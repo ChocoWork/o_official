@@ -16,10 +16,10 @@ const Footer = () => {
               <div>
                 ITEM
                 <ul className="mt-2 ml-3 space-y-1">
-                  <li> - ALL</li>
-                  <li> - OUTERS</li>
-                  <li> - TOPS</li>
-                  <li> - BOTTOMS</li>
+                  <li> ALL</li>
+                  <li> OUTERS</li>
+                  <li> TOPS</li>
+                  <li> BOTTOMS</li>
                 </ul>
               </div>
               <div>

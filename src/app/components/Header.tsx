@@ -1,3 +1,4 @@
+import Link from 'next/link'; // Linkコンポーネントをインポート
 import Image from "next/image";
 
 const Header = () => {
@@ -5,16 +6,18 @@ const Header = () => {
     <header className="grid grid-cols-[4fr_1fr_4fr] items-center p-2 pl-10 pr-10"> {/* bg-gray-100 */}
       {/* 左側のメニュー */}
       <nav className="flex space-x-7 justify-start text-sm">
-        <a href="#" className="text-gray-700 hover:text-gray-900">NEWS</a>
-        <a href="#" className="text-gray-700 hover:text-gray-900">ITEM</a>
-        <a href="#" className="text-gray-700 hover:text-gray-900">LOOK</a>
-        <a href="#" className="text-gray-700 hover:text-gray-900">STORY</a>
-        <a href="#" className="text-gray-700 hover:text-gray-900">CONTACT</a>
-        <a href="#" className="text-gray-700 hover:text-gray-900">STOCKIST</a>
+        <Link href="/news" className="text-gray-700 hover:text-gray-900">NEWS</Link>
+        <Link href="/item" className="text-gray-700 hover:text-gray-900">ITEM</Link>
+        <Link href="/look" className="text-gray-700 hover:text-gray-900">LOOK</Link>
+        <Link href="/story" className="text-gray-700 hover:text-gray-900">STORY</Link>
+        <Link href="/contact" className="text-gray-700 hover:text-gray-900">CONTACT</Link>
+        <Link href="/stockist" className="text-gray-700 hover:text-gray-900">STOCKIST</Link>
       </nav>
       {/* 中央のロゴ */}
       <div className="flex justify-center items-center">
-        <Image src="/logo.png" alt="Logo" width={40} height={40} />
+        <Link href="/">
+          <Image src="/logo.png" alt="Logo" width={40} height={40} />
+        </Link>
       </div>
       {/* 右側のボタン */}
       <div className="flex space-x-2 justify-end">

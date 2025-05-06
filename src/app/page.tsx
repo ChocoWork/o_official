@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Item from './components/Item';
 
 type Item = {
   id: number;
@@ -8,7 +9,7 @@ type Item = {
 
 const items: Item[] = Array.from({ length: 10 }, (_, i) => ({
   id: i,
-  name: `商品名`,
+  name: `商品名 ${i + 1}`,
   imageUrl: "/placeholder.png", // public フォルダの画像
 }));
 
@@ -33,27 +34,10 @@ export default function Home() {
         <h2 className="text-2xl mt-25 mb-5">New Item</h2>
 
         {/* 商品カードグリッド */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-3 w-full px-4 sm:px-6 md:px-8 lg:px-10 xl:px-12">
-          {items.map((item) => (
-            <div
-              key={item.id}
-              className="flex flex-col items-start"
-            >
-              <div className="w-full aspect-[3/4] relative">
-                <Image
-                  src={item.imageUrl}
-                  alt={item.name}
-                  fill
-                  className="object-cover"
-                />
-              </div>
-              <p className="mt-2 mb-12 text-sm text-left">{item.name}</p>
-            </div>
-          ))}
-        </div>
+        <Item items={items} />
 
         {/* VIEW ALLボタン */}
-        <button className="px-20 py-1 bg-black text-white rounded hover:opacity-80">
+        <button className="px-20 py-1 border hover:bg-black hover:text-white">
            VIEW ALL
         </button>
 
@@ -61,7 +45,7 @@ export default function Home() {
         <h2 className="text-2xl mt-25 mb-5">LOOK</h2>
 
         {/* LOOKカードグリッド */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-3 w-full px-4 sm:px-6 md:px-8 lg:px-10 xl:px-12">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-1 w-full">
           {items.map((item) => (
             <div
               key={item.id}
@@ -80,8 +64,8 @@ export default function Home() {
         </div>
 
         {/* VIEW ALLボタン */}
-        <button className="my-15 px-20 py-1 bg-black text-white rounded hover:opacity-80">
-          VIEW ALL
+        <button className="px-20 py-1 border hover:bg-black hover:text-white">
+           VIEW ALL
         </button>
       </main>
     </div>

@@ -23,4 +23,82 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  font-size: 14px;
 }
+
+/* button */
+.btn-box {
+  position: relative;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+}
+
+.btn {
+  position: relative;
+  display: block;
+  width: 14rem; /* 幅 */
+  height: 2rem; /* 高さ */
+  line-height: 2rem; /* テキストの高さ */
+  text-decoration: none;
+  background-color: #fff;
+  color: #232323;
+  text-align: center;
+  cursor: pointer;
+  -webkit-transition: all 0.4s;
+  transition: all 0.4s;
+}
+
+.btn:before {
+  content: "";
+  height: 0.7rem; /* 短辺に合わせた高さ調整 */
+  width: 0.7rem; /* 短辺に合わせた幅調整 */
+  position: absolute;
+  top: 0;
+  left: 0;
+  border: 3px solid #232323;
+  border-width: 3px 0 0 3px;
+  -webkit-transition: all 0.4s;
+  transition: all 0.4s;
+}
+
+.btn:after {
+  content: "";
+  height: 0.7rem; /* 短辺に合わせた高さ調整 */
+  width: 0.7rem; /* 短辺に合わせた幅調整 */
+  position: absolute;
+  top: calc(2rem - 0.7rem); /* ボタン高さ - 疑似要素高さ */
+  left: calc(14rem - 0.7rem); /* ボタン幅 - 疑似要素幅 */
+  border: 3px solid #232323;
+  border-width: 0 3px 3px 0;
+  -webkit-transition: all 0.4s;
+  transition: all 0.4s;
+}
+
+.btn:hover:before {
+  content: "";
+  height: 100%;
+  width: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  border: 3px solid #232323;
+  border-width: 3px 0 0 3px;
+  -webkit-transition: all 0.4s;
+  transition: all 0.4s;
+}
+
+.btn:hover:after {
+  content: "";
+  height: 100%;
+  width: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  border: 3px solid #232323;
+  border-width: 0 3px 3px 0;
+  -webkit-transition: all 0.4s;
+  transition: all 0.4s;
+}
+
