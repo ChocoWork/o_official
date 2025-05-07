@@ -15,7 +15,7 @@ imageUrl: "/placeholder.png", // public フォルダの画像
 
 export default function LookPage() {
     return (
-        <main className="px-5 pt-10 pb-20">
+        <main className="px-5 pt-20 pb-20">
             <div className="grid grid-cols-[1fr_2fr_3fr]">
                 {/* 左カラム: テキストリスト */}
                 <div className="pr-5">

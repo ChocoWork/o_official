@@ -3,7 +3,7 @@ import Image from "next/image";
 
 const Header = () => {
   return (
-    <header className="grid grid-cols-[4fr_1fr_4fr] items-center p-2 pl-10 pr-10"> {/* bg-gray-100 */}
+    <header className="fixed top-0 left-0 w-full bg-white z-50 grid grid-cols-[4fr_1fr_4fr] items-center p-2 pl-10 pr-10">
       {/* 左側のメニュー */}
       <nav className="flex space-x-7 justify-start text-sm">
         <Link href="/news" className="text-gray-700 hover:text-gray-900">NEWS</Link>
