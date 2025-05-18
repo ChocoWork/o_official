@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import Image from "next/image";
 import Item from './components/Item';
 
@@ -37,9 +38,11 @@ export default function Home() {
         <Item items={items} />
 
         {/* VIEW ALLボタン */}
-        <button className="px-20 py-1 border hover:bg-black hover:text-white">
-           VIEW ALL
-        </button>
+        <Link href="/item">
+          <button className="px-20 py-1 border hover:bg-black hover:text-white">
+            VIEW ALL
+          </button>
+        </Link>
 
         {/* 見出し */}
         <h2 className="text-2xl mt-25 mb-5">LOOK</h2>
@@ -64,9 +67,11 @@ export default function Home() {
         </div>
 
         {/* VIEW ALLボタン */}
-        <button className="px-20 py-1 border hover:bg-black hover:text-white">
-           VIEW ALL
-        </button>
+        <Link href="/look">
+          <button className="px-20 py-1 border hover:bg-black hover:text-white">
+            VIEW ALL
+          </button>
+        </Link>
       </main>
     </div>
   );

@@ -15,11 +15,11 @@ const items: Item[] = Array.from({ length: 10 }, (_, i) => ({
 
 export default function ItemPage() {
   return (
-    <main className="pb-60">
-      <section id="itemCategory">
-        <div className="p-7">itemカテゴリボタンを配置（複数選択可）</div>
-      </section>
-      <section id="itemFilter">
+    <main className="pt-12 pb-60">
+      {/* <section id="itemCategory">
+        <div className="p-6">itemカテゴリボタンを配置（複数選択可）</div>
+      </section> */}
+      <section id="itemFilter" className="fixed w-full bg-white z-10 shadow-md">
         {/* Header */}
         <div className="flex justify-between items-center">
           <button
