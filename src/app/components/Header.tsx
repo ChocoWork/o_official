@@ -30,9 +30,12 @@ const Header = () => {
         <button className="p-2 rounded hover:bg-gray-200 transition">
           <Image src="/person_white.svg" alt="login" width={20} height={20} />
         </button>
-        <button className="p-2 rounded hover:bg-gray-200 transition">
+        {/* <button className="p-2 rounded hover:bg-gray-200 transition">
           <Image src="/bag_icon.svg" alt="cart" width={20} height={20} />
-        </button>
+        </button> */}
+        <Link href="/cart" className="p-2 rounded hover:bg-gray-200 transition">
+          <Image src="/bag_icon.svg" alt="cart" width={20} height={20} />
+        </Link>
       </div>
     </header>
   );
