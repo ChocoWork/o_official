@@ -1,17 +1,33 @@
+"use client";
+
 import Link from 'next/link'; // Linkコンポーネントをインポート
 import Image from "next/image";
+import { usePathname } from 'next/navigation';
 
 const Header = () => {
+  const pathname = usePathname();
+  const menuItems = [
+    { href: '/news', label: 'NEWS' },
+    { href: '/item', label: 'ITEM' },
+    { href: '/look', label: 'LOOK' },
+    { href: '/story', label: 'STORY' },
+    { href: '/contact', label: 'CONTACT' },
+    { href: '/stockist', label: 'STOCKIST' },
+  ];
+
   return (
     <header className="fixed top-0 left-0 w-full bg-white z-50 grid grid-cols-[4fr_1fr_4fr] items-center p-2 px-7">
       {/* 左側のメニュー */}
       <nav className="flex space-x-7 justify-start text-sm">
-        <Link href="/news" className="text-gray-700 hover:text-gray-900">NEWS</Link>
-        <Link href="/item" className="text-gray-700 hover:text-gray-900">ITEM</Link>
-        <Link href="/look" className="text-gray-700 hover:text-gray-900">LOOK</Link>
-        <Link href="/story" className="text-gray-700 hover:text-gray-900">STORY</Link>
-        <Link href="/contact" className="text-gray-700 hover:text-gray-900">CONTACT</Link>
-        <Link href="/stockist" className="text-gray-700 hover:text-gray-900">STOCKIST</Link>
+        {menuItems.map((item) => (
+          <Link key={item.href} href={item.href} legacyBehavior passHref>
+            <a
+              className={`text-gray-700 hover:text-gray-900 pb-1 transition border-b-2 ${pathname === item.href ? 'border-black' : 'border-transparent'}`}
+            >
+              {item.label}
+            </a>
+          </Link>
+        ))}
       </nav>
       {/* 中央のロゴ */}
       <div className="flex justify-center items-center">
