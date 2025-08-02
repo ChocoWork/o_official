@@ -31,9 +31,11 @@ export default function RootLayout({
   return (
     // <html>タグでページ全体をラップ
     <html lang="ja">  {/* ページの言語を英語に設定 */}
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`} > {/* BodyにフォントのCSS変数と`antialiased`（アンチエイリアス効果）を適用*/}
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col min-h-screen`} > {/* BodyにフォントのCSS変数と`antialiased`（アンチエイリアス効果）を適用*/}
         <Header /> {/* ヘッダーを表示する */}
-        {children} {/* 各ページのコンテンツが表示される部分。childrenに渡されたコンテンツがここに挿入される */}
+        <div className="flex-1">
+          {children}{/* 各ページのコンテンツが表示される部分。childrenに渡されたコンテンツがここに挿入される */}
+        </div>
         <Footer /> {/* フッターを表示する */}
       </body>
     </html>
