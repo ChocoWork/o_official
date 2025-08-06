@@ -24,7 +24,7 @@ export const EmptyCart: React.FC<EmptyCartProps> = ({ onStartShopping }) => {
         
         <a
           href="http://localhost:3000/item"
-          className="inline-flex items-center px-6 py-3 bg-gray-900 text-white font-medium rounded-sm hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors duration-200"
+          className="inline-flex items-center px-6 py-3 bg-gray-900 text-white font-medium rounded-sm hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors duration-200"
         >
           <span>ショッピングを始める</span>
           <ArrowRight className="w-5 h-5 ml-2" />

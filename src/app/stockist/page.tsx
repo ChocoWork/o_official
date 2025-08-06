@@ -86,7 +86,7 @@ export default function StockistPage() {
   ];
 
   return (
-    <main className="px-5 pt-40 pb-60">
+    <main className="px-5 pt-30 pb-10">
       <div id="mainContents">
         <div id="article" className="flex justify-center">
           <div id="articleInnerList">

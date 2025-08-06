@@ -1,5 +1,8 @@
-import React from "react";
+'use client'
+
+import React, { useState } from "react";
 import Item from './../components/Item';
+import FilterSidebar from './../components/FilterSidebar';
 
 type Item = {
   id: number;
@@ -14,8 +17,10 @@ const items: Item[] = Array.from({ length: 10 }, (_, i) => ({
 }));
 
 export default function ItemPage() {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   return (
-    <main className="pt-12 pb-60">
+    <main className="pt-12 pb-10">
       {/* <section id="itemCategory">
         <div className="p-6">itemカテゴリボタンを配置（複数選択可）</div>
       </section> */}
@@ -23,7 +28,7 @@ export default function ItemPage() {
         {/* Header */}
         <div className="flex justify-between items-center">
           <button
-            // onClick={() => setFilter(filter === "Outerwear" ? "" : "Outerwear")}
+            onClick={() => setSidebarOpen(true)}
             className="px-7 py-6"
           >
             {/* FILTER {filter === "Outerwear" ? "-" : "+"} */}
@@ -40,6 +45,7 @@ export default function ItemPage() {
           </button>
         </div>
       </section>
+      <FilterSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div id="contact">
         <div id="contactList" className="flex justify-center">
             {/* 商品カードグリッド */}

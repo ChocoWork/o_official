@@ -10,7 +10,7 @@ export default function ContactPage() {
     };
 
     return (
-      <main className="px-5 pt-40 pb-60">
+      <main className="px-5 pt-30 pb-10">
         <div id="contact">
             <div id="contactList" className="flex justify-center">
                 <div id="mainContents" className="ja">
