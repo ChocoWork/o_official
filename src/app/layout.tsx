@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google"; // Google FontsのGeistと
 import "./globals.css"; // グローバルCSSファイルをインポート
 import Header from './components/Header'; // ヘッダーコンポーネントをインポート
 import Footer from './components/Footer'; // フッターコンポーネントをインポート
+import { LoginProvider } from './components/LoginContext'; // ログイン状態管理のためのLoginProviderをインポート
 
 // Geistフォントを設定。変数名を`--font-geist-sans`に設定。
 const geistSans = Geist({
@@ -32,11 +33,13 @@ export default function RootLayout({
     // <html>タグでページ全体をラップ
     <html lang="ja">  {/* ページの言語を英語に設定 */}
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col min-h-screen`} > {/* BodyにフォントのCSS変数と`antialiased`（アンチエイリアス効果）を適用*/}
-        <Header /> {/* ヘッダーを表示する */}
-        <div className="flex-1">
-          {children}{/* 各ページのコンテンツが表示される部分。childrenに渡されたコンテンツがここに挿入される */}
-        </div>
-        <Footer /> {/* フッターを表示する */}
+        <LoginProvider>
+          <Header /> {/* ヘッダーを表示する */}
+          <div className="flex-1">
+            {children}{/* 各ページのコンテンツが表示される部分。childrenに渡されたコンテンツがここに挿入される */}
+          </div>
+          <Footer /> {/* フッターを表示する */}
+        </LoginProvider>
       </body>
     </html>
   );

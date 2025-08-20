@@ -3,8 +3,14 @@
 import Link from 'next/link'; // Linkコンポーネントをインポート
 import Image from "next/image";
 import { usePathname } from 'next/navigation';
+import React, { useState } from "react";
+import LoginModal from "./LoginModal";
+import { useLogin } from "./LoginContext";
 
 const Header = () => {
+  const [loginOpen, setLoginOpen] = useState(false);
+  const { isLoggedIn, isAdmin, logout } = useLogin();
+  console.log("Header: isLoggedIn, isAdmin", isLoggedIn, isAdmin);
   const pathname = usePathname();
   const menuItems = [
     { href: '/news', label: 'NEWS' },
@@ -28,6 +34,15 @@ const Header = () => {
             </a>
           </Link>
         ))}
+        {isAdmin && (
+          <Link href="/admin" legacyBehavior passHref>
+            <a
+              className={`text-red-700 hover:text-red-900 pb-1 transition border-b-2 ${pathname === '/admin' ? 'border-black' : 'border-transparent'}`}
+            >
+              Admin
+            </a>
+          </Link>
+        )}
       </nav>
       {/* 中央のロゴ */}
       <div className="flex justify-center items-center">
@@ -43,9 +58,15 @@ const Header = () => {
         <button className="p-2 rounded hover:bg-gray-200 transition">
           <Image src="/search_icon.svg" alt="search" width={20} height={20} />
         </button>
-        <button className="p-2 rounded hover:bg-gray-200 transition">
-          <Image src="/person_white.svg" alt="login" width={20} height={20} />
-        </button>
+        {!isLoggedIn ? (
+          <button className="p-2 rounded hover:bg-gray-200 transition" onClick={() => setLoginOpen(true)}>
+            <Image src="/person_white.svg" alt="login" width={20} height={20} />
+          </button>
+        ) : (
+          <button className="p-2 rounded hover:bg-gray-200 transition" onClick={logout}>
+            <Image src="/person_black.svg" alt="logout" width={20} height={20} />
+          </button>
+        )}
         {/* <button className="p-2 rounded hover:bg-gray-200 transition">
           <Image src="/bag_icon.svg" alt="cart" width={20} height={20} />
         </button> */}
@@ -53,6 +74,7 @@ const Header = () => {
           <Image src="/bag_icon.svg" alt="cart" width={20} height={20} />
         </Link>
       </div>
+      <LoginModal open={loginOpen && !isLoggedIn} onClose={() => setLoginOpen(false)} />
     </header>
   );
 };
