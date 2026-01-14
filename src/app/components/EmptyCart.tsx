@@ -1,35 +1,42 @@
+"use client";
+
 import React from 'react';
-import { ShoppingBag, ArrowRight } from 'lucide-react';
+import Link from 'next/link';
 
 interface EmptyCartProps {
-  onStartShopping: () => void;
+  onStartShopping?: () => void;
 }
 
 export const EmptyCart: React.FC<EmptyCartProps> = ({ onStartShopping }) => {
   return (
-    <div className="text-center py-16">
-      <div className="max-w-md mx-auto">
-        <div className="bg-gray-50 rounded-full w-24 h-24 flex items-center justify-center mx-auto mb-6">
-          <ShoppingBag className="w-12 h-12 text-gray-400" />
-        </div>
-        
-        <h2 className="text-2xl font-semibold text-gray-900 mb-3">
-          カートが空です
-        </h2>
-        
-        <p className="text-gray-600 mb-8">
-          まだ商品が追加されていません。<br />
-          お気に入りの商品を見つけて、ショッピングを始めましょう。
-        </p>
-        
-        <a
-          href="http://localhost:3000/item"
-          className="inline-flex items-center px-6 py-3 bg-gray-900 text-white font-medium rounded-sm hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors duration-200"
+    <main className="pt-32 pb-20 px-6 lg:px-12">
+      <div className="max-w-4xl mx-auto">
+        <h1
+          className="text-4xl lg:text-5xl text-black mb-16 tracking-tight text-center"
+          style={{ fontFamily: 'Didot, serif' }}
         >
-          <span>ショッピングを始める</span>
-          <ArrowRight className="w-5 h-5 ml-2" />
-        </a>
+          SHOPPING CART
+        </h1>
+
+        <div className="text-center py-20">
+          <div className="w-20 h-20 mx-auto flex items-center justify-center mb-6">
+            <i className="ri-shopping-bag-line text-6xl text-[#474747]"></i>
+          </div>
+
+          <p className="text-lg text-[#474747] mb-8" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+            カートは空です
+          </p>
+
+          <Link
+            href="/item"
+            className="px-12 py-4 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap"
+            style={{ fontFamily: 'acumin-pro, sans-serif' }}
+            onClick={() => onStartShopping && onStartShopping()}
+          >
+            CONTINUE SHOPPING
+          </Link>
+        </div>
       </div>
-    </div>
+    </main>
   );
 };

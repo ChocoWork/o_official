@@ -1,108 +1,156 @@
 export default function StockistPage() {
-  // 各地域のデータを配列で管理
-  const stockists = [
-    {
-      title: "TOKYO",
-      places: [
-        "BARNEYS NEW YORK GINZA Kojun Building 6-8-7 Ginza Chuo-Ku Tokyo 0120 137 007",
-        "BARNEYS NEW YORK ROPPONGI 7-7-7 Roppongi Minato-Ku Tokyo 0120 137 007",
-        "BIOTOP 4-6-44 Shirokanedai Minato-Ku Tokyo 03 3444 2421",
-        "EDITION LUMINE SHINJUKU B1F Lumine1 1-1-5 Nishishinjuku Shinjuku-Ku Tokyo 03 3343 0121",
-        "EDITION OMOTESANDO HILLS 2F 4-12-10 Jingumae Shibuya-Ku Tokyo 03 3403 8086",
-      ],
-    },
-    {
-      title: "HOKKAIDO",
-      places: [
-        "MARUIIMAI RE-STYLE 3F Odori Building Minami1-Jo Nishi 2-Chome Chuo-Ku Sapporo Hokkaido 011 205 2333",
-        "MAW 1F Alpha 2-5 Building Minami 2-Jo Nishi 5-Chome Chuo-Ku Sapporo Hokkaido 011 271 0505",
-        "UNITED ARROWS SAPPORO 1.2F Sapporo Parco Minami1-Jo Nishi 3-Chome Chuo-Ku Sapporo Hokkaido 011 218 6001",
-      ],
-    },
-    {
-      title: "TOHOKU",
-      places: [
-        "MARUIIMAI RE-STYLE 3F Odori Building Minami1-Jo Nishi 2-Chome Chuo-Ku Sapporo Hokkaido 011 205 2333",
-        "MAW 1F Alpha 2-5 Building Minami 2-Jo Nishi 5-Chome Chuo-Ku Sapporo Hokkaido 011 271 0505",
-        "UNITED ARROWS SAPPORO 1.2F Sapporo Parco Minami1-Jo Nishi 3-Chome Chuo-Ku Sapporo Hokkaido 011 218 6001",
-      ],
-    },
-    {
-      title: "KANTO",
-      places: [
-        "MARUIIMAI RE-STYLE 3F Odori Building Minami1-Jo Nishi 2-Chome Chuo-Ku Sapporo Hokkaido 011 205 2333",
-        "MAW 1F Alpha 2-5 Building Minami 2-Jo Nishi 5-Chome Chuo-Ku Sapporo Hokkaido 011 271 0505",
-        "UNITED ARROWS SAPPORO 1.2F Sapporo Parco Minami1-Jo Nishi 3-Chome Chuo-Ku Sapporo Hokkaido 011 218 6001",
-      ],
-    },
-    {
-      title: "CHUBU",
-      places: [
-        "MARUIIMAI RE-STYLE 3F Odori Building Minami1-Jo Nishi 2-Chome Chuo-Ku Sapporo Hokkaido 011 205 2333",
-        "MAW 1F Alpha 2-5 Building Minami 2-Jo Nishi 5-Chome Chuo-Ku Sapporo Hokkaido 011 271 0505",
-        "UNITED ARROWS SAPPORO 1.2F Sapporo Parco Minami1-Jo Nishi 3-Chome Chuo-Ku Sapporo Hokkaido 011 218 6001",
-      ],
-    },
-    {
-      title: "KINKI",
-      places: [
-        "MARUIIMAI RE-STYLE 3F Odori Building Minami1-Jo Nishi 2-Chome Chuo-Ku Sapporo Hokkaido 011 205 2333",
-        "MAW 1F Alpha 2-5 Building Minami 2-Jo Nishi 5-Chome Chuo-Ku Sapporo Hokkaido 011 271 0505",
-        "UNITED ARROWS SAPPORO 1.2F Sapporo Parco Minami1-Jo Nishi 3-Chome Chuo-Ku Sapporo Hokkaido 011 218 6001",
-      ],
-    },
-    {
-      title: "CHUGOKU",
-      places: [
-        "MARUIIMAI RE-STYLE 3F Odori Building Minami1-Jo Nishi 2-Chome Chuo-Ku Sapporo Hokkaido 011 205 2333",
-        "MAW 1F Alpha 2-5 Building Minami 2-Jo Nishi 5-Chome Chuo-Ku Sapporo Hokkaido 011 271 0505",
-        "UNITED ARROWS SAPPORO 1.2F Sapporo Parco Minami1-Jo Nishi 3-Chome Chuo-Ku Sapporo Hokkaido 011 218 6001",
-      ],
-    },
-    {
-      title: "SHIKOKU",
-      places: [
-        "MARUIIMAI RE-STYLE 3F Odori Building Minami1-Jo Nishi 2-Chome Chuo-Ku Sapporo Hokkaido 011 205 2333",
-        "MAW 1F Alpha 2-5 Building Minami 2-Jo Nishi 5-Chome Chuo-Ku Sapporo Hokkaido 011 271 0505",
-        "UNITED ARROWS SAPPORO 1.2F Sapporo Parco Minami1-Jo Nishi 3-Chome Chuo-Ku Sapporo Hokkaido 011 218 6001",
-      ],
-    },
-    {
-      title: "KYUSYU",
-      places: [
-        "MARUIIMAI RE-STYLE 3F Odori Building Minami1-Jo Nishi 2-Chome Chuo-Ku Sapporo Hokkaido 011 205 2333",
-        "MAW 1F Alpha 2-5 Building Minami 2-Jo Nishi 5-Chome Chuo-Ku Sapporo Hokkaido 011 271 0505",
-        "UNITED ARROWS SAPPORO 1.2F Sapporo Parco Minami1-Jo Nishi 3-Chome Chuo-Ku Sapporo Hokkaido 011 218 6001",
-      ],
-    },
-    {
-      title: "OKINAWA",
-      places: [
-        "MARUIIMAI RE-STYLE 3F Odori Building Minami1-Jo Nishi 2-Chome Chuo-Ku Sapporo Hokkaido 011 205 2333",
-        "MAW 1F Alpha 2-5 Building Minami 2-Jo Nishi 5-Chome Chuo-Ku Sapporo Hokkaido 011 271 0505",
-        "UNITED ARROWS SAPPORO 1.2F Sapporo Parco Minami1-Jo Nishi 3-Chome Chuo-Ku Sapporo Hokkaido 011 218 6001",
-      ],
-    },
-  ];
-
   return (
-    <main className="px-5 pt-30 pb-10">
-      <div id="mainContents">
-        <div id="article" className="flex justify-center">
-          <div id="articleInnerList">
-            {stockists.map((stockist, index) => (
-              <div key={index} className="flex mb-5">
-                <h4 className="font-bold w-48">{stockist.title}</h4>
-                <span className="articleInnerIcon">
-                  <span className="articleInnerBars"></span>
-                </span>
-                <ul>
-                  {stockist.places.map((place, idx) => (
-                    <li className="mb-half" key={idx}>{place}</li>
-                  ))}
-                </ul>
+    <main className="pt-32 pb-20 px-6 lg:px-12">
+      <div className="max-w-7xl mx-auto">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
+          <div className="border border-black/10 p-8 hover:border-black transition-colors duration-300">
+            <div className="mb-4">
+              <span className="text-xs text-black tracking-widest px-3 py-1 border border-black inline-block mb-4" style={{ fontFamily: 'acumin-pro, sans-serif' }}>FLAGSHIP STORE</span>
+              <h2 className="text-2xl text-black mb-6" style={{ fontFamily: 'Didot, serif' }}>Le Fil des Heures Aoyama</h2>
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-start">
+                <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-map-pin-line text-lg text-black" /></div>
+                <p className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>東京都港区南青山3-14-15</p>
               </div>
-            ))}
+              <div className="flex items-center">
+                <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-phone-line text-lg text-black" /></div>
+                <p className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>03-1234-5678</p>
+              </div>
+              <div className="flex items-center">
+                <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-time-line text-lg text-black" /></div>
+                <p className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>11:00 - 20:00</p>
+              </div>
+              <div className="flex items-center">
+                <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-calendar-line text-lg text-black" /></div>
+                <p className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>水曜定休</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="border border-black/10 p-8 hover:border-black transition-colors duration-300">
+            <div className="mb-4">
+              <span className="text-xs text-black tracking-widest px-3 py-1 border border-black inline-block mb-4" style={{ fontFamily: 'acumin-pro, sans-serif' }}>STORE</span>
+              <h2 className="text-2xl text-black mb-6" style={{ fontFamily: 'Didot, serif' }}>Le Fil des Heures Ginza</h2>
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-start">
+                <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-map-pin-line text-lg text-black" /></div>
+                <p className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>東京都中央区銀座6-10-1</p>
+              </div>
+              <div className="flex items-center">
+                <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-phone-line text-lg text-black" /></div>
+                <p className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>03-2345-6789</p>
+              </div>
+              <div className="flex items-center">
+                <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-time-line text-lg text-black" /></div>
+                <p className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>11:00 - 20:00</p>
+              </div>
+              <div className="flex items-center">
+                <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-calendar-line text-lg text-black" /></div>
+                <p className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>不定休</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="border border-black/10 p-8 hover:border-black transition-colors duration-300">
+            <div className="mb-4">
+              <span className="text-xs text-black tracking-widest px-3 py-1 border border-black inline-block mb-4" style={{ fontFamily: 'acumin-pro, sans-serif' }}>STORE</span>
+              <h2 className="text-2xl text-black mb-6" style={{ fontFamily: 'Didot, serif' }}>Le Fil des Heures Osaka</h2>
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-start">
+                <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-map-pin-line text-lg text-black" /></div>
+                <p className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>大阪府大阪市北区梅田2-5-25</p>
+              </div>
+              <div className="flex items-center">
+                <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-phone-line text-lg text-black" /></div>
+                <p className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>06-3456-7890</p>
+              </div>
+              <div className="flex items-center">
+                <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-time-line text-lg text-black" /></div>
+                <p className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>11:00 - 20:00</p>
+              </div>
+              <div className="flex items-center">
+                <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-calendar-line text-lg text-black" /></div>
+                <p className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>水曜定休</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="border border-black/10 p-8 hover:border-black transition-colors duration-300">
+            <div className="mb-4">
+              <span className="text-xs text-black tracking-widest px-3 py-1 border border-black inline-block mb-4" style={{ fontFamily: 'acumin-pro, sans-serif' }}>SELECT SHOP</span>
+              <h2 className="text-2xl text-black mb-6" style={{ fontFamily: 'Didot, serif' }}>Maison de Mode Tokyo</h2>
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-start">
+                <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-map-pin-line text-lg text-black" /></div>
+                <p className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>東京都渋谷区神宮前5-10-1</p>
+              </div>
+              <div className="flex items-center">
+                <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-phone-line text-lg text-black" /></div>
+                <p className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>03-4567-8901</p>
+              </div>
+              <div className="flex items-center">
+                <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-time-line text-lg text-black" /></div>
+                <p className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>12:00 - 20:00</p>
+              </div>
+              <div className="flex items-center">
+                <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-calendar-line text-lg text-black" /></div>
+                <p className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>月曜定休</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="border border-black/10 p-8 hover:border-black transition-colors duration-300">
+            <div className="mb-4">
+              <span className="text-xs text-black tracking-widest px-3 py-1 border border-black inline-block mb-4" style={{ fontFamily: 'acumin-pro, sans-serif' }}>SELECT SHOP</span>
+              <h2 className="text-2xl text-black mb-6" style={{ fontFamily: 'Didot, serif' }}>Atelier Blanc Kyoto</h2>
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-start">
+                <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-map-pin-line text-lg text-black" /></div>
+                <p className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>京都府京都市中京区烏丸通三条上ル</p>
+              </div>
+              <div className="flex items-center">
+                <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-phone-line text-lg text-black" /></div>
+                <p className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>075-567-8901</p>
+              </div>
+              <div className="flex items-center">
+                <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-time-line text-lg text-black" /></div>
+                <p className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>11:00 - 19:00</p>
+              </div>
+              <div className="flex items-center">
+                <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-calendar-line text-lg text-black" /></div>
+                <p className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>火曜定休</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="border border-black/10 p-8 hover:border-black transition-colors duration-300">
+            <div className="mb-4">
+              <span className="text-xs text-black tracking-widest px-3 py-1 border border-black inline-block mb-4" style={{ fontFamily: 'acumin-pro, sans-serif' }}>SELECT SHOP</span>
+              <h2 className="text-2xl text-black mb-6" style={{ fontFamily: 'Didot, serif' }}>Minimal Store Fukuoka</h2>
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-start">
+                <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-map-pin-line text-lg text-black" /></div>
+                <p className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>福岡県福岡市中央区天神2-8-34</p>
+              </div>
+              <div className="flex items-center">
+                <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-phone-line text-lg text-black" /></div>
+                <p className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>092-678-9012</p>
+              </div>
+              <div className="flex items-center">
+                <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-time-line text-lg text-black" /></div>
+                <p className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>11:00 - 20:00</p>
+              </div>
+              <div className="flex items-center">
+                <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-calendar-line text-lg text-black" /></div>
+                <p className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>不定休</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>

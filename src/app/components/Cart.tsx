@@ -79,36 +79,34 @@ export const Cart: React.FC = () => {
   };
 
   return (
-    <div className="">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {cartItems.length === 0 ? (
-          <EmptyCart onStartShopping={startShopping} />
-        ) : (
-          <div className="lg:grid lg:grid-cols-3 lg:gap-8">
-            {/* カート商品リスト */}
-            <div className="lg:col-span-2">
-              <div>
-                {cartItems.map(item => (
-                  <CartItem
-                    key={item.id}
-                    item={item}
-                    onUpdateQuantity={updateQuantity}
-                    onRemoveItem={removeItem}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {/* 注文サマリー */}
-            <div className="mt-8 lg:mt-0">
-              <CartSummary
-                summary={summary}
-                onCheckout={handleCheckout}
-              />
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {cartItems.length === 0 ? (
+        <EmptyCart onStartShopping={startShopping} />
+      ) : (
+        <div className="lg:grid lg:grid-cols-3 lg:gap-8">
+          {/* カート商品リスト */}
+          <div className="lg:col-span-2">
+            <div>
+              {cartItems.map(item => (
+                <CartItem
+                  key={item.id}
+                  item={item}
+                  onUpdateQuantity={updateQuantity}
+                  onRemoveItem={removeItem}
+                />
+              ))}
             </div>
           </div>
-        )}
-      </div>
+
+          {/* 注文サマリー */}
+          <div className="mt-8 lg:mt-0">
+            <CartSummary
+              summary={summary}
+              onCheckout={handleCheckout}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

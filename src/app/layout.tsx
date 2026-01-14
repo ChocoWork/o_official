@@ -30,15 +30,17 @@ export default function RootLayout({
   children: React.ReactNode;  // childrenはReactのノード（要素、文字列など）であることを示す
 }>) {
   return (
-    // <html>タグでページ全体をラップ
-    <html lang="ja">  {/* ページの言語を英語に設定 */}
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col min-h-screen`} > {/* BodyにフォントのCSS変数と`antialiased`（アンチエイリアス効果）を適用*/}
+    <html lang="ja">
+      <head>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/remixicon/fonts/remixicon.css" />
+      </head>
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col min-h-screen`}> 
         <LoginProvider>
-          <Header /> {/* ヘッダーを表示する */}
-          <div className="flex-1">
-            {children}{/* 各ページのコンテンツが表示される部分。childrenに渡されたコンテンツがここに挿入される */}
+          <Header />
+          <div className="flex-1 flex flex-col"> {/* Bodyの高さを調整し、Footerが常に下に来るように */}
+            {children}
           </div>
-          <Footer /> {/* フッターを表示する */}
+          <Footer />
         </LoginProvider>
       </body>
     </html>

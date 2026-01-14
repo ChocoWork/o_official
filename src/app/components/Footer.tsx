@@ -1,115 +1,54 @@
 import React from 'react';
-import { Mail, Instagram, Twitter, Facebook } from 'lucide-react';
 
 const Footer = () => {
   return (
-    <footer className="border-t border-gray-200">
-      {/* メインフッターセクション */}
-      <div className="w-full px-4 sm:px-6 lg:px-16 xl:px-24 py-12">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-          {/* ロゴとブランド情報 */}
-          <div className="lg:col-span-1">
-            <div className="flex items-center mb-4">
-              <img 
-                src="/logo.png" 
-                alt="Logo" 
-                className="w-20 h-20 object-cover"
-              />
-            </div>
-            {/* ソーシャルメディアアイコン */}
-            <div className="flex space-x-4">
-              <a href="#" className="text-gray-400 hover:text-gray-600 transition-colors">
-                <Instagram className="w-5 h-5" />
-              </a>
-              <a href="#" className="text-gray-400 hover:text-gray-600 transition-colors">
-                <Twitter className="w-5 h-5" />
-              </a>
-              <a href="#" className="text-gray-400 hover:text-gray-600 transition-colors">
-                <Facebook className="w-5 h-5" />
-              </a>
-            </div>
+    <footer className="bg-black text-white py-16 px-6 lg:px-12 w-full">
+      <div className="w-full">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-12 w-full">
+          <div>
+            <h3 className="text-2xl mb-6 tracking-tight" style={{ fontFamily: 'Didot, serif' }}>Le Fil des Heures</h3>
+            <p className="text-sm text-white/70 leading-relaxed" style={{ fontFamily: 'acumin-pro, sans-serif' }}>時を紡ぐニュートラルモードな日常着</p>
           </div>
-
-          {/* ナビゲーションリンク */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:col-span-2 gap-8">
-            <div>
-              {/* <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-4">
-                CATEGORY
-              </h3> */}
-              <ul className="space-y-3">
-                <li><a href="#" className="text-gray-600 hover:text-gray-900 transition-colors text-sm">ALL ITEM</a></li>
-                <li><a href="#" className="text-gray-600 hover:text-gray-900 transition-colors text-sm">OUTER</a></li>
-                <li><a href="#" className="text-gray-600 hover:text-gray-900 transition-colors text-sm">TOPS</a></li>
-                <li><a href="#" className="text-gray-600 hover:text-gray-900 transition-colors text-sm">BOTTOMS</a></li>
-              </ul>
-            </div>
-
-            <div>
-              {/* <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-4">
-                情報
-              </h3> */}
-              <ul className="space-y-3">
-                <li><a href="#" className="text-gray-600 hover:text-gray-900 transition-colors text-sm">NEWS</a></li>
-                <li><a href="#" className="text-gray-600 hover:text-gray-900 transition-colors text-sm">LOOK</a></li>
-                <li><a href="#" className="text-gray-600 hover:text-gray-900 transition-colors text-sm">STORY</a></li>
-                <li><a href="#" className="text-gray-600 hover:text-gray-900 transition-colors text-sm">STOCKIST</a></li>
-              </ul>
-            </div>
-
-            <div>
-              {/* <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-4">
-                サポート
-              </h3> */}
-              <ul className="space-y-3">
-                <li><a href="#" className="text-gray-600 hover:text-gray-900 transition-colors text-sm">CONTACT</a></li>
-                <li><a href="#" className="text-gray-600 hover:text-gray-900 transition-colors text-sm">SIZE GUIDE</a></li>
-                <li><a href="#" className="text-gray-600 hover:text-gray-900 transition-colors text-sm">SHIPPING & RETURNS</a></li>
-                <li><a href="#" className="text-gray-600 hover:text-gray-900 transition-colors text-sm">FAQ</a></li>
-              </ul>
-            </div>
+          <div>
+            <h4 className="text-sm tracking-widest mb-4" style={{ fontFamily: 'acumin-pro, sans-serif' }}>SHOP</h4>
+            <ul className="space-y-2">
+              <li><a className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/item" style={{ fontFamily: 'acumin-pro, sans-serif' }}>ALL</a></li>
+              <li><a className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/item" style={{ fontFamily: 'acumin-pro, sans-serif' }}>TOPS</a></li>
+              <li><a className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/item" style={{ fontFamily: 'acumin-pro, sans-serif' }}>BOTTOMS</a></li>
+              <li><a className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/item" style={{ fontFamily: 'acumin-pro, sans-serif' }}>OUTERWEAR</a></li>
+              <li><a className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/item" style={{ fontFamily: 'acumin-pro, sans-serif' }}>ACCESSORIES</a></li>
+            </ul>
           </div>
-
-          {/* ニュースレター登録 */}
-          <div className="lg:col-span-1">
-            <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-4">
-              NEWS LETTER
-            </h3>
-            {/* <p className="text-gray-600 text-sm mb-4">
-              最新情報やお得な情報をお届けします
-            </p> */}
-            <div className="flex gap-2">
-              <input
-              type="email"
-              placeholder="Enter your email address"
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-sm focus:ring-2 focus:ring-gray-500 focus:border-transparent outline-none transition-all text-sm"
-              />
-              <button className="px-4 py-2 bg-gray-900 text-white rounded-sm hover:bg-gray-800 transition-colors text-sm font-medium flex items-center justify-center whitespace-nowrap">
-              <Mail className="w-4 h-4 mr-2" />
-              Subscribe
-              </button>
+          <div>
+            <h4 className="text-sm tracking-widest mb-4" style={{ fontFamily: 'acumin-pro, sans-serif' }}>INFORMATION</h4>
+            <ul className="space-y-2">
+              <li><a className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/about" style={{ fontFamily: 'acumin-pro, sans-serif' }}>ABOUT</a></li>
+              <li><a className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/look" style={{ fontFamily: 'acumin-pro, sans-serif' }}>LOOK</a></li>
+              <li><a className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/news" style={{ fontFamily: 'acumin-pro, sans-serif' }}>NEWS</a></li>
+              <li><a className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/stockist" style={{ fontFamily: 'acumin-pro, sans-serif' }}>STOCKIST</a></li>
+              <li><a className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/contact" style={{ fontFamily: 'acumin-pro, sans-serif' }}>CONTACT</a></li>
+            </ul>
+          </div>
+          <div>
+            <h4 className="text-sm tracking-widest mb-4" style={{ fontFamily: 'acumin-pro, sans-serif' }}>FOLLOW US</h4>
+            <div className="flex gap-4">
+              <a href="#" className="w-10 h-10 flex items-center justify-center border border-white hover:bg-white hover:text-black transition-all duration-300 cursor-pointer">
+                <i className="ri-instagram-line text-xl"></i>
+              </a>
+              <a href="#" className="w-10 h-10 flex items-center justify-center border border-white hover:bg-white hover:text-black transition-all duration-300 cursor-pointer">
+                <i className="ri-facebook-line text-xl"></i>
+              </a>
+              <a href="#" className="w-10 h-10 flex items-center justify-center border border-white hover:bg-white hover:text-black transition-all duration-300 cursor-pointer">
+                <i className="ri-twitter-x-line text-xl"></i>
+              </a>
             </div>
           </div>
         </div>
-      </div>
-
-      {/* フッター下部 */}
-      <div className="border-t border-gray-200 bg-white">
-        <div className="w-full px-4 sm:px-6 lg:px-16 xl:px-24 py-6">
-          <div className="flex flex-col sm:flex-row justify-between items-center space-y-4 sm:space-y-0">
-            <div className="text-sm text-gray-600">
-              © 2026 O. All rights reserved.
-            </div>
-            <div className="flex space-x-6">
-              <a href="#" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">
-                Privacy Policy
-              </a>
-              <a href="#" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">
-                Terms Of Use
-              </a>
-                <a href="#" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">
-                Legal Notice
-                </a>
-            </div>
+        <div className="border-t border-white/20 pt-8 flex flex-col md:flex-row justify-between items-center gap-4 w-full">
+          <p className="text-xs text-white/50" style={{ fontFamily: 'acumin-pro, sans-serif' }}>© 2024 Le Fil des Heures. All rights reserved.</p>
+          <div className="flex gap-6">
+            <a className="text-xs text-white/50 hover:text-white transition-colors duration-300 cursor-pointer" href="/privacy" style={{ fontFamily: 'acumin-pro, sans-serif' }}>Privacy Policy</a>
+            <a className="text-xs text-white/50 hover:text-white transition-colors duration-300 cursor-pointer" href="/terms" style={{ fontFamily: 'acumin-pro, sans-serif' }}>Terms of Service</a>
           </div>
         </div>
       </div>
