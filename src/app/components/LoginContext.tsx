@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, ReactNode } from "react";
+import { supabase } from '@/lib/supabase/client';
 
 interface LoginContextType {
   isLoggedIn: boolean;
@@ -22,26 +23,40 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
   const [isAdmin, setIsAdmin] = useState(false);
 
   const login = (email?: string, password?: string) => {
-    console.log("login called with:", { email, password });
-    setIsLoggedIn(true);
-    if (email === 'aaa@gmail.com' && password === 'bbb') {
-      setIsAdmin(true);
-    } else {
-      setIsAdmin(false);
-    }
-    // 認証状態をデバッグ出力
-    setTimeout(() => {
-      console.log("After login:", { isLoggedIn: true, isAdmin: email === 'aaa@gmail.com' && password === 'bbb', email, password });
-    }, 0);
+    (async () => {
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: email || '',
+          password: password || '',
+        });
+        if (error) {
+          console.error('Supabase signIn error', error);
+          setIsLoggedIn(false);
+          setIsAdmin(false);
+          return;
+        }
+        const userEmail = data.user?.email;
+        setIsLoggedIn(true);
+        setIsAdmin(userEmail === 'aaa@gmail.com');
+      } catch (e) {
+        console.error('Login error', e);
+        setIsLoggedIn(false);
+        setIsAdmin(false);
+      }
+    })();
   };
 
   const logout = () => {
-    setIsLoggedIn(false);
-    setIsAdmin(false);
-    // 認証状態をデバッグ出力
-    setTimeout(() => {
-      console.log("After logout:", { isLoggedIn: false, isAdmin: false });
-    }, 0);
+    (async () => {
+      try {
+        await supabase.auth.signOut();
+      } catch (e) {
+        console.error('Sign out error', e);
+      } finally {
+        setIsLoggedIn(false);
+        setIsAdmin(false);
+      }
+    })();
   };
 
   // 状態が変わるたびに認証状態を出力

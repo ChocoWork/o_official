@@ -34,3 +34,16 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Supabase client placement
+
+- Server-side Supabase initializer: `src/lib/supabase/server.ts` (use on server routes / server components). This file may read cookies and must not be bundled to the browser.
+- Client-side Supabase initializer: `src/lib/supabase/client.ts` (use in client components). Only use `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in browser code.
+
+Environment variables:
+
+- `NEXT_PUBLIC_SUPABASE_URL` (public)
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` (public)
+- `SUPABASE_SERVICE_ROLE_KEY` (server-only, keep secret)
+
+During migration the old compatibility file `src/utils/supabase/server.ts` re-exports the new implementation; update imports to `@/lib/supabase/server` when convenient.

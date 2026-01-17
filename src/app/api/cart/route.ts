@@ -1,3 +1,6 @@
+import { createClient } from '@/lib/supabase/server';
+import { NextResponse } from 'next/server';
+
 // GET: カート情報取得（一時的なテスト用実装）
 export async function GET(request: Request) {
   try {
