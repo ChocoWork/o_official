@@ -56,7 +56,7 @@ Next.js + Supabase を前提とした認証基盤を実装する。メール/パ
 # 依存関係
 
 - メール送信プロバイダ（SendGrid 等）
-- Secrets 管理（`JWT_SECRET`, `SUPABASE_SERVICE_KEY` 等）
+- Secrets 管理（`JWT_SECRET`, `SUPABASE_SERVICE_ROLE_KEY` 等）
 
 # チェックリスト / サブタスク
 

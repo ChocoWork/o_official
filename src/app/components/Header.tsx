@@ -58,9 +58,15 @@ const Header = () => {
               <span className="absolute -top-2 -right-2 w-5 h-5 bg-black text-white rounded-full flex items-center justify-center text-xs" style={{ fontFamily: 'acumin-pro, sans-serif' }}>3</span>
             </Link>
             <div className="relative">
-              <Link href="/login" className="w-5 h-5 flex items-center justify-center cursor-pointer">
-                <i className="ri-user-line text-xl text-black hover:text-[#474747] transition-colors"></i>
-              </Link>
+              {isLoggedIn ? (
+                <Link href="/account" className="w-5 h-5 flex items-center justify-center cursor-pointer">
+                  <i className="ri-user-fill text-xl text-black hover:text-[#474747] transition-colors"></i>
+                </Link>
+              ) : (
+                <Link href="/login" className="w-5 h-5 flex items-center justify-center cursor-pointer">
+                  <i className="ri-user-line text-xl text-black hover:text-[#474747] transition-colors"></i>
+                </Link>
+              )}
             </div>
             <button className="lg:hidden w-5 h-5 flex items-center justify-center cursor-pointer">
               <i className="ri-menu-line text-2xl text-black"></i>

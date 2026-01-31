@@ -25,5 +25,5 @@ GitHub Actions のセットアップ:
 2. `main` ブランチに push するとワークフローが走り、`migrations/*.sql` を順次適用します。
 
 注意:
-- Supabase を利用している場合は `SUPABASE_SERVICE_KEY` を用いた管理操作が必要なケースがあります。`DATABASE_URL` と `SUPABASE_SERVICE_KEY` のいずれを CI で使うかは環境に合わせて決めてください。
+- Supabase を利用している場合は `SUPABASE_SERVICE_ROLE_KEY` を用いた管理操作が必要なケースがあります。`DATABASE_URL` と `SUPABASE_SERVICE_ROLE_KEY` のいずれを CI で使うかは環境に合わせて決めてください。
 - `pgcrypto` 拡張が必要な SQL を含みます（`gen_random_uuid()` 等）。エラーが出た場合は管理者に確認してください。

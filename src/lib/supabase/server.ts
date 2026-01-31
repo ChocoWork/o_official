@@ -29,13 +29,13 @@ export async function createClient(): Promise<SupabaseClient> {
 }
 
 // サーバサイドの管理操作（マイグレーションやユーザ管理等）に使うサービスロールキーを用いたクライアント
-// SUPABASE_SERVICE_KEY を必ず環境変数で設定して使用してください（Secrets 管理下に置くこと）。
+// SUPABASE_SERVICE_ROLE_KEY を必ず環境変数で設定して使用してください（Secrets 管理下に置くこと）。
 export function createServiceRoleClient(): SupabaseClient {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_KEY;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url || !serviceKey) {
-    throw new Error('SUPABASE_SERVICE_KEY and SUPABASE_URL must be set for service role client');
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY and SUPABASE_URL must be set for service role client');
   }
 
   return createSupabaseClient(url, serviceKey, {

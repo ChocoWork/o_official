@@ -59,10 +59,33 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
     })();
   };
 
-  // 状態が変わるたびに認証状態を出力
+  // 初期セッション確認と状態変化の購読
   React.useEffect(() => {
-    console.log("Auth state changed:", { isLoggedIn, isAdmin });
-  }, [isLoggedIn, isAdmin]);
+    let mounted = true;
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const session = (data as any)?.session;
+        if (mounted && session?.user) {
+          setIsLoggedIn(true);
+          setIsAdmin(session.user.email === 'aaa@gmail.com');
+        }
+      } catch (e) {
+        console.error('Error fetching initial session', e);
+      }
+    })();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const user = (session as any)?.user;
+      setIsLoggedIn(!!user);
+      setIsAdmin(user?.email === 'aaa@gmail.com');
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   return (
     <LoginContext.Provider value={{ isLoggedIn, isAdmin, login, logout }}>
