@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@aws-sdk/client-ses": "^3.975.0",
     "@radix-ui/react-slot": "^1.2.3",
     "@supabase/supabase-js": "^2.53.0",
     "chart.js": "^4.5.0",

@@ -1,12 +1,11 @@
-import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import { createClient as createSupabaseClient, SupabaseClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 
-export async function createClient() {
+// ブラウザ/Edge ランタイム向けに Cookie を使ってユーザセッションを復元するクライアント
+export async function createClient(): Promise<SupabaseClient> {
   const cookieStore = await cookies();
-  
-  // 認証トークンを条件付きで取得
   const authToken = cookieStore.get('sb-access-token')?.value;
-  
+
   const supabase = createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -16,13 +15,33 @@ export async function createClient() {
         persistSession: true,
         detectSessionInUrl: false,
       },
-      global: authToken ? {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-      } : {},
+      global: authToken
+        ? {
+            headers: {
+              Authorization: `Bearer ${authToken}`,
+            },
+          }
+        : {},
     }
   );
 
   return supabase;
+}
+
+// サーバサイドの管理操作（マイグレーションやユーザ管理等）に使うサービスロールキーを用いたクライアント
+// SUPABASE_SERVICE_KEY を必ず環境変数で設定して使用してください（Secrets 管理下に置くこと）。
+export function createServiceRoleClient(): SupabaseClient {
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_KEY;
+
+  if (!url || !serviceKey) {
+    throw new Error('SUPABASE_SERVICE_KEY and SUPABASE_URL must be set for service role client');
+  }
+
+  return createSupabaseClient(url, serviceKey, {
+    auth: {
+      persistSession: false,
+      detectSessionInUrl: false,
+    },
+  });
 }
