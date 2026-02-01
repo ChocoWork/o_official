@@ -40,21 +40,48 @@ sequenceDiagram
     Note right of Browser: UI update — Header shows ri-user-fill linking to /account
 
     Note right of API: 運用上の必須ルール:
-    Note right of API: - `SUPABASE_SERVICE_ROLE_KEY` はサーバ側のみ保持（Secrets Manager 推奨）
-    Note right of API: - `redirect_to` はホワイトリストで検証（オープンリダイレクト防止）
-    Note right of API: - トークンは即時消費（ワンタイム化）し、ログに平文で保存しない（マスキング）
-    Note right of API: - レート制限・監査ログ・Referrer-Policy: no-referrer を付与
+    Note right of API: - SUPABASE_SERVICE_ROLE_KEY はサーバ側のみ保持（Secrets Manager 推奨）
+    Note right of API: - redirect_to は自ドメインのパスのみをホワイトリストで検証（オープンリダイレクト防止）
+    Note right of API: - トークンはワンタイム化し、検証後は無効化。ログにトークンを平文で残さない（マスキング）
+    Note right of API: - レート制限（実装要件）: 一般 API IP=100 req/10min、認証系 IP=50 req/10min、アカウント失敗は別途カウント（Postgres に保存）
+    Note right of API: - ブルートフォース対策: アカウント+IP の二軸制御、失敗閾値で段階的遅延・CAPTCHA 発動（実装: Postgres にカウンタを保持）。CAPTCHA 実装: Cloudflare Turnstile を優先採用。登録/パスワード再設定は常時表示、ログインは連続失敗や異常検出時の適応型で表示する。
+    Note right of API: - CSRF: ダブルサブミット方式 (X-CSRF-Token) を採用。CSRF cookie: SameSite=Lax, Secure は本番必須
+    Note right of API: - Cookie: Refresh cookie を推奨 (HttpOnly, Secure, SameSite=Lax, Path=/, Max-Age=604800)。Access token は短期メモリで管理
+    Note right of API: - Refresh トークン: JTI を sessions.current_jti に保存し、再利用検出時は当該ユーザーの全 session を失効
+    Note right of API: - 同時セッション: On(デフォルト有効), 上限 5。超過時は最古を削除するローテーション方式。管理画面で有効/無効、上限値の変更を可能にする。
+    Note right of API: - 監査ログ: 認証イベントは 1 年保持、管理操作は 3〜7 年。IP はハッシュ化/マスク、RBAC によるアクセス制御を必須化
 
-    Note over User,API: ログインフロー
+    Note over User,API: ログインフロー (IP+Account レート制御 / 段階的遅延 / CAPTCHA)
     User->>Browser: ログイン情報送信
     Browser->>API: POST /api/auth/login {email,password}
-    API->>Auth: Verify credentials
-    Auth->>DB: SELECT users
-    DB-->>Auth: user row
-    Auth-->>API: Issue access_token (15m) + refresh_token (7d sliding)
-    API->>DB: INSERT sessions (refresh_token_hash, expires_at)
-    API->>Browser: Set-Cookie (HttpOnly, Secure, SameSite=Lax)
-    API->>Audit: auth.login (success)
+    API->>DB: Check IP rate counter (IP_count) and auth-rate (IP_auth_count)
+    DB-->>API: allowed / rate_limited
+    alt rate limited
+        API->>Browser: 429 + {retry_after}
+        API->>Audit: auth.login.rate_limited
+    else allowed
+        API->>DB: Check account failure count for email
+        DB-->>API: fail_count
+        alt fail_count >= threshold
+            API->>Browser: 429 + {retry_after} (or respond with CAPTCHA required)
+            API->>Audit: auth.login.blocked
+        else
+            API->>Auth: Verify credentials
+            Auth->>DB: SELECT users
+            DB-->>Auth: user row
+            alt invalid credentials
+                API->>DB: Increment account failure counter, record timestamp
+                API->>Audit: auth.login.failure
+                API-->>Browser: 401 (invalid credentials)
+            else valid
+                API->>DB: Reset account failure counter
+                Auth-->>API: Issue access_token (15m) + refresh_token (7d)
+                API->>DB: INSERT sessions (refresh_token_hash, expires_at, current_jti)
+                API->>Browser: Set-Cookie (HttpOnly, Secure, SameSite=Lax)
+                API->>Audit: auth.login (success)
+            end
+        end
+    end
 
     Note over User,API: パスワードリセット要求 (request)
     User->>Browser: パスワードリセット要求フォーム送信
@@ -80,26 +107,34 @@ sequenceDiagram
         API-->>Browser: 400/401
     end
 
-    Note over Browser,API: リフレッシュ (トークンローテーション)
+    Note over Browser,API: リフレッシュ (JTI ローテーション / 再利用検出)
     Browser->>API: POST /api/auth/refresh (HttpOnly Cookie)
-    API->>DB: Lookup session by refresh_token_hash
+    API->>DB: Lookup session by refresh_token_hash -> session (includes current_jti)
     DB-->>API: session row
-    API->>Auth: Issue new access_token + new refresh_token
-    API->>DB: Update session refresh_token_hash -> new hash, expires_at
-    alt refresh token mismatch
-        API->>DB: Revoke all user sessions
-        API->>Audit: auth.refresh.failure
+    API->>API: Verify incoming refresh JTI matches session.current_jti
+    alt jti mismatch (re-use detected)
+        API->>DB: Revoke all user sessions for user_id
+        API->>Audit: auth.refresh.reuse_detected
         API-->>Browser: 401 Unauthorized
-    else success
+    else jti matches
+        API->>Auth: Issue new access_token + new refresh_token (new_jti)
+        API->>DB: Update session current_jti -> new_jti, refresh_token_hash -> new hash, expires_at
         API->>Audit: auth.refresh.success
         API-->>Browser: 200 OK + Set-Cookie (rotated)
     end
 
-    Note over Browser,API: ログアウト
-    Browser->>API: POST /api/auth/logout (HttpOnly Cookie)
-    API->>DB: Mark session revoked_at
-    API->>Audit: auth.logout
-    API-->>Browser: 204 No Content
+    Note over User,API: ログアウト
+    User->>Browser: Click "ログアウト" button
+    Browser->>Browser: Optional: show confirmation modal (confirm=yes/no)
+    alt confirm=yes
+        Browser->>API: POST /api/auth/logout { X-CSRF-Token } (HttpOnly Cookie)
+        API->>DB: Mark session revoked_at
+        API->>Audit: auth.logout
+        API-->>Browser: 204 No Content
+        Browser->>User: Redirect / update UI to logged-out state
+    else confirm=no
+        Browser->>User: Stay logged in
+    end
 
     Note over API,Audit: 監査ログは JSON Lines フォーマットで出力
     Audit-->>DB: append audit entry {id,timestamp,actor_id,actor_email,action,resource,resource_id,ip,user_agent,outcome,metadata}
@@ -119,5 +154,6 @@ sequenceDiagram
     Note over API,Auth: OpenAPI / エラーハンドリング
     Note right of API: - 共通エラー: 400 (validation), 401 (invalid credentials), 429 (rate limit)
     Note right of API: - 各エンドポイントは OpenAPI で定義し契約テストを推奨
+    Note right of API: - E2E 自動化: 本番公開前必須。今スプリントで CI スモークテストを導入し、次スプリントでメールリンク等を含む主要フローの自動 E2E を追加する。
 
 ```

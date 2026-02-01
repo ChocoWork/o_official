@@ -88,8 +88,17 @@
   - Endpoint: `POST /api/auth/logout` (204)
   - Endpoint: `POST /api/auth/refresh` (200 + Set-Cookie)
     - リフレッシュ時はトークンローテーションを行い、`refresh_token_hash` を DB にハッシュ保存して照合
+    - 実装要点:
+      - 各 refresh トークンに **JTI (unique id)** を付与し、sessions レコードに `current_jti` を保存
+      - refresh は一回限り（単一使用）。Refresh リクエスト時に DB の `current_jti` と照合し、成功したら新しい refresh を発行して `current_jti` を差し替える
+      - 古い refresh が再利用された場合は「再利用検出」とし、当該アカウント内の全 session を失効（強制ログアウト）する
+      - 再利用検出時は監査ログを出力し、必要に応じ管理者通知やユーザ通知を行う
     - 無効なリフレッシュは 401 を返し、必要なら全セッション失効
   - 管理用: `POST /api/auth/revoke-user-sessions` — 指定ユーザーの全セッションを `revoked_at` で失効
+  - 同時セッション数 / 強制ログアウト:
+    - 方針: **On（デフォルト有効）**。上限: **ユーザ単位上限 5 セッション**。
+    - 超過時: 最古セッションを自動削除する **ローテーション方式** を採用（UX を配慮）
+    - 管理画面で上限値の変更およびセッションの列挙/個別リボークを可能にすること（管理者操作）
 
   ### 4.4 パスワード再設定 (Password Reset)
   - Request: `POST /api/auth/password-reset/request` { email }
@@ -107,11 +116,20 @@
   ## 5. セキュリティ設計・運用 (Security & Ops)
   - Service Role キー管理:
     - `SUPABASE_SERVICE_ROLE_KEY` の保存場所・アクセス制御は未決定のため要相談。デフォルト方針は Secrets Manager（Vault / Vercel 環境変数）で厳格に管理し、最小権限の運用を推奨
-  - Cookie 設計: `HttpOnly; Secure; SameSite=Lax`
+  - Cookie 設計:
+    - 本番: `HttpOnly; Secure; SameSite=Lax` を必須
+    - ローカル: `Secure=false` を許可するのは `NODE_ENV=development` または `ALLOW_INSECURE_COOKIES=true` が明示されている場合のみ
+    - Access token: 基本はメモリ管理（短寿命、15 分）。必要に応じ短期 cookie を利用
+    - Refresh token cookie: `HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=604800`（7 日）を推奨（7 日は短めのデフォルト、運用でスライディング延長最大 30 日を選択可）
   - リダイレクト制御: `redirect_to` はホワイトリストで検証（オープンリダイレクト防止）
   - Referrer-Policy: `no-referrer` を `/api/auth/confirm` のレスポンスに付与
   - ログと監査: トークン等は平文で保存しない（マスキング）
-  - レート制限 / 不正検出: 認証系エンドポイント全般に適用
+  - レート制限 / 不正検出:
+    - 一般 API (IP): **100 req / 10 min**
+    - 認証エンドポイント (IP): **50 req / 10 min**
+    - アカウント失敗カウント: パスワード誤り等の失敗はアカウント単位でカウントし、5 回失敗で段階的遅延/ロックアウトを適用（詳細は下記アルゴリズム参照）。
+    - CAPTCHA: **Cloudflare Turnstile** を優先採用。登録 (`/api/auth/register`) およびパスワードリセット (`/api/auth/password-reset/request`) では常時表示し、ログインでは連続失敗や異常スコア閾値到達時に表示する **適応型** を採用する（4〜5 回失敗での挿入）。実装は Turnstile のサーバ検証とフロント統合を行う。
+    - 実装メモ: Vercel のインスタンスローカルメモリはカウンタ保存に不向きなため、**Supabase(Postgres)** にカウンタ/メタデータを保持して分散制御を行うこと。IP とアカウントの二軸制御を必須とする。
 
   ## 6. トークン寿命（再掲）
   - Access token: 15 分
@@ -121,6 +139,21 @@
 
   ## 7. API 仕様・エラーハンドリング
   - 共通エラー: 400 (validation), 401 (invalid credentials), 429 (rate limit)
+  - エラー構造 (OpenAPI 用スキーマ):
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "code": { "type": "string" },
+    "message": { "type": "string" },
+    "detail": { "type": "string" },
+    "retry_after": { "type": "number", "description": "秒、オプション" }
+  },
+  "required": ["code","message"]
+}
+```
+
   - 各エンドポイントの入出力は OpenAPI で定義し、契約テストを実施する
 
   ### OpenAPI スニペット（例）
@@ -180,6 +213,11 @@
   ## 10. 監査・観測・テスト
   - 監査ログ対象: login success/fail, refresh, logout, password change, oauth link
   - フォーマット: JSON Lines（例を下記に示す）
+  - 保持期間・アクセス制御・マスキング:
+    - 認証イベント（ログイン/失敗/トークン交換）: **1 年** 保持（例）
+    - 管理操作: **3〜7 年**（規制に従う）
+    - ログのマスキング: IP はハッシュ化または末尾のみ可視、トークンや敏感情報は記録しないか完全マスク
+    - アクセス: RBAC による限定、ログの改竄検知（ハッシュチェーン）を導入することを推奨
 
   ```json
   {
@@ -197,7 +235,7 @@
   }
   ```
 
-  - E2E: メール確認リンククリック→自動ログイン→`Header` が `ri-user-fill` に変わることを必須とする
+  - E2E: メール確認リンククリック→自動ログイン→`Header` が `ri-user-fill` に変わることを必須とする。**自動化ポリシー**: 本番公開前に自動化を必須とし、今スプリントで CI スモークテストを導入、次スプリントで主要フロー（メールリンク含む）の自動 E2E を追加する。
 
   ## 11. 実装ノート
   - 推奨スタック: Next.js API routes + Supabase Postgres/Auth
@@ -228,7 +266,7 @@
   ---
 
 
-- **redirect_to のホワイトリスト（必須）**: `redirect_to` パラメータは必ずホワイトリストで検証し、許可された自ドメインのパス以外にはリダイレクトしないこと（オープンリダイレクト対策）。
+- **redirect_to のホワイトリスト（必須）**: `redirect_to` パラメータは**自ドメインのパスのみ**をホワイトリスト化して検証すること（外部・サブドメイン等は運用で明示的に許可しない限り禁止）。オープンリダイレクト対策として厳格に扱うこと。
 - **ログ出力のマスキング（必須）**: 監査ログやサーバーログに確認トークンやリフレッシュトークンを平文で保存しない。監査ログには event, actor, ip, user_agent, outcome のみを残し、トークンはマスクまたは除外すること。
   - リクエストの URL やクエリ文字列をそのままログに保存しないこと。どうしても保存が必要な場合は、クエリ内のトークン部分を確実にマスクして保存すること。
 - **ワンタイムトークン再利用検出（必須）**: トークンの再利用が検出された場合は該当ユーザーの全セッションを失効させ、セキュリティアラートを発行する運用を準備すること。
@@ -318,8 +356,9 @@ CREATE TABLE sessions (
 - POST `/api/auth/revoke-user-sessions`: 指定ユーザのすべてのセッションを失効。
 
 ### CSRF 実装パターン
-- Cookie: `HttpOnly; Secure; SameSite=Lax` を推奨
-- CSRF トークン: 同期トークン方式またはダブルサブミット方式を併用。`X-CSRF-Token` ヘッダで検証。
+- 方針: **ダブルサブミット方式 (X-CSRF-Token)** を採用。クライアントはログイン後に HttpOnly ではない CSRF cookie を受け取り、以降の状態変更リクエストで `X-CSRF-Token` ヘッダを付与して検証する。
+- CSRF cookie 属性: `SameSite=Lax` を付与。`Secure` は本番環境で必須。ローカル開発では `NODE_ENV=development` または `ALLOW_INSECURE_COOKIES=true` が明示されている場合にのみ `Secure=false` を許可する。
+- 検証: トークンは毎リクエストで検証し、ミスマッチは 401/403 を返却。トークンのローテーションや有効期限（例: 1 時間）を導入することを推奨。
 
 ### ローテーションと不正検出
 - リフレッシュ時に `refresh_token_hash` の突合を行い、不一致は全セッション失効 + アラート。
