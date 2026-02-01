@@ -35,7 +35,7 @@ sequenceDiagram
     Auth-->>API: verification success
     API->>DB: Create session / INSERT sessions (refresh_token_hash, expires_at)
     API->>Browser: Set-Cookie (HttpOnly, Secure, SameSite=Lax)
-    API->>Audit: auth.confirm (success) + auth.login (auto)
+    API->>Audit: auth.confirm (success) and auth.login (auto)
     API-->>Browser: Redirect to /account (ログイン済み状態)
     Note right of Browser: UI update — Header shows ri-user-fill linking to /account
 
@@ -43,27 +43,28 @@ sequenceDiagram
     Note right of API: - SUPABASE_SERVICE_ROLE_KEY はサーバ側のみ保持（Secrets Manager 推奨）
     Note right of API: - redirect_to は自ドメインのパスのみをホワイトリストで検証（オープンリダイレクト防止）
     Note right of API: - トークンはワンタイム化し、検証後は無効化。ログにトークンを平文で残さない（マスキング）
-    Note right of API: - レート制限（実装要件）: 一般 API IP=100 req/10min、認証系 IP=50 req/10min、アカウント失敗は別途カウント（Postgres に保存）
-    Note right of API: - ブルートフォース対策: アカウント+IP の二軸制御、失敗閾値で段階的遅延・CAPTCHA 発動（実装: Postgres にカウンタを保持）。CAPTCHA 実装: Cloudflare Turnstile を優先採用。登録/パスワード再設定は常時表示、ログインは連続失敗や異常検出時の適応型で表示する。
+    Note right of API: - レート制限（実装要件）: 一般 API IP=100 req/10min、<br>認証系 IP=50 req/10min、<br>アカウント失敗は別途カウント（Postgres に保存）
+    Note right of API: - ブルートフォース対策: アカウントとIP の二軸制御、失敗閾値で段階的遅延・CAPTCHA 発動<br>（実装: Postgres にカウンタを保持）。
+    Note right of API: - CAPTCHA 実装: Cloudflare Turnstile を優先採用。登録/パスワード再設定は常時表示、<br>ログインは連続失敗や異常検出時の適応型で表示する。
     Note right of API: - CSRF: ダブルサブミット方式 (X-CSRF-Token) を採用。CSRF cookie: SameSite=Lax, Secure は本番必須
-    Note right of API: - Cookie: Refresh cookie を推奨 (HttpOnly, Secure, SameSite=Lax, Path=/, Max-Age=604800)。Access token は短期メモリで管理
+    Note right of API: - Cookie: Refresh cookie を推奨 (HttpOnly, Secure, SameSite=Lax, Path=/, Max-Age=604800)。<br>Access token は短期メモリで管理
     Note right of API: - Refresh トークン: JTI を sessions.current_jti に保存し、再利用検出時は当該ユーザーの全 session を失効
-    Note right of API: - 同時セッション: On(デフォルト有効), 上限 5。超過時は最古を削除するローテーション方式。管理画面で有効/無効、上限値の変更を可能にする。
-    Note right of API: - 監査ログ: 認証イベントは 1 年保持、管理操作は 3〜7 年。IP はハッシュ化/マスク、RBAC によるアクセス制御を必須化
+    Note right of API: - 同時セッション: On(デフォルト有効), 上限 5。<br>超過時は最古を削除するローテーション方式。<br>管理画面で有効/無効、上限値の変更を可能にする。
+    Note right of API: - 監査ログ: 認証イベントは 1 年保持、管理操作は 3〜7 年。<br>IP はハッシュ化/マスク、RBAC によるアクセス制御を必須化
 
-    Note over User,API: ログインフロー (IP+Account レート制御 / 段階的遅延 / CAPTCHA)
+    Note over User,API: ログインフロー (IP and Account レート制御 / 段階的遅延 / CAPTCHA)
     User->>Browser: ログイン情報送信
     Browser->>API: POST /api/auth/login {email,password}
     API->>DB: Check IP rate counter (IP_count) and auth-rate (IP_auth_count)
     DB-->>API: allowed / rate_limited
     alt rate limited
-        API->>Browser: 429 + {retry_after}
+        API->>Browser: 429 {retry_after}
         API->>Audit: auth.login.rate_limited
     else allowed
         API->>DB: Check account failure count for email
         DB-->>API: fail_count
         alt fail_count >= threshold
-            API->>Browser: 429 + {retry_after} (or respond with CAPTCHA required)
+            API->>Browser: 429 {retry_after} (or respond with CAPTCHA required)
             API->>Audit: auth.login.blocked
         else
             API->>Auth: Verify credentials
@@ -75,13 +76,91 @@ sequenceDiagram
                 API-->>Browser: 401 (invalid credentials)
             else valid
                 API->>DB: Reset account failure counter
-                Auth-->>API: Issue access_token (15m) + refresh_token (7d)
+                Auth-->>API: Issue access_token (15m) and refresh_token (7d)
                 API->>DB: INSERT sessions (refresh_token_hash, expires_at, current_jti)
                 API->>Browser: Set-Cookie (HttpOnly, Secure, SameSite=Lax)
                 API->>Audit: auth.login (success)
             end
         end
     end
+
+    Note over User,API: OAuth (Google) フロー（リンク提案を優先、**自動マージは行わない**）
+    User->>Browser: Click "Sign in with Google"
+    Browser->>API: GET /api/auth/oauth/start?provider=google&redirect_to=/account
+    API->>DB: Check oauth endpoint rate limit (IP/account - 50 req / 10 min)
+    alt rate limited
+        API->>Browser: 429 {retry_after}
+        API->>Audit: auth.oauth.start.rate_limited
+    else allowed
+        API->>API: Create `state` and PKCE `code_challenge`, store short-lived state (Redis or oauth_requests table) with TTL (10m), used_at null, client_ip, code_challenge_method, redirect_to
+        API->>Audit: auth.oauth.start (state generated)
+        API-->>Browser: 302 Redirect to Provider (state, code_challenge)
+    end
+    Browser->>Auth: User authenticates at Provider and authorizes
+    Auth-->>Browser: Redirect to /api/auth/oauth/callback?code=...&state=...
+    Browser->>API: GET /api/auth/oauth/callback?code=...&state=...
+    API->>DB: Check oauth callback rate limit (IP/account)
+    alt rate limited
+        API->>Browser: 429 {retry_after}
+        API->>Audit: auth.oauth.callback.rate_limited
+    else allowed
+        API->>DB: Lookup stored `state`
+        alt state missing/expired/used
+            API->>Audit: auth.oauth.callback.invalid_state
+            API->>Browser: 400 Bad Request
+        else valid
+            API->>DB: Mark used_at (prevent replay)
+            API->>API: Exchange code (server-side, using code_verifier) → fetch tokens/profile from Provider
+            alt exchange failure
+                API->>Audit: auth.oauth.callback.exchange_failure
+                API->>Browser: 502 Bad Gateway
+            else exchange success
+                API->>API: Verify ID token signature via JWKS and claims (sub == provider_user_id, aud, exp, etc.)
+                API->>API: Enforce default policy: DO NOT persist provider tokens unless explicitly required (if persisted, encrypt via KMS and audit accesses)
+                API->>DB: Find oauth_accounts by (provider, provider_user_id)
+            end
+            alt no existing provider_id
+                API->>DB: if email not found → create user, INSERT oauth_accounts, create session
+                API->>Audit: auth.oauth.create, auth.oauth.callback.success
+                API->>Browser: Set-Cookie (HttpOnly) and 302 /account
+            else if provider_id exists
+                API->>DB: create session for linked user
+                API->>Audit: auth.oauth.callback.success
+                API->>Browser: Set-Cookie and 302 /account
+            else if email matches existing user (but provider_id absent)
+                API->>Browser: 302 /auth/oauth/link-proposal?provider=google&provider_id=...
+                API->>Audit: auth.oauth.link_proposal
+                Note right of Browser: Show link proposal page. <br>Require user re-auth: password OR email link OR 2FA
+                User->>Browser: Accept link and re-authenticate
+                Browser->>API: POST /api/auth/oauth/link-confirm {provider, provider_id, proof}
+                API->>API: Verify proof (password/email link/2FA)
+                alt proof invalid
+                    API->>Audit: auth.oauth.link_confirm_failure
+                    API->>Browser: 403 Forbidden
+                else proof valid
+                    API->>DB: Attempt to INSERT oauth_accounts (enforce unique (provider, provider_user_id))
+                    alt insert conflict
+                        API->>Audit: auth.oauth.link_conflict
+                        API->>Browser: 409 Conflict
+                    else success
+                        API->>Audit: auth.oauth.link
+                        API->>Browser: 200 OK and Set-Cookie (linked)
+                    end
+                end
+            end
+        end
+    end
+    Note right of API: OAuth specifics
+    Note right of API: - state stored in Redis or oauth_requests table
+    Note right of API: - TTL 10m and one-time use
+    Note right of API: - do not persist provider tokens by default
+    Note right of API: - if provider tokens persisted then encrypt and audit
+    Note right of API: - oauth endpoints rate-limited at 50 req per 10 min
+    Note right of API: - Add cleanup job to remove expired or used oauth_requests
+    Note right of API: - Admin API: OAuth unlink/re-link (audit logged)
+    Note right of API: - oauth_accounts needs a unique index on provider and provider_user_id
+    Note right of API: - oauth_accounts: last_synced_at, raw_profile_hash (for tamper detection)
+    Note right of API: - oauth_accounts: last_synced_at, raw_profile_hash (for tamper detection)
 
     Note over User,API: パスワードリセット要求 (request)
     User->>Browser: パスワードリセット要求フォーム送信
@@ -109,7 +188,7 @@ sequenceDiagram
 
     Note over Browser,API: リフレッシュ (JTI ローテーション / 再利用検出)
     Browser->>API: POST /api/auth/refresh (HttpOnly Cookie)
-    API->>DB: Lookup session by refresh_token_hash -> session (includes current_jti)
+    API->>DB: Lookup session by refresh_token_hash → session (includes current_jti)
     DB-->>API: session row
     API->>API: Verify incoming refresh JTI matches session.current_jti
     alt jti mismatch (re-use detected)
@@ -125,12 +204,11 @@ sequenceDiagram
             API->>DB: Flag session/quarantine and require user verification (email/2FA)
             API-->>Browser: 401 Unauthorized (verification required)
         end
-    end
     else jti matches
-        API->>Auth: Issue new access_token + new refresh_token (new_jti)
-        API->>DB: Update session current_jti -> new_jti, refresh_token_hash -> new hash, expires_at
+        API->>Auth: Issue new access_token and new refresh_token (new_jti)
+        API->>DB: Update session current_jti → new_jti, refresh_token_hash → new hash, expires_at
         API->>Audit: auth.refresh.success
-        API-->>Browser: 200 OK + Set-Cookie (rotated)
+        API-->>Browser: 200 OK and Set-Cookie (rotated)
     end
 
     Note over User,API: ログアウト
@@ -146,13 +224,12 @@ sequenceDiagram
         Browser->>User: Stay logged in
     end
 
-    Note over API,Audit: 監査ログは JSON Lines フォーマットで出力
-    Audit-->>DB: append audit entry {id,timestamp,actor_id,actor_email,action,resource,resource_id,ip,user_agent,outcome,metadata}
+    Note right of Audit: 監査ログは JSON Lines フォーマットで出力
+    Audit-->>DB: append audit entry  <br> {id,timestamp,actor_id,<br>actor_email,<br>action,<br>resource,<br>resource_id,<br>ip,<br>user_agent,<br>outcome,<br>metadata}
 
-    Note over API,Auth: セキュリティ・運用・非機能（要点）
-    Note right of API: - 環境変数 / シークレット:
-    Note right of API:   JWT_SECRET, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, AWS_SES_REGION, AWS_SES_ACCESS_KEY_ID, AWS_SES_SECRET_ACCESS_KEY, SES_FROM_ADDRESS, NEXT_PUBLIC_*
-    Note right of API: - トークン取り扱い（確認/リセット）: 受信した `token` はサーバ側で即時検証・消費し、Set-Cookie 発行後にクリーンな URL へ 302/303 リダイレクトしてクエリにトークンを残さない。レスポンスには `Cache-Control: no-store` と `Referrer-Policy: no-referrer` を付与し、トークンはログに保存しない（マスキング）ことを必須化する。
+    Note right of API: セキュリティ・運用・非機能（要点）
+    Note right of API: - 環境変数 / シークレット:<br>JWT_SECRET, <br>SUPABASE_URL, <br>SUPABASE_SERVICE_ROLE_KEY, AWS_SES_REGION, <br>AWS_SES_ACCESS_KEY_ID, <br>AWS_SES_SECRET_ACCESS_KEY, <br>SES_FROM_ADDRESS, <br>NEXT_PUBLIC_*
+    Note right of API: - トークン取り扱い（確認/リセット）: 受信した `token` はサーバ側で即時検証・消費し、<br>Set-Cookie 発行後にクリーンな URL へ 302/303 リダイレクトしてクエリにトークンを残さない。<br>レスポンスには `Cache-Control: no-store` と `Referrer-Policy: no-referrer` を付与し、<br>トークンはログに保存しない（マスキング）ことを必須化する。
     Note right of API: - Cookie 設計: HttpOnly, Secure, SameSite=Lax
     Note right of API: - CSRF: 同期トークン/ダブルサブミットまたは適切な SameSite
     Note right of API: - パスワードハッシュ: Argon2 または Bcrypt を推奨
@@ -162,9 +239,9 @@ sequenceDiagram
     Note right of API: - 運用: SUPABASE_SERVICE_ROLE_KEY の保管は Secrets Manager。定期ローテーションと自動化必須
     Note right of API: - ログ出力はトークン等をマスク。クエリ文字列をそのまま保存しない
 
-    Note over API,Auth: OpenAPI / エラーハンドリング
+    Note right of API: OpenAPI / エラーハンドリング
     Note right of API: - 共通エラー: 400 (validation), 401 (invalid credentials), 429 (rate limit)
     Note right of API: - 各エンドポイントは OpenAPI で定義し契約テストを推奨
-    Note right of API: - E2E 自動化: 本番公開前必須。今スプリントで CI スモークテストを導入し、次スプリントでメールリンク等を含む主要フローの自動 E2E を追加する。
+    Note right of API: - E2E 自動化: 本番公開前必須。今スプリントで CI スモークテストを導入し、<br>次スプリントでメールリンク等を含む主要フローの自動 E2E を追加する。
 
 ```

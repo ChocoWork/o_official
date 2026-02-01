@@ -109,12 +109,141 @@
     - トークン寿命: 1時間。ワンタイムかつ即時消費。メールテンプレートは SES で管理。
     - セキュリティ（トークン in URL の取り扱い）: リセットリンクに含まれる `token` は受信時にサーバ側で検証・消費し、一時的な安全なセッション（または短寿命の one-time nonce）を発行してからクリーンな URL へリダイレクトすること。これによりブラウザ履歴や Referer にトークンが残らないようにする。JavaScript が無効な場合でも GET リクエストで受信した段階でサーバ側で即時検証→リダイレクト（トークン無効化）を行い、トークンが保存されないことを保証する。
 
-  ### 4.5 OAuth (Google) — フル実装
+  ### 4.5 OAuth (Google) — フル実装（詳細と安全設計）
   - 範囲:
-    - OAuth 2.0 認可コードフローの実装（サーバー側でトークン交換）
-    - 新規ユーザー作成 or 既存アカウントへのリンク処理
-    - 安全な `redirect_uri` ホワイトリスト検証
-    - 監査ログ記録・エラー処理・ユーザ通知
+    - OAuth 2.0 認可コードフロー（PKCE を含む）をサーバー側で実装し、トークン交換とプロファイル取得を行う。
+    - 新規ユーザーの作成、既存ユーザーとのアカウントリンク（**自動マージは採用しない**）の実装。
+    - 安全な `redirect_uri` のホワイトリスト検証と `state` / PKCE の検証による CSRF 対策。
+    - 監査ログ（`auth.oauth.*`）の記録、ユーザ通知（リンク提案／リンク成功／異常検出）およびエラーハンドリング。
+
+  - エンドポイント（例）:
+    - `GET /api/auth/oauth/start?provider=google&redirect_to=...`  
+      - サーバ側で `state` と PKCE の `code_challenge` を発行し、Provider へ redirect（`state` を Redis 等の短期キャッシュまたは `oauth_requests` テーブルに保持）。TTL と一回性を付与すること（推奨 TTL: 5–15 分、デフォルト 10 分）。
+    - `GET /api/auth/oauth/callback?code=...&state=...`  
+      - サーバ側で `state` を検証（再利用・期限切れ・client IP 等の整合性チェックを含む）し、トークン交換 → プロファイル取得（`email`, `email_verified`, `provider_user_id`, `raw_profile`）。ID token がある場合は JWKS による署名検証を必須化する（`sub`, `aud`, `exp` の検証）。
+    - UI: `/auth/oauth/link-proposal?provider=google&provider_id=...`（既存メール一致時にユーザ同意を得るための画面）
+
+  - 高優先度の追記（メール/パスワード仕様と揃えるための必須要件）
+    - レート制限 / 不正検出:
+      - `/api/auth/oauth/start` と `/api/auth/oauth/callback` は認証エンドポイント基準に従う（デフォルト: IP ベース・アカウント軸ともに **50 req / 10 min**）。異常検出時に Turnstile 挿入や一時ブロックを行う。IP/アカウント両軸での閾値超過は監査ログに記録すること。
+    - state / PKCE の保存設計:
+      - 保存場所: Redis 等の短期キャッシュを推奨。ただし運用上の理由で Postgres (`oauth_requests` テーブル) を採用しても可。保存内容: `state`, `code_challenge`, `code_challenge_method`, `redirect_to`, `client_ip`, `created_at`, `expires_at`, `used_at`。
+      - TTL: 推奨 10 分 (5–15 分 の範囲)。ワンタイム使用を強制し、`used_at` を更新して再利用を拒否する。再利用や期限切れは監査ログ出力・アラートトリガーとする。
+      - cleanup: 定期バッチで expired / used レコードを削除。
+    - provider トークンの扱い:
+      - デフォルト方針: Provider の `access_token` / `refresh_token` は**保存しない**（設計上は最小権限）。保存が必要な場合のみ明示的に許可する。
+      - 保存する場合の要件: KMS（Vault/Cloud KMS）による暗号化、アクセスログ、トークン有効期限の管理、明確なローテーション・削除手順。ユーザが unlink したら即時削除。
+    - DB 制約:
+      - `oauth_accounts` に `(provider, provider_user_id)` のユニークインデックスを必須とする。衝突時は `409 Conflict` を返す。
+      - `user_id` は `users(id)` の FK とし、ON DELETE 動作（例えば CASCADE）を運用ポリシーに従って設定する（破壊的変更時は事前承認）。
+    - 再認証方式の詳細:
+      - リンク実行時は常に再認証を要求。優先順は: 1) パスワード確認、2) メール確認リンク、3) 2FA（有効な場合）。再認証失敗時は `403 Forbidden` を返し、リンクは行わない。UX は明確なエラーメッセージと再試行/キャンセルを提供する。
+    - エラー / ステータス設計:
+      - `state` 検証失敗: `400 Bad Request`（監査ログ記録）
+      - PKCE 検証失敗: `401 Unauthorized`（監査ログ記録）
+      - 重複 `provider_user_id` のリンク試行: `409 Conflict`
+      - Provider との交換失敗: `502 Bad Gateway`（Provider 問題）または `400 Bad Request`（パラメータ不正）
+    - リダイレクトフローの安全化:
+      - ブラウザに `code` / `token` を露出させないため、`callback` ではサーバ側で即時交換 → ワンタイム session / HttpOnly クッキーを発行 → クリーンな URL へ `302` リダイレクトすることを必須とする。レスポンスヘッダに `Cache-Control: no-store`, `Referrer-Policy: no-referrer` を付与する。
+    - Provider 検証:
+      - 受け取る ID token / profile の署名（JWKS）検証を必須化し、`sub` と `provider_user_id` の整合性、`aud`, `exp` の検証、`email_verified` の確認を行う。
+
+  - 追加推奨・運用（中優先度）
+    - PKCE/state の DB スキーマ例と TTL（例: 10 分）をドキュメント化し、cleanup ジョブを追加する。
+    - `oauth_accounts` に `last_synced_at`, `raw_profile_hash`, `access_token_encrypted`, `refresh_token_encrypted`, `token_expires_at` カラムを追加（保存する場合のみ）。
+    - 管理 API: OAuth unlink / re-link の管理 API と監査ログを定義すること。
+    - Provider refresh token を保存する場合は KMS 暗号化 + アクセスログを必須化する。
+    - OpenAPI に `start`, `callback`, `link-proposal`, `link-confirm`, `unlink` の定義を追加する。
+    - E2E テストケース: 新規登録 / 既存メール→リンク提案→再認証成功・キャンセル・異常系（state 改竄、expired code、duplicated provider_user_id）を必ず含める。
+
+  - テスト要件（追加）
+    - 単体: state/PKCE の生成・検証・有効期限・再利用検出のテスト
+    - 結合: Provider モックを用いて callback の正常系・異常系（expired, wrong state, wrong code）をテスト
+    - セキュリティ: リプレイ攻撃、オープンリダイレクト検出、id_token 署名 (JWKS) 検証
+    - E2E: UI のリンク提案フロー（承認／拒否）を自動化
+
+  - 受け入れ基準（追記）
+    - OAuth callback で `state`/PKCE 検証失敗は `400`/`401` を返し、監査ログに記録すること。
+    - `oauth_accounts` に `(provider, provider_user_id)` のユニークキーが存在すること。
+    - Provider の access/refresh token を保存する場合は、KMS 暗号化とアクセス監査が行われること。
+    - すべての OAuth イベント（start/callback/link/unlink/失敗）は監査ログに記録されること。
+
+  - DB スキーマ（追記例）
+  ```sql
+  CREATE TABLE oauth_requests (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    provider text NOT NULL,
+    state text NOT NULL UNIQUE,
+    code_challenge text NOT NULL,
+    code_challenge_method text NOT NULL,
+    redirect_to text,
+    client_ip inet NULL,
+    created_at timestamptz DEFAULT now(),
+    expires_at timestamptz NOT NULL,
+    used_at timestamptz NULL
+  );
+
+  ALTER TABLE oauth_accounts
+    ADD COLUMN IF NOT EXISTS last_synced_at timestamptz NULL,
+    ADD COLUMN IF NOT EXISTS raw_profile_hash text NULL,
+    ADD COLUMN IF NOT EXISTS access_token_encrypted text NULL,
+    ADD COLUMN IF NOT EXISTS refresh_token_encrypted text NULL,
+    ADD COLUMN IF NOT EXISTS token_expires_at timestamptz NULL;
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_oauth_accounts_provider_user ON oauth_accounts(provider, provider_user_id);
+  ```
+
+  - OpenAPI 例（追加）
+  ```yaml
+  paths:
+    /api/auth/oauth/start:
+      get:
+        parameters:
+          - name: provider
+            in: query
+            required: true
+        responses:
+          '302':
+            description: Redirect to provider (state generated & stored)
+    /api/auth/oauth/callback:
+      get:
+        parameters:
+          - name: code
+            in: query
+            required: true
+          - name: state
+            in: query
+            required: true
+        responses:
+          '200':
+            description: Callback processed (or 400/401 on validation failure)
+  ```
+
+  - アカウント解決ポリシー（必須）:
+    - Provider が返す `email_verified=true` の場合でも **自動マージは行わない**。既存メールと一致する場合は **リンク提案ページへ遷移**し、ユーザーの明示的承認を得た上でリンク（リンクには再認証を要求 — パスワード確認またはメール確認リンク）。
+    - `email_verified=false` または Provider がメールを返さない場合は自動マージを行わず、ユーザーへ追加確認手順を提示する（メール確認 or 手動リンク）。
+
+  - セキュリティ上の必須項目:
+    - `state` の検証、PKCE の検証を必須化。`redirect_uri` はホワイトリストで検証。
+    - 取得するプロファイルは最小限（email, email_verified, provider_user_id, name）とする。
+    - すべての OAuth イベント（開始・callback・リンク成功・失敗）は監査ログへ記録する。
+
+  - 受け入れ基準（例）:
+    - OAuth 新規登録: 201 Created + セッション Cookie 発行。
+    - OAuth 既存メール一致: リンク提案に遷移 → ユーザー承認 + 再認証でリンク完了（200）。
+    - OAuth callback で `state`/PKCE 検証失敗は 400 / 401 を返す。
+
+  - テスト計画（必須）:
+    - 単体: PKCE/state 検証、プロファイルパース、oauth_accounts の CRUD。
+    - 結合: Provider モックを用いて callback の正常系/異常系を確認。
+    - E2E: OAuth フロー（新規登録 / 既存メール→リンク提案→リンク完了／キャンセル）を自動化。
+
+  - 実装ノート:
+    - 実装ファイル例: `src/app/api/auth/oauth/start/route.ts`, `src/app/api/auth/oauth/callback/route.ts`, `src/features/auth/oauth/handlers.ts`, `src/features/auth/schemas/oauth.ts`。
+    - 監査: すべてのリンクイベントに `auth.oauth.link` の audit entry を追加する。
+
+  - 仕様変更メモ:
+    - 「自動マージは採用しない」という方針を仕様に明記しました。将来的に安全基準（厳格な `email_verified`、低リスクスコア、運用アラート）を満たす場合に限り、自動マージを再検討することができます。
 
   ## 5. セキュリティ設計・運用 (Security & Ops)
   - Service Role キー管理:

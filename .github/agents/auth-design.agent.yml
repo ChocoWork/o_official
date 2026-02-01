@@ -1,0 +1,15 @@
+# Copilot Agent サンプル設定（日本語）
+name: auth-sdd
+description: "認証 (Auth) の構造設計と詳細設計を生成する Agent（構造設計→詳細設計の順で実行します）"
+entrypoint_prompt: .github/prompts/03_auth_sdd.prompt.md
+triggers:
+  - command: /auth-sdd
+    description: "認証 SDD を実行します。パラメータ: TASK_ID, SPEC_FILES, OUTPUT_DIR, EXTRA"
+    prompt_file: .github/prompts/03_auth_sdd.prompt.md
+    post_process:
+      - run: "npm run validate-docs"
+      - run: "npm run check-coverage"
+      - on_fail: "Report validation/coverage errors and fix docs until both validation and coverage pass"
+
+# 例: /auth-sdd TASK_ID=DOC-01 SPEC_FILES=docs/specs/01_auth.md OUTPUT_DIR=src/features/auth
+# 必要に応じてエージェント統合設定に合わせて調整してください。
