@@ -25,8 +25,8 @@
    - 依存: Rate limiter, ブルートフォース検出
  **Service Role キーの管理（必須）**: `SUPABASE_SERVICE_ROLE_KEY`（service role / service role key）はサーバー側の環境変数にのみ保持し、ソース管理 (VCS) やクライアントに決して含めないこと。キーは Secrets Manager（または Vercel の Environment Variables）で保管し、ローテーション手順を運用に含めること。
 3. パスワードリセット（必須）
- 環境変数: `JWT_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SENDGRID_API_KEY`
-   - 依存: メール送信
+ 環境変数: `JWT_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `AWS_SES_REGION`, `AWS_SES_ACCESS_KEY_ID`, `AWS_SES_SECRET_ACCESS_KEY`, `SES_FROM_ADDRESS`
+   - 依存: メール送信 (Amazon SES)
   ---
   title: "認証 (Auth)"
   task: [DOC-01]
@@ -72,6 +72,7 @@
     - Supabase の確認メールを利用し、メール内 `redirect_to` を `/api/auth/confirm` に設定する
     - `/api/auth/confirm` は受け取った `token` を server-side (service role) で検証し、成功時に HttpOnly セッション Cookie を発行してユーザーを自動ログインする
     - 確認トークンはワンタイム化し、検証後は無効化する
+    - セキュリティ（トークン in URL の即時交換/消去）: サービスは受信したクエリの `token` を受け取ったら即時サーバ側で検証・消費（ワンタイム化）し、Set-Cookie を発行した後にクリーンなパス（例: `/account` または `/auth/confirmed`）へ 302/303 リダイレクトして URL にトークンを残さないこと。レスポンスには `Cache-Control: no-store` と `Referrer-Policy: no-referrer` を付与し、トークンをログに保存しない（マスキング）ことを必須化する。可能であればサーバ側で検証→交換→リダイレクトを行い、ブラウザ側でトークンを露出しない設計（POST を使う交換パターン等）を優先する。
   - バリデーション: RFC準拠の `email`、パスワードは最低8文字（英数字＋記号推奨）
     - 推奨ライブラリ: Zod
 
@@ -91,8 +92,9 @@
     - 実装要点:
       - 各 refresh トークンに **JTI (unique id)** を付与し、sessions レコードに `current_jti` を保存
       - refresh は一回限り（単一使用）。Refresh リクエスト時に DB の `current_jti` と照合し、成功したら新しい refresh を発行して `current_jti` を差し替える
-      - 古い refresh が再利用された場合は「再利用検出」とし、当該アカウント内の全 session を失効（強制ログアウト）する
-      - 再利用検出時は監査ログを出力し、必要に応じ管理者通知やユーザ通知を行う
+      - 古い refresh が再利用された場合は「再利用検出」とし、まずは当該アカウントを**準隔離 (quarantine)** 状態に移行して監査ログ出力・ユーザ通知・管理者アラートを発行する。
+      - システムは IP / 地理位置 / 時刻 / 過去のイベント 等に基づくリスクスコアを算出し、リスクが閾値を超える場合は自動的に**全セッションを失効（強制ログアウト）**する。閾値未満の場合は追加確認（メールリンク確認や 2FA）を要求し、ユーザが確認できない場合は最終的に失効を実施する。
+      - 再利用検出の誤用（DoS）を防ぐため、再利用検出処理自体にもレート制限としきい値を適用すること。管理コンソールから即時全失効が実行できることを運用要件とする。
     - 無効なリフレッシュは 401 を返し、必要なら全セッション失効
   - 管理用: `POST /api/auth/revoke-user-sessions` — 指定ユーザーの全セッションを `revoked_at` で失効
   - 同時セッション数 / 強制ログアウト:
@@ -105,6 +107,7 @@
     - 200: メール送信処理開始（Amazon SES を使用）
   - Confirm: `POST /api/auth/password-reset/confirm` { token, newPassword }
     - トークン寿命: 1時間。ワンタイムかつ即時消費。メールテンプレートは SES で管理。
+    - セキュリティ（トークン in URL の取り扱い）: リセットリンクに含まれる `token` は受信時にサーバ側で検証・消費し、一時的な安全なセッション（または短寿命の one-time nonce）を発行してからクリーンな URL へリダイレクトすること。これによりブラウザ履歴や Referer にトークンが残らないようにする。JavaScript が無効な場合でも GET リクエストで受信した段階でサーバ側で即時検証→リダイレクト（トークン無効化）を行い、トークンが保存されないことを保証する。
 
   ### 4.5 OAuth (Google) — フル実装
   - 範囲:
@@ -319,11 +322,27 @@ CREATE TABLE sessions (
   id uuid PRIMARY KEY,
   user_id uuid REFERENCES users(id),
   refresh_token_hash text NOT NULL,
+  current_jti uuid NULL,
+  ip inet NULL,
+  user_agent text NULL,
+  device_name text NULL,
   created_at timestamptz DEFAULT now(),
   expires_at timestamptz,
   revoked_at timestamptz NULL,
   last_seen_at timestamptz
 );
+
+-- マイグレーション（既存 DB への追加例）
+-- セッションに IP / user_agent / device_name / current_jti を追加する
+ALTER TABLE sessions
+  ADD COLUMN IF NOT EXISTS current_jti uuid NULL,
+  ADD COLUMN IF NOT EXISTS ip inet NULL,
+  ADD COLUMN IF NOT EXISTS user_agent text NULL,
+  ADD COLUMN IF NOT EXISTS device_name text NULL;
+
+-- 必要に応じてインデックスを追加
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
 ```
 
 ## バリデーションルール
@@ -384,7 +403,7 @@ CREATE TABLE sessions (
 
 ## 実装ノート
 - 推奨スタック: Next.js API routes + Supabase Postgres/Auth
-- 環境変数: `JWT_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SENDGRID_API_KEY`
+  - 環境変数: `JWT_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `AWS_SES_REGION`, `AWS_SES_ACCESS_KEY_ID`, `AWS_SES_SECRET_ACCESS_KEY`, `SES_FROM_ADDRESS`
 - トークンは最小単位（整数）や期限の検証をサーバ側で必ず行う
 
 ## 関連ドキュメント
@@ -392,7 +411,7 @@ CREATE TABLE sessions (
 
 ## 担当 / 依存
 - 担当: Backend (Auth API), Frontend (UI/Forms)
-- 依存: SendGrid 等メールプロバイダ、Supabase
+- 依存: Amazon SES, Supabase
 
 ## 受け入れ基準（まとめ）
 - 新規登録 201

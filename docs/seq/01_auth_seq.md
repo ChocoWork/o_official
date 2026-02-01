@@ -113,9 +113,19 @@ sequenceDiagram
     DB-->>API: session row
     API->>API: Verify incoming refresh JTI matches session.current_jti
     alt jti mismatch (re-use detected)
-        API->>DB: Revoke all user sessions for user_id
+        API->>DB: Mark account as 'quarantine' and append audit entry
         API->>Audit: auth.refresh.reuse_detected
-        API-->>Browser: 401 Unauthorized
+        API->>Mail: send user security notification (possible token reuse)
+        API->>API: Evaluate risk score (IP/location/time/history)
+        alt risk high
+            API->>DB: Revoke all user sessions for user_id
+            API->>Audit: auth.refresh.revoke_all
+            API-->>Browser: 401 Unauthorized
+        else risk low
+            API->>DB: Flag session/quarantine and require user verification (email/2FA)
+            API-->>Browser: 401 Unauthorized (verification required)
+        end
+    end
     else jti matches
         API->>Auth: Issue new access_token + new refresh_token (new_jti)
         API->>DB: Update session current_jti -> new_jti, refresh_token_hash -> new hash, expires_at
@@ -141,7 +151,8 @@ sequenceDiagram
 
     Note over API,Auth: セキュリティ・運用・非機能（要点）
     Note right of API: - 環境変数 / シークレット:
-    Note right of API:   JWT_SECRET, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, AWS_SES_* or SENDGRID_API_KEY, SES_FROM_ADDRESS, NEXT_PUBLIC_*
+    Note right of API:   JWT_SECRET, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, AWS_SES_REGION, AWS_SES_ACCESS_KEY_ID, AWS_SES_SECRET_ACCESS_KEY, SES_FROM_ADDRESS, NEXT_PUBLIC_*
+    Note right of API: - トークン取り扱い（確認/リセット）: 受信した `token` はサーバ側で即時検証・消費し、Set-Cookie 発行後にクリーンな URL へ 302/303 リダイレクトしてクエリにトークンを残さない。レスポンスには `Cache-Control: no-store` と `Referrer-Policy: no-referrer` を付与し、トークンはログに保存しない（マスキング）ことを必須化する。
     Note right of API: - Cookie 設計: HttpOnly, Secure, SameSite=Lax
     Note right of API: - CSRF: 同期トークン/ダブルサブミットまたは適切な SameSite
     Note right of API: - パスワードハッシュ: Argon2 または Bcrypt を推奨
