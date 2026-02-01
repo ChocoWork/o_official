@@ -57,7 +57,6 @@
 - コードブロックやテンプレートを提示する際は、該当ファイルパスを明記すること。
 - 破壊的変更やスキーマ変更がある場合は事前に警告し、承認を得ること。
 - デザイン関連実装は必ず [docs/specs/brand-guidelines.md](docs/specs/brand-guidelines.md) に従うこと。デザイン疑義は担当デザイナーに確認すること。
- - デザイン関連実装は必ず [docs/specs/brand-guidelines.md](docs/specs/brand-guidelines.md) に従うこと。デザイン疑義は担当デザイナーに確認すること。
  - プロジェクトのソース分割・ファイル配置ルールは `docs/specs/code-structure.md` を参照すること。
 プロジェクト標準のコード分割ルールは `docs/specs/code-structure.md` を参照してください。
 
