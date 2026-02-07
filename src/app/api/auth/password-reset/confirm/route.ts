@@ -3,18 +3,14 @@ import { z } from 'zod';
 import crypto from 'crypto';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
-
-const bodySchema = z.object({
-  token: z.string().min(1),
-  email: z.string().email(),
-  new_password: z.string().min(8),
-});
+import { ResetConfirmSchema } from '@/features/auth/schemas/password-reset';
+import { formatZodError } from '@/features/auth/schemas/common';
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const parsed = bodySchema.safeParse(body);
-    if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+    const parsed = ResetConfirmSchema.safeParse(body);
+    if (!parsed.success) return NextResponse.json(formatZodError(parsed.error), { status: 400 });
 
     const { token, email, new_password } = parsed.data;
     const supabase = createServiceRoleClient();

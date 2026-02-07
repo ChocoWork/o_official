@@ -2,12 +2,10 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
+import { RegisterRequestSchema } from '@/features/auth/schemas/register';
+import { formatZodError } from '@/features/auth/schemas/common';
 
-const bodySchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
-  display_name: z.string().optional(),
-});
+
 
 export async function POST(request: Request) {
   try {
@@ -26,9 +24,9 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const parsed = bodySchema.safeParse(body);
+    const parsed = RegisterRequestSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+      return NextResponse.json(formatZodError(parsed.error), { status: 400 });
     }
 
     const { email, password, display_name } = parsed.data;

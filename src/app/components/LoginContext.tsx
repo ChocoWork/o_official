@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase/client';
 interface LoginContextType {
   isLoggedIn: boolean;
   isAdmin: boolean;
-  login: (email?: string, password?: string) => void;
+  login: (email?: string, password?: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
 }
 
@@ -22,28 +22,43 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
 
-  const login = (email?: string, password?: string) => {
-    (async () => {
+  const login = async (email?: string, password?: string) => {
+    try {
+      // client-side validation before sending
+      const { LoginRequestSchema } = await import('@/features/auth/schemas/login');
       try {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: email || '',
-          password: password || '',
-        });
-        if (error) {
-          console.error('Supabase signIn error', error);
+        LoginRequestSchema.parse({ email: email || '', password: password || '' });
+      } catch (err) {
+        if (err instanceof Error && (err as any).issues) {
+          // ZodError
+          const message = (err as any).issues.map((i: any) => i.message).join(' ');
           setIsLoggedIn(false);
           setIsAdmin(false);
-          return;
+          return { success: false, error: message };
         }
-        const userEmail = data.user?.email;
-        setIsLoggedIn(true);
-        setIsAdmin(userEmail === 'aaa@gmail.com');
-      } catch (e) {
-        console.error('Login error', e);
+        return { success: false, error: '入力が無効です' };
+      }
+
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email || '',
+        password: password || '',
+      });
+      if (error) {
+        console.error('Supabase signIn error', error);
         setIsLoggedIn(false);
         setIsAdmin(false);
+        return { success: false, error: error.message || 'ログインに失敗しました' };
       }
-    })();
+      const userEmail = data.user?.email;
+      setIsLoggedIn(true);
+      setIsAdmin(userEmail === 'aaa@gmail.com');
+      return { success: true };
+    } catch (e) {
+      console.error('Login error', e);
+      setIsLoggedIn(false);
+      setIsAdmin(false);
+      return { success: false, error: '内部エラーが発生しました' };
+    }
   };
 
   const logout = () => {

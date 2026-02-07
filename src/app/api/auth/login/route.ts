@@ -2,12 +2,9 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
+import { LoginRequestSchema } from '@/features/auth/schemas/login';
+import { formatZodError } from '@/features/auth/schemas/common';
 import crypto from 'crypto';
-
-const bodySchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(1),
-});
 
 const ACCESS_TOKEN_MAX_AGE = 15 * 60; // 15 minutes
 const REFRESH_TOKEN_MAX_AGE = 7 * 24 * 60 * 60; // 7 days
@@ -15,8 +12,10 @@ const REFRESH_TOKEN_MAX_AGE = 7 * 24 * 60 * 60; // 7 days
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const parsed = bodySchema.safeParse(body);
-    if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+    const parsed = LoginRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(formatZodError(parsed.error), { status: 400 });
+    }
 
     const { email, password } = parsed.data;
 

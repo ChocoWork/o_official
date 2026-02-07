@@ -1,6 +1,9 @@
 import React, { useRef, useState } from "react";
 import { useLogin } from "./LoginContext";
 import { supabase } from '@/lib/supabase/client';
+import { LoginRequestSchema } from '@/features/auth/schemas/login';
+import { RegisterRequestSchema } from '@/features/auth/schemas/register';
+import { z } from 'zod';
 
 interface LoginModalProps {
   open: boolean;
@@ -16,14 +19,37 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
   const [registerLoading, setRegisterLoading] = useState(false);
   const [registerError, setRegisterError] = useState<string | null>(null);
   const [registerSuccess, setRegisterSuccess] = useState<string | null>(null);
+  const [loginError, setLoginError] = useState<string | null>(null);
   if (!open) return null;
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     const email = emailRef.current?.value || "";
     const password = passwordRef.current?.value || "";
-    login(email, password);
-    onClose();
+
+    try {
+      LoginRequestSchema.parse({ email, password });
+      setLoginError(null);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        setLoginError(err.issues.map((i) => i.message).join(' '));
+      } else {
+        setLoginError('入力に誤りがあります');
+      }
+      return;
+    }
+
+    try {
+      const res = await login(email, password);
+      if (res.success) {
+        onClose();
+      } else {
+        setLoginError(res.error || 'ログインに失敗しました');
+      }
+    } catch (err) {
+      console.error('Unexpected login error', err);
+      setLoginError('ログインに失敗しました');
+    }
   };
 
   const handleRegister = (e: React.FormEvent) => {
@@ -34,12 +60,15 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
       const email = emailRef.current?.value || "";
       const password = passwordRef.current?.value || "";
 
-      if (!email || !password) {
-        setRegisterError('メールとパスワードを入力してください');
-        return;
-      }
-      if (password.length < 8) {
-        setRegisterError('パスワードは8文字以上にしてください');
+      // validate using RegisterRequestSchema
+      try {
+        RegisterRequestSchema.parse({ email, password, display_name: name });
+      } catch (err) {
+        if (err instanceof z.ZodError) {
+          setRegisterError(err.issues.map((i) => i.message).join(' '));
+        } else {
+          setRegisterError('入力に誤りがあります');
+        }
         return;
       }
 
@@ -133,6 +162,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
             <input id="password" ref={passwordRef} required className="w-full px-4 py-3 border border-black/20 focus:border-black outline-none transition-colors duration-300 text-sm" type="password" style={{ fontFamily: 'acumin-pro, sans-serif' }} />
           </div>
           <button type="submit" className="w-full py-4 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap disabled:opacity-50" style={{ fontFamily: 'acumin-pro, sans-serif' }}>ログイン</button>
+          {loginError ? <p className="text-sm text-red-600 mt-2">{loginError}</p> : null}
         </form>
       ) : (
         <form className="space-y-6 mb-8" onSubmit={handleRegister}>

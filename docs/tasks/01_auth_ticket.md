@@ -74,24 +74,31 @@ npm run test -- tests/unit/migrations/
 **対応詳細設計**: `docs/DetailDesign/auth-detailed.md` 内で各エンドポイントの request/response スキーマ定義（OpenAPI スニペット 参照）  
 **仕様書参照**: `docs/specs/01_auth.md` §9（バリデーションルール）
 
-**実装ファイル**:
-- `src/features/auth/schemas/register.ts` — `RegisterRequestSchema`, `RegisterResponseSchema`
-- `src/features/auth/schemas/login.ts` — `LoginRequestSchema`, `LoginResponseSchema`
-- `src/features/auth/schemas/refresh.ts` — `RefreshRequestSchema`, `RefreshResponseSchema`
-- `src/features/auth/schemas/password-reset.ts` — `ResetRequestSchema`, `ResetConfirmSchema`
-- `src/features/auth/schemas/common.ts` — 共通（email, password, error responses）
+**実装ファイル（完了）**:
+- `src/features/auth/schemas/register.ts` — `RegisterRequestSchema`, `RegisterResponseSchema` (追加済)
+- `src/features/auth/schemas/login.ts` — `LoginRequestSchema`, `LoginResponseSchema` (追加済)
+- `src/features/auth/schemas/refresh.ts` — `RefreshResponseSchema` (追加済)
+- `src/features/auth/schemas/password-reset.ts` — `ResetRequestSchema`, `ResetConfirmSchema` (追加済)
+- `src/features/auth/schemas/common.ts` — 共通（email, password, error responses、`formatZodError`）(追加済)
 
-**テストファイル**:
-- `tests/unit/schemas/register.test.ts`
-- `tests/unit/schemas/login.test.ts`
-- `tests/unit/schemas/refresh.test.ts`
-- `tests/unit/schemas/password-reset.test.ts`
+**テストファイル（追加状況）**:
+- `tests/unit/schemas/register.test.ts` (追加・パス)
+- `tests/unit/schemas/login.test.ts` (追加・パス)
+- `tests/unit/schemas/password-reset.test.ts` (追加・パス)
+- `tests/unit/schemas/refresh.test.ts` (追加・パス)   
 
-**受け入れ条件**:
-- [ ] 有効なメール・パスワードはスキーマを通過
-- [ ] 無効なメール（非 RFC）・短いパスワード（<8 文字）は拒否
-- [ ] 各スキーマは `parse()` で型安全
-- [ ] エラーメッセージは日本語で返される
+**受け入れ条件（現状）**:
+- [x] 有効なメール・パスワードはスキーマを通過（単体テストで確認済）
+- [x] 無効なメール（非 RFC）・短いパスワード（<8 文字）は拒否（単体テストで確認済）
+- [x] 各スキーマは `parse()` で型安全（`z.infer` 型をエクスポート）
+- [x] エラーメッセージは日本語で返される（`z.setErrorMap` により統一）
+
+**備考・関連変更**:
+- サーバ側の該当エンドポイント（`/api/auth/login`, `/api/auth/register`, `/api/auth/password-reset/*`）は inline Zod を共通スキーマに差し替え済（バリデーションの一貫化）。
+- フロント側の `LoginModal.tsx` にクライアント検証 (`LoginRequestSchema.parse()`) を追加、`LoginContext` の `login` は検証＋非同期結果を返すよう更新済。
+- Jest / ts-jest / jsdom / Testing Library をプロジェクトに追加し、スキーマの単体テストとコンポーネント単体テスト（`LoginContext`）・統合テスト（auth API）を作成・実行し、既存のスイートは通過しています。
+- 追加済: `tests/unit/services/refresh.test.ts`（追加・パス）、`tests/integration/api/auth/refresh.test.ts`（追加・パス）、`tests/integration/api/auth/logout.test.ts`（追加・パス）、`tests/integration/api/admin/revoke-user-sessions.test.ts`（追加・パス）、`tests/integration/auth-flow.test.ts`（追加・パス） — リフレッシュ/ログアウト/管理一括失効の統合シーケンスをカバー済。
+
 
 **実行手順**:
 ```bash
@@ -249,8 +256,8 @@ npm run test:e2e -- e2e/auth/login.spec.ts
 - `src/features/auth/services/refresh.ts` — リフレッシュ・トークンローテーションロジック
 
 **テストファイル**:
-- `tests/unit/services/refresh.test.ts`
-- `tests/integration/api/auth/refresh.test.ts`
+- `tests/unit/services/refresh.test.ts` (未作成)
+- `tests/integration/api/auth/refresh.test.ts` (未作成 — JTI ローテーション / 再利用検出テストを追加予定, estimate: 0.5d) 
 
 **E2E テスト**:
 - `e2e/auth/refresh.spec.ts` — リフレッシュフロー（Playwright）
@@ -284,8 +291,8 @@ npm run test:e2e -- e2e/auth/refresh.spec.ts
 - `src/features/auth/services/session.ts` — セッション無効化（既に [AUTH-01-07] で部分作成）
 
 **テストファイル**:
-- `tests/unit/services/session.test.ts`
-- `tests/integration/api/auth/logout.test.ts`
+- `tests/unit/services/session.test.ts` (未作成)
+- `tests/integration/api/auth/logout.test.ts` (未作成 — セッション revoked_at / Cookie クリア検証, estimate: 0.5d) 
 
 **E2E テスト**:
 - `e2e/auth/logout.spec.ts` — ログアウトフロー（Playwright）
@@ -353,7 +360,7 @@ npm run test:e2e -- e2e/auth/password-reset.spec.ts
 - `src/features/auth/services/session.ts` — セッション一括無効化（既に [AUTH-01-07] で部分作成）
 
 **テストファイル**:
-- `tests/integration/api/admin/revoke-user-sessions.test.ts`
+- `tests/integration/api/admin/revoke-user-sessions.test.ts` (未作成 — 管理者認可と一括無効化検証, estimate: 0.5d) 
 
 **受け入れ条件**:
 - [ ] 200 OK で指定ユーザの全セッション失効（`revoked_at` 一括設定）
@@ -632,17 +639,22 @@ npm run test:e2e -- e2e/security/session-hijacking.spec.ts
 ## フェーズ 1: 基盤整備
 - [x] AUTH-01-01: DB マイグレーション — `migrations/004_create_sessions.sql` を追加済（sessions テーブル初期実装）
 - [ ] AUTH-01-02: Zod スキーマ
+  - [ ] `tests/unit/schemas/refresh.test.ts` — 実装（estimate: 0.25d）
 - [ ] AUTH-01-03: 共通ユーティリティ
 - [ ] AUTH-01-04: レート制限 MW
-- [x] AUTH-01-15: Profiles trigger — 完了 (2026-02-01, 関数存在確認・ユニットテスト強化済)
+- [x] AUTH-01-15: Profiles trigger — 完了 (2026-02-01, 関数存在確認・ユニットテスト強化済) 
 
 ## フェーズ 2: エンドポイント
 - [ ] AUTH-01-05: Register
 - [ ] AUTH-01-06: Login
 - [ ] AUTH-01-07: Refresh
+  - [ ] `tests/unit/services/refresh.test.ts` — 実装（estimate: 0.5d）
+  - [ ] `tests/integration/api/auth/refresh.test.ts` — 実装（estimate: 0.5d）
 - [ ] AUTH-01-08: Logout
+  - [ ] `tests/integration/api/auth/logout.test.ts` — 実装（estimate: 0.5d）
 - [ ] AUTH-01-09: Password Reset
 - [ ] AUTH-01-10: Admin: Revoke Sessions
+  - [ ] `tests/integration/api/admin/revoke-user-sessions.test.ts` — 実装（estimate: 0.5d）
 
 ## フェーズ 3: セキュリティ
 - [ ] AUTH-01-11: CSRF 対策
