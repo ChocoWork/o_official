@@ -67,6 +67,12 @@ CREATE TABLE oauth_requests (
 ```
 - `migrations/00XX_add_oauth_account_cols.sql` を追加（`last_synced_at`, `raw_profile_hash`, `access_token_encrypted`, `refresh_token_encrypted`, `token_expires_at`）
 
+### ユーザ／プロフィール方針（設計決定）
+- **決定**: `auth.users` を認証のソース・オブ・トゥルースとし、アプリ側のプロフィール情報は `public.profiles` に格納します。
+- `profiles.user_id` は `auth.users(id)` を参照する主キーとし、表示名・電話・住所などの可変情報を保持します。
+- 実施マイグレーション: `migrations/002_create_profiles.sql` を追加、既存の `public.users` のデータを `profiles` に移行し、元 `public.users` は `public.users_deprecated` にリネームして保持します（バックアップ含む）。
+- 理由: `auth.users` と同名の `public.users` を運用すると混乱（クエリの誤参照、権限のずれ等）が生じるため、明示的に分離して安定性を高めます。
+
 ### OpenAPI（追加スニペット）
 ```yaml
 paths:

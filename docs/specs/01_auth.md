@@ -337,6 +337,8 @@
 
   ※ パスワードリセット用や OAuth リンク用のテーブル（例: `password_reset_tokens`, `oauth_accounts`）は別マイグレーションで追加することを推奨。
 
+**注（設計決定、2026-02-01）**: `auth.users` を認証のソース・オブ・トゥルース（source-of-truth）とし、アプリ側のプロフィール情報は `public.profiles` テーブルに格納します。`migrations/002_create_profiles.sql` にて `profiles` テーブルを作成し、既存の `public.users` データを移行して `public.users` は `public.users_deprecated` にリネームしました。
+
   ## 9. バリデーションルール
   - `email`: RFC 準拠
   - `password`: 最低 8 文字、英数字 + 記号推奨

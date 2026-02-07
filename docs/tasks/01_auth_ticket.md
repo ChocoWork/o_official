@@ -41,7 +41,7 @@ Next.js + Supabase を前提とした認証基盤を実装する。メール/パ
 **実装ファイル**:
 - `migrations/001_init_auth_tables.sql` — `users`, `sessions` テーブル作成
 - `migrations/002_add_sessions_fields.sql` — `sessions` に `current_jti, ip, user_agent, device_name` を追加
-- `migrations/003_create_rate_counters.sql` — `rate_limit_counters` テーブル作成（IP/アカウント二軸）
+- `migrations/005_create_rate_limit_counters.sql` — `rate_limit_counters` テーブル作成（IP/エンドポイント/バケット）
 
 **テストファイル**:
 - `tests/unit/migrations/001.test.ts`
@@ -49,9 +49,12 @@ Next.js + Supabase を前提とした認証基盤を実装する。メール/パ
 - `tests/unit/migrations/003.test.ts`
 
 **受け入れ条件**:
-- [ ] `users` テーブルが存在し、`id (PK), email (UNIQUE), password_hash, display_name, kana_name, phone, address (jsonb), created_at` を持つ
-- [ ] `sessions` テーブルが存在し、`id, user_id (FK), refresh_token_hash, current_jti, ip, user_agent, device_name, created_at, expires_at, revoked_at, last_seen_at` を持つ
-- [ ] `rate_limit_counters` テーブルが存在し、`(ip, endpoint, bucket)` で GROUP BY カウント可能
+- [x] `users` テーブルが存在し、`id (PK), email (UNIQUE), password_hash, display_name, kana_name, phone, address (jsonb), created_at` を持つ（**注意: `public.users` は非推奨。`auth.users` を source-of-truth とし、`public.profiles` に移行済または移行予定**）  
+- [x] `profiles` テーブルが存在し、`user_id (PK, FK -> auth.users.id), display_name, kana_name, phone, address (jsonb), created_at` を持つ（`migrations/002_create_profiles.sql` 実行済み / 現環境で `count(*) = 0`）  
+- [x] `AUTH-01-15` マイグレーション: `auth.users` にユーザが作成された際に `public.profiles` を自動作成する DB トリガーを追加（実装: `migrations/003_profiles_trigger.sql`） — 検証済: 関数 `create_profile_for_new_auth_user` が DB に存在し、`public.profiles` に行が作成されることを確認（スクリーンショット/SQL確認）。ユニットテストを強化し、 `returns trigger` / `language plpgsql` / `execute procedure` のチェックを追加済み。
+- [ ] `AUTH-01-16` マイグレーション: `profiles` を作成済みの `auth.users` が抜けている場合に一括でデフォルトレコードを作成する seed マイグレーション（必要に応じ）
+- [x] `sessions` テーブルが存在し、`id, user_id (FK), refresh_token_hash, current_jti, ip, user_agent, device_name, created_at, expires_at, revoked_at, last_seen_at` を持つ — 完了 (2026-02-01: `migrations/004_create_sessions.sql` 適用、ユニット/統合テスト追加、ステージングでの動作確認済)
+- [x] `rate_limit_counters` テーブルが存在し、`(ip, endpoint, bucket)` で GROUP BY カウント可能 — 完了 (2026-02-07: `migrations/005_create_rate_limit_counters.sql` 適用、upsert・集計・インデックス利用を手動検証済)
 - [ ] マイグレーション実行後に逆実行（rollback）可能
 
 **実行手順**:
@@ -59,6 +62,8 @@ Next.js + Supabase を前提とした認証基盤を実装する。メール/パ
 npm run db:migrate:latest  # or Supabase CLI equivalent
 npm run test -- tests/unit/migrations/
 ```
+
+**メモ**: `migrations/002_create_profiles.sql` と対応ユニットテスト `tests/unit/migrations/002_create_profiles.test.ts` をリポジトリに追加済です。`profiles` 作成・データ移行・`public.users` のリネームは本マイグレーションにより実行されます。
 
 ---
 
@@ -625,10 +630,11 @@ npm run test:e2e -- e2e/security/session-hijacking.spec.ts
 # チェックリスト / サブタスク進捗
 
 ## フェーズ 1: 基盤整備
-- [ ] AUTH-01-01: DB マイグレーション
+- [x] AUTH-01-01: DB マイグレーション — `migrations/004_create_sessions.sql` を追加済（sessions テーブル初期実装）
 - [ ] AUTH-01-02: Zod スキーマ
 - [ ] AUTH-01-03: 共通ユーティリティ
 - [ ] AUTH-01-04: レート制限 MW
+- [x] AUTH-01-15: Profiles trigger — 完了 (2026-02-01, 関数存在確認・ユニットテスト強化済)
 
 ## フェーズ 2: エンドポイント
 - [ ] AUTH-01-05: Register

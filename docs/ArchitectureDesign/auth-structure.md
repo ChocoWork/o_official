@@ -40,7 +40,7 @@ refs:
 | REQ-AUTH-006 | OAuth | ARCH-AUTH-06 | OAuth コールバック、外部プロバイダリンク、state/PKCE 管理、oauth_requests テーブル、cleanup ジョブ、Admin unlink/re-link | `src/app/api/auth/oauth/start/route.ts`, `src/app/api/auth/oauth/callback/route.ts`, `src/app/api/auth/oauth/link-proposal/route.ts`, `src/app/api/auth/oauth/link-confirm/route.ts`, `src/app/api/auth/oauth/unlink/route.ts` `src/features/auth/oauth/handlers.ts`, `migrations/00XX_create_oauth_requests.sql`, `src/workers/oauth_cleanup_job.ts`, `tests/auth/oauth.*.test.ts` |
 | REQ-AUTH-007 | CSRF / Cookie | ARCH-AUTH-07 | CSRF ダブルサブミット設計、Cookie ポリシー | `src/lib/csrf.ts`, `src/lib/cookie.ts`, `src/features/auth/hooks/useCsrf.ts`, `tests/lib/csrf.test.ts` |
 | REQ-AUTH-008 | 監査ログ | ARCH-AUTH-08 | JSON Lines 監査ログ, 保持/アクセス制御 | `src/lib/audit.ts`, `migrations/00XX_create_audit_logs.sql`, `docs/ops/audit.md`, `tests/lib/audit.test.ts` |
-| REQ-AUTH-009 | レート制限 | ARCH-AUTH-09 | IP/アカウント二軸カウンタ（Postgres 保存）、Cloudflare Turnstile 連携 | `src/features/auth/ratelimit/index.ts`, `src/lib/middleware/rateLimit.ts`, `migrations/00XX_create_rate_counters.sql`, `tests/ratelimit.test.ts` |
+| REQ-AUTH-009 | レート制限 | ARCH-AUTH-09 | IP/エンドポイント/バケットカウンタ（Postgres 保存）、Cloudflare Turnstile 連携 | `src/features/auth/ratelimit/index.ts`, `src/lib/middleware/rateLimit.ts`, `migrations/005_create_rate_limit_counters.sql`, `tests/integration/db/rate_limit_counters.integration.test.ts` |
 | REQ-AUTH-010 | シークレット管理 | ARCH-AUTH-10 | SUPABASE_SERVICE_ROLE_KEY の運用（初期: 手動） | `docs/ops/secrets.md` (現行: 手動更新手順を適用。将来的に `docs/seq/supabase-service-role-key-rotation-diagrams.md` に従った自動ローテーションへ移行予定) |
 
 > 注: 上表のアーキテクチャID はユニークで、詳細設計（`docs/DetailDesign/auth-detailed.md`）の各セクションは対応する ARCH-ID を参照して記述します。
@@ -115,6 +115,9 @@ docs/DetailDesign/
 ## 6. 未解決の質問（確認が必要な事項）
 - SUPABASE_SERVICE_ROLE_KEY の保管/アクセス承認フローはどのチームで保持・承認するか？（運用担当）
 - OAuth での既存アカウント衝突時のポリシー（自動マージ vs 別口座）を確定してください
+
+### ユーザーテーブル方針（決定: 2026-02-01）
+- **決定**: `auth.users` を認証のソース・オブ・トゥルース（source-of-truth）とし、アプリ側のプロフィール情報は `public.profiles` テーブル（`user_id` -> `auth.users.id`）に格納します。`migrations/002_create_profiles.sql` を追加し、`public.users` のデータを移行して `public.users` は `public.users_deprecated` にリネームして保持しました。
 
 ## 7. 次のアクション
 1. ここに記載した構造設計に対してレビュー（コメント/承認）してください。  
