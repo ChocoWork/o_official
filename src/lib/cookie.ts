@@ -30,7 +30,8 @@ export function cookieOptionsForCsrf(maxAgeSeconds: number) {
     ...getBaseCookieOptions(),
     maxAge: maxAgeSeconds,
     httpOnly: false, // CSRF cookie must be readable by client for double-submit
-    sameSite: 'strict' as const,
+    // Align with spec: use SameSite=Lax for CSRF cookie to allow top-level navigation
+    sameSite: 'lax' as const,
   };
 }
 

@@ -134,7 +134,7 @@ npm run test -- tests/unit/schemas/
 **受け入れ条件（現状）**:
 - [x] JWT は 15 分で期限切れ、署名検証で改ざん検出 ✅ ユニットテストで確認済
 - [x] パスワードハッシュは一方向で照合可能 ✅ `src/lib/hash.ts` を Argon2id に移行し、ユニットテストで検証済（legacy scrypt 互換対応含む）
-- [ ] Cookie に `HttpOnly; Secure; SameSite=Lax` 設定 (要統合/ステージング検証)
+- [x] Cookie に `HttpOnly; Secure; SameSite=Lax` 設定 (要統合/ステージング検証)
 - [ ] CSRF トークン生成・検証・ローテーション動作確認 (統合テスト待ち)
 - [x] 監査ログ JSON Lines はマスキング済（DB 保存は実装済み、統合テスト残り）
 
@@ -144,7 +144,6 @@ npm run test -- tests/unit/schemas/
 
 **次の作業（短期）**:
 - CSRF ミドルウェアと cookie 設定の統合テストを作成しステージングで実行（推奨）
-- `migrations/009_add_password_hash_algo.sql` のステージング適用検証（権限に注意）
 - 結合テスト: `refresh` / `logout` / `password-reset` のシーケンスをステージング DB で確認
 
 
