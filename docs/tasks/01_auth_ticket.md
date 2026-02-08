@@ -125,17 +125,28 @@ npm run test -- tests/unit/schemas/
 
 **テストファイル**:
 - `tests/unit/lib/jwt.test.ts`
-- `tests/unit/lib/hash.test.ts`
+- `tests/unit/lib/hash.test.ts` (Argon2 実装と互換性のユニットテストを追加・パス済)
 - `tests/unit/lib/cookie.test.ts`
 - `tests/unit/lib/csrf.test.ts`
 - `tests/unit/lib/audit.test.ts`
+- `tests/unit/features/auth/services/session.test.ts` (sessions DB helper のユニットテストを追加・パス済)
 
-**受け入れ条件**:
+**受け入れ条件（現状）**:
 - [x] JWT は 15 分で期限切れ、署名検証で改ざん検出 ✅ ユニットテストで確認済
-- [ ] （テスト未実施） パスワードハッシュは一方向で照合可能
-- [ ] （テスト未実施） Cookie に `HttpOnly; Secure; SameSite=Lax` 設定
-- [ ] （テスト未実施） CSRF トークン生成・検証・ローテーション動作確認
-- [ ] （テスト未実施） 監査ログ JSON Lines で DB に保存可能
+- [x] パスワードハッシュは一方向で照合可能 ✅ `src/lib/hash.ts` を Argon2id に移行し、ユニットテストで検証済（legacy scrypt 互換対応含む）
+- [ ] Cookie に `HttpOnly; Secure; SameSite=Lax` 設定 (要統合/ステージング検証)
+- [ ] CSRF トークン生成・検証・ローテーション動作確認 (統合テスト待ち)
+- [x] 監査ログ JSON Lines はマスキング済（DB 保存は実装済み、統合テスト残り）
+
+**補足**:
+- `src/lib/hash.ts` は Argon2id を主要アルゴリズムとし、既存の scrypt フォーマットをフォールバックで検証します。新規ハッシュは Argon2 で生成されます。パラメータは `timeCost=3, memoryCost=4096` の初期値でドキュメント化済（`docs/specs/01_auth.md` に記載）。
+- `sessions` テーブル向けの DB ヘルパ（`src/features/auth/services/session.ts`）を実装し、refresh/logout フローで使われる SHA-256 トークンハッシュの照合・更新・失効処理をユニットテストで検証しました。
+
+**次の作業（短期）**:
+- CSRF ミドルウェアと cookie 設定の統合テストを作成しステージングで実行（推奨）
+- `migrations/009_add_password_hash_algo.sql` のステージング適用検証（権限に注意）
+- 結合テスト: `refresh` / `logout` / `password-reset` のシーケンスをステージング DB で確認
+
 
 **実行手順**:
 ```bash

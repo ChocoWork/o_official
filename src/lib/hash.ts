@@ -1,20 +1,45 @@
 import crypto from 'crypto';
+import argon2 from 'argon2';
 
-// Password hashing using scrypt. Format: scrypt$<salt_hex>$<derived_hex>
+// Password hashing using Argon2id. We keep backwards compatibility with older
+// scrypt-based hashes and with token SHA-256 hashes used for refresh/reset tokens.
+
+// Create an Argon2id password hash. Parameters chosen to balance security and
+// CI/runtime performance; can be tuned later and documented in docs/specs.
 export async function hashPassword(password: string) {
-  const salt = crypto.randomBytes(16);
-  const derived = crypto.scryptSync(password, salt, 64);
-  return `scrypt$${salt.toString('hex')}$${derived.toString('hex')}`;
+  return await argon2.hash(password, {
+    type: argon2.argon2id,
+    timeCost: 3,
+    memoryCost: 4096, // KiB (~4 MB)
+    parallelism: 1,
+  });
 }
 
+// Verify a password against a stored hash. Supports Argon2 hashes (preferred)
+// and legacy scrypt hashes (format: scrypt$<salt_hex>$<derived_hex>). Returns boolean.
 export async function verifyPassword(password: string, stored: string) {
   if (!stored) return false;
+
+  // Argon2 hashed strings start with `$argon2` (argon2i/argon2id)
+  if (stored.startsWith('$argon2')) {
+    try {
+      return await argon2.verify(stored, password);
+    } catch {
+      return false;
+    }
+  }
+
+  // Legacy scrypt format: scrypt$<salt_hex>$<derived_hex>
   const parts = stored.split('$');
   if (parts.length !== 3 || parts[0] !== 'scrypt') return false;
   const salt = Buffer.from(parts[1], 'hex');
   const derived = Buffer.from(parts[2], 'hex');
   const attempt = crypto.scryptSync(password, salt, derived.length);
-  return crypto.timingSafeEqual(attempt, derived);
+  try {
+    return crypto.timingSafeEqual(attempt, derived);
+  } catch {
+    return false;
+  }
 }
 
 // Token hashing: SHA-256 hex digest. Used for refresh tokens / reset tokens persisted in DB.
@@ -29,7 +54,7 @@ export async function verify(plain: string, storedHash: string | null) {
   if (/^[0-9a-f]{64}$/i.test(storedHash)) {
     return tokenHashSha256(plain) === storedHash;
   }
-  // Otherwise assume it's a password-style scrypt hash
+  // Otherwise handle password-style hashes (argon2 or legacy scrypt)
   return verifyPassword(plain, storedHash);
 }
 
