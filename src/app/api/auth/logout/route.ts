@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import crypto from 'crypto';
 
@@ -11,7 +11,15 @@ export async function POST() {
     if (refreshToken) {
       try {
         const service = createServiceRoleClient();
-        const hash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+        const { tokenHashSha256 } = await import('@/lib/hash');
+        const { refreshCookieName, csrfCookieName } = await import('@/lib/cookie');
+        const hash = tokenHashSha256(refreshToken);
+
+        // Delegate to reusable middleware helper
+        const { requireCsrfOrDeny } = await import('@/lib/csrfMiddleware');
+        const denial = await requireCsrfOrDeny();
+        if (denial) return denial;
+
         await service
           .from('sessions')
           .update({ revoked_at: new Date().toISOString() })
@@ -23,26 +31,11 @@ export async function POST() {
 
     const res = NextResponse.json({ ok: true }, { status: 200 });
 
-    // Clear cookies
-    res.cookies.set({
-      name: 'sb-refresh-token',
-      value: '',
-      path: '/',
-      maxAge: 0,
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-    });
-
-    res.cookies.set({
-      name: 'sb-access-token',
-      value: '',
-      path: '/',
-      maxAge: 0,
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-    });
+    // Clear cookies using helpers
+    const { refreshCookieName, csrfCookieName, clearCookieOptions } = await import('@/lib/cookie');
+    res.cookies.set({ name: refreshCookieName, value: '', ...clearCookieOptions() });
+    res.cookies.set({ name: 'sb-access-token', value: '', ...clearCookieOptions() });
+    res.cookies.set({ name: csrfCookieName, value: '', ...clearCookieOptions() });
 
     return res;
   } catch (err) {

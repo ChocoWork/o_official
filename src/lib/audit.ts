@@ -10,24 +10,57 @@ export type AuditEvent = {
   detail?: string | null;
   ip?: string | null;
   user_agent?: string | null;
+  metadata?: Record<string, unknown> | null;
   created_at?: string | null;
 };
 
+export function maskAuditEvent(event: AuditEvent) {
+  // 深いコピーして元のオブジェクトを壊さない
+  const masked: AuditEvent = JSON.parse(JSON.stringify(event));
+
+  // マスク対象キー（小文字比較）
+  const sensitiveKeyPatterns = [/password/, /^pass$/, /^pwd$/, /token/, /secret/, /ssn/, /card/, /cvv/, /credit_card/, /pan/, /number/];
+
+  if (masked.metadata && typeof masked.metadata === 'object') {
+    for (const [k, v] of Object.entries(masked.metadata)) {
+      const lower = k.toLowerCase();
+      if (sensitiveKeyPatterns.some((r) => r.test(lower))) {
+        masked.metadata![k] = '[REDACTED]';
+      }
+    }
+  }
+
+  if (masked.detail && typeof masked.detail === 'string') {
+    // JWT のような header.payload.signature をマスク
+    masked.detail = masked.detail.replace(/[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, '[REDACTED_JWT]');
+    // 長いトークン（32 文字以上の英数字・.-_）をマスク
+    masked.detail = masked.detail.replace(/[A-Za-z0-9\-_=]{32,}/g, '[REDACTED_TOKEN]');
+    // パスワードの明示的な記述（password=xxx）をマスク
+    masked.detail = masked.detail.replace(/(password|pwd|pass)\s*[=:]\s*[^\s&;]+/gi, '$1=[REDACTED]');
+  }
+
+  return masked;
+}
+
 export async function logAudit(event: AuditEvent) {
   try {
-    // 非同期で DB 挿入を試みる（テーブルが無ければ console に出す）
-    const supabase = createServiceRoleClient();
+    const supabase = await createServiceRoleClient();
+
+    const masked = maskAuditEvent(event);
+
     await supabase.from('audit_logs').insert([
       {
-        action: event.action,
-        actor_id: event.actor_id,
-        actor_email: event.actor_email,
-        resource: event.resource,
-        resource_id: event.resource_id,
-        outcome: event.outcome,
-        detail: event.detail,
-        ip: event.ip,
-        user_agent: event.user_agent,
+        action: masked.action,
+        actor_id: masked.actor_id,
+        actor_email: masked.actor_email,
+        resource: masked.resource,
+        resource_id: masked.resource_id,
+        outcome: masked.outcome,
+        detail: masked.detail,
+        ip: masked.ip,
+        user_agent: masked.user_agent,
+        metadata: masked.metadata ?? null,
+        created_at: masked.created_at ?? new Date().toISOString(),
       },
     ]);
   } catch (err) {

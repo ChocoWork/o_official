@@ -48,32 +48,35 @@ export async function POST() {
 
     // Set new refresh cookie
     const res = NextResponse.json({ access_token: newAccessToken, user }, { status: 200 });
-    res.cookies.set({
-      name: 'sb-refresh-token',
-      value: newRefreshToken ?? '',
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: REFRESH_TOKEN_MAX_AGE,
-    });
+
+    // Use cookie helpers and update CSRF
+    const { refreshCookieName, cookieOptionsForRefresh, csrfCookieName, cookieOptionsForCsrf } = await import('@/lib/cookie');
+    res.cookies.set({ name: refreshCookieName, value: newRefreshToken ?? '', ...cookieOptionsForRefresh(REFRESH_TOKEN_MAX_AGE) });
+
+    const { tokenHashSha256 } = await import('@/lib/hash');
+    const { generateCsrfToken } = await import('@/lib/csrf');
+
+    const newCsrfToken = generateCsrfToken();
+    res.cookies.set({ name: csrfCookieName, value: newCsrfToken, ...cookieOptionsForCsrf(REFRESH_TOKEN_MAX_AGE) });
 
     // Update sessions table: revoke old session row(s) and insert new one
     try {
       const service = createServiceRoleClient();
-      const oldHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+      const oldHash = tokenHashSha256(refreshToken ?? '');
       await service
         .from('sessions')
         .update({ revoked_at: new Date().toISOString() })
         .eq('refresh_token_hash', oldHash);
 
-      const newHash = crypto.createHash('sha256').update(newRefreshToken ?? '').digest('hex');
+      const newHash = tokenHashSha256(newRefreshToken ?? '');
+      const csrfHash = tokenHashSha256(newCsrfToken);
       const expiresAt = expiresIn ? new Date(Date.now() + expiresIn * 1000).toISOString() : null;
 
       await service.from('sessions').insert([
         {
           user_id: user?.id,
           refresh_token_hash: newHash,
+          csrf_token_hash: csrfHash,
           expires_at: expiresAt,
           last_seen_at: new Date().toISOString(),
         },

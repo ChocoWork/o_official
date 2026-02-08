@@ -33,34 +33,37 @@ export async function POST(request: Request) {
     // Return access token in JSON; set refresh token only as HttpOnly cookie
     const res = NextResponse.json({ access_token: session.access_token, user: data.user }, { status: 200 });
 
-    res.cookies.set({
-      name: 'sb-refresh-token',
-      value: session.refresh_token ?? '',
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: REFRESH_TOKEN_MAX_AGE,
-    });
-
-    // Persist hashed refresh token into sessions table using service role client
+    // set refresh cookie using helpers
+    // Synchronously set cookies and persist session info (tests expect DB call to have happened)
     try {
-      const service = createServiceRoleClient();
+      const { refreshCookieName, cookieOptionsForRefresh, csrfCookieName, cookieOptionsForCsrf } = await import('@/lib/cookie');
+      res.cookies.set({ name: refreshCookieName, value: session.refresh_token ?? '', ...cookieOptionsForRefresh(REFRESH_TOKEN_MAX_AGE) });
+
+      // Generate CSRF token and set non-httpOnly cookie; persist its hash alongside session
+      const { generateCsrfToken } = await import('@/lib/csrf');
+      const { tokenHashSha256 } = await import('@/lib/hash');
+      const csrfToken = generateCsrfToken();
+      res.cookies.set({ name: csrfCookieName, value: csrfToken, ...cookieOptionsForCsrf(REFRESH_TOKEN_MAX_AGE) });
+
+      // Persist hashed refresh & csrf token into sessions table using service role client
+      const service = (await import('@/lib/supabase/server')).createServiceRoleClient();
       const refreshToken = session.refresh_token ?? '';
-      const hash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+      const refreshHash = tokenHashSha256(refreshToken);
+      const csrfHash = tokenHashSha256(csrfToken);
 
       const expiresAt = session.expires_at ? new Date(session.expires_at).toISOString() : null;
 
       await service.from('sessions').insert([
         {
           user_id: data.user?.id,
-          refresh_token_hash: hash,
+          refresh_token_hash: refreshHash,
+          csrf_token_hash: csrfHash,
           expires_at: expiresAt,
           last_seen_at: new Date().toISOString(),
         },
       ]);
-    } catch (dbErr) {
-      console.error('Failed to persist session row:', dbErr);
+    } catch (e) {
+      console.error('Failed to set cookies/persist session:', e);
     }
 
     await logAudit({ action: 'login', actor_email: email, outcome: 'success', resource_id: data.user?.id });

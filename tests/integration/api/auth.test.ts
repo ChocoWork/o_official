@@ -65,6 +65,10 @@ describe('Auth API integration (mocked supabase)', () => {
     expect(res.status).toBe(200);
     expect(body.access_token).toBeDefined();
     expect(body.user.email).toBe('user@example.com');
+
+    // audit log should be written
+    const { createServiceRoleClient } = require('@/lib/supabase/server');
+    expect(createServiceRoleClient().from).toHaveBeenCalledWith('audit_logs');
   });
 
   test('login invalid credentials returns 401', async () => {

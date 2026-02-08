@@ -52,10 +52,10 @@ Next.js + Supabase を前提とした認証基盤を実装する。メール/パ
 - [x] `users` テーブルが存在し、`id (PK), email (UNIQUE), password_hash, display_name, kana_name, phone, address (jsonb), created_at` を持つ（**注意: `public.users` は非推奨。`auth.users` を source-of-truth とし、`public.profiles` に移行済または移行予定**）  
 - [x] `profiles` テーブルが存在し、`user_id (PK, FK -> auth.users.id), display_name, kana_name, phone, address (jsonb), created_at` を持つ（`migrations/002_create_profiles.sql` 実行済み / 現環境で `count(*) = 0`）  
 - [x] `AUTH-01-15` マイグレーション: `auth.users` にユーザが作成された際に `public.profiles` を自動作成する DB トリガーを追加（実装: `migrations/003_profiles_trigger.sql`） — 検証済: 関数 `create_profile_for_new_auth_user` が DB に存在し、`public.profiles` に行が作成されることを確認（スクリーンショット/SQL確認）。ユニットテストを強化し、 `returns trigger` / `language plpgsql` / `execute procedure` のチェックを追加済み。
-- [ ] `AUTH-01-16` マイグレーション: `profiles` を作成済みの `auth.users` が抜けている場合に一括でデフォルトレコードを作成する seed マイグレーション（必要に応じ）
+- [ ] （テスト未実施） `AUTH-01-16` マイグレーション: `profiles` を作成済みの `auth.users` が抜けている場合に一括でデフォルトレコードを作成する seed マイグレーション（必要に応じ）
 - [x] `sessions` テーブルが存在し、`id, user_id (FK), refresh_token_hash, current_jti, ip, user_agent, device_name, created_at, expires_at, revoked_at, last_seen_at` を持つ — 完了 (2026-02-01: `migrations/004_create_sessions.sql` 適用、ユニット/統合テスト追加、ステージングでの動作確認済)
 - [x] `rate_limit_counters` テーブルが存在し、`(ip, endpoint, bucket)` で GROUP BY カウント可能 — 完了 (2026-02-07: `migrations/005_create_rate_limit_counters.sql` 適用、upsert・集計・インデックス利用を手動検証済)
-- [ ] マイグレーション実行後に逆実行（rollback）可能
+- [ ] （テスト未実施） マイグレーション実行後に逆実行（rollback）可能
 
 **実行手順**:
 ```bash
@@ -115,11 +115,13 @@ npm run test -- tests/unit/schemas/
 **仕様書参照**: `docs/specs/01_auth.md` §5（セキュリティ・CSRF・Cookie）, §10（監査ログ）
 
 **実装ファイル**:
-- `src/lib/jwt.ts` — JWT 生成・検証（HS256）
+- `src/lib/jwt.ts` — JWT 生成・検証（HS256, 実装済: `jsonwebtoken` 使用） ✅
 - `src/lib/hash.ts` — Bcrypt/Argon2 ハッシュ・照合
 - `src/lib/cookie.ts` — Cookie 設定（HttpOnly, Secure, SameSite）
 - `src/lib/csrf.ts` — CSRF トークン生成・検証（ダブルサブミット方式）
 - `src/lib/audit.ts` — 監査ログ出力（JSON Lines）
+
+> **状態メモ**: `jwt.ts` を `jsonwebtoken` で本実装し、ユニットテストを追加しました。監査ログの DB 統合を実施し、`audit_logs` テーブル用マイグレーションと `logAudit` の DB 挿入テストを追加しました。管理画面向けの `GET /api/admin/audit-logs` エンドポイントも追加し、認可と取得（最大100件）を実装しています。CSRF の追加統合テスト、監査ログの保持・マスキング・クリーンアップは次フェーズで進めます。
 
 **テストファイル**:
 - `tests/unit/lib/jwt.test.ts`
@@ -129,11 +131,11 @@ npm run test -- tests/unit/schemas/
 - `tests/unit/lib/audit.test.ts`
 
 **受け入れ条件**:
-- [ ] JWT は 15 分で期限切れ、署名検証で改ざん検出
-- [ ] パスワードハッシュは一方向で照合可能
-- [ ] Cookie に `HttpOnly; Secure; SameSite=Lax` 設定
-- [ ] CSRF トークン生成・検証・ローテーション動作確認
-- [ ] 監査ログ JSON Lines で DB に保存可能
+- [x] JWT は 15 分で期限切れ、署名検証で改ざん検出 ✅ ユニットテストで確認済
+- [ ] （テスト未実施） パスワードハッシュは一方向で照合可能
+- [ ] （テスト未実施） Cookie に `HttpOnly; Secure; SameSite=Lax` 設定
+- [ ] （テスト未実施） CSRF トークン生成・検証・ローテーション動作確認
+- [ ] （テスト未実施） 監査ログ JSON Lines で DB に保存可能
 
 **実行手順**:
 ```bash
@@ -193,11 +195,11 @@ npm run test -- tests/integration/ratelimit.test.ts
 - `e2e/auth/register.spec.ts` — フロント登録フロー（Playwright）
 
 **受け入れ条件**:
-- [ ] 201 Created で新規ユーザレコード作成、`users` テーブルに記録
-- [ ] 重複メールで 400 Bad Request
-- [ ] レスポンス本体は `{ user: { id, email, display_name }, accessToken, refreshToken }`
-- [ ] HTTP-only クッキーにリフレッシュトークン設定
-- [ ] 監査ログ `auth.register.success` 記録
+- [ ] （テスト未実施） 201 Created で新規ユーザレコード作成、`users` テーブルに記録
+- [ ] （テスト未実施） 重複メールで 400 Bad Request
+- [ ] （テスト未実施） レスポンス本体は `{ user: { id, email, display_name }, accessToken, refreshToken }`
+- [ ] （テスト未実施） HTTP-only クッキーにリフレッシュトークン設定
+- [ ] （テスト未実施） 監査ログ `auth.register.success` 記録
 
 **実行手順**:
 ```bash
@@ -228,12 +230,12 @@ npm run test:e2e -- e2e/auth/register.spec.ts
 - `e2e/auth/login.spec.ts` — ログインフロー（Playwright）
 
 **受け入れ条件**:
-- [ ] 200 OK で セッション Cookie 発行（`refresh_token_hash` をハッシュ化して DB に保存）
-- [ ] 誤パスワード・存在しないメール → 401 Unauthorized
-- [ ] `sessions` テーブルに `(user_id, refresh_token_hash, created_at, expires_at)` レコード作成
-- [ ] レート制限：同一 IP から 50 req/10min、同一アカウント 5 failed/10min で 429
-- [ ] 監査ログ `auth.login.success` or `auth.login.failure` 記録
-- [ ] リスポンスに `accessToken` 含む（クライアント側で使用）
+- [ ] （テスト未実施） 200 OK で セッション Cookie 発行（`refresh_token_hash` をハッシュ化して DB に保存）
+- [ ] （テスト未実施） 誤パスワード・存在しないメール → 401 Unauthorized
+- [ ] （テスト未実施） `sessions` テーブルに `(user_id, refresh_token_hash, created_at, expires_at)` レコード作成
+- [ ] （テスト未実施） レート制限：同一 IP から 50 req/10min、同一アカウント 5 failed/10min で 429
+- [ ] （テスト未実施） 監査ログ `auth.login.success` or `auth.login.failure` 記録
+- [ ] （テスト未実施） リスポンスに `accessToken` 含む（クライアント側で使用）
 
 **実行手順**:
 ```bash
@@ -263,12 +265,12 @@ npm run test:e2e -- e2e/auth/login.spec.ts
 - `e2e/auth/refresh.spec.ts` — リフレッシュフロー（Playwright）
 
 **受け入れ条件**:
-- [ ] 200 OK で新しい accessToken + refreshToken 発行
-- [ ] `sessions.current_jti` を新しい JTI に更新、旧トークン無効化
-- [ ] リフレッシュトークン一致しない（改ざん検出） → 401 & 全セッション失効
-- [ ] 有効期限切れ（expires_at < now） → 401
-- [ ] 監査ログ `auth.refresh.success` or `auth.refresh.failure` 記録
-- [ ] トークン再利用検出時は `quarantine` フラグ立てて通知準備
+- [ ] （テスト未実施） 200 OK で新しい accessToken + refreshToken 発行
+- [ ] （テスト未実施） `sessions.current_jti` を新しい JTI に更新、旧トークン無効化
+- [ ] （テスト未実施） リフレッシュトークン一致しない（改ざん検出） → 401 & 全セッション失効
+- [ ] （テスト未実施） 有効期限切れ（expires_at < now） → 401
+- [ ] （テスト未実施） 監査ログ `auth.refresh.success` or `auth.refresh.failure` 記録
+- [ ] （テスト未実施） トークン再利用検出時は `quarantine` フラグ立てて通知準備
 
 **実行手順**:
 ```bash
@@ -298,10 +300,10 @@ npm run test:e2e -- e2e/auth/refresh.spec.ts
 - `e2e/auth/logout.spec.ts` — ログアウトフロー（Playwright）
 
 **受け入れ条件**:
-- [ ] 204 No Content で当該セッション失効（`revoked_at` 設定）
-- [ ] セッション Cookie クリア
-- [ ] 監査ログ `auth.logout.success` 記録
-- [ ] ログアウト後、旧リフレッシュトークン使用時は 401
+- [ ] （テスト未実施） 204 No Content で当該セッション失効（`revoked_at` 設定）
+- [ ] （テスト未実施） セッション Cookie クリア
+- [ ] （テスト未実施） 監査ログ `auth.logout.success` 記録
+- [ ] （テスト未実施） ログアウト後、旧リフレッシュトークン使用時は 401
 
 **実行手順**:
 ```bash
@@ -333,11 +335,11 @@ npm run test:e2e -- e2e/auth/logout.spec.ts
 - `e2e/auth/password-reset.spec.ts` — リセットフロー（Playwright）
 
 **受け入れ条件**:
-- [ ] `/request` で 200 OK メール送信（Amazon SES）
-- [ ] トークン `password_reset_tokens` テーブルに 1 時間 TTL で保存
-- [ ] `/confirm` で 200 OK パスワード更新、トークン無効化（`used_at` 設定）
-- [ ] 期限切れ・既使用トークンで 400
-- [ ] 監査ログ `auth.password_reset.request` / `auth.password_reset.confirm` 記録
+- [ ] （テスト未実施） `/request` で 200 OK メール送信（Amazon SES）
+- [ ] （テスト未実施） トークン `password_reset_tokens` テーブルに 1 時間 TTL で保存
+- [ ] （テスト未実施） `/confirm` で 200 OK パスワード更新、トークン無効化（`used_at` 設定）
+- [ ] （テスト未実施） 期限切れ・既使用トークンで 400
+- [ ] （テスト未実施） 監査ログ `auth.password_reset.request` / `auth.password_reset.confirm` 記録
 
 **実行手順**:
 ```bash
@@ -363,9 +365,9 @@ npm run test:e2e -- e2e/auth/password-reset.spec.ts
 - `tests/integration/api/admin/revoke-user-sessions.test.ts` (未作成 — 管理者認可と一括無効化検証, estimate: 0.5d) 
 
 **受け入れ条件**:
-- [ ] 200 OK で指定ユーザの全セッション失効（`revoked_at` 一括設定）
-- [ ] 管理者認可のみ許可（401/403）
-- [ ] 監査ログ `auth.admin.revoke_user_sessions` 記録
+- [ ] （テスト未実施） 200 OK で指定ユーザの全セッション失効（`revoked_at` 一括設定）
+- [ ] （テスト未実施） 管理者認可のみ許可（401/403）
+- [ ] （テスト未実施） 監査ログ `auth.admin.revoke_user_sessions` 記録
 
 **実行手順**:
 ```bash
@@ -395,10 +397,10 @@ npm run test -- tests/integration/api/admin/revoke-user-sessions.test.ts
 - `e2e/security/csrf.spec.ts` — CSRF 攻撃シミュレーション（Playwright）
 
 **受け入れ条件**:
-- [ ] ログイン後に HttpOnly ではない CSRF Cookie 発行
-- [ ] POST リクエストで `X-CSRF-Token` ヘッダ必須
-- [ ] トークン不一致で 403 Forbidden
-- [ ] トークン一回性ローテーション実装
+- [ ] （テスト未実施） ログイン後に HttpOnly ではない CSRF Cookie 発行
+- [ ] （テスト未実施） POST リクエストで `X-CSRF-Token` ヘッダ必須
+- [ ] （テスト未実施） トークン不一致で 403 Forbidden
+- [ ] （テスト未実施） トークン一回性ローテーション実装
 
 **実行手順**:
 ```bash
@@ -425,15 +427,21 @@ npm run test:e2e -- e2e/security/csrf.spec.ts
 - `tests/integration/api/admin/audit-logs.test.ts`
 
 **受け入れ条件**:
-- [ ] 認証操作（login, logout, register, refresh）が JSON Lines で audit_logs テーブルに記録
-- [ ] ログフォーマット: `{ id, timestamp, actor_id, action, resource, resource_id, ip, outcome, metadata }`
-- [ ] トークン・パスワードはマスク化（平文保存なし）
-- [ ] 管理者のみ監査ログ参照可能（認可）
-- [ ] 保持期間 1 年（cleanup job で自動削除）
+- [ ] （テスト未実施） 認証操作（login, logout, register, refresh）が JSON Lines で audit_logs テーブルに記録
+- [ ] （テスト未実施） ログフォーマット: `{ id, timestamp, actor_id, action, resource, resource_id, ip, outcome, metadata }`
+- [x] トークン・パスワードはマスク化（平文保存なし） ✅ 実装済
+- [ ] （テスト未実施） 管理者のみ監査ログ参照可能（認可）
+- [x] 保持期間 1 年（cleanup job で自動削除） ✅ 実装済（`scripts/cleanup-audit-logs.js` と `src/lib/auditCleanup.ts`）。ステージングで手動検証済：古いログ 1 件を削除（`audit.cleanup` に `deleted_count:1` が記録されました）。
+- [x] cleanup を自動化する GitHub Actions ワークフローを追加（`.github/workflows/cleanup-audit-logs.yml`）。
+  - 必要: リポジトリ Secrets に `SUPABASE_URL` と `SUPABASE_SERVICE_ROLE_KEY` を設定してください。`AUDIT_LOG_RETENTION_DAYS` はオプション（デフォルト 365 日）。
+  - 実行スケジュール: 毎日 02:00 UTC（workflow_dispatch で手動実行可）
 
 **実行手順**:
 ```bash
 npm run test -- tests/integration/api/admin/audit-logs.test.ts
+# 保持削除ジョブを手動実行する場合（環境変数を設定）
+SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npm run cleanup:audit-logs
+# デフォルト保持期間は 365 日（AUDIT_LOG_RETENTION_DAYS 環境変数で上書き可）
 ```
 
 ---
@@ -459,9 +467,9 @@ npm run test -- tests/integration/api/admin/audit-logs.test.ts
 6. ✅ エラーシナリオ（存在しないメール、誤パスワード、期限切れトークン）
 
 **受け入れ条件**:
-- [ ] シーケンス図 `docs/seq/01_auth_seq.md` のフローすべてが実行可能
-- [ ] 監査ログがシーケンスに従い記録される
-- [ ] エラーハンドリング：不正状態で即座に検出・拒否
+- [ ] （テスト未実施） シーケンス図 `docs/seq/01_auth_seq.md` のフローすべてが実行可能
+- [ ] （テスト未実施） 監査ログがシーケンスに従い記録される
+- [ ] （テスト未実施） エラーハンドリング：不正状態で即座に検出・拒否
 
 **実行手順**:
 ```bash
@@ -640,7 +648,7 @@ npm run test:e2e -- e2e/security/session-hijacking.spec.ts
 - [x] AUTH-01-01: DB マイグレーション — `migrations/004_create_sessions.sql` を追加済（sessions テーブル初期実装）
 - [ ] AUTH-01-02: Zod スキーマ
   - [ ] `tests/unit/schemas/refresh.test.ts` — 実装（estimate: 0.25d）
-- [ ] AUTH-01-03: 共通ユーティリティ
+- [ ] AUTH-01-03: 共通ユーティリティ (jwt 実装済 — `jsonwebtoken` を追加。残作業: audit DB 統合、CSRF 統合テスト、ルート差し替え)
 - [ ] AUTH-01-04: レート制限 MW
 - [x] AUTH-01-15: Profiles trigger — 完了 (2026-02-01, 関数存在確認・ユニットテスト強化済) 
 
@@ -658,7 +666,7 @@ npm run test:e2e -- e2e/security/session-hijacking.spec.ts
 
 ## フェーズ 3: セキュリティ
 - [ ] AUTH-01-11: CSRF 対策
-- [ ] AUTH-01-12: 監査ログ
+- [x] AUTH-01-12: 監査ログ (マスキング & 保持削除ジョブ実装済 — ステージング削除検証済: 1 件削除、統合テストの自動化/スケジュール化が残り)
 
 ## フェーズ 4: テスト
 - [ ] AUTH-01-13: 結合テスト

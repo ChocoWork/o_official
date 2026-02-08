@@ -9,7 +9,8 @@
     "lint": "next lint",
     "test": "jest",
     "validate-docs": "node scripts/validate-design-docs.js",
-    "check-coverage": "node scripts/generate-coverage-report.js"
+    "check-coverage": "node scripts/generate-coverage-report.js",
+    "cleanup:audit-logs": "node scripts/cleanup-audit-logs.js"
   },
   "dependencies": {
     "@aws-sdk/client-ses": "^3.975.0",
@@ -27,7 +28,8 @@
     "remixicon": "^4.8.0",
     "remixicon-react": "^1.0.0",
     "tailwind-merge": "^3.3.1",
-    "zod": "^4.3.6"
+    "zod": "^4.3.6",
+    "jsonwebtoken": "^9.0.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
