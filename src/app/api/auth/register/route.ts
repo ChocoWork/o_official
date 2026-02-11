@@ -9,6 +9,15 @@ import { formatZodError } from '@/features/auth/schemas/common';
 
 export async function POST(request: Request) {
   try {
+    // Enforce rate limit for admin register calls
+    try {
+      const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
+      const rl = await enforceRateLimit({ request, endpoint: 'auth:register', limit: 20, windowSeconds: 3600 });
+      if (rl) return rl;
+    } catch (e) {
+      console.error('Rate limit middleware error (register):', e);
+    }
+
     // 管理者専用エンドポイントにするため、ヘッダに管理者用トークンを要求する
     const adminApiKey = process.env.ADMIN_API_KEY;
     if (!adminApiKey) {

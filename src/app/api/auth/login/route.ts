@@ -11,10 +11,27 @@ const REFRESH_TOKEN_MAX_AGE = 7 * 24 * 60 * 60; // 7 days
 
 export async function POST(request: Request) {
   try {
+    // Enforce IP-level rate limit for login attempts
+    try {
+      const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
+      const rl = await enforceRateLimit({ request, endpoint: 'auth:login', limit: 50, windowSeconds: 600 });
+      if (rl) return rl;
+    } catch (e) {
+      console.error('Rate limit middleware error (login):', e);
+    }
     const body = await request.json();
     const parsed = LoginRequestSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(formatZodError(parsed.error), { status: 400 });
+    }
+
+    // Account-based rate limit (by email)
+    try {
+      const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
+      const rlAccount = await enforceRateLimit({ request, endpoint: 'auth:login', limit: 5, windowSeconds: 600, subject: parsed.data.email });
+      if (rlAccount) return rlAccount;
+    } catch (e) {
+      console.error('Rate limit middleware error (login-account):', e);
     }
 
     const { email, password } = parsed.data;

@@ -9,11 +9,28 @@ import { formatZodError } from '@/features/auth/schemas/common';
 
 export async function POST(request: Request) {
   try {
+    // Enforce IP-level rate limit for password reset requests
+    try {
+      const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
+      const rl = await enforceRateLimit({ request, endpoint: 'auth:password_reset_request', limit: 10, windowSeconds: 3600 });
+      if (rl) return rl;
+    } catch (e) {
+      console.error('Rate limit middleware error (password-reset):', e);
+    }
     const body = await request.json();
     const parsed = ResetRequestSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json(formatZodError(parsed.error), { status: 400 });
 
     const { email } = parsed.data;
+
+    // Account-based rate limit (by email) to prevent email enumeration/abuse
+    try {
+      const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
+      const rlAccount = await enforceRateLimit({ request, endpoint: 'auth:password_reset_request', limit: 5, windowSeconds: 3600, subject: email });
+      if (rlAccount) return rlAccount;
+    } catch (e) {
+      console.error('Rate limit middleware error (password-reset-account):', e);
+    }
     const supabase = createServiceRoleClient();
 
     // Find user by email in users table (if exists)

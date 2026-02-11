@@ -5,8 +5,16 @@ import crypto from 'crypto';
 
 const REFRESH_TOKEN_MAX_AGE = 7 * 24 * 60 * 60; // 7 days
 
-export async function POST() {
+export async function POST(request?: Request) {
   try {
+    // Enforce IP-level rate limit for refresh attempts
+    try {
+      const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
+      const rl = await enforceRateLimit({ request, endpoint: 'auth:refresh', limit: 30, windowSeconds: 600 });
+      if (rl) return rl;
+    } catch (e) {
+      console.error('Rate limit middleware error (refresh):', e);
+    }
     const cookieStore = cookies();
     const refreshToken = cookieStore.get('sb-refresh-token')?.value;
 

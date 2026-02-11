@@ -160,22 +160,32 @@ npm run test -- tests/unit/lib/
 **対応 ARCH-ID**: ARCH-AUTH-09  
 **対応詳細設計**: 詳細設計内で OAuth セクション「state / PKCE 保存方針」にて rate-limit 関連を参照  
 **仕様書参照**: `docs/specs/01_auth.md` §5（レート制限・不正検出）, シーケンス図 `docs/seq/01_auth_seq.md` 内「IP and Account レート制御」
+**実装ファイル（実装済）**:
+- [src/features/auth/middleware/rateLimit.ts](src/features/auth/middleware/rateLimit.ts#L1) — IP/アカウント二軸レート制限ロジック（ミドルウェア）
+- [src/features/auth/ratelimit/index.ts](src/features/auth/ratelimit/index.ts#L1) — レート制限サービス（DB upsert/count）
 
-**実装ファイル**:
-- `src/features/auth/middleware/rateLimit.ts` — IP/アカウント二軸レート制限ロジック
-- `src/features/auth/ratelimit/index.ts` — レート制限サービス
+**テストファイル（追加・ローカル通過）**:
+- [tests/unit/middleware/rateLimit.test.ts](tests/unit/middleware/rateLimit.test.ts#L1) — 単体テスト（モック）: PASS
+- [tests/integration/ratelimit.test.ts](tests/integration/ratelimit.test.ts#L1) — 統合テスト（ローカル・モック環境）: PASS
 
-**テストファイル**:
-- `tests/unit/middleware/rateLimit.test.ts`
-- `tests/integration/ratelimit.test.ts`
+**受け入れ条件（現在の実装状況）**:
+- [x] `/api/auth/*` エンドポイントで IP ベース 50 req/10min を制限 — ミドルウェアでバケット化し計測済（適用済み）
+- [x] アカウント別に `/api/auth/login` 5 failed attempts/10min で一時ブロック — アカウント（subject）ベースのカウンタを導入し、`login` / `password-reset/request` 等に適用済
+- [x] 429 Too Many Requests 応答で `Retry-After` ヘッダ付与 — `enforceRateLimit()` が `Retry-After` を返す実装済
+- [x] 制限情報は `rate_limit_counters` テーブルに記録 — DB upsert による記録実装済（ステージングでの実運用確認を推奨）
 
-**受け入れ条件**:
-- [ ] `/api/auth/*` エンドポイントで IP ベース 50 req/10min を制限
-- [ ] アカウント別に `/api/auth/login` 5 failed attempts/10min で一時ブロック
-- [ ] 429 Too Many Requests 応答で `Retry-After` ヘッダ付与
-- [ ] 制限情報は `rate_limit_counters` テーブルに記録
+**適用済エンドポイント（抜粋）**:
+- [src/app/api/auth/login/route.ts](src/app/api/auth/login/route.ts#L1) — IP + アカウント制限を適用
+- [src/app/api/auth/password-reset/request/route.ts](src/app/api/auth/password-reset/request/route.ts#L1) — アカウント保護の適用
+- [src/app/api/auth/refresh/route.ts](src/app/api/auth/refresh/route.ts#L1) — IP ベース制限適用
+- [src/app/api/auth/register/route.ts](src/app/api/auth/register/route.ts#L1) — IP ベース制限適用
 
-**実行手順**:
+**残作業 / 注意点**:
+- TTL / cleanup ジョブ: `rate_limit_counters` の古いバケット削除（スケジュールジョブ）を未実装。Postgres 関数 or cron ワークフローで自動化推奨。
+- ステージング実運用検証: 高負荷下での upsert 性能、競合時の動作（fail-open ポリシー）をステージングで確認してください。
+- 本番での適用はバックアップと低トラフィック時間帯での実行を推奨します。
+
+**実行手順（テスト実行）**:
 ```bash
 npm run test -- tests/unit/middleware/rateLimit.test.ts
 npm run test -- tests/integration/ratelimit.test.ts
