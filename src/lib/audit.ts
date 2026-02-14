@@ -63,6 +63,22 @@ export async function logAudit(event: AuditEvent) {
         created_at: masked.created_at ?? new Date().toISOString(),
       },
     ]);
+
+    const alertUrl = process.env.ALERT_AUDIT_URL;
+    if (alertUrl) {
+      try {
+        await fetch(alertUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(process.env.ALERT_AUDIT_SECRET ? { 'x-alert-secret': process.env.ALERT_AUDIT_SECRET } : {}),
+          },
+          body: JSON.stringify({ record: masked }),
+        });
+      } catch (alertErr) {
+        console.warn('Failed to call audit alert webhook:', alertErr);
+      }
+    }
   } catch (err) {
     // 監査ログは冗長性を持たせるべきだが、まずはサーバログに出力する
     console.warn('Failed to write audit log:', err, event);

@@ -21,7 +21,15 @@ export async function POST(request: Request) {
     const parsed = ResetRequestSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json(formatZodError(parsed.error), { status: 400 });
 
-    const { email } = parsed.data;
+    const { email, turnstileToken } = parsed.data;
+
+    const { verifyTurnstile } = await import('@/lib/turnstile');
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null;
+    const turnstile = await verifyTurnstile(turnstileToken, ip);
+    if (!turnstile.ok) {
+      await logAudit({ action: 'password_reset_request', actor_email: email, outcome: 'failure', detail: turnstile.error || 'turnstile_failed' });
+      return NextResponse.json({ error: 'Bot detection failed' }, { status: 403 });
+    }
 
     // Account-based rate limit (by email) to prevent email enumeration/abuse
     try {

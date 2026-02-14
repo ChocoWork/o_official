@@ -18,8 +18,7 @@ export default function Page({ params }: { params: { id: string } }) {
               e.preventDefault();
               history.back();
             }}
-            className="text-sm text-[#474747] hover:text-black transition-colors duration-300 flex items-center gap-2"
-            style={{ fontFamily: "acumin-pro, sans-serif" }}
+            className="text-sm text-[#474747] hover:text-black transition-colors duration-300 flex items-center gap-2 font-brand"
           >
             <i className="ri-arrow-left-line" />BACK TO ITEMS
           </a>
@@ -55,43 +54,41 @@ export default function Page({ params }: { params: { id: string } }) {
 
           <div className="space-y-8">
             <div>
-              <p className="text-xs text-[#474747] tracking-widest mb-2" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+              <p className="text-xs text-[#474747] tracking-widest mb-2 font-brand">
                 OUTERWEAR
               </p>
-              <h1 className="text-3xl lg:text-4xl text-black mb-4 tracking-tight" style={{ fontFamily: "Didot, serif" }}>
+              <h1 className="text-3xl lg:text-4xl text-black mb-4 tracking-tight font-display">
                 Minimal Wool Coat
               </h1>
-              <p className="text-2xl text-black" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+              <p className="text-2xl text-black font-brand">
                 ¥89,000
               </p>
             </div>
 
             <div>
-              <p className="text-base text-[#474747] leading-relaxed" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+              <p className="text-base text-[#474747] leading-relaxed font-brand">
                 上質なウールを使用したミニマルなコート。シンプルながら洗練されたデザインで、長く愛用していただける一着です。
               </p>
             </div>
 
             <div>
-              <h3 className="text-sm tracking-widest mb-4" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+              <h3 className="text-sm tracking-widest mb-4 font-brand">
                 COLOR
               </h3>
               <div className="flex gap-3">
                 <button
                   onClick={() => setColor("Black")}
-                  className={`px-6 py-2 text-xs tracking-widest transition-all duration-300 cursor-pointer whitespace-nowrap border border-black text-black hover:bg-black hover:text-white ${
+                  className={`px-6 py-2 text-xs tracking-widest transition-all duration-300 cursor-pointer whitespace-nowrap border border-black text-black hover:bg-black hover:text-white font-brand ${
                     color === "Black" ? "bg-black text-white" : ""
                   }`}
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
                 >
                   Black
                 </button>
                 <button
                   onClick={() => setColor("Sand Beige")}
-                  className={`px-6 py-2 text-xs tracking-widest transition-all duration-300 cursor-pointer whitespace-nowrap border border-black text-black hover:bg-black hover:text-white ${
+                  className={`px-6 py-2 text-xs tracking-widest transition-all duration-300 cursor-pointer whitespace-nowrap border border-black text-black hover:bg-black hover:text-white font-brand ${
                     color === "Sand Beige" ? "bg-black text-white" : ""
                   }`}
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
                 >
                   Sand Beige
                 </button>
@@ -99,7 +96,7 @@ export default function Page({ params }: { params: { id: string } }) {
             </div>
 
             <div>
-              <h3 className="text-sm tracking-widest mb-4" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+              <h3 className="text-sm tracking-widest mb-4 font-brand">
                 SIZE
               </h3>
               <div className="flex gap-3">
@@ -107,10 +104,9 @@ export default function Page({ params }: { params: { id: string } }) {
                   <button
                     key={s}
                     onClick={() => setSize(s)}
-                    className={`w-16 h-12 text-sm tracking-widest transition-all duration-300 cursor-pointer border border-black text-black hover:bg-black hover:text-white ${
+                    className={`w-16 h-12 text-sm tracking-widest transition-all duration-300 cursor-pointer border border-black text-black hover:bg-black hover:text-white font-brand ${
                       size === s ? "bg-black text-white" : ""
                     }`}
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
                   >
                     {s}
                   </button>
@@ -119,7 +115,7 @@ export default function Page({ params }: { params: { id: string } }) {
             </div>
 
             <div>
-              <h3 className="text-sm tracking-widest mb-4" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+              <h3 className="text-sm tracking-widest mb-4 font-brand">
                 QUANTITY
               </h3>
               <div className="flex items-center gap-4">
@@ -129,7 +125,7 @@ export default function Page({ params }: { params: { id: string } }) {
                 >
                   <i className="ri-subtract-line" />
                 </button>
-                <span className="text-lg w-12 text-center" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+                <span className="text-lg w-12 text-center font-brand">
                   {quantity}
                 </span>
                 <button
@@ -143,27 +139,26 @@ export default function Page({ params }: { params: { id: string } }) {
 
             <button
               onClick={(e) => e.preventDefault()}
-              className="w-full py-4 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap"
-              style={{ fontFamily: "acumin-pro, sans-serif" }}
+              className="w-full py-4 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap font-brand"
             >
               ADD TO CART
             </button>
 
             <div className="border-t border-black/10 pt-8">
-              <h3 className="text-sm tracking-widest mb-4" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+              <h3 className="text-sm tracking-widest mb-4 font-brand">
                 PRODUCT DETAILS
               </h3>
               <ul className="space-y-2">
-                <li className="text-sm text-[#474747]" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+                <li className="text-sm text-[#474747] font-brand">
                   素材：ウール100%
                 </li>
-                <li className="text-sm text-[#474747]" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+                <li className="text-sm text-[#474747] font-brand">
                   裏地：キュプラ100%
                 </li>
-                <li className="text-sm text-[#474747]" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+                <li className="text-sm text-[#474747] font-brand">
                   原産国：日本
                 </li>
-                <li className="text-sm text-[#474747]" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+                <li className="text-sm text-[#474747] font-brand">
                   ドライクリーニング推奨
                 </li>
               </ul>

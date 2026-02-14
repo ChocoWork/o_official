@@ -10,7 +10,7 @@ describe('csrf helpers', () => {
 
   test('verifyAndRotateCsrf verifies and rotates', async () => {
     const token = generateCsrfToken();
-    const storedHash = tokenHashSha256(token);
+    const storedHash = await tokenHashSha256(token);
     let storedNewHash: string | null = null;
     const storeNewHash = async (h: string) => {
       storedNewHash = h;
@@ -20,6 +20,6 @@ describe('csrf helpers', () => {
     expect(res.ok).toBe(true);
     expect(res.rotated).toBe(true);
     expect(typeof res.nextToken).toBe('string');
-    expect(storedNewHash).toBe(tokenHashSha256(res.nextToken));
+    expect(storedNewHash).toBe(await tokenHashSha256(res.nextToken));
   });
 });

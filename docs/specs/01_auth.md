@@ -62,6 +62,165 @@
     - JWT: JSON Web Token
     - TOTP: Time-based One-time Password
 
+  ## 3.5. Supabase Auth 統合設計（実装済み）
+  
+  ### 設計方針
+  当プロジェクトは **Supabase Auth を ID 管理層（認証ストア）** として使用し、**アプリ側でセッション・セキュリティポリシーを実装** する設計を採用しています。これにより、Supabase の強力な認証機能を活用しながら、独自のセキュリティ要件（JTI ローテーション、詳細な監査ログ、カスタム OAuth フローなど）を実現しています。
+
+  ### 役割分担
+
+  #### Supabase Auth が担当（ID 管理層）
+  - ✅ `auth.users` テーブルの管理（ユーザー作成・削除・検証）
+  - ✅ 認証情報の検証（メール/パスワード、OAuth）
+  - ✅ メール確認トークンの発行と検証（`verifyOtp`）
+  - ✅ パスワードリセットトークンの発行
+  - ✅ OAuth プロバイダとの連携（Google など）
+  - ✅ JWT（access_token/refresh_token）の発行と署名検証
+
+  #### アプリ側が担当（セッション・セキュリティ層）
+  - ✅ HttpOnly Cookie によるセッション管理（フロントエンドに JWT を露出させない）
+  - ✅ `sessions` テーブルでの `refresh_token_hash` 管理
+  - ✅ JTI ローテーションと再利用検出（`current_jti` 照合）
+  - ✅ レート制限（IP 軸 + アカウント軸の二重制御）
+  - ✅ 監査ログ（`audit_logs` テーブル、JSON Lines 形式）
+  - ✅ CSRF トークン管理（ダブルサブミット方式）
+  - ✅ OAuth リンク提案フロー（自動マージ禁止ポリシー）
+  - ✅ RLS ポリシーの設計と運用
+
+  ### 実装アーキテクチャ
+
+  #### 認証フロー例: 新規登録
+
+  ```
+  クライアント                Supabase Auth                アプリ API              DB (sessions/profiles)
+       |                           |                           |                           |
+       | POST /api/auth/register   |                           |                           |
+       |-------------------------->|                           |                           |
+       |                           | signUp()                  |                           |
+       |                           |-------------------------->|                           |
+       |                           |                           | 確認メール送信             |
+       |                           |                           | (redirect_to=/api/auth/confirm)
+       |                           |<--------------------------|                           |
+       | 201 Created              |                           |                           |
+       |<--------------------------|                           |                           |
+       |                           |                           |                           |
+       | (ユーザがメールのリンクをクリック)                                                     |
+       | GET /auth/v1/verify?token=...&redirect_to=/api/auth/confirm                          |
+       |-------------------------->|                           |                           |
+       |                           | トークン検証               |                           |
+       |                           | 302 /api/auth/confirm?token_hash=...                   |
+       |                           |-------------------------------------------------------->|
+       |                           |                           | verifyOtp (service role)  |
+       |                           |                           | →セッション作成            |
+       |                           |                           |-------------------------->|
+       |                           |                           | HttpOnly Cookie 発行      |
+       | 302 /account (Set-Cookie)|                           |                           |
+       |<--------------------------------------------------------------------------|
+  ```
+
+  #### 認証フロー例: ログイン
+
+  ```
+  クライアント                Supabase Auth                アプリ API              DB (sessions)
+       |                           |                           |                           |
+       | POST /api/auth/login      |                           |                           |
+       | {email, password}         |                           |                           |
+       |-------------------------->|                           |                           |
+       |                           | レート制限チェック         |                           |
+       |                           | signInWithPassword()      |                           |
+       |                           |-------------------------->|                           |
+       |                           | access_token + refresh_token                           |
+       |                           |<--------------------------|                           |
+       |                           |                           | refresh_token_hash 保存   |
+       |                           |                           | current_jti 生成          |
+       |                           |                           |-------------------------->|
+       |                           |                           | HttpOnly Cookie 発行      |
+       | 200 OK (Set-Cookie)      |                           |                           |
+       |<--------------------------|                           |                           |
+  ```
+
+  #### リフレッシュフロー（JTI ローテーション）
+
+  ```
+  クライアント                アプリ API                     DB (sessions)          Supabase Auth
+       |                           |                           |                           |
+       | POST /api/auth/refresh    |                           |                           |
+       | (Cookie: refresh_token)   |                           |                           |
+       |-------------------------->|                           |                           |
+       |                           | sessions.current_jti 照合 |                           |
+       |                           |-------------------------->|                           |
+       |                           | JTI 不一致?                |                           |
+       |                           |   → 再利用検出!            |                           |
+       |                           |   → quarantine/全失効      |                           |
+       |                           |<--------------------------|                           |
+       |                           | JTI 一致                   |                           |
+       |                           | Supabase token endpoint   |                           |
+       |                           |------------------------------------------------------>|
+       |                           | 新 access_token + refresh_token                       |
+       |                           |<------------------------------------------------------|
+       |                           | 新 JTI 生成・更新          |                           |
+       |                           |-------------------------->|                           |
+       | 200 OK (新 Cookie)       |                           |                           |
+       |<--------------------------|                           |                           |
+  ```
+
+  ### Supabase API の利用箇所
+
+  | API / 機能 | 使用箇所 | 目的 |
+  |-----------|---------|-----|
+  | `auth.admin.createUser()` | `/api/auth/register` (管理者用) | ユーザー作成（確認済み状態） |
+  | `auth.signUp()` | `/api/auth/register` (公開用) | ユーザー作成 + 確認メール送信 |
+  | `auth.verifyOtp()` | `/api/auth/confirm` | メール確認トークンの検証 |
+  | `auth.signInWithPassword()` | `/api/auth/login` | メール/パスワード認証 |
+  | `/auth/v1/token` (refresh grant) | `/api/auth/refresh` | refresh_token から新トークン取得 |
+  | OAuth プロバイダ設定 | `/api/auth/oauth/*` | Google OAuth 連携 |
+
+  ### セキュリティ境界の明確化
+
+  #### サービスロールキー（`SUPABASE_SERVICE_ROLE_KEY`）の使用箇所
+  - ✅ `/api/auth/confirm` - メール確認トークンの検証（RLS バイパス必要）
+  - ✅ `/api/auth/register` - 管理者によるユーザー作成
+  - ✅ `/api/auth/refresh` - トークン交換（セッション照合後）
+  - ✅ `sessions` テーブルへのアクセス（CRUD 操作）
+  - ⚠️ **厳格な保護**: 環境変数のみ、VCS に含めない、Secrets Manager で管理
+
+  #### 一般クライアント（`NEXT_PUBLIC_SUPABASE_ANON_KEY`）の使用箇所
+  - フロントエンド（クライアントコンポーネント）
+  - RLS が有効なテーブルへのアクセス（`profiles` など）
+  - セキュリティ: RLS で保護されているため公開可能
+
+  ### 本設計のメリット
+
+  1. **セキュリティの多層防御**
+     - Supabase Auth が認証情報を管理（専門性の活用）
+     - アプリ側で追加のセキュリティ層（JTI、レート制限、監査）を実装
+
+  2. **柔軟性**
+     - OAuth プロバイダの追加が容易
+     - カスタムビジネスロジック（アカウントリンク、監査要件）を実装可能
+
+  3. **運用性**
+     - Supabase ダッシュボードでユーザー管理可能
+     - アプリ側でセッション・監査ログを独立管理
+
+  4. **パフォーマンス**
+     - Cookie ベースセッションで DB アクセスを最小化
+     - refresh_token の検証のみ DB クエリが必要
+
+  ### 制限事項と注意点
+
+  1. **Supabase の制限**
+     - メール送信レート制限（無料プランは 3 emails/hour）
+     - OAuth プロバイダは Supabase ダッシュボードで設定必要
+
+  2. **運用上の注意**
+     - `SUPABASE_SERVICE_ROLE_KEY` の厳格な管理必須
+     - トークン寿命は Supabase 設定とアプリ側で統一が必要
+
+  3. **テストの複雑性**
+     - Supabase API のモックが必要
+     - E2E テストでメール確認フローの自動化が困難
+
   ## 4. 主要機能（章立て）
 
   ### 4.1 新規登録 (Register)

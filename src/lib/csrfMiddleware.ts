@@ -15,8 +15,8 @@ export async function requireCsrfOrDeny() {
   if (!headerToken) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
   const { tokenHashSha256 } = await import('@/lib/hash');
-  const refreshHash = tokenHashSha256(refreshToken);
-  const providedHash = tokenHashSha256(headerToken);
+  const refreshHash = await tokenHashSha256(refreshToken);
+  const providedHash = await tokenHashSha256(headerToken);
 
   try {
     const service = createServiceRoleClient();

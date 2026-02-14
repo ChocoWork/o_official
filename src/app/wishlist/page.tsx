@@ -6,8 +6,8 @@ export default function Page() {
     <main className="pt-32 pb-20 px-6 lg:px-12">
       <div className="max-w-7xl mx-auto">
         <div className="flex items-center justify-between mb-12">
-          <h1 className="text-4xl text-black tracking-tight" style={{ fontFamily: 'Didot, serif' }}>Wishlist</h1>
-          <p className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>4点のアイテム</p>
+          <h1 className="text-4xl text-black tracking-tight font-display">Wishlist</h1>
+          <p className="text-sm text-[#474747] font-brand">4点のアイテム</p>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
@@ -25,9 +25,9 @@ export default function Page() {
               <i className="ri-close-line text-xl" />
             </button>
             <Link href="/item/1">
-              <p className="text-xs text-[#474747] mb-2 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>TOPS</p>
-              <h3 className="text-base text-black mb-2 hover:text-[#474747] transition-colors" style={{ fontFamily: 'acumin-pro, sans-serif' }}>カシミアセーター</h3>
-              <p className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>¥38,000</p>
+              <p className="text-xs text-[#474747] mb-2 tracking-wider font-brand">TOPS</p>
+              <h3 className="text-base text-black mb-2 hover:text-[#474747] transition-colors font-brand">カシミアセーター</h3>
+              <p className="text-sm text-black font-brand">¥38,000</p>
             </Link>
           </div>
 
@@ -45,9 +45,9 @@ export default function Page() {
               <i className="ri-close-line text-xl" />
             </button>
             <Link href="/item/2">
-              <p className="text-xs text-[#474747] mb-2 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>OUTERWEAR</p>
-              <h3 className="text-base text-black mb-2 hover:text-[#474747] transition-colors" style={{ fontFamily: 'acumin-pro, sans-serif' }}>レザージャケット</h3>
-              <p className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>¥98,000</p>
+              <p className="text-xs text-[#474747] mb-2 tracking-wider font-brand">OUTERWEAR</p>
+              <h3 className="text-base text-black mb-2 hover:text-[#474747] transition-colors font-brand">レザージャケット</h3>
+              <p className="text-sm text-black font-brand">¥98,000</p>
             </Link>
           </div>
 
@@ -65,9 +65,9 @@ export default function Page() {
               <i className="ri-close-line text-xl" />
             </button>
             <Link href="/item/3">
-              <p className="text-xs text-[#474747] mb-2 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>ACCESSORIES</p>
-              <h3 className="text-base text-black mb-2 hover:text-[#474747] transition-colors" style={{ fontFamily: 'acumin-pro, sans-serif' }}>シルクスカーフ</h3>
-              <p className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>¥18,000</p>
+              <p className="text-xs text-[#474747] mb-2 tracking-wider font-brand">ACCESSORIES</p>
+              <h3 className="text-base text-black mb-2 hover:text-[#474747] transition-colors font-brand">シルクスカーフ</h3>
+              <p className="text-sm text-black font-brand">¥18,000</p>
             </Link>
           </div>
 
@@ -85,9 +85,9 @@ export default function Page() {
               <i className="ri-close-line text-xl" />
             </button>
             <Link href="/item/4">
-              <p className="text-xs text-[#474747] mb-2 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>BOTTOMS</p>
-              <h3 className="text-base text-black mb-2 hover:text-[#474747] transition-colors" style={{ fontFamily: 'acumin-pro, sans-serif' }}>ウールパンツ</h3>
-              <p className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>¥32,000</p>
+              <p className="text-xs text-[#474747] mb-2 tracking-wider font-brand">BOTTOMS</p>
+              <h3 className="text-base text-black mb-2 hover:text-[#474747] transition-colors font-brand">ウールパンツ</h3>
+              <p className="text-sm text-black font-brand">¥32,000</p>
             </Link>
           </div>
         </div>

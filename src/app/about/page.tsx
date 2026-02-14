@@ -12,11 +12,11 @@ export default function StoryPage() {
           </div>
           <div className="flex flex-col justify-center space-y-8">
             <div>
-              <h2 className="text-3xl text-black mb-6 tracking-tight" style={{ fontFamily: 'Didot, serif' }}>Brand Philosophy</h2>
-              <p className="text-base text-[#474747] leading-relaxed mb-4" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+              <h2 className="text-3xl text-black mb-6 tracking-tight">Brand Philosophy</h2>
+              <p className="text-base text-[#474747] leading-relaxed mb-4">
                 Le Fil des Heuresは、「時を紡ぐニュートラルモードな日常着」をコンセプトに、時代を超えて愛される普遍的なデザインと上質な素材にこだわったアパレルブランドです。
               </p>
-              <p className="text-base text-[#474747] leading-relaxed" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+              <p className="text-base text-[#474747] leading-relaxed">
                 ミニマルでありながら洗練されたデザイン、そして着る人の個性を引き立てるニュートラルなカラーパレット。私たちは、日常に寄り添いながらも特別な瞬間を演出する服を提案します。
               </p>
             </div>
@@ -26,11 +26,11 @@ export default function StoryPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 mb-24">
           <div className="flex flex-col justify-center space-y-8 lg:order-2">
             <div>
-              <h2 className="text-3xl text-black mb-6 tracking-tight" style={{ fontFamily: 'Didot, serif' }}>Quality &amp; Craftsmanship</h2>
-              <p className="text-base text-[#474747] leading-relaxed mb-4" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+              <h2 className="text-3xl text-black mb-6 tracking-tight">Quality &amp; Craftsmanship</h2>
+              <p className="text-base text-[#474747] leading-relaxed mb-4">
                 厳選された上質な素材と、熟練した職人による丁寧な縫製。細部にまでこだわり抜いた製品づくりが、Le Fil des Heuresの品質を支えています。
               </p>
-              <p className="text-base text-[#474747] leading-relaxed" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+              <p className="text-base text-[#474747] leading-relaxed">
                 長く愛用していただけるよう、耐久性と快適性を両立させた服作りを心がけています。
               </p>
             </div>
@@ -45,35 +45,35 @@ export default function StoryPage() {
         </div>
 
         <div className="mb-24">
-          <h2 className="text-3xl text-black mb-12 tracking-tight text-center" style={{ fontFamily: 'Didot, serif' }}>Our Values</h2>
+          <h2 className="text-3xl text-black mb-12 tracking-tight text-center">Our Values</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div className="text-center space-y-4">
               <div className="w-16 h-16 mx-auto flex items-center justify-center"><i className="ri-time-line text-4xl text-black"></i></div>
-              <h3 className="text-xl text-black tracking-tight" style={{ fontFamily: 'Didot, serif' }}>Timeless</h3>
-              <p className="text-sm text-[#474747] leading-relaxed" style={{ fontFamily: 'acumin-pro, sans-serif' }}>流行に左右されない、時代を超えたデザイン</p>
+              <h3 className="text-xl text-black tracking-tight">Timeless</h3>
+              <p className="text-sm text-[#474747] leading-relaxed">流行に左右されない、時代を超えたデザイン</p>
             </div>
 
             <div className="text-center space-y-4">
               <div className="w-16 h-16 mx-auto flex items-center justify-center"><i className="ri-leaf-line text-4xl text-black"></i></div>
-              <h3 className="text-xl text-black tracking-tight" style={{ fontFamily: 'Didot, serif' }}>Sustainable</h3>
-              <p className="text-sm text-[#474747] leading-relaxed" style={{ fontFamily: 'acumin-pro, sans-serif' }}>環境に配慮した素材と製造プロセス</p>
+              <h3 className="text-xl text-black tracking-tight">Sustainable</h3>
+              <p className="text-sm text-[#474747] leading-relaxed">環境に配慮した素材と製造プロセス</p>
             </div>
 
             <div className="text-center space-y-4">
               <div className="w-16 h-16 mx-auto flex items-center justify-center"><i className="ri-heart-line text-4xl text-black"></i></div>
-              <h3 className="text-xl text-black tracking-tight" style={{ fontFamily: 'Didot, serif' }}>Thoughtful</h3>
-              <p className="text-sm text-[#474747] leading-relaxed" style={{ fontFamily: 'acumin-pro, sans-serif' }}>着る人に寄り添う、心地よい服作り</p>
+              <h3 className="text-xl text-black tracking-tight">Thoughtful</h3>
+              <p className="text-sm text-[#474747] leading-relaxed">着る人に寄り添う、心地よい服作り</p>
             </div>
           </div>
         </div>
 
         <div className="bg-[#f5f5f5] p-12 lg:p-16">
           <div className="max-w-3xl mx-auto text-center">
-            <h2 className="text-3xl text-black mb-6 tracking-tight" style={{ fontFamily: 'Didot, serif' }}>Contact Us</h2>
-            <p className="text-base text-[#474747] leading-relaxed mb-8" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+            <h2 className="text-3xl text-black mb-6 tracking-tight">Contact Us</h2>
+            <p className="text-base text-[#474747] leading-relaxed mb-8">
               ご質問やお問い合わせは、以下のメールアドレスまでお気軽にご連絡ください。
             </p>
-            <a href="mailto:info@lefildesheures.com" className="text-lg text-black hover:text-[#474747] transition-colors duration-300 tracking-wide" style={{ fontFamily: 'acumin-pro, sans-serif' }}>info@lefildesheures.com</a>
+            <a href="mailto:info@lefildesheures.com" className="text-lg text-black hover:text-[#474747] transition-colors duration-300 tracking-wide">info@lefildesheures.com</a>
           </div>
         </div>
       </div>

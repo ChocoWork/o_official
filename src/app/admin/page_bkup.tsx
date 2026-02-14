@@ -730,7 +730,7 @@ const AdminPage = () => {
                       )) : <span className="text-gray-400 text-xs">ラベルを追加</span>}
                     </div>
                     {openLabelId === product.id && (
-                      <div className="absolute z-20 left-0 top-8 bg-white border border-gray-200 rounded shadow p-2 min-w-[200px]" style={{minWidth:220}} onClick={e => e.stopPropagation()}>
+                      <div className="absolute z-20 left-0 top-8 bg-white border border-gray-200 rounded shadow p-2 min-w-[220px]" onClick={e => e.stopPropagation()}>
                         <div className="flex flex-col gap-1 mb-2 max-h-32 overflow-y-auto">
                           {allLabels.length === 0 && <span className="text-gray-400 text-xs">ラベルがありません</span>}
                           {allLabels.map((label, idx) => (

@@ -5,6 +5,9 @@ export const RegisterRequestSchema = z.object({
   email: emailSchema,
   password: passwordSchema,
   display_name: z.string().max(100).optional(),
+  emailRedirectTo: z.string().max(2000).optional(),
+  redirect_to: z.string().max(2000).optional(),
+  turnstileToken: z.string().min(1).optional(),
 });
 
 export type RegisterRequest = z.infer<typeof RegisterRequestSchema>;

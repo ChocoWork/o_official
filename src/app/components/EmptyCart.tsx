@@ -13,7 +13,6 @@ export const EmptyCart: React.FC<EmptyCartProps> = ({ onStartShopping }) => {
       <div className="max-w-4xl mx-auto">
         <h1
           className="text-4xl lg:text-5xl text-black mb-16 tracking-tight text-center"
-          style={{ fontFamily: 'Didot, serif' }}
         >
           SHOPPING CART
         </h1>
@@ -23,14 +22,13 @@ export const EmptyCart: React.FC<EmptyCartProps> = ({ onStartShopping }) => {
             <i className="ri-shopping-bag-line text-6xl text-[#474747]"></i>
           </div>
 
-          <p className="text-lg text-[#474747] mb-8" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+          <p className="text-lg text-[#474747] mb-8">
             カートは空です
           </p>
 
           <Link
             href="/item"
             className="px-12 py-4 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap"
-            style={{ fontFamily: 'acumin-pro, sans-serif' }}
             onClick={() => onStartShopping && onStartShopping()}
           >
             CONTINUE SHOPPING

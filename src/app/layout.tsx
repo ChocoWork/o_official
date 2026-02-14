@@ -1,4 +1,5 @@
 import type { Metadata } from "next"; // Metadata型をNext.jsからインポート
+import { headers } from 'next/headers';
 import { Geist, Geist_Mono } from "next/font/google"; // Google FontsのGeistとGeist_Monoフォントをインポート
 import "./globals.css"; // グローバルCSSファイルをインポート
 import Header from './components/Header'; // ヘッダーコンポーネントをインポート
@@ -29,10 +30,13 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;  // childrenはReactのノード（要素、文字列など）であることを示す
 }>) {
+  const nonce = headers().get('x-nonce') ?? undefined;
+
   return (
     <html lang="ja">
       <head>
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/remixicon/fonts/remixicon.css" />
+        <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer nonce={nonce}></script>
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col min-h-screen`}> 
         <LoginProvider>

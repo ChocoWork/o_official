@@ -65,8 +65,8 @@ export default function Home() {
             </div>
             <div className="h-full flex-1 flex items-center justify-center relative z-10 min-w-0">
               <div className="h-screen text-center px-6 max-w-4xl w-full mx-auto flex flex-col justify-center">
-                <div className="text-3xl md:text-4xl lg:text-5xl mb-8 text-black tracking-tight w-full" style={{ fontFamily: 'Didot, serif' }}>26SS Theme 「Black Rose」</div>
-                <div className="text-lg md:text-3xl lg:text-4xl text-[#474747] tracking-widest max-w-2xl mx-auto leading-relaxed" style={{ fontFamily: 'acumin-pro, sans-serif' }}>出発 × 永遠</div>
+                <div className="text-3xl md:text-4xl lg:text-5xl mb-8 text-black tracking-tight w-full font-display">26SS Theme 「Black Rose」</div>
+                <div className="text-lg md:text-3xl lg:text-4xl text-[#474747] tracking-widest max-w-2xl mx-auto leading-relaxed font-brand">出発 × 永遠</div>
               </div>
             </div>
           </div>
@@ -76,7 +76,7 @@ export default function Home() {
         <section id="news" className="py-24 lg:py-32 px-6 lg:px-12 bg-white w-full">
           <div className="max-w-7xl mx-auto">
             <div className="text-center mb-16 lg:mb-24">
-              <h2 className="text-4xl lg:text-5xl mb-4 text-black tracking-tight" style={{ fontFamily: 'Didot, serif' }}>NEWS</h2>
+              <h2 className="text-4xl lg:text-5xl mb-4 text-black tracking-tight font-display">NEWS</h2>
               <div className="w-16 h-px bg-black mx-auto"></div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 lg:gap-12">
@@ -93,13 +93,13 @@ export default function Home() {
                     />
                   </div>
                   <div className="space-y-3">
-                    <div className="flex items-center space-x-4 text-xs tracking-widest text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                    <div className="flex items-center space-x-4 text-xs tracking-widest text-[#474747] font-brand">
                       <span>2024.03.15</span>
                       <span className="w-1 h-1 bg-[#474747] rounded-full"></span>
                       <span>COLLECTION</span>
                     </div>
-                    <h3 className="text-xl text-black group-hover:text-[#474747] transition-colors duration-300" style={{ fontFamily: 'acumin-pro, sans-serif' }}>2024 Spring/Summer Collection Launch</h3>
-                    <p className="text-sm text-[#474747] leading-relaxed line-clamp-3" style={{ fontFamily: 'acumin-pro, sans-serif' }}>新しいシーズンコレクションが登場。ミニマルなデザインと上質な素材が織りなす、洗練された日常着をご覧ください。</p>
+                    <h3 className="text-xl text-black group-hover:text-[#474747] transition-colors duration-300 font-brand">2024 Spring/Summer Collection Launch</h3>
+                    <p className="text-sm text-[#474747] leading-relaxed line-clamp-3 font-brand">新しいシーズンコレクションが登場。ミニマルなデザインと上質な素材が織りなす、洗練された日常着をご覧ください。</p>
                   </div>
                 </article>
               </a>
@@ -116,13 +116,13 @@ export default function Home() {
                     />
                   </div>
                   <div className="space-y-3">
-                    <div className="flex items-center space-x-4 text-xs tracking-widest text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                    <div className="flex items-center space-x-4 text-xs tracking-widest text-[#474747] font-brand">
                       <span>2024.03.08</span>
                       <span className="w-1 h-1 bg-[#474747] rounded-full"></span>
                       <span>EVENT</span>
                     </div>
-                    <h3 className="text-xl text-black group-hover:text-[#474747] transition-colors duration-300" style={{ fontFamily: 'acumin-pro, sans-serif' }}>Pop-up Store in Tokyo</h3>
-                    <p className="text-sm text-[#474747] leading-relaxed line-clamp-3" style={{ fontFamily: 'acumin-pro, sans-serif' }}>東京・青山にて期間限定ポップアップストアを開催。最新コレクションを実際に手に取ってご覧いただけます。</p>
+                    <h3 className="text-xl text-black group-hover:text-[#474747] transition-colors duration-300 font-brand">Pop-up Store in Tokyo</h3>
+                    <p className="text-sm text-[#474747] leading-relaxed line-clamp-3 font-brand">東京・青山にて期間限定ポップアップストアを開催。最新コレクションを実際に手に取ってご覧いただけます。</p>
                   </div>
                 </article>
               </a>
@@ -139,20 +139,20 @@ export default function Home() {
                     />
                   </div>
                   <div className="space-y-3">
-                    <div className="flex items-center space-x-4 text-xs tracking-widest text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                    <div className="flex items-center space-x-4 text-xs tracking-widest text-[#474747] font-brand">
                       <span>2024.02.28</span>
                       <span className="w-1 h-1 bg-[#474747] rounded-full"></span>
                       <span>COLLABORATION</span>
                     </div>
-                    <h3 className="text-xl text-black group-hover:text-[#474747] transition-colors duration-300" style={{ fontFamily: 'acumin-pro, sans-serif' }}>Artist Collaboration Series</h3>
-                    <p className="text-sm text-[#474747] leading-relaxed line-clamp-3" style={{ fontFamily: 'acumin-pro, sans-serif' }}>気鋭のアーティストとのコラボレーションアイテムが登場。アートとファッションが融合した特別なコレクションです。</p>
+                    <h3 className="text-xl text-black group-hover:text-[#474747] transition-colors duration-300 font-brand">Artist Collaboration Series</h3>
+                    <p className="text-sm text-[#474747] leading-relaxed line-clamp-3 font-brand">気鋭のアーティストとのコラボレーションアイテムが登場。アートとファッションが融合した特別なコレクションです。</p>
                   </div>
                 </article>
               </a>
             </div>
             <div className="text-center mt-16">
               <a href="/viewer/readdy-nextjs-v1-prod/2874d3eb57d938/news">
-                <button className="px-12 py-4 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap" style={{ fontFamily: 'acumin-pro, sans-serif' }}>VIEW ALL NEWS</button>
+                <button className="px-12 py-4 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap font-brand">VIEW ALL NEWS</button>
               </a>
             </div>
           </div>
@@ -177,9 +177,9 @@ export default function Home() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <p className="text-xs text-[#474747] tracking-widest" style={{ fontFamily: 'acumin-pro, sans-serif' }}>OUTERWEAR</p>
-                    <h3 className="text-base text-black tracking-tight" style={{ fontFamily: 'acumin-pro, sans-serif' }}>Minimal Wool Coat</h3>
-                    <p className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>¥89,000</p>
+                    <p className="text-xs text-[#474747] tracking-widest font-brand">OUTERWEAR</p>
+                    <h3 className="text-base text-black tracking-tight font-brand">Minimal Wool Coat</h3>
+                    <p className="text-sm text-black font-brand">¥89,000</p>
                   </div>
                 </div>
               </Link>
@@ -195,9 +195,9 @@ export default function Home() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <p className="text-xs text-[#474747] tracking-widest" style={{ fontFamily: 'acumin-pro, sans-serif' }}>BOTTOMS</p>
-                    <h3 className="text-base text-black tracking-tight" style={{ fontFamily: 'acumin-pro, sans-serif' }}>Wide Leg Trousers</h3>
-                    <p className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>¥32,000</p>
+                    <p className="text-xs text-[#474747] tracking-widest font-brand">BOTTOMS</p>
+                    <h3 className="text-base text-black tracking-tight font-brand">Wide Leg Trousers</h3>
+                    <p className="text-sm text-black font-brand">¥32,000</p>
                   </div>
                 </div>
               </Link>
@@ -213,9 +213,9 @@ export default function Home() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <p className="text-xs text-[#474747] tracking-widest" style={{ fontFamily: 'acumin-pro, sans-serif' }}>OUTERWEAR</p>
-                    <h3 className="text-base text-black tracking-tight" style={{ fontFamily: 'acumin-pro, sans-serif' }}>Oversized Coat</h3>
-                    <p className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>¥68,000</p>
+                    <p className="text-xs text-[#474747] tracking-widest font-brand">OUTERWEAR</p>
+                    <h3 className="text-base text-black tracking-tight font-brand">Oversized Coat</h3>
+                    <p className="text-sm text-black font-brand">¥68,000</p>
                   </div>
                 </div>
               </Link>
@@ -231,9 +231,9 @@ export default function Home() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <p className="text-xs text-[#474747] tracking-widest" style={{ fontFamily: 'acumin-pro, sans-serif' }}>TOPS</p>
-                    <h3 className="text-base text-black tracking-tight" style={{ fontFamily: 'acumin-pro, sans-serif' }}>Cotton Knit Sweater</h3>
-                    <p className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>¥24,000</p>
+                    <p className="text-xs text-[#474747] tracking-widest font-brand">TOPS</p>
+                    <h3 className="text-base text-black tracking-tight font-brand">Cotton Knit Sweater</h3>
+                    <p className="text-sm text-black font-brand">¥24,000</p>
                   </div>
                 </div>
               </Link>
@@ -249,9 +249,9 @@ export default function Home() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <p className="text-xs text-[#474747] tracking-widest" style={{ fontFamily: 'acumin-pro, sans-serif' }}>BOTTOMS</p>
-                    <h3 className="text-base text-black tracking-tight" style={{ fontFamily: 'acumin-pro, sans-serif' }}>Pleated Midi Skirt</h3>
-                    <p className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>¥26,000</p>
+                    <p className="text-xs text-[#474747] tracking-widest font-brand">BOTTOMS</p>
+                    <h3 className="text-base text-black tracking-tight font-brand">Pleated Midi Skirt</h3>
+                    <p className="text-sm text-black font-brand">¥26,000</p>
                   </div>
                 </div>
               </a>
@@ -267,16 +267,16 @@ export default function Home() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <p className="text-xs text-[#474747] tracking-widest" style={{ fontFamily: 'acumin-pro, sans-serif' }}>OUTERWEAR</p>
-                    <h3 className="text-base text-black tracking-tight" style={{ fontFamily: 'acumin-pro, sans-serif' }}>Structured Blazer</h3>
-                    <p className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>¥58,000</p>
+                    <p className="text-xs text-[#474747] tracking-widest font-brand">OUTERWEAR</p>
+                    <h3 className="text-base text-black tracking-tight font-brand">Structured Blazer</h3>
+                    <p className="text-sm text-black font-brand">¥58,000</p>
                   </div>
                 </div>
               </a>
             </div>
             <div className="text-center mt-16">
               <a href="/viewer/readdy-nextjs-v1-prod/8ed5d1f76d3598/item">
-                <button className="px-12 py-4 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap" style={{ fontFamily: 'acumin-pro, sans-serif' }}>VIEW ALL ITEMS</button>
+                <button className="px-12 py-4 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap font-brand">VIEW ALL ITEMS</button>
               </a>
             </div>
           </div>
@@ -286,7 +286,7 @@ export default function Home() {
         <section id="look" className="py-24 lg:py-32 px-6 lg:px-12 bg-white w-full">
           <div className="max-w-7xl mx-auto">
             <div className="text-center mb-16 lg:mb-24">
-              <h2 className="text-4xl lg:text-5xl mb-4 text-black tracking-tight" style={{ fontFamily: 'Didot, serif' }}>LOOK</h2>
+              <h2 className="text-4xl lg:text-5xl mb-4 text-black tracking-tight font-display">LOOK</h2>
               <div className="w-16 h-px bg-black mx-auto"></div>
             </div>
 
@@ -302,8 +302,8 @@ export default function Home() {
                   />
                 </div>
                 <div className="text-center space-y-2">
-                  <h3 className="text-lg text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>LOOK 01</h3>
-                  <p className="text-xs tracking-widest text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>2024 S/S</p>
+                  <h3 className="text-lg text-black font-brand">LOOK 01</h3>
+                  <p className="text-xs tracking-widest text-[#474747] font-brand">2024 S/S</p>
                 </div>
               </div>
 
@@ -318,8 +318,8 @@ export default function Home() {
                   />
                 </div>
                 <div className="text-center space-y-2">
-                  <h3 className="text-lg text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>LOOK 02</h3>
-                  <p className="text-xs tracking-widest text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>2024 S/S</p>
+                  <h3 className="text-lg text-black font-brand">LOOK 02</h3>
+                  <p className="text-xs tracking-widest text-[#474747] font-brand">2024 S/S</p>
                 </div>
               </div>
 
@@ -334,8 +334,8 @@ export default function Home() {
                   />
                 </div>
                 <div className="text-center space-y-2">
-                  <h3 className="text-lg text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>LOOK 03</h3>
-                  <p className="text-xs tracking-widest text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>2024 S/S</p>
+                  <h3 className="text-lg text-black font-brand">LOOK 03</h3>
+                  <p className="text-xs tracking-widest text-[#474747] font-brand">2024 S/S</p>
                 </div>
               </div>
 
@@ -350,15 +350,15 @@ export default function Home() {
                   />
                 </div>
                 <div className="text-center space-y-2">
-                  <h3 className="text-lg text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>LOOK 04</h3>
-                  <p className="text-xs tracking-widest text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>2024 S/S</p>
+                  <h3 className="text-lg text-black font-brand">LOOK 04</h3>
+                  <p className="text-xs tracking-widest text-[#474747] font-brand">2024 S/S</p>
                 </div>
               </div>
             </div>
 
             <div className="text-center mt-8">
               <a href="/viewer/readdy-nextjs-v1-prod/2871426bde5e68/look">
-                <button className="px-12 py-4 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap" style={{ fontFamily: 'acumin-pro, sans-serif' }}>VIEW LOOKBOOK</button>
+                <button className="px-12 py-4 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap font-brand">VIEW LOOKBOOK</button>
               </a>
             </div>
           </div>
@@ -368,9 +368,9 @@ export default function Home() {
           <div className="max-w-7xl mx-auto">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-center">
               <div className="order-2 lg:order-1">
-                <h2 className="text-4xl lg:text-5xl mb-8 text-black tracking-tight" style={{ fontFamily: 'Didot, serif' }}>ABOUT</h2>
+                <h2 className="text-4xl lg:text-5xl mb-8 text-black tracking-tight font-display">ABOUT</h2>
                 <div className="w-16 h-px bg-black mb-8"></div>
-                <div className="space-y-6 text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                <div className="space-y-6 text-[#474747] font-brand">
                   <p className="text-base lg:text-lg leading-relaxed">Le Fil des Heuresは、「時を紡ぐニュートラルモードな日常着」をコンセプトに、2020年に東京で誕生したアパレルブランドです。</p>
                   <p className="text-base lg:text-lg leading-relaxed">時代を超えて愛される普遍的なデザインと、上質な素材選びにこだわり、日常に寄り添う洗練されたワードローブを提案しています。</p>
                   <p className="text-base lg:text-lg leading-relaxed">ミニマルでありながら、着る人の個性を引き立てる。そんな服作りを目指し、一着一着丁寧に仕上げています。</p>
@@ -378,12 +378,12 @@ export default function Home() {
                 </div>
                 <div className="mt-12 grid grid-cols-2 gap-8">
                   <div>
-                    <h3 className="text-sm tracking-widest text-black mb-3" style={{ fontFamily: 'acumin-pro, sans-serif' }}>PHILOSOPHY</h3>
-                    <p className="text-sm text-[#474747] leading-relaxed" style={{ fontFamily: 'acumin-pro, sans-serif' }}>時代を超える普遍的な美しさ</p>
+                    <h3 className="text-sm tracking-widest text-black mb-3 font-brand">PHILOSOPHY</h3>
+                    <p className="text-sm text-[#474747] leading-relaxed font-brand">時代を超える普遍的な美しさ</p>
                   </div>
                   <div>
-                    <h3 className="text-sm tracking-widest text-black mb-3" style={{ fontFamily: 'acumin-pro, sans-serif' }}>ESTABLISHED</h3>
-                    <p className="text-sm text-[#474747] leading-relaxed" style={{ fontFamily: 'acumin-pro, sans-serif' }}>2020, Tokyo</p>
+                    <h3 className="text-sm tracking-widest text-black mb-3 font-brand">ESTABLISHED</h3>
+                    <p className="text-sm text-[#474747] leading-relaxed font-brand">2020, Tokyo</p>
                   </div>
                 </div>
               </div>
@@ -407,14 +407,14 @@ export default function Home() {
         <section id="stockist" className="py-24 lg:py-32 px-6 lg:px-12 bg-white w-full">
           <div className="max-w-7xl mx-auto">
             <div className="text-center mb-16 lg:mb-24">
-              <h2 className="text-4xl lg:text-5xl mb-4 text-black tracking-tight" style={{ fontFamily: 'Didot, serif' }}>STOCKIST</h2>
+              <h2 className="text-4xl lg:text-5xl mb-4 text-black tracking-tight font-display">STOCKIST</h2>
               <div className="w-16 h-px bg-black mx-auto"></div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 lg:gap-12">
               <div className="border border-[#d5d0c9] p-8 lg:p-10 hover:border-black transition-colors duration-300">
-                <h3 className="text-xl lg:text-2xl mb-6 text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>Le Fil des Heures Aoyama</h3>
-                <div className="space-y-3 text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                <h3 className="text-xl lg:text-2xl mb-6 text-black font-brand">Le Fil des Heures Aoyama</h3>
+                <div className="space-y-3 text-[#474747] font-brand">
                   <div className="flex items-start">
                     <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-map-pin-line text-lg"></i></div>
                     <p className="text-sm">東京都港区南青山3-14-8</p>
@@ -434,8 +434,8 @@ export default function Home() {
               </div>
 
               <div className="border border-[#d5d0c9] p-8 lg:p-10 hover:border-black transition-colors duration-300">
-                <h3 className="text-xl lg:text-2xl mb-6 text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>Le Fil des Heures Ginza</h3>
-                <div className="space-y-3 text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                <h3 className="text-xl lg:text-2xl mb-6 text-black font-brand">Le Fil des Heures Ginza</h3>
+                <div className="space-y-3 text-[#474747] font-brand">
                   <div className="flex items-start">
                     <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-map-pin-line text-lg"></i></div>
                     <p className="text-sm">東京都中央区銀座6-10-1</p>
@@ -455,8 +455,8 @@ export default function Home() {
               </div>
 
               <div className="border border-[#d5d0c9] p-8 lg:p-10 hover:border-black transition-colors duration-300">
-                <h3 className="text-xl lg:text-2xl mb-6 text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>Le Fil des Heures Kyoto</h3>
-                <div className="space-y-3 text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                <h3 className="text-xl lg:text-2xl mb-6 text-black font-brand">Le Fil des Heures Kyoto</h3>
+                <div className="space-y-3 text-[#474747] font-brand">
                   <div className="flex items-start">
                     <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-map-pin-line text-lg"></i></div>
                     <p className="text-sm">京都府京都市中京区烏丸通三条上ル</p>
@@ -476,8 +476,8 @@ export default function Home() {
               </div>
 
               <div className="border border-[#d5d0c9] p-8 lg:p-10 hover:border-black transition-colors duration-300">
-                <h3 className="text-xl lg:text-2xl mb-6 text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>Le Fil des Heures Osaka</h3>
-                <div className="space-y-3 text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                <h3 className="text-xl lg:text-2xl mb-6 text-black font-brand">Le Fil des Heures Osaka</h3>
+                <div className="space-y-3 text-[#474747] font-brand">
                   <div className="flex items-start">
                     <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-map-pin-line text-lg"></i></div>
                     <p className="text-sm">大阪府大阪市北区梅田2-5-25</p>
@@ -503,10 +503,10 @@ export default function Home() {
                   src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3241.2479707857677!2d139.71433831525895!3d35.66572098019819!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x60188b835e2c0d0f%3A0x3c6c8e8e8e8e8e8e!2z5p2x5Lqs6YO95riv5Yy65Y2X6Z2S5bGx!5e0!3m2!1sja!2sjp!4v1234567890123!5m2!1sja!2sjp"
                   width="100%"
                   height="100%"
+                  className="border-0"
                   allowFullScreen
                   loading="lazy"
                   referrerPolicy="no-referrer-when-downgrade"
-                  style={{ border: 0 }}
                 />
               </div>
             </div>

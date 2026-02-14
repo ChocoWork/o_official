@@ -2,11 +2,14 @@
 
 import React, { createContext, useContext, useState, ReactNode } from "react";
 import { supabase } from '@/lib/supabase/client';
+import type { Session } from '@supabase/supabase-js';
+import { z } from 'zod';
 
 interface LoginContextType {
   isLoggedIn: boolean;
   isAdmin: boolean;
   login: (email?: string, password?: string) => Promise<{ success: boolean; error?: string }>;
+  loginWithGoogle: (params?: { next?: string }) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
 }
 
@@ -29,9 +32,8 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
       try {
         LoginRequestSchema.parse({ email: email || '', password: password || '' });
       } catch (err) {
-        if (err instanceof Error && (err as any).issues) {
-          // ZodError
-          const message = (err as any).issues.map((i: any) => i.message).join(' ');
+        if (err instanceof z.ZodError) {
+          const message = err.issues.map((i) => i.message).join(' ');
           setIsLoggedIn(false);
           setIsAdmin(false);
           return { success: false, error: message };
@@ -61,6 +63,18 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const loginWithGoogle = async (params?: { next?: string }) => {
+    try {
+      const next = params?.next && params.next.startsWith('/') ? params.next : '/auth/verified';
+      const url = `/api/auth/oauth/start?provider=google&redirect_to=${encodeURIComponent(next)}`;
+      window.location.assign(url);
+      return { success: true };
+    } catch (e) {
+      console.error('OAuth login error', e);
+      return { success: false, error: 'OAuthログインに失敗しました' };
+    }
+  };
+
   const logout = () => {
     (async () => {
       try {
@@ -80,7 +94,7 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
     (async () => {
       try {
         const { data } = await supabase.auth.getSession();
-        const session = (data as any)?.session;
+        const session = data.session;
         if (mounted && session?.user) {
           setIsLoggedIn(true);
           setIsAdmin(session.user.email === 'aaa@gmail.com');
@@ -90,8 +104,8 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
       }
     })();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      const user = (session as any)?.user;
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session: Session | null) => {
+      const user = session?.user;
       setIsLoggedIn(!!user);
       setIsAdmin(user?.email === 'aaa@gmail.com');
     });
@@ -103,7 +117,7 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   return (
-    <LoginContext.Provider value={{ isLoggedIn, isAdmin, login, logout }}>
+    <LoginContext.Provider value={{ isLoggedIn, isAdmin, login, loginWithGoogle, logout }}>
       {children}
     </LoginContext.Provider>
   );

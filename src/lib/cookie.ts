@@ -2,6 +2,7 @@
 // Provides helper functions to build cookie options used across auth routes.
 
 export const refreshCookieName = 'sb-refresh-token';
+export const accessCookieName = 'sb-access-token';
 export const csrfCookieName = 'sb-csrf-token';
 
 export function getBaseCookieOptions() {
@@ -25,6 +26,15 @@ export function cookieOptionsForRefresh(maxAgeSeconds: number) {
   };
 }
 
+export function cookieOptionsForAccess(maxAgeSeconds: number) {
+  return {
+    ...getBaseCookieOptions(),
+    maxAge: maxAgeSeconds,
+    httpOnly: true,
+    sameSite: 'lax' as const,
+  };
+}
+
 export function cookieOptionsForCsrf(maxAgeSeconds: number) {
   return {
     ...getBaseCookieOptions(),
@@ -42,4 +52,12 @@ export function clearCookieOptions() {
   };
 }
 
-export default { refreshCookieName, csrfCookieName, cookieOptionsForRefresh, cookieOptionsForCsrf, clearCookieOptions };
+export default {
+  refreshCookieName,
+  accessCookieName,
+  csrfCookieName,
+  cookieOptionsForRefresh,
+  cookieOptionsForAccess,
+  cookieOptionsForCsrf,
+  clearCookieOptions,
+};

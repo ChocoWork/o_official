@@ -48,7 +48,7 @@ describe('CSRF integration (mocked)', () => {
     headers.mockReturnValue({ get: jest.fn().mockReturnValue(headerToken) });
 
     const { tokenHashSha256 } = require('@/lib/hash');
-    const storedHash = tokenHashSha256(headerToken);
+    const storedHash = await tokenHashSha256(headerToken);
 
     // Mock service role client to return stored csrf_token_hash and accept updates
     const { createServiceRoleClient } = require('@/lib/supabase/server');

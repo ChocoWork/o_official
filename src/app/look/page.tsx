@@ -14,10 +14,10 @@ export default function LookPage() {
                             />
                         </div>
                         <div className="space-y-3">
-                            <p className="text-xs text-[#474747] tracking-widest" style={{ fontFamily: 'acumin-pro, sans-serif' }}>2024 SPRING/SUMMER</p>
+                            <p className="text-xs text-[#474747] tracking-widest font-brand">2024 SPRING/SUMMER</p>
                             <div className="space-y-2">
-                                <a className="block text-sm text-black hover:text-[#474747] transition-colors duration-300" style={{ fontFamily: 'acumin-pro, sans-serif' }} href="/preview/23e7a295-62c1-445b-b0a0-8472d065b6a8/5236221/item/1">Minimal Wool Coat</a>
-                                <a className="block text-sm text-black hover:text-[#474747] transition-colors duration-300" style={{ fontFamily: 'acumin-pro, sans-serif' }} href="/preview/23e7a295-62c1-445b-b0a0-8472d065b6a8/5236221/item/5">Cashmere Blend Sweater</a>
+                                <a className="block text-sm text-black hover:text-[#474747] transition-colors duration-300 font-brand" href="/preview/23e7a295-62c1-445b-b0a0-8472d065b6a8/5236221/item/1">Minimal Wool Coat</a>
+                                <a className="block text-sm text-black hover:text-[#474747] transition-colors duration-300 font-brand" href="/preview/23e7a295-62c1-445b-b0a0-8472d065b6a8/5236221/item/5">Cashmere Blend Sweater</a>
                             </div>
                         </div>
                     </div>
@@ -31,10 +31,10 @@ export default function LookPage() {
                             />
                         </div>
                         <div className="space-y-3">
-                            <p className="text-xs text-[#474747] tracking-widest" style={{ fontFamily: 'acumin-pro, sans-serif' }}>2024 SPRING/SUMMER</p>
+                            <p className="text-xs text-[#474747] tracking-widest font-brand">2024 SPRING/SUMMER</p>
                             <div className="space-y-2">
-                                <a className="block text-sm text-black hover:text-[#474747] transition-colors duration-300" style={{ fontFamily: 'acumin-pro, sans-serif' }} href="/preview/23e7a295-62c1-445b-b0a0-8472d065b6a8/5236221/item/2">Tailored Blazer</a>
-                                <a className="block text-sm text-black hover:text-[#474747] transition-colors duration-300" style={{ fontFamily: 'acumin-pro, sans-serif' }} href="/preview/23e7a295-62c1-445b-b0a0-8472d065b6a8/5236221/item/3">Wide Leg Trousers</a>
+                                <a className="block text-sm text-black hover:text-[#474747] transition-colors duration-300 font-brand" href="/preview/23e7a295-62c1-445b-b0a0-8472d065b6a8/5236221/item/2">Tailored Blazer</a>
+                                <a className="block text-sm text-black hover:text-[#474747] transition-colors duration-300 font-brand" href="/preview/23e7a295-62c1-445b-b0a0-8472d065b6a8/5236221/item/3">Wide Leg Trousers</a>
                             </div>
                         </div>
                     </div>
@@ -48,10 +48,10 @@ export default function LookPage() {
                             />
                         </div>
                         <div className="space-y-3">
-                            <p className="text-xs text-[#474747] tracking-widest" style={{ fontFamily: 'acumin-pro, sans-serif' }}>2024 SPRING/SUMMER</p>
+                            <p className="text-xs text-[#474747] tracking-widest font-brand">2024 SPRING/SUMMER</p>
                             <div className="space-y-2">
-                                <a className="block text-sm text-black hover:text-[#474747] transition-colors duration-300" style={{ fontFamily: 'acumin-pro, sans-serif' }} href="/preview/23e7a295-62c1-445b-b0a0-8472d065b6a8/5236221/item/4">Silk Blend Shirt</a>
-                                <a className="block text-sm text-black hover:text-[#474747] transition-colors duration-300" style={{ fontFamily: 'acumin-pro, sans-serif' }} href="/preview/23e7a295-62c1-445b-b0a0-8472d065b6a8/5236221/item/6">Merino Wool Cardigan</a>
+                                <a className="block text-sm text-black hover:text-[#474747] transition-colors duration-300 font-brand" href="/preview/23e7a295-62c1-445b-b0a0-8472d065b6a8/5236221/item/4">Silk Blend Shirt</a>
+                                <a className="block text-sm text-black hover:text-[#474747] transition-colors duration-300 font-brand" href="/preview/23e7a295-62c1-445b-b0a0-8472d065b6a8/5236221/item/6">Merino Wool Cardigan</a>
                             </div>
                         </div>
                     </div>
@@ -65,10 +65,10 @@ export default function LookPage() {
                             />
                         </div>
                         <div className="space-y-3">
-                            <p className="text-xs text-[#474747] tracking-widest" style={{ fontFamily: 'acumin-pro, sans-serif' }}>2024 AUTUMN/WINTER</p>
+                            <p className="text-xs text-[#474747] tracking-widest font-brand">2024 AUTUMN/WINTER</p>
                             <div className="space-y-2">
-                                <a className="block text-sm text-black hover:text-[#474747] transition-colors duration-300" style={{ fontFamily: 'acumin-pro, sans-serif' }} href="/preview/23e7a295-62c1-445b-b0a0-8472d065b6a8/5236221/item/7">Cotton Poplin Dress</a>
-                                <a className="block text-sm text-black hover:text-[#474747] transition-colors duration-300" style={{ fontFamily: 'acumin-pro, sans-serif' }} href="/preview/23e7a295-62c1-445b-b0a0-8472d065b6a8/5236221/item/1">Minimal Wool Coat</a>
+                                <a className="block text-sm text-black hover:text-[#474747] transition-colors duration-300 font-brand" href="/preview/23e7a295-62c1-445b-b0a0-8472d065b6a8/5236221/item/7">Cotton Poplin Dress</a>
+                                <a className="block text-sm text-black hover:text-[#474747] transition-colors duration-300 font-brand" href="/preview/23e7a295-62c1-445b-b0a0-8472d065b6a8/5236221/item/1">Minimal Wool Coat</a>
                             </div>
                         </div>
                     </div>
@@ -82,10 +82,10 @@ export default function LookPage() {
                             />
                         </div>
                         <div className="space-y-3">
-                            <p className="text-xs text-[#474747] tracking-widest" style={{ fontFamily: 'acumin-pro, sans-serif' }}>2024 AUTUMN/WINTER</p>
+                            <p className="text-xs text-[#474747] tracking-widest font-brand">2024 AUTUMN/WINTER</p>
                             <div className="space-y-2">
-                                <a className="block text-sm text-black hover:text-[#474747] transition-colors duration-300" style={{ fontFamily: 'acumin-pro, sans-serif' }} href="/preview/23e7a295-62c1-445b-b0a0-8472d065b6a8/5236221/item/8">Linen Blend Pants</a>
-                                <a className="block text-sm text-black hover:text-[#474747] transition-colors duration-300" style={{ fontFamily: 'acumin-pro, sans-serif' }} href="/preview/23e7a295-62c1-445b-b0a0-8472d065b6a8/5236221/item/5">Cashmere Blend Sweater</a>
+                                <a className="block text-sm text-black hover:text-[#474747] transition-colors duration-300 font-brand" href="/preview/23e7a295-62c1-445b-b0a0-8472d065b6a8/5236221/item/8">Linen Blend Pants</a>
+                                <a className="block text-sm text-black hover:text-[#474747] transition-colors duration-300 font-brand" href="/preview/23e7a295-62c1-445b-b0a0-8472d065b6a8/5236221/item/5">Cashmere Blend Sweater</a>
                             </div>
                         </div>
                     </div>
@@ -99,10 +99,10 @@ export default function LookPage() {
                             />
                         </div>
                         <div className="space-y-3">
-                            <p className="text-xs text-[#474747] tracking-widest" style={{ fontFamily: 'acumin-pro, sans-serif' }}>2024 AUTUMN/WINTER</p>
+                            <p className="text-xs text-[#474747] tracking-widest font-brand">2024 AUTUMN/WINTER</p>
                             <div className="space-y-2">
-                                <a className="block text-sm text-black hover:text-[#474747] transition-colors duration-300" style={{ fontFamily: 'acumin-pro, sans-serif' }} href="/preview/23e7a295-62c1-445b-b0a0-8472d065b6a8/5236221/item/2">Tailored Blazer</a>
-                                <a className="block text-sm text-black hover:text-[#474747] transition-colors duration-300" style={{ fontFamily: 'acumin-pro, sans-serif' }} href="/preview/23e7a295-62c1-445b-b0a0-8472d065b6a8/5236221/item/4">Silk Blend Shirt</a>
+                                <a className="block text-sm text-black hover:text-[#474747] transition-colors duration-300 font-brand" href="/preview/23e7a295-62c1-445b-b0a0-8472d065b6a8/5236221/item/2">Tailored Blazer</a>
+                                <a className="block text-sm text-black hover:text-[#474747] transition-colors duration-300 font-brand" href="/preview/23e7a295-62c1-445b-b0a0-8472d065b6a8/5236221/item/4">Silk Blend Shirt</a>
                             </div>
                         </div>
                     </div>

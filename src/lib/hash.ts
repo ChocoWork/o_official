@@ -43,8 +43,13 @@ export async function verifyPassword(password: string, stored: string) {
 }
 
 // Token hashing: SHA-256 hex digest. Used for refresh tokens / reset tokens persisted in DB.
-export function tokenHashSha256(token: string) {
-  return crypto.createHash('sha256').update(token).digest('hex');
+// Uses Web Crypto API for Edge Runtime compatibility.
+export async function tokenHashSha256(token: string) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(token);
+  const hashBuffer = await globalThis.crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 // Backwards-compatible verify function used by existing code (expecting `verify(plain, storedHash)`)
@@ -52,7 +57,8 @@ export async function verify(plain: string, storedHash: string | null) {
   if (!storedHash) return false;
   // If storedHash looks like a hex sha256 (64 hex chars), compare with sha256
   if (/^[0-9a-f]{64}$/i.test(storedHash)) {
-    return tokenHashSha256(plain) === storedHash;
+    const plainHash = await tokenHashSha256(plain);
+    return plainHash === storedHash;
   }
   // Otherwise handle password-style hashes (argon2 or legacy scrypt)
   return verifyPassword(plain, storedHash);

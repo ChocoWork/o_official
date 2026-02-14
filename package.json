@@ -8,6 +8,10 @@
     "start": "next start",
     "lint": "next lint",
     "test": "jest",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:debug": "playwright test --debug",
     "validate-docs": "node scripts/validate-design-docs.js",
     "check-coverage": "node scripts/generate-coverage-report.js",
     "cleanup:audit-logs": "node scripts/cleanup-audit-logs.js"
@@ -35,6 +39,7 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@mermaid-js/mermaid-cli": "^11.12.0",
+    "@playwright/test": "^1.58.2",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",

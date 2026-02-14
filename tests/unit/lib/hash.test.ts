@@ -1,12 +1,12 @@
 import { tokenHashSha256, hash, verify } from '../../../src/lib/hash';
 
 describe('hash utilities', () => {
-  test('tokenHashSha256 produces expected sha256 hex', () => {
+  test('tokenHashSha256 produces expected sha256 hex', async () => {
     const token = 'my-secret-token';
-    const h = tokenHashSha256(token);
+    const h = await tokenHashSha256(token);
     expect(h).toMatch(/^[0-9a-f]{64}$/i);
     // deterministic
-    expect(tokenHashSha256(token)).toBe(h);
+    expect(await tokenHashSha256(token)).toBe(h);
   });
 
   test('password hash and verify work', async () => {
@@ -21,7 +21,7 @@ describe('hash utilities', () => {
 
   test('verify falls back to sha256 token compare', async () => {
     const token = 'token123';
-    const h = tokenHashSha256(token);
+    const h = await tokenHashSha256(token);
     const ok = await verify(token, h);
     expect(ok).toBe(true);
   });

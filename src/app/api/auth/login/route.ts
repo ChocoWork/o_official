@@ -1,10 +1,8 @@
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
-import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
+import { createClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
 import { LoginRequestSchema } from '@/features/auth/schemas/login';
 import { formatZodError } from '@/features/auth/schemas/common';
-import crypto from 'crypto';
 
 const ACCESS_TOKEN_MAX_AGE = 15 * 60; // 15 minutes
 const REFRESH_TOKEN_MAX_AGE = 7 * 24 * 60 * 60; // 7 days
@@ -53,7 +51,16 @@ export async function POST(request: Request) {
     // set refresh cookie using helpers
     // Synchronously set cookies and persist session info (tests expect DB call to have happened)
     try {
-      const { refreshCookieName, cookieOptionsForRefresh, csrfCookieName, cookieOptionsForCsrf } = await import('@/lib/cookie');
+      const {
+        refreshCookieName,
+        accessCookieName,
+        cookieOptionsForRefresh,
+        cookieOptionsForAccess,
+        csrfCookieName,
+        cookieOptionsForCsrf,
+      } = await import('@/lib/cookie');
+
+      res.cookies.set({ name: accessCookieName, value: session.access_token ?? '', ...cookieOptionsForAccess(ACCESS_TOKEN_MAX_AGE) });
       res.cookies.set({ name: refreshCookieName, value: session.refresh_token ?? '', ...cookieOptionsForRefresh(REFRESH_TOKEN_MAX_AGE) });
 
       // Generate CSRF token and set non-httpOnly cookie; persist its hash alongside session

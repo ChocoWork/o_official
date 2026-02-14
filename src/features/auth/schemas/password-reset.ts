@@ -3,6 +3,7 @@ import { emailSchema, passwordSchema } from './common';
 
 export const ResetRequestSchema = z.object({
   email: emailSchema,
+  turnstileToken: z.string().min(1).optional(),
 });
 
 export type ResetRequest = z.infer<typeof ResetRequestSchema>;

@@ -17,6 +17,11 @@ jest.mock('next/server', () => ({
   },
 }));
 
+// Mock rateLimit middleware to avoid DB calls/noise
+jest.mock('@/features/auth/middleware/rateLimit', () => ({
+  enforceRateLimit: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock('@/lib/supabase/server', () => ({
   createClient: jest.fn(),
   createServiceRoleClient: jest.fn(),
@@ -28,6 +33,7 @@ jest.mock('next/headers', () => ({
 
 let refreshHandler: any;
 const { cookies } = require('next/headers');
+const originalConsoleError = console.error;
 
 describe('Refresh API integration (mocked supabase & headers & fetch)', () => {
   beforeAll(() => {
@@ -36,9 +42,13 @@ describe('Refresh API integration (mocked supabase & headers & fetch)', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
+    console.error = jest.fn();
     // default service client chain
     const { createServiceRoleClient } = require('@/lib/supabase/server');
-    const fromMock = jest.fn((table: string) => ({ update: jest.fn().mockResolvedValue({}), insert: jest.fn().mockResolvedValue({}) }));
+    const fromMock = jest.fn((table: string) => ({
+      update: jest.fn(() => ({ eq: jest.fn().mockResolvedValue({}) })),
+      insert: jest.fn().mockResolvedValue({}),
+    }));
     createServiceRoleClient.mockReturnValue({ from: fromMock });
     // by default, no cookie
     cookies.mockReturnValue({ get: jest.fn().mockReturnValue(undefined) });
@@ -85,7 +95,10 @@ describe('Refresh API integration (mocked supabase & headers & fetch)', () => {
     jest.spyOn(global, 'fetch').mockResolvedValue(fakeTokenResponse);
 
     const { createServiceRoleClient } = require('@/lib/supabase/server');
-    const fromMock = jest.fn((table: string) => ({ update: jest.fn().mockResolvedValue({}), insert: jest.fn().mockResolvedValue({}) }));
+    const fromMock = jest.fn((table: string) => ({
+      update: jest.fn(() => ({ eq: jest.fn().mockResolvedValue({}) })),
+      insert: jest.fn().mockResolvedValue({}),
+    }));
     createServiceRoleClient.mockReturnValue({ from: fromMock });
 
     // Act
@@ -106,5 +119,9 @@ describe('Refresh API integration (mocked supabase & headers & fetch)', () => {
     expect(createServiceRoleClient().from).toHaveBeenCalledWith('sessions');
 
     (global.fetch as jest.MockedFunction<any>).mockRestore();
+  });
+
+  afterEach(() => {
+    console.error = originalConsoleError;
   });
 });

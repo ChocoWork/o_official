@@ -23,9 +23,10 @@ jest.mock('@/lib/supabase/server', () => ({
 
 jest.mock('next/headers', () => ({
   cookies: jest.fn(),
+  headers: jest.fn(),
 }));
 
-const { cookies } = require('next/headers');
+const { cookies, headers } = require('next/headers');
 let logoutHandler: any;
 
 describe('Logout API integration (mocked supabase & headers)', () => {
@@ -37,6 +38,8 @@ describe('Logout API integration (mocked supabase & headers)', () => {
     jest.resetAllMocks();
     // default: no cookie
     cookies.mockReturnValue({ get: jest.fn().mockReturnValue(undefined) });
+    // default: no CSRF header (optional since logout can work without CSRF check in some flows)
+    headers.mockReturnValue({ get: jest.fn().mockReturnValue(null) });
   });
 
   test('no cookie returns 200 and clears cookies', async () => {
@@ -54,12 +57,21 @@ describe('Logout API integration (mocked supabase & headers)', () => {
   });
 
   test('with cookie revokes sessions and clears cookies', async () => {
+    // Mock CSRF verification to allow request
+    const { tokenHashSha256 } = await import('@/lib/hash');
+    const csrfToken = 'valid-csrf-token';
+    const csrfHash = await tokenHashSha256(csrfToken);
+    
     // Arrange: provide cookie and mock DB update chain
     cookies.mockReturnValue({ get: jest.fn().mockReturnValue({ value: 'old-refresh' }) });
+    headers.mockReturnValue({ get: jest.fn().mockReturnValue(csrfToken) }); // Valid CSRF header
 
     const eqMock = jest.fn().mockResolvedValue({});
     const updateMock = jest.fn().mockReturnValue({ eq: eqMock });
-    const fromMock = jest.fn((table: string) => ({ update: updateMock }));
+    const maybeSingleMock = jest.fn().mockResolvedValue({ data: { csrf_token_hash: csrfHash } });
+    const selectEqMock = jest.fn().mockReturnValue({ maybeSingle: maybeSingleMock });
+    const selectMock = jest.fn().mockReturnValue({ eq: selectEqMock });
+    const fromMock = jest.fn((table: string) => ({ update: updateMock, select: selectMock }));
     const { createServiceRoleClient } = require('@/lib/supabase/server');
     createServiceRoleClient.mockReturnValue({ from: fromMock });
 
@@ -82,10 +94,18 @@ describe('Logout API integration (mocked supabase & headers)', () => {
   });
 
   test('DB update failure still clears cookies and returns 200', async () => {
+    const { tokenHashSha256 } = await import('@/lib/hash');
+    const csrfToken = 'valid-csrf-token';
+    const csrfHash = await tokenHashSha256(csrfToken);
+
     cookies.mockReturnValue({ get: jest.fn().mockReturnValue({ value: 'old-refresh' }) });
+    headers.mockReturnValue({ get: jest.fn().mockReturnValue(csrfToken) });
 
     const updateMock = jest.fn(() => { throw new Error('db fail'); });
-    const fromMock = jest.fn((table: string) => ({ update: updateMock }));
+    const maybeSingleMock = jest.fn().mockResolvedValue({ data: { csrf_token_hash: csrfHash } });
+    const selectEqMock = jest.fn().mockReturnValue({ maybeSingle: maybeSingleMock });
+    const selectMock = jest.fn().mockReturnValue({ eq: selectEqMock });
+    const fromMock = jest.fn((table: string) => ({ update: updateMock, select: selectMock }));
     const { createServiceRoleClient } = require('@/lib/supabase/server');
     createServiceRoleClient.mockReturnValue({ from: fromMock });
 

@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServiceRoleClient } from '@/lib/supabase/server';
-import crypto from 'crypto';
 
 const REFRESH_TOKEN_MAX_AGE = 7 * 24 * 60 * 60; // 7 days
 
@@ -58,7 +57,15 @@ export async function POST(request?: Request) {
     const res = NextResponse.json({ access_token: newAccessToken, user }, { status: 200 });
 
     // Use cookie helpers and update CSRF
-    const { refreshCookieName, cookieOptionsForRefresh, csrfCookieName, cookieOptionsForCsrf } = await import('@/lib/cookie');
+    const {
+      refreshCookieName,
+      accessCookieName,
+      cookieOptionsForRefresh,
+      cookieOptionsForAccess,
+      csrfCookieName,
+      cookieOptionsForCsrf,
+    } = await import('@/lib/cookie');
+    res.cookies.set({ name: accessCookieName, value: newAccessToken ?? '', ...cookieOptionsForAccess(expiresIn || 15 * 60) });
     res.cookies.set({ name: refreshCookieName, value: newRefreshToken ?? '', ...cookieOptionsForRefresh(REFRESH_TOKEN_MAX_AGE) });
 
     const { tokenHashSha256 } = await import('@/lib/hash');

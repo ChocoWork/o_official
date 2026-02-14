@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
-import { cookies, headers } from 'next/headers';
+import { cookies } from 'next/headers';
 import { createServiceRoleClient } from '@/lib/supabase/server';
-import crypto from 'crypto';
 
 export async function POST() {
   try {
@@ -17,7 +16,7 @@ export async function POST() {
         const service = createServiceRoleClient();
         const { tokenHashSha256 } = await import('@/lib/hash');
         const { refreshCookieName, csrfCookieName } = await import('@/lib/cookie');
-        const hash = tokenHashSha256(refreshToken);
+        const hash = await tokenHashSha256(refreshToken);
 
         // Delegate to reusable middleware helper. It may return a NextResponse
         // on denial/error, or an object with `rotatedCsrfToken` when rotation
@@ -49,14 +48,14 @@ export async function POST() {
     const res = NextResponse.json({ ok: true }, { status: 200 });
 
     // If CSRF rotation returned a new token, set it as a csrf cookie on the response.
-    const { refreshCookieName, csrfCookieName, clearCookieOptions, cookieOptionsForCsrf } = await import('@/lib/cookie');
+    const { refreshCookieName, accessCookieName, csrfCookieName, clearCookieOptions, cookieOptionsForCsrf } = await import('@/lib/cookie');
     if (csrfResult && (csrfResult as any).rotatedCsrfToken) {
       res.cookies.set({ name: csrfCookieName, value: (csrfResult as any).rotatedCsrfToken, ...cookieOptionsForCsrf(0) });
     }
 
     // Clear cookies using helpers
     res.cookies.set({ name: refreshCookieName, value: '', ...clearCookieOptions() });
-    res.cookies.set({ name: 'sb-access-token', value: '', ...clearCookieOptions() });
+    res.cookies.set({ name: accessCookieName, value: '', ...clearCookieOptions() });
     res.cookies.set({ name: csrfCookieName, value: '', ...clearCookieOptions() });
 
     return res;

@@ -53,6 +53,24 @@
 
 body {
   font-size: 14px;
+  font-family: 'acumin-pro', sans-serif;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: 'Didot', serif;
+}
+
+.font-brand {
+  font-family: 'acumin-pro', sans-serif;
+}
+
+.font-display {
+  font-family: 'Didot', serif;
 }
 
 /* button */
