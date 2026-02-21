@@ -4,7 +4,7 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 
 export async function POST() {
   try {
-    const cookieStore = cookies();
+    const cookieStore = await cookies();
     const refreshToken = cookieStore.get('sb-refresh-token')?.value;
 
     // Prepare variable to capture CSRF middleware result so it's available
@@ -13,7 +13,7 @@ export async function POST() {
 
     if (refreshToken) {
       try {
-        const service = createServiceRoleClient();
+        const service = await createServiceRoleClient();
         const { tokenHashSha256 } = await import('@/lib/hash');
         const { refreshCookieName, csrfCookieName } = await import('@/lib/cookie');
         const hash = await tokenHashSha256(refreshToken);

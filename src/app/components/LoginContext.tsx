@@ -3,12 +3,12 @@
 import React, { createContext, useContext, useState, ReactNode } from "react";
 import { supabase } from '@/lib/supabase/client';
 import type { Session } from '@supabase/supabase-js';
-import { z } from 'zod';
 
 interface LoginContextType {
   isLoggedIn: boolean;
   isAdmin: boolean;
-  login: (email?: string, password?: string) => Promise<{ success: boolean; error?: string }>;
+  sendOtp: (email: string, turnstileToken?: string) => Promise<{ success: boolean; error?: string; message?: string }>;
+  verifyOtp: (email: string, code: string) => Promise<{ success: boolean; error?: string; message?: string }>;
   loginWithGoogle: (params?: { next?: string }) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
 }
@@ -25,40 +25,73 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
 
-  const login = async (email?: string, password?: string) => {
+  const sendOtp = async (email: string, turnstileToken?: string) => {
     try {
-      // client-side validation before sending
-      const { LoginRequestSchema } = await import('@/features/auth/schemas/login');
-      try {
-        LoginRequestSchema.parse({ email: email || '', password: password || '' });
-      } catch (err) {
-        if (err instanceof z.ZodError) {
-          const message = err.issues.map((i) => i.message).join(' ');
-          setIsLoggedIn(false);
-          setIsAdmin(false);
-          return { success: false, error: message };
-        }
-        return { success: false, error: '入力が無効です' };
+      const { IdentifyRequestSchema } = await import('@/features/auth/schemas/identify');
+      const parsed = IdentifyRequestSchema.safeParse({ email, turnstileToken });
+      if (!parsed.success) {
+        return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ') };
       }
 
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email || '',
-        password: password || '',
+      const resp = await fetch('/api/auth/identify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, turnstileToken, redirect_to: '/auth/verified' }),
       });
-      if (error) {
-        console.error('Supabase signIn error', error);
-        setIsLoggedIn(false);
-        setIsAdmin(false);
-        return { success: false, error: error.message || 'ログインに失敗しました' };
+
+      const body: unknown = await resp.json().catch(() => null);
+      if (!resp.ok) {
+        const message =
+          typeof body === 'object' && body && 'error' in body && typeof (body as { error?: unknown }).error === 'string'
+            ? (body as { error: string }).error
+            : 'メール送信に失敗しました';
+        return { success: false, error: message };
       }
-      const userEmail = data.user?.email;
-      setIsLoggedIn(true);
-      setIsAdmin(userEmail === 'aaa@gmail.com');
-      return { success: true };
+
+      const message =
+        typeof body === 'object' && body && 'message' in body && typeof (body as { message?: unknown }).message === 'string'
+          ? (body as { message: string }).message
+          : 'メールを送信しました。受信したリンクをご確認ください。';
+
+      return { success: true, message };
     } catch (e) {
-      console.error('Login error', e);
-      setIsLoggedIn(false);
-      setIsAdmin(false);
+      console.error('OTP send error', e);
+      return { success: false, error: '内部エラーが発生しました' };
+    }
+  };
+
+  const verifyOtp = async (email: string, code: string) => {
+    try {
+      const { OtpVerifyRequestSchema } = await import('@/features/auth/schemas/otp');
+      const parsed = OtpVerifyRequestSchema.safeParse({ email, code });
+      if (!parsed.success) {
+        return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ') };
+      }
+
+      const resp = await fetch('/api/auth/otp/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, code }),
+      });
+
+      const body: unknown = await resp.json().catch(() => null);
+      if (!resp.ok) {
+        const message =
+          typeof body === 'object' && body && 'error' in body && typeof (body as { error?: unknown }).error === 'string'
+            ? (body as { error: string }).error
+            : '認証に失敗しました';
+        return { success: false, error: message };
+      }
+
+      const message =
+        typeof body === 'object' && body && 'message' in body && typeof (body as { message?: unknown }).message === 'string'
+          ? (body as { message: string }).message
+          : '認証に成功しました。';
+
+      setIsLoggedIn(true);
+      return { success: true, message };
+    } catch (e) {
+      console.error('OTP verify error', e);
       return { success: false, error: '内部エラーが発生しました' };
     }
   };
@@ -117,7 +150,7 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   return (
-    <LoginContext.Provider value={{ isLoggedIn, isAdmin, login, loginWithGoogle, logout }}>
+    <LoginContext.Provider value={{ isLoggedIn, isAdmin, sendOtp, verifyOtp, loginWithGoogle, logout }}>
       {children}
     </LoginContext.Provider>
   );

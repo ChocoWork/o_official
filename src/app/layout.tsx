@@ -25,12 +25,12 @@ export const metadata: Metadata = {
 };
 
 // RootLayoutコンポーネントをエクスポート
-export default function RootLayout({
+export default async function RootLayout({
   children,  // `children`はレイアウト内に挿入されるコンテンツ（子コンポーネント）を示す
 }: Readonly<{
   children: React.ReactNode;  // childrenはReactのノード（要素、文字列など）であることを示す
 }>) {
-  const nonce = headers().get('x-nonce') ?? undefined;
+  const nonce = (await headers()).get('x-nonce') ?? undefined;
 
   return (
     <html lang="ja">

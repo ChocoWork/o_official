@@ -5,7 +5,7 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
  * Returns the Supabase response object.
  */
 export async function cleanupAuditLogs({ retentionDays = 365 }: { retentionDays?: number } = {}) {
-  const supabase = createServiceRoleClient();
+  const supabase = await createServiceRoleClient();
   const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
 
   // Supabase PostgREST: delete where created_at < cutoff

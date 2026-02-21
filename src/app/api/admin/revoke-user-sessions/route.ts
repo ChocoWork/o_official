@@ -22,7 +22,7 @@ export async function POST(request: Request) {
     const { user_id } = parsed.data;
 
     try {
-      const service = createServiceRoleClient();
+      const service = await createServiceRoleClient();
       await service.from('sessions').update({ revoked_at: new Date().toISOString() }).eq('user_id', user_id);
       await logAudit({ action: 'admin_revoke_user_sessions', actor_email: null, outcome: 'success', resource_id: user_id });
       return NextResponse.json({ ok: true }, { status: 200 });

@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     if (!parsed.success) return NextResponse.json(formatZodError(parsed.error), { status: 400 });
 
     const { token, email, new_password } = parsed.data;
-    const supabase = createServiceRoleClient();
+    const supabase = await createServiceRoleClient();
 
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 

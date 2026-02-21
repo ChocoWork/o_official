@@ -15,7 +15,7 @@ export default function Page() {
 				</p>
 				<a
 					className="inline-block px-12 py-4 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap font-brand"
-					href="/viewer/readdy-nextjs-v1-prod/d8dd929a55e308/login"
+					href="/login"
 				>
 					ログイン
 				</a>

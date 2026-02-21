@@ -7,11 +7,11 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 // CSRF token (store a new hash) and return the new raw token to the caller so
 // the route can set it as a non-HttpOnly cookie.
 export async function requireCsrfOrDeny() {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const refreshToken = cookieStore.get('sb-refresh-token')?.value;
   if (!refreshToken) return; // no session -> no CSRF required
 
-  const headerToken = headers().get('x-csrf-token');
+  const headerToken = (await headers()).get('x-csrf-token');
   if (!headerToken) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
   const { tokenHashSha256 } = await import('@/lib/hash');
@@ -19,7 +19,7 @@ export async function requireCsrfOrDeny() {
   const providedHash = await tokenHashSha256(headerToken);
 
   try {
-    const service = createServiceRoleClient();
+    const service = await createServiceRoleClient();
     const q = await service.from('sessions').select('csrf_token_hash').eq('refresh_token_hash', refreshHash).maybeSingle();
     const storedHash = q?.data?.csrf_token_hash ?? null;
     if (!storedHash || storedHash !== providedHash) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });

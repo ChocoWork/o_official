@@ -24,7 +24,7 @@ export async function persistSessionAndCookies(res: NextResponse, session: any, 
     const { tokenHashSha256 } = await import('@/lib/hash');
     const { createServiceRoleClient } = await import('@/lib/supabase/server');
 
-    const service = createServiceRoleClient();
+    const service = await createServiceRoleClient();
     const REFRESH_TOKEN_MAX_AGE = 7 * 24 * 60 * 60; // 7 days
 
     const accessToken = session.access_token ?? '';

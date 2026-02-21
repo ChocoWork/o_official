@@ -39,7 +39,7 @@ export async function POST(request: Request) {
     } catch (e) {
       console.error('Rate limit middleware error (password-reset-account):', e);
     }
-    const supabase = createServiceRoleClient();
+    const supabase = await createServiceRoleClient();
 
     // Find user by email in users table (if exists)
     const { data: usersData } = await supabase.from('users').select('id').eq('email', email).maybeSingle();
@@ -48,7 +48,7 @@ export async function POST(request: Request) {
     // Generate secure token and store its hash
     const token = crypto.randomBytes(32).toString('hex');
     const { tokenHashSha256 } = await import('@/lib/hash');
-    const tokenHash = tokenHashSha256(token);
+    const tokenHash = await tokenHashSha256(token);
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 hour
 
     await supabase.from('password_reset_tokens').insert([

@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   /* config options here */
+  devIndicators: false,
   images: {
     remotePatterns: [
       {
@@ -15,6 +16,12 @@ const nextConfig: NextConfig = {
         hostname: '*.supabase.co',
         port: '',
         pathname: '/storage/v1/object/public/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'readdy.ai',
+        port: '',
+        pathname: '/api/search-image',
       },
     ],
   },

@@ -7,7 +7,7 @@ estimate: 12d
 assignee: unassigned
 dependencies: []
 created: 2026-01-17
-updated: 2026-02-11
+updated: 2026-02-14
 refs:
   - docs/specs/01_auth.md
   - docs/seq/01_auth_seq.md
@@ -30,6 +30,32 @@ Next.js + Supabase を前提とした認証基盤を実装する。メール/パ
 - [x] [AUTH-01-SUPA-03] `/api/auth/confirm` の失敗時エラーハンドリング（トークン期限切れ/不正/再利用）と監査ログ
 - [x] [AUTH-01-SUPA-04] 認証Cookie運用の整合性確認（refresh/csrf/access の設定統一・削除・ローテーション）
 - [x] [AUTH-01-SUPA-05] 登録/確認フローの統合テスト追加（confirm を含む E2E/統合の最小1ケース）
+
+---
+
+# 識別子ファースト / JIT + Passwordless 対応（2026-02-14 追加）
+
+方針: Supabase Auth 公式ガイドの Passwordless（Magic Link / OTP）と OAuth を採用し、
+`POST /api/auth/identify` で「メールだけ入力 → 既存ならログイン、未登録なら JIT 作成」を同一フローで扱う。
+
+- [x] [AUTH-01-IDF-01] 仕様整理（Supabase Auth ガイド準拠）
+- [x] [AUTH-01-IDF-02] UI 方針策定（ログイン/新規登録の分離廃止、メール入力 + Google）
+- [x] [AUTH-01-IDF-03] API 設計（`POST /api/auth/identify`、メール列挙防止レスポンス、監査ログ）
+- [x] [AUTH-01-IDF-04] API 実装（`/api/auth/identify` で `signInWithOtp({ shouldCreateUser: true })`）
+- [x] [AUTH-01-IDF-05] 画面実装（`LoginModal` を Passwordless 単一フォームに変更）
+- [x] [AUTH-01-IDF-06] クライアント認証コンテキスト更新（`LoginContext` にメール開始フローを追加）
+- [x] [AUTH-01-IDF-07] Turnstile 連携（サイトキー有効時のみ表示・検証）
+- [x] [AUTH-01-IDF-08] 監査ログイベント追加（`auth.identify` 成功/失敗）
+- [ ] [AUTH-01-IDF-09] テスト追加（identify API 統合 + LoginModal UI）
+- [ ] [AUTH-01-IDF-10] E2E 追加（メールリンク遷移 + Google 導線）
+- [x] [AUTH-01-IDF-11] UI順序変更（Google導線を上部、Email導線を下部）
+- [x] [AUTH-01-IDF-12] Email認証方式をOTPに変更（Magic Link依存を削減）
+- [x] [AUTH-01-IDF-13] パスワード再設定導線の要否見直し（Passwordless方針により削除）
+- [ ] [AUTH-01-IDF-14] Supabaseダッシュボード設定確認（Email provider を OTP コード送信モードに設定し、Magic Link優先挙動を無効化）
+- [x] [AUTH-01-IDF-15] 新規メール時もOTP送信に統一（確認メールテンプレートへのフォールバックを回避）
+  - [x] [AUTH-01-IDF-15a] `POST /api/auth/identify` を修正し、未登録メールはサーバー側でJIT作成（`auth.admin.createUser`）後に OTP 送信へ統一
+  - [x] [AUTH-01-IDF-15b] メール列挙防止レスポンスと監査ログ（成功/失敗）を維持
+  - [x] [AUTH-01-IDF-15c] 統合テスト追加（未登録メールで identify 実行時にOTP送信フローへ入ること）
 
 ---
 

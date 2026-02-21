@@ -19,7 +19,7 @@ export async function POST(request: Request) {
 
     // 管理者用エンドポイントだが、ここはサーバ側で Service Role を使用してユーザを作成する
     const { email, password, display_name } = parsed.data;
-    const supabase = createServiceRoleClient();
+    const supabase = await createServiceRoleClient();
 
     const { data, error } = await supabase.auth.admin.createUser({
       email,

@@ -14,7 +14,7 @@ export async function POST(request?: Request) {
     } catch (e) {
       console.error('Rate limit middleware error (refresh):', e);
     }
-    const cookieStore = cookies();
+    const cookieStore = await cookies();
     const refreshToken = cookieStore.get('sb-refresh-token')?.value;
 
     if (!refreshToken) {
@@ -76,15 +76,15 @@ export async function POST(request?: Request) {
 
     // Update sessions table: revoke old session row(s) and insert new one
     try {
-      const service = createServiceRoleClient();
-      const oldHash = tokenHashSha256(refreshToken ?? '');
+      const service = await createServiceRoleClient();
+      const oldHash = await tokenHashSha256(refreshToken ?? '');
       await service
         .from('sessions')
         .update({ revoked_at: new Date().toISOString() })
         .eq('refresh_token_hash', oldHash);
 
-      const newHash = tokenHashSha256(newRefreshToken ?? '');
-      const csrfHash = tokenHashSha256(newCsrfToken);
+      const newHash = await tokenHashSha256(newRefreshToken ?? '');
+      const csrfHash = await tokenHashSha256(newCsrfToken);
       const expiresAt = expiresIn ? new Date(Date.now() + expiresIn * 1000).toISOString() : null;
 
       await service.from('sessions').insert([

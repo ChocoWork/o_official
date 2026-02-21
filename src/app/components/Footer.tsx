@@ -2,9 +2,9 @@ import React from 'react';
 
 const Footer = () => {
   return (
-    <footer className="bg-black text-white py-16 px-6 lg:px-12 w-full font-brand">
+    <footer className="bg-black text-white py-8 px-6 lg:px-12 w-full font-brand">
       <div className="w-full">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-12 w-full">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-8 w-full">
           <div>
             <h3 className="text-2xl mb-6 tracking-tight font-display">Le Fil des Heures</h3>
             <p className="text-sm text-white/70 leading-relaxed">時を紡ぐニュートラルモードな日常着</p>
@@ -44,7 +44,7 @@ const Footer = () => {
             </div>
           </div>
         </div>
-        <div className="border-t border-white/20 pt-8 flex flex-col md:flex-row justify-between items-center gap-4 w-full">
+        <div className="flex flex-col md:flex-row justify-between items-center gap-4 w-full">
           <p className="text-xs text-white/50">© 2024 Le Fil des Heures. All rights reserved.</p>
           <div className="flex gap-6">
             <a className="text-xs text-white/50 hover:text-white transition-colors duration-300 cursor-pointer" href="/privacy">Privacy Policy</a>

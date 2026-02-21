@@ -11,7 +11,7 @@ export async function GET(request: Request) {
     const token = request.headers.get('x-admin-token');
     if (token !== adminApiKey) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const service = createServiceRoleClient();
+    const service = await createServiceRoleClient();
     const { data, error } = await service.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(100);
     if (error) {
       console.error('Failed to fetch audit logs:', error);
