@@ -22,6 +22,7 @@ export interface NewsArticle {
 export interface NewsFormData {
   title: string;
   category: Exclude<NewsCategory, "ALL">;
+  date: string;
   imageUrl: string;
   content: string;
   detailedContent: string;

@@ -10,6 +10,7 @@ export default function CreateNewsPage() {
   const [formData, setFormData] = useState<NewsFormData>({
     title: '',
     category: 'COLLECTION',
+    date: '',
     imageUrl: '',
     content: '',
     detailedContent: '',
@@ -21,8 +22,8 @@ export default function CreateNewsPage() {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleStatusChange = (status: NewsStatus) => {
-    setFormData(prev => ({ ...prev, status }));
+  const handleStatusChange = (status: string) => {
+    setFormData(prev => ({ ...prev, status: status as NewsStatus }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -47,24 +48,38 @@ export default function CreateNewsPage() {
             />
           </FormField>
 
-          {/* カテゴリー */}
-          <FormField label="カテゴリー">
-            <div className="relative">
-              <select
-                name="category"
-                value={formData.category}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* カテゴリー */}
+            <FormField label="カテゴリー">
+              <div className="relative">
+                <select
+                  name="category"
+                  value={formData.category}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-3 pr-8 border border-black/20 text-sm focus:outline-none focus:border-black appearance-none cursor-pointer font-acumin"
+                >
+                  <option value="COLLECTION">COLLECTION</option>
+                  <option value="EVENT">EVENT</option>
+                  <option value="COLLABORATION">COLLABORATION</option>
+                  <option value="SUSTAINABILITY">SUSTAINABILITY</option>
+                  <option value="STORE">STORE</option>
+                </select>
+                <i className="ri-arrow-down-s-line absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+              </div>
+            </FormField>
+
+            {/* 公開日 */}
+            <FormField label="公開日">
+              <input
+                type="date"
+                name="date"
+                value={formData.date}
                 onChange={handleInputChange}
-                className="w-full px-4 py-3 pr-8 border border-black/20 text-sm focus:outline-none focus:border-black appearance-none cursor-pointer font-acumin"
-              >
-                <option value="COLLECTION">COLLECTION</option>
-                <option value="EVENT">EVENT</option>
-                <option value="COLLABORATION">COLLABORATION</option>
-                <option value="SUSTAINABILITY">SUSTAINABILITY</option>
-                <option value="STORE">STORE</option>
-              </select>
-              <i className="ri-arrow-down-s-line absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>
-            </div>
-          </FormField>
+                required
+                className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black font-acumin"
+              />
+            </FormField>
+          </div>
 
           {/* 画像URL */}
           <FormField label="画像URL">
