@@ -45,7 +45,7 @@ const Footer = () => {
           </div>
         </div>
         <div className="flex flex-col md:flex-row justify-between items-center gap-4 w-full">
-          <p className="text-xs text-white/50">© 2024 Le Fil des Heures. All rights reserved.</p>
+          <p className="text-xs text-white/50">© 2026 Le Fil des Heures. All rights reserved.</p>
           <div className="flex gap-6">
             <a className="text-xs text-white/50 hover:text-white transition-colors duration-300 cursor-pointer" href="/privacy">Privacy Policy</a>
             <a className="text-xs text-white/50 hover:text-white transition-colors duration-300 cursor-pointer" href="/terms">Terms of Service</a>

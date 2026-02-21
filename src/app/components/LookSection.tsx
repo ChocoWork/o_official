@@ -42,16 +42,6 @@ export default function LookSection() {
 
 	return (
 		<section>
-			<div className="flex justify-between items-center mb-8">
-				<h3 className="text-2xl text-black font-didot">LOOK管理</h3>
-				<Link
-					href="/admin/look/create"
-					className="px-8 py-3 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all cursor-pointer whitespace-nowrap font-acumin"
-				>
-					新規作成
-				</Link>
-			</div>
-
 			<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 				{lookItems.map((item) => (
 					<div key={item.id} className="border border-[#d5d0c9] overflow-hidden">

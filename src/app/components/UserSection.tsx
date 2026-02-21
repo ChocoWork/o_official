@@ -34,7 +34,6 @@ export default function UserSection() {
 	return (
 		<section>
 			<div className="flex justify-between items-center mb-8">
-				<h3 className="text-2xl text-black font-didot">USER管理</h3>
 			</div>
 
 			<div className="border border-[#d5d0c9] overflow-hidden">

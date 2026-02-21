@@ -52,15 +52,6 @@ export default function NewsSection() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-8">
-        <h3 className="text-2xl text-black font-didot">NEWS管理</h3>
-        <Link
-          href="/admin/news/create"
-          className="px-8 py-3 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all cursor-pointer whitespace-nowrap font-acumin"
-        >
-          新規作成
-        </Link>
-      </div>
       <div className="space-y-4">
         {newsItems.map((item) => (
           <div key={item.id} className="border border-[#d5d0c9] p-6 flex items-center justify-between">

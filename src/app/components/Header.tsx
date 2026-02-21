@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import React, { useEffect, useRef, useState } from "react";
+import { usePathname } from 'next/navigation';
 import LoginModal from "./LoginModal";
 import { useLogin } from "./LoginContext";
 import "remixicon/fonts/remixicon.css";
@@ -19,7 +20,13 @@ const Header = () => {
   const [loginOpen, setLoginOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
   const { isLoggedIn, isAdmin, logout } = useLogin();
+
+  const isActiveMenuItem = (href: string) => {
+    if (href === '/') return pathname === '/';
+    return pathname === href || pathname.startsWith(`${href}/`);
+  };
 
   useEffect(() => {
     if (!accountMenuOpen) return;
@@ -52,13 +59,21 @@ const Header = () => {
             {menuItems.map((item) => (
               <Link key={item.href} href={item.href} className="text-sm tracking-widest relative group cursor-pointer text-[#474747]">
                 {item.label}
-                <span className="absolute bottom-0 left-0 w-full h-[1px] bg-black transition-transform duration-300 scale-x-0 group-hover:scale-x-100 origin-left"></span>
+                <span
+                  className={`absolute bottom-0 left-0 w-full h-[1px] bg-black transition-transform duration-300 origin-left ${
+                    isActiveMenuItem(item.href) ? 'scale-x-100' : 'scale-x-0 group-hover:scale-x-100'
+                  }`}
+                ></span>
               </Link>
             ))}
             {isAdmin && (
               <Link href="/admin" className="text-sm tracking-widest relative group cursor-pointer text-red-700">
                 Admin
-                <span className="absolute bottom-0 left-0 w-full h-[1px] bg-red-700 transition-transform duration-300 scale-x-0 group-hover:scale-x-100 origin-left"></span>
+                <span
+                  className={`absolute bottom-0 left-0 w-full h-[1px] bg-red-700 transition-transform duration-300 origin-left ${
+                    isActiveMenuItem('/admin') ? 'scale-x-100' : 'scale-x-0 group-hover:scale-x-100'
+                  }`}
+                ></span>
               </Link>
             )}
           </nav>

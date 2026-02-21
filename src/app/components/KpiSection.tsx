@@ -38,8 +38,6 @@ export default function KpiSection() {
 
 	return (
 		<section>
-			<h3 className="text-2xl text-black font-didot mb-8">KPIダッシュボード</h3>
-
 			<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
 				<div className="border border-[#d5d0c9] p-6">
 					<p className="text-xs text-[#474747] tracking-widest mb-2 font-acumin">本日の売上</p>
