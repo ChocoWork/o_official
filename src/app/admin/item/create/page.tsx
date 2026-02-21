@@ -5,8 +5,6 @@ export default function AdminItemCreatePage() {
 	return (
 		<main className="pt-32 pb-20">
 			<div className="max-w-4xl mx-auto px-6 lg:px-12">
-				<h1 className="text-4xl text-black mb-12 tracking-tight font-serif">商品作成</h1>
-
 				<form className="space-y-8">
 					<div>
 						<label className="block text-sm tracking-widest mb-2">商品画像URL</label>

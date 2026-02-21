@@ -34,10 +34,6 @@ export default function CreateNewsPage() {
   return (
     <main className="pt-32 pb-20">
       <div className="max-w-4xl mx-auto px-6 lg:px-12">
-        <h1 className="text-4xl text-black mb-12 tracking-tight font-didot">
-          NEWS記事作成
-        </h1>
-
         <form onSubmit={handleSubmit} className="space-y-8">
           {/* タイトル */}
           <FormField label="タイトル">
