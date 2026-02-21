@@ -4,16 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import FormField from '@/app/components/FormField';
 import RadioGroup from '@/app/components/RadioGroup';
-
-type NewsStatus = 'draft' | 'published';
-
-interface NewsFormData {
-  title: string;
-  category: string;
-  imageUrl: string;
-  content: string;
-  status: NewsStatus;
-}
+import type { NewsFormData, NewsStatus } from '@/types/news';
 
 export default function CreateNewsPage() {
   const [formData, setFormData] = useState<NewsFormData>({
@@ -21,6 +12,7 @@ export default function CreateNewsPage() {
     category: 'COLLECTION',
     imageUrl: '',
     content: '',
+    detailedContent: '',
     status: 'draft',
   });
 
@@ -70,8 +62,9 @@ export default function CreateNewsPage() {
               >
                 <option value="COLLECTION">COLLECTION</option>
                 <option value="EVENT">EVENT</option>
-                <option value="BRAND">BRAND</option>
                 <option value="COLLABORATION">COLLABORATION</option>
+                <option value="SUSTAINABILITY">SUSTAINABILITY</option>
+                <option value="STORE">STORE</option>
               </select>
               <i className="ri-arrow-down-s-line absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>
             </div>
@@ -90,14 +83,28 @@ export default function CreateNewsPage() {
             />
           </FormField>
 
-          {/* 本文 */}
-          <FormField label="本文">
+          {/* 本文（要約） */}
+          <FormField label="本文（要約）">
             <textarea
               name="content"
               value={formData.content}
               onChange={handleInputChange}
+              rows={4}
+              required
+              placeholder="一覧ページに表示される要約文を入力してください"
+              className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black resize-none font-acumin"
+            />
+          </FormField>
+
+          {/* 本文（詳細） */}
+          <FormField label="本文（詳細）">
+            <textarea
+              name="detailedContent"
+              value={formData.detailedContent}
+              onChange={handleInputChange}
               rows={12}
               required
+              placeholder="詳細ページに表示される本文を入力してください"
               className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black resize-none font-acumin"
             />
           </FormField>
