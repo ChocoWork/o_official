@@ -1,7 +1,8 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 
 const CATEGORIES = ['TOPS', 'BOTTOMS', 'OUTERWEAR', 'ACCESSORIES'] as const;
 const SIZES = ['S', 'M', 'L', 'FREE'] as const;
@@ -12,12 +13,27 @@ interface ColorInput {
 	hex: string;
 }
 
+type ColorPresetResponse = {
+	id: number;
+	name: string;
+	hex: string;
+	created_at: string;
+};
+
 export default function AdminItemCreatePage() {
+	const router = useRouter();
 	const [imageFiles, setImageFiles] = useState<File[]>([]);
 	const [previewUrls, setPreviewUrls] = useState<string[]>([]);
 	const [isDragging, setIsDragging] = useState(false);
+	const [isSubmitting, setIsSubmitting] = useState(false);
+	const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
 	const [submitError, setSubmitError] = useState<string | null>(null);
 	const fileInputRef = useRef<HTMLInputElement | null>(null);
+	const [category, setCategory] = useState<(typeof CATEGORIES)[number]>('TOPS');
+	const [itemName, setItemName] = useState('');
+	const [price, setPrice] = useState('');
+	const [description, setDescription] = useState('');
+	const [status, setStatus] = useState<'private' | 'published'>('private');
 
 	const [colors, setColors] = useState<ColorInput[]>([
 		{ id: '1', name: '', hex: '#000000' }
@@ -25,6 +41,27 @@ export default function AdminItemCreatePage() {
 	const [savedColors, setSavedColors] = useState<ColorInput[]>([]);
 	const [selectedSizes, setSelectedSizes] = useState<Set<string>>(new Set());
 	const [productDetails, setProductDetails] = useState<string>('Material : \nMade in : ');
+
+	const fetchSavedColors = async () => {
+		try {
+			const response = await fetch('/api/admin/item-color-presets');
+			if (!response.ok) {
+				throw new Error('Failed to fetch color presets');
+			}
+
+			const json = await response.json();
+			const presetList = (json?.data ?? []) as ColorPresetResponse[];
+			setSavedColors(
+				presetList.map((preset) => ({
+					id: String(preset.id),
+					name: preset.name,
+					hex: preset.hex,
+				}))
+			);
+		} catch (error) {
+			console.error('Failed to load color presets:', error);
+		}
+	};
 
 	const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
 		const selected = e.target.files?.[0];
@@ -58,9 +95,10 @@ export default function AdminItemCreatePage() {
 
 		const reader = new FileReader();
 		reader.onload = () => {
-			if (typeof reader.result === 'string') {
-				setImageFiles([...imageFiles, file]);
-				setPreviewUrls([...previewUrls, reader.result]);
+			const loadedResult = reader.result;
+			if (typeof loadedResult === 'string') {
+				setImageFiles((previousFiles) => [...previousFiles, file]);
+				setPreviewUrls((previousUrls) => [...previousUrls, loadedResult]);
 			}
 		};
 		reader.onerror = () => {
@@ -72,6 +110,21 @@ export default function AdminItemCreatePage() {
 	const removeImage = (index: number) => {
 		setImageFiles(imageFiles.filter((_, i) => i !== index));
 		setPreviewUrls(previewUrls.filter((_, i) => i !== index));
+	};
+
+	const resetForm = () => {
+		setImageFiles([]);
+		setPreviewUrls([]);
+		setCategory('TOPS');
+		setItemName('');
+		setPrice('');
+		setDescription('');
+		setColors([{ id: '1', name: '', hex: '#000000' }]);
+		setSelectedSizes(new Set());
+		setProductDetails('Material : \nMade in : ');
+		setStatus('private');
+		setSubmitError(null);
+		setSubmitSuccess(null);
 	};
 
 	const handleColorChange = (id: string, field: 'name' | 'hex', value: string) => {
@@ -93,14 +146,52 @@ export default function AdminItemCreatePage() {
 
 	const handleSaveColor = (color: ColorInput) => {
 		const trimmedName = color.name.trim();
+		if (!trimmedName) {
+			setSubmitError('保存するカラー名を入力してください');
+			return;
+		}
+
 		const exists = savedColors.some(
 			(saved) => saved.hex === color.hex && saved.name === trimmedName
 		);
 
-		if (!exists) {
-			const newId = String(Date.now());
-			setSavedColors([...savedColors, { id: newId, name: trimmedName, hex: color.hex }]);
+		if (exists) {
+			window.alert('このカラー名と色の組み合わせは既に保存されています。');
+			return;
 		}
+
+		void (async () => {
+			try {
+				const response = await fetch('/api/admin/item-color-presets', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ name: trimmedName, hex: color.hex }),
+				});
+
+				const json = await response.json().catch(() => null);
+				if (!response.ok) {
+					setSubmitError(json?.error ?? 'カラー保存に失敗しました');
+					return;
+				}
+
+				const savedPreset = json?.data as ColorPresetResponse | undefined;
+				if (savedPreset) {
+					setSavedColors((previous) => {
+						if (previous.some((entry) => entry.id === String(savedPreset.id))) {
+							return previous;
+						}
+
+						return [
+							{ id: String(savedPreset.id), name: savedPreset.name, hex: savedPreset.hex },
+							...previous,
+						];
+					});
+				}
+			} catch (error) {
+				console.error('Failed to save color preset:', error);
+				setSubmitError('カラー保存に失敗しました');
+			}
+		})();
 	};
 
 	const handleApplySavedColor = (color: ColorInput) => {
@@ -109,7 +200,22 @@ export default function AdminItemCreatePage() {
 	};
 
 	const handleRemoveSavedColor = (id: string) => {
-		setSavedColors(savedColors.filter((color) => color.id !== id));
+		void (async () => {
+			try {
+				const response = await fetch(`/api/admin/item-color-presets/${id}`, {
+					method: 'DELETE',
+				});
+
+				if (!response.ok) {
+					throw new Error('Failed to delete color preset');
+				}
+
+				setSavedColors((previous) => previous.filter((color) => color.id !== id));
+			} catch (error) {
+				console.error('Failed to delete color preset:', error);
+				setSubmitError('保存済みカラーの削除に失敗しました');
+			}
+		})();
 	};
 
 	const handleSizeToggle = (size: string) => {
@@ -122,10 +228,101 @@ export default function AdminItemCreatePage() {
 		setSelectedSizes(newSizes);
 	};
 
+	const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+		e.preventDefault();
+		setSubmitError(null);
+		setSubmitSuccess(null);
+
+		const trimmedName = itemName.trim();
+		const trimmedDescription = description.trim();
+		const trimmedDetails = productDetails.trim();
+		const parsedPrice = Number(price);
+		const normalizedColors = colors
+			.map((color) => ({ name: color.name.trim(), hex: color.hex }))
+			.filter((color) => color.name.length > 0);
+		const normalizedSizes = Array.from(selectedSizes);
+
+		if (!trimmedName) {
+			setSubmitError('商品名を入力してください');
+			return;
+		}
+
+		if (!trimmedDescription) {
+			setSubmitError('商品情報を入力してください');
+			return;
+		}
+
+		if (!Number.isInteger(parsedPrice) || parsedPrice < 0) {
+			setSubmitError('価格は0以上の整数で入力してください');
+			return;
+		}
+
+		if (imageFiles.length === 0) {
+			setSubmitError('画像を1枚以上追加してください');
+			return;
+		}
+
+		if (normalizedColors.length === 0) {
+			setSubmitError('カラー名を1つ以上入力してください');
+			return;
+		}
+
+		if (normalizedSizes.length === 0) {
+			setSubmitError('サイズを1つ以上選択してください');
+			return;
+		}
+
+		if (!trimmedDetails) {
+			setSubmitError('PRODUCT DETAILSを入力してください');
+			return;
+		}
+
+		setIsSubmitting(true);
+
+		try {
+			const formData = new FormData();
+			formData.append('name', trimmedName);
+			formData.append('description', trimmedDescription);
+			formData.append('price', String(parsedPrice));
+			formData.append('category', category);
+			formData.append('productDetails', trimmedDetails);
+			formData.append('status', status);
+			formData.append('sizes', JSON.stringify(normalizedSizes));
+			formData.append('colors', JSON.stringify(normalizedColors));
+
+			for (const file of imageFiles) {
+				formData.append('images', file);
+			}
+
+			const response = await fetch('/api/admin/items', {
+				method: 'POST',
+				body: formData,
+			});
+
+			const responseJson = await response.json().catch(() => null);
+			if (!response.ok) {
+				setSubmitError(responseJson?.error ?? '商品の保存に失敗しました');
+				return;
+			}
+
+			setSubmitSuccess('商品を保存しました');
+			router.push('/admin?tab=ITEM');
+		} catch (error) {
+			console.error('Failed to submit item:', error);
+			setSubmitError('通信エラーが発生しました。時間をおいて再度お試しください');
+		} finally {
+			setIsSubmitting(false);
+		}
+	};
+
+	useEffect(() => {
+		void fetchSavedColors();
+	}, []);
+
 	return (
 		<main className="pt-32 pb-20">
 			<div className="max-w-4xl mx-auto px-6 lg:px-12">
-				<form className="space-y-8">
+				<form className="space-y-8" onSubmit={handleSubmit}>
 					<div>
 						<label className="block text-sm tracking-widest mb-4">商品画像</label>
 						<div className="grid grid-cols-2 gap-4 mb-6">
@@ -185,7 +382,11 @@ export default function AdminItemCreatePage() {
 					<div>
 						<label className="block text-sm tracking-widest mb-2">カテゴリー</label>
 						<div className="relative">
-							<select className="w-full px-4 py-3 pr-8 border border-black/20 text-sm focus:outline-none focus:border-black appearance-none cursor-pointer">
+							<select
+								className="w-full px-4 py-3 pr-8 border border-black/20 text-sm focus:outline-none focus:border-black appearance-none cursor-pointer"
+								value={category}
+								onChange={(e) => setCategory(e.target.value as (typeof CATEGORIES)[number])}
+							>
 								{CATEGORIES.map((category) => (
 									<option key={category} value={category}>
 										{category}
@@ -202,6 +403,8 @@ export default function AdminItemCreatePage() {
 							className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black"
 							required
 							type="text"
+							value={itemName}
+							onChange={(e) => setItemName(e.target.value)}
 						/>
 					</div>
 
@@ -211,6 +414,8 @@ export default function AdminItemCreatePage() {
 							className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black"
 							required
 							type="number"
+							value={price}
+							onChange={(e) => setPrice(e.target.value)}
 						/>
 					</div>
 
@@ -219,6 +424,8 @@ export default function AdminItemCreatePage() {
 						<textarea
 							rows={4}
 							className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black resize-none"
+							value={description}
+							onChange={(e) => setDescription(e.target.value)}
 							required
 						/>
 					</div>
@@ -341,15 +548,35 @@ export default function AdminItemCreatePage() {
 						<label className="block text-sm tracking-widest mb-2">ステータス</label>
 						<div className="flex gap-4">
 							<label className="flex items-center gap-2 cursor-pointer">
-								<input className="cursor-pointer" type="radio" name="status" value="draft" defaultChecked />
+								<input
+									className="cursor-pointer"
+									type="radio"
+									name="status"
+									value="private"
+									checked={status === 'private'}
+									onChange={() => setStatus('private')}
+								/>
 								<span className="text-sm">非公開</span>
 							</label>
 							<label className="flex items-center gap-2 cursor-pointer">
-								<input className="cursor-pointer" type="radio" name="status" value="published" />
+								<input
+									className="cursor-pointer"
+									type="radio"
+									name="status"
+									value="published"
+									checked={status === 'published'}
+									onChange={() => setStatus('published')}
+								/>
 								<span className="text-sm">公開</span>
 							</label>
 						</div>
 					</div>
+
+					{submitSuccess && (
+						<p className="text-sm text-black" role="status">
+							{submitSuccess}
+						</p>
+					)}
 
 					{submitError && (
 						<p className="text-sm text-red-600" role="alert">
@@ -360,15 +587,18 @@ export default function AdminItemCreatePage() {
 					<div className="flex gap-4">
 						<button
 							type="button"
+							onClick={resetForm}
+							disabled={isSubmitting}
 							className="px-8 py-3 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap"
 						>
 							キャンセル
 						</button>
 						<button
 							type="submit"
+							disabled={isSubmitting}
 							className="px-8 py-3 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap disabled:opacity-50"
 						>
-							保存
+							{isSubmitting ? '保存中...' : '保存'}
 						</button>
 					</div>
 				</form>

@@ -7,7 +7,7 @@ estimate: 4d
 assignee: unassigned
 dependencies: []
 created: 2026-01-17
-updated: 2026-01-17
+updated: 2026-02-22
 ---
 
 # 概要
@@ -37,6 +37,13 @@ updated: 2026-01-17
 
 # チェックリスト
 
+- [x] 管理画面 `/admin/item/create` から `POST /api/admin/items` で商品を保存できる
+- [x] 管理画面 ITEM タブに Supabase 登録済み商品を表示できる
+- [x] 商品登録完了後に `/admin?tab=ITEM` へ遷移する
+- [x] 管理画面 ITEM タブで公開/非公開切替（PATCH）と削除（DELETE）が動作する
+- [x] 管理画面 ITEM タブの編集ボタンから編集ページへ遷移し、更新（PUT）できる
+- [x] 保存済みカラーをDB永続化し、別の新規作成でも再利用できる
+- [x] 編集画面でも保存済みカラーの表示/再利用/削除ができ、新規作成と同じUXになっている
 - [ ] CSV インポートジョブ実装
 - [ ] 管理 API の RBAC 実装
 - [ ] 監査ログ出力追加
