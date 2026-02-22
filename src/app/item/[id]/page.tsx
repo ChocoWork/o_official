@@ -33,6 +33,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             setColor((firstColor as { name: string }).name);
           }
         }
+        // サイズが1つの場合は自動選択
+        if (data.sizes && Array.isArray(data.sizes) && data.sizes.length === 1) {
+          setSize(data.sizes[0]);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "エラーが発生しました");
         console.error("Failed to fetch item:", err);
