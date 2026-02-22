@@ -2,7 +2,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import AdminTabs from '@/app/components/AdminTabs';
 import KpiSection from '@/app/components/KpiSection';
 import NewsSection from '@/app/components/NewsSection';
@@ -77,8 +78,16 @@ const initialOrders: OrderItem[] = [
 ];
 
 export default function AdminPage() {
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabType>('KPI');
   const [orders, setOrders] = useState<OrderItem[]>(initialOrders);
+
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab && ['KPI', 'NEWS', 'ITEM', 'LOOK', 'USER', 'ORDER'].includes(tab)) {
+      setActiveTab(tab as TabType);
+    }
+  }, [searchParams]);
 
   const pendingShipmentCount = useMemo(
     () => orders.filter((order) => order.status === '未出荷').length,

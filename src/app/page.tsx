@@ -1,50 +1,10 @@
-'use client';
-
-import Link from 'next/link';
 import Image from "next/image";
-import { useEffect, useState } from 'react';
-import { Item } from '@/app/types/item';
+import HomeNewsSection from '@/app/components/HomeNewsSection';
+import HomeItemsSection from '@/app/components/HomeItemsSection';
+import { getLatestNews } from '@/app/actions/news';
 
-export default function Home() {
-  const [items, setItems] = useState<Item[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const fetchItems = async () => {
-      try {
-        const response = await fetch('/api/items');
-        if (!response.ok) {
-          throw new Error('Failed to fetch items');
-        }
-        const data: Item[] = await response.json();
-        setItems(data);
-      } catch (err) {
-        setError('商品データの取得に失敗しました');
-        console.error('Failed to fetch items:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchItems();
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-xl">商品データを読み込み中...</div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-xl text-red-500">{error}</div>
-      </div>
-    );
-  }
+export default async function Home() {
+  const latestNews = await getLatestNews();
 
   return (
     <div className="min-h-screen font-sans">
@@ -72,215 +32,8 @@ export default function Home() {
           </div>
         </section>
 
-        {/* News セクション */}
-        <section id="news" className="py-24 lg:py-32 px-6 lg:px-12 bg-white w-full">
-          <div className="max-w-7xl mx-auto">
-            <div className="text-center mb-16 lg:mb-24">
-              <h2 className="text-4xl lg:text-5xl mb-4 text-black tracking-tight font-display">NEWS</h2>
-              <div className="w-16 h-px bg-black mx-auto"></div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 lg:gap-12">
-              <a href="/viewer/readdy-nextjs-v1-prod/2874d3eb57d938/news/1">
-                <article className="group cursor-pointer">
-                  <div className="relative overflow-hidden mb-6 aspect-[4/3]">
-                    <Image
-                      src="/news1.png"
-                      alt="2024 Spring/Summer Collection Launch"
-                      fill
-                      unoptimized
-                      className="w-full h-full object-cover object-center transition-transform duration-700 group-hover:scale-105"
-                      sizes="(max-width: 1024px) 100vw, 33vw"
-                    />
-                  </div>
-                  <div className="space-y-3">
-                    <div className="flex items-center space-x-4 text-xs tracking-widest text-[#474747] font-brand">
-                      <span>2024.03.15</span>
-                      <span className="w-1 h-1 bg-[#474747] rounded-full"></span>
-                      <span>COLLECTION</span>
-                    </div>
-                    <h3 className="text-xl text-black group-hover:text-[#474747] transition-colors duration-300 font-brand">2024 Spring/Summer Collection Launch</h3>
-                    <p className="text-sm text-[#474747] leading-relaxed line-clamp-3 font-brand">新しいシーズンコレクションが登場。ミニマルなデザインと上質な素材が織りなす、洗練された日常着をご覧ください。</p>
-                  </div>
-                </article>
-              </a>
-              <a href="/viewer/readdy-nextjs-v1-prod/2874d3eb57d938/news/2">
-                <article className="group cursor-pointer">
-                  <div className="relative overflow-hidden mb-6 aspect-[4/3]">
-                    <Image
-                      src="/news2.png"
-                      alt="Pop-up Store in Tokyo"
-                      fill
-                      unoptimized
-                      className="w-full h-full object-cover object-center transition-transform duration-700 group-hover:scale-105"
-                      sizes="(max-width: 1024px) 100vw, 33vw"
-                    />
-                  </div>
-                  <div className="space-y-3">
-                    <div className="flex items-center space-x-4 text-xs tracking-widest text-[#474747] font-brand">
-                      <span>2024.03.08</span>
-                      <span className="w-1 h-1 bg-[#474747] rounded-full"></span>
-                      <span>EVENT</span>
-                    </div>
-                    <h3 className="text-xl text-black group-hover:text-[#474747] transition-colors duration-300 font-brand">Pop-up Store in Tokyo</h3>
-                    <p className="text-sm text-[#474747] leading-relaxed line-clamp-3 font-brand">東京・青山にて期間限定ポップアップストアを開催。最新コレクションを実際に手に取ってご覧いただけます。</p>
-                  </div>
-                </article>
-              </a>
-              <a href="/viewer/readdy-nextjs-v1-prod/2874d3eb57d938/news/3">
-                <article className="group cursor-pointer">
-                  <div className="relative overflow-hidden mb-6 aspect-[4/3]">
-                    <Image
-                      src="/news3.png"
-                      alt="Artist Collaboration Series"
-                      fill
-                      unoptimized
-                      className="w-full h-full object-cover object-center transition-transform duration-700 group-hover:scale-105"
-                      sizes="(max-width: 1024px) 100vw, 33vw"
-                    />
-                  </div>
-                  <div className="space-y-3">
-                    <div className="flex items-center space-x-4 text-xs tracking-widest text-[#474747] font-brand">
-                      <span>2024.02.28</span>
-                      <span className="w-1 h-1 bg-[#474747] rounded-full"></span>
-                      <span>COLLABORATION</span>
-                    </div>
-                    <h3 className="text-xl text-black group-hover:text-[#474747] transition-colors duration-300 font-brand">Artist Collaboration Series</h3>
-                    <p className="text-sm text-[#474747] leading-relaxed line-clamp-3 font-brand">気鋭のアーティストとのコラボレーションアイテムが登場。アートとファッションが融合した特別なコレクションです。</p>
-                  </div>
-                </article>
-              </a>
-            </div>
-            <div className="text-center mt-16">
-              <a href="/viewer/readdy-nextjs-v1-prod/2874d3eb57d938/news">
-                <button className="px-12 py-4 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap font-brand">VIEW ALL NEWS</button>
-              </a>
-            </div>
-          </div>
-        </section>
-
-
         {/* Item セクション */}
-        <section className="py-24 lg:py-32 px-6 lg:px-12 bg-white w-full">
-          <div className="max-w-7xl mx-auto">
-            {/* カラムを減らして画像幅を大きく、間隔も広めに */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-12">
-              <Link href="/item/1">
-                <div className="group cursor-pointer">
-                  {/* アスペクト比を指定して横切れを防ぐ */}
-                  <div className="aspect-[3/4] bg-[#f5f5f5] mb-4 overflow-hidden relative">
-                    <Image
-                      src="https://readdy.ai/api/search-image?query=Minimalist%20black%20wool%20coat%20on%20neutral%20beige%20background%20with%20clean%20lines%20and%20elegant%20silhouette%20showcasing%20timeless%20design%20and%20premium%20quality%20fabric%20texture%20in%20professional%20product%20photography&width=600&height=800&seq=item001&orientation=portrait"
-                      alt="Minimal Wool Coat"
-                      fill
-                      className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500"
-                      unoptimized
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-xs text-[#474747] tracking-widest font-brand">OUTERWEAR</p>
-                    <h3 className="text-base text-black tracking-tight font-brand">Minimal Wool Coat</h3>
-                    <p className="text-sm text-black font-brand">¥89,000</p>
-                  </div>
-                </div>
-              </Link>
-              <Link href="/item/2">
-                <div className="group cursor-pointer">
-                  <div className="aspect-[3/4] bg-[#f5f5f5] mb-4 overflow-hidden relative">
-                    <Image
-                      src="https://readdy.ai/api/search-image?query=Elegant%20grey%20wide%20leg%20trousers%20displayed%20on%20white%20background%20with%20minimalist%20styling%20soft%20natural%20lighting%20highlighting%20the%20fabric%20drape%20and%20tailored%20silhouette%20in%20neutral%20tones%20showcasing%20contemporary%20fashion%20with%20clean%20simple%20presentation%20and%20subtle%20texture%20details&width=600&height=800&seq=item002&orientation=portrait"
-                      alt="Wide Leg Trousers"
-                      fill
-                      className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500"
-                      unoptimized
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-xs text-[#474747] tracking-widest font-brand">BOTTOMS</p>
-                    <h3 className="text-base text-black tracking-tight font-brand">Wide Leg Trousers</h3>
-                    <p className="text-sm text-black font-brand">¥32,000</p>
-                  </div>
-                </div>
-              </Link>
-              <Link href="/item/3">
-                <div className="group cursor-pointer">
-                  <div className="aspect-[3/4] bg-[#f5f5f5] mb-4 overflow-hidden relative">
-                    <Image
-                      src="https://readdy.ai/api/search-image?query=Sophisticated%20sand%20beige%20oversized%20coat%20hanging%20on%20minimal%20white%20background%20with%20soft%20studio%20lighting%20emphasizing%20the%20luxurious%20fabric%20texture%20and%20elegant%20draping%20in%20neutral%20tones%20with%20contemporary%20minimalist%20fashion%20photography%20style%20and%20clean%20architectural%20composition&width=600&height=800&seq=item003&orientation=portrait"
-                      alt="Oversized Coat"
-                      fill
-                      className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500"
-                      unoptimized
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-xs text-[#474747] tracking-widest font-brand">OUTERWEAR</p>
-                    <h3 className="text-base text-black tracking-tight font-brand">Oversized Coat</h3>
-                    <p className="text-sm text-black font-brand">¥68,000</p>
-                  </div>
-                </div>
-              </Link>
-              <Link href="/item/4">
-                <div className="group cursor-pointer">
-                  <div className="aspect-[3/4] bg-[#f5f5f5] mb-4 overflow-hidden relative">
-                    <Image
-                      src="https://readdy.ai/api/search-image?query=Minimalist%20grey%20cotton%20knit%20sweater%20folded%20neatly%20on%20pure%20white%20surface%20with%20soft%20natural%20lighting%20highlighting%20the%20knit%20texture%20and%20simple%20elegant%20design%20in%20neutral%20tones%20with%20contemporary%20fashion%20photography%20style%20and%20subtle%20shadows%20creating%20depth&width=600&height=800&seq=item004&orientation=portrait"
-                      alt="Cotton Knit Sweater"
-                      fill
-                      className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500"
-                      unoptimized
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-xs text-[#474747] tracking-widest font-brand">TOPS</p>
-                    <h3 className="text-base text-black tracking-tight font-brand">Cotton Knit Sweater</h3>
-                    <p className="text-sm text-black font-brand">¥24,000</p>
-                  </div>
-                </div>
-              </Link>
-              <a href="/viewer/readdy-nextjs-v1-prod/8ed5d1f76d3598/item/5">
-                <div className="group cursor-pointer">
-                  <div className="aspect-[3/4] bg-[#f5f5f5] mb-4 overflow-hidden relative">
-                    <Image
-                      src="https://readdy.ai/api/search-image?query=Elegant%20beige%20pleated%20midi%20skirt%20displayed%20on%20white%20background%20with%20minimalist%20styling%20soft%20natural%20lighting%20highlighting%20the%20pleated%20fabric%20texture%20and%20flowing%20silhouette%20in%20neutral%20tones%20showcasing%20contemporary%20fashion%20with%20clean%20simple%20presentation&width=600&height=800&seq=item005&orientation=portrait"
-                      alt="Pleated Midi Skirt"
-                      fill
-                      className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500"
-                      unoptimized
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-xs text-[#474747] tracking-widest font-brand">BOTTOMS</p>
-                    <h3 className="text-base text-black tracking-tight font-brand">Pleated Midi Skirt</h3>
-                    <p className="text-sm text-black font-brand">¥26,000</p>
-                  </div>
-                </div>
-              </a>
-              <a href="/viewer/readdy-nextjs-v1-prod/8ed5d1f76d3598/item/6">
-                <div className="group cursor-pointer">
-                  <div className="aspect-[3/4] bg-[#f5f5f5] mb-4 overflow-hidden relative">
-                    <Image
-                      src="https://readdy.ai/api/search-image?query=Sophisticated%20black%20structured%20blazer%20hanging%20on%20minimal%20white%20background%20with%20soft%20studio%20lighting%20emphasizing%20the%20tailored%20silhouette%20and%20luxurious%20fabric%20texture%20in%20neutral%20tones%20with%20contemporary%20minimalist%20fashion%20photography%20style%20and%20clean%20lines&width=600&height=800&seq=item006&orientation=portrait"
-                      alt="Structured Blazer"
-                      fill
-                      className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500"
-                      unoptimized
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-xs text-[#474747] tracking-widest font-brand">OUTERWEAR</p>
-                    <h3 className="text-base text-black tracking-tight font-brand">Structured Blazer</h3>
-                    <p className="text-sm text-black font-brand">¥58,000</p>
-                  </div>
-                </div>
-              </a>
-            </div>
-            <div className="text-center mt-16">
-              <a href="/viewer/readdy-nextjs-v1-prod/8ed5d1f76d3598/item">
-                <button className="px-12 py-4 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap font-brand">VIEW ALL ITEMS</button>
-              </a>
-            </div>
-          </div>
-        </section>
+        <HomeItemsSection />
 
         {/* LOOK セクション */}
         <section id="look" className="py-24 lg:py-32 px-6 lg:px-12 bg-white w-full">
@@ -363,6 +116,10 @@ export default function Home() {
             </div>
           </div>
         </section>
+
+        {/* News セクション */}
+        <HomeNewsSection initialNews={latestNews} />
+
         {/* ABOUT セクション */}
         <section id="about" className="py-24 lg:py-32 px-6 lg:px-12 bg-[#fafafa] w-full">
           <div className="max-w-7xl mx-auto">

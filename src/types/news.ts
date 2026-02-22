@@ -6,7 +6,7 @@ export type NewsCategory =
   | "SUSTAINABILITY"
   | "STORE";
 
-export type NewsStatus = "draft" | "published";
+export type NewsStatus = "private" | "published";
 
 export interface NewsArticle {
   id: number;
@@ -23,7 +23,6 @@ export interface NewsFormData {
   title: string;
   category: Exclude<NewsCategory, "ALL">;
   date: string;
-  imageUrl: string;
   content: string;
   detailedContent: string;
   status: NewsStatus;

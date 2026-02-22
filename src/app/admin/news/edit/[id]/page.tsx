@@ -13,14 +13,27 @@ function getTodayDateString(): string {
   return new Date(now.getTime() - tzOffset).toISOString().slice(0, 10);
 }
 
-export default function CreateNewsPage() {
+type NewsArticle = {
+  id: string;
+  title: string;
+  category: string;
+  published_date: string;
+  image_url: string;
+  content: string;
+  detailed_content: string;
+  status: 'private' | 'published';
+};
+
+export default function EditNewsPage({ params }: { params: { id: string } }) {
   const router = useRouter();
+  const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [formData, setFormData] = useState<NewsFormData>({
@@ -31,6 +44,35 @@ export default function CreateNewsPage() {
     detailedContent: '',
     status: 'private',
   });
+
+  useEffect(() => {
+    const fetchArticle = async () => {
+      try {
+        const res = await fetch(`/api/admin/news/${params.id}`);
+        if (!res.ok) throw new Error('Failed to fetch article');
+        const json = await res.json();
+        const article: NewsArticle = json.data;
+
+        setFormData({
+          title: article.title,
+          category: article.category as NewsFormData['category'],
+          date: article.published_date,
+          content: article.content,
+          detailedContent: article.detailed_content,
+          status: article.status,
+        });
+
+        setExistingImageUrl(article.image_url);
+      } catch (error) {
+        console.error('Failed to load article:', error);
+        setSubmitError('記事の読み込みに失敗しました');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchArticle();
+  }, [params.id]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -77,11 +119,6 @@ export default function CreateNewsPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!imageFile) {
-      setSubmitError('画像を添付してください');
-      return;
-    }
-
     setIsSubmitting(true);
     setSubmitError(null);
     setSubmitSuccess(null);
@@ -94,23 +131,25 @@ export default function CreateNewsPage() {
       requestFormData.append('content', formData.content);
       requestFormData.append('detailedContent', formData.detailedContent);
       requestFormData.append('status', formData.status);
-      requestFormData.append('image', imageFile);
+      
+      if (imageFile) {
+        requestFormData.append('image', imageFile);
+      }
 
-      const response = await fetch('/api/admin/news', {
-        method: 'POST',
+      const response = await fetch(`/api/admin/news/${params.id}`, {
+        method: 'PUT',
         body: requestFormData,
       });
 
       const result = await response.json();
 
       if (!response.ok) {
-        setSubmitError(result?.error ?? '保存に失敗しました');
+        setSubmitError(result?.error ?? '更新に失敗しました');
         return;
       }
 
-      setSubmitSuccess('保存しました');
-      
-      // /admin?tab=NEWS へリダイレクト
+      setSubmitSuccess('更新しました');
+
       setTimeout(() => {
         router.push('/admin?tab=NEWS');
       }, 500);
@@ -139,6 +178,18 @@ export default function CreateNewsPage() {
     };
     reader.readAsDataURL(imageFile);
   }, [imageFile]);
+
+  if (isLoading) {
+    return (
+      <main className="pt-32 pb-20">
+        <div className="max-w-4xl mx-auto px-6 lg:px-12 text-center font-acumin">
+          読み込み中...
+        </div>
+      </main>
+    );
+  }
+
+  const displayImageUrl = previewUrl || existingImageUrl;
 
   return (
     <main className="pt-32 pb-20">
@@ -218,19 +269,19 @@ export default function CreateNewsPage() {
                 onChange={handleFileSelect}
                 className="hidden"
               />
-              {imageFile ? (
+              {displayImageUrl ? (
                 <div className="space-y-4">
-                  <p className="text-sm tracking-widest">{imageFile.name}</p>
-                  {previewUrl && (
-                    <Image
-                      src={previewUrl}
-                      alt="選択画像プレビュー"
-                      width={640}
-                      height={360}
-                      unoptimized
-                      className="mx-auto max-h-56 object-contain"
-                    />
-                  )}
+                  <p className="text-sm tracking-widest">
+                    {imageFile ? `${imageFile.name} (新規)` : '現在の画像'}
+                  </p>
+                  <Image
+                    src={displayImageUrl}
+                    alt="画像プレビュー"
+                    width={640}
+                    height={360}
+                    unoptimized={!!previewUrl}
+                    className="mx-auto max-h-56 object-contain"
+                  />
                   <p className="text-xs text-black/70">クリックまたはドラッグ&ドロップで画像を変更</p>
                 </div>
               ) : (
@@ -295,7 +346,7 @@ export default function CreateNewsPage() {
               disabled={isSubmitting}
               className="px-8 py-3 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap disabled:opacity-50 font-acumin"
             >
-              {isSubmitting ? '保存中...' : '保存'}
+              {isSubmitting ? '更新中...' : '更新'}
             </button>
           </div>
 
