@@ -111,14 +111,23 @@ export default function AdminLookCreatePage() {
 					</div>
 
 					<div>
-						<label className="block text-sm tracking-widest mb-2">シーズンタイトル</label>
-						<input
-							className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black"
-							placeholder="例: Effortless Elegance"
-							required
-							type="text"
-						/>
-					</div>
+					<label className="block text-sm tracking-widest mb-2">シーズンテーマ</label>
+					<input
+						className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black"
+						placeholder="例: Effortless Elegance"
+						required
+						type="text"
+					/>
+				</div>
+
+				<div>
+					<label className="block text-sm tracking-widest mb-2">シーズンテーマ詳細</label>
+					<textarea
+						className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black resize-none"
+						placeholder="このシーズンテーマの説明文を入力してください"
+						rows={4}
+					/>
+				</div>
 
 					<div>
 						<label className="block text-sm tracking-widest mb-2">画像</label>
