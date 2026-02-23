@@ -130,7 +130,7 @@ const Header = () => {
                   role="menu"
                 >
                   <a className="block px-6 py-3 text-xs tracking-wider text-black hover:bg-[#f5f5f5] transition-colors cursor-pointer" href="/account" style={{ fontFamily: 'acumin-pro, sans-serif' }} role="menuitem">会員情報</a>
-                  <a className="block px-6 py-3 text-xs tracking-wider text-black hover:bg-[#f5f5f5] transition-colors cursor-pointer" href="/account" style={{ fontFamily: 'acumin-pro, sans-serif' }} role="menuitem">購入履歴</a>
+                  <a className="block px-6 py-3 text-xs tracking-wider text-black hover:bg-[#f5f5f5] transition-colors cursor-pointer" href="/account?tab=orders" style={{ fontFamily: 'acumin-pro, sans-serif' }} role="menuitem">購入履歴</a>
                   <button
                     className="block w-full text-left px-6 py-3 text-xs tracking-wider text-black hover:bg-[#f5f5f5] transition-colors cursor-pointer"
                     style={{ fontFamily: 'acumin-pro, sans-serif' }}

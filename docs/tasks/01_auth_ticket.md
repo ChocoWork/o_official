@@ -57,6 +57,14 @@ Next.js + Supabase を前提とした認証基盤を実装する。メール/パ
   - [x] [AUTH-01-IDF-15b] メール列挙防止レスポンスと監査ログ（成功/失敗）を維持
   - [x] [AUTH-01-IDF-15c] 統合テスト追加（未登録メールで identify 実行時にOTP送信フローへ入ること）
 
+## Account 画面ログイン判定（2026-02-23 追加）
+
+- [x] [AUTH-01-UI-ACCOUNT-01] `src/app/account/page.tsx` でサーバー側ログイン判定を実装し、未ログイン時は既存のログイン誘導表示、ログイン時は `My Account` レイアウトを表示
+  - [x] 2026-02-23 追記: ヘッダーと同一の `LoginContext`（`supabase.auth.getSession()` ベース）で判定する方式へ統一
+  - [x] 2026-02-23 追記: `LoginContext` に `isAuthResolved` を追加し、`account` で初回判定完了までローディング表示を出してチラつきを抑制
+  - [x] 2026-02-23 追記: `account` 内タブ切替を実装し、「購入履歴」「配送先住所」押下時に指定UIへ切り替え表示
+  - [x] 2026-02-23 追記: `account` から氏名・電話・パスワード項目を外し、注文時入力 + 任意保存（ローカル保存）へ切替。保存済みデータの表示・変更・削除を追加
+
 ---
 
 # セキュリティ対策（必須/推奨・更新版）
@@ -916,4 +924,49 @@ npm run test:e2e:ui
 
 ---
 
-*最終更新: 2026-02-11 (SDD Agent)*
+*最終更新: 2026-02-23 (SDD Agent)*
+
+---
+
+## データ最小化対応（2026-02-23 追加）
+
+### [AUTH-DATA-MIN-01] プライバシー最小化：氏名・電話の任意保存
+
+- **依存**: AUTH-01-01（profiles テーブル作成済み）
+- **対応 REQ**: REQ-AUTH-001（Data Minimization 原則）
+- **仕様書参照**: `docs/specs/01_auth.md` §3（設計思想 - Privacy Minimization）
+
+**実装内容**:
+1. [x] マイグレーション `022_add_optional_profile_fields.sql` 作成
+   - `profiles` テーブルに `optional_name`, `optional_phone`, `updated_at` カラム追加
+   - RLS ポリシー設定（本人のみ SELECT/INSERT/UPDATE/DELETE 可能）
+2. [x] API エンドポイント `/api/profile` 作成（GET/POST/DELETE）
+   - GET: 保存済み氏名・電話取得
+   - POST: upsert で optional_name/optional_phone を保存
+   - DELETE: optional_name/optional_phone を null へ更新
+3. [x] checkout ページ修正
+   - 姓名欄を「姓+名」から単一「氏名」フィールドに統合
+   - 任意保存チェックボックスで同意時のみ `/api/profile` POST
+   - localStorage 依存を削除
+4. [x] account ページ修正
+   - 姓名欄を単一「氏名」フィールドに統合
+   - プロフィール表示・編集・削除を `/api/profile` API 経由に切替
+   - localStorage 依存を削除
+   - 初回ロード中は「読み込み中...」表示
+
+**実装ファイル**:
+- `migrations/022_add_optional_profile_fields.sql`
+- `src/app/api/profile/route.ts`（新規作成）
+- `src/app/checkout/page.tsx`（fullName 統合、API 連携）
+- `src/app/account/page.tsx`（fullName 統合、API 連携、isLoadingProfile 追加）
+
+**破壊的変更**: なし（既存 profiles テーブルへのカラム追加のみ）
+
+**テスト方針**:
+- RLS ポリシーの動作確認（本人以外アクセス不可）
+- checkout からの保存 → account での読込確認
+- 削除操作の確認
+
+---
+
+*最終更新: 2026-02-23 (SDD Agent - Data Minimization 対応完了)*

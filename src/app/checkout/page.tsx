@@ -5,9 +5,72 @@ import Link from 'next/link';
 
 export default function CheckoutPage() {
   const [step, setStep] = useState<number>(1);
+  const [shippingForm, setShippingForm] = useState({
+    email: '',
+    fullName: '',
+    postalCode: '',
+    prefecture: '',
+    city: '',
+    address: '',
+    building: '',
+    phone: '',
+    saveProfile: false,
+  });
 
-  const handleShippingNext = (e: React.FormEvent) => {
+  const handleShippingChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => {
+    const { name, value, type } = e.target;
+    const checked =
+      type === 'checkbox' && 'checked' in e.target
+        ? (e.target as HTMLInputElement).checked
+        : false;
+
+    setShippingForm((prev) => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value,
+    }));
+
+    // 郵便番号自動補完
+    if (name === 'postalCode') {
+      const cleanedZip = value.replace(/[^0-9]/g, '');
+      if (cleanedZip.length === 7) {
+        fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${cleanedZip}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.status === 200 && data.results) {
+              const result = data.results[0];
+              setShippingForm(prev => ({
+                ...prev,
+                prefecture: result.address1 || prev.prefecture,
+                city: result.address2 || prev.city,
+                address: result.address3 || prev.address,
+              }));
+            }
+          })
+          .catch(err => console.error('郵便番号検索エラー:', err));
+      }
+    }
+  };
+
+  const handleShippingNext = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (shippingForm.saveProfile) {
+      const payload = {
+        fullName: shippingForm.fullName.trim(),
+        phone: shippingForm.phone.trim(),
+      };
+
+      if (payload.fullName || payload.phone) {
+        await fetch('/api/profile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      }
+    }
+
     setStep(2);
   };
 
@@ -112,28 +175,22 @@ export default function CheckoutPage() {
                     <div className="space-y-6">
                       <div>
                         <label className="block text-xs text-[#474747] mb-2 tracking-wider font-brand">メールアドレス</label>
-                        <input required className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand" type="email" name="email" defaultValue={""} />
+                        <input required className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand" type="email" name="email" autoComplete="email" value={shippingForm.email} onChange={handleShippingChange} />
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-xs text-[#474747] mb-2 tracking-wider font-brand">姓</label>
-                          <input required className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand" type="text" name="lastName" defaultValue={""} />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-[#474747] mb-2 tracking-wider font-brand">名</label>
-                          <input required className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand" type="text" name="firstName" defaultValue={""} />
-                        </div>
+                      <div>
+                        <label className="block text-xs text-[#474747] mb-2 tracking-wider font-brand">氏名</label>
+                        <input required className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand" type="text" name="fullName" autoComplete="name" value={shippingForm.fullName} onChange={handleShippingChange} />
                       </div>
 
                       <div>
                         <label className="block text-xs text-[#474747] mb-2 tracking-wider font-brand">郵便番号</label>
-                        <input required placeholder="123-4567" className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand" type="text" name="postalCode" defaultValue={""} />
+                        <input required placeholder="123-4567" className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand" type="text" name="postalCode" autoComplete="postal-code" value={shippingForm.postalCode} onChange={handleShippingChange} />
                       </div>
 
                       <div>
                         <label className="block text-xs text-[#474747] mb-2 tracking-wider font-brand">都道府県</label>
-                        <select name="prefecture" required className="w-full px-4 py-3 pr-8 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors cursor-pointer font-brand" defaultValue={""}>
+                        <select name="prefecture" required className="w-full px-4 py-3 pr-8 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors cursor-pointer font-brand" autoComplete="address-level1" value={shippingForm.prefecture} onChange={handleShippingChange}>
                           <option value="">選択してください</option>
                           <option value="東京都">東京都</option>
                           <option value="大阪府">大阪府</option>
@@ -145,22 +202,39 @@ export default function CheckoutPage() {
 
                       <div>
                         <label className="block text-xs text-[#474747] mb-2 tracking-wider font-brand">市区町村</label>
-                        <input required className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand" type="text" name="city" defaultValue={""} />
+                        <input required className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand" type="text" name="city" autoComplete="address-level2" value={shippingForm.city} onChange={handleShippingChange} />
                       </div>
 
                       <div>
                         <label className="block text-xs text-[#474747] mb-2 tracking-wider font-brand">番地</label>
-                        <input required className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand" type="text" name="address" defaultValue={""} />
+                        <input required className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand" type="text" name="address" autoComplete="street-address" value={shippingForm.address} onChange={handleShippingChange} />
                       </div>
 
                       <div>
                         <label className="block text-xs text-[#474747] mb-2 tracking-wider font-brand">建物名・部屋番号（任意）</label>
-                        <input className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand" type="text" name="building" defaultValue={""} />
+                        <input className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand" type="text" name="building" value={shippingForm.building} onChange={handleShippingChange} />
                       </div>
 
                       <div>
                         <label className="block text-xs text-[#474747] mb-2 tracking-wider font-brand">電話番号</label>
-                        <input required placeholder="090-1234-5678" className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand" type="tel" name="phone" defaultValue={""} />
+                        <input required placeholder="090-1234-5678" className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand" type="tel" name="phone" autoComplete="tel" value={shippingForm.phone} onChange={handleShippingChange} />
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <input
+                          id="saveProfile"
+                          className="w-4 h-4 cursor-pointer"
+                          type="checkbox"
+                          name="saveProfile"
+                          checked={shippingForm.saveProfile}
+                          onChange={handleShippingChange}
+                        />
+                        <label
+                          htmlFor="saveProfile"
+                          className="text-xs text-[#474747] tracking-wider font-brand cursor-pointer"
+                        >
+                          氏名と電話番号をプロフィールに任意保存する
+                        </label>
                       </div>
                     </div>
                   </div>

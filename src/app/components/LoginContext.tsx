@@ -7,6 +7,7 @@ import type { Session } from '@supabase/supabase-js';
 interface LoginContextType {
   isLoggedIn: boolean;
   isAdmin: boolean;
+  isAuthResolved: boolean;
   sendOtp: (email: string, turnstileToken?: string) => Promise<{ success: boolean; error?: string; message?: string }>;
   verifyOtp: (email: string, code: string) => Promise<{ success: boolean; error?: string; message?: string }>;
   loginWithGoogle: (params?: { next?: string }) => Promise<{ success: boolean; error?: string }>;
@@ -24,6 +25,7 @@ export const useLogin = () => {
 export const LoginProvider = ({ children }: { children: ReactNode }) => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isAuthResolved, setIsAuthResolved] = useState(false);
 
   const sendOtp = async (email: string, turnstileToken?: string) => {
     try {
@@ -89,6 +91,7 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
           : '認証に成功しました。';
 
       setIsLoggedIn(true);
+      setIsAuthResolved(true);
       return { success: true, message };
     } catch (e) {
       console.error('OTP verify error', e);
@@ -99,7 +102,7 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
   const loginWithGoogle = async (params?: { next?: string }) => {
     try {
       const next = params?.next && params.next.startsWith('/') ? params.next : '/auth/verified';
-      const { data, error } = await supabase.auth.signInWithOAuth({
+      const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
@@ -145,6 +148,10 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
         }
       } catch (e) {
         console.error('Error fetching initial session', e);
+      } finally {
+        if (mounted) {
+          setIsAuthResolved(true);
+        }
       }
     })();
 
@@ -152,6 +159,7 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
       const user = session?.user;
       setIsLoggedIn(!!user);
       setIsAdmin(user?.email === 'aaa@gmail.com');
+      setIsAuthResolved(true);
     });
 
     return () => {
@@ -161,7 +169,7 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   return (
-    <LoginContext.Provider value={{ isLoggedIn, isAdmin, sendOtp, verifyOtp, loginWithGoogle, logout }}>
+    <LoginContext.Provider value={{ isLoggedIn, isAdmin, isAuthResolved, sendOtp, verifyOtp, loginWithGoogle, logout }}>
       {children}
     </LoginContext.Provider>
   );
