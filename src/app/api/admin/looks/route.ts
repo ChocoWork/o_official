@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 
 const lookStatusSchema = z.enum(['private', 'published']);
 
@@ -45,6 +46,11 @@ function parseJsonField<T>(value: FormDataEntryValue | null, schema: z.ZodType<T
 
 export async function POST(request: Request) {
   try {
+    const authz = await authorizeAdminPermission('admin.looks.manage', request);
+    if (!authz.ok) {
+      return authz.response;
+    }
+
     const formData = await request.formData();
 
     const parsedPayload = createLookSchema.safeParse({
@@ -178,8 +184,13 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const authz = await authorizeAdminPermission('admin.looks.read', request);
+    if (!authz.ok) {
+      return authz.response;
+    }
+
     const supabase = await createServiceRoleClient();
 
     const { data, error } = await supabase

@@ -14,7 +14,6 @@ const menuItems = [
   { href: '/look', label: 'LOOK' },
   { href: '/about', label: 'ABOUT' },
   { href: '/stockist', label: 'STOCKIST' },
-  { href: '/admin', label: 'MANAGE' },
 ];
 
 const Header = () => {
@@ -22,7 +21,8 @@ const Header = () => {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
-  const { isLoggedIn, isAdmin, logout } = useLogin();
+  const { isLoggedIn, userRole, logout } = useLogin();
+  const canManage = userRole === 'admin' || userRole === 'supporter';
   const { cartCount } = useCart();
 
   const isActiveMenuItem = (href: string) => {
@@ -68,11 +68,11 @@ const Header = () => {
                 ></span>
               </Link>
             ))}
-            {isAdmin && (
-              <Link href="/admin" className="text-sm tracking-widest relative group cursor-pointer text-red-700">
-                Admin
+            {canManage && (
+              <Link href="/admin" className="text-sm tracking-widest relative group cursor-pointer text-[#474747]">
+                MANAGE
                 <span
-                  className={`absolute bottom-0 left-0 w-full h-[1px] bg-red-700 transition-transform duration-300 origin-left ${
+                  className={`absolute bottom-0 left-0 w-full h-[1px] bg-black transition-transform duration-300 origin-left ${
                     isActiveMenuItem('/admin') ? 'scale-x-100' : 'scale-x-0 group-hover:scale-x-100'
                   }`}
                 ></span>

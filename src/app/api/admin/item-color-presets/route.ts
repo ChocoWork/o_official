@@ -1,14 +1,20 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 
 const colorPresetSchema = z.object({
   name: z.string().trim().min(1).max(40),
   hex: z.string().regex(/^#[0-9a-fA-F]{6}$/),
 });
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const authz = await authorizeAdminPermission('admin.items.read', request);
+    if (!authz.ok) {
+      return authz.response;
+    }
+
     const supabase = await createServiceRoleClient();
 
     const { data, error } = await supabase
@@ -30,6 +36,11 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const authz = await authorizeAdminPermission('admin.items.manage', request);
+    if (!authz.ok) {
+      return authz.response;
+    }
+
     const body = await request.json();
     const parsed = colorPresetSchema.safeParse(body);
 

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
+import { clientFetch } from '@/lib/client-fetch';
 
 type NewsArticle = {
   id: string;
@@ -21,8 +22,12 @@ export default function NewsSection() {
 
   const fetchNews = async () => {
     try {
-      const res = await fetch('/api/admin/news');
-      if (!res.ok) throw new Error('Failed to fetch news');
+      const res = await clientFetch('/api/admin/news');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        console.error(`Failed to fetch news: ${res.status} ${res.statusText}`, errorData);
+        throw new Error(`Failed to fetch news: ${res.status} ${res.statusText}`);
+      }
       const json = await res.json();
       setNewsItems(json.data || []);
     } catch (error) {
@@ -40,7 +45,7 @@ export default function NewsSection() {
     const newStatus = currentStatus === 'published' ? 'private' : 'published';
     
     try {
-      const res = await fetch(`/api/admin/news/${id}`, {
+      const res = await clientFetch(`/api/admin/news/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
@@ -62,7 +67,7 @@ export default function NewsSection() {
     }
 
     try {
-      const res = await fetch(`/api/admin/news/${id}`, {
+      const res = await clientFetch(`/api/admin/news/${id}`, {
         method: 'DELETE',
       });
 

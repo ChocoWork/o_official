@@ -4,7 +4,8 @@
 import Link from 'next/link';
 import { useMemo, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
-import AdminTabs from '@/app/components/AdminTabs';
+import AdminTabs, { type TabType } from '@/app/components/AdminTabs';
+import { useLogin } from '@/app/components/LoginContext';
 import KpiSection from '@/app/components/KpiSection';
 import NewsSection from '@/app/components/NewsSection';
 import ItemSection from '@/app/components/ItemSection';
@@ -12,7 +13,8 @@ import LookSection from '@/app/components/LookSection';
 import UserSection from '@/app/components/UserSection';
 import OrderSection, { type OrderItem, type OrderStatus } from '@/app/components/OrderSection';
 
-type TabType = 'KPI' | 'NEWS' | 'ITEM' | 'LOOK' | 'USER' | 'ORDER';
+const allAdminTabs: TabType[] = ['KPI', 'NEWS', 'ITEM', 'LOOK', 'USER', 'ORDER'];
+const supporterTabs: TabType[] = ['ORDER'];
 
 const statusTransitionMap: Partial<Record<OrderStatus, OrderStatus>> = {
   未出荷: '準備中',
@@ -78,16 +80,48 @@ const initialOrders: OrderItem[] = [
 ];
 
 export default function AdminPage() {
+  const { isLoggedIn, isAuthResolved, userRole } = useLogin();
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabType>('KPI');
   const [orders, setOrders] = useState<OrderItem[]>(initialOrders);
 
-  useEffect(() => {
-    const tab = searchParams.get('tab');
-    if (tab && ['KPI', 'NEWS', 'ITEM', 'LOOK', 'USER', 'ORDER'].includes(tab)) {
-      setActiveTab(tab as TabType);
+  const visibleTabs = useMemo<TabType[]>(() => {
+    if (userRole === 'admin') {
+      return allAdminTabs;
     }
-  }, [searchParams]);
+
+    if (userRole === 'supporter') {
+      return supporterTabs;
+    }
+
+    return [];
+  }, [userRole]);
+
+  const canAccessAdmin = visibleTabs.length > 0;
+
+  useEffect(() => {
+    if (!canAccessAdmin) {
+      return;
+    }
+
+    const tab = searchParams.get('tab');
+    if (tab && visibleTabs.includes(tab as TabType)) {
+      setActiveTab(tab as TabType);
+      return;
+    }
+
+    setActiveTab(visibleTabs[0]);
+  }, [searchParams, visibleTabs, canAccessAdmin]);
+
+  useEffect(() => {
+    if (!canAccessAdmin) {
+      return;
+    }
+
+    if (!visibleTabs.includes(activeTab)) {
+      setActiveTab(visibleTabs[0]);
+    }
+  }, [activeTab, visibleTabs, canAccessAdmin]);
 
   const pendingShipmentCount = useMemo(
     () => orders.filter((order) => order.status === '未出荷').length,
@@ -118,6 +152,7 @@ export default function AdminPage() {
   const tabRightContent = (() => {
     switch (activeTab) {
       case 'NEWS':
+        if (userRole !== 'admin') return null;
         return (
           <Link
             href="/admin/news/create"
@@ -127,6 +162,7 @@ export default function AdminPage() {
           </Link>
         );
       case 'ITEM':
+        if (userRole !== 'admin') return null;
         return (
           <Link
             href="/admin/item/create"
@@ -136,6 +172,7 @@ export default function AdminPage() {
           </Link>
         );
       case 'LOOK':
+        if (userRole !== 'admin') return null;
         return (
           <Link
             href="/admin/look/create"
@@ -165,26 +202,60 @@ export default function AdminPage() {
   const renderContent = () => {
     switch (activeTab) {
       case 'KPI':
+        if (userRole !== 'admin') return null;
         return <KpiSection />;
       case 'NEWS':
+        if (userRole !== 'admin') return null;
         return <NewsSection />;
       case 'ITEM':
+        if (userRole !== 'admin') return null;
         return <ItemSection />;
       case 'LOOK':
+        if (userRole !== 'admin') return null;
         return <LookSection />;
       case 'USER':
+        if (userRole !== 'admin') return null;
         return <UserSection />;
       case 'ORDER':
         return <OrderSection orders={orders} onTransitStatus={handleTransitStatus} />;
       default:
-        return <KpiSection />;
+        return null;
     }
+  };
+
+  if (!isAuthResolved) {
+    return (
+      <main className="pt-24 pb-20 px-6 lg:px-12">
+        <div className="max-w-7xl mx-auto">
+          <p className="text-sm text-[#474747] font-acumin">読み込み中...</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (!isLoggedIn || !canAccessAdmin) {
+    return (
+      <main className="pt-24 pb-20 px-6 lg:px-12">
+        <div className="max-w-7xl mx-auto">
+          <h1 className="text-2xl text-black mb-4 font-display">アクセス権限がありません</h1>
+          <p className="text-sm text-[#474747] font-acumin">このページは Admin または Supporter のみ利用できます。</p>
+        </div>
+      </main>
+    );
+  }
+
+  const handleTabChange = (tab: TabType) => {
+    if (!visibleTabs.includes(tab)) {
+      return;
+    }
+
+    setActiveTab(tab);
   };
 
   return (
     <main className="pt-24 pb-20 px-6 lg:px-12">
       <div className="max-w-7xl mx-auto">
-        <AdminTabs activeTab={activeTab} onTabChange={setActiveTab} rightContent={tabRightContent} />
+        <AdminTabs activeTab={activeTab} onTabChange={handleTabChange} tabs={visibleTabs} rightContent={tabRightContent} />
         {renderContent()}
       </div>
     </main>

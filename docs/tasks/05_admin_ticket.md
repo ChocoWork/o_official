@@ -7,7 +7,7 @@ estimate: 4d
 assignee: unassigned
 dependencies: []
 created: 2026-01-17
-updated: 2026-02-22
+updated: 2026-02-23
 ---
 
 # 概要
@@ -49,6 +49,16 @@ updated: 2026-02-22
 - [x] 管理画面 LOOK タブに Supabase 登録済みLOOKを表示できる
 - [x] 管理画面 LOOK タブで公開/非公開切替（PATCH）と削除（DELETE）が動作する
 - [x] 管理画面 LOOK タブの編集ボタンから編集ページへ遷移し、更新（PUT）できる
+- [x] 管理画面 USER タブで DB（auth.users + profiles）連携の一覧表示ができる
+- [x] 管理画面 USER タブで権限（admin/supporter/user）をプルダウン変更し保存できる
+- [x] 管理画面 USER タブの権限列・セレクト幅が全行で統一されている
+- [x] `/api/admin/users` に RBAC を実装（GET: admin/supporter, PATCH: admin のみ）
+- [x] Header の `MANAGE` メニューを Admin / Supporter のみに表示
+- [x] Admin は管理画面の全タブを表示・操作できる
+- [x] Supporter は ORDER タブのみ表示・操作できる
+- [x] 管理 API の RBAC 実装（users 以外の admin API へ横展開）
+  - `src/lib/auth/admin-rbac.ts`: ハイブリッド RBAC ヘルパー（トークン役割 + DB ACL クエリ）
+  - Migration 023: roles, permissions, role_permissions, user_roles テーブル + RLS ポリシー + has_permission()
+  - items, news, looks, item-color-presets API に permission code ゲート適用
 - [ ] CSV インポートジョブ実装
-- [ ] 管理 API の RBAC 実装
 - [ ] 監査ログ出力追加

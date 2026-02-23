@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { clientFetch } from '@/lib/client-fetch';
 
 type AdminLookItem = {
 	id: number;
@@ -19,7 +20,7 @@ export default function LookSection() {
 
 	const fetchLooks = async () => {
 		try {
-			const res = await fetch('/api/admin/looks');
+			const res = await clientFetch('/api/admin/looks');
 			if (!res.ok) {
 				throw new Error('Failed to fetch looks');
 			}
@@ -41,7 +42,7 @@ export default function LookSection() {
 		const nextStatus = currentStatus === 'published' ? 'private' : 'published';
 
 		try {
-			const res = await fetch(`/api/admin/looks/${id}`, {
+			const res = await clientFetch(`/api/admin/looks/${id}`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ status: nextStatus }),
@@ -64,7 +65,7 @@ export default function LookSection() {
 		}
 
 		try {
-			const res = await fetch(`/api/admin/looks/${id}`, {
+			const res = await clientFetch(`/api/admin/looks/${id}`, {
 				method: 'DELETE',
 			});
 

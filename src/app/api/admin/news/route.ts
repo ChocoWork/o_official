@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 
 const createNewsSchema = z.object({
   title: z.string().trim().min(1).max(200),
@@ -16,6 +17,11 @@ const maxImageBytes = 5 * 1024 * 1024;
 
 export async function POST(request: Request) {
   try {
+    const authz = await authorizeAdminPermission('admin.news.manage', request);
+    if (!authz.ok) {
+      return authz.response;
+    }
+
     const formData = await request.formData();
     const image = formData.get('image');
 
@@ -101,8 +107,13 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const authz = await authorizeAdminPermission('admin.news.read', request);
+    if (!authz.ok) {
+      return authz.response;
+    }
+
     const supabase = await createServiceRoleClient();
 
     const { data, error } = await supabase

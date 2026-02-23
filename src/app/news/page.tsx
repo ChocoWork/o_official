@@ -16,10 +16,11 @@ type NewsArticle = {
 export default async function NewsPage({
   searchParams,
 }: {
-  searchParams?: { category?: string };
+  searchParams?: Promise<{ category?: string }>;
 }) {
   const supabase = await createClient();
-  const selectedCategory = (searchParams?.category ?? "ALL").toUpperCase();
+  const params = await searchParams;
+  const selectedCategory = (params?.category ?? "ALL").toUpperCase();
   const activeCategory = categories.includes(
     selectedCategory as (typeof categories)[number],
   )

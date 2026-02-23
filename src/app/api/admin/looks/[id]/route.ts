@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 
 const lookStatusSchema = z.enum(['private', 'published']);
 
@@ -49,6 +50,11 @@ function parseJsonField<T>(value: FormDataEntryValue | null, schema: z.ZodType<T
 
 export async function GET(request: Request, { params }: { params: { id: string } }) {
   try {
+    const authz = await authorizeAdminPermission('admin.looks.read', request);
+    if (!authz.ok) {
+      return authz.response;
+    }
+
     const supabase = await createServiceRoleClient();
 
     const { data: lookData, error: lookError } = await supabase
@@ -90,6 +96,11 @@ export async function GET(request: Request, { params }: { params: { id: string }
 
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
   try {
+    const authz = await authorizeAdminPermission('admin.looks.manage', request);
+    if (!authz.ok) {
+      return authz.response;
+    }
+
     const formData = await request.formData();
 
     const parsedPayload = updateLookSchema.safeParse({
@@ -238,6 +249,11 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
   try {
+    const authz = await authorizeAdminPermission('admin.looks.manage', request);
+    if (!authz.ok) {
+      return authz.response;
+    }
+
     const body = await request.json();
     const parsed = patchStatusSchema.safeParse(body);
 
@@ -272,6 +288,11 @@ export async function PATCH(request: Request, { params }: { params: { id: string
 
 export async function DELETE(request: Request, { params }: { params: { id: string } }) {
   try {
+    const authz = await authorizeAdminPermission('admin.looks.manage', request);
+    if (!authz.ok) {
+      return authz.response;
+    }
+
     const supabase = await createServiceRoleClient();
 
     const { error } = await supabase.from('looks').delete().eq('id', params.id);

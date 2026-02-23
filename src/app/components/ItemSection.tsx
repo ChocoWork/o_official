@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
+import { clientFetch } from '@/lib/client-fetch';
 
 interface AdminItem {
   id: number;
@@ -77,7 +78,7 @@ export default function ItemSection() {
 
   const fetchItems = async () => {
     try {
-      const res = await fetch('/api/admin/items');
+      const res = await clientFetch('/api/admin/items');
       if (!res.ok) {
         throw new Error('Failed to fetch items');
       }
@@ -99,7 +100,7 @@ export default function ItemSection() {
     const nextStatus = currentStatus === 'published' ? 'private' : 'published';
 
     try {
-      const res = await fetch(`/api/admin/items/${id}`, {
+      const res = await clientFetch(`/api/admin/items/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: nextStatus }),
@@ -122,7 +123,7 @@ export default function ItemSection() {
     }
 
     try {
-      const res = await fetch(`/api/admin/items/${id}`, {
+      const res = await clientFetch(`/api/admin/items/${id}`, {
         method: 'DELETE',
       });
 

@@ -4,9 +4,21 @@ import React, { createContext, useContext, useState, ReactNode } from "react";
 import { supabase } from '@/lib/supabase/client';
 import type { Session } from '@supabase/supabase-js';
 
+type UserRole = 'admin' | 'supporter' | 'user';
+
+const isUserRole = (role: unknown): role is UserRole => {
+  return role === 'admin' || role === 'supporter' || role === 'user';
+};
+
+const getRoleFromSession = (session: Session | null): UserRole => {
+  const rawRole = session?.user?.app_metadata?.role;
+  return isUserRole(rawRole) ? rawRole : 'user';
+};
+
 interface LoginContextType {
   isLoggedIn: boolean;
   isAdmin: boolean;
+  userRole: UserRole;
   isAuthResolved: boolean;
   sendOtp: (email: string, turnstileToken?: string) => Promise<{ success: boolean; error?: string; message?: string }>;
   verifyOtp: (email: string, code: string) => Promise<{ success: boolean; error?: string; message?: string }>;
@@ -25,6 +37,7 @@ export const useLogin = () => {
 export const LoginProvider = ({ children }: { children: ReactNode }) => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [userRole, setUserRole] = useState<UserRole>('user');
   const [isAuthResolved, setIsAuthResolved] = useState(false);
 
   const sendOtp = async (email: string, turnstileToken?: string) => {
@@ -131,6 +144,7 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
       } finally {
         setIsLoggedIn(false);
         setIsAdmin(false);
+        setUserRole('user');
       }
     })();
   };
@@ -143,8 +157,10 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
         const { data } = await supabase.auth.getSession();
         const session = data.session;
         if (mounted && session?.user) {
+          const role = getRoleFromSession(session);
           setIsLoggedIn(true);
-          setIsAdmin(session.user.email === 'aaa@gmail.com');
+          setUserRole(role);
+          setIsAdmin(role === 'admin');
         }
       } catch (e) {
         console.error('Error fetching initial session', e);
@@ -157,8 +173,10 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session: Session | null) => {
       const user = session?.user;
+      const role = getRoleFromSession(session);
       setIsLoggedIn(!!user);
-      setIsAdmin(user?.email === 'aaa@gmail.com');
+      setUserRole(role);
+      setIsAdmin(!!user && role === 'admin');
       setIsAuthResolved(true);
     });
 
@@ -169,7 +187,7 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   return (
-    <LoginContext.Provider value={{ isLoggedIn, isAdmin, isAuthResolved, sendOtp, verifyOtp, loginWithGoogle, logout }}>
+    <LoginContext.Provider value={{ isLoggedIn, isAdmin, userRole, isAuthResolved, sendOtp, verifyOtp, loginWithGoogle, logout }}>
       {children}
     </LoginContext.Provider>
   );

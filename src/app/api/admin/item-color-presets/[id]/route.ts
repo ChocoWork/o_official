@@ -1,8 +1,14 @@
 import { NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 
 export async function DELETE(request: Request, { params }: { params: { id: string } }) {
   try {
+    const authz = await authorizeAdminPermission('admin.items.manage', request);
+    if (!authz.ok) {
+      return authz.response;
+    }
+
     const supabase = await createServiceRoleClient();
 
     const { error } = await supabase

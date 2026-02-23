@@ -1,12 +1,32 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 
-// ブラウザ/Edge ランタイム向けに Cookie を使ってユーザセッションを復元するクライアント
-export async function createClient(): Promise<SupabaseClient> {
+// Authorization Header から Bearer token を抽出する
+export function extractBearerToken(request?: Request): string | null {
+  if (!request) return null;
+
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) return null;
+
+  const token = authHeader.substring(7);
+  console.log('[Supabase] Bearer token found in Authorization header');
+  return token;
+}
+
+// API ルート向け：Request オブジェクトから Cookie または Authorization ヘッダーを読み取りセッション復元
+export async function createClient(request?: Request): Promise<SupabaseClient> {
   const cookieStore = await cookies();
-  const authToken = cookieStore.get('sb-access-token')?.value;
+  const headersList = await headers();
 
   const { createClient: createSupabaseClient } = await import('@supabase/supabase-js');
+
+  // Authorization header から Bearer token を取得（優先順位：Authorization > Cookie）
+  const bearerToken = extractBearerToken(request);
+  
+  // Request がある場合はそこから Cookie を読み取る、なければ next/headers を使う
+  const cookieHeader = request ? request.headers.get('cookie') : headersList.get('cookie');
+
+  console.log('[Supabase] Cookie header:', cookieHeader?.substring(0, 100));
 
   const supabase = createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,16 +34,79 @@ export async function createClient(): Promise<SupabaseClient> {
     {
       auth: {
         autoRefreshToken: true,
-        persistSession: true,
+        persistSession: false,
         detectSessionInUrl: false,
       },
-      global: authToken
-        ? {
-            headers: {
-              Authorization: `Bearer ${authToken}`,
-            },
+      cookies: {
+        getAll() {
+          // Authorization header に Bearer token がある場合は synthetic session を返す
+          if (bearerToken) {
+            console.log('[Supabase.Session] Using Bearer token from Authorization header');
+            return [
+              {
+                name: 'sb-access-token',
+                value: bearerToken,
+              },
+            ];
           }
-        : {},
+
+          const result: Array<{ name: string; value: string }> = [];
+          
+          if (cookieHeader) {
+            // Cookie ヘッダーから手動で解析
+            const cookiePairs = cookieHeader.split(';');
+            for (const pair of cookiePairs) {
+              const trimmed = pair.trim();
+              const eqIndex = trimmed.indexOf('=');
+              if (eqIndex > 0) {
+                const name = trimmed.substring(0, eqIndex);
+                const rawValue = trimmed.substring(eqIndex + 1);
+                
+                // URL デコード
+                let decodedValue = rawValue;
+                try {
+                  decodedValue = decodeURIComponent(rawValue);
+                } catch (e) {
+                  console.warn(`[Supabase.Cookie] Failed to decode ${name}: ${e}`);
+                }
+                
+                result.push({ name, value: decodedValue });
+                
+                // トークン関連の Cookie は詳しくログ
+                if (name.includes('sb-') || name.includes('refresh') || name.includes('access') || name.includes('session')) {
+                  console.log(`[Supabase.Cookie] ${name}:`);
+                  console.log(`  Raw: ${rawValue.substring(0, 60)}`);
+                  console.log(`  Decoded: ${decodedValue.substring(0, 60)}`);
+                  console.log(`  Length: ${decodedValue.length}`);
+                }
+              }
+            }
+          } else {
+            // Fallback：next/headers から
+            console.log('[Supabase.Cookie] No cookieHeader from Request, falling back to next/headers');
+            return cookieStore.getAll();
+          }
+
+          console.log(`[Supabase.Cookie] Total ${result.length} cookies parsed from header`);
+          return result;
+        },
+        setAll(cookiesToSet) {
+          if (bearerToken) {
+            // Bearer token を使っている場合は setAll を無視（Cookie を設定しない）
+            console.log('[Supabase.Session] Ignoring setAll when using Bearer token');
+            return;
+          }
+
+          try {
+            for (const { name, value, options } of cookiesToSet) {
+              console.log(`[Supabase.Cookie.setAll] Setting ${name}`);
+              cookieStore.set(name, value, options);
+            }
+          } catch (error) {
+            console.warn('[Supabase.Cookie.setAll] Failed:', error);
+          }
+        },
+      },
     }
   );
 
