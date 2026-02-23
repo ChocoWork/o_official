@@ -99,8 +99,19 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
   const loginWithGoogle = async (params?: { next?: string }) => {
     try {
       const next = params?.next && params.next.startsWith('/') ? params.next : '/auth/verified';
-      const url = `/api/auth/oauth/start?provider=google&redirect_to=${encodeURIComponent(next)}`;
-      window.location.assign(url);
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+        },
+      });
+      
+      if (error) {
+        console.error('OAuth start error', error);
+        return { success: false, error: error.message };
+      }
+      
+      // ブラウザは自動的に data.url にリダイレクトされる
       return { success: true };
     } catch (e) {
       console.error('OAuth login error', e);
