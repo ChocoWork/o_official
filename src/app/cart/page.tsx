@@ -1,129 +1,326 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Link from 'next/link';
+import Image from "next/image";
+import { useCart } from "@/app/components/CartContext";
+
+interface CartItem {
+  id: string;
+  item_id: number;
+  quantity: number;
+  color: string | null;
+  size: string | null;
+  added_at: string;
+  items: {
+    id: number;
+    name: string;
+    price: number;
+    image_url: string;
+    category: string;
+  };
+}
 
 export default function CartPage() {
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [togglingWishlist, setTogglingWishlist] = useState<string | null>(null);
+  const { updateCartCount, wishlistedItems, toggleWishlist } = useCart();
+
+  useEffect(() => {
+    fetchCart();
+  }, []);
+
+  const fetchCart = async () => {
+    try {
+      const response = await fetch('/api/cart');
+      if (!response.ok) {
+        throw new Error('カートの取得に失敗しました');
+      }
+      const data = await response.json();
+      setCartItems(data);
+    } catch (err) {
+      console.error('Error fetching cart:', err);
+      setError(err instanceof Error ? err.message : 'エラーが発生しました');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleQuantityChange = async (cartId: string, newQuantity: number) => {
+    if (newQuantity < 1) return;
+
+    setUpdatingId(cartId);
+    try {
+      const response = await fetch(`/api/cart/${cartId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quantity: newQuantity }),
+      });
+
+      if (!response.ok) {
+        throw new Error('数量更新に失敗しました');
+      }
+
+      setCartItems(
+        cartItems.map((item) =>
+          item.id === cartId ? { ...item, quantity: newQuantity } : item
+        )
+      );
+
+      // Update cart count in context
+      await updateCartCount();
+    } catch (err) {
+      console.error('Error updating quantity:', err);
+      alert(err instanceof Error ? err.message : 'エラーが発生しました');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const handleRemove = async (cartId: string) => {
+    setUpdatingId(cartId);
+    try {
+      const response = await fetch(`/api/cart/${cartId}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        throw new Error('削除に失敗しました');
+      }
+
+      setCartItems(cartItems.filter((item) => item.id !== cartId));
+
+      // Update cart count in context
+      await updateCartCount();
+    } catch (err) {
+      console.error('Error removing from cart:', err);
+      alert(err instanceof Error ? err.message : 'エラーが発生しました');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const handleToggleWishlist = async (itemId: number) => {
+    setTogglingWishlist(itemId.toString());
+    try {
+      await toggleWishlist(itemId);
+    } catch (error) {
+      console.error('Error toggling wishlist:', error);
+      alert(error instanceof Error ? error.message : 'エラーが発生しました');
+    } finally {
+      setTogglingWishlist(null);
+    }
+  };
+
+  const subtotal = cartItems.reduce(
+    (sum, item) => sum + item.items.price * item.quantity,
+    0
+  );
+
+  const total = subtotal;
+
+  if (loading) {
+    return (
+      <main className="pt-32 pb-20 px-6 lg:px-12">
+        <div className="max-w-7xl mx-auto text-center">
+          <div className="text-base tracking-widest font-brand">読み込み中...</div>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="pt-32 pb-20 px-6 lg:px-12">
       <div className="max-w-7xl mx-auto">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
           <div className="lg:col-span-2 space-y-6">
-            <div className="flex gap-6 border-b border-black/10 pb-6 relative group">
-              <Link href="/item/1" className="w-32 h-40 bg-[#f5f5f5] flex-shrink-0 overflow-hidden">
-                <img alt="シルクブラウス" className="w-full h-full object-cover object-top hover:scale-105 transition-transform duration-500" src="https://readdy.ai/api/search-image?query=elegant%20black%20silk%20blouse%20on%20white%20background%20minimalist%20fashion%20photography%20high%20quality%20luxury%20fabric%20texture%20soft%20lighting%20professional%20product%20shot%20clean%20simple%20backdrop&amp;width=400&amp;height=500&amp;seq=cart1&amp;orientation=portrait" />
-              </Link>
-              <div className="flex-1">
-                <div className="flex justify-between items-start mb-2">
-                  <Link href="/item/1">
-                    <h3 className="text-lg text-black hover:text-[#474747] transition-colors cursor-pointer font-brand">シルクブラウス</h3>
-                  </Link>
-                  <div className="flex items-center gap-2">
-                    <button className="w-8 h-8 flex items-center justify-center text-[#474747] hover:text-red-600 transition-colors cursor-pointer opacity-0 group-hover:opacity-100"><i className="ri-heart-line text-xl"></i></button>
-                    <button className="w-8 h-8 flex items-center justify-center text-[#474747] hover:text-black transition-colors cursor-pointer opacity-0 group-hover:opacity-100"><i className="ri-close-line text-xl"></i></button>
-                  </div>
-                </div>
-                <p className="text-sm text-[#474747] mb-1 font-brand">カラー: ブラック</p>
-                <p className="text-sm text-[#474747] mb-4 font-brand">サイズ: M</p>
-                <div className="flex items-center justify-between">
-                  <p className="text-lg text-black font-brand">¥28,000</p>
-                  <div className="flex items-center gap-2">
-                    <button disabled className="w-8 h-8 border border-black flex items-center justify-center hover:bg-black hover:text-white transition-all duration-300 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:text-black"><i className="ri-subtract-line text-sm"></i></button>
-                    <span className="text-sm w-8 text-center font-brand">1</span>
-                    <button className="w-8 h-8 border border-black flex items-center justify-center hover:bg-black hover:text-white transition-all duration-300 cursor-pointer"><i className="ri-add-line text-sm"></i></button>
-                  </div>
-                </div>
+            {error && (
+              <div className="text-sm text-red-500 font-brand p-4 border border-red-300 bg-red-50">
+                {error}
               </div>
-            </div>
+            )}
 
-            <div className="flex gap-6 border-b border-black/10 pb-6 relative group">
-              <Link href="/item/2" className="w-32 h-40 bg-[#f5f5f5] flex-shrink-0 overflow-hidden">
-                <img alt="ウールコート" className="w-full h-full object-cover object-top hover:scale-105 transition-transform duration-500" src="https://readdy.ai/api/search-image?query=navy%20blue%20wool%20coat%20on%20white%20background%20classic%20elegant%20outerwear%20fashion%20photography%20luxury%20winter%20clothing%20professional%20product%20image%20clean%20minimal%20setting&amp;width=400&amp;height=500&amp;seq=cart2&amp;orientation=portrait" />
-              </Link>
-              <div className="flex-1">
-                <div className="flex justify-between items-start mb-2">
-                  <Link href="/item/2">
-                    <h3 className="text-lg text-black hover:text-[#474747] transition-colors cursor-pointer font-brand">ウールコート</h3>
-                  </Link>
-                  <div className="flex items-center gap-2">
-                    <button className="w-8 h-8 flex items-center justify-center text-[#474747] hover:text-red-600 transition-colors cursor-pointer opacity-0 group-hover:opacity-100"><i className="ri-heart-line text-xl"></i></button>
-                    <button className="w-8 h-8 flex items-center justify-center text-[#474747] hover:text-black transition-colors cursor-pointer opacity-0 group-hover:opacity-100"><i className="ri-close-line text-xl"></i></button>
-                  </div>
-                </div>
-                <p className="text-sm text-[#474747] mb-1 font-brand">カラー: ネイビー</p>
-                <p className="text-sm text-[#474747] mb-4 font-brand">サイズ: L</p>
-                <div className="flex items-center justify-between">
-                  <p className="text-lg text-black font-brand">¥68,000</p>
-                  <div className="flex items-center gap-2">
-                    <button className="w-8 h-8 border border-black flex items-center justify-center hover:bg-black hover:text-white transition-all duration-300 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:text-black"><i className="ri-subtract-line text-sm"></i></button>
-                    <span className="text-sm w-8 text-center font-brand">2</span>
-                    <button className="w-8 h-8 border border-black flex items-center justify-center hover:bg-black hover:text-white transition-all duration-300 cursor-pointer"><i className="ri-add-line text-sm"></i></button>
-                  </div>
-                </div>
+            {cartItems.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-sm text-[#474747] font-brand mb-4">
+                  カートは空です
+                </p>
+                <Link href="/item" className="text-sm text-black hover:text-[#474747] transition-colors font-brand">
+                  買い物を続ける
+                </Link>
               </div>
-            </div>
+            ) : (
+              <>
+                {cartItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex gap-6 border-b border-black/10 pb-6 relative group"
+                  >
+                    <Link
+                      href={`/item/${item.id}`}
+                      className="w-32 h-40 bg-[#f5f5f5] flex-shrink-0 overflow-hidden relative"
+                    >
+                      <Image
+                        alt={item.items.name}
+                        className="w-full h-full object-cover object-top hover:scale-105 transition-transform duration-500"
+                        src={item.items.image_url}
+                        fill
+                        sizes="128px"
+                      />
+                    </Link>
+                    <div className="flex-1">
+                      <div className="flex justify-between items-start mb-2">
+                        <Link href={`/item/${item.items.id}`}>
+                          <h3 className="text-lg text-black hover:text-[#474747] transition-colors cursor-pointer font-brand">
+                            {item.items.name}
+                          </h3>
+                        </Link>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleToggleWishlist(item.item_id)}
+                            disabled={togglingWishlist === item.item_id.toString()}
+                            className="w-8 h-8 flex items-center justify-center text-[#474747] hover:text-black transition-colors cursor-pointer disabled:opacity-30"
+                          >
+                            <i className={`text-xl ${wishlistedItems.has(item.item_id) ? "ri-heart-fill text-red-500" : "ri-heart-line"}`} />
+                          </button>
+                          <button
+                            onClick={() => handleRemove(item.id)}
+                            disabled={updatingId === item.id}
+                            className="w-8 h-8 flex items-center justify-center text-[#474747] hover:text-black transition-colors cursor-pointer disabled:opacity-30"
+                          >
+                            <i className="ri-close-line text-xl"></i>
+                          </button>
+                        </div>
+                      </div>
+                      {item.color && (
+                        <p className="text-sm text-[#474747] mb-1 font-brand">
+                          カラー: {item.color}
+                        </p>
+                      )}
+                      {item.size && (
+                        <p className="text-sm text-[#474747] mb-4 font-brand">
+                          サイズ: {item.size}
+                        </p>
+                      )}
+                      <div className="flex items-center justify-between">
+                        <p className="text-lg text-black font-brand">
+                          ¥{item.items.price.toLocaleString('ja-JP')}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() =>
+                              handleQuantityChange(item.id, item.quantity - 1)
+                            }
+                            disabled={updatingId === item.id || item.quantity <= 1}
+                            className="w-8 h-8 border border-black flex items-center justify-center hover:bg-black hover:text-white transition-all duration-300 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:text-black"
+                          >
+                            <i className="ri-subtract-line text-sm"></i>
+                          </button>
+                          <span className="text-sm w-8 text-center font-brand">
+                            {item.quantity}
+                          </span>
+                          <button
+                            onClick={() =>
+                              handleQuantityChange(item.id, item.quantity + 1)
+                            }
+                            disabled={updatingId === item.id}
+                            className="w-8 h-8 border border-black flex items-center justify-center hover:bg-black hover:text-white transition-all duration-300 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                          >
+                            <i className="ri-add-line text-sm"></i>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
 
-            <div className="flex gap-6 border-b border-black/10 pb-6 relative group">
-              <Link href="/item/3" className="w-32 h-40 bg-[#f5f5f5] flex-shrink-0 overflow-hidden">
-                <img alt="レザーバッグ" className="w-full h-full object-cover object-top hover:scale-105 transition-transform duration-500" src="https://readdy.ai/api/search-image?query=gold%20leather%20handbag%20on%20white%20background%20luxury%20fashion%20accessory%20elegant%20design%20professional%20product%20photography%20high%20quality%20craftsmanship%20clean%20minimal%20backdrop&amp;width=400&amp;height=500&amp;seq=cart3&amp;orientation=portrait" />
-              </Link>
-              <div className="flex-1">
-                <div className="flex justify-between items-start mb-2">
-                  <Link href="/item/3">
-                    <h3 className="text-lg text-black hover:text-[#474747] transition-colors cursor-pointer font-brand">レザーバッグ</h3>
+                <div className="pt-6">
+                  <Link
+                    href="/item"
+                    className="inline-flex items-center gap-2 text-sm text-black hover:text-[#474747] transition-colors cursor-pointer font-brand"
+                  >
+                    <i className="ri-arrow-left-line"></i>買い物を続ける
                   </Link>
-                  <div className="flex items-center gap-2">
-                    <button className="w-8 h-8 flex items-center justify-center text-[#474747] hover:text-red-600 transition-colors cursor-pointer opacity-0 group-hover:opacity-100"><i className="ri-heart-line text-xl"></i></button>
-                    <button className="w-8 h-8 flex items-center justify-center text-[#474747] hover:text-black transition-colors cursor-pointer opacity-0 group-hover:opacity-100"><i className="ri-close-line text-xl"></i></button>
-                  </div>
                 </div>
-                <p className="text-sm text-[#474747] mb-1 font-brand">カラー: ゴールド</p>
-                <p className="text-sm text-[#474747] mb-4 font-brand">サイズ: FREE</p>
-                <div className="flex items-center justify-between">
-                  <p className="text-lg text-black font-brand">¥45,000</p>
-                  <div className="flex items-center gap-2">
-                    <button disabled className="w-8 h-8 border border-black flex items-center justify-center hover:bg-black hover:text-white transition-all duration-300 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:text-black"><i className="ri-subtract-line text-sm"></i></button>
-                    <span className="text-sm w-8 text-center font-brand">1</span>
-                    <button className="w-8 h-8 border border-black flex items-center justify-center hover:bg-black hover:text-white transition-all duration-300 cursor-pointer"><i className="ri-add-line text-sm"></i></button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-6">
-              <Link href="/item" className="inline-flex items-center gap-2 text-sm text-black hover:text-[#474747] transition-colors cursor-pointer font-brand">
-                <i className="ri-arrow-left-line"></i>買い物を続ける
-              </Link>
-            </div>
+              </>
+            )}
           </div>
 
           <div className="lg:col-span-1">
             <div className="border border-black/10 p-8 sticky top-32">
-              <h2 className="text-2xl text-black mb-8 tracking-tight font-display">Order Summary</h2>
+              <h2 className="text-2xl text-black mb-8 tracking-tight font-display">
+                Order Summary
+              </h2>
               <div className="mb-6">
-                <label className="block text-xs text-[#474747] mb-2 tracking-wider font-brand">プロモーションコード</label>
+                <label className="block text-xs text-[#474747] mb-2 tracking-wider font-brand">
+                  プロモーションコード
+                </label>
                 <div className="flex gap-2">
-                  <input placeholder="コードを入力" className="flex-1 px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand" type="text" value={""} />
-                  <button className="px-6 py-3 bg-black text-white text-xs tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap font-brand">適用</button>
+                  <input
+                    placeholder="コードを入力"
+                    className="flex-1 px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand"
+                    type="text"
+                  />
+                  <button className="px-6 py-3 bg-black text-white text-xs tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap font-brand">
+                    適用
+                  </button>
                 </div>
-                <p className="text-xs text-[#474747] mt-2 font-brand">お試し: WELCOME10 または SAVE20</p>
+                <p className="text-xs text-[#474747] mt-2 font-brand">
+                  お試し: WELCOME10 または SAVE20
+                </p>
               </div>
 
               <div className="space-y-4 mb-8 pb-8 border-b border-black/10">
-                <div className="flex justify-between"><span className="text-sm text-[#474747] font-brand">小計</span><span className="text-sm text-black font-brand">¥209,000</span></div>
-                <div className="flex justify-between"><span className="text-sm text-[#474747] font-brand">配送料</span><span className="text-sm text-black font-brand">無料</span></div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-[#474747] font-brand">小計</span>
+                  <span className="text-sm text-black font-brand">
+                    ¥{subtotal.toLocaleString('ja-JP')}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-[#474747] font-brand">配送料</span>
+                  <span className="text-sm text-black font-brand">無料</span>
+                </div>
               </div>
 
-              <div className="flex justify-between mb-8"><span className="text-lg text-black font-brand">合計</span><span className="text-2xl text-black font-display">¥209,000</span></div>
+              <div className="flex justify-between mb-8">
+                <span className="text-lg text-black font-brand">合計</span>
+                <span className="text-2xl text-black font-display">
+                  ¥{total.toLocaleString('ja-JP')}
+                </span>
+              </div>
 
-              <Link href="/checkout" className="block w-full py-4 bg-black text-white text-sm tracking-widest text-center hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap mb-4 font-brand">
+              <Link
+                href="/checkout"
+                className="block w-full py-4 bg-black text-white text-sm tracking-widest text-center hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap mb-4 font-brand"
+              >
                 購入手続きへ進む
               </Link>
 
               <div className="space-y-3 pt-6 border-t border-black/10">
-                <div className="flex items-center gap-3"><div className="w-5 h-5 flex items-center justify-center"><i className="ri-shield-check-line text-lg text-black"></i></div><p className="text-xs text-[#474747] font-brand">安全な決済</p></div>
-                <div className="flex items-center gap-3"><div className="w-5 h-5 flex items-center justify-center"><i className="ri-truck-line text-lg text-black"></i></div><p className="text-xs text-[#474747] font-brand">2-5営業日でお届け</p></div>
-                <div className="flex items-center gap-3"><div className="w-5 h-5 flex items-center justify-center"><i className="ri-arrow-go-back-line text-lg text-black"></i></div><p className="text-xs text-[#474747] font-brand">30日間返品可能</p></div>
+                <div className="flex items-center gap-3">
+                  <div className="w-5 h-5 flex items-center justify-center">
+                    <i className="ri-shield-check-line text-lg text-black"></i>
+                  </div>
+                  <p className="text-xs text-[#474747] font-brand">安全な決済</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-5 h-5 flex items-center justify-center">
+                    <i className="ri-truck-line text-lg text-black"></i>
+                  </div>
+                  <p className="text-xs text-[#474747] font-brand">
+                    2-5営業日でお届け
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-5 h-5 flex items-center justify-center">
+                    <i className="ri-arrow-go-back-line text-lg text-black"></i>
+                  </div>
+                  <p className="text-xs text-[#474747] font-brand">30日間返品可能</p>
+                </div>
               </div>
             </div>
           </div>

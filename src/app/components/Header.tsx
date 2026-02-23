@@ -5,6 +5,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { usePathname } from 'next/navigation';
 import LoginModal from "./LoginModal";
 import { useLogin } from "./LoginContext";
+import { useCart } from "./CartContext";
 import "remixicon/fonts/remixicon.css";
 
 const menuItems = [
@@ -22,6 +23,7 @@ const Header = () => {
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
   const { isLoggedIn, isAdmin, logout } = useLogin();
+  const { cartCount } = useCart();
 
   const isActiveMenuItem = (href: string) => {
     if (href === '/') return pathname === '/';
@@ -87,7 +89,11 @@ const Header = () => {
             </Link>
             <Link href="/cart" className="w-5 h-5 flex items-center justify-center cursor-pointer relative">
               <i className="ri-shopping-bag-line text-xl text-black hover:text-[#474747] transition-colors"></i>
-              <span className="absolute -top-2 -right-2 w-5 h-5 bg-black text-white rounded-full flex items-center justify-center text-xs font-brand">3</span>
+              {cartCount > 0 && (
+                <span className="absolute -top-2 -right-2 w-5 h-5 bg-black text-white rounded-full flex items-center justify-center text-xs font-brand">
+                  {cartCount}
+                </span>
+              )}
             </Link>
             <div
               ref={accountMenuRef}

@@ -3,9 +3,11 @@
 import React, { useState, useEffect, use } from "react";
 import Image from "next/image";
 import { Item } from "@/app/types/item";
+import { useCart } from "@/app/components/CartContext";
 
 export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const { updateCartCount, wishlistedItems, toggleWishlist } = useCart();
   const [item, setItem] = useState<Item | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -13,6 +15,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const [size, setSize] = useState<string | null>(null);
   const [quantity, setQuantity] = useState<number>(1);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const [addingToCart, setAddingToCart] = useState(false);
+  const [togglingWishlist, setTogglingWishlist] = useState(false);
+
+  const isWishlisted = item ? wishlistedItems.has(item.id) : false;
 
   useEffect(() => {
     const fetchItem = async () => {
@@ -47,6 +53,58 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
     fetchItem();
   }, [id]);
+
+  const handleAddToCart = async () => {
+    if (!item || !color || !size) {
+      alert("すべてのオプションを選択してください");
+      return;
+    }
+
+    setAddingToCart(true);
+    try {
+      const response = await fetch('/api/cart', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          item_id: item.id,
+          quantity,
+          color,
+          size,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('カートへの追加に失敗しました');
+      }
+
+      // Update cart count in context
+      await updateCartCount();
+
+      alert('カートに追加しました');
+      setQuantity(1);
+    } catch (error) {
+      console.error('Error adding to cart:', error);
+      alert(error instanceof Error ? error.message : 'エラーが発生しました');
+    } finally {
+      setAddingToCart(false);
+    }
+  };
+
+  const handleToggleWishlist = async () => {
+    if (!item) return;
+
+    setTogglingWishlist(true);
+    try {
+      await toggleWishlist(item.id);
+    } catch (error) {
+      console.error('Error toggling wishlist:', error);
+      alert(error instanceof Error ? error.message : 'エラーが発生しました');
+    } finally {
+      setTogglingWishlist(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -236,12 +294,22 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               </div>
             </div>
 
-            <button
-              onClick={(e) => e.preventDefault()}
-              className="w-full py-4 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap font-brand"
-            >
-              ADD TO CART
-            </button>
+            <div className="flex gap-4">
+              <button
+                onClick={handleAddToCart}
+                disabled={addingToCart}
+                className="flex-1 py-4 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap font-brand disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {addingToCart ? "追加中..." : "ADD TO CART"}
+              </button>
+              <button
+                onClick={handleToggleWishlist}
+                disabled={togglingWishlist}
+                className="w-14 py-4 border border-black flex items-center justify-center hover:bg-black hover:text-white transition-all duration-300 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <i className={`text-2xl ${isWishlisted ? "ri-heart-fill text-red-500" : "ri-heart-line"}`} />
+              </button>
+            </div>
 
             {item.product_details && (
               <div className="border-t border-black/10 pt-8">

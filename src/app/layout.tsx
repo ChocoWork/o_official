@@ -2,9 +2,7 @@ import type { Metadata } from "next"; // Metadata型をNext.jsからインポー
 import { headers } from 'next/headers';
 import { Geist, Geist_Mono } from "next/font/google"; // Google FontsのGeistとGeist_Monoフォントをインポート
 import "./globals.css"; // グローバルCSSファイルをインポート
-import Header from './components/Header'; // ヘッダーコンポーネントをインポート
-import Footer from './components/Footer'; // フッターコンポーネントをインポート
-import { LoginProvider } from './components/LoginContext'; // ログイン状態管理のためのLoginProviderをインポート
+import { Providers } from './components/Providers'; // ProvidersとLayout componentsをインポート
 
 // Geistフォントを設定。変数名を`--font-geist-sans`に設定。
 const geistSans = Geist({
@@ -39,13 +37,9 @@ export default async function RootLayout({
         <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer nonce={nonce}></script>
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col min-h-screen`}> 
-        <LoginProvider>
-          <Header />
-          <div className="flex-1 flex flex-col"> {/* Bodyの高さを調整し、Footerが常に下に来るように */}
-            {children}
-          </div>
-          <Footer />
-        </LoginProvider>
+        <Providers>
+          {children}
+        </Providers>
       </body>
     </html>
   );

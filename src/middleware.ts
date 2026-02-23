@@ -48,6 +48,19 @@ export function middleware(request: NextRequest) {
   const response = NextResponse.next();
   const nonce = generateNonce();
 
+  // Generate session_id for guest users (cart/wishlist)
+  let sessionId = request.cookies.get('session_id')?.value;
+  if (!sessionId) {
+    sessionId = generateNonce();
+    response.cookies.set('session_id', sessionId, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 30, // 30 days
+      path: '/',
+    });
+  }
+
   response.headers.set('Content-Security-Policy', buildCsp(nonce));
   response.headers.set('Referrer-Policy', 'no-referrer');
   response.headers.set('X-Content-Type-Options', 'nosniff');

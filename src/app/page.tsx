@@ -1,6 +1,7 @@
 import Image from "next/image";
 import HomeNewsSection from '@/app/components/HomeNewsSection';
 import HomeItemsSection from '@/app/components/HomeItemsSection';
+import HomeLookSection from '@/app/components/HomeLookSection';
 import { getLatestNews } from '@/app/actions/news';
 
 export default async function Home() {
@@ -35,87 +36,7 @@ export default async function Home() {
         {/* Item セクション */}
         <HomeItemsSection />
 
-        {/* LOOK セクション */}
-        <section id="look" className="py-24 lg:py-32 px-6 lg:px-12 bg-white w-full">
-          <div className="max-w-7xl mx-auto">
-            <div className="text-center mb-16 lg:mb-24">
-              <h2 className="text-4xl lg:text-5xl mb-4 text-black tracking-tight font-display">LOOK</h2>
-              <div className="w-16 h-px bg-black mx-auto"></div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
-              <div className="group cursor-pointer">
-                <div className="relative overflow-hidden mb-4 aspect-[2/3]">
-                  <Image
-                    src="https://readdy.ai/api/search-image?query=Full%20body%20fashion%20editorial%20photography%20featuring%20minimalist%20neutral%20beige%20and%20grey%20outfit%20on%20model%20against%20clean%20white%20studio%20background%20with%20soft%20natural%20lighting%20showcasing%20contemporary%20modern%20styling%20with%20elegant%20silhouette%20and%20sophisticated%20draping%20in%20neutral%20color%20palette&width=800&height=1200&seq=look001&orientation=portrait"
-                    alt="LOOK 01"
-                    fill
-                    unoptimized
-                    className="w-full h-full object-cover object-center transition-transform duration-700 group-hover:scale-105"
-                  />
-                </div>
-                <div className="text-center space-y-2">
-                  <h3 className="text-lg text-black font-brand">LOOK 01</h3>
-                  <p className="text-xs tracking-widest text-[#474747] font-brand">2024 S/S</p>
-                </div>
-              </div>
-
-              <div className="group cursor-pointer">
-                <div className="relative overflow-hidden mb-4 aspect-[2/3]">
-                  <Image
-                    src="https://readdy.ai/api/search-image?query=Full%20body%20fashion%20editorial%20photography%20featuring%20minimalist%20sand%20beige%20and%20white%20layered%20outfit%20on%20model%20against%20clean%20white%20studio%20background%20with%20soft%20natural%20lighting%20showcasing%20contemporary%20modern%20styling%20with%20flowing%20silhouette%20and%20elegant%20composition%20in%20neutral%20tones&width=800&height=1200&seq=look002&orientation=portrait"
-                    alt="LOOK 02"
-                    fill
-                    unoptimized
-                    className="w-full h-full object-cover object-center transition-transform duration-700 group-hover:scale-105"
-                  />
-                </div>
-                <div className="text-center space-y-2">
-                  <h3 className="text-lg text-black font-brand">LOOK 02</h3>
-                  <p className="text-xs tracking-widest text-[#474747] font-brand">2024 S/S</p>
-                </div>
-              </div>
-
-              <div className="group cursor-pointer">
-                <div className="relative overflow-hidden mb-4 aspect-[2/3]">
-                  <Image
-                    src="https://readdy.ai/api/search-image?query=Full%20body%20fashion%20editorial%20photography%20featuring%20minimalist%20grey%20and%20black%20structured%20outfit%20on%20model%20against%20clean%20white%20studio%20background%20with%20soft%20natural%20lighting%20showcasing%20contemporary%20modern%20styling%20with%20tailored%20silhouette%20and%20sophisticated%20design%20in%20neutral%20color%20palette&width=800&height=1200&seq=look003&orientation=portrait"
-                    alt="LOOK 03"
-                    fill
-                    unoptimized
-                    className="w-full h-full object-cover object-center transition-transform duration-700 group-hover:scale-105"
-                  />
-                </div>
-                <div className="text-center space-y-2">
-                  <h3 className="text-lg text-black font-brand">LOOK 03</h3>
-                  <p className="text-xs tracking-widest text-[#474747] font-brand">2024 S/S</p>
-                </div>
-              </div>
-
-              <div className="group cursor-pointer">
-                <div className="relative overflow-hidden mb-4 aspect-[2/3]">
-                  <Image
-                    src="https://readdy.ai/api/search-image?query=Full%20body%20fashion%20editorial%20photography%20featuring%20minimalist%20beige%20monochrome%20outfit%20on%20model%20against%20clean%20white%20studio%20background%20with%20soft%20natural%20lighting%20showcasing%20contemporary%20modern%20styling%20with%20elegant%20draping%20and%20sophisticated%20silhouette%20in%20neutral%20tones&width=800&height=1200&seq=look004&orientation=portrait"
-                    alt="LOOK 04"
-                    fill
-                    unoptimized
-                    className="w-full h-full object-cover object-center transition-transform duration-700 group-hover:scale-105"
-                  />
-                </div>
-                <div className="text-center space-y-2">
-                  <h3 className="text-lg text-black font-brand">LOOK 04</h3>
-                  <p className="text-xs tracking-widest text-[#474747] font-brand">2024 S/S</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="text-center mt-8">
-              <a href="/viewer/readdy-nextjs-v1-prod/2871426bde5e68/look">
-                <button className="px-12 py-4 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap font-brand">VIEW LOOKBOOK</button>
-              </a>
-            </div>
-          </div>
-        </section>
+        <HomeLookSection />
 
         {/* News セクション */}
         <HomeNewsSection initialNews={latestNews} />

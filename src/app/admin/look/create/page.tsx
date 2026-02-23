@@ -1,18 +1,19 @@
 'use client';
 
 import Image from 'next/image';
-import { useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
-const SAMPLE_ITEMS = [
-	{ name: 'Leather Tote Bag', price: '¥38,000' },
-	{ name: 'Oversized Coat', price: '¥58,000' },
-	{ name: 'Linen Blend Shirt', price: '¥24,800' },
-	{ name: 'Cotton Knit Sweater', price: '¥22,000' },
-	{ name: 'Wide Leg Trousers', price: '¥28,600' },
-	{ name: 'Silk Blend Dress', price: '¥42,000' },
-] as const;
+type ItemSummary = {
+	id: number;
+	name: string;
+	price: number;
+	image_url: string;
+	status: 'private' | 'published';
+};
 
 export default function AdminLookCreatePage() {
+	const router = useRouter();
 	const now = new Date();
 	const currentYear = now.getFullYear();
 	const defaultSeason: 'SS' | 'AW' = now.getMonth() < 6 ? 'SS' : 'AW';
@@ -20,11 +21,42 @@ export default function AdminLookCreatePage() {
 
 	const [seasonYear, setSeasonYear] = useState<number>(currentYear);
 	const [seasonType, setSeasonType] = useState<'SS' | 'AW'>(defaultSeason);
+	const [theme, setTheme] = useState('');
+	const [themeDescription, setThemeDescription] = useState('');
+	const [status, setStatus] = useState<'private' | 'published'>('private');
 	const [imageFiles, setImageFiles] = useState<File[]>([]);
 	const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+	const [items, setItems] = useState<ItemSummary[]>([]);
+	const [selectedItemIds, setSelectedItemIds] = useState<Set<number>>(new Set());
+	const [isLoadingItems, setIsLoadingItems] = useState(true);
 	const [isDragging, setIsDragging] = useState(false);
+	const [isSubmitting, setIsSubmitting] = useState(false);
+	const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
 	const [submitError, setSubmitError] = useState<string | null>(null);
 	const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+	const currencyFormatter = useMemo(
+		() => new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 }),
+		[]
+	);
+
+	const fetchItems = async () => {
+		setIsLoadingItems(true);
+		try {
+			const response = await fetch('/api/admin/items');
+			if (!response.ok) {
+				throw new Error('Failed to fetch items');
+			}
+
+			const json = (await response.json()) as { data?: ItemSummary[] };
+			setItems(Array.isArray(json.data) ? json.data : []);
+		} catch (error) {
+			console.error('Failed to load items:', error);
+			setSubmitError('商品一覧の取得に失敗しました');
+		} finally {
+			setIsLoadingItems(false);
+		}
+	};
 
 	const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
 		const selected = e.target.files?.[0];
@@ -58,9 +90,10 @@ export default function AdminLookCreatePage() {
 
 		const reader = new FileReader();
 		reader.onload = () => {
-			if (typeof reader.result === 'string') {
-				setImageFiles([...imageFiles, file]);
-				setPreviewUrls([...previewUrls, reader.result]);
+			const loadedResult = reader.result;
+			if (typeof loadedResult === 'string') {
+				setImageFiles((previousFiles) => [...previousFiles, file]);
+				setPreviewUrls((previousUrls) => [...previousUrls, loadedResult]);
 			}
 		};
 		reader.onerror = () => {
@@ -70,14 +103,90 @@ export default function AdminLookCreatePage() {
 	};
 
 	const removeImage = (index: number) => {
-		setImageFiles(imageFiles.filter((_, i) => i !== index));
-		setPreviewUrls(previewUrls.filter((_, i) => i !== index));
+		setImageFiles((previousFiles) => previousFiles.filter((_, i) => i !== index));
+		setPreviewUrls((previousUrls) => previousUrls.filter((_, i) => i !== index));
 	};
+
+	const toggleItemSelection = (itemId: number) => {
+		setSelectedItemIds((previousIds) => {
+			const nextIds = new Set(previousIds);
+			if (nextIds.has(itemId)) {
+				nextIds.delete(itemId);
+			} else {
+				nextIds.add(itemId);
+			}
+			return nextIds;
+		});
+	};
+
+	const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+		e.preventDefault();
+		setSubmitError(null);
+		setSubmitSuccess(null);
+
+		const trimmedTheme = theme.trim();
+		const trimmedThemeDescription = themeDescription.trim();
+		const linkedItemIds = Array.from(selectedItemIds);
+
+		if (!trimmedTheme) {
+			setSubmitError('シーズンテーマを入力してください');
+			return;
+		}
+
+		if (imageFiles.length === 0) {
+			setSubmitError('画像を1枚以上追加してください');
+			return;
+		}
+
+		if (linkedItemIds.length === 0) {
+			setSubmitError('紐づける商品を1つ以上選択してください');
+			return;
+		}
+
+		setIsSubmitting(true);
+
+		try {
+			const formData = new FormData();
+			formData.append('seasonYear', String(seasonYear));
+			formData.append('seasonType', seasonType);
+			formData.append('theme', trimmedTheme);
+			formData.append('themeDescription', trimmedThemeDescription);
+			formData.append('status', status);
+			formData.append('linkedItemIds', JSON.stringify(linkedItemIds));
+
+			for (const image of imageFiles) {
+				formData.append('images', image);
+			}
+
+			const response = await fetch('/api/admin/looks', {
+				method: 'POST',
+				body: formData,
+			});
+
+			const responseJson = await response.json().catch(() => null);
+			if (!response.ok) {
+				setSubmitError(responseJson?.error ?? 'Lookの保存に失敗しました');
+				return;
+			}
+
+			setSubmitSuccess('Lookを保存しました');
+			router.push('/admin?tab=LOOK');
+		} catch (error) {
+			console.error('Failed to submit look:', error);
+			setSubmitError('通信エラーが発生しました。時間をおいて再度お試しください');
+		} finally {
+			setIsSubmitting(false);
+		}
+	};
+
+	useEffect(() => {
+		void fetchItems();
+	}, []);
 
 	return (
 		<main className="pt-32 pb-20">
 			<div className="max-w-4xl mx-auto px-6 lg:px-12">
-				<form className="space-y-8">
+				<form className="space-y-8" onSubmit={handleSubmit}>
 					<div>
 						<label className="block text-sm tracking-widest mb-2">シーズン</label>
 						<div className="flex flex-wrap gap-3">
@@ -111,23 +220,27 @@ export default function AdminLookCreatePage() {
 					</div>
 
 					<div>
-					<label className="block text-sm tracking-widest mb-2">シーズンテーマ</label>
-					<input
-						className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black"
-						placeholder="例: Effortless Elegance"
-						required
-						type="text"
-					/>
-				</div>
+						<label className="block text-sm tracking-widest mb-2">シーズンテーマ</label>
+						<input
+							className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black"
+							placeholder="例: Effortless Elegance"
+							required
+							type="text"
+							value={theme}
+							onChange={(e) => setTheme(e.target.value)}
+						/>
+					</div>
 
-				<div>
-					<label className="block text-sm tracking-widest mb-2">シーズンテーマ詳細</label>
-					<textarea
-						className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black resize-none"
-						placeholder="このシーズンテーマの説明文を入力してください"
-						rows={4}
-					/>
-				</div>
+					<div>
+						<label className="block text-sm tracking-widest mb-2">シーズンテーマ詳細</label>
+						<textarea
+							className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black resize-none"
+							placeholder="このシーズンテーマの説明文を入力してください"
+							rows={4}
+							value={themeDescription}
+							onChange={(e) => setThemeDescription(e.target.value)}
+						/>
+					</div>
 
 					<div>
 						<label className="block text-sm tracking-widest mb-2">画像</label>
@@ -187,43 +300,80 @@ export default function AdminLookCreatePage() {
 
 					<div>
 						<label className="block text-sm tracking-widest mb-4">紐づける商品を選択</label>
-						<div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-							{SAMPLE_ITEMS.map((item) => (
-								<div
-									key={item.name}
-									className="border cursor-pointer transition-all duration-300 border-black/20 hover:border-black"
-								>
-									<div className="aspect-[3/4] bg-[#f5f5f5] overflow-hidden relative">
-										<Image
-											src="/images/items/search-image.png"
-											alt={item.name}
-											fill
-											sizes="(max-width: 768px) 50vw, 33vw"
-											className="object-cover object-top"
-										/>
-									</div>
-									<div className="p-3">
-										<p className="text-xs text-black mb-1">{item.name}</p>
-										<p className="text-xs text-[#474747]">{item.price}</p>
-									</div>
-								</div>
-							))}
-						</div>
+						{isLoadingItems ? (
+							<p className="text-sm text-black/70">商品を読み込み中です...</p>
+						) : items.length === 0 ? (
+							<p className="text-sm text-black/70">登録済み商品がありません。先にITEMを登録してください。</p>
+						) : (
+							<div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+								{items.map((item) => {
+									const isSelected = selectedItemIds.has(item.id);
+
+									return (
+										<div
+											key={item.id}
+											onClick={() => toggleItemSelection(item.id)}
+											className={`border cursor-pointer transition-all duration-300 hover:border-black ${
+												isSelected ? 'border-black ring-1 ring-black' : 'border-black/20'
+											}`}
+										>
+											<div className="aspect-[3/4] bg-[#f5f5f5] overflow-hidden relative">
+												<Image
+													src={item.image_url}
+													alt={item.name}
+													fill
+													sizes="(max-width: 768px) 50vw, 33vw"
+													className="object-cover object-top"
+													unoptimized
+												/>
+											</div>
+											<div className="p-3">
+												<p className="text-xs text-black mb-1">{item.name}</p>
+												<p className="text-xs text-[#474747]">{currencyFormatter.format(item.price)}</p>
+												{item.status === 'private' && (
+													<p className="mt-2 text-[10px] tracking-widest text-black/60">非公開商品</p>
+												)}
+											</div>
+										</div>
+									);
+								})}
+							</div>
+						)}
 					</div>
 
 					<div>
 						<label className="block text-sm tracking-widest mb-2">ステータス</label>
 						<div className="flex gap-4">
 							<label className="flex items-center gap-2 cursor-pointer">
-								<input className="cursor-pointer" type="radio" name="status" value="draft" defaultChecked />
+								<input
+									className="cursor-pointer"
+									type="radio"
+									name="status"
+									value="private"
+									checked={status === 'private'}
+									onChange={() => setStatus('private')}
+								/>
 								<span className="text-sm">非公開</span>
 							</label>
 							<label className="flex items-center gap-2 cursor-pointer">
-								<input className="cursor-pointer" type="radio" name="status" value="published" />
+								<input
+									className="cursor-pointer"
+									type="radio"
+									name="status"
+									value="published"
+									checked={status === 'published'}
+									onChange={() => setStatus('published')}
+								/>
 								<span className="text-sm">公開</span>
 							</label>
 						</div>
 					</div>
+
+					{submitSuccess && (
+						<p className="text-sm text-green-700" role="status">
+							{submitSuccess}
+						</p>
+					)}
 
 					{submitError && (
 						<p className="text-sm text-red-600" role="alert">
@@ -234,15 +384,17 @@ export default function AdminLookCreatePage() {
 					<div className="flex gap-4">
 						<button
 							type="button"
+							onClick={() => router.push('/admin?tab=LOOK')}
 							className="px-8 py-3 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap"
 						>
 							キャンセル
 						</button>
 						<button
 							type="submit"
+							disabled={isSubmitting}
 							className="px-8 py-3 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap disabled:opacity-50"
 						>
-							保存
+							{isSubmitting ? '保存中...' : '保存'}
 						</button>
 					</div>
 				</form>
