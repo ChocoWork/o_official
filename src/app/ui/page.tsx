@@ -20,6 +20,8 @@ export default function Page() {
   const [singleValue, setSingleValue] = useState(50);
   // use 0–100 scale; default range corresponds to ¥0–¥10000
   const [rangeValues, setRangeValues] = useState<[number, number]>([0, 100]);
+  // stepper demo value
+  const [stepperValue, setStepperValue] = useState<number>(1);
   const rangeMin = Math.min(rangeValues[0], rangeValues[1]);
   const rangeMax = Math.max(rangeValues[0], rangeValues[1]);
   // ...existing code...
@@ -624,6 +626,7 @@ export default function Page() {
                 <button
                   type="button"
                   className="w-12 h-12 flex items-center justify-center border-r border-black/20 hover:bg-[#f5f5f5] transition-colors cursor-pointer"
+                  onClick={() => setStepperValue((v) => Math.max(1, v - 1))}
                 >
                   <div className="w-4 h-4 flex items-center justify-center">
                     <i className="ri-subtract-line text-base"></i>
@@ -632,12 +635,29 @@ export default function Page() {
                 <input
                   className="flex-1 h-12 text-center text-sm focus:outline-none"
                   type="number"
-                  value="1"
+                  min="1"
+                  value={stepperValue}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    if (!isNaN(val)) {
+                      setStepperValue(Math.max(1, val));
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      setStepperValue((v) => v + 1);
+                    } else if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      setStepperValue((v) => Math.max(1, v - 1));
+                    }
+                  }}
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 />
                 <button
                   type="button"
                   className="w-12 h-12 flex items-center justify-center border-l border-black/20 hover:bg-[#f5f5f5] transition-colors cursor-pointer"
+                  onClick={() => setStepperValue((v) => v + 1)}
                 >
                   <div className="w-4 h-4 flex items-center justify-center">
                     <i className="ri-add-line text-base"></i>
