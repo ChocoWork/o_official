@@ -37,6 +37,22 @@ export default function Page() {
   const [dateValue, setDateValue] = useState("2024-03-15");
   const [timeValue, setTimeValue] = useState("14:30");
   const [dateTimeValue, setDateTimeValue] = useState("2024-03-15T14:30");
+  const pageNumbers = [1, 2, 3, 4, 5] as const;
+  const [currentPage, setCurrentPage] = useState<number>(1);
+
+  const bottomNavItems = [
+    { key: "HOME", iconClass: "ri-home-line" },
+    { key: "SEARCH", iconClass: "ri-search-line" },
+    { key: "WISHLIST", iconClass: "ri-heart-line" },
+    { key: "ACCOUNT", iconClass: "ri-user-line" },
+  ] as const;
+  const [activeBottomNav, setActiveBottomNav] = useState<(typeof bottomNavItems)[number]["key"]>("ACCOUNT");
+
+  const standardTabs = ["ALL", "NEW", "SALE"] as const;
+  const [activeStandardTab, setActiveStandardTab] = useState<(typeof standardTabs)[number]>("ALL");
+
+  const segmentOptions = ["TOPS", "BOTTOMS", "OUTERWEAR", "ACCESSORIES"] as const;
+  const [activeSegment, setActiveSegment] = useState<(typeof segmentOptions)[number]>("TOPS");
 
   const rangeMin = Math.min(rangeValues[0], rangeValues[1]);
   const rangeMax = Math.max(rangeValues[0], rangeValues[1]);
@@ -883,50 +899,41 @@ export default function Page() {
             <div className="flex items-center justify-center gap-2">
               <button
                 type="button"
-                disabled
+                disabled={currentPage === pageNumbers[0]}
+                aria-label="Previous page"
+                onClick={() => setCurrentPage((prev) => Math.max(pageNumbers[0], prev - 1))}
                 className="w-10 h-10 flex items-center justify-center border border-black/20 hover:bg-[#f5f5f5] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <div className="w-4 h-4 flex items-center justify-center">
                   <i className="ri-arrow-left-s-line text-base"></i>
                 </div>
               </button>
+              {pageNumbers.map((pageNum) => (
+                <button
+                  key={pageNum}
+                  type="button"
+                  aria-current={currentPage === pageNum ? "page" : undefined}
+                  onClick={() => setCurrentPage(pageNum)}
+                  className={
+                    "w-10 h-10 flex items-center justify-center text-sm transition-colors cursor-pointer " +
+                    (currentPage === pageNum
+                      ? "bg-black text-white"
+                      : "border border-black/20 hover:bg-[#f5f5f5]")
+                  }
+                  style={{ fontFamily: "acumin-pro, sans-serif" }}
+                >
+                  {pageNum}
+                </button>
+              ))}
               <button
                 type="button"
-                className="w-10 h-10 flex items-center justify-center text-sm transition-colors cursor-pointer bg-black text-white"
-                style={{ fontFamily: "acumin-pro, sans-serif" }}
-              >
-                1
-              </button>
-              <button
-                type="button"
-                className="w-10 h-10 flex items-center justify-center text-sm transition-colors cursor-pointer border border-black/20 hover:bg-[#f5f5f5]"
-                style={{ fontFamily: "acumin-pro, sans-serif" }}
-              >
-                2
-              </button>
-              <button
-                type="button"
-                className="w-10 h-10 flex items-center justify-center text-sm transition-colors cursor-pointer border border-black/20 hover:bg-[#f5f5f5]"
-                style={{ fontFamily: "acumin-pro, sans-serif" }}
-              >
-                3
-              </button>
-              <button
-                type="button"
-                className="w-10 h-10 flex items-center justify-center text-sm transition-colors cursor-pointer border border-black/20 hover:bg-[#f5f5f5]"
-                style={{ fontFamily: "acumin-pro, sans-serif" }}
-              >
-                4
-              </button>
-              <button
-                type="button"
-                className="w-10 h-10 flex items-center justify-center text-sm transition-colors cursor-pointer border border-black/20 hover:bg-[#f5f5f5]"
-                style={{ fontFamily: "acumin-pro, sans-serif" }}
-              >
-                5
-              </button>
-              <button
-                type="button"
+                disabled={currentPage === pageNumbers[pageNumbers.length - 1]}
+                aria-label="Next page"
+                onClick={() =>
+                  setCurrentPage((prev) =>
+                    Math.min(pageNumbers[pageNumbers.length - 1], prev + 1)
+                  )
+                }
                 className="w-10 h-10 flex items-center justify-center border border-black/20 hover:bg-[#f5f5f5] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <div className="w-4 h-4 flex items-center justify-center">
@@ -947,62 +954,31 @@ export default function Page() {
             <div className="max-w-md mx-auto">
               <div className="bg-white border border-black/20 shadow-lg">
                 <div className="flex items-center justify-around py-3">
-                  <button
-                    type="button"
-                    className="flex flex-col items-center gap-1 cursor-pointer group"
-                  >
-                    <div className="w-6 h-6 flex items-center justify-center">
-                      <i className="ri-home-line text-2xl transition-colors text-black/40 group-hover:text-black/60"></i>
-                    </div>
-                    <span
-                      className="text-[10px] tracking-wider transition-colors text-black/40 group-hover:text-black/60"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      HOME
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    className="flex flex-col items-center gap-1 cursor-pointer group"
-                  >
-                    <div className="w-6 h-6 flex items-center justify-center">
-                      <i className="ri-search-line text-2xl transition-colors text-black/40 group-hover:text-black/60"></i>
-                    </div>
-                    <span
-                      className="text-[10px] tracking-wider transition-colors text-black/40 group-hover:text-black/60"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      SEARCH
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    className="flex flex-col items-center gap-1 cursor-pointer group"
-                  >
-                    <div className="w-6 h-6 flex items-center justify-center">
-                      <i className="ri-heart-line text-2xl transition-colors text-black/40 group-hover:text-black/60"></i>
-                    </div>
-                    <span
-                      className="text-[10px] tracking-wider transition-colors text-black/40 group-hover:text-black/60"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      WISHLIST
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    className="flex flex-col items-center gap-1 cursor-pointer group"
-                  >
-                    <div className="w-6 h-6 flex items-center justify-center">
-                      <i className="ri-user-line text-2xl transition-colors text-black"></i>
-                    </div>
-                    <span
-                      className="text-[10px] tracking-wider transition-colors text-black"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      ACCOUNT
-                    </span>
-                  </button>
+                  {bottomNavItems.map((item) => {
+                    const isActive = activeBottomNav === item.key;
+
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        aria-current={isActive ? "page" : undefined}
+                        className="flex flex-col items-center gap-1 cursor-pointer group"
+                        onClick={() => setActiveBottomNav(item.key)}
+                      >
+                        <div className="w-6 h-6 flex items-center justify-center">
+                          <i
+                            className={`${item.iconClass} text-2xl transition-colors ${isActive ? "text-black" : "text-black/40 group-hover:text-black/60"}`}
+                          ></i>
+                        </div>
+                        <span
+                          className={`text-[10px] tracking-wider transition-colors ${isActive ? "text-black" : "text-black/40 group-hover:text-black/60"}`}
+                          style={{ fontFamily: "acumin-pro, sans-serif" }}
+                        >
+                          {item.key}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -1024,29 +1000,28 @@ export default function Page() {
                 >
                   STANDARD TABS
                 </label>
-                <div className="flex items-center gap-8 border-b border-black/20">
-                  <button
-                    type="button"
-                    className="pb-4 text-sm tracking-widest transition-colors cursor-pointer relative text-black"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    ALL
-                    <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-black"></span>
-                  </button>
-                  <button
-                    type="button"
-                    className="pb-4 text-sm tracking-widest transition-colors cursor-pointer relative text-black/40 hover:text-black/60"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    NEW
-                  </button>
-                  <button
-                    type="button"
-                    className="pb-4 text-sm tracking-widest transition-colors cursor-pointer relative text-black/40 hover:text-black/60"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    SALE
-                  </button>
+                <div className="flex items-center gap-8 border-b border-black/20" role="tablist" aria-label="Standard tabs">
+                  {standardTabs.map((tab) => {
+                    const isActive = activeStandardTab === tab;
+
+                    return (
+                      <button
+                        key={tab}
+                        type="button"
+                        role="tab"
+                        aria-selected={isActive}
+                        className={
+                          "pb-4 text-sm tracking-widest transition-colors cursor-pointer relative " +
+                          (isActive ? "text-black" : "text-black/40 hover:text-black/60")
+                        }
+                        style={{ fontFamily: "acumin-pro, sans-serif" }}
+                        onClick={() => setActiveStandardTab(tab)}
+                      >
+                        {tab}
+                        {isActive && <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-black"></span>}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
               <div>
@@ -1057,34 +1032,27 @@ export default function Page() {
                   SEGMENT CONTROL
                 </label>
                 <div className="inline-flex items-center bg-[#f5f5f5] p-1 rounded-full">
-                  <button
-                    type="button"
-                    className="px-6 py-2 text-xs tracking-widest transition-all cursor-pointer rounded-full whitespace-nowrap bg-black text-white"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    TOPS
-                  </button>
-                  <button
-                    type="button"
-                    className="px-6 py-2 text-xs tracking-widest transition-all cursor-pointer rounded-full whitespace-nowrap text-black/60 hover:text-black"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    BOTTOMS
-                  </button>
-                  <button
-                    type="button"
-                    className="px-6 py-2 text-xs tracking-widest transition-all cursor-pointer rounded-full whitespace-nowrap text-black/60 hover:text-black"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    OUTERWEAR
-                  </button>
-                  <button
-                    type="button"
-                    className="px-6 py-2 text-xs tracking-widest transition-all cursor-pointer rounded-full whitespace-nowrap text-black/60 hover:text-black"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    ACCESSORIES
-                  </button>
+                  {segmentOptions.map((segment) => {
+                    const isActive = activeSegment === segment;
+
+                    return (
+                      <button
+                        key={segment}
+                        type="button"
+                        aria-pressed={isActive}
+                        onClick={() => setActiveSegment(segment)}
+                        className={
+                          "px-6 py-2 text-xs tracking-widest transition-all cursor-pointer rounded-full whitespace-nowrap " +
+                          (isActive
+                            ? "bg-black text-white"
+                            : "text-black/60 hover:text-black")
+                        }
+                        style={{ fontFamily: "acumin-pro, sans-serif" }}
+                      >
+                        {segment}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>
