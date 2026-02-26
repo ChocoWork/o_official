@@ -17,7 +17,6 @@
 - [ ] 単体/結合/契約/E2E テスト計画が追加されている
 - [ ] `npm run validate-docs` によるドキュメント検証が成功している（Markdown Preview Enhanced 描画エラーなし）
 - [ ] `docs/ArchitectureDesign/coverage-report.md`（`npm run check-coverage`）を添付し、漏れがないことを確認した
-- [ ] tasks/roadmap.md の該当チェックボックスを更新した
 - [ ] BREAKING CHANGE がある場合、影響範囲と承認者を明記した
 
 ---

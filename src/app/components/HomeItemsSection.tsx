@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { Item } from "@/app/types/item";
+import { LinkButton } from '@/app/components/ui/LinkButton';
 
 export default function HomeItemsSection() {
   const [items, setItems] = useState<Item[]>([]);
@@ -100,14 +101,7 @@ export default function HomeItemsSection() {
           ))}
         </div>
         <div className="text-center mt-16">
-          <Link href="/item">
-            <button
-              className="px-12 py-4 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap"
-              style={{ fontFamily: "acumin-pro, sans-serif" }}
-            >
-              VIEW ALL ITEMS
-            </button>
-          </Link>
+          <LinkButton href="/item" size="lg" className="font-acumin">VIEW ALL ITEMS</LinkButton>
         </div>
       </div>
     </section>

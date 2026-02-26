@@ -1,5 +1,9 @@
 'use client';
 
+import { Button } from '@/app/components/ui/Button';
+import { DataTable } from '@/app/components/ui/DataTable';
+import { StatusBadge } from '@/app/components/ui/StatusBadge';
+
 export type OrderStatus = '未出荷' | '準備中' | '出荷完了' | '配達完了' | 'キャンセル';
 
 export type OrderItem = {
@@ -35,52 +39,58 @@ export default function OrderSection({ orders, onTransitStatus }: OrderSectionPr
 
 	return (
 		<section>
-			<div className="border border-[#d5d0c9] overflow-hidden overflow-x-auto">
-				<table className="w-full min-w-[900px]">
-					<thead className="bg-[#f5f5f5]">
-						<tr>
-							<th className="px-6 py-4 text-left text-xs tracking-widest text-[#474747] font-acumin">注文ID</th>
-							<th className="px-6 py-4 text-left text-xs tracking-widest text-[#474747] font-acumin">顧客名</th>
-							<th className="px-6 py-4 text-left text-xs tracking-widest text-[#474747] font-acumin">注文日</th>
-							<th className="px-6 py-4 text-left text-xs tracking-widest text-[#474747] font-acumin">商品数</th>
-							<th className="px-6 py-4 text-left text-xs tracking-widest text-[#474747] font-acumin">合計金額</th>
-							<th className="px-6 py-4 text-left text-xs tracking-widest text-[#474747] font-acumin">出荷状況</th>
-							<th className="px-6 py-4 text-left text-xs tracking-widest text-[#474747] font-acumin">操作</th>
-						</tr>
-					</thead>
-					<tbody>
-						{orders.map((order) => (
-							<tr key={order.id} className="border-t border-[#d5d0c9]">
-								<td className="px-6 py-4 text-sm text-black font-medium font-acumin">{order.id}</td>
-								<td className="px-6 py-4">
-									<p className="text-sm text-black font-acumin">{order.customerName}</p>
-									<p className="text-xs text-[#474747] font-acumin">{order.customerEmail}</p>
-								</td>
-								<td className="px-6 py-4 text-sm text-[#474747] font-acumin">{order.orderDate}</td>
-								<td className="px-6 py-4 text-sm text-black font-acumin">{order.itemCount}</td>
-								<td className="px-6 py-4 text-sm text-black font-acumin">{order.totalAmount}</td>
-								<td className="px-6 py-4">
-									<span className={`px-3 py-1 text-xs tracking-widest font-acumin ${statusClassMap[order.status]}`}>
-										{order.status}
-									</span>
-								</td>
-								<td className="px-6 py-4">
-									<div className="flex items-center gap-2">
-										{actionLabelMap[order.status] && (
-											<button
-												onClick={() => onTransitStatus(order.id)}
-												className="px-4 py-2 text-xs tracking-widest transition-all cursor-pointer whitespace-nowrap font-acumin border border-black text-black hover:bg-black hover:text-white"
-											>
-												{actionLabelMap[order.status]}
-											</button>
-										)}
-									</div>
-								</td>
-							</tr>
-						))}
-					</tbody>
-				</table>
-			</div>
+			<DataTable
+				rows={orders}
+				rowKey={(order) => order.id}
+				columns={[
+					{
+						key: 'id',
+						header: '注文ID',
+						render: (order) => <p className="font-medium font-acumin">{order.id}</p>,
+					},
+					{
+						key: 'customer',
+						header: '顧客名',
+						render: (order) => (
+							<div>
+								<p className="text-sm text-black font-acumin">{order.customerName}</p>
+								<p className="text-xs text-[#474747] font-acumin">{order.customerEmail}</p>
+							</div>
+						),
+					},
+					{ key: 'date', header: '注文日', render: (order) => <p className="text-[#474747] font-acumin">{order.orderDate}</p> },
+					{ key: 'count', header: '商品数', render: (order) => <p className="font-acumin">{order.itemCount}</p> },
+					{ key: 'total', header: '合計金額', render: (order) => <p className="font-acumin">{order.totalAmount}</p> },
+					{
+						key: 'status',
+						header: '出荷状況',
+						render: (order) => (
+							<StatusBadge
+								tone={
+									order.status === '配達完了'
+										? 'positive'
+										: order.status === 'キャンセル'
+											? 'danger'
+											: 'warning'
+								}
+								className={statusClassMap[order.status]}
+							>
+								{order.status}
+							</StatusBadge>
+						),
+					},
+					{
+						key: 'action',
+						header: '操作',
+						render: (order) =>
+							actionLabelMap[order.status] ? (
+								<Button variant="secondary" size="sm" className="font-acumin" onClick={() => onTransitStatus(order.id)}>
+									{actionLabelMap[order.status]}
+								</Button>
+							) : null,
+					},
+				]}
+			/>
 		</section>
 	);
 }

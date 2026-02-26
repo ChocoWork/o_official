@@ -1,5 +1,6 @@
 import React from "react";
 import styles from "./FilterSidebar.module.css";
+import { Button } from '@/app/components/ui/Button';
 
 interface FilterSidebarProps {
   open: boolean;
@@ -9,7 +10,7 @@ interface FilterSidebarProps {
 const FilterSidebar: React.FC<FilterSidebarProps> = ({ open, onClose }) => {
   return (
     <div className={open ? styles.sidebarOpen : styles.sidebarClosed}>
-      <button className={styles.closeButton} onClick={onClose}>×</button>
+      <Button className={styles.closeButton} variant="ghost" onClick={onClose}>×</Button>
       <div className={styles.content}>
         {/* ここにフィルターUIを追加 */}
         <h2>フィルター</h2>

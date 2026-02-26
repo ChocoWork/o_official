@@ -1,4 +1,4 @@
-import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
+import { SESClient, SendEmailCommand, type SendEmailCommandInput } from '@aws-sdk/client-ses';
 
 type MailPayload = {
   to: string;
@@ -16,7 +16,7 @@ export async function sendMail({ to, subject, html, text, from }: MailPayload) {
 
   const client = new SESClient({ region: REGION });
 
-  const params = {
+  const params: SendEmailCommandInput = {
     Destination: { ToAddresses: [to] },
     Message: {
       Body: {
@@ -26,7 +26,7 @@ export async function sendMail({ to, subject, html, text, from }: MailPayload) {
       Subject: { Charset: 'UTF-8', Data: subject },
     },
     Source: sender,
-  } as any;
+  };
 
   const cmd = new SendEmailCommand(params);
   const res = await client.send(cmd);

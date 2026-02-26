@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
 import { createServiceRoleClient, createClient } from '@/lib/supabase/server';
 import { getRequestOrigin, sanitizeRedirectPath } from '@/lib/redirect';
 import { logAudit } from '@/lib/audit';
 import { RegisterRequestSchema } from '@/features/auth/schemas/register';
 import { formatZodError } from '@/features/auth/schemas/common';
+
+type AdminUserLite = {
+  email?: string | null;
+};
 
 
 
@@ -87,7 +90,7 @@ export async function POST(request: Request) {
             try {
               const listed = await service.auth.admin.listUsers({ per_page: 100 });
               if (listed?.data?.users) {
-                const found = listed.data.users.find((u: any) => String(u.email).toLowerCase() === String(emailToCheck).toLowerCase());
+                const found = listed.data.users.find((u) => String(u.email).toLowerCase() === String(emailToCheck).toLowerCase());
                 if (found) return { found: true, detail: 'email already exists (pre-check listUsers)' };
               }
             } catch (e) {
@@ -112,8 +115,10 @@ export async function POST(request: Request) {
               });
 
               if (r.ok) {
-                const body = await r.json();
-                const foundUser = Array.isArray(body) ? body.find((u: any) => String(u.email).toLowerCase() === String(emailToCheck).toLowerCase()) : (body?.email ? body : null);
+                const body: unknown = await r.json();
+                const foundUser = Array.isArray(body)
+                  ? (body as AdminUserLite[]).find((u) => String(u.email).toLowerCase() === String(emailToCheck).toLowerCase())
+                  : (typeof body === 'object' && body !== null && 'email' in body ? body : null);
                 if (foundUser) return { found: true, detail: 'email already exists (admin HTTP pre-check)' };
               } else if (r.status !== 404) {
                 console.warn('Admin HTTP pre-check returned non-ok status', r.status, await r.text());

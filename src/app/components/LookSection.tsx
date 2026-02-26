@@ -1,9 +1,12 @@
 "use client";
 
 import Image from 'next/image';
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { clientFetch } from '@/lib/client-fetch';
+import { Button } from '@/app/components/ui/Button';
+import { Card } from '@/app/components/ui/Card';
+import { LinkButton } from '@/app/components/ui/LinkButton';
+import { StatusBadge } from '@/app/components/ui/StatusBadge';
 
 type AdminLookItem = {
 	id: number;
@@ -92,7 +95,7 @@ export default function LookSection() {
 		<section>
 			<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 				{lookItems.map((item) => (
-					<div key={item.id} className="border border-[#d5d0c9] overflow-hidden">
+					<Card key={item.id} className="overflow-hidden p-0">
 						<Image
 							src={item.image_urls?.[0] || '/placeholder.png'}
 							alt={item.theme}
@@ -103,39 +106,42 @@ export default function LookSection() {
 						/>
 						<div className="p-4 space-y-3">
 							<div className="flex items-center space-x-2">
-								<span
-									className={`px-3 py-1 text-xs tracking-widest font-acumin ${
-										item.status === 'published' ? 'bg-black text-white' : 'border border-black text-black'
-									}`}
-								>
+								<StatusBadge tone={item.status === 'published' ? 'positive' : 'neutral'}>
 									{item.status === 'published' ? '公開中' : '非公開'}
-								</span>
+								</StatusBadge>
 							</div>
 							<p className="text-xs text-[#474747] tracking-widest font-acumin">
 								{item.season_year} {item.season_type}
 							</p>
 							<p className="text-sm text-black font-acumin">{item.theme}</p>
 							<div className="flex space-x-2 pt-2">
-								<button
+								<Button
 									onClick={() => handleToggleStatus(item.id, item.status)}
-									className="flex-1 px-4 py-2 border border-black text-black text-xs tracking-widest hover:bg-black hover:text-white transition-all cursor-pointer whitespace-nowrap font-acumin"
+									variant="secondary"
+									size="sm"
+									className="flex-1 font-acumin"
 								>
 									{item.status === 'published' ? '非公開' : '公開'}
-								</button>
-								<Link href={`/admin/look/edit/${item.id}`} className="flex-1">
-									<button className="w-full px-4 py-2 border border-black text-black text-xs tracking-widest hover:bg-black hover:text-white transition-all cursor-pointer whitespace-nowrap font-acumin">
-										編集
-									</button>
-								</Link>
-								<button
+								</Button>
+								<LinkButton
+									href={`/admin/look/edit/${item.id}`}
+									variant="secondary"
+									size="sm"
+									className="flex-1 font-acumin"
+								>
+									編集
+								</LinkButton>
+								<Button
 									onClick={() => handleDelete(item.id)}
-									className="px-4 py-2 bg-black text-white text-xs tracking-widest hover:bg-[#474747] transition-all cursor-pointer whitespace-nowrap font-acumin"
+									variant="primary"
+									size="sm"
+									className="font-acumin"
 								>
 									削除
-								</button>
+								</Button>
 							</div>
 						</div>
-					</div>
+					</Card>
 				))}
 			</div>
 		</section>

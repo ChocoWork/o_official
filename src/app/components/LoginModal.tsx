@@ -3,6 +3,7 @@ import { useLogin } from "./LoginContext";
 import { z } from 'zod';
 import { IdentifyRequestSchema } from '@/features/auth/schemas/identify';
 import { useRouter } from 'next/navigation';
+import { Button } from '@/app/components/ui/Button';
 
 declare global {
   interface Window {
@@ -230,15 +231,17 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
       <div className="mb-8 text-center">
         <h1 className="text-lg tracking-widest mb-2">サインイン</h1>
       </div>
-      <button
+      <Button
         type="button"
         onClick={() => {
           void loginWithGoogle({ next: '/' });
         }}
-        className="w-full py-4 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap flex items-center justify-center gap-3 mb-8"
+        variant="secondary"
+        size="lg"
+        className="w-full flex items-center justify-center gap-3 mb-8"
       >
         <i className="ri-google-fill text-lg"></i>Googleでサインイン
-      </button>
+      </Button>
       <div className="relative mb-8">
         <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-black/20"></div></div>
         <div className="relative flex justify-center text-sm"><span className="px-4 bg-white text-[#474747]">OR</span></div>
@@ -255,9 +258,11 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
               {timeRemaining > 0 ? (
                 <span className="text-xs text-[#474747]">{timeRemaining}秒</span>
               ) : (
-                <button
+                <Button
                   type="button"
-                  className="text-xs underline text-[#474747] hover:text-black transition-colors"
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs underline text-[#474747] hover:text-black transition-colors px-0 py-0"
                   onClick={async () => {
                     const email = emailRef.current?.value || '';
                     setLoading(true);
@@ -282,7 +287,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
                   }}
                 >
                   再送信
-                </button>
+                </Button>
               )}
             </div>
             <div className="flex items-center justify-between gap-2" id="otp">
@@ -312,12 +317,13 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
             <div className="cf-turnstile" data-sitekey={siteKey} data-callback="onTurnstileSuccess"></div>
           </div>
         ) : null}
-        <button type="submit" className="w-full py-4 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap disabled:opacity-50" disabled={loading || (otpSent && otpCode.length !== OTP_LENGTH)}>
+        <Button type="submit" size="lg" className="w-full disabled:opacity-50" disabled={loading || (otpSent && otpCode.length !== OTP_LENGTH)}>
           {loading ? '処理中...' : otpSent ? 'サインイン' : 'メールで認証コードを受け取る'}
-        </button>
+        </Button>
         {otpSent ? (
-          <button
+          <Button
             type="button"
+            variant="ghost"
             className="w-full py-3 border border-black/20 text-sm tracking-widest hover:bg-black/5 transition-all duration-300"
             onClick={() => {
               setOtpSent(false);
@@ -329,7 +335,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
             }}
           >
             メールアドレスを変更
-          </button>
+          </Button>
         ) : null}
         {error ? <p className="text-sm text-red-600 mt-2">{error}</p> : null}
         {success ? <p className="text-sm text-green-600 mt-2">{success}</p> : null}

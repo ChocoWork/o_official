@@ -4,6 +4,10 @@ import React from 'react';
 import Image from 'next/image';
 import { useSearchParams } from 'next/navigation';
 import { useLogin } from '@/app/components/LoginContext';
+import { Button } from '@/app/components/ui/Button';
+import { LinkButton } from '@/app/components/ui/LinkButton';
+import { TabSegmentControl } from '@/app/components/ui/TabSegmentControl';
+import { TextField } from '@/app/components/ui/TextField';
 
 type AccountTab = 'profile' | 'orders' | 'address';
 
@@ -149,14 +153,6 @@ export default function Page() {
 		}
 	};
 
-	const getTabButtonClass = (tab: AccountTab) => {
-		if (activeTab === tab) {
-			return 'w-full text-left px-6 py-4 text-sm tracking-wider transition-colors cursor-pointer bg-black text-white';
-		}
-
-		return 'w-full text-left px-6 py-4 text-sm tracking-wider transition-colors cursor-pointer bg-[#f5f5f5] text-black hover:bg-[#e5e5e5]';
-	};
-
 	if (!isAuthResolved) {
 		return (
 			<main className="pt-32 pb-20 px-6 lg:px-12">
@@ -180,30 +176,15 @@ export default function Page() {
 					<div className="grid grid-cols-1 lg:grid-cols-4 gap-12">
 						<div className="lg:col-span-1">
 							<nav className="space-y-2">
-								<button
-									type="button"
-									className={getTabButtonClass('profile')}
-									onClick={() => setActiveTab('profile')}
-									style={{ fontFamily: 'acumin-pro, sans-serif' }}
-								>
-									プロフィール
-								</button>
-								<button
-									type="button"
-									className={getTabButtonClass('orders')}
-									onClick={() => setActiveTab('orders')}
-									style={{ fontFamily: 'acumin-pro, sans-serif' }}
-								>
-									購入履歴
-								</button>
-								<button
-									type="button"
-									className={getTabButtonClass('address')}
-									onClick={() => setActiveTab('address')}
-									style={{ fontFamily: 'acumin-pro, sans-serif' }}
-								>
-									配送先住所
-								</button>
+								<TabSegmentControl
+									items={[
+										{ key: 'profile', label: 'プロフィール' },
+										{ key: 'orders', label: '購入履歴' },
+										{ key: 'address', label: '配送先住所' },
+									]}
+									activeKey={activeTab}
+									onChange={(tab) => setActiveTab(tab as AccountTab)}
+								/>
 							</nav>
 						</div>
 						<div className="lg:col-span-3">
@@ -217,10 +198,10 @@ export default function Page() {
 											>
 												メールアドレス
 											</label>
-											<input
+											<TextField
 												className="w-full px-4 py-3 border border-black/20 text-sm bg-[#f5f5f5] text-[#474747]"
 												type="email"
-												defaultValue="demo@gmail.com"
+												value="demo@gmail.com"
 												readOnly
 												style={{ fontFamily: 'acumin-pro, sans-serif' }}
 											/>
@@ -245,22 +226,23 @@ export default function Page() {
 													<p className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>{savedContact.phone || '-'}</p>
 												</div>
 												<div className="flex gap-3">
-													<button
+													<Button
 														type="button"
-														className="px-8 py-3 bg-black text-white text-xs tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap"
-														style={{ fontFamily: 'acumin-pro, sans-serif' }}
+														size="sm"
+														className="px-8 font-acumin"
 														onClick={() => setIsEditingProfile(true)}
 													>
 														変更する
-													</button>
-													<button
+													</Button>
+													<Button
 														type="button"
-														className="px-8 py-3 border border-black text-black text-xs tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap"
-														style={{ fontFamily: 'acumin-pro, sans-serif' }}
+														variant="secondary"
+														size="sm"
+														className="px-8 font-acumin"
 														onClick={handleProfileDelete}
 													>
 														削除する
-													</button>
+													</Button>
 												</div>
 											</div>
 										)}
@@ -269,32 +251,33 @@ export default function Page() {
 											<form className="space-y-6" onSubmit={handleProfileSave}>
 												<div>
 													<label className="block text-xs text-[#474747] mb-2 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>氏名</label>
-													<input className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors" type="text" name="fullName" autoComplete="name" value={profileForm.fullName} onChange={handleProfileFormChange} style={{ fontFamily: 'acumin-pro, sans-serif' }} />
+													<TextField className="font-acumin" type="text" name="fullName" autoComplete="name" value={profileForm.fullName} onChange={handleProfileFormChange} style={{ fontFamily: 'acumin-pro, sans-serif' }} />
 												</div>
 												<div>
 													<label className="block text-xs text-[#474747] mb-2 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>電話番号</label>
-													<input className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors" type="tel" name="phone" autoComplete="tel" value={profileForm.phone} onChange={handleProfileFormChange} style={{ fontFamily: 'acumin-pro, sans-serif' }} />
+													<TextField className="font-acumin" type="tel" name="phone" autoComplete="tel" value={profileForm.phone} onChange={handleProfileFormChange} style={{ fontFamily: 'acumin-pro, sans-serif' }} />
 												</div>
 												<div className="flex gap-3">
-													<button
+													<Button
 														type="submit"
-														className="px-12 py-4 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap"
-														style={{ fontFamily: 'acumin-pro, sans-serif' }}
+														size="lg"
+														className="px-12 font-acumin"
 													>
 														{savedContact ? '変更を保存' : '保存する'}
-													</button>
+													</Button>
 													{savedContact && (
-														<button
+														<Button
 															type="button"
-															className="px-8 py-4 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap"
-															style={{ fontFamily: 'acumin-pro, sans-serif' }}
+															variant="secondary"
+															size="lg"
+															className="px-8 font-acumin"
 															onClick={() => {
 																setProfileForm(savedContact);
 																setIsEditingProfile(false);
 															}}
 														>
 															キャンセル
-														</button>
+														</Button>
 													)}
 												</div>
 											</form>
@@ -456,7 +439,7 @@ export default function Page() {
 									<form className="space-y-6">
 										<div>
 											<label className="block text-xs text-[#474747] mb-2 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>郵便番号</label>
-											<input 
+											<TextField 
 												className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors" 
 												type="text" 
 												name="postalCode"
@@ -469,7 +452,7 @@ export default function Page() {
 										</div>
 										<div>
 											<label className="block text-xs text-[#474747] mb-2 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>都道府県</label>
-											<input 
+											<TextField 
 												className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors" 
 												type="text" 
 												name="prefecture"
@@ -481,7 +464,7 @@ export default function Page() {
 										</div>
 										<div>
 											<label className="block text-xs text-[#474747] mb-2 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>市区町村</label>
-											<input 
+											<TextField 
 												className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors" 
 												type="text" 
 												name="city"
@@ -493,7 +476,7 @@ export default function Page() {
 										</div>
 										<div>
 											<label className="block text-xs text-[#474747] mb-2 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>番地</label>
-											<input 
+											<TextField 
 												className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors" 
 												type="text" 
 												name="address"
@@ -505,7 +488,7 @@ export default function Page() {
 										</div>
 										<div>
 											<label className="block text-xs text-[#474747] mb-2 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>建物名・部屋番号</label>
-											<input 
+											<TextField 
 												className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors" 
 												type="text" 
 												name="building"
@@ -514,13 +497,13 @@ export default function Page() {
 												style={{ fontFamily: 'acumin-pro, sans-serif' }} 
 											/>
 										</div>
-										<button
+										<Button
 											type="submit"
-											className="px-12 py-4 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap"
-											style={{ fontFamily: 'acumin-pro, sans-serif' }}
+											size="lg"
+											className="px-12 font-acumin"
 										>
 											更新する
-										</button>
+										</Button>
 									</form>
 								</div>
 							)}
@@ -543,12 +526,9 @@ export default function Page() {
 				<p className="text-lg text-[#474747] mb-8 font-brand">
 					会員情報を確認するにはログインが必要です
 				</p>
-				<a
-					className="inline-block px-12 py-4 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap font-brand"
-					href="/login"
-				>
+				<LinkButton href="/login" variant="primary" size="lg" className="font-brand">
 					ログイン
-				</a>
+				</LinkButton>
 			</div>
 		</main>
 	);

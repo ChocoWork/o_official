@@ -6,12 +6,14 @@ import { usePathname } from 'next/navigation';
 import LoginModal from "./LoginModal";
 import { useLogin } from "./LoginContext";
 import { useCart } from "./CartContext";
+import { Button } from '@/app/components/ui/Button';
 import "remixicon/fonts/remixicon.css";
 
 const menuItems = [
   { href: '/news', label: 'NEWS' },
   { href: '/item', label: 'ITEM' },
   { href: '/look', label: 'LOOK' },
+  { href: '/ui', label: 'UI' },
   { href: '/about', label: 'ABOUT' },
   { href: '/stockist', label: 'STOCKIST' },
 ];
@@ -106,16 +108,18 @@ const Header = () => {
               }}
             >
               {isLoggedIn ? (
-                <button
+                <Button
                   type="button"
-                  className="w-5 h-5 flex items-center justify-center cursor-pointer"
+                  variant="ghost"
+                  size="sm"
+                  className="w-5 h-5 flex items-center justify-center cursor-pointer px-0 py-0"
                   aria-label="アカウントメニュー"
                   aria-haspopup="menu"
                   aria-expanded={accountMenuOpen}
                   onClick={() => setAccountMenuOpen((prev) => !prev)}
                 >
                   <i className="ri-user-fill text-xl text-black hover:text-[#474747] transition-colors"></i>
-                </button>
+                </Button>
               ) : (
                 <Link href="/login" className="w-5 h-5 flex items-center justify-center cursor-pointer">
                   <i className="ri-user-line text-xl text-black hover:text-[#474747] transition-colors"></i>
@@ -131,23 +135,24 @@ const Header = () => {
                 >
                   <a className="block px-6 py-3 text-xs tracking-wider text-black hover:bg-[#f5f5f5] transition-colors cursor-pointer" href="/account" style={{ fontFamily: 'acumin-pro, sans-serif' }} role="menuitem">会員情報</a>
                   <a className="block px-6 py-3 text-xs tracking-wider text-black hover:bg-[#f5f5f5] transition-colors cursor-pointer" href="/account?tab=orders" style={{ fontFamily: 'acumin-pro, sans-serif' }} role="menuitem">購入履歴</a>
-                  <button
+                  <Button
                     className="block w-full text-left px-6 py-3 text-xs tracking-wider text-black hover:bg-[#f5f5f5] transition-colors cursor-pointer"
                     style={{ fontFamily: 'acumin-pro, sans-serif' }}
                     role="menuitem"
+                    variant="ghost"
                     onClick={() => {
                       logout();
                       setAccountMenuOpen(false);
                     }}
                   >
                     ログアウト
-                  </button>
+                  </Button>
                 </div>
               )}
             </div>
-            <button className="lg:hidden w-5 h-5 flex items-center justify-center cursor-pointer">
+            <Button variant="ghost" size="sm" className="lg:hidden w-5 h-5 flex items-center justify-center cursor-pointer px-0 py-0">
               <i className="ri-menu-line text-2xl text-black"></i>
-            </button>
+            </Button>
           </div>
         </div>
       </div>

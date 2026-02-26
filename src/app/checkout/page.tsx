@@ -2,9 +2,16 @@
 
 import React, { useState } from "react";
 import Link from 'next/link';
+import Image from 'next/image';
+import { Button } from '@/app/components/ui/Button';
+import { Checkbox } from '@/app/components/ui/Checkbox';
+import { RadioButtonGroup } from '@/app/components/ui/RadioButtonGroup';
+import { SingleSelect } from '@/app/components/ui/SingleSelect';
+import { TextField } from '@/app/components/ui/TextField';
 
 export default function CheckoutPage() {
   const [step, setStep] = useState<number>(1);
+  const [paymentMethod, setPaymentMethod] = useState('credit');
   const [shippingForm, setShippingForm] = useState({
     email: '',
     fullName: '',
@@ -173,74 +180,50 @@ export default function CheckoutPage() {
                   <div>
                     <h2 className="text-2xl text-black mb-8 tracking-tight font-display">配送情報</h2>
                     <div className="space-y-6">
-                      <div>
-                        <label className="block text-xs text-[#474747] mb-2 tracking-wider font-brand">メールアドレス</label>
-                        <input required className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand" type="email" name="email" autoComplete="email" value={shippingForm.email} onChange={handleShippingChange} />
-                      </div>
+                      <TextField required label="メールアドレス" type="email" name="email" autoComplete="email" value={shippingForm.email} onChange={handleShippingChange} className="font-brand" />
 
-                      <div>
-                        <label className="block text-xs text-[#474747] mb-2 tracking-wider font-brand">氏名</label>
-                        <input required className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand" type="text" name="fullName" autoComplete="name" value={shippingForm.fullName} onChange={handleShippingChange} />
-                      </div>
+                      <TextField required label="氏名" type="text" name="fullName" autoComplete="name" value={shippingForm.fullName} onChange={handleShippingChange} className="font-brand" />
 
-                      <div>
-                        <label className="block text-xs text-[#474747] mb-2 tracking-wider font-brand">郵便番号</label>
-                        <input required placeholder="123-4567" className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand" type="text" name="postalCode" autoComplete="postal-code" value={shippingForm.postalCode} onChange={handleShippingChange} />
-                      </div>
+                      <TextField required label="郵便番号" placeholder="123-4567" type="text" name="postalCode" autoComplete="postal-code" value={shippingForm.postalCode} onChange={handleShippingChange} className="font-brand" />
 
-                      <div>
-                        <label className="block text-xs text-[#474747] mb-2 tracking-wider font-brand">都道府県</label>
-                        <select name="prefecture" required className="w-full px-4 py-3 pr-8 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors cursor-pointer font-brand" autoComplete="address-level1" value={shippingForm.prefecture} onChange={handleShippingChange}>
-                          <option value="">選択してください</option>
-                          <option value="東京都">東京都</option>
-                          <option value="大阪府">大阪府</option>
-                          <option value="神奈川県">神奈川県</option>
-                          <option value="愛知県">愛知県</option>
-                          <option value="福岡県">福岡県</option>
-                        </select>
-                      </div>
+                      <SingleSelect
+                        name="prefecture"
+                        required
+                        label="都道府県"
+                        autoComplete="address-level1"
+                        value={shippingForm.prefecture}
+                        onChange={handleShippingChange}
+                        className="font-brand"
+                        options={[
+                          { value: '', label: '選択してください' },
+                          { value: '東京都', label: '東京都' },
+                          { value: '大阪府', label: '大阪府' },
+                          { value: '神奈川県', label: '神奈川県' },
+                          { value: '愛知県', label: '愛知県' },
+                          { value: '福岡県', label: '福岡県' },
+                        ]}
+                      />
 
-                      <div>
-                        <label className="block text-xs text-[#474747] mb-2 tracking-wider font-brand">市区町村</label>
-                        <input required className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand" type="text" name="city" autoComplete="address-level2" value={shippingForm.city} onChange={handleShippingChange} />
-                      </div>
+                      <TextField required label="市区町村" type="text" name="city" autoComplete="address-level2" value={shippingForm.city} onChange={handleShippingChange} className="font-brand" />
 
-                      <div>
-                        <label className="block text-xs text-[#474747] mb-2 tracking-wider font-brand">番地</label>
-                        <input required className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand" type="text" name="address" autoComplete="street-address" value={shippingForm.address} onChange={handleShippingChange} />
-                      </div>
+                      <TextField required label="番地" type="text" name="address" autoComplete="street-address" value={shippingForm.address} onChange={handleShippingChange} className="font-brand" />
 
-                      <div>
-                        <label className="block text-xs text-[#474747] mb-2 tracking-wider font-brand">建物名・部屋番号（任意）</label>
-                        <input className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand" type="text" name="building" value={shippingForm.building} onChange={handleShippingChange} />
-                      </div>
+                      <TextField label="建物名・部屋番号（任意）" type="text" name="building" value={shippingForm.building} onChange={handleShippingChange} className="font-brand" />
 
-                      <div>
-                        <label className="block text-xs text-[#474747] mb-2 tracking-wider font-brand">電話番号</label>
-                        <input required placeholder="090-1234-5678" className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand" type="tel" name="phone" autoComplete="tel" value={shippingForm.phone} onChange={handleShippingChange} />
-                      </div>
+                      <TextField required label="電話番号" placeholder="090-1234-5678" type="tel" name="phone" autoComplete="tel" value={shippingForm.phone} onChange={handleShippingChange} className="font-brand" />
 
-                      <div className="flex items-center gap-3">
-                        <input
-                          id="saveProfile"
-                          className="w-4 h-4 cursor-pointer"
-                          type="checkbox"
-                          name="saveProfile"
-                          checked={shippingForm.saveProfile}
-                          onChange={handleShippingChange}
-                        />
-                        <label
-                          htmlFor="saveProfile"
-                          className="text-xs text-[#474747] tracking-wider font-brand cursor-pointer"
-                        >
-                          氏名と電話番号をプロフィールに任意保存する
-                        </label>
-                      </div>
+                      <Checkbox
+                        id="saveProfile"
+                        name="saveProfile"
+                        checked={shippingForm.saveProfile}
+                        onChange={handleShippingChange}
+                        label="氏名と電話番号をプロフィールに任意保存する"
+                      />
                     </div>
                   </div>
 
                   <div className="flex gap-4 mt-12">
-                    <button type="submit" className="flex-1 py-4 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap font-brand">次へ</button>
+                    <Button type="submit" size="lg" className="flex-1 font-brand">次へ</Button>
                   </div>
                 </form>
               )}
@@ -272,8 +255,8 @@ export default function CheckoutPage() {
                   </div>
 
                   <div className="flex gap-4 mt-12">
-                    <button type="button" onClick={() => setStep(2)} className="px-8 py-4 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap font-brand">戻る</button>
-                    <button type="submit" className="flex-1 py-4 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap font-brand">注文を確定する</button>
+                    <Button type="button" variant="secondary" size="lg" onClick={() => setStep(2)} className="font-brand">戻る</Button>
+                    <Button type="submit" size="lg" className="flex-1 font-brand">注文を確定する</Button>
                   </div>
                 </form>
               )}
@@ -284,47 +267,32 @@ export default function CheckoutPage() {
                   <div>
                     <h2 className="text-2xl text-black mb-8 tracking-tight font-display">お支払い方法</h2>
                     <div className="space-y-6">
-                      <div className="space-y-4">
-                        <label className="flex items-center gap-3 p-4 border border-black/20 cursor-pointer hover:border-black transition-colors">
-                          <input className="w-4 h-4 cursor-pointer" type="radio" value="credit" defaultChecked name="paymentMethod" />
-                          <span className="text-sm font-brand">クレジットカード</span>
-                        </label>
-                        <label className="flex items-center gap-3 p-4 border border-black/20 cursor-pointer hover:border-black transition-colors">
-                          <input className="w-4 h-4 cursor-pointer" type="radio" value="bank" name="paymentMethod" />
-                          <span className="text-sm font-brand">銀行振込</span>
-                        </label>
-                        <label className="flex items-center gap-3 p-4 border border-black/20 cursor-pointer hover:border-black transition-colors">
-                          <input className="w-4 h-4 cursor-pointer" type="radio" value="cod" name="paymentMethod" />
-                          <span className="text-sm font-brand">代金引換</span>
-                        </label>
-                      </div>
+                      <RadioButtonGroup
+                        name="paymentMethod"
+                        value={paymentMethod}
+                        onChange={setPaymentMethod}
+                        direction="column"
+                        options={[
+                          { value: 'credit', label: 'クレジットカード' },
+                          { value: 'bank', label: '銀行振込' },
+                          { value: 'cod', label: '代金引換' },
+                        ]}
+                      />
 
                       <div className="space-y-6 pt-6">
-                        <div>
-                          <label className="block text-xs text-[#474747] mb-2 tracking-wider font-brand">カード番号</label>
-                          <input required placeholder="1234 5678 9012 3456" className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand" type="text" name="cardNumber" defaultValue={""} />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-[#474747] mb-2 tracking-wider font-brand">カード名義</label>
-                          <input required placeholder="TARO YAMADA" className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand" type="text" name="cardName" defaultValue={""} />
-                        </div>
+                        <TextField required label="カード番号" placeholder="1234 5678 9012 3456" type="text" name="cardNumber" defaultValue={""} className="font-brand" />
+                        <TextField required label="カード名義" placeholder="TARO YAMADA" type="text" name="cardName" defaultValue={""} className="font-brand" />
                         <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-xs text-[#474747] mb-2 tracking-wider font-brand">有効期限</label>
-                            <input required placeholder="MM/YY" className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand" type="text" name="expiryDate" defaultValue={""} />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-[#474747] mb-2 tracking-wider font-brand">セキュリティコード</label>
-                            <input required placeholder="123" className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand" type="text" name="cvv" defaultValue={""} />
-                          </div>
+                          <TextField required label="有効期限" placeholder="MM/YY" type="text" name="expiryDate" defaultValue={""} className="font-brand" />
+                          <TextField required label="セキュリティコード" placeholder="123" type="text" name="cvv" defaultValue={""} className="font-brand" />
                         </div>
                       </div>
                     </div>
                   </div>
 
                   <div className="flex gap-4 mt-12">
-                    <button type="button" onClick={() => setStep(1)} className="px-8 py-4 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap font-brand">戻る</button>
-                    <button type="submit" className="flex-1 py-4 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap font-brand">次へ</button>
+                    <Button type="button" variant="secondary" size="lg" onClick={() => setStep(1)} className="font-brand">戻る</Button>
+                    <Button type="submit" size="lg" className="flex-1 font-brand">次へ</Button>
                   </div>
                 </form>
               )}
@@ -337,7 +305,7 @@ export default function CheckoutPage() {
               <div className="space-y-6 mb-8 pb-8 border-b border-black/10">
                 <div className="flex gap-4">
                   <div className="w-20 h-24 bg-[#f5f5f5] flex-shrink-0 overflow-hidden relative">
-                    <img alt="シルクブラウス" className="w-full h-full object-cover object-top" src="https://readdy.ai/api/search-image?query=elegant%20black%20silk%20blouse%20on%20white%20background%20minimalist%20fashion%20photography%20high%20quality%20luxury%20fabric%20texture%20soft%20lighting%20professional%20product%20shot%20clean%20simple%20backdrop&amp;width=400&amp;height=500&amp;seq=checkout1&amp;orientation=portrait" />
+                    <Image alt="シルクブラウス" className="w-full h-full object-cover object-top" src="https://readdy.ai/api/search-image?query=elegant%20black%20silk%20blouse%20on%20white%20background%20minimalist%20fashion%20photography%20high%20quality%20luxury%20fabric%20texture%20soft%20lighting%20professional%20product%20shot%20clean%20simple%20backdrop&amp;width=400&amp;height=500&amp;seq=checkout1&amp;orientation=portrait" width={400} height={500} />
                     <div className="absolute -top-2 -right-2 w-6 h-6 bg-black text-white rounded-full flex items-center justify-center text-xs font-brand">1</div>
                   </div>
                   <div className="flex-1">

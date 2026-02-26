@@ -4,6 +4,8 @@ import React, { useState, useEffect, use } from "react";
 import Image from "next/image";
 import { Item } from "@/app/types/item";
 import { useCart } from "@/app/components/CartContext";
+import { Button } from '@/app/components/ui/Button';
+import { Stepper } from '@/app/components/ui/Stepper';
 
 export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -121,16 +123,17 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       <main className="pt-32 pb-20 px-6 lg:px-12">
         <div className="max-w-7xl mx-auto">
           <div className="mb-8">
-            <a
-              href="#"
+            <Button
+              type="button"
               onClick={(e) => {
                 e.preventDefault();
                 history.back();
               }}
-              className="text-sm text-[#474747] hover:text-black transition-colors duration-300 flex items-center gap-2 font-brand"
+              variant="ghost"
+              className="text-sm text-[#474747] hover:text-black transition-colors duration-300 flex items-center gap-2 font-brand px-0 py-0"
             >
               <i className="ri-arrow-left-line" />BACK TO ITEMS
-            </a>
+            </Button>
           </div>
           <div className="text-center">
             <p className="text-base tracking-widest font-brand text-red-500">
@@ -154,16 +157,17 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     <main className="pt-32 pb-20 px-6 lg:px-12">
       <div className="max-w-7xl mx-auto">
         <div className="mb-8">
-          <a
-            href="#"
+          <Button
+            type="button"
             onClick={(e) => {
               e.preventDefault();
               history.back();
             }}
-            className="text-sm text-[#474747] hover:text-black transition-colors duration-300 flex items-center gap-2 font-brand"
+            variant="ghost"
+            className="text-sm text-[#474747] hover:text-black transition-colors duration-300 flex items-center gap-2 font-brand px-0 py-0"
           >
             <i className="ri-arrow-left-line" />BACK TO ITEMS
-          </a>
+          </Button>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
@@ -236,15 +240,15 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                 </h3>
                 <div className="flex gap-3 flex-wrap">
                   {(item.colors as unknown as Array<{ hex: string; name: string }>).map((colorOption) => (
-                    <button
+                    <Button
                       key={colorOption.name}
                       onClick={() => setColor(colorOption.name)}
-                      className={`px-6 py-2 text-xs tracking-widest transition-all duration-300 cursor-pointer whitespace-nowrap border border-black text-black hover:bg-black hover:text-white font-brand ${
-                        color === colorOption.name ? "bg-black text-white" : ""
-                      }`}
+                      variant={color === colorOption.name ? 'primary' : 'secondary'}
+                      size="sm"
+                      className="font-brand"
                     >
                       {colorOption.name}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               </div>
@@ -257,15 +261,15 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                 </h3>
                 <div className="flex gap-3 flex-wrap">
                   {item.sizes!.map((sizeOption: string) => (
-                    <button
+                    <Button
                       key={sizeOption}
                       onClick={() => setSize(sizeOption)}
-                      className={`w-16 h-12 text-sm tracking-widest transition-all duration-300 cursor-pointer border border-black text-black hover:bg-black hover:text-white font-brand ${
-                        size === sizeOption ? "bg-black text-white" : ""
-                      }`}
+                      variant={size === sizeOption ? 'primary' : 'secondary'}
+                      size="sm"
+                      className="w-16 h-12 font-brand"
                     >
                       {sizeOption}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               </div>
@@ -275,40 +279,27 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               <h3 className="text-sm tracking-widest mb-4 font-brand">
                 QUANTITY
               </h3>
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                  className="w-10 h-10 border border-black flex items-center justify-center hover:bg-black hover:text-white transition-all duration-300 cursor-pointer"
-                >
-                  <i className="ri-subtract-line" />
-                </button>
-                <span className="text-lg w-12 text-center font-brand">
-                  {quantity}
-                </span>
-                <button
-                  onClick={() => setQuantity((q) => q + 1)}
-                  className="w-10 h-10 border border-black flex items-center justify-center hover:bg-black hover:text-white transition-all duration-300 cursor-pointer"
-                >
-                  <i className="ri-add-line" />
-                </button>
-              </div>
+              <Stepper value={quantity} min={1} onChange={setQuantity} />
             </div>
 
             <div className="flex gap-4">
-              <button
+              <Button
                 onClick={handleAddToCart}
                 disabled={addingToCart}
-                className="flex-1 py-4 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap font-brand disabled:opacity-50 disabled:cursor-not-allowed"
+                size="lg"
+                className="flex-1 font-brand disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {addingToCart ? "追加中..." : "ADD TO CART"}
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={handleToggleWishlist}
                 disabled={togglingWishlist}
-                className="w-14 py-4 border border-black flex items-center justify-center hover:bg-black hover:text-white transition-all duration-300 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                variant="secondary"
+                size="lg"
+                className="w-14 py-4 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <i className={`text-2xl ${isWishlisted ? "ri-heart-fill text-red-500" : "ri-heart-line"}`} />
-              </button>
+              </Button>
             </div>
 
             {item.product_details && (

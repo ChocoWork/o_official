@@ -22,7 +22,7 @@ export function maskAuditEvent(event: AuditEvent) {
   const sensitiveKeyPatterns = [/password/, /^pass$/, /^pwd$/, /token/, /secret/, /ssn/, /card/, /cvv/, /credit_card/, /pan/, /number/];
 
   if (masked.metadata && typeof masked.metadata === 'object') {
-    for (const [k, v] of Object.entries(masked.metadata)) {
+    for (const [k] of Object.entries(masked.metadata)) {
       const lower = k.toLowerCase();
       if (sensitiveKeyPatterns.some((r) => r.test(lower))) {
         masked.metadata![k] = '[REDACTED]';

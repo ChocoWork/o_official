@@ -1,6 +1,8 @@
 import React from 'react';
 import { CreditCard, Truck, Shield } from 'lucide-react';
 import { CartSummary as CartSummaryType } from '../types/cart';
+import { Button } from '@/app/components/ui/Button';
+import { TextField } from '@/app/components/ui/TextField';
 
 interface CartSummaryProps {
   summary: CartSummaryType;
@@ -40,13 +42,13 @@ export const CartSummary: React.FC<CartSummaryProps> = ({ summary, onCheckout })
       </div>
 
       {/* チェックアウトボタン */}
-      <button
+      <Button
         onClick={onCheckout}
-        className="w-full bg-gray-900 text-white py-4 px-6 rounded-sm font-semibold text-lg hover:bg-gray-700 transition-colors duration-200 flex items-center justify-center space-x-2"
+        className="w-full rounded-sm font-semibold text-lg hover:bg-gray-700 transition-colors duration-200 flex items-center justify-center space-x-2"
       >
         <CreditCard className="w-5 h-5" />
         <span>レジに進む</span>
-      </button>
+      </Button>
 
       {/* 安心できる情報 */}
       <div className="mt-6 space-y-3">
@@ -64,14 +66,12 @@ export const CartSummary: React.FC<CartSummaryProps> = ({ summary, onCheckout })
       {/* プロモーションコード */}
       <div className="mt-6 pt-6 border-t border-gray-200">
         <div className="flex space-x-2">
-          <input
+          <TextField
             type="text"
             placeholder="プロモーションコード"
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent"
+            className="flex-1 rounded-sm px-3 py-2 border-gray-300 focus:ring-2 focus:ring-gray-500 focus:border-transparent"
           />
-          <button className="px-4 py-2 bg-gray-100 text-gray-700 rounded-sm text-sm font-medium hover:bg-gray-200 transition-colors duration-200">
-            適用
-          </button>
+          <Button variant="secondary" size="sm" className="rounded-sm text-sm font-medium">適用</Button>
         </div>
       </div>
     </div>

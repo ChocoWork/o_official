@@ -11,6 +11,28 @@ const compat = new FlatCompat({
 
 const eslintConfig = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
+  {
+    files: ["**/*.{ts,tsx,js,jsx,mjs,cjs}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@/app/components/ui",
+              message:
+                "`@/app/components/ui/<Component>` の直接importを使用してください。",
+            },
+            {
+              name: "@/app/components/ui/index",
+              message:
+                "`@/app/components/ui/<Component>` の直接importを使用してください。",
+            },
+          ],
+        },
+      ],
+    },
+  },
 ];
 
 export default eslintConfig;

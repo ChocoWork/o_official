@@ -3,6 +3,8 @@
 import Link from "next/link";
 import Image from "next/image";
 import { type NewsArticle } from "@/app/actions/news";
+import { LinkButton } from '@/app/components/ui/LinkButton';
+import { TagLabel } from '@/app/components/ui/TagLabel';
 
 interface HomeNewsSectionProps {
   initialNews: NewsArticle[];
@@ -59,12 +61,11 @@ export default function HomeNewsSection({ initialNews }: HomeNewsSectionProps) {
                       >
                         {article.published_date.replace(/-/g, ".")}
                       </span>
-                      <span
-                        className="text-xs text-black tracking-widest px-3 py-1 border border-black"
-                        style={{ fontFamily: "acumin-pro, sans-serif" }}
+                      <TagLabel
+                        className="font-acumin"
                       >
                         {article.category}
-                      </span>
+                      </TagLabel>
                     </div>
 
                     {/* Title */}
@@ -100,14 +101,7 @@ export default function HomeNewsSection({ initialNews }: HomeNewsSectionProps) {
         )}
 
         <div className="text-center mt-16">
-          <Link href="/news">
-            <button
-              className="px-12 py-4 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap"
-              style={{ fontFamily: "acumin-pro, sans-serif" }}
-            >
-              VIEW ALL NEWS
-            </button>
-          </Link>
+          <LinkButton href="/news" size="lg" className="font-acumin">VIEW ALL NEWS</LinkButton>
         </div>
       </div>
     </section>

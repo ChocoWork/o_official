@@ -4,6 +4,10 @@ import React, { useState, useEffect } from "react";
 import Link from 'next/link';
 import Image from "next/image";
 import { useCart } from "@/app/components/CartContext";
+import { Button } from '@/app/components/ui/Button';
+import { LinkButton } from '@/app/components/ui/LinkButton';
+import { Stepper } from '@/app/components/ui/Stepper';
+import { TextField } from '@/app/components/ui/TextField';
 
 interface CartItem {
   id: string;
@@ -179,20 +183,24 @@ export default function CartPage() {
                           </h3>
                         </Link>
                         <div className="flex items-center gap-2">
-                          <button
+                          <Button
                             onClick={() => handleToggleWishlist(item.item_id)}
                             disabled={togglingWishlist === item.item_id.toString()}
-                            className="w-8 h-8 flex items-center justify-center text-[#474747] hover:text-black transition-colors cursor-pointer disabled:opacity-30"
+                            variant="ghost"
+                            size="sm"
+                            className="w-8 h-8 flex items-center justify-center text-[#474747] hover:text-black transition-colors cursor-pointer disabled:opacity-30 px-0 py-0"
                           >
                             <i className={`text-xl ${wishlistedItems.has(item.item_id) ? "ri-heart-fill text-red-500" : "ri-heart-line"}`} />
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             onClick={() => handleRemove(item.id)}
                             disabled={updatingId === item.id}
-                            className="w-8 h-8 flex items-center justify-center text-[#474747] hover:text-black transition-colors cursor-pointer disabled:opacity-30"
+                            variant="ghost"
+                            size="sm"
+                            className="w-8 h-8 flex items-center justify-center text-[#474747] hover:text-black transition-colors cursor-pointer disabled:opacity-30 px-0 py-0"
                           >
                             <i className="ri-close-line text-xl"></i>
-                          </button>
+                          </Button>
                         </div>
                       </div>
                       {item.color && (
@@ -210,27 +218,11 @@ export default function CartPage() {
                           ¥{item.items.price.toLocaleString('ja-JP')}
                         </p>
                         <div className="flex items-center gap-2">
-                          <button
-                            onClick={() =>
-                              handleQuantityChange(item.id, item.quantity - 1)
-                            }
-                            disabled={updatingId === item.id || item.quantity <= 1}
-                            className="w-8 h-8 border border-black flex items-center justify-center hover:bg-black hover:text-white transition-all duration-300 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:text-black"
-                          >
-                            <i className="ri-subtract-line text-sm"></i>
-                          </button>
-                          <span className="text-sm w-8 text-center font-brand">
-                            {item.quantity}
-                          </span>
-                          <button
-                            onClick={() =>
-                              handleQuantityChange(item.id, item.quantity + 1)
-                            }
-                            disabled={updatingId === item.id}
-                            className="w-8 h-8 border border-black flex items-center justify-center hover:bg-black hover:text-white transition-all duration-300 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                          >
-                            <i className="ri-add-line text-sm"></i>
-                          </button>
+                          <Stepper
+                            value={item.quantity}
+                            min={1}
+                            onChange={(value) => handleQuantityChange(item.id, value)}
+                          />
                         </div>
                       </div>
                     </div>
@@ -259,14 +251,12 @@ export default function CartPage() {
                   プロモーションコード
                 </label>
                 <div className="flex gap-2">
-                  <input
+                  <TextField
                     placeholder="コードを入力"
                     className="flex-1 px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand"
                     type="text"
                   />
-                  <button className="px-6 py-3 bg-black text-white text-xs tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap font-brand">
-                    適用
-                  </button>
+                  <Button size="md" className="font-brand">適用</Button>
                 </div>
                 <p className="text-xs text-[#474747] mt-2 font-brand">
                   お試し: WELCOME10 または SAVE20
@@ -293,12 +283,9 @@ export default function CartPage() {
                 </span>
               </div>
 
-              <Link
-                href="/checkout"
-                className="block w-full py-4 bg-black text-white text-sm tracking-widest text-center hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap mb-4 font-brand"
-              >
+              <LinkButton href="/checkout" variant="primary" size="lg" className="w-full mb-4 font-brand">
                 購入手続きへ進む
-              </Link>
+              </LinkButton>
 
               <div className="space-y-3 pt-6 border-t border-black/10">
                 <div className="flex items-center gap-3">

@@ -3,6 +3,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
 import { categories } from "@/lib/news-data";
+import { TagLabel } from '@/app/components/ui/TagLabel';
 
 type NewsArticle = {
   id: string;
@@ -108,12 +109,9 @@ export default async function NewsPage({
                       >
                         {article.published_date.replace(/-/g, '.')}
                       </span>
-                      <span
-                        className="text-xs text-black tracking-widest px-3 py-1 border border-black"
-                        style={{ fontFamily: "acumin-pro, sans-serif" }}
-                      >
+                      <TagLabel className="font-acumin">
                         {article.category}
-                      </span>
+                      </TagLabel>
                     </div>
 
                     {/* Title */}

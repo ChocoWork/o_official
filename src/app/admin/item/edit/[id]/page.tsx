@@ -1,8 +1,15 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
+import { Button } from '@/app/components/ui/Button';
+import { ColorPicker } from '@/app/components/ui/ColorPicker';
+import { RadioButtonGroup } from '@/app/components/ui/RadioButtonGroup';
+import { SingleSelect } from '@/app/components/ui/SingleSelect';
+import { TextAreaField } from '@/app/components/ui/TextAreaField';
+import { TextField } from '@/app/components/ui/TextField';
+import { clientFetch } from '@/lib/client-fetch';
 
 const CATEGORIES = ['TOPS', 'BOTTOMS', 'OUTERWEAR', 'ACCESSORIES'] as const;
 const SIZES = ['S', 'M', 'L', 'FREE'] as const;
@@ -36,8 +43,10 @@ type ItemResponse = {
   status: ItemStatus;
 };
 
-export default function AdminItemEditPage({ params }: { params: { id: string } }) {
+export default function AdminItemEditPage() {
   const router = useRouter();
+  const params = useParams<{ id: string }>();
+  const itemId = params?.id;
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -60,7 +69,7 @@ export default function AdminItemEditPage({ params }: { params: { id: string } }
 
   const fetchSavedColors = async () => {
     try {
-      const response = await fetch('/api/admin/item-color-presets');
+      const response = await clientFetch('/api/admin/item-color-presets');
       if (!response.ok) {
         throw new Error('Failed to fetch color presets');
       }
@@ -84,9 +93,15 @@ export default function AdminItemEditPage({ params }: { params: { id: string } }
   }, []);
 
   useEffect(() => {
+    if (!itemId) {
+      setSubmitError('商品IDの取得に失敗しました');
+      setIsLoading(false);
+      return;
+    }
+
     const fetchItem = async () => {
       try {
-        const response = await fetch(`/api/admin/items/${params.id}`);
+        const response = await clientFetch(`/api/admin/items/${itemId}`);
         const json = await response.json().catch(() => null);
         if (!response.ok) {
           setSubmitError(json?.error ?? '商品の取得に失敗しました');
@@ -125,7 +140,7 @@ export default function AdminItemEditPage({ params }: { params: { id: string } }
     };
 
     fetchItem();
-  }, [params.id]);
+  }, [itemId]);
 
   const updateSelectedImage = (file: File) => {
     const supportedTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
@@ -208,7 +223,7 @@ export default function AdminItemEditPage({ params }: { params: { id: string } }
 
     void (async () => {
       try {
-        const response = await fetch('/api/admin/item-color-presets', {
+        const response = await clientFetch('/api/admin/item-color-presets', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: trimmedName, hex: color.hex }),
@@ -245,7 +260,7 @@ export default function AdminItemEditPage({ params }: { params: { id: string } }
   const handleRemoveSavedColor = (id: string) => {
     void (async () => {
       try {
-        const response = await fetch(`/api/admin/item-color-presets/${id}`, {
+        const response = await clientFetch(`/api/admin/item-color-presets/${id}`, {
           method: 'DELETE',
         });
 
@@ -273,6 +288,11 @@ export default function AdminItemEditPage({ params }: { params: { id: string } }
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+
+    if (!itemId) {
+      setSubmitError('商品IDの取得に失敗しました');
+      return;
+    }
     setSubmitError(null);
     setSubmitSuccess(null);
 
@@ -322,7 +342,7 @@ export default function AdminItemEditPage({ params }: { params: { id: string } }
         formData.append('images', file);
       }
 
-      const response = await fetch(`/api/admin/items/${params.id}`, {
+      const response = await clientFetch(`/api/admin/items/${itemId}`, {
         method: 'PUT',
         body: formData,
       });
@@ -361,13 +381,14 @@ export default function AdminItemEditPage({ params }: { params: { id: string } }
               {previewUrls.map((url, index) => (
                 <div key={`${url}-${index}`} className="relative aspect-[3/4] bg-[#f5f5f5] overflow-hidden border border-black/20">
                   <Image src={url} alt={`プレビュー ${index + 1}`} fill className="w-full h-full object-cover object-center" unoptimized />
-                  <button
+                  <Button
                     type="button"
                     onClick={() => removeImage(index)}
-                    className="absolute top-2 right-2 w-8 h-8 bg-black text-white flex items-center justify-center text-xs hover:bg-[#474747] transition-colors"
+                    size="sm"
+                    className="absolute top-2 right-2 h-8 w-8 p-0"
                   >
                     ×
-                  </button>
+                  </Button>
                 </div>
               ))}
             </div>
@@ -407,53 +428,26 @@ export default function AdminItemEditPage({ params }: { params: { id: string } }
 
           <div>
             <label className="block text-sm tracking-widest mb-2">カテゴリー</label>
-            <div className="relative">
-              <select
-                className="w-full px-4 py-3 pr-8 border border-black/20 text-sm focus:outline-none focus:border-black appearance-none cursor-pointer"
-                value={category}
-                onChange={(e) => setCategory(e.target.value as (typeof CATEGORIES)[number])}
-              >
-                {CATEGORIES.map((itemCategory) => (
-                  <option key={itemCategory} value={itemCategory}>
-                    {itemCategory}
-                  </option>
-                ))}
-              </select>
-              <i className="ri-arrow-down-s-line absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>
-            </div>
+            <SingleSelect
+              value={category}
+              onChange={(e) => setCategory(e.target.value as (typeof CATEGORIES)[number])}
+              options={CATEGORIES.map((itemCategory) => ({ value: itemCategory, label: itemCategory }))}
+            />
           </div>
 
           <div>
             <label className="block text-sm tracking-widest mb-2">商品名</label>
-            <input
-              className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black"
-              required
-              type="text"
-              value={itemName}
-              onChange={(e) => setItemName(e.target.value)}
-            />
+            <TextField required type="text" value={itemName} onChange={(e) => setItemName(e.target.value)} />
           </div>
 
           <div>
             <label className="block text-sm tracking-widest mb-2">価格（円）</label>
-            <input
-              className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black"
-              required
-              type="number"
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-            />
+            <TextField required type="number" value={price} onChange={(e) => setPrice(e.target.value)} />
           </div>
 
           <div>
             <label className="block text-sm tracking-widest mb-2">商品情報</label>
-            <textarea
-              rows={4}
-              className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black resize-none"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              required
-            />
+            <TextAreaField rows={4} value={description} onChange={(e) => setDescription(e.target.value)} required />
           </div>
 
           <div>
@@ -461,71 +455,72 @@ export default function AdminItemEditPage({ params }: { params: { id: string } }
             <div className="space-y-4 mb-4">
               {colors.map((color) => (
                 <div key={color.id} className="flex gap-3 items-end">
-                  <input
-                    className="flex-1 px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black"
+                  <TextField
+                    className="flex-1"
                     placeholder="カラー名"
                     type="text"
                     value={color.name}
                     onChange={(e) => handleColorChange(color.id, 'name', e.target.value)}
                   />
-                  <label className="relative w-12 h-12 rounded-full border-2 border-black/20 cursor-pointer overflow-hidden">
-                    <span className="absolute inset-0" style={{ backgroundColor: color.hex }} />
-                    <input
-                      type="color"
-                      value={color.hex}
-                      onChange={(e) => handleColorChange(color.id, 'hex', e.target.value)}
-                      className="absolute inset-0 opacity-0 cursor-pointer"
-                      aria-label="カラーを選択"
-                    />
-                  </label>
-                  <button
+                  <ColorPicker
+                    value={color.hex}
+                    onChange={(e) => handleColorChange(color.id, 'hex', e.target.value)}
+                    aria-label="カラーを選択"
+                  />
+                  <Button
                     type="button"
                     onClick={() => handleSaveColor(color)}
-                    className="px-3 py-2 border border-black text-black text-xs tracking-widest hover:bg-black hover:text-white transition-all"
+                    variant="secondary"
+                    size="sm"
                   >
                     保存
-                  </button>
+                  </Button>
                   {colors.length > 1 && (
-                    <button
+                    <Button
                       type="button"
                       onClick={() => handleRemoveColor(color.id)}
-                      className="px-3 py-2 border border-red-500 text-red-500 text-xs tracking-widest hover:bg-red-500 hover:text-white transition-all"
+                      variant="danger"
+                      size="sm"
                     >
                       削除
-                    </button>
+                    </Button>
                   )}
                 </div>
               ))}
             </div>
-            <button
+            <Button
               type="button"
               onClick={handleAddColor}
-              className="px-6 py-2 border border-black text-black text-xs tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap"
+              variant="secondary"
+              size="sm"
             >
               カラーを追加
-            </button>
+            </Button>
             {savedColors.length > 0 && (
               <div className="mt-6">
                 <p className="text-xs tracking-widest mb-3">保存済みカラー</p>
                 <div className="flex flex-wrap gap-3">
                   {savedColors.map((color) => (
                     <div key={color.id} className="relative w-10 h-10">
-                      <button
+                      <Button
                         type="button"
                         onClick={() => handleApplySavedColor(color)}
-                        className="relative w-10 h-10 rounded-full border-2 border-black/20 overflow-hidden"
+                        variant="ghost"
+                        size="sm"
+                        className="relative h-10 w-10 rounded-full border-2 border-black/20 overflow-hidden p-0"
                         aria-label={`保存済みカラー ${color.name || color.hex}`}
                       >
                         <span className="absolute inset-0" style={{ backgroundColor: color.hex }} />
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         type="button"
                         onClick={() => handleRemoveSavedColor(color.id)}
-                        className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-black text-white text-[10px] leading-none flex items-center justify-center"
+                        size="sm"
+                        className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 text-[10px]"
                         aria-label="保存済みカラーを削除"
                       >
                         ×
-                      </button>
+                      </Button>
                     </div>
                   ))}
                 </div>
@@ -555,41 +550,20 @@ export default function AdminItemEditPage({ params }: { params: { id: string } }
 
           <div>
             <label className="block text-sm tracking-widest mb-2">PRODUCT DETAILS（素材・洗濯の情報）</label>
-            <textarea
-              rows={6}
-              className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black resize-none"
-              value={productDetails}
-              onChange={(e) => setProductDetails(e.target.value)}
-              required
-            />
+            <TextAreaField rows={6} value={productDetails} onChange={(e) => setProductDetails(e.target.value)} required />
           </div>
 
           <div>
             <label className="block text-sm tracking-widest mb-2">ステータス</label>
-            <div className="flex gap-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  className="cursor-pointer"
-                  type="radio"
-                  name="status"
-                  value="private"
-                  checked={status === 'private'}
-                  onChange={() => setStatus('private')}
-                />
-                <span className="text-sm">非公開</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  className="cursor-pointer"
-                  type="radio"
-                  name="status"
-                  value="published"
-                  checked={status === 'published'}
-                  onChange={() => setStatus('published')}
-                />
-                <span className="text-sm">公開</span>
-              </label>
-            </div>
+            <RadioButtonGroup
+              name="status"
+              value={status}
+              onChange={(value) => setStatus(value as ItemStatus)}
+              options={[
+                { value: 'private', label: '非公開' },
+                { value: 'published', label: '公開' },
+              ]}
+            />
           </div>
 
           {submitSuccess && (
@@ -605,21 +579,20 @@ export default function AdminItemEditPage({ params }: { params: { id: string } }
           )}
 
           <div className="flex gap-4">
-            <button
+            <Button
               type="button"
               onClick={() => router.push('/admin?tab=ITEM')}
               disabled={isSubmitting}
-              className="px-8 py-3 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap"
+              variant="secondary"
             >
               キャンセル
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
               disabled={isSubmitting}
-              className="px-8 py-3 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap disabled:opacity-50"
             >
               {isSubmitting ? '更新中...' : '更新'}
-            </button>
+            </Button>
           </div>
         </form>
       </div>

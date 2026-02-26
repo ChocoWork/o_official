@@ -1,11 +1,15 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
-import FormField from '@/app/components/FormField';
-import RadioGroup from '@/app/components/RadioGroup';
+import { Button } from '@/app/components/ui/Button';
+import { RadioButtonGroup } from '@/app/components/ui/RadioButtonGroup';
+import { SingleSelect } from '@/app/components/ui/SingleSelect';
+import { TextAreaField } from '@/app/components/ui/TextAreaField';
+import { TextField } from '@/app/components/ui/TextField';
 import type { NewsFormData, NewsStatus } from '@/types/news';
+import { clientFetch } from '@/lib/client-fetch';
 
 function getTodayDateString(): string {
   const now = new Date();
@@ -24,8 +28,10 @@ type NewsArticle = {
   status: 'private' | 'published';
 };
 
-export default function EditNewsPage({ params }: { params: { id: string } }) {
+export default function EditNewsPage() {
   const router = useRouter();
+  const params = useParams<{ id: string }>();
+  const articleId = params?.id;
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -46,9 +52,15 @@ export default function EditNewsPage({ params }: { params: { id: string } }) {
   });
 
   useEffect(() => {
+    if (!articleId) {
+      setSubmitError('記事IDの取得に失敗しました');
+      setIsLoading(false);
+      return;
+    }
+
     const fetchArticle = async () => {
       try {
-        const res = await fetch(`/api/admin/news/${params.id}`);
+        const res = await clientFetch(`/api/admin/news/${articleId}`);
         if (!res.ok) throw new Error('Failed to fetch article');
         const json = await res.json();
         const article: NewsArticle = json.data;
@@ -72,7 +84,7 @@ export default function EditNewsPage({ params }: { params: { id: string } }) {
     };
 
     fetchArticle();
-  }, [params.id]);
+  }, [articleId]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -119,6 +131,11 @@ export default function EditNewsPage({ params }: { params: { id: string } }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (!articleId) {
+      setSubmitError('記事IDの取得に失敗しました');
+      return;
+    }
+
     setIsSubmitting(true);
     setSubmitError(null);
     setSubmitSuccess(null);
@@ -136,7 +153,7 @@ export default function EditNewsPage({ params }: { params: { id: string } }) {
         requestFormData.append('image', imageFile);
       }
 
-      const response = await fetch(`/api/admin/news/${params.id}`, {
+      const response = await clientFetch(`/api/admin/news/${articleId}`, {
         method: 'PUT',
         body: requestFormData,
       });
@@ -195,53 +212,29 @@ export default function EditNewsPage({ params }: { params: { id: string } }) {
     <main className="pt-32 pb-20">
       <div className="max-w-4xl mx-auto px-6 lg:px-12">
         <form onSubmit={handleSubmit} className="space-y-8">
-          {/* タイトル */}
-          <FormField label="タイトル">
-            <input
-              type="text"
-              name="title"
-              value={formData.title}
-              onChange={handleInputChange}
-              required
-              className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black font-acumin"
-            />
-          </FormField>
+          <TextField label="タイトル" type="text" name="title" value={formData.title} onChange={handleInputChange} required className="font-acumin" />
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* カテゴリー */}
-            <FormField label="カテゴリー">
-              <div className="relative">
-                <select
-                  name="category"
-                  value={formData.category}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-3 pr-8 border border-black/20 text-sm focus:outline-none focus:border-black appearance-none cursor-pointer font-acumin"
-                >
-                  <option value="COLLECTION">COLLECTION</option>
-                  <option value="EVENT">EVENT</option>
-                  <option value="COLLABORATION">COLLABORATION</option>
-                  <option value="SUSTAINABILITY">SUSTAINABILITY</option>
-                  <option value="STORE">STORE</option>
-                </select>
-                <i className="ri-arrow-down-s-line absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>
-              </div>
-            </FormField>
+            <SingleSelect
+              label="カテゴリー"
+              name="category"
+              value={formData.category}
+              onChange={handleInputChange}
+              className="font-acumin"
+              options={[
+                { value: 'COLLECTION', label: 'COLLECTION' },
+                { value: 'EVENT', label: 'EVENT' },
+                { value: 'COLLABORATION', label: 'COLLABORATION' },
+                { value: 'SUSTAINABILITY', label: 'SUSTAINABILITY' },
+                { value: 'STORE', label: 'STORE' },
+              ]}
+            />
 
-            {/* 公開日 */}
-            <FormField label="公開日">
-              <input
-                type="date"
-                name="date"
-                value={formData.date}
-                onChange={handleInputChange}
-                required
-                className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black font-acumin"
-              />
-            </FormField>
+            <TextField label="公開日" type="date" name="date" value={formData.date} onChange={handleInputChange} required className="font-acumin" />
           </div>
 
-          {/* 画像 */}
-          <FormField label="画像">
+          <div className="space-y-2">
+            <label className="block text-xs tracking-wider text-[#474747] font-brand">画像</label>
             <div
               role="button"
               tabIndex={0}
@@ -291,63 +284,59 @@ export default function EditNewsPage({ params }: { params: { id: string } }) {
                 </div>
               )}
             </div>
-          </FormField>
+          </div>
 
-          {/* 本文（要約） */}
-          <FormField label="本文（要約）">
-            <textarea
-              name="content"
-              value={formData.content}
-              onChange={handleInputChange}
-              rows={4}
-              required
-              placeholder="一覧ページに表示される要約文を入力してください"
-              className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black resize-none font-acumin"
-            />
-          </FormField>
+          <TextAreaField
+            label="本文（要約）"
+            name="content"
+            value={formData.content}
+            onChange={handleInputChange}
+            rows={4}
+            required
+            placeholder="一覧ページに表示される要約文を入力してください"
+            className="font-acumin"
+          />
 
-          {/* 本文（詳細） */}
-          <FormField label="本文（詳細）">
-            <textarea
-              name="detailedContent"
-              value={formData.detailedContent}
-              onChange={handleInputChange}
-              rows={12}
-              required
-              placeholder="詳細ページに表示される本文を入力してください"
-              className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black resize-none font-acumin"
-            />
-          </FormField>
+          <TextAreaField
+            label="本文（詳細）"
+            name="detailedContent"
+            value={formData.detailedContent}
+            onChange={handleInputChange}
+            rows={12}
+            required
+            placeholder="詳細ページに表示される本文を入力してください"
+            className="font-acumin"
+          />
 
-          {/* ステータス */}
-          <FormField label="ステータス">
-            <RadioGroup
+          <div className="space-y-2">
+            <label className="block text-xs tracking-wider text-[#474747] font-brand">ステータス</label>
+            <RadioButtonGroup
               name="status"
               options={[
                 { value: 'private', label: '非公開' },
                 { value: 'published', label: '公開' },
               ]}
-              selectedValue={formData.status}
+              value={formData.status}
               onChange={handleStatusChange}
             />
-          </FormField>
+          </div>
 
-          {/* ボタン */}
           <div className="flex gap-4">
-            <button
+            <Button
               type="button"
               onClick={() => router.push('/admin?tab=NEWS')}
-              className="px-8 py-3 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap font-acumin"
+              variant="secondary"
+              className="font-acumin"
             >
               キャンセル
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
               disabled={isSubmitting}
-              className="px-8 py-3 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap disabled:opacity-50 font-acumin"
+              className="font-acumin"
             >
               {isSubmitting ? '更新中...' : '更新'}
-            </button>
+            </Button>
           </div>
 
           {submitError && (

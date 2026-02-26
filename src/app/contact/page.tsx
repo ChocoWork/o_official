@@ -1,12 +1,16 @@
 "use client"; // これを追加
 
 import React, { useState } from 'react';
+import { Button } from '@/app/components/ui/Button';
+import { RadioButtonGroup } from '@/app/components/ui/RadioButtonGroup';
+import { TextAreaField } from '@/app/components/ui/TextAreaField';
+import { TextField } from '@/app/components/ui/TextField';
 
 export default function ContactPage() {
     const [selectedInquiryType, setSelectedInquiryType] = useState('');
 
-    const handleInquiryChange = (event) => {
-        setSelectedInquiryType(event.target.value);
+    const handleInquiryChange = (value: string) => {
+        setSelectedInquiryType(value);
     };
 
     return (
@@ -42,27 +46,27 @@ export default function ContactPage() {
 
                     <div>
                         <form className="space-y-6">
-                            <div>
-                                <label htmlFor="name" className="block text-sm tracking-widest mb-2">NAME *</label>
-                                <input id="name" required className="w-full px-4 py-3 border border-black/20 focus:border-black outline-none transition-colors duration-300 text-sm" type="text" name="name" />
-                            </div>
+                            <RadioButtonGroup
+                                name="inquiry"
+                                value={selectedInquiryType}
+                                onChange={handleInquiryChange}
+                                direction="column"
+                                options={[
+                                    { value: 'product', label: '商品について' },
+                                    { value: 'order', label: 'ご注文について' },
+                                    { value: 'other', label: 'その他' },
+                                ]}
+                            />
 
-                            <div>
-                                <label htmlFor="email" className="block text-sm tracking-widest mb-2">EMAIL *</label>
-                                <input id="email" required className="w-full px-4 py-3 border border-black/20 focus:border-black outline-none transition-colors duration-300 text-sm" type="email" name="email" />
-                            </div>
+                            <TextField id="name" required label="NAME *" type="text" name="name" />
 
-                            <div>
-                                <label htmlFor="subject" className="block text-sm tracking-widest mb-2">SUBJECT *</label>
-                                <input id="subject" required className="w-full px-4 py-3 border border-black/20 focus:border-black outline-none transition-colors duration-300 text-sm" type="text" name="subject" />
-                            </div>
+                            <TextField id="email" required label="EMAIL *" type="email" name="email" />
 
-                            <div>
-                                <label htmlFor="message" className="block text-sm tracking-widest mb-2">MESSAGE *</label>
-                                <textarea id="message" name="message" required rows={6} maxLength={500} className="w-full px-4 py-3 border border-black/20 focus:border-black outline-none transition-colors duration-300 resize-none text-sm"></textarea>
-                            </div>
+                            <TextField id="subject" required label="SUBJECT *" type="text" name="subject" />
 
-                            <button type="submit" className="w-full py-4 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap">SEND MESSAGE</button>
+                            <TextAreaField id="message" label="MESSAGE *" name="message" required rows={6} maxLength={500} />
+
+                            <Button type="submit" size="lg" className="w-full">SEND MESSAGE</Button>
                         </form>
                     </div>
                 </div>

@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 export default function VerifiedPage() {
-  const [message, setMessage] = useState<string | null>('確認完了。アカウントへ移動します…');
+  const [message] = useState<string | null>('確認完了。アカウントへ移動します…');
   const router = useRouter();
 
   useEffect(() => {

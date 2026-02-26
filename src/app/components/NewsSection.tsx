@@ -1,9 +1,12 @@
 'use client';
 
-import Link from 'next/link';
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { clientFetch } from '@/lib/client-fetch';
+import { Button } from '@/app/components/ui/Button';
+import { Card } from '@/app/components/ui/Card';
+import { LinkButton } from '@/app/components/ui/LinkButton';
+import { StatusBadge } from '@/app/components/ui/StatusBadge';
 
 type NewsArticle = {
   id: string;
@@ -93,7 +96,7 @@ export default function NewsSection() {
     <div>
       <div className="space-y-4">
         {newsItems.map((item) => (
-          <div key={item.id} className="border border-[#d5d0c9] p-6 flex items-center justify-between">
+          <Card key={item.id} className="flex items-center justify-between">
             <div className="flex items-center space-x-6 flex-1">
               <Image
                 src={item.image_url}
@@ -104,15 +107,9 @@ export default function NewsSection() {
               />
               <div className="flex-1">
                 <div className="flex items-center space-x-3 mb-2">
-                  <span
-                    className={`px-3 py-1 text-xs tracking-widest font-acumin ${
-                      item.status === 'published'
-                        ? 'bg-black text-white'
-                        : 'border border-black text-black'
-                    }`}
-                  >
+                  <StatusBadge tone={item.status === 'published' ? 'positive' : 'neutral'}>
                     {item.status === 'published' ? '公開中' : '非公開'}
-                  </span>
+                  </StatusBadge>
                   <span className="text-xs text-[#474747] tracking-widest font-acumin">
                     {item.category}
                   </span>
@@ -122,25 +119,32 @@ export default function NewsSection() {
               </div>
             </div>
             <div className="flex items-center space-x-3">
-              <button
+              <Button
                 onClick={() => handleToggleStatus(item.id, item.status)}
-                className="px-6 py-2 border border-black text-black text-xs tracking-widest hover:bg-black hover:text-white transition-all cursor-pointer whitespace-nowrap font-acumin"
+                variant="secondary"
+                size="sm"
+                className="font-acumin"
               >
                 {item.status === 'published' ? '非公開' : '公開'}
-              </button>
-              <Link href={`/admin/news/edit/${item.id}`}>
-                <button className="px-6 py-2 border border-black text-black text-xs tracking-widest hover:bg-black hover:text-white transition-all cursor-pointer whitespace-nowrap font-acumin">
-                  編集
-                </button>
-              </Link>
-              <button
+              </Button>
+              <LinkButton
+                href={`/admin/news/edit/${item.id}`}
+                variant="secondary"
+                size="sm"
+                className="font-acumin"
+              >
+                編集
+              </LinkButton>
+              <Button
                 onClick={() => handleDelete(item.id)}
-                className="px-6 py-2 bg-black text-white text-xs tracking-widest hover:bg-[#474747] transition-all cursor-pointer whitespace-nowrap font-acumin"
+                variant="primary"
+                size="sm"
+                className="font-acumin"
               >
                 削除
-              </button>
+              </Button>
             </div>
-          </div>
+          </Card>
         ))}
       </div>
     </div>

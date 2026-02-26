@@ -28,4 +28,6 @@ export async function verifyAndRotateCsrf(providedToken: string | undefined, sto
   return { ok: false } as const;
 }
 
-export default { generateCsrfToken, verifyAndRotateCsrf };
+const csrfHelper = { generateCsrfToken, verifyAndRotateCsrf };
+
+export default csrfHelper;

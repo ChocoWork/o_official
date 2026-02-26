@@ -1,7 +1,6 @@
 // ----------------- 管理ダッシュボード -----------------
 'use client';
 
-import Link from 'next/link';
 import { useMemo, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import AdminTabs, { type TabType } from '@/app/components/AdminTabs';
@@ -12,6 +11,7 @@ import ItemSection from '@/app/components/ItemSection';
 import LookSection from '@/app/components/LookSection';
 import UserSection from '@/app/components/UserSection';
 import OrderSection, { type OrderItem, type OrderStatus } from '@/app/components/OrderSection';
+import { LinkButton } from '@/app/components/ui/LinkButton';
 
 const allAdminTabs: TabType[] = ['KPI', 'NEWS', 'ITEM', 'LOOK', 'USER', 'ORDER'];
 const supporterTabs: TabType[] = ['ORDER'];
@@ -154,32 +154,23 @@ export default function AdminPage() {
       case 'NEWS':
         if (userRole !== 'admin') return null;
         return (
-          <Link
-            href="/admin/news/create"
-            className="px-8 py-3 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all cursor-pointer whitespace-nowrap font-acumin"
-          >
+          <LinkButton href="/admin/news/create" variant="primary" size="md" className="font-acumin">
             新規作成
-          </Link>
+          </LinkButton>
         );
       case 'ITEM':
         if (userRole !== 'admin') return null;
         return (
-          <Link
-            href="/admin/item/create"
-            className="px-8 py-3 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all cursor-pointer whitespace-nowrap font-acumin"
-          >
+          <LinkButton href="/admin/item/create" variant="primary" size="md" className="font-acumin">
             新規作成
-          </Link>
+          </LinkButton>
         );
       case 'LOOK':
         if (userRole !== 'admin') return null;
         return (
-          <Link
-            href="/admin/look/create"
-            className="px-8 py-3 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all cursor-pointer whitespace-nowrap font-acumin"
-          >
+          <LinkButton href="/admin/look/create" variant="primary" size="md" className="font-acumin">
             新規作成
-          </Link>
+          </LinkButton>
         );
       case 'ORDER':
         return (

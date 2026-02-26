@@ -2,6 +2,15 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
+type CartItemResponse = {
+  quantity: number;
+};
+
+type WishlistItemResponse = {
+  id: string;
+  item_id: number;
+};
+
 interface CartContextType {
   cartCount: number;
   wishlistedItems: Set<number>;
@@ -20,8 +29,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     try {
       const response = await fetch('/api/cart');
       if (response.ok) {
-        const cartItems = await response.json();
-        const totalCount = cartItems.reduce((sum: number, item: any) => sum + item.quantity, 0);
+        const cartItems: CartItemResponse[] = await response.json();
+        const totalCount = cartItems.reduce((sum: number, item) => sum + item.quantity, 0);
         setCartCount(totalCount);
       }
     } catch (error) {
@@ -33,8 +42,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     try {
       const response = await fetch('/api/wishlist');
       if (response.ok) {
-        const wishlistItems = await response.json();
-        const itemIds = new Set(wishlistItems.map((item: any) => item.item_id));
+        const wishlistItems: WishlistItemResponse[] = await response.json();
+        const itemIds = new Set(wishlistItems.map((item) => item.item_id));
         setWishlistedItems(itemIds);
       }
     } catch (error) {
@@ -50,8 +59,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         // Remove from wishlist - need to find wishlist ID first
         const response = await fetch('/api/wishlist');
         if (response.ok) {
-          const wishlistItems = await response.json();
-          const wishlistItem = wishlistItems.find((item: any) => item.item_id === itemId);
+          const wishlistItems: WishlistItemResponse[] = await response.json();
+          const wishlistItem = wishlistItems.find((item) => item.item_id === itemId);
           
           if (wishlistItem) {
             const deleteResponse = await fetch(`/api/wishlist/${wishlistItem.id}`, {

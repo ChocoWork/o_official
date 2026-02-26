@@ -1,7 +1,19 @@
 import { NextResponse } from 'next/server';
 import { logAudit } from '@/lib/audit';
 
-export async function persistSessionAndCookies(res: NextResponse, session: any, user: any) {
+type PersistSession = {
+  access_token: string;
+  refresh_token: string;
+  expires_in?: number;
+  expires_at?: number;
+};
+
+type PersistUser = {
+  id?: string | null;
+  email?: string | null;
+};
+
+export async function persistSessionAndCookies(res: NextResponse, session: PersistSession, user: PersistUser) {
   const context = { actor_id: user?.id ?? null, actor_email: user?.email ?? null };
 
   try {
@@ -95,13 +107,15 @@ export async function persistSessionAndCookies(res: NextResponse, session: any, 
     console.error('persistSessionAndCookies unexpected error:', e, context);
     try {
       await logAudit({ action: 'auth.session.persist', outcome: 'error', detail: String(e), actor_id: context.actor_id, actor_email: context.actor_email });
-    } catch (_) {
+    } catch {
       // ignore audit logging errors
     }
     return { ok: false, error: String(e) };
   }
 }
 
-export default {
+const registerService = {
   persistSessionAndCookies,
 };
+
+export default registerService;

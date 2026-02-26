@@ -2,6 +2,11 @@ import { NextResponse } from 'next/server';
 import { headers, cookies } from 'next/headers';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 
+type CsrfRotationResult = {
+  rotated?: boolean;
+  nextToken?: string;
+};
+
 // Verifies X-CSRF-Token header matches the stored csrf_token_hash for the session
 // identified by refresh token cookie. On success it will attempt to rotate the
 // CSRF token (store a new hash) and return the new raw token to the caller so
@@ -34,7 +39,7 @@ export async function requireCsrfOrDeny() {
           .from('sessions')
           .update({ csrf_token_hash: nextHash, csrf_prev_token_hash: storedHash })
           .eq('refresh_token_hash', refreshHash);
-      } catch (e) {
+      } catch {
         // If schema doesn't have csrf_prev_token_hash, fallback to updating only current.
         try {
           await service
@@ -48,8 +53,9 @@ export async function requireCsrfOrDeny() {
     };
 
     const rotation = await verifyAndRotateCsrf(headerToken, storedHash, storeNewHash);
-    if (rotation && (rotation as any).rotated && (rotation as any).nextToken) {
-      return { rotatedCsrfToken: (rotation as any).nextToken };
+    const rotationResult = rotation as CsrfRotationResult | undefined;
+    if (rotationResult?.rotated && rotationResult.nextToken) {
+      return { rotatedCsrfToken: rotationResult.nextToken };
     }
 
     return; // allowed, no rotation

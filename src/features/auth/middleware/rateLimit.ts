@@ -9,7 +9,7 @@ function getIpFromRequest(request?: Request): string {
     if (fwd) return fwd.split(',')[0].trim();
     const real = request.headers.get('x-real-ip');
     if (real) return real;
-  } catch (e) {
+  } catch {
     // ignore
   }
   return '127.0.0.1';
@@ -30,10 +30,10 @@ export async function enforceRateLimit({ request, endpoint, limit = 50, windowSe
         const res = NextResponse.json({ error: 'Too many requests' }, { status: 429 });
         res.headers.set('Retry-After', String(retryAfter));
         return res;
-      } catch (err) {
+      } catch {
         // In test environments NextResponse may not be available; return a
         // plain-like object to make assertions easier.
-        return { status: 429, _body: { error: 'Too many requests' }, headers: { 'Retry-After': String(retryAfter) } } as any;
+        return { status: 429, _body: { error: 'Too many requests' }, headers: { 'Retry-After': String(retryAfter) } };
       }
     }
     return undefined;

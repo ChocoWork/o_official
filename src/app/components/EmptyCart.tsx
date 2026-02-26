@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import Link from 'next/link';
+import { LinkButton } from '@/app/components/ui/LinkButton';
 
 interface EmptyCartProps {
   onStartShopping?: () => void;
@@ -26,13 +26,9 @@ export const EmptyCart: React.FC<EmptyCartProps> = ({ onStartShopping }) => {
             カートは空です
           </p>
 
-          <Link
-            href="/item"
-            className="px-12 py-4 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap"
-            onClick={() => onStartShopping && onStartShopping()}
-          >
+          <LinkButton href="/item" size="lg" onClick={() => onStartShopping && onStartShopping()}>
             CONTINUE SHOPPING
-          </Link>
+          </LinkButton>
         </div>
       </div>
     </main>

@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { Item } from '@/app/types/item';
 
 // GET: 商品一覧取得（公開済みのみ）
-export async function GET(request: Request) {
+export async function GET() {
   try {
     const supabase = await createClient();
     

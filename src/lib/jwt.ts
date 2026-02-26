@@ -12,7 +12,12 @@ export type JwtPayload = {
   sid?: string;
   role?: string | string[];
   email?: string | null;
-  [k: string]: any;
+  [k: string]: unknown;
+};
+
+type JwtHeader = {
+  alg?: string;
+  kid?: string;
 };
 
 const DEFAULT_EXPIRES_SECONDS = 15 * 60; // 15 minutes
@@ -49,7 +54,7 @@ export function sign(payload: Partial<JwtPayload>, opts?: { expiresInSeconds?: n
   const signKey = alg.startsWith('HS') ? (secret as string) : (process.env.JWT_PRIVATE_KEY || publicKey);
   if (!signKey) throw new Error('JWT signing key not configured');
 
-  const header: Record<string, any> = { typ: 'JWT' };
+  const header: Record<string, unknown> = { typ: 'JWT' };
   if (process.env.JWT_KID) header.kid = process.env.JWT_KID;
 
   const token = jwt.sign(body as object, signKey, {
@@ -63,7 +68,7 @@ export function sign(payload: Partial<JwtPayload>, opts?: { expiresInSeconds?: n
 
 // JWKS cache
 const JWKS_CACHE: {
-  keys?: any[];
+  keys?: JsonWebKey[];
   fetchedAt?: number;
   ttlMs?: number;
 } = { ttlMs: 5 * 60 * 1000 };
@@ -74,13 +79,16 @@ async function fetchJwks(jwksUrl: string) {
     return JWKS_CACHE.keys;
   }
   // Prefer global fetch (node 18+ or test polyfill), otherwise dynamic import node-fetch
-  let fetchFn: any = (globalThis as any).fetch;
-  if (typeof fetchFn !== 'function') {
-    fetchFn = (await import('node-fetch')).default as any;
+  let fetchFn: (url: string, init?: RequestInit) => Promise<Response>;
+  if (typeof globalThis.fetch === 'function') {
+    fetchFn = globalThis.fetch.bind(globalThis);
+  } else {
+    const nodeFetch = (await import('node-fetch')).default;
+    fetchFn = nodeFetch as unknown as (url: string, init?: RequestInit) => Promise<Response>;
   }
   const res = await fetchFn(jwksUrl, { headers: { Accept: 'application/json' } });
   if (!res.ok) throw new Error(`Failed to fetch JWKS: ${res.status}`);
-  const body = await res.json();
+  const body = (await res.json()) as { keys?: JsonWebKey[] };
   JWKS_CACHE.keys = body.keys || [];
   JWKS_CACHE.fetchedAt = Date.now();
   return JWKS_CACHE.keys;
@@ -93,20 +101,23 @@ export function _clearJwksCache() {
 }
 
 
-function jwkToPem(jwk: any) {
+function jwkToPem(jwk: JsonWebKey) {
   if (!jwk || jwk.kty !== 'RSA') throw new Error('Unsupported JWK type');
   // Node can import a JWK object directly
-  const keyObj = crypto.createPublicKey({ key: jwk, format: 'jwk' } as any);
+  const keyObj = crypto.createPublicKey({ key: jwk, format: 'jwk' });
   return keyObj.export({ type: 'spki', format: 'pem' }) as string;
 }
 
 export async function verify<T extends JwtPayload = JwtPayload>(token: string): Promise<T> {
   const { alg, secret, publicKey, jwksUrl, expectedIss, expectedAud } = getSigningConfig();
 
-  const decodedHeader = (() => {
+  const decodedHeader = (() : JwtHeader => {
     try {
-      const h = jwt.decode(token, { complete: true }) as any;
-      return h?.header || {};
+      const decoded = jwt.decode(token, { complete: true });
+      if (decoded && typeof decoded === 'object' && 'header' in decoded) {
+        return (decoded as jwt.Jwt).header as JwtHeader;
+      }
+      return {};
     } catch {
       return {};
     }
@@ -131,23 +142,25 @@ export async function verify<T extends JwtPayload = JwtPayload>(token: string): 
     try {
       const options: jwt.VerifyOptions = { algorithms: [alg as jwt.Algorithm] };
       if (expectedIss) options.issuer = expectedIss as string;
-      if (expectedAud) options.audience = expectedAud as string as any;
+      if (expectedAud) options.audience = expectedAud as string;
       const payload = jwt.verify(token, verifyKey, options) as T;
       return payload;
-    } catch (err: any) {
-      if (err.name === 'TokenExpiredError') throw new Error('Token expired');
-      if (err.name === 'JsonWebTokenError') {
-        const m = (err.message || '').toLowerCase();
+    } catch (err: unknown) {
+      const errName = err instanceof Error ? err.name : '';
+      const errMessage = err instanceof Error ? err.message : '';
+      if (errName === 'TokenExpiredError') throw new Error('Token expired');
+      if (errName === 'JsonWebTokenError') {
+        const m = errMessage.toLowerCase();
         if (m.includes('issuer')) {
-          await logAudit({ action: 'auth_token_verify', outcome: 'failure', detail: 'invalid_issuer', metadata: { expectedIss, message: err.message } });
+          await logAudit({ action: 'auth_token_verify', outcome: 'failure', detail: 'invalid_issuer', metadata: { expectedIss, message: errMessage } });
           throw new Error('Invalid issuer');
         }
         if (m.includes('audience')) {
-          await logAudit({ action: 'auth_token_verify', outcome: 'failure', detail: 'invalid_audience', metadata: { expectedAud, message: err.message } });
+          await logAudit({ action: 'auth_token_verify', outcome: 'failure', detail: 'invalid_audience', metadata: { expectedAud, message: errMessage } });
           throw new Error('Invalid audience');
         }
         // Signature or other token invalid
-        await logAudit({ action: 'auth_token_verify', outcome: 'failure', detail: 'signature_invalid', metadata: { message: err.message } });
+        await logAudit({ action: 'auth_token_verify', outcome: 'failure', detail: 'signature_invalid', metadata: { message: errMessage } });
         throw new Error('Invalid token');
       }
       throw err;
@@ -162,9 +175,9 @@ export async function verify<T extends JwtPayload = JwtPayload>(token: string): 
     if (!keys || keys.length === 0) throw new Error('No JWKS key found');
 
     // Build candidate list: prefer kid match, otherwise try all keys (to support rotation)
-    const candidates: any[] = [];
+    const candidates: JsonWebKey[] = [];
     if (decodedHeader.kid) {
-      const matched = keys.find((k: any) => k.kid === decodedHeader.kid);
+      const matched = keys.find((k) => k.kid === decodedHeader.kid);
       if (matched) candidates.push(matched);
       // include others as fallback
       for (const k of keys) if (k.kid !== decodedHeader.kid) candidates.push(k);
@@ -173,34 +186,36 @@ export async function verify<T extends JwtPayload = JwtPayload>(token: string): 
     }
 
     // Try each candidate key until one verifies
-    let lastErr: any = null;
+    let lastErr: unknown = null;
     for (const jwk of candidates) {
       const pem = jwkToPem(jwk);
       try {
         const options: jwt.VerifyOptions = { algorithms: [alg as jwt.Algorithm] };
         if (expectedIss) options.issuer = expectedIss as string;
-        if (expectedAud) options.audience = expectedAud as string as any;
+        if (expectedAud) options.audience = expectedAud as string;
         const payload = jwt.verify(token, pem, options) as T;
         return payload;
-      } catch (e: any) {
-        lastErr = e;
+      } catch (error: unknown) {
+        lastErr = error;
         // continue to next key
       }
     }
 
     // If none matched, throw normalized error and record audit
-    if (lastErr && lastErr.name === 'TokenExpiredError') throw new Error('Token expired');
-    if (lastErr && lastErr.name === 'JsonWebTokenError') {
-      const m = (lastErr.message || '').toLowerCase();
+    const lastErrName = lastErr instanceof Error ? lastErr.name : '';
+    const lastErrMessage = lastErr instanceof Error ? lastErr.message : '';
+    if (lastErrName === 'TokenExpiredError') throw new Error('Token expired');
+    if (lastErrName === 'JsonWebTokenError') {
+      const m = lastErrMessage.toLowerCase();
       if (m.includes('issuer')) {
-        await logAudit({ action: 'auth_token_verify', outcome: 'failure', detail: 'invalid_issuer', metadata: { expectedIss, message: lastErr.message } });
+        await logAudit({ action: 'auth_token_verify', outcome: 'failure', detail: 'invalid_issuer', metadata: { expectedIss, message: lastErrMessage } });
         throw new Error('Invalid issuer');
       }
       if (m.includes('audience')) {
-        await logAudit({ action: 'auth_token_verify', outcome: 'failure', detail: 'invalid_audience', metadata: { expectedAud, message: lastErr.message } });
+        await logAudit({ action: 'auth_token_verify', outcome: 'failure', detail: 'invalid_audience', metadata: { expectedAud, message: lastErrMessage } });
         throw new Error('Invalid audience');
       }
-      await logAudit({ action: 'auth_token_verify', outcome: 'failure', detail: 'signature_invalid', metadata: { message: lastErr.message } });
+      await logAudit({ action: 'auth_token_verify', outcome: 'failure', detail: 'signature_invalid', metadata: { message: lastErrMessage } });
       throw new Error('Invalid token');
     }
     await logAudit({ action: 'auth_token_verify', outcome: 'failure', detail: 'signature_invalid' });
@@ -214,13 +229,15 @@ export async function verify<T extends JwtPayload = JwtPayload>(token: string): 
   try {
     const options: jwt.VerifyOptions = { algorithms: [alg as jwt.Algorithm] };
     if (expectedIss) options.issuer = expectedIss as string;
-    if (expectedAud) options.audience = expectedAud as string as any;
+    if (expectedAud) options.audience = expectedAud as string;
     const payload = jwt.verify(token, keyToUse, options) as T;
     return payload;
-  } catch (err: any) {
-    if (err.name === 'TokenExpiredError') throw new Error('Token expired');
-    if (err.name === 'JsonWebTokenError') {
-      const m = (err.message || '').toLowerCase();
+  } catch (err: unknown) {
+    const errName = err instanceof Error ? err.name : '';
+    const errMessage = err instanceof Error ? err.message : '';
+    if (errName === 'TokenExpiredError') throw new Error('Token expired');
+    if (errName === 'JsonWebTokenError') {
+      const m = errMessage.toLowerCase();
       if (m.includes('issuer')) throw new Error('Invalid issuer');
       if (m.includes('audience')) throw new Error('Invalid audience');
       throw new Error('Invalid token');
@@ -229,4 +246,6 @@ export async function verify<T extends JwtPayload = JwtPayload>(token: string): 
   }
 }
 
-export default { sign, verify };
+const jwtHelper = { sign, verify };
+
+export default jwtHelper;

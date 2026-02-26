@@ -5,14 +5,14 @@
 # Development Workflow (Specification-Driven)
 
 1. 実装前チェック
-- 実装を始める前に必ず参照する: [docs/ECSiteSpec.md](docs/ECSiteSpec.md), [docs/specs/](docs/specs/)、`tasks/roadmap.md`。
+- 実装を始める前に必ず参照する: [docs/ECSiteSpec.md](docs/ECSiteSpec.md), [docs/specs/](docs/specs/)、`tasks/`。
 - 実装開始時に**必ずタスクID**を明示する（例: [BE-01]、`DOC-01` など）。
 
 2. 仕様準拠
 - すべての提案・実装は仕様書に基づくこと。仕様にない挙動は開発者が勝手に補完せず、必ず質問して合意を得る。
 
 3. 完了報告
-- 実装完了後は `tasks/roadmap.md` の該当チェックボックスを更新し、レビュー依頼を出す。
+- 実装完了後は `tasks/*.md` の該当チェックボックスを更新し、レビュー依頼を出す。
 
 4. 破壊的変更
 - DBスキーマや公開APIの破壊的変更は事前に明示し、チーム承認を得ること。
@@ -53,7 +53,7 @@
 # Instructions for Output
 
 - 回答の冒頭で「どの仕様に基づき、どのタスクを実行するか」を宣言すること。
-- コードやファイル参照の際は `tasks/roadmap.md` と仕様書を先に確認すること。
+- コードやファイル参照の際は `tasks/*.md` と仕様書を先に確認すること。
 - コードブロックやテンプレートを提示する際は、該当ファイルパスを明記すること。
 - 破壊的変更やスキーマ変更がある場合は事前に警告し、承認を得ること。
 - デザイン関連実装は必ず [docs/specs/brand-guidelines.md](docs/specs/brand-guidelines.md) に従うこと。デザイン疑義は担当デザイナーに確認すること。
@@ -66,12 +66,12 @@
 
 - 実装前: 仕様確認、タスクID宣言
 - 実装中: 型厳格、Zodで検証、RSC優先
-- 公開前: テスト実行、フォーマット、`tasks/roadmap.md` 更新
+- 公開前: テスト実行、フォーマット、`tasks/*.md` 更新
 - 破壊的変更: 事前合意を取得
 
 # Post-implementation
 
-- 実装完了後は `tasks/roadmap.md` の該当項目を完了にする。
+- 実装完了後は `tasks/*.md` の該当項目を完了にする。
 - 追加ドキュメントやマイグレーション手順があれば同ファイル群に追記する。
 
 # Questions

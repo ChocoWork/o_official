@@ -1,9 +1,12 @@
 'use client';
 
-import Link from 'next/link';
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { clientFetch } from '@/lib/client-fetch';
+import { Button } from '@/app/components/ui/Button';
+import { Card } from '@/app/components/ui/Card';
+import { LinkButton } from '@/app/components/ui/LinkButton';
+import { StatusBadge } from '@/app/components/ui/StatusBadge';
 
 interface AdminItem {
   id: number;
@@ -24,7 +27,7 @@ function ItemCard({ item, onToggleStatus, onDelete }: ItemCardProps) {
   const priceLabel = `¥${item.price.toLocaleString()}`;
 
   return (
-    <div className="border border-[#d5d0c9] overflow-hidden">
+    <Card className="overflow-hidden p-0">
       <Image
         alt={item.name}
         className="w-full aspect-[3/4] object-cover bg-[#f5f5f5]"
@@ -35,13 +38,9 @@ function ItemCard({ item, onToggleStatus, onDelete }: ItemCardProps) {
       />
       <div className="p-4 space-y-3">
         <div className="flex items-center space-x-2">
-          <span
-            className={`px-3 py-1 text-xs tracking-widest font-acumin ${
-              item.status === 'published' ? 'bg-black text-white' : 'border border-black text-black'
-            }`}
-          >
+          <StatusBadge tone={item.status === 'published' ? 'positive' : 'neutral'}>
             {item.status === 'published' ? '公開中' : '非公開'}
-          </span>
+          </StatusBadge>
           <span className="text-xs text-[#474747] tracking-widest font-acumin">
             {item.category}
           </span>
@@ -49,26 +48,33 @@ function ItemCard({ item, onToggleStatus, onDelete }: ItemCardProps) {
         <h4 className="text-base text-black font-acumin">{item.name}</h4>
         <p className="text-sm text-black font-acumin">{priceLabel}</p>
         <div className="flex space-x-2 pt-2">
-          <button
+          <Button
             onClick={() => onToggleStatus(item.id, item.status)}
-            className="flex-1 px-4 py-2 border border-black text-black text-xs tracking-widest hover:bg-black hover:text-white transition-all cursor-pointer whitespace-nowrap font-acumin"
+            variant="secondary"
+            size="sm"
+            className="flex-1 font-acumin"
           >
             {item.status === 'published' ? '非公開' : '公開'}
-          </button>
-          <Link className="flex-1" href={`/admin/item/edit/${item.id}`}>
-            <button className="w-full px-4 py-2 border border-black text-black text-xs tracking-widest hover:bg-black hover:text-white transition-all cursor-pointer whitespace-nowrap font-acumin">
-              編集
-            </button>
-          </Link>
-          <button
+          </Button>
+          <LinkButton
+            className="flex-1 font-acumin"
+            href={`/admin/item/edit/${item.id}`}
+            variant="secondary"
+            size="sm"
+          >
+            編集
+          </LinkButton>
+          <Button
             onClick={() => onDelete(item.id)}
-            className="px-4 py-2 bg-black text-white text-xs tracking-widest hover:bg-[#474747] transition-all cursor-pointer whitespace-nowrap font-acumin"
+            variant="primary"
+            size="sm"
+            className="font-acumin"
           >
             削除
-          </button>
+          </Button>
         </div>
       </div>
-    </div>
+    </Card>
   );
 }
 

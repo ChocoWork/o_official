@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Item } from '@/app/types/item';
+import { TabSegmentControl } from '@/app/components/ui/TabSegmentControl';
 
 export default function ItemPage() {
   const [items, setItems] = useState<Item[]>([]);
@@ -67,19 +68,11 @@ export default function ItemPage() {
       <div className="max-w-7xl mx-auto">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 gap-6">
           <div className="flex flex-wrap gap-3">
-            {categories.map((category) => (
-              <button
-                key={category}
-                onClick={() => setSelectedCategory(category === 'ALL' ? null : category)}
-                className={`px-6 py-2 text-xs tracking-widest transition-all duration-300 cursor-pointer whitespace-nowrap font-brand ${
-                  (category === 'ALL' && selectedCategory === null) || selectedCategory === category
-                    ? 'bg-black text-white'
-                    : 'border border-black text-black hover:bg-black hover:text-white'
-                }`}
-              >
-                {category}
-              </button>
-            ))}
+            <TabSegmentControl
+              items={categories.map((category) => ({ key: category, label: category }))}
+              activeKey={selectedCategory ?? 'ALL'}
+              onChange={(category) => setSelectedCategory(category === 'ALL' ? null : category)}
+            />
           </div>
         </div>
 

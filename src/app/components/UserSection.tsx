@@ -2,6 +2,9 @@
 
 import React from 'react';
 import { clientFetch } from '@/lib/client-fetch';
+import { DataTable } from '@/app/components/ui/DataTable';
+import { SingleSelect } from '@/app/components/ui/SingleSelect';
+import { StatusBadge } from '@/app/components/ui/StatusBadge';
 
 type UserRoleValue = 'admin' | 'supporter' | 'user';
 type UserRoleLabel = 'Admin' | 'Support' | 'User';
@@ -147,45 +150,42 @@ export default function UserSection() {
 		<section>
 			{errorMessage && <p className="mb-4 text-sm text-red-700 font-acumin">{errorMessage}</p>}
 
-			<div className="border border-[#d5d0c9] overflow-hidden overflow-x-auto">
-				<table className="w-full min-w-[980px]">
-					<thead className="bg-[#f5f5f5]">
-						<tr>
-							<th className="px-6 py-4 text-left text-xs tracking-widest text-[#474747] font-acumin">名前</th>
-							<th className="px-6 py-4 text-left text-xs tracking-widest text-[#474747] font-acumin">メールアドレス</th>
-							<th className="w-[180px] px-6 py-4 text-left text-xs tracking-widest text-[#474747] font-acumin">権限</th>
-							<th className="px-6 py-4 text-left text-xs tracking-widest text-[#474747] font-acumin">最終ログイン</th>
-							<th className="px-6 py-4 text-left text-xs tracking-widest text-[#474747] font-acumin">ステータス</th>
-						</tr>
-					</thead>
-					<tbody>
-						{sortedUsers.map((user) => (
-							<tr key={user.id} className="border-t border-[#d5d0c9]">
-								<td className="px-6 py-4 text-sm text-black font-acumin">{user.name}</td>
-								<td className="px-6 py-4 text-sm text-[#474747] font-acumin">{user.email}</td>
-								<td className="w-[180px] px-6 py-4">
-									<select
-										className={`w-[140px] border px-3 py-2 text-xs tracking-widest font-acumin focus:outline-none focus:border-black ${roleSelectClassMap[user.roleValue]}`}
-										value={user.roleValue}
-										onChange={(event) => handleRoleChange(user.id, event.target.value as UserRoleValue)}
-										disabled={savingUserId === user.id}
-									>
-										<option value="admin">Admin</option>
-										<option value="supporter">Support</option>
-										<option value="user">User</option>
-									</select>
-								</td>
-								<td className="px-6 py-4 text-sm text-[#474747] font-acumin">{user.lastLogin}</td>
-								<td className="px-6 py-4">
-									<span className={`px-3 py-1 text-xs tracking-widest font-acumin ${statusClassMap[user.status]}`}>
-										{user.status}
-									</span>
-								</td>
-							</tr>
-						))}
-					</tbody>
-				</table>
-			</div>
+			<DataTable
+				rows={sortedUsers}
+				rowKey={(user) => user.id}
+				columns={[
+					{ key: 'name', header: '名前', render: (user) => <p className="font-acumin">{user.name}</p> },
+					{ key: 'email', header: 'メールアドレス', render: (user) => <p className="text-[#474747] font-acumin">{user.email}</p> },
+					{
+						key: 'role',
+						header: '権限',
+						className: 'w-[180px]',
+						render: (user) => (
+							<SingleSelect
+								className={`w-[140px] py-2 text-xs tracking-widest font-acumin ${roleSelectClassMap[user.roleValue]}`}
+								value={user.roleValue}
+								onChange={(event) => handleRoleChange(user.id, event.target.value as UserRoleValue)}
+								disabled={savingUserId === user.id}
+								options={[
+									{ value: 'admin', label: 'Admin' },
+									{ value: 'supporter', label: 'Support' },
+									{ value: 'user', label: 'User' },
+								]}
+							/>
+						),
+					},
+					{ key: 'lastLogin', header: '最終ログイン', render: (user) => <p className="text-[#474747] font-acumin">{user.lastLogin}</p> },
+					{
+						key: 'status',
+						header: 'ステータス',
+						render: (user) => (
+							<StatusBadge className={statusClassMap[user.status]}>
+								{user.status}
+							</StatusBadge>
+						),
+					},
+				]}
+			/>
 		</section>
 	);
 }

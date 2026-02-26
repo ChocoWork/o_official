@@ -4,6 +4,8 @@ import Image from "next/image";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { categories } from "@/lib/news-data";
+import { LinkButton } from '@/app/components/ui/LinkButton';
+import { TagLabel } from '@/app/components/ui/TagLabel';
 
 type NewsArticle = {
   id: string;
@@ -102,12 +104,9 @@ export default async function NewsDetailPage({
             >
               {typedArticle.published_date.replace(/-/g, '.')}
             </span>
-            <span
-              className="text-xs text-black tracking-widest px-3 py-1 border border-black"
-              style={{ fontFamily: "acumin-pro, sans-serif" }}
-            >
+            <TagLabel className="font-acumin">
               {typedArticle.category}
-            </span>
+            </TagLabel>
           </div>
           <h1
             className="text-4xl lg:text-5xl text-black mb-8"
@@ -175,14 +174,9 @@ export default async function NewsDetailPage({
           )}
 
           {/* View All Button */}
-          <Link href={`/news${navCategoryParam}`} className="justify-self-center">
-            <button
-              className="px-10 py-3 border border-black text-black text-xs tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap"
-              style={{ fontFamily: "acumin-pro, sans-serif" }}
-            >
-              VIEW ALL
-            </button>
-          </Link>
+          <LinkButton href={`/news${navCategoryParam}`} size="sm" className="justify-self-center font-acumin">
+            VIEW ALL
+          </LinkButton>
 
           {/* Next Article */}
           {nextArticle ? (

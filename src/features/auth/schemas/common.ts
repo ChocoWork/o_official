@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 // 日本語エラーメッセージをデフォルトで設定
-z.setErrorMap((issue, _ctx) => {
+z.setErrorMap((issue) => {
   switch (issue.code) {
     case 'invalid_type':
       return { message: '型が正しくありません' };

@@ -52,7 +52,7 @@ export function clearCookieOptions() {
   };
 }
 
-export default {
+const cookieHelper = {
   refreshCookieName,
   accessCookieName,
   csrfCookieName,
@@ -61,3 +61,5 @@ export default {
   cookieOptionsForCsrf,
   clearCookieOptions,
 };
+
+export default cookieHelper;

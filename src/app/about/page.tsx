@@ -1,13 +1,17 @@
+import Image from 'next/image';
+
 export default function StoryPage() {
   return (
     <main className="pt-32 pb-20">
       <div className="max-w-6xl mx-auto px-6 lg:px-12">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 mb-24">
           <div className="aspect-[4/5] bg-[#f5f5f5] overflow-hidden">
-            <img
+            <Image
               alt="Brand Philosophy"
               className="w-full h-full object-cover object-center"
               src="https://readdy.ai/api/search-image?query=Minimalist%20fashion%20brand%20concept%20image%20showing%20elegant%20neutral%20toned%20clothing%20items%20carefully%20arranged%20on%20clean%20white%20geometric%20architectural%20structures%20with%20soft%20natural%20lighting%20emphasizing%20quality%20craftsmanship%20and%20timeless%20design%20philosophy&amp;width=800&amp;height=1000&amp;seq=about001&amp;orientation=portrait"
+              width={800}
+              height={1000}
             />
           </div>
           <div className="flex flex-col justify-center space-y-8">
@@ -36,10 +40,12 @@ export default function StoryPage() {
             </div>
           </div>
           <div className="aspect-[4/5] bg-[#f5f5f5] overflow-hidden lg:order-1">
-            <img
+            <Image
               alt="Quality &amp; Craftsmanship"
               className="w-full h-full object-cover object-center"
               src="https://readdy.ai/api/search-image?query=Close%20up%20detail%20photography%20of%20high%20quality%20fabric%20texture%20and%20precise%20stitching%20on%20neutral%20beige%20garment%20with%20soft%20natural%20lighting%20highlighting%20craftsmanship%20and%20material%20quality%20in%20minimalist%20fashion%20production&amp;width=800&amp;height=1000&amp;seq=about002&amp;orientation=portrait"
+              width={800}
+              height={1000}
             />
           </div>
         </div>

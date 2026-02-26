@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState } from 'react';
+import { Button } from '@/app/components/ui/Button';
+import { TextField } from '@/app/components/ui/TextField';
 
 export default function AdminCreateUserPage() {
   const [email, setEmail] = useState('');
@@ -51,20 +53,11 @@ export default function AdminCreateUserPage() {
     <div className="max-w-md mx-auto p-6">
       <h1 className="text-xl mb-4">管理者: ユーザ作成</h1>
       <form onSubmit={handleSubmit} className="space-y-4">
+        <TextField label="NAME" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+        <TextField label="EMAIL" value={email} onChange={(e) => setEmail(e.target.value)} type="email" />
+        <TextField label="PASSWORD" value={password} onChange={(e) => setPassword(e.target.value)} type="password" />
         <div>
-          <label className="block text-sm mb-1">NAME</label>
-          <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="w-full px-3 py-2 border" />
-        </div>
-        <div>
-          <label className="block text-sm mb-1">EMAIL</label>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" className="w-full px-3 py-2 border" />
-        </div>
-        <div>
-          <label className="block text-sm mb-1">PASSWORD</label>
-          <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" className="w-full px-3 py-2 border" />
-        </div>
-        <div>
-          <button type="submit" disabled={loading} className="px-4 py-2 bg-black text-white">作成</button>
+          <Button type="submit" disabled={loading}>作成</Button>
         </div>
         {message ? <p className="text-sm mt-2">{message}</p> : null}
       </form>

@@ -6,6 +6,23 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+type CartRow = {
+  id: string;
+  item_id: number;
+  quantity: number;
+  color: string | null;
+  size: string | null;
+  added_at: string;
+};
+
+type ItemRow = {
+  id: number;
+  name: string;
+  price: number;
+  image_url: string;
+  category: string;
+};
+
 /**
  * GET /api/cart
  * Fetch cart items for a session
@@ -56,10 +73,10 @@ export async function GET(req: NextRequest) {
     }
 
     // Merge cart and items data
-    const itemsMap = new Map(
-      (itemsData || []).map((item: any) => [item.id, item])
+    const itemsMap = new Map<number, ItemRow>(
+      ((itemsData || []) as ItemRow[]).map((item) => [item.id, item])
     );
-    const result = cartData.map((cartItem: any) => ({
+    const result = (cartData as CartRow[]).map((cartItem) => ({
       ...cartItem,
       items: itemsMap.get(cartItem.item_id),
     }));

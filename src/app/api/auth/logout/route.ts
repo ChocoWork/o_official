@@ -2,6 +2,23 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 
+type CsrfDenyResponse = {
+  status: number;
+  _body: unknown;
+};
+
+type CsrfRotateResult = {
+  rotatedCsrfToken: string;
+};
+
+function isCsrfDenyResponse(value: unknown): value is CsrfDenyResponse {
+  return typeof value === 'object' && value !== null && 'status' in value && '_body' in value;
+}
+
+function hasRotatedCsrfToken(value: unknown): value is CsrfRotateResult {
+  return typeof value === 'object' && value !== null && 'rotatedCsrfToken' in value;
+}
+
 export async function POST() {
   try {
     const cookieStore = await cookies();
@@ -9,13 +26,12 @@ export async function POST() {
 
     // Prepare variable to capture CSRF middleware result so it's available
     // later when setting rotated CSRF cookie on the response.
-    let csrfResult: any = undefined;
+    let csrfResult: unknown;
 
     if (refreshToken) {
       try {
         const service = await createServiceRoleClient();
         const { tokenHashSha256 } = await import('@/lib/hash');
-        const { refreshCookieName, csrfCookieName } = await import('@/lib/cookie');
         const hash = await tokenHashSha256(refreshToken);
 
         // Delegate to reusable middleware helper. It may return a NextResponse
@@ -24,8 +40,8 @@ export async function POST() {
         // after creating it below.
         const { requireCsrfOrDeny } = await import('@/lib/csrfMiddleware');
         csrfResult = await requireCsrfOrDeny();
-        if (csrfResult && (csrfResult as any).status && (csrfResult as any)._body !== undefined) {
-          return csrfResult as any; // NextResponse-like denial
+        if (isCsrfDenyResponse(csrfResult)) {
+          return csrfResult;
         }
 
         // Some test mocks return an object where `update()` itself returns
@@ -33,8 +49,8 @@ export async function POST() {
         // chainable query builder where `.update(...).eq(...)` is valid.
         // Handle both shapes gracefully.
         const updateCall = service.from('sessions').update({ revoked_at: new Date().toISOString() });
-        if (updateCall && typeof (updateCall as any).eq === 'function') {
-          await (updateCall as any).eq('refresh_token_hash', hash);
+        if (updateCall && typeof (updateCall as { eq?: (column: string, value: string) => Promise<unknown> }).eq === 'function') {
+          await (updateCall as { eq: (column: string, value: string) => Promise<unknown> }).eq('refresh_token_hash', hash);
         } else {
           // Await the promise-like update result if it's promise-like.
           await updateCall;
@@ -49,8 +65,8 @@ export async function POST() {
 
     // If CSRF rotation returned a new token, set it as a csrf cookie on the response.
     const { refreshCookieName, accessCookieName, csrfCookieName, clearCookieOptions, cookieOptionsForCsrf } = await import('@/lib/cookie');
-    if (csrfResult && (csrfResult as any).rotatedCsrfToken) {
-      res.cookies.set({ name: csrfCookieName, value: (csrfResult as any).rotatedCsrfToken, ...cookieOptionsForCsrf(0) });
+    if (hasRotatedCsrfToken(csrfResult)) {
+      res.cookies.set({ name: csrfCookieName, value: csrfResult.rotatedCsrfToken, ...cookieOptionsForCsrf(0) });
     }
 
     // Clear cookies using helpers

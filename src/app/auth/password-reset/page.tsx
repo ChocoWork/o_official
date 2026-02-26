@@ -4,6 +4,14 @@ import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ResetRequestSchema, ResetConfirmSchema } from '@/features/auth/schemas/password-reset';
 import { z } from 'zod';
+import { Button } from '@/app/components/ui/Button';
+import { TextField } from '@/app/components/ui/TextField';
+
+declare global {
+  interface Window {
+    onTurnstileReset?: (tokenValue: string) => void;
+  }
+}
 
 export default function PasswordResetPage() {
   const searchParams = useSearchParams();
@@ -21,10 +29,10 @@ export default function PasswordResetPage() {
 
   useEffect(() => {
     if (!siteKey) return;
-    (window as any).onTurnstileReset = (tokenValue: string) => setTurnstileToken(tokenValue);
+    window.onTurnstileReset = (tokenValue: string) => setTurnstileToken(tokenValue);
     return () => {
-      if ((window as any).onTurnstileReset) {
-        delete (window as any).onTurnstileReset;
+      if (window.onTurnstileReset) {
+        delete window.onTurnstileReset;
       }
     };
   }, [siteKey]);
@@ -121,31 +129,25 @@ export default function PasswordResetPage() {
           {isConfirmMode ? 'パスワード再設定' : 'パスワード再設定の申請'}
         </h1>
         <form className="space-y-6" onSubmit={isConfirmMode ? handleConfirm : handleRequest}>
-          <div>
-            <label htmlFor="email" className="block text-sm tracking-widest mb-2">EMAIL</label>
-            <input
-              id="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full px-4 py-3 border border-black/20 focus:border-black outline-none transition-colors duration-300 text-sm"
-              type="email"
-              disabled={Boolean(emailFromQuery)}
-            />
-          </div>
+          <TextField
+            id="email"
+            label="EMAIL"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            type="email"
+            disabled={Boolean(emailFromQuery)}
+          />
 
           {isConfirmMode ? (
-            <div>
-              <label htmlFor="newPassword" className="block text-sm tracking-widest mb-2">NEW PASSWORD</label>
-              <input
-                id="newPassword"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                required
-                className="w-full px-4 py-3 border border-black/20 focus:border-black outline-none transition-colors duration-300 text-sm"
-                type="password"
-              />
-            </div>
+            <TextField
+              id="newPassword"
+              label="NEW PASSWORD"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              required
+              type="password"
+            />
           ) : (
             siteKey ? (
               <div className="pt-2">
@@ -154,13 +156,14 @@ export default function PasswordResetPage() {
             ) : null
           )}
 
-          <button
+          <Button
             type="submit"
-            className="w-full py-4 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap disabled:opacity-50"
+            className="w-full disabled:opacity-50"
+            size="lg"
             disabled={loading}
           >
             {isConfirmMode ? 'パスワードを更新' : '再設定メールを送信'}
-          </button>
+          </Button>
         </form>
         {error ? <p className="text-sm text-red-600 mt-4">{error}</p> : null}
         {message ? <p className="text-sm text-green-600 mt-4">{message}</p> : null}

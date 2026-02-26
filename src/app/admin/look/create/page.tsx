@@ -3,6 +3,12 @@
 import Image from 'next/image';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Button } from '@/app/components/ui/Button';
+import { RadioButtonGroup } from '@/app/components/ui/RadioButtonGroup';
+import { SingleSelect } from '@/app/components/ui/SingleSelect';
+import { TextAreaField } from '@/app/components/ui/TextAreaField';
+import { TextField } from '@/app/components/ui/TextField';
+import { clientFetch } from '@/lib/client-fetch';
 
 type ItemSummary = {
 	id: number;
@@ -43,7 +49,7 @@ export default function AdminLookCreatePage() {
 	const fetchItems = async () => {
 		setIsLoadingItems(true);
 		try {
-			const response = await fetch('/api/admin/items');
+			const response = await clientFetch('/api/admin/items');
 			if (!response.ok) {
 				throw new Error('Failed to fetch items');
 			}
@@ -158,7 +164,7 @@ export default function AdminLookCreatePage() {
 				formData.append('images', image);
 			}
 
-			const response = await fetch('/api/admin/looks', {
+			const response = await clientFetch('/api/admin/looks', {
 				method: 'POST',
 				body: formData,
 			});
@@ -190,30 +196,22 @@ export default function AdminLookCreatePage() {
 					<div>
 						<label className="block text-sm tracking-widest mb-2">シーズン</label>
 						<div className="flex flex-wrap gap-3">
-							<div className="relative min-w-[140px]">
-								<select
-									className="w-full px-4 py-3 pr-8 border border-black/20 text-sm focus:outline-none focus:border-black appearance-none cursor-pointer"
-									value={seasonYear}
+							<div className="min-w-[140px]">
+								<SingleSelect
+									value={String(seasonYear)}
 									onChange={(e) => setSeasonYear(Number(e.target.value))}
-								>
-									{yearOptions.map((year) => (
-										<option key={year} value={year}>
-											{year}
-										</option>
-									))}
-								</select>
-								<i className="ri-arrow-down-s-line absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+									options={yearOptions.map((year) => ({ value: String(year), label: String(year) }))}
+								/>
 							</div>
-							<div className="relative min-w-[110px]">
-								<select
-									className="w-full px-4 py-3 pr-8 border border-black/20 text-sm focus:outline-none focus:border-black appearance-none cursor-pointer"
+							<div className="min-w-[110px]">
+								<SingleSelect
 									value={seasonType}
 									onChange={(e) => setSeasonType(e.target.value as 'SS' | 'AW')}
-								>
-									<option value="SS">SS</option>
-									<option value="AW">AW</option>
-								</select>
-								<i className="ri-arrow-down-s-line absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+									options={[
+										{ value: 'SS', label: 'SS' },
+										{ value: 'AW', label: 'AW' },
+									]}
+								/>
 							</div>
 							<input type="hidden" name="season" value={`${seasonYear} ${seasonType}`} />
 						</div>
@@ -221,25 +219,12 @@ export default function AdminLookCreatePage() {
 
 					<div>
 						<label className="block text-sm tracking-widest mb-2">シーズンテーマ</label>
-						<input
-							className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black"
-							placeholder="例: Effortless Elegance"
-							required
-							type="text"
-							value={theme}
-							onChange={(e) => setTheme(e.target.value)}
-						/>
+						<TextField placeholder="例: Effortless Elegance" required type="text" value={theme} onChange={(e) => setTheme(e.target.value)} />
 					</div>
 
 					<div>
 						<label className="block text-sm tracking-widest mb-2">シーズンテーマ詳細</label>
-						<textarea
-							className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black resize-none"
-							placeholder="このシーズンテーマの説明文を入力してください"
-							rows={4}
-							value={themeDescription}
-							onChange={(e) => setThemeDescription(e.target.value)}
-						/>
+						<TextAreaField placeholder="このシーズンテーマの説明文を入力してください" rows={4} value={themeDescription} onChange={(e) => setThemeDescription(e.target.value)} />
 					</div>
 
 					<div>
@@ -254,13 +239,14 @@ export default function AdminLookCreatePage() {
 										className="w-full h-full object-cover object-center"
 										unoptimized
 									/>
-									<button
+									<Button
 										type="button"
 										onClick={() => removeImage(index)}
-										className="absolute top-2 right-2 w-8 h-8 bg-black text-white flex items-center justify-center text-xs hover:bg-[#474747] transition-colors"
+										size="sm"
+										className="absolute top-2 right-2 h-8 w-8 p-0"
 									>
 										×
-									</button>
+									</Button>
 								</div>
 							))}
 						</div>
@@ -343,30 +329,15 @@ export default function AdminLookCreatePage() {
 
 					<div>
 						<label className="block text-sm tracking-widest mb-2">ステータス</label>
-						<div className="flex gap-4">
-							<label className="flex items-center gap-2 cursor-pointer">
-								<input
-									className="cursor-pointer"
-									type="radio"
-									name="status"
-									value="private"
-									checked={status === 'private'}
-									onChange={() => setStatus('private')}
-								/>
-								<span className="text-sm">非公開</span>
-							</label>
-							<label className="flex items-center gap-2 cursor-pointer">
-								<input
-									className="cursor-pointer"
-									type="radio"
-									name="status"
-									value="published"
-									checked={status === 'published'}
-									onChange={() => setStatus('published')}
-								/>
-								<span className="text-sm">公開</span>
-							</label>
-						</div>
+						<RadioButtonGroup
+							name="status"
+							value={status}
+							onChange={(value) => setStatus(value as 'private' | 'published')}
+							options={[
+								{ value: 'private', label: '非公開' },
+								{ value: 'published', label: '公開' },
+							]}
+						/>
 					</div>
 
 					{submitSuccess && (
@@ -382,20 +353,19 @@ export default function AdminLookCreatePage() {
 					)}
 
 					<div className="flex gap-4">
-						<button
+						<Button
 							type="button"
 							onClick={() => router.push('/admin?tab=LOOK')}
-							className="px-8 py-3 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap"
+							variant="secondary"
 						>
 							キャンセル
-						</button>
-						<button
+						</Button>
+						<Button
 							type="submit"
 							disabled={isSubmitting}
-							className="px-8 py-3 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap disabled:opacity-50"
 						>
 							{isSubmitting ? '保存中...' : '保存'}
-						</button>
+						</Button>
 					</div>
 				</form>
 			</div>

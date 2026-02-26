@@ -1,4 +1,5 @@
 import React from 'react';
+import Link from 'next/link';
 
 const Footer = () => {
   return (
@@ -12,21 +13,21 @@ const Footer = () => {
           <div>
             <h4 className="text-sm tracking-widest mb-4">SHOP</h4>
             <ul className="space-y-2">
-              <li><a className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/item">ALL</a></li>
-              <li><a className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/item">TOPS</a></li>
-              <li><a className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/item">BOTTOMS</a></li>
-              <li><a className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/item">OUTERWEAR</a></li>
-              <li><a className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/item">ACCESSORIES</a></li>
+              <li><Link className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/item">ALL</Link></li>
+              <li><Link className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/item">TOPS</Link></li>
+              <li><Link className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/item">BOTTOMS</Link></li>
+              <li><Link className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/item">OUTERWEAR</Link></li>
+              <li><Link className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/item">ACCESSORIES</Link></li>
             </ul>
           </div>
           <div>
             <h4 className="text-sm tracking-widest mb-4">INFORMATION</h4>
             <ul className="space-y-2">
-              <li><a className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/about">ABOUT</a></li>
-              <li><a className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/look">LOOK</a></li>
-              <li><a className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/news">NEWS</a></li>
-              <li><a className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/stockist">STOCKIST</a></li>
-              <li><a className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/contact">CONTACT</a></li>
+              <li><Link className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/about">ABOUT</Link></li>
+              <li><Link className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/look">LOOK</Link></li>
+              <li><Link className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/news">NEWS</Link></li>
+              <li><Link className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/stockist">STOCKIST</Link></li>
+              <li><Link className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/contact">CONTACT</Link></li>
             </ul>
           </div>
           <div>
