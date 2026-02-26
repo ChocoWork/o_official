@@ -24,6 +24,17 @@ export default function Page() {
   const [stepperValue, setStepperValue] = useState<number>(1);
   // rating demo
   const [rating, setRating] = useState<number>(3);
+  // color picker states
+  const presetColors = [
+    { value: "#000000", swatchClass: "bg-black" },
+    { value: "#F5F5DC", swatchClass: "bg-[#F5F5DC]" },
+    { value: "#D4C5B9", swatchClass: "bg-[#D4C5B9]" },
+    { value: "#808080", swatchClass: "bg-[#808080]" },
+    { value: "#1A1A2E", swatchClass: "bg-[#1A1A2E]" },
+    { value: "#8B4513", swatchClass: "bg-[#8B4513]" },
+  ] as const;
+  const [color, setColor] = useState<string>(presetColors[2].value); // default beige
+
   const rangeMin = Math.min(rangeValues[0], rangeValues[1]);
   const rangeMax = Math.max(rangeValues[0], rangeValues[1]);
   // ...existing code...
@@ -759,42 +770,15 @@ export default function Page() {
                   PRESET COLORS
                 </label>
                 <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    className="w-10 h-10 rounded-full border-2 transition-all cursor-pointer border-black scale-110"
-                    title="BLACK"
-                    style={{ backgroundColor: "rgb(0, 0, 0)" }}
-                  ></button>
-                  <button
-                    type="button"
-                    className="w-10 h-10 rounded-full border-2 transition-all cursor-pointer border-black/20"
-                    title="IVORY"
-                    style={{ backgroundColor: "rgb(245, 245, 220)" }}
-                  ></button>
-                  <button
-                    type="button"
-                    className="w-10 h-10 rounded-full border-2 transition-all cursor-pointer border-black/20"
-                    title="BEIGE"
-                    style={{ backgroundColor: "rgb(212, 197, 185)" }}
-                  ></button>
-                  <button
-                    type="button"
-                    className="w-10 h-10 rounded-full border-2 transition-all cursor-pointer border-black/20"
-                    title="GREY"
-                    style={{ backgroundColor: "rgb(128, 128, 128)" }}
-                  ></button>
-                  <button
-                    type="button"
-                    className="w-10 h-10 rounded-full border-2 transition-all cursor-pointer border-black/20"
-                    title="NAVY"
-                    style={{ backgroundColor: "rgb(26, 26, 46)" }}
-                  ></button>
-                  <button
-                    type="button"
-                    className="w-10 h-10 rounded-full border-2 transition-all cursor-pointer border-black/20"
-                    title="BROWN"
-                    style={{ backgroundColor: "rgb(139, 69, 19)" }}
-                  ></button>
+                  {presetColors.map((preset) => (
+                    <button
+                      key={preset.value}
+                      type="button"
+                      className={`w-10 h-10 rounded-full border-2 transition-all cursor-pointer ${preset.swatchClass} ${preset.value === color ? "border-black" : "border-black/20"}`}
+                      title={preset.value}
+                      onClick={() => setColor(preset.value)}
+                    ></button>
+                  ))}
                 </div>
               </div>
               <div className="max-w-xs">
@@ -808,13 +792,20 @@ export default function Page() {
                   <input
                     className="w-16 h-12 border border-black/20 cursor-pointer"
                     type="color"
-                    value="#000000"
+                    value={color}
+                    onChange={(e) => setColor(e.target.value)}
                   />
                   <input
                     className="flex-1 px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors uppercase"
                     type="text"
-                    value="#000000"
+                    value={color}
                     style={{ fontFamily: "acumin-pro, sans-serif" }}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (/^#[0-9A-Fa-f]{6}$/.test(v)) {
+                        setColor(v);
+                      }
+                    }}
                   />
                 </div>
               </div>
