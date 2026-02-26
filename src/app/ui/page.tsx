@@ -22,6 +22,8 @@ export default function Page() {
   const [rangeValues, setRangeValues] = useState<[number, number]>([0, 100]);
   // stepper demo value
   const [stepperValue, setStepperValue] = useState<number>(1);
+  // rating demo
+  const [rating, setRating] = useState<number>(3);
   const rangeMin = Math.min(rangeValues[0], rangeValues[1]);
   const rangeMax = Math.max(rangeValues[0], rangeValues[1]);
   // ...existing code...
@@ -684,36 +686,25 @@ export default function Page() {
                   INTERACTIVE
                 </label>
                 <div className="flex items-center gap-2">
-                  <button type="button" className="cursor-pointer transition-transform hover:scale-110">
-                    <div className="w-6 h-6 flex items-center justify-center">
-                      <i className="ri-star-fill text-2xl text-black"></i>
-                    </div>
-                  </button>
-                  <button type="button" className="cursor-pointer transition-transform hover:scale-110">
-                    <div className="w-6 h-6 flex items-center justify-center">
-                      <i className="ri-star-fill text-2xl text-black"></i>
-                    </div>
-                  </button>
-                  <button type="button" className="cursor-pointer transition-transform hover:scale-110">
-                    <div className="w-6 h-6 flex items-center justify-center">
-                      <i className="ri-star-fill text-2xl text-black"></i>
-                    </div>
-                  </button>
-                  <button type="button" className="cursor-pointer transition-transform hover:scale-110">
-                    <div className="w-6 h-6 flex items-center justify-center">
-                      <i className="ri-star-line text-2xl text-black"></i>
-                    </div>
-                  </button>
-                  <button type="button" className="cursor-pointer transition-transform hover:scale-110">
-                    <div className="w-6 h-6 flex items-center justify-center">
-                      <i className="ri-star-line text-2xl text-black"></i>
-                    </div>
-                  </button>
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      className="cursor-pointer transition-transform hover:scale-110"
+                      onClick={() => setRating(i)}
+                    >
+                      <div className="w-6 h-6 flex items-center justify-center">
+                        <i
+                          className={`ri-star-${i <= rating ? "fill" : "line"} text-2xl text-black`}
+                        ></i>
+                      </div>
+                    </button>
+                  ))}
                   <span
                     className="ml-3 text-sm text-black"
                     style={{ fontFamily: "acumin-pro, sans-serif" }}
                   >
-                    3 / 5
+                    {rating} / 5
                   </span>
                 </div>
               </div>
