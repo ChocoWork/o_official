@@ -34,6 +34,9 @@ export default function Page() {
     { value: "#8B4513", swatchClass: "bg-[#8B4513]" },
   ] as const;
   const [color, setColor] = useState<string>(presetColors[2].value); // default beige
+  const [dateValue, setDateValue] = useState("2024-03-15");
+  const [timeValue, setTimeValue] = useState("14:30");
+  const [dateTimeValue, setDateTimeValue] = useState("2024-03-15T14:30");
 
   const rangeMin = Math.min(rangeValues[0], rangeValues[1]);
   const rangeMax = Math.max(rangeValues[0], rangeValues[1]);
@@ -831,7 +834,8 @@ export default function Page() {
                 <input
                   className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors cursor-pointer"
                   type="date"
-                  value="2024-03-15"
+                  value={dateValue}
+                  onChange={(e) => setDateValue(e.target.value)}
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 />
               </div>
@@ -845,7 +849,8 @@ export default function Page() {
                 <input
                   className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors cursor-pointer"
                   type="time"
-                  value="14:30"
+                  value={timeValue}
+                  onChange={(e) => setTimeValue(e.target.value)}
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 />
               </div>
@@ -859,7 +864,8 @@ export default function Page() {
                 <input
                   className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors cursor-pointer"
                   type="datetime-local"
-                  value="2024-03-15T14:30"
+                  value={dateTimeValue}
+                  onChange={(e) => setDateTimeValue(e.target.value)}
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 />
               </div>

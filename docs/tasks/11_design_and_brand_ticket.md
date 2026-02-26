@@ -54,3 +54,4 @@ updated: 2026-02-27
 - [x] ESLintで `@/app/components/ui`（ディレクトリ直import）を禁止し、直接import運用を固定化
 - [x] PR時に `npm run lint` を自動実行する GitHub Actions（`.github/workflows/lint.yml`）を追加
 - [x] `/ui` の `Color Picker` で `PRESET COLORS` が未着色になる問題を修正（CSP下でのインライン背景指定をクラス指定へ変更）
+- [x] `/ui` の `Date / Time Picker` で `DATE` / `TIME` / `DATETIME` 入力が固定値で編集不能だった問題を修正（state + onChange で制御）
