@@ -9,6 +9,7 @@ export default function Page() {
   const [radioValue, setRadioValue] = useState("option1");
   const [category, setCategory] = useState("TOPS");
   const [categoryOpen, setCategoryOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const categoryOptions = ["TOPS", "BOTTOMS", "OUTERWEAR", "ACCESSORIES"];
 
   const [sizes, setSizes] = useState(["S", "M"]);
@@ -1136,10 +1137,51 @@ export default function Page() {
               type="button"
               className="px-8 py-3 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap"
               style={{ fontFamily: "acumin-pro, sans-serif" }}
+              onClick={() => setDialogOpen(true)}
             >
               OPEN DIALOG
             </button>
           </section>
+          {dialogOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center">
+              <div className="absolute inset-0 bg-black/40"></div>
+              <div className="relative bg-white w-full max-w-md mx-4 shadow-2xl">
+                <div className="p-8">
+                  <h3
+                    className="text-2xl text-black mb-4 tracking-tight"
+                    style={{ fontFamily: "Didot, serif" }}
+                  >
+                    Dialog Title
+                  </h3>
+                  <p
+                    className="text-sm text-black/60 mb-8 leading-relaxed"
+                    style={{ fontFamily: "acumin-pro, sans-serif" }}
+                  >
+                    これはダイアログの本文です。ユーザーに重要な情報を伝えたり、確認を求めたりする際に使用します。
+                  </p>
+                  <div className="flex items-center gap-4">
+                    <button
+                      type="button"
+                      className="flex-1 px-6 py-3 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap"
+                      style={{ fontFamily: "acumin-pro, sans-serif" }}
+                      onClick={() => setDialogOpen(false)}
+                    >
+                      CANCEL
+                    </button>
+                    <button
+                      type="button"
+                      className="flex-1 px-6 py-3 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap"
+                      style={{ fontFamily: "acumin-pro, sans-serif" }}
+                      onClick={() => setDialogOpen(false)}
+                    >
+                      CONFIRM
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
 
           {/* --- Sheet --- */}
           <section>
