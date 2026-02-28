@@ -17,6 +17,7 @@ export default function Page() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   // stack of toast notifications
   const [toasts, setToasts] = useState<{id: number; message: string; variant?: 'success' | 'error' | 'info'}[]>([]);
+  const [tooltipVisible, setTooltipVisible] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -1400,9 +1401,19 @@ export default function Page() {
                   type="button"
                   className="px-8 py-3 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
+                  onMouseEnter={() => setTooltipVisible(true)}
+                  onMouseLeave={() => setTooltipVisible(false)}
+                  onFocus={() => setTooltipVisible(true)}
+                  onBlur={() => setTooltipVisible(false)}
                 >
                   HOVER ME
                 </button>
+                {tooltipVisible && (
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-4 py-2 bg-black text-white text-xs whitespace-nowrap" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+                    これはツールチップです
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-black"></div>
+                  </div>
+                )}
               </div>
               <div className="relative">
                 <button
