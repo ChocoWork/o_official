@@ -57,3 +57,4 @@ updated: 2026-02-27
 - [x] `/ui` の `Date / Time Picker` で `DATE` / `TIME` / `DATETIME` 入力が固定値で編集不能だった問題を修正（state + onChange で制御）
 - [x] `/ui` の `Page Control` / `Bottom Navigation` / `STANDARD TABS` / `SEGMENT CONTROL` を状態管理付きで動作化（選択状態の見た目更新と前後ページ遷移を実装）
 - [x] `/ui` の `Search Field` を入力可能に修正し、`WITH CLEAR BUTTON` で入力時のみクリアボタン表示・ワンクリック消去を実装
+- [x] `/ui` の `Toast / Snackbar` で SUCCESS ボタンを押すとトーストが表示されるように実装

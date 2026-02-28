@@ -15,6 +15,7 @@ export default function Page() {
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -1317,6 +1318,10 @@ export default function Page() {
                 type="button"
                 className="px-8 py-3 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap"
                 style={{ fontFamily: "acumin-pro, sans-serif" }}
+                onClick={() => {
+                  setShowSuccessToast(true);
+                  setTimeout(() => setShowSuccessToast(false), 3000);
+                }}
               >
                 SUCCESS
               </button>
@@ -1335,7 +1340,20 @@ export default function Page() {
                 INFO
               </button>
             </div>
-            <div className="fixed bottom-8 right-8 z-50 space-y-3"></div>
+            <div className="fixed bottom-8 right-8 z-50 space-y-3">
+              {showSuccessToast && (
+                <div className="bg-black text-white px-6 py-4 shadow-2xl min-w-[300px] animate-[slideIn_0.3s_ease-out]">
+                  <div className="flex items-center gap-3">
+                    <div className="w-5 h-5 flex items-center justify-center">
+                      <i className="ri-check-line text-xl"></i>
+                    </div>
+                    <span className="text-sm" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+                      操作が完了しました
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
           </section>
 
           {/* --- Tooltip --- */}
