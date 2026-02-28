@@ -227,3 +227,18 @@ h6 {
   }
 }
 
+.search-no-native-clear::-webkit-search-decoration,
+.search-no-native-clear::-webkit-search-cancel-button,
+.search-no-native-clear::-webkit-search-results-button,
+.search-no-native-clear::-webkit-search-results-decoration {
+  display: none;
+  -webkit-appearance: none;
+}
+
+.search-no-native-clear::-ms-clear,
+.search-no-native-clear::-ms-reveal {
+  display: none;
+  width: 0;
+  height: 0;
+}
+

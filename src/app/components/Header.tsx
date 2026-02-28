@@ -13,9 +13,9 @@ const menuItems = [
   { href: '/news', label: 'NEWS' },
   { href: '/item', label: 'ITEM' },
   { href: '/look', label: 'LOOK' },
-  { href: '/ui', label: 'UI' },
   { href: '/about', label: 'ABOUT' },
   { href: '/stockist', label: 'STOCKIST' },
+  { href: '/ui', label: 'UI' },
 ];
 
 const Header = () => {

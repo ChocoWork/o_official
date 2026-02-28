@@ -37,6 +37,8 @@ export default function Page() {
   const [dateValue, setDateValue] = useState("2024-03-15");
   const [timeValue, setTimeValue] = useState("14:30");
   const [dateTimeValue, setDateTimeValue] = useState("2024-03-15T14:30");
+  const [searchStandard, setSearchStandard] = useState("");
+  const [searchWithClear, setSearchWithClear] = useState("");
   const pageNumbers = [1, 2, 3, 4, 5] as const;
   const [currentPage, setCurrentPage] = useState<number>(1);
 
@@ -720,7 +722,7 @@ export default function Page() {
                     <button
                       key={i}
                       type="button"
-                      className="cursor-pointer transition-transform hover:scale-110"
+                      className="cursor-pointer"
                       onClick={() => setRating(i)}
                     >
                       <div className="w-6 h-6 flex items-center justify-center">
@@ -1080,9 +1082,10 @@ export default function Page() {
                   </div>
                   <input
                     placeholder="商品を検索"
-                    className="w-full pl-12 pr-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors"
+                    className="search-no-native-clear w-full pl-12 pr-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors"
                     type="search"
-                    value=""
+                    value={searchStandard}
+                    onChange={(e) => setSearchStandard(e.target.value)}
                     style={{ fontFamily: "acumin-pro, sans-serif" }}
                   />
                 </div>
@@ -1100,11 +1103,22 @@ export default function Page() {
                   </div>
                   <input
                     placeholder="商品を検索"
-                    className="w-full pl-12 pr-12 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors"
+                    className="search-no-native-clear w-full pl-12 pr-12 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors"
                     type="search"
-                    value=""
+                    value={searchWithClear}
+                    onChange={(e) => setSearchWithClear(e.target.value)}
                     style={{ fontFamily: "acumin-pro, sans-serif" }}
                   />
+                  {searchWithClear.length > 0 && (
+                    <button
+                      type="button"
+                      aria-label="入力内容をクリア"
+                      className="absolute right-4 top-1/2 -translate-y-1/2 cursor-pointer"
+                      onClick={() => setSearchWithClear("")}
+                    >
+                      <i className="ri-close-line text-base text-black/60 hover:text-black transition-colors"></i>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
