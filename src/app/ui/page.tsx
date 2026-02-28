@@ -20,6 +20,12 @@ export default function Page() {
   const [tooltipVisible, setTooltipVisible] = useState(false);
   const [infoTooltipVisible, setInfoTooltipVisible] = useState(false);
   const [floatMenuOpen, setFloatMenuOpen] = useState(false); 
+  const carouselImages = [
+    "https://readdy.ai/api/search-image?query=minimalist%20elegant%20fashion%20collection%20display%20clean%20white%20background%20soft%20natural%20lighting%20high%20end%20luxury%20clothing%20simple%20composition%20professional%20photography%20modern%20aesthetic%20premium%20fabric%20textures&width=800&height=500&seq=carousel1&orientation=landscape",
+    "https://readdy.ai/api/search-image?query=stylish%20model%20wearing%20luxury%20streetwear%20outfit%20on%20urban%20background%20professional%20photography%20soft%20lighting&width=800&height=500&seq=carousel2&orientation=landscape",
+    "https://readdy.ai/api/search-image?query=high-end%20black%20leather%20jacket%20product%20shot%20on%20white%20background%20studio%20photography&width=800&height=500&seq=carousel3&orientation=landscape",
+  ];
+  const [slideIndex, setSlideIndex] = useState(0);
   const [openAccordion, setOpenAccordion] = useState<"shipping" | "returns" | "size" | null>("shipping");
   const menuRef = useRef<HTMLDivElement | null>(null);
 
@@ -2082,9 +2088,9 @@ export default function Page() {
             <div className="relative max-w-4xl mx-auto">
               <div className="relative aspect-[16/10] bg-[#f5f5f5] overflow-hidden">
                 <Image
-                  alt="Slide 1"
+                  alt={`Slide ${slideIndex + 1}`}
                   className="w-full h-full object-cover object-top"
-                  src="https://readdy.ai/api/search-image?query=minimalist%20elegant%20fashion%20collection%20display%20clean%20white%20background%20soft%20natural%20lighting%20high%20end%20luxury%20clothing%20simple%20composition%20professional%20photography%20modern%20aesthetic%20premium%20fabric%20textures&width=800&height=500&seq=carousel1&orientation=landscape"
+                  src={carouselImages[slideIndex]}
                   width={800}
                   height={500}
                   priority={false}
@@ -2092,6 +2098,9 @@ export default function Page() {
                 <button
                   type="button"
                   className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-white/90 hover:bg-white flex items-center justify-center transition-colors cursor-pointer"
+                  onClick={() =>
+                    setSlideIndex((idx) => (idx - 1 + carouselImages.length) % carouselImages.length)
+                  }
                 >
                   <div className="w-6 h-6 flex items-center justify-center">
                     <i className="ri-arrow-left-s-line text-2xl"></i>
@@ -2100,15 +2109,28 @@ export default function Page() {
                 <button
                   type="button"
                   className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-white/90 hover:bg-white flex items-center justify-center transition-colors cursor-pointer"
+                  onClick={() =>
+                    setSlideIndex((idx) => (idx + 1) % carouselImages.length)
+                  }
                 >
                   <div className="w-6 h-6 flex items-center justify-center">
                     <i className="ri-arrow-right-s-line text-2xl"></i>
                   </div>
                 </button>
                 <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2">
-                  <button type="button" className="w-2 h-2 rounded-full transition-all cursor-pointer bg-white w-6"></button>
-                  <button type="button" className="w-2 h-2 rounded-full transition-all cursor-pointer bg-white/50"></button>
-                  <button type="button" className="w-2 h-2 rounded-full transition-all cursor-pointer bg-white/50"></button>
+                  {carouselImages.map((_, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      className={
+                        `transition-all cursor-pointer ` +
+                        (slideIndex === idx
+                          ? "w-6 h-2 rounded-full bg-white"
+                          : "w-2 h-2 rounded-full bg-white/50")
+                      }
+                      onClick={() => setSlideIndex(idx)}
+                    ></button>
+                  ))}
                 </div>
               </div>
             </div>
