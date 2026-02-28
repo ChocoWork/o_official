@@ -14,6 +14,7 @@ export default function Page() {
   const [largeSheetOpen, setLargeSheetOpen] = useState(false);
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -1297,6 +1298,7 @@ export default function Page() {
               type="button"
               className="px-8 py-3 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap"
               style={{ fontFamily: "acumin-pro, sans-serif" }}
+              onClick={() => setDrawerOpen(true)}
             >
               OPEN DRAWER
             </button>
@@ -2789,6 +2791,68 @@ export default function Page() {
               >
                 キャンセル
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {drawerOpen && (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setDrawerOpen(false)}></div>
+          <div
+            className="absolute top-0 right-0 bottom-0 w-full max-w-md bg-white shadow-2xl overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-8">
+                <h3
+                  className="text-2xl text-black tracking-tight"
+                  style={{ fontFamily: "Didot, serif" }}
+                >
+                  Drawer Menu
+                </h3>
+                <button
+                  type="button"
+                  className="w-8 h-8 flex items-center justify-center hover:bg-[#f5f5f5] transition-colors cursor-pointer"
+                  onClick={() => setDrawerOpen(false)}
+                >
+                  <div className="w-5 h-5 flex items-center justify-center">
+                    <i className="ri-close-line text-xl"></i>
+                  </div>
+                </button>
+              </div>
+              <nav className="space-y-2">
+                {['ITEM','LOOK','NEWS','ABOUT','STOCKIST','CONTACT'].map(label => (
+                  <button
+                    key={label}
+                    type="button"
+                    className="w-full px-4 py-4 text-sm tracking-widest text-black hover:bg-[#f5f5f5] transition-colors cursor-pointer text-left"
+                    style={{ fontFamily: "acumin-pro, sans-serif" }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </nav>
+              <div className="mt-12 pt-8 border-t border-black/10">
+                <p
+                  className="text-xs tracking-widest text-black/60 mb-4"
+                  style={{ fontFamily: "acumin-pro, sans-serif" }}
+                >
+                  FOLLOW US
+                </p>
+                <div className="flex items-center gap-4">
+                  {['instagram','facebook','twitter'].map((icon) => (
+                    <button
+                      key={icon}
+                      type="button"
+                      className="w-10 h-10 flex items-center justify-center border border-black/20 hover:bg-black hover:text-white transition-all duration-300 cursor-pointer"
+                    >
+                      <div className="w-5 h-5 flex items-center justify-center">
+                        <i className={`ri-${icon}-line text-xl`}></i>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>
