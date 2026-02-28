@@ -2326,7 +2326,7 @@ export default function Page() {
               </div>
               <div className="border border-black/20 p-6 hover:border-black transition-colors">
                 <div className="w-10 h-10 flex items-center justify-center mb-4">
-                  <i className="ri-money-yen-circle-line text-3xl text-black"></i>
+                  <i className="ri-currency-line text-3xl text-black"></i>
                 </div>
                 <p
                   className="text-3xl text-black mb-2"
@@ -2639,6 +2639,71 @@ export default function Page() {
                     <i className="ri-layout-grid-line text-xl"></i>
                   </div>
                 </button>
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <h2 className="text-2xl text-black mb-8 tracking-tight" style={{ fontFamily: "Didot, serif" }}>
+              Tag / Label
+            </h2>
+            <div className="space-y-8">
+              <div>
+                <p className="text-xs tracking-widest mb-4 text-black/80" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+                  BASIC TAGS
+                </p>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="px-4 py-2 bg-black text-white text-xs tracking-widest" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+                    NEW
+                  </span>
+                  <span className="px-4 py-2 border border-black text-black text-xs tracking-widest" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+                    SALE
+                  </span>
+                  <span className="px-4 py-2 bg-[#f5f5f5] text-black text-xs tracking-widest" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+                    LIMITED
+                  </span>
+                </div>
+              </div>
+              <div>
+                <p className="text-xs tracking-widest mb-4 text-black/80" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+                  REMOVABLE TAGS
+                </p>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="px-4 py-2 bg-[#f5f5f5] text-black text-xs tracking-widest flex items-center gap-2" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+                    TOPS
+                    <button type="button" className="w-4 h-4 flex items-center justify-center hover:bg-black/10 transition-colors cursor-pointer">
+                      <i className="ri-close-line text-sm"></i>
+                    </button>
+                  </span>
+                  <span className="px-4 py-2 bg-[#f5f5f5] text-black text-xs tracking-widest flex items-center gap-2" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+                    BOTTOMS
+                    <button type="button" className="w-4 h-4 flex items-center justify-center hover:bg-black/10 transition-colors cursor-pointer">
+                      <i className="ri-close-line text-sm"></i>
+                    </button>
+                  </span>
+                  <span className="px-4 py-2 bg-[#f5f5f5] text-black text-xs tracking-widest flex items-center gap-2" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+                    OUTERWEAR
+                    <button type="button" className="w-4 h-4 flex items-center justify-center hover:bg-black/10 transition-colors cursor-pointer">
+                      <i className="ri-close-line text-sm"></i>
+                    </button>
+                  </span>
+                </div>
+              </div>
+              <div>
+                <p className="text-xs tracking-widest mb-4 text-black/80" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+                  ROUNDED TAGS
+                </p>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="px-4 py-2 bg-black text-white text-xs tracking-widest rounded-full" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+                    FEATURED
+                  </span>
+                  <span className="px-4 py-2 border border-black text-black text-xs tracking-widest rounded-full" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+                    TRENDING
+                  </span>
+                  <span className="px-4 py-2 bg-[#f5f5f5] text-black text-xs tracking-widest rounded-full" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+                    POPULAR
+                  </span>
+                </div>
               </div>
             </div>
           </section>
