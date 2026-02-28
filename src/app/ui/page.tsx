@@ -12,6 +12,7 @@ export default function Page() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [mediumSheetOpen, setMediumSheetOpen] = useState(false);
   const [largeSheetOpen, setLargeSheetOpen] = useState(false);
+  const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const categoryOptions = ["TOPS", "BOTTOMS", "OUTERWEAR", "ACCESSORIES"];
 
   const [sizes, setSizes] = useState(["S", "M"]);
@@ -1187,6 +1188,7 @@ export default function Page() {
               type="button"
               className="px-8 py-3 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap"
               style={{ fontFamily: "acumin-pro, sans-serif" }}
+              onClick={() => setActionSheetOpen(true)}
             >
               OPEN ACTION SHEET
             </button>
@@ -2658,6 +2660,66 @@ export default function Page() {
                   </p>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {actionSheetOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center"
+          onClick={() => setActionSheetOpen(false)}
+        >
+          <div className="absolute inset-0 bg-black/40"></div>
+          <div
+            className="relative bg-white w-full max-w-md mx-4 mb-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-2">
+              <button
+                type="button"
+                className="w-full px-6 py-4 text-sm text-black hover:bg-[#f5f5f5] transition-colors cursor-pointer text-left"
+                style={{ fontFamily: "acumin-pro, sans-serif" }}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-5 h-5 flex items-center justify-center">
+                    <i className="ri-share-line text-xl"></i>
+                  </div>
+                  <span>シェアする</span>
+                </div>
+              </button>
+              <button
+                type="button"
+                className="w-full px-6 py-4 text-sm text-black hover:bg-[#f5f5f5] transition-colors cursor-pointer text-left"
+                style={{ fontFamily: "acumin-pro, sans-serif" }}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-5 h-5 flex items-center justify-center">
+                    <i className="ri-download-line text-xl"></i>
+                  </div>
+                  <span>ダウンロード</span>
+                </div>
+              </button>
+              <button
+                type="button"
+                className="w-full px-6 py-4 text-sm text-black hover:bg-[#f5f5f5] transition-colors cursor-pointer text-left"
+                style={{ fontFamily: "acumin-pro, sans-serif" }}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-5 h-5 flex items-center justify-center">
+                    <i className="ri-edit-line text-xl"></i>
+                  </div>
+                  <span>編集する</span>
+                </div>
+              </button>
+              <div className="h-px bg-black/10 my-2"></div>
+              <button
+                type="button"
+                className="w-full px-6 py-4 text-sm text-black hover:bg-[#f5f5f5] transition-colors cursor-pointer text-left"
+                style={{ fontFamily: "acumin-pro, sans-serif" }}
+                onClick={() => setActionSheetOpen(false)}
+              >
+                キャンセル
+              </button>
             </div>
           </div>
         </div>
