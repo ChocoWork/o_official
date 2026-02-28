@@ -1,7 +1,7 @@
 "use client";
 
 import Image from 'next/image';
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 
 export default function Page() {
   const [standardText, setStandardText] = useState("");
@@ -14,6 +14,18 @@ export default function Page() {
   const [largeSheetOpen, setLargeSheetOpen] = useState(false);
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [menuOpen]);
   const categoryOptions = ["TOPS", "BOTTOMS", "OUTERWEAR", "ACCESSORIES"];
 
   const [sizes, setSizes] = useState(["S", "M"]);
@@ -1203,7 +1215,7 @@ export default function Page() {
             >
               Dropdown
             </h2>
-            <div className="relative inline-block">
+            <div className="relative inline-block" ref={menuRef}>
               <button
                 type="button"
                 className="px-8 py-3 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap flex items-center gap-2"
