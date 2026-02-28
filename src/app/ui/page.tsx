@@ -18,6 +18,7 @@ export default function Page() {
   // stack of toast notifications
   const [toasts, setToasts] = useState<{id: number; message: string; variant?: 'success' | 'error' | 'info'}[]>([]);
   const [tooltipVisible, setTooltipVisible] = useState(false);
+  const [infoTooltipVisible, setInfoTooltipVisible] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -1419,11 +1420,21 @@ export default function Page() {
                 <button
                   type="button"
                   className="w-10 h-10 flex items-center justify-center border border-black/20 hover:bg-[#f5f5f5] transition-colors cursor-pointer"
+                  onMouseEnter={() => setInfoTooltipVisible(true)}
+                  onMouseLeave={() => setInfoTooltipVisible(false)}
+                  onFocus={() => setInfoTooltipVisible(true)}
+                  onBlur={() => setInfoTooltipVisible(false)}
                 >
                   <div className="w-5 h-5 flex items-center justify-center">
                     <i className="ri-information-line text-xl"></i>
                   </div>
                 </button>
+                {infoTooltipVisible && (
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-4 py-2 bg-black text-white text-xs whitespace-nowrap" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+                    詳細情報
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-black"></div>
+                  </div>
+                )}
               </div>
             </div>
           </section>
