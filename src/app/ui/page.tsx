@@ -13,6 +13,7 @@ export default function Page() {
   const [mediumSheetOpen, setMediumSheetOpen] = useState(false);
   const [largeSheetOpen, setLargeSheetOpen] = useState(false);
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const categoryOptions = ["TOPS", "BOTTOMS", "OUTERWEAR", "ACCESSORIES"];
 
   const [sizes, setSizes] = useState(["S", "M"]);
@@ -1207,12 +1208,68 @@ export default function Page() {
                 type="button"
                 className="px-8 py-3 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap flex items-center gap-2"
                 style={{ fontFamily: "acumin-pro, sans-serif" }}
+                onClick={() => setMenuOpen((v) => !v)}
               >
                 MENU
                 <div className="w-4 h-4 flex items-center justify-center">
                   <i className="ri-arrow-down-s-line text-base"></i>
                 </div>
               </button>
+              {menuOpen && (
+                <div
+                  className="absolute top-full left-0 mt-2 w-56 bg-white border border-black/20 shadow-lg z-10"
+                >
+                  <button
+                    type="button"
+                    className="w-full px-6 py-3 text-sm text-black hover:bg-[#f5f5f5] transition-colors cursor-pointer text-left"
+                    style={{ fontFamily: "acumin-pro, sans-serif" }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-5 h-5 flex items-center justify-center">
+                        <i className="ri-user-line text-xl"></i>
+                      </div>
+                      <span>アカウント設定</span>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full px-6 py-3 text-sm text-black hover:bg-[#f5f5f5] transition-colors cursor-pointer text-left"
+                    style={{ fontFamily: "acumin-pro, sans-serif" }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-5 h-5 flex items-center justify-center">
+                        <i className="ri-heart-line text-xl"></i>
+                      </div>
+                      <span>お気に入り</span>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full px-6 py-3 text-sm text-black hover:bg-[#f5f5f5] transition-colors cursor-pointer text-left"
+                    style={{ fontFamily: "acumin-pro, sans-serif" }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-5 h-5 flex items-center justify-center">
+                        <i className="ri-shopping-bag-line text-xl"></i>
+                      </div>
+                      <span>注文履歴</span>
+                    </div>
+                  </button>
+                  <div className="h-px bg-black/10 my-1"></div>
+                  <button
+                    type="button"
+                    className="w-full px-6 py-3 text-sm text-black hover:bg-[#f5f5f5] transition-colors cursor-pointer text-left"
+                    style={{ fontFamily: "acumin-pro, sans-serif" }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-5 h-5 flex items-center justify-center">
+                        <i className="ri-logout-box-line text-xl"></i>
+                      </div>
+                      <span>ログアウト</span>
+                    </div>
+                  </button>
+                </div>
+              )}
             </div>
           </section>
 
