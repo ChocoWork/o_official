@@ -19,6 +19,7 @@ export default function Page() {
   const [toasts, setToasts] = useState<{id: number; message: string; variant?: 'success' | 'error' | 'info'}[]>([]);
   const [tooltipVisible, setTooltipVisible] = useState(false);
   const [infoTooltipVisible, setInfoTooltipVisible] = useState(false);
+  const [floatMenuOpen, setFloatMenuOpen] = useState(false); 
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -1455,12 +1456,41 @@ export default function Page() {
                 右下のフローティングボタンをクリック
               </p>
               <div className="absolute bottom-6 right-6">
+                {floatMenuOpen && (
+                  <div className="absolute bottom-16 right-0 space-y-3 mb-3">
+                    <button
+                      type="button"
+                      className="w-12 h-12 bg-white border border-black/20 shadow-lg flex items-center justify-center hover:bg-[#f5f5f5] transition-all cursor-pointer"
+                    >
+                      <div className="w-5 h-5 flex items-center justify-center">
+                        <i className="ri-share-line text-xl"></i>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      className="w-12 h-12 bg-white border border-black/20 shadow-lg flex items-center justify-center hover:bg-[#f5f5f5] transition-all cursor-pointer"
+                    >
+                      <div className="w-5 h-5 flex items-center justify-center">
+                        <i className="ri-heart-line text-xl"></i>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      className="w-12 h-12 bg-white border border-black/20 shadow-lg flex items-center justify-center hover:bg-[#f5f5f5] transition-all cursor-pointer"
+                    >
+                      <div className="w-5 h-5 flex items-center justify-center">
+                        <i className="ri-message-line text-xl"></i>
+                      </div>
+                    </button>
+                  </div>
+                )}
                 <button
                   type="button"
                   className="w-14 h-14 bg-black text-white shadow-2xl flex items-center justify-center hover:bg-[#474747] transition-all cursor-pointer"
+                  onClick={() => setFloatMenuOpen((v) => !v)}
                 >
                   <div className="w-6 h-6 flex items-center justify-center">
-                    <i className="ri-add-line text-2xl transition-transform"></i>
+                    <i className={`${floatMenuOpen ? 'ri-close-line' : 'ri-add-line'} text-2xl transition-transform`}></i>
                   </div>
                 </button>
               </div>
