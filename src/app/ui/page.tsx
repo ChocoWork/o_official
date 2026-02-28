@@ -20,6 +20,7 @@ export default function Page() {
   const [tooltipVisible, setTooltipVisible] = useState(false);
   const [infoTooltipVisible, setInfoTooltipVisible] = useState(false);
   const [floatMenuOpen, setFloatMenuOpen] = useState(false); 
+  const [openAccordion, setOpenAccordion] = useState<"shipping" | "returns" | "size" | null>("shipping");
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -1835,10 +1836,14 @@ export default function Page() {
               Accordion
             </h2>
             <div className="max-w-2xl border border-black/20">
+              {/* shipping */}
               <div className="border-b border-black/10">
                 <button
                   type="button"
                   className="w-full px-6 py-5 flex items-center justify-between hover:bg-[#f5f5f5] transition-colors cursor-pointer text-left"
+                  onClick={() =>
+                    setOpenAccordion((v) => (v === "shipping" ? null : "shipping"))
+                  }
                 >
                   <span
                     className="text-sm text-black tracking-wide"
@@ -1847,22 +1852,31 @@ export default function Page() {
                     配送について
                   </span>
                   <div className="w-5 h-5 flex items-center justify-center">
-                    <i className="ri-arrow-up-s-line text-xl transition-transform"></i>
+                    <i
+                      className={`ri-arrow-${openAccordion === "shipping" ? "up" : "down"}-s-line text-xl transition-transform`}
+                    ></i>
                   </div>
                 </button>
-                <div className="px-6 pb-5">
-                  <p
-                    className="text-sm text-black/60 leading-relaxed"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    国内配送は通常3-5営業日でお届けします。送料は全国一律¥500、¥10,000以上のご購入で送料無料となります。
-                  </p>
-                </div>
+                {openAccordion === "shipping" && (
+                  <div className="px-6 pb-5">
+                    <p
+                      className="text-sm text-black/60 leading-relaxed"
+                      style={{ fontFamily: "acumin-pro, sans-serif" }}
+                    >
+                      国内配送は通常3-5営業日でお届けします。送料は全国一律¥500、¥10,000以上のご購入で送料無料となります。
+                    </p>
+                  </div>
+                )}
               </div>
+
+              {/* returns */}
               <div className="border-b border-black/10">
                 <button
                   type="button"
                   className="w-full px-6 py-5 flex items-center justify-between hover:bg-[#f5f5f5] transition-colors cursor-pointer text-left"
+                  onClick={() =>
+                    setOpenAccordion((v) => (v === "returns" ? null : "returns"))
+                  }
                 >
                   <span
                     className="text-sm text-black tracking-wide"
@@ -1871,14 +1885,31 @@ export default function Page() {
                     返品・交換について
                   </span>
                   <div className="w-5 h-5 flex items-center justify-center">
-                    <i className="ri-arrow-down-s-line text-xl transition-transform"></i>
+                    <i
+                      className={`ri-arrow-${openAccordion === "returns" ? "up" : "down"}-s-line text-xl transition-transform`}
+                    ></i>
                   </div>
                 </button>
+                {openAccordion === "returns" && (
+                  <div className="px-6 pb-5">
+                    <p
+                      className="text-sm text-black/60 leading-relaxed"
+                      style={{ fontFamily: "acumin-pro, sans-serif" }}
+                    >
+                      商品到着後14日以内であれば、未使用品に限り返品・交換を承ります。詳細は利用規約をご確認ください。
+                    </p>
+                  </div>
+                )}
               </div>
+
+              {/* size guide */}
               <div className="">
                 <button
                   type="button"
                   className="w-full px-6 py-5 flex items-center justify-between hover:bg-[#f5f5f5] transition-colors cursor-pointer text-left"
+                  onClick={() =>
+                    setOpenAccordion((v) => (v === "size" ? null : "size"))
+                  }
                 >
                   <span
                     className="text-sm text-black tracking-wide"
@@ -1887,9 +1918,21 @@ export default function Page() {
                     サイズガイド
                   </span>
                   <div className="w-5 h-5 flex items-center justify-center">
-                    <i className="ri-arrow-down-s-line text-xl transition-transform"></i>
+                    <i
+                      className={`ri-arrow-${openAccordion === "size" ? "up" : "down"}-s-line text-xl transition-transform`}
+                    ></i>
                   </div>
                 </button>
+                {openAccordion === "size" && (
+                  <div className="px-6 pb-5">
+                    <p
+                      className="text-sm text-black/60 leading-relaxed"
+                      style={{ fontFamily: "acumin-pro, sans-serif" }}
+                    >
+                      各商品ページにサイズ表を掲載しております。ご不明な点がございましたら、お気軽にお問い合わせください。
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           </section>
