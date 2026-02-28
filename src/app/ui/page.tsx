@@ -10,6 +10,8 @@ export default function Page() {
   const [category, setCategory] = useState("TOPS");
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [mediumSheetOpen, setMediumSheetOpen] = useState(false);
+  const [largeSheetOpen, setLargeSheetOpen] = useState(false);
   const categoryOptions = ["TOPS", "BOTTOMS", "OUTERWEAR", "ACCESSORIES"];
 
   const [sizes, setSizes] = useState(["S", "M"]);
@@ -1158,6 +1160,7 @@ export default function Page() {
                 type="button"
                 className="px-8 py-3 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap"
                 style={{ fontFamily: "acumin-pro, sans-serif" }}
+                onClick={() => setMediumSheetOpen(true)}
               >
                 MEDIUM SHEET
               </button>
@@ -1165,6 +1168,7 @@ export default function Page() {
                 type="button"
                 className="px-8 py-3 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap"
                 style={{ fontFamily: "acumin-pro, sans-serif" }}
+                onClick={() => setLargeSheetOpen(true)}
               >
                 LARGE SHEET
               </button>
@@ -2511,6 +2515,148 @@ export default function Page() {
                 >
                   CONFIRM
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {mediumSheetOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center"
+          onClick={() => setMediumSheetOpen(false)}
+        >
+          <div className="absolute inset-0 bg-black/40"></div>
+          <div
+            className="relative bg-white w-full max-h-[50vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h3
+                  className="text-2xl text-black tracking-tight"
+                  style={{ fontFamily: "Didot, serif" }}
+                >
+                  Medium Sheet
+                </h3>
+                <button
+                  type="button"
+                  className="w-8 h-8 flex items-center justify-center hover:bg-[#f5f5f5] transition-colors cursor-pointer"
+                  onClick={() => setMediumSheetOpen(false)}
+                >
+                  <div className="w-5 h-5 flex items-center justify-center">
+                    <i className="ri-close-line text-xl"></i>
+                  </div>
+                </button>
+              </div>
+              <p
+                className="text-sm text-black/60 leading-relaxed"
+                style={{ fontFamily: "acumin-pro, sans-serif" }}
+              >
+                画面の約50%を占めるシートです。フィルター設定やオプション選択などに適しています。
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      {largeSheetOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center"
+          onClick={() => setLargeSheetOpen(false)}
+        >
+          <div className="absolute inset-0 bg-black/40"></div>
+          <div
+            className="relative bg-white w-full max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h3
+                  className="text-2xl text-black tracking-tight"
+                  style={{ fontFamily: "Didot, serif" }}
+                >
+                  Large Sheet
+                </h3>
+                <button
+                  type="button"
+                  className="w-8 h-8 flex items-center justify-center hover:bg-[#f5f5f5] transition-colors cursor-pointer"
+                  onClick={() => setLargeSheetOpen(false)}
+                >
+                  <div className="w-5 h-5 flex items-center justify-center">
+                    <i className="ri-close-line text-xl"></i>
+                  </div>
+                </button>
+              </div>
+              <p
+                className="text-sm text-black/60 leading-relaxed mb-6"
+                style={{ fontFamily: "acumin-pro, sans-serif" }}
+              >
+                画面の約90%を占める大きなシートです。詳細情報の表示や複雑なフォームに適しています。
+              </p>
+              <div className="space-y-4">
+                <div className="p-4 border border-black/10">
+                  <p
+                    className="text-sm text-black"
+                    style={{ fontFamily: "acumin-pro, sans-serif" }}
+                  >
+                    コンテンツ項目 1
+                  </p>
+                </div>
+                <div className="p-4 border border-black/10">
+                  <p
+                    className="text-sm text-black"
+                    style={{ fontFamily: "acumin-pro, sans-serif" }}
+                  >
+                    コンテンツ項目 2
+                  </p>
+                </div>
+                <div className="p-4 border border-black/10">
+                  <p
+                    className="text-sm text-black"
+                    style={{ fontFamily: "acumin-pro, sans-serif" }}
+                  >
+                    コンテンツ項目 3
+                  </p>
+                </div>
+                <div className="p-4 border border-black/10">
+                  <p
+                    className="text-sm text-black"
+                    style={{ fontFamily: "acumin-pro, sans-serif" }}
+                  >
+                    コンテンツ項目 4
+                  </p>
+                </div>
+                <div className="p-4 border border-black/10">
+                  <p
+                    className="text-sm text-black"
+                    style={{ fontFamily: "acumin-pro, sans-serif" }}
+                  >
+                    コンテンツ項目 5
+                  </p>
+                </div>
+                <div className="p-4 border border-black/10">
+                  <p
+                    className="text-sm text-black"
+                    style={{ fontFamily: "acumin-pro, sans-serif" }}
+                  >
+                    コンテンツ項目 6
+                  </p>
+                </div>
+                <div className="p-4 border border-black/10">
+                  <p
+                    className="text-sm text-black"
+                    style={{ fontFamily: "acumin-pro, sans-serif" }}
+                  >
+                    コンテンツ項目 7
+                  </p>
+                </div>
+                <div className="p-4 border border-black/10">
+                  <p
+                    className="text-sm text-black"
+                    style={{ fontFamily: "acumin-pro, sans-serif" }}
+                  >
+                    コンテンツ項目 8
+                  </p>
+                </div>
               </div>
             </div>
           </div>
