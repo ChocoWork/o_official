@@ -4,7 +4,11 @@ import Image from 'next/image';
 import { useState, useEffect, useRef } from "react";
 import { Button } from '@/app/components/ui/Button';
 import { Checkbox } from '@/app/components/ui/Checkbox';
+import { MultiSelect } from '@/app/components/ui/MultiSelect';
 import { RadioButtonGroup } from '@/app/components/ui/RadioButtonGroup';
+import { SingleSelect } from '@/app/components/ui/SingleSelect';
+import { Slider } from '@/app/components/ui/Slider';
+import { SwitchToggle } from '@/app/components/ui/SwitchToggle';
 import { TextAreaField } from '@/app/components/ui/TextAreaField';
 import { TextField } from '@/app/components/ui/TextField';
 
@@ -16,7 +20,6 @@ export default function Page() {
   const [checkboxNewsletter, setCheckboxNewsletter] = useState(false);
   const [checkboxPrivacy, setCheckboxPrivacy] = useState(false);
   const [category, setCategory] = useState("TOPS");
-  const [categoryOpen, setCategoryOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [mediumSheetOpen, setMediumSheetOpen] = useState(false);
   const [largeSheetOpen, setLargeSheetOpen] = useState(false);
@@ -56,8 +59,6 @@ export default function Page() {
   const categoryOptions = ["TOPS", "BOTTOMS", "OUTERWEAR", "ACCESSORIES"];
 
   const [sizes, setSizes] = useState(["S", "M"]);
-  const [sizeOpen, setSizeOpen] = useState(false);
-  const sizeOptions = ["S", "M", "L", "FREE"];
   const [notify, setNotify] = useState(false);
 
   // slider states
@@ -108,6 +109,8 @@ export default function Page() {
     { value: 'option3', label: 'オプション 3' },
     { value: 'option4', label: '無効なオプション', disabled: true },
   ];
+  const singleSelectOptions = categoryOptions.map((option) => ({ value: option, label: option }));
+  const multiSelectOptions = ["S", "M", "L", "FREE"].map((option) => ({ value: option, label: option }));
   // ...existing code...
   return (    <main className="pt-32 pb-20">
       <div className="max-w-7xl mx-auto px-6 lg:px-12">
@@ -307,48 +310,13 @@ export default function Page() {
               Single Select
             </h2>
             <div className="max-w-md">
-              <label
-                className="block text-xs tracking-widest mb-2 text-black/80"
-                style={{ fontFamily: "acumin-pro, sans-serif" }}
-              >
-                CATEGORY
-              </label>
-              <div className="relative">
-                <button
-                  type="button"
-                  className="w-full px-4 py-3 border border-black/20 text-sm text-left focus:outline-none focus:border-black transition-colors cursor-pointer flex items-center justify-between"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  onClick={() => setCategoryOpen((v) => !v)}
-                  aria-haspopup="listbox"
-                  aria-expanded={categoryOpen}
-                >
-                  <span>{category}</span>
-                  <div className="w-4 h-4 flex items-center justify-center">
-                    <i className="ri-arrow-down-s-line text-base transition-transform" style={{ transform: categoryOpen ? "rotate(180deg)" : undefined }}></i>
-                  </div>
-                </button>
-                {categoryOpen && (
-                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-black/20 shadow-lg z-10">
-                    {categoryOptions.map((opt) => (
-                      <button
-                        key={opt}
-                        type="button"
-                        className={
-                          "w-full px-4 py-3 text-sm text-left hover:bg-[#f5f5f5] transition-colors cursor-pointer" +
-                          (category === opt ? " bg-[#f5f5f5]" : "")
-                        }
-                        style={{ fontFamily: "acumin-pro, sans-serif" }}
-                        onClick={() => {
-                          setCategory(opt);
-                          setCategoryOpen(false);
-                        }}
-                      >
-                        {opt}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <SingleSelect
+                label="CATEGORY"
+                variant="dropdown"
+                options={singleSelectOptions}
+                value={category}
+                onValueChange={setCategory}
+              />
             </div>
           </section>
 
@@ -361,51 +329,13 @@ export default function Page() {
               Multi Select
             </h2>
             <div className="max-w-md">
-              <label
-                className="block text-xs tracking-widest mb-2 text-black/80"
-                style={{ fontFamily: "acumin-pro, sans-serif" }}
-              >
-                SIZE
-              </label>
-              <div className="relative">
-                <button
-                  type="button"
-                  className="w-full px-4 py-3 border border-black/20 text-sm text-left focus:outline-none focus:border-black transition-colors cursor-pointer flex items-center justify-between"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  onClick={() => setSizeOpen((v) => !v)}
-                  aria-haspopup="listbox"
-                  aria-expanded={sizeOpen}
-                >
-                  <span>{sizes.length > 0 ? sizes.join(", ") : "選択してください"}</span>
-                  <div className="w-4 h-4 flex items-center justify-center">
-                    <i className={"ri-arrow-" + (sizeOpen ? "up" : "down") + "-s-line text-base transition-transform"}></i>
-                  </div>
-                </button>
-                {sizeOpen && (
-                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-black/20 shadow-lg z-10">
-                    {sizeOptions.map((opt) => (
-                      <label
-                        key={opt}
-                        className="flex items-center gap-3 px-4 py-3 hover:bg-[#f5f5f5] transition-colors cursor-pointer"
-                      >
-                        <input
-                          className="w-4 h-4 cursor-pointer accent-black"
-                          type="checkbox"
-                          checked={sizes.includes(opt)}
-                          onChange={() => {
-                            setSizes((prev) =>
-                              prev.includes(opt)
-                                ? prev.filter((s) => s !== opt)
-                                : [...prev, opt]
-                            );
-                          }}
-                        />
-                        <span className="text-sm" style={{ fontFamily: "acumin-pro, sans-serif" }}>{opt}</span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <MultiSelect
+                label="SIZE"
+                variant="dropdown"
+                options={multiSelectOptions}
+                values={sizes}
+                onChange={setSizes}
+              />
             </div>
           </section>
 
@@ -418,38 +348,22 @@ export default function Page() {
               Switch / Toggle
             </h2>
             <div className="space-y-6">
-              <div className="flex items-center justify-between max-w-md">
-                <span
-                  className="text-sm text-black"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  通知を受け取る
-                </span>
-                <button
-                  type="button"
-                  className={`relative w-12 h-6 rounded-full transition-colors cursor-pointer ${notify ? 'bg-black' : 'bg-black/20'}`}
-                  aria-pressed={notify}
-                  onClick={() => setNotify((v) => !v)}
-                >
-                  <span
-                    className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${notify ? 'translate-x-7' : 'left-1'}`}
-                  ></span>
-                </button>
+              <div className="max-w-md">
+                <SwitchToggle
+                  label="通知を受け取る"
+                  checked={notify}
+                  onChange={setNotify}
+                  fullWidth
+                />
               </div>
-              <div className="flex items-center justify-between max-w-md opacity-40">
-                <span
-                  className="text-sm text-black"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  無効なスイッチ
-                </span>
-                <button
-                  type="button"
+              <div className="max-w-md">
+                <SwitchToggle
+                  label="無効なスイッチ"
+                  checked={false}
+                  onChange={() => undefined}
                   disabled
-                  className="relative w-12 h-6 rounded-full bg-black/20 cursor-not-allowed"
-                >
-                  <span className="absolute top-1 left-1 w-4 h-4 bg-white rounded-full"></span>
-                </button>
+                  fullWidth
+                />
               </div>
             </div>
           </section>
@@ -464,91 +378,27 @@ export default function Page() {
             </h2>
             <div className="space-y-12 max-w-md">
               <div>
-                <div className="flex items-center justify-between mb-4">
-                  <label
-                    className="text-xs tracking-widest text-black/80"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    SINGLE VALUE
-                  </label>
-                  <span
-                    className="text-sm text-black"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    {singleValue}
-                  </span>
-                </div>
-                <input
-                  min="0"
-                  max="100"
-                  className="w-full h-1 bg-black/20 rounded-full appearance-none cursor-pointer [&amp;::-webkit-slider-thumb]:appearance-none [&amp;::-webkit-slider-thumb]:w-4 [&amp;::-webkit-slider-thumb]:h-4 [&amp;::-webkit-slider-thumb]:rounded-full [&amp;::-webkit-slider-thumb]:bg-black [&amp;::-webkit-slider-thumb]:cursor-pointer [&amp;::-moz-range-thumb]:w-4 [&amp;::-moz-range-thumb]:h-4 [&amp;::-moz-range-thumb]:rounded-full [&amp;::-moz-range-thumb]:bg-black [&amp;::-moz-range-thumb]:border-0 [&amp;::-moz-range-thumb]:cursor-pointer"
-                  type="range"
+                <Slider
+                  label="SINGLE VALUE"
                   value={singleValue}
-                  onChange={(e) => setSingleValue(Number(e.target.value))}
+                  min={0}
+                  max={100}
+                  step={1}
+                  onValueChange={setSingleValue}
+                  valueDisplay={String(singleValue)}
                 />
               </div>
               <div>
-                <div className="flex items-center justify-between mb-4">
-                  <label
-                    className="text-xs tracking-widest text-black/80"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    PRICE RANGE
-                  </label>
-                  <span
-                    className="text-sm text-black"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    ¥{rangeMin * 100} - ¥{rangeMax * 100}
-                  </span>
-                </div>
-                <div className="relative h-4" data-testid="price-range-track-wrap">
-                  <div className="absolute left-0 top-1/2 h-1 w-full -translate-y-1/2 overflow-hidden rounded-full bg-black/20" data-testid="price-range-track">
-                    <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 1" preserveAspectRatio="none" aria-hidden="true">
-                      <rect
-                        data-testid="price-range-fill"
-                        x={rangeMin}
-                        y={0}
-                        width={Math.max(rangeMax - rangeMin, 0)}
-                        height={1}
-                        fill="currentColor"
-                        className="text-black"
-                      />
-                    </svg>
-                  </div>
-                  <input
-                    min="0"
-                    max="100"
-                    className="pointer-events-none absolute left-0 top-1/2 z-20 h-4 w-full -translate-y-1/2 appearance-none bg-transparent [accent-color:transparent] [&::-webkit-slider-runnable-track]:h-1 [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:mt-[-6px] [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-black [&::-webkit-slider-thumb]:cursor-pointer [&::-moz-range-track]:h-1 [&::-moz-range-track]:bg-transparent [&::-moz-range-progress]:bg-transparent [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-black [&::-moz-range-thumb]:cursor-pointer"
-                    type="range"
-                    step="1"
-                    value={rangeMin}
-                    aria-label="Minimum price"
-                    onChange={(e) => {
-                      const v = Number(e.target.value);
-                      setRangeValues(([currentMin, currentMax]) => [
-                        Math.min(v, Math.max(currentMin, currentMax)),
-                        Math.max(currentMin, currentMax),
-                      ]);
-                    }}
-                  />
-                  <input
-                    min="0"
-                    max="100"
-                    className="pointer-events-none absolute left-0 top-1/2 z-30 h-4 w-full -translate-y-1/2 appearance-none bg-transparent [accent-color:transparent] [&::-webkit-slider-runnable-track]:h-1 [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:mt-[-6px] [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-black [&::-webkit-slider-thumb]:cursor-pointer [&::-moz-range-track]:h-1 [&::-moz-range-track]:bg-transparent [&::-moz-range-progress]:bg-transparent [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-black [&::-moz-range-thumb]:cursor-pointer"
-                    type="range"
-                    step="1"
-                    value={rangeMax}
-                    aria-label="Maximum price"
-                    onChange={(e) => {
-                      const v = Number(e.target.value);
-                      setRangeValues(([currentMin, currentMax]) => [
-                        Math.min(currentMin, currentMax),
-                        Math.max(v, Math.min(currentMin, currentMax)),
-                      ]);
-                    }}
-                  />
-                </div>
+                <Slider
+                  mode="range"
+                  label="PRICE RANGE"
+                  rangeValue={rangeValues}
+                  min={0}
+                  max={100}
+                  step={1}
+                  onRangeChange={setRangeValues}
+                  valueDisplay={`¥${rangeMin * 100} - ¥${rangeMax * 100}`}
+                />
               </div>
             </div>
           </section>

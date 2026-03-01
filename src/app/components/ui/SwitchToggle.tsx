@@ -5,29 +5,33 @@ export interface SwitchToggleProps {
   onChange: (checked: boolean) => void;
   label?: string;
   disabled?: boolean;
+  fullWidth?: boolean;
 }
 
-export function SwitchToggle({ checked, onChange, label, disabled = false }: SwitchToggleProps) {
+export function SwitchToggle({ checked, onChange, label, disabled = false, fullWidth = false }: SwitchToggleProps) {
   return (
-    <label className={cn('inline-flex items-center gap-3', disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer')}>
+    <label
+      className={cn(
+        'inline-flex items-center gap-3',
+        fullWidth ? 'w-full justify-between' : null,
+        disabled ? 'cursor-not-allowed opacity-40' : 'cursor-pointer',
+      )}
+    >
+      {label ? <span className="text-sm text-black">{label}</span> : null}
       <button
         type="button"
         aria-pressed={checked}
         onClick={() => onChange(!checked)}
         disabled={disabled}
-        className={cn(
-          'relative h-6 w-11 rounded-full border transition-colors',
-          checked ? 'border-black bg-black' : 'border-black/30 bg-white',
-        )}
+        className={cn('relative h-6 w-12 rounded-full transition-colors', checked ? 'bg-black' : 'bg-black/20')}
       >
         <span
           className={cn(
-            'absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform',
-            checked ? 'translate-x-5' : 'translate-x-0.5 bg-black/70',
+            'absolute top-1 h-4 w-4 rounded-full bg-white transition-transform',
+            checked ? 'translate-x-7' : 'left-1',
           )}
-        />
+        ></span>
       </button>
-      {label ? <span className="text-sm text-black">{label}</span> : null}
     </label>
   );
 }
