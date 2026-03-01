@@ -6,13 +6,18 @@ import { Button } from '@/app/components/ui/Button';
 import { Checkbox } from '@/app/components/ui/Checkbox';
 import { ColorPicker } from '@/app/components/ui/ColorPicker';
 import { DateTimePicker } from '@/app/components/ui/DateTimePicker';
+import { Dialog } from '@/app/components/ui/Dialog';
 import { MultiSelect } from '@/app/components/ui/MultiSelect';
+import { BottomNavigation } from '@/app/components/ui/BottomNavigation';
+import { PageControl } from '@/app/components/ui/PageControl';
 import { RadioButtonGroup } from '@/app/components/ui/RadioButtonGroup';
 import { Rating } from '@/app/components/ui/Rating';
+import { SearchField } from '@/app/components/ui/SearchField';
 import { SingleSelect } from '@/app/components/ui/SingleSelect';
 import { Slider } from '@/app/components/ui/Slider';
 import { Stepper } from '@/app/components/ui/Stepper';
 import { SwitchToggle } from '@/app/components/ui/SwitchToggle';
+import { TabSegmentControl } from '@/app/components/ui/TabSegmentControl';
 import { TextAreaField } from '@/app/components/ui/TextAreaField';
 import { TextField } from '@/app/components/ui/TextField';
 
@@ -516,51 +521,11 @@ export default function Page() {
             >
               Page Control
             </h2>
-            <div className="flex items-center justify-center gap-2">
-              <button
-                type="button"
-                disabled={currentPage === pageNumbers[0]}
-                aria-label="Previous page"
-                onClick={() => setCurrentPage((prev) => Math.max(pageNumbers[0], prev - 1))}
-                className="w-10 h-10 flex items-center justify-center border border-black/20 hover:bg-[#f5f5f5] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <div className="w-4 h-4 flex items-center justify-center">
-                  <i className="ri-arrow-left-s-line text-base"></i>
-                </div>
-              </button>
-              {pageNumbers.map((pageNum) => (
-                <button
-                  key={pageNum}
-                  type="button"
-                  aria-current={currentPage === pageNum ? "page" : undefined}
-                  onClick={() => setCurrentPage(pageNum)}
-                  className={
-                    "w-10 h-10 flex items-center justify-center text-sm transition-colors cursor-pointer " +
-                    (currentPage === pageNum
-                      ? "bg-black text-white"
-                      : "border border-black/20 hover:bg-[#f5f5f5]")
-                  }
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  {pageNum}
-                </button>
-              ))}
-              <button
-                type="button"
-                disabled={currentPage === pageNumbers[pageNumbers.length - 1]}
-                aria-label="Next page"
-                onClick={() =>
-                  setCurrentPage((prev) =>
-                    Math.min(pageNumbers[pageNumbers.length - 1], prev + 1)
-                  )
-                }
-                className="w-10 h-10 flex items-center justify-center border border-black/20 hover:bg-[#f5f5f5] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <div className="w-4 h-4 flex items-center justify-center">
-                  <i className="ri-arrow-right-s-line text-base"></i>
-                </div>
-              </button>
-            </div>
+            <PageControl
+              page={currentPage}
+              totalPages={pageNumbers.length}
+              onPageChange={setCurrentPage}
+            />
           </section>
 
           {/* --- Bottom Navigation --- */}
@@ -572,35 +537,14 @@ export default function Page() {
               Bottom Navigation
             </h2>
             <div className="max-w-md mx-auto">
-              <div className="bg-white border border-black/20 shadow-lg">
-                <div className="flex items-center justify-around py-3">
-                  {bottomNavItems.map((item) => {
-                    const isActive = activeBottomNav === item.key;
-
-                    return (
-                      <button
-                        key={item.key}
-                        type="button"
-                        aria-current={isActive ? "page" : undefined}
-                        className="flex flex-col items-center gap-1 cursor-pointer group"
-                        onClick={() => setActiveBottomNav(item.key)}
-                      >
-                        <div className="w-6 h-6 flex items-center justify-center">
-                          <i
-                            className={`${item.iconClass} text-2xl transition-colors ${isActive ? "text-black" : "text-black/40 group-hover:text-black/60"}`}
-                          ></i>
-                        </div>
-                        <span
-                          className={`text-[10px] tracking-wider transition-colors ${isActive ? "text-black" : "text-black/40 group-hover:text-black/60"}`}
-                          style={{ fontFamily: "acumin-pro, sans-serif" }}
-                        >
-                          {item.key}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+              <BottomNavigation
+                items={bottomNavItems.map((item) => ({ key: item.key, label: item.key, iconClass: item.iconClass }))}
+                activeKey={activeBottomNav}
+                onChange={(key) => setActiveBottomNav(key as (typeof bottomNavItems)[number]["key"])}
+                fixed={false}
+                appearance="minimal"
+                className="shadow-lg"
+              />
             </div>
           </section>
 
@@ -620,29 +564,12 @@ export default function Page() {
                 >
                   STANDARD TABS
                 </label>
-                <div className="flex items-center gap-8 border-b border-black/20" role="tablist" aria-label="Standard tabs">
-                  {standardTabs.map((tab) => {
-                    const isActive = activeStandardTab === tab;
-
-                    return (
-                      <button
-                        key={tab}
-                        type="button"
-                        role="tab"
-                        aria-selected={isActive}
-                        className={
-                          "pb-4 text-sm tracking-widest transition-colors cursor-pointer relative " +
-                          (isActive ? "text-black" : "text-black/40 hover:text-black/60")
-                        }
-                        style={{ fontFamily: "acumin-pro, sans-serif" }}
-                        onClick={() => setActiveStandardTab(tab)}
-                      >
-                        {tab}
-                        {isActive && <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-black"></span>}
-                      </button>
-                    );
-                  })}
-                </div>
+                <TabSegmentControl
+                  variant="tabs-standard"
+                  items={standardTabs.map((tab) => ({ key: tab, label: tab }))}
+                  activeKey={activeStandardTab}
+                  onChange={(key) => setActiveStandardTab(key as (typeof standardTabs)[number])}
+                />
               </div>
               <div>
                 <label
@@ -651,29 +578,12 @@ export default function Page() {
                 >
                   SEGMENT CONTROL
                 </label>
-                <div className="inline-flex items-center bg-[#f5f5f5] p-1 rounded-full">
-                  {segmentOptions.map((segment) => {
-                    const isActive = activeSegment === segment;
-
-                    return (
-                      <button
-                        key={segment}
-                        type="button"
-                        aria-pressed={isActive}
-                        onClick={() => setActiveSegment(segment)}
-                        className={
-                          "px-6 py-2 text-xs tracking-widest transition-all cursor-pointer rounded-full whitespace-nowrap " +
-                          (isActive
-                            ? "bg-black text-white"
-                            : "text-black/60 hover:text-black")
-                        }
-                        style={{ fontFamily: "acumin-pro, sans-serif" }}
-                      >
-                        {segment}
-                      </button>
-                    );
-                  })}
-                </div>
+                <TabSegmentControl
+                  variant="segment-pill"
+                  items={segmentOptions.map((segment) => ({ key: segment, label: segment }))}
+                  activeKey={activeSegment}
+                  onChange={(key) => setActiveSegment(key as (typeof segmentOptions)[number])}
+                />
               </div>
             </div>
           </section>
@@ -687,58 +597,20 @@ export default function Page() {
               Search Field
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div>
-                <label
-                  className="block text-xs tracking-widest mb-2 text-black/80"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  STANDARD
-                </label>
-                <div className="relative">
-                  <div className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center">
-                    <i className="ri-search-line text-base text-black/60"></i>
-                  </div>
-                  <input
-                    placeholder="商品を検索"
-                    className="search-no-native-clear w-full pl-12 pr-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors"
-                    type="search"
-                    value={searchStandard}
-                    onChange={(e) => setSearchStandard(e.target.value)}
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  />
-                </div>
-              </div>
-              <div>
-                <label
-                  className="block text-xs tracking-widest mb-2 text-black/80"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  WITH CLEAR BUTTON
-                </label>
-                <div className="relative">
-                  <div className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center">
-                    <i className="ri-search-line text-base text-black/60"></i>
-                  </div>
-                  <input
-                    placeholder="商品を検索"
-                    className="search-no-native-clear w-full pl-12 pr-12 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors"
-                    type="search"
-                    value={searchWithClear}
-                    onChange={(e) => setSearchWithClear(e.target.value)}
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  />
-                  {searchWithClear.length > 0 && (
-                    <button
-                      type="button"
-                      aria-label="入力内容をクリア"
-                      className="absolute right-4 top-1/2 -translate-y-1/2 cursor-pointer"
-                      onClick={() => setSearchWithClear("")}
-                    >
-                      <i className="ri-close-line text-base text-black/60 hover:text-black transition-colors"></i>
-                    </button>
-                  )}
-                </div>
-              </div>
+              <SearchField
+                label="STANDARD"
+                placeholder="商品を検索"
+                value={searchStandard}
+                onChange={(event) => setSearchStandard(event.target.value)}
+              />
+              <SearchField
+                label="WITH CLEAR BUTTON"
+                placeholder="商品を検索"
+                value={searchWithClear}
+                onChange={(event) => setSearchWithClear(event.target.value)}
+                showClearButton
+                onClear={() => setSearchWithClear('')}
+              />
             </div>
           </section>
 
@@ -750,14 +622,9 @@ export default function Page() {
             >
               Dialog
             </h2>
-            <button
-              type="button"
-              className="px-8 py-3 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap"
-              style={{ fontFamily: "acumin-pro, sans-serif" }}
-              onClick={() => setDialogOpen(true)}
-            >
+            <Button type="button" className="px-8" onClick={() => setDialogOpen(true)}>
               OPEN DIALOG
-            </button>
+            </Button>
           </section>
           {/* overlay moved below container */}
 
@@ -2369,51 +2236,12 @@ export default function Page() {
             </section>
         </div>
       </div>
-      {dialogOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          onClick={() => setDialogOpen(false)}
-        >
-          <div className="absolute inset-0 bg-black/40"></div>
-          <div
-            className="relative bg-white w-full max-w-md mx-4 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-8">
-              <h3
-                className="text-2xl text-black mb-4 tracking-tight"
-                style={{ fontFamily: "Didot, serif" }}
-              >
-                Dialog Title
-              </h3>
-              <p
-                className="text-sm text-black/60 mb-8 leading-relaxed"
-                style={{ fontFamily: "acumin-pro, sans-serif" }}
-              >
-                これはダイアログの本文です。ユーザーに重要な情報を伝えたり、確認を求めたりする際に使用します。
-              </p>
-              <div className="flex items-center gap-4">
-                <button
-                  type="button"
-                  className="flex-1 px-6 py-3 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  onClick={() => setDialogOpen(false)}
-                >
-                  CANCEL
-                </button>
-                <button
-                  type="button"
-                  className="flex-1 px-6 py-3 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  onClick={() => setDialogOpen(false)}
-                >
-                  CONFIRM
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <Dialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        title="Dialog Title"
+        description="これはダイアログの本文です。ユーザーに重要な情報を伝えたり、確認を求めたりする際に使用します。"
+      />
       {mediumSheetOpen && (
         <div
           className="fixed inset-0 z-50 flex items-end justify-center"
