@@ -2,11 +2,19 @@
 
 import Image from 'next/image';
 import { useState, useEffect, useRef } from "react";
+import { Button } from '@/app/components/ui/Button';
+import { Checkbox } from '@/app/components/ui/Checkbox';
+import { RadioButtonGroup } from '@/app/components/ui/RadioButtonGroup';
+import { TextAreaField } from '@/app/components/ui/TextAreaField';
+import { TextField } from '@/app/components/ui/TextField';
 
 export default function Page() {
   const [standardText, setStandardText] = useState("");
   const [email, setEmail] = useState("");
   const [radioValue, setRadioValue] = useState("option1");
+  const [checkboxTerms, setCheckboxTerms] = useState(false);
+  const [checkboxNewsletter, setCheckboxNewsletter] = useState(false);
+  const [checkboxPrivacy, setCheckboxPrivacy] = useState(false);
   const [category, setCategory] = useState("TOPS");
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -94,6 +102,12 @@ export default function Page() {
 
   const rangeMin = Math.min(rangeValues[0], rangeValues[1]);
   const rangeMax = Math.max(rangeValues[0], rangeValues[1]);
+  const radioOptions = [
+    { value: 'option1', label: 'オプション 1' },
+    { value: 'option2', label: 'オプション 2' },
+    { value: 'option3', label: 'オプション 3' },
+    { value: 'option4', label: '無効なオプション', disabled: true },
+  ];
   // ...existing code...
   return (    <main className="pt-32 pb-20">
       <div className="max-w-7xl mx-auto px-6 lg:px-12">
@@ -121,70 +135,38 @@ export default function Page() {
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div>
-                <label
-                  className="block text-xs tracking-widest mb-2 text-black/80"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  STANDARD
-                </label>
-                <input
+                <TextField
+                  label="STANDARD"
                   placeholder="テキストを入力"
-                  className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors"
                   type="text"
                   value={standardText}
                   onChange={e => setStandardText(e.target.value)}
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
                 />
               </div>
               <div>
-                <label
-                  className="block text-xs tracking-widest mb-2 text-black/80"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  WITH ICON
-                </label>
-                <div className="relative">
-                  <div className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center">
-                    <i className="ri-mail-line text-base text-black/60"></i>
-                  </div>
-                  <input
-                    placeholder="メールアドレス"
-                    className="w-full pl-12 pr-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors"
-                    type="email"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  />
-                </div>
+                <TextField
+                  label="WITH ICON"
+                  placeholder="メールアドレス"
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  leadingIcon={<i className="ri-mail-line text-base"></i>}
+                />
               </div>
               <div>
-                <label
-                  className="block text-xs tracking-widest mb-2 text-black/80"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  DISABLED
-                </label>
-                <input
+                <TextField
+                  label="DISABLED"
                   disabled
-                  className="w-full px-4 py-3 border border-black/10 text-sm bg-[#f5f5f5] text-black/40 cursor-not-allowed"
                   type="text"
                   value="無効な入力フィールド"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
                 />
               </div>
               <div>
-                <label
-                  className="block text-xs tracking-widest mb-2 text-black/80"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  TEXTAREA
-                </label>
-                <textarea
+                <TextAreaField
+                  label="TEXTAREA"
                   placeholder="メッセージを入力"
                   rows={4}
-                  className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black resize-none transition-colors"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                ></textarea>
+                />
               </div>
             </div>
           </section>
@@ -205,12 +187,9 @@ export default function Page() {
                 >
                   PRIMARY
                 </p>
-                <button
-                  className="w-full px-8 py-3 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
+                <Button className="w-full" size="md">
                   PRIMARY BUTTON
-                </button>
+                </Button>
               </div>
               <div>
                 <p
@@ -219,12 +198,9 @@ export default function Page() {
                 >
                   SECONDARY
                 </p>
-                <button
-                  className="w-full px-8 py-3 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
+                <Button variant="secondary" className="w-full" size="md">
                   SECONDARY BUTTON
-                </button>
+                </Button>
               </div>
               <div>
                 <p
@@ -233,12 +209,9 @@ export default function Page() {
                 >
                   TEXT
                 </p>
-                <button
-                  className="w-full px-8 py-3 text-black text-sm tracking-widest hover:text-[#474747] transition-colors cursor-pointer whitespace-nowrap"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
+                <Button variant="text" className="w-full" size="md">
                   TEXT BUTTON
-                </button>
+                </Button>
               </div>
               <div>
                 <p
@@ -247,15 +220,12 @@ export default function Page() {
                 >
                   WITH ICON
                 </p>
-                <button
-                  className="w-full px-8 py-3 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap flex items-center justify-center gap-2"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
+                <Button className="w-full gap-2" size="md">
                   <div className="w-4 h-4 flex items-center justify-center">
                     <i className="ri-shopping-bag-line text-base"></i>
                   </div>
                   ADD TO CART
-                </button>
+                </Button>
               </div>
               <div>
                 <p
@@ -264,13 +234,11 @@ export default function Page() {
                 >
                   ICON ONLY
                 </p>
-                <button
-                  className="px-4 py-3 border border-black text-black hover:bg-black hover:text-white transition-all duration-300 cursor-pointer"
-                >
+                <Button variant="secondary" className="px-4 py-3" size="sm" aria-label="Add to wishlist">
                   <div className="w-5 h-5 flex items-center justify-center">
                     <i className="ri-heart-line text-xl"></i>
                   </div>
-                </button>
+                </Button>
               </div>
               <div>
                 <p
@@ -279,13 +247,9 @@ export default function Page() {
                 >
                   DISABLED
                 </p>
-                <button
-                  disabled
-                  className="w-full px-8 py-3 bg-black/20 text-white text-sm tracking-widest cursor-not-allowed whitespace-nowrap"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
+                <Button disabled className="w-full" size="md">
                   DISABLED BUTTON
-                </button>
+                </Button>
               </div>
             </div>
           </section>
@@ -298,67 +262,12 @@ export default function Page() {
             >
               Radio Button
             </h2>
-            <div className="space-y-4">
-              <label className="flex items-center gap-3 cursor-pointer group">
-                <input
-                  className="w-5 h-5 cursor-pointer accent-black"
-                  type="radio"
-                  value="option1"
-                  checked={radioValue === "option1"}
-                  onChange={() => setRadioValue("option1")}
-                />
-                <span
-                  className="text-sm text-black group-hover:text-[#474747] transition-colors"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  オプション 1
-                </span>
-              </label>
-              <label className="flex items-center gap-3 cursor-pointer group">
-                <input
-                  className="w-5 h-5 cursor-pointer accent-black"
-                  type="radio"
-                  value="option2"
-                  checked={radioValue === "option2"}
-                  onChange={() => setRadioValue("option2")}
-                />
-                <span
-                  className="text-sm text-black group-hover:text-[#474747] transition-colors"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  オプション 2
-                </span>
-              </label>
-              <label className="flex items-center gap-3 cursor-pointer group">
-                <input
-                  className="w-5 h-5 cursor-pointer accent-black"
-                  type="radio"
-                  value="option3"
-                  checked={radioValue === "option3"}
-                  onChange={() => setRadioValue("option3")}
-                />
-                <span
-                  className="text-sm text-black group-hover:text-[#474747] transition-colors"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  オプション 3
-                </span>
-              </label>
-              <label className="flex items-center gap-3 cursor-not-allowed opacity-40">
-                <input
-                  disabled
-                  className="w-5 h-5 cursor-not-allowed"
-                  type="radio"
-                  value="option4"
-                />
-                <span
-                  className="text-sm text-black"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  無効なオプション
-                </span>
-              </label>
-            </div>
+            <RadioButtonGroup
+              name="demo-radio"
+              value={radioValue}
+              options={radioOptions}
+              onChange={setRadioValue}
+            />
           </section>
 
           {/* --- Checkbox --- */}
@@ -370,55 +279,22 @@ export default function Page() {
               Checkbox
             </h2>
             <div className="space-y-4">
-              <label className="flex items-center gap-3 cursor-pointer group">
-                <input
-                  className="w-5 h-5 cursor-pointer accent-black"
-                  type="checkbox"
-                />
-                <span
-                  className="text-sm text-black group-hover:text-[#474747] transition-colors"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  利用規約に同意する
-                </span>
-              </label>
-              <label className="flex items-center gap-3 cursor-pointer group">
-                <input
-                  className="w-5 h-5 cursor-pointer accent-black"
-                  type="checkbox"
-                />
-                <span
-                  className="text-sm text-black group-hover:text-[#474747] transition-colors"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  ニュースレターを受け取る
-                </span>
-              </label>
-              <label className="flex items-center gap-3 cursor-pointer group">
-                <input
-                  className="w-5 h-5 cursor-pointer accent-black"
-                  type="checkbox"
-                />
-                <span
-                  className="text-sm text-black group-hover:text-[#474747] transition-colors"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  プライバシーポリシーに同意する
-                </span>
-              </label>
-              <label className="flex items-center gap-3 cursor-not-allowed opacity-40">
-                <input
-                  disabled
-                  className="w-5 h-5 cursor-not-allowed"
-                  type="checkbox"
-                />
-                <span
-                  className="text-sm text-black"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  無効なチェックボックス
-                </span>
-              </label>
+              <Checkbox
+                checked={checkboxTerms}
+                onChange={(e) => setCheckboxTerms(e.target.checked)}
+                label="利用規約に同意する"
+              />
+              <Checkbox
+                checked={checkboxNewsletter}
+                onChange={(e) => setCheckboxNewsletter(e.target.checked)}
+                label="ニュースレターを受け取る"
+              />
+              <Checkbox
+                checked={checkboxPrivacy}
+                onChange={(e) => setCheckboxPrivacy(e.target.checked)}
+                label="プライバシーポリシーに同意する"
+              />
+              <Checkbox disabled label="無効なチェックボックス" />
             </div>
           </section>
 
