@@ -67,3 +67,5 @@ updated: 2026-02-27
 - [x] `/ui` の `Stepper` / `Rating` / `Color Picker` / `Date / Time Picker` セクションを生HTMLから `src/app/components/ui` コンポーネント利用へ置換
 - [x] `/ui` の `Page Control` / `Bottom Navigation` / `Tab / Segment Control`（`STANDARD TABS`・`SEGMENT CONTROL`）/ `Search Field`（`STANDARD`・`WITH CLEAR BUTTON`）/ `Dialog` 仕様を各UIコンポーネントへ反映
 - [x] `/ui` の `Page Control` / `Bottom Navigation` / `Tab / Segment Control` / `Search Field` / `Dialog` セクションを生HTMLから `src/app/components/ui` コンポーネント利用へ置換
+- [x] `/ui` の `Sheet`（`MEDIUM SHEET`・`LARGE SHEET`）/ `Action Sheet` / `Dropdown` / `Drawer` 仕様を各UIコンポーネントへ反映
+- [x] `/ui` の `Sheet` / `Action Sheet` / `Dropdown` / `Drawer` セクションを生HTMLから `src/app/components/ui` コンポーネント利用へ置換

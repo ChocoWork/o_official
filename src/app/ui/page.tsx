@@ -1,18 +1,23 @@
 "use client";
 
 import Image from 'next/image';
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
+import { ActionSheet } from '@/app/components/ui/ActionSheet';
 import { Button } from '@/app/components/ui/Button';
 import { Checkbox } from '@/app/components/ui/Checkbox';
 import { ColorPicker } from '@/app/components/ui/ColorPicker';
 import { DateTimePicker } from '@/app/components/ui/DateTimePicker';
 import { Dialog } from '@/app/components/ui/Dialog';
+import { Drawer } from '@/app/components/ui/Drawer';
+import { Dropdown } from '@/app/components/ui/Dropdown';
 import { MultiSelect } from '@/app/components/ui/MultiSelect';
 import { BottomNavigation } from '@/app/components/ui/BottomNavigation';
 import { PageControl } from '@/app/components/ui/PageControl';
 import { RadioButtonGroup } from '@/app/components/ui/RadioButtonGroup';
 import { Rating } from '@/app/components/ui/Rating';
 import { SearchField } from '@/app/components/ui/SearchField';
+import { SheetLarge } from '@/app/components/ui/SheetLarge';
+import { SheetMedium } from '@/app/components/ui/SheetMedium';
 import { SingleSelect } from '@/app/components/ui/SingleSelect';
 import { Slider } from '@/app/components/ui/Slider';
 import { Stepper } from '@/app/components/ui/Stepper';
@@ -33,7 +38,6 @@ export default function Page() {
   const [mediumSheetOpen, setMediumSheetOpen] = useState(false);
   const [largeSheetOpen, setLargeSheetOpen] = useState(false);
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   // stack of toast notifications
   const [toasts, setToasts] = useState<{id: number; message: string; variant?: 'success' | 'error' | 'info'}[]>([]);
@@ -53,18 +57,6 @@ export default function Page() {
   ];
   const [slideIndex, setSlideIndex] = useState(0);
   const [openAccordion, setOpenAccordion] = useState<"shipping" | "returns" | "size" | null>("shipping");
-  const menuRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const handleClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [menuOpen]);
   const categoryOptions = ["TOPS", "BOTTOMS", "OUTERWEAR", "ACCESSORIES"];
 
   const [sizes, setSizes] = useState(["S", "M"]);
@@ -665,14 +657,9 @@ export default function Page() {
             >
               Action Sheet
             </h2>
-            <button
-              type="button"
-              className="px-8 py-3 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap"
-              style={{ fontFamily: "acumin-pro, sans-serif" }}
-              onClick={() => setActionSheetOpen(true)}
-            >
+            <Button type="button" className="px-8" onClick={() => setActionSheetOpen(true)}>
               OPEN ACTION SHEET
-            </button>
+            </Button>
           </section>
 
           {/* --- Dropdown --- */}
@@ -683,74 +670,21 @@ export default function Page() {
             >
               Dropdown
             </h2>
-            <div className="relative inline-block" ref={menuRef}>
-              <button
-                type="button"
-                className="px-8 py-3 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap flex items-center gap-2"
-                style={{ fontFamily: "acumin-pro, sans-serif" }}
-                onClick={() => setMenuOpen((v) => !v)}
-              >
-                MENU
-                <div className="w-4 h-4 flex items-center justify-center">
-                  <i className="ri-arrow-down-s-line text-base"></i>
-                </div>
-              </button>
-              {menuOpen && (
-                <div
-                  className="absolute top-full left-0 mt-2 w-56 bg-white border border-black/20 shadow-lg z-10"
-                >
-                  <button
-                    type="button"
-                    className="w-full px-6 py-3 text-sm text-black hover:bg-[#f5f5f5] transition-colors cursor-pointer text-left"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-5 h-5 flex items-center justify-center">
-                        <i className="ri-user-line text-xl"></i>
-                      </div>
-                      <span>アカウント設定</span>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    className="w-full px-6 py-3 text-sm text-black hover:bg-[#f5f5f5] transition-colors cursor-pointer text-left"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-5 h-5 flex items-center justify-center">
-                        <i className="ri-heart-line text-xl"></i>
-                      </div>
-                      <span>お気に入り</span>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    className="w-full px-6 py-3 text-sm text-black hover:bg-[#f5f5f5] transition-colors cursor-pointer text-left"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-5 h-5 flex items-center justify-center">
-                        <i className="ri-shopping-bag-line text-xl"></i>
-                      </div>
-                      <span>注文履歴</span>
-                    </div>
-                  </button>
-                  <div className="h-px bg-black/10 my-1"></div>
-                  <button
-                    type="button"
-                    className="w-full px-6 py-3 text-sm text-black hover:bg-[#f5f5f5] transition-colors cursor-pointer text-left"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-5 h-5 flex items-center justify-center">
-                        <i className="ri-logout-box-line text-xl"></i>
-                      </div>
-                      <span>ログアウト</span>
-                    </div>
-                  </button>
-                </div>
-              )}
-            </div>
+            <Dropdown
+              triggerLabel="MENU"
+              items={[
+                { key: 'account', label: 'アカウント設定', iconClass: 'ri-user-line', onSelect: () => {} },
+                { key: 'favorite', label: 'お気に入り', iconClass: 'ri-heart-line', onSelect: () => {} },
+                { key: 'orders', label: '注文履歴', iconClass: 'ri-shopping-bag-line', onSelect: () => {} },
+                {
+                  key: 'logout',
+                  label: 'ログアウト',
+                  iconClass: 'ri-logout-box-line',
+                  hasDividerBefore: true,
+                  onSelect: () => {},
+                },
+              ]}
+            />
           </section>
 
           {/* --- Drawer --- */}
@@ -2242,270 +2176,94 @@ export default function Page() {
         title="Dialog Title"
         description="これはダイアログの本文です。ユーザーに重要な情報を伝えたり、確認を求めたりする際に使用します。"
       />
-      {mediumSheetOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center"
-          onClick={() => setMediumSheetOpen(false)}
+      <SheetMedium open={mediumSheetOpen} onClose={() => setMediumSheetOpen(false)} title="Medium Sheet">
+        <p
+          className="text-sm text-black/60 leading-relaxed"
+          style={{ fontFamily: "acumin-pro, sans-serif" }}
         >
-          <div className="absolute inset-0 bg-black/40"></div>
-          <div
-            className="relative bg-white w-full max-h-[50vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-8">
-              <div className="flex items-center justify-between mb-6">
-                <h3
-                  className="text-2xl text-black tracking-tight"
-                  style={{ fontFamily: "Didot, serif" }}
-                >
-                  Medium Sheet
-                </h3>
-                <button
-                  type="button"
-                  className="w-8 h-8 flex items-center justify-center hover:bg-[#f5f5f5] transition-colors cursor-pointer"
-                  onClick={() => setMediumSheetOpen(false)}
-                >
-                  <div className="w-5 h-5 flex items-center justify-center">
-                    <i className="ri-close-line text-xl"></i>
-                  </div>
-                </button>
-              </div>
-              <p
-                className="text-sm text-black/60 leading-relaxed"
-                style={{ fontFamily: "acumin-pro, sans-serif" }}
-              >
-                画面の約50%を占めるシートです。フィルター設定やオプション選択などに適しています。
+          画面の約50%を占めるシートです。フィルター設定やオプション選択などに適しています。
+        </p>
+      </SheetMedium>
+      <SheetLarge open={largeSheetOpen} onClose={() => setLargeSheetOpen(false)} title="Large Sheet">
+        <p
+          className="text-sm text-black/60 leading-relaxed mb-6"
+          style={{ fontFamily: "acumin-pro, sans-serif" }}
+        >
+          画面の約90%を占める大きなシートです。詳細情報の表示や複雑なフォームに適しています。
+        </p>
+        <div className="space-y-4">
+          {[1, 2, 3, 4, 5, 6, 7, 8].map((item) => (
+            <div key={item} className="p-4 border border-black/10">
+              <p className="text-sm text-black" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+                {`コンテンツ項目 ${item}`}
               </p>
             </div>
-          </div>
+          ))}
         </div>
-      )}
-      {largeSheetOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center"
-          onClick={() => setLargeSheetOpen(false)}
-        >
-          <div className="absolute inset-0 bg-black/40"></div>
-          <div
-            className="relative bg-white w-full max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-8">
-              <div className="flex items-center justify-between mb-6">
-                <h3
-                  className="text-2xl text-black tracking-tight"
-                  style={{ fontFamily: "Didot, serif" }}
-                >
-                  Large Sheet
-                </h3>
+      </SheetLarge>
+      <ActionSheet
+        open={actionSheetOpen}
+        onClose={() => setActionSheetOpen(false)}
+        actions={[
+          { key: 'share', label: 'シェアする', iconClass: 'ri-share-line', onSelect: () => {} },
+          { key: 'download', label: 'ダウンロード', iconClass: 'ri-download-line', onSelect: () => {} },
+          { key: 'edit', label: '編集する', iconClass: 'ri-edit-line', onSelect: () => {} },
+        ]}
+      />
+      <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)}>
+        <div className="p-8">
+          <div className="flex items-center justify-between mb-8">
+            <h3
+              className="text-2xl text-black tracking-tight"
+              style={{ fontFamily: "Didot, serif" }}
+            >
+              Drawer Menu
+            </h3>
+            <button
+              type="button"
+              className="w-8 h-8 flex items-center justify-center hover:bg-[#f5f5f5] transition-colors cursor-pointer"
+              onClick={() => setDrawerOpen(false)}
+            >
+              <div className="w-5 h-5 flex items-center justify-center">
+                <i className="ri-close-line text-xl"></i>
+              </div>
+            </button>
+          </div>
+          <nav className="space-y-2">
+            {['ITEM','LOOK','NEWS','ABOUT','STOCKIST','CONTACT'].map(label => (
+              <button
+                key={label}
+                type="button"
+                className="w-full px-4 py-4 text-sm tracking-widest text-black hover:bg-[#f5f5f5] transition-colors cursor-pointer text-left"
+                style={{ fontFamily: "acumin-pro, sans-serif" }}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+          <div className="mt-12 pt-8 border-t border-black/10">
+            <p
+              className="text-xs tracking-widest text-black/60 mb-4"
+              style={{ fontFamily: "acumin-pro, sans-serif" }}
+            >
+              FOLLOW US
+            </p>
+            <div className="flex items-center gap-4">
+              {['instagram','facebook','twitter'].map((icon) => (
                 <button
+                  key={icon}
                   type="button"
-                  className="w-8 h-8 flex items-center justify-center hover:bg-[#f5f5f5] transition-colors cursor-pointer"
-                  onClick={() => setLargeSheetOpen(false)}
+                  className="w-10 h-10 flex items-center justify-center border border-black/20 hover:bg-black hover:text-white transition-all duration-300 cursor-pointer"
                 >
                   <div className="w-5 h-5 flex items-center justify-center">
-                    <i className="ri-close-line text-xl"></i>
+                    <i className={`ri-${icon}-line text-xl`}></i>
                   </div>
                 </button>
-              </div>
-              <p
-                className="text-sm text-black/60 leading-relaxed mb-6"
-                style={{ fontFamily: "acumin-pro, sans-serif" }}
-              >
-                画面の約90%を占める大きなシートです。詳細情報の表示や複雑なフォームに適しています。
-              </p>
-              <div className="space-y-4">
-                <div className="p-4 border border-black/10">
-                  <p
-                    className="text-sm text-black"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    コンテンツ項目 1
-                  </p>
-                </div>
-                <div className="p-4 border border-black/10">
-                  <p
-                    className="text-sm text-black"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    コンテンツ項目 2
-                  </p>
-                </div>
-                <div className="p-4 border border-black/10">
-                  <p
-                    className="text-sm text-black"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    コンテンツ項目 3
-                  </p>
-                </div>
-                <div className="p-4 border border-black/10">
-                  <p
-                    className="text-sm text-black"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    コンテンツ項目 4
-                  </p>
-                </div>
-                <div className="p-4 border border-black/10">
-                  <p
-                    className="text-sm text-black"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    コンテンツ項目 5
-                  </p>
-                </div>
-                <div className="p-4 border border-black/10">
-                  <p
-                    className="text-sm text-black"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    コンテンツ項目 6
-                  </p>
-                </div>
-                <div className="p-4 border border-black/10">
-                  <p
-                    className="text-sm text-black"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    コンテンツ項目 7
-                  </p>
-                </div>
-                <div className="p-4 border border-black/10">
-                  <p
-                    className="text-sm text-black"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    コンテンツ項目 8
-                  </p>
-                </div>
-              </div>
+              ))}
             </div>
           </div>
         </div>
-      )}
-      {actionSheetOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center"
-          onClick={() => setActionSheetOpen(false)}
-        >
-          <div className="absolute inset-0 bg-black/40"></div>
-          <div
-            className="relative bg-white w-full max-w-md mx-4 mb-4 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-2">
-              <button
-                type="button"
-                className="w-full px-6 py-4 text-sm text-black hover:bg-[#f5f5f5] transition-colors cursor-pointer text-left"
-                style={{ fontFamily: "acumin-pro, sans-serif" }}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-5 h-5 flex items-center justify-center">
-                    <i className="ri-share-line text-xl"></i>
-                  </div>
-                  <span>シェアする</span>
-                </div>
-              </button>
-              <button
-                type="button"
-                className="w-full px-6 py-4 text-sm text-black hover:bg-[#f5f5f5] transition-colors cursor-pointer text-left"
-                style={{ fontFamily: "acumin-pro, sans-serif" }}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-5 h-5 flex items-center justify-center">
-                    <i className="ri-download-line text-xl"></i>
-                  </div>
-                  <span>ダウンロード</span>
-                </div>
-              </button>
-              <button
-                type="button"
-                className="w-full px-6 py-4 text-sm text-black hover:bg-[#f5f5f5] transition-colors cursor-pointer text-left"
-                style={{ fontFamily: "acumin-pro, sans-serif" }}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-5 h-5 flex items-center justify-center">
-                    <i className="ri-edit-line text-xl"></i>
-                  </div>
-                  <span>編集する</span>
-                </div>
-              </button>
-              <div className="h-px bg-black/10 my-2"></div>
-              <button
-                type="button"
-                className="w-full px-6 py-4 text-sm text-black hover:bg-[#f5f5f5] transition-colors cursor-pointer text-left"
-                style={{ fontFamily: "acumin-pro, sans-serif" }}
-                onClick={() => setActionSheetOpen(false)}
-              >
-                キャンセル
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {drawerOpen && (
-        <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setDrawerOpen(false)}></div>
-          <div
-            className="absolute top-0 right-0 bottom-0 w-full max-w-md bg-white shadow-2xl overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-8">
-              <div className="flex items-center justify-between mb-8">
-                <h3
-                  className="text-2xl text-black tracking-tight"
-                  style={{ fontFamily: "Didot, serif" }}
-                >
-                  Drawer Menu
-                </h3>
-                <button
-                  type="button"
-                  className="w-8 h-8 flex items-center justify-center hover:bg-[#f5f5f5] transition-colors cursor-pointer"
-                  onClick={() => setDrawerOpen(false)}
-                >
-                  <div className="w-5 h-5 flex items-center justify-center">
-                    <i className="ri-close-line text-xl"></i>
-                  </div>
-                </button>
-              </div>
-              <nav className="space-y-2">
-                {['ITEM','LOOK','NEWS','ABOUT','STOCKIST','CONTACT'].map(label => (
-                  <button
-                    key={label}
-                    type="button"
-                    className="w-full px-4 py-4 text-sm tracking-widest text-black hover:bg-[#f5f5f5] transition-colors cursor-pointer text-left"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </nav>
-              <div className="mt-12 pt-8 border-t border-black/10">
-                <p
-                  className="text-xs tracking-widest text-black/60 mb-4"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  FOLLOW US
-                </p>
-                <div className="flex items-center gap-4">
-                  {['instagram','facebook','twitter'].map((icon) => (
-                    <button
-                      key={icon}
-                      type="button"
-                      className="w-10 h-10 flex items-center justify-center border border-black/20 hover:bg-black hover:text-white transition-all duration-300 cursor-pointer"
-                    >
-                      <div className="w-5 h-5 flex items-center justify-center">
-                        <i className={`ri-${icon}-line text-xl`}></i>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      </Drawer>
     </main>
   );
 }

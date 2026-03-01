@@ -7,18 +7,34 @@ export function SheetMedium(props: BaseOverlayProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40" onClick={props.onClose}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={props.onClose}>
+      <div className="absolute inset-0 bg-black/40"></div>
       <aside
-        className={cn('absolute bottom-0 left-0 right-0 mx-auto h-[55vh] max-w-4xl border border-black/10 bg-white p-6', props.className)}
+        className={cn('relative w-full max-h-[50vh] overflow-y-auto bg-white', props.className)}
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="mb-4 flex items-center justify-between">
-          {props.title ? <h3 className="text-lg tracking-tight text-black">{props.title}</h3> : <span />}
-          <button type="button" onClick={props.onClose} className="text-xl text-[#474747] hover:text-black" aria-label="close">
-            ×
-          </button>
+        <div className="p-8">
+          <div className="mb-6 flex items-center justify-between">
+            {props.title ? (
+              <h3 className="text-2xl tracking-tight text-black" style={{ fontFamily: 'Didot, serif' }}>
+                {props.title}
+              </h3>
+            ) : (
+              <span />
+            )}
+            <button
+              type="button"
+              onClick={props.onClose}
+              className="flex h-8 w-8 cursor-pointer items-center justify-center transition-colors hover:bg-[#f5f5f5]"
+              aria-label="close"
+            >
+              <div className="flex h-5 w-5 items-center justify-center">
+                <i className="ri-close-line text-xl"></i>
+              </div>
+            </button>
+          </div>
+          {props.children}
         </div>
-        {props.children}
       </aside>
     </div>
   );

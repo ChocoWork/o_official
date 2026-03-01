@@ -1,9 +1,9 @@
 import { cn } from '@/lib/utils';
-import { Button } from './Button';
 
 export interface ActionSheetAction {
   key: string;
   label: string;
+  iconClass?: string;
   destructive?: boolean;
   onSelect: () => void;
 }
@@ -20,9 +20,13 @@ export function ActionSheet({ open, onClose, actions }: ActionSheetProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40" onClick={onClose}>
-      <div className="absolute bottom-0 left-0 right-0 mx-auto max-w-2xl border border-black/10 bg-white p-3" onClick={(event) => event.stopPropagation()}>
-        <div className="space-y-2">
+    <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/40"></div>
+      <div
+        className="relative mb-4 mx-4 w-full max-w-md bg-white shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="p-2">
           {actions.map((action) => (
             <button
               key={action.key}
@@ -32,17 +36,31 @@ export function ActionSheet({ open, onClose, actions }: ActionSheetProps) {
                 onClose();
               }}
               className={cn(
-                'w-full border border-black/10 px-4 py-3 text-left text-sm hover:bg-black/5',
+                'w-full cursor-pointer px-6 py-4 text-left text-sm transition-colors hover:bg-[#f5f5f5]',
                 action.destructive ? 'text-red-600' : 'text-black',
               )}
+              style={{ fontFamily: 'acumin-pro, sans-serif' }}
             >
-              {action.label}
+              <div className="flex items-center gap-3">
+                {action.iconClass ? (
+                  <div className="flex h-5 w-5 items-center justify-center">
+                    <i className={cn(action.iconClass, 'text-xl')}></i>
+                  </div>
+                ) : null}
+                <span>{action.label}</span>
+              </div>
             </button>
           ))}
+          <div className="my-2 h-px bg-black/10"></div>
+          <button
+            type="button"
+            className="w-full cursor-pointer px-6 py-4 text-left text-sm text-black transition-colors hover:bg-[#f5f5f5]"
+            style={{ fontFamily: 'acumin-pro, sans-serif' }}
+            onClick={onClose}
+          >
+            キャンセル
+          </button>
         </div>
-        <Button variant="secondary" className="mt-2 w-full" onClick={onClose}>
-          キャンセル
-        </Button>
       </div>
     </div>
   );
