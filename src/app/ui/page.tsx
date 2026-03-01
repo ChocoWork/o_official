@@ -7,9 +7,12 @@ import { Button } from '@/app/components/ui/Button';
 import { Checkbox } from '@/app/components/ui/Checkbox';
 import { ColorPicker } from '@/app/components/ui/ColorPicker';
 import { DateTimePicker } from '@/app/components/ui/DateTimePicker';
+import { DataTable } from '@/app/components/ui/DataTable';
 import { Dialog } from '@/app/components/ui/Dialog';
 import { Drawer } from '@/app/components/ui/Drawer';
 import { Dropdown } from '@/app/components/ui/Dropdown';
+import { FloatingButton } from '@/app/components/ui/FloatingButton';
+import { List } from '@/app/components/ui/List';
 import { MultiSelect } from '@/app/components/ui/MultiSelect';
 import { BottomNavigation } from '@/app/components/ui/BottomNavigation';
 import { PageControl } from '@/app/components/ui/PageControl';
@@ -25,6 +28,8 @@ import { SwitchToggle } from '@/app/components/ui/SwitchToggle';
 import { TabSegmentControl } from '@/app/components/ui/TabSegmentControl';
 import { TextAreaField } from '@/app/components/ui/TextAreaField';
 import { TextField } from '@/app/components/ui/TextField';
+import { ToastSnackbar } from '@/app/components/ui/ToastSnackbar';
+import { Tooltip } from '@/app/components/ui/Tooltip';
 
 export default function Page() {
   const [standardText, setStandardText] = useState("");
@@ -41,8 +46,6 @@ export default function Page() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   // stack of toast notifications
   const [toasts, setToasts] = useState<{id: number; message: string; variant?: 'success' | 'error' | 'info'}[]>([]);
-  const [tooltipVisible, setTooltipVisible] = useState(false);
-  const [infoTooltipVisible, setInfoTooltipVisible] = useState(false);
   const [floatMenuOpen, setFloatMenuOpen] = useState(false); 
   // banner visibility flags
   const [showInfoBanner, setShowInfoBanner] = useState(true);
@@ -112,6 +115,18 @@ export default function Page() {
   ];
   const singleSelectOptions = categoryOptions.map((option) => ({ value: option, label: option }));
   const multiSelectOptions = ["S", "M", "L", "FREE"].map((option) => ({ value: option, label: option }));
+  const orderRows = [
+    { id: 'ORD-001', date: '2024-03-15', product: 'Minimal Cotton Shirt', qty: '1', total: '¥18,000' },
+    { id: 'ORD-002', date: '2024-03-14', product: 'Pleated Skirt', qty: '2', total: '¥32,000' },
+    { id: 'ORD-003', date: '2024-03-13', product: 'Cashmere Blend Coat', qty: '1', total: '¥68,000' },
+    { id: 'ORD-004', date: '2024-03-12', product: 'Leather Tote Bag', qty: '1', total: '¥24,000' },
+  ] as const;
+  const showcaseListItems = [
+    { name: 'Minimal Cotton Shirt', category: 'TOPS', price: '¥18,000' },
+    { name: 'Pleated Skirt', category: 'BOTTOMS', price: '¥16,000' },
+    { name: 'Cashmere Blend Coat', category: 'OUTERWEAR', price: '¥68,000' },
+    { name: 'Leather Tote Bag', category: 'ACCESSORIES', price: '¥24,000' },
+  ] as const;
   // ...existing code...
   return (    <main className="pt-32 pb-20">
       <div className="max-w-7xl mx-auto px-6 lg:px-12">
@@ -714,10 +729,9 @@ export default function Page() {
               Toast / Snackbar
             </h2>
             <div className="flex items-center gap-4 flex-wrap">
-              <button
+              <Button
                 type="button"
-                className="px-8 py-3 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap"
-                style={{ fontFamily: "acumin-pro, sans-serif" }}
+                className="px-8"
                 onClick={() => {
                   const id = Date.now();
                   setToasts((prev) => [...prev, { id, message: "操作が完了しました" }]);
@@ -727,11 +741,11 @@ export default function Page() {
                 }}
               >
                 SUCCESS
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                className="px-8 py-3 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap"
-                style={{ fontFamily: "acumin-pro, sans-serif" }}
+                variant="secondary"
+                className="px-8"
                 onClick={() => {
                   const id = Date.now();
                   setToasts((prev) => [...prev, { id, message: "エラーが発生しました", variant: 'error' }]);
@@ -741,11 +755,11 @@ export default function Page() {
                 }}
               >
                 ERROR
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                className="px-8 py-3 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap"
-                style={{ fontFamily: "acumin-pro, sans-serif" }}
+                variant="secondary"
+                className="px-8"
                 onClick={() => {
                   const id = Date.now();
                   setToasts((prev) => [...prev, { id, message: "情報を確認してください", variant: 'info' }]);
@@ -755,33 +769,12 @@ export default function Page() {
                 }}
               >
                 INFO
-              </button>
+              </Button>
             </div>
             <div className="fixed bottom-8 right-8 z-50 space-y-3">
-              {toasts.map((toast) => {
-                const iconClass =
-                  toast.variant === 'error'
-                    ? 'ri-error-warning-line'
-                    : toast.variant === 'info'
-                    ? 'ri-information-line'
-                    : 'ri-check-line';
-
-                return (
-                  <div
-                    key={toast.id}
-                    className="bg-black text-white px-6 py-4 shadow-2xl min-w-[300px] animate-[slideIn_0.3s_ease-out]"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-5 h-5 flex items-center justify-center">
-                        <i className={`${iconClass} text-xl`}></i>
-                      </div>
-                      <span className="text-sm" style={{ fontFamily: "acumin-pro, sans-serif" }}>
-                        {toast.message}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
+              {toasts.map((toast) => (
+                <ToastSnackbar key={toast.id} message={toast.message} variant={toast.variant} />
+              ))}
             </div>
           </section>
 
@@ -794,45 +787,18 @@ export default function Page() {
               Tooltip
             </h2>
             <div className="flex items-center gap-8">
-              <div className="relative">
-                <button
-                  type="button"
-                  className="px-8 py-3 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  onMouseEnter={() => setTooltipVisible(true)}
-                  onMouseLeave={() => setTooltipVisible(false)}
-                  onFocus={() => setTooltipVisible(true)}
-                  onBlur={() => setTooltipVisible(false)}
-                >
+              <Tooltip content="これはツールチップです">
+                <Button type="button" className="px-8">
                   HOVER ME
-                </button>
-                {tooltipVisible && (
-                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-4 py-2 bg-black text-white text-xs whitespace-nowrap" style={{ fontFamily: "acumin-pro, sans-serif" }}>
-                    これはツールチップです
-                    <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-black"></div>
-                  </div>
-                )}
-              </div>
-              <div className="relative">
-                <button
-                  type="button"
-                  className="w-10 h-10 flex items-center justify-center border border-black/20 hover:bg-[#f5f5f5] transition-colors cursor-pointer"
-                  onMouseEnter={() => setInfoTooltipVisible(true)}
-                  onMouseLeave={() => setInfoTooltipVisible(false)}
-                  onFocus={() => setInfoTooltipVisible(true)}
-                  onBlur={() => setInfoTooltipVisible(false)}
-                >
+                </Button>
+              </Tooltip>
+              <Tooltip content="詳細情報">
+                <Button type="button" variant="secondary" className="h-10 w-10 px-0 py-0" aria-label="詳細情報">
                   <div className="w-5 h-5 flex items-center justify-center">
                     <i className="ri-information-line text-xl"></i>
                   </div>
-                </button>
-                {infoTooltipVisible && (
-                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-4 py-2 bg-black text-white text-xs whitespace-nowrap" style={{ fontFamily: "acumin-pro, sans-serif" }}>
-                    詳細情報
-                    <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-black"></div>
-                  </div>
-                )}
-              </div>
+                </Button>
+              </Tooltip>
             </div>
           </section>
 
@@ -851,45 +817,19 @@ export default function Page() {
               >
                 右下のフローティングボタンをクリック
               </p>
-              <div className="absolute bottom-6 right-6">
-                {floatMenuOpen && (
-                  <div className="absolute bottom-16 right-0 space-y-3 mb-3">
-                    <button
-                      type="button"
-                      className="w-12 h-12 bg-white border border-black/20 shadow-lg flex items-center justify-center hover:bg-[#f5f5f5] transition-all cursor-pointer"
-                    >
-                      <div className="w-5 h-5 flex items-center justify-center">
-                        <i className="ri-share-line text-xl"></i>
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      className="w-12 h-12 bg-white border border-black/20 shadow-lg flex items-center justify-center hover:bg-[#f5f5f5] transition-all cursor-pointer"
-                    >
-                      <div className="w-5 h-5 flex items-center justify-center">
-                        <i className="ri-heart-line text-xl"></i>
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      className="w-12 h-12 bg-white border border-black/20 shadow-lg flex items-center justify-center hover:bg-[#f5f5f5] transition-all cursor-pointer"
-                    >
-                      <div className="w-5 h-5 flex items-center justify-center">
-                        <i className="ri-message-line text-xl"></i>
-                      </div>
-                    </button>
-                  </div>
-                )}
-                <button
-                  type="button"
-                  className="w-14 h-14 bg-black text-white shadow-2xl flex items-center justify-center hover:bg-[#474747] transition-all cursor-pointer"
-                  onClick={() => setFloatMenuOpen((v) => !v)}
-                >
-                  <div className="w-6 h-6 flex items-center justify-center">
-                    <i className={`${floatMenuOpen ? 'ri-close-line' : 'ri-add-line'} text-2xl transition-transform`}></i>
-                  </div>
-                </button>
-              </div>
+              <FloatingButton
+                label="FLOAT"
+                onClick={() => undefined}
+                actions={[
+                  { key: 'share', iconClass: 'ri-share-line', onClick: () => undefined },
+                  { key: 'heart', iconClass: 'ri-heart-line', onClick: () => undefined },
+                  { key: 'message', iconClass: 'ri-message-line', onClick: () => undefined },
+                ]}
+                open={floatMenuOpen}
+                onOpenChange={setFloatMenuOpen}
+                fixed={false}
+                className="absolute bottom-6 right-6"
+              />
             </div>
           </section>
 
@@ -901,174 +841,51 @@ export default function Page() {
             >
               Table
             </h2>
-            <div className="overflow-x-auto border border-black/20">
-              <table className="w-full">
-                <thead className="bg-[#f5f5f5]">
-                  <tr>
-                    <th
-                      className="px-6 py-4 text-left text-xs tracking-widest text-black/80"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      ORDER ID
-                    </th>
-                    <th
-                      className="px-6 py-4 text-left text-xs tracking-widest text-black/80"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      DATE
-                    </th>
-                    <th
-                      className="px-6 py-4 text-left text-xs tracking-widest text-black/80"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      PRODUCT
-                    </th>
-                    <th
-                      className="px-6 py-4 text-left text-xs tracking-widest text-black/80"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      QTY
-                    </th>
-                    <th
-                      className="px-6 py-4 text-left text-xs tracking-widest text-black/80"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      TOTAL
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr className="border-b border-black/10 hover:bg-[#f5f5f5] transition-colors">
-                    <td
-                      className="px-6 py-4 text-sm text-black"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      ORD-001
-                    </td>
-                    <td
-                      className="px-6 py-4 text-sm text-black/60"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      2024-03-15
-                    </td>
-                    <td
-                      className="px-6 py-4 text-sm text-black"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      Minimal Cotton Shirt
-                    </td>
-                    <td
-                      className="px-6 py-4 text-sm text-black/60"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      1
-                    </td>
-                    <td
-                      className="px-6 py-4 text-sm text-black"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      ¥18,000
-                    </td>
-                  </tr>
-                  <tr className="border-b border-black/10 hover:bg-[#f5f5f5] transition-colors">
-                    <td
-                      className="px-6 py-4 text-sm text-black"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      ORD-002
-                    </td>
-                    <td
-                      className="px-6 py-4 text-sm text-black/60"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      2024-03-14
-                    </td>
-                    <td
-                      className="px-6 py-4 text-sm text-black"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      Pleated Skirt
-                    </td>
-                    <td
-                      className="px-6 py-4 text-sm text-black/60"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      2
-                    </td>
-                    <td
-                      className="px-6 py-4 text-sm text-black"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      ¥32,000
-                    </td>
-                  </tr>
-                  <tr className="border-b border-black/10 hover:bg-[#f5f5f5] transition-colors">
-                    <td
-                      className="px-6 py-4 text-sm text-black"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      ORD-003
-                    </td>
-                    <td
-                      className="px-6 py-4 text-sm text-black/60"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      2024-03-13
-                    </td>
-                    <td
-                      className="px-6 py-4 text-sm text-black"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      Cashmere Blend Coat
-                    </td>
-                    <td
-                      className="px-6 py-4 text-sm text-black/60"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      1
-                    </td>
-                    <td
-                      className="px-6 py-4 text-sm text-black"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      ¥68,000
-                    </td>
-                  </tr>
-                  <tr className="hover:bg-[#f5f5f5] transition-colors">
-                    <td
-                      className="px-6 py-4 text-sm text-black"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      ORD-004
-                    </td>
-                    <td
-                      className="px-6 py-4 text-sm text-black/60"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      2024-03-12
-                    </td>
-                    <td
-                      className="px-6 py-4 text-sm text-black"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      Leather Tote Bag
-                    </td>
-                    <td
-                      className="px-6 py-4 text-sm text-black/60"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      1
-                    </td>
-                    <td
-                      className="px-6 py-4 text-sm text-black"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      ¥24,000
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              columns={[
+                {
+                  key: 'id',
+                  header: 'ORDER ID',
+                  render: (row) => row.id,
+                  headerClassName: 'text-black/80',
+                  cellClassName: 'text-black',
+                },
+                {
+                  key: 'date',
+                  header: 'DATE',
+                  render: (row) => row.date,
+                  headerClassName: 'text-black/80',
+                  cellClassName: 'text-black/60',
+                },
+                {
+                  key: 'product',
+                  header: 'PRODUCT',
+                  render: (row) => row.product,
+                  headerClassName: 'text-black/80',
+                  cellClassName: 'text-black',
+                },
+                {
+                  key: 'qty',
+                  header: 'QTY',
+                  render: (row) => row.qty,
+                  headerClassName: 'text-black/80',
+                  cellClassName: 'text-black/60',
+                },
+                {
+                  key: 'total',
+                  header: 'TOTAL',
+                  render: (row) => row.total,
+                  headerClassName: 'text-black/80',
+                  cellClassName: 'text-black',
+                },
+              ]}
+              rows={orderRows}
+              rowKey={(row) => row.id}
+              hoverableRows
+              containerClassName="border-black/20"
+              tableClassName="w-full min-w-0"
+              rowClassName="border-black/10"
+            />
           </section>
 
           {/* --- List --- */}
@@ -1079,147 +896,42 @@ export default function Page() {
             >
               List
             </h2>
-            <div className="max-w-2xl space-y-px border border-black/20">
-              <div className="flex items-center justify-between px-6 py-5 hover:bg-[#f5f5f5] transition-colors cursor-pointer border-b border-black/10">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-[#f5f5f5] flex items-center justify-center">
-                    <div className="w-5 h-5 flex items-center justify-center">
-                      <i className="ri-image-line text-xl text-black/40"></i>
+            <List<(typeof showcaseListItems)[number]>
+              items={showcaseListItems}
+              itemKey={(item) => item.name}
+              className="max-w-2xl space-y-px border border-black/20"
+              renderItem={(item, index) => (
+                <div
+                  className={`flex cursor-pointer items-center justify-between px-6 py-5 transition-colors hover:bg-[#f5f5f5] ${
+                    index < showcaseListItems.length - 1 ? 'border-b border-black/10' : ''
+                  }`}
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-[#f5f5f5] flex items-center justify-center">
+                      <div className="w-5 h-5 flex items-center justify-center">
+                        <i className="ri-image-line text-xl text-black/40"></i>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-sm text-black mb-1" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                        {item.name}
+                      </p>
+                      <p className="text-xs text-black/40 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                        {item.category}
+                      </p>
                     </div>
                   </div>
-                  <div>
-                    <p
-                      className="text-sm text-black mb-1"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      Minimal Cotton Shirt
-                    </p>
-                    <p
-                      className="text-xs text-black/40 tracking-wider"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      TOPS
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <span
-                    className="text-sm text-black"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    ¥18,000
-                  </span>
-                  <div className="w-5 h-5 flex items-center justify-center">
-                    <i className="ri-arrow-right-s-line text-xl text-black/40"></i>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between px-6 py-5 hover:bg-[#f5f5f5] transition-colors cursor-pointer border-b border-black/10">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-[#f5f5f5] flex items-center justify-center">
+                  <div className="flex items-center gap-4">
+                    <span className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                      {item.price}
+                    </span>
                     <div className="w-5 h-5 flex items-center justify-center">
-                      <i className="ri-image-line text-xl text-black/40"></i>
+                      <i className="ri-arrow-right-s-line text-xl text-black/40"></i>
                     </div>
                   </div>
-                  <div>
-                    <p
-                      className="text-sm text-black mb-1"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      Pleated Skirt
-                    </p>
-                    <p
-                      className="text-xs text-black/40 tracking-wider"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      BOTTOMS
-                    </p>
-                  </div>
                 </div>
-                <div className="flex items-center gap-4">
-                  <span
-                    className="text-sm text-black"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    ¥16,000
-                  </span>
-                  <div className="w-5 h-5 flex items-center justify-center">
-                    <i className="ri-arrow-right-s-line text-xl text-black/40"></i>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between px-6 py-5 hover:bg-[#f5f5f5] transition-colors cursor-pointer border-b border-black/10">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-[#f5f5f5] flex items-center justify-center">
-                    <div className="w-5 h-5 flex items-center justify-center">
-                      <i className="ri-image-line text-xl text-black/40"></i>
-                    </div>
-                  </div>
-                  <div>
-                    <p
-                      className="text-sm text-black mb-1"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      Cashmere Blend Coat
-                    </p>
-                    <p
-                      className="text-xs text-black/40 tracking-wider"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      OUTERWEAR
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <span
-                    className="text-sm text-black"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    ¥68,000
-                  </span>
-                  <div className="w-5 h-5 flex items-center justify-center">
-                    <i className="ri-arrow-right-s-line text-xl text-black/40"></i>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between px-6 py-5 hover:bg-[#f5f5f5] transition-colors ">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-[#f5f5f5] flex items-center justify-center">
-                    <div className="w-5 h-5 flex items-center justify-center">
-                      <i className="ri-image-line text-xl text-black/40"></i>
-                    </div>
-                  </div>
-                  <div>
-                    <p
-                      className="text-sm text-black mb-1"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      Leather Tote Bag
-                    </p>
-                    <p
-                      className="text-xs text-black/40 tracking-wider"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      ACCESSORIES
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <span
-                    className="text-sm text-black"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    ¥24,000
-                  </span>
-                  <div className="w-5 h-5 flex items-center justify-center">
-                    <i className="ri-arrow-right-s-line text-xl text-black/40"></i>
-                  </div>
-                </div>
-              </div>
-            </div>
+              )}
+            />
           </section>
 
           {/* --- Accordion --- */}
