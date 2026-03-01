@@ -20,6 +20,12 @@ export default function Page() {
   const [tooltipVisible, setTooltipVisible] = useState(false);
   const [infoTooltipVisible, setInfoTooltipVisible] = useState(false);
   const [floatMenuOpen, setFloatMenuOpen] = useState(false); 
+  // banner visibility flags
+  const [showInfoBanner, setShowInfoBanner] = useState(true);
+  const [showPromoBanner, setShowPromoBanner] = useState(true);
+  const [showAlertBanner, setShowAlertBanner] = useState(true);
+  // tags that can be removed by user
+  const [removableTags, setRemovableTags] = useState<string[]>(["TOPS", "BOTTOMS", "OUTERWEAR"]);
   const carouselImages = [
     "https://readdy.ai/api/search-image?query=minimalist%20elegant%20fashion%20collection%20display%20clean%20white%20background%20soft%20natural%20lighting%20high%20end%20luxury%20clothing%20simple%20composition%20professional%20photography%20modern%20aesthetic%20premium%20fabric%20textures&width=800&height=500&seq=carousel1&orientation=landscape",
     "https://readdy.ai/api/search-image?query=stylish%20model%20wearing%20luxury%20streetwear%20outfit%20on%20urban%20background%20professional%20photography%20soft%20lighting&width=800&height=500&seq=carousel2&orientation=landscape",
@@ -2387,65 +2393,74 @@ export default function Page() {
               Banner / Alert
             </h2>
             <div className="space-y-4 max-w-4xl">
-              <div className="bg-black text-white px-6 py-4 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-5 h-5 flex items-center justify-center">
-                    <i className="ri-information-line text-xl"></i>
-                  </div>
-                  <p className="text-sm" style={{ fontFamily: "acumin-pro, sans-serif" }}>
-                    春の新作コレクションが入荷しました
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  className="w-6 h-6 flex items-center justify-center hover:bg-white/20 transition-colors cursor-pointer"
-                >
-                  <div className="w-4 h-4 flex items-center justify-center">
-                    <i className="ri-close-line text-base"></i>
-                  </div>
-                </button>
-              </div>
-              <div className="bg-[#f5f5f5] border border-black/20 px-6 py-4 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-5 h-5 flex items-center justify-center">
-                    <i className="ri-gift-line text-xl text-black"></i>
-                  </div>
-                  <p className="text-sm text-black" style={{ fontFamily: "acumin-pro, sans-serif" }}>
-                    ¥10,000以上のご購入で送料無料
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  className="w-6 h-6 flex items-center justify-center hover:bg-black/10 transition-colors cursor-pointer"
-                >
-                  <div className="w-4 h-4 flex items-center justify-center">
-                    <i className="ri-close-line text-base text-black"></i>
-                  </div>
-                </button>
-              </div>
-              <div className="border-l-4 border-black bg-[#f5f5f5] px-6 py-4 flex items-start justify-between">
-                <div className="flex items-start gap-3">
-                  <div className="w-5 h-5 flex items-center justify-center mt-0.5">
-                    <i className="ri-error-warning-line text-xl text-black"></i>
-                  </div>
-                  <div>
-                    <p className="text-sm text-black mb-1" style={{ fontFamily: "acumin-pro, sans-serif" }}>
-                      重要なお知らせ
-                    </p>
-                    <p className="text-sm text-black/60 leading-relaxed" style={{ fontFamily: "acumin-pro, sans-serif" }}>
-                      システムメンテナンスのため、3月20日 2:00-4:00の間、一時的にサービスをご利用いただけません。
+              {showInfoBanner && (
+                <div className="bg-black text-white px-6 py-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-5 h-5 flex items-center justify-center">
+                      <i className="ri-information-line text-xl"></i>
+                    </div>
+                    <p className="text-sm" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+                      春の新作コレクションが入荷しました
                     </p>
                   </div>
+                  <button
+                    type="button"
+                    className="w-6 h-6 flex items-center justify-center hover:bg-white/20 transition-colors cursor-pointer"
+                    onClick={() => setShowInfoBanner(false)}
+                  >
+                    <div className="w-4 h-4 flex items-center justify-center">
+                      <i className="ri-close-line text-base"></i>
+                    </div>
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  className="w-6 h-6 flex items-center justify-center hover:bg-black/10 transition-colors cursor-pointer flex-shrink-0"
-                >
-                  <div className="w-4 h-4 flex items-center justify-center">
-                    <i className="ri-close-line text-base text-black"></i>
+              )}
+              {showPromoBanner && (
+                <div className="bg-[#f5f5f5] border border-black/20 px-6 py-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-5 h-5 flex items-center justify-center">
+                      <i className="ri-gift-line text-xl text-black"></i>
+                    </div>
+                    <p className="text-sm text-black" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+                      ¥10,000以上のご購入で送料無料
+                    </p>
                   </div>
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    className="w-6 h-6 flex items-center justify-center hover:bg-black/10 transition-colors cursor-pointer"
+                    onClick={() => setShowPromoBanner(false)}
+                  >
+                    <div className="w-4 h-4 flex items-center justify-center">
+                      <i className="ri-close-line text-base text-black"></i>
+                    </div>
+                  </button>
+                </div>
+              )}
+              {showAlertBanner && (
+                <div className="border-l-4 border-black bg-[#f5f5f5] px-6 py-4 flex items-start justify-between">
+                  <div className="flex items-start gap-3">
+                    <div className="w-5 h-5 flex items-center justify-center mt-0.5">
+                      <i className="ri-error-warning-line text-xl text-black"></i>
+                    </div>
+                    <div>
+                      <p className="text-sm text-black mb-1" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+                        重要なお知らせ
+                      </p>
+                      <p className="text-sm text-black/60 leading-relaxed" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+                        システムメンテナンスのため、3月20日 2:00-4:00の間、一時的にサービスをご利用いただけません。
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="w-6 h-6 flex items-center justify-center hover:bg-black/10 transition-colors cursor-pointer flex-shrink-0"
+                    onClick={() => setShowAlertBanner(false)}
+                  >
+                    <div className="w-4 h-4 flex items-center justify-center">
+                      <i className="ri-close-line text-base text-black"></i>
+                    </div>
+                  </button>
+                </div>
+              )}
             </div>
           </section>
 
@@ -2669,24 +2684,18 @@ export default function Page() {
                   REMOVABLE TAGS
                 </p>
                 <div className="flex items-center gap-3 flex-wrap">
-                  <span className="px-4 py-2 bg-[#f5f5f5] text-black text-xs tracking-widest flex items-center gap-2" style={{ fontFamily: "acumin-pro, sans-serif" }}>
-                    TOPS
-                    <button type="button" className="w-4 h-4 flex items-center justify-center hover:bg-black/10 transition-colors cursor-pointer">
-                      <i className="ri-close-line text-sm"></i>
-                    </button>
-                  </span>
-                  <span className="px-4 py-2 bg-[#f5f5f5] text-black text-xs tracking-widest flex items-center gap-2" style={{ fontFamily: "acumin-pro, sans-serif" }}>
-                    BOTTOMS
-                    <button type="button" className="w-4 h-4 flex items-center justify-center hover:bg-black/10 transition-colors cursor-pointer">
-                      <i className="ri-close-line text-sm"></i>
-                    </button>
-                  </span>
-                  <span className="px-4 py-2 bg-[#f5f5f5] text-black text-xs tracking-widest flex items-center gap-2" style={{ fontFamily: "acumin-pro, sans-serif" }}>
-                    OUTERWEAR
-                    <button type="button" className="w-4 h-4 flex items-center justify-center hover:bg-black/10 transition-colors cursor-pointer">
-                      <i className="ri-close-line text-sm"></i>
-                    </button>
-                  </span>
+                  {removableTags.map((tag) => (
+                    <span key={tag} className="px-4 py-2 bg-[#f5f5f5] text-black text-xs tracking-widest flex items-center gap-2" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+                      {tag}
+                      <button
+                        type="button"
+                        className="w-4 h-4 flex items-center justify-center hover:bg-black/10 transition-colors cursor-pointer"
+                        onClick={() => setRemovableTags((prev) => prev.filter((t) => t !== tag))}
+                      >
+                        <i className="ri-close-line text-sm"></i>
+                      </button>
+                    </span>
+                  ))}
                 </div>
               </div>
               <div>
