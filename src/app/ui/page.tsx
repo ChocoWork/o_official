@@ -2,8 +2,11 @@
 
 import Image from 'next/image';
 import { useState } from "react";
+import { Accordion } from '@/app/components/ui/Accordion';
 import { ActionSheet } from '@/app/components/ui/ActionSheet';
 import { Button } from '@/app/components/ui/Button';
+import { Card } from '@/app/components/ui/Card';
+import { Carousel } from '@/app/components/ui/Carousel';
 import { Checkbox } from '@/app/components/ui/Checkbox';
 import { ColorPicker } from '@/app/components/ui/ColorPicker';
 import { DateTimePicker } from '@/app/components/ui/DateTimePicker';
@@ -12,7 +15,9 @@ import { Dialog } from '@/app/components/ui/Dialog';
 import { Drawer } from '@/app/components/ui/Drawer';
 import { Dropdown } from '@/app/components/ui/Dropdown';
 import { FloatingButton } from '@/app/components/ui/FloatingButton';
+import { Graph } from '@/app/components/ui/Graph';
 import { List } from '@/app/components/ui/List';
+import { MapView } from '@/app/components/ui/MapView';
 import { MultiSelect } from '@/app/components/ui/MultiSelect';
 import { BottomNavigation } from '@/app/components/ui/BottomNavigation';
 import { PageControl } from '@/app/components/ui/PageControl';
@@ -23,6 +28,7 @@ import { SheetLarge } from '@/app/components/ui/SheetLarge';
 import { SheetMedium } from '@/app/components/ui/SheetMedium';
 import { SingleSelect } from '@/app/components/ui/SingleSelect';
 import { Slider } from '@/app/components/ui/Slider';
+import { Stats } from '@/app/components/ui/Stats';
 import { Stepper } from '@/app/components/ui/Stepper';
 import { SwitchToggle } from '@/app/components/ui/SwitchToggle';
 import { TabSegmentControl } from '@/app/components/ui/TabSegmentControl';
@@ -126,6 +132,71 @@ export default function Page() {
     { name: 'Pleated Skirt', category: 'BOTTOMS', price: '¥16,000' },
     { name: 'Cashmere Blend Coat', category: 'OUTERWEAR', price: '¥68,000' },
     { name: 'Leather Tote Bag', category: 'ACCESSORIES', price: '¥24,000' },
+  ] as const;
+  const accordionItems = [
+    {
+      key: 'shipping',
+      title: '配送について',
+      content: '国内配送は通常3-5営業日でお届けします。送料は全国一律¥500、¥10,000以上のご購入で送料無料となります。',
+    },
+    {
+      key: 'returns',
+      title: '返品・交換について',
+      content: '商品到着後14日以内であれば、未使用品に限り返品・交換を承ります。詳細は利用規約をご確認ください。',
+    },
+    {
+      key: 'size',
+      title: 'サイズガイド',
+      content: '各商品ページにサイズ表を掲載しております。ご不明な点がございましたら、お気軽にお問い合わせください。',
+    },
+  ] as const;
+  const cardItems = [
+    {
+      alt: 'Minimal Cotton Shirt',
+      src: 'https://readdy.ai/api/search-image?query=minimalist%20elegant%20white%20cotton%20shirt%20on%20clean%20white%20background%20professional%20product%20photography%20soft%20natural%20lighting%20high%20end%20fashion%20simple%20composition%20luxury%20fabric%20texture%20studio%20shot&width=400&height=500&seq=card1&orientation=portrait',
+      category: 'TOPS',
+      title: 'Minimal Cotton Shirt',
+      price: '¥18,000',
+    },
+    {
+      alt: 'Pleated Skirt',
+      src: 'https://readdy.ai/api/search-image?query=elegant%20beige%20pleated%20midi%20skirt%20on%20clean%20white%20background%20professional%20product%20photography%20soft%20natural%20lighting%20high%20end%20fashion%20simple%20composition%20luxury%20fabric%20texture%20studio%20shot&width=400&height=500&seq=card2&orientation=portrait',
+      category: 'BOTTOMS',
+      title: 'Pleated Skirt',
+      price: '¥16,000',
+    },
+    {
+      alt: 'Cashmere Blend Coat',
+      src: 'https://readdy.ai/api/search-image?query=luxurious%20camel%20cashmere%20wool%20coat%20on%20clean%20white%20background%20professional%20product%20photography%20soft%20natural%20lighting%20high%20end%20fashion%20simple%20composition%20premium%20fabric%20texture%20studio%20shot&width=400&height=500&seq=card3&orientation=portrait',
+      category: 'OUTERWEAR',
+      title: 'Cashmere Blend Coat',
+      price: '¥68,000',
+    },
+  ] as const;
+  const carouselSlides = carouselImages.map((src, index) => ({
+    src,
+    alt: `Slide ${index + 1}`,
+  }));
+  const salesTrendData = [
+    { label: '1月', value: 40 },
+    { label: '2月', value: 65 },
+    { label: '3月', value: 45 },
+    { label: '4月', value: 80 },
+    { label: '5月', value: 55 },
+    { label: '6月', value: 90 },
+    { label: '7月', value: 70 },
+  ] as const;
+  const categoryDistributionData = [
+    { label: 'TOPS', value: 30, color: '#000000' },
+    { label: 'BOTTOMS', value: 25, color: '#474747' },
+    { label: 'OUTERWEAR', value: 20, color: '#808080' },
+    { label: 'ACCESSORIES', value: 25, color: '#B0B0B0' },
+  ] as const;
+  const statsItems = [
+    { label: 'TOTAL ORDERS', value: '1,234', iconClass: 'ri-shopping-bag-line' },
+    { label: 'REVENUE', value: '¥2,450,000', iconClass: 'ri-currency-line' },
+    { label: 'CUSTOMERS', value: '856', iconClass: 'ri-user-line' },
+    { label: 'PRODUCTS', value: '142', iconClass: 'ri-shirt-line' },
   ] as const;
   // ...existing code...
   return (    <main className="pt-32 pb-20">
@@ -942,106 +1013,11 @@ export default function Page() {
             >
               Accordion
             </h2>
-            <div className="max-w-2xl border border-black/20">
-              {/* shipping */}
-              <div className="border-b border-black/10">
-                <button
-                  type="button"
-                  className="w-full px-6 py-5 flex items-center justify-between hover:bg-[#f5f5f5] transition-colors cursor-pointer text-left"
-                  onClick={() =>
-                    setOpenAccordion((v) => (v === "shipping" ? null : "shipping"))
-                  }
-                >
-                  <span
-                    className="text-sm text-black tracking-wide"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    配送について
-                  </span>
-                  <div className="w-5 h-5 flex items-center justify-center">
-                    <i
-                      className={`ri-arrow-${openAccordion === "shipping" ? "up" : "down"}-s-line text-xl transition-transform`}
-                    ></i>
-                  </div>
-                </button>
-                {openAccordion === "shipping" && (
-                  <div className="px-6 pb-5">
-                    <p
-                      className="text-sm text-black/60 leading-relaxed"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      国内配送は通常3-5営業日でお届けします。送料は全国一律¥500、¥10,000以上のご購入で送料無料となります。
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* returns */}
-              <div className="border-b border-black/10">
-                <button
-                  type="button"
-                  className="w-full px-6 py-5 flex items-center justify-between hover:bg-[#f5f5f5] transition-colors cursor-pointer text-left"
-                  onClick={() =>
-                    setOpenAccordion((v) => (v === "returns" ? null : "returns"))
-                  }
-                >
-                  <span
-                    className="text-sm text-black tracking-wide"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    返品・交換について
-                  </span>
-                  <div className="w-5 h-5 flex items-center justify-center">
-                    <i
-                      className={`ri-arrow-${openAccordion === "returns" ? "up" : "down"}-s-line text-xl transition-transform`}
-                    ></i>
-                  </div>
-                </button>
-                {openAccordion === "returns" && (
-                  <div className="px-6 pb-5">
-                    <p
-                      className="text-sm text-black/60 leading-relaxed"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      商品到着後14日以内であれば、未使用品に限り返品・交換を承ります。詳細は利用規約をご確認ください。
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* size guide */}
-              <div className="">
-                <button
-                  type="button"
-                  className="w-full px-6 py-5 flex items-center justify-between hover:bg-[#f5f5f5] transition-colors cursor-pointer text-left"
-                  onClick={() =>
-                    setOpenAccordion((v) => (v === "size" ? null : "size"))
-                  }
-                >
-                  <span
-                    className="text-sm text-black tracking-wide"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    サイズガイド
-                  </span>
-                  <div className="w-5 h-5 flex items-center justify-center">
-                    <i
-                      className={`ri-arrow-${openAccordion === "size" ? "up" : "down"}-s-line text-xl transition-transform`}
-                    ></i>
-                  </div>
-                </button>
-                {openAccordion === "size" && (
-                  <div className="px-6 pb-5">
-                    <p
-                      className="text-sm text-black/60 leading-relaxed"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      各商品ページにサイズ表を掲載しております。ご不明な点がございましたら、お気軽にお問い合わせください。
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
+            <Accordion
+              items={accordionItems}
+              openKey={openAccordion}
+              onOpenChange={(key) => setOpenAccordion(key as "shipping" | "returns" | "size" | null)}
+            />
           </section>
 
           {/* --- Card --- */}
@@ -1053,128 +1029,35 @@ export default function Page() {
               Card
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              <div className="group cursor-pointer">
-                <div className="relative aspect-[4/5] bg-[#f5f5f5] mb-4 overflow-hidden">
-                  <Image
-                    alt="Minimal Cotton Shirt"
-                    className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500"
-                    src="https://readdy.ai/api/search-image?query=minimalist%20elegant%20white%20cotton%20shirt%20on%20clean%20white%20background%20professional%20product%20photography%20soft%20natural%20lighting%20high%20end%20fashion%20simple%20composition%20luxury%20fabric%20texture%20studio%20shot&width=400&height=500&seq=card1&orientation=portrait"
-                    width={400}
-                    height={500}
-                    priority={false}
-                  />
-                  <button
-                    type="button"
-                    className="absolute top-4 right-4 w-10 h-10 bg-white/90 flex items-center justify-center hover:bg-white transition-colors"
-                  >
-                    <div className="w-5 h-5 flex items-center justify-center">
-                      <i className="ri-heart-line text-xl"></i>
-                    </div>
-                  </button>
-                </div>
-                <div>
-                  <p
-                    className="text-xs tracking-widest text-black/40 mb-2"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    TOPS
-                  </p>
-                  <h3
-                    className="text-sm text-black mb-2"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    Minimal Cotton Shirt
-                  </h3>
-                  <p
-                    className="text-sm text-black"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    ¥18,000
-                  </p>
-                </div>
-              </div>
-
-              <div className="group cursor-pointer">
-                <div className="relative aspect-[4/5] bg-[#f5f5f5] mb-4 overflow-hidden">
-                  <Image
-                    alt="Pleated Skirt"
-                    className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500"
-                    src="https://readdy.ai/api/search-image?query=elegant%20beige%20pleated%20midi%20skirt%20on%20clean%20white%20background%20professional%20product%20photography%20soft%20natural%20lighting%20high%20end%20fashion%20simple%20composition%20luxury%20fabric%20texture%20studio%20shot&width=400&height=500&seq=card2&orientation=portrait"
-                    width={400}
-                    height={500}
-                    priority={false}
-                  />
-                  <button
-                    type="button"
-                    className="absolute top-4 right-4 w-10 h-10 bg-white/90 flex items-center justify-center hover:bg-white transition-colors"
-                  >
-                    <div className="w-5 h-5 flex items-center justify-center">
-                      <i className="ri-heart-line text-xl"></i>
-                    </div>
-                  </button>
-                </div>
-                <div>
-                  <p
-                    className="text-xs tracking-widest text-black/40 mb-2"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    BOTTOMS
-                  </p>
-                  <h3
-                    className="text-sm text-black mb-2"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    Pleated Skirt
-                  </h3>
-                  <p
-                    className="text-sm text-black"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    ¥16,000
-                  </p>
-                </div>
-              </div>
-
-              <div className="group cursor-pointer">
-                <div className="relative aspect-[4/5] bg-[#f5f5f5] mb-4 overflow-hidden">
-                  <Image
-                    alt="Cashmere Blend Coat"
-                    className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500"
-                    src="https://readdy.ai/api/search-image?query=luxurious%20camel%20cashmere%20wool%20coat%20on%20clean%20white%20background%20professional%20product%20photography%20soft%20natural%20lighting%20high%20end%20fashion%20simple%20composition%20premium%20fabric%20texture%20studio%20shot&width=400&height=500&seq=card3&orientation=portrait"
-                    width={400}
-                    height={500}
-                    priority={false}
-                  />
-                  <button
-                    type="button"
-                    className="absolute top-4 right-4 w-10 h-10 bg-white/90 flex items-center justify-center hover:bg-white transition-colors"
-                  >
-                    <div className="w-5 h-5 flex items-center justify-center">
-                      <i className="ri-heart-line text-xl"></i>
-                    </div>
-                  </button>
-                </div>
-                <div>
-                  <p
-                    className="text-xs tracking-widest text-black/40 mb-2"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    OUTERWEAR
-                  </p>
-                  <h3
-                    className="text-sm text-black mb-2"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    Cashmere Blend Coat
-                  </h3>
-                  <p
-                    className="text-sm text-black"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    ¥68,000
-                  </p>
-                </div>
-              </div>
+              {cardItems.map((item) => (
+                <Card
+                  key={item.title}
+                  className="group"
+                  category={item.category}
+                  title={item.title}
+                  price={item.price}
+                  image={
+                    <Image
+                      alt={item.alt}
+                      className="h-full w-full object-cover object-top transition-transform duration-500 group-hover:scale-105"
+                      src={item.src}
+                      width={400}
+                      height={500}
+                      priority={false}
+                    />
+                  }
+                  overlayAction={
+                    <button
+                      type="button"
+                      className="flex h-10 w-10 items-center justify-center bg-white/90 transition-colors hover:bg-white"
+                    >
+                      <div className="flex h-5 w-5 items-center justify-center">
+                        <i className="ri-heart-line text-xl"></i>
+                      </div>
+                    </button>
+                  }
+                />
+              ))}
             </div>
           </section>
 
@@ -1186,55 +1069,7 @@ export default function Page() {
             >
               Carousel
             </h2>
-            <div className="relative max-w-4xl mx-auto">
-              <div className="relative aspect-[16/10] bg-[#f5f5f5] overflow-hidden">
-                <Image
-                  alt={`Slide ${slideIndex + 1}`}
-                  className="w-full h-full object-cover object-top"
-                  src={carouselImages[slideIndex]}
-                  width={800}
-                  height={500}
-                  priority={false}
-                />
-                <button
-                  type="button"
-                  className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-white/90 hover:bg-white flex items-center justify-center transition-colors cursor-pointer"
-                  onClick={() =>
-                    setSlideIndex((idx) => (idx - 1 + carouselImages.length) % carouselImages.length)
-                  }
-                >
-                  <div className="w-6 h-6 flex items-center justify-center">
-                    <i className="ri-arrow-left-s-line text-2xl"></i>
-                  </div>
-                </button>
-                <button
-                  type="button"
-                  className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-white/90 hover:bg-white flex items-center justify-center transition-colors cursor-pointer"
-                  onClick={() =>
-                    setSlideIndex((idx) => (idx + 1) % carouselImages.length)
-                  }
-                >
-                  <div className="w-6 h-6 flex items-center justify-center">
-                    <i className="ri-arrow-right-s-line text-2xl"></i>
-                  </div>
-                </button>
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2">
-                  {carouselImages.map((_, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      className={
-                        `transition-all cursor-pointer ` +
-                        (slideIndex === idx
-                          ? "w-6 h-2 rounded-full bg-white"
-                          : "w-2 h-2 rounded-full bg-white/50")
-                      }
-                      onClick={() => setSlideIndex(idx)}
-                    ></button>
-                  ))}
-                </div>
-              </div>
-            </div>
+            <Carousel slides={carouselSlides} index={slideIndex} onIndexChange={setSlideIndex} />
           </section>
 
           {/* --- Map --- */}
@@ -1245,17 +1080,10 @@ export default function Page() {
             >
               Map
             </h2>
-            <div className="aspect-video bg-[#f5f5f5] border border-black/20">
-              <iframe
-                src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3240.8280108514437!2d139.7671248!3d35.6812362!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x60188bfbd89f700b%3A0x277c49ba34ed38!2z5p2x5Lqs6aeF!5e0!3m2!1sja!2sjp!4v1234567890123"
-                width="100%"
-                height="100%"
-                allowFullScreen={true}
-                loading="lazy"
-                referrerPolicy="no-referrer-when-downgrade"
-                style={{ border: "0px" }}
-              ></iframe>
-            </div>
+            <MapView
+              embedUrl="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3240.8280108514437!2d139.7671248!3d35.6812362!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x60188bfbd89f700b%3A0x277c49ba34ed38!2z5p2x5Lqs6aeF!5e0!3m2!1sja!2sjp!4v1234567890123"
+              className="border-black/20"
+            />
           </section>
 
           {/* --- Chart --- */}
@@ -1274,36 +1102,7 @@ export default function Page() {
                 >
                   SALES TREND
                 </h3>
-                <div className="h-64 flex items-end justify-between gap-2">
-                  <div className="flex-1 flex flex-col items-center gap-2">
-                    <div className="w-full bg-black hover:bg-[#474747] transition-colors cursor-pointer" style={{ height: "40%" }}></div>
-                    <span className="text-xs text-black/40" style={{ fontFamily: "acumin-pro, sans-serif" }}>1月</span>
-                  </div>
-                  <div className="flex-1 flex flex-col items-center gap-2">
-                    <div className="w-full bg-black hover:bg-[#474747] transition-colors cursor-pointer" style={{ height: "65%" }}></div>
-                    <span className="text-xs text-black/40" style={{ fontFamily: "acumin-pro, sans-serif" }}>2月</span>
-                  </div>
-                  <div className="flex-1 flex flex-col items-center gap-2">
-                    <div className="w-full bg-black hover:bg-[#474747] transition-colors cursor-pointer" style={{ height: "45%" }}></div>
-                    <span className="text-xs text-black/40" style={{ fontFamily: "acumin-pro, sans-serif" }}>3月</span>
-                  </div>
-                  <div className="flex-1 flex flex-col items-center gap-2">
-                    <div className="w-full bg-black hover:bg-[#474747] transition-colors cursor-pointer" style={{ height: "80%" }}></div>
-                    <span className="text-xs text-black/40" style={{ fontFamily: "acumin-pro, sans-serif" }}>4月</span>
-                  </div>
-                  <div className="flex-1 flex flex-col items-center gap-2">
-                    <div className="w-full bg-black hover:bg-[#474747] transition-colors cursor-pointer" style={{ height: "55%" }}></div>
-                    <span className="text-xs text-black/40" style={{ fontFamily: "acumin-pro, sans-serif" }}>5月</span>
-                  </div>
-                  <div className="flex-1 flex flex-col items-center gap-2">
-                    <div className="w-full bg-black hover:bg-[#474747] transition-colors cursor-pointer" style={{ height: "90%" }}></div>
-                    <span className="text-xs text-black/40" style={{ fontFamily: "acumin-pro, sans-serif" }}>6月</span>
-                  </div>
-                  <div className="flex-1 flex flex-col items-center gap-2">
-                    <div className="w-full bg-black hover:bg-[#474747] transition-colors cursor-pointer" style={{ height: "70%" }}></div>
-                    <span className="text-xs text-black/40" style={{ fontFamily: "acumin-pro, sans-serif" }}>7月</span>
-                  </div>
-                </div>
+                <Graph data={salesTrendData} variant="bars" />
               </div>
               <div className="border border-black/20 p-6">
                 <h3
@@ -1312,89 +1111,7 @@ export default function Page() {
                 >
                   CATEGORY DISTRIBUTION
                 </h3>
-                <div className="h-64 flex items-center justify-center">
-                  <div className="relative w-48 h-48">
-                    <svg viewBox="0 0 100 100" className="transform -rotate-90">
-                      <circle
-                        cx="50"
-                        cy="50"
-                        r="40"
-                        fill="none"
-                        stroke="#000000"
-                        stroke-width="20"
-                        stroke-dasharray="75.4 251.2"
-                      ></circle>
-                      <circle
-                        cx="50"
-                        cy="50"
-                        r="40"
-                        fill="none"
-                        stroke="#474747"
-                        stroke-width="20"
-                        stroke-dasharray="62.8 251.2"
-                        stroke-dashoffset="-75.4"
-                      ></circle>
-                      <circle
-                        cx="50"
-                        cy="50"
-                        r="40"
-                        fill="none"
-                        stroke="#808080"
-                        stroke-width="20"
-                        stroke-dasharray="50.2 251.2"
-                        stroke-dashoffset="-138.2"
-                      ></circle>
-                      <circle
-                        cx="50"
-                        cy="50"
-                        r="40"
-                        fill="none"
-                        stroke="#B0B0B0"
-                        stroke-width="20"
-                        stroke-dasharray="62.8 251.2"
-                        stroke-dashoffset="-188.4"
-                      ></circle>
-                    </svg>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4 mt-6">
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3" style={{ backgroundColor: "rgb(0, 0, 0)" }}></div>
-                    <span
-                      className="text-xs text-black/60"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      TOPS 30%
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3" style={{ backgroundColor: "rgb(71, 71, 71)" }}></div>
-                    <span
-                      className="text-xs text-black/60"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      BOTTOMS 25%
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3" style={{ backgroundColor: "rgb(128, 128, 128)" }}></div>
-                    <span
-                      className="text-xs text-black/60"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      OUTERWEAR 20%
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3" style={{ backgroundColor: "rgb(176, 176, 176)" }}></div>
-                    <span
-                      className="text-xs text-black/60"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      ACCESSORIES 25%
-                    </span>
-                  </div>
-                </div>
+                <Graph data={categoryDistributionData} variant="donut" />
               </div>
             </div>
           </section>
@@ -1407,76 +1124,13 @@ export default function Page() {
             >
               Stats
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-              <div className="border border-black/20 p-6 hover:border-black transition-colors">
-                <div className="w-10 h-10 flex items-center justify-center mb-4">
-                  <i className="ri-shopping-bag-line text-3xl text-black"></i>
-                </div>
-                <p
-                  className="text-3xl text-black mb-2"
-                  style={{ fontFamily: "Didot, serif" }}
-                >
-                  1,234
-                </p>
-                <p
-                  className="text-xs tracking-widest text-black/60"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  TOTAL ORDERS
-                </p>
-              </div>
-              <div className="border border-black/20 p-6 hover:border-black transition-colors">
-                <div className="w-10 h-10 flex items-center justify-center mb-4">
-                  <i className="ri-currency-line text-3xl text-black"></i>
-                </div>
-                <p
-                  className="text-3xl text-black mb-2"
-                  style={{ fontFamily: "Didot, serif" }}
-                >
-                  ¥2,450,000
-                </p>
-                <p
-                  className="text-xs tracking-widest text-black/60"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  REVENUE
-                </p>
-              </div>
-              <div className="border border-black/20 p-6 hover:border-black transition-colors">
-                <div className="w-10 h-10 flex items-center justify-center mb-4">
-                  <i className="ri-user-line text-3xl text-black"></i>
-                </div>
-                <p
-                  className="text-3xl text-black mb-2"
-                  style={{ fontFamily: "Didot, serif" }}
-                >
-                  856
-                </p>
-                <p
-                  className="text-xs tracking-widest text-black/60"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  CUSTOMERS
-                </p>
-              </div>
-              <div className="border border-black/20 p-6 hover:border-black transition-colors">
-                <div className="w-10 h-10 flex items-center justify-center mb-4">
-                  <i className="ri-shirt-line text-3xl text-black"></i>
-                </div>
-                <p
-                  className="text-3xl text-black mb-2"
-                  style={{ fontFamily: "Didot, serif" }}
-                >
-                  142
-                </p>
-                <p
-                  className="text-xs tracking-widest text-black/60"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  PRODUCTS
-                </p>
-              </div>
-            </div>
+            <Stats
+              items={statsItems.map((item) => ({
+                label: item.label,
+                value: item.value,
+                icon: <i className={`${item.iconClass} text-3xl text-black`}></i>,
+              }))}
+            />
           </section>
 
           {/* --- Banner / Alert --- */}

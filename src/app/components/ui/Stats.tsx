@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Card } from './Card';
+import { cn } from '@/lib/utils';
 
 export interface StatItem {
   label: string;
@@ -8,18 +8,32 @@ export interface StatItem {
 }
 
 export interface StatsProps {
-  items: StatItem[];
+  items: readonly StatItem[];
+  className?: string;
+  cardClassName?: string;
+  valueClassName?: string;
+  labelClassName?: string;
 }
 
-export function Stats({ items }: StatsProps) {
+export function Stats({ items, className, cardClassName, valueClassName, labelClassName }: StatsProps) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className={cn('grid grid-cols-1 gap-6 md:grid-cols-4', className)}>
       {items.map((item) => (
-        <Card key={item.label} className="p-4">
-          {item.icon ? <div className="mb-3 text-black">{item.icon}</div> : null}
-          <p className="text-xs tracking-wider text-[#474747]">{item.label}</p>
-          <p className="mt-2 text-2xl tracking-tight text-black">{item.value}</p>
-        </Card>
+        <div
+          key={item.label}
+          className={cn('border border-black/20 p-6 transition-colors hover:border-black', cardClassName)}
+        >
+          {item.icon ? <div className="mb-4 flex h-10 w-10 items-center justify-center text-black">{item.icon}</div> : null}
+          <p className={cn('mb-2 text-3xl text-black', valueClassName)} style={{ fontFamily: 'Didot, serif' }}>
+            {item.value}
+          </p>
+          <p
+            className={cn('text-xs tracking-widest text-black/60', labelClassName)}
+            style={{ fontFamily: 'acumin-pro, sans-serif' }}
+          >
+            {item.label}
+          </p>
+        </div>
       ))}
     </div>
   );
