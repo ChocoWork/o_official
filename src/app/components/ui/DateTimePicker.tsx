@@ -7,5 +7,9 @@ export interface DateTimePickerProps extends InputHTMLAttributes<HTMLInputElemen
 }
 
 export function DateTimePicker({ label, className, mode = 'datetime-local', ...props }: DateTimePickerProps) {
-  return <TextField label={label} type={mode} className={className} {...props} />;
+  const resolvedLabel =
+    label ??
+    (mode === 'date' ? 'DATE' : mode === 'time' ? 'TIME' : 'DATETIME');
+
+  return <TextField label={resolvedLabel} type={mode} className={className} {...props} />;
 }

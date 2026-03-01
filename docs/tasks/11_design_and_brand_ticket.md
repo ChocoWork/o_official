@@ -63,3 +63,5 @@ updated: 2026-02-27
 - [x] `/ui` の `Text Field` / `Button` / `Radio Button` / `Checkbox` セクションを生HTMLから `src/app/components/ui` コンポーネント利用へ置換
 - [x] `/ui` の `Single Select` / `Multi Select` / `Switch / Toggle` / `Slider` 仕様を各UIコンポーネントへ反映
 - [x] `/ui` の `Single Select` / `Multi Select` / `Switch / Toggle` / `Slider` セクションを生HTMLから `src/app/components/ui` コンポーネント利用へ置換
+- [x] `/ui` の `Stepper` / `Rating`（`INTERACTIVE`・`READ ONLY`）/ `Color Picker`（`PRESET COLORS`・`CUSTOM COLOR`）/ `Date / Time Picker`（`DATE`・`TIME`・`DATETIME`）仕様を各UIコンポーネントへ反映
+- [x] `/ui` の `Stepper` / `Rating` / `Color Picker` / `Date / Time Picker` セクションを生HTMLから `src/app/components/ui` コンポーネント利用へ置換

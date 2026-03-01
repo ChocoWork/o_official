@@ -4,10 +4,14 @@ import Image from 'next/image';
 import { useState, useEffect, useRef } from "react";
 import { Button } from '@/app/components/ui/Button';
 import { Checkbox } from '@/app/components/ui/Checkbox';
+import { ColorPicker } from '@/app/components/ui/ColorPicker';
+import { DateTimePicker } from '@/app/components/ui/DateTimePicker';
 import { MultiSelect } from '@/app/components/ui/MultiSelect';
 import { RadioButtonGroup } from '@/app/components/ui/RadioButtonGroup';
+import { Rating } from '@/app/components/ui/Rating';
 import { SingleSelect } from '@/app/components/ui/SingleSelect';
 import { Slider } from '@/app/components/ui/Slider';
+import { Stepper } from '@/app/components/ui/Stepper';
 import { SwitchToggle } from '@/app/components/ui/SwitchToggle';
 import { TextAreaField } from '@/app/components/ui/TextAreaField';
 import { TextField } from '@/app/components/ui/TextField';
@@ -412,54 +416,13 @@ export default function Page() {
               Stepper
             </h2>
             <div className="max-w-xs">
-              <label
-                className="block text-xs tracking-widest mb-2 text-black/80"
-                style={{ fontFamily: "acumin-pro, sans-serif" }}
-              >
-                QUANTITY
-              </label>
-              <div className="flex items-center border border-black/20">
-                <button
-                  type="button"
-                  className="w-12 h-12 flex items-center justify-center border-r border-black/20 hover:bg-[#f5f5f5] transition-colors cursor-pointer"
-                  onClick={() => setStepperValue((v) => Math.max(1, v - 1))}
-                >
-                  <div className="w-4 h-4 flex items-center justify-center">
-                    <i className="ri-subtract-line text-base"></i>
-                  </div>
-                </button>
-                <input
-                  className="flex-1 h-12 text-center text-sm focus:outline-none"
-                  type="number"
-                  min="1"
-                  value={stepperValue}
-                  onChange={(e) => {
-                    const val = parseInt(e.target.value, 10);
-                    if (!isNaN(val)) {
-                      setStepperValue(Math.max(1, val));
-                    }
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "ArrowUp") {
-                      e.preventDefault();
-                      setStepperValue((v) => v + 1);
-                    } else if (e.key === "ArrowDown") {
-                      e.preventDefault();
-                      setStepperValue((v) => Math.max(1, v - 1));
-                    }
-                  }}
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                />
-                <button
-                  type="button"
-                  className="w-12 h-12 flex items-center justify-center border-l border-black/20 hover:bg-[#f5f5f5] transition-colors cursor-pointer"
-                  onClick={() => setStepperValue((v) => v + 1)}
-                >
-                  <div className="w-4 h-4 flex items-center justify-center">
-                    <i className="ri-add-line text-base"></i>
-                  </div>
-                </button>
-              </div>
+              <Stepper
+                label="QUANTITY"
+                value={stepperValue}
+                min={1}
+                onChange={setStepperValue}
+                variant="field"
+              />
             </div>
           </section>
 
@@ -472,67 +435,19 @@ export default function Page() {
               Rating
             </h2>
             <div className="space-y-6">
-              <div>
-                <label
-                  className="block text-xs tracking-widest mb-3 text-black/80"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  INTERACTIVE
-                </label>
-                <div className="flex items-center gap-2">
-                  {[1, 2, 3, 4, 5].map((i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      className="cursor-pointer"
-                      onClick={() => setRating(i)}
-                    >
-                      <div className="w-6 h-6 flex items-center justify-center">
-                        <i
-                          className={`ri-star-${i <= rating ? "fill" : "line"} text-2xl text-black`}
-                        ></i>
-                      </div>
-                    </button>
-                  ))}
-                  <span
-                    className="ml-3 text-sm text-black"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    {rating} / 5
-                  </span>
-                </div>
-              </div>
-              <div>
-                <label
-                  className="block text-xs tracking-widest mb-3 text-black/80"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  READ ONLY
-                </label>
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 flex items-center justify-center">
-                    <i className="ri-star-fill text-2xl text-black"></i>
-                  </div>
-                  <div className="w-6 h-6 flex items-center justify-center">
-                    <i className="ri-star-fill text-2xl text-black"></i>
-                  </div>
-                  <div className="w-6 h-6 flex items-center justify-center">
-                    <i className="ri-star-fill text-2xl text-black"></i>
-                  </div>
-                  <div className="w-6 h-6 flex items-center justify-center">
-                    <i className="ri-star-fill text-2xl text-black"></i>
-                  </div>
-                  <div className="w-6 h-6 flex items-center justify-center">
-                    <i className="ri-star-line text-2xl text-black"></i>
-                  </div>
-                  <span
-                    className="ml-3 text-sm text-black"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                  >
-                    4.0 / 5
-                  </span>
-                </div>
-              </div>
+              <Rating
+                label="INTERACTIVE"
+                value={rating}
+                onChange={setRating}
+                showValue
+              />
+              <Rating
+                label="READ ONLY"
+                value={4}
+                readOnly
+                showValue
+                valueText="4.0 / 5"
+              />
             </div>
           </section>
 
@@ -545,52 +460,20 @@ export default function Page() {
               Color Picker
             </h2>
             <div className="space-y-6">
-              <div>
-                <label
-                  className="block text-xs tracking-widest mb-3 text-black/80"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  PRESET COLORS
-                </label>
-                <div className="flex items-center gap-3">
-                  {presetColors.map((preset) => (
-                    <button
-                      key={preset.value}
-                      type="button"
-                      className={`w-10 h-10 rounded-full border-2 transition-all cursor-pointer ${preset.swatchClass} ${preset.value === color ? "border-black" : "border-black/20"}`}
-                      title={preset.value}
-                      onClick={() => setColor(preset.value)}
-                    ></button>
-                  ))}
-                </div>
-              </div>
+              <ColorPicker
+                label="PRESET COLORS"
+                variant="preset"
+                value={color}
+                presets={presetColors}
+                onValueChange={setColor}
+              />
               <div className="max-w-xs">
-                <label
-                  className="block text-xs tracking-widest mb-3 text-black/80"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  CUSTOM COLOR
-                </label>
-                <div className="flex items-center gap-4">
-                  <input
-                    className="w-16 h-12 border border-black/20 cursor-pointer"
-                    type="color"
-                    value={color}
-                    onChange={(e) => setColor(e.target.value)}
-                  />
-                  <input
-                    className="flex-1 px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors uppercase"
-                    type="text"
-                    value={color}
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      if (/^#[0-9A-Fa-f]{6}$/.test(v)) {
-                        setColor(v);
-                      }
-                    }}
-                  />
-                </div>
+                <ColorPicker
+                  label="CUSTOM COLOR"
+                  variant="custom"
+                  value={color}
+                  onValueChange={setColor}
+                />
               </div>
             </div>
           </section>
@@ -604,51 +487,24 @@ export default function Page() {
               Date / Time Picker
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              <div>
-                <label
-                  className="block text-xs tracking-widest mb-2 text-black/80"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  DATE
-                </label>
-                <input
-                  className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors cursor-pointer"
-                  type="date"
-                  value={dateValue}
-                  onChange={(e) => setDateValue(e.target.value)}
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                />
-              </div>
-              <div>
-                <label
-                  className="block text-xs tracking-widest mb-2 text-black/80"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  TIME
-                </label>
-                <input
-                  className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors cursor-pointer"
-                  type="time"
-                  value={timeValue}
-                  onChange={(e) => setTimeValue(e.target.value)}
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                />
-              </div>
-              <div>
-                <label
-                  className="block text-xs tracking-widest mb-2 text-black/80"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  DATETIME
-                </label>
-                <input
-                  className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors cursor-pointer"
-                  type="datetime-local"
-                  value={dateTimeValue}
-                  onChange={(e) => setDateTimeValue(e.target.value)}
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                />
-              </div>
+              <DateTimePicker
+                mode="date"
+                value={dateValue}
+                onChange={(event) => setDateValue(event.target.value)}
+                className="cursor-pointer"
+              />
+              <DateTimePicker
+                mode="time"
+                value={timeValue}
+                onChange={(event) => setTimeValue(event.target.value)}
+                className="cursor-pointer"
+              />
+              <DateTimePicker
+                mode="datetime-local"
+                value={dateTimeValue}
+                onChange={(event) => setDateTimeValue(event.target.value)}
+                className="cursor-pointer"
+              />
             </div>
           </section>
 
