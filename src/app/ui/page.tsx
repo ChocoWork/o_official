@@ -4,6 +4,8 @@ import Image from 'next/image';
 import { useState } from "react";
 import { Accordion } from '@/app/components/ui/Accordion';
 import { ActionSheet } from '@/app/components/ui/ActionSheet';
+import { Avatar } from '@/app/components/ui/Avatar';
+import { BannerAlert } from '@/app/components/ui/BannerAlert';
 import { Button } from '@/app/components/ui/Button';
 import { Card } from '@/app/components/ui/Card';
 import { Carousel } from '@/app/components/ui/Carousel';
@@ -29,12 +31,15 @@ import { SheetMedium } from '@/app/components/ui/SheetMedium';
 import { SingleSelect } from '@/app/components/ui/SingleSelect';
 import { Slider } from '@/app/components/ui/Slider';
 import { Stats } from '@/app/components/ui/Stats';
+import { StatusBadge } from '@/app/components/ui/StatusBadge';
 import { Stepper } from '@/app/components/ui/Stepper';
 import { SwitchToggle } from '@/app/components/ui/SwitchToggle';
 import { TabSegmentControl } from '@/app/components/ui/TabSegmentControl';
+import { TagLabel } from '@/app/components/ui/TagLabel';
 import { TextAreaField } from '@/app/components/ui/TextAreaField';
 import { TextField } from '@/app/components/ui/TextField';
 import { ToastSnackbar } from '@/app/components/ui/ToastSnackbar';
+import { Toolbar } from '@/app/components/ui/Toolbar';
 import { Tooltip } from '@/app/components/ui/Tooltip';
 
 export default function Page() {
@@ -197,6 +202,25 @@ export default function Page() {
     { label: 'REVENUE', value: '¥2,450,000', iconClass: 'ri-currency-line' },
     { label: 'CUSTOMERS', value: '856', iconClass: 'ri-user-line' },
     { label: 'PRODUCTS', value: '142', iconClass: 'ri-shirt-line' },
+  ] as const;
+  const toolbarPrimaryLeftItems = [
+    { key: 'bold', iconClass: 'ri-bold' },
+    { key: 'italic', iconClass: 'ri-italic' },
+    { key: 'underline', iconClass: 'ri-underline' },
+    { key: 'align-left', iconClass: 'ri-align-left' },
+    { key: 'align-center', iconClass: 'ri-align-center' },
+    { key: 'align-right', iconClass: 'ri-align-right' },
+  ] as const;
+  const toolbarPrimaryRightItems = [
+    { key: 'link', iconClass: 'ri-link' },
+    { key: 'image', iconClass: 'ri-image-line' },
+  ] as const;
+  const toolbarSecondaryLeftItems = [
+    { key: 'filter', iconClass: 'ri-filter-line', label: 'フィルター' },
+    { key: 'sort', iconClass: 'ri-sort-desc', label: '並び替え' },
+  ] as const;
+  const toolbarSecondaryRightItems = [
+    { key: 'layout', iconClass: 'ri-layout-grid-line' },
   ] as const;
   // ...existing code...
   return (    <main className="pt-32 pb-20">
@@ -1143,72 +1167,32 @@ export default function Page() {
             </h2>
             <div className="space-y-4 max-w-4xl">
               {showInfoBanner && (
-                <div className="bg-black text-white px-6 py-4 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-5 h-5 flex items-center justify-center">
-                      <i className="ri-information-line text-xl"></i>
-                    </div>
-                    <p className="text-sm" style={{ fontFamily: "acumin-pro, sans-serif" }}>
-                      春の新作コレクションが入荷しました
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    className="w-6 h-6 flex items-center justify-center hover:bg-white/20 transition-colors cursor-pointer"
-                    onClick={() => setShowInfoBanner(false)}
-                  >
-                    <div className="w-4 h-4 flex items-center justify-center">
-                      <i className="ri-close-line text-base"></i>
-                    </div>
-                  </button>
-                </div>
+                <BannerAlert
+                  variant="info"
+                  icon={<i className="ri-information-line text-xl"></i>}
+                  message="春の新作コレクションが入荷しました"
+                  dismissible
+                  onDismiss={() => setShowInfoBanner(false)}
+                />
               )}
               {showPromoBanner && (
-                <div className="bg-[#f5f5f5] border border-black/20 px-6 py-4 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-5 h-5 flex items-center justify-center">
-                      <i className="ri-gift-line text-xl text-black"></i>
-                    </div>
-                    <p className="text-sm text-black" style={{ fontFamily: "acumin-pro, sans-serif" }}>
-                      ¥10,000以上のご購入で送料無料
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    className="w-6 h-6 flex items-center justify-center hover:bg-black/10 transition-colors cursor-pointer"
-                    onClick={() => setShowPromoBanner(false)}
-                  >
-                    <div className="w-4 h-4 flex items-center justify-center">
-                      <i className="ri-close-line text-base text-black"></i>
-                    </div>
-                  </button>
-                </div>
+                <BannerAlert
+                  variant="warning"
+                  icon={<i className="ri-gift-line text-xl text-black"></i>}
+                  message="¥10,000以上のご購入で送料無料"
+                  dismissible
+                  onDismiss={() => setShowPromoBanner(false)}
+                />
               )}
               {showAlertBanner && (
-                <div className="border-l-4 border-black bg-[#f5f5f5] px-6 py-4 flex items-start justify-between">
-                  <div className="flex items-start gap-3">
-                    <div className="w-5 h-5 flex items-center justify-center mt-0.5">
-                      <i className="ri-error-warning-line text-xl text-black"></i>
-                    </div>
-                    <div>
-                      <p className="text-sm text-black mb-1" style={{ fontFamily: "acumin-pro, sans-serif" }}>
-                        重要なお知らせ
-                      </p>
-                      <p className="text-sm text-black/60 leading-relaxed" style={{ fontFamily: "acumin-pro, sans-serif" }}>
-                        システムメンテナンスのため、3月20日 2:00-4:00の間、一時的にサービスをご利用いただけません。
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="w-6 h-6 flex items-center justify-center hover:bg-black/10 transition-colors cursor-pointer flex-shrink-0"
-                    onClick={() => setShowAlertBanner(false)}
-                  >
-                    <div className="w-4 h-4 flex items-center justify-center">
-                      <i className="ri-close-line text-base text-black"></i>
-                    </div>
-                  </button>
-                </div>
+                <BannerAlert
+                  variant="error"
+                  icon={<i className="ri-error-warning-line text-xl text-black"></i>}
+                  message="重要なお知らせ"
+                  description="システムメンテナンスのため、3月20日 2:00-4:00の間、一時的にサービスをご利用いただけません。"
+                  dismissible
+                  onDismiss={() => setShowAlertBanner(false)}
+                />
               )}
             </div>
           </section>
@@ -1223,9 +1207,7 @@ export default function Page() {
             </h2>
             <div className="flex items-center gap-8 flex-wrap">
               <div className="flex flex-col items-center gap-3">
-                <div className="w-16 h-16 rounded-full bg-black flex items-center justify-center text-white text-xl" style={{ fontFamily: "Didot, serif" }}>
-                  A
-                </div>
+                <Avatar alt="A" fallback="A" size="lg" className="text-xl" />
                 <p
                   className="text-xs tracking-wider text-black/60"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
@@ -1234,9 +1216,7 @@ export default function Page() {
                 </p>
               </div>
               <div className="flex flex-col items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-black flex items-center justify-center text-white text-base" style={{ fontFamily: "Didot, serif" }}>
-                  B
-                </div>
+                <Avatar alt="B" fallback="B" size="md" className="text-base" />
                 <p
                   className="text-xs tracking-wider text-black/60"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
@@ -1245,9 +1225,7 @@ export default function Page() {
                 </p>
               </div>
               <div className="flex flex-col items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-black flex items-center justify-center text-white text-sm" style={{ fontFamily: "Didot, serif" }}>
-                  C
-                </div>
+                <Avatar alt="C" fallback="C" size="sm" className="text-sm" />
                 <p
                   className="text-xs tracking-wider text-black/60"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
@@ -1256,16 +1234,12 @@ export default function Page() {
                 </p>
               </div>
               <div className="flex flex-col items-center gap-3">
-                <div className="w-12 h-12 rounded-full overflow-hidden bg-[#f5f5f5]">
-                    <Image
-                      alt="Avatar"
-                      className="w-full h-full object-cover"
-                      src="https://readdy.ai/api/search-image?query=professional%20elegant%20portrait%20photo%20clean%20white%20background%20soft%20natural%20lighting%20minimalist%20aesthetic%20high%20quality%20studio%20photography&width=100&height=100&seq=avatar1&orientation=squarish"
-                      width={100}
-                      height={100}
-                      priority={false}
-                    />
-                  </div>
+                <Avatar
+                  alt="Avatar"
+                  fallback=""
+                  src="https://readdy.ai/api/search-image?query=professional%20elegant%20portrait%20photo%20clean%20white%20background%20soft%20natural%20lighting%20minimalist%20aesthetic%20high%20quality%20studio%20photography&width=100&height=100&seq=avatar1&orientation=squarish"
+                  size="md"
+                />
                 <p
                   className="text-xs tracking-wider text-black/60"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
@@ -1274,12 +1248,13 @@ export default function Page() {
                 </p>
               </div>
               <div className="flex flex-col items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-black flex items-center justify-center relative">
-                  <div className="w-5 h-5 flex items-center justify-center">
-                    <i className="ri-user-line text-xl text-white"></i>
-                  </div>
-                  <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
-                </div>
+                <Avatar
+                  alt="User"
+                  fallback=""
+                  icon={<i className="ri-user-line text-xl text-white"></i>}
+                  size="md"
+                  status="online"
+                />
                 <p
                   className="text-xs tracking-wider text-black/60"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
@@ -1299,111 +1274,8 @@ export default function Page() {
               Toolbar
             </h2>
             <div className="space-y-6">
-              <div className="border border-black/20 p-4 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    className="w-10 h-10 flex items-center justify-center hover:bg-[#f5f5f5] transition-colors cursor-pointer"
-                  >
-                    <div className="w-5 h-5 flex items-center justify-center">
-                      <i className="ri-bold text-xl"></i>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    className="w-10 h-10 flex items-center justify-center hover:bg-[#f5f5f5] transition-colors cursor-pointer"
-                  >
-                    <div className="w-5 h-5 flex items-center justify-center">
-                      <i className="ri-italic text-xl"></i>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    className="w-10 h-10 flex items-center justify-center hover:bg-[#f5f5f5] transition-colors cursor-pointer"
-                  >
-                    <div className="w-5 h-5 flex items-center justify-center">
-                      <i className="ri-underline text-xl"></i>
-                    </div>
-                  </button>
-                  <div className="w-px h-6 bg-black/20 mx-2"></div>
-                  <button
-                    type="button"
-                    className="w-10 h-10 flex items-center justify-center hover:bg-[#f5f5f5] transition-colors cursor-pointer"
-                  >
-                    <div className="w-5 h-5 flex items-center justify-center">
-                      <i className="ri-align-left text-xl"></i>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    className="w-10 h-10 flex items-center justify-center hover:bg-[#f5f5f5] transition-colors cursor-pointer"
-                  >
-                    <div className="w-5 h-5 flex items-center justify-center">
-                      <i className="ri-align-center text-xl"></i>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    className="w-10 h-10 flex items-center justify-center hover:bg-[#f5f5f5] transition-colors cursor-pointer"
-                  >
-                    <div className="w-5 h-5 flex items-center justify-center">
-                      <i className="ri-align-right text-xl"></i>
-                    </div>
-                  </button>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    className="w-10 h-10 flex items-center justify-center hover:bg-[#f5f5f5] transition-colors cursor-pointer"
-                  >
-                    <div className="w-5 h-5 flex items-center justify-center">
-                      <i className="ri-link text-xl"></i>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    className="w-10 h-10 flex items-center justify-center hover:bg-[#f5f5f5] transition-colors cursor-pointer"
-                  >
-                    <div className="w-5 h-5 flex items-center justify-center">
-                      <i className="ri-image-line text-xl"></i>
-                    </div>
-                  </button>
-                </div>
-              </div>
-              <div className="bg-[#f5f5f5] border border-black/20 p-4 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <button
-                    type="button"
-                    className="flex items-center gap-2 px-4 py-2 hover:bg-white/50 transition-colors cursor-pointer"
-                  >
-                    <div className="w-5 h-5 flex items-center justify-center">
-                      <i className="ri-filter-line text-xl"></i>
-                    </div>
-                    <span className="text-sm" style={{ fontFamily: "acumin-pro, sans-serif" }}>
-                      フィルター
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    className="flex items-center gap-2 px-4 py-2 hover:bg-white/50 transition-colors cursor-pointer"
-                  >
-                    <div className="w-5 h-5 flex items-center justify-center">
-                      <i className="ri-sort-desc text-xl"></i>
-                    </div>
-                    <span className="text-sm" style={{ fontFamily: "acumin-pro, sans-serif" }}>
-                      並び替え
-                    </span>
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  className="flex items-center gap-2 px-4 py-2 hover:bg-white/50 transition-colors cursor-pointer"
-                >
-                  <div className="w-5 h-5 flex items-center justify-center">
-                    <i className="ri-layout-grid-line text-xl"></i>
-                  </div>
-                </button>
-              </div>
+              <Toolbar leftItems={toolbarPrimaryLeftItems} rightItems={toolbarPrimaryRightItems} splitIndex={3} />
+              <Toolbar variant="muted" leftItems={toolbarSecondaryLeftItems} rightItems={toolbarSecondaryRightItems} />
             </div>
           </section>
 
@@ -1417,15 +1289,9 @@ export default function Page() {
                   BASIC TAGS
                 </p>
                 <div className="flex items-center gap-3 flex-wrap">
-                  <span className="px-4 py-2 bg-black text-white text-xs tracking-widest" style={{ fontFamily: "acumin-pro, sans-serif" }}>
-                    NEW
-                  </span>
-                  <span className="px-4 py-2 border border-black text-black text-xs tracking-widest" style={{ fontFamily: "acumin-pro, sans-serif" }}>
-                    SALE
-                  </span>
-                  <span className="px-4 py-2 bg-[#f5f5f5] text-black text-xs tracking-widest" style={{ fontFamily: "acumin-pro, sans-serif" }}>
-                    LIMITED
-                  </span>
+                  <TagLabel variant="solid" className="px-4 py-2">NEW</TagLabel>
+                  <TagLabel variant="outline" className="px-4 py-2">SALE</TagLabel>
+                  <TagLabel variant="subtle" className="px-4 py-2">LIMITED</TagLabel>
                 </div>
               </div>
               <div>
@@ -1434,16 +1300,15 @@ export default function Page() {
                 </p>
                 <div className="flex items-center gap-3 flex-wrap">
                   {removableTags.map((tag) => (
-                    <span key={tag} className="px-4 py-2 bg-[#f5f5f5] text-black text-xs tracking-widest flex items-center gap-2" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+                    <TagLabel
+                      key={tag}
+                      variant="subtle"
+                      removable
+                      className="px-4 py-2"
+                      onRemove={() => setRemovableTags((prev) => prev.filter((t) => t !== tag))}
+                    >
                       {tag}
-                      <button
-                        type="button"
-                        className="w-4 h-4 flex items-center justify-center hover:bg-black/10 transition-colors cursor-pointer"
-                        onClick={() => setRemovableTags((prev) => prev.filter((t) => t !== tag))}
-                      >
-                        <i className="ri-close-line text-sm"></i>
-                      </button>
-                    </span>
+                    </TagLabel>
                   ))}
                 </div>
               </div>
@@ -1452,15 +1317,9 @@ export default function Page() {
                   ROUNDED TAGS
                 </p>
                 <div className="flex items-center gap-3 flex-wrap">
-                  <span className="px-4 py-2 bg-black text-white text-xs tracking-widest rounded-full" style={{ fontFamily: "acumin-pro, sans-serif" }}>
-                    FEATURED
-                  </span>
-                  <span className="px-4 py-2 border border-black text-black text-xs tracking-widest rounded-full" style={{ fontFamily: "acumin-pro, sans-serif" }}>
-                    TRENDING
-                  </span>
-                  <span className="px-4 py-2 bg-[#f5f5f5] text-black text-xs tracking-widest rounded-full" style={{ fontFamily: "acumin-pro, sans-serif" }}>
-                    POPULAR
-                  </span>
+                  <TagLabel variant="solid" rounded className="px-4 py-2">FEATURED</TagLabel>
+                  <TagLabel variant="outline" rounded className="px-4 py-2">TRENDING</TagLabel>
+                  <TagLabel variant="subtle" rounded className="px-4 py-2">POPULAR</TagLabel>
                 </div>
               </div>
             </div>
@@ -1485,10 +1344,9 @@ export default function Page() {
                 </div>
               </button>
               <span
-                className="absolute -top-1 -right-1 w-5 h-5 bg-black text-white text-xs flex items-center justify-center rounded-full"
-                style={{ fontFamily: "acumin-pro, sans-serif" }}
+                className="absolute -top-1 -right-1"
               >
-                3
+                <StatusBadge variant="count" count={3} />
               </span>
               </div>
               <div className="relative">
@@ -1501,10 +1359,9 @@ export default function Page() {
                 </div>
               </button>
               <span
-                className="absolute -top-1 -right-1 w-5 h-5 bg-black text-white text-xs flex items-center justify-center rounded-full"
-                style={{ fontFamily: "acumin-pro, sans-serif" }}
+                className="absolute -top-1 -right-1"
               >
-                12
+                <StatusBadge variant="count" count={12} />
               </span>
               </div>
               <div className="relative">
@@ -1516,7 +1373,7 @@ export default function Page() {
                 <i className="ri-shopping-cart-line text-2xl"></i>
                 </div>
               </button>
-              <span className="absolute -top-1 -right-1 w-2 h-2 bg-black rounded-full"></span>
+              <span className="absolute -top-1 -right-1"><StatusBadge variant="dot" /></span>
               </div>
               <div className="relative">
               <span
@@ -1525,12 +1382,7 @@ export default function Page() {
               >
                 新着メッセージ
               </span>
-              <span
-                className="absolute -top-2 -right-6 px-2 py-0.5 bg-black text-white text-[10px] tracking-wider rounded-full"
-                style={{ fontFamily: "acumin-pro, sans-serif" }}
-              >
-                NEW
-              </span>
+              <span className="absolute -top-2 -right-6"><StatusBadge tone="positive" className="rounded-full px-2 py-0.5 text-[10px]">NEW</StatusBadge></span>
               </div>
             </div>
             </section>

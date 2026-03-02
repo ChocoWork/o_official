@@ -75,3 +75,5 @@ updated: 2026-02-27
 - [x] `/ui` の `Accordion` / `Card` / `Carousel` / `Map` / `Chart` / `Stats` セクションを生HTMLから `src/app/components/ui` コンポーネント利用へ置換
 - [x] `/ui` の `Chart > CATEGORY DISTRIBUTION` が描画されない問題を `Graph` のドーナツ描画方式見直し（SVGセグメント化）で修正
 - [x] `/ui` の `Map` が表示不安定になる問題を `MapView` の埋め込みレイアウトを生HTML準拠構造へ戻して修正
+- [x] `/ui` の `Banner / Alert` / `Avatar` / `Toolbar` / `Tag / Label` / `Badge` 仕様を各UIコンポーネントへ反映
+- [x] `/ui` の `Banner / Alert` / `Avatar` / `Toolbar` / `Tag / Label` / `Badge` セクションを生HTMLから `src/app/components/ui` コンポーネント利用へ置換
