@@ -5,7 +5,7 @@ export interface ToolbarItem {
   key: string;
   iconClass: string;
   label?: string;
-  onClick?: () => void;
+  onClick?: React.MouseEventHandler<HTMLButtonElement>;
 }
 
 export interface ToolbarProps {

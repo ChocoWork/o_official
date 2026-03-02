@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
-import type { ReactNode } from 'react';
+import type { ReactNode, MouseEventHandler } from 'react';
 
 export interface LinkButtonProps {
   href: string;
@@ -8,7 +8,7 @@ export interface LinkButtonProps {
   variant?: 'primary' | 'secondary';
   size?: 'sm' | 'md' | 'lg';
   className?: string;
-  onClick?: () => void;
+  onClick?: MouseEventHandler<HTMLAnchorElement>;
 }
 
 const linkButtonVariantClass: Record<NonNullable<LinkButtonProps['variant']>, string> = {

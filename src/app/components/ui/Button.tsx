@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import type { ButtonHTMLAttributes } from 'react';
+import type { ButtonHTMLAttributes, MouseEventHandler } from 'react';
 
 export type UIButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'link';
 export type UIButtonSize = 'sm' | 'md' | 'lg';
@@ -26,7 +26,7 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: UIButtonVariant | 'text';
   size?: UIButtonSize;
   className?: string;
-  onClick?: () => void;
+  onClick?: MouseEventHandler<HTMLButtonElement>;
 }
 
 export function Button({ variant = 'primary', size = 'md', className, type = 'button', ...props }: ButtonProps) {
