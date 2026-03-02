@@ -284,30 +284,33 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
             <div className="flex gap-4">
               <Button
-              onClick={handleAddToCart}
-              disabled={addingToCart}
-              size="md"
-              className="flex-1 font-brand py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={handleAddToCart}
+                disabled={addingToCart}
+                size="md"
+                className="w-full font-brand"
               >
-              {addingToCart ? (
-                "追加中..."
-              ) : (
-                <div className="gap-4 flex items-center justify-center">
-                <div className="w-4 h-4 flex items-center justify-center">
-                  <i className="ri-shopping-bag-line text-base" />
-                </div>
-                ADD TO CART
-                </div>
-              )}
+                {addingToCart ? (
+                  "追加中..."
+                ) : (
+                  <div className="gap-2 flex items-center justify-center">
+                    <div className="w-4 h-4 flex items-center justify-center">
+                      <i className="ri-shopping-bag-line text-base" />
+                    </div>
+                    ADD TO CART
+                  </div>
+                )}
               </Button>
               <Button
                 onClick={handleToggleWishlist}
                 disabled={togglingWishlist}
                 variant="secondary"
-                size="md"
-                className="w-14 py-4 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                size="sm"
+                aria-label="Add to wishlist"
+                className="px-4 py-3"
               >
-                <i className={`text-2xl ${isWishlisted ? "ri-heart-fill text-red-500" : "ri-heart-line"}`} />
+                <div className="w-5 h-5 flex items-center justify-center">
+                  <i className={`text-xl ${isWishlisted ? "ri-heart-fill text-red-500" : "ri-heart-line"}`} />
+                </div>
               </Button>
             </div>
 
