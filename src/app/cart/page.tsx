@@ -4,8 +4,8 @@ import React, { useState, useEffect } from "react";
 import Link from 'next/link';
 import Image from "next/image";
 import { useCart } from "@/app/components/CartContext";
+import { EmptyCart } from '@/app/components/EmptyCart';
 import { Button } from '@/app/components/ui/Button';
-import { LinkButton } from '@/app/components/ui/LinkButton';
 import { Stepper } from '@/app/components/ui/Stepper';
 import { TextField } from '@/app/components/ui/TextField';
 
@@ -134,6 +134,10 @@ export default function CartPage() {
         </div>
       </main>
     );
+  }
+
+  if (cartItems.length === 0) {
+    return <EmptyCart />;
   }
 
   return (
@@ -283,9 +287,9 @@ export default function CartPage() {
                 </span>
               </div>
 
-              <LinkButton href="/checkout" variant="primary" size="lg" className="w-full mb-4 font-brand">
+              <Button href="/checkout" variant="primary" size="lg" className="w-full mb-4 font-brand">
                 購入手続きへ進む
-              </LinkButton>
+              </Button>
 
               <div className="space-y-3 pt-6 border-t border-black/10">
                 <div className="flex items-center gap-3">

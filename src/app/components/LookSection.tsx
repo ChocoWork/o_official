@@ -5,7 +5,6 @@ import { useEffect, useState } from 'react';
 import { clientFetch } from '@/lib/client-fetch';
 import { Button } from '@/app/components/ui/Button';
 import { Card } from '@/app/components/ui/Card';
-import { LinkButton } from '@/app/components/ui/LinkButton';
 import { StatusBadge } from '@/app/components/ui/StatusBadge';
 
 type AdminLookItem = {
@@ -123,14 +122,14 @@ export default function LookSection() {
 								>
 									{item.status === 'published' ? '非公開' : '公開'}
 								</Button>
-								<LinkButton
+								<Button
 									href={`/admin/look/edit/${item.id}`}
 									variant="secondary"
 									size="sm"
 									className="flex-1 font-acumin"
 								>
 									編集
-								</LinkButton>
+								</Button>
 								<Button
 									onClick={() => handleDelete(item.id)}
 									variant="primary"

@@ -4,6 +4,7 @@ import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
 import { categories } from "@/lib/news-data";
 import { TagLabel } from '@/app/components/ui/TagLabel';
+import { NewsCategoryTabs } from '@/app/news/NewsCategoryTabs';
 
 type NewsArticle = {
   id: string;
@@ -44,28 +45,8 @@ export default async function NewsPage({
   return (
     <main className="pt-32 pb-20 px-6 lg:px-12">
       <div className="max-w-7xl mx-auto">
-        {/* Category Filter Buttons */}
-        <div className="flex items-center justify-center space-x-6 mb-16">
-          {categories.map((category) => {
-            const isActive = category === activeCategory;
-            const href = category === "ALL" ? "/news" : `/news?category=${category}`;
-
-            return (
-              <Link
-                key={category}
-                href={href}
-                className={`text-xs tracking-widest px-4 py-2 transition-all duration-300 cursor-pointer whitespace-nowrap ${
-                  isActive
-                    ? "text-black border-b-2 border-black"
-                    : "text-[#999] hover:text-black"
-                }`}
-                style={{ fontFamily: "acumin-pro, sans-serif" }}
-              >
-                {category}
-              </Link>
-            );
-          })}
-        </div>
+        {/* Category Filter Tabs */}
+        <NewsCategoryTabs activeCategory={activeCategory} />
 
         {/* News Grid */}
         {newsData.length === 0 ? (

@@ -11,7 +11,7 @@ import ItemSection from '@/app/components/ItemSection';
 import LookSection from '@/app/components/LookSection';
 import UserSection from '@/app/components/UserSection';
 import OrderSection, { type OrderItem, type OrderStatus } from '@/app/components/OrderSection';
-import { LinkButton } from '@/app/components/ui/LinkButton';
+import { Button } from '@/app/components/ui/Button';
 
 const allAdminTabs: TabType[] = ['KPI', 'NEWS', 'ITEM', 'LOOK', 'USER', 'ORDER'];
 const supporterTabs: TabType[] = ['ORDER'];
@@ -154,23 +154,23 @@ export default function AdminPage() {
       case 'NEWS':
         if (userRole !== 'admin') return null;
         return (
-          <LinkButton href="/admin/news/create" variant="primary" size="md" className="font-acumin">
+          <Button href="/admin/news/create" variant="primary" size="md" className="font-acumin">
             新規作成
-          </LinkButton>
+          </Button>
         );
       case 'ITEM':
         if (userRole !== 'admin') return null;
         return (
-          <LinkButton href="/admin/item/create" variant="primary" size="md" className="font-acumin">
+          <Button href="/admin/item/create" variant="primary" size="md" className="font-acumin">
             新規作成
-          </LinkButton>
+          </Button>
         );
       case 'LOOK':
         if (userRole !== 'admin') return null;
         return (
-          <LinkButton href="/admin/look/create" variant="primary" size="md" className="font-acumin">
+          <Button href="/admin/look/create" variant="primary" size="md" className="font-acumin">
             新規作成
-          </LinkButton>
+          </Button>
         );
       case 'ORDER':
         return (

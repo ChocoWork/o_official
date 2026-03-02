@@ -4,7 +4,7 @@ import Image from "next/image";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { categories } from "@/lib/news-data";
-import { LinkButton } from '@/app/components/ui/LinkButton';
+import { Button } from '@/app/components/ui/Button';
 import { TagLabel } from '@/app/components/ui/TagLabel';
 
 type NewsArticle = {
@@ -174,9 +174,9 @@ export default async function NewsDetailPage({
           )}
 
           {/* View All Button */}
-          <LinkButton href={`/news${navCategoryParam}`} size="sm" className="justify-self-center font-acumin">
+          <Button href={`/news${navCategoryParam}`} size="sm" className="justify-self-center font-acumin">
             VIEW ALL
-          </LinkButton>
+          </Button>
 
           {/* Next Article */}
           {nextArticle ? (

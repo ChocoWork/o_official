@@ -5,7 +5,6 @@ import Image from 'next/image';
 import { useSearchParams } from 'next/navigation';
 import { useLogin } from '@/app/components/LoginContext';
 import { Button } from '@/app/components/ui/Button';
-import { LinkButton } from '@/app/components/ui/LinkButton';
 import { TabSegmentControl } from '@/app/components/ui/TabSegmentControl';
 import { TextField } from '@/app/components/ui/TextField';
 
@@ -526,9 +525,9 @@ export default function Page() {
 				<p className="text-lg text-[#474747] mb-8 font-brand">
 					会員情報を確認するにはログインが必要です
 				</p>
-				<LinkButton href="/login" variant="primary" size="lg" className="font-brand">
+				<Button href="/login" variant="primary" size="lg" className="font-brand">
 					ログイン
-				</LinkButton>
+				</Button>
 			</div>
 		</main>
 	);

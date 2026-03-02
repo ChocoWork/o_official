@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import { LinkButton } from '@/app/components/ui/LinkButton';
+import { Button } from '@/app/components/ui/Button';
 
 interface EmptyCartProps {
   onStartShopping?: () => void;
@@ -26,9 +26,9 @@ export const EmptyCart: React.FC<EmptyCartProps> = ({ onStartShopping }) => {
             カートは空です
           </p>
 
-          <LinkButton href="/item" size="lg" onClick={() => onStartShopping && onStartShopping()}>
+          <Button href="/item" size="lg" onClick={() => onStartShopping && onStartShopping()}>
             CONTINUE SHOPPING
-          </LinkButton>
+          </Button>
         </div>
       </div>
     </main>

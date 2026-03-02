@@ -22,8 +22,11 @@ const buttonSizeClass: Record<UIButtonSize, string> = {
 };
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  href?: string;
   variant?: UIButtonVariant | 'text';
   size?: UIButtonSize;
+  className?: string;
+  onClick?: () => void;
 }
 
 export function Button({ variant = 'primary', size = 'md', className, type = 'button', ...props }: ButtonProps) {

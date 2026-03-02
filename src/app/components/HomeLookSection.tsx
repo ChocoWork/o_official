@@ -1,7 +1,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { formatLookSeason, getPublishedLooks } from '@/lib/look/public';
-import { LinkButton } from '@/app/components/ui/LinkButton';
+import { Button } from '@/app/components/ui/Button';
 
 export default async function HomeLookSection() {
   const looks = await getPublishedLooks(4);
@@ -41,7 +41,7 @@ export default async function HomeLookSection() {
             </div>
 
             <div className="text-center mt-8">
-              <LinkButton href="/look" size="lg" className="font-brand">VIEW LOOKBOOK</LinkButton>
+              <Button href="/look" variant="secondary" size="md" className="font-brand">VIEW LOOKBOOK</Button>
             </div>
           </>
         )}

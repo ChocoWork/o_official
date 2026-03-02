@@ -217,10 +217,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               <p className="text-xs text-[#474747] tracking-widest mb-2 font-brand">
                 {item.category}
               </p>
-              <h1 className="text-3xl lg:text-4xl text-black mb-4 tracking-tight font-display">
+              <h2 className="text-xl lg:text-2xl text-black mb-4 tracking-tight font-display">
                 {item.name}
-              </h1>
-              <p className="text-2xl text-black font-brand">
+              </h2>
+              <p className="text-xl text-black font-brand">
                 ¥{item.price.toLocaleString('ja-JP')}
               </p>
             </div>
@@ -284,18 +284,27 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
             <div className="flex gap-4">
               <Button
-                onClick={handleAddToCart}
-                disabled={addingToCart}
-                size="lg"
-                className="flex-1 font-brand disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={handleAddToCart}
+              disabled={addingToCart}
+              size="md"
+              className="flex-1 font-brand py-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {addingToCart ? "追加中..." : "ADD TO CART"}
+              {addingToCart ? (
+                "追加中..."
+              ) : (
+                <div className="gap-4 flex items-center justify-center">
+                <div className="w-4 h-4 flex items-center justify-center">
+                  <i className="ri-shopping-bag-line text-base" />
+                </div>
+                ADD TO CART
+                </div>
+              )}
               </Button>
               <Button
                 onClick={handleToggleWishlist}
                 disabled={togglingWishlist}
                 variant="secondary"
-                size="lg"
+                size="md"
                 className="w-14 py-4 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <i className={`text-2xl ${isWishlisted ? "ri-heart-fill text-red-500" : "ri-heart-line"}`} />

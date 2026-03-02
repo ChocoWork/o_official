@@ -4,7 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { Item } from "@/app/types/item";
-import { LinkButton } from '@/app/components/ui/LinkButton';
+import { Button } from '@/app/components/ui/Button';
 
 export default function HomeItemsSection() {
   const [items, setItems] = useState<Item[]>([]);
@@ -95,7 +95,7 @@ export default function HomeItemsSection() {
           ))}
         </div>
         <div className="text-center mt-16">
-          <LinkButton href="/item" size="lg" className="font-acumin">VIEW ALL ITEMS</LinkButton>
+          <Button href="/item" variant="secondary" size="md" className=" font-acumin">VIEW ALL ITEMS</Button>
         </div>
       </div>
     </section>

@@ -5,7 +5,6 @@ import { useEffect, useState } from 'react';
 import { clientFetch } from '@/lib/client-fetch';
 import { Button } from '@/app/components/ui/Button';
 import { Card } from '@/app/components/ui/Card';
-import { LinkButton } from '@/app/components/ui/LinkButton';
 import { StatusBadge } from '@/app/components/ui/StatusBadge';
 
 interface AdminItem {
@@ -56,14 +55,14 @@ function ItemCard({ item, onToggleStatus, onDelete }: ItemCardProps) {
           >
             {item.status === 'published' ? '非公開' : '公開'}
           </Button>
-          <LinkButton
+          <Button
             className="flex-1 font-acumin"
             href={`/admin/item/edit/${item.id}`}
             variant="secondary"
             size="sm"
           >
             編集
-          </LinkButton>
+          </Button>
           <Button
             onClick={() => onDelete(item.id)}
             variant="primary"

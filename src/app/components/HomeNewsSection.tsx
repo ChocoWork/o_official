@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { type NewsArticle } from "@/app/actions/news";
-import { LinkButton } from '@/app/components/ui/LinkButton';
+import { Button } from '@/app/components/ui/Button';
 import { TagLabel } from '@/app/components/ui/TagLabel';
 
 interface HomeNewsSectionProps {
@@ -101,7 +101,7 @@ export default function HomeNewsSection({ initialNews }: HomeNewsSectionProps) {
         )}
 
         <div className="text-center mt-16">
-          <LinkButton href="/news" size="lg" className="font-acumin">VIEW ALL NEWS</LinkButton>
+          <Button href="/news" variant="secondary" size="md" className="font-acumin">VIEW ALL NEWS</Button>
         </div>
       </div>
     </section>
