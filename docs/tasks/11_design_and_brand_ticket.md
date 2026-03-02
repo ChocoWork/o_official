@@ -77,3 +77,4 @@ updated: 2026-02-27
 - [x] `/ui` の `Map` が表示不安定になる問題を `MapView` の埋め込みレイアウトを生HTML準拠構造へ戻して修正
 - [x] `/ui` の `Banner / Alert` / `Avatar` / `Toolbar` / `Tag / Label` / `Badge` 仕様を各UIコンポーネントへ反映
 - [x] `/ui` の `Banner / Alert` / `Avatar` / `Toolbar` / `Tag / Label` / `Badge` セクションを生HTMLから `src/app/components/ui` コンポーネント利用へ置換
+- [x] Home の `ITEMS` セクションを `item/page.tsx` と同じ `/api/items` 取得・カード描画方式へ統一し、表示件数を最大6件に制限
