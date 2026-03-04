@@ -192,7 +192,7 @@ export default function CartPage() {
                             disabled={togglingWishlist === item.item_id.toString()}
                             variant="ghost"
                             size="sm"
-                            className="w-8 h-8 flex items-center justify-center text-[#474747] hover:text-black transition-colors cursor-pointer disabled:opacity-30 px-0 py-0"
+                            className="w-8 h-8 flex items-center justify-center text-[#474747] hover:text-black hover:bg-transparent transition-colors cursor-pointer disabled:opacity-30 px-0 py-0"
                           >
                             <i className={`text-xl ${wishlistedItems.has(item.item_id) ? "ri-heart-fill text-red-500" : "ri-heart-line"}`} />
                           </Button>
