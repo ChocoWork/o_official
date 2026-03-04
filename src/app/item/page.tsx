@@ -72,6 +72,7 @@ export default function ItemPage() {
               items={categories.map((category) => ({ key: category, label: category }))}
               activeKey={selectedCategory ?? 'ALL'}
               onChange={(category) => setSelectedCategory(category === 'ALL' ? null : category)}
+              variant="segment-pill"
             />
           </div>
         </div>

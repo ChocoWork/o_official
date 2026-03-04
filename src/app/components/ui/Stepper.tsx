@@ -33,7 +33,7 @@ export function Stepper({
         <div className="flex items-center border border-black/20">
           <button
             type="button"
-            className="flex h-12 w-12 cursor-pointer items-center justify-center border-r border-black/20 transition-colors hover:bg-[#f5f5f5]"
+            className="flex h-12 w-12 cursor-pointer items-center justify-center transition-colors hover:bg-[#f5f5f5]"
             onClick={() => onChange(prev)}
             aria-label="decrease"
           >
@@ -66,7 +66,7 @@ export function Stepper({
           />
           <button
             type="button"
-            className="flex h-12 w-12 cursor-pointer items-center justify-center border-l border-black/20 transition-colors hover:bg-[#f5f5f5]"
+            className="flex h-12 w-12 cursor-pointer items-center justify-center transition-colors hover:bg-[#f5f5f5]"
             onClick={() => onChange(next)}
             aria-label="increase"
           >

@@ -154,23 +154,9 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     : [item.image_url];
 
   return (
-    <main className="pt-32 pb-20 px-6 lg:px-12">
+    <main className="pt-24 pb-20 px-6 lg:px-12">
       <div className="max-w-7xl mx-auto">
-        <div className="mb-8">
-          <Button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              history.back();
-            }}
-            variant="ghost"
-            className="text-sm text-[#474747] hover:text-black transition-colors duration-300 flex items-center gap-2 font-brand px-0 py-0"
-          >
-            <i className="ri-arrow-left-line" />BACK TO ITEMS
-          </Button>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-24">
           <div>
             <div className="aspect-[3/4] bg-[#f5f5f5] mb-4 overflow-hidden">
               {mainImage ? (
@@ -266,7 +252,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                       onClick={() => setSize(sizeOption)}
                       variant={size === sizeOption ? 'primary' : 'secondary'}
                       size="sm"
-                      className="w-16 h-12 font-brand"
+                      className="font-brand"
                     >
                       {sizeOption}
                     </Button>

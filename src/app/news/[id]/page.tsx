@@ -84,17 +84,6 @@ export default async function NewsDetailPage({
   return (
     <main className="pt-32 pb-20 px-6 lg:px-12">
       <div className="max-w-4xl mx-auto">
-        {/* Back to News Link */}
-        <Link href={`/news${navCategoryParam}`}>
-          <div
-            className="flex items-center space-x-2 text-sm text-[#474747] mb-12 hover:text-black transition-colors cursor-pointer"
-            style={{ fontFamily: "acumin-pro, sans-serif" }}
-          >
-            <span className="w-4 h-4 flex items-center justify-center">←</span>
-            <span className="tracking-widest">BACK TO NEWS</span>
-          </div>
-        </Link>
-
         {/* Article Header */}
         <div className="mb-8">
           <div className="flex items-center space-x-4 mb-6">
