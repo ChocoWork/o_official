@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 
 export type PublicLookLinkedItem = {
+  category: string;
   id: number;
   name: string;
   price: number;
@@ -35,6 +36,7 @@ type LookItemRow = {
 
 type ItemRow = {
   id: number;
+  category: string;
   name: string;
   price: number;
   image_url: string;
@@ -97,7 +99,7 @@ async function hydrateLooks(lookRows: LookRow[]): Promise<PublicLook[]> {
   if (uniqueItemIds.length > 0) {
     const { data: itemRows, error: itemRowsError } = await supabase
       .from('items')
-      .select('id,name,price,image_url')
+      .select('id,category,name,price,image_url')
       .in('id', uniqueItemIds);
 
     if (itemRowsError) {
@@ -105,6 +107,7 @@ async function hydrateLooks(lookRows: LookRow[]): Promise<PublicLook[]> {
     } else {
       for (const row of (itemRows ?? []) as ItemRow[]) {
         itemMap.set(row.id, {
+          category: row.category,
           id: row.id,
           name: row.name,
           price: row.price,

@@ -18,6 +18,7 @@ export default function AdminTabs({ activeTab, onTabChange, tabs = allTabs, righ
       <div className="flex items-center justify-between gap-4">
         <div className="flex space-x-2 overflow-x-auto">
           <TabSegmentControl
+            variant="tabs-standard"
             items={tabs.map((tab) => ({ key: tab, label: tab }))}
             activeKey={activeTab}
             onChange={(tab) => onTabChange(tab as TabType)}

@@ -16,7 +16,7 @@ export interface TabSegmentControlProps {
 export function TabSegmentControl({ items, activeKey, onChange, variant = 'segment', className }: TabSegmentControlProps) {
   if (variant === 'tabs-standard') {
     return (
-      <div className={cn('flex items-center gap-8 border-b border-black/20', className)} role="tablist">
+      <div className={cn('flex items-center gap-8', className)} role="tablist">
         {items.map((item) => {
           const isActive = item.key === activeKey;
 

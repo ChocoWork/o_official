@@ -79,3 +79,5 @@ updated: 2026-02-27
 - [x] `/ui` の `Banner / Alert` / `Avatar` / `Toolbar` / `Tag / Label` / `Badge` セクションを生HTMLから `src/app/components/ui` コンポーネント利用へ置換
 - [x] Home の `ITEMS` セクションを `item/page.tsx` と同じ `/api/items` 取得・カード描画方式へ統一し、表示件数を最大6件に制限
 - [x] `item/[id]` の購入操作ボタンを `/ui` の `Button` サンプル（`WITH ICON` / `ICON ONLY` / `DISABLED`）準拠の見た目・状態表示に統一
+- [x] `look/[id]` の `STYLING ITEMS` 表示を `/ui` の `List` サンプル準拠に差し替え、共通 `List` コンポーネントを適用
+- [x] `look/[id]` の `STYLING ITEMS` で `item.category` が表示されるよう、`getPublishedLooks` の linked item 取得項目に `category` を追加

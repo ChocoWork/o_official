@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { formatLookSeason, getPublishedLooks } from '@/lib/look/public';
+import { List } from '@/app/components/ui/List';
 
 export default async function LookDetailPage({ params }: { params: { id: string } }) {
   const lookId = Number(params.id);
@@ -34,15 +35,6 @@ export default async function LookDetailPage({ params }: { params: { id: string 
     return (
         <main className="pt-32 pb-20 px-6 lg:px-12">
             <div className="max-w-7xl mx-auto">
-                <Link
-                    href="/look"
-                    className="flex items-center space-x-2 text-sm text-[#474747] mb-12 hover:text-black transition-colors duration-300"
-                    style={{ fontFamily: 'acumin-pro, sans-serif' }}
-                >
-                    <i className="ri-arrow-left-line w-4 h-4 flex items-center justify-center"></i>
-                    <span className="tracking-widest">BACK TO LOOKBOOK</span>
-                </Link>
-
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20">
                     <div className="space-y-4">
                         <div className="w-full aspect-[3/4] bg-[#f5f5f5] overflow-hidden relative">
@@ -67,27 +59,51 @@ export default async function LookDetailPage({ params }: { params: { id: string 
                         </div>
 
                         <div className="border-t border-[#d5d0c9] pt-8">
-                            <h3 className="text-xs text-black tracking-widest mb-6" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                            <h3 className="text-md text-black tracking-widest mb-6" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
                                 STYLING ITEMS
                             </h3>
-                            <div className="space-y-4">
-                                {currentLook.linkedItems.length === 0 ? (
-                                    <p className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-                                        紐づけ商品はありません
-                                    </p>
-                                ) : (
-                                    currentLook.linkedItems.map((item) => (
-                                        <div key={item.id} className="flex items-center justify-between py-3 border-b border-[#f0ede8]">
-                                            <span className="text-sm text-black tracking-wide" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-                                                {item.name}
-                                            </span>
-                                            <span className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-                                                {currencyFormatter.format(item.price)}
-                                            </span>
+                            {currentLook.linkedItems.length === 0 ? (
+                                <p className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                                    紐づけ商品はありません
+                                </p>
+                            ) : (
+                                <List<(typeof currentLook.linkedItems)[number]>
+                                    items={currentLook.linkedItems}
+                                    itemKey={(item) => String(item.id)}
+                                    className="space-y-px border border-black/20"
+                                    renderItem={(item, index) => (
+                                        <div
+                                            className={`flex items-center justify-between px-6 py-5 transition-colors hover:bg-[#f5f5f5] ${
+                                                index < currentLook.linkedItems.length - 1 ? 'border-b border-black/10' : ''
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-12 h-12 bg-[#f5f5f5] flex items-center justify-center">
+                                                    <div className="w-5 h-5 flex items-center justify-center">
+                                                        <i className="ri-image-line text-xl text-black/40"></i>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm text-black mb-1" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                                                        {item.name}
+                                                    </p>
+                                                    <p className="text-xs text-black/40 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                                                        {item.category}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-4">
+                                                <span className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                                                    {currencyFormatter.format(item.price)}
+                                                </span>
+                                                <div className="w-5 h-5 flex items-center justify-center">
+                                                    <i className="ri-arrow-right-s-line text-xl text-black/40"></i>
+                                                </div>
+                                            </div>
                                         </div>
-                                    ))
-                                )}
-                            </div>
+                                    )}
+                                />
+                            )}
                         </div>
 
                         <div className="flex items-center justify-between pt-4">

@@ -154,21 +154,21 @@ export default function AdminPage() {
       case 'NEWS':
         if (userRole !== 'admin') return null;
         return (
-          <Button href="/admin/news/create" variant="primary" size="md" className="font-acumin">
+          <Button href="/admin/news/create" variant="primary" size="sm" className="font-acumin">
             新規作成
           </Button>
         );
       case 'ITEM':
         if (userRole !== 'admin') return null;
         return (
-          <Button href="/admin/item/create" variant="primary" size="md" className="font-acumin">
+          <Button href="/admin/item/create" variant="primary" size="sm" className="font-acumin">
             新規作成
           </Button>
         );
       case 'LOOK':
         if (userRole !== 'admin') return null;
         return (
-          <Button href="/admin/look/create" variant="primary" size="md" className="font-acumin">
+          <Button href="/admin/look/create" variant="primary" size="sm" className="font-acumin">
             新規作成
           </Button>
         );
