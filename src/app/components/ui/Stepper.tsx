@@ -42,7 +42,7 @@ export function Stepper({
             </span>
           </button>
           <input
-            className="h-12 flex-1 text-center text-sm focus:outline-none"
+            className="h-12 flex-1 text-center text-sm focus:outline-none appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-moz-appearance]:textfield"
             type="number"
             min={min}
             max={max}
@@ -84,7 +84,29 @@ export function Stepper({
       <Button size="sm" variant="ghost" onClick={() => onChange(prev)} aria-label="decrease">
         −
       </Button>
-      <span className="min-w-12 px-3 text-center text-sm">{value}</span>
+      <input
+        className="w-12 text-center text-sm focus:outline-none appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-moz-appearance]:textfield"
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(event) => {
+          const parsed = Number.parseInt(event.target.value, 10);
+          if (!Number.isNaN(parsed)) {
+            onChange(clamp(parsed));
+          }
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            onChange(next);
+          } else if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            onChange(prev);
+          }
+        }}
+      />
       <Button size="sm" variant="ghost" onClick={() => onChange(next)} aria-label="increase">
         ＋
       </Button>
