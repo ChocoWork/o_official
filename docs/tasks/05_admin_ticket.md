@@ -56,6 +56,8 @@ updated: 2026-02-23
 - [x] Header の `MANAGE` メニューを Admin / Supporter のみに表示
 - [x] Admin は管理画面の全タブを表示・操作できる
 - [x] Supporter は ORDER タブのみ表示・操作できる
+- [x] 管理画面 ORDER タブで注文一覧を CSV エクスポートできる
+- [x] 管理画面 ORDER タブで「商品数」に加えて購入商品名と数量を確認できる
 - [x] 管理 API の RBAC 実装（users 以外の admin API へ横展開）
   - `src/lib/auth/admin-rbac.ts`: ハイブリッド RBAC ヘルパー（トークン役割 + DB ACL クエリ）
   - Migration 023: roles, permissions, role_permissions, user_roles テーブル + RLS ポリシー + has_permission()

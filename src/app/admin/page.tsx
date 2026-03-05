@@ -17,10 +17,21 @@ const allAdminTabs: TabType[] = ['KPI', 'NEWS', 'ITEM', 'LOOK', 'USER', 'ORDER']
 const supporterTabs: TabType[] = ['ORDER'];
 
 const statusTransitionMap: Partial<Record<OrderStatus, OrderStatus>> = {
-  未出荷: '準備中',
-  準備中: '出荷完了',
+  未決済: '決済完了',
+  決済完了: '出荷完了',
   出荷完了: '配達完了',
 };
+
+const ORDER_CSV_HEADERS = ['注文ID', '顧客名', '顧客メール', '注文日', '購入商品', '商品数', '合計金額', '出荷状況'] as const;
+
+function formatOrderItems(items: OrderItem['items']): string {
+  return items.map((item) => `${item.name} x${item.quantity}`).join(' / ');
+}
+
+function escapeCsvValue(value: string): string {
+  const escapedValue = value.replace(/"/g, '""');
+  return `"${escapedValue}"`;
+}
 
 const initialOrders: OrderItem[] = [
   {
@@ -29,8 +40,13 @@ const initialOrders: OrderItem[] = [
     customerEmail: 'nakamura@example.com',
     orderDate: '2025-01-15',
     itemCount: '3点',
+    items: [
+      { name: 'オーバーサイズシャツ', quantity: 1 },
+      { name: 'ワイドパンツ', quantity: 1 },
+      { name: 'レザーベルト', quantity: 1 },
+    ],
     totalAmount: '¥78,000',
-    status: '未出荷',
+    status: '未決済',
   },
   {
     id: 'ORD-2025-0155',
@@ -38,8 +54,12 @@ const initialOrders: OrderItem[] = [
     customerEmail: 'kobayashi@example.com',
     orderDate: '2025-01-15',
     itemCount: '2点',
+    items: [
+      { name: 'ニットカーディガン', quantity: 1 },
+      { name: 'テーパードスラックス', quantity: 1 },
+    ],
     totalAmount: '¥45,000',
-    status: '準備中',
+    status: '決済完了',
   },
   {
     id: 'ORD-2025-0154',
@@ -47,6 +67,12 @@ const initialOrders: OrderItem[] = [
     customerEmail: 'kato@example.com',
     orderDate: '2025-01-14',
     itemCount: '4点',
+    items: [
+      { name: 'ウールコート', quantity: 1 },
+      { name: 'ハイゲージニット', quantity: 1 },
+      { name: 'デニムパンツ', quantity: 1 },
+      { name: 'レザーシューズ', quantity: 1 },
+    ],
     totalAmount: '¥128,000',
     status: '出荷完了',
   },
@@ -56,6 +82,7 @@ const initialOrders: OrderItem[] = [
     customerEmail: 'yoshida@example.com',
     orderDate: '2025-01-14',
     itemCount: '1点',
+    items: [{ name: 'ミニマルジャケット', quantity: 1 }],
     totalAmount: '¥35,000',
     status: '配達完了',
   },
@@ -65,6 +92,10 @@ const initialOrders: OrderItem[] = [
     customerEmail: 'watanabe@example.com',
     orderDate: '2025-01-13',
     itemCount: '3点',
+    items: [
+      { name: 'タートルネックニット', quantity: 2 },
+      { name: 'プリーツスカート', quantity: 1 },
+    ],
     totalAmount: '¥92,000',
     status: '配達完了',
   },
@@ -74,6 +105,10 @@ const initialOrders: OrderItem[] = [
     customerEmail: 'matsumoto@example.com',
     orderDate: '2025-01-12',
     itemCount: '2点',
+    items: [
+      { name: 'ダブルジャケット', quantity: 1 },
+      { name: 'ストレートパンツ', quantity: 1 },
+    ],
     totalAmount: '¥56,000',
     status: 'キャンセル',
   },
@@ -124,12 +159,12 @@ export default function AdminPage() {
   }, [activeTab, visibleTabs, canAccessAdmin]);
 
   const pendingShipmentCount = useMemo(
-    () => orders.filter((order) => order.status === '未出荷').length,
+    () => orders.filter((order) => order.status === '未決済').length,
     [orders],
   );
 
   const preparingShipmentCount = useMemo(
-    () => orders.filter((order) => order.status === '準備中').length,
+    () => orders.filter((order) => order.status === '決済完了').length,
     [orders],
   );
 
@@ -147,6 +182,37 @@ export default function AdminPage() {
         };
       }),
     );
+  };
+
+  const handleExportOrdersCsv = () => {
+    const csvRows = orders.map((order) => {
+      const row = [
+        order.id,
+        order.customerName,
+        order.customerEmail,
+        order.orderDate,
+        formatOrderItems(order.items),
+        order.itemCount,
+        order.totalAmount,
+        order.status,
+      ];
+
+      return row.map((value) => escapeCsvValue(value)).join(',');
+    });
+
+    const csvContent = [ORDER_CSV_HEADERS.join(','), ...csvRows].join('\n');
+    const bom = '\uFEFF';
+    const blob = new Blob([`${bom}${csvContent}`], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    const date = new Date().toISOString().slice(0, 10);
+
+    anchor.href = url;
+    anchor.download = `orders_${date}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    window.URL.revokeObjectURL(url);
   };
 
   const tabRightContent = (() => {
@@ -175,13 +241,16 @@ export default function AdminPage() {
       case 'ORDER':
         return (
           <div className="flex items-center gap-4">
+            <Button variant="secondary" size="sm" className="font-acumin" onClick={handleExportOrdersCsv}>
+              CSVエクスポート
+            </Button>
             <div className="flex items-center gap-2 text-sm font-acumin">
               <span className="w-3 h-3 bg-red-100 rounded-full" />
-              <span className="text-[#474747]">未出荷: {pendingShipmentCount}</span>
+              <span className="text-[#474747]">未決済: {pendingShipmentCount}</span>
             </div>
             <div className="flex items-center gap-2 text-sm font-acumin">
               <span className="w-3 h-3 bg-yellow-100 rounded-full" />
-              <span className="text-[#474747]">準備中: {preparingShipmentCount}</span>
+              <span className="text-[#474747]">決済完了: {preparingShipmentCount}</span>
             </div>
           </div>
         );
