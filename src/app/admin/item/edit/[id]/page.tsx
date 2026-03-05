@@ -427,11 +427,13 @@ export default function AdminItemEditPage() {
           </div>
 
           <div>
-            <label className="block text-sm tracking-widest mb-2">カテゴリー</label>
             <SingleSelect
-              value={category}
-              onChange={(e) => setCategory(e.target.value as (typeof CATEGORIES)[number])}
+              label="カテゴリー"
+              variant="dropdown"
               options={CATEGORIES.map((itemCategory) => ({ value: itemCategory, label: itemCategory }))}
+              value={category}
+              onValueChange={(val) => setCategory(val as (typeof CATEGORIES)[number])}
+              className="font-acumin"
             />
           </div>
 

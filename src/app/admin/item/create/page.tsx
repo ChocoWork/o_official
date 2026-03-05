@@ -372,14 +372,14 @@ export default function AdminItemCreatePage() {
 						</div>
 					</div>
 
-					<div>
-						<label className="block text-sm tracking-widest mb-2">カテゴリー</label>
-						<SingleSelect
-							value={category}
-							onChange={(e) => setCategory(e.target.value as (typeof CATEGORIES)[number])}
-							options={CATEGORIES.map((option) => ({ value: option, label: option }))}
-						/>
-					</div>
+					<SingleSelect
+						label="カテゴリー"
+						variant="dropdown"
+						options={CATEGORIES.map((itemCategory) => ({ value: itemCategory, label: itemCategory }))}
+						value={category}
+						onValueChange={(val) => setCategory(val as (typeof CATEGORIES)[number])}
+						className="font-acumin"
+					/>
 
 					<div>
 						<label className="block text-sm tracking-widest mb-2">商品名</label>
