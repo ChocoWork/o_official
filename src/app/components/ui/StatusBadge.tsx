@@ -10,9 +10,10 @@ export interface StatusBadgeProps {
 }
 
 const badgeToneClass: Record<NonNullable<StatusBadgeProps['tone']>, string> = {
-  neutral: 'border border-black text-black',
+  // default styles avoid border so badges appear flush with their background
+  neutral: 'text-black',
   positive: 'bg-black text-white',
-  // warning tone used for intermediate statuses; keep background but remove border
+  // warning tone used for intermediate statuses
   warning: 'bg-[#f5f5f5] text-black',
   danger: 'bg-black text-white',
 };

@@ -39,8 +39,8 @@ const roleSelectClassMap: Record<UserRoleValue, string> = {
 };
 
 const statusClassMap: Record<UserStatus, string> = {
-	アクティブ: 'bg-green-100 text-green-800',
-	非アクティブ: 'bg-gray-100 text-gray-500',
+	アクティブ: 'bg-green-100 text-green-800 border-none',
+	非アクティブ: 'bg-gray-100 text-gray-500 border-none',
 };
 
 export default function UserSection() {
