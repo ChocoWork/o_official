@@ -36,9 +36,9 @@ interface OrderSectionProps {
 export default function OrderSection({ orders, onTransitStatus }: OrderSectionProps) {
 
 	const statusClassMap: Record<OrderStatus, string> = {
-		未決済: 'bg-red-100 text-red-800',
-		決済完了: 'bg-yellow-100 text-yellow-800',
-		出荷完了: 'bg-blue-100 text-blue-800',
+		未決済: 'bg-red-100 text-red-800 border-none',
+		決済完了: 'bg-yellow-100 text-yellow-800 border-none',
+		出荷完了: 'bg-blue-100 text-blue-800 border-none',
 		配達完了: 'bg-green-100 text-green-800',
 		キャンセル: 'bg-gray-100 text-gray-500',
 	};
