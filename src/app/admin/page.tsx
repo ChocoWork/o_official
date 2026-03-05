@@ -185,7 +185,10 @@ export default function AdminPage() {
   };
 
   const handleExportOrdersCsv = () => {
-    const csvRows = orders.map((order) => {
+    // only export orders that are in the “決済完了” status
+    const filtered = orders.filter((o) => o.status === '決済完了');
+
+    const csvRows = filtered.map((order) => {
       const row = [
         order.id,
         order.customerName,
