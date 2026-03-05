@@ -493,6 +493,7 @@ export function ItemForm({
                     value={color.hex}
                     onChange={(e) => handleColorChange(color.id, 'hex', e.target.value)}
                     aria-label="カラーを選択"
+                    className="h-10 w-10"
                   />
                   <Button
                     type="button"

@@ -82,6 +82,31 @@ export function ColorPicker({
     );
   }
 
+  // for the default 'input' variant we now always render a circular swatch
+  if (variant === 'input') {
+    return (
+      <label className="relative inline-block">
+        {label ? <span className="sr-only">{label}</span> : null}
+        <input
+          type="color"
+          value={value}
+          onChange={handleColorInputChange}
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer rounded-full"
+          {...props}
+        />
+        <span
+          className={cn(
+            'block h-full w-full rounded-full border border-black/20',
+            // allow size overrides via className but ignore other styles
+            className
+          )}
+          style={{ backgroundColor: value }}
+        />
+      </label>
+    );
+  }
+
+  // fallback to rectangular input if someone requests custom variant
   return (
     <label className="inline-flex items-center gap-3">
       {label ? <span className="text-xs tracking-widest text-black/80 font-brand">{label}</span> : null}
