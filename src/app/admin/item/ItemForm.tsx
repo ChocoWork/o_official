@@ -467,17 +467,15 @@ export function ItemForm({
             onChange={(e) => setPrice(e.target.value)}
           />
 
-          <div>
-            <label className="block text-sm tracking-widest mb-2">商品情報</label>
-            <TextAreaField
-              label="商品情報"
-              placeholder="商品情報を入力"
-              rows={4}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              required
-            />
-          </div>
+          <TextAreaField
+            label="商品情報"
+            placeholder="商品情報を入力"
+            rows={4}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            required
+          />
+
 
           <div>
             <label className="block text-sm tracking-widest mb-4">カラー</label>
@@ -546,7 +544,7 @@ export function ItemForm({
                         className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 text-[10px]"
                         aria-label="保存済みカラーを削除"
                       >
-                        ×
+                        <i className="ri-close-line text-xs" />
                       </Button>
                     </div>
                   ))}
