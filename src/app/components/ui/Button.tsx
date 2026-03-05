@@ -1,5 +1,6 @@
+import Link from 'next/link';
 import { cn } from '@/lib/utils';
-import type { ButtonHTMLAttributes, MouseEventHandler } from 'react';
+import type { ButtonHTMLAttributes, AnchorHTMLAttributes, MouseEventHandler } from 'react';
 
 export type UIButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'link';
 export type UIButtonSize = 'sm' | 'md' | 'lg';
@@ -21,30 +22,57 @@ const buttonSizeClass: Record<UIButtonSize, string> = {
   lg: 'px-8 py-4 text-sm',
 };
 
-export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+// union of button and anchor attributes so `href` use works
+export interface ButtonProps
+  extends ButtonHTMLAttributes<HTMLButtonElement>,
+    AnchorHTMLAttributes<HTMLAnchorElement> {
   href?: string;
   variant?: UIButtonVariant | 'text';
   size?: UIButtonSize;
   className?: string;
-  onClick?: MouseEventHandler<HTMLButtonElement>;
+  onClick?: MouseEventHandler<HTMLElement>;
 }
 
-export function Button({ variant = 'primary', size = 'md', className, type = 'button', ...props }: ButtonProps) {
+export function Button({
+  href,
+  variant = 'primary',
+  size = 'md',
+  className,
+  type = 'button',
+  disabled,
+  children,
+  ...props
+}: ButtonProps) {
   const resolvedVariantClass =
     variant === 'text'
       ? 'bg-transparent text-black hover:text-[#474747] border border-transparent disabled:text-black/40 disabled:hover:text-black/40'
-      : buttonVariantClass[variant];
+      : buttonVariantClass[variant as UIButtonVariant];
+
+  const baseClass = cn(
+    'inline-flex items-center justify-center whitespace-nowrap tracking-widest transition-all duration-300',
+    resolvedVariantClass,
+    buttonSizeClass[size as UIButtonSize],
+    className,
+    disabled && 'cursor-not-allowed',
+  );
+
+  if (href) {
+    // render as link for navigation; disabled link still styled but not clickable
+    return (
+      <Link href={href} className={baseClass} {...(disabled ? { onClick: (e) => e.preventDefault() } : {})} {...props}>
+        {children}
+      </Link>
+    );
+  }
 
   return (
     <button
       type={type}
-      className={cn(
-        'inline-flex items-center justify-center whitespace-nowrap tracking-widest transition-all duration-300 cursor-pointer disabled:cursor-not-allowed',
-        resolvedVariantClass,
-        buttonSizeClass[size],
-        className,
-      )}
+      className={baseClass}
+      disabled={disabled}
       {...props}
-    />
+    >
+      {children}
+    </button>
   );
 }

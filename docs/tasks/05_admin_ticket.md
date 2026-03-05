@@ -39,6 +39,7 @@ updated: 2026-02-23
 
 - [x] 管理画面 `/admin/item/create` から `POST /api/admin/items` で商品を保存できる
 - [x] 管理画面 ITEM タブに Supabase 登録済み商品を表示できる
+- [x] 管理画面 ITEM タブの「新規作成」ボタンから作成ページへ移動できる
 - [x] 商品登録完了後に `/admin?tab=ITEM` へ遷移する
 - [x] 管理画面 ITEM タブで公開/非公開切替（PATCH）と削除（DELETE）が動作する
 - [x] 管理画面 ITEM タブの編集ボタンから編集ページへ遷移し、更新（PUT）できる
