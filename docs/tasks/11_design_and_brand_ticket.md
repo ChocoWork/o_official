@@ -42,7 +42,8 @@ updated: 2026-02-27
 - [x] `account` ページの主要操作（タブ・プロフィール編集・住所入力・ログイン導線）を共通UIへ置換
 - [x] 認証/管理フォームの追加置換（`auth/password-reset` / `admin/create-user`）
 - [x] Admin `item/look/news` の create/edit ページで入力UIを共通コンポーネントへ統一
-- [x] Admin 一覧ページ側のアクション導線（新規作成/編集リンク）を `LinkButton` に統一
+- [x] Admin 一覧ページ側のアクション導線（新規作成/編集リンク）を `LinkButton` に統一  
+  *(現在は未使用のため `LinkButton` は削除済み)*
 - [x] Admin `news/item/look` の新規作成・編集・公開切替・削除で認証付きAPI呼び出しが動作するよう `clientFetch` 統一
 - [x] Admin `news/look/item` edit ページで Next.js 15 の動的ルートID取得を `useParams` に統一し、編集失敗の真因を修正
 - [x] Header に `UI` メニューを追加し、`/ui` で `src/app/components/ui` の全コンポーネント確認サンプルを提供

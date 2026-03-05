@@ -47,7 +47,6 @@
 **その他のファイル**
 
 - InputChangeEvent.ts (ユーティリティ)
-- LinkButton.tsx (ボタン派生)
 - OverlayShell.tsx (レイアウト/ユーティリティ)
 - shared.ts (共通ロジック)
 
