@@ -449,19 +449,34 @@ export function ItemForm({
             className="font-acumin"
           />
 
-          <div>
-            <label className="block text-sm tracking-widest mb-2">商品名</label>
-            <TextField required type="text" value={itemName} onChange={(e) => setItemName(e.target.value)} />
-          </div>
+          <TextField 
+            required
+            label="商品名"
+            placeholder="商品名を入力"
+            type="text"
+            value={itemName}
+            onChange={(e) => setItemName(e.target.value)}
+          />
 
-          <div>
-            <label className="block text-sm tracking-widest mb-2">価格（円）</label>
-            <TextField required type="number" value={price} onChange={(e) => setPrice(e.target.value)} />
-          </div>
+          <TextField 
+            required
+            label="価格（円）"
+            placeholder="価格を入力"
+            type="number"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+          />
 
           <div>
             <label className="block text-sm tracking-widest mb-2">商品情報</label>
-            <TextAreaField rows={4} value={description} onChange={(e) => setDescription(e.target.value)} required />
+            <TextAreaField
+              label="商品情報"
+              placeholder="商品情報を入力"
+              rows={4}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              required
+            />
           </div>
 
           <div>
