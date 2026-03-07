@@ -2,13 +2,15 @@ import { cn } from '@/lib/utils';
 import type { SelectHTMLAttributes } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { controlBaseClass, type SelectOption } from './shared';
+import { ComponentSize } from './types';
 
-export interface SingleSelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
+export interface SingleSelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'size'> {
   label?: string;
   options: SelectOption[];
   placeholder?: string;
   variant?: 'native' | 'dropdown';
   onValueChange?: (value: string) => void;
+  size?: ComponentSize;
 }
 
 export function SingleSelect({
@@ -22,8 +24,11 @@ export function SingleSelect({
   value,
   defaultValue,
   disabled,
+  size = 'md',
   ...props
 }: SingleSelectProps) {
+  const heightClass = size === 'sm' ? 'h-8' : size === 'lg' ? 'h-12' : 'h-10';
+  const textClass = size === 'lg' ? 'text-base' : 'text-sm';
   const selectId = id ?? props.name;
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -52,6 +57,7 @@ export function SingleSelect({
   }, [open, variant]);
 
   if (variant === 'dropdown') {
+    const optionPadding = size === 'sm' ? 'py-2' : size === 'lg' ? 'py-4' : 'py-3';
     return (
       <label className="block space-y-2">
         {label ? <span className="block text-xs tracking-widest text-black/80 font-brand">{label}</span> : null}
@@ -61,6 +67,8 @@ export function SingleSelect({
             className={cn(
               controlBaseClass,
               'flex items-center justify-between text-left',
+              heightClass,
+              textClass,
               disabled ? 'cursor-not-allowed border-black/10 bg-[#f5f5f5] text-black/40' : 'cursor-pointer',
               className,
             )}
@@ -88,7 +96,10 @@ export function SingleSelect({
                   key={option.value}
                   type="button"
                   className={cn(
-                    'w-full cursor-pointer px-4 py-3 text-left text-sm transition-colors hover:bg-[#f5f5f5]',
+                    'w-full cursor-pointer px-4',
+                    optionPadding,
+                    textClass,
+                    'text-left transition-colors hover:bg-[#f5f5f5]',
                     resolvedValue === option.value ? 'bg-[#f5f5f5]' : null,
                   )}
                   onClick={() => {
@@ -111,7 +122,7 @@ export function SingleSelect({
       {label ? <span className="block text-xs tracking-widest text-black/80 font-brand">{label}</span> : null}
       <select
         id={selectId}
-        className={cn(controlBaseClass, 'cursor-pointer pr-8', className)}
+        className={cn(controlBaseClass, 'cursor-pointer pr-8', heightClass, textClass, className)}
         value={value}
         defaultValue={defaultValue}
         disabled={disabled}

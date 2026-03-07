@@ -8,5 +8,5 @@ interface RadioGroupProps {
 }
 
 export default function RadioGroup({ name, options, selectedValue, onChange }: RadioGroupProps) {
-  return <RadioButtonGroup name={name} options={options} value={selectedValue} onChange={onChange} />;
+  return <RadioButtonGroup name={name} options={options} value={selectedValue} onChange={onChange}  size="md"/>;
 }

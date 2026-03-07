@@ -333,7 +333,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
               setSuccess(null);
               setOtpDigits([...EMPTY_OTP_DIGITS]);
             }}
-          >
+           size="md">
             メールアドレスを変更
           </Button>
         ) : null}

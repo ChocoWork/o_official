@@ -1,5 +1,8 @@
 import { Button } from './Button';
 import { cn } from '@/lib/utils';
+import { ComponentSize } from './types';
+
+import type { UIButtonSize } from './Button';
 
 export interface StepperProps {
   value: number;
@@ -10,6 +13,7 @@ export interface StepperProps {
   label?: string;
   variant?: 'compact' | 'field';
   className?: string;
+  size?: ComponentSize;
 }
 
 export function Stepper({
@@ -21,10 +25,59 @@ export function Stepper({
   label,
   variant = 'compact',
   className,
+  size = 'md',
 }: StepperProps) {
   const clamp = (nextValue: number) => Math.min(max, Math.max(min, nextValue));
   const next = clamp(value + step);
   const prev = clamp(value - step);
+
+  // size-dependent classes via explicit maps for clarity
+  // height should match Button height for each size
+  const heightClassMap: Record<ComponentSize, string> = {
+    sm: 'h-8', // matches Button.sm
+    md: 'h-10', // matches Button.md
+    lg: 'h-12', // matches Button.lg
+  };
+  const textClassMap: Record<ComponentSize, string> = {
+    sm: 'text-xs',
+    md: 'text-sm',
+    lg: 'text-base',
+  };
+  // make side button width equal height to form square buttons
+  const sideButtonWidthMap: Record<ComponentSize, string> = {
+    sm: 'w-8',
+    md: 'w-10',
+    lg: 'w-12',
+  };
+  const iconBoxClassMap: Record<ComponentSize, string> = {
+    sm: 'h-3 w-3',
+    md: 'h-4 w-4',
+    lg: 'h-6 w-6',
+  };
+  const iconClassMap: Record<ComponentSize, string> = {
+    sm: 'text-sm',
+    md: 'text-base',
+    lg: 'text-lg',
+  };
+  const compactButtonSizeMap: Record<ComponentSize, UIButtonSize> = {
+    sm: 'sm',
+    md: 'sm',
+    lg: 'md',
+  };
+  // compact variant input width scaled relative to height
+  const compactInputWidthMap: Record<ComponentSize, string> = {
+    sm: 'w-8',
+    md: 'w-10',
+    lg: 'w-12',
+  };
+  const heightClass = heightClassMap[size];
+  const textClass = textClassMap[size];
+  const sideButtonWidth = sideButtonWidthMap[size];
+  const iconBoxClass = iconBoxClassMap[size];
+  const iconClass = iconClassMap[size];
+  const compactButtonSize = compactButtonSizeMap[size];
+  const compactInputWidth = compactInputWidthMap[size];
+
 
   if (variant === 'field') {
     return (
@@ -33,16 +86,16 @@ export function Stepper({
         <div className="flex items-center border border-black/20">
           <button
             type="button"
-            className="flex h-12 w-12 cursor-pointer items-center justify-center transition-colors hover:bg-[#f5f5f5]"
+            className={cn('flex cursor-pointer items-center justify-center transition-colors hover:bg-[#f5f5f5]', heightClass, sideButtonWidth)}
             onClick={() => onChange(prev)}
             aria-label="decrease"
           >
-            <span className="flex h-4 w-4 items-center justify-center">
-              <i className="ri-subtract-line text-base"></i>
+            <span className={cn('flex items-center justify-center', iconBoxClass)}>
+              <i className={cn('ri-subtract-line', iconClass)}></i>
             </span>
           </button>
           <input
-            className="h-12 flex-1 text-center text-sm focus:outline-none appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-moz-appearance]:textfield"
+            className={cn(heightClass, 'flex-1 text-center', textClass, 'focus:outline-none appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-moz-appearance]:textfield')}
             type="number"
             min={min}
             max={max}
@@ -66,12 +119,12 @@ export function Stepper({
           />
           <button
             type="button"
-            className="flex h-12 w-12 cursor-pointer items-center justify-center transition-colors hover:bg-[#f5f5f5]"
+            className={cn('flex cursor-pointer items-center justify-center transition-colors hover:bg-[#f5f5f5]', heightClass, sideButtonWidth)}
             onClick={() => onChange(next)}
             aria-label="increase"
           >
-            <span className="flex h-4 w-4 items-center justify-center">
-              <i className="ri-add-line text-base"></i>
+            <span className={cn('flex items-center justify-center', iconBoxClass)}>
+              <i className={cn('ri-add-line', iconClass)}></i>
             </span>
           </button>
         </div>
@@ -81,11 +134,16 @@ export function Stepper({
 
   return (
     <div className={cn('inline-flex items-center border border-black/20', className)}>
-      <Button size="sm" variant="ghost" onClick={() => onChange(prev)} aria-label="decrease">
+      <Button
+        size={compactButtonSize}
+        variant="ghost"
+        onClick={() => onChange(prev)}
+        aria-label="decrease"
+      >
         −
       </Button>
       <input
-        className="w-12 text-center text-sm focus:outline-none appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-moz-appearance]:textfield"
+        className={cn(compactInputWidth, 'text-center', textClass, 'focus:outline-none appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-moz-appearance]:textfield')}
         type="number"
         min={min}
         max={max}
@@ -107,7 +165,12 @@ export function Stepper({
           }
         }}
       />
-      <Button size="sm" variant="ghost" onClick={() => onChange(next)} aria-label="increase">
+      <Button
+        size={compactButtonSize}
+        variant="ghost"
+        onClick={() => onChange(next)}
+        aria-label="increase"
+      >
         ＋
       </Button>
     </div>

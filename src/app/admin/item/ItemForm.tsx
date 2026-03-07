@@ -1,12 +1,14 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import Image from 'next/image';
+// preview images now handled by Card component
 import { useRouter } from 'next/navigation';
 import { Button } from '@/app/components/ui/Button';
 import { ColorPicker } from '@/app/components/ui/ColorPicker';
 import { RadioButtonGroup } from '@/app/components/ui/RadioButtonGroup';
 import { SingleSelect } from '@/app/components/ui/SingleSelect';
+import { MultiSelect } from '@/app/components/ui/MultiSelect';
+import { Card } from '@/app/components/ui/Card';
 import { TextAreaField } from '@/app/components/ui/TextAreaField';
 import { TextField } from '@/app/components/ui/TextField';
 import { clientFetch } from '@/lib/client-fetch';
@@ -264,15 +266,6 @@ export function ItemForm({
     })();
   };
 
-  const handleSizeToggle = (size: string) => {
-    const newSizes = new Set(selectedSizes);
-    if (newSizes.has(size)) {
-      newSizes.delete(size);
-    } else {
-      newSizes.add(size);
-    }
-    setSelectedSizes(newSizes);
-  };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -379,31 +372,12 @@ export function ItemForm({
         <form className="space-y-8" onSubmit={handleSubmit}>
           {/* image upload section same as before */}
           <div>
-            <label className="block text-sm tracking-widest mb-4">商品画像</label>
-            <div className="grid grid-cols-2 gap-4 mb-6">
-              {previewUrls.map((url, index) => (
-                <div
-                  key={index}
-                  className="relative aspect-[3/4] bg-[#f5f5f5] overflow-hidden border border-black/20"
-                >
-                  <Image
-                    src={url}
-                    alt={`プレビュー ${index + 1}`}
-                    fill
-                    className="w-full h-full object-cover object-center"
-                    unoptimized
-                  />
-                  <Button
-                    type="button"
-                    onClick={() => removeImage(index)}
-                    size="sm"
-                    className="absolute top-2 right-2 h-8 w-8 p-0"
-                  >
-                    ×
-                  </Button>
-                </div>
-              ))}
-            </div>
+            <Card
+              label="商品画像"
+              previewUrls={previewUrls}
+              onRemovePreview={removeImage}
+              className="p-0 border-0"
+            />
             <div
               role="button"
               tabIndex={0}
@@ -447,6 +421,7 @@ export function ItemForm({
             value={category}
             onValueChange={(val) => setCategory(val as (typeof CATEGORIES)[number])}
             className="font-acumin"
+            size="sm"
           />
 
           <TextField 
@@ -456,7 +431,7 @@ export function ItemForm({
             type="text"
             value={itemName}
             onChange={(e) => setItemName(e.target.value)}
-          />
+           size="sm"/>
 
           <TextField 
             required
@@ -465,7 +440,7 @@ export function ItemForm({
             type="number"
             value={price}
             onChange={(e) => setPrice(e.target.value)}
-          />
+           size="sm"/>
 
           <TextAreaField
             label="商品情報"
@@ -474,27 +449,27 @@ export function ItemForm({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             required
+            size="sm"
           />
 
 
           <div>
-            <label className="block text-sm tracking-widest mb-4">カラー</label>
             <div className="space-y-4 mb-4">
               {colors.map((color) => (
                 <div key={color.id} className="flex gap-3 items-end">
                   <TextField
+                    label="カラー"
                     className="flex-1"
                     placeholder="カラー名"
                     type="text"
                     value={color.name}
                     onChange={(e) => handleColorChange(color.id, 'name', e.target.value)}
-                  />
+                    size="sm"/>
                   <ColorPicker
                     value={color.hex}
                     onChange={(e) => handleColorChange(color.id, 'hex', e.target.value)}
                     aria-label="カラーを選択"
-                    className="h-10 w-10"
-                  />
+                    size="sm"/>
                   <Button
                     type="button"
                     onClick={() => handleSaveColor(color)}
@@ -516,7 +491,7 @@ export function ItemForm({
                 </div>
               ))}
             </div>
-            <Button type="button" onClick={handleAddColor} variant="secondary" size="sm">
+            <Button type="button" onClick={handleAddColor} variant="primary" size="sm">
               カラーを追加
             </Button>
             {savedColors.length > 0 && (
@@ -554,43 +529,35 @@ export function ItemForm({
             )}
           </div>
 
-          <div>
-            <label className="block text-sm tracking-widest mb-4">サイズ（複数選択可能）</label>
-            <div className="flex gap-3 flex-wrap">
-              {SIZES.map((size) => (
-                <button
-                  key={size}
-                  type="button"
-                  onClick={() => handleSizeToggle(size)}
-                  className={`px-6 py-2 text-xs tracking-widest transition-all duration-300 cursor-pointer whitespace-nowrap border ${
-                    selectedSizes.has(size)
-                      ? 'border-black bg-black text-white'
-                      : 'border-black text-black hover:bg-black hover:text-white'
-                  }`}
-                >
-                  {size}
-                </button>
-              ))}
-            </div>
-          </div>
+          <MultiSelect
+            label="サイズ（複数選択可能）"
+            variant="buttons"
+            options={SIZES.map((s) => ({ value: s, label: s }))}
+            values={Array.from(selectedSizes)}
+            onChange={(vals) => setSelectedSizes(new Set(vals))}
+            size="sm"
+          />
 
-          <div>
-            <label className="block text-sm tracking-widest mb-2">PRODUCT DETAILS（素材・洗濯の情報）</label>
-            <TextAreaField rows={6} value={productDetails} onChange={(e) => setProductDetails(e.target.value)} required />
-          </div>
 
-          <div>
-            <label className="block text-sm tracking-widest mb-2">ステータス</label>
-            <RadioButtonGroup
-              name="status"
-              value={status}
-              onChange={(value) => setStatus(value as ItemStatus)}
-              options={[
-                { value: 'private', label: '非公開' },
-                { value: 'published', label: '公開' },
-              ]}
-            />
-          </div>
+          <TextAreaField
+            required
+            label='PRODUCT DETAILS（素材・洗濯の情報）'
+            rows={6}
+            value={productDetails}
+            onChange={(e) => setProductDetails(e.target.value)}
+            size="md"
+          />
+
+          <RadioButtonGroup
+            label="ステータス"
+            name="status"
+            value={status}
+            onChange={(value) => setStatus(value as ItemStatus)}
+            options={[
+              { value: 'private', label: '非公開' },
+              { value: 'published', label: '公開' },
+            ]}
+           size="md"/>
 
           {submitSuccess && (
             <p className="text-sm text-black" role="status">
@@ -610,10 +577,10 @@ export function ItemForm({
               onClick={() => router.push('/admin?tab=ITEM')}
               disabled={isSubmitting}
               variant="secondary"
-            >
+             size="md">
               キャンセル
             </Button>
-            <Button type="submit" disabled={isSubmitting}>
+            <Button type="submit" disabled={isSubmitting} size="md">
               {isSubmitting ? `${submitLabel}中...` : submitLabel}
             </Button>
           </div>

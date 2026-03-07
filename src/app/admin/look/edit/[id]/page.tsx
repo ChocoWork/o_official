@@ -266,7 +266,7 @@ export default function AdminLookEditPage() {
                   value={String(seasonYear)}
                   onChange={(e) => setSeasonYear(Number(e.target.value))}
                   options={yearOptions.map((year) => ({ value: String(year), label: String(year) }))}
-                />
+                 size="md"/>
               </div>
               <div className="min-w-[110px]">
                 <SingleSelect
@@ -276,14 +276,14 @@ export default function AdminLookEditPage() {
                     { value: 'SS', label: 'SS' },
                     { value: 'AW', label: 'AW' },
                   ]}
-                />
+                 size="md"/>
               </div>
             </div>
           </div>
 
           <div>
             <label className="block text-sm tracking-widest mb-2">シーズンテーマ</label>
-            <TextField placeholder="例: Effortless Elegance" required type="text" value={theme} onChange={(e) => setTheme(e.target.value)} />
+            <TextField placeholder="例: Effortless Elegance" required type="text" value={theme} onChange={(e) => setTheme(e.target.value)}  size="md"/>
           </div>
 
           <div>
@@ -293,7 +293,7 @@ export default function AdminLookEditPage() {
               rows={4}
               value={themeDescription}
               onChange={(e) => setThemeDescription(e.target.value)}
-            />
+             size="md"/>
           </div>
 
           <div>
@@ -410,7 +410,7 @@ export default function AdminLookEditPage() {
                 { value: 'private', label: '非公開' },
                 { value: 'published', label: '公開' },
               ]}
-            />
+             size="md"/>
           </div>
 
           {submitSuccess && (
@@ -430,13 +430,13 @@ export default function AdminLookEditPage() {
               type="button"
               onClick={() => router.push('/admin?tab=LOOK')}
               variant="secondary"
-            >
+             size="md">
               キャンセル
             </Button>
             <Button
               type="submit"
               disabled={isSubmitting}
-            >
+             size="md">
               {isSubmitting ? '更新中...' : '更新'}
             </Button>
           </div>

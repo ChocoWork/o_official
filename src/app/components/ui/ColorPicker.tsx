@@ -1,18 +1,20 @@
 import { cn } from '@/lib/utils';
 import type { ChangeEventHandler, InputHTMLAttributes } from 'react';
+import { ComponentSize } from './types';
 
 interface ColorPreset {
   value: string;
   swatchClass?: string;
 }
 
-export interface ColorPickerProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'onChange'> {
+export interface ColorPickerProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'onChange' | 'size'> {
   label?: string;
   variant?: 'input' | 'preset' | 'custom';
   presets?: ReadonlyArray<ColorPreset>;
   value?: string;
   onChange?: ChangeEventHandler<HTMLInputElement>;
   onValueChange?: (value: string) => void;
+  size?: ComponentSize;
 }
 
 export function ColorPicker({
@@ -23,8 +25,10 @@ export function ColorPicker({
   value = '#000000',
   onChange,
   onValueChange,
+  size = 'md',
   ...props
 }: ColorPickerProps) {
+  const sizeClass = size === 'sm' ? 'h-8 w-8' : size === 'lg' ? 'h-12 w-12' : 'h-10 w-10';
   const handleColorInputChange: ChangeEventHandler<HTMLInputElement> = (event) => {
     onChange?.(event);
     onValueChange?.(event.target.value);
@@ -40,7 +44,8 @@ export function ColorPicker({
               key={preset.value}
               type="button"
               className={cn(
-                'h-10 w-10 cursor-pointer rounded-full border-2 transition-all',
+                sizeClass,
+                'cursor-pointer rounded-full border-2 transition-all',
                 preset.swatchClass,
                 preset.value === value ? 'border-black' : 'border-black/20',
               )}
@@ -85,7 +90,7 @@ export function ColorPicker({
   // for the default 'input' variant we now always render a circular swatch
   if (variant === 'input') {
     return (
-      <label className="relative inline-block">
+      <label className={cn('relative inline-block', sizeClass)}>
         {label ? <span className="sr-only">{label}</span> : null}
         <input
           type="color"

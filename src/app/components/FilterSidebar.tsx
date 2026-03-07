@@ -10,7 +10,7 @@ interface FilterSidebarProps {
 const FilterSidebar: React.FC<FilterSidebarProps> = ({ open, onClose }) => {
   return (
     <div className={open ? styles.sidebarOpen : styles.sidebarClosed}>
-      <Button className={styles.closeButton} variant="ghost" onClick={onClose}>×</Button>
+      <Button className={styles.closeButton} variant="ghost" onClick={onClose} size="md">×</Button>
       <div className={styles.content}>
         {/* ここにフィルターUIを追加 */}
         <h2>フィルター</h2>

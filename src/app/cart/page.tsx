@@ -226,7 +226,7 @@ export default function CartPage() {
                             value={item.quantity}
                             min={1}
                             onChange={(value) => handleQuantityChange(item.id, value)}
-                          />
+                           size="sm"/>
                         </div>
                       </div>
                     </div>
@@ -259,7 +259,7 @@ export default function CartPage() {
                     placeholder="コードを入力"
                     className="flex-1 px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors font-brand"
                     type="text"
-                  />
+                   size="md"/>
                   <Button size="md" className="font-brand">適用</Button>
                 </div>
                 <p className="text-xs text-[#474747] mt-2 font-brand">

@@ -180,11 +180,11 @@ export default function CheckoutPage() {
                   <div>
                     <h2 className="text-2xl text-black mb-8 tracking-tight font-display">配送情報</h2>
                     <div className="space-y-6">
-                      <TextField required label="メールアドレス" type="email" name="email" autoComplete="email" value={shippingForm.email} onChange={handleShippingChange} className="font-brand" />
+                      <TextField required label="メールアドレス" type="email" name="email" autoComplete="email" value={shippingForm.email} onChange={handleShippingChange} className="font-brand"  size="md"/>
 
-                      <TextField required label="氏名" type="text" name="fullName" autoComplete="name" value={shippingForm.fullName} onChange={handleShippingChange} className="font-brand" />
+                      <TextField required label="氏名" type="text" name="fullName" autoComplete="name" value={shippingForm.fullName} onChange={handleShippingChange} className="font-brand"  size="md"/>
 
-                      <TextField required label="郵便番号" placeholder="123-4567" type="text" name="postalCode" autoComplete="postal-code" value={shippingForm.postalCode} onChange={handleShippingChange} className="font-brand" />
+                      <TextField required label="郵便番号" placeholder="123-4567" type="text" name="postalCode" autoComplete="postal-code" value={shippingForm.postalCode} onChange={handleShippingChange} className="font-brand"  size="md"/>
 
                       <SingleSelect
                         name="prefecture"
@@ -202,15 +202,15 @@ export default function CheckoutPage() {
                           { value: '愛知県', label: '愛知県' },
                           { value: '福岡県', label: '福岡県' },
                         ]}
-                      />
+                       size="md"/>
 
-                      <TextField required label="市区町村" type="text" name="city" autoComplete="address-level2" value={shippingForm.city} onChange={handleShippingChange} className="font-brand" />
+                      <TextField required label="市区町村" type="text" name="city" autoComplete="address-level2" value={shippingForm.city} onChange={handleShippingChange} className="font-brand"  size="md"/>
 
-                      <TextField required label="番地" type="text" name="address" autoComplete="street-address" value={shippingForm.address} onChange={handleShippingChange} className="font-brand" />
+                      <TextField required label="番地" type="text" name="address" autoComplete="street-address" value={shippingForm.address} onChange={handleShippingChange} className="font-brand"  size="md"/>
 
-                      <TextField label="建物名・部屋番号（任意）" type="text" name="building" value={shippingForm.building} onChange={handleShippingChange} className="font-brand" />
+                      <TextField label="建物名・部屋番号（任意）" type="text" name="building" value={shippingForm.building} onChange={handleShippingChange} className="font-brand"  size="md"/>
 
-                      <TextField required label="電話番号" placeholder="090-1234-5678" type="tel" name="phone" autoComplete="tel" value={shippingForm.phone} onChange={handleShippingChange} className="font-brand" />
+                      <TextField required label="電話番号" placeholder="090-1234-5678" type="tel" name="phone" autoComplete="tel" value={shippingForm.phone} onChange={handleShippingChange} className="font-brand"  size="md"/>
 
                       <Checkbox
                         id="saveProfile"
@@ -218,7 +218,7 @@ export default function CheckoutPage() {
                         checked={shippingForm.saveProfile}
                         onChange={handleShippingChange}
                         label="氏名と電話番号をプロフィールに任意保存する"
-                      />
+                       size="md"/>
                     </div>
                   </div>
 
@@ -277,14 +277,14 @@ export default function CheckoutPage() {
                           { value: 'bank', label: '銀行振込' },
                           { value: 'cod', label: '代金引換' },
                         ]}
-                      />
+                       size="md"/>
 
                       <div className="space-y-6 pt-6">
-                        <TextField required label="カード番号" placeholder="1234 5678 9012 3456" type="text" name="cardNumber" defaultValue={""} className="font-brand" />
-                        <TextField required label="カード名義" placeholder="TARO YAMADA" type="text" name="cardName" defaultValue={""} className="font-brand" />
+                        <TextField required label="カード番号" placeholder="1234 5678 9012 3456" type="text" name="cardNumber" defaultValue={""} className="font-brand"  size="md"/>
+                        <TextField required label="カード名義" placeholder="TARO YAMADA" type="text" name="cardName" defaultValue={""} className="font-brand"  size="md"/>
                         <div className="grid grid-cols-2 gap-4">
-                          <TextField required label="有効期限" placeholder="MM/YY" type="text" name="expiryDate" defaultValue={""} className="font-brand" />
-                          <TextField required label="セキュリティコード" placeholder="123" type="text" name="cvv" defaultValue={""} className="font-brand" />
+                          <TextField required label="有効期限" placeholder="MM/YY" type="text" name="expiryDate" defaultValue={""} className="font-brand"  size="md"/>
+                          <TextField required label="セキュリティコード" placeholder="123" type="text" name="cvv" defaultValue={""} className="font-brand"  size="md"/>
                         </div>
                       </div>
                     </div>

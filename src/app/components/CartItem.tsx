@@ -53,7 +53,7 @@ export const CartItem: React.FC<CartItemProps> = ({
                   min={1}
                   max={item.inStock ? Number.MAX_SAFE_INTEGER : item.quantity}
                   onChange={handleQuantityChange}
-                />
+                 size="md"/>
               </div>
             </div>
             

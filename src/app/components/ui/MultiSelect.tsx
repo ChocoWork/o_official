@@ -2,6 +2,7 @@ import { Checkbox } from './Checkbox';
 import { cn } from '@/lib/utils';
 import { useEffect, useRef, useState } from 'react';
 import type { SelectOption } from './shared';
+import { ComponentSize } from './types';
 
 export interface MultiSelectProps {
   options: SelectOption[];
@@ -9,7 +10,8 @@ export interface MultiSelectProps {
   onChange: (values: string[]) => void;
   label?: string;
   placeholder?: string;
-  variant?: 'panel' | 'dropdown';
+  variant?: 'panel' | 'dropdown' | 'buttons'; // button-style toggle group
+  size?: ComponentSize;
   className?: string;
 }
 
@@ -20,6 +22,7 @@ export function MultiSelect({
   label,
   placeholder = '選択してください',
   variant = 'panel',
+  size = 'md',
   className,
 }: MultiSelectProps) {
   const [open, setOpen] = useState(false);
@@ -46,6 +49,59 @@ export function MultiSelect({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [open, variant]);
 
+  // size-specific helpers using explicit maps
+  const heightClassMap: Record<ComponentSize, string> = {
+    sm: 'h-8',
+    md: 'h-10',
+    lg: 'h-12',
+  };
+  const textClassMap: Record<ComponentSize, string> = {
+    sm: 'text-sm', // smaller text same as md earlier
+    md: 'text-sm',
+    lg: 'text-base',
+  };
+  const buttonTextSizeMap: Record<ComponentSize, string> = {
+    sm: 'text-xs',
+    md: 'text-sm',
+    lg: 'text-base',
+  };
+  const buttonPadMap: Record<ComponentSize, string> = {
+    sm: 'px-4 py-1',
+    md: 'px-6 py-2',
+    lg: 'px-8 py-3',
+  };
+  const heightClass = heightClassMap[size];
+  const textClass = textClassMap[size];
+  const buttonTextSize = buttonTextSizeMap[size];
+  const buttonPad = buttonPadMap[size];
+
+  if (variant === 'buttons') {
+    return (
+      <div className={cn('space-y-2', className)} ref={wrapperRef}>
+        {label ? <span className="block text-xs tracking-widest text-black/80 font-brand">{label}</span> : null}
+        <div className="flex gap-3 flex-wrap">
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => handleChange(option.value)}
+              className={cn(
+                buttonPad,
+                buttonTextSize,
+                'tracking-widest transition-all duration-300 cursor-pointer whitespace-nowrap border',
+                values.includes(option.value)
+                  ? 'border-black bg-black text-white'
+                  : 'border-black text-black hover:bg-black hover:text-white',
+              )}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   if (variant === 'dropdown') {
     return (
       <div className={cn('space-y-2', className)} ref={wrapperRef}>
@@ -53,7 +109,12 @@ export function MultiSelect({
         <div className="relative">
           <button
             type="button"
-            className="w-full cursor-pointer border border-black/20 px-4 py-3 text-left text-sm focus:border-black focus:outline-none transition-colors flex items-center justify-between"
+            className={cn(
+              'w-full cursor-pointer border border-black/20 text-left focus:border-black focus:outline-none transition-colors flex items-center justify-between',
+              heightClass,
+              textClass,
+              'px-4',
+            )}
             onClick={() => setOpen((previous) => !previous)}
             aria-haspopup="listbox"
             aria-expanded={open}
@@ -97,6 +158,7 @@ export function MultiSelect({
             checked={values.includes(option.value)}
             onChange={() => handleChange(option.value)}
             label={option.label}
+            size={size}
           />
         ))}
       </div>

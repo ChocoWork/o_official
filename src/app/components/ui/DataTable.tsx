@@ -20,6 +20,7 @@ export interface DataTableProps<T> {
   headerClassName?: string;
   rowClassName?: string | ((row: T, index: number) => string);
   hoverableRows?: boolean;
+  size?: ComponentSize;
 }
 
 export function DataTable<T>({
@@ -32,7 +33,23 @@ export function DataTable<T>({
   headerClassName,
   rowClassName,
   hoverableRows = false,
+  size = 'md',
 }: DataTableProps<T>) {
+  // size maps
+  const paddingMap = {
+    sm: { px: 'px-3', py: 'py-2' },
+    md: { px: 'px-6', py: 'py-4' },
+    lg: { px: 'px-8', py: 'py-6' },
+  } as const;
+  const textMap = {
+    sm: { header: 'text-xs', cell: 'text-sm', empty: 'text-xs' },
+    md: { header: 'text-xs', cell: 'text-sm', empty: 'text-sm' },
+    lg: { header: 'text-sm', cell: 'text-base', empty: 'text-sm' },
+  } as const;
+
+  const { px, py } = paddingMap[size];
+  const { header: headerText, cell: cellText, empty: emptyText } = textMap[size];
+
   return (
     <div className={cn('overflow-x-auto border border-[#d5d0c9]', containerClassName)}>
       <table className={cn('w-full min-w-[720px]', tableClassName)}>
@@ -42,7 +59,10 @@ export function DataTable<T>({
               <th
                 key={column.key}
                 className={cn(
-                  'px-6 py-4 text-left text-xs tracking-widest text-[#474747] font-acumin',
+                  px,
+                  py,
+                  'text-left tracking-widest text-[#474747] font-acumin',
+                  headerText,
                   column.className,
                   column.headerClassName,
                 )}
@@ -55,7 +75,7 @@ export function DataTable<T>({
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td className="px-6 py-10 text-center text-sm text-[#474747]" colSpan={columns.length}>
+              <td className={cn(px, py, 'text-center', emptyText, 'text-[#474747]')} colSpan={columns.length}>
                 {emptyLabel}
               </td>
             </tr>
@@ -72,7 +92,7 @@ export function DataTable<T>({
                 {columns.map((column) => (
                   <td
                     key={column.key}
-                    className={cn('px-6 py-4 text-sm text-black', column.className, column.cellClassName)}
+                    className={cn(px, py, cellText, 'text-black', column.className, column.cellClassName)}
                   >
                     {column.render(row)}
                   </td>

@@ -2,7 +2,9 @@
 
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
+import { Button } from './Button';
 import { useState, type ReactNode } from 'react';
+import { ComponentSize } from './types';
 
 export interface CarouselSlide {
   src: string;
@@ -18,6 +20,8 @@ export interface CarouselProps {
   showDots?: boolean;
   showArrows?: boolean;
   className?: string;
+  /** demo-friendly size: sm/md/lg */
+  size?: ComponentSize;
 }
 
 export function Carousel({
@@ -29,6 +33,7 @@ export function Carousel({
   showDots = true,
   showArrows = true,
   className,
+  size = 'md',
 }: CarouselProps) {
   const [internalIndex, setInternalIndex] = useState(0);
   const currentIndex = index ?? internalIndex;
@@ -49,9 +54,31 @@ export function Carousel({
   if (slides && slides.length > 0) {
     const activeSlide = slides[currentIndex] ?? slides[0];
 
+    // size-based style maps
+    const aspectMap: Record<ComponentSize, string> = {
+      sm: 'aspect-[4/3]',
+      md: 'aspect-[16/10]',
+      lg: 'aspect-[16/9]',
+    };
+    // container width similar to MapView sizing
+    const containerWidthMap: Record<ComponentSize, string> = {
+      sm: 'w-1/2',
+      md: 'w-3/4',
+      lg: 'w-full',
+    };
+    const arrowIconMap: Record<ComponentSize, string> = {
+      sm: 'text-lg',
+      md: 'text-2xl',
+      lg: 'text-3xl',
+    };
+    // dots: small fixed circle, active expands to fixed width
+    // regardless of carousel size, follow sample w-2 h-2 rounded-full bg-white w-6
+    const dotActiveWidth = 'w-6';
+    const dotInactiveSize = 'w-2 h-2';
+
     return (
-      <div className={cn('relative mx-auto max-w-4xl', className)}>
-        <div className={cn('relative aspect-[16/10] overflow-hidden bg-[#f5f5f5]', aspectClassName)}>
+      <div className={cn('relative mx-auto', containerWidthMap[size], className)}>
+        <div className={cn('relative overflow-hidden bg-[#f5f5f5]', aspectMap[size], aspectClassName)}>
           <Image
             alt={activeSlide.alt}
             className="h-full w-full object-cover object-top"
@@ -62,24 +89,24 @@ export function Carousel({
           />
           {showArrows ? (
             <>
-              <button
-                type="button"
-                className="absolute left-4 top-1/2 flex h-12 w-12 -translate-y-1/2 cursor-pointer items-center justify-center bg-white/90 transition-colors hover:bg-white"
+              <Button
+                size={size === 'sm' ? 'sm' : size === 'lg' ? 'lg' : 'md'}
+                variant="ghost"
+                className={cn('absolute left-4 top-1/2 flex -translate-y-1/2', 'bg-white/90', 'hover:bg-white',
+                  'items-center justify-center px-0', 'aspect-square')}
                 onClick={() => setCurrentIndex(currentIndex - 1)}
               >
-                <div className="flex h-6 w-6 items-center justify-center">
-                  <i className="ri-arrow-left-s-line text-2xl"></i>
-                </div>
-              </button>
-              <button
-                type="button"
-                className="absolute right-4 top-1/2 flex h-12 w-12 -translate-y-1/2 cursor-pointer items-center justify-center bg-white/90 transition-colors hover:bg-white"
+                <i className={cn('ri-arrow-left-s-line', arrowIconMap[size])}></i>
+              </Button>
+              <Button
+                size={size === 'sm' ? 'sm' : size === 'lg' ? 'lg' : 'md'}
+                variant="ghost"
+                className={cn('absolute right-4 top-1/2 flex -translate-y-1/2', 'bg-white/90', 'hover:bg-white',
+                  'items-center justify-center px-0', 'aspect-square')}
                 onClick={() => setCurrentIndex(currentIndex + 1)}
               >
-                <div className="flex h-6 w-6 items-center justify-center">
-                  <i className="ri-arrow-right-s-line text-2xl"></i>
-                </div>
-              </button>
+                <i className={cn('ri-arrow-right-s-line', arrowIconMap[size])}></i>
+              </Button>
             </>
           ) : null}
           {showDots ? (
@@ -90,7 +117,9 @@ export function Carousel({
                   type="button"
                   className={cn(
                     'cursor-pointer transition-all',
-                    currentIndex === slideIndex ? 'h-2 w-6 rounded-full bg-white' : 'h-2 w-2 rounded-full bg-white/50',
+                    currentIndex === slideIndex
+                      ? cn('rounded-full bg-white', dotInactiveSize, dotActiveWidth)
+                      : cn('rounded-full bg-white/50', dotInactiveSize),
                   )}
                   onClick={() => setCurrentIndex(slideIndex)}
                 ></button>

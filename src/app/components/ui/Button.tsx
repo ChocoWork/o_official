@@ -17,9 +17,9 @@ const buttonVariantClass: Record<UIButtonVariant, string> = {
 };
 
 const buttonSizeClass: Record<UIButtonSize, string> = {
-  sm: 'px-3 py-2 text-xs',
-  md: 'px-6 py-3 text-sm',
-  lg: 'px-8 py-4 text-sm',
+  sm: 'h-8 text-xs px-3',
+  md: 'h-10 text-sm px-4',
+  lg: 'h-12 text-sm px-5',
 };
 
 // union of button and anchor attributes so `href` use works

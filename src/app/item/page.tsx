@@ -73,7 +73,7 @@ export default function ItemPage() {
               activeKey={selectedCategory ?? 'ALL'}
               onChange={(category) => setSelectedCategory(category === 'ALL' ? null : category)}
               variant="segment-pill"
-            />
+             size="md"/>
           </div>
         </div>
 

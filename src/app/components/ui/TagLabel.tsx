@@ -1,5 +1,6 @@
 import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
+import { ComponentSize } from './types';
 
 export interface TagLabelProps {
   children: ReactNode;
@@ -8,6 +9,8 @@ export interface TagLabelProps {
   removable?: boolean;
   onRemove?: () => void;
   className?: string;
+  /** demo size (sm/md/lg) */
+  size?: ComponentSize;
 }
 
 export function TagLabel({
@@ -17,11 +20,19 @@ export function TagLabel({
   removable = false,
   onRemove,
   className,
+  size = 'md',
 }: TagLabelProps) {
+  const paddingMap: Record<ComponentSize, string> = {
+    sm: 'px-2 py-0.5 text-[10px]',
+    md: 'px-3 py-1 text-xs',
+    lg: 'px-4 py-1.5 text-s',
+  };
+
   return (
     <span
       className={cn(
-        'inline-flex items-center px-3 py-1 text-xs tracking-widest',
+        'inline-flex items-center tracking-widest',
+        paddingMap[size],
         removable ? 'gap-2' : null,
         variant === 'solid' ? 'bg-black text-white' : null,
         variant === 'outline' ? 'border border-black text-black' : null,

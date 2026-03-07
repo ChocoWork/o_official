@@ -94,7 +94,7 @@ export default function LookSection() {
 		<section>
 			<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 				{lookItems.map((item) => (
-					<Card key={item.id} className="overflow-hidden p-0">
+					<Card key={item.id} className="overflow-hidden p-0" size="md">
 						<Image
 							src={item.image_urls?.[0] || '/placeholder.png'}
 							alt={item.theme}
@@ -105,7 +105,7 @@ export default function LookSection() {
 						/>
 						<div className="p-4 space-y-3">
 							<div className="flex items-center space-x-2">
-								<StatusBadge tone={item.status === 'published' ? 'positive' : 'neutral'}>
+								<StatusBadge tone={item.status === 'published' ? 'positive' : 'neutral'} size="md">
 									{item.status === 'published' ? '公開中' : '非公開'}
 								</StatusBadge>
 							</div>

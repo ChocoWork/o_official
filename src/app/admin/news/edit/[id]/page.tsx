@@ -212,7 +212,7 @@ export default function EditNewsPage() {
     <main className="pt-32 pb-20">
       <div className="max-w-4xl mx-auto px-6 lg:px-12">
         <form onSubmit={handleSubmit} className="space-y-8">
-          <TextField label="タイトル" type="text" name="title" value={formData.title} onChange={handleInputChange} required className="font-acumin" />
+          <TextField label="タイトル" type="text" name="title" value={formData.title} onChange={handleInputChange} required className="font-acumin"  size="md"/>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <SingleSelect
@@ -228,9 +228,9 @@ export default function EditNewsPage() {
                 { value: 'SUSTAINABILITY', label: 'SUSTAINABILITY' },
                 { value: 'STORE', label: 'STORE' },
               ]}
-            />
+             size="md"/>
 
-            <TextField label="公開日" type="date" name="date" value={formData.date} onChange={handleInputChange} required className="font-acumin" />
+            <TextField label="公開日" type="date" name="date" value={formData.date} onChange={handleInputChange} required className="font-acumin"  size="md"/>
           </div>
 
           <div className="space-y-2">
@@ -295,7 +295,7 @@ export default function EditNewsPage() {
             required
             placeholder="一覧ページに表示される要約文を入力してください"
             className="font-acumin"
-          />
+           size="md"/>
 
           <TextAreaField
             label="本文（詳細）"
@@ -306,7 +306,7 @@ export default function EditNewsPage() {
             required
             placeholder="詳細ページに表示される本文を入力してください"
             className="font-acumin"
-          />
+           size="md"/>
 
           <div className="space-y-2">
             <label className="block text-xs tracking-wider text-[#474747] font-brand">ステータス</label>
@@ -318,7 +318,7 @@ export default function EditNewsPage() {
               ]}
               value={formData.status}
               onChange={handleStatusChange}
-            />
+             size="md"/>
           </div>
 
           <div className="flex gap-4">
@@ -327,14 +327,14 @@ export default function EditNewsPage() {
               onClick={() => router.push('/admin?tab=NEWS')}
               variant="secondary"
               className="font-acumin"
-            >
+             size="md">
               キャンセル
             </Button>
             <Button
               type="submit"
               disabled={isSubmitting}
               className="font-acumin"
-            >
+             size="md">
               {isSubmitting ? '更新中...' : '更新'}
             </Button>
           </div>

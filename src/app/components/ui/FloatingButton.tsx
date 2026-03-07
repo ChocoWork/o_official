@@ -1,5 +1,8 @@
 import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
+import { ComponentSize } from './types';
+import { Button } from './Button';
+import type { UIButtonSize } from './Button';
 
 export interface FloatingButtonAction {
   key: string;
@@ -16,6 +19,7 @@ export interface FloatingButtonProps {
   onOpenChange?: (open: boolean) => void;
   fixed?: boolean;
   className?: string;
+  size?: ComponentSize;
 }
 
 export function FloatingButton({
@@ -27,30 +31,38 @@ export function FloatingButton({
   onOpenChange,
   fixed = true,
   className,
+  size = 'md',
 }: FloatingButtonProps) {
   const hasActions = Boolean(actions && actions.length > 0);
+  const buttonSizeMap: Record<ComponentSize, UIButtonSize> = {
+    sm: 'sm',
+    md: 'md',
+    lg: 'lg',
+  };
+  const buttonSize = buttonSizeMap[size];
+  const actionsOffsetClass = size === 'sm' ? 'bottom-12' : size === 'lg' ? 'bottom-20' : 'bottom-16';
 
   return (
     <div className={cn('relative', fixed ? 'fixed bottom-6 right-6 z-40' : null, className)}>
       {hasActions && open ? (
-        <div className="absolute bottom-16 right-0 mb-3 space-y-3">
+        <div className={cn('absolute right-0 mb-3 space-y-3', actionsOffsetClass)}>
           {actions?.map((action) => (
-            <button
+            <Button
               key={action.key}
-              type="button"
-              className="flex h-12 w-12 cursor-pointer items-center justify-center border border-black/20 bg-white shadow-lg transition-all hover:bg-[#f5f5f5]"
+              size={buttonSize}
+              variant="ghost"
+              className={cn('flex items-center justify-center border border-black/20 bg-white shadow-lg transition-all hover:bg-[#f5f5f5]', 'px-0', 'aspect-square')}
               onClick={action.onClick}
             >
-              <div className="flex h-5 w-5 items-center justify-center">
-                <i className={cn(action.iconClass, 'text-xl')}></i>
-              </div>
-            </button>
+              <i className={cn(action.iconClass, 'text-xl')}></i>
+            </Button>
           ))}
         </div>
       ) : null}
 
-      <button
-        type="button"
+      <Button
+        size={buttonSize}
+        variant="ghost"
         onClick={() => {
           if (hasActions) {
             onOpenChange?.(!open);
@@ -60,8 +72,8 @@ export function FloatingButton({
         }}
         className={cn(
           hasActions
-            ? 'flex h-14 w-14 cursor-pointer items-center justify-center bg-black text-white shadow-2xl transition-all hover:bg-[#474747]'
-            : 'inline-flex h-14 min-w-14 items-center justify-center gap-2 rounded-full bg-black px-5 text-white shadow-sm transition-colors hover:bg-[#474747]',
+            ? 'flex items-center justify-center bg-black text-white shadow-2xl transition-all hover:bg-[#474747] px-0 aspect-square'
+            : 'inline-flex min-w-14 items-center justify-center gap-2 rounded-full bg-black px-5 text-white shadow-sm transition-colors hover:bg-[#474747]',
         )}
       >
         {hasActions ? (
@@ -74,7 +86,7 @@ export function FloatingButton({
             <span className="text-xs tracking-wider">{label}</span>
           </>
         )}
-      </button>
+      </Button>
     </div>
   );
 }

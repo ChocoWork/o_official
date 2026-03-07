@@ -63,7 +63,7 @@ export default function HomeNewsSection({ initialNews }: HomeNewsSectionProps) {
                       </span>
                       <TagLabel
                         className="font-acumin"
-                      >
+                       size="md">
                         {article.category}
                       </TagLabel>
                     </div>

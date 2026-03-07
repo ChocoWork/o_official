@@ -1,7 +1,8 @@
 import { cn } from '@/lib/utils';
 import type { InputHTMLAttributes } from 'react';
+import { ComponentSize } from './types';
 
-export interface SliderProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> {
+export interface SliderProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'size'> {
   label?: string;
   mode?: 'single' | 'range';
   value?: number;
@@ -9,6 +10,7 @@ export interface SliderProps extends Omit<InputHTMLAttributes<HTMLInputElement>,
   rangeValue?: [number, number];
   onRangeChange?: (value: [number, number]) => void;
   valueDisplay?: string;
+  size?: ComponentSize;
 }
 
 export function Slider({
@@ -23,8 +25,10 @@ export function Slider({
   min = 0,
   max = 100,
   step = 1,
+  size = 'md',
   ...props
 }: SliderProps) {
+  const sliderHeight = size === 'sm' ? 'h-1' : size === 'lg' ? 'h-3' : 'h-2';
   if (mode === 'range' && rangeValue && onRangeChange) {
     const rangeMin = Math.min(rangeValue[0], rangeValue[1]);
     const rangeMax = Math.max(rangeValue[0], rangeValue[1]);
@@ -37,7 +41,7 @@ export function Slider({
             {valueDisplay ? <span className="text-sm text-black">{valueDisplay}</span> : null}
           </div>
         ) : null}
-        <div className="relative h-4" data-testid="price-range-track-wrap">
+        <div className={`relative ${sliderHeight}`} data-testid="price-range-track-wrap">
           <div
             className="absolute left-0 top-1/2 h-1 w-full -translate-y-1/2 overflow-hidden rounded-full bg-black/20"
             data-testid="price-range-track"

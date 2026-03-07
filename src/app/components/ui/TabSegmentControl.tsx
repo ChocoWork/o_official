@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { ComponentSize } from './types';
 
 export interface TabSegmentControlItem {
   key: string;
@@ -11,12 +12,36 @@ export interface TabSegmentControlProps {
   onChange: (key: string) => void;
   variant?: 'segment' | 'tabs' | 'segment-pill' | 'tabs-standard';
   className?: string;
+  size?: ComponentSize;
 }
 
-export function TabSegmentControl({ items, activeKey, onChange, variant = 'segment', className }: TabSegmentControlProps) {
+export function TabSegmentControl({ items, activeKey, onChange, variant = 'segment', className, size = 'md' }: TabSegmentControlProps) {
+  // utility maps
+  const textSizeMap: Record<ComponentSize, string> = {
+    sm: 'text-xs',
+    md: 'text-xs',
+    lg: 'text-sm',
+  };
+  // md gap should match original non-size version (gap-8)
+  const gapMap: Record<ComponentSize, string> = {
+    sm: 'gap-2',
+    md: 'gap-8',
+    lg: 'gap-6',
+  };
+  const pillPaddingMap: Record<ComponentSize, string> = {
+    sm: 'px-4 py-1.5',
+    md: 'px-6 py-2',
+    lg: 'px-7 py-2',
+  };
+  const segmentPaddingMap: Record<ComponentSize, string> = {
+    sm: 'px-2 py-1',
+    md: 'px-4 py-2',
+    lg: 'px-5 py-2.5',
+  };
+
   if (variant === 'tabs-standard') {
     return (
-      <div className={cn('flex items-center gap-8', className)} role="tablist">
+      <div className={cn('flex items-center', gapMap[size], className)} role="tablist">
         {items.map((item) => {
           const isActive = item.key === activeKey;
 
@@ -27,7 +52,9 @@ export function TabSegmentControl({ items, activeKey, onChange, variant = 'segme
               role="tab"
               aria-selected={isActive}
               className={cn(
-                'relative cursor-pointer pb-4 text-sm tracking-widest transition-colors',
+                'relative cursor-pointer pb-4 tracking-widest transition-colors',
+                // tabs-standard originally always text-sm regardless of size
+                size === 'md' ? 'text-sm' : textSizeMap[size],
                 isActive ? 'text-black' : 'text-black/40 hover:text-black/60',
               )}
               onClick={() => onChange(item.key)}
@@ -54,7 +81,9 @@ export function TabSegmentControl({ items, activeKey, onChange, variant = 'segme
               aria-pressed={isActive}
               onClick={() => onChange(item.key)}
               className={cn(
-                'cursor-pointer whitespace-nowrap rounded-full px-6 py-2 text-xs tracking-widest transition-all',
+                'cursor-pointer whitespace-nowrap rounded-full tracking-widest transition-all',
+                pillPaddingMap[size],
+                textSizeMap[size],
                 isActive ? 'bg-black text-white' : 'text-black/60 hover:text-black',
               )}
             >
@@ -79,7 +108,9 @@ export function TabSegmentControl({ items, activeKey, onChange, variant = 'segme
           type="button"
           onClick={() => onChange(item.key)}
           className={cn(
-            variant === 'segment' ? 'px-4 py-2 text-xs tracking-widest transition-colors' : 'relative px-4 pb-4 text-sm tracking-widest transition-colors',
+            variant === 'segment'
+              ? cn(segmentPaddingMap[size], textSizeMap[size], 'tracking-widest transition-colors')
+              : cn('relative', segmentPaddingMap[size], textSizeMap[size], 'tracking-widest transition-colors pb-4'),
             variant === 'segment'
               ? item.key === activeKey
                 ? 'bg-black text-white'

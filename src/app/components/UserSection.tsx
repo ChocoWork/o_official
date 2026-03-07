@@ -171,7 +171,7 @@ export default function UserSection() {
 									{ value: 'supporter', label: 'Support' },
 									{ value: 'user', label: 'User' },
 								]}
-							/>
+							 size="md"/>
 						),
 					},
 					{ key: 'lastLogin', header: '最終ログイン', render: (user) => <p className="text-[#474747] font-acumin">{user.lastLogin}</p> },
@@ -179,13 +179,13 @@ export default function UserSection() {
 						key: 'status',
 						header: 'ステータス',
 						render: (user) => (
-							<StatusBadge className={statusClassMap[user.status]}>
+							<StatusBadge className={statusClassMap[user.status]} size="md">
 								{user.status}
 							</StatusBadge>
 						),
 					},
 				]}
-			/>
+			 size="md"/>
 		</section>
 	);
 }

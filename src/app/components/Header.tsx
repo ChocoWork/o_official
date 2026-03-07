@@ -144,7 +144,7 @@ const Header = () => {
                       logout();
                       setAccountMenuOpen(false);
                     }}
-                  >
+                   size="md">
                     ログアウト
                   </Button>
                 </div>

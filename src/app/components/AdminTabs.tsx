@@ -22,7 +22,7 @@ export default function AdminTabs({ activeTab, onTabChange, tabs = allTabs, righ
             items={tabs.map((tab) => ({ key: tab, label: tab }))}
             activeKey={activeTab}
             onChange={(tab) => onTabChange(tab as TabType)}
-          />
+           size="md"/>
         </div>
         {rightContent && <div className="shrink-0 pb-2">{rightContent}</div>}
       </div>

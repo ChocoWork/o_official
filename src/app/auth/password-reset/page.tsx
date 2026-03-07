@@ -137,7 +137,7 @@ export default function PasswordResetPage() {
             required
             type="email"
             disabled={Boolean(emailFromQuery)}
-          />
+           size="md"/>
 
           {isConfirmMode ? (
             <TextField
@@ -147,7 +147,7 @@ export default function PasswordResetPage() {
               onChange={(e) => setNewPassword(e.target.value)}
               required
               type="password"
-            />
+             size="md"/>
           ) : (
             siteKey ? (
               <div className="pt-2">

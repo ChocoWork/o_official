@@ -95,7 +95,7 @@ export default function NewsSection() {
     <div>
       <div className="space-y-4">
         {newsItems.map((item) => (
-          <Card key={item.id} className="flex items-center justify-between">
+          <Card key={item.id} className="flex items-center justify-between" size="md">
             <div className="flex items-center space-x-6 flex-1">
               <Image
                 src={item.image_url}
@@ -106,7 +106,7 @@ export default function NewsSection() {
               />
               <div className="flex-1">
                 <div className="flex items-center space-x-3 mb-2">
-                  <StatusBadge tone={item.status === 'published' ? 'positive' : 'neutral'}>
+                  <StatusBadge tone={item.status === 'published' ? 'positive' : 'neutral'} size="md">
                     {item.status === 'published' ? '公開中' : '非公開'}
                   </StatusBadge>
                   <span className="text-xs text-[#474747] tracking-widest font-acumin">

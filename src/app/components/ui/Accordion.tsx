@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import { useState, type ReactNode } from 'react';
+import { ComponentSize } from './types';
 
 export interface AccordionItem {
   key: string;
@@ -18,6 +19,8 @@ export interface AccordionProps {
   itemClassName?: string;
   triggerClassName?: string;
   contentClassName?: string;
+  /** demo-compatible size modifier */
+  size?: ComponentSize;
 }
 
 export function Accordion({
@@ -28,6 +31,7 @@ export function Accordion({
   itemClassName,
   triggerClassName,
   contentClassName,
+  size = 'md',
 }: AccordionProps) {
   const [internalOpenKey, setInternalOpenKey] = useState<string | null>(null);
   const currentOpenKey = openKey !== undefined ? openKey : internalOpenKey;
@@ -38,6 +42,34 @@ export function Accordion({
       return;
     }
     setInternalOpenKey(key);
+  };
+
+  // maps for size adjustments
+  const triggerPaddingMap: Record<ComponentSize, string> = {
+    sm: 'px-4 py-2',
+    md: 'px-6 py-3',
+    lg: 'px-8 py-4',
+  };
+  const contentPaddingMap: Record<ComponentSize, string> = {
+    sm: 'px-4 py-0.5 pb-1',
+    md: 'px-6 py-1 pb-2',
+    lg: 'px-8 py-1.5 pb-3',
+  };
+  const textSizeMap: Record<ComponentSize, string> = {
+    // md should match original implementation (text-sm)
+    sm: 'text-sm',
+    md: 'text-sm',
+    lg: 'text-lg',
+  };
+  const iconSizeMap: Record<ComponentSize, string> = {
+    sm: 'text-lg',
+    md: 'text-xl',
+    lg: 'text-2xl',
+  };
+  const iconContainerSizeMap: Record<ComponentSize, string> = {
+    sm: 'h-4 w-4',
+    md: 'h-5 w-5',
+    lg: 'h-6 w-6',
   };
 
   return (
@@ -53,20 +85,35 @@ export function Accordion({
             <button
               type="button"
               className={cn(
-                'flex w-full cursor-pointer items-center justify-between px-6 py-5 text-left transition-colors hover:bg-[#f5f5f5]',
+                'flex w-full cursor-pointer items-center justify-between text-left transition-colors hover:bg-[#f5f5f5]',
+                triggerPaddingMap[size],
                 triggerClassName,
               )}
               onClick={() => setCurrentOpenKey(isOpen ? null : item.key)}
             >
-              <span className="text-sm tracking-wide text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+              <span
+                className={cn(textSizeMap[size], 'tracking-wide text-black')}
+                style={{ fontFamily: 'acumin-pro, sans-serif' }}
+              >
                 {item.title}
               </span>
-              <div className="flex h-5 w-5 items-center justify-center">
-                <i className={cn(`ri-arrow-${isOpen ? 'up' : 'down'}-s-line`, 'text-xl transition-transform')}></i>
+              <div
+                className={cn(
+                  'flex items-center justify-center',
+                  iconContainerSizeMap[size]
+                )}
+              >
+                <i
+                  className={cn(
+                    `ri-arrow-${isOpen ? 'up' : 'down'}-s-line`,
+                    iconSizeMap[size],
+                    'transition-transform'
+                  )}
+                />
               </div>
             </button>
             {isOpen ? (
-              <div className={cn('px-6 pb-5', contentClassName)}>
+              <div className={cn(contentPaddingMap[size], contentClassName)}>
                 <div className="text-sm leading-relaxed text-black/60" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
                   {item.content}
                 </div>

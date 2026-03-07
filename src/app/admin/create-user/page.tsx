@@ -53,11 +53,11 @@ export default function AdminCreateUserPage() {
     <div className="max-w-md mx-auto p-6">
       <h1 className="text-xl mb-4">管理者: ユーザ作成</h1>
       <form onSubmit={handleSubmit} className="space-y-4">
-        <TextField label="NAME" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
-        <TextField label="EMAIL" value={email} onChange={(e) => setEmail(e.target.value)} type="email" />
-        <TextField label="PASSWORD" value={password} onChange={(e) => setPassword(e.target.value)} type="password" />
+        <TextField label="NAME" value={displayName} onChange={(e) => setDisplayName(e.target.value)}  size="md"/>
+        <TextField label="EMAIL" value={email} onChange={(e) => setEmail(e.target.value)} type="email"  size="md"/>
+        <TextField label="PASSWORD" value={password} onChange={(e) => setPassword(e.target.value)} type="password"  size="md"/>
         <div>
-          <Button type="submit" disabled={loading}>作成</Button>
+          <Button type="submit" disabled={loading} size="md">作成</Button>
         </div>
         {message ? <p className="text-sm mt-2">{message}</p> : null}
       </form>

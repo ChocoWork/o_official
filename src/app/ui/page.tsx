@@ -2,6 +2,8 @@
 
 import Image from 'next/image';
 import { useState } from "react";
+import { ComponentSize } from '@/app/components/ui/types';
+import { cn } from '@/lib/utils';
 import { Accordion } from '@/app/components/ui/Accordion';
 import { ActionSheet } from '@/app/components/ui/ActionSheet';
 import { Avatar } from '@/app/components/ui/Avatar';
@@ -43,6 +45,7 @@ import { Toolbar } from '@/app/components/ui/Toolbar';
 import { Tooltip } from '@/app/components/ui/Tooltip';
 
 export default function Page() {
+  const [demoSize, setDemoSize] = useState<ComponentSize>('md');
   const [standardText, setStandardText] = useState("");
   const [email, setEmail] = useState("");
   const [radioValue, setRadioValue] = useState("option1");
@@ -115,6 +118,13 @@ export default function Page() {
 
   const segmentOptions = ["TOPS", "BOTTOMS", "OUTERWEAR", "ACCESSORIES"] as const;
   const [activeSegment, setActiveSegment] = useState<(typeof segmentOptions)[number]>("TOPS");
+
+  // helper maps for the drawer demo buttons
+  const navItemClassMap: Record<ComponentSize, string> = {
+    sm: 'px-4 py-3 text-xs',
+    md: 'px-4 py-4 text-sm',
+    lg: 'px-4 py-5 text-base',
+  };
 
   const rangeMin = Math.min(rangeValues[0], rangeValues[1]);
   const rangeMax = Math.max(rangeValues[0], rangeValues[1]);
@@ -225,18 +235,20 @@ export default function Page() {
   // ...existing code...
   return (    <main className="pt-32 pb-20">
       <div className="max-w-7xl mx-auto px-6 lg:px-12">
-        <h1
-          className="text-5xl text-black mb-4 tracking-tight"
-          style={{ fontFamily: "Didot, serif" }}
-        >
-          UI Components
-        </h1>
-        <p
-          className="text-sm text-black/60 mb-16 tracking-wider"
-          style={{ fontFamily: "acumin-pro, sans-serif" }}
-        >
-          Le Fil des Heures オリジナルUIコンポーネントライブラリ
-        </p>
+        <div className="mb-12 flex items-center gap-3 sticky top-32 bg-white z-50 py-4">
+          {(['sm', 'md', 'lg'] as const).map((size) => (
+            <Button
+              key={size}
+              type="button"
+              variant={demoSize === size ? 'primary' : 'secondary'}
+              size="sm"
+              onClick={() => setDemoSize(size)}
+              className="min-w-14 uppercase"
+            >
+              {size}
+            </Button>
+          ))}
+        </div>
 
         <div className="space-y-24">
           {/* --- Text Field --- */}
@@ -255,7 +267,7 @@ export default function Page() {
                   type="text"
                   value={standardText}
                   onChange={e => setStandardText(e.target.value)}
-                />
+                  size={demoSize}/>
               </div>
               <div>
                 <TextField
@@ -265,7 +277,7 @@ export default function Page() {
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   leadingIcon={<i className="ri-mail-line text-base"></i>}
-                />
+                 size={demoSize}/>
               </div>
               <div>
                 <TextField
@@ -273,14 +285,14 @@ export default function Page() {
                   disabled
                   type="text"
                   value="無効な入力フィールド"
-                />
+                 size={demoSize}/>
               </div>
               <div>
                 <TextAreaField
                   label="TEXTAREA"
                   placeholder="メッセージを入力"
                   rows={4}
-                />
+                 size={demoSize}/>
               </div>
             </div>
           </section>
@@ -301,7 +313,7 @@ export default function Page() {
                 >
                   PRIMARY
                 </p>
-                <Button className="w-full" size="md">
+                <Button className="w-full" size={demoSize}>
                   PRIMARY BUTTON
                 </Button>
               </div>
@@ -312,7 +324,7 @@ export default function Page() {
                 >
                   SECONDARY
                 </p>
-                <Button variant="secondary" className="w-full" size="md">
+                <Button variant="secondary" className="w-full" size={demoSize}>
                   SECONDARY BUTTON
                 </Button>
               </div>
@@ -323,7 +335,7 @@ export default function Page() {
                 >
                   TEXT
                 </p>
-                <Button variant="text" className="w-full" size="md">
+                <Button variant="text" className="w-full" size={demoSize}>
                   TEXT BUTTON
                 </Button>
               </div>
@@ -334,7 +346,7 @@ export default function Page() {
                 >
                   WITH ICON
                 </p>
-                <Button className="w-full gap-2" size="md">
+                <Button className="w-full gap-2" size={demoSize}>
                   <div className="w-4 h-4 flex items-center justify-center">
                     <i className="ri-shopping-bag-line text-base"></i>
                   </div>
@@ -348,7 +360,7 @@ export default function Page() {
                 >
                   ICON ONLY
                 </p>
-                <Button variant="secondary" className="px-4 py-3" size="sm" aria-label="Add to wishlist">
+                <Button variant="secondary" className="aspect-square px-0" size={demoSize} aria-label="Add to wishlist">
                   <div className="w-5 h-5 flex items-center justify-center">
                     <i className="ri-heart-line text-xl"></i>
                   </div>
@@ -361,7 +373,7 @@ export default function Page() {
                 >
                   DISABLED
                 </p>
-                <Button disabled className="w-full" size="md">
+                <Button disabled className="w-full" size={demoSize}>
                   DISABLED BUTTON
                 </Button>
               </div>
@@ -381,7 +393,7 @@ export default function Page() {
               value={radioValue}
               options={radioOptions}
               onChange={setRadioValue}
-            />
+             size={demoSize}/>
           </section>
 
           {/* --- Checkbox --- */}
@@ -397,18 +409,18 @@ export default function Page() {
                 checked={checkboxTerms}
                 onChange={(e) => setCheckboxTerms(e.target.checked)}
                 label="利用規約に同意する"
-              />
+               size={demoSize}/>
               <Checkbox
                 checked={checkboxNewsletter}
                 onChange={(e) => setCheckboxNewsletter(e.target.checked)}
                 label="ニュースレターを受け取る"
-              />
+               size={demoSize}/>
               <Checkbox
                 checked={checkboxPrivacy}
                 onChange={(e) => setCheckboxPrivacy(e.target.checked)}
                 label="プライバシーポリシーに同意する"
-              />
-              <Checkbox disabled label="無効なチェックボックス" />
+               size={demoSize}/>
+              <Checkbox disabled label="無効なチェックボックス"  size={demoSize}/>
             </div>
           </section>
 
@@ -427,7 +439,7 @@ export default function Page() {
                 options={singleSelectOptions}
                 value={category}
                 onValueChange={setCategory}
-              />
+               size={demoSize}/>
             </div>
           </section>
 
@@ -446,7 +458,17 @@ export default function Page() {
                 options={multiSelectOptions}
                 values={sizes}
                 onChange={setSizes}
-              />
+               size={demoSize}/>
+            </div>
+            {/* button-style example */}
+            <div className="max-w-md mt-8">
+              <MultiSelect
+                label="SIZE (BUTTONS)"
+                variant="buttons"
+                options={multiSelectOptions}
+                values={sizes}
+                onChange={setSizes}
+               size={demoSize}/>
             </div>
           </section>
 
@@ -465,7 +487,7 @@ export default function Page() {
                   checked={notify}
                   onChange={setNotify}
                   fullWidth
-                />
+                  size={demoSize}/>
               </div>
               <div className="max-w-md">
                 <SwitchToggle
@@ -474,7 +496,7 @@ export default function Page() {
                   onChange={() => undefined}
                   disabled
                   fullWidth
-                />
+                  size={demoSize}/>
               </div>
             </div>
           </section>
@@ -497,7 +519,7 @@ export default function Page() {
                   step={1}
                   onValueChange={setSingleValue}
                   valueDisplay={String(singleValue)}
-                />
+                 size={demoSize}/>
               </div>
               <div>
                 <Slider
@@ -509,7 +531,7 @@ export default function Page() {
                   step={1}
                   onRangeChange={setRangeValues}
                   valueDisplay={`¥${rangeMin * 100} - ¥${rangeMax * 100}`}
-                />
+                 size={demoSize}/>
               </div>
             </div>
           </section>
@@ -529,7 +551,7 @@ export default function Page() {
                 min={1}
                 onChange={setStepperValue}
                 variant="field"
-              />
+                size={demoSize}/>
             </div>
           </section>
 
@@ -547,14 +569,14 @@ export default function Page() {
                 value={rating}
                 onChange={setRating}
                 showValue
-              />
+                size={demoSize}/>
               <Rating
                 label="READ ONLY"
                 value={4}
                 readOnly
                 showValue
                 valueText="4.0 / 5"
-              />
+                size={demoSize}/>
             </div>
           </section>
 
@@ -573,14 +595,14 @@ export default function Page() {
                 value={color}
                 presets={presetColors}
                 onValueChange={setColor}
-              />
+               size={demoSize}/>
               <div className="max-w-xs">
                 <ColorPicker
                   label="CUSTOM COLOR"
                   variant="custom"
                   value={color}
                   onValueChange={setColor}
-                />
+                 size={demoSize}/>
               </div>
             </div>
           </section>
@@ -599,19 +621,19 @@ export default function Page() {
                 value={dateValue}
                 onChange={(event) => setDateValue(event.target.value)}
                 className="cursor-pointer"
-              />
+                size={demoSize}/>
               <DateTimePicker
                 mode="time"
                 value={timeValue}
                 onChange={(event) => setTimeValue(event.target.value)}
                 className="cursor-pointer"
-              />
+                size={demoSize}/>
               <DateTimePicker
                 mode="datetime-local"
                 value={dateTimeValue}
                 onChange={(event) => setDateTimeValue(event.target.value)}
                 className="cursor-pointer"
-              />
+                size={demoSize}/>
             </div>
           </section>
 
@@ -627,7 +649,7 @@ export default function Page() {
               page={currentPage}
               totalPages={pageNumbers.length}
               onPageChange={setCurrentPage}
-            />
+              size={demoSize}/>
           </section>
 
           {/* --- Bottom Navigation --- */}
@@ -646,7 +668,7 @@ export default function Page() {
                 fixed={false}
                 appearance="minimal"
                 className="shadow-lg"
-              />
+                size={demoSize}/>
             </div>
           </section>
 
@@ -671,7 +693,7 @@ export default function Page() {
                   items={standardTabs.map((tab) => ({ key: tab, label: tab }))}
                   activeKey={activeStandardTab}
                   onChange={(key) => setActiveStandardTab(key as (typeof standardTabs)[number])}
-                />
+                 size={demoSize}/>
               </div>
               <div>
                 <label
@@ -685,7 +707,7 @@ export default function Page() {
                   items={segmentOptions.map((segment) => ({ key: segment, label: segment }))}
                   activeKey={activeSegment}
                   onChange={(key) => setActiveSegment(key as (typeof segmentOptions)[number])}
-                />
+                 size={demoSize}/>
               </div>
             </div>
           </section>
@@ -704,7 +726,7 @@ export default function Page() {
                 placeholder="商品を検索"
                 value={searchStandard}
                 onChange={(event) => setSearchStandard(event.target.value)}
-              />
+               size={demoSize}/>
               <SearchField
                 label="WITH CLEAR BUTTON"
                 placeholder="商品を検索"
@@ -712,7 +734,7 @@ export default function Page() {
                 onChange={(event) => setSearchWithClear(event.target.value)}
                 showClearButton
                 onClear={() => setSearchWithClear('')}
-              />
+               size={demoSize}/>
             </div>
           </section>
 
@@ -724,7 +746,7 @@ export default function Page() {
             >
               Dialog
             </h2>
-            <Button type="button" className="px-8" onClick={() => setDialogOpen(true)}>
+            <Button type="button" className="px-8" onClick={() => setDialogOpen(true)} size={demoSize}>
               OPEN DIALOG
             </Button>
           </section>
@@ -767,7 +789,7 @@ export default function Page() {
             >
               Action Sheet
             </h2>
-            <Button type="button" className="px-8" onClick={() => setActionSheetOpen(true)}>
+            <Button type="button" className="px-8" onClick={() => setActionSheetOpen(true)} size={demoSize}>
               OPEN ACTION SHEET
             </Button>
           </section>
@@ -794,7 +816,7 @@ export default function Page() {
                   onSelect: () => {},
                 },
               ]}
-            />
+              size={demoSize}/>
           </section>
 
           {/* --- Drawer --- */}
@@ -834,7 +856,7 @@ export default function Page() {
                     setToasts((prev) => prev.filter((t) => t.id !== id));
                   }, 3000);
                 }}
-              >
+               size={demoSize}>
                 SUCCESS
               </Button>
               <Button
@@ -848,7 +870,7 @@ export default function Page() {
                     setToasts((prev) => prev.filter((t) => t.id !== id));
                   }, 3000);
                 }}
-              >
+               size={demoSize}>
                 ERROR
               </Button>
               <Button
@@ -862,13 +884,13 @@ export default function Page() {
                     setToasts((prev) => prev.filter((t) => t.id !== id));
                   }, 3000);
                 }}
-              >
+               size={demoSize}>
                 INFO
               </Button>
             </div>
             <div className="fixed bottom-8 right-8 z-50 space-y-3">
               {toasts.map((toast) => (
-                <ToastSnackbar key={toast.id} message={toast.message} variant={toast.variant} />
+                <ToastSnackbar key={toast.id} message={toast.message} variant={toast.variant}  size={demoSize}/>
               ))}
             </div>
           </section>
@@ -882,13 +904,13 @@ export default function Page() {
               Tooltip
             </h2>
             <div className="flex items-center gap-8">
-              <Tooltip content="これはツールチップです">
-                <Button type="button" className="px-8">
+              <Tooltip content="これはツールチップです" size={demoSize}>
+                <Button type="button" className="px-8" size={demoSize}>
                   HOVER ME
                 </Button>
               </Tooltip>
-              <Tooltip content="詳細情報">
-                <Button type="button" variant="secondary" className="h-10 w-10 px-0 py-0" aria-label="詳細情報">
+              <Tooltip content="詳細情報" size={demoSize}>
+                <Button type="button" variant="secondary" className="h-10 w-10 px-0 py-0" aria-label="詳細情報" size={demoSize}>
                   <div className="w-5 h-5 flex items-center justify-center">
                     <i className="ri-information-line text-xl"></i>
                   </div>
@@ -924,7 +946,7 @@ export default function Page() {
                 onOpenChange={setFloatMenuOpen}
                 fixed={false}
                 className="absolute bottom-6 right-6"
-              />
+                size={demoSize}/>
             </div>
           </section>
 
@@ -980,7 +1002,7 @@ export default function Page() {
               containerClassName="border-black/20"
               tableClassName="w-full min-w-0"
               rowClassName="border-black/10"
-            />
+             size={demoSize}/>
           </section>
 
           {/* --- List --- */}
@@ -995,37 +1017,11 @@ export default function Page() {
               items={showcaseListItems}
               itemKey={(item) => item.name}
               className="max-w-2xl space-y-px border border-black/20"
-              renderItem={(item, index) => (
-                <div
-                  className={`flex cursor-pointer items-center justify-between px-6 py-5 transition-colors hover:bg-[#f5f5f5] ${
-                    index < showcaseListItems.length - 1 ? 'border-b border-black/10' : ''
-                  }`}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-[#f5f5f5] flex items-center justify-center">
-                      <div className="w-5 h-5 flex items-center justify-center">
-                        <i className="ri-image-line text-xl text-black/40"></i>
-                      </div>
-                    </div>
-                    <div>
-                      <p className="text-sm text-black mb-1" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-                        {item.name}
-                      </p>
-                      <p className="text-xs text-black/40 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-                        {item.category}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <span className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-                      {item.price}
-                    </span>
-                    <div className="w-5 h-5 flex items-center justify-center">
-                      <i className="ri-arrow-right-s-line text-xl text-black/40"></i>
-                    </div>
-                  </div>
-                </div>
-              )}
+              variant="showcase"
+              getName={(item) => item.name}
+              getCategory={(item) => item.category}
+              getPrice={(item) => item.price}
+              size={demoSize}
             />
           </section>
 
@@ -1041,7 +1037,7 @@ export default function Page() {
               items={accordionItems}
               openKey={openAccordion}
               onOpenChange={(key) => setOpenAccordion(key as "shipping" | "returns" | "size" | null)}
-            />
+             size={demoSize}/>
           </section>
 
           {/* --- Card --- */}
@@ -1080,7 +1076,7 @@ export default function Page() {
                       </div>
                     </button>
                   }
-                />
+                  size={demoSize}/>
               ))}
             </div>
           </section>
@@ -1093,7 +1089,7 @@ export default function Page() {
             >
               Carousel
             </h2>
-            <Carousel slides={carouselSlides} index={slideIndex} onIndexChange={setSlideIndex} />
+            <Carousel slides={carouselSlides} index={slideIndex} onIndexChange={setSlideIndex}  size={demoSize}/>
           </section>
 
           {/* --- Map --- */}
@@ -1107,7 +1103,7 @@ export default function Page() {
             <MapView
               embedUrl="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3240.8280108514437!2d139.7671248!3d35.6812362!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x60188bfbd89f700b%3A0x277c49ba34ed38!2z5p2x5Lqs6aeF!5e0!3m2!1sja!2sjp!4v1234567890123"
               className="border-black/20"
-            />
+             size={demoSize}/>
           </section>
 
           {/* --- Chart --- */}
@@ -1126,7 +1122,7 @@ export default function Page() {
                 >
                   SALES TREND
                 </h3>
-                <Graph data={salesTrendData} variant="bars" />
+                <Graph data={salesTrendData} variant="bars"  size={demoSize}/>
               </div>
               <div className="border border-black/20 p-6">
                 <h3
@@ -1135,7 +1131,7 @@ export default function Page() {
                 >
                   CATEGORY DISTRIBUTION
                 </h3>
-                <Graph data={categoryDistributionData} variant="donut" />
+                <Graph data={categoryDistributionData} variant="donut"  size={demoSize}/>
               </div>
             </div>
           </section>
@@ -1154,7 +1150,7 @@ export default function Page() {
                 value: item.value,
                 icon: <i className={`${item.iconClass} text-3xl text-black`}></i>,
               }))}
-            />
+             size={demoSize}/>
           </section>
 
           {/* --- Banner / Alert --- */}
@@ -1173,7 +1169,7 @@ export default function Page() {
                   message="春の新作コレクションが入荷しました"
                   dismissible
                   onDismiss={() => setShowInfoBanner(false)}
-                />
+                 size={demoSize}/>
               )}
               {showPromoBanner && (
                 <BannerAlert
@@ -1182,7 +1178,7 @@ export default function Page() {
                   message="¥10,000以上のご購入で送料無料"
                   dismissible
                   onDismiss={() => setShowPromoBanner(false)}
-                />
+                 size={demoSize}/>
               )}
               {showAlertBanner && (
                 <BannerAlert
@@ -1192,7 +1188,7 @@ export default function Page() {
                   description="システムメンテナンスのため、3月20日 2:00-4:00の間、一時的にサービスをご利用いただけません。"
                   dismissible
                   onDismiss={() => setShowAlertBanner(false)}
-                />
+                 size={demoSize}/>
               )}
             </div>
           </section>
@@ -1216,7 +1212,7 @@ export default function Page() {
                 </p>
               </div>
               <div className="flex flex-col items-center gap-3">
-                <Avatar alt="B" fallback="B" size="md" className="text-base" />
+                <Avatar alt="B" fallback="B" size={demoSize} className="text-base" />
                 <p
                   className="text-xs tracking-wider text-black/60"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
@@ -1238,7 +1234,7 @@ export default function Page() {
                   alt="Avatar"
                   fallback=""
                   src="https://readdy.ai/api/search-image?query=professional%20elegant%20portrait%20photo%20clean%20white%20background%20soft%20natural%20lighting%20minimalist%20aesthetic%20high%20quality%20studio%20photography&width=100&height=100&seq=avatar1&orientation=squarish"
-                  size="md"
+                  size={demoSize}
                 />
                 <p
                   className="text-xs tracking-wider text-black/60"
@@ -1252,7 +1248,7 @@ export default function Page() {
                   alt="User"
                   fallback=""
                   icon={<i className="ri-user-line text-xl text-white"></i>}
-                  size="md"
+                  size={demoSize}
                   status="online"
                 />
                 <p
@@ -1274,8 +1270,8 @@ export default function Page() {
               Toolbar
             </h2>
             <div className="space-y-6">
-              <Toolbar leftItems={toolbarPrimaryLeftItems} rightItems={toolbarPrimaryRightItems} splitIndex={3} />
-              <Toolbar variant="muted" leftItems={toolbarSecondaryLeftItems} rightItems={toolbarSecondaryRightItems} />
+              <Toolbar leftItems={toolbarPrimaryLeftItems} rightItems={toolbarPrimaryRightItems} splitIndex={3} size={demoSize} />
+              <Toolbar variant="muted" leftItems={toolbarSecondaryLeftItems} rightItems={toolbarSecondaryRightItems} size={demoSize} />
             </div>
           </section>
 
@@ -1289,9 +1285,9 @@ export default function Page() {
                   BASIC TAGS
                 </p>
                 <div className="flex items-center gap-3 flex-wrap">
-                  <TagLabel variant="solid" className="px-4 py-2">NEW</TagLabel>
-                  <TagLabel variant="outline" className="px-4 py-2">SALE</TagLabel>
-                  <TagLabel variant="subtle" className="px-4 py-2">LIMITED</TagLabel>
+                  <TagLabel variant="solid" size={demoSize}>NEW</TagLabel>
+                  <TagLabel variant="outline" size={demoSize}>SALE</TagLabel>
+                  <TagLabel variant="subtle" size={demoSize}>LIMITED</TagLabel>
                 </div>
               </div>
               <div>
@@ -1304,9 +1300,8 @@ export default function Page() {
                       key={tag}
                       variant="subtle"
                       removable
-                      className="px-4 py-2"
                       onRemove={() => setRemovableTags((prev) => prev.filter((t) => t !== tag))}
-                    >
+                     size={demoSize}>
                       {tag}
                     </TagLabel>
                   ))}
@@ -1317,9 +1312,9 @@ export default function Page() {
                   ROUNDED TAGS
                 </p>
                 <div className="flex items-center gap-3 flex-wrap">
-                  <TagLabel variant="solid" rounded className="px-4 py-2">FEATURED</TagLabel>
-                  <TagLabel variant="outline" rounded className="px-4 py-2">TRENDING</TagLabel>
-                  <TagLabel variant="subtle" rounded className="px-4 py-2">POPULAR</TagLabel>
+                  <TagLabel variant="solid" rounded size={demoSize}>FEATURED</TagLabel>
+                  <TagLabel variant="outline" rounded size={demoSize}>TRENDING</TagLabel>
+                  <TagLabel variant="subtle" rounded size={demoSize}>POPULAR</TagLabel>
                 </div>
               </div>
             </div>
@@ -1346,7 +1341,7 @@ export default function Page() {
               <span
                 className="absolute -top-1 -right-1"
               >
-                <StatusBadge variant="count" count={3} />
+                <StatusBadge variant="count" count={3}  size={demoSize}/>
               </span>
               </div>
               <div className="relative">
@@ -1361,7 +1356,7 @@ export default function Page() {
               <span
                 className="absolute -top-1 -right-1"
               >
-                <StatusBadge variant="count" count={12} />
+                <StatusBadge variant="count" count={12}  size={demoSize}/>
               </span>
               </div>
               <div className="relative">
@@ -1373,7 +1368,7 @@ export default function Page() {
                 <i className="ri-shopping-cart-line text-2xl"></i>
                 </div>
               </button>
-              <span className="absolute -top-1 -right-1"><StatusBadge variant="dot" /></span>
+              <span className="absolute -top-1 -right-1"><StatusBadge variant="dot"  size={demoSize}/></span>
               </div>
               <div className="relative">
               <span
@@ -1382,7 +1377,7 @@ export default function Page() {
               >
                 新着メッセージ
               </span>
-              <span className="absolute -top-2 -right-6"><StatusBadge tone="positive" className="rounded-full px-2 py-0.5 text-[10px]">NEW</StatusBadge></span>
+              <span className="absolute -top-2 -right-6"><StatusBadge tone="positive" className="rounded-full px-2 py-0.5 text-[10px]" size={demoSize}>NEW</StatusBadge></span>
               </div>
             </div>
             </section>
@@ -1393,7 +1388,7 @@ export default function Page() {
         onClose={() => setDialogOpen(false)}
         title="Dialog Title"
         description="これはダイアログの本文です。ユーザーに重要な情報を伝えたり、確認を求めたりする際に使用します。"
-      />
+       size={demoSize}/>
       <SheetMedium open={mediumSheetOpen} onClose={() => setMediumSheetOpen(false)} title="Medium Sheet">
         <p
           className="text-sm text-black/60 leading-relaxed"
@@ -1427,8 +1422,9 @@ export default function Page() {
           { key: 'download', label: 'ダウンロード', iconClass: 'ri-download-line', onSelect: () => {} },
           { key: 'edit', label: '編集する', iconClass: 'ri-edit-line', onSelect: () => {} },
         ]}
+        size={demoSize}
       />
-      <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)}>
+      <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} size={demoSize}>
         <div className="p-8">
           <div className="flex items-center justify-between mb-8">
             <h3
@@ -1437,26 +1433,29 @@ export default function Page() {
             >
               Drawer Menu
             </h3>
-            <button
-              type="button"
-              className="w-8 h-8 flex items-center justify-center hover:bg-[#f5f5f5] transition-colors cursor-pointer"
+            <Button
+              variant="ghost"
+              size={demoSize}
+              className="aspect-square px-0 flex items-center justify-center hover:bg-[#f5f5f5] transition-colors cursor-pointer"
               onClick={() => setDrawerOpen(false)}
+              aria-label="Close drawer"
             >
               <div className="w-5 h-5 flex items-center justify-center">
                 <i className="ri-close-line text-xl"></i>
               </div>
-            </button>
+            </Button>
           </div>
           <nav className="space-y-2">
             {['ITEM','LOOK','NEWS','ABOUT','STOCKIST','CONTACT'].map(label => (
-              <button
+              <Button
                 key={label}
-                type="button"
-                className="w-full px-4 py-4 text-sm tracking-widest text-black hover:bg-[#f5f5f5] transition-colors cursor-pointer text-left"
+                variant="ghost"
+                size={demoSize}
+                className={cn('w-full justify-start text-left', navItemClassMap[demoSize])}
                 style={{ fontFamily: "acumin-pro, sans-serif" }}
               >
                 {label}
-              </button>
+              </Button>
             ))}
           </nav>
           <div className="mt-12 pt-8 border-t border-black/10">
@@ -1468,15 +1467,16 @@ export default function Page() {
             </p>
             <div className="flex items-center gap-4">
               {['instagram','facebook','twitter'].map((icon) => (
-                <button
+                <Button
                   key={icon}
-                  type="button"
-                  className="w-10 h-10 flex items-center justify-center border border-black/20 hover:bg-black hover:text-white transition-all duration-300 cursor-pointer"
+                  variant="secondary"
+                  size={demoSize}
+                  className="aspect-square px-0"
                 >
                   <div className="w-5 h-5 flex items-center justify-center">
                     <i className={`ri-${icon}-line text-xl`}></i>
                   </div>
-                </button>
+                </Button>
               ))}
             </div>
           </div>

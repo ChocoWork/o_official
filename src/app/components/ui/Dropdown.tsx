@@ -2,6 +2,9 @@
 
 import { cn } from '@/lib/utils';
 import { useEffect, useRef, useState } from 'react';
+import { Button } from './Button';
+import type { UIButtonSize } from './Button';
+import { ComponentSize } from './types';
 
 export interface DropdownItem {
   key: string;
@@ -15,9 +18,16 @@ export interface DropdownProps {
   triggerLabel: string;
   items: DropdownItem[];
   className?: string;
+  size?: ComponentSize;
 }
 
-export function Dropdown({ triggerLabel, items, className }: DropdownProps) {
+export function Dropdown({ triggerLabel, items, className, size = 'md' }: DropdownProps) {
+  const buttonSizeMap: Record<ComponentSize, UIButtonSize> = {
+    sm: 'sm',
+    md: 'md',
+    lg: 'lg',
+  };
+  const buttonSize = buttonSizeMap[size];
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
@@ -36,11 +46,32 @@ export function Dropdown({ triggerLabel, items, className }: DropdownProps) {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [open]);
 
+  // size mappings
+  const triggerClassMap: Record<ComponentSize, string> = {
+    sm: 'px-4 py-2 text-xs gap-1',
+    md: 'px-8 py-3 text-sm gap-2',
+    lg: 'px-10 py-4 text-base gap-3',
+  };
+  const itemClassMap: Record<ComponentSize, string> = {
+    sm: 'px-4 py-2 text-xs',
+    md: 'px-6 py-3 text-sm',
+    lg: 'px-8 py-4 text-base',
+  };
+  const menuWidthMap: Record<ComponentSize, string> = {
+    sm: 'w-40',
+    md: 'w-56',
+    lg: 'w-64',
+  };
+
   return (
     <div className={cn('relative inline-block', className)} ref={menuRef}>
-      <button
-        type="button"
-        className="flex cursor-pointer items-center gap-2 whitespace-nowrap border border-black px-8 py-3 text-sm tracking-widest text-black transition-all duration-300 hover:bg-black hover:text-white"
+      <Button
+        size={buttonSize}
+        variant="ghost"
+        className={cn(
+          'flex cursor-pointer items-center whitespace-nowrap border border-black tracking-widest text-black transition-all duration-300 hover:bg-black hover:text-white',
+          triggerClassMap[size],
+        )}
         style={{ fontFamily: 'acumin-pro, sans-serif' }}
         onClick={() => setOpen((current) => !current)}
       >
@@ -48,15 +79,16 @@ export function Dropdown({ triggerLabel, items, className }: DropdownProps) {
         <div className="flex h-4 w-4 items-center justify-center">
           <i className="ri-arrow-down-s-line text-base"></i>
         </div>
-      </button>
+      </Button>
       {open ? (
-        <div className="absolute left-0 top-full z-10 mt-2 w-56 border border-black/20 bg-white shadow-lg">
+        <div className={cn('absolute left-0 top-full z-10 mt-2 border border-black/20 bg-white shadow-lg', menuWidthMap[size])}>
           {items.map((item) => (
             <div key={item.key}>
               {item.hasDividerBefore ? <div className="my-1 h-px bg-black/10"></div> : null}
-              <button
-                type="button"
-                className="w-full cursor-pointer px-6 py-3 text-left text-sm text-black transition-colors hover:bg-[#f5f5f5]"
+              <Button
+                size={buttonSize}
+                variant="ghost"
+                className={cn('w-full cursor-pointer justify-start text-left text-black transition-colors hover:bg-[#f5f5f5]', itemClassMap[size])}
                 style={{ fontFamily: 'acumin-pro, sans-serif' }}
                 onClick={() => {
                   item.onSelect();
@@ -71,7 +103,7 @@ export function Dropdown({ triggerLabel, items, className }: DropdownProps) {
                   ) : null}
                   <span>{item.label}</span>
                 </div>
-              </button>
+              </Button>
             </div>
           ))}
         </div>

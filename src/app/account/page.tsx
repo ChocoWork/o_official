@@ -183,7 +183,7 @@ export default function Page() {
 									]}
 									activeKey={activeTab}
 									onChange={(tab) => setActiveTab(tab as AccountTab)}
-								/>
+								 size="md"/>
 							</nav>
 						</div>
 						<div className="lg:col-span-3">
@@ -203,7 +203,7 @@ export default function Page() {
 												value="demo@gmail.com"
 												readOnly
 												style={{ fontFamily: 'acumin-pro, sans-serif' }}
-											/>
+											 size="md"/>
 										</div>
 
 										<p className="text-xs text-[#474747] tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
@@ -250,11 +250,11 @@ export default function Page() {
 											<form className="space-y-6" onSubmit={handleProfileSave}>
 												<div>
 													<label className="block text-xs text-[#474747] mb-2 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>氏名</label>
-													<TextField className="font-acumin" type="text" name="fullName" autoComplete="name" value={profileForm.fullName} onChange={handleProfileFormChange} style={{ fontFamily: 'acumin-pro, sans-serif' }} />
+													<TextField className="font-acumin" type="text" name="fullName" autoComplete="name" value={profileForm.fullName} onChange={handleProfileFormChange} style={{ fontFamily: 'acumin-pro, sans-serif' }}  size="md"/>
 												</div>
 												<div>
 													<label className="block text-xs text-[#474747] mb-2 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>電話番号</label>
-													<TextField className="font-acumin" type="tel" name="phone" autoComplete="tel" value={profileForm.phone} onChange={handleProfileFormChange} style={{ fontFamily: 'acumin-pro, sans-serif' }} />
+													<TextField className="font-acumin" type="tel" name="phone" autoComplete="tel" value={profileForm.phone} onChange={handleProfileFormChange} style={{ fontFamily: 'acumin-pro, sans-serif' }}  size="md"/>
 												</div>
 												<div className="flex gap-3">
 													<Button
@@ -447,7 +447,7 @@ export default function Page() {
 												value={addressForm.postalCode}
 												onChange={handleAddressChange}
 												style={{ fontFamily: 'acumin-pro, sans-serif' }} 
-											/>
+											 size="md"/>
 										</div>
 										<div>
 											<label className="block text-xs text-[#474747] mb-2 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>都道府県</label>
@@ -459,7 +459,7 @@ export default function Page() {
 												value={addressForm.prefecture}
 												onChange={handleAddressChange}
 												style={{ fontFamily: 'acumin-pro, sans-serif' }} 
-											/>
+											 size="md"/>
 										</div>
 										<div>
 											<label className="block text-xs text-[#474747] mb-2 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>市区町村</label>
@@ -471,7 +471,7 @@ export default function Page() {
 												value={addressForm.city}
 												onChange={handleAddressChange}
 												style={{ fontFamily: 'acumin-pro, sans-serif' }} 
-											/>
+											 size="md"/>
 										</div>
 										<div>
 											<label className="block text-xs text-[#474747] mb-2 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>番地</label>
@@ -483,7 +483,7 @@ export default function Page() {
 												value={addressForm.address}
 												onChange={handleAddressChange}
 												style={{ fontFamily: 'acumin-pro, sans-serif' }} 
-											/>
+											 size="md"/>
 										</div>
 										<div>
 											<label className="block text-xs text-[#474747] mb-2 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>建物名・部屋番号</label>
@@ -494,7 +494,7 @@ export default function Page() {
 												value={addressForm.building}
 												onChange={handleAddressChange}
 												style={{ fontFamily: 'acumin-pro, sans-serif' }} 
-											/>
+											 size="md"/>
 										</div>
 										<Button
 											type="submit"

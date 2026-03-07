@@ -56,15 +56,15 @@ export default function ContactPage() {
                                     { value: 'order', label: 'ご注文について' },
                                     { value: 'other', label: 'その他' },
                                 ]}
-                            />
+                             size="md"/>
 
-                            <TextField id="name" required label="NAME *" type="text" name="name" />
+                            <TextField id="name" required label="NAME *" type="text" name="name"  size="md"/>
 
-                            <TextField id="email" required label="EMAIL *" type="email" name="email" />
+                            <TextField id="email" required label="EMAIL *" type="email" name="email"  size="md"/>
 
-                            <TextField id="subject" required label="SUBJECT *" type="text" name="subject" />
+                            <TextField id="subject" required label="SUBJECT *" type="text" name="subject"  size="md"/>
 
-                            <TextAreaField id="message" label="MESSAGE *" name="message" required rows={6} maxLength={500} />
+                            <TextAreaField id="message" label="MESSAGE *" name="message" required rows={6} maxLength={500}  size="md"/>
 
                             <Button type="submit" size="lg" className="w-full">SEND MESSAGE</Button>
                         </form>

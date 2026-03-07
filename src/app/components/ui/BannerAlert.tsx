@@ -1,5 +1,6 @@
 import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
+import { ComponentSize } from './types';
 
 export interface BannerAlertProps {
   title?: string;
@@ -10,6 +11,8 @@ export interface BannerAlertProps {
   dismissible?: boolean;
   onDismiss?: () => void;
   className?: string;
+  /** demo size: sm/md/lg */
+  size?: ComponentSize;
 }
 
 const bannerTone: Record<NonNullable<BannerAlertProps['variant']>, string> = {
@@ -28,25 +31,45 @@ export function BannerAlert({
   dismissible = false,
   onDismiss,
   className,
+  size = 'md',
 }: BannerAlertProps) {
   const contentText = message ?? title ?? '';
+
+  // spacing should correspond to Button padding, with vertical padding roughly half height
+  const paddingMap: Record<ComponentSize, string> = {
+    sm: 'px-3 py-2',
+    md: 'px-4 py-3',
+    lg: 'px-5 py-4',
+  };
+  const textMap: Record<ComponentSize, string> = {
+    sm: 'text-xs',
+    md: 'text-sm',
+    lg: 'text-sm',
+  };
+  // icon inside alert uses same scale as button icons
+  const iconSizeMap: Record<ComponentSize, string> = {
+    sm: 'h-4 w-4',
+    md: 'h-5 w-5',
+    lg: 'h-6 w-6',
+  };
 
   return (
     <div
       className={cn(
-        'flex items-start justify-between px-6 py-4',
+        'flex items-center justify-between',
+        paddingMap[size],
         variant !== 'info' ? 'border' : null,
         bannerTone[variant],
         className,
       )}
     >
-      <div className={cn('flex gap-3', description ? 'items-start' : 'items-center')}>
+      <div className={cn('flex gap-3 items-center')}>
         {icon ? (
-          <div className={cn('flex h-5 w-5 items-center justify-center', description ? 'mt-0.5' : null)}>{icon}</div>
+          <div className={cn('flex items-center justify-center', iconSizeMap[size])}>{icon}</div>
         ) : null}
         <div>
           {contentText ? (
-            <p className={cn('text-sm', description ? 'mb-1 text-black' : null)} style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+            <p className={cn(textMap[size], description ? 'mb-1 text-black' : null)} style={{ fontFamily: 'acumin-pro, sans-serif' }}>
               {contentText}
             </p>
           ) : null}

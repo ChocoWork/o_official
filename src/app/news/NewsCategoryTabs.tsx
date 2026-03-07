@@ -35,7 +35,7 @@ export function NewsCategoryTabs({ activeCategory }: NewsCategoryTabsProps) {
         activeKey={activeCategory}
         onChange={handleChange}
         variant="segment-pill"
-      />
+       size="md"/>
     </div>
   );
 }

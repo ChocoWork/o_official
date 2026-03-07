@@ -90,7 +90,7 @@ export default async function NewsPage({
                       >
                         {article.published_date.replace(/-/g, '.')}
                       </span>
-                      <TagLabel className="font-acumin">
+                      <TagLabel className="font-acumin" size="md">
                         {article.category}
                       </TagLabel>
                     </div>

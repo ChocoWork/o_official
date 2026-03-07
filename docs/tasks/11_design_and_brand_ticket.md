@@ -7,7 +7,7 @@ estimate: 2d
 assignee: unassigned
 dependencies: []
 created: 2026-01-17
-updated: 2026-02-27
+updated: 2026-03-05
 ---
 
 # 概要
@@ -82,3 +82,22 @@ updated: 2026-02-27
 - [x] `item/[id]` の購入操作ボタンを `/ui` の `Button` サンプル（`WITH ICON` / `ICON ONLY` / `DISABLED`）準拠の見た目・状態表示に統一
 - [x] `look/[id]` の `STYLING ITEMS` 表示を `/ui` の `List` サンプル準拠に差し替え、共通 `List` コンポーネントを適用
 - [x] `look/[id]` の `STYLING ITEMS` で `item.category` が表示されるよう、`getPublishedLooks` の linked item 取得項目に `category` を追加
+- [x] `src/app/components/ui` の全コンポーネントで `size`（`sm` / `md` / `lg`）指定を可能にし、共通サイズトークン（`uiSizeClass`）で反映
+- [x] `/ui` に `sm` / `md` / `lg` のデモサイズ切替を追加し、主要デモを `size={demoSize}` で確認可能にした
+- [x] `src/app`（`src/app/components/ui` 除外）の UI利用箇所で、`size` 対応コンポーネント未指定分へ `size="md"` を明示追加（既存指定は維持）
+- [x] `size` 対応導入で崩れた `/ui` の主要表示（`ICON ONLY` 高さ差 / `Stepper` ±消失 / `SEGMENT CONTROL` 余白 / `Search Field` アイコン位置 / `Float Button` md寸法 / `Map` md寸法 / `Badge` つぶれ）を原因別に修正
+- [x] `/ui` / `cart` / `item/[id]` の `Stepper` ホバー見た目を改善し、`cart` と `item/[id]` は統合前相当のコンパクト寸法（`size="sm"`）へ調整
+- [x] `Stepper` の `size` 対応を維持したまま、`size` 以外の構造・操作互換（`compact` の数値入力編集、`±` 表示、`field` 構造）を統合前実装へ復元
+- [x] `/ui` の `Toolbar` デモで `lg` が反映されない問題を修正（`size={compactDemoSize}` を `size={demoSize}` に変更）
+- [x] `Toolbar` の `sm` 見た目を改善し、`Button` の `sm` 高さ（`h-8`）に揃えるようサイズマップを調整
+- [x] `Toolbar` の `md` / `lg` 高さを `Button` と一致（`h-10` / `h-12`）させ、視認性を保つよう余白・アイコン・区切り線寸法を再調整
+- [x] `/ui` の `Toolbar`（`md` / `lg`）でラベル付き・アイコンのみ両パターンの横余白を1段階だけ微調整（`label px` / `icon-only width`）
+- [x] `Toolbar` の `muted` バリアントのみ hover 表現を1段階調整し、白背景との差が出るよう `hover:bg-black/[0.04]` を適用
+- [x] `Toolbar` 外枠の縦パディングを除去（`p-*` -> `px-*`）し、`/ui` 上で `Button` との高さ差が出ないよう見た目を再調整
+- [x] `ToastSnackbar` の `size` トークン（高さ・文字サイズ・横パディング）を `Button` と同値に統一（`sm: h-8 text-xs px-3`, `md: h-10 text-sm px-4`, `lg: h-12 text-sm px-5`）
+- [x] `ToastSnackbar` の固定最小幅（`min-w-[300px]`）を廃止し、内容幅ベース（`w-fit`）へ変更して `Button` と同等のサイズ感に調整
+- [x] `List` コンポーネントが `size` を受けても変化が分かりにくかったため、gap 値を大きくしテキストサイズマップを追加して `sm/md/lg` で明確に差が出るよう改善
+- [x] `List` に `showcase` バリアントを追加し、`/ui` と `look/[id]` の重複HTMLをコンポーネントへ集約（`md` を既存見た目として `sm/md/lg` 対応）
+- [x] `TagLabel` のサイズ感を過去コミット基準へ寄せるため `md` を `px-3 py-1 text-xs` に固定し、`sm/lg` の拡大量を抑制（`lg` の文字サイズを `text-xs` へ）
+- [x] `/ui` の `Tag / Label` デモで `className="px-4 py-2"` 上書きを削除し、`TagLabel` の `size` 設計がそのまま反映されるよう修正
+- [x] `TabSegmentControl` に導入されたサイズ拡大を元に戻し、md がコミット当初の標準サイズ相当（segment px-4 py-2 text-xs, pill px-6 py-2, tabs-standard text-sm, gap-8）になるようマップを調整

@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { ComponentSize } from './types';
 
 export interface GraphDatum {
   label: string;
@@ -14,18 +15,30 @@ export interface GraphProps {
   variant?: GraphVariant;
   className?: string;
   legendClassName?: string;
+  /** 表示サイズ。文字列サイズまたは具体的な高さ(px) */
+  size?: ComponentSize | number;
 }
 
-export function Graph({ data, maxValue, variant = 'progress', className, legendClassName }: GraphProps) {
+export function Graph({ data, maxValue, variant = 'progress', className, legendClassName, size = 'md' }: GraphProps) {
   if (data.length === 0) {
     return null;
   }
 
   const max = maxValue ?? Math.max(...data.map((item) => item.value), 1);
 
+  const containerClass =
+    typeof size === 'number'
+      ? ''
+      : size === 'sm'
+      ? 'h-40'
+      : size === 'lg'
+      ? 'h-96'
+      : 'h-64';
+  const containerStyle = typeof size === 'number' ? { height: size } : undefined;
+
   if (variant === 'bars') {
     return (
-      <div className={cn('h-64 flex items-end justify-between gap-2', className)}>
+      <div className={cn(containerClass, 'flex items-end justify-between gap-2', className)} style={containerStyle}>
         {data.map((item) => (
           <div key={item.label} className="flex flex-1 flex-col items-center gap-2">
             <div
@@ -49,7 +62,7 @@ export function Graph({ data, maxValue, variant = 'progress', className, legendC
 
     return (
       <div className={cn(className)}>
-        <div className="flex h-64 items-center justify-center">
+        <div className={cn('flex items-center justify-center', containerClass)} style={containerStyle}>
           <div className="relative h-48 w-48">
             <svg viewBox="0 0 100 100" className="h-full w-full">
               <g transform="rotate(-90 50 50)">

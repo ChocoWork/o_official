@@ -1,16 +1,31 @@
 import { cn } from '@/lib/utils';
 import type { InputHTMLAttributes, ReactNode } from 'react';
 import { controlBaseClass } from './shared';
+import { ComponentSize } from './types';
 
-export interface TextFieldProps extends InputHTMLAttributes<HTMLInputElement> {
+export interface TextFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'size'> {
   label?: string;
   helperText?: string;
   errorText?: string;
   leadingIcon?: ReactNode;
+  /** デモ用の小中大サイズ */
+  size?: ComponentSize;
 }
 
-export function TextField({ label, helperText, errorText, leadingIcon, className, id, ...props }: TextFieldProps) {
+export function TextField({ label, helperText, errorText, leadingIcon, className, id, size = 'md', ...props }: TextFieldProps) {
   const fieldId = id ?? props.name;
+  const heightClass = size === 'sm' ? 'h-8' : size === 'lg' ? 'h-12' : 'h-10';
+  // single-select uses controlBaseClass which already includes `px-4`,
+  // so keep the same horizontal gutter by default.  this ensures the
+  // text start aligns perfectly between the two components.
+  const widthPaddingClass = 'px-4';
+  const paddingClass = leadingIcon
+    ? // icon concerns override left padding only – keep same base px-4 on
+      // the right side consistently
+      size === 'sm'
+      ? 'pl-10 '
+      : 'pl-12 '
+    : undefined;
 
   return (
     <label className="block space-y-2">
@@ -25,8 +40,10 @@ export function TextField({ label, helperText, errorText, leadingIcon, className
           id={fieldId}
           className={cn(
             controlBaseClass,
+            heightClass,
+            widthPaddingClass,
             'disabled:border-black/10 disabled:bg-[#f5f5f5] disabled:text-black/40 disabled:opacity-100',
-            leadingIcon ? 'pl-12' : null,
+            paddingClass,
             className,
           )}
           {...props}

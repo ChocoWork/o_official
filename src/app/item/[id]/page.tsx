@@ -131,7 +131,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               }}
               variant="ghost"
               className="text-sm text-[#474747] hover:text-black transition-colors duration-300 flex items-center gap-2 font-brand px-0 py-0"
-            >
+             size="md">
               <i className="ri-arrow-left-line" />BACK TO ITEMS
             </Button>
           </div>
@@ -265,7 +265,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               <h3 className="text-sm tracking-widest mb-4 font-brand">
                 QUANTITY
               </h3>
-              <Stepper value={quantity} min={1} onChange={setQuantity} />
+              <Stepper value={quantity} min={1} onChange={setQuantity}  size="sm"/>
             </div>
 
             <div className="flex gap-4">

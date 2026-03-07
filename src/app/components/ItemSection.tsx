@@ -26,7 +26,7 @@ function ItemCard({ item, onToggleStatus, onDelete }: ItemCardProps) {
   const priceLabel = `¥${item.price.toLocaleString()}`;
 
   return (
-    <Card className="overflow-hidden p-0">
+    <Card className="overflow-hidden p-0" size="md">
       <Image
         alt={item.name}
         className="w-full aspect-[3/4] object-cover bg-[#f5f5f5]"
@@ -37,7 +37,7 @@ function ItemCard({ item, onToggleStatus, onDelete }: ItemCardProps) {
       />
       <div className="p-4 space-y-3">
         <div className="flex items-center space-x-2">
-          <StatusBadge tone={item.status === 'published' ? 'positive' : 'neutral'}>
+          <StatusBadge tone={item.status === 'published' ? 'positive' : 'neutral'} size="md">
             {item.status === 'published' ? '公開中' : '非公開'}
           </StatusBadge>
           <span className="text-xs text-[#474747] tracking-widest font-acumin">

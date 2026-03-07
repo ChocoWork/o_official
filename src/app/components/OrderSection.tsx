@@ -93,7 +93,7 @@ export default function OrderSection({ orders, onTransitStatus }: OrderSectionPr
 											: 'warning'
 								}
 								className={statusClassMap[order.status]}
-							>
+							 size="md">
 								{order.status}
 							</StatusBadge>
 						),
@@ -109,7 +109,7 @@ export default function OrderSection({ orders, onTransitStatus }: OrderSectionPr
 							) : null,
 					},
 				]}
-			/>
+			 size="md"/>
 		</section>
 	);
 }
