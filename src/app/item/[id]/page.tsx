@@ -290,10 +290,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                 onClick={handleToggleWishlist}
                 disabled={togglingWishlist}
                 variant="secondary"
-                size="sm"
+                size="md"
                 aria-label="Add to wishlist"
-                className="px-4 py-3"
-              >
+                className="aspect-square px-0 hover:bg-transparent hover:text-current"
+                >
                 <div className="w-5 h-5 flex items-center justify-center">
                   <i className={`text-xl ${isWishlisted ? "ri-heart-fill text-red-500" : "ri-heart-line"}`} />
                 </div>
