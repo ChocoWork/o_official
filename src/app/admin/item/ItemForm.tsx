@@ -421,7 +421,7 @@ export function ItemForm({
             value={category}
             onValueChange={(val) => setCategory(val as (typeof CATEGORIES)[number])}
             className="font-acumin"
-            size="sm"
+            size="md"
           />
 
           <TextField 
@@ -431,7 +431,8 @@ export function ItemForm({
             type="text"
             value={itemName}
             onChange={(e) => setItemName(e.target.value)}
-           size="sm"/>
+            size="md"
+          />
 
           <TextField 
             required
@@ -440,7 +441,8 @@ export function ItemForm({
             type="number"
             value={price}
             onChange={(e) => setPrice(e.target.value)}
-           size="sm"/>
+            size="md"
+         />
 
           <TextAreaField
             label="商品情報"
@@ -449,32 +451,32 @@ export function ItemForm({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             required
-            size="sm"
+            size="md"
           />
 
 
           <div>
-            <div className="space-y-4 mb-4">
+            <div className="space-y-2 mb-4">
+              <span className="block text-xs tracking-widest text-black/80 font-brand">カラー</span>
               {colors.map((color) => (
                 <div key={color.id} className="flex gap-3 items-end">
                   <TextField
-                    label="カラー"
                     className="flex-1"
                     placeholder="カラー名"
                     type="text"
                     value={color.name}
                     onChange={(e) => handleColorChange(color.id, 'name', e.target.value)}
-                    size="sm"/>
+                    size="md"/>
                   <ColorPicker
                     value={color.hex}
                     onChange={(e) => handleColorChange(color.id, 'hex', e.target.value)}
                     aria-label="カラーを選択"
-                    size="sm"/>
+                    size="md"/>
                   <Button
                     type="button"
                     onClick={() => handleSaveColor(color)}
                     variant="secondary"
-                    size="sm"
+                    size="md"
                   >
                     保存
                   </Button>
@@ -483,7 +485,7 @@ export function ItemForm({
                       type="button"
                       onClick={() => handleRemoveColor(color.id)}
                       variant="danger"
-                      size="sm"
+                      size="md"
                     >
                       削除
                     </Button>
@@ -491,7 +493,7 @@ export function ItemForm({
                 </div>
               ))}
             </div>
-            <Button type="button" onClick={handleAddColor} variant="primary" size="sm">
+            <Button type="button" onClick={handleAddColor} variant="primary" size="md">
               カラーを追加
             </Button>
             {savedColors.length > 0 && (
@@ -504,7 +506,7 @@ export function ItemForm({
                         type="button"
                         onClick={() => handleApplySavedColor(color)}
                         variant="ghost"
-                        size="sm"
+                        size="md"
                         className="relative h-10 w-10 rounded-full border-2 border-black/20 overflow-hidden p-0"
                         aria-label={`保存済みカラー ${color.name || color.hex}`}
                       >
@@ -516,7 +518,7 @@ export function ItemForm({
                       <Button
                         type="button"
                         onClick={() => handleRemoveSavedColor(color.id)}
-                        size="sm"
+                        size="md"
                         className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 text-[10px]"
                         aria-label="保存済みカラーを削除"
                       >
@@ -535,7 +537,7 @@ export function ItemForm({
             options={SIZES.map((s) => ({ value: s, label: s }))}
             values={Array.from(selectedSizes)}
             onChange={(vals) => setSelectedSizes(new Set(vals))}
-            size="sm"
+            size="md"
           />
 
 
@@ -557,7 +559,8 @@ export function ItemForm({
               { value: 'private', label: '非公開' },
               { value: 'published', label: '公開' },
             ]}
-           size="md"/>
+            size="md"
+          />
 
           {submitSuccess && (
             <p className="text-sm text-black" role="status">
