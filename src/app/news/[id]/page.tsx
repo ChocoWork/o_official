@@ -2,20 +2,10 @@ import React from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
 import { categories } from "@/lib/news-data";
 import { Button } from '@/app/components/ui/Button';
 import { TagLabel } from '@/app/components/ui/TagLabel';
-
-type NewsArticle = {
-  id: string;
-  title: string;
-  published_date: string;
-  category: string;
-  image_url: string;
-  content: string;
-  detailed_content: string;
-};
+import { getPublishedNewsDetailById, getPublishedNewsNavigation } from '@/features/news/services/public';
 
 interface NewsDetailPageProps {
   params: {
@@ -30,8 +20,6 @@ export default async function NewsDetailPage({
   params,
   searchParams,
 }: NewsDetailPageProps) {
-  const supabase = await createClient();
-
   const selectedCategory = (searchParams?.category ?? "ALL").toUpperCase();
   const activeCategory = categories.includes(
     selectedCategory as (typeof categories)[number],
@@ -39,45 +27,17 @@ export default async function NewsDetailPage({
     ? (selectedCategory as (typeof categories)[number])
     : "ALL";
   
-  // 現在の記事を取得（公開記事のみ）
-  let articleQuery = supabase
-    .from("news_articles")
-    .select("*")
-    .eq("id", params.id)
-    .eq("status", "published");
-
-  if (activeCategory !== "ALL") {
-    articleQuery = articleQuery.eq("category", activeCategory);
-  }
-
-  const { data: article } = await articleQuery.single();
+  const article = await getPublishedNewsDetailById(params.id, {
+    category: activeCategory,
+  });
 
   if (!article) {
     notFound();
   }
 
-  const typedArticle: NewsArticle = article;
-
-  // 全公開記事を取得して前後の記事を特定
-  let allArticlesQuery = supabase
-    .from("news_articles")
-    .select("id, title")
-    .eq("status", "published")
-    .order("published_date", { ascending: false });
-
-  if (activeCategory !== "ALL") {
-    allArticlesQuery = allArticlesQuery.eq("category", activeCategory);
-  }
-
-  const { data: allArticles } = await allArticlesQuery;
-
-  const currentIndex =
-    allArticles?.findIndex((item) => String(item.id) === params.id) ?? -1;
-  const prevArticle = currentIndex > 0 && allArticles ? allArticles[currentIndex - 1] : null;
-  const nextArticle =
-    currentIndex >= 0 && allArticles && currentIndex < allArticles.length - 1
-      ? allArticles[currentIndex + 1]
-      : null;
+  const { prevArticle, nextArticle } = await getPublishedNewsNavigation(params.id, {
+    category: activeCategory,
+  });
 
   const navCategoryParam = activeCategory === "ALL" ? "" : `?category=${activeCategory}`;
 
@@ -91,26 +51,26 @@ export default async function NewsDetailPage({
               className="text-xs text-[#474747] tracking-widest"
               style={{ fontFamily: "acumin-pro, sans-serif" }}
             >
-              {typedArticle.published_date.replace(/-/g, '.')}
+              {article.published_date.replace(/-/g, '.')}
             </span>
             <TagLabel className="font-acumin" size="md">
-              {typedArticle.category}
+              {article.category}
             </TagLabel>
           </div>
           <h1
             className="text-4xl lg:text-5xl text-black mb-8"
             style={{ fontFamily: "Didot, serif" }}
           >
-            {typedArticle.title}
+            {article.title}
           </h1>
         </div>
 
         {/* Article Image */}
         <div className="aspect-[16/10] overflow-hidden mb-12 bg-[#f5f5f5] relative">
           <Image
-            alt={typedArticle.title}
+            alt={article.title}
             className="w-full h-full object-cover object-center"
-            src={typedArticle.image_url}
+            src={article.image_url}
             width={1200}
             height={750}
             priority
@@ -122,7 +82,7 @@ export default async function NewsDetailPage({
           className="prose prose-lg max-w-none"
           style={{ fontFamily: "acumin-pro, sans-serif" }}
         >
-          {typedArticle.detailed_content.split("\n\n").map((paragraph: string, index: number) => (
+          {article.detailed_content.split("\n\n").map((paragraph: string, index: number) => (
             <p
               key={index}
               className="text-[#474747] leading-relaxed mb-6 whitespace-pre-line"

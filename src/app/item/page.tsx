@@ -1,36 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import Image from 'next/image';
-import { Item } from '@/app/types/item';
 import { TabSegmentControl } from '@/app/components/ui/TabSegmentControl';
+import { usePublicItems } from '@/features/items/hooks/usePublicItems';
+import { PublicItemGrid } from '@/features/items/components/PublicItemGrid';
 
 export default function ItemPage() {
-  const [items, setItems] = useState<Item[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { items, loading, error } = usePublicItems();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-
-  useEffect(() => {
-    const fetchItems = async () => {
-      try {
-        const response = await fetch('/api/items');
-        if (!response.ok) {
-          throw new Error('Failed to fetch items');
-        }
-        const data: Item[] = await response.json();
-        setItems(data);
-      } catch (err) {
-        setError('商品データの取得に失敗しました');
-        console.error('Failed to fetch items:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchItems();
-  }, []);
 
   // デバッグ情報をコンソールに出力
   useEffect(() => {
@@ -77,35 +54,10 @@ export default function ItemPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-          {displayItems.map((item) => (
-            <Link key={item.id} href={`/item/${item.id}`}>
-              <div className="group cursor-pointer">
-                <div className="aspect-[3/4] bg-[#f5f5f5] mb-4 overflow-hidden">
-                  {item.image_url ? (
-                    <Image
-                      src={item.image_url}
-                      alt={item.name}
-                      width={600}
-                      height={800}
-                      className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500"
-                      priority={false}
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-gray-400">
-                      No Image
-                    </div>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <p className="text-xs text-[#474747] tracking-widest font-brand">{item.category}</p>
-                  <h3 className="text-base text-black tracking-tight font-brand">{item.name}</h3>
-                  <p className="text-sm text-black font-brand">¥{item.price.toLocaleString('ja-JP')}</p>
-                </div>
-              </div>
-            </Link>
-          ))}
-        </div>
+        <PublicItemGrid
+          items={displayItems}
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8"
+        />
 
         {displayItems.length === 0 && (
           <div className="text-center py-12">

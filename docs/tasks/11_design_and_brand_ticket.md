@@ -7,7 +7,7 @@ estimate: 2d
 assignee: unassigned
 dependencies: []
 created: 2026-01-17
-updated: 2026-03-05
+updated: 2026-03-08
 ---
 
 # 概要
@@ -79,6 +79,12 @@ updated: 2026-03-05
 - [x] `/ui` の `Banner / Alert` / `Avatar` / `Toolbar` / `Tag / Label` / `Badge` 仕様を各UIコンポーネントへ反映
 - [x] `/ui` の `Banner / Alert` / `Avatar` / `Toolbar` / `Tag / Label` / `Badge` セクションを生HTMLから `src/app/components/ui` コンポーネント利用へ置換
 - [x] Home の `ITEMS` セクションを `item/page.tsx` と同じ `/api/items` 取得・カード描画方式へ統一し、表示件数を最大6件に制限
+- [x] Home/`item/page.tsx` の公開商品取得処理を `usePublicItems` へ共通化し、Home は `limit` 指定（`<HomeItemsSection limit={...} />`）で表示件数を変更可能にした
+- [x] Home/`item/page.tsx` の商品カード描画（`displayItems.map(...)`）を `PublicItemGrid` に共通化し、画面差分は `className` 指定のみで管理するよう統一
+- [x] Home LOOK セクションと `/look` ページのカード描画を `PublicLookGrid` に共通化し、差分は `variant` と `className` のみで管理するよう統一
+- [x] Home NEWS セクションと `/news` ページのカード描画を `PublicNewsGrid` に共通化し、差分は `buildHref`（カテゴリ維持）と `className` のみで管理するよう統一
+- [x] Home NEWS（`getLatestNews`）と `/news` 一覧の取得処理を `features/news/services/public.ts` の `getPublishedNews` に共通化
+- [x] `news/[id]` の取得処理（詳細記事 + 前後ナビ記事）を `features/news/services/public.ts` に共通化し、NEWS系データ取得をサービス層へ一本化
 - [x] `item/[id]` の購入操作ボタンを `/ui` の `Button` サンプル（`WITH ICON` / `ICON ONLY` / `DISABLED`）準拠の見た目・状態表示に統一
 - [x] `look/[id]` の `STYLING ITEMS` 表示を `/ui` の `List` サンプル準拠に差し替え、共通 `List` コンポーネントを適用
 - [x] `look/[id]` の `STYLING ITEMS` で `item.category` が表示されるよう、`getPublishedLooks` の linked item 取得項目に `category` を追加

@@ -1,26 +1,15 @@
 import React from "react";
-import Link from "next/link";
-import Image from "next/image";
-import { createClient } from "@/lib/supabase/server";
 import { categories } from "@/lib/news-data";
-import { TagLabel } from '@/app/components/ui/TagLabel';
 import { NewsCategoryTabs } from '@/app/news/NewsCategoryTabs';
-
-type NewsArticle = {
-  id: string;
-  title: string;
-  published_date: string;
-  category: string;
-  image_url: string;
-  content: string;
-};
+import { PublicNewsGrid } from '@/features/news/components/PublicNewsGrid';
+import { getPublishedNews } from '@/features/news/services/public';
+import { PublicNewsArticle } from '@/features/news/types';
 
 export default async function NewsPage({
   searchParams,
 }: {
   searchParams?: Promise<{ category?: string }>;
 }) {
-  const supabase = await createClient();
   const params = await searchParams;
   const selectedCategory = (params?.category ?? "ALL").toUpperCase();
   const activeCategory = categories.includes(
@@ -29,18 +18,9 @@ export default async function NewsPage({
     ? (selectedCategory as (typeof categories)[number])
     : "ALL";
 
-  let query = supabase
-    .from("news_articles")
-    .select("id, title, published_date, category, image_url, content")
-    .eq("status", "published")
-    .order("published_date", { ascending: false });
-
-  if (activeCategory !== "ALL") {
-    query = query.eq("category", activeCategory);
-  }
-
-  const { data: articles } = await query;
-  const newsData: NewsArticle[] = articles || [];
+  const newsData: PublicNewsArticle[] = await getPublishedNews({
+    category: activeCategory,
+  });
 
   return (
     <main className="pt-32 pb-20 px-6 lg:px-12">
@@ -59,73 +39,15 @@ export default async function NewsPage({
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 lg:gap-12">
-            {newsData.map((article) => {
-              const detailHref =
-                activeCategory === "ALL"
-                  ? `/news/${article.id}`
-                  : `/news/${article.id}?category=${activeCategory}`;
-
-              return (
-                <Link key={article.id} href={detailHref}>
-                <article className="group cursor-pointer">
-                  {/* Image */}
-                  <div className="aspect-[4/3] overflow-hidden mb-6 bg-[#f5f5f5] relative">
-                    <Image
-                      alt={article.title}
-                      className="w-full h-full object-cover object-center transition-transform duration-700 group-hover:scale-105"
-                      src={article.image_url}
-                      width={1200}
-                      height={750}
-                    />
-                  </div>
-
-                  {/* Content */}
-                  <div className="space-y-3">
-                    {/* Date & Category */}
-                    <div className="flex items-center space-x-4">
-                      <span
-                        className="text-xs text-[#474747] tracking-widest"
-                        style={{ fontFamily: "acumin-pro, sans-serif" }}
-                      >
-                        {article.published_date.replace(/-/g, '.')}
-                      </span>
-                      <TagLabel className="font-acumin" size="md">
-                        {article.category}
-                      </TagLabel>
-                    </div>
-
-                    {/* Title */}
-                    <h2
-                      className="text-xl text-black group-hover:text-[#474747] transition-colors duration-300"
-                      style={{ fontFamily: "Didot, serif" }}
-                    >
-                      {article.title}
-                    </h2>
-
-                    {/* Description */}
-                    <p
-                      className="text-sm text-[#474747] leading-relaxed line-clamp-3"
-                      style={{ fontFamily: "acumin-pro, sans-serif" }}
-                    >
-                      {article.content}
-                    </p>
-
-                    {/* Read More */}
-                    <div className="pt-2">
-                      <span
-                        className="text-xs text-black tracking-widest group-hover:underline"
-                        style={{ fontFamily: "acumin-pro, sans-serif" }}
-                      >
-                        READ MORE →
-                      </span>
-                    </div>
-                  </div>
-                </article>
-              </Link>
-                );
-              })}
-          </div>
+          <PublicNewsGrid
+            articles={newsData}
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 lg:gap-12"
+            buildHref={(article) =>
+              activeCategory === "ALL"
+                ? `/news/${article.id}`
+                : `/news/${article.id}?category=${activeCategory}`
+            }
+          />
         )}
       </div>
     </main>

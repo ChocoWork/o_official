@@ -34,7 +34,7 @@ export default async function Home() {
         </section>
 
         {/* Item セクション */}
-        <HomeItemsSection />
+        <HomeItemsSection limit={6} />
 
         <HomeLookSection />
 
