@@ -142,12 +142,13 @@ export default function Page() {
     { id: 'ORD-003', date: '2024-03-13', product: 'Cashmere Blend Coat', qty: '1', total: '¥68,000' },
     { id: 'ORD-004', date: '2024-03-12', product: 'Leather Tote Bag', qty: '1', total: '¥24,000' },
   ] as const;
-  const showcaseListItems = [
-    { name: 'Minimal Cotton Shirt', category: 'TOPS', price: '¥18,000' },
-    { name: 'Pleated Skirt', category: 'BOTTOMS', price: '¥16,000' },
-    { name: 'Cashmere Blend Coat', category: 'OUTERWEAR', price: '¥68,000' },
-    { name: 'Leather Tote Bag', category: 'ACCESSORIES', price: '¥24,000' },
-  ] as const;
+  type ShowcaseItem = { name: string; category: string; price: string; imageUrl: string };
+  const showcaseListItems: ShowcaseItem[] = [
+    { name: 'Minimal Cotton Shirt', category: 'TOPS', price: '¥18,000', imageUrl: '/placeholder.png' },
+    { name: 'Pleated Skirt', category: 'BOTTOMS', price: '¥16,000', imageUrl: '/placeholder.png' },
+    { name: 'Cashmere Blend Coat', category: 'OUTERWEAR', price: '¥68,000', imageUrl: '/placeholder.png' },
+    { name: 'Leather Tote Bag', category: 'ACCESSORIES', price: '¥24,000', imageUrl: '/placeholder.png' },
+  ];
   const accordionItems = [
     {
       key: 'shipping',
@@ -1021,6 +1022,7 @@ export default function Page() {
               getName={(item) => item.name}
               getCategory={(item) => item.category}
               getPrice={(item) => item.price}
+              getImage={(item) => item.imageUrl}
               size={demoSize}
             />
           </section>
