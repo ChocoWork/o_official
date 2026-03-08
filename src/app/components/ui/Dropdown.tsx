@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from '@/lib/utils';
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Button } from './Button';
 import type { UIButtonSize } from './Button';
 import { ComponentSize } from './types';
@@ -15,13 +15,18 @@ export interface DropdownItem {
 }
 
 export interface DropdownProps {
-  triggerLabel: string;
+  // triggerLabel can be text or any React element (icon etc.)
+  triggerLabel: React.ReactNode;
   items: DropdownItem[];
   className?: string;
   size?: ComponentSize;
+  /** when true, menu opens on hover instead of click */
+  openOnHover?: boolean;
+  /** alignment of menu relative to trigger: left or right */
+  align?: 'left' | 'right';
 }
 
-export function Dropdown({ triggerLabel, items, className, size = 'md' }: DropdownProps) {
+export function Dropdown({ triggerLabel, items, className, size = 'md', openOnHover = false, align = 'left' }: DropdownProps) {
   const buttonSizeMap: Record<ComponentSize, UIButtonSize> = {
     sm: 'sm',
     md: 'md',
@@ -64,24 +69,45 @@ export function Dropdown({ triggerLabel, items, className, size = 'md' }: Dropdo
   };
 
   return (
-    <div className={cn('relative inline-block', className)} ref={menuRef}>
-      <Button
-        size={buttonSize}
-        variant="ghost"
-        className={cn(
-          'flex cursor-pointer items-center whitespace-nowrap border border-black tracking-widest text-black transition-all duration-300 hover:bg-black hover:text-white',
-          triggerClassMap[size],
-        )}
-        style={{ fontFamily: 'acumin-pro, sans-serif' }}
-        onClick={() => setOpen((current) => !current)}
-      >
-        {triggerLabel}
-        <div className="flex h-4 w-4 items-center justify-center">
-          <i className="ri-arrow-down-s-line text-base"></i>
+    <div
+      className={cn('relative inline-block', className)}
+      ref={menuRef}
+      onMouseEnter={() => {
+        if (openOnHover) setOpen(true);
+      }}
+      onMouseLeave={() => {
+        if (openOnHover) setOpen(false);
+      }}
+    >
+      {openOnHover ? (
+        <div className="cursor-pointer inline-flex items-center" onClick={() => setOpen((c) => !c)}>
+          {triggerLabel}
         </div>
-      </Button>
+      ) : (
+        <Button
+          size={buttonSize}
+          variant="ghost"
+          className={cn(
+            'flex cursor-pointer items-center whitespace-nowrap border border-black tracking-widest text-black transition-all duration-300 hover:bg-black hover:text-white',
+            triggerClassMap[size],
+          )}
+          style={{ fontFamily: 'acumin-pro, sans-serif' }}
+          onClick={() => setOpen((current) => !current)}
+        >
+          {triggerLabel}
+          <div className="flex h-4 w-4 items-center justify-center">
+            <i className="ri-arrow-down-s-line text-base"></i>
+          </div>
+        </Button>
+      )}
       {open ? (
-        <div className={cn('absolute left-0 top-full z-10 mt-2 border border-black/20 bg-white shadow-lg', menuWidthMap[size])}>
+        <div
+          className={cn(
+            'absolute top-full z-10 mt-2 border border-black/20 bg-white shadow-lg',
+            menuWidthMap[size],
+            align === 'right' ? 'right-0' : 'left-0'
+          )}
+        >
           {items.map((item) => (
             <div key={item.key}>
               {item.hasDividerBefore ? <div className="my-1 h-px bg-black/10"></div> : null}

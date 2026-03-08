@@ -166,25 +166,20 @@ export default function Page() {
 		return (
 			<main className="pt-32 pb-20 px-6 lg:px-12">
 				<div className="max-w-7xl mx-auto">
-					<h1
-						className="text-4xl text-black tracking-tight mb-12"
-						style={{ fontFamily: 'Didot, serif' }}
-					>
-						My Account
-					</h1>
 					<div className="grid grid-cols-1 lg:grid-cols-4 gap-12">
 						<div className="lg:col-span-1">
-							<nav className="space-y-2">
-								<TabSegmentControl
-									items={[
-										{ key: 'profile', label: 'プロフィール' },
-										{ key: 'orders', label: '購入履歴' },
-										{ key: 'address', label: '配送先住所' },
-									]}
-									activeKey={activeTab}
-									onChange={(tab) => setActiveTab(tab as AccountTab)}
-								 size="md"/>
-							</nav>
+							<TabSegmentControl
+								items={[
+									{ key: 'profile', label: 'プロフィール' },
+									{ key: 'orders', label: '購入履歴' },
+									{ key: 'address', label: '配送先住所' },
+								]}
+								activeKey={activeTab}
+								onChange={(tab) => setActiveTab(tab as AccountTab)}
+								orientation="vertical"
+								size="md"
+								className='space-y-2'
+							/>
 						</div>
 						<div className="lg:col-span-3">
 							{activeTab === 'profile' && (
@@ -203,12 +198,9 @@ export default function Page() {
 												value="demo@gmail.com"
 												readOnly
 												style={{ fontFamily: 'acumin-pro, sans-serif' }}
-											 size="md"/>
+												size="md"
+											/>
 										</div>
-
-										<p className="text-xs text-[#474747] tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-											氏名・電話番号は注文時に入力し、希望時のみ保存できます。
-										</p>
 
 										{isLoadingProfile && (
 											<p className="text-xs text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>読み込み中...</p>
@@ -260,7 +252,7 @@ export default function Page() {
 													<Button
 														type="submit"
 														size="lg"
-														className="px-12 font-acumin"
+														className="font-acumin"
 													>
 														{savedContact ? '変更を保存' : '保存する'}
 													</Button>
@@ -269,7 +261,7 @@ export default function Page() {
 															type="button"
 															variant="secondary"
 															size="lg"
-															className="px-8 font-acumin"
+															className="font-acumin"
 															onClick={() => {
 																setProfileForm(savedContact);
 																setIsEditingProfile(false);
@@ -499,7 +491,7 @@ export default function Page() {
 										<Button
 											type="submit"
 											size="lg"
-											className="px-12 font-acumin"
+											className="font-acumin"
 										>
 											更新する
 										</Button>

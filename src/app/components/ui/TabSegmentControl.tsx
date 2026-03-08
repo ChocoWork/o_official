@@ -13,9 +13,18 @@ export interface TabSegmentControlProps {
   variant?: 'segment' | 'tabs' | 'segment-pill' | 'tabs-standard';
   className?: string;
   size?: ComponentSize;
+  orientation?: 'horizontal' | 'vertical';
 }
 
-export function TabSegmentControl({ items, activeKey, onChange, variant = 'segment', className, size = 'md' }: TabSegmentControlProps) {
+export function TabSegmentControl({
+  items,
+  activeKey,
+  onChange,
+  variant = 'segment',
+  className,
+  size = 'md',
+  orientation = 'horizontal',
+}: TabSegmentControlProps) {
   // utility maps
   const textSizeMap: Record<ComponentSize, string> = {
     sm: 'text-xs',
@@ -39,9 +48,43 @@ export function TabSegmentControl({ items, activeKey, onChange, variant = 'segme
     lg: 'px-5 py-2.5',
   };
 
+  // when vertical orientation requested we render simple stacked buttons
+  if (orientation === 'vertical') {
+    return (
+      <div className={cn('flex flex-col', className)} role="tablist">
+        {items.map((item) => {
+          const isActive = item.key === activeKey;
+          return (
+            <button
+              key={item.key}
+              type="button"
+              className={cn(
+                'w-full text-left px-6 py-4 text-sm tracking-wider transition-colors cursor-pointer',
+                isActive
+                  ? 'bg-black text-white'
+                  : 'bg-[#f5f5f5] text-black hover:bg-[#e5e5e5]'
+              )}
+              onClick={() => onChange(item.key)}
+            >
+              {item.label}
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
   if (variant === 'tabs-standard') {
     return (
-      <div className={cn('flex items-center', gapMap[size], className)} role="tablist">
+      <div
+        className={cn(
+          'flex',
+          ((orientation as string) === 'vertical' ? 'flex-col' : 'items-center') as string,
+          gapMap[size],
+          className,
+        )}
+        role="tablist"
+      >
         {items.map((item) => {
           const isActive = item.key === activeKey;
 
@@ -70,7 +113,13 @@ export function TabSegmentControl({ items, activeKey, onChange, variant = 'segme
 
   if (variant === 'segment-pill') {
     return (
-      <div className={cn('inline-flex items-center rounded-full bg-[#f5f5f5] p-1', className)}>
+      <div
+        className={cn(
+          'inline-flex items-center rounded-full bg-[#f5f5f5] p-1',
+          ((orientation as string) === 'vertical' ? 'flex-col' : '') as string,
+          className,
+        )}
+      >
         {items.map((item) => {
           const isActive = item.key === activeKey;
 
@@ -98,7 +147,11 @@ export function TabSegmentControl({ items, activeKey, onChange, variant = 'segme
   return (
     <div
       className={cn(
-        variant === 'segment' ? 'inline-flex overflow-hidden border border-black/20 bg-white' : 'inline-flex border-b border-black/20',
+        variant === 'segment'
+          ? 'inline-flex overflow-hidden border border-black/20 bg-white'
+          : 'inline-flex border-b border-black/20',
+        // @ts-expect-error: comparison against literal union causes spurious warning
+        (orientation === 'vertical' ? 'flex-col' : '') as string,
         className,
       )}
     >
