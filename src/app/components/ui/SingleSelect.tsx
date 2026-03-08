@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils';
 import type { SelectHTMLAttributes } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import ReactDOM from 'react-dom';
 import { controlBaseClass, type SelectOption } from './shared';
 import { ComponentSize } from './types';
 
@@ -32,6 +33,7 @@ export function SingleSelect({
   const selectId = id ?? props.name;
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
   const resolvedValue = useMemo(() => {
     if (typeof value === 'string') {
@@ -55,6 +57,41 @@ export function SingleSelect({
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [open, variant]);
+
+  // reposition dropdown when it opens
+  useEffect(() => {
+    if (variant === 'dropdown' && open && wrapperRef.current) {
+      const rect = wrapperRef.current.getBoundingClientRect();
+      setDropdownPos({
+        top: rect.bottom + window.scrollY,
+        left: rect.left + window.scrollX,
+        width: rect.width,
+      });
+    } else {
+      setDropdownPos(null);
+    }
+  }, [open, variant]);
+
+  // update position on scroll/resize while open
+  useEffect(() => {
+    if (!open) return;
+    const handler = () => {
+      if (wrapperRef.current) {
+        const rect = wrapperRef.current.getBoundingClientRect();
+        setDropdownPos({
+          top: rect.bottom + window.scrollY,
+          left: rect.left + window.scrollX,
+          width: rect.width,
+        });
+      }
+    };
+    window.addEventListener('resize', handler);
+    window.addEventListener('scroll', handler);
+    return () => {
+      window.removeEventListener('resize', handler);
+      window.removeEventListener('scroll', handler);
+    };
+  }, [open]);
 
   if (variant === 'dropdown') {
     const optionPadding = size === 'sm' ? 'py-2' : size === 'lg' ? 'py-4' : 'py-3';
@@ -89,29 +126,40 @@ export function SingleSelect({
               ></i>
             </span>
           </button>
-          {open ? (
-            <div className="absolute left-0 right-0 top-full z-10 mt-1 border border-black/20 bg-white shadow-lg">
-              {options.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={cn(
-                    'w-full cursor-pointer px-4',
-                    optionPadding,
-                    textClass,
-                    'text-left transition-colors hover:bg-[#f5f5f5]',
-                    resolvedValue === option.value ? 'bg-[#f5f5f5]' : null,
-                  )}
-                  onClick={() => {
-                    onValueChange?.(option.value);
-                    setOpen(false);
-                  }}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          ) : null}
+          {open && dropdownPos &&
+            ReactDOM.createPortal(
+              <div
+                style={{
+                  position: 'absolute',
+                  top: dropdownPos.top,
+                  left: dropdownPos.left,
+                  width: dropdownPos.width,
+                }}
+                className="z-10 mt-1 border border-black/20 bg-white shadow-lg"
+              >
+                {options.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={cn(
+                      'w-full cursor-pointer px-4',
+                      optionPadding,
+                      textClass,
+                      'text-left transition-colors hover:bg-[#f5f5f5]',
+                      resolvedValue === option.value ? 'bg-[#f5f5f5]' : null,
+                    )}
+                    onClick={() => {
+                      onValueChange?.(option.value);
+                      setOpen(false);
+                    }}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>,
+              document.body,
+            )}
+
         </div>
       </label>
     );

@@ -1,5 +1,6 @@
 import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
+import type { ComponentSize } from './types';
 
 export interface TableColumn<T> {
   key: string;
@@ -36,23 +37,23 @@ export function DataTable<T>({
   size = 'md',
 }: DataTableProps<T>) {
   // size maps
-  const paddingMap = {
+  const paddingMap: Record<ComponentSize, { px: string; py: string }> = {
     sm: { px: 'px-3', py: 'py-2' },
     md: { px: 'px-6', py: 'py-4' },
     lg: { px: 'px-8', py: 'py-6' },
-  } as const;
-  const textMap = {
+  };
+  const textMap: Record<ComponentSize, { header: string; cell: string; empty: string }> = {
     sm: { header: 'text-xs', cell: 'text-sm', empty: 'text-xs' },
     md: { header: 'text-xs', cell: 'text-sm', empty: 'text-sm' },
     lg: { header: 'text-sm', cell: 'text-base', empty: 'text-sm' },
-  } as const;
+  };
 
   const { px, py } = paddingMap[size];
   const { header: headerText, cell: cellText, empty: emptyText } = textMap[size];
 
   return (
-    <div className={cn('overflow-x-auto border border-[#d5d0c9]', containerClassName)}>
-      <table className={cn('w-full min-w-[720px]', tableClassName)}>
+    <div className={cn('overflow-auto border border-[#d5d0c9]', containerClassName)}>
+      <table className={cn('w-full', tableClassName)}>
         <thead className={cn('bg-[#f5f5f5]', headerClassName)}>
           <tr>
             {columns.map((column) => (

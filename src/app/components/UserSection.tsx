@@ -162,7 +162,8 @@ export default function UserSection() {
 						className: 'w-[180px]',
 						render: (user) => (
 							<SingleSelect
-								className={`w-[140px] py-2 text-xs tracking-widest font-acumin ${roleSelectClassMap[user.roleValue]}`}
+								variant="dropdown"
+								className={`w-[140px] tracking-widest font-acumin ${roleSelectClassMap[user.roleValue]}`}
 								value={user.roleValue}
 								onChange={(event) => handleRoleChange(user.id, event.target.value as UserRoleValue)}
 								disabled={savingUserId === user.id}
@@ -171,7 +172,7 @@ export default function UserSection() {
 									{ value: 'supporter', label: 'Support' },
 									{ value: 'user', label: 'User' },
 								]}
-							 size="md"/>
+							 size="sm"/>
 						),
 					},
 					{ key: 'lastLogin', header: '最終ログイン', render: (user) => <p className="text-[#474747] font-acumin">{user.lastLogin}</p> },
