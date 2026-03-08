@@ -16,13 +16,15 @@ interface CartItem {
   color: string | null;
   size: string | null;
   added_at: string;
+  // `items` may be null when the product has been removed from inventory;
+  // API filters these cases out but we keep the union here for safety.
   items: {
     id: number;
     name: string;
     price: number;
     image_url: string;
     category: string;
-  };
+  } | null;
 }
 
 export default function CartPage() {
@@ -32,6 +34,21 @@ export default function CartPage() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [togglingWishlist, setTogglingWishlist] = useState<string | null>(null);
   const { updateCartCount, wishlistedItems, toggleWishlist } = useCart();
+
+  // track pending network updates to debounce API calls per-item
+  const pendingTimers = React.useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const lastDesired = React.useRef<Record<string, number>>({});
+  const inFlight = React.useRef<Set<string>>(new Set());
+
+  // clear any outstanding timers on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(pendingTimers.current).forEach(clearTimeout);
+      pendingTimers.current = {};
+      lastDesired.current = {};
+      inFlight.current.clear();
+    };
+  }, []);
 
   useEffect(() => {
     fetchCart();
@@ -43,8 +60,9 @@ export default function CartPage() {
       if (!response.ok) {
         throw new Error('カートの取得に失敗しました');
       }
-      const data = await response.json();
-      setCartItems(data);
+      const data: CartItem[] = await response.json();
+      // filter out any entries where item details are missing (should be rare)
+      setCartItems(data.filter((ci) => ci.items !== null));
     } catch (err) {
       console.error('Error fetching cart:', err);
       setError(err instanceof Error ? err.message : 'エラーが発生しました');
@@ -53,34 +71,65 @@ export default function CartPage() {
     }
   };
 
-  const handleQuantityChange = async (cartId: string, newQuantity: number) => {
-    if (newQuantity < 1) return;
+  const scheduleUpdate = (cartId: string) => {
+    if (pendingTimers.current[cartId]) {
+      clearTimeout(pendingTimers.current[cartId]);
+    }
+    pendingTimers.current[cartId] = setTimeout(() => sendUpdate(cartId), 500);
+  };
 
+  const sendUpdate = async (cartId: string) => {
+    delete pendingTimers.current[cartId];
+    if (inFlight.current.has(cartId)) {
+      // another request already in flight; it will schedule again when done
+      return;
+    }
+
+    const quantity = lastDesired.current[cartId];
+    if (quantity === undefined) return;
+
+    inFlight.current.add(cartId);
     setUpdatingId(cartId);
     try {
       const response = await fetch(`/api/cart/${cartId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ quantity: newQuantity }),
+        body: JSON.stringify({ quantity }),
       });
 
       if (!response.ok) {
         throw new Error('数量更新に失敗しました');
       }
 
-      setCartItems(
-        cartItems.map((item) =>
-          item.id === cartId ? { ...item, quantity: newQuantity } : item
-        )
-      );
-
-      // Update cart count in context
       await updateCartCount();
     } catch (err) {
       console.error('Error updating quantity:', err);
       alert(err instanceof Error ? err.message : 'エラーが発生しました');
     } finally {
+      inFlight.current.delete(cartId);
       setUpdatingId(null);
+      // if user adjusted quantity again while this request was running,
+      // schedule another update reflecting the newest value
+      if (lastDesired.current[cartId] !== quantity) {
+        scheduleUpdate(cartId);
+      }
+    }
+  };
+
+  const handleQuantityChange = (cartId: string, newQuantity: number) => {
+    if (newQuantity < 1) return;
+
+    // track latest desired quantity for this item
+    lastDesired.current[cartId] = newQuantity;
+
+    // optimistic UI update
+    setCartItems((prev) =>
+      prev.map((item) => (item.id === cartId ? { ...item, quantity: newQuantity } : item))
+    );
+
+    // if no request is currently in flight, start debounce timer
+    if (!inFlight.current.has(cartId)) {
+      scheduleUpdate(cartId);
     }
   };
 
@@ -120,7 +169,7 @@ export default function CartPage() {
   };
 
   const subtotal = cartItems.reduce(
-    (sum, item) => sum + item.items.price * item.quantity,
+    (sum, item) => sum + (item.items?.price ?? 0) * item.quantity,
     0
   );
 
@@ -162,7 +211,12 @@ export default function CartPage() {
               </div>
             ) : (
               <>
-                {cartItems.map((item) => (
+                {cartItems.map((item) => {
+              if (!item.items) {
+                // this should not happen because we filter on fetch, but defensive
+                return null;
+              }
+              return (
                   <div
                     key={item.id}
                     className="flex gap-6 border-b border-black/10 pb-6 relative group"
@@ -231,7 +285,8 @@ export default function CartPage() {
                       </div>
                     </div>
                   </div>
-                ))}
+                );
+            })}
 
                 <div className="pt-6">
                   <Link

@@ -76,10 +76,13 @@ export async function GET(req: NextRequest) {
     const itemsMap = new Map<number, ItemRow>(
       ((itemsData || []) as ItemRow[]).map((item) => [item.id, item])
     );
-    const result = (cartData as CartRow[]).map((cartItem) => ({
-      ...cartItem,
-      items: itemsMap.get(cartItem.item_id),
-    }));
+    const result = (cartData as CartRow[])
+      .map((cartItem) => ({
+        ...cartItem,
+        items: itemsMap.get(cartItem.item_id) || null,
+      }))
+      // If an item no longer exists in the items table, drop it from the response
+      .filter((ci) => ci.items !== null);
 
     return NextResponse.json(result);
   } catch (error) {

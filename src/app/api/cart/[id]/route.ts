@@ -25,8 +25,19 @@ export async function PATCH(
       );
     }
 
-    const body = await req.json();
-    const { quantity } = body;
+    // safely parse request JSON; it may be empty or malformed
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch (err) {
+      console.warn('Failed to parse JSON body for cart patch', err);
+      return NextResponse.json(
+        { error: 'Invalid request body' },
+        { status: 400 }
+      );
+    }
+
+    const { quantity } = (body as Record<string, unknown>) || {};
 
     if (quantity === undefined || quantity < 1) {
       return NextResponse.json(
