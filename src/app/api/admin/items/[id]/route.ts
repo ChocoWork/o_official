@@ -55,8 +55,9 @@ function parseJsonField<T>(value: FormDataEntryValue | null, schema: z.ZodType<T
   return schema.parse(parsedJson);
 }
 
-export async function GET(request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const authz = await authorizeAdminPermission('admin.items.read', request);
     if (!authz.ok) {
       return authz.response;
@@ -67,7 +68,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
     const { data, error } = await supabase
       .from('items')
       .select('*')
-      .eq('id', params.id)
+      .eq('id', id)
       .single();
 
     if (error || !data) {
@@ -81,8 +82,9 @@ export async function GET(request: Request, { params }: { params: { id: string }
   }
 }
 
-export async function PUT(request: Request, { params }: { params: { id: string } }) {
+export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const authz = await authorizeAdminPermission('admin.items.manage', request);
     if (!authz.ok) {
       return authz.response;
@@ -169,7 +171,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     const { error } = await supabase
       .from('items')
       .update(updatePayload)
-      .eq('id', params.id);
+      .eq('id', id);
 
     if (error) {
       console.error('Failed to update item:', error);
@@ -193,8 +195,9 @@ export async function PUT(request: Request, { params }: { params: { id: string }
   }
 }
 
-export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const authz = await authorizeAdminPermission('admin.items.manage', request);
     if (!authz.ok) {
       return authz.response;
@@ -218,7 +221,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     const { error } = await supabase
       .from('items')
       .update({ status: parsed.data.status })
-      .eq('id', params.id);
+      .eq('id', id);
 
     if (error) {
       console.error('Failed to update item status:', error);
@@ -232,8 +235,9 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   }
 }
 
-export async function DELETE(request: Request, { params }: { params: { id: string } }) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const authz = await authorizeAdminPermission('admin.items.manage', request);
     if (!authz.ok) {
       return authz.response;
@@ -244,7 +248,7 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
     const { error } = await supabase
       .from('items')
       .delete()
-      .eq('id', params.id);
+      .eq('id', id);
 
     if (error) {
       console.error('Failed to delete item:', error);

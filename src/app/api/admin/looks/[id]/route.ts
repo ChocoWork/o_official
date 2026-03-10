@@ -48,8 +48,9 @@ function parseJsonField<T>(value: FormDataEntryValue | null, schema: z.ZodType<T
   return schema.parse(parsedJson);
 }
 
-export async function GET(request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const authz = await authorizeAdminPermission('admin.looks.read', request);
     if (!authz.ok) {
       return authz.response;
@@ -60,7 +61,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
     const { data: lookData, error: lookError } = await supabase
       .from('looks')
       .select('*')
-      .eq('id', params.id)
+      .eq('id', id)
       .single();
 
     if (lookError || !lookData) {
@@ -70,7 +71,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
     const { data: lookItems, error: lookItemsError } = await supabase
       .from('look_items')
       .select('item_id')
-      .eq('look_id', params.id);
+      .eq('look_id', id);
 
     if (lookItemsError) {
       console.error('Failed to fetch look items:', lookItemsError);
@@ -94,8 +95,9 @@ export async function GET(request: Request, { params }: { params: { id: string }
   }
 }
 
-export async function PUT(request: Request, { params }: { params: { id: string } }) {
+export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const authz = await authorizeAdminPermission('admin.looks.manage', request);
     if (!authz.ok) {
       return authz.response;
@@ -139,7 +141,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     const { data: existingLook, error: existingLookError } = await supabase
       .from('looks')
       .select('id,image_urls')
-      .eq('id', params.id)
+      .eq('id', id)
       .single();
 
     if (existingLookError || !existingLook) {
@@ -204,14 +206,14 @@ export async function PUT(request: Request, { params }: { params: { id: string }
         image_urls: imageUrls,
         status: parsedPayload.data.status,
       })
-      .eq('id', params.id);
+      .eq('id', id);
 
     if (updateLookError) {
       console.error('Failed to update look:', updateLookError);
       return NextResponse.json({ error: 'Failed to update look' }, { status: 500 });
     }
 
-    const { error: deleteLookItemsError } = await supabase.from('look_items').delete().eq('look_id', params.id);
+    const { error: deleteLookItemsError } = await supabase.from('look_items').delete().eq('look_id', id);
 
     if (deleteLookItemsError) {
       console.error('Failed to replace look-item links:', deleteLookItemsError);
@@ -219,7 +221,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     }
 
     const lookItemsPayload = parsedPayload.data.linkedItemIds.map((itemId) => ({
-      look_id: Number(params.id),
+      look_id: Number(id),
       item_id: itemId,
     }));
 
@@ -247,8 +249,9 @@ export async function PUT(request: Request, { params }: { params: { id: string }
   }
 }
 
-export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const authz = await authorizeAdminPermission('admin.looks.manage', request);
     if (!authz.ok) {
       return authz.response;
@@ -272,7 +275,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     const { error } = await supabase
       .from('looks')
       .update({ status: parsed.data.status })
-      .eq('id', params.id);
+      .eq('id', id);
 
     if (error) {
       console.error('Failed to update look status:', error);
@@ -286,8 +289,9 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   }
 }
 
-export async function DELETE(request: Request, { params }: { params: { id: string } }) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const authz = await authorizeAdminPermission('admin.looks.manage', request);
     if (!authz.ok) {
       return authz.response;
@@ -295,7 +299,7 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
 
     const supabase = await createServiceRoleClient();
 
-    const { error } = await supabase.from('looks').delete().eq('id', params.id);
+    const { error } = await supabase.from('looks').delete().eq('id', id);
 
     if (error) {
       console.error('Failed to delete look:', error);

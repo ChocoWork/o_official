@@ -80,15 +80,9 @@ export async function POST(request: Request) {
         try {
           const service = await createServiceRoleClient();
 
-          if (service?.auth?.admin?.getUserByEmail) {
-            const maybe = await service.auth.admin.getUserByEmail(emailToCheck);
-            if (maybe?.data?.user) return { found: true, detail: 'email already exists (pre-check getUserByEmail)' };
-            return { found: false };
-          }
-
           if (service?.auth?.admin?.listUsers) {
             try {
-              const listed = await service.auth.admin.listUsers({ per_page: 100 });
+              const listed = await service.auth.admin.listUsers({ perPage: 100 });
               if (listed?.data?.users) {
                 const found = listed.data.users.find((u) => String(u.email).toLowerCase() === String(emailToCheck).toLowerCase());
                 if (found) return { found: true, detail: 'email already exists (pre-check listUsers)' };
@@ -175,6 +169,11 @@ export async function POST(request: Request) {
 
       // If signup returned a session (auto signed-in), persist session and set cookies
       if (data.session) {
+        if (!data.user) {
+          await logAudit({ action: 'register', actor_email: email, outcome: 'error', detail: 'missing_user_after_signup' });
+          return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+        }
+
         const res = NextResponse.json({ access_token: data.session.access_token, user: data.user }, { status: 201 });
         try {
           const { persistSessionAndCookies } = await import('@/features/auth/services/register');

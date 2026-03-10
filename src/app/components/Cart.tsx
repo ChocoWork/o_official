@@ -6,7 +6,9 @@ import { EmptyCart } from './EmptyCart';
 
 const SAMPLE_ITEMS: CartItemType[] = [
   {
-    id: '1',
+    id: 1,
+    user_id: 'sample-user',
+    item_id: 1,
     name: 'ワイヤレスノイズキャンセリングヘッドホン',
     price: 29800,
     image: 'https://images.pexels.com/photos/3394650/pexels-photo-3394650.jpeg?auto=compress&cs=tinysrgb&w=300',
@@ -15,9 +17,12 @@ const SAMPLE_ITEMS: CartItemType[] = [
     color: 'ブラック',
     size: 'フリー', // サイズ追加
     inStock: true,
+    created_at: new Date().toISOString(),
   },
   {
-    id: '2',
+    id: 2,
+    user_id: 'sample-user',
+    item_id: 2,
     name: 'スマートウォッチ シリーズ8',
     price: 45800,
     image: 'https://images.pexels.com/photos/393047/pexels-photo-393047.jpeg?auto=compress&cs=tinysrgb&w=300',
@@ -26,9 +31,12 @@ const SAMPLE_ITEMS: CartItemType[] = [
     color: 'シルバー',
     size: 'M', // サイズ追加
     inStock: true,
+    created_at: new Date().toISOString(),
   },
   {
-    id: '3',
+    id: 3,
+    user_id: 'sample-user',
+    item_id: 3,
     name: 'ワイヤレス充電器',
     price: 3980,
     image: 'https://images.pexels.com/photos/4526129/pexels-photo-4526129.jpeg?auto=compress&cs=tinysrgb&w=300',
@@ -37,13 +45,14 @@ const SAMPLE_ITEMS: CartItemType[] = [
     color: 'ホワイト',
     size: 'S', // サイズ追加
     inStock: false,
+    created_at: new Date().toISOString(),
   },
 ];
 
 export const Cart: React.FC = () => {
   const [cartItems, setCartItems] = useState<CartItemType[]>(SAMPLE_ITEMS);
 
-  const updateQuantity = (id: string, quantity: number) => {
+  const updateQuantity = (id: number, quantity: number) => {
     setCartItems(items =>
       items.map(item =>
         item.id === id ? { ...item, quantity } : item
@@ -51,7 +60,7 @@ export const Cart: React.FC = () => {
     );
   };
 
-  const removeItem = (id: string) => {
+  const removeItem = (id: number) => {
     setCartItems(items => items.filter(item => item.id !== id));
   };
 

@@ -5,6 +5,7 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 type CsrfDenyResponse = {
   status: number;
   _body: unknown;
+  headers?: Record<string, string>;
 };
 
 type CsrfRotateResult = {
@@ -41,20 +42,19 @@ export async function POST() {
         const { requireCsrfOrDeny } = await import('@/lib/csrfMiddleware');
         csrfResult = await requireCsrfOrDeny();
         if (isCsrfDenyResponse(csrfResult)) {
-          return csrfResult;
+          const denyResponse = NextResponse.json(csrfResult._body, { status: csrfResult.status });
+          if (csrfResult.headers) {
+            for (const [key, value] of Object.entries(csrfResult.headers)) {
+              denyResponse.headers.set(key, value);
+            }
+          }
+          return denyResponse;
         }
 
-        // Some test mocks return an object where `update()` itself returns
-        // a Promise (no `.eq()` chain). Other implementations return a
-        // chainable query builder where `.update(...).eq(...)` is valid.
-        // Handle both shapes gracefully.
-        const updateCall = service.from('sessions').update({ revoked_at: new Date().toISOString() });
-        if (updateCall && typeof (updateCall as { eq?: (column: string, value: string) => Promise<unknown> }).eq === 'function') {
-          await (updateCall as { eq: (column: string, value: string) => Promise<unknown> }).eq('refresh_token_hash', hash);
-        } else {
-          // Await the promise-like update result if it's promise-like.
-          await updateCall;
-        }
+        await service
+          .from('sessions')
+          .update({ revoked_at: new Date().toISOString() })
+          .eq('refresh_token_hash', hash);
       } catch (dbErr) {
         console.error('Failed to mark session revoked:', dbErr);
       }

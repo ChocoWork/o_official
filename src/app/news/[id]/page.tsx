@@ -8,26 +8,28 @@ import { TagLabel } from '@/app/components/ui/TagLabel';
 import { getPublishedNewsDetailById, getPublishedNewsNavigation } from '@/features/news/services/public';
 
 interface NewsDetailPageProps {
-  params: {
+  params: Promise<{
     id: string;
-  };
-  searchParams?: {
+  }>;
+  searchParams?: Promise<{
     category?: string;
-  };
+  }>;
 }
 
 export default async function NewsDetailPage({
   params,
   searchParams,
 }: NewsDetailPageProps) {
-  const selectedCategory = (searchParams?.category ?? "ALL").toUpperCase();
+  const resolvedParams = await params;
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
+  const selectedCategory = (resolvedSearchParams?.category ?? "ALL").toUpperCase();
   const activeCategory = categories.includes(
     selectedCategory as (typeof categories)[number],
   )
     ? (selectedCategory as (typeof categories)[number])
     : "ALL";
   
-  const article = await getPublishedNewsDetailById(params.id, {
+  const article = await getPublishedNewsDetailById(resolvedParams.id, {
     category: activeCategory,
   });
 
@@ -35,7 +37,7 @@ export default async function NewsDetailPage({
     notFound();
   }
 
-  const { prevArticle, nextArticle } = await getPublishedNewsNavigation(params.id, {
+  const { prevArticle, nextArticle } = await getPublishedNewsNavigation(resolvedParams.id, {
     category: activeCategory,
   });
 

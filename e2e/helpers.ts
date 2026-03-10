@@ -127,11 +127,26 @@ export async function apiRequest(
   path: string,
   data?: any
 ) {
-  const response = await page.request[method.toLowerCase()](path, {
+  const requestOptions = {
     data,
     headers: {
       'Content-Type': 'application/json',
     },
-  });
-  return response;
+  };
+
+  const normalizedMethod = method.toLowerCase();
+  switch (normalizedMethod) {
+    case 'get':
+      return page.request.get(path, requestOptions);
+    case 'post':
+      return page.request.post(path, requestOptions);
+    case 'put':
+      return page.request.put(path, requestOptions);
+    case 'patch':
+      return page.request.patch(path, requestOptions);
+    case 'delete':
+      return page.request.delete(path, requestOptions);
+    default:
+      throw new Error(`Unsupported HTTP method: ${method}`);
+  }
 }

@@ -15,8 +15,9 @@ const updateNewsSchema = z.object({
 const allowedImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 const maxImageBytes = 5 * 1024 * 1024;
 
-export async function GET(request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const authz = await authorizeAdminPermission('admin.news.read', request);
     if (!authz.ok) {
       return authz.response;
@@ -27,7 +28,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
     const { data, error } = await supabase
       .from('news_articles')
       .select('*')
-      .eq('id', params.id)
+      .eq('id', id)
       .single();
 
     if (error || !data) {
@@ -42,8 +43,9 @@ export async function GET(request: Request, { params }: { params: { id: string }
   }
 }
 
-export async function PUT(request: Request, { params }: { params: { id: string } }) {
+export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const authz = await authorizeAdminPermission('admin.news.manage', request);
     if (!authz.ok) {
       return authz.response;
@@ -125,7 +127,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     const { error } = await supabase
       .from('news_articles')
       .update(updatePayload)
-      .eq('id', params.id);
+      .eq('id', id);
 
     if (error) {
       console.error('Failed to update news article:', error);
@@ -143,8 +145,9 @@ const patchStatusSchema = z.object({
   status: z.enum(['private', 'published']),
 });
 
-export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const authz = await authorizeAdminPermission('admin.news.manage', request);
     if (!authz.ok) {
       return authz.response;
@@ -168,7 +171,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     const { error } = await supabase
       .from('news_articles')
       .update({ status: parsed.data.status })
-      .eq('id', params.id);
+      .eq('id', id);
 
     if (error) {
       console.error('Failed to update news article status:', error);
@@ -182,8 +185,9 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   }
 }
 
-export async function DELETE(request: Request, { params }: { params: { id: string } }) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const authz = await authorizeAdminPermission('admin.news.manage', request);
     if (!authz.ok) {
       return authz.response;
@@ -194,7 +198,7 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
     const { error } = await supabase
       .from('news_articles')
       .delete()
-      .eq('id', params.id);
+      .eq('id', id);
 
     if (error) {
       console.error('Failed to delete news article:', error);

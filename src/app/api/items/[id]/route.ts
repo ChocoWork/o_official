@@ -5,15 +5,16 @@ import { Item } from '@/app/types/item';
 // GET: 個別商品取得（公開済みのみ）
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const supabase = await createClient();
 
     const { data, error } = await supabase
       .from('items')
       .select('id, name, description, price, category, image_url, image_urls, colors, sizes, product_details, status, created_at, updated_at')
-      .eq('id', params.id)
+      .eq('id', id)
       .eq('status', 'published')
       .single();
 

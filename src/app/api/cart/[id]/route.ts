@@ -38,8 +38,9 @@ export async function PATCH(
     }
 
     const { quantity } = (body as Record<string, unknown>) || {};
+    const parsedQuantity = typeof quantity === 'number' ? quantity : Number(quantity);
 
-    if (quantity === undefined || quantity < 1) {
+    if (!Number.isFinite(parsedQuantity) || parsedQuantity < 1) {
       return NextResponse.json(
         { error: "Valid quantity is required" },
         { status: 400 }
@@ -49,7 +50,7 @@ export async function PATCH(
     const { data: cartItem, error: updateError } = await supabase
       .from("carts")
       .update({
-        quantity,
+        quantity: parsedQuantity,
         updated_at: new Date().toISOString(),
       })
       .eq("id", id)

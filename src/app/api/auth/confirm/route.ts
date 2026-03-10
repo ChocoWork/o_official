@@ -4,7 +4,8 @@ import { logAudit } from '@/lib/audit';
 import { getRequestOrigin, sanitizeRedirectPath } from '@/lib/redirect';
 
 const DEFAULT_REDIRECT_PATH = '/account';
-const ALLOWED_OTP_TYPES = new Set(['signup', 'email', 'magiclink', 'recovery']);
+type OtpType = 'signup' | 'email' | 'magiclink' | 'recovery';
+const ALLOWED_OTP_TYPES = new Set<OtpType>(['signup', 'email', 'magiclink', 'recovery']);
 
 function classifyConfirmError(message: string | undefined) {
   const normalized = (message || '').toLowerCase();
@@ -25,7 +26,15 @@ export async function GET(request: Request) {
   try {
     const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
     const rl = await enforceRateLimit({ request, endpoint: 'auth:confirm', limit: 50, windowSeconds: 600 });
-    if (rl) return rl;
+    if (rl) {
+      if (rl instanceof Response) {
+        return rl;
+      }
+
+      const fallback = NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+      fallback.headers.set('Retry-After', '600');
+      return fallback;
+    }
   } catch (e) {
     console.error('Rate limit middleware error (confirm):', e);
   }
@@ -34,7 +43,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const tokenHash = url.searchParams.get('token_hash') || url.searchParams.get('token');
   const rawType = url.searchParams.get('type') || 'signup';
-  const otpType = ALLOWED_OTP_TYPES.has(rawType) ? rawType : 'signup';
+  const otpType: OtpType = ALLOWED_OTP_TYPES.has(rawType as OtpType) ? (rawType as OtpType) : 'signup';
   const redirectPath = sanitizeRedirectPath(url.searchParams.get('redirect_to'), DEFAULT_REDIRECT_PATH);
 
   if (!tokenHash) {
@@ -43,7 +52,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const supabase = createServiceRoleClient();
+    const supabase = await createServiceRoleClient();
     const { data, error } = await supabase.auth.verifyOtp({
       token_hash: tokenHash,
       type: otpType,

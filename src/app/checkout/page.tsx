@@ -1,17 +1,79 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import Link from 'next/link';
 import Image from 'next/image';
 import { Button } from '@/app/components/ui/Button';
 import { Checkbox } from '@/app/components/ui/Checkbox';
+import {
+  formatPostalCodeInput,
+  isCompletePostalCode,
+  normalizePostalCode,
+} from '@/features/checkout/utils/postal-code.util';
 import { RadioButtonGroup } from '@/app/components/ui/RadioButtonGroup';
 import { SingleSelect } from '@/app/components/ui/SingleSelect';
 import { TextField } from '@/app/components/ui/TextField';
 
+const PREFECTURES = [
+  '北海道',
+  '青森県',
+  '岩手県',
+  '宮城県',
+  '秋田県',
+  '山形県',
+  '福島県',
+  '茨城県',
+  '栃木県',
+  '群馬県',
+  '埼玉県',
+  '千葉県',
+  '東京都',
+  '神奈川県',
+  '新潟県',
+  '富山県',
+  '石川県',
+  '福井県',
+  '山梨県',
+  '長野県',
+  '岐阜県',
+  '静岡県',
+  '愛知県',
+  '三重県',
+  '滋賀県',
+  '京都府',
+  '大阪府',
+  '兵庫県',
+  '奈良県',
+  '和歌山県',
+  '鳥取県',
+  '島根県',
+  '岡山県',
+  '広島県',
+  '山口県',
+  '徳島県',
+  '香川県',
+  '愛媛県',
+  '高知県',
+  '福岡県',
+  '佐賀県',
+  '長崎県',
+  '熊本県',
+  '大分県',
+  '宮崎県',
+  '鹿児島県',
+  '沖縄県',
+];
+
+const CHECKOUT_STEPS = [
+  { id: 1, label: '配送情報' },
+  { id: 2, label: 'お支払い方法' },
+  { id: 3, label: 'ご注文内容の確認' },
+];
+
 export default function CheckoutPage() {
   const [step, setStep] = useState<number>(1);
   const [paymentMethod, setPaymentMethod] = useState('credit');
+  const latestPostalLookupRef = useRef('');
   const [shippingForm, setShippingForm] = useState({
     email: '',
     fullName: '',
@@ -28,6 +90,7 @@ export default function CheckoutPage() {
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
     const { name, value, type } = e.target;
+    const nextValue = name === 'postalCode' ? formatPostalCodeInput(value) : value;
     const checked =
       type === 'checkbox' && 'checked' in e.target
         ? (e.target as HTMLInputElement).checked
@@ -35,28 +98,36 @@ export default function CheckoutPage() {
 
     setShippingForm((prev) => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : value,
+      [name]: type === 'checkbox' ? checked : nextValue,
     }));
 
     // 郵便番号自動補完
     if (name === 'postalCode') {
-      const cleanedZip = value.replace(/[^0-9]/g, '');
-      if (cleanedZip.length === 7) {
-        fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${cleanedZip}`)
-          .then(res => res.json())
-          .then(data => {
-            if (data.status === 200 && data.results) {
-              const result = data.results[0];
-              setShippingForm(prev => ({
-                ...prev,
-                prefecture: result.address1 || prev.prefecture,
-                city: result.address2 || prev.city,
-                address: result.address3 || prev.address,
-              }));
-            }
-          })
-          .catch(err => console.error('郵便番号検索エラー:', err));
+      const cleanedZip = normalizePostalCode(nextValue);
+      if (!isCompletePostalCode(cleanedZip)) {
+        latestPostalLookupRef.current = '';
+        return;
       }
+
+      latestPostalLookupRef.current = cleanedZip;
+      fetch(`/api/checkout/postal-code?postalCode=${cleanedZip}`)
+        .then(res => res.json())
+        .then((data) => {
+          if (latestPostalLookupRef.current !== cleanedZip) {
+            return;
+          }
+
+          const address = data?.address;
+          if (address) {
+            setShippingForm(prev => ({
+              ...prev,
+              prefecture: address.prefecture || prev.prefecture,
+              city: address.city || prev.city,
+              address: address.address || prev.address,
+            }));
+          }
+        })
+        .catch(err => console.error('郵便番号検索エラー:', err));
     }
   };
 
@@ -153,21 +224,23 @@ export default function CheckoutPage() {
   return (
       <main className="pt-32 pb-20 px-6 lg:px-12">
       <div className="max-w-7xl mx-auto">
-        <h1 className="text-4xl text-black tracking-tight mb-12 font-display">Checkout</h1>
-
         <div className="flex items-center justify-center mb-12">
-          <div className="flex items-center gap-4">
-            <div className={`flex items-center justify-center w-10 h-10 rounded-full border-2 ${step>=1 ? 'bg-black border-black text-white' : 'border-black/20 text-[#474747]'}`}>
-              <span className="text-sm font-brand">1</span>
-            </div>
-            <div className={`${step>=2 ? 'w-20 h-0.5 bg-black' : 'w-20 h-0.5 bg-black/20'}`}></div>
-            <div className={`flex items-center justify-center w-10 h-10 rounded-full border-2 ${step>=2 ? 'bg-black border-black text-white' : 'border-black/20 text-[#474747]'}`}>
-              <span className="text-sm font-brand">2</span>
-            </div>
-            <div className={`${step>=3 ? 'w-20 h-0.5 bg-black' : 'w-20 h-0.5 bg-black/20'}`}></div>
-            <div className={`flex items-center justify-center w-10 h-10 rounded-full border-2 ${step>=3 ? 'bg-black border-black text-white' : 'border-black/20 text-[#474747]'}`}>
-              <span className="text-sm font-brand">3</span>
-            </div>
+          <div className="flex items-start">
+            {CHECKOUT_STEPS.map((checkoutStep, index) => (
+              <React.Fragment key={checkoutStep.id}>
+                <div className="w-24 sm:w-32 flex flex-col items-center text-center">
+                  <div className={`flex items-center justify-center w-10 h-10 rounded-full border-2 ${step >= checkoutStep.id ? 'bg-black border-black text-white' : 'border-black/20 text-[#474747]'}`}>
+                    <span className="text-sm font-brand">{checkoutStep.id}</span>
+                  </div>
+                  <span className={`mt-3 text-xs sm:text-sm font-brand leading-tight ${step >= checkoutStep.id ? 'text-black' : 'text-[#474747]'}`}>
+                    {checkoutStep.label}
+                  </span>
+                </div>
+                {index < CHECKOUT_STEPS.length - 1 && (
+                  <div className={`${step >= checkoutStep.id + 1 ? 'bg-black' : 'bg-black/20'} w-10 sm:w-16 h-0.5 mt-5`}></div>
+                )}
+              </React.Fragment>
+            ))}
           </div>
         </div>
 
@@ -178,7 +251,6 @@ export default function CheckoutPage() {
               {step === 1 && (
                 <form onSubmit={handleShippingNext}>
                   <div>
-                    <h2 className="text-2xl text-black mb-8 tracking-tight font-display">配送情報</h2>
                     <div className="space-y-6">
                       <TextField required label="メールアドレス" type="email" name="email" autoComplete="email" value={shippingForm.email} onChange={handleShippingChange} className="font-brand"  size="md"/>
 
@@ -190,17 +262,22 @@ export default function CheckoutPage() {
                         name="prefecture"
                         required
                         label="都道府県"
+                        variant="dropdown"
                         autoComplete="address-level1"
                         value={shippingForm.prefecture}
-                        onChange={handleShippingChange}
+                        onValueChange={(prefecture) => {
+                          setShippingForm((prev) => ({
+                            ...prev,
+                            prefecture,
+                          }));
+                        }}
                         className="font-brand"
                         options={[
                           { value: '', label: '選択してください' },
-                          { value: '東京都', label: '東京都' },
-                          { value: '大阪府', label: '大阪府' },
-                          { value: '神奈川県', label: '神奈川県' },
-                          { value: '愛知県', label: '愛知県' },
-                          { value: '福岡県', label: '福岡県' },
+                          ...PREFECTURES.map((prefecture) => ({
+                            value: prefecture,
+                            label: prefecture,
+                          })),
                         ]}
                        size="md"/>
 
@@ -217,7 +294,7 @@ export default function CheckoutPage() {
                         name="saveProfile"
                         checked={shippingForm.saveProfile}
                         onChange={handleShippingChange}
-                        label="氏名と電話番号をプロフィールに任意保存する"
+                        label="氏名と電話番号を保存する"
                        size="md"/>
                     </div>
                   </div>
@@ -232,7 +309,6 @@ export default function CheckoutPage() {
               {step === 3 && (
                 <form onSubmit={handleConfirm}>
                   <div>
-                    <h2 className="text-2xl text-black mb-8 tracking-tight font-display">ご注文内容の確認</h2>
                     <div className="space-y-8">
                       <div>
                         <h3 className="text-sm text-[#474747] mb-4 tracking-wider font-brand">配送先</h3>
@@ -265,7 +341,6 @@ export default function CheckoutPage() {
               {step === 2 && (
                 <form onSubmit={handlePaymentNext}>
                   <div>
-                    <h2 className="text-2xl text-black mb-8 tracking-tight font-display">お支払い方法</h2>
                     <div className="space-y-6">
                       <RadioButtonGroup
                         name="paymentMethod"

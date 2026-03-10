@@ -4,7 +4,7 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 
 const REFRESH_TOKEN_MAX_AGE = 7 * 24 * 60 * 60; // 7 days
 
-export async function POST(request?: Request) {
+export async function POST(request: Request) {
   try {
     // Enforce IP-level rate limit for refresh attempts
     try {

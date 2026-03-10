@@ -1,8 +1,20 @@
 import type { NextConfig } from "next";
 
+const skipBuildChecks = process.env.NEXT_BUILD_SKIP_CHECKS === '1';
+
 const nextConfig: NextConfig = {
   /* config options here */
   devIndicators: false,
+  ...(skipBuildChecks
+    ? {
+        typescript: {
+          ignoreBuildErrors: true,
+        },
+        eslint: {
+          ignoreDuringBuilds: true,
+        },
+      }
+    : {}),
   images: {
     remotePatterns: [
       {

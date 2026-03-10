@@ -31,9 +31,14 @@ export async function enforceRateLimit({ request, endpoint, limit = 50, windowSe
         res.headers.set('Retry-After', String(retryAfter));
         return res;
       } catch {
-        // In test environments NextResponse may not be available; return a
-        // plain-like object to make assertions easier.
-        return { status: 429, _body: { error: 'Too many requests' }, headers: { 'Retry-After': String(retryAfter) } };
+        // In test environments NextResponse may not be available; return Web Response.
+        return new Response(JSON.stringify({ error: 'Too many requests' }), {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            'Retry-After': String(retryAfter),
+          },
+        });
       }
     }
     return undefined;

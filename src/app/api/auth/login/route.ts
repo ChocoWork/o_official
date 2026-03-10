@@ -70,10 +70,10 @@ export async function POST(request: Request) {
       res.cookies.set({ name: csrfCookieName, value: csrfToken, ...cookieOptionsForCsrf(REFRESH_TOKEN_MAX_AGE) });
 
       // Persist hashed refresh & csrf token into sessions table using service role client
-      const service = (await import('@/lib/supabase/server')).createServiceRoleClient();
+      const service = await (await import('@/lib/supabase/server')).createServiceRoleClient();
       const refreshToken = session.refresh_token ?? '';
-      const refreshHash = tokenHashSha256(refreshToken);
-      const csrfHash = tokenHashSha256(csrfToken);
+      const refreshHash = await tokenHashSha256(refreshToken);
+      const csrfHash = await tokenHashSha256(csrfToken);
 
       const expiresAt = session.expires_at ? new Date(session.expires_at).toISOString() : null;
 
