@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
-import type { ButtonHTMLAttributes, AnchorHTMLAttributes, MouseEventHandler } from 'react';
+import type { ButtonHTMLAttributes, MouseEventHandler } from 'react';
 
 export type UIButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'link';
 export type UIButtonSize = 'sm' | 'md' | 'lg';
@@ -24,8 +24,7 @@ const buttonSizeClass: Record<UIButtonSize, string> = {
 
 // union of button and anchor attributes so `href` use works
 export interface ButtonProps
-  extends ButtonHTMLAttributes<HTMLButtonElement>,
-    AnchorHTMLAttributes<HTMLAnchorElement> {
+  extends ButtonHTMLAttributes<HTMLButtonElement> {
   href?: string;
   variant?: UIButtonVariant | 'text';
   size?: UIButtonSize;
@@ -58,8 +57,16 @@ export function Button({
 
   if (href) {
     // render as link for navigation; disabled link still styled but not clickable
+    // props may include button-specific attributes; cast to anchor attributes
+    const anchorProps = props as React.AnchorHTMLAttributes<HTMLAnchorElement>;
+
     return (
-      <Link href={href} className={baseClass} {...(disabled ? { onClick: (e) => e.preventDefault() } : {})} {...props}>
+      <Link
+        href={href}
+        className={baseClass}
+        {...(disabled ? { onClick: (e) => e.preventDefault() } : {})}
+        {...anchorProps}
+      >
         {children}
       </Link>
     );
