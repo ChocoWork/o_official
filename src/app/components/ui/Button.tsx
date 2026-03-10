@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
-import type { ButtonHTMLAttributes, AnchorHTMLAttributes, MouseEventHandler } from 'react';
+import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode } from 'react';
 
 export type UIButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'link';
 export type UIButtonSize = 'sm' | 'md' | 'lg';
@@ -22,27 +22,28 @@ const buttonSizeClass: Record<UIButtonSize, string> = {
   lg: 'h-12 text-sm px-5',
 };
 
-// union of button and anchor attributes so `href` use works
-export interface ButtonProps
-  extends ButtonHTMLAttributes<HTMLButtonElement>,
-    AnchorHTMLAttributes<HTMLAnchorElement> {
-  href?: string;
+type ButtonBaseProps = {
   variant?: UIButtonVariant | 'text';
   size?: UIButtonSize;
   className?: string;
-  onClick?: MouseEventHandler<HTMLElement>;
-}
+  children?: ReactNode;
+};
 
-export function Button({
-  href,
-  variant = 'primary',
-  size = 'md',
-  className,
-  type = 'button',
-  disabled,
-  children,
-  ...props
-}: ButtonProps) {
+type ButtonElementProps = ButtonBaseProps &
+  ButtonHTMLAttributes<HTMLButtonElement> & {
+    href?: undefined;
+  };
+
+type AnchorElementProps = ButtonBaseProps &
+  Omit<AnchorHTMLAttributes<HTMLAnchorElement>, 'href' | 'type' | 'disabled'> & {
+    href: string;
+    disabled?: boolean;
+  };
+
+export type ButtonProps = ButtonElementProps | AnchorElementProps;
+
+export function Button(props: ButtonProps) {
+  const { variant = 'primary', size = 'md', className } = props;
   const resolvedVariantClass =
     variant === 'text'
       ? 'bg-transparent text-black hover:text-[#474747] border border-transparent disabled:text-black/40 disabled:hover:text-black/40'
@@ -53,24 +54,42 @@ export function Button({
     resolvedVariantClass,
     buttonSizeClass[size as UIButtonSize],
     className,
-    disabled && 'cursor-not-allowed',
   );
 
-  if (href) {
+  if ('href' in props && props.href) {
+    const { href, disabled, children, onClick, ...anchorProps } = props;
+
+    const handleClick = (event: Parameters<NonNullable<AnchorElementProps['onClick']>>[0]) => {
+      if (disabled) {
+        event.preventDefault();
+        return;
+      }
+      onClick?.(event);
+    };
+
     // render as link for navigation; disabled link still styled but not clickable
     return (
-      <Link href={href} className={baseClass} {...(disabled ? { onClick: (e) => e.preventDefault() } : {})} {...props}>
+      <Link
+        href={href}
+        className={cn(baseClass, disabled && 'cursor-not-allowed')}
+        aria-disabled={disabled}
+        tabIndex={disabled ? -1 : anchorProps.tabIndex}
+        onClick={handleClick}
+        {...anchorProps}
+      >
         {children}
       </Link>
     );
   }
 
+  const { type = 'button', disabled, children, ...buttonProps } = props as ButtonElementProps;
+
   return (
     <button
       type={type}
-      className={baseClass}
+      className={cn(baseClass, disabled && 'cursor-not-allowed')}
       disabled={disabled}
-      {...props}
+      {...buttonProps}
     >
       {children}
     </button>

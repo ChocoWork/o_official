@@ -2,6 +2,7 @@ import { Button } from './Button';
 import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 import { ComponentSize } from './types';
+import type { UIButtonSize } from './Button';
 
 export interface DialogProps {
   open: boolean;

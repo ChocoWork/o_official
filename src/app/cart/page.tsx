@@ -42,11 +42,19 @@ export default function CartPage() {
 
   // clear any outstanding timers on unmount
   useEffect(() => {
+    const pendingTimersSnapshot = pendingTimers.current;
+    const lastDesiredSnapshot = lastDesired.current;
+    const inFlightSnapshot = inFlight.current;
+
     return () => {
-      Object.values(pendingTimers.current).forEach(clearTimeout);
-      pendingTimers.current = {};
-      lastDesired.current = {};
-      inFlight.current.clear();
+      Object.values(pendingTimersSnapshot).forEach(clearTimeout);
+      for (const key of Object.keys(pendingTimersSnapshot)) {
+        delete pendingTimersSnapshot[key];
+      }
+      for (const key of Object.keys(lastDesiredSnapshot)) {
+        delete lastDesiredSnapshot[key];
+      }
+      inFlightSnapshot.clear();
     };
   }, []);
 

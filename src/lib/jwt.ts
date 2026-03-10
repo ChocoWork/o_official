@@ -2,6 +2,8 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { logAudit } from '@/lib/audit';
 
+type NodeJsonWebKey = crypto.JsonWebKey;
+
 export type JwtPayload = {
   iss?: string;
   sub: string;
@@ -54,7 +56,7 @@ export function sign(payload: Partial<JwtPayload>, opts?: { expiresInSeconds?: n
   const signKey = alg.startsWith('HS') ? (secret as string) : (process.env.JWT_PRIVATE_KEY || publicKey);
   if (!signKey) throw new Error('JWT signing key not configured');
 
-  const header: Record<string, unknown> = { typ: 'JWT' };
+  const header: jwt.JwtHeader = { alg: alg as jwt.Algorithm, typ: 'JWT' };
   if (process.env.JWT_KID) header.kid = process.env.JWT_KID;
 
   const token = jwt.sign(body as object, signKey, {
@@ -68,7 +70,7 @@ export function sign(payload: Partial<JwtPayload>, opts?: { expiresInSeconds?: n
 
 // JWKS cache
 const JWKS_CACHE: {
-  keys?: JsonWebKey[];
+  keys?: NodeJsonWebKey[];
   fetchedAt?: number;
   ttlMs?: number;
 } = { ttlMs: 5 * 60 * 1000 };
@@ -88,7 +90,7 @@ async function fetchJwks(jwksUrl: string) {
   }
   const res = await fetchFn(jwksUrl, { headers: { Accept: 'application/json' } });
   if (!res.ok) throw new Error(`Failed to fetch JWKS: ${res.status}`);
-  const body = (await res.json()) as { keys?: JsonWebKey[] };
+  const body = (await res.json()) as { keys?: NodeJsonWebKey[] };
   JWKS_CACHE.keys = body.keys || [];
   JWKS_CACHE.fetchedAt = Date.now();
   return JWKS_CACHE.keys;
@@ -101,7 +103,7 @@ export function _clearJwksCache() {
 }
 
 
-function jwkToPem(jwk: JsonWebKey) {
+function jwkToPem(jwk: NodeJsonWebKey) {
   if (!jwk || jwk.kty !== 'RSA') throw new Error('Unsupported JWK type');
   // Node can import a JWK object directly
   const keyObj = crypto.createPublicKey({ key: jwk, format: 'jwk' });
@@ -175,7 +177,7 @@ export async function verify<T extends JwtPayload = JwtPayload>(token: string): 
     if (!keys || keys.length === 0) throw new Error('No JWKS key found');
 
     // Build candidate list: prefer kid match, otherwise try all keys (to support rotation)
-    const candidates: JsonWebKey[] = [];
+    const candidates: NodeJsonWebKey[] = [];
     if (decodedHeader.kid) {
       const matched = keys.find((k) => k.kid === decodedHeader.kid);
       if (matched) candidates.push(matched);

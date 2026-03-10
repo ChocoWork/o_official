@@ -38,3 +38,4 @@ updated: 2026-01-17
 - [ ] Cart API 実装
 - [ ] Cookie 永続化設計
 - [ ] クーポン検証ロジック
+- [x] `src/app/cart/page.tsx` の cleanup 処理で ref スナップショットを使用し、`react-hooks/exhaustive-deps` 警告（`inFlight.current` 参照）を解消

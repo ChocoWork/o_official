@@ -78,7 +78,7 @@ export async function persistSessionAndCookies(res: NextResponse, session: Persi
     const expiresAt = session.expires_at ? new Date(session.expires_at).toISOString() : null;
 
     try {
-      const { data: inserted, error: insertError } = await service.from('sessions').insert([
+      const { error: insertError } = await service.from('sessions').insert([
         {
           user_id: user?.id,
           refresh_token_hash: refreshHash,
@@ -96,7 +96,13 @@ export async function persistSessionAndCookies(res: NextResponse, session: Persi
       }
 
       // success
-      await logAudit({ action: 'auth.session.persist', outcome: 'success', actor_id: context.actor_id, actor_email: context.actor_email, metadata: { inserted_count: Array.isArray(inserted) ? inserted.length : 1, expires_at: expiresAt } });
+      await logAudit({
+        action: 'auth.session.persist',
+        outcome: 'success',
+        actor_id: context.actor_id,
+        actor_email: context.actor_email,
+        metadata: { inserted_count: 1, expires_at: expiresAt },
+      });
       return { ok: true };
     } catch (dbErr) {
       console.error('persistSessionAndCookies: unexpected DB error', dbErr, context);

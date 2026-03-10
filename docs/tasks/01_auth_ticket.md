@@ -206,6 +206,11 @@ npm run test -- tests/unit/migrations/
 - フロント側の `LoginModal.tsx` にクライアント検証 (`LoginRequestSchema.parse()`) を追加、`LoginContext` の `login` は検証＋非同期結果を返すよう更新済。
 - Jest / ts-jest / jsdom / Testing Library をプロジェクトに追加し、スキーマの単体テストとコンポーネント単体テスト（`LoginContext`）・統合テスト（auth API）を作成・実行し、既存のスイートは通過しています。
 - 追加済: `tests/unit/services/refresh.test.ts`（追加・パス）、`tests/integration/api/auth/refresh.test.ts`（追加・パス）、`tests/integration/api/auth/logout.test.ts`（追加・パス）、`tests/integration/api/admin/revoke-user-sessions.test.ts`（追加・パス）、`tests/integration/auth-flow.test.ts`（追加・パス） — リフレッシュ/ログアウト/管理一括失効の統合シーケンスをカバー済。
+- [x] `src/features/auth/schemas/common.ts` の `z.setErrorMap` を Zod v4 互換へ更新（`invalid_string` → `invalid_format`、email判定を `issue.format` ベースへ修正）
+- [x] `src/features/auth/services/register.ts` のセッション永続化監査ログで `inserted.length` 参照を除去し、Supabase推論型（`never`）でのビルド失敗を解消
+- [x] `src/features/auth/services/session.ts` で `tokenHashSha256` の非同期戻り値を `await` し、`Promise<string>` 比較による型不一致を解消
+- [x] `src/lib/jwt.ts` の型互換を調整（`@types/jsonwebtoken`/`@types/node-fetch` 導入、`JwtHeader` と Node `JsonWebKey` 型整合）し、ビルドを通過
+- [x] `src/lib/supabase/server.ts` のサーバークライアント初期化を `@supabase/ssr` `createServerClient` に揃え、`cookies` オプション型エラーを解消
 
 
 **実行手順**:

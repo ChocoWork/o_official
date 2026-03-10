@@ -107,3 +107,4 @@ updated: 2026-03-08
 - [x] `TagLabel` のサイズ感を過去コミット基準へ寄せるため `md` を `px-3 py-1 text-xs` に固定し、`sm/lg` の拡大量を抑制（`lg` の文字サイズを `text-xs` へ）
 - [x] `/ui` の `Tag / Label` デモで `className="px-4 py-2"` 上書きを削除し、`TagLabel` の `size` 設計がそのまま反映されるよう修正
 - [x] `TabSegmentControl` に導入されたサイズ拡大を元に戻し、md がコミット当初の標準サイズ相当（segment px-4 py-2 text-xs, pill px-6 py-2, tabs-standard text-sm, gap-8）になるようマップを調整
+- [x] `Button` の型定義を `href` 有無で判別共用体化し、`ButtonHTMLAttributes` と `AnchorHTMLAttributes` の同時拡張による型衝突（`onAbort`/`onSubmit` 不一致）を解消

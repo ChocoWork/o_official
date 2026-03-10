@@ -11,8 +11,10 @@ z.setErrorMap((issue) => {
     case 'too_big':
       if (issue.type === 'string') return { message: '入力が長すぎます' };
       return { message: '値が大きすぎます' };
-    case 'invalid_string':
-      if (issue.validation === 'email') return { message: 'メールアドレスの形式が正しくありません' };
+    case 'invalid_format':
+      if ('format' in issue && issue.format === 'email') {
+        return { message: 'メールアドレスの形式が正しくありません' };
+      }
       return { message: '文字列の形式が正しくありません' };
     case 'custom':
       return { message: issue.message ?? '無効な値です' };

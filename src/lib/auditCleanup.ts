@@ -10,13 +10,16 @@ export async function cleanupAuditLogs({ retentionDays = 365 }: { retentionDays?
 
   // Supabase PostgREST: delete where created_at < cutoff
   // Note: use .lt('created_at', cutoff) to perform deletion
-  const { data, error } = await supabase.from('audit_logs').delete().lt('created_at', cutoff);
+  const { data, error, count } = await supabase
+    .from('audit_logs')
+    .delete({ count: 'exact' })
+    .lt('created_at', cutoff);
 
   if (error) {
     throw error;
   }
 
-  return { deleted: data ? data.length : 0, data };
+  return { deleted: count ?? 0, data };
 }
 
 export default cleanupAuditLogs;

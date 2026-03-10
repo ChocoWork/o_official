@@ -14,7 +14,7 @@ export type Session = {
 export async function findSessionByRefreshHash(hashOrToken: string): Promise<Session | null> {
   const service = await createServiceRoleClient();
   const isLikelyHash = /^[0-9a-f]{64}$/i.test(hashOrToken);
-  const lookup = isLikelyHash ? hashOrToken : tokenHashSha256(hashOrToken);
+  const lookup = isLikelyHash ? hashOrToken : await tokenHashSha256(hashOrToken);
 
   const { data, error } = await service
     .from('sessions')
@@ -62,7 +62,7 @@ export async function revokeAllSessionsForUser(userId: string): Promise<void> {
 export async function isReplay(session: Session, token: string): Promise<boolean> {
   if (!session) return false;
   if (session.quarantined) return true;
-  const tokenHash = tokenHashSha256(token);
+  const tokenHash = await tokenHashSha256(token);
   if (session.previous_refresh_token_hash && session.previous_refresh_token_hash === tokenHash) return true;
   return false;
 }

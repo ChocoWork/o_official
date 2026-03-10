@@ -18,7 +18,7 @@ export async function createClient(request?: Request): Promise<SupabaseClient> {
   const cookieStore = await cookies();
   const headersList = await headers();
 
-  const { createClient: createSupabaseClient } = await import('@supabase/supabase-js');
+  const { createServerClient } = await import('@supabase/ssr');
 
   // Authorization header から Bearer token を取得（優先順位：Authorization > Cookie）
   const bearerToken = extractBearerToken(request);
@@ -28,7 +28,7 @@ export async function createClient(request?: Request): Promise<SupabaseClient> {
 
   console.log('[Supabase] Cookie header:', cookieHeader?.substring(0, 100));
 
-  const supabase = createSupabaseClient(
+  const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
