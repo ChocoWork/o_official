@@ -3,13 +3,9 @@ import {
   normalizePostalCode,
   type PostalAddressSuggestion,
 } from '@/features/checkout/utils/postal-code.util';
-import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
-import { getRedisJson, setRedisJson } from '@/lib/cache/redis-cache';
 
 const POSTAL_CACHE_TTL_MS = 1000 * 60 * 60 * 24;
-const REDIS_CACHE_TTL_SECONDS = 60 * 60 * 24;
 const ZIPCLOUD_TIMEOUT_MS = 5000;
-const REDIS_KEY_PREFIX = 'checkout:postal_code';
 
 interface PostalCacheEntry {
   address: PostalAddressSuggestion;
@@ -18,13 +14,6 @@ interface PostalCacheEntry {
 
 const postalAddressCache = new Map<string, PostalCacheEntry>();
 const inFlightRequests = new Map<string, Promise<PostalAddressSuggestion | null>>();
-
-interface PostalCodeCacheRow {
-  postal_code: string;
-  prefecture: string;
-  city: string;
-  address: string;
-}
 
 function getCachedAddress(postalCode: string): PostalAddressSuggestion | null {
   const cached = postalAddressCache.get(postalCode);
@@ -47,56 +36,6 @@ function setCachedAddress(postalCode: string, address: PostalAddressSuggestion) 
   });
 }
 
-function getRedisCacheKey(postalCode: string) {
-  return `${REDIS_KEY_PREFIX}:${postalCode}`;
-}
-
-async function getSupabaseClient() {
-  try {
-    return await createServiceRoleClient();
-  } catch {
-    return await createClient();
-  }
-}
-
-function mapRowToAddress(row: PostalCodeCacheRow): PostalAddressSuggestion {
-  return {
-    prefecture: row.prefecture,
-    city: row.city,
-    address: row.address,
-  };
-}
-
-async function findAddressInDb(postalCode: string): Promise<PostalAddressSuggestion | null> {
-  const supabase = await getSupabaseClient();
-  const { data, error } = await supabase
-    .from('postal_code_cache')
-    .select('postal_code,prefecture,city,address')
-    .eq('postal_code', postalCode)
-    .maybeSingle<PostalCodeCacheRow>();
-
-  if (error || !data) {
-    return null;
-  }
-
-  return mapRowToAddress(data);
-}
-
-async function upsertAddressToDb(postalCode: string, address: PostalAddressSuggestion): Promise<void> {
-  const supabase = await getSupabaseClient();
-  await supabase.from('postal_code_cache').upsert(
-    {
-      postal_code: postalCode,
-      prefecture: address.prefecture,
-      city: address.city,
-      address: address.address,
-      source: 'zipcloud',
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'postal_code' },
-  );
-}
-
 export async function fetchAddressByPostalCode(postalCode: string): Promise<PostalAddressSuggestion | null> {
   const normalizedPostalCode = normalizePostalCode(postalCode);
   if (normalizedPostalCode.length !== 7) {
@@ -106,19 +45,6 @@ export async function fetchAddressByPostalCode(postalCode: string): Promise<Post
   const cachedAddress = getCachedAddress(normalizedPostalCode);
   if (cachedAddress) {
     return cachedAddress;
-  }
-
-  const dbAddress = await findAddressInDb(normalizedPostalCode);
-  if (dbAddress) {
-    setCachedAddress(normalizedPostalCode, dbAddress);
-    await setRedisJson(getRedisCacheKey(normalizedPostalCode), dbAddress, REDIS_CACHE_TTL_SECONDS);
-    return dbAddress;
-  }
-
-  const redisAddress = await getRedisJson<PostalAddressSuggestion>(getRedisCacheKey(normalizedPostalCode));
-  if (redisAddress) {
-    setCachedAddress(normalizedPostalCode, redisAddress);
-    return redisAddress;
   }
 
   const pendingRequest = inFlightRequests.get(normalizedPostalCode);
@@ -148,8 +74,6 @@ export async function fetchAddressByPostalCode(postalCode: string): Promise<Post
 
       if (address) {
         setCachedAddress(normalizedPostalCode, address);
-        await upsertAddressToDb(normalizedPostalCode, address);
-        await setRedisJson(getRedisCacheKey(normalizedPostalCode), address, REDIS_CACHE_TTL_SECONDS);
       }
 
       return address;
