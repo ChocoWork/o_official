@@ -38,8 +38,34 @@ describe('Button component', () => {
 
     await user.click(element);
     // because we intercept with preventDefault on disabled prop, nothing should happen
-    // we can assert that default was prevented by checking no navigation event? not trivial here
     // at least ensure element is still in document
     expect(element).toBeInTheDocument();
+  });
+
+  test('button and link apply cursor styles correctly', () => {
+    // enabled button
+    render(<Button>Click</Button>);
+    const btn = screen.getByRole('button', { name: 'Click' });
+    expect(btn).toHaveClass('cursor-pointer');
+
+    // disabled button
+    render(<Button disabled>Disabled</Button>);
+    const btnDis = screen.getByRole('button', { name: 'Disabled' });
+    expect(btnDis).toHaveClass('cursor-not-allowed');
+
+    // enabled link
+    render(<Button href="/foo">Link</Button>);
+    const link = screen.getByRole('link', { name: 'Link' });
+    // anchor defaults to pointer cursor; our component adds no extra class but should still include cursor-pointer
+    expect(link).toHaveClass('cursor-pointer');
+
+    // disabled link also shows not-allowed and removes pointer
+    render(
+      <Button href="/foo" disabled>
+        LinkDisabled
+      </Button>
+    );
+    const linkDis = screen.getByRole('link', { name: 'LinkDisabled' });
+    expect(linkDis).toHaveClass('cursor-not-allowed');
   });
 });
