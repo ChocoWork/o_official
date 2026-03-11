@@ -71,6 +71,54 @@ const CHECKOUT_STEPS = [
 ];
 
 export default function CheckoutPage() {
+  // cart data for order summary (mirrors cart/page.tsx)
+  interface CartItem {
+    id: string;
+    item_id: number;
+    quantity: number;
+    color: string | null;
+    size: string | null;
+    added_at: string;
+    items:
+      | {
+          id: number;
+          name: string;
+          price: number;
+          image_url: string;
+          category: string;
+        }
+      | null;
+  }
+
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [cartLoading, setCartLoading] = useState(true);
+
+  // calculate costs
+  const subtotal = cartItems.reduce(
+    (sum, item) => sum + (item.items?.price ?? 0) * item.quantity,
+    0
+  );
+  // for now we use a flat shipping rate or free shipping example
+  const shipping = subtotal === 0 ? 0 : 500; // ¥500 flat fee when there are items
+  const total = subtotal + shipping;
+
+  React.useEffect(() => {
+    const fetchCart = async () => {
+      try {
+        const res = await fetch('/api/cart');
+        if (res.ok) {
+          const data: CartItem[] = await res.json();
+          setCartItems(data.filter((ci) => ci.items !== null));
+        }
+      } catch (err) {
+        console.error('カート取得エラー', err);
+      } finally {
+        setCartLoading(false);
+      }
+    };
+    fetchCart();
+  }, []);
+
   const [step, setStep] = useState<number>(1);
   const [paymentMethod, setPaymentMethod] = useState('credit');
   const latestPostalLookupRef = useRef('');
@@ -165,6 +213,16 @@ export default function CheckoutPage() {
 
   const [completed, setCompleted] = useState<boolean>(false);
 
+  if (cartLoading) {
+    return (
+      <main className="pt-32 pb-20 px-6 lg:px-12">
+        <div className="max-w-7xl mx-auto text-center">
+          <div className="text-base tracking-widest font-brand">読み込み中...</div>
+        </div>
+      </main>
+    );
+  }
+
   if (completed) {
     return (
       <main className="pt-32 pb-20 px-6 lg:px-12">
@@ -222,7 +280,7 @@ export default function CheckoutPage() {
   }
 
   return (
-      <main className="pt-32 pb-20 px-6 lg:px-12">
+    <main className="pt-32 pb-20 px-6 lg:px-12">
       <div className="max-w-7xl mx-auto">
         <div className="flex items-center justify-center mb-12">
           <div className="flex items-start">
@@ -373,30 +431,80 @@ export default function CheckoutPage() {
               )}
           </div>
 
+
           <div className="lg:col-span-1">
             <div className="border border-black/10 p-8 sticky top-32">
-              <h2 className="text-2xl text-black mb-8 tracking-tight font-display">注文内容</h2>
+              <h2 className="text-2xl text-black mb-8 tracking-tight font-display" style={{ fontFamily: 'Didot, serif' }}>注文内容</h2>
 
-              <div className="space-y-6 mb-8 pb-8 border-b border-black/10">
-                <div className="flex gap-4">
-                  <div className="w-20 h-24 bg-[#f5f5f5] flex-shrink-0 overflow-hidden relative">
-                    <Image alt="シルクブラウス" className="w-full h-full object-cover object-top" src="https://readdy.ai/api/search-image?query=elegant%20black%20silk%20blouse%20on%20white%20background%20minimalist%20fashion%20photography%20high%20quality%20luxury%20fabric%20texture%20soft%20lighting%20professional%20product%20shot%20clean%20simple%20backdrop&amp;width=400&amp;height=500&amp;seq=checkout1&amp;orientation=portrait" width={400} height={500} />
-                    <div className="absolute -top-2 -right-2 w-6 h-6 bg-black text-white rounded-full flex items-center justify-center text-xs font-brand">1</div>
+              {cartItems.length === 0 ? (
+                <p className="text-sm text-gray-500">カートに商品がありません</p>
+              ) : (
+                <>
+                  <div className="space-y-6 mb-8 pb-8 border-b border-black/10">
+                    {cartItems.map((item) => {
+                      // defensive guard; the fetch logic filters out null items but keep typing safe
+                      const product = item.items;
+                      if (!product) return null;
+
+                      return (
+                        <div className="flex gap-4" key={item.id}>
+                          <div className="w-20 h-24 bg-[#f5f5f5] flex-shrink-0 overflow-hidden relative">
+                            <Image
+                              alt={product.name}
+                              className="w-full h-full object-cover object-top"
+                              src={product.image_url}
+                              width={400}
+                              height={500}
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-sm text-black mb-1" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                              {product.name}
+                            </p>
+                            <p className="text-xs text-[#474747] mb-1" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                              {item.color} / {item.size}
+                            </p>
+                            <p className="text-xs text-[#474747] mb-1" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                              数量: {item.quantity}
+                            </p>
+                            <p className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                              ¥{product.price.toLocaleString()}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <div className="flex-1">
-                    <p className="text-sm text-black mb-1 font-brand">シルクブラウス</p>
-                    <p className="text-xs text-[#474747] mb-1 font-brand">ブラック / M</p>
-                    <p className="text-sm text-black font-brand">¥28,000</p>
+
+                  <div className="space-y-4 mb-8 pb-8 border-b border-black/10">
+                    <div className="flex justify-between">
+                      <span className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                        小計
+                      </span>
+                      <span className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                        ¥{subtotal.toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                        配送料
+                      </span>
+                      <span className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                        {shipping === 0 ? '無料' : `¥${shipping.toLocaleString()}`}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              </div>
 
-              <div className="space-y-4 mb-8 pb-8 border-b border-black/10">
-                <div className="flex justify-between"><span className="text-sm text-[#474747] font-brand">小計</span><span className="text-sm text-black font-brand">¥28,000</span></div>
-                <div className="flex justify-between"><span className="text-sm text-[#474747] font-brand">配送料</span><span className="text-sm text-black font-brand">¥800</span></div>
-              </div>
-
-              <div className="flex justify-between"><span className="text-lg text-black font-brand">合計</span><span className="text-2xl text-black font-display">¥28,800</span></div>
+                  <div className="flex justify-between">
+                    <span className="text-lg text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                      合計
+                    </span>
+                    <span className="text-2xl text-black" style={{ fontFamily: 'Didot, serif' }}>
+                      ¥{total.toLocaleString()}
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
