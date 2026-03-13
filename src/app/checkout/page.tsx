@@ -413,11 +413,11 @@ export default function CheckoutPage() {
                        size="md"/>
 
                       <div className="space-y-6 pt-6">
-                        <TextField required label="カード番号" placeholder="1234 5678 9012 3456" type="text" name="cardNumber" defaultValue={""} className="font-brand"  size="md"/>
-                        <TextField required label="カード名義" placeholder="TARO YAMADA" type="text" name="cardName" defaultValue={""} className="font-brand"  size="md"/>
+                        <TextField required label="カード番号" placeholder="1234 5678 9012 3456" type="tel" name="cardNumber" defaultValue={""} className="font-brand" size="md" autoComplete="off" inputMode="numeric" />
+                        <TextField required label="カード名義" placeholder="TARO YAMADA" type="text" name="cardName" defaultValue={""} className="font-brand" size="md" autoComplete="off" />
                         <div className="grid grid-cols-2 gap-4">
-                          <TextField required label="有効期限" placeholder="MM/YY" type="text" name="expiryDate" defaultValue={""} className="font-brand"  size="md"/>
-                          <TextField required label="セキュリティコード" placeholder="123" type="text" name="cvv" defaultValue={""} className="font-brand"  size="md"/>
+                          <TextField required label="有効期限" placeholder="MM/YY" type="tel" name="expiryDate" defaultValue={""} className="font-brand" size="md" autoComplete="off" inputMode="numeric" />
+                          <TextField required label="セキュリティコード" placeholder="123" type="tel" name="cvv" defaultValue={""} className="font-brand" size="md" autoComplete="off" inputMode="numeric" />
                         </div>
                       </div>
                     </div>
