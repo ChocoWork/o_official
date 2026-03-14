@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import Stripe from 'stripe';
+import crypto from 'crypto';
 import { z } from 'zod';
 import { getStripeServerClient } from '@/lib/stripe/server';
 
@@ -81,9 +82,22 @@ export async function POST(req: NextRequest) {
     }
 
     const stripe = getStripeServerClient();
-    const idempotencyKey =
-      req.headers.get('x-idempotency-key') ??
-      `checkout:${sessionId}:${amount}:${parsedBody.data.paymentMethod}`;
+
+    const createIdempotencyKey = (parts: Record<string, unknown>) => {
+      const hash = crypto
+        .createHash('sha256')
+        .update(JSON.stringify(parts))
+        .digest('hex')
+        .slice(0, 16);
+      return `checkout:${hash}`;
+    };
+
+    const idempotencyKey = createIdempotencyKey({
+      sessionId,
+      amount,
+      currency: parsedBody.data.currency,
+      paymentMethod: parsedBody.data.paymentMethod,
+    });
 
     const basePayload = {
       amount,
@@ -100,6 +114,11 @@ export async function POST(req: NextRequest) {
             {
               ...basePayload,
               payment_method_types: ['paypay'],
+              payment_method_options: {
+                paypay: {
+                  // Stripe may require explicit payload for PayPay; keep defaults but still allow customization.
+                },
+              },
             },
             { idempotencyKey }
           )
@@ -108,6 +127,12 @@ export async function POST(req: NextRequest) {
               {
                 ...basePayload,
                 payment_method_types: ['konbini'],
+                payment_method_options: {
+                  konbini: {
+                    // 期限: 3日 (Stripe default), 明示的に設定して安定化する
+                    expires_after_days: 3,
+                  },
+                },
               },
               { idempotencyKey }
             )

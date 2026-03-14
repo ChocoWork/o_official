@@ -14,7 +14,48 @@ import { RadioButtonGroup } from '@/app/components/ui/RadioButtonGroup';
 import { SingleSelect } from '@/app/components/ui/SingleSelect';
 import { TextField } from '@/app/components/ui/TextField';
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
-import { loadStripe } from '@stripe/stripe-js';
+import { loadStripe, Appearance } from '@stripe/stripe-js';
+
+const stripeAppearance: Appearance = {
+  theme: 'stripe',
+  labels: 'floating',
+  variables: {
+    fontFamily: 'acumin-pro, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    fontSizeBase: '16px',
+    fontWeightNormal: '400',
+    fontWeightBold: '700',
+    colorPrimary: '#000000',
+    colorBackground: '#ffffff',
+    colorText: '#111827',
+    colorDanger: '#dc2626',
+    colorBorder: '#d1d5db',
+    borderRadius: '12px',
+    spacingUnit: '6px',
+  },
+  rules: {
+    '.Input': {
+      boxShadow: '0 1px 2px rgba(0, 0, 0, 0.06)',
+      padding: '12px 14px',
+      minHeight: '40px',
+      borderRadius: '6px',
+    },
+    '.Input:focus': {
+      boxShadow: '0 0 0 2px rgba(0, 0, 0, 0.12)',
+    },
+    '.Input::placeholder': {
+      color: 'rgba(17, 24, 39, 0.6)',
+    },
+    '.Label': {
+      fontSize: '14px',
+      fontWeight: '600',
+    },
+    '.Button': {
+      // fontWeight: '700',
+      borderRadius: '12px',
+      padding: '14px 18px',
+    },
+  },
+};
 
 const PREFECTURES = [
   '北海道',
@@ -697,20 +738,31 @@ export default function CheckoutPage() {
                         )}
 
                         {stripePromise && paymentClientSecret && (
-                          <Elements
-                            stripe={stripePromise}
-                            options={{
-                              clientSecret: paymentClientSecret,
-                              appearance: { theme: 'stripe' },
-                            }}
-                          >
-                            <CreditCardPaymentElementForm
-                              onBack={() => setStep(1)}
-                              onSuccess={(id) => { setPaymentIntentId(id); setStep(3); }}
-                              email={shippingForm.email}
-                              fullName={shippingForm.fullName}
-                            />
-                          </Elements>
+                          <>
+                            {paymentMethod === 'stripe_konbini' && (
+                              <div className="rounded-lg border border-black/10 bg-[#f9fafb] p-4 text-sm text-[#374151] font-brand mb-4">
+                                <p className="font-semibold text-black mb-1">コンビニ支払いについて</p>
+                                <p>このあと「次へ」を押すと、コンビニ支払い用の情報が表示されます。表示された番号と期限をメモして、指定のコンビニでお支払いください。</p>
+                                <p className="mt-2 text-xs text-[#6b7280]">（※お支払い期限は通常3日間です）</p>
+                              </div>
+                            )}
+
+                            <Elements
+                              stripe={stripePromise}
+                              options={{
+                                clientSecret: paymentClientSecret,
+                                appearance: stripeAppearance,
+                              }}
+                              key={paymentMethod}
+                            >
+                              <CreditCardPaymentElementForm
+                                onBack={() => setStep(1)}
+                                onSuccess={(id) => { setPaymentIntentId(id); setStep(3); }}
+                                email={shippingForm.email}
+                                fullName={shippingForm.fullName}
+                              />
+                            </Elements>
+                          </>
                         )}
                       </div>
                     ) : (
