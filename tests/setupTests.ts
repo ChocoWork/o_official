@@ -11,8 +11,17 @@ if (!(globalThis as any).crypto || !(globalThis as any).crypto.subtle) {
       getRandomValues: (arr: Uint8Array) => {
         return webcrypto.getRandomValues(arr);
       },
+      randomUUID: () => webcrypto.randomUUID(),
     },
     writable: true,
+  });
+} else if (!(globalThis as any).crypto.randomUUID) {
+  // jsdom 環境で randomUUID だけ不足している場合の補完
+  const existingCrypto = (globalThis as any).crypto;
+  Object.defineProperty(existingCrypto, 'randomUUID', {
+    value: () => webcrypto.randomUUID(),
+    writable: true,
+    configurable: true,
   });
 }
 

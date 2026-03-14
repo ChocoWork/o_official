@@ -24,6 +24,10 @@ function buildCsp(nonce: string) {
     supabaseOrigin,
     'https://*.supabase.co',
     'https://challenges.cloudflare.com',
+    'https://api.stripe.com',
+    'https://r.stripe.com',
+    'https://m.stripe.network',
+    'https://q.stripe.com',
   ].filter(Boolean).join(' ');
 
   return [
@@ -32,11 +36,11 @@ function buildCsp(nonce: string) {
     "form-action 'self'",
     "frame-ancestors 'none'",
     "object-src 'none'",
-    "img-src 'self' data: https://placehold.co https://*.supabase.co",
+    "img-src 'self' data: https://placehold.co https://*.supabase.co https://q.stripe.com https://*.stripe.com",
     `style-src 'self' https://cdn.jsdelivr.net`,
     "font-src 'self' https://cdn.jsdelivr.net",
-    `script-src 'self' 'nonce-${nonce}' https://cdn.jsdelivr.net https://challenges.cloudflare.com`,
-    "frame-src https://challenges.cloudflare.com",
+    `script-src 'self' 'nonce-${nonce}' https://cdn.jsdelivr.net https://challenges.cloudflare.com https://js.stripe.com`,
+    "frame-src https://challenges.cloudflare.com https://js.stripe.com https://hooks.stripe.com",
     `connect-src ${connectSources}`,
     "manifest-src 'self'",
     "upgrade-insecure-requests",

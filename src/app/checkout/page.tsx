@@ -13,6 +13,8 @@ import {
 import { RadioButtonGroup } from '@/app/components/ui/RadioButtonGroup';
 import { SingleSelect } from '@/app/components/ui/SingleSelect';
 import { TextField } from '@/app/components/ui/TextField';
+import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
+import { loadStripe } from '@stripe/stripe-js';
 
 const PREFECTURES = [
   '北海道',
@@ -70,6 +72,139 @@ const CHECKOUT_STEPS = [
   { id: 3, label: 'ご注文内容の確認' },
 ];
 
+const stripePromise = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+  ? loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
+  : null;
+
+type CheckoutPaymentMethod =
+  | 'stripe_card'
+  | 'stripe_paypay'
+  | 'stripe_konbini'
+  | 'bank'
+  | 'cod';
+
+const isStripePaymentMethod = (paymentMethod: CheckoutPaymentMethod) =>
+  paymentMethod === 'stripe_card' ||
+  paymentMethod === 'stripe_paypay' ||
+  paymentMethod === 'stripe_konbini';
+
+type CreditCardPaymentElementFormProps = {
+  onBack: () => void;
+  onSuccess: (paymentIntentId: string) => void;
+  email: string;
+  fullName: string;
+};
+
+function CreditCardPaymentElementForm({
+  onBack,
+  onSuccess,
+  email,
+  fullName,
+}: CreditCardPaymentElementFormProps) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isElementReady, setIsElementReady] = useState(false);
+
+  React.useEffect(() => {
+    if (isElementReady) {
+      return;
+    }
+
+    const timerId = window.setTimeout(() => {
+      setSubmitError((prev) => prev ?? '決済フォームの読み込みに失敗しました。ページを再読み込みしてください。');
+    }, 8000);
+
+    return () => {
+      window.clearTimeout(timerId);
+    };
+  }, [isElementReady]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!stripe || !elements) {
+      setSubmitError('決済フォームの初期化を待ってから再度お試しください。');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setSubmitError(null);
+
+    const submitResult = await elements.submit();
+    if (submitResult.error) {
+      setSubmitError(submitResult.error.message ?? '入力内容をご確認ください。');
+      setIsSubmitting(false);
+      return;
+    }
+
+    const returnUrl = typeof window !== 'undefined' ? `${window.location.origin}/checkout` : undefined;
+
+    const { error, paymentIntent } = await stripe.confirmPayment({
+      elements,
+      confirmParams: {
+        return_url: returnUrl,
+        payment_method_data: {
+          billing_details: {
+            name: fullName || undefined,
+            email: email || undefined,
+          },
+        },
+      },
+      redirect: 'if_required',
+    });
+
+    if (error) {
+      setSubmitError(error.message ?? '決済に失敗しました。時間をおいて再度お試しください。');
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (
+      !paymentIntent ||
+      paymentIntent.status === 'succeeded' ||
+      paymentIntent.status === 'processing' ||
+      paymentIntent.status === 'requires_capture'
+    ) {
+      onSuccess(paymentIntent?.id ?? '');
+      return;
+    }
+
+    setSubmitError('決済を完了できませんでした。別のお支払い方法をお試しください。');
+    setIsSubmitting(false);
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <div className="space-y-6 pt-6">
+        <PaymentElement
+          onReady={() => {
+            setIsElementReady(true);
+            setSubmitError(null);
+          }}
+          onLoadError={() => {
+            setSubmitError('決済フォームの読み込みに失敗しました。時間をおいて再度お試しください。');
+          }}
+        />
+        {!isElementReady && !submitError && (
+          <p className="text-sm text-[#474747] font-brand">決済フォームを読み込み中です...</p>
+        )}
+        {submitError && <p className="text-sm text-red-600 font-brand">{submitError}</p>}
+      </div>
+
+      <div className="flex gap-4 mt-12">
+        <Button type="button" variant="secondary" size="lg" onClick={onBack} className="font-brand" disabled={isSubmitting}>
+          戻る
+        </Button>
+        <Button type="submit" size="lg" className="flex-1 font-brand" disabled={!stripe || !elements || !isElementReady || isSubmitting}>
+          {isSubmitting ? '決済処理中...' : '次へ'}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 export default function CheckoutPage() {
   // cart data for order summary (mirrors cart/page.tsx)
   interface CartItem {
@@ -120,7 +255,14 @@ export default function CheckoutPage() {
   }, []);
 
   const [step, setStep] = useState<number>(1);
-  const [paymentMethod, setPaymentMethod] = useState('credit');
+  const [paymentMethod, setPaymentMethod] = useState<CheckoutPaymentMethod>('stripe_card');
+  const [paymentClientSecret, setPaymentClientSecret] = useState<string | null>(null);
+  const [paymentIntentId, setPaymentIntentId] = useState<string | null>(null);
+  const [paymentIntentLoading, setPaymentIntentLoading] = useState(false);
+  const [paymentIntentError, setPaymentIntentError] = useState<string | null>(null);
+  const [confirmingOrder, setConfirmingOrder] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [completedOrderId, setCompletedOrderId] = useState<string | null>(null);
   const latestPostalLookupRef = useRef('');
   const [shippingForm, setShippingForm] = useState({
     email: '',
@@ -133,6 +275,12 @@ export default function CheckoutPage() {
     phone: '',
     saveProfile: false,
   });
+
+  React.useEffect(() => {
+    setPaymentClientSecret(null);
+    setPaymentIntentError(null);
+    setPaymentIntentId(null);
+  }, [paymentMethod]);
 
   const handleShippingChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
@@ -200,15 +348,107 @@ export default function CheckoutPage() {
     setStep(2);
   };
 
+  React.useEffect(() => {
+    if (step !== 2 || !isStripePaymentMethod(paymentMethod) || paymentClientSecret) {
+      return;
+    }
+
+    let active = true;
+
+    const createPaymentIntent = async () => {
+      setPaymentIntentLoading(true);
+      setPaymentIntentError(null);
+
+      try {
+        const response = await fetch('/api/checkout/payment-intent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ currency: 'jpy', paymentMethod }),
+        });
+
+        if (!response.ok) {
+          const errorData: { error?: string } = await response.json().catch(() => ({}));
+          throw new Error(errorData.error ?? '決済情報の初期化に失敗しました。');
+        }
+
+        const data: { clientSecret?: string } = await response.json();
+        if (!data.clientSecret) {
+          throw new Error('決済情報の取得に失敗しました。');
+        }
+
+        if (active) {
+          setPaymentClientSecret(data.clientSecret);
+        }
+      } catch (error) {
+        if (active) {
+          setPaymentIntentError(
+            error instanceof Error ? error.message : '決済情報の初期化に失敗しました。'
+          );
+        }
+      } finally {
+        if (active) {
+          setPaymentIntentLoading(false);
+        }
+      }
+    };
+
+    createPaymentIntent();
+
+    return () => {
+      active = false;
+    };
+  }, [step, paymentMethod, paymentClientSecret]);
+
   const handlePaymentNext = (e: React.FormEvent) => {
     e.preventDefault();
     setStep(3);
   };
 
-  const handleConfirm = (e: React.FormEvent) => {
+  const handleConfirm = async (e: React.FormEvent) => {
     e.preventDefault();
-    // 確定処理はここに追加できます（API呼び出しなど）
-    setCompleted(true);
+
+    setConfirmingOrder(true);
+    setConfirmError(null);
+
+    try {
+      const response = await fetch('/api/checkout/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paymentMethod,
+          paymentIntentId: isStripePaymentMethod(paymentMethod)
+            ? paymentIntentId
+            : undefined,
+          shipping: {
+            email: shippingForm.email,
+            fullName: shippingForm.fullName,
+            postalCode: shippingForm.postalCode,
+            prefecture: shippingForm.prefecture,
+            city: shippingForm.city,
+            address: shippingForm.address,
+            building: shippingForm.building,
+            phone: shippingForm.phone,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('注文確定に失敗しました。時間をおいて再度お試しください。');
+      }
+
+      const data: { orderId?: string } = await response.json();
+      if (data.orderId) {
+        setCompletedOrderId(data.orderId);
+      }
+
+      setCompleted(true);
+    } catch (error) {
+      setConfirmError(
+        error instanceof Error ? error.message : '注文確定に失敗しました。'
+      );
+    } finally {
+      setConfirmingOrder(false);
+    }
   };
 
   const [completed, setCompleted] = useState<boolean>(false);
@@ -235,11 +475,11 @@ export default function CheckoutPage() {
             <div className="grid grid-cols-2 gap-6">
               <div>
                 <p className="text-xs text-[#474747] mb-2 tracking-wider font-brand">注文番号</p>
-                <p className="text-lg text-black font-brand">ORD-0YHJIH2IT</p>
+                <p className="text-lg text-black font-brand">{completedOrderId ?? paymentIntentId ?? '—'}</p>
               </div>
               <div>
                 <p className="text-xs text-[#474747] mb-2 tracking-wider font-brand">注文日</p>
-                <p className="text-lg text-black font-brand">2026年1月14日</p>
+                <p className="text-lg text-black font-brand">{new Date().toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
               </div>
             </div>
           </div>
@@ -371,63 +611,129 @@ export default function CheckoutPage() {
                       <div>
                         <h3 className="text-sm text-[#474747] mb-4 tracking-wider font-brand">配送先</h3>
                         <div className="p-6 bg-[#f5f5f5] text-sm font-brand">
-                          <p className="mb-1">櫻井 雅也</p>
-                          <p className="mb-1">〒981-3351</p>
-                          <p className="mb-1">東京都富谷市富谷市鷹乃杜一丁目32番6-202号</p>
-                          <p className="mb-1">202号</p>
-                          <p className="mb-1">08058476671</p>
-                          <p>14masa56@gmail.com</p>
+                          {shippingForm.fullName && <p className="mb-1">{shippingForm.fullName}</p>}
+                          {shippingForm.postalCode && <p className="mb-1">〒{shippingForm.postalCode}</p>}
+                          <p className="mb-1">{shippingForm.prefecture}{shippingForm.city}{shippingForm.address}</p>
+                          {shippingForm.building && <p className="mb-1">{shippingForm.building}</p>}
+                          {shippingForm.phone && <p className="mb-1">{shippingForm.phone}</p>}
+                          {shippingForm.email && <p>{shippingForm.email}</p>}
                         </div>
                       </div>
                       <div>
                         <h3 className="text-sm text-[#474747] mb-4 tracking-wider font-brand">お支払い方法</h3>
                         <div className="p-6 bg-[#f5f5f5] text-sm font-brand">
-                          <p>クレジットカード</p>
+                          <p>
+                            {paymentMethod === 'stripe_card'
+                              ? 'カード決済'
+                              : paymentMethod === 'stripe_paypay'
+                                  ? 'PayPay'
+                                  : paymentMethod === 'stripe_konbini'
+                                    ? 'コンビニ決済'
+                                    : paymentMethod === 'bank'
+                                        ? '銀行振込'
+                                        : '代金引換'}
+                          </p>
+                          {paymentMethod === 'bank' && (
+                            <p className="mt-3 text-xs text-[#474747]">
+                              ご注文後に振込先情報をご案内します。入金確認後に発送いたします。
+                            </p>
+                          )}
+                          {paymentMethod === 'cod' && (
+                            <p className="mt-3 text-xs text-[#474747]">
+                              代金は商品受け取り時に配送業者へお支払いください。
+                            </p>
+                          )}
                         </div>
                       </div>
                     </div>
                   </div>
 
+                  {confirmError && (
+                    <p className="text-sm text-red-600 font-brand mt-6">{confirmError}</p>
+                  )}
+
                   <div className="flex gap-4 mt-12">
                     <Button type="button" variant="secondary" size="lg" onClick={() => setStep(2)} className="font-brand">戻る</Button>
-                    <Button type="submit" size="lg" className="flex-1 font-brand">注文を確定する</Button>
+                    <Button type="submit" size="lg" className="flex-1 font-brand" disabled={confirmingOrder}>
+                      {confirmingOrder ? '注文確定中...' : '注文を確定する'}
+                    </Button>
                   </div>
                 </form>
               )}
 
               {/* Payment form (step 2) */}
               {step === 2 && (
-                <form onSubmit={handlePaymentNext}>
-                  <div>
-                    <div className="space-y-6">
-                      <RadioButtonGroup
-                        name="paymentMethod"
-                        value={paymentMethod}
-                        onChange={setPaymentMethod}
-                        direction="column"
-                        options={[
-                          { value: 'credit', label: 'クレジットカード' },
-                          { value: 'bank', label: '銀行振込' },
-                          { value: 'cod', label: '代金引換' },
-                        ]}
-                       size="md"/>
+                <div>
+                  <div className="space-y-6">
+                    <RadioButtonGroup
+                      name="paymentMethod"
+                      value={paymentMethod}
+                      onChange={(value) => setPaymentMethod(value as CheckoutPaymentMethod)}
+                      direction="column"
+                      options={[
+                        { value: 'stripe_card', label: 'カード決済' },
+                        { value: 'stripe_paypay', label: 'PayPay' },
+                        { value: 'stripe_konbini', label: 'コンビニ決済' },
+                        { value: 'bank', label: '銀行振込' },
+                        { value: 'cod', label: '代金引換' },
+                      ]}
+                      size="md"
+                    />
 
-                      <div className="space-y-6 pt-6">
-                        <TextField required label="カード番号" placeholder="1234 5678 9012 3456" type="tel" name="cardNumber" defaultValue={""} className="font-brand" size="md" autoComplete="off" inputMode="numeric" />
-                        <TextField required label="カード名義" placeholder="TARO YAMADA" type="text" name="cardName" defaultValue={""} className="font-brand" size="md" autoComplete="off" />
-                        <div className="grid grid-cols-2 gap-4">
-                          <TextField required label="有効期限" placeholder="MM/YY" type="tel" name="expiryDate" defaultValue={""} className="font-brand" size="md" autoComplete="off" inputMode="numeric" />
-                          <TextField required label="セキュリティコード" placeholder="123" type="tel" name="cvv" defaultValue={""} className="font-brand" size="md" autoComplete="off" inputMode="numeric" />
-                        </div>
+                    {isStripePaymentMethod(paymentMethod) ? (
+                      <div className="space-y-4 pt-6">
+                        {!stripePromise && (
+                          <p className="text-sm text-red-600 font-brand">
+                            Stripeの公開可能キーが設定されていないため、Stripeオンライン決済を利用できません。
+                          </p>
+                        )}
+
+                        {paymentIntentLoading && (
+                          <p className="text-sm text-[#474747] font-brand">決済フォームを準備中です...</p>
+                        )}
+
+                        {paymentIntentError && (
+                          <p className="text-sm text-red-600 font-brand">{paymentIntentError}</p>
+                        )}
+
+                        {stripePromise && paymentClientSecret && (
+                          <Elements
+                            stripe={stripePromise}
+                            options={{
+                              clientSecret: paymentClientSecret,
+                              appearance: { theme: 'stripe' },
+                            }}
+                          >
+                            <CreditCardPaymentElementForm
+                              onBack={() => setStep(1)}
+                              onSuccess={(id) => { setPaymentIntentId(id); setStep(3); }}
+                              email={shippingForm.email}
+                              fullName={shippingForm.fullName}
+                            />
+                          </Elements>
+                        )}
                       </div>
-                    </div>
+                    ) : (
+                      <form onSubmit={handlePaymentNext}>
+                        <div className="pt-6">
+                          <p className="text-sm text-[#474747] font-brand">
+                            {paymentMethod === 'bank'
+                              ? '銀行振込を選択しました。次へ進むと注文確認画面で確定できます。'
+                              : '代金引換を選択しました。次へ進むと注文確認画面で確定できます。'}
+                          </p>
+                        </div>
+                        <div className="flex gap-4 mt-12">
+                          <Button type="button" variant="secondary" size="lg" onClick={() => setStep(1)} className="font-brand">
+                            戻る
+                          </Button>
+                          <Button type="submit" size="lg" className="flex-1 font-brand">
+                            次へ
+                          </Button>
+                        </div>
+                      </form>
+                    )}
                   </div>
-
-                  <div className="flex gap-4 mt-12">
-                    <Button type="button" variant="secondary" size="lg" onClick={() => setStep(1)} className="font-brand">戻る</Button>
-                    <Button type="submit" size="lg" className="flex-1 font-brand">次へ</Button>
-                  </div>
-                </form>
+                </div>
               )}
           </div>
 

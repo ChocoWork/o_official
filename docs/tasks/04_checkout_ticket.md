@@ -7,7 +7,7 @@ estimate: 3d
 assignee: unassigned
 dependencies: [CART-01]
 created: 2026-01-17
-updated: 2026-01-17
+updated: 2026-03-13
 ---
 
 # 概要
@@ -37,7 +37,9 @@ updated: 2026-01-17
 # チェックリスト
 
 - [ ] Stripe セッション作成実装
-- [ ] Webhook 受信と署名検証
-- [ ] 注文確定ロジックとメール送信
+- [x] Stripe Payment Element + PaymentIntent 初期化API実装
+- [x] `POST /api/checkout/complete` 実装（カード/銀行振込/代金引換）
+- [x] Webhook 受信と署名検証
+- [x] 注文確定ロジック（orders / order_items 保存、カートクリア）
 - [x] 郵便番号入力時の住所自動補完を同一オリジンAPI経由へ変更（CSP制約回避）
 - [x] 郵便番号住所検索を Supabase DB 一次ソース + Redis 任意キャッシュ構成へ変更
