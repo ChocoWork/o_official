@@ -43,3 +43,14 @@ updated: 2026-03-13
 - [x] 注文確定ロジック（orders / order_items 保存、カートクリア）
 - [x] 郵便番号入力時の住所自動補完を同一オリジンAPI経由へ変更（CSP制約回避）
 - [x] 郵便番号住所検索を Supabase DB 一次ソース + Redis 任意キャッシュ構成へ変更
+
+## Stripe Payment Element ベストプラクティス
+
+- [ ] Payment Element のレイアウトを Accordion で表示し、複数支払い方法を切り替えられる UI にする
+- [ ] Appearance API で Payment Element の見た目をブランドに合わせてカスタマイズする
+- [ ] Checkout Sessions API を使った決済フローに切り替え（サーバー側でセッションを作成し、クライアントはセッションへリダイレクト）
+- [ ] セッション／PaymentIntent に `metadata`（注文ID、カートID 等）を渡して Stripe ダッシュボードで検索できるようにする
+- [ ] Dynamic Payment Methods を利用し、Stripe による支払い方法の最適表示を有効化する
+- [ ] Stripe API バージョンが最新であることを確認し、必要であれば `stripe` SDK をアップデートする
+- [ ] Payment Element が iframe 内に埋め込まれないようにし、リダイレクトを伴う支払い方法でも正常に動作することを確認する
+- [ ] Dashboard の「支払い方法の設定」画面で表示される支払い方法を確認し、必要に応じて Payment Method Rules でカスタマイズする

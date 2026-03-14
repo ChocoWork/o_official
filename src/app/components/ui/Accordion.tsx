@@ -6,7 +6,8 @@ import { ComponentSize } from './types';
 
 export interface AccordionItem {
   key: string;
-  title: string;
+  /** Title can be a string or React element; commonly used for radio + label layout */
+  title: ReactNode;
   content: ReactNode;
   className?: string;
 }

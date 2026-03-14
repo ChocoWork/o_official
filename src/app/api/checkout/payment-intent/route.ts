@@ -30,7 +30,6 @@ type ItemRow = {
 export async function POST(req: NextRequest) {
   try {
     const sessionId = req.cookies.get('session_id')?.value;
-
     if (!sessionId) {
       return NextResponse.json({ error: 'Session not found' }, { status: 400 });
     }
@@ -55,6 +54,12 @@ export async function POST(req: NextRequest) {
     }
 
     const itemIds = (cartData as CartRow[]).map((item) => item.item_id);
+    const cartSignature = (cartData as CartRow[])
+      .slice()
+      .sort((a, b) => a.item_id - b.item_id)
+      .map((item) => `${item.item_id}:${item.quantity}`)
+      .join('|');
+
     const { data: itemsData, error: itemsError } = await supabase
       .from('items')
       .select('id, price')
@@ -66,7 +71,7 @@ export async function POST(req: NextRequest) {
     }
 
     const itemPriceMap = new Map<number, number>(
-      ((itemsData || []) as ItemRow[]).map((item) => [item.id, item.price])
+      ((itemsData ?? []) as ItemRow[]).map((item) => [item.id, item.price])
     );
 
     const subtotal = (cartData as CartRow[]).reduce((sum, cartItem) => {
@@ -92,70 +97,43 @@ export async function POST(req: NextRequest) {
       return `checkout:${hash}`;
     };
 
+    const paymentMethod = parsedBody.data.paymentMethod;
+
     const idempotencyKey = createIdempotencyKey({
       sessionId,
       amount,
       currency: parsedBody.data.currency,
-      paymentMethod: parsedBody.data.paymentMethod,
+      paymentMethod,
+      cartSignature,
     });
 
-    const basePayload = {
-      amount,
-      currency: parsedBody.data.currency,
-      metadata: {
-        session_id: sessionId,
-        selected_payment_method: parsedBody.data.paymentMethod,
-      },
-    };
+    const paymentMethodTypes =
+      paymentMethod === 'stripe_paypay'
+        ? ['paypay']
+        : paymentMethod === 'stripe_konbini'
+        ? ['konbini']
+        : ['card', 'konbini', 'paypay'];
 
-    const paymentIntent =
-      parsedBody.data.paymentMethod === 'stripe_paypay'
-        ? await stripe.paymentIntents.create(
-            {
-              ...basePayload,
-              payment_method_types: ['paypay'],
-              payment_method_options: {
-                paypay: {
-                  // Stripe may require explicit payload for PayPay; keep defaults but still allow customization.
-                },
-              },
-            },
-            { idempotencyKey }
-          )
-        : parsedBody.data.paymentMethod === 'stripe_konbini'
-          ? await stripe.paymentIntents.create(
-              {
-                ...basePayload,
-                payment_method_types: ['konbini'],
-                payment_method_options: {
-                  konbini: {
-                    // 期限: 3日 (Stripe default), 明示的に設定して安定化する
-                    expires_after_days: 3,
-                  },
-                },
-              },
-              { idempotencyKey }
-            )
-          : parsedBody.data.paymentMethod === 'stripe_card'
-            ? await stripe.paymentIntents.create(
-                {
-                  ...basePayload,
-                  payment_method_types: ['card'],
-                },
-                { idempotencyKey }
-              )
-            : await stripe.paymentIntents.create(
-                {
-                  ...basePayload,
-                  payment_method_types: ['card'],
-                },
-                { idempotencyKey }
-              );
+    const paymentIntent = await stripe.paymentIntents.create(
+      {
+        amount,
+        currency: parsedBody.data.currency,
+        payment_method_types: paymentMethodTypes,
+        metadata: {
+          session_id: sessionId,
+          selected_payment_method: paymentMethod,
+        },
+      },
+      { idempotencyKey }
+    );
+
+    if (!paymentIntent.client_secret) {
+      return NextResponse.json({ error: 'Failed to create payment intent' }, { status: 500 });
+    }
 
     return NextResponse.json({
       clientSecret: paymentIntent.client_secret,
-      amount,
-      currency: parsedBody.data.currency,
+      paymentIntentId: paymentIntent.id,
     });
   } catch (error) {
     console.error('Payment intent creation error:', error);
@@ -190,6 +168,10 @@ export async function POST(req: NextRequest) {
         },
         { status: error.statusCode ?? 400 }
       );
+    }
+
+    if (error instanceof Error) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

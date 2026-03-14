@@ -3,6 +3,10 @@
 import React, { useRef, useState } from "react";
 import Link from 'next/link';
 import Image from 'next/image';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
+import { cn } from '@/lib/utils';
 import { Button } from '@/app/components/ui/Button';
 import { Checkbox } from '@/app/components/ui/Checkbox';
 import {
@@ -10,52 +14,8 @@ import {
   isCompletePostalCode,
   normalizePostalCode,
 } from '@/features/checkout/utils/postal-code.util';
-import { RadioButtonGroup } from '@/app/components/ui/RadioButtonGroup';
 import { SingleSelect } from '@/app/components/ui/SingleSelect';
 import { TextField } from '@/app/components/ui/TextField';
-import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
-import { loadStripe, Appearance } from '@stripe/stripe-js';
-
-const stripeAppearance: Appearance = {
-  theme: 'stripe',
-  labels: 'floating',
-  variables: {
-    fontFamily: 'acumin-pro, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-    fontSizeBase: '16px',
-    fontWeightNormal: '400',
-    fontWeightBold: '700',
-    colorPrimary: '#000000',
-    colorBackground: '#ffffff',
-    colorText: '#111827',
-    colorDanger: '#dc2626',
-    colorBorder: '#d1d5db',
-    borderRadius: '12px',
-    spacingUnit: '6px',
-  },
-  rules: {
-    '.Input': {
-      boxShadow: '0 1px 2px rgba(0, 0, 0, 0.06)',
-      padding: '12px 14px',
-      minHeight: '40px',
-      borderRadius: '6px',
-    },
-    '.Input:focus': {
-      boxShadow: '0 0 0 2px rgba(0, 0, 0, 0.12)',
-    },
-    '.Input::placeholder': {
-      color: 'rgba(17, 24, 39, 0.6)',
-    },
-    '.Label': {
-      fontSize: '14px',
-      fontWeight: '600',
-    },
-    '.Button': {
-      // fontWeight: '700',
-      borderRadius: '12px',
-      padding: '14px 18px',
-    },
-  },
-};
 
 const PREFECTURES = [
   '北海道',
@@ -107,15 +67,14 @@ const PREFECTURES = [
   '沖縄県',
 ];
 
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '');
+
 const CHECKOUT_STEPS = [
   { id: 1, label: '配送情報' },
   { id: 2, label: 'お支払い方法' },
   { id: 3, label: 'ご注文内容の確認' },
 ];
 
-const stripePromise = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
-  ? loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
-  : null;
 
 type CheckoutPaymentMethod =
   | 'stripe_card'
@@ -129,122 +88,6 @@ const isStripePaymentMethod = (paymentMethod: CheckoutPaymentMethod) =>
   paymentMethod === 'stripe_paypay' ||
   paymentMethod === 'stripe_konbini';
 
-type CreditCardPaymentElementFormProps = {
-  onBack: () => void;
-  onSuccess: (paymentIntentId: string) => void;
-  email: string;
-  fullName: string;
-};
-
-function CreditCardPaymentElementForm({
-  onBack,
-  onSuccess,
-  email,
-  fullName,
-}: CreditCardPaymentElementFormProps) {
-  const stripe = useStripe();
-  const elements = useElements();
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [isElementReady, setIsElementReady] = useState(false);
-
-  React.useEffect(() => {
-    if (isElementReady) {
-      return;
-    }
-
-    const timerId = window.setTimeout(() => {
-      setSubmitError((prev) => prev ?? '決済フォームの読み込みに失敗しました。ページを再読み込みしてください。');
-    }, 8000);
-
-    return () => {
-      window.clearTimeout(timerId);
-    };
-  }, [isElementReady]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!stripe || !elements) {
-      setSubmitError('決済フォームの初期化を待ってから再度お試しください。');
-      return;
-    }
-
-    setIsSubmitting(true);
-    setSubmitError(null);
-
-    const submitResult = await elements.submit();
-    if (submitResult.error) {
-      setSubmitError(submitResult.error.message ?? '入力内容をご確認ください。');
-      setIsSubmitting(false);
-      return;
-    }
-
-    const returnUrl = typeof window !== 'undefined' ? `${window.location.origin}/checkout` : undefined;
-
-    const { error, paymentIntent } = await stripe.confirmPayment({
-      elements,
-      confirmParams: {
-        return_url: returnUrl,
-        payment_method_data: {
-          billing_details: {
-            name: fullName || undefined,
-            email: email || undefined,
-          },
-        },
-      },
-      redirect: 'if_required',
-    });
-
-    if (error) {
-      setSubmitError(error.message ?? '決済に失敗しました。時間をおいて再度お試しください。');
-      setIsSubmitting(false);
-      return;
-    }
-
-    if (
-      !paymentIntent ||
-      paymentIntent.status === 'succeeded' ||
-      paymentIntent.status === 'processing' ||
-      paymentIntent.status === 'requires_capture'
-    ) {
-      onSuccess(paymentIntent?.id ?? '');
-      return;
-    }
-
-    setSubmitError('決済を完了できませんでした。別のお支払い方法をお試しください。');
-    setIsSubmitting(false);
-  };
-
-  return (
-    <form onSubmit={handleSubmit}>
-      <div className="space-y-6 pt-6">
-        <PaymentElement
-          onReady={() => {
-            setIsElementReady(true);
-            setSubmitError(null);
-          }}
-          onLoadError={() => {
-            setSubmitError('決済フォームの読み込みに失敗しました。時間をおいて再度お試しください。');
-          }}
-        />
-        {!isElementReady && !submitError && (
-          <p className="text-sm text-[#474747] font-brand">決済フォームを読み込み中です...</p>
-        )}
-        {submitError && <p className="text-sm text-red-600 font-brand">{submitError}</p>}
-      </div>
-
-      <div className="flex gap-4 mt-12">
-        <Button type="button" variant="secondary" size="lg" onClick={onBack} className="font-brand" disabled={isSubmitting}>
-          戻る
-        </Button>
-        <Button type="submit" size="lg" className="flex-1 font-brand" disabled={!stripe || !elements || !isElementReady || isSubmitting}>
-          {isSubmitting ? '決済処理中...' : '次へ'}
-        </Button>
-      </div>
-    </form>
-  );
-}
 
 export default function CheckoutPage() {
   // cart data for order summary (mirrors cart/page.tsx)
@@ -295,16 +138,20 @@ export default function CheckoutPage() {
     fetchCart();
   }, []);
 
-  const [step, setStep] = useState<number>(1);
+  const [step, setStep] = useState<number>(2);
   const [paymentMethod, setPaymentMethod] = useState<CheckoutPaymentMethod>('stripe_card');
-  const [paymentClientSecret, setPaymentClientSecret] = useState<string | null>(null);
+  const [paymentIntentClientSecret, setPaymentIntentClientSecret] = useState<string | null>(null);
   const [paymentIntentId, setPaymentIntentId] = useState<string | null>(null);
   const [paymentIntentLoading, setPaymentIntentLoading] = useState(false);
-  const [paymentIntentError, setPaymentIntentError] = useState<string | null>(null);
+  const [paymentConfirming, setPaymentConfirming] = useState(false);
+  const [stripeError, setStripeError] = useState<string | null>(null);
   const [confirmingOrder, setConfirmingOrder] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [completedOrderId, setCompletedOrderId] = useState<string | null>(null);
+  const [processedCallback, setProcessedCallback] = useState(false);
   const latestPostalLookupRef = useRef('');
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [shippingForm, setShippingForm] = useState({
     email: '',
     fullName: '',
@@ -317,11 +164,196 @@ export default function CheckoutPage() {
     saveProfile: false,
   });
 
-  React.useEffect(() => {
-    setPaymentClientSecret(null);
-    setPaymentIntentError(null);
-    setPaymentIntentId(null);
+  const stripeConfirmRef = useRef<(() => Promise<void>) | null>(null);
+
+  const createPaymentIntent = React.useCallback(async () => {
+    setStripeError(null);
+    setPaymentIntentLoading(true);
+
+    try {
+      const response = await fetch('/api/checkout/payment-intent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          currency: 'jpy',
+          paymentMethod,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData: { error?: string } = await response.json().catch(() => ({}));
+        throw new Error(errorData.error ?? '決済情報の取得に失敗しました。');
+      }
+
+      const data: { clientSecret?: string; paymentIntentId?: string } = await response.json();
+      if (!data.clientSecret || !data.paymentIntentId) {
+        throw new Error('Stripeの決済情報が取得できませんでした。');
+      }
+
+      setPaymentIntentClientSecret(data.clientSecret);
+      setPaymentIntentId(data.paymentIntentId);
+    } catch (error) {
+      setStripeError(error instanceof Error ? error.message : '決済情報の取得に失敗しました。');
+    } finally {
+      setPaymentIntentLoading(false);
+    }
   }, [paymentMethod]);
+
+  // Stripe Payment Element の描画と確定処理を行うコンポーネント。
+  // `stripeConfirmRef` に確定処理を登録して、外部ボタンから実行可能にします。
+  const StripePaymentForm = () => {
+    const stripe = useStripe();
+    const elements = useElements();
+
+    const confirmPayment = React.useCallback(async () => {
+      if (!paymentIntentClientSecret) {
+        return;
+      }
+
+      if (!stripe || !elements) {
+        setStripeError('Stripeの初期化がまだ完了していません。しばらくしてから再度お試しください。');
+        return;
+      }
+
+      setPaymentConfirming(true);
+      setStripeError(null);
+
+      const result = await stripe.confirmPayment({
+        elements,
+        confirmParams: {
+          return_url: `${window.location.origin}/checkout`,
+        },
+        redirect: 'if_required',
+      });
+
+      if (result.error) {
+        setStripeError(result.error.message ?? '決済に失敗しました。');
+        setPaymentConfirming(false);
+        return;
+      }
+
+      if (!result.paymentIntent?.id) {
+        setStripeError('決済の確認に失敗しました。');
+        setPaymentConfirming(false);
+        return;
+      }
+
+      const intent = result.paymentIntent;
+      setPaymentIntentId(intent.id);
+
+      const pmType = intent.payment_method_types?.[0] ??
+        intent.charges?.data?.[0]?.payment_method_details?.type;
+
+      if (pmType === 'card') {
+        setPaymentMethod('stripe_card');
+      } else if (pmType === 'konbini') {
+        setPaymentMethod('stripe_konbini');
+      } else if (pmType === 'paypay') {
+        setPaymentMethod('stripe_paypay');
+      }
+
+      setStep(3);
+      setPaymentConfirming(false);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [elements, paymentIntentClientSecret, setPaymentMethod, setStep, setStripeError, setPaymentConfirming, stripe]
+    );
+
+    React.useEffect(() => {
+      stripeConfirmRef.current = confirmPayment;
+      return () => {
+        stripeConfirmRef.current = null;
+      };
+    }, [confirmPayment]);
+
+    return (
+      <PaymentElement
+        options={{
+          layout: {
+            type: 'accordion',
+            defaultCollapsed: false,
+            radios: 'always',
+            spacedAccordionItems: false,
+          },
+        }}
+      />
+    );
+  };
+
+  const handlePaymentStepNext = async () => {
+    if (isStripePaymentMethod(paymentMethod)) {
+      if (!paymentIntentClientSecret) {
+        await createPaymentIntent();
+        return;
+      }
+
+      if (stripeConfirmRef.current) {
+        await stripeConfirmRef.current();
+      }
+      return;
+    }
+
+    setStep(3);
+  };
+
+  React.useEffect(() => {
+    setStripeError(null);
+  }, [paymentMethod]);
+
+  React.useEffect(() => {
+    if (step !== 2 || !isStripePaymentMethod(paymentMethod)) return;
+    if (paymentIntentClientSecret || paymentIntentLoading || stripeError) return;
+
+    void createPaymentIntent();
+  }, [step, paymentMethod, paymentIntentClientSecret, paymentIntentLoading, stripeError, createPaymentIntent]);
+
+  React.useEffect(() => {
+    const paymentIntentId = searchParams.get('payment_intent');
+    const sessionId = searchParams.get('session_id');
+
+    if (processedCallback) return;
+    if (!paymentIntentId && !sessionId) return;
+
+    setProcessedCallback(true);
+
+    const finalizeOrder = async () => {
+      setConfirmingOrder(true);
+      setConfirmError(null);
+
+      try {
+        const body = paymentIntentId
+          ? { paymentIntentId }
+          : { checkoutSessionId: sessionId };
+
+        const response = await fetch('/api/checkout/complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+
+        if (!response.ok) {
+          throw new Error('注文確定に失敗しました。時間をおいて再度お試しください。');
+        }
+
+        const data: { orderId?: string } = await response.json();
+        if (data.orderId) {
+          setCompletedOrderId(data.orderId);
+        }
+        setCompleted(true);
+
+        // Remove query params so reloading doesn't re-trigger
+        router.replace('/checkout');
+      } catch (error) {
+        setConfirmError(
+          error instanceof Error ? error.message : '注文確定に失敗しました。'
+        );
+      } finally {
+        setConfirmingOrder(false);
+      }
+    };
+
+    void finalizeOrder();
+  }, [searchParams, processedCallback, router]);
 
   const handleShippingChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
@@ -389,61 +421,6 @@ export default function CheckoutPage() {
     setStep(2);
   };
 
-  React.useEffect(() => {
-    if (step !== 2 || !isStripePaymentMethod(paymentMethod) || paymentClientSecret) {
-      return;
-    }
-
-    let active = true;
-
-    const createPaymentIntent = async () => {
-      setPaymentIntentLoading(true);
-      setPaymentIntentError(null);
-
-      try {
-        const response = await fetch('/api/checkout/payment-intent', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ currency: 'jpy', paymentMethod }),
-        });
-
-        if (!response.ok) {
-          const errorData: { error?: string } = await response.json().catch(() => ({}));
-          throw new Error(errorData.error ?? '決済情報の初期化に失敗しました。');
-        }
-
-        const data: { clientSecret?: string } = await response.json();
-        if (!data.clientSecret) {
-          throw new Error('決済情報の取得に失敗しました。');
-        }
-
-        if (active) {
-          setPaymentClientSecret(data.clientSecret);
-        }
-      } catch (error) {
-        if (active) {
-          setPaymentIntentError(
-            error instanceof Error ? error.message : '決済情報の初期化に失敗しました。'
-          );
-        }
-      } finally {
-        if (active) {
-          setPaymentIntentLoading(false);
-        }
-      }
-    };
-
-    createPaymentIntent();
-
-    return () => {
-      active = false;
-    };
-  }, [step, paymentMethod, paymentClientSecret]);
-
-  const handlePaymentNext = (e: React.FormEvent) => {
-    e.preventDefault();
-    setStep(3);
-  };
 
   const handleConfirm = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -457,9 +434,7 @@ export default function CheckoutPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           paymentMethod,
-          paymentIntentId: isStripePaymentMethod(paymentMethod)
-            ? paymentIntentId
-            : undefined,
+          paymentIntentId: isStripePaymentMethod(paymentMethod) ? paymentIntentId : undefined,
           shipping: {
             email: shippingForm.email,
             fullName: shippingForm.fullName,
@@ -516,7 +491,7 @@ export default function CheckoutPage() {
             <div className="grid grid-cols-2 gap-6">
               <div>
                 <p className="text-xs text-[#474747] mb-2 tracking-wider font-brand">注文番号</p>
-                <p className="text-lg text-black font-brand">{completedOrderId ?? paymentIntentId ?? '—'}</p>
+                <p className="text-lg text-black font-brand">{completedOrderId ?? '—'}</p>
               </div>
               <div>
                 <p className="text-xs text-[#474747] mb-2 tracking-wider font-brand">注文日</p>
@@ -706,84 +681,133 @@ export default function CheckoutPage() {
               {step === 2 && (
                 <div>
                   <div className="space-y-6">
-                    <RadioButtonGroup
-                      name="paymentMethod"
-                      value={paymentMethod}
-                      onChange={(value) => setPaymentMethod(value as CheckoutPaymentMethod)}
-                      direction="column"
-                      options={[
-                        { value: 'stripe_card', label: 'カード決済' },
-                        { value: 'stripe_paypay', label: 'PayPay' },
-                        { value: 'stripe_konbini', label: 'コンビニ決済' },
-                        { value: 'bank', label: '銀行振込' },
-                        { value: 'cod', label: '代金引換' },
-                      ]}
-                      size="md"
-                    />
 
-                    {isStripePaymentMethod(paymentMethod) ? (
-                      <div className="space-y-4 pt-6">
-                        {!stripePromise && (
-                          <p className="text-sm text-red-600 font-brand">
-                            Stripeの公開可能キーが設定されていないため、Stripeオンライン決済を利用できません。
+                    <div className="rounded-xl border border-black/10 p-6 bg-white">
+                      {paymentMethod === 'stripe_card' || paymentMethod === 'stripe_paypay' ? (
+                        <>
+                          <h3 className="text-lg font-semibold mb-4 font-brand">お支払い方法</h3>
+                          <p className="text-sm text-[#474747] mb-4">
+                            支払い方法を選択し、必要な情報を入力してください。
                           </p>
-                        )}
 
-                        {paymentIntentLoading && (
-                          <p className="text-sm text-[#474747] font-brand">決済フォームを準備中です...</p>
-                        )}
+                          {stripeError && (
+                            <div className="mb-4">
+                              <p className="text-sm text-red-600 font-brand">{stripeError}</p>
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                onClick={createPaymentIntent}
+                                disabled={paymentIntentLoading}
+                                className="mt-2"
+                              >
+                                再読み込み
+                              </Button>
+                            </div>
+                          )}
 
-                        {paymentIntentError && (
-                          <p className="text-sm text-red-600 font-brand">{paymentIntentError}</p>
-                        )}
+                          {paymentIntentLoading && (
+                            <p className="text-sm text-[#474747] mb-4">決済情報を準備しています...</p>
+                          )}
 
-                        {stripePromise && paymentClientSecret && (
-                          <>
-                            {paymentMethod === 'stripe_konbini' && (
-                              <div className="rounded-lg border border-black/10 bg-[#f9fafb] p-4 text-sm text-[#374151] font-brand mb-4">
-                                <p className="font-semibold text-black mb-1">コンビニ支払いについて</p>
-                                <p>このあと「次へ」を押すと、コンビニ支払い用の情報が表示されます。表示された番号と期限をメモして、指定のコンビニでお支払いください。</p>
-                                <p className="mt-2 text-xs text-[#6b7280]">（※お支払い期限は通常3日間です）</p>
-                              </div>
-                            )}
-
+                          {paymentIntentClientSecret ? (
                             <Elements
                               stripe={stripePromise}
                               options={{
-                                clientSecret: paymentClientSecret,
-                                appearance: stripeAppearance,
+                                clientSecret: paymentIntentClientSecret,
                               }}
-                              key={paymentMethod}
                             >
-                              <CreditCardPaymentElementForm
-                                onBack={() => setStep(1)}
-                                onSuccess={(id) => { setPaymentIntentId(id); setStep(3); }}
-                                email={shippingForm.email}
-                                fullName={shippingForm.fullName}
-                              />
+                              <StripePaymentForm />
                             </Elements>
-                          </>
-                        )}
-                      </div>
-                    ) : (
-                      <form onSubmit={handlePaymentNext}>
-                        <div className="pt-6">
-                          <p className="text-sm text-[#474747] font-brand">
-                            {paymentMethod === 'bank'
-                              ? '銀行振込を選択しました。次へ進むと注文確認画面で確定できます。'
-                              : '代金引換を選択しました。次へ進むと注文確認画面で確定できます。'}
-                          </p>
-                        </div>
-                        <div className="flex gap-4 mt-12">
-                          <Button type="button" variant="secondary" size="lg" onClick={() => setStep(1)} className="font-brand">
-                            戻る
-                          </Button>
-                          <Button type="submit" size="lg" className="flex-1 font-brand">
-                            次へ
-                          </Button>
-                        </div>
-                      </form>
-                    )}
+                          ) : (
+                            <p className="text-sm text-[#474747]">
+                              支払いフォームを読み込んでいます。もう少しお待ちください。
+                            </p>
+                          )}
+
+                          <div className="mt-8 grid gap-3">
+                            <button
+                              type="button"
+                              onClick={() => setPaymentMethod('bank')}
+                              className={cn(
+                                'flex items-start gap-3 w-full rounded-lg border px-4 py-4 text-left transition',
+                                paymentMethod === 'bank'
+                                  ? 'border-black bg-black text-white'
+                                  : 'border-black/10 bg-white text-black hover:border-black/40'
+                              )}
+                            >
+                              <span
+                                className={cn(
+                                  'flex h-5 w-5 items-center justify-center rounded-full border',
+                                  paymentMethod === 'bank'
+                                    ? 'border-white bg-white'
+                                    : 'border-black/30'
+                                )}
+                              >
+                                {paymentMethod === 'bank' ? (
+                                  <span className="h-2.5 w-2.5 rounded-full bg-black" />
+                                ) : null}
+                              </span>
+                              <div>
+                                <p className="text-sm font-semibold">銀行振込</p>
+                                <p className="text-xs text-[#4b5563]">入金確認後に発送いたします。振込先は注文完了後に通知します。</p>
+                              </div>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setPaymentMethod('cod')}
+                              className={cn(
+                                'flex items-start gap-3 w-full rounded-lg border px-4 py-4 text-left transition',
+                                paymentMethod === 'cod'
+                                  ? 'border-black bg-black text-white'
+                                  : 'border-black/10 bg-white text-black hover:border-black/40'
+                              )}
+                            >
+                              <span
+                                className={cn(
+                                  'flex h-5 w-5 items-center justify-center rounded-full border',
+                                  paymentMethod === 'cod'
+                                    ? 'border-white bg-white'
+                                    : 'border-black/30'
+                                )}
+                              >
+                                {paymentMethod === 'cod' ? (
+                                  <span className="h-2.5 w-2.5 rounded-full bg-black" />
+                                ) : null}
+                              </span>
+                              <div>
+                                <p className="text-sm font-semibold">代金引換</p>
+                                <p className="text-xs text-[#4b5563]">商品受取時に配送業者へお支払いください。</p>
+                              </div>
+                            </button>
+                          </div>
+                        </>
+                      ) : paymentMethod === 'bank' ? (
+                        <p className="text-sm text-[#474747]">
+                          ご注文後に振込先情報をご案内します。入金確認後に発送いたします。
+                        </p>
+                      ) : (
+                        <p className="text-sm text-[#474747]">
+                          代金は商品受け取り時に配送業者へお支払いください。
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4 mt-12">
+                    <Button type="button" variant="secondary" size="lg" onClick={() => setStep(1)} className="font-brand">
+                      戻る
+                    </Button>
+                    <Button
+                      type="button"
+                      size="lg"
+                      className="flex-1 font-brand"
+                      onClick={handlePaymentStepNext}
+                      disabled={paymentIntentLoading || paymentConfirming}
+                    >
+                      {paymentConfirming ? '決済処理中...' : '次へ'}
+                    </Button>
                   </div>
                 </div>
               )}

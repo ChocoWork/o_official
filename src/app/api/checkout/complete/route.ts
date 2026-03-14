@@ -9,14 +9,11 @@ const supabase = createClient(
 );
 
 const completeCheckoutSchema = z.object({
-  paymentMethod: z.enum([
-    'stripe_card',
-    'stripe_paypay',
-    'stripe_konbini',
-    'bank',
-    'cod',
-  ]),
+  paymentMethod: z
+    .enum(['stripe_card', 'stripe_paypay', 'stripe_konbini', 'bank', 'cod'])
+    .optional(),
   paymentIntentId: z.string().trim().optional(),
+  checkoutSessionId: z.string().trim().optional(),
   shipping: z.object({
     email: z.string().trim().email().optional(),
     fullName: z.string().trim().optional(),
@@ -48,12 +45,6 @@ type OrderRow = {
   status: 'pending' | 'paid' | 'failed' | 'cancelled';
 };
 
-const stripePaymentMethods = new Set([
-  'stripe_card',
-  'stripe_paypay',
-  'stripe_konbini',
-]);
-
 export async function POST(req: NextRequest) {
   try {
     const sessionId = req.cookies.get('session_id')?.value;
@@ -66,28 +57,65 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
     }
 
-    const { paymentMethod, paymentIntentId, shipping } = parsed.data;
+    const { paymentMethod, paymentIntentId, checkoutSessionId, shipping } = parsed.data;
 
-    const isStripeOnlinePayment = stripePaymentMethods.has(paymentMethod);
+    const stripe = getStripeServerClient();
 
-    if (isStripeOnlinePayment && !paymentIntentId) {
+    let resolvedPaymentMethod = paymentMethod;
+    let resolvedPaymentIntentId = paymentIntentId;
+
+    if (checkoutSessionId) {
+      const session = await stripe.checkout.sessions.retrieve(checkoutSessionId, {
+        expand: ['payment_intent'],
+      });
+
+      resolvedPaymentMethod =
+        resolvedPaymentMethod ??
+        (typeof session.metadata?.selected_payment_method === 'string'
+          ? session.metadata.selected_payment_method
+          : undefined);
+      resolvedPaymentIntentId =
+        resolvedPaymentIntentId ||
+        (typeof session.payment_intent === 'string'
+          ? session.payment_intent
+          : session.payment_intent?.id);
+    }
+
+    const isStripeOnlinePayment = Boolean(resolvedPaymentIntentId);
+
+    if (isStripeOnlinePayment && !resolvedPaymentIntentId) {
       return NextResponse.json({ error: 'paymentIntentId is required for Stripe payment' }, { status: 400 });
     }
 
-    if (isStripeOnlinePayment && paymentIntentId) {
+    if (isStripeOnlinePayment && resolvedPaymentIntentId) {
       const { data: existingOrder } = await supabase
         .from('orders')
         .select('id, status')
-        .eq('payment_intent_id', paymentIntentId)
+        .eq('payment_intent_id', resolvedPaymentIntentId)
         .maybeSingle<OrderRow>();
 
       if (existingOrder) {
         return NextResponse.json({
           orderId: existingOrder.id,
           status: existingOrder.status,
-          paymentMethod,
+          paymentMethod: resolvedPaymentMethod,
         });
       }
+    }
+
+    if (isStripeOnlinePayment && resolvedPaymentIntentId && !resolvedPaymentMethod) {
+      const pi = await stripe.paymentIntents.retrieve(resolvedPaymentIntentId);
+      const type = pi.payment_method_types?.[0] ||
+        pi.charges?.data?.[0]?.payment_method_details?.type;
+
+      const mapStripeType = (t: string | undefined): typeof paymentMethod => {
+        if (t === 'card') return 'stripe_card';
+        if (t === 'konbini') return 'stripe_konbini';
+        if (t === 'paypay') return 'stripe_paypay';
+        return 'stripe_card';
+      };
+
+      resolvedPaymentMethod = mapStripeType(type);
     }
 
     const { data: cartData, error: cartError } = await supabase
@@ -132,11 +160,12 @@ export async function POST(req: NextRequest) {
     }
 
     let orderStatus: 'pending' | 'paid' = 'pending';
-    let storedPaymentIntentId = paymentIntentId ?? `offline_${paymentMethod}_${crypto.randomUUID()}`;
+    let storedPaymentIntentId =
+      resolvedPaymentIntentId ?? `offline_${resolvedPaymentMethod ?? 'unknown'}_${crypto.randomUUID()}`;
 
-    if (isStripeOnlinePayment && paymentIntentId) {
+    if (isStripeOnlinePayment && resolvedPaymentIntentId) {
       const stripe = getStripeServerClient();
-      const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
+      const pi = await stripe.paymentIntents.retrieve(resolvedPaymentIntentId);
 
       if (pi.metadata?.session_id && pi.metadata.session_id !== sessionId) {
         return NextResponse.json({ error: 'Payment intent does not belong to current session' }, { status: 403 });
@@ -217,7 +246,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       orderId: createdOrder.id,
       status: createdOrder.status,
-      paymentMethod,
+      paymentMethod: resolvedPaymentMethod,
     });
   } catch (error) {
     console.error('Complete checkout error:', error);
