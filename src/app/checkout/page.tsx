@@ -194,8 +194,8 @@ export default function CheckoutPage() {
     (sum, item) => sum + (item.items?.price ?? 0) * item.quantity,
     0
   );
-  // for now we use a flat shipping rate or free shipping example
-  const shipping = subtotal === 0 ? 0 : 500; // ¥500 flat fee when there are items
+  // Shipping is free
+  const shipping = 0;
   const total = subtotal + shipping;
 
   React.useEffect(() => {
@@ -819,7 +819,7 @@ export default function CheckoutPage() {
 
           <div className="lg:col-span-1">
             <div className="border border-black/10 p-8 sticky top-32">
-              <h2 className="text-2xl text-black mb-8 tracking-tight font-display" style={{ fontFamily: 'Didot, serif' }}>注文内容</h2>
+              <h2 className="text-2xl text-black mb-8 tracking-tight font-brand font-semibold">注文内容</h2>
 
               {cartItems.length === 0 ? (
                 <p className="text-sm text-gray-500">カートに商品がありません</p>
