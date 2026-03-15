@@ -6,7 +6,6 @@ import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
-import { cn } from '@/lib/utils';
 import { Button } from '@/app/components/ui/Button';
 import { Checkbox } from '@/app/components/ui/Checkbox';
 import {
@@ -79,8 +78,7 @@ const CHECKOUT_STEPS = [
 type CheckoutPaymentMethod =
   | 'stripe_card'
   | 'stripe_paypay'
-  | 'stripe_konbini'
-  | 'bank';
+  | 'stripe_konbini';
 
 const isStripePaymentMethod = (paymentMethod: CheckoutPaymentMethod) =>
   paymentMethod === 'stripe_card' ||
@@ -240,8 +238,7 @@ export default function CheckoutPage() {
       const intent = result.paymentIntent;
       setPaymentIntentId(intent.id);
 
-      const pmType = intent.payment_method_types?.[0] ??
-        intent.charges?.data?.[0]?.payment_method_details?.type;
+      const pmType = intent.payment_method_types?.[0];
 
       if (pmType === 'card') {
         setPaymentMethod('stripe_card');
@@ -646,11 +643,6 @@ export default function CheckoutPage() {
                                     ? 'コンビニ決済'
                                     : '銀行振込'}
                           </p>
-                          {paymentMethod === 'bank' && (
-                            <p className="mt-3 text-xs text-[#474747]">
-                              ご注文後に振込先情報をご案内します。入金確認後に発送いたします。
-                            </p>
-                          )}
                         </div>
                       </div>
                     </div>
@@ -718,40 +710,9 @@ export default function CheckoutPage() {
                           )}
 
                           <div className="mt-8 grid gap-3">
-                            <button
-                              type="button"
-                              onClick={() => setPaymentMethod('bank')}
-                              className={cn(
-                                'flex items-start gap-3 w-full rounded-lg border px-4 py-4 text-left transition',
-                                paymentMethod === 'bank'
-                                  ? 'border-black bg-black text-white'
-                                  : 'border-black/10 bg-white text-black hover:border-black/40'
-                              )}
-                            >
-                              <span
-                                className={cn(
-                                  'flex h-5 w-5 items-center justify-center rounded-full border',
-                                  paymentMethod === 'bank'
-                                    ? 'border-white bg-white'
-                                    : 'border-black/30'
-                                )}
-                              >
-                                {paymentMethod === 'bank' ? (
-                                  <span className="h-2.5 w-2.5 rounded-full bg-black" />
-                                ) : null}
-                              </span>
-                              <div>
-                                <p className="text-sm font-semibold">銀行振込</p>
-                                <p className="text-xs text-[#4b5563]">入金確認後に発送いたします。振込先は注文完了後に通知します。</p>
-                              </div>
-                            </button>
 
                             </div>
                         </>
-                      ) : paymentMethod === 'bank' ? (
-                        <p className="text-sm text-[#474747]">
-                          ご注文後に振込先情報をご案内します。入金確認後に発送いたします。
-                        </p>
                       ) : null}
                     </div>
                   </div>
