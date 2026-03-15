@@ -81,13 +81,13 @@ const stripeAppearance: Appearance = {
     fontSizeBase: '16px',
     fontWeightNormal: '400',
     fontWeightMedium: '600',
-    borderRadius: '0.625rem',
+    borderRadius: '0.375rem',
     spacingUnit: '4px',
   },
   rules: {
     '.Input': {
       border: '1px solid rgba(0,0,0,0.2)',
-      borderRadius: '0.625rem',
+      borderRadius: '0.375rem',
       backgroundColor: '#ffffff',
       color: '#000000',
       fontFamily: 'acumin-pro, sans-serif',
@@ -111,7 +111,7 @@ const stripeAppearance: Appearance = {
     '.Button': {
       backgroundColor: '#000000',
       color: '#ffffff',
-      borderRadius: '0.625rem',
+      borderRadius: '0.375rem',
       fontFamily: 'acumin-pro, sans-serif',
       fontWeight: '600',
       padding: '0.75rem 1rem',
@@ -126,7 +126,7 @@ const stripeAppearance: Appearance = {
     },
 
     '.Tab': {
-      borderRadius: '0.625rem',
+      borderRadius: '0.375rem',
       border: '1px solid rgba(0,0,0,0.2)',
       backgroundColor: '#ffffff',
       color: '#000000',
@@ -138,7 +138,7 @@ const stripeAppearance: Appearance = {
 
     '.Checkbox': {
       borderColor: 'rgba(0,0,0,0.2)',
-      borderRadius: '0.25rem',
+      borderRadius: '0.375rem',
       backgroundColor: '#ffffff',
     },
     '.Checkbox:checked': {
@@ -746,7 +746,7 @@ export default function CheckoutPage() {
                 <div>
                   <div className="space-y-6">
 
-                    <div className="rounded-xl border border-black/10 p-6 bg-white">
+                    <div className="rounded-xs border border-black/10 p-6 bg-white">
                       {paymentMethod === 'stripe_card' || paymentMethod === 'stripe_paypay' ? (
                         <>
                           <h3 className="text-lg font-semibold mb-4 font-brand">お支払い方法</h3>
