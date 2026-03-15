@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { z } from 'zod';
+import Stripe from 'stripe';
 import { getStripeServerClient } from '@/lib/stripe/server';
 
 const supabase = createClient(
@@ -102,6 +103,11 @@ export async function POST(req: NextRequest) {
         ? ['konbini']
         : ['card'];
 
+    // Stripe の公式型では paypay/konbini が含まれていないため、
+    // 明示的にキャストして型エラーを回避します。
+    const paymentMethodTypesForStripe = paymentMethodTypes as unknown as
+      Stripe.Checkout.SessionCreateParams.PaymentMethodType[];
+
     const lineItems = (cartData as CartRow[]).map((cartItem) => {
       const item = itemMap.get(cartItem.item_id);
       const unitAmount = item?.price ?? 0;
@@ -137,7 +143,7 @@ export async function POST(req: NextRequest) {
     const cancelUrl = `${origin}/checkout?cancelled=1`;
 
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: paymentMethodTypes,
+      payment_method_types: paymentMethodTypesForStripe,
       mode: 'payment',
       line_items: lineItems,
       success_url: successUrl,
