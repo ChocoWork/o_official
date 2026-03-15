@@ -4,7 +4,7 @@ import React, { useRef, useState } from "react";
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { loadStripe } from '@stripe/stripe-js';
+import { loadStripe, type Appearance } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
 import { Button } from '@/app/components/ui/Button';
 import { Checkbox } from '@/app/components/ui/Checkbox';
@@ -69,22 +69,18 @@ const PREFECTURES = [
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '');
 
 // Stripe Payment Element appearance (ブランドトークンに合わせたカスタマイズ)
-const stripeAppearance = {
+const stripeAppearance: Appearance = {
   theme: 'stripe',
   variables: {
     colorBackground: '#ffffff',
     colorText: '#000000',
     colorPrimary: '#000000',
-    colorSecondary: '#474747',
-    colorBorder: 'rgba(0,0,0,0.2)',
-    colorInput: '#ffffff',
+    colorTextSecondary: '#474747',
     colorDanger: '#dc2626',
-    colorAccent: '#d5d0c9',
-    colorDisabled: 'rgba(0,0,0,0.2)',
     fontFamily: 'acumin-pro, sans-serif',
     fontSizeBase: '16px',
     fontWeightNormal: '400',
-    fontWeightSemiBold: '600',
+    fontWeightMedium: '600',
     borderRadius: '0.625rem',
     spacingUnit: '4px',
   },
