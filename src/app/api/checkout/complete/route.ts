@@ -61,6 +61,24 @@ export async function POST(req: NextRequest) {
 
     const stripe = getStripeServerClient();
 
+    type CheckoutPaymentMethod =
+      | 'stripe_card'
+      | 'stripe_paypay'
+      | 'stripe_konbini'
+      | 'bank'
+      | 'cod';
+
+    const isCheckoutPaymentMethod = (value: unknown): value is CheckoutPaymentMethod =>
+      typeof value === 'string' &&
+      ['stripe_card', 'stripe_paypay', 'stripe_konbini', 'bank', 'cod'].includes(value);
+
+    const mapStripeType = (t: string | undefined): CheckoutPaymentMethod => {
+      if (t === 'card') return 'stripe_card';
+      if (t === 'konbini') return 'stripe_konbini';
+      if (t === 'paypay') return 'stripe_paypay';
+      return 'stripe_card';
+    };
+
     let resolvedPaymentMethod = paymentMethod;
     let resolvedPaymentIntentId = paymentIntentId;
 
@@ -69,11 +87,11 @@ export async function POST(req: NextRequest) {
         expand: ['payment_intent'],
       });
 
-      resolvedPaymentMethod =
-        resolvedPaymentMethod ??
-        (typeof session.metadata?.selected_payment_method === 'string'
-          ? session.metadata.selected_payment_method
-          : undefined);
+      const sessionSelectedPaymentMethod = session.metadata?.selected_payment_method;
+      if (isCheckoutPaymentMethod(sessionSelectedPaymentMethod)) {
+        resolvedPaymentMethod = resolvedPaymentMethod ?? sessionSelectedPaymentMethod;
+      }
+
       resolvedPaymentIntentId =
         resolvedPaymentIntentId ||
         (typeof session.payment_intent === 'string'
@@ -105,10 +123,9 @@ export async function POST(req: NextRequest) {
 
     if (isStripeOnlinePayment && resolvedPaymentIntentId && !resolvedPaymentMethod) {
       const pi = await stripe.paymentIntents.retrieve(resolvedPaymentIntentId);
-      const type = pi.payment_method_types?.[0] ||
-        pi.charges?.data?.[0]?.payment_method_details?.type;
+      const type = pi.payment_method_types?.[0];
 
-      const mapStripeType = (t: string | undefined): typeof paymentMethod => {
+      const mapStripeType = (t: string | undefined): CheckoutPaymentMethod => {
         if (t === 'card') return 'stripe_card';
         if (t === 'konbini') return 'stripe_konbini';
         if (t === 'paypay') return 'stripe_paypay';
@@ -182,6 +199,11 @@ export async function POST(req: NextRequest) {
       orderStatus =
         pi.status === 'succeeded' || pi.status === 'requires_capture' ? 'paid' : 'pending';
       storedPaymentIntentId = pi.id;
+
+      if (!resolvedPaymentMethod) {
+        const type = pi.payment_method_types?.[0];
+        resolvedPaymentMethod = mapStripeType(type);
+      }
     }
 
     const { data: createdOrder, error: createOrderError } = await supabase
