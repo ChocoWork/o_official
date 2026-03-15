@@ -68,6 +68,90 @@ const PREFECTURES = [
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '');
 
+// Stripe Payment Element appearance (ブランドトークンに合わせたカスタマイズ)
+const stripeAppearance = {
+  theme: 'stripe',
+  variables: {
+    colorBackground: '#ffffff',
+    colorText: '#000000',
+    colorPrimary: '#000000',
+    colorSecondary: '#474747',
+    colorBorder: 'rgba(0,0,0,0.2)',
+    colorInput: '#ffffff',
+    colorDanger: '#dc2626',
+    colorAccent: '#d5d0c9',
+    colorDisabled: 'rgba(0,0,0,0.2)',
+    fontFamily: 'acumin-pro, sans-serif',
+    fontSizeBase: '16px',
+    fontWeightNormal: '400',
+    fontWeightSemiBold: '600',
+    borderRadius: '0.625rem',
+    spacingUnit: '4px',
+  },
+  rules: {
+    '.Input': {
+      border: '1px solid rgba(0,0,0,0.2)',
+      borderRadius: '0.625rem',
+      backgroundColor: '#ffffff',
+      color: '#000000',
+      fontFamily: 'acumin-pro, sans-serif',
+      padding: '0.75rem 1rem',
+    },
+    '.Input:focus': {
+      borderColor: '#000000',
+      boxShadow: '0 0 0 3px rgba(0,0,0,0.15)',
+    },
+    '.Input::placeholder': {
+      color: 'rgba(0,0,0,0.4)',
+    },
+
+    '.Label': {
+      color: '#474747',
+      fontWeight: '600',
+      fontSize: '0.75rem',
+      letterSpacing: '0.05em',
+    },
+
+    '.Button': {
+      backgroundColor: '#000000',
+      color: '#ffffff',
+      borderRadius: '0.625rem',
+      fontFamily: 'acumin-pro, sans-serif',
+      fontWeight: '600',
+      padding: '0.75rem 1rem',
+    },
+    '.Button:hover': {
+      backgroundColor: '#474747',
+    },
+
+    '.Error': {
+      color: '#dc2626',
+      fontWeight: '600',
+    },
+
+    '.Tab': {
+      borderRadius: '0.625rem',
+      border: '1px solid rgba(0,0,0,0.2)',
+      backgroundColor: '#ffffff',
+      color: '#000000',
+    },
+    '.Tab--selected': {
+      backgroundColor: '#000000',
+      color: '#ffffff',
+    },
+
+    '.Checkbox': {
+      borderColor: 'rgba(0,0,0,0.2)',
+      borderRadius: '0.25rem',
+      backgroundColor: '#ffffff',
+    },
+    '.Checkbox:checked': {
+      backgroundColor: '#000000',
+      borderColor: '#000000',
+    },
+  },
+};
+
 const CHECKOUT_STEPS = [
   { id: 1, label: '配送情報' },
   { id: 2, label: 'お支払い方法' },
@@ -699,6 +783,7 @@ export default function CheckoutPage() {
                               stripe={stripePromise}
                               options={{
                                 clientSecret: paymentIntentClientSecret,
+                                appearance: stripeAppearance,
                               }}
                             >
                               <StripePaymentForm />
