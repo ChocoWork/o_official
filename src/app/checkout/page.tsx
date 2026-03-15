@@ -215,7 +215,7 @@ export default function CheckoutPage() {
     fetchCart();
   }, []);
 
-  const [step, setStep] = useState<number>(2);
+  const [step, setStep] = useState<number>(1);
   const [paymentMethod, setPaymentMethod] = useState<CheckoutPaymentMethod>('stripe_card');
   const [paymentIntentClientSecret, setPaymentIntentClientSecret] = useState<string | null>(null);
   const [paymentIntentId, setPaymentIntentId] = useState<string | null>(null);
