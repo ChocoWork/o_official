@@ -5,7 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { loadStripe, type Appearance } from '@stripe/stripe-js';
-import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
+import { Elements, CardElement } from '@stripe/react-stripe-js';
 import { Button } from '@/app/components/ui/Button';
 import { Checkbox } from '@/app/components/ui/Checkbox';
 import {
@@ -216,12 +216,9 @@ export default function CheckoutPage() {
   }, []);
 
   const [step, setStep] = useState<number>(1);
-  const [paymentMethod, setPaymentMethod] = useState<CheckoutPaymentMethod>('stripe_card');
-  const [paymentIntentClientSecret, setPaymentIntentClientSecret] = useState<string | null>(null);
-  const [paymentIntentId, setPaymentIntentId] = useState<string | null>(null);
-  const [paymentIntentLoading, setPaymentIntentLoading] = useState(false);
-  const [paymentConfirming, setPaymentConfirming] = useState(false);
-  const [stripeError, setStripeError] = useState<string | null>(null);
+  const [paymentMethod] = useState<CheckoutPaymentMethod>('stripe_card');
+  const [creatingSession, setCreatingSession] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [confirmingOrder, setConfirmingOrder] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [completedOrderId, setCompletedOrderId] = useState<string | null>(null);
@@ -241,154 +238,59 @@ export default function CheckoutPage() {
     saveProfile: false,
   });
 
-  const stripeConfirmRef = useRef<(() => Promise<void>) | null>(null);
-
-  const createPaymentIntent = React.useCallback(async () => {
-    setStripeError(null);
-    setPaymentIntentLoading(true);
+  const createCheckoutSession = React.useCallback(async () => {
+    setCheckoutError(null);
+    setCreatingSession(true);
 
     try {
-      const response = await fetch('/api/checkout/payment-intent', {
+      const response = await fetch('/api/checkout/create-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          currency: 'jpy',
           paymentMethod,
+          shipping: {
+            email: shippingForm.email,
+            fullName: shippingForm.fullName,
+            postalCode: shippingForm.postalCode,
+            prefecture: shippingForm.prefecture,
+            city: shippingForm.city,
+            address: shippingForm.address,
+            building: shippingForm.building,
+            phone: shippingForm.phone,
+          },
         }),
       });
 
       if (!response.ok) {
         const errorData: { error?: string } = await response.json().catch(() => ({}));
-        throw new Error(errorData.error ?? '決済情報の取得に失敗しました。');
+        throw new Error(errorData.error ?? '決済セッションの作成に失敗しました。');
       }
 
-      const data: { clientSecret?: string; paymentIntentId?: string } = await response.json();
-      if (!data.clientSecret || !data.paymentIntentId) {
-        throw new Error('Stripeの決済情報が取得できませんでした。');
+      const data: { url?: string } = await response.json();
+      if (!data.url) {
+        throw new Error('Stripe チェックアウトへの遷移先URLが取得できませんでした。');
       }
 
-      setPaymentIntentClientSecret(data.clientSecret);
-      setPaymentIntentId(data.paymentIntentId);
+      window.location.href = data.url;
     } catch (error) {
-      setStripeError(error instanceof Error ? error.message : '決済情報の取得に失敗しました。');
-    } finally {
-      setPaymentIntentLoading(false);
+      setCheckoutError(error instanceof Error ? error.message : '決済セッションの作成に失敗しました。');
+      setCreatingSession(false);
     }
-  }, [paymentMethod]);
-
-  // Stripe Payment Element の描画と確定処理を行うコンポーネント。
-  // `stripeConfirmRef` に確定処理を登録して、外部ボタンから実行可能にします。
-  const StripePaymentForm = () => {
-    const stripe = useStripe();
-    const elements = useElements();
-
-    const confirmPayment = React.useCallback(async () => {
-      if (!paymentIntentClientSecret) {
-        return;
-      }
-
-      if (!stripe || !elements) {
-        setStripeError('Stripeの初期化がまだ完了していません。しばらくしてから再度お試しください。');
-        return;
-      }
-
-      setPaymentConfirming(true);
-      setStripeError(null);
-
-      const result = await stripe.confirmPayment({
-        elements,
-        confirmParams: {
-          return_url: `${window.location.origin}/checkout`,
-        },
-        redirect: 'if_required',
-      });
-
-      if (result.error) {
-        setStripeError(result.error.message ?? '決済に失敗しました。');
-        setPaymentConfirming(false);
-        return;
-      }
-
-      if (!result.paymentIntent?.id) {
-        setStripeError('決済の確認に失敗しました。');
-        setPaymentConfirming(false);
-        return;
-      }
-
-      const intent = result.paymentIntent;
-      setPaymentIntentId(intent.id);
-
-      const pmType = intent.payment_method_types?.[0];
-
-      if (pmType === 'card') {
-        setPaymentMethod('stripe_card');
-      } else if (pmType === 'konbini') {
-        setPaymentMethod('stripe_konbini');
-      } else if (pmType === 'paypay') {
-        setPaymentMethod('stripe_paypay');
-      }
-
-      setStep(3);
-      setPaymentConfirming(false);
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [elements, paymentIntentClientSecret, setPaymentMethod, setStep, setStripeError, setPaymentConfirming, stripe]
-    );
-
-    React.useEffect(() => {
-      stripeConfirmRef.current = confirmPayment;
-      return () => {
-        stripeConfirmRef.current = null;
-      };
-    }, [confirmPayment]);
-
-    return (
-      <PaymentElement
-        options={{
-          layout: {
-            type: 'accordion',
-            defaultCollapsed: false,
-            radios: 'always',
-            spacedAccordionItems: false,
-          },
-        }}
-      />
-    );
-  };
+  }, [paymentMethod, shippingForm]);
 
   const handlePaymentStepNext = async () => {
     if (isStripePaymentMethod(paymentMethod)) {
-      if (!paymentIntentClientSecret) {
-        await createPaymentIntent();
-        return;
-      }
-
-      if (stripeConfirmRef.current) {
-        await stripeConfirmRef.current();
-      }
+      await createCheckoutSession();
       return;
     }
 
     setStep(3);
   };
-
   React.useEffect(() => {
-    setStripeError(null);
-  }, [paymentMethod]);
-
-  React.useEffect(() => {
-    if (step !== 2 || !isStripePaymentMethod(paymentMethod)) return;
-    if (paymentIntentClientSecret || paymentIntentLoading || stripeError) return;
-
-    void createPaymentIntent();
-  }, [step, paymentMethod, paymentIntentClientSecret, paymentIntentLoading, stripeError, createPaymentIntent]);
-
-  React.useEffect(() => {
-    const paymentIntentId = searchParams.get('payment_intent');
     const sessionId = searchParams.get('session_id');
 
     if (processedCallback) return;
-    if (!paymentIntentId && !sessionId) return;
+    if (!sessionId) return;
 
     setProcessedCallback(true);
 
@@ -397,14 +299,10 @@ export default function CheckoutPage() {
       setConfirmError(null);
 
       try {
-        const body = paymentIntentId
-          ? { paymentIntentId }
-          : { checkoutSessionId: sessionId };
-
         const response = await fetch('/api/checkout/complete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+          body: JSON.stringify({ checkoutSessionId: sessionId }),
         });
 
         if (!response.ok) {
@@ -510,7 +408,6 @@ export default function CheckoutPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           paymentMethod,
-          paymentIntentId: isStripePaymentMethod(paymentMethod) ? paymentIntentId : undefined,
           shipping: {
             email: shippingForm.email,
             fullName: shippingForm.fullName,
@@ -745,54 +642,41 @@ export default function CheckoutPage() {
               {step === 2 && (
                 <div>
                   <div className="space-y-6">
-
                     <div className="rounded-xs border border-black/10 p-6 bg-white">
                       {paymentMethod === 'stripe_card' || paymentMethod === 'stripe_paypay' ? (
                         <>
                           <h3 className="text-lg font-semibold mb-4 font-brand">お支払い方法</h3>
                           <p className="text-sm text-[#474747] mb-4">
-                            支払い方法を選択し、必要な情報を入力してください。
+                            Stripe Checkout へ遷移して安全に決済を完了します。
                           </p>
 
-                          {stripeError && (
+                          {checkoutError && (
                             <div className="mb-4">
-                              <p className="text-sm text-red-600 font-brand">{stripeError}</p>
-                              <Button
-                                type="button"
-                                variant="secondary"
-                                size="sm"
-                                onClick={createPaymentIntent}
-                                disabled={paymentIntentLoading}
-                                className="mt-2"
-                              >
-                                再読み込み
-                              </Button>
+                              <p className="text-sm text-red-600 font-brand">{checkoutError}</p>
                             </div>
                           )}
 
-                          {paymentIntentLoading && (
-                            <p className="text-sm text-[#474747] mb-4">決済情報を準備しています...</p>
-                          )}
-
-                          {paymentIntentClientSecret ? (
-                            <Elements
-                              stripe={stripePromise}
-                              options={{
-                                clientSecret: paymentIntentClientSecret,
-                                appearance: stripeAppearance,
-                              }}
-                            >
-                              <StripePaymentForm />
-                            </Elements>
-                          ) : (
-                            <p className="text-sm text-[#474747]">
-                              支払いフォームを読み込んでいます。もう少しお待ちください。
-                            </p>
-                          )}
-
-                          <div className="mt-8 grid gap-3">
-
+                          <div className="space-y-4">
+                            <div className="text-sm text-[#474747]">
+                              カード情報はStripe上で入力されます。
+                              ここでは見た目のみ表示しています。
                             </div>
+                            <div className="border border-black/10 p-4 rounded-md">
+                              <Elements stripe={stripePromise} options={{ appearance: stripeAppearance }}>
+                                <CardElement
+                                  options={{
+                                    style: {
+                                      base: {
+                                        fontFamily: 'acumin-pro, sans-serif',
+                                        fontSize: '16px',
+                                        color: '#000000',
+                                      },
+                                    },
+                                  }}
+                                />
+                              </Elements>
+                            </div>
+                          </div>
                         </>
                       ) : null}
                     </div>
@@ -807,9 +691,9 @@ export default function CheckoutPage() {
                       size="lg"
                       className="flex-1 font-brand"
                       onClick={handlePaymentStepNext}
-                      disabled={paymentIntentLoading || paymentConfirming}
+                      disabled={creatingSession}
                     >
-                      {paymentConfirming ? '決済処理中...' : '次へ'}
+                      {creatingSession ? '決済処理中...' : '次へ'}
                     </Button>
                   </div>
                 </div>
