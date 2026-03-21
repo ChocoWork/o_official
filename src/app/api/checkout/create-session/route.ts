@@ -11,6 +11,7 @@ const supabase = createClient(
 
 const createSessionSchema = z.object({
   paymentMethod: z.enum(['stripe_card', 'stripe_paypay', 'stripe_konbini']),
+  uiMode: z.enum(['hosted', 'custom']).default('hosted'),
   shipping: z
     .object({
       email: z.string().trim().email().optional(),
@@ -51,7 +52,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
     }
 
-    const { paymentMethod, shipping } = parsed.data;
+    const { paymentMethod, shipping, uiMode } = parsed.data;
 
     const { data: cartData, error: cartError } = await supabase
       .from('carts')
@@ -141,6 +142,32 @@ export async function POST(req: NextRequest) {
     const origin = new URL(req.url).origin;
     const successUrl = `${origin}/checkout?session_id={CHECKOUT_SESSION_ID}`;
     const cancelUrl = `${origin}/checkout?cancelled=1`;
+
+    const paymentMethodTypesForCustomUi = ['card', 'paypay', 'konbini'] as unknown as
+      Stripe.Checkout.SessionCreateParams.PaymentMethodType[];
+
+    if (uiMode === 'custom') {
+      const session = await stripe.checkout.sessions.create({
+        ui_mode: 'custom',
+        payment_method_types: paymentMethodTypesForCustomUi,
+        mode: 'payment',
+        line_items: lineItems,
+        metadata: {
+          session_id: sessionId,
+          selected_payment_method: paymentMethod,
+        },
+        customer_email: shipping?.email ?? undefined,
+      });
+
+      if (!session.client_secret) {
+        return NextResponse.json({ error: 'Failed to create checkout client secret' }, { status: 500 });
+      }
+
+      return NextResponse.json({
+        clientSecret: session.client_secret,
+        checkoutSessionId: session.id,
+      });
+    }
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: paymentMethodTypesForStripe,

@@ -36,7 +36,7 @@ updated: 2026-03-13
 
 # チェックリスト
 
-- [ ] Stripe セッション作成実装
+- [x] Stripe セッション作成実装
 - [x] Stripe Payment Element + PaymentIntent 初期化API実装
 - [x] `POST /api/checkout/complete` 実装（カード/銀行振込/代金引換）
 - [x] Webhook 受信と署名検証
@@ -46,10 +46,10 @@ updated: 2026-03-13
 
 ## Stripe Payment Element ベストプラクティス
 
-- [ ] Payment Element のレイアウトを Accordion で表示し、複数支払い方法を切り替えられる UI にする
-- [ ] Appearance API で Payment Element の見た目をブランドに合わせてカスタマイズする
-- [ ] Checkout Sessions API を使った決済フローに切り替え（サーバー側でセッションを作成し、クライアントはセッションへリダイレクト）
-- [ ] セッション／PaymentIntent に `metadata`（注文ID、カートID 等）を渡して Stripe ダッシュボードで検索できるようにする
+- [x] Payment Element のレイアウトを Accordion で表示し、複数支払い方法を切り替えられる UI にする
+- [x] Appearance API で Payment Element の見た目をブランドに合わせてカスタマイズする
+- [x] Checkout Sessions API を使った決済フローに切り替え（custom UI モードで確定時に Stripe へ反映）
+- [x] セッション／PaymentIntent に `metadata`（注文ID、カートID 等）を渡して Stripe ダッシュボードで検索できるようにする
 - [ ] Dynamic Payment Methods を利用し、Stripe による支払い方法の最適表示を有効化する
 - [ ] Stripe API バージョンが最新であることを確認し、必要であれば `stripe` SDK をアップデートする
 - [ ] Payment Element が iframe 内に埋め込まれないようにし、リダイレクトを伴う支払い方法でも正常に動作することを確認する

@@ -99,10 +99,19 @@ export async function POST(req: NextRequest) {
           : session.payment_intent?.id);
     }
 
+    const isStripePaymentMethod =
+      resolvedPaymentMethod === 'stripe_card' ||
+      resolvedPaymentMethod === 'stripe_paypay' ||
+      resolvedPaymentMethod === 'stripe_konbini' ||
+      Boolean(checkoutSessionId);
+
     const isStripeOnlinePayment = Boolean(resolvedPaymentIntentId);
 
-    if (isStripeOnlinePayment && !resolvedPaymentIntentId) {
-      return NextResponse.json({ error: 'paymentIntentId is required for Stripe payment' }, { status: 400 });
+    if (isStripePaymentMethod && !resolvedPaymentIntentId) {
+      return NextResponse.json(
+        { error: 'Stripe payment is not confirmed yet' },
+        { status: 400 }
+      );
     }
 
     if (isStripeOnlinePayment && resolvedPaymentIntentId) {
@@ -180,6 +189,13 @@ export async function POST(req: NextRequest) {
     let storedPaymentIntentId =
       resolvedPaymentIntentId ?? `offline_${resolvedPaymentMethod ?? 'unknown'}_${crypto.randomUUID()}`;
 
+    if (isStripePaymentMethod && !resolvedPaymentIntentId) {
+      return NextResponse.json(
+        { error: 'Stripe payment intent is missing' },
+        { status: 400 }
+      );
+    }
+
     if (isStripeOnlinePayment && resolvedPaymentIntentId) {
       const stripe = getStripeServerClient();
       const pi = await stripe.paymentIntents.retrieve(resolvedPaymentIntentId);
@@ -233,16 +249,31 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Failed to create order' }, { status: 500 });
     }
 
-    const orderItems = (cartData as CartRow[]).map((cartItem) => {
+   // Filter cart items to only include items that exist in the database
+   const validCartItems = (cartData as CartRow[]).filter(
+     (cartItem) => itemMap.has(cartItem.item_id)
+   );
+
+   if (validCartItems.length === 0) {
+     return NextResponse.json(
+       { error: 'カート内に有効な商品がありません。商品が削除されている可能性があります。' },
+       { status: 400 }
+     );
+   }
+
+   const orderItems = validCartItems.map((cartItem) => {
       const item = itemMap.get(cartItem.item_id);
-      const itemPrice = item?.price ?? 0;
+     if (!item) {
+       throw new Error(`Item ${cartItem.item_id} not found in itemMap`);
+     }
+     const itemPrice = item.price;
 
       return {
         order_id: createdOrder.id,
         item_id: cartItem.item_id,
-        item_name: item?.name ?? '（商品名不明）',
+       item_name: item.name,
         item_price: itemPrice,
-        item_image_url: item?.image_url ?? null,
+       item_image_url: item.image_url ?? null,
         color: cartItem.color,
         size: cartItem.size,
         quantity: cartItem.quantity,

@@ -3,9 +3,7 @@ description: "Best practices for building Next.js (App Router) apps with modern 
 applyTo: "**/*.tsx, **/*.ts, **/*.jsx, **/*.js, **/*.css"
 ---
 
-# Next.js Best Practices for LLMs (2026)
-
-_Last updated: January 2026 (aligned to Next.js 16.1.1)_
+# Next.js Best Practices for LLMs
 
 This document summarizes the latest, authoritative best practices for building, structuring, and maintaining Next.js applications. It is intended for use by LLMs and developers to ensure code quality, maintainability, and scalability.
 
@@ -178,3 +176,13 @@ Do not create example/demo files (like ModalExample.tsx) in the main codebase un
 - Use the following tools to fetch and search documentation if they are available:
   - `resolve_library_id` to resolve the package/library name in the docs.
   - `get_library_docs` for up-to-date documentation.
+
+## 11. Implementation Process
+- 1. Plan component hierarchy
+- 2. Define types and interfaces
+- 3. Implement server-side logic
+- 4. Build client components
+- 5. Add proper error handling
+- 6. Implement responsive styling
+- 7. Add loading states
+- 8. Write tests

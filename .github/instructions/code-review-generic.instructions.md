@@ -10,9 +10,7 @@ Comprehensive code review guidelines for GitHub Copilot that can be adapted to a
 
 ## Review Language
 
-When performing a code review, respond in **English** (or specify your preferred language).
-
-> **Customization Tip**: Change to your preferred language by replacing "English" with "Portuguese (Brazilian)", "Spanish", "French", etc.
+When performing a code review, respond in **Japanese** (or specify your preferred language).
 
 ## Review Priorities
 

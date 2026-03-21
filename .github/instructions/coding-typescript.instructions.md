@@ -7,6 +7,11 @@ applyTo: "**/*.ts, **/*.tsx"
 
 このドキュメントはリポジトリ内の TypeScript コードに関する規約とセキュリティのベストプラクティスをまとめたもので、Copilot は提案を調整する際に参照します。
 
+- Strict mode enabled
+- Clear type definitions
+- Proper error handling with type guards
+- Zod for runtime type validation
+
 ## スタイル & 慣習
 
 - **厳格な型付け**：`tsconfig.json` は `strict: true` に設定されています。`any` の使用は避け、正確なインターフェースやジェネリックを使用してください。
@@ -36,3 +41,4 @@ applyTo: "**/*.ts, **/*.tsx"
 - **エラーハンドリング**：レスポンスでスタックトレースや機密データを漏らさず、安全にログ出力。
 
 これらのガイドラインはプロジェクト仕様と一般的な TypeScript ベストプラクティスから要約したものです。すべての `.ts` または `.tsx` ファイル作成時に従ってください。
+

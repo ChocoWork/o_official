@@ -5,7 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { loadStripe, type Appearance } from '@stripe/stripe-js';
-import { Elements, CardElement } from '@stripe/react-stripe-js';
+import { CheckoutProvider, PaymentElement, useCheckout } from '@stripe/react-stripe-js/checkout';
 import { Button } from '@/app/components/ui/Button';
 import { Checkbox } from '@/app/components/ui/Checkbox';
 import {
@@ -154,16 +154,10 @@ const CHECKOUT_STEPS = [
   { id: 3, label: 'ご注文内容の確認' },
 ];
 
-
 type CheckoutPaymentMethod =
   | 'stripe_card'
   | 'stripe_paypay'
   | 'stripe_konbini';
-
-const isStripePaymentMethod = (paymentMethod: CheckoutPaymentMethod) =>
-  paymentMethod === 'stripe_card' ||
-  paymentMethod === 'stripe_paypay' ||
-  paymentMethod === 'stripe_konbini';
 
 
 export default function CheckoutPage() {
@@ -195,7 +189,7 @@ export default function CheckoutPage() {
     0
   );
   // Shipping is free
-  const shipping = 0;
+  const shipping: number = 0;
   const total = subtotal + shipping;
 
   React.useEffect(() => {
@@ -216,9 +210,12 @@ export default function CheckoutPage() {
   }, []);
 
   const [step, setStep] = useState<number>(1);
-  const [paymentMethod] = useState<CheckoutPaymentMethod>('stripe_card');
-  const [creatingSession, setCreatingSession] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<CheckoutPaymentMethod>('stripe_card');
+  const [customSessionLoading, setCustomSessionLoading] = useState(false);
+  const [customCheckoutClientSecret, setCustomCheckoutClientSecret] = useState<string | null>(null);
+  const [customCheckoutSessionId, setCustomCheckoutSessionId] = useState<string | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [confirmingPayment, setConfirmingPayment] = useState(false);
   const [confirmingOrder, setConfirmingOrder] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [completedOrderId, setCompletedOrderId] = useState<string | null>(null);
@@ -238,15 +235,18 @@ export default function CheckoutPage() {
     saveProfile: false,
   });
 
-  const createCheckoutSession = React.useCallback(async () => {
+
+
+  const createCustomCheckoutSession = React.useCallback(async () => {
     setCheckoutError(null);
-    setCreatingSession(true);
+    setCustomSessionLoading(true);
 
     try {
       const response = await fetch('/api/checkout/create-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          uiMode: 'custom',
           paymentMethod,
           shipping: {
             email: shippingForm.email,
@@ -263,29 +263,37 @@ export default function CheckoutPage() {
 
       if (!response.ok) {
         const errorData: { error?: string } = await response.json().catch(() => ({}));
-        throw new Error(errorData.error ?? '決済セッションの作成に失敗しました。');
+        throw new Error(errorData.error ?? '決済セッションの初期化に失敗しました。');
       }
 
-      const data: { url?: string } = await response.json();
-      if (!data.url) {
-        throw new Error('Stripe チェックアウトへの遷移先URLが取得できませんでした。');
+      const data: { clientSecret?: string; checkoutSessionId?: string } = await response.json();
+      if (!data.clientSecret || !data.checkoutSessionId) {
+        throw new Error('決済セッションの初期化に必要な client_secret が取得できませんでした。');
       }
 
-      window.location.href = data.url;
+      const normalizedClientSecret = decodeURIComponent(data.clientSecret);
+      setCustomCheckoutClientSecret(normalizedClientSecret);
+      setCustomCheckoutSessionId(data.checkoutSessionId);
     } catch (error) {
-      setCheckoutError(error instanceof Error ? error.message : '決済セッションの作成に失敗しました。');
-      setCreatingSession(false);
+      setCheckoutError(error instanceof Error ? error.message : '決済セッションの初期化に失敗しました。');
+    } finally {
+      setCustomSessionLoading(false);
     }
   }, [paymentMethod, shippingForm]);
 
-  const handlePaymentStepNext = async () => {
-    if (isStripePaymentMethod(paymentMethod)) {
-      await createCheckoutSession();
-      return;
-    }
 
-    setStep(3);
-  };
+
+  React.useEffect(() => {
+    setCheckoutError(null);
+  }, [paymentMethod]);
+
+  React.useEffect(() => {
+    if (step !== 2) return;
+    if (customCheckoutClientSecret) return;
+
+    void createCustomCheckoutSession();
+  }, [step, customCheckoutClientSecret, createCustomCheckoutSession]);
+
   React.useEffect(() => {
     const sessionId = searchParams.get('session_id');
 
@@ -408,6 +416,7 @@ export default function CheckoutPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           paymentMethod,
+          checkoutSessionId: customCheckoutSessionId,
           shipping: {
             email: shippingForm.email,
             fullName: shippingForm.fullName,
@@ -438,6 +447,53 @@ export default function CheckoutPage() {
     } finally {
       setConfirmingOrder(false);
     }
+  };
+
+  const Step2ConfirmButton = () => {
+    const checkout = useCheckout();
+
+    const handleStep2Next = async () => {
+      if (checkout.type !== 'success') {
+        setCheckoutError('決済フォームの初期化が完了していません。少し待ってから再度お試しください。');
+        return;
+      }
+
+      setCheckoutError(null);
+      setConfirmingPayment(true);
+
+      try {
+        const result = await checkout.checkout.confirm({
+          redirect: 'if_required',
+          returnUrl: `${window.location.origin}/checkout?session_id={CHECKOUT_SESSION_ID}`,
+        });
+
+        if (result.type === 'error') {
+          setCheckoutError(result.error.message ?? '決済の確定に失敗しました。');
+          return;
+        }
+
+        // カード等の非リダイレクト決済はここで確定し、確認ステップへ遷移
+        setStep(3);
+      } catch (error) {
+        setCheckoutError(
+          error instanceof Error ? error.message : '決済の確定中にエラーが発生しました。'
+        );
+      } finally {
+        setConfirmingPayment(false);
+      }
+    };
+
+    return (
+      <Button
+        type="button"
+        size="lg"
+        className="flex-1 font-brand"
+        onClick={handleStep2Next}
+        disabled={customSessionLoading || confirmingPayment || !customCheckoutClientSecret}
+      >
+        {confirmingPayment ? '決済処理中...' : '次へ'}
+      </Button>
+    );
   };
 
   const [completed, setCompleted] = useState<boolean>(false);
@@ -641,61 +697,87 @@ export default function CheckoutPage() {
               {/* Payment form (step 2) */}
               {step === 2 && (
                 <div>
-                  <div className="space-y-6">
+                  {customSessionLoading && (
                     <div className="rounded-xs border border-black/10 p-6 bg-white">
-                      {paymentMethod === 'stripe_card' || paymentMethod === 'stripe_paypay' ? (
-                        <>
+                      <h3 className="text-lg font-semibold mb-4 font-brand">お支払い方法</h3>
+                      <p className="text-sm text-[#474747] font-brand">決済フォームを準備しています...</p>
+                    </div>
+                  )}
+
+                  {!customSessionLoading && customCheckoutClientSecret && (
+                    <CheckoutProvider
+                      stripe={stripePromise}
+                      options={{
+                        clientSecret: customCheckoutClientSecret,
+                        elementsOptions: {
+                          appearance: stripeAppearance,
+                        },
+                      }}
+                    >
+                      <div className="space-y-6">
+                        <div className="rounded-xs border border-black/10 p-6 bg-white">
                           <h3 className="text-lg font-semibold mb-4 font-brand">お支払い方法</h3>
-                          <p className="text-sm text-[#474747] mb-4">
-                            Stripe Checkout へ遷移して安全に決済を完了します。
+
+                          <PaymentElement
+                            options={{
+                              layout: {
+                                type: 'accordion',
+                                defaultCollapsed: false,
+                                radios: 'always',
+                                spacedAccordionItems: false,
+                              },
+                            }}
+                            onChange={(event) => {
+                              const selectedType = event.value?.type;
+                              if (selectedType === 'paypay') {
+                                setPaymentMethod('stripe_paypay');
+                                return;
+                              }
+
+                              if (selectedType === 'konbini') {
+                                setPaymentMethod('stripe_konbini');
+                                return;
+                              }
+
+                              setPaymentMethod('stripe_card');
+                            }}
+                          />
+
+                          <p className="text-xs text-[#474747] mt-4 font-brand" aria-live="polite">
+                            選択中: {paymentMethod === 'stripe_paypay' ? 'PayPay' : paymentMethod === 'stripe_konbini' ? 'コンビニ決済' : 'カード決済'}
+                          </p>
+
+                          <p className="text-xs text-[#474747] mt-2 font-brand">
+                            Checkout Sessions APIのカスタムUIモードを利用します。「次へ」で決済を確定します。
                           </p>
 
                           {checkoutError && (
-                            <div className="mb-4">
+                            <div className="mt-4">
                               <p className="text-sm text-red-600 font-brand">{checkoutError}</p>
                             </div>
                           )}
+                        </div>
 
-                          <div className="space-y-4">
-                            <div className="text-sm text-[#474747]">
-                              カード情報はStripe上で入力されます。
-                              ここでは見た目のみ表示しています。
-                            </div>
-                            <div className="border border-black/10 p-4 rounded-md">
-                              <Elements stripe={stripePromise} options={{ appearance: stripeAppearance }}>
-                                <CardElement
-                                  options={{
-                                    style: {
-                                      base: {
-                                        fontFamily: 'acumin-pro, sans-serif',
-                                        fontSize: '16px',
-                                        color: '#000000',
-                                      },
-                                    },
-                                  }}
-                                />
-                              </Elements>
-                            </div>
-                          </div>
-                        </>
-                      ) : null}
+                        <div className="flex gap-4 mt-12">
+                          <Button type="button" variant="secondary" size="lg" onClick={() => setStep(1)} className="font-brand">
+                            戻る
+                          </Button>
+                          <Step2ConfirmButton />
+                        </div>
+                      </div>
+                    </CheckoutProvider>
+                  )}
+
+                  {!customSessionLoading && !customCheckoutClientSecret && (
+                    <div className="flex gap-4 mt-12">
+                      <Button type="button" variant="secondary" size="lg" onClick={() => setStep(1)} className="font-brand">
+                        戻る
+                      </Button>
+                      <Button type="button" size="lg" className="flex-1 font-brand" disabled>
+                        次へ
+                      </Button>
                     </div>
-                  </div>
-
-                  <div className="flex gap-4 mt-12">
-                    <Button type="button" variant="secondary" size="lg" onClick={() => setStep(1)} className="font-brand">
-                      戻る
-                    </Button>
-                    <Button
-                      type="button"
-                      size="lg"
-                      className="flex-1 font-brand"
-                      onClick={handlePaymentStepNext}
-                      disabled={creatingSession}
-                    >
-                      {creatingSession ? '決済処理中...' : '次へ'}
-                    </Button>
-                  </div>
+                  )}
                 </div>
               )}
           </div>
