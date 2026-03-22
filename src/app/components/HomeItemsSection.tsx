@@ -65,9 +65,13 @@ export default function HomeItemsSection({ limit = 6 }: HomeItemsSectionProps) {
           items={displayItems}
           className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-6 sm:gap-8 md:gap-10 lg:gap-10 xl:gap-10"
         />
-        <div className="text-center mt-10">
-          <Button href="/item" variant="secondary" size="md" className=" font-acumin">VIEW ALL ITEMS</Button>
-        </div>
+        {items.length > limit && (
+          <div className="text-center mt-10">
+            <Button href="/item" variant="secondary" size="md" className=" font-acumin">
+              VIEW ALL ITEMS
+            </Button>
+          </div>
+        )}
       </div>
     </section>
   );
