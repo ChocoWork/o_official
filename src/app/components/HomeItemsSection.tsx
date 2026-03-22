@@ -10,28 +10,43 @@ type HomeItemsSectionProps = {
 };
 
 export default function HomeItemsSection({ limit = 6 }: HomeItemsSectionProps) {
-  const [isLargeScreen, setIsLargeScreen] = useState(() => window.matchMedia('(min-width: 1024px)').matches);
-  const desiredItemCount = isLargeScreen ? 8 : limit;
-  const { items, loading, error } = usePublicItems({ limit: desiredItemCount });
+  const [desiredItemCount, setDesiredItemCount] = useState<number | null>(null);
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
     const mediaQuery = window.matchMedia('(min-width: 1024px)');
+
+    const updateLimit = (matches: boolean) => {
+      setDesiredItemCount(matches ? 8 : limit);
+    };
+
+    updateLimit(mediaQuery.matches);
+
     const setMatch = (event: MediaQueryList | MediaQueryListEvent) => {
-      setIsLargeScreen(event.matches);
+      updateLimit(event.matches);
     };
 
     mediaQuery.addEventListener('change', setMatch);
     return () => mediaQuery.removeEventListener('change', setMatch);
-  }, []);
+  }, [limit]);
+
+  const { items, loading, error } = usePublicItems({
+    limit: desiredItemCount ?? undefined,
+    enabled: desiredItemCount !== null,
+  });
 
   const displayItems = items;
 
   if (loading) {
     return (
-      <section className="lg:py-32 px-6 bg-white w-full" aria-live="polite">
+      <section className="lg:py-32 px-6 bg-white w-full">
+        <div className="sr-only" aria-live="polite">アイテムの読み込み中です</div>
         <div className="max-w-7xl mx-auto">
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-6 sm:gap-8 md:gap-10 lg:gap-10 xl:gap-10 animate-pulse" aria-hidden="true">
-            {Array.from({ length: desiredItemCount }).map((_, index) => (
+            {Array.from({ length: desiredItemCount ?? 0 }).map((_, index) => (
               <div key={index} className="aspect-[3/4] bg-slate-100 dark:bg-slate-800" />
             ))}
           </div>
@@ -51,12 +66,11 @@ export default function HomeItemsSection({ limit = 6 }: HomeItemsSectionProps) {
   }
 
   return (
-    <section className="lg:py-32 px-6 bg-white w-full">
+    <section id="items" className="lg:py-32 px-6 bg-white w-full">
       <div className="max-w-7xl mx-auto">
         <div className="text-left mb-8">
           <h2
-            className="text-xl lg:text-2xl mb-2 text-black font-semibold tracking-tight underline underline-offset-8 decoration-black decoration-1"
-            style={{ fontFamily: "Didot, serif" }}
+            className="text-xl lg:text-2xl mb-2 text-black tracking-tight underline underline-offset-8 decoration-black decoration-1"
           >
             ITEMS
           </h2>
@@ -65,7 +79,7 @@ export default function HomeItemsSection({ limit = 6 }: HomeItemsSectionProps) {
           items={displayItems}
           className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-6 sm:gap-8 md:gap-10 lg:gap-10 xl:gap-10"
         />
-        {items.length > limit && (
+        {desiredItemCount !== null && items.length > desiredItemCount && (
           <div className="text-center mt-10">
             <Button href="/item" variant="secondary" size="md" className=" font-acumin">
               VIEW ALL ITEMS

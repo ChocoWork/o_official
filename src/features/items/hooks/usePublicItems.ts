@@ -5,6 +5,7 @@ import { Item } from '@/app/types/item';
 
 type UsePublicItemsOptions = {
   limit?: number;
+  enabled?: boolean;
 };
 
 export function usePublicItems(options?: UsePublicItemsOptions) {
@@ -13,6 +14,10 @@ export function usePublicItems(options?: UsePublicItemsOptions) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (options?.enabled === false) {
+      return;
+    }
+
     const fetchItems = async () => {
       try {
         const query =
@@ -39,7 +44,7 @@ export function usePublicItems(options?: UsePublicItemsOptions) {
 
     setLoading(true);
     fetchItems();
-  }, [options?.limit]);
+  }, [options?.limit, options?.enabled]);
 
   return {
     items,
