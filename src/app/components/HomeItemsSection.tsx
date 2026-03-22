@@ -39,31 +39,7 @@ export default function HomeItemsSection({ limit = 6 }: HomeItemsSectionProps) {
   });
 
   const displayItems = items;
-
-  if (loading) {
-    return (
-      <section className="lg:py-32 px-6 bg-white w-full">
-        <div className="sr-only" aria-live="polite">アイテムの読み込み中です</div>
-        <div className="max-w-7xl mx-auto">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-6 sm:gap-8 md:gap-10 lg:gap-10 xl:gap-10 animate-pulse" aria-hidden="true">
-            {Array.from({ length: desiredItemCount ?? 0 }).map((_, index) => (
-              <div key={index} className="aspect-[3/4] bg-slate-100 dark:bg-slate-800" />
-            ))}
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  if (error) {
-    return (
-      <section className="lg:py-32 px-6 bg-white w-full">
-        <div className="max-w-7xl mx-auto text-center">
-          <div className="text-xl text-red-500">{error}</div>
-        </div>
-      </section>
-    );
-  }
+  const isReadyToShow = !loading && !error && desiredItemCount !== null;
 
   return (
     <section id="items" className="lg:py-32 px-6 bg-white w-full">
@@ -75,15 +51,39 @@ export default function HomeItemsSection({ limit = 6 }: HomeItemsSectionProps) {
             ITEMS
           </h2>
         </div>
-        <PublicItemGrid 
-          items={displayItems}
-          className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-6 sm:gap-8 md:gap-10 lg:gap-10 xl:gap-10"
-        />
-        {desiredItemCount !== null && items.length > desiredItemCount && (
-          <div className="text-center mt-10">
-            <Button href="/item" variant="secondary" size="md" className=" font-acumin">
-              VIEW ALL ITEMS
-            </Button>
+
+        {loading && (
+          <div id="sym:loading" className="space-y-4">
+            <div className="sr-only" aria-live="polite">
+              アイテムの読み込み中です
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-6 sm:gap-8 md:gap-10 lg:gap-10 xl:gap-10 animate-pulse" aria-hidden="true">
+              {Array.from({ length: desiredItemCount ?? 0 }).map((_, index) => (
+                <div key={index} className="aspect-[3/4] bg-slate-100 dark:bg-slate-800" />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <div id="sym:error" className="text-center py-10">
+            <div className="text-xl text-red-500">{error}</div>
+          </div>
+        )}
+
+        {isReadyToShow && (
+          <div id="sym:success">
+            <PublicItemGrid
+              items={displayItems}
+              className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-6 sm:gap-8 md:gap-10 lg:gap-10 xl:gap-10"
+            />
+            {items.length > desiredItemCount && (
+              <div className="text-center mt-10">
+                <Button href="/item" variant="secondary" size="md" className=" font-acumin">
+                  VIEW ALL ITEMS
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>
