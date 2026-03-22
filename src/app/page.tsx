@@ -49,19 +49,19 @@ export default async function Home() {
                 <h2 className="text-4xl lg:text-5xl mb-8 text-black tracking-tight font-display">ABOUT</h2>
                 <div className="w-16 h-px bg-black mb-8"></div>
                 <div className="space-y-6 text-[#474747] font-brand">
-                  <p className="text-base lg:text-lg leading-relaxed">Le Fil des Heuresは、「時を紡ぐニュートラルモードな日常着」をコンセプトに、2020年に東京で誕生したアパレルブランドです。</p>
+                  <p className="text-base lg:text-lg leading-relaxed">Le Fil des Heuresは、「時を紡ぐニュートラルモードな日常着」をコンセプトに、2026年に日本の宮城県で誕生したアパレルブランドです。</p>
                   <p className="text-base lg:text-lg leading-relaxed">時代を超えて愛される普遍的なデザインと、上質な素材選びにこだわり、日常に寄り添う洗練されたワードローブを提案しています。</p>
                   <p className="text-base lg:text-lg leading-relaxed">ミニマルでありながら、着る人の個性を引き立てる。そんな服作りを目指し、一着一着丁寧に仕上げています。</p>
-                  <p className="text-base lg:text-lg leading-relaxed">シーズンごとに移り変わる時の流れの中で、変わらない価値を持つ服を。それが私たちの願いです。</p>
+                  <p className="text-base lg:text-lg leading-relaxed">シーズンごとに移り変わる時の流れの中で、変わらない価値を持つ服を、永く使用していただく。それが願いです。</p>
                 </div>
                 <div className="mt-12 grid grid-cols-2 gap-8">
                   <div>
                     <h3 className="text-sm tracking-widest text-black mb-3 font-brand">PHILOSOPHY</h3>
-                    <p className="text-sm text-[#474747] leading-relaxed font-brand">時代を超える普遍的な美しさ</p>
+                    <p className="text-sm text-[#474747] leading-relaxed font-brand">時代を超えた普遍的な美しさ</p>
                   </div>
                   <div>
                     <h3 className="text-sm tracking-widest text-black mb-3 font-brand">ESTABLISHED</h3>
-                    <p className="text-sm text-[#474747] leading-relaxed font-brand">2020, Tokyo</p>
+                    <p className="text-sm text-[#474747] leading-relaxed font-brand">2026, Miyagi in Japan</p>
                   </div>
                 </div>
               </div>

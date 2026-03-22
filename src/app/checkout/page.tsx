@@ -8,6 +8,7 @@ import { loadStripe, type Appearance } from '@stripe/stripe-js';
 import { CheckoutProvider, PaymentElement, useCheckout } from '@stripe/react-stripe-js/checkout';
 import { Button } from '@/app/components/ui/Button';
 import { Checkbox } from '@/app/components/ui/Checkbox';
+import { useCart } from '@/app/components/CartContext';
 import {
   formatPostalCodeInput,
   isCompletePostalCode,
@@ -223,6 +224,7 @@ export default function CheckoutPage() {
   const latestPostalLookupRef = useRef('');
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { updateCartCount } = useCart();
   const [shippingForm, setShippingForm] = useState({
     email: '',
     fullName: '',
@@ -321,6 +323,7 @@ export default function CheckoutPage() {
         if (data.orderId) {
           setCompletedOrderId(data.orderId);
         }
+        await updateCartCount();
         setCompleted(true);
 
         // Remove query params so reloading doesn't re-trigger
@@ -335,7 +338,7 @@ export default function CheckoutPage() {
     };
 
     void finalizeOrder();
-  }, [searchParams, processedCallback, router]);
+  }, [searchParams, processedCallback, router, updateCartCount]);
 
   const handleShippingChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
@@ -439,6 +442,7 @@ export default function CheckoutPage() {
         setCompletedOrderId(data.orderId);
       }
 
+      await updateCartCount();
       setCompleted(true);
     } catch (error) {
       setConfirmError(
@@ -496,7 +500,7 @@ export default function CheckoutPage() {
     );
   };
 
-  const [completed, setCompleted] = useState<boolean>(false);
+  const [completed, setCompleted] = useState<boolean>(true);
 
   if (cartLoading) {
     return (
@@ -512,8 +516,7 @@ export default function CheckoutPage() {
     return (
       <main className="pt-32 pb-20 px-6 lg:px-12">
         <div className="max-w-3xl mx-auto text-center">
-          <div className="w-20 h-20 flex items-center justify-center mx-auto mb-8 bg-[#f0fdf4] rounded-full"><i className="ri-checkbox-circle-fill text-5xl text-[#16a34a]"></i></div>
-          <h1 className="text-4xl text-black tracking-tight mb-4 font-display">ご注文ありがとうございます</h1>
+          <h1 className="text-4xl text-black tracking-tight mb-4 font-display">Thank you for your order</h1>
           <p className="text-lg text-[#474747] mb-12 font-brand">ご注文を承りました。確認メールをお送りしましたのでご確認ください。</p>
 
           <div className="bg-[#f5f5f5] p-8 mb-12 text-left">
