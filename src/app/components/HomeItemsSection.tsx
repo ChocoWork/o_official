@@ -13,7 +13,7 @@ export default function HomeItemsSection({ limit = 6 }: HomeItemsSectionProps) {
 
   if (loading) {
     return (
-      <section className="lg:py-32 px-6 lg:px-12 bg-white w-full">
+      <section className="lg:py-32 px-6 bg-white w-full">
         <div className="max-w-7xl mx-auto text-center">
           <div className="text-xl">商品データを読み込み中...</div>
         </div>
@@ -23,7 +23,7 @@ export default function HomeItemsSection({ limit = 6 }: HomeItemsSectionProps) {
 
   if (error) {
     return (
-      <section className="lg:py-32 px-6 lg:px-12 bg-white w-full">
+      <section className="lg:py-32 px-6 bg-white w-full">
         <div className="max-w-7xl mx-auto text-center">
           <div className="text-xl text-red-500">{error}</div>
         </div>
