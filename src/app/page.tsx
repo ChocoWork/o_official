@@ -2,6 +2,7 @@ import Image from "next/image";
 import { PublicLookGrid } from '@/features/look/components/PublicLookGrid';
 import { PublicItemGrid } from '@/features/items/components/PublicItemGrid';
 import { PublicNewsGrid } from '@/features/news/components/PublicNewsGrid';
+import { PublicStockistGrid } from '@/features/stockist/components/PublicStockistGrid';
 
 export default async function Home() {
   return (
@@ -44,13 +45,16 @@ export default async function Home() {
           <div className="max-w-7xl mx-auto">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-center">
               <div className="order-2 lg:order-1">
-                <h2 className="text-4xl lg:text-5xl mb-8 text-black tracking-tight font-display">ABOUT</h2>
-                <div className="w-16 h-px bg-black mb-8"></div>
+                <div className="text-left mb-10 md:mb-12">
+                  <h2 className="text-xl lg:text-2xl mb-2 text-black tracking-tight underline underline-offset-8 decoration-black decoration-1">
+                    STOCKIST
+                  </h2>
+                </div>
                 <div className="space-y-6 text-[#474747] font-brand">
                   <p className="text-base lg:text-lg leading-relaxed">Le Fil des Heuresは、「時を紡ぐニュートラルモードな日常着」をコンセプトに、2026年に日本の宮城県で誕生したアパレルブランドです。</p>
-                  <p className="text-base lg:text-lg leading-relaxed">時代を超えて愛される普遍的なデザインと、上質な素材選びにこだわり、日常に寄り添う洗練されたワードローブを提案しています。</p>
+                  <p className="text-base lg:text-lg leading-relaxed">時代を超えて愛される普遍的なデザインと、素材選びにこだわり、日常に寄り添う洗練されたワードローブを提案しています。</p>
                   <p className="text-base lg:text-lg leading-relaxed">ミニマルでありながら、着る人の個性を引き立てる。そんな服作りを目指し、一着一着丁寧に仕上げています。</p>
-                  <p className="text-base lg:text-lg leading-relaxed">シーズンごとに移り変わる時の流れの中で、変わらない価値を持つ服を、永く使用していただく。それが願いです。</p>
+                  <p className="text-base lg:text-lg leading-relaxed">移り変わる時の流れの中で、変わらない価値を持つ服を、永く使用していただく。それが願いです。</p>
                 </div>
                 <div className="mt-12 grid grid-cols-2 gap-8">
                   <div>
@@ -80,114 +84,7 @@ export default async function Home() {
         </section>
 
         {/* STOCKIST セクション */}
-        <section id="stockist" className="py-24 lg:py-32 px-6 lg:px-12 bg-white w-full">
-          <div className="max-w-7xl mx-auto">
-            <div className="text-center mb-16 lg:mb-24">
-              <h2 className="text-4xl lg:text-5xl mb-4 text-black tracking-tight font-display">STOCKIST</h2>
-              <div className="w-16 h-px bg-black mx-auto"></div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 lg:gap-12">
-              <div className="border border-[#d5d0c9] p-8 lg:p-10 hover:border-black transition-colors duration-300">
-                <h3 className="text-xl lg:text-2xl mb-6 text-black font-brand">Le Fil des Heures Aoyama</h3>
-                <div className="space-y-3 text-[#474747] font-brand">
-                  <div className="flex items-start">
-                    <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-map-pin-line text-lg"></i></div>
-                    <p className="text-sm">東京都港区南青山3-14-8</p>
-                  </div>
-                  <div className="flex items-start">
-                    <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-phone-line text-lg"></i></div>
-                    <p className="text-sm">03-1234-5678</p>
-                  </div>
-                  <div className="flex items-start">
-                    <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-time-line text-lg"></i></div>
-                    <div className="text-sm">
-                      <p>11:00 - 20:00</p>
-                      <p className="text-xs mt-1">水曜定休</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="border border-[#d5d0c9] p-8 lg:p-10 hover:border-black transition-colors duration-300">
-                <h3 className="text-xl lg:text-2xl mb-6 text-black font-brand">Le Fil des Heures Ginza</h3>
-                <div className="space-y-3 text-[#474747] font-brand">
-                  <div className="flex items-start">
-                    <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-map-pin-line text-lg"></i></div>
-                    <p className="text-sm">東京都中央区銀座6-10-1</p>
-                  </div>
-                  <div className="flex items-start">
-                    <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-phone-line text-lg"></i></div>
-                    <p className="text-sm">03-2345-6789</p>
-                  </div>
-                  <div className="flex items-start">
-                    <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-time-line text-lg"></i></div>
-                    <div className="text-sm">
-                      <p>11:00 - 20:00</p>
-                      <p className="text-xs mt-1">不定休</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="border border-[#d5d0c9] p-8 lg:p-10 hover:border-black transition-colors duration-300">
-                <h3 className="text-xl lg:text-2xl mb-6 text-black font-brand">Le Fil des Heures Kyoto</h3>
-                <div className="space-y-3 text-[#474747] font-brand">
-                  <div className="flex items-start">
-                    <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-map-pin-line text-lg"></i></div>
-                    <p className="text-sm">京都府京都市中京区烏丸通三条上ル</p>
-                  </div>
-                  <div className="flex items-start">
-                    <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-phone-line text-lg"></i></div>
-                    <p className="text-sm">075-123-4567</p>
-                  </div>
-                  <div className="flex items-start">
-                    <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-time-line text-lg"></i></div>
-                    <div className="text-sm">
-                      <p>11:00 - 19:00</p>
-                      <p className="text-xs mt-1">水曜定休</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="border border-[#d5d0c9] p-8 lg:p-10 hover:border-black transition-colors duration-300">
-                <h3 className="text-xl lg:text-2xl mb-6 text-black font-brand">Le Fil des Heures Osaka</h3>
-                <div className="space-y-3 text-[#474747] font-brand">
-                  <div className="flex items-start">
-                    <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-map-pin-line text-lg"></i></div>
-                    <p className="text-sm">大阪府大阪市北区梅田2-5-25</p>
-                  </div>
-                  <div className="flex items-start">
-                    <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-phone-line text-lg"></i></div>
-                    <p className="text-sm">06-1234-5678</p>
-                  </div>
-                  <div className="flex items-start">
-                    <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-time-line text-lg"></i></div>
-                    <div className="text-sm">
-                      <p>11:00 - 20:00</p>
-                      <p className="text-xs mt-1">不定休</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-16 lg:mt-24">
-              <div className="aspect-[16/9] lg:aspect-[21/9] w-full">
-                <iframe
-                  src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3241.2479707857677!2d139.71433831525895!3d35.66572098019819!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x60188b835e2c0d0f%3A0x3c6c8e8e8e8e8e8e!2z5p2x5Lqs6YO95riv5Yy65Y2X6Z2S5bGx!5e0!3m2!1sja!2sjp!4v1234567890123!5m2!1sja!2sjp"
-                  width="100%"
-                  height="100%"
-                  className="border-0"
-                  allowFullScreen
-                  loading="lazy"
-                  referrerPolicy="no-referrer-when-downgrade"
-                />
-              </div>
-            </div>
-          </div>
-        </section>
+        <PublicStockistGrid variant="home" />
       </main>
     </div>
   );

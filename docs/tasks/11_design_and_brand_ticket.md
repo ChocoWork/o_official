@@ -83,7 +83,9 @@ updated: 2026-03-08
 - [x] Home/`item/page.tsx` の商品カード描画（`displayItems.map(...)`）を `PublicItemGrid` に共通化し、画面差分は `className` 指定のみで管理するよう統一
 - [x] Home LOOK セクションと `/look` ページのカード描画を `PublicLookGrid` に共通化し、差分は `variant` と `className` のみで管理するよう統一
 - [x] Home NEWS セクションと `/news` ページのカード描画を `PublicNewsGrid` に共通化し、差分は `buildHref`（カテゴリ維持）と `className` のみで管理するよう統一
+- [x] Home の `STOCKIST` セクションと `/stockist` ページの表示を `features/stockist/components/PublicStockistGrid.tsx` に共通化し、公開データを feature 配下へ集約
 - [x] Home の `ITEMS` / `LOOK` / `NEWS` セクションで、`main` の `gap` 依存を廃止し、8ptグリッド基準の `pt/pb`（`pt-14 pb-16`〜`lg:pt-20 lg:pb-24`）へ統一して縦方向リズムを最適化
+- [x] HOME 実機比較（375px / 768px / 1440px）を行い、`LOOK -> NEWS` の切り替え強調のため `LOOK` セクション下余白のみ 8px 増加（`pb-[72px] md:pb-[88px] lg:pb-[104px]`）、md は追加微調整不要と判断
 - [x] Home NEWS（`getLatestNews`）と `/news` 一覧の取得処理を `features/news/services/public.ts` の `getPublishedNews` に共通化
 - [x] `news/[id]` の取得処理（詳細記事 + 前後ナビ記事）を `features/news/services/public.ts` に共通化し、NEWS系データ取得をサービス層へ一本化
 - [x] `item/[id]` の購入操作ボタンを `/ui` の `Button` サンプル（`WITH ICON` / `ICON ONLY` / `DISABLED`）準拠の見た目・状態表示に統一
