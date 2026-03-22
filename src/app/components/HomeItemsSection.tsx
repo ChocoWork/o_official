@@ -10,7 +10,7 @@ type HomeItemsSectionProps = {
 };
 
 export default function HomeItemsSection({ limit = 6 }: HomeItemsSectionProps) {
-  const [desiredItemCount, setDesiredItemCount] = useState<number | null>(null);
+  const [isWide, setIsWide] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -19,51 +19,38 @@ export default function HomeItemsSection({ limit = 6 }: HomeItemsSectionProps) {
 
     const mediaQuery = window.matchMedia('(min-width: 1024px)');
 
-    const updateLimit = (matches: boolean) => {
-      setDesiredItemCount(matches ? 8 : limit);
+    const updateIsWide = (matches: boolean) => {
+      setIsWide(matches);
     };
 
-    updateLimit(mediaQuery.matches);
+    updateIsWide(mediaQuery.matches);
 
-    const setMatch = (event: MediaQueryList | MediaQueryListEvent) => {
-      updateLimit(event.matches);
+    const handleChange = (event: MediaQueryList | MediaQueryListEvent) => {
+      updateIsWide(event.matches);
     };
 
-    mediaQuery.addEventListener('change', setMatch);
-    return () => mediaQuery.removeEventListener('change', setMatch);
-  }, [limit]);
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
 
-  const { items, loading, error } = usePublicItems({
-    limit: desiredItemCount ?? undefined,
-    enabled: desiredItemCount !== null,
+  // 画面幅に関係なく先に8件を取得し、狭い場合は表示だけ6件にする
+  const { items, error } = usePublicItems({
+    limit: 8,
+    enabled: isWide !== null,
   });
 
-  const displayItems = items;
-  const isReadyToShow = !loading && !error && desiredItemCount !== null;
+  const isReadyToShow = !error && isWide !== null;
+
+  const displayItems = isWide === false ? items.slice(0, Math.min(limit, items.length)) : items;
 
   return (
     <section id="items" className="lg:py-32 px-6 bg-white w-full">
       <div className="max-w-7xl mx-auto">
         <div className="text-left mb-8">
-          <h2
-            className="text-xl lg:text-2xl mb-2 text-black tracking-tight underline underline-offset-8 decoration-black decoration-1"
-          >
+          <h2 className="text-xl lg:text-2xl mb-2 text-black tracking-tight underline underline-offset-8 decoration-black decoration-1">
             ITEMS
           </h2>
         </div>
-
-        {loading && (
-          <div id="sym:loading" className="space-y-4">
-            <div className="sr-only" aria-live="polite">
-              アイテムの読み込み中です
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-6 sm:gap-8 md:gap-10 lg:gap-10 xl:gap-10 animate-pulse" aria-hidden="true">
-              {Array.from({ length: desiredItemCount ?? 0 }).map((_, index) => (
-                <div key={index} className="aspect-[3/4] bg-slate-100 dark:bg-slate-800" />
-              ))}
-            </div>
-          </div>
-        )}
 
         {error && (
           <div id="sym:error" className="text-center py-10">
@@ -77,9 +64,9 @@ export default function HomeItemsSection({ limit = 6 }: HomeItemsSectionProps) {
               items={displayItems}
               className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-6 sm:gap-8 md:gap-10 lg:gap-10 xl:gap-10"
             />
-            {items.length > desiredItemCount && (
+            {items.length > displayItems.length && (
               <div className="text-center mt-10">
-                <Button href="/item" variant="secondary" size="md" className=" font-acumin">
+                <Button href="/item" variant="secondary" size="md" className="font-acumin">
                   VIEW ALL ITEMS
                 </Button>
               </div>
@@ -90,3 +77,4 @@ export default function HomeItemsSection({ limit = 6 }: HomeItemsSectionProps) {
     </section>
   );
 }
+
