@@ -47,7 +47,7 @@ export default async function Home() {
               <div className="order-2 lg:order-1">
                 <div className="text-left mb-10 md:mb-12">
                   <h2 className="text-xl lg:text-2xl mb-2 text-black tracking-tight underline underline-offset-8 decoration-black decoration-1">
-                    STOCKIST
+                    ABOUT
                   </h2>
                 </div>
                 <div className="space-y-6 text-[#474747] font-brand">

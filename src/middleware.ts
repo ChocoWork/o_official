@@ -40,7 +40,7 @@ function buildCsp(nonce: string) {
     `style-src 'self' https://cdn.jsdelivr.net`,
     "font-src 'self' https://cdn.jsdelivr.net",
     `script-src 'self' 'nonce-${nonce}' https://cdn.jsdelivr.net https://challenges.cloudflare.com https://js.stripe.com`,
-    "frame-src https://challenges.cloudflare.com https://js.stripe.com https://hooks.stripe.com",
+    "frame-src https://challenges.cloudflare.com https://js.stripe.com https://hooks.stripe.com https://www.google.com https://maps.google.com",
     `connect-src ${connectSources}`,
     "manifest-src 'self'",
     "upgrade-insecure-requests",
