@@ -1,8 +1,8 @@
 import Image from "next/image";
 import HomeNewsSection from '@/app/components/HomeNewsSection';
-import HomeItemsSection from '@/app/components/HomeItemsSection';
 import HomeLookSection from '@/app/components/HomeLookSection';
 import { getLatestNews } from '@/app/actions/news';
+import { PublicItemGrid } from '@/features/items/components/PublicItemGrid';
 
 export default async function Home() {
   const latestNews = await getLatestNews();
@@ -34,10 +34,10 @@ export default async function Home() {
         </section>
 
         {/* Item セクション */}
-        <HomeItemsSection limit={6} />
+        <PublicItemGrid variant="home" />
 
         {/* Look セクション */}
-        <HomeLookSection />
+        <HomeLookSection limit={2} />
 
         {/* News セクション */}
         <HomeNewsSection initialNews={latestNews} />

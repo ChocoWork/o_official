@@ -8,34 +8,46 @@ type PublicLookGridProps = {
   looks: PublicLook[];
   variant: PublicLookGridVariant;
   className?: string;
+  mobileLimit?: number;
 };
 
-export function PublicLookGrid({ looks, variant, className }: PublicLookGridProps) {
+export function PublicLookGrid({ looks, variant, className, mobileLimit }: PublicLookGridProps) {
   const gridClassName = className ?? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12';
 
   return (
     <div className={gridClassName}>
-      {looks.map((look, index) =>
-        variant === 'home' ? (
-          <Link key={look.id} href={`/look/${look.id}`} className="group cursor-pointer">
-            <div className="relative overflow-hidden mb-4 aspect-[2/3]">
-              <Image
-                src={look.imageUrls[0] || '/placeholder.png'}
-                alt={`LOOK ${index + 1}`}
-                fill
-                unoptimized
-                className="w-full h-full object-cover object-center transition-transform duration-700 group-hover:scale-105"
-              />
-            </div>
-            <div className="text-center space-y-2">
-              <h3 className="text-lg text-black font-brand">{look.theme}</h3>
-              <p className="text-xs tracking-widest text-[#474747] font-brand">
-                {formatLookSeason(look.seasonYear, look.seasonType)}
-              </p>
-            </div>
-          </Link>
-        ) : (
-          <div key={look.id}>
+      {looks.map((look, index) => {
+        const mobileLimitClassName =
+          mobileLimit !== undefined && index >= mobileLimit ? 'hidden lg:block' : undefined;
+
+        if (variant === 'home') {
+          return (
+            <Link
+              key={look.id}
+              href={`/look/${look.id}`}
+              className={['group cursor-pointer', mobileLimitClassName].filter(Boolean).join(' ')}
+            >
+              <div className="relative overflow-hidden mb-4 aspect-[2/3]">
+                <Image
+                  src={look.imageUrls[0] || '/placeholder.png'}
+                  alt={`LOOK ${index + 1}`}
+                  fill
+                  unoptimized
+                  className="w-full h-full object-cover object-center transition-transform duration-700 group-hover:scale-105"
+                />
+              </div>
+              <div className="text-center space-y-2">
+                <h3 className="text-lg text-black font-brand">{look.theme}</h3>
+                <p className="text-xs tracking-widest text-[#474747] font-brand">
+                  {formatLookSeason(look.seasonYear, look.seasonType)}
+                </p>
+              </div>
+            </Link>
+          );
+        }
+
+        return (
+          <div key={look.id} className={mobileLimitClassName}>
             <Link href={`/look/${look.id}`} className="group block">
               <div className="aspect-[2/3] bg-[#f5f5f5] mb-6 overflow-hidden relative">
                 <Image
@@ -71,8 +83,8 @@ export function PublicLookGrid({ looks, variant, className }: PublicLookGridProp
               </div>
             </div>
           </div>
-        ),
-      )}
+        );
+      })}
     </div>
   );
 }
