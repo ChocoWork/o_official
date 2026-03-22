@@ -93,7 +93,11 @@ const Header = () => {
                 </Link>
               )}
             </div>
-            <Button variant="ghost" size="sm" className="lg:hidden w-5 h-5 flex items-center justify-center cursor-pointer px-0 py-0">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="lg:hidden w-5 h-5 flex items-center justify-center cursor-pointer px-0 py-0 hover:bg-transparent"
+            >
               <i className="ri-menu-line text-2xl text-black"></i>
             </Button>
           </div>
