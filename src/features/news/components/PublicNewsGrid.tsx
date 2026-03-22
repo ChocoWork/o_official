@@ -161,14 +161,10 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
     return (
       <section id="news" className="lg:py-32 px-6 lg:px-12 bg-white w-full">
         <div className="max-w-7xl mx-auto">
-          <div className="text-center mb-16 lg:mb-24">
-            <h2
-              className="text-4xl lg:text-5xl mb-4 text-black tracking-tight"
-              style={{ fontFamily: 'Didot, serif' }}
-            >
+          <div className="text-left mb-8">
+            <h2 className="text-xl lg:text-2xl mb-2 text-black tracking-tight underline underline-offset-8 decoration-black decoration-1">
               NEWS
             </h2>
-            <div className="w-16 h-px bg-black mx-auto"></div>
           </div>
 
           {loading ? (

@@ -34,7 +34,7 @@ export default async function Home() {
         <PublicItemGrid variant="home" />
 
         {/* Look セクション */}
-        <PublicLookGrid variant="home" mobileLimit={2} />
+        <PublicLookGrid variant="home" />
 
         {/* News セクション */}
         <PublicNewsGrid variant="home" />
