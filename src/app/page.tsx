@@ -6,7 +6,7 @@ import { PublicNewsGrid } from '@/features/news/components/PublicNewsGrid';
 export default async function Home() {
   return (
     <div className="min-h-screen font-sans">
-      <main className="flex flex-col items-center gap-8">
+      <main className="flex flex-col items-center">
         {/* メイン画像セクション */}
         <section className="relative min-h-screen w-full flex items-center justify-center bg-white pt-20">
           <div className="flex h-full w-full">

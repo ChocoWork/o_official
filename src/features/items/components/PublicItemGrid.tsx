@@ -102,7 +102,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
   if (variant === 'home') {
     if (isSelfFetch && error) {
       return (
-        <section id="items" className="lg:py-32 px-6 bg-white w-full">
+        <section id="items" className="px-6 lg:px-12 bg-white w-full pt-14 pb-16 md:pt-16 md:pb-20 lg:pt-20 lg:pb-24">
           <div className="max-w-7xl mx-auto text-center py-10">
             <div className="text-xl text-red-500">{error}</div>
           </div>
@@ -111,23 +111,23 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     }
 
     return (
-      <section id="items" className="lg:py-32 px-6 bg-white w-full">
+      <section id="items" className="px-6 lg:px-12 bg-white w-full pt-14 pb-16 md:pt-16 md:pb-20 lg:pt-20 lg:pb-24">
         <div className="max-w-7xl mx-auto">
-          <div className="text-left mb-8">
+          <div className="text-left mb-10 md:mb-12">
             <h2 className="text-xl lg:text-2xl mb-2 text-black tracking-tight underline underline-offset-8 decoration-black decoration-1">
               ITEMS
             </h2>
           </div>
 
           {isSelfFetch && loading ? (
-            <div className="text-center py-8 text-[#474747] font-brand">読み込み中...</div>
+            <div className="text-center py-12 text-[#474747] font-brand">読み込み中...</div>
           ) : resolvedItems.length === 0 ? (
-            <div className="text-center py-8 text-[#474747] font-brand">公開中のITEMがありません</div>
+            <div className="text-center py-12 text-[#474747] font-brand">公開中のITEMがありません</div>
           ) : (
             <div id="sym:success">
               {renderGrid()}
               {shouldLimitOnMobile && resolvedItems.length > resolvedMobileLimit! && (
-                <div className="text-center mt-10 lg:hidden">
+                <div className="text-center mt-12 lg:hidden">
                   <Button href="/item" variant="secondary" size="md" className="font-acumin">
                     VIEW ALL ITEMS
                   </Button>

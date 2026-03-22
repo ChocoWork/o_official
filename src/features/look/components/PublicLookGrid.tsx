@@ -114,21 +114,21 @@ export async function PublicLookGrid(props: PublicLookGridProps) {
   // home variant rendering
   if (variant === 'home') {
     return (
-      <section id="look" className="lg:py-32 px-6 bg-white w-full">
+      <section id="look" className="px-6 lg:px-12 bg-white w-full pt-14 pb-16 md:pt-16 md:pb-20 lg:pt-20 lg:pb-24">
         <div className="max-w-7xl mx-auto">
-          <div className="text-left mb-8">
+          <div className="text-left mb-10 md:mb-12">
             <h2 className="text-xl lg:text-2xl mb-2 text-black tracking-tight underline underline-offset-8 decoration-black decoration-1">
               LOOK
             </h2>
           </div>
 
           {resolvedLooks.length === 0 ? (
-            <div className="text-center py-8 text-[#474747] font-brand">公開中のLOOKがありません</div>
+            <div className="text-center py-12 text-[#474747] font-brand">公開中のLOOKがありません</div>
           ) : (
             <>
               {renderGrid()}
               {shouldLimitOnMobile && resolvedLooks.length > resolvedMobileLimit! && (
-                <div className="text-center mt-10 lg:hidden">
+                <div className="text-center mt-12 lg:hidden">
                   <Button href="/look" variant="secondary" size="md" className="font-acumin">
                     VIEW LOOKBOOK
                   </Button>

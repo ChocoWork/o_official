@@ -159,9 +159,9 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
   // home variant rendering
   if (variant === 'home') {
     return (
-      <section id="news" className="lg:py-32 px-6 lg:px-12 bg-white w-full">
+      <section id="news" className="px-6 lg:px-12 bg-white w-full pt-14 pb-16 md:pt-16 md:pb-20 lg:pt-20 lg:pb-24">
         <div className="max-w-7xl mx-auto">
-          <div className="text-left mb-8">
+          <div className="text-left mb-10 md:mb-12">
             <h2 className="text-xl lg:text-2xl mb-2 text-black tracking-tight underline underline-offset-8 decoration-black decoration-1">
               NEWS
             </h2>
@@ -189,7 +189,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
             renderGrid()
           )}
 
-          <div className="text-center mt-16">
+          <div className="text-center mt-12 md:mt-16">
             <Button href="/news" variant="secondary" size="md" className="font-acumin">
               VIEW ALL NEWS
             </Button>
