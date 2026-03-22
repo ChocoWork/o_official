@@ -1,10 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Button } from '@/app/components/ui/Button';
+import { TabSegmentControl } from '@/app/components/ui/TabSegmentControl';
 import { Item } from '@/app/types/item';
+import { usePublicItems } from '@/features/items/hooks/usePublicItems';
+
+const ITEM_CATEGORIES = ['ALL', 'TOPS', 'BOTTOMS', 'OUTERWEAR', 'ACCESSORIES'] as const;
+type ItemCategory = typeof ITEM_CATEGORIES[number];
 
 type PublicItemGridHomeProps = {
   variant: 'home';
@@ -17,7 +22,7 @@ type PublicItemGridHomeProps = {
 
 type PublicItemGridCatalogProps = {
   variant: 'catalog';
-  items: Item[];
+  items?: Item[];
   className?: string;
   mobileLimit?: number;
 };
@@ -26,43 +31,26 @@ type PublicItemGridProps = PublicItemGridHomeProps | PublicItemGridCatalogProps;
 
 export function PublicItemGrid(props: PublicItemGridProps) {
   const { variant, className, mobileLimit } = props;
-  const [homeItems, setHomeItems] = useState<Item[]>([]);
-  const [isLoadingHomeItems, setIsLoadingHomeItems] = useState(false);
-  const [homeItemsError, setHomeItemsError] = useState<string | null>(null);
 
-  const fetchLimit = variant === 'home' ? props.fetchLimit ?? 8 : 8;
+  // Category filter state - catalog variant only
+  const [selectedCategory, setSelectedCategory] = useState<ItemCategory>('ALL');
 
-  useEffect(() => {
-    if (variant !== 'home' || typeof props.items !== 'undefined') {
-      return;
-    }
+  // Self-fetch: triggered when items are not provided externally
+  const isSelfFetch = typeof props.items === 'undefined';
+  const fetchLimit = variant === 'home' ? (props.fetchLimit ?? 8) : undefined;
+  const { items: fetchedItems, loading, error } = usePublicItems({
+    limit: fetchLimit,
+    enabled: isSelfFetch,
+  });
 
-    const resolvedFetchLimit = Number.isFinite(fetchLimit) && fetchLimit > 0 ? Math.floor(fetchLimit) : 8;
+  // Use external items if provided, otherwise fall back to fetched items
+  const resolvedItems = props.items ?? fetchedItems;
 
-    const fetchHomeItems = async () => {
-      try {
-        setIsLoadingHomeItems(true);
-        const response = await fetch(`/api/items?limit=${resolvedFetchLimit}`, { cache: 'no-store' });
-        if (!response.ok) {
-          throw new Error('Failed to fetch home items');
-        }
-
-        const data: Item[] = await response.json();
-        setHomeItems(data);
-        setHomeItemsError(null);
-      } catch (error) {
-        console.error('Failed to fetch home items:', error);
-        setHomeItems([]);
-        setHomeItemsError('商品データの取得に失敗しました');
-      } finally {
-        setIsLoadingHomeItems(false);
-      }
-    };
-
-    fetchHomeItems();
-  }, [variant, props.items, fetchLimit]);
-
-  const resolvedItems = variant === 'home' ? props.items ?? homeItems : props.items;
+  // Apply category filter for catalog variant
+  const displayItems =
+    variant === 'catalog' && selectedCategory !== 'ALL'
+      ? resolvedItems.filter((item) => item.category === selectedCategory)
+      : resolvedItems;
 
   const defaultCatalogGridClassName = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8';
   const defaultHomeGridClassName =
@@ -71,13 +59,13 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     className ?? (variant === 'home' ? defaultHomeGridClassName : defaultCatalogGridClassName);
   const gridClassName = `${resolvedGridClassName} w-full`;
 
-  const resolvedMobileLimit = variant === 'home' ? mobileLimit ?? 6 : undefined;
+  const resolvedMobileLimit = variant === 'home' ? (mobileLimit ?? 6) : mobileLimit;
   const shouldLimitOnMobile = typeof resolvedMobileLimit === 'number';
 
   const renderGrid = () => (
     <div className={gridClassName}>
-      {resolvedItems.map((item, index) => {
-        const hideOnMobile = shouldLimitOnMobile && index >= resolvedMobileLimit;
+      {displayItems.map((item, index) => {
+        const hideOnMobile = shouldLimitOnMobile && index >= resolvedMobileLimit!;
 
         return (
           <Link key={item.id} href={`/item/${item.id}`} className={hideOnMobile ? 'hidden lg:block' : undefined}>
@@ -110,12 +98,13 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     </div>
   );
 
+  // home variant rendering
   if (variant === 'home') {
-    if (homeItemsError !== null && typeof props.items === 'undefined') {
+    if (isSelfFetch && error) {
       return (
         <section id="items" className="lg:py-32 px-6 bg-white w-full">
           <div className="max-w-7xl mx-auto text-center py-10">
-            <div className="text-xl text-red-500">{homeItemsError}</div>
+            <div className="text-xl text-red-500">{error}</div>
           </div>
         </section>
       );
@@ -130,14 +119,14 @@ export function PublicItemGrid(props: PublicItemGridProps) {
             </h2>
           </div>
 
-          {isLoadingHomeItems && typeof props.items === 'undefined' ? (
+          {isSelfFetch && loading ? (
             <div className="text-center py-8 text-[#474747] font-brand">読み込み中...</div>
           ) : resolvedItems.length === 0 ? (
             <div className="text-center py-8 text-[#474747] font-brand">公開中のITEMがありません</div>
           ) : (
             <div id="sym:success">
               {renderGrid()}
-              {shouldLimitOnMobile && resolvedItems.length > resolvedMobileLimit && (
+              {shouldLimitOnMobile && resolvedItems.length > resolvedMobileLimit! && (
                 <div className="text-center mt-10 lg:hidden">
                   <Button href="/item" variant="secondary" size="md" className="font-acumin">
                     VIEW ALL ITEMS
@@ -151,5 +140,44 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     );
   }
 
-  return renderGrid();
+  // catalog variant rendering
+  if (isSelfFetch && loading) {
+    return (
+      <div className="text-center py-12">
+        <div className="text-base tracking-widest font-brand">読み込み中...</div>
+      </div>
+    );
+  }
+
+  if (isSelfFetch && error) {
+    return (
+      <div className="text-center py-12">
+        <div className="text-base tracking-widest font-brand text-red-500">{error}</div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 gap-6">
+        <div className="flex flex-wrap gap-3">
+          <TabSegmentControl
+            items={ITEM_CATEGORIES.map((category) => ({ key: category, label: category }))}
+            activeKey={selectedCategory}
+            onChange={(category) => setSelectedCategory(category as ItemCategory)}
+            variant="segment-pill"
+            size="md"
+          />
+        </div>
+      </div>
+
+      {renderGrid()}
+
+      {displayItems.length === 0 && (
+        <div className="text-center py-12">
+          <p className="text-base tracking-widest font-brand text-gray-500">商品が見つかりません</p>
+        </div>
+      )}
+    </>
+  );
 }

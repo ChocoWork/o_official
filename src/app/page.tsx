@@ -1,6 +1,6 @@
 import Image from "next/image";
 import HomeNewsSection from '@/app/components/HomeNewsSection';
-import HomeLookSection from '@/app/components/HomeLookSection';
+import { PublicLookGrid } from '@/features/look/components/PublicLookGrid';
 import { getLatestNews } from '@/app/actions/news';
 import { PublicItemGrid } from '@/features/items/components/PublicItemGrid';
 
@@ -37,7 +37,7 @@ export default async function Home() {
         <PublicItemGrid variant="home" />
 
         {/* Look セクション */}
-        <HomeLookSection limit={2} />
+        <PublicLookGrid variant="home" mobileLimit={2} />
 
         {/* News セクション */}
         <HomeNewsSection initialNews={latestNews} />

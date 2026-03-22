@@ -1,24 +1,47 @@
 import Image from 'next/image';
 import Link from 'next/link';
-import { PublicLook, formatLookSeason } from '@/lib/look/public';
+import { Button } from '@/app/components/ui/Button';
+import { PublicLook, formatLookSeason, getPublishedLooks } from '@/lib/look/public';
 
-type PublicLookGridVariant = 'home' | 'catalog';
+const DEFAULT_HOME_GRID_CLASS = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8';
+const DEFAULT_CATALOG_GRID_CLASS = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12';
 
-type PublicLookGridProps = {
-  looks: PublicLook[];
-  variant: PublicLookGridVariant;
+type PublicLookGridHomeProps = {
+  variant: 'home';
+  looks?: PublicLook[];
+  /** データを自己フェッチする際の上限。未指定時は 8 */
+  fetchLimit?: number;
+  /** モバイルで非表示にする閾値。未指定時は 6 */
+  mobileLimit?: number;
+  className?: string;
+};
+
+type PublicLookGridCatalogProps = {
+  variant: 'catalog';
+  looks?: PublicLook[];
   className?: string;
   mobileLimit?: number;
 };
 
-export function PublicLookGrid({ looks, variant, className, mobileLimit }: PublicLookGridProps) {
-  const gridClassName = className ?? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12';
+type PublicLookGridProps = PublicLookGridHomeProps | PublicLookGridCatalogProps;
 
-  return (
+export async function PublicLookGrid(props: PublicLookGridProps) {
+  const { variant, className, mobileLimit } = props;
+
+  const fetchLimit = variant === 'home' ? (props.fetchLimit ?? 8) : undefined;
+  const resolvedLooks = props.looks ?? await getPublishedLooks(fetchLimit);
+
+  const defaultGridClass = variant === 'home' ? DEFAULT_HOME_GRID_CLASS : DEFAULT_CATALOG_GRID_CLASS;
+  const gridClassName = className ?? defaultGridClass;
+
+  const resolvedMobileLimit = variant === 'home' ? (mobileLimit ?? 6) : mobileLimit;
+  const shouldLimitOnMobile = typeof resolvedMobileLimit === 'number';
+
+  const renderGrid = () => (
     <div className={gridClassName}>
-      {looks.map((look, index) => {
-        const mobileLimitClassName =
-          mobileLimit !== undefined && index >= mobileLimit ? 'hidden lg:block' : undefined;
+      {resolvedLooks.map((look, index) => {
+        const hideOnMobile = shouldLimitOnMobile && index >= resolvedMobileLimit!;
+        const mobileLimitClassName = hideOnMobile ? 'hidden lg:block' : undefined;
 
         if (variant === 'home') {
           return (
@@ -86,5 +109,46 @@ export function PublicLookGrid({ looks, variant, className, mobileLimit }: Publi
         );
       })}
     </div>
+  );
+
+  // home variant rendering
+  if (variant === 'home') {
+    return (
+      <section id="look" className="lg:py-32 px-6 bg-white w-full">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-left mb-8">
+            <h2 className="text-xl lg:text-2xl mb-2 text-black tracking-tight underline underline-offset-8 decoration-black decoration-1">
+              LOOK
+            </h2>
+          </div>
+
+          {resolvedLooks.length === 0 ? (
+            <div className="text-center py-8 text-[#474747] font-brand">公開中のLOOKがありません</div>
+          ) : (
+            <>
+              {renderGrid()}
+              {shouldLimitOnMobile && resolvedLooks.length > resolvedMobileLimit! && (
+                <div className="text-center mt-10 lg:hidden">
+                  <Button href="/look" variant="secondary" size="md" className="font-acumin">
+                    VIEW LOOKBOOK
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </section>
+    );
+  }
+
+  // catalog variant rendering
+  return (
+    <>
+      {resolvedLooks.length === 0 ? (
+        <div className="text-center py-12 text-[#474747] font-brand">公開中のLOOKがありません</div>
+      ) : (
+        renderGrid()
+      )}
+    </>
   );
 }
