@@ -1,12 +1,9 @@
 import Image from "next/image";
-import HomeNewsSection from '@/app/components/HomeNewsSection';
 import { PublicLookGrid } from '@/features/look/components/PublicLookGrid';
-import { getLatestNews } from '@/app/actions/news';
 import { PublicItemGrid } from '@/features/items/components/PublicItemGrid';
+import { PublicNewsGrid } from '@/features/news/components/PublicNewsGrid';
 
 export default async function Home() {
-  const latestNews = await getLatestNews();
-
   return (
     <div className="min-h-screen font-sans">
       <main className="flex flex-col items-center gap-8">
@@ -40,7 +37,7 @@ export default async function Home() {
         <PublicLookGrid variant="home" mobileLimit={2} />
 
         {/* News セクション */}
-        <HomeNewsSection initialNews={latestNews} />
+        <PublicNewsGrid variant="home" />
 
         {/* ABOUT セクション */}
         <section id="about" className="py-24 lg:py-32 px-6 lg:px-12 bg-[#fafafa] w-full">
