@@ -3,12 +3,12 @@
 import Link from 'next/link';
 import React, { useState } from "react";
 import { usePathname } from 'next/navigation';
+import { cn } from '@/lib/utils';
 import LoginModal from "./LoginModal";
 import { useLogin } from "./LoginContext";
 import { useCart } from "./CartContext";
 import { Button } from '@/app/components/ui/Button';
-// Dropdown no longer needed for account menu
-
+import { Drawer } from '@/app/components/ui/Drawer';
 import "remixicon/fonts/remixicon.css";
 
 const menuItems = [
@@ -16,12 +16,14 @@ const menuItems = [
   { href: '/item', label: 'ITEM' },
   { href: '/look', label: 'LOOK' },
   { href: '/about', label: 'ABOUT' },
+  { href: '/contact', label: 'CONTACT' },
   { href: '/stockist', label: 'STOCKIST' },
   { href: '/ui', label: 'UI' },
 ];
 
 const Header = () => {
   const [loginOpen, setLoginOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const pathname = usePathname();
   const { isLoggedIn, userRole } = useLogin();
   const canManage = userRole === 'admin' || userRole === 'supporter';
@@ -97,12 +99,76 @@ const Header = () => {
               variant="ghost"
               size="sm"
               className="lg:hidden w-5 h-5 flex items-center justify-center cursor-pointer px-0 py-0 hover:bg-transparent"
+              onClick={() => setDrawerOpen(true)}
+              aria-label="Open menu"
             >
               <i className="ri-menu-line text-2xl text-black"></i>
             </Button>
           </div>
         </div>
       </div>
+
+      <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} size="md">
+        <div className="p-8">
+          <div className="flex items-center justify-between mb-8">
+            <h3
+              className="text-2xl text-black tracking-tight"
+              style={{ fontFamily: "Didot, serif" }}
+            >
+              Menu
+            </h3>
+            <Button
+              variant="ghost"
+              size="md"
+              className="aspect-square px-0 flex items-center justify-center hover:bg-[#f5f5f5] transition-colors cursor-pointer"
+              onClick={() => setDrawerOpen(false)}
+              aria-label="Close drawer"
+            >
+              <div className="w-5 h-5 flex items-center justify-center">
+                <i className="ri-close-line text-xl"></i>
+              </div>
+            </Button>
+          </div>
+          <nav className="space-y-2">
+            {[...menuItems].map((item) => (
+              <Button
+                key={item.label}
+                variant="ghost"
+                size="md"
+                href={item.href}
+                onClick={() => setDrawerOpen(false)}
+                className={cn('w-full justify-start text-left px-4 py-4 text-sm')}
+                style={{ fontFamily: "acumin-pro, sans-serif" }}
+              >
+                {item.label}
+              </Button>
+            ))}
+          </nav>
+          <div className="mt-12 pt-8 border-t border-black/10">
+            <p
+              className="text-xs tracking-widest text-black/60 mb-4"
+              style={{ fontFamily: "acumin-pro, sans-serif" }}
+            >
+              FOLLOW US
+            </p>
+            <div className="flex items-center gap-4">
+              {['instagram','facebook','twitter'].map((icon) => (
+                <Button
+                  key={icon}
+                  variant="secondary"
+                  size="md"
+                  className="aspect-square px-0"
+                >
+                  <div className="w-5 h-5 flex items-center justify-center">
+                    <i className={`ri-${icon}-line text-xl`}></i>
+                  </div>
+                </Button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Drawer>
+
       <LoginModal open={loginOpen && !isLoggedIn} onClose={() => setLoginOpen(false)} />
     </header>
   );
