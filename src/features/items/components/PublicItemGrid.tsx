@@ -8,7 +8,7 @@ type PublicItemGridProps = {
 };
 
 export function PublicItemGrid({ items, className }: PublicItemGridProps) {
-  const gridClassName = className ?? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8';
+  const gridClassName = `${className ?? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8'} w-full`;
 
   return (
     <div className={gridClassName}>

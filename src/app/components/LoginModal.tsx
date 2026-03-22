@@ -228,9 +228,6 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
 
   return (
     <div className="w-full max-w-md mx-auto px-6 font-brand">
-      <div className="mb-8 text-center">
-        <h1 className="text-lg tracking-widest mb-2">サインイン</h1>
-      </div>
       <Button
         type="button"
         onClick={() => {

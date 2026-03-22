@@ -12,7 +12,7 @@ export default function HomeNewsSection({ initialNews }: HomeNewsSectionProps) {
   const newsData = initialNews;
 
   return (
-    <section id="news" className="py-24 lg:py-32 px-6 lg:px-12 bg-white w-full">
+    <section id="news" className="lg:py-32 px-6 lg:px-12 bg-white w-full">
       <div className="max-w-7xl mx-auto">
         <div className="text-center mb-16 lg:mb-24">
           <h2

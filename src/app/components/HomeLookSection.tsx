@@ -6,7 +6,7 @@ export default async function HomeLookSection() {
   const looks = await getPublishedLooks(4);
 
   return (
-    <section id="look" className="py-24 lg:py-32 px-6 lg:px-12 bg-white w-full">
+    <section id="look" className="lg:py-32 px-6 lg:px-12 bg-white w-full">
       <div className="max-w-7xl mx-auto">
         <div className="text-center mb-16 lg:mb-24">
           <h2 className="text-4xl lg:text-5xl mb-4 text-black tracking-tight font-display">LOOK</h2>

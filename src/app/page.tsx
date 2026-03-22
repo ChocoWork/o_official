@@ -36,6 +36,7 @@ export default async function Home() {
         {/* Item セクション */}
         <HomeItemsSection limit={6} />
 
+        {/* Look セクション */}
         <HomeLookSection />
 
         {/* News セクション */}
