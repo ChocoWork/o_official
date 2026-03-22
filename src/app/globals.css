@@ -62,7 +62,7 @@ h3,
 h4,
 h5,
 h6 {
-  font-family: 'Didot', serif;
+  font-family: "Georgia", "Times New Roman", serif;
 }
 
 .font-brand {
@@ -70,7 +70,8 @@ h6 {
 }
 
 .font-display {
-  font-family: 'Didot', serif;
+  font-family: 'Didot', "Georgia", "Times New Roman", serif;
+  font-weight: 500;
 }
 
 /* button */

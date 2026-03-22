@@ -11,7 +11,7 @@ const Footer = () => {
             <p className="text-sm text-white/70 leading-relaxed">時を紡ぐニュートラルモードな日常着</p>
           </div>
           <div>
-            <h4 className="text-sm tracking-widest mb-4">SHOP</h4>
+            <h4 className="text-sm tracking-widest mb-4 font-display">SHOP</h4>
             <ul className="space-y-2">
               <li><Link className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/item">ALL</Link></li>
               <li><Link className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/item">TOPS</Link></li>
@@ -21,7 +21,7 @@ const Footer = () => {
             </ul>
           </div>
           <div>
-            <h4 className="text-sm tracking-widest mb-4">INFORMATION</h4>
+            <h4 className="text-sm tracking-widest mb-4 font-display">INFORMATION</h4>
             <ul className="space-y-2">
               <li><Link className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/about">ABOUT</Link></li>
               <li><Link className="text-sm text-white/70 hover:text-white transition-colors duration-300 cursor-pointer" href="/look">LOOK</Link></li>
@@ -31,7 +31,7 @@ const Footer = () => {
             </ul>
           </div>
           <div>
-            <h4 className="text-sm tracking-widest mb-4">FOLLOW US</h4>
+            <h4 className="text-sm tracking-widest mb-4 font-display">FOLLOW US</h4>
             <div className="flex gap-4">
               <a href="#" className="w-10 h-10 flex items-center justify-center border border-white hover:bg-white hover:text-black transition-all duration-300 cursor-pointer">
                 <i className="ri-instagram-line text-xl"></i>
