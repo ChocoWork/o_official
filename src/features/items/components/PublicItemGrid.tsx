@@ -5,15 +5,21 @@ import { Item } from '@/app/types/item';
 type PublicItemGridProps = {
   items: Item[];
   className?: string;
+  /** lg未満の画面でこのインデックス以降のアイテムを非表示にする */
+  mobileLimit?: number;
 };
 
-export function PublicItemGrid({ items, className }: PublicItemGridProps) {
+export function PublicItemGrid({ items, className, mobileLimit }: PublicItemGridProps) {
   const gridClassName = `${className ?? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8'} w-full`;
 
   return (
     <div className={gridClassName}>
-      {items.map((item) => (
-        <Link key={item.id} href={`/item/${item.id}`}>
+      {items.map((item, index) => (
+        <Link
+          key={item.id}
+          href={`/item/${item.id}`}
+          className={mobileLimit !== undefined && index >= mobileLimit ? 'hidden lg:block' : undefined}
+        >
           <div className="group cursor-pointer">
             <div className="aspect-[3/4] bg-[#f5f5f5] mb-4 overflow-hidden">
               {item.image_url ? (
