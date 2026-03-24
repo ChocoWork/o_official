@@ -102,7 +102,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
   if (variant === 'home') {
     if (isSelfFetch && error) {
       return (
-        <section id="items" className="px-6 lg:px-12 bg-white w-full pt-14 pb-16 md:pt-16 md:pb-20 lg:pt-20 lg:pb-24">
+        <section id="items" className="px-6 lg:px-12 bg-white w-full md:pb-20 lg:pb-20">
           <div className="max-w-7xl mx-auto text-center py-10">
             <div className="text-xl text-red-500">{error}</div>
           </div>
@@ -111,10 +111,10 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     }
 
     return (
-      <section id="items" className="px-6 lg:px-12 bg-white w-full pt-14 pb-16 md:pt-16 md:pb-20 lg:pt-20 lg:pb-24">
+      <section id="items" className="px-6 lg:px-12 bg-white w-full md:pb-20 lg:pb-20">
         <div className="max-w-7xl mx-auto">
-          <div className="text-left mb-10 md:mb-12">
-            <h2 className="text-xl lg:text-2xl mb-2 text-black tracking-tight underline underline-offset-8 decoration-black decoration-1">
+          <div className="text-left mb-6 md:mb-8">
+            <h2 className="text-xl lg:text-2xl text-black tracking-tight underline underline-offset-8 decoration-black decoration-1">
               ITEMS
             </h2>
           </div>

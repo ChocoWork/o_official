@@ -9,7 +9,7 @@ export default async function Home() {
     <div className="min-h-screen font-sans">
       <main className="flex flex-col items-center">
         {/* メイン画像セクション */}
-        <section className="relative min-h-screen w-full flex items-center justify-center bg-white pt-20">
+        <section className="relative min-h-screen w-full flex items-center justify-center bg-white pt-20 pb-20">
           <div className="flex h-full w-full">
             <div className="h-screen min-h-[400px] relative flex items-center justify-center">
               <Image
@@ -46,7 +46,7 @@ export default async function Home() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-center">
               <div className="order-2 lg:order-1">
                 <div className="text-left mb-10 md:mb-12">
-                  <h2 className="text-xl lg:text-2xl mb-2 text-black tracking-tight underline underline-offset-8 decoration-black decoration-1">
+                  <h2 className="text-xl lg:text-2xl text-black tracking-tight underline underline-offset-8 decoration-black decoration-1">
                     ABOUT
                   </h2>
                 </div>

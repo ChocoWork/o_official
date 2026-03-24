@@ -84,10 +84,10 @@ export async function PublicLookGrid(props: PublicLookGridProps) {
   // home variant rendering
   if (variant === 'home') {
     return (
-      <section id="look" className="px-6 lg:px-12 bg-white w-full pt-14 pb-[72px] md:pt-16 md:pb-[88px] lg:pt-20 lg:pb-[104px]">
+      <section id="look" className="px-6 lg:px-12 bg-white w-full md:pb-20 lg:pb-20">
         <div className="max-w-7xl mx-auto">
           <div className="text-left mb-10 md:mb-12">
-            <h2 className="text-xl lg:text-2xl mb-2 text-black tracking-tight underline underline-offset-8 decoration-black decoration-1">
+            <h2 className="text-xl lg:text-2xl text-black tracking-tight underline underline-offset-8 decoration-black decoration-1">
               LOOK
             </h2>
           </div>

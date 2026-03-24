@@ -93,7 +93,7 @@ export function PublicStockistGrid(props: PublicStockistGridProps) {
       <section id="stockist" className="py-24 lg:py-32 px-6 lg:px-12 bg-white w-full">
         <div className="max-w-7xl mx-auto">
           <div className="text-left mb-10 md:mb-12">
-            <h2 className="text-xl lg:text-2xl mb-2 text-black tracking-tight underline underline-offset-8 decoration-black decoration-1">
+            <h2 className="text-xl lg:text-2xl text-black tracking-tight underline underline-offset-8 decoration-black decoration-1">
               STOCKIST
             </h2>
           </div>
