@@ -25,6 +25,49 @@ type PublicLookGridCatalogProps = {
 
 type PublicLookGridProps = PublicLookGridHomeProps | PublicLookGridCatalogProps;
 
+type LookCardProps = {
+  look: PublicLook;
+  hideOnMobile: boolean;
+};
+
+function LookCard({ look, hideOnMobile }: LookCardProps) {
+  return (
+    <div className={hideOnMobile ? 'hidden lg:block' : undefined}>
+      <Link href={`/look/${look.id}`} className="group block">
+        <div className="aspect-[2/3] bg-[#f5f5f5] mb-6 overflow-hidden relative">
+          <Image
+            src={look.imageUrls[0] || '/placeholder.png'}
+            alt={look.theme}
+            fill
+            unoptimized
+            className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500"
+          />
+        </div>
+      </Link>
+      <div className="space-y-1">
+        <Link href={`/look/${look.id}`}>
+          <p className="text-lg text-black font-display hover:text-[#474747] transition-colors">{formatLookSeason(look.seasonYear, look.seasonType)} - {look.theme}</p>
+        </Link>
+        <div className="pt-2 space-y-1">
+          {look.linkedItems.length === 0 ? (
+            <p className="text-xs text-[#474747] font-brand">紐づけ商品なし</p>
+          ) : (
+            look.linkedItems.map((item) => (
+              <Link
+                key={item.id}
+                href={`/item/${item.id}`}
+                className="block text-xs text-[#474747] hover:text-black transition-colors font-brand"
+              >
+                {item.name}
+              </Link>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export async function PublicLookGrid(props: PublicLookGridProps) {
   const { variant, className, mobileLimit } = props;
 
@@ -41,81 +84,8 @@ export async function PublicLookGrid(props: PublicLookGridProps) {
     <div className={gridClassName}>
       {resolvedLooks.map((look, index) => {
         const hideOnMobile = shouldLimitOnMobile && index >= resolvedMobileLimit!;
-        const mobileLimitClassName = hideOnMobile ? 'hidden lg:block' : undefined;
 
-        if (variant === 'home') {
-          return (
-            <div key={look.id} className={mobileLimitClassName}>
-              <Link href={`/look/${look.id}`} className="group block">
-                <div className="aspect-[2/3] bg-[#f5f5f5] mb-6 overflow-hidden relative">
-                  <Image
-                    src={look.imageUrls[0] || '/placeholder.png'}
-                    alt={look.theme}
-                    fill
-                    unoptimized
-                    className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500"
-                  />
-                </div>
-              </Link>
-              <div className="space-y-1">
-                <Link href={`/look/${look.id}`}>
-                  <p className="text-lg text-black font-display hover:text-[#474747] transition-colors">{formatLookSeason(look.seasonYear, look.seasonType)} - {look.theme}</p>
-                </Link>
-                <div className="pt-2 space-y-1">
-                  {look.linkedItems.length === 0 ? (
-                    <p className="text-xs text-[#474747] font-brand">紐づけ商品なし</p>
-                  ) : (
-                    look.linkedItems.map((item) => (
-                      <Link
-                        key={item.id}
-                        href={`/item/${item.id}`}
-                        className="block text-xs text-[#474747] hover:text-black transition-colors font-brand"
-                      >
-                        {item.name}
-                      </Link>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
-          );
-        }
-
-        return (
-          <div key={look.id}>
-            <Link href={`/look/${look.id}`} className="group block">
-              <div className="aspect-[2/3] bg-[#f5f5f5] mb-6 overflow-hidden relative">
-                <Image
-                  src={look.imageUrls[0] || '/placeholder.png'}
-                  alt={look.theme}
-                  fill
-                  unoptimized
-                  className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500"
-                />
-              </div>
-            </Link>
-            <div className="space-y-1">
-              <Link href={`/look/${look.id}`}>
-                <p className="text-lg text-black font-display hover:text-[#474747] transition-colors">{formatLookSeason(look.seasonYear, look.seasonType)} - {look.theme}</p>
-              </Link>
-              <div className="pt-2 space-y-1">
-                {look.linkedItems.length === 0 ? (
-                  <p className="text-xs text-[#474747] font-brand">紐づけ商品なし</p>
-                ) : (
-                  look.linkedItems.map((item) => (
-                    <Link
-                      key={item.id}
-                      href={`/item/${item.id}`}
-                      className="block text-xs text-[#474747] hover:text-black transition-colors font-brand"
-                    >
-                      {item.name}
-                    </Link>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-        );
+        return <LookCard key={look.id} look={look} hideOnMobile={hideOnMobile} />;
       })}
     </div>
   );
