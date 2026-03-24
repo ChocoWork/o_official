@@ -72,16 +72,6 @@ export default function StoryPage() {
             </div>
           </div>
         </div>
-
-        <div className="bg-[#f5f5f5] p-12 lg:p-16">
-          <div className="max-w-3xl mx-auto text-center">
-            <h2 className="text-3xl text-black mb-6 tracking-tight">Contact Us</h2>
-            <p className="text-base text-[#474747] leading-relaxed mb-8">
-              ご質問やお問い合わせは、以下のメールアドレスまでお気軽にご連絡ください。
-            </p>
-            <a href="mailto:info@lefildesheures.com" className="text-lg text-black hover:text-[#474747] transition-colors duration-300 tracking-wide">info@lefildesheures.com</a>
-          </div>
-        </div>
       </div>
     </main>
   );

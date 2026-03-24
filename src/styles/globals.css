@@ -53,7 +53,7 @@
 
 body {
   font-size: 14px;
-  font-family: 'acumin-pro', sans-serif;
+  font-family: 'acumin-pro', 'sans-serif';
 }
 
 h1,
@@ -62,15 +62,15 @@ h3,
 h4,
 h5,
 h6 {
-  font-family: "Georgia", "Times New Roman", serif;
+  font-family: 'Georgia', 'Times New Roman', 'serif';
 }
 
 .font-brand {
-  font-family: 'acumin-pro', sans-serif;
+  font-family: 'acumin-pro', 'sans-serif';
 }
 
 .font-display {
-  font-family: 'Didot', "Georgia", "Times New Roman", serif;
+  font-family: 'Didot', 'Georgia', 'Times New Roman', 'serif';
   font-weight: 400;
 }
 

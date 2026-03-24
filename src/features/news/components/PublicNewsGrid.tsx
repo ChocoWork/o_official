@@ -156,6 +156,38 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
     </div>
   );
 
+  const renderEmpty = (message: string) => (
+    <div className="text-center py-20">
+      <p className="text-lg text-[#474747] font-brand">
+        {message}
+      </p>
+    </div>
+  );
+
+  const renderError = () => (
+    <div className="text-center py-20">
+      <p className="text-lg text-red-500 font-brand">
+        {error}
+      </p>
+    </div>
+  );
+
+  const renderLoading = () => (
+    <div className="text-center py-20">
+      <p className="text-lg text-[#474747] font-brand">
+        読み込み中...
+      </p>
+    </div>
+  );
+
+  const renderContent = (entries: PublicNewsArticle[], emptyMessage: string) => {
+    if (loading) return renderLoading();
+    if (error) return renderError();
+    if (entries.length === 0) return renderEmpty(emptyMessage);
+
+    return renderGrid();
+  };
+
   // home variant rendering
   if (variant === 'home') {
     return (
@@ -163,27 +195,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
         <div className="max-w-7xl mx-auto">
           <SectionTitle title="NEWS" />
 
-          {loading ? (
-            <div className="text-center py-20">
-              <p className="text-lg text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-                読み込み中...
-              </p>
-            </div>
-          ) : error ? (
-            <div className="text-center py-20">
-              <p className="text-lg text-red-500" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-                {error}
-              </p>
-            </div>
-          ) : resolvedArticles.length === 0 ? (
-            <div className="text-center py-20">
-              <p className="text-lg text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-                現在、公開されている記事はありません
-              </p>
-            </div>
-          ) : (
-            renderGrid()
-          )}
+          {renderContent(resolvedArticles, '現在、公開されている記事はありません')}
 
           <div className="text-center mt-12 md:mt-16">
             <Button href="/news" variant="secondary" size="md" className="font-acumin">
@@ -208,29 +220,13 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
         />
       </div>
       {loading ? (
-        <div className="text-center py-20">
-          <p className="text-lg text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-            読み込み中...
-          </p>
-        </div>
+        renderLoading()
       ) : error ? (
-        <div className="text-center py-20">
-          <p className="text-lg text-red-500" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-            {error}
-          </p>
-        </div>
+        renderError()
       ) : resolvedArticles.length === 0 ? (
-        <div className="text-center py-20">
-          <p className="text-lg text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-            現在、公開されている記事はありません
-          </p>
-        </div>
+        renderEmpty('現在、公開されている記事はありません')
       ) : displayArticles.length === 0 ? (
-        <div className="text-center py-20">
-          <p className="text-lg text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-            該当カテゴリの記事はありません
-          </p>
-        </div>
+        renderEmpty('該当カテゴリの記事はありません')
       ) : (
         renderGrid()
       )}
