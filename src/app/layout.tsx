@@ -2,7 +2,7 @@ import type { Metadata } from "next"; // Metadata型をNext.jsからインポー
 import { headers } from 'next/headers';
 import { Geist, Geist_Mono } from "next/font/google"; // Google FontsのGeistとGeist_Monoフォントをインポート
 import "../styles/globals.css"; // グローバルCSSファイルをインポート
-import { Providers } from '@/components/Providers'; // ProvidersとLayout componentsをインポート
+import { Providers } from '@/contexts/Providers'; // ProvidersとLayout componentsをインポート
 
 // Geistフォントを設定。変数名を`--font-geist-sans`に設定。
 const geistSans = Geist({

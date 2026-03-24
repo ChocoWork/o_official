@@ -3,8 +3,8 @@
 import React from 'react';
 import { CartProvider } from '@/contexts/CartContext';
 import { LoginProvider } from '@/contexts/LoginContext';
-import Header from './Header';
-import Footer from './Footer';
+import Header from '@/components/Header';
+import Footer from '@/components/Footer';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
