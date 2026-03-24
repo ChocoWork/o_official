@@ -1,8 +1,8 @@
 'use client';
 
 import React from 'react';
-import { CartProvider } from './CartContext';
-import { LoginProvider } from './LoginContext';
+import { CartProvider } from '@/contexts/CartContext';
+import { LoginProvider } from '@/contexts/LoginContext';
 import Header from './Header';
 import Footer from './Footer';
 

@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { useCart } from '@/components/CartContext';
+import { useCart } from '@/contexts/CartContext';
 
 interface WishlistItem {
   id: string;

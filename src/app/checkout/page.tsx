@@ -8,7 +8,7 @@ import { loadStripe, type Appearance } from '@stripe/stripe-js';
 import { CheckoutProvider, PaymentElement, useCheckout } from '@stripe/react-stripe-js/checkout';
 import { Button } from '@/components/ui/Button';
 import { Checkbox } from '@/components/ui/Checkbox';
-import { useCart } from '@/components/CartContext';
+import { useCart } from '@/contexts/CartContext';
 import {
   formatPostalCodeInput,
   isCompletePostalCode,

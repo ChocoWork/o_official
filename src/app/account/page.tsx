@@ -3,7 +3,7 @@
 import React from 'react';
 import Image from 'next/image';
 import { useSearchParams } from 'next/navigation';
-import { useLogin } from '@/components/LoginContext';
+import { useLogin } from '@/contexts/LoginContext';
 import { Button } from '@/components/ui/Button';
 import { TabSegmentControl } from '@/components/ui/TabSegmentControl';
 import { TextField } from '@/components/ui/TextField';

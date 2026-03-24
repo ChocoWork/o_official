@@ -4,7 +4,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import AdminTabs, { type TabType } from '@/components/AdminTabs';
-import { useLogin } from '@/components/LoginContext';
+import { useLogin } from '@/contexts/LoginContext';
 import KpiSection from '@/components/KpiSection';
 import NewsSection from '@/components/NewsSection';
 import ItemSection from '@/components/ItemSection';

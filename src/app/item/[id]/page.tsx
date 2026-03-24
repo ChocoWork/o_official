@@ -3,7 +3,7 @@
 import React, { useState, useEffect, use } from "react";
 import Image from "next/image";
 import { Item } from "@/types/item";
-import { useCart } from "@/components/CartContext";
+import { useCart } from "@/contexts/CartContext";
 import { Button } from '@/components/ui/Button';
 import { Stepper } from '@/components/ui/Stepper';
 
