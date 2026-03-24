@@ -3,16 +3,13 @@ import Link from 'next/link';
 import { Button } from '@/app/components/ui/Button';
 import { PublicLook, formatLookSeason, getPublishedLooks } from '@/lib/look/public';
 
-const DEFAULT_HOME_GRID_CLASS = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8';
-const DEFAULT_CATALOG_GRID_CLASS = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12';
+const FIXED_LOOK_COUNT = 6;
+const DEFAULT_HOME_GRID_CLASS = 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-6 lg:gap-8';
+const DEFAULT_CATALOG_GRID_CLASS = 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-12';
 
 type PublicLookGridHomeProps = {
   variant: 'home';
   looks?: PublicLook[];
-  /** データを自己フェッチする際の上限。未指定時は 8 */
-  fetchLimit?: number;
-  /** モバイルで非表示にする閾値。未指定時は 6 */
-  mobileLimit?: number;
   className?: string;
 };
 
@@ -20,19 +17,17 @@ type PublicLookGridCatalogProps = {
   variant: 'catalog';
   looks?: PublicLook[];
   className?: string;
-  mobileLimit?: number;
 };
 
 type PublicLookGridProps = PublicLookGridHomeProps | PublicLookGridCatalogProps;
 
 type LookCardProps = {
   look: PublicLook;
-  hideOnMobile: boolean;
 };
 
-function LookCard({ look, hideOnMobile }: LookCardProps) {
+function LookCard({ look }: LookCardProps) {
   return (
-    <div className={hideOnMobile ? 'hidden lg:block' : undefined}>
+    <div>
       <Link href={`/look/${look.id}`} className="group block">
         <div className="aspect-[2/3] bg-[#f5f5f5] mb-6 overflow-hidden relative">
           <Image
@@ -46,7 +41,7 @@ function LookCard({ look, hideOnMobile }: LookCardProps) {
       </Link>
       <div className="space-y-1">
         <Link href={`/look/${look.id}`}>
-          <p className="text-lg text-black font-display hover:text-[#474747] transition-colors">{formatLookSeason(look.seasonYear, look.seasonType)} - {look.theme}</p>
+          <p className="text-lg text-black font-brand hover:text-[#474747] transition-colors">{formatLookSeason(look.seasonYear, look.seasonType)} - {look.theme}</p>
         </Link>
         <div className="pt-2 space-y-1">
           {look.linkedItems.length === 0 ? (
@@ -69,23 +64,19 @@ function LookCard({ look, hideOnMobile }: LookCardProps) {
 }
 
 export async function PublicLookGrid(props: PublicLookGridProps) {
-  const { variant, className, mobileLimit } = props;
+  const { variant, className } = props;
 
-  const fetchLimit = variant === 'home' ? (props.fetchLimit ?? 8) : undefined;
-  const resolvedLooks = props.looks ?? await getPublishedLooks(fetchLimit);
+  const loadedLooks = props.looks ?? await getPublishedLooks(FIXED_LOOK_COUNT);
+  const totalLookCount = loadedLooks.length;
+  const resolvedLooks = loadedLooks.slice(0, FIXED_LOOK_COUNT);
 
   const defaultGridClass = variant === 'home' ? DEFAULT_HOME_GRID_CLASS : DEFAULT_CATALOG_GRID_CLASS;
   const gridClassName = className ?? defaultGridClass;
 
-  const resolvedMobileLimit = variant === 'home' ? (mobileLimit ?? 6) : mobileLimit;
-  const shouldLimitOnMobile = typeof resolvedMobileLimit === 'number';
-
   const renderGrid = () => (
     <div className={gridClassName}>
-      {resolvedLooks.map((look, index) => {
-        const hideOnMobile = shouldLimitOnMobile && index >= resolvedMobileLimit!;
-
-        return <LookCard key={look.id} look={look} hideOnMobile={hideOnMobile} />;
+      {resolvedLooks.map((look) => {
+        return <LookCard key={look.id} look={look} />;
       })}
     </div>
   );
@@ -106,7 +97,7 @@ export async function PublicLookGrid(props: PublicLookGridProps) {
           ) : (
             <>
               {renderGrid()}
-              {shouldLimitOnMobile && resolvedLooks.length > resolvedMobileLimit! && (
+              {totalLookCount > FIXED_LOOK_COUNT && (
                 <div className="text-center mt-12 lg:hidden">
                   <Button href="/look" variant="secondary" size="md" className="font-acumin">
                     VIEW LOOKBOOK

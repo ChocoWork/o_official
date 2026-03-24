@@ -122,20 +122,19 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
                 >
                   {article.published_date.replace(/-/g, '.')}
                 </span>
-                <TagLabel className="font-acumin" size="md">
+                <TagLabel className="font-acumin" size="sm">
                   {article.category}
                 </TagLabel>
               </div>
 
               <h2
-                className="text-xl text-black group-hover:text-[#474747] transition-colors duration-300"
-                style={{ fontFamily: 'Didot, serif' }}
+                className="text-lg text-black font-brand group-hover:text-[#474747] transition-colors duration-300"
               >
                 {article.title}
               </h2>
 
               <p
-                className="text-sm text-[#474747] leading-relaxed line-clamp-3"
+                className="text-xs text-[#474747] leading-relaxed line-clamp-3"
                 style={{ fontFamily: 'acumin-pro, sans-serif' }}
               >
                 {article.content}
