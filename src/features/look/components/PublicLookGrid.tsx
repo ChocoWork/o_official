@@ -82,40 +82,40 @@ export async function PublicLookGrid(props: PublicLookGridProps) {
     </div>
   );
 
-  // home variant rendering
+  const renderEmptyState = () => (
+    <div className="text-center py-12 text-[#474747] font-brand">公開中のLOOKがありません</div>
+  );
+
+  const renderContent = () => {
+    if (resolvedLooks.length === 0) {
+      return renderEmptyState();
+    }
+
+    return (
+      <>
+        {renderGrid()}
+        {variant === 'home' && totalLookCount > FIXED_LOOK_COUNT && (
+          <div className="text-center mt-12 lg:hidden">
+            <Button href="/look" variant="secondary" size="md" className="font-acumin">
+              VIEW LOOKBOOK
+            </Button>
+          </div>
+        )}
+      </>
+    );
+  };
+
   if (variant === 'home') {
     return (
       <section id="look" className="px-6 lg:px-12 bg-white w-full md:pb-20 lg:pb-20">
         <div className="max-w-7xl mx-auto">
           <SectionTitle title="LOOK" />
-
-          {resolvedLooks.length === 0 ? (
-            <div className="text-center py-12 text-[#474747] font-brand">公開中のLOOKがありません</div>
-          ) : (
-            <>
-              {renderGrid()}
-              {totalLookCount > FIXED_LOOK_COUNT && (
-                <div className="text-center mt-12 lg:hidden">
-                  <Button href="/look" variant="secondary" size="md" className="font-acumin">
-                    VIEW LOOKBOOK
-                  </Button>
-                </div>
-              )}
-            </>
-          )}
+          {renderContent()}
         </div>
       </section>
     );
   }
 
-  // catalog variant rendering
-  return (
-    <>
-      {resolvedLooks.length === 0 ? (
-        <div className="text-center py-12 text-[#474747] font-brand">公開中のLOOKがありません</div>
-      ) : (
-        renderGrid()
-      )}
-    </>
-  );
+  return <>{renderContent()}</>;
+
 }

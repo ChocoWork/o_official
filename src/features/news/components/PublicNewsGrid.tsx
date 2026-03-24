@@ -159,7 +159,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
   // home variant rendering
   if (variant === 'home') {
     return (
-      <section id="news" className="px-6 lg:px-12 bg-white w-full pt-14 pb-16 md:pt-16 md:pb-20 lg:pt-20 lg:pb-24">
+      <section id="news" className="px-6 lg:px-12 bg-white w-full md:pb-20 lg:pb-20">
         <div className="max-w-7xl mx-auto">
           <SectionTitle title="NEWS" />
 
