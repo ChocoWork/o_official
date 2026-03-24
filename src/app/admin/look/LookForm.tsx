@@ -3,11 +3,11 @@
 import Image from 'next/image';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button } from '@/app/components/ui/Button';
-import { RadioButtonGroup } from '@/app/components/ui/RadioButtonGroup';
-import { SingleSelect } from '@/app/components/ui/SingleSelect';
-import { TextAreaField } from '@/app/components/ui/TextAreaField';
-import { TextField } from '@/app/components/ui/TextField';
+import { Button } from '@/components/ui/Button';
+import { RadioButtonGroup } from '@/components/ui/RadioButtonGroup';
+import { SingleSelect } from '@/components/ui/SingleSelect';
+import { TextAreaField } from '@/components/ui/TextAreaField';
+import { TextField } from '@/components/ui/TextField';
 import { clientFetch } from '@/lib/client-fetch';
 import { ItemSummary, LookFormValues, LookStatus, SeasonType } from './types';
 

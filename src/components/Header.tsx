@@ -7,8 +7,8 @@ import { cn } from '@/lib/utils';
 import LoginModal from "./LoginModal";
 import { useLogin } from "./LoginContext";
 import { useCart } from "./CartContext";
-import { Button } from '@/app/components/ui/Button';
-import { Drawer } from '@/app/components/ui/Drawer';
+import { Button } from '@/components/ui/Button';
+import { Drawer } from '@/components/ui/Drawer';
 import "remixicon/fonts/remixicon.css";
 
 const menuItems = [

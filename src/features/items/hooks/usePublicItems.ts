@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Item } from '@/app/types/item';
+import { Item } from '@/types/item';
 
 type UsePublicItemsOptions = {
   limit?: number;

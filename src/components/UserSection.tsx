@@ -2,9 +2,9 @@
 
 import React from 'react';
 import { clientFetch } from '@/lib/client-fetch';
-import { DataTable } from '@/app/components/ui/DataTable';
-import { SingleSelect } from '@/app/components/ui/SingleSelect';
-import { StatusBadge } from '@/app/components/ui/StatusBadge';
+import { DataTable } from '@/components/ui/DataTable';
+import { SingleSelect } from '@/components/ui/SingleSelect';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 
 type UserRoleValue = 'admin' | 'supporter' | 'user';
 type UserRoleLabel = 'Admin' | 'Support' | 'User';

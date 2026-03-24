@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { TagLabel } from '@/app/components/ui/TagLabel';
+import { TagLabel } from '@/components/ui/TagLabel';
 
 describe('TagLabel', () => {
   it('renders children and adjusts size padding/font', () => {

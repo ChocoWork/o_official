@@ -3,7 +3,7 @@ import { useLogin } from "./LoginContext";
 import { z } from 'zod';
 import { IdentifyRequestSchema } from '@/features/auth/schemas/identify';
 import { useRouter } from 'next/navigation';
-import { Button } from '@/app/components/ui/Button';
+import { Button } from '@/components/ui/Button';
 
 declare global {
   interface Window {

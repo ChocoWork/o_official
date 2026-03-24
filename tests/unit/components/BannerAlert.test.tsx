@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { BannerAlert } from '@/app/components/ui/BannerAlert';
+import { BannerAlert } from '@/components/ui/BannerAlert';
 
 describe('BannerAlert', () => {
   it('renders message and applies size classes', () => {

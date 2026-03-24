@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import { ActionSheet, ActionSheetAction } from '@/app/components/ui/ActionSheet';
+import { ActionSheet, ActionSheetAction } from '@/components/ui/ActionSheet';
 
 describe('ActionSheet sizing', () => {
   const actions: ActionSheetAction[] = [

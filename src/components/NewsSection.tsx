@@ -3,9 +3,9 @@
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { clientFetch } from '@/lib/client-fetch';
-import { Button } from '@/app/components/ui/Button';
-import { Card } from '@/app/components/ui/Card';
-import { StatusBadge } from '@/app/components/ui/StatusBadge';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 
 type NewsArticle = {
   id: string;

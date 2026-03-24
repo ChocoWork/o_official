@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { formatLookSeason, getPublishedLooks } from '@/lib/look/public';
-import { List } from '@/app/components/ui/List';
+import { List } from '@/components/ui/List';
 
 export default async function LookDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

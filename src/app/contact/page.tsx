@@ -1,10 +1,10 @@
 "use client"; // これを追加
 
 import React, { useState } from 'react';
-import { Button } from '@/app/components/ui/Button';
-import { RadioButtonGroup } from '@/app/components/ui/RadioButtonGroup';
-import { TextAreaField } from '@/app/components/ui/TextAreaField';
-import { TextField } from '@/app/components/ui/TextField';
+import { Button } from '@/components/ui/Button';
+import { RadioButtonGroup } from '@/components/ui/RadioButtonGroup';
+import { TextAreaField } from '@/components/ui/TextAreaField';
+import { TextField } from '@/components/ui/TextField';
 
 export default function ContactPage() {
     const [selectedInquiryType, setSelectedInquiryType] = useState('');

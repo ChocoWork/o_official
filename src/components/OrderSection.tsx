@@ -1,8 +1,8 @@
 'use client';
 
-import { Button } from '@/app/components/ui/Button';
-import { DataTable } from '@/app/components/ui/DataTable';
-import { StatusBadge } from '@/app/components/ui/StatusBadge';
+import { Button } from '@/components/ui/Button';
+import { DataTable } from '@/components/ui/DataTable';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 
 export type OrderStatus = '未決済' | '決済完了' | '出荷完了' | '配達完了' | 'キャンセル';
 

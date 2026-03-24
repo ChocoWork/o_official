@@ -1,59 +1,85 @@
-import * as React from "react"
-import { Slot } from "@radix-ui/react-slot"
-import { cva, type VariantProps } from "class-variance-authority"
+import Link from 'next/link';
+import { cn } from '@/lib/utils';
+import type { ButtonHTMLAttributes, MouseEventHandler } from 'react';
 
-import { cn } from "@/lib/utils"
+export type UIButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'link';
+export type UIButtonSize = 'sm' | 'md' | 'lg';
 
-const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
-  {
-    variants: {
-      variant: {
-        default:
-          "bg-primary text-primary-foreground shadow-xs hover:bg-primary/90",
-        destructive:
-          "bg-destructive text-white shadow-xs hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
-        outline:
-          "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50",
-        secondary:
-          "bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80",
-        ghost:
-          "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
-        link: "text-primary underline-offset-4 hover:underline",
-      },
-      size: {
-        default: "h-9 px-4 py-2 has-[>svg]:px-3",
-        sm: "h-8 rounded-md gap-1.5 px-3 has-[>svg]:px-2.5",
-        lg: "h-10 rounded-md px-6 has-[>svg]:px-4",
-        icon: "size-9",
-      },
-    },
-    defaultVariants: {
-      variant: "default",
-      size: "default",
-    },
-  }
-)
+const buttonVariantClass: Record<UIButtonVariant, string> = {
+  primary:
+    'bg-black text-white hover:bg-[#474747] border border-black disabled:bg-black/20 disabled:text-white disabled:border-black/20 disabled:hover:bg-black/20',
+  secondary:
+    'bg-white text-black hover:bg-black hover:text-white border border-black disabled:bg-white disabled:text-black/40 disabled:border-black/20 disabled:hover:bg-white',
+  danger:
+    'bg-black text-white hover:bg-[#474747] border border-black disabled:bg-black/20 disabled:text-white disabled:border-black/20 disabled:hover:bg-black/20',
+  ghost: 'bg-transparent text-black hover:bg-black/5 border border-transparent',
+  link: 'bg-transparent text-black underline-offset-2 hover:underline border border-transparent px-0 py-0',
+};
 
-function Button({
-  className,
-  variant,
-  size,
-  asChild = false,
-  ...props
-}: React.ComponentProps<"button"> &
-  VariantProps<typeof buttonVariants> & {
-    asChild?: boolean
-  }) {
-  const Comp = asChild ? Slot : "button"
+const buttonSizeClass: Record<UIButtonSize, string> = {
+  sm: 'h-8 text-xs px-3',
+  md: 'h-10 text-sm px-4',
+  lg: 'h-12 text-sm px-5',
+};
 
-  return (
-    <Comp
-      data-slot="button"
-      className={cn(buttonVariants({ variant, size, className }))}
-      {...props}
-    />
-  )
+// union of button and anchor attributes so `href` use works
+export interface ButtonProps
+  extends ButtonHTMLAttributes<HTMLButtonElement> {
+  href?: string;
+  variant?: UIButtonVariant | 'text';
+  size?: UIButtonSize;
+  className?: string;
+  onClick?: MouseEventHandler<HTMLElement>;
 }
 
-export { Button, buttonVariants }
+export function Button({
+  href,
+  variant = 'primary',
+  size = 'md',
+  className,
+  type = 'button',
+  disabled,
+  children,
+  ...props
+}: ButtonProps) {
+  const resolvedVariantClass =
+    variant === 'text'
+      ? 'bg-transparent text-black hover:text-[#474747] border border-transparent disabled:text-black/40 disabled:hover:text-black/40'
+      : buttonVariantClass[variant as UIButtonVariant];
+
+  const baseClass = cn(
+    'inline-flex items-center justify-center whitespace-nowrap tracking-widest transition-all duration-300',
+    resolvedVariantClass,
+    buttonSizeClass[size as UIButtonSize],
+    className,
+    disabled && 'cursor-not-allowed',
+  );
+
+  if (href) {
+    // render as link for navigation; disabled link still styled but not clickable
+    // props may include button-specific attributes; cast to anchor attributes
+    const anchorProps = props as React.AnchorHTMLAttributes<HTMLAnchorElement>;
+
+    return (
+      <Link
+        href={href}
+        className={baseClass}
+        {...(disabled ? { onClick: (e) => e.preventDefault() } : {})}
+        {...anchorProps}
+      >
+        {children}
+      </Link>
+    );
+  }
+
+  return (
+    <button
+      type={type}
+      className={baseClass}
+      disabled={disabled}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}

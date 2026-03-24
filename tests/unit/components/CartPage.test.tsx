@@ -17,7 +17,7 @@ jest.mock('next/image', () => {
 });
 
 // stub useCart hook so the component renders without context issues
-jest.mock('@/app/components/CartContext', () => {
+jest.mock('@/components/CartContext', () => {
   return {
     useCart: () => ({
       updateCartCount: jest.fn(),

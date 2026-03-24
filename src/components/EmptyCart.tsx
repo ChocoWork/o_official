@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import { Button } from '@/app/components/ui/Button';
+import { Button } from '@/components/ui/Button';
 
 interface EmptyCartProps {
   onStartShopping?: () => void;

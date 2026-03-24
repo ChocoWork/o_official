@@ -20,6 +20,11 @@
         "/^node -e \"console\\.log\\(require\\.resolve\\('@playwright/test'\\)\\)\"$/": {
             "approve": true,
             "matchCommandLine": true
-        }
+        },
+        "New-Item": true,
+        "Out-Null": true,
+        "Test-Path": true,
+        "Move-Item": true,
+        "npx tsc": true
     }
 }

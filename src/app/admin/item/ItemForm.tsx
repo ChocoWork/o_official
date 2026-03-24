@@ -3,14 +3,14 @@
 import { useEffect, useRef, useState } from 'react';
 // preview images now handled by Card component
 import { useRouter } from 'next/navigation';
-import { Button } from '@/app/components/ui/Button';
-import { ColorPicker } from '@/app/components/ui/ColorPicker';
-import { RadioButtonGroup } from '@/app/components/ui/RadioButtonGroup';
-import { SingleSelect } from '@/app/components/ui/SingleSelect';
-import { MultiSelect } from '@/app/components/ui/MultiSelect';
-import { Card } from '@/app/components/ui/Card';
-import { TextAreaField } from '@/app/components/ui/TextAreaField';
-import { TextField } from '@/app/components/ui/TextField';
+import { Button } from '@/components/ui/Button';
+import { ColorPicker } from '@/components/ui/ColorPicker';
+import { RadioButtonGroup } from '@/components/ui/RadioButtonGroup';
+import { SingleSelect } from '@/components/ui/SingleSelect';
+import { MultiSelect } from '@/components/ui/MultiSelect';
+import { Card } from '@/components/ui/Card';
+import { TextAreaField } from '@/components/ui/TextAreaField';
+import { TextField } from '@/components/ui/TextField';
 import { clientFetch } from '@/lib/client-fetch';
 import {
   CATEGORIES,

@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { LoginProvider, useLogin } from '@/app/components/LoginContext';
+import { LoginProvider, useLogin } from '@/components/LoginContext';
 
 // Mock supabase client
 jest.mock('@/lib/supabase/client', () => {

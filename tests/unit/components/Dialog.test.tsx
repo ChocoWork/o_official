@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, within } from '@testing-library/react';
-import { Dialog } from '@/app/components/ui/Dialog';
+import { Dialog } from '@/components/ui/Dialog';
 
 describe('Dialog', () => {
   it('renders with appropriate size classes', () => {

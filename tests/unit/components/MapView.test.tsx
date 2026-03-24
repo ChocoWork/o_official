@@ -1,6 +1,6 @@
 import React from 'react';
 import { render } from '@testing-library/react';
-import { MapView } from '@/app/components/ui/MapView';
+import { MapView } from '@/components/ui/MapView';
 
 describe('MapView component', () => {
   test('default (md) embed container has h-48', () => {

@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
-import { Item } from '@/app/types/item';
+import { Item } from '@/types/item';
 
 // GET: 個別商品取得（公開済みのみ）
 export async function GET(

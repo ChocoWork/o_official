@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { TagLabel } from '@/app/components/ui/TagLabel';
-import { Button } from '@/app/components/ui/Button';
-import { TabSegmentControl } from '@/app/components/ui/TabSegmentControl';
+import { TagLabel } from '@/components/ui/TagLabel';
+import { Button } from '@/components/ui/Button';
+import { TabSegmentControl } from '@/components/ui/TabSegmentControl';
 import { categories } from '@/lib/news-data';
 import { PublicNewsArticle } from '@/features/news/types';
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
-import HomeItemsSection from '@/app/components/HomeItemsSection';
+import HomeItemsSection from '@/components/HomeItemsSection';
 
 jest.mock('next/link', () => {
   return ({ href, children, ...props }: any) => (

@@ -3,10 +3,10 @@
 import React from 'react';
 import Image from 'next/image';
 import { useSearchParams } from 'next/navigation';
-import { useLogin } from '@/app/components/LoginContext';
-import { Button } from '@/app/components/ui/Button';
-import { TabSegmentControl } from '@/app/components/ui/TabSegmentControl';
-import { TextField } from '@/app/components/ui/TextField';
+import { useLogin } from '@/components/LoginContext';
+import { Button } from '@/components/ui/Button';
+import { TabSegmentControl } from '@/components/ui/TabSegmentControl';
+import { TextField } from '@/components/ui/TextField';
 
 type AccountTab = 'profile' | 'orders' | 'address';
 

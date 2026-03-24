@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import { StatusBadge } from '@/app/components/ui/StatusBadge';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 
 describe('StatusBadge sizing', () => {
   test('text variant default md', () => {

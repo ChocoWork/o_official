@@ -1,6 +1,6 @@
 import React from 'react';
 import { render } from '@testing-library/react';
-import { Drawer } from '@/app/components/ui/Drawer';
+import { Drawer } from '@/components/ui/Drawer';
 
 describe('Drawer size prop', () => {
   const children = <div>content</div>;

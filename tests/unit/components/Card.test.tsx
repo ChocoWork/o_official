@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import { Card } from '@/app/components/ui/Card';
+import { Card } from '@/components/ui/Card';
 
 // simple helper to render card with title/price
 function renderCard(size?: 'sm' | 'md' | 'lg') {

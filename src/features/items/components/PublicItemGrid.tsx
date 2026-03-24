@@ -3,9 +3,9 @@
 import { useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Button } from '@/app/components/ui/Button';
-import { TabSegmentControl } from '@/app/components/ui/TabSegmentControl';
-import { Item } from '@/app/types/item';
+import { Button } from '@/components/ui/Button';
+import { TabSegmentControl } from '@/components/ui/TabSegmentControl';
+import { Item } from '@/types/item';
 import { usePublicItems } from '@/features/items/hooks/usePublicItems';
 
 const ITEM_CATEGORIES = ['ALL', 'TOPS', 'BOTTOMS', 'OUTERWEAR', 'ACCESSORIES'] as const;

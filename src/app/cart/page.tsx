@@ -3,11 +3,11 @@
 import React, { useState, useEffect } from "react";
 import Link from 'next/link';
 import Image from "next/image";
-import { useCart } from "@/app/components/CartContext";
-import { EmptyCart } from '@/app/components/EmptyCart';
-import { Button } from '@/app/components/ui/Button';
-import { Stepper } from '@/app/components/ui/Stepper';
-import { TextField } from '@/app/components/ui/TextField';
+import { useCart } from "@/components/CartContext";
+import { EmptyCart } from '@/components/EmptyCart';
+import { Button } from '@/components/ui/Button';
+import { Stepper } from '@/components/ui/Stepper';
+import { TextField } from '@/components/ui/TextField';
 
 interface CartItem {
   id: string;

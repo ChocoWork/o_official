@@ -3,15 +3,15 @@
 
 import { useMemo, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
-import AdminTabs, { type TabType } from '@/app/components/AdminTabs';
-import { useLogin } from '@/app/components/LoginContext';
-import KpiSection from '@/app/components/KpiSection';
-import NewsSection from '@/app/components/NewsSection';
-import ItemSection from '@/app/components/ItemSection';
-import LookSection from '@/app/components/LookSection';
-import UserSection from '@/app/components/UserSection';
-import OrderSection, { type OrderItem, type OrderStatus } from '@/app/components/OrderSection';
-import { Button } from '@/app/components/ui/Button';
+import AdminTabs, { type TabType } from '@/components/AdminTabs';
+import { useLogin } from '@/components/LoginContext';
+import KpiSection from '@/components/KpiSection';
+import NewsSection from '@/components/NewsSection';
+import ItemSection from '@/components/ItemSection';
+import LookSection from '@/components/LookSection';
+import UserSection from '@/components/UserSection';
+import OrderSection, { type OrderItem, type OrderStatus } from '@/components/OrderSection';
+import { Button } from '@/components/ui/Button';
 
 const allAdminTabs: TabType[] = ['KPI', 'NEWS', 'ITEM', 'LOOK', 'USER', 'ORDER'];
 const supporterTabs: TabType[] = ['ORDER'];

@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import { Stats, StatItem } from '@/app/components/ui/Stats';
+import { Stats, StatItem } from '@/components/ui/Stats';
 
 const items: StatItem[] = [
   { label: 'A', value: '1', icon: <i data-testid="icon"></i> },

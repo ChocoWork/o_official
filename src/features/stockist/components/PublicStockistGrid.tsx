@@ -1,5 +1,5 @@
-import { Card } from '@/app/components/ui/Card';
-import { TagLabel } from '@/app/components/ui/TagLabel';
+import { Card } from '@/components/ui/Card';
+import { TagLabel } from '@/components/ui/TagLabel';
 import {
   getPublicStockists,
   HOME_PUBLIC_STOCKISTS,

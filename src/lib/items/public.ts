@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
-import type { Item } from '@/app/types/item';
+import type { Item } from '@/types/item';
 
 export async function getPublishedItems(limit?: number): Promise<Item[]> {
   const supabase = await createClient();

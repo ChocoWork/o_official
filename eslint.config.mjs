@@ -19,14 +19,14 @@ const eslintConfig = [
         {
           paths: [
             {
-              name: "@/app/components/ui",
+              name: "@/components/ui",
               message:
-                "`@/app/components/ui/<Component>` の直接importを使用してください。",
+                "`@/components/ui/<Component>` の直接importを使用してください。",
             },
             {
-              name: "@/app/components/ui/index",
+              name: "@/components/ui/index",
               message:
-                "`@/app/components/ui/<Component>` の直接importを使用してください。",
+                "`@/components/ui/<Component>` の直接importを使用してください。",
             },
           ],
         },

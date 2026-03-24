@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import { Toolbar, ToolbarItem } from '@/app/components/ui/Toolbar';
+import { Toolbar, ToolbarItem } from '@/components/ui/Toolbar';
 
 const items: ToolbarItem[] = [
   { key: 'one', iconClass: 'ri-star-line', label: 'One' },

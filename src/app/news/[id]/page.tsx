@@ -3,8 +3,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
 import { categories } from "@/lib/news-data";
-import { Button } from '@/app/components/ui/Button';
-import { TagLabel } from '@/app/components/ui/TagLabel';
+import { Button } from '@/components/ui/Button';
+import { TagLabel } from '@/components/ui/TagLabel';
 import { getPublishedNewsDetailById, getPublishedNewsNavigation } from '@/features/news/services/public';
 
 interface NewsDetailPageProps {

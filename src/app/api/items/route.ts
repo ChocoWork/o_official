@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
-import { Item } from '@/app/types/item';
+import { Item } from '@/types/item';
 import { z } from 'zod';
 
 // GET: 商品一覧取得（公開済みのみ）

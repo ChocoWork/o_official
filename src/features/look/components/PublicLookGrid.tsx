@@ -1,6 +1,6 @@
 import Image from 'next/image';
 import Link from 'next/link';
-import { Button } from '@/app/components/ui/Button';
+import { Button } from '@/components/ui/Button';
 import { PublicLook, formatLookSeason, getPublishedLooks } from '@/lib/look/public';
 
 const FIXED_LOOK_COUNT = 6;

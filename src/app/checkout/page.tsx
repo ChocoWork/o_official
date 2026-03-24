@@ -6,16 +6,16 @@ import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { loadStripe, type Appearance } from '@stripe/stripe-js';
 import { CheckoutProvider, PaymentElement, useCheckout } from '@stripe/react-stripe-js/checkout';
-import { Button } from '@/app/components/ui/Button';
-import { Checkbox } from '@/app/components/ui/Checkbox';
-import { useCart } from '@/app/components/CartContext';
+import { Button } from '@/components/ui/Button';
+import { Checkbox } from '@/components/ui/Checkbox';
+import { useCart } from '@/components/CartContext';
 import {
   formatPostalCodeInput,
   isCompletePostalCode,
   normalizePostalCode,
 } from '@/features/checkout/utils/postal-code.util';
-import { SingleSelect } from '@/app/components/ui/SingleSelect';
-import { TextField } from '@/app/components/ui/TextField';
+import { SingleSelect } from '@/components/ui/SingleSelect';
+import { TextField } from '@/components/ui/TextField';
 
 const PREFECTURES = [
   '北海道',

@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import { Rating } from '@/app/components/ui/Rating';
+import { Rating } from '@/components/ui/Rating';
 
 describe('Rating component', () => {
   test('renders correct number of stars and applies small size classes', () => {

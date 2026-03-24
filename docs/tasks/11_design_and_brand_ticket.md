@@ -49,10 +49,10 @@ updated: 2026-03-08
 - [x] Header に `UI` メニューを追加し、`/ui` で `src/app/components/ui` の全コンポーネント確認サンプルを提供
 - [x] `/ui` を提供モックに合わせて全面拡張し、`forms/navigation/data-display` コンポーネントAPIをデモ向けに更新
 - [x] `src/app/components/ui` を 1コンポーネント1ファイル構成へ分解し、既存利用箇所が壊れないよう互換exportを維持
-- [x] 利用側importを `@/app/components/ui` バレル経由から、`@/app/components/ui/<Component>` 直接importへ統一
+- [x] 利用側importを `@/components/ui` バレル経由から、`@/components/ui/<Component>` 直接importへ統一
 - [x] 直接import統一後、未使用となった互換re-exportファイル（`forms/navigation/overlays/data-display`）を削除
 - [x] export方針を「直接import優先」に決定し、`src/app/components/ui/index.ts` バレルを廃止
-- [x] ESLintで `@/app/components/ui`（ディレクトリ直import）を禁止し、直接import運用を固定化
+- [x] ESLintで `@/components/ui`（ディレクトリ直import）を禁止し、直接import運用を固定化
 - [x] PR時に `npm run lint` を自動実行する GitHub Actions（`.github/workflows/lint.yml`）を追加
 - [x] `/ui` の `Color Picker` で `PRESET COLORS` が未着色になる問題を修正（CSP下でのインライン背景指定をクラス指定へ変更）
 - [x] `/ui` の `Date / Time Picker` で `DATE` / `TIME` / `DATETIME` 入力が固定値で編集不能だった問題を修正（state + onChange で制御）

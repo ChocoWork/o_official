@@ -1,8 +1,8 @@
 import React from 'react';
 import { CreditCard, Truck, Shield } from 'lucide-react';
 import { CartSummary as CartSummaryType } from '../types/cart';
-import { Button } from '@/app/components/ui/Button';
-import { TextField } from '@/app/components/ui/TextField';
+import { Button } from '@/components/ui/Button';
+import { TextField } from '@/components/ui/TextField';
 
 interface CartSummaryProps {
   summary: CartSummaryType;

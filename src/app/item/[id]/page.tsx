@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect, use } from "react";
 import Image from "next/image";
-import { Item } from "@/app/types/item";
-import { useCart } from "@/app/components/CartContext";
-import { Button } from '@/app/components/ui/Button';
-import { Stepper } from '@/app/components/ui/Stepper';
+import { Item } from "@/types/item";
+import { useCart } from "@/components/CartContext";
+import { Button } from '@/components/ui/Button';
+import { Stepper } from '@/components/ui/Stepper';
 
 export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
