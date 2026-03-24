@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { TagLabel } from '@/components/ui/TagLabel';
 import { Button } from '@/components/ui/Button';
+import { SectionTitle } from '@/components/ui/SectionTitle';
 import { TabSegmentControl } from '@/components/ui/TabSegmentControl';
 import { categories } from '@/lib/news-data';
 import { PublicNewsArticle } from '@/features/news/types';
@@ -160,11 +161,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
     return (
       <section id="news" className="px-6 lg:px-12 bg-white w-full pt-14 pb-16 md:pt-16 md:pb-20 lg:pt-20 lg:pb-24">
         <div className="max-w-7xl mx-auto">
-          <div className="text-left mb-10 md:mb-12">
-            <h2 className="text-xl lg:text-2xl text-black tracking-tight underline underline-offset-8 decoration-black decoration-1">
-              NEWS
-            </h2>
-          </div>
+          <SectionTitle title="NEWS" />
 
           {loading ? (
             <div className="text-center py-20">

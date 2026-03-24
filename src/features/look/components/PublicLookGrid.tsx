@@ -1,6 +1,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
+import { SectionTitle } from '@/components/ui/SectionTitle';
 import { PublicLook, formatLookSeason, getPublishedLooks } from '@/lib/look/public';
 
 const FIXED_LOOK_COUNT = 6;
@@ -86,11 +87,7 @@ export async function PublicLookGrid(props: PublicLookGridProps) {
     return (
       <section id="look" className="px-6 lg:px-12 bg-white w-full md:pb-20 lg:pb-20">
         <div className="max-w-7xl mx-auto">
-          <div className="text-left mb-10 md:mb-12">
-            <h2 className="text-xl lg:text-2xl text-black tracking-tight underline underline-offset-8 decoration-black decoration-1">
-              LOOK
-            </h2>
-          </div>
+          <SectionTitle title="LOOK" />
 
           {resolvedLooks.length === 0 ? (
             <div className="text-center py-12 text-[#474747] font-brand">公開中のLOOKがありません</div>

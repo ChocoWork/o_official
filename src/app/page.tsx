@@ -3,6 +3,7 @@ import { PublicLookGrid } from '@/features/look/components/PublicLookGrid';
 import { PublicItemGrid } from '@/features/items/components/PublicItemGrid';
 import { PublicNewsGrid } from '@/features/news/components/PublicNewsGrid';
 import { PublicStockistGrid } from '@/features/stockist/components/PublicStockistGrid';
+import { SectionTitle } from '@/components/ui/SectionTitle';
 
 export default async function Home() {
   return (
@@ -45,11 +46,7 @@ export default async function Home() {
           <div className="max-w-7xl mx-auto">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-center">
               <div className="order-2 lg:order-1">
-                <div className="text-left mb-10 md:mb-12">
-                  <h2 className="text-xl lg:text-2xl text-black tracking-tight underline underline-offset-8 decoration-black decoration-1">
-                    ABOUT
-                  </h2>
-                </div>
+                <SectionTitle title="ABOUT" />
                 <div className="space-y-6 text-[#474747] font-brand">
                   <p className="text-base lg:text-base leading-relaxed">Le Fil des Heuresは、「時を紡ぐニュートラルモードな日常着」をコンセプトに、2026年に日本の宮城県で誕生したアパレルブランドです。</p>
                   <p className="text-base lg:text-base leading-relaxed">時代を超えて愛される普遍的なデザインと、素材選びにこだわり、日常に寄り添う洗練されたワードローブを提案しています。</p>

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
+import { SectionTitle } from '@/components/ui/SectionTitle';
 import { TabSegmentControl } from '@/components/ui/TabSegmentControl';
 import { Item } from '@/types/item';
 import { usePublicItems } from '@/features/items/hooks/usePublicItems';
@@ -113,11 +114,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     return (
       <section id="items" className="px-6 lg:px-12 bg-white w-full md:pb-20 lg:pb-20">
         <div className="max-w-7xl mx-auto">
-          <div className="text-left mb-6 md:mb-8">
-            <h2 className="text-xl lg:text-2xl text-black tracking-tight underline underline-offset-8 decoration-black decoration-1">
-              ITEMS
-            </h2>
-          </div>
+          <SectionTitle title="ITEMS" />
 
           {isSelfFetch && loading ? (
             <div className="text-center py-12 text-[#474747] font-brand">読み込み中...</div>
