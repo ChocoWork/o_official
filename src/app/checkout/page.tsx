@@ -500,7 +500,7 @@ export default function CheckoutPage() {
     );
   };
 
-  const [completed, setCompleted] = useState<boolean>(true);
+  const [completed, setCompleted] = useState<boolean>(false);
 
   if (cartLoading) {
     return (

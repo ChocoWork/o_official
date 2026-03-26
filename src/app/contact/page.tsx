@@ -2,50 +2,47 @@
 
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/Button';
-import { RadioButtonGroup } from '@/components/ui/RadioButtonGroup';
+import { SingleSelect } from '@/components/ui/SingleSelect';
 import { TextAreaField } from '@/components/ui/TextAreaField';
 import { TextField } from '@/components/ui/TextField';
 
 export default function ContactPage() {
     const [selectedInquiryType, setSelectedInquiryType] = useState('');
 
-    const handleInquiryChange = (value: string) => {
-        setSelectedInquiryType(value);
-    };
-
     return (
-        <main className="pt-32 pb-20">
-            <div className="max-w-4xl mx-auto px-6 lg:px-12">
-                <div className="mb-16">
-                    <p className="text-base text-[#474747] leading-relaxed">ご質問やお問い合わせは、以下のフォームよりお気軽にご連絡ください。</p>
-                </div>
+        <main className="pt-24 pb-16 min-h-screen flex items-start justify-center">
+            <div className="w-full max-w-4xl mx-auto px-6 lg:px-12">
+                <div className="mb-14 p-8 lg:p-10">
+                    <h1 className="text-3xl text-black mb-2 tracking-tight font-display">Contact / お問い合わせ</h1>
+                    <p className="text-base text-[#474747] leading-relaxed tracking-tight mb-8">ご質問やお問い合わせは、以下のフォームよりご連絡ください。</p>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 mb-16">
-                    <div>
-                        <form className="space-y-6">
-                            <RadioButtonGroup
-                                name="inquiry"
-                                value={selectedInquiryType}
-                                onChange={handleInquiryChange}
-                                direction="column"
-                                options={[
-                                    { value: 'product', label: '商品について' },
-                                    { value: 'order', label: 'ご注文について' },
-                                    { value: 'other', label: 'その他' },
-                                ]}
-                             size="md"/>
+                    <form className="space-y-6">
+                        <TextField id="name" required label="NAME / お名前 *" type="text" name="name" size="md" className="w-full" />
 
-                            <TextField id="name" required label="NAME *" type="text" name="name"  size="md"/>
+                        <TextField id="email" required label="EMAIL / メールアドレス *" type="email" name="email" size="md" className="w-full" />
 
-                            <TextField id="email" required label="EMAIL *" type="email" name="email"  size="md"/>
+                        <SingleSelect
+                            name="inquiry"
+                            label="お問い合わせ内容"
+                            value={selectedInquiryType}
+                            onValueChange={(value) => setSelectedInquiryType(value)}
+                            placeholder="選択してください"
+                            options={[
+                                { value: 'product', label: '商品について' },
+                                { value: 'order', label: 'ご注文について' },
+                                { value: 'other', label: 'その他' },
+                            ]}
+                            size="md"
+                            variant="dropdown"
+                            className="w-full"
+                        />
 
-                            <TextField id="subject" required label="SUBJECT *" type="text" name="subject"  size="md"/>
+                        <TextField id="subject" required label="SUBJECT / 件名 *" type="text" name="subject" size="md" className="w-full" />
 
-                            <TextAreaField id="message" label="MESSAGE *" name="message" required rows={6} maxLength={500}  size="md"/>
+                        <TextAreaField id="message" label="MESSAGE / メッセージ *" name="message" required rows={6} maxLength={500} size="md" className="w-full" />
 
-                            <Button type="submit" size="lg" className="w-full">SEND MESSAGE</Button>
-                        </form>
-                    </div>
+                        <Button type="submit" size="lg" className="w-full ">SEND MESSAGE</Button>
+                    </form>
                 </div>
             </div>
         </main>

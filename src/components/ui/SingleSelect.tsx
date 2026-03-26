@@ -32,6 +32,7 @@ export function SingleSelect({
   const textClass = size === 'lg' ? 'text-base' : 'text-sm';
   const selectId = id ?? props.name;
   const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
@@ -50,7 +51,10 @@ export function SingleSelect({
       return;
     }
     const handleClickOutside = (event: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      const clickedInWrapper = wrapperRef.current?.contains(target);
+      const clickedInDropdown = dropdownRef.current?.contains(target);
+      if (!clickedInWrapper && !clickedInDropdown) {
         setOpen(false);
       }
     };
@@ -118,7 +122,11 @@ export function SingleSelect({
             aria-expanded={open}
             disabled={disabled}
           >
-            <span>{resolvedValue || placeholder || ''}</span>
+            <span>
+              {resolvedValue
+                ? options.find((opt) => opt.value === resolvedValue)?.label ?? resolvedValue
+                : placeholder || '選択してください'}
+            </span>
             <span className="flex h-4 w-4 items-center justify-center">
               <i
                 className="ri-arrow-down-s-line text-base transition-transform"
@@ -129,6 +137,7 @@ export function SingleSelect({
           {open && dropdownPos &&
             ReactDOM.createPortal(
               <div
+                ref={dropdownRef}
                 style={{
                   position: 'absolute',
                   top: dropdownPos.top,
