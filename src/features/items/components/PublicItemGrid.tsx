@@ -39,13 +39,18 @@ export function PublicItemGrid(props: PublicItemGridProps) {
   // Self-fetch: triggered when items are not provided externally
   const isSelfFetch = typeof props.items === 'undefined';
   const fetchLimit = variant === 'home' ? (props.fetchLimit ?? 8) : undefined;
+  // Over-fetch by 1 to detect whether more items exist beyond fetchLimit
+  const overFetchLimit = typeof fetchLimit === 'number' ? fetchLimit + 1 : undefined;
   const { items: fetchedItems, loading, error } = usePublicItems({
-    limit: fetchLimit,
+    limit: overFetchLimit,
     enabled: isSelfFetch,
   });
 
-  // Use external items if provided, otherwise fall back to fetched items
-  const resolvedItems = props.items ?? fetchedItems;
+  // True only when the DB has more published items than fetchLimit
+  const hasMoreItems = isSelfFetch && typeof fetchLimit === 'number' && fetchedItems.length > fetchLimit;
+
+  // Use external items if provided, otherwise trim fetched items to fetchLimit
+  const resolvedItems = props.items ?? fetchedItems.slice(0, fetchLimit ?? fetchedItems.length);
 
   // Apply category filter for catalog variant
   const displayItems =
@@ -123,8 +128,8 @@ export function PublicItemGrid(props: PublicItemGridProps) {
           ) : (
             <div id="sym:success">
               {renderGrid()}
-              {shouldLimitOnMobile && resolvedItems.length > resolvedMobileLimit! && (
-                <div className="text-center mt-12 lg:hidden">
+              {hasMoreItems && (
+                <div className="text-center mt-12">
                   <Button href="/item" variant="secondary" size="md" className="font-acumin">
                     VIEW ALL ITEMS
                   </Button>
