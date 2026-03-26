@@ -24,10 +24,32 @@ const menuItems = [
 const Header = () => {
   const [loginOpen, setLoginOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [isHeaderVisible, setIsHeaderVisible] = useState(true);
   const pathname = usePathname();
   const { isLoggedIn, userRole } = useLogin();
   const canManage = userRole === 'admin' || userRole === 'supporter';
   const { cartCount } = useCart();
+
+  const lastScrollY = React.useRef(0);
+
+  React.useEffect(() => {
+    const onScroll = () => {
+      const currentScrollY = window.scrollY;
+
+      if (currentScrollY <= 0) {
+        setIsHeaderVisible(true);
+      } else if (currentScrollY > lastScrollY.current && currentScrollY > 50) {
+        setIsHeaderVisible(false);
+      } else if (currentScrollY < lastScrollY.current) {
+        setIsHeaderVisible(true);
+      }
+
+      lastScrollY.current = currentScrollY;
+    };
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   const isActiveMenuItem = (href: string) => {
     if (href === '/') return pathname === '/';
@@ -36,7 +58,7 @@ const Header = () => {
 
 
   return (
-    <header className="fixed top-0 left-0 right-0 bg-white z-50 border-b border-black/10">
+    <header className={`fixed left-0 right-0 bg-white z-50 border-b border-black/10 transition-transform duration-300 ease-in-out ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}`}>
       <div className="px-6 lg:px-12 py-6">
         <div className="flex items-center justify-between">
           {/* サイトタイトル */}
