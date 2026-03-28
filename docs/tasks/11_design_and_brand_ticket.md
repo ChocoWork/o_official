@@ -87,6 +87,7 @@ updated: 2026-03-08
 - [x] Home の `ITEMS` / `LOOK` / `NEWS` セクションで、`main` の `gap` 依存を廃止し、8ptグリッド基準の `pt/pb`（`pt-14 pb-16`〜`lg:pt-20 lg:pb-24`）へ統一して縦方向リズムを最適化
 - [x] HOME 実機比較（375px / 768px / 1440px）を行い、`LOOK -> NEWS` の切り替え強調のため `LOOK` セクション下余白のみ 8px 増加（`pb-[72px] md:pb-[88px] lg:pb-[104px]`）、md は追加微調整不要と判断
 - [x] Home NEWS（`getLatestNews`）と `/news` 一覧の取得処理を `features/news/services/public.ts` の `getPublishedNews` に共通化
+- [x] HOME 初回表示の体感速度改善のため、`page.tsx` で ITEM / NEWS をサーバー事前取得して `PublicItemGrid` / `PublicNewsGrid` へ props 注入する方式へ変更（LOOK と同等の初回描画特性に統一）
 - [x] `news/[id]` の取得処理（詳細記事 + 前後ナビ記事）を `features/news/services/public.ts` に共通化し、NEWS系データ取得をサービス層へ一本化
 - [x] `item/[id]` の購入操作ボタンを `/ui` の `Button` サンプル（`WITH ICON` / `ICON ONLY` / `DISABLED`）準拠の見た目・状態表示に統一
 - [x] `look/[id]` の `STYLING ITEMS` 表示を `/ui` の `List` サンプル準拠に差し替え、共通 `List` コンポーネントを適用

@@ -45,12 +45,11 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     limit: overFetchLimit,
     enabled: isSelfFetch,
   });
+  const sourceItems = props.items ?? fetchedItems;
 
-  // True only when the DB has more published items than fetchLimit
-  const hasMoreItems = isSelfFetch && typeof fetchLimit === 'number' && fetchedItems.length > fetchLimit;
+  const hasMoreItems = typeof fetchLimit === 'number' && sourceItems.length > fetchLimit;
 
-  // Use external items if provided, otherwise trim fetched items to fetchLimit
-  const resolvedItems = props.items ?? fetchedItems.slice(0, fetchLimit ?? fetchedItems.length);
+  const resolvedItems = sourceItems.slice(0, fetchLimit ?? sourceItems.length);
 
   // Apply category filter for catalog variant
   const displayItems =
@@ -122,7 +121,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
             <div id="sym:success">
               {renderGrid()}
               {(hasHiddenItemsOnTablet || hasMoreItems) && (
-                <div className="text-center mt-12 lg:hidden">
+                <div className="text-center mt-12">
                   <Button href="/item" variant="secondary" size="md" className="font-acumin">
                     VIEW ALL ITEMS
                   </Button>

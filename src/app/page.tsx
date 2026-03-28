@@ -4,8 +4,15 @@ import { PublicItemGrid } from '@/features/items/components/PublicItemGrid';
 import { PublicNewsGrid } from '@/features/news/components/PublicNewsGrid';
 import { PublicStockistGrid } from '@/features/stockist/components/PublicStockistGrid';
 import { SectionTitle } from '@/components/ui/SectionTitle';
+import { getPublishedItems } from '@/lib/items/public';
+import { getPublishedNews } from '@/features/news/services/public';
 
 export default async function Home() {
+  const [homeItems, homeNews] = await Promise.all([
+    getPublishedItems(9),
+    getPublishedNews({ limit: 3 }),
+  ]);
+
   return (
     <div className="min-h-screen font-sans">
       <main className="flex flex-col items-center">
@@ -33,13 +40,13 @@ export default async function Home() {
         </section>
 
         {/* Item セクション */}
-        <PublicItemGrid variant="home" />
+        <PublicItemGrid variant="home" items={homeItems} />
 
         {/* Look セクション */}
         <PublicLookGrid variant="home" />
 
         {/* News セクション */}
-        <PublicNewsGrid variant="home" />
+        <PublicNewsGrid variant="home" articles={homeNews} />
 
         {/* ABOUT セクション */}
         <section id="about" className="py-24 lg:py-32 px-6 lg:px-12 bg-[#fafafa] w-full">
