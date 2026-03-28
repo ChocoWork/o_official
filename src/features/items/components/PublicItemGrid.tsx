@@ -31,7 +31,7 @@ type PublicItemGridCatalogProps = {
 type PublicItemGridProps = PublicItemGridHomeProps | PublicItemGridCatalogProps;
 
 export function PublicItemGrid(props: PublicItemGridProps) {
-  const { variant, className, mobileLimit } = props;
+  const { variant, mobileLimit } = props;
 
   // Category filter state - catalog variant only
   const [selectedCategory, setSelectedCategory] = useState<ItemCategory>('ALL');
@@ -58,25 +58,18 @@ export function PublicItemGrid(props: PublicItemGridProps) {
       ? resolvedItems.filter((item) => item.category === selectedCategory)
       : resolvedItems;
 
-  const defaultCatalogGridClassName = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8';
-  const defaultHomeGridClassName =
-    'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-6 sm:gap-8 md:gap-10 lg:gap-10 xl:gap-10';
-  const resolvedGridClassName =
-    className ?? (variant === 'home' ? defaultHomeGridClassName : defaultCatalogGridClassName);
-  const gridClassName = `${resolvedGridClassName} w-full`;
-
-  const resolvedMobileLimit = variant === 'home' ? (mobileLimit ?? 6) : mobileLimit;
+    const resolvedMobileLimit = variant === 'home' ? (mobileLimit ?? 6) : mobileLimit;
   const shouldLimitOnMobile = typeof resolvedMobileLimit === 'number';
 
   const renderGrid = () => (
-    <div className={gridClassName}>
+    <div className='grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-2 sm:gap-4 md:gap-6 lg:gap-8 w-full'>
       {displayItems.map((item, index) => {
         const hideOnMobile = shouldLimitOnMobile && index >= resolvedMobileLimit!;
 
         return (
           <Link key={item.id} href={`/item/${item.id}`} className={hideOnMobile ? 'hidden lg:block' : undefined}>
             <div className="group cursor-pointer">
-              <div className="aspect-[3/4] bg-[#f5f5f5] mb-4 overflow-hidden">
+              <div className="aspect-[3/4] bg-[#f5f5f5] mb-2 overflow-hidden">
                 {item.image_url ? (
                   <Image
                     src={item.image_url}
@@ -92,10 +85,9 @@ export function PublicItemGrid(props: PublicItemGridProps) {
                   </div>
                 )}
               </div>
-              <div className="space-y-2">
-                <p className="text-xs text-[#474747] tracking-widest font-brand">{item.category}</p>
-                <h3 className="text-lg text-black font-brand tracking-tight">{item.name}</h3>
-                <p className="text-sm text-black font-brand">¥{item.price.toLocaleString('ja-JP')}</p>
+              <div>
+                <h3 className="mb-1 text-base text-black font-brand tracking-tight">{item.name}</h3>
+                <p className="mb-2 text-sm text-black font-brand">¥{item.price.toLocaleString('ja-JP')}</p>
               </div>
             </div>
           </Link>
