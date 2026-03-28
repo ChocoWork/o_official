@@ -30,7 +30,7 @@ function LookCard({ look }: LookCardProps) {
   return (
     <div>
       <Link href={`/look/${look.id}`} className="group block">
-        <div className="aspect-[2/3] bg-[#f5f5f5] mb-6 overflow-hidden relative">
+        <div className="aspect-[2/3] bg-[#f5f5f5] mb-3 overflow-hidden relative">
           <Image
             src={look.imageUrls[0] || '/placeholder.png'}
             alt={look.theme}
@@ -40,11 +40,11 @@ function LookCard({ look }: LookCardProps) {
           />
         </div>
       </Link>
-      <div className="space-y-1">
+      <div className="">
         <Link href={`/look/${look.id}`}>
-          <p className="text-lg text-black font-brand hover:text-[#474747] transition-colors">{formatLookSeason(look.seasonYear, look.seasonType)} - {look.theme}</p>
+          <p className="text-lg mb-2 text-black font-brand hover:text-[#474747] transition-colors">{formatLookSeason(look.seasonYear, look.seasonType)} - {look.theme}</p>
         </Link>
-        <div className="pt-2 space-y-1">
+        <div className="space-y-1">
           {look.linkedItems.length === 0 ? (
             <p className="text-xs text-[#474747] font-brand">紐づけ商品なし</p>
           ) : (
@@ -67,8 +67,8 @@ function LookCard({ look }: LookCardProps) {
 export async function PublicLookGrid(props: PublicLookGridProps) {
   const { variant, className } = props;
 
-  const loadedLooks = props.looks ?? await getPublishedLooks(FIXED_LOOK_COUNT);
-  const totalLookCount = loadedLooks.length;
+  const loadedLooks = props.looks ?? await getPublishedLooks(FIXED_LOOK_COUNT + 1);
+  const hasMoreLooks = loadedLooks.length > FIXED_LOOK_COUNT;
   const resolvedLooks = loadedLooks.slice(0, FIXED_LOOK_COUNT);
 
   const defaultGridClass = variant === 'home' ? DEFAULT_HOME_GRID_CLASS : DEFAULT_CATALOG_GRID_CLASS;
@@ -94,8 +94,8 @@ export async function PublicLookGrid(props: PublicLookGridProps) {
     return (
       <>
         {renderGrid()}
-        {variant === 'home' && totalLookCount > FIXED_LOOK_COUNT && (
-          <div className="text-center mt-12 lg:hidden">
+        {variant === 'home' && hasMoreLooks && (
+          <div className="text-center mt-12">
             <Button href="/look" variant="secondary" size="md" className="font-acumin">
               VIEW LOOKBOOK
             </Button>
