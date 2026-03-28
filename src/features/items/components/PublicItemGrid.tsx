@@ -58,8 +58,9 @@ export function PublicItemGrid(props: PublicItemGridProps) {
       ? resolvedItems.filter((item) => item.category === selectedCategory)
       : resolvedItems;
 
-    const resolvedMobileLimit = variant === 'home' ? (mobileLimit ?? 6) : mobileLimit;
+  const resolvedMobileLimit = variant === 'home' ? (mobileLimit ?? 6) : mobileLimit;
   const shouldLimitOnMobile = typeof resolvedMobileLimit === 'number';
+  const hasHiddenItemsOnTablet = shouldLimitOnMobile && resolvedItems.length > resolvedMobileLimit;
 
   const renderGrid = () => (
     <div className='grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-2 sm:gap-4 md:gap-6 lg:gap-8 w-full'>
@@ -120,8 +121,8 @@ export function PublicItemGrid(props: PublicItemGridProps) {
           ) : (
             <div id="sym:success">
               {renderGrid()}
-              {hasMoreItems && (
-                <div className="text-center mt-12">
+              {(hasHiddenItemsOnTablet || hasMoreItems) && (
+                <div className="text-center mt-12 lg:hidden">
                   <Button href="/item" variant="secondary" size="md" className="font-acumin">
                     VIEW ALL ITEMS
                   </Button>
