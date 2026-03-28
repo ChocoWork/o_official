@@ -38,7 +38,7 @@ export default async function LookDetailPage({ params }: { params: Promise<{ id:
             <div className="max-w-7xl mx-auto">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20">
                     <div className="space-y-4">
-                        <div className="w-full aspect-[3/4] bg-[#f5f5f5] overflow-hidden relative">
+                        <div className="w-full aspect-[3/4] bg-[#f5f5f5] relative">
                             <Image src={mainImage} alt={currentLook.theme} fill className="w-full h-full object-cover object-top" unoptimized />
                         </div>
                     </div>
