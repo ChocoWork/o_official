@@ -61,6 +61,11 @@ updated: 2026-02-23
 - [x] Supporter は ORDER タブのみ表示・操作できる
 - [x] 管理画面 ORDER タブで注文一覧を CSV エクスポートできる
 - [x] 管理画面 ORDER タブで「商品数」に加えて購入商品名と数量を確認できる
+- [x] 管理画面 ORDER タブで Supabase `orders` / `order_items` と Stripe PaymentIntent を連携した一覧表示ができる
+- [x] 管理画面 ORDER タブにページングと期間フィルタを実装し、注文取得範囲を制御できる
+- [x] 管理画面 ORDER タブの注文操作（ステータス更新・返金）から該当 API へ遷移/実行できる
+- [x] 注文ステータス変更イベントを `audit_logs` に記録できる
+- [x] 管理画面 ORDER タブでステータス絞り込み・検索・操作中制御を実装し、操作性を改善した
 - [x] 管理 API の RBAC 実装（users 以外の admin API へ横展開）
   - `src/lib/auth/admin-rbac.ts`: ハイブリッド RBAC ヘルパー（トークン役割 + DB ACL クエリ）
   - Migration 023: roles, permissions, role_permissions, user_roles テーブル + RLS ポリシー + has_permission()

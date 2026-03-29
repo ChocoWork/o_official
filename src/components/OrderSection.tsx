@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/Button';
 import { DataTable } from '@/components/ui/DataTable';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 
-export type OrderStatus = '未決済' | '決済完了' | '出荷完了' | '配達完了' | 'キャンセル';
+export type OrderStatus = '未決済' | '決済完了' | '決済失敗' | 'キャンセル';
 
 export type OrderLineItem = {
 	name: string;
@@ -20,34 +20,55 @@ export type OrderItem = {
 	items: OrderLineItem[];
 	totalAmount: string;
 	status: OrderStatus;
+	canRefund?: boolean;
 };
 
 const actionLabelMap: Partial<Record<OrderStatus, string>> = {
-	未決済: '決済完了',
-	決済完了: '出荷完了',
-	出荷完了: '配達完了',
+	未決済: 'キャンセル',
+	決済完了: 'キャンセル',
 };
 
 interface OrderSectionProps {
 	orders: OrderItem[];
-	onTransitStatus: (id: string) => void;
+	isLoading?: boolean;
+	errorMessage?: string | null;
+	onCancelOrder?: (id: string) => void;
+	onRefundOrder?: (id: string) => void;
+	processingOrderIds?: string[];
 }
 
-export default function OrderSection({ orders, onTransitStatus }: OrderSectionProps) {
+export default function OrderSection({
+	orders,
+	isLoading = false,
+	errorMessage = null,
+	onCancelOrder,
+	onRefundOrder,
+	processingOrderIds = [],
+}: OrderSectionProps) {
 
 	const statusClassMap: Record<OrderStatus, string> = {
 		未決済: 'bg-red-100 text-red-800',
 		決済完了: 'bg-yellow-100 text-yellow-800',
-		出荷完了: 'bg-blue-100 text-blue-800',
-		配達完了: 'bg-green-100 text-green-800',
+		決済失敗: 'bg-orange-100 text-orange-800',
 		キャンセル: 'bg-gray-100 text-gray-500',
 	};
 
+	if (isLoading) {
+		return (
+			<section>
+				<p className="text-sm text-[#474747] font-acumin">注文一覧を読み込み中です...</p>
+			</section>
+		);
+	}
+
 	return (
 		<section>
+			{errorMessage && <p className="mb-4 text-sm text-red-700 font-acumin">{errorMessage}</p>}
+
 			<DataTable
 				rows={orders}
 				rowKey={(order) => order.id}
+				emptyLabel="条件に一致する注文はありません"
 				columns={[
 					{
 						key: 'id',
@@ -82,13 +103,13 @@ export default function OrderSection({ orders, onTransitStatus }: OrderSectionPr
 					{ key: 'total', header: '合計金額', render: (order) => <p className="font-acumin">{order.totalAmount}</p> },
 					{
 						key: 'status',
-						header: '出荷状況',
+						header: '決済状況',
 						render: (order) => (
 							<StatusBadge
 								tone={
-									order.status === '配達完了'
+									order.status === '決済完了'
 										? 'positive'
-										: order.status === 'キャンセル'
+										: order.status === '決済失敗' || order.status === 'キャンセル'
 											? 'danger'
 											: 'warning'
 								}
@@ -101,12 +122,36 @@ export default function OrderSection({ orders, onTransitStatus }: OrderSectionPr
 					{
 						key: 'action',
 						header: '操作',
-						render: (order) =>
-							actionLabelMap[order.status] ? (
-								<Button variant="secondary" size="sm" className="font-acumin" onClick={() => onTransitStatus(order.id)}>
-									{actionLabelMap[order.status]}
-								</Button>
-							) : null,
+						render: (order) => {
+							const isProcessing = processingOrderIds.includes(order.id);
+
+							return (
+							<div className="flex items-center gap-2">
+								{order.canRefund && onRefundOrder ? (
+									<Button
+										variant="secondary"
+										size="sm"
+										className="font-acumin"
+										onClick={() => onRefundOrder(order.id)}
+										disabled={isProcessing}
+									>
+										{isProcessing ? '処理中...' : '返金'}
+									</Button>
+								) : null}
+								{actionLabelMap[order.status] && onCancelOrder ? (
+									<Button
+										variant="secondary"
+										size="sm"
+										className="font-acumin"
+										onClick={() => onCancelOrder(order.id)}
+										disabled={isProcessing}
+									>
+										{isProcessing ? '処理中...' : actionLabelMap[order.status]}
+									</Button>
+								) : null}
+							</div>
+							);
+						},
 					},
 				]}
 			 size="md"/>

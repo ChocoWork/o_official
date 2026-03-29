@@ -38,9 +38,9 @@ export function DataTable<T>({
 }: DataTableProps<T>) {
   // size maps
   const paddingMap: Record<ComponentSize, { px: string; py: string }> = {
-    sm: { px: 'px-3', py: 'py-2' },
-    md: { px: 'px-6', py: 'py-4' },
-    lg: { px: 'px-8', py: 'py-6' },
+    sm: { px: 'px-1', py: 'py-1' },
+    md: { px: 'px-2', py: 'py-2' },
+    lg: { px: 'px-3', py: 'py-3' },
   };
   const textMap: Record<ComponentSize, { header: string; cell: string; empty: string }> = {
     sm: { header: 'text-xs', cell: 'text-sm', empty: 'text-xs' },

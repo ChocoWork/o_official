@@ -1,28 +1,34 @@
 // ----------------- 管理ダッシュボード -----------------
 'use client';
 
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import AdminTabs, { type TabType } from '@/components/AdminTabs';
 import { useLogin } from '@/contexts/LoginContext';
+import { clientFetch } from '@/lib/client-fetch';
 import KpiSection from '@/components/KpiSection';
 import NewsSection from '@/components/NewsSection';
 import ItemSection from '@/components/ItemSection';
 import LookSection from '@/components/LookSection';
 import UserSection from '@/components/UserSection';
-import OrderSection, { type OrderItem, type OrderStatus } from '@/components/OrderSection';
+import OrderSection, { type OrderItem } from '@/components/OrderSection';
 import { Button } from '@/components/ui/Button';
+import { DateTimePicker } from '@/components/ui/DateTimePicker';
+import { SearchField } from '@/components/ui/SearchField';
 
 const allAdminTabs: TabType[] = ['KPI', 'NEWS', 'ITEM', 'LOOK', 'USER', 'ORDER'];
 const supporterTabs: TabType[] = ['ORDER'];
+const ORDER_STATUS_FILTERS = [
+  { label: 'すべて', value: 'all' },
+  { label: '未決済', value: '未決済' },
+  { label: '決済完了', value: '決済完了' },
+  { label: '決済失敗', value: '決済失敗' },
+  { label: 'キャンセル', value: 'キャンセル' },
+] as const;
 
-const statusTransitionMap: Partial<Record<OrderStatus, OrderStatus>> = {
-  未決済: '決済完了',
-  決済完了: '出荷完了',
-  出荷完了: '配達完了',
-};
+type OrderStatusFilterValue = (typeof ORDER_STATUS_FILTERS)[number]['value'];
 
-const ORDER_CSV_HEADERS = ['注文ID', '顧客名', '顧客メール', '注文日', '購入商品', '商品数', '合計金額', '出荷状況'] as const;
+const ORDER_CSV_HEADERS = ['注文ID', '顧客名', '顧客メール', '注文日', '購入商品', '商品数', '合計金額', '決済状況'] as const;
 
 function formatOrderItems(items: OrderItem['items']): string {
   return items.map((item) => `${item.name} x${item.quantity}`).join(' / ');
@@ -33,92 +39,25 @@ function escapeCsvValue(value: string): string {
   return `"${escapedValue}"`;
 }
 
-const initialOrders: OrderItem[] = [
-  {
-    id: 'ORD-2025-0156',
-    customerName: '中村 優子',
-    customerEmail: 'nakamura@example.com',
-    orderDate: '2025-01-15',
-    itemCount: '3点',
-    items: [
-      { name: 'オーバーサイズシャツ', quantity: 1 },
-      { name: 'ワイドパンツ', quantity: 1 },
-      { name: 'レザーベルト', quantity: 1 },
-    ],
-    totalAmount: '¥78,000',
-    status: '未決済',
-  },
-  {
-    id: 'ORD-2025-0155',
-    customerName: '小林 大輔',
-    customerEmail: 'kobayashi@example.com',
-    orderDate: '2025-01-15',
-    itemCount: '2点',
-    items: [
-      { name: 'ニットカーディガン', quantity: 1 },
-      { name: 'テーパードスラックス', quantity: 1 },
-    ],
-    totalAmount: '¥45,000',
-    status: '決済完了',
-  },
-  {
-    id: 'ORD-2025-0154',
-    customerName: '加藤 真理',
-    customerEmail: 'kato@example.com',
-    orderDate: '2025-01-14',
-    itemCount: '4点',
-    items: [
-      { name: 'ウールコート', quantity: 1 },
-      { name: 'ハイゲージニット', quantity: 1 },
-      { name: 'デニムパンツ', quantity: 1 },
-      { name: 'レザーシューズ', quantity: 1 },
-    ],
-    totalAmount: '¥128,000',
-    status: '出荷完了',
-  },
-  {
-    id: 'ORD-2025-0153',
-    customerName: '吉田 翔太',
-    customerEmail: 'yoshida@example.com',
-    orderDate: '2025-01-14',
-    itemCount: '1点',
-    items: [{ name: 'ミニマルジャケット', quantity: 1 }],
-    totalAmount: '¥35,000',
-    status: '配達完了',
-  },
-  {
-    id: 'ORD-2025-0152',
-    customerName: '渡辺 美穂',
-    customerEmail: 'watanabe@example.com',
-    orderDate: '2025-01-13',
-    itemCount: '3点',
-    items: [
-      { name: 'タートルネックニット', quantity: 2 },
-      { name: 'プリーツスカート', quantity: 1 },
-    ],
-    totalAmount: '¥92,000',
-    status: '配達完了',
-  },
-  {
-    id: 'ORD-2025-0151',
-    customerName: '松本 健一',
-    customerEmail: 'matsumoto@example.com',
-    orderDate: '2025-01-12',
-    itemCount: '2点',
-    items: [
-      { name: 'ダブルジャケット', quantity: 1 },
-      { name: 'ストレートパンツ', quantity: 1 },
-    ],
-    totalAmount: '¥56,000',
-    status: 'キャンセル',
-  },
-];
-
 export default function AdminPage() {
   const { isLoggedIn, isAuthResolved, userRole } = useLogin();
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabType>('KPI');
-  const [orders, setOrders] = useState<OrderItem[]>(initialOrders);
+  const [orders, setOrders] = useState<OrderItem[]>([]);
+  const [isOrdersLoading, setIsOrdersLoading] = useState(false);
+  const [ordersErrorMessage, setOrdersErrorMessage] = useState<string | null>(null);
+  const [ordersPage, setOrdersPage] = useState(1);
+  const [ordersPageSize] = useState(20);
+  const [ordersTotalPages, setOrdersTotalPages] = useState(1);
+  const [ordersTotalCount, setOrdersTotalCount] = useState(0);
+  const [periodFromInput, setPeriodFromInput] = useState('');
+  const [periodToInput, setPeriodToInput] = useState('');
+  const [periodFrom, setPeriodFrom] = useState('');
+  const [periodTo, setPeriodTo] = useState('');
+  const [periodErrorMessage, setPeriodErrorMessage] = useState<string | null>(null);
+  const [orderStatusFilters, setOrderStatusFilters] = useState<OrderStatusFilterValue[]>(['all']);
+  const [orderSearchKeyword, setOrderSearchKeyword] = useState('');
+  const [processingOrderIds, setProcessingOrderIds] = useState<string[]>([]);
 
   const visibleTabs = useMemo<TabType[]>(() => {
     if (userRole === 'admin') {
@@ -158,6 +97,75 @@ export default function AdminPage() {
     }
   }, [activeTab, visibleTabs, canAccessAdmin]);
 
+  const fetchOrders = useCallback(async (nextPage?: number) => {
+    try {
+      setIsOrdersLoading(true);
+      setOrdersErrorMessage(null);
+
+      const page = nextPage ?? ordersPage;
+      const query = new URLSearchParams({
+        page: String(page),
+        pageSize: String(ordersPageSize),
+      });
+
+      if (periodFrom) {
+        query.set('from', periodFrom);
+      }
+
+      if (periodTo) {
+        query.set('to', periodTo);
+      }
+
+      const response = await clientFetch(`/api/admin/orders?${query.toString()}`, {
+        cache: 'no-store',
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error('認証が必要です。再ログインしてください。');
+        }
+
+        if (response.status === 403) {
+          throw new Error('注文一覧を表示する権限がありません。');
+        }
+
+        throw new Error('注文一覧の取得に失敗しました。');
+      }
+
+      const json = (await response.json()) as {
+        data: OrderItem[];
+        pagination: {
+          page: number;
+          pageSize: number;
+          total: number;
+          totalPages: number;
+        };
+      };
+
+      setOrders(json.data ?? []);
+      setOrdersPage(json.pagination?.page ?? page);
+      setOrdersTotalPages(json.pagination?.totalPages ?? 1);
+      setOrdersTotalCount(json.pagination?.total ?? 0);
+    } catch (error) {
+      console.error('Failed to fetch admin orders:', error);
+      setOrdersErrorMessage(error instanceof Error ? error.message : '注文一覧の取得に失敗しました。');
+    } finally {
+      setIsOrdersLoading(false);
+    }
+  }, [ordersPage, ordersPageSize, periodFrom, periodTo]);
+
+  useEffect(() => {
+    if (!canAccessAdmin) {
+      return;
+    }
+
+    if (activeTab !== 'ORDER') {
+      return;
+    }
+
+    void fetchOrders();
+  }, [activeTab, canAccessAdmin, fetchOrders]);
+
   const pendingShipmentCount = useMemo(
     () => orders.filter((order) => order.status === '未決済').length,
     [orders],
@@ -168,25 +176,172 @@ export default function AdminPage() {
     [orders],
   );
 
-  const handleTransitStatus = (id: string) => {
-    setOrders((prevOrders) =>
-      prevOrders.map((order) => {
-        if (order.id !== id) return order;
+  const displayedOrders = useMemo(() => {
+    const normalizedKeyword = orderSearchKeyword.trim().toLowerCase();
+    const hasAllFilter = orderStatusFilters.includes('all');
 
-        const nextStatus = statusTransitionMap[order.status];
-        if (!nextStatus) return order;
+    return orders.filter((order) => {
+      const matchesStatus = hasAllFilter ? true : orderStatusFilters.includes(order.status);
+      const matchesKeyword =
+        normalizedKeyword.length === 0
+          ? true
+          : [order.id, order.customerName, order.customerEmail].some((value) =>
+              value.toLowerCase().includes(normalizedKeyword),
+            );
 
-        return {
-          ...order,
-          status: nextStatus,
-        };
-      }),
-    );
+      return matchesStatus && matchesKeyword;
+    });
+  }, [orders, orderSearchKeyword, orderStatusFilters]);
+
+  const handleStatusFilterToggle = (nextFilter: OrderStatusFilterValue) => {
+    setOrderStatusFilters((prev) => {
+      if (nextFilter === 'all') {
+        return ['all'];
+      }
+
+      const nextValues = prev.filter((value) => value !== 'all');
+
+      if (nextValues.includes(nextFilter)) {
+        const filteredValues = nextValues.filter((value) => value !== nextFilter);
+        return filteredValues.length > 0 ? filteredValues : ['all'];
+      }
+
+      return [...nextValues, nextFilter];
+    });
+  };
+
+  const updateProcessingOrder = (id: string, shouldAdd: boolean) => {
+    setProcessingOrderIds((prev) => {
+      if (shouldAdd) {
+        if (prev.includes(id)) {
+          return prev;
+        }
+        return [...prev, id];
+      }
+
+      return prev.filter((itemId) => itemId !== id);
+    });
+  };
+
+  const handleCancelOrder = async (id: string) => {
+    if (!window.confirm('この注文をキャンセルしますか？')) {
+      return;
+    }
+
+    try {
+      setOrdersErrorMessage(null);
+      updateProcessingOrder(id, true);
+
+      const response = await clientFetch(`/api/admin/orders/${id}/status`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: 'cancelled' }),
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error('認証が必要です。再ログインしてください。');
+        }
+
+        if (response.status === 403) {
+          throw new Error('注文ステータス更新の権限がありません。');
+        }
+
+        throw new Error('注文ステータスの更新に失敗しました。');
+      }
+
+      setOrders((prevOrders) =>
+        prevOrders.map((order) =>
+          order.id === id
+            ? {
+                ...order,
+                status: 'キャンセル',
+              }
+            : order,
+        ),
+      );
+    } catch (error) {
+      console.error('Failed to cancel order:', error);
+      setOrdersErrorMessage(error instanceof Error ? error.message : '注文ステータスの更新に失敗しました。');
+    } finally {
+      updateProcessingOrder(id, false);
+    }
+  };
+
+  const handleRefundOrder = async (id: string) => {
+    if (!window.confirm('この注文を全額返金しますか？')) {
+      return;
+    }
+
+    try {
+      setOrdersErrorMessage(null);
+      updateProcessingOrder(id, true);
+
+      const response = await clientFetch(`/api/admin/orders/${id}/refund`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ reason: 'requested_by_customer' }),
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error('認証が必要です。再ログインしてください。');
+        }
+
+        if (response.status === 403) {
+          throw new Error('返金操作の権限がありません。');
+        }
+
+        throw new Error('返金処理に失敗しました。');
+      }
+
+      setOrders((prevOrders) =>
+        prevOrders.map((order) =>
+          order.id === id
+            ? {
+                ...order,
+                status: 'キャンセル',
+                canRefund: false,
+              }
+            : order,
+        ),
+      );
+    } catch (error) {
+      console.error('Failed to refund order:', error);
+      setOrdersErrorMessage(error instanceof Error ? error.message : '返金処理に失敗しました。');
+    } finally {
+      updateProcessingOrder(id, false);
+    }
+  };
+
+  const handleApplyPeriodFilter = () => {
+    if (periodFromInput && periodToInput && periodFromInput > periodToInput) {
+      setPeriodErrorMessage('期間指定が不正です。開始日は終了日以前にしてください。');
+      return;
+    }
+
+    setPeriodErrorMessage(null);
+    setPeriodFrom(periodFromInput);
+    setPeriodTo(periodToInput);
+    setOrdersPage(1);
+  };
+
+  const handleClearPeriodFilter = () => {
+    setPeriodFromInput('');
+    setPeriodToInput('');
+    setPeriodFrom('');
+    setPeriodTo('');
+    setPeriodErrorMessage(null);
+    setOrdersPage(1);
   };
 
   const handleExportOrdersCsv = () => {
     // only export orders that are in the “決済完了” status
-    const filtered = orders.filter((o) => o.status === '決済完了');
+    const filtered = displayedOrders.filter((o) => o.status === '決済完了');
 
     const csvRows = filtered.map((order) => {
       const row = [
@@ -243,17 +398,31 @@ export default function AdminPage() {
         );
       case 'ORDER':
         return (
-          <div className="flex items-center gap-4">
-            <Button variant="secondary" size="sm" className="font-acumin" onClick={handleExportOrdersCsv}>
-              CSVエクスポート
-            </Button>
-            <div className="flex items-center gap-2 text-sm font-acumin">
-              <span className="w-3 h-3 bg-red-100 rounded-full" />
-              <span className="text-[#474747]">未決済: {pendingShipmentCount}</span>
+          <div className="flex items-center justify-end gap-3 whitespace-nowrap">
+            <div className="w-80 shrink-0 xl:w-96">
+              <SearchField
+                label=""
+                placeholder="注文ID / 顧客名 / メール"
+                value={orderSearchKeyword}
+                onChange={(event) => setOrderSearchKeyword(event.target.value)}
+                showClearButton
+                onClear={() => setOrderSearchKeyword('')}
+                size='sm'
+                className="font-acumin"
+              />
             </div>
-            <div className="flex items-center gap-2 text-sm font-acumin">
-              <span className="w-3 h-3 bg-yellow-100 rounded-full" />
-              <span className="text-[#474747]">決済完了: {preparingShipmentCount}</span>
+            <div className="flex shrink-0 gap-2">
+              {ORDER_STATUS_FILTERS.map((statusFilter) => (
+                <Button
+                  key={statusFilter.value}
+                  variant={orderStatusFilters.includes(statusFilter.value) ? 'primary' : 'secondary'}
+                  size="sm"
+                  className="font-acumin"
+                  onClick={() => handleStatusFilterToggle(statusFilter.value)}
+                >
+                  {statusFilter.label}
+                </Button>
+              ))}
             </div>
           </div>
         );
@@ -280,7 +449,83 @@ export default function AdminPage() {
         if (userRole !== 'admin') return null;
         return <UserSection />;
       case 'ORDER':
-        return <OrderSection orders={orders} onTransitStatus={handleTransitStatus} />;
+        return (
+          <div className="space-y-4">
+            <div className="space-y-3 border-b border-black/10 pb-4">
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="flex items-center gap-2">
+                  <DateTimePicker
+                    id="orders-from"
+                    label=""
+                    mode="date"
+                    value={periodFromInput}
+                    onChange={(event) => setPeriodFromInput(event.target.value)}
+                    size="sm"
+                    className="w-full"
+                  />
+                  <span className="text-sm text-[#474747] font-acumin">~</span>
+                  <DateTimePicker
+                    id="orders-to"
+                    label=""
+                    mode="date"
+                    value={periodToInput}
+                    onChange={(event) => setPeriodToInput(event.target.value)}
+                    size="sm"
+                    className="w-full"
+                  />
+                </div>
+                <Button variant="secondary" size="sm" className="font-acumin" onClick={handleApplyPeriodFilter}>
+                  期間適用
+                </Button>
+                <Button variant="secondary" size="sm" className="font-acumin" onClick={handleClearPeriodFilter}>
+                  期間クリア
+                </Button>
+                <Button variant="secondary" size="sm" className="font-acumin" onClick={handleExportOrdersCsv}>
+                  CSVエクスポート
+                </Button>
+                <div className="flex items-center gap-2 text-xs font-acumin">
+                  <span className="text-[#474747]">{ordersTotalCount}件（表示 {displayedOrders.length}件）</span>
+                  <span className="text-[#474747]">{ordersPage} / {ordersTotalPages}ページ</span>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="font-acumin"
+                    onClick={() => setOrdersPage((prev) => Math.max(1, prev - 1))}
+                    disabled={ordersPage <= 1 || isOrdersLoading}
+                  >
+                    前へ
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="font-acumin"
+                    onClick={() => setOrdersPage((prev) => Math.min(ordersTotalPages, prev + 1))}
+                    disabled={ordersPage >= ordersTotalPages || isOrdersLoading}
+                  >
+                    次へ
+                  </Button>
+                </div>
+                <div className="flex items-center gap-2 text-sm font-acumin ml-2">
+                  <span className="w-3 h-3 bg-red-100 rounded-full" />
+                  <span className="text-[#474747]">未決済: {pendingShipmentCount}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm font-acumin">
+                  <span className="w-3 h-3 bg-yellow-100 rounded-full" />
+                  <span className="text-[#474747]">決済完了: {preparingShipmentCount}</span>
+                </div>
+              </div>
+            </div>
+            {periodErrorMessage ? <p className="text-sm text-red-700 font-acumin">{periodErrorMessage}</p> : null}
+            <OrderSection
+              orders={displayedOrders}
+              isLoading={isOrdersLoading}
+              errorMessage={ordersErrorMessage}
+              onCancelOrder={handleCancelOrder}
+              onRefundOrder={handleRefundOrder}
+              processingOrderIds={processingOrderIds}
+            />
+          </div>
+        );
       default:
         return null;
     }

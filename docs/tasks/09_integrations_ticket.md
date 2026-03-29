@@ -36,6 +36,7 @@ updated: 2026-01-17
 
 # チェックリスト
 
-- [ ] Stripe 統合 + Webhook 署名検証
+- [x] Stripe 統合 + Webhook 署名検証
+- [x] 管理画面 ORDER タブ向け Stripe Refund API 連携（`POST /api/admin/orders/:id/refund`）
 - [ ] SendGrid テンプレート連携
 - [ ] 配送 API 初期連携
