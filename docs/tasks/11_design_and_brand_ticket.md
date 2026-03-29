@@ -92,6 +92,8 @@ updated: 2026-03-08
 - [x] `item/[id]` の購入操作ボタンを `/ui` の `Button` サンプル（`WITH ICON` / `ICON ONLY` / `DISABLED`）準拠の見た目・状態表示に統一
 - [x] `look/[id]` の `STYLING ITEMS` 表示を `/ui` の `List` サンプル準拠に差し替え、共通 `List` コンポーネントを適用
 - [x] `look/[id]` の `STYLING ITEMS` で `item.category` が表示されるよう、`getPublishedLooks` の linked item 取得項目に `category` を追加
+- [x] `look/[id]` の PREV/NEXT 遷移後にメイン画像が空描画になることがある不具合を修正し、hero画像を `key + priority + sizes` で安定描画させる
+- [x] `look/[id]` の初回遷移時に `STYLING ITEMS` サムネイルが出ないことがある不具合を修正し、`List` showcase画像を「高さ基準 + 幅auto」のアスペクト比表示へ変更して、リロード時の正方形見えを解消した
 - [x] `src/app/components/ui` の全コンポーネントで `size`（`sm` / `md` / `lg`）指定を可能にし、共通サイズトークン（`uiSizeClass`）で反映
 - [x] `/ui` に `sm` / `md` / `lg` のデモサイズ切替を追加し、主要デモを `size={demoSize}` で確認可能にした
 - [x] `src/app`（`src/app/components/ui` 除外）の UI利用箇所で、`size` 対応コンポーネント未指定分へ `size="md"` を明示追加（既存指定は維持）

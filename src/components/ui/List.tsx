@@ -34,7 +34,8 @@ export type ListProps<T> = CustomListProps<T> | ShowcaseListProps<T>;
 const showcaseSizeMap: Record<ComponentSize, {
   rowPadding: string;
   rowGap: string;
-  previewSize: string;
+  previewHeight: string;
+  previewIconBox: string;
   titleSize: string;
   categorySize: string;
   rightSize: string;
@@ -43,7 +44,8 @@ const showcaseSizeMap: Record<ComponentSize, {
   sm: {
     rowPadding: 'px-3 py-2',
     rowGap: 'gap-3',
-    previewSize: 'w-10 h-10',
+    previewHeight: 'h-10',
+    previewIconBox: 'w-10 h-10',
     titleSize: 'text-xs',
     categorySize: 'text-[10px]',
     rightSize: 'text-xs',
@@ -52,7 +54,8 @@ const showcaseSizeMap: Record<ComponentSize, {
   md: {
     rowPadding: 'px-4 py-3',
     rowGap: 'gap-4',
-    previewSize: 'w-12 h-12',
+    previewHeight: 'h-12',
+    previewIconBox: 'w-12 h-12',
     titleSize: 'text-sm',
     categorySize: 'text-xs',
     rightSize: 'text-sm',
@@ -61,7 +64,8 @@ const showcaseSizeMap: Record<ComponentSize, {
   lg: {
     rowPadding: 'px-5 py-4',
     rowGap: 'gap-5',
-    previewSize: 'w-14 h-14',
+    previewHeight: 'h-14',
+    previewIconBox: 'w-14 h-14',
     titleSize: 'text-base',
     categorySize: 'text-sm',
     rightSize: 'text-base',
@@ -88,7 +92,7 @@ export function List<T>({ items, itemKey, className, size = 'md', ...props }: Li
   return (
     <ul className={cn(gapClass, className)}>
       {items.map((item, index) => (
-        <li key={itemKey ? itemKey(item, index) : index} className={cn(!isShowcaseVariant && itemTextClass, isShowcaseVariant && 'hover:bg-[#f5f5f5]') }>
+        <li key={itemKey ? itemKey(item, index) : index} className={cn(!isShowcaseVariant && itemTextClass, isShowcaseVariant && 'hover:bg-[#f5f5f5]')}>
           {isShowcaseVariant ? (
             props.getHref ? (
               <Link
@@ -100,16 +104,19 @@ export function List<T>({ items, itemKey, className, size = 'md', ...props }: Li
                 )}
               >
                 <div className={cn('flex items-center', showcaseClasses.rowGap)}>
-                  <div className={cn('bg-[#f5f5f5] relative overflow-hidden flex items-center justify-center', showcaseClasses.previewSize, 'h-auto')}>
+                  <div className={cn('relative flex shrink-0 items-center justify-center overflow-hidden', showcaseClasses.previewHeight)}>
                     {props.getImage ? (
                       <Image
                         src={props.getImage(item) || '/placeholder.png'}
                         alt={props.getName(item)}
-                        fill
-                        className="object-contain"
+                        width={96}
+                        height={144}
+                        sizes="(min-width: 1024px) 56px, 40px"
+                        loading="eager"
+                        className="h-full w-auto object-contain"
                       />
                     ) : (
-                      <div className="w-5 h-5 flex items-center justify-center">
+                      <div className={cn('flex items-center justify-center bg-[#f5f5f5]', showcaseClasses.previewIconBox)}>
                         <i className={cn('ri-image-line text-black/40', showcaseClasses.iconSize)}></i>
                       </div>
                     )}
@@ -141,16 +148,19 @@ export function List<T>({ items, itemKey, className, size = 'md', ...props }: Li
                 )}
               >
                 <div className={cn('flex items-center', showcaseClasses.rowGap)}>
-                  <div className={cn('bg-[#f5f5f5] relative overflow-hidden flex items-center justify-center', showcaseClasses.previewSize, 'h-auto')}>
+                  <div className={cn('relative flex shrink-0 items-center justify-center overflow-hidden', showcaseClasses.previewHeight)}>
                     {props.getImage ? (
                       <Image
                         src={props.getImage(item) || '/placeholder.png'}
                         alt={props.getName(item)}
-                        fill
-                        className="object-contain"
+                        width={96}
+                        height={144}
+                        sizes="(min-width: 1024px) 56px, 40px"
+                        loading="eager"
+                        className="h-full w-auto object-contain"
                       />
                     ) : (
-                      <div className="w-5 h-5 flex items-center justify-center">
+                      <div className={cn('flex items-center justify-center bg-[#f5f5f5]', showcaseClasses.previewIconBox)}>
                         <i className={cn('ri-image-line text-black/40', showcaseClasses.iconSize)}></i>
                       </div>
                     )}
