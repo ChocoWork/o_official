@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import AdminTabs, { type TabType } from '@/components/AdminTabs';
 import { useLogin } from '@/contexts/LoginContext';
 import { clientFetch } from '@/lib/client-fetch';
-import KpiSection from '@/components/KpiSection';
+import KpiSection, { type AdminKpiData } from '@/components/KpiSection';
 import NewsSection from '@/components/NewsSection';
 import ItemSection from '@/components/ItemSection';
 import LookSection from '@/components/LookSection';
@@ -43,6 +43,9 @@ export default function AdminPage() {
   const { isLoggedIn, isAuthResolved, userRole } = useLogin();
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabType>('KPI');
+  const [kpiData, setKpiData] = useState<AdminKpiData | null>(null);
+  const [isKpiLoading, setIsKpiLoading] = useState(false);
+  const [kpiErrorMessage, setKpiErrorMessage] = useState<string | null>(null);
   const [orders, setOrders] = useState<OrderItem[]>([]);
   const [isOrdersLoading, setIsOrdersLoading] = useState(false);
   const [ordersErrorMessage, setOrdersErrorMessage] = useState<string | null>(null);
@@ -72,6 +75,37 @@ export default function AdminPage() {
   }, [userRole]);
 
   const canAccessAdmin = visibleTabs.length > 0;
+
+  const fetchKpi = useCallback(async () => {
+    try {
+      setIsKpiLoading(true);
+      setKpiErrorMessage(null);
+
+      const response = await clientFetch('/api/admin/kpi', {
+        cache: 'no-store',
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error('認証が必要です。再ログインしてください。');
+        }
+
+        if (response.status === 403) {
+          throw new Error('KPIを表示する権限がありません。');
+        }
+
+        throw new Error('KPIの取得に失敗しました。');
+      }
+
+      const json = (await response.json()) as { data: AdminKpiData };
+      setKpiData(json.data);
+    } catch (error) {
+      console.error('Failed to fetch admin KPI:', error);
+      setKpiErrorMessage(error instanceof Error ? error.message : 'KPIの取得に失敗しました。');
+    } finally {
+      setIsKpiLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!canAccessAdmin) {
@@ -165,6 +199,18 @@ export default function AdminPage() {
 
     void fetchOrders();
   }, [activeTab, canAccessAdmin, fetchOrders]);
+
+  useEffect(() => {
+    if (!canAccessAdmin || userRole !== 'admin') {
+      return;
+    }
+
+    if (activeTab !== 'KPI') {
+      return;
+    }
+
+    void fetchKpi();
+  }, [activeTab, canAccessAdmin, fetchKpi, userRole]);
 
   const pendingShipmentCount = useMemo(
     () => orders.filter((order) => order.status === '未決済').length,
@@ -435,7 +481,7 @@ export default function AdminPage() {
     switch (activeTab) {
       case 'KPI':
         if (userRole !== 'admin') return null;
-        return <KpiSection />;
+        return <KpiSection data={kpiData} isLoading={isKpiLoading} errorMessage={kpiErrorMessage} onRetry={fetchKpi} />;
       case 'NEWS':
         if (userRole !== 'admin') return null;
         return <NewsSection />;
