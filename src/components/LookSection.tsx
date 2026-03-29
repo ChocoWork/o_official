@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { clientFetch } from '@/lib/client-fetch';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { StatusBadge } from '@/components/ui/StatusBadge';
+import { TagLabel } from '@/components/ui/TagLabel';
 
 type AdminLookItem = {
 	id: number;
@@ -105,9 +105,12 @@ export default function LookSection() {
 						/>
 						<div className="p-4 space-y-3">
 							<div className="flex items-center space-x-2">
-								<StatusBadge tone={item.status === 'published' ? 'positive' : 'neutral'} size="md">
+								<TagLabel
+									variant={item.status === 'published' ? 'solid' : 'outline'}
+									size="md"
+								>
 									{item.status === 'published' ? '公開中' : '非公開'}
-								</StatusBadge>
+								</TagLabel>
 							</div>
 							<p className="text-xs text-[#474747] tracking-widest font-acumin">
 								{item.season_year} {item.season_type}
