@@ -58,7 +58,7 @@ const Header = () => {
 
 
   return (
-    <header className={`fixed left-0 right-0 bg-white z-50 border-b border-black/10 transition-transform duration-300 ease-in-out ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}`}>
+    <header className={`fixed left-0 right-0 bg-white z-50 transition-transform duration-300 ease-in-out ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}`}>
       <div className="px-6 lg:px-12 py-6">
         <div className="flex items-center justify-between">
           {/* サイトタイトル */}
