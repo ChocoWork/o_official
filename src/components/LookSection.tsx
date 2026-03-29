@@ -92,7 +92,7 @@ export default function LookSection() {
 
 	return (
 		<section>
-			<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+			<div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
 				{lookItems.map((item) => (
 					<Card key={item.id} className="overflow-hidden p-0" size="md">
 						<Image
