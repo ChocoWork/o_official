@@ -58,6 +58,7 @@ const Header = () => {
 
 
   return (
+    <>
     <header className={`fixed left-0 right-0 bg-white z-50 transition-transform duration-300 ease-in-out ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}`}>
       <div className="px-6 lg:px-12 py-6">
         <div className="flex items-center justify-between">
@@ -130,6 +131,8 @@ const Header = () => {
         </div>
       </div>
 
+    </header>
+
       <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} size="md">
         <div className="p-8">
           <div className="flex items-center justify-between mb-8">
@@ -192,7 +195,7 @@ const Header = () => {
       </Drawer>
 
       <LoginModal open={loginOpen && !isLoggedIn} onClose={() => setLoginOpen(false)} />
-    </header>
+    </>
   );
 };
 

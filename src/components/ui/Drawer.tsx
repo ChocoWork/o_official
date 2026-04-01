@@ -23,7 +23,7 @@ export function Drawer({ open, onClose, side = 'right', children, className, siz
   };
 
   return (
-    <div className="fixed inset-0 z-50" onClick={onClose}>
+    <div className="fixed inset-0 z-[100]" onClick={onClose}>
       <div className="absolute inset-0 bg-black/40"></div>
       <aside
         className={cn(
