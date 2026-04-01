@@ -47,6 +47,7 @@
             "matchCommandLine": true
         },
         "npx eslint": true,
-        "npx playwright": true
+        "npx playwright": true,
+        "Get-Process": true
     }
 }

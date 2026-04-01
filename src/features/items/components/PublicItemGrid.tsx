@@ -17,21 +17,18 @@ type PublicItemGridHomeProps = {
   items?: Item[];
   fetchLimit?: number;
   className?: string;
-  /** home バリアント時のみ適用。未指定時は 6 */
-  mobileLimit?: number;
 };
 
 type PublicItemGridCatalogProps = {
   variant: 'catalog';
   items?: Item[];
   className?: string;
-  mobileLimit?: number;
 };
 
 type PublicItemGridProps = PublicItemGridHomeProps | PublicItemGridCatalogProps;
 
 export function PublicItemGrid(props: PublicItemGridProps) {
-  const { variant, mobileLimit } = props;
+  const { variant } = props;
 
   // Category filter state - catalog variant only
   const [selectedCategory, setSelectedCategory] = useState<ItemCategory>('ALL');
@@ -57,7 +54,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
       ? resolvedItems.filter((item) => item.category === selectedCategory)
       : resolvedItems;
 
-  const resolvedMobileLimit = variant === 'home' ? (mobileLimit ?? 6) : mobileLimit;
+  const resolvedMobileLimit = variant === 'home' ? 6 : undefined;
   const shouldLimitOnMobile = typeof resolvedMobileLimit === 'number';
   const hasHiddenItemsOnTablet = shouldLimitOnMobile && resolvedItems.length > resolvedMobileLimit;
 

@@ -17,7 +17,7 @@ type NewsCategory = (typeof NEWS_CATEGORIES)[number];
 type PublicNewsGridHomeProps = {
   variant: 'home';
   articles?: PublicNewsArticle[];
-  /** 未指定時は 3 */
+  /** 未指定時は 6 */
   fetchLimit?: number;
   className?: string;
 };
@@ -40,6 +40,8 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
 
   const shouldFetch = typeof props.articles === 'undefined';
   const fetchLimit = variant === 'home' ? (props.fetchLimit ?? 6) : undefined;
+  // Over-fetch by 1 to detect whether more articles exist beyond fetchLimit
+  const overFetchLimit = typeof fetchLimit === 'number' ? fetchLimit + 1 : undefined;
 
   useEffect(() => {
     if (!shouldFetch) {
@@ -47,8 +49,8 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
     }
 
     const query = new URLSearchParams();
-    if (typeof fetchLimit === 'number') {
-      query.set('limit', String(fetchLimit));
+    if (typeof overFetchLimit === 'number') {
+      query.set('limit', String(overFetchLimit));
     }
 
     const url = query.toString() ? `/api/news?${query.toString()}` : '/api/news';
@@ -73,11 +75,18 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
     };
 
     fetchNews();
-  }, [shouldFetch, fetchLimit]);
+  }, [shouldFetch, overFetchLimit]);
 
-  const resolvedArticles = useMemo(
+  const sourceArticles = useMemo(
     () => (typeof props.articles === 'undefined' ? fetchedArticles : props.articles),
     [fetchedArticles, props.articles],
+  );
+
+  const hasMoreArticles = typeof fetchLimit === 'number' && sourceArticles.length > fetchLimit;
+
+  const resolvedArticles = useMemo(
+    () => sourceArticles.slice(0, fetchLimit ?? sourceArticles.length),
+    [sourceArticles, fetchLimit],
   );
 
   const displayArticles = useMemo(() => {
@@ -100,59 +109,68 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
     return `/news/${article.id}`;
   };
 
+  // Mobile: show only 3 articles on home variant (hidden lg:block hides them below lg breakpoint)
+  const resolvedMobileLimit = variant === 'home' ? 3 : undefined;
+  const shouldLimitOnMobile = typeof resolvedMobileLimit === 'number';
+  const hasHiddenItemsOnMobile = shouldLimitOnMobile && resolvedArticles.length > resolvedMobileLimit;
+
   const renderGrid = () => (
     <div className={gridClassName}>
-      {displayArticles.map((article) => (
-        <Link key={article.id} href={resolveBuildHref(article)}>
-          <article className="group cursor-pointer">
-            <div className="aspect-[4/3] overflow-hidden mb-6 bg-[#f5f5f5] relative">
-              <Image
-                alt={article.title}
-                className="w-full h-full object-cover object-center transition-transform duration-700 group-hover:scale-105"
-                src={article.image_url}
-                width={1200}
-                height={750}
-              />
-            </div>
+      {displayArticles.map((article, index) => {
+        const hideOnMobile = shouldLimitOnMobile && index >= resolvedMobileLimit!;
 
-            <div className="space-y-3">
-              <div className="flex items-center space-x-4">
-                <span
-                  className="text-xs text-[#474747] tracking-widest"
-                  style={{ fontFamily: 'acumin-pro, sans-serif' }}
-                >
-                  {article.published_date.replace(/-/g, '.')}
-                </span>
-                <TagLabel className="font-acumin" size="sm">
-                  {article.category}
-                </TagLabel>
+        return (
+          <Link key={article.id} href={resolveBuildHref(article)} className={hideOnMobile ? 'hidden lg:block' : undefined}>
+            <article className="group cursor-pointer">
+              <div className="aspect-[4/3] overflow-hidden mb-6 bg-[#f5f5f5] relative">
+                <Image
+                  alt={article.title}
+                  className="w-full h-full object-cover object-center transition-transform duration-700 group-hover:scale-105"
+                  src={article.image_url}
+                  width={1200}
+                  height={750}
+                />
               </div>
 
-              <h2
-                className="text-sm md:text-base lg:text-lg text-black font-brand group-hover:text-[#474747] transition-colors duration-300"
-              >
-                {article.title}
-              </h2>
+              <div className="space-y-3">
+                <div className="flex items-center space-x-4">
+                  <span
+                    className="text-xs text-[#474747] tracking-widest"
+                    style={{ fontFamily: 'acumin-pro, sans-serif' }}
+                  >
+                    {article.published_date.replace(/-/g, '.')}
+                  </span>
+                  <TagLabel className="font-acumin" size="sm">
+                    {article.category}
+                  </TagLabel>
+                </div>
 
-              <p
-                className="text-xs text-[#474747] leading-relaxed line-clamp-3"
-                style={{ fontFamily: 'acumin-pro, sans-serif' }}
-              >
-                {article.content}
-              </p>
+                <h2
+                  className="text-sm md:text-base lg:text-lg text-black font-brand group-hover:text-[#474747] transition-colors duration-300"
+                >
+                  {article.title}
+                </h2>
 
-              <div className="pt-2">
-                <span
-                  className="text-xs text-black tracking-widest group-hover:underline"
+                <p
+                  className="text-xs text-[#474747] leading-relaxed line-clamp-3"
                   style={{ fontFamily: 'acumin-pro, sans-serif' }}
                 >
-                  READ MORE →
-                </span>
+                  {article.content}
+                </p>
+
+                <div className="pt-2">
+                  <span
+                    className="text-xs text-black tracking-widest group-hover:underline"
+                    style={{ fontFamily: 'acumin-pro, sans-serif' }}
+                  >
+                    READ MORE →
+                  </span>
+                </div>
               </div>
-            </div>
-          </article>
-        </Link>
-      ))}
+            </article>
+          </Link>
+        );
+      })}
     </div>
   );
 
@@ -180,14 +198,6 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
     </div>
   );
 
-  const renderContent = (entries: PublicNewsArticle[], emptyMessage: string) => {
-    if (loading) return renderLoading();
-    if (error) return renderError();
-    if (entries.length === 0) return renderEmpty(emptyMessage);
-
-    return renderGrid();
-  };
-
   // home variant rendering
   if (variant === 'home') {
     return (
@@ -195,13 +205,24 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
         <div className="max-w-7xl mx-auto">
           <SectionTitle title="NEWS" />
 
-          {renderContent(resolvedArticles, '現在、公開されている記事はありません')}
-
-          <div className="text-center mt-12 md:mt-16">
-            <Button href="/news" variant="secondary" size="md" className="font-acumin">
-              VIEW ALL NEWS
-            </Button>
-          </div>
+          {loading ? (
+            renderLoading()
+          ) : error ? (
+            renderError()
+          ) : resolvedArticles.length === 0 ? (
+            renderEmpty('現在、公開されている記事はありません')
+          ) : (
+            <>
+              {renderGrid()}
+              {(hasHiddenItemsOnMobile || hasMoreArticles) && (
+                <div className="text-center mt-12 md:mt-16">
+                  <Button href="/news" variant="secondary" size="md" className="font-acumin">
+                    VIEW ALL NEWS
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
         </div>
       </section>
     );
