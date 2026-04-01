@@ -10,7 +10,7 @@ import { getPublishedNews } from '@/features/news/services/public';
 export default async function Home() {
   const [homeItems, homeNews] = await Promise.all([
     getPublishedItems(9),
-    getPublishedNews({ limit: 3 }),
+    getPublishedNews({ limit: 6 }),
   ]);
 
   return (

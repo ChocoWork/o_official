@@ -10,7 +10,7 @@ import { TabSegmentControl } from '@/components/ui/TabSegmentControl';
 import { categories } from '@/lib/news-data';
 import { PublicNewsArticle } from '@/features/news/types';
 
-const DEFAULT_GRID_CLASS = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 lg:gap-12';
+const DEFAULT_GRID_CLASS = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8 lg:gap-12';
 const NEWS_CATEGORIES = categories;
 type NewsCategory = (typeof NEWS_CATEGORIES)[number];
 
@@ -39,7 +39,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
   const [selectedCategory, setSelectedCategory] = useState<NewsCategory>('ALL');
 
   const shouldFetch = typeof props.articles === 'undefined';
-  const fetchLimit = variant === 'home' ? (props.fetchLimit ?? 3) : undefined;
+  const fetchLimit = variant === 'home' ? (props.fetchLimit ?? 6) : undefined;
 
   useEffect(() => {
     if (!shouldFetch) {
@@ -129,7 +129,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
               </div>
 
               <h2
-                className="text-lg text-black font-brand group-hover:text-[#474747] transition-colors duration-300"
+                className="text-sm md:text-base lg:text-lg text-black font-brand group-hover:text-[#474747] transition-colors duration-300"
               >
                 {article.title}
               </h2>
