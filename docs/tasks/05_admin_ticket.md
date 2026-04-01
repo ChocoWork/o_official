@@ -67,6 +67,7 @@ updated: 2026-02-23
 - [x] 注文ステータス変更イベントを `audit_logs` に記録できる
 - [x] 管理画面 ORDER タブでステータス絞り込み・検索・操作中制御を実装し、操作性を改善した
 - [x] 管理画面 KPI タブで実データ（注文・商品・LOOK・NEWS・ユーザー集計）を表示できる
+- [x] 管理画面 KPI タブでシーズン別KPI目標（複数年）を編集・保存できる
 - [x] 管理 API の RBAC 実装（users 以外の admin API へ横展開）
   - `src/lib/auth/admin-rbac.ts`: ハイブリッド RBAC ヘルパー（トークン役割 + DB ACL クエリ）
   - Migration 023: roles, permissions, role_permissions, user_roles テーブル + RLS ポリシー + has_permission()

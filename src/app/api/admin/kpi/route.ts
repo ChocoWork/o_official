@@ -3,11 +3,12 @@ import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 
 type OrderStatus = 'pending' | 'paid' | 'failed' | 'cancelled';
-type ItemCategory = 'TOPS' | 'BOTTOMS' | 'OUTERWEAR' | 'ACCESSORIES';
 type PublishStatus = 'private' | 'published';
 
 type OrderMetricRow = {
   id: string;
+  session_id: string;
+  user_id: string | null;
   status: OrderStatus;
   total_amount: number;
   created_at: string;
@@ -24,34 +25,25 @@ type OrderItemMetricRow = {
 
 type ItemMetricRow = {
   id: number;
-  category: ItemCategory;
   status: PublishStatus;
 };
 
-type StatusMetricRow = {
-  status: PublishStatus;
+type OrderAggregation = {
+  totalUnits: number;
+  itemIds: number[];
 };
 
-type UserMetricRow = {
-  id: string;
-  last_sign_in_at: string | null;
+type PeriodAccumulator = {
+  allOrders: number;
+  paidOrders: number;
+  paidSales: number;
+  setOrderCount: number;
+  cancelledOrders: number;
+  soldItemIds: Set<number>;
+  customerOrderCount: Map<string, number>;
 };
 
-const CATEGORY_LABELS: Record<ItemCategory, string> = {
-  TOPS: 'トップス',
-  BOTTOMS: 'ボトムス',
-  OUTERWEAR: 'アウター',
-  ACCESSORIES: 'アクセサリー',
-};
-
-const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
-  pending: '未決済',
-  paid: '決済完了',
-  failed: '決済失敗',
-  cancelled: 'キャンセル',
-};
-
-const TREND_WINDOW_DAYS = 30;
+const SEASON_HISTORY_YEARS = 3;
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('ja-JP', {
@@ -143,13 +135,7 @@ function buildRecentSeasonKeys(currentSeasonKey: string, count: number): string[
     cursor = getPreviousSeasonKey(cursor);
   }
 
-  return keys.reverse();
-}
-
-function shiftUtcDate(baseDate: Date, dayOffset: number): Date {
-  const nextDate = new Date(baseDate);
-  nextDate.setUTCDate(nextDate.getUTCDate() + dayOffset);
-  return nextDate;
+  return keys;
 }
 
 function createMonthSeries(year: number): Array<{ key: string; label: string }> {
@@ -161,52 +147,135 @@ function createMonthSeries(year: number): Array<{ key: string; label: string }> 
   });
 }
 
-function getPercentChange(currentValue: number, previousValue: number): number | null {
-  if (previousValue === 0) {
-    return currentValue === 0 ? 0 : null;
-  }
-
-  return ((currentValue - previousValue) / previousValue) * 100;
+function createPeriodAccumulator(): PeriodAccumulator {
+  return {
+    allOrders: 0,
+    paidOrders: 0,
+    paidSales: 0,
+    setOrderCount: 0,
+    cancelledOrders: 0,
+    soldItemIds: new Set<number>(),
+    customerOrderCount: new Map<string, number>(),
+  };
 }
 
-function getDifference(currentValue: number, previousValue: number): number {
-  return currentValue - previousValue;
+function getOrCreatePeriodAccumulator(map: Map<string, PeriodAccumulator>, key: string): PeriodAccumulator {
+  const existing = map.get(key);
+  if (existing) {
+    return existing;
+  }
+
+  const created = createPeriodAccumulator();
+  map.set(key, created);
+  return created;
 }
 
-function getTrendTone(value: number | null): 'positive' | 'negative' | 'neutral' {
-  if (value === null || value === 0) {
-    return 'neutral';
+function resolveCustomerKey(order: Pick<OrderMetricRow, 'user_id' | 'session_id'>): string {
+  if (order.user_id) {
+    return `user:${order.user_id}`;
   }
 
-  return value > 0 ? 'positive' : 'negative';
+  return `guest:${order.session_id}`;
 }
 
-function getDifferenceTone(value: number): 'positive' | 'negative' | 'neutral' {
-  if (value === 0) {
-    return 'neutral';
+function applyOrderToAccumulator(
+  accumulator: PeriodAccumulator,
+  order: OrderMetricRow,
+  orderAggregation: OrderAggregation,
+): void {
+  accumulator.allOrders += 1;
+
+  if (order.status === 'cancelled') {
+    accumulator.cancelledOrders += 1;
   }
 
-  return value > 0 ? 'positive' : 'negative';
+  if (order.status !== 'paid') {
+    return;
+  }
+
+  accumulator.paidOrders += 1;
+  accumulator.paidSales += order.total_amount;
+
+  if (orderAggregation.totalUnits >= 2) {
+    accumulator.setOrderCount += 1;
+  }
+
+  const customerKey = resolveCustomerKey(order);
+  accumulator.customerOrderCount.set(customerKey, (accumulator.customerOrderCount.get(customerKey) ?? 0) + 1);
+
+  for (const itemId of orderAggregation.itemIds) {
+    accumulator.soldItemIds.add(itemId);
+  }
 }
 
-function getTrendLabel(currentValue: number, previousValue: number, unit: 'currency' | 'count' | 'percent'): string {
-  if (previousValue === 0 && currentValue > 0) {
-    return '比較対象なし';
+function toKpiMetricsResponse(
+  period: string,
+  accumulator: PeriodAccumulator,
+  publishedItemsCount: number,
+): {
+  period: string;
+  salesAmount: number;
+  formattedSales: string;
+  cvr: number;
+  formattedCvr: string;
+  aov: number;
+  formattedAov: string;
+  setPurchaseRate: number;
+  formattedSetPurchaseRate: string;
+  inventoryConsumptionRate: number;
+  formattedInventoryConsumptionRate: string;
+  ltv: number;
+  formattedLtv: string;
+  repeatRate: number;
+  formattedRepeatRate: string;
+  returnRate: number;
+  formattedReturnRate: string;
+  orderCount: number;
+  paidOrderCount: number;
+  customerCount: number;
+  repeatCustomerCount: number;
+} {
+  const cvr = accumulator.allOrders === 0 ? 0 : (accumulator.paidOrders / accumulator.allOrders) * 100;
+  const aov = accumulator.paidOrders === 0 ? 0 : accumulator.paidSales / accumulator.paidOrders;
+  const setPurchaseRate = accumulator.paidOrders === 0 ? 0 : (accumulator.setOrderCount / accumulator.paidOrders) * 100;
+  const inventoryConsumptionRate =
+    publishedItemsCount === 0 ? 0 : (accumulator.soldItemIds.size / publishedItemsCount) * 100;
+  const customerCount = accumulator.customerOrderCount.size;
+  const ltv = customerCount === 0 ? 0 : accumulator.paidSales / customerCount;
+
+  let repeatCustomerCount = 0;
+  for (const orderCount of accumulator.customerOrderCount.values()) {
+    if (orderCount >= 2) {
+      repeatCustomerCount += 1;
+    }
   }
 
-  const diff = currentValue - previousValue;
-  if (unit === 'currency') {
-    const prefix = diff > 0 ? '+' : '';
-    return `${prefix}${formatCurrency(diff)} 前期間比`;
-  }
+  const repeatRate = customerCount === 0 ? 0 : (repeatCustomerCount / customerCount) * 100;
+  const returnRate = accumulator.allOrders === 0 ? 0 : (accumulator.cancelledOrders / accumulator.allOrders) * 100;
 
-  if (unit === 'percent') {
-    const prefix = diff > 0 ? '+' : '';
-    return `${prefix}${diff.toFixed(1)}pt 前期間比`;
-  }
-
-  const prefix = diff > 0 ? '+' : '';
-  return `${prefix}${formatInteger(diff)} 前日比`;
+  return {
+    period,
+    salesAmount: accumulator.paidSales,
+    formattedSales: formatCurrency(accumulator.paidSales),
+    cvr,
+    formattedCvr: formatPercent(cvr),
+    aov,
+    formattedAov: formatCurrency(Math.round(aov)),
+    setPurchaseRate,
+    formattedSetPurchaseRate: formatPercent(setPurchaseRate),
+    inventoryConsumptionRate,
+    formattedInventoryConsumptionRate: formatPercent(inventoryConsumptionRate),
+    ltv,
+    formattedLtv: formatCurrency(Math.round(ltv)),
+    repeatRate,
+    formattedRepeatRate: formatPercent(repeatRate),
+    returnRate,
+    formattedReturnRate: formatPercent(returnRate),
+    orderCount: accumulator.allOrders,
+    paidOrderCount: accumulator.paidOrders,
+    customerCount,
+    repeatCustomerCount,
+  };
 }
 
 export async function GET(request: Request) {
@@ -223,25 +292,14 @@ export async function GET(request: Request) {
     const supabase = await createServiceRoleClient();
     const now = new Date();
     const targetYear = getJstYear(now);
-    const firstMonthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1));
-    const fromIso = firstMonthDate.toISOString();
 
-    const [ordersResult, orderItemsResult, itemsResult, looksResult, newsResult, usersResult] = await Promise.all([
+    const [ordersResult, orderItemsResult, itemsResult] = await Promise.all([
       supabase
         .from('orders')
-        .select('id, status, total_amount, created_at')
+        .select('id, session_id, user_id, status, total_amount, created_at')
         .order('created_at', { ascending: false }),
-      supabase
-        .from('order_items')
-        .select('order_id, item_id, item_name, quantity, line_total, created_at')
-        .gte('created_at', fromIso),
-      supabase.from('items').select('id, category, status'),
-      supabase.from('looks').select('status'),
-      supabase.from('news_articles').select('status'),
-      supabase.auth.admin.listUsers({
-        page: 1,
-        perPage: 1000,
-      }),
+      supabase.from('order_items').select('order_id, item_id, item_name, quantity, line_total, created_at'),
+      supabase.from('items').select('id, status'),
     ]);
 
     if (ordersResult.error) {
@@ -259,75 +317,11 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Failed to fetch KPI data' }, { status: 500 });
     }
 
-    if (looksResult.error) {
-      console.error('[admin.kpi] Failed to fetch looks:', looksResult.error);
-      return NextResponse.json({ error: 'Failed to fetch KPI data' }, { status: 500 });
-    }
-
-    if (newsResult.error) {
-      console.error('[admin.kpi] Failed to fetch news:', newsResult.error);
-      return NextResponse.json({ error: 'Failed to fetch KPI data' }, { status: 500 });
-    }
-
-    if (usersResult.error) {
-      console.error('[admin.kpi] Failed to fetch users:', usersResult.error);
-      return NextResponse.json({ error: 'Failed to fetch KPI data' }, { status: 500 });
-    }
-
     const orders = (ordersResult.data ?? []) as OrderMetricRow[];
     const orderItems = (orderItemsResult.data ?? []) as OrderItemMetricRow[];
     const items = (itemsResult.data ?? []) as ItemMetricRow[];
-    const looks = (looksResult.data ?? []) as StatusMetricRow[];
-    const newsArticles = (newsResult.data ?? []) as StatusMetricRow[];
-    const users = (usersResult.data.users ?? []) as UserMetricRow[];
 
-    const ordersById = new Map<string, OrderMetricRow>(orders.map((order) => [order.id, order]));
-    const itemCategoryById = new Map<number, ItemCategory>(items.map((item) => [item.id, item.category]));
     const paidOrders = orders.filter((order) => order.status === 'paid');
-
-    const todayKey = getJstDayKey(now);
-    const yesterdayKey = getJstDayKey(shiftUtcDate(now, -1));
-    const currentWindowStartKey = getJstDayKey(shiftUtcDate(now, -(TREND_WINDOW_DAYS - 1)));
-    const previousWindowStartKey = getJstDayKey(shiftUtcDate(now, -((TREND_WINDOW_DAYS * 2) - 1)));
-    const previousWindowEndKey = getJstDayKey(shiftUtcDate(now, -TREND_WINDOW_DAYS));
-    const last30LoginStartKey = getJstDayKey(shiftUtcDate(now, -29));
-
-    const todayOrders = orders.filter((order) => getJstDayKey(order.created_at) === todayKey);
-    const yesterdayOrders = orders.filter((order) => getJstDayKey(order.created_at) === yesterdayKey);
-    const todayPaidOrders = todayOrders.filter((order) => order.status === 'paid');
-    const yesterdayPaidOrders = yesterdayOrders.filter((order) => order.status === 'paid');
-
-    const currentWindowOrders = orders.filter((order) => {
-      const dayKey = getJstDayKey(order.created_at);
-      return dayKey >= currentWindowStartKey;
-    });
-
-    const previousWindowOrders = orders.filter((order) => {
-      const dayKey = getJstDayKey(order.created_at);
-      return dayKey >= previousWindowStartKey && dayKey <= previousWindowEndKey;
-    });
-
-    const currentWindowPaidOrders = currentWindowOrders.filter((order) => order.status === 'paid');
-    const previousWindowPaidOrders = previousWindowOrders.filter((order) => order.status === 'paid');
-
-    const todaySalesAmount = todayPaidOrders.reduce((sum, order) => sum + order.total_amount, 0);
-    const yesterdaySalesAmount = yesterdayPaidOrders.reduce((sum, order) => sum + order.total_amount, 0);
-    const todayOrdersCount = todayOrders.length;
-    const yesterdayOrdersCount = yesterdayOrders.length;
-
-    const currentCompletionRate = currentWindowOrders.length === 0
-      ? 0
-      : (currentWindowPaidOrders.length / currentWindowOrders.length) * 100;
-    const previousCompletionRate = previousWindowOrders.length === 0
-      ? 0
-      : (previousWindowPaidOrders.length / previousWindowOrders.length) * 100;
-
-    const currentAov = currentWindowPaidOrders.length === 0
-      ? 0
-      : currentWindowPaidOrders.reduce((sum, order) => sum + order.total_amount, 0) / currentWindowPaidOrders.length;
-    const previousAov = previousWindowPaidOrders.length === 0
-      ? 0
-      : previousWindowPaidOrders.reduce((sum, order) => sum + order.total_amount, 0) / previousWindowPaidOrders.length;
 
     const monthlyYearOptions = Array.from(new Set(paidOrders.map((order) => getJstYear(order.created_at))))
       .sort((left, right) => right - left);
@@ -336,261 +330,55 @@ export async function GET(request: Request) {
       monthlyYearOptions.unshift(targetYear);
     }
 
-    const monthSeriesByYear = new Map<number, Array<{ key: string; label: string }>>();
-    for (const year of monthlyYearOptions) {
-      monthSeriesByYear.set(year, createMonthSeries(year));
+    const orderAggregationByOrderId = new Map<string, OrderAggregation>();
+    for (const orderItem of orderItems) {
+      const current = orderAggregationByOrderId.get(orderItem.order_id) ?? { totalUnits: 0, itemIds: [] };
+      current.totalUnits += orderItem.quantity;
+      current.itemIds.push(orderItem.item_id);
+      orderAggregationByOrderId.set(orderItem.order_id, current);
     }
 
-    const monthSalesMap = new Map<string, number>();
-    const monthOrderCountMap = new Map<string, number>();
+    const monthlyAccumulatorMap = new Map<string, PeriodAccumulator>();
+    const seasonalAccumulatorMap = new Map<string, PeriodAccumulator>();
 
-    for (const order of paidOrders) {
+    for (const order of orders) {
       const monthKey = getJstMonthKey(order.created_at);
-      monthSalesMap.set(monthKey, (monthSalesMap.get(monthKey) ?? 0) + order.total_amount);
-      monthOrderCountMap.set(monthKey, (monthOrderCountMap.get(monthKey) ?? 0) + 1);
+      const seasonKey = getSeasonKeyFromDate(new Date(order.created_at));
+      const orderAggregation = orderAggregationByOrderId.get(order.id) ?? { totalUnits: 0, itemIds: [] };
+
+      applyOrderToAccumulator(getOrCreatePeriodAccumulator(monthlyAccumulatorMap, monthKey), order, orderAggregation);
+      applyOrderToAccumulator(getOrCreatePeriodAccumulator(seasonalAccumulatorMap, seasonKey), order, orderAggregation);
     }
 
-    const monthlySalesByYear = monthlyYearOptions.map((year) => {
-      const series = monthSeriesByYear.get(year) ?? createMonthSeries(year);
+    const publishedItems = items.filter((item) => item.status === 'published').length;
+
+    const monthlyKpiByYear = monthlyYearOptions.map((year) => {
+      const monthSeries = createMonthSeries(year);
 
       return {
         year,
-        monthlySales: series.map((month) => {
-          const amount = monthSalesMap.get(month.key) ?? 0;
-          return {
-            month: month.label,
-            salesAmount: amount,
-            formattedSales: formatCurrency(amount),
-            orderCount: monthOrderCountMap.get(month.key) ?? 0,
-          };
+        metrics: monthSeries.map((month) => {
+          const accumulator = monthlyAccumulatorMap.get(month.key) ?? createPeriodAccumulator();
+          return toKpiMetricsResponse(month.label, accumulator, publishedItems);
         }),
       };
     });
 
-    const monthlySales = monthlySalesByYear.find((entry) => entry.year === targetYear)?.monthlySales ?? createMonthSeries(targetYear).map((month) => ({
-      month: month.label,
-      salesAmount: 0,
-      formattedSales: formatCurrency(0),
-      orderCount: 0,
-    }));
-
-    const annualSalesMap = new Map<number, { salesAmount: number; orderCount: number }>();
-    for (const order of paidOrders) {
-      const year = getJstYear(order.created_at);
-      const current = annualSalesMap.get(year) ?? { salesAmount: 0, orderCount: 0 };
-      current.salesAmount += order.total_amount;
-      current.orderCount += 1;
-      annualSalesMap.set(year, current);
-    }
-
-    const recentAnnualYears = Array.from({ length: 10 }, (_, index) => targetYear - 9 + index);
-
-    const annualSales = recentAnnualYears.map((year) => {
-      const metric = annualSalesMap.get(year) ?? { salesAmount: 0, orderCount: 0 };
-      return {
-        year,
-        salesAmount: metric.salesAmount,
-        formattedSales: formatCurrency(metric.salesAmount),
-        orderCount: metric.orderCount,
-      };
+    const recentSeasonKeys = buildRecentSeasonKeys(getSeasonKeyFromDate(now), SEASON_HISTORY_YEARS * 2);
+    const seasonalKpi = recentSeasonKeys.map((seasonKey) => {
+      const accumulator = seasonalAccumulatorMap.get(seasonKey) ?? createPeriodAccumulator();
+      return toKpiMetricsResponse(seasonKey, accumulator, publishedItems);
     });
-
-    const seasonalSalesMap = new Map<string, { salesAmount: number; orderCount: number }>();
-
-    for (const order of paidOrders) {
-      const orderYear = getJstYear(order.created_at);
-      const orderMonth = getJstMonthNumber(order.created_at);
-      const seasonType = orderMonth >= 4 && orderMonth <= 9 ? 'SS' : 'AW';
-      const seasonYear = seasonType === 'AW' && orderMonth <= 3 ? orderYear - 1 : orderYear;
-      const seasonKey = `${seasonYear}${seasonType}`;
-      const currentSeasonValue = seasonalSalesMap.get(seasonKey) ?? { salesAmount: 0, orderCount: 0 };
-
-      currentSeasonValue.salesAmount += order.total_amount;
-      currentSeasonValue.orderCount += 1;
-      seasonalSalesMap.set(seasonKey, currentSeasonValue);
-    }
-
-    const recentSeasonKeys = buildRecentSeasonKeys(getSeasonKeyFromDate(now), 10);
-    const seasonalSales = recentSeasonKeys.map((seasonKey) => {
-      const metric = seasonalSalesMap.get(seasonKey) ?? { salesAmount: 0, orderCount: 0 };
-
-      return {
-        season: seasonKey,
-        salesAmount: metric.salesAmount,
-        formattedSales: formatCurrency(metric.salesAmount),
-        orderCount: metric.orderCount,
-      };
-    });
-
-    const categorySalesAmountMap = new Map<ItemCategory, number>();
-    const topProductMap = new Map<number, { itemName: string; salesAmount: number; units: number }>();
-
-    for (const orderItem of orderItems) {
-      const order = ordersById.get(orderItem.order_id);
-      if (!order || order.status !== 'paid') {
-        continue;
-      }
-
-      const category = itemCategoryById.get(orderItem.item_id);
-      if (category) {
-        categorySalesAmountMap.set(category, (categorySalesAmountMap.get(category) ?? 0) + orderItem.line_total);
-      }
-
-      const currentTopProduct = topProductMap.get(orderItem.item_id) ?? {
-        itemName: orderItem.item_name,
-        salesAmount: 0,
-        units: 0,
-      };
-
-      currentTopProduct.salesAmount += orderItem.line_total;
-      currentTopProduct.units += orderItem.quantity;
-      topProductMap.set(orderItem.item_id, currentTopProduct);
-    }
-
-    const totalCategorySalesAmount = Array.from(categorySalesAmountMap.values()).reduce((sum, amount) => sum + amount, 0);
-    const categorySales = (Object.keys(CATEGORY_LABELS) as ItemCategory[]).map((category) => {
-      const salesAmount = categorySalesAmountMap.get(category) ?? 0;
-      const percentage = totalCategorySalesAmount === 0 ? 0 : (salesAmount / totalCategorySalesAmount) * 100;
-      return {
-        name: CATEGORY_LABELS[category],
-        salesAmount,
-        formattedSales: formatCurrency(salesAmount),
-        percentage,
-      };
-    });
-
-    const topProducts = Array.from(topProductMap.entries())
-      .map(([itemId, value]) => ({
-        itemId,
-        name: value.itemName,
-        salesAmount: value.salesAmount,
-        units: value.units,
-      }))
-      .sort((left, right) => right.salesAmount - left.salesAmount)
-      .slice(0, 5)
-      .map((product, index) => ({
-        rank: index + 1,
-        name: product.name,
-        formattedSales: formatCurrency(product.salesAmount),
-        unitsLabel: `${formatInteger(product.units)}点`,
-      }));
-
-    const publishedItems = items.filter((item) => item.status === 'published').length;
-    const privateItems = items.length - publishedItems;
-    const publishedLooks = looks.filter((item) => item.status === 'published').length;
-    const privateLooks = looks.length - publishedLooks;
-    const publishedNews = newsArticles.filter((item) => item.status === 'published').length;
-    const privateNews = newsArticles.length - publishedNews;
-    const activeUsersLast30Days = users.filter((user) => {
-      if (!user.last_sign_in_at) {
-        return false;
-      }
-
-      return getJstDayKey(user.last_sign_in_at) >= last30LoginStartKey;
-    }).length;
-
-    const salesPercentChange = getPercentChange(todaySalesAmount, yesterdaySalesAmount);
-    const completionRateDiff = getDifference(currentCompletionRate, previousCompletionRate);
 
     return NextResponse.json(
       {
         data: {
-          summaryCards: [
-            {
-              label: '本日の売上',
-              value: formatCurrency(todaySalesAmount),
-              trend: salesPercentChange === null
-                ? '比較対象なし'
-                : `${salesPercentChange > 0 ? '+' : ''}${salesPercentChange.toFixed(1)}% 前日比`,
-              tone: getTrendTone(salesPercentChange),
-            },
-            {
-              label: '本日の注文数',
-              value: formatInteger(todayOrdersCount),
-              trend: getTrendLabel(todayOrdersCount, yesterdayOrdersCount, 'count'),
-              tone: getDifferenceTone(getDifference(todayOrdersCount, yesterdayOrdersCount)),
-            },
-            {
-              label: `決済完了率（直近${TREND_WINDOW_DAYS}日）`,
-              value: formatPercent(currentCompletionRate),
-              trend: getTrendLabel(currentCompletionRate, previousCompletionRate, 'percent'),
-              tone: getDifferenceTone(completionRateDiff),
-            },
-            {
-              label: `平均注文単価（直近${TREND_WINDOW_DAYS}日）`,
-              value: formatCurrency(Math.round(currentAov)),
-              trend: getTrendLabel(Math.round(currentAov), Math.round(previousAov), 'currency'),
-              tone: getDifferenceTone(Math.round(currentAov - previousAov)),
-            },
-          ],
           targetYear,
-          monthlySales,
           monthlyYearOptions,
-          monthlySalesByYear,
-          annualSales,
-          seasonalSales,
-          categorySales,
-          operationalCards: [
-            {
-              label: '登録顧客数',
-              value: formatInteger(users.length),
-              detail: `直近30日ログイン ${formatInteger(activeUsersLast30Days)}名`,
-            },
-            {
-              label: '公開商品数',
-              value: formatInteger(publishedItems),
-              detail: `非公開 ${formatInteger(privateItems)}件`,
-            },
-            {
-              label: '公開コンテンツ数',
-              value: formatInteger(publishedLooks + publishedNews),
-              detail: `LOOK ${formatInteger(publishedLooks)} / NEWS ${formatInteger(publishedNews)}`,
-            },
-          ],
-          topProducts,
-          managementSummary: [
-            {
-              label: `直近12か月 ${ORDER_STATUS_LABELS.pending}`,
-              value: formatInteger(
-                orders.filter((order) => {
-                  if (order.status !== 'pending') {
-                    return false;
-                  }
-
-                  return new Date(order.created_at) >= firstMonthDate;
-                }).length,
-              ),
-              tone: 'warning',
-            },
-            {
-              label: `直近12か月 ${ORDER_STATUS_LABELS.paid}`,
-              value: formatInteger(
-                orders.filter((order) => {
-                  if (order.status !== 'paid') {
-                    return false;
-                  }
-
-                  return new Date(order.created_at) >= firstMonthDate;
-                }).length,
-              ),
-              tone: 'success',
-            },
-            {
-              label: '公開商品 / 非公開商品',
-              value: `${formatInteger(publishedItems)} / ${formatInteger(privateItems)}`,
-              tone: 'neutral',
-            },
-            {
-              label: '公開LOOK / 非公開LOOK',
-              value: `${formatInteger(publishedLooks)} / ${formatInteger(privateLooks)}`,
-              tone: 'neutral',
-            },
-            {
-              label: '公開NEWS / 非公開NEWS',
-              value: `${formatInteger(publishedNews)} / ${formatInteger(privateNews)}`,
-              tone: 'neutral',
-            },
-          ],
+          monthlyKpiByYear,
+          seasonalKpi,
+          returnRateNote: '返品データが未保持のため、返品率はキャンセル率を代替表示しています。',
+          inventoryConsumptionRateNote: '在庫数量を保持していないため、在庫消化率は「販売実績のある公開商品数 / 公開商品数」で算出しています。',
         },
       },
       { status: 200 },
