@@ -95,7 +95,7 @@ export async function PublicLookGrid(props: PublicLookGridProps) {
       <>
         {renderGrid()}
         {variant === 'home' && hasMoreLooks && (
-          <div className="text-center mt-12">
+          <div className="text-center mt-6 md:mt-8 lg:mt-12">
             <Button href="/look" variant="secondary" size="md" className="font-acumin">
               VIEW LOOKBOOK
             </Button>
@@ -107,7 +107,7 @@ export async function PublicLookGrid(props: PublicLookGridProps) {
 
   if (variant === 'home') {
     return (
-      <section id="look" className="px-6 lg:px-12 bg-white w-full md:pb-20 lg:pb-20">
+      <section id="look" className="mt-14 lg:mt-20 px-6 lg:px-12 bg-white w-full md:pb-20 lg:pb-20">
         <div className="max-w-7xl mx-auto">
           <SectionTitle title="LOOK" />
           {renderContent()}

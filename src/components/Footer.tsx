@@ -49,36 +49,38 @@ const Footer = () => {
   return (
     <footer className="bg-black text-white py-8 px-6 lg:px-12 w-full font-brand">
       <div className="w-full">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-8 w-full">
-          <div>
-            <h3 className="text-2xl mb-6 tracking-tight font-display">Le Fil des Heures</h3>
-            <p className="text-sm text-white/70 leading-relaxed">時を紡ぐニュートラルモードな日常着</p>
+        <div className="flex flex-col md:flex-row gap-8 lg:gap-20 xl:gap-40 mb-8 w-full">
+          <div className="w-auto md:flex-shrink-0">
+            <h3 className="text-xl lg:text-2xl mb-2 md:mb-2 lg:mb-6 tracking-tight font-display">Le Fil des Heures</h3>
+            <p className="text-xs lg:text-sm text-white/70 leading-relaxed whitespace-nowrap">時を紡ぐニュートラルモードな日常着</p>
           </div>
 
-          <FooterLinkList title="SHOP" links={shopLinks} />
-          <FooterLinkList title="INFORMATION" links={informationLinks} />
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 lg:gap-12 w-full md:flex-1">
+            <FooterLinkList title="SHOP" links={shopLinks} />
+            <FooterLinkList title="INFORMATION" links={informationLinks} />
 
-          <div>
-            <h4 className="text-sm tracking-widest mb-4 font-display">FOLLOW US</h4>
-            <div className="flex gap-4">
-              <a
-                href="#"
-                className="w-10 h-10 flex items-center justify-center border border-white hover:bg-white hover:text-black transition-all duration-300 cursor-pointer"
-              >
-                <i className="ri-instagram-line text-xl"></i>
-              </a>
-              <a
-                href="#"
-                className="w-10 h-10 flex items-center justify-center border border-white hover:bg-white hover:text-black transition-all duration-300 cursor-pointer"
-              >
-                <i className="ri-facebook-line text-xl"></i>
-              </a>
-              <a
-                href="#"
-                className="w-10 h-10 flex items-center justify-center border border-white hover:bg-white hover:text-black transition-all duration-300 cursor-pointer"
-              >
-                <i className="ri-twitter-x-line text-xl"></i>
-              </a>
+            <div>
+              <h4 className="text-sm tracking-widest mb-4 font-display">FOLLOW US</h4>
+              <div className="flex gap-4">
+                <a
+                  href="#"
+                  className="w-10 h-10 flex items-center justify-center border border-white hover:bg-white hover:text-black transition-all duration-300 cursor-pointer"
+                >
+                  <i className="ri-instagram-line text-xl"></i>
+                </a>
+                <a
+                  href="#"
+                  className="w-10 h-10 flex items-center justify-center border border-white hover:bg-white hover:text-black transition-all duration-300 cursor-pointer"
+                >
+                  <i className="ri-facebook-line text-xl"></i>
+                </a>
+                <a
+                  href="#"
+                  className="w-10 h-10 flex items-center justify-center border border-white hover:bg-white hover:text-black transition-all duration-300 cursor-pointer"
+                >
+                  <i className="ri-twitter-x-line text-xl"></i>
+                </a>
+              </div>
             </div>
           </div>
         </div>

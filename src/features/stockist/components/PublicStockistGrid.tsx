@@ -8,7 +8,7 @@ import {
 } from '@/features/stockist/services/public';
 import { PublicStockist } from '@/features/stockist/types';
 
-const DEFAULT_GRID_CLASS = 'grid grid-cols-1 md:grid-cols-2 gap-8 lg:gap-12';
+const DEFAULT_GRID_CLASS = 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8 lg:gap-12';
 
 type PublicStockistGridHomeProps = {
   variant: 'home';
@@ -36,9 +36,9 @@ export function PublicStockistGrid(props: PublicStockistGridProps) {
 
         if (isHome) {
           return (
-            <div key={shop.name} className="border border-[#d5d0c9] p-8 lg:p-10 hover:border-black transition-colors duration-300">
-              <h3 className="text-xl lg:text-2xl mb-6 text-black font-brand">{shop.name}</h3>
-              <div className="space-y-3 text-[#474747] font-brand">
+            <div key={shop.name} className="border border-[#d5d0c9] p-6 xl:p-8 hover:border-black transition-colors duration-300">
+              <h3 className="text-lg lg:text-2xl mb-4 text-black font-brand">{shop.name}</h3>
+              <div className="space-y-2 text-[#474747] font-brand">
                 <div className="flex items-start">
                   <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-map-pin-line text-lg" /></div>
                   <p className="text-sm">{shop.address}</p>
@@ -91,7 +91,7 @@ export function PublicStockistGrid(props: PublicStockistGridProps) {
 
   if (variant === 'home') {
     return (
-      <section id="stockist" className="py-24 lg:py-32 px-6 lg:px-12 bg-white w-full">
+      <section id="stockist" className="mt-14 lg:mt-20 px-6 lg:px-12 bg-white w-full">
         <div className="max-w-7xl mx-auto">
           <SectionTitle title="STOCKIST" />
 

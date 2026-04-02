@@ -106,7 +106,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     }
 
     return (
-      <section id="items" className="px-6 lg:px-12 bg-white w-full md:pb-20 lg:pb-20">
+      <section id="items" className="mt-14 lg:mt-20 px-6 lg:px-12 bg-white w-full md:pb-20 lg:pb-20">
         <div className="max-w-7xl mx-auto">
           <SectionTitle title="ITEMS" />
 
@@ -118,7 +118,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
             <div id="sym:success">
               {renderGrid()}
               {(hasHiddenItemsOnTablet || hasMoreItems) && (
-                <div className="text-center mt-12">
+                <div className="text-center mt-6 md:mt-8 lg:mt-12">
                   <Button href="/item" variant="secondary" size="md" className="font-acumin">
                     VIEW ALL ITEMS
                   </Button>

@@ -49,9 +49,9 @@ export default async function Home() {
         <PublicNewsGrid variant="home" articles={homeNews} />
 
         {/* ABOUT セクション */}
-        <section id="about" className="py-24 lg:py-32 px-6 lg:px-12 bg-[#fafafa] w-full">
+        <section id="about" className="mt-14 lg:mt-20  py-14 lg:py-20 px-6 lg:px-12 bg-[#fafafa] w-full">
           <div className="max-w-7xl mx-auto">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-center">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-12 lg:gap-20 items-center">
               <div className="order-2 lg:order-1">
                 <SectionTitle title="ABOUT" />
                 <div className="space-y-6 text-[#474747] font-brand">

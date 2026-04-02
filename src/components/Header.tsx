@@ -69,7 +69,7 @@ const Header = () => {
             </h1>
           </Link>
           {/* メニュー（大画面のみ） */}
-          <nav className="hidden lg:flex items-center gap-12 font-brand">
+          <nav className="hidden lg:flex items-center gap-6 xl:gap-12 font-brand">
             {menuItems.map((item) => (
               <Link key={item.href} href={item.href} className="text-sm tracking-widest relative group cursor-pointer text-[#474747]">
                 {item.label}
@@ -92,7 +92,7 @@ const Header = () => {
             )}
           </nav>
           {/* 右側アイコン群 */}
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-4 md:gap-5 lg:gap-6">
             <Link href="/search" className="w-5 h-5 flex items-center justify-center cursor-pointer">
               <i className="ri-search-line text-xl text-black hover:text-[#474747] transition-colors"></i>
             </Link>

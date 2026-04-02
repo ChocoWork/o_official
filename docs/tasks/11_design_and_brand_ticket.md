@@ -7,7 +7,7 @@ estimate: 2d
 assignee: unassigned
 dependencies: []
 created: 2026-01-17
-updated: 2026-03-08
+updated: 2026-04-02
 ---
 
 # 概要
@@ -114,3 +114,4 @@ updated: 2026-03-08
 - [x] `/ui` の `Tag / Label` デモで `className="px-4 py-2"` 上書きを削除し、`TagLabel` の `size` 設計がそのまま反映されるよう修正
 - [x] `TabSegmentControl` に導入されたサイズ拡大を元に戻し、md がコミット当初の標準サイズ相当（segment px-4 py-2 text-xs, pill px-6 py-2, tabs-standard text-sm, gap-8）になるようマップを調整
 - [x] `Button` の型定義を `href` 有無で判別共用体化し、`ButtonHTMLAttributes` と `AnchorHTMLAttributes` の同時拡張による型衝突（`onAbort`/`onSubmit` 不一致）を解消
+- [x] `Footer` のブランド文言ブロックをグリッド外へ分離し、`md` 以上で固定幅を確保してタブレット表示時の文言折り返しを防止

@@ -201,7 +201,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
   // home variant rendering
   if (variant === 'home') {
     return (
-      <section id="news" className="px-6 lg:px-12 bg-white w-full md:pb-20 lg:pb-20">
+      <section id="news" className="mt-14 lg:mt-20 px-6 lg:px-12 bg-white w-full md:pb-20 lg:pb-20">
         <div className="max-w-7xl mx-auto">
           <SectionTitle title="NEWS" />
 
@@ -215,7 +215,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
             <>
               {renderGrid()}
               {(hasHiddenItemsOnMobile || hasMoreArticles) && (
-                <div className="text-center mt-12 md:mt-16">
+                <div className="text-center mt-6 md:mt-8 lg:mt-12">
                   <Button href="/news" variant="secondary" size="md" className="font-acumin">
                     VIEW ALL NEWS
                   </Button>
