@@ -6,6 +6,7 @@ import { clientFetch } from '@/lib/client-fetch';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { TagLabel } from '@/components/ui/TagLabel';
 
 type NewsArticle = {
   id: string;
@@ -109,9 +110,9 @@ export default function NewsSection() {
                   <StatusBadge tone={item.status === 'published' ? 'positive' : 'neutral'} size="md">
                     {item.status === 'published' ? '公開中' : '非公開'}
                   </StatusBadge>
-                  <span className="text-xs text-[#474747] tracking-widest font-acumin">
+                  <TagLabel variant="outline" size="sm" className="font-acumin tracking-widest">
                     {item.category}
-                  </span>
+                  </TagLabel>
                 </div>
                 <h4 className="text-lg text-black mb-2 font-acumin">{item.title}</h4>
                 <p className="text-sm text-[#474747] font-acumin">{item.published_date}</p>

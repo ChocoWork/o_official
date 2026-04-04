@@ -9,7 +9,6 @@ import { useLogin } from "@/contexts/LoginContext";
 import { useCart } from "@/contexts/CartContext";
 import { Button } from '@/components/ui/Button';
 import { Drawer } from '@/components/ui/Drawer';
-import "remixicon/fonts/remixicon.css";
 
 const menuItems = [
   { href: '/news', label: 'NEWS' },
