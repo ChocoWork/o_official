@@ -156,7 +156,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   return (
     <main className="pt-24 pb-20 px-6 lg:px-12">
       <div className="max-w-7xl mx-auto">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-24">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-24">
           <div>
             <div className="aspect-[3/4] bg-[#f5f5f5] mb-4 overflow-hidden">
               {mainImage ? (
