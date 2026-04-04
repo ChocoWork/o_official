@@ -70,7 +70,7 @@ export async function PublicStockistGrid(props: PublicStockistGridProps) {
 
   if (variant === 'home') {
     return (
-      <section id="stockist" className="my-14 lg:my-20 px-6 lg:px-12 bg-white w-full">
+      <section id="stockist" className="mt-14 sm:mt-16 lg:mt-20 pb-20 sm:pb-24 lg:pb-32 px-6 lg:px-12 bg-white w-full">
         <div className="max-w-7xl mx-auto">
           <SectionTitle title="STOCKIST" />
 

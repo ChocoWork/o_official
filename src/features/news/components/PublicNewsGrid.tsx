@@ -125,7 +125,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
         return (
           <Link key={article.id} href={resolveBuildHref(article)} className={hideOnMobile ? 'hidden lg:block' : undefined}>
             <article className="group cursor-pointer">
-              <div className="aspect-[4/3] overflow-hidden mb-6 bg-[#f5f5f5] relative">
+              <div className="aspect-[4/3] overflow-hidden mb-3 sm:mb-4 md:mb-6 bg-[#f5f5f5] relative">
                 <Image
                   alt={article.title}
                   className="w-full h-full object-cover object-center transition-transform duration-700 group-hover:scale-105"
@@ -135,8 +135,8 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
                 />
               </div>
 
-              <div className="space-y-3">
-                <div className="flex items-center space-x-4">
+              <div className="space-y-2 sm:space-y-3">
+                <div className="flex items-center space-x-3 sm:space-x-4">
                   <span
                     className="text-xs text-[#474747] tracking-widest"
                     style={{ fontFamily: 'acumin-pro, sans-serif' }}
@@ -155,7 +155,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
                 </h2>
 
                 <p
-                  className="text-xs text-[#474747] leading-relaxed line-clamp-3"
+                  className="text-xs sm:text-sm text-[#474747] leading-relaxed line-clamp-3"
                   style={{ fontFamily: 'acumin-pro, sans-serif' }}
                 >
                   {article.content}
@@ -204,7 +204,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
   // home variant rendering
   if (variant === 'home') {
     return (
-      <section id="news" className="mt-14 lg:mt-20 px-6 lg:px-12 bg-white w-full md:pb-20 lg:pb-20">
+      <section id="news" className="mt-14 sm:mt-16 lg:mt-20 pb-14 sm:pb-16 md:pb-20 px-6 lg:px-12 bg-white w-full">
         <div className="max-w-7xl mx-auto">
           <SectionTitle title="NEWS" />
 

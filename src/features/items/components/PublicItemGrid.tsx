@@ -69,7 +69,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
         return (
           <Link key={item.id} href={`/item/${item.id}`} className={hideOnMobile ? 'hidden lg:block' : undefined}>
             <div className="group cursor-pointer">
-              <div className="aspect-[3/4] bg-[#f5f5f5] mb-2 overflow-hidden">
+              <div className="aspect-[3/4] bg-[#f5f5f5] mb-2 sm:mb-3 overflow-hidden">
                 {item.image_url ? (
                   <Image
                     src={item.image_url}
@@ -86,8 +86,8 @@ export function PublicItemGrid(props: PublicItemGridProps) {
                 )}
               </div>
               <div>
-                <h3 className="mb-1 text-base text-black font-brand tracking-tight">{item.name}</h3>
-                <p className="mb-2 text-sm text-black font-brand">¥{item.price.toLocaleString('ja-JP')}</p>
+                <h3 className="mb-1 text-base lg:text-lg text-black font-brand tracking-tight">{item.name}</h3>
+                <p className="mb-2 text-sm lg:text-base text-black font-brand">¥{item.price.toLocaleString('ja-JP')}</p>
               </div>
             </div>
           </Link>
@@ -100,7 +100,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
   if (variant === 'home') {
     if (isSelfFetch && error) {
       return (
-        <section id="items" className="px-6 lg:px-12 bg-white w-full md:pb-20 lg:pb-20">
+        <section id="items" className="px-6 lg:px-12 bg-white w-full pb-14 sm:pb-16 md:pb-20">
           <div className="max-w-7xl mx-auto text-center py-10">
             <div className="text-xl text-red-500">{error}</div>
           </div>
@@ -109,7 +109,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     }
 
     return (
-      <section id="items" className="mt-14 lg:mt-20 px-6 lg:px-12 bg-white w-full md:pb-20 lg:pb-20">
+      <section id="items" className="mt-14 sm:mt-16 lg:mt-20 pb-14 sm:pb-16 md:pb-20 px-6 lg:px-12 bg-white w-full">
         <div className="max-w-7xl mx-auto">
           <SectionTitle title="ITEMS" />
 

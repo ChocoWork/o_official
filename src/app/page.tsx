@@ -49,25 +49,25 @@ export default async function Home() {
         <PublicNewsGrid variant="home" articles={homeNews} />
 
         {/* ABOUT セクション */}
-        <section id="about" className="mt-14 lg:mt-20  py-14 lg:py-20 px-6 lg:px-12 bg-[#fafafa] w-full">
+        <section id="about" className="mt-14 sm:mt-16 lg:mt-20 py-14 sm:py-16 lg:py-24 px-6 lg:px-12 bg-[#fafafa] w-full">
           <div className="max-w-7xl mx-auto">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-12 lg:gap-20 items-center">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 lg:gap-20 items-center">
               <div className="order-2 lg:order-1">
                 <SectionTitle title="ABOUT" />
-                <div className="space-y-6 text-[#474747] font-brand">
-                  <p className="text-base lg:text-base leading-relaxed">Le Fil des Heuresは、「時を紡ぐニュートラルモードな日常着」をコンセプトに、2026年に日本の宮城県で誕生したアパレルブランドです。</p>
-                  <p className="text-base lg:text-base leading-relaxed">時代を超えて愛される普遍的なデザインと、素材選びにこだわり、日常に寄り添う洗練されたワードローブを提案しています。</p>
-                  <p className="text-base lg:text-base leading-relaxed">ミニマルでありながら、着る人の個性を引き立てる。そんな服作りを目指し、一着一着丁寧に仕上げています。</p>
-                  <p className="text-base lg:text-base leading-relaxed">移り変わる時の流れの中で、変わらない価値を持つ服を、永く使用していただく。それが願いです。</p>
+                <div className="space-y-4 lg:space-y-6 text-[#474747] font-brand">
+                  <p className="text-base lg:text-lg leading-relaxed">Le Fil des Heuresは、「時を紡ぐニュートラルモードな日常着」をコンセプトに、2026年に日本の宮城県で誕生したアパレルブランドです。</p>
+                  <p className="text-base lg:text-lg leading-relaxed">時代を超えて愛される普遂的なデザインと、素材選びにこだわり、日常に寄り添う洗練されたワードローブを提案しています。</p>
+                  <p className="text-base lg:text-lg leading-relaxed">ミニマルでありながら、着る人の個性を引き立てる。そんな服作りを目指し、一着一着丁寧に仕上げています。</p>
+                  <p className="text-base lg:text-lg leading-relaxed">移り変わる時の流れの中で、変わらない価値を持つ服を、永く使用していただく。それが願いです。</p>
                 </div>
-                <div className="mt-12 grid grid-cols-2 gap-8">
+                <div className="mt-8 lg:mt-12 grid grid-cols-2 gap-8">
                   <div>
-                    <h3 className="text-sm tracking-widest text-black mb-2 font-brand">PHILOSOPHY</h3>
-                    <p className="text-sm text-[#474747] leading-relaxed font-brand">時代を超えた普遍的な美しさ</p>
+                    <h3 className="text-xs sm:text-sm lg:text-base tracking-widest text-black mb-2 font-brand">PHILOSOPHY</h3>
+                    <p className="text-xs sm:text-sm lg:text-base text-[#474747] leading-relaxed font-brand">時代を超えた普遂的な美しさ</p>
                   </div>
                   <div>
-                    <h3 className="text-sm tracking-widest text-black mb-2 font-brand">ESTABLISHED</h3>
-                    <p className="text-sm text-[#474747] leading-relaxed font-brand">2026, Miyagi in Japan</p>
+                    <h3 className="text-xs sm:text-sm lg:text-base tracking-widest text-black mb-2 font-brand">ESTABLISHED</h3>
+                    <p className="text-xs sm:text-sm lg:text-base text-[#474747] leading-relaxed font-brand">2026, Miyagi in Japan</p>
                   </div>
                 </div>
               </div>
