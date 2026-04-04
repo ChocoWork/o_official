@@ -55,19 +55,19 @@ export default async function Home() {
               <div className="order-2 lg:order-1">
                 <SectionTitle title="ABOUT" />
                 <div className="space-y-4 lg:space-y-6 text-[#474747] font-brand">
-                  <p className="text-base lg:text-lg leading-relaxed">Le Fil des Heuresは、「時を紡ぐニュートラルモードな日常着」をコンセプトに、2026年に日本の宮城県で誕生したアパレルブランドです。</p>
-                  <p className="text-base lg:text-lg leading-relaxed">時代を超えて愛される普遂的なデザインと、素材選びにこだわり、日常に寄り添う洗練されたワードローブを提案しています。</p>
-                  <p className="text-base lg:text-lg leading-relaxed">ミニマルでありながら、着る人の個性を引き立てる。そんな服作りを目指し、一着一着丁寧に仕上げています。</p>
-                  <p className="text-base lg:text-lg leading-relaxed">移り変わる時の流れの中で、変わらない価値を持つ服を、永く使用していただく。それが願いです。</p>
+                  <p className="text-sm lg:text-base leading-relaxed">Le Fil des Heuresは、「時を紡ぐニュートラルモードな日常着」をコンセプトに、2026年に日本の宮城県で誕生したアパレルブランドです。</p>
+                  <p className="text-sm lg:text-base leading-relaxed">時代を超えて愛される普遂的なデザインと、素材選びにこだわり、日常に寄り添う洗練されたワードローブを提案しています。</p>
+                  <p className="text-sm lg:text-base leading-relaxed">ミニマルでありながら、着る人の個性を引き立てる。そんな服作りを目指し、一着一着丁寧に仕上げています。</p>
+                  <p className="text-sm lg:text-base leading-relaxed">移り変わる時の流れの中で、変わらない価値を持つ服を、永く使用していただく。それが願いです。</p>
                 </div>
-                <div className="mt-8 lg:mt-12 grid grid-cols-2 gap-8">
+                <div className="mt-8 lg:mt-12 grid grid-cols-2 gap-4">
                   <div>
-                    <h3 className="text-xs sm:text-sm lg:text-base tracking-widest text-black mb-2 font-brand">PHILOSOPHY</h3>
-                    <p className="text-xs sm:text-sm lg:text-base text-[#474747] leading-relaxed font-brand">時代を超えた普遂的な美しさ</p>
+                    <h3 className="text-xs lg:text-sm tracking-widest text-black mb-2 font-brand">PHILOSOPHY</h3>
+                    <p className="text-xs text-[#474747] leading-relaxed font-brand">時代を超えた普遂的な美しさ</p>
                   </div>
                   <div>
-                    <h3 className="text-xs sm:text-sm lg:text-base tracking-widest text-black mb-2 font-brand">ESTABLISHED</h3>
-                    <p className="text-xs sm:text-sm lg:text-base text-[#474747] leading-relaxed font-brand">2026, Miyagi in Japan</p>
+                    <h3 className="text-xs lg:text-sm tracking-widest text-black mb-2 font-brand">ESTABLISHED</h3>
+                    <p className="text-xs text-[#474747] leading-relaxed font-brand">2026, Miyagi in Japan</p>
                   </div>
                 </div>
               </div>
