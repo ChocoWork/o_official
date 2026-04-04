@@ -8,8 +8,11 @@ import { SectionTitle } from '@/components/ui/SectionTitle';
 import { TabSegmentControl } from '@/components/ui/TabSegmentControl';
 import { Item } from '@/types/item';
 import { usePublicItems } from '@/features/items/hooks/usePublicItems';
+import { cn } from '@/lib/utils';
 
 const ITEM_CATEGORIES = ['ALL', 'TOPS', 'BOTTOMS', 'OUTERWEAR', 'ACCESSORIES'] as const;
+const TAB_SCROLL_CONTAINER_CLASS =
+  'w-full overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden';
 type ItemCategory = typeof ITEM_CATEGORIES[number];
 
 type PublicItemGridHomeProps = {
@@ -150,14 +153,15 @@ export function PublicItemGrid(props: PublicItemGridProps) {
 
   return (
     <>
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 gap-6">
-        <div className="flex flex-wrap gap-3">
+      <div className="mb-10 md:mb-12">
+        <div className={cn(TAB_SCROLL_CONTAINER_CLASS, 'md:flex md:justify-start')}>
           <TabSegmentControl
             items={ITEM_CATEGORIES.map((category) => ({ key: category, label: category }))}
             activeKey={selectedCategory}
             onChange={(category) => setSelectedCategory(category as ItemCategory)}
             variant="segment-pill"
             size="md"
+            className="min-w-max"
           />
         </div>
       </div>

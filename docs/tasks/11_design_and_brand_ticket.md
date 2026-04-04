@@ -115,3 +115,4 @@ updated: 2026-04-02
 - [x] `TabSegmentControl` に導入されたサイズ拡大を元に戻し、md がコミット当初の標準サイズ相当（segment px-4 py-2 text-xs, pill px-6 py-2, tabs-standard text-sm, gap-8）になるようマップを調整
 - [x] `Button` の型定義を `href` 有無で判別共用体化し、`ButtonHTMLAttributes` と `AnchorHTMLAttributes` の同時拡張による型衝突（`onAbort`/`onSubmit` 不一致）を解消
 - [x] `Footer` のブランド文言ブロックをグリッド外へ分離し、`md` 以上で固定幅を確保してタブレット表示時の文言折り返しを防止
+- [x] `news` / `item` カタログの `TabSegmentControl` をモバイル・タブレット向けに再調整し、ページ側で横スクロール許可 + スクロールバー非表示 + 余白最適化を適用（Playwright: iPhone 12 / iPad gen7 で確認）

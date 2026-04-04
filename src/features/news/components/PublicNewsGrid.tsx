@@ -8,10 +8,13 @@ import { Button } from '@/components/ui/Button';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { TabSegmentControl } from '@/components/ui/TabSegmentControl';
 import { categories } from '@/lib/news-data';
+import { cn } from '@/lib/utils';
 import { PublicNewsArticle } from '@/features/news/types';
 
 const DEFAULT_GRID_CLASS = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8 lg:gap-12';
 const NEWS_CATEGORIES = categories;
+const TAB_SCROLL_CONTAINER_CLASS =
+  'w-full overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden';
 type NewsCategory = (typeof NEWS_CATEGORIES)[number];
 
 type PublicNewsGridHomeProps = {
@@ -231,14 +234,17 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
   // catalog variant rendering
   return (
     <>
-      <div className="flex items-center justify-center space-x-6 mb-16">
-        <TabSegmentControl
-          items={NEWS_CATEGORIES.map((category) => ({ key: category, label: category }))}
-          activeKey={selectedCategory}
-          onChange={(category) => setSelectedCategory(category as NewsCategory)}
-          variant="segment-pill"
-          size="md"
-        />
+      <div className="mb-10 md:mb-16">
+        <div className={cn(TAB_SCROLL_CONTAINER_CLASS, 'md:flex md:justify-center')}>
+          <TabSegmentControl
+            items={NEWS_CATEGORIES.map((category) => ({ key: category, label: category }))}
+            activeKey={selectedCategory}
+            onChange={(category) => setSelectedCategory(category as NewsCategory)}
+            variant="segment-pill"
+            size="md"
+            className="min-w-max"
+          />
+        </div>
       </div>
       {loading ? (
         renderLoading()
