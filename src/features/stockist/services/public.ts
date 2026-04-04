@@ -40,5 +40,5 @@ export async function getPublicStockists(options?: {
 }
 
 export async function getHomePublicStockists(): Promise<PublicStockist[]> {
-  return getPublicStockists({ limit: 4 });
+  return getPublicStockists({ limit: 6 });
 }

@@ -32,12 +32,19 @@ export async function PublicStockistGrid(props: PublicStockistGridProps) {
     (variant === 'home' ? await getHomePublicStockists() : await getPublicStockists());
   const gridClassName = className ?? (variant === 'catalog' ? CATALOG_GRID_CLASS : DEFAULT_GRID_CLASS);
 
+  // Home variant: hide items beyond index 3 on mobile, show all on tablet (md+)
+  const mobileLimit = variant === 'home' ? 3 : undefined;
+
   const renderGrid = () => (
     <div className={gridClassName}>
-      {resolvedStockists.map((shop) => (
+      {resolvedStockists.map((shop, index) => (
         // Vertical card: name, divider, detail rows
         // Responsive scale: mobile=compact / sm(tablet)=readable / xl(desktop)=luxurious
-        <Card key={shop.name} className="border-black/10 p-5 sm:p-6 xl:p-7 hover:border-black transition-colors duration-300" size="sm">
+        <Card
+          key={shop.name}
+          className={`border-black/10 p-5 sm:p-6 xl:p-7 hover:border-black transition-colors duration-300${typeof mobileLimit === 'number' && index >= mobileLimit ? ' hidden md:block' : ''}`}
+          size="sm"
+        >
           {/* Identity section */}
           <div className="mb-3 sm:mb-4 xl:mb-5">
             <h2 className="text-sm sm:text-base xl:text-lg text-black font-display leading-snug">{shop.name}</h2>

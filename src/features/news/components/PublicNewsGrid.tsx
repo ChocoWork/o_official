@@ -123,7 +123,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
         const hideOnMobile = shouldLimitOnMobile && index >= resolvedMobileLimit!;
 
         return (
-          <Link key={article.id} href={resolveBuildHref(article)} className={hideOnMobile ? 'hidden lg:block' : undefined}>
+          <Link key={article.id} href={resolveBuildHref(article)} className={hideOnMobile ? 'hidden md:block' : undefined}>
             <article className="group cursor-pointer">
               <div className="aspect-[4/3] overflow-hidden mb-3 sm:mb-4 md:mb-6 bg-[#f5f5f5] relative">
                 <Image
