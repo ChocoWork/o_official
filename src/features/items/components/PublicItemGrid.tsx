@@ -86,8 +86,8 @@ export function PublicItemGrid(props: PublicItemGridProps) {
                 )}
               </div>
               <div>
-                <h3 className="mb-1 text-base lg:text-lg text-black font-brand tracking-tight">{item.name}</h3>
-                <p className="mb-2 text-sm lg:text-base text-black font-brand">¥{item.price.toLocaleString('ja-JP')}</p>
+                <h3 className="mb-1 text-sm text-black font-brand tracking-tight">{item.name}</h3>
+                <p className="mb-2 text-xs text-black font-brand">¥{item.price.toLocaleString('ja-JP')}</p>
               </div>
             </div>
           </Link>

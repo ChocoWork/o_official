@@ -64,6 +64,7 @@
         "/^node -e \"const \\{ chromium, devices \\} = require\\('playwright'\\); \\(async \\(\\) => \\{ const targets=\\[\\{url:'http://localhost:3002/news',name:'news'\\},\\{url:'http://localhost:3002/item',name:'item'\\}\\]; const d=\\[\\{name:'iPhone 12',device:devices\\['iPhone 12'\\]\\},\\{name:'iPad \\(gen 7\\)',device:devices\\['iPad \\(gen 7\\)'\\]\\}\\]; for \\(const t of targets\\)\\{ for \\(const dv of d\\)\\{ const browser=await chromium\\.launch\\(\\); const context=await browser\\.newContext\\(\\{\\.\\.\\.dv\\.device\\}\\); const page=await context\\.newPage\\(\\); await page\\.goto\\(t\\.url,\\{waitUntil:'domcontentloaded'\\}\\); const metrics=await page\\.evaluate\\(\\(\\)=>\\{ const allButton=\\[\\.\\.\\.document\\.querySelectorAll\\('button'\\)\\]\\.find\\(\\(el\\)=>el\\.textContent\\?\\.trim\\(\\)==='ALL'\\); if\\(!allButton\\) return null; const tabRoot=allButton\\.parentElement; const scrollContainer=tabRoot\\?\\.parentElement; const rect=tabRoot\\?\\.getBoundingClientRect\\(\\); const sRect=scrollContainer\\?\\.getBoundingClientRect\\(\\); return \\{ tabRootWidth:rect\\?Math\\.round\\(rect\\.width\\):null, viewportWidth:window\\.innerWidth, scrollContainerWidth:sRect\\?Math\\.round\\(sRect\\.width\\):null, scrollWidth:scrollContainer\\?\\.scrollWidth \\?\\? null, clientWidth:scrollContainer\\?\\.clientWidth \\?\\? null, scrollClass:scrollContainer\\?\\.className \\?\\? '' \\}; \\}\\); console\\.log\\(JSON\\.stringify\\(\\{page:t\\.name,device:dv\\.name,metrics\\},null,2\\)\\); await browser\\.close\\(\\); \\}\\} \\}\\)\\(\\);\"$/": {
             "approve": true,
             "matchCommandLine": true
-        }
+        },
+        "netstat": true
     }
 }

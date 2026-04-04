@@ -42,17 +42,17 @@ function LookCard({ look }: LookCardProps) {
       </Link>
       <div className="">
         <Link href={`/look/${look.id}`}>
-          <p className="text-base sm:text-lg lg:text-xl mb-2 sm:mb-3 text-black font-brand hover:text-[#474747] transition-colors">{formatLookSeason(look.seasonYear, look.seasonType)} - {look.theme}</p>
+          <p className="text-sm sm:text-base lg:text-lg mb-1.5 sm:mb-2 text-black font-brand hover:text-[#474747] transition-colors">{formatLookSeason(look.seasonYear, look.seasonType)} - {look.theme}</p>
         </Link>
         <div className="space-y-1">
           {look.linkedItems.length === 0 ? (
-            <p className="text-xs sm:text-sm text-[#474747] font-brand">紐づけ商品なし</p>
+            <p className="text-xs text-[#474747] font-brand">紐づけ商品なし</p>
           ) : (
             look.linkedItems.map((item) => (
               <Link
                 key={item.id}
                 href={`/item/${item.id}`}
-                className="block text-xs sm:text-sm text-[#474747] hover:text-black transition-colors font-brand"
+                className="block text-xs text-[#474747] hover:text-black transition-colors font-brand"
               >
                 {item.name}
               </Link>
