@@ -1,0 +1,5 @@
+BEGIN;
+
+ALTER TABLE public.stockists DROP COLUMN IF EXISTS type;
+
+COMMIT;

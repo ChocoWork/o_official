@@ -47,15 +47,15 @@ const FooterLinkList = ({
 
 const Footer = () => {
   return (
-    <footer className="bg-black text-white py-8 px-6 lg:px-12 w-full font-brand">
+    <footer className="bg-black text-white py-10 lg:py-16 px-6 lg:px-12 w-full font-brand">
       <div className="w-full">
-        <div className="flex flex-col md:flex-row gap-8 lg:gap-20 xl:gap-40 mb-8 w-full">
+          <div className="flex flex-col md:flex-row gap-8 lg:gap-20 xl:gap-40 mb-10 lg:mb-16 w-full">
           <div className="w-auto md:flex-shrink-0">
-            <h3 className="text-xl lg:text-2xl mb-2 md:mb-2 lg:mb-6 tracking-tight font-display">Le Fil des Heures</h3>
+            <h3 className="text-xl lg:text-2xl mb-2 lg:mb-6 tracking-tight font-display">Le Fil des Heures</h3>
             <p className="text-xs lg:text-sm text-white/70 leading-relaxed whitespace-nowrap">時を紡ぐニュートラルモードな日常着</p>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 lg:gap-12 w-full md:flex-1">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-6 lg:gap-12 w-full md:flex-1">
             <FooterLinkList title="SHOP" links={shopLinks} />
             <FooterLinkList title="INFORMATION" links={informationLinks} />
 

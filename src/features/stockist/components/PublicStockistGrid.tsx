@@ -1,13 +1,15 @@
 import { Card } from '@/components/ui/Card';
 import { SectionTitle } from '@/components/ui/SectionTitle';
-import { TagLabel } from '@/components/ui/TagLabel';
 import {
   getHomePublicStockists,
   getPublicStockists,
 } from '@/features/stockist/services/public';
 import { PublicStockist } from '@/features/stockist/types';
 
+// Home variant: 3-col showcasing grid
 const DEFAULT_GRID_CLASS = 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8 lg:gap-12';
+// Catalog variant: 3-col grid for vertical cards (matches mobile stacked layout)
+const CATALOG_GRID_CLASS = 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4';
 
 type PublicStockistGridHomeProps = {
   variant: 'home';
@@ -28,65 +30,41 @@ export async function PublicStockistGrid(props: PublicStockistGridProps) {
   const resolvedStockists =
     props.stockists ??
     (variant === 'home' ? await getHomePublicStockists() : await getPublicStockists());
-  const gridClassName = className ?? DEFAULT_GRID_CLASS;
+  const gridClassName = className ?? (variant === 'catalog' ? CATALOG_GRID_CLASS : DEFAULT_GRID_CLASS);
 
   const renderGrid = () => (
     <div className={gridClassName}>
-      {resolvedStockists.map((shop) => {
-        const isHome = variant === 'home';
-
-        if (isHome) {
-          return (
-            <div key={shop.name} className="border border-[#d5d0c9] p-6 xl:p-8 hover:border-black transition-colors duration-300">
-              <h3 className="text-lg lg:text-2xl mb-4 text-black font-brand">{shop.name}</h3>
-              <div className="space-y-2 text-[#474747] font-brand">
-                <div className="flex items-start">
-                  <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-map-pin-line text-lg" /></div>
-                  <p className="text-sm">{shop.address}</p>
-                </div>
-                <div className="flex items-start">
-                  <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-phone-line text-lg" /></div>
-                  <p className="text-sm">{shop.phone}</p>
-                </div>
-                <div className="flex items-start">
-                  <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-time-line text-lg" /></div>
-                  <div className="text-sm">
-                    <p>{shop.time}</p>
-                    <p className="text-xs mt-1">{shop.holiday}</p>
-                  </div>
-                </div>
-              </div>
+      {resolvedStockists.map((shop) => (
+        // Vertical card: name, divider, detail rows
+        // Responsive scale: mobile=compact / sm(tablet)=readable / xl(desktop)=luxurious
+        <Card key={shop.name} className="border-black/10 p-5 sm:p-6 xl:p-7 hover:border-black transition-colors duration-300" size="sm">
+          {/* Identity section */}
+          <div className="mb-3 sm:mb-4 xl:mb-5">
+            <h2 className="text-sm sm:text-base xl:text-lg text-black font-display leading-snug">{shop.name}</h2>
+          </div>
+          {/* Divider */}
+          <div className="border-t border-black/10 mb-3 sm:mb-4 xl:mb-5" />
+          {/* Detail rows */}
+          <div className="flex flex-col gap-1.5 sm:gap-2 xl:gap-2.5">
+            <div className="flex items-start gap-2">
+              <i className="ri-map-pin-line text-xs sm:text-sm text-black flex-shrink-0 mt-[3px]" />
+              <p className="text-xs sm:text-sm text-[#474747] font-brand leading-relaxed">{shop.address}</p>
             </div>
-          );
-        }
-
-        return (
-          <Card key={shop.name} className="border-black/10 p-8 hover:border-black transition-colors duration-300" size="md">
-            <div className="mb-4">
-              <TagLabel variant="outline" className="inline-block mb-4 font-brand bg-white" size="md">{shop.type}</TagLabel>
-              <h2 className="text-2xl text-black mb-6 font-display">{shop.name}</h2>
+            <div className="flex items-center gap-2">
+              <i className="ri-phone-line text-xs sm:text-sm text-black flex-shrink-0" />
+              <p className="text-xs sm:text-sm text-[#474747] font-brand">{shop.phone}</p>
             </div>
-            <div className="space-y-3">
-              <div className="flex items-start">
-                <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-map-pin-line text-lg text-black" /></div>
-                <p className="text-sm text-[#474747] font-brand">{shop.address}</p>
-              </div>
-              <div className="flex items-center">
-                <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-phone-line text-lg text-black" /></div>
-                <p className="text-sm text-[#474747] font-brand">{shop.phone}</p>
-              </div>
-              <div className="flex items-center">
-                <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-time-line text-lg text-black" /></div>
-                <p className="text-sm text-[#474747] font-brand">{shop.time}</p>
-              </div>
-              <div className="flex items-center">
-                <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-calendar-line text-lg text-black" /></div>
-                <p className="text-sm text-[#474747] font-brand">{shop.holiday}</p>
-              </div>
+            <div className="flex items-center gap-2">
+              <i className="ri-time-line text-xs sm:text-sm text-black flex-shrink-0" />
+              <p className="text-xs sm:text-sm text-[#474747] font-brand">{shop.time}</p>
             </div>
-          </Card>
-        );
-      })}
+            <div className="flex items-center gap-2">
+              <i className="ri-calendar-line text-xs sm:text-sm text-black flex-shrink-0" />
+              <p className="text-xs sm:text-sm text-[#474747] font-brand">{shop.holiday}</p>
+            </div>
+          </div>
+        </Card>
+      ))}
     </div>
   );
 

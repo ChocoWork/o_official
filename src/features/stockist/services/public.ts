@@ -6,7 +6,6 @@ export const STOCKIST_MAP_EMBED_URL =
 
 function toPublicStockists(rows: StockistRecord[]): PublicStockist[] {
   return rows.map((row) => ({
-    type: row.type,
     name: row.name,
     address: row.address,
     phone: row.phone,
@@ -22,7 +21,7 @@ export async function getPublicStockists(options?: {
 
   let query = supabase
     .from('stockists')
-    .select('id, type, name, address, phone, time, holiday, status')
+    .select('id, name, address, phone, time, holiday, status')
     .eq('status', 'published')
     .order('id', { ascending: true });
 

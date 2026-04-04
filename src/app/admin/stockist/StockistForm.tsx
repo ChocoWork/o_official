@@ -6,14 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { SingleSelect } from '@/components/ui/SingleSelect';
 import { TextField } from '@/components/ui/TextField';
 import { clientFetch } from '@/lib/client-fetch';
-import { StockistType } from '@/features/stockist/types';
 import { StockistFormValues, StockistStatus } from './types';
-
-const STOCKIST_TYPE_OPTIONS: Array<{ value: StockistType; label: StockistType }> = [
-  { value: 'FLAGSHIP STORE', label: 'FLAGSHIP STORE' },
-  { value: 'STORE', label: 'STORE' },
-  { value: 'SELECT SHOP', label: 'SELECT SHOP' },
-];
 
 const STOCKIST_STATUS_OPTIONS: Array<{ value: StockistStatus; label: string }> = [
   { value: 'private', label: '非公開' },
@@ -30,7 +23,6 @@ type StockistFormProps = {
 export function StockistForm({ submitUrl, submitMethod, initialValues, isLoading = false }: StockistFormProps) {
   const router = useRouter();
 
-  const [type, setType] = useState<StockistType>(initialValues?.type ?? 'STORE');
   const [name, setName] = useState(initialValues?.name ?? '');
   const [address, setAddress] = useState(initialValues?.address ?? '');
   const [phone, setPhone] = useState(initialValues?.phone ?? '');
@@ -46,7 +38,6 @@ export function StockistForm({ submitUrl, submitMethod, initialValues, isLoading
       return;
     }
 
-    setType(initialValues.type);
     setName(initialValues.name);
     setAddress(initialValues.address);
     setPhone(initialValues.phone);
@@ -80,7 +71,6 @@ export function StockistForm({ submitUrl, submitMethod, initialValues, isLoading
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          type,
           name: trimmedName,
           address: trimmedAddress,
           phone: trimmedPhone,
@@ -127,24 +117,13 @@ export function StockistForm({ submitUrl, submitMethod, initialValues, isLoading
             size="md"
           />
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <TextField
+          <TextField
               required
               label="店舗名"
               value={name}
               onChange={(event) => setName(event.target.value)}
               size="md"
             />
-
-            <SingleSelect
-              label="店舗種別"
-              variant="dropdown"
-              value={type}
-              onValueChange={(value) => setType(value as StockistType)}
-              options={STOCKIST_TYPE_OPTIONS}
-              size="md"
-            />
-          </div>
 
           <TextField
             required

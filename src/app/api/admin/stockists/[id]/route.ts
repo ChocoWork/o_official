@@ -3,11 +3,9 @@ import { z } from 'zod';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 
-const stockistTypeSchema = z.enum(['FLAGSHIP STORE', 'STORE', 'SELECT SHOP']);
 const stockistStatusSchema = z.enum(['private', 'published']);
 
 const updateStockistSchema = z.object({
-  type: stockistTypeSchema,
   name: z.string().trim().min(1).max(255),
   address: z.string().trim().min(1).max(500),
   phone: z.string().trim().min(1).max(50),
@@ -92,7 +90,6 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const { error } = await supabase
       .from('stockists')
       .update({
-        type: parsed.data.type,
         name: parsed.data.name,
         address: parsed.data.address,
         phone: parsed.data.phone,

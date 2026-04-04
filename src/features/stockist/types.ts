@@ -1,9 +1,7 @@
-export type StockistType = 'FLAGSHIP STORE' | 'STORE' | 'SELECT SHOP';
 export type StockistStatus = 'private' | 'published';
 
 export type StockistRecord = {
   id: number;
-  type: StockistType;
   name: string;
   address: string;
   phone: string;
@@ -15,7 +13,6 @@ export type StockistRecord = {
 };
 
 export type PublicStockist = {
-  type: StockistType;
   name: string;
   address: string;
   phone: string;

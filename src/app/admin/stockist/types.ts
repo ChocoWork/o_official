@@ -1,9 +1,6 @@
-import { StockistType } from '@/features/stockist/types';
-
 export type StockistStatus = 'private' | 'published';
 
 export type StockistFormValues = {
-  type: StockistType;
   name: string;
   address: string;
   phone: string;
@@ -14,7 +11,6 @@ export type StockistFormValues = {
 
 export type StockistResponse = {
   id: number;
-  type: StockistType;
   name: string;
   address: string;
   phone: string;

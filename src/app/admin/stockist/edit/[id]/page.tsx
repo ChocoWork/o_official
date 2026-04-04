@@ -37,7 +37,6 @@ export default function AdminStockistEditPage() {
         }
 
         setInitialValues({
-          type: stockist.type,
           name: stockist.name,
           address: stockist.address,
           phone: stockist.phone,

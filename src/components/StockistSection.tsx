@@ -5,12 +5,9 @@ import { clientFetch } from '@/lib/client-fetch';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
-import { TagLabel } from '@/components/ui/TagLabel';
-import { StockistType } from '@/features/stockist/types';
 
 type AdminStockist = {
   id: number;
-  type: StockistType;
   name: string;
   address: string;
   phone: string;
@@ -95,38 +92,39 @@ export default function StockistSection() {
 
   return (
     <section>
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8 lg:gap-12">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
         {stockists.map((stockist) => (
           <Card
             key={stockist.id}
-            className={`border-black/10 p-8 hover:border-black transition-colors duration-300 ${stockist.status === 'published' ? 'bg-[#f7fff1]' : 'bg-[#fafafa]'}`}
-            size="md"
+            className={`border-black/10 p-5 sm:p-6 xl:p-7 hover:border-black transition-colors duration-300 ${stockist.status === 'published' ? 'bg-[#f7fff1]' : 'bg-[#fafafa]'}`}
+            size="sm"
           >
-            <div className="space-y-2">
-              <div className="mb-4 flex items-center justify-between gap-4">
-                <TagLabel variant="outline" className="inline-block font-brand bg-white" size="md">{stockist.type}</TagLabel>
-                <StatusBadge tone={stockist.status === 'published' ? 'positive' : 'warning'} size="md">
-                  {stockist.status === 'published' ? '公開中' : '非公開'}
-                </StatusBadge>
+            {/* Identity: name + StatusBadge */}
+            <div className="mb-3 sm:mb-4 xl:mb-5 flex items-start justify-between gap-3">
+              <h2 className="text-sm sm:text-base xl:text-lg text-black font-display leading-snug">{stockist.name}</h2>
+              <StatusBadge tone={stockist.status === 'published' ? 'positive' : 'warning'} size="md" className="flex-shrink-0">
+                {stockist.status === 'published' ? '公開中' : '非公開'}
+              </StatusBadge>
+            </div>
+            {/* Divider */}
+            <div className="border-t border-black/10 mb-3 sm:mb-4 xl:mb-5" />
+            {/* Detail rows */}
+            <div className="flex flex-col gap-1.5 sm:gap-2 xl:gap-2.5">
+              <div className="flex items-start gap-2">
+                <i className="ri-map-pin-line text-xs sm:text-sm text-black flex-shrink-0 mt-[3px]" />
+                <p className="text-xs sm:text-sm text-[#474747] font-brand leading-relaxed">{stockist.address}</p>
               </div>
-              <h2 className="text-2xl text-black mb-6 font-display">{stockist.name}</h2>
-              <div className="space-y-3">
-                <div className="flex items-start">
-                  <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-map-pin-line text-lg text-black" /></div>
-                  <p className="text-sm text-[#474747] font-brand">{stockist.address}</p>
-                </div>
-                <div className="flex items-center">
-                  <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-phone-line text-lg text-black" /></div>
-                  <p className="text-sm text-[#474747] font-brand">{stockist.phone}</p>
-                </div>
-                <div className="flex items-center">
-                  <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-time-line text-lg text-black" /></div>
-                  <p className="text-sm text-[#474747] font-brand">{stockist.time}</p>
-                </div>
-                <div className="flex items-center">
-                  <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-calendar-line text-lg text-black" /></div>
-                  <p className="text-sm text-[#474747] font-brand">{stockist.holiday}</p>
-                </div>
+              <div className="flex items-center gap-2">
+                <i className="ri-phone-line text-xs sm:text-sm text-black flex-shrink-0" />
+                <p className="text-xs sm:text-sm text-[#474747] font-brand">{stockist.phone}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <i className="ri-time-line text-xs sm:text-sm text-black flex-shrink-0" />
+                <p className="text-xs sm:text-sm text-[#474747] font-brand">{stockist.time}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <i className="ri-calendar-line text-xs sm:text-sm text-black flex-shrink-0" />
+                <p className="text-xs sm:text-sm text-[#474747] font-brand">{stockist.holiday}</p>
               </div>
             </div>
 
