@@ -15,8 +15,8 @@ const badgeToneClass: Record<NonNullable<StatusBadgeProps['tone']>, string> = {
   // default styles avoid border so badges appear flush with their background
   neutral: 'text-black',
   positive: 'bg-black text-white',
-  // warning tone used for intermediate statuses
-  warning: 'bg-[#f5f5f5] text-black',
+  // warning tone used for intermediate or private statuses
+  warning: 'border border-black bg-white text-black',
   danger: 'bg-black text-white',
 };
 

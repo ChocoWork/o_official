@@ -63,7 +63,7 @@ export async function PublicStockistGrid(props: PublicStockistGridProps) {
         return (
           <Card key={shop.name} className="border-black/10 p-8 hover:border-black transition-colors duration-300" size="md">
             <div className="mb-4">
-              <TagLabel className="inline-block mb-4 font-brand" size="md">{shop.type}</TagLabel>
+              <TagLabel variant="outline" className="inline-block mb-4 font-brand bg-white" size="md">{shop.type}</TagLabel>
               <h2 className="text-2xl text-black mb-6 font-display">{shop.name}</h2>
             </div>
             <div className="space-y-3">

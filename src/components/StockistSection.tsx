@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { clientFetch } from '@/lib/client-fetch';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 import { TagLabel } from '@/components/ui/TagLabel';
 import { StockistType } from '@/features/stockist/types';
 
@@ -96,12 +97,19 @@ export default function StockistSection() {
     <section>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8 lg:gap-12">
         {stockists.map((stockist) => (
-          <Card key={stockist.id} className="border-black/10 p-8 hover:border-black transition-colors duration-300" size="md">
+          <Card
+            key={stockist.id}
+            className={`border-black/10 p-8 hover:border-black transition-colors duration-300 ${stockist.status === 'published' ? 'bg-[#f7fff1]' : 'bg-[#fafafa]'}`}
+            size="md"
+          >
             <div className="space-y-2">
-              <div className="mb-4">
-                <TagLabel className="inline-block mb-4 font-brand" size="md">{stockist.type}</TagLabel>
-                <h2 className="text-2xl text-black mb-6 font-display">{stockist.name}</h2>
+              <div className="mb-4 flex items-center justify-between gap-4">
+                <TagLabel variant="outline" className="inline-block font-brand bg-white" size="md">{stockist.type}</TagLabel>
+                <StatusBadge tone={stockist.status === 'published' ? 'positive' : 'warning'} size="md">
+                  {stockist.status === 'published' ? '公開中' : '非公開'}
+                </StatusBadge>
               </div>
+              <h2 className="text-2xl text-black mb-6 font-display">{stockist.name}</h2>
               <div className="space-y-3">
                 <div className="flex items-start">
                   <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 mr-3"><i className="ri-map-pin-line text-lg text-black" /></div>
@@ -123,11 +131,6 @@ export default function StockistSection() {
             </div>
 
             <div className="mt-8 border-t border-black/10 pt-4">
-              <div className="mb-3">
-                <TagLabel variant={stockist.status === 'published' ? 'solid' : 'outline'} size="sm">
-                  {stockist.status === 'published' ? '公開中' : '非公開'}
-                </TagLabel>
-              </div>
               <div className="flex space-x-2">
               <Button
                 onClick={() => handleToggleStatus(stockist.id, stockist.status)}
