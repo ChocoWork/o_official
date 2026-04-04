@@ -52,7 +52,7 @@ export default async function Home() {
         <section id="about" className="mt-14 sm:mt-16 lg:mt-20 py-14 sm:py-16 lg:py-24 px-6 lg:px-12 bg-[#fafafa] w-full">
           <div className="max-w-7xl mx-auto">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 lg:gap-20 items-center">
-              <div className="order-2 lg:order-1">
+              <div className="order-2 md:order-1">
                 <SectionTitle title="ABOUT" />
                 <div className="space-y-4 lg:space-y-6 text-[#474747] font-brand">
                   <p className="text-sm lg:text-base leading-relaxed">Le Fil des Heuresは、「時を紡ぐニュートラルモードな日常着」をコンセプトに、2026年に日本の宮城県で誕生したアパレルブランドです。</p>
@@ -72,7 +72,7 @@ export default async function Home() {
                 </div>
               </div>
 
-              <div className="order-1 lg:order-2">
+              <div className="order-1 md:order-2">
                 <div className="relative aspect-[3/4] overflow-hidden">
                   <Image
                     src="https://readdy.ai/api/search-image?query=Minimalist%20fashion%20brand%20atelier%20studio%20interior%20with%20neutral%20beige%20and%20grey%20tones%20featuring%20clean%20white%20walls%20elegant%20fabric%20samples%20hanging%20on%20simple%20racks%20natural%20lighting%20through%20large%20windows%20contemporary%20workspace%20with%20sophisticated%20design%20elements%20and%20architectural%20details%20showcasing%20modern%20fashion%20design%20environment&width=800&height=1000&seq=about001&orientation=portrait"
