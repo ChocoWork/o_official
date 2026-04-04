@@ -50,6 +50,10 @@ updated: 2026-02-23
 - [x] 管理画面 LOOK タブに Supabase 登録済みLOOKを表示できる
 - [x] 管理画面 LOOK タブで公開/非公開切替（PATCH）と削除（DELETE）が動作する
 - [x] 管理画面 LOOK タブの編集ボタンから編集ページへ遷移し、更新（PUT）できる
+- [x] 管理画面に STOCKIST タブを追加し、一覧表示できる
+- [x] 管理画面 STOCKIST タブから追加・編集・削除・公開切替ができる
+- [x] 公開 STOCKIST 一覧（HOME/stockist）が DB 連携で表示される
+- [x] STOCKIST の表示順 / HOME表示フラグをフォーム・API・DB から削除し、編集フォーム表示順を統一した
 - [x] 管理画面 LOOK 作成/編集フォームを共通コンポーネント化し、重複実装を解消した
 - [x] 管理画面 NEWS 作成/編集フォームを共通コンポーネント化し、重複実装を解消した
 - [x] 管理画面 USER タブで DB（auth.users + profiles）連携の一覧表示ができる

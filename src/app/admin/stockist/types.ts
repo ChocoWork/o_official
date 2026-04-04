@@ -1,7 +1,18 @@
-export type StockistType = 'FLAGSHIP STORE' | 'STORE' | 'SELECT SHOP';
+import { StockistType } from '@/features/stockist/types';
+
 export type StockistStatus = 'private' | 'published';
 
-export type StockistRecord = {
+export type StockistFormValues = {
+  type: StockistType;
+  name: string;
+  address: string;
+  phone: string;
+  time: string;
+  holiday: string;
+  status: StockistStatus;
+};
+
+export type StockistResponse = {
   id: number;
   type: StockistType;
   name: string;
@@ -10,15 +21,4 @@ export type StockistRecord = {
   time: string;
   holiday: string;
   status: StockistStatus;
-  created_at?: string;
-  updated_at?: string;
-};
-
-export type PublicStockist = {
-  type: StockistType;
-  name: string;
-  address: string;
-  phone: string;
-  time: string;
-  holiday: string;
 };

@@ -53,10 +53,6 @@ function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
-function formatInteger(value: number): string {
-  return new Intl.NumberFormat('ja-JP').format(value);
-}
-
 function formatPercent(value: number): string {
   return `${value.toFixed(1)}%`;
 }
@@ -75,11 +71,6 @@ function getJstDateParts(dateInput: Date | string): { year: string; month: strin
   const day = parts.find((part) => part.type === 'day')?.value ?? '01';
 
   return { year, month, day };
-}
-
-function getJstDayKey(dateInput: Date | string): string {
-  const { year, month, day } = getJstDateParts(dateInput);
-  return `${year}-${month}-${day}`;
 }
 
 function getJstMonthKey(dateInput: Date | string): string {

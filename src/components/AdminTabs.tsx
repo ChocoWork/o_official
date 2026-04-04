@@ -1,4 +1,4 @@
-export type TabType = 'KPI' | 'NEWS' | 'ITEM' | 'LOOK' | 'USER' | 'ORDER';
+export type TabType = 'KPI' | 'NEWS' | 'ITEM' | 'LOOK' | 'STOCKIST' | 'USER' | 'ORDER';
 
 import type { ReactNode } from 'react';
 import { TabSegmentControl } from '@/components/ui/TabSegmentControl';
@@ -10,7 +10,7 @@ interface AdminTabsProps {
   rightContent?: ReactNode;
 }
 
-const allTabs: TabType[] = ['KPI', 'NEWS', 'ITEM', 'LOOK', 'USER', 'ORDER'];
+const allTabs: TabType[] = ['KPI', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER'];
 
 export default function AdminTabs({ activeTab, onTabChange, tabs = allTabs, rightContent }: AdminTabsProps) {
   return (

@@ -2,9 +2,8 @@ import { Card } from '@/components/ui/Card';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { TagLabel } from '@/components/ui/TagLabel';
 import {
+  getHomePublicStockists,
   getPublicStockists,
-  HOME_PUBLIC_STOCKISTS,
-  STOCKIST_MAP_EMBED_URL,
 } from '@/features/stockist/services/public';
 import { PublicStockist } from '@/features/stockist/types';
 
@@ -24,9 +23,11 @@ type PublicStockistGridCatalogProps = {
 
 type PublicStockistGridProps = PublicStockistGridHomeProps | PublicStockistGridCatalogProps;
 
-export function PublicStockistGrid(props: PublicStockistGridProps) {
+export async function PublicStockistGrid(props: PublicStockistGridProps) {
   const { variant, className } = props;
-  const resolvedStockists = props.stockists ?? (variant === 'home' ? HOME_PUBLIC_STOCKISTS : getPublicStockists());
+  const resolvedStockists =
+    props.stockists ??
+    (variant === 'home' ? await getHomePublicStockists() : await getPublicStockists());
   const gridClassName = className ?? DEFAULT_GRID_CLASS;
 
   const renderGrid = () => (

@@ -11,6 +11,8 @@ export type PermissionCode =
   | 'admin.news.manage'
   | 'admin.looks.read'
   | 'admin.looks.manage'
+  | 'admin.stockists.read'
+  | 'admin.stockists.manage'
   | 'admin.orders.read'
   | 'admin.orders.manage';
 
@@ -37,6 +39,8 @@ const legacyPermissionMap: Record<AppRole, Set<PermissionCode>> = {
     'admin.news.manage',
     'admin.looks.read',
     'admin.looks.manage',
+    'admin.stockists.read',
+    'admin.stockists.manage',
     'admin.orders.read',
     'admin.orders.manage',
   ]),

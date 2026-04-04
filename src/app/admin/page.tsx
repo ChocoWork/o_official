@@ -10,13 +10,14 @@ import KpiSection, { type AdminKpiData } from '@/components/KpiSection';
 import NewsSection from '@/components/NewsSection';
 import ItemSection from '@/components/ItemSection';
 import LookSection from '@/components/LookSection';
+import StockistSection from '@/components/StockistSection';
 import UserSection from '@/components/UserSection';
 import OrderSection, { type OrderItem } from '@/components/OrderSection';
 import { Button } from '@/components/ui/Button';
 import { DateTimePicker } from '@/components/ui/DateTimePicker';
 import { SearchField } from '@/components/ui/SearchField';
 
-const allAdminTabs: TabType[] = ['KPI', 'NEWS', 'ITEM', 'LOOK', 'USER', 'ORDER'];
+const allAdminTabs: TabType[] = ['KPI', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER'];
 const supporterTabs: TabType[] = ['ORDER'];
 const ORDER_STATUS_FILTERS = [
   { label: 'すべて', value: 'all' },
@@ -442,6 +443,13 @@ export default function AdminPage() {
             新規作成
           </Button>
         );
+      case 'STOCKIST':
+        if (userRole !== 'admin') return null;
+        return (
+          <Button href="/admin/stockist/create" variant="primary" size="sm" className="font-acumin">
+            新規作成
+          </Button>
+        );
       case 'ORDER':
         return (
           <div className="flex items-center justify-end gap-3 whitespace-nowrap">
@@ -491,6 +499,9 @@ export default function AdminPage() {
       case 'LOOK':
         if (userRole !== 'admin') return null;
         return <LookSection />;
+      case 'STOCKIST':
+        if (userRole !== 'admin') return null;
+        return <StockistSection />;
       case 'USER':
         if (userRole !== 'admin') return null;
         return <UserSection />;
