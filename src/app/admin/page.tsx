@@ -453,7 +453,7 @@ export default function AdminPage() {
       case 'ORDER':
         return (
           <div className="flex items-center justify-end gap-3 whitespace-nowrap">
-            <div className="w-80 shrink-0 xl:w-96">
+            <div className="w-64 shrink-0 xl:w-72">
               <SearchField
                 label=""
                 placeholder="注文ID / 顧客名 / メール"
