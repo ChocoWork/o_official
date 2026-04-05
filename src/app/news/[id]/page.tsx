@@ -43,7 +43,7 @@ export default async function NewsDetailPage({
   const navCategoryParam = activeCategory === "ALL" ? "" : `?category=${activeCategory}`;
 
   return (
-    <main className="pt-32 pb-16 sm:pb-20 px-6 lg:px-12">
+    <div className="pb-10 sm:pb-14 px-6 lg:px-12">
       <div className="max-w-3xl mx-auto">
         {/* Article Header */}
         <div className="mb-8 sm:mb-10">
@@ -145,6 +145,6 @@ export default async function NewsDetailPage({
           )}
         </div>
       </div>
-    </main>
+    </div>
   );
 }

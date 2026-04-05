@@ -10,10 +10,10 @@ export default async function NewsPage({
   const articles = await getPublishedNews();
 
   return (
-    <main className="pt-32 pb-20 px-6 lg:px-12">
+    <div className="pb-10 sm:pb-14 px-6 lg:px-12">
       <div className="max-w-7xl mx-auto">
         <PublicNewsGrid variant="catalog" articles={articles} />
       </div>
-    </main>
+    </div>
   );
 }

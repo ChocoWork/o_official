@@ -75,11 +75,11 @@ export default function OAuthCallbackPage() {
   }, [router, searchParams, next]);
 
   return (
-    <main className="pt-32 pb-20 px-6 lg:px-12">
+    <div className="pb-10 sm:pb-14 px-6 lg:px-12">
       <div className="max-w-xl mx-auto font-brand">
         <h1 className="text-xl tracking-widest mb-4">OAuth</h1>
         <p className="text-sm text-[#474747]">{message}</p>
       </div>
-    </main>
+    </div>
   );
 }

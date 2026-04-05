@@ -504,17 +504,17 @@ export default function CheckoutPage() {
 
   if (cartLoading) {
     return (
-      <main className="pt-32 pb-20 px-6 lg:px-12">
+      <div className="pb-10 sm:pb-14 px-6 lg:px-12">
         <div className="max-w-7xl mx-auto text-center">
           <div className="text-base tracking-widest font-brand">読み込み中...</div>
         </div>
-      </main>
+      </div>
     );
   }
 
   if (completed) {
     return (
-      <main className="pt-32 pb-20 px-6 lg:px-12">
+      <div className="pb-10 sm:pb-14 px-6 lg:px-12">
         <div className="max-w-3xl mx-auto text-center">
           <h1 className="text-4xl text-black tracking-tight mb-4 font-display">Thank you for your order</h1>
           <p className="text-lg text-[#474747] mb-12 font-brand">ご注文を承りました。確認メールをお送りしましたのでご確認ください。</p>
@@ -563,12 +563,12 @@ export default function CheckoutPage() {
             <Link href="/account" className="px-12 py-4 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap font-brand">注文履歴を見る</Link>
           </div>
         </div>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="pt-32 pb-20 px-6 lg:px-12">
+    <div className="pb-10 sm:pb-14 px-6 lg:px-12">
       <div className="max-w-7xl mx-auto">
         <div className="flex items-center justify-center mb-12">
           <div className="flex items-start">
@@ -863,6 +863,6 @@ export default function CheckoutPage() {
           </div>
         </div>
       </div>
-    </main>
+    </div>
   );
 }

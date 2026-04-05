@@ -2,7 +2,7 @@ import Image from 'next/image';
 
 export default function StoryPage() {
   return (
-    <main className="pt-32 pb-20">
+    <div className="pb-10 sm:pb-14">
       <div className="max-w-6xl mx-auto px-6 lg:px-12">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 mb-24">
           <div className="aspect-[4/5] bg-[#f5f5f5] overflow-hidden">
@@ -73,6 +73,6 @@ export default function StoryPage() {
           </div>
         </div>
       </div>
-    </main>
+    </div>
   );
 }

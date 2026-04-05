@@ -154,17 +154,17 @@ export default function Page() {
 
 	if (!isAuthResolved) {
 		return (
-			<main className="pt-32 pb-20 px-6 lg:px-12">
+			<div className="pb-10 sm:pb-14 px-6 lg:px-12">
 				<div className="max-w-3xl mx-auto text-center">
 					<p className="text-lg text-[#474747] mb-8 font-brand">読み込み中...</p>
 				</div>
-			</main>
+			</div>
 		);
 	}
 
 	if (isLoggedIn) {
 		return (
-			<main className="pt-32 pb-20 px-6 lg:px-12">
+			<div className="pb-10 sm:pb-14 px-6 lg:px-12">
 				<div className="max-w-7xl mx-auto">
 					<div className="grid grid-cols-1 lg:grid-cols-4 gap-12">
 						<div className="lg:col-span-1">
@@ -501,12 +501,12 @@ export default function Page() {
 						</div>
 					</div>
 				</div>
-			</main>
+			</div>
 		);
 	}
 
 	return (
-		<main className="pt-32 pb-20 px-6 lg:px-12">
+		<div className="pb-10 sm:pb-14 px-6 lg:px-12">
 			<div className="max-w-3xl mx-auto text-center">
 				<div className="w-20 h-20 flex items-center justify-center mx-auto mb-8">
 					<i className="ri-user-line text-6xl text-[#474747]"></i>
@@ -521,6 +521,4 @@ export default function Page() {
 					ログイン
 				</Button>
 			</div>
-		</main>
-	);
-}
+		</div>

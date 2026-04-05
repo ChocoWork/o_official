@@ -65,6 +65,7 @@
             "approve": true,
             "matchCommandLine": true
         },
-        "netstat": true
+        "netstat": true,
+        "ForEach-Object": true
     }
 }

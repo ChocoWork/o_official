@@ -1,11 +1,11 @@
 "use client";
 import React from "react";
-import LoginModal from "../components/LoginModal";
+import LoginModal from "@/components/LoginModal";
 
 export default function LoginPage() {
   return (
-    <main className="pt-32 pb-20 px-6 lg:px-12">
+    <div className="pb-10 sm:pb-14 px-6 lg:px-12">
       <LoginModal open={true} onClose={() => {}} />
-    </main>
+    </div>
   );
 }

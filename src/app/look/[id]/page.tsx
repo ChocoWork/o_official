@@ -11,14 +11,14 @@ export default async function LookDetailPage({ params }: { params: Promise<{ id:
 
   if (currentIndex < 0) {
     return (
-      <main className="pt-32 pb-20 px-6 lg:px-12">
+      <div className="pb-10 sm:pb-14 px-6 lg:px-12">
         <div className="max-w-7xl mx-auto text-center">
           <h1 className="text-2xl font-brand text-black">Look not found</h1>
           <Link href="/look" className="text-sm text-[#474747] hover:text-black mt-4 inline-block">
             Back to Lookbook
           </Link>
         </div>
-      </main>
+      </div>
     );
   }
 
@@ -34,7 +34,7 @@ export default async function LookDetailPage({ params }: { params: Promise<{ id:
   });
 
     return (
-        <main className="pt-32 pb-20 px-6 lg:px-12">
+        <div className="pb-10 sm:pb-14 px-6 lg:px-12">
             <div className="max-w-7xl mx-auto">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20">
                     <div className="space-y-4">
@@ -127,6 +127,6 @@ export default async function LookDetailPage({ params }: { params: Promise<{ id:
                     </div>
                 </div>
             </div>
-        </main>
+        </div>
     );
 }

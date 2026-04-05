@@ -5,10 +5,10 @@ export default async function ItemPage() {
   const items = await getPublishedItems();
 
   return (
-    <main className="pt-32 pb-20 px-6 lg:px-12">
+    <div className="pb-10 sm:pb-14 px-6 lg:px-12">
       <div className="max-w-7xl mx-auto">
         <PublicItemGrid variant="catalog" items={items} />
       </div>
-    </main>
+    </div>
   );
 }

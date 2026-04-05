@@ -10,7 +10,7 @@ export default function ContactPage() {
     const [selectedInquiryType, setSelectedInquiryType] = useState('');
 
     return (
-        <main className="pt-24 pb-16 min-h-screen flex items-start justify-center">
+        <div className="pb-10 min-h-screen flex items-start justify-center">
             <div className="w-full max-w-4xl mx-auto px-6 lg:px-12">
                 <div className="mb-14 p-8 lg:p-10">
                     <h1 className="text-3xl text-black mb-2 tracking-tight font-display">Contact / お問い合わせ</h1>
@@ -45,6 +45,6 @@ export default function ContactPage() {
                     </form>
                 </div>
             </div>
-        </main>
+        </div>
     );
 }

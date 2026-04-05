@@ -234,7 +234,7 @@ export default function Page() {
     { key: 'layout', iconClass: 'ri-layout-grid-line' },
   ] as const;
   // ...existing code...
-  return (    <main className="pt-32 pb-20">
+  return (    <div className="pb-20">
       <div className="max-w-7xl mx-auto px-6 lg:px-12">
         <div className="mb-12 flex items-center gap-3 sticky top-32 bg-white z-50 py-4">
           {(['sm', 'md', 'lg'] as const).map((size) => (
@@ -1484,6 +1484,6 @@ export default function Page() {
           </div>
         </div>
       </Drawer>
-    </main>
+    </div>
   );
 }

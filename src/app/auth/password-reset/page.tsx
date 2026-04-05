@@ -123,7 +123,7 @@ export default function PasswordResetPage() {
   const isConfirmMode = Boolean(token && emailFromQuery);
 
   return (
-    <main className="pt-32 pb-20 px-6 lg:px-12">
+    <div className="pb-10 sm:pb-14 px-6 lg:px-12">
       <div className="w-full max-w-md mx-auto px-6 font-brand">
         <h1 className="text-xl mb-6">
           {isConfirmMode ? 'パスワード再設定' : 'パスワード再設定の申請'}
@@ -168,6 +168,6 @@ export default function PasswordResetPage() {
         {error ? <p className="text-sm text-red-600 mt-4">{error}</p> : null}
         {message ? <p className="text-sm text-green-600 mt-4">{message}</p> : null}
       </div>
-    </main>
+    </div>
   );
 }

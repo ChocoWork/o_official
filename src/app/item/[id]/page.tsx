@@ -110,17 +110,17 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
   if (loading) {
     return (
-      <main className="pt-32 pb-20 px-6 lg:px-12">
+      <div className="pb-10 sm:pb-14 px-6 lg:px-12">
         <div className="max-w-7xl mx-auto text-center">
           <div className="text-base tracking-widest font-brand">読み込み中...</div>
         </div>
-      </main>
+      </div>
     );
   }
 
   if (error || !item) {
     return (
-      <main className="pt-32 pb-20 px-6 lg:px-12">
+      <div className="pb-10 sm:pb-14 px-6 lg:px-12">
         <div className="max-w-7xl mx-auto">
           <div className="mb-8">
             <Button
@@ -141,7 +141,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             </p>
           </div>
         </div>
-      </main>
+      </div>
     );
   }
 
@@ -154,7 +154,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     : [item.image_url];
 
   return (
-    <main className="pt-24 pb-20 px-6 lg:px-12">
+    <div className="pb-10 sm:pb-14 px-6 lg:px-12">
       <div className="max-w-7xl mx-auto">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-24">
           <div>
@@ -331,6 +331,6 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
           </div>
         </div>
       </div>
-    </main>
+    </div>
   );
 }
