@@ -154,11 +154,11 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     : [item.image_url];
 
   return (
-    <div className="pb-16 sm:pb-20 lg:pb-24 px-6 lg:px-12">
+    <div className="pb-16 sm:pb-20 lg:pb-24 px-6 sm:px-12 lg:px-24">
       <div className="max-w-7xl mx-auto">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[5fr_7fr] gap-8 md:gap-10 lg:gap-12 xl:gap-16">
-          <div className="md:sticky md:top-24 lg:top-28">
-            <div className="flex flex-col gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-[5fr_7fr] gap-8 md:gap-6 lg:gap-12 xl:gap-16 lg:w-fit">
+          <div className="md:sticky md:top-24 lg:top-28 lg:w-fit">
+            <div className="flex flex-col gap-2 lg:w-fit">
               <div className="relative aspect-[3/4] lg:aspect-auto lg:h-[calc(100vh-22rem)] lg:w-[calc((100vh-22rem)*3/4)] lg:max-w-full bg-white overflow-hidden">
                 {mainImage ? (
                   <Image
@@ -204,30 +204,19 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             </div>
           </div>
 
-          <div className="space-y-5 sm:space-y-6 md:space-y-7 lg:space-y-8">
+          <div className="space-y-4 lg:space-y-6">
             <div>
-              <p className="text-xs text-[#474747] tracking-widest mb-2 font-brand">
-                {item.category}
-              </p>
-              <h2 className="sm:text-base md:text-xl text-black mb-2 sm:mb-3 md:mb-4 tracking-tight font-brand">
+              <h2 className="sm:text-base md:text-xl text-black tracking-tight font-brand">
                 {item.name}
               </h2>
-              <p className="text-base md:text-xl text-black font-brand">
+              <p className="text-sm md:text-lg text-black font-brand">
                 ¥{item.price.toLocaleString('ja-JP')}
               </p>
             </div>
 
-            {item.description && (
-              <div>
-                <p className="text-xs md:text-sm text-[#474747] leading-relaxed font-brand">
-                  {item.description}
-                </p>
-              </div>
-            )}
-
             {item.colors && Array.isArray(item.colors) && item.colors.length > 0 && (
               <div>
-                <h3 className="text-sm tracking-widest mb-4 font-brand">
+                <h3 className="text-xs md:text-sm tracking-widest mb-2 font-brand">
                   COLOR
                 </h3>
                 <div className="flex gap-3 flex-wrap">
@@ -248,7 +237,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
             {item.sizes && item.sizes.length > 0 && (
               <div>
-                <h3 className="text-sm tracking-widest mb-4 font-brand">
+                <h3 className="text-xs md:text-sm tracking-widest mb-2 font-brand">
                   SIZE
                 </h3>
                 <div className="flex gap-3 flex-wrap">
@@ -268,11 +257,50 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             )}
 
             <div>
-              <h3 className="text-sm tracking-widest mb-4 font-brand">
+              <h3 className="text-xs md:text-sm tracking-widest mb-2 font-brand">
                 QUANTITY
               </h3>
               <Stepper value={quantity} min={1} onChange={setQuantity}  size="sm"/>
             </div>
+
+
+
+            {item.description && (
+              <div className="border-t border-black/10 pt-4 lg:pt-6">
+                <p className="text-xs md:text-sm text-[#474747] leading-relaxed font-brand">
+                  {item.description}
+                </p>
+              </div>
+            )}
+
+            {item.product_details && (
+              <div className="border-t border-black/10 py-4 lg:py-6">
+                <h3 className="text-sm tracking-widest mb-4 font-brand">
+                  PRODUCT DETAILS
+                </h3>
+                {typeof item.product_details === 'string' ? (
+                  <p className="text-xs md:text-sm text-[#474747] font-brand whitespace-pre-line">
+                    {item.product_details}
+                  </p>
+                ) : Array.isArray(item.product_details) ? (
+                  <ul className="space-y-2">
+                    {item.product_details.map((detail: string, idx: number) => (
+                      <li key={idx} className="text-xs md:text-sm text-[#474747] font-brand">
+                        {detail}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <ul className="space-y-2">
+                    {Object.entries(item.product_details!).map(([key, value]: [string, unknown]) => (
+                      <li key={key} className="text-xs md:text-sm text-[#474747] font-brand">
+                        {String(value)}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
 
             <div className="flex gap-4">
               <Button
@@ -305,35 +333,6 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                 </div>
               </Button>
             </div>
-
-            {item.product_details && (
-              <div className="border-t border-black/10 pt-6 sm:pt-8">
-                <h3 className="text-sm tracking-widest mb-4 font-brand">
-                  PRODUCT DETAILS
-                </h3>
-                {typeof item.product_details === 'string' ? (
-                  <p className="text-sm text-[#474747] font-brand whitespace-pre-line">
-                    {item.product_details}
-                  </p>
-                ) : Array.isArray(item.product_details) ? (
-                  <ul className="space-y-2">
-                    {item.product_details.map((detail: string, idx: number) => (
-                      <li key={idx} className="text-sm text-[#474747] font-brand">
-                        {detail}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <ul className="space-y-2">
-                    {Object.entries(item.product_details!).map(([key, value]: [string, unknown]) => (
-                      <li key={key} className="text-sm text-[#474747] font-brand">
-                        {String(value)}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
           </div>
         </div>
       </div>
