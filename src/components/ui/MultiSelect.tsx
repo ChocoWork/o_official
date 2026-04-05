@@ -12,6 +12,8 @@ export interface MultiSelectProps {
   placeholder?: string;
   variant?: 'panel' | 'dropdown' | 'buttons'; // button-style toggle group
   size?: ComponentSize;
+  /** dropdown variant only: 'check' = native checkbox (default), 'fill' = solid black square */
+  checkStyle?: 'check' | 'fill';
   className?: string;
 }
 
@@ -23,6 +25,7 @@ export function MultiSelect({
   placeholder = '選択してください',
   variant = 'panel',
   size = 'md',
+  checkStyle = 'check',
   className,
 }: MultiSelectProps) {
   const [open, setOpen] = useState(false);
@@ -129,14 +132,34 @@ export function MultiSelect({
               {options.map((option) => (
                 <label
                   key={option.value}
-                  className="flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-[#f5f5f5]"
+                  className="flex cursor-pointer items-center gap-3 px-4 py-2 transition-colors hover:bg-[#f5f5f5]"
                 >
-                  <input
-                    className="h-4 w-4 cursor-pointer accent-black"
-                    type="checkbox"
-                    checked={values.includes(option.value)}
-                    onChange={() => handleChange(option.value)}
-                  />
+                  {checkStyle === 'fill' ? (
+                    <>
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          'h-3 w-3 flex-shrink-0 border',
+                          values.includes(option.value)
+                            ? 'bg-black border-black'
+                            : 'bg-white border-black/40',
+                        )}
+                      />
+                      <input
+                        className="sr-only"
+                        type="checkbox"
+                        checked={values.includes(option.value)}
+                        onChange={() => handleChange(option.value)}
+                      />
+                    </>
+                  ) : (
+                    <input
+                      className="h-4 w-4 cursor-pointer accent-black"
+                      type="checkbox"
+                      checked={values.includes(option.value)}
+                      onChange={() => handleChange(option.value)}
+                    />
+                  )}
                   <span className="text-sm text-black">{option.label}</span>
                 </label>
               ))}

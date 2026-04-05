@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { TagLabel } from '@/components/ui/TagLabel';
 import { Button } from '@/components/ui/Button';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { TabSegmentControl } from '@/components/ui/TabSegmentControl';
+import { MultiSelect } from '@/components/ui/MultiSelect';
 import { categories } from '@/lib/news-data';
 import { cn } from '@/lib/utils';
 import { PublicNewsArticle } from '@/features/news/types';
@@ -37,20 +38,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
   const [fetchedArticles, setFetchedArticles] = useState<PublicNewsArticle[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<NewsCategory>('ALL');
-  const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
-  const mobileFilterRef = useRef<HTMLDivElement>(null);
-
-  // Close mobile dropdown when clicking outside
-  useEffect(() => {
-    const handleOutsideClick = (e: MouseEvent) => {
-      if (mobileFilterRef.current && !mobileFilterRef.current.contains(e.target as Node)) {
-        setMobileFilterOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, []);
+  const [selectedCategories, setSelectedCategories] = useState<NewsCategory[]>(['ALL']);
 
   const shouldFetch = typeof props.articles === 'undefined';
   const fetchLimit = variant === 'home' ? (props.fetchLimit ?? 6) : undefined;
@@ -104,18 +92,19 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
   );
 
   const displayArticles = useMemo(() => {
-    if (variant !== 'catalog' || selectedCategory === 'ALL') {
+    if (variant !== 'catalog' || selectedCategories.includes('ALL')) {
       return resolvedArticles;
     }
-
-    return resolvedArticles.filter((article) => article.category === selectedCategory);
-  }, [resolvedArticles, selectedCategory, variant]);
+    return resolvedArticles.filter((article) =>
+      selectedCategories.includes(article.category as NewsCategory),
+    );
+  }, [resolvedArticles, selectedCategories, variant]);
 
   const resolveBuildHref = (article: PublicNewsArticle): string => {
     if (variant === 'catalog') {
       if (props.buildHref) return props.buildHref(article);
-      return selectedCategory !== 'ALL'
-        ? `/news/${article.id}?category=${selectedCategory}`
+      return selectedCategories.length === 1 && selectedCategories[0] !== 'ALL'
+        ? `/news/${article.id}?category=${selectedCategories[0]}`
         : `/news/${article.id}`;
     }
     return `/news/${article.id}`;
@@ -243,64 +232,46 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
   return (
     <>
       {/* Category filter */}
-      <div className="mb-8 sm:mb-10 md:mb-16">
-        {/* Mobile: custom dropdown */}
-        <div className="sm:hidden relative" ref={mobileFilterRef}>
-          <button
-            type="button"
-            onClick={() => setMobileFilterOpen((prev) => !prev)}
-            className="flex w-full items-center justify-between border border-black/20 px-4 py-3 text-xs tracking-widest transition-colors hover:border-black"
-            style={{ fontFamily: 'acumin-pro, sans-serif' }}
-            aria-expanded={mobileFilterOpen}
-            aria-haspopup="listbox"
-          >
-            <span className="text-black/40">CATEGORY</span>
-            <span className="flex items-center gap-2.5">
-              <span className="text-black">{selectedCategory}</span>
-              <i
-                className={cn(
-                  'ri-arrow-down-s-line text-base text-black transition-transform duration-200',
-                  mobileFilterOpen && 'rotate-180',
-                )}
-              />
-            </span>
-          </button>
-          {mobileFilterOpen && (
-            <div
-              role="listbox"
-              aria-label="カテゴリ"
-              className="absolute left-0 right-0 z-20 border border-t-0 border-black/20 bg-white shadow-sm"
-            >
-              {NEWS_CATEGORIES.map((cat) => (
-                <button
-                  key={cat}
-                  type="button"
-                  role="option"
-                  aria-selected={cat === selectedCategory}
-                  onClick={() => {
-                    setSelectedCategory(cat as NewsCategory);
-                    setMobileFilterOpen(false);
-                  }}
-                  className={cn(
-                    'block w-full text-left px-4 py-3 text-xs tracking-widest transition-colors',
-                    cat === selectedCategory
-                      ? 'bg-black text-white'
-                      : 'text-black hover:bg-[#f5f5f5]',
-                  )}
-                  style={{ fontFamily: 'acumin-pro, sans-serif' }}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
-          )}
+      <div className="mb-5 sm:mb-6 md:mb-8 lg:mb-10">
+        {/* Mobile: MultiSelect dropdown with fill indicator */}
+        <div className="sm:hidden" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+          <MultiSelect
+            variant="dropdown"
+            options={NEWS_CATEGORIES.map((c) => ({ value: c, label: c }))}
+            values={selectedCategories}
+            onChange={(newValues) => {
+              if (newValues.length === 0) {
+                // 全解除 → ALL に戻す
+                setSelectedCategories(['ALL']);
+                return;
+              }
+              const hadAll = selectedCategories.includes('ALL');
+              const hasAll = newValues.includes('ALL');
+              if (!hadAll && hasAll) {
+                // ALL が追加された → ALL のみにリセット
+                setSelectedCategories(['ALL']);
+                return;
+              }
+              if (hadAll && newValues.length > 1) {
+                // ALL 選択中に他が追加された → ALL を外して他のみに
+                setSelectedCategories(
+                  newValues.filter((v) => v !== 'ALL') as NewsCategory[],
+                );
+                return;
+              }
+              setSelectedCategories(newValues as NewsCategory[]);
+            }}
+            checkStyle="fill"
+            size="sm"
+            className="tracking-widest"
+          />
         </div>
         {/* sm+: pill tabs */}
         <div className={cn('hidden sm:block', TAB_SCROLL_CONTAINER_CLASS, 'md:flex md:justify-center')}>
           <TabSegmentControl
             items={NEWS_CATEGORIES.map((category) => ({ key: category, label: category }))}
-            activeKey={selectedCategory}
-            onChange={(category) => setSelectedCategory(category as NewsCategory)}
+            activeKey={selectedCategories.length === 1 ? selectedCategories[0] : 'ALL'}
+            onChange={(category) => setSelectedCategories([category as NewsCategory])}
             variant="segment-pill"
             size="md"
             className="min-w-max"
