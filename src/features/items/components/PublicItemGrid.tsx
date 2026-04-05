@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { TabSegmentControl } from '@/components/ui/TabSegmentControl';
+import { MultiSelect } from '@/components/ui/MultiSelect';
 import { Item } from '@/types/item';
 import { usePublicItems } from '@/features/items/hooks/usePublicItems';
 import { cn } from '@/lib/utils';
@@ -33,8 +34,8 @@ type PublicItemGridProps = PublicItemGridHomeProps | PublicItemGridCatalogProps;
 export function PublicItemGrid(props: PublicItemGridProps) {
   const { variant } = props;
 
-  // Category filter state - catalog variant only
-  const [selectedCategory, setSelectedCategory] = useState<ItemCategory>('ALL');
+  // Category filter state - catalog variant only (supports multi-select on mobile, same pattern as News)
+  const [selectedCategories, setSelectedCategories] = useState<ItemCategory[]>(['ALL']);
 
   // Self-fetch: triggered when items are not provided externally
   const isSelfFetch = typeof props.items === 'undefined';
@@ -53,8 +54,8 @@ export function PublicItemGrid(props: PublicItemGridProps) {
 
   // Apply category filter for catalog variant
   const displayItems =
-    variant === 'catalog' && selectedCategory !== 'ALL'
-      ? resolvedItems.filter((item) => item.category === selectedCategory)
+    variant === 'catalog' && !selectedCategories.includes('ALL')
+      ? resolvedItems.filter((item) => selectedCategories.includes(item.category as ItemCategory))
       : resolvedItems;
 
   const resolvedMobileLimit = variant === 'home' ? 6 : undefined;
@@ -153,12 +154,42 @@ export function PublicItemGrid(props: PublicItemGridProps) {
 
   return (
     <>
-      <div className="mb-10 md:mb-12">
-        <div className={cn(TAB_SCROLL_CONTAINER_CLASS, 'md:flex md:justify-start')}>
+      {/* Category filter */}
+      <div className="mb-5 sm:mb-6 md:mb-8 lg:mb-10">
+        {/* Mobile: MultiSelect dropdown */}
+        <div className="sm:hidden" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+          <MultiSelect
+            variant="dropdown"
+            options={ITEM_CATEGORIES.map((c) => ({ value: c, label: c }))}
+            values={selectedCategories}
+            onChange={(newValues) => {
+              if (newValues.length === 0) {
+                setSelectedCategories(['ALL']);
+                return;
+              }
+              const hadAll = selectedCategories.includes('ALL');
+              const hasAll = newValues.includes('ALL');
+              if (!hadAll && hasAll) {
+                setSelectedCategories(['ALL']);
+                return;
+              }
+              if (hadAll && newValues.length > 1) {
+                setSelectedCategories(newValues.filter((v) => v !== 'ALL') as ItemCategory[]);
+                return;
+              }
+              setSelectedCategories(newValues as ItemCategory[]);
+            }}
+            checkStyle="fill"
+            size="sm"
+            className="tracking-widest"
+          />
+        </div>
+        {/* sm+: pill tabs (centered) */}
+        <div className={cn('hidden sm:block', TAB_SCROLL_CONTAINER_CLASS, 'md:flex md:justify-center')}>
           <TabSegmentControl
             items={ITEM_CATEGORIES.map((category) => ({ key: category, label: category }))}
-            activeKey={selectedCategory}
-            onChange={(category) => setSelectedCategory(category as ItemCategory)}
+            activeKey={selectedCategories.length === 1 ? selectedCategories[0] : 'ALL'}
+            onChange={(category) => setSelectedCategories([category as ItemCategory])}
             variant="segment-pill"
             size="md"
             className="min-w-max"

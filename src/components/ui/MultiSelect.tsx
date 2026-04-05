@@ -53,13 +53,8 @@ export function MultiSelect({
   }, [open, variant]);
 
   // size-specific helpers using explicit maps
-  const heightClassMap: Record<ComponentSize, string> = {
-    sm: 'h-8',
-    md: 'h-10',
-    lg: 'h-12',
-  };
   const textClassMap: Record<ComponentSize, string> = {
-    sm: 'text-sm', // smaller text same as md earlier
+    sm: 'text-sm',
     md: 'text-sm',
     lg: 'text-base',
   };
@@ -73,7 +68,18 @@ export function MultiSelect({
     md: 'px-6 py-2',
     lg: 'px-8 py-3',
   };
-  const heightClass = heightClassMap[size];
+  // Dropdown trigger: min-h (not fixed) so multi-line selections expand naturally
+  const dropdownTriggerMinHMap: Record<ComponentSize, string> = {
+    sm: 'min-h-8 py-1.5',
+    md: 'min-h-10 py-2',
+    lg: 'min-h-12 py-3',
+  };
+  // Dropdown trigger text: one step smaller than body text so long selections don't wrap as readily
+  const dropdownTriggerTextMap: Record<ComponentSize, string> = {
+    sm: 'text-[11px]',
+    md: 'text-sm',
+    lg: 'text-base',
+  };
   const textClass = textClassMap[size];
   const buttonTextSize = buttonTextSizeMap[size];
   const buttonPad = buttonPadMap[size];
@@ -114,8 +120,8 @@ export function MultiSelect({
             type="button"
             className={cn(
               'w-full cursor-pointer border border-black/20 text-left focus:border-black focus:outline-none transition-colors flex items-center justify-between',
-              heightClass,
-              textClass,
+              dropdownTriggerMinHMap[size],
+              dropdownTriggerTextMap[size],
               'px-4',
             )}
             onClick={() => setOpen((previous) => !previous)}
@@ -132,14 +138,14 @@ export function MultiSelect({
               {options.map((option) => (
                 <label
                   key={option.value}
-                  className="flex cursor-pointer items-center gap-3 px-4 py-2 transition-colors hover:bg-[#f5f5f5]"
+                  className="flex cursor-pointer items-center gap-2 px-3 py-1.5 transition-colors hover:bg-[#f5f5f5]"
                 >
                   {checkStyle === 'fill' ? (
                     <>
                       <span
                         aria-hidden="true"
                         className={cn(
-                          'h-3 w-3 flex-shrink-0 border',
+                          'h-2.5 w-2.5 flex-shrink-0 border',
                           values.includes(option.value)
                             ? 'bg-black border-black'
                             : 'bg-white border-black/40',
@@ -160,7 +166,7 @@ export function MultiSelect({
                       onChange={() => handleChange(option.value)}
                     />
                   )}
-                  <span className="text-sm text-black">{option.label}</span>
+                  <span className="text-xs text-black">{option.label}</span>
                 </label>
               ))}
             </div>
