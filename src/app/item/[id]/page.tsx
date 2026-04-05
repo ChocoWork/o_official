@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, use } from "react";
+import React, { useState, useEffect, use, useRef } from "react";
 import Image from "next/image";
 import { Item } from "@/types/item";
 import { useCart } from "@/contexts/CartContext";
@@ -19,6 +19,8 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [addingToCart, setAddingToCart] = useState(false);
   const [togglingWishlist, setTogglingWishlist] = useState(false);
+  const [isButtonVisible, setIsButtonVisible] = useState(false);
+  const cartButtonRef = useRef<HTMLDivElement>(null);
 
   const isWishlisted = item ? wishlistedItems.has(item.id) : false;
 
@@ -55,6 +57,18 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
     fetchItem();
   }, [id]);
+
+  useEffect(() => {
+    if (!item) return;
+    const el = cartButtonRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setIsButtonVisible(entry.isIntersecting),
+      { threshold: 0.5 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [item]);
 
   const handleAddToCart = async () => {
     if (!item || !color || !size) {
@@ -302,7 +316,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               </div>
             )}
 
-            <div className="flex gap-4">
+            <div ref={cartButtonRef} className="flex gap-4">
               <Button
                 onClick={handleAddToCart}
                 disabled={addingToCart}
@@ -335,6 +349,42 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             </div>
           </div>
         </div>
+      </div>
+
+      <div
+        className={`fixed bottom-0 left-0 right-0 z-50 md:hidden bg-white border-t border-black/10 px-6 py-3 flex gap-3 transition-transform duration-300 ${
+          isButtonVisible ? "translate-y-full" : "translate-y-0"
+        }`}
+      >
+        <Button
+          onClick={handleAddToCart}
+          disabled={addingToCart}
+          size="sm"
+          className="w-full font-brand"
+        >
+          {addingToCart ? (
+            "追加中..."
+          ) : (
+            <div className="gap-2 flex items-center justify-center">
+              <div className="w-4 h-4 flex items-center justify-center">
+                <i className="ri-shopping-bag-line text-base" />
+              </div>
+              ADD TO CART
+            </div>
+          )}
+        </Button>
+        <Button
+          onClick={handleToggleWishlist}
+          disabled={togglingWishlist}
+          variant="secondary"
+          size="sm"
+          aria-label="Add to wishlist"
+          className="aspect-square px-0 hover:bg-transparent hover:text-current"
+        >
+          <div className="w-5 h-5 flex items-center justify-center">
+            <i className={`text-xl ${isWishlisted ? "ri-heart-fill text-red-500" : "ri-heart-line"}`} />
+          </div>
+        </Button>
       </div>
     </div>
   );
