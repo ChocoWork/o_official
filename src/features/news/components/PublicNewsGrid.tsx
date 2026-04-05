@@ -267,7 +267,8 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
           />
         </div>
         {/* sm+: pill tabs */}
-        <div className={cn('hidden sm:block', TAB_SCROLL_CONTAINER_CLASS, 'md:flex md:justify-center')}>
+        <div className={cn('hidden sm:block', TAB_SCROLL_CONTAINER_CLASS)}>
+          <div className="flex justify-center min-w-max w-full">
           <TabSegmentControl
             items={NEWS_CATEGORIES.map((category) => ({ key: category, label: category }))}
             activeKey={selectedCategories.length === 1 ? selectedCategories[0] : 'ALL'}
@@ -276,6 +277,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
             size="md"
             className="min-w-max"
           />
+          </div>
         </div>
       </div>
       {loading ? (

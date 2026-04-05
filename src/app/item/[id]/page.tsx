@@ -110,7 +110,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
   if (loading) {
     return (
-      <div className="pb-10 sm:pb-14 px-6 lg:px-12">
+      <div className="pb-12 px-6 lg:px-12">
         <div className="max-w-7xl mx-auto text-center">
           <div className="text-base tracking-widest font-brand">読み込み中...</div>
         </div>
@@ -120,7 +120,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
   if (error || !item) {
     return (
-      <div className="pb-10 sm:pb-14 px-6 lg:px-12">
+      <div className="pb-12 px-6 lg:px-12">
         <div className="max-w-7xl mx-auto">
           <div className="mb-8">
             <Button
@@ -154,59 +154,61 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     : [item.image_url];
 
   return (
-    <div className="pb-10 sm:pb-14 px-6 lg:px-12">
+    <div className="pb-16 sm:pb-20 lg:pb-24 px-6 lg:px-12">
       <div className="max-w-7xl mx-auto">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-24">
-          <div>
-            <div className="aspect-[3/4] bg-[#f5f5f5] mb-4 overflow-hidden">
-              {mainImage ? (
-                <Image
-                  src={mainImage}
-                  alt={item.name}
-                  width={600}
-                  height={800}
-                  className="w-full h-full object-cover object-top"
-                  priority
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-gray-400">
-                  No Image
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-10 md:gap-14 lg:gap-20 xl:gap-24">
+          <div className="md:sticky md:top-24 lg:top-28">
+            <div className="flex flex-col gap-3">
+              <div className="aspect-[3/4] bg-[#f5f5f5] overflow-hidden md:max-w-[85%] lg:max-w-[70%]">
+                {mainImage ? (
+                  <Image
+                    src={mainImage}
+                    alt={item.name}
+                    width={600}
+                    height={800}
+                    className="w-full h-full object-cover object-top"
+                    priority
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-gray-400">
+                    No Image
+                  </div>
+                )}
+              </div>
+
+              {thumbnailImages.length > 1 && (
+                <div className="flex gap-2 flex-shrink-0 overflow-x-auto">
+                  {thumbnailImages.map((imgUrl: string, index: number) => (
+                    <div
+                      key={index}
+                      className={`flex-shrink-0 w-20 aspect-[3/4] md:w-24 lg:w-30 bg-[#f5f5f5] overflow-hidden cursor-pointer transition-all duration-300 ${
+                        selectedImageIndex === index ? "ring-2 ring-black" : ""
+                      }`}
+                      onClick={() => setSelectedImageIndex(index)}
+                    >
+                      <Image
+                        src={imgUrl}
+                        alt={`${item.name} ${index + 1}`}
+                        width={160}
+                        height={200}
+                        className="w-full h-full object-cover object-top"
+                      />
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
-
-            {thumbnailImages.length > 1 && (
-              <div className="grid grid-cols-2 gap-4">
-                {thumbnailImages.map((imgUrl: string, index: number) => (
-                  <div
-                    key={index}
-                    className={`aspect-[3/4] bg-[#f5f5f5] overflow-hidden cursor-pointer transition-all duration-300 ${
-                      selectedImageIndex === index ? "ring-2 ring-black" : ""
-                    }`}
-                    onClick={() => setSelectedImageIndex(index)}
-                  >
-                    <Image
-                      src={imgUrl}
-                      alt={`${item.name} ${index + 1}`}
-                      width={300}
-                      height={400}
-                      className="w-full h-full object-cover object-top"
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
 
-          <div className="space-y-8">
+          <div className="space-y-5 sm:space-y-6 md:space-y-7 lg:space-y-8">
             <div>
               <p className="text-xs text-[#474747] tracking-widest mb-2 font-brand">
                 {item.category}
               </p>
-              <h2 className="text-xl lg:text-2xl text-black mb-4 tracking-tight font-display">
+              <h2 className="text-lg sm:text-xl md:text-2xl lg:text-2xl text-black mb-2 sm:mb-3 md:mb-4 tracking-tight font-brand">
                 {item.name}
               </h2>
-              <p className="text-xl text-black font-brand">
+              <p className="text-lg sm:text-xl md:text-2xl lg:text-2xl text-black font-brand">
                 ¥{item.price.toLocaleString('ja-JP')}
               </p>
             </div>
@@ -301,7 +303,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
             </div>
 
             {item.product_details && (
-              <div className="border-t border-black/10 pt-8">
+              <div className="border-t border-black/10 pt-6 sm:pt-8">
                 <h3 className="text-sm tracking-widest mb-4 font-brand">
                   PRODUCT DETAILS
                 </h3>

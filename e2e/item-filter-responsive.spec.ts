@@ -10,6 +10,9 @@ const ALL_VIEWPORTS = [
   { name: 'mobile-320',  width: 320,  height: 812 },
   { name: 'mobile-375',  width: 375,  height: 812 },
   { name: 'mobile-425',  width: 425,  height: 812 },
+  { name: 'tablet-640',  width: 640,  height: 900 },
+  { name: 'tablet-682',  width: 682,  height: 900 },
+  { name: 'tablet-700',  width: 700,  height: 900 },
   { name: 'tablet-768',  width: 768,  height: 1024 },
   { name: 'pc-1024',     width: 1024, height: 768 },
   { name: 'pc-1440',     width: 1440, height: 900 },
@@ -52,6 +55,26 @@ test.describe('ITEM page filter – all viewports (after fix)', () => {
       await dropdownTrigger.click();
       await page.waitForTimeout(400);
       await page.screenshot({ path: `${SCREENSHOT_DIR}\\after-${vp.name}-multiselected.png`, fullPage: false });
+    });
+  }
+});
+
+// NEWS page filter – pill overflow check
+const NEWS_TABLET_VIEWPORTS = [
+  { name: 'tablet-640',  width: 640,  height: 900 },
+  { name: 'tablet-682',  width: 682,  height: 900 },
+  { name: 'tablet-700',  width: 700,  height: 900 },
+  { name: 'tablet-768',  width: 768,  height: 1024 },
+  { name: 'pc-1440',     width: 1440, height: 900 },
+];
+
+test.describe('NEWS page filter – overflow check', () => {
+  for (const vp of NEWS_TABLET_VIEWPORTS) {
+    test(`news filter pills – ${vp.name}`, async ({ page }) => {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await page.goto('/news', { waitUntil: 'domcontentloaded' });
+      await page.waitForTimeout(1500);
+      await page.screenshot({ path: `${SCREENSHOT_DIR}\\news-${vp.name}-filter.png`, fullPage: false });
     });
   }
 });

@@ -185,7 +185,8 @@ export function PublicItemGrid(props: PublicItemGridProps) {
           />
         </div>
         {/* sm+: pill tabs (centered) */}
-        <div className={cn('hidden sm:block', TAB_SCROLL_CONTAINER_CLASS, 'md:flex md:justify-center')}>
+        <div className={cn('hidden sm:block', TAB_SCROLL_CONTAINER_CLASS)}>
+          <div className="flex justify-center min-w-max w-full">
           <TabSegmentControl
             items={ITEM_CATEGORIES.map((category) => ({ key: category, label: category }))}
             activeKey={selectedCategories.length === 1 ? selectedCategories[0] : 'ALL'}
@@ -194,6 +195,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
             size="md"
             className="min-w-max"
           />
+          </div>
         </div>
       </div>
 

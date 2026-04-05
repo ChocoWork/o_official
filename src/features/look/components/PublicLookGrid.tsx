@@ -5,8 +5,8 @@ import { SectionTitle } from '@/components/ui/SectionTitle';
 import { PublicLook, formatLookSeason, getPublishedLooks } from '@/lib/look/public';
 
 const FIXED_LOOK_COUNT = 6;
-const DEFAULT_HOME_GRID_CLASS = 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-6 lg:gap-8';
-const DEFAULT_CATALOG_GRID_CLASS = 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-12';
+const DEFAULT_HOME_GRID_CLASS = 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8';
+const DEFAULT_CATALOG_GRID_CLASS = 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-4 sm:gap-6 md:gap-8 lg:gap-10 xl:gap-12';
 
 type PublicLookGridHomeProps = {
   variant: 'home';
