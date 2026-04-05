@@ -59,7 +59,7 @@ export default async function NewsDetailPage({
             </TagLabel>
           </div>
           <h1
-            className="text-2xl sm:text-3xl lg:text-4xl text-black leading-snug"
+            className="text-base md:text-2xl text-black leading-snug"
             style={{ fontFamily: "Didot, serif" }}
           >
             {article.title}
@@ -74,7 +74,7 @@ export default async function NewsDetailPage({
           {article.detailed_content.split("\n\n").map((paragraph: string, index: number) => (
             <p
               key={index}
-              className="text-sm sm:text-base text-[#474747] leading-loose mb-5 sm:mb-7 whitespace-pre-line"
+              className="text-xs md:text-sm text-[#474747] leading-loose mb-5 sm:mb-7 whitespace-pre-line"
             >
               {paragraph}
             </p>
