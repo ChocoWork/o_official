@@ -156,18 +156,18 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   return (
     <div className="pb-16 sm:pb-20 lg:pb-24 px-6 lg:px-12">
       <div className="max-w-7xl mx-auto">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-10 md:gap-14 lg:gap-20 xl:gap-24">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[5fr_7fr] gap-8 md:gap-10 lg:gap-12 xl:gap-16">
           <div className="md:sticky md:top-24 lg:top-28">
-            <div className="flex flex-col gap-3">
-              <div className="aspect-[3/4] bg-[#f5f5f5] overflow-hidden md:max-w-[85%] lg:max-w-[70%]">
+            <div className="flex flex-col gap-2">
+              <div className="relative aspect-[3/4] lg:aspect-auto lg:h-[calc(100vh-22rem)] bg-white overflow-hidden">
                 {mainImage ? (
                   <Image
                     src={mainImage}
                     alt={item.name}
-                    width={600}
-                    height={800}
-                    className="w-full h-full object-cover object-top"
+                    fill
+                    className="object-contain"
                     priority
+                    sizes="(max-width: 768px) 100vw, (max-width: 1024px) 45vw, 35vw"
                   />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-gray-400">
@@ -177,23 +177,27 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               </div>
 
               {thumbnailImages.length > 1 && (
-                <div className="flex gap-2 flex-shrink-0 overflow-x-auto">
+                <div className="flex gap-3 overflow-x-auto px-[3px] py-[3px]">
                   {thumbnailImages.map((imgUrl: string, index: number) => (
-                    <div
+                    <button
                       key={index}
-                      className={`flex-shrink-0 w-20 aspect-[3/4] md:w-24 lg:w-30 bg-[#f5f5f5] overflow-hidden cursor-pointer transition-all duration-300 ${
-                        selectedImageIndex === index ? "ring-2 ring-black" : ""
+                      type="button"
+                      aria-label={`${item.name} ${index + 1}枚目を表示`}
+                      className={`relative flex-shrink-0 w-20 md:w-24 aspect-[3/4] bg-[#f5f5f5] overflow-hidden cursor-pointer focus-visible:outline-none transition-opacity duration-200 ${
+                        selectedImageIndex === index
+                          ? "ring-2 ring-black opacity-100"
+                          : "opacity-50 hover:opacity-90"
                       }`}
                       onClick={() => setSelectedImageIndex(index)}
                     >
                       <Image
                         src={imgUrl}
                         alt={`${item.name} ${index + 1}`}
-                        width={160}
-                        height={200}
-                        className="w-full h-full object-cover object-top"
+                        fill
+                        className="object-cover object-top"
+                        sizes="80px"
                       />
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}
