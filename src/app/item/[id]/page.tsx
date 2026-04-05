@@ -159,13 +159,13 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[5fr_7fr] gap-8 md:gap-10 lg:gap-12 xl:gap-16">
           <div className="md:sticky md:top-24 lg:top-28">
             <div className="flex flex-col gap-2">
-              <div className="relative aspect-[3/4] lg:aspect-auto lg:h-[calc(100vh-22rem)] bg-white overflow-hidden">
+              <div className="relative aspect-[3/4] lg:aspect-auto lg:h-[calc(100vh-22rem)] lg:w-[calc((100vh-22rem)*3/4)] lg:max-w-full bg-white overflow-hidden">
                 {mainImage ? (
                   <Image
                     src={mainImage}
                     alt={item.name}
                     fill
-                    className="object-contain"
+                    className="object-contain object-left-top"
                     priority
                     sizes="(max-width: 768px) 100vw, (max-width: 1024px) 45vw, 35vw"
                   />
