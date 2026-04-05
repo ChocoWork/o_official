@@ -1,9 +1,13 @@
 import { test } from '@playwright/test';
+import path from 'path';
 
 const VIEWPORTS = [
-  { name: 'mobile',  width: 390,  height: 844 },
-  { name: 'tablet',  width: 768,  height: 1024 },
-  { name: 'desktop', width: 1440, height: 900 },
+  { name: 'mobile-320',  width: 320,  height: 812 },
+  { name: 'mobile-375',  width: 375,  height: 812 },
+  { name: 'mobile-425',  width: 425,  height: 812 },
+  { name: 'tablet-768',  width: 768,  height: 1024 },
+  { name: 'desktop-1024', width: 1024, height: 900 },
+  { name: 'desktop-1440', width: 1440, height: 900 },
 ];
 
 test.describe('NEWS detail page responsive', () => {
@@ -12,24 +16,36 @@ test.describe('NEWS detail page responsive', () => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
 
       // NEWSリストページから最初の記事URLを取得
-      await page.goto('/news');
-      await page.waitForLoadState('networkidle');
+      await page.goto('/news', { waitUntil: 'domcontentloaded' });
+      await page.waitForTimeout(2000);
 
-      const firstLink = page.locator('article.border-b').first().locator('..').locator('a').first();
       // Link wraps article — locate the first anchor on the page that starts with /news/
       const firstArticleHref = await page.locator('a[href^="/news/"]').first().getAttribute('href');
 
       if (firstArticleHref) {
-        await page.goto(firstArticleHref);
-        await page.waitForLoadState('networkidle');
+        await page.goto(firstArticleHref, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(1500);
       } else {
-        await page.goto('/news');
+        await page.goto('/news', { waitUntil: 'domcontentloaded' });
       }
 
+      const screenshotDir = 'c:\\work\\o_official\\screenshots';
       await page.screenshot({
-        path: `playwright-report/news-detail-${vp.name}.png`,
+        path: `${screenshotDir}\\news-detail-${vp.name}.png`,
         fullPage: true,
       });
+
+      // 2記事目（PREV+NEXTの両方がある記事）に移動してスクリーンショット
+      const newsLinks = await page.locator('a[href^="/news/"]').all();
+      const nextHref = newsLinks.length > 0 ? await newsLinks[0].getAttribute('href') : null;
+      if (nextHref) {
+        await page.goto(nextHref, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(1500);
+        await page.screenshot({
+          path: `${screenshotDir}\\news-detail-${vp.name}-mid.png`,
+          fullPage: true,
+        });
+      }
     });
   }
 });

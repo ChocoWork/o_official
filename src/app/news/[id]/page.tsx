@@ -43,7 +43,7 @@ export default async function NewsDetailPage({
   const navCategoryParam = activeCategory === "ALL" ? "" : `?category=${activeCategory}`;
 
   return (
-    <div className="pb-10 sm:pb-14 px-6 lg:px-12">
+    <div className="pt-6 sm:pt-8 lg:pt-12 pb-12 sm:pb-16 lg:pb-20 px-5 sm:px-6 lg:px-12">
       <div className="max-w-3xl mx-auto">
         {/* Article Header */}
         <div className="mb-8 sm:mb-10">
@@ -82,67 +82,140 @@ export default async function NewsDetailPage({
         </div>
 
         {/* Navigation */}
-        <div className="mt-14 sm:mt-16 pt-6 sm:pt-8 border-t border-[#d5d0c9] grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-4">
-          {/* Previous Article */}
-          {prevArticle ? (
-            <Link
-              href={`/news/${prevArticle.id}${navCategoryParam}`}
-              className="group flex items-center space-x-3 cursor-pointer justify-self-start"
-            >
-              <span className="w-5 h-5 flex items-center justify-center text-[#474747] group-hover:text-black transition-colors">
-                ←
-              </span>
-              <div>
-                <p
-                  className="text-xs text-[#999] tracking-widest"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  PREV
-                </p>
-                <p
-                  className="text-xs sm:text-sm text-[#474747] group-hover:text-black transition-colors max-w-[100px] sm:max-w-[180px] truncate"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  {prevArticle.title}
-                </p>
-              </div>
-            </Link>
-          ) : (
-            <div></div>
-          )}
+        <div className="mt-12 sm:mt-16 pt-6 sm:pt-8 border-t border-[#d5d0c9]">
 
-          {/* View All Button */}
-          <Button href={`/news${navCategoryParam}`} size="sm" className="justify-self-center font-acumin">
-            VIEW ALL
-          </Button>
+          {/* Mobile layout: PREV/NEXT row → VIEW ALL centered */}
+          <div className="sm:hidden">
+            <div className="flex items-start justify-between mb-5">
+              {/* Previous Article */}
+              {prevArticle ? (
+                <Link
+                  href={`/news/${prevArticle.id}${navCategoryParam}`}
+                  className="group flex items-start gap-2 max-w-[45%]"
+                >
+                  <span className="flex-shrink-0 w-4 h-4 flex items-center justify-center text-[#474747] group-hover:text-black transition-colors mt-0.5 text-sm">
+                    ←
+                  </span>
+                  <div className="min-w-0">
+                    <p
+                      className="text-[10px] text-[#999] tracking-widest mb-0.5"
+                      style={{ fontFamily: "acumin-pro, sans-serif" }}
+                    >
+                      PREV
+                    </p>
+                    <p
+                      className="text-[11px] text-[#474747] group-hover:text-black transition-colors leading-snug line-clamp-2"
+                      style={{ fontFamily: "acumin-pro, sans-serif" }}
+                    >
+                      {prevArticle.title}
+                    </p>
+                  </div>
+                </Link>
+              ) : (
+                <div className="max-w-[45%]" />
+              )}
 
-          {/* Next Article */}
-          {nextArticle ? (
-            <Link
-              href={`/news/${nextArticle.id}${navCategoryParam}`}
-              className="group flex items-center space-x-3 cursor-pointer text-right justify-self-end"
-            >
-              <div>
-                <p
-                  className="text-xs text-[#999] tracking-widest"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
+              {/* Next Article */}
+              {nextArticle ? (
+                <Link
+                  href={`/news/${nextArticle.id}${navCategoryParam}`}
+                  className="group flex items-start gap-2 max-w-[45%] text-right"
                 >
-                  NEXT
-                </p>
-                <p
-                  className="text-xs sm:text-sm text-[#474747] group-hover:text-black transition-colors max-w-[100px] sm:max-w-[180px] truncate"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
-                >
-                  {nextArticle.title}
-                </p>
-              </div>
-              <span className="w-5 h-5 flex items-center justify-center text-[#474747] group-hover:text-black transition-colors">
-                →
-              </span>
-            </Link>
-          ) : (
-            <div></div>
-          )}
+                  <div className="min-w-0">
+                    <p
+                      className="text-[10px] text-[#999] tracking-widest mb-0.5"
+                      style={{ fontFamily: "acumin-pro, sans-serif" }}
+                    >
+                      NEXT
+                    </p>
+                    <p
+                      className="text-[11px] text-[#474747] group-hover:text-black transition-colors leading-snug line-clamp-2"
+                      style={{ fontFamily: "acumin-pro, sans-serif" }}
+                    >
+                      {nextArticle.title}
+                    </p>
+                  </div>
+                  <span className="flex-shrink-0 w-4 h-4 flex items-center justify-center text-[#474747] group-hover:text-black transition-colors mt-0.5 text-sm">
+                    →
+                  </span>
+                </Link>
+              ) : (
+                <div className="max-w-[45%]" />
+              )}
+            </div>
+
+            {/* VIEW ALL centered */}
+            <div className="flex justify-center pt-2">
+              <Button href={`/news${navCategoryParam}`} size="sm" className="font-acumin">
+                VIEW ALL
+              </Button>
+            </div>
+          </div>
+
+          {/* Desktop layout: 3-column grid (sm and up) */}
+          <div className="hidden sm:grid sm:grid-cols-[1fr_auto_1fr] sm:items-center sm:gap-4">
+            {/* Previous Article */}
+            {prevArticle ? (
+              <Link
+                href={`/news/${prevArticle.id}${navCategoryParam}`}
+                className="group flex items-center gap-3 justify-self-start"
+              >
+                <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center text-[#474747] group-hover:text-black transition-colors">
+                  ←
+                </span>
+                <div className="min-w-0">
+                  <p
+                    className="text-xs text-[#999] tracking-widest"
+                    style={{ fontFamily: "acumin-pro, sans-serif" }}
+                  >
+                    PREV
+                  </p>
+                  <p
+                    className="text-xs sm:text-sm text-[#474747] group-hover:text-black transition-colors max-w-[160px] md:max-w-[220px] lg:max-w-[280px] truncate"
+                    style={{ fontFamily: "acumin-pro, sans-serif" }}
+                  >
+                    {prevArticle.title}
+                  </p>
+                </div>
+              </Link>
+            ) : (
+              <div />
+            )}
+
+            {/* View All Button */}
+            <Button href={`/news${navCategoryParam}`} size="sm" className="justify-self-center font-acumin">
+              VIEW ALL
+            </Button>
+
+            {/* Next Article */}
+            {nextArticle ? (
+              <Link
+                href={`/news/${nextArticle.id}${navCategoryParam}`}
+                className="group flex items-center gap-3 justify-self-end text-right"
+              >
+                <div className="min-w-0">
+                  <p
+                    className="text-xs text-[#999] tracking-widest"
+                    style={{ fontFamily: "acumin-pro, sans-serif" }}
+                  >
+                    NEXT
+                  </p>
+                  <p
+                    className="text-xs sm:text-sm text-[#474747] group-hover:text-black transition-colors max-w-[160px] md:max-w-[220px] lg:max-w-[280px] truncate"
+                    style={{ fontFamily: "acumin-pro, sans-serif" }}
+                  >
+                    {nextArticle.title}
+                  </p>
+                </div>
+                <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center text-[#474747] group-hover:text-black transition-colors">
+                  →
+                </span>
+              </Link>
+            ) : (
+              <div />
+            )}
+          </div>
+
         </div>
       </div>
     </div>
