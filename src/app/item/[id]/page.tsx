@@ -205,17 +205,17 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
               <p className="text-xs text-[#474747] tracking-widest mb-2 font-brand">
                 {item.category}
               </p>
-              <h2 className="text-lg sm:text-xl md:text-2xl lg:text-2xl text-black mb-2 sm:mb-3 md:mb-4 tracking-tight font-brand">
+              <h2 className="sm:text-base md:text-xl text-black mb-2 sm:mb-3 md:mb-4 tracking-tight font-brand">
                 {item.name}
               </h2>
-              <p className="text-lg sm:text-xl md:text-2xl lg:text-2xl text-black font-brand">
+              <p className="text-base md:text-xl text-black font-brand">
                 ¥{item.price.toLocaleString('ja-JP')}
               </p>
             </div>
 
             {item.description && (
               <div>
-                <p className="text-base text-[#474747] leading-relaxed font-brand">
+                <p className="text-xs md:text-sm text-[#474747] leading-relaxed font-brand">
                   {item.description}
                 </p>
               </div>
