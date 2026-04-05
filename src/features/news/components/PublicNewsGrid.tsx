@@ -154,13 +154,13 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
                   </div>
 
                   <h2
-                    className="text-sm sm:text-base xl:text-lg text-black leading-snug mb-1.5 sm:mb-2 xl:mb-2.5 group-hover:text-[#474747] transition-colors duration-300 font-brand"
+                    className="text-sm md:text-base text-black leading-snug mb-1.5 sm:mb-2 xl:mb-2.5 group-hover:text-[#474747] transition-colors duration-300 font-display"
                   >
                     {article.title}
                   </h2>
 
                   <p
-                    className="text-xs sm:text-sm text-[#474747] leading-relaxed line-clamp-2 sm:line-clamp-3"
+                    className="text-xs md:text-sm text-[#474747] leading-relaxed line-clamp-2 sm:line-clamp-3"
                     style={{ fontFamily: 'acumin-pro, sans-serif' }}
                   >
                     {article.content}
