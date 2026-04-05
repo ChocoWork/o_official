@@ -1,6 +1,5 @@
 import React from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { notFound } from "next/navigation";
 import { categories } from "@/lib/news-data";
 import { Button } from '@/components/ui/Button';
@@ -44,50 +43,38 @@ export default async function NewsDetailPage({
   const navCategoryParam = activeCategory === "ALL" ? "" : `?category=${activeCategory}`;
 
   return (
-    <main className="pt-32 pb-20 px-6 lg:px-12">
-      <div className="max-w-4xl mx-auto">
+    <main className="pt-32 pb-16 sm:pb-20 px-6 lg:px-12">
+      <div className="max-w-3xl mx-auto">
         {/* Article Header */}
-        <div className="mb-8">
-          <div className="flex items-center space-x-4 mb-6">
+        <div className="mb-8 sm:mb-10">
+          <div className="flex items-center gap-3 sm:gap-4 mb-4 sm:mb-5">
             <span
-              className="text-xs text-[#474747] tracking-widest"
+              className="text-[11px] sm:text-xs text-[#474747] tracking-widest"
               style={{ fontFamily: "acumin-pro, sans-serif" }}
             >
               {article.published_date.replace(/-/g, '.')}
             </span>
-            <TagLabel className="font-acumin" size="md">
+            <TagLabel className="font-acumin" size="sm">
               {article.category}
             </TagLabel>
           </div>
           <h1
-            className="text-4xl lg:text-5xl text-black mb-8"
+            className="text-2xl sm:text-3xl lg:text-4xl text-black leading-snug"
             style={{ fontFamily: "Didot, serif" }}
           >
             {article.title}
           </h1>
         </div>
 
-        {/* Article Image */}
-        <div className="aspect-[16/10] overflow-hidden mb-12 bg-[#f5f5f5] relative">
-          <Image
-            alt={article.title}
-            className="w-full h-full object-cover object-center"
-            src={article.image_url}
-            width={1200}
-            height={750}
-            priority
-          />
-        </div>
-
         {/* Article Content */}
         <div
-          className="prose prose-lg max-w-none"
+          className="border-t border-black/10 pt-8 sm:pt-10"
           style={{ fontFamily: "acumin-pro, sans-serif" }}
         >
           {article.detailed_content.split("\n\n").map((paragraph: string, index: number) => (
             <p
               key={index}
-              className="text-[#474747] leading-relaxed mb-6 whitespace-pre-line"
+              className="text-sm sm:text-base text-[#474747] leading-loose mb-5 sm:mb-7 whitespace-pre-line"
             >
               {paragraph}
             </p>
@@ -95,7 +82,7 @@ export default async function NewsDetailPage({
         </div>
 
         {/* Navigation */}
-        <div className="mt-16 pt-8 border-t border-[#d5d0c9] grid grid-cols-[1fr_auto_1fr] items-center">
+        <div className="mt-14 sm:mt-16 pt-6 sm:pt-8 border-t border-[#d5d0c9] grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-4">
           {/* Previous Article */}
           {prevArticle ? (
             <Link
@@ -113,7 +100,7 @@ export default async function NewsDetailPage({
                   PREV
                 </p>
                 <p
-                  className="text-sm text-[#474747] group-hover:text-black transition-colors max-w-[200px] truncate"
+                  className="text-xs sm:text-sm text-[#474747] group-hover:text-black transition-colors max-w-[100px] sm:max-w-[180px] truncate"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 >
                   {prevArticle.title}
@@ -143,7 +130,7 @@ export default async function NewsDetailPage({
                   NEXT
                 </p>
                 <p
-                  className="text-sm text-[#474747] group-hover:text-black transition-colors max-w-[200px] truncate"
+                  className="text-xs sm:text-sm text-[#474747] group-hover:text-black transition-colors max-w-[100px] sm:max-w-[180px] truncate"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 >
                   {nextArticle.title}

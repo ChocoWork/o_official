@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from 'react';
-import Image from 'next/image';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { TagLabel } from '@/components/ui/TagLabel';
 import { Button } from '@/components/ui/Button';
@@ -11,7 +10,6 @@ import { categories } from '@/lib/news-data';
 import { cn } from '@/lib/utils';
 import { PublicNewsArticle } from '@/features/news/types';
 
-const DEFAULT_GRID_CLASS = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8 lg:gap-12';
 const NEWS_CATEGORIES = categories;
 const TAB_SCROLL_CONTAINER_CLASS =
   'w-full overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden';
@@ -40,6 +38,19 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<NewsCategory>('ALL');
+  const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
+  const mobileFilterRef = useRef<HTMLDivElement>(null);
+
+  // Close mobile dropdown when clicking outside
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (mobileFilterRef.current && !mobileFilterRef.current.contains(e.target as Node)) {
+        setMobileFilterOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
 
   const shouldFetch = typeof props.articles === 'undefined';
   const fetchLimit = variant === 'home' ? (props.fetchLimit ?? 6) : undefined;
@@ -100,8 +111,6 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
     return resolvedArticles.filter((article) => article.category === selectedCategory);
   }, [resolvedArticles, selectedCategory, variant]);
 
-  const gridClassName = className ?? DEFAULT_GRID_CLASS;
-
   const resolveBuildHref = (article: PublicNewsArticle): string => {
     if (variant === 'catalog') {
       if (props.buildHref) return props.buildHref(article);
@@ -118,56 +127,55 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
   const hasHiddenItemsOnMobile = shouldLimitOnMobile && resolvedArticles.length > resolvedMobileLimit;
 
   const renderGrid = () => (
-    <div className={gridClassName}>
+    <div className={cn('border-t border-black/10', className)}>
       {displayArticles.map((article, index) => {
         const hideOnMobile = shouldLimitOnMobile && index >= resolvedMobileLimit!;
 
         return (
-          <Link key={article.id} href={resolveBuildHref(article)} className={hideOnMobile ? 'hidden md:block' : undefined}>
-            <article className="group cursor-pointer">
-              <div className="aspect-[4/3] overflow-hidden mb-3 sm:mb-4 md:mb-6 bg-[#f5f5f5] relative">
-                <Image
-                  alt={article.title}
-                  className="w-full h-full object-cover object-center transition-transform duration-700 group-hover:scale-105"
-                  src={article.image_url}
-                  width={1200}
-                  height={750}
-                />
-              </div>
-
-              <div className="space-y-2 sm:space-y-3">
-                <div className="flex items-center space-x-3 sm:space-x-4">
+          <Link
+            key={article.id}
+            href={resolveBuildHref(article)}
+            className={hideOnMobile ? 'hidden md:block' : 'block'}
+          >
+            <article className="border-b border-black/10 py-4 sm:py-5 xl:py-7 group cursor-pointer">
+              <div className="sm:flex sm:items-start sm:gap-8 xl:gap-12">
+                {/* Date column: inline with category on mobile, fixed-width on sm+ */}
+                <div className="flex items-center gap-3 mb-2 sm:mb-0 sm:w-28 xl:w-36 sm:flex-shrink-0 sm:pt-0.5">
                   <span
-                    className="text-xs text-[#474747] tracking-widest"
+                    className="text-[11px] sm:text-xs text-[#474747] tracking-widest whitespace-nowrap"
                     style={{ fontFamily: 'acumin-pro, sans-serif' }}
                   >
                     {article.published_date.replace(/-/g, '.')}
                   </span>
-                  <TagLabel className="font-acumin" size="sm">
-                    {article.category}
-                  </TagLabel>
+                  {/* Category tag: mobile only */}
+                  <div className="sm:hidden">
+                    <TagLabel className="font-acumin" size="sm">
+                      {article.category}
+                    </TagLabel>
+                  </div>
                 </div>
 
-                <h2
-                  className="text-sm md:text-base lg:text-lg text-black font-brand group-hover:text-[#474747] transition-colors duration-300"
-                >
-                  {article.title}
-                </h2>
+                {/* Content column */}
+                <div className="flex-1 min-w-0">
+                  {/* Category tag: sm+ only */}
+                  <div className="hidden sm:block mb-2 xl:mb-2.5">
+                    <TagLabel className="font-acumin" size="sm">
+                      {article.category}
+                    </TagLabel>
+                  </div>
 
-                <p
-                  className="text-xs sm:text-sm text-[#474747] leading-relaxed line-clamp-3"
-                  style={{ fontFamily: 'acumin-pro, sans-serif' }}
-                >
-                  {article.content}
-                </p>
+                  <h2
+                    className="text-sm sm:text-base xl:text-lg text-black leading-snug mb-1.5 sm:mb-2 xl:mb-2.5 group-hover:text-[#474747] transition-colors duration-300 font-brand"
+                  >
+                    {article.title}
+                  </h2>
 
-                <div className="pt-2">
-                  <span
-                    className="text-xs text-black tracking-widest group-hover:underline"
+                  <p
+                    className="text-xs sm:text-sm text-[#474747] leading-relaxed line-clamp-2 sm:line-clamp-3"
                     style={{ fontFamily: 'acumin-pro, sans-serif' }}
                   >
-                    READ MORE →
-                  </span>
+                    {article.content}
+                  </p>
                 </div>
               </div>
             </article>
@@ -234,8 +242,61 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
   // catalog variant rendering
   return (
     <>
-      <div className="mb-10 md:mb-16">
-        <div className={cn(TAB_SCROLL_CONTAINER_CLASS, 'md:flex md:justify-center')}>
+      {/* Category filter */}
+      <div className="mb-8 sm:mb-10 md:mb-16">
+        {/* Mobile: custom dropdown */}
+        <div className="sm:hidden relative" ref={mobileFilterRef}>
+          <button
+            type="button"
+            onClick={() => setMobileFilterOpen((prev) => !prev)}
+            className="flex w-full items-center justify-between border border-black/20 px-4 py-3 text-xs tracking-widest transition-colors hover:border-black"
+            style={{ fontFamily: 'acumin-pro, sans-serif' }}
+            aria-expanded={mobileFilterOpen}
+            aria-haspopup="listbox"
+          >
+            <span className="text-black/40">CATEGORY</span>
+            <span className="flex items-center gap-2.5">
+              <span className="text-black">{selectedCategory}</span>
+              <i
+                className={cn(
+                  'ri-arrow-down-s-line text-base text-black transition-transform duration-200',
+                  mobileFilterOpen && 'rotate-180',
+                )}
+              />
+            </span>
+          </button>
+          {mobileFilterOpen && (
+            <div
+              role="listbox"
+              aria-label="カテゴリ"
+              className="absolute left-0 right-0 z-20 border border-t-0 border-black/20 bg-white shadow-sm"
+            >
+              {NEWS_CATEGORIES.map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  role="option"
+                  aria-selected={cat === selectedCategory}
+                  onClick={() => {
+                    setSelectedCategory(cat as NewsCategory);
+                    setMobileFilterOpen(false);
+                  }}
+                  className={cn(
+                    'block w-full text-left px-4 py-3 text-xs tracking-widest transition-colors',
+                    cat === selectedCategory
+                      ? 'bg-black text-white'
+                      : 'text-black hover:bg-[#f5f5f5]',
+                  )}
+                  style={{ fontFamily: 'acumin-pro, sans-serif' }}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {/* sm+: pill tabs */}
+        <div className={cn('hidden sm:block', TAB_SCROLL_CONTAINER_CLASS, 'md:flex md:justify-center')}>
           <TabSegmentControl
             items={NEWS_CATEGORIES.map((category) => ({ key: category, label: category }))}
             activeKey={selectedCategory}

@@ -59,11 +59,11 @@ const Header = () => {
   return (
     <>
     <header className={`fixed left-0 right-0 bg-white z-50 transition-transform duration-300 ease-in-out ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}`}>
-      <div className="px-6 lg:px-12 py-4 md:py-5 lg:py-6">
+      <div className="px-4 sm:px-6 lg:px-12 py-3.5 sm:py-4 md:py-5 lg:py-6">
         <div className="flex items-center justify-between">
           {/* サイトタイトル */}
           <Link href="/">
-            <h1 className="text-xl md:text-2xl text-black tracking-tight cursor-pointer hover:text-[#474747] transition-colors duration-300 font-display">
+            <h1 className="text-[15px] sm:text-xl md:text-2xl text-black tracking-tight cursor-pointer hover:text-[#474747] transition-colors duration-300 font-display whitespace-nowrap">
               Le Fil des Heures
             </h1>
           </Link>
@@ -91,29 +91,29 @@ const Header = () => {
             )}
           </nav>
           {/* 右側アイコン群 */}
-          <div className="flex items-center gap-4 md:gap-5 lg:gap-6">
-            <Link href="/search" className="w-5 h-5 flex items-center justify-center cursor-pointer">
-              <i className="ri-search-line text-xl text-black hover:text-[#474747] transition-colors"></i>
+          <div className="flex items-center gap-2.5 sm:gap-4 md:gap-5 lg:gap-6">
+            <Link href="/search" className="w-[18px] h-[18px] sm:w-5 sm:h-5 flex items-center justify-center cursor-pointer">
+              <i className="ri-search-line text-[18px] sm:text-xl text-black hover:text-[#474747] transition-colors"></i>
             </Link>
-            <Link href="/wishlist" className="w-5 h-5 flex items-center justify-center cursor-pointer">
-              <i className="ri-heart-line text-xl text-black hover:text-[#474747] transition-colors"></i>
+            <Link href="/wishlist" className="w-[18px] h-[18px] sm:w-5 sm:h-5 flex items-center justify-center cursor-pointer">
+              <i className="ri-heart-line text-[18px] sm:text-xl text-black hover:text-[#474747] transition-colors"></i>
             </Link>
-            <Link href="/cart" className="w-5 h-5 flex items-center justify-center cursor-pointer relative">
-              <i className="ri-shopping-bag-line text-xl text-black hover:text-[#474747] transition-colors"></i>
+            <Link href="/cart" className="w-[18px] h-[18px] sm:w-5 sm:h-5 flex items-center justify-center cursor-pointer relative">
+              <i className="ri-shopping-bag-line text-[18px] sm:text-xl text-black hover:text-[#474747] transition-colors"></i>
               {cartCount > 0 && (
-                <span className="absolute -top-2 -right-2 w-5 h-5 bg-black text-white rounded-full flex items-center justify-center text-xs font-brand">
+                <span className="absolute -top-1.5 -right-1.5 w-4 h-4 sm:-top-2 sm:-right-2 sm:w-5 sm:h-5 bg-black text-white rounded-full flex items-center justify-center text-[9px] sm:text-xs font-brand">
                   {cartCount}
                 </span>
               )}
             </Link>
             <div className="relative">
               {isLoggedIn ? (
-                <Link href="/account" className="w-5 h-5 flex items-center justify-center cursor-pointer">
-                  <i className="ri-user-fill text-xl text-black hover:text-[#474747] transition-colors"></i>
+                <Link href="/account" className="w-[18px] h-[18px] sm:w-5 sm:h-5 flex items-center justify-center cursor-pointer">
+                  <i className="ri-user-fill text-[18px] sm:text-xl text-black hover:text-[#474747] transition-colors"></i>
                 </Link>
               ) : (
-                <Link href="/login" className="w-5 h-5 flex items-center justify-center cursor-pointer">
-                  <i className="ri-user-line text-xl text-black hover:text-[#474747] transition-colors"></i>
+                <Link href="/login" className="w-[18px] h-[18px] sm:w-5 sm:h-5 flex items-center justify-center cursor-pointer">
+                  <i className="ri-user-line text-[18px] sm:text-xl text-black hover:text-[#474747] transition-colors"></i>
                 </Link>
               )}
             </div>
@@ -124,7 +124,7 @@ const Header = () => {
               onClick={() => setDrawerOpen(true)}
               aria-label="Open menu"
             >
-              <i className="ri-menu-line text-2xl text-black"></i>
+              <i className="ri-menu-line text-[18px] sm:text-2xl text-black"></i>
             </Button>
           </div>
         </div>
