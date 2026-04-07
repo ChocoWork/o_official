@@ -155,7 +155,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
   return (
     <>
       {/* Category filter */}
-      <div className="mb-5 sm:mb-6 md:mb-8 lg:mb-10">
+      <div className="mb-5 sm:mb-6 md:mb-7 lg:mb-8">
         {/* Mobile: MultiSelect dropdown */}
         <div className="sm:hidden" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
           <MultiSelect

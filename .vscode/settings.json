@@ -66,6 +66,22 @@
             "matchCommandLine": true
         },
         "netstat": true,
-        "ForEach-Object": true
+        "ForEach-Object": true,
+        "/^node --input-type=module scripts/screenshot-drawer\\.mjs 2>&1$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node scripts/screenshot-drawer\\.mjs 2>&1$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^Start-Sleep -Seconds 3 ; node scripts/screenshot-drawer-after\\.mjs 2>&1$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^Start-Sleep -Seconds 2 ; node scripts/screenshot-drawer-after\\.mjs 2>&1$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
     }
 }

@@ -21,6 +21,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const [togglingWishlist, setTogglingWishlist] = useState(false);
   const [isButtonVisible, setIsButtonVisible] = useState(false);
   const cartButtonRef = useRef<HTMLDivElement>(null);
+  const carouselRef = useRef<HTMLDivElement>(null);
 
   const isWishlisted = item ? wishlistedItems.has(item.id) : false;
 
@@ -69,6 +70,12 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
     observer.observe(el);
     return () => observer.disconnect();
   }, [item]);
+
+  const handleCarouselScroll = () => {
+    if (!carouselRef.current) return;
+    const { scrollLeft, offsetWidth } = carouselRef.current;
+    setSelectedImageIndex(Math.round(scrollLeft / offsetWidth));
+  };
 
   const handleAddToCart = async () => {
     if (!item || !color || !size) {
@@ -172,7 +179,53 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       <div className="max-w-7xl mx-auto">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-[5fr_7fr] gap-8 md:gap-6 lg:gap-12 xl:gap-16 lg:w-fit">
           <div className="md:sticky md:top-24 lg:top-28 lg:w-fit">
-            <div className="flex flex-col gap-2 lg:w-fit">
+            {/* モバイル: 横スクロールカルーセル (サムネイルの代わり) */}
+            <div className="md:hidden">
+              <div
+                ref={carouselRef}
+                className="flex overflow-x-scroll snap-x snap-mandatory w-full touch-pan-x"
+                style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' } as React.CSSProperties}
+                onScroll={handleCarouselScroll}
+              >
+                {thumbnailImages.map((imgUrl: string, index: number) => (
+                  <div
+                    key={index}
+                    className="snap-start flex-shrink-0 min-w-full relative bg-white overflow-hidden"
+                    style={{ height: 'min(calc(100svh - 14rem), 470px)' }}
+                  >
+                    {imgUrl ? (
+                      <Image
+                        src={imgUrl}
+                        alt={`${item.name} ${index + 1}`}
+                        fill
+                        className="object-contain object-center"
+                        priority={index === 0}
+                        sizes="100vw"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-gray-400">
+                        No Image
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {thumbnailImages.length > 1 && (
+                <div className="flex gap-1.5 justify-center mt-2">
+                  {thumbnailImages.map((_, i) => (
+                    <div
+                      key={i}
+                      className={`w-1.5 h-1.5 rounded-full transition-colors duration-200 ${
+                        i === selectedImageIndex ? 'bg-black' : 'bg-black/20'
+                      }`}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* デスクトップ: 静的画像 + サムネイル */}
+            <div className="hidden md:flex flex-col gap-2 lg:w-fit">
               <div className="relative aspect-[3/4] lg:aspect-auto lg:h-[calc(100vh-22rem)] lg:w-[calc((100vh-22rem)*3/4)] lg:max-w-full bg-white overflow-hidden">
                 {mainImage ? (
                   <Image
@@ -181,7 +234,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                     fill
                     className="object-contain object-left-top"
                     priority
-                    sizes="(max-width: 768px) 100vw, (max-width: 1024px) 45vw, 35vw"
+                    sizes="(max-width: 1024px) 45vw, 35vw"
                   />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-gray-400">
@@ -220,10 +273,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
           <div className="space-y-4 lg:space-y-6">
             <div>
-              <h2 className="sm:text-base md:text-xl text-black tracking-tight font-brand">
+              <h2 className="sm:text-base md:text-lg lg:text-xl text-black tracking-tight font-brand">
                 {item.name}
               </h2>
-              <p className="text-sm md:text-lg text-black font-brand">
+              <p className="text-sm md:text-base lg:text-lg text-black font-brand">
                 ¥{item.price.toLocaleString('ja-JP')}
               </p>
             </div>

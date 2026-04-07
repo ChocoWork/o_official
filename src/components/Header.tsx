@@ -133,8 +133,8 @@ const Header = () => {
     </header>
 
       <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} size="md">
-        <div className="p-8">
-          <div className="flex items-center justify-between mb-8">
+        <div className="p-6 sm:p-8">
+          <div className="flex items-center justify-between mb-4">
             <h3
               className="text-2xl text-black tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
@@ -153,7 +153,7 @@ const Header = () => {
               </div>
             </Button>
           </div>
-          <nav className="space-y-2">
+          <nav className="space-y-0">
             {[...menuItems].map((item) => (
               <Button
                 key={item.label}
@@ -161,14 +161,14 @@ const Header = () => {
                 size="md"
                 href={item.href}
                 onClick={() => setDrawerOpen(false)}
-                className={cn('w-full justify-start text-left px-4 py-4 text-sm')}
+                className={cn('w-full justify-start text-left px-4 py-2.5 md:py-2 text-sm h-auto')}
                 style={{ fontFamily: "acumin-pro, sans-serif" }}
               >
                 {item.label}
               </Button>
             ))}
           </nav>
-          <div className="mt-12 pt-8 border-t border-black/10">
+          <div className="mt-8 pt-6 border-t border-black/10">
             <p
               className="text-xs tracking-widest text-black/60 mb-4"
               style={{ fontFamily: "acumin-pro, sans-serif" }}
