@@ -82,6 +82,18 @@
         "/^Start-Sleep -Seconds 2 ; node scripts/screenshot-drawer-after\\.mjs 2>&1$/": {
             "approve": true,
             "matchCommandLine": true
+        },
+        "/^node scripts/screenshot-pages\\.mjs 2>&1$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node scripts/screenshot-pages-after\\.mjs$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node -e \"const playwright=require\\('playwright'\\); \\(async\\(\\)=>\\{ const browser=await playwright\\.chromium\\.launch\\(\\); const page=await browser\\.newPage\\(\\); const viewports=\\[320,375,425,768,1024,1440\\]; for\\(const width of viewports\\)\\{ await page\\.setViewportSize\\(\\{width,height:900\\}\\); await page\\.goto\\('http://localhost:3000/'\\); await page\\.waitForLoadState\\('networkidle'\\); await page\\.screenshot\\(\\{path:`test-results/home-plain-\\$\\{width\\}w\\.png`,fullPage:true\\}\\); console\\.log\\('done',width\\); \\} await browser\\.close\\(\\); \\}\\)\\(\\)\\.catch\\(e=>\\{ console\\.error\\(e\\); process\\.exit\\(1\\); \\}\\);\"$/": {
+            "approve": true,
+            "matchCommandLine": true
         }
     }
 }

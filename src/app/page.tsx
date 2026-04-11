@@ -14,28 +14,27 @@ export default async function Home() {
   ]);
 
   return (
-    <div className="min-h-screen font-sans">
-      <div className="flex flex-col items-center">
+    <div className="min-h-screen w-full font-sans">
+      <div className="flex flex-col w-full items-stretch">
         {/* メイン画像セクション */}
-        <section className="relative min-h-screen w-full flex items-center justify-center bg-white pt-20 pb-20">
-          <div className="flex h-full w-full">
-            <div className="h-screen min-h-[400px] relative flex items-center justify-center">
-              <Image
-                src="/original.jpg"
-                alt="main photo"
-                width={1024} // ←original.jpgの実際の横幅に合わせて調整してください
-                height={1536} // ←original.jpgの実際の縦幅に合わせて調整してください
-                className="h-full object-contain object-left opacity-90"
-                priority
-              />
-              <div className="absolute inset-0 bg-gradient-to-b from-white/40 via-transparent to-white/60"></div>
-            </div>
-            <div className="h-full flex-1 flex items-center justify-center relative z-10 min-w-0">
-              <div className="h-screen text-center px-6 max-w-4xl w-full mx-auto flex flex-col justify-center">
-                <div className="text-3xl md:text-4xl lg:text-5xl mb-8 text-black tracking-tight w-full font-display">26SS Theme 「Black Rose」</div>
-                <div className="text-lg md:text-3xl lg:text-4xl text-[#474747] tracking-widest max-w-2xl mx-auto leading-relaxed font-brand">出発 × 永遠</div>
-              </div>
-            </div>
+        <section className="relative min-h-screen w-full flex items-center justify-center bg-white pt-20">
+          <div className="absolute inset-0 overflow-hidden">
+            <Image
+              src="/mainphoto.png"
+              alt="Hero Background"
+              width={2752} // ←mainphoto.pngの実際の横幅に合わせて調整してください
+              height={1536} // ←mainphoto.pngの実際の縦幅に合わせて調整してください
+              className="w-full h-full object-cover object-center opacity-90"
+            />
+            <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/60" />
+          </div>
+          <div className="relative z-10 text-center px-6 max-w-4xl mx-auto">
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl mb-8 text-white tracking-tight" style={{ fontFamily: 'Didot, serif' }}>
+              Le Fil des Heures
+            </h1>
+            {/* <p className="text-sm sm:text-base lg:text-lg text-white tracking-widest max-w-2xl mx-auto leading-relaxed" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+              時を紡ぐニュートラルモードな日常着
+            </p> */}
           </div>
         </section>
 
@@ -55,10 +54,10 @@ export default async function Home() {
               <div className="order-2 md:order-1">
                 <SectionTitle title="ABOUT" />
                 <div className="space-y-4 lg:space-y-6 text-[#474747] font-brand">
-                  <p className="text-sm lg:text-base leading-relaxed">Le Fil des Heuresは、「時を紡ぐニュートラルモードな日常着」をコンセプトに、2026年に日本の宮城県で誕生したアパレルブランドです。</p>
-                  <p className="text-sm lg:text-base leading-relaxed">時代を超えて愛される普遂的なデザインと、素材選びにこだわり、日常に寄り添う洗練されたワードローブを提案しています。</p>
-                  <p className="text-sm lg:text-base leading-relaxed">ミニマルでありながら、着る人の個性を引き立てる。そんな服作りを目指し、一着一着丁寧に仕上げています。</p>
-                  <p className="text-sm lg:text-base leading-relaxed">移り変わる時の流れの中で、変わらない価値を持つ服を、永く使用していただく。それが願いです。</p>
+                  <p className="text-xs sm:text-sm lg:text-base leading-relaxed">Le Fil des Heuresは、「時を紡ぐニュートラルモードな日常着」をコンセプトに、2026年に日本の宮城県で誕生したアパレルブランドです。</p>
+                  <p className="text-xs sm:text-sm lg:text-base leading-relaxed">時代を超えて愛される普遂的なデザインと、素材選びにこだわり、日常に寄り添う洗練されたワードローブを提案しています。</p>
+                  <p className="text-xs sm:text-sm lg:text-base leading-relaxed">ミニマルでありながら、着る人の個性を引き立てる。そんな服作りを目指し、一着一着丁寧に仕上げています。</p>
+                  <p className="text-xs sm:text-sm lg:text-base leading-relaxed">移り変わる時の流れの中で、変わらない価値を持つ服を、永く使用していただく。それが願いです。</p>
                 </div>
                 <div className="mt-8 lg:mt-12 grid grid-cols-2 gap-4">
                   <div>

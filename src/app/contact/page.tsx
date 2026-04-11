@@ -11,10 +11,10 @@ export default function ContactPage() {
 
     return (
         <div className="pb-10 min-h-screen flex items-start justify-center">
-            <div className="w-full max-w-4xl mx-auto px-6 lg:px-12">
-                <div className="mb-14 p-8 lg:p-10">
-                    <h1 className="text-3xl text-black mb-2 tracking-tight font-display">Contact / お問い合わせ</h1>
-                    <p className="text-base text-[#474747] leading-relaxed tracking-tight mb-8">ご質問やお問い合わせは、以下のフォームよりご連絡ください。</p>
+            <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-12">
+                <div className="mb-6 sm:mb-14 p-4 sm:p-8 lg:p-10">
+                    <h1 className="text-xl sm:text-2xl lg:text-3xl text-black mb-2 tracking-tight font-display">Contact / お問い合わせ</h1>
+                    <p className="text-sm lg:text-base text-[#474747] leading-relaxed tracking-tight mb-4 sm:mb-8">ご質問やお問い合わせは、以下のフォームよりご連絡ください。</p>
 
                     <form className="space-y-6">
                         <TextField id="name" required label="NAME / お名前 *" type="text" name="name" size="md" className="w-full" />

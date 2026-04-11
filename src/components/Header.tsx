@@ -136,7 +136,7 @@ const Header = () => {
         <div className="p-6 sm:p-8">
           <div className="flex items-center justify-between mb-4">
             <h3
-              className="text-2xl text-black tracking-tight"
+              className="text-xl sm:text-2xl text-black tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Menu

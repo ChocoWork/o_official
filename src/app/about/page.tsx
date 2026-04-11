@@ -3,8 +3,8 @@ import Image from 'next/image';
 export default function StoryPage() {
   return (
     <div className="pb-10 sm:pb-14">
-      <div className="max-w-6xl mx-auto px-6 lg:px-12">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 mb-24">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-12">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8 lg:gap-16 mb-8 sm:mb-14 lg:mb-24">
           <div className="aspect-[4/5] bg-[#f5f5f5] overflow-hidden">
             <Image
               alt="Brand Philosophy"
@@ -14,9 +14,9 @@ export default function StoryPage() {
               height={1000}
             />
           </div>
-          <div className="flex flex-col justify-center space-y-8">
+          <div className="flex flex-col justify-center space-y-4 lg:space-y-8">
             <div>
-              <h2 className="text-3xl text-black mb-6 tracking-tight">Brand Philosophy</h2>
+              <h2 className="text-xl sm:text-2xl lg:text-3xl text-black mb-3 sm:mb-6 tracking-tight">Brand Philosophy</h2>
               <p className="text-base text-[#474747] leading-relaxed mb-4">
                 Le Fil des Heuresは、「時を紡ぐニュートラルモードな日常着」をコンセプトに、時代を超えて愛される普遍的なデザインと上質な素材にこだわったアパレルブランドです。
               </p>
@@ -27,15 +27,15 @@ export default function StoryPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 mb-24">
-          <div className="flex flex-col justify-center space-y-8 lg:order-2">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8 lg:gap-16 mb-8 sm:mb-14 lg:mb-24">
+          <div className="flex flex-col justify-center space-y-4 lg:space-y-8 lg:order-2">
             <div>
-              <h2 className="text-3xl text-black mb-6 tracking-tight">Quality &amp; Craftsmanship</h2>
+              <h2 className="text-xl sm:text-2xl lg:text-3xl text-black mb-3 sm:mb-6 tracking-tight">Quality &amp; Craftsmanship</h2>
               <p className="text-base text-[#474747] leading-relaxed mb-4">
-                厳選された上質な素材と、熟練した職人による丁寧な縫製。細部にまでこだわり抜いた製品づくりが、Le Fil des Heuresの品質を支えています。
+                こだわりの素材と、職人による丁寧な縫製。細部にまでこだわり抜いた製品づくりが、Le Fil des Heuresの品質を支えています。
               </p>
               <p className="text-base text-[#474747] leading-relaxed">
-                長く愛用していただけるよう、耐久性と快適性を両立させた服作りを心がけています。
+                長く愛用していただけるよう、普遍的なデザインと耐久性、快適性を兼ね備えた服作りを心がけています。
               </p>
             </div>
           </div>
@@ -50,8 +50,8 @@ export default function StoryPage() {
           </div>
         </div>
 
-        <div className="mb-24">
-          <h2 className="text-3xl text-black mb-12 tracking-tight text-center">Our Values</h2>
+        <div className="mb-8 sm:mb-14 lg:mb-24">
+          <h2 className="text-xl sm:text-2xl lg:text-3xl text-black mb-6 sm:mb-8 lg:mb-12 tracking-tight text-center">Our Values</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div className="text-center space-y-4">
               <div className="w-16 h-16 mx-auto flex items-center justify-center"><i className="ri-time-line text-4xl text-black"></i></div>
