@@ -522,3 +522,5 @@ export default function Page() {
 				</Button>
 			</div>
 		</div>
+	);
+}
