@@ -12,25 +12,14 @@
 | FR-ITEM-ALL-006 | コレクション・サイズ・カラー・価格など複数属性で絞り込み可能とする | IMPL-ITEM-LIST-006 | `src/features/items/components/PublicItemGrid.tsx` | 未実装。カテゴリ（TOPS, BOTTOMS 等）のみクライアント側で絞り込み可能 | 未 |
 | FR-ITEM-ALL-007 | 一覧にソート機能を追加し新着順・価格昇順/降順・人気順などの切り替えを提供する | IMPL-ITEM-LIST-007 | `src/features/items/components/PublicItemGrid.tsx` | 未実装 | 未 |
 | FR-ITEM-ALL-008 | ITEM ページに `generateMetadata` を実装し `title` / `description` を設定する | IMPL-ITEM-LIST-008 | `src/app/item/page.tsx` | `generateMetadata` エクスポートがない。SEO 未対応 | 未 |
+| FR-ITEM-ALL-009 | `GET /api/items` でフィルタ/ソート対応の商品一覧 API を提供する | IMPL-ITEMS-LIST-API-01 | `src/app/api/items/route.ts` | 全件取得のみ。サーバ側フィルタ未実装 | 未 |
+| FR-ITEM-ALL-010 | `GET /api/items/:id` で PDP 用の商品詳細データを取得する | IMPL-ITEMS-DETAIL-API-01 | `src/app/api/items/[id]/route.ts` | `useEffect` で fetch 済み | 済 |
+| FR-ITEM-ALL-011 | `POST /api/items/:id/notify` で入荷通知登録 API を提供する | IMPL-ITEMS-NOTIFY-01 | `src/app/api/items/[id]/notify/route.ts` | 未実装 | 未 |
+| FR-ITEM-ALL-012 | ITEMS API に対して単体テストとパフォーマンステスト（目標: P95 < 200ms）を整備する | IMPL-ITEMS-TEST-01 | `tests/items/` | 未実装 | 未 |
 
 ---
 
-## 実装タスク管理 (ITEMS-01)
-
-**タスクID**: ITEMS-01  
-**ステータス**: 一部実装済  
-**元ファイル**: `docs/tasks/02_items_ticket.md`
-
-### API チェックリスト
-
-| 要件ID | 要件内容 | 実装ID | 実装対象ファイル | 実装概要 | 実装ステータス |
-|--------|----------|--------|----------------|----------|--------------|
-| ITEMS-01-001 | `GET /api/items` フィルタ/ソート対応 | IMPL-ITEMS-LIST-API-01 | `src/app/api/items/route.ts` | 全件取得のみ。サーバ側フィルタ未実装 | 未 |
-| ITEMS-01-002 | `GET /api/items/:id` PDP データ取得 | IMPL-ITEMS-DETAIL-API-01 | `src/app/api/items/[id]/route.ts` | `useEffect` で fetch 済み | 済 |
-| ITEMS-01-003 | `POST /api/items/:id/notify` 入荷通知登録 | IMPL-ITEMS-NOTIFY-01 | `src/app/api/items/[id]/notify/route.ts` | 未実装 | 未 |
-| ITEMS-01-004 | 単体テスト + パフォーマンステスト（目標: 95% < 200ms） | IMPL-ITEMS-TEST-01 | `tests/items/` | 未実装 | 未 |
-
-### 依存関係
+## 依存関係
 
 - CDN / オブジェクトストレージ: `item-images` Supabase Storage バケットで対応済み
 - 検索インデックス基盤: 未整備

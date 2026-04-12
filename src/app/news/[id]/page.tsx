@@ -1,6 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import { categories } from "@/lib/news-data";
 import { Button } from '@/components/ui/Button';
 import { TagLabel } from '@/components/ui/TagLabel';
@@ -15,18 +16,45 @@ interface NewsDetailPageProps {
   }>;
 }
 
+function resolveCategory(category: string | undefined): (typeof categories)[number] {
+  const normalizedCategory = (category ?? "ALL").toUpperCase();
+  return categories.includes(normalizedCategory as (typeof categories)[number])
+    ? (normalizedCategory as (typeof categories)[number])
+    : "ALL";
+}
+
+function buildDescription(content: string): string {
+  const normalized = content.replace(/\s+/g, " ").trim();
+  if (normalized.length === 0) {
+    return "Le Fil des Heuresのニュース詳細ページです。";
+  }
+  return normalized.length > 120 ? `${normalized.slice(0, 120)}...` : normalized;
+}
+
+export async function generateMetadata({ params }: NewsDetailPageProps): Promise<Metadata> {
+  const resolvedParams = await params;
+  const article = await getPublishedNewsDetailById(resolvedParams.id);
+
+  if (!article) {
+    return {
+      title: "NEWS DETAIL | Le Fil des Heures",
+      description: "Le Fil des Heuresのニュース詳細ページです。",
+    };
+  }
+
+  return {
+    title: `${article.title} | NEWS | Le Fil des Heures`,
+    description: buildDescription(article.detailed_content),
+  };
+}
+
 export default async function NewsDetailPage({
   params,
   searchParams,
 }: NewsDetailPageProps) {
   const resolvedParams = await params;
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
-  const selectedCategory = (resolvedSearchParams?.category ?? "ALL").toUpperCase();
-  const activeCategory = categories.includes(
-    selectedCategory as (typeof categories)[number],
-  )
-    ? (selectedCategory as (typeof categories)[number])
-    : "ALL";
+  const activeCategory = resolveCategory(resolvedSearchParams?.category);
   
   const article = await getPublishedNewsDetailById(resolvedParams.id, {
     category: activeCategory,
@@ -47,6 +75,27 @@ export default async function NewsDetailPage({
       <div className="max-w-3xl mx-auto">
         {/* Article Header */}
         <div className="mb-8 sm:mb-10">
+          <nav aria-label="Breadcrumb" className="mb-4 sm:mb-5">
+            <ol className="flex items-center gap-2 text-[11px] sm:text-xs text-[#474747]" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+              <li>
+                <Link href="/news" className="hover:text-black transition-colors underline underline-offset-2">
+                  NEWS
+                </Link>
+              </li>
+              <li aria-hidden="true">/</li>
+              <li>
+                <Link
+                  href={`/news?category=${encodeURIComponent(article.category)}`}
+                  className="hover:text-black transition-colors underline underline-offset-2"
+                >
+                  {article.category}
+                </Link>
+              </li>
+              <li aria-hidden="true">/</li>
+              <li className="truncate" aria-current="page">{article.title}</li>
+            </ol>
+          </nav>
+
           <div className="flex items-center gap-3 sm:gap-4 mb-4 sm:mb-5">
             <span
               className="text-[11px] sm:text-xs text-[#474747] tracking-widest"
@@ -91,6 +140,7 @@ export default async function NewsDetailPage({
               {prevArticle ? (
                 <Link
                   href={`/news/${prevArticle.id}${navCategoryParam}`}
+                  aria-label={`前の記事: ${prevArticle.title}`}
                   className="group flex items-start gap-2 max-w-[45%]"
                 >
                   <span className="flex-shrink-0 w-4 h-4 flex items-center justify-center text-[#474747] group-hover:text-black transition-colors mt-0.5 text-sm">
@@ -119,6 +169,7 @@ export default async function NewsDetailPage({
               {nextArticle ? (
                 <Link
                   href={`/news/${nextArticle.id}${navCategoryParam}`}
+                  aria-label={`次の記事: ${nextArticle.title}`}
                   className="group flex items-start gap-2 max-w-[45%] text-right"
                 >
                   <div className="min-w-0">
@@ -158,6 +209,7 @@ export default async function NewsDetailPage({
             {prevArticle ? (
               <Link
                 href={`/news/${prevArticle.id}${navCategoryParam}`}
+                aria-label={`前の記事: ${prevArticle.title}`}
                 className="group flex items-center gap-3 justify-self-start"
               >
                 <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center text-[#474747] group-hover:text-black transition-colors">
@@ -191,6 +243,7 @@ export default async function NewsDetailPage({
             {nextArticle ? (
               <Link
                 href={`/news/${nextArticle.id}${navCategoryParam}`}
+                aria-label={`次の記事: ${nextArticle.title}`}
                 className="group flex items-center gap-3 justify-self-end text-right"
               >
                 <div className="min-w-0">
