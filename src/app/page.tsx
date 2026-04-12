@@ -74,7 +74,7 @@ export default async function Home() {
               <div className="order-1 md:order-2">
                 <div className="relative aspect-[3/4] overflow-hidden">
                   <Image
-                    src="https://readdy.ai/api/search-image?query=Minimalist%20fashion%20brand%20atelier%20studio%20interior%20with%20neutral%20beige%20and%20grey%20tones%20featuring%20clean%20white%20walls%20elegant%20fabric%20samples%20hanging%20on%20simple%20racks%20natural%20lighting%20through%20large%20windows%20contemporary%20workspace%20with%20sophisticated%20design%20elements%20and%20architectural%20details%20showcasing%20modern%20fashion%20design%20environment&width=800&height=1000&seq=about001&orientation=portrait"
+                    src="/about.png"
                     alt="About Le Fil des Heures"
                     fill
                     unoptimized
