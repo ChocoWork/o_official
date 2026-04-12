@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Image from "next/image";
+import ReactDOM from "react-dom";
 import { PublicLookGrid } from '@/features/look/components/PublicLookGrid';
 import { PublicItemGrid } from '@/features/items/components/PublicItemGrid';
 import { PublicNewsGrid } from '@/features/news/components/PublicNewsGrid';
@@ -25,6 +26,10 @@ export default async function Home() {
     getPublishedItems(9),
     getPublishedNews({ limit: 6 }),
   ]);
+
+  ReactDOM.preload('/mainphoto.png', {
+    as: 'image',
+  });
 
   return (
     <div className="min-h-screen w-full font-sans">

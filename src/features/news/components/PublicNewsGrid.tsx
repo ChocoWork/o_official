@@ -35,18 +35,50 @@ type PublicNewsGridCatalogProps = {
 
 type PublicNewsGridProps = PublicNewsGridHomeProps | PublicNewsGridCatalogProps;
 
+function parseCategorySelection(
+  categoryParam: string | null,
+  fallback: NewsCategory = 'ALL',
+): NewsCategory[] {
+  if (!categoryParam || categoryParam.trim().length === 0) {
+    return [fallback];
+  }
+
+  const parsed = categoryParam
+    .split(',')
+    .map((value) => value.trim().toUpperCase())
+    .filter((value): value is NewsCategory => NEWS_CATEGORIES.includes(value as NewsCategory));
+
+  if (parsed.length === 0) {
+    return ['ALL'];
+  }
+
+  if (parsed.includes('ALL')) {
+    return ['ALL'];
+  }
+
+  return [...new Set(parsed)];
+}
+
+function isSameSelection(left: NewsCategory[], right: NewsCategory[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((value, index) => value === right[index]);
+}
+
 export function PublicNewsGrid(props: PublicNewsGridProps) {
   const { variant, className } = props;
   const catalogProps = props.variant === 'catalog' ? props : null;
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const categoryQuery = searchParams.get('category');
   const [fetchedArticles, setFetchedArticles] = useState<PublicNewsArticle[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedCategories, setSelectedCategories] = useState<NewsCategory[]>(() => {
     if (catalogProps) {
-      return [catalogProps.initialCategory ?? 'ALL'];
+      return parseCategorySelection(categoryQuery, catalogProps.initialCategory ?? 'ALL');
     }
     return ['ALL'];
   });
@@ -57,8 +89,9 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
     }
 
     const params = new URLSearchParams(searchParams.toString());
-    if (nextSelection.length === 1 && nextSelection[0] !== 'ALL') {
-      params.set('category', nextSelection[0]);
+    const normalizedSelection = nextSelection.filter((value) => value !== 'ALL');
+    if (normalizedSelection.length > 0) {
+      params.set('category', normalizedSelection.join(','));
     } else {
       params.delete('category');
     }
@@ -73,14 +106,15 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
       return;
     }
 
-    const categoryFromProps = catalogProps.initialCategory ?? 'ALL';
-    setSelectedCategories((current) => {
-      if (current.length === 1 && current[0] === categoryFromProps) {
-        return current;
-      }
-      return [categoryFromProps];
-    });
-  }, [catalogProps]);
+    const nextSelection = parseCategorySelection(
+      categoryQuery,
+      catalogProps.initialCategory ?? 'ALL',
+    );
+
+    setSelectedCategories((current) =>
+      isSameSelection(current, nextSelection) ? current : nextSelection,
+    );
+  }, [catalogProps, categoryQuery]);
 
   const shouldFetch = typeof props.articles === 'undefined';
   const fetchLimit = variant === 'home' ? (props.fetchLimit ?? 6) : undefined;
@@ -145,9 +179,11 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
   const resolveBuildHref = (article: PublicNewsArticle): string => {
     if (catalogProps) {
       if (catalogProps.buildHref) return catalogProps.buildHref(article);
-      return selectedCategories.length === 1 && selectedCategories[0] !== 'ALL'
-        ? `/news/${article.id}?category=${selectedCategories[0]}`
-        : `/news/${article.id}`;
+      const normalizedSelection = selectedCategories.filter((value) => value !== 'ALL');
+      if (normalizedSelection.length > 0) {
+        return `/news/${article.id}?category=${encodeURIComponent(normalizedSelection.join(','))}`;
+      }
+      return `/news/${article.id}`;
     }
     return `/news/${article.id}`;
   };

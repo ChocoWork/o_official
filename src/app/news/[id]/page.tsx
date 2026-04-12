@@ -16,6 +16,26 @@ interface NewsDetailPageProps {
   }>;
 }
 
+function resolveCategoryListParam(category: string | undefined): string | null {
+  if (!category || category.trim().length === 0) {
+    return null;
+  }
+
+  const parsed = category
+    .split(',')
+    .map((value) => value.trim().toUpperCase())
+    .filter((value): value is (typeof categories)[number] =>
+      categories.includes(value as (typeof categories)[number]),
+    )
+    .filter((value) => value !== 'ALL');
+
+  if (parsed.length === 0) {
+    return null;
+  }
+
+  return [...new Set(parsed)].join(',');
+}
+
 function resolveCategory(category: string | undefined): (typeof categories)[number] {
   const normalizedCategory = (category ?? "ALL").toUpperCase();
   return categories.includes(normalizedCategory as (typeof categories)[number])
@@ -54,6 +74,7 @@ export default async function NewsDetailPage({
 }: NewsDetailPageProps) {
   const resolvedParams = await params;
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
+  const persistedCategoryList = resolveCategoryListParam(resolvedSearchParams?.category);
   const activeCategory = resolveCategory(resolvedSearchParams?.category);
   
   const article = await getPublishedNewsDetailById(resolvedParams.id, {
@@ -68,7 +89,9 @@ export default async function NewsDetailPage({
     category: activeCategory,
   });
 
-  const navCategoryParam = activeCategory === "ALL" ? "" : `?category=${activeCategory}`;
+  const navCategoryParam = persistedCategoryList
+    ? `?category=${encodeURIComponent(persistedCategoryList)}`
+    : "";
 
   return (
     <div className="pt-6 sm:pt-8 lg:pt-12 pb-12 sm:pb-16 lg:pb-20 px-5 sm:px-6 lg:px-12">
@@ -78,7 +101,7 @@ export default async function NewsDetailPage({
           <nav aria-label="Breadcrumb" className="mb-4 sm:mb-5">
             <ol className="flex items-center gap-2 text-[11px] sm:text-xs text-[#474747]" style={{ fontFamily: "acumin-pro, sans-serif" }}>
               <li>
-                <Link href="/news" className="hover:text-black transition-colors underline underline-offset-2">
+                <Link href={`/news${navCategoryParam}`} className="hover:text-black transition-colors underline underline-offset-2">
                   NEWS
                 </Link>
               </li>
