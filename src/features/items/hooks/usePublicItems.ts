@@ -8,6 +8,12 @@ type UsePublicItemsOptions = {
   enabled?: boolean;
 };
 
+type ItemsApiResponse =
+  | Item[]
+  | {
+      items: Item[];
+    };
+
 export function usePublicItems(options?: UsePublicItemsOptions) {
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,8 +36,9 @@ export function usePublicItems(options?: UsePublicItemsOptions) {
           throw new Error('Failed to fetch items');
         }
 
-        const data: Item[] = await response.json();
-        setItems(data);
+        const payload = (await response.json()) as ItemsApiResponse;
+        const normalizedItems = Array.isArray(payload) ? payload : payload.items;
+        setItems(normalizedItems);
         setError(null);
       } catch (fetchError) {
         setItems([]);

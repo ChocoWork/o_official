@@ -128,7 +128,7 @@ export function MultiSelect({
             aria-haspopup="listbox"
             aria-expanded={open}
           >
-            <span>{values.length > 0 ? values.join(', ') : placeholder}</span>
+            <span>{values.length > 0 ? values.map((v) => options.find((o) => o.value === v)?.label ?? v).join(', ') : placeholder}</span>
             <span className="flex h-4 w-4 items-center justify-center">
               <i className={cn('text-base transition-transform', open ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line')}></i>
             </span>

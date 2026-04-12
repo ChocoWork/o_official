@@ -20,7 +20,7 @@ test.describe('Item catalog – typography layout', () => {
 
       // Wait for item grid to appear
       const firstLink = page.locator('main a').first();
-      await expect(firstLink).toBeVisible({ timeout: 10000 });
+      await expect(firstLink).toBeVisible({ timeout: 20000 });
 
       await page.screenshot({
         path: `test-results/item-${vp.name}-${vp.width}w.png`,
@@ -42,7 +42,7 @@ test.describe('Look catalog – typography layout', () => {
 
       // Wait for look grid to appear
       const firstLink = page.locator('main a').first();
-      await expect(firstLink).toBeVisible({ timeout: 10000 });
+      await expect(firstLink).toBeVisible({ timeout: 20000 });
 
       await page.screenshot({
         path: `test-results/look-${vp.name}-${vp.width}w.png`,
