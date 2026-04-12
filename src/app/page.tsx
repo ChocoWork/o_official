@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Image from "next/image";
 import { PublicLookGrid } from '@/features/look/components/PublicLookGrid';
 import { PublicItemGrid } from '@/features/items/components/PublicItemGrid';
@@ -6,6 +7,18 @@ import { PublicStockistGrid } from '@/features/stockist/components/PublicStockis
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { getPublishedItems } from '@/lib/items/public';
 import { getPublishedNews } from '@/features/news/services/public';
+
+export async function generateMetadata(): Promise<Metadata> {
+  return {
+    title: 'Le Fil des Heures',
+    description: 'Le Fil des Heuresの公式オンラインストア。時を紡ぐニュートラルモードな日常着を提案します。',
+    openGraph: {
+      title: 'Le Fil des Heures',
+      description: 'Le Fil des Heuresの公式オンラインストア。時を紡ぐニュートラルモードな日常着を提案します。',
+      images: ['/mainphoto.png'],
+    },
+  };
+}
 
 export default async function Home() {
   const [homeItems, homeNews] = await Promise.all([
@@ -24,9 +37,11 @@ export default async function Home() {
               alt="Hero Background"
               width={2752} // ←mainphoto.pngの実際の横幅に合わせて調整してください
               height={1536} // ←mainphoto.pngの実際の縦幅に合わせて調整してください
+              priority
+              sizes="100vw"
               className="w-full h-full object-cover object-center opacity-90"
             />
-            <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/60" />
+            <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/60" />
           </div>
           <div className="relative z-10 text-center px-6 max-w-4xl mx-auto">
             <h1 className="text-2xl sm:text-3xl lg:text-4xl mb-8 text-white tracking-tight" style={{ fontFamily: 'Didot, serif' }}>

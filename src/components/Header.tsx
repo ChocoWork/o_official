@@ -62,10 +62,10 @@ const Header = () => {
       <div className="px-4 sm:px-6 lg:px-12 py-3.5 sm:py-4 md:py-5 lg:py-6">
         <div className="flex items-center justify-between">
           {/* サイトタイトル */}
-          <Link href="/">
-            <h1 className="text-[15px] sm:text-xl md:text-2xl text-black tracking-tight cursor-pointer hover:text-[#474747] transition-colors duration-300 font-display whitespace-nowrap">
+          <Link href="/" aria-label="Le Fil des Heures home">
+            <span className="text-[15px] sm:text-xl md:text-2xl text-black tracking-tight cursor-pointer hover:text-[#474747] transition-colors duration-300 font-display whitespace-nowrap">
               Le Fil des Heures
-            </h1>
+            </span>
           </Link>
           {/* メニュー（大画面のみ） */}
           <nav className="hidden lg:flex items-center gap-6 xl:gap-12 font-brand">
