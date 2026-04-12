@@ -124,4 +124,5 @@ export const categories = [
   "COLLABORATION",
   "SUSTAINABILITY",
   "STORE",
+  "BLOG",
 ] as const;

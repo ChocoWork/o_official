@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { TagLabel } from '@/components/ui/TagLabel';
 import { Button } from '@/components/ui/Button';
 import { SectionTitle } from '@/components/ui/SectionTitle';
@@ -27,6 +28,7 @@ type PublicNewsGridHomeProps = {
 type PublicNewsGridCatalogProps = {
   variant: 'catalog';
   articles?: PublicNewsArticle[];
+  initialCategory?: NewsCategory;
   className?: string;
   buildHref?: (article: PublicNewsArticle) => string;
 };
@@ -35,10 +37,50 @@ type PublicNewsGridProps = PublicNewsGridHomeProps | PublicNewsGridCatalogProps;
 
 export function PublicNewsGrid(props: PublicNewsGridProps) {
   const { variant, className } = props;
+  const catalogProps = props.variant === 'catalog' ? props : null;
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [fetchedArticles, setFetchedArticles] = useState<PublicNewsArticle[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedCategories, setSelectedCategories] = useState<NewsCategory[]>(['ALL']);
+  const [selectedCategories, setSelectedCategories] = useState<NewsCategory[]>(() => {
+    if (catalogProps) {
+      return [catalogProps.initialCategory ?? 'ALL'];
+    }
+    return ['ALL'];
+  });
+
+  const syncCategoryQuery = (nextSelection: NewsCategory[]): void => {
+    if (variant !== 'catalog') {
+      return;
+    }
+
+    const params = new URLSearchParams(searchParams.toString());
+    if (nextSelection.length === 1 && nextSelection[0] !== 'ALL') {
+      params.set('category', nextSelection[0]);
+    } else {
+      params.delete('category');
+    }
+
+    const query = params.toString();
+    const nextUrl = query.length > 0 ? `${pathname}?${query}` : pathname;
+    router.push(nextUrl, { scroll: false });
+  };
+
+  useEffect(() => {
+    if (!catalogProps) {
+      return;
+    }
+
+    const categoryFromProps = catalogProps.initialCategory ?? 'ALL';
+    setSelectedCategories((current) => {
+      if (current.length === 1 && current[0] === categoryFromProps) {
+        return current;
+      }
+      return [categoryFromProps];
+    });
+  }, [catalogProps]);
 
   const shouldFetch = typeof props.articles === 'undefined';
   const fetchLimit = variant === 'home' ? (props.fetchLimit ?? 6) : undefined;
@@ -101,8 +143,8 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
   }, [resolvedArticles, selectedCategories, variant]);
 
   const resolveBuildHref = (article: PublicNewsArticle): string => {
-    if (variant === 'catalog') {
-      if (props.buildHref) return props.buildHref(article);
+    if (catalogProps) {
+      if (catalogProps.buildHref) return catalogProps.buildHref(article);
       return selectedCategories.length === 1 && selectedCategories[0] !== 'ALL'
         ? `/news/${article.id}?category=${selectedCategories[0]}`
         : `/news/${article.id}`;
@@ -240,26 +282,33 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
             options={NEWS_CATEGORIES.map((c) => ({ value: c, label: c }))}
             values={selectedCategories}
             onChange={(newValues) => {
+              let nextSelection: NewsCategory[];
               if (newValues.length === 0) {
                 // 全解除 → ALL に戻す
-                setSelectedCategories(['ALL']);
+                nextSelection = ['ALL'];
+                setSelectedCategories(nextSelection);
+                syncCategoryQuery(nextSelection);
                 return;
               }
               const hadAll = selectedCategories.includes('ALL');
               const hasAll = newValues.includes('ALL');
               if (!hadAll && hasAll) {
                 // ALL が追加された → ALL のみにリセット
-                setSelectedCategories(['ALL']);
+                nextSelection = ['ALL'];
+                setSelectedCategories(nextSelection);
+                syncCategoryQuery(nextSelection);
                 return;
               }
               if (hadAll && newValues.length > 1) {
                 // ALL 選択中に他が追加された → ALL を外して他のみに
-                setSelectedCategories(
-                  newValues.filter((v) => v !== 'ALL') as NewsCategory[],
-                );
+                nextSelection = newValues.filter((v) => v !== 'ALL') as NewsCategory[];
+                setSelectedCategories(nextSelection);
+                syncCategoryQuery(nextSelection);
                 return;
               }
-              setSelectedCategories(newValues as NewsCategory[]);
+              nextSelection = newValues as NewsCategory[];
+              setSelectedCategories(nextSelection);
+              syncCategoryQuery(nextSelection);
             }}
             checkStyle="fill"
             size="sm"
@@ -272,7 +321,11 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
           <TabSegmentControl
             items={NEWS_CATEGORIES.map((category) => ({ key: category, label: category }))}
             activeKey={selectedCategories.length === 1 ? selectedCategories[0] : 'ALL'}
-            onChange={(category) => setSelectedCategories([category as NewsCategory])}
+            onChange={(category) => {
+              const nextSelection: NewsCategory[] = [category as NewsCategory];
+              setSelectedCategories(nextSelection);
+              syncCategoryQuery(nextSelection);
+            }}
             variant="segment-pill"
             size="md"
             className="min-w-max"
