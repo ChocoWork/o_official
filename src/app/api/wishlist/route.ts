@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
     );
     const result = wishlistData.map((wishlistItem) => ({
       ...wishlistItem,
-      items: itemsMap.get(wishlistItem.item_id),
+      items: itemsMap.get(wishlistItem.item_id) ?? null,
     }));
 
     return NextResponse.json(result);

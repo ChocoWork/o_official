@@ -10,10 +10,10 @@
 | FR-WISHLIST-004 | ユーザーはカード上の削除ボタンでアイテムを削除でき削除後に一覧を再レンダリングする | IMPL-WISHLIST-004 | `src/app/wishlist/client.tsx`, `src/app/api/wishlist/[id]/route.ts` | `DELETE /api/wishlist/${wishlistId}` 呼び出し後に `filter` で画面更新。エラー時は `alert()` のみ | 済 |
 | FR-WISHLIST-005 | ウィッシュリスト API は GET / POST / DELETE を有し `session_id` に基づいてセッション間で管理する | IMPL-WISHLIST-005 | `src/app/api/wishlist/route.ts`, `src/app/api/wishlist/[id]/route.ts` | `GET` / `DELETE` はクライアントコードで実装済み。`POST` は商品詳細ページから呼び出し。`session_id` クッキーベース | 済 |
 | FR-WISHLIST-006 | ウィッシュリストが空の場合は案内テキストと `/item` への継続購入リンクを提供する | IMPL-WISHLIST-006 | `src/app/wishlist/client.tsx` | 「ウィッシュリストは空です」と `Link href="/item"` 「買い物を続ける」を表示 | 済 |
-| FR-WISHLIST-007 | 各カードに「カートに追加」ボタンを追加しウィッシュリストから直接購入に移せるようにする | IMPL-WISHLIST-007 | `src/app/wishlist/client.tsx` | 未実装。カードには削除ボタンのみ存在する | 未 |
-| FR-WISHLIST-008 | 削除ボタンに `aria-label="ウィッシュリストから削除"` を付与しカードリストに適切な role を設定する | IMPL-WISHLIST-008 | `src/app/wishlist/client.tsx` | `<button>` に `aria-label` が設定されていない。アイコンのみで支援技術がボタンの目的を読み上げられない | 未 |
-| FR-WISHLIST-009 | 認証連携による永続化・デバイス間同期（WONT） | — | — | 現在は `session_id` クッキーベース。ログイン後の永続化・同期は現フェーズ対象外 | 未 |
-| FR-WISHLIST-010 | `item.items` が `null` の場合のフォールバック UI と API レスポンスの型チェックを強化する | IMPL-WISHLIST-009 | `src/app/wishlist/client.tsx` | `client.tsx` の `map` 内で `item.items.*` を null ガードなしに直接参照。API が `null` を返した場合にランタイムエラーが発生する可能性 | 未 |
+| FR-WISHLIST-007 | 各カードに「カートに追加」ボタンを追加しウィッシュリストから直接購入に移せるようにする | IMPL-WISHLIST-007 | `src/app/wishlist/client.tsx` | 各カードに「カートに追加」ボタンを実装。`POST /api/cart` 成功時に画面メッセージ表示とカート件数更新を行う | 済 |
+| FR-WISHLIST-008 | 削除ボタンに `aria-label="ウィッシュリストから削除"` を付与しカードリストに適切な role を設定する | IMPL-WISHLIST-008 | `src/app/wishlist/client.tsx` | 削除ボタンへ `aria-label` を付与し、一覧に `role="list"`、カードに `role="listitem"` を設定 | 済 |
+| FR-WISHLIST-009 | 認証連携による永続化・デバイス間同期（WONT） | — | — | 現在は `session_id` クッキーベース。ログイン後の永続化・同期は現フェーズ対象外（WONT） | 対象外 |
+| FR-WISHLIST-010 | `item.items` が `null` の場合のフォールバック UI と API レスポンスの型チェックを強化する | IMPL-WISHLIST-009 | `src/app/wishlist/client.tsx`, `src/app/api/wishlist/route.ts` | APIレスポンスのランタイム型チェックを追加し、`item.items === null` 時にフォールバックUIを表示してクラッシュを回避 | 済 |
 
 ---
 
