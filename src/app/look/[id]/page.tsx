@@ -1,9 +1,40 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
-import Image from 'next/image';
-import { formatLookSeason, getPublishedLooks } from '@/lib/look/public';
+import { formatLookSeason, getPublishedLookById, getPublishedLooks } from '@/lib/look/public';
 import { List } from '@/components/ui/List';
+import { LookImageGallery } from '@/features/look/components/LookImageGallery';
 
-export default async function LookDetailPage({ params }: { params: Promise<{ id: string }> }) {
+type Props = {
+    params: Promise<{ id: string }>;
+};
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+    const { id } = await params;
+    const lookId = Number(id);
+    const look = Number.isNaN(lookId) ? null : await getPublishedLookById(lookId);
+
+    if (!look) {
+        return {
+            title: 'Look not found | Le Fil des Heures',
+            description: '指定されたルックは見つかりませんでした。',
+        };
+    }
+
+    const title = `${look.theme} | LOOK | Le Fil des Heures`;
+    const description = look.themeDescription || `${look.theme} のスタイリング詳細ページ`;
+
+    return {
+        title,
+        description,
+        openGraph: {
+            title,
+            description,
+            images: look.imageUrls.length > 0 ? [{ url: look.imageUrls[0] }] : [],
+        },
+    };
+}
+
+export default async function LookDetailPage({ params }: Props) {
   const { id } = await params;
   const lookId = Number(id);
   const looks = await getPublishedLooks();
@@ -25,7 +56,6 @@ export default async function LookDetailPage({ params }: { params: Promise<{ id:
   const currentLook = looks[currentIndex];
   const prevLook = currentIndex > 0 ? looks[currentIndex - 1] : null;
   const nextLook = currentIndex < looks.length - 1 ? looks[currentIndex + 1] : null;
-  const mainImage = currentLook.imageUrls[0] || '/placeholder.png';
   const seasonLabel = formatLookSeason(currentLook.seasonYear, currentLook.seasonType);
   const currencyFormatter = new Intl.NumberFormat('ja-JP', {
     style: 'currency',
@@ -36,20 +66,15 @@ export default async function LookDetailPage({ params }: { params: Promise<{ id:
     return (
         <div className="pb-10 sm:pb-14 px-6 lg:px-12">
             <div className="max-w-7xl mx-auto">
+                <div className="mb-6">
+                    <Link href="/look" className="text-sm text-[#474747] hover:text-black inline-block" aria-label="Back to Lookbook">
+                        Back to Lookbook
+                    </Link>
+                </div>
+
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20">
                     <div className="space-y-4">
-                        <div className="w-full aspect-[3/4] relative">
-                            <Image
-                                key={`${currentLook.id}:${mainImage}`}
-                                src={mainImage}
-                                alt={currentLook.theme}
-                                fill
-                                className="w-full h-full object-cover object-top"
-                                sizes="(min-width: 1024px) 50vw, 100vw"
-                                priority
-                                unoptimized
-                            />
-                        </div>
+                        <LookImageGallery theme={currentLook.theme} imageUrls={currentLook.imageUrls} />
                     </div>
 
                     <div className="lg:pt-8 space-y-10">
@@ -94,7 +119,7 @@ export default async function LookDetailPage({ params }: { params: Promise<{ id:
 
                         <div className="flex items-center justify-between pt-4">
                             {prevLook ? (
-                                <Link href={`/look/${prevLook.id}`} className="group flex items-center space-x-3 cursor-pointer">
+                                <Link href={`/look/${prevLook.id}`} aria-label={`Previous look: ${prevLook.theme}`} className="group flex items-center space-x-3 cursor-pointer">
                                     <i className="ri-arrow-left-line w-5 h-5 flex items-center justify-center text-[#474747] group-hover:text-black transition-colors"></i>
                                     <div>
                                         <p className="text-xs text-[#999] tracking-widest font-brand">
@@ -109,7 +134,7 @@ export default async function LookDetailPage({ params }: { params: Promise<{ id:
                                 <div />
                             )}
                             {nextLook ? (
-                                <Link href={`/look/${nextLook.id}`} className="group flex items-center space-x-3 cursor-pointer text-right">
+                                <Link href={`/look/${nextLook.id}`} aria-label={`Next look: ${nextLook.theme}`} className="group flex items-center space-x-3 cursor-pointer text-right">
                                     <div>
                                         <p className="text-xs text-[#999] tracking-widest font-brand">
                                             NEXT
