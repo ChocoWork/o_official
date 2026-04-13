@@ -13,7 +13,7 @@ export async function GET(
 
     const { data, error } = await supabase
       .from('items')
-      .select('id, name, description, price, category, image_url, image_urls, colors, sizes, product_details, status, created_at, updated_at')
+      .select('id, name, description, price, category, image_url, image_urls, colors, sizes, product_details, status, stock_quantity, created_at, updated_at')
       .eq('id', id)
       .eq('status', 'published')
       .single();

@@ -11,6 +11,8 @@ export type Item = {
   sizes?: string[];
   product_details?: string | Record<string, string> | string[];
   status?: 'private' | 'published';
+  /** NULL = 在庫情報なし, 0 = SOLD OUT, 1-4 = 残りわずか, 5以上 = 在庫あり */
+  stock_quantity?: number | null;
   created_at?: string;
   updated_at?: string;
 };

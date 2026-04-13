@@ -10,13 +10,13 @@
 | FR-ITEM-DETAIL-004 | カート追加ボタンとウィッシュリスト切替ボタンを提供し状態変更時に適切なフィードバックを返す | IMPL-ITEM-DETAIL-004 | `src/app/item/[id]/page.tsx`, `src/app/api/cart/route.ts`, `src/app/api/wishlist/route.ts` | カート追加・ウィッシュリスト切替ともに実装済み。フィードバックは `alert()` を使用（Toast 等への改善推奨） | 済 |
 | FR-ITEM-DETAIL-005 | 読み込み中はローディング表示・404 時にはエラーメッセージと戻るボタンを表示する | IMPL-ITEM-DETAIL-005 | `src/app/item/[id]/page.tsx` | ローディング中は「読み込み中...」テキスト表示。エラー時は "BACK TO ITEMS" ボタンを表示 | 済 |
 | FR-ITEM-DETAIL-006 | レスポンシブレイアウトを採用しモバイルでは固定フッターボタンを含む操作領域を維持する | IMPL-ITEM-DETAIL-006 | `src/app/item/[id]/page.tsx` | デスクトップは `md:sticky` で粘着配置。モバイルは `fixed bottom-0` の固定フッターボタンを `IntersectionObserver` で制御 | 済 |
-| FR-ITEM-DETAIL-007 | 在庫状態を表示しサイズ・カラー選択時に「残りわずか」「売り切れ」情報を明示する。選択不可バリエーションは無効化する | IMPL-ITEM-DETAIL-007 | `src/app/item/[id]/page.tsx` | 在庫状態の表示ロジックがなく品切れバリアントの無効化も未実装 | 未 |
-| FR-ITEM-DETAIL-008 | カラー・サイズのボタンに `aria-pressed` を付与しエラーメッセージには `role="alert"` を含める | IMPL-ITEM-DETAIL-008 | `src/app/item/[id]/page.tsx` | カラー・サイズボタンに `aria-pressed` なし。エラーメッセージに `role="alert"` なし | 未 |
-| FR-ITEM-DETAIL-009 | `generateMetadata` で SEO メタ情報を設定する（Server Component ラッパーへの切り出しが必要） | IMPL-ITEM-DETAIL-009 | `src/app/item/[id]/page.tsx` | ページ全体が `"use client"` で `generateMetadata` エクスポート不可。SEO 未対応 | 未 |
-| FR-ITEM-DETAIL-010 | パンくずナビゲーションと「ITEM一覧へ戻る」の明示的リンクを設ける | IMPL-ITEM-DETAIL-010 | `src/app/item/[id]/page.tsx` | エラー時のみ "BACK TO ITEMS" ボタンが表示される。正常時にパンくずも `/item` 固定リンクも存在しない | 未 |
-| FR-ITEM-DETAIL-011 | `compare_at_price` / セール価格対応や「NEW」「SALE」「SOLD OUT」バッジ表示を追加する | IMPL-ITEM-DETAIL-011 | `src/app/item/[id]/page.tsx`, `src/types/item.ts` | 未実装。価格は `¥{item.price.toLocaleString()}` のみ | 未 |
-| FR-ITEM-DETAIL-012 | 同カテゴリ・おすすめルックなどの関連商品提案セクションを設ける | IMPL-ITEM-DETAIL-012 | `src/app/item/[id]/page.tsx` | 未実装 | 未 |
-| FR-ITEM-DETAIL-013 | 画像の alt テキストは商品名だけでなく色・角度などを含めて付与する | IMPL-ITEM-DETAIL-013 | `src/app/item/[id]/page.tsx` | メイン画像の alt は `item.name` のみ。カルーセル画像は `${item.name} ${index + 1}` の連番のみ | 未 |
+| FR-ITEM-DETAIL-007 | 在庫状態を表示しサイズ・カラー選択時に「残りわずか」「売り切れ」情報を明示する。選択不可バリエーションは無効化する | IMPL-ITEM-DETAIL-007 | `src/app/item/[id]/ItemDetailClient.tsx`, `src/app/item/[id]/page.tsx` | `StockBadge` コンポーネントで在庫表示。`isSoldOut` で UI 無効化。`stock_quantity` カラムを DB に追加 | 済 |
+| FR-ITEM-DETAIL-008 | カラー・サイズのボタンに `aria-pressed` を付与しエラーメッセージには `role="alert"` を含める | IMPL-ITEM-DETAIL-008 | `src/app/item/[id]/ItemDetailClient.tsx` | カラー・サイズボタンに `aria-pressed` を動的に設定。バリデーションエラーに `role="alert"` を付与 | 済 |
+| FR-ITEM-DETAIL-009 | `generateMetadata` で SEO メタ情報を設定する（Server Component ラッパーへの切り出しが必要） | IMPL-ITEM-DETAIL-009 | `src/app/item/[id]/page.tsx`, `src/app/item/[id]/ItemDetailClient.tsx` | Server Component `page.tsx` で `generateMetadata` 実装。商品名・説明・OGP 画像を設定 | 済 |
+| FR-ITEM-DETAIL-010 | パンくずナビゲーションと「ITEM一覧へ戻る」の明示的リンクを設ける | IMPL-ITEM-DETAIL-010 | `src/app/item/[id]/ItemDetailClient.tsx` | Breadcrumb: HOME > ITEMS > 商品名。ITEMS へのリンク（navigation + history.back オプション） | 済 |
+| FR-ITEM-DETAIL-011 | `compare_at_price` / セール価格対応や「NEW」「SALE」「SOLD OUT」バッジ表示を追加する | IMPL-ITEM-DETAIL-011 | `src/app/item/[id]/page.tsx`, `src/types/item.ts` | 未実装。価格は `¥{item.price.toLocaleString()}` のみ | 不要 |
+| FR-ITEM-DETAIL-012 | 同カテゴリ・おすすめルックなどの関連商品提案セクションを設ける | IMPL-ITEM-DETAIL-012 | `src/app/item/[id]/ItemDetailClient.tsx`, `src/features/items/components/RelatedItems.tsx` | 関連商品セクション: 同カテゴリから最大 4 件の関連商品を取得・表示 | 済 |
+| FR-ITEM-DETAIL-013 | 画像の alt テキストは商品名だけでなく色・角度などを含めて付与する | IMPL-ITEM-DETAIL-013 | `src/app/item/[id]/ItemDetailClient.tsx` | メイン・カルーセル画像の alt: `${item.name} - ${activeColorName} - ${index + 1}枚目` | 済 |
 
 ---
 
@@ -31,8 +31,8 @@
 | 要件ID | 要件内容 | 実装ID | 実装対象ファイル | 実装概要 | 実装ステータス |
 |--------|----------|--------|----------------|----------|--------------|
 | ITEMS-01-PDP-001 | `GET /api/items/:id` PDP データ取得（SKU 単位価格・在庫） | IMPL-ITEMS-DETAIL-API-01 | `src/app/api/items/[id]/route.ts` | API 実装済み。在庫表示は未実装 | 一部未 |
-| ITEMS-01-PDP-002 | SKU バリアント（サイズ・カラー）選択と在庫ステータス表示 | IMPL-ITEMS-VARIANT-01 | `src/app/item/[id]/page.tsx` | 未実装（FR-ITEM-DETAIL-007） | 未 |
-| ITEMS-01-PDP-003 | `next/image` による画像最適化 | IMPL-ITEMS-IMAGE-01 | `src/app/item/[id]/page.tsx` | 未実装（通常 `<img>` タグ使用） | 未 |
+| ITEMS-01-PDP-002 | SKU バリアント（サイズ・カラー）選択と在庫ステータス表示 | IMPL-ITEMS-VARIANT-01 | `src/app/item/[id]/ItemDetailClient.tsx` | バリアント選択: `color` / `size` ボタン実装済み。在庫ステータス: `StockBadge` で表示。SOLD OUT/LOW STOCK 対応 | 済 |
+| ITEMS-01-PDP-003 | `next/image` による画像最適化 | IMPL-ITEMS-IMAGE-01 | `src/app/item/[id]/ItemDetailClient.tsx` | `next/image` の `Image` コンポーネント使用。メイン画像・カルーセル・関連商品で最適化済み | 済 |
 | ITEMS-01-PDP-004 | 入荷通知 `POST /api/items/:id/notify` | IMPL-ITEMS-NOTIFY-01 | `src/app/api/items/[id]/notify/route.ts` | 未実装 | 未 |
 
 ---
