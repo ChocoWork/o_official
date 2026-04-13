@@ -6,6 +6,7 @@ export const STOCKIST_MAP_EMBED_URL =
 
 function toPublicStockists(rows: StockistRecord[]): PublicStockist[] {
   return rows.map((row) => ({
+    id: row.id,
     name: row.name,
     address: row.address,
     phone: row.phone,

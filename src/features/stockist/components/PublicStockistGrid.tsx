@@ -41,7 +41,7 @@ export async function PublicStockistGrid(props: PublicStockistGridProps) {
         // Vertical card: name, divider, detail rows
         // Responsive scale: mobile=compact / sm(tablet)=readable / xl(desktop)=luxurious
         <Card
-          key={shop.name}
+          key={shop.id}
           className={`border-black/10 p-5 sm:p-6 xl:p-7 hover:border-black transition-colors duration-300${typeof mobileLimit === 'number' && index >= mobileLimit ? ' hidden md:block' : ''}`}
           size="sm"
         >
