@@ -1,15 +1,33 @@
+import type { Metadata } from 'next';
 import Image from 'next/image';
+import Link from 'next/link';
+
+export async function generateMetadata(): Promise<Metadata> {
+  return {
+    title: 'ABOUT | Le Fil des Heures',
+    description: 'Le Fil des Heures のブランド哲学、品質へのこだわり、価値観を紹介するABOUTページです。',
+    openGraph: {
+      title: 'ABOUT | Le Fil des Heures',
+      description: 'Le Fil des Heures のブランド哲学、品質へのこだわり、価値観を紹介するABOUTページです。',
+      images: ['/about.png'],
+    },
+  };
+}
 
 export default function StoryPage() {
   return (
     <div className="pb-10 sm:pb-14">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-12">
+        <div className="mb-8 sm:mb-10 lg:mb-12">
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl text-black tracking-tight">ABOUT</h1>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8 lg:gap-16 mb-8 sm:mb-14 lg:mb-24">
           <div className="aspect-[4/5] bg-[#f5f5f5] overflow-hidden">
             <Image
-              alt="Brand Philosophy"
+              alt="Le Fil des Heuresのブランド哲学を表現したミニマルなスタイリングイメージ"
               className="w-full h-full object-cover object-center"
-              src="https://readdy.ai/api/search-image?query=Minimalist%20fashion%20brand%20concept%20image%20showing%20elegant%20neutral%20toned%20clothing%20items%20carefully%20arranged%20on%20clean%20white%20geometric%20architectural%20structures%20with%20soft%20natural%20lighting%20emphasizing%20quality%20craftsmanship%20and%20timeless%20design%20philosophy&amp;width=800&amp;height=1000&amp;seq=about001&amp;orientation=portrait"
+              src="/about.png"
               width={800}
               height={1000}
             />
@@ -41,32 +59,47 @@ export default function StoryPage() {
           </div>
           <div className="aspect-[4/5] bg-[#f5f5f5] overflow-hidden lg:order-1">
             <Image
-              alt="Quality &amp; Craftsmanship"
+              alt="上質な素材感と仕立ての丁寧さを伝えるクラフトマンシップイメージ"
               className="w-full h-full object-cover object-center"
-              src="https://readdy.ai/api/search-image?query=Close%20up%20detail%20photography%20of%20high%20quality%20fabric%20texture%20and%20precise%20stitching%20on%20neutral%20beige%20garment%20with%20soft%20natural%20lighting%20highlighting%20craftsmanship%20and%20material%20quality%20in%20minimalist%20fashion%20production&amp;width=800&amp;height=1000&amp;seq=about002&amp;orientation=portrait"
+              src="/mainphoto.png"
               width={800}
               height={1000}
             />
           </div>
         </div>
 
+        <section className="mb-8 sm:mb-14 lg:mb-24 border-t border-black/10 pt-8 sm:pt-10 lg:pt-12">
+          <h2 className="text-xl sm:text-2xl lg:text-3xl text-black mb-6 sm:mb-8 tracking-tight text-center">Explore More</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
+            <Link href="/item" className="block border border-black/20 px-6 py-4 text-center hover:border-black transition-colors">
+              COLLECTIONを見る
+            </Link>
+            <Link href="/look" className="block border border-black/20 px-6 py-4 text-center hover:border-black transition-colors">
+              LOOKBOOKを見る
+            </Link>
+            <Link href="/contact" className="block border border-black/20 px-6 py-4 text-center hover:border-black transition-colors">
+              CONTACTする
+            </Link>
+          </div>
+        </section>
+
         <div className="mb-8 sm:mb-14 lg:mb-24">
           <h2 className="text-xl sm:text-2xl lg:text-3xl text-black mb-6 sm:mb-8 lg:mb-12 tracking-tight text-center">Our Values</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div className="text-center space-y-4">
-              <div className="w-16 h-16 mx-auto flex items-center justify-center"><i className="ri-time-line text-4xl text-black"></i></div>
+              <div className="w-16 h-16 mx-auto flex items-center justify-center"><i aria-hidden="true" className="ri-time-line text-4xl text-black"></i></div>
               <h3 className="text-xl text-black tracking-tight">Timeless</h3>
               <p className="text-sm text-[#474747] leading-relaxed">流行に左右されない、時代を超えたデザイン</p>
             </div>
 
             <div className="text-center space-y-4">
-              <div className="w-16 h-16 mx-auto flex items-center justify-center"><i className="ri-leaf-line text-4xl text-black"></i></div>
+              <div className="w-16 h-16 mx-auto flex items-center justify-center"><i aria-hidden="true" className="ri-leaf-line text-4xl text-black"></i></div>
               <h3 className="text-xl text-black tracking-tight">Sustainable</h3>
               <p className="text-sm text-[#474747] leading-relaxed">環境に配慮した素材と製造プロセス</p>
             </div>
 
             <div className="text-center space-y-4">
-              <div className="w-16 h-16 mx-auto flex items-center justify-center"><i className="ri-heart-line text-4xl text-black"></i></div>
+              <div className="w-16 h-16 mx-auto flex items-center justify-center"><i aria-hidden="true" className="ri-heart-line text-4xl text-black"></i></div>
               <h3 className="text-xl text-black tracking-tight">Thoughtful</h3>
               <p className="text-sm text-[#474747] leading-relaxed">着る人に寄り添う、心地よい服作り</p>
             </div>
