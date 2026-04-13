@@ -67,9 +67,10 @@ function LookCard({ look }: LookCardProps) {
 export async function PublicLookGrid(props: PublicLookGridProps) {
   const { variant, className } = props;
 
-  const loadedLooks = props.looks ?? await getPublishedLooks(FIXED_LOOK_COUNT + 1);
-  const hasMoreLooks = loadedLooks.length > FIXED_LOOK_COUNT;
-  const resolvedLooks = loadedLooks.slice(0, FIXED_LOOK_COUNT);
+  const loadedLooks = props.looks
+    ?? await getPublishedLooks(variant === 'home' ? FIXED_LOOK_COUNT + 1 : undefined);
+  const hasMoreLooks = variant === 'home' && loadedLooks.length > FIXED_LOOK_COUNT;
+  const resolvedLooks = variant === 'home' ? loadedLooks.slice(0, FIXED_LOOK_COUNT) : loadedLooks;
 
   const defaultGridClass = variant === 'home' ? DEFAULT_HOME_GRID_CLASS : DEFAULT_CATALOG_GRID_CLASS;
   const gridClassName = className ?? defaultGridClass;
