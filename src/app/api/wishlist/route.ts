@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
     const itemIds = wishlistData.map((item) => item.item_id);
     const { data: itemsData, error: itemsError } = await supabase
       .from("items")
-      .select("id, name, price, image_url, category")
+      .select("id, name, price, image_url, category, colors, sizes")
       .in("id", itemIds);
 
     if (itemsError) {

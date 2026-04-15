@@ -38,6 +38,7 @@ type ItemRow = {
   name: string;
   price: number;
   image_url: string | null;
+  stock_quantity: number | null;
 };
 
 export async function POST(req: NextRequest) {
@@ -71,7 +72,7 @@ export async function POST(req: NextRequest) {
     const itemIds = (cartData as CartRow[]).map((item) => item.item_id);
     const { data: itemsData, error: itemsError } = await supabase
       .from('items')
-      .select('id, name, price, image_url')
+      .select('id, name, price, image_url, stock_quantity')
       .in('id', itemIds);
 
     if (itemsError) {
@@ -82,6 +83,26 @@ export async function POST(req: NextRequest) {
     const itemMap = new Map<number, ItemRow>(
       ((itemsData ?? []) as ItemRow[]).map((item) => [item.id, item])
     );
+
+    // 在庫チェック: stock_quantity === 0 の商品は決済不可 (FR-CHECKOUT-007)
+    const outOfStockItems = (cartData as CartRow[]).filter((cartItem) => {
+      const item = itemMap.get(cartItem.item_id);
+      return item?.stock_quantity !== undefined && item.stock_quantity !== null && item.stock_quantity === 0;
+    });
+
+    if (outOfStockItems.length > 0) {
+      const outOfStockNames = outOfStockItems
+        .map((cartItem) => itemMap.get(cartItem.item_id)?.name ?? '商品')
+        .join('、');
+      return NextResponse.json(
+        {
+          error: 'out_of_stock',
+          message: `以下の商品の在庫がなくなりました: ${outOfStockNames}。カートから削除してください。`,
+          items: outOfStockItems.map((ci) => ci.item_id),
+        },
+        { status: 409 }
+      );
+    }
 
     const subtotal = (cartData as CartRow[]).reduce((sum, cartItem) => {
       const price = itemMap.get(cartItem.item_id)?.price ?? 0;

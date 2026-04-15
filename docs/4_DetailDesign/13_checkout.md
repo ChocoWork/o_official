@@ -6,13 +6,13 @@
 |--------|----------|--------|----------------|----------|--------------|
 | FR-CHECKOUT-001 | チェックアウトは Stripe の `CheckoutProvider` と `PaymentElement` を使用しカード・PayPay・コンビニ決済を提供する | IMPL-CHECKOUT-001 | `src/app/checkout/page.tsx`, `src/app/api/checkout/route.ts` | `CheckoutProvider` + `PaymentElement` を実装。paymentMethodTypes でカード・PayPay・コンビニを設定 | 済 |
 | FR-CHECKOUT-002 | クレジットカード情報の入力・保持は Stripe Elements に委譲しサーバサイドはカード番号を一切保存しない | IMPL-CHECKOUT-002 | `src/app/checkout/page.tsx` | Stripe Elements ホスト型 UI を使用、PCI DSS 準拠。自サーバへのカードデータ送信なし | 済 |
-| FR-CHECKOUT-003 | 注文サマリーに小計・税・送料・合計を明示する | IMPL-CHECKOUT-003 | `src/app/checkout/page.tsx` | 小計・配送料・合計は表示するが消費税行は未実装 | 未 |
-| FR-CHECKOUT-004 | 住所入力フォームの各フィールドにバリデーションメッセージと `aria-describedby` を実装しユーザーが誤入力を確認できるようにする | IMPL-CHECKOUT-004 | `src/app/checkout/page.tsx` | 配送先住所フォームあり。フィールドバリデーション・`aria-describedby` は未実装 | 未 |
+| FR-CHECKOUT-003 | 注文サマリーに小計・税・送料・合計を明示する | IMPL-CHECKOUT-003 | `src/app/checkout/page.tsx` | 小計・消費税（10%）・配送料・合計を表示 | 済 |
+| FR-CHECKOUT-004 | 住所入力フォームの各フィールドにバリデーションメッセージと `aria-describedby` を実装しユーザーが誤入力を確認できるようにする | IMPL-CHECKOUT-004 | `src/app/checkout/page.tsx`, `src/components/ui/TextField.tsx` | フィールド別バリデーション、`errorText`、`aria-describedby`、`aria-invalid` を実装 | 済 |
 | FR-CHECKOUT-005 | 郵便番号入力に自動補完機能を実装し `GET /api/checkout/postal-code` で住所を取得してフォームに反映する | IMPL-CHECKOUT-005 | `src/app/checkout/page.tsx`, `src/app/api/checkout/postal-code/route.ts` | `useEffect` + `latestPostalLookupRef` でレース防止。郵便番号7桁入力で市区町村・都道府県を自動補完 | 済 |
 | FR-CHECKOUT-006 | 決済完了時に確認メールを送信し画面に完了メッセージを表示する | IMPL-CHECKOUT-006 | `src/app/checkout/page.tsx` | `onComplete` コールバックで「確認メールをお送りしました」テキストを表示。実際のメール送信は Webhook 側で処理 | 済 |
-| FR-CHECKOUT-007 | 決済確定前に在庫チェックを行い枯渇時はエラーメッセージと代替案を表示する | IMPL-CHECKOUT-007 | `src/app/api/checkout/route.ts` | 在庫チェック実装なし | 未 |
-| FR-CHECKOUT-008 | 決済エラー発生時は明確なメッセージと再試行導線を表示する | IMPL-CHECKOUT-008 | `src/app/checkout/page.tsx` | `checkoutError` ステートをメッセージ表示。再試行ボタン・フォームリセット導線は未実装 | 未 |
-| FR-CHECKOUT-009 | Stripe Webhook の冪等性を実装しネットワーク障害や再送による二重注文を防ぐ | IMPL-CHECKOUT-009 | `src/app/checkout/page.tsx`, `src/app/api/checkout/webhook/route.ts` | クライアント側に `processedCallback` フラグで二重トリガー防止。サーバ側 Webhook の冪等性キー実装は confirm required | 済 |
+| FR-CHECKOUT-007 | 決済確定前に在庫チェックを行い枯渇時はエラーメッセージと代替案を表示する | IMPL-CHECKOUT-007 | `src/app/api/checkout/create-session/route.ts`, `src/app/checkout/page.tsx` | `stock_quantity` を参照した在庫チェックを追加し、409 と在庫切れメッセージを返却・表示 | 済 |
+| FR-CHECKOUT-008 | 決済エラー発生時は明確なメッセージと再試行導線を表示する | IMPL-CHECKOUT-008 | `src/app/checkout/page.tsx` | `checkoutError` の表示に加え、「再試行する」ボタンで決済セッション再作成を実装 | 済 |
+| FR-CHECKOUT-009 | Stripe Webhook の冪等性を実装しネットワーク障害や再送による二重注文を防ぐ | IMPL-CHECKOUT-009 | `src/app/checkout/page.tsx`, `src/app/api/webhook/stripe/route.ts` | クライアント側 `processedCallback` とサーバ側 `stripe_webhook_events` upsert、および `payment_intent_id` 重複防止を実装 | 済 |
 | FR-CHECKOUT-010 | 郵便番号 API に `postal_code_cache` テーブルを利用しキャッシュ済みの住所は外部 API を再呼び出しせず返す | IMPL-CHECKOUT-010 | `src/app/api/checkout/postal-code/route.ts`, `migrations/024_create_postal_code_cache.sql` | `postal_code_cache` テーブルへの SELECT + キャッシュミス時に外部 API 問い合わせ後に INSERT | 済 |
 | FR-CHECKOUT-011 | 消費税の自動計算と詳細な税率表示（WONT） | — | — | 現フェーズ対象外 | 未 |
 
@@ -67,7 +67,7 @@
 ### 実装ノート
 
 - 各種シークレットは `.env.local` で管理。本番は Vercel Environment Variables に設定
-- Webhook の冪等性: クライアント側 `processedCallback` フラグで実装済み。サーバ側冪等性キーは要確認（FR-CHECKOUT-009）
+- Webhook の冪等性: クライアント側 `processedCallback` フラグに加え、サーバ側で `stripe_webhook_events` への upsert と `payment_intent_id` の重複注文防止を実装
 
 ---
 

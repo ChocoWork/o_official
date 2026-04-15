@@ -15,7 +15,55 @@ interface WishlistItem {
     price: number;
     image_url: string;
     category: string;
+    colors?: Array<{ hex: string; name: string }> | string[];
+    sizes?: string[];
   } | null;
+}
+
+function isColorOption(value: unknown): value is { hex: string; name: string } {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  return typeof candidate.hex === 'string' && typeof candidate.name === 'string';
+}
+
+function isColorList(value: unknown): value is Array<{ hex: string; name: string }> | string[] {
+  if (value === undefined) {
+    return true;
+  }
+
+  if (!Array.isArray(value)) {
+    return false;
+  }
+
+  return value.every((entry) => typeof entry === 'string' || isColorOption(entry));
+}
+
+function isSizeList(value: unknown): value is string[] {
+  if (value === undefined) {
+    return true;
+  }
+
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+}
+
+function resolveDefaultColor(item: WishlistItem['items']): string | null {
+  if (!item?.colors || item.colors.length === 0) {
+    return null;
+  }
+
+  const firstColor = item.colors[0];
+  return typeof firstColor === 'string' ? firstColor : firstColor.name;
+}
+
+function resolveDefaultSize(item: WishlistItem['items']): string | null {
+  if (!item?.sizes || item.sizes.length === 0) {
+    return null;
+  }
+
+  return item.sizes.length === 1 ? item.sizes[0] : null;
 }
 
 function isWishlistItem(value: unknown): value is WishlistItem {
@@ -48,6 +96,8 @@ function isWishlistItem(value: unknown): value is WishlistItem {
     && typeof item.price === 'number'
     && typeof item.image_url === 'string'
     && typeof item.category === 'string'
+    && isColorList(item.colors)
+    && isSizeList(item.sizes)
   );
 }
 
@@ -123,6 +173,15 @@ export default function WishlistClient() {
       return;
     }
 
+    const resolvedColor = resolveDefaultColor(wishlistItem.items);
+    const resolvedSize = resolveDefaultSize(wishlistItem.items);
+    const requiresSizeSelection = Array.isArray(wishlistItem.items.sizes) && wishlistItem.items.sizes.length > 1;
+
+    if (requiresSizeSelection) {
+      setActionMessage('サイズ選択が必要な商品です。商品詳細ページからカートに追加してください。');
+      return;
+    }
+
     setActionMessage(null);
     setAddingToCartId(wishlistItem.id);
 
@@ -135,6 +194,8 @@ export default function WishlistClient() {
         body: JSON.stringify({
           item_id: wishlistItem.items.id,
           quantity: 1,
+          color: resolvedColor,
+          size: resolvedSize,
         }),
       });
 

@@ -191,7 +191,9 @@ export default function CheckoutPage() {
   );
   // Shipping is free
   const shipping: number = 0;
-  const total = subtotal + shipping;
+  // Tax calculation: 10% consumer tax (rounded down)
+  const tax = Math.floor(subtotal * 0.1);
+  const total = subtotal + tax + shipping;
 
   React.useEffect(() => {
     const fetchCart = async () => {
@@ -237,6 +239,42 @@ export default function CheckoutPage() {
     saveProfile: false,
   });
 
+  // フィールドごとのバリデーションエラー (FR-CHECKOUT-004)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  const validateShippingForm = (): boolean => {
+    const errors: Record<string, string> = {};
+    if (!shippingForm.email.trim()) {
+      errors.email = 'メールアドレスを入力してください';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(shippingForm.email)) {
+      errors.email = '正しいメールアドレスを入力してください';
+    }
+    if (!shippingForm.fullName.trim()) {
+      errors.fullName = '氏名を入力してください';
+    }
+    if (!shippingForm.postalCode.trim()) {
+      errors.postalCode = '郵便番号を入力してください';
+    } else if (!/^\d{3}-?\d{4}$/.test(shippingForm.postalCode)) {
+      errors.postalCode = '正しい郵便番号を入力してください（例: 123-4567）';
+    }
+    if (!shippingForm.prefecture) {
+      errors.prefecture = '都道府県を選択してください';
+    }
+    if (!shippingForm.city.trim()) {
+      errors.city = '市区町村を入力してください';
+    }
+    if (!shippingForm.address.trim()) {
+      errors.address = '番地を入力してください';
+    }
+    if (!shippingForm.phone.trim()) {
+      errors.phone = '電話番号を入力してください';
+    } else if (!/^[\d\-+()]{10,}$/.test(shippingForm.phone.replace(/\s/g, ''))) {
+      errors.phone = '正しい電話番号を入力してください';
+    }
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
 
 
   const createCustomCheckoutSession = React.useCallback(async () => {
@@ -264,7 +302,11 @@ export default function CheckoutPage() {
       });
 
       if (!response.ok) {
-        const errorData: { error?: string } = await response.json().catch(() => ({}));
+        const errorData: { error?: string; message?: string } = await response.json().catch(() => ({}));
+        // 在庫切れエラーは専用のメッセージを表示 (FR-CHECKOUT-007)
+        if (errorData.error === 'out_of_stock' && errorData.message) {
+          throw new Error(errorData.message);
+        }
         throw new Error(errorData.error ?? '決済セッションの初期化に失敗しました。');
       }
 
@@ -355,6 +397,11 @@ export default function CheckoutPage() {
       [name]: type === 'checkbox' ? checked : nextValue,
     }));
 
+    // 入力時にそのフィールドのエラーをクリア
+    if (fieldErrors[name]) {
+      setFieldErrors((prev) => ({ ...prev, [name]: '' }));
+    }
+
     // 郵便番号自動補完
     if (name === 'postalCode') {
       const cleanedZip = normalizePostalCode(nextValue);
@@ -387,6 +434,10 @@ export default function CheckoutPage() {
 
   const handleShippingNext = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!validateShippingForm()) {
+      return;
+    }
 
     if (shippingForm.saveProfile) {
       const payload = {
@@ -595,14 +646,14 @@ export default function CheckoutPage() {
             {/* Render shipping form when step 1, payment form when step 2 */}
               {/* Shipping form (step 1) */}
               {step === 1 && (
-                <form onSubmit={handleShippingNext}>
+                <form onSubmit={handleShippingNext} noValidate>
                   <div>
                     <div className="space-y-6">
-                      <TextField required label="メールアドレス" type="email" name="email" autoComplete="email" value={shippingForm.email} onChange={handleShippingChange} className="font-brand"  size="md"/>
+                      <TextField required label="メールアドレス" type="email" name="email" autoComplete="email" value={shippingForm.email} onChange={handleShippingChange} className="font-brand" size="md" errorText={fieldErrors.email} />
 
-                      <TextField required label="氏名" type="text" name="fullName" autoComplete="name" value={shippingForm.fullName} onChange={handleShippingChange} className="font-brand"  size="md"/>
+                      <TextField required label="氏名" type="text" name="fullName" autoComplete="name" value={shippingForm.fullName} onChange={handleShippingChange} className="font-brand" size="md" errorText={fieldErrors.fullName} />
 
-                      <TextField required label="郵便番号" placeholder="123-4567" type="text" name="postalCode" autoComplete="postal-code" value={shippingForm.postalCode} onChange={handleShippingChange} className="font-brand"  size="md"/>
+                      <TextField required label="郵便番号" placeholder="123-4567" type="text" name="postalCode" autoComplete="postal-code" value={shippingForm.postalCode} onChange={handleShippingChange} className="font-brand" size="md" errorText={fieldErrors.postalCode} />
 
                       <SingleSelect
                         name="prefecture"
@@ -616,6 +667,9 @@ export default function CheckoutPage() {
                             ...prev,
                             prefecture,
                           }));
+                          if (prefecture) {
+                            setFieldErrors((prev) => ({ ...prev, prefecture: '' }));
+                          }
                         }}
                         className="font-brand"
                         options={[
@@ -626,14 +680,19 @@ export default function CheckoutPage() {
                           })),
                         ]}
                        size="md"/>
+                      {fieldErrors.prefecture && (
+                        <span id="prefecture-error" role="alert" className="block text-xs text-red-600 -mt-4">
+                          {fieldErrors.prefecture}
+                        </span>
+                      )}
 
-                      <TextField required label="市区町村" type="text" name="city" autoComplete="address-level2" value={shippingForm.city} onChange={handleShippingChange} className="font-brand"  size="md"/>
+                      <TextField required label="市区町村" type="text" name="city" autoComplete="address-level2" value={shippingForm.city} onChange={handleShippingChange} className="font-brand" size="md" errorText={fieldErrors.city} />
 
-                      <TextField required label="番地" type="text" name="address" autoComplete="street-address" value={shippingForm.address} onChange={handleShippingChange} className="font-brand"  size="md"/>
+                      <TextField required label="番地" type="text" name="address" autoComplete="street-address" value={shippingForm.address} onChange={handleShippingChange} className="font-brand" size="md" errorText={fieldErrors.address} />
 
-                      <TextField label="建物名・部屋番号（任意）" type="text" name="building" value={shippingForm.building} onChange={handleShippingChange} className="font-brand"  size="md"/>
+                      <TextField label="建物名・部屋番号（任意）" type="text" name="building" value={shippingForm.building} onChange={handleShippingChange} className="font-brand" size="md" />
 
-                      <TextField required label="電話番号" placeholder="090-1234-5678" type="tel" name="phone" autoComplete="tel" value={shippingForm.phone} onChange={handleShippingChange} className="font-brand"  size="md"/>
+                      <TextField required label="電話番号" placeholder="090-1234-5678" type="tel" name="phone" autoComplete="tel" value={shippingForm.phone} onChange={handleShippingChange} className="font-brand" size="md" errorText={fieldErrors.phone} />
 
                       <Checkbox
                         id="saveProfile"
@@ -755,8 +814,22 @@ export default function CheckoutPage() {
                           </p>
 
                           {checkoutError && (
-                            <div className="mt-4">
+                            <div className="mt-4 space-y-3">
                               <p className="text-sm text-red-600 font-brand">{checkoutError}</p>
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                className="font-brand"
+                                onClick={() => {
+                                  setCheckoutError(null);
+                                  setCustomCheckoutClientSecret(null);
+                                  setCustomCheckoutSessionId(null);
+                                  void createCustomCheckoutSession();
+                                }}
+                              >
+                                再試行する
+                              </Button>
                             </div>
                           )}
                         </div>
@@ -837,6 +910,14 @@ export default function CheckoutPage() {
                       </span>
                       <span className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
                         ¥{subtotal.toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                        消費税（10%）
+                      </span>
+                      <span className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                        ¥{tax.toLocaleString()}
                       </span>
                     </div>
                     <div className="flex justify-between">
