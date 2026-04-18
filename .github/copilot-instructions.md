@@ -17,7 +17,7 @@
 
 # 開発ワークフロー（仕様駆動）
 ## 1. 仕様確認
-- 実装を始める前に必ず参照する: [docs/ECSiteSpec.md](docs/ECSiteSpec.md), [docs/specs/](docs/specs/)、`tasks/`。
+- 実装を始める前に必ず参照する: [docs/1_RequirementsDifinition/RequirementsDifinition.md](docs/1_RequirementsDifinition/RequirementsDifinition.md), [docs/2_Specs](docs/2_Specs/)、[`docs/4_DetailDesign`](docs/4_DetailDesign/)。
 - 実装開始時に**必ずタスクID**を明示する（例: [BE-01]、`DOC-01` など）。
 - 仕様にない挙動は開発者が勝手に補完せず、必ず質問して合意を得ること。
 
@@ -30,10 +30,11 @@
 ## 4.計画
 - 仕様とコードとドキュメントを踏まえて、実装の計画を立てること。必要なAPI呼び出しやデータフローを明確にすること。
 - どこにどのような修正をするかを明確にすること。
-- `tasks/*.md` に該当タスクがあるかを確認し、存在しない場合は必要な項目を追加すること。
+- `docs/4_DetailDesign` に該当タスクがあるかを確認し、存在しない場合は必要な項目を追加すること。
 
 ## 5. 実装
-- `tasks/*.md` に記載したタスクを完了させること。
+- 修正前に、e2e\FR-HOME-001-hero-banner.spec.tsのような名前で要件ごとにPlaywrightの試験ファイルを作成し、要件を満たすためのコードを実装すること。
+- `docs/4_DetailDesign` に記載したタスクを完了させること。
 - コーディング規約とベストプラクティスを遵守すること。
 - DBスキーマや公開APIの破壊的変更は事前に明示し、チーム承認を得ること。
 
@@ -46,7 +47,8 @@
 ## 7. テスト
 - 単体テスト、統合テスト、E2Eテストを実行し、カバレッジ100%を目指すこと。
 - テストに失敗したら、コードを修正し、再度テストを実行すること。
-- テストがすべて成功したら、コードをフォーマットし、`tasks/*.md` の該当項目を完了にすること。
+- 画面は崩れていないかをPlaywrightで確認すること。
+- テストがすべて成功したら、コードをフォーマットし、`docs/4_DetailDesign` の該当項目を済にすること。
 
 # Project Context
 ## Tech Stack

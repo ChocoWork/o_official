@@ -8,7 +8,7 @@
 | FR-LOGIN-002 | Google OAuth によるソーシャルログインボタンを設置する | IMPL-LOGIN-002 | `src/components/LoginModal.tsx`, `src/contexts/LoginContext.tsx`, `src/app/auth/callback/page.tsx` | `signInWithOAuth({ provider: 'google' })` ボタンを実装し、`queryParams.prompt = 'select_account'` を付与してアカウント選択を強制。コールバックは `/auth/callback/page.tsx` で処理 | 済 |
 | FR-LOGIN-003 | 「パスワードを忘れた方はこちら」リンクを設置し `/auth/password-reset` に遷移させる | IMPL-LOGIN-003 | `src/components/LoginModal.tsx`, `src/app/auth/password-reset/page.tsx` | 「パスワードをお忘れの方」リンクを設置し `/auth/password-reset` へ遷移 | 済 |
 | FR-LOGIN-004 | 新規ユーザー向けの専用サインアップページを設置する（WONT） | — | — | 現フェーズ対象外。OTP フローで既存・新規ユーザーを区別なく処理 | 未 |
-| FR-LOGIN-005 | `generateMetadata` を実装しページタイトル・OGP を設定する | IMPL-LOGIN-004 | `src/app/login/page.tsx` | `"use client"` 宣言のため `generateMetadata` の export が不可。メタデータ未設定 | 未 |
+| FR-LOGIN-005 | `generateMetadata` を実装しページタイトル・OGP を設定する | IMPL-LOGIN-004 | `src/app/login/page.tsx` | login ページを Server Component とし、`generateMetadata` で title / description / OGP を設定 | 済 |
 | FR-LOGIN-006 | メール送信後に「○分 ○秒後に再送可能」のカウントダウンタイマーを表示し再送ボタンの多重押しを防ぐ | IMPL-LOGIN-005 | `src/components/LoginModal.tsx` | `otpSentTime` + `timeRemaining` の `useEffect` カウントダウンを実装。経過後リセットで再送ボタン有効化 | 済 |
 | FR-LOGIN-007 | 二要素認証（2FA）の追加サポート（WONT） | — | — | 現フェーズ対象外 | 未 |
 
@@ -21,16 +21,30 @@
 
 | 要件ID | 種別 | 現状 | 修正/確認計画 |
 |--------|------|------|--------------|
+| FR-LOGIN-003 | 実装 | LoginModal にパスワード再設定導線を追加済み | `/auth/password-reset` へのリンク実装を維持し UI テストで確認する |
 | FR-LOGIN-004 | WONT | 現フェーズ対象外 | 専用サインアップ画面は実装せず、将来タスクとして保留 |
-| FR-LOGIN-005 | 実装 | metadata 未設定 | `src/app/login/page.tsx` を Server Component 化し `generateMetadata` を追加 |
+| FR-LOGIN-005 | 実装 | Server Component 化と metadata 追加を反映済み | `src/app/login/page.tsx` の metadata 実装と Playwright で継続確認する |
 | FR-LOGIN-007 | WONT | 現フェーズ対象外 | 2FA は別フェーズで実装 |
-| AUTH-01-IDF-09 | テスト | LoginModal UI テスト不足 | `tests/unit/components/LoginModal.test.tsx` を追加 |
-| AUTH-01-IDF-10 | E2E | ログイン要件単位の Playwright 不足 | `e2e/FR-LOGIN-*.spec.ts` を追加 |
+| AUTH-01-SUPA-05 | テスト | register / confirm の統合テスト実装有無を確認済み | 実装ステータスは `済` とし、追加差分が出た場合のみ更新する |
+| AUTH-01-IDF-09 | テスト | `tests/unit/components/LoginModal.test.tsx` を追加済み | LoginModal の Google ボタン / パスワード再設定導線 / OTP 切替を回帰確認する |
+| AUTH-01-IDF-10 | E2E | `e2e/FR-LOGIN-*.spec.ts` を追加済み | 要件単位の Playwright を継続運用し、WONT は skip で明示する |
 | AUTH-01-IDF-14 | 手動設定 | Supabase Dashboard 未確認 | Dashboard の OTP コード送信モードを手動確認 |
+| AUTH-SEC-001 | 実装確認 | HSTS 実装を確認済み | middleware の `Strict-Transport-Security` 設定を維持する |
+| AUTH-SEC-007 | ドキュメント確認 | secrets 運用手順の既存ドキュメントを確認済み | `docs/ops/secrets.md` を参照元として維持する |
+| AUTH-SEC-008 | テスト確認 | JTI 再利用検出テストの既存有無を確認済み | 認証基盤変更時は再実行して整合性を確認する |
+| AUTH-SEC-009 | 実装確認 | CSP ヘッダの既存実装を確認済み | nonce ベース CSP の維持を前提とする |
 | AUTH-SEC-010 | インフラ | WAF/CDN 未確認 | Vercel / Cloudflare 設定を手動確認 |
 | AUTH-SEC-012 | 設計 | ハッシュチェーン未実装 | 監査証跡保全は別設計タスクで対応 |
 | AUTH-02-AC-009 | 実装 | 既存メール衝突時の導線なし | link-proposal / link-confirm フローを別タスクで実装 |
 | AUTH-02-CFG-001〜003 | 手動設定 | Google / Supabase OAuth 設定未確認 | 各ダッシュボード設定を手動確認 |
+
+---
+
+## 統合メモ (AUTH-LOGIN-FOLLOWUPS)
+
+- コード修正対象は login ページ metadata と LoginModal 導線を優先する。
+- 試験ファイルは FR-LOGIN 要件ごとに Playwright で追加し、WONT / 外部設定依存は skip で明示する。
+- 外部サービス設定が必要な項目は TODO を残し、コード側から確認できる範囲のみ反映する。
 
 ---
 
@@ -55,8 +69,8 @@
 | 要件ID | 要件内容 | 実装ID | 実装対象ファイル | 実装概要 | 実装ステータス |
 |--------|----------|--------|----------------|----------|--------------|
 | AUTH-01-IDF-01〜08 | 仕様整理・UI 方針・API 設計/実装・LoginModal 変更・LoginContext 更新・Turnstile 連携・監査ログ | IMPL-AUTH-OTP-01 | `src/components/LoginModal.tsx`, `src/app/components/LoginContext.tsx`, `src/lib/turnstile.ts` | OTP フロー全体実装済み | 済 |
-| AUTH-01-IDF-09 | identify API 統合テスト + LoginModal UI テスト | IMPL-AUTH-OTP-09 | `tests/auth/` | 未実装 | 未 |
-| AUTH-01-IDF-10 | E2E テスト追加（OTP メールリンク遷移 + Google 導線） | IMPL-AUTH-OTP-10 | `e2e/auth/` | 未実装 | 未 |
+| AUTH-01-IDF-09 | identify API 統合テスト + LoginModal UI テスト | IMPL-AUTH-OTP-09 | `tests/unit/components/LoginModal.test.tsx` | LoginModal の Google ボタン表示、パスワード再設定導線、OTP 切替 UI テストを追加済み | 済 |
+| AUTH-01-IDF-10 | E2E テスト追加（OTP メールリンク遷移 + Google 導線） | IMPL-AUTH-OTP-10 | `e2e/FR-LOGIN-001-otp-turnstile.spec.ts`, `e2e/FR-LOGIN-002-google-oauth.spec.ts`, `e2e/FR-LOGIN-003-password-reset-link.spec.ts`, `e2e/FR-LOGIN-005-metadata.spec.ts`, `e2e/FR-LOGIN-006-otp-resend-countdown.spec.ts` | ログイン要件単位の Playwright 試験を追加済み。WONT 要件は skip で管理 | 済 |
 | AUTH-01-IDF-11〜13 | UI 順序変更（Google 上部）・OTP 方式切替・パスワード再設定導線見直し | IMPL-AUTH-OTP-02 | `src/components/LoginModal.tsx` | UI 更新済み | 済 |
 | AUTH-01-IDF-14 | Supabase Dashboard: OTP コード送信モードへの切替確認 | IMPL-AUTH-OTP-14 | Supabase Dashboard 設定 | 設定確認要 | 未 |
 | AUTH-01-IDF-15a〜c | 未登録メール JIT 作成 + OTP 統一、テスト追加 | IMPL-AUTH-OTP-03 | `src/app/api/auth/identify/route.ts` | JIT ユーザー作成 + OTP 統一フロー実装済み | 済 |
@@ -116,7 +130,7 @@
 
 ### 実装ファイル
 
-- `src/app/components/LoginContext.tsx` — `signInWithOAuth` 呼び出しに変更
+- `src/contexts/LoginContext.tsx` — `signInWithOAuth` 呼び出しに変更
 - `src/app/auth/callback/page.tsx` — コールバック処理（既存実装済み）
 - `migrations/011_create_oauth_requests.sql` — oauth_requests テーブル
 
@@ -124,7 +138,7 @@
 
 | 要件ID | 要件内容 | 実装ID | 実装対象ファイル | 実装概要 | 実装ステータス |
 |--------|----------|--------|----------------|----------|--------------|
-| AUTH-02-AC-001 | 「Googleでログイン」ボタンで OAuth フロー開始 | IMPL-OAUTH-001 | `src/app/components/LoginContext.tsx` | `signInWithOAuth({ provider: 'google' })` 実装済み | 済 |
+| AUTH-02-AC-001 | 「Googleでログイン」ボタンで OAuth フロー開始 | IMPL-OAUTH-001 | `src/contexts/LoginContext.tsx` | `signInWithOAuth({ provider: 'google' })` 実装済み | 済 |
 | AUTH-02-AC-002 | callback で Cookie 発行 + 303 リダイレクト | IMPL-OAUTH-002 | `src/app/auth/callback/page.tsx` | コールバック処理で Cookie 発行 + リダイレクト実装済み | 済 |
 | AUTH-02-AC-003 | callback URL から code 等が残らない | IMPL-OAUTH-003 | `src/app/auth/callback/page.tsx` | クリーン URL リダイレクト実装済み | 済 |
 | AUTH-02-AC-004 | callback 異常系の統合テスト | IMPL-OAUTH-004 | `tests/auth/` | 統合テスト実装済み | 済 |
@@ -134,6 +148,30 @@
 | AUTH-02-AC-008 | Google OAuth 新規登録・既存ログイン | IMPL-OAUTH-008 | `src/app/auth/callback/page.tsx` | 新規/既存ユーザー両対応実装済み | 済 |
 | AUTH-02-AC-009 | 既存メール衝突時エラー（暫定） | — | — | 次フェーズで link-proposal を実装予定 | 未 |
 | AUTH-02-AC-010 | Google サインイン時に利用アカウントを選択できる | IMPL-OAUTH-009 | `src/contexts/LoginContext.tsx` | `signInWithOAuth` の `queryParams.prompt` に `select_account` を設定し、Google アカウント選択画面を表示 | 済 |
+
+---
+
+## Google アカウント選択対応 (AUTH-02-GOOGLE-ACCOUNT-CHOOSER)
+
+### 背景
+
+- Google でサインイン押下時、Google 側の既存セッションによりアカウント選択画面を経ずにログインすることがある。
+- ログイン先アカウントを利用者が選べる挙動が必要。
+
+### 対象ファイル
+
+- `src/contexts/LoginContext.tsx`
+- `src/components/LoginModal.tsx`
+- `e2e/FR-LOGIN-002-google-oauth.spec.ts`
+- `tests/unit/components/LoginContext.test.tsx`
+
+### 反映内容
+
+- FR-LOGIN-002 の Playwright 試験をアカウント選択要件まで拡張済み。
+- `signInWithOAuth` に Google アカウント選択を強制するクエリを付与済み。
+- 単体テストで OAuth オプションを固定化済み。
+- 詳細設計と仕様レビューを更新済み。
+- Chromium Playwright と Jest で再検証済み。
 
 ---
 
