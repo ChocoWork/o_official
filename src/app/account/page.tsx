@@ -16,7 +16,7 @@ type SavedContact = {
 };
 
 export default function Page() {
-	const { isLoggedIn, isAuthResolved } = useLogin();
+	const { isLoggedIn, isAuthResolved, logout } = useLogin();
 	const searchParams = useSearchParams();
 	const tabParam = searchParams.get('tab') as AccountTab | null;
 	const [activeTab, setActiveTab] = React.useState<AccountTab>(tabParam && ['profile', 'orders', 'address'].includes(tabParam) ? tabParam : 'profile');
@@ -34,6 +34,8 @@ export default function Page() {
 		address: '',
 		building: '',
 	});
+	const [logoutError, setLogoutError] = React.useState<string | null>(null);
+	const [isLoggingOut, setIsLoggingOut] = React.useState(false);
 
 	React.useEffect(() => {
 		if (tabParam && ['profile', 'orders', 'address'].includes(tabParam)) {
@@ -152,6 +154,18 @@ export default function Page() {
 		}
 	};
 
+	const handleLogout = async () => {
+		setIsLoggingOut(true);
+		setLogoutError(null);
+
+		const result = await logout();
+		if (!result.success) {
+			setLogoutError(result.error || 'ログアウトに失敗しました');
+		}
+
+		setIsLoggingOut(false);
+	};
+
 	if (!isAuthResolved) {
 		return (
 			<div className="pb-10 sm:pb-14 px-6 lg:px-12">
@@ -180,6 +194,21 @@ export default function Page() {
 								size="md"
 								className='space-y-2'
 							/>
+							<div className="mt-6 pt-6 border-t border-black/10">
+								<Button
+									type="button"
+									variant="secondary"
+									size="md"
+									className="w-full font-acumin"
+									onClick={handleLogout}
+									disabled={isLoggingOut}
+								>
+									{isLoggingOut ? 'ログアウト中...' : 'ログアウト'}
+								</Button>
+								{logoutError ? (
+									<p className="mt-3 text-xs text-red-600 font-acumin">{logoutError}</p>
+								) : null}
+							</div>
 						</div>
 						<div className="lg:col-span-3">
 							{activeTab === 'profile' && (

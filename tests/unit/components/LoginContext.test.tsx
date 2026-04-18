@@ -3,47 +3,68 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { LoginProvider, useLogin } from '@/contexts/LoginContext';
 
-// Mock supabase client
-jest.mock('@/lib/supabase/client', () => {
-  return {
-    supabase: {
-      auth: {
-        signInWithPassword: jest.fn(),
-        signOut: jest.fn().mockResolvedValue({}),
-        getSession: jest.fn().mockResolvedValue({ data: { session: null } }),
-        onAuthStateChange: jest.fn().mockReturnValue({ data: { subscription: { unsubscribe: () => {} } } }),
-      },
-    },
-  };
-});
+const signInWithOAuthMock = jest.fn();
+const signOutMock = jest.fn().mockResolvedValue({});
+const getSessionMock = jest.fn();
+const onAuthStateChangeMock = jest.fn();
 
-const TestConsumer: React.FC = () => {
-  const { login, logout, isLoggedIn, isAdmin } = useLogin();
+jest.mock('@/lib/supabase/client', () => ({
+  supabase: {
+    auth: {
+      signInWithOAuth: (...args: unknown[]) => signInWithOAuthMock(...args),
+      signOut: (...args: unknown[]) => signOutMock(...args),
+      getSession: (...args: unknown[]) => getSessionMock(...args),
+      onAuthStateChange: (...args: unknown[]) => onAuthStateChangeMock(...args),
+    },
+  },
+}));
+
+const TestConsumer = () => {
+  const { isLoggedIn, isAdmin, isAuthResolved, sendOtp, verifyOtp, loginWithGoogle, logout } = useLogin();
+
   return (
     <div>
       <div>logged:{isLoggedIn ? 'yes' : 'no'}</div>
       <div>admin:{isAdmin ? 'yes' : 'no'}</div>
-      <button onClick={() => login('user@example.com', 'password123')}>do-login</button>
-      <button onClick={() => login('bademail', 'pw')}>do-login-bad</button>
-      <button onClick={() => logout()}>do-logout</button>
+      <div>resolved:{isAuthResolved ? 'yes' : 'no'}</div>
+      <button onClick={() => void sendOtp('user@example.com')}>send-otp</button>
+      <button onClick={() => void verifyOtp('user@example.com', '12345678')}>verify-otp</button>
+      <button onClick={() => void loginWithGoogle({ next: '/account' })}>google-login</button>
+      <button onClick={() => void logout()}>logout</button>
     </div>
   );
 };
 
 describe('LoginContext', () => {
-  afterEach(() => {
-    jest.clearAllMocks();
-  });
-
   beforeEach(() => {
-    const { supabase } = require('@/lib/supabase/client');
-    supabase.auth.getSession.mockResolvedValue({ data: { session: null } });
-    supabase.auth.onAuthStateChange.mockReturnValue({ data: { subscription: { unsubscribe: () => {} } } });
+    jest.clearAllMocks();
+    getSessionMock.mockResolvedValue({ data: { session: null } });
+    onAuthStateChangeMock.mockReturnValue({
+      data: {
+        subscription: {
+          unsubscribe: jest.fn(),
+        },
+      },
+    });
+    signInWithOAuthMock.mockResolvedValue({ error: null });
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ message: 'ok' }),
+    } as Response);
   });
 
-  test('successful login sets state and returns success', async () => {
-    const { supabase } = require('@/lib/supabase/client');
-    supabase.auth.signInWithPassword.mockResolvedValue({ data: { user: { email: 'aaa@gmail.com' } }, error: null });
+  test('initial session resolves admin state from Supabase session', async () => {
+    getSessionMock.mockResolvedValue({
+      data: {
+        session: {
+          user: {
+            app_metadata: {
+              role: 'admin',
+            },
+          },
+        },
+      },
+    });
 
     render(
       <LoginProvider>
@@ -51,32 +72,42 @@ describe('LoginContext', () => {
       </LoginProvider>
     );
 
-    userEvent.click(screen.getByText('do-login'));
-
-    await waitFor(() => expect(screen.getByText('logged:yes')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('resolved:yes')).toBeInTheDocument());
+    expect(screen.getByText('logged:yes')).toBeInTheDocument();
     expect(screen.getByText('admin:yes')).toBeInTheDocument();
   });
 
-  test('validation failure returns error and does not call supabase', async () => {
-    const { supabase } = require('@/lib/supabase/client');
+  test('sendOtp posts identify request with fixed redirect target', async () => {
+    const user = userEvent.setup();
+
     render(
       <LoginProvider>
         <TestConsumer />
       </LoginProvider>
     );
 
-    userEvent.click(screen.getByText('do-login-bad'));
+    await user.click(screen.getByText('send-otp'));
 
-    // Wait a short moment to ensure async validation completes
-    await new Promise((r) => setTimeout(r, 50));
-
-    expect(supabase.auth.signInWithPassword).not.toHaveBeenCalled();
-    expect(screen.getByText('logged:no')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith('/api/auth/identify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'user@example.com',
+          turnstileToken: undefined,
+          redirect_to: '/auth/verified',
+        }),
+      });
+    });
   });
 
-  test('supabase auth error returns failure and keeps logged out', async () => {
-    const { supabase } = require('@/lib/supabase/client');
-    supabase.auth.signInWithPassword.mockResolvedValue({ data: null, error: { message: 'invalid credentials' } });
+  test('verifyOtp success marks the user as logged in', async () => {
+    const user = userEvent.setup();
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ message: '認証に成功しました。' }),
+    } as Response);
 
     render(
       <LoginProvider>
@@ -84,8 +115,70 @@ describe('LoginContext', () => {
       </LoginProvider>
     );
 
-    userEvent.click(screen.getByText('do-login'));
+    await user.click(screen.getByText('verify-otp'));
 
+    await waitFor(() => expect(screen.getByText('logged:yes')).toBeInTheDocument());
+  });
+
+  test('loginWithGoogle starts OAuth with account chooser enabled', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <LoginProvider>
+        <TestConsumer />
+      </LoginProvider>
+    );
+
+    await user.click(screen.getByText('google-login'));
+
+    await waitFor(() => {
+      expect(signInWithOAuthMock).toHaveBeenCalledWith({
+        provider: 'google',
+        options: {
+          redirectTo: 'http://localhost/auth/callback?next=%2Faccount',
+          queryParams: {
+            prompt: 'select_account',
+          },
+        },
+      });
+    });
+  });
+
+  test('logout calls logout API and clears login state', async () => {
+    const user = userEvent.setup();
+
+    document.cookie = 'sb-csrf-token=test-csrf-token';
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ message: '認証に成功しました。' }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ message: 'ログアウトしました。' }),
+      } as Response);
+
+    render(
+      <LoginProvider>
+        <TestConsumer />
+      </LoginProvider>
+    );
+
+    await user.click(screen.getByText('verify-otp'));
+    await waitFor(() => expect(screen.getByText('logged:yes')).toBeInTheDocument());
+
+    await user.click(screen.getByText('logout'));
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenLastCalledWith('/api/auth/logout', {
+        method: 'POST',
+        headers: {
+          'x-csrf-token': 'test-csrf-token',
+        },
+      });
+    });
+    expect(signOutMock).toHaveBeenCalled();
     await waitFor(() => expect(screen.getByText('logged:no')).toBeInTheDocument());
   });
 });

@@ -5,12 +5,32 @@
 | 要件ID | 要件内容 | 実装ID | 実装対象ファイル | 実装概要 | 実装ステータス |
 |--------|----------|--------|----------------|----------|--------------|
 | FR-LOGIN-001 | `/login` ページはメールアドレス OTP 認証を提供し Cloudflare Turnstile による CAPTCHA を組み込む | IMPL-LOGIN-001 | `src/app/login/page.tsx`, `src/components/LoginModal.tsx` | `LoginModal` 内に OTP フロー + Turnstile CAPTCHA を実装。`page.tsx` は `<LoginModal>` の呼び出しのみ | 済 |
-| FR-LOGIN-002 | Google OAuth によるソーシャルログインボタンを設置する | IMPL-LOGIN-002 | `src/components/LoginModal.tsx`, `src/app/auth/callback/route.ts` | `signInWithOAuth({ provider: 'google' })` ボタンを実装。コールバックは `/auth/callback/route.ts` で処理 | 済 |
+| FR-LOGIN-002 | Google OAuth によるソーシャルログインボタンを設置する | IMPL-LOGIN-002 | `src/components/LoginModal.tsx`, `src/contexts/LoginContext.tsx`, `src/app/auth/callback/page.tsx` | `signInWithOAuth({ provider: 'google' })` ボタンを実装し、`queryParams.prompt = 'select_account'` を付与してアカウント選択を強制。コールバックは `/auth/callback/page.tsx` で処理 | 済 |
 | FR-LOGIN-003 | 「パスワードを忘れた方はこちら」リンクを設置し `/auth/password-reset` に遷移させる | IMPL-LOGIN-003 | `src/components/LoginModal.tsx`, `src/app/auth/password-reset/page.tsx` | 「パスワードをお忘れの方」リンクを設置し `/auth/password-reset` へ遷移 | 済 |
 | FR-LOGIN-004 | 新規ユーザー向けの専用サインアップページを設置する（WONT） | — | — | 現フェーズ対象外。OTP フローで既存・新規ユーザーを区別なく処理 | 未 |
 | FR-LOGIN-005 | `generateMetadata` を実装しページタイトル・OGP を設定する | IMPL-LOGIN-004 | `src/app/login/page.tsx` | `"use client"` 宣言のため `generateMetadata` の export が不可。メタデータ未設定 | 未 |
 | FR-LOGIN-006 | メール送信後に「○分 ○秒後に再送可能」のカウントダウンタイマーを表示し再送ボタンの多重押しを防ぐ | IMPL-LOGIN-005 | `src/components/LoginModal.tsx` | `otpSentTime` + `timeRemaining` の `useEffect` カウントダウンを実装。経過後リセットで再送ボタン有効化 | 済 |
 | FR-LOGIN-007 | 二要素認証（2FA）の追加サポート（WONT） | — | — | 現フェーズ対象外 | 未 |
+
+---
+
+## TODO一覧 (AUTH-LOGIN-FOLLOWUPS)
+
+**タスクID**: AUTH-LOGIN-FOLLOWUPS  
+**元ファイル**: `docs/tasks/AUTH-LOGIN-followups.md`
+
+| 要件ID | 種別 | 現状 | 修正/確認計画 |
+|--------|------|------|--------------|
+| FR-LOGIN-004 | WONT | 現フェーズ対象外 | 専用サインアップ画面は実装せず、将来タスクとして保留 |
+| FR-LOGIN-005 | 実装 | metadata 未設定 | `src/app/login/page.tsx` を Server Component 化し `generateMetadata` を追加 |
+| FR-LOGIN-007 | WONT | 現フェーズ対象外 | 2FA は別フェーズで実装 |
+| AUTH-01-IDF-09 | テスト | LoginModal UI テスト不足 | `tests/unit/components/LoginModal.test.tsx` を追加 |
+| AUTH-01-IDF-10 | E2E | ログイン要件単位の Playwright 不足 | `e2e/FR-LOGIN-*.spec.ts` を追加 |
+| AUTH-01-IDF-14 | 手動設定 | Supabase Dashboard 未確認 | Dashboard の OTP コード送信モードを手動確認 |
+| AUTH-SEC-010 | インフラ | WAF/CDN 未確認 | Vercel / Cloudflare 設定を手動確認 |
+| AUTH-SEC-012 | 設計 | ハッシュチェーン未実装 | 監査証跡保全は別設計タスクで対応 |
+| AUTH-02-AC-009 | 実装 | 既存メール衝突時の導線なし | link-proposal / link-confirm フローを別タスクで実装 |
+| AUTH-02-CFG-001〜003 | 手動設定 | Google / Supabase OAuth 設定未確認 | 各ダッシュボード設定を手動確認 |
 
 ---
 
@@ -28,7 +48,7 @@
 | AUTH-01-SUPA-02 | `/api/auth/confirm` 実装（トークン検証・ワンタイム消費・セッション発行・監査ログ・クリーン URL リダイレクト） | IMPL-AUTH-CONF-01 | `src/app/api/auth/confirm/route.ts` | verifyOtp でトークン検証、セッション Cookie 発行、303 クリーン URL リダイレクト実装済み | 済 |
 | AUTH-01-SUPA-03 | `/api/auth/confirm` 失敗時エラーハンドリング（期限切れ/不正/再利用）と監査ログ | IMPL-AUTH-CONF-02 | `src/app/api/auth/confirm/route.ts` | 期限切れ/不正/再利用の各エラーケースと監査ログ実装済み | 済 |
 | AUTH-01-SUPA-04 | 認証 Cookie 整合性確認（refresh/csrf/access の設定統一・削除・ローテーション） | IMPL-AUTH-COOKIE-01 | `src/lib/cookie.ts`, `src/app/api/auth/` 各 route | HttpOnly/Secure/SameSite=Lax Cookie 統一設定済み | 済 |
-| AUTH-01-SUPA-05 | 登録/確認フローの統合テスト追加 | IMPL-AUTH-TEST-01 | `tests/auth/` | 未実装 | 未 |
+| AUTH-01-SUPA-05 | 登録/確認フローの統合テスト追加 | IMPL-AUTH-TEST-01 | `tests/integration/api/auth/register.test.ts`, `tests/integration/api/auth/confirm.test.ts` | register / confirm の統合テストを実装済み | 済 |
 
 ### Passwordless / OTP フロー
 
@@ -46,20 +66,21 @@
 | 要件ID | 要件内容 | 実装ID | 実装対象ファイル | 実装概要 | 実装ステータス |
 |--------|----------|--------|----------------|----------|--------------|
 | AUTH-01-UI-ACCOUNT-01 | `account/page.tsx` サーバー側ログイン判定・`LoginContext`（`isAuthResolved`）・タブ切替・注文時入力への切替 | IMPL-AUTH-ACCOUNT-01 | `src/app/account/page.tsx`, `src/app/components/LoginContext.tsx` | サーバー側ログイン判定 + isAuthResolved フラグ + タブ切替実装済み | 済 |
+| FR-ACCOUNT-007 | account ページからログアウトできる導線を提供し、ログアウト後は未ログイン状態を明示する | IMPL-AUTH-ACCOUNT-02 | `src/app/account/page.tsx`, `src/contexts/LoginContext.tsx`, `src/app/api/auth/logout/route.ts` | account サイドバーにログアウトボタンを追加し、`/api/auth/logout` 呼び出し後にクライアント認証状態を未ログインへ更新 | 済 |
 
 ### セキュリティ対策
 
 | 要件ID | 要件内容 | 実装ID | 実装対象ファイル | 実装概要 | 実装ステータス |
 |--------|----------|--------|----------------|----------|--------------|
-| AUTH-SEC-001 | TLS/HSTS 強制（必須） | — | インフラ（Vercel） | TLS はインフラ設定済み。HSTS 確認要 | 要確認 |
+| AUTH-SEC-001 | TLS/HSTS 強制（必須） | IMPL-AUTH-SEC-001 | `src/middleware.ts` | `Strict-Transport-Security` ヘッダを middleware で付与済み | 済 |
 | AUTH-SEC-002 | セキュア Cookie（HttpOnly/Secure/SameSite）（必須） | IMPL-AUTH-COOKIE-01 | `src/lib/cookie.ts` | HttpOnly/Secure/SameSite=Lax 設定済み | 済 |
 | AUTH-SEC-003 | CSRF ダブルサブミット（必須） | IMPL-AUTH-CSRF-01 | `src/lib/csrf.ts`, `src/lib/csrfMiddleware.ts` | ダブルサブミットパターン実装済み | 済 |
 | AUTH-SEC-004 | 入力バリデーション（Zod）（必須） | IMPL-AUTH-VAL-01 | `src/features/auth/schemas/` | Zod スキーマで全入力検証済み | 済 |
 | AUTH-SEC-005 | 連続試行制限（IP/アカウント軸）（必須） | IMPL-AUTH-RATE-01 | `src/features/auth/middleware/rateLimit.ts` | Postgres カウンタベースのレート制限実装済み | 済 |
 | AUTH-SEC-006 | 監査ログ（認証イベント）（必須） | IMPL-AUTH-AUDIT-01 | `src/lib/audit.ts` | audit_logs テーブルへの記録 + cleanup 実装済み | 済 |
-| AUTH-SEC-007 | シークレット管理/ローテーション手順（必須） | — | `docs/ops/secrets.md` | `ALERT_AUDIT_URL` 等の手順整備要 | 未 |
-| AUTH-SEC-008 | セッション管理 JTI 再利用検出テスト（必須） | IMPL-AUTH-JTI-01 | `src/features/auth/services/session.ts`, `tests/` | JTI 実装済み、テスト未実施 | 未 |
-| AUTH-SEC-009 | CSP ヘッダ（nonce ベース）（推奨） | — | `next.config.ts` | 未実装 | 未 |
+| AUTH-SEC-007 | シークレット管理/ローテーション手順（必須） | IMPL-AUTH-SEC-007 | `docs/ops/secrets.md` | シークレット手動運用・ローテーション手順をドキュメント化済み | 済 |
+| AUTH-SEC-008 | セッション管理 JTI 再利用検出テスト（必須） | IMPL-AUTH-JTI-01 | `src/features/auth/services/session.ts`, `tests/unit/features/auth/services/session.test.ts` | JTI 再利用検出の単体テストを実装済み | 済 |
+| AUTH-SEC-009 | CSP ヘッダ（nonce ベース）（推奨） | IMPL-AUTH-SEC-009 | `src/middleware.ts` | nonce 付き CSP ヘッダを middleware で付与済み | 済 |
 | AUTH-SEC-010 | WAF/CDN（推奨） | — | インフラ（Vercel/Cloudflare） | 未実装 | 未 |
 | AUTH-SEC-011 | Bot 対策（Turnstile 常時表示）（推奨） | IMPL-AUTH-TURNSTILE-01 | `src/lib/turnstile.ts` | Cloudflare Turnstile 実装済み | 済 |
 | AUTH-SEC-012 | 監査証跡保全（ハッシュチェーン）（推奨） | — | — | 未実装 | 未 |
@@ -112,6 +133,7 @@
 | AUTH-02-AC-007 | session persist 失敗時も 303 | IMPL-OAUTH-007 | `src/app/auth/callback/page.tsx` | セッション保存失敗時も 303 リダイレクト実装済み | 済 |
 | AUTH-02-AC-008 | Google OAuth 新規登録・既存ログイン | IMPL-OAUTH-008 | `src/app/auth/callback/page.tsx` | 新規/既存ユーザー両対応実装済み | 済 |
 | AUTH-02-AC-009 | 既存メール衝突時エラー（暫定） | — | — | 次フェーズで link-proposal を実装予定 | 未 |
+| AUTH-02-AC-010 | Google サインイン時に利用アカウントを選択できる | IMPL-OAUTH-009 | `src/contexts/LoginContext.tsx` | `signInWithOAuth` の `queryParams.prompt` に `select_account` を設定し、Google アカウント選択画面を表示 | 済 |
 
 ---
 
@@ -452,6 +474,7 @@ CREATE INDEX idx_email_confirmation_tokens_expires ON email_confirmation_tokens(
 
 - **問題**: 自前の state/PKCE を `/auth/v1/authorize` に渡す実装 → Supabase Auth が独自 state 管理するため state 不一致エラー（`bad_oauth_state`）
 - **修正**: `LoginContext.tsx` を `signInWithOAuth({ provider: 'google' })` に変更（Supabase 公式パターン）
+- **追加修正**: `signInWithOAuth` の `queryParams.prompt` に `select_account` を設定し、Google 側でアカウント選択画面を必ず表示する。
 
 ### Google OAuth 設定チェックリスト
 

@@ -23,7 +23,7 @@ interface LoginContextType {
   sendOtp: (email: string, turnstileToken?: string) => Promise<{ success: boolean; error?: string; message?: string }>;
   verifyOtp: (email: string, code: string) => Promise<{ success: boolean; error?: string; message?: string }>;
   loginWithGoogle: (params?: { next?: string }) => Promise<{ success: boolean; error?: string }>;
-  logout: () => void;
+  logout: () => Promise<{ success: boolean; error?: string }>;
 }
 
 const LoginContext = createContext<LoginContextType | undefined>(undefined);
@@ -39,6 +39,17 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [userRole, setUserRole] = useState<UserRole>('user');
   const [isAuthResolved, setIsAuthResolved] = useState(false);
+
+  const getCsrfTokenFromCookie = () => {
+    if (typeof document === 'undefined') return undefined;
+
+    const targetCookie = document.cookie
+      .split('; ')
+      .find((cookie) => cookie.startsWith('sb-csrf-token='));
+
+    if (!targetCookie) return undefined;
+    return decodeURIComponent(targetCookie.split('=').slice(1).join('='));
+  };
 
   const sendOtp = async (email: string, turnstileToken?: string) => {
     try {
@@ -119,6 +130,9 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
         provider: 'google',
         options: {
           redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+          queryParams: {
+            prompt: 'select_account',
+          },
         },
       });
       
@@ -135,18 +149,28 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const logout = () => {
-    (async () => {
-      try {
-        await supabase.auth.signOut();
-      } catch (e) {
-        console.error('Sign out error', e);
-      } finally {
-        setIsLoggedIn(false);
-        setIsAdmin(false);
-        setUserRole('user');
-      }
-    })();
+  const logout = async () => {
+    try {
+      const csrfToken = getCsrfTokenFromCookie();
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: csrfToken
+          ? {
+              'x-csrf-token': csrfToken,
+            }
+          : undefined,
+      });
+      await supabase.auth.signOut();
+      return { success: true };
+    } catch (e) {
+      console.error('Sign out error', e);
+      return { success: false, error: 'ログアウトに失敗しました' };
+    } finally {
+      setIsLoggedIn(false);
+      setIsAdmin(false);
+      setUserRole('user');
+      setIsAuthResolved(true);
+    }
   };
 
   // 初期セッション確認と状態変化の購読

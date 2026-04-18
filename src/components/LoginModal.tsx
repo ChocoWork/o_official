@@ -1,4 +1,7 @@
+"use client";
+
 import React, { useRef, useState } from "react";
+import Link from 'next/link';
 import { useLogin } from "@/contexts/LoginContext";
 import { z } from 'zod';
 import { IdentifyRequestSchema } from '@/features/auth/schemas/identify';
@@ -13,11 +16,17 @@ declare global {
 
 interface LoginModalProps {
   open: boolean;
-  onClose: () => void;
+  onClose?: () => void;
 }
 
 const OTP_LENGTH = 8;
 const EMPTY_OTP_DIGITS = Array.from({ length: OTP_LENGTH }, () => '');
+
+const formatOtpCountdown = (timeRemaining: number) => {
+  const minutes = Math.floor(timeRemaining / 60);
+  const seconds = timeRemaining % 60;
+  return `${minutes}分 ${String(seconds).padStart(2, '0')}秒後に再送可能`;
+};
 
 const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
   const { sendOtp, verifyOtp, loginWithGoogle } = useLogin();
@@ -187,7 +196,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
         return;
       }
       setSuccess(res.message || '認証に成功しました。');
-      onClose();
+      onClose?.();
       router.replace('/');
     } catch (err) {
       console.error('Unexpected OTP verify error', err);
@@ -253,7 +262,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
             <div className="flex items-center justify-between mb-2">
               <label htmlFor="otp" className="block text-sm tracking-widest">認証コード</label>
               {timeRemaining > 0 ? (
-                <span className="text-xs text-[#474747]">{timeRemaining}秒</span>
+                <span className="text-xs text-[#474747]">{formatOtpCountdown(timeRemaining)}</span>
               ) : (
                 <Button
                   type="button"
@@ -317,6 +326,16 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
         <Button type="submit" size="lg" className="w-full disabled:opacity-50" disabled={loading || (otpSent && otpCode.length !== OTP_LENGTH)}>
           {loading ? '処理中...' : otpSent ? 'サインイン' : 'メールで認証コードを受け取る'}
         </Button>
+        {!otpSent ? (
+          <div className="text-right">
+            <Link
+              href="/auth/password-reset"
+              className="text-sm text-[#474747] underline underline-offset-4 hover:text-black transition-colors"
+            >
+              パスワードを忘れた方はこちら
+            </Link>
+          </div>
+        ) : null}
         {otpSent ? (
           <Button
             type="button"
