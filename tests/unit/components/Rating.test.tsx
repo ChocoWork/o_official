@@ -4,7 +4,7 @@ import { Rating } from '@/components/ui/Rating';
 
 describe('Rating component', () => {
   test('renders correct number of stars and applies small size classes', () => {
-    const { container } = render(<Rating value={3} max={5} size="sm" readOnly />);
+    render(<Rating value={3} max={5} size="sm" readOnly />);
     const stars = screen.getAllByTestId('rating-star');
     expect(stars).toHaveLength(5);
 

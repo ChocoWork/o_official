@@ -73,7 +73,7 @@ describe('Auth full flow integration (register -> login -> refresh -> logout)', 
     // LOGIN
     const fakeClient = { auth: { signInWithPassword: jest.fn().mockResolvedValue({ data: { session: { access_token: 'a1', refresh_token: 'r1', expires_at: Date.now() + 3600 }, user: { id: 'u-seq', email: 'seq@example.com' } }, error: null }) } };
     createClient.mockResolvedValue(fakeClient);
-    const fromMock = jest.fn((table:string) => ({ insert: jest.fn().mockResolvedValue({}) }));
+    const fromMock = jest.fn(() => ({ insert: jest.fn().mockResolvedValue({}) }));
     createServiceRoleClient.mockReturnValue({ from: fromMock });
 
     const loginReq = new Request('http://localhost/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'seq@example.com', password: 'password123' }) });
@@ -94,7 +94,7 @@ describe('Auth full flow integration (register -> login -> refresh -> logout)', 
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'svc_key';
 
     (global as any).fetch.mockResolvedValue({ ok: true, json: async () => ({ access_token: 'a2', refresh_token: 'r2', expires_in: 3600, user: { id: 'u-seq', email: 'seq@example.com' } }) });
-    const serviceFromMock = jest.fn((table: string) => ({ update: jest.fn().mockResolvedValue({}), insert: jest.fn().mockResolvedValue({}) }));
+    const serviceFromMock = jest.fn(() => ({ update: jest.fn().mockResolvedValue({}), insert: jest.fn().mockResolvedValue({}) }));
     createServiceRoleClient.mockReturnValue({ from: serviceFromMock });
 
     const refreshRes: any = await refreshHandler();

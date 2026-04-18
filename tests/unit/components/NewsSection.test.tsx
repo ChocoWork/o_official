@@ -4,7 +4,7 @@ import NewsSection from '@/components/NewsSection';
 
 jest.mock('next/image', () => ({
   __esModule: true,
-  default: ({ src, alt }: { src: string; alt: string }) => <img src={src} alt={alt} />,
+  default: ({ src, alt }: { src: string; alt: string }) => React.createElement('img', { src, alt }),
 }));
 
 jest.mock('@/lib/client-fetch', () => ({
@@ -51,7 +51,7 @@ describe('NewsSection category label', () => {
   });
 
   it('renders category with border (TagLabel outline variant)', async () => {
-    const { container } = render(<NewsSection />);
+    render(<NewsSection />);
 
     await waitFor(() => {
       expect(screen.getByText('SUSTAINABILITY')).toBeInTheDocument();
@@ -64,7 +64,7 @@ describe('NewsSection category label', () => {
   });
 
   it('renders all category labels as TagLabel outline', async () => {
-    const { container } = render(<NewsSection />);
+    render(<NewsSection />);
 
     await waitFor(() => {
       expect(screen.getByText('COLLABORATION')).toBeInTheDocument();

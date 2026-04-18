@@ -5,7 +5,7 @@
 | 要件ID | 要件内容 | 実装ID | 実装対象ファイル | 実装概要 | 実装ステータス |
 |--------|----------|--------|----------------|----------|--------------|
 | FR-CART-001 | `/cart` ページは `GET /api/cart` からカートアイテムを取得し商品画像・商品名・価格・カラー・サイズ・数量変更 UI を表示する | IMPL-CART-001 | `src/app/cart/page.tsx`, `src/app/api/cart/route.ts` | `useEffect` で `fetch('/api/cart')` 実行、画像/名前/価格/カラー/サイズ/`Stepper` を表示。※ 画像の `<Link href>` がカート UUID を参照するバグが存在（正しくは `item.items.id`） | 済 |
-| FR-CART-002 | カートは `middleware.ts` で生成される `session_id` クッキーに基づき30日間保持されログイン不要の永続カートを実現する | IMPL-CART-002 | `src/middleware.ts`, `src/app/api/cart/route.ts` | `session_id` クッキーベースで middleware が管理 | 済 |
+| FR-CART-002 | カートは `proxy.ts` で生成される `session_id` クッキーに基づき30日間保持されログイン不要の永続カートを実現する | IMPL-CART-002 | `src/proxy.ts`, `src/app/api/cart/route.ts` | `session_id` クッキーベースで proxy が管理 | 済 |
 | FR-CART-003 | 数量変更は `Stepper` で可能とし 500ms のデバウンスで `PATCH /api/cart/[id]` を呼び出す | IMPL-CART-003 | `src/app/cart/page.tsx`, `src/app/api/cart/[id]/route.ts` | `scheduleUpdate` で 500ms デバウンス、`inFlight` で二重送信防止、楽観的 UI 更新を実装 | 済 |
 | FR-CART-004 | アイテム削除は `DELETE /api/cart/[id]` で実行し削除後にカート件数と画面を更新する | IMPL-CART-004 | `src/app/cart/page.tsx`, `src/app/api/cart/[id]/route.ts` | `DELETE /api/cart/${cartId}` + `setCartItems(filter)` で即時反映 + `updateCartCount()` でバッジ更新。エラー時は `alert()` のみ | 済 |
 | FR-CART-005 | 注文サマリーは小計・配送料（無料表示）・合計を表示し `/checkout` への遷移ボタンを設置する | IMPL-CART-005 | `src/app/cart/page.tsx` | 小計・配送料「無料」・合計・`Button href="/checkout"` を実装。`total = subtotal`（送料0円） | 済 |
@@ -32,7 +32,7 @@
 | 要件ID | 要件内容 | 実装ID | 実装対象ファイル | 実装概要 | 実装ステータス |
 |--------|----------|--------|----------------|----------|--------------|
 | CART-01-001 | Cart API 実装（GET/POST/PATCH/DELETE） | IMPL-CART-API-01 | `src/app/api/cart/route.ts`, `src/app/api/cart/[id]/route.ts` | 全メソッド実装済み | 済 |
-| CART-01-002 | Cookie 永続化（`session_id` ベース、30日TTL） | IMPL-CART-SESSION-01 | `src/middleware.ts` | session_id Cookie で永続カート実装済み | 済 |
+| CART-01-002 | Cookie 永続化（`session_id` ベース、30日TTL） | IMPL-CART-SESSION-01 | `src/proxy.ts` | session_id Cookie で永続カート実装済み | 済 |
 | CART-01-003 | `inFlight.current` ref スナップショットパターンで ESLint 警告解消 | IMPL-CART-ESLINT-01 | `src/app/cart/page.tsx` | ref スナップショットパターン適用済み | 済 |
 | CART-01-004 | クーポン検証ロジック（サーバ側） | IMPL-CART-COUPON-01 | `src/app/api/cart/coupon/route.ts` | 未実装 | 未 |
 | CART-01-005 | 在庫チェック（数量超過でエラー） | IMPL-CART-STOCK-01 | `src/app/api/cart/route.ts` | 未実装 | 未 |

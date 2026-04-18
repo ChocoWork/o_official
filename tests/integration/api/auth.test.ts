@@ -113,7 +113,7 @@ describe('Auth API integration (mocked supabase)', () => {
   test('password reset request inserts token and returns 200', async () => {
     const { createServiceRoleClient } = require('@/lib/supabase/server');
     const insertMock = jest.fn().mockResolvedValue({});
-    const fromMock = jest.fn((table: string) => ({ insert: insertMock, select: jest.fn().mockReturnThis(), eq: jest.fn().mockReturnThis(), maybeSingle: jest.fn().mockResolvedValue({ data: null }) }));
+    const fromMock = jest.fn(() => ({ insert: insertMock, select: jest.fn().mockReturnThis(), eq: jest.fn().mockReturnThis(), maybeSingle: jest.fn().mockResolvedValue({ data: null }) }));
     const fakeService = { from: fromMock };
     createServiceRoleClient.mockReturnValue(fakeService);
 
@@ -128,7 +128,6 @@ describe('Auth API integration (mocked supabase)', () => {
 
   test('password reset confirm with valid token updates password and returns 200', async () => {
     const { createServiceRoleClient } = require('@/lib/supabase/server');
-    const updateMock = jest.fn().mockReturnValue({ eq: jest.fn().mockResolvedValue({}) });
     const chain = {
       select: jest.fn().mockReturnThis(),
       eq: jest.fn().mockReturnThis(),
@@ -139,7 +138,7 @@ describe('Auth API integration (mocked supabase)', () => {
     // make eq and update chainable
     chain.update.mockReturnValue({ eq: jest.fn().mockResolvedValue({}) });
 
-    const fromFn = jest.fn((table: string) => chain);
+    const fromFn = jest.fn(() => chain);
     const fakeService = { from: fromFn, auth: { admin: { updateUserById: jest.fn().mockResolvedValue({}) } } };
     createServiceRoleClient.mockReturnValue(fakeService);
 

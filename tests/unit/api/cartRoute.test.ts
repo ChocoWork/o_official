@@ -14,13 +14,11 @@ jest.mock('next/server', () => {
   };
 });
 
-import { GET } from '@/app/api/cart/route';
-
 // we'll mock supabase client used in the route implementation
 jest.mock('@supabase/supabase-js', () => {
   return {
     createClient: jest.fn().mockReturnValue({
-      from: jest.fn().mockImplementation((table: string) => {
+      from: jest.fn().mockImplementation(() => {
         const chain: any = {
           select: jest.fn().mockReturnThis(),
           eq: jest.fn().mockReturnThis(),

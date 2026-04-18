@@ -71,7 +71,7 @@ describe('Logout API integration (mocked supabase & headers)', () => {
     const maybeSingleMock = jest.fn().mockResolvedValue({ data: { csrf_token_hash: csrfHash } });
     const selectEqMock = jest.fn().mockReturnValue({ maybeSingle: maybeSingleMock });
     const selectMock = jest.fn().mockReturnValue({ eq: selectEqMock });
-    const fromMock = jest.fn((table: string) => ({ update: updateMock, select: selectMock }));
+    const fromMock = jest.fn(() => ({ update: updateMock, select: selectMock }));
     const { createServiceRoleClient } = require('@/lib/supabase/server');
     createServiceRoleClient.mockReturnValue({ from: fromMock });
 
@@ -105,7 +105,7 @@ describe('Logout API integration (mocked supabase & headers)', () => {
     const maybeSingleMock = jest.fn().mockResolvedValue({ data: { csrf_token_hash: csrfHash } });
     const selectEqMock = jest.fn().mockReturnValue({ maybeSingle: maybeSingleMock });
     const selectMock = jest.fn().mockReturnValue({ eq: selectEqMock });
-    const fromMock = jest.fn((table: string) => ({ update: updateMock, select: selectMock }));
+    const fromMock = jest.fn(() => ({ update: updateMock, select: selectMock }));
     const { createServiceRoleClient } = require('@/lib/supabase/server');
     createServiceRoleClient.mockReturnValue({ from: fromMock });
 

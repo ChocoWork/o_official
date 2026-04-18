@@ -27,7 +27,7 @@ jest.mock('next/headers', () => ({
   headers: jest.fn(),
 }));
 
-const { cookies, headers } = require('next/headers');
+const { cookies } = require('next/headers');
 
 // Bypass CSRF middleware checks in this integration test suite to avoid
 // dependencies on header hashing and DB state. Individual CSRF unit tests
@@ -65,7 +65,7 @@ describe('Auth cookie flags (integration, mocked)', () => {
     const { createClient, createServiceRoleClient } = require('@/lib/supabase/server');
     createClient.mockReturnValue({ auth: { signInWithPassword: jest.fn().mockResolvedValue({ data: { session: { access_token: 'a', refresh_token: 'r', expires_at: new Date().toISOString() }, user: { id: 'u1' } }, error: null }) } });
 
-    const fromMock = jest.fn((table: string) => ({ insert: jest.fn().mockResolvedValue({}) }));
+    const fromMock = jest.fn(() => ({ insert: jest.fn().mockResolvedValue({}) }));
     createServiceRoleClient.mockReturnValue({ from: fromMock });
 
     // call handler
@@ -98,7 +98,7 @@ describe('Auth cookie flags (integration, mocked)', () => {
     (global as any).fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ access_token: 'new-a', refresh_token: 'new-r', expires_in: 3600, user: { id: 'u1' } }) });
 
     const { createServiceRoleClient } = require('@/lib/supabase/server');
-    const fromMock = jest.fn((table: string) => ({
+    const fromMock = jest.fn(() => ({
       update: jest.fn().mockReturnValue({ eq: jest.fn().mockResolvedValue({}) }),
       insert: jest.fn().mockResolvedValue({}),
     }));
@@ -126,7 +126,7 @@ describe('Auth cookie flags (integration, mocked)', () => {
     cookies.mockReturnValue({ get: jest.fn().mockReturnValue({ value: 'old-refresh' }) });
 
     const { createServiceRoleClient } = require('@/lib/supabase/server');
-    const fromMock = jest.fn((table: string) => ({ update: jest.fn().mockResolvedValue({}) }));
+    const fromMock = jest.fn(() => ({ update: jest.fn().mockResolvedValue({}) }));
     createServiceRoleClient.mockReturnValue({ from: fromMock });
 
     const res: any = await logoutHandler();

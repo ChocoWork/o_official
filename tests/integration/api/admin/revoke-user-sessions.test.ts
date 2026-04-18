@@ -49,7 +49,7 @@ describe('Admin revoke-user-sessions API (mocked supabase & audit)', () => {
     process.env.ADMIN_API_KEY = 'adm';
     const eqMock = jest.fn().mockResolvedValue({});
     const updateMock = jest.fn().mockReturnValue({ eq: eqMock });
-    const fromMock = jest.fn((table: string) => ({ update: updateMock }));
+    const fromMock = jest.fn(() => ({ update: updateMock }));
     const { createServiceRoleClient } = require('@/lib/supabase/server');
     createServiceRoleClient.mockReturnValue({ from: fromMock });
 
@@ -68,7 +68,7 @@ describe('Admin revoke-user-sessions API (mocked supabase & audit)', () => {
   test('DB error returns 500 and logs error', async () => {
     process.env.ADMIN_API_KEY = 'adm';
     const updateMock = jest.fn(() => { throw new Error('db fail'); });
-    const fromMock = jest.fn((table: string) => ({ update: updateMock }));
+    const fromMock = jest.fn(() => ({ update: updateMock }));
     const { createServiceRoleClient } = require('@/lib/supabase/server');
     createServiceRoleClient.mockReturnValue({ from: fromMock });
 

@@ -53,11 +53,6 @@ export function MultiSelect({
   }, [open, variant]);
 
   // size-specific helpers using explicit maps
-  const textClassMap: Record<ComponentSize, string> = {
-    sm: 'text-sm',
-    md: 'text-sm',
-    lg: 'text-base',
-  };
   const buttonTextSizeMap: Record<ComponentSize, string> = {
     sm: 'text-xs',
     md: 'text-sm',
@@ -80,7 +75,6 @@ export function MultiSelect({
     md: 'text-sm',
     lg: 'text-base',
   };
-  const textClass = textClassMap[size];
   const buttonTextSize = buttonTextSizeMap[size];
   const buttonPad = buttonPadMap[size];
 

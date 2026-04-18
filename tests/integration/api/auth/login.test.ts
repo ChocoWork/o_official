@@ -22,7 +22,7 @@ jest.mock('@/lib/supabase/server', () => {
   }));
 
   const createMockServiceRoleClient = jest.fn(() => ({
-    from: jest.fn((table: string) => ({
+    from: jest.fn(() => ({
       insert: jest.fn().mockResolvedValue({ data: [{ id: 'session-id' }], error: null }),
     })),
   }));

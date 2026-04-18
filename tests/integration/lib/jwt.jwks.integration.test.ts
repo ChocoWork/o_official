@@ -21,7 +21,7 @@ describe('JWKS integration-like tests', () => {
     process.env.JWT_PRIVATE_KEY = privPem;
 
     // JWKS endpoint returns non-ok
-    (globalThis as any).fetch = async (url: string) => ({ ok: false, status: 500 });
+    (globalThis as any).fetch = async () => ({ ok: false, status: 500 });
     process.env.JWT_JWKS_URL = 'https://example.com/.well-known/jwks.json';
 
     const token = sign({ sub: 'user-fetch-error' }, { expiresInSeconds: 60 });
@@ -47,7 +47,7 @@ describe('JWKS integration-like tests', () => {
     process.env.JWT_JWKS_URL = 'https://example.com/.well-known/jwks.json';
 
     // JWKS initially only contains A
-    (globalThis as any).fetch = async (url: string) => ({ ok: true, json: async () => ({ keys: [pubJwkA] }) });
+    (globalThis as any).fetch = async () => ({ ok: true, json: async () => ({ keys: [pubJwkA] }) });
 
     const token = sign({ sub: 'rot-user' }, { expiresInSeconds: 60 });
 
@@ -55,7 +55,7 @@ describe('JWKS integration-like tests', () => {
     await expect(verify(token)).rejects.toThrow(/Invalid token/);
 
     // Now JWKS rotated to include B as well; clear cache and update fetch
-    (globalThis as any).fetch = async (url: string) => ({ ok: true, json: async () => ({ keys: [pubJwkA, pubJwkB] }) });
+    (globalThis as any).fetch = async () => ({ ok: true, json: async () => ({ keys: [pubJwkA, pubJwkB] }) });
     _clearJwksCache();
 
     const payload = await verify(token);

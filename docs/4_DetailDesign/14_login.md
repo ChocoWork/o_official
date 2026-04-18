@@ -86,7 +86,7 @@
 
 | 要件ID | 要件内容 | 実装ID | 実装対象ファイル | 実装概要 | 実装ステータス |
 |--------|----------|--------|----------------|----------|--------------|
-| AUTH-SEC-001 | TLS/HSTS 強制（必須） | IMPL-AUTH-SEC-001 | `src/middleware.ts` | `Strict-Transport-Security` ヘッダを middleware で付与済み | 済 |
+| AUTH-SEC-001 | TLS/HSTS 強制（必須） | IMPL-AUTH-SEC-001 | `src/proxy.ts` | `Strict-Transport-Security` ヘッダを proxy で付与済み | 済 |
 | AUTH-SEC-002 | セキュア Cookie（HttpOnly/Secure/SameSite）（必須） | IMPL-AUTH-COOKIE-01 | `src/lib/cookie.ts` | HttpOnly/Secure/SameSite=Lax 設定済み | 済 |
 | AUTH-SEC-003 | CSRF ダブルサブミット（必須） | IMPL-AUTH-CSRF-01 | `src/lib/csrf.ts`, `src/lib/csrfMiddleware.ts` | ダブルサブミットパターン実装済み | 済 |
 | AUTH-SEC-004 | 入力バリデーション（Zod）（必須） | IMPL-AUTH-VAL-01 | `src/features/auth/schemas/` | Zod スキーマで全入力検証済み | 済 |
@@ -94,7 +94,7 @@
 | AUTH-SEC-006 | 監査ログ（認証イベント）（必須） | IMPL-AUTH-AUDIT-01 | `src/lib/audit.ts` | audit_logs テーブルへの記録 + cleanup 実装済み | 済 |
 | AUTH-SEC-007 | シークレット管理/ローテーション手順（必須） | IMPL-AUTH-SEC-007 | `docs/ops/secrets.md` | シークレット手動運用・ローテーション手順をドキュメント化済み | 済 |
 | AUTH-SEC-008 | セッション管理 JTI 再利用検出テスト（必須） | IMPL-AUTH-JTI-01 | `src/features/auth/services/session.ts`, `tests/unit/features/auth/services/session.test.ts` | JTI 再利用検出の単体テストを実装済み | 済 |
-| AUTH-SEC-009 | CSP ヘッダ（nonce ベース）（推奨） | IMPL-AUTH-SEC-009 | `src/middleware.ts` | nonce 付き CSP ヘッダを middleware で付与済み | 済 |
+| AUTH-SEC-009 | CSP ヘッダ（nonce ベース）（推奨） | IMPL-AUTH-SEC-009 | `src/proxy.ts` | nonce 付き CSP ヘッダを proxy で付与済み | 済 |
 | AUTH-SEC-010 | WAF/CDN（推奨） | — | インフラ（Vercel/Cloudflare） | 未実装 | 未 |
 | AUTH-SEC-011 | Bot 対策（Turnstile 常時表示）（推奨） | IMPL-AUTH-TURNSTILE-01 | `src/lib/turnstile.ts` | Cloudflare Turnstile 実装済み | 済 |
 | AUTH-SEC-012 | 監査証跡保全（ハッシュチェーン）（推奨） | — | — | 未実装 | 未 |

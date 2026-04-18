@@ -5,9 +5,6 @@ test.describe('FR-CHECKOUT-002 PCI DSS 準拠（カード情報非保存）', ()
     await page.goto('/checkout');
     await page.waitForLoadState('networkidle').catch(() => undefined);
 
-    // 郵便番号自動補完を確認（iframe がないことで Stripe の埋め込み確認）
-    const iframes = await page.locator('iframe').count();
-    
     // Step through to payment form to see Payment Element
     await page.fill('input[name="email"]', 'test@example.com');
     await page.fill('input[name="fullName"]', 'テスト太郎');

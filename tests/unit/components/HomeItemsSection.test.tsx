@@ -29,7 +29,7 @@ jest.mock('@/features/items/hooks/usePublicItems', () => ({
 // stub next/image globally to simple <img>
 jest.mock('next/image', () => ({
   __esModule: true,
-  default: ({ src, alt, ...props }: any) => <img src={src as string} alt={alt as string} {...props} />,
+  default: ({ src, alt, ...props }: any) => React.createElement('img', { src: src as string, alt: alt as string, ...props }),
 }));
 
 describe('HomeItemsSectionClient', () => {
@@ -63,7 +63,6 @@ describe('HomeItemsSectionClient', () => {
       }),
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (window.matchMedia as unknown as any).setMatches = (newMatches: boolean) => {
       matches = newMatches;
       if (listener) {
@@ -73,15 +72,6 @@ describe('HomeItemsSectionClient', () => {
   });
 
   test('renders 8 items on wide screens and switches to 6 on narrow screens', async () => {
-    const items = Array.from({ length: 8 }).map((_, index) => ({
-      id: index + 1,
-      name: `Item ${index + 1}`,
-      description: 'desc',
-      price: 1000,
-      image_url: '/img.png',
-      category: 'TOPS',
-    }));
-
     render(<HomeItemsSection limit={6} />);
 
     await waitFor(() => {
@@ -92,7 +82,6 @@ describe('HomeItemsSectionClient', () => {
     expect(screen.queryByRole('link', { name: 'VIEW ALL ITEMS' })).not.toBeInTheDocument();
 
     // simulate narrow
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (window.matchMedia as any).setMatches(false);
 
     await waitFor(() => {

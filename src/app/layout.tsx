@@ -3,6 +3,7 @@ import { headers } from 'next/headers';
 import { Geist, Geist_Mono } from "next/font/google"; // Google FontsのGeistとGeist_Monoフォントをインポート
 import "../styles/globals.css"; // グローバルCSSファイルをインポート
 import { Providers } from '@/contexts/Providers'; // ProvidersとLayout componentsをインポート
+import { getSiteUrl } from '@/lib/redirect';
 
 // Geistフォントを設定。変数名を`--font-geist-sans`に設定。
 const geistSans = Geist({
@@ -20,6 +21,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Le Fil des Heures",  // ページのタイトル
   description: "Le Fil des Heuresの公式オンラインストア。時を紡ぐニュートラルモードな日常着を提案します。",  // ページの説明
+  metadataBase: new URL(getSiteUrl()),
 };
 
 // RootLayoutコンポーネントをエクスポート

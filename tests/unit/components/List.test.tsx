@@ -1,11 +1,11 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import { List } from '@/components/ui/List';
 
 // stub next/image globally to simple <img> so src attribute is predictable
 jest.mock('next/image', () => ({
   __esModule: true,
-  default: ({ src, alt, ...props }: any) => <img src={src as string} alt={alt as string} {...props} />,
+  default: ({ src, alt, ...props }: any) => React.createElement('img', { src: src as string, alt: alt as string, ...props }),
 }));
 
 describe('List component', () => {
@@ -39,7 +39,7 @@ describe('List component', () => {
       // mock next/image to simple <img>
       jest.mock('next/image', () => ({
         __esModule: true,
-        default: ({ src, alt, ...props }: any) => <img src={src as string} alt={alt as string} {...props} />,
+        default: ({ src, alt, ...props }: any) => React.createElement('img', { src: src as string, alt: alt as string, ...props }),
       }));
     });
 

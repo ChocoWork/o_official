@@ -2,16 +2,16 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 function generateNonce(): string {
-  // Use Web Crypto API for Edge Runtime compatibility
   const bytes = new Uint8Array(12);
   globalThis.crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-function buildCsp(nonce: string) {
+function buildCsp(nonce: string): string {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
   const supabaseOrigin = (() => {
     if (!supabaseUrl) return '';
+
     try {
       return new URL(supabaseUrl).origin;
     } catch {
@@ -37,22 +37,21 @@ function buildCsp(nonce: string) {
     "frame-ancestors 'none'",
     "object-src 'none'",
     "img-src 'self' data: https://placehold.co https://*.supabase.co https://q.stripe.com https://*.stripe.com",
-    `style-src 'self' https://cdn.jsdelivr.net`,
+    "style-src 'self' https://cdn.jsdelivr.net",
     "font-src 'self' https://cdn.jsdelivr.net",
     `script-src 'self' 'nonce-${nonce}' https://cdn.jsdelivr.net https://challenges.cloudflare.com https://js.stripe.com`,
     "frame-src https://challenges.cloudflare.com https://js.stripe.com https://hooks.stripe.com https://www.google.com https://maps.google.com",
     `connect-src ${connectSources}`,
     "manifest-src 'self'",
-    "upgrade-insecure-requests",
-    "block-all-mixed-content",
+    'upgrade-insecure-requests',
+    'block-all-mixed-content',
   ].join('; ');
 }
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const response = NextResponse.next();
   const nonce = generateNonce();
 
-  // Generate session_id for guest users (cart/wishlist)
   let sessionId = request.cookies.get('session_id')?.value;
   if (!sessionId) {
     sessionId = generateNonce();
@@ -60,7 +59,7 @@ export function middleware(request: NextRequest) {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 30, // 30 days
+      maxAge: 60 * 60 * 24 * 30,
       path: '/',
     });
   }

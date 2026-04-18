@@ -16,7 +16,7 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   if (typeof fetcher !== 'function') {
     try {
       fetcher = require('node-fetch');
-    } catch (e) {
+    } catch {
       console.error('Global fetch not available and node-fetch not installed');
       process.exit(2);
     }

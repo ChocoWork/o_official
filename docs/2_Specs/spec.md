@@ -301,7 +301,7 @@
 
 - **FR-CART-001** `MUST`: `/cart` ページは `GET /api/cart` からカートアイテムを取得し、商品画像・商品名・価格・カラー・サイズ・数量変更 UI を表示する。
   - レビュー: `useEffect` で `fetch('/api/cart')` ✅、画像/名前/価格/カラー/サイズ/`Stepper` を表示 ✅。ただし画像の `<Link>` が `href={/item/${item.id}}` (カート UUID) を参照しており、正しくは `item.items.id` (商品 ID) であるべきバグが存在する ❌。
-- **FR-CART-002** `MUST`: カートは `middleware.ts` で生成される `session_id` クッキーに基づき 30 日間保持され、ログイン不要の永続カートを実現する。
+- **FR-CART-002** `MUST`: カートは `proxy.ts` で生成される `session_id` クッキーに基づき 30 日間保持され、ログイン不要の永続カートを実現する。
   - レビュー: `session_id` クッキーベース。ページコードからは直接確認できないが、設計上 middleware で管理。要件を満たしている。
 - **FR-CART-003** `MUST`: 数量変更は `Stepper` で可能とし、クライアントで即時反映したうえで 500ms のデバウンスで `PATCH /api/cart/[id]` を呼び出す。
   - レビュー: `scheduleUpdate` で 500ms デバウンス ✅、`inFlight` で二重送信防止 ✅、楽観的 UI 更新 ✅。要件を満たしている。

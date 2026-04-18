@@ -4,11 +4,10 @@ test.describe('FR-LOOK-ALL-002 ルックカード表示と遷移', () => {
   test('カードにシーズン・テーマ・画像・紐づけ商品名を表示し詳細へ遷移できる', async ({ page }) => {
     await page.goto('/look');
 
-    const firstLookLink = page.locator('a[href^="/look/"]').first();
-    await expect(firstLookLink).toBeVisible();
+    const firstLookImageLink = page.locator('a[href^="/look/"]').first();
+    await expect(firstLookImageLink).toBeVisible();
 
-    const firstCard = firstLookLink.locator('xpath=ancestor::div[1]');
-    const firstImage = firstLookLink.locator('img').first();
+    const firstImage = firstLookImageLink.locator('img').first();
     await expect(firstImage).toBeVisible();
 
     const imageAlt = await firstImage.getAttribute('alt');
@@ -28,7 +27,10 @@ test.describe('FR-LOOK-ALL-002 ルックカード表示と遷移', () => {
     const emptyVisible = await linkedItemOrEmpty.isVisible().catch(() => false);
     expect(linkedItemVisible || emptyVisible).toBeTruthy();
 
-    await firstLookLink.click();
+    const detailHref = await firstLookImageLink.getAttribute('href');
+    expect(detailHref).toMatch(/^\/look\/[\w-]+$/);
+
+    await page.goto(detailHref!);
     await expect(page).toHaveURL(/\/look\/\d+/);
   });
 });

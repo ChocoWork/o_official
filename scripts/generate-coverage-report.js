@@ -39,7 +39,6 @@ function keywordsFromDesc(desc){
 
 (function main(){
   const archFiles = readDirMd('docs/ArchitectureDesign');
-  const specFiles = fs.readdirSync('docs').filter(f=>f.startsWith('specs')||f==='seq' ).flatMap(fn=>readDirMd(path.join('docs',fn))).concat(readDirMd('docs/specs'));
   // fallback include docs/specs and docs/seq
   const specs = [...readDirMd('docs/specs'), ...readDirMd('docs/seq')];
 

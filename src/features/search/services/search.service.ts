@@ -211,13 +211,13 @@ export async function executeSearch(options: SearchExecutionOptions): Promise<Se
   const newsArticles = (newsResult.data ?? []) as SearchNewsRow[];
 
   const rankedItems: RankedResult[] = items
-    .map((item) => {
+    .flatMap((item) => {
       const score = rankText([item.name, item.description ?? '', item.category], query);
       if (score === 0) {
-        return null;
+        return [];
       }
 
-      return {
+      return [{
         id: String(item.id),
         type: 'item' as const,
         title: item.name,
@@ -226,20 +226,19 @@ export async function executeSearch(options: SearchExecutionOptions): Promise<Se
         imageUrl: item.image_url ?? null,
         meta: item.category,
         score,
-      };
+      }];
     })
-    .filter((item): item is RankedResult => Boolean(item))
     .sort((left, right) => right.score - left.score)
     .slice(0, limitPerType);
 
   const rankedLooks: RankedResult[] = looks
-    .map((look) => {
-        const score = rankText([look.theme, look.theme_description ?? ''], query);
+    .flatMap((look) => {
+      const score = rankText([look.theme, look.theme_description ?? ''], query);
       if (score === 0) {
-        return null;
+        return [];
       }
 
-      return {
+      return [{
         id: String(look.id),
         type: 'look' as const,
         title: look.theme,
@@ -248,20 +247,19 @@ export async function executeSearch(options: SearchExecutionOptions): Promise<Se
         imageUrl: Array.isArray(look.image_urls) ? (look.image_urls[0] ?? null) : null,
         meta: formatLookSeason(look.season_year, look.season_type),
         score,
-      };
+      }];
     })
-    .filter((look): look is RankedResult => Boolean(look))
     .sort((left, right) => right.score - left.score)
     .slice(0, limitPerType);
 
   const rankedNews: RankedResult[] = newsArticles
-    .map((article) => {
+    .flatMap((article) => {
       const score = rankText([article.title, article.content, article.category], query);
       if (score === 0) {
-        return null;
+        return [];
       }
 
-      return {
+      return [{
         id: String(article.id),
         type: 'news' as const,
         title: article.title,
@@ -270,9 +268,8 @@ export async function executeSearch(options: SearchExecutionOptions): Promise<Se
         imageUrl: article.image_url ?? null,
         meta: article.category,
         score,
-      };
+      }];
     })
-    .filter((article): article is RankedResult => Boolean(article))
     .sort((left, right) => right.score - left.score)
     .slice(0, limitPerType);
 
@@ -365,7 +362,11 @@ export async function getSearchSuggestions(query: string, limit = 8): Promise<Se
       }
     });
 
-  return Array.from(unique.values()).slice(0, limit).map(({ score: _score, ...suggestion }) => suggestion);
+  return Array.from(unique.values()).slice(0, limit).map((candidate) => ({
+    label: candidate.label,
+    type: candidate.type,
+    href: candidate.href,
+  }));
 }
 
 export function getResultTypeLabel(type: SearchResultType): string {

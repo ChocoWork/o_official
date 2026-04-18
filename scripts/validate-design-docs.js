@@ -30,8 +30,8 @@ function checkFrontmatter(content, file){
     const yaml = content.slice(3, end+1);
     try{
       require('js-yaml').load(yaml);
-    }catch(e){
-      console.error(`Invalid YAML frontmatter in ${file}: ${e.message}`);
+    }catch(error){
+      console.error(`Invalid YAML frontmatter in ${file}: ${error.message}`);
       hasError = true;
     }
   }
@@ -55,7 +55,7 @@ async function checkMermaid(content, file){
     if(mermaid.initialize) {
       mermaid.initialize({startOnLoad:false});
     }
-  }catch(e){
+  }catch{
     console.warn('mermaid package not installed - skipping mermaid validation. Run `npm i -D mermaid` to enable.');
     return;
   }
@@ -71,8 +71,8 @@ async function checkMermaid(content, file){
       } else {
         console.warn('mermaid parse API not available - skipping parse check');
       }
-    }catch(e){
-      console.error(`Mermaid syntax error in ${file}: ${e.message}`);
+    }catch(error){
+      console.error(`Mermaid syntax error in ${file}: ${error.message}`);
       hasError = true;
     }
   }

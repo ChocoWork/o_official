@@ -12,8 +12,7 @@ jest.mock('next/link', () => {
   );
 });
 jest.mock('next/image', () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return ({ src, alt, ...props }: any) => <img src={src} alt={alt} {...props} />;
+  return ({ src, alt, ...props }: any) => React.createElement('img', { src, alt, ...props });
 });
 
 // stub useCart hook so the component renders without context issues

@@ -8,7 +8,7 @@ describe('audit DB integration', () => {
 
   test('logAudit inserts into audit_logs table', async () => {
     const insertMock = jest.fn().mockResolvedValue({});
-    const fromMock = jest.fn((table: string) => ({ insert: insertMock }));
+    const fromMock = jest.fn(() => ({ insert: insertMock }));
     createServiceRoleClient.mockReturnValue({ from: fromMock });
 
     await logAudit({ action: 'test_action', actor_email: 'a@example.com', outcome: 'success', detail: 'ok' });
@@ -20,7 +20,7 @@ describe('audit DB integration', () => {
 
   test('logAudit failures are caught and do not throw', async () => {
     const insertMock = jest.fn().mockRejectedValue(new Error('db down'));
-    const fromMock = jest.fn((table: string) => ({ insert: insertMock }));
+    const fromMock = jest.fn(() => ({ insert: insertMock }));
     createServiceRoleClient.mockReturnValue({ from: fromMock });
 
     await expect(logAudit({ action: 'x', outcome: 'failure' })).resolves.not.toThrow();

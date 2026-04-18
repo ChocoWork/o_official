@@ -1,6 +1,5 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { BottomNavigation, BottomNavigationItem } from '@/components/ui/BottomNavigation';
 
 const items: BottomNavigationItem[] = [

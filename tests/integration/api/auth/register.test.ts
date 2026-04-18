@@ -29,9 +29,6 @@ describe('POST /api/auth/register (public)', () => {
     const resp = await route.POST(req as any);
     // resp is the object returned by our mocked NextResponse.json
     const body = await resp.json();
-    // debug
-    // eslint-disable-next-line no-console
-    console.log('register test response body:', body, 'status', resp.status);
     expect(resp.status).toBe(201);
     expect(body.id).toBeDefined();
     expect(body.email).toBe('test@example.com');
@@ -52,9 +49,6 @@ describe('POST /api/auth/register (public)', () => {
     expect(body.user.email).toBe('test@example.com');
   });
 });
-
-export {};
-import { createRequest } from '../../testUtils';
 
 describe('/api/auth/register', () => {
   test('route exists', async () => {

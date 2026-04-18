@@ -20,7 +20,6 @@ test.describe('FR-ITEM-DETAIL-005 ローディング・エラー状態', () => {
     await page.goto('/item/1');
 
     // ローディングテキストが一瞬現れる（タイミングによりスキップ可）
-    const loading = page.locator('text=読み込み中');
     // 短時間でも表示されることが期待されるが、タイミング依存のためソフトチェック
     await page.waitForLoadState('networkidle');
   });

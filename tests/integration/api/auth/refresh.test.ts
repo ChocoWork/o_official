@@ -45,7 +45,7 @@ describe('Refresh API integration (mocked supabase & headers & fetch)', () => {
     console.error = jest.fn();
     // default service client chain
     const { createServiceRoleClient } = require('@/lib/supabase/server');
-    const fromMock = jest.fn((table: string) => ({
+    const fromMock = jest.fn(() => ({
       update: jest.fn(() => ({ eq: jest.fn().mockResolvedValue({}) })),
       insert: jest.fn().mockResolvedValue({}),
     }));
@@ -95,7 +95,7 @@ describe('Refresh API integration (mocked supabase & headers & fetch)', () => {
     jest.spyOn(global, 'fetch').mockResolvedValue(fakeTokenResponse);
 
     const { createServiceRoleClient } = require('@/lib/supabase/server');
-    const fromMock = jest.fn((table: string) => ({
+    const fromMock = jest.fn(() => ({
       update: jest.fn(() => ({ eq: jest.fn().mockResolvedValue({}) })),
       insert: jest.fn().mockResolvedValue({}),
     }));

@@ -3,7 +3,6 @@ jest.mock('node-fetch', () => ({
 }));
 
 import { sign, verify } from '../../../src/lib/jwt';
-import fetchMock from 'node-fetch';
 
 describe('jwt JWKS verification', () => {
   beforeEach(() => {
@@ -32,7 +31,7 @@ describe('jwt JWKS verification', () => {
 
     // mock JWKS endpoint
     // set global fetch so fetchJwks picks it up
-    (globalThis as any).fetch = async (url: string) => ({ ok: true, json: async () => ({ keys: [pubJwk] }) });
+    (globalThis as any).fetch = async () => ({ ok: true, json: async () => ({ keys: [pubJwk] }) });
 
     process.env.JWT_JWKS_URL = 'https://example.com/.well-known/jwks.json';
     process.env.JWT_KID = pubJwk.kid;
@@ -60,7 +59,7 @@ describe('jwt JWKS verification', () => {
     // intentionally set JWT_KID to a non-existent kid to test fallback
     process.env.JWT_KID = 'non-existent-kid';
 
-    (globalThis as any).fetch = async (url: string) => ({ ok: true, json: async () => ({ keys: [pubJwk1, pubJwk2] }) });
+    (globalThis as any).fetch = async () => ({ ok: true, json: async () => ({ keys: [pubJwk1, pubJwk2] }) });
 
     const token = sign({ sub: 'fallback-user' }, { expiresInSeconds: 60 });
     const payload = await verify(token);

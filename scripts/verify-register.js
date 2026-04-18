@@ -2,7 +2,7 @@
 // Load .env.local if present (optional)
 try {
   require('dotenv').config({ path: '.env.local' });
-} catch (e) {
+} catch {
   // dotenv not installed or file missing — continue using process.env
 }
 
@@ -31,7 +31,7 @@ try {
       });
     }
   }
-} catch (e) {
+} catch {
   // ignore
 }
 
@@ -49,7 +49,7 @@ async function httpPostRegister(email, password) {
   });
   const text = await resp.text();
   let json = null;
-  try { json = JSON.parse(text); } catch (e) { json = text; }
+  try { json = JSON.parse(text); } catch { json = text; }
   const setCookie = resp.headers.get('set-cookie') || resp.headers.get('Set-Cookie');
   return { status: resp.status, body: json, setCookie };
 }
@@ -108,8 +108,8 @@ async function run() {
         console.log('User not found via REST API. Note: `auth.users` may be in a different schema or not exposed via PostgREST. If so, run the SQL below in Supabase SQL editor:');
         console.log(`\n-- SQL to run in Supabase SQL editor:\nselect id,email from auth.users where email = '${EMAIL}';\nselect * from public.sessions where user_id = '<id-from-above>' order by created_at desc limit 5;\nselect * from audit_logs where action='register' and actor_email='${EMAIL}' order by created_at desc limit 10;\n`);
       }
-    } catch (e) {
-      console.error('Supabase REST query failed:', e.message || e);
+    } catch (error) {
+      console.error('Supabase REST query failed:', error.message || error);
     }
   } else {
     console.log('\n3) SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set — skipping DB queries. To run DB checks, set these env vars and re-run.');
@@ -122,4 +122,4 @@ async function run() {
   process.exit(ok ? 0 : 2);
 }
 
-run().catch(e => { console.error(e); process.exit(3); });
+run().catch((error) => { console.error(error); process.exit(3); });

@@ -60,7 +60,6 @@ describe('GET /api/auth/confirm', () => {
     try {
       res = await route.GET(req as any);
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.error('confirm missing-token test error:', err);
       throw err;
     }
@@ -93,7 +92,6 @@ describe('GET /api/auth/confirm', () => {
     try {
       res = await route.GET(req as any);
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.error('confirm valid-token test error:', err);
       throw err;
     }
