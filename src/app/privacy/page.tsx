@@ -1,4 +1,20 @@
+import type { Metadata } from 'next';
 import React from 'react';
+
+export async function generateMetadata(): Promise<Metadata> {
+  const title = 'Privacy Policy | Le Fil des Heures';
+  const description = 'Le Fil des Heures のプライバシーポリシー。個人情報の取扱い、利用目的、第三者提供、お問い合わせ窓口をご案内します。';
+
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      images: ['/mainphoto.png'],
+    },
+  };
+}
 
 export default function PrivacyPage() {
   return (

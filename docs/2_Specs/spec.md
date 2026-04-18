@@ -442,7 +442,7 @@
 - **FR-PRIVACY-001** `MUST`: プライバシーポリシーの内容を静的ページとして表示する。
   - レビュー: `PrivacyPage` RSC として実装 ✅。`h1` "Privacy Policy"、各セクションを `<section>` + `<h2>` で構造化 ✅。
 - **FR-PRIVACY-002** `SHOULD`: `generateMetadata` で `title` / `description` を設定する。
-  - レビュー: `generateMetadata` 未実装 ❌。
+  - レビュー: `generateMetadata` を実装し、title / description / Open Graph を設定済み ✅。
 
 ---
 
@@ -451,21 +451,21 @@
 - **FR-TERMS-001** `MUST`: 利用規約の内容を静的ページとして表示する。
   - レビュー: `TermsPage` RSC として実装 ✅。`h1` "Terms of Service"、利用規約コンテンツを `<section>` + `<h2>` で構造化 ✅。
 - **FR-TERMS-002** `SHOULD`: `generateMetadata` で `title` / `description` を設定する。
-  - レビュー: `generateMetadata` 未実装 ❌。
+  - レビュー: `generateMetadata` を実装し、title / description / Open Graph を設定済み ✅。
 
 ---
 
 ### 1.19 検索ページ（SEARCH）— 未実装
 
-- **FR-SEARCH-001** `WONT`: 高速なフルテキスト検索を実装し、スペルミス補正とサジェスト機能を提供する（将来対応）。
+- **FR-SEARCH-001** `MUST`: 高速なフルテキスト検索を実装し、スペルミス補正とサジェスト機能を提供する（将来対応）。
   - レビュー: `src/app/search/` ディレクトリ自体が未作成 ❌。
-- **FR-SEARCH-002** `WONT`: 価格・サイズ・カラー・カテゴリなどの属性による絞り込みを提供する（将来対応）。
+- **FR-SEARCH-002** `MUST`: 価格・サイズ・カラー・カテゴリなどの属性による絞り込みを提供する（将来対応）。
   - レビュー: 未実装 ❌。
-- **FR-SEARCH-003** `WONT`: 人気順・新着順・価格順などのソート機能を提供する（将来対応）。
+- **FR-SEARCH-003** `MUST`: 人気順・新着順・価格順などのソート機能を提供する（将来対応）。
   - レビュー: 未実装 ❌。
-- **FR-SEARCH-004** `WONT`: フィルタ状態を URL で共有可能にし、同じ検索結果を再現できるようにする（将来対応）。
+- **FR-SEARCH-004** `MUST`: フィルタ状態を URL で共有可能にし、同じ検索結果を再現できるようにする（将来対応）。
   - レビュー: 未実装 ❌。
-- **FR-SEARCH-005** `WONT`: 検索バックエンドは Supabase のフルテキスト検索を一次候補とし、必要に応じて Meilisearch を検討する（将来対応）。
+- **FR-SEARCH-005** `MUST`: 検索バックエンドは Supabase のフルテキスト検索を一次候補とし、必要に応じて Meilisearch を検討する（将来対応）。
   - レビュー: 未実装 ❌。
 
 ---

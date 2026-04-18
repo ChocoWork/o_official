@@ -1,3 +1,20 @@
+import type { Metadata } from 'next';
+
+export async function generateMetadata(): Promise<Metadata> {
+  const title = 'Terms of Service | Le Fil des Heures';
+  const description = 'Le Fil des Heures の利用規約ページです。会員登録、注文、支払方法、配送、返品・交換、免責事項をご確認いただけます。';
+
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      images: ['/mainphoto.png'],
+    },
+  };
+}
+
 export default function TermsPage() {
   return (
     <div className="pb-10 sm:pb-14">
