@@ -14,6 +14,7 @@
 | FR-CHECKOUT-008 | 決済エラー発生時は明確なメッセージと再試行導線を表示する | IMPL-CHECKOUT-008 | `src/app/checkout/page.tsx` | `checkoutError` の表示に加え、「再試行する」ボタンで決済セッション再作成を実装 | 済 |
 | FR-CHECKOUT-009 | Stripe Webhook の冪等性を実装しネットワーク障害や再送による二重注文を防ぐ | IMPL-CHECKOUT-009 | `src/app/checkout/page.tsx`, `src/app/api/webhook/stripe/route.ts` | クライアント側 `processedCallback` とサーバ側 `stripe_webhook_events` upsert、および `payment_intent_id` 重複防止を実装 | 済 |
 | FR-CHECKOUT-010 | 郵便番号 API に `postal_code_cache` テーブルを利用しキャッシュ済みの住所は外部 API を再呼び出しせず返す | IMPL-CHECKOUT-010 | `src/app/api/checkout/postal-code/route.ts`, `migrations/024_create_postal_code_cache.sql` | `postal_code_cache` テーブルへの SELECT + キャッシュミス時に外部 API 問い合わせ後に INSERT | 済 |
+| FR-CHECKOUT-012 | ログイン済みユーザーの配送情報入力は account に保存済みのプロフィール・配送情報を既定値として表示する | IMPL-CHECKOUT-012 | `src/app/checkout/page.tsx`, `e2e/FR-CHECKOUT-012-account-profile-defaults.spec.ts` | `/api/profile` を読み込み、メールアドレス・氏名・電話番号・住所を checkout 配送フォームの初期値へ反映する | 済 |
 | FR-CHECKOUT-011 | 消費税の自動計算と詳細な税率表示（WONT） | — | — | 現フェーズ対象外 | 未 |
 
 ---

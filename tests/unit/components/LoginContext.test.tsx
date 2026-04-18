@@ -7,6 +7,7 @@ const signInWithOAuthMock = jest.fn();
 const signOutMock = jest.fn().mockResolvedValue({});
 const getSessionMock = jest.fn();
 const onAuthStateChangeMock = jest.fn();
+const setSessionMock = jest.fn();
 
 jest.mock('@/lib/supabase/client', () => ({
   supabase: {
@@ -14,6 +15,7 @@ jest.mock('@/lib/supabase/client', () => ({
       signInWithOAuth: (...args: unknown[]) => signInWithOAuthMock(...args),
       signOut: (...args: unknown[]) => signOutMock(...args),
       getSession: (...args: unknown[]) => getSessionMock(...args),
+      setSession: (...args: unknown[]) => setSessionMock(...args),
       onAuthStateChange: (...args: unknown[]) => onAuthStateChangeMock(...args),
     },
   },
@@ -43,6 +45,17 @@ describe('LoginContext', () => {
       data: {
         subscription: {
           unsubscribe: jest.fn(),
+        },
+      },
+    });
+    setSessionMock.mockResolvedValue({
+      data: {
+        session: {
+          user: {
+            app_metadata: {
+              role: 'user',
+            },
+          },
         },
       },
     });
@@ -106,7 +119,11 @@ describe('LoginContext', () => {
 
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ message: '認証に成功しました。' }),
+      json: async () => ({
+        message: '認証に成功しました。',
+        access_token: 'test-access-token',
+        refresh_token: 'test-refresh-token',
+      }),
     } as Response);
 
     render(
@@ -118,6 +135,10 @@ describe('LoginContext', () => {
     await user.click(screen.getByText('verify-otp'));
 
     await waitFor(() => expect(screen.getByText('logged:yes')).toBeInTheDocument());
+    expect(setSessionMock).toHaveBeenCalledWith({
+      access_token: 'test-access-token',
+      refresh_token: 'test-refresh-token',
+    });
   });
 
   test('loginWithGoogle starts OAuth with account chooser enabled', async () => {
@@ -152,7 +173,11 @@ describe('LoginContext', () => {
       .fn()
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ message: '認証に成功しました。' }),
+        json: async () => ({
+          message: '認証に成功しました。',
+          access_token: 'test-access-token',
+          refresh_token: 'test-refresh-token',
+        }),
       } as Response)
       .mockResolvedValueOnce({
         ok: true,

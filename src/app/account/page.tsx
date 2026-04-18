@@ -1,156 +1,390 @@
-"use client";
+'use client';
 
+import Link from 'next/link';
 import React from 'react';
-import Image from 'next/image';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useLogin } from '@/contexts/LoginContext';
 import { Button } from '@/components/ui/Button';
 import { TabSegmentControl } from '@/components/ui/TabSegmentControl';
 import { TextField } from '@/components/ui/TextField';
+import { clientFetch } from '@/lib/client-fetch';
+import { formatPhoneNumberInput } from '@/features/account/utils/profile-format.util';
+import { formatPostalCodeInput, normalizePostalCode } from '@/features/checkout/utils/postal-code.util';
 
-type AccountTab = 'profile' | 'orders' | 'address';
+type AccountTab = 'profile' | 'shipping' | 'orders';
 
-type SavedContact = {
-	fullName: string;
-	phone: string;
+type ProfileAddress = {
+	postalCode: string;
+	prefecture: string;
+	city: string;
+	address: string;
+	building: string;
 };
 
-export default function Page() {
+type ProfileForm = {
+	email: string;
+	fullName: string;
+	kanaName: string;
+	phone: string;
+	address: ProfileAddress;
+};
+
+type OrderSummary = {
+	id: string;
+	orderNumber: string;
+	orderDate: string;
+	status: string;
+	totalAmount: string;
+	itemCount: number;
+	items: Array<{
+		id: string;
+		name: string;
+		imageUrl?: string | null;
+		color?: string | null;
+		size?: string | null;
+		quantity: number;
+		amount: string;
+	}>;
+	detailHref: string;
+};
+
+const EMPTY_ADDRESS: ProfileAddress = {
+	postalCode: '',
+	prefecture: '',
+	city: '',
+	address: '',
+	building: '',
+};
+
+const EMPTY_PROFILE: ProfileForm = {
+	email: '',
+	fullName: '',
+	kanaName: '',
+	phone: '',
+	address: EMPTY_ADDRESS,
+};
+
+function normalizeAccountTab(tabParam: string | null): AccountTab {
+	if (tabParam === 'shipping' || tabParam === 'address') {
+		return 'shipping';
+	}
+
+	if (tabParam === 'orders') {
+		return tabParam;
+	}
+
+	return 'profile';
+}
+
+function hasAddressValue(address: ProfileAddress) {
+	return Object.values(address).some((value) => value.trim().length > 0);
+}
+
+export default function AccountPage() {
 	const { isLoggedIn, isAuthResolved, logout } = useLogin();
+	const router = useRouter();
+	const pathname = usePathname();
 	const searchParams = useSearchParams();
-	const tabParam = searchParams.get('tab') as AccountTab | null;
-	const [activeTab, setActiveTab] = React.useState<AccountTab>(tabParam && ['profile', 'orders', 'address'].includes(tabParam) ? tabParam : 'profile');
-	const [savedContact, setSavedContact] = React.useState<SavedContact | null>(null);
+	const activeTabFromQuery = normalizeAccountTab(searchParams.get('tab'));
+
+	const [activeTab, setActiveTab] = React.useState<AccountTab>(activeTabFromQuery);
+	const [savedProfile, setSavedProfile] = React.useState<ProfileForm>(EMPTY_PROFILE);
+	const [profileForm, setProfileForm] = React.useState<ProfileForm>(EMPTY_PROFILE);
+	const [orders, setOrders] = React.useState<OrderSummary[]>([]);
 	const [isEditingProfile, setIsEditingProfile] = React.useState(false);
-	const [profileForm, setProfileForm] = React.useState<SavedContact>({
-		fullName: '',
-		phone: '',
-	});
+	const [isEditingShipping, setIsEditingShipping] = React.useState(false);
 	const [isLoadingProfile, setIsLoadingProfile] = React.useState(true);
-	const [addressForm, setAddressForm] = React.useState({
-		postalCode: '',
-		prefecture: '',
-		city: '',
-		address: '',
-		building: '',
-	});
+	const [isLoadingOrders, setIsLoadingOrders] = React.useState(false);
+	const [isSavingProfile, setIsSavingProfile] = React.useState(false);
+	const [profileMessage, setProfileMessage] = React.useState<string | null>(null);
+	const [profileError, setProfileError] = React.useState<string | null>(null);
+	const [ordersError, setOrdersError] = React.useState<string | null>(null);
 	const [logoutError, setLogoutError] = React.useState<string | null>(null);
 	const [isLoggingOut, setIsLoggingOut] = React.useState(false);
+	const latestPostalLookupRef = React.useRef('');
+	const rawTabFromQuery = searchParams.get('tab');
 
-	React.useEffect(() => {
-		if (tabParam && ['profile', 'orders', 'address'].includes(tabParam)) {
-			setActiveTab(tabParam);
+	const syncTabToUrl = React.useCallback(
+		(nextTab: AccountTab) => {
+			const nextParams = new URLSearchParams(searchParams.toString());
+			nextParams.set('tab', nextTab);
+			router.replace(`${pathname}?${nextParams.toString()}`, { scroll: false });
+		},
+		[pathname, router, searchParams],
+	);
+
+	const fetchProfile = React.useCallback(async () => {
+		setIsLoadingProfile(true);
+		setProfileError(null);
+
+		try {
+			const response = await clientFetch('/api/profile', { cache: 'no-store' });
+			if (!response.ok) {
+				throw new Error('プロフィールの取得に失敗しました');
+			}
+
+			const data = (await response.json()) as Partial<ProfileForm> & { address?: Partial<ProfileAddress> };
+			const normalizedProfile: ProfileForm = {
+				email: typeof data.email === 'string' ? data.email : '',
+				fullName: typeof data.fullName === 'string' ? data.fullName : '',
+				kanaName: typeof data.kanaName === 'string' ? data.kanaName : '',
+				phone: formatPhoneNumberInput(typeof data.phone === 'string' ? data.phone : ''),
+				address: {
+					postalCode: formatPostalCodeInput(typeof data.address?.postalCode === 'string' ? data.address.postalCode : ''),
+					prefecture: typeof data.address?.prefecture === 'string' ? data.address.prefecture : '',
+					city: typeof data.address?.city === 'string' ? data.address.city : '',
+					address: typeof data.address?.address === 'string' ? data.address.address : '',
+					building: typeof data.address?.building === 'string' ? data.address.building : '',
+				},
+			};
+
+			setSavedProfile(normalizedProfile);
+			setProfileForm(normalizedProfile);
+		} catch (error) {
+			console.error('Failed to fetch profile:', error);
+			setProfileError('プロフィールを読み込めませんでした');
+		} finally {
+			setIsLoadingProfile(false);
 		}
-	}, [tabParam]);
+	}, []);
+
+	const fetchOrders = React.useCallback(async () => {
+		setIsLoadingOrders(true);
+		setOrdersError(null);
+
+		try {
+			const response = await clientFetch('/api/orders', { cache: 'no-store' });
+			if (!response.ok) {
+				throw new Error('注文履歴の取得に失敗しました');
+			}
+
+			const data = (await response.json()) as { data?: OrderSummary[] };
+			setOrders(Array.isArray(data.data) ? data.data : []);
+		} catch (error) {
+			console.error('Failed to fetch orders:', error);
+			setOrdersError('注文履歴を読み込めませんでした');
+		} finally {
+			setIsLoadingOrders(false);
+		}
+	}, []);
 
 	React.useEffect(() => {
-		if (!isLoggedIn || !isAuthResolved) {
+		setActiveTab(activeTabFromQuery);
+
+		if (rawTabFromQuery && rawTabFromQuery !== activeTabFromQuery) {
+			syncTabToUrl(activeTabFromQuery);
+		}
+	}, [activeTabFromQuery, rawTabFromQuery, syncTabToUrl]);
+
+	React.useEffect(() => {
+		if (!isAuthResolved || !isLoggedIn) {
 			setIsLoadingProfile(false);
 			return;
 		}
 
-		const fetchProfile = async () => {
-			try {
-				const res = await fetch('/api/profile');
-				if (!res.ok) {
-					setIsLoadingProfile(false);
-					return;
-				}
-				const data = await res.json();
-				const normalized: SavedContact = {
-					fullName: typeof data.fullName === 'string' ? data.fullName : '',
-					phone: typeof data.phone === 'string' ? data.phone : '',
-				};
+		void fetchProfile();
+	}, [fetchProfile, isAuthResolved, isLoggedIn]);
 
-				if (normalized.fullName || normalized.phone) {
-					setSavedContact(normalized);
-					setProfileForm(normalized);
-				}
-			} catch (err) {
-				console.error('Failed to fetch profile:', err);
-			} finally {
-				setIsLoadingProfile(false);
-			}
-		};
+	React.useEffect(() => {
+		if (!isAuthResolved || !isLoggedIn || activeTab !== 'orders') {
+			return;
+		}
 
-		fetchProfile();
-	}, [isLoggedIn, isAuthResolved]);
+		void fetchOrders();
+	}, [activeTab, fetchOrders, isAuthResolved, isLoggedIn]);
 
-	const handleProfileFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-		const { name, value } = e.target;
-		setProfileForm((prev) => ({ ...prev, [name]: value }));
+	const handleTabChange = (tab: string) => {
+		const nextTab = normalizeAccountTab(tab);
+		setActiveTab(nextTab);
+		syncTabToUrl(nextTab);
+		setProfileMessage(null);
+		setProfileError(null);
+		setIsEditingProfile(false);
+		setIsEditingShipping(false);
 	};
 
-	const handleProfileSave = async (e: React.FormEvent) => {
-		e.preventDefault();
-		const normalized: SavedContact = {
-			fullName: profileForm.fullName.trim(),
-			phone: profileForm.phone.trim(),
+	const handleProfileFieldChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+		const { name, value } = event.target;
+		const nextValue = name === 'phone' ? formatPhoneNumberInput(value) : value;
+		setProfileForm((prev) => ({
+			...prev,
+			[name]: nextValue,
+		}));
+	};
+
+	const handleAddressFieldChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+		const { name, value } = event.target;
+		const nextValue = name === 'postalCode' ? formatPostalCodeInput(value) : value;
+		const nextAddress = {
+			...profileForm.address,
+			[name]: nextValue,
 		};
 
-		if (!normalized.fullName && !normalized.phone) {
-			await handleProfileDelete();
+		setProfileForm((prev) => ({
+			...prev,
+			address: nextAddress,
+		}));
+
+		if (name !== 'postalCode') {
+			return;
+		}
+
+		const cleanedPostalCode = normalizePostalCode(value);
+		latestPostalLookupRef.current = cleanedPostalCode;
+
+		if (cleanedPostalCode.length !== 7) {
 			return;
 		}
 
 		try {
-			const res = await fetch('/api/profile', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(normalized),
-			});
+			const response = await fetch(`/api/checkout/postal-code?postalCode=${cleanedPostalCode}`);
+			const data = (await response.json()) as { address?: Partial<ProfileAddress> };
 
-			if (!res.ok) {
-				console.error('Failed to save profile');
+			if (!response.ok || latestPostalLookupRef.current !== cleanedPostalCode || !data.address) {
 				return;
 			}
 
-			setSavedContact(normalized);
-			setProfileForm(normalized);
+			setProfileForm((prev) => ({
+				...prev,
+				address: {
+					...prev.address,
+					postalCode: formatPostalCodeInput(cleanedPostalCode),
+					prefecture: data.address?.prefecture || prev.address.prefecture,
+					city: data.address?.city || prev.address.city,
+					address: data.address?.address || prev.address.address,
+					building: prev.address.building,
+				},
+			}));
+		} catch (error) {
+			console.error('Postal code lookup error:', error);
+		}
+	};
+
+	const persistProfile = async (nextProfile: ProfileForm = profileForm) => {
+		const payload = {
+			fullName: nextProfile.fullName.trim(),
+			kanaName: nextProfile.kanaName.trim(),
+			phone: formatPhoneNumberInput(nextProfile.phone.trim()),
+			address: {
+				postalCode: normalizePostalCode(nextProfile.address.postalCode),
+				prefecture: nextProfile.address.prefecture.trim(),
+				city: nextProfile.address.city.trim(),
+				address: nextProfile.address.address.trim(),
+				building: nextProfile.address.building.trim(),
+			},
+		};
+
+		const response = await clientFetch('/api/profile', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(payload),
+		});
+
+		if (!response.ok) {
+			throw new Error('プロフィールの保存に失敗しました');
+		}
+
+		const data = (await response.json()) as ProfileForm;
+		const normalizedProfile: ProfileForm = {
+			email: typeof data.email === 'string' ? data.email : nextProfile.email,
+			fullName: typeof data.fullName === 'string' ? data.fullName : '',
+			kanaName: typeof data.kanaName === 'string' ? data.kanaName : '',
+			phone: formatPhoneNumberInput(typeof data.phone === 'string' ? data.phone : ''),
+			address: {
+				postalCode: formatPostalCodeInput(typeof data.address?.postalCode === 'string' ? data.address.postalCode : ''),
+				prefecture: typeof data.address?.prefecture === 'string' ? data.address.prefecture : '',
+				city: typeof data.address?.city === 'string' ? data.address.city : '',
+				address: typeof data.address?.address === 'string' ? data.address.address : '',
+				building: typeof data.address?.building === 'string' ? data.address.building : '',
+			},
+		};
+
+		setSavedProfile(normalizedProfile);
+		setProfileForm(normalizedProfile);
+	};
+
+	const handleShippingSave = async (event: React.FormEvent) => {
+		event.preventDefault();
+		setIsSavingProfile(true);
+		setProfileMessage(null);
+		setProfileError(null);
+
+		try {
+			await persistProfile(profileForm);
+			setIsEditingShipping(false);
+			setProfileMessage('配送情報を保存しました');
+		} catch (error) {
+			console.error('Shipping save error:', error);
+			setProfileError('配送情報を保存できませんでした');
+		} finally {
+			setIsSavingProfile(false);
+		}
+	};
+
+	const handleProfileSave = async (event: React.FormEvent) => {
+		event.preventDefault();
+		setIsSavingProfile(true);
+		setProfileMessage(null);
+		setProfileError(null);
+
+		try {
+			await persistProfile(profileForm);
 			setIsEditingProfile(false);
-		} catch (err) {
-			console.error('Profile save error:', err);
+			setProfileMessage('プロフィールを保存しました');
+		} catch (error) {
+			console.error('Profile save error:', error);
+			setProfileError('プロフィールを保存できませんでした');
+		} finally {
+			setIsSavingProfile(false);
 		}
 	};
 
 	const handleProfileDelete = async () => {
+		setProfileMessage(null);
+		setProfileError(null);
+
 		try {
-			const res = await fetch('/api/profile', { method: 'DELETE' });
-			if (!res.ok) {
-				console.error('Failed to delete profile');
-				return;
-			}
-			setSavedContact(null);
-			setProfileForm({ fullName: '', phone: '' });
+			setProfileForm((prev) => ({
+				...prev,
+				fullName: '',
+				kanaName: '',
+				phone: '',
+			}));
+
+			const nextProfile = {
+				...profileForm,
+				fullName: '',
+				kanaName: '',
+				phone: '',
+			};
+			setProfileForm(nextProfile);
+			await persistProfile(nextProfile);
 			setIsEditingProfile(false);
-		} catch (err) {
-			console.error('Profile delete error:', err);
+			setProfileMessage('プロフィールを削除しました');
+		} catch (error) {
+			console.error('Profile delete error:', error);
+			setProfileError('プロフィールを削除できませんでした');
 		}
 	};
 
-	const handleAddressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-		const { name, value } = e.target;
-		setAddressForm(prev => ({ ...prev, [name]: value }));
+	const handleShippingDelete = async () => {
+		setProfileMessage(null);
+		setProfileError(null);
 
-		// 郵便番号自動補完
-		if (name === 'postalCode') {
-			const cleanedZip = value.replace(/[^0-9]/g, '');
-			if (cleanedZip.length === 7) {
-				fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${cleanedZip}`)
-					.then(res => res.json())
-					.then(data => {
-						if (data.status === 200 && data.results) {
-							const result = data.results[0];
-							setAddressForm(prev => ({
-								...prev,
-								prefecture: result.address1 || prev.prefecture,
-								city: result.address2 || prev.city,
-								address: result.address3 || prev.address,
-							}));
-						}
-					})
-					.catch(err => console.error('郵便番号検索エラー:', err));
-			}
+		try {
+			const nextProfile = {
+				...profileForm,
+				address: {
+					...EMPTY_ADDRESS,
+				},
+			};
+			setProfileForm(nextProfile);
+			await persistProfile(nextProfile);
+			setIsEditingShipping(false);
+			setProfileMessage('配送情報を削除しました');
+		} catch (error) {
+			console.error('Shipping delete error:', error);
+			setProfileError('配送情報を削除できませんでした');
 		}
 	};
 
@@ -166,6 +400,14 @@ export default function Page() {
 		setIsLoggingOut(false);
 	};
 
+	const hasSavedProfile =
+		savedProfile.email.trim().length > 0 ||
+		savedProfile.fullName.trim().length > 0 ||
+		savedProfile.kanaName.trim().length > 0 ||
+		savedProfile.phone.trim().length > 0;
+
+	const hasSavedShipping = hasAddressValue(savedProfile.address);
+
 	if (!isAuthResolved) {
 		return (
 			<div className="pb-10 sm:pb-14 px-6 lg:px-12">
@@ -176,359 +418,18 @@ export default function Page() {
 		);
 	}
 
-	if (isLoggedIn) {
+	if (!isLoggedIn) {
 		return (
 			<div className="pb-10 sm:pb-14 px-6 lg:px-12">
-				<div className="max-w-7xl mx-auto">
-					<div className="grid grid-cols-1 lg:grid-cols-4 gap-12">
-						<div className="lg:col-span-1">
-							<TabSegmentControl
-								items={[
-									{ key: 'profile', label: 'プロフィール' },
-									{ key: 'orders', label: '購入履歴' },
-									{ key: 'address', label: '配送先住所' },
-								]}
-								activeKey={activeTab}
-								onChange={(tab) => setActiveTab(tab as AccountTab)}
-								orientation="vertical"
-								size="md"
-								className='space-y-2'
-							/>
-							<div className="mt-6 pt-6 border-t border-black/10">
-								<Button
-									type="button"
-									variant="secondary"
-									size="md"
-									className="w-full font-acumin"
-									onClick={handleLogout}
-									disabled={isLoggingOut}
-								>
-									{isLoggingOut ? 'ログアウト中...' : 'ログアウト'}
-								</Button>
-								{logoutError ? (
-									<p className="mt-3 text-xs text-red-600 font-acumin">{logoutError}</p>
-								) : null}
-							</div>
-						</div>
-						<div className="lg:col-span-3">
-							{activeTab === 'profile' && (
-								<div>
-									<div className="space-y-6">
-										<div>
-											<label
-												className="block text-xs text-[#474747] mb-2 tracking-wider"
-												style={{ fontFamily: 'acumin-pro, sans-serif' }}
-											>
-												メールアドレス
-											</label>
-											<TextField
-												className="w-full px-4 py-3 border border-black/20 text-sm bg-[#f5f5f5] text-[#474747]"
-												type="email"
-												value="demo@gmail.com"
-												readOnly
-												style={{ fontFamily: 'acumin-pro, sans-serif' }}
-												size="md"
-											/>
-										</div>
-
-										{isLoadingProfile && (
-											<p className="text-xs text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>読み込み中...</p>
-										)}
-
-										{savedContact && !isEditingProfile && (
-											<div className="border border-black/10 p-6 space-y-4">
-												<div>
-													<p className="text-xs text-[#474747] mb-1 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>氏名</p>
-													<p className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>{savedContact.fullName}</p>
-												</div>
-												<div>
-													<p className="text-xs text-[#474747] mb-1 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>電話番号</p>
-													<p className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>{savedContact.phone || '-'}</p>
-												</div>
-												<div className="flex gap-3">
-													<Button
-														type="button"
-														size="sm"
-														className="px-8 font-acumin"
-														onClick={() => setIsEditingProfile(true)}
-													>
-														変更する
-													</Button>
-													<Button
-														type="button"
-														variant="secondary"
-														size="sm"
-														className="px-8 font-acumin"
-														onClick={handleProfileDelete}
-													>
-														削除する
-													</Button>
-												</div>
-											</div>
-										)}
-
-										{(!savedContact || isEditingProfile) && !isLoadingProfile && (
-											<form className="space-y-6" onSubmit={handleProfileSave}>
-												<div>
-													<label className="block text-xs text-[#474747] mb-2 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>氏名</label>
-													<TextField className="font-acumin" type="text" name="fullName" autoComplete="name" value={profileForm.fullName} onChange={handleProfileFormChange} style={{ fontFamily: 'acumin-pro, sans-serif' }}  size="md"/>
-												</div>
-												<div>
-													<label className="block text-xs text-[#474747] mb-2 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>電話番号</label>
-													<TextField className="font-acumin" type="tel" name="phone" autoComplete="tel" value={profileForm.phone} onChange={handleProfileFormChange} style={{ fontFamily: 'acumin-pro, sans-serif' }}  size="md"/>
-												</div>
-												<div className="flex gap-3">
-													<Button
-														type="submit"
-														size="lg"
-														className="font-acumin"
-													>
-														{savedContact ? '変更を保存' : '保存する'}
-													</Button>
-													{savedContact && (
-														<Button
-															type="button"
-															variant="secondary"
-															size="lg"
-															className="font-acumin"
-															onClick={() => {
-																setProfileForm(savedContact);
-																setIsEditingProfile(false);
-															}}
-														>
-															キャンセル
-														</Button>
-													)}
-												</div>
-											</form>
-										)}
-									</div>
-								</div>
-							)}
-
-							{activeTab === 'orders' && (
-								<div>
-									<div className="space-y-8">
-										<div className="border border-black/10 p-8">
-											<div className="flex justify-between items-start mb-6 pb-6 border-b border-black/10">
-												<div>
-													<p className="text-sm text-[#474747] mb-1" style={{ fontFamily: 'acumin-pro, sans-serif' }}>注文番号</p>
-													<p className="text-lg text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>ORD-ABC123</p>
-												</div>
-												<div className="text-right">
-													<p className="text-sm text-[#474747] mb-1" style={{ fontFamily: 'acumin-pro, sans-serif' }}>注文日</p>
-													<p className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>2024年1月15日</p>
-												</div>
-											</div>
-											<div className="space-y-4 mb-6">
-												<div className="flex gap-4">
-													<div className="w-20 h-24 bg-[#f5f5f5] flex-shrink-0 overflow-hidden">
-														<Image alt="シルクブラウス" className="w-full h-full object-cover object-top" src="https://readdy.ai/api/search-image?query=elegant%20black%20silk%20blouse%20on%20white%20background%20minimalist%20fashion%20photography%20high%20quality%20luxury%20fabric%20texture%20soft%20lighting%20professional%20product%20shot%20clean%20simple%20backdrop&width=200&height=250&seq=order1&orientation=portrait" width={200} height={250} />
-													</div>
-													<div className="flex-1">
-														<p className="text-sm text-black mb-1" style={{ fontFamily: 'acumin-pro, sans-serif' }}>シルクブラウス</p>
-														<p className="text-xs text-[#474747] mb-2" style={{ fontFamily: 'acumin-pro, sans-serif' }}>数量: 1</p>
-														<p className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>¥28,000</p>
-													</div>
-												</div>
-												<div className="flex gap-4">
-													<div className="w-20 h-24 bg-[#f5f5f5] flex-shrink-0 overflow-hidden">
-														<Image alt="ウールコート" className="w-full h-full object-cover object-top" src="https://readdy.ai/api/search-image?query=navy%20blue%20wool%20coat%20on%20white%20background%20classic%20elegant%20outerwear%20fashion%20photography%20luxury%20winter%20clothing%20professional%20product%20image%20clean%20minimal%20setting&width=200&height=250&seq=order2&orientation=portrait" width={200} height={250} />
-													</div>
-													<div className="flex-1">
-														<p className="text-sm text-black mb-1" style={{ fontFamily: 'acumin-pro, sans-serif' }}>ウールコート</p>
-														<p className="text-xs text-[#474747] mb-2" style={{ fontFamily: 'acumin-pro, sans-serif' }}>数量: 2</p>
-														<p className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>¥68,000</p>
-													</div>
-												</div>
-												<div className="flex gap-4">
-													<div className="w-20 h-24 bg-[#f5f5f5] flex-shrink-0 overflow-hidden">
-														<Image alt="レザーバッグ" className="w-full h-full object-cover object-top" src="https://readdy.ai/api/search-image?query=gold%20leather%20handbag%20on%20white%20background%20luxury%20fashion%20accessory%20elegant%20design%20professional%20product%20photography%20high%20quality%20craftsmanship%20clean%20minimal%20backdrop&width=200&height=250&seq=order3&orientation=portrait" width={200} height={250} />
-													</div>
-													<div className="flex-1">
-														<p className="text-sm text-black mb-1" style={{ fontFamily: 'acumin-pro, sans-serif' }}>レザーバッグ</p>
-														<p className="text-xs text-[#474747] mb-2" style={{ fontFamily: 'acumin-pro, sans-serif' }}>数量: 1</p>
-														<p className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>¥45,000</p>
-													</div>
-												</div>
-											</div>
-											<div className="flex justify-between items-center pt-6 border-t border-black/10">
-												<div>
-													<span className="inline-block px-4 py-2 text-xs tracking-wider bg-[#fef3c7] text-[#d97706]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>配送中</span>
-												</div>
-												<div className="text-right">
-													<p className="text-sm text-[#474747] mb-1" style={{ fontFamily: 'acumin-pro, sans-serif' }}>合計</p>
-													<p className="text-xl text-black" style={{ fontFamily: 'Didot, serif' }}>¥141,000</p>
-												</div>
-											</div>
-										</div>
-
-										<div className="border border-black/10 p-8">
-											<div className="flex justify-between items-start mb-6 pb-6 border-b border-black/10">
-												<div>
-													<p className="text-sm text-[#474747] mb-1" style={{ fontFamily: 'acumin-pro, sans-serif' }}>注文番号</p>
-													<p className="text-lg text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>ORD-DEF456</p>
-												</div>
-												<div className="text-right">
-													<p className="text-sm text-[#474747] mb-1" style={{ fontFamily: 'acumin-pro, sans-serif' }}>注文日</p>
-													<p className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>2023年12月28日</p>
-												</div>
-											</div>
-											<div className="space-y-4 mb-6">
-												<div className="flex gap-4">
-													<div className="w-20 h-24 bg-[#f5f5f5] flex-shrink-0 overflow-hidden">
-														<Image alt="カシミアセーター" className="w-full h-full object-cover object-top" src="https://readdy.ai/api/search-image?query=beige%20cashmere%20sweater%20on%20white%20background%20luxury%20knitwear%20soft%20texture%20elegant%20fashion%20photography%20professional%20product%20shot%20clean%20minimal%20setting%20high%20quality&width=200&height=250&seq=order4&orientation=portrait" width={200} height={250} />
-													</div>
-													<div className="flex-1">
-														<p className="text-sm text-black mb-1" style={{ fontFamily: 'acumin-pro, sans-serif' }}>カシミアセーター</p>
-														<p className="text-xs text-[#474747] mb-2" style={{ fontFamily: 'acumin-pro, sans-serif' }}>数量: 1</p>
-														<p className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>¥38,000</p>
-													</div>
-												</div>
-												<div className="flex gap-4">
-													<div className="w-20 h-24 bg-[#f5f5f5] flex-shrink-0 overflow-hidden">
-														<Image alt="ウールパンツ" className="w-full h-full object-cover object-top" src="https://readdy.ai/api/search-image?query=grey%20wool%20trousers%20on%20white%20background%20tailored%20pants%20elegant%20fashion%20photography%20luxury%20clothing%20professional%20product%20shot%20clean%20simple%20backdrop&width=200&height=250&seq=order5&orientation=portrait" width={200} height={250} />
-													</div>
-													<div className="flex-1">
-														<p className="text-sm text-black mb-1" style={{ fontFamily: 'acumin-pro, sans-serif' }}>ウールパンツ</p>
-														<p className="text-xs text-[#474747] mb-2" style={{ fontFamily: 'acumin-pro, sans-serif' }}>数量: 1</p>
-														<p className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>¥32,000</p>
-													</div>
-												</div>
-												<div className="flex gap-4">
-													<div className="w-20 h-24 bg-[#f5f5f5] flex-shrink-0 overflow-hidden">
-														<Image alt="シルクスカーフ" className="w-full h-full object-cover object-top" src="https://readdy.ai/api/search-image?query=pink%20silk%20scarf%20on%20white%20background%20luxury%20fashion%20accessory%20elegant%20pattern%20professional%20product%20photography%20high%20quality%20craftsmanship%20clean%20minimal%20setting&width=200&height=250&seq=order6&orientation=portrait" width={200} height={250} />
-													</div>
-													<div className="flex-1">
-														<p className="text-sm text-black mb-1" style={{ fontFamily: 'acumin-pro, sans-serif' }}>シルクスカーフ</p>
-														<p className="text-xs text-[#474747] mb-2" style={{ fontFamily: 'acumin-pro, sans-serif' }}>数量: 1</p>
-														<p className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>¥18,000</p>
-													</div>
-												</div>
-											</div>
-											<div className="flex justify-between items-center pt-6 border-t border-black/10">
-												<div>
-													<span className="inline-block px-4 py-2 text-xs tracking-wider bg-[#f0fdf4] text-[#16a34a]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>配送完了</span>
-												</div>
-												<div className="text-right">
-													<p className="text-sm text-[#474747] mb-1" style={{ fontFamily: 'acumin-pro, sans-serif' }}>合計</p>
-													<p className="text-xl text-black" style={{ fontFamily: 'Didot, serif' }}>¥98,000</p>
-												</div>
-											</div>
-										</div>
-
-										<div className="border border-black/10 p-8">
-											<div className="flex justify-between items-start mb-6 pb-6 border-b border-black/10">
-												<div>
-													<p className="text-sm text-[#474747] mb-1" style={{ fontFamily: 'acumin-pro, sans-serif' }}>注文番号</p>
-													<p className="text-lg text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>ORD-GHI789</p>
-												</div>
-												<div className="text-right">
-													<p className="text-sm text-[#474747] mb-1" style={{ fontFamily: 'acumin-pro, sans-serif' }}>注文日</p>
-													<p className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>2023年12月10日</p>
-												</div>
-											</div>
-											<div className="space-y-4 mb-6">
-												<div className="flex gap-4">
-													<div className="w-20 h-24 bg-[#f5f5f5] flex-shrink-0 overflow-hidden">
-														<Image alt="レザージャケット" className="w-full h-full object-cover object-top" src="https://readdy.ai/api/search-image?query=black%20leather%20jacket%20on%20white%20background%20luxury%20outerwear%20classic%20biker%20style%20elegant%20fashion%20photography%20professional%20product%20image%20clean%20minimal%20backdrop&width=200&height=250&seq=order7&orientation=portrait" width={200} height={250} />
-													</div>
-													<div className="flex-1">
-														<p className="text-sm text-black mb-1" style={{ fontFamily: 'acumin-pro, sans-serif' }}>レザージャケット</p>
-														<p className="text-xs text-[#474747] mb-2" style={{ fontFamily: 'acumin-pro, sans-serif' }}>数量: 1</p>
-														<p className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>¥98,000</p>
-													</div>
-												</div>
-											</div>
-											<div className="flex justify-between items-center pt-6 border-t border-black/10">
-												<div>
-													<span className="inline-block px-4 py-2 text-xs tracking-wider bg-[#f0fdf4] text-[#16a34a]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>配送完了</span>
-												</div>
-												<div className="text-right">
-													<p className="text-sm text-[#474747] mb-1" style={{ fontFamily: 'acumin-pro, sans-serif' }}>合計</p>
-													<p className="text-xl text-black" style={{ fontFamily: 'Didot, serif' }}>¥98,000</p>
-												</div>
-											</div>
-										</div>
-									</div>
-								</div>
-							)}
-
-							{activeTab === 'address' && (
-								<div>
-									<form className="space-y-6">
-										<div>
-											<label className="block text-xs text-[#474747] mb-2 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>郵便番号</label>
-											<TextField 
-												className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors" 
-												type="text" 
-												name="postalCode"
-												placeholder="123-4567"
-												autoComplete="postal-code"
-												value={addressForm.postalCode}
-												onChange={handleAddressChange}
-												style={{ fontFamily: 'acumin-pro, sans-serif' }} 
-											 size="md"/>
-										</div>
-										<div>
-											<label className="block text-xs text-[#474747] mb-2 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>都道府県</label>
-											<TextField 
-												className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors" 
-												type="text" 
-												name="prefecture"
-												autoComplete="address-level1"
-												value={addressForm.prefecture}
-												onChange={handleAddressChange}
-												style={{ fontFamily: 'acumin-pro, sans-serif' }} 
-											 size="md"/>
-										</div>
-										<div>
-											<label className="block text-xs text-[#474747] mb-2 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>市区町村</label>
-											<TextField 
-												className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors" 
-												type="text" 
-												name="city"
-												autoComplete="address-level2"
-												value={addressForm.city}
-												onChange={handleAddressChange}
-												style={{ fontFamily: 'acumin-pro, sans-serif' }} 
-											 size="md"/>
-										</div>
-										<div>
-											<label className="block text-xs text-[#474747] mb-2 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>番地</label>
-											<TextField 
-												className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors" 
-												type="text" 
-												name="address"
-												autoComplete="street-address"
-												value={addressForm.address}
-												onChange={handleAddressChange}
-												style={{ fontFamily: 'acumin-pro, sans-serif' }} 
-											 size="md"/>
-										</div>
-										<div>
-											<label className="block text-xs text-[#474747] mb-2 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>建物名・部屋番号</label>
-											<TextField 
-												className="w-full px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors" 
-												type="text" 
-												name="building"
-												value={addressForm.building}
-												onChange={handleAddressChange}
-												style={{ fontFamily: 'acumin-pro, sans-serif' }} 
-											 size="md"/>
-										</div>
-										<Button
-											type="submit"
-											size="lg"
-											className="font-acumin"
-										>
-											更新する
-										</Button>
-									</form>
-								</div>
-							)}
-						</div>
+				<div className="max-w-3xl mx-auto text-center">
+					<div className="w-20 h-20 flex items-center justify-center mx-auto mb-8">
+						<i className="ri-user-line text-6xl text-[#474747]"></i>
 					</div>
+					<h1 className="text-4xl text-black tracking-tight mb-4 font-display">会員情報</h1>
+					<p className="text-lg text-[#474747] mb-8 font-brand">会員情報を確認するにはログインが必要です</p>
+					<Button href="/login" variant="primary" size="lg" className="font-brand">
+						ログイン
+					</Button>
 				</div>
 			</div>
 		);
@@ -536,19 +437,233 @@ export default function Page() {
 
 	return (
 		<div className="pb-10 sm:pb-14 px-6 lg:px-12">
-			<div className="max-w-3xl mx-auto text-center">
-				<div className="w-20 h-20 flex items-center justify-center mx-auto mb-8">
-					<i className="ri-user-line text-6xl text-[#474747]"></i>
+			<div className="max-w-7xl mx-auto">
+				<div className="grid grid-cols-1 lg:grid-cols-4 gap-12">
+					<div className="lg:col-span-1">
+						<TabSegmentControl
+							items={[
+								{ key: 'profile', label: 'プロフィール' },
+								{ key: 'shipping', label: '配送情報' },
+								{ key: 'orders', label: '購入履歴' },
+							]}
+							activeKey={activeTab}
+							onChange={handleTabChange}
+							orientation="vertical"
+							size="md"
+							className="space-y-2"
+						/>
+						<div className="mt-6 pt-6 border-t border-black/10">
+							<Button
+								type="button"
+								variant="secondary"
+								size="md"
+								className="w-full font-acumin"
+								onClick={handleLogout}
+								disabled={isLoggingOut}
+							>
+								{isLoggingOut ? 'ログアウト中...' : 'ログアウト'}
+							</Button>
+							{logoutError ? <p className="mt-3 text-xs text-red-600 font-acumin">{logoutError}</p> : null}
+						</div>
+					</div>
+
+					<div className="lg:col-span-3 min-w-0">
+						{activeTab === 'profile' ? (
+							<div className="space-y-6">
+								{isLoadingProfile ? <p className="text-sm text-[#474747] font-brand">読み込み中...</p> : null}
+								{profileMessage ? <p className="text-sm text-green-700 font-brand">{profileMessage}</p> : null}
+								{profileError ? <p className="text-sm text-red-600 font-brand">{profileError}</p> : null}
+
+								{!isLoadingProfile && hasSavedProfile && !isEditingProfile ? (
+									<div className="border border-black/10 p-6 space-y-4">
+										<div>
+											<p className="text-xs text-[#474747] mb-1 tracking-wider font-brand">メールアドレス</p>
+											<p className="text-sm text-black font-brand break-all">{savedProfile.email || '-'}</p>
+										</div>
+										<div>
+											<p className="text-xs text-[#474747] mb-1 tracking-wider font-brand">氏名</p>
+											<p className="text-sm text-black font-brand">{savedProfile.fullName || '-'}</p>
+										</div>
+										<div>
+											<p className="text-xs text-[#474747] mb-1 tracking-wider font-brand">フリガナ</p>
+											<p className="text-sm text-black font-brand">{savedProfile.kanaName || '-'}</p>
+										</div>
+										<div>
+											<p className="text-xs text-[#474747] mb-1 tracking-wider font-brand">電話番号</p>
+											<p className="text-sm text-black font-brand">{savedProfile.phone || '-'}</p>
+										</div>
+										<div className="flex flex-wrap gap-3">
+											<Button type="button" size="sm" className="px-8 font-acumin" onClick={() => setIsEditingProfile(true)}>
+												変更する
+											</Button>
+											<Button type="button" variant="secondary" size="sm" className="px-8 font-acumin" onClick={handleProfileDelete}>
+												削除する
+											</Button>
+										</div>
+									</div>
+								) : null}
+
+								{!isLoadingProfile && (!hasSavedProfile || isEditingProfile) ? (
+									<form className="space-y-6 border border-black/10 p-6" onSubmit={handleProfileSave}>
+										<TextField label="メールアドレス" className="bg-[#f5f5f5]" type="email" name="email" value={profileForm.email} readOnly size="md" />
+										<TextField label="氏名" type="text" name="fullName" autoComplete="name" value={profileForm.fullName} onChange={handleProfileFieldChange} size="md" />
+										<TextField label="フリガナ" type="text" name="kanaName" value={profileForm.kanaName} onChange={handleProfileFieldChange} size="md" />
+										<TextField label="電話番号" type="tel" name="phone" autoComplete="tel" inputMode="numeric" value={profileForm.phone} onChange={handleProfileFieldChange} size="md" />
+										<div className="flex flex-wrap gap-3">
+											<Button type="submit" size="lg" className="font-acumin" disabled={isSavingProfile}>
+												{isSavingProfile ? '保存中...' : hasSavedProfile ? '変更を保存' : '保存する'}
+											</Button>
+											{hasSavedProfile ? (
+												<Button
+													type="button"
+													variant="secondary"
+													size="lg"
+													className="font-acumin"
+													onClick={() => {
+														setProfileForm(savedProfile);
+														setIsEditingProfile(false);
+														setProfileError(null);
+													}}
+												>
+													キャンセル
+												</Button>
+											) : null}
+										</div>
+									</form>
+								) : null}
+							</div>
+						) : null}
+
+						{activeTab === 'shipping' ? (
+							<div className="space-y-6">
+								{isLoadingProfile ? <p className="text-sm text-[#474747] font-brand">読み込み中...</p> : null}
+								{profileMessage ? <p className="text-sm text-green-700 font-brand">{profileMessage}</p> : null}
+								{profileError ? <p className="text-sm text-red-600 font-brand">{profileError}</p> : null}
+
+								{!isLoadingProfile && hasSavedShipping && !isEditingShipping ? (
+									<div className="border border-black/10 p-6 space-y-4">
+										<div>
+											<p className="text-xs text-[#474747] mb-1 tracking-wider font-brand">郵便番号</p>
+											<p className="text-sm text-black font-brand">{savedProfile.address.postalCode || '-'}</p>
+										</div>
+										<div>
+											<p className="text-xs text-[#474747] mb-1 tracking-wider font-brand">都道府県</p>
+											<p className="text-sm text-black font-brand">{savedProfile.address.prefecture || '-'}</p>
+										</div>
+										<div>
+											<p className="text-xs text-[#474747] mb-1 tracking-wider font-brand">市区町村</p>
+											<p className="text-sm text-black font-brand">{savedProfile.address.city || '-'}</p>
+										</div>
+										<div>
+											<p className="text-xs text-[#474747] mb-1 tracking-wider font-brand">番地</p>
+											<p className="text-sm text-black font-brand">{savedProfile.address.address || '-'}</p>
+										</div>
+										<div>
+											<p className="text-xs text-[#474747] mb-1 tracking-wider font-brand">建物名・部屋番号</p>
+											<p className="text-sm text-black font-brand">{savedProfile.address.building || '-'}</p>
+										</div>
+										<div className="flex flex-wrap gap-3">
+											<Button type="button" size="sm" className="px-8 font-acumin" onClick={() => setIsEditingShipping(true)}>
+												変更する
+											</Button>
+											<Button type="button" variant="secondary" size="sm" className="px-8 font-acumin" onClick={handleShippingDelete}>
+												削除する
+											</Button>
+										</div>
+									</div>
+								) : null}
+
+								{!isLoadingProfile && (!hasSavedShipping || isEditingShipping) ? (
+									<form className="space-y-6 border border-black/10 p-6" onSubmit={handleShippingSave}>
+										<TextField label="郵便番号" type="text" name="postalCode" autoComplete="postal-code" inputMode="numeric" value={profileForm.address.postalCode} onChange={handleAddressFieldChange} size="md" />
+										<TextField label="都道府県" type="text" name="prefecture" autoComplete="address-level1" value={profileForm.address.prefecture} onChange={handleAddressFieldChange} size="md" />
+										<TextField label="市区町村" type="text" name="city" autoComplete="address-level2" value={profileForm.address.city} onChange={handleAddressFieldChange} size="md" />
+										<TextField label="番地" type="text" name="address" autoComplete="street-address" value={profileForm.address.address} onChange={handleAddressFieldChange} size="md" />
+										<TextField label="建物名・部屋番号" type="text" name="building" value={profileForm.address.building} onChange={handleAddressFieldChange} size="md" />
+										<div className="flex flex-wrap gap-3">
+											<Button type="submit" size="lg" className="font-acumin" disabled={isSavingProfile}>
+												{isSavingProfile ? '保存中...' : hasSavedShipping ? '変更を保存' : '保存する'}
+											</Button>
+											{hasSavedShipping ? (
+												<Button
+													type="button"
+													variant="secondary"
+													size="lg"
+													className="font-acumin"
+													onClick={() => {
+														setProfileForm(savedProfile);
+														setIsEditingShipping(false);
+														setProfileError(null);
+													}}
+												>
+													キャンセル
+												</Button>
+											) : null}
+										</div>
+									</form>
+								) : null}
+							</div>
+						) : null}
+
+						{activeTab === 'orders' ? (
+							<div className="space-y-6">
+								{isLoadingOrders ? <p className="text-sm text-[#474747] font-brand">注文履歴を読み込み中...</p> : null}
+								{ordersError ? <p className="text-sm text-red-600 font-brand">{ordersError}</p> : null}
+								{!isLoadingOrders && !ordersError && orders.length === 0 ? (
+									<div className="border border-black/10 p-8">
+										<p className="text-base text-black font-brand mb-2">注文履歴はまだありません</p>
+										<p className="text-sm text-[#474747] font-brand">ご注文いただいた商品はこの画面に表示されます。</p>
+									</div>
+								) : null}
+
+								{orders.map((order) => (
+									<article key={order.id} className="border border-black/10 p-8 space-y-6">
+										<div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between pb-6 border-b border-black/10">
+											<div>
+												<p className="text-sm text-[#474747] mb-1 font-brand">注文番号</p>
+												<p className="text-lg text-black font-brand">{order.orderNumber}</p>
+											</div>
+											<div className="sm:text-right">
+												<p className="text-sm text-[#474747] mb-1 font-brand">注文日</p>
+												<p className="text-sm text-black font-brand">{order.orderDate}</p>
+											</div>
+										</div>
+
+										<div className="space-y-4">
+											{order.items.map((item) => (
+												<div key={item.id} className="flex flex-col gap-1 border-b border-black/5 pb-4 last:border-b-0 last:pb-0">
+													<p className="text-sm text-black font-brand">{item.name}</p>
+													<p className="text-xs text-[#474747] font-brand">
+														数量: {item.quantity}
+														{item.color ? ` / カラー: ${item.color}` : ''}
+														{item.size ? ` / サイズ: ${item.size}` : ''}
+													</p>
+													<p className="text-sm text-black font-brand">{item.amount}</p>
+												</div>
+											))}
+										</div>
+
+										<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pt-6 border-t border-black/10">
+											<div>
+												<span className="inline-flex items-center px-4 py-2 text-xs tracking-wider bg-[#f5f5f5] text-black font-brand">{order.status}</span>
+												<p className="mt-3 text-xs text-[#474747] font-brand">商品点数: {order.itemCount}点</p>
+											</div>
+											<div className="sm:text-right flex flex-col gap-3 sm:items-end">
+												<div>
+													<p className="text-sm text-[#474747] mb-1 font-brand">合計</p>
+													<p className="text-xl text-black font-display">{order.totalAmount}</p>
+												</div>
+												<Link href={order.detailHref} className="text-sm text-black underline underline-offset-4 font-brand">
+													注文詳細を見る
+												</Link>
+											</div>
+										</div>
+									</article>
+								))}
+							</div>
+						) : null}
+					</div>
 				</div>
-				<h1 className="text-4xl text-black tracking-tight mb-4 font-display">
-					会員情報
-				</h1>
-				<p className="text-lg text-[#474747] mb-8 font-brand">
-					会員情報を確認するにはログインが必要です
-				</p>
-				<Button href="/login" variant="primary" size="lg" className="font-brand">
-					ログイン
-				</Button>
 			</div>
 		</div>
 	);

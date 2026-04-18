@@ -1,5 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { cookies, headers } from 'next/headers';
+import { accessCookieName } from '@/lib/cookie';
+
+type AuthUserResponse = Awaited<ReturnType<SupabaseClient['auth']['getUser']>>;
 
 // Authorization Header から Bearer token を抽出する
 export function extractBearerToken(request?: Request): string | null {
@@ -13,20 +16,101 @@ export function extractBearerToken(request?: Request): string | null {
   return token;
 }
 
+function extractCookieValue(cookieHeader: string | null, cookieName: string): string | null {
+  if (!cookieHeader) {
+    return null;
+  }
+
+  const cookiePairs = cookieHeader.split(';');
+  for (const pair of cookiePairs) {
+    const trimmed = pair.trim();
+    const prefix = `${cookieName}=`;
+
+    if (!trimmed.startsWith(prefix)) {
+      continue;
+    }
+
+    const rawValue = trimmed.slice(prefix.length);
+    try {
+      return decodeURIComponent(rawValue);
+    } catch {
+      return rawValue;
+    }
+  }
+
+  return null;
+}
+
+export function extractAccessTokenFromCookie(request?: Request): string | null {
+  if (!request) {
+    return null;
+  }
+
+  return extractCookieValue(request.headers.get('cookie'), accessCookieName);
+}
+
+export function extractAuthToken(request?: Request): string | null {
+  return extractBearerToken(request) ?? extractAccessTokenFromCookie(request);
+}
+
+export async function resolveRequestUser(
+  supabase: SupabaseClient,
+  request?: Request,
+): Promise<AuthUserResponse> {
+  const bearerToken = extractBearerToken(request);
+  const cookieToken = extractAccessTokenFromCookie(request);
+
+  if (bearerToken) {
+    const bearerResult = await supabase.auth.getUser(bearerToken);
+    if (bearerResult.data.user) {
+      return bearerResult;
+    }
+  }
+
+  if (cookieToken && cookieToken !== bearerToken) {
+    const cookieResult = await supabase.auth.getUser(cookieToken);
+    if (cookieResult.data.user) {
+      return cookieResult;
+    }
+  }
+
+  return supabase.auth.getUser();
+}
+
 // API ルート向け：Request オブジェクトから Cookie または Authorization ヘッダーを読み取りセッション復元
 export async function createClient(request?: Request): Promise<SupabaseClient> {
   const cookieStore = await cookies();
   const headersList = await headers();
 
   const { createServerClient } = await import('@supabase/ssr');
+  const { createClient: createSupabaseClient } = await import('@supabase/supabase-js');
 
-  // Authorization header から Bearer token を取得（優先順位：Authorization > Cookie）
-  const bearerToken = extractBearerToken(request);
+  const authToken = extractAuthToken(request);
   
   // Request がある場合はそこから Cookie を読み取る、なければ next/headers を使う
   const cookieHeader = request ? request.headers.get('cookie') : headersList.get('cookie');
 
   console.log('[Supabase] Cookie header:', cookieHeader?.substring(0, 100));
+
+  if (authToken) {
+    console.log('[Supabase.Session] Using request-scoped Authorization for Supabase client');
+    return createSupabaseClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+          detectSessionInUrl: false,
+        },
+        global: {
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+          },
+        },
+      },
+    );
+  }
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -39,17 +123,6 @@ export async function createClient(request?: Request): Promise<SupabaseClient> {
       },
       cookies: {
         getAll() {
-          // Authorization header に Bearer token がある場合は synthetic session を返す
-          if (bearerToken) {
-            console.log('[Supabase.Session] Using Bearer token from Authorization header');
-            return [
-              {
-                name: 'sb-access-token',
-                value: bearerToken,
-              },
-            ];
-          }
-
           const result: Array<{ name: string; value: string }> = [];
           
           if (cookieHeader) {
@@ -91,12 +164,6 @@ export async function createClient(request?: Request): Promise<SupabaseClient> {
           return result;
         },
         setAll(cookiesToSet) {
-          if (bearerToken) {
-            // Bearer token を使っている場合は setAll を無視（Cookie を設定しない）
-            console.log('[Supabase.Session] Ignoring setAll when using Bearer token');
-            return;
-          }
-
           try {
             for (const { name, value, options } of cookiesToSet) {
               console.log(`[Supabase.Cookie.setAll] Setting ${name}`);

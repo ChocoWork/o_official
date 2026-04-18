@@ -26,6 +26,12 @@ interface LoginContextType {
   logout: () => Promise<{ success: boolean; error?: string }>;
 }
 
+type OtpVerifySuccessBody = {
+  message?: string;
+  access_token?: string;
+  refresh_token?: string;
+};
+
 const LoginContext = createContext<LoginContextType | undefined>(undefined);
 
 export const useLogin = () => {
@@ -109,10 +115,42 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
         return { success: false, error: message };
       }
 
+      const successBody = typeof body === 'object' && body ? (body as OtpVerifySuccessBody) : null;
       const message =
-        typeof body === 'object' && body && 'message' in body && typeof (body as { message?: unknown }).message === 'string'
-          ? (body as { message: string }).message
+        typeof successBody?.message === 'string'
+          ? successBody.message
           : '認証に成功しました。';
+
+      const accessToken = typeof successBody?.access_token === 'string' ? successBody.access_token : null;
+      const refreshToken = typeof successBody?.refresh_token === 'string' ? successBody.refresh_token : null;
+
+      if (typeof window !== 'undefined' && accessToken) {
+        localStorage.setItem(
+          'supabase.auth.token',
+          JSON.stringify({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+            currentSession: {
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            },
+          }),
+        );
+      }
+
+      if (accessToken && refreshToken) {
+        try {
+          const { data } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+          const role = getRoleFromSession(data.session);
+          setUserRole(role);
+          setIsAdmin(role === 'admin');
+        } catch (sessionError) {
+          console.error('OTP setSession error', sessionError);
+        }
+      }
 
       setIsLoggedIn(true);
       setIsAuthResolved(true);
@@ -166,6 +204,9 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
       console.error('Sign out error', e);
       return { success: false, error: 'ログアウトに失敗しました' };
     } finally {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('supabase.auth.token');
+      }
       setIsLoggedIn(false);
       setIsAdmin(false);
       setUserRole('user');

@@ -18,6 +18,8 @@ test.describe('FR-ACCOUNT-007 logout from account page', () => {
         contentType: 'application/json',
         body: JSON.stringify({
           message: '認証に成功しました。',
+          access_token: 'test-access-token',
+          refresh_token: 'test-refresh-token',
           user: { id: 'test-user-id', email: 'user@example.com' },
         }),
       });

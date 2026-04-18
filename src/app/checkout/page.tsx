@@ -9,6 +9,8 @@ import { CheckoutProvider, PaymentElement, useCheckout } from '@stripe/react-str
 import { Button } from '@/components/ui/Button';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { useCart } from '@/contexts/CartContext';
+import { clientFetch } from '@/lib/client-fetch';
+import { formatPhoneNumberInput } from '@/features/account/utils/profile-format.util';
 import {
   formatPostalCodeInput,
   isCompletePostalCode,
@@ -160,6 +162,19 @@ type CheckoutPaymentMethod =
   | 'stripe_paypay'
   | 'stripe_konbini';
 
+type CheckoutProfileResponse = {
+  email?: string;
+  fullName?: string;
+  phone?: string;
+  address?: {
+    postalCode?: string;
+    prefecture?: string;
+    city?: string;
+    address?: string;
+    building?: string;
+  };
+};
+
 
 export default function CheckoutPage() {
   // cart data for order summary (mirrors cart/page.tsx)
@@ -241,6 +256,35 @@ export default function CheckoutPage() {
 
   // フィールドごとのバリデーションエラー (FR-CHECKOUT-004)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  React.useEffect(() => {
+    const fetchProfileDefaults = async () => {
+      try {
+        const response = await clientFetch('/api/profile', { cache: 'no-store' });
+        if (!response.ok) {
+          return;
+        }
+
+        const data = (await response.json()) as CheckoutProfileResponse;
+
+        setShippingForm((prev) => ({
+          ...prev,
+          email: prev.email || (typeof data.email === 'string' ? data.email : ''),
+          fullName: prev.fullName || (typeof data.fullName === 'string' ? data.fullName : ''),
+          postalCode: prev.postalCode || formatPostalCodeInput(typeof data.address?.postalCode === 'string' ? data.address.postalCode : ''),
+          prefecture: prev.prefecture || (typeof data.address?.prefecture === 'string' ? data.address.prefecture : ''),
+          city: prev.city || (typeof data.address?.city === 'string' ? data.address.city : ''),
+          address: prev.address || (typeof data.address?.address === 'string' ? data.address.address : ''),
+          building: prev.building || (typeof data.address?.building === 'string' ? data.address.building : ''),
+          phone: prev.phone || formatPhoneNumberInput(typeof data.phone === 'string' ? data.phone : ''),
+        }));
+      } catch (error) {
+        console.error('プロフィール初期値の取得に失敗しました', error);
+      }
+    };
+
+    void fetchProfileDefaults();
+  }, []);
 
   const validateShippingForm = (): boolean => {
     const errors: Record<string, string> = {};
@@ -386,7 +430,11 @@ export default function CheckoutPage() {
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
     const { name, value, type } = e.target;
-    const nextValue = name === 'postalCode' ? formatPostalCodeInput(value) : value;
+    const nextValue = name === 'postalCode'
+      ? formatPostalCodeInput(value)
+      : name === 'phone'
+        ? formatPhoneNumberInput(value)
+        : value;
     const checked =
       type === 'checkbox' && 'checked' in e.target
         ? (e.target as HTMLInputElement).checked
@@ -442,11 +490,18 @@ export default function CheckoutPage() {
     if (shippingForm.saveProfile) {
       const payload = {
         fullName: shippingForm.fullName.trim(),
-        phone: shippingForm.phone.trim(),
+        phone: formatPhoneNumberInput(shippingForm.phone.trim()),
+        address: {
+          postalCode: normalizePostalCode(shippingForm.postalCode),
+          prefecture: shippingForm.prefecture.trim(),
+          city: shippingForm.city.trim(),
+          address: shippingForm.address.trim(),
+          building: shippingForm.building.trim(),
+        },
       };
 
-      if (payload.fullName || payload.phone) {
-        await fetch('/api/profile', {
+      if (payload.fullName || payload.phone || Object.values(payload.address).some((value) => value.length > 0)) {
+        await clientFetch('/api/profile', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
@@ -692,7 +747,7 @@ export default function CheckoutPage() {
 
                       <TextField label="建物名・部屋番号（任意）" type="text" name="building" value={shippingForm.building} onChange={handleShippingChange} className="font-brand" size="md" />
 
-                      <TextField required label="電話番号" placeholder="090-1234-5678" type="tel" name="phone" autoComplete="tel" value={shippingForm.phone} onChange={handleShippingChange} className="font-brand" size="md" errorText={fieldErrors.phone} />
+                      <TextField required label="電話番号" placeholder="090-1234-5678" type="tel" name="phone" autoComplete="tel" inputMode="numeric" value={shippingForm.phone} onChange={handleShippingChange} className="font-brand" size="md" errorText={fieldErrors.phone} />
 
                       <Checkbox
                         id="saveProfile"

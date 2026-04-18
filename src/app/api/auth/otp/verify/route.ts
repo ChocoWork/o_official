@@ -46,7 +46,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: '認証コードが無効、または期限切れです。' }, { status: 401 });
     }
 
-    const res = NextResponse.json({ user: result.data.user, message: '認証に成功しました。' }, { status: 200 });
+    const res = NextResponse.json(
+      {
+        user: result.data.user,
+        message: '認証に成功しました。',
+        access_token: result.data.session.access_token,
+        refresh_token: result.data.session.refresh_token,
+      },
+      { status: 200 },
+    );
     const { persistSessionAndCookies } = await import('@/features/auth/services/register');
     const persistResult = await persistSessionAndCookies(res, result.data.session, result.data.user);
 
