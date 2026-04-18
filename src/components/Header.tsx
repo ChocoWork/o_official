@@ -92,7 +92,7 @@ const Header = () => {
           </nav>
           {/* 右側アイコン群 */}
           <div className="flex items-center gap-2.5 sm:gap-4 md:gap-5 lg:gap-6">
-            <Link href="/search" className="w-[18px] h-[18px] sm:w-5 sm:h-5 flex items-center justify-center cursor-pointer">
+            <Link href="/search" aria-label="Search" className="w-[18px] h-[18px] sm:w-5 sm:h-5 flex items-center justify-center cursor-pointer">
               <i className="ri-search-line text-[18px] sm:text-xl text-black hover:text-[#474747] transition-colors"></i>
             </Link>
             <Link href="/wishlist" className="w-[18px] h-[18px] sm:w-5 sm:h-5 flex items-center justify-center cursor-pointer">
