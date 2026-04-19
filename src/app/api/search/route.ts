@@ -22,6 +22,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid search query' }, { status: 400 });
     }
 
+    const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
+    const rateLimitResponse = await enforceRateLimit({
+      request,
+      endpoint: parsed.data.preview ? 'search:preview' : 'search:public',
+      limit: parsed.data.preview ? 20 : 120,
+      windowSeconds: 600,
+    });
+
+    if (rateLimitResponse) {
+      return rateLimitResponse;
+    }
+
     const result = await executeSearch({
       query: parsed.data.q,
       tab: parsed.data.tab as SearchTab,
