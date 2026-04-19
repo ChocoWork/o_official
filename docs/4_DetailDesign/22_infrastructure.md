@@ -7,6 +7,7 @@
 | FR-INFRA-001 | `npm run dev` でアプリが起動できる Next.js プロジェクトを構成する | IMPL-INFRA-001 | `next.config.ts`, `package.json` | Next.js 15 App Router 構成。`npm run dev` で起動確認済み | 済 |
 | FR-INFRA-002 | ESLint / TypeScript strict モードを設定しコード品質を保証する | IMPL-INFRA-002 | `eslint.config.mjs`, `tsconfig.json` | ESLint 設定・strict TypeScript 設定済み | 済 |
 | FR-INFRA-003 | `.env.local` で必須環境変数を管理し `.env.example` に記載する | IMPL-INFRA-003 | `.env.local`, `.env.example` | 必須変数（Supabase/Stripe/Turnstile 等）を `.env.local` で管理 | 済 |
+| FR-INFRA-003-A | 信頼済みプロキシ検証のための環境変数管理 | IMPL-INFRA-003-A | `.env.example`, デプロイ手順 | `TRUSTED_PROXY_IPS` などを環境変数で定義し、プロキシ経由の IP 値を安全に検証する運用を想定 | 予定 |
 | FR-INFRA-004 | `src/` 配下を機能駆動型アーキテクチャ（Feature-Based）で整理する | IMPL-INFRA-004 | `src/` | `features/`, `components/`, `contexts/`, `hooks/`, `lib/`, `styles/`, `types/` 構成を実現 | 済 |
 | FR-INFRA-005 | OpenAPI / Contract テストの導入 | — | — | 別チケットで実施予定 | 未 |
 
