@@ -90,7 +90,7 @@ export async function createClient(request?: Request): Promise<SupabaseClient> {
   // Request がある場合はそこから Cookie を読み取る、なければ next/headers を使う
   const cookieHeader = request ? request.headers.get('cookie') : headersList.get('cookie');
 
-  console.log('[Supabase] Cookie header:', cookieHeader?.substring(0, 100));
+  console.log('[Supabase] Cookie header present:', Boolean(cookieHeader));
 
   if (authToken) {
     console.log('[Supabase.Session] Using request-scoped Authorization for Supabase client');
@@ -140,18 +140,10 @@ export async function createClient(request?: Request): Promise<SupabaseClient> {
                 try {
                   decodedValue = decodeURIComponent(rawValue);
                 } catch (e) {
-                  console.warn(`[Supabase.Cookie] Failed to decode ${name}: ${e}`);
+                  console.warn(`[Supabase.Cookie] Failed to decode cookie value: ${e}`);
                 }
-                
+
                 result.push({ name, value: decodedValue });
-                
-                // トークン関連の Cookie は詳しくログ
-                if (name.includes('sb-') || name.includes('refresh') || name.includes('access') || name.includes('session')) {
-                  console.log(`[Supabase.Cookie] ${name}:`);
-                  console.log(`  Raw: ${rawValue.substring(0, 60)}`);
-                  console.log(`  Decoded: ${decodedValue.substring(0, 60)}`);
-                  console.log(`  Length: ${decodedValue.length}`);
-                }
               }
             }
           } else {
@@ -160,15 +152,17 @@ export async function createClient(request?: Request): Promise<SupabaseClient> {
             return cookieStore.getAll();
           }
 
-          console.log(`[Supabase.Cookie] Total ${result.length} cookies parsed from header`);
+          console.log(`[Supabase.Cookie] Parsed ${result.length} cookie(s) from header`);
           return result;
         },
         setAll(cookiesToSet) {
           try {
+            let count = 0;
             for (const { name, value, options } of cookiesToSet) {
-              console.log(`[Supabase.Cookie.setAll] Setting ${name}`);
               cookieStore.set(name, value, options);
+              count += 1;
             }
+            console.log(`[Supabase.Cookie.setAll] Set ${count} cookie(s)`);
           } catch (error) {
             console.warn('[Supabase.Cookie.setAll] Failed:', error);
           }
