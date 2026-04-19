@@ -11,9 +11,7 @@ export function extractBearerToken(request?: Request): string | null {
   const authHeader = request.headers.get('authorization');
   if (!authHeader?.startsWith('Bearer ')) return null;
 
-  const token = authHeader.substring(7);
-  console.log('[Supabase] Bearer token found in Authorization header');
-  return token;
+  return authHeader.substring(7);
 }
 
 function extractCookieValue(cookieHeader: string | null, cookieName: string): string | null {
@@ -90,10 +88,7 @@ export async function createClient(request?: Request): Promise<SupabaseClient> {
   // Request がある場合はそこから Cookie を読み取る、なければ next/headers を使う
   const cookieHeader = request ? request.headers.get('cookie') : headersList.get('cookie');
 
-  console.log('[Supabase] Cookie header present:', Boolean(cookieHeader));
-
   if (authToken) {
-    console.log('[Supabase.Session] Using request-scoped Authorization for Supabase client');
     return createSupabaseClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -148,21 +143,16 @@ export async function createClient(request?: Request): Promise<SupabaseClient> {
             }
           } else {
             // Fallback：next/headers から
-            console.log('[Supabase.Cookie] No cookieHeader from Request, falling back to next/headers');
             return cookieStore.getAll();
           }
 
-          console.log(`[Supabase.Cookie] Parsed ${result.length} cookie(s) from header`);
           return result;
         },
         setAll(cookiesToSet) {
           try {
-            let count = 0;
             for (const { name, value, options } of cookiesToSet) {
               cookieStore.set(name, value, options);
-              count += 1;
             }
-            console.log(`[Supabase.Cookie.setAll] Set ${count} cookie(s)`);
           } catch (error) {
             console.warn('[Supabase.Cookie.setAll] Failed:', error);
           }
