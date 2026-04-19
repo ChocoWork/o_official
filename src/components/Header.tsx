@@ -63,7 +63,7 @@ const Header = () => {
         <div className="flex items-center justify-between">
           {/* サイトタイトル */}
           <Link href="/" aria-label="Le Fil des Heures home">
-            <span className="text-[15px] sm:text-xl md:text-2xl text-black tracking-tight cursor-pointer hover:text-[#474747] transition-colors duration-300 font-display whitespace-nowrap">
+            <span className="header-title font-display">
               Le Fil des Heures
             </span>
           </Link>
