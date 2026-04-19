@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { createPublicClient } from '@/lib/supabase/server';
 
 export type PublicLookLinkedItem = {
   category: string;
@@ -47,7 +47,7 @@ export function formatLookSeason(seasonYear: number, seasonType: 'SS' | 'AW'): s
 }
 
 export async function getPublishedLooks(limit?: number): Promise<PublicLook[]> {
-  const supabase = await createClient();
+  const supabase = await createPublicClient();
 
   let query = supabase
     .from('looks')
@@ -79,7 +79,7 @@ async function hydrateLooks(lookRows: LookRow[]): Promise<PublicLook[]> {
     return [];
   }
 
-  const supabase = await createClient();
+  const supabase = await createPublicClient();
   const lookIds = lookRows.map((look) => look.id);
 
   const { data: lookItemRows, error: lookItemsError } = await supabase
@@ -100,7 +100,8 @@ async function hydrateLooks(lookRows: LookRow[]): Promise<PublicLook[]> {
     const { data: itemRows, error: itemRowsError } = await supabase
       .from('items')
       .select('id,category,name,price,image_url')
-      .in('id', uniqueItemIds);
+      .in('id', uniqueItemIds)
+      .eq('status', 'published');
 
     if (itemRowsError) {
       console.error('Failed to fetch linked items:', itemRowsError);

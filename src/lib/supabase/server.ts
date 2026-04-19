@@ -174,6 +174,23 @@ export async function createClient(request?: Request): Promise<SupabaseClient> {
   return supabase;
 }
 
+// 公開ページ用：閲覧者セッションを引き継がない匿名クライアント
+export async function createPublicClient(): Promise<SupabaseClient> {
+  const { createClient: createSupabaseClient } = await import('@supabase/supabase-js');
+
+  return createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+        detectSessionInUrl: false,
+      },
+    },
+  );
+}
+
 // サーバサイドの管理操作（マイグレーションやユーザ管理等）に使うサービスロールキーを用いたクライアント
 // SUPABASE_SERVICE_ROLE_KEY を必ず環境変数で設定して使用してください（Secrets 管理下に置くこと）。
 export async function createServiceRoleClient(): Promise<SupabaseClient> {
