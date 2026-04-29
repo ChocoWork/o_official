@@ -1,0 +1,1507 @@
+{
+  "communities": {
+    "0": [
+      "adapters_ses_sendmail",
+      "app_api_admin_create_user_route_ts",
+      "app_api_admin_orders_id_refund_route_ts",
+      "app_api_admin_revoke_user_sessions_route_ts",
+      "app_api_auth_confirm_route_ts",
+      "app_api_auth_identify_route_ts",
+      "app_api_auth_login_route_ts",
+      "app_api_auth_logout_route_ts",
+      "app_api_auth_oauth_callback_route_ts",
+      "app_api_auth_oauth_start_route_ts",
+      "app_api_auth_otp_verify_route_ts",
+      "app_api_auth_password_reset_confirm_route_ts",
+      "app_api_auth_password_reset_link_route_ts",
+      "app_api_auth_password_reset_request_route_ts",
+      "app_api_auth_refresh_route_ts",
+      "app_api_auth_register_route_ts",
+      "app_api_checkout_payment_intent_route_ts",
+      "app_api_contact_route_ts",
+      "app_api_wishlist_route_ts",
+      "callback_route_get",
+      "confirm_route_buildredirectresponse",
+      "confirm_route_classifyconfirmerror",
+      "confirm_route_get",
+      "confirm_route_post",
+      "contact_route_getclientip",
+      "contact_route_hashtext",
+      "contact_route_issameoriginrequest",
+      "contact_route_post",
+      "create_user_route_post",
+      "features_auth_middleware_ratelimit_ts",
+      "features_auth_schemas_common_ts",
+      "features_auth_services_auth_admin_user_ts",
+      "features_auth_services_refresh_ts",
+      "features_auth_services_register_ts",
+      "features_auth_services_session_ts",
+      "identify_route_isalreadyexistserror",
+      "identify_route_post",
+      "lib_audit_logaudit",
+      "lib_audit_maskauditevent",
+      "lib_audit_ts",
+      "lib_cookie_clearcookieoptions",
+      "lib_cookie_cookieoptionsforaccess",
+      "lib_cookie_cookieoptionsforcsrf",
+      "lib_cookie_cookieoptionsforpasswordreset",
+      "lib_cookie_cookieoptionsforrefresh",
+      "lib_cookie_cookieoptionsforsession",
+      "lib_cookie_generatesessionid",
+      "lib_cookie_getbasecookieoptions",
+      "lib_cookie_ts",
+      "lib_csrf_generatecsrftoken",
+      "lib_csrf_ts",
+      "lib_csrf_verifyandrotatecsrf",
+      "lib_csrfmiddleware_requirecsrfordeny",
+      "lib_csrfmiddleware_ts",
+      "lib_hash_tokenhashsha256",
+      "lib_mail_adapters_ses_ts",
+      "lib_redirect_buildcandidateorigin",
+      "lib_redirect_getrequestorigin",
+      "lib_redirect_getsiteurl",
+      "lib_redirect_normalizeorigin",
+      "lib_redirect_parseallowedorigins",
+      "lib_redirect_sanitizeredirectpath",
+      "lib_redirect_shouldtrustforwardedheaders",
+      "lib_redirect_ts",
+      "lib_turnstile_ts",
+      "lib_turnstile_verifyturnstile",
+      "link_route_buildredirectresponse",
+      "link_route_get",
+      "login_route_post",
+      "logout_route_hasrotatedcsrftoken",
+      "logout_route_iscsrfdenyresponse",
+      "logout_route_post",
+      "middleware_ratelimit_enforceratelimit",
+      "middleware_ratelimit_getipfromrequest",
+      "payment_intent_route_post",
+      "refresh_route_clearauthcookies",
+      "refresh_route_parsejwtjti",
+      "refresh_route_post",
+      "refund_route_post",
+      "register_route_post",
+      "request_route_post",
+      "revoke_user_sessions_route_post",
+      "schemas_common_formatzoderror",
+      "services_auth_admin_user_findauthuseridbyemail",
+      "services_refresh_refreshsession",
+      "services_refresh_unauthorizederror",
+      "services_register_persistsessionandcookies",
+      "services_session_findsessionbyrefreshhash",
+      "services_session_isreplay",
+      "services_session_revokeallsessionsforuser",
+      "services_session_rotatejtiandsave",
+      "start_route_base64urlencode",
+      "start_route_get",
+      "start_route_sha256base64url",
+      "supabase_server_createserviceroleclient",
+      "verify_route_post",
+      "verify_route_tryverifyotpwithtypes",
+      "wishlist_route_get",
+      "wishlist_route_getclientip",
+      "wishlist_route_post"
+    ],
+    "1": [
+      "app_api_admin_item_color_presets_id_route_ts",
+      "app_api_admin_items_id_route_ts",
+      "app_api_admin_looks_id_route_ts",
+      "app_api_admin_looks_route_ts",
+      "app_api_admin_news_id_route_ts",
+      "app_api_admin_stockists_id_route_ts",
+      "app_api_admin_stockists_route_ts",
+      "app_api_cart_id_route_ts",
+      "app_api_items_id_route_ts",
+      "app_api_orders_id_route_ts",
+      "app_api_wishlist_id_route_ts",
+      "features_auth_ratelimit_index_ts",
+      "features_look_services_admin_audit_ts",
+      "features_look_services_admin_rate_limit_ts",
+      "features_stockist_services_admin_security_ts",
+      "id_route_delete",
+      "id_route_formatcurrency",
+      "id_route_formatorderdate",
+      "id_route_get",
+      "id_route_getclientip",
+      "id_route_getrequestuseragent",
+      "id_route_lognewsaudit",
+      "id_route_mapcartrpcerror",
+      "id_route_mapstatuslabel",
+      "id_route_parsejsonfield",
+      "id_route_parsestockistid",
+      "id_route_patch",
+      "id_route_put",
+      "id_route_toordernumber",
+      "id_route_toshippingaddress",
+      "id_route_tostockstatus",
+      "lib_auditcleanup_cleanupauditlogs",
+      "lib_auditcleanup_ts",
+      "looks_route_get",
+      "looks_route_parsejsonfield",
+      "looks_route_post",
+      "ratelimit_index_extractcounterresult",
+      "ratelimit_index_incrementcounter",
+      "ratelimit_index_incrementcounterby",
+      "ratelimit_index_normalizecountertarget",
+      "services_admin_audit_getrequestuseragent",
+      "services_admin_audit_logadminlookaudit",
+      "services_admin_rate_limit_buildhourlybucketiso",
+      "services_admin_rate_limit_buildratelimiterrorresponse",
+      "services_admin_rate_limit_consumeadminlookuploadquota",
+      "services_admin_rate_limit_enforceadminlookmutationratelimit",
+      "services_admin_rate_limit_validatelookimagebatch",
+      "services_admin_security_applyrotatedcsrfcookie",
+      "services_admin_security_enforceadminstockistmutationratelimit",
+      "services_admin_security_enforceadminstockistreadratelimit",
+      "services_admin_security_enforcestockistadminratelimit",
+      "services_admin_security_hasmockcsrfbody",
+      "services_admin_security_hasrotatedcsrftoken",
+      "services_admin_security_requireadminstockistcsrf",
+      "services_admin_security_tocsrfdenyresponse",
+      "stockists_route_get",
+      "stockists_route_post"
+    ],
+    "2": [
+      "app_api_admin_orders_route_ts",
+      "app_api_cart_route_ts",
+      "app_api_checkout_complete_route_ts",
+      "app_api_checkout_create_session_route_ts",
+      "app_api_webhook_stripe_route_ts",
+      "cart_route_get",
+      "cart_route_getclientip",
+      "cart_route_post",
+      "complete_route_getclientip",
+      "complete_route_post",
+      "complete_route_resolvepaymentmethod",
+      "create_session_route_getclientip",
+      "create_session_route_post",
+      "features_cart_services_cart_stock_ts",
+      "features_checkout_services_checkout_draft_service_ts",
+      "features_checkout_services_checkout_pricing_service_ts",
+      "lib_stripe_server_ts",
+      "orders_route_fetchpaymentintentmap",
+      "orders_route_maporderstatustolabel",
+      "orders_route_mappaymentmethodlabel",
+      "orders_route_tocurrencylabel",
+      "orders_route_tojstdate",
+      "services_cart_stock_buildinventoryconflictbody",
+      "services_cart_stock_collectinventoryissues",
+      "services_cart_stock_mapfinalizeorderrpcerror",
+      "services_cart_stock_normalizecartvariantvalue",
+      "services_cart_stock_parsefinalizeorderrpcresult",
+      "services_checkout_draft_service_calculatecheckoutamounts",
+      "services_checkout_draft_service_getdraftidfromstripemetadata",
+      "services_checkout_draft_service_isstripecheckoutpaymentmethod",
+      "services_checkout_draft_service_mapstripepaymentmethodtype",
+      "services_checkout_draft_service_normalizenfkctext",
+      "services_checkout_draft_service_normalizeoptionalemail",
+      "services_checkout_draft_service_normalizeoptionalphone",
+      "services_checkout_draft_service_normalizeoptionalpostalcode",
+      "services_checkout_draft_service_normalizeoptionaltext",
+      "services_checkout_pricing_service_calculatecheckoutamountsfromcartrows",
+      "services_checkout_pricing_service_calculatecheckoutamountsfromsubtotal",
+      "services_checkout_pricing_service_ischeckoutdisplayedamountsmatched",
+      "stripe_route_createorderfromdraft",
+      "stripe_route_getcheckoutdraftauditsnapshot",
+      "stripe_route_getclientip",
+      "stripe_route_handlecheckoutsessionasyncpaymentfailed",
+      "stripe_route_handlecheckoutsessionasyncpaymentsucceeded",
+      "stripe_route_handlecheckoutsessioncompleted",
+      "stripe_route_handlecheckoutsessionexpired",
+      "stripe_route_handlepaymentintentfailed",
+      "stripe_route_handlepaymentintentsucceeded",
+      "stripe_route_logwebhookaudit",
+      "stripe_route_post",
+      "stripe_server_getstripeserverclient"
+    ],
+    "3": [
+      "admin_page_escapecsvvalue",
+      "admin_page_formatorderitems",
+      "admin_page_handleapplyperiodfilter",
+      "admin_page_handlecancelorder",
+      "admin_page_handleclearperiodfilter",
+      "admin_page_handleexportorderscsv",
+      "admin_page_handlerefundorder",
+      "admin_page_handlestatusfiltertoggle",
+      "admin_page_updateprocessingorder",
+      "app_account_orders_id_page_tsx",
+      "app_admin_item_itemform_tsx",
+      "app_admin_look_lookform_tsx",
+      "app_admin_page_tsx",
+      "components_looksection_fetchlooks",
+      "components_looksection_handledelete",
+      "components_looksection_handletogglestatus",
+      "components_looksection_tsx",
+      "components_newssection_fetchnews",
+      "components_newssection_handledelete",
+      "components_newssection_handletogglestatus",
+      "components_newssection_tsx",
+      "components_stockistsection_fetchstockists",
+      "components_stockistsection_handledelete",
+      "components_stockistsection_handletogglestatus",
+      "components_stockistsection_tsx",
+      "components_usersection_handlerolechange",
+      "components_usersection_tsx",
+      "id_page_fetchorderdetail",
+      "item_itemform_fetchsavedcolors",
+      "item_itemform_handleaddcolor",
+      "item_itemform_handleapplysavedcolor",
+      "item_itemform_handlecolorchange",
+      "item_itemform_handledrop",
+      "item_itemform_handlefileselect",
+      "item_itemform_handleremovecolor",
+      "item_itemform_handleremovesavedcolor",
+      "item_itemform_handlesavecolor",
+      "item_itemform_handlesubmit",
+      "item_itemform_removeimage",
+      "item_itemform_updateselectedimage",
+      "lib_client_fetch_clientfetch",
+      "lib_client_fetch_getcsrftokenfromcookie",
+      "lib_client_fetch_ts",
+      "look_lookform_fetchitems",
+      "look_lookform_handledrop",
+      "look_lookform_handlefileselect",
+      "look_lookform_handlesubmit",
+      "look_lookform_removeimage",
+      "look_lookform_toggleitemselection",
+      "look_lookform_updateselectedimage"
+    ],
+    "4": [
+      "account_page_handleaddressfieldchange",
+      "account_page_handlelogout",
+      "account_page_handleprofiledelete",
+      "account_page_handleprofilefieldchange",
+      "account_page_handleprofilesave",
+      "account_page_handleshippingdelete",
+      "account_page_handleshippingsave",
+      "account_page_handletabchange",
+      "account_page_hasaddressvalue",
+      "account_page_normalizeaccounttab",
+      "account_page_persistprofile",
+      "app_account_page_tsx",
+      "app_api_checkout_postal_code_route_ts",
+      "app_checkout_page_tsx",
+      "checkout_page_fetchcart",
+      "checkout_page_fetchprofiledefaults",
+      "checkout_page_finalizeorder",
+      "checkout_page_getcsrftokenfromcookie",
+      "checkout_page_handleconfirm",
+      "checkout_page_handleshippingchange",
+      "checkout_page_handleshippingnext",
+      "checkout_page_step2confirmbutton",
+      "checkout_page_validateshippingform",
+      "features_account_utils_profile_format_util_ts",
+      "features_checkout_services_postal_code_service_ts",
+      "features_checkout_utils_postal_code_util_ts",
+      "postal_code_route_get",
+      "services_postal_code_service_fetchaddressbypostalcode",
+      "services_postal_code_service_getcachedaddress",
+      "services_postal_code_service_getdbcachedaddress",
+      "services_postal_code_service_getserviceroleclient",
+      "services_postal_code_service_isdbcachefresh",
+      "services_postal_code_service_setcachedaddress",
+      "services_postal_code_service_setdbcachedaddress",
+      "utils_postal_code_util_extractaddressfromzipcloud",
+      "utils_postal_code_util_formatpostalcodeinput",
+      "utils_postal_code_util_iscompletepostalcode",
+      "utils_postal_code_util_normalizepostalcode",
+      "utils_profile_format_util_formatphonenumberinput",
+      "utils_profile_format_util_normalizephonenumber"
+    ],
+    "5": [
+      "app_api_auth_me_route_ts",
+      "app_api_orders_route_ts",
+      "app_api_profile_route_ts",
+      "features_stockist_services_public_ts",
+      "lib_supabase_server_ts",
+      "me_route_buildresponse",
+      "me_route_get",
+      "me_route_isuserrole",
+      "orders_route_formatcurrency",
+      "orders_route_formatorderdate",
+      "orders_route_get",
+      "orders_route_mapstatuslabel",
+      "orders_route_toordernumber",
+      "profile_route_buildlegacyprofileupsertpayload",
+      "profile_route_buildprofileupsertpayload",
+      "profile_route_clearprofilerow",
+      "profile_route_delete",
+      "profile_route_fetchprofilerow",
+      "profile_route_get",
+      "profile_route_hasaddressvalue",
+      "profile_route_hasrotatedcsrftoken",
+      "profile_route_iscsrfdenyresponse",
+      "profile_route_ismissingoptionalprofilecolumnerror",
+      "profile_route_normalizeaddress",
+      "profile_route_post",
+      "profile_route_upsertprofilerow",
+      "services_public_gethomepublicstockists",
+      "services_public_getpublicstockists",
+      "services_public_topublicstockists",
+      "supabase_server_createclient",
+      "supabase_server_extractaccesstokenfromcookie",
+      "supabase_server_extractauthtoken",
+      "supabase_server_extractbearertoken",
+      "supabase_server_extractcookievalue",
+      "supabase_server_extractsessionidfromcookie",
+      "supabase_server_resolverequestuser"
+    ],
+    "6": [
+      "app_api_admin_audit_logs_route_ts",
+      "app_api_admin_item_color_presets_route_ts",
+      "app_api_admin_items_route_ts",
+      "app_api_admin_kpi_migration_status_route_ts",
+      "app_api_admin_news_route_ts",
+      "app_api_admin_orders_id_status_route_ts",
+      "app_api_admin_users_route_ts",
+      "app_api_items_route_ts",
+      "app_api_news_route_ts",
+      "audit_logs_route_get",
+      "auth_admin_rbac_authorizeadminpermission",
+      "auth_admin_rbac_isapprole",
+      "auth_admin_rbac_ismfaverified",
+      "auth_admin_rbac_resolveaclpermissions",
+      "auth_admin_rbac_resolvetokenrole",
+      "item_color_presets_route_get",
+      "item_color_presets_route_post",
+      "items_route_get",
+      "items_route_parsejsonfield",
+      "items_route_parseoptionalintparam",
+      "items_route_post",
+      "lib_auth_admin_rbac_ts",
+      "migration_status_route_get",
+      "news_route_get",
+      "news_route_getrequestuseragent",
+      "news_route_lognewsaudit",
+      "news_route_post",
+      "status_route_get",
+      "status_route_post",
+      "users_route_extractrolecode",
+      "users_route_get",
+      "users_route_patch",
+      "users_route_todisplayrole",
+      "users_route_tojstdatetime"
+    ],
+    "7": [
+      "actions_news_getlatestnews",
+      "app_actions_news_ts",
+      "app_item_id_page_tsx",
+      "app_look_id_page_tsx",
+      "app_news_id_page_tsx",
+      "app_news_page_tsx",
+      "features_news_services_public_ts",
+      "id_page_builddescription",
+      "id_page_generatemetadata",
+      "id_page_page",
+      "id_page_resolvecategory",
+      "id_page_resolvecategorylistparam",
+      "lib_look_public_ts",
+      "lib_storage_news_images_ts",
+      "look_public_formatlookseason",
+      "look_public_getpublishedlookbyid",
+      "look_public_getpublishedlooks",
+      "look_public_hydratelooks",
+      "look_public_maplookrowtopubliclook",
+      "news_page_generatemetadata",
+      "news_page_newspage",
+      "news_page_resolvecategory",
+      "services_public_getpublishednews",
+      "services_public_getpublishednewsdetailbyid",
+      "services_public_getpublishednewsnavigation",
+      "storage_news_images_createsignedurlbypath",
+      "storage_news_images_extractnewsimageobjectpath",
+      "storage_news_images_normalizeobjectpath",
+      "storage_news_images_signnewsimagefields",
+      "storage_news_images_signnewsimageurl",
+      "supabase_server_createpublicclient"
+    ],
+    "8": [
+      "app_api_admin_kpi_route_ts",
+      "kpi_route_applyordertoaccumulator",
+      "kpi_route_buildrecentseasonkeys",
+      "kpi_route_createmonthseries",
+      "kpi_route_createperiodaccumulator",
+      "kpi_route_formatcurrency",
+      "kpi_route_formatpercent",
+      "kpi_route_get",
+      "kpi_route_getjstdateparts",
+      "kpi_route_getjstmonthkey",
+      "kpi_route_getjstmonthnumber",
+      "kpi_route_getjstyear",
+      "kpi_route_getorcreateperiodaccumulator",
+      "kpi_route_getpreviousseasonkey",
+      "kpi_route_getseasonkeyfromdate",
+      "kpi_route_resolvecustomerkey",
+      "kpi_route_tokpimetricsresponse"
+    ],
+    "9": [
+      "components_publicitemgrid_extractcollection",
+      "components_publicitemgrid_extractcolors",
+      "components_publicitemgrid_extractcolorswatches",
+      "components_publicitemgrid_handlepointerdown",
+      "components_publicitemgrid_if",
+      "components_publicitemgrid_isiteminstock",
+      "components_publicitemgrid_itemkey",
+      "components_publicitemgrid_normalizecolor",
+      "components_publicitemgrid_parsecategories",
+      "components_publicitemgrid_parsecolors",
+      "components_publicitemgrid_parseintquery",
+      "components_publicitemgrid_parseseasons",
+      "components_publicitemgrid_parsesizes",
+      "components_publicitemgrid_parsesort",
+      "components_publicitemgrid_parsestock",
+      "components_publicitemgrid_rendergrid",
+      "features_items_components_publicitemgrid_tsx"
+    ],
+    "10": [
+      "arch_auth_01",
+      "arch_auth_02",
+      "arch_auth_03",
+      "arch_auth_04",
+      "arch_auth_05",
+      "arch_auth_06",
+      "arch_auth_07",
+      "arch_auth_08",
+      "arch_auth_09",
+      "arch_auth_10",
+      "auth_api_route_stubs",
+      "auth_db_migration",
+      "auth_design_doc",
+      "auth_openapi_snippet",
+      "auth_security_design",
+      "auth_test_plan",
+      "auth_zod_schema"
+    ],
+    "11": [
+      "app_api_search_route_ts",
+      "app_api_suggest_route_ts",
+      "features_search_services_search_service_ts",
+      "search_route_get",
+      "services_search_service_buildsnippet",
+      "services_search_service_executesearch",
+      "services_search_service_formatlookseason",
+      "services_search_service_getpopularitems",
+      "services_search_service_getresulttypelabel",
+      "services_search_service_getsearchsuggestions",
+      "services_search_service_mappopularitem",
+      "services_search_service_normalizetext",
+      "services_search_service_ranktext",
+      "services_search_service_tokenizequery",
+      "suggest_route_get"
+    ],
+    "12": [
+      "app_api_admin_kpi_targets_route_ts",
+      "targets_route_authorizeasadmin",
+      "targets_route_builddefaulttargetpayload",
+      "targets_route_buildeditableseasons",
+      "targets_route_buildvaluesmatrix",
+      "targets_route_get",
+      "targets_route_getjstyearmonth",
+      "targets_route_getnextseasonkey",
+      "targets_route_getprevseasonkey",
+      "targets_route_getseasonfromdate",
+      "targets_route_gettargetpayload",
+      "targets_route_parseseasonkey",
+      "targets_route_put"
+    ],
+    "13": [
+      "components_searchpageclient_escaperegexp",
+      "components_searchpageclient_fetchresults",
+      "components_searchpageclient_fetchsuggestions",
+      "components_searchpageclient_getresulttypelabel",
+      "components_searchpageclient_handleclear",
+      "components_searchpageclient_handlesubmit",
+      "components_searchpageclient_handletabchange",
+      "components_searchpageclient_normalizetab",
+      "components_searchpageclient_readsearchhistory",
+      "components_searchpageclient_renderhighlightedtext",
+      "components_searchpageclient_searchresultcard",
+      "components_searchpageclient_writesearchhistory",
+      "features_search_components_searchpageclient_tsx"
+    ],
+    "14": [
+      "app_item_page_tsx",
+      "app_page_generatemetadata",
+      "app_page_home",
+      "app_page_tsx",
+      "item_page_generatemetadata",
+      "item_page_itempage",
+      "item_page_parsepositiveint",
+      "item_page_parsesort",
+      "items_public_getpublisheditems",
+      "items_public_getpublisheditemspage",
+      "lib_items_public_ts"
+    ],
+    "15": [
+      "app_wishlist_client_tsx",
+      "wishlist_client_fetchwishlist",
+      "wishlist_client_handleaddtocart",
+      "wishlist_client_handleremove",
+      "wishlist_client_iscolorlist",
+      "wishlist_client_iscoloroption",
+      "wishlist_client_issizelist",
+      "wishlist_client_iswishlistitem",
+      "wishlist_client_parsewishlistresponse",
+      "wishlist_client_resolvedefaultcolor",
+      "wishlist_client_resolvedefaultsize"
+    ],
+    "16": [
+      "app_cart_page_tsx",
+      "cart_page_fetchcart",
+      "cart_page_handlequantitychange",
+      "cart_page_handleremove",
+      "cart_page_handleresyncfromserver",
+      "cart_page_handleretryupdate",
+      "cart_page_handletogglewishlist",
+      "cart_page_rollbacktoconfirmed",
+      "cart_page_scheduleupdate",
+      "cart_page_sendupdate"
+    ],
+    "17": [
+      "app_admin_news_newsform_tsx",
+      "news_newsform_getdefaultformvalues",
+      "news_newsform_gettodaydatestring",
+      "news_newsform_handledrop",
+      "news_newsform_handlefileselect",
+      "news_newsform_handleinputchange",
+      "news_newsform_handlestatuschange",
+      "news_newsform_handlesubmit",
+      "news_newsform_updateselectedimage"
+    ],
+    "18": [
+      "components_loginmodal_focusotpinput",
+      "components_loginmodal_formatotpcountdown",
+      "components_loginmodal_handleotpchange",
+      "components_loginmodal_handleotpkeydown",
+      "components_loginmodal_handleotppaste",
+      "components_loginmodal_handlesendotp",
+      "components_loginmodal_handleverifyotp",
+      "components_loginmodal_tsx"
+    ],
+    "19": [
+      "lib_jwt_clearjwkscache",
+      "lib_jwt_fetchjwks",
+      "lib_jwt_generatejti",
+      "lib_jwt_getsigningconfig",
+      "lib_jwt_jwktopem",
+      "lib_jwt_sign",
+      "lib_jwt_ts",
+      "lib_jwt_verify"
+    ],
+    "20": [
+      "app_contact_page_tsx",
+      "contact_page_fielddescribedby",
+      "contact_page_handlefieldblur",
+      "contact_page_handlefieldchange",
+      "contact_page_handlesubmit",
+      "contact_page_validate",
+      "contact_page_validatefield"
+    ],
+    "21": [
+      "app_item_id_itemdetailclient_tsx",
+      "id_itemdetailclient_fetchitem",
+      "id_itemdetailclient_handleaddtocart",
+      "id_itemdetailclient_handlecarouselscroll",
+      "id_itemdetailclient_handletogglewishlist",
+      "id_itemdetailclient_resolvestockstatus",
+      "id_itemdetailclient_stockbadge"
+    ],
+    "22": [
+      "components_kpisection_calculateprogresspercent",
+      "components_kpisection_clonekpitargetvalues",
+      "components_kpisection_getprogressstatusclassname",
+      "components_kpisection_handletargetvaluechange",
+      "components_kpisection_parsetargetnumericvalue",
+      "components_kpisection_resolveprogressstatus",
+      "components_kpisection_tsx"
+    ],
+    "23": [
+      "proxy_ts",
+      "src_proxy_buildcsp",
+      "src_proxy_generatenonce",
+      "src_proxy_isprotectedstatechangingapirequest",
+      "src_proxy_issameoriginrequest",
+      "src_proxy_proxy",
+      "src_proxy_resolverequestorigin"
+    ],
+    "24": [
+      "lib_storage_item_images_ts",
+      "storage_item_images_createsignedurlbypath",
+      "storage_item_images_extractitemimageobjectpath",
+      "storage_item_images_normalizeobjectpath",
+      "storage_item_images_signitemimagefields",
+      "storage_item_images_signitemimageurl",
+      "storage_item_images_signitemimageurls"
+    ],
+    "25": [
+      "components_publicnewsgrid_fetchnews",
+      "components_publicnewsgrid_issameselection",
+      "components_publicnewsgrid_parsecategoryselection",
+      "components_publicnewsgrid_resolvebuildhref",
+      "components_publicnewsgrid_synccategoryquery",
+      "features_news_components_publicnewsgrid_tsx"
+    ],
+    "26": [
+      "lib_hash_hash",
+      "lib_hash_hashpassword",
+      "lib_hash_ts",
+      "lib_hash_verify",
+      "lib_hash_verifypassword"
+    ],
+    "27": [
+      "lib_storage_look_images_ts",
+      "storage_look_images_createsignedurlbypath",
+      "storage_look_images_extractlookimageobjectpath",
+      "storage_look_images_signlookimageurl",
+      "storage_look_images_signlookimageurls"
+    ],
+    "28": [
+      "app_auth_password_reset_page_tsx",
+      "password_reset_page_handleconfirm",
+      "password_reset_page_handlerequest",
+      "password_reset_page_resolveresetsession"
+    ],
+    "29": [
+      "components_ui_multiselect_tsx",
+      "ui_multiselect_cn",
+      "ui_multiselect_handlechange",
+      "ui_multiselect_handleclickoutside"
+    ],
+    "30": [
+      "components_ui_singleselect_tsx",
+      "ui_singleselect_cn",
+      "ui_singleselect_handleclickoutside",
+      "ui_singleselect_handler"
+    ],
+    "31": [
+      "contexts_logincontext_isuserrole",
+      "contexts_logincontext_loginprovider",
+      "contexts_logincontext_tsx",
+      "contexts_logincontext_uselogin"
+    ],
+    "32": [
+      "components_ui_button_tsx",
+      "lib_utils_cn",
+      "lib_utils_ts",
+      "ui_button_button"
+    ],
+    "33": [
+      "cache_redis_cache_getredisconfig",
+      "cache_redis_cache_getredisjson",
+      "cache_redis_cache_setredisjson",
+      "lib_cache_redis_cache_ts"
+    ],
+    "34": [
+      "items_collection_utils_normalizeseason",
+      "items_collection_utils_parseitemcollectionmeta",
+      "items_collection_utils_tosourcetext",
+      "lib_items_collection_utils_ts"
+    ],
+    "35": [
+      "about_page_generatemetadata",
+      "about_page_storypage",
+      "app_about_page_tsx"
+    ],
+    "36": [
+      "app_api_auth_password_reset_session_route_ts",
+      "session_route_buildsessionresponse",
+      "session_route_get"
+    ],
+    "37": [
+      "app_login_page_tsx",
+      "login_page_generatemetadata",
+      "login_page_loginpage"
+    ],
+    "38": [
+      "app_look_page_tsx",
+      "look_page_generatemetadata",
+      "look_page_lookpage"
+    ],
+    "39": [
+      "app_privacy_page_tsx",
+      "privacy_page_generatemetadata",
+      "privacy_page_privacypage"
+    ],
+    "40": [
+      "app_search_page_tsx",
+      "search_page_generatemetadata",
+      "search_page_searchpage"
+    ],
+    "41": [
+      "app_stockist_page_tsx",
+      "stockist_page_generatemetadata",
+      "stockist_page_stockistpage"
+    ],
+    "42": [
+      "app_terms_page_tsx",
+      "terms_page_generatemetadata",
+      "terms_page_termspage"
+    ],
+    "43": [
+      "components_footer_footer",
+      "components_footer_footerlinklist",
+      "components_footer_tsx"
+    ],
+    "44": [
+      "components_header_isactivemenuitem",
+      "components_header_onscroll",
+      "components_header_tsx"
+    ],
+    "45": [
+      "components_itemsection_itemcard",
+      "components_itemsection_itemsection",
+      "components_itemsection_tsx"
+    ],
+    "46": [
+      "components_ui_carousel_tsx",
+      "ui_carousel_cn",
+      "ui_carousel_setcurrentindex"
+    ],
+    "47": [
+      "components_ui_colorpicker_tsx",
+      "ui_colorpicker_cn",
+      "ui_colorpicker_handlecolorinputchange"
+    ],
+    "48": [
+      "contexts_cartcontext_cartprovider",
+      "contexts_cartcontext_tsx",
+      "contexts_cartcontext_usecart"
+    ],
+    "49": [
+      "components_relateditems_fetchrelated",
+      "components_relateditems_normalizeallowedcategory",
+      "features_items_components_relateditems_tsx"
+    ],
+    "50": [
+      "components_publiclookgrid_lookcard",
+      "components_publiclookgrid_renderemptystate",
+      "features_look_components_publiclookgrid_tsx"
+    ],
+    "51": [
+      "app_layout_rootlayout",
+      "app_layout_tsx"
+    ],
+    "52": [
+      "app_admin_create_user_page_tsx",
+      "create_user_page_admincreateuserpage"
+    ],
+    "53": [
+      "app_admin_item_create_page_tsx",
+      "create_page_adminitemcreatepage"
+    ],
+    "54": [
+      "app_admin_item_edit_id_page_tsx",
+      "id_page_adminitemeditpage"
+    ],
+    "55": [
+      "app_admin_look_create_page_tsx",
+      "create_page_adminlookcreatepage"
+    ],
+    "56": [
+      "app_admin_look_edit_id_page_tsx",
+      "id_page_adminlookeditpage"
+    ],
+    "57": [
+      "app_admin_news_create_page_tsx",
+      "create_page_createnewspage"
+    ],
+    "58": [
+      "app_admin_news_edit_id_page_tsx",
+      "id_page_editnewspage"
+    ],
+    "59": [
+      "app_admin_stockist_stockistform_tsx",
+      "stockist_stockistform_stockistform"
+    ],
+    "60": [
+      "app_admin_stockist_create_page_tsx",
+      "create_page_adminstockistcreatepage"
+    ],
+    "61": [
+      "app_admin_stockist_edit_id_page_tsx",
+      "id_page_adminstockisteditpage"
+    ],
+    "62": [
+      "app_auth_callback_page_tsx",
+      "callback_page_oauthcallbackpage"
+    ],
+    "63": [
+      "app_auth_verified_page_tsx",
+      "verified_page_verifiedpage"
+    ],
+    "64": [
+      "app_news_newscategorytabs_tsx",
+      "news_newscategorytabs_newscategorytabs"
+    ],
+    "65": [
+      "app_wishlist_page_tsx",
+      "wishlist_page_page"
+    ],
+    "66": [
+      "components_cartitem_handlequantitychange",
+      "components_cartitem_tsx"
+    ],
+    "67": [
+      "components_cartsummary_cartsummary",
+      "components_cartsummary_tsx"
+    ],
+    "68": [
+      "components_ui_accordion_tsx",
+      "ui_accordion_setcurrentopenkey"
+    ],
+    "69": [
+      "components_ui_actionsheet_tsx",
+      "ui_actionsheet_cn"
+    ],
+    "70": [
+      "components_ui_banneralert_tsx",
+      "ui_banneralert_banneralert"
+    ],
+    "71": [
+      "components_ui_card_tsx",
+      "ui_card_category"
+    ],
+    "72": [
+      "components_ui_checkbox_tsx",
+      "ui_checkbox_checkbox"
+    ],
+    "73": [
+      "components_ui_datetimepicker_tsx",
+      "ui_datetimepicker_datetimepicker"
+    ],
+    "74": [
+      "components_ui_drawer_tsx",
+      "ui_drawer_drawer"
+    ],
+    "75": [
+      "components_ui_dropdown_tsx",
+      "ui_dropdown_handleclick"
+    ],
+    "76": [
+      "components_ui_graph_tsx",
+      "ui_graph_graph"
+    ],
+    "77": [
+      "components_ui_list_tsx",
+      "ui_list_cn"
+    ],
+    "78": [
+      "components_ui_mapview_tsx",
+      "ui_mapview_mapview"
+    ],
+    "79": [
+      "components_ui_overlayshell_tsx",
+      "ui_overlayshell_overlayshell"
+    ],
+    "80": [
+      "components_ui_pagecontrol_tsx",
+      "ui_pagecontrol_cn"
+    ],
+    "81": [
+      "components_ui_rating_tsx",
+      "ui_rating_rating"
+    ],
+    "82": [
+      "components_ui_sectiontitle_tsx",
+      "ui_sectiontitle_sectiontitle"
+    ],
+    "83": [
+      "components_ui_sheetlarge_tsx",
+      "ui_sheetlarge_sheetlarge"
+    ],
+    "84": [
+      "components_ui_slider_tsx",
+      "ui_slider_cn"
+    ],
+    "85": [
+      "components_ui_stats_tsx",
+      "ui_stats_stats"
+    ],
+    "86": [
+      "components_ui_statusbadge_tsx",
+      "ui_statusbadge_statusbadge"
+    ],
+    "87": [
+      "components_ui_stepper_tsx",
+      "ui_stepper_clamp"
+    ],
+    "88": [
+      "components_ui_tabsegmentcontrol_tsx",
+      "ui_tabsegmentcontrol_cn"
+    ],
+    "89": [
+      "components_ui_taglabel_tsx",
+      "ui_taglabel_taglabel"
+    ],
+    "90": [
+      "components_ui_textareafield_tsx",
+      "ui_textareafield_textareafield"
+    ],
+    "91": [
+      "components_ui_textfield_tsx",
+      "ui_textfield_cn"
+    ],
+    "92": [
+      "components_ui_toastsnackbar_tsx",
+      "ui_toastsnackbar_toastsnackbar"
+    ],
+    "93": [
+      "components_ui_toolbar_tsx",
+      "ui_toolbar_cn"
+    ],
+    "94": [
+      "components_ui_tooltip_tsx",
+      "ui_tooltip_tooltip"
+    ],
+    "95": [
+      "features_items_hooks_usepublicitems_ts",
+      "hooks_usepublicitems_usepublicitems"
+    ],
+    "96": [
+      "components_searchhomepreview_fetchpreview",
+      "features_search_components_searchhomepreview_tsx"
+    ],
+    "97": [
+      "components_publicstockistgrid_rendergrid",
+      "features_stockist_components_publicstockistgrid_tsx"
+    ],
+    "98": [
+      "lib_browser_location_navigatebrowser",
+      "lib_browser_location_ts"
+    ],
+    "99": [
+      "lib_mail_sendmail",
+      "lib_mail_ts"
+    ],
+    "100": [
+      "app_admin_item_types_ts"
+    ],
+    "101": [
+      "app_admin_look_types_ts"
+    ],
+    "102": [
+      "app_admin_stockist_types_ts"
+    ],
+    "103": [
+      "app_ui_page_tsx"
+    ],
+    "104": [
+      "components_admintabs_tsx"
+    ],
+    "105": [
+      "components_emptycart_tsx"
+    ],
+    "106": [
+      "components_ordersection_tsx"
+    ],
+    "107": [
+      "components_ui_avatar_tsx"
+    ],
+    "108": [
+      "components_ui_bottomnavigation_tsx"
+    ],
+    "109": [
+      "components_ui_datatable_tsx"
+    ],
+    "110": [
+      "components_ui_dialog_tsx"
+    ],
+    "111": [
+      "components_ui_floatingbutton_tsx"
+    ],
+    "112": [
+      "components_ui_inputchangeevent_ts"
+    ],
+    "113": [
+      "components_ui_radiobuttongroup_tsx"
+    ],
+    "114": [
+      "components_ui_searchfield_tsx"
+    ],
+    "115": [
+      "components_ui_shared_ts"
+    ],
+    "116": [
+      "components_ui_sheetmedium_tsx"
+    ],
+    "117": [
+      "components_ui_switchtoggle_tsx"
+    ],
+    "118": [
+      "components_ui_types_ts"
+    ],
+    "119": [
+      "contexts_providers_tsx"
+    ],
+    "120": [
+      "features_auth_schemas_identify_ts"
+    ],
+    "121": [
+      "features_auth_schemas_login_ts"
+    ],
+    "122": [
+      "features_auth_schemas_otp_ts"
+    ],
+    "123": [
+      "features_auth_schemas_refresh_ts"
+    ],
+    "124": [
+      "features_auth_schemas_register_ts"
+    ],
+    "125": [
+      "features_look_components_lookimagegallery_tsx"
+    ],
+    "126": [
+      "features_news_types_ts"
+    ],
+    "127": [
+      "features_search_types_search_types_ts"
+    ],
+    "128": [
+      "features_stockist_types_ts"
+    ],
+    "129": [
+      "lib_news_data_ts"
+    ],
+    "130": [
+      "lib_supabase_client_ts"
+    ],
+    "131": [
+      "types_cart_ts"
+    ],
+    "132": [
+      "types_css_d_ts"
+    ],
+    "133": [
+      "types_item_ts"
+    ],
+    "134": [
+      "types_news_ts"
+    ],
+    "135": [
+      "utils_supabase_server_ts"
+    ]
+  },
+  "cohesion": {
+    "0": 0.05,
+    "1": 0.08,
+    "2": 0.07,
+    "3": 0.06,
+    "4": 0.08,
+    "5": 0.11,
+    "6": 0.09,
+    "7": 0.09,
+    "8": 0.24,
+    "9": 0.12,
+    "10": 0.12,
+    "11": 0.18,
+    "12": 0.37,
+    "13": 0.19,
+    "14": 0.22,
+    "15": 0.27,
+    "16": 0.31,
+    "17": 0.31,
+    "18": 0.36,
+    "19": 0.43,
+    "20": 0.38,
+    "21": 0.29,
+    "22": 0.29,
+    "23": 0.52,
+    "24": 0.48,
+    "25": 0.33,
+    "26": 0.6,
+    "27": 0.6,
+    "28": 0.5,
+    "29": 0.5,
+    "30": 0.5,
+    "31": 0.5,
+    "32": 0.5,
+    "33": 0.83,
+    "34": 0.83,
+    "35": 0.67,
+    "36": 1.0,
+    "37": 0.67,
+    "38": 0.67,
+    "39": 0.67,
+    "40": 0.67,
+    "41": 0.67,
+    "42": 0.67,
+    "43": 0.67,
+    "44": 0.67,
+    "45": 0.67,
+    "46": 0.67,
+    "47": 0.67,
+    "48": 0.67,
+    "49": 1.0,
+    "50": 0.67,
+    "51": 1.0,
+    "52": 1.0,
+    "53": 1.0,
+    "54": 1.0,
+    "55": 1.0,
+    "56": 1.0,
+    "57": 1.0,
+    "58": 1.0,
+    "59": 1.0,
+    "60": 1.0,
+    "61": 1.0,
+    "62": 1.0,
+    "63": 1.0,
+    "64": 1.0,
+    "65": 1.0,
+    "66": 1.0,
+    "67": 1.0,
+    "68": 1.0,
+    "69": 1.0,
+    "70": 1.0,
+    "71": 1.0,
+    "72": 1.0,
+    "73": 1.0,
+    "74": 1.0,
+    "75": 1.0,
+    "76": 1.0,
+    "77": 1.0,
+    "78": 1.0,
+    "79": 1.0,
+    "80": 1.0,
+    "81": 1.0,
+    "82": 1.0,
+    "83": 1.0,
+    "84": 1.0,
+    "85": 1.0,
+    "86": 1.0,
+    "87": 1.0,
+    "88": 1.0,
+    "89": 1.0,
+    "90": 1.0,
+    "91": 1.0,
+    "92": 1.0,
+    "93": 1.0,
+    "94": 1.0,
+    "95": 1.0,
+    "96": 1.0,
+    "97": 1.0,
+    "98": 1.0,
+    "99": 1.0,
+    "100": 1.0,
+    "101": 1.0,
+    "102": 1.0,
+    "103": 1.0,
+    "104": 1.0,
+    "105": 1.0,
+    "106": 1.0,
+    "107": 1.0,
+    "108": 1.0,
+    "109": 1.0,
+    "110": 1.0,
+    "111": 1.0,
+    "112": 1.0,
+    "113": 1.0,
+    "114": 1.0,
+    "115": 1.0,
+    "116": 1.0,
+    "117": 1.0,
+    "118": 1.0,
+    "119": 1.0,
+    "120": 1.0,
+    "121": 1.0,
+    "122": 1.0,
+    "123": 1.0,
+    "124": 1.0,
+    "125": 1.0,
+    "126": 1.0,
+    "127": 1.0,
+    "128": 1.0,
+    "129": 1.0,
+    "130": 1.0,
+    "131": 1.0,
+    "132": 1.0,
+    "133": 1.0,
+    "134": 1.0,
+    "135": 1.0
+  },
+  "labels": {
+    "0": "createServiceRoleClient()",
+    "1": "DELETE()",
+    "2": "POST()",
+    "3": "clientFetch()",
+    "4": "page.tsx",
+    "5": "createClient()",
+    "6": "authorizeAdminPermission()",
+    "7": "createPublicClient()",
+    "8": "route.ts",
+    "9": "PublicItemGrid.tsx",
+    "10": "Auth Detailed Design Stub",
+    "11": "search.service.ts",
+    "12": "route.ts",
+    "13": "SearchPageClient.tsx",
+    "14": "getPublishedItemsPage()",
+    "15": "client.tsx",
+    "16": "page.tsx",
+    "17": "NewsForm.tsx",
+    "18": "LoginModal.tsx",
+    "19": "jwt.ts",
+    "20": "page.tsx",
+    "21": "ItemDetailClient.tsx",
+    "22": "KpiSection.tsx",
+    "23": "proxy()",
+    "24": "item-images.ts",
+    "25": "PublicNewsGrid.tsx",
+    "26": "hash.ts",
+    "27": "look-images.ts",
+    "28": "page.tsx",
+    "29": "MultiSelect.tsx",
+    "30": "SingleSelect.tsx",
+    "31": "LoginContext.tsx",
+    "32": "cn()",
+    "33": "getRedisConfig()",
+    "34": "parseItemCollectionMeta()",
+    "35": "page.tsx",
+    "36": "GET()",
+    "37": "page.tsx",
+    "38": "page.tsx",
+    "39": "page.tsx",
+    "40": "page.tsx",
+    "41": "page.tsx",
+    "42": "page.tsx",
+    "43": "Footer.tsx",
+    "44": "Header.tsx",
+    "45": "ItemSection.tsx",
+    "46": "Carousel.tsx",
+    "47": "ColorPicker.tsx",
+    "48": "CartContext.tsx",
+    "49": "fetchRelated()",
+    "50": "PublicLookGrid.tsx",
+    "51": "RootLayout()",
+    "52": "page.tsx",
+    "53": "page.tsx",
+    "54": "page.tsx",
+    "55": "page.tsx",
+    "56": "page.tsx",
+    "57": "page.tsx",
+    "58": "page.tsx",
+    "59": "StockistForm.tsx",
+    "60": "page.tsx",
+    "61": "page.tsx",
+    "62": "page.tsx",
+    "63": "page.tsx",
+    "64": "NewsCategoryTabs.tsx",
+    "65": "page.tsx",
+    "66": "handleQuantityChange()",
+    "67": "CartSummary()",
+    "68": "Accordion.tsx",
+    "69": "ActionSheet.tsx",
+    "70": "BannerAlert.tsx",
+    "71": "Card.tsx",
+    "72": "Checkbox.tsx",
+    "73": "DateTimePicker.tsx",
+    "74": "Drawer.tsx",
+    "75": "Dropdown.tsx",
+    "76": "Graph.tsx",
+    "77": "List.tsx",
+    "78": "MapView.tsx",
+    "79": "OverlayShell.tsx",
+    "80": "PageControl.tsx",
+    "81": "Rating.tsx",
+    "82": "SectionTitle.tsx",
+    "83": "SheetLarge.tsx",
+    "84": "Slider.tsx",
+    "85": "Stats.tsx",
+    "86": "StatusBadge.tsx",
+    "87": "Stepper.tsx",
+    "88": "TabSegmentControl.tsx",
+    "89": "TagLabel.tsx",
+    "90": "TextAreaField.tsx",
+    "91": "TextField.tsx",
+    "92": "ToastSnackbar.tsx",
+    "93": "Toolbar.tsx",
+    "94": "Tooltip.tsx",
+    "95": "usePublicItems.ts",
+    "96": "fetchPreview()",
+    "97": "renderGrid()",
+    "98": "navigateBrowser()",
+    "99": "sendMail()",
+    "100": "types.ts",
+    "101": "types.ts",
+    "102": "types.ts",
+    "103": "page.tsx",
+    "104": "AdminTabs.tsx",
+    "105": "EmptyCart.tsx",
+    "106": "OrderSection.tsx",
+    "107": "Avatar.tsx",
+    "108": "BottomNavigation.tsx",
+    "109": "DataTable.tsx",
+    "110": "Dialog.tsx",
+    "111": "FloatingButton.tsx",
+    "112": "InputChangeEvent.ts",
+    "113": "RadioButtonGroup.tsx",
+    "114": "SearchField.tsx",
+    "115": "shared.ts",
+    "116": "SheetMedium.tsx",
+    "117": "SwitchToggle.tsx",
+    "118": "types.ts",
+    "119": "Providers.tsx",
+    "120": "identify.ts",
+    "121": "login.ts",
+    "122": "otp.ts",
+    "123": "refresh.ts",
+    "124": "register.ts",
+    "125": "LookImageGallery.tsx",
+    "126": "types.ts",
+    "127": "search.types.ts",
+    "128": "types.ts",
+    "129": "news-data.ts",
+    "130": "client.ts",
+    "131": "cart.ts",
+    "132": "css.d.ts",
+    "133": "item.ts",
+    "134": "news.ts",
+    "135": "server.ts"
+  },
+  "gods": [
+    {
+      "id": "supabase_server_createserviceroleclient",
+      "label": "createServiceRoleClient()",
+      "degree": 52
+    },
+    {
+      "id": "wishlist_route_get",
+      "label": "GET()",
+      "degree": 44
+    },
+    {
+      "id": "lib_audit_logaudit",
+      "label": "logAudit()",
+      "degree": 36
+    },
+    {
+      "id": "id_route_delete",
+      "label": "DELETE()",
+      "degree": 33
+    },
+    {
+      "id": "auth_admin_rbac_authorizeadminpermission",
+      "label": "authorizeAdminPermission()",
+      "degree": 32
+    },
+    {
+      "id": "supabase_server_createclient",
+      "label": "createClient()",
+      "degree": 32
+    },
+    {
+      "id": "middleware_ratelimit_enforceratelimit",
+      "label": "enforceRateLimit()",
+      "degree": 30
+    },
+    {
+      "id": "id_route_get",
+      "label": "GET()",
+      "degree": 26
+    },
+    {
+      "id": "lib_client_fetch_clientfetch",
+      "label": "clientFetch()",
+      "degree": 23
+    },
+    {
+      "id": "id_route_patch",
+      "label": "PATCH()",
+      "degree": 22
+    }
+  ],
+  "surprises": [
+    {
+      "source": "handleSubmit()",
+      "target": "clientFetch()",
+      "source_files": [
+        "app\\admin\\news\\NewsForm.tsx",
+        "lib\\client-fetch.ts"
+      ],
+      "confidence": "INFERRED",
+      "relation": "calls",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities; peripheral node `handleSubmit()` unexpectedly reaches hub `clientFetch()`"
+    },
+    {
+      "source": "syncCategoryQuery()",
+      "target": "DELETE()",
+      "source_files": [
+        "features\\news\\components\\PublicNewsGrid.tsx",
+        "app\\api\\wishlist\\[id]\\route.ts"
+      ],
+      "confidence": "INFERRED",
+      "relation": "calls",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities; peripheral node `syncCategoryQuery()` unexpectedly reaches hub `DELETE()`"
+    },
+    {
+      "source": "handleClear()",
+      "target": "DELETE()",
+      "source_files": [
+        "features\\search\\components\\SearchPageClient.tsx",
+        "app\\api\\wishlist\\[id]\\route.ts"
+      ],
+      "confidence": "INFERRED",
+      "relation": "calls",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities; peripheral node `handleClear()` unexpectedly reaches hub `DELETE()`"
+    },
+    {
+      "source": "GET()",
+      "target": "signLookImageUrls()",
+      "source_files": [
+        "app\\api\\orders\\[id]\\route.ts",
+        "lib\\storage\\look-images.ts"
+      ],
+      "confidence": "INFERRED",
+      "relation": "calls",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities; peripheral node `signLookImageUrls()` unexpectedly reaches hub `GET()`"
+    },
+    {
+      "source": "fetchProfileDefaults()",
+      "target": "clientFetch()",
+      "source_files": [
+        "app\\checkout\\page.tsx",
+        "lib\\client-fetch.ts"
+      ],
+      "confidence": "INFERRED",
+      "relation": "calls",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities; peripheral node `fetchProfileDefaults()` unexpectedly reaches hub `clientFetch()`"
+    }
+  ],
+  "questions": [
+    {
+      "type": "bridge_node",
+      "question": "Why does `GET()` connect `createServiceRoleClient()` to `DELETE()`, `POST()`, `page.tsx`, `createClient()`, `createPublicClient()`, `proxy()`, `item-images.ts`?",
+      "why": "High betweenness centrality (0.108) - this node is a cross-community bridge."
+    },
+    {
+      "type": "bridge_node",
+      "question": "Why does `createClient()` connect `createClient()` to `createServiceRoleClient()`, `DELETE()`, `authorizeAdminPermission()`, `createPublicClient()`, `route.ts`, `search.service.ts`, `getPublishedItemsPage()`?",
+      "why": "High betweenness centrality (0.108) - this node is a cross-community bridge."
+    },
+    {
+      "type": "bridge_node",
+      "question": "Why does `createServiceRoleClient()` connect `createServiceRoleClient()` to `DELETE()`, `page.tsx`, `createClient()`, `authorizeAdminPermission()`, `createPublicClient()`, `route.ts`, `getPublishedItemsPage()`?",
+      "why": "High betweenness centrality (0.091) - this node is a cross-community bridge."
+    },
+    {
+      "type": "verify_inferred",
+      "question": "Are the 51 inferred relationships involving `createServiceRoleClient()` (e.g. with `GET()` and `POST()`) actually correct?",
+      "why": "`createServiceRoleClient()` has 51 INFERRED edges - model-reasoned connections that need verification."
+    },
+    {
+      "type": "verify_inferred",
+      "question": "Are the 41 inferred relationships involving `GET()` (e.g. with `resolveRequestOrigin()` and `isSameOriginRequest()`) actually correct?",
+      "why": "`GET()` has 41 INFERRED edges - model-reasoned connections that need verification."
+    },
+    {
+      "type": "verify_inferred",
+      "question": "Are the 34 inferred relationships involving `logAudit()` (e.g. with `POST()` and `DELETE()`) actually correct?",
+      "why": "`logAudit()` has 34 INFERRED edges - model-reasoned connections that need verification."
+    },
+    {
+      "type": "verify_inferred",
+      "question": "Are the 20 inferred relationships involving `DELETE()` (e.g. with `authorizeAdminPermission()` and `createServiceRoleClient()`) actually correct?",
+      "why": "`DELETE()` has 20 INFERRED edges - model-reasoned connections that need verification."
+    }
+  ]
+}

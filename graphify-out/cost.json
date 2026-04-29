@@ -1,0 +1,11 @@
+{
+  "detection": {},
+  "semantic": {
+    "input_tokens": 0,
+    "output_tokens": 0
+  },
+  "graph": {
+    "nodes": 816,
+    "edges": 1302
+  }
+}

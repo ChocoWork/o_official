@@ -1,0 +1,2101 @@
+{
+  "directed": false,
+  "multigraph": false,
+  "graph": {},
+  "nodes": [
+    {
+      "label": "AdminTabs.tsx",
+      "file_type": "code",
+      "source_file": "AdminTabs.tsx",
+      "source_location": "L1",
+      "id": "admintabs_tsx",
+      "community": 42,
+      "norm_label": "admintabs.tsx"
+    },
+    {
+      "label": "CartItem.tsx",
+      "file_type": "code",
+      "source_file": "CartItem.tsx",
+      "source_location": "L1",
+      "id": "cartitem_tsx",
+      "community": 13,
+      "norm_label": "cartitem.tsx"
+    },
+    {
+      "label": "handleQuantityChange()",
+      "file_type": "code",
+      "source_file": "CartItem.tsx",
+      "source_location": "L19",
+      "id": "components_cartitem_handlequantitychange",
+      "community": 13,
+      "norm_label": "handlequantitychange()"
+    },
+    {
+      "label": "CartSummary.tsx",
+      "file_type": "code",
+      "source_file": "CartSummary.tsx",
+      "source_location": "L1",
+      "id": "cartsummary_tsx",
+      "community": 14,
+      "norm_label": "cartsummary.tsx"
+    },
+    {
+      "label": "CartSummary()",
+      "file_type": "code",
+      "source_file": "CartSummary.tsx",
+      "source_location": "L12",
+      "id": "components_cartsummary_cartsummary",
+      "community": 14,
+      "norm_label": "cartsummary()"
+    },
+    {
+      "label": "EmptyCart.tsx",
+      "file_type": "code",
+      "source_file": "EmptyCart.tsx",
+      "source_location": "L1",
+      "id": "emptycart_tsx",
+      "community": 43,
+      "norm_label": "emptycart.tsx"
+    },
+    {
+      "label": "Footer.tsx",
+      "file_type": "code",
+      "source_file": "Footer.tsx",
+      "source_location": "L1",
+      "id": "footer_tsx",
+      "community": 8,
+      "norm_label": "footer.tsx"
+    },
+    {
+      "label": "FooterLinkList()",
+      "file_type": "code",
+      "source_file": "Footer.tsx",
+      "source_location": "L27",
+      "id": "components_footer_footerlinklist",
+      "community": 8,
+      "norm_label": "footerlinklist()"
+    },
+    {
+      "label": "Footer()",
+      "file_type": "code",
+      "source_file": "Footer.tsx",
+      "source_location": "L48",
+      "id": "components_footer_footer",
+      "community": 8,
+      "norm_label": "footer()"
+    },
+    {
+      "label": "Header.tsx",
+      "file_type": "code",
+      "source_file": "Header.tsx",
+      "source_location": "L1",
+      "id": "header_tsx",
+      "community": 9,
+      "norm_label": "header.tsx"
+    },
+    {
+      "label": "onScroll()",
+      "file_type": "code",
+      "source_file": "Header.tsx",
+      "source_location": "L35",
+      "id": "components_header_onscroll",
+      "community": 9,
+      "norm_label": "onscroll()"
+    },
+    {
+      "label": "isActiveMenuItem()",
+      "file_type": "code",
+      "source_file": "Header.tsx",
+      "source_location": "L53",
+      "id": "components_header_isactivemenuitem",
+      "community": 9,
+      "norm_label": "isactivemenuitem()"
+    },
+    {
+      "label": "ItemSection.tsx",
+      "file_type": "code",
+      "source_file": "ItemSection.tsx",
+      "source_location": "L1",
+      "id": "itemsection_tsx",
+      "community": 10,
+      "norm_label": "itemsection.tsx"
+    },
+    {
+      "label": "ItemCard()",
+      "file_type": "code",
+      "source_file": "ItemSection.tsx",
+      "source_location": "L25",
+      "id": "components_itemsection_itemcard",
+      "community": 10,
+      "norm_label": "itemcard()"
+    },
+    {
+      "label": "ItemSection()",
+      "file_type": "code",
+      "source_file": "ItemSection.tsx",
+      "source_location": "L83",
+      "id": "components_itemsection_itemsection",
+      "community": 10,
+      "norm_label": "itemsection()"
+    },
+    {
+      "label": "KpiSection.tsx",
+      "file_type": "code",
+      "source_file": "KpiSection.tsx",
+      "source_location": "L1",
+      "id": "kpisection_tsx",
+      "community": 1,
+      "norm_label": "kpisection.tsx"
+    },
+    {
+      "label": "parseTargetNumericValue()",
+      "file_type": "code",
+      "source_file": "KpiSection.tsx",
+      "source_location": "L91",
+      "id": "components_kpisection_parsetargetnumericvalue",
+      "community": 1,
+      "norm_label": "parsetargetnumericvalue()"
+    },
+    {
+      "label": "calculateProgressPercent()",
+      "file_type": "code",
+      "source_file": "KpiSection.tsx",
+      "source_location": "L115",
+      "id": "components_kpisection_calculateprogresspercent",
+      "community": 1,
+      "norm_label": "calculateprogresspercent()"
+    },
+    {
+      "label": "resolveProgressStatus()",
+      "file_type": "code",
+      "source_file": "KpiSection.tsx",
+      "source_location": "L131",
+      "id": "components_kpisection_resolveprogressstatus",
+      "community": 1,
+      "norm_label": "resolveprogressstatus()"
+    },
+    {
+      "label": "getProgressStatusClassName()",
+      "file_type": "code",
+      "source_file": "KpiSection.tsx",
+      "source_location": "L147",
+      "id": "components_kpisection_getprogressstatusclassname",
+      "community": 1,
+      "norm_label": "getprogressstatusclassname()"
+    },
+    {
+      "label": "cloneKpiTargetValues()",
+      "file_type": "code",
+      "source_file": "KpiSection.tsx",
+      "source_location": "L163",
+      "id": "components_kpisection_clonekpitargetvalues",
+      "community": 1,
+      "norm_label": "clonekpitargetvalues()"
+    },
+    {
+      "label": "handleTargetValueChange()",
+      "file_type": "code",
+      "source_file": "KpiSection.tsx",
+      "source_location": "L387",
+      "id": "components_kpisection_handletargetvaluechange",
+      "community": 1,
+      "norm_label": "handletargetvaluechange()"
+    },
+    {
+      "label": "LoginModal.tsx",
+      "file_type": "code",
+      "source_file": "LoginModal.tsx",
+      "source_location": "L1",
+      "id": "loginmodal_tsx",
+      "community": 0,
+      "norm_label": "loginmodal.tsx"
+    },
+    {
+      "label": "formatOtpCountdown()",
+      "file_type": "code",
+      "source_file": "LoginModal.tsx",
+      "source_location": "L26",
+      "id": "components_loginmodal_formatotpcountdown",
+      "community": 0,
+      "norm_label": "formatotpcountdown()"
+    },
+    {
+      "label": "focusOtpInput()",
+      "file_type": "code",
+      "source_file": "LoginModal.tsx",
+      "source_location": "L48",
+      "id": "components_loginmodal_focusotpinput",
+      "community": 0,
+      "norm_label": "focusotpinput()"
+    },
+    {
+      "label": "handleOtpChange()",
+      "file_type": "code",
+      "source_file": "LoginModal.tsx",
+      "source_location": "L56",
+      "id": "components_loginmodal_handleotpchange",
+      "community": 0,
+      "norm_label": "handleotpchange()"
+    },
+    {
+      "label": "handleOtpKeyDown()",
+      "file_type": "code",
+      "source_file": "LoginModal.tsx",
+      "source_location": "L85",
+      "id": "components_loginmodal_handleotpkeydown",
+      "community": 0,
+      "norm_label": "handleotpkeydown()"
+    },
+    {
+      "label": "handleOtpPaste()",
+      "file_type": "code",
+      "source_file": "LoginModal.tsx",
+      "source_location": "L116",
+      "id": "components_loginmodal_handleotppaste",
+      "community": 0,
+      "norm_label": "handleotppaste()"
+    },
+    {
+      "label": "handleSendOtp()",
+      "file_type": "code",
+      "source_file": "LoginModal.tsx",
+      "source_location": "L138",
+      "id": "components_loginmodal_handlesendotp",
+      "community": 0,
+      "norm_label": "handlesendotp()"
+    },
+    {
+      "label": "handleVerifyOtp()",
+      "file_type": "code",
+      "source_file": "LoginModal.tsx",
+      "source_location": "L181",
+      "id": "components_loginmodal_handleverifyotp",
+      "community": 0,
+      "norm_label": "handleverifyotp()"
+    },
+    {
+      "label": "LookSection.tsx",
+      "file_type": "code",
+      "source_file": "LookSection.tsx",
+      "source_location": "L1",
+      "id": "looksection_tsx",
+      "community": 2,
+      "norm_label": "looksection.tsx"
+    },
+    {
+      "label": "fetchLooks()",
+      "file_type": "code",
+      "source_file": "LookSection.tsx",
+      "source_location": "L23",
+      "id": "components_looksection_fetchlooks",
+      "community": 2,
+      "norm_label": "fetchlooks()"
+    },
+    {
+      "label": "handleToggleStatus()",
+      "file_type": "code",
+      "source_file": "LookSection.tsx",
+      "source_location": "L43",
+      "id": "components_looksection_handletogglestatus",
+      "community": 2,
+      "norm_label": "handletogglestatus()"
+    },
+    {
+      "label": "handleDelete()",
+      "file_type": "code",
+      "source_file": "LookSection.tsx",
+      "source_location": "L64",
+      "id": "components_looksection_handledelete",
+      "community": 2,
+      "norm_label": "handledelete()"
+    },
+    {
+      "label": "NewsSection.tsx",
+      "file_type": "code",
+      "source_file": "NewsSection.tsx",
+      "source_location": "L1",
+      "id": "newssection_tsx",
+      "community": 3,
+      "norm_label": "newssection.tsx"
+    },
+    {
+      "label": "fetchNews()",
+      "file_type": "code",
+      "source_file": "NewsSection.tsx",
+      "source_location": "L26",
+      "id": "components_newssection_fetchnews",
+      "community": 3,
+      "norm_label": "fetchnews()"
+    },
+    {
+      "label": "handleToggleStatus()",
+      "file_type": "code",
+      "source_file": "NewsSection.tsx",
+      "source_location": "L47",
+      "id": "components_newssection_handletogglestatus",
+      "community": 3,
+      "norm_label": "handletogglestatus()"
+    },
+    {
+      "label": "handleDelete()",
+      "file_type": "code",
+      "source_file": "NewsSection.tsx",
+      "source_location": "L67",
+      "id": "components_newssection_handledelete",
+      "community": 3,
+      "norm_label": "handledelete()"
+    },
+    {
+      "label": "OrderSection.tsx",
+      "file_type": "code",
+      "source_file": "OrderSection.tsx",
+      "source_location": "L1",
+      "id": "ordersection_tsx",
+      "community": 44,
+      "norm_label": "ordersection.tsx"
+    },
+    {
+      "label": "StockistSection.tsx",
+      "file_type": "code",
+      "source_file": "StockistSection.tsx",
+      "source_location": "L1",
+      "id": "stockistsection_tsx",
+      "community": 4,
+      "norm_label": "stockistsection.tsx"
+    },
+    {
+      "label": "fetchStockists()",
+      "file_type": "code",
+      "source_file": "StockistSection.tsx",
+      "source_location": "L23",
+      "id": "components_stockistsection_fetchstockists",
+      "community": 4,
+      "norm_label": "fetchstockists()"
+    },
+    {
+      "label": "handleToggleStatus()",
+      "file_type": "code",
+      "source_file": "StockistSection.tsx",
+      "source_location": "L43",
+      "id": "components_stockistsection_handletogglestatus",
+      "community": 4,
+      "norm_label": "handletogglestatus()"
+    },
+    {
+      "label": "handleDelete()",
+      "file_type": "code",
+      "source_file": "StockistSection.tsx",
+      "source_location": "L64",
+      "id": "components_stockistsection_handledelete",
+      "community": 4,
+      "norm_label": "handledelete()"
+    },
+    {
+      "label": "UserSection.tsx",
+      "file_type": "code",
+      "source_file": "UserSection.tsx",
+      "source_location": "L1",
+      "id": "usersection_tsx",
+      "community": 15,
+      "norm_label": "usersection.tsx"
+    },
+    {
+      "label": "handleRoleChange()",
+      "file_type": "code",
+      "source_file": "UserSection.tsx",
+      "source_location": "L95",
+      "id": "components_usersection_handlerolechange",
+      "community": 15,
+      "norm_label": "handlerolechange()"
+    },
+    {
+      "label": "Accordion.tsx",
+      "file_type": "code",
+      "source_file": "ui\\Accordion.tsx",
+      "source_location": "L1",
+      "id": "ui_accordion_tsx",
+      "community": 16,
+      "norm_label": "accordion.tsx"
+    },
+    {
+      "label": "setCurrentOpenKey()",
+      "file_type": "code",
+      "source_file": "ui\\Accordion.tsx",
+      "source_location": "L40",
+      "id": "ui_accordion_setcurrentopenkey",
+      "community": 16,
+      "norm_label": "setcurrentopenkey()"
+    },
+    {
+      "label": "ActionSheet.tsx",
+      "file_type": "code",
+      "source_file": "ui\\ActionSheet.tsx",
+      "source_location": "L1",
+      "id": "ui_actionsheet_tsx",
+      "community": 17,
+      "norm_label": "actionsheet.tsx"
+    },
+    {
+      "label": "cn()",
+      "file_type": "code",
+      "source_file": "ui\\ActionSheet.tsx",
+      "source_location": "L68",
+      "id": "ui_actionsheet_cn",
+      "community": 17,
+      "norm_label": "cn()"
+    },
+    {
+      "label": "Avatar.tsx",
+      "file_type": "code",
+      "source_file": "ui\\Avatar.tsx",
+      "source_location": "L1",
+      "id": "ui_avatar_tsx",
+      "community": 45,
+      "norm_label": "avatar.tsx"
+    },
+    {
+      "label": "BannerAlert.tsx",
+      "file_type": "code",
+      "source_file": "ui\\BannerAlert.tsx",
+      "source_location": "L1",
+      "id": "ui_banneralert_tsx",
+      "community": 18,
+      "norm_label": "banneralert.tsx"
+    },
+    {
+      "label": "BannerAlert()",
+      "file_type": "code",
+      "source_file": "ui\\BannerAlert.tsx",
+      "source_location": "L25",
+      "id": "ui_banneralert_banneralert",
+      "community": 18,
+      "norm_label": "banneralert()"
+    },
+    {
+      "label": "BottomNavigation.tsx",
+      "file_type": "code",
+      "source_file": "ui\\BottomNavigation.tsx",
+      "source_location": "L1",
+      "id": "ui_bottomnavigation_tsx",
+      "community": 46,
+      "norm_label": "bottomnavigation.tsx"
+    },
+    {
+      "label": "Button.tsx",
+      "file_type": "code",
+      "source_file": "ui\\Button.tsx",
+      "source_location": "L1",
+      "id": "ui_button_tsx",
+      "community": 7,
+      "norm_label": "button.tsx"
+    },
+    {
+      "label": "Button()",
+      "file_type": "code",
+      "source_file": "ui\\Button.tsx",
+      "source_location": "L35",
+      "id": "ui_button_button",
+      "community": 7,
+      "norm_label": "button()"
+    },
+    {
+      "label": "Card.tsx",
+      "file_type": "code",
+      "source_file": "ui\\Card.tsx",
+      "source_location": "L1",
+      "id": "ui_card_tsx",
+      "community": 19,
+      "norm_label": "card.tsx"
+    },
+    {
+      "label": "category()",
+      "file_type": "code",
+      "source_file": "ui\\Card.tsx",
+      "source_location": "L122",
+      "id": "ui_card_category",
+      "community": 19,
+      "norm_label": "category()"
+    },
+    {
+      "label": "Carousel.tsx",
+      "file_type": "code",
+      "source_file": "ui\\Carousel.tsx",
+      "source_location": "L1",
+      "id": "ui_carousel_tsx",
+      "community": 11,
+      "norm_label": "carousel.tsx"
+    },
+    {
+      "label": "setCurrentIndex()",
+      "file_type": "code",
+      "source_file": "ui\\Carousel.tsx",
+      "source_location": "L41",
+      "id": "ui_carousel_setcurrentindex",
+      "community": 11,
+      "norm_label": "setcurrentindex()"
+    },
+    {
+      "label": "cn()",
+      "file_type": "code",
+      "source_file": "ui\\Carousel.tsx",
+      "source_location": "L118",
+      "id": "ui_carousel_cn",
+      "community": 11,
+      "norm_label": "cn()"
+    },
+    {
+      "label": "Checkbox.tsx",
+      "file_type": "code",
+      "source_file": "ui\\Checkbox.tsx",
+      "source_location": "L1",
+      "id": "ui_checkbox_tsx",
+      "community": 20,
+      "norm_label": "checkbox.tsx"
+    },
+    {
+      "label": "Checkbox()",
+      "file_type": "code",
+      "source_file": "ui\\Checkbox.tsx",
+      "source_location": "L10",
+      "id": "ui_checkbox_checkbox",
+      "community": 20,
+      "norm_label": "checkbox()"
+    },
+    {
+      "label": "ColorPicker.tsx",
+      "file_type": "code",
+      "source_file": "ui\\ColorPicker.tsx",
+      "source_location": "L1",
+      "id": "ui_colorpicker_tsx",
+      "community": 12,
+      "norm_label": "colorpicker.tsx"
+    },
+    {
+      "label": "handleColorInputChange()",
+      "file_type": "code",
+      "source_file": "ui\\ColorPicker.tsx",
+      "source_location": "L32",
+      "id": "ui_colorpicker_handlecolorinputchange",
+      "community": 12,
+      "norm_label": "handlecolorinputchange()"
+    },
+    {
+      "label": "cn()",
+      "file_type": "code",
+      "source_file": "ui\\ColorPicker.tsx",
+      "source_location": "L46",
+      "id": "ui_colorpicker_cn",
+      "community": 12,
+      "norm_label": "cn()"
+    },
+    {
+      "label": "DataTable.tsx",
+      "file_type": "code",
+      "source_file": "ui\\DataTable.tsx",
+      "source_location": "L1",
+      "id": "ui_datatable_tsx",
+      "community": 47,
+      "norm_label": "datatable.tsx"
+    },
+    {
+      "label": "DateTimePicker.tsx",
+      "file_type": "code",
+      "source_file": "ui\\DateTimePicker.tsx",
+      "source_location": "L1",
+      "id": "ui_datetimepicker_tsx",
+      "community": 21,
+      "norm_label": "datetimepicker.tsx"
+    },
+    {
+      "label": "DateTimePicker()",
+      "file_type": "code",
+      "source_file": "ui\\DateTimePicker.tsx",
+      "source_location": "L11",
+      "id": "ui_datetimepicker_datetimepicker",
+      "community": 21,
+      "norm_label": "datetimepicker()"
+    },
+    {
+      "label": "Dialog.tsx",
+      "file_type": "code",
+      "source_file": "ui\\Dialog.tsx",
+      "source_location": "L1",
+      "id": "ui_dialog_tsx",
+      "community": 48,
+      "norm_label": "dialog.tsx"
+    },
+    {
+      "label": "Drawer.tsx",
+      "file_type": "code",
+      "source_file": "ui\\Drawer.tsx",
+      "source_location": "L1",
+      "id": "ui_drawer_tsx",
+      "community": 22,
+      "norm_label": "drawer.tsx"
+    },
+    {
+      "label": "Drawer()",
+      "file_type": "code",
+      "source_file": "ui\\Drawer.tsx",
+      "source_location": "L14",
+      "id": "ui_drawer_drawer",
+      "community": 22,
+      "norm_label": "drawer()"
+    },
+    {
+      "label": "Dropdown.tsx",
+      "file_type": "code",
+      "source_file": "ui\\Dropdown.tsx",
+      "source_location": "L1",
+      "id": "ui_dropdown_tsx",
+      "community": 23,
+      "norm_label": "dropdown.tsx"
+    },
+    {
+      "label": "handleClick()",
+      "file_type": "code",
+      "source_file": "ui\\Dropdown.tsx",
+      "source_location": "L44",
+      "id": "ui_dropdown_handleclick",
+      "community": 23,
+      "norm_label": "handleclick()"
+    },
+    {
+      "label": "FloatingButton.tsx",
+      "file_type": "code",
+      "source_file": "ui\\FloatingButton.tsx",
+      "source_location": "L1",
+      "id": "ui_floatingbutton_tsx",
+      "community": 49,
+      "norm_label": "floatingbutton.tsx"
+    },
+    {
+      "label": "Graph.tsx",
+      "file_type": "code",
+      "source_file": "ui\\Graph.tsx",
+      "source_location": "L1",
+      "id": "ui_graph_tsx",
+      "community": 24,
+      "norm_label": "graph.tsx"
+    },
+    {
+      "label": "Graph()",
+      "file_type": "code",
+      "source_file": "ui\\Graph.tsx",
+      "source_location": "L22",
+      "id": "ui_graph_graph",
+      "community": 24,
+      "norm_label": "graph()"
+    },
+    {
+      "label": "InputChangeEvent.ts",
+      "file_type": "code",
+      "source_file": "ui\\InputChangeEvent.ts",
+      "source_location": "L1",
+      "id": "ui_inputchangeevent_ts",
+      "community": 50,
+      "norm_label": "inputchangeevent.ts"
+    },
+    {
+      "label": "List.tsx",
+      "file_type": "code",
+      "source_file": "ui\\List.tsx",
+      "source_location": "L1",
+      "id": "ui_list_tsx",
+      "community": 25,
+      "norm_label": "list.tsx"
+    },
+    {
+      "label": "cn()",
+      "file_type": "code",
+      "source_file": "ui\\List.tsx",
+      "source_location": "L128",
+      "id": "ui_list_cn",
+      "community": 25,
+      "norm_label": "cn()"
+    },
+    {
+      "label": "MapView.tsx",
+      "file_type": "code",
+      "source_file": "ui\\MapView.tsx",
+      "source_location": "L1",
+      "id": "ui_mapview_tsx",
+      "community": 26,
+      "norm_label": "mapview.tsx"
+    },
+    {
+      "label": "MapView()",
+      "file_type": "code",
+      "source_file": "ui\\MapView.tsx",
+      "source_location": "L17",
+      "id": "ui_mapview_mapview",
+      "community": 26,
+      "norm_label": "mapview()"
+    },
+    {
+      "label": "MultiSelect.tsx",
+      "file_type": "code",
+      "source_file": "ui\\MultiSelect.tsx",
+      "source_location": "L1",
+      "id": "ui_multiselect_tsx",
+      "community": 5,
+      "norm_label": "multiselect.tsx"
+    },
+    {
+      "label": "handleChange()",
+      "file_type": "code",
+      "source_file": "ui\\MultiSelect.tsx",
+      "source_location": "L34",
+      "id": "ui_multiselect_handlechange",
+      "community": 5,
+      "norm_label": "handlechange()"
+    },
+    {
+      "label": "handleClickOutside()",
+      "file_type": "code",
+      "source_file": "ui\\MultiSelect.tsx",
+      "source_location": "L46",
+      "id": "ui_multiselect_handleclickoutside",
+      "community": 5,
+      "norm_label": "handleclickoutside()"
+    },
+    {
+      "label": "cn()",
+      "file_type": "code",
+      "source_file": "ui\\MultiSelect.tsx",
+      "source_location": "L91",
+      "id": "ui_multiselect_cn",
+      "community": 5,
+      "norm_label": "cn()"
+    },
+    {
+      "label": "OverlayShell.tsx",
+      "file_type": "code",
+      "source_file": "ui\\OverlayShell.tsx",
+      "source_location": "L1",
+      "id": "ui_overlayshell_tsx",
+      "community": 27,
+      "norm_label": "overlayshell.tsx"
+    },
+    {
+      "label": "OverlayShell()",
+      "file_type": "code",
+      "source_file": "ui\\OverlayShell.tsx",
+      "source_location": "L12",
+      "id": "ui_overlayshell_overlayshell",
+      "community": 27,
+      "norm_label": "overlayshell()"
+    },
+    {
+      "label": "PageControl.tsx",
+      "file_type": "code",
+      "source_file": "ui\\PageControl.tsx",
+      "source_location": "L1",
+      "id": "ui_pagecontrol_tsx",
+      "community": 28,
+      "norm_label": "pagecontrol.tsx"
+    },
+    {
+      "label": "cn()",
+      "file_type": "code",
+      "source_file": "ui\\PageControl.tsx",
+      "source_location": "L68",
+      "id": "ui_pagecontrol_cn",
+      "community": 28,
+      "norm_label": "cn()"
+    },
+    {
+      "label": "RadioButtonGroup.tsx",
+      "file_type": "code",
+      "source_file": "ui\\RadioButtonGroup.tsx",
+      "source_location": "L1",
+      "id": "ui_radiobuttongroup_tsx",
+      "community": 51,
+      "norm_label": "radiobuttongroup.tsx"
+    },
+    {
+      "label": "Rating.tsx",
+      "file_type": "code",
+      "source_file": "ui\\Rating.tsx",
+      "source_location": "L1",
+      "id": "ui_rating_tsx",
+      "community": 29,
+      "norm_label": "rating.tsx"
+    },
+    {
+      "label": "Rating()",
+      "file_type": "code",
+      "source_file": "ui\\Rating.tsx",
+      "source_location": "L21",
+      "id": "ui_rating_rating",
+      "community": 29,
+      "norm_label": "rating()"
+    },
+    {
+      "label": "SearchField.tsx",
+      "file_type": "code",
+      "source_file": "ui\\SearchField.tsx",
+      "source_location": "L1",
+      "id": "ui_searchfield_tsx",
+      "community": 52,
+      "norm_label": "searchfield.tsx"
+    },
+    {
+      "label": "SectionTitle.tsx",
+      "file_type": "code",
+      "source_file": "ui\\SectionTitle.tsx",
+      "source_location": "L1",
+      "id": "ui_sectiontitle_tsx",
+      "community": 30,
+      "norm_label": "sectiontitle.tsx"
+    },
+    {
+      "label": "SectionTitle()",
+      "file_type": "code",
+      "source_file": "ui\\SectionTitle.tsx",
+      "source_location": "L7",
+      "id": "ui_sectiontitle_sectiontitle",
+      "community": 30,
+      "norm_label": "sectiontitle()"
+    },
+    {
+      "label": "shared.ts",
+      "file_type": "code",
+      "source_file": "ui\\shared.ts",
+      "source_location": "L1",
+      "id": "ui_shared_ts",
+      "community": 53,
+      "norm_label": "shared.ts"
+    },
+    {
+      "label": "SheetLarge.tsx",
+      "file_type": "code",
+      "source_file": "ui\\SheetLarge.tsx",
+      "source_location": "L1",
+      "id": "ui_sheetlarge_tsx",
+      "community": 31,
+      "norm_label": "sheetlarge.tsx"
+    },
+    {
+      "label": "SheetLarge()",
+      "file_type": "code",
+      "source_file": "ui\\SheetLarge.tsx",
+      "source_location": "L5",
+      "id": "ui_sheetlarge_sheetlarge",
+      "community": 31,
+      "norm_label": "sheetlarge()"
+    },
+    {
+      "label": "SheetMedium.tsx",
+      "file_type": "code",
+      "source_file": "ui\\SheetMedium.tsx",
+      "source_location": "L1",
+      "id": "ui_sheetmedium_tsx",
+      "community": 54,
+      "norm_label": "sheetmedium.tsx"
+    },
+    {
+      "label": "SingleSelect.tsx",
+      "file_type": "code",
+      "source_file": "ui\\SingleSelect.tsx",
+      "source_location": "L1",
+      "id": "ui_singleselect_tsx",
+      "community": 6,
+      "norm_label": "singleselect.tsx"
+    },
+    {
+      "label": "handleClickOutside()",
+      "file_type": "code",
+      "source_file": "ui\\SingleSelect.tsx",
+      "source_location": "L53",
+      "id": "ui_singleselect_handleclickoutside",
+      "community": 6,
+      "norm_label": "handleclickoutside()"
+    },
+    {
+      "label": "handler()",
+      "file_type": "code",
+      "source_file": "ui\\SingleSelect.tsx",
+      "source_location": "L82",
+      "id": "ui_singleselect_handler",
+      "community": 6,
+      "norm_label": "handler()"
+    },
+    {
+      "label": "cn()",
+      "file_type": "code",
+      "source_file": "ui\\SingleSelect.tsx",
+      "source_location": "L153",
+      "id": "ui_singleselect_cn",
+      "community": 6,
+      "norm_label": "cn()"
+    },
+    {
+      "label": "Slider.tsx",
+      "file_type": "code",
+      "source_file": "ui\\Slider.tsx",
+      "source_location": "L1",
+      "id": "ui_slider_tsx",
+      "community": 32,
+      "norm_label": "slider.tsx"
+    },
+    {
+      "label": "cn()",
+      "file_type": "code",
+      "source_file": "ui\\Slider.tsx",
+      "source_location": "L108",
+      "id": "ui_slider_cn",
+      "community": 32,
+      "norm_label": "cn()"
+    },
+    {
+      "label": "Stats.tsx",
+      "file_type": "code",
+      "source_file": "ui\\Stats.tsx",
+      "source_location": "L1",
+      "id": "ui_stats_tsx",
+      "community": 33,
+      "norm_label": "stats.tsx"
+    },
+    {
+      "label": "Stats()",
+      "file_type": "code",
+      "source_file": "ui\\Stats.tsx",
+      "source_location": "L21",
+      "id": "ui_stats_stats",
+      "community": 33,
+      "norm_label": "stats()"
+    },
+    {
+      "label": "StatusBadge.tsx",
+      "file_type": "code",
+      "source_file": "ui\\StatusBadge.tsx",
+      "source_location": "L1",
+      "id": "ui_statusbadge_tsx",
+      "community": 34,
+      "norm_label": "statusbadge.tsx"
+    },
+    {
+      "label": "StatusBadge()",
+      "file_type": "code",
+      "source_file": "ui\\StatusBadge.tsx",
+      "source_location": "L23",
+      "id": "ui_statusbadge_statusbadge",
+      "community": 34,
+      "norm_label": "statusbadge()"
+    },
+    {
+      "label": "Stepper.tsx",
+      "file_type": "code",
+      "source_file": "ui\\Stepper.tsx",
+      "source_location": "L1",
+      "id": "ui_stepper_tsx",
+      "community": 35,
+      "norm_label": "stepper.tsx"
+    },
+    {
+      "label": "clamp()",
+      "file_type": "code",
+      "source_file": "ui\\Stepper.tsx",
+      "source_location": "L30",
+      "id": "ui_stepper_clamp",
+      "community": 35,
+      "norm_label": "clamp()"
+    },
+    {
+      "label": "SwitchToggle.tsx",
+      "file_type": "code",
+      "source_file": "ui\\SwitchToggle.tsx",
+      "source_location": "L1",
+      "id": "ui_switchtoggle_tsx",
+      "community": 55,
+      "norm_label": "switchtoggle.tsx"
+    },
+    {
+      "label": "TabSegmentControl.tsx",
+      "file_type": "code",
+      "source_file": "ui\\TabSegmentControl.tsx",
+      "source_location": "L1",
+      "id": "ui_tabsegmentcontrol_tsx",
+      "community": 36,
+      "norm_label": "tabsegmentcontrol.tsx"
+    },
+    {
+      "label": "cn()",
+      "file_type": "code",
+      "source_file": "ui\\TabSegmentControl.tsx",
+      "source_location": "L97",
+      "id": "ui_tabsegmentcontrol_cn",
+      "community": 36,
+      "norm_label": "cn()"
+    },
+    {
+      "label": "TagLabel.tsx",
+      "file_type": "code",
+      "source_file": "ui\\TagLabel.tsx",
+      "source_location": "L1",
+      "id": "ui_taglabel_tsx",
+      "community": 37,
+      "norm_label": "taglabel.tsx"
+    },
+    {
+      "label": "TagLabel()",
+      "file_type": "code",
+      "source_file": "ui\\TagLabel.tsx",
+      "source_location": "L16",
+      "id": "ui_taglabel_taglabel",
+      "community": 37,
+      "norm_label": "taglabel()"
+    },
+    {
+      "label": "TextAreaField.tsx",
+      "file_type": "code",
+      "source_file": "ui\\TextAreaField.tsx",
+      "source_location": "L1",
+      "id": "ui_textareafield_tsx",
+      "community": 38,
+      "norm_label": "textareafield.tsx"
+    },
+    {
+      "label": "TextAreaField()",
+      "file_type": "code",
+      "source_file": "ui\\TextAreaField.tsx",
+      "source_location": "L12",
+      "id": "ui_textareafield_textareafield",
+      "community": 38,
+      "norm_label": "textareafield()"
+    },
+    {
+      "label": "TextField.tsx",
+      "file_type": "code",
+      "source_file": "ui\\TextField.tsx",
+      "source_location": "L1",
+      "id": "ui_textfield_tsx",
+      "community": 39,
+      "norm_label": "textfield.tsx"
+    },
+    {
+      "label": "cn()",
+      "file_type": "code",
+      "source_file": "ui\\TextField.tsx",
+      "source_location": "L52",
+      "id": "ui_textfield_cn",
+      "community": 39,
+      "norm_label": "cn()"
+    },
+    {
+      "label": "ToastSnackbar.tsx",
+      "file_type": "code",
+      "source_file": "ui\\ToastSnackbar.tsx",
+      "source_location": "L1",
+      "id": "ui_toastsnackbar_tsx",
+      "community": 40,
+      "norm_label": "toastsnackbar.tsx"
+    },
+    {
+      "label": "ToastSnackbar()",
+      "file_type": "code",
+      "source_file": "ui\\ToastSnackbar.tsx",
+      "source_location": "L18",
+      "id": "ui_toastsnackbar_toastsnackbar",
+      "community": 40,
+      "norm_label": "toastsnackbar()"
+    },
+    {
+      "label": "Toolbar.tsx",
+      "file_type": "code",
+      "source_file": "ui\\Toolbar.tsx",
+      "source_location": "L1",
+      "id": "ui_toolbar_tsx",
+      "community": 7,
+      "norm_label": "toolbar.tsx"
+    },
+    {
+      "label": "cn()",
+      "file_type": "code",
+      "source_file": "ui\\Toolbar.tsx",
+      "source_location": "L88",
+      "id": "ui_toolbar_cn",
+      "community": 7,
+      "norm_label": "cn()"
+    },
+    {
+      "label": "Tooltip.tsx",
+      "file_type": "code",
+      "source_file": "ui\\Tooltip.tsx",
+      "source_location": "L1",
+      "id": "ui_tooltip_tsx",
+      "community": 41,
+      "norm_label": "tooltip.tsx"
+    },
+    {
+      "label": "Tooltip()",
+      "file_type": "code",
+      "source_file": "ui\\Tooltip.tsx",
+      "source_location": "L14",
+      "id": "ui_tooltip_tooltip",
+      "community": 41,
+      "norm_label": "tooltip()"
+    },
+    {
+      "label": "types.ts",
+      "file_type": "code",
+      "source_file": "ui\\types.ts",
+      "source_location": "L1",
+      "id": "ui_types_ts",
+      "community": 56,
+      "norm_label": "types.ts"
+    }
+  ],
+  "links": [
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "CartItem.tsx",
+      "source_location": "L19",
+      "weight": 1.0,
+      "_src": "cartitem_tsx",
+      "_tgt": "components_cartitem_handlequantitychange",
+      "source": "cartitem_tsx",
+      "target": "components_cartitem_handlequantitychange",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "CartSummary.tsx",
+      "source_location": "L12",
+      "weight": 1.0,
+      "_src": "cartsummary_tsx",
+      "_tgt": "components_cartsummary_cartsummary",
+      "source": "cartsummary_tsx",
+      "target": "components_cartsummary_cartsummary",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "Footer.tsx",
+      "source_location": "L27",
+      "weight": 1.0,
+      "_src": "footer_tsx",
+      "_tgt": "components_footer_footerlinklist",
+      "source": "footer_tsx",
+      "target": "components_footer_footerlinklist",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "Footer.tsx",
+      "source_location": "L48",
+      "weight": 1.0,
+      "_src": "footer_tsx",
+      "_tgt": "components_footer_footer",
+      "source": "footer_tsx",
+      "target": "components_footer_footer",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "Header.tsx",
+      "source_location": "L35",
+      "weight": 1.0,
+      "_src": "header_tsx",
+      "_tgt": "components_header_onscroll",
+      "source": "header_tsx",
+      "target": "components_header_onscroll",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "Header.tsx",
+      "source_location": "L53",
+      "weight": 1.0,
+      "_src": "header_tsx",
+      "_tgt": "components_header_isactivemenuitem",
+      "source": "header_tsx",
+      "target": "components_header_isactivemenuitem",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ItemSection.tsx",
+      "source_location": "L25",
+      "weight": 1.0,
+      "_src": "itemsection_tsx",
+      "_tgt": "components_itemsection_itemcard",
+      "source": "itemsection_tsx",
+      "target": "components_itemsection_itemcard",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ItemSection.tsx",
+      "source_location": "L83",
+      "weight": 1.0,
+      "_src": "itemsection_tsx",
+      "_tgt": "components_itemsection_itemsection",
+      "source": "itemsection_tsx",
+      "target": "components_itemsection_itemsection",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "KpiSection.tsx",
+      "source_location": "L91",
+      "weight": 1.0,
+      "_src": "kpisection_tsx",
+      "_tgt": "components_kpisection_parsetargetnumericvalue",
+      "source": "kpisection_tsx",
+      "target": "components_kpisection_parsetargetnumericvalue",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "KpiSection.tsx",
+      "source_location": "L115",
+      "weight": 1.0,
+      "_src": "kpisection_tsx",
+      "_tgt": "components_kpisection_calculateprogresspercent",
+      "source": "kpisection_tsx",
+      "target": "components_kpisection_calculateprogresspercent",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "KpiSection.tsx",
+      "source_location": "L131",
+      "weight": 1.0,
+      "_src": "kpisection_tsx",
+      "_tgt": "components_kpisection_resolveprogressstatus",
+      "source": "kpisection_tsx",
+      "target": "components_kpisection_resolveprogressstatus",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "KpiSection.tsx",
+      "source_location": "L147",
+      "weight": 1.0,
+      "_src": "kpisection_tsx",
+      "_tgt": "components_kpisection_getprogressstatusclassname",
+      "source": "kpisection_tsx",
+      "target": "components_kpisection_getprogressstatusclassname",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "KpiSection.tsx",
+      "source_location": "L163",
+      "weight": 1.0,
+      "_src": "kpisection_tsx",
+      "_tgt": "components_kpisection_clonekpitargetvalues",
+      "source": "kpisection_tsx",
+      "target": "components_kpisection_clonekpitargetvalues",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "KpiSection.tsx",
+      "source_location": "L387",
+      "weight": 1.0,
+      "_src": "kpisection_tsx",
+      "_tgt": "components_kpisection_handletargetvaluechange",
+      "source": "kpisection_tsx",
+      "target": "components_kpisection_handletargetvaluechange",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "LoginModal.tsx",
+      "source_location": "L26",
+      "weight": 1.0,
+      "_src": "loginmodal_tsx",
+      "_tgt": "components_loginmodal_formatotpcountdown",
+      "source": "loginmodal_tsx",
+      "target": "components_loginmodal_formatotpcountdown",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "LoginModal.tsx",
+      "source_location": "L48",
+      "weight": 1.0,
+      "_src": "loginmodal_tsx",
+      "_tgt": "components_loginmodal_focusotpinput",
+      "source": "loginmodal_tsx",
+      "target": "components_loginmodal_focusotpinput",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "LoginModal.tsx",
+      "source_location": "L56",
+      "weight": 1.0,
+      "_src": "loginmodal_tsx",
+      "_tgt": "components_loginmodal_handleotpchange",
+      "source": "loginmodal_tsx",
+      "target": "components_loginmodal_handleotpchange",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "LoginModal.tsx",
+      "source_location": "L85",
+      "weight": 1.0,
+      "_src": "loginmodal_tsx",
+      "_tgt": "components_loginmodal_handleotpkeydown",
+      "source": "loginmodal_tsx",
+      "target": "components_loginmodal_handleotpkeydown",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "LoginModal.tsx",
+      "source_location": "L116",
+      "weight": 1.0,
+      "_src": "loginmodal_tsx",
+      "_tgt": "components_loginmodal_handleotppaste",
+      "source": "loginmodal_tsx",
+      "target": "components_loginmodal_handleotppaste",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "LoginModal.tsx",
+      "source_location": "L138",
+      "weight": 1.0,
+      "_src": "loginmodal_tsx",
+      "_tgt": "components_loginmodal_handlesendotp",
+      "source": "loginmodal_tsx",
+      "target": "components_loginmodal_handlesendotp",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "LoginModal.tsx",
+      "source_location": "L181",
+      "weight": 1.0,
+      "_src": "loginmodal_tsx",
+      "_tgt": "components_loginmodal_handleverifyotp",
+      "source": "loginmodal_tsx",
+      "target": "components_loginmodal_handleverifyotp",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "LoginModal.tsx",
+      "source_location": "L82",
+      "weight": 1.0,
+      "_src": "components_loginmodal_handleotpchange",
+      "_tgt": "components_loginmodal_focusotpinput",
+      "source": "components_loginmodal_focusotpinput",
+      "target": "components_loginmodal_handleotpchange",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "LoginModal.tsx",
+      "source_location": "L107",
+      "weight": 1.0,
+      "_src": "components_loginmodal_handleotpkeydown",
+      "_tgt": "components_loginmodal_focusotpinput",
+      "source": "components_loginmodal_focusotpinput",
+      "target": "components_loginmodal_handleotpkeydown",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "LoginModal.tsx",
+      "source_location": "L135",
+      "weight": 1.0,
+      "_src": "components_loginmodal_handleotppaste",
+      "_tgt": "components_loginmodal_focusotpinput",
+      "source": "components_loginmodal_focusotpinput",
+      "target": "components_loginmodal_handleotppaste",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "LookSection.tsx",
+      "source_location": "L23",
+      "weight": 1.0,
+      "_src": "looksection_tsx",
+      "_tgt": "components_looksection_fetchlooks",
+      "source": "looksection_tsx",
+      "target": "components_looksection_fetchlooks",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "LookSection.tsx",
+      "source_location": "L43",
+      "weight": 1.0,
+      "_src": "looksection_tsx",
+      "_tgt": "components_looksection_handletogglestatus",
+      "source": "looksection_tsx",
+      "target": "components_looksection_handletogglestatus",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "LookSection.tsx",
+      "source_location": "L64",
+      "weight": 1.0,
+      "_src": "looksection_tsx",
+      "_tgt": "components_looksection_handledelete",
+      "source": "looksection_tsx",
+      "target": "components_looksection_handledelete",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "LookSection.tsx",
+      "source_location": "L57",
+      "weight": 1.0,
+      "_src": "components_looksection_handletogglestatus",
+      "_tgt": "components_looksection_fetchlooks",
+      "source": "components_looksection_fetchlooks",
+      "target": "components_looksection_handletogglestatus",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "LookSection.tsx",
+      "source_location": "L78",
+      "weight": 1.0,
+      "_src": "components_looksection_handledelete",
+      "_tgt": "components_looksection_fetchlooks",
+      "source": "components_looksection_fetchlooks",
+      "target": "components_looksection_handledelete",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "NewsSection.tsx",
+      "source_location": "L26",
+      "weight": 1.0,
+      "_src": "newssection_tsx",
+      "_tgt": "components_newssection_fetchnews",
+      "source": "newssection_tsx",
+      "target": "components_newssection_fetchnews",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "NewsSection.tsx",
+      "source_location": "L47",
+      "weight": 1.0,
+      "_src": "newssection_tsx",
+      "_tgt": "components_newssection_handletogglestatus",
+      "source": "newssection_tsx",
+      "target": "components_newssection_handletogglestatus",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "NewsSection.tsx",
+      "source_location": "L67",
+      "weight": 1.0,
+      "_src": "newssection_tsx",
+      "_tgt": "components_newssection_handledelete",
+      "source": "newssection_tsx",
+      "target": "components_newssection_handledelete",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "NewsSection.tsx",
+      "source_location": "L60",
+      "weight": 1.0,
+      "_src": "components_newssection_handletogglestatus",
+      "_tgt": "components_newssection_fetchnews",
+      "source": "components_newssection_fetchnews",
+      "target": "components_newssection_handletogglestatus",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "NewsSection.tsx",
+      "source_location": "L80",
+      "weight": 1.0,
+      "_src": "components_newssection_handledelete",
+      "_tgt": "components_newssection_fetchnews",
+      "source": "components_newssection_fetchnews",
+      "target": "components_newssection_handledelete",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "StockistSection.tsx",
+      "source_location": "L23",
+      "weight": 1.0,
+      "_src": "stockistsection_tsx",
+      "_tgt": "components_stockistsection_fetchstockists",
+      "source": "stockistsection_tsx",
+      "target": "components_stockistsection_fetchstockists",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "StockistSection.tsx",
+      "source_location": "L43",
+      "weight": 1.0,
+      "_src": "stockistsection_tsx",
+      "_tgt": "components_stockistsection_handletogglestatus",
+      "source": "stockistsection_tsx",
+      "target": "components_stockistsection_handletogglestatus",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "StockistSection.tsx",
+      "source_location": "L64",
+      "weight": 1.0,
+      "_src": "stockistsection_tsx",
+      "_tgt": "components_stockistsection_handledelete",
+      "source": "stockistsection_tsx",
+      "target": "components_stockistsection_handledelete",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "StockistSection.tsx",
+      "source_location": "L57",
+      "weight": 1.0,
+      "_src": "components_stockistsection_handletogglestatus",
+      "_tgt": "components_stockistsection_fetchstockists",
+      "source": "components_stockistsection_fetchstockists",
+      "target": "components_stockistsection_handletogglestatus",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "StockistSection.tsx",
+      "source_location": "L78",
+      "weight": 1.0,
+      "_src": "components_stockistsection_handledelete",
+      "_tgt": "components_stockistsection_fetchstockists",
+      "source": "components_stockistsection_fetchstockists",
+      "target": "components_stockistsection_handledelete",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "UserSection.tsx",
+      "source_location": "L95",
+      "weight": 1.0,
+      "_src": "usersection_tsx",
+      "_tgt": "components_usersection_handlerolechange",
+      "source": "usersection_tsx",
+      "target": "components_usersection_handlerolechange",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\Accordion.tsx",
+      "source_location": "L40",
+      "weight": 1.0,
+      "_src": "ui_accordion_tsx",
+      "_tgt": "ui_accordion_setcurrentopenkey",
+      "source": "ui_accordion_tsx",
+      "target": "ui_accordion_setcurrentopenkey",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\ActionSheet.tsx",
+      "source_location": "L68",
+      "weight": 1.0,
+      "_src": "ui_actionsheet_tsx",
+      "_tgt": "ui_actionsheet_cn",
+      "source": "ui_actionsheet_tsx",
+      "target": "ui_actionsheet_cn",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\BannerAlert.tsx",
+      "source_location": "L25",
+      "weight": 1.0,
+      "_src": "ui_banneralert_tsx",
+      "_tgt": "ui_banneralert_banneralert",
+      "source": "ui_banneralert_tsx",
+      "target": "ui_banneralert_banneralert",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\Button.tsx",
+      "source_location": "L35",
+      "weight": 1.0,
+      "_src": "ui_button_tsx",
+      "_tgt": "ui_button_button",
+      "source": "ui_button_tsx",
+      "target": "ui_button_button",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "ui\\Button.tsx",
+      "source_location": "L50",
+      "weight": 1.0,
+      "_src": "ui_button_button",
+      "_tgt": "ui_toolbar_cn",
+      "source": "ui_button_button",
+      "target": "ui_toolbar_cn"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\Card.tsx",
+      "source_location": "L122",
+      "weight": 1.0,
+      "_src": "ui_card_tsx",
+      "_tgt": "ui_card_category",
+      "source": "ui_card_tsx",
+      "target": "ui_card_category",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\Carousel.tsx",
+      "source_location": "L41",
+      "weight": 1.0,
+      "_src": "ui_carousel_tsx",
+      "_tgt": "ui_carousel_setcurrentindex",
+      "source": "ui_carousel_tsx",
+      "target": "ui_carousel_setcurrentindex",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\Carousel.tsx",
+      "source_location": "L118",
+      "weight": 1.0,
+      "_src": "ui_carousel_tsx",
+      "_tgt": "ui_carousel_cn",
+      "source": "ui_carousel_tsx",
+      "target": "ui_carousel_cn",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\Checkbox.tsx",
+      "source_location": "L10",
+      "weight": 1.0,
+      "_src": "ui_checkbox_tsx",
+      "_tgt": "ui_checkbox_checkbox",
+      "source": "ui_checkbox_tsx",
+      "target": "ui_checkbox_checkbox",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\ColorPicker.tsx",
+      "source_location": "L32",
+      "weight": 1.0,
+      "_src": "ui_colorpicker_tsx",
+      "_tgt": "ui_colorpicker_handlecolorinputchange",
+      "source": "ui_colorpicker_tsx",
+      "target": "ui_colorpicker_handlecolorinputchange",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\ColorPicker.tsx",
+      "source_location": "L122",
+      "weight": 1.0,
+      "_src": "ui_colorpicker_tsx",
+      "_tgt": "ui_colorpicker_cn",
+      "source": "ui_colorpicker_tsx",
+      "target": "ui_colorpicker_cn",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\DateTimePicker.tsx",
+      "source_location": "L11",
+      "weight": 1.0,
+      "_src": "ui_datetimepicker_tsx",
+      "_tgt": "ui_datetimepicker_datetimepicker",
+      "source": "ui_datetimepicker_tsx",
+      "target": "ui_datetimepicker_datetimepicker",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\Drawer.tsx",
+      "source_location": "L14",
+      "weight": 1.0,
+      "_src": "ui_drawer_tsx",
+      "_tgt": "ui_drawer_drawer",
+      "source": "ui_drawer_tsx",
+      "target": "ui_drawer_drawer",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\Dropdown.tsx",
+      "source_location": "L44",
+      "weight": 1.0,
+      "_src": "ui_dropdown_tsx",
+      "_tgt": "ui_dropdown_handleclick",
+      "source": "ui_dropdown_tsx",
+      "target": "ui_dropdown_handleclick",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\Graph.tsx",
+      "source_location": "L22",
+      "weight": 1.0,
+      "_src": "ui_graph_tsx",
+      "_tgt": "ui_graph_graph",
+      "source": "ui_graph_tsx",
+      "target": "ui_graph_graph",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\List.tsx",
+      "source_location": "L172",
+      "weight": 1.0,
+      "_src": "ui_list_tsx",
+      "_tgt": "ui_list_cn",
+      "source": "ui_list_tsx",
+      "target": "ui_list_cn",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\MapView.tsx",
+      "source_location": "L17",
+      "weight": 1.0,
+      "_src": "ui_mapview_tsx",
+      "_tgt": "ui_mapview_mapview",
+      "source": "ui_mapview_tsx",
+      "target": "ui_mapview_mapview",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\MultiSelect.tsx",
+      "source_location": "L34",
+      "weight": 1.0,
+      "_src": "ui_multiselect_tsx",
+      "_tgt": "ui_multiselect_handlechange",
+      "source": "ui_multiselect_tsx",
+      "target": "ui_multiselect_handlechange",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\MultiSelect.tsx",
+      "source_location": "L46",
+      "weight": 1.0,
+      "_src": "ui_multiselect_tsx",
+      "_tgt": "ui_multiselect_handleclickoutside",
+      "source": "ui_multiselect_tsx",
+      "target": "ui_multiselect_handleclickoutside",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\MultiSelect.tsx",
+      "source_location": "L91",
+      "weight": 1.0,
+      "_src": "ui_multiselect_tsx",
+      "_tgt": "ui_multiselect_cn",
+      "source": "ui_multiselect_tsx",
+      "target": "ui_multiselect_cn",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\OverlayShell.tsx",
+      "source_location": "L12",
+      "weight": 1.0,
+      "_src": "ui_overlayshell_tsx",
+      "_tgt": "ui_overlayshell_overlayshell",
+      "source": "ui_overlayshell_tsx",
+      "target": "ui_overlayshell_overlayshell",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\PageControl.tsx",
+      "source_location": "L68",
+      "weight": 1.0,
+      "_src": "ui_pagecontrol_tsx",
+      "_tgt": "ui_pagecontrol_cn",
+      "source": "ui_pagecontrol_tsx",
+      "target": "ui_pagecontrol_cn",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\Rating.tsx",
+      "source_location": "L21",
+      "weight": 1.0,
+      "_src": "ui_rating_tsx",
+      "_tgt": "ui_rating_rating",
+      "source": "ui_rating_tsx",
+      "target": "ui_rating_rating",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\SectionTitle.tsx",
+      "source_location": "L7",
+      "weight": 1.0,
+      "_src": "ui_sectiontitle_tsx",
+      "_tgt": "ui_sectiontitle_sectiontitle",
+      "source": "ui_sectiontitle_tsx",
+      "target": "ui_sectiontitle_sectiontitle",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\SheetLarge.tsx",
+      "source_location": "L5",
+      "weight": 1.0,
+      "_src": "ui_sheetlarge_tsx",
+      "_tgt": "ui_sheetlarge_sheetlarge",
+      "source": "ui_sheetlarge_tsx",
+      "target": "ui_sheetlarge_sheetlarge",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\SingleSelect.tsx",
+      "source_location": "L53",
+      "weight": 1.0,
+      "_src": "ui_singleselect_tsx",
+      "_tgt": "ui_singleselect_handleclickoutside",
+      "source": "ui_singleselect_tsx",
+      "target": "ui_singleselect_handleclickoutside",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\SingleSelect.tsx",
+      "source_location": "L82",
+      "weight": 1.0,
+      "_src": "ui_singleselect_tsx",
+      "_tgt": "ui_singleselect_handler",
+      "source": "ui_singleselect_tsx",
+      "target": "ui_singleselect_handler",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\SingleSelect.tsx",
+      "source_location": "L182",
+      "weight": 1.0,
+      "_src": "ui_singleselect_tsx",
+      "_tgt": "ui_singleselect_cn",
+      "source": "ui_singleselect_tsx",
+      "target": "ui_singleselect_cn",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\Slider.tsx",
+      "source_location": "L108",
+      "weight": 1.0,
+      "_src": "ui_slider_tsx",
+      "_tgt": "ui_slider_cn",
+      "source": "ui_slider_tsx",
+      "target": "ui_slider_cn",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\Stats.tsx",
+      "source_location": "L21",
+      "weight": 1.0,
+      "_src": "ui_stats_tsx",
+      "_tgt": "ui_stats_stats",
+      "source": "ui_stats_tsx",
+      "target": "ui_stats_stats",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\StatusBadge.tsx",
+      "source_location": "L23",
+      "weight": 1.0,
+      "_src": "ui_statusbadge_tsx",
+      "_tgt": "ui_statusbadge_statusbadge",
+      "source": "ui_statusbadge_tsx",
+      "target": "ui_statusbadge_statusbadge",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\Stepper.tsx",
+      "source_location": "L30",
+      "weight": 1.0,
+      "_src": "ui_stepper_tsx",
+      "_tgt": "ui_stepper_clamp",
+      "source": "ui_stepper_tsx",
+      "target": "ui_stepper_clamp",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\TabSegmentControl.tsx",
+      "source_location": "L132",
+      "weight": 1.0,
+      "_src": "ui_tabsegmentcontrol_tsx",
+      "_tgt": "ui_tabsegmentcontrol_cn",
+      "source": "ui_tabsegmentcontrol_tsx",
+      "target": "ui_tabsegmentcontrol_cn",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\TagLabel.tsx",
+      "source_location": "L16",
+      "weight": 1.0,
+      "_src": "ui_taglabel_tsx",
+      "_tgt": "ui_taglabel_taglabel",
+      "source": "ui_taglabel_tsx",
+      "target": "ui_taglabel_taglabel",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\TextAreaField.tsx",
+      "source_location": "L12",
+      "weight": 1.0,
+      "_src": "ui_textareafield_tsx",
+      "_tgt": "ui_textareafield_textareafield",
+      "source": "ui_textareafield_tsx",
+      "target": "ui_textareafield_textareafield",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\TextField.tsx",
+      "source_location": "L52",
+      "weight": 1.0,
+      "_src": "ui_textfield_tsx",
+      "_tgt": "ui_textfield_cn",
+      "source": "ui_textfield_tsx",
+      "target": "ui_textfield_cn",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\ToastSnackbar.tsx",
+      "source_location": "L18",
+      "weight": 1.0,
+      "_src": "ui_toastsnackbar_tsx",
+      "_tgt": "ui_toastsnackbar_toastsnackbar",
+      "source": "ui_toastsnackbar_tsx",
+      "target": "ui_toastsnackbar_toastsnackbar",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\Toolbar.tsx",
+      "source_location": "L88",
+      "weight": 1.0,
+      "_src": "ui_toolbar_tsx",
+      "_tgt": "ui_toolbar_cn",
+      "source": "ui_toolbar_tsx",
+      "target": "ui_toolbar_cn",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ui\\Tooltip.tsx",
+      "source_location": "L14",
+      "weight": 1.0,
+      "_src": "ui_tooltip_tsx",
+      "_tgt": "ui_tooltip_tooltip",
+      "source": "ui_tooltip_tsx",
+      "target": "ui_tooltip_tooltip",
+      "confidence_score": 1.0
+    }
+  ],
+  "hyperedges": []
+}
