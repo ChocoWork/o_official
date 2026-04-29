@@ -31,9 +31,9 @@
 |--------|----------|--------|----------------|----------|--------------|
 | CHECKOUT-01-001 | Stripe セッション作成実装 | IMPL-CHECKOUT-SESSION-01 | `src/app/api/checkout/route.ts` | Stripe セッション作成実装済み | 済 |
 | CHECKOUT-01-002 | Payment Element + PaymentIntent 初期化 API | IMPL-CHECKOUT-PI-01 | `src/app/api/checkout/route.ts` | PaymentIntent 初期化 API 実装済み | 済 |
-| CHECKOUT-01-003 | `POST /api/checkout/complete`（カード/銀行振込/代金引換） | IMPL-CHECKOUT-COMPLETE-01 | `src/app/api/checkout/complete/route.ts` | 決済完了 API 実装済み | 済 |
+| CHECKOUT-01-003 | `POST /api/checkout/complete`（Stripe Checkout Session のみ） | IMPL-CHECKOUT-COMPLETE-01 | `src/app/api/checkout/complete/route.ts` | `checkoutSessionId` と `draft_id` を必須化し、公開 complete API では Stripe セッション検証後にのみ注文確定する | 済 |
 | CHECKOUT-01-004 | Webhook 受信と署名検証 | IMPL-CHECKOUT-WEBHOOK-01 | `src/app/api/checkout/webhook/route.ts` | Stripe 署名検証付き Webhook 実装済み | 済 |
-| CHECKOUT-01-005 | 注文確定ロジック（orders/order_items 保存、カートクリア） | IMPL-CHECKOUT-ORDER-01 | `src/app/api/checkout/webhook/route.ts`, `migrations/025_create_orders.sql` | 注文保存 + カートクリア実装済み | 済 |
+| CHECKOUT-01-005 | 注文確定ロジック（orders/order_items 保存、カートクリア） | IMPL-CHECKOUT-ORDER-01 | `src/app/api/checkout/create-session/route.ts`, `src/app/api/checkout/complete/route.ts`, `src/app/api/webhook/stripe/route.ts`, `migrations/040_create_checkout_drafts.sql` | create-session 時点で immutable な checkout draft を保存し、complete / webhook は `finalize_order_from_checkout_draft` RPC で draft スナップショットからのみ注文確定する | 済 |
 | CHECKOUT-01-006 | 郵便番号住所自動補完（同一オリジン API + `postal_code_cache`） | IMPL-CHECKOUT-POSTAL-01 | `src/app/api/checkout/postal-code/route.ts` | キャッシュ付き郵便番号補完実装済み | 済 |
 | CHECKOUT-01-007 | Payment Element Accordion UI + Appearance API | IMPL-CHECKOUT-UI-01 | `src/app/checkout/page.tsx` | Accordion UI + Appearance API 実装済み | 済 |
 | CHECKOUT-01-008 | Checkout Sessions API（custom UI モード） | IMPL-CHECKOUT-SESSION-02 | `src/app/api/checkout/route.ts` | custom UI モード実装済み | 済 |

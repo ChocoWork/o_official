@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
-import { createServiceRoleClient } from '@/lib/supabase/server';
+import { createClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
 
 const orderIdSchema = z.string().uuid();
@@ -79,7 +79,7 @@ export async function POST(
       );
     }
 
-    const supabase = await createServiceRoleClient();
+    const supabase = await createClient(request);
 
     const { data: currentOrder, error: currentOrderError } = await supabase
       .from('orders')

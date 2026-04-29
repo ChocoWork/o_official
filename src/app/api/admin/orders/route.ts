@@ -3,7 +3,7 @@ import Stripe from 'stripe';
 import { z } from 'zod';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { getStripeServerClient } from '@/lib/stripe/server';
-import { createServiceRoleClient } from '@/lib/supabase/server';
+import { createClient } from '@/lib/supabase/server';
 
 type OrderRow = {
   id: string;
@@ -165,7 +165,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const supabase = await createServiceRoleClient();
+    const supabase = await createClient(request);
     const fromIso = parsedQuery.data.from ? `${parsedQuery.data.from}T00:00:00.000Z` : null;
     const toIso = parsedQuery.data.to ? `${parsedQuery.data.to}T23:59:59.999Z` : null;
     const page = parsedQuery.data.page;

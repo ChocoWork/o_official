@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
+import { signItemImageFields } from '@/lib/storage/item-images';
 
 const itemCategorySchema = z.enum(['TOPS', 'BOTTOMS', 'OUTERWEAR', 'ACCESSORIES']);
 const itemStatusSchema = z.enum(['private', 'published']);
@@ -75,7 +76,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'Item not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ data }, { status: 200 });
+    const signedItem = await signItemImageFields(supabase, data);
+
+    return NextResponse.json({ data: signedItem }, { status: 200 });
   } catch (error) {
     console.error('GET /api/admin/items/:id error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

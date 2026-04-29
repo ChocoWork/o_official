@@ -4,6 +4,10 @@
 export const refreshCookieName = 'sb-refresh-token';
 export const accessCookieName = 'sb-access-token';
 export const csrfCookieName = 'sb-csrf-token';
+export const passwordResetSessionCookieName = 'sb-password-reset-session';
+export const sessionCookieName = 'session_id';
+
+const SESSION_ID_BYTES = 16;
 
 export function getBaseCookieOptions() {
   // Note: `secure` should be true in production (HTTPS)
@@ -45,6 +49,30 @@ export function cookieOptionsForCsrf(maxAgeSeconds: number) {
   };
 }
 
+export function cookieOptionsForSession(maxAgeSeconds: number) {
+  return {
+    ...getBaseCookieOptions(),
+    maxAge: maxAgeSeconds,
+    httpOnly: true,
+    sameSite: 'lax' as const,
+  };
+}
+
+export function generateSessionId() {
+  const bytes = new Uint8Array(SESSION_ID_BYTES);
+  globalThis.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+export function cookieOptionsForPasswordReset(maxAgeSeconds: number) {
+  return {
+    ...getBaseCookieOptions(),
+    maxAge: maxAgeSeconds,
+    httpOnly: true,
+    sameSite: 'strict' as const,
+  };
+}
+
 export function clearCookieOptions() {
   return {
     ...getBaseCookieOptions(),
@@ -56,9 +84,14 @@ const cookieHelper = {
   refreshCookieName,
   accessCookieName,
   csrfCookieName,
+  passwordResetSessionCookieName,
+  sessionCookieName,
   cookieOptionsForRefresh,
   cookieOptionsForAccess,
   cookieOptionsForCsrf,
+  cookieOptionsForSession,
+  cookieOptionsForPasswordReset,
+  generateSessionId,
   clearCookieOptions,
 };
 

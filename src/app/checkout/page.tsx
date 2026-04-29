@@ -16,6 +16,7 @@ import {
   isCompletePostalCode,
   normalizePostalCode,
 } from '@/features/checkout/utils/postal-code.util';
+import { calculateCheckoutAmountsFromSubtotal } from '@/features/checkout/services/checkout-pricing.service';
 import { SingleSelect } from '@/components/ui/SingleSelect';
 import { TextField } from '@/components/ui/TextField';
 
@@ -162,6 +163,17 @@ type CheckoutPaymentMethod =
   | 'stripe_paypay'
   | 'stripe_konbini';
 
+// Reads the non-HttpOnly CSRF cookie set at login. Returns undefined for guests
+// who have no active auth session (cookie won't exist).
+function getCsrfTokenFromCookie(): string | undefined {
+  if (typeof document === 'undefined') return undefined;
+  const match = document.cookie
+    .split('; ')
+    .find((c) => c.startsWith('sb-csrf-token='));
+  if (!match) return undefined;
+  return decodeURIComponent(match.split('=').slice(1).join('='));
+}
+
 type CheckoutProfileResponse = {
   email?: string;
   fullName?: string;
@@ -199,16 +211,15 @@ export default function CheckoutPage() {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [cartLoading, setCartLoading] = useState(true);
 
-  // calculate costs
+  // Server and UI must share the same pricing policy to avoid checkout amount mismatch.
   const subtotal = cartItems.reduce(
     (sum, item) => sum + (item.items?.price ?? 0) * item.quantity,
     0
   );
-  // Shipping is free
-  const shipping: number = 0;
-  // Tax calculation: 10% consumer tax (rounded down)
-  const tax = Math.floor(subtotal * 0.1);
-  const total = subtotal + tax + shipping;
+  const checkoutAmounts = calculateCheckoutAmountsFromSubtotal(subtotal);
+  const shipping = checkoutAmounts.shippingAmount;
+  const tax = checkoutAmounts.taxAmount;
+  const total = checkoutAmounts.totalAmount;
 
   React.useEffect(() => {
     const fetchCart = async () => {
@@ -233,6 +244,7 @@ export default function CheckoutPage() {
   const [customCheckoutClientSecret, setCustomCheckoutClientSecret] = useState<string | null>(null);
   const [customCheckoutSessionId, setCustomCheckoutSessionId] = useState<string | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [profileSaveError, setProfileSaveError] = useState<string | null>(null);
   const [confirmingPayment, setConfirmingPayment] = useState(false);
   const [confirmingOrder, setConfirmingOrder] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
@@ -326,12 +338,17 @@ export default function CheckoutPage() {
     setCustomSessionLoading(true);
 
     try {
+      const csrfToken = getCsrfTokenFromCookie();
       const response = await fetch('/api/checkout/create-session', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+        },
         body: JSON.stringify({
           uiMode: 'custom',
           paymentMethod,
+          displayedAmounts: checkoutAmounts,
           shipping: {
             email: shippingForm.email,
             fullName: shippingForm.fullName,
@@ -367,7 +384,7 @@ export default function CheckoutPage() {
     } finally {
       setCustomSessionLoading(false);
     }
-  }, [paymentMethod, shippingForm]);
+  }, [paymentMethod, shippingForm, checkoutAmounts]);
 
 
 
@@ -482,6 +499,7 @@ export default function CheckoutPage() {
 
   const handleShippingNext = async (e: React.FormEvent) => {
     e.preventDefault();
+    setProfileSaveError(null);
 
     if (!validateShippingForm()) {
       return;
@@ -501,11 +519,16 @@ export default function CheckoutPage() {
       };
 
       if (payload.fullName || payload.phone || Object.values(payload.address).some((value) => value.length > 0)) {
-        await clientFetch('/api/profile', {
+        const profileResponse = await clientFetch('/api/profile', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
+
+        if (!profileResponse.ok) {
+          setProfileSaveError('プロフィールの保存に失敗しました。再度お試しください。');
+          return;
+        }
       }
     }
 
@@ -760,6 +783,9 @@ export default function CheckoutPage() {
                   </div>
 
                   <div className="flex gap-4 mt-12">
+                    {profileSaveError && (
+                      <p className="text-sm text-red-600 font-brand" role="alert">{profileSaveError}</p>
+                    )}
                     <Button type="submit" size="lg" className="flex-1 font-brand">次へ</Button>
                   </div>
                 </form>
@@ -900,13 +926,33 @@ export default function CheckoutPage() {
                   )}
 
                   {!customSessionLoading && !customCheckoutClientSecret && (
-                    <div className="flex gap-4 mt-12">
-                      <Button type="button" variant="secondary" size="lg" onClick={() => setStep(1)} className="font-brand">
-                        戻る
-                      </Button>
-                      <Button type="button" size="lg" className="flex-1 font-brand" disabled>
-                        次へ
-                      </Button>
+                    <div className="space-y-6">
+                      {checkoutError && (
+                        <div className="rounded-xs border border-red-200 bg-red-50 p-4 space-y-3">
+                          <p className="text-sm text-red-600 font-brand">{checkoutError}</p>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            className="font-brand"
+                            onClick={() => {
+                              setCheckoutError(null);
+                              void createCustomCheckoutSession();
+                            }}
+                          >
+                            再試行する
+                          </Button>
+                        </div>
+                      )}
+
+                      <div className="flex gap-4 mt-12">
+                        <Button type="button" variant="secondary" size="lg" onClick={() => setStep(1)} className="font-brand">
+                          戻る
+                        </Button>
+                        <Button type="button" size="lg" className="flex-1 font-brand" disabled>
+                          次へ
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </div>

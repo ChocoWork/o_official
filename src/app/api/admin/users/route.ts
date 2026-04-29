@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
+import { logAudit } from '@/lib/audit';
 
 const roleSchema = z.enum(['admin', 'supporter', 'user']);
 
@@ -174,9 +175,30 @@ export async function PATCH(request: Request) {
       return authResult.response;
     }
 
-    const parsed = patchBodySchema.safeParse(await request.json());
+    const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
+    const userAgent = request.headers.get('user-agent') ?? null;
+
+    const body = await request.json().catch(() => ({}));
+    const parsed = patchBodySchema.safeParse(body);
+    const requestedRole = typeof body?.role === 'string' ? body.role : null;
+    const requestedUserId = typeof body?.userId === 'string' ? body.userId : null;
 
     if (!parsed.success) {
+      await logAudit({
+        action: 'admin.users.role.update',
+        actor_id: authResult.userId,
+        resource: 'users',
+        resource_id: requestedUserId ?? null,
+        outcome: 'failure',
+        detail: 'Invalid request body',
+        ip: clientIp,
+        user_agent: userAgent,
+        metadata: {
+          requested_role: requestedRole,
+          requested_user_id: requestedUserId,
+        },
+      });
+
       return NextResponse.json(
         {
           error: 'Invalid request',
@@ -192,10 +214,25 @@ export async function PATCH(request: Request) {
     const { data: userData, error: getUserError } = await supabase.auth.admin.getUserById(userId);
     if (getUserError || !userData.user) {
       console.error('Failed to get user by id:', getUserError);
+      await logAudit({
+        action: 'admin.users.role.update',
+        actor_id: authResult.userId,
+        resource: 'users',
+        resource_id: userId,
+        outcome: 'failure',
+        detail: 'User not found',
+        ip: clientIp,
+        user_agent: userAgent,
+        metadata: {
+          requested_role: role,
+          requested_user_id: userId,
+        },
+      });
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
     const currentAppMetadata = userData.user.app_metadata ?? {};
+    const previousRole = typeof currentAppMetadata.role === 'string' ? currentAppMetadata.role : 'unknown';
 
     const { error: updateError } = await supabase.auth.admin.updateUserById(userId, {
       app_metadata: {
@@ -206,6 +243,20 @@ export async function PATCH(request: Request) {
 
     if (updateError) {
       console.error('Failed to update user role:', updateError);
+      await logAudit({
+        action: 'admin.users.role.update',
+        actor_id: authResult.userId,
+        resource: 'users',
+        resource_id: userId,
+        outcome: 'error',
+        detail: 'Failed to update auth metadata',
+        ip: clientIp,
+        user_agent: userAgent,
+        metadata: {
+          previous_role: previousRole,
+          requested_role: role,
+        },
+      });
       return NextResponse.json({ error: 'Failed to update role' }, { status: 500 });
     }
 
@@ -217,6 +268,20 @@ export async function PATCH(request: Request) {
 
     if (roleError || !roleRow) {
       console.error('Failed to resolve role id:', roleError);
+      await logAudit({
+        action: 'admin.users.role.update',
+        actor_id: authResult.userId,
+        resource: 'users',
+        resource_id: userId,
+        outcome: 'error',
+        detail: 'Failed to resolve role id',
+        ip: clientIp,
+        user_agent: userAgent,
+        metadata: {
+          previous_role: previousRole,
+          requested_role: role,
+        },
+      });
       return NextResponse.json({ error: 'Failed to update ACL role' }, { status: 500 });
     }
 
@@ -228,6 +293,20 @@ export async function PATCH(request: Request) {
 
     if (deactivateError) {
       console.error('Failed to deactivate existing ACL roles:', deactivateError);
+      await logAudit({
+        action: 'admin.users.role.update',
+        actor_id: authResult.userId,
+        resource: 'users',
+        resource_id: userId,
+        outcome: 'error',
+        detail: 'Failed to deactivate existing ACL roles',
+        ip: clientIp,
+        user_agent: userAgent,
+        metadata: {
+          previous_role: previousRole,
+          requested_role: role,
+        },
+      });
       return NextResponse.json({ error: 'Failed to update ACL role' }, { status: 500 });
     }
 
@@ -247,8 +326,38 @@ export async function PATCH(request: Request) {
 
     if (upsertAclError) {
       console.error('Failed to upsert ACL role:', upsertAclError);
+      await logAudit({
+        action: 'admin.users.role.update',
+        actor_id: authResult.userId,
+        resource: 'users',
+        resource_id: userId,
+        outcome: 'error',
+        detail: 'Failed to write ACL role',
+        ip: clientIp,
+        user_agent: userAgent,
+        metadata: {
+          previous_role: previousRole,
+          requested_role: role,
+        },
+      });
       return NextResponse.json({ error: 'Failed to update ACL role' }, { status: 500 });
     }
+
+    await logAudit({
+      action: 'admin.users.role.update',
+      actor_id: authResult.userId,
+      resource: 'users',
+      resource_id: userId,
+      outcome: 'success',
+      detail: 'User role updated',
+      ip: clientIp,
+      user_agent: userAgent,
+      metadata: {
+        previous_role: previousRole,
+        requested_role: role,
+        assigned_by: authResult.userId,
+      },
+    });
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {

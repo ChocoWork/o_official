@@ -5,12 +5,12 @@ test.describe('FR-ACCOUNT-009 authenticated profile fetch', () => {
 	test('認証付きでプロフィールを取得し、ログイン中メールアドレスを表示する', async ({ page }) => {
 		await mockOtpAuthentication(page);
 
-		let profileAuthorizationHeader: string | null = null;
+		let profileCookieHeader: string | null = null;
 
 		await page.route('**/api/profile', async (route) => {
-			profileAuthorizationHeader = route.request().headers().authorization ?? null;
+			profileCookieHeader = route.request().headers().cookie ?? null;
 
-			if (!profileAuthorizationHeader?.startsWith('Bearer test-access-token')) {
+			if (!profileCookieHeader?.includes('sb-access-token=test-access-token')) {
 				await route.fulfill({
 					status: 401,
 					contentType: 'application/json',
@@ -48,7 +48,7 @@ test.describe('FR-ACCOUNT-009 authenticated profile fetch', () => {
 
 		await loginAndOpenAccount(page);
 
-		await expect.poll(() => profileAuthorizationHeader).toContain('Bearer test-access-token');
+		await expect.poll(() => profileCookieHeader).toContain('sb-access-token=test-access-token');
 		await expect(page.getByText('メールアドレス')).toBeVisible();
 		await expect(page.getByText('user@example.com')).toBeVisible();
 		await expect(page.getByText('プロフィールを読み込めませんでした')).toHaveCount(0);

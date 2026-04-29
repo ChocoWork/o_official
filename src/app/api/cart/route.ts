@@ -1,9 +1,28 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
+import {
+  addCartItemSchema,
+  buildInventoryConflictBody,
+  normalizeCartVariantValue,
+} from '@/features/cart/services/cart-stock';
+import { logAudit } from '@/lib/audit';
+import { signItemImageUrl } from '@/lib/storage/item-images';
 
-const supabase = createClient(
+const cartSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+const publicItemSupabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+      detectSessionInUrl: false,
+    },
+  }
 );
 
 type CartRow = {
@@ -21,7 +40,25 @@ type ItemRow = {
   price: number;
   image_url: string;
   category: string;
+  status: string;
+  stock_quantity?: number | null;
 };
+
+type ExistingCartRow = {
+  id: string;
+  quantity: number;
+  color: string | null;
+  size: string | null;
+};
+
+function getClientIp(request: NextRequest): string | null {
+  const forwardedFor = request.headers.get('x-forwarded-for');
+  if (forwardedFor) {
+    return forwardedFor.split(',')[0]?.trim() ?? null;
+  }
+
+  return request.headers.get('x-real-ip');
+}
 
 /**
  * GET /api/cart
@@ -39,7 +76,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Get cart items
-    const { data: cartData, error: cartError } = await supabase
+    const { data: cartData, error: cartError } = await cartSupabase
       .from("carts")
       .select("id, item_id, quantity, color, size, added_at")
       .eq("session_id", sessionId)
@@ -59,10 +96,11 @@ export async function GET(req: NextRequest) {
 
     // Get items data
     const itemIds = cartData.map((item) => item.item_id);
-    const { data: itemsData, error: itemsError } = await supabase
+    const { data: itemsData, error: itemsError } = await publicItemSupabase
       .from("items")
-      .select("id, name, price, image_url, category")
-      .in("id", itemIds);
+      .select("id, name, price, image_url, category, status")
+      .in("id", itemIds)
+      .eq("status", "published");
 
     if (itemsError) {
       console.error("Error fetching items:", itemsError);
@@ -72,9 +110,16 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    const signedItemsData = await Promise.all(
+      ((itemsData || []) as ItemRow[]).map(async (item) => ({
+        ...item,
+        image_url: (await signItemImageUrl(cartSupabase, item.image_url)) ?? item.image_url,
+      })),
+    );
+
     // Merge cart and items data
     const itemsMap = new Map<number, ItemRow>(
-      ((itemsData || []) as ItemRow[]).map((item) => [item.id, item])
+      signedItemsData.map((item) => [item.id, item])
     );
     const result = (cartData as CartRow[])
       .map((cartItem) => ({
@@ -101,6 +146,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const sessionId = req.cookies.get("session_id")?.value;
+    const clientIp = getClientIp(req);
+    const userAgent = req.headers.get('user-agent');
 
     if (!sessionId) {
       return NextResponse.json(
@@ -109,60 +156,76 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const body = await req.json();
-    const { item_id, quantity = 1, color, size } = body;
+    const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
+    const rateLimitByIp = await enforceRateLimit({
+      request: req,
+      endpoint: 'cart:add',
+      limit: 60,
+      windowSeconds: 60,
+    });
+    if (rateLimitByIp) {
+      return rateLimitByIp;
+    }
 
-    // Validate input
-    if (!item_id) {
+    const rateLimitBySession = await enforceRateLimit({
+      request: req,
+      endpoint: 'cart:add',
+      limit: 30,
+      windowSeconds: 60,
+      subject: sessionId,
+    });
+    if (rateLimitBySession) {
+      return rateLimitBySession;
+    }
+
+    const parsedBody = addCartItemSchema.safeParse(await req.json().catch(() => null));
+    if (!parsedBody.success) {
+      await logAudit({
+        action: 'cart.add',
+        outcome: 'failure',
+        detail: 'Invalid request body',
+        ip: clientIp,
+        user_agent: userAgent,
+        metadata: { session_id: sessionId },
+      });
       return NextResponse.json(
-        { error: "item_id is required" },
+        { error: 'Invalid request body' },
         { status: 400 }
       );
     }
 
-    if (quantity < 1) {
-      return NextResponse.json(
-        { error: "quantity must be >= 1" },
-        { status: 400 }
-      );
-    }
+    const { item_id, quantity, color, size } = parsedBody.data;
+    const normalizedColor = normalizeCartVariantValue(color);
+    const normalizedSize = normalizeCartVariantValue(size);
 
     // Check if item exists
-    const { data: itemData, error: itemError } = await supabase
+    const { data: itemData, error: itemError } = await publicItemSupabase
       .from("items")
-      .select("id")
+      .select("id, name, stock_quantity, status")
       .eq("id", item_id)
+      .eq("status", "published")
       .single();
 
-    if (itemError || !itemData) {
+    if (itemError || !itemData || itemData.status !== 'published') {
+      await logAudit({
+        action: 'cart.add',
+        outcome: 'failure',
+        detail: 'Item not found',
+        ip: clientIp,
+        user_agent: userAgent,
+        metadata: { session_id: sessionId, item_id },
+      });
       return NextResponse.json(
         { error: "Item not found" },
         { status: 404 }
       );
     }
 
-    // Check if same variant exists in cart
-    let query = supabase
+    const { data: existingItems, error: checkError } = await cartSupabase
       .from("carts")
-      .select("id, quantity")
+      .select("id, quantity, color, size")
       .eq("session_id", sessionId)
       .eq("item_id", item_id);
-
-    // Handle color matching (NULL or specific value)
-    if (color) {
-      query = query.eq("color", color);
-    } else {
-      query = query.is("color", null);
-    }
-
-    // Handle size matching (NULL or specific value)
-    if (size) {
-      query = query.eq("size", size);
-    } else {
-      query = query.is("size", null);
-    }
-
-    const { data: existingItem, error: checkError } = await query.maybeSingle();
 
     if (checkError) {
       console.error("Error checking cart:", checkError);
@@ -172,12 +235,55 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const cartRows = (existingItems ?? []) as ExistingCartRow[];
+    const existingItem = cartRows.find(
+      (cartRow) =>
+        normalizeCartVariantValue(cartRow.color) === normalizedColor &&
+        normalizeCartVariantValue(cartRow.size) === normalizedSize
+    );
+    const totalRequestedQuantity =
+      cartRows.reduce((sum, cartRow) => sum + cartRow.quantity, 0) + quantity;
+
+    if (
+      itemData.stock_quantity !== null &&
+      totalRequestedQuantity > itemData.stock_quantity
+    ) {
+      await logAudit({
+        action: 'cart.add',
+        outcome: 'conflict',
+        detail: 'Insufficient stock',
+        ip: clientIp,
+        user_agent: userAgent,
+        metadata: {
+          session_id: sessionId,
+          item_id,
+          requested_quantity: totalRequestedQuantity,
+          available_quantity: itemData.stock_quantity,
+        },
+      });
+      return NextResponse.json(
+        buildInventoryConflictBody(
+          [
+            {
+              item_id,
+              name: itemData.name,
+              requestedQuantity: totalRequestedQuantity,
+              availableQuantity: itemData.stock_quantity,
+              reason: 'insufficient_stock',
+            },
+          ],
+          'insufficient_stock'
+        ),
+        { status: 409 }
+      );
+    }
+
     let cartItem;
     let error;
 
     if (existingItem) {
       // Update existing cart item (increase quantity)
-      const { data: updated, error: updateError } = await supabase
+      const { data: updated, error: updateError } = await cartSupabase
         .from("carts")
         .update({
           quantity: existingItem.quantity + quantity,
@@ -190,14 +296,14 @@ export async function POST(req: NextRequest) {
       error = updateError;
     } else {
       // Insert new cart item
-      const { data: inserted, error: insertError } = await supabase
+      const { data: inserted, error: insertError } = await cartSupabase
         .from("carts")
         .insert({
           session_id: sessionId,
           item_id,
           quantity,
-          color: color || null,
-          size: size || null,
+          color: normalizedColor,
+          size: normalizedSize,
         })
         .select()
         .single();
@@ -208,11 +314,36 @@ export async function POST(req: NextRequest) {
 
     if (error) {
       console.error("Error adding to cart:", error);
+      await logAudit({
+        action: 'cart.add',
+        outcome: 'error',
+        detail: 'Failed to add to cart',
+        ip: clientIp,
+        user_agent: userAgent,
+        metadata: { session_id: sessionId, item_id, quantity },
+      });
       return NextResponse.json(
         { error: "Failed to add to cart" },
         { status: 500 }
       );
     }
+
+    await logAudit({
+      action: 'cart.add',
+      outcome: 'success',
+      resource: 'carts',
+      resource_id: cartItem?.id ?? null,
+      ip: clientIp,
+      user_agent: userAgent,
+      metadata: {
+        session_id: sessionId,
+        item_id,
+        quantity,
+        color: normalizedColor,
+        size: normalizedSize,
+        operation: existingItem ? 'increment' : 'insert',
+      },
+    });
 
     return NextResponse.json(cartItem, { status: 201 });
   } catch (error) {

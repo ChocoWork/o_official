@@ -24,9 +24,11 @@ test.describe('FR-ITEM-DETAIL-012/013 related items and alt', () => {
 
     await page.goto('/item/101');
 
-    await expect(page.getByTestId('related-items')).toBeVisible();
+    const relatedItemsSection = page.getByTestId('related-items');
+
+    await expect(relatedItemsSection).toBeVisible();
     await expect(page.getByRole('heading', { level: 2, name: 'YOU MAY ALSO LIKE' })).toBeVisible();
-    await expect(page.getByTestId('item-card')).toHaveCount(2);
+    await expect(relatedItemsSection.getByTestId('item-card')).toHaveCount(2);
     await expect(page.locator('img[alt="Silk Blouse - Black - 1枚目"]').last()).toBeVisible();
   });
 });

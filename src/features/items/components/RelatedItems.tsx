@@ -11,6 +11,13 @@ type Props = {
   category: string;
 };
 
+const ITEM_CATEGORIES = new Set(['TOPS', 'BOTTOMS', 'OUTERWEAR', 'ACCESSORIES']);
+
+function normalizeAllowedCategory(value: string): string | null {
+  const normalized = value.trim().toUpperCase();
+  return ITEM_CATEGORIES.has(normalized) ? normalized : null;
+}
+
 export function RelatedItems({ currentItemId, category }: Props) {
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
@@ -18,9 +25,13 @@ export function RelatedItems({ currentItemId, category }: Props) {
   useEffect(() => {
     const fetchRelated = async () => {
       try {
-        const res = await fetch(
-          `/api/items?category=${encodeURIComponent(category)}&pageSize=5`
-        );
+        const safeCategory = normalizeAllowedCategory(category);
+        const query = new URLSearchParams({ pageSize: '5' });
+        if (safeCategory) {
+          query.set('category', safeCategory);
+        }
+
+        const res = await fetch(`/api/items?${query.toString()}`);
         if (!res.ok) return;
         const payload = await res.json() as { items?: Item[] } | Item[];
         const allItems: Item[] = Array.isArray(payload) ? payload : (payload.items ?? []);

@@ -50,8 +50,6 @@ export async function POST(request: Request) {
       {
         user: result.data.user,
         message: '認証に成功しました。',
-        access_token: result.data.session.access_token,
-        refresh_token: result.data.session.refresh_token,
       },
       { status: 200 },
     );

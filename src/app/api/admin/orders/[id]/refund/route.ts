@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { logAudit } from '@/lib/audit';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { getStripeServerClient } from '@/lib/stripe/server';
-import { createServiceRoleClient } from '@/lib/supabase/server';
+import { createClient } from '@/lib/supabase/server';
 
 const orderIdSchema = z.string().uuid();
 const refundRequestSchema = z.object({
@@ -30,6 +30,22 @@ export async function POST(
     const authz = await authorizeAdminPermission('admin.orders.manage', request);
     if (!authz.ok) {
       return authz.response;
+    }
+
+    if (authz.role !== 'admin') {
+      const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
+      const userAgent = request.headers.get('user-agent') ?? null;
+      await logAudit({
+        action: 'admin.orders.refund.create',
+        actor_id: authz.userId,
+        resource: 'orders',
+        resource_id: null,
+        outcome: 'forbidden',
+        detail: 'Refund restricted to admin role',
+        ip: clientIp,
+        user_agent: userAgent,
+      });
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     actorId = authz.userId;
@@ -78,7 +94,7 @@ export async function POST(
       );
     }
 
-    const supabase = await createServiceRoleClient();
+    const supabase = await createClient(request);
 
     const { data: order, error: orderError } = await supabase
       .from('orders')

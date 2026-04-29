@@ -3,9 +3,8 @@ import { test, expect } from '@playwright/test';
 test.describe('FR-ITEM-DETAIL-005 ローディング・エラー状態', () => {
   test('存在しない商品IDでエラーメッセージと戻るボタンを表示する', async ({ page }) => {
     await page.goto('/item/9999999999');
-    await page.waitForLoadState('networkidle');
 
-    await expect(page.getByText('BACK TO ITEMS')).toBeVisible();
+    await expect(page.getByRole('button', { name: /BACK TO ITEMS/i })).toBeVisible();
     // エラーメッセージ（赤テキスト）が表示される
     await expect(page.locator('.text-red-500').first()).toBeVisible();
   });

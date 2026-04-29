@@ -116,9 +116,9 @@ function formatLookSeason(seasonYear: number, seasonType: 'SS' | 'AW'): string {
   return `${seasonYear} ${seasonType}`;
 }
 
-function buildLikePattern(query: string): string {
-  return `%${query.replace(/[%_]/g, '')}%`;
-}
+// buildLikePattern removed: user input is now passed as a bind parameter to
+// search_items / search_looks / search_news RPC functions, which escape ILIKE
+// special characters internally (OWASP A03 – Injection prevention).
 
 function mapPopularItem(item: SearchItemRow): SearchResult {
   return {
@@ -170,30 +170,13 @@ export async function executeSearch(options: SearchExecutionOptions): Promise<Se
   }
 
   const supabase = await createClient();
-  const likePattern = buildLikePattern(query);
 
+  // Use parameterized RPC functions so user input is never concatenated into
+  // a PostgREST filter string (prevents filter-string injection).
   const [itemResult, lookResult, newsResult] = await Promise.all([
-    supabase
-      .from('items')
-      .select('id, name, description, category, image_url')
-      .eq('status', 'published')
-      .or(`name.ilike.${likePattern},description.ilike.${likePattern},category.ilike.${likePattern}`)
-      .order('created_at', { ascending: false })
-      .limit(limitPerType),
-    supabase
-      .from('looks')
-      .select('id, season_year, season_type, theme, theme_description, image_urls')
-      .eq('status', 'published')
-      .or(`theme.ilike.${likePattern},theme_description.ilike.${likePattern}`)
-      .order('created_at', { ascending: false })
-      .limit(limitPerType),
-    supabase
-      .from('news_articles')
-      .select('id, title, category, image_url, content, published_date')
-      .eq('status', 'published')
-      .or(`title.ilike.${likePattern},content.ilike.${likePattern},category.ilike.${likePattern}`)
-      .order('published_date', { ascending: false })
-      .limit(limitPerType),
+    supabase.rpc('search_items', { search_query: query, limit_count: limitPerType }),
+    supabase.rpc('search_looks', { search_query: query, limit_count: limitPerType }),
+    supabase.rpc('search_news',  { search_query: query, limit_count: limitPerType }),
   ]);
 
   if (itemResult.error) {
@@ -299,30 +282,12 @@ export async function getSearchSuggestions(query: string, limit = 8): Promise<Se
   }
 
   const supabase = await createClient();
-  const likePattern = buildLikePattern(normalizedQuery);
 
+  // Parameterized RPC calls (same injection-prevention pattern as executeSearch).
   const [itemResult, lookResult, newsResult] = await Promise.all([
-    supabase
-      .from('items')
-      .select('id, name, description, category, image_url')
-      .eq('status', 'published')
-      .or(`name.ilike.${likePattern},description.ilike.${likePattern},category.ilike.${likePattern}`)
-      .order('created_at', { ascending: false })
-      .limit(limit),
-    supabase
-      .from('looks')
-      .select('id, season_year, season_type, theme, theme_description, image_urls')
-      .eq('status', 'published')
-      .or(`theme.ilike.${likePattern},theme_description.ilike.${likePattern}`)
-      .order('created_at', { ascending: false })
-      .limit(limit),
-    supabase
-      .from('news_articles')
-      .select('id, title, category, image_url, content, published_date')
-      .eq('status', 'published')
-      .or(`title.ilike.${likePattern},content.ilike.${likePattern},category.ilike.${likePattern}`)
-      .order('published_date', { ascending: false })
-      .limit(limit),
+    supabase.rpc('search_items', { search_query: normalizedQuery, limit_count: limit }),
+    supabase.rpc('search_looks', { search_query: normalizedQuery, limit_count: limit }),
+    supabase.rpc('search_news',  { search_query: normalizedQuery, limit_count: limit }),
   ]);
 
   const items = (itemResult.data ?? []) as SearchItemRow[];

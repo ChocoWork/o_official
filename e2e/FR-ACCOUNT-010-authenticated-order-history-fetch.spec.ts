@@ -5,7 +5,7 @@ test.describe('FR-ACCOUNT-010 authenticated order history fetch', () => {
 	test('認証付きで注文履歴を取得し、購入履歴タブに一覧表示する', async ({ page }) => {
 		await mockOtpAuthentication(page);
 
-		let ordersAuthorizationHeader: string | null = null;
+		let ordersCookieHeader: string | null = null;
 
 		await page.route('**/api/profile', async (route) => {
 			await route.fulfill({
@@ -28,9 +28,9 @@ test.describe('FR-ACCOUNT-010 authenticated order history fetch', () => {
 		});
 
 		await page.route('**/api/orders', async (route) => {
-			ordersAuthorizationHeader = route.request().headers().authorization ?? null;
+			ordersCookieHeader = route.request().headers().cookie ?? null;
 
-			if (!ordersAuthorizationHeader?.startsWith('Bearer test-access-token')) {
+			if (!ordersCookieHeader?.includes('sb-access-token=test-access-token')) {
 				await route.fulfill({
 					status: 401,
 					contentType: 'application/json',
@@ -62,7 +62,7 @@ test.describe('FR-ACCOUNT-010 authenticated order history fetch', () => {
 		await loginAndOpenAccount(page);
 		await page.getByRole('button', { name: '購入履歴' }).click();
 
-		await expect.poll(() => ordersAuthorizationHeader).toContain('Bearer test-access-token');
+		await expect.poll(() => ordersCookieHeader).toContain('sb-access-token=test-access-token');
 		await expect(page.getByText('ORD-0001')).toBeVisible();
 		await expect(page.getByText('注文履歴を読み込めませんでした')).toHaveCount(0);
 	});

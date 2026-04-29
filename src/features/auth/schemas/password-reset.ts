@@ -15,3 +15,9 @@ export const ResetConfirmSchema = z.object({
 });
 
 export type ResetConfirm = z.infer<typeof ResetConfirmSchema>;
+
+export const ResetSessionConfirmSchema = z.object({
+  new_password: passwordSchema,
+});
+
+export type ResetSessionConfirm = z.infer<typeof ResetSessionConfirmSchema>;

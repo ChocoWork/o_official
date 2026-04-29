@@ -33,17 +33,23 @@ export default function CartPage() {
   const [error, setError] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [togglingWishlist, setTogglingWishlist] = useState<string | null>(null);
+  const [resyncing, setResyncing] = useState(false);
+  const [syncErrorByItem, setSyncErrorByItem] = useState<Record<string, string>>({});
   const { updateCartCount, wishlistedItems, toggleWishlist } = useCart();
 
   // track pending network updates to debounce API calls per-item
   const pendingTimers = React.useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const lastDesired = React.useRef<Record<string, number>>({});
+  const failedDesired = React.useRef<Record<string, number>>({});
+  const confirmedQuantities = React.useRef<Record<string, number>>({});
   const inFlight = React.useRef<Set<string>>(new Set());
 
   // clear any outstanding timers on unmount
   useEffect(() => {
     const pendingTimersSnapshot = pendingTimers.current;
     const lastDesiredSnapshot = lastDesired.current;
+    const failedDesiredSnapshot = failedDesired.current;
+    const confirmedQuantitiesSnapshot = confirmedQuantities.current;
     const inFlightSnapshot = inFlight.current;
 
     return () => {
@@ -54,15 +60,25 @@ export default function CartPage() {
       for (const key of Object.keys(lastDesiredSnapshot)) {
         delete lastDesiredSnapshot[key];
       }
+      for (const key of Object.keys(failedDesiredSnapshot)) {
+        delete failedDesiredSnapshot[key];
+      }
+      for (const key of Object.keys(confirmedQuantitiesSnapshot)) {
+        delete confirmedQuantitiesSnapshot[key];
+      }
       inFlightSnapshot.clear();
     };
   }, []);
 
   useEffect(() => {
-    fetchCart();
+    fetchCart({ showLoading: true });
   }, []);
 
-  const fetchCart = async () => {
+  const fetchCart = async ({ showLoading = false }: { showLoading?: boolean } = {}) => {
+    if (showLoading) {
+      setLoading(true);
+    }
+
     try {
       const response = await fetch('/api/cart');
       if (!response.ok) {
@@ -70,13 +86,37 @@ export default function CartPage() {
       }
       const data: CartItem[] = await response.json();
       // filter out any entries where item details are missing (should be rare)
-      setCartItems(data.filter((ci) => ci.items !== null));
+      const filteredItems = data.filter((ci) => ci.items !== null);
+      setCartItems(filteredItems);
+
+      const confirmedNext: Record<string, number> = {};
+      for (const item of filteredItems) {
+        confirmedNext[item.id] = item.quantity;
+      }
+
+      confirmedQuantities.current = confirmedNext;
+      failedDesired.current = {};
+      setSyncErrorByItem({});
+      setError(null);
     } catch (err) {
       console.error('Error fetching cart:', err);
       setError(err instanceof Error ? err.message : 'エラーが発生しました');
     } finally {
-      setLoading(false);
+      if (showLoading) {
+        setLoading(false);
+      }
     }
+  };
+
+  const rollbackToConfirmed = (cartId: string) => {
+    const confirmedQuantity = confirmedQuantities.current[cartId];
+    if (typeof confirmedQuantity !== 'number') {
+      return;
+    }
+
+    setCartItems((prev) =>
+      prev.map((item) => (item.id === cartId ? { ...item, quantity: confirmedQuantity } : item))
+    );
   };
 
   const scheduleUpdate = (cartId: string) => {
@@ -106,13 +146,44 @@ export default function CartPage() {
       });
 
       if (!response.ok) {
-        throw new Error('数量更新に失敗しました');
+        const errorPayload = await response.json().catch(() => null);
+        const errorMessage =
+          typeof errorPayload?.message === 'string'
+            ? errorPayload.message
+            : typeof errorPayload?.error === 'string'
+              ? errorPayload.error
+              : '数量更新に失敗しました';
+        throw new Error(errorMessage);
       }
+
+      const updatedItem = await response.json().catch(() => null);
+      const confirmedQuantity =
+        typeof updatedItem?.quantity === 'number' ? updatedItem.quantity : quantity;
+      confirmedQuantities.current[cartId] = confirmedQuantity;
+      delete failedDesired.current[cartId];
+
+      setCartItems((prev) =>
+        prev.map((item) =>
+          item.id === cartId
+            ? { ...item, quantity: confirmedQuantity }
+            : item
+        )
+      );
+      setSyncErrorByItem((prev) => {
+        const next = { ...prev };
+        delete next[cartId];
+        return next;
+      });
 
       await updateCartCount();
     } catch (err) {
       console.error('Error updating quantity:', err);
-      alert(err instanceof Error ? err.message : 'エラーが発生しました');
+      failedDesired.current[cartId] = quantity;
+      rollbackToConfirmed(cartId);
+      setSyncErrorByItem((prev) => ({
+        ...prev,
+        [cartId]: err instanceof Error ? err.message : 'エラーが発生しました',
+      }));
     } finally {
       inFlight.current.delete(cartId);
       setUpdatingId(null);
@@ -123,6 +194,35 @@ export default function CartPage() {
       }
     }
   };
+
+  const handleRetryUpdate = (cartId: string) => {
+    const desiredQuantity = failedDesired.current[cartId];
+    if (typeof desiredQuantity !== 'number') {
+      return;
+    }
+
+    lastDesired.current[cartId] = desiredQuantity;
+    setCartItems((prev) =>
+      prev.map((item) => (item.id === cartId ? { ...item, quantity: desiredQuantity } : item))
+    );
+    setSyncErrorByItem((prev) => {
+      const next = { ...prev };
+      delete next[cartId];
+      return next;
+    });
+
+    if (!inFlight.current.has(cartId)) {
+      scheduleUpdate(cartId);
+    }
+  };
+
+  const handleResyncFromServer = async () => {
+    setResyncing(true);
+    await fetchCart({ showLoading: false });
+    setResyncing(false);
+  };
+
+  const hasSyncError = Object.keys(syncErrorByItem).length > 0;
 
   const handleQuantityChange = (cartId: string, newQuantity: number) => {
     if (newQuantity < 1) return;
@@ -205,6 +305,21 @@ export default function CartPage() {
             {error && (
               <div className="text-sm text-red-500 font-brand p-4 border border-red-300 bg-red-50">
                 {error}
+              </div>
+            )}
+
+            {hasSyncError && (
+              <div className="text-sm text-amber-700 font-brand p-4 border border-amber-300 bg-amber-50 flex items-center justify-between gap-4">
+                <span>数量の更新に失敗した商品があります。再試行または再同期してください。</span>
+                <Button
+                  onClick={handleResyncFromServer}
+                  disabled={resyncing}
+                  variant="secondary"
+                  size="sm"
+                  className="font-brand"
+                >
+                  {resyncing ? '再同期中...' : '最新状態を再取得'}
+                </Button>
               </div>
             )}
 
@@ -291,6 +406,30 @@ export default function CartPage() {
                            size="sm"/>
                         </div>
                       </div>
+                      {syncErrorByItem[item.id] && (
+                        <div className="mt-3 text-xs text-red-600 font-brand flex items-center justify-between gap-3">
+                          <span>{syncErrorByItem[item.id]}</span>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              onClick={() => handleRetryUpdate(item.id)}
+                              variant="secondary"
+                              size="sm"
+                              className="font-brand"
+                            >
+                              再試行
+                            </Button>
+                            <Button
+                              onClick={handleResyncFromServer}
+                              disabled={resyncing}
+                              variant="ghost"
+                              size="sm"
+                              className="font-brand"
+                            >
+                              最新状態を再取得
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );

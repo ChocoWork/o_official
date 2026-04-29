@@ -30,8 +30,19 @@ jest.mock('@/lib/audit', () => ({
   logAudit: jest.fn(),
 }));
 
+jest.mock('@/features/auth/middleware/rateLimit', () => ({
+  enforceRateLimit: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('@/features/auth/services/session', () => ({
+  findSessionByRefreshHash: jest.fn(),
+  isReplay: jest.fn(),
+  revokeAllSessionsForUser: jest.fn(),
+}));
+
 const { cookies } = require('next/headers');
 const { logAudit } = require('@/lib/audit');
+const sessionService = require('@/features/auth/services/session');
 
 let registerHandler: any;
 let loginHandler: any;
@@ -54,6 +65,9 @@ describe('Auth full flow integration (register -> login -> refresh -> logout)', 
     delete process.env.SUPABASE_URL;
     delete process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!(global as any).fetch) (global as any).fetch = jest.fn();
+    sessionService.findSessionByRefreshHash.mockResolvedValue({ id: 'session-1', user_id: 'u-seq' });
+    sessionService.isReplay.mockResolvedValue(false);
+    sessionService.revokeAllSessionsForUser.mockResolvedValue(undefined);
   });
 
   test('register -> login -> refresh -> logout sequence', async () => {
@@ -83,6 +97,10 @@ describe('Auth full flow integration (register -> login -> refresh -> logout)', 
     expect(loginBody.access_token).toBeDefined();
     // inspect cookie set by login
     const refreshCookie = loginRes.cookies.get('sb-refresh-token');
+    const sessionCookie = loginRes.cookies.get('session_id');
+    expect(sessionCookie).toBeDefined();
+    expect(typeof sessionCookie.value).toBe('string');
+    expect(sessionCookie.value.length).toBeGreaterThan(0);
     expect(refreshCookie).toBeDefined();
     expect(refreshCookie.value).toBe('r1');
     expect(createServiceRoleClient().from).toHaveBeenCalledWith('sessions');

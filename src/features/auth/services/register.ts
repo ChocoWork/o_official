@@ -27,10 +27,13 @@ export async function persistSessionAndCookies(res: NextResponse, session: Persi
     const {
       refreshCookieName,
       accessCookieName,
+      sessionCookieName,
       cookieOptionsForRefresh,
       cookieOptionsForAccess,
       csrfCookieName,
       cookieOptionsForCsrf,
+      cookieOptionsForSession,
+      generateSessionId,
     } = await import('@/lib/cookie');
     const { generateCsrfToken } = await import('@/lib/csrf');
     const { tokenHashSha256 } = await import('@/lib/hash');
@@ -38,9 +41,22 @@ export async function persistSessionAndCookies(res: NextResponse, session: Persi
 
     const service = await createServiceRoleClient();
     const REFRESH_TOKEN_MAX_AGE = 7 * 24 * 60 * 60; // 7 days
+    const SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
 
     const accessToken = session.access_token ?? '';
     const accessMaxAge = typeof session.expires_in === 'number' ? session.expires_in : 15 * 60;
+
+    try {
+      res.cookies.set({
+        name: sessionCookieName,
+        value: generateSessionId(),
+        ...cookieOptionsForSession(SESSION_COOKIE_MAX_AGE),
+      });
+    } catch (e) {
+      console.error('persistSessionAndCookies: failed to rotate session cookie', e, context);
+      await logAudit({ action: 'auth.session.persist', outcome: 'error', detail: 'Failed to rotate session cookie', actor_id: context.actor_id, actor_email: context.actor_email });
+      return { ok: false, error: 'Failed to rotate session cookie' };
+    }
 
     // set access cookie (HttpOnly)
     try {

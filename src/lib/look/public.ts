@@ -1,4 +1,5 @@
-import { createPublicClient } from '@/lib/supabase/server';
+import { createPublicClient, createServiceRoleClient } from '@/lib/supabase/server';
+import { signLookImageUrls } from '@/lib/storage/look-images';
 
 export type PublicLookLinkedItem = {
   category: string;
@@ -79,7 +80,12 @@ async function hydrateLooks(lookRows: LookRow[]): Promise<PublicLook[]> {
     return [];
   }
 
-  const supabase = await createPublicClient();
+  // Use service role client to sign image URLs from the private look-images bucket,
+  // and anon client for DB reads (respects RLS; only published rows are accessible).
+  const [supabase, serviceSupabase] = await Promise.all([
+    createPublicClient(),
+    createServiceRoleClient(),
+  ]);
   const lookIds = lookRows.map((look) => look.id);
 
   const { data: lookItemRows, error: lookItemsError } = await supabase
@@ -130,8 +136,19 @@ async function hydrateLooks(lookRows: LookRow[]): Promise<PublicLook[]> {
     lookItemsMap.set(lookItemRow.look_id, list);
   }
 
+  // Sign image URLs for all looks in parallel
+  const signedImageUrlsMap = new Map<number, string[]>();
+  await Promise.all(
+    lookRows.map(async (row) => {
+      const rawUrls = Array.isArray(row.image_urls) ? row.image_urls : [];
+      const signed = await signLookImageUrls(serviceSupabase, rawUrls);
+      signedImageUrlsMap.set(row.id, signed);
+    })
+  );
+
   return lookRows.map((row) => ({
     ...mapLookRowToPublicLook(row),
+    imageUrls: signedImageUrlsMap.get(row.id) ?? [],
     linkedItems: lookItemsMap.get(row.id) ?? [],
   }));
 }

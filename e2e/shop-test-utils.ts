@@ -42,7 +42,8 @@ export type MockItemDetail = {
   colors: Array<{ hex: string; name: string }>;
   sizes: string[];
   product_details: string[];
-  stock_quantity: number | null;
+  stockStatus?: 'in_stock' | 'low_stock' | 'sold_out' | 'unknown';
+  stock_quantity?: number | null;
 };
 
 export const sampleCartItem = (overrides: Partial<MockCartItem> = {}): MockCartItem => ({
@@ -100,7 +101,7 @@ export const sampleItemDetail = (
   ],
   sizes: ['S', 'M'],
   product_details: ['Silk 100%', 'Made in Japan'],
-  stock_quantity: 3,
+  stockStatus: 'low_stock',
   ...overrides,
 });
 
@@ -250,12 +251,21 @@ export async function mockItemDetailApis(
     });
   });
 
-  await page.route(`**/api/items?category=${encodeURIComponent(item.category)}&pageSize=5`, async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ items: [item, ...relatedItems] }),
-    });
+  await page.route('**/api/items?*', async (route) => {
+    const requestUrl = new URL(route.request().url());
+    const pageSize = requestUrl.searchParams.get('pageSize');
+    const category = requestUrl.searchParams.get('category');
+
+    if (pageSize === '5' && category === item.category) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [item, ...relatedItems] }),
+      });
+      return;
+    }
+
+    await route.fallback();
   });
 }
 

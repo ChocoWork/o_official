@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
-import { ResetRequestSchema, ResetConfirmSchema } from '@/features/auth/schemas/password-reset';
+import Script from 'next/script';
+import { ResetRequestSchema, ResetSessionConfirmSchema } from '@/features/auth/schemas/password-reset';
 import { z } from 'zod';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
@@ -14,18 +14,60 @@ declare global {
 }
 
 export default function PasswordResetPage() {
-  const searchParams = useSearchParams();
-  const token = searchParams.get('token');
-  const emailFromQuery = searchParams.get('email');
-
-  const [email, setEmail] = useState(emailFromQuery || '');
+  const [email, setEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [turnstileToken, setTurnstileToken] = useState('');
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isConfirmMode, setIsConfirmMode] = useState(false);
+  const [isResolvingSession, setIsResolvingSession] = useState(true);
 
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '';
+
+  useEffect(() => {
+    let active = true;
+
+    const resolveResetSession = async () => {
+      try {
+        const response = await fetch('/api/auth/password-reset/session', {
+          method: 'GET',
+          cache: 'no-store',
+          headers: { Accept: 'application/json' },
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const body = await response.json().catch(() => null);
+        if (!active || !body) {
+          return;
+        }
+
+        if (body.ready) {
+          setIsConfirmMode(true);
+          setEmail(typeof body.email === 'string' ? body.email : '');
+        } else {
+          setIsConfirmMode(false);
+        }
+      } catch {
+        if (active) {
+          setIsConfirmMode(false);
+        }
+      } finally {
+        if (active) {
+          setIsResolvingSession(false);
+        }
+      }
+    };
+
+    void resolveResetSession();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!siteKey) return;
@@ -87,7 +129,7 @@ export default function PasswordResetPage() {
     setMessage(null);
 
     try {
-      ResetConfirmSchema.parse({ token: token || '', email, new_password: newPassword });
+      ResetSessionConfirmSchema.parse({ new_password: newPassword });
     } catch (err) {
       if (err instanceof z.ZodError) {
         setError(err.issues.map((i) => i.message).join(' '));
@@ -102,7 +144,7 @@ export default function PasswordResetPage() {
       const resp = await fetch('/api/auth/password-reset/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, email, new_password: newPassword }),
+        body: JSON.stringify({ new_password: newPassword }),
       });
 
       if (!resp.ok) {
@@ -112,6 +154,9 @@ export default function PasswordResetPage() {
       }
 
       setMessage('パスワードを更新しました。ログインしてください。');
+      setIsConfirmMode(false);
+      setEmail('');
+      setNewPassword('');
     } catch (err) {
       console.error(err);
       setError('再設定に失敗しました');
@@ -120,10 +165,15 @@ export default function PasswordResetPage() {
     }
   };
 
-  const isConfirmMode = Boolean(token && emailFromQuery);
-
   return (
     <div className="pb-10 sm:pb-14 px-6 lg:px-12">
+      {siteKey ? (
+        <Script
+          id="turnstile-reset-script"
+          src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+          strategy="afterInteractive"
+        />
+      ) : null}
       <div className="w-full max-w-md mx-auto px-6 font-brand">
         <h1 className="text-xl mb-6">
           {isConfirmMode ? 'パスワード再設定' : 'パスワード再設定の申請'}
@@ -136,7 +186,7 @@ export default function PasswordResetPage() {
             onChange={(e) => setEmail(e.target.value)}
             required
             type="email"
-            disabled={Boolean(emailFromQuery)}
+            disabled={isConfirmMode || isResolvingSession}
            size="md"/>
 
           {isConfirmMode ? (
@@ -160,9 +210,9 @@ export default function PasswordResetPage() {
             type="submit"
             className="w-full disabled:opacity-50"
             size="lg"
-            disabled={loading}
+            disabled={loading || isResolvingSession}
           >
-            {isConfirmMode ? 'パスワードを更新' : '再設定メールを送信'}
+            {isResolvingSession ? '確認中...' : isConfirmMode ? 'パスワードを更新' : '再設定メールを送信'}
           </Button>
         </form>
         {error ? <p className="text-sm text-red-600 mt-4">{error}</p> : null}

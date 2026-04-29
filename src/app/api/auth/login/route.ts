@@ -54,12 +54,17 @@ export async function POST(request: Request) {
       const {
         refreshCookieName,
         accessCookieName,
+        sessionCookieName,
         cookieOptionsForRefresh,
         cookieOptionsForAccess,
         csrfCookieName,
         cookieOptionsForCsrf,
+        cookieOptionsForSession,
+        generateSessionId,
       } = await import('@/lib/cookie');
+      const SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
 
+      res.cookies.set({ name: sessionCookieName, value: generateSessionId(), ...cookieOptionsForSession(SESSION_COOKIE_MAX_AGE) });
       res.cookies.set({ name: accessCookieName, value: session.access_token ?? '', ...cookieOptionsForAccess(ACCESS_TOKEN_MAX_AGE) });
       res.cookies.set({ name: refreshCookieName, value: session.refresh_token ?? '', ...cookieOptionsForRefresh(REFRESH_TOKEN_MAX_AGE) });
 

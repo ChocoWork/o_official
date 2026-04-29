@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
+import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 
 const bodySchema = z.object({
   email: z.string().email(),
@@ -10,10 +11,29 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: Request) {
+  let actorId: string | null = null;
+  let actorEmail: string | null = null;
+
   try {
+    const authz = await authorizeAdminPermission('admin.users.manage', request);
+    if (!authz.ok) {
+      return authz.response;
+    }
+
+    actorId = authz.userId;
+    actorEmail = authz.actorEmail;
+
     const body = await request.json();
     const parsed = bodySchema.safeParse(body);
     if (!parsed.success) {
+      await logAudit({
+        action: 'admin_create_user',
+        actor_id: actorId,
+        actor_email: actorEmail,
+        resource: 'users',
+        outcome: 'failure',
+        detail: 'Invalid request body',
+      });
       return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
     }
 
@@ -31,15 +51,36 @@ export async function POST(request: Request) {
       console.error('admin.createUser error:', error);
       const msg = String(error.message || '').toLowerCase();
       if (msg.includes('already') || msg.includes('duplicate')) {
-        await logAudit({ action: 'admin_create_user', actor_email: null, outcome: 'conflict', detail: error.message });
+        await logAudit({
+          action: 'admin_create_user',
+          actor_id: actorId,
+          actor_email: actorEmail,
+          resource: 'users',
+          outcome: 'conflict',
+          detail: error.message,
+        });
         return NextResponse.json({ error: 'Email already registered' }, { status: 409 });
       }
 
-      await logAudit({ action: 'admin_create_user', actor_email: null, outcome: 'error', detail: error.message });
+      await logAudit({
+        action: 'admin_create_user',
+        actor_id: actorId,
+        actor_email: actorEmail,
+        resource: 'users',
+        outcome: 'error',
+        detail: error.message,
+      });
       return NextResponse.json({ error: 'Failed to create user' }, { status: 500 });
     }
 
-    await logAudit({ action: 'admin_create_user', actor_email: null, outcome: 'success', resource_id: data.user?.id });
+    await logAudit({
+      action: 'admin_create_user',
+      actor_id: actorId,
+      actor_email: actorEmail,
+      resource: 'users',
+      resource_id: data.user?.id,
+      outcome: 'success',
+    });
     return NextResponse.json({ id: data.user?.id, email: data.user?.email }, { status: 201 });
   } catch (err) {
     console.error('Admin create-user handler error:', err);

@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { createServiceRoleClient } from '@/lib/supabase/server';
+import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { logAudit } from '@/lib/audit';
+import { signNewsImageFields } from '@/lib/storage/news-images';
 
 const createNewsSchema = z.object({
   title: z.string().trim().min(1).max(200),
@@ -91,13 +92,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Image size must be 5MB or less' }, { status: 400 });
     }
 
-    const supabase = await createServiceRoleClient();
+    const dbSupabase = await createClient(request);
+    const uploadSupabase = await createServiceRoleClient();
 
     const extension = imageExtensionMap[image.type];
     const filePath = `news/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.${extension}`;
     const imageBuffer = Buffer.from(await image.arrayBuffer());
 
-    const { error: uploadError } = await supabase.storage
+    const { error: uploadError } = await uploadSupabase.storage
       .from('news-images')
       .upload(filePath, imageBuffer, {
         contentType: image.type,
@@ -116,18 +118,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Failed to upload image' }, { status: 500 });
     }
 
-    const {
-      data: { publicUrl },
-    } = supabase.storage.from('news-images').getPublicUrl(filePath);
-
-    const { data, error } = await supabase
+    const { data, error } = await dbSupabase
       .from('news_articles')
       .insert([
         {
           title: parsed.data.title,
           category: parsed.data.category,
           published_date: parsed.data.date,
-          image_url: publicUrl,
+          image_url: filePath,
           content: parsed.data.content,
           detailed_content: parsed.data.detailedContent,
           status: parsed.data.status,
@@ -177,7 +175,10 @@ export async function GET(request: Request) {
       return authz.response;
     }
 
-    const supabase = await createServiceRoleClient();
+    const [supabase, serviceSupabase] = await Promise.all([
+      createClient(request),
+      createServiceRoleClient(),
+    ]);
 
     const { data, error } = await supabase
       .from('news_articles')
@@ -189,7 +190,13 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Failed to fetch news articles' }, { status: 500 });
     }
 
-    return NextResponse.json({ data }, { status: 200 });
+    const signedArticles = await Promise.all(
+      ((data ?? []) as Array<Record<string, unknown> & { image_url?: string | null }>).map((article) =>
+        signNewsImageFields(serviceSupabase, article),
+      ),
+    );
+
+    return NextResponse.json({ data: signedArticles }, { status: 200 });
   } catch (error) {
     console.error('GET /api/admin/news error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

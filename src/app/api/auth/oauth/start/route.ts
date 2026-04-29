@@ -96,6 +96,7 @@ export async function GET(request: Request) {
     authorizeUrl.searchParams.set('code_challenge', codeChallenge);
     authorizeUrl.searchParams.set('code_challenge_method', 'S256');
     authorizeUrl.searchParams.set('state', state);
+    authorizeUrl.searchParams.set('prompt', 'select_account');
 
     const res = NextResponse.redirect(authorizeUrl, { status: 302 });
     res.headers.set('Cache-Control', 'no-store');

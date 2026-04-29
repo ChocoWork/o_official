@@ -1,3 +1,5 @@
+export type ItemStockStatus = 'in_stock' | 'low_stock' | 'sold_out' | 'unknown';
+
 export type Item = {
   id: number;
   name: string;
@@ -11,6 +13,7 @@ export type Item = {
   sizes?: string[];
   product_details?: string | Record<string, string> | string[];
   status?: 'private' | 'published';
+  stockStatus?: ItemStockStatus;
   /** NULL = 在庫情報なし, 0 = SOLD OUT, 1-4 = 残りわずか, 5以上 = 在庫あり */
   stock_quantity?: number | null;
   created_at?: string;

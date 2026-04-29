@@ -41,6 +41,20 @@ test.describe('FR-ACCOUNT-006 extended profile fields', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) });
     });
 
+    await page.route('**/api/checkout/postal-code?postalCode=1600022', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          address: {
+            prefecture: '東京都',
+            city: '新宿区',
+            address: '新宿',
+          },
+        }),
+      });
+    });
+
     await loginAndOpenAccount(page);
 
     await page.getByRole('button', { name: '変更する' }).click();
@@ -56,7 +70,9 @@ test.describe('FR-ACCOUNT-006 extended profile fields', () => {
     await expect(page.getByLabel('郵便番号')).toHaveValue('160-0022');
     await page.getByLabel('都道府県').fill('東京都');
     await page.getByLabel('市区町村').fill('新宿区');
+    await expect(page.getByLabel('番地')).toHaveValue('新宿');
     await page.getByLabel('番地').fill('新宿3-4-5');
+    await expect(page.getByLabel('番地')).toHaveValue('新宿3-4-5');
     await page.getByLabel('建物名・部屋番号').fill('新宿ビル 502');
     await page.getByRole('button', { name: '変更を保存' }).click();
 

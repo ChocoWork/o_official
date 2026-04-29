@@ -17,12 +17,22 @@ jest.mock('@/features/checkout/services/postal-code.service', () => ({
   fetchAddressByPostalCode: jest.fn(),
 }));
 
+const mockEnforceRateLimit = jest.fn();
+jest.mock('@/features/auth/middleware/rateLimit', () => ({
+  enforceRateLimit: (...args: unknown[]) => mockEnforceRateLimit(...args),
+}));
+
 import { GET } from '@/app/api/checkout/postal-code/route';
 import { fetchAddressByPostalCode } from '@/features/checkout/services/postal-code.service';
 
 const mockedFetchAddressByPostalCode = fetchAddressByPostalCode as jest.MockedFunction<typeof fetchAddressByPostalCode>;
 
 describe('GET /api/checkout/postal-code', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockEnforceRateLimit.mockResolvedValue(undefined);
+  });
+
   test('郵便番号不正時は400を返す', async () => {
     const req = new NextRequest('http://localhost/api/checkout/postal-code');
     const res = await GET(req);
@@ -60,5 +70,19 @@ describe('GET /api/checkout/postal-code', () => {
 
     expect(res.status).toBe(502);
     expect(res.body).toEqual({ error: 'Postal code lookup failed' });
+  });
+
+  test('レート制限時は429を返す', async () => {
+    mockEnforceRateLimit.mockResolvedValueOnce({
+      body: { error: 'Too many requests' },
+      status: 429,
+    });
+
+    const req = new NextRequest('http://localhost/api/checkout/postal-code?postalCode=9813351');
+    const res = await GET(req);
+
+    expect(res.status).toBe(429);
+    expect(res.body).toEqual({ error: 'Too many requests' });
+    expect(mockedFetchAddressByPostalCode).not.toHaveBeenCalled();
   });
 });

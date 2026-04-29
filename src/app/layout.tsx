@@ -1,5 +1,4 @@
 import type { Metadata } from "next"; // Metadata型をNext.jsからインポート
-import { headers } from 'next/headers';
 import { Geist, Geist_Mono } from "next/font/google"; // Google FontsのGeistとGeist_Monoフォントをインポート
 import "../styles/globals.css"; // グローバルCSSファイルをインポート
 import { Providers } from '@/contexts/Providers'; // ProvidersとLayout componentsをインポート
@@ -25,19 +24,13 @@ export const metadata: Metadata = {
 };
 
 // RootLayoutコンポーネントをエクスポート
-export default async function RootLayout({
+export default function RootLayout({
   children,  // `children`はレイアウト内に挿入されるコンテンツ（子コンポーネント）を示す
 }: Readonly<{
   children: React.ReactNode;  // childrenはReactのノード（要素、文字列など）であることを示す
 }>) {
-  const nonce = (await headers()).get('x-nonce') ?? undefined;
-
   return (
     <html lang="ja">
-      <head>
-        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/remixicon/fonts/remixicon.css" />
-        <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer nonce={nonce}></script>
-      </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col min-h-screen`}> 
         <Providers>
           {children}

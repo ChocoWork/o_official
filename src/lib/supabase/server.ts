@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { cookies, headers } from 'next/headers';
-import { accessCookieName } from '@/lib/cookie';
+import { accessCookieName, sessionCookieName } from '@/lib/cookie';
 
 type AuthUserResponse = Awaited<ReturnType<SupabaseClient['auth']['getUser']>>;
 
@@ -51,6 +51,14 @@ export function extractAuthToken(request?: Request): string | null {
   return extractBearerToken(request) ?? extractAccessTokenFromCookie(request);
 }
 
+export function extractSessionIdFromCookie(request?: Request): string | null {
+  if (!request) {
+    return null;
+  }
+
+  return extractCookieValue(request.headers.get('cookie'), sessionCookieName);
+}
+
 export async function resolveRequestUser(
   supabase: SupabaseClient,
   request?: Request,
@@ -84,6 +92,13 @@ export async function createClient(request?: Request): Promise<SupabaseClient> {
   const { createClient: createSupabaseClient } = await import('@supabase/supabase-js');
 
   const authToken = extractAuthToken(request);
+  const sessionId = request
+    ? extractSessionIdFromCookie(request)
+    : cookieStore.get(sessionCookieName)?.value ?? extractCookieValue(headersList.get('cookie'), sessionCookieName);
+  const sessionContextHeaders: Record<string, string> = {};
+  if (sessionId) {
+    sessionContextHeaders['x-session-id'] = sessionId;
+  }
   
   // Request がある場合はそこから Cookie を読み取る、なければ next/headers を使う
   const cookieHeader = request ? request.headers.get('cookie') : headersList.get('cookie');
@@ -101,6 +116,7 @@ export async function createClient(request?: Request): Promise<SupabaseClient> {
         global: {
           headers: {
             Authorization: `Bearer ${authToken}`,
+            ...sessionContextHeaders,
           },
         },
       },
@@ -115,6 +131,9 @@ export async function createClient(request?: Request): Promise<SupabaseClient> {
         autoRefreshToken: true,
         persistSession: false,
         detectSessionInUrl: false,
+      },
+      global: {
+        headers: sessionContextHeaders,
       },
       cookies: {
         getAll() {
@@ -134,8 +153,9 @@ export async function createClient(request?: Request): Promise<SupabaseClient> {
                 let decodedValue = rawValue;
                 try {
                   decodedValue = decodeURIComponent(rawValue);
-                } catch (e) {
-                  console.warn(`[Supabase.Cookie] Failed to decode cookie value: ${e}`);
+                } catch {
+                  // Intentionally omit error details to avoid leaking raw cookie value fragments in logs
+                  console.warn('[Supabase.Cookie] Failed to decode cookie value');
                 }
 
                 result.push({ name, value: decodedValue });
@@ -148,13 +168,14 @@ export async function createClient(request?: Request): Promise<SupabaseClient> {
 
           return result;
         },
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet: Array<{ name: string; value: string; options?: Parameters<typeof cookieStore.set>[2] }>) {
           try {
             for (const { name, value, options } of cookiesToSet) {
               cookieStore.set(name, value, options);
             }
-          } catch (error) {
-            console.warn('[Supabase.Cookie.setAll] Failed:', error);
+          } catch {
+            // Avoid logging runtime error objects because some platforms may include request metadata.
+            console.warn('[Supabase.Cookie.setAll] Failed');
           }
         },
       },

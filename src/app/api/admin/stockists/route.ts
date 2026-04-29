@@ -1,7 +1,15 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { createServiceRoleClient } from '@/lib/supabase/server';
+import { createClient } from '@/lib/supabase/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
+import { logAudit } from '@/lib/audit';
+import {
+  applyRotatedCsrfCookie,
+  enforceAdminStockistMutationRateLimit,
+  enforceAdminStockistReadRateLimit,
+  requireAdminStockistCsrf,
+  toCsrfDenyResponse,
+} from '@/features/stockist/services/admin-security';
 
 const stockistStatusSchema = z.enum(['private', 'published']);
 
@@ -21,7 +29,12 @@ export async function GET(request: Request) {
       return authz.response;
     }
 
-    const supabase = await createServiceRoleClient();
+    const rateLimitResponse = await enforceAdminStockistReadRateLimit(request, authz.userId);
+    if (rateLimitResponse) {
+      return rateLimitResponse;
+    }
+
+    const supabase = await createClient(request);
 
     const { data, error } = await supabase
       .from('stockists')
@@ -47,10 +60,34 @@ export async function POST(request: Request) {
       return authz.response;
     }
 
+    const rateLimitResponse = await enforceAdminStockistMutationRateLimit(request, authz.userId);
+    if (rateLimitResponse) {
+      return rateLimitResponse;
+    }
+
+    const csrfResult = await requireAdminStockistCsrf();
+    const csrfDenyResponse = toCsrfDenyResponse(csrfResult);
+    if (csrfDenyResponse) {
+      return csrfDenyResponse;
+    }
+
+    const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
+    const userAgent = request.headers.get('user-agent') ?? null;
+
     const body = await request.json();
     const parsed = createStockistSchema.safeParse(body);
 
     if (!parsed.success) {
+      await logAudit({
+        action: 'admin.stockists.create',
+        actor_id: authz.userId,
+        actor_email: authz.actorEmail,
+        resource: 'stockists',
+        outcome: 'failure',
+        detail: 'Validation failed',
+        ip: clientIp,
+        user_agent: userAgent,
+      });
       return NextResponse.json(
         {
           error: 'Invalid request',
@@ -60,7 +97,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const supabase = await createServiceRoleClient();
+    const supabase = await createClient(request);
 
     const { data, error } = await supabase
       .from('stockists')
@@ -79,10 +116,34 @@ export async function POST(request: Request) {
 
     if (error) {
       console.error('Failed to create stockist:', error);
+      await logAudit({
+        action: 'admin.stockists.create',
+        actor_id: authz.userId,
+        actor_email: authz.actorEmail,
+        resource: 'stockists',
+        outcome: 'error',
+        detail: 'DB insert failed',
+        ip: clientIp,
+        user_agent: userAgent,
+      });
       return NextResponse.json({ error: 'Failed to save stockist' }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, id: data.id }, { status: 201 });
+    await logAudit({
+      action: 'admin.stockists.create',
+      actor_id: authz.userId,
+      actor_email: authz.actorEmail,
+      resource: 'stockists',
+      resource_id: String(data.id),
+      outcome: 'success',
+      detail: `Created stockist: ${parsed.data.name}`,
+      ip: clientIp,
+      user_agent: userAgent,
+    });
+
+    const response = NextResponse.json({ success: true, id: data.id }, { status: 201 });
+    applyRotatedCsrfCookie(response, csrfResult);
+    return response;
   } catch (error) {
     console.error('POST /api/admin/stockists error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

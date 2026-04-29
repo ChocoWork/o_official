@@ -116,7 +116,7 @@ describe('CartPage', () => {
     expect(screen.getByDisplayValue('4')).toBeInTheDocument();
 
     // now resolve first request
-    resolveFirst({ ok: true });
+    resolveFirst({ ok: true, json: async () => ({ quantity: 2 }) });
     // allow microtasks to run and scheduling logic to execute
     await Promise.resolve();
 
@@ -125,6 +125,45 @@ describe('CartPage', () => {
     expect(fetch.mock.calls[2][1]).toMatchObject({ method: 'PATCH' });
 
     // clean up second promise resolution
-    resolveSecond({ ok: true });
+    resolveSecond({ ok: true, json: async () => ({ quantity: 4 }) });
+  });
+
+  it('PATCH失敗時に確定値へロールバックし再試行UIを表示する', async () => {
+    const initialCart = [
+      {
+        id: '1',
+        item_id: 1,
+        quantity: 1,
+        color: null,
+        size: null,
+        added_at: '2025-01-01T00:00:00Z',
+        items: {
+          id: 1,
+          name: 'Test item',
+          price: 100,
+          image_url: '/x.png',
+          category: 'TEST',
+        },
+      },
+    ];
+
+    (global as any).fetch
+      .mockResolvedValueOnce({ ok: true, json: async () => initialCart })
+      .mockResolvedValueOnce({ ok: false, json: async () => ({ message: '在庫不足' }) });
+
+    render(<CartPage />);
+    await waitFor(() => screen.getByText('Test item'));
+
+    const inc = screen.getByLabelText('increase');
+    await userEvent.click(inc);
+
+    await new Promise((r) => setTimeout(r, 550));
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('1')).toBeInTheDocument();
+      expect(screen.getByText('在庫不足')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: '再試行' })).toBeInTheDocument();
+      expect(screen.getAllByRole('button', { name: '最新状態を再取得' }).length).toBeGreaterThan(0);
+    });
   });
 });

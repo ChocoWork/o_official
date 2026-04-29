@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
+import { createClient } from '@/lib/supabase/server';
 import { sanitizeRedirectPath } from '@/lib/redirect';
 import { logAudit } from '@/lib/audit';
 import { IdentifyRequestSchema } from '@/features/auth/schemas/identify';
@@ -55,28 +55,11 @@ export async function POST(request: Request) {
       }
     }
 
-    let usedCreateUserFallback = false;
-    try {
-      const serviceRole = await createServiceRoleClient();
-      const { error: createError } = await serviceRole.auth.admin.createUser({
-        email,
-        email_confirm: true,
-      });
-
-      if (createError && !isAlreadyExistsError(createError.message || '')) {
-        usedCreateUserFallback = true;
-        console.warn('Identify JIT createUser failed. Falling back to shouldCreateUser=true.', createError);
-      }
-    } catch (createUserError) {
-      usedCreateUserFallback = true;
-      console.warn('Identify JIT createUser unexpected error. Falling back to shouldCreateUser=true.', createUserError);
-    }
-
     const supabase = await createClient();
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        shouldCreateUser: usedCreateUserFallback,
+        shouldCreateUser: true,
       },
     });
 
@@ -89,7 +72,7 @@ export async function POST(request: Request) {
       action: 'auth.identify',
       actor_email: email,
       outcome: 'success',
-      detail: usedCreateUserFallback ? 'otp_sent_with_signup_fallback' : 'otp_sent_after_jit_prepare',
+      detail: 'otp_sent',
     });
 
     return NextResponse.json(

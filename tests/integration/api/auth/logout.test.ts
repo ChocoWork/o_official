@@ -49,7 +49,10 @@ describe('Logout API integration (mocked supabase & headers)', () => {
     expect(body.ok).toBe(true);
 
     const refreshCookie = res.cookies.get('sb-refresh-token');
+    const sessionCookie = res.cookies.get('session_id');
     const accessCookie = res.cookies.get('sb-access-token');
+    expect(sessionCookie).toBeDefined();
+    expect(sessionCookie.maxAge).toBe(0);
     expect(refreshCookie).toBeDefined();
     expect(refreshCookie.maxAge).toBe(0);
     expect(accessCookie).toBeDefined();
@@ -86,7 +89,10 @@ describe('Logout API integration (mocked supabase & headers)', () => {
     expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ revoked_at: expect.any(String) }));
 
     const refreshCookie = res.cookies.get('sb-refresh-token');
+    const sessionCookie = res.cookies.get('session_id');
     const accessCookie = res.cookies.get('sb-access-token');
+    expect(sessionCookie).toBeDefined();
+    expect(sessionCookie.maxAge).toBe(0);
     expect(refreshCookie).toBeDefined();
     expect(refreshCookie.maxAge).toBe(0);
     expect(accessCookie).toBeDefined();
@@ -116,6 +122,9 @@ describe('Logout API integration (mocked supabase & headers)', () => {
     expect(body.ok).toBe(true);
 
     const refreshCookie = res.cookies.get('sb-refresh-token');
+    const sessionCookie = res.cookies.get('session_id');
+    expect(sessionCookie).toBeDefined();
+    expect(sessionCookie.maxAge).toBe(0);
     expect(refreshCookie).toBeDefined();
     expect(refreshCookie.maxAge).toBe(0);
   });

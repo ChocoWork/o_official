@@ -41,7 +41,7 @@ function escapeCsvValue(value: string): string {
 }
 
 export default function AdminPage() {
-  const { isLoggedIn, isAuthResolved, userRole } = useLogin();
+  const { isLoggedIn, isAuthResolved, userRole, isMfaVerified } = useLogin();
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabType>('KPI');
   const [kpiData, setKpiData] = useState<AdminKpiData | null>(null);
@@ -578,7 +578,7 @@ export default function AdminPage() {
               isLoading={isOrdersLoading}
               errorMessage={ordersErrorMessage}
               onCancelOrder={handleCancelOrder}
-              onRefundOrder={handleRefundOrder}
+              onRefundOrder={userRole === 'admin' ? handleRefundOrder : undefined}
               processingOrderIds={processingOrderIds}
             />
           </div>
@@ -604,6 +604,19 @@ export default function AdminPage() {
         <div className="max-w-7xl mx-auto">
           <h1 className="text-2xl text-black mb-4 font-display">アクセス権限がありません</h1>
           <p className="text-sm text-[#474747] font-acumin">このページは Admin または Supporter のみ利用できます。</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (!isMfaVerified) {
+    return (
+      <main className="pt-24 pb-20 px-6 lg:px-12">
+        <div className="max-w-7xl mx-auto">
+          <h1 className="text-2xl text-black mb-4 font-display">2要素認証が必要です</h1>
+          <p className="text-sm text-[#474747] font-acumin">
+            管理画面へのアクセスには 2FA の有効化と認証が必要です。設定済みの場合は再度ログインしてください。
+          </p>
         </div>
       </main>
     );

@@ -22,4 +22,20 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON public.sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON public.sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_last_seen_at ON public.sessions(last_seen_at);
 
+-- Enable RLS for sessions so anon/auth clients cannot access session records directly.
+ALTER TABLE public.sessions ENABLE ROW LEVEL SECURITY;
+
+-- Deny direct access from authenticated or anonymous clients.
+DROP POLICY IF EXISTS "Deny direct select on sessions" ON public.sessions;
+DROP POLICY IF EXISTS "Deny direct insert on sessions" ON public.sessions;
+DROP POLICY IF EXISTS "Deny direct update on sessions" ON public.sessions;
+DROP POLICY IF EXISTS "Deny direct delete on sessions" ON public.sessions;
+
+CREATE POLICY "Deny direct select on sessions" ON public.sessions FOR SELECT USING (false);
+CREATE POLICY "Deny direct insert on sessions" ON public.sessions FOR INSERT WITH CHECK (false);
+CREATE POLICY "Deny direct update on sessions" ON public.sessions FOR UPDATE USING (false) WITH CHECK (false);
+CREATE POLICY "Deny direct delete on sessions" ON public.sessions FOR DELETE USING (false);
+
+-- Service role key bypasses RLS, so backend auth/session management continues to work.
+
 -- Note: refresh_token_hash should be stored as a secure hash; application code must hash refresh tokens before insert.

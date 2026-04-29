@@ -14,3 +14,5 @@
 | FR-CONTACT-008 | 問い合わせデータを受け取る API ルートを実装しメール送信処理と問い合わせ履歴の保存を行う | IMPL-CONTACT-008 | `src/app/api/contact/route.ts` | `POST /api/contact` を追加。入力検証、問い合わせ履歴（`audit_logs`）保存、メール送信処理を実装 | 済 |
 | FR-CONTACT-009 | `message` フィールドに文字数カウンターを追加し送信ボタンは入力状態・送信中に応じて無効化する | IMPL-CONTACT-009 | `src/app/contact/page.tsx`, `src/components/ui/TextAreaField.tsx` | `message` 文字数カウンター（`x / 500`）を表示。フォーム未充足または送信中は送信ボタンを無効化 | 済 |
 | FR-CONTACT-010 | 送信完了後にサンクス画面またはモーダルを表示しユーザーに送信完了を明確に伝える | IMPL-CONTACT-010 | `src/app/contact/page.tsx` | 送信成功時にサンクスモーダル（`role=dialog`）を表示 | 済 |
+| FR-CONTACT-011 | 公開問い合わせ API に同一オリジン検証・Bot 対策・レート制限を適用し悪用を抑止する | IMPL-CONTACT-011 | `src/app/api/contact/route.ts`, `src/app/contact/page.tsx`, `e2e/FR-CONTACT-011-security-controls.spec.ts` | `Origin/Referer` 検証、IP/メール単位のレート制限、honeypot フィールド検証を実装 | 済 |
+| FR-CONTACT-012 | 問い合わせ本文を監査ログから分離し、audit_logs の記録を最小化する | IMPL-CONTACT-012 | `src/app/api/contact/route.ts`, `migrations/041_create_contact_inquiries.sql` | 本文は `contact_inquiries` に保存し、`audit_logs` には `inquiry_id` と最小分類情報のみ記録 | 済 |

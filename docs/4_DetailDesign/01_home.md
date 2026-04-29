@@ -15,3 +15,7 @@
 | FR-HOME-009 | `h1` 要素を1つ配置し各セクション見出しを `h2` として構造化する | IMPL-HOME-009 | `src/app/page.tsx` | ヒーローに `h1`（ブランド名）、各セクションに `SectionTitle`（`h2` 相当）を使用。見出し階層は適切 | 済 |
 | NFR-HOME-001 | ホームページの初回表示速度を2秒以内に収める | IMPL-HOME-010 | `src/app/page.tsx` | `priority` 未設定・外部画像依存のため目標達成が不確定 | 済 |
 | NFR-HOME-002 | WCAG 2.1 AA を満たす色彩コントラストを確保する | IMPL-HOME-011 | `src/app/page.tsx`, `src/components/Header.tsx`, `src/styles/globals.css`, `e2e/NFR-HOME-002-wcag-accessibility.spec.ts`, `e2e/FR-HOME-006-007-011-home-quality.spec.ts` | ヒーロー見出しの高コントラスト表示を維持し、装飾グラデーションを `aria-hidden` 化。共通ヘッダーの `h1` を通常テキストへ変更してページ内 `h1` を 1 つに整理し、Playwright で contrast・見出し構造・表示崩れを確認 | 済 |
+
+## 運用メモ
+
+- BUG-PUBLIC-001: `migrations/049_set_wishlist_session_context_pre_request.sql` の `private.set_request_context` は PostgREST の全リクエスト前に実行されるため、`private` schema の `USAGE` 権限が欠けると HOME を含む全公開ページの DB 読み取りが空になる。復旧には `migrations/050_restore_public_read_access_after_pre_request_hook.sql` の適用が必須。

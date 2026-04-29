@@ -62,6 +62,7 @@ describe('GET /api/auth/oauth/start', () => {
     expect(location).toContain('code_challenge=');
     expect(location).toContain('code_challenge_method=S256');
     expect(location).toContain('state=');
+    expect(location).toContain('prompt=select_account');
     expect(location).toContain('redirect_to=http%3A%2F%2Flocalhost%3A3000%2Fapi%2Fauth%2Foauth%2Fcallback');
   });
 

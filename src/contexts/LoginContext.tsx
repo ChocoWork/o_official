@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, ReactNode } from "react";
 import { supabase } from '@/lib/supabase/client';
-import type { Session } from '@supabase/supabase-js';
+import { navigateBrowser } from '@/lib/browser-location';
 
 type UserRole = 'admin' | 'supporter' | 'user';
 
@@ -10,15 +10,11 @@ const isUserRole = (role: unknown): role is UserRole => {
   return role === 'admin' || role === 'supporter' || role === 'user';
 };
 
-const getRoleFromSession = (session: Session | null): UserRole => {
-  const rawRole = session?.user?.app_metadata?.role;
-  return isUserRole(rawRole) ? rawRole : 'user';
-};
-
 interface LoginContextType {
   isLoggedIn: boolean;
   isAdmin: boolean;
   userRole: UserRole;
+  isMfaVerified: boolean;
   isAuthResolved: boolean;
   sendOtp: (email: string, turnstileToken?: string) => Promise<{ success: boolean; error?: string; message?: string }>;
   verifyOtp: (email: string, code: string) => Promise<{ success: boolean; error?: string; message?: string }>;
@@ -28,8 +24,14 @@ interface LoginContextType {
 
 type OtpVerifySuccessBody = {
   message?: string;
-  access_token?: string;
-  refresh_token?: string;
+};
+
+type AuthStateResponseBody = {
+  authenticated?: boolean;
+  user?: {
+    role?: unknown;
+    mfaVerified?: boolean;
+  };
 };
 
 const LoginContext = createContext<LoginContextType | undefined>(undefined);
@@ -44,6 +46,7 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [userRole, setUserRole] = useState<UserRole>('user');
+  const [isMfaVerified, setIsMfaVerified] = useState(false);
   const [isAuthResolved, setIsAuthResolved] = useState(false);
 
   const getCsrfTokenFromCookie = () => {
@@ -56,6 +59,33 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
     if (!targetCookie) return undefined;
     return decodeURIComponent(targetCookie.split('=').slice(1).join('='));
   };
+
+  const applyAuthState = React.useCallback((authenticated: boolean, role?: unknown, mfaVerified?: boolean) => {
+    const resolvedRole = authenticated && isUserRole(role) ? role : 'user';
+    setIsLoggedIn(authenticated);
+    setUserRole(resolvedRole);
+    setIsAdmin(authenticated && resolvedRole === 'admin');
+    setIsMfaVerified(authenticated && mfaVerified === true);
+    setIsAuthResolved(true);
+  }, []);
+
+  const syncAuthState = React.useCallback(async () => {
+    try {
+      const response = await fetch('/api/auth/me', {
+        method: 'GET',
+        cache: 'no-store',
+        credentials: 'same-origin',
+      });
+
+      const body: unknown = await response.json().catch(() => null);
+      const authState = typeof body === 'object' && body ? (body as AuthStateResponseBody) : null;
+      const authenticated = response.ok && authState?.authenticated === true;
+      applyAuthState(authenticated, authState?.user?.role, authState?.user?.mfaVerified);
+    } catch (error) {
+      console.error('Failed to sync auth state', error);
+      applyAuthState(false);
+    }
+  }, [applyAuthState]);
 
   const sendOtp = async (email: string, turnstileToken?: string) => {
     try {
@@ -121,39 +151,7 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
           ? successBody.message
           : '認証に成功しました。';
 
-      const accessToken = typeof successBody?.access_token === 'string' ? successBody.access_token : null;
-      const refreshToken = typeof successBody?.refresh_token === 'string' ? successBody.refresh_token : null;
-
-      if (typeof window !== 'undefined' && accessToken) {
-        localStorage.setItem(
-          'supabase.auth.token',
-          JSON.stringify({
-            access_token: accessToken,
-            refresh_token: refreshToken,
-            currentSession: {
-              access_token: accessToken,
-              refresh_token: refreshToken,
-            },
-          }),
-        );
-      }
-
-      if (accessToken && refreshToken) {
-        try {
-          const { data } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken,
-          });
-          const role = getRoleFromSession(data.session);
-          setUserRole(role);
-          setIsAdmin(role === 'admin');
-        } catch (sessionError) {
-          console.error('OTP setSession error', sessionError);
-        }
-      }
-
-      setIsLoggedIn(true);
-      setIsAuthResolved(true);
+      await syncAuthState();
       return { success: true, message };
     } catch (e) {
       console.error('OTP verify error', e);
@@ -164,22 +162,8 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
   const loginWithGoogle = async (params?: { next?: string }) => {
     try {
       const next = params?.next && params.next.startsWith('/') ? params.next : '/auth/verified';
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
-          queryParams: {
-            prompt: 'select_account',
-          },
-        },
-      });
-      
-      if (error) {
-        console.error('OAuth start error', error);
-        return { success: false, error: error.message };
-      }
-      
-      // ブラウザは自動的に data.url にリダイレクトされる
+
+      navigateBrowser(`/api/auth/oauth/start?provider=google&redirect_to=${encodeURIComponent(next)}`);
       return { success: true };
     } catch (e) {
       console.error('OAuth login error', e);
@@ -204,55 +188,33 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
       console.error('Sign out error', e);
       return { success: false, error: 'ログアウトに失敗しました' };
     } finally {
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('supabase.auth.token');
-      }
       setIsLoggedIn(false);
       setIsAdmin(false);
       setUserRole('user');
+      setIsMfaVerified(false);
       setIsAuthResolved(true);
     }
   };
 
   // 初期セッション確認と状態変化の購読
   React.useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const { data } = await supabase.auth.getSession();
-        const session = data.session;
-        if (mounted && session?.user) {
-          const role = getRoleFromSession(session);
-          setIsLoggedIn(true);
-          setUserRole(role);
-          setIsAdmin(role === 'admin');
-        }
-      } catch (e) {
-        console.error('Error fetching initial session', e);
-      } finally {
-        if (mounted) {
-          setIsAuthResolved(true);
-        }
-      }
-    })();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session: Session | null) => {
-      const user = session?.user;
-      const role = getRoleFromSession(session);
-      setIsLoggedIn(!!user);
-      setUserRole(role);
-      setIsAdmin(!!user && role === 'admin');
-      setIsAuthResolved(true);
-    });
-
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
-  }, []);
+    void syncAuthState();
+  }, [syncAuthState]);
 
   return (
-    <LoginContext.Provider value={{ isLoggedIn, isAdmin, userRole, isAuthResolved, sendOtp, verifyOtp, loginWithGoogle, logout }}>
+    <LoginContext.Provider
+      value={{
+        isLoggedIn,
+        isAdmin,
+        userRole,
+        isMfaVerified,
+        isAuthResolved,
+        sendOtp,
+        verifyOtp,
+        loginWithGoogle,
+        logout,
+      }}
+    >
       {children}
     </LoginContext.Provider>
   );

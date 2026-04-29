@@ -1,8 +1,11 @@
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
+import { signItemImageFields } from '@/lib/storage/item-images';
 import type { Item } from '@/types/item';
 
 const ITEM_SELECT_COLUMNS =
-  'id, name, description, price, category, image_url, image_urls, colors, sizes, product_details, status, created_at, updated_at';
+  'id, name, description, price, category, image_url, image_urls, colors, sizes, product_details';
+
+export type PublicItemDto = Omit<Item, 'status' | 'created_at' | 'updated_at'>;
 
 export type ItemSort = 'newest' | 'price_asc' | 'price_desc' | 'popular';
 
@@ -17,14 +20,14 @@ export type PublishedItemsQuery = {
 };
 
 export type PublishedItemsPage = {
-  items: Item[];
+  items: PublicItemDto[];
   page: number;
   pageSize: number;
   total: number;
   hasMore: boolean;
 };
 
-export async function getPublishedItems(limit?: number): Promise<Item[]> {
+export async function getPublishedItems(limit?: number): Promise<PublicItemDto[]> {
   const supabase = await createClient();
 
   let query = supabase
@@ -48,7 +51,12 @@ export async function getPublishedItems(limit?: number): Promise<Item[]> {
     return [];
   }
 
-  return data as Item[];
+  const signSupabase = await createServiceRoleClient();
+  const signedItems = await Promise.all(
+    (data as PublicItemDto[]).map((item) => signItemImageFields(signSupabase, item)),
+  );
+
+  return signedItems;
 }
 
 export async function getPublishedItemsPage(queryInput: PublishedItemsQuery = {}): Promise<PublishedItemsPage> {
@@ -114,7 +122,10 @@ export async function getPublishedItemsPage(queryInput: PublishedItemsQuery = {}
     };
   }
 
-  const items = (data ?? []) as Item[];
+  const signSupabase = await createServiceRoleClient();
+  const items = await Promise.all(
+    ((data ?? []) as PublicItemDto[]).map((item) => signItemImageFields(signSupabase, item)),
+  );
   const total = typeof count === 'number' ? count : items.length;
 
   return {

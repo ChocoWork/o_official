@@ -3,22 +3,19 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { LoginProvider, useLogin } from '@/contexts/LoginContext';
 
-const signInWithOAuthMock = jest.fn();
 const signOutMock = jest.fn().mockResolvedValue({});
-const getSessionMock = jest.fn();
-const onAuthStateChangeMock = jest.fn();
-const setSessionMock = jest.fn();
+const assignMock = jest.fn();
 
 jest.mock('@/lib/supabase/client', () => ({
   supabase: {
     auth: {
-      signInWithOAuth: (...args: unknown[]) => signInWithOAuthMock(...args),
       signOut: (...args: unknown[]) => signOutMock(...args),
-      getSession: (...args: unknown[]) => getSessionMock(...args),
-      setSession: (...args: unknown[]) => setSessionMock(...args),
-      onAuthStateChange: (...args: unknown[]) => onAuthStateChangeMock(...args),
     },
   },
+}));
+
+jest.mock('@/lib/browser-location', () => ({
+  navigateBrowser: (...args: unknown[]) => assignMock(...args),
 }));
 
 const TestConsumer = () => {
@@ -40,44 +37,43 @@ const TestConsumer = () => {
 describe('LoginContext', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    getSessionMock.mockResolvedValue({ data: { session: null } });
-    onAuthStateChangeMock.mockReturnValue({
-      data: {
-        subscription: {
-          unsubscribe: jest.fn(),
-        },
-      },
-    });
-    setSessionMock.mockResolvedValue({
-      data: {
-        session: {
-          user: {
-            app_metadata: {
-              role: 'user',
-            },
-          },
-        },
-      },
-    });
-    signInWithOAuthMock.mockResolvedValue({ error: null });
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ message: 'ok' }),
-    } as Response);
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/auth/me') {
+        return {
+          ok: true,
+          json: async () => ({ authenticated: false }),
+        } as Response;
+      }
+
+      return {
+        ok: true,
+        json: async () => ({ message: 'ok' }),
+      } as Response;
+    }) as jest.Mock;
   });
 
   test('initial session resolves admin state from Supabase session', async () => {
-    getSessionMock.mockResolvedValue({
-      data: {
-        session: {
-          user: {
-            app_metadata: {
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/auth/me') {
+        return {
+          ok: true,
+          json: async () => ({
+            authenticated: true,
+            user: {
               role: 'admin',
+              mfaVerified: true,
             },
-          },
-        },
-      },
-    });
+          }),
+        } as Response;
+      }
+
+      return {
+        ok: true,
+        json: async () => ({ message: 'ok' }),
+      } as Response;
+    }) as jest.Mock;
 
     render(
       <LoginProvider>
@@ -117,14 +113,35 @@ describe('LoginContext', () => {
   test('verifyOtp success marks the user as logged in', async () => {
     const user = userEvent.setup();
 
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        message: '認証に成功しました。',
-        access_token: 'test-access-token',
-        refresh_token: 'test-refresh-token',
-      }),
-    } as Response);
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/auth/otp/verify') {
+        return {
+          ok: true,
+          json: async () => ({
+            message: '認証に成功しました。',
+          }),
+        } as Response;
+      }
+
+      if (url === '/api/auth/me') {
+        return {
+          ok: true,
+          json: async () => ({
+            authenticated: true,
+            user: {
+              role: 'user',
+              mfaVerified: false,
+            },
+          }),
+        } as Response;
+      }
+
+      return {
+        ok: true,
+        json: async () => ({ message: 'ok' }),
+      } as Response;
+    }) as jest.Mock;
 
     render(
       <LoginProvider>
@@ -135,9 +152,10 @@ describe('LoginContext', () => {
     await user.click(screen.getByText('verify-otp'));
 
     await waitFor(() => expect(screen.getByText('logged:yes')).toBeInTheDocument());
-    expect(setSessionMock).toHaveBeenCalledWith({
-      access_token: 'test-access-token',
-      refresh_token: 'test-refresh-token',
+    expect(global.fetch).toHaveBeenCalledWith('/api/auth/me', {
+      method: 'GET',
+      cache: 'no-store',
+      credentials: 'same-origin',
     });
   });
 
@@ -153,15 +171,7 @@ describe('LoginContext', () => {
     await user.click(screen.getByText('google-login'));
 
     await waitFor(() => {
-      expect(signInWithOAuthMock).toHaveBeenCalledWith({
-        provider: 'google',
-        options: {
-          redirectTo: 'http://localhost/auth/callback?next=%2Faccount',
-          queryParams: {
-            prompt: 'select_account',
-          },
-        },
-      });
+      expect(assignMock).toHaveBeenCalledWith('/api/auth/oauth/start?provider=google&redirect_to=%2Faccount');
     });
   });
 
@@ -169,20 +179,41 @@ describe('LoginContext', () => {
     const user = userEvent.setup();
 
     document.cookie = 'sb-csrf-token=test-csrf-token';
-    global.fetch = jest
-      .fn()
-      .mockResolvedValueOnce({
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url === '/api/auth/otp/verify') {
+        return {
+          ok: true,
+          json: async () => ({ message: '認証に成功しました。' }),
+        } as Response;
+      }
+
+      if (url === '/api/auth/me') {
+        return {
+          ok: true,
+          json: async () => ({
+            authenticated: true,
+            user: {
+              role: 'user',
+              mfaVerified: false,
+            },
+          }),
+        } as Response;
+      }
+
+      if (url === '/api/auth/logout') {
+        return {
+          ok: true,
+          json: async () => ({ message: 'ログアウトしました。' }),
+        } as Response;
+      }
+
+      return {
         ok: true,
-        json: async () => ({
-          message: '認証に成功しました。',
-          access_token: 'test-access-token',
-          refresh_token: 'test-refresh-token',
-        }),
-      } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ message: 'ログアウトしました。' }),
-      } as Response);
+        json: async () => ({ message: 'ok' }),
+      } as Response;
+    }) as jest.Mock;
 
     render(
       <LoginProvider>

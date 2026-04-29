@@ -1,5 +1,14 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import {
+  cookieOptionsForSession,
+  generateSessionId,
+  sessionCookieName,
+} from '@/lib/cookie';
+
+const STATE_CHANGING_PATH_PREFIXES = ['/api/cart', '/api/checkout/create-session', '/api/checkout/complete', '/api/wishlist'] as const;
+const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
 
 function generateNonce(): string {
   const bytes = new Uint8Array(12);
@@ -48,24 +57,58 @@ function buildCsp(nonce: string): string {
   ].join('; ');
 }
 
+function resolveRequestOrigin(request: NextRequest): string {
+  const proto = request.headers.get('x-forwarded-proto') ?? request.nextUrl.protocol.replace(':', '');
+  const host = request.headers.get('x-forwarded-host') ?? request.headers.get('host') ?? request.nextUrl.host;
+  return `${proto}://${host}`;
+}
+
+function isProtectedStateChangingApiRequest(request: NextRequest): boolean {
+  if (!STATE_CHANGING_METHODS.has(request.method.toUpperCase())) {
+    return false;
+  }
+
+  const pathname = request.nextUrl.pathname;
+  return STATE_CHANGING_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
+function isSameOriginRequest(request: NextRequest): boolean {
+  const expectedOrigin = resolveRequestOrigin(request);
+  const originHeader = request.headers.get('origin');
+  const refererHeader = request.headers.get('referer');
+
+  if (originHeader) {
+    return originHeader === expectedOrigin;
+  }
+
+  if (refererHeader) {
+    try {
+      return new URL(refererHeader).origin === expectedOrigin;
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
+}
+
 export function proxy(request: NextRequest) {
+  if (isProtectedStateChangingApiRequest(request) && !isSameOriginRequest(request)) {
+    return NextResponse.json({ error: 'Forbidden origin' }, { status: 403 });
+  }
+
   const response = NextResponse.next();
   const nonce = generateNonce();
 
-  let sessionId = request.cookies.get('session_id')?.value;
+  let sessionId = request.cookies.get(sessionCookieName)?.value;
   if (!sessionId) {
-    sessionId = generateNonce();
-    response.cookies.set('session_id', sessionId, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 30,
-      path: '/',
-    });
+    sessionId = generateSessionId();
+    response.cookies.set(sessionCookieName, sessionId, cookieOptionsForSession(SESSION_COOKIE_MAX_AGE));
   }
 
   response.headers.set('Content-Security-Policy', buildCsp(nonce));
   response.headers.set('Referrer-Policy', 'no-referrer');
+  response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   response.headers.set('X-Content-Type-Options', 'nosniff');
   response.headers.set('X-Frame-Options', 'DENY');
   response.headers.set('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');

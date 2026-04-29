@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
-import { createServiceRoleClient } from '@/lib/supabase/server';
+import { createClient } from '@/lib/supabase/server';
 
 type OrderStatus = 'pending' | 'paid' | 'failed' | 'cancelled';
 type PublishStatus = 'private' | 'published';
@@ -280,7 +280,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const supabase = await createServiceRoleClient();
+    const supabase = await createClient(request);
     const now = new Date();
     const targetYear = getJstYear(now);
 

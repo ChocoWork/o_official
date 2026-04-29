@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, resolveRequestUser } from '@/lib/supabase/server';
+import { createClient, createServiceRoleClient, resolveRequestUser } from '@/lib/supabase/server';
+import { signItemImageUrl } from '@/lib/storage/item-images';
 
 type OrderItemRow = {
 	id: string;
@@ -103,24 +104,25 @@ export async function GET(request: NextRequest) {
 		return NextResponse.json({ error: 'Failed to fetch orders' }, { status: 500 });
 	}
 
-	const response = ((data ?? []) as OrderRow[]).map((order) => ({
+	const signSupabase = await createServiceRoleClient();
+	const response = await Promise.all(((data ?? []) as OrderRow[]).map(async (order) => ({
 		id: order.id,
 		orderNumber: toOrderNumber(order.id),
 		orderDate: formatOrderDate(order.created_at),
 		status: mapStatusLabel(order.status),
 		totalAmount: formatCurrency(order.total_amount, order.currency),
 		itemCount: (order.order_items ?? []).reduce((sum, item) => sum + item.quantity, 0),
-		items: (order.order_items ?? []).map((item) => ({
+		items: await Promise.all((order.order_items ?? []).map(async (item) => ({
 			id: item.id,
 			name: item.item_name,
-			imageUrl: item.item_image_url,
+			imageUrl: await signItemImageUrl(signSupabase, item.item_image_url),
 			color: item.color,
 			size: item.size,
 			quantity: item.quantity,
 			amount: formatCurrency(item.line_total, order.currency),
-		})),
+		}))),
 		detailHref: `/account/orders/${order.id}`,
-	}));
+	})));
 
 	return NextResponse.json({ data: response });
 }

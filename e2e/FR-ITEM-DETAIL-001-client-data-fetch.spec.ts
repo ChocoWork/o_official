@@ -7,16 +7,14 @@ test.describe('FR-ITEM-DETAIL-001 クライアントサイドデータ取得', (
     test.skip(!item, '公開商品データがないためスキップ');
 
     await page.goto(`/item/${item!.id}`);
-    await page.waitForLoadState('networkidle');
 
     await expect(page.locator('h2').first()).toBeVisible();
-    await expect(page.locator('text=/¥[\d,]+/').first()).toBeVisible();
+    await expect(page.getByText(/¥[\d,]+/).first()).toBeVisible();
   });
 
   test('存在しないIDにアクセスするとエラーメッセージを表示する', async ({ page }) => {
     await page.goto('/item/9999999999');
-    await page.waitForLoadState('networkidle');
 
-    await expect(page.getByText('BACK TO ITEMS')).toBeVisible();
+    await expect(page.getByRole('button', { name: /BACK TO ITEMS/i })).toBeVisible();
   });
 });

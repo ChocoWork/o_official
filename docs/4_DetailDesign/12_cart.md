@@ -35,7 +35,7 @@
 | CART-01-002 | Cookie 永続化（`session_id` ベース、30日TTL） | IMPL-CART-SESSION-01 | `src/proxy.ts` | session_id Cookie で永続カート実装済み | 済 |
 | CART-01-003 | `inFlight.current` ref スナップショットパターンで ESLint 警告解消 | IMPL-CART-ESLINT-01 | `src/app/cart/page.tsx` | ref スナップショットパターン適用済み | 済 |
 | CART-01-004 | クーポン検証ロジック（サーバ側） | IMPL-CART-COUPON-01 | `src/app/api/cart/coupon/route.ts` | 未実装 | 未 |
-| CART-01-005 | 在庫チェック（数量超過でエラー） | IMPL-CART-STOCK-01 | `src/app/api/cart/route.ts` | 未実装 | 未 |
+| CART-01-005 | 在庫チェック（数量超過でエラー） | IMPL-CART-STOCK-01 | `src/app/api/cart/route.ts`, `src/app/api/cart/[id]/route.ts`, `src/features/cart/services/cart-stock.ts` | 同一 `item_id` の合算数量で `quantity <= stock_quantity` を検証し、非公開商品と在庫不足を 409 で返却 | 済 |
 
 ### 依存関係
 

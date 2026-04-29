@@ -17,9 +17,22 @@ export async function mockOtpAuthentication(page: Page, email = 'user@example.co
       contentType: 'application/json',
       body: JSON.stringify({
         message: '認証に成功しました。',
-        access_token: 'test-access-token',
-        refresh_token: 'test-refresh-token',
-        user: { id: 'test-user-id', email },
+      }),
+    });
+  });
+
+  await page.route('**/api/auth/me', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        authenticated: true,
+        user: {
+          id: 'test-user-id',
+          email,
+          role: 'user',
+          mfaVerified: false,
+        },
       }),
     });
   });
@@ -51,7 +64,7 @@ export async function loginAndOpenAccount(page: Page, email = 'user@example.com'
     { name: 'sb-csrf-token', value: 'test-csrf-token', url: origin, httpOnly: false, sameSite: 'Lax' },
   ]);
 
-  await page.locator('a[href="/account"]').first().click();
+  await page.goto('/account');
   await page.waitForURL('**/account');
   await expect(page).toHaveURL(/\/account/);
 }

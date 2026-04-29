@@ -1,4 +1,4 @@
-import { ResetRequestSchema, ResetConfirmSchema } from '@/features/auth/schemas/password-reset';
+import { ResetRequestSchema, ResetConfirmSchema, ResetSessionConfirmSchema } from '@/features/auth/schemas/password-reset';
 
 describe('ResetRequestSchema', () => {
   test('valid email passes', () => {
@@ -23,6 +23,18 @@ describe('ResetConfirmSchema', () => {
 
   test('missing token fails', () => {
     const parsed = ResetConfirmSchema.safeParse({ email: 'user@example.com', new_password: 'password123' });
+    expect(parsed.success).toBe(false);
+  });
+});
+
+describe('ResetSessionConfirmSchema', () => {
+  test('valid password passes', () => {
+    const parsed = ResetSessionConfirmSchema.safeParse({ new_password: 'password123' });
+    expect(parsed.success).toBe(true);
+  });
+
+  test('missing password fails', () => {
+    const parsed = ResetSessionConfirmSchema.safeParse({});
     expect(parsed.success).toBe(false);
   });
 });

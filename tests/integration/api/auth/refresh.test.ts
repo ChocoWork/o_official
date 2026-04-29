@@ -27,12 +27,19 @@ jest.mock('@/lib/supabase/server', () => ({
   createServiceRoleClient: jest.fn(),
 }));
 
+jest.mock('@/features/auth/services/session', () => ({
+  findSessionByRefreshHash: jest.fn(),
+  isReplay: jest.fn(),
+  revokeAllSessionsForUser: jest.fn(),
+}));
+
 jest.mock('next/headers', () => ({
   cookies: jest.fn(),
 }));
 
 let refreshHandler: any;
 const { cookies } = require('next/headers');
+const sessionService = require('@/features/auth/services/session');
 const originalConsoleError = console.error;
 
 describe('Refresh API integration (mocked supabase & headers & fetch)', () => {
@@ -52,6 +59,9 @@ describe('Refresh API integration (mocked supabase & headers & fetch)', () => {
     createServiceRoleClient.mockReturnValue({ from: fromMock });
     // by default, no cookie
     cookies.mockReturnValue({ get: jest.fn().mockReturnValue(undefined) });
+    sessionService.findSessionByRefreshHash.mockResolvedValue({ id: 'sess1', user_id: 'u1', current_jti: null, quarantined: false, previous_refresh_token_hash: null });
+    sessionService.isReplay.mockResolvedValue(false);
+    sessionService.revokeAllSessionsForUser.mockResolvedValue(undefined);
     delete process.env.SUPABASE_URL;
     delete process.env.SUPABASE_SERVICE_ROLE_KEY;
 

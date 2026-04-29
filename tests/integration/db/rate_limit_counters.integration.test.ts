@@ -28,31 +28,25 @@ describe('integration: rate_limit_counters', () => {
       const endpoint = '/api/auth/login';
       const bucket = new Date().toISOString();
 
-      // First insert
-      await client.query(
-        `INSERT INTO public.rate_limit_counters (ip, endpoint, bucket, count)
-         VALUES ($1, $2, $3, 1)
-         ON CONFLICT (ip, endpoint, bucket) DO UPDATE SET count = rate_limit_counters.count + 1, last_seen_at = now()`,
+      const firstResult = await client.query(
+        `SELECT public.increment_rate_limit_counter($1, $2, $3) AS count`,
         [testIp, endpoint, bucket]
       );
 
-      // Upsert again (should increment count)
-      await client.query(
-        `INSERT INTO public.rate_limit_counters (ip, endpoint, bucket, count)
-         VALUES ($1, $2, $3, 1)
-         ON CONFLICT (ip, endpoint, bucket) DO UPDATE SET count = rate_limit_counters.count + 1, last_seen_at = now()`,
+      expect(firstResult.rowCount).toBe(1);
+      expect(parseInt(firstResult.rows[0].count, 10)).toBe(1);
+
+      const secondResult = await client.query(
+        `SELECT public.increment_rate_limit_counter($1, $2, $3) AS count`,
         [testIp, endpoint, bucket]
       );
 
-      const res = await client.query(
-        `SELECT ip, endpoint, bucket, sum(count) as sum_count FROM public.rate_limit_counters WHERE ip = $1 AND endpoint = $2 AND bucket = $3 GROUP BY ip, endpoint, bucket`,
-        [testIp, endpoint, bucket]
-      );
+      expect(secondResult.rowCount).toBe(1);
+      expect(parseInt(secondResult.rows[0].count, 10)).toBe(2);
 
-      expect(res.rowCount).toBe(1);
-      // After two upserts with initial value 1 and increment on conflict, the stored count should be 2
       const storedCountRes = await client.query(`SELECT count FROM public.rate_limit_counters WHERE ip = $1 AND endpoint = $2 AND bucket = $3`, [testIp, endpoint, bucket]);
-      expect(parseInt(storedCountRes.rows[0].count, 10)).toBeGreaterThanOrEqual(2);
+      expect(storedCountRes.rowCount).toBe(1);
+      expect(parseInt(storedCountRes.rows[0].count, 10)).toBe(2);
 
       await client.query('ROLLBACK');
     } finally {

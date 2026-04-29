@@ -48,6 +48,24 @@ type SupabaseRouteError = {
 	hint?: string;
 };
 
+type CsrfDenyResponse = {
+	status: number;
+	_body: unknown;
+	headers?: Record<string, string>;
+};
+
+type CsrfRotateResult = {
+	rotatedCsrfToken: string;
+};
+
+function isCsrfDenyResponse(value: unknown): value is CsrfDenyResponse {
+	return typeof value === 'object' && value !== null && 'status' in value && '_body' in value;
+}
+
+function hasRotatedCsrfToken(value: unknown): value is CsrfRotateResult {
+	return typeof value === 'object' && value !== null && 'rotatedCsrfToken' in value;
+}
+
 function isMissingOptionalProfileColumnError(error: SupabaseRouteError | null) {
 	if (!error) {
 		return false;
@@ -214,6 +232,18 @@ export async function POST(request: NextRequest) {
 		return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
+	const { requireCsrfOrDeny } = await import('@/lib/csrfMiddleware');
+	const csrfResult = await requireCsrfOrDeny();
+	if (isCsrfDenyResponse(csrfResult)) {
+		const denyResponse = NextResponse.json(csrfResult._body, { status: csrfResult.status });
+		if (csrfResult.headers) {
+			for (const [key, value] of Object.entries(csrfResult.headers)) {
+				denyResponse.headers.set(key, value);
+			}
+		}
+		return denyResponse;
+	}
+
 	const rawBody = await request.json().catch(() => null);
 	const parsedBody = profilePayloadSchema.safeParse(rawBody);
 
@@ -239,7 +269,7 @@ export async function POST(request: NextRequest) {
 		return NextResponse.json({ error: 'Database error' }, { status: 500 });
 	}
 
-	return NextResponse.json({
+	const response = NextResponse.json({
 		success: true,
 		email: user.email ?? '',
 		fullName,
@@ -247,6 +277,13 @@ export async function POST(request: NextRequest) {
 		phone,
 		address,
 	});
+
+	if (hasRotatedCsrfToken(csrfResult)) {
+		const { csrfCookieName, cookieOptionsForCsrf } = await import('@/lib/cookie');
+		response.cookies.set({ name: csrfCookieName, value: csrfResult.rotatedCsrfToken, ...cookieOptionsForCsrf(0) });
+	}
+
+	return response;
 }
 
 export async function DELETE(request: NextRequest) {
@@ -261,6 +298,18 @@ export async function DELETE(request: NextRequest) {
 		return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
+	const { requireCsrfOrDeny } = await import('@/lib/csrfMiddleware');
+	const csrfResult = await requireCsrfOrDeny();
+	if (isCsrfDenyResponse(csrfResult)) {
+		const denyResponse = NextResponse.json(csrfResult._body, { status: csrfResult.status });
+		if (csrfResult.headers) {
+			for (const [key, value] of Object.entries(csrfResult.headers)) {
+				denyResponse.headers.set(key, value);
+			}
+		}
+		return denyResponse;
+	}
+
 	const { error } = await clearProfileRow(supabase, user.id);
 
 	if (error) {
@@ -268,5 +317,11 @@ export async function DELETE(request: NextRequest) {
 		return NextResponse.json({ error: 'Database error' }, { status: 500 });
 	}
 
-	return NextResponse.json({ success: true });
+	const response = NextResponse.json({ success: true });
+	if (hasRotatedCsrfToken(csrfResult)) {
+		const { csrfCookieName, cookieOptionsForCsrf } = await import('@/lib/cookie');
+		response.cookies.set({ name: csrfCookieName, value: csrfResult.rotatedCsrfToken, ...cookieOptionsForCsrf(0) });
+	}
+
+	return response;
 }

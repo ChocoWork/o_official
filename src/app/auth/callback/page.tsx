@@ -2,7 +2,6 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { supabase } from '@/lib/supabase/client';
 
 export default function OAuthCallbackPage() {
   const router = useRouter();
@@ -20,51 +19,37 @@ export default function OAuthCallbackPage() {
     (async () => {
       try {
         const code = searchParams.get('code');
-        console.log('[OAuth] Callback started, code:', code ? 'present' : 'missing');
+        const state = searchParams.get('state');
 
-        // 既にセッションがある場合はそのまま進む
-        const existing = await supabase.auth.getSession();
-        console.log('[OAuth] Existing session:', existing.data.session ? 'YES' : 'NO');
-        if (existing.data.session) {
-          console.log('[OAuth] Session already exists, redirecting to:', next);
+        if (code && state) {
+          const redirectParams = new URLSearchParams(searchParams.toString());
+          window.location.replace(`/api/auth/oauth/callback?${redirectParams.toString()}`);
+          return;
+        }
+
+        const response = await fetch('/api/auth/me', {
+          method: 'GET',
+          cache: 'no-store',
+          credentials: 'same-origin',
+        });
+        const body: unknown = await response.json().catch(() => null);
+        const authenticated =
+          response.ok &&
+          typeof body === 'object' &&
+          body !== null &&
+          'authenticated' in body &&
+          (body as { authenticated?: unknown }).authenticated === true;
+
+        if (authenticated) {
           if (!cancelled) router.replace(next);
           return;
         }
 
-        // PKCE の code がある場合は exchange
-        if (code) {
-          console.log('[OAuth] Exchanging code for session...');
-          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-          console.log('[OAuth] Exchange result:', error ? 'ERROR' : 'SUCCESS');
-          if (error) {
-            console.error('[OAuth] exchangeCodeForSession error', error);
-            if (!cancelled) setMessage('認証に失敗しました。もう一度お試しください。');
-            return;
-          }
-
-          if (!data.session) {
-            console.error('[OAuth] No session after exchange');
-            if (!cancelled) setMessage('セッションの取得に失敗しました。');
-            return;
-          }
-
-          console.log('[OAuth] Session created successfully, redirecting to:', next);
-          // Session 作成後、Cookies を確認
-          const parsed = localStorage.getItem('supabase.auth.token');
-          if (parsed) {
-            const token = JSON.parse(parsed);
-            console.log('[OAuth] Token stored:', token.access_token?.substring(0, 30));
-          }
-
-          // URL から code を消してクリーンに遷移
-          if (!cancelled) router.replace(next);
-          return;
+        if (!cancelled) {
+          setMessage('認証を完了できませんでした。ログイン画面からもう一度お試しください。');
         }
-
-        // code が無い場合はエラー
-        if (!cancelled) setMessage('認証情報が見つかりませんでした。');
       } catch (e) {
-        console.error('[OAuth] callback error', e);
+        console.error('OAuth callback page error', e);
         if (!cancelled) setMessage('内部エラーが発生しました。');
       }
     })();

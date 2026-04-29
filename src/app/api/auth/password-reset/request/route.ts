@@ -5,6 +5,7 @@ import sendMail from '@/lib/mail';
 import { logAudit } from '@/lib/audit';
 import { ResetRequestSchema } from '@/features/auth/schemas/password-reset';
 import { formatZodError } from '@/features/auth/schemas/common';
+import { getRequestOrigin } from '@/lib/redirect';
 
 export async function POST(request: Request) {
   try {
@@ -40,9 +41,9 @@ export async function POST(request: Request) {
     }
     const supabase = await createServiceRoleClient();
 
-    // Find user by email in users table (if exists)
-    const { data: usersData } = await supabase.from('users').select('id').eq('email', email).maybeSingle();
-    const userId = usersData?.id ?? null;
+    // Resolve user from Supabase Auth admin API to avoid public.users dependency.
+    const { findAuthUserIdByEmail } = await import('@/features/auth/services/auth-admin-user');
+    const userId = await findAuthUserIdByEmail(supabase, email);
 
     // Generate secure token and store its hash
     const token = crypto.randomBytes(32).toString('hex');
@@ -61,15 +62,15 @@ export async function POST(request: Request) {
     ]);
 
     // Send email with reset link
-    const base = process.env.NEXT_PUBLIC_BASE_URL || process.env.BASE_URL || 'http://localhost:3000';
-    const resetUrl = `${base}/auth/password-reset?token=${token}&email=${encodeURIComponent(email)}`;
+    const resetUrl = new URL('/api/auth/password-reset/link', getRequestOrigin(request));
+    resetUrl.searchParams.set('token', token);
 
     try {
       await sendMail({
         to: email,
         subject: 'Password reset',
-        html: `<p>Click to reset your password: <a href="${resetUrl}">Reset password</a></p>`,
-        text: `Reset your password: ${resetUrl}`,
+        html: `<p>Click to reset your password: <a href="${resetUrl.toString()}">Reset password</a></p>`,
+        text: `Reset your password: ${resetUrl.toString()}`,
       });
     } catch (mailErr) {
       console.warn('Failed to send password reset mail:', mailErr);

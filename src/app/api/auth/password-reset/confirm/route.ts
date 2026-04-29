@@ -2,17 +2,43 @@ import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
-import { ResetConfirmSchema } from '@/features/auth/schemas/password-reset';
+import { ResetConfirmSchema, ResetSessionConfirmSchema } from '@/features/auth/schemas/password-reset';
 import { formatZodError } from '@/features/auth/schemas/common';
+import { cookieOptionsForPasswordReset, passwordResetSessionCookieName } from '@/lib/cookie';
+import { readPasswordResetSessionFromCookieHeader } from '@/features/auth/services/password-reset-session';
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const parsed = ResetConfirmSchema.safeParse(body);
+    const session = readPasswordResetSessionFromCookieHeader(request.headers.get('cookie'));
+    const parsed = session ? ResetSessionConfirmSchema.safeParse(body) : ResetConfirmSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json(formatZodError(parsed.error), { status: 400 });
 
-    const { token, email, new_password } = parsed.data;
+    const { new_password } = parsed.data;
     const supabase = await createServiceRoleClient();
+
+    if (session) {
+      try {
+        await supabase.auth.admin.updateUserById(session.userId, { password: new_password });
+      } catch (updErr) {
+        console.error('Failed to update user password:', updErr);
+        await logAudit({ action: 'password_reset_confirm', actor_email: session.email, outcome: 'error', detail: String(updErr) });
+        return NextResponse.json({ error: 'Failed to update password' }, { status: 500 });
+      }
+
+      const response = NextResponse.json({ ok: true }, { status: 200 });
+      response.cookies.set({
+        name: passwordResetSessionCookieName,
+        value: '',
+        ...cookieOptionsForPasswordReset(0),
+      });
+
+      await logAudit({ action: 'password_reset_confirm', actor_email: session.email, outcome: 'success', resource_id: session.userId });
+      return response;
+    }
+
+    const legacyParsed = parsed.data as { token: string; email: string; new_password: string };
+    const { token, email } = legacyParsed;
 
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
@@ -39,8 +65,8 @@ export async function POST(request: Request) {
     // Update user's password — attempt to find user id
     let userId = tokenRow.user_id;
     if (!userId) {
-      const { data: u } = await supabase.from('users').select('id').eq('email', email).maybeSingle();
-      userId = u?.id ?? null;
+      const { findAuthUserIdByEmail } = await import('@/features/auth/services/auth-admin-user');
+      userId = await findAuthUserIdByEmail(supabase, email);
     }
 
     if (!userId) {

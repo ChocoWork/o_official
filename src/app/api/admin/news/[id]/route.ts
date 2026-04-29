@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { createServiceRoleClient } from '@/lib/supabase/server';
+import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
+import { logAudit } from '@/lib/audit';
+import { signNewsImageFields } from '@/lib/storage/news-images';
 
 const updateNewsSchema = z.object({
   title: z.string().trim().min(1).max(200),
@@ -15,6 +17,31 @@ const updateNewsSchema = z.object({
 const allowedImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 const maxImageBytes = 5 * 1024 * 1024;
 
+function getRequestUserAgent(request: Request): string | null {
+  return request.headers.get('user-agent') || null;
+}
+
+async function logNewsAudit(
+  request: Request,
+  actorId: string,
+  action: string,
+  outcome: 'success' | 'failure',
+  detail: string,
+  metadata: Record<string, unknown>,
+  resourceId: string | null = null
+) {
+  return logAudit({
+    action,
+    actor_id: actorId,
+    resource: 'news_article',
+    resource_id: resourceId,
+    outcome,
+    detail,
+    user_agent: getRequestUserAgent(request),
+    metadata,
+  });
+}
+
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
@@ -23,7 +50,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       return authz.response;
     }
 
-    const supabase = await createServiceRoleClient();
+    const [supabase, serviceSupabase] = await Promise.all([
+      createClient(request),
+      createServiceRoleClient(),
+    ]);
 
     const { data, error } = await supabase
       .from('news_articles')
@@ -36,7 +66,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'Article not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ data }, { status: 200 });
+    return NextResponse.json({ data: await signNewsImageFields(serviceSupabase, data) }, { status: 200 });
   } catch (error) {
     console.error('GET /api/admin/news/:id error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -73,9 +103,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       );
     }
 
-    const supabase = await createServiceRoleClient();
+    const dbSupabase = await createClient(request);
+    const uploadSupabase = await createServiceRoleClient();
 
-    let imageUrl: string | undefined = undefined;
+    let imagePath: string | undefined = undefined;
 
     // 画像が新規アップロードされている場合
     if (image instanceof File) {
@@ -91,7 +122,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       const filePath = `news/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.${extension}`;
       const imageBuffer = Buffer.from(await image.arrayBuffer());
 
-      const { error: uploadError } = await supabase.storage
+      const { error: uploadError } = await uploadSupabase.storage
         .from('news-images')
         .upload(filePath, imageBuffer, {
           contentType: image.type,
@@ -100,15 +131,17 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         });
 
       if (uploadError) {
+        await logNewsAudit(request, authz.userId, 'admin.news.update.upload_failed', 'failure', 'Image upload failed', {
+          storagePath: filePath,
+          articleId: id,
+          imageType: image.type,
+        }, id);
+
         console.error('Failed to upload image:', uploadError);
         return NextResponse.json({ error: 'Failed to upload image' }, { status: 500 });
       }
 
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from('news-images').getPublicUrl(filePath);
-
-      imageUrl = publicUrl;
+      imagePath = filePath;
     }
 
     const updatePayload: Record<string, unknown> = {
@@ -120,19 +153,31 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       status: parsed.data.status,
     };
 
-    if (imageUrl) {
-      updatePayload.image_url = imageUrl;
+    if (imagePath) {
+      updatePayload.image_url = imagePath;
     }
 
-    const { error } = await supabase
+    const { error } = await dbSupabase
       .from('news_articles')
       .update(updatePayload)
       .eq('id', id);
 
     if (error) {
+      await logNewsAudit(request, authz.userId, 'admin.news.update.failed', 'failure', 'News article update failed', {
+        articleId: id,
+        status: parsed.data.status,
+        category: parsed.data.category,
+      }, id);
+
       console.error('Failed to update news article:', error);
       return NextResponse.json({ error: 'Failed to update news article' }, { status: 500 });
     }
+
+    await logNewsAudit(request, authz.userId, 'admin.news.update', 'success', 'News article updated', {
+      articleId: id,
+      status: parsed.data.status,
+      category: parsed.data.category,
+    }, id);
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
@@ -166,7 +211,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       );
     }
 
-    const supabase = await createServiceRoleClient();
+    const supabase = await createClient(request);
 
     const { error } = await supabase
       .from('news_articles')
@@ -174,9 +219,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       .eq('id', id);
 
     if (error) {
+      await logNewsAudit(request, authz.userId, 'admin.news.status_update.failed', 'failure', 'News article status update failed', {
+        articleId: id,
+        status: parsed.data.status,
+      }, id);
+
       console.error('Failed to update news article status:', error);
       return NextResponse.json({ error: 'Failed to update status' }, { status: 500 });
     }
+
+    await logNewsAudit(request, authz.userId, 'admin.news.status_update', 'success', 'News article status updated', {
+      articleId: id,
+      status: parsed.data.status,
+    }, id);
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
@@ -193,7 +248,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       return authz.response;
     }
 
-    const supabase = await createServiceRoleClient();
+    const supabase = await createClient(request);
 
     const { error } = await supabase
       .from('news_articles')
@@ -201,9 +256,17 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       .eq('id', id);
 
     if (error) {
+      await logNewsAudit(request, authz.userId, 'admin.news.delete.failed', 'failure', 'News article delete failed', {
+        articleId: id,
+      }, id);
+
       console.error('Failed to delete news article:', error);
       return NextResponse.json({ error: 'Failed to delete article' }, { status: 500 });
     }
+
+    await logNewsAudit(request, authz.userId, 'admin.news.delete', 'success', 'News article deleted', {
+      articleId: id,
+    }, id);
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {

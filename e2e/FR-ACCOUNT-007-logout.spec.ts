@@ -18,9 +18,22 @@ test.describe('FR-ACCOUNT-007 logout from account page', () => {
         contentType: 'application/json',
         body: JSON.stringify({
           message: '認証に成功しました。',
-          access_token: 'test-access-token',
-          refresh_token: 'test-refresh-token',
-          user: { id: 'test-user-id', email: 'user@example.com' },
+        }),
+      });
+    });
+
+    await page.route('**/api/auth/me', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          authenticated: true,
+          user: {
+            id: 'test-user-id',
+            email: 'user@example.com',
+            role: 'user',
+            mfaVerified: false,
+          },
         }),
       });
     });
@@ -44,7 +57,14 @@ test.describe('FR-ACCOUNT-007 logout from account page', () => {
     await page.locator('form button[type="submit"]').click();
     await page.waitForURL('**/');
 
-    await page.locator('a[href="/account"]').first().click();
+    const origin = new URL(page.url()).origin;
+    await page.context().addCookies([
+      { name: 'sb-access-token', value: 'test-access-token', url: origin, httpOnly: true, sameSite: 'Lax' },
+      { name: 'sb-refresh-token', value: 'test-refresh-token', url: origin, httpOnly: true, sameSite: 'Lax' },
+      { name: 'sb-csrf-token', value: 'test-csrf-token', url: origin, httpOnly: false, sameSite: 'Lax' },
+    ]);
+
+    await page.goto('/account');
     await page.waitForURL('**/account');
 
     await expect(page.getByRole('button', { name: 'ログアウト' })).toBeVisible();

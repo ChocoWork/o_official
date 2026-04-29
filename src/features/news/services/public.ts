@@ -1,4 +1,5 @@
-import { createClient } from '@/lib/supabase/server';
+import { createPublicClient, createServiceRoleClient } from '@/lib/supabase/server';
+import { signNewsImageFields } from '@/lib/storage/news-images';
 import { PublicNewsArticle, PublicNewsDetailArticle, PublicNewsTitle } from '@/features/news/types';
 
 type GetPublishedNewsOptions = {
@@ -7,7 +8,10 @@ type GetPublishedNewsOptions = {
 };
 
 export async function getPublishedNews(options?: GetPublishedNewsOptions): Promise<PublicNewsArticle[]> {
-  const supabase = await createClient();
+  const [supabase, serviceSupabase] = await Promise.all([
+    createPublicClient(),
+    createServiceRoleClient(),
+  ]);
 
   let query = supabase
     .from('news_articles')
@@ -24,14 +28,20 @@ export async function getPublishedNews(options?: GetPublishedNewsOptions): Promi
   }
 
   const { data } = await query;
-  return (data ?? []) as PublicNewsArticle[];
+
+  return Promise.all(
+    ((data ?? []) as PublicNewsArticle[]).map((article) => signNewsImageFields(serviceSupabase, article)),
+  );
 }
 
 export async function getPublishedNewsDetailById(
   id: string,
   options?: { category?: string },
 ): Promise<PublicNewsDetailArticle | null> {
-  const supabase = await createClient();
+  const [supabase, serviceSupabase] = await Promise.all([
+    createPublicClient(),
+    createServiceRoleClient(),
+  ]);
 
   let query = supabase
     .from('news_articles')
@@ -44,14 +54,16 @@ export async function getPublishedNewsDetailById(
   }
 
   const { data } = await query.single();
-  return (data as PublicNewsDetailArticle | null) ?? null;
+  const article = (data as PublicNewsDetailArticle | null) ?? null;
+
+  return article ? signNewsImageFields(serviceSupabase, article) : null;
 }
 
 export async function getPublishedNewsNavigation(
   id: string,
   options?: { category?: string },
 ): Promise<{ prevArticle: PublicNewsTitle | null; nextArticle: PublicNewsTitle | null }> {
-  const supabase = await createClient();
+  const supabase = await createPublicClient();
 
   let query = supabase
     .from('news_articles')

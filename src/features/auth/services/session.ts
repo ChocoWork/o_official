@@ -8,6 +8,7 @@ export type Session = {
   current_jti?: string;
   previous_refresh_token_hash?: string | null;
   quarantined?: boolean;
+  revoked_at?: string | null;
 };
 
 // Accepts either a raw refresh token or a precomputed sha256 hash. Returns session or null.
@@ -18,7 +19,7 @@ export async function findSessionByRefreshHash(hashOrToken: string): Promise<Ses
 
   const { data, error } = await service
     .from('sessions')
-    .select('id, user_id, refresh_token_hash, current_jti, previous_refresh_token_hash, quarantined')
+    .select('id, user_id, refresh_token_hash, current_jti, previous_refresh_token_hash, quarantined, revoked_at')
     .eq('refresh_token_hash', lookup)
     .maybeSingle();
 
@@ -35,6 +36,7 @@ export async function findSessionByRefreshHash(hashOrToken: string): Promise<Ses
     current_jti: data.current_jti,
     previous_refresh_token_hash: data.previous_refresh_token_hash ?? null,
     quarantined: data.quarantined ?? false,
+    revoked_at: data.revoked_at ?? null,
   };
 }
 
@@ -50,7 +52,11 @@ export async function rotateJtiAndSave(sessionId: string, newJti: string): Promi
 
 export async function revokeAllSessionsForUser(userId: string): Promise<void> {
   const service = await createServiceRoleClient();
-  const { error } = await service.from('sessions').update({ revoked_at: new Date().toISOString() }).eq('user_id', userId);
+  const { error } = await service
+    .from('sessions')
+    .update({ revoked_at: new Date().toISOString(), quarantined: true })
+    .eq('user_id', userId)
+    .is('revoked_at', null);
   if (error) {
     console.error('revokeAllSessionsForUser DB error:', error);
     throw error;
@@ -62,6 +68,7 @@ export async function revokeAllSessionsForUser(userId: string): Promise<void> {
 export async function isReplay(session: Session, token: string): Promise<boolean> {
   if (!session) return false;
   if (session.quarantined) return true;
+  if (session.revoked_at) return true;
   const tokenHash = await tokenHashSha256(token);
   if (session.previous_refresh_token_hash && session.previous_refresh_token_hash === tokenHash) return true;
   return false;

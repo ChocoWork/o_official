@@ -12,17 +12,9 @@ jest.mock('@/lib/audit', () => ({
   logAudit: jest.fn().mockResolvedValue(undefined),
 }));
 
-const mockCreateUser = jest.fn();
 const mockSignInWithOtp = jest.fn();
 
 jest.mock('@/lib/supabase/server', () => ({
-  createServiceRoleClient: jest.fn(async () => ({
-    auth: {
-      admin: {
-        createUser: mockCreateUser,
-      },
-    },
-  })),
   createClient: jest.fn(async () => ({
     auth: {
       signInWithOtp: mockSignInWithOtp,
@@ -51,11 +43,10 @@ describe('POST /api/auth/identify', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockCreateUser.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null });
     mockSignInWithOtp.mockResolvedValue({ data: {}, error: null });
   });
 
-  test('未登録メールでもJIT作成後にOTP送信（shouldCreateUser=false）', async () => {
+  test('OTP送信は常に shouldCreateUser:true で行われる', async () => {
     const req = new Request('http://localhost/api/auth/identify', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -67,19 +58,13 @@ describe('POST /api/auth/identify', () => {
 
     expect(res.status).toBe(200);
     expect(body.message).toContain('認証コード');
-    expect(mockCreateUser).toHaveBeenCalledWith({ email: 'new-user@example.com', email_confirm: true });
     expect(mockSignInWithOtp).toHaveBeenCalledWith({
       email: 'new-user@example.com',
-      options: { shouldCreateUser: false },
+      options: { shouldCreateUser: true },
     });
   });
 
-  test('既存メールでcreateUserが重複エラーでもOTP送信継続（shouldCreateUser=false）', async () => {
-    mockCreateUser.mockResolvedValue({
-      data: null,
-      error: { message: 'User already registered' },
-    });
-
+  test('既存メールでもOTP送信は shouldCreateUser:true で行われる', async () => {
     const req = new Request('http://localhost/api/auth/identify', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -91,27 +76,22 @@ describe('POST /api/auth/identify', () => {
     expect(res.status).toBe(200);
     expect(mockSignInWithOtp).toHaveBeenCalledWith({
       email: 'existing-user@example.com',
-      options: { shouldCreateUser: false },
+      options: { shouldCreateUser: true },
     });
   });
 
-  test('JIT作成が重複以外のエラー時はフォールバック（shouldCreateUser=true）', async () => {
-    mockCreateUser.mockResolvedValue({
-      data: null,
-      error: { message: 'Service unavailable' },
-    });
-
+  test('エラーありでもOTP送信は shouldCreateUser:true で行われる', async () => {
     const req = new Request('http://localhost/api/auth/identify', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: 'fallback-user@example.com' }),
+      body: JSON.stringify({ email: 'error-user@example.com' }),
     });
 
     const res = await identifyHandler(req);
 
     expect(res.status).toBe(200);
     expect(mockSignInWithOtp).toHaveBeenCalledWith({
-      email: 'fallback-user@example.com',
+      email: 'error-user@example.com',
       options: { shouldCreateUser: true },
     });
   });

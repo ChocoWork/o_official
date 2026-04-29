@@ -20,7 +20,7 @@ test.describe('FR-ITEM-DETAIL-003 カラー・サイズ・数量選択', () => {
     await expect(colorButtons.first()).toBeVisible();
 
     // 最初のボタンが初期選択状態
-    await expect(colorButtons.first()).toHaveAttribute('data-variant', 'primary');
+    await expect(colorButtons.first()).toHaveAttribute('aria-pressed', 'true');
   });
 
   test('サイズボタンが表示され、クリックで選択状態が変わる', async ({ page }) => {
@@ -40,7 +40,7 @@ test.describe('FR-ITEM-DETAIL-003 カラー・サイズ・数量選択', () => {
     await expect(sizeButtons.first()).toBeVisible();
 
     await sizeButtons.first().click();
-    await expect(sizeButtons.first()).toHaveAttribute('data-variant', 'primary');
+    await expect(sizeButtons.first()).toHaveAttribute('aria-pressed', 'true');
   });
 
   test('数量ステッパーが表示される', async ({ page }) => {

@@ -11,9 +11,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isHome = pathname === '/';
   const isAdmin = pathname.startsWith('/admin');
+  const isPrivacyPage = pathname === '/privacy';
 
   return (
-    <CartProvider>
+    <CartProvider enabled={!isPrivacyPage}>
       <LoginProvider>
         <Header />
         {isAdmin ? (

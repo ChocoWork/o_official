@@ -12,6 +12,7 @@ type ContactFormData = {
     inquiryType: string;
     subject: string;
     message: string;
+    website: string;
 };
 
 type FormErrors = Partial<Record<keyof ContactFormData, string>>;
@@ -25,6 +26,7 @@ export default function ContactPage() {
         inquiryType: '',
         subject: '',
         message: '',
+        website: '',
     });
     const [errors, setErrors] = useState<FormErrors>({});
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -153,6 +155,7 @@ export default function ContactPage() {
                 inquiryType: '',
                 subject: '',
                 message: '',
+                website: '',
             });
             setErrors({});
         } catch (error) {
@@ -172,6 +175,17 @@ export default function ContactPage() {
                     <p className="text-sm lg:text-base text-[#474747] leading-relaxed tracking-tight mb-4 sm:mb-8">ご質問やお問い合わせは、以下のフォームよりご連絡ください。</p>
 
                     <form className="space-y-6" onSubmit={handleSubmit} noValidate>
+                        <input
+                            type="text"
+                            name="website"
+                            value={formData.website}
+                            onChange={(event) => handleFieldChange('website', event.target.value)}
+                            autoComplete="off"
+                            tabIndex={-1}
+                            aria-hidden="true"
+                            className="hidden"
+                        />
+
                         <TextField
                             id="name"
                             required

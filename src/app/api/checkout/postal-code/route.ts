@@ -10,6 +10,17 @@ const postalCodeSchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
+  const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
+  const rateLimitResponse = await enforceRateLimit({
+    request,
+    endpoint: 'checkout:postal-code',
+    limit: 60,
+    windowSeconds: 600,
+  });
+  if (rateLimitResponse) {
+    return rateLimitResponse;
+  }
+
   const { searchParams } = new URL(request.url);
   const parsed = postalCodeSchema.safeParse({
     postalCode: searchParams.get('postalCode') ?? '',

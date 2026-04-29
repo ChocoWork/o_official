@@ -59,8 +59,8 @@ describe('session service', () => {
   });
 
   test('revokeAllSessionsForUser marks revoked_at', async () => {
-    const update = jest.fn().mockResolvedValue({ error: null });
-    const eq = jest.fn().mockReturnValue({ update });
+    const is = jest.fn().mockResolvedValue({ error: null });
+    const eq = jest.fn().mockReturnValue({ is });
     const from = jest.fn().mockReturnValue({ update: jest.fn().mockReturnValue({ eq }) });
     mockCreateClient.mockResolvedValue({ from });
 

@@ -32,6 +32,7 @@ jest.mock('@/lib/hash', () => ({
 // Mock Supabase client with dynamic configuration
 let mockFromImplementation: any;
 let mockUpdateUserByIdImplementation: any;
+let mockListUsersImplementation: any;
 
 jest.mock('@/lib/supabase/server', () => {
   return {
@@ -71,6 +72,15 @@ jest.mock('@/lib/supabase/server', () => {
       }),
       auth: {
         admin: {
+          listUsers: jest.fn((...args: any[]) => {
+            if (mockListUsersImplementation) {
+              return mockListUsersImplementation(...args);
+            }
+            return Promise.resolve({
+              data: { users: [{ id: 'user-123', email: 'test@example.com' }] },
+              error: null,
+            });
+          }),
           updateUserById: jest.fn((...args: any[]) => {
             if (mockUpdateUserByIdImplementation) {
               return mockUpdateUserByIdImplementation(...args);
@@ -86,11 +96,39 @@ jest.mock('@/lib/supabase/server', () => {
 // Mock NextResponse
 jest.mock('next/server', () => ({
   NextResponse: {
-    json: (body: any, init?: any) => ({
-      status: init?.status ?? 200,
-      _body: body,
-      json: async () => body,
-    }),
+    json: (body: any, init?: any) => {
+      const headers = new Headers(init?.headers);
+      const cookieCalls: any[] = [];
+      return {
+        status: init?.status ?? 200,
+        headers,
+        cookies: {
+          set: jest.fn((value: any) => {
+            cookieCalls.push(value);
+          }),
+        },
+        _body: body,
+        _cookies: cookieCalls,
+        json: async () => body,
+      };
+    },
+    redirect: (url: URL | string, init?: any) => {
+      const headers = new Headers(init?.headers);
+      headers.set('location', String(url));
+      const cookieCalls: any[] = [];
+      return {
+        status: init?.status ?? 303,
+        headers,
+        cookies: {
+          set: jest.fn((value: any) => {
+            cookieCalls.push(value);
+          }),
+        },
+        _body: null,
+        _cookies: cookieCalls,
+        json: async () => null,
+      };
+    },
   },
 }));
 
@@ -98,17 +136,23 @@ const { logAudit } = require('@/lib/audit');
 const sendMail = require('@/lib/mail');
 let requestHandler: any;
 let confirmHandler: any;
+let linkHandler: any;
+let sessionHandler: any;
 
 describe('Password Reset API - Integration Tests', () => {
   beforeAll(async () => {
     requestHandler = (await import('@/app/api/auth/password-reset/request/route')).POST;
     confirmHandler = (await import('@/app/api/auth/password-reset/confirm/route')).POST;
+    linkHandler = (await import('@/app/api/auth/password-reset/link/route')).GET;
+    sessionHandler = (await import('@/app/api/auth/password-reset/session/route')).GET;
   });
 
   beforeEach(() => {
     jest.clearAllMocks();
     mockFromImplementation = null;
     mockUpdateUserByIdImplementation = null;
+    mockListUsersImplementation = null;
+    process.env.JWT_SECRET = 'test-jwt-secret';
     process.env.NEXT_PUBLIC_BASE_URL = 'http://localhost:3000';
   });
 
@@ -135,8 +179,10 @@ describe('Password Reset API - Integration Tests', () => {
           expect.objectContaining({
             to: 'test@example.com',
             subject: 'Password reset',
+            text: expect.stringContaining('/api/auth/password-reset/link?token='),
           })
         );
+        expect(sendMail.mock.calls[0][0].text).not.toContain('email=');
 
         // 監査ログが記録されていることを確認
         expect(logAudit).toHaveBeenCalledWith({
@@ -148,15 +194,13 @@ describe('Password Reset API - Integration Tests', () => {
       });
 
       test('[SUCCESS] 存在しないメールでも 200 OK（列挙攻撃対策）', async () => {
-        // users テーブルでユーザーが見つからない場合
+        // auth admin listUsers でユーザーが見つからない場合
+        mockListUsersImplementation = jest.fn().mockResolvedValue({
+          data: { users: [] },
+          error: null,
+        });
+
         mockFromImplementation = (table: string) => {
-          if (table === 'users') {
-            return {
-              select: jest.fn().mockReturnThis(),
-              eq: jest.fn().mockReturnThis(),
-              maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
-            };
-          }
           if (table === 'password_reset_tokens') {
             return {
               insert: jest.fn().mockResolvedValue({ data: [], error: null }),
@@ -188,13 +232,6 @@ describe('Password Reset API - Integration Tests', () => {
         mockFromImplementation = (table: string) => {
           if (table === 'password_reset_tokens') {
             return { insert: insertMock };
-          }
-          if (table === 'users') {
-            return {
-              select: jest.fn().mockReturnThis(),
-              eq: jest.fn().mockReturnThis(),
-              maybeSingle: jest.fn().mockResolvedValue({ data: { id: 'user-123' }, error: null }),
-            };
           }
           return {};
         };
@@ -283,16 +320,19 @@ describe('Password Reset API - Integration Tests', () => {
 
   describe('POST /api/auth/password-reset/confirm', () => {
     describe('正常系', () => {
-      test('[SUCCESS] 有効なトークンでパスワード更新 200 OK', async () => {
+      test('[SUCCESS] reset-session cookie でパスワード更新 200 OK', async () => {
+        const { createPasswordResetSessionToken } = await import('@/features/auth/services/password-reset-session');
         const updateUserByIdMock = jest.fn().mockResolvedValue({ data: { user: { id: 'user-123' } }, error: null });
         mockUpdateUserByIdImplementation = updateUserByIdMock;
+        const sessionToken = createPasswordResetSessionToken({ userId: 'user-123', email: 'test@example.com', tokenId: 'token-123' });
 
         const req = new Request('http://localhost/api/auth/password-reset/confirm', {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers: {
+            'content-type': 'application/json',
+            cookie: `sb-password-reset-session=${encodeURIComponent(sessionToken)}`,
+          },
           body: JSON.stringify({
-            token: 'valid-token-hex',
-            email: 'test@example.com',
             new_password: 'NewPassword123!',
           }),
         });
@@ -316,6 +356,11 @@ describe('Password Reset API - Integration Tests', () => {
           outcome: 'success',
           resource_id: 'user-123',
         });
+        expect(res._cookies).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ name: 'sb-password-reset-session', value: '' }),
+          ])
+        );
       });
 
       test('[SUCCESS] トークンが使用済みにマークされる', async () => {
@@ -333,13 +378,6 @@ describe('Password Reset API - Integration Tests', () => {
                 error: null,
               }),
               update: updateMock,
-            };
-          }
-          if (table === 'users') {
-            return {
-              select: jest.fn().mockReturnThis(),
-              eq: jest.fn().mockReturnThis(),
-              maybeSingle: jest.fn().mockResolvedValue({ data: { id: 'user-123' }, error: null }),
             };
           }
           return {};
@@ -374,13 +412,6 @@ describe('Password Reset API - Integration Tests', () => {
               maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
             };
           }
-          if (table === 'users') {
-            return {
-              select: jest.fn().mockReturnThis(),
-              eq: jest.fn().mockReturnThis(),
-              maybeSingle: jest.fn().mockResolvedValue({ data: { id: 'user-123' }, error: null }),
-            };
-          }
           return {};
         };
 
@@ -413,13 +444,6 @@ describe('Password Reset API - Integration Tests', () => {
               eq: jest.fn().mockReturnThis(),
               gte: jest.fn().mockReturnThis(),
               maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
-            };
-          }
-          if (table === 'users') {
-            return {
-              select: jest.fn().mockReturnThis(),
-              eq: jest.fn().mockReturnThis(),
-              maybeSingle: jest.fn().mockResolvedValue({ data: { id: 'user-123' }, error: null }),
             };
           }
           return {};
@@ -457,6 +481,11 @@ describe('Password Reset API - Integration Tests', () => {
       });
 
       test('[ERROR] ユーザーが存在しない場合 404 Not Found', async () => {
+        mockListUsersImplementation = jest.fn().mockResolvedValue({
+          data: { users: [] },
+          error: null,
+        });
+
         mockFromImplementation = (table: string) => {
           if (table === 'password_reset_tokens') {
             return {
@@ -467,13 +496,6 @@ describe('Password Reset API - Integration Tests', () => {
                 data: { id: 'token-123', user_id: null, email: 'test@example.com', used: false },
                 error: null,
               }),
-            };
-          }
-          if (table === 'users') {
-            return {
-              select: jest.fn().mockReturnThis(),
-              eq: jest.fn().mockReturnThis(),
-              maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
             };
           }
           return {};
@@ -493,6 +515,69 @@ describe('Password Reset API - Integration Tests', () => {
 
         expect(res.status).toBe(404);
       });
+    });
+  });
+
+  describe('GET /api/auth/password-reset/link', () => {
+    test('[SECURITY] トークンを即時消費して clean URL に 303 リダイレクト', async () => {
+      const eqMock = jest.fn().mockResolvedValue({ data: null, error: null });
+      const updateMock = jest.fn().mockReturnValue({ eq: eqMock });
+
+      mockFromImplementation = (table: string) => {
+        if (table === 'password_reset_tokens') {
+          return {
+            select: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            gte: jest.fn().mockReturnThis(),
+            maybeSingle: jest.fn().mockResolvedValue({
+              data: { id: 'token-123', user_id: 'user-123', email: 'test@example.com', used: false },
+              error: null,
+            }),
+            update: updateMock,
+          };
+        }
+
+        return {};
+      };
+
+      const req = new Request('http://localhost/api/auth/password-reset/link?token=valid-token', {
+        method: 'GET',
+      });
+
+      const res: any = await linkHandler(req);
+
+      expect(res.status).toBe(303);
+      expect(res.headers.get('location')).toBe('http://localhost:3000/auth/password-reset');
+      expect(res.headers.get('Cache-Control')).toBe('no-store');
+      expect(res.headers.get('Referrer-Policy')).toBe('no-referrer');
+      expect(updateMock).toHaveBeenCalledWith({ used: true });
+      expect(eqMock).toHaveBeenCalledWith('id', 'token-123');
+      expect(res._cookies).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'sb-password-reset-session' }),
+        ])
+      );
+    });
+  });
+
+  describe('GET /api/auth/password-reset/session', () => {
+    test('[SUCCESS] 有効な reset-session を返す', async () => {
+      const { createPasswordResetSessionToken } = await import('@/features/auth/services/password-reset-session');
+      const sessionToken = createPasswordResetSessionToken({ userId: 'user-123', email: 'test@example.com', tokenId: 'token-123' });
+
+      const req = new Request('http://localhost/api/auth/password-reset/session', {
+        method: 'GET',
+        headers: {
+          cookie: `sb-password-reset-session=${encodeURIComponent(sessionToken)}`,
+        },
+      });
+
+      const res: any = await sessionHandler(req);
+      const body = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(body).toEqual({ ready: true, email: 'test@example.com' });
+      expect(res.headers.get('Cache-Control')).toBe('no-store');
     });
   });
 });

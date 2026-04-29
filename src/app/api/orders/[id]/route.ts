@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, resolveRequestUser } from '@/lib/supabase/server';
+import { createClient, createServiceRoleClient, resolveRequestUser } from '@/lib/supabase/server';
+import { signItemImageUrl } from '@/lib/storage/item-images';
 
 type OrderItemRow = {
 	id: string;
@@ -141,6 +142,8 @@ export async function GET(
 		return NextResponse.json({ error: 'Order not found' }, { status: 404 });
 	}
 
+	const signSupabase = await createServiceRoleClient();
+
 	return NextResponse.json({
 		id: data.id,
 		orderNumber: toOrderNumber(data.id),
@@ -151,14 +154,14 @@ export async function GET(
 		shippingEmail: data.shipping_email ?? '',
 		shippingPhone: data.shipping_phone ?? '',
 		shippingAddress: toShippingAddress(data),
-		items: (data.order_items ?? []).map((item) => ({
+		items: await Promise.all((data.order_items ?? []).map(async (item) => ({
 			id: item.id,
 			name: item.item_name,
-			imageUrl: item.item_image_url,
+			imageUrl: await signItemImageUrl(signSupabase, item.item_image_url),
 			color: item.color,
 			size: item.size,
 			quantity: item.quantity,
 			amount: formatCurrency(item.line_total, data.currency),
-		})),
+		}))),
 	});
 }

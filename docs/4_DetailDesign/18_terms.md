@@ -13,6 +13,7 @@
 
 - [x] FR-TERMS-001: Playwright 試験 `e2e/FR-TERMS-001-terms-content.spec.ts` を追加する
 - [x] FR-TERMS-002: `generateMetadata` を実装し、Playwright 試験 `e2e/FR-TERMS-002-metadata.spec.ts` を追加する
+- [x] TERMS-SEC-01: Playwright 試験 `e2e/FR-TERMS-003-security-headers.spec.ts` を追加し、`/terms` のセキュリティヘッダー回帰を検知する
 
 ## 修正計画（実装前）
 

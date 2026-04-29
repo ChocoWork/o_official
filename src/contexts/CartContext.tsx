@@ -21,7 +21,7 @@ interface CartContextType {
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
-export function CartProvider({ children }: { children: React.ReactNode }) {
+export function CartProvider({ children, enabled = true }: { children: React.ReactNode; enabled?: boolean }) {
   const [cartCount, setCartCount] = useState(0);
   const [wishlistedItems, setWishlistedItems] = useState<Set<number>>(new Set());
 
@@ -112,9 +112,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   // Initial fetch on mount
   useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
     updateCartCount();
     updateWishlist();
-  }, []);
+  }, [enabled]);
 
   return (
     <CartContext.Provider value={{ cartCount, wishlistedItems, updateCartCount, updateWishlist, toggleWishlist }}>

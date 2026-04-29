@@ -5,7 +5,7 @@
 | 要件ID | 要件内容 | 実装ID | 実装対象ファイル | 実装概要 | 実装ステータス |
 |--------|----------|--------|----------------|----------|--------------|
 | FR-LOGIN-001 | `/login` ページはメールアドレス OTP 認証を提供し Cloudflare Turnstile による CAPTCHA を組み込む | IMPL-LOGIN-001 | `src/app/login/page.tsx`, `src/components/LoginModal.tsx` | `LoginModal` 内に OTP フロー + Turnstile CAPTCHA を実装。`page.tsx` は `<LoginModal>` の呼び出しのみ | 済 |
-| FR-LOGIN-002 | Google OAuth によるソーシャルログインボタンを設置する | IMPL-LOGIN-002 | `src/components/LoginModal.tsx`, `src/contexts/LoginContext.tsx`, `src/app/auth/callback/page.tsx` | `signInWithOAuth({ provider: 'google' })` ボタンを実装し、`queryParams.prompt = 'select_account'` を付与してアカウント選択を強制。コールバックは `/auth/callback/page.tsx` で処理 | 済 |
+| FR-LOGIN-002 | Google OAuth によるソーシャルログインボタンを設置する | IMPL-LOGIN-002 | `src/components/LoginModal.tsx`, `src/contexts/LoginContext.tsx`, `src/app/api/auth/oauth/start/route.ts`, `src/app/api/auth/oauth/callback/route.ts` | Google ログイン開始は `/api/auth/oauth/start` に統一し、`prompt=select_account` を付与。code 交換と Cookie 発行は `/api/auth/oauth/callback` で処理 | 済 |
 | FR-LOGIN-003 | 「パスワードを忘れた方はこちら」リンクを設置し `/auth/password-reset` に遷移させる | IMPL-LOGIN-003 | `src/components/LoginModal.tsx`, `src/app/auth/password-reset/page.tsx` | 「パスワードをお忘れの方」リンクを設置し `/auth/password-reset` へ遷移 | 済 |
 | FR-LOGIN-004 | 新規ユーザー向けの専用サインアップページを設置する（WONT） | — | — | 現フェーズ対象外。OTP フローで既存・新規ユーザーを区別なく処理 | 未 |
 | FR-LOGIN-005 | `generateMetadata` を実装しページタイトル・OGP を設定する | IMPL-LOGIN-004 | `src/app/login/page.tsx` | login ページを Server Component とし、`generateMetadata` で title / description / OGP を設定 | 済 |
@@ -109,7 +109,7 @@
 | AUTH-01-06 | Login エンドポイント + テスト（9/9 成功） | IMPL-AUTH-LOGIN-01 | `src/app/api/auth/login/route.ts` | ログイン API 実装済み（9/9 テスト成功） | 済 |
 | AUTH-01-07 | Refresh エンドポイント + JTI ローテーション + テスト | IMPL-AUTH-REFRESH-01 | `src/app/api/auth/refresh/route.ts`, `src/features/auth/services/session.ts` | JTI ローテーション実装済み | 済 |
 | AUTH-01-08 | Logout エンドポイント + CSRF 検証 + テスト（3/3 成功） | IMPL-AUTH-LOGOUT-01 | `src/app/api/auth/logout/route.ts` | ログアウト + CSRF 検証実装済み（3/3 テスト成功） | 済 |
-| AUTH-01-09 | Password Reset フロー + テスト（6/12 成功、モック調整要） | IMPL-AUTH-PWR-01 | `src/app/api/auth/password-reset/` | パスワードリセットフロー実装済み（テスト 6/12 成功） | 一部未 |
+| AUTH-01-09 | Password Reset フロー + テスト（server-managed consume + clean redirect 対応） | IMPL-AUTH-PWR-01 | `src/app/api/auth/password-reset/` | メールリンクは server route で即時消費し、HttpOnly reset-session cookie と clean URL に移行 | 済 |
 | AUTH-01-10 | Admin Revoke User Sessions + テスト（3/3 成功） | IMPL-AUTH-ADMIN-01 | `src/app/api/admin/users/[id]/sessions/route.ts` | セッション強制失効実装済み（3/3 テスト成功） | 済 |
 | AUTH-01-11 | CSRF 対策（`src/lib/csrf.ts`, `csrfMiddleware.ts`） + テスト | IMPL-AUTH-CSRF-01 | `src/lib/csrf.ts`, `src/lib/csrfMiddleware.ts` | CSRF 対策実装済み | 済 |
 | AUTH-01-12 | 監査ログ（`src/lib/audit.ts`, cleanup, CI workflow） + テスト（2/2 成功） | IMPL-AUTH-AUDIT-01 | `src/lib/audit.ts`, `.github/workflows/cleanup-audit-logs.yml` | 監査ログ + cleanup 実装済み（2/2 テスト成功） | 済 |
@@ -130,24 +130,25 @@
 
 ### 実装ファイル
 
-- `src/contexts/LoginContext.tsx` — `signInWithOAuth` 呼び出しに変更
-- `src/app/auth/callback/page.tsx` — コールバック処理（既存実装済み）
+- `src/contexts/LoginContext.tsx` — OAuth 開始を `/api/auth/oauth/start` へ統一
+- `src/app/api/auth/oauth/start/route.ts` — state / PKCE 生成と Provider リダイレクト
+- `src/app/api/auth/oauth/callback/route.ts` — code 交換、Cookie 発行、303 リダイレクト
 - `migrations/011_create_oauth_requests.sql` — oauth_requests テーブル
 
 ### 受け入れ条件
 
 | 要件ID | 要件内容 | 実装ID | 実装対象ファイル | 実装概要 | 実装ステータス |
 |--------|----------|--------|----------------|----------|--------------|
-| AUTH-02-AC-001 | 「Googleでログイン」ボタンで OAuth フロー開始 | IMPL-OAUTH-001 | `src/contexts/LoginContext.tsx` | `signInWithOAuth({ provider: 'google' })` 実装済み | 済 |
-| AUTH-02-AC-002 | callback で Cookie 発行 + 303 リダイレクト | IMPL-OAUTH-002 | `src/app/auth/callback/page.tsx` | コールバック処理で Cookie 発行 + リダイレクト実装済み | 済 |
-| AUTH-02-AC-003 | callback URL から code 等が残らない | IMPL-OAUTH-003 | `src/app/auth/callback/page.tsx` | クリーン URL リダイレクト実装済み | 済 |
+| AUTH-02-AC-001 | 「Googleでログイン」ボタンで OAuth フロー開始 | IMPL-OAUTH-001 | `src/contexts/LoginContext.tsx`, `src/app/api/auth/oauth/start/route.ts` | `/api/auth/oauth/start` 経由で state / PKCE を生成して OAuth を開始 | 済 |
+| AUTH-02-AC-002 | callback で Cookie 発行 + 303 リダイレクト | IMPL-OAUTH-002 | `src/app/api/auth/oauth/callback/route.ts` | サーバ側 callback で Cookie 発行 + 303 リダイレクト実装済み | 済 |
+| AUTH-02-AC-003 | callback URL から code 等が残らない | IMPL-OAUTH-003 | `src/app/api/auth/oauth/callback/route.ts` | サーバ側 callback 完了後にクリーン URL へリダイレクト | 済 |
 | AUTH-02-AC-004 | callback 異常系の統合テスト | IMPL-OAUTH-004 | `tests/auth/` | 統合テスト実装済み | 済 |
 | AUTH-02-AC-005 | callback 正常系の統合テスト | IMPL-OAUTH-005 | `tests/auth/` | 統合テスト実装済み | 済 |
-| AUTH-02-AC-006 | callback 入力不正で 400 | IMPL-OAUTH-006 | `src/app/auth/callback/page.tsx` | 不正入力時 400 実装済み | 済 |
-| AUTH-02-AC-007 | session persist 失敗時も 303 | IMPL-OAUTH-007 | `src/app/auth/callback/page.tsx` | セッション保存失敗時も 303 リダイレクト実装済み | 済 |
-| AUTH-02-AC-008 | Google OAuth 新規登録・既存ログイン | IMPL-OAUTH-008 | `src/app/auth/callback/page.tsx` | 新規/既存ユーザー両対応実装済み | 済 |
+| AUTH-02-AC-006 | callback 入力不正で 400 | IMPL-OAUTH-006 | `src/app/api/auth/oauth/callback/route.ts` | 不正入力時 400 実装済み | 済 |
+| AUTH-02-AC-007 | session persist 失敗時も 303 | IMPL-OAUTH-007 | `src/app/api/auth/oauth/callback/route.ts` | セッション保存失敗時も 303 リダイレクト実装済み | 済 |
+| AUTH-02-AC-008 | Google OAuth 新規登録・既存ログイン | IMPL-OAUTH-008 | `src/app/api/auth/oauth/callback/route.ts` | 新規/既存ユーザー両対応実装済み | 済 |
 | AUTH-02-AC-009 | 既存メール衝突時エラー（暫定） | — | — | 次フェーズで link-proposal を実装予定 | 未 |
-| AUTH-02-AC-010 | Google サインイン時に利用アカウントを選択できる | IMPL-OAUTH-009 | `src/contexts/LoginContext.tsx` | `signInWithOAuth` の `queryParams.prompt` に `select_account` を設定し、Google アカウント選択画面を表示 | 済 |
+| AUTH-02-AC-010 | Google サインイン時に利用アカウントを選択できる | IMPL-OAUTH-009 | `src/app/api/auth/oauth/start/route.ts` | Provider リダイレクト URL に `prompt=select_account` を設定し、Google アカウント選択画面を表示 | 済 |
 
 ---
 

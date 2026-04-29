@@ -43,8 +43,24 @@ export async function enforceRateLimit({ request, endpoint, limit = 50, windowSe
     }
     return undefined;
   } catch (err) {
-    // On DB errors, fail-open (allow request) but log error
+    // On DB errors, fail-closed to preserve authentication abuse protection.
     console.error('enforceRateLimit error:', err);
-    return undefined;
+    const retryAfter = windowSeconds;
+    try {
+      const res = NextResponse.json(
+        { error: 'Rate limiter unavailable' },
+        { status: 503 }
+      );
+      res.headers.set('Retry-After', String(retryAfter));
+      return res;
+    } catch {
+      return new Response(JSON.stringify({ error: 'Rate limiter unavailable' }), {
+        status: 503,
+        headers: {
+          'Content-Type': 'application/json',
+          'Retry-After': String(retryAfter),
+        },
+      });
+    }
   }
 }

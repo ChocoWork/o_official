@@ -42,6 +42,11 @@
 
 - FR-ITEM-ALL-011 は要件から削除（本設計書・API仕様・試験対象から除外）
 
+### 運用メモ
+
+- BUG-PUBLIC-001: `src/app/api/items/route.ts` の数値クエリは未指定値を `0` に強制変換しないこと。`priceMin` / `priceMax` / `collectionYearMin` / `collectionYearMax` が `null` のまま解釈されないと、匿名一覧 API が意図せず空配列を返す。
+- BUG-PUBLIC-001: wishlist 向け pre-request フック導入後は `private` schema の `USAGE` 権限が公開一覧 API にも波及する。`migrations/050_restore_public_read_access_after_pre_request_hook.sql` を公開一覧の前提条件として維持する。
+
 ### 修正計画（実装前）
 
 1. サーバデータ取得層の拡張

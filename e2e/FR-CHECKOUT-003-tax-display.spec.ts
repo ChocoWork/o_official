@@ -1,4 +1,19 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+
+function parseYenAmount(text: string): number {
+  const normalized = text.replace(/,/g, '');
+  const match = normalized.match(/\d+/);
+  return match ? Number(match[0]) : 0;
+}
+
+async function readAmountByLabel(page: Page, label: string): Promise<number> {
+  const row = page
+    .locator('div.flex.justify-between')
+    .filter({ has: page.getByText(label, { exact: true }) })
+    .first();
+  const valueText = await row.locator('span').last().innerText();
+  return parseYenAmount(valueText);
+}
 
 test.describe('FR-CHECKOUT-003 消費税行の明示', () => {
   test('注文内容サマリーに小計・消費税・配送料・合計が表示される', async ({ page }) => {
@@ -14,6 +29,21 @@ test.describe('FR-CHECKOUT-003 消費税行の明示', () => {
       await expect(page.getByText('消費税（10%）')).toBeVisible();
       await expect(page.getByText('配送料')).toBeVisible();
       await expect(page.getByText('合計')).toBeVisible();
+
+      const subtotal = await readAmountByLabel(page, '小計');
+      const tax = await readAmountByLabel(page, '消費税（10%）');
+      const shippingText = await page
+        .locator('div.flex.justify-between')
+        .filter({ has: page.getByText('配送料', { exact: true }) })
+        .first()
+        .locator('span')
+        .last()
+        .innerText();
+      const shipping = shippingText.includes('無料') ? 0 : parseYenAmount(shippingText);
+      const total = await readAmountByLabel(page, '合計');
+
+      expect(tax).toBe(Math.floor(subtotal * 0.1));
+      expect(total).toBe(subtotal + tax + shipping);
     } else {
       // カートが空の場合はその旨が表示される
       expect(hasEmptyCart).toBeTruthy();

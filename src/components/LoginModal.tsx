@@ -2,6 +2,7 @@
 
 import React, { useRef, useState } from "react";
 import Link from 'next/link';
+import Script from 'next/script';
 import { useLogin } from "@/contexts/LoginContext";
 import { z } from 'zod';
 import { IdentifyRequestSchema } from '@/features/auth/schemas/identify';
@@ -237,6 +238,13 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
 
   return (
     <div className="w-full max-w-md mx-auto px-6 font-brand">
+      {siteKey ? (
+        <Script
+          id="turnstile-login-script"
+          src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+          strategy="afterInteractive"
+        />
+      ) : null}
       <Button
         type="button"
         onClick={() => {

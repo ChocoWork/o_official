@@ -64,12 +64,13 @@ export async function POST() {
     const res = NextResponse.json({ ok: true }, { status: 200 });
 
     // If CSRF rotation returned a new token, set it as a csrf cookie on the response.
-    const { refreshCookieName, accessCookieName, csrfCookieName, clearCookieOptions, cookieOptionsForCsrf } = await import('@/lib/cookie');
+    const { refreshCookieName, accessCookieName, csrfCookieName, sessionCookieName, clearCookieOptions, cookieOptionsForCsrf } = await import('@/lib/cookie');
     if (hasRotatedCsrfToken(csrfResult)) {
       res.cookies.set({ name: csrfCookieName, value: csrfResult.rotatedCsrfToken, ...cookieOptionsForCsrf(0) });
     }
 
     // Clear cookies using helpers
+    res.cookies.set({ name: sessionCookieName, value: '', ...clearCookieOptions() });
     res.cookies.set({ name: refreshCookieName, value: '', ...clearCookieOptions() });
     res.cookies.set({ name: accessCookieName, value: '', ...clearCookieOptions() });
     res.cookies.set({ name: csrfCookieName, value: '', ...clearCookieOptions() });

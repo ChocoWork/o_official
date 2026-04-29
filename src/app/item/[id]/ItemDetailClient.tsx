@@ -5,7 +5,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Item } from "@/types/item";
+import { useRouter } from "next/navigation";
+import { Item, ItemStockStatus } from "@/types/item";
 import { useCart } from "@/contexts/CartContext";
 import { Button } from "@/components/ui/Button";
 import { Stepper } from "@/components/ui/Stepper";
@@ -13,10 +14,11 @@ import { RelatedItems } from "@/features/items/components/RelatedItems";
 
 type Props = { id: string };
 
-/** 在庫状態ラベル: NULL=情報なし, 0=SOLD OUT, 1-4=残りわずか, 5+=在庫あり */
-function StockBadge({ stockQuantity }: { stockQuantity?: number | null }) {
-  if (stockQuantity === null || stockQuantity === undefined) return null;
-  if (stockQuantity === 0) {
+/** 在庫状態ラベル: unknown=情報なし, sold_out=SOLD OUT, low_stock=残りわずか */
+function StockBadge({ stockStatus }: { stockStatus?: ItemStockStatus }) {
+  if (!stockStatus || stockStatus === "unknown" || stockStatus === "in_stock") return null;
+
+  if (stockStatus === "sold_out") {
     return (
       <span
         data-testid="stock-status"
@@ -26,7 +28,8 @@ function StockBadge({ stockQuantity }: { stockQuantity?: number | null }) {
       </span>
     );
   }
-  if (stockQuantity <= 4) {
+
+  if (stockStatus === "low_stock") {
     return (
       <span
         data-testid="stock-status"
@@ -36,10 +39,30 @@ function StockBadge({ stockQuantity }: { stockQuantity?: number | null }) {
       </span>
     );
   }
+
   return null;
 }
 
+function resolveStockStatus(item: Item): ItemStockStatus {
+  if (item.stockStatus) {
+    return item.stockStatus;
+  }
+
+  // Backward compatibility for tests or old fixtures that still send stock_quantity.
+  if (item.stock_quantity === null || item.stock_quantity === undefined) {
+    return "unknown";
+  }
+  if (item.stock_quantity === 0) {
+    return "sold_out";
+  }
+  if (item.stock_quantity <= 4) {
+    return "low_stock";
+  }
+  return "in_stock";
+}
+
 export default function ItemDetailClient({ id }: Props) {
+  const router = useRouter();
   const { updateCartCount, wishlistedItems, toggleWishlist } = useCart();
   const [item, setItem] = useState<Item | null>(null);
   const [loading, setLoading] = useState(true);
@@ -57,10 +80,8 @@ export default function ItemDetailClient({ id }: Props) {
   const carouselRef = useRef<HTMLDivElement>(null);
 
   const isWishlisted = item ? wishlistedItems.has(item.id) : false;
-  const isSoldOut =
-    item?.stock_quantity !== null &&
-    item?.stock_quantity !== undefined &&
-    item.stock_quantity === 0;
+  const stockStatus = item ? resolveStockStatus(item) : "unknown";
+  const isSoldOut = stockStatus === "sold_out";
 
   useEffect(() => {
     const fetchItem = async () => {
@@ -171,7 +192,7 @@ export default function ItemDetailClient({ id }: Props) {
               type="button"
               onClick={(e) => {
                 e.preventDefault();
-                history.back();
+                router.push('/item');
               }}
               variant="ghost"
               className="text-sm text-[#474747] hover:text-black transition-colors duration-300 flex items-center gap-2 font-brand px-0 py-0"
@@ -342,7 +363,7 @@ export default function ItemDetailClient({ id }: Props) {
                   ¥{item.price.toLocaleString("ja-JP")}
                 </p>
                 {/* 在庫状態バッジ (FR-ITEM-DETAIL-007) */}
-                <StockBadge stockQuantity={item.stock_quantity} />
+                <StockBadge stockStatus={stockStatus} />
               </div>
             </div>
 

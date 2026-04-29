@@ -3,17 +3,28 @@ jest.mock('@/lib/supabase/server', () => ({
 	resolveRequestUser: jest.fn(),
 }));
 
+jest.mock('@/lib/csrfMiddleware', () => ({
+	requireCsrfOrDeny: jest.fn(),
+}));
+
 jest.mock('next/server', () => ({
 	NextResponse: {
 		json: (body: unknown, init?: { status?: number }) => ({
 			status: init?.status ?? 200,
 			_body: body,
+			headers: new Map(),
+			cookies: {
+				_cookies: [] as any[],
+				set(c: any) { this._cookies.push(c); },
+				get(name: string) { return this._cookies.find((c: any) => c.name === name); },
+			},
 			json: async () => body,
 		}),
 	},
 }));
 
 const { createClient, resolveRequestUser } = require('@/lib/supabase/server');
+const { requireCsrfOrDeny } = require('@/lib/csrfMiddleware');
 const handler = require('@/app/api/profile/route');
 
 function createProfileQueryBuilder(results: Array<{ data: unknown; error: unknown }>) {
@@ -32,6 +43,7 @@ function createProfileQueryBuilder(results: Array<{ data: unknown; error: unknow
 describe('GET /api/profile', () => {
 	beforeEach(() => {
 		jest.resetAllMocks();
+		requireCsrfOrDeny.mockResolvedValue(undefined);
 		resolveRequestUser.mockResolvedValue({
 			data: {
 				user: {
@@ -138,5 +150,70 @@ describe('GET /api/profile', () => {
 			expect.objectContaining({ onConflict: 'user_id' }),
 		);
 		expect(body).toMatchObject({ phone: '090-1234-5678' });
+	});
+
+	test('POST は CSRF 検証に失敗すると 403 を返す', async () => {
+		requireCsrfOrDeny.mockResolvedValue({ status: 403, _body: { error: 'Forbidden' } });
+		createClient.mockResolvedValue({ from: jest.fn() });
+		resolveRequestUser.mockResolvedValue({
+			data: { user: { id: 'user-1', email: 'user@example.com' } },
+			error: null,
+		});
+
+		const req = new Request('http://localhost/api/profile', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ fullName: '山田 花子' }),
+		});
+
+		const res: any = await handler.POST(req);
+		const body = await res.json();
+
+		expect(res.status).toBe(403);
+		expect(body).toEqual({ error: 'Forbidden' });
+	});
+
+	test('POST は CSRF ローテーションを受けて CSRF cookie を返す', async () => {
+		requireCsrfOrDeny.mockResolvedValue({ rotatedCsrfToken: 'new-csrf-token' });
+		const upsert = jest.fn().mockResolvedValue({ error: null });
+		createClient.mockResolvedValue({
+			from: jest.fn().mockReturnValue({
+				upsert,
+			}),
+		});
+		resolveRequestUser.mockResolvedValue({
+			data: { user: { id: 'user-1', email: 'user@example.com' } },
+			error: null,
+		});
+
+		const req = new Request('http://localhost/api/profile', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ fullName: '山田 花子' }),
+		});
+
+		const res: any = await handler.POST(req);
+
+		expect(res.status).toBe(200);
+		expect(res.cookies.get('sb-csrf-token')?.value).toBe('new-csrf-token');
+	});
+
+	test('DELETE は CSRF 検証に失敗すると 403 を返す', async () => {
+		requireCsrfOrDeny.mockResolvedValue({ status: 403, _body: { error: 'Forbidden' } });
+		createClient.mockResolvedValue({ from: jest.fn() });
+		resolveRequestUser.mockResolvedValue({
+			data: { user: { id: 'user-1', email: 'user@example.com' } },
+			error: null,
+		});
+
+		const req = new Request('http://localhost/api/profile', {
+			method: 'DELETE',
+		});
+
+		const res: any = await handler.DELETE(req);
+		const body = await res.json();
+
+		expect(res.status).toBe(403);
+		expect(body).toEqual({ error: 'Forbidden' });
 	});
 });

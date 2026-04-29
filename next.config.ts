@@ -31,6 +31,21 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: 'https',
+        hostname: '*.supabase.co',
+        port: '',
+        pathname: '/storage/v1/object/sign/**',
+      },
+      {
+        protocol: 'https',
+        hostname: '*.supabase.co',
+        port: '',
+        pathname: '/storage/v1/object/authenticated/**',
+      },
+      // SECURITY NOTE:
+      // readdy.ai image URLs are still referenced by legacy/demo content.
+      // Keep this allow-list only while that content exists, and review regularly.
+      {
+        protocol: 'https',
         hostname: 'readdy.ai',
         port: '',
         pathname: '/api/search-image',

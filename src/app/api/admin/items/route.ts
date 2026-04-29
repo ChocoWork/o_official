@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
+import { signItemImageFields } from '@/lib/storage/item-images';
 
 const itemCategorySchema = z.enum(['TOPS', 'BOTTOMS', 'OUTERWEAR', 'ACCESSORIES']);
 const itemStatusSchema = z.enum(['private', 'published']);
@@ -185,7 +186,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Failed to fetch items' }, { status: 500 });
     }
 
-    return NextResponse.json({ data }, { status: 200 });
+    const signedItems = await Promise.all((data ?? []).map((item) => signItemImageFields(supabase, item)));
+
+    return NextResponse.json({ data: signedItems }, { status: 200 });
   } catch (error) {
     console.error('GET /api/admin/items error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

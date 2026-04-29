@@ -3,7 +3,7 @@ import { mockCartApis, mockItemDetailApis, sampleItemDetail } from './shop-test-
 
 test.describe('FR-ITEM-DETAIL-004/006/007/008 item detail actions and stock', () => {
   test('未選択エラー・在庫表示・モバイル固定CTA・カート追加を確認する', async ({ page }) => {
-    const item = sampleItemDetail({ stock_quantity: 2 });
+    const item = sampleItemDetail({ stockStatus: 'low_stock', stock_quantity: 2 });
     const cartMocks = await mockCartApis(page, []);
     await mockItemDetailApis(page, item, []);
 
@@ -31,7 +31,7 @@ test.describe('FR-ITEM-DETAIL-004/006/007/008 item detail actions and stock', ()
   });
 
   test('売り切れ商品では SOLD OUT 表示と disabled 状態になる', async ({ page }) => {
-    const soldOutItem = sampleItemDetail({ stock_quantity: 0, sizes: ['M'] });
+    const soldOutItem = sampleItemDetail({ stockStatus: 'sold_out', stock_quantity: 0, sizes: ['M'] });
     await mockCartApis(page, []);
     await mockItemDetailApis(page, soldOutItem, []);
 

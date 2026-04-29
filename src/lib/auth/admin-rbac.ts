@@ -14,12 +14,14 @@ export type PermissionCode =
   | 'admin.stockists.read'
   | 'admin.stockists.manage'
   | 'admin.orders.read'
-  | 'admin.orders.manage';
+  | 'admin.orders.manage'
+  | 'admin.audit.read';
 
 type AuthzSuccess = {
   ok: true;
   userId: string;
   role: AppRole;
+  actorEmail: string | null;
 };
 
 type AuthzFailure = {
@@ -29,6 +31,8 @@ type AuthzFailure = {
 
 export type AuthzResult = AuthzSuccess | AuthzFailure;
 
+// Legacy role-to-permission map is preserved for UI/consistency checks only.
+// Authorization decisions are made from DB ACL permissions, not from app_metadata.role.
 const legacyPermissionMap: Record<AppRole, Set<PermissionCode>> = {
   admin: new Set<PermissionCode>([
     'admin.users.read',
@@ -43,6 +47,7 @@ const legacyPermissionMap: Record<AppRole, Set<PermissionCode>> = {
     'admin.stockists.manage',
     'admin.orders.read',
     'admin.orders.manage',
+    'admin.audit.read',
   ]),
   supporter: new Set<PermissionCode>(['admin.orders.read', 'admin.orders.manage', 'admin.users.read']),
   user: new Set<PermissionCode>([]),
@@ -70,6 +75,20 @@ async function resolveTokenRole(userId: string): Promise<AppRole> {
     console.error('[RBAC.resolveTokenRole] Exception:', err);
     return 'user';
   }
+}
+
+function isMfaVerified(user: { app_metadata?: unknown } | null | undefined): boolean {
+  if (!user || typeof user !== 'object') {
+    return false;
+  }
+
+  const appMetadata = user.app_metadata;
+  if (!appMetadata || typeof appMetadata !== 'object') {
+    return false;
+  }
+
+  const metadata = appMetadata as Record<string, unknown>;
+  return metadata['admin_mfa_verified'] === true || metadata['mfa_verified'] === true;
 }
 
 async function resolveAclPermissions(userId: string): Promise<Set<PermissionCode>> {
@@ -153,11 +172,9 @@ export async function authorizeAdminPermission(requiredPermission: PermissionCod
     console.log(`[RBAC] ACL permissions: ${Array.from(aclPermissions).join(', ')}`);
 
     const hasAclPermission = aclPermissions.has(requiredPermission);
-    const hasLegacyPermission = legacyPermissionMap[tokenRole].has(requiredPermission);
+    console.log(`[RBAC] ACL check: ${hasAclPermission}`);
 
-    console.log(`[RBAC] ACL check: ${hasAclPermission}, Legacy check: ${hasLegacyPermission}`);
-
-    if (!hasAclPermission && !hasLegacyPermission) {
+    if (!hasAclPermission) {
       console.warn(`[RBAC] Permission denied for ${user.id}: ${requiredPermission}`);
       return {
         ok: false,
@@ -168,11 +185,23 @@ export async function authorizeAdminPermission(requiredPermission: PermissionCod
       };
     }
 
+    if (!isMfaVerified(user)) {
+      console.warn(`[RBAC] MFA required for ${user.id}: ${requiredPermission}`);
+      return {
+        ok: false,
+        response: NextResponse.json(
+          { error: 'Forbidden', reason: 'MFA required', permission: requiredPermission, role: tokenRole },
+          { status: 403 }
+        ),
+      };
+    }
+
     console.log(`[RBAC] Permission granted for ${user.id}: ${requiredPermission}`);
     return {
       ok: true,
       userId: user.id,
       role: tokenRole,
+      actorEmail: user.email ?? null,
     };
   } catch (err) {
     console.error('[RBAC] Authorization error:', err);

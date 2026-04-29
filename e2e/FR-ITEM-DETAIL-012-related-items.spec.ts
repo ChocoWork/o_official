@@ -7,7 +7,6 @@ test.describe('FR-ITEM-DETAIL-012 関連商品セクション', () => {
     test.skip(!item, '公開商品データがないためスキップ');
 
     await page.goto(`/item/${item!.id}`);
-    await page.waitForLoadState('networkidle');
 
     const relatedSection = page.locator('[data-testid="related-items"]');
     await expect(relatedSection).toBeVisible();
@@ -18,7 +17,6 @@ test.describe('FR-ITEM-DETAIL-012 関連商品セクション', () => {
     test.skip(!item, '公開商品データがないためスキップ');
 
     await page.goto(`/item/${item!.id}`);
-    await page.waitForLoadState('networkidle');
 
     const relatedSection = page.locator('[data-testid="related-items"]');
     await expect(relatedSection).toBeVisible();
@@ -34,7 +32,6 @@ test.describe('FR-ITEM-DETAIL-012 関連商品セクション', () => {
     test.skip(!item, '公開商品データがないためスキップ');
 
     await page.goto(`/item/${item!.id}`);
-    await page.waitForLoadState('networkidle');
 
     const relatedSection = page.locator('[data-testid="related-items"]');
     const cards = relatedSection.locator('[data-testid="item-card"]');
@@ -46,7 +43,6 @@ test.describe('FR-ITEM-DETAIL-012 関連商品セクション', () => {
     }
 
     await cards.first().click();
-    await page.waitForLoadState('networkidle');
 
     // URL が /item/:id 形式に変わる
     await expect(page).toHaveURL(/\/item\/\d+/);
