@@ -10,6 +10,9 @@
 | スキル | 用途 |
 |--------|------|
 | `office-document-analyzer` | Excel / PowerPoint 等の設計書を解析して内容を読み取る |
+| `github-flow` | ブランチ・PR 運用 |
+| `create-specification` | AI 向けに最適化された仕様書を GitHub Issue として作成する |
+| `update-specification` | 仕様書 Issue 更新 |
 
 - `docs/1_RequirementsDifinition/` 配下に Excel Excel / PowerPoint 等の設計書があれば `office-document-analyzer` で解析し、要件を把握する
 
@@ -17,9 +20,13 @@
 
 | スキル | 用途 |
 |--------|------|
-| `create-specification` | AI 向けに最適化された仕様書を GitHub Issue として作成する |
-| `cosmosdb-datamodeling` | Cosmos DB のデータモデルを設計する |
-| `clean-architecture-guide` | Next.js App Router / feature-oriented module architecture の設計ガイドに従う |
+| `github-flow` | 設計・実装計画を作成し、仕様書 Issue にコメントとして投稿 |
+| `create-implementation-plan` | 設計方針・実装計画の作成 |
+| `documentation-guide` | ドキュメント作成・更新のガイド |
+| `implement-component` | Next.js / React / TypeScript を用いた設計・実装ガイド |
+| `implement-nextjs` | Next.js の設計・実装ガイド |
+| `implement-stripe` | Stripe の設計・実装ガイド |
+| `implement-supabase` | Supabase の設計・実装ガイド |
 
 - 要件をもとに `create-specification` で GitHub Issue として仕様書化する
 - 実装計画は仕様書 Issue にコメントとして記録する（`feature-lifecycle` スキルの Phase 2 参照）
@@ -29,13 +36,18 @@
 | スキル | 用途 |
 |--------|------|
 | `github-flow` | **必須** — feature ブランチ作成から Draft PR、Squash Merge までの開発フロー |
-| `nextjs-implement` | Next.js App Router / Route Handlers / Server Actions の実装 |
-| `react-implement` | React 19 / TypeScript の実装ベストプラクティス |
 | `implement-component` | Next.js / React / TypeScript を用いたコード生成ガイド |
+| `implement-nextjs` | Next.js App Router / Route Handlers / Server Actions の実装 |
+| `implement-react` | React 19 / TypeScript の実装ベストプラクティス |
+| `implement-stripe` | Stripe の設計・実装ガイド |
+| `implement-supabase` | Supabase の設計・実装ガイド |
+| `implement-uiux` | UI/UX の設計・実装ガイド |
+| `test-jest` | Jest によるユニットテストの作成 |
+| `test-react-testing-library` | React コンポーネントのテスト |
 | `playwright-cli` | ブラウザを使った E2E テストの自動化 |
 
 - **コードを変更する際は必ず `github-flow` に従う**（feature ブランチ → Draft PR → レビュー → Squash Merge）
-- Next.js / React / TypeScript コードは `nextjs-implement` および `react-implement` および `implement-component` に準拠する
+- Next.js / React / TypeScript コードは `implement-nextjs` および `implement-react` および `implement-component` に準拠する
 
 ## フェーズ 4: テスト
 
