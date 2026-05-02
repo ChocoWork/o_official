@@ -19,6 +19,7 @@ test.describe('FR-TERMS-003 security headers', () => {
     expect(headers['permissions-policy']).toBe('camera=(), microphone=(), geolocation=()');
     expect(headers['x-content-type-options']).toBe('nosniff');
     expect(headers['x-frame-options']).toBe('DENY');
+    expect(headers['x-powered-by']).toBeUndefined();
     expect(headers['strict-transport-security']).toContain('max-age=63072000');
     expect(headers['x-nonce']).toMatch(/^[0-9a-f]{24}$/);
   });

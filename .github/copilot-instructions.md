@@ -5,25 +5,23 @@
 
 ---
 
-## フェーズ 1: 要件理解・分析
+## フェーズ 1: 要件定義
 
 | スキル | 用途 |
 |--------|------|
 | `office-document-analyzer` | Excel / PowerPoint 等の設計書を解析して内容を読み取る |
 
-- `docs/user-stories/` 配下の Excel 設計書を `office-document-analyzer` で解析し、要件を把握する
+- `docs/1_RequirementsDifinition/` 配下に Excel Excel / PowerPoint 等の設計書があれば `office-document-analyzer` で解析し、要件を把握する
 
-## フェーズ 2: アーキテクチャ・仕様策定
+## フェーズ 2: 設計方針・実装計画
 
 | スキル | 用途 |
 |--------|------|
 | `create-specification` | AI 向けに最適化された仕様書を GitHub Issue として作成する |
 | `cosmosdb-datamodeling` | Cosmos DB のデータモデルを設計する |
-| `clean-architecture-guide` | Modular Monolith + Clean Architecture の設計ガイドに従う |
+| `clean-architecture-guide` | Next.js App Router / feature-oriented module architecture の設計ガイドに従う |
 
 - 要件をもとに `create-specification` で GitHub Issue として仕様書化する
-- データ層の設計が必要な場合は `cosmosdb-datamodeling` を使用する
-- モジュール構成・レイヤー設計は `clean-architecture-guide` に従う
 - 実装計画は仕様書 Issue にコメントとして記録する（`feature-lifecycle` スキルの Phase 2 参照）
 
 ## フェーズ 3: 開発
@@ -31,23 +29,20 @@
 | スキル | 用途 |
 |--------|------|
 | `github-flow` | **必須** — feature ブランチ作成から Draft PR、Squash Merge までの開発フロー |
-| `dotnet-best-practices` | .NET / C# のベストプラクティスに準拠する |
-| `aspnet-minimal-api-openapi` | ASP.NET Minimal API + OpenAPI のエンドポイント実装 |
-| `aspire` | Aspire による分散アプリケーションの構成・実行・デバッグ |
-| `cosmosdb-datamodeling` | Azure Cosmos DB のデータモデル設計（`docs/cosmosdb_data_model.md` 参照） |
-| `csharp-async` | C# 非同期プログラミングのベストプラクティス |
-| `microsoft-docs` | Microsoft 公式ドキュメントの参照 |
-| `microsoft-code-reference` | Microsoft API リファレンス・コードサンプルの検索 |
+| `nextjs-implement` | Next.js App Router / Route Handlers / Server Actions の実装 |
+| `react-implement` | React 19 / TypeScript の実装ベストプラクティス |
+| `implement-component` | Next.js / React / TypeScript を用いたコード生成ガイド |
+| `playwright-cli` | ブラウザを使った E2E テストの自動化 |
 
 - **コードを変更する際は必ず `github-flow` に従う**（feature ブランチ → Draft PR → レビュー → Squash Merge）
-- .NET / C# コードは `dotnet-best-practices` に準拠する
-- 最新の .NET 10 / C# 14 / ASP.NET Core 10 / Blazor 10 の機能は `dotnet10` / `aspnetcore-blazor10` スキルで確認する
+- Next.js / React / TypeScript コードは `nextjs-implement` および `react-implement` および `implement-component` に準拠する
 
 ## フェーズ 4: テスト
 
 | スキル | 用途 |
 |--------|------|
-| `csharp-mstest` | MSTest によるユニットテストの作成 |
+| `unit-test-jest` | Jest によるユニットテストの作成 |
+| `react-testing-library` | React コンポーネントのテスト |
 | `playwright-cli` | ブラウザを使った E2E テストの自動化 |
 
 ---

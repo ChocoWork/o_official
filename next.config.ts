@@ -5,6 +5,7 @@ const skipBuildChecks = process.env.NEXT_BUILD_SKIP_CHECKS === '1';
 const nextConfig: NextConfig = {
   /* config options here */
   devIndicators: false,
+  poweredByHeader: false,
   ...(skipBuildChecks
     ? {
         typescript: {
@@ -40,15 +41,6 @@ const nextConfig: NextConfig = {
         hostname: '*.supabase.co',
         port: '',
         pathname: '/storage/v1/object/authenticated/**',
-      },
-      // SECURITY NOTE:
-      // readdy.ai image URLs are still referenced by legacy/demo content.
-      // Keep this allow-list only while that content exists, and review regularly.
-      {
-        protocol: 'https',
-        hostname: 'readdy.ai',
-        port: '',
-        pathname: '/api/search-image',
       },
     ],
   },

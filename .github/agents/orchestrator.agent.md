@@ -1,7 +1,6 @@
 ---
 description: ユーザーの要望に基づき、機能追加やバグ修正の実装をオーケストレーションします。
 argument-hint: 報告したいイシュー、またはリクエストしたい機能を説明してください。
-infer: false
 tools:
   [
     "agent",
