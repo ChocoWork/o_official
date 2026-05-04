@@ -19,9 +19,8 @@ export default function OAuthCallbackPage() {
     (async () => {
       try {
         const code = searchParams.get('code');
-        const state = searchParams.get('state');
 
-        if (code && state) {
+        if (code) {
           const redirectParams = new URLSearchParams(searchParams.toString());
           window.location.replace(`/api/auth/oauth/callback?${redirectParams.toString()}`);
           return;

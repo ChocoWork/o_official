@@ -1,14 +1,15 @@
 import { NextResponse } from 'next/server';
+import type { CookieOptions } from '@supabase/ssr';
+import { createServerClient } from '@supabase/ssr';
 import { z } from 'zod';
 import { getRequestOrigin, sanitizeRedirectPath } from '@/lib/redirect';
 import { logAudit } from '@/lib/audit';
-import { createServiceRoleClient } from '@/lib/supabase/server';
 
 const DEFAULT_REDIRECT_PATH = '/auth/verified';
 
 const CallbackQuerySchema = z.object({
   code: z.string().min(1),
-  state: z.string().min(1),
+  next: z.string().optional(),
 });
 
 const TokenResponseSchema = z.object({
@@ -22,6 +23,33 @@ const TokenResponseSchema = z.object({
     email: z.string().email().optional().nullable(),
   }).passthrough(),
 }).passthrough();
+
+function parseRequestCookies(cookieHeader: string | null): Array<{ name: string; value: string }> {
+  if (!cookieHeader) {
+    return [];
+  }
+
+  return cookieHeader
+    .split(';')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const separatorIndex = entry.indexOf('=');
+      if (separatorIndex <= 0) {
+        return null;
+      }
+
+      const name = entry.slice(0, separatorIndex);
+      const rawValue = entry.slice(separatorIndex + 1);
+
+      try {
+        return { name, value: decodeURIComponent(rawValue) };
+      } catch {
+        return { name, value: rawValue };
+      }
+    })
+    .filter((cookie): cookie is { name: string; value: string } => cookie !== null);
+}
 
 export async function GET(request: Request) {
   const origin = getRequestOrigin(request);
@@ -38,39 +66,15 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const parsed = CallbackQuerySchema.safeParse({
       code: url.searchParams.get('code'),
-      state: url.searchParams.get('state'),
+      next: url.searchParams.get('next') || undefined,
     });
 
     if (!parsed.success) {
-      await logAudit({ action: 'auth.oauth.callback', outcome: 'failure', detail: 'missing_code_or_state' });
+      await logAudit({ action: 'auth.oauth.callback', outcome: 'failure', detail: 'missing_code' });
       return NextResponse.json({ error: 'Bad Request' }, { status: 400 });
     }
 
-    const { code, state } = parsed.data;
-
-    const service = await createServiceRoleClient();
-
-    const { data: reqRow, error: reqErr } = await service
-      .from('oauth_requests')
-      .select('*')
-      .eq('state', state)
-      .gte('expires_at', new Date().toISOString())
-      .is('used_at', null)
-      .maybeSingle();
-
-    if (reqErr) {
-      console.error('oauth_requests lookup error:', reqErr);
-      await logAudit({ action: 'auth.oauth.callback', outcome: 'error', detail: 'state_lookup_failed' });
-      return NextResponse.json({ error: 'Invalid state' }, { status: 400 });
-    }
-
-    if (!reqRow) {
-      await logAudit({ action: 'auth.oauth.callback', outcome: 'failure', detail: 'invalid_or_expired_state' });
-      return NextResponse.json({ error: 'Invalid state' }, { status: 400 });
-    }
-
-    // One-time use
-    await service.from('oauth_requests').update({ used_at: new Date().toISOString() }).eq('id', reqRow.id);
+    const { code, next } = parsed.data;
 
     const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
     const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -79,33 +83,48 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 });
     }
 
-    const tokenUrl = new URL('/auth/v1/token', supabaseUrl);
-    tokenUrl.searchParams.set('grant_type', 'pkce');
-
-    const tokenResp = await fetch(tokenUrl.toString(), {
-      method: 'POST',
-      headers: {
-        apikey: anonKey,
-        Authorization: `Bearer ${anonKey}`,
-        'Content-Type': 'application/json',
+    const cookiesToSet: Array<{ name: string; value: string; options?: CookieOptions }> = [];
+    const supabase = createServerClient(supabaseUrl, anonKey, {
+      auth: {
+        flowType: 'pkce',
+        detectSessionInUrl: false,
       },
-      body: JSON.stringify({
-        auth_code: code,
-        code_verifier: reqRow.code_verifier,
-      }),
+      cookies: {
+        getAll() {
+          return parseRequestCookies(request.headers.get('cookie'));
+        },
+        setAll(nextCookies) {
+          cookiesToSet.push(...nextCookies);
+        },
+      },
     });
 
-    if (!tokenResp.ok) {
-      const text = await tokenResp.text().catch(() => '');
-      console.error('token exchange failed:', tokenResp.status, text);
-      await logAudit({ action: 'auth.oauth.callback', outcome: 'failure', detail: 'token_exchange_failed', metadata: { status: tokenResp.status } });
+    const exchangeResult = await supabase.auth.exchangeCodeForSession(code);
+    if (exchangeResult.error || !exchangeResult.data.session || !exchangeResult.data.user) {
+      console.error('token exchange failed:', exchangeResult.error);
+      await logAudit({
+        action: 'auth.oauth.callback',
+        outcome: 'failure',
+        detail: 'token_exchange_failed',
+        metadata: {
+          error: exchangeResult.error?.message ?? null,
+        },
+      });
       return NextResponse.json({ error: 'OAuth exchange failed' }, { status: 502 });
     }
 
-    const tokenJson: unknown = await tokenResp.json();
-    const tokenParsed = TokenResponseSchema.safeParse(tokenJson);
+    const session = exchangeResult.data.session;
+    const user = exchangeResult.data.user;
+    const tokenParsed = TokenResponseSchema.safeParse({
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
+      expires_in: session.expires_in,
+      expires_at: session.expires_at,
+      token_type: session.token_type,
+      user,
+    });
     if (!tokenParsed.success) {
-      console.error('token response parse failed', tokenParsed.error);
+      console.error('session response parse failed', tokenParsed.error);
       await logAudit({ action: 'auth.oauth.callback', outcome: 'error', detail: 'invalid_token_response_shape' });
       return NextResponse.json({ error: 'OAuth exchange failed' }, { status: 502 });
     }
@@ -118,14 +137,14 @@ export async function GET(request: Request) {
       token_type: tokenParsed.data.token_type,
     };
 
-    const user = tokenParsed.data.user;
-
-    // NOTE: 既存メール衝突時の「リンク提案」は別途実装（今回はサーバ側で制御しない）
-    const redirectPath = sanitizeRedirectPath(reqRow.redirect_to, DEFAULT_REDIRECT_PATH);
+    const redirectPath = sanitizeRedirectPath(next, DEFAULT_REDIRECT_PATH);
 
     const res = NextResponse.redirect(new URL(redirectPath, origin), { status: 303 });
     res.headers.set('Cache-Control', 'no-store');
     res.headers.set('Referrer-Policy', 'no-referrer');
+    for (const cookie of cookiesToSet) {
+      res.cookies.set(cookie.name, cookie.value, cookie.options);
+    }
 
     try {
       const { persistSessionAndCookies } = await import('@/features/auth/services/register');

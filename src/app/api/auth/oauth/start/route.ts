@@ -1,31 +1,44 @@
 import { NextResponse } from 'next/server';
-import crypto from 'crypto';
+import type { CookieOptions } from '@supabase/ssr';
+import { createServerClient } from '@supabase/ssr';
 import { z } from 'zod';
 import { getRequestOrigin, sanitizeRedirectPath } from '@/lib/redirect';
 import { logAudit } from '@/lib/audit';
-import { createServiceRoleClient } from '@/lib/supabase/server';
 
 const PROVIDERS = new Set(['google']);
 const DEFAULT_REDIRECT_PATH = '/auth/verified';
-const STATE_TTL_SECONDS = 10 * 60; // 10 minutes
-
-function base64UrlEncode(input: Buffer) {
-  return input
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/g, '');
-}
-
-function sha256Base64Url(input: string) {
-  const digest = crypto.createHash('sha256').update(input).digest();
-  return base64UrlEncode(digest);
-}
 
 const StartQuerySchema = z.object({
   provider: z.string().min(1),
   redirect_to: z.string().optional(),
 });
+
+function parseRequestCookies(cookieHeader: string | null): Array<{ name: string; value: string }> {
+  if (!cookieHeader) {
+    return [];
+  }
+
+  return cookieHeader
+    .split(';')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const separatorIndex = entry.indexOf('=');
+      if (separatorIndex <= 0) {
+        return null;
+      }
+
+      const name = entry.slice(0, separatorIndex);
+      const rawValue = entry.slice(separatorIndex + 1);
+
+      try {
+        return { name, value: decodeURIComponent(rawValue) };
+      } catch {
+        return { name, value: rawValue };
+      }
+    })
+    .filter((cookie): cookie is { name: string; value: string } => cookie !== null);
+}
 
 export async function GET(request: Request) {
   const origin = getRequestOrigin(request);
@@ -58,29 +71,6 @@ export async function GET(request: Request) {
 
     const redirectPath = sanitizeRedirectPath(parsed.data.redirect_to, DEFAULT_REDIRECT_PATH);
 
-    // PKCE
-    const state = base64UrlEncode(crypto.randomBytes(32));
-    const codeVerifier = base64UrlEncode(crypto.randomBytes(48));
-    const codeChallenge = sha256Base64Url(codeVerifier);
-
-    const clientIpHeader = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null;
-
-    const expiresAt = new Date(Date.now() + STATE_TTL_SECONDS * 1000).toISOString();
-
-    const service = await createServiceRoleClient();
-    await service.from('oauth_requests').insert([
-      {
-        provider,
-        state,
-        code_challenge: codeChallenge,
-        code_challenge_method: 'S256',
-        code_verifier: codeVerifier,
-        redirect_to: redirectPath,
-        client_ip: clientIpHeader,
-        expires_at: expiresAt,
-      },
-    ]);
-
     const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
     const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     if (!supabaseUrl || !anonKey) {
@@ -89,18 +79,46 @@ export async function GET(request: Request) {
     }
 
     const callbackUrl = new URL('/api/auth/oauth/callback', origin);
+    callbackUrl.searchParams.set('next', redirectPath);
 
-    const authorizeUrl = new URL('/auth/v1/authorize', supabaseUrl);
-    authorizeUrl.searchParams.set('provider', provider);
-    authorizeUrl.searchParams.set('redirect_to', callbackUrl.toString());
-    authorizeUrl.searchParams.set('code_challenge', codeChallenge);
-    authorizeUrl.searchParams.set('code_challenge_method', 'S256');
-    authorizeUrl.searchParams.set('state', state);
-    authorizeUrl.searchParams.set('prompt', 'select_account');
+    const cookiesToSet: Array<{ name: string; value: string; options?: CookieOptions }> = [];
+    const supabase = createServerClient(supabaseUrl, anonKey, {
+      auth: {
+        flowType: 'pkce',
+        detectSessionInUrl: false,
+      },
+      cookies: {
+        getAll() {
+          return parseRequestCookies(request.headers.get('cookie'));
+        },
+        setAll(nextCookies) {
+          cookiesToSet.push(...nextCookies);
+        },
+      },
+    });
 
-    const res = NextResponse.redirect(authorizeUrl, { status: 302 });
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: callbackUrl.toString(),
+        queryParams: {
+          prompt: 'select_account',
+        },
+      },
+    });
+
+    if (error || !data?.url) {
+      console.error('OAuth start error (signInWithOAuth):', error);
+      await logAudit({ action: 'auth.oauth.start', outcome: 'failure', detail: 'oauth_authorize_url_generation_failed' });
+      return NextResponse.json({ error: 'OAuth start failed' }, { status: 502 });
+    }
+
+    const res = NextResponse.redirect(data.url, { status: 302 });
     res.headers.set('Cache-Control', 'no-store');
     res.headers.set('Referrer-Policy', 'no-referrer');
+    for (const cookie of cookiesToSet) {
+      res.cookies.set(cookie.name, cookie.value, cookie.options);
+    }
 
     await logAudit({ action: 'auth.oauth.start', outcome: 'success', metadata: { provider, redirect_to: redirectPath } });
     return res;

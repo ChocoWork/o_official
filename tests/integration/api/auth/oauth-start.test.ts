@@ -14,12 +14,14 @@ jest.mock('@/lib/audit', () => ({
   logAudit: jest.fn().mockResolvedValue(undefined),
 }));
 
-// Minimal Supabase service-role mock for oauth_requests insert
-jest.mock('@/lib/supabase/server', () => {
-  const insert = jest.fn().mockResolvedValue({ data: [{ id: 'req-1' }], error: null });
-  const from = jest.fn(() => ({ insert }));
+const signInWithOAuthMock = jest.fn();
+jest.mock('@supabase/ssr', () => {
   return {
-    createServiceRoleClient: jest.fn(async () => ({ from })),
+    createServerClient: jest.fn(() => ({
+      auth: {
+        signInWithOAuth: signInWithOAuthMock,
+      },
+    })),
   };
 });
 
@@ -46,9 +48,15 @@ describe('GET /api/auth/oauth/start', () => {
     jest.clearAllMocks();
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'anon';
     process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://example.supabase.co';
+    signInWithOAuthMock.mockResolvedValue({
+      data: {
+        url: 'https://example.supabase.co/auth/v1/authorize?provider=google',
+      },
+      error: null,
+    });
   });
 
-  test('redirects to Supabase authorize with state and PKCE', async () => {
+  test('redirects to Supabase authorize with account chooser', async () => {
     const { GET } = await handlerImport();
 
     const req = new Request('http://localhost:3000/api/auth/oauth/start?provider=google&redirect_to=%2Fauth%2Fverified');
@@ -58,12 +66,16 @@ describe('GET /api/auth/oauth/start', () => {
     const location = res.headers.get('location');
     expect(typeof location).toBe('string');
     expect(location).toContain('/auth/v1/authorize');
-    expect(location).toContain('provider=google');
-    expect(location).toContain('code_challenge=');
-    expect(location).toContain('code_challenge_method=S256');
-    expect(location).toContain('state=');
-    expect(location).toContain('prompt=select_account');
-    expect(location).toContain('redirect_to=http%3A%2F%2Flocalhost%3A3000%2Fapi%2Fauth%2Foauth%2Fcallback');
+
+    expect(signInWithOAuthMock).toHaveBeenCalledWith({
+      provider: 'google',
+      options: {
+        redirectTo: 'http://localhost:3000/api/auth/oauth/callback?next=%2Fauth%2Fverified',
+        queryParams: {
+          prompt: 'select_account',
+        },
+      },
+    });
   });
 
   test('returns 400 for unsupported provider', async () => {
@@ -75,6 +87,22 @@ describe('GET /api/auth/oauth/start', () => {
 
     expect(res.status).toBe(400);
     expect(body.error).toBe('Unsupported provider');
+  });
+
+  test('returns 502 when oauth authorize url cannot be generated', async () => {
+    signInWithOAuthMock.mockResolvedValueOnce({
+      data: { url: null },
+      error: { message: 'failed' },
+    });
+
+    const { GET } = await handlerImport();
+
+    const req = new Request('http://localhost:3000/api/auth/oauth/start?provider=google&redirect_to=%2Fauth%2Fverified');
+    const res: any = await GET(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(502);
+    expect(body.error).toBe('OAuth start failed');
   });
 });
 

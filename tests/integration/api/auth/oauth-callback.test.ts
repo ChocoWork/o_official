@@ -19,22 +19,14 @@ jest.mock('@/features/auth/services/register', () => ({
   persistSessionAndCookies: (...args: unknown[]) => persistSessionAndCookiesMock(...args),
 }));
 
-const maybeSingleMock = jest.fn();
-const eqUpdateMock = jest.fn().mockResolvedValue({ data: null, error: null });
-const updateMock = jest.fn().mockReturnValue({ eq: eqUpdateMock });
-
-jest.mock('@/lib/supabase/server', () => {
-  const from = jest.fn(() => ({
-    select: jest.fn().mockReturnThis(),
-    eq: jest.fn().mockReturnThis(),
-    gte: jest.fn().mockReturnThis(),
-    is: jest.fn().mockReturnThis(),
-    maybeSingle: maybeSingleMock,
-    update: updateMock,
-  }));
-
+const exchangeCodeForSessionMock = jest.fn();
+jest.mock('@supabase/ssr', () => {
   return {
-    createServiceRoleClient: jest.fn(async () => ({ from })),
+    createServerClient: jest.fn(() => ({
+      auth: {
+        exchangeCodeForSession: exchangeCodeForSessionMock,
+      },
+    })),
   };
 });
 
@@ -62,36 +54,31 @@ describe('GET /api/auth/oauth/callback - Error Cases', () => {
     jest.clearAllMocks();
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'anon';
     process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://example.supabase.co';
+    exchangeCodeForSessionMock.mockResolvedValue({
+      data: {
+        session: {
+          access_token: 'access-token',
+          refresh_token: 'refresh-token',
+          expires_in: 3600,
+          expires_at: 1_900_000_000,
+          token_type: 'bearer',
+        },
+        user: {
+          id: 'user-123',
+          email: 'test@example.com',
+        },
+      },
+      error: null,
+    });
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
   });
 
-  test('[ERROR] state期限切れで 400 Bad Request', async () => {
-    maybeSingleMock.mockResolvedValueOnce({ data: null, error: null });
-
+  test('[ERROR] code欠落で 400 Bad Request', async () => {
     const { GET } = await handlerImport();
-    const req = new Request('http://localhost:3000/api/auth/oauth/callback?code=valid-code&state=expired-state');
-    const res: { status: number; json: () => Promise<{ error: string }> } = await GET(req);
-    const body = await res.json();
-
-    expect(res.status).toBe(400);
-    expect(body.error).toBe('Invalid state');
-
-    const { logAudit } = require('@/lib/audit');
-    expect(logAudit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: 'auth.oauth.callback',
-        outcome: 'failure',
-        detail: 'invalid_or_expired_state',
-      })
-    );
-  });
-
-  test('[ERROR] code/state欠落で 400 Bad Request', async () => {
-    const { GET } = await handlerImport();
-    const req = new Request('http://localhost:3000/api/auth/oauth/callback?state=only-state');
+    const req = new Request('http://localhost:3000/api/auth/oauth/callback?next=%2Fauth%2Fverified');
     const res: { status: number; json: () => Promise<{ error: string }> } = await GET(req);
     const body = await res.json();
 
@@ -103,64 +90,46 @@ describe('GET /api/auth/oauth/callback - Error Cases', () => {
       expect.objectContaining({
         action: 'auth.oauth.callback',
         outcome: 'failure',
-        detail: 'missing_code_or_state',
+        detail: 'missing_code',
       })
     );
   });
 
-  test('[ERROR] state再利用で 400 Bad Request', async () => {
-    // used_at is not null のレコードは .is('used_at', null) で取得されず、結果的に data:null になる想定
-    maybeSingleMock.mockResolvedValueOnce({ data: null, error: null });
-
+  test('[ERROR] code欠落で 400 Bad Request', async () => {
     const { GET } = await handlerImport();
-    const req = new Request('http://localhost:3000/api/auth/oauth/callback?code=valid-code&state=reused-state');
+    const req = new Request('http://localhost:3000/api/auth/oauth/callback');
     const res: { status: number; json: () => Promise<{ error: string }> } = await GET(req);
     const body = await res.json();
 
     expect(res.status).toBe(400);
-    expect(body.error).toBe('Invalid state');
+    expect(body.error).toBe('Bad Request');
 
     const { logAudit } = require('@/lib/audit');
     expect(logAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'auth.oauth.callback',
         outcome: 'failure',
-        detail: 'invalid_or_expired_state',
+        detail: 'missing_code',
       })
     );
   });
 
   test('[ERROR] トークン交換失敗で 502 Bad Gateway', async () => {
-    maybeSingleMock.mockResolvedValueOnce({
+    exchangeCodeForSessionMock.mockResolvedValueOnce({
       data: {
-        id: 'oauth-req-1',
-        code_verifier: 'verifier-123',
-        redirect_to: '/auth/verified',
+        session: null,
+        user: null,
       },
-      error: null,
-    });
-
-    Object.defineProperty(globalThis, 'fetch', {
-      configurable: true,
-      writable: true,
-      value: jest.fn().mockResolvedValueOnce({
-      ok: false,
-      status: 400,
-      text: async () => 'invalid_grant',
-      json: async () => ({ error: 'invalid_grant' }),
-      } as unknown as Response),
+      error: { message: 'invalid_grant' },
     });
 
     const { GET } = await handlerImport();
-    const req = new Request('http://localhost:3000/api/auth/oauth/callback?code=bad-code&state=valid-state');
+    const req = new Request('http://localhost:3000/api/auth/oauth/callback?code=bad-code&next=%2Fauth%2Fverified');
     const res: { status: number; json: () => Promise<{ error: string }> } = await GET(req);
     const body = await res.json();
 
     expect(res.status).toBe(502);
     expect(body.error).toBe('OAuth exchange failed');
-
-    expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ used_at: expect.any(String) }));
-    expect(eqUpdateMock).toHaveBeenCalledWith('id', 'oauth-req-1');
 
     const { logAudit } = require('@/lib/audit');
     expect(logAudit).toHaveBeenCalledWith(
@@ -168,51 +137,20 @@ describe('GET /api/auth/oauth/callback - Error Cases', () => {
         action: 'auth.oauth.callback',
         outcome: 'failure',
         detail: 'token_exchange_failed',
-        metadata: expect.objectContaining({ status: 400 }),
+        metadata: expect.objectContaining({ error: 'invalid_grant' }),
       })
     );
   });
 
   test('[SUCCESS] token交換成功で Cookie 発行 + 303 リダイレクト', async () => {
-    maybeSingleMock.mockResolvedValueOnce({
-      data: {
-        id: 'oauth-req-success-1',
-        code_verifier: 'verifier-success-123',
-        redirect_to: '/auth/verified',
-      },
-      error: null,
-    });
-
-    Object.defineProperty(globalThis, 'fetch', {
-      configurable: true,
-      writable: true,
-      value: jest.fn().mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          access_token: 'access-token',
-          refresh_token: 'refresh-token',
-          expires_in: 3600,
-          token_type: 'bearer',
-          user: {
-            id: 'user-123',
-            email: 'test@example.com',
-          },
-        }),
-      } as unknown as Response),
-    });
-
     const { GET } = await handlerImport();
-    const req = new Request('http://localhost:3000/api/auth/oauth/callback?code=good-code&state=valid-state');
+    const req = new Request('http://localhost:3000/api/auth/oauth/callback?code=good-code&next=%2Fauth%2Fverified');
     const res: { status: number; headers: Map<string, string> } = await GET(req);
 
     expect(res.status).toBe(303);
     expect(res.headers.get('location')).toBe('http://localhost:3000/auth/verified');
     expect(res.headers.get('Cache-Control')).toBe('no-store');
     expect(res.headers.get('Referrer-Policy')).toBe('no-referrer');
-
-    expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ used_at: expect.any(String) }));
-    expect(eqUpdateMock).toHaveBeenCalledWith('id', 'oauth-req-success-1');
 
     expect(persistSessionAndCookiesMock).toHaveBeenCalledWith(
       expect.objectContaining({ status: 303 }),
@@ -238,38 +176,27 @@ describe('GET /api/auth/oauth/callback - Error Cases', () => {
   });
 
   test('[ERROR] セッション永続化失敗でも 303 リダイレクトは返る', async () => {
-    maybeSingleMock.mockResolvedValueOnce({
+    exchangeCodeForSessionMock.mockResolvedValueOnce({
       data: {
-        id: 'oauth-req-success-2',
-        code_verifier: 'verifier-success-456',
-        redirect_to: '/auth/verified',
-      },
-      error: null,
-    });
-
-    Object.defineProperty(globalThis, 'fetch', {
-      configurable: true,
-      writable: true,
-      value: jest.fn().mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({
+        session: {
           access_token: 'access-token-2',
           refresh_token: 'refresh-token-2',
           expires_in: 3600,
+          expires_at: 1_900_000_001,
           token_type: 'bearer',
-          user: {
-            id: 'user-456',
-            email: 'persist-fail@example.com',
-          },
-        }),
-      } as unknown as Response),
+        },
+        user: {
+          id: 'user-456',
+          email: 'persist-fail@example.com',
+        },
+      },
+      error: null,
     });
 
     persistSessionAndCookiesMock.mockResolvedValueOnce({ ok: false, error: 'db insert failed' });
 
     const { GET } = await handlerImport();
-    const req = new Request('http://localhost:3000/api/auth/oauth/callback?code=good-code-2&state=valid-state-2');
+    const req = new Request('http://localhost:3000/api/auth/oauth/callback?code=good-code-2&next=%2Fauth%2Fverified');
     const res: { status: number; headers: Map<string, string> } = await GET(req);
 
     expect(res.status).toBe(303);
