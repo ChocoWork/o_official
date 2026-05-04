@@ -112,19 +112,19 @@ export default function StockistSection() {
             <div className="flex flex-col gap-1.5 sm:gap-2 xl:gap-2.5">
               <div className="flex items-start gap-2">
                 <i className="ri-map-pin-line text-xs sm:text-sm text-black flex-shrink-0 mt-[3px]" />
-                <p className="text-xs sm:text-sm text-[#474747] font-brand leading-relaxed">{stockist.address}</p>
+                <p className="text-xs sm:text-sm text-[#474747] leading-relaxed">{stockist.address}</p>
               </div>
               <div className="flex items-center gap-2">
                 <i className="ri-phone-line text-xs sm:text-sm text-black flex-shrink-0" />
-                <p className="text-xs sm:text-sm text-[#474747] font-brand">{stockist.phone}</p>
+                <p className="text-xs sm:text-sm text-[#474747]">{stockist.phone}</p>
               </div>
               <div className="flex items-center gap-2">
                 <i className="ri-time-line text-xs sm:text-sm text-black flex-shrink-0" />
-                <p className="text-xs sm:text-sm text-[#474747] font-brand">{stockist.time}</p>
+                <p className="text-xs sm:text-sm text-[#474747]">{stockist.time}</p>
               </div>
               <div className="flex items-center gap-2">
                 <i className="ri-calendar-line text-xs sm:text-sm text-black flex-shrink-0" />
-                <p className="text-xs sm:text-sm text-[#474747] font-brand">{stockist.holiday}</p>
+                <p className="text-xs sm:text-sm text-[#474747]">{stockist.holiday}</p>
               </div>
             </div>
 

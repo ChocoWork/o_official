@@ -237,7 +237,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
   if (!open) return null;
 
   return (
-    <div className="w-full max-w-md mx-auto px-6 font-brand">
+    <div className="w-full max-w-md mx-auto px-6">
       {siteKey ? (
         <Script
           id="turnstile-login-script"

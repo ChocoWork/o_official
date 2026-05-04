@@ -33,7 +33,7 @@ export default async function Home() {
   });
 
   return (
-    <div className="min-h-screen w-full font-sans">
+    <div className="min-h-screen w-full">
       <div className="flex flex-col w-full items-stretch">
         {/* メイン画像セクション */}
         <section className="relative min-h-screen w-full flex items-center justify-center bg-white pt-20">
@@ -76,7 +76,7 @@ export default async function Home() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 lg:gap-20 items-center">
               <div className="order-2 md:order-1">
                 <SectionTitle title="ABOUT" />
-                <div className="space-y-4 lg:space-y-6 text-[#474747] font-brand">
+                <div className="space-y-4 lg:space-y-6 text-[#474747]">
                   <p className="text-xs sm:text-sm lg:text-base leading-relaxed">Le Fil des Heuresは、「時を紡ぐニュートラルモードな日常着」をコンセプトに、2026年に日本の宮城県で誕生したアパレルブランドです。</p>
                   <p className="text-xs sm:text-sm lg:text-base leading-relaxed">時代を超えて愛される普遂的なデザインと、素材選びにこだわり、日常に寄り添う洗練されたワードローブを提案しています。</p>
                   <p className="text-xs sm:text-sm lg:text-base leading-relaxed">ミニマルでありながら、着る人の個性を引き立てる。そんな服作りを目指し、一着一着丁寧に仕上げています。</p>
@@ -84,12 +84,12 @@ export default async function Home() {
                 </div>
                 <div className="mt-8 lg:mt-12 grid grid-cols-2 gap-4">
                   <div>
-                    <h3 className="text-xs lg:text-sm tracking-widest text-black mb-2 font-brand">PHILOSOPHY</h3>
-                    <p className="text-xs text-[#474747] leading-relaxed font-brand">時代を超えた普遂的な美しさ</p>
+                    <p className="text-xs lg:text-sm tracking-widest text-black mb-2">PHILOSOPHY</p>
+                    <p className="text-xs text-[#474747] leading-relaxed">時代を超えた普遂的な美しさ</p>
                   </div>
                   <div>
-                    <h3 className="text-xs lg:text-sm tracking-widest text-black mb-2 font-brand">ESTABLISHED</h3>
-                    <p className="text-xs text-[#474747] leading-relaxed font-brand">2026, Miyagi in Japan</p>
+                    <p className="text-xs lg:text-sm tracking-widest text-black mb-2">ESTABLISHED</p>
+                    <p className="text-xs text-[#474747] leading-relaxed">2026, Miyagi in Japan</p>
                   </div>
                 </div>
               </div>

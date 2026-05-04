@@ -101,7 +101,7 @@ export function SingleSelect({
     const optionPadding = size === 'sm' ? 'py-2' : size === 'lg' ? 'py-4' : 'py-3';
     return (
       <label className="block space-y-2">
-        {label ? <span className="block text-xs tracking-widest text-black/80 font-brand">{label}</span> : null}
+        {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
         <div className="relative" ref={wrapperRef}>
           <button
             type="button"
@@ -176,7 +176,7 @@ export function SingleSelect({
 
   return (
     <label className="block space-y-2">
-      {label ? <span className="block text-xs tracking-widest text-black/80 font-brand">{label}</span> : null}
+      {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
       <select
         id={selectId}
         className={cn(controlBaseClass, 'cursor-pointer pr-8', heightClass, textClass, className)}

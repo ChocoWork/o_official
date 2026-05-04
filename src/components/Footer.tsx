@@ -47,7 +47,7 @@ const FooterLinkList = ({
 
 const Footer = () => {
   return (
-    <footer className="bg-black text-white py-10 lg:py-16 px-6 lg:px-12 w-full font-brand">
+    <footer className="bg-black text-white py-10 lg:py-16 px-6 lg:px-12 w-full">
       <div className="w-full">
           <div className="flex flex-col md:flex-row gap-8 lg:gap-20 xl:gap-40 mb-10 lg:mb-16 w-full">
           <div className="w-auto md:flex-shrink-0">

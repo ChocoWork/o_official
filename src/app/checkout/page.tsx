@@ -620,7 +620,7 @@ export default function CheckoutPage() {
       <Button
         type="button"
         size="lg"
-        className="flex-1 font-brand"
+        className="flex-1"
         onClick={handleStep2Next}
         disabled={customSessionLoading || confirmingPayment || !customCheckoutClientSecret}
       >
@@ -635,7 +635,7 @@ export default function CheckoutPage() {
     return (
       <div className="pb-10 sm:pb-14 px-6 lg:px-12">
         <div className="max-w-7xl mx-auto text-center">
-          <div className="text-base tracking-widest font-brand">読み込み中...</div>
+          <div className="text-base tracking-widest">読み込み中...</div>
         </div>
       </div>
     );
@@ -646,17 +646,17 @@ export default function CheckoutPage() {
       <div className="pb-10 sm:pb-14 px-6 lg:px-12">
         <div className="max-w-3xl mx-auto text-center">
           <h1 className="text-4xl text-black tracking-tight mb-4 font-display">Thank you for your order</h1>
-          <p className="text-lg text-[#474747] mb-12 font-brand">ご注文を承りました。確認メールをお送りしましたのでご確認ください。</p>
+          <p className="text-lg text-[#474747] mb-12">ご注文を承りました。確認メールをお送りしましたのでご確認ください。</p>
 
           <div className="bg-[#f5f5f5] p-8 mb-12 text-left">
             <div className="grid grid-cols-2 gap-6">
               <div>
-                <p className="text-xs text-[#474747] mb-2 tracking-wider font-brand">注文番号</p>
-                <p className="text-lg text-black font-brand">{completedOrderId ?? '—'}</p>
+                <p className="text-xs text-[#474747] mb-2 tracking-wider">注文番号</p>
+                <p className="text-lg text-black">{completedOrderId ?? '—'}</p>
               </div>
               <div>
-                <p className="text-xs text-[#474747] mb-2 tracking-wider font-brand">注文日</p>
-                <p className="text-lg text-black font-brand">{new Date().toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                <p className="text-xs text-[#474747] mb-2 tracking-wider">注文日</p>
+                <p className="text-lg text-black">{new Date().toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
               </div>
             </div>
           </div>
@@ -665,31 +665,31 @@ export default function CheckoutPage() {
             <div className="flex items-start gap-4 p-6 border border-black/10">
               <div className="w-12 h-12 flex items-center justify-center bg-black text-white rounded-full flex-shrink-0"><i className="ri-mail-line text-xl"></i></div>
               <div className="text-left">
-                <h3 className="text-lg text-black mb-2 font-brand">確認メールを送信しました</h3>
-                <p className="text-sm text-[#474747] font-brand">ご登録のメールアドレスに注文確認メールをお送りしました。メールが届かない場合は、迷惑メールフォルダをご確認ください。</p>
+                <h3 className="text-lg text-black mb-2">確認メールを送信しました</h3>
+                <p className="text-sm text-[#474747]">ご登録のメールアドレスに注文確認メールをお送りしました。メールが届かない場合は、迷惑メールフォルダをご確認ください。</p>
               </div>
             </div>
 
             <div className="flex items-start gap-4 p-6 border border-black/10">
               <div className="w-12 h-12 flex items-center justify-center bg-black text-white rounded-full flex-shrink-0"><i className="ri-truck-line text-xl"></i></div>
               <div className="text-left">
-                <h3 className="text-lg text-black mb-2 font-brand">配送について</h3>
-                <p className="text-sm text-[#474747] font-brand">商品は2-5営業日以内に発送いたします。発送完了後、追跡番号をメールでお知らせいたします。</p>
+                <h3 className="text-lg text-black mb-2">配送について</h3>
+                <p className="text-sm text-[#474747]">商品は2-5営業日以内に発送いたします。発送完了後、追跡番号をメールでお知らせいたします。</p>
               </div>
             </div>
 
             <div className="flex items-start gap-4 p-6 border border-black/10">
               <div className="w-12 h-12 flex items-center justify-center bg-black text-white rounded-full flex-shrink-0"><i className="ri-customer-service-line text-xl"></i></div>
               <div className="text-left">
-                <h3 className="text-lg text-black mb-2 font-brand">お問い合わせ</h3>
-                <p className="text-sm text-[#474747] font-brand">ご不明な点がございましたら、お気軽にお問い合わせください。カスタマーサポートが対応いたします。</p>
+                <h3 className="text-lg text-black mb-2">お問い合わせ</h3>
+                <p className="text-sm text-[#474747]">ご不明な点がございましたら、お気軽にお問い合わせください。カスタマーサポートが対応いたします。</p>
               </div>
             </div>
           </div>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/item" className="px-12 py-4 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap font-brand">買い物を続ける</Link>
-            <Link href="/account" className="px-12 py-4 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap font-brand">注文履歴を見る</Link>
+            <Link href="/item" className="px-12 py-4 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap">買い物を続ける</Link>
+            <Link href="/account" className="px-12 py-4 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap">注文履歴を見る</Link>
           </div>
         </div>
       </div>
@@ -705,9 +705,9 @@ export default function CheckoutPage() {
               <React.Fragment key={checkoutStep.id}>
                 <div className="w-24 sm:w-32 flex flex-col items-center text-center">
                   <div className={`flex items-center justify-center w-10 h-10 rounded-full border-2 ${step >= checkoutStep.id ? 'bg-black border-black text-white' : 'border-black/20 text-[#474747]'}`}>
-                    <span className="text-sm font-brand">{checkoutStep.id}</span>
+                    <span className="text-sm">{checkoutStep.id}</span>
                   </div>
-                  <span className={`mt-3 text-xs sm:text-sm font-brand leading-tight ${step >= checkoutStep.id ? 'text-black' : 'text-[#474747]'}`}>
+                  <span className={`mt-3 text-xs sm:text-sm leading-tight ${step >= checkoutStep.id ? 'text-black' : 'text-[#474747]'}`}>
                     {checkoutStep.label}
                   </span>
                 </div>
@@ -727,11 +727,11 @@ export default function CheckoutPage() {
                 <form onSubmit={handleShippingNext} noValidate>
                   <div>
                     <div className="space-y-6">
-                      <TextField required label="メールアドレス" type="email" name="email" autoComplete="email" value={shippingForm.email} onChange={handleShippingChange} className="font-brand" size="md" errorText={fieldErrors.email} />
+                      <TextField required label="メールアドレス" type="email" name="email" autoComplete="email" value={shippingForm.email} onChange={handleShippingChange} size="md" errorText={fieldErrors.email} />
 
-                      <TextField required label="氏名" type="text" name="fullName" autoComplete="name" value={shippingForm.fullName} onChange={handleShippingChange} className="font-brand" size="md" errorText={fieldErrors.fullName} />
+                      <TextField required label="氏名" type="text" name="fullName" autoComplete="name" value={shippingForm.fullName} onChange={handleShippingChange} size="md" errorText={fieldErrors.fullName} />
 
-                      <TextField required label="郵便番号" placeholder="123-4567" type="text" name="postalCode" autoComplete="postal-code" value={shippingForm.postalCode} onChange={handleShippingChange} className="font-brand" size="md" errorText={fieldErrors.postalCode} />
+                      <TextField required label="郵便番号" placeholder="123-4567" type="text" name="postalCode" autoComplete="postal-code" value={shippingForm.postalCode} onChange={handleShippingChange} size="md" errorText={fieldErrors.postalCode} />
 
                       <SingleSelect
                         name="prefecture"
@@ -749,7 +749,6 @@ export default function CheckoutPage() {
                             setFieldErrors((prev) => ({ ...prev, prefecture: '' }));
                           }
                         }}
-                        className="font-brand"
                         options={[
                           { value: '', label: '選択してください' },
                           ...PREFECTURES.map((prefecture) => ({
@@ -764,13 +763,13 @@ export default function CheckoutPage() {
                         </span>
                       )}
 
-                      <TextField required label="市区町村" type="text" name="city" autoComplete="address-level2" value={shippingForm.city} onChange={handleShippingChange} className="font-brand" size="md" errorText={fieldErrors.city} />
+                      <TextField required label="市区町村" type="text" name="city" autoComplete="address-level2" value={shippingForm.city} onChange={handleShippingChange} size="md" errorText={fieldErrors.city} />
 
-                      <TextField required label="番地" type="text" name="address" autoComplete="street-address" value={shippingForm.address} onChange={handleShippingChange} className="font-brand" size="md" errorText={fieldErrors.address} />
+                      <TextField required label="番地" type="text" name="address" autoComplete="street-address" value={shippingForm.address} onChange={handleShippingChange} size="md" errorText={fieldErrors.address} />
 
-                      <TextField label="建物名・部屋番号（任意）" type="text" name="building" value={shippingForm.building} onChange={handleShippingChange} className="font-brand" size="md" />
+                      <TextField label="建物名・部屋番号（任意）" type="text" name="building" value={shippingForm.building} onChange={handleShippingChange} size="md" />
 
-                      <TextField required label="電話番号" placeholder="090-1234-5678" type="tel" name="phone" autoComplete="tel" inputMode="numeric" value={shippingForm.phone} onChange={handleShippingChange} className="font-brand" size="md" errorText={fieldErrors.phone} />
+                      <TextField required label="電話番号" placeholder="090-1234-5678" type="tel" name="phone" autoComplete="tel" inputMode="numeric" value={shippingForm.phone} onChange={handleShippingChange} size="md" errorText={fieldErrors.phone} />
 
                       <Checkbox
                         id="saveProfile"
@@ -784,9 +783,9 @@ export default function CheckoutPage() {
 
                   <div className="flex gap-4 mt-12">
                     {profileSaveError && (
-                      <p className="text-sm text-red-600 font-brand" role="alert">{profileSaveError}</p>
+                      <p className="text-sm text-red-600" role="alert">{profileSaveError}</p>
                     )}
-                    <Button type="submit" size="lg" className="flex-1 font-brand">次へ</Button>
+                    <Button type="submit" size="lg" className="flex-1">次へ</Button>
                   </div>
                 </form>
               )}
@@ -798,7 +797,7 @@ export default function CheckoutPage() {
                     <div className="space-y-8">
                       <div>
                         <h3 className="text-sm text-[#474747] mb-4 tracking-wider font-brand">配送先</h3>
-                        <div className="p-6 bg-[#f5f5f5] text-sm font-brand">
+                        <div className="p-6 bg-[#f5f5f5] text-sm">
                           {shippingForm.fullName && <p className="mb-1">{shippingForm.fullName}</p>}
                           {shippingForm.postalCode && <p className="mb-1">〒{shippingForm.postalCode}</p>}
                           <p className="mb-1">{shippingForm.prefecture}{shippingForm.city}{shippingForm.address}</p>
@@ -809,7 +808,7 @@ export default function CheckoutPage() {
                       </div>
                       <div>
                         <h3 className="text-sm text-[#474747] mb-4 tracking-wider font-brand">お支払い方法</h3>
-                        <div className="p-6 bg-[#f5f5f5] text-sm font-brand">
+                        <div className="p-6 bg-[#f5f5f5] text-sm">
                           <p>
                             {paymentMethod === 'stripe_card'
                               ? 'カード決済'
@@ -825,12 +824,12 @@ export default function CheckoutPage() {
                   </div>
 
                   {confirmError && (
-                    <p className="text-sm text-red-600 font-brand mt-6">{confirmError}</p>
+                    <p className="text-sm text-red-600 mt-6">{confirmError}</p>
                   )}
 
                   <div className="flex gap-4 mt-12">
-                    <Button type="button" variant="secondary" size="lg" onClick={() => setStep(2)} className="font-brand">戻る</Button>
-                    <Button type="submit" size="lg" className="flex-1 font-brand" disabled={confirmingOrder}>
+                    <Button type="button" variant="secondary" size="lg" onClick={() => setStep(2)}>戻る</Button>
+                    <Button type="submit" size="lg" className="flex-1" disabled={confirmingOrder}>
                       {confirmingOrder ? '注文確定中...' : '注文を確定する'}
                     </Button>
                   </div>
@@ -843,7 +842,7 @@ export default function CheckoutPage() {
                   {customSessionLoading && (
                     <div className="rounded-xs border border-black/10 p-6 bg-white">
                       <h3 className="text-lg font-semibold mb-4 font-brand">お支払い方法</h3>
-                      <p className="text-sm text-[#474747] font-brand">決済フォームを準備しています...</p>
+                      <p className="text-sm text-[#474747]">決済フォームを準備しています...</p>
                     </div>
                   )}
 
@@ -886,22 +885,21 @@ export default function CheckoutPage() {
                             }}
                           />
 
-                          <p className="text-xs text-[#474747] mt-4 font-brand" aria-live="polite">
+                          <p className="text-xs text-[#474747] mt-4" aria-live="polite">
                             選択中: {paymentMethod === 'stripe_paypay' ? 'PayPay' : paymentMethod === 'stripe_konbini' ? 'コンビニ決済' : 'カード決済'}
                           </p>
 
-                          <p className="text-xs text-[#474747] mt-2 font-brand">
+                          <p className="text-xs text-[#474747] mt-2">
                             Checkout Sessions APIのカスタムUIモードを利用します。「次へ」で決済を確定します。
                           </p>
 
                           {checkoutError && (
                             <div className="mt-4 space-y-3">
-                              <p className="text-sm text-red-600 font-brand">{checkoutError}</p>
+                              <p className="text-sm text-red-600">{checkoutError}</p>
                               <Button
                                 type="button"
                                 variant="secondary"
                                 size="sm"
-                                className="font-brand"
                                 onClick={() => {
                                   setCheckoutError(null);
                                   setCustomCheckoutClientSecret(null);
@@ -916,7 +914,7 @@ export default function CheckoutPage() {
                         </div>
 
                         <div className="flex gap-4 mt-12">
-                          <Button type="button" variant="secondary" size="lg" onClick={() => setStep(1)} className="font-brand">
+                          <Button type="button" variant="secondary" size="lg" onClick={() => setStep(1)}>
                             戻る
                           </Button>
                           <Step2ConfirmButton />
@@ -929,12 +927,11 @@ export default function CheckoutPage() {
                     <div className="space-y-6">
                       {checkoutError && (
                         <div className="rounded-xs border border-red-200 bg-red-50 p-4 space-y-3">
-                          <p className="text-sm text-red-600 font-brand">{checkoutError}</p>
+                          <p className="text-sm text-red-600">{checkoutError}</p>
                           <Button
                             type="button"
                             variant="secondary"
                             size="sm"
-                            className="font-brand"
                             onClick={() => {
                               setCheckoutError(null);
                               void createCustomCheckoutSession();
@@ -946,10 +943,10 @@ export default function CheckoutPage() {
                       )}
 
                       <div className="flex gap-4 mt-12">
-                        <Button type="button" variant="secondary" size="lg" onClick={() => setStep(1)} className="font-brand">
+                        <Button type="button" variant="secondary" size="lg" onClick={() => setStep(1)}>
                           戻る
                         </Button>
-                        <Button type="button" size="lg" className="flex-1 font-brand" disabled>
+                        <Button type="button" size="lg" className="flex-1" disabled>
                           次へ
                         </Button>
                       </div>

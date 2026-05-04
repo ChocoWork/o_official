@@ -82,7 +82,7 @@ export function Stepper({
   if (variant === 'field') {
     return (
       <div className={cn('space-y-2', className)}>
-        {label ? <span className="block text-xs tracking-widest text-black/80 font-brand">{label}</span> : null}
+        {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
         <div className="flex items-center border border-black/20">
           <button
             type="button"

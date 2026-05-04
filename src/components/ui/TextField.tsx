@@ -38,7 +38,7 @@ export function TextField({ label, helperText, errorText, leadingIcon, className
 
   return (
     <label className="block space-y-2">
-      {label ? <span className="block text-xs tracking-widest text-black/80 font-brand">{label}</span> : null}
+      {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
       <span className="relative block">
         {leadingIcon ? (
           <span className="pointer-events-none absolute left-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-black/60">

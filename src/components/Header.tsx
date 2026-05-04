@@ -59,31 +59,31 @@ const Header = () => {
   return (
     <>
     <header className={`fixed left-0 right-0 bg-white z-50 transition-transform duration-300 ease-in-out ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}`}>
-      <div className="px-4 sm:px-6 lg:px-12 py-3.5 sm:py-4 md:py-5 lg:py-6">
-        <div className="flex items-center justify-between">
+      <div className="header-space">
+        <div className="header-position">
           {/* サイトタイトル */}
           <Link href="/" aria-label="Le Fil des Heures home">
             <span className="header-title font-display">
               Le Fil des Heures
             </span>
           </Link>
-          {/* メニュー（大画面のみ） */}
-          <nav className="hidden lg:flex items-center gap-6 xl:gap-12 font-brand">
+          {/* ナビゲーション（大画面のみ） */}
+          <nav className="header-nav-position">
             {menuItems.map((item) => (
-              <Link key={item.href} href={item.href} className="text-sm tracking-widest relative group cursor-pointer text-[#474747]">
+              <Link key={item.href} href={item.href} className="header-nav-title group">
                 {item.label}
                 <span
-                  className={`absolute bottom-0 left-0 w-full h-[1px] bg-black transition-transform duration-300 origin-left ${
+                  className={`underline-animation-left2right ${
                     isActiveMenuItem(item.href) ? 'scale-x-100' : 'scale-x-0 group-hover:scale-x-100'
                   }`}
                 ></span>
               </Link>
             ))}
             {canManage && (
-              <Link href="/admin" className="text-sm tracking-widest relative group cursor-pointer text-[#474747]">
+              <Link href="/admin" className="header-nav-title group">
                 MANAGE
                 <span
-                  className={`absolute bottom-0 left-0 w-full h-[1px] bg-black transition-transform duration-300 origin-left ${
+                  className={`underline-animation-left2right ${
                     isActiveMenuItem('/admin') ? 'scale-x-100' : 'scale-x-0 group-hover:scale-x-100'
                   }`}
                 ></span>
@@ -91,40 +91,40 @@ const Header = () => {
             )}
           </nav>
           {/* 右側アイコン群 */}
-          <div className="flex items-center gap-2.5 sm:gap-4 md:gap-5 lg:gap-6">
-            <Link href="/search" aria-label="Search" className="w-[18px] h-[18px] sm:w-5 sm:h-5 flex items-center justify-center cursor-pointer">
-              <i className="ri-search-line text-[18px] sm:text-xl text-black hover:text-[#474747] transition-colors"></i>
+          <div className="header-nav-icon-position">
+            <Link href="/search" aria-label="Search" className="icon-flame">
+              <i className="ri-search-line icon"></i>
             </Link>
-            <Link href="/wishlist" className="w-[18px] h-[18px] sm:w-5 sm:h-5 flex items-center justify-center cursor-pointer">
-              <i className="ri-heart-line text-[18px] sm:text-xl text-black hover:text-[#474747] transition-colors"></i>
+            <Link href="/wishlist" className="icon-flame">
+              <i className="ri-heart-line icon"></i>
             </Link>
-            <Link href="/cart" className="w-[18px] h-[18px] sm:w-5 sm:h-5 flex items-center justify-center cursor-pointer relative">
-              <i className="ri-shopping-bag-line text-[18px] sm:text-xl text-black hover:text-[#474747] transition-colors"></i>
+            <Link href="/cart" className="icon-flame relative">
+              <i className="ri-shopping-bag-line icon"></i>
               {cartCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 w-4 h-4 sm:-top-2 sm:-right-2 sm:w-5 sm:h-5 bg-black text-white rounded-full flex items-center justify-center text-[9px] sm:text-xs font-brand">
+                <span className="absolute -top-1.5 -right-1.5 w-4 h-4 sm:-top-2 sm:-right-2 sm:w-5 sm:h-5 bg-black text-white rounded-full flex items-center justify-center text-[9px] sm:text-xs">
                   {cartCount}
                 </span>
               )}
             </Link>
             <div className="relative">
               {isLoggedIn ? (
-                <Link href="/account" className="w-[18px] h-[18px] sm:w-5 sm:h-5 flex items-center justify-center cursor-pointer">
-                  <i className="ri-user-fill text-[18px] sm:text-xl text-black hover:text-[#474747] transition-colors"></i>
+                <Link href="/account" className="icon-flame">
+                  <i className="ri-user-fill icon"></i>
                 </Link>
               ) : (
-                <Link href="/login" className="w-[18px] h-[18px] sm:w-5 sm:h-5 flex items-center justify-center cursor-pointer">
-                  <i className="ri-user-line text-[18px] sm:text-xl text-black hover:text-[#474747] transition-colors"></i>
+                <Link href="/login" className="icon-flame">
+                  <i className="ri-user-line icon"></i>
                 </Link>
               )}
             </div>
             <Button
               variant="ghost"
               size="sm"
-              className="lg:hidden w-5 h-5 flex items-center justify-center cursor-pointer px-0 py-0 hover:bg-transparent"
+              className="lg:hidden icon-frame p-0 hover:bg-transparent"
               onClick={() => setDrawerOpen(true)}
               aria-label="Open menu"
             >
-              <i className="ri-menu-line text-[18px] sm:text-2xl text-black"></i>
+              <i className="ri-menu-line icon"></i>
             </Button>
           </div>
         </div>

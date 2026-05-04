@@ -796,7 +796,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
                 <h3 className="mb-1 text-sm text-black font-brand tracking-tight" data-testid="item-name">
                   {item.name}
                 </h3>
-                <p className="mb-2 text-xs text-black font-brand" data-testid="item-price">
+                <p className="mb-2 text-xs text-black" data-testid="item-price">
                   ¥{item.price.toLocaleString('ja-JP')}
                 </p>
               </div>
@@ -824,9 +824,9 @@ export function PublicItemGrid(props: PublicItemGridProps) {
           <SectionTitle title="ITEMS" />
 
           {isSelfFetch && loading ? (
-            <div className="text-center py-12 text-[#474747] font-brand">読み込み中...</div>
+            <div className="text-center py-12 text-[#474747]">読み込み中...</div>
           ) : resolvedItems.length === 0 ? (
-            <div className="text-center py-12 text-[#474747] font-brand">公開中のITEMがありません</div>
+            <div className="text-center py-12 text-[#474747]">公開中のITEMがありません</div>
           ) : (
             <div id="sym:success">
               {renderGrid()}
@@ -899,7 +899,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
 
       {displayItems.length === 0 && (
         <div className="text-center py-12">
-          <p className="text-base tracking-widest font-brand text-gray-500">商品が見つかりません</p>
+          <p className="text-base tracking-widest text-gray-500">商品が見つかりません</p>
         </div>
       )}
 

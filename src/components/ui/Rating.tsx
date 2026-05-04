@@ -44,7 +44,7 @@ export function Rating({
 
   return (
     <div className={cn('space-y-3', className)}>
-      {label ? <span className="block text-xs tracking-widest text-black/80 font-brand">{label}</span> : null}
+      {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
       <div className="flex items-center gap-2">
         {Array.from({ length: max }).map((_, index) => {
           const score = index + 1;

@@ -37,7 +37,7 @@ export function Slider({
       <div className="space-y-4">
         {(label || valueDisplay) ? (
           <div className="flex items-center justify-between">
-            {label ? <span className="text-xs tracking-widest text-black/80 font-brand">{label}</span> : <span></span>}
+            {label ? <span className="text-xs tracking-widest text-black/80">{label}</span> : <span></span>}
             {valueDisplay ? <span className="text-sm text-black">{valueDisplay}</span> : null}
           </div>
         ) : null}
@@ -99,7 +99,7 @@ export function Slider({
     <div className="space-y-4">
       {(label || valueDisplay) ? (
         <div className="flex items-center justify-between">
-          {label ? <span className="text-xs tracking-widest text-black/80 font-brand">{label}</span> : <span></span>}
+          {label ? <span className="text-xs tracking-widest text-black/80">{label}</span> : <span></span>}
           {valueDisplay ? <span className="text-sm text-black">{valueDisplay}</span> : null}
         </div>
       ) : null}

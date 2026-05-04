@@ -457,7 +457,7 @@ export function ItemForm({
 
           <div>
             <div className="space-y-2 mb-4">
-              <span className="block text-xs tracking-widest text-black/80 font-brand">カラー</span>
+              <span className="block text-xs tracking-widest text-black/80">カラー</span>
               {colors.map((color) => (
                 <div key={color.id} className="flex gap-3 items-end">
                   <TextField

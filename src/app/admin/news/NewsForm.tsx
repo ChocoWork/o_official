@@ -233,7 +233,7 @@ export function NewsForm({
           </div>
 
           <div className="space-y-2">
-            <label className="block text-xs tracking-wider text-[#474747] font-brand">画像</label>
+            <label className="block text-xs tracking-wider text-[#474747]">画像</label>
             <div
               role="button"
               tabIndex={0}

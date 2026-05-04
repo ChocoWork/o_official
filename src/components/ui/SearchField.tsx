@@ -45,7 +45,7 @@ export function SearchField({ label, showClearButton = false, onClear, className
 
   return (
     <label className="block space-y-2">
-      {label ? <span className="block text-xs tracking-widest text-black/80 font-brand">{label}</span> : null}
+      {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
       <div className={`relative ${sizeClass}`}>
         <span className={cn('pointer-events-none absolute top-1/2 flex -translate-y-1/2 items-center justify-center', iconLeftClass, iconSizeClass)}>
           <i className="ri-search-line text-black/60"></i>

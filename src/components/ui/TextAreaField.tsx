@@ -17,7 +17,7 @@ export function TextAreaField({ label, className, id, rows, size = 'md', ...prop
 
   return (
     <label className="block space-y-2">
-      {label ? <span className="block text-xs tracking-widest text-black/80 font-brand">{label}</span> : null}
+      {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
       <textarea id={fieldId} rows={computedRows} className={cn(controlBaseClass, 'resize-none', className)} {...props} />
     </label>
   );

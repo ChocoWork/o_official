@@ -72,7 +72,7 @@ export function Dialog({
         <div className={cn(paddingMap[size])}>
           <h3 className={cn('mb-4 tracking-tight text-black font-title', titleSizeMap[size])}>{title}</h3>
           {description ? (
-            <p className={cn('mb-8 leading-relaxed text-black/60 font-brand', descSizeMap[size])}>{description}</p>
+            <p className={cn('mb-8 leading-relaxed text-black/60', descSizeMap[size])}>{description}</p>
           ) : null}
           {children ? (
             children

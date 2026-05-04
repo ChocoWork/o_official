@@ -55,19 +55,19 @@ export async function PublicStockistGrid(props: PublicStockistGridProps) {
           <div className="flex flex-col gap-1.5 sm:gap-2 xl:gap-2.5">
             <div className="flex items-start gap-2">
               <i className="ri-map-pin-line text-xs sm:text-sm text-black flex-shrink-0 mt-[3px]" />
-              <p className="text-xs sm:text-sm text-[#474747] font-brand leading-relaxed">{shop.address}</p>
+              <p className="text-xs sm:text-sm text-[#474747] leading-relaxed">{shop.address}</p>
             </div>
             <div className="flex items-center gap-2">
               <i className="ri-phone-line text-xs sm:text-sm text-black flex-shrink-0" />
-              <p className="text-xs sm:text-sm text-[#474747] font-brand">{shop.phone}</p>
+              <p className="text-xs sm:text-sm text-[#474747]">{shop.phone}</p>
             </div>
             <div className="flex items-center gap-2">
               <i className="ri-time-line text-xs sm:text-sm text-black flex-shrink-0" />
-              <p className="text-xs sm:text-sm text-[#474747] font-brand">{shop.time}</p>
+              <p className="text-xs sm:text-sm text-[#474747]">{shop.time}</p>
             </div>
             <div className="flex items-center gap-2">
               <i className="ri-calendar-line text-xs sm:text-sm text-black flex-shrink-0" />
-              <p className="text-xs sm:text-sm text-[#474747] font-brand">{shop.holiday}</p>
+              <p className="text-xs sm:text-sm text-[#474747]">{shop.holiday}</p>
             </div>
           </div>
         </Card>

@@ -79,7 +79,7 @@ export default async function LookDetailPage({ params }: Props) {
 
                     <div className="lg:pt-8 space-y-10">
                         <div>
-                            <p className="text-xs text-[#474747] tracking-widest mb-4 font-brand">
+                            <p className="text-xs text-[#474747] tracking-widest mb-4">
                                 {seasonLabel}
                             </p>
                             <h1 className="text-4xl lg:text-5xl text-black mb-3" style={{ fontFamily: 'Didot, serif' }}>
@@ -88,7 +88,7 @@ export default async function LookDetailPage({ params }: Props) {
                         </div>
 
                         <div className="border-t border-[#d5d0c9] pt-8">
-                            <p className="text-sm text-[#474747] leading-[2] font-brand">
+                            <p className="text-sm text-[#474747] leading-[2]">
                                 {currentLook.themeDescription || ' '}
                             </p>
                         </div>
@@ -98,7 +98,7 @@ export default async function LookDetailPage({ params }: Props) {
                                 STYLING ITEMS
                             </h3>
                             {currentLook.linkedItems.length === 0 ? (
-                                <p className="text-sm text-[#474747] font-brand">
+                                <p className="text-sm text-[#474747]">
                                     紐づけ商品はありません
                                 </p>
                             ) : (
@@ -122,10 +122,10 @@ export default async function LookDetailPage({ params }: Props) {
                                 <Link href={`/look/${prevLook.id}`} aria-label={`Previous look: ${prevLook.theme}`} className="group flex items-center space-x-3 cursor-pointer">
                                     <i className="ri-arrow-left-line w-5 h-5 flex items-center justify-center text-[#474747] group-hover:text-black transition-colors"></i>
                                     <div>
-                                        <p className="text-xs text-[#999] tracking-widest font-brand">
+                                        <p className="text-xs text-[#999] tracking-widest">
                                             PREV
                                         </p>
-                                        <p className="text-sm text-[#474747] group-hover:text-black transition-colors font-brand">
+                                        <p className="text-sm text-[#474747] group-hover:text-black transition-colors">
                                             {prevLook.theme}
                                         </p>
                                     </div>
@@ -136,10 +136,10 @@ export default async function LookDetailPage({ params }: Props) {
                             {nextLook ? (
                                 <Link href={`/look/${nextLook.id}`} aria-label={`Next look: ${nextLook.theme}`} className="group flex items-center space-x-3 cursor-pointer text-right">
                                     <div>
-                                        <p className="text-xs text-[#999] tracking-widest font-brand">
+                                        <p className="text-xs text-[#999] tracking-widest">
                                             NEXT
                                         </p>
-                                        <p className="text-sm text-[#474747] group-hover:text-black transition-colors font-brand">
+                                        <p className="text-sm text-[#474747] group-hover:text-black transition-colors">
                                             {nextLook.theme}
                                         </p>
                                     </div>

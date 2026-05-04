@@ -216,7 +216,7 @@ export default function WishlistClient() {
   if (loading) {
     return (
       <div className="text-center py-12">
-        <div className="text-base tracking-widest font-brand">読み込み中...</div>
+        <div className="text-base tracking-widest">読み込み中...</div>
       </div>
     );
   }
@@ -224,7 +224,7 @@ export default function WishlistClient() {
   if (error) {
     return (
       <div className="text-center py-12">
-        <p className="text-sm text-red-500 font-brand">{error}</p>
+        <p className="text-sm text-red-500">{error}</p>
       </div>
     );
   }
@@ -232,10 +232,10 @@ export default function WishlistClient() {
   if (wishlistItems.length === 0) {
     return (
       <div className="text-center py-12">
-        <p className="text-sm text-[#474747] font-brand mb-4">
+        <p className="text-sm text-[#474747] mb-4">
           ウィッシュリストは空です
         </p>
-        <Link href="/item" className="text-sm text-black hover:text-[#474747] transition-colors font-brand">
+        <Link href="/item" className="text-sm text-black hover:text-[#474747] transition-colors">
           買い物を続ける
         </Link>
       </div>
@@ -245,10 +245,10 @@ export default function WishlistClient() {
   return (
     <>
       <div className="flex items-center justify-between mb-8">
-        <p className="text-sm text-[#474747] font-brand">{wishlistItems.length}点のアイテム</p>
+        <p className="text-sm text-[#474747]">{wishlistItems.length}点のアイテム</p>
       </div>
       {actionMessage ? (
-        <p className="mb-4 text-sm text-[#474747] font-brand" role="status">{actionMessage}</p>
+        <p className="mb-4 text-sm text-[#474747]" role="status">{actionMessage}</p>
       ) : null}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8" role="list" aria-label="ウィッシュリスト商品一覧">
         {wishlistItems.map((item) => (
@@ -266,7 +266,7 @@ export default function WishlistClient() {
                 </div>
               </Link>
             ) : (
-              <div className="aspect-[4/5] bg-[#f5f5f5] mb-4 flex items-center justify-center px-4 text-center text-sm text-[#474747] font-brand">
+              <div className="aspect-[4/5] bg-[#f5f5f5] mb-4 flex items-center justify-center px-4 text-center text-sm text-[#474747]">
                 商品情報を取得できませんでした
               </div>
             )}
@@ -281,13 +281,13 @@ export default function WishlistClient() {
             {item.items ? (
               <>
                 <Link href={`/item/${item.items.id}`}>
-                  <p className="text-xs text-[#474747] mb-2 tracking-wider font-brand">
+                  <p className="text-xs text-[#474747] mb-2 tracking-wider">
                     {item.items.category}
                   </p>
                   <h3 className="text-base text-black mb-2 hover:text-[#474747] transition-colors font-brand">
                     {item.items.name}
                   </h3>
-                  <p className="text-sm text-black font-brand mb-3">
+                  <p className="text-sm text-black mb-3">
                     ¥{item.items.price.toLocaleString('ja-JP')}
                   </p>
                 </Link>
@@ -302,7 +302,7 @@ export default function WishlistClient() {
               </>
             ) : (
               <div className="space-y-2">
-                <p className="text-xs text-[#474747] tracking-wider font-brand">不明なカテゴリ</p>
+                <p className="text-xs text-[#474747] tracking-wider">不明なカテゴリ</p>
                 <h3 className="text-base text-black font-brand">削除済み商品</h3>
               </div>
             )}

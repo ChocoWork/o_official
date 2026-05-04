@@ -53,7 +53,8 @@
 }
 
 body {
-  font-size: 14px;
+  font-size: 1rem;
+  line-height: 1.7;
   font-family: 'acumin-pro', sans-serif;
 }
 
@@ -61,9 +62,9 @@ h1,
 h2,
 h3,
 h4,
-h5,
-h6 {
-  font-family: Georgia, 'Times New Roman', serif;
+h5 {
+  font-family: Didot, Georgia, 'Times New Roman', serif;
+  font-weight: 400;
 }
 
 .font-brand {
@@ -256,7 +257,40 @@ h6 {
 }
 
 @layer components {
+  .header-space {
+    @apply px-4 sm:px-6 lg:px-12 py-3.5 sm:py-4 md:py-5 lg:py-6;
+  }
+
+  .header-position {
+    @apply flex items-center justify-between;
+  }
+
   .header-title {
     @apply text-[15px] sm:text-xl md:text-2xl text-black tracking-tight cursor-pointer hover:text-[#474747] transition-colors duration-300 whitespace-nowrap;
   }
+
+  .header-nav-position {
+    @apply hidden lg:flex items-center gap-6 xl:gap-12;
+  }
+
+  .header-nav-title {
+    @apply text-sm tracking-widest relative cursor-pointer text-[#474747];
+  }
+
+  .underline-animation-left2right {
+    @apply absolute bottom-0 left-0 w-full h-[1px] bg-black transition-transform duration-300 origin-left;
+  }
+
+  .header-nav-icon-position {
+    @apply flex items-center gap-2.5 sm:gap-4 md:gap-5 lg:gap-6;
+  }
+
+  .icon-frame {
+    @apply w-[18px] h-[18px] sm:w-5 sm:h-5 flex items-center justify-center cursor-pointer;
+  }
+
+  .icon {
+    @apply text-[18px] sm:text-xl text-black hover:text-[#474747] transition-colors;
+  }
+
 }

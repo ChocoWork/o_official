@@ -81,7 +81,7 @@ export function MultiSelect({
   if (variant === 'buttons') {
     return (
       <div className={cn('space-y-2', className)} ref={wrapperRef}>
-        {label ? <span className="block text-xs tracking-widest text-black/80 font-brand">{label}</span> : null}
+        {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
         <div className="flex gap-3 flex-wrap">
           {options.map((option) => (
             <button
@@ -108,7 +108,7 @@ export function MultiSelect({
   if (variant === 'dropdown') {
     return (
       <div className={cn('space-y-2', className)} ref={wrapperRef}>
-        {label ? <span className="block text-xs tracking-widest text-black/80 font-brand">{label}</span> : null}
+        {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
         <div className="relative">
           <button
             type="button"
@@ -172,7 +172,7 @@ export function MultiSelect({
 
   return (
     <fieldset className="space-y-2">
-      {label ? <legend className="text-xs tracking-widest text-black/80 font-brand">{label}</legend> : null}
+      {label ? <legend className="text-xs tracking-widest text-black/80">{label}</legend> : null}
       <div className="space-y-2 border border-black/20 p-3">
         {options.map((option) => (
           <Checkbox

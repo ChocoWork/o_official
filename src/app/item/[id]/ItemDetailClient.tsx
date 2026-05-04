@@ -22,7 +22,7 @@ function StockBadge({ stockStatus }: { stockStatus?: ItemStockStatus }) {
     return (
       <span
         data-testid="stock-status"
-        className="inline-block text-xs tracking-widest font-brand text-white bg-black px-2 py-0.5"
+        className="inline-block text-xs tracking-widest text-white bg-black px-2 py-0.5"
       >
         SOLD OUT
       </span>
@@ -33,7 +33,7 @@ function StockBadge({ stockStatus }: { stockStatus?: ItemStockStatus }) {
     return (
       <span
         data-testid="stock-status"
-        className="inline-block text-xs tracking-widest font-brand text-red-600 border border-red-400 px-2 py-0.5"
+        className="inline-block text-xs tracking-widest text-red-600 border border-red-400 px-2 py-0.5"
       >
         残りわずか
       </span>
@@ -177,7 +177,7 @@ export default function ItemDetailClient({ id }: Props) {
     return (
       <div className="pb-12 px-6 lg:px-12">
         <div className="max-w-7xl mx-auto text-center">
-          <div className="text-base tracking-widest font-brand">読み込み中...</div>
+          <div className="text-base tracking-widest">読み込み中...</div>
         </div>
       </div>
     );
@@ -195,7 +195,7 @@ export default function ItemDetailClient({ id }: Props) {
                 router.push('/item');
               }}
               variant="ghost"
-              className="text-sm text-[#474747] hover:text-black transition-colors duration-300 flex items-center gap-2 font-brand px-0 py-0"
+              className="text-sm text-[#474747] hover:text-black transition-colors duration-300 flex items-center gap-2 px-0 py-0"
               size="md"
             >
               <i className="ri-arrow-left-line" />
@@ -203,7 +203,7 @@ export default function ItemDetailClient({ id }: Props) {
             </Button>
           </div>
           <div className="text-center">
-            <p className="text-base tracking-widest font-brand text-red-500">
+            <p className="text-base tracking-widest text-red-500">
               {error || "商品が見つかりません"}
             </p>
           </div>
@@ -228,7 +228,7 @@ export default function ItemDetailClient({ id }: Props) {
       <div className="max-w-7xl mx-auto">
         {/* パンくずナビゲーション (FR-ITEM-DETAIL-010) */}
         <nav aria-label="breadcrumb" className="mb-6 lg:mb-8">
-          <ol className="flex items-center gap-2 text-xs tracking-widest font-brand text-[#888]">
+          <ol className="flex items-center gap-2 text-xs tracking-widest text-[#888]">
             <li>
               <Link href="/" className="hover:text-black transition-colors">
                 HOME
@@ -359,7 +359,7 @@ export default function ItemDetailClient({ id }: Props) {
                 {item.name}
               </h2>
               <div className="flex items-center gap-3 mt-1">
-                <p className="text-sm md:text-base lg:text-lg text-black font-brand">
+                <p className="text-sm md:text-base lg:text-lg text-black">
                   ¥{item.price.toLocaleString("ja-JP")}
                 </p>
                 {/* 在庫状態バッジ (FR-ITEM-DETAIL-007) */}
@@ -382,7 +382,6 @@ export default function ItemDetailClient({ id }: Props) {
                         }}
                         variant={color === colorOption.name ? "primary" : "secondary"}
                         size="sm"
-                        className="font-brand"
                         aria-pressed={color === colorOption.name}
                       >
                         {colorOption.name}
@@ -407,7 +406,6 @@ export default function ItemDetailClient({ id }: Props) {
                       }}
                       variant={size === sizeOption ? "primary" : "secondary"}
                       size="sm"
-                      className="font-brand"
                       aria-pressed={size === sizeOption}
                     >
                       {sizeOption}
@@ -424,14 +422,14 @@ export default function ItemDetailClient({ id }: Props) {
 
             {/* バリデーションエラーメッセージ (FR-ITEM-DETAIL-008: role="alert") */}
             {validationError && (
-              <p role="alert" className="text-xs text-red-500 font-brand">
+              <p role="alert" className="text-xs text-red-500">
                 {validationError}
               </p>
             )}
 
             {item.description && (
               <div className="border-t border-black/10 pt-4 lg:pt-6">
-                <p className="text-xs md:text-sm text-[#474747] leading-relaxed font-brand">
+                <p className="text-xs md:text-sm text-[#474747] leading-relaxed">
                   {item.description}
                 </p>
               </div>
@@ -441,13 +439,13 @@ export default function ItemDetailClient({ id }: Props) {
               <div className="border-t border-black/10 py-4 lg:py-6">
                 <h3 className="text-sm tracking-widest mb-4 font-brand">PRODUCT DETAILS</h3>
                 {typeof item.product_details === "string" ? (
-                  <p className="text-xs md:text-sm text-[#474747] font-brand whitespace-pre-line">
+                  <p className="text-xs md:text-sm text-[#474747] whitespace-pre-line">
                     {item.product_details}
                   </p>
                 ) : Array.isArray(item.product_details) ? (
                   <ul className="space-y-2">
                     {item.product_details.map((detail: string, idx: number) => (
-                      <li key={idx} className="text-xs md:text-sm text-[#474747] font-brand">
+                      <li key={idx} className="text-xs md:text-sm text-[#474747]">
                         {detail}
                       </li>
                     ))}
@@ -456,7 +454,7 @@ export default function ItemDetailClient({ id }: Props) {
                   <ul className="space-y-2">
                     {Object.entries(item.product_details!).map(
                       ([key, value]: [string, unknown]) => (
-                        <li key={key} className="text-xs md:text-sm text-[#474747] font-brand">
+                        <li key={key} className="text-xs md:text-sm text-[#474747]">
                           {String(value)}
                         </li>
                       )
@@ -472,7 +470,7 @@ export default function ItemDetailClient({ id }: Props) {
                 onClick={handleAddToCart}
                 disabled={addingToCart || isSoldOut}
                 size="md"
-                className="w-full font-brand"
+                className="w-full"
               >
                 {isSoldOut ? (
                   "SOLD OUT"
@@ -521,7 +519,7 @@ export default function ItemDetailClient({ id }: Props) {
           onClick={handleAddToCart}
           disabled={addingToCart || isSoldOut}
           size="sm"
-          className="w-full font-brand"
+          className="w-full"
         >
           {isSoldOut ? (
             "SOLD OUT"

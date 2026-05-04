@@ -42,17 +42,17 @@ function LookCard({ look }: LookCardProps) {
       </Link>
       <div className="">
         <Link href={`/look/${look.id}`}>
-          <p className="text-sm sm:text-base lg:text-lg mb-1.5 sm:mb-2 text-black font-brand hover:text-[#474747] transition-colors">{formatLookSeason(look.seasonYear, look.seasonType)} - {look.theme}</p>
+          <p className="text-sm sm:text-base lg:text-lg mb-1.5 sm:mb-2 text-black hover:text-[#474747] transition-colors">{formatLookSeason(look.seasonYear, look.seasonType)} - {look.theme}</p>
         </Link>
         <div className="space-y-1">
           {look.linkedItems.length === 0 ? (
-            <p className="text-xs text-[#474747] font-brand">紐づけ商品なし</p>
+            <p className="text-xs text-[#474747]">紐づけ商品なし</p>
           ) : (
             look.linkedItems.map((item) => (
               <Link
                 key={item.id}
                 href={`/item/${item.id}`}
-                className="block text-xs text-[#474747] hover:text-black transition-colors font-brand"
+                className="block text-xs text-[#474747] hover:text-black transition-colors"
               >
                 {item.name}
               </Link>
@@ -84,7 +84,7 @@ export async function PublicLookGrid(props: PublicLookGridProps) {
   );
 
   const renderEmptyState = () => (
-    <div className="text-center py-12 text-[#474747] font-brand">公開中のLOOKがありません</div>
+    <div className="text-center py-12 text-[#474747]">公開中のLOOKがありません</div>
   );
 
   const renderContent = () => {
@@ -97,7 +97,7 @@ export async function PublicLookGrid(props: PublicLookGridProps) {
         {renderGrid()}
         {variant === 'home' && hasMoreLooks && (
           <div className="text-center mt-6 md:mt-8 lg:mt-12">
-            <Button href="/look" variant="secondary" size="md" className="font-acumin">
+            <Button href="/look" variant="secondary" size="md">
               VIEW LOOKBOOK
             </Button>
           </div>

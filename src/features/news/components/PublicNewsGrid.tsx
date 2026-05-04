@@ -254,7 +254,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
 
   const renderEmpty = (message: string) => (
     <div className="text-center py-20">
-      <p className="text-lg text-[#474747] font-brand">
+      <p className="text-lg text-[#474747]">
         {message}
       </p>
     </div>
@@ -262,7 +262,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
 
   const renderError = () => (
     <div className="text-center py-20">
-      <p className="text-lg text-red-500 font-brand">
+      <p className="text-lg text-red-500">
         {error}
       </p>
     </div>
@@ -270,7 +270,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
 
   const renderLoading = () => (
     <div className="text-center py-20">
-      <p className="text-lg text-[#474747] font-brand">
+      <p className="text-lg text-[#474747]">
         読み込み中...
       </p>
     </div>

@@ -84,11 +84,11 @@ export function RelatedItems({ currentItemId, category }: Props) {
                 </div>
               )}
             </div>
-            <p className="text-xs text-[#888] tracking-widest font-brand">{item.category}</p>
-            <p className="text-xs md:text-sm text-black tracking-tight font-brand line-clamp-2">
+            <p className="text-xs text-[#888] tracking-widest">{item.category}</p>
+            <p className="text-xs md:text-sm text-black tracking-tight line-clamp-2">
               {item.name}
             </p>
-            <p className="text-xs md:text-sm text-black font-brand">
+            <p className="text-xs md:text-sm text-black">
               ¥{item.price.toLocaleString('ja-JP')}
             </p>
           </Link>

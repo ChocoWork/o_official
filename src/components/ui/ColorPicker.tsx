@@ -37,7 +37,7 @@ export function ColorPicker({
   if (variant === 'preset') {
     return (
       <div className={cn('space-y-3', className)}>
-        {label ? <span className="block text-xs tracking-widest text-black/80 font-brand">{label}</span> : null}
+        {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
         <div className="flex items-center gap-3">
           {presets.map((preset) => (
             <button
@@ -62,7 +62,7 @@ export function ColorPicker({
   if (variant === 'custom') {
     return (
       <div className={cn('space-y-3', className)}>
-        {label ? <span className="block text-xs tracking-widest text-black/80 font-brand">{label}</span> : null}
+        {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
         <div className="flex items-center gap-4">
           <input
             type="color"
@@ -114,7 +114,7 @@ export function ColorPicker({
   // fallback to rectangular input if someone requests custom variant
   return (
     <label className="inline-flex items-center gap-3">
-      {label ? <span className="text-xs tracking-widest text-black/80 font-brand">{label}</span> : null}
+      {label ? <span className="text-xs tracking-widest text-black/80">{label}</span> : null}
       <input
         type="color"
         value={value}

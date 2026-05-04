@@ -55,11 +55,11 @@ export function SearchHomePreview() {
       <div className="mx-auto max-w-7xl space-y-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
-            <p className="text-xs tracking-[0.3em] text-black/50 font-brand">PREVIEW</p>
+            <p className="text-xs tracking-[0.3em] text-black/50">PREVIEW</p>
             <h2 className="text-3xl tracking-tight text-black font-display">Search Preview</h2>
-            <p className="mt-2 text-sm leading-relaxed text-[#474747] font-brand">「{query}」に関連する結果をホーム上で即時プレビューしています。</p>
+            <p className="mt-2 text-sm leading-relaxed text-[#474747]">「{query}」に関連する結果をホーム上で即時プレビューしています。</p>
           </div>
-          <Link href={`/search?q=${encodeURIComponent(query)}`} className="text-sm tracking-widest text-black transition-colors hover:text-[#474747] font-brand">
+          <Link href={`/search?q=${encodeURIComponent(query)}`} className="text-sm tracking-widest text-black transition-colors hover:text-[#474747]">
             VIEW ALL RESULTS
           </Link>
         </div>
@@ -68,14 +68,14 @@ export function SearchHomePreview() {
           <div className="grid gap-4 md:grid-cols-3">
             {previewResults.map((result) => (
               <Link key={`${result.type}-${result.id}`} href={result.href} className="rounded-2xl border border-black/10 bg-white p-5 transition-colors hover:border-black/30">
-                <p className="mb-2 text-[11px] tracking-widest text-black/50 font-brand">{result.meta}</p>
+                <p className="mb-2 text-[11px] tracking-widest text-black/50">{result.meta}</p>
                 <h3 className="text-lg leading-snug text-black font-display">{result.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-[#474747] font-brand">{result.description}</p>
+                <p className="mt-2 text-sm leading-relaxed text-[#474747]">{result.description}</p>
               </Link>
             ))}
           </div>
         ) : (
-          <p className="text-sm text-[#474747] font-brand">プレビュー対象の検索結果は見つかりませんでした。</p>
+          <p className="text-sm text-[#474747]">プレビュー対象の検索結果は見つかりませんでした。</p>
         )}
       </div>
     </section>

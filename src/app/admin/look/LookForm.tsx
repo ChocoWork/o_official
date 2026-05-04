@@ -351,7 +351,7 @@ export function LookForm({
           </div>
 
           <label className="block space-y-2">
-            <span className="block text-xs tracking-widest text-black/80 font-brand">シーズン</span>
+            <span className="block text-xs tracking-widest text-black/80">シーズン</span>
             <div className="flex flex-wrap gap-3">
               <div className="min-w-[140px]">
                 <SingleSelect
