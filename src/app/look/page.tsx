@@ -19,7 +19,7 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function LookPage() {
     return (
         <div className="pt-6 sm:pt-8 lg:pt-12 pb-12 sm:pb-16 lg:pb-20 px-5 sm:px-6 lg:px-12">
-            <div className="max-w-7xl mx-auto">
+            <div className="element-width">
                 <PublicLookGrid variant="catalog" />
             </div>
         </div>

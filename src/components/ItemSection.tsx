@@ -29,7 +29,7 @@ function ItemCard({ item, onToggleStatus, onDelete }: ItemCardProps) {
     <Card className="overflow-hidden p-0" size="md">
       <Image
         alt={item.name}
-        className="w-full aspect-[3/4] object-cover bg-[#f5f5f5]"
+        className="w-full aspect-[3/4] object-cover"
         src={item.image_url || '/placeholder.png'}
         width={300}
         height={400}

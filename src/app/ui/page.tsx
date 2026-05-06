@@ -235,7 +235,7 @@ export default function Page() {
   ] as const;
   // ...existing code...
   return (    <div className="pb-20">
-      <div className="max-w-7xl mx-auto px-6 lg:px-12">
+      <div className="element-width px-6 lg:px-12">
         <div className="mb-12 flex items-center gap-3 sticky top-32 bg-white z-50 py-4">
           {(['sm', 'md', 'lg'] as const).map((size) => (
             <Button

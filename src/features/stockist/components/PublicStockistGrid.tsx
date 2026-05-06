@@ -47,7 +47,7 @@ export async function PublicStockistGrid(props: PublicStockistGridProps) {
         >
           {/* Identity section */}
           <div className="mb-3 sm:mb-4 xl:mb-5">
-            <h2 className="text-sm sm:text-base xl:text-lg text-black font-display leading-snug">{shop.name}</h2>
+            <h3 className="leading-snug">{shop.name}</h3>
           </div>
           {/* Divider */}
           <div className="border-t border-black/10 mb-3 sm:mb-4 xl:mb-5" />
@@ -77,8 +77,8 @@ export async function PublicStockistGrid(props: PublicStockistGridProps) {
 
   if (variant === 'home') {
     return (
-      <section id="stockist" className="mt-14 sm:mt-16 lg:mt-20 pb-20 sm:pb-24 lg:pb-32 px-6 lg:px-12 bg-white w-full">
-        <div className="max-w-7xl mx-auto">
+      <section id="stockist" className="section-space">
+        <div className="element-width">
           <SectionTitle title="STOCKIST" />
 
           {renderGrid()}

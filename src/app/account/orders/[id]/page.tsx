@@ -78,7 +78,7 @@ export default function AccountOrderDetailPage() {
 		return (
 			<div className="pb-10 sm:pb-14 px-6 lg:px-12">
 				<div className="max-w-3xl mx-auto text-center">
-					<h1 className="text-4xl text-black tracking-tight mb-4 font-display">注文詳細</h1>
+					<h1 className="mb-4">注文詳細</h1>
 					<p className="text-lg text-[#474747] mb-8">注文詳細を確認するにはログインが必要です</p>
 					<Button href="/login" variant="primary" size="lg">
 						ログイン
@@ -93,7 +93,7 @@ export default function AccountOrderDetailPage() {
 			<div className="max-w-4xl mx-auto space-y-6">
 				<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 					<div>
-						<h1 className="text-4xl text-black tracking-tight mb-2 font-display">注文詳細</h1>
+						<h1 className="mb-2">注文詳細</h1>
 						<p className="text-sm text-[#474747]">ご注文内容と配送先情報を確認できます。</p>
 					</div>
 					<Link href="/account?tab=orders" className="text-sm text-black underline underline-offset-4">
@@ -128,7 +128,7 @@ export default function AccountOrderDetailPage() {
 						</section>
 
 						<section className="border border-black/10 p-8 space-y-4">
-							<h2 className="text-2xl text-black tracking-tight font-display">ご注文商品</h2>
+							<h2>ご注文商品</h2>
 							<div className="space-y-4">
 								{order.items.map((item) => (
 									<div key={item.id} className="border-b border-black/5 pb-4 last:border-b-0 last:pb-0">
@@ -145,7 +145,7 @@ export default function AccountOrderDetailPage() {
 						</section>
 
 						<section className="border border-black/10 p-8 space-y-4">
-							<h2 className="text-2xl text-black tracking-tight font-display">配送先情報</h2>
+							<h2>配送先情報</h2>
 							<div className="space-y-2 text-sm text-black">
 								<p>{order.shippingFullName || '-'}</p>
 								<p>{order.shippingEmail || '-'}</p>

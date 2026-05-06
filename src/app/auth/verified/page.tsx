@@ -14,7 +14,7 @@ export default function VerifiedPage() {
 
   return (
     <div className="max-w-xl mx-auto p-6">
-      <h1 className="text-xl mb-4">メール確認</h1>
+      <h1 className="mb-4">メール確認</h1>
       <p className="mb-4">{message}</p>
       <div>
         <a href="/account" className="text-blue-600">アカウントへ</a>

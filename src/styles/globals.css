@@ -53,6 +53,7 @@
 }
 
 body {
+  color: black;
   font-size: 1rem;
   line-height: 1.7;
   font-family: 'acumin-pro', sans-serif;
@@ -70,6 +71,36 @@ h5 {
 .font-brand {
   font-family: 'acumin-pro', sans-serif;
 }
+
+h1 {
+  @apply text-xl sm:text-2xl lg:text-3xl tracking-tight;
+}
+
+h2 {
+  @apply text-lg sm:text-xl lg:text-2xl tracking-tight;
+}
+
+h3 {
+  @apply text-base sm:text-lg lg:text-xl tracking-tight;
+}
+
+h4 {
+  @apply text-sm sm:text-base lg:text-lg tracking-tight;
+}
+
+h5 {
+  @apply text-xs sm:text-sm lg:text-base tracking-tight;
+}
+
+p {
+  @apply text-xs md:text-sm;
+}
+
+ul {
+  @apply text-xs md:text-sm;
+}
+
+
 
 .font-display {
   font-family: Didot, Georgia, 'Times New Roman', serif;
@@ -258,7 +289,7 @@ h5 {
 
 @layer components {
   .header-space {
-    @apply px-4 sm:px-6 lg:px-12 py-3.5 sm:py-4 md:py-5 lg:py-6;
+    @apply px-3 sm:px-4.5 md:px-6 lg:px-7.5 py-2 sm:py-3 md:py-4 lg:py-5;
   }
 
   .header-position {
@@ -266,7 +297,7 @@ h5 {
   }
 
   .header-title {
-    @apply text-[15px] sm:text-xl md:text-2xl text-black tracking-tight cursor-pointer hover:text-[#474747] transition-colors duration-300 whitespace-nowrap;
+    @apply text-[15px] sm:text-xl lg:text-2xl text-black tracking-tight cursor-pointer hover:text-[#474747] transition-colors duration-300 whitespace-nowrap;
   }
 
   .header-nav-position {
@@ -274,7 +305,7 @@ h5 {
   }
 
   .header-nav-title {
-    @apply text-sm tracking-widest relative cursor-pointer text-[#474747];
+    @apply text-xs xl:text-sm tracking-widest relative cursor-pointer text-[#474747];
   }
 
   .underline-animation-left2right {
@@ -290,7 +321,41 @@ h5 {
   }
 
   .icon {
-    @apply text-[18px] sm:text-xl text-black hover:text-[#474747] transition-colors;
+    @apply text-[18px] sm:text-xl hover:text-[#474747] transition-colors;
   }
+  
+  .about-main-text {
+    @apply text-xs sm:text-sm lg:text-base leading-relaxed text-[#474747];
+  }
+
+  .about-main-space {
+    @apply space-y-4 sm:space-y-6 lg:space-y-8;
+  }
+
+  .about-secondary-title {
+    @apply text-xs lg:text-sm tracking-widest mb-2;
+  }
+
+  .about-secondary-text {
+    @apply text-xs text-[#474747] leading-relaxed;
+  }
+
+  .section-space-about {
+    @apply mt-14 sm:mt-16 lg:mt-20 py-14 sm:py-16 md:py-20 px-6 lg:px-12 w-full bg-[#fafafa];
+  }
+
+  .section-space {
+    @apply mt-14 sm:mt-16 lg:mt-20 pb-14 sm:pb-16 md:pb-20 px-6 lg:px-12 w-full bg-white;
+  }
+
+  .element-width {
+    @apply max-w-7xl mx-auto;
+  }
+
+  .image {
+    @apply w-full h-full object-cover object-center;
+  }
+
+
 
 }

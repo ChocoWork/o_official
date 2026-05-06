@@ -425,7 +425,7 @@ export default function AccountPage() {
 					<div className="w-20 h-20 flex items-center justify-center mx-auto mb-8">
 						<i className="ri-user-line text-6xl text-[#474747]"></i>
 					</div>
-					<h1 className="text-4xl text-black tracking-tight mb-4 font-display">会員情報</h1>
+					<h1 className="mb-4">会員情報</h1>
 					<p className="text-lg text-[#474747] mb-8">会員情報を確認するにはログインが必要です</p>
 					<Button href="/login" variant="primary" size="lg">
 						ログイン
@@ -437,7 +437,7 @@ export default function AccountPage() {
 
 	return (
 		<div className="pb-10 sm:pb-14 px-6 lg:px-12">
-			<div className="max-w-7xl mx-auto">
+			<div className="element-width">
 				<div className="grid grid-cols-1 lg:grid-cols-4 gap-12">
 					<div className="lg:col-span-1">
 						<TabSegmentControl

@@ -42,7 +42,7 @@ function LookCard({ look }: LookCardProps) {
       </Link>
       <div className="">
         <Link href={`/look/${look.id}`}>
-          <p className="text-sm sm:text-base lg:text-lg mb-1.5 sm:mb-2 text-black hover:text-[#474747] transition-colors">{formatLookSeason(look.seasonYear, look.seasonType)} - {look.theme}</p>
+          <h5 className="mb-1.5 sm:mb-2 font-brand hover:text-[#474747] transition-colors">{formatLookSeason(look.seasonYear, look.seasonType)} - {look.theme}</h5>
         </Link>
         <div className="space-y-1">
           {look.linkedItems.length === 0 ? (
@@ -108,8 +108,8 @@ export async function PublicLookGrid(props: PublicLookGridProps) {
 
   if (variant === 'home') {
     return (
-      <section id="look" className="mt-14 sm:mt-16 lg:mt-20 pb-14 sm:pb-16 md:pb-20 px-6 lg:px-12 bg-white w-full">
-        <div className="max-w-7xl mx-auto">
+      <section id="look" className="section-space">
+        <div className="element-width">
           <SectionTitle title="LOOK" />
           {renderContent()}
         </div>

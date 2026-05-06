@@ -55,10 +55,7 @@ export function RelatedItems({ currentItemId, category }: Props) {
       aria-labelledby="related-items-heading"
       className="mt-16 lg:mt-24 border-t border-black/10 pt-10"
     >
-      <h2
-        id="related-items-heading"
-        className="text-sm tracking-widest mb-8 font-brand"
-      >
+      <h2 id="related-items-heading" className="mb-8">
         YOU MAY ALSO LIKE
       </h2>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 lg:gap-6">
@@ -84,7 +81,6 @@ export function RelatedItems({ currentItemId, category }: Props) {
                 </div>
               )}
             </div>
-            <p className="text-xs text-[#888] tracking-widest">{item.category}</p>
             <p className="text-xs md:text-sm text-black tracking-tight line-clamp-2">
               {item.name}
             </p>

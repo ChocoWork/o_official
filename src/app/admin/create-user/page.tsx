@@ -51,7 +51,7 @@ export default function AdminCreateUserPage() {
 
   return (
     <div className="max-w-md mx-auto p-6">
-      <h1 className="text-xl mb-4">管理者: ユーザ作成</h1>
+      <h1 className="mb-4">管理者: ユーザ作成</h1>
       <form onSubmit={handleSubmit} className="space-y-4">
         <TextField label="NAME" value={displayName} onChange={(e) => setDisplayName(e.target.value)}  size="md"/>
         <TextField label="EMAIL" value={email} onChange={(e) => setEmail(e.target.value)} type="email"  size="md"/>

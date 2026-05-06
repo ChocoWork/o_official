@@ -43,8 +43,8 @@ export default async function LookDetailPage({ params }: Props) {
   if (currentIndex < 0) {
     return (
       <div className="pb-10 sm:pb-14 px-6 lg:px-12">
-        <div className="max-w-7xl mx-auto text-center">
-          <h1 className="text-2xl font-brand text-black">Look not found</h1>
+        <div className="element-width text-center">
+          <h1>Look not found</h1>
           <Link href="/look" className="text-sm text-[#474747] hover:text-black mt-4 inline-block">
             Back to Lookbook
           </Link>
@@ -65,7 +65,7 @@ export default async function LookDetailPage({ params }: Props) {
 
     return (
         <div className="pb-10 sm:pb-14 px-6 lg:px-12">
-            <div className="max-w-7xl mx-auto">
+            <div className="element-width">
                 <div className="mb-6">
                     <Link href="/look" className="text-sm text-[#474747] hover:text-black inline-block" aria-label="Back to Lookbook">
                         Back to Lookbook
@@ -82,7 +82,7 @@ export default async function LookDetailPage({ params }: Props) {
                             <p className="text-xs text-[#474747] tracking-widest mb-4">
                                 {seasonLabel}
                             </p>
-                            <h1 className="text-4xl lg:text-5xl text-black mb-3" style={{ fontFamily: 'Didot, serif' }}>
+                            <h1 className="mb-3">
                                 {currentLook.theme}
                             </h1>
                         </div>

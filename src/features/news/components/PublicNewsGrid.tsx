@@ -231,11 +231,11 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
                     </TagLabel>
                   </div>
 
-                  <h2
-                    className="text-sm md:text-base text-black leading-snug mb-1.5 sm:mb-2 xl:mb-2.5 group-hover:text-[#474747] transition-colors duration-300 font-display"
+                  <h4
+                    className="leading-snug mb-1.5 sm:mb-2 xl:mb-2.5 group-hover:text-[#474747] transition-colors duration-300"
                   >
                     {article.title}
-                  </h2>
+                  </h4>
 
                   <p
                     className="text-xs md:text-sm text-[#474747] leading-relaxed line-clamp-2 sm:line-clamp-3"
@@ -279,8 +279,8 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
   // home variant rendering
   if (variant === 'home') {
     return (
-      <section id="news" className="mt-14 sm:mt-16 lg:mt-20 pb-14 sm:pb-16 md:pb-20 px-6 lg:px-12 bg-white w-full">
-        <div className="max-w-7xl mx-auto">
+      <section id="news" className="section-space">
+        <div className="element-width">
           <SectionTitle title="NEWS" />
 
           {loading ? (

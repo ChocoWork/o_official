@@ -56,7 +56,7 @@ export function SearchHomePreview() {
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-xs tracking-[0.3em] text-black/50">PREVIEW</p>
-            <h2 className="text-3xl tracking-tight text-black font-display">Search Preview</h2>
+            <h2>Search Preview</h2>
             <p className="mt-2 text-sm leading-relaxed text-[#474747]">「{query}」に関連する結果をホーム上で即時プレビューしています。</p>
           </div>
           <Link href={`/search?q=${encodeURIComponent(query)}`} className="text-sm tracking-widest text-black transition-colors hover:text-[#474747]">

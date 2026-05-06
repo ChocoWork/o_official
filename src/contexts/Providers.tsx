@@ -20,7 +20,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         {isAdmin ? (
           <div className="flex-1 flex flex-col">{children}</div>
         ) : (
-          <main className={`flex-1 flex flex-col${isHome ? '' : ' pt-16 sm:pt-18 md:pt-20 lg:pt-26'}`}>
+          <main className={`flex-1 flex flex-col${isHome ? '' : ' mt-12 sm:mt-14 lg:mt-19'}`}>
             {children}
           </main>
         )}

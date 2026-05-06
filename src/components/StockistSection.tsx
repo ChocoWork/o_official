@@ -101,7 +101,7 @@ export default function StockistSection() {
           >
             {/* Identity: name + StatusBadge */}
             <div className="mb-3 sm:mb-4 xl:mb-5 flex items-start justify-between gap-3">
-              <h2 className="text-sm sm:text-base xl:text-lg text-black font-display leading-snug">{stockist.name}</h2>
+              <h3 className="leading-snug">{stockist.name}</h3>
               <StatusBadge tone={stockist.status === 'published' ? 'positive' : 'warning'} size="md" className="flex-shrink-0">
                 {stockist.status === 'published' ? '公開中' : '非公開'}
               </StatusBadge>

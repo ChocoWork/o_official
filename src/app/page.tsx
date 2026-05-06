@@ -45,17 +45,14 @@ export default async function Home() {
               height={1536} // ←mainphoto.pngの実際の縦幅に合わせて調整してください
               priority
               sizes="100vw"
-              className="w-full h-full object-cover object-center opacity-90"
+              className="image opacity-90"
             />
             <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/60" />
           </div>
           <div className="relative z-10 text-center px-6 max-w-4xl mx-auto">
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl mb-8 text-white tracking-tight" style={{ fontFamily: 'Didot, serif' }}>
+            <h1 className="text-white " style={{ fontFamily: 'Didot, serif' }}>
               Le Fil des Heures
             </h1>
-            {/* <p className="text-sm sm:text-base lg:text-lg text-white tracking-widest max-w-2xl mx-auto leading-relaxed" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-              時を紡ぐニュートラルモードな日常着
-            </p> */}
           </div>
         </section>
 
@@ -71,25 +68,25 @@ export default async function Home() {
         <PublicNewsGrid variant="home" articles={homeNews} />
 
         {/* ABOUT セクション */}
-        <section id="about" className="mt-14 sm:mt-16 lg:mt-20 py-14 sm:py-16 lg:py-24 px-6 lg:px-12 bg-[#fafafa] w-full">
-          <div className="max-w-7xl mx-auto">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 lg:gap-20 items-center">
+        <section id="about" className="section-space-about">
+          <div className="element-width">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 lg:gap-20 items-center">
               <div className="order-2 md:order-1">
                 <SectionTitle title="ABOUT" />
-                <div className="space-y-4 lg:space-y-6 text-[#474747]">
-                  <p className="text-xs sm:text-sm lg:text-base leading-relaxed">Le Fil des Heuresは、「時を紡ぐニュートラルモードな日常着」をコンセプトに、2026年に日本の宮城県で誕生したアパレルブランドです。</p>
-                  <p className="text-xs sm:text-sm lg:text-base leading-relaxed">時代を超えて愛される普遂的なデザインと、素材選びにこだわり、日常に寄り添う洗練されたワードローブを提案しています。</p>
-                  <p className="text-xs sm:text-sm lg:text-base leading-relaxed">ミニマルでありながら、着る人の個性を引き立てる。そんな服作りを目指し、一着一着丁寧に仕上げています。</p>
-                  <p className="text-xs sm:text-sm lg:text-base leading-relaxed">移り変わる時の流れの中で、変わらない価値を持つ服を、永く使用していただく。それが願いです。</p>
+                <div className="about-main-space">
+                  <p className="about-main-text">Le Fil des Heuresは、「時を紡ぐニュートラルモードな日常着」をコンセプトに、2026年に日本の宮城県で誕生したアパレルブランドです。</p>
+                  <p className="about-main-text">時代を超えて愛される普遂的なデザインと、素材選びにこだわり、日常に寄り添う洗練されたワードローブを提案しています。</p>
+                  <p className="about-main-text">ミニマルでありながら、着る人の個性を引き立てる。そんな服作りを目指し、一着一着丁寧に仕上げています。</p>
+                  <p className="about-main-text">移り変わる時の流れの中で、変わらない価値を持つ服を、永く使用していただく。それが願いです。</p>
                 </div>
                 <div className="mt-8 lg:mt-12 grid grid-cols-2 gap-4">
                   <div>
-                    <p className="text-xs lg:text-sm tracking-widest text-black mb-2">PHILOSOPHY</p>
-                    <p className="text-xs text-[#474747] leading-relaxed">時代を超えた普遂的な美しさ</p>
+                    <p className="about-secondary-title">PHILOSOPHY</p>
+                    <p className="about-secondary-text">Timeless Design</p>
                   </div>
                   <div>
-                    <p className="text-xs lg:text-sm tracking-widest text-black mb-2">ESTABLISHED</p>
-                    <p className="text-xs text-[#474747] leading-relaxed">2026, Miyagi in Japan</p>
+                    <p className="about-secondary-title">ESTABLISHED</p>
+                    <p className="about-secondary-text">2026, Miyagi in Japan</p>
                   </div>
                 </div>
               </div>
@@ -101,7 +98,7 @@ export default async function Home() {
                     alt="About Le Fil des Heures"
                     fill
                     unoptimized
-                    className="w-full h-full object-cover object-center"
+                    className="image"
                   />
                 </div>
               </div>

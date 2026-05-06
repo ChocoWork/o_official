@@ -89,7 +89,7 @@ function SearchResultCard({ result, query }: { result: SearchResult; query: stri
         <TagLabel size="sm">{getResultTypeLabel(result.type)}</TagLabel>
         <span className="text-[11px] tracking-widest text-black/50">{result.meta}</span>
       </div>
-      <h2 className="mb-2 text-lg text-black font-display leading-snug">{renderHighlightedText(result.title, query)}</h2>
+      <h2 className="mb-2">{renderHighlightedText(result.title, query)}</h2>
       <p className="text-sm leading-relaxed text-[#474747]">{renderHighlightedText(result.description, query)}</p>
     </Link>
   );
@@ -103,7 +103,7 @@ function SearchSection({ title, results, query }: { title: string; results: Sear
   return (
     <section className="space-y-4">
       <div className="flex items-center justify-between gap-3 border-b border-black/10 pb-3">
-        <h2 className="text-lg tracking-widest text-black font-display">{title}</h2>
+        <h2>{title}</h2>
         <span className="text-xs tracking-widest text-black/50">{results.length} RESULTS</span>
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -299,7 +299,7 @@ export function SearchPageClient() {
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-8">
         <div className="space-y-3">
           <p className="text-xs tracking-[0.3em] text-black/50">DISCOVER</p>
-          <h1 className="text-4xl lg:text-5xl tracking-tight text-black font-display">SEARCH</h1>
+          <h1>SEARCH</h1>
           <p className="max-w-2xl text-sm leading-relaxed text-[#474747]">
             商品、ルック、ニュースを横断して検索できます。キーワードは URL に保持され、再訪時には検索履歴から再利用できます。
           </p>
@@ -354,7 +354,7 @@ export function SearchPageClient() {
 
         {!query ? (
           <section className="space-y-4 rounded-[28px] border border-black/10 bg-[#fafafa] p-6">
-            <h2 className="text-lg tracking-widest text-black font-display">START YOUR SEARCH</h2>
+            <h2 className="">START YOUR SEARCH</h2>
             <p className="text-sm leading-relaxed text-[#474747]">
               気になる商品名やトピックを入力すると、商品・ルック・ニュースを横断した結果を表示します。
             </p>

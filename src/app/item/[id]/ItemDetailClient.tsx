@@ -176,7 +176,7 @@ export default function ItemDetailClient({ id }: Props) {
   if (loading) {
     return (
       <div className="pb-12 px-6 lg:px-12">
-        <div className="max-w-7xl mx-auto text-center">
+        <div className="element-width text-center">
           <div className="text-base tracking-widest">読み込み中...</div>
         </div>
       </div>
@@ -186,7 +186,7 @@ export default function ItemDetailClient({ id }: Props) {
   if (error || !item) {
     return (
       <div className="pb-12 px-6 lg:px-12">
-        <div className="max-w-7xl mx-auto">
+        <div className="element-width">
           <div className="mb-8">
             <Button
               type="button"
@@ -225,7 +225,7 @@ export default function ItemDetailClient({ id }: Props) {
 
   return (
     <div className="pb-16 sm:pb-20 lg:pb-24 px-6 sm:px-12 lg:px-24">
-      <div className="max-w-7xl mx-auto">
+      <div className="element-width">
         {/* パンくずナビゲーション (FR-ITEM-DETAIL-010) */}
         <nav aria-label="breadcrumb" className="mb-6 lg:mb-8">
           <ol className="flex items-center gap-2 text-xs tracking-widest text-[#888]">
@@ -332,7 +332,7 @@ export default function ItemDetailClient({ id }: Props) {
                       key={index}
                       type="button"
                       aria-label={`${item.name} ${index + 1}枚目を表示`}
-                      className={`relative flex-shrink-0 w-20 md:w-24 aspect-[3/4] bg-[#f5f5f5] overflow-hidden cursor-pointer focus-visible:outline-none transition-opacity duration-200 ${
+                      className={`relative flex-shrink-0 w-20 md:w-24 aspect-[3/4] overflow-hidden cursor-pointer focus-visible:outline-none transition-opacity duration-200 ${
                         selectedImageIndex === index
                           ? "ring-2 ring-black opacity-100"
                           : "opacity-50 hover:opacity-90"
@@ -355,13 +355,13 @@ export default function ItemDetailClient({ id }: Props) {
 
           <div className="space-y-4 lg:space-y-6">
             <div>
-              <h2 className="sm:text-base md:text-lg lg:text-xl text-black tracking-tight font-brand">
+              <h2>
                 {item.name}
               </h2>
               <div className="flex items-center gap-3 mt-1">
-                <p className="text-sm md:text-base lg:text-lg text-black">
+                <h4 className="font-brand">
                   ¥{item.price.toLocaleString("ja-JP")}
-                </p>
+                </h4>
                 {/* 在庫状態バッジ (FR-ITEM-DETAIL-007) */}
                 <StockBadge stockStatus={stockStatus} />
               </div>
@@ -370,7 +370,7 @@ export default function ItemDetailClient({ id }: Props) {
             {/* カラー選択 (FR-ITEM-DETAIL-008: aria-pressed) */}
             {item.colors && Array.isArray(item.colors) && item.colors.length > 0 && (
               <div>
-                <h3 className="text-xs md:text-sm tracking-widest mb-2 font-brand">COLOR</h3>
+                <p className="mb-2">COLOR</p>
                 <div className="flex gap-3 flex-wrap">
                   {(item.colors as unknown as Array<{ hex: string; name: string }>).map(
                     (colorOption) => (
@@ -395,7 +395,7 @@ export default function ItemDetailClient({ id }: Props) {
             {/* サイズ選択 (FR-ITEM-DETAIL-008: aria-pressed) */}
             {item.sizes && item.sizes.length > 0 && (
               <div>
-                <h3 className="text-xs md:text-sm tracking-widest mb-2 font-brand">SIZE</h3>
+                <p className="mb-2">SIZE</p>
                 <div className="flex gap-3 flex-wrap">
                   {item.sizes.map((sizeOption: string) => (
                     <Button
@@ -416,7 +416,7 @@ export default function ItemDetailClient({ id }: Props) {
             )}
 
             <div>
-              <h3 className="text-xs md:text-sm tracking-widest mb-2 font-brand">QUANTITY</h3>
+              <p className="mb-2">QUANTITY</p>
               <Stepper value={quantity} min={1} onChange={setQuantity} size="sm" />
             </div>
 
@@ -437,7 +437,7 @@ export default function ItemDetailClient({ id }: Props) {
 
             {item.product_details && (
               <div className="border-t border-black/10 py-4 lg:py-6">
-                <h3 className="text-sm tracking-widest mb-4 font-brand">PRODUCT DETAILS</h3>
+                <p className="mb-4 font-brand">PRODUCT DETAILS</p>
                 {typeof item.product_details === "string" ? (
                   <p className="text-xs md:text-sm text-[#474747] whitespace-pre-line">
                     {item.product_details}

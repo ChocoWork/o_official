@@ -61,7 +61,7 @@ export default function OAuthCallbackPage() {
   return (
     <div className="pb-10 sm:pb-14 px-6 lg:px-12">
       <div className="max-w-xl mx-auto">
-        <h1 className="text-xl tracking-widest mb-4">OAuth</h1>
+        <h1 className="mb-4">OAuth</h1>
         <p className="text-sm text-[#474747]">{message}</p>
       </div>
     </div>

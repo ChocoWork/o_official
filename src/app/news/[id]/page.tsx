@@ -130,12 +130,7 @@ export default async function NewsDetailPage({
               {article.category}
             </TagLabel>
           </div>
-          <h1
-            className="text-base md:text-2xl text-black leading-snug"
-            style={{ fontFamily: "Didot, serif" }}
-          >
-            {article.title}
-          </h1>
+          <h1>{article.title}</h1>
         </div>
 
         {/* Article Content */}

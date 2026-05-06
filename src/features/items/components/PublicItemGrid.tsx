@@ -772,7 +772,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
             className={hideOnMobile ? 'hidden lg:block' : undefined}
           >
             <div className="group cursor-pointer" data-testid="item-card">
-              <div className="aspect-[3/4] bg-[#f5f5f5] mb-2 sm:mb-3 overflow-hidden">
+              <div className="aspect-[3/4] mb-2 overflow-hidden">
                 {item.image_url ? (
                   <Image
                     src={item.image_url}
@@ -789,14 +789,11 @@ export function PublicItemGrid(props: PublicItemGridProps) {
                   </div>
                 )}
               </div>
-              <div>
-                <p className="text-[11px] text-[#474747] mb-1 tracking-wider" data-testid="item-category">
-                  {item.category}
-                </p>
-                <h3 className="mb-1 text-sm text-black font-brand tracking-tight" data-testid="item-name">
+              <div className="space-y-1">
+                <h5 className="font-brand" data-testid="item-name">
                   {item.name}
-                </h3>
-                <p className="mb-2 text-xs text-black" data-testid="item-price">
+                </h5>
+                <p data-testid="item-price">
                   ¥{item.price.toLocaleString('ja-JP')}
                 </p>
               </div>
@@ -811,7 +808,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     if (isSelfFetch && error) {
       return (
         <section id="items" className="px-6 lg:px-12 bg-white w-full pb-14 sm:pb-16 md:pb-20">
-          <div className="max-w-7xl mx-auto text-center py-10">
+          <div className="element-width text-center py-10">
             <div className="text-xl text-red-500">{error}</div>
           </div>
         </section>
@@ -819,8 +816,8 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     }
 
     return (
-      <section id="items" className="mt-14 sm:mt-16 lg:mt-20 pb-14 sm:pb-16 md:pb-20 px-6 lg:px-12 bg-white w-full">
-        <div className="max-w-7xl mx-auto">
+      <section id="items" className="section-space">
+        <div className="element-width">
           <SectionTitle title="ITEMS" />
 
           {isSelfFetch && loading ? (

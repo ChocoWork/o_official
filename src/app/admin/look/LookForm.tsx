@@ -268,13 +268,13 @@ export function LookForm({
                 {existingImageUrls.map((url, index) => (
                   <div
                     key={`${url}-${index}`}
-                    className="relative aspect-[3/4] bg-[#f5f5f5] overflow-hidden border border-black/20"
+                    className="relative aspect-[3/4] overflow-hidden border border-black/20"
                   >
                     <Image
                       src={url}
                       alt={`登録済み画像 ${index + 1}`}
                       fill
-                      className="w-full h-full object-cover object-center"
+                      className="image"
                       unoptimized
                     />
                   </div>
@@ -287,13 +287,13 @@ export function LookForm({
                 {previewUrls.map((url, index) => (
                   <div
                     key={index}
-                    className="relative aspect-[3/4] bg-[#f5f5f5] overflow-hidden border border-black/20"
+                    className="relative aspect-[3/4] overflow-hidden border border-black/20"
                   >
                     <Image
                       src={url}
                       alt={`プレビュー ${index + 1}`}
                       fill
-                      className="w-full h-full object-cover object-center"
+                      className="image"
                       unoptimized
                     />
                     <Button

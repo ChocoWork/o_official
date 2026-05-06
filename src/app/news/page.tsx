@@ -33,7 +33,7 @@ export default async function NewsPage({
 
   return (
     <div className="pb-10 sm:pb-14 px-6 lg:px-12">
-      <div className="max-w-7xl mx-auto">
+      <div className="element-width">
         <PublicNewsGrid
           variant="catalog"
           articles={articles}

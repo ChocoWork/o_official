@@ -175,7 +175,7 @@ export default function PasswordResetPage() {
         />
       ) : null}
       <div className="w-full max-w-md mx-auto px-6">
-        <h1 className="text-xl mb-6">
+        <h1 className="mb-6">
           {isConfirmMode ? 'パスワード再設定' : 'パスワード再設定の申請'}
         </h1>
         <form className="space-y-6" onSubmit={isConfirmMode ? handleConfirm : handleRequest}>

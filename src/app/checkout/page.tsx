@@ -634,7 +634,7 @@ export default function CheckoutPage() {
   if (cartLoading) {
     return (
       <div className="pb-10 sm:pb-14 px-6 lg:px-12">
-        <div className="max-w-7xl mx-auto text-center">
+        <div className="element-width text-center">
           <div className="text-base tracking-widest">読み込み中...</div>
         </div>
       </div>
@@ -645,7 +645,7 @@ export default function CheckoutPage() {
     return (
       <div className="pb-10 sm:pb-14 px-6 lg:px-12">
         <div className="max-w-3xl mx-auto text-center">
-          <h1 className="text-4xl text-black tracking-tight mb-4 font-display">Thank you for your order</h1>
+          <h1 className="mb-4">Thank you for your order</h1>
           <p className="text-lg text-[#474747] mb-12">ご注文を承りました。確認メールをお送りしましたのでご確認ください。</p>
 
           <div className="bg-[#f5f5f5] p-8 mb-12 text-left">
@@ -698,7 +698,7 @@ export default function CheckoutPage() {
 
   return (
     <div className="pb-10 sm:pb-14 px-6 lg:px-12">
-      <div className="max-w-7xl mx-auto">
+      <div className="element-width">
         <div className="flex items-center justify-center mb-12">
           <div className="flex items-start">
             {CHECKOUT_STEPS.map((checkoutStep, index) => (
@@ -959,7 +959,7 @@ export default function CheckoutPage() {
 
           <div className="lg:col-span-1">
             <div className="border border-black/10 p-8 sticky top-32">
-              <h2 className="text-2xl text-black mb-8 tracking-tight font-brand font-semibold">注文内容</h2>
+              <h2 className="mb-8 font-brand font-semibold">注文内容</h2>
 
               {cartItems.length === 0 ? (
                 <p className="text-sm text-gray-500">カートに商品がありません</p>
@@ -973,10 +973,10 @@ export default function CheckoutPage() {
 
                       return (
                         <div className="flex gap-4" key={item.id}>
-                          <div className="w-20 h-24 bg-[#f5f5f5] flex-shrink-0 overflow-hidden relative">
+                          <div className="w-20 h-24 flex-shrink-0 overflow-hidden relative">
                             <Image
                               alt={product.name}
-                              className="w-full h-full object-cover object-top"
+                              className="image"
                               src={product.image_url}
                               width={400}
                               height={500}

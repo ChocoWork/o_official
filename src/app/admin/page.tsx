@@ -591,7 +591,7 @@ export default function AdminPage() {
   if (!isAuthResolved) {
     return (
       <main className="pt-24 pb-20 px-6 lg:px-12">
-        <div className="max-w-7xl mx-auto">
+        <div className="element-width">
           <p className="text-sm text-[#474747] font-acumin">読み込み中...</p>
         </div>
       </main>
@@ -601,8 +601,8 @@ export default function AdminPage() {
   if (!isLoggedIn || !canAccessAdmin) {
     return (
       <main className="pt-24 pb-20 px-6 lg:px-12">
-        <div className="max-w-7xl mx-auto">
-          <h1 className="text-2xl text-black mb-4 font-display">アクセス権限がありません</h1>
+        <div className="element-width">
+          <h1 className="mb-4">アクセス権限がありません</h1>
           <p className="text-sm text-[#474747] font-acumin">このページは Admin または Supporter のみ利用できます。</p>
         </div>
       </main>
@@ -612,8 +612,8 @@ export default function AdminPage() {
   if (!isMfaVerified) {
     return (
       <main className="pt-24 pb-20 px-6 lg:px-12">
-        <div className="max-w-7xl mx-auto">
-          <h1 className="text-2xl text-black mb-4 font-display">2要素認証が必要です</h1>
+        <div className="element-width">
+          <h1 className="mb-4">2要素認証が必要です</h1>
           <p className="text-sm text-[#474747] font-acumin">
             管理画面へのアクセスには 2FA の有効化と認証が必要です。設定済みの場合は再度ログインしてください。
           </p>
@@ -632,7 +632,7 @@ export default function AdminPage() {
 
   return (
     <main className="pt-24 pb-20 px-6 lg:px-12">
-      <div className="max-w-7xl mx-auto">
+      <div className="element-width">
         <AdminTabs activeTab={activeTab} onTabChange={handleTabChange} tabs={visibleTabs} rightContent={tabRightContent} />
         {renderContent()}
       </div>
