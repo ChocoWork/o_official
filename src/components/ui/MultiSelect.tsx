@@ -1,3 +1,4 @@
+import { Button } from './Button';
 import { Checkbox } from './Checkbox';
 import { cn } from '@/lib/utils';
 import { useEffect, useRef, useState } from 'react';
@@ -79,21 +80,6 @@ export function MultiSelect({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [open, variant]);
 
-  // size-specific helpers using explicit maps
-  const buttonTextSizeMap: Record<ComponentSize, string> = {
-    xs: 'text-[10px]',
-    sm: 'text-xs',
-    md: 'text-sm',
-    lg: 'text-base',
-    xl: 'text-lg',
-  };
-  const buttonPadMap: Record<ComponentSize, string> = {
-    xs: 'px-3 py-1',
-    sm: 'px-4 py-1',
-    md: 'px-6 py-2',
-    lg: 'px-8 py-3',
-    xl: 'px-10 py-4',
-  };
   // Dropdown trigger: min-h (not fixed) so multi-line selections expand naturally
   const dropdownTriggerMinHMap: Record<ComponentSize, string> = {
     xs: 'min-h-7 py-1',
@@ -110,8 +96,6 @@ export function MultiSelect({
     lg: 'text-base',
     xl: 'text-lg',
   };
-  const buttonTextSize = buttonTextSizeMap[size];
-  const buttonPad = buttonPadMap[size];
 
   if (variant === 'buttons') {
     return (
@@ -119,21 +103,20 @@ export function MultiSelect({
         {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
         <div className="flex gap-3 flex-wrap">
           {options.map((option) => (
-            <button
+            <Button
               key={option.value}
               type="button"
+              variant={values.includes(option.value) ? 'primary' : 'secondary'}
+              size={size}
+              shape={shape}
               onClick={() => handleChange(option.value)}
+              aria-pressed={values.includes(option.value)}
               className={cn(
-                buttonPad,
-                buttonTextSize,
-                'tracking-widest transition-all duration-300 cursor-pointer whitespace-nowrap border',
-                values.includes(option.value)
-                  ? 'border-black bg-black text-white'
-                  : 'border-black text-black hover:bg-black hover:text-white',
+                'tracking-widest whitespace-nowrap',
               )}
             >
               {option.label}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
