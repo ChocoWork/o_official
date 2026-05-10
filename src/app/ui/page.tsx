@@ -8,7 +8,7 @@ import { Accordion } from '@/components/ui/Accordion';
 import { ActionSheet } from '@/components/ui/ActionSheet';
 import { Avatar } from '@/components/ui/Avatar';
 import { BannerAlert } from '@/components/ui/BannerAlert';
-import { Button } from '@/components/ui/Button';
+import { Button, type UIButtonSize } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Carousel } from '@/components/ui/Carousel';
 import { Checkbox } from '@/components/ui/Checkbox';
@@ -46,6 +46,8 @@ import { Tooltip } from '@/components/ui/Tooltip';
 
 export default function Page() {
   const [demoSize, setDemoSize] = useState<ComponentSize>('md');
+  const [buttonDemoSize, setButtonDemoSize] = useState<UIButtonSize>('md');
+  const [multiSelectDemoSize, setMultiSelectDemoSize] = useState<UIButtonSize>('md');
   const [standardText, setStandardText] = useState("");
   const [email, setEmail] = useState("");
   const [radioValue, setRadioValue] = useState("option1");
@@ -234,8 +236,9 @@ export default function Page() {
     { key: 'layout', iconClass: 'ri-layout-grid-line' },
   ] as const;
   // ...existing code...
-  return (    <div className="pb-20">
-      <div className="element-width px-6 lg:px-12">
+  return (    
+    <div>
+      <div className="element-width">
         <div className="mb-12 flex items-center gap-3 sticky top-32 bg-white z-50 py-4">
           {(['sm', 'md', 'lg'] as const).map((size) => (
             <Button
@@ -306,6 +309,20 @@ export default function Page() {
             >
               Button
             </h2>
+            <div className="mb-6 flex flex-wrap gap-3">
+              {(['xs', 'sm', 'md', 'lg', 'xl'] as const).map((size) => (
+                <Button
+                  key={size}
+                  type="button"
+                  variant={buttonDemoSize === size ? 'primary' : 'secondary'}
+                  size="xs"
+                  onClick={() => setButtonDemoSize(size)}
+                  className="min-w-14 uppercase"
+                >
+                  {size}
+                </Button>
+              ))}
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
               <div>
                 <p
@@ -314,7 +331,7 @@ export default function Page() {
                 >
                   PRIMARY
                 </p>
-                <Button className="w-full" size={demoSize}>
+                <Button className="w-full" size={buttonDemoSize}>
                   PRIMARY BUTTON
                 </Button>
               </div>
@@ -325,7 +342,7 @@ export default function Page() {
                 >
                   SECONDARY
                 </p>
-                <Button variant="secondary" className="w-full" size={demoSize}>
+                <Button variant="secondary" className="w-full" size={buttonDemoSize}>
                   SECONDARY BUTTON
                 </Button>
               </div>
@@ -336,7 +353,7 @@ export default function Page() {
                 >
                   TEXT
                 </p>
-                <Button variant="text" className="w-full" size={demoSize}>
+                <Button variant="text" className="w-full" size={buttonDemoSize}>
                   TEXT BUTTON
                 </Button>
               </div>
@@ -347,7 +364,7 @@ export default function Page() {
                 >
                   WITH ICON
                 </p>
-                <Button className="w-full gap-2" size={demoSize}>
+                <Button className="w-full gap-2" size={buttonDemoSize}>
                   <div className="w-4 h-4 flex items-center justify-center">
                     <i className="ri-shopping-bag-line text-base"></i>
                   </div>
@@ -361,7 +378,7 @@ export default function Page() {
                 >
                   ICON ONLY
                 </p>
-                <Button variant="secondary" className="aspect-square px-0" size={demoSize} aria-label="Add to wishlist">
+                <Button variant="secondary" className="aspect-square px-0" size={buttonDemoSize} aria-label="Add to wishlist">
                   <div className="w-5 h-5 flex items-center justify-center">
                     <i className="ri-heart-line text-xl"></i>
                   </div>
@@ -374,7 +391,7 @@ export default function Page() {
                 >
                   DISABLED
                 </p>
-                <Button disabled className="w-full" size={demoSize}>
+                <Button disabled className="w-full" size={buttonDemoSize}>
                   DISABLED BUTTON
                 </Button>
               </div>
@@ -408,16 +425,22 @@ export default function Page() {
             <div className="space-y-4">
               <Checkbox
                 checked={checkboxTerms}
+                shape='rounded'
+                checkStyle='check'
                 onChange={(e) => setCheckboxTerms(e.target.checked)}
                 label="利用規約に同意する"
                size={demoSize}/>
               <Checkbox
                 checked={checkboxNewsletter}
+                shape='rounded'
+                checkStyle='fill'
                 onChange={(e) => setCheckboxNewsletter(e.target.checked)}
                 label="ニュースレターを受け取る"
                size={demoSize}/>
               <Checkbox
                 checked={checkboxPrivacy}
+                shape='square'
+                checkStyle='fill'
                 onChange={(e) => setCheckboxPrivacy(e.target.checked)}
                 label="プライバシーポリシーに同意する"
                size={demoSize}/>
@@ -452,14 +475,37 @@ export default function Page() {
             >
               Multi Select
             </h2>
+            <div className="mb-5 flex flex-wrap gap-3">
+              {(['xs', 'sm', 'md', 'lg', 'xl'] as const).map((size) => (
+                <Button
+                  key={size}
+                  type="button"
+                  size="xs"
+                  variant={multiSelectDemoSize === size ? 'primary' : 'secondary'}
+                  aria-pressed={multiSelectDemoSize === size}
+                  onClick={() => setMultiSelectDemoSize(size)}
+                >
+                  {size.toUpperCase()}
+                </Button>
+              ))}
+            </div>
             <div className="max-w-md">
+              <MultiSelect
+                label="SIZE (PANEL)"
+                variant="panel"
+                options={multiSelectOptions}
+                values={sizes}
+                onChange={setSizes}
+               size={multiSelectDemoSize}/>
+            </div>
+            <div className="max-w-md mt-8">
               <MultiSelect
                 label="SIZE"
                 variant="dropdown"
                 options={multiSelectOptions}
                 values={sizes}
                 onChange={setSizes}
-               size={demoSize}/>
+               size={multiSelectDemoSize}/>
             </div>
             {/* button-style example */}
             <div className="max-w-md mt-8">
@@ -469,7 +515,7 @@ export default function Page() {
                 options={multiSelectOptions}
                 values={sizes}
                 onChange={setSizes}
-               size={demoSize}/>
+               size={multiSelectDemoSize}/>
             </div>
           </section>
 

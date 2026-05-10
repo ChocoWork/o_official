@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
-export default function OAuthCallbackPage() {
+function OAuthCallbackContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = useMemo(() => {
@@ -65,5 +65,22 @@ export default function OAuthCallbackPage() {
         <p className="text-sm text-[#474747]">{message}</p>
       </div>
     </div>
+  );
+}
+
+export default function OAuthCallbackPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="pb-10 sm:pb-14 px-6 lg:px-12">
+          <div className="max-w-xl mx-auto">
+            <h1 className="mb-4">OAuth</h1>
+            <p className="text-sm text-[#474747]">認証処理中…</p>
+          </div>
+        </div>
+      }
+    >
+      <OAuthCallbackContent />
+    </Suspense>
   );
 }

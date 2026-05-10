@@ -20,6 +20,39 @@ import {
   isCheckoutDisplayedAmountsMatched,
 } from '@/features/checkout/services/checkout-pricing.service';
 import { logAudit } from '@/lib/audit';
+import { cookieOptionsForCsrf, csrfCookieName } from '@/lib/cookie';
+
+type CsrfDenyResponse = {
+  status: number;
+  _body: unknown;
+  headers?: Headers | Record<string, string>;
+};
+
+type CsrfRotateResult = {
+  rotatedCsrfToken: string;
+};
+
+function isCsrfDenyResponse(value: unknown): value is CsrfDenyResponse {
+  return typeof value === 'object' && value !== null && 'status' in value && '_body' in value;
+}
+
+function hasRotatedCsrfToken(value: unknown): value is CsrfRotateResult {
+  return typeof value === 'object' && value !== null && 'rotatedCsrfToken' in value;
+}
+
+function applyRotatedCsrfCookie(response: NextResponse, csrfResult: unknown) {
+  if (!hasRotatedCsrfToken(csrfResult)) {
+    return response;
+  }
+
+  response.cookies.set({
+    name: csrfCookieName,
+    value: csrfResult.rotatedCsrfToken,
+    ...cookieOptionsForCsrf(0),
+  });
+
+  return response;
+}
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -85,8 +118,19 @@ export async function POST(req: NextRequest) {
     // Unauthenticated guest sessions are mitigated by SameSite=Lax cookie policy.
     const { requireCsrfOrDeny } = await import('@/lib/csrfMiddleware');
     const csrfResult = await requireCsrfOrDeny();
-    if (csrfResult) {
-      return csrfResult;
+    if (isCsrfDenyResponse(csrfResult)) {
+      const denyResponse = NextResponse.json(csrfResult._body, { status: csrfResult.status });
+      if (csrfResult.headers instanceof Headers) {
+        csrfResult.headers.forEach((headerValue, headerName) => {
+          denyResponse.headers.set(headerName, headerValue);
+        });
+      } else if (csrfResult.headers) {
+        for (const [headerName, headerValue] of Object.entries(csrfResult.headers)) {
+          denyResponse.headers.set(headerName, headerValue);
+        }
+      }
+
+      return denyResponse;
     }
 
     const parsed = createSessionSchema.safeParse(await req.json().catch(() => ({})));
@@ -368,10 +412,13 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Failed to create checkout client secret' }, { status: 500 });
       }
 
-      return NextResponse.json({
-        clientSecret: session.client_secret,
-        checkoutSessionId: session.id,
-      });
+      return applyRotatedCsrfCookie(
+        NextResponse.json({
+          clientSecret: session.client_secret,
+          checkoutSessionId: session.id,
+        }),
+        csrfResult
+      );
     }
 
     const sessionParams: Stripe.Checkout.SessionCreateParams = {
@@ -423,7 +470,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Failed to create checkout session' }, { status: 500 });
     }
 
-    return NextResponse.json({ url: session.url });
+    return applyRotatedCsrfCookie(NextResponse.json({ url: session.url }), csrfResult);
   } catch (error) {
     console.error('Checkout session creation error:', error);
     await logAudit({

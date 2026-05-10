@@ -18,8 +18,6 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default function LoginPage() {
   return (
-    <div className="pb-10 sm:pb-14 px-6 lg:px-12">
-      <LoginModal open={true} />
-    </div>
+    <LoginModal open={true} />
   );
 }

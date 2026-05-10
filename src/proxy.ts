@@ -17,6 +17,7 @@ function generateNonce(): string {
 }
 
 function buildCsp(nonce: string): string {
+  const isDevelopment = process.env.NODE_ENV !== 'production';
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
   const supabaseOrigin = (() => {
     if (!supabaseUrl) return '';
@@ -30,6 +31,7 @@ function buildCsp(nonce: string): string {
 
   const connectSources = [
     "'self'",
+    ...(isDevelopment ? ['ws:', 'wss:'] : []),
     supabaseOrigin,
     'https://*.supabase.co',
     'https://challenges.cloudflare.com',
@@ -39,16 +41,42 @@ function buildCsp(nonce: string): string {
     'https://q.stripe.com',
   ].filter(Boolean).join(' ');
 
+  const imgSources = [
+    "'self'",
+    'data:',
+    'https://placehold.co',
+    'https://readdy.ai',
+    'https://*.readdy.ai',
+    'https://*.supabase.co',
+    'https://q.stripe.com',
+    'https://*.stripe.com',
+  ].join(' ');
+
+  const styleSources = [
+    "'self'",
+    ...(isDevelopment ? ["'unsafe-inline'"] : []),
+    'https://cdn.jsdelivr.net',
+  ].join(' ');
+
+  const scriptSources = [
+    "'self'",
+    `'nonce-${nonce}'`,
+    ...(isDevelopment ? ["'unsafe-eval'"] : []),
+    'https://cdn.jsdelivr.net',
+    'https://challenges.cloudflare.com',
+    'https://js.stripe.com',
+  ].join(' ');
+
   return [
     "default-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",
     "object-src 'none'",
-    "img-src 'self' data: https://placehold.co https://*.supabase.co https://q.stripe.com https://*.stripe.com",
-    "style-src 'self' https://cdn.jsdelivr.net",
+    `img-src ${imgSources}`,
+    `style-src ${styleSources}`,
     "font-src 'self' https://cdn.jsdelivr.net",
-    `script-src 'self' 'nonce-${nonce}' https://cdn.jsdelivr.net https://challenges.cloudflare.com https://js.stripe.com`,
+    `script-src ${scriptSources}`,
     "frame-src https://challenges.cloudflare.com https://js.stripe.com https://hooks.stripe.com https://www.google.com https://maps.google.com",
     `connect-src ${connectSources}`,
     "manifest-src 'self'",

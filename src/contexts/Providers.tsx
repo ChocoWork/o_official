@@ -10,20 +10,19 @@ import Footer from '@/components/Footer';
 export function Providers({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isHome = pathname === '/';
-  const isAdmin = pathname.startsWith('/admin');
   const isPrivacyPage = pathname === '/privacy';
+
+  const pageMainClassName = isHome
+    ? 'flex-1 flex flex-col'
+    : 'flex-1 flex flex-col my-[52px] sm:my-[54px] md:my-[56px] lg:my-[58px] xl:my-[60px] pt-0 sm:pt-1 md:pt-2 lg:pt-4 px-6 lg:px-12';
 
   return (
     <CartProvider enabled={!isPrivacyPage}>
       <LoginProvider>
         <Header />
-        {isAdmin ? (
-          <div className="flex-1 flex flex-col">{children}</div>
-        ) : (
-          <main className={`flex-1 flex flex-col${isHome ? '' : ' mt-12 sm:mt-14 lg:mt-19'}`}>
-            {children}
-          </main>
-        )}
+        <main className={pageMainClassName}>
+          {children}
+        </main>
         <Footer />
       </LoginProvider>
     </CartProvider>

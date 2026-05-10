@@ -12,8 +12,9 @@ export interface MultiSelectProps {
   placeholder?: string;
   variant?: 'panel' | 'dropdown' | 'buttons'; // button-style toggle group
   size?: ComponentSize;
-  /** dropdown variant only: 'check' = native checkbox (default), 'fill' = solid black square */
+  /** 'check' = native checkbox (default), 'fill' = solid black square */
   checkStyle?: 'check' | 'fill';
+  shape?: 'square' | 'rounded';
   className?: string;
 }
 
@@ -26,6 +27,7 @@ export function MultiSelect({
   variant = 'panel',
   size = 'md',
   checkStyle = 'check',
+  shape = 'rounded',
   className,
 }: MultiSelectProps) {
   const [open, setOpen] = useState(false);
@@ -37,6 +39,55 @@ export function MultiSelect({
       return;
     }
     onChange([...values, optionValue]);
+  };
+
+  const optionTextSizeMap: Record<ComponentSize, string> = {
+    sm: 'text-xs',
+    md: 'text-sm',
+    lg: 'text-base',
+  };
+
+  const renderOptionItem = (option: SelectOption) => {
+    const isChecked = values.includes(option.value);
+    const shapeClass = shape === 'square' ? 'rounded-none' : 'rounded';
+
+    return (
+      <label
+        key={option.value}
+        className={cn(
+          'flex cursor-pointer items-center gap-2 px-3 py-1.5 transition-colors hover:bg-[#f5f5f5]',
+          optionTextSizeMap[size],
+          'text-[#474747] tracking-widest',
+        )}
+      >
+        {checkStyle === 'fill' ? (
+          <>
+            <span
+              aria-hidden="true"
+              className={cn(
+                'h-2.5 w-2.5 flex-shrink-0 border',
+                shapeClass,
+                isChecked ? 'bg-black border-black' : 'bg-white border-black/40',
+              )}
+            />
+            <input
+              className="sr-only"
+              type="checkbox"
+              checked={isChecked}
+              onChange={() => handleChange(option.value)}
+            />
+          </>
+        ) : (
+          <input
+            className={cn('h-4 w-4 cursor-pointer accent-black', shapeClass)}
+            type="checkbox"
+            checked={isChecked}
+            onChange={() => handleChange(option.value)}
+          />
+        )}
+        <span>{option.label}</span>
+      </label>
+    );
   };
 
   useEffect(() => {
@@ -105,6 +156,17 @@ export function MultiSelect({
     );
   }
 
+  if (variant === 'panel') {
+    return (
+      <div className={cn('space-y-2', className)} ref={wrapperRef}>
+        {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
+        <div className="space-y-2">
+          {options.map((option) => renderOptionItem(option))}
+        </div>
+      </div>
+    );
+  }
+
   if (variant === 'dropdown') {
     return (
       <div className={cn('space-y-2', className)} ref={wrapperRef}>
@@ -129,40 +191,7 @@ export function MultiSelect({
           </button>
           {open ? (
             <div className="absolute left-0 right-0 top-full z-10 mt-1 border border-black/20 bg-white shadow-lg">
-              {options.map((option) => (
-                <label
-                  key={option.value}
-                  className="flex cursor-pointer items-center gap-2 px-3 py-1.5 transition-colors hover:bg-[#f5f5f5]"
-                >
-                  {checkStyle === 'fill' ? (
-                    <>
-                      <span
-                        aria-hidden="true"
-                        className={cn(
-                          'h-2.5 w-2.5 flex-shrink-0 border',
-                          values.includes(option.value)
-                            ? 'bg-black border-black'
-                            : 'bg-white border-black/40',
-                        )}
-                      />
-                      <input
-                        className="sr-only"
-                        type="checkbox"
-                        checked={values.includes(option.value)}
-                        onChange={() => handleChange(option.value)}
-                      />
-                    </>
-                  ) : (
-                    <input
-                      className="h-4 w-4 cursor-pointer accent-black"
-                      type="checkbox"
-                      checked={values.includes(option.value)}
-                      onChange={() => handleChange(option.value)}
-                    />
-                  )}
-                  <span className="text-xs text-black">{option.label}</span>
-                </label>
-              ))}
+              {options.map((option) => renderOptionItem(option))}
             </div>
           ) : null}
         </div>
@@ -182,6 +211,8 @@ export function MultiSelect({
             onChange={() => handleChange(option.value)}
             label={option.label}
             size={size}
+            checkStyle={checkStyle}
+            shape={shape}
           />
         ))}
       </div>

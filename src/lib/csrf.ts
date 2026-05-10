@@ -5,18 +5,26 @@
 import { tokenHashSha256 } from './hash';
 
 export function generateCsrfToken() {
-  // Use Web Crypto API for Edge Runtime compatibility
+  // Use a header-safe ASCII representation so the token can travel via
+  // cookie and X-CSRF-Token without introducing control characters.
   const bytes = new Uint8Array(32);
   globalThis.crypto.getRandomValues(bytes);
-  return Array.from(bytes)
-    .map(b => String.fromCharCode(b))
-    .join('');
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function normalizeTransportToken(token: string): string {
+  try {
+    return decodeURIComponent(token);
+  } catch {
+    return token;
+  }
 }
 
 export async function verifyAndRotateCsrf(providedToken: string | undefined, storedHash: string | null, storeNewHash: (hash: string) => Promise<void>) {
   // Provided token is the raw token from header; storedHash is the stored sha256 hash in DB
   if (!providedToken) return false;
-  const providedHash = await tokenHashSha256(providedToken);
+  const normalizedProvidedToken = normalizeTransportToken(providedToken);
+  const providedHash = await tokenHashSha256(normalizedProvidedToken);
   // Immediate match: OK
   if (storedHash && providedHash === storedHash) {
     // rotate: store new hash for next time (optional)

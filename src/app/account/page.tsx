@@ -80,7 +80,7 @@ function hasAddressValue(address: ProfileAddress) {
 	return Object.values(address).some((value) => value.trim().length > 0);
 }
 
-export default function AccountPage() {
+function AccountPageContent() {
 	const { isLoggedIn, isAuthResolved, logout } = useLogin();
 	const router = useRouter();
 	const pathname = usePathname();
@@ -410,261 +410,271 @@ export default function AccountPage() {
 
 	if (!isAuthResolved) {
 		return (
-			<div className="pb-10 sm:pb-14 px-6 lg:px-12">
-				<div className="max-w-3xl mx-auto text-center">
-					<p className="text-lg text-[#474747] mb-8">読み込み中...</p>
-				</div>
+			<div className="max-w-3xl mx-auto text-center">
+				<p className="text-lg text-[#474747] mb-8">読み込み中...</p>
 			</div>
 		);
 	}
 
 	if (!isLoggedIn) {
 		return (
-			<div className="pb-10 sm:pb-14 px-6 lg:px-12">
-				<div className="max-w-3xl mx-auto text-center">
-					<div className="w-20 h-20 flex items-center justify-center mx-auto mb-8">
-						<i className="ri-user-line text-6xl text-[#474747]"></i>
-					</div>
-					<h1 className="mb-4">会員情報</h1>
-					<p className="text-lg text-[#474747] mb-8">会員情報を確認するにはログインが必要です</p>
-					<Button href="/login" variant="primary" size="lg">
-						ログイン
-					</Button>
+			<div className="max-w-3xl mx-auto text-center">
+				<div className="w-20 h-20 flex items-center justify-center mx-auto mb-8">
+					<i className="ri-user-line text-6xl text-[#474747]"></i>
 				</div>
+				<h1 className="mb-4">会員情報</h1>
+				<p className="text-lg text-[#474747] mb-8">会員情報を確認するにはログインが必要です</p>
+				<Button href="/login" variant="primary" size="lg">
+					ログイン
+				</Button>
 			</div>
 		);
 	}
 
 	return (
-		<div className="pb-10 sm:pb-14 px-6 lg:px-12">
-			<div className="element-width">
-				<div className="grid grid-cols-1 lg:grid-cols-4 gap-12">
-					<div className="lg:col-span-1">
-						<TabSegmentControl
-							items={[
-								{ key: 'profile', label: 'プロフィール' },
-								{ key: 'shipping', label: '配送情報' },
-								{ key: 'orders', label: '購入履歴' },
-							]}
-							activeKey={activeTab}
-							onChange={handleTabChange}
-							orientation="vertical"
+		<div className="element-width">
+			<div className="grid grid-cols-1 lg:grid-cols-4 gap-12">
+				<div className="lg:col-span-1">
+					<TabSegmentControl
+						items={[
+							{ key: 'profile', label: 'プロフィール' },
+							{ key: 'shipping', label: '配送情報' },
+							{ key: 'orders', label: '購入履歴' },
+						]}
+						activeKey={activeTab}
+						onChange={handleTabChange}
+						orientation="vertical"
+						size="md"
+						className="space-y-2"
+					/>
+					<div className="mt-6 pt-6 border-t border-black/10">
+						<Button
+							type="button"
+							variant="secondary"
 							size="md"
-							className="space-y-2"
-						/>
-						<div className="mt-6 pt-6 border-t border-black/10">
-							<Button
-								type="button"
-								variant="secondary"
-								size="md"
-								className="w-full font-acumin"
-								onClick={handleLogout}
-								disabled={isLoggingOut}
-							>
-								{isLoggingOut ? 'ログアウト中...' : 'ログアウト'}
-							</Button>
-							{logoutError ? <p className="mt-3 text-xs text-red-600 font-acumin">{logoutError}</p> : null}
+							className="w-full font-acumin"
+							onClick={handleLogout}
+							disabled={isLoggingOut}
+						>
+							{isLoggingOut ? 'ログアウト中...' : 'ログアウト'}
+						</Button>
+						{logoutError ? <p className="mt-3 text-xs text-red-600 font-acumin">{logoutError}</p> : null}
+					</div>
+				</div>
+
+				<div className="lg:col-span-3 min-w-0">
+					{activeTab === 'profile' ? (
+						<div className="space-y-6">
+							{isLoadingProfile ? <p className="text-sm text-[#474747]">読み込み中...</p> : null}
+							{profileMessage ? <p className="text-sm text-green-700">{profileMessage}</p> : null}
+							{profileError ? <p className="text-sm text-red-600">{profileError}</p> : null}
+
+							{!isLoadingProfile && hasSavedProfile && !isEditingProfile ? (
+								<div className="border border-black/10 p-6 space-y-4">
+									<div>
+										<p className="text-xs text-[#474747] mb-1 tracking-wider">メールアドレス</p>
+										<p className="text-sm text-black break-all">{savedProfile.email || '-'}</p>
+									</div>
+									<div>
+										<p className="text-xs text-[#474747] mb-1 tracking-wider">氏名</p>
+										<p className="text-sm text-black">{savedProfile.fullName || '-'}</p>
+									</div>
+									<div>
+										<p className="text-xs text-[#474747] mb-1 tracking-wider">フリガナ</p>
+										<p className="text-sm text-black">{savedProfile.kanaName || '-'}</p>
+									</div>
+									<div>
+										<p className="text-xs text-[#474747] mb-1 tracking-wider">電話番号</p>
+										<p className="text-sm text-black">{savedProfile.phone || '-'}</p>
+									</div>
+									<div className="flex flex-wrap gap-3">
+										<Button type="button" size="sm" className="px-8 font-acumin" onClick={() => setIsEditingProfile(true)}>
+											変更する
+										</Button>
+										<Button type="button" variant="secondary" size="sm" className="px-8 font-acumin" onClick={handleProfileDelete}>
+											削除する
+										</Button>
+									</div>
+								</div>
+							) : null}
+
+							{!isLoadingProfile && (!hasSavedProfile || isEditingProfile) ? (
+								<form className="space-y-6 border border-black/10 p-6" onSubmit={handleProfileSave}>
+									<TextField label="メールアドレス" className="bg-[#f5f5f5]" type="email" name="email" value={profileForm.email} readOnly size="md" />
+									<TextField label="氏名" type="text" name="fullName" autoComplete="name" value={profileForm.fullName} onChange={handleProfileFieldChange} size="md" />
+									<TextField label="フリガナ" type="text" name="kanaName" value={profileForm.kanaName} onChange={handleProfileFieldChange} size="md" />
+									<TextField label="電話番号" type="tel" name="phone" autoComplete="tel" inputMode="numeric" value={profileForm.phone} onChange={handleProfileFieldChange} size="md" />
+									<div className="flex flex-wrap gap-3">
+										<Button type="submit" size="lg" className="font-acumin" disabled={isSavingProfile}>
+											{isSavingProfile ? '保存中...' : hasSavedProfile ? '変更を保存' : '保存する'}
+										</Button>
+										{hasSavedProfile ? (
+											<Button
+												type="button"
+												variant="secondary"
+												size="lg"
+												className="font-acumin"
+												onClick={() => {
+													setProfileForm(savedProfile);
+													setIsEditingProfile(false);
+													setProfileError(null);
+												}}
+											>
+												キャンセル
+											</Button>
+										) : null}
+									</div>
+								</form>
+							) : null}
 						</div>
-					</div>
+					) : null}
 
-					<div className="lg:col-span-3 min-w-0">
-						{activeTab === 'profile' ? (
-							<div className="space-y-6">
-								{isLoadingProfile ? <p className="text-sm text-[#474747]">読み込み中...</p> : null}
-								{profileMessage ? <p className="text-sm text-green-700">{profileMessage}</p> : null}
-								{profileError ? <p className="text-sm text-red-600">{profileError}</p> : null}
+					{activeTab === 'shipping' ? (
+						<div className="space-y-6">
+							{isLoadingProfile ? <p className="text-sm text-[#474747]">読み込み中...</p> : null}
+							{profileMessage ? <p className="text-sm text-green-700">{profileMessage}</p> : null}
+							{profileError ? <p className="text-sm text-red-600">{profileError}</p> : null}
 
-								{!isLoadingProfile && hasSavedProfile && !isEditingProfile ? (
-									<div className="border border-black/10 p-6 space-y-4">
-										<div>
-											<p className="text-xs text-[#474747] mb-1 tracking-wider">メールアドレス</p>
-											<p className="text-sm text-black break-all">{savedProfile.email || '-'}</p>
-										</div>
-										<div>
-											<p className="text-xs text-[#474747] mb-1 tracking-wider">氏名</p>
-											<p className="text-sm text-black">{savedProfile.fullName || '-'}</p>
-										</div>
-										<div>
-											<p className="text-xs text-[#474747] mb-1 tracking-wider">フリガナ</p>
-											<p className="text-sm text-black">{savedProfile.kanaName || '-'}</p>
-										</div>
-										<div>
-											<p className="text-xs text-[#474747] mb-1 tracking-wider">電話番号</p>
-											<p className="text-sm text-black">{savedProfile.phone || '-'}</p>
-										</div>
-										<div className="flex flex-wrap gap-3">
-											<Button type="button" size="sm" className="px-8 font-acumin" onClick={() => setIsEditingProfile(true)}>
-												変更する
+							{!isLoadingProfile && hasSavedShipping && !isEditingShipping ? (
+								<div className="border border-black/10 p-6 space-y-4">
+									<div>
+										<p className="text-xs text-[#474747] mb-1 tracking-wider">郵便番号</p>
+										<p className="text-sm text-black">{savedProfile.address.postalCode || '-'}</p>
+									</div>
+									<div>
+										<p className="text-xs text-[#474747] mb-1 tracking-wider">都道府県</p>
+										<p className="text-sm text-black">{savedProfile.address.prefecture || '-'}</p>
+									</div>
+									<div>
+										<p className="text-xs text-[#474747] mb-1 tracking-wider">市区町村</p>
+										<p className="text-sm text-black">{savedProfile.address.city || '-'}</p>
+									</div>
+									<div>
+										<p className="text-xs text-[#474747] mb-1 tracking-wider">番地</p>
+										<p className="text-sm text-black">{savedProfile.address.address || '-'}</p>
+									</div>
+									<div>
+										<p className="text-xs text-[#474747] mb-1 tracking-wider">建物名・部屋番号</p>
+										<p className="text-sm text-black">{savedProfile.address.building || '-'}</p>
+									</div>
+									<div className="flex flex-wrap gap-3">
+										<Button type="button" size="sm" className="px-8 font-acumin" onClick={() => setIsEditingShipping(true)}>
+											変更する
+										</Button>
+										<Button type="button" variant="secondary" size="sm" className="px-8 font-acumin" onClick={handleShippingDelete}>
+											削除する
+										</Button>
+									</div>
+								</div>
+							) : null}
+
+							{!isLoadingProfile && (!hasSavedShipping || isEditingShipping) ? (
+								<form className="space-y-6 border border-black/10 p-6" onSubmit={handleShippingSave}>
+									<TextField label="郵便番号" type="text" name="postalCode" autoComplete="postal-code" inputMode="numeric" value={profileForm.address.postalCode} onChange={handleAddressFieldChange} size="md" />
+									<TextField label="都道府県" type="text" name="prefecture" autoComplete="address-level1" value={profileForm.address.prefecture} onChange={handleAddressFieldChange} size="md" />
+									<TextField label="市区町村" type="text" name="city" autoComplete="address-level2" value={profileForm.address.city} onChange={handleAddressFieldChange} size="md" />
+									<TextField label="番地" type="text" name="address" autoComplete="street-address" value={profileForm.address.address} onChange={handleAddressFieldChange} size="md" />
+									<TextField label="建物名・部屋番号" type="text" name="building" value={profileForm.address.building} onChange={handleAddressFieldChange} size="md" />
+									<div className="flex flex-wrap gap-3">
+										<Button type="submit" size="lg" className="font-acumin" disabled={isSavingProfile}>
+											{isSavingProfile ? '保存中...' : hasSavedShipping ? '変更を保存' : '保存する'}
+										</Button>
+										{hasSavedShipping ? (
+											<Button
+												type="button"
+												variant="secondary"
+												size="lg"
+												className="font-acumin"
+												onClick={() => {
+													setProfileForm(savedProfile);
+													setIsEditingShipping(false);
+													setProfileError(null);
+												}}
+											>
+												キャンセル
 											</Button>
-											<Button type="button" variant="secondary" size="sm" className="px-8 font-acumin" onClick={handleProfileDelete}>
-												削除する
-											</Button>
+										) : null}
+									</div>
+								</form>
+							) : null}
+						</div>
+					) : null}
+
+					{activeTab === 'orders' ? (
+						<div className="space-y-6">
+							{isLoadingOrders ? <p className="text-sm text-[#474747]">注文履歴を読み込み中...</p> : null}
+							{ordersError ? <p className="text-sm text-red-600">{ordersError}</p> : null}
+							{!isLoadingOrders && !ordersError && orders.length === 0 ? (
+								<div className="border border-black/10 p-8">
+									<p className="text-base text-black mb-2">注文履歴はまだありません</p>
+									<p className="text-sm text-[#474747]">ご注文いただいた商品はこの画面に表示されます。</p>
+								</div>
+							) : null}
+
+							{orders.map((order) => (
+								<article key={order.id} className="border border-black/10 p-8 space-y-6">
+									<div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between pb-6 border-b border-black/10">
+										<div>
+											<p className="text-sm text-[#474747] mb-1">注文番号</p>
+											<p className="text-lg text-black">{order.orderNumber}</p>
+										</div>
+										<div className="sm:text-right">
+											<p className="text-sm text-[#474747] mb-1">注文日</p>
+											<p className="text-sm text-black">{order.orderDate}</p>
 										</div>
 									</div>
-								) : null}
 
-								{!isLoadingProfile && (!hasSavedProfile || isEditingProfile) ? (
-									<form className="space-y-6 border border-black/10 p-6" onSubmit={handleProfileSave}>
-										<TextField label="メールアドレス" className="bg-[#f5f5f5]" type="email" name="email" value={profileForm.email} readOnly size="md" />
-										<TextField label="氏名" type="text" name="fullName" autoComplete="name" value={profileForm.fullName} onChange={handleProfileFieldChange} size="md" />
-										<TextField label="フリガナ" type="text" name="kanaName" value={profileForm.kanaName} onChange={handleProfileFieldChange} size="md" />
-										<TextField label="電話番号" type="tel" name="phone" autoComplete="tel" inputMode="numeric" value={profileForm.phone} onChange={handleProfileFieldChange} size="md" />
-										<div className="flex flex-wrap gap-3">
-											<Button type="submit" size="lg" className="font-acumin" disabled={isSavingProfile}>
-												{isSavingProfile ? '保存中...' : hasSavedProfile ? '変更を保存' : '保存する'}
-											</Button>
-											{hasSavedProfile ? (
-												<Button
-													type="button"
-													variant="secondary"
-													size="lg"
-													className="font-acumin"
-													onClick={() => {
-														setProfileForm(savedProfile);
-														setIsEditingProfile(false);
-														setProfileError(null);
-													}}
-												>
-													キャンセル
-												</Button>
-											) : null}
-										</div>
-									</form>
-								) : null}
-							</div>
-						) : null}
-
-						{activeTab === 'shipping' ? (
-							<div className="space-y-6">
-								{isLoadingProfile ? <p className="text-sm text-[#474747]">読み込み中...</p> : null}
-								{profileMessage ? <p className="text-sm text-green-700">{profileMessage}</p> : null}
-								{profileError ? <p className="text-sm text-red-600">{profileError}</p> : null}
-
-								{!isLoadingProfile && hasSavedShipping && !isEditingShipping ? (
-									<div className="border border-black/10 p-6 space-y-4">
-										<div>
-											<p className="text-xs text-[#474747] mb-1 tracking-wider">郵便番号</p>
-											<p className="text-sm text-black">{savedProfile.address.postalCode || '-'}</p>
-										</div>
-										<div>
-											<p className="text-xs text-[#474747] mb-1 tracking-wider">都道府県</p>
-											<p className="text-sm text-black">{savedProfile.address.prefecture || '-'}</p>
-										</div>
-										<div>
-											<p className="text-xs text-[#474747] mb-1 tracking-wider">市区町村</p>
-											<p className="text-sm text-black">{savedProfile.address.city || '-'}</p>
-										</div>
-										<div>
-											<p className="text-xs text-[#474747] mb-1 tracking-wider">番地</p>
-											<p className="text-sm text-black">{savedProfile.address.address || '-'}</p>
-										</div>
-										<div>
-											<p className="text-xs text-[#474747] mb-1 tracking-wider">建物名・部屋番号</p>
-											<p className="text-sm text-black">{savedProfile.address.building || '-'}</p>
-										</div>
-										<div className="flex flex-wrap gap-3">
-											<Button type="button" size="sm" className="px-8 font-acumin" onClick={() => setIsEditingShipping(true)}>
-												変更する
-											</Button>
-											<Button type="button" variant="secondary" size="sm" className="px-8 font-acumin" onClick={handleShippingDelete}>
-												削除する
-											</Button>
-										</div>
+									<div className="space-y-4">
+										{order.items.map((item) => (
+											<div key={item.id} className="flex flex-col gap-1 border-b border-black/5 pb-4 last:border-b-0 last:pb-0">
+												<p className="text-sm text-black">{item.name}</p>
+												<p className="text-xs text-[#474747]">
+													数量: {item.quantity}
+													{item.color ? ` / カラー: ${item.color}` : ''}
+													{item.size ? ` / サイズ: ${item.size}` : ''}
+												</p>
+												<p className="text-sm text-black">{item.amount}</p>
+											</div>
+										))}
 									</div>
-								) : null}
 
-								{!isLoadingProfile && (!hasSavedShipping || isEditingShipping) ? (
-									<form className="space-y-6 border border-black/10 p-6" onSubmit={handleShippingSave}>
-										<TextField label="郵便番号" type="text" name="postalCode" autoComplete="postal-code" inputMode="numeric" value={profileForm.address.postalCode} onChange={handleAddressFieldChange} size="md" />
-										<TextField label="都道府県" type="text" name="prefecture" autoComplete="address-level1" value={profileForm.address.prefecture} onChange={handleAddressFieldChange} size="md" />
-										<TextField label="市区町村" type="text" name="city" autoComplete="address-level2" value={profileForm.address.city} onChange={handleAddressFieldChange} size="md" />
-										<TextField label="番地" type="text" name="address" autoComplete="street-address" value={profileForm.address.address} onChange={handleAddressFieldChange} size="md" />
-										<TextField label="建物名・部屋番号" type="text" name="building" value={profileForm.address.building} onChange={handleAddressFieldChange} size="md" />
-										<div className="flex flex-wrap gap-3">
-											<Button type="submit" size="lg" className="font-acumin" disabled={isSavingProfile}>
-												{isSavingProfile ? '保存中...' : hasSavedShipping ? '変更を保存' : '保存する'}
-											</Button>
-											{hasSavedShipping ? (
-												<Button
-													type="button"
-													variant="secondary"
-													size="lg"
-													className="font-acumin"
-													onClick={() => {
-														setProfileForm(savedProfile);
-														setIsEditingShipping(false);
-														setProfileError(null);
-													}}
-												>
-													キャンセル
-												</Button>
-											) : null}
+									<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pt-6 border-t border-black/10">
+										<div>
+											<span className="inline-flex items-center px-4 py-2 text-xs tracking-wider bg-[#f5f5f5] text-black">{order.status}</span>
+											<p className="mt-3 text-xs text-[#474747]">商品点数: {order.itemCount}点</p>
 										</div>
-									</form>
-								) : null}
-							</div>
-						) : null}
-
-						{activeTab === 'orders' ? (
-							<div className="space-y-6">
-								{isLoadingOrders ? <p className="text-sm text-[#474747]">注文履歴を読み込み中...</p> : null}
-								{ordersError ? <p className="text-sm text-red-600">{ordersError}</p> : null}
-								{!isLoadingOrders && !ordersError && orders.length === 0 ? (
-									<div className="border border-black/10 p-8">
-										<p className="text-base text-black mb-2">注文履歴はまだありません</p>
-										<p className="text-sm text-[#474747]">ご注文いただいた商品はこの画面に表示されます。</p>
-									</div>
-								) : null}
-
-								{orders.map((order) => (
-									<article key={order.id} className="border border-black/10 p-8 space-y-6">
-										<div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between pb-6 border-b border-black/10">
+										<div className="sm:text-right flex flex-col gap-3 sm:items-end">
 											<div>
-												<p className="text-sm text-[#474747] mb-1">注文番号</p>
-												<p className="text-lg text-black">{order.orderNumber}</p>
+												<p className="text-sm text-[#474747] mb-1">合計</p>
+												<p className="text-xl text-black font-display">{order.totalAmount}</p>
 											</div>
-											<div className="sm:text-right">
-												<p className="text-sm text-[#474747] mb-1">注文日</p>
-												<p className="text-sm text-black">{order.orderDate}</p>
-											</div>
+											<Link href={order.detailHref} className="text-sm text-black underline underline-offset-4">
+												注文詳細を見る
+											</Link>
 										</div>
-
-										<div className="space-y-4">
-											{order.items.map((item) => (
-												<div key={item.id} className="flex flex-col gap-1 border-b border-black/5 pb-4 last:border-b-0 last:pb-0">
-													<p className="text-sm text-black">{item.name}</p>
-													<p className="text-xs text-[#474747]">
-														数量: {item.quantity}
-														{item.color ? ` / カラー: ${item.color}` : ''}
-														{item.size ? ` / サイズ: ${item.size}` : ''}
-													</p>
-													<p className="text-sm text-black">{item.amount}</p>
-												</div>
-											))}
-										</div>
-
-										<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pt-6 border-t border-black/10">
-											<div>
-												<span className="inline-flex items-center px-4 py-2 text-xs tracking-wider bg-[#f5f5f5] text-black">{order.status}</span>
-												<p className="mt-3 text-xs text-[#474747]">商品点数: {order.itemCount}点</p>
-											</div>
-											<div className="sm:text-right flex flex-col gap-3 sm:items-end">
-												<div>
-													<p className="text-sm text-[#474747] mb-1">合計</p>
-													<p className="text-xl text-black font-display">{order.totalAmount}</p>
-												</div>
-												<Link href={order.detailHref} className="text-sm text-black underline underline-offset-4">
-													注文詳細を見る
-												</Link>
-											</div>
-										</div>
-									</article>
-								))}
-							</div>
-						) : null}
-					</div>
+									</div>
+								</article>
+							))}
+						</div>
+					) : null}
 				</div>
 			</div>
 		</div>
+	);
+}
+
+export default function AccountPage() {
+	return (
+		<React.Suspense
+			fallback={
+				<div className="pb-10 sm:pb-14 px-6 lg:px-12">
+					<div className="max-w-6xl mx-auto">
+						<p className="text-sm text-[#474747]">読み込み中...</p>
+					</div>
+				</div>
+			}
+		>
+			<AccountPageContent />
+		</React.Suspense>
 	);
 }

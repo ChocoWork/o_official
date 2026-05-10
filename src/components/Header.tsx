@@ -58,78 +58,75 @@ const Header = () => {
 
   return (
     <>
-    <header className={`fixed left-0 right-0 bg-white z-50 transition-transform duration-300 ease-in-out ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}`}>
-      <div className="header-space">
-        <div className="header-position">
-          {/* サイトタイトル */}
-          <Link href="/" aria-label="Le Fil des Heures home">
-            <span className="header-title font-display">
-              Le Fil des Heures
-            </span>
+    <header className={`fixed top-0 left-0 right-0 bg-white z-50 h-[52px] sm:h-[54px] md:h-[56px] xl:h-[60px] transition-transform duration-300 ease-in-out ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}`}>
+      <div className="header-position">
+        {/* サイトタイトル */}
+        <Link href="/" aria-label="Le Fil des Heures home">
+          <span className="header-title font-display">
+            Le Fil des Heures
+          </span>
+        </Link>
+        {/* ナビゲーション（大画面のみ） */}
+        <nav className="header-nav-position">
+          {menuItems.map((item) => (
+            <Link key={item.href} href={item.href} className="header-nav-title group">
+              {item.label}
+              <span
+                className={`underline-animation-left2right ${
+                  isActiveMenuItem(item.href) ? 'scale-x-100' : 'scale-x-0 group-hover:scale-x-100'
+                }`}
+              ></span>
+            </Link>
+          ))}
+          {canManage && (
+            <Link href="/admin" className="header-nav-title group">
+              MANAGE
+              <span
+                className={`underline-animation-left2right ${
+                  isActiveMenuItem('/admin') ? 'scale-x-100' : 'scale-x-0 group-hover:scale-x-100'
+                }`}
+              ></span>
+            </Link>
+          )}
+        </nav>
+        {/* 右側アイコン群 */}
+        <div className="header-nav-icon-position">
+          <Link href="/search" aria-label="Search" className="icon-flame">
+            <i className="ri-search-line icon"></i>
           </Link>
-          {/* ナビゲーション（大画面のみ） */}
-          <nav className="header-nav-position">
-            {menuItems.map((item) => (
-              <Link key={item.href} href={item.href} className="header-nav-title group">
-                {item.label}
-                <span
-                  className={`underline-animation-left2right ${
-                    isActiveMenuItem(item.href) ? 'scale-x-100' : 'scale-x-0 group-hover:scale-x-100'
-                  }`}
-                ></span>
+          <Link href="/wishlist" className="icon-flame">
+            <i className="ri-heart-line icon"></i>
+          </Link>
+          <Link href="/cart" className="icon-flame relative">
+            <i className="ri-shopping-bag-line icon"></i>
+            {cartCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 w-4 h-4 sm:-top-2 sm:-right-2 sm:w-5 sm:h-5 bg-black text-white rounded-full flex items-center justify-center text-[9px] sm:text-xs">
+                {cartCount}
+              </span>
+            )}
+          </Link>
+          <div className="relative">
+            {isLoggedIn ? (
+              <Link href="/account" className="icon-flame">
+                <i className="ri-user-fill icon"></i>
               </Link>
-            ))}
-            {canManage && (
-              <Link href="/admin" className="header-nav-title group">
-                MANAGE
-                <span
-                  className={`underline-animation-left2right ${
-                    isActiveMenuItem('/admin') ? 'scale-x-100' : 'scale-x-0 group-hover:scale-x-100'
-                  }`}
-                ></span>
+            ) : (
+              <Link href="/login" className="icon-flame">
+                <i className="ri-user-line icon"></i>
               </Link>
             )}
-          </nav>
-          {/* 右側アイコン群 */}
-          <div className="header-nav-icon-position">
-            <Link href="/search" aria-label="Search" className="icon-flame">
-              <i className="ri-search-line icon"></i>
-            </Link>
-            <Link href="/wishlist" className="icon-flame">
-              <i className="ri-heart-line icon"></i>
-            </Link>
-            <Link href="/cart" className="icon-flame relative">
-              <i className="ri-shopping-bag-line icon"></i>
-              {cartCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 w-4 h-4 sm:-top-2 sm:-right-2 sm:w-5 sm:h-5 bg-black text-white rounded-full flex items-center justify-center text-[9px] sm:text-xs">
-                  {cartCount}
-                </span>
-              )}
-            </Link>
-            <div className="relative">
-              {isLoggedIn ? (
-                <Link href="/account" className="icon-flame">
-                  <i className="ri-user-fill icon"></i>
-                </Link>
-              ) : (
-                <Link href="/login" className="icon-flame">
-                  <i className="ri-user-line icon"></i>
-                </Link>
-              )}
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="lg:hidden icon-frame p-0 hover:bg-transparent"
-              onClick={() => setDrawerOpen(true)}
-              aria-label="Open menu"
-            >
-              <i className="ri-menu-line icon"></i>
-            </Button>
           </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="lg:hidden icon-frame p-0 hover:bg-transparent"
+            onClick={() => setDrawerOpen(true)}
+            aria-label="Open menu"
+          >
+            <i className="ri-menu-line icon"></i>
+          </Button>
         </div>
       </div>
-
     </header>
 
       <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} size="md">

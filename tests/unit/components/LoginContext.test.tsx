@@ -227,12 +227,15 @@ describe('LoginContext', () => {
     await user.click(screen.getByText('logout'));
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenLastCalledWith('/api/auth/logout', {
-        method: 'POST',
-        headers: {
-          'x-csrf-token': 'test-csrf-token',
-        },
-      });
+      const logoutCall = (global.fetch as jest.Mock).mock.calls.find(
+        ([input]) => input === '/api/auth/logout'
+      );
+      expect(logoutCall).toBeDefined();
+
+      const [, options] = logoutCall as [string, RequestInit & { headers: Headers }];
+      expect(options.method).toBe('POST');
+      expect(options.credentials).toBe('same-origin');
+      expect((options.headers as Headers).get('x-csrf-token')).toBe('test-csrf-token');
     });
     expect(signOutMock).toHaveBeenCalled();
     await waitFor(() => expect(screen.getByText('logged:no')).toBeInTheDocument());

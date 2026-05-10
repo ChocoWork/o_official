@@ -42,7 +42,7 @@ export default async function LookDetailPage({ params }: Props) {
 
   if (currentIndex < 0) {
     return (
-      <div className="pb-10 sm:pb-14 px-6 lg:px-12">
+      <div>
         <div className="element-width text-center">
           <h1>Look not found</h1>
           <Link href="/look" className="text-sm text-[#474747] hover:text-black mt-4 inline-block">
@@ -64,7 +64,7 @@ export default async function LookDetailPage({ params }: Props) {
   });
 
     return (
-        <div className="pb-10 sm:pb-14 px-6 lg:px-12">
+        <div>
             <div className="element-width">
                 <div className="mb-6">
                     <Link href="/look" className="text-sm text-[#474747] hover:text-black inline-block" aria-label="Back to Lookbook">

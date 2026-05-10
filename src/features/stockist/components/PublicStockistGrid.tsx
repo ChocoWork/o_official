@@ -6,11 +6,6 @@ import {
 } from '@/features/stockist/services/public';
 import { PublicStockist } from '@/features/stockist/types';
 
-// Home variant: 3-col showcasing grid
-const DEFAULT_GRID_CLASS = 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8 lg:gap-12';
-// Catalog variant: 3-col grid for vertical cards (matches mobile stacked layout)
-const CATALOG_GRID_CLASS = 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4';
-
 type PublicStockistGridHomeProps = {
   variant: 'home';
   stockists?: PublicStockist[];
@@ -30,44 +25,46 @@ export async function PublicStockistGrid(props: PublicStockistGridProps) {
   const resolvedStockists =
     props.stockists ??
     (variant === 'home' ? await getHomePublicStockists() : await getPublicStockists());
-  const gridClassName = className ?? (variant === 'catalog' ? CATALOG_GRID_CLASS : DEFAULT_GRID_CLASS);
 
   // Home variant: hide items beyond index 3 on mobile, show all on tablet (md+)
   const mobileLimit = variant === 'home' ? 3 : undefined;
+  const gapClass = variant === 'catalog' ? 'stockist-grid-catalog' : 'stockist-grid-home';
+  const colsClass = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3';
 
   const renderGrid = () => (
-    <div className={gridClassName}>
+    <div className={`${gapClass} ${colsClass}${className ? ` ${className}` : ''}`}>
       {resolvedStockists.map((shop, index) => (
         // Vertical card: name, divider, detail rows
         // Responsive scale: mobile=compact / sm(tablet)=readable / xl(desktop)=luxurious
         <Card
           key={shop.id}
-          className={`border-black/10 p-5 sm:p-6 xl:p-7 hover:border-black transition-colors duration-300${typeof mobileLimit === 'number' && index >= mobileLimit ? ' hidden md:block' : ''}`}
+          className={`stockist-card${typeof mobileLimit === 'number' && index >= mobileLimit ? ' hidden md:block' : ''}`}
+          hoverable
           size="sm"
         >
           {/* Identity section */}
-          <div className="mb-3 sm:mb-4 xl:mb-5">
-            <h3 className="leading-snug">{shop.name}</h3>
+          <div className="stockist-card-identity">
+            <h3 className="stockist-card-title">{shop.name}</h3>
           </div>
           {/* Divider */}
-          <div className="border-t border-black/10 mb-3 sm:mb-4 xl:mb-5" />
+          <div className="stockist-card-divider" />
           {/* Detail rows */}
-          <div className="flex flex-col gap-1.5 sm:gap-2 xl:gap-2.5">
-            <div className="flex items-start gap-2">
-              <i className="ri-map-pin-line text-xs sm:text-sm text-black flex-shrink-0 mt-[3px]" />
-              <p className="text-xs sm:text-sm text-[#474747] leading-relaxed">{shop.address}</p>
+          <div className="stockist-card-details">
+            <div className="stockist-card-row">
+              <i className="ri-map-pin-line stockist-card-icon stockist-card-icon--pin" />
+              <p className="stockist-card-text">{shop.address}</p>
             </div>
-            <div className="flex items-center gap-2">
-              <i className="ri-phone-line text-xs sm:text-sm text-black flex-shrink-0" />
-              <p className="text-xs sm:text-sm text-[#474747]">{shop.phone}</p>
+            <div className="stockist-card-row stockist-card-row--compact">
+              <i className="ri-phone-line stockist-card-icon" />
+              <p className="stockist-card-text">{shop.phone}</p>
             </div>
-            <div className="flex items-center gap-2">
-              <i className="ri-time-line text-xs sm:text-sm text-black flex-shrink-0" />
-              <p className="text-xs sm:text-sm text-[#474747]">{shop.time}</p>
+            <div className="stockist-card-row stockist-card-row--compact">
+              <i className="ri-time-line stockist-card-icon" />
+              <p className="stockist-card-text">{shop.time}</p>
             </div>
-            <div className="flex items-center gap-2">
-              <i className="ri-calendar-line text-xs sm:text-sm text-black flex-shrink-0" />
-              <p className="text-xs sm:text-sm text-[#474747]">{shop.holiday}</p>
+            <div className="stockist-card-row stockist-card-row--compact">
+              <i className="ri-calendar-line stockist-card-icon" />
+              <p className="stockist-card-text">{shop.holiday}</p>
             </div>
           </div>
         </Card>

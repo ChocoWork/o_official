@@ -7,6 +7,10 @@ import { logAudit } from '@/lib/audit';
 
 const DEFAULT_REDIRECT_PATH = '/auth/verified';
 
+type UserRole = 'admin' | 'supporter' | 'user';
+
+const isUserRole = (role: unknown): role is UserRole => role === 'admin' || role === 'supporter' || role === 'user';
+
 const CallbackQuerySchema = z.object({
   code: z.string().min(1),
   next: z.string().optional(),
@@ -137,7 +141,12 @@ export async function GET(request: Request) {
       token_type: tokenParsed.data.token_type,
     };
 
-    const redirectPath = sanitizeRedirectPath(next, DEFAULT_REDIRECT_PATH);
+    const requestedRedirectPath = sanitizeRedirectPath(next, DEFAULT_REDIRECT_PATH);
+    const role = isUserRole(user.app_metadata?.role) ? user.app_metadata.role : 'user';
+    const isPrivileged = role === 'admin' || role === 'supporter';
+    const redirectPath = !isPrivileged && requestedRedirectPath === DEFAULT_REDIRECT_PATH
+      ? '/account'
+      : requestedRedirectPath;
 
     const res = NextResponse.redirect(new URL(redirectPath, origin), { status: 303 });
     res.headers.set('Cache-Control', 'no-store');

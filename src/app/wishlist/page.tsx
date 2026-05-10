@@ -3,13 +3,11 @@ import WishlistClient from './client';
 
 export default function Page() {
   return (
-    <div className="pb-10 sm:pb-14 px-6 lg:px-12">
-      <div className="element-width">
-        <div className="flex items-center justify-between mb-12">
-          <h1>Wishlist</h1>
-        </div>
-        <WishlistClient />
+    <div className="element-width">
+      <div className="flex items-center justify-between mb-12">
+        <h1>Wishlist</h1>
       </div>
+      <WishlistClient />
     </div>
   );
 }

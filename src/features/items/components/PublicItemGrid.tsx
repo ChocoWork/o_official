@@ -760,7 +760,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
   const hasHiddenItemsOnTablet = shouldLimitOnMobile && resolvedItems.length > resolvedMobileLimit;
 
   const renderGrid = () => (
-    <div className='grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-2 sm:gap-4 md:gap-6 lg:gap-8 w-full'>
+    <div className='grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-[8px] sm:gap-[10px] md:gap-[13px] lg:gap-[21px]'>
       {displayItems.map((item, index) => {
         const hideOnMobile = shouldLimitOnMobile && index >= resolvedMobileLimit!;
 
@@ -769,10 +769,10 @@ export function PublicItemGrid(props: PublicItemGridProps) {
             key={item.id}
             href={`/item/${item.id}`}
             data-testid="item-card-link"
-            className={hideOnMobile ? 'hidden lg:block' : undefined}
+            className={`${hideOnMobile ? 'hidden lg:block' : ''} mb-[8px] sm:mb-[10px] md:mb-[12px]`}
           >
             <div className="group cursor-pointer" data-testid="item-card">
-              <div className="aspect-[3/4] mb-2 overflow-hidden">
+              <div className="aspect-[3/4] bg-[#f5f5f5] mb-[2px] sm:mb-[6px] md:mb-[8px] overflow-hidden">
                 {item.image_url ? (
                   <Image
                     src={item.image_url}
@@ -784,16 +784,16 @@ export function PublicItemGrid(props: PublicItemGridProps) {
                     data-testid="item-image"
                   />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-gray-400">
+                  <div className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500">
                     No Image
                   </div>
                 )}
               </div>
-              <div className="space-y-1">
-                <h5 className="font-brand" data-testid="item-name">
+              <div>
+                <h3 className="font-brand text-[11px] sm:text-[12px] md:text-[13px] lg:text-[14px] tracking-tight" data-testid="item-name">
                   {item.name}
-                </h5>
-                <p data-testid="item-price">
+                </h3>
+                <p className="text-[10px] sm:text-[11px] md:text-[12px] lg:text-[13px]" data-testid="item-price">
                   ¥{item.price.toLocaleString('ja-JP')}
                 </p>
               </div>
@@ -807,7 +807,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
   if (variant === 'home') {
     if (isSelfFetch && error) {
       return (
-        <section id="items" className="px-6 lg:px-12 bg-white w-full pb-14 sm:pb-16 md:pb-20">
+        <section id="items" className="w-full pb-14 sm:pb-16 md:pb-20">
           <div className="element-width text-center py-10">
             <div className="text-xl text-red-500">{error}</div>
           </div>
@@ -829,7 +829,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
               {renderGrid()}
               {(hasHiddenItemsOnTablet || hasMoreHomeItems) && (
                 <div className="text-center mt-6 md:mt-8 lg:mt-12">
-                  <Button href="/item" variant="secondary" size="md" className="font-acumin">
+                  <Button href="/item" variant="secondary" size="xs">
                     VIEW ALL ITEMS
                   </Button>
                 </div>
@@ -843,8 +843,8 @@ export function PublicItemGrid(props: PublicItemGridProps) {
 
   return (
     <>
-      <div className="mb-4 sm:mb-6 md:mb-8">
-        <div className="flex items-center justify-between pt-3">
+      <div className="mb-2 sm:mb-4 md:mb-6">
+        <div className="flex items-center justify-between">
           <button
             type="button"
             onClick={() => setIsFilterDrawerOpen(true)}

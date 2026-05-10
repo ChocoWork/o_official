@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { Suspense } from 'react';
 import { SearchPageClient } from '@/features/search/components/SearchPageClient';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -17,5 +18,9 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default function SearchPage() {
-  return <SearchPageClient />;
+  return (
+    <Suspense fallback={<p className="text-sm text-[#474747]">読み込み中...</p>}>
+      <SearchPageClient />
+    </Suspense>
+  );
 }

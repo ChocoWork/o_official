@@ -76,6 +76,20 @@ export async function POST(request: Request) {
 
       // Persist hashed refresh & csrf token into sessions table using service role client
       const service = await (await import('@/lib/supabase/server')).createServiceRoleClient();
+      const { resetPrivilegedMfaVerification } = await import('@/features/auth/services/mfa-metadata');
+
+      const resetResult = await resetPrivilegedMfaVerification(service, data.user ?? null);
+      if (!resetResult.ok) {
+        await logAudit({
+          action: 'login',
+          actor_email: email,
+          outcome: 'error',
+          detail: `failed_to_reset_privileged_mfa:${resetResult.error}`,
+          resource_id: data.user?.id,
+        });
+        return NextResponse.json({ error: 'ログイン処理に失敗しました。' }, { status: 500 });
+      }
+
       const refreshToken = session.refresh_token ?? '';
       const refreshHash = await tokenHashSha256(refreshToken);
       const csrfHash = await tokenHashSha256(csrfToken);

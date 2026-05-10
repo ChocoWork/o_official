@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, ReactNode } from "react";
 import { supabase } from '@/lib/supabase/client';
 import { navigateBrowser } from '@/lib/browser-location';
+import { clientFetch } from '@/lib/client-fetch';
 
 type UserRole = 'admin' | 'supporter' | 'user';
 
@@ -48,17 +49,6 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
   const [userRole, setUserRole] = useState<UserRole>('user');
   const [isMfaVerified, setIsMfaVerified] = useState(false);
   const [isAuthResolved, setIsAuthResolved] = useState(false);
-
-  const getCsrfTokenFromCookie = () => {
-    if (typeof document === 'undefined') return undefined;
-
-    const targetCookie = document.cookie
-      .split('; ')
-      .find((cookie) => cookie.startsWith('sb-csrf-token='));
-
-    if (!targetCookie) return undefined;
-    return decodeURIComponent(targetCookie.split('=').slice(1).join('='));
-  };
 
   const applyAuthState = React.useCallback((authenticated: boolean, role?: unknown, mfaVerified?: boolean) => {
     const resolvedRole = authenticated && isUserRole(role) ? role : 'user';
@@ -173,14 +163,8 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
 
   const logout = async () => {
     try {
-      const csrfToken = getCsrfTokenFromCookie();
-      await fetch('/api/auth/logout', {
+      await clientFetch('/api/auth/logout', {
         method: 'POST',
-        headers: csrfToken
-          ? {
-              'x-csrf-token': csrfToken,
-            }
-          : undefined,
       });
       await supabase.auth.signOut();
       return { success: true };

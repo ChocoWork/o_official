@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { Suspense, useRef, useState } from "react";
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -163,17 +163,6 @@ type CheckoutPaymentMethod =
   | 'stripe_paypay'
   | 'stripe_konbini';
 
-// Reads the non-HttpOnly CSRF cookie set at login. Returns undefined for guests
-// who have no active auth session (cookie won't exist).
-function getCsrfTokenFromCookie(): string | undefined {
-  if (typeof document === 'undefined') return undefined;
-  const match = document.cookie
-    .split('; ')
-    .find((c) => c.startsWith('sb-csrf-token='));
-  if (!match) return undefined;
-  return decodeURIComponent(match.split('=').slice(1).join('='));
-}
-
 type CheckoutProfileResponse = {
   email?: string;
   fullName?: string;
@@ -188,7 +177,7 @@ type CheckoutProfileResponse = {
 };
 
 
-export default function CheckoutPage() {
+function CheckoutPageContent() {
   // cart data for order summary (mirrors cart/page.tsx)
   interface CartItem {
     id: string;
@@ -265,6 +254,16 @@ export default function CheckoutPage() {
     phone: '',
     saveProfile: false,
   });
+  const {
+    email,
+    fullName,
+    postalCode,
+    prefecture,
+    city,
+    address,
+    building,
+    phone,
+  } = shippingForm;
 
   // フィールドごとのバリデーションエラー (FR-CHECKOUT-004)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -338,26 +337,31 @@ export default function CheckoutPage() {
     setCustomSessionLoading(true);
 
     try {
-      const csrfToken = getCsrfTokenFromCookie();
-      const response = await fetch('/api/checkout/create-session', {
+      const displayedAmounts = {
+        subtotalAmount: subtotal,
+        shippingAmount: shipping,
+        taxAmount: tax,
+        totalAmount: total,
+      };
+
+      const response = await clientFetch('/api/checkout/create-session', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
         },
         body: JSON.stringify({
           uiMode: 'custom',
           paymentMethod,
-          displayedAmounts: checkoutAmounts,
+          displayedAmounts,
           shipping: {
-            email: shippingForm.email,
-            fullName: shippingForm.fullName,
-            postalCode: shippingForm.postalCode,
-            prefecture: shippingForm.prefecture,
-            city: shippingForm.city,
-            address: shippingForm.address,
-            building: shippingForm.building,
-            phone: shippingForm.phone,
+            email,
+            fullName,
+            postalCode,
+            prefecture,
+            city,
+            address,
+            building,
+            phone,
           },
         }),
       });
@@ -384,7 +388,7 @@ export default function CheckoutPage() {
     } finally {
       setCustomSessionLoading(false);
     }
-  }, [paymentMethod, shippingForm, checkoutAmounts]);
+  }, [paymentMethod, subtotal, shipping, tax, total, email, fullName, postalCode, prefecture, city, address, building, phone]);
 
 
 
@@ -633,10 +637,8 @@ export default function CheckoutPage() {
 
   if (cartLoading) {
     return (
-      <div className="pb-10 sm:pb-14 px-6 lg:px-12">
-        <div className="element-width text-center">
-          <div className="text-base tracking-widest">読み込み中...</div>
-        </div>
+      <div className="element-width text-center">
+        <div className="text-base tracking-widest">読み込み中...</div>
       </div>
     );
   }
@@ -1043,5 +1045,21 @@ export default function CheckoutPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function CheckoutPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="pb-10 sm:pb-14 px-6 lg:px-12">
+          <div className="max-w-6xl mx-auto">
+            <p className="text-sm text-[#474747]">読み込み中...</p>
+          </div>
+        </div>
+      }
+    >
+      <CheckoutPageContent />
+    </Suspense>
   );
 }

@@ -50,7 +50,7 @@ export default async function Home() {
             <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/60" />
           </div>
           <div className="relative z-10 text-center px-6 max-w-4xl mx-auto">
-            <h1 className="text-white " style={{ fontFamily: 'Didot, serif' }}>
+            <h1 className="text-[22px] sm:text-[26px] md:text-[28px] lg:text-[32px] xl:text-[34px] mb-[13px] sm:mb-[16px] md:mb-[21px] tracking-tight text-white" style={{ fontFamily: 'Didot, serif' }}>
               Le Fil des Heures
             </h1>
           </div>
@@ -70,7 +70,7 @@ export default async function Home() {
         {/* ABOUT セクション */}
         <section id="about" className="section-space-about">
           <div className="element-width">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 lg:gap-20 items-center">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-[21px] sm:gap-[26px] md:gap-[34px] lg:gap-[55px] items-center">
               <div className="order-2 md:order-1">
                 <SectionTitle title="ABOUT" />
                 <div className="about-main-space">
@@ -79,13 +79,13 @@ export default async function Home() {
                   <p className="about-main-text">ミニマルでありながら、着る人の個性を引き立てる。そんな服作りを目指し、一着一着丁寧に仕上げています。</p>
                   <p className="about-main-text">移り変わる時の流れの中で、変わらない価値を持つ服を、永く使用していただく。それが願いです。</p>
                 </div>
-                <div className="mt-8 lg:mt-12 grid grid-cols-2 gap-4">
+                <div className="mt-[21px] sm:mt-[26px] md:mt-[34px] grid grid-cols-2 gap-[13px] sm:gap-[16px] md:gap-[21px]">
                   <div>
-                    <p className="about-secondary-title">PHILOSOPHY</p>
+                    <h3 className="about-secondary-title font-brand">PHILOSOPHY</h3>
                     <p className="about-secondary-text">Timeless Design</p>
                   </div>
                   <div>
-                    <p className="about-secondary-title">ESTABLISHED</p>
+                    <h3 className="about-secondary-title font-brand">ESTABLISHED</h3>
                     <p className="about-secondary-text">2026, Miyagi in Japan</p>
                   </div>
                 </div>

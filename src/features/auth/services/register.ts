@@ -11,6 +11,7 @@ type PersistSession = {
 type PersistUser = {
   id?: string | null;
   email?: string | null;
+  app_metadata?: unknown;
 };
 
 export async function persistSessionAndCookies(res: NextResponse, session: PersistSession, user: PersistUser) {
@@ -38,8 +39,24 @@ export async function persistSessionAndCookies(res: NextResponse, session: Persi
     const { generateCsrfToken } = await import('@/lib/csrf');
     const { tokenHashSha256 } = await import('@/lib/hash');
     const { createServiceRoleClient } = await import('@/lib/supabase/server');
+    const { resetPrivilegedMfaVerification } = await import('@/features/auth/services/mfa-metadata');
 
     const service = await createServiceRoleClient();
+
+    // Privileged users must re-complete MFA after each new sign-in session.
+    const resetResult = await resetPrivilegedMfaVerification(service, user);
+    if (!resetResult.ok) {
+      console.error('persistSessionAndCookies: failed to reset privileged MFA metadata', resetResult.error, context);
+      await logAudit({
+        action: 'auth.session.persist',
+        outcome: 'error',
+        detail: `failed_to_reset_privileged_mfa:${resetResult.error}`,
+        actor_id: context.actor_id,
+        actor_email: context.actor_email,
+      });
+      return { ok: false, error: 'Failed to reset privileged MFA verification state' };
+    }
+
     const REFRESH_TOKEN_MAX_AGE = 7 * 24 * 60 * 60; // 7 days
     const SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
 

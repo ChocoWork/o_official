@@ -97,7 +97,7 @@ export async function PublicLookGrid(props: PublicLookGridProps) {
         {renderGrid()}
         {variant === 'home' && hasMoreLooks && (
           <div className="text-center mt-6 md:mt-8 lg:mt-12">
-            <Button href="/look" variant="secondary" size="md">
+            <Button href="/look" variant="secondary" size="xs">
               VIEW LOOKBOOK
             </Button>
           </div>

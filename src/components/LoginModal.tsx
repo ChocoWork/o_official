@@ -20,6 +20,15 @@ interface LoginModalProps {
   onClose?: () => void;
 }
 
+type AuthMeResponse = {
+  authenticated?: boolean;
+  user?: {
+    role?: unknown;
+  };
+};
+
+const isPrivilegedRole = (role: unknown): boolean => role === 'admin' || role === 'supporter';
+
 const OTP_LENGTH = 8;
 const EMPTY_OTP_DIGITS = Array.from({ length: OTP_LENGTH }, () => '');
 
@@ -44,6 +53,26 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
   const [timeRemaining, setTimeRemaining] = useState(0);
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '';
   const otpCode = otpDigits.join('');
+
+  const resolvePostLoginPath = React.useCallback(async (): Promise<string> => {
+    try {
+      const response = await fetch('/api/auth/me', {
+        method: 'GET',
+        cache: 'no-store',
+        credentials: 'same-origin',
+      });
+
+      const body = (await response.json().catch(() => null)) as AuthMeResponse | null;
+      const authenticated = response.ok && body?.authenticated === true;
+      if (!authenticated) {
+        return '/login';
+      }
+
+      return isPrivilegedRole(body?.user?.role) ? '/auth/verified' : '/account';
+    } catch {
+      return '/account';
+    }
+  }, []);
 
   const focusOtpInput = (index: number) => {
     const input = otpInputRefs.current[index];
@@ -198,7 +227,8 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
       }
       setSuccess(res.message || '認証に成功しました。');
       onClose?.();
-      router.replace('/');
+      const nextPath = await resolvePostLoginPath();
+      router.replace(nextPath);
     } catch (err) {
       console.error('Unexpected OTP verify error', err);
       setError('認証コードの確認に失敗しました');
@@ -248,7 +278,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
       <Button
         type="button"
         onClick={() => {
-          void loginWithGoogle({ next: '/' });
+          void loginWithGoogle({ next: '/auth/verified' });
         }}
         variant="secondary"
         size="lg"

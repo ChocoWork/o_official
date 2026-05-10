@@ -285,10 +285,41 @@ export default function CartPage() {
 
   if (loading) {
     return (
-      <div className="pb-10 sm:pb-14 px-6 lg:px-12">
-        <div className="element-width text-center">
-          <div className="text-base tracking-widest">読み込み中...</div>
+      <div className="relative aspect-video bg-white flex items-center justify-center overflow-hidden border border-black/10">
+        <div className="absolute inset-0 flex flex-col">
+          <div
+            className="flex-1 bg-black animate-[barReveal_2s_ease-in-out_infinite_alternate]"
+            style={{ animationDelay: '0ms' }}
+          />
+          <div
+            className="flex-1 bg-black animate-[barReveal_2s_ease-in-out_infinite_alternate]"
+            style={{ animationDelay: '200ms' }}
+          />
+          <div
+            className="flex-1 bg-black animate-[barReveal_2s_ease-in-out_infinite_alternate]"
+            style={{ animationDelay: '400ms' }}
+          />
+          <div
+            className="flex-1 bg-black animate-[barReveal_2s_ease-in-out_infinite_alternate]"
+            style={{ animationDelay: '600ms' }}
+          />
+          <div
+            className="flex-1 bg-black animate-[barReveal_2s_ease-in-out_infinite_alternate]"
+            style={{ animationDelay: '800ms' }}
+          />
         </div>
+        <span
+          className="relative text-sm tracking-widest text-white mix-blend-difference"
+          style={{ fontFamily: 'Didot, serif' }}
+        >
+          Loading
+        </span>
+        <p
+          className="absolute bottom-6 left-6 text-xs tracking-widest text-black/40 mix-blend-difference"
+          style={{ fontFamily: 'acumin-pro, sans-serif' }}
+        >
+          BARS REVEAL
+        </p>
       </div>
     );
   }
@@ -298,219 +329,217 @@ export default function CartPage() {
   }
 
   return (
-    <div className="pb-10 sm:pb-14 px-6 lg:px-12">
-      <div className="element-width">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-          <div className="lg:col-span-2 space-y-6">
-            {error && (
-              <div className="text-sm text-red-500 p-4 border border-red-300 bg-red-50">
-                {error}
-              </div>
-            )}
+    <div className="element-width">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+        <div className="lg:col-span-2 space-y-6">
+          {error && (
+            <div className="text-sm text-red-500 p-4 border border-red-300 bg-red-50">
+              {error}
+            </div>
+          )}
 
-            {hasSyncError && (
-              <div className="text-sm text-amber-700 p-4 border border-amber-300 bg-amber-50 flex items-center justify-between gap-4">
-                <span>数量の更新に失敗した商品があります。再試行または再同期してください。</span>
-                <Button
-                  onClick={handleResyncFromServer}
-                  disabled={resyncing}
-                  variant="secondary"
-                  size="sm"
+          {hasSyncError && (
+            <div className="text-sm text-amber-700 p-4 border border-amber-300 bg-amber-50 flex items-center justify-between gap-4">
+              <span>数量の更新に失敗した商品があります。再試行または再同期してください。</span>
+              <Button
+                onClick={handleResyncFromServer}
+                disabled={resyncing}
+                variant="secondary"
+                size="sm"
+              >
+                {resyncing ? '再同期中...' : '最新状態を再取得'}
+              </Button>
+            </div>
+          )}
+
+          {cartItems.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-sm text-[#474747] mb-4">
+                カートは空です
+              </p>
+              <Link href="/item" className="text-sm text-black hover:text-[#474747] transition-colors">
+                買い物を続ける
+              </Link>
+            </div>
+          ) : (
+            <>
+              {cartItems.map((item) => {
+            if (!item.items) {
+              // this should not happen because we filter on fetch, but defensive
+              return null;
+            }
+            return (
+                <div
+                  key={item.id}
+                  className="flex gap-6 border-b border-black/10 pb-6 relative group"
                 >
-                  {resyncing ? '再同期中...' : '最新状態を再取得'}
-                </Button>
-              </div>
-            )}
+                  <Link
+                    href={`/item/${item.id}`}
+                    className="w-32 h-40 bg-[#f5f5f5] flex-shrink-0 overflow-hidden relative"
+                  >
+                    <Image
+                      alt={item.items.name}
+                      className="w-full h-full object-cover object-top hover:scale-105 transition-transform duration-500"
+                      src={item.items.image_url}
+                      fill
+                      sizes="128px"
+                    />
+                  </Link>
+                  <div className="flex-1">
+                    <div className="flex justify-between items-start mb-2">
+                      <Link href={`/item/${item.items.id}`}>
+                        <p className="text-lg text-black hover:text-[#474747] transition-colors cursor-pointer">
+                          {item.items.name}
+                        </p>
+                      </Link>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          onClick={() => handleToggleWishlist(item.item_id)}
+                          disabled={togglingWishlist === item.item_id.toString()}
+                          variant="ghost"
+                          size="sm"
+                          className="w-8 h-8 flex items-center justify-center text-[#474747] hover:text-black hover:bg-transparent transition-colors cursor-pointer disabled:opacity-30 px-0 py-0"
+                        >
+                          <i className={`text-xl ${wishlistedItems.has(item.item_id) ? "ri-heart-fill text-red-500" : "ri-heart-line"}`} />
+                        </Button>
+                        <Button
+                          onClick={() => handleRemove(item.id)}
+                          disabled={updatingId === item.id}
+                          variant="ghost"
+                          size="sm"
+                          className="w-8 h-8 flex items-center justify-center text-[#474747] hover:text-black transition-colors cursor-pointer disabled:opacity-30 px-0 py-0"
+                        >
+                          <i className="ri-close-line text-xl"></i>
+                        </Button>
+                      </div>
+                    </div>
+                    {item.color && (
+                      <p className="text-sm text-[#474747] mb-1">
+                        カラー: {item.color}
+                      </p>
+                    )}
+                    {item.size && (
+                      <p className="text-sm text-[#474747] mb-4">
+                        サイズ: {item.size}
+                      </p>
+                    )}
+                    <div className="flex items-center justify-between">
+                      <p className="text-lg text-black">
+                        ¥{item.items.price.toLocaleString('ja-JP')}
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <Stepper
+                          value={item.quantity}
+                          min={1}
+                          onChange={(value) => handleQuantityChange(item.id, value)}
+                          size="sm"/>
+                      </div>
+                    </div>
+                    {syncErrorByItem[item.id] && (
+                      <div className="mt-3 text-xs text-red-600 flex items-center justify-between gap-3">
+                        <span>{syncErrorByItem[item.id]}</span>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            onClick={() => handleRetryUpdate(item.id)}
+                            variant="secondary"
+                            size="sm"
+                          >
+                            再試行
+                          </Button>
+                          <Button
+                            onClick={handleResyncFromServer}
+                            disabled={resyncing}
+                            variant="ghost"
+                            size="sm"
+                          >
+                            最新状態を再取得
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+          })}
 
-            {cartItems.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-sm text-[#474747] mb-4">
-                  カートは空です
-                </p>
-                <Link href="/item" className="text-sm text-black hover:text-[#474747] transition-colors">
-                  買い物を続ける
+              <div className="pt-6">
+                <Link
+                  href="/item"
+                  className="inline-flex items-center gap-2 text-sm text-black hover:text-[#474747] transition-colors cursor-pointer"
+                >
+                  <i className="ri-arrow-left-line"></i>買い物を続ける
                 </Link>
               </div>
-            ) : (
-              <>
-                {cartItems.map((item) => {
-              if (!item.items) {
-                // this should not happen because we filter on fetch, but defensive
-                return null;
-              }
-              return (
-                  <div
-                    key={item.id}
-                    className="flex gap-6 border-b border-black/10 pb-6 relative group"
-                  >
-                    <Link
-                      href={`/item/${item.id}`}
-                      className="w-32 h-40 bg-[#f5f5f5] flex-shrink-0 overflow-hidden relative"
-                    >
-                      <Image
-                        alt={item.items.name}
-                        className="w-full h-full object-cover object-top hover:scale-105 transition-transform duration-500"
-                        src={item.items.image_url}
-                        fill
-                        sizes="128px"
-                      />
-                    </Link>
-                    <div className="flex-1">
-                      <div className="flex justify-between items-start mb-2">
-                        <Link href={`/item/${item.items.id}`}>
-                          <p className="text-lg text-black hover:text-[#474747] transition-colors cursor-pointer">
-                            {item.items.name}
-                          </p>
-                        </Link>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            onClick={() => handleToggleWishlist(item.item_id)}
-                            disabled={togglingWishlist === item.item_id.toString()}
-                            variant="ghost"
-                            size="sm"
-                            className="w-8 h-8 flex items-center justify-center text-[#474747] hover:text-black hover:bg-transparent transition-colors cursor-pointer disabled:opacity-30 px-0 py-0"
-                          >
-                            <i className={`text-xl ${wishlistedItems.has(item.item_id) ? "ri-heart-fill text-red-500" : "ri-heart-line"}`} />
-                          </Button>
-                          <Button
-                            onClick={() => handleRemove(item.id)}
-                            disabled={updatingId === item.id}
-                            variant="ghost"
-                            size="sm"
-                            className="w-8 h-8 flex items-center justify-center text-[#474747] hover:text-black transition-colors cursor-pointer disabled:opacity-30 px-0 py-0"
-                          >
-                            <i className="ri-close-line text-xl"></i>
-                          </Button>
-                        </div>
-                      </div>
-                      {item.color && (
-                        <p className="text-sm text-[#474747] mb-1">
-                          カラー: {item.color}
-                        </p>
-                      )}
-                      {item.size && (
-                        <p className="text-sm text-[#474747] mb-4">
-                          サイズ: {item.size}
-                        </p>
-                      )}
-                      <div className="flex items-center justify-between">
-                        <p className="text-lg text-black">
-                          ¥{item.items.price.toLocaleString('ja-JP')}
-                        </p>
-                        <div className="flex items-center gap-2">
-                          <Stepper
-                            value={item.quantity}
-                            min={1}
-                            onChange={(value) => handleQuantityChange(item.id, value)}
-                           size="sm"/>
-                        </div>
-                      </div>
-                      {syncErrorByItem[item.id] && (
-                        <div className="mt-3 text-xs text-red-600 flex items-center justify-between gap-3">
-                          <span>{syncErrorByItem[item.id]}</span>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              onClick={() => handleRetryUpdate(item.id)}
-                              variant="secondary"
-                              size="sm"
-                            >
-                              再試行
-                            </Button>
-                            <Button
-                              onClick={handleResyncFromServer}
-                              disabled={resyncing}
-                              variant="ghost"
-                              size="sm"
-                            >
-                              最新状態を再取得
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-            })}
+            </>
+          )}
+        </div>
 
-                <div className="pt-6">
-                  <Link
-                    href="/item"
-                    className="inline-flex items-center gap-2 text-sm text-black hover:text-[#474747] transition-colors cursor-pointer"
-                  >
-                    <i className="ri-arrow-left-line"></i>買い物を続ける
-                  </Link>
-                </div>
-              </>
-            )}
-          </div>
-
-          <div className="lg:col-span-1">
-            <div className="border border-black/10 p-8 sticky top-32">
-              <h2 className="text-2xl text-black mb-8 tracking-tight font-display">
-                Order Summary
-              </h2>
-              <div className="mb-6">
-                <label className="block text-xs text-[#474747] mb-2 tracking-wider">
-                  プロモーションコード
-                </label>
-                <div className="flex gap-2">
-                  <TextField
-                    placeholder="コードを入力"
-                    className="flex-1 px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors"
-                    type="text"
-                   size="md"/>
-                  <Button size="md">適用</Button>
-                </div>
-                <p className="text-xs text-[#474747] mt-2">
-                  お試し: WELCOME10 または SAVE20
-                </p>
+        <div className="lg:col-span-1">
+          <div className="border border-black/10 p-8 sticky top-32">
+            <h2 className="text-2xl text-black mb-8 tracking-tight font-display">
+              Order Summary
+            </h2>
+            <div className="mb-6">
+              <label className="block text-xs text-[#474747] mb-2 tracking-wider">
+                プロモーションコード
+              </label>
+              <div className="flex gap-2">
+                <TextField
+                  placeholder="コードを入力"
+                  className="flex-1 px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors"
+                  type="text"
+                  size="md"/>
+                <Button size="md">適用</Button>
               </div>
+              <p className="text-xs text-[#474747] mt-2">
+                お試し: WELCOME10 または SAVE20
+              </p>
+            </div>
 
-              <div className="space-y-4 mb-8 pb-8 border-b border-black/10">
-                <div className="flex justify-between">
-                  <span className="text-sm text-[#474747]">小計</span>
-                  <span className="text-sm text-black">
-                    ¥{subtotal.toLocaleString('ja-JP')}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-[#474747]">配送料</span>
-                  <span className="text-sm text-black">無料</span>
-                </div>
-              </div>
-
-              <div className="flex justify-between mb-8">
-                <span className="text-lg text-black">合計</span>
-                <span className="text-2xl text-black font-display">
-                  ¥{total.toLocaleString('ja-JP')}
+            <div className="space-y-4 mb-8 pb-8 border-b border-black/10">
+              <div className="flex justify-between">
+                <span className="text-sm text-[#474747]">小計</span>
+                <span className="text-sm text-black">
+                  ¥{subtotal.toLocaleString('ja-JP')}
                 </span>
               </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-[#474747]">配送料</span>
+                <span className="text-sm text-black">無料</span>
+              </div>
+            </div>
 
-              <Button href="/checkout" variant="primary" size="lg" className="w-full mb-4">
-                購入手続きへ進む
-              </Button>
+            <div className="flex justify-between mb-8">
+              <span className="text-lg text-black">合計</span>
+              <span className="text-2xl text-black font-display">
+                ¥{total.toLocaleString('ja-JP')}
+              </span>
+            </div>
 
-              <div className="space-y-3 pt-6 border-t border-black/10">
-                <div className="flex items-center gap-3">
-                  <div className="w-5 h-5 flex items-center justify-center">
-                    <i className="ri-shield-check-line text-lg text-black"></i>
-                  </div>
-                  <p className="text-xs text-[#474747]">安全な決済</p>
+            <Button href="/checkout" variant="primary" size="lg" className="w-full mb-4">
+              購入手続きへ進む
+            </Button>
+
+            <div className="space-y-3 pt-6 border-t border-black/10">
+              <div className="flex items-center gap-3">
+                <div className="w-5 h-5 flex items-center justify-center">
+                  <i className="ri-shield-check-line text-lg text-black"></i>
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className="w-5 h-5 flex items-center justify-center">
-                    <i className="ri-truck-line text-lg text-black"></i>
-                  </div>
-                  <p className="text-xs text-[#474747]">
-                    2-5営業日でお届け
-                  </p>
+                <p className="text-xs text-[#474747]">安全な決済</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-5 h-5 flex items-center justify-center">
+                  <i className="ri-truck-line text-lg text-black"></i>
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className="w-5 h-5 flex items-center justify-center">
-                    <i className="ri-arrow-go-back-line text-lg text-black"></i>
-                  </div>
-                  <p className="text-xs text-[#474747]">30日間返品可能</p>
+                <p className="text-xs text-[#474747]">
+                  2-5営業日でお届け
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-5 h-5 flex items-center justify-center">
+                  <i className="ri-arrow-go-back-line text-lg text-black"></i>
                 </div>
+                <p className="text-xs text-[#474747]">30日間返品可能</p>
               </div>
             </div>
           </div>

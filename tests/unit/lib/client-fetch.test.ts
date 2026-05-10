@@ -57,4 +57,22 @@ describe('clientFetch', () => {
     const headers = options.headers as Headers;
     expect(headers.get('x-csrf-token')).toBeNull();
   });
+
+  test('パーセントエンコード済みの既存 CSRF Cookie をそのまま transport できる', async () => {
+    cookieGetterSpy = jest
+      .spyOn(document, 'cookie', 'get')
+      .mockReturnValue('foo=bar; sb-csrf-token=%01legacy-csrf-token');
+
+    await clientFetch('/api/profile', {
+      method: 'POST',
+    });
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const [, options] = (global.fetch as jest.Mock).mock.calls[0] as [
+      string,
+      RequestInit & { headers: Headers }
+    ];
+    const headers = options.headers as Headers;
+    expect(headers.get('x-csrf-token')).toBe('%01legacy-csrf-token');
+  });
 });

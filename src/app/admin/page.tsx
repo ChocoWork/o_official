@@ -1,7 +1,7 @@
 // ----------------- 管理ダッシュボード -----------------
 'use client';
 
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { Suspense, useMemo, useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import AdminTabs, { type TabType } from '@/components/AdminTabs';
 import { useLogin } from '@/contexts/LoginContext';
@@ -29,6 +29,10 @@ const ORDER_STATUS_FILTERS = [
 
 type OrderStatusFilterValue = (typeof ORDER_STATUS_FILTERS)[number]['value'];
 
+type ForbiddenErrorBody = {
+  reason?: string;
+};
+
 const ORDER_CSV_HEADERS = ['注文ID', '顧客名', '顧客メール', '注文日', '購入商品', '商品数', '合計金額', '決済状況'] as const;
 
 function formatOrderItems(items: OrderItem['items']): string {
@@ -40,7 +44,7 @@ function escapeCsvValue(value: string): string {
   return `"${escapedValue}"`;
 }
 
-export default function AdminPage() {
+function AdminPageContent() {
   const { isLoggedIn, isAuthResolved, userRole, isMfaVerified } = useLogin();
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabType>('KPI');
@@ -92,6 +96,19 @@ export default function AdminPage() {
         }
 
         if (response.status === 403) {
+          let forbiddenReason: string | undefined;
+
+          try {
+            const body = (await response.clone().json()) as ForbiddenErrorBody;
+            forbiddenReason = typeof body.reason === 'string' ? body.reason : undefined;
+          } catch {
+            forbiddenReason = undefined;
+          }
+
+          if (forbiddenReason === 'MFA required') {
+            throw new Error('KPIを表示するには2要素認証が必要です。再ログイン後に2FA認証を完了してください。');
+          }
+
           throw new Error('KPIを表示する権限がありません。');
         }
 
@@ -202,7 +219,7 @@ export default function AdminPage() {
   }, [activeTab, canAccessAdmin, fetchOrders]);
 
   useEffect(() => {
-    if (!canAccessAdmin || userRole !== 'admin') {
+    if (!canAccessAdmin || userRole !== 'admin' || !isMfaVerified) {
       return;
     }
 
@@ -211,7 +228,7 @@ export default function AdminPage() {
     }
 
     void fetchKpi();
-  }, [activeTab, canAccessAdmin, fetchKpi, userRole]);
+  }, [activeTab, canAccessAdmin, fetchKpi, isMfaVerified, userRole]);
 
   const pendingShipmentCount = useMemo(
     () => orders.filter((order) => order.status === '未決済').length,
@@ -590,35 +607,29 @@ export default function AdminPage() {
 
   if (!isAuthResolved) {
     return (
-      <main className="pt-24 pb-20 px-6 lg:px-12">
-        <div className="element-width">
-          <p className="text-sm text-[#474747] font-acumin">読み込み中...</p>
-        </div>
-      </main>
+      <div className="element-width">
+        <p className="text-sm text-[#474747] font-acumin">読み込み中...</p>
+      </div>
     );
   }
 
   if (!isLoggedIn || !canAccessAdmin) {
     return (
-      <main className="pt-24 pb-20 px-6 lg:px-12">
-        <div className="element-width">
-          <h1 className="mb-4">アクセス権限がありません</h1>
-          <p className="text-sm text-[#474747] font-acumin">このページは Admin または Supporter のみ利用できます。</p>
-        </div>
-      </main>
+      <div className="element-width">
+        <h1 className="mb-4">アクセス権限がありません</h1>
+        <p className="text-sm text-[#474747] font-acumin">このページは Admin または Supporter のみ利用できます。</p>
+      </div>
     );
   }
 
   if (!isMfaVerified) {
     return (
-      <main className="pt-24 pb-20 px-6 lg:px-12">
-        <div className="element-width">
-          <h1 className="mb-4">2要素認証が必要です</h1>
-          <p className="text-sm text-[#474747] font-acumin">
-            管理画面へのアクセスには 2FA の有効化と認証が必要です。設定済みの場合は再度ログインしてください。
-          </p>
-        </div>
-      </main>
+      <div className="element-width">
+        <h1 className="mb-4">2要素認証が必要です</h1>
+        <p className="text-sm text-[#474747] font-acumin">
+          管理画面へのアクセスには 2FA の有効化と認証が必要です。設定済みの場合は再度ログインしてください。
+        </p>
+      </div>
     );
   }
 
@@ -631,11 +642,25 @@ export default function AdminPage() {
   };
 
   return (
-    <main className="pt-24 pb-20 px-6 lg:px-12">
+    <div>
       <div className="element-width">
         <AdminTabs activeTab={activeTab} onTabChange={handleTabChange} tabs={visibleTabs} rightContent={tabRightContent} />
         {renderContent()}
       </div>
-    </main>
+    </div>
+  );
+}
+
+export default function AdminPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="element-width">
+          <p className="text-sm text-[#474747] font-acumin">読み込み中...</p>
+        </div>
+      }
+    >
+      <AdminPageContent />
+    </Suspense>
   );
 }

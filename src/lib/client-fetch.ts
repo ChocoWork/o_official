@@ -15,7 +15,9 @@ function getCsrfTokenFromCookie(): string | undefined {
     return undefined;
   }
 
-  return decodeURIComponent(match.split('=').slice(1).join('='));
+  // Keep the transport value header-safe. Legacy cookies may be percent-encoded
+  // and are decoded on the server before hash comparison.
+  return match.split('=').slice(1).join('=');
 }
 
 export async function clientFetch(

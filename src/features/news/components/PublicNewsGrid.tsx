@@ -6,7 +6,6 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { TagLabel } from '@/components/ui/TagLabel';
 import { Button } from '@/components/ui/Button';
 import { SectionTitle } from '@/components/ui/SectionTitle';
-import { TabSegmentControl } from '@/components/ui/TabSegmentControl';
 import { MultiSelect } from '@/components/ui/MultiSelect';
 import { categories } from '@/lib/news-data';
 import { cn } from '@/lib/utils';
@@ -194,7 +193,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
   const hasHiddenItemsOnMobile = shouldLimitOnMobile && resolvedArticles.length > resolvedMobileLimit;
 
   const renderGrid = () => (
-    <div className={cn('border-t border-black/10', className)}>
+    <div className={cn('w-full border-t border-black/10', className)}>
       {displayArticles.map((article, index) => {
         const hideOnMobile = shouldLimitOnMobile && index >= resolvedMobileLimit!;
 
@@ -294,7 +293,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
               {renderGrid()}
               {(hasHiddenItemsOnMobile || hasMoreArticles) && (
                 <div className="text-center mt-6 md:mt-8 lg:mt-12">
-                  <Button href="/news" variant="secondary" size="md" className="font-acumin">
+                  <Button href="/news" variant="secondary" size="xs">
                     VIEW ALL NEWS
                   </Button>
                 </div>
@@ -308,9 +307,9 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
 
   // catalog variant rendering
   return (
-    <>
+    <div className="flex w-full">
       {/* Category filter */}
-      <div className="mb-5 sm:mb-6 md:mb-8 lg:mb-10">
+      <aside className="hidden lg:block w-[199px] xl:w-[233px] flex-shrink-0 sticky top-[56px] xl:top-[60px] h-[calc(100vh-56px)] xl:h-[calc(100vh-60px)] overflow-y-auto border-r border-black/5 px-[13px] xl:px-[21px] py-[21px] xl:py-[34px]">
         {/* Mobile: MultiSelect dropdown with fill indicator */}
         <div className="sm:hidden" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
           <MultiSelect
@@ -354,32 +353,72 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
         {/* sm+: pill tabs */}
         <div className={cn('hidden sm:block', TAB_SCROLL_CONTAINER_CLASS)}>
           <div className="flex justify-center min-w-max w-full">
-          <TabSegmentControl
-            items={NEWS_CATEGORIES.map((category) => ({ key: category, label: category }))}
-            activeKey={selectedCategories.length === 1 ? selectedCategories[0] : 'ALL'}
-            onChange={(category) => {
-              const nextSelection: NewsCategory[] = [category as NewsCategory];
-              setSelectedCategories(nextSelection);
-              syncCategoryQuery(nextSelection);
-            }}
-            variant="segment-pill"
-            size="md"
-            className="min-w-max"
-          />
+            {/* <TabSegmentControl
+              items={NEWS_CATEGORIES.map((category) => ({ key: category, label: category }))}
+              activeKey={selectedCategories.length === 1 ? selectedCategories[0] : 'ALL'}
+              onChange={(category) => {
+                const nextSelection: NewsCategory[] = [category as NewsCategory];
+                setSelectedCategories(nextSelection);
+                syncCategoryQuery(nextSelection);
+              }}
+              variant="segment-pill"
+              size="md"
+              className="min-w-max"
+            /> */}
+            <MultiSelect
+              variant="panel"
+              options={NEWS_CATEGORIES.map((c) => ({ value: c, label: c }))}
+              values={selectedCategories}
+              onChange={(newValues) => {
+                let nextSelection: NewsCategory[];
+                if (newValues.length === 0) {
+                  // 全解除 → ALL に戻す
+                  nextSelection = ['ALL'];
+                  setSelectedCategories(nextSelection);
+                  syncCategoryQuery(nextSelection);
+                  return;
+                }
+                const hadAll = selectedCategories.includes('ALL');
+                const hasAll = newValues.includes('ALL');
+                if (!hadAll && hasAll) {
+                  // ALL が追加された → ALL のみにリセット
+                  nextSelection = ['ALL'];
+                  setSelectedCategories(nextSelection);
+                  syncCategoryQuery(nextSelection);
+                  return;
+                }
+                if (hadAll && newValues.length > 1) {
+                  // ALL 選択中に他が追加された → ALL を外して他のみに
+                  nextSelection = newValues.filter((v) => v !== 'ALL') as NewsCategory[];
+                  setSelectedCategories(nextSelection);
+                  syncCategoryQuery(nextSelection);
+                  return;
+                }
+                nextSelection = newValues as NewsCategory[];
+                setSelectedCategories(nextSelection);
+                syncCategoryQuery(nextSelection);
+              }}
+              shape='square'
+              checkStyle="check"
+              size="sm"
+              className="tracking-widest"
+            />
           </div>
         </div>
+      </aside>
+      <div className="flex-1 min-w-0 w-full max-w-full px-[13px] sm:px-[16px] md:px-[21px] lg:px-[21px] xl:px-[34px] 2xl:px-[55px] py-[21px] sm:py-[21px] md:py-[34px] xl:py-[34px]">
+        {loading ? (
+          renderLoading()
+        ) : error ? (
+          renderError()
+        ) : resolvedArticles.length === 0 ? (
+          renderEmpty('現在、公開されている記事はありません')
+        ) : displayArticles.length === 0 ? (
+          renderEmpty('該当カテゴリの記事はありません')
+        ) : (
+          renderGrid()
+        )}
       </div>
-      {loading ? (
-        renderLoading()
-      ) : error ? (
-        renderError()
-      ) : resolvedArticles.length === 0 ? (
-        renderEmpty('現在、公開されている記事はありません')
-      ) : displayArticles.length === 0 ? (
-        renderEmpty('該当カテゴリの記事はありません')
-      ) : (
-        renderGrid()
-      )}
-    </>
+    </div>
   );
 }
