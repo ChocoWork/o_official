@@ -33,49 +33,67 @@ export function Toolbar({
   size = 'md',
 }: ToolbarProps) {
   const paddingMap: Record<ComponentSize, string> = {
+    xs: 'px-2',
     sm: 'px-2',
     md: 'px-3',
     lg: 'px-4',
+    xl: 'px-4',
   };
   const buttonHeightMap: Record<ComponentSize, string> = {
+    xs: 'h-8',
     sm: 'h-8',
     md: 'h-10',
     lg: 'h-12',
+    xl: 'h-12',
   };
   const iconContainerMap: Record<ComponentSize, string> = {
+    xs: 'h-4 w-4',
     sm: 'h-4 w-4',
     md: 'h-5 w-5',
     lg: 'h-6 w-6',
+    xl: 'h-6 w-6',
   };
   const textSizeMap: Record<ComponentSize, string> = {
+    xs: 'text-xs',
     sm: 'text-xs',
     md: 'text-sm',
     lg: 'text-base',
+    xl: 'text-base',
   };
   const gapMap: Record<ComponentSize, string> = {
+    xs: 'gap-1',
     sm: 'gap-1',
     md: 'gap-2',
     lg: 'gap-3',
+    xl: 'gap-3',
   };
   const labelPaddingMap: Record<ComponentSize, string> = {
+    xs: 'px-2 py-1',
     sm: 'px-2 py-1',
     md: 'px-2 py-2',
     lg: 'px-3 py-2',
+    xl: 'px-3 py-2',
   };
   const iconOnlyWidthMap: Record<ComponentSize, string> = {
+    xs: 'w-8',
     sm: 'w-8',
     md: 'w-9',
     lg: 'w-11',
+    xl: 'w-11',
   };
   const iconSizeMap: Record<ComponentSize, string> = {
+    xs: 'text-base',
     sm: 'text-base',
     md: 'text-xl',
     lg: 'text-2xl',
+    xl: 'text-2xl',
   };
   const splitDividerHeightMap: Record<ComponentSize, string> = {
+    xs: 'h-4',
     sm: 'h-4',
     md: 'h-6',
     lg: 'h-8',
+    xl: 'h-8',
   };
   const labelHoverClass = variant === 'muted' ? 'hover:bg-black/[0.04]' : 'hover:bg-white/50';
   const iconHoverClass = variant === 'muted' ? 'hover:bg-black/[0.04]' : 'hover:bg-[#f5f5f5]';

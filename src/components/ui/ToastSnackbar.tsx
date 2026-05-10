@@ -37,24 +37,32 @@ export function ToastSnackbar({
       : 'ri-check-line';
 
   const frameMap: Record<ComponentSize, string> = {
+    xs: 'h-8 px-3',
     sm: 'h-8 px-3',
     md: 'h-10 px-4',
     lg: 'h-12 px-5',
+    xl: 'h-12 px-5',
   };
   const textMap: Record<ComponentSize, string> = {
+    xs: 'text-xs',
     sm: 'text-xs',
     md: 'text-sm',
     lg: 'text-sm',
+    xl: 'text-sm',
   };
   const iconSizeMap: Record<ComponentSize, string> = {
+    xs: 'text-sm',
     sm: 'text-sm',
     md: 'text-base',
     lg: 'text-lg',
+    xl: 'text-lg',
   };
   const gapMap: Record<ComponentSize, string> = {
+    xs: 'gap-2',
     sm: 'gap-2',
     md: 'gap-2',
     lg: 'gap-3',
+    xl: 'gap-3',
   };
 
   const frame = frameMap[size];

@@ -2,7 +2,7 @@ import { Button } from './Button';
 import { cn } from '@/lib/utils';
 import { ComponentSize } from './types';
 
-import type { UIButtonSize } from './Button';
+import type { UIButtonSize } from './types';
 
 export interface StepperProps {
   value: number;
@@ -34,41 +34,55 @@ export function Stepper({
   // size-dependent classes via explicit maps for clarity
   // height should match Button height for each size
   const heightClassMap: Record<ComponentSize, string> = {
+    xs: 'h-8',
     sm: 'h-8', // matches Button.sm
     md: 'h-10', // matches Button.md
     lg: 'h-12', // matches Button.lg
+    xl: 'h-14',
   };
   const textClassMap: Record<ComponentSize, string> = {
+    xs: 'text-xs',
     sm: 'text-xs',
     md: 'text-sm',
     lg: 'text-base',
+    xl: 'text-lg',
   };
   // make side button width equal height to form square buttons
   const sideButtonWidthMap: Record<ComponentSize, string> = {
+    xs: 'w-8',
     sm: 'w-8',
     md: 'w-10',
     lg: 'w-12',
+    xl: 'w-14',
   };
   const iconBoxClassMap: Record<ComponentSize, string> = {
+    xs: 'h-3 w-3',
     sm: 'h-3 w-3',
     md: 'h-4 w-4',
     lg: 'h-6 w-6',
+    xl: 'h-6 w-6',
   };
   const iconClassMap: Record<ComponentSize, string> = {
+    xs: 'text-sm',
     sm: 'text-sm',
     md: 'text-base',
     lg: 'text-lg',
+    xl: 'text-xl',
   };
   const compactButtonSizeMap: Record<ComponentSize, UIButtonSize> = {
+    xs: 'sm',
     sm: 'sm',
     md: 'sm',
     lg: 'md',
+    xl: 'lg',
   };
   // compact variant input width scaled relative to height
   const compactInputWidthMap: Record<ComponentSize, string> = {
+    xs: 'w-8',
     sm: 'w-8',
     md: 'w-10',
     lg: 'w-12',
+    xl: 'w-14',
   };
   const heightClass = heightClassMap[size];
   const textClass = textClassMap[size];

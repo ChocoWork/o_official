@@ -35,33 +35,43 @@ export function RadioButtonGroup({
   // md values correspond exactly to pre-refactor baseline
   // sm/lg chosen by stepping one unit smaller/larger
   const radioSizeClassMap: Record<ComponentSize, string> = {
+    xs: 'h-4 w-4',
     sm: 'h-4 w-4',
     md: 'h-5 w-5', // baseline (originally hardcoded in the old impl)
     lg: 'h-6 w-6',
+    xl: 'h-6 w-6',
   };
   // typography sizes: md is original, sm/lg one step smaller/larger
   const labelTextSizeMap: Record<ComponentSize, string> = {
+    xs: 'text-xs',
     sm: 'text-xs',
     md: 'text-sm', // baseline
     lg: 'text-base',
+    xl: 'text-base',
   };
   // spacing between radio and label: md = gap-3 from baseline
   const itemGapMap: Record<ComponentSize, string> = {
+    xs: 'gap-2',
     sm: 'gap-2',
     md: 'gap-3', // baseline
     lg: 'gap-4',
+    xl: 'gap-4',
   };
   // padding inside boxed variant: baseline = px-3 py-2
   const boxedPaddingMap: Record<ComponentSize, string> = {
+    xs: 'px-2 py-1',
     sm: 'px-2 py-1',
     md: 'px-3 py-2', // baseline
     lg: 'px-4 py-3',
+    xl: 'px-4 py-3',
   };
   // outer container gap between items; md matches previous gap-4
   const containerSpacingMap: Record<ComponentSize, string> = {
+    xs: 'gap-3',
     sm: 'gap-3',
     md: 'gap-4', // baseline
     lg: 'gap-5',
+    xl: 'gap-5',
   };
   const radioSizeClass = radioSizeClassMap[size];
   const labelTextSize = labelTextSizeMap[size];

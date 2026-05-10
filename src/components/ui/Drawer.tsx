@@ -17,9 +17,11 @@ export function Drawer({ open, onClose, side = 'right', children, className, siz
   }
 
   const widthMap: Record<ComponentSize, string> = {
+    xs: 'max-w-sm',
     sm: 'max-w-sm',
     md: 'max-w-md',
     lg: 'max-w-lg',
+    xl: 'max-w-lg',
   };
 
   return (

@@ -41,19 +41,25 @@ export function Card({
   size = 'md',
 }: CardProps) {
   const padMap: Record<ComponentSize, string> = {
+    xs: 'p-4',
     sm: 'p-4',
     md: 'p-6',
     lg: 'p-8',
+    xl: 'p-8',
   };
   const titleMap: Record<ComponentSize, string> = {
+    xs: 'text-sm',
     sm: 'text-sm',
     md: 'text-base',
     lg: 'text-lg',
+    xl: 'text-lg',
   };
   const priceMap: Record<ComponentSize, string> = {
+    xs: 'text-sm',
     sm: 'text-sm',
     md: 'text-base',
     lg: 'text-lg',
+    xl: 'text-lg',
   };
   // class names will be looked up inline to avoid unused-variable lint errors
 

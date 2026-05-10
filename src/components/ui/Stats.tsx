@@ -20,19 +20,25 @@ export interface StatsProps {
 
 export function Stats({ items, className, cardClassName, valueClassName, labelClassName, size = 'md' }: StatsProps) {
   const padMap: Record<ComponentSize, string> = {
+    xs: 'p-4',
     sm: 'p-4',
     md: 'p-6',
     lg: 'p-8',
+    xl: 'p-8',
   };
   const iconMap: Record<ComponentSize, string> = {
+    xs: 'h-6 w-6 text-xl',
     sm: 'h-6 w-6 text-xl',
     md: 'h-10 w-10 text-2xl',
     lg: 'h-12 w-12 text-3xl',
+    xl: 'h-12 w-12 text-3xl',
   };
   const valueMap: Record<ComponentSize, string> = {
+    xs: 'text-2xl',
     sm: 'text-2xl',
     md: 'text-3xl',
     lg: 'text-4xl',
+    xl: 'text-4xl',
   };
 
   const pad = padMap[size];

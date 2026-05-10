@@ -47,30 +47,40 @@ export function Accordion({
 
   // maps for size adjustments
   const triggerPaddingMap: Record<ComponentSize, string> = {
+    xs: 'px-4 py-2',
     sm: 'px-4 py-2',
     md: 'px-6 py-3',
     lg: 'px-8 py-4',
+    xl: 'px-8 py-4',
   };
   const contentPaddingMap: Record<ComponentSize, string> = {
+    xs: 'px-4 py-0.5 pb-1',
     sm: 'px-4 py-0.5 pb-1',
     md: 'px-6 py-1 pb-2',
     lg: 'px-8 py-1.5 pb-3',
+    xl: 'px-8 py-1.5 pb-3',
   };
   const textSizeMap: Record<ComponentSize, string> = {
     // md should match original implementation (text-sm)
+    xs: 'text-sm',
     sm: 'text-sm',
     md: 'text-sm',
     lg: 'text-lg',
+    xl: 'text-lg',
   };
   const iconSizeMap: Record<ComponentSize, string> = {
+    xs: 'text-lg',
     sm: 'text-lg',
     md: 'text-xl',
     lg: 'text-2xl',
+    xl: 'text-2xl',
   };
   const iconContainerSizeMap: Record<ComponentSize, string> = {
+    xs: 'h-4 w-4',
     sm: 'h-4 w-4',
     md: 'h-5 w-5',
     lg: 'h-6 w-6',
+    xl: 'h-6 w-6',
   };
 
   return (

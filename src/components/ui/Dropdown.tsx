@@ -3,7 +3,7 @@
 import { cn } from '@/lib/utils';
 import React, { useEffect, useRef, useState } from 'react';
 import { Button } from './Button';
-import type { UIButtonSize } from './Button';
+import type { UIButtonSize } from './types';
 import { ComponentSize } from './types';
 
 export interface DropdownItem {
@@ -28,9 +28,11 @@ export interface DropdownProps {
 
 export function Dropdown({ triggerLabel, items, className, size = 'md', openOnHover = false, align = 'left' }: DropdownProps) {
   const buttonSizeMap: Record<ComponentSize, UIButtonSize> = {
+    xs: 'sm',
     sm: 'sm',
     md: 'md',
     lg: 'lg',
+    xl: 'lg',
   };
   const buttonSize = buttonSizeMap[size];
   const [open, setOpen] = useState(false);
@@ -53,19 +55,25 @@ export function Dropdown({ triggerLabel, items, className, size = 'md', openOnHo
 
   // size mappings
   const triggerClassMap: Record<ComponentSize, string> = {
+    xs: 'px-4 py-2 text-xs gap-1',
     sm: 'px-4 py-2 text-xs gap-1',
     md: 'px-8 py-3 text-sm gap-2',
     lg: 'px-10 py-4 text-base gap-3',
+    xl: 'px-10 py-4 text-base gap-3',
   };
   const itemClassMap: Record<ComponentSize, string> = {
+    xs: 'px-4 py-2 text-xs',
     sm: 'px-4 py-2 text-xs',
     md: 'px-6 py-3 text-sm',
     lg: 'px-8 py-4 text-base',
+    xl: 'px-8 py-4 text-base',
   };
   const menuWidthMap: Record<ComponentSize, string> = {
+    xs: 'w-40',
     sm: 'w-40',
     md: 'w-56',
     lg: 'w-64',
+    xl: 'w-64',
   };
 
   return (

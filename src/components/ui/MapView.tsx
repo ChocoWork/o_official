@@ -26,14 +26,18 @@ export function MapView({
 }: MapViewProps) {
   // for sm, width and height should be half of lg
   const containerMap: Record<ComponentSize, string> = {
+    xs: 'w-1/2 h-40',
     sm: 'w-1/2 h-40',
     md: 'w-3/4 h-60', // md narrower than full width
     lg: 'w-full h-80', // fallback for non-embed (unused when embedUrl lg)
+    xl: 'w-full h-80',
   };
   const minHMap: Record<ComponentSize, string> = {
+    xs: 'min-h-24',
     sm: 'min-h-24',
     md: 'min-h-36',
     lg: 'min-h-48', // as per requested size for lg non-embed
+    xl: 'min-h-48',
   };
   const containerClass = containerMap[size];
   const minHClass = minHMap[size];
@@ -41,9 +45,11 @@ export function MapView({
     // always enforce 16:9 aspect ratio via aspect-video
     // width varies by size: sm half, md three-quarters, lg full
     const widthMap: Record<ComponentSize, string> = {
+      xs: 'w-1/2',
       sm: 'w-1/2',
       md: 'w-3/4',
       lg: 'w-full',
+      xl: 'w-full',
     };
     const embedClass = `aspect-video ${widthMap[size]}`;
     return (

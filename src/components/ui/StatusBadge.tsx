@@ -29,41 +29,55 @@ export function StatusBadge({
   size = 'md',
 }: StatusBadgeProps) {
   const dotSizeMap: Record<ComponentSize, string> = {
+    xs: 'h-1 w-1',
     sm: 'h-1 w-1',
     md: 'h-2 w-2',
     lg: 'h-3 w-3',
+    xl: 'h-3 w-3',
   };
 
   const countHeightMap: Record<ComponentSize, string> = {
+    xs: 'h-4',
     sm: 'h-4',
     md: 'h-5',
     lg: 'h-6',
+    xl: 'h-6',
   };
   const countFontMap: Record<ComponentSize, string> = {
+    xs: 'text-xs',
     sm: 'text-xs',
     md: 'text-xs',
     lg: 'text-sm',
+    xl: 'text-sm',
   };
   const countPaddingMap: Record<ComponentSize, string> = {
+    xs: 'px-1',
     sm: 'px-1',
     md: 'px-1.5',
     lg: 'px-2',
+    xl: 'px-2',
   };
   const countMinWidthMap: Record<ComponentSize, string> = {
+    xs: 'min-w-4',
     sm: 'min-w-4',
     md: 'min-w-5',
     lg: 'min-w-6',
+    xl: 'min-w-6',
   };
 
   const textPaddingMap: Record<ComponentSize, string> = {
+    xs: 'px-2 py-[2px]',
     sm: 'px-2 py-[2px]',
     md: 'px-3 py-1',
     lg: 'px-4 py-2',
+    xl: 'px-4 py-2',
   };
   const textSizeMap: Record<ComponentSize, string> = {
+    xs: 'text-[10px]',
     sm: 'text-[10px]',
     md: 'text-xs',
     lg: 'text-sm',
+    xl: 'text-sm',
   };
 
   if (variant === 'dot') {

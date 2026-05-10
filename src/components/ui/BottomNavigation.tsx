@@ -33,29 +33,39 @@ export function BottomNavigation({
 
   // size-based helpers
   const iconContainerMap: Record<ComponentSize, string> = {
+    xs: 'h-5 w-5',
     sm: 'h-5 w-5',
     md: 'h-6 w-6',
     lg: 'h-8 w-8',
+    xl: 'h-8 w-8',
   };
   const iconTextMap: Record<ComponentSize, string> = {
+    xs: 'text-lg',
     sm: 'text-lg',
     md: 'text-2xl',
     lg: 'text-3xl',
+    xl: 'text-3xl',
   };
   const labelTextMap: Record<ComponentSize, string> = {
+    xs: 'text-[10px]',
     sm: 'text-[10px]',
     md: 'text-xs',
     lg: 'text-sm',
+    xl: 'text-sm',
   };
   const gapMap: Record<ComponentSize, string> = {
+    xs: 'gap-0.5',
     sm: 'gap-0.5',
     md: 'gap-1',
     lg: 'gap-1.5',
+    xl: 'gap-1.5',
   };
   const paddingMap: Record<ComponentSize, string> = {
+    xs: 'px-2 py-1',
     sm: 'px-2 py-1',
     md: 'px-2 py-2',
     lg: 'px-3 py-3',
+    xl: 'px-3 py-3',
   };
 
   const iconContainer = iconContainerMap[size];

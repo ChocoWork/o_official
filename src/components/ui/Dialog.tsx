@@ -2,7 +2,7 @@ import { Button } from './Button';
 import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 import { ComponentSize } from './types';
-import type { UIButtonSize } from './Button';
+import type { UIButtonSize } from './types';
 
 export interface DialogProps {
   open: boolean;
@@ -35,30 +35,40 @@ export function Dialog({
   }
 
   const widthMap: Record<ComponentSize, string> = {
+    xs: 'max-w-sm',
     sm: 'max-w-sm',
     md: 'max-w-md',
     lg: 'max-w-lg',
+    xl: 'max-w-lg',
   };
   const paddingMap: Record<ComponentSize, string> = {
+    xs: 'p-4',
     sm: 'p-4',
     md: 'p-8',
     lg: 'p-12',
+    xl: 'p-12',
   };
   const titleSizeMap: Record<ComponentSize, string> = {
+    xs: 'text-xl',
     sm: 'text-xl',
     md: 'text-2xl',
     lg: 'text-3xl',
+    xl: 'text-3xl',
   };
   const descSizeMap: Record<ComponentSize, string> = {
+    xs: 'text-sm',
     sm: 'text-sm',
     md: 'text-sm',
     lg: 'text-base',
+    xl: 'text-base',
   };
 
   const buttonSizeMap: Record<ComponentSize, UIButtonSize> = {
+    xs: 'sm',
     sm: 'sm',
     md: 'md',
     lg: 'lg',
+    xl: 'lg',
   };
   const buttonSize = buttonSizeMap[size];
 

@@ -13,29 +13,39 @@ export interface SearchFieldProps extends Omit<InputHTMLAttributes<HTMLInputElem
 export function SearchField({ label, showClearButton = false, onClear, className, value, size = 'md', ...props }: SearchFieldProps) {
   const hasValue = typeof value === 'string' && value.length > 0;
   const sizeClassMap: Record<ComponentSize, string> = {
+    xs: 'h-8',
     sm: 'h-8',
     md: 'h-10',
     lg: 'h-12',
+    xl: 'h-12',
   };
   const widthPaddingMap: Record<ComponentSize, string> = {
+    xs: 'px-2',
     sm: 'px-2',
     md: 'px-4',
     lg: 'px-6',
+    xl: 'px-6',
   };
   const iconLeftMap: Record<ComponentSize, string> = {
+    xs: 'left-3',
     sm: 'left-3',
     md: 'left-4',
     lg: 'left-5',
+    xl: 'left-5',
   };
   const iconSizeMap: Record<ComponentSize, string> = {
+    xs: 'h-3.5 w-3.5 text-sm',
     sm: 'h-3.5 w-3.5 text-sm',
     md: 'h-4 w-4 text-base',
     lg: 'h-5 w-5 text-lg',
+    xl: 'h-5 w-5 text-lg',
   };
   const clearRightMap: Record<ComponentSize, string> = {
+    xs: 'right-3',
     sm: 'right-3',
     md: 'right-4',
     lg: 'right-5',
+    xl: 'right-5',
   };
   const sizeClass = sizeClassMap[size];
   const widthPaddingClass = widthPaddingMap[size];

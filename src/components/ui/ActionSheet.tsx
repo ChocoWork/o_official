@@ -23,30 +23,40 @@ export function ActionSheet({ open, onClose, actions, size = 'md' }: ActionSheet
 
   // mirror Button component sizing
   const heightClassMap: Record<ComponentSize, string> = {
+    xs: 'h-8',
     sm: 'h-8',
     md: 'h-10',
     lg: 'h-12',
+    xl: 'h-12',
   };
   const buttonPaddingMap: Record<ComponentSize, string> = {
     // horizontal padding matches Button px; vertical padding minimal since we enforce height
+    xs: 'px-3',
     sm: 'px-3',
     md: 'px-4',
     lg: 'px-5',
+    xl: 'px-5',
   };
   const buttonTextMap: Record<ComponentSize, string> = {
+    xs: 'text-xs',
     sm: 'text-xs',
     md: 'text-sm',
     lg: 'text-sm',
+    xl: 'text-sm',
   };
   const iconSizeMap: Record<ComponentSize, string> = {
+    xs: 'h-4 w-4',
     sm: 'h-4 w-4',
     md: 'h-5 w-5',
     lg: 'h-6 w-6',
+    xl: 'h-6 w-6',
   };
   const gapMap: Record<ComponentSize, string> = {
+    xs: 'gap-2',
     sm: 'gap-2',
     md: 'gap-3',
     lg: 'gap-4',
+    xl: 'gap-4',
   };
 
   return (

@@ -2,13 +2,13 @@
 
 import Image from 'next/image';
 import { useState } from "react";
-import { ComponentSize } from '@/components/ui/types';
+import { ComponentSize, type UIButtonSize } from '@/components/ui/types';
 import { cn } from '@/lib/utils';
 import { Accordion } from '@/components/ui/Accordion';
 import { ActionSheet } from '@/components/ui/ActionSheet';
 import { Avatar } from '@/components/ui/Avatar';
 import { BannerAlert } from '@/components/ui/BannerAlert';
-import { Button, type UIButtonSize } from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Carousel } from '@/components/ui/Carousel';
 import { Checkbox } from '@/components/ui/Checkbox';
@@ -123,10 +123,14 @@ export default function Page() {
 
   // helper maps for the drawer demo buttons
   const navItemClassMap: Record<ComponentSize, string> = {
+    xs: 'px-3 py-2 text-[11px]',
     sm: 'px-4 py-3 text-xs',
     md: 'px-4 py-4 text-sm',
     lg: 'px-4 py-5 text-base',
+    xl: 'px-5 py-6 text-lg',
   };
+
+  const avatarSize = demoSize === 'xs' ? 'sm' : demoSize === 'xl' ? 'lg' : demoSize;
 
   const rangeMin = Math.min(rangeValues[0], rangeValues[1]);
   const rangeMax = Math.max(rangeValues[0], rangeValues[1]);
@@ -1260,7 +1264,7 @@ export default function Page() {
                 </p>
               </div>
               <div className="flex flex-col items-center gap-3">
-                <Avatar alt="B" fallback="B" size={demoSize} className="text-base" />
+                <Avatar alt="B" fallback="B" size={avatarSize} className="text-base" />
                 <p
                   className="text-xs tracking-wider text-black/60"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
@@ -1282,7 +1286,7 @@ export default function Page() {
                   alt="Avatar"
                   fallback=""
                   src="https://readdy.ai/api/search-image?query=professional%20elegant%20portrait%20photo%20clean%20white%20background%20soft%20natural%20lighting%20minimalist%20aesthetic%20high%20quality%20studio%20photography&width=100&height=100&seq=avatar1&orientation=squarish"
-                  size={demoSize}
+                  size={avatarSize}
                 />
                 <p
                   className="text-xs tracking-wider text-black/60"
@@ -1296,7 +1300,7 @@ export default function Page() {
                   alt="User"
                   fallback=""
                   icon={<i className="ri-user-line text-xl text-white"></i>}
-                  size={demoSize}
+                  size={avatarSize}
                   status="online"
                 />
                 <p

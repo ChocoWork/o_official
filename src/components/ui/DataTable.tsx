@@ -38,14 +38,18 @@ export function DataTable<T>({
 }: DataTableProps<T>) {
   // size maps
   const paddingMap: Record<ComponentSize, { px: string; py: string }> = {
+    xs: { px: 'px-1', py: 'py-1' },
     sm: { px: 'px-1', py: 'py-1' },
     md: { px: 'px-2', py: 'py-2' },
     lg: { px: 'px-3', py: 'py-3' },
+    xl: { px: 'px-3', py: 'py-3' },
   };
   const textMap: Record<ComponentSize, { header: string; cell: string; empty: string }> = {
+    xs: { header: 'text-xs', cell: 'text-sm', empty: 'text-xs' },
     sm: { header: 'text-xs', cell: 'text-sm', empty: 'text-xs' },
     md: { header: 'text-xs', cell: 'text-sm', empty: 'text-sm' },
     lg: { header: 'text-sm', cell: 'text-base', empty: 'text-sm' },
+    xl: { header: 'text-sm', cell: 'text-base', empty: 'text-sm' },
   };
 
   const { px, py } = paddingMap[size];

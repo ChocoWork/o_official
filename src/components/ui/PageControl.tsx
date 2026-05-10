@@ -27,19 +27,25 @@ export function PageControl({
 
   // classes derived from size
   const dimensionMap: Record<ComponentSize, string> = {
+    xs: 'h-8 w-8',
     sm: 'h-8 w-8',
     md: 'h-10 w-10',
     lg: 'h-12 w-12',
+    xl: 'h-12 w-12',
   };
   const textMap: Record<ComponentSize, string> = {
+    xs: 'text-xs',
     sm: 'text-xs',
     md: 'text-sm',
     lg: 'text-base',
+    xl: 'text-base',
   };
   const iconMap: Record<ComponentSize, string> = {
+    xs: 'text-xs',
     sm: 'text-xs',
     md: 'text-base',
     lg: 'text-lg',
+    xl: 'text-lg',
   };
 
   const btnDim = dimensionMap[size];

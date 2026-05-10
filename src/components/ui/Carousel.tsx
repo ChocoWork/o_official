@@ -56,20 +56,26 @@ export function Carousel({
 
     // size-based style maps
     const aspectMap: Record<ComponentSize, string> = {
+      xs: 'aspect-[4/3]',
       sm: 'aspect-[4/3]',
       md: 'aspect-[16/10]',
       lg: 'aspect-[16/9]',
+      xl: 'aspect-[16/9]',
     };
     // container width similar to MapView sizing
     const containerWidthMap: Record<ComponentSize, string> = {
+      xs: 'w-1/2',
       sm: 'w-1/2',
       md: 'w-3/4',
       lg: 'w-full',
+      xl: 'w-full',
     };
     const arrowIconMap: Record<ComponentSize, string> = {
+      xs: 'text-lg',
       sm: 'text-lg',
       md: 'text-2xl',
       lg: 'text-3xl',
+      xl: 'text-3xl',
     };
     // dots: small fixed circle, active expands to fixed width
     // regardless of carousel size, follow sample w-2 h-2 rounded-full bg-white w-6
@@ -90,7 +96,7 @@ export function Carousel({
           {showArrows ? (
             <>
               <Button
-                size={size === 'sm' ? 'sm' : size === 'lg' ? 'lg' : 'md'}
+                size={size === 'xs' ? 'sm' : size === 'sm' ? 'sm' : size === 'lg' || size === 'xl' ? 'lg' : 'md'}
                 variant="ghost"
                 className={cn('absolute left-4 top-1/2 flex -translate-y-1/2', 'bg-white/90', 'hover:bg-white',
                   'items-center justify-center px-0', 'aspect-square')}
@@ -99,7 +105,7 @@ export function Carousel({
                 <i className={cn('ri-arrow-left-s-line', arrowIconMap[size])}></i>
               </Button>
               <Button
-                size={size === 'sm' ? 'sm' : size === 'lg' ? 'lg' : 'md'}
+                size={size === 'xs' ? 'sm' : size === 'sm' ? 'sm' : size === 'lg' || size === 'xl' ? 'lg' : 'md'}
                 variant="ghost"
                 className={cn('absolute right-4 top-1/2 flex -translate-y-1/2', 'bg-white/90', 'hover:bg-white',
                   'items-center justify-center px-0', 'aspect-square')}

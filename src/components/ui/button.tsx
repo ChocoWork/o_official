@@ -1,24 +1,8 @@
 import Link from 'next/link';
 import type {
   AnchorHTMLAttributes,
-  ButtonHTMLAttributes,
-  MouseEventHandler,
 } from 'react';
-
-export type UIButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'link';
-export type UIButtonSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
-export type UIButtonShape = 'rounded' | 'square' | 'pill';
-
-// union of button and anchor attributes so `href` use works
-export interface ButtonProps
-  extends ButtonHTMLAttributes<HTMLButtonElement> {
-  href?: string;
-  variant?: UIButtonVariant | 'text';
-  size?: UIButtonSize;
-  shape?: UIButtonShape;
-  className?: string;
-  onClick?: MouseEventHandler<HTMLElement>;
-}
+import type { ButtonProps } from './types';
 
 export function Button({
   href,

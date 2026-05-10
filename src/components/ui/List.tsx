@@ -41,6 +41,16 @@ const showcaseSizeMap: Record<ComponentSize, {
   rightSize: string;
   iconSize: string;
 }> = {
+  xs: {
+    rowPadding: 'px-3 py-2',
+    rowGap: 'gap-3',
+    previewHeight: 'h-10',
+    previewIconBox: 'w-10 h-10',
+    titleSize: 'text-xs',
+    categorySize: 'text-[10px]',
+    rightSize: 'text-xs',
+    iconSize: 'text-lg',
+  },
   sm: {
     rowPadding: 'px-3 py-2',
     rowGap: 'gap-3',
@@ -71,18 +81,32 @@ const showcaseSizeMap: Record<ComponentSize, {
     rightSize: 'text-base',
     iconSize: 'text-2xl',
   },
+  xl: {
+    rowPadding: 'px-5 py-4',
+    rowGap: 'gap-5',
+    previewHeight: 'h-14',
+    previewIconBox: 'w-14 h-14',
+    titleSize: 'text-base',
+    categorySize: 'text-sm',
+    rightSize: 'text-base',
+    iconSize: 'text-2xl',
+  },
 };
 
 export function List<T>({ items, itemKey, className, size = 'md', ...props }: ListProps<T>) {
   const gapMap: Record<ComponentSize, string> = {
+    xs: 'space-y-1',
     sm: 'space-y-1',
     md: 'space-y-2',
     lg: 'space-y-4',
+    xl: 'space-y-4',
   };
   const textSizeMap: Record<ComponentSize, string> = {
+    xs: 'text-sm',
     sm: 'text-sm',
     md: 'text-base',
     lg: 'text-lg',
+    xl: 'text-lg',
   };
   const gapClass = gapMap[size];
   const itemTextClass = textSizeMap[size];
@@ -98,7 +122,7 @@ export function List<T>({ items, itemKey, className, size = 'md', ...props }: Li
               <Link
                 href={props.getHref(item)}
                 className={cn(
-                  'block flex items-center justify-between',
+                  'flex items-center justify-between',
                   showcaseClasses.rowPadding,
                   index < items.length - 1 && 'border-b border-black/10',
                 )}

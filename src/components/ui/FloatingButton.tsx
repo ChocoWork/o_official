@@ -2,7 +2,7 @@ import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 import { ComponentSize } from './types';
 import { Button } from './Button';
-import type { UIButtonSize } from './Button';
+import type { UIButtonSize } from './types';
 
 export interface FloatingButtonAction {
   key: string;
@@ -35,12 +35,14 @@ export function FloatingButton({
 }: FloatingButtonProps) {
   const hasActions = Boolean(actions && actions.length > 0);
   const buttonSizeMap: Record<ComponentSize, UIButtonSize> = {
+    xs: 'xs',
     sm: 'sm',
     md: 'md',
     lg: 'lg',
+    xl: 'xl',
   };
   const buttonSize = buttonSizeMap[size];
-  const actionsOffsetClass = size === 'sm' ? 'bottom-12' : size === 'lg' ? 'bottom-20' : 'bottom-16';
+  const actionsOffsetClass = size === 'xs' || size === 'sm' ? 'bottom-12' : size === 'lg' ? 'bottom-20' : size === 'xl' ? 'bottom-24' : 'bottom-16';
 
   return (
     <div className={cn('relative', fixed ? 'fixed bottom-6 right-6 z-40' : null, className)}>

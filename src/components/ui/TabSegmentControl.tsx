@@ -27,25 +27,33 @@ export function TabSegmentControl({
 }: TabSegmentControlProps) {
   // utility maps
   const textSizeMap: Record<ComponentSize, string> = {
+    xs: 'text-xs',
     sm: 'text-xs',
     md: 'text-xs',
     lg: 'text-sm',
+    xl: 'text-sm',
   };
   // md gap should match original non-size version (gap-8)
   const gapMap: Record<ComponentSize, string> = {
+    xs: 'gap-2',
     sm: 'gap-2',
     md: 'gap-8',
     lg: 'gap-6',
+    xl: 'gap-6',
   };
   const pillPaddingMap: Record<ComponentSize, string> = {
+    xs: 'px-4 py-1.5',
     sm: 'px-4 py-1.5',
     md: 'px-6 py-2',
     lg: 'px-7 py-2',
+    xl: 'px-7 py-2',
   };
   const segmentPaddingMap: Record<ComponentSize, string> = {
+    xs: 'px-2 py-1',
     sm: 'px-2 py-1',
     md: 'px-4 py-2',
     lg: 'px-5 py-2.5',
+    xl: 'px-5 py-2.5',
   };
 
   // when vertical orientation requested we render simple stacked buttons

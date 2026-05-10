@@ -37,20 +37,26 @@ export function BannerAlert({
 
   // spacing should correspond to Button padding, with vertical padding roughly half height
   const paddingMap: Record<ComponentSize, string> = {
+    xs: 'px-3 py-2',
     sm: 'px-3 py-2',
     md: 'px-4 py-3',
     lg: 'px-5 py-4',
+    xl: 'px-5 py-4',
   };
   const textMap: Record<ComponentSize, string> = {
+    xs: 'text-xs',
     sm: 'text-xs',
     md: 'text-sm',
     lg: 'text-sm',
+    xl: 'text-sm',
   };
   // icon inside alert uses same scale as button icons
   const iconSizeMap: Record<ComponentSize, string> = {
+    xs: 'h-4 w-4',
     sm: 'h-4 w-4',
     md: 'h-5 w-5',
     lg: 'h-6 w-6',
+    xl: 'h-6 w-6',
   };
 
   return (
