@@ -53,9 +53,6 @@ export function Checkbox({
         className,
       )}
     >
-      <span className={cn(labelSizeMap[size], 'text-[#474747] tracking-widest')}>
-        {label}
-      </span>
       <input
         id={checkboxId}
         type="checkbox"
@@ -63,6 +60,9 @@ export function Checkbox({
         className={inputClass}
         {...props}
       />
+      <span className={cn(labelSizeMap[size], 'text-[#474747] tracking-widest')}>
+        {label}
+      </span>
     </label>
   );
 }

@@ -41,52 +41,28 @@ export function MultiSelect({
     onChange([...values, optionValue]);
   };
 
-  const optionTextSizeMap: Record<ComponentSize, string> = {
-    sm: 'text-xs',
-    md: 'text-sm',
-    lg: 'text-base',
-  };
-
   const renderOptionItem = (option: SelectOption) => {
     const isChecked = values.includes(option.value);
     const shapeClass = shape === 'square' ? 'rounded-none' : 'rounded';
 
     return (
-      <label
+      <Checkbox
         key={option.value}
+        label={option.label}
+        checked={isChecked}
+        onChange={() => handleChange(option.value)}
+        size={size}
+        checkStyle={checkStyle}
+        shape={shape}
         className={cn(
-          'flex cursor-pointer items-center gap-2 px-3 py-1.5 transition-colors hover:bg-[#f5f5f5]',
-          optionTextSizeMap[size],
+          'w-full justify-start px-3 py-1.5 transition-colors hover:bg-[#f5f5f5]',
           'text-[#474747] tracking-widest',
         )}
-      >
-        {checkStyle === 'fill' ? (
-          <>
-            <span
-              aria-hidden="true"
-              className={cn(
-                'h-2.5 w-2.5 flex-shrink-0 border',
-                shapeClass,
-                isChecked ? 'bg-black border-black' : 'bg-white border-black/40',
-              )}
-            />
-            <input
-              className="sr-only"
-              type="checkbox"
-              checked={isChecked}
-              onChange={() => handleChange(option.value)}
-            />
-          </>
-        ) : (
-          <input
-            className={cn('h-4 w-4 cursor-pointer accent-black', shapeClass)}
-            type="checkbox"
-            checked={isChecked}
-            onChange={() => handleChange(option.value)}
-          />
+        inputClassName={cn(
+          checkStyle === 'fill' ? 'h-2.5 w-2.5' : 'h-4 w-4',
+          shapeClass,
         )}
-        <span>{option.label}</span>
-      </label>
+      />
     );
   };
 
@@ -198,24 +174,4 @@ export function MultiSelect({
       </div>
     );
   }
-
-  return (
-    <fieldset className="space-y-2">
-      {label ? <legend className="text-xs tracking-widest text-black/80">{label}</legend> : null}
-      <div className="space-y-2 border border-black/20 p-3">
-        {options.map((option) => (
-          <Checkbox
-            key={option.value}
-            name={option.value}
-            checked={values.includes(option.value)}
-            onChange={() => handleChange(option.value)}
-            label={option.label}
-            size={size}
-            checkStyle={checkStyle}
-            shape={shape}
-          />
-        ))}
-      </div>
-    </fieldset>
-  );
 }

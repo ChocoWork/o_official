@@ -399,7 +399,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
                 syncCategoryQuery(nextSelection);
               }}
               shape='square'
-              checkStyle="check"
+              checkStyle="fill"
               size="sm"
               className="tracking-widest"
             />
