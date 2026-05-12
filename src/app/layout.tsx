@@ -30,7 +30,7 @@ export default function RootLayout({
   children: React.ReactNode;  // childrenはReactのノード（要素、文字列など）であることを示す
 }>) {
   return (
-    <html lang="ja">
+    <html lang="ja" data-header-visible="true">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col min-h-screen`}> 
         <Providers>
           {children}

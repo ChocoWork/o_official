@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { TagLabel } from '@/components/ui/TagLabel';
 import { Button } from '@/components/ui/Button';
+import { Drawer } from '@/components/ui/Drawer';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { MultiSelect } from '@/components/ui/MultiSelect';
 import { categories } from '@/lib/news-data';
@@ -75,6 +76,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
   const [fetchedArticles, setFetchedArticles] = useState<PublicNewsArticle[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState<boolean>(false);
   const [selectedCategories, setSelectedCategories] = useState<NewsCategory[]>(() => {
     if (catalogProps) {
       return parseCategorySelection(categoryQuery, catalogProps.initialCategory ?? 'ALL');
@@ -186,6 +188,59 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
     }
     return `/news/${article.id}`;
   };
+
+  const applyCategorySelection = (newValues: string[]): void => {
+    const typedValues = newValues as NewsCategory[];
+    let nextSelection: NewsCategory[];
+    if (typedValues.length === 0) {
+      // 全解除 → ALL に戻す
+      nextSelection = ['ALL'];
+      setSelectedCategories(nextSelection);
+      syncCategoryQuery(nextSelection);
+      return;
+    }
+
+    const hadAll = selectedCategories.includes('ALL');
+    const hasAll = typedValues.includes('ALL');
+    if (!hadAll && hasAll) {
+      // ALL が追加された → ALL のみにリセット
+      nextSelection = ['ALL'];
+      setSelectedCategories(nextSelection);
+      syncCategoryQuery(nextSelection);
+      return;
+    }
+
+    if (hadAll && typedValues.length > 1) {
+      // ALL 選択中に他が追加された → ALL を外して他のみに
+      nextSelection = typedValues.filter((v) => v !== 'ALL') as NewsCategory[];
+      setSelectedCategories(nextSelection);
+      syncCategoryQuery(nextSelection);
+      return;
+    }
+
+    nextSelection = typedValues;
+    setSelectedCategories(nextSelection);
+    syncCategoryQuery(nextSelection);
+  };
+
+  const renderCategoryFilter = () => (
+    <MultiSelect
+      variant="panel"
+      options={NEWS_CATEGORIES.map((c) => ({ value: c, label: c }))}
+      values={selectedCategories}
+      onChange={applyCategorySelection}
+      shape="square"
+      checkStyle="fill"
+      size="sm"
+      className="tracking-widest"
+      expandLabelHitArea={false}
+    />
+  );
+
+  const mobileFilterStickyStyle = {
+    top: 'var(--site-header-height)',
+    transform: 'translateY(calc(var(--site-header-offset) - var(--site-header-height)))',
+  } as const;
 
   // Mobile: show only 3 articles on home variant (hidden lg:block hides them below lg breakpoint)
   const resolvedMobileLimit = variant === 'home' ? 3 : undefined;
@@ -307,108 +362,86 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
 
   // catalog variant rendering
   return (
-    <div className="flex w-full">
-      {/* Category filter */}
-      <aside className="hidden lg:block w-[199px] xl:w-[233px] flex-shrink-0 sticky top-[56px] xl:top-[60px] h-[calc(100vh-56px)] xl:h-[calc(100vh-60px)] overflow-y-auto border-r border-black/5 px-[13px] xl:px-[21px] py-[21px] xl:py-[34px]">
-        {/* Mobile: MultiSelect dropdown with fill indicator */}
-        <div className="sm:hidden" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-          <MultiSelect
-            variant="dropdown"
-            options={NEWS_CATEGORIES.map((c) => ({ value: c, label: c }))}
-            values={selectedCategories}
-            onChange={(newValues) => {
-              let nextSelection: NewsCategory[];
-              if (newValues.length === 0) {
-                // 全解除 → ALL に戻す
-                nextSelection = ['ALL'];
-                setSelectedCategories(nextSelection);
-                syncCategoryQuery(nextSelection);
-                return;
-              }
-              const hadAll = selectedCategories.includes('ALL');
-              const hasAll = newValues.includes('ALL');
-              if (!hadAll && hasAll) {
-                // ALL が追加された → ALL のみにリセット
-                nextSelection = ['ALL'];
-                setSelectedCategories(nextSelection);
-                syncCategoryQuery(nextSelection);
-                return;
-              }
-              if (hadAll && newValues.length > 1) {
-                // ALL 選択中に他が追加された → ALL を外して他のみに
-                nextSelection = newValues.filter((v) => v !== 'ALL') as NewsCategory[];
-                setSelectedCategories(nextSelection);
-                syncCategoryQuery(nextSelection);
-                return;
-              }
-              nextSelection = newValues as NewsCategory[];
-              setSelectedCategories(nextSelection);
-              syncCategoryQuery(nextSelection);
-            }}
-            checkStyle="fill"
-            size="sm"
-            className="tracking-widest"
-            expandLabelHitArea={false}
-          />
-        </div>
-        {/* sm+: pill tabs */}
-        <div className={cn('hidden sm:block', TAB_SCROLL_CONTAINER_CLASS)}>
-          <div className="flex justify-center min-w-max w-full">
-            <MultiSelect
-              variant="panel"
-              options={NEWS_CATEGORIES.map((c) => ({ value: c, label: c }))}
-              values={selectedCategories}
-              onChange={(newValues) => {
-                let nextSelection: NewsCategory[];
-                if (newValues.length === 0) {
-                  // 全解除 → ALL に戻す
-                  nextSelection = ['ALL'];
-                  setSelectedCategories(nextSelection);
-                  syncCategoryQuery(nextSelection);
-                  return;
-                }
-                const hadAll = selectedCategories.includes('ALL');
-                const hasAll = newValues.includes('ALL');
-                if (!hadAll && hasAll) {
-                  // ALL が追加された → ALL のみにリセット
-                  nextSelection = ['ALL'];
-                  setSelectedCategories(nextSelection);
-                  syncCategoryQuery(nextSelection);
-                  return;
-                }
-                if (hadAll && newValues.length > 1) {
-                  // ALL 選択中に他が追加された → ALL を外して他のみに
-                  nextSelection = newValues.filter((v) => v !== 'ALL') as NewsCategory[];
-                  setSelectedCategories(nextSelection);
-                  syncCategoryQuery(nextSelection);
-                  return;
-                }
-                nextSelection = newValues as NewsCategory[];
-                setSelectedCategories(nextSelection);
-                syncCategoryQuery(nextSelection);
-              }}
-              shape='square'
-              checkStyle="fill"
-              size="sm"
-              className="tracking-widest"
-              expandLabelHitArea={false}
-            />
+    <>
+      <Drawer
+        open={isFilterDrawerOpen}
+        onClose={() => setIsFilterDrawerOpen(false)}
+        side="left"
+        size="sm"
+        className="max-w-[280px] sm:max-w-sm"
+      >
+        <div className="flex h-full flex-col px-5 py-4 sm:px-6 sm:py-5">
+          <div className="flex items-center justify-between border-b border-black/10 pb-3">
+            <h2 className="text-[11px] tracking-[0.15em] text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+              FILTER
+            </h2>
+            <button
+              type="button"
+              onClick={() => setIsFilterDrawerOpen(false)}
+              aria-label="Close filter drawer"
+              className="text-xl leading-none text-black"
+            >
+              ×
+            </button>
+          </div>
+
+          <div className="pt-4">
+            {renderCategoryFilter()}
           </div>
         </div>
-      </aside>
-      <div className="flex-1 min-w-0 w-full max-w-full px-[13px] sm:px-[16px] md:px-[21px] lg:px-[21px] xl:px-[34px] 2xl:px-[55px] py-[21px] sm:py-[21px] md:py-[34px] xl:py-[34px]">
-        {loading ? (
-          renderLoading()
-        ) : error ? (
-          renderError()
-        ) : resolvedArticles.length === 0 ? (
-          renderEmpty('現在、公開されている記事はありません')
-        ) : displayArticles.length === 0 ? (
-          renderEmpty('該当カテゴリの記事はありません')
-        ) : (
-          renderGrid()
-        )}
+      </Drawer>
+
+      <div className="flex w-full">
+        {/* Category filter */}
+        <aside className="hidden lg:block w-[199px] xl:w-[233px] flex-shrink-0 sticky top-0 h-[calc(100vh-var(--site-header-offset))] overflow-visible">
+          <div
+            className="h-full overflow-y-auto border-r border-black/5 px-[13px] xl:px-[21px] py-[21px] xl:py-[34px] transition-transform duration-300 ease-in-out"
+            style={{ transform: 'translateY(var(--site-header-offset))' }}
+          >
+            <div className={TAB_SCROLL_CONTAINER_CLASS}>
+              <div className="flex justify-center min-w-max w-full">
+                {renderCategoryFilter()}
+              </div>
+            </div>
+          </div>
+        </aside>
+        <div className="flex-1 min-w-0 w-full max-w-full px-0 md:px-[21px] lg:px-[21px] xl:px-[34px] 2xl:px-[55px] py-0 xl:py-[34px]">
+          <div
+            className="sticky z-30 sm:-mt-1 md:-mt-2 lg:hidden transition-transform duration-300 ease-in-out"
+            style={mobileFilterStickyStyle}
+          >
+            <div
+              className="flex items-center justify-between border-b border-black/5 bg-white/95 px-[13px] py-[13px] backdrop-blur"
+            >
+              <Button
+                onClick={() => setIsFilterDrawerOpen(true)}
+                variant="secondary"
+                size="xs"
+                className="min-h-0 gap-2 px-[8px] sm:px-[13px] py-[3px] sm:py-[5px] text-[9px] sm:text-[10px] tracking-[0.15em] uppercase"
+                style={{ fontFamily: 'acumin-pro, sans-serif' }}
+                aria-haspopup="dialog"
+                aria-expanded={isFilterDrawerOpen}
+              >
+                <div className="w-4 h-4 flex items-center justify-center" aria-hidden="true">
+                  <i className="ri-equalizer-line text-base" />
+                </div>
+                FILTER
+              </Button>
+            </div>
+          </div>
+          {loading ? (
+            renderLoading()
+          ) : error ? (
+            renderError()
+          ) : resolvedArticles.length === 0 ? (
+            renderEmpty('現在、公開されている記事はありません')
+          ) : displayArticles.length === 0 ? (
+            renderEmpty('該当カテゴリの記事はありません')
+          ) : (
+            renderGrid()
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }

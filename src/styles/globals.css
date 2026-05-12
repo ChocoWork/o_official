@@ -186,6 +186,11 @@ ul {
 :root {
   --radius: 0.625rem;
   --button-phi: 1.61803398875;
+  --control-line-height: 1.272;
+  --control-pad-ratio: calc(var(--control-line-height) / (var(--button-phi) * var(--button-phi)));
+  --control-height-ratio: calc(var(--control-line-height) + (var(--control-pad-ratio) * 2));
+  --site-header-height: 52px;
+  --site-header-offset: 0px;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -217,6 +222,32 @@ ul {
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+}
+
+@media (min-width: 640px) {
+  :root {
+    --site-header-height: 54px;
+  }
+}
+
+@media (min-width: 768px) {
+  :root {
+    --site-header-height: 56px;
+  }
+}
+
+@media (min-width: 1280px) {
+  :root {
+    --site-header-height: 60px;
+  }
+}
+
+html[data-header-visible='true'] {
+  --site-header-offset: var(--site-header-height);
+}
+
+html[data-header-visible='false'] {
+  --site-header-offset: 0px;
 }
 
 .dark {
@@ -355,9 +386,9 @@ ul {
 
   [data-ui-button] {
     --button-font-size: clamp(0.875rem, 0.84rem + 0.14vw, 0.9375rem);
-    --button-pad-block: clamp(0.55rem, 0.5rem + 0.14vw, 0.7rem);
-    --button-pad-inline: calc(var(--button-pad-block) * var(--button-phi));
-    --button-min-height: clamp(2.5rem, 2.35rem + 0.45vw, 2.75rem);
+    --button-pad-block: calc(var(--button-font-size) * var(--control-pad-ratio));
+    --button-pad-inline: 1em;
+    --button-min-height: calc(var(--button-font-size) * var(--control-height-ratio));
     --button-radius-default: 9999px;
     --button-radius-rounded: clamp(0.875rem, 0.8rem + 0.35vw, 1.25rem);
     --button-bg: #111111;
@@ -382,7 +413,7 @@ ul {
     background: var(--button-bg);
     color: var(--button-color);
     font-size: var(--button-font-size);
-    line-height: 1.15;
+    line-height: var(--control-line-height);
     font-weight: 400;
     text-decoration: none;
     text-align: center;
@@ -401,32 +432,22 @@ ul {
 
   [data-ui-button][data-ui-button-size="xs"] {
     --button-font-size: clamp(0.75rem, 0.72rem + 0.08vw, 0.8125rem);
-    --button-pad-block: clamp(0.35rem, 0.3rem + 0.1vw, 0.45rem);
-    --button-min-height: clamp(2rem, 1.9rem + 0.32vw, 2.25rem);
   }
 
   [data-ui-button][data-ui-button-size="sm"] {
     --button-font-size: clamp(0.8125rem, 0.78rem + 0.1vw, 0.875rem);
-    --button-pad-block: clamp(0.45rem, 0.4rem + 0.12vw, 0.55rem);
-    --button-min-height: clamp(2.25rem, 2.1rem + 0.4vw, 2.5rem);
   }
 
   [data-ui-button][data-ui-button-size="md"] {
     --button-font-size: clamp(0.875rem, 0.84rem + 0.14vw, 0.9375rem);
-    --button-pad-block: clamp(0.55rem, 0.5rem + 0.14vw, 0.7rem);
-    --button-min-height: clamp(2.5rem, 2.35rem + 0.45vw, 2.75rem);
   }
 
   [data-ui-button][data-ui-button-size="lg"] {
     --button-font-size: clamp(0.9375rem, 0.9rem + 0.14vw, 1rem);
-    --button-pad-block: clamp(0.7rem, 0.62rem + 0.2vw, 0.9rem);
-    --button-min-height: clamp(3rem, 2.75rem + 0.75vw, 3.5rem);
   }
 
   [data-ui-button][data-ui-button-size="xl"] {
     --button-font-size: clamp(1rem, 0.94rem + 0.2vw, 1.125rem);
-    --button-pad-block: clamp(0.8rem, 0.72rem + 0.24vw, 1rem);
-    --button-min-height: clamp(3.5rem, 3.15rem + 0.9vw, 4.125rem);
   }
 
   [data-ui-button][data-ui-button-shape="rounded"] {
@@ -551,14 +572,14 @@ ul {
     --checkbox-font-size: clamp(0.8125rem, 0.78rem + 0.12vw, 0.9375rem);
     --checkbox-control-size: clamp(0.9375rem, 0.9rem + 0.14vw, 1.125rem);
     --checkbox-gap: calc(var(--checkbox-control-size) / var(--checkbox-phi));
-    --checkbox-padding-block-expanded: calc(var(--checkbox-gap) * 0.85);
+    --checkbox-padding-block-expanded: calc(var(--checkbox-font-size) * var(--control-pad-ratio));
     --checkbox-padding-block-compact: calc(var(--checkbox-padding-block-expanded) / 2);
     --checkbox-padding-block: var(--checkbox-padding-block-compact);
     --checkbox-padding-inline: calc(var(--checkbox-gap) * 0.75);
     --checkbox-row-radius: 0;
     --checkbox-control-radius: calc(var(--checkbox-control-size) / 2.61803398875);
-    --checkbox-hit-height-expanded: calc(var(--checkbox-control-size) * var(--checkbox-phi) * var(--checkbox-phi));
-    --checkbox-hit-height-compact: calc(var(--checkbox-control-size) * var(--checkbox-phi));
+    --checkbox-hit-height-expanded: calc(var(--checkbox-font-size) * var(--control-height-ratio));
+    --checkbox-hit-height-compact: calc(var(--checkbox-font-size) * (var(--control-line-height) + var(--control-pad-ratio)));
     --checkbox-hit-height: var(--checkbox-hit-height-compact);
     --checkbox-surface: transparent;
     --checkbox-surface-hover: transparent;
@@ -580,7 +601,7 @@ ul {
     background: var(--checkbox-surface);
     color: var(--checkbox-text);
     font-size: var(--checkbox-font-size);
-    line-height: 1.4;
+    line-height: var(--control-line-height);
     text-align: left;
     cursor: default;
     transition:
@@ -767,6 +788,84 @@ ul {
     [data-ui-checkbox-label] {
       color: inherit;
     }
+  }
+
+  [data-ui-multiselect-trigger] {
+    --multiselect-font-size: 14px;
+    --multiselect-pad-block: calc(var(--multiselect-font-size) * var(--control-pad-ratio));
+    --multiselect-pad-inline: 1em;
+    --multiselect-min-height: calc(var(--multiselect-font-size) * var(--control-height-ratio));
+    --multiselect-border-color: rgb(0 0 0 / 0.2);
+    --multiselect-background: #ffffff;
+    --multiselect-color: #111111;
+    --multiselect-focus-ring: #111111;
+    appearance: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: clamp(0.5rem, 0.42rem + 0.18vw, 0.75rem);
+    width: 100%;
+    min-height: var(--multiselect-min-height);
+    padding-block: var(--multiselect-pad-block);
+    padding-inline: var(--multiselect-pad-inline);
+    border: 1px solid var(--multiselect-border-color);
+    background: var(--multiselect-background);
+    color: var(--multiselect-color);
+    font-size: var(--multiselect-font-size);
+    line-height: var(--control-line-height);
+    text-align: left;
+    cursor: pointer;
+    transition:
+      background-color 180ms ease,
+      color 180ms ease,
+      border-color 180ms ease,
+      box-shadow 180ms ease;
+  }
+
+  [data-ui-multiselect-trigger][data-ui-multiselect-size="xs"] {
+    --multiselect-font-size: 10px;
+  }
+
+  [data-ui-multiselect-trigger][data-ui-multiselect-size="sm"] {
+    --multiselect-font-size: 11px;
+  }
+
+  [data-ui-multiselect-trigger][data-ui-multiselect-size="md"] {
+    --multiselect-font-size: 14px;
+  }
+
+  [data-ui-multiselect-trigger][data-ui-multiselect-size="lg"] {
+    --multiselect-font-size: 16px;
+  }
+
+  [data-ui-multiselect-trigger][data-ui-multiselect-size="xl"] {
+    --multiselect-font-size: 18px;
+  }
+
+  [data-ui-multiselect-trigger]:focus-visible {
+    outline: 2px solid transparent;
+    box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--multiselect-focus-ring);
+  }
+
+  [data-ui-multiselect-trigger-label] {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow-wrap: anywhere;
+  }
+
+  [data-ui-multiselect-trigger-icon] {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 1rem;
+    height: 1rem;
+  }
+
+  [data-ui-multiselect-panel] {
+    border: 1px solid rgb(0 0 0 / 0.2);
+    background: #ffffff;
+    box-shadow: 0 10px 24px rgb(17 17 17 / 0.12);
   }
 
   .stockist-grid-home {

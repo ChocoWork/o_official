@@ -1,11 +1,41 @@
 import type {
 	ButtonHTMLAttributes,
 	InputHTMLAttributes,
+	SelectHTMLAttributes,
 	MouseEventHandler,
 	ReactNode,
 } from 'react';
 
 export type ComponentSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+
+export interface SelectOption {
+	value: string;
+	label: string;
+}
+
+export interface SingleSelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'size'> {
+	label?: string;
+	options: SelectOption[];
+	placeholder?: string;
+	variant?: 'native' | 'dropdown';
+	onValueChange?: (value: string) => void;
+	size?: ComponentSize;
+}
+
+export interface MultiSelectProps {
+	options: SelectOption[];
+	values: string[];
+	onChange: (values: string[]) => void;
+	label?: string;
+	placeholder?: string;
+	variant?: 'panel' | 'dropdown' | 'buttons';
+	size?: ComponentSize;
+	/** 'check' = native checkbox (default), 'fill' = solid black square */
+	checkStyle?: 'check' | 'fill';
+	shape?: 'square' | 'rounded';
+	expandLabelHitArea?: boolean;
+	className?: string;
+}
 
 export type UIButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'link';
 export type UIButtonSize = ComponentSize;

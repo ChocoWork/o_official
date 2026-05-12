@@ -2,23 +2,7 @@ import { Button } from './Button';
 import { Checkbox } from './Checkbox';
 import { cn } from '@/lib/utils';
 import { useEffect, useRef, useState } from 'react';
-import type { SelectOption } from './shared';
-import { ComponentSize } from './types';
-
-export interface MultiSelectProps {
-  options: SelectOption[];
-  values: string[];
-  onChange: (values: string[]) => void;
-  label?: string;
-  placeholder?: string;
-  variant?: 'panel' | 'dropdown' | 'buttons'; // button-style toggle group
-  size?: ComponentSize;
-  /** 'check' = native checkbox (default), 'fill' = solid black square */
-  checkStyle?: 'check' | 'fill';
-  shape?: 'square' | 'rounded';
-  expandLabelHitArea?: boolean;
-  className?: string;
-}
+import type { MultiSelectProps, SelectOption } from './types';
 
 export function MultiSelect({
   options,
@@ -84,26 +68,9 @@ export function MultiSelect({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [open, variant]);
 
-  // Dropdown trigger: min-h (not fixed) so multi-line selections expand naturally
-  const dropdownTriggerMinHMap: Record<ComponentSize, string> = {
-    xs: 'min-h-7 py-1',
-    sm: 'min-h-8 py-1.5',
-    md: 'min-h-10 py-2',
-    lg: 'min-h-12 py-3',
-    xl: 'min-h-14 py-3.5',
-  };
-  // Dropdown trigger text: one step smaller than body text so long selections don't wrap as readily
-  const dropdownTriggerTextMap: Record<ComponentSize, string> = {
-    xs: 'text-[10px]',
-    sm: 'text-[11px]',
-    md: 'text-sm',
-    lg: 'text-base',
-    xl: 'text-lg',
-  };
-
   if (variant === 'buttons') {
     return (
-      <div className={cn('space-y-2', className)} ref={wrapperRef}>
+      <div className={cn('space-y-2', className)} ref={wrapperRef} data-ui-multiselect="true" data-ui-multiselect-variant={variant}>
         {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
         <div className="flex gap-3 flex-wrap">
           {options.map((option) => (
@@ -129,7 +96,7 @@ export function MultiSelect({
 
   if (variant === 'panel') {
     return (
-      <div className={cn('space-y-2', className)} ref={wrapperRef}>
+      <div className={cn('space-y-2', className)} ref={wrapperRef} data-ui-multiselect="true" data-ui-multiselect-variant={variant}>
         {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
         <div className="space-y-2">
           {options.map((option) => renderOptionItem(option))}
@@ -140,28 +107,24 @@ export function MultiSelect({
 
   if (variant === 'dropdown') {
     return (
-      <div className={cn('space-y-2', className)} ref={wrapperRef}>
+      <div className={cn('space-y-2', className)} ref={wrapperRef} data-ui-multiselect="true" data-ui-multiselect-variant={variant}>
         {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
         <div className="relative">
           <button
             type="button"
-            className={cn(
-              'w-full cursor-pointer border border-black/20 text-left focus:border-black focus:outline-none transition-colors flex items-center justify-between',
-              dropdownTriggerMinHMap[size],
-              dropdownTriggerTextMap[size],
-              'px-4',
-            )}
+            data-ui-multiselect-trigger="true"
+            data-ui-multiselect-size={size}
             onClick={() => setOpen((previous) => !previous)}
             aria-haspopup="listbox"
             aria-expanded={open}
           >
-            <span>{values.length > 0 ? values.map((v) => options.find((o) => o.value === v)?.label ?? v).join(', ') : placeholder}</span>
-            <span className="flex h-4 w-4 items-center justify-center">
-              <i className={cn('text-base transition-transform', open ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line')}></i>
+            <span data-ui-multiselect-trigger-label="true">{values.length > 0 ? values.map((v) => options.find((o) => o.value === v)?.label ?? v).join(', ') : placeholder}</span>
+            <span data-ui-multiselect-trigger-icon="true">
+              <i className={open ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'}></i>
             </span>
           </button>
           {open ? (
-            <div className="absolute left-0 right-0 top-full z-10 mt-1 border border-black/20 bg-white shadow-lg">
+            <div className="absolute left-0 right-0 top-full z-10 mt-1" data-ui-multiselect-panel="true">
               {options.map((option) => renderOptionItem(option))}
             </div>
           ) : null}

@@ -1,18 +1,8 @@
 import { cn } from '@/lib/utils';
-import type { SelectHTMLAttributes } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
-import { controlBaseClass, type SelectOption } from './shared';
-import { ComponentSize } from './types';
-
-export interface SingleSelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'size'> {
-  label?: string;
-  options: SelectOption[];
-  placeholder?: string;
-  variant?: 'native' | 'dropdown';
-  onValueChange?: (value: string) => void;
-  size?: ComponentSize;
-}
+import { controlBaseClass } from './shared';
+import type { SelectOption, SingleSelectProps } from './types';
 
 export function SingleSelect({
   label,

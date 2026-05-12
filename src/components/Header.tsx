@@ -32,7 +32,7 @@ const Header = () => {
   const lastScrollY = React.useRef(0);
 
   React.useEffect(() => {
-    const onScroll = () => {
+    const syncHeaderVisibility = () => {
       const currentScrollY = window.scrollY;
 
       if (currentScrollY <= 0) {
@@ -46,9 +46,14 @@ const Header = () => {
       lastScrollY.current = currentScrollY;
     };
 
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
+    syncHeaderVisibility();
+    window.addEventListener('scroll', syncHeaderVisibility, { passive: true });
+    return () => window.removeEventListener('scroll', syncHeaderVisibility);
   }, []);
+
+  React.useEffect(() => {
+    document.documentElement.dataset.headerVisible = isHeaderVisible ? 'true' : 'false';
+  }, [isHeaderVisible]);
 
   const isActiveMenuItem = (href: string) => {
     if (href === '/') return pathname === '/';
