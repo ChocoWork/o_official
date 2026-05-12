@@ -16,6 +16,7 @@ export interface MultiSelectProps {
   /** 'check' = native checkbox (default), 'fill' = solid black square */
   checkStyle?: 'check' | 'fill';
   shape?: 'square' | 'rounded';
+  expandLabelHitArea?: boolean;
   className?: string;
 }
 
@@ -29,6 +30,7 @@ export function MultiSelect({
   size = 'md',
   checkStyle = 'check',
   shape = 'rounded',
+  expandLabelHitArea = false,
   className,
 }: MultiSelectProps) {
   const [open, setOpen] = useState(false);
@@ -55,8 +57,10 @@ export function MultiSelect({
         size={size}
         checkStyle={checkStyle}
         shape={shape}
+        expandLabelHitArea={expandLabelHitArea}
         className={cn(
-          'w-full justify-start px-3 py-1.5 transition-colors hover:bg-[#f5f5f5]',
+          'w-full justify-start px-3 transition-colors',
+          expandLabelHitArea ? 'py-1.5 hover:bg-[#f5f5f5]' : 'py-[3px]',
           'text-[#474747] tracking-widest',
         )}
         inputClassName={cn(

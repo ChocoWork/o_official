@@ -500,6 +500,7 @@ export default function Page() {
                 options={multiSelectOptions}
                 values={sizes}
                 onChange={setSizes}
+                expandLabelHitArea
                size={multiSelectDemoSize}/>
             </div>
             <div className="max-w-md mt-8">
@@ -509,6 +510,7 @@ export default function Page() {
                 options={multiSelectOptions}
                 values={sizes}
                 onChange={setSizes}
+                expandLabelHitArea
                size={multiSelectDemoSize}/>
             </div>
             {/* button-style example */}
@@ -519,6 +521,7 @@ export default function Page() {
                 options={multiSelectOptions}
                 values={sizes}
                 onChange={setSizes}
+                expandLabelHitArea
                size={multiSelectDemoSize}/>
             </div>
           </section>

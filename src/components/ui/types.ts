@@ -29,6 +29,7 @@ export interface CheckboxProps
 	size?: ComponentSize;
 	checkStyle?: UICheckboxCheckStyle;
 	shape?: UICheckboxShape;
+	expandLabelHitArea?: boolean;
 	className?: string;
 	inputClassName?: string;
 }

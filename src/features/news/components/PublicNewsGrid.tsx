@@ -203,12 +203,12 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
             href={resolveBuildHref(article)}
             className={hideOnMobile ? 'hidden md:block' : 'block'}
           >
-            <article className="border-b border-black/10 py-4 sm:py-5 xl:py-7 group cursor-pointer">
-              <div className="sm:flex sm:items-start sm:gap-8 xl:gap-12">
+            <article className="py-[13px] sm:py-[13px] md:py-[21px] xl:py-[21px] border-b border-black/5 group cursor-pointer">
+              <div className="sm:flex sm:items-start">
                 {/* Date column: inline with category on mobile, fixed-width on sm+ */}
                 <div className="flex items-center gap-3 mb-2 sm:mb-0 sm:w-28 xl:w-36 sm:flex-shrink-0 sm:pt-0.5">
                   <span
-                    className="text-[11px] sm:text-xs text-[#474747] tracking-widest whitespace-nowrap"
+                    className="text-[9px] sm:text-[10px] md:text-[11px] lg:text-[12px] flex-shrink-0 text-[#474747] tracking-widest whitespace-nowrap"
                     style={{ fontFamily: 'acumin-pro, sans-serif' }}
                   >
                     {article.published_date.replace(/-/g, '.')}
@@ -231,13 +231,13 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
                   </div>
 
                   <h4
-                    className="leading-snug mb-1.5 sm:mb-2 xl:mb-2.5 group-hover:text-[#474747] transition-colors duration-300"
+                    className="text-[13px] sm:text-[14px] md:text-[15px] lg:text-[16px]  mb-[5px] sm:mb-[8px] group-hover:text-black/50 transition-colors duration-300 leading-snug"
                   >
                     {article.title}
                   </h4>
 
                   <p
-                    className="text-xs md:text-sm text-[#474747] leading-relaxed line-clamp-2 sm:line-clamp-3"
+                    className="text-[10px] sm:text-[11px] md:text-[12px] lg:text-[13px] leading-[1.8] line-clamp-2 sm:line-clamp-3 text-[#474747]"
                     style={{ fontFamily: 'acumin-pro, sans-serif' }}
                   >
                     {article.content}
@@ -348,23 +348,12 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
             checkStyle="fill"
             size="sm"
             className="tracking-widest"
+            expandLabelHitArea={false}
           />
         </div>
         {/* sm+: pill tabs */}
         <div className={cn('hidden sm:block', TAB_SCROLL_CONTAINER_CLASS)}>
           <div className="flex justify-center min-w-max w-full">
-            {/* <TabSegmentControl
-              items={NEWS_CATEGORIES.map((category) => ({ key: category, label: category }))}
-              activeKey={selectedCategories.length === 1 ? selectedCategories[0] : 'ALL'}
-              onChange={(category) => {
-                const nextSelection: NewsCategory[] = [category as NewsCategory];
-                setSelectedCategories(nextSelection);
-                syncCategoryQuery(nextSelection);
-              }}
-              variant="segment-pill"
-              size="md"
-              className="min-w-max"
-            /> */}
             <MultiSelect
               variant="panel"
               options={NEWS_CATEGORIES.map((c) => ({ value: c, label: c }))}
@@ -402,6 +391,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
               checkStyle="fill"
               size="sm"
               className="tracking-widest"
+              expandLabelHitArea={false}
             />
           </div>
         </div>

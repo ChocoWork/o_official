@@ -551,14 +551,18 @@ ul {
     --checkbox-font-size: clamp(0.8125rem, 0.78rem + 0.12vw, 0.9375rem);
     --checkbox-control-size: clamp(0.9375rem, 0.9rem + 0.14vw, 1.125rem);
     --checkbox-gap: calc(var(--checkbox-control-size) / var(--checkbox-phi));
-    --checkbox-padding-block: calc(var(--checkbox-gap) * 0.85);
+    --checkbox-padding-block-expanded: calc(var(--checkbox-gap) * 0.85);
+    --checkbox-padding-block-compact: calc(var(--checkbox-padding-block-expanded) / 2);
+    --checkbox-padding-block: var(--checkbox-padding-block-compact);
     --checkbox-padding-inline: calc(var(--checkbox-gap) * 0.75);
     --checkbox-row-radius: 0;
     --checkbox-control-radius: calc(var(--checkbox-control-size) / 2.61803398875);
-    --checkbox-hit-height: calc(var(--checkbox-control-size) * var(--checkbox-phi) * var(--checkbox-phi));
+    --checkbox-hit-height-expanded: calc(var(--checkbox-control-size) * var(--checkbox-phi) * var(--checkbox-phi));
+    --checkbox-hit-height-compact: calc(var(--checkbox-control-size) * var(--checkbox-phi));
+    --checkbox-hit-height: var(--checkbox-hit-height-compact);
     --checkbox-surface: transparent;
-    --checkbox-surface-hover: #f1f1f1;
-    --checkbox-surface-active: #eaeaea;
+    --checkbox-surface-hover: transparent;
+    --checkbox-surface-active: transparent;
     --checkbox-border: #d2d2d2;
     --checkbox-text: #474747;
     --checkbox-text-strong: #111111;
@@ -578,7 +582,7 @@ ul {
     font-size: var(--checkbox-font-size);
     line-height: 1.4;
     text-align: left;
-    cursor: pointer;
+    cursor: default;
     transition:
       background-color 180ms ease,
       color 180ms ease,
@@ -611,6 +615,19 @@ ul {
     --checkbox-control-size: clamp(1.125rem, 1.06rem + 0.2vw, 1.375rem);
   }
 
+  [data-ui-checkbox][data-ui-checkbox-expand-hit-area="true"] {
+    --checkbox-padding-block: var(--checkbox-padding-block-expanded);
+    --checkbox-hit-height: var(--checkbox-hit-height-expanded);
+    --checkbox-surface-hover: #f1f1f1;
+    --checkbox-surface-active: #eaeaea;
+    cursor: pointer;
+  }
+
+  [data-ui-checkbox][data-ui-checkbox-expand-hit-area="false"] {
+    --checkbox-padding-block: var(--checkbox-padding-block-compact);
+    --checkbox-hit-height: var(--checkbox-hit-height-compact);
+  }
+
   [data-ui-checkbox][data-ui-checkbox-shape="square"] {
     border-radius: 0;
   }
@@ -636,6 +653,11 @@ ul {
 
   [data-ui-checkbox][data-ui-checkbox-disabled="true"] [data-ui-checkbox-label] {
     color: #8c8c8c;
+    cursor: not-allowed;
+  }
+
+  [data-ui-checkbox][data-ui-checkbox-disabled="true"] [data-ui-checkbox-input] {
+    cursor: not-allowed;
   }
 
   [data-ui-checkbox-input] {
@@ -688,6 +710,16 @@ ul {
 
   [data-ui-checkbox]:not([data-ui-checkbox-disabled="true"]):active {
     background: var(--checkbox-surface-active);
+  }
+
+  [data-ui-checkbox][data-ui-checkbox-expand-hit-area="false"]:hover,
+  [data-ui-checkbox][data-ui-checkbox-expand-hit-area="false"]:active {
+    background: transparent !important;
+    background-color: transparent !important;
+  }
+
+  [data-ui-checkbox][data-ui-checkbox-expand-hit-area="false"] [data-ui-checkbox-label] {
+    cursor: pointer;
   }
 
   @media (prefers-reduced-motion: reduce) {
