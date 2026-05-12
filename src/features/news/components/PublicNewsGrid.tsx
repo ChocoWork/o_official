@@ -242,6 +242,34 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
     transform: 'translateY(calc(var(--site-header-offset) - var(--site-header-height)))',
   } as const;
 
+  const renderMobileFilterBar = (interactive: boolean) => (
+    <div
+      data-filter-bar={interactive ? 'floating' : 'placeholder'}
+      aria-hidden={interactive ? undefined : true}
+      className={cn(
+        'flex items-center justify-between border-b border-black/5 bg-white/95 px-[13px] py-[13px] backdrop-blur',
+        !interactive && 'pointer-events-none invisible',
+      )}
+    >
+      <Button
+        data-filter-button={interactive ? 'floating' : 'placeholder'}
+        onClick={interactive ? () => setIsFilterDrawerOpen(true) : undefined}
+        variant="secondary"
+        size="xs"
+        className="min-h-0 gap-2 px-[8px] sm:px-[13px] py-[3px] sm:py-[5px] text-[9px] sm:text-[10px] tracking-[0.15em] uppercase"
+        style={{ fontFamily: 'acumin-pro, sans-serif' }}
+        aria-haspopup={interactive ? 'dialog' : undefined}
+        aria-expanded={interactive ? isFilterDrawerOpen : undefined}
+        tabIndex={interactive ? undefined : -1}
+      >
+        <div className="w-4 h-4 flex items-center justify-center" aria-hidden="true">
+          <i className="ri-equalizer-line text-base" />
+        </div>
+        FILTER
+      </Button>
+    </div>
+  );
+
   // Mobile: show only 3 articles on home variant (hidden lg:block hides them below lg breakpoint)
   const resolvedMobileLimit = variant === 'home' ? 3 : undefined;
   const shouldLimitOnMobile = typeof resolvedMobileLimit === 'number';
@@ -406,27 +434,12 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
           </div>
         </aside>
         <div className="flex-1 min-w-0 w-full max-w-full px-0 md:px-[21px] lg:px-[21px] xl:px-[34px] 2xl:px-[55px] py-0 xl:py-[34px]">
-          <div
-            className="sticky z-30 sm:-mt-1 md:-mt-2 lg:hidden transition-transform duration-300 ease-in-out"
-            style={mobileFilterStickyStyle}
-          >
-            <div
-              className="flex items-center justify-between border-b border-black/5 bg-white/95 px-[13px] py-[13px] backdrop-blur"
-            >
-              <Button
-                onClick={() => setIsFilterDrawerOpen(true)}
-                variant="secondary"
-                size="xs"
-                className="min-h-0 gap-2 px-[8px] sm:px-[13px] py-[3px] sm:py-[5px] text-[9px] sm:text-[10px] tracking-[0.15em] uppercase"
-                style={{ fontFamily: 'acumin-pro, sans-serif' }}
-                aria-haspopup="dialog"
-                aria-expanded={isFilterDrawerOpen}
-              >
-                <div className="w-4 h-4 flex items-center justify-center" aria-hidden="true">
-                  <i className="ri-equalizer-line text-base" />
-                </div>
-                FILTER
-              </Button>
+          <div className="sm:-mt-1 md:-mt-2 lg:hidden">
+            {renderMobileFilterBar(false)}
+          </div>
+          <div className="fixed inset-x-0 z-30 lg:hidden transition-transform duration-300 ease-in-out" style={mobileFilterStickyStyle}>
+            <div className="element-width px-6 md:px-[45px]">
+              {renderMobileFilterBar(true)}
             </div>
           </div>
           {loading ? (

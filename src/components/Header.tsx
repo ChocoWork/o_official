@@ -51,7 +51,7 @@ const Header = () => {
     return () => window.removeEventListener('scroll', syncHeaderVisibility);
   }, []);
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     document.documentElement.dataset.headerVisible = isHeaderVisible ? 'true' : 'false';
   }, [isHeaderVisible]);
 
