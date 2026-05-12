@@ -242,6 +242,10 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
     transform: 'translateY(calc(var(--site-header-offset) - var(--site-header-height)))',
   } as const;
 
+  const desktopFilterStickyStyle = {
+    top: 'var(--site-header-offset)',
+  } as const;
+
   const renderMobileFilterBar = (interactive: boolean) => (
     <div
       data-filter-bar={interactive ? 'floating' : 'placeholder'}
@@ -421,10 +425,12 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
 
       <div className="flex w-full">
         {/* Category filter */}
-        <aside className="hidden lg:block w-[199px] xl:w-[233px] flex-shrink-0 sticky top-0 h-[calc(100vh-var(--site-header-offset))] overflow-visible">
+        <aside
+          className="hidden lg:block w-[199px] xl:w-[233px] flex-shrink-0 sticky h-[calc(100vh-var(--site-header-offset))] overflow-visible transition-[top,height] duration-300 ease-in-out"
+          style={desktopFilterStickyStyle}
+        >
           <div
-            className="h-full overflow-y-auto border-r border-black/5 px-[13px] xl:px-[21px] py-[21px] xl:py-[34px] transition-transform duration-300 ease-in-out"
-            style={{ transform: 'translateY(var(--site-header-offset))' }}
+            className="h-full overflow-y-auto border-r border-black/5 px-[13px] xl:px-[21px] py-[21px] xl:py-[34px]"
           >
             <div className={TAB_SCROLL_CONTAINER_CLASS}>
               <div className="flex justify-center min-w-max w-full">
