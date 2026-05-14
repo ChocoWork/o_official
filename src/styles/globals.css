@@ -567,6 +567,168 @@ html[data-header-visible='false'] {
     }
   }
 
+  [data-ui-accordion] {
+    --accordion-font-size: clamp(0.875rem, 0.84rem + 0.14vw, 0.9375rem);
+    --accordion-line-height: var(--button-phi);
+    --accordion-space-ratio: calc(1 / var(--button-phi));
+    --accordion-pad-inline: 1em;
+    --accordion-pad-block: calc(var(--accordion-font-size) * var(--accordion-space-ratio));
+    --accordion-gap: calc(var(--accordion-font-size) * var(--accordion-space-ratio));
+    --accordion-icon-box-size: 1.25em;
+    --accordion-border-color: var(--border);
+    --accordion-surface: var(--card);
+    --accordion-surface-hover: var(--muted);
+    --accordion-surface-active: var(--accent);
+    --accordion-title-color: var(--foreground);
+    --accordion-content-color: var(--muted-foreground);
+    --accordion-focus-ring: var(--ring);
+    width: 100%;
+    max-width: 42rem;
+    overflow: hidden;
+    border: 1px solid var(--accordion-border-color);
+    background: var(--accordion-surface);
+    color: var(--accordion-title-color);
+  }
+
+  [data-ui-accordion][data-ui-accordion-size="xs"] {
+    --accordion-font-size: clamp(0.75rem, 0.72rem + 0.08vw, 0.8125rem);
+  }
+
+  [data-ui-accordion][data-ui-accordion-size="sm"] {
+    --accordion-font-size: clamp(0.8125rem, 0.78rem + 0.1vw, 0.875rem);
+  }
+
+  [data-ui-accordion][data-ui-accordion-size="md"] {
+    --accordion-font-size: clamp(0.875rem, 0.84rem + 0.14vw, 0.9375rem);
+  }
+
+  [data-ui-accordion][data-ui-accordion-size="lg"] {
+    --accordion-font-size: clamp(0.9375rem, 0.9rem + 0.14vw, 1rem);
+  }
+
+  [data-ui-accordion][data-ui-accordion-size="xl"] {
+    --accordion-font-size: clamp(1rem, 0.94rem + 0.2vw, 1.125rem);
+  }
+
+  [data-ui-accordion-item]:not(:last-child) {
+    border-bottom: 1px solid var(--accordion-border-color);
+  }
+
+  [data-ui-accordion-trigger] {
+    appearance: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--accordion-gap);
+    width: 100%;
+    min-width: 0;
+    padding: var(--accordion-pad-block) var(--accordion-pad-inline);
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-family: inherit;
+    font-size: var(--accordion-font-size);
+    line-height: var(--accordion-line-height);
+    text-align: left;
+    cursor: pointer;
+    transition:
+      background-color 180ms ease,
+      color 180ms ease,
+      box-shadow 180ms ease,
+      transform 180ms ease;
+  }
+
+  [data-ui-accordion-trigger]:hover,
+  [data-ui-accordion-trigger][aria-expanded="true"] {
+    background: var(--accordion-surface-hover);
+  }
+
+  [data-ui-accordion-trigger]:active {
+    background: var(--accordion-surface-active);
+  }
+
+  [data-ui-accordion-trigger]:focus-visible {
+    position: relative;
+    z-index: 1;
+    outline: 2px solid var(--accordion-focus-ring);
+    outline-offset: -2px;
+  }
+
+  [data-ui-accordion-title] {
+    display: block;
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow-wrap: anywhere;
+  }
+
+  [data-ui-accordion-icon-wrap] {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: var(--accordion-icon-box-size);
+    height: var(--accordion-icon-box-size);
+  }
+
+  [data-ui-accordion-icon] {
+    font-size: 1em;
+    line-height: 1;
+    transition: transform 180ms ease;
+  }
+
+  [data-ui-accordion-content] {
+    padding: var(--accordion-pad-block) var(--accordion-pad-inline);
+  }
+
+  [data-ui-accordion-content-body] {
+    min-width: 0;
+    color: var(--accordion-content-color);
+    font-size: var(--accordion-font-size);
+    line-height: var(--accordion-line-height);
+    overflow-wrap: anywhere;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-ui-accordion],
+    [data-ui-accordion-trigger],
+    [data-ui-accordion-icon] {
+      transition: none;
+    }
+  }
+
+  @media (forced-colors: active) {
+    [data-ui-accordion] {
+      forced-color-adjust: auto;
+      background: Canvas;
+      color: CanvasText;
+      border-color: CanvasText;
+    }
+
+    [data-ui-accordion-item]:not(:last-child) {
+      border-bottom-color: CanvasText;
+    }
+
+    [data-ui-accordion-trigger] {
+      forced-color-adjust: auto;
+      color: CanvasText;
+    }
+
+    [data-ui-accordion-trigger]:hover,
+    [data-ui-accordion-trigger][aria-expanded="true"],
+    [data-ui-accordion-trigger]:active {
+      background: Canvas;
+    }
+
+    [data-ui-accordion-trigger]:focus-visible {
+      outline-color: Highlight;
+    }
+
+    [data-ui-accordion-content-body],
+    [data-ui-accordion-icon] {
+      color: CanvasText;
+    }
+  }
+
   [data-ui-checkbox] {
     --checkbox-phi: 1.61803398875;
     --checkbox-font-size: clamp(0.8125rem, 0.78rem + 0.12vw, 0.9375rem);

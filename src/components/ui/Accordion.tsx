@@ -59,47 +59,9 @@ export function Accordion({
     setCurrentOpenKey(isOpen ? null : key);
   };
 
-  // maps for size adjustments
-  const triggerPaddingMap: Record<ComponentSize, string> = {
-    xs: 'px-4 py-2',
-    sm: 'px-4 py-2',
-    md: 'px-6 py-3',
-    lg: 'px-8 py-4',
-    xl: 'px-8 py-4',
-  };
-  const contentPaddingMap: Record<ComponentSize, string> = {
-    xs: 'px-4 py-0.5 pb-1',
-    sm: 'px-4 py-0.5 pb-1',
-    md: 'px-6 py-1 pb-2',
-    lg: 'px-8 py-1.5 pb-3',
-    xl: 'px-8 py-1.5 pb-3',
-  };
-  const textSizeMap: Record<ComponentSize, string> = {
-    // md should match original implementation (text-sm)
-    xs: 'text-sm',
-    sm: 'text-sm',
-    md: 'text-sm',
-    lg: 'text-lg',
-    xl: 'text-lg',
-  };
-  const iconSizeMap: Record<ComponentSize, string> = {
-    xs: 'text-base',
-    sm: 'text-base',
-    md: 'text-lg',
-    lg: 'text-xl',
-    xl: 'text-xl',
-  };
-  const iconContainerSizeMap: Record<ComponentSize, string> = {
-    xs: 'h-4 w-4',
-    sm: 'h-4 w-4',
-    md: 'h-5 w-5',
-    lg: 'h-6 w-6',
-    xl: 'h-6 w-6',
-  };
-
   return (
-    <div className={cn('max-w-2xl border border-black/20', className)}>
-      {items.map((item, index) => {
+    <div data-ui-accordion data-ui-accordion-size={size} className={className}>
+      {items.map((item) => {
         const isOpen =
           openMode === 'multiple'
             ? internalOpenKeys.includes(item.key)
@@ -108,42 +70,30 @@ export function Accordion({
         return (
           <div
             key={item.key}
-            className={cn(index < items.length - 1 ? 'border-b border-black/10' : null, itemClassName, item.className)}
+            data-ui-accordion-item
+            className={cn(itemClassName, item.className)}
           >
             <button
               type="button"
-              className={cn(
-                'flex w-full cursor-pointer items-center justify-between text-left transition-colors hover:bg-[#f5f5f5]',
-                triggerPaddingMap[size],
-                triggerClassName,
-              )}
+              data-ui-accordion-trigger
+              aria-expanded={isOpen}
+              className={triggerClassName}
               onClick={() => toggleOpenKey(item.key, isOpen)}
             >
-              <span
-                className={cn(textSizeMap[size], 'tracking-wide text-black')}
-                style={{ fontFamily: 'acumin-pro, sans-serif' }}
-              >
+              <span data-ui-accordion-title>
                 {item.title}
               </span>
-              <div
-                className={cn(
-                  'flex items-center justify-center',
-                  iconContainerSizeMap[size]
-                )}
-              >
+              <span data-ui-accordion-icon-wrap aria-hidden="true">
                 <i
-                  className={cn(
-                    isOpen ? 'ri-subtract-line' : 'ri-add-line',
-                    iconSizeMap[size],
-                    'transition-transform',
-                    'antialiased'
-                  )}
+                  data-ui-accordion-icon
+                  className={isOpen ? 'ri-subtract-line' : 'ri-add-line'}
+                  aria-hidden="true"
                 />
-              </div>
+              </span>
             </button>
             {isOpen ? (
-              <div className={cn(contentPaddingMap[size], contentClassName)}>
-                <div className="text-sm leading-relaxed text-black/60" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+              <div data-ui-accordion-content className={contentClassName}>
+                <div data-ui-accordion-content-body>
                   {item.content}
                 </div>
               </div>
