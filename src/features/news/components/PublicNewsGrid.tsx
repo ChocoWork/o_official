@@ -251,7 +251,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
       data-filter-bar={interactive ? 'floating' : 'placeholder'}
       aria-hidden={interactive ? undefined : true}
       className={cn(
-        'flex items-center justify-between border-b border-black/5 bg-white/95 px-[13px] py-[13px] backdrop-blur',
+        'flex items-center justify-between border-b border-black/5 bg-white/95 py-[13px] backdrop-blur',
         !interactive && 'pointer-events-none invisible',
       )}
     >
