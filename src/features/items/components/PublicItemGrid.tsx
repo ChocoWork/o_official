@@ -280,10 +280,6 @@ export function PublicItemGrid(props: PublicItemGridProps) {
   }, [searchParams]);
 
   useEffect(() => {
-    if (!isFilterDrawerOpen) {
-      return;
-    }
-
     setDraftCollection(selectedCollection);
     setDraftCategories(selectedCategories);
     setDraftSizes(selectedSizes);
@@ -430,38 +426,6 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     const max = selectedPriceMax === '' ? priceBounds.max : selectedPriceMax;
     setDraftPriceRange([Math.min(min, max), Math.max(min, max)]);
   }, [priceBounds.min, priceBounds.max, selectedPriceMin, selectedPriceMax, isFilterDrawerOpen]);
-
-  const activeFilterCount = useMemo(() => {
-    const checks = [
-      selectedCollection.length > 0,
-      selectedCategories.length > 0,
-      selectedSizes.length > 0,
-      selectedColors.length > 0,
-      selectedStock !== 'all',
-      selectedCollectionYearMin !== '' && selectedCollectionYearMin !== collectionYearBounds.min,
-      selectedCollectionYearMax !== '' && selectedCollectionYearMax !== collectionYearBounds.max,
-      selectedCollectionSeasons.length !== 2,
-      selectedPriceMin !== '' && selectedPriceMin !== priceBounds.min,
-      selectedPriceMax !== '' && selectedPriceMax !== priceBounds.max,
-    ];
-
-    return checks.filter(Boolean).length;
-  }, [
-    selectedCollection,
-    selectedCategories,
-    selectedSizes,
-    selectedColors,
-    selectedStock,
-    selectedCollectionYearMin,
-    selectedCollectionYearMax,
-    selectedCollectionSeasons,
-    selectedPriceMin,
-    selectedPriceMax,
-    collectionYearBounds.min,
-    collectionYearBounds.max,
-    priceBounds.min,
-    priceBounds.max,
-  ]);
 
   const displayItems = useMemo(() => {
     if (variant === 'home') {
@@ -699,6 +663,15 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     }));
   }, []);
 
+  const mobileFilterStickyStyle = {
+    top: 'var(--site-header-height)',
+    transform: 'translateY(calc(var(--site-header-offset) - var(--site-header-height)))',
+  } as const;
+
+  const desktopFilterStickyStyle = {
+    top: 'var(--site-header-offset)',
+  } as const;
+
   useEffect(() => {
     if (variant !== 'catalog') {
       return;
@@ -804,6 +777,340 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     </div>
   );
 
+  const renderMobileFilterBar = (interactive: boolean) => (
+    <div
+      data-filter-bar={interactive ? 'floating' : 'placeholder'}
+      aria-hidden={interactive ? undefined : true}
+      className={cn(
+        'flex items-center justify-between border-b border-black/5 bg-white/95 py-[13px] backdrop-blur',
+        !interactive && 'pointer-events-none invisible',
+      )}
+    >
+      <Button
+        data-filter-button={interactive ? 'floating' : 'placeholder'}
+        onClick={interactive ? () => setIsFilterDrawerOpen(true) : undefined}
+        variant="secondary"
+        size="xs"
+        className="min-h-0 gap-2 px-[8px] sm:px-[13px] py-[3px] sm:py-[5px] text-[9px] sm:text-[10px] tracking-[0.15em] uppercase"
+        style={{ fontFamily: 'acumin-pro, sans-serif' }}
+        aria-haspopup={interactive ? 'dialog' : undefined}
+        aria-expanded={interactive ? isFilterDrawerOpen : undefined}
+        tabIndex={interactive ? undefined : -1}
+      >
+        <div className="w-4 h-4 flex items-center justify-center" aria-hidden="true">
+          <i className="ri-equalizer-line text-base" />
+        </div>
+        FILTER
+      </Button>
+    </div>
+  );
+
+  const renderFilterSections = () => (
+    <div className="pt-3 space-y-3">
+      <div className="border-b border-black/10 pb-3">
+        <button
+          type="button"
+          onClick={() => toggleSection('category')}
+          className="flex w-full items-center justify-between py-1 text-left text-xs tracking-[0.2em] text-black"
+          aria-label="Toggle CATEGORY section"
+        >
+          <span>CATEGORY</span>
+          <span>{openSections.category ? '-' : '+'}</span>
+        </button>
+        {openSections.category && (
+          <div className="mt-2 space-y-2">
+            {ITEM_CATEGORIES.map((category) => {
+              const isAll = category === 'ALL';
+              const isChecked = isAll ? draftCategories.length === 0 : draftCategories.includes(category);
+              return (
+                <label key={category} className="flex cursor-pointer items-center gap-2 text-xs text-[#474747]">
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      'h-2.5 w-2.5 flex-shrink-0 border',
+                      isChecked ? 'bg-black border-black' : 'bg-white border-black/40',
+                    )}
+                  />
+                  <input
+                    className="sr-only"
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => toggleDraftCategory(category)}
+                    aria-label={`CATEGORY ${category}`}
+                  />
+                  <span className="tracking-widest">{category}</span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {availableColorSwatches.length > 0 && (
+        <div className="border-b border-black/10 pb-3">
+          <button
+            type="button"
+            onClick={() => toggleSection('color')}
+            className="flex w-full items-center justify-between py-1 text-left text-xs tracking-[0.2em] text-black"
+            aria-label="Toggle COLOR section"
+          >
+            <span>COLOR</span>
+            <span>{openSections.color ? '-' : '+'}</span>
+          </button>
+          {openSections.color && (
+            <div className="mt-2 space-y-2">
+              <label className="flex cursor-pointer items-center gap-2 text-xs text-[#474747]">
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'h-2.5 w-2.5 flex-shrink-0 border',
+                    draftColors.length === 0 ? 'bg-black border-black' : 'bg-white border-black/40',
+                  )}
+                />
+                <input
+                  className="sr-only"
+                  type="checkbox"
+                  checked={draftColors.length === 0}
+                  onChange={() => toggleDraftColor('ALL')}
+                  aria-label="COLOR ALL"
+                />
+                <span className="tracking-widest">ALL</span>
+              </label>
+              {availableColorSwatches.map((swatch) => {
+                const checked = draftColors.includes(swatch.name);
+                return (
+                  <label key={swatch.name} className="flex cursor-pointer items-center gap-2 text-xs text-[#474747]">
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        'h-2.5 w-2.5 flex-shrink-0 border',
+                        checked ? 'bg-black border-black' : 'bg-white border-black/40',
+                      )}
+                    />
+                    <input
+                      className="sr-only"
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleDraftColor(swatch.name)}
+                      aria-label={`COLOR ${swatch.name}`}
+                    />
+                    <span
+                      className="inline-block h-3 w-3 rounded-full border border-black/20"
+                      style={{ backgroundColor: swatch.hex ?? '#ffffff' }}
+                      aria-hidden="true"
+                    />
+                    <span className="tracking-widest">{swatch.name}</span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="border-b border-black/10 pb-3">
+        <button
+          type="button"
+          onClick={() => toggleSection('stock')}
+          className="flex w-full items-center justify-between py-1 text-left text-xs tracking-[0.2em] text-black"
+          aria-label="Toggle STOCK section"
+        >
+          <span>STOCK</span>
+          <span>{openSections.stock ? '-' : '+'}</span>
+        </button>
+        {openSections.stock && (
+          <div className="mt-2 space-y-2">
+            {([
+              { value: 'all', label: 'ALL' },
+              { value: 'in', label: 'IN STOCK' },
+              { value: 'out', label: 'OUT OF STOCK' },
+            ] as const).map((option) => {
+              const checked = draftStock === option.value;
+              return (
+                <label key={option.value} className="flex cursor-pointer items-center gap-2 text-xs text-[#474747]">
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      'h-2.5 w-2.5 flex-shrink-0 border',
+                      checked ? 'bg-black border-black' : 'bg-white border-black/40',
+                    )}
+                  />
+                  <input
+                    className="sr-only"
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleDraftStock(option.value)}
+                    aria-label={`STOCK ${option.label}`}
+                  />
+                  <span className="tracking-widest">{option.label}</span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {availableSizes.length > 0 && (
+        <div className="border-b border-black/10 pb-3">
+          <button
+            type="button"
+            onClick={() => toggleSection('size')}
+            className="flex w-full items-center justify-between py-1 text-left text-xs tracking-[0.2em] text-black"
+            aria-label="Toggle SIZE section"
+          >
+            <span>SIZE</span>
+            <span>{openSections.size ? '-' : '+'}</span>
+          </button>
+          {openSections.size && (
+            <div className="mt-2 space-y-2">
+              <label className="flex cursor-pointer items-center gap-2 text-xs text-[#474747]">
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'h-2.5 w-2.5 flex-shrink-0 border',
+                    draftSizes.length === 0 ? 'bg-black border-black' : 'bg-white border-black/40',
+                  )}
+                />
+                <input
+                  className="sr-only"
+                  type="checkbox"
+                  checked={draftSizes.length === 0}
+                  onChange={() => toggleDraftSize('ALL')}
+                  aria-label="SIZE ALL"
+                />
+                <span className="tracking-widest">ALL</span>
+              </label>
+              {availableSizes.map((size) => {
+                const checked = draftSizes.includes(size);
+                return (
+                  <label key={size} className="flex cursor-pointer items-center gap-2 text-xs text-[#474747]">
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        'h-2.5 w-2.5 flex-shrink-0 border',
+                        checked ? 'bg-black border-black' : 'bg-white border-black/40',
+                      )}
+                    />
+                    <input
+                      className="sr-only"
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleDraftSize(size)}
+                      aria-label={`SIZE ${size}`}
+                    />
+                    <span className="tracking-widest">{size}</span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="border-b border-black/10 pb-3">
+        <button
+          type="button"
+          onClick={() => toggleSection('season')}
+          className="flex w-full items-center justify-between py-1 text-left text-xs tracking-[0.2em] text-black"
+          aria-label="Toggle SEASON section"
+        >
+          <span>SEASON</span>
+          <span>{openSections.season ? '-' : '+'}</span>
+        </button>
+        {openSections.season && (
+          <div className="mt-2 space-y-2">
+            <label className="flex cursor-pointer items-center gap-2 text-xs text-[#474747]">
+              <span
+                aria-hidden="true"
+                className={cn(
+                  'h-2.5 w-2.5 flex-shrink-0 border',
+                  draftCollectionSeasons.length === 2 ? 'bg-black border-black' : 'bg-white border-black/40',
+                )}
+              />
+              <input
+                className="sr-only"
+                type="checkbox"
+                checked={draftCollectionSeasons.length === 2}
+                onChange={() => toggleDraftSeason('ALL')}
+                aria-label="SEASON ALL"
+              />
+              <span className="tracking-widest">ALL</span>
+            </label>
+            {(['AW', 'SS'] as const).map((season) => {
+              const checked = draftCollectionSeasons.length === 1 && draftCollectionSeasons[0] === season;
+              return (
+                <label key={season} className="flex cursor-pointer items-center gap-2 text-xs text-[#474747]">
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      'h-2.5 w-2.5 flex-shrink-0 border',
+                      checked ? 'bg-black border-black' : 'bg-white border-black/40',
+                    )}
+                  />
+                  <input
+                    className="sr-only"
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleDraftSeason(season)}
+                    aria-label={`SEASON ${season}`}
+                  />
+                  <span className="tracking-widest">{season}</span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="border-b border-black/10 pb-3">
+        <button
+          type="button"
+          onClick={() => toggleSection('price')}
+          className="flex w-full items-center justify-between py-1 text-left text-xs tracking-[0.2em] text-black"
+          aria-label="Toggle PRICE section"
+        >
+          <span>PRICE</span>
+          <span>{openSections.price ? '-' : '+'}</span>
+        </button>
+        {openSections.price && (
+          <div className="mt-2 pb-1">
+            <Slider
+              mode="range"
+              label="PRICE RANGE"
+              rangeValue={draftPriceRange}
+              min={priceBounds.min}
+              max={priceBounds.max}
+              step={1000}
+              onRangeChange={setDraftPriceRange}
+              valueDisplay={`¥${Math.min(draftPriceRange[0], draftPriceRange[1]).toLocaleString('ja-JP')} - ¥${Math.max(draftPriceRange[0], draftPriceRange[1]).toLocaleString('ja-JP')}`}
+            />
+          </div>
+        )}
+      </div>
+
+      <div className="mt-5 space-y-2">
+        <Button
+          type="button"
+          variant="primary"
+          size="md"
+          onClick={applyDraftFilters}
+          className="w-full tracking-[0.18em]"
+        >
+          APPLY
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          size="md"
+          onClick={resetDraftFilters}
+          className="w-full tracking-[0.18em]"
+        >
+          RESET
+        </Button>
+      </div>
+    </div>
+  );
+
   if (variant === 'home') {
     if (isSelfFetch && error) {
       return (
@@ -843,67 +1150,77 @@ export function PublicItemGrid(props: PublicItemGridProps) {
 
   return (
     <>
-      <div className="mb-2 sm:mb-4 md:mb-6">
-        <div className="flex items-center justify-between">
-          <button
-            type="button"
-            onClick={() => setIsFilterDrawerOpen(true)}
-            className="text-[11px] tracking-[0.22em] text-black uppercase"
-            aria-label="Open filter drawer"
-          >
-            FILTER +
-            {activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
-          </button>
-
-          <div className="relative" ref={sortMenuRef}>
-            <button
-              type="button"
-              onClick={() => setIsSortMenuOpen((prev) => !prev)}
-              className="text-[11px] tracking-[0.22em] text-black uppercase"
-              aria-label="Open sort menu"
-              aria-expanded={isSortMenuOpen}
-            >
-              SORT
-            </button>
-
-            {isSortMenuOpen && (
-              <div className="absolute right-0 top-7 z-20 w-52 border border-black/15 bg-white shadow-lg">
-                {SORT_OPTIONS.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    className={cn(
-                      'w-full px-3 py-2 text-left text-xs tracking-wider hover:bg-[#f5f5f5]',
-                      selectedSort === option.value ? 'text-black' : 'text-[#474747]',
-                    )}
-                    onClick={() => {
-                      updateQuery((params) => {
-                        params.set('sort', option.value);
-                      });
-                      setIsSortMenuOpen(false);
-                    }}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            )}
+      <div className="flex w-full">
+        <aside
+          className="hidden lg:block w-[199px] xl:w-[233px] flex-shrink-0 sticky h-[calc(100vh-var(--site-header-offset))] overflow-visible transition-[top,height] duration-300 ease-in-out"
+          style={desktopFilterStickyStyle}
+        >
+          <div className="h-full overflow-y-auto border-r border-black/5 px-[13px] xl:px-[21px] py-[21px] xl:py-[34px]">
+            {renderFilterSections()}
           </div>
+        </aside>
+
+        <div className="flex-1 min-w-0 w-full max-w-full px-0 md:px-[21px] lg:px-[21px] xl:px-[34px] 2xl:px-[55px] py-0 xl:py-[34px]">
+          <div className="sm:-mt-1 md:-mt-2 lg:hidden">
+            {renderMobileFilterBar(false)}
+          </div>
+          <div className="fixed inset-x-0 z-30 lg:hidden transition-transform duration-300 ease-in-out" style={mobileFilterStickyStyle}>
+            <div className="element-width px-6 md:px-[45px]">
+              {renderMobileFilterBar(true)}
+            </div>
+          </div>
+
+          <div className="mb-2 sm:mb-4 md:mb-6 flex items-center justify-end">
+            <div className="relative" ref={sortMenuRef}>
+              <button
+                type="button"
+                onClick={() => setIsSortMenuOpen((prev) => !prev)}
+                className="text-[11px] tracking-[0.22em] text-black uppercase"
+                aria-label="Open sort menu"
+                aria-expanded={isSortMenuOpen}
+              >
+                SORT
+              </button>
+
+              {isSortMenuOpen && (
+                <div className="absolute right-0 top-7 z-20 w-52 border border-black/15 bg-white shadow-lg">
+                  {SORT_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={cn(
+                        'w-full px-3 py-2 text-left text-xs tracking-wider hover:bg-[#f5f5f5]',
+                        selectedSort === option.value ? 'text-black' : 'text-[#474747]',
+                      )}
+                      onClick={() => {
+                        updateQuery((params) => {
+                          params.set('sort', option.value);
+                        });
+                        setIsSortMenuOpen(false);
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {renderGrid()}
+
+          {displayItems.length === 0 && (
+            <div className="text-center py-12">
+              <p className="text-base tracking-widest text-gray-500">商品が見つかりません</p>
+            </div>
+          )}
+
+          <div ref={sentinelRef} data-testid="item-infinite-sentinel" className="h-8" />
+          {isFetchingMore && (
+            <div className="text-center text-sm text-[#474747] pb-4">読み込み中...</div>
+          )}
         </div>
       </div>
-
-      {renderGrid()}
-
-      {displayItems.length === 0 && (
-        <div className="text-center py-12">
-          <p className="text-base tracking-widest text-gray-500">商品が見つかりません</p>
-        </div>
-      )}
-
-      <div ref={sentinelRef} data-testid="item-infinite-sentinel" className="h-8" />
-      {isFetchingMore && (
-        <div className="text-center text-sm text-[#474747] pb-4">読み込み中...</div>
-      )}
 
       <Drawer
         open={isFilterDrawerOpen}
@@ -913,7 +1230,6 @@ export function PublicItemGrid(props: PublicItemGridProps) {
       >
         <div className="px-5 py-4 sm:px-6 sm:py-5">
           <div className="flex items-center justify-between border-b border-black/10 pb-3">
-            <h3 className="text-sm tracking-[0.22em] text-black">FILTER</h3>
             <button
               type="button"
               onClick={closeDrawerAndApplyFilters}
@@ -924,300 +1240,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
             </button>
           </div>
 
-          <div className="pt-3 space-y-3">
-            <div className="border-b border-black/10 pb-3">
-              <button
-                type="button"
-                onClick={() => toggleSection('category')}
-                className="flex w-full items-center justify-between py-1 text-left text-xs tracking-[0.2em] text-black"
-                aria-label="Toggle CATEGORY section"
-              >
-                <span>CATEGORY</span>
-                <span>{openSections.category ? '-' : '+'}</span>
-              </button>
-              {openSections.category && (
-                <div className="mt-2 space-y-2">
-                  {ITEM_CATEGORIES.map((category) => {
-                    const isAll = category === 'ALL';
-                    const isChecked = isAll ? draftCategories.length === 0 : draftCategories.includes(category);
-                    return (
-                      <label key={category} className="flex cursor-pointer items-center gap-2 text-xs text-[#474747]">
-                        <span
-                          aria-hidden="true"
-                          className={cn(
-                            'h-2.5 w-2.5 flex-shrink-0 border',
-                            isChecked ? 'bg-black border-black' : 'bg-white border-black/40',
-                          )}
-                        />
-                        <input
-                          className="sr-only"
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => toggleDraftCategory(category)}
-                          aria-label={`CATEGORY ${category}`}
-                        />
-                        <span className="tracking-widest">{category}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {availableColorSwatches.length > 0 && (
-              <div className="border-b border-black/10 pb-3">
-                <button
-                  type="button"
-                  onClick={() => toggleSection('color')}
-                  className="flex w-full items-center justify-between py-1 text-left text-xs tracking-[0.2em] text-black"
-                  aria-label="Toggle COLOR section"
-                >
-                  <span>COLOR</span>
-                  <span>{openSections.color ? '-' : '+'}</span>
-                </button>
-                {openSections.color && (
-                  <div className="mt-2 space-y-2">
-                    <label className="flex cursor-pointer items-center gap-2 text-xs text-[#474747]">
-                      <span
-                        aria-hidden="true"
-                        className={cn(
-                          'h-2.5 w-2.5 flex-shrink-0 border',
-                          draftColors.length === 0 ? 'bg-black border-black' : 'bg-white border-black/40',
-                        )}
-                      />
-                      <input
-                        className="sr-only"
-                        type="checkbox"
-                        checked={draftColors.length === 0}
-                        onChange={() => toggleDraftColor('ALL')}
-                        aria-label="COLOR ALL"
-                      />
-                      <span className="tracking-widest">ALL</span>
-                    </label>
-                    {availableColorSwatches.map((swatch) => {
-                      const checked = draftColors.includes(swatch.name);
-                      return (
-                        <label key={swatch.name} className="flex cursor-pointer items-center gap-2 text-xs text-[#474747]">
-                          <span
-                            aria-hidden="true"
-                            className={cn(
-                              'h-2.5 w-2.5 flex-shrink-0 border',
-                              checked ? 'bg-black border-black' : 'bg-white border-black/40',
-                            )}
-                          />
-                          <input
-                            className="sr-only"
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleDraftColor(swatch.name)}
-                            aria-label={`COLOR ${swatch.name}`}
-                          />
-                          <span
-                            className="inline-block h-3 w-3 rounded-full border border-black/20"
-                            style={{ backgroundColor: swatch.hex ?? '#ffffff' }}
-                            aria-hidden="true"
-                          />
-                          <span className="tracking-widest">{swatch.name}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="border-b border-black/10 pb-3">
-              <button
-                type="button"
-                onClick={() => toggleSection('stock')}
-                className="flex w-full items-center justify-between py-1 text-left text-xs tracking-[0.2em] text-black"
-                aria-label="Toggle STOCK section"
-              >
-                <span>STOCK</span>
-                <span>{openSections.stock ? '-' : '+'}</span>
-              </button>
-              {openSections.stock && (
-                <div className="mt-2 space-y-2">
-                  {([
-                    { value: 'all', label: 'ALL' },
-                    { value: 'in', label: 'IN STOCK' },
-                    { value: 'out', label: 'OUT OF STOCK' },
-                  ] as const).map((option) => {
-                    const checked = draftStock === option.value;
-                    return (
-                      <label key={option.value} className="flex cursor-pointer items-center gap-2 text-xs text-[#474747]">
-                        <span
-                          aria-hidden="true"
-                          className={cn(
-                            'h-2.5 w-2.5 flex-shrink-0 border',
-                            checked ? 'bg-black border-black' : 'bg-white border-black/40',
-                          )}
-                        />
-                        <input
-                          className="sr-only"
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleDraftStock(option.value)}
-                          aria-label={`STOCK ${option.label}`}
-                        />
-                        <span className="tracking-widest">{option.label}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {availableSizes.length > 0 && (
-              <div className="border-b border-black/10 pb-3">
-                <button
-                  type="button"
-                  onClick={() => toggleSection('size')}
-                  className="flex w-full items-center justify-between py-1 text-left text-xs tracking-[0.2em] text-black"
-                  aria-label="Toggle SIZE section"
-                >
-                  <span>SIZE</span>
-                  <span>{openSections.size ? '-' : '+'}</span>
-                </button>
-                {openSections.size && (
-                  <div className="mt-2 space-y-2">
-                    <label className="flex cursor-pointer items-center gap-2 text-xs text-[#474747]">
-                      <span
-                        aria-hidden="true"
-                        className={cn(
-                          'h-2.5 w-2.5 flex-shrink-0 border',
-                          draftSizes.length === 0 ? 'bg-black border-black' : 'bg-white border-black/40',
-                        )}
-                      />
-                      <input
-                        className="sr-only"
-                        type="checkbox"
-                        checked={draftSizes.length === 0}
-                        onChange={() => toggleDraftSize('ALL')}
-                        aria-label="SIZE ALL"
-                      />
-                      <span className="tracking-widest">ALL</span>
-                    </label>
-                    {availableSizes.map((size) => {
-                      const checked = draftSizes.includes(size);
-                      return (
-                        <label key={size} className="flex cursor-pointer items-center gap-2 text-xs text-[#474747]">
-                          <span
-                            aria-hidden="true"
-                            className={cn(
-                              'h-2.5 w-2.5 flex-shrink-0 border',
-                              checked ? 'bg-black border-black' : 'bg-white border-black/40',
-                            )}
-                          />
-                          <input
-                            className="sr-only"
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleDraftSize(size)}
-                            aria-label={`SIZE ${size}`}
-                          />
-                          <span className="tracking-widest">{size}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="border-b border-black/10 pb-3">
-              <button
-                type="button"
-                onClick={() => toggleSection('season')}
-                className="flex w-full items-center justify-between py-1 text-left text-xs tracking-[0.2em] text-black"
-                aria-label="Toggle SEASON section"
-              >
-                <span>SEASON</span>
-                <span>{openSections.season ? '-' : '+'}</span>
-              </button>
-              {openSections.season && (
-                <div className="mt-2 space-y-2">
-                  <label className="flex cursor-pointer items-center gap-2 text-xs text-[#474747]">
-                    <span
-                      aria-hidden="true"
-                      className={cn(
-                        'h-2.5 w-2.5 flex-shrink-0 border',
-                        draftCollectionSeasons.length === 2 ? 'bg-black border-black' : 'bg-white border-black/40',
-                      )}
-                    />
-                    <input
-                      className="sr-only"
-                      type="checkbox"
-                      checked={draftCollectionSeasons.length === 2}
-                      onChange={() => toggleDraftSeason('ALL')}
-                      aria-label="SEASON ALL"
-                    />
-                    <span className="tracking-widest">ALL</span>
-                  </label>
-                  {(['AW', 'SS'] as const).map((season) => {
-                    const checked = draftCollectionSeasons.length === 1 && draftCollectionSeasons[0] === season;
-                    return (
-                      <label key={season} className="flex cursor-pointer items-center gap-2 text-xs text-[#474747]">
-                        <span
-                          aria-hidden="true"
-                          className={cn(
-                            'h-2.5 w-2.5 flex-shrink-0 border',
-                            checked ? 'bg-black border-black' : 'bg-white border-black/40',
-                          )}
-                        />
-                        <input
-                          className="sr-only"
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleDraftSeason(season)}
-                          aria-label={`SEASON ${season}`}
-                        />
-                        <span className="tracking-widest">{season}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div className="border-b border-black/10 pb-3">
-              <button
-                type="button"
-                onClick={() => toggleSection('price')}
-                className="flex w-full items-center justify-between py-1 text-left text-xs tracking-[0.2em] text-black"
-                aria-label="Toggle PRICE section"
-              >
-                <span>PRICE</span>
-                <span>{openSections.price ? '-' : '+'}</span>
-              </button>
-              {openSections.price && (
-                <div className="mt-2 pb-1">
-                  <Slider
-                    mode="range"
-                    label="PRICE RANGE"
-                    rangeValue={draftPriceRange}
-                    min={priceBounds.min}
-                    max={priceBounds.max}
-                    step={1000}
-                    onRangeChange={setDraftPriceRange}
-                    valueDisplay={`¥${Math.min(draftPriceRange[0], draftPriceRange[1]).toLocaleString('ja-JP')} - ¥${Math.max(draftPriceRange[0], draftPriceRange[1]).toLocaleString('ja-JP')}`}
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="mt-5">
-            <Button
-              type="button"
-              variant="secondary"
-              size="md"
-              onClick={resetDraftFilters}
-              className="w-full tracking-[0.18em]"
-            >
-              RESET
-            </Button>
-          </div>
+          {renderFilterSections()}
         </div>
       </Drawer>
     </>

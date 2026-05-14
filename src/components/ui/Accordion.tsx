@@ -22,6 +22,8 @@ export interface AccordionProps {
   contentClassName?: string;
   /** demo-compatible size modifier */
   size?: ComponentSize;
+  /** #sym:size: single keeps current behavior, multiple allows opening multiple items */
+  openMode?: 'single' | 'multiple';
 }
 
 export function Accordion({
@@ -33,8 +35,10 @@ export function Accordion({
   triggerClassName,
   contentClassName,
   size = 'md',
+  openMode = 'single',
 }: AccordionProps) {
   const [internalOpenKey, setInternalOpenKey] = useState<string | null>(null);
+  const [internalOpenKeys, setInternalOpenKeys] = useState<string[]>([]);
   const currentOpenKey = openKey !== undefined ? openKey : internalOpenKey;
 
   const setCurrentOpenKey = (key: string | null) => {
@@ -43,6 +47,16 @@ export function Accordion({
       return;
     }
     setInternalOpenKey(key);
+  };
+
+  const toggleOpenKey = (key: string, isOpen: boolean) => {
+    if (openMode === 'multiple') {
+      setInternalOpenKeys((prev) =>
+        isOpen ? prev.filter((entry) => entry !== key) : [...prev, key],
+      );
+      return;
+    }
+    setCurrentOpenKey(isOpen ? null : key);
   };
 
   // maps for size adjustments
@@ -69,11 +83,11 @@ export function Accordion({
     xl: 'text-lg',
   };
   const iconSizeMap: Record<ComponentSize, string> = {
-    xs: 'text-lg',
-    sm: 'text-lg',
-    md: 'text-xl',
-    lg: 'text-2xl',
-    xl: 'text-2xl',
+    xs: 'text-base',
+    sm: 'text-base',
+    md: 'text-lg',
+    lg: 'text-xl',
+    xl: 'text-xl',
   };
   const iconContainerSizeMap: Record<ComponentSize, string> = {
     xs: 'h-4 w-4',
@@ -86,7 +100,10 @@ export function Accordion({
   return (
     <div className={cn('max-w-2xl border border-black/20', className)}>
       {items.map((item, index) => {
-        const isOpen = currentOpenKey === item.key;
+        const isOpen =
+          openMode === 'multiple'
+            ? internalOpenKeys.includes(item.key)
+            : currentOpenKey === item.key;
 
         return (
           <div
@@ -100,7 +117,7 @@ export function Accordion({
                 triggerPaddingMap[size],
                 triggerClassName,
               )}
-              onClick={() => setCurrentOpenKey(isOpen ? null : item.key)}
+              onClick={() => toggleOpenKey(item.key, isOpen)}
             >
               <span
                 className={cn(textSizeMap[size], 'tracking-wide text-black')}
@@ -116,9 +133,10 @@ export function Accordion({
               >
                 <i
                   className={cn(
-                    `ri-arrow-${isOpen ? 'up' : 'down'}-s-line`,
+                    isOpen ? 'ri-subtract-line' : 'ri-add-line',
                     iconSizeMap[size],
-                    'transition-transform'
+                    'transition-transform',
+                    'antialiased'
                   )}
                 />
               </div>
