@@ -3,11 +3,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { TagLabel } from '@/components/ui/TagLabel';
-import { Button } from '@/components/ui/Button';
-import { Drawer } from '@/components/ui/Drawer';
-import { SectionTitle } from '@/components/ui/SectionTitle';
-import { MultiSelect } from '@/components/ui/MultiSelect';
+import { TagLabel } from '@/components/ui/TagLabel/TagLabel';
+import { Button } from '@/components/ui/Button/Button';
+import { Drawer } from '@/components/ui/Drawer/Drawer';
+import { SectionTitle } from '@/components/ui/SectionTitle/SectionTitle';
+import { MultiSelect } from '@/components/ui/MultiSelect/MultiSelect';
 import { categories } from '@/lib/news-data';
 import { cn } from '@/lib/utils';
 import { PublicNewsArticle } from '@/features/news/types';

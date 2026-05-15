@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button } from '@/components/ui/Button';
-import { SingleSelect } from '@/components/ui/SingleSelect';
+import { Button } from '@/components/ui/Button/Button';
+import { SingleSelect } from '@/components/ui/SingleSelect/SingleSelect';
 import type { SelectOption } from '@/components/ui/types';
 import { clientFetch } from '@/lib/client-fetch';
 

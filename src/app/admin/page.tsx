@@ -13,9 +13,9 @@ import LookSection from '@/components/LookSection';
 import StockistSection from '@/components/StockistSection';
 import UserSection from '@/components/UserSection';
 import OrderSection, { type OrderItem } from '@/components/OrderSection';
-import { Button } from '@/components/ui/Button';
-import { DateTimePicker } from '@/components/ui/DateTimePicker';
-import { SearchField } from '@/components/ui/SearchField';
+import { Button } from '@/components/ui/Button/Button';
+import { DateTimePicker } from '@/components/ui/DateTimePicker/DateTimePicker';
+import { SearchField } from '@/components/ui/SearchField/SearchField';
 
 const allAdminTabs: TabType[] = ['KPI', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER'];
 const supporterTabs: TabType[] = ['ORDER'];

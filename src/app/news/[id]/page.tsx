@@ -3,8 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { categories } from "@/lib/news-data";
-import { Button } from '@/components/ui/Button';
-import { TagLabel } from '@/components/ui/TagLabel';
+import { Button } from '@/components/ui/Button/Button';
+import { TagLabel } from '@/components/ui/TagLabel/TagLabel';
 import { getPublishedNewsDetailById, getPublishedNewsNavigation } from '@/features/news/services/public';
 
 interface NewsDetailPageProps {

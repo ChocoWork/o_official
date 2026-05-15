@@ -3,9 +3,9 @@
 import Link from 'next/link';
 import React from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { SearchField } from '@/components/ui/SearchField';
-import { TabSegmentControl } from '@/components/ui/TabSegmentControl';
-import { TagLabel } from '@/components/ui/TagLabel';
+import { SearchField } from '@/components/ui/SearchField/SearchField';
+import { TabSegmentControl } from '@/components/ui/TabSegmentControl/TabSegmentControl';
+import { TagLabel } from '@/components/ui/TagLabel/TagLabel';
 import type { SearchResult, SearchResultsResponse, SearchSuggestion, SearchTab } from '@/features/search/types/search.types';
 
 const SEARCH_HISTORY_KEY = 'search.history';

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import React from 'react';
 import { useParams } from 'next/navigation';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button/Button';
 import { useLogin } from '@/contexts/LoginContext';
 import { clientFetch } from '@/lib/client-fetch';
 

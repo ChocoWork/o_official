@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { clientFetch } from '@/lib/client-fetch';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button/Button';
 import { Card } from '@/components/ui/Card';
-import { StatusBadge } from '@/components/ui/StatusBadge';
+import { StatusBadge } from '@/components/ui/StatusBadge/StatusBadge';
 
 type AdminStockist = {
   id: number;

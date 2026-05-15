@@ -6,7 +6,7 @@ import { PublicItemGrid } from '@/features/items/components/PublicItemGrid';
 import { PublicNewsGrid } from '@/features/news/components/PublicNewsGrid';
 import { PublicStockistGrid } from '@/features/stockist/components/PublicStockistGrid';
 import { SearchHomePreview } from '@/features/search/components/SearchHomePreview';
-import { SectionTitle } from '@/components/ui/SectionTitle';
+import { SectionTitle } from '@/components/ui/SectionTitle/SectionTitle';
 import { getPublishedItems } from '@/lib/items/public';
 import { getPublishedNews } from '@/features/news/services/public';
 

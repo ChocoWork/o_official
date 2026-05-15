@@ -3,9 +3,9 @@
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { clientFetch } from '@/lib/client-fetch';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button/Button';
 import { Card } from '@/components/ui/Card';
-import { TagLabel } from '@/components/ui/TagLabel';
+import { TagLabel } from '@/components/ui/TagLabel/TagLabel';
 
 interface AdminItem {
   id: number;

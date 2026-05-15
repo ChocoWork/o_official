@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { TabSegmentControl } from '@/components/ui/TabSegmentControl';
+import { TabSegmentControl } from '@/components/ui/TabSegmentControl/TabSegmentControl';
 import { categories } from '@/lib/news-data';
 
 export interface NewsCategoryTabsProps {

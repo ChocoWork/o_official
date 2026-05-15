@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState } from 'react';
-import { Button } from '@/components/ui/Button';
-import { TextField } from '@/components/ui/TextField';
+import { Button } from '@/components/ui/Button/Button';
+import { TextField } from '@/components/ui/TextField/TextField';
 
 export default function AdminCreateUserPage() {
   const [email, setEmail] = useState('');

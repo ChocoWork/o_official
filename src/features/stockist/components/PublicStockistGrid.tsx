@@ -1,5 +1,5 @@
 import { Card } from '@/components/ui/Card';
-import { SectionTitle } from '@/components/ui/SectionTitle';
+import { SectionTitle } from '@/components/ui/SectionTitle/SectionTitle';
 import {
   getHomePublicStockists,
   getPublicStockists,

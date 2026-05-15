@@ -7,8 +7,8 @@ import { cn } from '@/lib/utils';
 import LoginModal from "@/components/LoginModal";
 import { useLogin } from "@/contexts/LoginContext";
 import { useCart } from "@/contexts/CartContext";
-import { Button } from '@/components/ui/Button';
-import { Drawer } from '@/components/ui/Drawer';
+import { Button } from '@/components/ui/Button/Button';
+import { Drawer } from '@/components/ui/Drawer/Drawer';
 
 const menuItems = [
   { href: '/news', label: 'NEWS' },

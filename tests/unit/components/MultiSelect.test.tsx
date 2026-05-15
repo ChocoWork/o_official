@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import { MultiSelect } from '@/components/ui/MultiSelect';
+import { MultiSelect } from '@/components/ui/MultiSelect/MultiSelect';
 
 describe('MultiSelect component', () => {
   const options = [

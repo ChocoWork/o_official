@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import { BottomNavigation, BottomNavigationItem } from '@/components/ui/BottomNavigation';
+import { BottomNavigation, BottomNavigationItem } from '@/components/ui/BottomNavigation/BottomNavigation';
 
 const items: BottomNavigationItem[] = [
   { key: 'home', label: 'Home', iconClass: 'ri-home-line' },

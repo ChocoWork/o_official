@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { formatLookSeason, getPublishedLookById, getPublishedLooks } from '@/lib/look/public';
-import { List } from '@/components/ui/List';
+import { List } from '@/components/ui/List/List';
 import { LookImageGallery } from '@/features/look/components/LookImageGallery';
 
 type Props = {

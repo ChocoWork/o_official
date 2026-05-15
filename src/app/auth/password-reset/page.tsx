@@ -4,8 +4,8 @@ import React, { useEffect, useState } from 'react';
 import Script from 'next/script';
 import { ResetRequestSchema, ResetSessionConfirmSchema } from '@/features/auth/schemas/password-reset';
 import { z } from 'zod';
-import { Button } from '@/components/ui/Button';
-import { TextField } from '@/components/ui/TextField';
+import { Button } from '@/components/ui/Button/Button';
+import { TextField } from '@/components/ui/TextField/TextField';
 
 declare global {
   interface Window {

@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import { Tooltip } from '@/components/ui/Tooltip';
+import { Tooltip } from '@/components/ui/Tooltip/Tooltip';
 
 describe('Tooltip component', () => {
   test('renders content with default (md) size classes', () => {

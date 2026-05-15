@@ -8,8 +8,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Item, ItemStockStatus } from "@/types/item";
 import { useCart } from "@/contexts/CartContext";
-import { Button } from "@/components/ui/Button";
-import { Stepper } from "@/components/ui/Stepper";
+import { Button } from "@/components/ui/Button/Button";
+import { Stepper } from "@/components/ui/Stepper/Stepper";
 import { RelatedItems } from "@/features/items/components/RelatedItems";
 
 type Props = { id: string };

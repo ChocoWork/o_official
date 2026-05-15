@@ -3,10 +3,10 @@
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { clientFetch } from '@/lib/client-fetch';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button/Button';
 import { Card } from '@/components/ui/Card';
-import { StatusBadge } from '@/components/ui/StatusBadge';
-import { TagLabel } from '@/components/ui/TagLabel';
+import { StatusBadge } from '@/components/ui/StatusBadge/StatusBadge';
+import { TagLabel } from '@/components/ui/TagLabel/TagLabel';
 
 type NewsArticle = {
   id: string;

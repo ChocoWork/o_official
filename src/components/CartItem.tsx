@@ -2,8 +2,8 @@ import React from 'react';
 import Image from 'next/image';
 import { Trash2, Heart } from 'lucide-react';
 import { CartItem as CartItemType } from '../types/cart';
-import { Button } from '@/components/ui/Button';
-import { Stepper } from '@/components/ui/Stepper';
+import { Button } from '@/components/ui/Button/Button';
+import { Stepper } from '@/components/ui/Stepper/Stepper';
 
 interface CartItemProps {
   item: CartItemType;

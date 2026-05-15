@@ -5,9 +5,9 @@ import Link from 'next/link';
 import Image from "next/image";
 import { useCart } from "@/contexts/CartContext";
 import { EmptyCart } from '@/components/EmptyCart';
-import { Button } from '@/components/ui/Button';
-import { Stepper } from '@/components/ui/Stepper';
-import { TextField } from '@/components/ui/TextField';
+import { Button } from '@/components/ui/Button/Button';
+import { Stepper } from '@/components/ui/Stepper/Stepper';
+import { TextField } from '@/components/ui/TextField/TextField';
 
 interface CartItem {
   id: string;

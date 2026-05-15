@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/Button';
-import { SingleSelect } from '@/components/ui/SingleSelect';
-import { TextField } from '@/components/ui/TextField';
+import { Button } from '@/components/ui/Button/Button';
+import { SingleSelect } from '@/components/ui/SingleSelect/SingleSelect';
+import { TextField } from '@/components/ui/TextField/TextField';
 import { clientFetch } from '@/lib/client-fetch';
 import { StockistFormValues, StockistStatus } from './types';
 

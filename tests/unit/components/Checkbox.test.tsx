@@ -1,7 +1,7 @@
 import React from 'react';
 import userEvent from '@testing-library/user-event';
 import { render, screen } from '@testing-library/react';
-import { Checkbox } from '@/components/ui/Checkbox';
+import { Checkbox } from '@/components/ui/Checkbox/Checkbox';
 
 describe('Checkbox component', () => {
   test('defaults to the compact hit area and keeps the row wrapper separate from the label', async () => {

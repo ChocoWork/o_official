@@ -1,7 +1,7 @@
 export type TabType = 'KPI' | 'NEWS' | 'ITEM' | 'LOOK' | 'STOCKIST' | 'USER' | 'ORDER';
 
 import type { ReactNode } from 'react';
-import { TabSegmentControl } from '@/components/ui/TabSegmentControl';
+import { TabSegmentControl } from '@/components/ui/TabSegmentControl/TabSegmentControl';
 
 interface AdminTabsProps {
   activeTab: TabType;

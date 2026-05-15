@@ -6,8 +6,8 @@ import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { loadStripe, type Appearance } from '@stripe/stripe-js';
 import { CheckoutProvider, PaymentElement, useCheckout } from '@stripe/react-stripe-js/checkout';
-import { Button } from '@/components/ui/Button';
-import { Checkbox } from '@/components/ui/Checkbox';
+import { Button } from '@/components/ui/Button/Button';
+import { Checkbox } from '@/components/ui/Checkbox/Checkbox';
 import { useCart } from '@/contexts/CartContext';
 import { clientFetch } from '@/lib/client-fetch';
 import { formatPhoneNumberInput } from '@/features/account/utils/profile-format.util';
@@ -17,8 +17,8 @@ import {
   normalizePostalCode,
 } from '@/features/checkout/utils/postal-code.util';
 import { calculateCheckoutAmountsFromSubtotal } from '@/features/checkout/services/checkout-pricing.service';
-import { SingleSelect } from '@/components/ui/SingleSelect';
-import { TextField } from '@/components/ui/TextField';
+import { SingleSelect } from '@/components/ui/SingleSelect/SingleSelect';
+import { TextField } from '@/components/ui/TextField/TextField';
 
 const PREFECTURES = [
   '北海道',

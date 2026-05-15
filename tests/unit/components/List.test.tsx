@@ -1,6 +1,6 @@
 import React from 'react';
 import { render } from '@testing-library/react';
-import { List } from '@/components/ui/List';
+import { List } from '@/components/ui/List/List';
 
 // stub next/image globally to simple <img> so src attribute is predictable
 jest.mock('next/image', () => ({

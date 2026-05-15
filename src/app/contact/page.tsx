@@ -1,10 +1,10 @@
 "use client"; // これを追加
 
 import React, { useState } from 'react';
-import { Button } from '@/components/ui/Button';
-import { SingleSelect } from '@/components/ui/SingleSelect';
-import { TextAreaField } from '@/components/ui/TextAreaField';
-import { TextField } from '@/components/ui/TextField';
+import { Button } from '@/components/ui/Button/Button';
+import { SingleSelect } from '@/components/ui/SingleSelect/SingleSelect';
+import { TextAreaField } from '@/components/ui/TextAreaField/TextAreaField';
+import { TextField } from '@/components/ui/TextField/TextField';
 
 type ContactFormData = {
   name: string;

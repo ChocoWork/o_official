@@ -3,11 +3,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { Button } from '@/components/ui/Button';
-import { RadioButtonGroup } from '@/components/ui/RadioButtonGroup';
-import { SingleSelect } from '@/components/ui/SingleSelect';
-import { TextAreaField } from '@/components/ui/TextAreaField';
-import { TextField } from '@/components/ui/TextField';
+import { Button } from '@/components/ui/Button/Button';
+import { RadioButtonGroup } from '@/components/ui/RadioButtonGroup/RadioButtonGroup';
+import { SingleSelect } from '@/components/ui/SingleSelect/SingleSelect';
+import { TextAreaField } from '@/components/ui/TextAreaField/TextAreaField';
+import { TextField } from '@/components/ui/TextField/TextField';
 import type { NewsFormData, NewsStatus } from '@/types/news';
 import { clientFetch } from '@/lib/client-fetch';
 
