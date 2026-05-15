@@ -567,6 +567,136 @@ html[data-header-visible='false'] {
     }
   }
 
+  [data-ui-tag-label] {
+    --tag-label-font-size: clamp(0.8125rem, 0.78rem + 0.1vw, 0.875rem);
+    --tag-label-pad-block: calc(var(--tag-label-font-size) * var(--control-pad-ratio));
+    --tag-label-pad-inline: 1em;
+    --tag-label-min-height: calc((var(--tag-label-font-size) * var(--control-line-height)) + (var(--tag-label-pad-block) * 2));
+    --tag-label-gap: calc(var(--tag-label-font-size) / var(--button-phi));
+    --tag-label-radius: 0;
+    --tag-label-bg: transparent;
+    --tag-label-color: #111111;
+    --tag-label-border-color: #111111;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--tag-label-gap);
+    min-height: var(--tag-label-min-height);
+    padding: var(--tag-label-pad-block) var(--tag-label-pad-inline);
+    border: 1px solid var(--tag-label-border-color);
+    border-radius: var(--tag-label-radius);
+    background: var(--tag-label-bg);
+    color: var(--tag-label-color);
+    font-family: 'acumin-pro', sans-serif;
+    font-size: var(--tag-label-font-size);
+    line-height: var(--control-line-height);
+    font-weight: 400;
+    letter-spacing: 0.1em;
+    text-decoration: none;
+    white-space: nowrap;
+    user-select: none;
+  }
+
+  [data-ui-tag-label][data-ui-tag-label-size="xs"] {
+    --tag-label-font-size: clamp(0.6875rem, 0.66rem + 0.08vw, 0.75rem);
+  }
+
+  [data-ui-tag-label][data-ui-tag-label-size="sm"] {
+    --tag-label-font-size: clamp(0.75rem, 0.72rem + 0.08vw, 0.8125rem);
+  }
+
+  [data-ui-tag-label][data-ui-tag-label-size="md"] {
+    --tag-label-font-size: clamp(0.8125rem, 0.78rem + 0.1vw, 0.875rem);
+  }
+
+  [data-ui-tag-label][data-ui-tag-label-size="lg"] {
+    --tag-label-font-size: clamp(0.875rem, 0.84rem + 0.14vw, 0.9375rem);
+  }
+
+  [data-ui-tag-label][data-ui-tag-label-size="xl"] {
+    --tag-label-font-size: clamp(0.9375rem, 0.9rem + 0.14vw, 1rem);
+  }
+
+  [data-ui-tag-label][data-ui-tag-label-variant="solid"] {
+    --tag-label-bg: #111111;
+    --tag-label-color: #ffffff;
+    --tag-label-border-color: #111111;
+  }
+
+  [data-ui-tag-label][data-ui-tag-label-variant="outline"] {
+    --tag-label-bg: transparent;
+    --tag-label-color: #111111;
+    --tag-label-border-color: #111111;
+  }
+
+  [data-ui-tag-label][data-ui-tag-label-variant="subtle"] {
+    --tag-label-bg: #f5f5f5;
+    --tag-label-color: #111111;
+    --tag-label-border-color: transparent;
+  }
+
+  [data-ui-tag-label][data-ui-tag-label-rounded="true"] {
+    --tag-label-radius: 9999px;
+  }
+
+  [data-ui-tag-label-remove] {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: calc(var(--tag-label-font-size) * 1.25);
+    height: calc(var(--tag-label-font-size) * 1.25);
+    margin-inline-end: calc(var(--tag-label-font-size) * -0.125);
+    padding: 0;
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
+    color: currentColor;
+    cursor: pointer;
+    transition: background-color 180ms ease, color 180ms ease, box-shadow 180ms ease;
+  }
+
+  [data-ui-tag-label-remove]:hover {
+    background: rgb(17 17 17 / 0.08);
+  }
+
+  [data-ui-tag-label-remove]:focus-visible {
+    outline: 2px solid transparent;
+    box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #111111;
+  }
+
+  [data-ui-tag-label-remove-icon] {
+    font-size: calc(var(--tag-label-font-size) * 1.05);
+    line-height: 1;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-ui-tag-label-remove] {
+      transition: background-color 180ms ease, color 180ms ease;
+    }
+  }
+
+  @media (forced-colors: active) {
+    [data-ui-tag-label] {
+      forced-color-adjust: auto;
+      background: Canvas;
+      color: CanvasText;
+      border-color: CanvasText;
+    }
+
+    [data-ui-tag-label-remove] {
+      background: ButtonFace;
+      color: ButtonText;
+      border: 1px solid ButtonText;
+    }
+
+    [data-ui-tag-label-remove]:focus-visible {
+      outline: 2px solid Highlight;
+      box-shadow: none;
+    }
+  }
+
   [data-ui-accordion] {
     --accordion-font-size: clamp(0.875rem, 0.84rem + 0.14vw, 0.9375rem);
     --accordion-line-height: var(--button-phi);

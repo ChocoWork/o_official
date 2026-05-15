@@ -1,6 +1,5 @@
-import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
-import { ComponentSize } from './types';
+import type { ComponentSize } from './types';
 
 export interface TagLabelProps {
   children: ReactNode;
@@ -9,7 +8,7 @@ export interface TagLabelProps {
   removable?: boolean;
   onRemove?: () => void;
   className?: string;
-  /** demo size (sm/md/lg) */
+  /** tag size */
   size?: ComponentSize;
 }
 
@@ -22,36 +21,26 @@ export function TagLabel({
   className,
   size = 'md',
 }: TagLabelProps) {
-  const paddingMap: Record<ComponentSize, string> = {
-    xs: 'px-2 py-0.5 text-[10px]',
-    sm: 'px-2 py-0.5 text-[10px]',
-    md: 'px-3 py-1 text-xs',
-    lg: 'px-4 py-1.5 text-s',
-    xl: 'px-4 py-1.5 text-s',
-  };
+  const isRemovable = removable && typeof onRemove === 'function';
 
   return (
     <span
-      className={cn(
-        'inline-flex items-center tracking-widest',
-        paddingMap[size],
-        removable ? 'gap-2' : null,
-        variant === 'solid' ? 'bg-black text-white' : null,
-        variant === 'outline' ? 'border border-black text-black' : null,
-        variant === 'subtle' ? 'bg-[#f5f5f5] text-black' : null,
-        rounded ? 'rounded-full' : null,
-        className,
-      )}
-      style={{ fontFamily: 'acumin-pro, sans-serif' }}
+      data-ui-tag-label="true"
+      data-ui-tag-label-variant={variant}
+      data-ui-tag-label-size={size}
+      data-ui-tag-label-rounded={rounded ? 'true' : undefined}
+      data-ui-tag-label-removable={isRemovable ? 'true' : undefined}
+      className={className}
     >
       {children}
-      {removable && onRemove ? (
+      {isRemovable ? (
         <button
           type="button"
-          className="flex h-4 w-4 cursor-pointer items-center justify-center transition-colors hover:bg-black/10"
+          data-ui-tag-label-remove="true"
+          aria-label="Remove tag"
           onClick={onRemove}
         >
-          <i className="ri-close-line text-sm"></i>
+          <i aria-hidden="true" className="ri-close-line" data-ui-tag-label-remove-icon="true"></i>
         </button>
       ) : null}
     </span>
