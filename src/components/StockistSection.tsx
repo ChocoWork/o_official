@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { clientFetch } from '@/lib/client-fetch';
 import { Button } from '@/components/ui/Button/Button';
-import { Card } from '@/components/ui/Card';
+import { Card } from '@/components/ui/Card/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge/StatusBadge';
 
 type AdminStockist = {

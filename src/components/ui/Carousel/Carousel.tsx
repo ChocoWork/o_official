@@ -1,5 +1,6 @@
 "use client";
 
+import "./Carousel.css"
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
 import { Button } from '../Button/Button';

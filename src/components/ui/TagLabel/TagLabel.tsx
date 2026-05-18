@@ -1,3 +1,4 @@
+import "./TagLabel.css"
 import type { ReactNode } from 'react';
 import type { ComponentSize } from '../types';
 

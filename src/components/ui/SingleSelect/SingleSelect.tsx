@@ -1,3 +1,4 @@
+import "./SingleSelect.css"
 import { cn } from '@/lib/utils';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';

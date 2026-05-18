@@ -1,0 +1,78 @@
+
+[data-ui-multiselect-trigger] {
+  --multiselect-font-size: 14px;
+  --multiselect-pad-block: calc(var(--multiselect-font-size) * var(--control-pad-ratio));
+  --multiselect-pad-inline: 1em;
+  --multiselect-min-height: calc(var(--multiselect-font-size) * var(--control-height-ratio));
+  --multiselect-border-color: rgb(0 0 0 / 0.2);
+  --multiselect-background: #ffffff;
+  --multiselect-color: #111111;
+  --multiselect-focus-ring: #111111;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: clamp(0.5rem, 0.42rem + 0.18vw, 0.75rem);
+  width: 100%;
+  min-height: var(--multiselect-min-height);
+  padding-block: var(--multiselect-pad-block);
+  padding-inline: var(--multiselect-pad-inline);
+  border: 1px solid var(--multiselect-border-color);
+  background: var(--multiselect-background);
+  color: var(--multiselect-color);
+  font-size: var(--multiselect-font-size);
+  line-height: var(--control-line-height);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+[data-ui-multiselect-trigger][data-ui-multiselect-size="xs"] {
+  --multiselect-font-size: 10px;
+}
+
+[data-ui-multiselect-trigger][data-ui-multiselect-size="sm"] {
+  --multiselect-font-size: 11px;
+}
+
+[data-ui-multiselect-trigger][data-ui-multiselect-size="md"] {
+  --multiselect-font-size: 14px;
+}
+
+[data-ui-multiselect-trigger][data-ui-multiselect-size="lg"] {
+  --multiselect-font-size: 16px;
+}
+
+[data-ui-multiselect-trigger][data-ui-multiselect-size="xl"] {
+  --multiselect-font-size: 18px;
+}
+
+[data-ui-multiselect-trigger]:focus-visible {
+  outline: 2px solid transparent;
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--multiselect-focus-ring);
+}
+
+[data-ui-multiselect-trigger-label] {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+}
+
+[data-ui-multiselect-trigger-icon] {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+}
+
+[data-ui-multiselect-panel] {
+  border: 1px solid rgb(0 0 0 / 0.2);
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgb(17 17 17 / 0.12);
+}

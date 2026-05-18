@@ -1,3 +1,4 @@
+import "./ColorPicker.css"
 import { cn } from '@/lib/utils';
 import type { ChangeEventHandler, InputHTMLAttributes } from 'react';
 import { ComponentSize } from '../types';

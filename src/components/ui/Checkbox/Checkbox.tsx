@@ -1,3 +1,4 @@
+import "./Checkbox.css"
 import { useId } from 'react';
 import type { CheckboxProps } from '../types';
 

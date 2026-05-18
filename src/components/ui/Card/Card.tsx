@@ -1,3 +1,4 @@
+import "./Card.css"
 import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 import Image from 'next/image';

@@ -1,3 +1,4 @@
+import "./MultiSelect.css";
 import { Button } from '../Button/Button';
 import { Checkbox } from '../Checkbox/Checkbox';
 import { cn } from '@/lib/utils';
@@ -15,6 +16,7 @@ export function MultiSelect({
   checkStyle = 'check',
   shape = 'rounded',
   expandLabelHitArea = false,
+  renderOptionLabel,
   className,
 }: MultiSelectProps) {
   const [open, setOpen] = useState(false);
@@ -31,11 +33,12 @@ export function MultiSelect({
   const renderOptionItem = (option: SelectOption) => {
     const isChecked = values.includes(option.value);
     const shapeClass = shape === 'square' ? 'rounded-none' : 'rounded';
+    const optionLabel = renderOptionLabel ? renderOptionLabel(option, isChecked) : option.label;
 
     return (
       <Checkbox
         key={option.value}
-        label={option.label}
+        label={optionLabel}
         checked={isChecked}
         onChange={() => handleChange(option.value)}
         size={size}
@@ -86,7 +89,7 @@ export function MultiSelect({
                 'tracking-widest whitespace-nowrap',
               )}
             >
-              {option.label}
+              {renderOptionLabel ? renderOptionLabel(option, values.includes(option.value)) : option.label}
             </Button>
           ))}
         </div>

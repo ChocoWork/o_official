@@ -1,3 +1,4 @@
+import "./BottomNavigation.css"
 import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 import { ComponentSize } from '../types';

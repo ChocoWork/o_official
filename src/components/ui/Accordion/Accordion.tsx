@@ -1,5 +1,5 @@
 "use client";
-
+import "./Accordion.css"
 import { cn } from '@/lib/utils';
 import { useState, type ReactNode } from 'react';
 import { ComponentSize } from '../types';
@@ -16,6 +16,7 @@ export interface AccordionProps {
   items: readonly AccordionItem[];
   openKey?: string | null;
   onOpenChange?: (key: string | null) => void;
+  defaultOpenKeys?: readonly string[];
   className?: string;
   itemClassName?: string;
   triggerClassName?: string;
@@ -36,9 +37,10 @@ export function Accordion({
   contentClassName,
   size = 'md',
   openMode = 'single',
+  defaultOpenKeys = [],
 }: AccordionProps) {
   const [internalOpenKey, setInternalOpenKey] = useState<string | null>(null);
-  const [internalOpenKeys, setInternalOpenKeys] = useState<string[]>([]);
+  const [internalOpenKeys, setInternalOpenKeys] = useState<string[]>(() => [...defaultOpenKeys]);
   const currentOpenKey = openKey !== undefined ? openKey : internalOpenKey;
 
   const setCurrentOpenKey = (key: string | null) => {

@@ -1,3 +1,4 @@
+import "./Dialog.css"
 import { Button } from '../Button/Button';
 import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';

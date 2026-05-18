@@ -34,6 +34,7 @@ export interface MultiSelectProps {
 	checkStyle?: 'check' | 'fill';
 	shape?: 'square' | 'rounded';
 	expandLabelHitArea?: boolean;
+	renderOptionLabel?: (option: SelectOption, selected: boolean) => ReactNode;
 	className?: string;
 }
 

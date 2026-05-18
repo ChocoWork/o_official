@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { Accordion } from '@/components/ui/Accordion/Accordion';
 import { Button } from '@/components/ui/Button/Button';
+import { MultiSelect } from '@/components/ui/MultiSelect/MultiSelect';
 import { SectionTitle } from '@/components/ui/SectionTitle/SectionTitle';
 import { Drawer } from '@/components/ui/Drawer/Drawer';
 import { Slider } from '@/components/ui/Slider/Slider';
@@ -256,14 +258,6 @@ export function PublicItemGrid(props: PublicItemGridProps) {
   const [draftCollectionYearMax, setDraftCollectionYearMax] = useState<number | ''>(selectedCollectionYearMax);
   const [draftCollectionSeasons, setDraftCollectionSeasons] = useState<CollectionSeason[]>(selectedCollectionSeasons);
   const [draftPriceRange, setDraftPriceRange] = useState<[number, number]>([0, 100]);
-  const [openSections, setOpenSections] = useState<Record<DrawerSectionKey, boolean>>({
-    category: true,
-    color: true,
-    stock: true,
-    size: true,
-    season: true,
-    price: true,
-  });
 
   useEffect(() => {
     if (variant !== 'catalog') {
@@ -548,7 +542,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
         params.delete('collectionYearMax');
       }
 
-      if (draftCollectionSeasons.length === 2) {
+      if (draftCollectionSeasons.length === 0 || draftCollectionSeasons.length === 2) {
         params.delete('collectionSeasons');
       } else {
         params.set('collectionSeasons', draftCollectionSeasons.join(','));
@@ -602,66 +596,6 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     setDraftCollectionSeasons(['AW', 'SS']);
     setDraftPriceRange([priceBounds.min, priceBounds.max]);
   }, [priceBounds.max, priceBounds.min]);
-
-  const toggleDraftCategory = useCallback((category: ItemCategory) => {
-    setDraftCategories((prev) => {
-      if (category === 'ALL') {
-        return [];
-      }
-      const current = prev.filter((entry) => entry !== 'ALL');
-      if (current.includes(category)) {
-        return current.filter((entry) => entry !== category);
-      }
-      return [...current, category];
-    });
-  }, []);
-
-  const toggleDraftColor = useCallback((colorName: string) => {
-    if (colorName === 'ALL') {
-      setDraftColors([]);
-      return;
-    }
-    setDraftColors((prev) =>
-      prev.includes(colorName)
-        ? prev.filter((entry) => entry !== colorName)
-        : [...prev, colorName],
-    );
-  }, []);
-
-  const toggleDraftSize = useCallback((size: string) => {
-    if (size === 'ALL') {
-      setDraftSizes([]);
-      return;
-    }
-    setDraftSizes((prev) =>
-      prev.includes(size)
-        ? prev.filter((entry) => entry !== size)
-        : [...prev, size],
-    );
-  }, []);
-
-  const toggleDraftStock = useCallback((value: StockFilter) => {
-    if (value === 'all') {
-      setDraftStock('all');
-      return;
-    }
-    setDraftStock((prev) => (prev === value ? 'all' : value));
-  }, []);
-
-  const toggleDraftSeason = useCallback((season: CollectionSeason | 'ALL') => {
-    if (season === 'ALL') {
-      setDraftCollectionSeasons(['AW', 'SS']);
-      return;
-    }
-    setDraftCollectionSeasons([season]);
-  }, []);
-
-  const toggleSection = useCallback((key: DrawerSectionKey) => {
-    setOpenSections((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
-  }, []);
 
   const mobileFilterStickyStyle = {
     top: 'var(--site-header-height)',
@@ -805,311 +739,246 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     </div>
   );
 
-  const renderFilterSections = () => (
-    <div className="pt-3 space-y-3">
-      <div className="border-b border-black/10 pb-3">
-        <button
-          type="button"
-          onClick={() => toggleSection('category')}
-          className="flex w-full items-center justify-between py-1 text-left text-xs tracking-[0.2em] text-black"
-          aria-label="Toggle CATEGORY section"
-        >
-          <span>CATEGORY</span>
-          <span>{openSections.category ? '-' : '+'}</span>
-        </button>
-        {openSections.category && (
-          <div className="mt-2 space-y-2">
-            {ITEM_CATEGORIES.map((category) => {
-              const isAll = category === 'ALL';
-              const isChecked = isAll ? draftCategories.length === 0 : draftCategories.includes(category);
-              return (
-                <label key={category} className="flex cursor-pointer items-center gap-2 text-xs text-[#474747]">
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      'h-2.5 w-2.5 flex-shrink-0 border',
-                      isChecked ? 'bg-black border-black' : 'bg-white border-black/40',
-                    )}
-                  />
-                  <input
-                    className="sr-only"
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={() => toggleDraftCategory(category)}
-                    aria-label={`CATEGORY ${category}`}
-                  />
-                  <span className="tracking-widest">{category}</span>
-                </label>
-              );
-            })}
-          </div>
-        )}
-      </div>
+  const renderFilterSections = () => {
+    const filterSectionKeys: DrawerSectionKey[] = ['category', 'stock', 'season', 'price'];
+    if (availableColorSwatches.length > 0) {
+      filterSectionKeys.splice(1, 0, 'color');
+    }
+    if (availableSizes.length > 0) {
+      filterSectionKeys.splice(filterSectionKeys.indexOf('season'), 0, 'size');
+    }
+    const categoryOptions = [
+      { value: 'ALL', label: 'ALL' },
+      ...ITEM_CATEGORIES.filter((category) => category !== 'ALL').map((category) => ({ value: category, label: category })),
+    ];
+    const stockOptions = [
+      { value: 'ALL', label: 'ALL' },
+      { value: 'in', label: 'IN STOCK' },
+      { value: 'out', label: 'OUT OF STOCK' },
+    ];
+    const sizeOptions = [
+      { value: 'ALL', label: 'ALL' },
+      ...availableSizes.map((size) => ({ value: size, label: size })),
+    ];
+    const seasonOptions = [
+      { value: 'ALL', label: 'ALL' },
+      ...(['AW', 'SS'] as const).map((season) => ({ value: season, label: season })),
+    ];
+    const colorOptions = [
+      { value: 'ALL', label: 'ALL' },
+      ...availableColorSwatches.map((swatch) => ({ value: swatch.name, label: swatch.name })),
+    ];
+    const colorSwatchHexByName = new Map(availableColorSwatches.map((swatch) => [swatch.name, swatch.hex]));
 
-      {availableColorSwatches.length > 0 && (
-        <div className="border-b border-black/10 pb-3">
-          <button
+    const normalizeAllSelection = (values: string[], currentValues: string[]) => {
+      const nextWithoutAll = values.filter((value) => value !== 'ALL');
+      if (values.length === 0) {
+        return [];
+      }
+      if (values.includes('ALL')) {
+        return currentValues.length === 0 ? nextWithoutAll : [];
+      }
+      return nextWithoutAll;
+    };
+
+    const categoryValues = draftCategories.length === 0 ? ['ALL'] : draftCategories;
+    const stockValues = draftStock === 'all' ? ['ALL'] : [draftStock];
+    const sizeValues = draftSizes.length === 0 ? ['ALL'] : draftSizes;
+    const seasonValues = draftCollectionSeasons.length === 2 ? ['ALL'] : draftCollectionSeasons;
+    const colorValues = draftColors.length === 0 ? ['ALL'] : draftColors;
+
+    return (
+      <div className="space-y-5">
+        <Accordion
+          items={[
+            {
+              key: 'category',
+              title: 'CATEGORY',
+              content: (
+                <div className="space-y-3">
+                  <MultiSelect
+                    options={categoryOptions}
+                    values={categoryValues}
+                    onChange={(values) => {
+                      const nextValues = normalizeAllSelection(values, draftCategories);
+                      setDraftCategories(
+                        nextValues.filter((value): value is ItemCategory => value !== 'ALL'),
+                      );
+                    }}
+                    variant="panel"
+                    size="xs"
+                    checkStyle="fill"
+                    shape="square"
+                    expandLabelHitArea={false}
+                    className="space-y-2"
+                  />
+                </div>
+              ),
+            },
+            ...(availableColorSwatches.length > 0
+              ? [
+                  {
+                    key: 'color',
+                    title: 'COLOR',
+                    content: (
+                      <div className="space-y-3">
+                        <MultiSelect
+                          options={colorOptions}
+                                values={colorValues}
+                                onChange={(values) => {
+                                  const nextValues = normalizeAllSelection(values, draftColors);
+                                  setDraftColors(nextValues.filter((value): value is string => value !== 'ALL'));
+                                }}
+                          variant="panel"
+                          size="xs"
+                          checkStyle="fill"
+                          shape="square"
+                          expandLabelHitArea={false}
+                          className="space-y-2"
+                          renderOptionLabel={(option) => (
+                                  option.value === 'ALL' ? (
+                                    <span>{option.label}</span>
+                                  ) : (
+                            <span className="inline-flex items-center gap-2">
+                              <span
+                                aria-hidden="true"
+                                className="inline-block h-3 w-3 rounded-full border border-black/20"
+                                style={{ backgroundColor: colorSwatchHexByName.get(option.value) ?? '#ffffff' }}
+                              />
+                              <span>{option.label}</span>
+                                  </span>
+                                  )
+                          )}
+                        />
+                      </div>
+                    ),
+                  },
+                ]
+              : []),
+            {
+              key: 'stock',
+              title: 'STOCK',
+              content: (
+                <div className="space-y-3">
+                  <MultiSelect
+                    options={stockOptions}
+                    values={stockValues}
+                    onChange={(values) => {
+                      const nextValues = normalizeAllSelection(values, draftStock === 'all' ? [] : [draftStock]);
+                      const nextValue = nextValues.find((value): value is 'in' | 'out' => value === 'in' || value === 'out');
+                      setDraftStock(nextValue ?? 'all');
+                    }}
+                    variant="panel"
+                    size="xs"
+                    checkStyle="fill"
+                    shape="square"
+                    expandLabelHitArea={false}
+                    className="space-y-2"
+                  />
+                </div>
+              ),
+            },
+            ...(availableSizes.length > 0
+              ? [
+                  {
+                    key: 'size',
+                    title: 'SIZE',
+                    content: (
+                      <div className="space-y-3">
+                        <MultiSelect
+                          options={sizeOptions}
+                                values={sizeValues}
+                                onChange={(values) => {
+                                  const nextValues = normalizeAllSelection(values, draftSizes);
+                                  setDraftSizes(nextValues.filter((value): value is string => value !== 'ALL'));
+                                }}
+                          variant="panel"
+                          size="xs"
+                          checkStyle="fill"
+                          shape="square"
+                          expandLabelHitArea={false}
+                          className="space-y-2"
+                        />
+                      </div>
+                    ),
+                  },
+                ]
+              : []),
+            {
+              key: 'season',
+              title: 'SEASON',
+              content: (
+                <div className="space-y-3">
+                  <MultiSelect
+                    options={seasonOptions}
+                    values={seasonValues}
+                    onChange={(values) => {
+                      const nextValues = normalizeAllSelection(
+                        values,
+                        draftCollectionSeasons.length === 2 ? [] : draftCollectionSeasons,
+                      );
+                      const nextSeasons = nextValues.filter(
+                        (value): value is CollectionSeason => value === 'AW' || value === 'SS',
+                      );
+                      setDraftCollectionSeasons(nextSeasons.length === 0 ? ['AW', 'SS'] : nextSeasons);
+                    }}
+                    variant="panel"
+                    size="xs"
+                    checkStyle="fill"
+                    shape="square"
+                    expandLabelHitArea={false}
+                    className="space-y-2"
+                  />
+                </div>
+              ),
+            },
+            {
+              key: 'price',
+              title: 'PRICE',
+              content: (
+                <div className="space-y-3">
+                  <Slider
+                    mode="range"
+                    rangeValue={draftPriceRange}
+                    min={priceBounds.min}
+                    max={priceBounds.max}
+                    step={1000}
+                    onRangeChange={setDraftPriceRange}
+                    valueDisplay={`¥${Math.min(draftPriceRange[0], draftPriceRange[1]).toLocaleString('ja-JP')} - ¥${Math.max(draftPriceRange[0], draftPriceRange[1]).toLocaleString('ja-JP')}`}
+                  />
+                </div>
+              ),
+            },
+          ]}
+          openMode="multiple"
+          defaultOpenKeys={filterSectionKeys}
+          size="xs"
+          className="!max-w-none !overflow-visible !border-0"
+        />
+
+        <div className="space-y-2">
+          <Button
             type="button"
-            onClick={() => toggleSection('color')}
-            className="flex w-full items-center justify-between py-1 text-left text-xs tracking-[0.2em] text-black"
-            aria-label="Toggle COLOR section"
+            variant="primary"
+            size="md"
+            onClick={applyDraftFilters}
+            className="w-full tracking-[0.18em]"
           >
-            <span>COLOR</span>
-            <span>{openSections.color ? '-' : '+'}</span>
-          </button>
-          {openSections.color && (
-            <div className="mt-2 space-y-2">
-              <label className="flex cursor-pointer items-center gap-2 text-xs text-[#474747]">
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    'h-2.5 w-2.5 flex-shrink-0 border',
-                    draftColors.length === 0 ? 'bg-black border-black' : 'bg-white border-black/40',
-                  )}
-                />
-                <input
-                  className="sr-only"
-                  type="checkbox"
-                  checked={draftColors.length === 0}
-                  onChange={() => toggleDraftColor('ALL')}
-                  aria-label="COLOR ALL"
-                />
-                <span className="tracking-widest">ALL</span>
-              </label>
-              {availableColorSwatches.map((swatch) => {
-                const checked = draftColors.includes(swatch.name);
-                return (
-                  <label key={swatch.name} className="flex cursor-pointer items-center gap-2 text-xs text-[#474747]">
-                    <span
-                      aria-hidden="true"
-                      className={cn(
-                        'h-2.5 w-2.5 flex-shrink-0 border',
-                        checked ? 'bg-black border-black' : 'bg-white border-black/40',
-                      )}
-                    />
-                    <input
-                      className="sr-only"
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleDraftColor(swatch.name)}
-                      aria-label={`COLOR ${swatch.name}`}
-                    />
-                    <span
-                      className="inline-block h-3 w-3 rounded-full border border-black/20"
-                      style={{ backgroundColor: swatch.hex ?? '#ffffff' }}
-                      aria-hidden="true"
-                    />
-                    <span className="tracking-widest">{swatch.name}</span>
-                  </label>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="border-b border-black/10 pb-3">
-        <button
-          type="button"
-          onClick={() => toggleSection('stock')}
-          className="flex w-full items-center justify-between py-1 text-left text-xs tracking-[0.2em] text-black"
-          aria-label="Toggle STOCK section"
-        >
-          <span>STOCK</span>
-          <span>{openSections.stock ? '-' : '+'}</span>
-        </button>
-        {openSections.stock && (
-          <div className="mt-2 space-y-2">
-            {([
-              { value: 'all', label: 'ALL' },
-              { value: 'in', label: 'IN STOCK' },
-              { value: 'out', label: 'OUT OF STOCK' },
-            ] as const).map((option) => {
-              const checked = draftStock === option.value;
-              return (
-                <label key={option.value} className="flex cursor-pointer items-center gap-2 text-xs text-[#474747]">
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      'h-2.5 w-2.5 flex-shrink-0 border',
-                      checked ? 'bg-black border-black' : 'bg-white border-black/40',
-                    )}
-                  />
-                  <input
-                    className="sr-only"
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => toggleDraftStock(option.value)}
-                    aria-label={`STOCK ${option.label}`}
-                  />
-                  <span className="tracking-widest">{option.label}</span>
-                </label>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {availableSizes.length > 0 && (
-        <div className="border-b border-black/10 pb-3">
-          <button
+            APPLY
+          </Button>
+          <Button
             type="button"
-            onClick={() => toggleSection('size')}
-            className="flex w-full items-center justify-between py-1 text-left text-xs tracking-[0.2em] text-black"
-            aria-label="Toggle SIZE section"
+            variant="secondary"
+            size="md"
+            onClick={resetDraftFilters}
+            className="w-full tracking-[0.18em]"
           >
-            <span>SIZE</span>
-            <span>{openSections.size ? '-' : '+'}</span>
-          </button>
-          {openSections.size && (
-            <div className="mt-2 space-y-2">
-              <label className="flex cursor-pointer items-center gap-2 text-xs text-[#474747]">
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    'h-2.5 w-2.5 flex-shrink-0 border',
-                    draftSizes.length === 0 ? 'bg-black border-black' : 'bg-white border-black/40',
-                  )}
-                />
-                <input
-                  className="sr-only"
-                  type="checkbox"
-                  checked={draftSizes.length === 0}
-                  onChange={() => toggleDraftSize('ALL')}
-                  aria-label="SIZE ALL"
-                />
-                <span className="tracking-widest">ALL</span>
-              </label>
-              {availableSizes.map((size) => {
-                const checked = draftSizes.includes(size);
-                return (
-                  <label key={size} className="flex cursor-pointer items-center gap-2 text-xs text-[#474747]">
-                    <span
-                      aria-hidden="true"
-                      className={cn(
-                        'h-2.5 w-2.5 flex-shrink-0 border',
-                        checked ? 'bg-black border-black' : 'bg-white border-black/40',
-                      )}
-                    />
-                    <input
-                      className="sr-only"
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleDraftSize(size)}
-                      aria-label={`SIZE ${size}`}
-                    />
-                    <span className="tracking-widest">{size}</span>
-                  </label>
-                );
-              })}
-            </div>
-          )}
+            RESET
+          </Button>
         </div>
-      )}
-
-      <div className="border-b border-black/10 pb-3">
-        <button
-          type="button"
-          onClick={() => toggleSection('season')}
-          className="flex w-full items-center justify-between py-1 text-left text-xs tracking-[0.2em] text-black"
-          aria-label="Toggle SEASON section"
-        >
-          <span>SEASON</span>
-          <span>{openSections.season ? '-' : '+'}</span>
-        </button>
-        {openSections.season && (
-          <div className="mt-2 space-y-2">
-            <label className="flex cursor-pointer items-center gap-2 text-xs text-[#474747]">
-              <span
-                aria-hidden="true"
-                className={cn(
-                  'h-2.5 w-2.5 flex-shrink-0 border',
-                  draftCollectionSeasons.length === 2 ? 'bg-black border-black' : 'bg-white border-black/40',
-                )}
-              />
-              <input
-                className="sr-only"
-                type="checkbox"
-                checked={draftCollectionSeasons.length === 2}
-                onChange={() => toggleDraftSeason('ALL')}
-                aria-label="SEASON ALL"
-              />
-              <span className="tracking-widest">ALL</span>
-            </label>
-            {(['AW', 'SS'] as const).map((season) => {
-              const checked = draftCollectionSeasons.length === 1 && draftCollectionSeasons[0] === season;
-              return (
-                <label key={season} className="flex cursor-pointer items-center gap-2 text-xs text-[#474747]">
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      'h-2.5 w-2.5 flex-shrink-0 border',
-                      checked ? 'bg-black border-black' : 'bg-white border-black/40',
-                    )}
-                  />
-                  <input
-                    className="sr-only"
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => toggleDraftSeason(season)}
-                    aria-label={`SEASON ${season}`}
-                  />
-                  <span className="tracking-widest">{season}</span>
-                </label>
-              );
-            })}
-          </div>
-        )}
       </div>
-
-      <div className="border-b border-black/10 pb-3">
-        <button
-          type="button"
-          onClick={() => toggleSection('price')}
-          className="flex w-full items-center justify-between py-1 text-left text-xs tracking-[0.2em] text-black"
-          aria-label="Toggle PRICE section"
-        >
-          <span>PRICE</span>
-          <span>{openSections.price ? '-' : '+'}</span>
-        </button>
-        {openSections.price && (
-          <div className="mt-2 pb-1">
-            <Slider
-              mode="range"
-              label="PRICE RANGE"
-              rangeValue={draftPriceRange}
-              min={priceBounds.min}
-              max={priceBounds.max}
-              step={1000}
-              onRangeChange={setDraftPriceRange}
-              valueDisplay={`¥${Math.min(draftPriceRange[0], draftPriceRange[1]).toLocaleString('ja-JP')} - ¥${Math.max(draftPriceRange[0], draftPriceRange[1]).toLocaleString('ja-JP')}`}
-            />
-          </div>
-        )}
-      </div>
-
-      <div className="mt-5 space-y-2">
-        <Button
-          type="button"
-          variant="primary"
-          size="md"
-          onClick={applyDraftFilters}
-          className="w-full tracking-[0.18em]"
-        >
-          APPLY
-        </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          size="md"
-          onClick={resetDraftFilters}
-          className="w-full tracking-[0.18em]"
-        >
-          RESET
-        </Button>
-      </div>
-    </div>
-  );
+    );
+  };
 
   if (variant === 'home') {
     if (isSelfFetch && error) {

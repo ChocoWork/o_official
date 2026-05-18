@@ -2,14 +2,10 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { TagLabel } from '@/components/ui/TagLabel/TagLabel';
 
 describe('TagLabel', () => {
-  it('renders children and adjusts size padding/font', () => {
-    const { rerender } = render(<TagLabel size="sm">Hello</TagLabel>);
-    const el = screen.getByText('Hello');
-    expect(el).toHaveClass('px-2', 'py-0.5');
+  it.each(['xs', 'sm', 'md', 'lg', 'xl'] as const)('applies the %s size token', (size) => {
+    render(<TagLabel size={size}>Hello</TagLabel>);
 
-    rerender(<TagLabel size="lg">Hello</TagLabel>);
-    const elLg = screen.getByText('Hello');
-    expect(elLg).toHaveClass('px-4', 'py-1.5', 'text-sm');
+    expect(screen.getByText('Hello')).toHaveAttribute('data-ui-tag-label-size', size);
   });
 
   it('calls onRemove when removable', () => {

@@ -1,4 +1,4 @@
-import { Card } from '@/components/ui/Card';
+import { Card } from '@/components/ui/Card/Card';
 import { SectionTitle } from '@/components/ui/SectionTitle/SectionTitle';
 import {
   getHomePublicStockists,

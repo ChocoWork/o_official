@@ -1,3 +1,4 @@
+import "./SheetMedium.css"
 import { cn } from '@/lib/utils';
 import type { BaseOverlayProps } from '../OverlayShell/OverlayShell';
 

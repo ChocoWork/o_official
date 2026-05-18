@@ -1,3 +1,4 @@
+import "./SwitchToggle.css"
 import { cn } from '@/lib/utils';
 import { ComponentSize } from '../types';
 

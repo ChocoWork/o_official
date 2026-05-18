@@ -1,3 +1,4 @@
+import "./Stepper.css"
 import { Button } from '../Button/Button';
 import { cn } from '@/lib/utils';
 import { ComponentSize } from '../types';

@@ -1,3 +1,4 @@
+import "./Slider.css"
 import { cn } from '@/lib/utils';
 import type { InputHTMLAttributes } from 'react';
 import { ComponentSize } from '../types';

@@ -1,3 +1,4 @@
+import "./SectionTitle.css"
 import clsx from 'clsx';
 
 type SectionTitleProps = {

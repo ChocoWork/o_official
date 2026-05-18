@@ -1,3 +1,4 @@
+import "./Button.css";
 import Link from 'next/link';
 import type {
   AnchorHTMLAttributes,

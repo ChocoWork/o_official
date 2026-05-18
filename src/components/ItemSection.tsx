@@ -4,7 +4,7 @@ import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { clientFetch } from '@/lib/client-fetch';
 import { Button } from '@/components/ui/Button/Button';
-import { Card } from '@/components/ui/Card';
+import { Card } from '@/components/ui/Card/Card';
 import { TagLabel } from '@/components/ui/TagLabel/TagLabel';
 
 interface AdminItem {

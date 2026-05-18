@@ -231,7 +231,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
       onChange={applyCategorySelection}
       shape="square"
       checkStyle="fill"
-      size="sm"
+      size="xs"
       className="tracking-widest"
       expandLabelHitArea={false}
     />
@@ -302,7 +302,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
                   </span>
                   {/* Category tag: mobile only */}
                   <div className="sm:hidden">
-                    <TagLabel className="font-acumin" size="sm">
+                    <TagLabel className="font-acumin" size="xs">
                       {article.category}
                     </TagLabel>
                   </div>
