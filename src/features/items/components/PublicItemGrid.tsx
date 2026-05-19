@@ -960,7 +960,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
           <Button
             type="button"
             variant="primary"
-            size="md"
+            size="xs"
             onClick={applyDraftFilters}
             className="w-full tracking-[0.18em]"
           >
@@ -969,7 +969,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
           <Button
             type="button"
             variant="secondary"
-            size="md"
+            size="xs"
             onClick={resetDraftFilters}
             className="w-full tracking-[0.18em]"
           >

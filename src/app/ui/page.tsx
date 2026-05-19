@@ -382,9 +382,9 @@ export default function Page() {
                 >
                   ICON ONLY
                 </p>
-                <Button variant="secondary" className="aspect-square px-0" size={buttonDemoSize} aria-label="Add to wishlist">
-                  <div className="w-5 h-5 flex items-center justify-center">
-                    <i className="ri-heart-line text-xl"></i>
+                <Button variant="secondary" size={buttonDemoSize} aria-label="Add to wishlist">
+                  <div className="w-4 h-4 flex items-center justify-center">
+                    <i className="ri-heart-line text-base"></i>
                   </div>
                 </Button>
               </div>
