@@ -22,6 +22,8 @@ const SORT_OPTIONS = [
   { value: 'price_asc', label: 'PRICE: LOW TO HIGH' },
   { value: 'price_desc', label: 'PRICE: HIGH TO LOW' },
 ] as const;
+const FILTER_SIDEBAR_SCROLL_CONTAINER_CLASS =
+  'h-full overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden border-r border-black/5 px-[13px] xl:px-[21px] py-[21px] xl:py-[34px]';
 
 type ItemCategory = typeof ITEM_CATEGORIES[number];
 type ItemSort = (typeof SORT_OPTIONS)[number]['value'];
@@ -1024,7 +1026,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
           className="hidden lg:block w-[199px] xl:w-[233px] flex-shrink-0 sticky h-[calc(100vh-var(--site-header-offset))] overflow-visible transition-[top,height] duration-300 ease-in-out"
           style={desktopFilterStickyStyle}
         >
-          <div className="h-full overflow-y-auto border-r border-black/5 px-[13px] xl:px-[21px] py-[21px] xl:py-[34px]">
+          <div className={FILTER_SIDEBAR_SCROLL_CONTAINER_CLASS}>
             {renderFilterSections()}
           </div>
         </aside>
