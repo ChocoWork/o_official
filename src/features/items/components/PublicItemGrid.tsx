@@ -24,6 +24,10 @@ const SORT_OPTIONS = [
 ] as const;
 const FILTER_SIDEBAR_SCROLL_CONTAINER_CLASS =
   'h-full overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden border-r border-black/5 px-[13px] xl:px-[21px] py-[21px] xl:py-[34px]';
+const FILTER_DRAWER_CLASS =
+  '[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden';
+const FILTER_ACTIONS_CLASS =
+  "relative sticky bottom-0 z-40 space-y-2 bg-white pt-4 pb-1 before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:bg-white before:content-[''] after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-screen after:bg-white after:content-['']";
 
 type ItemCategory = typeof ITEM_CATEGORIES[number];
 type ItemSort = (typeof SORT_OPTIONS)[number]['value'];
@@ -958,7 +962,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
           className="!max-w-none !overflow-visible !border-0"
         />
 
-        <div className="space-y-2">
+        <div className={FILTER_ACTIONS_CLASS}>
           <Button
             type="button"
             variant="primary"
@@ -1098,6 +1102,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
         onClose={closeDrawerAndApplyFilters}
         side="left"
         size="md"
+        className={FILTER_DRAWER_CLASS}
       >
         <div className="px-5 py-4 sm:px-6 sm:py-5">
           <div className="flex items-center justify-between border-b border-black/10 pb-3">
