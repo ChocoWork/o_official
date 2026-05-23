@@ -135,21 +135,19 @@ const Header = () => {
     </header>
 
       <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} size="md">
-        <div className="p-6 sm:p-8">
-          <div className="flex items-center justify-between mb-4">
+        <div className="px-[13px] pb-6 pt-[11px] sm:px-[16px] sm:pb-8 sm:pt-[11px] md:px-[21px] md:pb-10 md:pt-[11px]">
+          <div className="mb-[21px] flex justify-end sm:mb-[34px]">
             <Button
               variant="ghost"
-              size="md"
-              className="aspect-square px-0 flex items-center justify-center hover:bg-[#f5f5f5] transition-colors cursor-pointer"
+              size="sm"
+              className="icon-frame p-0 hover:bg-transparent"
               onClick={() => setDrawerOpen(false)}
               aria-label="Close drawer"
             >
-              <div className="w-5 h-5 flex items-center justify-center">
-                <i className="ri-close-line text-xl"></i>
-              </div>
+              <i className="ri-close-line icon"></i>
             </Button>
           </div>
-          <nav className="space-y-0">
+          <nav className="flex w-full flex-col items-stretch">
             {[...menuItems].map((item) => (
               <Button
                 key={item.label}
@@ -157,8 +155,14 @@ const Header = () => {
                 size="md"
                 href={item.href}
                 onClick={() => setDrawerOpen(false)}
-                className={cn('w-full justify-start text-left px-4 py-2.5 md:py-2 text-sm h-auto')}
-                style={{ fontFamily: "acumin-pro, sans-serif" }}
+                className={cn('w-full self-stretch justify-start px-0 py-2.5 text-left text-sm h-auto md:py-2')}
+                style={{
+                  fontFamily: "acumin-pro, sans-serif",
+                  justifyContent: 'flex-start',
+                  textAlign: 'left',
+                  paddingLeft: 0,
+                  paddingRight: 0,
+                }}
               >
                 {item.label}
               </Button>
