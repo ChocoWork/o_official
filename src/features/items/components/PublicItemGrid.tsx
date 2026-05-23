@@ -957,6 +957,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
           ]}
           openMode="multiple"
           defaultOpenKeys={filterSectionKeys}
+          highlightOnHover={false}
           size="xs"
           className="!max-w-none !overflow-visible !border-0"
         />

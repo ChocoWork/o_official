@@ -3,6 +3,7 @@ module.exports = {
   testEnvironment: 'jsdom',
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
+    '\\.(css)$': '<rootDir>/tests/styleMock.js',
   },
   transform: {
     '^.+\\.(ts|tsx)$': 'ts-jest',

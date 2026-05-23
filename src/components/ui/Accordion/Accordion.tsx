@@ -23,6 +23,10 @@ export interface AccordionProps {
   contentClassName?: string;
   /** demo-compatible size modifier */
   size?: ComponentSize;
+  /** controls hover surface color and the item spacing that supports it */
+  highlightOnHover?: boolean;
+  /** controls whether trigger rows render an underline */
+  showUnderline?: boolean;
   /** #sym:size: single keeps current behavior, multiple allows opening multiple items */
   openMode?: 'single' | 'multiple';
 }
@@ -36,10 +40,12 @@ export function Accordion({
   triggerClassName,
   contentClassName,
   size = 'md',
+  highlightOnHover = true,
+  showUnderline = true,
   openMode = 'single',
   defaultOpenKeys = [],
 }: AccordionProps) {
-  const [internalOpenKey, setInternalOpenKey] = useState<string | null>(null);
+  const [internalOpenKey, setInternalOpenKey] = useState<string | null>(() => defaultOpenKeys[0] ?? null);
   const [internalOpenKeys, setInternalOpenKeys] = useState<string[]>(() => [...defaultOpenKeys]);
   const currentOpenKey = openKey !== undefined ? openKey : internalOpenKey;
 
@@ -62,7 +68,13 @@ export function Accordion({
   };
 
   return (
-    <div data-ui-accordion data-ui-accordion-size={size} className={className}>
+    <div
+      data-ui-accordion
+      data-ui-accordion-size={size}
+      data-ui-accordion-hover-highlight={highlightOnHover ? 'true' : 'false'}
+      data-ui-accordion-show-underline={showUnderline ? 'true' : 'false'}
+      className={className}
+    >
       {items.map((item) => {
         const isOpen =
           openMode === 'multiple'
