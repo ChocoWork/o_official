@@ -124,7 +124,7 @@ const Header = () => {
           <Button
             variant="ghost"
             size="sm"
-            className="lg:hidden icon-frame p-0 hover:bg-transparent"
+            className="header-menu-button icon-frame p-0"
             onClick={() => setDrawerOpen(true)}
             aria-label="Open menu"
           >
@@ -139,12 +139,14 @@ const Header = () => {
           <div className="mb-[21px] flex justify-end sm:mb-[34px]">
             <Button
               variant="ghost"
-              size="sm"
-              className="icon-frame p-0 hover:bg-transparent"
+              size="md"
+              className="header-drawer-close-button aspect-square px-0 flex items-center justify-center"
               onClick={() => setDrawerOpen(false)}
               aria-label="Close drawer"
             >
-              <i className="ri-close-line icon"></i>
+              <div className="w-5 h-5 flex items-center justify-center">
+                <i className="ri-close-line text-xl"></i>
+              </div>
             </Button>
           </div>
           <nav className="flex w-full flex-col items-stretch">

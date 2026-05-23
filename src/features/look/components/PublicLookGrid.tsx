@@ -184,15 +184,14 @@ function PublicLookCatalog({ looks, initialSeason = 'ALL', className }: PublicLo
         data-filter-button={interactive ? 'floating' : 'placeholder'}
         onClick={interactive ? () => setIsFilterDrawerOpen(true) : undefined}
         variant="secondary"
-        size="xs"
-        className="min-h-0 gap-2 px-[8px] py-[3px] text-[9px] uppercase tracking-[0.15em] sm:px-[13px] sm:py-[5px] sm:text-[10px]"
-        style={{ fontFamily: 'acumin-pro, sans-serif' }}
+        size="compact"
+        className="tracking-[0.15em] uppercase"
         aria-label={interactive ? 'Open filter drawer FILTER' : undefined}
         aria-haspopup={interactive ? 'dialog' : undefined}
         aria-expanded={interactive ? isFilterDrawerOpen : undefined}
         tabIndex={interactive ? undefined : -1}
       >
-        <div className="flex h-4 w-4 items-center justify-center" aria-hidden="true">
+        <div className="w-4 h-4 flex items-center justify-center" aria-hidden="true">
           <i className="ri-equalizer-line text-base" />
         </div>
         FILTER

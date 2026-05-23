@@ -259,9 +259,8 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
         data-filter-button={interactive ? 'floating' : 'placeholder'}
         onClick={interactive ? () => setIsFilterDrawerOpen(true) : undefined}
         variant="secondary"
-        size="xs"
-        className="min-h-0 gap-2 px-[8px] sm:px-[13px] py-[3px] sm:py-[5px] text-[9px] sm:text-[10px] tracking-[0.15em] uppercase"
-        style={{ fontFamily: 'acumin-pro, sans-serif' }}
+        size="compact"
+        className="tracking-[0.15em] uppercase"
         aria-haspopup={interactive ? 'dialog' : undefined}
         aria-expanded={interactive ? isFilterDrawerOpen : undefined}
         tabIndex={interactive ? undefined : -1}
