@@ -3,12 +3,15 @@
 import Link from 'next/link';
 import React, { useState } from "react";
 import { usePathname } from 'next/navigation';
+import { Accordion } from '@/components/ui/Accordion/Accordion';
 import { cn } from '@/lib/utils';
 import LoginModal from "@/components/LoginModal";
 import { useLogin } from "@/contexts/LoginContext";
 import { useCart } from "@/contexts/CartContext";
 import { Button } from '@/components/ui/Button/Button';
 import { Drawer } from '@/components/ui/Drawer/Drawer';
+import { LOOK_SEASON_OPTIONS } from '@/lib/look/public';
+import { categories as newsCategories } from '@/lib/news-data';
 
 const menuItems = [
   { href: '/news', label: 'NEWS' },
@@ -19,6 +22,40 @@ const menuItems = [
   { href: '/stockist', label: 'STOCKIST' },
   { href: '/ui', label: 'UI' },
 ];
+
+const HEADER_ITEM_CATEGORIES = ['ALL', 'TOPS', 'BOTTOMS', 'OUTERWEAR', 'ACCESSORIES'] as const;
+
+const drawerFilterSections = [
+  {
+    key: 'news',
+    label: 'NEWS',
+    basePath: '/news',
+    queryKey: 'category',
+    values: newsCategories,
+  },
+  {
+    key: 'item',
+    label: 'ITEM',
+    basePath: '/item',
+    queryKey: 'category',
+    values: HEADER_ITEM_CATEGORIES,
+  },
+  {
+    key: 'look',
+    label: 'LOOK',
+    basePath: '/look',
+    queryKey: 'season',
+    values: LOOK_SEASON_OPTIONS,
+  },
+] as const;
+
+function buildDrawerFilterHref(basePath: string, queryKey: string, value: string) {
+  if (value === 'ALL') {
+    return basePath;
+  }
+
+  return `${basePath}?${queryKey}=${encodeURIComponent(value)}`;
+}
 
 const Header = () => {
   const [loginOpen, setLoginOpen] = useState(false);
@@ -59,6 +96,47 @@ const Header = () => {
     if (href === '/') return pathname === '/';
     return pathname === href || pathname.startsWith(`${href}/`);
   };
+
+  const activeDrawerSectionKey = React.useMemo(() => {
+    if (pathname.startsWith('/news')) {
+      return 'news';
+    }
+    if (pathname.startsWith('/item')) {
+      return 'item';
+    }
+    if (pathname.startsWith('/look')) {
+      return 'look';
+    }
+    return null;
+  }, [pathname]);
+
+  const drawerStaticItems = React.useMemo(
+    () => menuItems.filter((item) => !['/news', '/item', '/look'].includes(item.href)),
+    [],
+  );
+
+  const drawerAccordionItems = drawerFilterSections.map((section) => ({
+    key: section.key,
+    title: section.label,
+    content: (
+      <div className="header-drawer-accordion-links">
+        {section.values.map((value) => {
+          const href = buildDrawerFilterHref(section.basePath, section.queryKey, value);
+
+          return (
+            <Link
+              key={value}
+              href={href}
+              onClick={() => setDrawerOpen(false)}
+              className="header-drawer-subnav-link"
+            >
+              {value}
+            </Link>
+          );
+        })}
+      </div>
+    ),
+  }));
 
 
   return (
@@ -135,61 +213,69 @@ const Header = () => {
     </header>
 
       <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} size="md">
-        <div className="px-[13px] pb-6 pt-[11px] sm:px-[16px] sm:pb-8 sm:pt-[11px] md:px-[21px] md:pb-10 md:pt-[11px]">
-          <div className="mb-[21px] flex justify-end sm:mb-[34px]">
+        <div className="header-drawer-shell">
+          <div className="header-drawer-top-row">
             <Button
               variant="ghost"
-              size="md"
-              className="header-drawer-close-button aspect-square px-0 flex items-center justify-center"
+              size="sm"
+              className="header-drawer-close-button icon-frame p-0"
               onClick={() => setDrawerOpen(false)}
               aria-label="Close drawer"
             >
-              <div className="w-5 h-5 flex items-center justify-center">
-                <i className="ri-close-line text-xl"></i>
-              </div>
+              <i className="ri-close-line icon"></i>
             </Button>
           </div>
-          <nav className="flex w-full flex-col items-stretch">
-            {[...menuItems].map((item) => (
-              <Button
-                key={item.label}
-                variant="ghost"
-                size="md"
-                href={item.href}
-                onClick={() => setDrawerOpen(false)}
-                className={cn('w-full self-stretch justify-start px-0 py-2.5 text-left text-sm h-auto md:py-2')}
-                style={{
-                  fontFamily: "acumin-pro, sans-serif",
-                  justifyContent: 'flex-start',
-                  textAlign: 'left',
-                  paddingLeft: 0,
-                  paddingRight: 0,
-                }}
-              >
-                {item.label}
-              </Button>
-            ))}
-          </nav>
-          <div className="mt-8 pt-6 border-t border-black/10">
-            <p
-              className="text-xs tracking-widest text-black/60 mb-4"
-              style={{ fontFamily: "acumin-pro, sans-serif" }}
-            >
-              FOLLOW US
-            </p>
-            <div className="flex items-center gap-4">
-              {['instagram','facebook','twitter'].map((icon) => (
-                <Button
-                  key={icon}
-                  variant="secondary"
-                  size="md"
-                  className="aspect-square px-0"
-                >
-                  <div className="w-5 h-5 flex items-center justify-center">
-                    <i className={`ri-${icon}-line text-xl`}></i>
-                  </div>
-                </Button>
-              ))}
+          <div className="header-drawer-content">
+            <nav className="header-drawer-nav" aria-label="Mobile navigation">
+              <Accordion
+                items={drawerAccordionItems}
+                size="sm"
+                openMode="single"
+                defaultOpenKeys={activeDrawerSectionKey ? [activeDrawerSectionKey] : []}
+                className="header-drawer-accordion"
+              />
+              <div className="header-drawer-links">
+                {drawerStaticItems.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setDrawerOpen(false)}
+                    aria-current={isActiveMenuItem(item.href) ? 'page' : undefined}
+                    data-active={isActiveMenuItem(item.href) ? 'true' : undefined}
+                    className="header-drawer-primary-link"
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+                {canManage ? (
+                  <Link
+                    href="/admin"
+                    onClick={() => setDrawerOpen(false)}
+                    aria-current={isActiveMenuItem('/admin') ? 'page' : undefined}
+                    data-active={isActiveMenuItem('/admin') ? 'true' : undefined}
+                    className="header-drawer-primary-link"
+                  >
+                    MANAGE
+                  </Link>
+                ) : null}
+              </div>
+            </nav>
+            <div className="header-drawer-follow">
+              <p className="header-drawer-follow-title">FOLLOW US</p>
+              <div className="flex items-center gap-4">
+                {['instagram','facebook','twitter'].map((icon) => (
+                  <Button
+                    key={icon}
+                    variant="secondary"
+                    size="md"
+                    className="aspect-square px-0"
+                  >
+                    <div className="w-5 h-5 flex items-center justify-center">
+                      <i className={`ri-${icon}-line text-xl`}></i>
+                    </div>
+                  </Button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
