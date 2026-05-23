@@ -4,7 +4,6 @@ import Link from 'next/link';
 import React, { useState } from "react";
 import { usePathname } from 'next/navigation';
 import { Accordion } from '@/components/ui/Accordion/Accordion';
-import { cn } from '@/lib/utils';
 import LoginModal from "@/components/LoginModal";
 import { useLogin } from "@/contexts/LoginContext";
 import { useCart } from "@/contexts/CartContext";
@@ -128,7 +127,7 @@ const Header = () => {
               key={value}
               href={href}
               onClick={() => setDrawerOpen(false)}
-              className="header-drawer-subnav-link"
+              className="font-brand block py-[2px] text-[12px] leading-[1.45] tracking-[0.16em] text-[#474747] uppercase no-underline transition-colors"
             >
               {value}
             </Link>
@@ -213,8 +212,11 @@ const Header = () => {
     </header>
 
       <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} size="md">
-        <div className="header-drawer-shell">
-          <div className="header-drawer-top-row">
+        <div className="pb-6 sm:pb-8 md:pb-10">
+          <div
+            className="flex items-center justify-end px-[13px] sm:px-[16px] md:px-[21px]"
+            style={{ height: 'var(--site-header-height)' }}
+          >
             <Button
               variant="ghost"
               size="sm"
@@ -225,16 +227,18 @@ const Header = () => {
               <i className="ri-close-line icon"></i>
             </Button>
           </div>
-          <div className="header-drawer-content">
-            <nav className="header-drawer-nav" aria-label="Mobile navigation">
+          <div className="px-[25px]">
+            <nav className="flex flex-col gap-[10px]" aria-label="Mobile navigation">
               <Accordion
                 items={drawerAccordionItems}
                 size="sm"
                 openMode="single"
                 defaultOpenKeys={activeDrawerSectionKey ? [activeDrawerSectionKey] : []}
-                className="header-drawer-accordion"
+                className="w-full max-w-none overflow-visible border-0 bg-transparent [--accordion-font-size:0.75rem] [--accordion-pad-block:0.625rem] [--accordion-pad-inline:0] [--accordion-min-height:auto] [--accordion-item-gap:0] [--accordion-icon-box-size:1rem] [--accordion-border-color:rgb(17_17_17_/_0.08)] [--accordion-surface-hover:transparent] [--accordion-surface-active:transparent] [--accordion-title-color:#111111] [--accordion-content-color:#111111]"
+                triggerClassName="font-brand w-full border-b border-black/8 bg-transparent px-0 py-[10px] text-left text-[12px] leading-[1.4] tracking-[0.18em] uppercase hover:bg-transparent"
+                contentClassName="px-0 pt-[6px] pb-[12px]"
               />
-              <div className="header-drawer-links">
+              <div className="flex flex-col">
                 {drawerStaticItems.map((item) => (
                   <Link
                     key={item.href}
@@ -242,7 +246,7 @@ const Header = () => {
                     onClick={() => setDrawerOpen(false)}
                     aria-current={isActiveMenuItem(item.href) ? 'page' : undefined}
                     data-active={isActiveMenuItem(item.href) ? 'true' : undefined}
-                    className="header-drawer-primary-link"
+                    className="font-brand block border-b border-black/8 py-[10px] text-[12px] leading-[1.4] tracking-[0.18em] text-black uppercase no-underline transition-colors"
                   >
                     {item.label}
                   </Link>
@@ -253,15 +257,20 @@ const Header = () => {
                     onClick={() => setDrawerOpen(false)}
                     aria-current={isActiveMenuItem('/admin') ? 'page' : undefined}
                     data-active={isActiveMenuItem('/admin') ? 'true' : undefined}
-                    className="header-drawer-primary-link"
+                    className="font-brand block border-b border-black/8 py-[10px] text-[12px] leading-[1.4] tracking-[0.18em] text-black uppercase no-underline transition-colors"
                   >
                     MANAGE
                   </Link>
                 ) : null}
               </div>
             </nav>
-            <div className="header-drawer-follow">
-              <p className="header-drawer-follow-title">FOLLOW US</p>
+            <div className="mt-8 border-t border-black/10 pt-6">
+              <p
+                className="mb-4 text-xs tracking-widest text-black/60"
+                style={{ fontFamily: 'acumin-pro, sans-serif' }}
+              >
+                FOLLOW US
+              </p>
               <div className="flex items-center gap-4">
                 {['instagram','facebook','twitter'].map((icon) => (
                   <Button
