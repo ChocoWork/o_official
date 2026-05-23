@@ -730,9 +730,8 @@ export function PublicItemGrid(props: PublicItemGridProps) {
         data-filter-button={interactive ? 'floating' : 'placeholder'}
         onClick={interactive ? () => setIsFilterDrawerOpen(true) : undefined}
         variant="secondary"
-        size="xs"
-        className="min-h-0 gap-2 px-[8px] sm:px-[13px] py-[3px] sm:py-[5px] text-[9px] sm:text-[10px] tracking-[0.15em] uppercase"
-        style={{ fontFamily: 'acumin-pro, sans-serif' }}
+        size="compact"
+        className="tracking-[0.15em] uppercase"
         aria-haspopup={interactive ? 'dialog' : undefined}
         aria-expanded={interactive ? isFilterDrawerOpen : undefined}
         tabIndex={interactive ? undefined : -1}
@@ -1105,15 +1104,15 @@ export function PublicItemGrid(props: PublicItemGridProps) {
         className={FILTER_DRAWER_CLASS}
       >
         <div className="px-5 py-4 sm:px-6 sm:py-5">
-          <div className="flex items-center justify-between border-b border-black/10 pb-3">
-            <button
-              type="button"
+          <div className="flex items-center justify-end pb-3">
+            <Button
+              variant='text'
+              size='xl'
               onClick={closeDrawerAndApplyFilters}
-              aria-label="Close filter drawer"
               className="text-xl leading-none text-black"
             >
               ×
-            </button>
+            </Button>
           </div>
 
           {renderFilterSections()}

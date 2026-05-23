@@ -1,9 +1,11 @@
 
 [data-ui-button] {
 --button-font-size: var(--control-button-font-size-md);
---button-pad-block: calc(var(--button-font-size) * var(--control-pad-ratio));
---button-pad-inline: 1em;
---button-min-height: calc(var(--button-font-size) * var(--control-height-ratio));
+--button-pad-ratio: calc(1 / var(--button-phi));
+--button-pad-block: calc(var(--button-font-size) * var(--button-pad-ratio));
+--button-pad-inline: calc(var(--button-font-size) * var(--button-pad-ratio));
+--button-height-ratio: calc(var(--control-line-height) + (var(--button-pad-ratio) * 2));
+--button-min-height: calc(var(--button-font-size) * var(--button-height-ratio));
 --button-radius-default: 9999px;
 --button-radius-rounded: var(--control-button-radius-rounded);
 --button-bg: #111111;
@@ -20,7 +22,7 @@ position: relative;
 display: inline-flex;
 align-items: center;
 justify-content: center;
-gap: var(--control-button-gap);
+gap: calc(1em / var(--button-phi));
 min-height: var(--button-min-height);
 padding: var(--button-pad-block) var(--button-pad-inline);
 border: 1px solid var(--button-border-color);
@@ -45,10 +47,21 @@ transition:
     opacity 180ms ease;
 }
 
+[data-ui-button].icon-only {
+  width: var(--button-min-height);
+  min-width: var(--button-min-height);
+  aspect-ratio: 1 / 1;
+}
+
 [data-ui-button][data-ui-button-variant="primary"] {
 --button-hover-bg: #2a2a2a;
 --button-hover-color: #ffffff;
 --button-hover-border-color: #2a2a2a;
+}
+
+[data-ui-button][data-ui-button-size="compact"] {
+--button-font-size: var(--lk-size-5xs);
+--button-pad-ratio: calc(var(--control-pad-ratio) * 0.75);
 }
 
 [data-ui-button][data-ui-button-size="xs"] {
@@ -131,7 +144,6 @@ border-radius: var(--button-radius-default);
 --button-disabled-color: #8c8c8c;
 --button-disabled-border-color: transparent;
 min-height: auto;
-padding: 0;
 border-radius: 0;
 box-shadow: none;
 }
@@ -139,6 +151,7 @@ box-shadow: none;
 [data-ui-button][data-ui-button-variant="link"] {
 text-decoration: underline;
 text-underline-offset: 0.18em;
+padding: 0;
 }
 
 [data-ui-button-disabled="true"],

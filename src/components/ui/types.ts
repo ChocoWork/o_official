@@ -38,13 +38,13 @@ export interface MultiSelectProps {
 	className?: string;
 }
 
-export type UIButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'link';
-export type UIButtonSize = ComponentSize;
+export type UIButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'link' | 'text';
+export type UIButtonSize = ComponentSize | 'compact';
 export type UIButtonShape = 'rounded' | 'square' | 'pill';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 	href?: string;
-	variant?: UIButtonVariant | 'text';
+	variant?: UIButtonVariant;
 	size?: UIButtonSize;
 	shape?: UIButtonShape;
 	className?: string;
