@@ -8,7 +8,10 @@ import { PublicStockistGrid } from '@/features/stockist/components/PublicStockis
 import { SearchHomePreview } from '@/features/search/components/SearchHomePreview';
 import { SectionTitle } from '@/components/ui/SectionTitle/SectionTitle';
 import { getPublishedItems } from '@/lib/items/public';
+import { getPublishedLooks } from '@/lib/look/server';
 import { getPublishedNews } from '@/features/news/services/public';
+
+const HOME_LOOK_FETCH_COUNT = 7;
 
 export async function generateMetadata(): Promise<Metadata> {
   return {
@@ -23,8 +26,9 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function Home() {
-  const [homeItems, homeNews] = await Promise.all([
+  const [homeItems, homeLooks, homeNews] = await Promise.all([
     getPublishedItems(9),
+    getPublishedLooks(HOME_LOOK_FETCH_COUNT),
     getPublishedNews({ limit: 6 }),
   ]);
 
@@ -62,7 +66,7 @@ export default async function Home() {
         <PublicItemGrid variant="home" items={homeItems} />
 
         {/* Look セクション */}
-        <PublicLookGrid variant="home" />
+        <PublicLookGrid variant="home" looks={homeLooks} />
 
         {/* News セクション */}
         <PublicNewsGrid variant="home" articles={homeNews} />

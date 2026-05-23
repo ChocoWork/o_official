@@ -1,6 +1,7 @@
+import type { ReactNode } from 'react';
 import { render, screen } from '@testing-library/react';
 import { PublicLookGrid } from '@/features/look/components/PublicLookGrid';
-import { getPublishedLooks, type PublicLook } from '@/lib/look/public';
+import type { PublicLook } from '@/lib/look/public';
 
 jest.mock('next/image', () => ({
   __esModule: true,
@@ -10,10 +11,25 @@ jest.mock('next/image', () => ({
   },
 }));
 
-jest.mock('@/lib/look/public', () => ({
+jest.mock('@/components/ui/Button/Button', () => ({
   __esModule: true,
-  getPublishedLooks: jest.fn(),
-  formatLookSeason: (seasonYear: number, seasonType: 'SS' | 'AW') => `${seasonYear} ${seasonType}`,
+  Button: ({ children, href }: { children?: ReactNode; href?: string }) =>
+    href ? <a href={href}>{children}</a> : <button type="button">{children}</button>,
+}));
+
+jest.mock('@/components/ui/SectionTitle/SectionTitle', () => ({
+  __esModule: true,
+  SectionTitle: ({ title }: { title: string }) => <h2>{title}</h2>,
+}));
+
+jest.mock('@/components/ui/Drawer/Drawer', () => ({
+  __esModule: true,
+  Drawer: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+}));
+
+jest.mock('@/components/ui/MultiSelect/MultiSelect', () => ({
+  __esModule: true,
+  MultiSelect: () => <div data-testid="multi-select" />,
 }));
 
 function createLooks(count: number): PublicLook[] {
@@ -30,24 +46,14 @@ function createLooks(count: number): PublicLook[] {
 }
 
 describe('PublicLookGrid', () => {
-  afterEach(() => {
-    jest.clearAllMocks();
-  });
-
   it('公開LOOKが7件あるときに VIEW LOOKBOOK を表示する', async () => {
-    (getPublishedLooks as jest.Mock).mockResolvedValue(createLooks(7));
-
-    const ui = await PublicLookGrid({ variant: 'home' });
-    render(ui);
+    render(<PublicLookGrid variant="home" looks={createLooks(7)} />);
 
     expect(screen.getByRole('link', { name: 'VIEW LOOKBOOK' })).toBeInTheDocument();
   });
 
   it('公開LOOKが6件のときに VIEW LOOKBOOK を表示しない', async () => {
-    (getPublishedLooks as jest.Mock).mockResolvedValue(createLooks(6));
-
-    const ui = await PublicLookGrid({ variant: 'home' });
-    render(ui);
+    render(<PublicLookGrid variant="home" looks={createLooks(6)} />);
 
     expect(screen.queryByRole('link', { name: 'VIEW LOOKBOOK' })).not.toBeInTheDocument();
   });

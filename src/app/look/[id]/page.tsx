@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { formatLookSeason, getPublishedLookById, getPublishedLooks } from '@/lib/look/public';
+import { formatLookSeason } from '@/lib/look/public';
+import { getPublishedLookById, getPublishedLooks } from '@/lib/look/server';
 import { List } from '@/components/ui/List/List';
 import { LookImageGallery } from '@/features/look/components/LookImageGallery';
 

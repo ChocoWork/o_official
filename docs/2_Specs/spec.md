@@ -6,6 +6,10 @@
 > - `COULD` — 対応すると良い。余力があれば対応する改善・拡張機能。
 > - `WONT` — 現フェーズでは対応しない。将来のマイルストーンで再評価する。
 
+## 概要
+
+この要件定義書はサイト全体の要求と受け付け基準を管理する。LOOK 一覧ではシーズンフィルタ（ALL / SS / AW）を追加し、desktop では左サイドバー、tablet/mobile では FILTER ボタンと Drawer を採用する。
+
 
 ## 凡例
 
@@ -211,7 +215,7 @@
 
 ### 1.6 ルック一覧ページ（LOOK）— `GET /look`
 
-**概要**: 公開済みルックのカタログ表示。
+**概要**: 公開済みルックのカタログ表示とシーズンフィルタ。
 
 - **FR-LOOK-ALL-001** `MUST`: 公開済みルックをカードグリッドで一覧表示する。
   - レビュー: `PublicLookGrid variant="catalog"` で RSC として実装。`getPublishedLooks` でデータ取得しレスポンシブグリッド表示。要件を満たしている。
@@ -222,9 +226,9 @@
 - **FR-LOOK-ALL-004** `MUST`: HOME の LOOK セクション表示時は `PublicLookGrid variant="home"` を使用し、最大6件まで表示しつつ「VIEW LOOKBOOK」ボタンで詳細一覧に誘導する。
   - レビュー: ホームページで `<PublicLookGrid variant="home" />` を使用。要件を満たしている。
 - **FR-LOOK-ALL-005** `SHOULD`: LOOK一覧ページに `generateMetadata` を実装し、`title` / `description` などの SEO メタ情報を設定する。
-  - レビュー: `src/app/look/page.tsx` に `generateMetadata` エクスポートがない。SEO 未対応。
-- **FR-LOOK-ALL-006** `WONT`: 将来的にシーズン別・テーマ別・アイテム別のフィルタやソート機能を追加することを検討する。
-  - レビュー: 未実装。現フェーズ対応外。
+  - レビュー: `src/app/look/page.tsx` に `generateMetadata` を実装済み。要件を満たしている。
+- **FR-LOOK-ALL-006** `MUST`: LOOK 一覧ページでシーズン（ALL / SS / AW）をフィルタでき、desktop では左サイドバー、tablet/mobile では FILTER ボタンと Drawer を表示する。
+  - レビュー: `src/app/look/page.tsx`, `src/features/look/components/PublicLookGrid.tsx`, `src/features/look/components/PublicLookCatalogGrid.tsx`, `src/lib/look/look-view.ts` で実装。`season` クエリと UI 状態を同期し、MultiSelect で単一シーズンを切り替える。
 
 ---
 

@@ -8,7 +8,7 @@ import { ColorPicker } from '@/components/ui/ColorPicker/ColorPicker';
 import { RadioButtonGroup } from '@/components/ui/RadioButtonGroup/RadioButtonGroup';
 import { SingleSelect } from '@/components/ui/SingleSelect/SingleSelect';
 import { MultiSelect } from '@/components/ui/MultiSelect/MultiSelect';
-import { Card } from '@/components/ui/Card';
+import { Card } from '@/components/ui/Card/Card';
 import { TextAreaField } from '@/components/ui/TextAreaField/TextAreaField';
 import { TextField } from '@/components/ui/TextField/TextField';
 import { clientFetch } from '@/lib/client-fetch';

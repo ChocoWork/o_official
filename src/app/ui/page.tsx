@@ -47,7 +47,7 @@ import { Tooltip } from '@/components/ui/Tooltip/Tooltip';
 export default function Page() {
   const [demoSize, setDemoSize] = useState<ComponentSize>('md');
   const [buttonDemoSize, setButtonDemoSize] = useState<UIButtonSize>('md');
-  const [multiSelectDemoSize, setMultiSelectDemoSize] = useState<UIButtonSize>('md');
+  const [multiSelectDemoSize, setMultiSelectDemoSize] = useState<ComponentSize>('md');
   const [standardText, setStandardText] = useState("");
   const [email, setEmail] = useState("");
   const [radioValue, setRadioValue] = useState("option1");
