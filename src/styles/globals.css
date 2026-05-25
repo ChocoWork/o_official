@@ -260,7 +260,8 @@ html[data-header-visible='false'] {
   }
 
   .header-title {
-    @apply text-[16px] sm:text-[17px] md:text-[18px] xl:text-[19px] tracking-tight cursor-pointer hover:text-[#474747] transition-colors duration-300 whitespace-nowrap;
+    @apply tracking-tight cursor-pointer hover:text-[#474747] transition-colors duration-300 whitespace-nowrap;
+    font-size: var(--lk-size-xl);
   }
 
   .header-nav-position {
