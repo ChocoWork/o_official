@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import type { TextareaHTMLAttributes } from 'react';
+import type { CSSProperties, TextareaHTMLAttributes } from 'react';
 import { controlBaseClass } from '../shared';
 import { ComponentSize } from '../types';
 
@@ -11,14 +11,28 @@ export interface TextAreaFieldProps extends Omit<TextareaHTMLAttributes<HTMLText
 
 export function TextAreaField({ label, className, id, rows, size = 'md', ...props }: TextAreaFieldProps) {
   const fieldId = id ?? props.name;
+  const labelStyle: CSSProperties = { fontSize: 'var(--lk-size-xs)' };
+  const fieldStyle: CSSProperties = {
+    fontSize:
+      size === 'xs'
+        ? 'var(--lk-size-xs)'
+        : size === 'sm'
+          ? 'var(--lk-size-sm)'
+          : size === 'lg'
+            ? 'var(--lk-size-lg)'
+            : size === 'xl'
+              ? 'var(--lk-size-xl)'
+              : 'var(--lk-size-md)',
+    ...(props.style ?? {}),
+  };
   const computedRows =
     rows ??
     (size === 'sm' ? 2 : size === 'lg' ? 6 : 4);
 
   return (
     <label className="block space-y-2">
-      {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
-      <textarea id={fieldId} rows={computedRows} className={cn(controlBaseClass, 'resize-none', className)} {...props} />
+      {label ? <span className="block text-xs tracking-widest text-black/80" style={labelStyle}>{label}</span> : null}
+      <textarea id={fieldId} rows={computedRows} className={cn(controlBaseClass, 'resize-none', className)} style={fieldStyle} {...props} />
     </label>
   );
 }

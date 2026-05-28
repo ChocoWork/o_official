@@ -676,6 +676,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     <div className='grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-[8px] sm:gap-[10px] md:gap-[13px] lg:gap-[21px]'>
       {displayItems.map((item, index) => {
         const hideOnMobile = shouldLimitOnMobile && index >= resolvedMobileLimit!;
+        const itemNameClassName = 'font-brand tracking-tight';
 
         return (
           <Link
@@ -703,10 +704,17 @@ export function PublicItemGrid(props: PublicItemGridProps) {
                 )}
               </div>
               <div>
-                <h3 className="font-brand text-[11px] sm:text-[12px] md:text-[13px] lg:text-[14px] tracking-tight" data-testid="item-name">
+                <h3
+                  className={itemNameClassName}
+                  data-testid="item-name"
+                  style={{ fontSize: variant === 'home' ? 'var(--lk-size-2xs)' : 'var(--lk-size-2xs)' }}
+                >
                   {item.name}
                 </h3>
-                <p className="text-[10px] sm:text-[11px] md:text-[12px] lg:text-[13px]" data-testid="item-price">
+                <p
+                  data-testid="item-price"
+                  style={{ fontSize: variant === 'home' ? 'var(--lk-size-3xs)' : 'var(--lk-size-3xs)' }}
+                >
                   ¥{item.price.toLocaleString('ja-JP')}
                 </p>
               </div>
@@ -1050,7 +1058,8 @@ export function PublicItemGrid(props: PublicItemGridProps) {
               <button
                 type="button"
                 onClick={() => setIsSortMenuOpen((prev) => !prev)}
-                className="text-[11px] tracking-[0.22em] text-black uppercase"
+                className="tracking-[0.22em] text-black uppercase"
+                style={{ fontSize: 'var(--lk-size-2xs)' }}
                 aria-label="Open sort menu"
                 aria-expanded={isSortMenuOpen}
               >
@@ -1110,7 +1119,8 @@ export function PublicItemGrid(props: PublicItemGridProps) {
               variant='text'
               size='xl'
               onClick={closeDrawerAndApplyFilters}
-              className="text-xl leading-none text-black"
+              className="leading-none text-black"
+              style={{ fontSize: 'var(--lk-size-2xl)' }}
             >
               ×
             </Button>

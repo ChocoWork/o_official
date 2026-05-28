@@ -80,22 +80,22 @@ export default async function LookDetailPage({ params }: Props) {
 
                     <div className="lg:pt-8 space-y-10">
                         <div>
-                            <p className="text-xs text-[#474747] tracking-widest mb-4">
+                            <p className="text-[#474747] tracking-widest mb-4" style={{ fontSize: 'var(--lk-size-xs)' }}>
                                 {seasonLabel}
                             </p>
-                            <h1 className="mb-3">
+                            <h1 className="mb-3" style={{ fontSize: 'var(--lk-size-3xl)' }}>
                                 {currentLook.theme}
                             </h1>
                         </div>
 
                         <div className="border-t border-[#d5d0c9] pt-8">
-                            <p className="text-sm text-[#474747] leading-[2]">
+                            <p className="text-[#474747] leading-[2]" style={{ fontSize: 'var(--lk-size-md)' }}>
                                 {currentLook.themeDescription || ' '}
                             </p>
                         </div>
 
                         <div className="border-t border-[#d5d0c9] pt-8">
-                            <h3 className="text-md text-black tracking-widest mb-6 font-brand">
+                            <h3 className="text-black tracking-widest mb-6 font-brand" style={{ fontSize: 'var(--lk-size-lg)' }}>
                                 STYLING ITEMS
                             </h3>
                             {currentLook.linkedItems.length === 0 ? (
@@ -113,7 +113,7 @@ export default async function LookDetailPage({ params }: Props) {
                                     getPrice={(item) => currencyFormatter.format(item.price)}
                                     getImage={(item) => item.imageUrl}
                                     getHref={(item) => `/item/${item.id}`}
-                                    size="sm"
+                                    size="xs"
                                 />
                             )}
                         </div>
@@ -123,10 +123,10 @@ export default async function LookDetailPage({ params }: Props) {
                                 <Link href={`/look/${prevLook.id}`} aria-label={`Previous look: ${prevLook.theme}`} className="group flex items-center space-x-3 cursor-pointer">
                                     <i className="ri-arrow-left-line w-5 h-5 flex items-center justify-center text-[#474747] group-hover:text-black transition-colors"></i>
                                     <div>
-                                        <p className="text-xs text-[#999] tracking-widest">
+                                        <p className="text-[#999] tracking-widest" style={{ fontSize: 'var(--lk-size-xs)' }}>
                                             PREV
                                         </p>
-                                        <p className="text-sm text-[#474747] group-hover:text-black transition-colors">
+                                        <p className="text-[#474747] group-hover:text-black transition-colors" style={{ fontSize: 'var(--lk-size-md)' }}>
                                             {prevLook.theme}
                                         </p>
                                     </div>
@@ -137,10 +137,10 @@ export default async function LookDetailPage({ params }: Props) {
                             {nextLook ? (
                                 <Link href={`/look/${nextLook.id}`} aria-label={`Next look: ${nextLook.theme}`} className="group flex items-center space-x-3 cursor-pointer text-right">
                                     <div>
-                                        <p className="text-xs text-[#999] tracking-widest">
+                                        <p className="text-[#999] tracking-widest" style={{ fontSize: 'var(--lk-size-xs)' }}>
                                             NEXT
                                         </p>
-                                        <p className="text-sm text-[#474747] group-hover:text-black transition-colors">
+                                        <p className="text-[#474747] group-hover:text-black transition-colors" style={{ fontSize: 'var(--lk-size-md)' }}>
                                             {nextLook.theme}
                                         </p>
                                     </div>

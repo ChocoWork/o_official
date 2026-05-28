@@ -234,6 +234,9 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
       size="xs"
       className="tracking-widest"
       expandLabelHitArea={false}
+      renderOptionLabel={(option) => (
+        <span style={{ fontSize: 'var(--lk-size-4xs)' }}>{option.label}</span>
+      )}
     />
   );
 
@@ -294,14 +297,14 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
                 {/* Date column: inline with category on mobile, fixed-width on sm+ */}
                 <div className="flex items-center gap-3 mb-2 sm:mb-0 sm:w-28 xl:w-36 sm:flex-shrink-0 sm:pt-0.5">
                   <span
-                    className="text-[9px] sm:text-[10px] md:text-[11px] lg:text-[12px] flex-shrink-0 text-[#474747] tracking-widest whitespace-nowrap"
-                    style={{ fontFamily: 'acumin-pro, sans-serif' }}
+                    className="flex-shrink-0 text-[#474747] tracking-widest whitespace-nowrap"
+                    style={{ fontFamily: 'acumin-pro, sans-serif', fontSize: 'var(--lk-size-4xs)' }}
                   >
                     {article.published_date.replace(/-/g, '.')}
                   </span>
                   {/* Category tag: mobile only */}
                   <div className="sm:hidden">
-                    <TagLabel className="font-acumin" size="xs">
+                    <TagLabel className="font-acumin" size="md">
                       {article.category}
                     </TagLabel>
                   </div>
@@ -311,20 +314,21 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
                 <div className="flex-1 min-w-0">
                   {/* Category tag: sm+ only */}
                   <div className="hidden sm:block mb-2 xl:mb-2.5">
-                    <TagLabel className="font-acumin" size="sm">
+                    <TagLabel className="font-acumin" size="md">
                       {article.category}
                     </TagLabel>
                   </div>
 
                   <h4
-                    className="text-[13px] sm:text-[14px] md:text-[15px] lg:text-[16px]  mb-[5px] sm:mb-[8px] group-hover:text-black/50 transition-colors duration-300 leading-snug"
+                    className="mb-[5px] sm:mb-[8px] group-hover:text-black/50 transition-colors duration-300 leading-snug"
+                    style={{ fontSize: 'var(--lk-size-sm)' }}
                   >
                     {article.title}
                   </h4>
 
                   <p
-                    className="text-[10px] sm:text-[11px] md:text-[12px] lg:text-[13px] leading-[1.8] line-clamp-2 sm:line-clamp-3 text-[#474747]"
-                    style={{ fontFamily: 'acumin-pro, sans-serif' }}
+                    className="leading-[1.8] line-clamp-2 sm:line-clamp-3 text-[#474747]"
+                    style={{ fontFamily: 'acumin-pro, sans-serif', fontSize: 'var(--lk-size-2xs)' }}
                   >
                     {article.content}
                   </p>
@@ -410,7 +414,8 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
               type="button"
               onClick={() => setIsFilterDrawerOpen(false)}
               aria-label="Close filter drawer"
-              className="text-xl leading-none text-black"
+              className="leading-none text-black"
+              style={{ fontSize: 'var(--lk-size-2xl)' }}
             >
               ×
             </button>

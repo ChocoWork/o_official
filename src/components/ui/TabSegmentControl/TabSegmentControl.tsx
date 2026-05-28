@@ -1,5 +1,6 @@
 import "./TabSegmentControl.css"
 import { cn } from '@/lib/utils';
+import type { CSSProperties } from 'react';
 import { ComponentSize } from '../types';
 
 export interface TabSegmentControlItem {
@@ -15,6 +16,7 @@ export interface TabSegmentControlProps {
   className?: string;
   size?: ComponentSize;
   orientation?: 'horizontal' | 'vertical';
+  itemStyle?: CSSProperties;
 }
 
 export function TabSegmentControl({
@@ -25,6 +27,7 @@ export function TabSegmentControl({
   className,
   size = 'md',
   orientation = 'horizontal',
+  itemStyle,
 }: TabSegmentControlProps) {
   // utility maps
   const textSizeMap: Record<ComponentSize, string> = {
@@ -73,6 +76,7 @@ export function TabSegmentControl({
                   ? 'bg-black text-white'
                   : 'bg-[#f5f5f5] text-black hover:bg-[#e5e5e5]'
               )}
+              style={itemStyle}
               onClick={() => onChange(item.key)}
             >
               {item.label}
@@ -109,6 +113,7 @@ export function TabSegmentControl({
                 size === 'md' ? 'text-sm' : textSizeMap[size],
                 isActive ? 'text-black' : 'text-black/40 hover:text-black/60',
               )}
+              style={itemStyle}
               onClick={() => onChange(item.key)}
             >
               {item.label}
@@ -144,6 +149,7 @@ export function TabSegmentControl({
                 textSizeMap[size],
                 isActive ? 'bg-black text-white' : 'text-black/60 hover:text-black',
               )}
+              style={itemStyle}
             >
               {item.label}
             </button>
@@ -181,6 +187,7 @@ export function TabSegmentControl({
                 ? 'text-black after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-black'
                 : 'text-black/40 hover:text-black/60',
           )}
+          style={itemStyle}
         >
           {item.label}
         </button>

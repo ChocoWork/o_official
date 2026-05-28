@@ -20,6 +20,9 @@ type FormErrors = Partial<Record<keyof ContactFormData, string>>;
 const MAX_MESSAGE_LENGTH = 500;
 
 export default function ContactPage() {
+  const pageTitleStyle: React.CSSProperties = { fontSize: 'var(--lk-size-4xl)' };
+  const bodyTextStyle: React.CSSProperties = { fontSize: 'var(--lk-size-md)' };
+  const helperTextStyle: React.CSSProperties = { fontSize: 'var(--lk-size-xs)' };
   const [formData, setFormData] = useState<ContactFormData>({
     name: '',
     email: '',
@@ -171,8 +174,8 @@ export default function ContactPage() {
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-12">
         <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-12">
           <div>
-            <h1>Contact / お問い合わせ</h1>
-            <p className="text-sm lg:text-base text-[#474747] leading-relaxed tracking-tight mt-2">ご質問やお問い合わせは、以下のフォームよりご連絡ください。</p>
+            <h1 style={pageTitleStyle}>Contact / お問い合わせ</h1>
+            <p className="text-sm lg:text-base text-[#474747] leading-relaxed tracking-tight mt-2" style={bodyTextStyle}>ご質問やお問い合わせは、以下のフォームよりご連絡ください。</p>
           </div>
 
           <div className="mb-6 sm:mb-14 p-4 sm:p-8 lg:p-10">
@@ -277,12 +280,12 @@ export default function ContactPage() {
                 aria-invalid={Boolean(errors.message)}
               />
               <div className="flex items-center justify-between">
-                {errors.message ? <p id="message-error" className="text-xs text-red-600" role="alert">{errors.message}</p> : <span />}
-                <p id="message-counter" className="text-xs text-[#474747]">{messageCount} / {MAX_MESSAGE_LENGTH}</p>
+                {errors.message ? <p id="message-error" className="text-xs text-red-600" role="alert" style={helperTextStyle}>{errors.message}</p> : <span />}
+                <p id="message-counter" className="text-xs text-[#474747]" style={helperTextStyle}>{messageCount} / {MAX_MESSAGE_LENGTH}</p>
               </div>
 
-              {submitSuccess ? <p className="text-sm text-green-700" role="status">{submitSuccess}</p> : null}
-              {submitError ? <p className="text-sm text-red-600" role="alert">{submitError}</p> : null}
+              {submitSuccess ? <p className="text-sm text-green-700" role="status" style={bodyTextStyle}>{submitSuccess}</p> : null}
+              {submitError ? <p className="text-sm text-red-600" role="alert" style={bodyTextStyle}>{submitError}</p> : null}
 
               <Button type="submit" size="lg" className="w-full " disabled={!isFormValid || isSubmitting}>
                 {isSubmitting ? 'SENDING...' : 'SEND MESSAGE'}
@@ -295,7 +298,7 @@ export default function ContactPage() {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="送信完了">
             <div className="w-full max-w-md bg-white p-6 sm:p-8 text-center space-y-4">
               <h3>お問い合わせありがとうございます</h3>
-              <p className="text-sm text-[#474747]">内容を確認のうえ、担当者よりご連絡いたします。</p>
+              <p className="text-sm text-[#474747]" style={bodyTextStyle}>内容を確認のうえ、担当者よりご連絡いたします。</p>
               <Button type="button" size="md" className="w-full" onClick={() => setShowThanksModal(false)}>
                 閉じる
               </Button>

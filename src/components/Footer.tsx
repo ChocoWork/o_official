@@ -6,8 +6,6 @@ type FooterLinkItem = {
   href: string;
 };
 
-const FOOTER_LINK_CLASS = 'block text-[10px] sm:text-[11px] md:text-[12px] lg:text-[13px] leading-[1.2] text-white/70 hover:text-white transition-colors cursor-pointer';
-
 const shopLinks: FooterLinkItem[] = [
   { label: 'ALL', href: '/item' },
   { label: 'TOPS', href: '/item' },
@@ -36,7 +34,7 @@ const FooterLinkList = ({
     <ul className="space-y-[8px] md:space-y-[9px] lg:space-y-[10px]">
       {links.map((link) => (
         <li key={link.label}>
-          <Link className={FOOTER_LINK_CLASS} href={link.href}>
+          <Link className='footer-link' href={link.href}>
             {link.label}
           </Link>
         </li>
@@ -51,8 +49,8 @@ const Footer = () => {
       <div className="px-[13px] sm:px-[16px] md:px-[21px] lg:px-[34px] xl:px-[55px] max-w-[1280px] mx-auto">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-[13px] sm:gap-[16px] md:gap-[21px] lg:gap-[34px] mb-[21px] sm:mb-[26px] md:mb-[34px]">
           <div className="col-span-2 md:col-span-1">
-            <h3 className="text-[16px] sm:text-[17px] md:text-[18px] lg:text-[20px] mb-[8px] sm:mb-[10px] md:mb-[13px] tracking-tight">Le Fil des Heures</h3>
-            <p className="text-[10px] sm:text-[11px] text-white/70 leading-relaxed">時を紡ぐニュートラルモードな日常着</p>
+            <h3 className="footer-brand-title mb-[8px] sm:mb-[10px] md:mb-[13px] tracking-tight">Le Fil des Heures</h3>
+            <p className="footer-brand-theme">時を紡ぐニュートラルモードな日常着</p>
           </div>
 
           <FooterLinkList title="SHOP" links={shopLinks} />
@@ -63,32 +61,32 @@ const Footer = () => {
             <div className="flex gap-4">
               <a
                 href="#"
-                className="w-10 h-10 flex items-center justify-center border border-white hover:bg-white hover:text-black transition-all duration-300 cursor-pointer"
+                className="footer-social-link"
               >
-                <i className="ri-instagram-line text-xl"></i>
+                <i className="ri-instagram-line footer-social-icon"></i>
               </a>
               <a
                 href="#"
-                className="w-10 h-10 flex items-center justify-center border border-white hover:bg-white hover:text-black transition-all duration-300 cursor-pointer"
+                className="footer-social-link"
               >
-                <i className="ri-facebook-line text-xl"></i>
+                <i className="ri-facebook-line footer-social-icon"></i>
               </a>
               <a
                 href="#"
-                className="w-10 h-10 flex items-center justify-center border border-white hover:bg-white hover:text-black transition-all duration-300 cursor-pointer"
+                className="footer-social-link"
               >
-                <i className="ri-twitter-x-line text-xl"></i>
+                <i className="ri-twitter-x-line footer-social-icon"></i>
               </a>
             </div>
           </div>
         </div>
         <div className="pt-[13px] sm:pt-[16px] md:pt-[21px] border-t border-white/10 flex flex-col md:flex-row justify-between items-center gap-[8px] sm:gap-[10px] md:gap-[13px]">
-          <p className="text-[9px] sm:text-[12px] text-white/50">© 2026 Le Fil des Heures. All rights reserved.</p>
+          <p className="footer-legal-copy">© 2026 Le Fil des Heures. All rights reserved.</p>
           <div className="flex items-center gap-[13px] sm:gap-[16px] md:gap-[21px]">
-            <a className="text-[9px] sm:text-[12px] text-white/50 hover:text-white transition-colors duration-300 cursor-pointer" href="/privacy">
+            <a className="footer-legal-link" href="/privacy">
               Privacy Policy
             </a>
-            <a className="text-[9px] sm:text-[12px] text-white/50 hover:text-white transition-colors duration-300 cursor-pointer" href="/terms">
+            <a className="footer-legal-link" href="/terms">
               Terms of Service
             </a>
           </div>

@@ -14,10 +14,14 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default function StoryPage() {
+  const pageTitleStyle = { fontSize: 'var(--lk-size-4xl)' } as const;
+  const sectionTitleStyle = { fontSize: 'var(--lk-size-3xl)' } as const;
+  const bodyTextStyle = { fontSize: 'var(--lk-size-sm)' } as const;
+
   return (
     <div className="max-w-6xl mx-auto">
       <div className="mb-8 sm:mb-10 lg:mb-12">
-        <h1>ABOUT</h1>
+        <h1 style={pageTitleStyle}>ABOUT</h1>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8 lg:gap-16 mb-8 sm:mb-14 lg:mb-28">
@@ -32,12 +36,12 @@ export default function StoryPage() {
         </div>
         <div className="flex flex-col justify-center">
           <div>
-            <h2 className="mb-3 sm:mb-6">Brand Philosophy</h2>
+            <h2 className="mb-3 sm:mb-6" style={sectionTitleStyle}>Brand Philosophy</h2>
             <div className="about-main-space">
-              <p className="about-main-text">
+              <p className="about-main-text" style={bodyTextStyle}>
                 Le Fil des Heuresは、「時を紡ぐニュートラルモードな日常着」をコンセプトに、時代を超えて愛される普遍的なデザインと上質な素材にこだわったアパレルブランドです。
               </p>
-              <p className="about-main-text">
+              <p className="about-main-text" style={bodyTextStyle}>
                 ミニマルでありながら洗練されたデザイン、そして着る人の個性を引き立てるニュートラルなカラーパレット。私たちは、日常に寄り添いながらも特別な瞬間を演出する服を提案します。
               </p>
             </div>
@@ -48,12 +52,12 @@ export default function StoryPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8 lg:gap-16 mb-8 sm:mb-14 lg:mb-24">
         <div className="flex flex-col justify-center lg:order-2">
           <div>
-            <h2 className="mb-3 sm:mb-6">Quality &amp; Craftsmanship</h2>
+            <h2 className="mb-3 sm:mb-6" style={sectionTitleStyle}>Quality &amp; Craftsmanship</h2>
             <div className="about-main-space">
-              <p className="about-main-text">
+              <p className="about-main-text" style={bodyTextStyle}>
                 こだわりの素材と、職人による丁寧な縫製。細部にまでこだわり抜いた製品づくりが、Le Fil des Heuresの品質を支えています。
               </p>
-              <p className="about-main-text">
+              <p className="about-main-text" style={bodyTextStyle}>
                 長く愛用していただけるよう、普遍的なデザインと耐久性、快適性を兼ね備えた服作りを心がけています。
               </p>
             </div>

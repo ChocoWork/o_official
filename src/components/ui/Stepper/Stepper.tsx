@@ -42,11 +42,18 @@ export function Stepper({
     xl: 'h-14',
   };
   const textClassMap: Record<ComponentSize, string> = {
-    xs: 'text-xs',
-    sm: 'text-xs',
-    md: 'text-sm',
-    lg: 'text-base',
-    xl: 'text-lg',
+    xs: '',
+    sm: '',
+    md: '',
+    lg: '',
+    xl: '',
+  };
+  const inputFontSizeMap: Record<ComponentSize, string> = {
+    xs: 'var(--lk-size-xs)',
+    sm: 'var(--lk-size-xs)',
+    md: 'var(--lk-size-sm)',
+    lg: 'var(--lk-size-md)',
+    xl: 'var(--lk-size-lg)',
   };
   // make side button width equal height to form square buttons
   const sideButtonWidthMap: Record<ComponentSize, string> = {
@@ -92,6 +99,7 @@ export function Stepper({
   const iconClass = iconClassMap[size];
   const compactButtonSize = compactButtonSizeMap[size];
   const compactInputWidth = compactInputWidthMap[size];
+  const inputFontSize = inputFontSizeMap[size];
 
 
   if (variant === 'field') {
@@ -111,6 +119,7 @@ export function Stepper({
           </button>
           <input
             className={cn(heightClass, 'flex-1 text-center', textClass, 'focus:outline-none appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-moz-appearance]:textfield')}
+            style={{ fontSize: inputFontSize }}
             type="number"
             min={min}
             max={max}
@@ -159,6 +168,7 @@ export function Stepper({
       </Button>
       <input
         className={cn(compactInputWidth, 'text-center', textClass, 'focus:outline-none appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-moz-appearance]:textfield')}
+        style={{ fontSize: inputFontSize }}
         type="number"
         min={min}
         max={max}

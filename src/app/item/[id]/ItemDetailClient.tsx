@@ -222,13 +222,18 @@ export default function ItemDetailClient({ id }: Props) {
 
   // 現在選択中のカラー名（alt テキスト用）
   const activeColorName = color || "";
+  const breadcrumbTextStyle = { fontSize: 'var(--lk-size-xs)' } as const;
+  const itemNameStyle = { fontSize: 'var(--lk-size-3xl)' } as const;
+  const optionTitleStyle = { fontSize: 'var(--lk-size-xs)' } as const;
+  const bodyTextStyle = { fontSize: 'var(--lk-size-sm)' } as const;
+  const mobilePrimaryActionStyle = { fontSize: 'var(--lk-size-md)' } as const;
 
   return (
     <div>
       <div className="element-width">
       {/* パンくずナビゲーション (FR-ITEM-DETAIL-010) */}
       <nav aria-label="breadcrumb" className="mb-6 lg:mb-8">
-        <ol className="flex items-center gap-2 text-xs tracking-widest text-[#888]">
+        <ol className="flex items-center gap-2 tracking-widest text-[#888]" style={breadcrumbTextStyle}>
           <li>
             <Link href="/" className="hover:text-black transition-colors">
               HOME
@@ -355,7 +360,7 @@ export default function ItemDetailClient({ id }: Props) {
 
         <div className="space-y-4 lg:space-y-6">
           <div>
-            <h2>
+            <h2 style={itemNameStyle}>
               {item.name}
             </h2>
             <div className="flex items-center gap-3 mt-1">
@@ -370,7 +375,7 @@ export default function ItemDetailClient({ id }: Props) {
           {/* カラー選択 (FR-ITEM-DETAIL-008: aria-pressed) */}
           {item.colors && Array.isArray(item.colors) && item.colors.length > 0 && (
             <div>
-              <p className="mb-2">COLOR</p>
+              <p className="mb-2" style={optionTitleStyle}>COLOR</p>
               <div className="flex gap-3 flex-wrap">
                 {(item.colors as unknown as Array<{ hex: string; name: string }>).map(
                   (colorOption) => (
@@ -395,7 +400,7 @@ export default function ItemDetailClient({ id }: Props) {
           {/* サイズ選択 (FR-ITEM-DETAIL-008: aria-pressed) */}
           {item.sizes && item.sizes.length > 0 && (
             <div>
-              <p className="mb-2">SIZE</p>
+              <p className="mb-2" style={optionTitleStyle}>SIZE</p>
               <div className="flex gap-3 flex-wrap">
                 {item.sizes.map((sizeOption: string) => (
                   <Button
@@ -416,7 +421,7 @@ export default function ItemDetailClient({ id }: Props) {
           )}
 
           <div>
-            <p className="mb-2">QUANTITY</p>
+            <p className="mb-2" style={optionTitleStyle}>QUANTITY</p>
             <Stepper value={quantity} min={1} onChange={setQuantity} size="sm" />
           </div>
 
@@ -429,7 +434,7 @@ export default function ItemDetailClient({ id }: Props) {
 
           {item.description && (
             <div className="border-t border-black/10 pt-4 lg:pt-6">
-              <p className="text-xs md:text-sm text-[#474747] leading-relaxed">
+              <p className="text-[#474747] leading-relaxed" style={bodyTextStyle}>
                 {item.description}
               </p>
             </div>
@@ -437,15 +442,15 @@ export default function ItemDetailClient({ id }: Props) {
 
           {item.product_details && (
             <div className="border-t border-black/10 py-4 lg:py-6">
-              <p className="mb-4 font-brand">PRODUCT DETAILS</p>
+              <p className="mb-4 font-brand" style={optionTitleStyle}>PRODUCT DETAILS</p>
               {typeof item.product_details === "string" ? (
-                <p className="text-xs md:text-sm text-[#474747] whitespace-pre-line">
+                <p className="text-[#474747] whitespace-pre-line" style={bodyTextStyle}>
                   {item.product_details}
                 </p>
               ) : Array.isArray(item.product_details) ? (
                 <ul className="space-y-2">
                   {item.product_details.map((detail: string, idx: number) => (
-                    <li key={idx} className="text-xs md:text-sm text-[#474747]">
+                    <li key={idx} className="text-[#474747]" style={bodyTextStyle}>
                       {detail}
                     </li>
                   ))}
@@ -454,7 +459,7 @@ export default function ItemDetailClient({ id }: Props) {
                 <ul className="space-y-2">
                   {Object.entries(item.product_details!).map(
                     ([key, value]: [string, unknown]) => (
-                      <li key={key} className="text-xs md:text-sm text-[#474747]">
+                      <li key={key} className="text-[#474747]" style={bodyTextStyle}>
                         {String(value)}
                       </li>
                     )
@@ -520,6 +525,7 @@ export default function ItemDetailClient({ id }: Props) {
           disabled={addingToCart || isSoldOut}
           size="sm"
           className="w-full"
+          style={mobilePrimaryActionStyle}
         >
           {isSoldOut ? (
             "SOLD OUT"
@@ -541,6 +547,7 @@ export default function ItemDetailClient({ id }: Props) {
           size="sm"
           aria-label="Add to wishlist"
           className="aspect-square px-0 hover:bg-transparent hover:text-current"
+          style={mobilePrimaryActionStyle}
         >
           <div className="w-5 h-5 flex items-center justify-center">
             <i

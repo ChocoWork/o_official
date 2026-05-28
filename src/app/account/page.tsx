@@ -64,6 +64,12 @@ const EMPTY_PROFILE: ProfileForm = {
 	address: EMPTY_ADDRESS,
 };
 
+const accountTextXsStyle: React.CSSProperties = { fontSize: 'var(--lk-size-xs)' };
+const accountTextMdStyle: React.CSSProperties = { fontSize: 'var(--lk-size-md)' };
+const accountTextLgStyle: React.CSSProperties = { fontSize: 'var(--lk-size-lg)' };
+const accountTextXlStyle: React.CSSProperties = { fontSize: 'var(--lk-size-xl)' };
+const accountPageTitleStyle: React.CSSProperties = { fontSize: 'var(--lk-size-4xl)' };
+
 function normalizeAccountTab(tabParam: string | null): AccountTab {
 	if (tabParam === 'shipping' || tabParam === 'address') {
 		return 'shipping';
@@ -411,7 +417,7 @@ function AccountPageContent() {
 	if (!isAuthResolved) {
 		return (
 			<div className="max-w-3xl mx-auto text-center">
-				<p className="text-lg text-[#474747] mb-8">読み込み中...</p>
+				<p className="text-[#474747] mb-8" style={accountTextLgStyle}>読み込み中...</p>
 			</div>
 		);
 	}
@@ -422,8 +428,8 @@ function AccountPageContent() {
 				<div className="w-20 h-20 flex items-center justify-center mx-auto mb-8">
 					<i className="ri-user-line text-6xl text-[#474747]"></i>
 				</div>
-				<h1 className="mb-4">会員情報</h1>
-				<p className="text-lg text-[#474747] mb-8">会員情報を確認するにはログインが必要です</p>
+				<h1 className="mb-4" style={accountPageTitleStyle}>会員情報</h1>
+				<p className="text-[#474747] mb-8" style={accountTextLgStyle}>会員情報を確認するにはログインが必要です</p>
 				<Button href="/login" variant="primary" size="lg">
 					ログイン
 				</Button>
@@ -433,6 +439,9 @@ function AccountPageContent() {
 
 	return (
 		<div className="element-width">
+			<div className="mb-10">
+				<h1 style={accountPageTitleStyle}>会員情報</h1>
+			</div>
 			<div className="grid grid-cols-1 lg:grid-cols-4 gap-12">
 				<div className="lg:col-span-1">
 					<TabSegmentControl
@@ -446,6 +455,7 @@ function AccountPageContent() {
 						orientation="vertical"
 						size="md"
 						className="space-y-2"
+						itemStyle={accountTextMdStyle}
 					/>
 					<div className="mt-6 pt-6 border-t border-black/10">
 						<Button
@@ -458,34 +468,34 @@ function AccountPageContent() {
 						>
 							{isLoggingOut ? 'ログアウト中...' : 'ログアウト'}
 						</Button>
-						{logoutError ? <p className="mt-3 text-xs text-red-600 font-acumin">{logoutError}</p> : null}
+						{logoutError ? <p className="mt-3 text-red-600 font-acumin" style={accountTextXsStyle}>{logoutError}</p> : null}
 					</div>
 				</div>
 
 				<div className="lg:col-span-3 min-w-0">
 					{activeTab === 'profile' ? (
 						<div className="space-y-6">
-							{isLoadingProfile ? <p className="text-sm text-[#474747]">読み込み中...</p> : null}
-							{profileMessage ? <p className="text-sm text-green-700">{profileMessage}</p> : null}
-							{profileError ? <p className="text-sm text-red-600">{profileError}</p> : null}
+							{isLoadingProfile ? <p className="text-[#474747]" style={accountTextMdStyle}>読み込み中...</p> : null}
+							{profileMessage ? <p className="text-green-700" style={accountTextMdStyle}>{profileMessage}</p> : null}
+							{profileError ? <p className="text-red-600" style={accountTextMdStyle}>{profileError}</p> : null}
 
 							{!isLoadingProfile && hasSavedProfile && !isEditingProfile ? (
 								<div className="border border-black/10 p-6 space-y-4">
 									<div>
-										<p className="text-xs text-[#474747] mb-1 tracking-wider">メールアドレス</p>
-										<p className="text-sm text-black break-all">{savedProfile.email || '-'}</p>
+										<p className="text-[#474747] mb-1 tracking-wider" style={accountTextXsStyle}>メールアドレス</p>
+										<p className="text-black break-all" style={accountTextMdStyle}>{savedProfile.email || '-'}</p>
 									</div>
 									<div>
-										<p className="text-xs text-[#474747] mb-1 tracking-wider">氏名</p>
-										<p className="text-sm text-black">{savedProfile.fullName || '-'}</p>
+										<p className="text-[#474747] mb-1 tracking-wider" style={accountTextXsStyle}>氏名</p>
+										<p className="text-black" style={accountTextMdStyle}>{savedProfile.fullName || '-'}</p>
 									</div>
 									<div>
-										<p className="text-xs text-[#474747] mb-1 tracking-wider">フリガナ</p>
-										<p className="text-sm text-black">{savedProfile.kanaName || '-'}</p>
+										<p className="text-[#474747] mb-1 tracking-wider" style={accountTextXsStyle}>フリガナ</p>
+										<p className="text-black" style={accountTextMdStyle}>{savedProfile.kanaName || '-'}</p>
 									</div>
 									<div>
-										<p className="text-xs text-[#474747] mb-1 tracking-wider">電話番号</p>
-										<p className="text-sm text-black">{savedProfile.phone || '-'}</p>
+										<p className="text-[#474747] mb-1 tracking-wider" style={accountTextXsStyle}>電話番号</p>
+										<p className="text-black" style={accountTextMdStyle}>{savedProfile.phone || '-'}</p>
 									</div>
 									<div className="flex flex-wrap gap-3">
 										<Button type="button" size="sm" className="px-8 font-acumin" onClick={() => setIsEditingProfile(true)}>
@@ -531,31 +541,31 @@ function AccountPageContent() {
 
 					{activeTab === 'shipping' ? (
 						<div className="space-y-6">
-							{isLoadingProfile ? <p className="text-sm text-[#474747]">読み込み中...</p> : null}
-							{profileMessage ? <p className="text-sm text-green-700">{profileMessage}</p> : null}
-							{profileError ? <p className="text-sm text-red-600">{profileError}</p> : null}
+							{isLoadingProfile ? <p className="text-[#474747]" style={accountTextMdStyle}>読み込み中...</p> : null}
+							{profileMessage ? <p className="text-green-700" style={accountTextMdStyle}>{profileMessage}</p> : null}
+							{profileError ? <p className="text-red-600" style={accountTextMdStyle}>{profileError}</p> : null}
 
 							{!isLoadingProfile && hasSavedShipping && !isEditingShipping ? (
 								<div className="border border-black/10 p-6 space-y-4">
 									<div>
-										<p className="text-xs text-[#474747] mb-1 tracking-wider">郵便番号</p>
-										<p className="text-sm text-black">{savedProfile.address.postalCode || '-'}</p>
+										<p className="text-[#474747] mb-1 tracking-wider" style={accountTextXsStyle}>郵便番号</p>
+										<p className="text-black" style={accountTextMdStyle}>{savedProfile.address.postalCode || '-'}</p>
 									</div>
 									<div>
-										<p className="text-xs text-[#474747] mb-1 tracking-wider">都道府県</p>
-										<p className="text-sm text-black">{savedProfile.address.prefecture || '-'}</p>
+										<p className="text-[#474747] mb-1 tracking-wider" style={accountTextXsStyle}>都道府県</p>
+										<p className="text-black" style={accountTextMdStyle}>{savedProfile.address.prefecture || '-'}</p>
 									</div>
 									<div>
-										<p className="text-xs text-[#474747] mb-1 tracking-wider">市区町村</p>
-										<p className="text-sm text-black">{savedProfile.address.city || '-'}</p>
+										<p className="text-[#474747] mb-1 tracking-wider" style={accountTextXsStyle}>市区町村</p>
+										<p className="text-black" style={accountTextMdStyle}>{savedProfile.address.city || '-'}</p>
 									</div>
 									<div>
-										<p className="text-xs text-[#474747] mb-1 tracking-wider">番地</p>
-										<p className="text-sm text-black">{savedProfile.address.address || '-'}</p>
+										<p className="text-[#474747] mb-1 tracking-wider" style={accountTextXsStyle}>番地</p>
+										<p className="text-black" style={accountTextMdStyle}>{savedProfile.address.address || '-'}</p>
 									</div>
 									<div>
-										<p className="text-xs text-[#474747] mb-1 tracking-wider">建物名・部屋番号</p>
-										<p className="text-sm text-black">{savedProfile.address.building || '-'}</p>
+										<p className="text-[#474747] mb-1 tracking-wider" style={accountTextXsStyle}>建物名・部屋番号</p>
+										<p className="text-black" style={accountTextMdStyle}>{savedProfile.address.building || '-'}</p>
 									</div>
 									<div className="flex flex-wrap gap-3">
 										<Button type="button" size="sm" className="px-8 font-acumin" onClick={() => setIsEditingShipping(true)}>
@@ -602,12 +612,12 @@ function AccountPageContent() {
 
 					{activeTab === 'orders' ? (
 						<div className="space-y-6">
-							{isLoadingOrders ? <p className="text-sm text-[#474747]">注文履歴を読み込み中...</p> : null}
-							{ordersError ? <p className="text-sm text-red-600">{ordersError}</p> : null}
+							{isLoadingOrders ? <p className="text-[#474747]" style={accountTextMdStyle}>注文履歴を読み込み中...</p> : null}
+							{ordersError ? <p className="text-red-600" style={accountTextMdStyle}>{ordersError}</p> : null}
 							{!isLoadingOrders && !ordersError && orders.length === 0 ? (
 								<div className="border border-black/10 p-8">
-									<p className="text-base text-black mb-2">注文履歴はまだありません</p>
-									<p className="text-sm text-[#474747]">ご注文いただいた商品はこの画面に表示されます。</p>
+									<p className="text-black mb-2" style={accountTextLgStyle}>注文履歴はまだありません</p>
+									<p className="text-[#474747]" style={accountTextMdStyle}>ご注文いただいた商品はこの画面に表示されます。</p>
 								</div>
 							) : null}
 
@@ -616,19 +626,19 @@ function AccountPageContent() {
 									<div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between pb-6 border-b border-black/10">
 										<div>
 											<p className="text-sm text-[#474747] mb-1">注文番号</p>
-											<p className="text-lg text-black">{order.orderNumber}</p>
+											<p className="text-black" style={accountTextLgStyle}>{order.orderNumber}</p>
 										</div>
 										<div className="sm:text-right">
 											<p className="text-sm text-[#474747] mb-1">注文日</p>
-											<p className="text-sm text-black">{order.orderDate}</p>
+											<p className="text-black" style={accountTextMdStyle}>{order.orderDate}</p>
 										</div>
 									</div>
 
 									<div className="space-y-4">
 										{order.items.map((item) => (
 											<div key={item.id} className="flex flex-col gap-1 border-b border-black/5 pb-4 last:border-b-0 last:pb-0">
-												<p className="text-sm text-black">{item.name}</p>
-												<p className="text-xs text-[#474747]">
+												<p className="text-black" style={accountTextMdStyle}>{item.name}</p>
+												<p className="text-[#474747]" style={accountTextXsStyle}>
 													数量: {item.quantity}
 													{item.color ? ` / カラー: ${item.color}` : ''}
 													{item.size ? ` / サイズ: ${item.size}` : ''}
@@ -646,9 +656,9 @@ function AccountPageContent() {
 										<div className="sm:text-right flex flex-col gap-3 sm:items-end">
 											<div>
 												<p className="text-sm text-[#474747] mb-1">合計</p>
-												<p className="text-xl text-black font-display">{order.totalAmount}</p>
+												<p className="text-black font-display" style={accountTextXlStyle}>{order.totalAmount}</p>
 											</div>
-											<Link href={order.detailHref} className="text-sm text-black underline underline-offset-4">
+											<Link href={order.detailHref} className="text-black underline underline-offset-4" style={accountTextMdStyle}>
 												注文詳細を見る
 											</Link>
 										</div>
@@ -669,7 +679,7 @@ export default function AccountPage() {
 			fallback={
 				<div className="pb-10 sm:pb-14 px-6 lg:px-12">
 					<div className="max-w-6xl mx-auto">
-						<p className="text-sm text-[#474747]">読み込み中...</p>
+						<p className="text-[#474747]" style={accountTextMdStyle}>読み込み中...</p>
 					</div>
 				</div>
 			}

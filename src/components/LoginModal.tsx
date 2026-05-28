@@ -38,6 +38,10 @@ const formatOtpCountdown = (timeRemaining: number) => {
   return `${minutes}分 ${String(seconds).padStart(2, '0')}秒後に再送可能`;
 };
 
+const xsTextStyle: React.CSSProperties = { fontSize: 'var(--lk-size-xs)' };
+const mdTextStyle: React.CSSProperties = { fontSize: 'var(--lk-size-md)' };
+const lgTextStyle: React.CSSProperties = { fontSize: 'var(--lk-size-lg)' };
+
 const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
   const { sendOtp, verifyOtp, loginWithGoogle } = useLogin();
   const router = useRouter();
@@ -288,25 +292,26 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
       </Button>
       <div className="relative mb-8">
         <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-black/20"></div></div>
-        <div className="relative flex justify-center text-sm"><span className="px-4 bg-white text-[#474747]">OR</span></div>
+        <div className="relative flex justify-center"><span className="px-4 bg-white text-[#474747]" style={mdTextStyle}>OR</span></div>
       </div>
       <form className="space-y-6 mb-8" onSubmit={otpSent ? handleVerifyOtp : handleSendOtp}>
         <div>
-          <label htmlFor="email" className="block text-sm tracking-widest mb-2">EMAIL</label>
-          <input id="email" ref={emailRef} required className="w-full px-4 py-3 border border-black/20 focus:border-black outline-none transition-colors duration-300 text-sm" type="email" disabled={otpSent} />
+          <label htmlFor="email" className="block tracking-widest mb-2" style={mdTextStyle}>EMAIL</label>
+          <input id="email" ref={emailRef} required className="w-full px-4 py-3 border border-black/20 focus:border-black outline-none transition-colors duration-300" style={mdTextStyle} type="email" disabled={otpSent} />
         </div>
         {otpSent ? (
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label htmlFor="otp" className="block text-sm tracking-widest">認証コード</label>
+              <label htmlFor="otp" className="block tracking-widest" style={mdTextStyle}>認証コード</label>
               {timeRemaining > 0 ? (
-                <span className="text-xs text-[#474747]">{formatOtpCountdown(timeRemaining)}</span>
+                <span className="text-[#474747]" style={xsTextStyle}>{formatOtpCountdown(timeRemaining)}</span>
               ) : (
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
                   className="text-xs underline text-[#474747] hover:text-black transition-colors px-0 py-0"
+                  style={xsTextStyle}
                   onClick={async () => {
                     const email = emailRef.current?.value || '';
                     setLoading(true);
@@ -345,7 +350,8 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
                   onChange={(event) => handleOtpChange(index, event.target.value)}
                   onKeyDown={(event) => handleOtpKeyDown(index, event)}
                   onPaste={(event) => handleOtpPaste(index, event)}
-                  className="w-10 h-11 border border-black/20 text-center text-lg outline-none transition-colors duration-200 focus:border-black"
+                  className="w-10 h-11 border border-black/20 text-center outline-none transition-colors duration-200 focus:border-black"
+                  style={lgTextStyle}
                   type="text"
                   inputMode="numeric"
                   autoComplete={index === 0 ? 'one-time-code' : 'off'}
@@ -368,7 +374,8 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
           <div className="text-right">
             <Link
               href="/auth/password-reset"
-              className="text-sm text-[#474747] underline underline-offset-4 hover:text-black transition-colors"
+              className="text-[#474747] underline underline-offset-4 hover:text-black transition-colors"
+              style={mdTextStyle}
             >
               パスワードを忘れた方はこちら
             </Link>
@@ -378,7 +385,8 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
           <Button
             type="button"
             variant="ghost"
-            className="w-full py-3 border border-black/20 text-sm tracking-widest hover:bg-black/5 transition-all duration-300"
+            className="w-full py-3 border border-black/20 tracking-widest hover:bg-black/5 transition-all duration-300"
+            style={mdTextStyle}
             onClick={() => {
               setOtpSent(false);
               setOtpSentTime(null);
@@ -391,13 +399,13 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
             メールアドレスを変更
           </Button>
         ) : null}
-        {error ? <p className="text-sm text-red-600 mt-2">{error}</p> : null}
-        {success ? <p className="text-sm text-green-600 mt-2">{success}</p> : null}
+        {error ? <p className="text-red-600 mt-2" style={mdTextStyle}>{error}</p> : null}
+        {success ? <p className="text-green-600 mt-2" style={mdTextStyle}>{success}</p> : null}
       </form>
       <div className="relative mb-16">
         <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-black/20"></div></div>
       </div>
-      <p className="max-w-[360px] mx-auto px-2 text-xs text-[#474747] text-center leading-6 mb-8 break-keep [text-wrap:pretty]">
+      <p className="max-w-[360px] mx-auto px-2 text-[#474747] text-center leading-6 mb-8 break-keep [text-wrap:pretty]" style={xsTextStyle}>
         続行することで、
         <a href="/terms" className="underline hover:text-black transition-colors">利用規約</a>
         および

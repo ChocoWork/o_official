@@ -116,7 +116,7 @@ const Header = () => {
 
   const drawerAccordionItems = drawerFilterSections.map((section) => ({
     key: section.key,
-    title: section.label,
+    title: <span className="header-drawer-accordion-title">{section.label}</span>,
     content: (
       <div className="header-drawer-accordion-links">
         {section.values.map((value) => {
@@ -286,7 +286,7 @@ const Header = () => {
                     className="aspect-square px-0"
                   >
                     <div className="w-5 h-5 flex items-center justify-center">
-                      <i className={`ri-${icon}-line text-xl`}></i>
+                      <i className={`ri-${icon}-line header-drawer-follow-icon`}></i>
                     </div>
                   </Button>
                 ))}

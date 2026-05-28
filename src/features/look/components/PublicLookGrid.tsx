@@ -32,6 +32,7 @@ const LOOK_SEASON_FILTER_OPTIONS = LOOK_SEASON_OPTIONS.map((season) => ({
 
 type LookCardProps = {
   look: PublicLook;
+  variant: 'home' | 'catalog';
 };
 
 type PublicLookGridHomeProps = {
@@ -49,7 +50,7 @@ type PublicLookGridCatalogProps = {
 
 type PublicLookGridProps = PublicLookGridHomeProps | PublicLookGridCatalogProps;
 
-function LookCard({ look }: LookCardProps) {
+function LookCard({ look, variant }: LookCardProps) {
   return (
     <div>
       <Link href={`/look/${look.id}`} className="group block">
@@ -65,19 +66,20 @@ function LookCard({ look }: LookCardProps) {
       </Link>
       <div>
         <Link href={`/look/${look.id}`} className="inline-block">
-          <h5 className="mb-1.5 font-brand transition-colors hover:text-[#474747] sm:mb-2">
+          <h5 className="mb-1.5 font-brand transition-colors hover:text-[#474747] sm:mb-2" style={{ fontSize: 'var(--lk-size-lg)' }}>
             {formatLookSeason(look.seasonYear, look.seasonType)} - {look.theme}
           </h5>
         </Link>
         <div className="space-y-1">
           {look.linkedItems.length === 0 ? (
-            <p className="text-xs text-[#474747]">紐づけ商品なし</p>
+            <p className="text-[#474747]" style={{ fontSize: 'var(--lk-size-xs)' }}>紐づけ商品なし</p>
           ) : (
             look.linkedItems.map((item) => (
               <Link
                 key={item.id}
                 href={`/item/${item.id}`}
-                className="block text-xs text-[#474747] transition-colors hover:text-black"
+                className="block text-[#474747] transition-colors hover:text-black"
+                style={{ fontSize: 'var(--lk-size-xs)' }}
               >
                 {item.name}
               </Link>
@@ -159,6 +161,7 @@ function PublicLookCatalog({ looks, initialSeason = 'ALL', className }: PublicLo
       size="xs"
       className="tracking-widest"
       expandLabelHitArea={false}
+      renderOptionLabel={(option) => <span style={{ fontSize: 'var(--lk-size-4xs)' }}>{option.label}</span>}
     />
   );
 
@@ -217,7 +220,8 @@ function PublicLookCatalog({ looks, initialSeason = 'ALL', className }: PublicLo
               type="button"
               onClick={() => setIsFilterDrawerOpen(false)}
               aria-label="Close filter drawer"
-              className="text-xl leading-none text-black"
+              className="leading-none text-black"
+              style={{ fontSize: 'var(--lk-size-2xl)' }}
             >
               ×
             </button>
@@ -255,7 +259,7 @@ function PublicLookCatalog({ looks, initialSeason = 'ALL', className }: PublicLo
           ) : (
             <div className={gridClassName}>
               {displayLooks.map((look) => (
-                <LookCard key={look.id} look={look} />
+                <LookCard key={look.id} look={look} variant="catalog" />
               ))}
             </div>
           )}
@@ -284,7 +288,7 @@ export function PublicLookGrid(props: PublicLookGridProps) {
             <>
               <div className={gridClassName}>
                 {resolvedLooks.map((look) => (
-                  <LookCard key={look.id} look={look} />
+                  <LookCard key={look.id} look={look} variant="home" />
                 ))}
               </div>
 

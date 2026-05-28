@@ -49,17 +49,18 @@ export function SearchHomePreview() {
   }
 
   const previewResults = [...results.items, ...results.looks, ...results.news].slice(0, 3);
+  const previewTextStyle = { fontSize: 'var(--lk-size-md)' } as const;
 
   return (
     <section className="px-6 lg:px-12 py-10 bg-[#f7f5ef] border-y border-black/10">
       <div className="mx-auto max-w-7xl space-y-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
-            <p className="text-xs tracking-[0.3em] text-black/50">PREVIEW</p>
-            <h2>Search Preview</h2>
-            <p className="mt-2 text-sm leading-relaxed text-[#474747]">「{query}」に関連する結果をホーム上で即時プレビューしています。</p>
+            <p className="tracking-[0.3em] text-black/50" style={previewTextStyle}>PREVIEW</p>
+            <h2 style={previewTextStyle}>Search Preview</h2>
+            <p className="mt-2 leading-relaxed text-[#474747]" style={previewTextStyle}>「{query}」に関連する結果をホーム上で即時プレビューしています。</p>
           </div>
-          <Link href={`/search?q=${encodeURIComponent(query)}`} className="text-sm tracking-widest text-black transition-colors hover:text-[#474747]">
+          <Link href={`/search?q=${encodeURIComponent(query)}`} className="tracking-widest text-black transition-colors hover:text-[#474747]" style={previewTextStyle}>
             VIEW ALL RESULTS
           </Link>
         </div>
@@ -68,14 +69,14 @@ export function SearchHomePreview() {
           <div className="grid gap-4 md:grid-cols-3">
             {previewResults.map((result) => (
               <Link key={`${result.type}-${result.id}`} href={result.href} className="rounded-2xl border border-black/10 bg-white p-5 transition-colors hover:border-black/30">
-                <p className="mb-2 text-[11px] tracking-widest text-black/50">{result.meta}</p>
-                <h3 className="text-lg leading-snug text-black font-display">{result.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-[#474747]">{result.description}</p>
+                <p className="mb-2 tracking-widest text-black/50" style={previewTextStyle}>{result.meta}</p>
+                <h3 className="leading-snug text-black font-display" style={previewTextStyle}>{result.title}</h3>
+                <p className="mt-2 leading-relaxed text-[#474747]" style={previewTextStyle}>{result.description}</p>
               </Link>
             ))}
           </div>
         ) : (
-          <p className="text-sm text-[#474747]">プレビュー対象の検索結果は見つかりませんでした。</p>
+          <p className="text-[#474747]" style={previewTextStyle}>プレビュー対象の検索結果は見つかりませんでした。</p>
         )}
       </div>
     </section>

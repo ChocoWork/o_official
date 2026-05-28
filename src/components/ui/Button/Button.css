@@ -60,7 +60,7 @@ transition:
 }
 
 [data-ui-button][data-ui-button-size="compact"] {
---button-font-size: var(--lk-size-5xs);
+--button-font-size: var(--lk-size-4xs);
 --button-pad-ratio: calc(var(--control-pad-ratio) * 0.75);
 }
 

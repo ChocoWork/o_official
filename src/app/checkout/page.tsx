@@ -178,6 +178,11 @@ type CheckoutProfileResponse = {
 
 
 function CheckoutPageContent() {
+  const xsTextStyle: React.CSSProperties = { fontSize: 'var(--lk-size-xs)' };
+  const mdTextStyle: React.CSSProperties = { fontSize: 'var(--lk-size-md)' };
+  const lgTextStyle: React.CSSProperties = { fontSize: 'var(--lk-size-lg)' };
+  const xlTextStyle: React.CSSProperties = { fontSize: 'var(--lk-size-xl)' };
+  const summaryHeadingStyle: React.CSSProperties = { fontSize: 'var(--lk-size-3xl)' };
   // cart data for order summary (mirrors cart/page.tsx)
   interface CartItem {
     id: string;
@@ -638,7 +643,7 @@ function CheckoutPageContent() {
   if (cartLoading) {
     return (
       <div className="element-width text-center">
-        <div className="text-base tracking-widest">読み込み中...</div>
+        <div className="text-base tracking-widest" style={mdTextStyle}>読み込み中...</div>
       </div>
     );
   }
@@ -647,17 +652,17 @@ function CheckoutPageContent() {
     return (
       <div className="pb-10 sm:pb-14 px-6 lg:px-12">
         <div className="max-w-3xl mx-auto text-center">
-          <h1 className="mb-4">Thank you for your order</h1>
-          <p className="text-lg text-[#474747] mb-12">ご注文を承りました。確認メールをお送りしましたのでご確認ください。</p>
+          <h1 className="mb-4" style={lgTextStyle}>Thank you for your order</h1>
+          <p className="text-lg text-[#474747] mb-12" style={mdTextStyle}>ご注文を承りました。確認メールをお送りしましたのでご確認ください。</p>
 
           <div className="bg-[#f5f5f5] p-8 mb-12 text-left">
             <div className="grid grid-cols-2 gap-6">
               <div>
-                <p className="text-xs text-[#474747] mb-2 tracking-wider">注文番号</p>
+                <p className="text-xs text-[#474747] mb-2 tracking-wider" style={xsTextStyle}>注文番号</p>
                 <p className="text-lg text-black">{completedOrderId ?? '—'}</p>
               </div>
               <div>
-                <p className="text-xs text-[#474747] mb-2 tracking-wider">注文日</p>
+                <p className="text-xs text-[#474747] mb-2 tracking-wider" style={xsTextStyle}>注文日</p>
                 <p className="text-lg text-black">{new Date().toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
               </div>
             </div>
@@ -707,9 +712,9 @@ function CheckoutPageContent() {
               <React.Fragment key={checkoutStep.id}>
                 <div className="w-24 sm:w-32 flex flex-col items-center text-center">
                   <div className={`flex items-center justify-center w-10 h-10 rounded-full border-2 ${step >= checkoutStep.id ? 'bg-black border-black text-white' : 'border-black/20 text-[#474747]'}`}>
-                    <span className="text-sm">{checkoutStep.id}</span>
+                    <span className="text-sm" style={mdTextStyle}>{checkoutStep.id}</span>
                   </div>
-                  <span className={`mt-3 text-xs sm:text-sm leading-tight ${step >= checkoutStep.id ? 'text-black' : 'text-[#474747]'}`}>
+                  <span className={`mt-3 text-xs sm:text-sm leading-tight ${step >= checkoutStep.id ? 'text-black' : 'text-[#474747]'}`} style={xsTextStyle}>
                     {checkoutStep.label}
                   </span>
                 </div>
@@ -779,7 +784,7 @@ function CheckoutPageContent() {
                         checked={shippingForm.saveProfile}
                         onChange={handleShippingChange}
                         label="氏名と電話番号を保存する"
-                       size="md"/>
+                       size="lg"/>
                     </div>
                   </div>
 
@@ -843,8 +848,8 @@ function CheckoutPageContent() {
                 <div>
                   {customSessionLoading && (
                     <div className="rounded-xs border border-black/10 p-6 bg-white">
-                      <h3 className="text-lg font-semibold mb-4 font-brand">お支払い方法</h3>
-                      <p className="text-sm text-[#474747]">決済フォームを準備しています...</p>
+                      <h3 className="text-lg font-semibold mb-4 font-brand" style={xlTextStyle}>お支払い方法</h3>
+                      <p className="text-sm text-[#474747]" style={mdTextStyle}>決済フォームを準備しています...</p>
                     </div>
                   )}
 
@@ -860,7 +865,7 @@ function CheckoutPageContent() {
                     >
                       <div className="space-y-6">
                         <div className="rounded-xs border border-black/10 p-6 bg-white">
-                          <h3 className="text-lg font-semibold mb-4 font-brand">お支払い方法</h3>
+                          <h3 className="text-lg font-semibold mb-4 font-brand" style={xlTextStyle}>お支払い方法</h3>
 
                           <PaymentElement
                             options={{
@@ -887,11 +892,11 @@ function CheckoutPageContent() {
                             }}
                           />
 
-                          <p className="text-xs text-[#474747] mt-4" aria-live="polite">
+                          <p className="text-xs text-[#474747] mt-4" aria-live="polite" style={xsTextStyle}>
                             選択中: {paymentMethod === 'stripe_paypay' ? 'PayPay' : paymentMethod === 'stripe_konbini' ? 'コンビニ決済' : 'カード決済'}
                           </p>
 
-                          <p className="text-xs text-[#474747] mt-2">
+                          <p className="text-xs text-[#474747] mt-2" style={mdTextStyle}>
                             Checkout Sessions APIのカスタムUIモードを利用します。「次へ」で決済を確定します。
                           </p>
 
@@ -985,16 +990,16 @@ function CheckoutPageContent() {
                             />
                           </div>
                           <div className="flex-1">
-                            <p className="text-sm text-black mb-1" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                            <p className="text-sm text-black mb-1" style={{ fontFamily: 'acumin-pro, sans-serif', ...mdTextStyle }}>
                               {product.name}
                             </p>
-                            <p className="text-xs text-[#474747] mb-1" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                            <p className="text-xs text-[#474747] mb-1" style={{ fontFamily: 'acumin-pro, sans-serif', ...xsTextStyle }}>
                               {item.color} / {item.size}
                             </p>
-                            <p className="text-xs text-[#474747] mb-1" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                            <p className="text-xs text-[#474747] mb-1" style={{ fontFamily: 'acumin-pro, sans-serif', ...xsTextStyle }}>
                               数量: {item.quantity}
                             </p>
-                            <p className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                            <p className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif', ...mdTextStyle }}>
                               ¥{product.price.toLocaleString()}
                             </p>
                           </div>
@@ -1031,10 +1036,10 @@ function CheckoutPageContent() {
                   </div>
 
                   <div className="flex justify-between">
-                    <span className="text-lg text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                    <span className="text-lg text-black" style={{ fontFamily: 'acumin-pro, sans-serif', ...lgTextStyle }}>
                       合計
                     </span>
-                    <span className="text-2xl text-black" style={{ fontFamily: 'Didot, serif' }}>
+                    <span className="text-2xl text-black" style={{ fontFamily: 'Didot, serif', ...summaryHeadingStyle }}>
                       ¥{total.toLocaleString()}
                     </span>
                   </div>

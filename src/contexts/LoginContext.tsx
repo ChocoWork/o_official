@@ -163,20 +163,25 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
 
   const logout = async () => {
     try {
-      await clientFetch('/api/auth/logout', {
+      const response = await clientFetch('/api/auth/logout', {
         method: 'POST',
       });
+
+      if (!response.ok) {
+        throw new Error('ログアウトに失敗しました');
+      }
+
       await supabase.auth.signOut();
-      return { success: true };
-    } catch (e) {
-      console.error('Sign out error', e);
-      return { success: false, error: 'ログアウトに失敗しました' };
-    } finally {
       setIsLoggedIn(false);
       setIsAdmin(false);
       setUserRole('user');
       setIsMfaVerified(false);
       setIsAuthResolved(true);
+      return { success: true };
+    } catch (e) {
+      console.error('Sign out error', e);
+      setIsAuthResolved(true);
+      return { success: false, error: 'ログアウトに失敗しました' };
     }
   };
 

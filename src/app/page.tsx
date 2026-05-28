@@ -54,7 +54,7 @@ export default async function Home() {
             <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/60" />
           </div>
           <div className="relative z-10 text-center px-6 max-w-4xl mx-auto">
-            <h1 className="text-[22px] sm:text-[26px] md:text-[28px] lg:text-[32px] xl:text-[34px] mb-[13px] sm:mb-[16px] md:mb-[21px] tracking-tight text-white" style={{ fontFamily: 'Didot, serif' }}>
+            <h1 className="mb-[13px] sm:mb-[16px] md:mb-[21px] tracking-tight text-white" style={{ fontFamily: 'Didot, serif', fontSize: 'var(--lk-size-4xl)' }}>
               Le Fil des Heures
             </h1>
           </div>
@@ -78,19 +78,19 @@ export default async function Home() {
               <div className="order-2 md:order-1">
                 <SectionTitle title="ABOUT" />
                 <div className="about-main-space">
-                  <p className="about-main-text">Le Fil des Heuresは、「時を紡ぐニュートラルモードな日常着」をコンセプトに、2026年に日本の宮城県で誕生したアパレルブランドです。</p>
-                  <p className="about-main-text">時代を超えて愛される普遂的なデザインと、素材選びにこだわり、日常に寄り添う洗練されたワードローブを提案しています。</p>
-                  <p className="about-main-text">ミニマルでありながら、着る人の個性を引き立てる。そんな服作りを目指し、一着一着丁寧に仕上げています。</p>
-                  <p className="about-main-text">移り変わる時の流れの中で、変わらない価値を持つ服を、永く使用していただく。それが願いです。</p>
+                  <p className="about-main-text" style={{ fontSize: 'var(--lk-size-sm)' }}>Le Fil des Heuresは、「時を紡ぐニュートラルモードな日常着」をコンセプトに、2026年に日本の宮城県で誕生したアパレルブランドです。</p>
+                  <p className="about-main-text" style={{ fontSize: 'var(--lk-size-sm)' }}>時代を超えて愛される普遂的なデザインと、素材選びにこだわり、日常に寄り添う洗練されたワードローブを提案しています。</p>
+                  <p className="about-main-text" style={{ fontSize: 'var(--lk-size-sm)' }}>ミニマルでありながら、着る人の個性を引き立てる。そんな服作りを目指し、一着一着丁寧に仕上げています。</p>
+                  <p className="about-main-text" style={{ fontSize: 'var(--lk-size-sm)' }}>移り変わる時の流れの中で、変わらない価値を持つ服を、永く使用していただく。それが願いです。</p>
                 </div>
                 <div className="mt-[21px] sm:mt-[26px] md:mt-[34px] grid grid-cols-2 gap-[13px] sm:gap-[16px] md:gap-[21px]">
                   <div>
-                    <h3 className="about-secondary-title font-brand">PHILOSOPHY</h3>
-                    <p className="about-secondary-text">Timeless Design</p>
+                    <h3 className="about-secondary-title font-brand" style={{ fontSize: 'var(--lk-size-3xs)' }}>PHILOSOPHY</h3>
+                    <p className="about-secondary-text" style={{ fontSize: 'var(--lk-size-2xs)' }}>Timeless Design</p>
                   </div>
                   <div>
-                    <h3 className="about-secondary-title font-brand">ESTABLISHED</h3>
-                    <p className="about-secondary-text">2026, Miyagi in Japan</p>
+                    <h3 className="about-secondary-title font-brand" style={{ fontSize: 'var(--lk-size-3xs)' }}>ESTABLISHED</h3>
+                    <p className="about-secondary-text" style={{ fontSize: 'var(--lk-size-2xs)' }}>2026, Miyagi in Japan</p>
                   </div>
                 </div>
               </div>

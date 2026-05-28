@@ -8,14 +8,17 @@ interface EmptyCartProps {
 }
 
 export const EmptyCart: React.FC<EmptyCartProps> = ({ onStartShopping }) => {
+  const emptyIconStyle: React.CSSProperties = { fontSize: 'var(--lk-size-4xl)' };
+  const emptyTextStyle: React.CSSProperties = { fontSize: 'var(--lk-size-lg)' };
+
   return (
     <div className="max-w-4xl mx-auto">
       <div className="text-center py-20">
         <div className="w-20 h-20 mx-auto flex items-center justify-center mb-6">
-          <i className="ri-shopping-bag-line text-6xl text-[#474747]"></i>
+          <i className="ri-shopping-bag-line text-6xl text-[#474747]" style={emptyIconStyle}></i>
         </div>
 
-        <p className="text-lg text-[#474747] mb-8">
+        <p className="text-lg text-[#474747] mb-8" style={emptyTextStyle}>
           カートは空です
         </p>
 

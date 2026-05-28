@@ -114,6 +114,11 @@ function parseWishlistResponse(payload: unknown): WishlistItem[] {
   return parsed;
 }
 
+const wishlistTextXsStyle: React.CSSProperties = { fontSize: 'var(--lk-size-xs)' };
+const wishlistTextMdStyle: React.CSSProperties = { fontSize: 'var(--lk-size-md)' };
+const wishlistTextLgStyle: React.CSSProperties = { fontSize: 'var(--lk-size-lg)' };
+const wishlistIcon2xlStyle: React.CSSProperties = { fontSize: 'var(--lk-size-2xl)' };
+
 export default function WishlistClient() {
   const [wishlistItems, setWishlistItems] = useState<WishlistItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -216,7 +221,7 @@ export default function WishlistClient() {
   if (loading) {
     return (
       <div className="text-center py-12">
-        <div className="text-base tracking-widest">読み込み中...</div>
+        <div className="tracking-widest" style={wishlistTextLgStyle}>読み込み中...</div>
       </div>
     );
   }
@@ -224,7 +229,7 @@ export default function WishlistClient() {
   if (error) {
     return (
       <div className="text-center py-12">
-        <p className="text-sm text-red-500">{error}</p>
+        <p className="text-red-500" style={wishlistTextMdStyle}>{error}</p>
       </div>
     );
   }
@@ -232,10 +237,10 @@ export default function WishlistClient() {
   if (wishlistItems.length === 0) {
     return (
       <div className="text-center py-12">
-        <p className="text-sm text-[#474747] mb-4">
+        <p className="text-[#474747] mb-4" style={wishlistTextMdStyle}>
           ウィッシュリストは空です
         </p>
-        <Link href="/item" className="text-sm text-black hover:text-[#474747] transition-colors">
+        <Link href="/item" className="text-black hover:text-[#474747] transition-colors" style={wishlistTextMdStyle}>
           買い物を続ける
         </Link>
       </div>
@@ -245,10 +250,10 @@ export default function WishlistClient() {
   return (
     <>
       <div className="flex items-center justify-between mb-8">
-        <p className="text-sm text-[#474747]">{wishlistItems.length}点のアイテム</p>
+        <p className="text-[#474747]" style={wishlistTextMdStyle}>{wishlistItems.length}点のアイテム</p>
       </div>
       {actionMessage ? (
-        <p className="mb-4 text-sm text-[#474747]" role="status">{actionMessage}</p>
+        <p className="mb-4 text-[#474747]" role="status" style={wishlistTextMdStyle}>{actionMessage}</p>
       ) : null}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8" role="list" aria-label="ウィッシュリスト商品一覧">
         {wishlistItems.map((item) => (
@@ -266,7 +271,7 @@ export default function WishlistClient() {
                 </div>
               </Link>
             ) : (
-              <div className="aspect-[4/5] bg-[#f5f5f5] mb-4 flex items-center justify-center px-4 text-center text-sm text-[#474747]">
+              <div className="aspect-[4/5] bg-[#f5f5f5] mb-4 flex items-center justify-center px-4 text-center text-[#474747]" style={wishlistTextMdStyle}>
                 商品情報を取得できませんでした
               </div>
             )}
@@ -276,18 +281,18 @@ export default function WishlistClient() {
               aria-label="ウィッシュリストから削除"
               className="absolute top-4 right-4 w-10 h-10 bg-white flex items-center justify-center hover:bg-black hover:text-white transition-all duration-300 cursor-pointer opacity-0 group-hover:opacity-100 disabled:opacity-30"
             >
-              <i className="ri-close-line text-xl" />
+              <i className="ri-close-line" style={wishlistIcon2xlStyle} />
             </button>
             {item.items ? (
               <>
                 <Link href={`/item/${item.items.id}`}>
-                  <p className="text-xs text-[#474747] mb-2 tracking-wider">
+                  <p className="text-[#474747] mb-2 tracking-wider" style={wishlistTextXsStyle}>
                     {item.items.category}
                   </p>
-                  <h3 className="text-base text-black mb-2 hover:text-[#474747] transition-colors font-brand">
+                  <h3 className="text-black mb-2 hover:text-[#474747] transition-colors font-brand" style={wishlistTextLgStyle}>
                     {item.items.name}
                   </h3>
-                  <p className="text-sm text-black mb-3">
+                  <p className="text-black mb-3" style={wishlistTextMdStyle}>
                     ¥{item.items.price.toLocaleString('ja-JP')}
                   </p>
                 </Link>
@@ -295,15 +300,16 @@ export default function WishlistClient() {
                   type="button"
                   onClick={() => handleAddToCart(item)}
                   disabled={addingToCartId === item.id}
-                  className="w-full border border-black text-black text-sm py-2 hover:bg-black hover:text-white transition-colors disabled:opacity-40"
+                  className="w-full border border-black text-black py-2 hover:bg-black hover:text-white transition-colors disabled:opacity-40"
+                  style={wishlistTextMdStyle}
                 >
                   {addingToCartId === item.id ? '追加中...' : 'カートに追加'}
                 </button>
               </>
             ) : (
               <div className="space-y-2">
-                <p className="text-xs text-[#474747] tracking-wider">不明なカテゴリ</p>
-                <h3 className="text-base text-black font-brand">削除済み商品</h3>
+                <p className="text-[#474747] tracking-wider" style={wishlistTextXsStyle}>不明なカテゴリ</p>
+                <h3 className="text-black font-brand" style={wishlistTextLgStyle}>削除済み商品</h3>
               </div>
             )}
           </article>

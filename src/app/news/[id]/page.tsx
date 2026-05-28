@@ -93,12 +93,27 @@ export default async function NewsDetailPage({
     ? `?category=${encodeURIComponent(persistedCategoryList)}`
     : "";
 
+  const metaTextStyle = {
+    fontFamily: 'acumin-pro, sans-serif',
+    fontSize: 'var(--lk-size-2xs)',
+  } as const;
+
+  const actionLabelStyle = {
+    fontFamily: 'acumin-pro, sans-serif',
+    fontSize: 'var(--lk-size-4xs)',
+  } as const;
+
+  const actionTitleStyle = {
+    fontFamily: 'acumin-pro, sans-serif',
+    fontSize: 'var(--lk-size-sm)',
+  } as const;
+
   return (
     <div className="max-w-3xl mx-auto">
       {/* Article Header */}
       <div className="mb-8 sm:mb-10">
         <nav aria-label="Breadcrumb" className="mb-4 sm:mb-5">
-          <ol className="flex items-center gap-2 text-[11px] sm:text-xs text-[#474747]" style={{ fontFamily: "acumin-pro, sans-serif" }}>
+          <ol className="flex items-center gap-2 text-[#474747]" style={metaTextStyle}>
             <li>
               <Link href={`/news${navCategoryParam}`} className="hover:text-black transition-colors underline underline-offset-2">
                 NEWS
@@ -120,16 +135,16 @@ export default async function NewsDetailPage({
 
         <div className="flex items-center gap-3 sm:gap-4 mb-4 sm:mb-5">
           <span
-            className="text-[11px] sm:text-xs text-[#474747] tracking-widest"
-            style={{ fontFamily: "acumin-pro, sans-serif" }}
+            className="text-[#474747] tracking-widest"
+            style={metaTextStyle}
           >
             {article.published_date.replace(/-/g, '.')}
           </span>
-          <TagLabel className="font-acumin" size="sm">
+          <TagLabel className="font-acumin" size="md">
             {article.category}
           </TagLabel>
         </div>
-        <h1>{article.title}</h1>
+        <h1 className="leading-snug" style={{ fontSize: 'var(--lk-size-3xl)' }}>{article.title}</h1>
       </div>
 
       {/* Article Content */}
@@ -140,7 +155,8 @@ export default async function NewsDetailPage({
         {article.detailed_content.split("\n\n").map((paragraph: string, index: number) => (
           <p
             key={index}
-            className="text-xs md:text-sm text-[#474747] leading-loose mb-5 sm:mb-7 whitespace-pre-line"
+            className="text-[#474747] leading-loose mb-5 sm:mb-7 whitespace-pre-line"
+            style={{ fontSize: 'var(--lk-size-sm)' }}
           >
             {paragraph}
           </p>
@@ -165,14 +181,14 @@ export default async function NewsDetailPage({
                 </span>
                 <div className="min-w-0">
                   <p
-                    className="text-[10px] text-[#999] tracking-widest mb-0.5"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
+                    className="text-[#999] tracking-widest mb-0.5"
+                    style={actionLabelStyle}
                   >
                     PREV
                   </p>
                   <p
-                    className="text-[11px] text-[#474747] group-hover:text-black transition-colors leading-snug line-clamp-2"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
+                    className="text-[#474747] group-hover:text-black transition-colors leading-snug line-clamp-2"
+                    style={actionTitleStyle}
                   >
                     {prevArticle.title}
                   </p>
@@ -191,14 +207,14 @@ export default async function NewsDetailPage({
               >
                 <div className="min-w-0">
                   <p
-                    className="text-[10px] text-[#999] tracking-widest mb-0.5"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
+                    className="text-[#999] tracking-widest mb-0.5"
+                    style={actionLabelStyle}
                   >
                     NEXT
                   </p>
                   <p
-                    className="text-[11px] text-[#474747] group-hover:text-black transition-colors leading-snug line-clamp-2"
-                    style={{ fontFamily: "acumin-pro, sans-serif" }}
+                    className="text-[#474747] group-hover:text-black transition-colors leading-snug line-clamp-2"
+                    style={actionTitleStyle}
                   >
                     {nextArticle.title}
                   </p>
@@ -234,14 +250,14 @@ export default async function NewsDetailPage({
               </span>
               <div className="min-w-0">
                 <p
-                  className="text-xs text-[#999] tracking-widest"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
+                  className="text-[#999] tracking-widest"
+                  style={actionLabelStyle}
                 >
                   PREV
                 </p>
                 <p
-                  className="text-xs sm:text-sm text-[#474747] group-hover:text-black transition-colors max-w-[160px] md:max-w-[220px] lg:max-w-[280px] truncate"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
+                  className="text-[#474747] group-hover:text-black transition-colors max-w-[160px] md:max-w-[220px] lg:max-w-[280px] truncate"
+                  style={actionTitleStyle}
                 >
                   {prevArticle.title}
                 </p>
@@ -265,14 +281,14 @@ export default async function NewsDetailPage({
             >
               <div className="min-w-0">
                 <p
-                  className="text-xs text-[#999] tracking-widest"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
+                  className="text-[#999] tracking-widest"
+                  style={actionLabelStyle}
                 >
                   NEXT
                 </p>
                 <p
-                  className="text-xs sm:text-sm text-[#474747] group-hover:text-black transition-colors max-w-[160px] md:max-w-[220px] lg:max-w-[280px] truncate"
-                  style={{ fontFamily: "acumin-pro, sans-serif" }}
+                  className="text-[#474747] group-hover:text-black transition-colors max-w-[160px] md:max-w-[220px] lg:max-w-[280px] truncate"
+                  style={actionTitleStyle}
                 >
                   {nextArticle.title}
                 </p>

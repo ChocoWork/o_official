@@ -28,6 +28,10 @@ interface CartItem {
 }
 
 export default function CartPage() {
+  const mdTextStyle: React.CSSProperties = { fontSize: 'var(--lk-size-md)' };
+  const xsTextStyle: React.CSSProperties = { fontSize: 'var(--lk-size-xs)' };
+  const lgTextStyle: React.CSSProperties = { fontSize: 'var(--lk-size-lg)' };
+  const headingTextStyle: React.CSSProperties = { fontSize: 'var(--lk-size-3xl)' };
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -310,13 +314,13 @@ export default function CartPage() {
         </div>
         <span
           className="relative text-sm tracking-widest text-white mix-blend-difference"
-          style={{ fontFamily: 'Didot, serif' }}
+          style={{ fontFamily: 'Didot, serif', ...mdTextStyle }}
         >
           Loading
         </span>
         <p
           className="absolute bottom-6 left-6 text-xs tracking-widest text-black/40 mix-blend-difference"
-          style={{ fontFamily: 'acumin-pro, sans-serif' }}
+          style={{ fontFamily: 'acumin-pro, sans-serif', ...xsTextStyle }}
         >
           BARS REVEAL
         </p>
@@ -333,14 +337,14 @@ export default function CartPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
         <div className="lg:col-span-2 space-y-6">
           {error && (
-            <div className="text-sm text-red-500 p-4 border border-red-300 bg-red-50">
+            <div className="text-sm text-red-500 p-4 border border-red-300 bg-red-50" style={mdTextStyle}>
               {error}
             </div>
           )}
 
           {hasSyncError && (
-            <div className="text-sm text-amber-700 p-4 border border-amber-300 bg-amber-50 flex items-center justify-between gap-4">
-              <span>数量の更新に失敗した商品があります。再試行または再同期してください。</span>
+            <div className="text-sm text-amber-700 p-4 border border-amber-300 bg-amber-50 flex items-center justify-between gap-4" style={mdTextStyle}>
+              <span style={mdTextStyle}>数量の更新に失敗した商品があります。再試行または再同期してください。</span>
               <Button
                 onClick={handleResyncFromServer}
                 disabled={resyncing}
@@ -388,7 +392,7 @@ export default function CartPage() {
                   <div className="flex-1">
                     <div className="flex justify-between items-start mb-2">
                       <Link href={`/item/${item.items.id}`}>
-                        <p className="text-lg text-black hover:text-[#474747] transition-colors cursor-pointer">
+                        <p className="text-lg text-black hover:text-[#474747] transition-colors cursor-pointer" style={lgTextStyle}>
                           {item.items.name}
                         </p>
                       </Link>
@@ -414,17 +418,17 @@ export default function CartPage() {
                       </div>
                     </div>
                     {item.color && (
-                      <p className="text-sm text-[#474747] mb-1">
+                      <p className="text-sm text-[#474747] mb-1" style={mdTextStyle}>
                         カラー: {item.color}
                       </p>
                     )}
                     {item.size && (
-                      <p className="text-sm text-[#474747] mb-4">
+                      <p className="text-sm text-[#474747] mb-4" style={mdTextStyle}>
                         サイズ: {item.size}
                       </p>
                     )}
                     <div className="flex items-center justify-between">
-                      <p className="text-lg text-black">
+                      <p className="text-lg text-black" style={lgTextStyle}>
                         ¥{item.items.price.toLocaleString('ja-JP')}
                       </p>
                       <div className="flex items-center gap-2">
@@ -437,7 +441,7 @@ export default function CartPage() {
                     </div>
                     {syncErrorByItem[item.id] && (
                       <div className="mt-3 text-xs text-red-600 flex items-center justify-between gap-3">
-                        <span>{syncErrorByItem[item.id]}</span>
+                        <span style={xsTextStyle}>{syncErrorByItem[item.id]}</span>
                         <div className="flex items-center gap-2">
                           <Button
                             onClick={() => handleRetryUpdate(item.id)}
@@ -466,6 +470,7 @@ export default function CartPage() {
                 <Link
                   href="/item"
                   className="inline-flex items-center gap-2 text-sm text-black hover:text-[#474747] transition-colors cursor-pointer"
+                  style={mdTextStyle}
                 >
                   <i className="ri-arrow-left-line"></i>買い物を続ける
                 </Link>
@@ -476,11 +481,11 @@ export default function CartPage() {
 
         <div className="lg:col-span-1">
           <div className="border border-black/10 p-8 sticky top-32">
-            <h2 className="text-2xl text-black mb-8 tracking-tight font-display">
+            <h2 className="text-2xl text-black mb-8 tracking-tight font-display" style={headingTextStyle}>
               Order Summary
             </h2>
             <div className="mb-6">
-              <label className="block text-xs text-[#474747] mb-2 tracking-wider">
+              <label className="block text-xs text-[#474747] mb-2 tracking-wider" style={xsTextStyle}>
                 プロモーションコード
               </label>
               <div className="flex gap-2">
@@ -488,30 +493,31 @@ export default function CartPage() {
                   placeholder="コードを入力"
                   className="flex-1 px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors"
                   type="text"
+                  style={mdTextStyle}
                   size="md"/>
                 <Button size="md">適用</Button>
               </div>
-              <p className="text-xs text-[#474747] mt-2">
+              <p className="text-xs text-[#474747] mt-2" style={xsTextStyle}>
                 お試し: WELCOME10 または SAVE20
               </p>
             </div>
 
             <div className="space-y-4 mb-8 pb-8 border-b border-black/10">
               <div className="flex justify-between">
-                <span className="text-sm text-[#474747]">小計</span>
-                <span className="text-sm text-black">
+                <span className="text-sm text-[#474747]" style={mdTextStyle}>小計</span>
+                <span className="text-sm text-black" style={mdTextStyle}>
                   ¥{subtotal.toLocaleString('ja-JP')}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sm text-[#474747]">配送料</span>
-                <span className="text-sm text-black">無料</span>
+                <span className="text-sm text-[#474747]" style={mdTextStyle}>配送料</span>
+                <span className="text-sm text-black" style={mdTextStyle}>無料</span>
               </div>
             </div>
 
             <div className="flex justify-between mb-8">
-              <span className="text-lg text-black">合計</span>
-              <span className="text-2xl text-black font-display">
+              <span className="text-lg text-black" style={lgTextStyle}>合計</span>
+              <span className="text-2xl text-black font-display" style={headingTextStyle}>
                 ¥{total.toLocaleString('ja-JP')}
               </span>
             </div>
@@ -525,13 +531,13 @@ export default function CartPage() {
                 <div className="w-5 h-5 flex items-center justify-center">
                   <i className="ri-shield-check-line text-lg text-black"></i>
                 </div>
-                <p className="text-xs text-[#474747]">安全な決済</p>
+                <p className="text-xs text-[#474747]" style={xsTextStyle}>安全な決済</p>
               </div>
               <div className="flex items-center gap-3">
                 <div className="w-5 h-5 flex items-center justify-center">
                   <i className="ri-truck-line text-lg text-black"></i>
                 </div>
-                <p className="text-xs text-[#474747]">
+                <p className="text-xs text-[#474747]" style={xsTextStyle}>
                   2-5営業日でお届け
                 </p>
               </div>
@@ -539,7 +545,7 @@ export default function CartPage() {
                 <div className="w-5 h-5 flex items-center justify-center">
                   <i className="ri-arrow-go-back-line text-lg text-black"></i>
                 </div>
-                <p className="text-xs text-[#474747]">30日間返品可能</p>
+                <p className="text-xs text-[#474747]" style={xsTextStyle}>30日間返品可能</p>
               </div>
             </div>
           </div>

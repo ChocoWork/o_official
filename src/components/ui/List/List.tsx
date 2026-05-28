@@ -113,6 +113,9 @@ export function List<T>({ items, itemKey, className, size = 'md', ...props }: Li
   const itemTextClass = textSizeMap[size];
   const isShowcaseVariant = props.variant === 'showcase';
   const showcaseClasses = showcaseSizeMap[size];
+  const titleStyle = size === 'xs' ? { fontFamily: 'acumin-pro, sans-serif', fontSize: 'var(--lk-size-xs)' } : { fontFamily: 'acumin-pro, sans-serif' };
+  const categoryStyle = size === 'xs' ? { fontFamily: 'acumin-pro, sans-serif', fontSize: 'var(--lk-size-4xs)' } : { fontFamily: 'acumin-pro, sans-serif' };
+  const rightStyle = size === 'xs' ? { fontFamily: 'acumin-pro, sans-serif', fontSize: 'var(--lk-size-xs)' } : { fontFamily: 'acumin-pro, sans-serif' };
 
   return (
     <ul className={cn(gapClass, className)}>
@@ -147,16 +150,16 @@ export function List<T>({ items, itemKey, className, size = 'md', ...props }: Li
                     )}
                   </div>
                   <div>
-                    <p className={cn('text-black mb-1', showcaseClasses.titleSize)} style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                    <p className={cn('text-black mb-1', showcaseClasses.titleSize)} style={titleStyle}>
                       {props.getName(item)}
                     </p>
-                    <p className={cn('text-black/40 tracking-wider', showcaseClasses.categorySize)} style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                    <p className={cn('text-black/40 tracking-wider', showcaseClasses.categorySize)} style={categoryStyle}>
                       {props.getCategory(item)}
                     </p>
                   </div>
                 </div>
                 <div className={cn('flex items-center', showcaseClasses.rowGap)}>
-                  <span className={cn('text-black', showcaseClasses.rightSize)} style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                  <span className={cn('text-black', showcaseClasses.rightSize)} style={rightStyle}>
                     {props.getPrice(item)}
                   </span>
                   <div className="w-5 h-5 flex items-center justify-center">
@@ -191,16 +194,16 @@ export function List<T>({ items, itemKey, className, size = 'md', ...props }: Li
                     )}
                   </div>
                   <div>
-                    <p className={cn('text-black mb-1', showcaseClasses.titleSize)} style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                    <p className={cn('text-black mb-1', showcaseClasses.titleSize)} style={titleStyle}>
                       {props.getName(item)}
                     </p>
-                    <p className={cn('text-black/40 tracking-wider', showcaseClasses.categorySize)} style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                    <p className={cn('text-black/40 tracking-wider', showcaseClasses.categorySize)} style={categoryStyle}>
                       {props.getCategory(item)}
                     </p>
                   </div>
                 </div>
                 <div className={cn('flex items-center', showcaseClasses.rowGap)}>
-                  <span className={cn('text-black', showcaseClasses.rightSize)} style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                  <span className={cn('text-black', showcaseClasses.rightSize)} style={rightStyle}>
                     {props.getPrice(item)}
                   </span>
                   <div className="w-5 h-5 flex items-center justify-center">

@@ -46,4 +46,6 @@ next-env.d.ts
 # VS Code local settings (may contain secrets)
 .vscode/mcp.json
 
+/screenshots
+
 certificates

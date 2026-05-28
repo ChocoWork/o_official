@@ -83,19 +83,25 @@ function writeSearchHistory(query: string): string[] {
 }
 
 function SearchResultCard({ result, query }: { result: SearchResult; query: string }) {
+  const metaTextStyle = { fontSize: 'var(--lk-size-2xs)' } as const;
+  const bodyTextStyle = { fontSize: 'var(--lk-size-md)' } as const;
+
   return (
     <Link href={result.href} className="block rounded-2xl border border-black/10 bg-white p-5 transition-colors hover:border-black/30">
       <div className="mb-3 flex items-center justify-between gap-3">
         <TagLabel size="sm">{getResultTypeLabel(result.type)}</TagLabel>
-        <span className="text-[11px] tracking-widest text-black/50">{result.meta}</span>
+        <span className="tracking-widest text-black/50" style={metaTextStyle}>{result.meta}</span>
       </div>
       <h2 className="mb-2">{renderHighlightedText(result.title, query)}</h2>
-      <p className="text-sm leading-relaxed text-[#474747]">{renderHighlightedText(result.description, query)}</p>
+      <p className="leading-relaxed text-[#474747]" style={bodyTextStyle}>{renderHighlightedText(result.description, query)}</p>
     </Link>
   );
 }
 
 function SearchSection({ title, results, query }: { title: string; results: SearchResult[]; query: string }) {
+  const sectionHeadingStyle = { fontSize: 'var(--lk-size-xl)' } as const;
+  const resultsCountStyle = { fontSize: 'var(--lk-size-xs)' } as const;
+
   if (results.length === 0) {
     return null;
   }
@@ -103,8 +109,8 @@ function SearchSection({ title, results, query }: { title: string; results: Sear
   return (
     <section className="space-y-4">
       <div className="flex items-center justify-between gap-3 border-b border-black/10 pb-3">
-        <h2>{title}</h2>
-        <span className="text-xs tracking-widest text-black/50">{results.length} RESULTS</span>
+        <h2 style={sectionHeadingStyle}>{title}</h2>
+        <span className="tracking-widest text-black/50" style={resultsCountStyle}>{results.length} RESULTS</span>
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {results.map((result) => (
@@ -294,12 +300,19 @@ export function SearchPageClient() {
     return [];
   }, [activeTab, results]);
 
+  const xsTextStyle = { fontSize: 'var(--lk-size-xs)' } as const;
+  const mdTextStyle = { fontSize: 'var(--lk-size-md)' } as const;
+  const xlTextStyle = { fontSize: 'var(--lk-size-xl)' } as const;
+  const x2lTextStyle = { fontSize: 'var(--lk-size-2xl)' } as const;
+  const x3lTextStyle = { fontSize: 'var(--lk-size-3xl)' } as const;
+  const x4lTextStyle = { fontSize: 'var(--lk-size-4xl)' } as const;
+
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-8">
       <div className="space-y-3">
-        <p className="text-xs tracking-[0.3em] text-black/50">DISCOVER</p>
-        <h1>SEARCH</h1>
-        <p className="max-w-2xl text-sm leading-relaxed text-[#474747]">
+        <p className="tracking-[0.3em] text-black/50" style={xsTextStyle}>DISCOVER</p>
+        <h1 style={x4lTextStyle}>SEARCH</h1>
+        <p className="max-w-2xl leading-relaxed text-[#474747]" style={mdTextStyle}>
           商品、ルック、ニュースを横断して検索できます。キーワードは URL に保持され、再訪時には検索履歴から再利用できます。
         </p>
       </div>
@@ -316,6 +329,7 @@ export function SearchPageClient() {
             onClear={handleClear}
             size="lg"
             autoComplete="off"
+            style={mdTextStyle}
           />
         </form>
 
@@ -332,7 +346,8 @@ export function SearchPageClient() {
                   key={entry.key}
                   type="button"
                   onClick={entry.onSelect}
-                  className="rounded-full border border-black/15 bg-white px-4 py-2 text-sm text-black transition-colors hover:border-black/40"
+                  className="rounded-full border border-black/15 bg-white px-4 py-2 text-black transition-colors hover:border-black/40"
+                  style={mdTextStyle}
                 >
                   {entry.label}
                 </button>
@@ -347,14 +362,15 @@ export function SearchPageClient() {
         activeKey={activeTab}
         onChange={handleTabChange}
         variant="tabs-standard"
+        itemStyle={mdTextStyle}
       />
 
-      {errorMessage ? <p className="text-sm text-[#b42318]">{errorMessage}</p> : null}
+      {errorMessage ? <p className="text-[#b42318]" style={mdTextStyle}>{errorMessage}</p> : null}
 
       {!query ? (
         <section className="space-y-4 rounded-[28px] border border-black/10 bg-[#fafafa] p-6">
-          <h2 className="">START YOUR SEARCH</h2>
-          <p className="text-sm leading-relaxed text-[#474747]">
+          <h2 style={x2lTextStyle}>START YOUR SEARCH</h2>
+          <p className="leading-relaxed text-[#474747]" style={mdTextStyle}>
             気になる商品名やトピックを入力すると、商品・ルック・ニュースを横断した結果を表示します。
           </p>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -364,17 +380,17 @@ export function SearchPageClient() {
           </div>
         </section>
       ) : isLoading ? (
-        <p className="text-sm text-[#474747]">検索中です…</p>
+        <p className="text-[#474747]" style={mdTextStyle}>検索中です…</p>
       ) : results?.empty ? (
         <section className="space-y-6 rounded-[28px] border border-black/10 bg-[#fafafa] p-6">
           <div className="space-y-2">
-            <h2 className="text-2xl tracking-tight text-black font-display">「{query}」の検索結果はありません</h2>
-            <p className="text-sm leading-relaxed text-[#474747]">
+            <h2 className="tracking-tight text-black font-display" style={x3lTextStyle}>「{query}」の検索結果はありません</h2>
+            <p className="leading-relaxed text-[#474747]" style={mdTextStyle}>
               別のキーワードをお試しください。人気商品もあわせてご覧いただけます。
             </p>
           </div>
           <div className="space-y-4">
-            <h3 className="text-lg tracking-widest text-black font-display">POPULAR ITEMS</h3>
+            <h3 className="tracking-widest text-black font-display" style={xlTextStyle}>POPULAR ITEMS</h3>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               {results.popularItems.map((item) => (
                 <SearchResultCard key={`empty-${item.id}`} result={item} query="" />
@@ -391,8 +407,8 @@ export function SearchPageClient() {
       ) : (
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-3 border-b border-black/10 pb-3">
-            <p className="text-lg tracking-widest text-black font-display">{activeTab.toUpperCase()}</p>
-            <p className="text-xs tracking-widest text-black/50">{activeResults.length} RESULTS</p>
+            <p className="tracking-widest text-black font-display" style={xlTextStyle}>{activeTab.toUpperCase()}</p>
+            <p className="tracking-widest text-black/50" style={xsTextStyle}>{activeResults.length} RESULTS</p>
           </div>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {activeResults.map((result) => (
@@ -404,7 +420,7 @@ export function SearchPageClient() {
 
       {query ? (
         <div className="border-t border-black/10 pt-6">
-          <Link href={`/?q=${encodeURIComponent(query)}`} className="text-sm tracking-widest text-black/60 transition-colors hover:text-black">
+          <Link href={`/?q=${encodeURIComponent(query)}`} className="tracking-widest text-black/60 transition-colors hover:text-black" style={mdTextStyle}>
             VIEW PREVIEW ON HOME
           </Link>
         </div>

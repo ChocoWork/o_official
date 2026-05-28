@@ -1,5 +1,6 @@
 import "./SingleSelect.css"
 import { cn } from '@/lib/utils';
+import type { CSSProperties } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
 import { controlBaseClass } from '../shared';
@@ -21,6 +22,20 @@ export function SingleSelect({
 }: SingleSelectProps) {
   const heightClass = size === 'sm' ? 'h-8' : size === 'lg' ? 'h-12' : 'h-10';
   const textClass = size === 'lg' ? 'text-base' : 'text-sm';
+  const labelStyle: CSSProperties = { fontSize: 'var(--lk-size-xs)' };
+  const fieldStyle: CSSProperties = {
+    fontSize:
+      size === 'xs'
+        ? 'var(--lk-size-xs)'
+        : size === 'sm'
+          ? 'var(--lk-size-sm)'
+          : size === 'lg'
+            ? 'var(--lk-size-lg)'
+            : size === 'xl'
+              ? 'var(--lk-size-xl)'
+              : 'var(--lk-size-md)',
+    ...(props.style ?? {}),
+  };
   const selectId = id ?? props.name;
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
@@ -92,7 +107,7 @@ export function SingleSelect({
     const optionPadding = size === 'sm' ? 'py-2' : size === 'lg' ? 'py-4' : 'py-3';
     return (
       <label className="block space-y-2">
-        {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
+        {label ? <span className="block text-xs tracking-widest text-black/80" style={labelStyle}>{label}</span> : null}
         <div className="relative" ref={wrapperRef}>
           <button
             type="button"
@@ -104,6 +119,7 @@ export function SingleSelect({
               disabled ? 'cursor-not-allowed border-black/10 bg-[#f5f5f5] text-black/40' : 'cursor-pointer',
               className,
             )}
+            style={fieldStyle}
             onClick={() => {
               if (!disabled) {
                 setOpen((previous) => !previous);
@@ -148,6 +164,7 @@ export function SingleSelect({
                       'text-left transition-colors hover:bg-[#f5f5f5]',
                       resolvedValue === option.value ? 'bg-[#f5f5f5]' : null,
                     )}
+                    style={fieldStyle}
                     onClick={() => {
                       onValueChange?.(option.value);
                       setOpen(false);
@@ -167,10 +184,11 @@ export function SingleSelect({
 
   return (
     <label className="block space-y-2">
-      {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
+      {label ? <span className="block text-xs tracking-widest text-black/80" style={labelStyle}>{label}</span> : null}
       <select
         id={selectId}
         className={cn(controlBaseClass, 'cursor-pointer pr-8', heightClass, textClass, className)}
+        style={fieldStyle}
         value={value}
         defaultValue={defaultValue}
         disabled={disabled}

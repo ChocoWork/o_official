@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import type { InputHTMLAttributes, ReactNode } from 'react';
+import type { CSSProperties, InputHTMLAttributes, ReactNode } from 'react';
 import { controlBaseClass } from '../shared';
 import { ComponentSize } from '../types';
 
@@ -16,6 +16,20 @@ export function TextField({ label, helperText, errorText, leadingIcon, className
   const fieldId = id ?? props.name;
   const errorId = fieldId ? `${fieldId}-error` : undefined;
   const helperId = fieldId ? `${fieldId}-helper` : undefined;
+  const labelStyle: CSSProperties = { fontSize: 'var(--lk-size-xs)' };
+  const fieldStyle: CSSProperties = {
+    fontSize:
+      size === 'xs'
+        ? 'var(--lk-size-xs)'
+        : size === 'sm'
+          ? 'var(--lk-size-sm)'
+          : size === 'lg'
+            ? 'var(--lk-size-lg)'
+            : size === 'xl'
+              ? 'var(--lk-size-xl)'
+              : 'var(--lk-size-md)',
+    ...(props.style ?? {}),
+  };
   const heightClass = size === 'sm' ? 'h-8' : size === 'lg' ? 'h-12' : 'h-10';
   // single-select uses controlBaseClass which already includes `px-4`,
   // so keep the same horizontal gutter by default.  this ensures the
@@ -38,7 +52,7 @@ export function TextField({ label, helperText, errorText, leadingIcon, className
 
   return (
     <label className="block space-y-2">
-      {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
+      {label ? <span className="block text-xs tracking-widest text-black/80" style={labelStyle}>{label}</span> : null}
       <span className="relative block">
         {leadingIcon ? (
           <span className="pointer-events-none absolute left-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-black/60">
@@ -58,11 +72,12 @@ export function TextField({ label, helperText, errorText, leadingIcon, className
             paddingClass,
             className,
           )}
+          style={fieldStyle}
           {...props}
         />
       </span>
-      {errorText ? <span id={errorId} role="alert" className="text-xs text-red-600">{errorText}</span> : null}
-      {!errorText && helperText ? <span id={helperId} className="text-xs text-[#474747]">{helperText}</span> : null}
+      {errorText ? <span id={errorId} role="alert" className="text-xs text-red-600" style={labelStyle}>{errorText}</span> : null}
+      {!errorText && helperText ? <span id={helperId} className="text-xs text-[#474747]" style={labelStyle}>{helperText}</span> : null}
     </label>
   );
 }
