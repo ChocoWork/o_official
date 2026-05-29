@@ -295,7 +295,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
             <article className="py-[13px] sm:py-[13px] md:py-[21px] xl:py-[21px] border-b border-black/5 group cursor-pointer">
               <div className="sm:flex sm:items-start">
                 {/* Date column: inline with category on mobile, fixed-width on sm+ */}
-                <div className="flex items-center gap-3 mb-2 sm:mb-0 sm:w-28 xl:w-36 sm:flex-shrink-0 sm:pt-0.5">
+                <div className="flex items-center gap-3 mb-2 sm:mb-0 sm:w-24 xl:w-32 sm:flex-shrink-0 sm:pt-0.5">
                   <span
                     className="flex-shrink-0 text-[#474747] tracking-widest whitespace-nowrap"
                     style={{ fontFamily: 'acumin-pro, sans-serif', fontSize: 'var(--lk-size-4xs)' }}
@@ -430,11 +430,11 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
       <div className="flex w-full">
         {/* Category filter */}
         <aside
-          className="hidden lg:block w-[199px] xl:w-[233px] flex-shrink-0 sticky h-[calc(100vh-var(--site-header-offset))] overflow-visible transition-[top,height] duration-300 ease-in-out"
+          className="hidden lg:block w-[176px] xl:w-[208px] flex-shrink-0 sticky h-[calc(100vh-var(--site-header-offset))] overflow-visible transition-[top,height] duration-300 ease-in-out"
           style={desktopFilterStickyStyle}
         >
           <div
-            className="h-full overflow-y-auto border-r border-black/5 px-[13px] xl:px-[21px] py-[21px] xl:py-[34px]"
+            className="h-full overflow-y-auto border-r border-black/5 px-[10px] xl:px-[16px] py-[21px] xl:py-[34px]"
           >
             <div className={TAB_SCROLL_CONTAINER_CLASS}>
               <div className="flex justify-center min-w-max w-full">
@@ -443,7 +443,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
             </div>
           </div>
         </aside>
-        <div className="flex-1 min-w-0 w-full max-w-full px-0 md:px-[21px] lg:px-[21px] xl:px-[34px] 2xl:px-[55px] py-0 xl:py-[34px]">
+        <div className="flex-1 min-w-0 w-full max-w-full px-0 md:px-[21px] lg:px-[16px] xl:px-[21px] 2xl:px-[34px] py-0 xl:py-[34px]">
           <div className="sm:-mt-1 md:-mt-2 lg:hidden">
             {renderMobileFilterBar(false)}
           </div>

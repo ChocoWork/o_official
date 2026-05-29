@@ -551,7 +551,7 @@ html[data-header-visible='false'] {
   }
 
   .footer-link {
-    @apply block leading-[1.2] text-white/70 hover:text-white transition-colors cursor-pointer;
+    @apply block leading-[1.15] text-white/70 hover:text-white transition-colors cursor-pointer;
     font-size: var(--lk-size-2xs);
   }
 
@@ -576,6 +576,6 @@ html[data-header-visible='false'] {
 
   .footer-category-title-space
   {
-    @apply mt-2;
+    @apply mt-1;
   }
 }

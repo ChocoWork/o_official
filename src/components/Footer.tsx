@@ -31,7 +31,7 @@ const FooterLinkList = ({
 }) => (
   <div className="footer-category-title-space">
     <h4 className="footer-category-title font-brand">{title}</h4>
-    <ul className="space-y-[8px] md:space-y-[9px] lg:space-y-[10px]">
+    <ul className="space-y-[6px] sm:space-y-[7px] md:space-y-[8px]">
       {links.map((link) => (
         <li key={link.label}>
           <Link className='footer-link' href={link.href}>
@@ -45,11 +45,11 @@ const FooterLinkList = ({
 
 const Footer = () => {
   return (
-    <footer className="bg-black text-white pt-[34px] sm:pt-[42px] md:pt-[55px] pb-[13px] sm:pb-[16px] md:pb-[21px]">
+    <footer className="bg-black text-white pt-[28px] sm:pt-[34px] md:pt-[42px] pb-[10px] sm:pb-[13px] md:pb-[16px]">
       <div className="px-[13px] sm:px-[16px] md:px-[21px] lg:px-[34px] xl:px-[55px] max-w-[1280px] mx-auto">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-[13px] sm:gap-[16px] md:gap-[21px] lg:gap-[34px] mb-[21px] sm:mb-[26px] md:mb-[34px]">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-[13px] sm:gap-[14px] md:gap-[18px] lg:gap-[26px] mb-[18px] sm:mb-[21px] md:mb-[26px]">
           <div className="col-span-2 md:col-span-1">
-            <h3 className="footer-brand-title mb-[8px] sm:mb-[10px] md:mb-[13px] tracking-tight">Le Fil des Heures</h3>
+            <h3 className="footer-brand-title mb-[6px] sm:mb-[8px] md:mb-[10px] tracking-tight">Le Fil des Heures</h3>
             <p className="footer-brand-theme">時を紡ぐニュートラルモードな日常着</p>
           </div>
 
@@ -58,7 +58,7 @@ const Footer = () => {
 
           <div className="footer-category-title-space">
             <h4 className=" footer-category-title font-brand">FOLLOW US</h4>
-            <div className="flex gap-4">
+            <div className="flex gap-3 sm:gap-4">
               <a
                 href="#"
                 className="footer-social-link"
@@ -80,9 +80,9 @@ const Footer = () => {
             </div>
           </div>
         </div>
-        <div className="pt-[13px] sm:pt-[16px] md:pt-[21px] border-t border-white/10 flex flex-col md:flex-row justify-between items-center gap-[8px] sm:gap-[10px] md:gap-[13px]">
+        <div className="pt-[10px] sm:pt-[13px] md:pt-[16px] border-t border-white/10 flex flex-col md:flex-row justify-between items-center gap-[6px] sm:gap-[8px] md:gap-[10px]">
           <p className="footer-legal-copy">© 2026 Le Fil des Heures. All rights reserved.</p>
-          <div className="flex items-center gap-[13px] sm:gap-[16px] md:gap-[21px]">
+          <div className="flex items-center gap-[10px] sm:gap-[13px] md:gap-[16px]">
             <a className="footer-legal-link" href="/privacy">
               Privacy Policy
             </a>

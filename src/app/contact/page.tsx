@@ -171,15 +171,14 @@ export default function ContactPage() {
   const fieldDescribedBy = (name: keyof ContactFormData) => (errors[name] ? `${name}-error` : undefined);
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-12">
-        <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-12">
-          <div>
-            <h1 style={pageTitleStyle}>Contact / お問い合わせ</h1>
-            <p className="text-sm lg:text-base text-[#474747] leading-relaxed tracking-tight mt-2" style={bodyTextStyle}>ご質問やお問い合わせは、以下のフォームよりご連絡ください。</p>
-          </div>
+    <div className="w-full max-w-[680px] mx-auto">
+        <div className="space-y-2 sm:space-y-3">
+          <h1 style={pageTitleStyle}>Contact / お問い合わせ</h1>
+          <p className="text-sm lg:text-base text-[#474747] leading-relaxed tracking-tight" style={bodyTextStyle}>ご質問やお問い合わせは、以下のフォームよりご連絡ください。</p>
+        </div>
 
-          <div className="mb-6 sm:mb-14 p-4 sm:p-8 lg:p-10">
-            <form className="space-y-6" onSubmit={handleSubmit} noValidate>
+        <div className="mt-8 sm:mt-10 lg:mt-12 pb-8 sm:pb-10">
+          <form className="space-y-6" onSubmit={handleSubmit} noValidate>
               <input
                 type="text"
                 name="website"
@@ -290,8 +289,7 @@ export default function ContactPage() {
               <Button type="submit" size="lg" className="w-full " disabled={!isFormValid || isSubmitting}>
                 {isSubmitting ? 'SENDING...' : 'SEND MESSAGE'}
               </Button>
-            </form>
-          </div>
+          </form>
         </div>
 
         {showThanksModal ? (

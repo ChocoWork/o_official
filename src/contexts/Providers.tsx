@@ -14,7 +14,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   const pageMainClassName = isHome
     ? 'flex-1 flex flex-col'
-    : 'flex-1 flex flex-col my-[52px] sm:my-[54px] md:my-[56px] lg:my-[58px] xl:my-[60px] pt-0 sm:pt-1 md:pt-2 lg:pt-4 px-6 lg:px-12';
+    : 'flex-1 flex flex-col mt-[52px] sm:mt-[54px] md:mt-[56px] lg:mt-[58px] xl:mt-[60px] pt-0 sm:pt-1 md:pt-2 lg:pt-4 px-6 lg:px-12';
 
   return (
     <CartProvider enabled={!isPrivacyPage}>

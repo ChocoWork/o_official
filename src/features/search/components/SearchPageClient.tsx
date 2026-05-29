@@ -308,8 +308,8 @@ export function SearchPageClient() {
   const x4lTextStyle = { fontSize: 'var(--lk-size-4xl)' } as const;
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-8">
-      <div className="space-y-3">
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 sm:gap-7 lg:gap-8">
+      <div className="space-y-2 sm:space-y-3">
         <p className="tracking-[0.3em] text-black/50" style={xsTextStyle}>DISCOVER</p>
         <h1 style={x4lTextStyle}>SEARCH</h1>
         <p className="max-w-2xl leading-relaxed text-[#474747]" style={mdTextStyle}>
@@ -317,7 +317,7 @@ export function SearchPageClient() {
         </p>
       </div>
 
-      <div className="space-y-5">
+      <div className="space-y-4">
         <form onSubmit={handleSubmit} className="relative max-w-3xl">
           <SearchField
             aria-label="Search"
@@ -368,7 +368,7 @@ export function SearchPageClient() {
       {errorMessage ? <p className="text-[#b42318]" style={mdTextStyle}>{errorMessage}</p> : null}
 
       {!query ? (
-        <section className="space-y-4 rounded-[28px] border border-black/10 bg-[#fafafa] p-6">
+        <section className="space-y-4 rounded-[28px] border border-black/10 bg-[#fafafa] p-5 sm:p-6">
           <h2 style={x2lTextStyle}>START YOUR SEARCH</h2>
           <p className="leading-relaxed text-[#474747]" style={mdTextStyle}>
             気になる商品名やトピックを入力すると、商品・ルック・ニュースを横断した結果を表示します。
@@ -382,7 +382,7 @@ export function SearchPageClient() {
       ) : isLoading ? (
         <p className="text-[#474747]" style={mdTextStyle}>検索中です…</p>
       ) : results?.empty ? (
-        <section className="space-y-6 rounded-[28px] border border-black/10 bg-[#fafafa] p-6">
+        <section className="space-y-5 rounded-[28px] border border-black/10 bg-[#fafafa] p-5 sm:p-6">
           <div className="space-y-2">
             <h2 className="tracking-tight text-black font-display" style={x3lTextStyle}>「{query}」の検索結果はありません</h2>
             <p className="leading-relaxed text-[#474747]" style={mdTextStyle}>
@@ -399,7 +399,7 @@ export function SearchPageClient() {
           </div>
         </section>
       ) : activeTab === 'all' ? (
-        <div className="space-y-10">
+        <div className="space-y-8 sm:space-y-10">
           <SearchSection title="ITEM" results={results?.items ?? []} query={query} />
           <SearchSection title="LOOK" results={results?.looks ?? []} query={query} />
           <SearchSection title="NEWS" results={results?.news ?? []} query={query} />
