@@ -18,7 +18,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default function StockistPage() {
   return (
-    <div className="element-width">
+    <div className="element-width w-full">
       <PublicStockistGrid variant="catalog"/>
     </div>
   );
