@@ -172,6 +172,7 @@ h5 {
   --lk-stockist-card-padding: calc(var(--lk-stockist-card-edge-gap) - 1px);
   --lk-stockist-title-divider-gap: calc(var(--lk-size-lg) * var(--lk-wholestep-dec));
   --lk-stockist-divider-details-gap: var(--lk-stockist-title-divider-gap);
+  --lk-stockist-detail-line-height: clamp(calc(var(--lk-size-xs) * 1.45), calc(var(--lk-size-xs) * 1.4 + 0.12vw), calc(var(--lk-size-xs) * 1.55));
   --lk-stockist-detail-row-gap: max(0px, calc((var(--lk-size-xs) * var(--lk-wholestep-dec)) - (var(--lk-size-xs) * var(--lk-quarterstep-dec))));
 
 }
@@ -527,19 +528,23 @@ html[data-header-visible='false'] {
 
   .stockist-card-icon {
     flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-block-size: var(--lk-stockist-detail-line-height);
     color: #111111;
     font-size: clamp(0.6875rem, 0.66rem + 0.09vw, 0.8125rem);
     line-height: 1;
   }
 
   .stockist-card-icon--pin {
-    margin-top: clamp(0.125rem, 0.1rem + 0.03vw, 0.1875rem);
+    margin-top: 0;
   }
 
   .stockist-card-text {
     color: #474747;
     font-size: var(--lk-size-xs);
-    line-height: clamp(1.45, 1.4 + 0.12vw, 1.55);
+    line-height: var(--lk-stockist-detail-line-height);
   }
 
   .image {
