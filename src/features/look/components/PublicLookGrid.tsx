@@ -50,7 +50,7 @@ type PublicLookGridCatalogProps = {
 
 type PublicLookGridProps = PublicLookGridHomeProps | PublicLookGridCatalogProps;
 
-function LookCard({ look, variant }: LookCardProps) {
+function LookCard({ look }: LookCardProps) {
   return (
     <div>
       <Link href={`/look/${look.id}`} className="group block">
@@ -70,16 +70,15 @@ function LookCard({ look, variant }: LookCardProps) {
             {formatLookSeason(look.seasonYear, look.seasonType)} - {look.theme}
           </h5>
         </Link>
-        <div className="space-y-1">
+        <div className="look-related-items flex flex-col">
           {look.linkedItems.length === 0 ? (
-            <p className="text-[#474747]" style={{ fontSize: 'var(--lk-size-xs)' }}>紐づけ商品なし</p>
+            <p className="look-related-item-text text-[#474747]">紐づけ商品なし</p>
           ) : (
             look.linkedItems.map((item) => (
               <Link
                 key={item.id}
                 href={`/item/${item.id}`}
-                className="block text-[#474747] transition-colors hover:text-black"
-                style={{ fontSize: 'var(--lk-size-xs)' }}
+                className="look-related-item-text block text-[#474747] transition-colors hover:text-black"
               >
                 {item.name}
               </Link>
