@@ -51,6 +51,11 @@ type PublicLookGridCatalogProps = {
 type PublicLookGridProps = PublicLookGridHomeProps | PublicLookGridCatalogProps;
 
 function LookCard({ look }: LookCardProps) {
+  const currencyFormatter = new Intl.NumberFormat('ja-JP', {
+    style: 'currency',
+    currency: 'JPY',
+    maximumFractionDigits: 0,
+  });
   return (
     <div>
       <Link href={`/look/${look.id}`} className="group block">
@@ -66,9 +71,12 @@ function LookCard({ look }: LookCardProps) {
       </Link>
       <div>
         <Link href={`/look/${look.id}`} className="inline-block">
-          <h5 className="mb-1.5 font-brand transition-colors hover:text-[#474747] sm:mb-2" style={{ fontSize: 'var(--lk-size-lg)' }}>
-            {formatLookSeason(look.seasonYear, look.seasonType)} - {look.theme}
-          </h5>
+          <p className=" text-black/50 tracking-widest mb-[3px] sm:mb-[5px]" style={{ fontSize: 'var(--lk-size-7xs)' }}>
+            {formatLookSeason(look.seasonYear, look.seasonType)} COLLECTION
+          </p>
+          <h3 className="mb-1 font-brand transition-colors hover:text-[#474747] " style={{ fontSize: 'var(--lk-size-2xs)' }}>
+            {look.theme}
+          </h3>
         </Link>
         <div className="look-related-items flex flex-col">
           {look.linkedItems.length === 0 ? (
@@ -80,7 +88,10 @@ function LookCard({ look }: LookCardProps) {
                 href={`/item/${item.id}`}
                 className="look-related-item-text block text-[#474747] transition-colors hover:text-black"
               >
-                {item.name}
+                <div className="flex items-center justify-between">
+                  <span style={{ fontSize: 'var(--lk-size-3xs)' }}>{item.name}</span>
+                  <span style={{ fontSize: 'var(--lk-size-3xs)' }}>{currencyFormatter.format(item.price)}</span>
+                </div>
               </Link>
             ))
           )}
