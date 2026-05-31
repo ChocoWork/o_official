@@ -23,7 +23,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default function TermsPage() {
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="w-full max-w-4xl mx-auto pb-[34px] sm:pb-[42px] md:pb-[55px] lg:pb-[89px]">
       <h2 className="mb-8" style={pageTitleStyle}>Terms of Service</h2>
       <div className="space-y-8">
         <section>

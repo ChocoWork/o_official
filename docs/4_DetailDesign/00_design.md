@@ -144,8 +144,8 @@
 | `/search` | 検索ページ | - | HOME プレビューリンク | Link + style fontSize=--lk-size-md | --lk-size-md | --lk-size-md | 反復: 結果カード内のリンクは本文と同じmd帯で揃え、カード内で過度に浮かせない。 | 完了 |
 | `/cart` | カートページ | - | 読み込みテキスト | text-sm | --lk-size-md | --lk-size-md | 反復: ローディング文は他ページの状態メッセージと同じmdに揃え、補助説明として統一する。 | 完了 |
 | `/cart` | カートページ | - | 読み込みサブテキスト | text-xs | --lk-size-xs | --lk-size-xs | 対比: サブテキストは主メッセージより1段小さいxsで十分であり、状態説明の主従が崩れない。 | 完了 |
-| `/cart` | カートページ | - | 空カートアイコン | text-6xl |  | --lk-size-4xl | 対比: 空状態アイコンは強調が必要だが、タイポスケール外へ膨らませず4xl上限に収めると文言との釣り合いが取れる。 | 完了 |
-| `/cart` | カートページ | - | 空カートテキスト | text-lg | --lk-size-xl | --lk-size-lg | 近接: 空状態文はCTA直前の説明なので、lgに抑えてアイコンとボタンの間をつなぐ中位階層にする。 | 完了 |
+| `/cart` | カートページ | - | 空カートアイコン | style fontSize=var(--lk-size-5xl, calc(var(--lk-size-4xl) * var(--lk-quarterstep))) | --lk-size-5xl | --lk-size-5xl | 対比: まず 5xl を使い、未定義環境でも 4xl の次段へ解決できるようにして、視認性と保守性を両立する。 | 完了 |
+| `/cart` | カートページ | - | 空カートテキスト | p + style fontSize=--lk-size-sm | --lk-size-sm | --lk-size-sm | 近接: 空状態文は補助説明としてsmに下げることで、ボタンとの階層差をつくりつつミニマルな余白感を維持する。 | 完了 |
 | `/cart` | カートページ | - | CONTINUE SHOPPING ボタン | Button size="lg" | --lk-size-lg | --lk-size-lg | 反復: 空状態の主CTAは他フォーム送信ボタンと同じlgに揃え、学習コストを下げる。 | 完了 |
 | `/cart` | カートページ | - | エラーメッセージ | text-sm | --lk-size-md | --lk-size-md | 整列: エラー文は本文系と同じmdに揃え、状態差は色と文言で表現する。 | 完了 |
 | `/cart` | カートページ | - | 同期エラーバナー本文 | text-sm | --lk-size-md | --lk-size-md | 反復: バナー本文もmdに統一し、再同期ボタンとの差だけで主従を作る。 | 完了 |

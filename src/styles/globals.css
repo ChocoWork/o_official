@@ -150,6 +150,10 @@ h5 {
   --lk-size-2xl: calc(var(--lk-size-xl) * var(--lk-quarterstep));
   --lk-size-3xl: calc(var(--lk-size-2xl) * var(--lk-quarterstep));
   --lk-size-4xl: calc(var(--lk-size-3xl) * var(--lk-quarterstep));
+  --lk-size-5xl: calc(var(--lk-size-4xl) * var(--lk-quarterstep));
+  --lk-size-6xl: calc(var(--lk-size-5xl) * var(--lk-quarterstep));
+  --lk-size-7xl: calc(var(--lk-size-6xl) * var(--lk-quarterstep));
+  --lk-size-8xl: calc(var(--lk-size-7xl) * var(--lk-quarterstep));
   --control-button-gap: clamp(0.35rem, 0.3rem + 0.12vw, 0.5rem);
   --control-button-radius-rounded: clamp(0.875rem, 0.8rem + 0.35vw, 1.25rem);
 

@@ -310,7 +310,6 @@ export function SearchPageClient() {
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 sm:gap-7 lg:gap-8">
       <div className="space-y-2 sm:space-y-3">
-        <p className="tracking-[0.3em] text-black/50" style={xsTextStyle}>DISCOVER</p>
         <h1 style={x4lTextStyle}>SEARCH</h1>
         <p className="max-w-2xl leading-relaxed text-[#474747]" style={mdTextStyle}>
           商品、ルック、ニュースを横断して検索できます。キーワードは URL に保持され、再訪時には検索履歴から再利用できます。
