@@ -1,5 +1,5 @@
 import "./Button.css";
-import type { ButtonProps } from './Button';
+import type { ButtonProps } from './Button_types';
 import Link from 'next/link';
 import type {
   AnchorHTMLAttributes,

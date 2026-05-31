@@ -3,7 +3,8 @@ import { Button } from '../Button/Button';
 import { Checkbox } from '../Checkbox/Checkbox';
 import { cn } from '@/lib/utils';
 import { useEffect, useRef, useState } from 'react';
-import type { MultiSelectProps, SelectOption } from '../types';
+import type { MultiSelectProps} from './MultiSelect_types';
+import type { SelectOption } from '../types';
 
 export function MultiSelect({
   options,

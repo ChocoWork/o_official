@@ -1,9 +1,8 @@
 "use client";
 
-import './EmptyPage.css';
-
+import '@/components/ui/EmptyPage/EmptyPage.css';
 import { Button } from '@/components/ui/Button/Button';
-import type { EmptyPageProps } from '@/components/ui/types';
+import type { EmptyPageProps } from '@/components/ui/EmptyPage/EmptyPage_types';
 
 export function EmptyPage({
 	iconClassName,
