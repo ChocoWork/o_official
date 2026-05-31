@@ -1,9 +1,9 @@
 import "./Button.css";
+import type { ButtonProps } from './Button';
 import Link from 'next/link';
 import type {
   AnchorHTMLAttributes,
 } from 'react';
-import type { ButtonProps } from '../types';
 
 export function Button({
   href,
