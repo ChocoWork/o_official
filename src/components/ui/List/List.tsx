@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import Image from 'next/image';
 import type { ReactNode } from 'react';
-import { ComponentSize } from '../types';
+import { ComponentSize } from '@/components/ui/types';
 
 interface BaseListProps<T> {
   items: readonly T[];

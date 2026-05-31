@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import Image from 'next/image';
 import { Button } from '../Button/Button';
 import { useState, type ReactNode } from 'react';
-import { ComponentSize } from '../types';
+import { ComponentSize } from '@/components/ui/types';
 
 export interface CarouselSlide {
   src: string;

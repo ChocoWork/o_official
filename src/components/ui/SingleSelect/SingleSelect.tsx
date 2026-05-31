@@ -1,10 +1,10 @@
-import "./SingleSelect.css"
+import "@/components/ui/SingleSelect/SingleSelect.css"
 import { cn } from '@/lib/utils';
 import type { CSSProperties } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
-import { controlBaseClass } from '../shared';
-import type { SelectOption, SingleSelectProps } from '../types';
+import { controlBaseClass } from '@/components/ui/shared';
+import type { SingleSelectProps} from '@/components/ui/SingleSelect/SingleSelect_types';
 
 export function SingleSelect({
   label,

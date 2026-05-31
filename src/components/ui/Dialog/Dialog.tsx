@@ -2,8 +2,8 @@ import "./Dialog.css"
 import { Button } from '../Button/Button';
 import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
-import { ComponentSize } from '../types';
-import type { UIButtonSize } from '../types';
+import { ComponentSize } from '@/components/ui/types';
+import type { UIButtonSize } from '@/components/ui/Button/Button_types';
 
 export interface DialogProps {
   open: boolean;

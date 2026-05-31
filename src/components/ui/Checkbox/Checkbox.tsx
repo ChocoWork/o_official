@@ -1,6 +1,6 @@
-import "./Checkbox.css"
+import "@/components/ui/Checkbox/Checkbox.css"
 import { useId } from 'react';
-import type { CheckboxProps } from '../types';
+import type { CheckboxProps } from '@/components/ui/Checkbox/Checkbox_types';
 
 export function Checkbox({
   label,

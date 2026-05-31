@@ -1,8 +1,8 @@
 "use client";
-import "./Accordion.css"
-import { cn } from '@/lib/utils';
+import "@/components/ui/Accordion/Accordion.css"
 import { useState, type ReactNode } from 'react';
-import { ComponentSize } from '../types';
+import { cn } from '@/lib/utils';
+import { ComponentSize } from '@/components/ui/types';
 
 export interface AccordionItem {
   key: string;

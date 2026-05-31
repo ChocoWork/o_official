@@ -1,10 +1,10 @@
-import "./MultiSelect.css";
-import { Button } from '../Button/Button';
-import { Checkbox } from '../Checkbox/Checkbox';
+import "@/components/ui/MultiSelect/MultiSelect.css";
+import { Button } from '@/components/ui/Button/Button';
+import { Checkbox } from '@/components/ui/Checkbox/Checkbox';
 import { cn } from '@/lib/utils';
 import { useEffect, useRef, useState } from 'react';
-import type { MultiSelectProps} from './MultiSelect_types';
-import type { SelectOption } from '../types';
+import type { MultiSelectProps} from '@/components/ui/MultiSelect/MultiSelect_types';
+import type { SelectOption } from '@/components/ui/types';
 
 export function MultiSelect({
   options,

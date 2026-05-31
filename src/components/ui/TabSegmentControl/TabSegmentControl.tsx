@@ -1,7 +1,7 @@
 import "./TabSegmentControl.css"
 import { cn } from '@/lib/utils';
 import type { CSSProperties } from 'react';
-import { ComponentSize } from '../types';
+import { ComponentSize } from '@/components/ui/types';
 
 export interface TabSegmentControlItem {
   key: string;

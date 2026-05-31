@@ -1,7 +1,7 @@
 import { cn } from '@/lib/utils';
 import type { CSSProperties, InputHTMLAttributes, ReactNode } from 'react';
 import { controlBaseClass } from '../shared';
-import { ComponentSize } from '../types';
+import { ComponentSize } from '@/components/ui/types';
 
 export interface TextFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'size'> {
   label?: string;

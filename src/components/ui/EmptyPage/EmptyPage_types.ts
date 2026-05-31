@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { ComponentSize } from '../types';
+import type { ComponentSize } from '@/components/ui/types';
 
 export interface EmptyPageProps {
     iconClassName: string;

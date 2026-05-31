@@ -1,7 +1,7 @@
 import { cn } from '@/lib/utils';
 import type { CSSProperties, TextareaHTMLAttributes } from 'react';
 import { controlBaseClass } from '../shared';
-import { ComponentSize } from '../types';
+import { ComponentSize } from '@/components/ui/types';
 
 export interface TextAreaFieldProps extends Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'size'> {
   label?: string;

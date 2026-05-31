@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { ComponentSize, SelectOption } from '../types';
+import type { ComponentSize, SelectOption } from '@/components/ui/types';
 
 export interface MultiSelectProps {
     options: SelectOption[];

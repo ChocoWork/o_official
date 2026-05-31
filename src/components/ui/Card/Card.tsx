@@ -1,9 +1,9 @@
-import "./Card.css"
+import "@/components/ui/Card/Card.css"
 import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 import Image from 'next/image';
 import { Button } from '../Button/Button';
-import { ComponentSize } from '../types';
+import { ComponentSize } from '@/components/ui/types';
 
 export interface CardProps {
   children?: ReactNode;

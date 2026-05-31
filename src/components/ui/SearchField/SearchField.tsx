@@ -2,7 +2,7 @@ import "./SearchField.css"
 import { cn } from '@/lib/utils';
 import { controlBaseClass } from '../shared';
 import type { InputHTMLAttributes } from 'react';
-import { ComponentSize } from '../types';
+import { ComponentSize } from '@/components/ui/types';
 
 export interface SearchFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'size'> {
   label?: string;

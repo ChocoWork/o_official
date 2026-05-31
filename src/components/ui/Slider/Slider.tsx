@@ -1,7 +1,7 @@
 import "./Slider.css"
 import { cn } from '@/lib/utils';
 import type { InputHTMLAttributes } from 'react';
-import { ComponentSize } from '../types';
+import { ComponentSize } from '@/components/ui/types';
 
 type NumericInput = number | string | undefined;
 

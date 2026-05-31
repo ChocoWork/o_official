@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes,	MouseEventHandler } from 'react';
-import type { ComponentSize } from '../types';
+import type { ComponentSize } from '@/components/ui/types';
 
 export type UIButtonSize = ComponentSize | 'compact';
 export type UIButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'link' | 'text';

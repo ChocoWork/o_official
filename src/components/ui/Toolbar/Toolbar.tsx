@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
-import { ComponentSize } from '../types';
+import { ComponentSize } from '@/components/ui/types';
 
 export interface ToolbarItem {
   key: string;

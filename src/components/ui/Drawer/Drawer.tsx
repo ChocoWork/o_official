@@ -1,7 +1,7 @@
 import "./Drawer.css"
 import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
-import { ComponentSize } from '../types';
+import { ComponentSize } from '@/components/ui/types';
 
 export interface DrawerProps {
   open: boolean;

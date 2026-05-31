@@ -1,7 +1,7 @@
 import "./DataTable.css"
 import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
-import type { ComponentSize } from '../types';
+import type { ComponentSize } from '@/components/ui/types';
 
 export interface TableColumn<T> {
   key: string;

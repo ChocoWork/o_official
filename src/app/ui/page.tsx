@@ -2,7 +2,8 @@
 
 import Image from 'next/image';
 import { useState } from "react";
-import { ComponentSize, type UIButtonSize } from '@/components/ui/types';
+import { ComponentSize } from '@/components/ui/types';
+import { UIButtonSize } from '@/components/ui/Button/Button_types';
 import { cn } from '@/lib/utils';
 import { Accordion } from '@/components/ui/Accordion/Accordion';
 import { ActionSheet } from '@/components/ui/ActionSheet/ActionSheet';

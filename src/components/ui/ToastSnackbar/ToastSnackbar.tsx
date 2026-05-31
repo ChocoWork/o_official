@@ -2,7 +2,7 @@ import { cn } from '@/lib/utils';
 
 export type ToastVariant = 'success' | 'error' | 'info';
 
-import { ComponentSize } from '../types';
+import { ComponentSize } from '@/components/ui/types';
 
 export interface ToastSnackbarProps {
   open?: boolean;

@@ -1,9 +1,9 @@
 import "./FloatingButton.css"
 import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
-import { ComponentSize } from '../types';
+import { ComponentSize } from '@/components/ui/types';
 import { Button } from '../Button/Button';
-import type { UIButtonSize } from '../types';
+import type { UIButtonSize } from '@/components/ui/Button/Button_types';
 
 export interface FloatingButtonAction {
   key: string;

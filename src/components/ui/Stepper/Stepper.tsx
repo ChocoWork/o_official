@@ -1,9 +1,9 @@
 import "./Stepper.css"
 import { Button } from '../Button/Button';
 import { cn } from '@/lib/utils';
-import { ComponentSize } from '../types';
+import { ComponentSize } from '@/components/ui/types';
 
-import type { UIButtonSize } from '../types';
+import type { UIButtonSize } from '@/components/ui/Button/Button_types';
 
 export interface StepperProps {
   value: number;

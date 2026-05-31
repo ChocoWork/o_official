@@ -1,7 +1,7 @@
 import "./PageControl.css"
 import { cn } from '@/lib/utils';
 
-import { ComponentSize } from '../types';
+import { ComponentSize } from '@/components/ui/types';
 
 export interface PageControlProps {
   page: number;
