@@ -41,6 +41,7 @@ export interface MultiSelectProps {
 export type UIButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'link' | 'text';
 export type UIButtonSize = ComponentSize | 'compact';
 export type UIButtonShape = 'rounded' | 'square' | 'pill';
+export type EmptyPageSize = '4xl' | '5xl' | '6xl' | '7xl' | '8xl';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 	href?: string;
@@ -49,6 +50,17 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 	shape?: UIButtonShape;
 	className?: string;
 	onClick?: MouseEventHandler<HTMLElement>;
+}
+
+export interface EmptyPageProps {
+	iconClassName: string;
+	label: ReactNode;
+	buttonLabel: ReactNode;
+	href?: string;
+	onButtonClick?: () => void;
+	size?: EmptyPageSize;
+	className?: string;
+	buttonClassName?: string;
 }
 
 export type UICheckboxCheckStyle = 'check' | 'fill';

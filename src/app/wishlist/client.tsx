@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useCart } from '@/contexts/CartContext';
+import { EmptyPage } from '@/components/ui/EmptyPage/EmptyPage';
 
 interface WishlistItem {
   id: string;
@@ -236,14 +237,12 @@ export default function WishlistClient() {
 
   if (wishlistItems.length === 0) {
     return (
-      <div className="text-center py-12">
-        <p className="text-[#474747] mb-4" style={wishlistTextMdStyle}>
-          ウィッシュリストは空です
-        </p>
-        <Link href="/item" className="text-black hover:text-[#474747] transition-colors" style={wishlistTextMdStyle}>
-          買い物を続ける
-        </Link>
-      </div>
+      <EmptyPage
+        iconClassName="ri-heart-line"
+        label="ウィッシュリストは空です"
+        buttonLabel="買い物を続ける"
+        href="/item"
+      />
     );
   }
 

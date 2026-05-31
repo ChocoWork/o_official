@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import Link from 'next/link';
 import Image from "next/image";
 import { useCart } from "@/contexts/CartContext";
-import { EmptyCart } from '@/components/EmptyCart';
+import { EmptyPage } from '@/components/ui/EmptyPage/EmptyPage';
 import { Button } from '@/components/ui/Button/Button';
 import { Stepper } from '@/components/ui/Stepper/Stepper';
 import { TextField } from '@/components/ui/TextField/TextField';
@@ -329,7 +329,14 @@ export default function CartPage() {
   }
 
   if (cartItems.length === 0) {
-    return <EmptyCart />;
+    return (
+      <EmptyPage
+        iconClassName="ri-shopping-bag-line"
+        label="カートは空です"
+        buttonLabel="CONTINUE SHOPPING"
+        href="/item"
+      />
+    );
   }
 
   return (
@@ -357,14 +364,12 @@ export default function CartPage() {
           )}
 
           {cartItems.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-sm text-[#474747] mb-4">
-                カートは空です
-              </p>
-              <Link href="/item" className="text-sm text-black hover:text-[#474747] transition-colors">
-                買い物を続ける
-              </Link>
-            </div>
+            <EmptyPage
+              iconClassName="ri-shopping-bag-line"
+              label="カートは空です"
+              buttonLabel="CONTINUE SHOPPING"
+              href="/item"
+            />
           ) : (
             <>
               {cartItems.map((item) => {
