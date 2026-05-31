@@ -136,24 +136,37 @@ h5 {
   --lk-size-3xl: calc(var(--lk-size-2xl) * var(--lk-scalefactor));
   --lk-size-4xl: calc(var(--lk-size-3xl) * var(--lk-scalefactor)); */
 
+  --lk-eighthstep-2: calc(var(--lk-eighthstep) * var(--lk-eighthstep));
+  --lk-eighthstep-3: calc(var(--lk-eighthstep) * var(--lk-eighthstep) * var(--lk-eighthstep));
+  --lk-eighthstep-4: calc(var(--lk-eighthstep-2) * var(--lk-eighthstep-2));
+  --lk-eighthstep-5: calc(var(--lk-eighthstep-2) * var(--lk-eighthstep-3));
+  --lk-eighthstep-6: calc(var(--lk-eighthstep-3) * var(--lk-eighthstep-3));
+  --lk-eighthstep-7: calc(var(--lk-eighthstep-3) * var(--lk-eighthstep-4));
+  --lk-eighthstep-8: calc(var(--lk-eighthstep-4) * var(--lk-eighthstep-4));
+  --lk-eighthstep-9: calc(var(--lk-eighthstep-4) * var(--lk-eighthstep-5));
+
   --lk-size-md: clamp(0.875rem, 0.84rem + 0.14vw, 0.9375rem);
+
   --lk-size-sm: calc(var(--lk-size-md) / var(--lk-eighthstep));
-  --lk-size-xs: calc(var(--lk-size-sm) / var(--lk-eighthstep));
-  --lk-size-2xs: calc(var(--lk-size-xs) / var(--lk-eighthstep));
-  --lk-size-3xs: calc(var(--lk-size-2xs) / var(--lk-eighthstep));
-  --lk-size-4xs: calc(var(--lk-size-3xs) / var(--lk-eighthstep));
-  --lk-size-5xs: calc(var(--lk-size-4xs) / var(--lk-eighthstep));
-  --lk-size-6xs: calc(var(--lk-size-5xs) / var(--lk-eighthstep));
-  --lk-size-7xs: calc(var(--lk-size-6xs) / var(--lk-eighthstep));
+  --lk-size-xs: calc(var(--lk-size-md) / var(--lk-eighthstep-2));
+  --lk-size-2xs: calc(var(--lk-size-md) / var(--lk-eighthstep-3));
+  --lk-size-3xs: calc(var(--lk-size-md) / var(--lk-eighthstep-4));
+  --lk-size-4xs: calc(var(--lk-size-md) / var(--lk-eighthstep-5));
+  --lk-size-5xs: calc(var(--lk-size-md) / var(--lk-eighthstep-6));
+  --lk-size-6xs: calc(var(--lk-size-md) / var(--lk-eighthstep-7));
+  --lk-size-7xs: calc(var(--lk-size-md) / var(--lk-eighthstep-8));
+  --lk-size-8xs: calc(var(--lk-size-md) / var(--lk-eighthstep-9));
+  
   --lk-size-lg: calc(var(--lk-size-md) * var(--lk-eighthstep));
-  --lk-size-xl: calc(var(--lk-size-lg) * var(--lk-quarterstep));
-  --lk-size-2xl: calc(var(--lk-size-xl) * var(--lk-quarterstep));
-  --lk-size-3xl: calc(var(--lk-size-2xl) * var(--lk-quarterstep));
-  --lk-size-4xl: calc(var(--lk-size-3xl) * var(--lk-quarterstep));
-  --lk-size-5xl: calc(var(--lk-size-4xl) * var(--lk-quarterstep));
-  --lk-size-6xl: calc(var(--lk-size-5xl) * var(--lk-quarterstep));
-  --lk-size-7xl: calc(var(--lk-size-6xl) * var(--lk-quarterstep));
-  --lk-size-8xl: calc(var(--lk-size-7xl) * var(--lk-quarterstep));
+  --lk-size-xl: calc(var(--lk-size-md) * var(--lk-eighthstep-2));
+  --lk-size-2xl: calc(var(--lk-size-md) * var(--lk-eighthstep-3));
+  --lk-size-3xl: calc(var(--lk-size-md) * var(--lk-eighthstep-4));
+  --lk-size-4xl: calc(var(--lk-size-md) * var(--lk-eighthstep-5));
+  --lk-size-5xl: calc(var(--lk-size-md) * var(--lk-eighthstep-6));
+  --lk-size-6xl: calc(var(--lk-size-md) * var(--lk-eighthstep-7));
+  --lk-size-7xl: calc(var(--lk-size-md) * var(--lk-eighthstep-8));
+  --lk-size-8xl: calc(var(--lk-size-md) * var(--lk-eighthstep-9));
+  
   --control-button-gap: clamp(0.35rem, 0.3rem + 0.12vw, 0.5rem);
   --control-button-radius-rounded: clamp(0.875rem, 0.8rem + 0.35vw, 1.25rem);
 
