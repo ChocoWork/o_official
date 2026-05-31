@@ -126,16 +126,6 @@ h5 {
   /* It's okay to use em here because the root font size
                   has been manually set to 1rem */
 
-  /* --lk-size-sm: calc(1em / var(--lk-scalefactor));
-  --lk-size-xs: calc(var(--lk-size-sm) / var(--lk-scalefactor));
-  --lk-size-2xs: calc(var(--lk-size-xs) / var(--lk-scalefactor));
-  --lk-size-3xs: calc(var(--lk-size-2xs) / var(--lk-scalefactor));
-  --lk-size-lg: calc(1em * var(--lk-scalefactor));
-  --lk-size-xl: calc(var(--lk-size-lg) * var(--lk-scalefactor));
-  --lk-size-2xl: calc(var(--lk-size-xl) * var(--lk-scalefactor));
-  --lk-size-3xl: calc(var(--lk-size-2xl) * var(--lk-scalefactor));
-  --lk-size-4xl: calc(var(--lk-size-3xl) * var(--lk-scalefactor)); */
-
   --lk-eighthstep-2: calc(var(--lk-eighthstep) * var(--lk-eighthstep));
   --lk-eighthstep-3: calc(var(--lk-eighthstep) * var(--lk-eighthstep) * var(--lk-eighthstep));
   --lk-eighthstep-4: calc(var(--lk-eighthstep-2) * var(--lk-eighthstep-2));

@@ -1,16 +1,32 @@
 [data-ui-empty-page],
 .empty-page {
 	--empty-page-size: var(--lk-size-6xl);
-	--empty-page-figure-gap: calc(var(--empty-page-size) / 1.618);
-	--empty-page-figure-margin-bottom: calc(var(--lk-size-md) * 1.4);
+
+	/* 黄金比 φ ≈ 1.618 を基準にしたモジュラースケール */
+	/* 近接(グループ内): アイコンとラベルの横間隔 → 最小 (size / φ³ ≈ 0.236) */
+	--empty-page-figure-gap: calc(var(--empty-page-size) * 0.236);
+
+	/* 対比(グループ間): figure と Button の縦間隔 → figure-gap の約 φ³ 倍 (size × 1.0) */
+	/* 縦方向はアイコン高さ(≒size)を基準に十分離し、グループ分離を明確化 */
+	--empty-page-stack-gap: calc(var(--empty-page-size) * 1.0);
+
+	/* 整列・反復: パディングは size を基準に上下 > 左右で安定感を出す */
+	--empty-page-padding-block: calc(var(--empty-page-size) * 1.0);
+	--empty-page-padding-inline: calc(var(--empty-page-size) * 0.618);
+
 	display: flex;
 	width: 100%;
 	flex: 1 1 auto;
 	align-items: center;
 	justify-content: center;
+	padding: var(--empty-page-padding-block) var(--empty-page-padding-inline);
 }
 
 .empty-page__inner {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: var(--empty-page-stack-gap);
 	width: 100%;
 	max-width: 64rem;
 	text-align: center;
@@ -21,13 +37,11 @@
 	align-items: center;
 	justify-content: center;
 	gap: var(--empty-page-figure-gap);
-	margin-bottom: var(--empty-page-figure-margin-bottom);
 	min-width: 0;
 }
 
 .empty-page__icon,
 .empty-page__label {
-	color: #474747;
 	font-size: var(--empty-page-size);
 	line-height: 1;
 	white-space: nowrap;
@@ -35,31 +49,39 @@
 
 .empty-page__icon {
 	flex: none;
+	line-height: 1;
 }
 
 .empty-page__label {
-	font-family: inherit;
 	font-weight: 400;
+	/* 対比: ラベルはアイコンより一段小さく (size / φ ≈ 0.618) し主従を明確化 */
+	font-size: calc(var(--empty-page-size) * 0.618);
+	letter-spacing: 0.01em;
+}
+
+.empty-page__icon,
+.empty-page__label {
+	white-space: nowrap;
 }
 
 .empty-page[data-ui-empty-page-size="xs"] {
-	--empty-page-size: var(--lk-size-4xl);
+    --empty-page-size: calc(var(--lk-size-8xl) * var(--lk-eighthstep-2));
 }
 
 .empty-page[data-ui-empty-page-size="sm"] {
-	--empty-page-size: var(--lk-size-5xl);
+    --empty-page-size: calc(var(--lk-size-8xl) * var(--lk-eighthstep-3));
 }
 
 .empty-page[data-ui-empty-page-size="md"] {
-	--empty-page-size: var(--lk-size-6xl);
+    --empty-page-size: calc(var(--lk-size-8xl) * var(--lk-eighthstep-4));
 }
-
+    
 .empty-page[data-ui-empty-page-size="lg"] {
-	--empty-page-size: var(--lk-size-7xl);
+    --empty-page-size: calc(var(--lk-size-8xl) * var(--lk-eighthstep-5));
 }
 
 .empty-page[data-ui-empty-page-size="xl"] {
-	--empty-page-size: var(--lk-size-8xl);
+    --empty-page-size: calc(var(--lk-size-8xl) * var(--lk-eighthstep-6));
 }
 
 @media (forced-colors: active) {

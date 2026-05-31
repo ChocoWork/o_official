@@ -27,7 +27,7 @@ export function EmptyPage({
 					<span className="empty-page__label">{label}</span>
 				</div>
 
-				<Button href={href} size="xs" onClick={onButtonClick} className={buttonClassName}>
+				<Button href={href} size={size} onClick={onButtonClick} className={buttonClassName}>
 					{buttonLabel}
 				</Button>
 			</div>

@@ -332,7 +332,7 @@ export default function CartPage() {
     return (
       <EmptyPage
         iconClassName="ri-shopping-bag-line"
-        label="カートは空です"
+        label="YOUR CART IS EMPTY"
         size="xs"
         buttonLabel="CONTINUE SHOPPING"
         href="/item"
