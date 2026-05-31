@@ -333,6 +333,7 @@ export default function CartPage() {
       <EmptyPage
         iconClassName="ri-shopping-bag-line"
         label="カートは空です"
+        size="xs"
         buttonLabel="CONTINUE SHOPPING"
         href="/item"
       />

@@ -11,7 +11,7 @@ export function EmptyPage({
 	buttonLabel,
 	href = '/item',
 	onButtonClick,
-	size = '4xl',
+	size,
 	className,
 	buttonClassName,
 }: EmptyPageProps) {

@@ -41,7 +41,6 @@ export interface MultiSelectProps {
 export type UIButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'link' | 'text';
 export type UIButtonSize = ComponentSize | 'compact';
 export type UIButtonShape = 'rounded' | 'square' | 'pill';
-export type EmptyPageSize = '4xl' | '5xl' | '6xl' | '7xl' | '8xl';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 	href?: string;
@@ -58,7 +57,7 @@ export interface EmptyPageProps {
 	buttonLabel: ReactNode;
 	href?: string;
 	onButtonClick?: () => void;
-	size?: EmptyPageSize;
+	size?: ComponentSize;
 	className?: string;
 	buttonClassName?: string;
 }
