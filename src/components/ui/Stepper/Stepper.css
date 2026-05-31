@@ -1,0 +1,180 @@
+[data-ui-stepper] {
+  /* --- スケール基準（Button と同じ φ ベースのトークン体系を踏襲）--- */
+  --stepper-font-size: var(--lk-size-md);
+  --stepper-phi: var(--button-phi);
+
+  /* φ による各種寸法の導出（直値を使わない） */
+  --stepper-control-ratio: calc(var(--control-line-height) + (2 / var(--stepper-phi)));
+  --stepper-control-size: calc(var(--stepper-font-size) * var(--stepper-control-ratio));
+
+  /* 入力幅は正方形コントロールに φ を乗じた黄金比的バランス */
+  --stepper-input-width: calc(var(--stepper-control-size) * var(--stepper-phi));
+
+  /* アイコンボックスはコントロールを φ^2 で割ったサイズ（中央の余白を黄金比で確保） */
+  --stepper-icon-box: calc(var(--stepper-control-size) / (var(--stepper-phi) * var(--stepper-phi)));
+
+  /* ラベルと本体の間隔（近接：関連はするが分離） */
+  --stepper-label-gap: calc(var(--stepper-font-size) / var(--stepper-phi));
+  --stepper-label-size: calc(var(--stepper-font-size) / var(--lk-eighthstep-2));
+
+  /* 色トークン（Button と同系統。ハードコードは変数化して一箇所に集約） */
+  --stepper-border-color: rgb(0 0 0 / 0.2);
+  --stepper-bg: #ffffff;
+  --stepper-color: #111111;
+  --stepper-hover-bg: #f5f5f5;
+  --stepper-disabled-color: #b5b5b5;
+
+  --stepper-radius: 0;
+}
+
+/* --- サイズ展開（反復：Button と同一の公比スケールを再利用）--- */
+[data-ui-stepper][data-ui-stepper-size="xs"] {
+  --stepper-font-size: var(--lk-size-xs);
+}
+
+[data-ui-stepper][data-ui-stepper-size="sm"] {
+  --stepper-font-size: var(--lk-size-sm);
+}
+
+[data-ui-stepper][data-ui-stepper-size="md"] {
+  --stepper-font-size: var(--lk-size-md);
+}
+
+[data-ui-stepper][data-ui-stepper-size="lg"] {
+  --stepper-font-size: var(--lk-size-lg);
+}
+
+[data-ui-stepper][data-ui-stepper-size="xl"] {
+  --stepper-font-size: var(--lk-size-xl);
+}
+
+/* --- ラッパー（field 用：ラベルと本体の縦並び）--- */
+.stepper__wrapper {
+  display: inline-flex;
+  flex-direction: column;
+  gap: var(--stepper-label-gap);
+}
+
+.stepper__label {
+  display: block;
+  font-size: var(--stepper-label-size);
+  letter-spacing: 0.12em;
+  line-height: var(--control-line-height);
+  color: rgb(0 0 0 / 0.8);
+}
+
+/* --- 操作グループ（近接：3要素を1つの操作単位として囲う）--- */
+.stepper__group {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--stepper-border-color);
+  border-radius: var(--stepper-radius);
+  background: var(--stepper-bg);
+  overflow: hidden;
+}
+
+/* --- 左右コントロール（反復：左右対称の正方形）--- */
+.stepper__control {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--stepper-control-size);
+  min-width: var(--stepper-control-size);
+  height: var(--stepper-control-size);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--stepper-color);
+  cursor: pointer;
+  transition: background-color 180ms ease, color 180ms ease, opacity 180ms ease;
+}
+
+.stepper__control:disabled {
+  color: var(--stepper-disabled-color);
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.stepper__control:focus-visible {
+  outline: 2px solid transparent;
+  box-shadow: inset 0 0 0 2px var(--stepper-color);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .stepper__control:not(:disabled):hover {
+    background: var(--stepper-hover-bg);
+  }
+}
+
+/* --- アイコン（整列：ボックス内で中央寄せ）--- */
+.stepper__icon-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--stepper-icon-box);
+  height: var(--stepper-icon-box);
+}
+
+.stepper__icon {
+  display: inline-flex;
+  font-size: var(--stepper-icon-box);
+  line-height: 1;
+}
+
+/* --- 入力（対比：操作子と異なり背景反応なし／中央整列）--- */
+.stepper__input {
+  width: var(--stepper-input-width);
+  height: var(--stepper-control-size);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--stepper-color);
+  font-size: var(--stepper-font-size);
+  line-height: var(--control-line-height);
+  text-align: center;
+  appearance: none;
+  -moz-appearance: textfield;
+}
+
+.stepper__input:focus {
+  outline: none;
+}
+
+.stepper__input::-webkit-outer-spin-button,
+.stepper__input::-webkit-inner-spin-button {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* --- compact バリアント（field より入力幅を詰める）--- */
+[data-ui-stepper-variant="compact"] {
+  --stepper-input-width: var(--stepper-control-size);
+}
+
+/* --- アクセシビリティ配慮（Button と同じ思想で踏襲）--- */
+@media (prefers-reduced-motion: reduce) {
+  .stepper__control {
+    transition: background-color 180ms ease, color 180ms ease;
+  }
+}
+
+@media (forced-colors: active) {
+  .stepper__group {
+    border-color: ButtonText;
+  }
+
+  .stepper__control {
+    color: ButtonText;
+  }
+
+  .stepper__control:disabled {
+    color: GrayText;
+  }
+
+  .stepper__control:focus-visible {
+    outline: 2px solid Highlight;
+    box-shadow: none;
+  }
+}

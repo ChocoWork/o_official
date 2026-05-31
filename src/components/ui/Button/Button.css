@@ -171,21 +171,11 @@ box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #111111;
 }
 
 @media (hover: hover) and (pointer: fine) {
-[data-ui-button]:not([data-ui-button-disabled="true"]):not(:disabled):not([data-ui-button-variant="text"]):not([data-ui-button-variant="link"]):hover {
-    transform: translateY(-1px);
-    background: var(--button-hover-bg);
-    border-color: var(--button-hover-border-color);
-    color: var(--button-hover-color);
-    box-shadow: 0 10px 24px rgb(17 17 17 / 0.12);
-}
-
-[data-ui-button][data-ui-button-variant="primary"]:not([data-ui-button-disabled="true"]):not(:disabled):not([data-ui-button-variant="text"]):not([data-ui-button-variant="link"]):hover {
-    background: #2a2a2a;
-    border-color: #2a2a2a;
-    color: #ffffff;
-    transform: none;
-    box-shadow: none;
-}
+    [data-ui-button]:not([data-ui-button-disabled="true"]):not(:disabled):not([data-ui-button-variant="text"]):not([data-ui-button-variant="link"]):hover {
+        background: var(--button-hover-bg);
+        border-color: var(--button-hover-border-color);
+        color: var(--button-hover-color);
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {

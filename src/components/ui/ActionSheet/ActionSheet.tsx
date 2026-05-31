@@ -1,21 +1,7 @@
-import "./ActionSheet.css"
+import "@/components/ui/ActionSheet/ActionSheet.css"
 import { cn } from '@/lib/utils';
 import { ComponentSize } from '@/components/ui/types';
-
-export interface ActionSheetAction {
-  key: string;
-  label: string;
-  iconClass?: string;
-  destructive?: boolean;
-  onSelect: () => void;
-}
-
-export interface ActionSheetProps {
-  open: boolean;
-  onClose: () => void;
-  actions: ActionSheetAction[];
-  size?: ComponentSize;
-}
+import type { ActionSheetProps } from '@/components/ui/ActionSheet/ActionSheet_types';
 
 export function ActionSheet({ open, onClose, actions, size = 'md' }: ActionSheetProps) {
   if (!open) {

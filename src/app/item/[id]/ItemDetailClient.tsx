@@ -386,7 +386,7 @@ export default function ItemDetailClient({ id }: Props) {
                         setValidationError(null);
                       }}
                       variant={color === colorOption.name ? "primary" : "secondary"}
-                      size="sm"
+                      size="xs"
                       aria-pressed={color === colorOption.name}
                     >
                       {colorOption.name}
@@ -410,7 +410,7 @@ export default function ItemDetailClient({ id }: Props) {
                       setValidationError(null);
                     }}
                     variant={size === sizeOption ? "primary" : "secondary"}
-                    size="sm"
+                    size="xs"
                     aria-pressed={size === sizeOption}
                   >
                     {sizeOption}
@@ -422,7 +422,7 @@ export default function ItemDetailClient({ id }: Props) {
 
           <div>
             <p className="mb-2" style={optionTitleStyle}>QUANTITY</p>
-            <Stepper value={quantity} min={1} onChange={setQuantity} size="sm" />
+            <Stepper value={quantity} min={1} onChange={setQuantity} size="xs" />
           </div>
 
           {/* バリデーションエラーメッセージ (FR-ITEM-DETAIL-008: role="alert") */}
