@@ -1,0 +1,199 @@
+[data-ui-action-sheet] {
+  /* --- スケール基準（Button と同じ φ ベースのトークン体系を踏襲）--- */
+  --sheet-font-size: var(--lk-size-md);
+  --sheet-phi: var(--button-phi);
+  --sheet-pad-ratio: calc(1 / var(--sheet-phi));
+
+  /* 項目高さ：Button の min-height 算出（line-height + 2 * pad-ratio）と同思想 */
+  --sheet-item-height-ratio: calc(var(--control-line-height) + (var(--sheet-pad-ratio) * 2));
+  --sheet-item-height: calc(var(--sheet-font-size) * var(--sheet-item-height-ratio));
+
+  /* 横パディングは φ を乗じてテキストの呼吸を確保 */
+  --sheet-item-pad-inline: calc(var(--sheet-font-size) * var(--sheet-pad-ratio) * var(--sheet-phi));
+
+  /* アイコンとラベルの間隔（近接：密結合な小ギャップ = font / φ²）*/
+  --sheet-item-gap: calc(var(--sheet-font-size) / (var(--sheet-phi) * var(--sheet-phi)));
+
+  /* アイコンボックス（整列：固定枠でラベル開始位置を揃える）*/
+  --sheet-icon-box: calc(var(--sheet-font-size) * var(--sheet-phi));
+
+  /* パネル外周マージン・最大幅も φ から導出 */
+  --sheet-panel-gap: calc(var(--sheet-font-size) * var(--sheet-pad-ratio) * var(--sheet-phi));
+  --sheet-panel-pad: calc(var(--sheet-font-size) * var(--sheet-pad-ratio));
+  --sheet-panel-max-width: 28rem;
+
+  /* 角丸トークン（shape で切替。既定は rounded）*/
+  --sheet-panel-radius: var(--control-button-radius-rounded);
+  --sheet-item-radius: calc(var(--sheet-panel-radius) / var(--sheet-phi));
+
+  /* グループ間の区切り余白（近接：アクション群とキャンセルを分離）*/
+  --sheet-divider-gap: calc(var(--sheet-font-size) * var(--sheet-pad-ratio));
+
+  /* 色トークン（Button と同系統。ハードコードは一箇所に集約）*/
+  --sheet-panel-bg: #ffffff;
+  --sheet-color: #111111;
+  --sheet-danger-color: #c0392b;
+  --sheet-hover-bg: #f5f5f5;
+  --sheet-divider-color: rgb(0 0 0 / 0.1);
+  --sheet-backdrop-bg: rgb(0 0 0 / 0.4);
+}
+
+/* --- shape：角丸 / 直角の切替（反復：パネルと項目の radius を連動）--- */
+[data-ui-action-sheet][data-ui-action-sheet-shape="rounded"] {
+  --sheet-panel-radius: var(--control-button-radius-rounded);
+  --sheet-item-radius: calc(var(--sheet-panel-radius) / var(--sheet-phi));
+}
+
+[data-ui-action-sheet][data-ui-action-sheet-shape="square"] {
+  --sheet-panel-radius: 0;
+  --sheet-item-radius: 0;
+}
+
+/* --- サイズ展開（反復：Button と同一の公比スケールを再利用）--- */
+[data-ui-action-sheet][data-ui-action-sheet-size="xs"] {
+  --sheet-font-size: var(--lk-size-xs);
+}
+
+[data-ui-action-sheet][data-ui-action-sheet-size="sm"] {
+  --sheet-font-size: var(--lk-size-sm);
+}
+
+[data-ui-action-sheet][data-ui-action-sheet-size="md"] {
+  --sheet-font-size: var(--lk-size-md);
+}
+
+[data-ui-action-sheet][data-ui-action-sheet-size="lg"] {
+  --sheet-font-size: var(--lk-size-lg);
+}
+
+[data-ui-action-sheet][data-ui-action-sheet-size="xl"] {
+  --sheet-font-size: var(--lk-size-xl);
+}
+
+/* --- オーバーレイ（最前面・下寄せ中央）--- */
+.action-sheet__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+/* --- 背景の暗幕（対比：本体を浮き上がらせる）--- */
+.action-sheet__backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--sheet-backdrop-bg);
+}
+
+/* --- パネル本体 --- */
+.action-sheet__panel {
+  position: relative;
+  width: 100%;
+  max-width: var(--sheet-panel-max-width);
+  margin: 0 var(--sheet-panel-gap) var(--sheet-panel-gap);
+  padding: var(--sheet-panel-pad);
+  background: var(--sheet-panel-bg);
+  border-radius: var(--sheet-panel-radius);
+  box-shadow: 0 calc(var(--sheet-font-size) * 1.5) calc(var(--sheet-font-size) * 3) rgb(0 0 0 / 0.25);
+  font-family: 'acumin-pro', sans-serif;
+}
+
+/* --- 項目グループ（近接：関連アクションをまとめる）--- */
+.action-sheet__list {
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- アクション項目（反復：全項目で共通の枠組み）--- */
+.action-sheet__item {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: var(--sheet-item-height);
+  padding-block: 0;
+  padding-inline: var(--sheet-item-pad-inline);
+  border: 0;
+  border-radius: var(--sheet-item-radius);
+  background: transparent;
+  color: var(--sheet-color);
+  font-size: var(--sheet-font-size);
+  line-height: var(--control-line-height);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+.action-sheet__item[data-ui-action-sheet-destructive="true"] {
+  color: var(--sheet-danger-color);
+}
+
+.action-sheet__item:focus-visible {
+  outline: 2px solid transparent;
+  box-shadow: inset 0 0 0 2px var(--sheet-color);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .action-sheet__item:hover {
+    background: var(--sheet-hover-bg);
+  }
+}
+
+/* --- 項目内レイアウト（整列：アイコン＋ラベルを水平基線で揃える）--- */
+.action-sheet__item-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sheet-item-gap);
+}
+
+/* --- アイコン枠（整列：固定サイズでラベル開始位置を統一）--- */
+.action-sheet__icon-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--sheet-icon-box);
+  height: var(--sheet-icon-box);
+  flex: 0 0 auto;
+}
+
+.action-sheet__icon {
+  display: inline-flex;
+  font-size: var(--sheet-icon-box);
+  line-height: 1;
+}
+
+.action-sheet__label {
+  display: inline-block;
+}
+
+/* --- 区切り線（近接：グループ分離）--- */
+.action-sheet__divider {
+  height: 1px;
+  margin-block: var(--sheet-divider-gap);
+  border: 0;
+  background: var(--sheet-divider-color);
+}
+
+/* --- アクセシビリティ配慮（Button と同思想で踏襲）--- */
+@media (prefers-reduced-motion: reduce) {
+  .action-sheet__item {
+    transition: background-color 180ms ease, color 180ms ease;
+  }
+}
+
+@media (forced-colors: active) {
+  .action-sheet__panel {
+    border: 1px solid CanvasText;
+  }
+
+  .action-sheet__item {
+    color: ButtonText;
+  }
+
+  .action-sheet__item:focus-visible {
+    outline: 2px solid Highlight;
+    box-shadow: none;
+  }
+}

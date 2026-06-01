@@ -1,4 +1,6 @@
-import { ComponentSize } from '@/components/ui/types';
+import type { ComponentSize } from '@/components/ui/types';
+
+export type UIActionSheetShape = 'rounded' | 'square';
 
 export interface ActionSheetAction {
   key: string;
@@ -13,4 +15,7 @@ export interface ActionSheetProps {
   onClose: () => void;
   actions: ActionSheetAction[];
   size?: ComponentSize;
+  shape?: UIActionSheetShape;
+  cancelLabel?: string;
+  className?: string;
 }

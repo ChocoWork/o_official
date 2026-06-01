@@ -1,99 +1,92 @@
-import "@/components/ui/ActionSheet/ActionSheet.css"
+import '@/components/ui/ActionSheet/ActionSheet.css';
+import { useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
-import { ComponentSize } from '@/components/ui/types';
 import type { ActionSheetProps } from '@/components/ui/ActionSheet/ActionSheet_types';
 
-export function ActionSheet({ open, onClose, actions, size = 'md' }: ActionSheetProps) {
+export function ActionSheet({
+  open,
+  onClose,
+  actions,
+  size = 'md',
+  shape = 'rounded',
+  cancelLabel = 'キャンセル',
+  className,
+}: ActionSheetProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [open, onClose]);
+
   if (!open) {
     return null;
   }
 
-  // mirror Button component sizing
-  const heightClassMap: Record<ComponentSize, string> = {
-    xs: 'h-8',
-    sm: 'h-8',
-    md: 'h-10',
-    lg: 'h-12',
-    xl: 'h-12',
-  };
-  const buttonPaddingMap: Record<ComponentSize, string> = {
-    // horizontal padding matches Button px; vertical padding minimal since we enforce height
-    xs: 'px-3',
-    sm: 'px-3',
-    md: 'px-4',
-    lg: 'px-5',
-    xl: 'px-5',
-  };
-  const buttonTextMap: Record<ComponentSize, string> = {
-    xs: 'text-xs',
-    sm: 'text-xs',
-    md: 'text-sm',
-    lg: 'text-sm',
-    xl: 'text-sm',
-  };
-  const iconSizeMap: Record<ComponentSize, string> = {
-    xs: 'h-4 w-4',
-    sm: 'h-4 w-4',
-    md: 'h-5 w-5',
-    lg: 'h-6 w-6',
-    xl: 'h-6 w-6',
-  };
-  const gapMap: Record<ComponentSize, string> = {
-    xs: 'gap-2',
-    sm: 'gap-2',
-    md: 'gap-3',
-    lg: 'gap-4',
-    xl: 'gap-4',
-  };
+  const rootDataAttrs = {
+    'data-ui-action-sheet': 'true',
+    'data-ui-action-sheet-size': size,
+    'data-ui-action-sheet-shape': shape,
+  } as const;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/40"></div>
+    <div
+      className="action-sheet__overlay"
+      role="presentation"
+      onClick={onClose}
+      {...rootDataAttrs}
+    >
+      <div className="action-sheet__backdrop" aria-hidden="true" />
       <div
-        className="relative mb-4 mx-4 w-full max-w-md bg-white shadow-2xl"
+        ref={panelRef}
+        className={cn('action-sheet__panel', className)}
+        role="dialog"
+        aria-modal="true"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="p-2">
+        <div className="action-sheet__list" role="group">
           {actions.map((action) => (
             <button
               key={action.key}
               type="button"
+              className="action-sheet__item"
+              data-ui-action-sheet-destructive={action.destructive ? 'true' : undefined}
               onClick={() => {
                 action.onSelect();
                 onClose();
               }}
-              className={cn(
-                'w-full cursor-pointer text-left transition-colors hover:bg-[#f5f5f5]',
-                heightClassMap[size],
-                buttonPaddingMap[size],
-                buttonTextMap[size],
-                action.destructive ? 'text-red-600' : 'text-black',
-              )}
-              style={{ fontFamily: 'acumin-pro, sans-serif' }}
             >
-              <div className={cn('flex items-center', gapMap[size])}>
+              <span className="action-sheet__item-inner">
                 {action.iconClass ? (
-                  <div className={cn('flex items-center justify-center', iconSizeMap[size])}>
-                    <i className={cn(action.iconClass, 'text-xl')}></i>
-                  </div>
+                  <span className="action-sheet__icon-box" aria-hidden="true">
+                    <i className={cn(action.iconClass, 'action-sheet__icon')} />
+                  </span>
                 ) : null}
-                <span>{action.label}</span>
-              </div>
+                <span className="action-sheet__label">{action.label}</span>
+              </span>
             </button>
           ))}
-          <div className="my-2 h-px bg-black/10"></div>
+        </div>
+
+        <hr className="action-sheet__divider" />
+
+        <div className="action-sheet__list">
           <button
             type="button"
-            className={cn(
-              'w-full cursor-pointer text-left text-black transition-colors hover:bg-[#f5f5f5]',
-              heightClassMap[size],
-              buttonPaddingMap[size],
-              buttonTextMap[size],
-            )}
-            style={{ fontFamily: 'acumin-pro, sans-serif' }}
+            className="action-sheet__item action-sheet__item--cancel"
             onClick={onClose}
           >
-            キャンセル
+            <span className="action-sheet__item-inner">
+              <span className="action-sheet__label">{cancelLabel}</span>
+            </span>
           </button>
         </div>
       </div>
