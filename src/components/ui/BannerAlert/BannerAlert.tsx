@@ -7,7 +7,7 @@ export function BannerAlert({
   message,
   description,
   variant = 'info',
-  shape = 'squared',
+  shape = 'rounded',
   icon,
   dismissible = false,
   onDismiss,
