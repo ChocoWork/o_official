@@ -131,7 +131,7 @@ export default function Page() {
     xl: 'px-5 py-6 text-lg',
   };
 
-  const avatarSize = demoSize === 'xs' ? 'sm' : demoSize === 'xl' ? 'lg' : demoSize;
+  const avatarSize = demoSize;
 
   const rangeMin = Math.min(rangeValues[0], rangeValues[1]);
   const rangeMax = Math.max(rangeValues[0], rangeValues[1]);
@@ -1259,7 +1259,7 @@ export default function Page() {
             </h2>
             <div className="flex items-center gap-8 flex-wrap">
               <div className="flex flex-col items-center gap-3">
-                <Avatar alt="A" fallback="A" size="lg" className="text-xl" />
+                <Avatar alt="A" fallback="A" size={avatarSize}/>
                 <p
                   className="text-xs tracking-wider text-black/60"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
@@ -1268,7 +1268,7 @@ export default function Page() {
                 </p>
               </div>
               <div className="flex flex-col items-center gap-3">
-                <Avatar alt="B" fallback="B" size={avatarSize} className="text-base" />
+                <Avatar alt="B" fallback="B" size={avatarSize} />
                 <p
                   className="text-xs tracking-wider text-black/60"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
@@ -1277,7 +1277,7 @@ export default function Page() {
                 </p>
               </div>
               <div className="flex flex-col items-center gap-3">
-                <Avatar alt="C" fallback="C" size="sm" className="text-sm" />
+                <Avatar alt="C" fallback="C" size={avatarSize}/>
                 <p
                   className="text-xs tracking-wider text-black/60"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}

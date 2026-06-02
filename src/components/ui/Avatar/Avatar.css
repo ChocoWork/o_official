@@ -1,0 +1,136 @@
+[data-ui-avatar] {
+  /* --- スケール基準（Button と同じ φ ベースのトークン体系を踏襲）--- */
+  --avatar-phi: var(--button-phi);
+
+  /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
+  --avatar-font-size: var(--lk-size-md);
+
+  /* 径の算出比率（font × (line-height + 2/φ) × φ）*/
+  --avatar-size-ratio: calc(var(--control-line-height) + (2 / var(--avatar-phi)));
+
+  /*
+   * 重要：--avatar-size を「変数として固定計算」してしまうと、
+   * サイズ別セレクタで --avatar-font-size を変えても再評価されない。
+   * そのため派生計算は width/height など実プロパティ側で行い、
+   * 常に最新の --avatar-font-size を参照させる。
+   */
+
+  /* 色トークン（Button と同系統。ハードコードは一箇所に集約）*/
+  --avatar-bg: #111111;
+  --avatar-color: #ffffff;
+  --avatar-ring-color: #ffffff;
+  --avatar-status-online: #1f9d55;
+  --avatar-status-offline: #9b9b9b;
+
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  /* 本体径：font × ratio × φ を直接評価（font 変化に追従）*/
+  width: calc(var(--avatar-font-size) * var(--avatar-size-ratio) * var(--avatar-phi));
+  height: calc(var(--avatar-font-size) * var(--avatar-size-ratio) * var(--avatar-phi));
+
+  flex: 0 0 auto;
+}
+
+/* --- サイズ展開（この 1 変数を変えるだけで width/height/ラベル/ステータスが追従）--- */
+[data-ui-avatar][data-ui-avatar-size="xs"] {
+  --avatar-font-size: var(--lk-size-8xs);
+}
+
+[data-ui-avatar][data-ui-avatar-size="sm"] {
+  --avatar-font-size: var(--lk-size-7xs);
+}
+
+[data-ui-avatar][data-ui-avatar-size="md"] {
+  --avatar-font-size: var(--lk-size-6xs);
+}
+
+[data-ui-avatar][data-ui-avatar-size="lg"] {
+  --avatar-font-size: var(--lk-size-5xs);
+}
+
+[data-ui-avatar][data-ui-avatar-size="xl"] {
+  --avatar-font-size: var(--lk-size-4xs);
+}
+
+/* --- 画像（整列：円形に切り抜き中央寄せ）--- */
+.avatar__image {
+  width: 100%;
+  height: 100%;
+  border-radius: 9999px;
+  object-fit: cover;
+  display: block;
+}
+
+/* --- フォールバック（対比：黒地に白文字）--- */
+.avatar__fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 9999px;
+  background: var(--avatar-bg);
+  color: var(--avatar-color);
+
+  /*
+   * ラベルサイズも径から逆算するが、径は変数化していないため
+   * font × ratio × φ / φ² = font × ratio / φ として直接評価する。
+   * （= --avatar-size / φ² と数学的に等価）
+   */
+  font-size: calc(var(--avatar-font-size) * var(--avatar-size-ratio) / var(--avatar-phi));
+
+  line-height: 1;
+  font-weight: 400;
+  text-transform: uppercase;
+  user-select: none;
+  overflow: hidden;
+}
+
+/* --- ステータス（近接：角に密接配置／対比：色で状態区別）--- */
+.avatar__status {
+  /*
+   * ステータス径＝本体径 / φ²
+   * = font × ratio × φ / φ² = font × ratio / φ（ラベルと同径）
+   */
+  --avatar-status-size: calc(var(--avatar-font-size) * var(--avatar-size-ratio) / var(--avatar-phi));
+
+  /* 枠線：ステータス径 / φ³（最小 1px 保証）*/
+  --avatar-status-border: max(1px, calc(var(--avatar-status-size) / (var(--avatar-phi) * var(--avatar-phi) * var(--avatar-phi))));
+
+  /* 角オフセット：ステータス径 / -φ²（角に食い込ませる）*/
+  --avatar-status-offset: calc(var(--avatar-status-size) / (var(--avatar-phi) * var(--avatar-phi)) * -1);
+
+  position: absolute;
+  bottom: var(--avatar-status-offset);
+  right: var(--avatar-status-offset);
+  width: var(--avatar-status-size);
+  height: var(--avatar-status-size);
+  border-radius: 9999px;
+  border: var(--avatar-status-border) solid var(--avatar-ring-color);
+  background: var(--avatar-status-offline);
+}
+
+.avatar__status[data-ui-avatar-status="online"] {
+  background: var(--avatar-status-online);
+}
+
+.avatar__status[data-ui-avatar-status="offline"] {
+  background: var(--avatar-status-offline);
+}
+
+/* --- アクセシビリティ配慮（Button と同思想で踏襲）--- */
+@media (forced-colors: active) {
+  .avatar__fallback {
+    background: ButtonFace;
+    color: ButtonText;
+    border: 1px solid ButtonText;
+  }
+
+  .avatar__status {
+    border-color: Canvas;
+    forced-color-adjust: none;
+  }
+}
