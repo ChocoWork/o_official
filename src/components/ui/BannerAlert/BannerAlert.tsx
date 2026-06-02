@@ -1,33 +1,13 @@
-import "./BannerAlert.css"
+import '@/components/ui/BannerAlert/BannerAlert.css';
 import { cn } from '@/lib/utils';
-import type { ReactNode } from 'react';
-import { ComponentSize } from '@/components/ui/types';
-
-export interface BannerAlertProps {
-  title?: string;
-  message?: string;
-  description?: string;
-  variant?: 'info' | 'warning' | 'error' | 'success';
-  icon?: ReactNode;
-  dismissible?: boolean;
-  onDismiss?: () => void;
-  className?: string;
-  /** demo size: sm/md/lg */
-  size?: ComponentSize;
-}
-
-const bannerTone: Record<NonNullable<BannerAlertProps['variant']>, string> = {
-  info: 'bg-black text-white',
-  warning: 'bg-[#f5f5f5] border border-black/20 text-black',
-  error: 'border-l-4 border-black bg-[#f5f5f5] text-black',
-  success: 'bg-white border border-black/20 text-black',
-};
+import type { BannerAlertProps } from '@/components/ui/BannerAlert/BannerAlert_types';
 
 export function BannerAlert({
   title,
   message,
   description,
   variant = 'info',
+  shape = 'squared',
   icon,
   dismissible = false,
   onDismiss,
@@ -36,69 +16,45 @@ export function BannerAlert({
 }: BannerAlertProps) {
   const contentText = message ?? title ?? '';
 
-  // spacing should correspond to Button padding, with vertical padding roughly half height
-  const paddingMap: Record<ComponentSize, string> = {
-    xs: 'px-3 py-2',
-    sm: 'px-3 py-2',
-    md: 'px-4 py-3',
-    lg: 'px-5 py-4',
-    xl: 'px-5 py-4',
-  };
-  const textMap: Record<ComponentSize, string> = {
-    xs: 'text-xs',
-    sm: 'text-xs',
-    md: 'text-sm',
-    lg: 'text-sm',
-    xl: 'text-sm',
-  };
-  // icon inside alert uses same scale as button icons
-  const iconSizeMap: Record<ComponentSize, string> = {
-    xs: 'h-4 w-4',
-    sm: 'h-4 w-4',
-    md: 'h-5 w-5',
-    lg: 'h-6 w-6',
-    xl: 'h-6 w-6',
-  };
+  const rootDataAttrs = {
+    'data-ui-banner-alert': 'true',
+    'data-ui-banner-alert-variant': variant,
+    'data-ui-banner-alert-shape': shape,
+    'data-ui-banner-alert-size': size,
+  } as const;
 
   return (
-    <div
-      className={cn(
-        'flex items-center justify-between',
-        paddingMap[size],
-        variant !== 'info' ? 'border' : null,
-        bannerTone[variant],
-        className,
-      )}
-    >
-      <div className={cn('flex gap-3 items-center')}>
+    <div className={cn('banner-alert', className)} {...rootDataAttrs} role="alert">
+      <div className="banner-alert__body">
         {icon ? (
-          <div className={cn('flex items-center justify-center', iconSizeMap[size])}>{icon}</div>
+          <span className="banner-alert__icon" aria-hidden="true">
+            {icon}
+          </span>
         ) : null}
-        <div>
+        <div className="banner-alert__text">
           {contentText ? (
-            <p className={cn(textMap[size], description ? 'mb-1 text-black' : null)} style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+            <p
+              className="banner-alert__title"
+              data-ui-banner-alert-has-description={description ? 'true' : undefined}
+            >
               {contentText}
             </p>
           ) : null}
           {description ? (
-            <p className="text-sm leading-relaxed text-black/60" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-              {description}
-            </p>
+            <p className="banner-alert__description">{description}</p>
           ) : null}
         </div>
       </div>
       {dismissible && onDismiss ? (
         <button
           type="button"
-          className={cn(
-            'flex h-6 w-6 flex-shrink-0 cursor-pointer items-center justify-center transition-colors',
-            variant === 'info' ? 'hover:bg-white/20' : 'hover:bg-black/10',
-          )}
+          className="banner-alert__dismiss"
           onClick={onDismiss}
+          aria-label="閉じる"
         >
-          <div className="flex h-4 w-4 items-center justify-center">
-            <i className={cn('ri-close-line text-base', variant === 'info' ? 'text-white' : 'text-black')}></i>
-          </div>
+          <span className="banner-alert__dismiss-icon" aria-hidden="true">
+            <i className="ri-close-line" />
+          </span>
         </button>
       ) : null}
     </div>

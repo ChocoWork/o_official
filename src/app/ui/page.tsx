@@ -1246,6 +1246,16 @@ export default function Page() {
                   onDismiss={() => setShowAlertBanner(false)}
                  size={demoSize}/>
               )}
+              {showAlertBanner && (
+                <BannerAlert
+                  variant="success"
+                  icon={<i className="ri-error-warning-line text-xl text-black"></i>}
+                  message="重要なお知らせ"
+                  description="システムメンテナンスのため、3月20日 2:00-4:00の間、一時的にサービスをご利用いただけません。"
+                  dismissible
+                  onDismiss={() => setShowAlertBanner(false)}
+                 size={demoSize}/>
+              )}
             </div>
           </section>
 
