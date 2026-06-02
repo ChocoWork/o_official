@@ -722,7 +722,6 @@ export default function Page() {
                 onChange={(key) => setActiveBottomNav(key as (typeof bottomNavItems)[number]["key"])}
                 fixed={false}
                 appearance="minimal"
-                className="shadow-lg"
                 size={demoSize}/>
             </div>
           </section>

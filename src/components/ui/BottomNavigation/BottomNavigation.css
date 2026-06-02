@@ -1,0 +1,220 @@
+
+[data-ui-bottom-nav] {
+  /* --- スケール基準（Avatar / Button と同じ φ ベースのトークン体系を踏襲）--- */
+  --bottom-nav-phi: var(--button-phi);
+
+  /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
+  --bottom-nav-font-size: var(--lk-size-md);
+
+  /* アイコン径＝font × φ（ラベルより一段大きく対比）*/
+  --bottom-nav-icon-size: calc(var(--bottom-nav-font-size) * var(--bottom-nav-phi));
+
+  /* ラベル文字＝font / φ（アイコンに対し従属させ階層化）*/
+  --bottom-nav-label-size: calc(var(--bottom-nav-font-size) / var(--bottom-nav-phi));
+
+  /* 近接：アイコンとラベルの縦ギャップ＝font / φ²（密接にまとめる）*/
+  --bottom-nav-item-gap: calc(var(--bottom-nav-font-size) / (var(--bottom-nav-phi) * var(--bottom-nav-phi)));
+
+  /* グリッド列間ギャップ＝font / φ */
+  --bottom-nav-list-gap: calc(var(--bottom-nav-font-size) / var(--bottom-nav-phi));
+
+  /* ボタン内パディング：横＝font / φ、縦＝横 / φ（縦を控えめに）*/
+  --bottom-nav-btn-pad-x: calc(var(--bottom-nav-font-size) / var(--bottom-nav-phi));
+  --bottom-nav-btn-pad-y: calc(var(--bottom-nav-btn-pad-x) / var(--bottom-nav-phi));
+
+  /* バー全体パディング＝font / φ²（端に詰めすぎない最小余白）*/
+  --bottom-nav-bar-pad: calc(var(--bottom-nav-font-size) / (var(--bottom-nav-phi) * var(--bottom-nav-phi)));
+
+  /* 角丸・枠線（直値を排し φ から導出）*/
+  --bottom-nav-radius: calc(var(--bottom-nav-font-size) / var(--bottom-nav-phi));
+  --bottom-nav-border-width: max(1px, calc(var(--bottom-nav-font-size) / (var(--bottom-nav-phi) * var(--bottom-nav-phi) * var(--bottom-nav-phi))));
+
+  /* minimal の字間（トラッキング）＝font / φ⁴（わずかに開ける）*/
+  --bottom-nav-tracking: calc(var(--bottom-nav-font-size) / (var(--bottom-nav-phi) * var(--bottom-nav-phi) * var(--bottom-nav-phi) * var(--bottom-nav-phi)));
+
+  /* z-index（直値を避け変数化。プロジェクト既定があれば差し替え）*/
+  --bottom-nav-z: var(--lk-z-fixed, 40);
+
+  /* 色トークン（Avatar / Button と同系統。ハードコードは一箇所に集約）*/
+  --bottom-nav-bg: #ffffff;
+  --bottom-nav-active-bg: #000000;
+  --bottom-nav-active-fg: #ffffff;
+  --bottom-nav-fg: #000000;
+  --bottom-nav-fg-muted: rgba(0, 0, 0, 0.4);
+  --bottom-nav-fg-muted-hover: rgba(0, 0, 0, 0.6);
+  --bottom-nav-hover-bg: rgba(0, 0, 0, 0.05);
+  --bottom-nav-border-color: rgba(0, 0, 0, 0.2);
+  --bottom-nav-divider-color: rgba(0, 0, 0, 0.1);
+
+  display: block;
+  background: var(--bottom-nav-bg);
+  padding: var(--bottom-nav-bar-pad);
+  box-sizing: border-box;
+  font-family: acumin-pro, sans-serif;
+}
+
+/* --- 配置（fixed：画面下部に固定／非 fixed：枠付きの埋め込み）--- */
+[data-ui-bottom-nav][data-ui-bottom-nav-fixed="true"] {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: var(--bottom-nav-z);
+  border-top: var(--bottom-nav-border-width) solid var(--bottom-nav-divider-color);
+}
+
+@media (min-width: 1024px) {
+  [data-ui-bottom-nav][data-ui-bottom-nav-fixed="true"] {
+    display: none;
+  }
+}
+
+[data-ui-bottom-nav][data-ui-bottom-nav-fixed="false"] {
+  position: static;
+  border: var(--bottom-nav-border-width) solid var(--bottom-nav-border-color);
+}
+
+/* --- サイズ展開（反復：Avatar と同一の公比スケールを再利用）--- */
+[data-ui-bottom-nav][data-ui-bottom-nav-size="xs"] {
+  --bottom-nav-font-size: var(--lk-size-3xs);
+}
+
+[data-ui-bottom-nav][data-ui-bottom-nav-size="sm"] {
+  --bottom-nav-font-size: var(--lk-size-2xs);
+}
+
+[data-ui-bottom-nav][data-ui-bottom-nav-size="md"] {
+  --bottom-nav-font-size: var(--lk-size-xs);
+}
+
+[data-ui-bottom-nav][data-ui-bottom-nav-size="lg"] {
+  --bottom-nav-font-size: var(--lk-size-sm);
+}
+
+[data-ui-bottom-nav][data-ui-bottom-nav-size="xl"] {
+  --bottom-nav-font-size: var(--lk-size-md);
+}
+
+/* --- リスト（整列：項目を均等配置）--- */
+.bottom-nav__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* filled：項目数ぶんの等幅グリッド（反復：すべて同サイズ）*/
+[data-ui-bottom-nav-appearance="filled"] .bottom-nav__list {
+  display: grid;
+  grid-template-columns: repeat(var(--bottom-nav-count, 1), minmax(0, 1fr));
+  gap: var(--bottom-nav-list-gap);
+}
+
+/* minimal：均等間隔のフレックス（整列：space-around）*/
+[data-ui-bottom-nav-appearance="minimal"] .bottom-nav__list {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding-block: calc(var(--bottom-nav-font-size) / var(--bottom-nav-phi));
+}
+
+.bottom-nav__item {
+  display: flex;
+  min-width: 0;
+}
+
+[data-ui-bottom-nav-appearance="filled"] .bottom-nav__item {
+  width: 100%;
+}
+
+/* --- ボタン（近接：アイコン＋ラベルを縦に密集／整列：中央そろえ）--- */
+.bottom-nav__button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--bottom-nav-item-gap);
+  border: none;
+  background: transparent;
+  color: var(--bottom-nav-fg);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+/* filled：面で囲うボタン（対比：選択時に黒地白文字で反転）*/
+[data-ui-bottom-nav-appearance="filled"] .bottom-nav__button {
+  width: 100%;
+  padding: var(--bottom-nav-btn-pad-y) var(--bottom-nav-btn-pad-x);
+  border-radius: var(--bottom-nav-radius);
+}
+
+[data-ui-bottom-nav-appearance="filled"] .bottom-nav__button:hover {
+  background: var(--bottom-nav-hover-bg);
+}
+
+[data-ui-bottom-nav-appearance="filled"] .bottom-nav__button[data-ui-bottom-nav-active="true"] {
+  background: var(--bottom-nav-active-bg);
+  color: var(--bottom-nav-active-fg);
+}
+
+[data-ui-bottom-nav-appearance="filled"] .bottom-nav__button[data-ui-bottom-nav-active="true"]:hover {
+  background: var(--bottom-nav-active-bg);
+}
+
+/* minimal：面を持たず、色の濃淡だけで状態を対比 */
+[data-ui-bottom-nav-appearance="minimal"] .bottom-nav__button {
+  padding: 0;
+  color: var(--bottom-nav-fg-muted);
+}
+
+[data-ui-bottom-nav-appearance="minimal"] .bottom-nav__button:hover {
+  color: var(--bottom-nav-fg-muted-hover);
+}
+
+[data-ui-bottom-nav-appearance="minimal"] .bottom-nav__button[data-ui-bottom-nav-active="true"] {
+  color: var(--bottom-nav-fg);
+}
+
+/* --- アイコン（整列：中央／対比：ラベルより一段大きい）--- */
+.bottom-nav__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--bottom-nav-icon-size);
+  height: var(--bottom-nav-icon-size);
+  line-height: 1;
+  color: currentColor;
+}
+
+.bottom-nav__icon-glyph {
+  font-size: var(--bottom-nav-icon-size);
+  line-height: 1;
+  color: currentColor;
+}
+
+/* --- ラベル（対比：アイコンに従属する小さめ文字／minimal は字間を開く）--- */
+.bottom-nav__label {
+  font-size: var(--bottom-nav-label-size);
+  line-height: 1;
+  color: currentColor;
+  white-space: nowrap;
+}
+
+[data-ui-bottom-nav-appearance="minimal"] .bottom-nav__label {
+  letter-spacing: var(--bottom-nav-tracking);
+}
+
+/* --- アクセシビリティ配慮（Avatar / Button と同思想で踏襲）--- */
+@media (forced-colors: active) {
+  [data-ui-bottom-nav] {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+
+  .bottom-nav__button[data-ui-bottom-nav-active="true"] {
+    background: Highlight;
+    color: HighlightText;
+    forced-color-adjust: none;
+  }
+}
