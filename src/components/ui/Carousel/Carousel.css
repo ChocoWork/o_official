@@ -1,0 +1,209 @@
+/* File: src/components/ui/Carousel/Carousel.css */
+[data-ui-carousel] {
+  /* --- スケール基準（Avatar / Button / BannerAlert / Card と同じ φ ベースのトークン体系を踏襲）--- */
+  --carousel-phi: var(--button-phi);
+
+  /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
+  --carousel-font-size: var(--lk-size-xs);
+
+  /*
+   * コンテナ幅率（直値 w-1/2・w-3/4・w-full を φ から導出）。
+   *   1/φ² ≒ 0.382、1/φ ≒ 0.618、1 の3段を反復スケールに割り当てる。
+   *   サイズ別セレクタで --carousel-width-ratio のみ上書き。
+   */
+  --carousel-width-ratio: 1;
+  --carousel-max-width: calc(100% * var(--carousel-width-ratio));
+
+  /*
+   * ビューポートのアスペクト比（直値 4/3・16/10・16/9 を φ 近傍で段階化）。
+   *   φ ≒ 1.618 に対し 16/10 = 1.6 が最も近く、md の基準とする。
+   *   サイズ別セレクタで --carousel-aspect のみ上書き。
+   */
+  --carousel-aspect: 16 / 10;
+
+  /* 近接：矢印/ドットのエッジオフセット＝font × φ（面の四隅から適度に離す）*/
+  --carousel-edge-offset: calc(var(--carousel-font-size) * var(--carousel-phi));
+
+  /* ドット間ギャップ＝font / φ（密に並べてグループ化）*/
+  --carousel-dot-gap: calc(var(--carousel-font-size) / var(--carousel-phi));
+
+  /* ドット径＝font / φ。アクティブは φ² 倍に伸長（対比：長円で現在地を強調）*/
+  --carousel-dot-size: calc(var(--carousel-font-size) / var(--carousel-phi));
+  --carousel-dot-active-width: calc(
+    var(--carousel-dot-size) * var(--carousel-phi) * var(--carousel-phi)
+  );
+
+  /* 矢印アイコン＝font × φ（操作系を本文より一段大きく対比）*/
+  --carousel-arrow-icon-size: calc(var(--carousel-font-size) * var(--carousel-phi));
+
+  /* トラックモードのギャップ＝font / φ */
+  --carousel-track-gap: calc(var(--carousel-font-size) / var(--carousel-phi));
+
+  /* トラック項目の最小幅＝font × φ⁴（260px 相当をスケールに連動）*/
+  --carousel-track-item-min: calc(
+    var(--carousel-font-size) * var(--carousel-phi) * var(--carousel-phi) *
+      var(--carousel-phi) * var(--carousel-phi)
+  );
+
+  /* トラック下パディング＝font / φ² */
+  --carousel-track-pad: calc(
+    var(--carousel-font-size) / (var(--carousel-phi) * var(--carousel-phi))
+  );
+
+  /* 色トークン（Avatar / Button / BannerAlert / Card と同系統。集約）*/
+  --carousel-viewport-bg: #f5f5f5;
+  --carousel-control-bg: rgba(255, 255, 255, 0.9);
+  --carousel-control-bg-hover: #ffffff;
+  --carousel-dot-color: #ffffff;
+  --carousel-dot-color-inactive: rgba(255, 255, 255, 0.5);
+
+  position: relative;
+  margin-inline: auto;
+  max-width: var(--carousel-max-width);
+  box-sizing: border-box;
+}
+
+/* --- サイズ展開（反復：Avatar / BannerAlert / Card と同一の公比スケールを再利用）--- */
+[data-ui-carousel][data-ui-carousel-size="xs"] {
+  --carousel-font-size: var(--lk-size-3xs);
+  --carousel-width-ratio: calc(1 / (var(--carousel-phi) * var(--carousel-phi) * var(--carousel-phi) * var(--carousel-phi)));
+  --carousel-aspect: 4 / 3;
+}
+
+[data-ui-carousel][data-ui-carousel-size="sm"] {
+  --carousel-font-size: var(--lk-size-2xs);
+  --carousel-width-ratio: calc(1 / (var(--carousel-phi) * var(--carousel-phi) * var(--carousel-phi)));
+  --carousel-aspect: 4 / 3;
+}
+
+[data-ui-carousel][data-ui-carousel-size="md"] {
+  --carousel-font-size: var(--lk-size-xs);
+  --carousel-width-ratio: calc(1 / (var(--carousel-phi) * var(--carousel-phi)));
+  --carousel-aspect: 16 / 10;
+}
+
+[data-ui-carousel][data-ui-carousel-size="lg"] {
+  --carousel-font-size: var(--lk-size-sm);
+  --carousel-width-ratio: calc(1 / var(--carousel-phi));
+  --carousel-aspect: 16 / 9;
+}
+
+[data-ui-carousel][data-ui-carousel-size="xl"] {
+  --carousel-font-size: var(--lk-size-md);
+  --carousel-width-ratio: 1;
+  --carousel-aspect: 16 / 9;
+}
+
+/* --- ビューポート（整列：相対基準／対比：背景プレースホルダ）--- */
+.carousel__viewport {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: var(--carousel-aspect);
+  background: var(--carousel-viewport-bg);
+}
+
+/* --- 画像（整列：面いっぱい・上端基準でトリミング）--- */
+.carousel__image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+}
+
+/* --- 矢印ボタン（近接：左右エッジ／整列：垂直中央／対比：白面＋hover）--- */
+.carousel__arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1 / 1;
+  padding: 0;
+  background: var(--carousel-control-bg);
+}
+
+.carousel__arrow:hover {
+  background: var(--carousel-control-bg-hover);
+}
+
+/* 反復：左右で対称配置（近接距離 = edge-offset を共有）*/
+.carousel__arrow--prev {
+  left: var(--carousel-edge-offset);
+}
+
+.carousel__arrow--next {
+  right: var(--carousel-edge-offset);
+}
+
+/* 矢印アイコン（対比：操作系を一段大きく）*/
+.carousel__arrow-icon {
+  font-size: var(--carousel-arrow-icon-size);
+  line-height: 1;
+}
+
+/* --- ドット群（近接：下端中央に密集／反復：等間隔）--- */
+.carousel__dots {
+  position: absolute;
+  bottom: var(--carousel-edge-offset);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--carousel-dot-gap);
+}
+
+/* ドット（対比：非アクティブ＝半透明小円／アクティブ＝不透明長円）*/
+.carousel__dot {
+  width: var(--carousel-dot-size);
+  height: var(--carousel-dot-size);
+  padding: 0;
+  border: none;
+  border-radius: 9999px;
+  background: var(--carousel-dot-color-inactive);
+  cursor: pointer;
+  transition: width 200ms ease, background-color 200ms ease;
+}
+
+.carousel__dot[data-ui-carousel-dot-active="true"] {
+  width: var(--carousel-dot-active-width);
+  background: var(--carousel-dot-color);
+}
+
+/* --- トラックモード（反復：横スクロールで等幅項目を並べる）--- */
+.carousel__track {
+  display: flex;
+  gap: var(--carousel-track-gap);
+  overflow-x: auto;
+  padding-bottom: var(--carousel-track-pad);
+  scroll-snap-type: x mandatory;
+}
+
+.carousel__track-item {
+  flex: 0 0 auto;
+  min-width: var(--carousel-track-item-min);
+  scroll-snap-align: start;
+}
+
+/* --- アクセシビリティ配慮（Avatar / Button / BannerAlert / Card と同思想で踏襲）--- */
+@media (forced-colors: active) {
+  .carousel__arrow {
+    border: 1px solid CanvasText;
+    forced-color-adjust: none;
+  }
+
+  .carousel__dot {
+    border: 1px solid CanvasText;
+    forced-color-adjust: none;
+  }
+
+  .carousel__dot[data-ui-carousel-dot-active="true"] {
+    background: Highlight;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .carousel__dot {
+    transition: none;
+  }
+}

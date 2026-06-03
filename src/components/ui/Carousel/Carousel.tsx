@@ -1,29 +1,22 @@
-"use client";
+// File: src/components/ui/Carousel/Carousel.tsx
+'use client';
 
-import "./Carousel.css"
+import '@/components/ui/Carousel/Carousel.css';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
-import { Button } from '../Button/Button';
-import { useState, type ReactNode } from 'react';
-import { ComponentSize } from '@/components/ui/types';
+import { Button } from '@/components/ui/Button/Button';
+import { useState } from 'react';
+import type { ComponentSize } from '@/components/ui/types';
+import type { CarouselProps } from '@/components/ui/Carousel/Carousel_type';
 
-export interface CarouselSlide {
-  src: string;
-  alt: string;
-}
-
-export interface CarouselProps {
-  children?: ReactNode;
-  slides?: readonly CarouselSlide[];
-  index?: number;
-  onIndexChange?: (index: number) => void;
-  aspectClassName?: string;
-  showDots?: boolean;
-  showArrows?: boolean;
-  className?: string;
-  /** demo-friendly size: sm/md/lg */
-  size?: ComponentSize;
-}
+/** size → Button の size へのマッピング（Button 側の公比スケールに委譲）*/
+const arrowButtonSizeMap: Record<ComponentSize, 'sm' | 'md' | 'lg'> = {
+  xs: 'sm',
+  sm: 'sm',
+  md: 'md',
+  lg: 'lg',
+  xl: 'lg',
+};
 
 export function Carousel({
   children,
@@ -52,84 +45,68 @@ export function Carousel({
     setInternalIndex(normalizedIndex);
   };
 
+  const rootDataAttrs = {
+    'data-ui-carousel': 'true',
+    'data-ui-carousel-size': size,
+  } as const;
+
+  // --- パターン1：スライド配列モード（画像＋矢印＋ドット）---
   if (slides && slides.length > 0) {
     const activeSlide = slides[currentIndex] ?? slides[0];
 
-    // size-based style maps
-    const aspectMap: Record<ComponentSize, string> = {
-      xs: 'aspect-[4/3]',
-      sm: 'aspect-[4/3]',
-      md: 'aspect-[16/10]',
-      lg: 'aspect-[16/9]',
-      xl: 'aspect-[16/9]',
-    };
-    // container width similar to MapView sizing
-    const containerWidthMap: Record<ComponentSize, string> = {
-      xs: 'w-1/2',
-      sm: 'w-1/2',
-      md: 'w-3/4',
-      lg: 'w-full',
-      xl: 'w-full',
-    };
-    const arrowIconMap: Record<ComponentSize, string> = {
-      xs: 'text-lg',
-      sm: 'text-lg',
-      md: 'text-2xl',
-      lg: 'text-3xl',
-      xl: 'text-3xl',
-    };
-    // dots: small fixed circle, active expands to fixed width
-    // regardless of carousel size, follow sample w-2 h-2 rounded-full bg-white w-6
-    const dotActiveWidth = 'w-6';
-    const dotInactiveSize = 'w-2 h-2';
-
     return (
-      <div className={cn('relative mx-auto', containerWidthMap[size], className)}>
-        <div className={cn('relative overflow-hidden bg-[#f5f5f5]', aspectMap[size], aspectClassName)}>
+      <div
+        className={cn('carousel', className)}
+        data-ui-carousel-mode="slides"
+        {...rootDataAttrs}
+      >
+        <div className={cn('carousel__viewport', aspectClassName)}>
           <Image
             alt={activeSlide.alt}
-            className="h-full w-full object-cover object-top"
+            className="carousel__image"
             src={activeSlide.src}
             width={800}
             height={500}
             priority={false}
           />
+
           {showArrows ? (
             <>
               <Button
-                size={size === 'xs' ? 'sm' : size === 'sm' ? 'sm' : size === 'lg' || size === 'xl' ? 'lg' : 'md'}
+                size={size}
                 variant="ghost"
-                className={cn('absolute left-4 top-1/2 flex -translate-y-1/2', 'bg-white/90', 'hover:bg-white',
-                  'items-center justify-center px-0', 'aspect-square')}
+                className="carousel__arrow carousel__arrow--prev"
                 onClick={() => setCurrentIndex(currentIndex - 1)}
+                aria-label="前のスライド"
               >
-                <i className={cn('ri-arrow-left-s-line', arrowIconMap[size])}></i>
+                <i className="ri-arrow-left-s-line carousel__arrow-icon" aria-hidden="true" />
               </Button>
               <Button
-                size={size === 'xs' ? 'sm' : size === 'sm' ? 'sm' : size === 'lg' || size === 'xl' ? 'lg' : 'md'}
+                size={size}
                 variant="ghost"
-                className={cn('absolute right-4 top-1/2 flex -translate-y-1/2', 'bg-white/90', 'hover:bg-white',
-                  'items-center justify-center px-0', 'aspect-square')}
+                className="carousel__arrow carousel__arrow--next"
                 onClick={() => setCurrentIndex(currentIndex + 1)}
+                aria-label="次のスライド"
               >
-                <i className={cn('ri-arrow-right-s-line', arrowIconMap[size])}></i>
+                <i className="ri-arrow-right-s-line carousel__arrow-icon" aria-hidden="true" />
               </Button>
             </>
           ) : null}
+
           {showDots ? (
-            <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2">
+            <div className="carousel__dots">
               {slides.map((slide, slideIndex) => (
                 <button
                   key={slide.alt}
                   type="button"
-                  className={cn(
-                    'cursor-pointer transition-all',
-                    currentIndex === slideIndex
-                      ? cn('rounded-full bg-white', dotInactiveSize, dotActiveWidth)
-                      : cn('rounded-full bg-white/50', dotInactiveSize),
-                  )}
+                  className="carousel__dot"
+                  data-ui-carousel-dot-active={
+                    currentIndex === slideIndex ? 'true' : undefined
+                  }
                   onClick={() => setCurrentIndex(slideIndex)}
-                ></button>
+                  aria-label={`スライド ${slideIndex + 1} へ`}
+                  aria-current={currentIndex === slideIndex ? 'true' : undefined}
+                />
               ))}
             </div>
           ) : null}
@@ -138,15 +115,22 @@ export function Carousel({
     );
   }
 
+  // --- パターン2：任意 children の横スクロールトラック ---
   return (
-    <div className={cn('flex snap-x gap-4 overflow-x-auto pb-2', className)}>
+    <div
+      className={cn('carousel', 'carousel__track', className)}
+      data-ui-carousel-mode="track"
+      {...rootDataAttrs}
+    >
       {Array.isArray(children)
-        ? children.map((child, index) => (
-            <div key={index} className="min-w-[260px] snap-start">
+        ? children.map((child, childIndex) => (
+            <div key={childIndex} className="carousel__track-item">
               {child}
             </div>
           ))
-        : <div className="min-w-[260px] snap-start">{children}</div>}
+        : (
+            <div className="carousel__track-item">{children}</div>
+          )}
     </div>
   );
 }
