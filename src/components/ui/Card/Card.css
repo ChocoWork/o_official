@@ -1,0 +1,206 @@
+/* File: src/components/ui/Card/Card.css */
+[data-ui-card] {
+  /* --- スケール基準（Avatar / Button / BannerAlert と同じ φ ベースのトークン体系を踏襲）--- */
+  --card-phi: var(--button-phi);
+
+  /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
+  --card-font-size: var(--lk-size-xs);
+
+  /*
+   * パディング＝font × φ。
+   *   余白を本文より一段広く取り、カードの「面」を確保する。
+   *   BannerAlert が横長前提で縦を圧縮したのに対し、
+   *   Card は四方を等しく取り「ブロック」としての安定感を出す。
+   */
+  --card-pad: calc(var(--card-font-size) * var(--card-phi));
+
+  /* 近接：要素間の基本ギャップは font / φ で統一 */
+  --card-gap: calc(var(--card-font-size) / var(--card-phi));
+
+  /* メタ情報（カテゴリ/タイトル/価格）間の縦間隔＝font / φ²（密にグループ化）*/
+  --card-meta-gap: calc(var(--card-font-size) / (var(--card-phi) * var(--card-phi)));
+
+  /* ラベルと本文の間隔＝font / φ */
+  --card-label-gap: calc(var(--card-font-size) / var(--card-phi));
+
+  /* 画像下マージン＝font（本文とのグループ境界をやや広めに）*/
+  --card-media-gap: var(--card-font-size);
+
+  /* タイトル＝基準 font。価格も同階層。カテゴリは φ で一段小さく（対比）*/
+  --card-title-size: var(--card-font-size);
+  --card-price-size: var(--card-font-size);
+  --card-category-size: calc(var(--card-font-size) / var(--card-phi));
+  --card-label-size: calc(var(--card-font-size) / var(--card-phi));
+
+  /* 枠線（直値を排し φ³ から導出。最小 1px を保証）*/
+  --card-border-width: max(
+    1px,
+    calc(var(--card-font-size) / (var(--card-phi) * var(--card-phi) * var(--card-phi)))
+  );
+
+  /* オーバーレイ操作の余白＝font / φ（メディア四隅からの近接距離）*/
+  --card-overlay-offset: calc(var(--card-font-size) / var(--card-phi));
+
+  /* プレビュー削除ボタンのオフセット＝font / φ² */
+  --card-remove-offset: calc(var(--card-font-size) / (var(--card-phi) * var(--card-phi)));
+
+  /* 文字トラッキング（対比：ラベル/カテゴリは字間を開けて区別）*/
+  --card-tracking: 0.15em;
+
+  /* 色トークン（Avatar / Button / BannerAlert と同系統。ハードコードは一箇所に集約）*/
+  --card-bg: #ffffff;
+  --card-fg: #000000;
+  --card-fg-muted: rgba(0, 0, 0, 0.4);
+  --card-fg-label: rgba(0, 0, 0, 0.8);
+  --card-border-color: #d5d0c9;
+  --card-border-color-hover: #000000;
+  --card-media-bg: #f5f5f5;
+
+  /* アスペクト比トークン（メディア＝商品向け縦長、プレビュー＝3:4）*/
+  --card-media-ratio: 4 / 5;
+  --card-preview-ratio: 3 / 4;
+
+  font-family: acumin-pro, sans-serif;
+  box-sizing: border-box;
+  padding: var(--card-pad);
+}
+
+/* --- サイズ展開（反復：Avatar / BannerAlert と同一の公比スケールを再利用）--- */
+[data-ui-card][data-ui-card-size="xs"] {
+  --card-font-size: var(--lk-size-3xs);
+}
+
+[data-ui-card][data-ui-card-size="sm"] {
+  --card-font-size: var(--lk-size-2xs);
+}
+
+[data-ui-card][data-ui-card-size="md"] {
+  --card-font-size: var(--lk-size-xs);
+}
+
+[data-ui-card][data-ui-card-size="lg"] {
+  --card-font-size: var(--lk-size-sm);
+}
+
+[data-ui-card][data-ui-card-size="xl"] {
+  --card-font-size: var(--lk-size-md);
+}
+
+/* --- バリアント：枠付きカード（children モード）--- */
+[data-ui-card][data-ui-card-bordered="true"] {
+  background: var(--card-bg);
+  border: var(--card-border-width) solid var(--card-border-color);
+}
+
+/* hover でボーダーを強調（対比：通常＝淡色／hover＝黒）*/
+[data-ui-card][data-ui-card-hoverable="true"] {
+  transition: border-color 120ms ease;
+}
+
+[data-ui-card][data-ui-card-hoverable="true"]:hover {
+  border-color: var(--card-border-color-hover);
+}
+
+/* --- バリアント：インタラクティブカード（商品 / プレビュー）--- */
+[data-ui-card][data-ui-card-interactive="true"] {
+  cursor: pointer;
+}
+
+/* --- ラベル（対比：トラッキングを広げ、muted で本文と区別）--- */
+.card__label {
+  margin: 0 0 var(--card-label-gap);
+  font-size: var(--card-label-size);
+  letter-spacing: var(--card-tracking);
+  color: var(--card-fg-label);
+}
+
+/* --- メディア（整列：相対基準／対比：背景プレースホルダ）--- */
+.card__media {
+  position: relative;
+  margin-bottom: var(--card-media-gap);
+  aspect-ratio: var(--card-media-ratio);
+  overflow: hidden;
+  background: var(--card-media-bg);
+}
+
+/* オーバーレイ操作（近接：メディア右上に寄せる）*/
+.card__overlay-action {
+  position: absolute;
+  top: var(--card-overlay-offset);
+  right: var(--card-overlay-offset);
+}
+
+/* --- メタ情報群（近接：カテゴリ/タイトル/価格を密接配置）--- */
+.card__meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--card-meta-gap);
+  min-width: 0;
+}
+
+/* --- カテゴリ（対比：最も小さく・最も淡く・字間広め）--- */
+.card__category {
+  margin: 0;
+  font-size: var(--card-category-size);
+  letter-spacing: var(--card-tracking);
+  color: var(--card-fg-muted);
+}
+
+/* --- タイトル（対比：基準サイズ・濃色で主役）--- */
+.card__title {
+  margin: 0;
+  font-size: var(--card-title-size);
+  font-weight: 400;
+  line-height: var(--control-line-height, 1.4);
+  color: var(--card-fg);
+}
+
+/* --- 価格（タイトルと同階層・濃色）--- */
+.card__price {
+  margin: 0;
+  font-size: var(--card-price-size);
+  color: var(--card-fg);
+}
+
+/* --- フッター（近接：メタ群の末尾に gap で連結）--- */
+.card__footer {
+  margin: 0;
+}
+
+/* --- プレビューグリッド（反復：等幅 2 列で均等に並べる）--- */
+.card__preview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--card-gap);
+  margin-bottom: var(--card-media-gap);
+}
+
+/* プレビュー項目（整列：相対基準／対比：枠線で境界）*/
+.card__preview-item {
+  position: relative;
+  aspect-ratio: var(--card-preview-ratio);
+  overflow: hidden;
+  border: var(--card-border-width) solid var(--card-border-color);
+}
+
+.card__preview-image {
+  object-fit: cover;
+}
+
+/* 削除ボタン（近接：項目右上／反復：Button コンポーネントを流用）*/
+.card__preview-remove {
+  position: absolute;
+  top: var(--card-remove-offset);
+  right: var(--card-remove-offset);
+  padding: 0;
+}
+
+/* --- アクセシビリティ配慮（Avatar / Button / BannerAlert と同思想で踏襲）--- */
+@media (forced-colors: active) {
+  [data-ui-card][data-ui-card-bordered="true"],
+  .card__preview-item {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+}

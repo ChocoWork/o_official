@@ -1,29 +1,9 @@
-import "@/components/ui/Card/Card.css"
+// File: src/components/ui/Card/Card.tsx
+import '@/components/ui/Card/Card.css';
 import { cn } from '@/lib/utils';
-import type { ReactNode } from 'react';
 import Image from 'next/image';
 import { Button } from '@/components/ui/Button/Button';
-import { ComponentSize } from '@/components/ui/types';
-
-export interface CardProps {
-  children?: ReactNode;
-  className?: string;
-  hoverable?: boolean;
-  image?: ReactNode;
-  imageClassName?: string;
-  overlayAction?: ReactNode;
-  category?: string;
-  title?: string;
-  price?: string;
-  footer?: ReactNode;
-  /** optional label shown above content (e.g. for upload form) */
-  label?: string;
-  /** multiple preview images with removable icons (for upload UI) */
-  previewUrls?: string[];
-  onRemovePreview?: (index: number) => void;
-  /** card size controlling padding/text. sm/md/lg default md */
-  size?: ComponentSize;
-}
+import type { CardProps } from '@/components/ui/Card/Card_types';
 
 export function Card({
   children,
@@ -41,69 +21,51 @@ export function Card({
   onRemovePreview,
   size = 'md',
 }: CardProps) {
-  const padMap: Record<ComponentSize, string> = {
-    xs: 'p-4',
-    sm: 'p-4',
-    md: 'p-6',
-    lg: 'p-8',
-    xl: 'p-8',
-  };
-  const titleMap: Record<ComponentSize, string> = {
-    xs: 'text-sm',
-    sm: 'text-sm',
-    md: 'text-base',
-    lg: 'text-lg',
-    xl: 'text-lg',
-  };
-  const priceMap: Record<ComponentSize, string> = {
-    xs: 'text-sm',
-    sm: 'text-sm',
-    md: 'text-base',
-    lg: 'text-lg',
-    xl: 'text-lg',
-  };
-  // class names will be looked up inline to avoid unused-variable lint errors
+  const rootDataAttrs = {
+    'data-ui-card': 'true',
+    'data-ui-card-size': size,
+  } as const;
 
+  // --- パターン1：任意の children を内包する汎用カード ---
   if (children) {
     return (
       <article
-        className={cn(
-          'border border-[#d5d0c9] bg-white',
-          padMap[size],
-          hoverable ? 'transition-colors hover:border-black' : null,
-          className,
-        )}
+        className={cn('card', className)}
+        data-ui-card-bordered="true"
+        data-ui-card-hoverable={hoverable ? 'true' : undefined}
+        {...rootDataAttrs}
       >
-        {label ? <p className="mb-2 text-xs tracking-widest text-black/80" style={{ fontFamily: 'acumin-pro, sans-serif' }}>{label}</p> : null}
+        {label ? <p className="card__label">{label}</p> : null}
         {children}
       </article>
     );
   }
 
-  // if previewUrls given, render that grid before anything else
+  // --- パターン2：プレビュー画像グリッド（アップロードUI）---
   if (previewUrls && previewUrls.length > 0) {
     return (
-      <article className={cn('group cursor-pointer', padMap[size], className)}>
-        {label ? <p className="mb-2 text-xs tracking-widest text-black/80" style={{ fontFamily: 'acumin-pro, sans-serif' }}>{label}</p> : null}
-        <div className="grid grid-cols-2 gap-4 mb-6">
+      <article
+        className={cn('card', 'card--interactive', className)}
+        data-ui-card-interactive="true"
+        {...rootDataAttrs}
+      >
+        {label ? <p className="card__label">{label}</p> : null}
+        <div className="card__preview-grid">
           {previewUrls.map((url, index) => (
-            <div
-              key={index}
-              className="relative aspect-[3/4] overflow-hidden border border-black/20"
-            >
+            <div key={index} className="card__preview-item">
               <Image
                 src={url}
                 alt={`プレビュー ${index + 1}`}
                 fill
-                className="image"
+                className="card__preview-image"
                 unoptimized
               />
               {onRemovePreview ? (
                 <Button
                   type="button"
-                  onClick={() => onRemovePreview!(index)}
+                  onClick={() => onRemovePreview(index)}
                   size="sm"
-                  className="absolute top-2 right-2 h-8 w-8 p-0"
+                  className="card__preview-remove"
                 >
                   ×
                 </Button>
@@ -115,39 +77,30 @@ export function Card({
     );
   }
 
+  // --- パターン3：商品カード（画像＋カテゴリ／タイトル／価格／フッター）---
+  const hasMeta = Boolean(category || title || price || footer);
+
   return (
-    <article className={cn('group cursor-pointer', padMap[size], className)}>
-      {label ? <p className="mb-2 text-xs tracking-widest text-black/80" style={{ fontFamily: 'acumin-pro, sans-serif' }}>{label}</p> : null}
+    <article
+      className={cn('card', 'card--interactive', className)}
+      data-ui-card-interactive="true"
+      {...rootDataAttrs}
+    >
+      {label ? <p className="card__label">{label}</p> : null}
       {image ? (
-        <div className={cn('relative mb-4 aspect-[4/5] overflow-hidden bg-[#f5f5f5]', imageClassName)}>
+        <div className={cn('card__media', imageClassName)}>
           {image}
-          {overlayAction ? <div className="absolute right-4 top-4">{overlayAction}</div> : null}
+          {overlayAction ? (
+            <div className="card__overlay-action">{overlayAction}</div>
+          ) : null}
         </div>
       ) : null}
-      {(category || title || price || footer) ? (
-        <div>
-          {category ? (
-            <p className="mb-2 text-xs tracking-widest text-black/40" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-              {category}
-            </p>
-          ) : null}
-          {title ? (
-            <h3
-              className={cn('mb-2 text-black', titleMap[size])}
-              style={{ fontFamily: 'acumin-pro, sans-serif' }}
-            >
-              {title}
-            </h3>
-          ) : null}
-          {price ? (
-            <p
-              className={cn('text-black', priceMap[size])}
-              style={{ fontFamily: 'acumin-pro, sans-serif' }}
-            >
-              {price}
-            </p>
-          ) : null}
-          {footer}
+      {hasMeta ? (
+        <div className="card__meta">
+          {category ? <p className="card__category">{category}</p> : null}
+          {title ? <h3 className="card__title">{title}</h3> : null}
+          {price ? <p className="card__price">{price}</p> : null}
+          {footer ? <div className="card__footer">{footer}</div> : null}
         </div>
       ) : null}
     </article>
