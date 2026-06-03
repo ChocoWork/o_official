@@ -1,22 +1,12 @@
-import "./ColorPicker.css"
+// File: src/components/ui/ColorPicker/ColorPicker.tsx
+import '@/components/ui/ColorPicker/ColorPicker.css';
 import { cn } from '@/lib/utils';
-import type { ChangeEventHandler, InputHTMLAttributes } from 'react';
-import { ComponentSize } from '@/components/ui/types';
+import type { ChangeEventHandler } from 'react';
+import type {
+  ColorPickerProps,
+} from '@/components/ui/ColorPicker/ColorPicker_types';
 
-interface ColorPreset {
-  value: string;
-  swatchClass?: string;
-}
-
-export interface ColorPickerProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'onChange' | 'size'> {
-  label?: string;
-  variant?: 'input' | 'preset' | 'custom';
-  presets?: ReadonlyArray<ColorPreset>;
-  value?: string;
-  onChange?: ChangeEventHandler<HTMLInputElement>;
-  onValueChange?: (value: string) => void;
-  size?: ComponentSize;
-}
+const HEX6_PATTERN = /^#[0-9A-Fa-f]{6}$/;
 
 export function ColorPicker({
   label,
@@ -29,99 +19,95 @@ export function ColorPicker({
   size = 'md',
   ...props
 }: ColorPickerProps) {
-  const sizeClass = size === 'sm' ? 'h-8 w-8' : size === 'lg' ? 'h-12 w-12' : 'h-10 w-10';
   const handleColorInputChange: ChangeEventHandler<HTMLInputElement> = (event) => {
     onChange?.(event);
     onValueChange?.(event.target.value);
   };
 
+  const rootDataAttrs = {
+    'data-ui-color-picker': 'true',
+    'data-ui-color-picker-variant': variant,
+    'data-ui-color-picker-size': size,
+  } as const;
+
+  // --- preset：スウォッチを横並びで選択 ---
   if (variant === 'preset') {
     return (
-      <div className={cn('space-y-3', className)}>
-        {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
-        <div className="flex items-center gap-3">
+      <div className={cn('color-picker', className)} {...rootDataAttrs}>
+        {label ? <span className="color-picker__label">{label}</span> : null}
+        <div className="color-picker__swatch-row">
           {presets.map((preset) => (
             <button
               key={preset.value}
               type="button"
-              className={cn(
-                sizeClass,
-                'cursor-pointer rounded-full border-2 transition-all',
-                preset.swatchClass,
-                preset.value === value ? 'border-black' : 'border-black/20',
-              )}
-              style={preset.swatchClass ? undefined : { backgroundColor: preset.value }}
+              className={cn('color-picker__swatch', preset.swatchClass)}
+              data-ui-color-picker-selected={
+                preset.value === value ? 'true' : undefined
+              }
+              style={
+                preset.swatchClass
+                  ? undefined
+                  : { backgroundColor: preset.value }
+              }
               title={preset.value}
               onClick={() => onValueChange?.(preset.value)}
-            ></button>
+              aria-label={preset.value}
+              aria-pressed={preset.value === value}
+            />
           ))}
         </div>
       </div>
     );
   }
 
+  // --- custom：カラーボックス＋HEX テキスト入力 ---
   if (variant === 'custom') {
     return (
-      <div className={cn('space-y-3', className)}>
-        {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
-        <div className="flex items-center gap-4">
+      <div className={cn('color-picker', className)} {...rootDataAttrs}>
+        {label ? <span className="color-picker__label">{label}</span> : null}
+        <div className="color-picker__custom-row">
           <input
             type="color"
             value={value}
             onChange={handleColorInputChange}
-            className="h-12 w-16 cursor-pointer border border-black/20"
+            className="color-picker__color-box"
+            aria-label={label ?? 'カラーを選択'}
             {...props}
           />
           <input
             type="text"
             value={value}
-            className="flex-1 border border-black/20 px-4 py-3 text-sm uppercase transition-colors focus:border-black focus:outline-none"
+            className="color-picker__hex-input"
             onChange={(event) => {
               const nextValue = event.target.value;
-              if (/^#[0-9A-Fa-f]{6}$/.test(nextValue)) {
+              if (HEX6_PATTERN.test(nextValue)) {
                 onValueChange?.(nextValue);
               }
             }}
+            aria-label="HEX 値"
+            spellCheck={false}
           />
         </div>
       </div>
     );
   }
 
-  // for the default 'input' variant we now always render a circular swatch
-  if (variant === 'input') {
-    return (
-      <label className={cn('relative inline-block', sizeClass)}>
-        {label ? <span className="sr-only">{label}</span> : null}
-        <input
-          type="color"
-          value={value}
-          onChange={handleColorInputChange}
-          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer rounded-full"
-          {...props}
-        />
-        <span
-          className={cn(
-            'block h-full w-full rounded-full border border-black/20',
-            // allow size overrides via className but ignore other styles
-            className
-          )}
-          style={{ backgroundColor: value }}
-        />
-      </label>
-    );
-  }
-
-  // fallback to rectangular input if someone requests custom variant
+  // --- input（既定）：円形スウォッチ単体 ---
   return (
-    <label className="inline-flex items-center gap-3">
-      {label ? <span className="text-xs tracking-widest text-black/80">{label}</span> : null}
+    <label className={cn('color-picker', 'color-picker__circle', className)} {...rootDataAttrs}>
+      {label ? <span className="color-picker__sr-only">{label}</span> : null}
       <input
         type="color"
         value={value}
         onChange={handleColorInputChange}
-        className={cn('h-10 w-16 cursor-pointer border border-black/20', className)}
+        className="color-picker__native"
+        aria-label={label ?? 'カラーを選択'}
         {...props}
+      />
+      <span
+        className="color-picker__circle-face"
+        style={{ backgroundColor: value }}
+        aria-hidden="true"
       />
     </label>
   );

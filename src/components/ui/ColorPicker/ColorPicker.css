@@ -1,0 +1,246 @@
+/* File: src/components/ui/ColorPicker/ColorPicker.css */
+[data-ui-color-picker] {
+  /* --- スケール基準（Avatar / Button / BannerAlert / Card / Carousel と同じ φ ベースのトークン体系を踏襲）--- */
+  --cp-phi: var(--button-phi);
+
+  /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
+  --cp-font-size: var(--lk-size-xs);
+
+  /*
+   * スウォッチ径＝font × φ²（操作対象として指で押せる面を確保）。
+   *   font がサイズ別に変わるため、円・プリセット・カラーボックスが一括連動。
+   */
+  --cp-swatch-size: calc(var(--cp-font-size) * var(--cp-phi) * var(--cp-phi));
+
+  /* カラーボックス（custom）：幅＝径 × φ の横長、高さ＝径（対比：矩形で区別）*/
+  --cp-color-box-height: var(--cp-swatch-size);
+  --cp-color-box-width: calc(var(--cp-swatch-size) * var(--cp-phi));
+
+  /* 近接：スウォッチ間ギャップ＝font / φ */
+  --cp-swatch-gap: var(--cp-font-size);
+
+  /* custom 行のギャップ＝font（やや広めに離して 2 要素を区別）*/
+  --cp-row-gap: var(--cp-font-size);
+
+  /* ラベルと操作部の縦間隔＝font / φ（グループ化）*/
+  --cp-label-gap: calc(var(--cp-font-size) / var(--cp-phi));
+
+  /* HEX 入力のパディング（横＝font / φ、縦＝font / φ²）*/
+  --cp-input-pad-x: calc(var(--cp-font-size) / var(--cp-phi));
+  --cp-input-pad-y: calc(var(--cp-font-size) / (var(--cp-phi) * var(--cp-phi)));
+
+  /* 枠線（直値を排し φ³ から導出。最小 1px）*/
+  --cp-border-width: max(
+    1px,
+    calc(var(--cp-font-size) / (var(--cp-phi) * var(--cp-phi) * var(--cp-phi)))
+  );
+
+  /*
+   * --- 選択リング（外周を黒い円で囲う）---
+   *   本体とリングの隙間（gap）＝font / φ³（細い余白で本体色を活かす）。
+   *   リング太さ（width）＝font / φ²（隙間より一段太く、はっきり囲う）。
+   *   box-shadow を二重に重ね、内側＝白の隙間、外側＝黒のリングを作る。
+   */
+  --cp-ring-gap: max(2px, calc(var(--cp-font-size) / (var(--cp-phi) * var(--cp-phi) * var(--cp-phi))));
+  --cp-ring-width: max(1px, calc(var(--cp-font-size) / (var(--cp-phi) * var(--cp-phi) * var(--cp-phi) * var(--cp-phi))));
+
+  /* ラベル字間（ラベル/カテゴリ系で反復する tracking）*/
+  --cp-tracking: 0.15em;
+
+  /* フォント・テキストサイズ */
+  --cp-label-size: calc(var(--cp-font-size) / var(--cp-phi));
+  --cp-hex-size: var(--cp-font-size);
+
+  /* 色トークン（Avatar / Button / BannerAlert / Card / Carousel と同系統。集約）*/
+  --cp-fg-label: rgba(0, 0, 0, 0.8);
+  --cp-border-color: rgba(0, 0, 0, 0.2);
+  --cp-border-color-active: #000000;
+  --cp-ring-color: #000000;
+  --cp-ring-gap-color: #ffffff;
+  --cp-field-bg: #ffffff;
+  --cp-field-fg: #000000;
+
+  font-family: acumin-pro, sans-serif;
+  box-sizing: border-box;
+}
+
+/* --- サイズ展開（反復：他コンポーネントと同一の公比スケールを再利用）---
+ * font-size 1 変数の上書きで、スウォッチ径・カラーボックス・ギャップ・枠線・リングが一括連動。
+ */
+[data-ui-color-picker][data-ui-color-picker-size="xs"] {
+  --cp-font-size: var(--lk-size-8xs);
+}
+
+[data-ui-color-picker][data-ui-color-picker-size="sm"] {
+  --cp-font-size: var(--lk-size-7xs);
+}
+
+[data-ui-color-picker][data-ui-color-picker-size="md"] {
+  --cp-font-size: var(--lk-size-6xs);
+}
+
+[data-ui-color-picker][data-ui-color-picker-size="lg"] {
+  --cp-font-size: var(--lk-size-5xs);
+}
+
+[data-ui-color-picker][data-ui-color-picker-size="xl"] {
+  --cp-font-size: var(--lk-size-4xs);
+}
+
+/* --- preset / custom コンテナ（近接：ラベルと操作部を縦に密接配置）--- */
+[data-ui-color-picker][data-ui-color-picker-variant="preset"],
+[data-ui-color-picker][data-ui-color-picker-variant="custom"] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cp-label-gap);
+}
+
+/* --- ラベル（対比：字間を広げ muted で操作部と区別）--- */
+.color-picker__label {
+  display: block;
+  font-size: var(--cp-label-size);
+  letter-spacing: var(--cp-tracking);
+  color: var(--cp-fg-label);
+}
+
+/* スクリーンリーダー専用ラベル（input variant 用）*/
+.color-picker__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- preset：スウォッチ行（整列：中央／反復：等間隔）---
+ * 選択時にリングが外へ張り出すぶん、行の縦パディングをリング厚で確保。
+ */
+.color-picker__swatch-row {
+  display: flex;
+  align-items: center;
+  gap: var(--cp-swatch-gap);
+  padding: calc(var(--cp-ring-gap) + var(--cp-ring-width));
+}
+
+/*
+ * スウォッチ（反復：同径の円／対比：選択時は外周を黒リングで囲う）。
+ *   本体サイズは固定し、選択状態でも本体は縮まない。
+ *   通常時は薄い 1 枚の枠線、選択時は box-shadow の二重リングを重ねる。
+ */
+.color-picker__swatch {
+  width: var(--cp-swatch-size);
+  height: var(--cp-swatch-size);
+  padding: 0;
+  border: var(--cp-border-width) solid var(--cp-border-color);
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: box-shadow 120ms ease;
+}
+
+/*
+ * 選択：外周リング。
+ *   1 層目＝本体の外側に白い隙間（ring-gap）。
+ *   2 層目＝さらに外側に黒いリング（ring-width）。
+ *   → 本体色と黒リングの間に余白ができ、囲っている印象になる。
+ */
+.color-picker__swatch[data-ui-color-picker-selected="true"] {
+  box-shadow:
+    0 0 0 var(--cp-ring-gap) var(--cp-ring-gap-color),
+    0 0 0 calc(var(--cp-ring-gap) + var(--cp-ring-width)) var(--cp-ring-color);
+}
+
+/* --- custom：カラーボックス＋HEX 入力（整列：中央そろえ）--- */
+.color-picker__custom-row {
+  display: flex;
+  align-items: center;
+  gap: var(--cp-row-gap);
+}
+
+/* カラーボックス（対比：横長矩形でテキスト入力と区別）*/
+.color-picker__color-box {
+  width: var(--cp-color-box-width);
+  height: var(--cp-color-box-height);
+  padding: 0;
+  border: var(--cp-border-width) solid var(--cp-border-color);
+  background: var(--cp-field-bg);
+  cursor: pointer;
+}
+
+/* HEX テキスト入力（整列：残り幅を占有／対比：focus で枠を黒く）*/
+.color-picker__hex-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--cp-input-pad-y) var(--cp-input-pad-x);
+  border: var(--cp-border-width) solid var(--cp-border-color);
+  background: var(--cp-field-bg);
+  color: var(--cp-field-fg);
+  font-size: var(--cp-hex-size);
+  text-transform: uppercase;
+  transition: border-color 120ms ease;
+}
+
+.color-picker__hex-input:focus {
+  border-color: var(--cp-border-color-active);
+  outline: none;
+}
+
+/* --- input（既定）：円形スウォッチ単体 ---
+ * 選択リングのぶん外周に余白を確保（リングが切れないように）。
+ */
+.color-picker__circle {
+  position: relative;
+  display: inline-block;
+  width: var(--cp-swatch-size);
+  height: var(--cp-swatch-size);
+  margin: calc(var(--cp-ring-gap) + var(--cp-ring-width));
+}
+
+/* ネイティブ input は透明化して円の上に重ねる（整列：完全に重畳）*/
+.color-picker__native {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  opacity: 0;
+  cursor: pointer;
+  border-radius: 9999px;
+}
+
+/* 円の見た目（対比：枠線で背景と分離）*/
+.color-picker__circle-face {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: var(--cp-border-width) solid var(--cp-border-color);
+  border-radius: 9999px;
+}
+
+/* --- アクセシビリティ配慮（他コンポーネントと同思想で踏襲）--- */
+@media (forced-colors: active) {
+  .color-picker__swatch,
+  .color-picker__color-box,
+  .color-picker__hex-input,
+  .color-picker__circle-face {
+    border: 1px solid CanvasText;
+    forced-color-adjust: none;
+  }
+
+  .color-picker__swatch[data-ui-color-picker-selected="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .color-picker__swatch,
+  .color-picker__hex-input {
+    transition: none;
+  }
+}
