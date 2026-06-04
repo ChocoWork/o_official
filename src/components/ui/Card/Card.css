@@ -35,7 +35,7 @@
   /* 枠線（直値を排し φ³ から導出。最小 1px を保証）*/
   --card-border-width: max(
     1px,
-    calc(var(--card-font-size) / (var(--card-phi) * var(--card-phi) * var(--card-phi)))
+    calc(var(--card-font-size) / (var(--card-phi) * var(--card-phi) * var(--card-phi) * var(--card-phi)))
   );
 
   /* オーバーレイ操作の余白＝font / φ（メディア四隅からの近接距離）*/

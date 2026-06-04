@@ -6,17 +6,7 @@ import { cn } from '@/lib/utils';
 import Image from 'next/image';
 import { Button } from '@/components/ui/Button/Button';
 import { useState } from 'react';
-import type { ComponentSize } from '@/components/ui/types';
 import type { CarouselProps } from '@/components/ui/Carousel/Carousel_type';
-
-/** size → Button の size へのマッピング（Button 側の公比スケールに委譲）*/
-const arrowButtonSizeMap: Record<ComponentSize, 'sm' | 'md' | 'lg'> = {
-  xs: 'sm',
-  sm: 'sm',
-  md: 'md',
-  lg: 'lg',
-  xl: 'lg',
-};
 
 export function Carousel({
   children,
