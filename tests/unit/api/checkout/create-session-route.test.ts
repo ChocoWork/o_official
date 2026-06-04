@@ -17,7 +17,6 @@ const mockItemsStatusEq = jest.fn();
 const mockSelect = jest.fn().mockReturnThis();
 const mockDraftDeleteEq = jest.fn().mockResolvedValue({ data: null, error: null });
 const mockDraftUpdateEq = jest.fn().mockResolvedValue({ data: null, error: null });
-const mockDraftItemsInsert = jest.fn().mockResolvedValue({ data: null, error: null });
 const mockDraftInsertSingle = jest.fn().mockResolvedValue({
   data: {
     id: 'draft-123',
@@ -26,6 +25,11 @@ const mockDraftInsertSingle = jest.fn().mockResolvedValue({
     currency: 'jpy',
   },
   error: null,
+});
+const mockDraftInsert = jest.fn().mockReturnValue({
+  select: jest.fn().mockReturnValue({
+    single: mockDraftInsertSingle,
+  }),
 });
 const mockFrom = jest.fn();
 
@@ -107,11 +111,7 @@ describe('POST /api/checkout/create-session', () => {
 
       if (table === 'checkout_drafts') {
         return {
-          insert: jest.fn().mockReturnValue({
-            select: jest.fn().mockReturnValue({
-              single: mockDraftInsertSingle,
-            }),
-          }),
+          insert: mockDraftInsert,
           update: jest.fn().mockReturnValue({
             eq: mockDraftUpdateEq,
           }),
@@ -121,16 +121,10 @@ describe('POST /api/checkout/create-session', () => {
         };
       }
 
-      if (table === 'checkout_draft_items') {
-        return {
-          insert: mockDraftItemsInsert,
-        };
-      }
-
       return { select: mockSelect, eq: mockEq, in: mockIn };
     });
 
-    mockEq.mockResolvedValue({ data: [{ item_id: 1, quantity: 1, color: 'BLACK', size: 'M' }], error: null });
+    mockEq.mockResolvedValue({ data: [{ id: 'cart-1', item_id: 1, quantity: 1, color: 'BLACK', size: 'M' }], error: null });
     mockIn.mockReturnValue({ eq: mockItemsStatusEq });
     mockItemsStatusEq.mockResolvedValue({
       data: [{ id: 1, name: 'テスト商品', price: 5000, image_url: null, stock_quantity: 10, status: 'published' }],
@@ -156,12 +150,38 @@ describe('POST /api/checkout/create-session', () => {
   it('stripe_card 指定時は card の payment_method_types を送信する', async () => {
     mockCreate.mockResolvedValue({ url: 'https://stripe.com/checkout' });
 
-    const req = makeRequest({ paymentMethod: 'stripe_card', uiMode: 'hosted' });
+    const req = makeRequest({
+      paymentMethod: 'stripe_card',
+      uiMode: 'hosted',
+      shipping: {
+        email: 'test@example.com',
+        fullName: 'テスト太郎',
+        postalCode: '1000001',
+        prefecture: '東京都',
+        city: '千代田区',
+        address: '丸の内1-1-1',
+        phone: '09000000000',
+      },
+    });
     const res = await POST(req);
 
     expect(mockCreate).toHaveBeenCalledTimes(1);
     expect((mockCreate.mock.calls[0][0] as Record<string, unknown>).payment_method_types).toEqual(['card']);
-    expect(mockDraftItemsInsert).toHaveBeenCalled();
+    expect(mockDraftInsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        shipping_snapshot: expect.objectContaining({
+          email: 'test@example.com',
+          fullName: 'テスト太郎',
+        }),
+        items_snapshot: expect.arrayContaining([
+          expect.objectContaining({
+            item_id: 1,
+            item_name: 'テスト商品',
+            quantity: 1,
+          }),
+        ]),
+      })
+    );
     expect((res as { status: number }).status).toBe(200);
   });
 

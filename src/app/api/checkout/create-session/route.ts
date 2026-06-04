@@ -10,8 +10,10 @@ import {
 import {
   checkoutShippingSchema,
   STRIPE_CHECKOUT_PAYMENT_METHODS,
+  type CheckoutDraftItemSnapshot,
   type CheckoutCartSnapshotRow,
   type CheckoutDraftRow,
+  type CheckoutShippingSnapshot,
   type CheckoutItemSnapshotRow,
 } from '@/features/checkout/services/checkout-draft.service';
 import {
@@ -73,6 +75,21 @@ function getClientIp(request: NextRequest): string | null {
   }
 
   return request.headers.get('x-real-ip');
+}
+
+function buildShippingSnapshot(
+  shipping: NonNullable<z.infer<typeof checkoutShippingSchema>> | undefined
+): CheckoutShippingSnapshot {
+  return {
+    email: shipping?.email ?? null,
+    fullName: shipping?.fullName ?? null,
+    postalCode: shipping?.postalCode ?? null,
+    prefecture: shipping?.prefecture ?? null,
+    city: shipping?.city ?? null,
+    address: shipping?.address ?? null,
+    building: shipping?.building ?? null,
+    phone: shipping?.phone ?? null,
+  };
 }
 
 export async function POST(req: NextRequest) {
@@ -242,6 +259,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid total amount' }, { status: 400 });
     }
 
+    const shippingSnapshot = buildShippingSnapshot(shipping);
+    const itemsSnapshot: CheckoutDraftItemSnapshot[] = (cartData as CheckoutCartSnapshotRow[]).map(
+      (cartItem) => {
+        const item = itemMap.get(cartItem.item_id);
+
+        return {
+          source_cart_id: cartItem.id,
+          item_id: cartItem.item_id,
+          item_name: item?.name ?? '商品',
+          item_price: item?.price ?? 0,
+          item_image_url: item?.image_url ?? null,
+          color: cartItem.color,
+          size: cartItem.size,
+          quantity: cartItem.quantity,
+          line_total: (item?.price ?? 0) * cartItem.quantity,
+        };
+      }
+    );
+
     const { data: createdDraft, error: createDraftError } = await supabase
       .from('checkout_drafts')
       .insert({
@@ -251,47 +287,14 @@ export async function POST(req: NextRequest) {
         shipping_amount: shippingAmount,
         total_amount: totalAmount,
         currency: 'jpy',
-        shipping_email: shipping?.email ?? null,
-        shipping_full_name: shipping?.fullName ?? null,
-        shipping_postal_code: shipping?.postalCode ?? null,
-        shipping_prefecture: shipping?.prefecture ?? null,
-        shipping_city: shipping?.city ?? null,
-        shipping_address: shipping?.address ?? null,
-        shipping_building: shipping?.building ?? null,
-        shipping_phone: shipping?.phone ?? null,
+        shipping_snapshot: shippingSnapshot,
+        items_snapshot: itemsSnapshot,
       })
       .select('id, session_id, total_amount, currency')
       .single<CheckoutDraftRow>();
 
     if (createDraftError || !createdDraft) {
       console.error('Failed to create checkout draft:', createDraftError);
-      return NextResponse.json({ error: 'Failed to prepare checkout' }, { status: 500 });
-    }
-
-    const draftItems = (cartData as CheckoutCartSnapshotRow[]).map((cartItem) => {
-      const item = itemMap.get(cartItem.item_id);
-
-      return {
-        draft_id: createdDraft.id,
-        source_cart_id: cartItem.id,
-        item_id: cartItem.item_id,
-        item_name: item?.name ?? '商品',
-        item_price: item?.price ?? 0,
-        item_image_url: item?.image_url ?? null,
-        color: cartItem.color,
-        size: cartItem.size,
-        quantity: cartItem.quantity,
-        line_total: (item?.price ?? 0) * cartItem.quantity,
-      };
-    });
-
-    const { error: createDraftItemsError } = await supabase
-      .from('checkout_draft_items')
-      .insert(draftItems);
-
-    if (createDraftItemsError) {
-      console.error('Failed to create checkout draft items:', createDraftItemsError);
-      await supabase.from('checkout_drafts').delete().eq('id', createdDraft.id);
       return NextResponse.json({ error: 'Failed to prepare checkout' }, { status: 500 });
     }
 
@@ -391,7 +394,7 @@ export async function POST(req: NextRequest) {
 
       await supabase
         .from('checkout_drafts')
-        .update({ stripe_checkout_session_id: session.id })
+        .update({ checkout_session_id: session.id })
         .eq('id', createdDraft.id);
 
       await logAudit({
@@ -403,7 +406,7 @@ export async function POST(req: NextRequest) {
         metadata: {
           session_id: sessionId,
           draft_id: createdDraft.id,
-          stripe_checkout_session_id: session.id,
+          checkout_session_id: session.id,
           ui_mode: 'custom',
         },
       });
@@ -449,7 +452,7 @@ export async function POST(req: NextRequest) {
 
     await supabase
       .from('checkout_drafts')
-      .update({ stripe_checkout_session_id: session.id })
+      .update({ checkout_session_id: session.id })
       .eq('id', createdDraft.id);
 
     await logAudit({
@@ -461,7 +464,7 @@ export async function POST(req: NextRequest) {
       metadata: {
         session_id: sessionId,
         draft_id: createdDraft.id,
-        stripe_checkout_session_id: session.id,
+        checkout_session_id: session.id,
         ui_mode: 'hosted',
       },
     });

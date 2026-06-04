@@ -6,7 +6,10 @@ import {
   mapFinalizeOrderRpcError,
   parseFinalizeOrderRpcResult,
 } from '@/features/cart/services/cart-stock';
-import { getDraftIdFromStripeMetadata } from '@/features/checkout/services/checkout-draft.service';
+import {
+  getDraftIdFromStripeMetadata,
+  type CheckoutDraftItemsSnapshot,
+} from '@/features/checkout/services/checkout-draft.service';
 import { logAudit } from '@/lib/audit';
 
 const supabase = createClient(
@@ -56,27 +59,24 @@ async function getCheckoutDraftAuditSnapshot(
 ): Promise<CheckoutDraftAuditSnapshot | null> {
   const { data: draftData, error: draftError } = await supabase
     .from('checkout_drafts')
-    .select('subtotal_amount, shipping_amount, total_amount, currency')
+    .select('subtotal_amount, shipping_amount, total_amount, currency, items_snapshot')
     .eq('id', draftId)
     .maybeSingle<{
       subtotal_amount: number;
       shipping_amount: number;
       total_amount: number;
       currency: string;
+      items_snapshot: CheckoutDraftItemsSnapshot | null;
     }>();
 
   if (draftError || !draftData) {
     return null;
   }
 
-  const { data: draftItemsData } = await supabase
-    .from('checkout_draft_items')
-    .select('quantity, line_total')
-    .eq('draft_id', draftId);
-
-  const lineItemsCount = draftItemsData?.length ?? 0;
-  const totalQuantity = (draftItemsData ?? []).reduce((sum, item) => sum + (item.quantity ?? 0), 0);
-  const lineTotalSum = (draftItemsData ?? []).reduce((sum, item) => sum + (item.line_total ?? 0), 0);
+  const itemsSnapshot = draftData.items_snapshot ?? [];
+  const lineItemsCount = itemsSnapshot.length;
+  const totalQuantity = itemsSnapshot.reduce((sum, item) => sum + (item.quantity ?? 0), 0);
+  const lineTotalSum = itemsSnapshot.reduce((sum, item) => sum + (item.line_total ?? 0), 0);
 
   return {
     subtotalAmount: draftData.subtotal_amount,
@@ -224,7 +224,7 @@ async function handleCheckoutSessionCompleted(
   const { data: existingOrder } = await supabase
     .from('orders')
     .select('id')
-    .eq('checkout_session_id', session.id)
+    .eq('payment_intent_id', paymentIntentId)
     .maybeSingle();
 
   if (existingOrder) {
@@ -353,7 +353,7 @@ async function handleCheckoutSessionExpired(
   const { error } = await supabase
     .from('orders')
     .update({ status: 'failed' })
-    .or(`checkout_session_id.eq.${session.id},payment_intent_id.eq.${paymentIntentId}`)
+    .eq('payment_intent_id', paymentIntentId)
     .eq('status', 'pending');
 
   if (error) {

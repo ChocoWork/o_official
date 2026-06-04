@@ -120,11 +120,42 @@ export type CheckoutItemSnapshotRow = {
   status: string;
 };
 
+export type CheckoutDraftItemSnapshot = {
+  source_cart_id: string;
+  item_id: number;
+  item_name: string;
+  item_price: number;
+  item_image_url: string | null;
+  color: string | null;
+  size: string | null;
+  quantity: number;
+  line_total: number;
+};
+
+export type CheckoutDraftItemsSnapshot = CheckoutDraftItemSnapshot[];
+
+export type CheckoutShippingSnapshot = {
+  email: string | null;
+  fullName: string | null;
+  postalCode: string | null;
+  prefecture: string | null;
+  city: string | null;
+  address: string | null;
+  building: string | null;
+  phone: string | null;
+};
+
 export type CheckoutDraftRow = {
   id: string;
   session_id: string;
+  checkout_session_id: string | null;
+  payment_intent_id: string | null;
+  payment_method: string;
   total_amount: number;
   currency: string;
+  shipping_snapshot: CheckoutShippingSnapshot | null;
+  items_snapshot: CheckoutDraftItemsSnapshot | null;
+  status: string;
 };
 
 export function isStripeCheckoutPaymentMethod(

@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceRoleClient, resolveRequestUser } from '@/lib/supabase/server';
 import { signItemImageUrl } from '@/lib/storage/item-images';
 
+const NO_STORE_HEADERS = {
+	'Cache-Control': 'no-store',
+};
+
 type OrderItemRow = {
 	id: string;
 	item_name: string;
@@ -100,7 +104,7 @@ export async function GET(
 
 	if (userError || !user) {
 		console.error('Order detail auth error:', userError);
-		return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+		return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: NO_STORE_HEADERS });
 	}
 
 	const { data, error } = await supabase
@@ -135,11 +139,11 @@ export async function GET(
 
 	if (error) {
 		console.error('Order detail fetch error:', error);
-		return NextResponse.json({ error: 'Failed to fetch order detail' }, { status: 500 });
+		return NextResponse.json({ error: 'Failed to fetch order detail' }, { status: 500, headers: NO_STORE_HEADERS });
 	}
 
 	if (!data) {
-		return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+		return NextResponse.json({ error: 'Order not found' }, { status: 404, headers: NO_STORE_HEADERS });
 	}
 
 	const signSupabase = await createServiceRoleClient();
@@ -163,5 +167,5 @@ export async function GET(
 			quantity: item.quantity,
 			amount: formatCurrency(item.line_total, data.currency),
 		}))),
-	});
+	}, { headers: NO_STORE_HEADERS });
 }

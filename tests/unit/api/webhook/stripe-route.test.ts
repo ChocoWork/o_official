@@ -61,11 +61,13 @@ describe('POST /api/webhook/stripe', () => {
       }
 
       if (table === 'orders') {
+        const updateBuilder = {
+          or: jest.fn().mockReturnThis(),
+          eq: jest.fn().mockReturnThis(),
+        };
+
         return {
-          update: jest.fn().mockReturnValue({
-            or: jest.fn().mockReturnThis(),
-            eq: jest.fn().mockResolvedValue({ error: null }),
-          }),
+          update: jest.fn().mockReturnValue(updateBuilder),
           select: jest.fn().mockReturnThis(),
           eq: jest.fn().mockReturnThis(),
           maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
@@ -82,23 +84,13 @@ describe('POST /api/webhook/stripe', () => {
                   shipping_amount: 0,
                   total_amount: 5500,
                   currency: 'jpy',
+                  items_snapshot: [
+                    { quantity: 1, line_total: 3000 },
+                    { quantity: 1, line_total: 2000 },
+                  ],
                 },
                 error: null,
               }),
-            }),
-          }),
-        };
-      }
-
-      if (table === 'checkout_draft_items') {
-        return {
-          select: jest.fn().mockReturnValue({
-            eq: jest.fn().mockResolvedValue({
-              data: [
-                { quantity: 1, line_total: 3000 },
-                { quantity: 1, line_total: 2000 },
-              ],
-              error: null,
             }),
           }),
         };

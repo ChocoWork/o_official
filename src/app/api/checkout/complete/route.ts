@@ -12,10 +12,13 @@ import {
   isStripeCheckoutPaymentMethod,
   mapStripePaymentMethodType,
   STRIPE_CHECKOUT_PAYMENT_METHODS,
+  type CheckoutDraftItemsSnapshot,
   type CheckoutDraftRow,
+  type CheckoutShippingSnapshot,
   type StripeCheckoutPaymentMethod,
 } from '@/features/checkout/services/checkout-draft.service';
 import { logAudit } from '@/lib/audit';
+import { extractAuthToken } from '@/lib/supabase/server';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -30,8 +33,193 @@ const completeCheckoutSchema = z.object({
 
 type OrderRow = {
   id: string;
+  user_id: string | null;
   status: 'pending' | 'paid' | 'failed' | 'cancelled';
 };
+
+type CheckoutDraftDetails = CheckoutDraftRow & {
+  subtotal_amount: number;
+  shipping_amount: number;
+};
+
+function isLegacyCheckoutSessionColumnError(message: string | null | undefined) {
+  return typeof message === 'string' && message.includes('checkout_session_id does not exist');
+}
+
+function mapShippingSnapshotValue(
+  shippingSnapshot: CheckoutShippingSnapshot | null,
+  key: keyof NonNullable<CheckoutShippingSnapshot>
+) {
+  return shippingSnapshot?.[key] ?? null;
+}
+
+async function resolveAuthenticatedUserId(request: NextRequest): Promise<string | null> {
+  const authToken = extractAuthToken(request);
+  if (!authToken) {
+    return null;
+  }
+
+  const authClient = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+        detectSessionInUrl: false,
+      },
+      global: {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      },
+    }
+  );
+
+  const { data } = await authClient.auth.getUser(authToken);
+  return data.user?.id ?? null;
+}
+
+async function finalizeOrderDirectlyFromDraft(params: {
+  draftData: CheckoutDraftDetails;
+  paymentIntentId: string;
+  orderStatus: 'pending' | 'paid';
+  userId: string | null;
+}) {
+  const { draftData, paymentIntentId, orderStatus, userId } = params;
+  const itemsSnapshot = (draftData.items_snapshot ?? []) as CheckoutDraftItemsSnapshot;
+
+  const { data: itemRows, error: itemsError } = await supabase
+    .from('items')
+    .select('id, status, stock_quantity')
+    .in(
+      'id',
+      Array.from(new Set(itemsSnapshot.map((item) => item.item_id)))
+    );
+
+  if (itemsError) {
+    return { error: itemsError };
+  }
+
+  const itemMap = new Map((itemRows ?? []).map((item) => [item.id, item] as const));
+
+  for (const itemSnapshot of itemsSnapshot) {
+    const itemRow = itemMap.get(itemSnapshot.item_id);
+    if (!itemRow || itemRow.status !== 'published') {
+      return { error: new Error(`ITEM_NOT_PUBLISHED:${itemSnapshot.item_id}`) };
+    }
+
+    if (
+      itemRow.stock_quantity !== null &&
+      itemSnapshot.quantity > itemRow.stock_quantity
+    ) {
+      return {
+        error: new Error(
+          `INSUFFICIENT_STOCK:${itemSnapshot.item_id}:${itemSnapshot.quantity}:${itemRow.stock_quantity}`
+        ),
+      };
+    }
+  }
+
+  const { data: insertedOrder, error: orderInsertError } = await supabase
+    .from('orders')
+    .insert({
+      session_id: draftData.session_id,
+      user_id: userId,
+      payment_intent_id: paymentIntentId,
+      status: orderStatus,
+      subtotal_amount: draftData.subtotal_amount,
+      shipping_amount: draftData.shipping_amount,
+      total_amount: draftData.total_amount,
+      currency: draftData.currency,
+      shipping_email: mapShippingSnapshotValue(draftData.shipping_snapshot, 'email'),
+      shipping_full_name: mapShippingSnapshotValue(draftData.shipping_snapshot, 'fullName'),
+      shipping_postal_code: mapShippingSnapshotValue(draftData.shipping_snapshot, 'postalCode'),
+      shipping_prefecture: mapShippingSnapshotValue(draftData.shipping_snapshot, 'prefecture'),
+      shipping_city: mapShippingSnapshotValue(draftData.shipping_snapshot, 'city'),
+      shipping_address: mapShippingSnapshotValue(draftData.shipping_snapshot, 'address'),
+      shipping_building: mapShippingSnapshotValue(draftData.shipping_snapshot, 'building'),
+      shipping_phone: mapShippingSnapshotValue(draftData.shipping_snapshot, 'phone'),
+    })
+    .select('id, status')
+    .single<OrderRow>();
+
+  if (orderInsertError) {
+    const { data: existingOrder } = await supabase
+      .from('orders')
+      .select('id, status')
+      .eq('payment_intent_id', paymentIntentId)
+      .maybeSingle<OrderRow>();
+
+    if (existingOrder) {
+      return { data: existingOrder };
+    }
+
+    return { error: orderInsertError };
+  }
+
+  const orderItems = itemsSnapshot.map((itemSnapshot) => ({
+    order_id: insertedOrder.id,
+    item_id: itemSnapshot.item_id,
+    item_name: itemSnapshot.item_name,
+    item_price: itemSnapshot.item_price,
+    item_image_url: itemSnapshot.item_image_url,
+    color: itemSnapshot.color,
+    size: itemSnapshot.size,
+    quantity: itemSnapshot.quantity,
+    line_total: itemSnapshot.line_total,
+  }));
+
+  const { error: orderItemsError } = await supabase.from('order_items').insert(orderItems);
+  if (orderItemsError) {
+    return { error: orderItemsError };
+  }
+
+  const requestedQuantities = new Map<number, number>();
+  for (const itemSnapshot of itemsSnapshot) {
+    requestedQuantities.set(
+      itemSnapshot.item_id,
+      (requestedQuantities.get(itemSnapshot.item_id) ?? 0) + itemSnapshot.quantity
+    );
+  }
+
+  await Promise.all(
+    Array.from(requestedQuantities.entries()).map(async ([itemId, quantity]) => {
+      const itemRow = itemMap.get(itemId);
+      if (!itemRow || itemRow.stock_quantity === null) {
+        return;
+      }
+
+      await supabase
+        .from('items')
+        .update({ stock_quantity: itemRow.stock_quantity - quantity })
+        .eq('id', itemId);
+    })
+  );
+
+  await Promise.all(
+    itemsSnapshot
+      .filter((itemSnapshot) => itemSnapshot.source_cart_id)
+      .map(async (itemSnapshot) => {
+        await supabase
+          .from('carts')
+          .delete()
+          .eq('id', itemSnapshot.source_cart_id)
+          .eq('session_id', draftData.session_id);
+      })
+  );
+
+  await supabase
+    .from('checkout_drafts')
+    .update({
+      checkout_session_id: draftData.checkout_session_id ?? null,
+      payment_intent_id: paymentIntentId,
+      status: 'completed',
+    })
+    .eq('id', draftData.id);
+
+  return { data: insertedOrder };
+}
 
 function getClientIp(request: NextRequest): string | null {
   const forwardedFor = request.headers.get('x-forwarded-for');
@@ -58,6 +246,8 @@ export async function POST(req: NextRequest) {
       });
       return NextResponse.json({ error: 'Session not found' }, { status: 400 });
     }
+
+    const activeUserId = await resolveAuthenticatedUserId(req);
 
     const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
     const rateLimitByIp = await enforceRateLimit({
@@ -193,7 +383,7 @@ export async function POST(req: NextRequest) {
 
     const { data: draftData, error: draftError } = await supabase
       .from('checkout_drafts')
-      .select('id, session_id, total_amount, currency')
+      .select('id, session_id, checkout_session_id, total_amount, subtotal_amount, shipping_amount, currency, shipping_snapshot, items_snapshot')
       .eq('id', draftId)
       .maybeSingle<CheckoutDraftRow>();
 
@@ -227,9 +417,18 @@ export async function POST(req: NextRequest) {
 
     const { data: existingOrder } = await supabase
       .from('orders')
-      .select('id, status')
-      .eq('checkout_session_id', parsed.data.checkoutSessionId)
+      .select('id, user_id, status')
+      .eq('payment_intent_id', resolvedPaymentIntentId)
       .maybeSingle<OrderRow>();
+
+    if (existingOrder?.id && activeUserId && existingOrder.user_id !== activeUserId) {
+      await supabase
+        .from('orders')
+        .update({ user_id: activeUserId })
+        .eq('id', existingOrder.id)
+        .is('user_id', null);
+      existingOrder.user_id = activeUserId;
+    }
 
     if (existingOrder) {
       await logAudit({
@@ -266,6 +465,49 @@ export async function POST(req: NextRequest) {
 
     if (finalizeOrderError) {
       console.error('Failed to finalize order in complete checkout:', finalizeOrderError);
+      if (isLegacyCheckoutSessionColumnError(finalizeOrderError.message)) {
+        const fallbackResult = await finalizeOrderDirectlyFromDraft({
+          draftData: draftData as CheckoutDraftDetails,
+          paymentIntentId: resolvedPaymentIntentId,
+          orderStatus: session.payment_status === 'paid' ? 'paid' : 'pending',
+          userId: activeUserId,
+        });
+
+        if (fallbackResult.data && activeUserId) {
+          await supabase
+            .from('orders')
+            .update({ user_id: activeUserId })
+            .eq('id', fallbackResult.data.id)
+            .is('user_id', null);
+        }
+
+        if (fallbackResult.data) {
+          await logAudit({
+            action: 'checkout.complete',
+            outcome: 'success',
+            detail: 'Order finalized via direct fallback',
+            ip: clientIp,
+            user_agent: userAgent,
+            metadata: {
+              session_id: sessionId,
+              checkout_session_id: parsed.data.checkoutSessionId,
+              draft_id: draftId,
+              payment_intent_id: resolvedPaymentIntentId,
+              order_id: fallbackResult.data.id,
+              order_status: fallbackResult.data.status,
+            },
+          });
+
+          return NextResponse.json({
+            orderId: fallbackResult.data.id,
+            status: fallbackResult.data.status,
+            paymentMethod: resolvePaymentMethod(parsed.data.paymentMethod, session),
+          });
+        }
+
+        console.error('Direct fallback order finalization failed:', fallbackResult.error);
+      }
+
       await logAudit({
         action: 'checkout.complete',
         outcome: 'error',

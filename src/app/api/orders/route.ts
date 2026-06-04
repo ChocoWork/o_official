@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceRoleClient, resolveRequestUser } from '@/lib/supabase/server';
 import { signItemImageUrl } from '@/lib/storage/item-images';
 
+const NO_STORE_HEADERS = {
+	'Cache-Control': 'no-store',
+};
+
 type OrderItemRow = {
 	id: string;
 	item_name: string;
@@ -75,7 +79,7 @@ export async function GET(request: NextRequest) {
 
 	if (userError || !user) {
 		console.error('Orders auth error:', userError);
-		return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+		return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: NO_STORE_HEADERS });
 	}
 
 	const { data, error } = await supabase
@@ -101,7 +105,7 @@ export async function GET(request: NextRequest) {
 
 	if (error) {
 		console.error('Orders fetch error:', error);
-		return NextResponse.json({ error: 'Failed to fetch orders' }, { status: 500 });
+		return NextResponse.json({ error: 'Failed to fetch orders' }, { status: 500, headers: NO_STORE_HEADERS });
 	}
 
 	const signSupabase = await createServiceRoleClient();
@@ -124,5 +128,5 @@ export async function GET(request: NextRequest) {
 		detailHref: `/account/orders/${order.id}`,
 	})));
 
-	return NextResponse.json({ data: response });
+	return NextResponse.json({ data: response }, { headers: NO_STORE_HEADERS });
 }
