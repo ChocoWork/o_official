@@ -439,9 +439,6 @@ function AccountPageContent() {
 
 	return (
 		<div className="element-width">
-			<div className="mb-10">
-				<h1 style={accountPageTitleStyle}>会員情報</h1>
-			</div>
 			<div className="grid grid-cols-1 lg:grid-cols-4 gap-12">
 				<div className="lg:col-span-1">
 					<TabSegmentControl
