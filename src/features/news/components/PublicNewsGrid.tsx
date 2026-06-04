@@ -293,9 +293,9 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
             className={hideOnMobile ? 'hidden md:block' : 'block'}
           >
             <article className="py-[13px] sm:py-[13px] md:py-[21px] xl:py-[21px] border-b border-black/5 group cursor-pointer">
-              <div className="sm:flex sm:items-start">
+              <div className="flex-1 items-start">
                 {/* Date column: inline with category on mobile, fixed-width on sm+ */}
-                <div className="flex items-center gap-3 mb-2 sm:mb-0 sm:w-24 xl:w-32 sm:flex-shrink-0 sm:pt-0.5">
+                <div className="flex items-center gap-3 mb-[var(--lk-size-4xs)] flex-shrink-0">
                   <span
                     className="flex-shrink-0 text-[#474747] tracking-widest whitespace-nowrap"
                     style={{ fontFamily: 'acumin-pro, sans-serif', fontSize: 'var(--lk-size-4xs)' }}
@@ -303,8 +303,8 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
                     {article.published_date.replace(/-/g, '.')}
                   </span>
                   {/* Category tag: mobile only */}
-                  <div className="sm:hidden">
-                    <TagLabel className="font-acumin" size="md">
+                  <div className="flex items-center">
+                    <TagLabel className="font-acumin" size="xs">
                       {article.category}
                     </TagLabel>
                   </div>
@@ -312,15 +312,9 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
 
                 {/* Content column */}
                 <div className="flex-1 min-w-0">
-                  {/* Category tag: sm+ only */}
-                  <div className="hidden sm:block mb-2 xl:mb-2.5">
-                    <TagLabel className="font-acumin" size="md">
-                      {article.category}
-                    </TagLabel>
-                  </div>
 
                   <h4
-                    className="mb-[5px] sm:mb-[8px] group-hover:text-black/50 transition-colors duration-300 leading-snug"
+                    className="mb-[calc(var(--lk-size-sm)/var(--button-phi))] group-hover:text-black/50 transition-colors duration-300 leading-snug"
                     style={{ fontSize: 'var(--lk-size-sm)' }}
                   >
                     {article.title}

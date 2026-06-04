@@ -28,23 +28,23 @@ user-select: none;
 }
 
 [data-ui-tag-label][data-ui-tag-label-size="xs"] {
-font-size: var(--lk-size-7xs);
+font-size: var(--lk-size-8xs);
 }
 
 [data-ui-tag-label][data-ui-tag-label-size="sm"] {
-font-size: var(--lk-size-6xs);
+font-size: var(--lk-size-7xs);
 }
 
 [data-ui-tag-label][data-ui-tag-label-size="md"] {
-font-size: var(--lk-size-5xs);
+font-size: var(--lk-size-6xs);
 }
 
 [data-ui-tag-label][data-ui-tag-label-size="lg"] {
-font-size: var(--lk-size-4xs);
+font-size: var(--lk-size-5xs);
 }
 
 [data-ui-tag-label][data-ui-tag-label-size="xl"] {
-font-size: var(--lk-size-3xs);
+font-size: var(--lk-size-4xs);
 }
 
 [data-ui-tag-label][data-ui-tag-label-variant="solid"] {
