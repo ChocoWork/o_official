@@ -248,7 +248,7 @@
 /* --- ポータルメニュー（近接：フィールド直下／対比：影で浮かせる）--- */
 .single-select__menu {
   position: absolute;
-  z-index: 10;
+  z-index: var(--lk-z-popover, 1000);
   margin-top: var(--ss-menu-gap);
   border: var(--ss-border-width) solid var(--ss-border-color);
   background: var(--ss-bg);
