@@ -1,32 +1,29 @@
 /* File: src/components/ui/Drawer/Drawer.css */
 [data-ui-drawer] {
-  /* --- スケール基準（Dialog / BannerAlert / Avatar / Button と同じ φ ベースのトークン体系を踏襲）--- */
-  --drawer-phi: var(--button-phi);
-
   /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
   --drawer-font-size: var(--lk-size-xs);
 
   /*
-   * パネル最大幅＝font × φ⁵（Dialog と同一導出で反復させ、面の量感を揃える）。
+  /* パネル最大幅＝font × φ⁷（Dialog と同一導出で反復させ、Drawer の適正幅を確保）。
    * 小画面では width:100% 側が効くため、max-width は上限としてのみ作用する。
    */
   --drawer-max-width: calc(
-    var(--drawer-font-size) * var(--drawer-phi) * var(--drawer-phi) *
-    var(--drawer-phi) * var(--drawer-phi) * var(--drawer-phi)
+    var(--drawer-font-size) * var(--phi) * var(--phi) * var(--phi) *
+    var(--phi) * var(--phi) * var(--phi) * var(--phi)
   );
 
   /* 角丸（直値を排し φ から導出。内側エッジのみ丸める対比演出に使用）*/
-  --drawer-radius: calc(var(--drawer-font-size) / var(--drawer-phi));
+  --drawer-radius: calc(var(--drawer-font-size) / var(--phi));
 
   /* 枠線（直値を排し φ³ から導出。極小サイズでも消えないよう max(1px,…)）*/
   --drawer-border-width: max(
     1px,
-    calc(var(--drawer-font-size) / (var(--drawer-phi) * var(--drawer-phi) * var(--drawer-phi)))
+    calc(var(--drawer-font-size) / (var(--phi) * var(--phi) * var(--phi)))
   );
 
   /* 影（強度は φ から導出した広がりで対比をつける）*/
-  --drawer-shadow-blur: calc(var(--drawer-font-size) * var(--drawer-phi) * var(--drawer-phi));
-  --drawer-shadow-spread: calc(var(--drawer-font-size) / (var(--drawer-phi) * var(--drawer-phi)));
+  --drawer-shadow-blur: calc(var(--drawer-font-size) * var(--phi) * var(--phi));
+  --drawer-shadow-spread: calc(var(--drawer-font-size) / (var(--phi) * var(--phi)));
 
   /* スライドイン距離＝最大幅（画面外から完全に出し入れ）*/
   --drawer-slide-distance: var(--drawer-max-width);
@@ -84,7 +81,7 @@
   bottom: 0;
   height: 100%;
   width: 100%;
-  max-width: var(--drawer-max-width);
+  max-width: min(var(--drawer-max-width), 90vw);
   overflow-y: auto;
   background: var(--drawer-bg);
   color: var(--drawer-fg);
