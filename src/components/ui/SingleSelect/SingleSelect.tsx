@@ -3,7 +3,7 @@
 
 import '@/components/ui/SingleSelect/SingleSelect.css';
 import { cn } from '@/lib/utils';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
 import type { SingleSelectProps } from '@/components/ui/SingleSelect/SingleSelect_types';
 
@@ -24,7 +24,9 @@ export function SingleSelect({
   const selectId = id ?? props.name;
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
+  const [triggerMinWidth, setTriggerMinWidth] = useState<number | null>(null);
   const [dropdownPos, setDropdownPos] = useState<
     { top: number; left: number; width: number } | null
   >(null);
@@ -55,10 +57,72 @@ export function SingleSelect({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [open, variant]);
 
+  useLayoutEffect(() => {
+    if (variant !== 'dropdown') {
+      setTriggerMinWidth(null);
+      return;
+    }
+
+    const trigger = triggerRef.current;
+    if (!trigger) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const measure = () => {
+      const buttonStyle = getComputedStyle(trigger);
+      const chevron = trigger.querySelector('.single-select__chevron');
+      const chevronWidth = chevron instanceof HTMLElement ? chevron.getBoundingClientRect().width : 0;
+      const textCanvas = document.createElement('canvas');
+      const context = textCanvas.getContext('2d');
+      if (!context) {
+        return;
+      }
+
+      context.font = [
+        buttonStyle.fontStyle,
+        buttonStyle.fontVariant,
+        buttonStyle.fontWeight,
+        buttonStyle.fontSize,
+        buttonStyle.fontFamily,
+      ]
+        .filter(Boolean)
+        .join(' ');
+
+      const widestLabelWidth = Math.max(
+        ...options.map((option) => context.measureText(option.label).width),
+      );
+      const horizontalPadding =
+        Number.parseFloat(buttonStyle.paddingLeft) + Number.parseFloat(buttonStyle.paddingRight);
+      const borderWidth =
+        Number.parseFloat(buttonStyle.borderLeftWidth) + Number.parseFloat(buttonStyle.borderRightWidth);
+      const gapWidth = Number.parseFloat(buttonStyle.columnGap || '0');
+
+      const nextWidth = Math.ceil(widestLabelWidth + chevronWidth + gapWidth + horizontalPadding + borderWidth);
+      if (!cancelled) {
+        setTriggerMinWidth(nextWidth);
+      }
+    };
+
+    const ready = document.fonts?.ready;
+    if (ready) {
+      ready.then(measure).catch(() => {
+        measure();
+      });
+    } else {
+      measure();
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [options, size, variant]);
+
   // reposition dropdown when it opens
   useEffect(() => {
-    if (variant === 'dropdown' && open && wrapperRef.current) {
-      const rect = wrapperRef.current.getBoundingClientRect();
+    if (variant === 'dropdown' && open && triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
       setDropdownPos({
         top: rect.bottom + window.scrollY,
         left: rect.left + window.scrollX,
@@ -73,8 +137,8 @@ export function SingleSelect({
   useEffect(() => {
     if (!open) return;
     const handler = () => {
-      if (wrapperRef.current) {
-        const rect = wrapperRef.current.getBoundingClientRect();
+      if (triggerRef.current) {
+        const rect = triggerRef.current.getBoundingClientRect();
         setDropdownPos({
           top: rect.bottom + window.scrollY,
           left: rect.left + window.scrollX,
@@ -108,6 +172,8 @@ export function SingleSelect({
           <button
             type="button"
             className={cn('single-select__trigger', className)}
+            ref={triggerRef}
+            style={triggerMinWidth ? ({ '--ss-trigger-min-width': `${triggerMinWidth}px` } as React.CSSProperties) : undefined}
             data-ui-single-select-disabled={disabled ? 'true' : undefined}
             data-ui-single-select-placeholder={!resolvedValue ? 'true' : undefined}
             onClick={() => {

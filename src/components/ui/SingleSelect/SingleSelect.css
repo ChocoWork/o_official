@@ -10,8 +10,9 @@
    *   → BannerAlert 同様、横は広く縦は詰める。
    */
   --ss-field-height: calc(var(--ss-font-size) * var(--phi) * var(--phi));
-  --ss-pad-x: calc(var(--ss-font-size) * var(--phi));
+  --ss-pad-x: calc(var(--ss-font-size) / var(--lk-halfstep));
   --ss-pad-y: calc(var(--ss-font-size) / var(--phi));
+
 
   /* ラベルと操作部の縦間隔＝font / φ（近接でグループ化）*/
   --ss-label-gap: calc(var(--ss-font-size) / var(--phi));
@@ -22,10 +23,8 @@
   /* シェブロンの右端オフセット＝font / φ（近接：右端に寄せる）*/
   --ss-chevron-offset: calc(var(--ss-font-size) / var(--phi));
 
-  /* シェブロン領域ぶんの右パディング確保＝chevron + offset × φ */
-  --ss-field-pad-right: calc(
-    var(--ss-chevron-size) + var(--ss-chevron-offset) * var(--phi)
-  );
+  /* トリガー内のテキストとシェブロンの間隔＝font / φ² */
+  --ss-trigger-gap: calc((var(--ss-font-size) / var(--phi)) / var(--phi));
 
   /* メニューとフィールドの隙間＝font / φ³ */
   --ss-menu-gap: calc(var(--ss-font-size) / (var(--phi) * var(--phi) * var(--phi)));
@@ -110,6 +109,12 @@
   width: 100%;
 }
 
+[data-ui-single-select-variant="dropdown"] .single-select__wrapper {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+}
+
 /* --- 共通フィールド（trigger / native）の見た目 ---
  * controlBaseClass の役割（枠線・背景・高さ・パディング）を φ トークンで再定義。
  */
@@ -119,7 +124,7 @@
   align-items: center;
   width: 100%;
   height: var(--ss-field-height);
-  padding: var(--ss-pad-y) var(--ss-field-pad-right) var(--ss-pad-y) var(--ss-pad-x);
+  padding: var(--ss-pad-y) var(--ss-pad-x);
   border: var(--ss-border-width) solid var(--ss-border-color);
   border-radius: 0;
   background: var(--ss-bg);
@@ -140,7 +145,11 @@
 
 /* --- トリガー（dropdown）：値とシェブロンを両端そろえ（整列）--- */
 .single-select__trigger {
-  justify-content: space-between;
+  display: flex;
+  justify-content: flex-end;
+  column-gap: var(--ss-trigger-gap);
+  width: fit-content;
+  min-width: var(--ss-trigger-min-width, 0px);
   text-align: left;
 }
 
@@ -158,9 +167,13 @@
 }
 
 .single-select__value {
+  flex: 0 1 auto;
+  max-width: 100%;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 1;
 }
 
 /* --- ネイティブ select（整列：シェブロン領域ぶん右パディング確保）--- */
@@ -179,6 +192,7 @@
 
 /* --- シェブロン（対比：操作系を一段大きく／整列：垂直中央）--- */
 .single-select__chevron {
+  align-self: center;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -188,6 +202,11 @@
   font-size: var(--ss-chevron-size);
   line-height: 1;
   transition: transform 120ms ease;
+}
+
+.single-select__chevron i {
+  display: block;
+  line-height: 1;
 }
 
 /* dropdown のシェブロンは開いたら反転（反復：状態を回転で示す）*/

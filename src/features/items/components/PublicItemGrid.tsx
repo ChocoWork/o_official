@@ -7,6 +7,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Accordion } from '@/components/ui/Accordion/Accordion';
 import { Button } from '@/components/ui/Button/Button';
 import { MultiSelect } from '@/components/ui/MultiSelect/MultiSelect';
+import { SingleSelect } from '@/components/ui/SingleSelect/SingleSelect';
 import { SectionTitle } from '@/components/ui/SectionTitle/SectionTitle';
 import { Drawer } from '@/components/ui/Drawer/Drawer';
 import { Slider } from '@/components/ui/Slider/Slider';
@@ -19,8 +20,8 @@ const ITEM_CATEGORIES = ['ALL', 'TOPS', 'BOTTOMS', 'OUTERWEAR', 'ACCESSORIES'] a
 const SORT_OPTIONS = [
   { value: 'newest', label: 'NEWEST' },
   { value: 'popular', label: 'POPULAR' },
-  { value: 'price_asc', label: 'PRICE: LOW TO HIGH' },
-  { value: 'price_desc', label: 'PRICE: HIGH TO LOW' },
+  { value: 'price_asc', label: 'PRICE LOW TO HIGH' },
+  { value: 'price_desc', label: 'PRICE HIGH TO LOW' },
 ] as const;
 const FILTER_SIDEBAR_SCROLL_CONTAINER_CLASS =
   'h-full overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden border-r border-black/5 px-[13px] xl:px-[21px] py-[21px] xl:py-[34px]';
@@ -217,10 +218,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
   const [nextPage, setNextPage] = useState<number>(2);
   const [isFetchingMore, setIsFetchingMore] = useState<boolean>(false);
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
-  const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
-  const mobileSortMenuRef = useRef<HTMLDivElement | null>(null);
-  const desktopSortMenuRef = useRef<HTMLDivElement | null>(null);
   const latestQueryRef = useRef<string>(searchParams.toString());
 
   const selectedCategoryQuery = searchParams.get('category');
@@ -300,30 +298,6 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     selectedCollectionYearMax,
     selectedCollectionSeasons,
   ]);
-
-  useEffect(() => {
-    if (!isSortMenuOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target;
-      if (!(target instanceof Node)) {
-        return;
-      }
-      const isInsideSortMenu =
-        mobileSortMenuRef.current?.contains(target) || desktopSortMenuRef.current?.contains(target);
-
-      if (!isInsideSortMenu) {
-        setIsSortMenuOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-    };
-  }, [isSortMenuOpen]);
 
   const updateQuery = useCallback(
     (mutator: (params: URLSearchParams) => void) => {
@@ -616,6 +590,22 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     top: 'var(--site-header-offset)',
   } as const;
 
+  const renderSortSelect = (className: string) => (
+    <div className={className}>
+      <SingleSelect
+        variant="dropdown"
+        options={SORT_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+        value={selectedSort}
+        onValueChange={(nextSort) => {
+          updateQuery((params) => {
+            params.set('sort', nextSort);
+          });
+        }}
+        size="xs"
+      />
+    </div>
+  );
+
   useEffect(() => {
     if (variant !== 'catalog') {
       return;
@@ -741,7 +731,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
       <Button
         data-filter-button={interactive ? 'floating' : 'placeholder'}
         onClick={interactive ? () => setIsFilterDrawerOpen(true) : undefined}
-        variant="secondary"
+        variant="ghost"
         size="compact"
         className="tracking-[0.15em] uppercase"
         aria-haspopup={interactive ? 'dialog' : undefined}
@@ -754,47 +744,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
         FILTER
       </Button>
 
-      {interactive ? (
-        <div className="relative -mt-[3px]" ref={mobileSortMenuRef}>
-          <Button
-            type="button"
-            onClick={() => setIsSortMenuOpen((prev) => !prev)}
-            variant="text"
-            size="compact"
-            className="tracking-[0.22em] text-black uppercase"
-            style={{ fontSize: 'var(--lk-size-2xs)' }}
-            aria-label="Open sort menu"
-            aria-expanded={isSortMenuOpen}
-          >
-            SORT
-          </Button>
-
-          {isSortMenuOpen && (
-            <div className="absolute right-0 top-7 z-20 w-52 border border-black/15 bg-white shadow-lg">
-              {SORT_OPTIONS.map((option) => (
-                <Button
-                  key={option.value}
-                  type="button"
-                  variant="text"
-                  size="xs"
-                  className={cn(
-                    'w-full px-3 py-2 text-left text-xs tracking-wider hover:bg-[#f5f5f5]',
-                    selectedSort === option.value ? 'text-black' : 'text-[#474747]',
-                  )}
-                  onClick={() => {
-                    updateQuery((params) => {
-                      params.set('sort', option.value);
-                    });
-                    setIsSortMenuOpen(false);
-                  }}
-                >
-                  {option.label}
-                </Button>
-              ))}
-            </div>
-          )}
-        </div>
-      ) : null}
+      {interactive ? renderSortSelect('relative -mt-[3px] translate-x-[4px] w-[9.75rem] sm:w-[10.5rem]') : null}
     </div>
   );
 
@@ -1100,45 +1050,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
           </div>
 
           <div className="hidden lg:flex mb-2 sm:mb-4 md:mb-6 items-center justify-end">
-            <div className="relative -mt-[3px]" ref={desktopSortMenuRef}>
-              <Button
-                type="button"
-                onClick={() => setIsSortMenuOpen((prev) => !prev)}
-                variant="text"
-                size="compact"
-                className="tracking-[0.22em] text-black uppercase"
-                style={{ fontSize: 'var(--lk-size-2xs)' }}
-                aria-label="Open sort menu"
-                aria-expanded={isSortMenuOpen}
-              >
-                SORT
-              </Button>
-
-              {isSortMenuOpen && (
-                <div className="absolute right-0 top-7 z-20 w-52 border border-black/15 bg-white shadow-lg">
-                  {SORT_OPTIONS.map((option) => (
-                    <Button
-                      key={option.value}
-                      type="button"
-                      variant="text"
-                      size="xs"
-                      className={cn(
-                        'w-full px-3 py-2 text-left text-xs tracking-wider hover:bg-[#f5f5f5]',
-                        selectedSort === option.value ? 'text-black' : 'text-[#474747]',
-                      )}
-                      onClick={() => {
-                        updateQuery((params) => {
-                          params.set('sort', option.value);
-                        });
-                        setIsSortMenuOpen(false);
-                      }}
-                    >
-                      {option.label}
-                    </Button>
-                  ))}
-                </div>
-              )}
-            </div>
+            {renderSortSelect('relative -mt-[3px] w-[10.5rem]')}
           </div>
 
           {renderGrid()}
