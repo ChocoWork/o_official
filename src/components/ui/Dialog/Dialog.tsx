@@ -1,23 +1,8 @@
-import "./Dialog.css"
-import { Button } from '../Button/Button';
+// File: src/components/ui/Dialog/Dialog.tsx
+import '@/components/ui/Dialog/Dialog.css';
+import { Button } from '@/components/ui/Button/Button';
 import { cn } from '@/lib/utils';
-import type { ReactNode } from 'react';
-import { ComponentSize } from '@/components/ui/types';
-import type { UIButtonSize } from '@/components/ui/Button/Button_types';
-
-export interface DialogProps {
-  open: boolean;
-  onClose: () => void;
-  title?: string;
-  description?: string;
-  cancelText?: string;
-  confirmText?: string;
-  onConfirm?: () => void;
-  children?: ReactNode;
-  className?: string;
-  /** demo size (sm/md/lg) */
-  size?: ComponentSize;
-}
+import type { DialogProps } from '@/components/ui/Dialog/Dialog_types';
 
 export function Dialog({
   open,
@@ -29,79 +14,56 @@ export function Dialog({
   onConfirm,
   children,
   className,
+  shape = 'rounded',
   size = 'md',
 }: DialogProps) {
   if (!open) {
     return null;
   }
 
-  const widthMap: Record<ComponentSize, string> = {
-    xs: 'max-w-sm',
-    sm: 'max-w-sm',
-    md: 'max-w-md',
-    lg: 'max-w-lg',
-    xl: 'max-w-lg',
-  };
-  const paddingMap: Record<ComponentSize, string> = {
-    xs: 'p-4',
-    sm: 'p-4',
-    md: 'p-8',
-    lg: 'p-12',
-    xl: 'p-12',
-  };
-  const titleSizeMap: Record<ComponentSize, string> = {
-    xs: 'text-xl',
-    sm: 'text-xl',
-    md: 'text-2xl',
-    lg: 'text-3xl',
-    xl: 'text-3xl',
-  };
-  const descSizeMap: Record<ComponentSize, string> = {
-    xs: 'text-sm',
-    sm: 'text-sm',
-    md: 'text-sm',
-    lg: 'text-base',
-    xl: 'text-base',
-  };
-
-  const buttonSizeMap: Record<ComponentSize, UIButtonSize> = {
-    xs: 'sm',
-    sm: 'sm',
-    md: 'md',
-    lg: 'lg',
-    xl: 'lg',
-  };
-  const buttonSize = buttonSizeMap[size];
+  const rootDataAttrs = {
+    'data-ui-dialog': 'true',
+    'data-ui-dialog-shape': shape,
+    'data-ui-dialog-size': size,
+  } as const;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/40"></div>
+    <div
+      className="dialog-overlay"
+      onClick={onClose}
+      role="presentation"
+      {...rootDataAttrs}
+    >
+      <div className="dialog-overlay__scrim" aria-hidden="true" />
       <div
-        className={cn('relative mx-4 w-full bg-white shadow-2xl', widthMap[size], className)}
+        className={cn('dialog-panel', className)}
         onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
       >
-        <div className={cn(paddingMap[size])}>
-          <h3 className={cn('mb-4 tracking-tight text-black font-title', titleSizeMap[size])}>{title}</h3>
+        <div className="dialog-panel__body">
+          <h3 className="dialog-panel__title">{title}</h3>
           {description ? (
-            <p className={cn('mb-8 leading-relaxed text-black/60', descSizeMap[size])}>{description}</p>
+            <p className="dialog-panel__description">{description}</p>
           ) : null}
           {children ? (
-            children
+            <div className="dialog-panel__content">{children}</div>
           ) : (
-            <div className="flex items-center gap-4">
+            <div className="dialog-panel__actions">
               <Button
                 type="button"
                 variant="secondary"
-                size={buttonSize}
-                className="flex-1"
+                size={size}
+                className="dialog-panel__action"
                 onClick={onClose}
               >
                 {cancelText}
               </Button>
               <Button
                 type="button"
-                size={buttonSize}
-                className="flex-1"
+                size={size}
+                className="dialog-panel__action"
                 onClick={() => {
                   onConfirm?.();
                   onClose();

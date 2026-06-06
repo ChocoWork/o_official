@@ -1,0 +1,188 @@
+/* File: src/components/ui/Dialog/Dialog.css */
+[data-ui-dialog] {
+  /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
+  --dialog-font-size: var(--lk-size-xs);
+
+  /*
+   * パネル内パディング＝font × φ²（本文より一段ゆとりを持たせ、面の余白で要素群を浮かせる）。
+   * 縦横を同値にして整列の安定感を出す。
+   */
+  --dialog-pad: calc(var(--dialog-font-size) * var(--phi) * var(--phi));
+
+  /* タイトル＝font × φ（本文より一段大きく対比をつける）*/
+  --dialog-title-size: calc(var(--dialog-font-size) * var(--phi));
+
+  /* 説明文＝font（本文基準。色 muted で階層化）*/
+  --dialog-description-size: var(--dialog-font-size);
+
+  /* 近接：タイトル直下の説明文との間隔＝font / φ（密接グループ化）*/
+  --dialog-title-gap: calc(var(--dialog-font-size) / var(--phi));
+
+  /* 対比：本文ブロックとアクション列の間隔＝font × φ（グループ間は広く離す）*/
+  --dialog-actions-gap-top: calc(var(--dialog-font-size) * var(--phi));
+
+  /* 近接：アクションボタン間の横ギャップ＝font / φ */
+  --dialog-actions-gap: calc(var(--dialog-font-size) / var(--phi));
+
+  /* パネル最大幅＝font × φ⁷（現在のルートフォントスケールで自然なダイアログ幅に着地）*/
+  --dialog-max-width: calc(
+    var(--dialog-font-size) * var(--phi) * var(--phi) * var(--phi) *
+    var(--phi) * var(--phi) * var(--phi) * var(--phi)
+  );
+
+  /* オーバーレイ外周マージン＝font × φ（小画面でも端に貼り付かせない）*/
+  --dialog-edge-margin: calc(var(--dialog-font-size) * var(--phi));
+
+  /* 角丸（直値を排し φ から導出）*/
+  --dialog-radius: calc(var(--dialog-font-size) / var(--phi));
+  --dialog-shape-radius: var(--dialog-radius);
+
+  /* 影（強度は φ から導出した広がりで対比をつける）*/
+  --dialog-shadow-blur: calc(var(--dialog-font-size) * var(--phi) * var(--phi));
+  --dialog-shadow-spread: calc(var(--dialog-font-size) / (var(--phi) * var(--phi)));
+
+  /* 色トークン（BannerAlert と同系統。ハードコードは一箇所に集約）*/
+  --dialog-scrim: rgba(0, 0, 0, 0.4);
+  --dialog-bg: #ffffff;
+  --dialog-fg: #000000;
+  --dialog-fg-muted: rgba(0, 0, 0, 0.6);
+  --dialog-shadow-color: rgba(0, 0, 0, 0.25);
+
+  /* z 階層 */
+  --dialog-z: 50;
+
+  /* 整列：オーバーレイ中央に panel を配置 */
+  position: fixed;
+  inset: 0;
+  z-index: var(--dialog-z);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- 形状展開（shape：rounded / square）--- */
+[data-ui-dialog][data-ui-dialog-shape="rounded"] {
+  --dialog-shape-radius: var(--dialog-radius);
+}
+
+[data-ui-dialog][data-ui-dialog-shape="square"] {
+  --dialog-shape-radius: 0;
+}
+
+/* --- サイズ展開（反復：BannerAlert と同一の公比スケールを再利用）--- */
+[data-ui-dialog][data-ui-dialog-size="xs"] {
+  --dialog-font-size: var(--lk-size-3xs);
+}
+
+[data-ui-dialog][data-ui-dialog-size="sm"] {
+  --dialog-font-size: var(--lk-size-2xs);
+}
+
+[data-ui-dialog][data-ui-dialog-size="md"] {
+  --dialog-font-size: var(--lk-size-xs);
+}
+
+[data-ui-dialog][data-ui-dialog-size="lg"] {
+  --dialog-font-size: var(--lk-size-sm);
+}
+
+[data-ui-dialog][data-ui-dialog-size="xl"] {
+  --dialog-font-size: var(--lk-size-md);
+}
+
+/* --- 背景スクリム（対比：背後を暗転させ panel を前面に浮かせる）--- */
+.dialog-overlay__scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--dialog-scrim);
+}
+
+/* --- パネル（整列：中央／対比：白面＋影で前面化）--- */
+.dialog-panel {
+  position: relative;
+  width: 100%;
+  max-width: min(var(--dialog-max-width), 90vw);
+  margin-inline: var(--dialog-edge-margin);
+  background: var(--dialog-bg);
+  color: var(--dialog-fg);
+  border-radius: var(--dialog-shape-radius);
+  box-shadow: 0 var(--dialog-shadow-spread) var(--dialog-shadow-blur) var(--dialog-shadow-color);
+  box-sizing: border-box;
+}
+
+/* --- 本文ブロック（近接：タイトル/説明/アクションを 1 グループ化）--- */
+.dialog-panel__body {
+  display: flex;
+  flex-direction: column;
+  padding: var(--dialog-pad);
+  min-width: 0;
+}
+
+/* --- タイトル（対比：説明文より大きく・濃く）--- */
+.dialog-panel__title {
+  margin: 0;
+  font-family: var(--font-title, acumin-pro, sans-serif);
+  font-size: var(--dialog-title-size);
+  line-height: var(--control-line-height, 1.4);
+  letter-spacing: -0.01em;
+  font-weight: 600;
+  color: var(--dialog-fg);
+}
+
+/* --- 説明文（近接：タイトル直下／対比：muted・一段小さく）--- */
+.dialog-panel__description {
+  margin: var(--dialog-title-gap) 0 0 0;
+  font-size: var(--dialog-description-size);
+  line-height: 1.6;
+  color: var(--dialog-fg-muted);
+}
+
+/* --- カスタム content（近接：本文群の下にグループ間隔を確保）--- */
+.dialog-panel__content {
+  margin-top: var(--dialog-actions-gap-top);
+  min-width: 0;
+}
+
+/* --- 既定アクション列（整列：両ボタンを等幅・中央そろえ／近接：横ギャップ統一）--- */
+.dialog-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--dialog-actions-gap);
+  margin-top: var(--dialog-actions-gap-top);
+}
+
+/* 反復：cancel / confirm を等幅にして対称配置 */
+.dialog-panel__action {
+  flex: 1 1 0;
+}
+
+/* --- アクセシビリティ配慮（BannerAlert / Avatar / Button と同思想で踏襲）--- */
+@media (forced-colors: active) {
+  .dialog-panel {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+    box-shadow: none;
+  }
+
+  .dialog-overlay__scrim {
+    background: rgba(0, 0, 0, 0.5);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .dialog-panel {
+    animation: dialog-panel-in 160ms ease-out;
+  }
+}
+
+@keyframes dialog-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(calc(var(--dialog-font-size) / var(--phi)));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
