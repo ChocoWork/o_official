@@ -725,7 +725,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
       data-filter-bar={interactive ? 'floating' : 'placeholder'}
       aria-hidden={interactive ? undefined : true}
       className={cn(
-        'flex items-start justify-between border-b border-black/5 bg-white py-[13px]',
+        'flex items-center justify-between border-b border-black/5 bg-white py-[13px]',
         !interactive && 'pointer-events-none invisible',
       )}
     >
@@ -1041,7 +1041,10 @@ export function PublicItemGrid(props: PublicItemGridProps) {
           <div className="sm:-mt-1 md:-mt-2 lg:hidden">
             {renderMobileFilterBar(false)}
           </div>
-          <div className="fixed inset-x-0 z-30 lg:hidden transition-transform duration-300 ease-in-out bg-white" style={mobileFilterStickyStyle}>
+          <div
+            className="fixed inset-x-0 z-30 lg:hidden bg-white transition-transform duration-300 ease-in-out before:pointer-events-none before:absolute before:inset-x-0 before:-top-px before:h-px before:bg-white before:content-['']"
+            style={mobileFilterStickyStyle}
+          >
             <div className="element-width px-6 md:px-[45px]">
               {renderMobileFilterBar(true)}
             </div>
