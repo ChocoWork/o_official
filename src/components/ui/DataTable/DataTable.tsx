@@ -1,7 +1,6 @@
 // File: src/components/ui/DataTable/DataTable.tsx
 import './DataTable.css';
 import { cn } from '@/lib/utils';
-import type { ComponentSize } from '@/components/ui/types';
 import type { DataTableProps } from '@/components/ui/DataTable/DataTable_type';
 
 export type { TableColumn, DataTableProps } from '@/components/ui/DataTable/DataTable_type';

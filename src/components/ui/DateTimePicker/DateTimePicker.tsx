@@ -1,6 +1,5 @@
-import "./DateTimePicker.css"
 import type { InputHTMLAttributes } from 'react';
-import { TextField } from '../TextField/TextField';
+import { TextField } from '@/components/ui/TextField/TextField';
 import { ComponentSize } from '@/components/ui/types';
 
 export interface DateTimePickerProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'size'> {
