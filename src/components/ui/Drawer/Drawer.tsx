@@ -1,41 +1,39 @@
-import "./Drawer.css"
+// File: src/components/ui/Drawer/Drawer.tsx
+import '@/components/ui/Drawer/Drawer.css';
 import { cn } from '@/lib/utils';
-import type { ReactNode } from 'react';
-import { ComponentSize } from '@/components/ui/types';
+import type { DrawerProps } from '@/components/ui/Drawer/Drawer_type';
 
-export interface DrawerProps {
-  open: boolean;
-  onClose: () => void;
-  side?: 'left' | 'right';
-  children: ReactNode;
-  className?: string;
-  size?: ComponentSize;
-}
-
-export function Drawer({ open, onClose, side = 'right', children, className, size = 'md' }: DrawerProps) {
+export function Drawer({
+  open,
+  onClose,
+  side = 'right',
+  children,
+  className,
+  size = 'md',
+}: DrawerProps) {
   if (!open) {
     return null;
   }
 
-  const widthMap: Record<ComponentSize, string> = {
-    xs: 'max-w-sm',
-    sm: 'max-w-sm',
-    md: 'max-w-md',
-    lg: 'max-w-lg',
-    xl: 'max-w-lg',
-  };
+  const rootDataAttrs = {
+    'data-ui-drawer': 'true',
+    'data-ui-drawer-side': side,
+    'data-ui-drawer-size': size,
+  } as const;
 
   return (
-    <div className="fixed inset-0 z-[100]" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/40"></div>
+    <div
+      className="drawer-overlay"
+      onClick={onClose}
+      role="presentation"
+      {...rootDataAttrs}
+    >
+      <div className="drawer-overlay__scrim" aria-hidden="true" />
       <aside
-        className={cn(
-          'absolute top-0 bottom-0 h-full w-full overflow-y-auto bg-white shadow-2xl',
-          widthMap[size],
-          side === 'right' ? 'right-0 border-l' : 'left-0 border-r',
-          className,
-        )}
+        className={cn('drawer-panel', className)}
         onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
       >
         {children}
       </aside>

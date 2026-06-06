@@ -1,0 +1,156 @@
+/* File: src/components/ui/Drawer/Drawer.css */
+[data-ui-drawer] {
+  /* --- スケール基準（Dialog / BannerAlert / Avatar / Button と同じ φ ベースのトークン体系を踏襲）--- */
+  --drawer-phi: var(--button-phi);
+
+  /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
+  --drawer-font-size: var(--lk-size-xs);
+
+  /*
+   * パネル最大幅＝font × φ⁵（Dialog と同一導出で反復させ、面の量感を揃える）。
+   * 小画面では width:100% 側が効くため、max-width は上限としてのみ作用する。
+   */
+  --drawer-max-width: calc(
+    var(--drawer-font-size) * var(--drawer-phi) * var(--drawer-phi) *
+    var(--drawer-phi) * var(--drawer-phi) * var(--drawer-phi)
+  );
+
+  /* 角丸（直値を排し φ から導出。内側エッジのみ丸める対比演出に使用）*/
+  --drawer-radius: calc(var(--drawer-font-size) / var(--drawer-phi));
+
+  /* 枠線（直値を排し φ³ から導出。極小サイズでも消えないよう max(1px,…)）*/
+  --drawer-border-width: max(
+    1px,
+    calc(var(--drawer-font-size) / (var(--drawer-phi) * var(--drawer-phi) * var(--drawer-phi)))
+  );
+
+  /* 影（強度は φ から導出した広がりで対比をつける）*/
+  --drawer-shadow-blur: calc(var(--drawer-font-size) * var(--drawer-phi) * var(--drawer-phi));
+  --drawer-shadow-spread: calc(var(--drawer-font-size) / (var(--drawer-phi) * var(--drawer-phi)));
+
+  /* スライドイン距離＝最大幅（画面外から完全に出し入れ）*/
+  --drawer-slide-distance: var(--drawer-max-width);
+
+  /* 色トークン（Dialog と同系統。ハードコードは一箇所に集約）*/
+  --drawer-scrim: rgba(0, 0, 0, 0.4);
+  --drawer-bg: #ffffff;
+  --drawer-fg: #000000;
+  --drawer-border-color: rgba(0, 0, 0, 0.2);
+  --drawer-shadow-color: rgba(0, 0, 0, 0.25);
+
+  /* z 階層（Dialog より前面）*/
+  --drawer-z: 100;
+
+  /* 既定（side で上書き）*/
+  --drawer-slide-from: var(--drawer-slide-distance);
+
+  position: fixed;
+  inset: 0;
+  z-index: var(--drawer-z);
+}
+
+/* --- サイズ展開（反復：Dialog / BannerAlert と同一の公比スケールを再利用）--- */
+[data-ui-drawer][data-ui-drawer-size="xs"] {
+  --drawer-font-size: var(--lk-size-3xs);
+}
+
+[data-ui-drawer][data-ui-drawer-size="sm"] {
+  --drawer-font-size: var(--lk-size-2xs);
+}
+
+[data-ui-drawer][data-ui-drawer-size="md"] {
+  --drawer-font-size: var(--lk-size-xs);
+}
+
+[data-ui-drawer][data-ui-drawer-size="lg"] {
+  --drawer-font-size: var(--lk-size-sm);
+}
+
+[data-ui-drawer][data-ui-drawer-size="xl"] {
+  --drawer-font-size: var(--lk-size-md);
+}
+
+/* --- 背景スクリム（対比：背後を暗転させ panel を前面に浮かせる）--- */
+.drawer-overlay__scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--drawer-scrim);
+}
+
+/* --- パネル（整列：上下フル／対比：白面＋影で前面化）--- */
+.drawer-panel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  height: 100%;
+  width: 100%;
+  max-width: var(--drawer-max-width);
+  overflow-y: auto;
+  background: var(--drawer-bg);
+  color: var(--drawer-fg);
+  box-shadow: 0 0 var(--drawer-shadow-blur) var(--drawer-shadow-spread) var(--drawer-shadow-color);
+  box-sizing: border-box;
+}
+
+/* --- 側面展開（side：right / left）--- */
+/* 整列：指定辺にぴったり寄せ、対向辺に境界線で対比をつける */
+[data-ui-drawer][data-ui-drawer-side="right"] .drawer-panel {
+  right: 0;
+  border-left: var(--drawer-border-width) solid var(--drawer-border-color);
+  /* 内側エッジ（左上・左下）のみ丸めて反復演出 */
+  border-top-left-radius: var(--drawer-radius);
+  border-bottom-left-radius: var(--drawer-radius);
+  --drawer-slide-from: var(--drawer-slide-distance);
+}
+
+[data-ui-drawer][data-ui-drawer-side="left"] .drawer-panel {
+  left: 0;
+  border-right: var(--drawer-border-width) solid var(--drawer-border-color);
+  /* 内側エッジ（右上・右下）のみ丸めて反復演出 */
+  border-top-right-radius: var(--drawer-radius);
+  border-bottom-right-radius: var(--drawer-radius);
+  --drawer-slide-from: calc(-1 * var(--drawer-slide-distance));
+}
+
+/* --- アクセシビリティ配慮（Dialog / BannerAlert と同思想で踏襲）--- */
+@media (forced-colors: active) {
+  .drawer-panel {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+    box-shadow: none;
+  }
+
+  .drawer-overlay__scrim {
+    background: rgba(0, 0, 0, 0.5);
+  }
+}
+
+/* --- スライドイン演出（対比：静→動。reduced-motion では無効化）--- */
+@media (prefers-reduced-motion: no-preference) {
+  .drawer-overlay__scrim {
+    animation: drawer-scrim-in 200ms ease-out;
+  }
+
+  .drawer-panel {
+    animation: drawer-panel-in 220ms ease-out;
+  }
+}
+
+@keyframes drawer-scrim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes drawer-panel-in {
+  from {
+    transform: translateX(var(--drawer-slide-from));
+  }
+  to {
+    transform: translateX(0);
+  }
+}
