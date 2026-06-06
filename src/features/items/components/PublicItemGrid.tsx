@@ -219,7 +219,8 @@ export function PublicItemGrid(props: PublicItemGridProps) {
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
-  const sortMenuRef = useRef<HTMLDivElement | null>(null);
+  const mobileSortMenuRef = useRef<HTMLDivElement | null>(null);
+  const desktopSortMenuRef = useRef<HTMLDivElement | null>(null);
   const latestQueryRef = useRef<string>(searchParams.toString());
 
   const selectedCategoryQuery = searchParams.get('category');
@@ -310,7 +311,10 @@ export function PublicItemGrid(props: PublicItemGridProps) {
       if (!(target instanceof Node)) {
         return;
       }
-      if (!sortMenuRef.current?.contains(target)) {
+      const isInsideSortMenu =
+        mobileSortMenuRef.current?.contains(target) || desktopSortMenuRef.current?.contains(target);
+
+      if (!isInsideSortMenu) {
         setIsSortMenuOpen(false);
       }
     };
@@ -730,7 +734,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
       data-filter-bar={interactive ? 'floating' : 'placeholder'}
       aria-hidden={interactive ? undefined : true}
       className={cn(
-        'flex items-center justify-between border-b border-black/5 bg-white/95 py-[13px] backdrop-blur',
+        'flex items-start justify-between border-b border-black/5 bg-white/95 py-[13px] backdrop-blur',
         !interactive && 'pointer-events-none invisible',
       )}
     >
@@ -749,6 +753,44 @@ export function PublicItemGrid(props: PublicItemGridProps) {
         </div>
         FILTER
       </Button>
+
+      {interactive ? (
+        <div className="relative -mt-[5px]" ref={mobileSortMenuRef}>
+          <button
+            type="button"
+            onClick={() => setIsSortMenuOpen((prev) => !prev)}
+            className="tracking-[0.22em] text-black uppercase"
+            style={{ fontSize: 'var(--lk-size-2xs)' }}
+            aria-label="Open sort menu"
+            aria-expanded={isSortMenuOpen}
+          >
+            SORT
+          </button>
+
+          {isSortMenuOpen && (
+            <div className="absolute right-0 top-7 z-20 w-52 border border-black/15 bg-white shadow-lg">
+              {SORT_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={cn(
+                    'w-full px-3 py-2 text-left text-xs tracking-wider hover:bg-[#f5f5f5]',
+                    selectedSort === option.value ? 'text-black' : 'text-[#474747]',
+                  )}
+                  onClick={() => {
+                    updateQuery((params) => {
+                      params.set('sort', option.value);
+                    });
+                    setIsSortMenuOpen(false);
+                  }}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 
@@ -1053,8 +1095,8 @@ export function PublicItemGrid(props: PublicItemGridProps) {
             </div>
           </div>
 
-          <div className="mb-2 sm:mb-4 md:mb-6 flex items-center justify-end">
-            <div className="relative" ref={sortMenuRef}>
+          <div className="hidden lg:flex mb-2 sm:mb-4 md:mb-6 items-center justify-end">
+            <div className="relative" ref={desktopSortMenuRef}>
               <button
                 type="button"
                 onClick={() => setIsSortMenuOpen((prev) => !prev)}
