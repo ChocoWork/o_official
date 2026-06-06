@@ -602,6 +602,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
           });
         }}
         size="xs"
+        bordered={false}
       />
     </div>
   );
@@ -731,16 +732,13 @@ export function PublicItemGrid(props: PublicItemGridProps) {
       <Button
         data-filter-button={interactive ? 'floating' : 'placeholder'}
         onClick={interactive ? () => setIsFilterDrawerOpen(true) : undefined}
-        variant="ghost"
+        variant="text"
         size="compact"
         className="tracking-[0.15em] uppercase"
         aria-haspopup={interactive ? 'dialog' : undefined}
         aria-expanded={interactive ? isFilterDrawerOpen : undefined}
         tabIndex={interactive ? undefined : -1}
       >
-        <div className="w-4 h-4 flex items-center justify-center" aria-hidden="true">
-          <i className="ri-equalizer-line text-base" />
-        </div>
         FILTER
       </Button>
 

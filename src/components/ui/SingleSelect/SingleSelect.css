@@ -74,6 +74,14 @@
   --ss-font-size: var(--lk-size-3xs);
 }
 
+[data-ui-single-select][data-ui-single-select-size="compact"],
+.single-select__menu[data-ui-single-select-size="compact"] {
+  --ss-font-size: var(--lk-size-4xs);
+  --ss-pad-x: calc((var(--ss-font-size) / var(--lk-halfstep)) * 0.75);
+  --ss-pad-y: calc((var(--ss-font-size) / var(--phi)) * 0.75);
+  --ss-option-pad-y: calc((var(--ss-font-size) / var(--phi)) * 0.75);
+}
+
 [data-ui-single-select][data-ui-single-select-size="sm"],
 .single-select__menu[data-ui-single-select-size="sm"] {
   --ss-font-size: var(--lk-size-2xs);
@@ -135,6 +143,20 @@
   cursor: pointer;
   transition: border-color 120ms ease;
   box-sizing: border-box;
+}
+
+[data-ui-single-select-bordered="false"] .single-select__trigger,
+[data-ui-single-select-bordered="false"] .single-select__native,
+.single-select__trigger[data-ui-single-select-bordered="false"],
+.single-select__native[data-ui-single-select-bordered="false"] {
+  border-color: transparent;
+}
+
+[data-ui-single-select-bordered="false"] .single-select__trigger:focus,
+[data-ui-single-select-bordered="false"] .single-select__native:focus,
+.single-select__trigger[data-ui-single-select-bordered="false"]:focus,
+.single-select__native[data-ui-single-select-bordered="false"]:focus {
+  border-color: transparent;
 }
 
 .single-select__trigger:focus,

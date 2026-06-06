@@ -19,6 +19,7 @@ export function SingleSelect({
   defaultValue,
   disabled,
   size = 'md',
+  bordered = true,
   ...props
 }: SingleSelectProps) {
   const selectId = id ?? props.name;
@@ -157,6 +158,7 @@ export function SingleSelect({
   const rootDataAttrs = {
     'data-ui-single-select': 'true',
     'data-ui-single-select-size': size,
+    'data-ui-single-select-bordered': bordered ? 'true' : 'false',
   } as const;
 
   // --- dropdown：ポータル描画のカスタムリスト ---
@@ -173,6 +175,7 @@ export function SingleSelect({
             type="button"
             className={cn('single-select__trigger', className)}
             ref={triggerRef}
+            data-ui-single-select-bordered={bordered ? 'true' : 'false'}
             style={triggerMinWidth ? ({ '--ss-trigger-min-width': `${triggerMinWidth}px` } as React.CSSProperties) : undefined}
             data-ui-single-select-disabled={disabled ? 'true' : undefined}
             data-ui-single-select-placeholder={!resolvedValue ? 'true' : undefined}
@@ -239,6 +242,7 @@ export function SingleSelect({
         <select
           id={selectId}
           className={cn('single-select__native', className)}
+          data-ui-single-select-bordered={bordered ? 'true' : 'false'}
           value={value}
           defaultValue={defaultValue}
           disabled={disabled}
