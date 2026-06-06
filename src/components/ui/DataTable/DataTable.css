@@ -1,0 +1,174 @@
+/* File: src/components/ui/DataTable/DataTable.css */
+[data-ui-data-table] {
+  /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
+  --table-font-size: var(--lk-size-xs);
+
+  /*
+   * セル横パディング＝font × φ。
+   * セル縦パディング＝font / φ。
+   *   横を広く・縦を詰めることで行を走査しやすくする（整列・可読性）。
+   */
+  --table-cell-pad-x: calc(var(--table-font-size) * var(--phi));
+  --table-cell-pad-y: calc(var(--table-font-size) / var(--phi));
+
+  /* ヘッダーは本文よりさらに縦を φ 圧縮して帯状にまとめる（対比・グループ化）*/
+  --table-header-pad-y: calc(var(--table-font-size) / (var(--phi) * var(--phi)));
+
+  /* 本文セルは基準サイズ、ヘッダーは φ で一段小さく（対比・階層）*/
+  --table-cell-font-size: var(--table-font-size);
+  --table-header-font-size: calc(var(--table-font-size) / var(--phi));
+
+  /* 空表示メッセージはヘッダーと同階層の控えめサイズ（反復）*/
+  --table-empty-font-size: var(--table-header-font-size);
+
+  /* ヘッダーの字間（トラッキング）＝font / φ³（広めにとって帯を引き締める）*/
+  --table-header-tracking: calc(var(--table-font-size) / (var(--phi) * var(--phi) * var(--phi)));
+
+  /* 行高は φ から導出（密度の反復）*/
+  --table-line-height: var(--control-line-height, 1.4);
+
+  /* 枠線（直値を排し φ から導出）*/
+  --table-border-width: 1px;
+
+  /* 角丸＝font / φ（コンテナのみ。内部は反復のため共有）*/
+  --table-radius: calc(var(--table-font-size) / var(--phi));
+
+  /* 空表示時の最小高＝font × φ²（潰れ防止）*/
+  --table-empty-min-height: calc(var(--table-font-size) * var(--phi) * var(--phi));
+
+  /* 色トークン（BannerAlert / Avatar / Button と同系統。ハードコードは一箇所に集約）*/
+  --table-bg: #ffffff;
+  --table-header-bg: #f5f5f5;
+  --table-border-color: #d5d0c9;
+  --table-fg: #000000;
+  --table-fg-muted: #474747;
+  --table-row-hover: #f5f5f5;
+  --table-row-stripe: rgba(0, 0, 0, 0.025);
+
+  /* コンテナ：横スクロール許容＋枠線で面を区切る */
+  display: block;
+  overflow: auto;
+  border: var(--table-border-width) solid var(--table-border-color);
+  border-radius: var(--table-radius);
+  background: var(--table-bg);
+  font-family: acumin-pro, sans-serif;
+  box-sizing: border-box;
+}
+
+/* --- サイズ展開（反復：BannerAlert / Avatar と同一の公比スケールを再利用）--- */
+[data-ui-data-table][data-ui-data-table-size="xs"] {
+  --table-font-size: var(--lk-size-3xs);
+}
+
+[data-ui-data-table][data-ui-data-table-size="sm"] {
+  --table-font-size: var(--lk-size-2xs);
+}
+
+[data-ui-data-table][data-ui-data-table-size="md"] {
+  --table-font-size: var(--lk-size-xs);
+}
+
+[data-ui-data-table][data-ui-data-table-size="lg"] {
+  --table-font-size: var(--lk-size-sm);
+}
+
+[data-ui-data-table][data-ui-data-table-size="xl"] {
+  --table-font-size: var(--lk-size-md);
+}
+
+/* --- テーブル本体（整列：幅いっぱい・境界を結合）--- */
+.data-table__table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
+}
+
+/* --- ヘッダー（対比：面と字間で本文と区別）--- */
+.data-table__head {
+  background: var(--table-header-bg);
+}
+
+.data-table__th {
+  padding: var(--table-header-pad-y) var(--table-cell-pad-x);
+  font-size: var(--table-header-font-size);
+  font-weight: 400;
+  line-height: var(--table-line-height);
+  letter-spacing: var(--table-header-tracking);
+  color: var(--table-fg-muted);
+  white-space: nowrap;
+  /* 既定の寄せ（整列）。align 属性で上書き */
+  text-align: left;
+}
+
+/* --- ボディセル（近接：行内で密接配置／対比：本文は濃く）--- */
+.data-table__td {
+  padding: var(--table-cell-pad-y) var(--table-cell-pad-x);
+  font-size: var(--table-cell-font-size);
+  line-height: var(--table-line-height);
+  color: var(--table-fg);
+  vertical-align: middle;
+}
+
+/* --- 行（整列：行頭で罫線を反復させ走査線をつくる）--- */
+.data-table__row {
+  border-top: var(--table-border-width) solid var(--table-border-color);
+}
+
+/* striped：偶数行に薄い面（反復・可読性）*/
+[data-ui-data-table-striped="true"] .data-table__row:nth-of-type(even) {
+  background: var(--table-row-stripe);
+}
+
+/* hoverable：行ホバーで面を出す（対比・フィードバック）*/
+[data-ui-data-table-hoverable="true"] .data-table__row {
+  transition: background-color 120ms ease;
+}
+
+[data-ui-data-table-hoverable="true"] .data-table__row:hover {
+  background: var(--table-row-hover);
+}
+
+/* --- セルの寄せ（整列：列単位で揃える）--- */
+.data-table__th[data-align="left"],
+.data-table__td[data-align="left"] {
+  text-align: left;
+}
+
+.data-table__th[data-align="center"],
+.data-table__td[data-align="center"] {
+  text-align: center;
+}
+
+.data-table__th[data-align="right"],
+.data-table__td[data-align="right"] {
+  text-align: right;
+}
+
+/* --- 空表示（近接：中央へ集約／対比：muted）--- */
+.data-table__empty-cell {
+  padding: var(--table-cell-pad-x) var(--table-cell-pad-x);
+  height: var(--table-empty-min-height);
+  font-size: var(--table-empty-font-size);
+  line-height: var(--table-line-height);
+  color: var(--table-fg-muted);
+  text-align: center;
+}
+
+/* --- アクセシビリティ配慮（BannerAlert / Avatar / Button と同思想で踏襲）--- */
+@media (forced-colors: active) {
+  [data-ui-data-table] {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+
+  .data-table__row {
+    border-top: 1px solid CanvasText;
+  }
+
+  [data-ui-data-table-hoverable="true"] .data-table__row:hover,
+  [data-ui-data-table-striped="true"] .data-table__row:nth-of-type(even) {
+    background: Canvas;
+    forced-color-adjust: none;
+  }
+}
