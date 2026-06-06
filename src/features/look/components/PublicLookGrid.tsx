@@ -198,15 +198,12 @@ function PublicLookCatalog({ looks, initialSeason = 'ALL', className }: PublicLo
         onClick={interactive ? () => setIsFilterDrawerOpen(true) : undefined}
         variant="secondary"
         size="compact"
-        className="tracking-[0.15em] uppercase"
+        className="tracking-widest"
         aria-label={interactive ? 'Open filter drawer FILTER' : undefined}
         aria-haspopup={interactive ? 'dialog' : undefined}
         aria-expanded={interactive ? isFilterDrawerOpen : undefined}
         tabIndex={interactive ? undefined : -1}
       >
-        <div className="w-4 h-4 flex items-center justify-center" aria-hidden="true">
-          <i className="ri-equalizer-line text-base" />
-        </div>
         FILTER
       </Button>
     </div>
@@ -223,9 +220,6 @@ function PublicLookCatalog({ looks, initialSeason = 'ALL', className }: PublicLo
       >
         <div className="flex h-full flex-col px-5 py-4 sm:px-6 sm:py-5">
           <div className="flex items-center justify-between border-b border-black/10 pb-3">
-            <h2 className="text-[11px] tracking-[0.15em] text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-              FILTER
-            </h2>
             <button
               type="button"
               onClick={() => setIsFilterDrawerOpen(false)}

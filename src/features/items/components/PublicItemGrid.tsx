@@ -734,7 +734,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
         onClick={interactive ? () => setIsFilterDrawerOpen(true) : undefined}
         variant="text"
         size="compact"
-        className="tracking-[0.15em] uppercase"
+        className="tracking-widest"
         aria-haspopup={interactive ? 'dialog' : undefined}
         aria-expanded={interactive ? isFilterDrawerOpen : undefined}
         tabIndex={interactive ? undefined : -1}
