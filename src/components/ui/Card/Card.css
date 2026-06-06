@@ -1,8 +1,5 @@
 /* File: src/components/ui/Card/Card.css */
 [data-ui-card] {
-  /* --- スケール基準（Avatar / Button / BannerAlert と同じ φ ベースのトークン体系を踏襲）--- */
-  --card-phi: var(--button-phi);
-
   /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
   --card-font-size: var(--lk-size-xs);
 
@@ -12,16 +9,16 @@
    *   BannerAlert が横長前提で縦を圧縮したのに対し、
    *   Card は四方を等しく取り「ブロック」としての安定感を出す。
    */
-  --card-pad: calc(var(--card-font-size) * var(--card-phi));
+  --card-pad: calc(var(--card-font-size) * var(--phi));
 
   /* 近接：要素間の基本ギャップは font / φ で統一 */
-  --card-gap: calc(var(--card-font-size) / var(--card-phi));
+  --card-gap: calc(var(--card-font-size) / var(--phi));
 
   /* メタ情報（カテゴリ/タイトル/価格）間の縦間隔＝font / φ²（密にグループ化）*/
-  --card-meta-gap: calc(var(--card-font-size) / (var(--card-phi) * var(--card-phi)));
+  --card-meta-gap: calc(var(--card-font-size) / (var(--phi) * var(--phi)));
 
   /* ラベルと本文の間隔＝font / φ */
-  --card-label-gap: calc(var(--card-font-size) / var(--card-phi));
+  --card-label-gap: calc(var(--card-font-size) / var(--phi));
 
   /* 画像下マージン＝font（本文とのグループ境界をやや広めに）*/
   --card-media-gap: var(--card-font-size);
@@ -29,20 +26,20 @@
   /* タイトル＝基準 font。価格も同階層。カテゴリは φ で一段小さく（対比）*/
   --card-title-size: var(--card-font-size);
   --card-price-size: var(--card-font-size);
-  --card-category-size: calc(var(--card-font-size) / var(--card-phi));
-  --card-label-size: calc(var(--card-font-size) / var(--card-phi));
+  --card-category-size: calc(var(--card-font-size) / var(--phi));
+  --card-label-size: calc(var(--card-font-size) / var(--phi));
 
   /* 枠線（直値を排し φ³ から導出。最小 1px を保証）*/
   --card-border-width: max(
     1px,
-    calc(var(--card-font-size) / (var(--card-phi) * var(--card-phi) * var(--card-phi) * var(--card-phi)))
+    calc(var(--card-font-size) / (var(--phi) * var(--phi) * var(--phi) * var(--phi)))
   );
 
   /* オーバーレイ操作の余白＝font / φ（メディア四隅からの近接距離）*/
-  --card-overlay-offset: calc(var(--card-font-size) / var(--card-phi));
+  --card-overlay-offset: calc(var(--card-font-size) / var(--phi));
 
   /* プレビュー削除ボタンのオフセット＝font / φ² */
-  --card-remove-offset: calc(var(--card-font-size) / (var(--card-phi) * var(--card-phi)));
+  --card-remove-offset: calc(var(--card-font-size) / (var(--phi) * var(--phi)));
 
   /* 文字トラッキング（対比：ラベル/カテゴリは字間を開けて区別）*/
   --card-tracking: 0.15em;

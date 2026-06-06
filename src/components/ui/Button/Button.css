@@ -1,7 +1,7 @@
 
 [data-ui-button] {
 --button-font-size: var(--control-button-font-size-md);
---button-pad-ratio: calc(1 / var(--button-phi));
+--button-pad-ratio: calc(1 / var(--phi));
 --button-pad-block: calc(var(--button-font-size) * var(--button-pad-ratio));
 --button-pad-inline: calc(var(--button-font-size) * var(--button-pad-ratio));
 --button-height-ratio: calc(var(--control-line-height) + (var(--button-pad-ratio) * 2));
@@ -22,7 +22,7 @@ position: relative;
 display: inline-flex;
 align-items: center;
 justify-content: center;
-gap: calc(1em / var(--button-phi));
+gap: calc(1em / var(--phi));
 min-height: var(--button-min-height);
 padding: var(--button-pad-block) var(--button-pad-inline);
 border: 1px solid var(--button-border-color);

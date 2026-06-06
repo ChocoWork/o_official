@@ -1,10 +1,11 @@
-import "@/components/ui/SingleSelect/SingleSelect.css"
+// File: src/components/ui/SingleSelect/SingleSelect.tsx
+'use client';
+
+import '@/components/ui/SingleSelect/SingleSelect.css';
 import { cn } from '@/lib/utils';
-import type { CSSProperties } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
-import { controlBaseClass } from '@/components/ui/shared';
-import type { SingleSelectProps} from '@/components/ui/SingleSelect/SingleSelect_types';
+import type { SingleSelectProps } from '@/components/ui/SingleSelect/SingleSelect_types';
 
 export function SingleSelect({
   label,
@@ -20,27 +21,13 @@ export function SingleSelect({
   size = 'md',
   ...props
 }: SingleSelectProps) {
-  const heightClass = size === 'sm' ? 'h-8' : size === 'lg' ? 'h-12' : 'h-10';
-  const textClass = size === 'lg' ? 'text-base' : 'text-sm';
-  const labelStyle: CSSProperties = { fontSize: 'var(--lk-size-xs)' };
-  const fieldStyle: CSSProperties = {
-    fontSize:
-      size === 'xs'
-        ? 'var(--lk-size-xs)'
-        : size === 'sm'
-          ? 'var(--lk-size-sm)'
-          : size === 'lg'
-            ? 'var(--lk-size-lg)'
-            : size === 'xl'
-              ? 'var(--lk-size-xl)'
-              : 'var(--lk-size-md)',
-    ...(props.style ?? {}),
-  };
   const selectId = id ?? props.name;
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
-  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [dropdownPos, setDropdownPos] = useState<
+    { top: number; left: number; width: number } | null
+  >(null);
 
   const resolvedValue = useMemo(() => {
     if (typeof value === 'string') {
@@ -103,23 +90,26 @@ export function SingleSelect({
     };
   }, [open]);
 
+  const rootDataAttrs = {
+    'data-ui-single-select': 'true',
+    'data-ui-single-select-size': size,
+  } as const;
+
+  // --- dropdown：ポータル描画のカスタムリスト ---
   if (variant === 'dropdown') {
-    const optionPadding = size === 'sm' ? 'py-2' : size === 'lg' ? 'py-4' : 'py-3';
+    const selectedLabel = resolvedValue
+      ? options.find((opt) => opt.value === resolvedValue)?.label ?? resolvedValue
+      : placeholder || '選択してください';
+
     return (
-      <label className="block space-y-2">
-        {label ? <span className="block text-xs tracking-widest text-black/80" style={labelStyle}>{label}</span> : null}
-        <div className="relative" ref={wrapperRef}>
+      <label className="single-select" data-ui-single-select-variant="dropdown" {...rootDataAttrs}>
+        {label ? <span className="single-select__label">{label}</span> : null}
+        <div className="single-select__wrapper" ref={wrapperRef}>
           <button
             type="button"
-            className={cn(
-              controlBaseClass,
-              'flex items-center justify-between text-left',
-              heightClass,
-              textClass,
-              disabled ? 'cursor-not-allowed border-black/10 bg-[#f5f5f5] text-black/40' : 'cursor-pointer',
-              className,
-            )}
-            style={fieldStyle}
+            className={cn('single-select__trigger', className)}
+            data-ui-single-select-disabled={disabled ? 'true' : undefined}
+            data-ui-single-select-placeholder={!resolvedValue ? 'true' : undefined}
             onClick={() => {
               if (!disabled) {
                 setOpen((previous) => !previous);
@@ -129,78 +119,76 @@ export function SingleSelect({
             aria-expanded={open}
             disabled={disabled}
           >
-            <span>
-              {resolvedValue
-                ? options.find((opt) => opt.value === resolvedValue)?.label ?? resolvedValue
-                : placeholder || '選択してください'}
-            </span>
-            <span className="flex h-4 w-4 items-center justify-center">
-              <i
-                className="ri-arrow-down-s-line text-base transition-transform"
-                style={{ transform: open ? 'rotate(180deg)' : undefined }}
-              ></i>
+            <span className="single-select__value">{selectedLabel}</span>
+            <span className="single-select__chevron" data-ui-single-select-open={open ? 'true' : undefined}>
+              <i className="ri-arrow-down-s-line" aria-hidden="true" />
             </span>
           </button>
-          {open && dropdownPos &&
-            ReactDOM.createPortal(
-              <div
-                ref={dropdownRef}
-                style={{
-                  position: 'absolute',
-                  top: dropdownPos.top,
-                  left: dropdownPos.left,
-                  width: dropdownPos.width,
-                }}
-                className="z-10 mt-1 border border-black/20 bg-white shadow-lg"
-              >
-                {options.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    className={cn(
-                      'w-full cursor-pointer px-4',
-                      optionPadding,
-                      textClass,
-                      'text-left transition-colors hover:bg-[#f5f5f5]',
-                      resolvedValue === option.value ? 'bg-[#f5f5f5]' : null,
-                    )}
-                    style={fieldStyle}
-                    onClick={() => {
-                      onValueChange?.(option.value);
-                      setOpen(false);
-                    }}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>,
-              document.body,
-            )}
 
+          {open && dropdownPos
+            ? ReactDOM.createPortal(
+                <div
+                  ref={dropdownRef}
+                  className="single-select__menu"
+                  data-ui-single-select-size={size}
+                  style={{
+                    top: dropdownPos.top,
+                    left: dropdownPos.left,
+                    width: dropdownPos.width,
+                  }}
+                  role="listbox"
+                >
+                  {options.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className="single-select__option"
+                      data-ui-single-select-selected={
+                        resolvedValue === option.value ? 'true' : undefined
+                      }
+                      role="option"
+                      aria-selected={resolvedValue === option.value}
+                      onClick={() => {
+                        onValueChange?.(option.value);
+                        setOpen(false);
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>,
+                document.body,
+              )
+            : null}
         </div>
       </label>
     );
   }
 
+  // --- native（既定）：ネイティブ select ---
   return (
-    <label className="block space-y-2">
-      {label ? <span className="block text-xs tracking-widest text-black/80" style={labelStyle}>{label}</span> : null}
-      <select
-        id={selectId}
-        className={cn(controlBaseClass, 'cursor-pointer pr-8', heightClass, textClass, className)}
-        style={fieldStyle}
-        value={value}
-        defaultValue={defaultValue}
-        disabled={disabled}
-        {...props}
-      >
-        {placeholder ? <option value="">{placeholder}</option> : null}
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+    <label className="single-select" data-ui-single-select-variant="native" {...rootDataAttrs}>
+      {label ? <span className="single-select__label">{label}</span> : null}
+      <div className="single-select__wrapper">
+        <select
+          id={selectId}
+          className={cn('single-select__native', className)}
+          value={value}
+          defaultValue={defaultValue}
+          disabled={disabled}
+          {...props}
+        >
+          {placeholder ? <option value="">{placeholder}</option> : null}
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <span className="single-select__chevron single-select__chevron--native" aria-hidden="true">
+          <i className="ri-arrow-down-s-line" />
+        </span>
+      </div>
     </label>
   );
 }

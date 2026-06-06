@@ -73,9 +73,9 @@ h5 {
 
 :root {
   --radius: 0.625rem;
-  --button-phi: 1.61803398875;
+  --phi: 1.618;
   --control-line-height: 1.272;
-  --control-pad-ratio: calc(var(--control-line-height) / (var(--button-phi) * var(--button-phi)));
+  --control-pad-ratio: calc(var(--control-line-height) / (var(--phi) * var(--phi)));
   --control-height-ratio: calc(var(--control-line-height) + (var(--control-pad-ratio) * 2));
   --site-header-height: 52px;
   --site-header-offset: 0px;
@@ -111,8 +111,6 @@ h5 {
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
 
-  --lk-scalefactor: 1.618;
-  --lk-wholestep: 1.618;
   --lk-halfstep: 1.272;
   --lk-quarterstep: 1.128;
   --lk-eighthstep: 1.062;
@@ -164,12 +162,12 @@ h5 {
   /* Unitless sizes; required for adhoc calculations (division and multiplication in calc() require unitless numbers */
   /* NOTE: in calc() with multiplication or division the right side must be a unitless number */
 
-  --lk-size-sm-unitless: calc(1 / var(--lk-scalefactor));
-  --lk-size-xs-unitless: calc(var(--lk-size-sm-unitless) / var(--lk-scalefactor));
-  --lk-size-2xs-unitless: calc(var(--lk-size-xs-unitless) / var(--lk-scalefactor));
-  --lk-size-lg-unitless: calc(1 * var(--lk-scalefactor));
-  --lk-size-xl-unitless: calc(var(--lk-size-lg-unitless) * var(--lk-scalefactor));
-  --lk-size-2xl-unitless: calc(var(--lk-size-xl-unitless) * var(--lk-scalefactor));
+  --lk-size-sm-unitless: calc(1 / var(--phi));
+  --lk-size-xs-unitless: calc(var(--lk-size-sm-unitless) / var(--phi));
+  --lk-size-2xs-unitless: calc(var(--lk-size-xs-unitless) / var(--phi));
+  --lk-size-lg-unitless: calc(1 * var(--phi));
+  --lk-size-xl-unitless: calc(var(--lk-size-lg-unitless) * var(--phi));
+  --lk-size-2xl-unitless: calc(var(--lk-size-xl-unitless) * var(--phi));
 
   --lk-look-related-items-line-height: var(--lk-halfstep);
   --lk-look-related-items-visible-gap: calc(var(--lk-size-xs) * var(--lk-wholestep-dec));
@@ -349,7 +347,7 @@ html[data-header-visible='false'] {
   .header-drawer-accordion[data-ui-accordion][data-ui-accordion-size="sm"] {
     --header-drawer-subnav-font-size: 0.75rem;
     --header-drawer-subnav-pad-block: 0.125rem;
-    --header-drawer-subnav-target-gap: calc(var(--header-drawer-subnav-font-size) / var(--button-phi));
+    --header-drawer-subnav-target-gap: calc(var(--header-drawer-subnav-font-size) / var(--phi));
     --header-drawer-subnav-gap: max(0px, calc(var(--header-drawer-subnav-target-gap) - (var(--header-drawer-subnav-pad-block) * 2)));
     --accordion-font-size: var(--lk-size-md);
     --accordion-pad-block: 0.75rem;

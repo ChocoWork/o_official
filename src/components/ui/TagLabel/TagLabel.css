@@ -2,7 +2,7 @@
 --tag-label-pad-block: calc(1em * var(--control-pad-ratio));
 --tag-label-pad-inline: 1em;
 --tag-label-min-height: calc((1em * var(--control-line-height)) + (var(--tag-label-pad-block) * 2));
---tag-label-gap: calc(1em / var(--button-phi));
+--tag-label-gap: calc(1em / var(--phi));
 --tag-label-radius: 0;
 --tag-label-bg: transparent;
 --tag-label-color: #111111;

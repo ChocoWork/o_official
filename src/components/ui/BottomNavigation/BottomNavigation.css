@@ -1,36 +1,33 @@
 
 [data-ui-bottom-nav] {
-  /* --- スケール基準（Avatar / Button と同じ φ ベースのトークン体系を踏襲）--- */
-  --bottom-nav-phi: var(--button-phi);
-
   /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
   --bottom-nav-font-size: var(--lk-size-md);
 
   /* アイコン径＝font × φ（ラベルより一段大きく対比）*/
-  --bottom-nav-icon-size: calc(var(--bottom-nav-font-size) * var(--bottom-nav-phi));
+  --bottom-nav-icon-size: calc(var(--bottom-nav-font-size) * var(--phi));
 
   /* ラベル文字＝font / φ（アイコンに対し従属させ階層化）*/
-  --bottom-nav-label-size: calc(var(--bottom-nav-font-size) / var(--bottom-nav-phi));
+  --bottom-nav-label-size: calc(var(--bottom-nav-font-size) / var(--phi));
 
   /* 近接：アイコンとラベルの縦ギャップ＝font / φ²（密接にまとめる）*/
-  --bottom-nav-item-gap: calc(var(--bottom-nav-font-size) / (var(--bottom-nav-phi) * var(--bottom-nav-phi)));
+  --bottom-nav-item-gap: calc(var(--bottom-nav-font-size) / (var(--phi) * var(--phi)));
 
   /* グリッド列間ギャップ＝font / φ */
-  --bottom-nav-list-gap: calc(var(--bottom-nav-font-size) / var(--bottom-nav-phi));
+  --bottom-nav-list-gap: calc(var(--bottom-nav-font-size) / var(--phi));
 
   /* ボタン内パディング：横＝font / φ、縦＝横 / φ（縦を控えめに）*/
-  --bottom-nav-btn-pad-x: calc(var(--bottom-nav-font-size) / var(--bottom-nav-phi));
-  --bottom-nav-btn-pad-y: calc(var(--bottom-nav-btn-pad-x) / var(--bottom-nav-phi));
+  --bottom-nav-btn-pad-x: calc(var(--bottom-nav-font-size) / var(--phi));
+  --bottom-nav-btn-pad-y: calc(var(--bottom-nav-btn-pad-x) / var(--phi));
 
   /* バー全体パディング＝font / φ²（端に詰めすぎない最小余白）*/
-  --bottom-nav-bar-pad: calc(var(--bottom-nav-font-size) / (var(--bottom-nav-phi) * var(--bottom-nav-phi)));
+  --bottom-nav-bar-pad: calc(var(--bottom-nav-font-size) / (var(--phi) * var(--phi)));
 
   /* 角丸・枠線（直値を排し φ から導出）*/
-  --bottom-nav-radius: calc(var(--bottom-nav-font-size) / var(--bottom-nav-phi));
-  --bottom-nav-border-width: max(1px, calc(var(--bottom-nav-font-size) / (var(--bottom-nav-phi) * var(--bottom-nav-phi) * var(--bottom-nav-phi))));
+  --bottom-nav-radius: calc(var(--bottom-nav-font-size) / var(--phi));
+  --bottom-nav-border-width: max(1px, calc(var(--bottom-nav-font-size) / (var(--phi) * var(--phi) * var(--phi))));
 
   /* minimal の字間（トラッキング）＝font / φ⁴（わずかに開ける）*/
-  --bottom-nav-tracking: calc(var(--bottom-nav-font-size) / (var(--bottom-nav-phi) * var(--bottom-nav-phi) * var(--bottom-nav-phi) * var(--bottom-nav-phi)));
+  --bottom-nav-tracking: calc(var(--bottom-nav-font-size) / (var(--phi) * var(--phi) * var(--phi) * var(--phi)));
 
   /* z-index（直値を避け変数化。プロジェクト既定があれば差し替え）*/
   --bottom-nav-z: var(--lk-z-fixed, 40);
@@ -114,7 +111,7 @@
   display: flex;
   align-items: center;
   justify-content: space-around;
-  padding-block: calc(var(--bottom-nav-font-size) / var(--bottom-nav-phi));
+  padding-block: calc(var(--bottom-nav-font-size) / var(--phi));
 }
 
 .bottom-nav__item {

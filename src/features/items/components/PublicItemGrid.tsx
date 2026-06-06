@@ -755,24 +755,28 @@ export function PublicItemGrid(props: PublicItemGridProps) {
       </Button>
 
       {interactive ? (
-        <div className="relative -mt-[5px]" ref={mobileSortMenuRef}>
-          <button
+        <div className="relative -mt-[3px]" ref={mobileSortMenuRef}>
+          <Button
             type="button"
             onClick={() => setIsSortMenuOpen((prev) => !prev)}
+            variant="text"
+            size="compact"
             className="tracking-[0.22em] text-black uppercase"
             style={{ fontSize: 'var(--lk-size-2xs)' }}
             aria-label="Open sort menu"
             aria-expanded={isSortMenuOpen}
           >
             SORT
-          </button>
+          </Button>
 
           {isSortMenuOpen && (
             <div className="absolute right-0 top-7 z-20 w-52 border border-black/15 bg-white shadow-lg">
               {SORT_OPTIONS.map((option) => (
-                <button
+                <Button
                   key={option.value}
                   type="button"
+                  variant="text"
+                  size="xs"
                   className={cn(
                     'w-full px-3 py-2 text-left text-xs tracking-wider hover:bg-[#f5f5f5]',
                     selectedSort === option.value ? 'text-black' : 'text-[#474747]',
@@ -785,7 +789,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
                   }}
                 >
                   {option.label}
-                </button>
+                </Button>
               ))}
             </div>
           )}
@@ -1096,24 +1100,28 @@ export function PublicItemGrid(props: PublicItemGridProps) {
           </div>
 
           <div className="hidden lg:flex mb-2 sm:mb-4 md:mb-6 items-center justify-end">
-            <div className="relative" ref={desktopSortMenuRef}>
-              <button
+            <div className="relative -mt-[3px]" ref={desktopSortMenuRef}>
+              <Button
                 type="button"
                 onClick={() => setIsSortMenuOpen((prev) => !prev)}
+                variant="text"
+                size="compact"
                 className="tracking-[0.22em] text-black uppercase"
                 style={{ fontSize: 'var(--lk-size-2xs)' }}
                 aria-label="Open sort menu"
                 aria-expanded={isSortMenuOpen}
               >
                 SORT
-              </button>
+              </Button>
 
               {isSortMenuOpen && (
                 <div className="absolute right-0 top-7 z-20 w-52 border border-black/15 bg-white shadow-lg">
                   {SORT_OPTIONS.map((option) => (
-                    <button
+                    <Button
                       key={option.value}
                       type="button"
+                      variant="text"
+                      size="xs"
                       className={cn(
                         'w-full px-3 py-2 text-left text-xs tracking-wider hover:bg-[#f5f5f5]',
                         selectedSort === option.value ? 'text-black' : 'text-[#474747]',
@@ -1126,7 +1134,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
                       }}
                     >
                       {option.label}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               )}

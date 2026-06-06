@@ -1,8 +1,5 @@
 /* File: src/components/ui/Carousel/Carousel.css */
 [data-ui-carousel] {
-  /* --- スケール基準（Avatar / Button / BannerAlert / Card と同じ φ ベースのトークン体系を踏襲）--- */
-  --carousel-phi: var(--button-phi);
-
   /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
   --carousel-font-size: var(--lk-size-xs);
 
@@ -22,32 +19,32 @@
   --carousel-aspect: 16 / 10;
 
   /* 近接：矢印/ドットのエッジオフセット＝font × φ（面の四隅から適度に離す）*/
-  --carousel-edge-offset: calc(var(--carousel-font-size) * var(--carousel-phi));
+  --carousel-edge-offset: calc(var(--carousel-font-size) * var(--phi));
 
   /* ドット間ギャップ＝font / φ（密に並べてグループ化）*/
-  --carousel-dot-gap: calc(var(--carousel-font-size) / var(--carousel-phi));
+  --carousel-dot-gap: calc(var(--carousel-font-size) / var(--phi));
 
   /* ドット径＝font / φ。アクティブは φ² 倍に伸長（対比：長円で現在地を強調）*/
-  --carousel-dot-size: calc(var(--carousel-font-size) / var(--carousel-phi));
+  --carousel-dot-size: calc(var(--carousel-font-size) / var(--phi));
   --carousel-dot-active-width: calc(
-    var(--carousel-dot-size) * var(--carousel-phi) * var(--carousel-phi)
+    var(--carousel-dot-size) * var(--phi) * var(--phi)
   );
 
   /* 矢印アイコン＝font × φ（操作系を本文より一段大きく対比）*/
-  --carousel-arrow-icon-size: calc(var(--carousel-font-size) * var(--carousel-phi));
+  --carousel-arrow-icon-size: calc(var(--carousel-font-size) * var(--phi));
 
   /* トラックモードのギャップ＝font / φ */
-  --carousel-track-gap: calc(var(--carousel-font-size) / var(--carousel-phi));
+  --carousel-track-gap: calc(var(--carousel-font-size) / var(--phi));
 
   /* トラック項目の最小幅＝font × φ⁴（260px 相当をスケールに連動）*/
   --carousel-track-item-min: calc(
-    var(--carousel-font-size) * var(--carousel-phi) * var(--carousel-phi) *
-      var(--carousel-phi) * var(--carousel-phi)
+    var(--carousel-font-size) * var(--phi) * var(--phi) *
+      var(--phi) * var(--phi)
   );
 
   /* トラック下パディング＝font / φ² */
   --carousel-track-pad: calc(
-    var(--carousel-font-size) / (var(--carousel-phi) * var(--carousel-phi))
+    var(--carousel-font-size) / (var(--phi) * var(--phi))
   );
 
   /* 色トークン（Avatar / Button / BannerAlert / Card と同系統。集約）*/
@@ -66,25 +63,25 @@
 /* --- サイズ展開（反復：Avatar / BannerAlert / Card と同一の公比スケールを再利用）--- */
 [data-ui-carousel][data-ui-carousel-size="xs"] {
   --carousel-font-size: var(--lk-size-3xs);
-  --carousel-width-ratio: calc(1 / (var(--carousel-phi) * var(--carousel-phi) * var(--carousel-phi) * var(--carousel-phi)));
+  --carousel-width-ratio: calc(1 / (var(--phi) * var(--phi) * var(--phi) * var(--phi)));
   --carousel-aspect: 4 / 3;
 }
 
 [data-ui-carousel][data-ui-carousel-size="sm"] {
   --carousel-font-size: var(--lk-size-2xs);
-  --carousel-width-ratio: calc(1 / (var(--carousel-phi) * var(--carousel-phi) * var(--carousel-phi)));
+  --carousel-width-ratio: calc(1 / (var(--phi) * var(--phi) * var(--phi)));
   --carousel-aspect: 4 / 3;
 }
 
 [data-ui-carousel][data-ui-carousel-size="md"] {
   --carousel-font-size: var(--lk-size-xs);
-  --carousel-width-ratio: calc(1 / (var(--carousel-phi) * var(--carousel-phi)));
+  --carousel-width-ratio: calc(1 / (var(--phi) * var(--phi)));
   --carousel-aspect: 16 / 10;
 }
 
 [data-ui-carousel][data-ui-carousel-size="lg"] {
   --carousel-font-size: var(--lk-size-sm);
-  --carousel-width-ratio: calc(1 / var(--carousel-phi));
+  --carousel-width-ratio: calc(1 / var(--phi));
   --carousel-aspect: 16 / 9;
 }
 

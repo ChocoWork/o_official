@@ -314,7 +314,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
                 <div className="flex-1 min-w-0">
 
                   <h4
-                    className="mb-[calc(var(--lk-size-sm)/var(--button-phi))] group-hover:text-black/50 transition-colors duration-300 leading-snug"
+                    className="mb-[calc(var(--lk-size-sm)/var(--phi))] group-hover:text-black/50 transition-colors duration-300 leading-snug"
                     style={{ fontSize: 'var(--lk-size-sm)' }}
                   >
                     {article.title}

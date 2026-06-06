@@ -1,20 +1,18 @@
 [data-ui-stepper] {
-  /* --- スケール基準（Button と同じ φ ベースのトークン体系を踏襲）--- */
   --stepper-font-size: var(--lk-size-md);
-  --stepper-phi: var(--button-phi);
 
   /* φ による各種寸法の導出（直値を使わない） */
-  --stepper-control-ratio: calc(var(--control-line-height) + (2 / var(--stepper-phi)));
+  --stepper-control-ratio: calc(var(--control-line-height) + (2 / var(--phi)));
   --stepper-control-size: calc(var(--stepper-font-size) * var(--stepper-control-ratio));
 
   /* 入力幅は正方形コントロールに φ を乗じた黄金比的バランス */
-  --stepper-input-width: calc(var(--stepper-control-size) * var(--stepper-phi));
+  --stepper-input-width: calc(var(--stepper-control-size) * var(--phi));
 
   /* アイコンボックスはコントロールを φ^2 で割ったサイズ（中央の余白を黄金比で確保） */
-  --stepper-icon-box: calc(var(--stepper-control-size) / (var(--stepper-phi) * var(--stepper-phi)));
+  --stepper-icon-box: calc(var(--stepper-control-size) / (var(--phi) * var(--phi)));
 
   /* ラベルと本体の間隔（近接：関連はするが分離） */
-  --stepper-label-gap: calc(var(--stepper-font-size) / var(--stepper-phi));
+  --stepper-label-gap: calc(var(--stepper-font-size) / var(--phi));
   --stepper-label-size: calc(var(--stepper-font-size) / var(--lk-eighthstep-2));
 
   /* 色トークン（Button と同系統。ハードコードは変数化して一箇所に集約） */

@@ -1,0 +1,264 @@
+/* File: src/components/ui/SingleSelect/SingleSelect.css */
+[data-ui-single-select],
+.single-select__menu {
+  /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
+  --ss-font-size: var(--lk-size-xs);
+
+  /*
+   * フィールド高さ＝font × φ²（タップしやすい操作面）。
+   * 横パディング＝font × φ、縦パディング＝font / φ。
+   *   → BannerAlert 同様、横は広く縦は詰める。
+   */
+  --ss-field-height: calc(var(--ss-font-size) * var(--phi) * var(--phi));
+  --ss-pad-x: calc(var(--ss-font-size) * var(--phi));
+  --ss-pad-y: calc(var(--ss-font-size) / var(--phi));
+
+  /* ラベルと操作部の縦間隔＝font / φ（近接でグループ化）*/
+  --ss-label-gap: calc(var(--ss-font-size) / var(--phi));
+
+  /* シェブロン径＝font × φ（操作系を本文より一段大きく対比）*/
+  --ss-chevron-size: calc(var(--ss-font-size) * var(--phi));
+
+  /* シェブロンの右端オフセット＝font / φ（近接：右端に寄せる）*/
+  --ss-chevron-offset: calc(var(--ss-font-size) / var(--phi));
+
+  /* シェブロン領域ぶんの右パディング確保＝chevron + offset × φ */
+  --ss-field-pad-right: calc(
+    var(--ss-chevron-size) + var(--ss-chevron-offset) * var(--phi)
+  );
+
+  /* メニューとフィールドの隙間＝font / φ³ */
+  --ss-menu-gap: calc(var(--ss-font-size) / (var(--phi) * var(--phi) * var(--phi)));
+
+  /* オプション縦パディング＝font / φ（行の押しやすさを確保）*/
+  --ss-option-pad-y: calc(var(--ss-font-size) / var(--phi));
+
+  /* 枠線（直値を排し φ³ から導出。最小 1px）*/
+  --ss-border-width: 1px;
+
+  /* ラベル字間（ラベル系で反復する tracking）*/
+  --ss-tracking: 0.15em;
+
+  /* テキストサイズ（ラベルは本文より φ で一段小さく対比）*/
+  --ss-label-size: calc(var(--ss-font-size) / var(--phi));
+  --ss-field-size: var(--ss-font-size);
+
+  /* 色トークン（他コンポーネントと同系統。集約）*/
+  --ss-fg: #000000;
+  --ss-fg-label: rgba(0, 0, 0, 0.8);
+  --ss-fg-placeholder: rgba(0, 0, 0, 0.4);
+  --ss-fg-disabled: rgba(0, 0, 0, 0.4);
+  --ss-bg: #ffffff;
+  --ss-bg-hover: #f5f5f5;
+  --ss-bg-selected: #f5f5f5;
+  --ss-bg-disabled: #f5f5f5;
+  --ss-border-color: rgba(0, 0, 0, 0.2);
+  --ss-border-color-disabled: rgba(0, 0, 0, 0.1);
+  --ss-border-color-active: #000000;
+  --ss-menu-shadow: 0 calc(var(--ss-font-size) / var(--phi))
+    calc(var(--ss-font-size) * var(--phi)) rgba(0, 0, 0, 0.15);
+
+  font-family: acumin-pro, sans-serif;
+  box-sizing: border-box;
+}
+
+/* --- ルートレイアウト（近接：ラベルと操作部を縦に密接配置）--- */
+[data-ui-single-select] {
+  display: block;
+}
+
+/* --- サイズ展開（反復：他コンポーネントと同一の公比スケールを再利用）---
+ * font-size 1 変数の上書きで、高さ・パディング・シェブロン・枠線が一括連動。
+ */
+[data-ui-single-select][data-ui-single-select-size="xs"],
+.single-select__menu[data-ui-single-select-size="xs"] {
+  --ss-font-size: var(--lk-size-3xs);
+}
+
+[data-ui-single-select][data-ui-single-select-size="sm"],
+.single-select__menu[data-ui-single-select-size="sm"] {
+  --ss-font-size: var(--lk-size-2xs);
+}
+
+[data-ui-single-select][data-ui-single-select-size="md"],
+.single-select__menu[data-ui-single-select-size="md"] {
+  --ss-font-size: var(--lk-size-xs);
+}
+
+[data-ui-single-select][data-ui-single-select-size="lg"],
+.single-select__menu[data-ui-single-select-size="lg"] {
+  --ss-font-size: var(--lk-size-sm);
+}
+
+[data-ui-single-select][data-ui-single-select-size="xl"],
+.single-select__menu[data-ui-single-select-size="xl"] {
+  --ss-font-size: var(--lk-size-md);
+}
+
+/* --- ラベル（対比：字間を広げ muted で操作部と区別）--- */
+.single-select__label {
+  display: block;
+  margin-bottom: var(--ss-label-gap);
+  font-size: var(--ss-label-size);
+  letter-spacing: var(--ss-tracking);
+  color: var(--ss-fg-label);
+}
+
+/* --- 操作部ラッパ（整列：シェブロンを内側に重ねる相対基準）--- */
+.single-select__wrapper {
+  position: relative;
+  width: 100%;
+}
+
+/* --- 共通フィールド（trigger / native）の見た目 ---
+ * controlBaseClass の役割（枠線・背景・高さ・パディング）を φ トークンで再定義。
+ */
+.single-select__trigger,
+.single-select__native {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: var(--ss-field-height);
+  padding: var(--ss-pad-y) var(--ss-field-pad-right) var(--ss-pad-y) var(--ss-pad-x);
+  border: var(--ss-border-width) solid var(--ss-border-color);
+  border-radius: 0;
+  background: var(--ss-bg);
+  color: var(--ss-fg);
+  font-size: var(--ss-field-size);
+  font-family: inherit;
+  line-height: var(--control-line-height, 1.4);
+  cursor: pointer;
+  transition: border-color 120ms ease;
+  box-sizing: border-box;
+}
+
+.single-select__trigger:focus,
+.single-select__native:focus {
+  border-color: var(--ss-border-color-active);
+  outline: none;
+}
+
+/* --- トリガー（dropdown）：値とシェブロンを両端そろえ（整列）--- */
+.single-select__trigger {
+  justify-content: space-between;
+  text-align: left;
+}
+
+/* disabled（対比：淡色・薄枠・操作不可）*/
+.single-select__trigger[data-ui-single-select-disabled="true"] {
+  cursor: not-allowed;
+  border-color: var(--ss-border-color-disabled);
+  background: var(--ss-bg-disabled);
+  color: var(--ss-fg-disabled);
+}
+
+/* プレースホルダ表示（対比：muted）*/
+.single-select__trigger[data-ui-single-select-placeholder="true"] .single-select__value {
+  color: var(--ss-fg-placeholder);
+}
+
+.single-select__value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- ネイティブ select（整列：シェブロン領域ぶん右パディング確保）--- */
+.single-select__native {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+}
+
+.single-select__native:disabled {
+  cursor: not-allowed;
+  border-color: var(--ss-border-color-disabled);
+  background: var(--ss-bg-disabled);
+  color: var(--ss-fg-disabled);
+}
+
+/* --- シェブロン（対比：操作系を一段大きく／整列：垂直中央）--- */
+.single-select__chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: var(--ss-chevron-size);
+  height: var(--ss-chevron-size);
+  font-size: var(--ss-chevron-size);
+  line-height: 1;
+  transition: transform 120ms ease;
+}
+
+/* dropdown のシェブロンは開いたら反転（反復：状態を回転で示す）*/
+.single-select__chevron[data-ui-single-select-open="true"] {
+  transform: rotate(180deg);
+}
+
+/* native のシェブロンは select に重ねて右端に固定（クリックは select へ透過）*/
+.single-select__chevron--native {
+  position: absolute;
+  top: 50%;
+  right: var(--ss-chevron-offset);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+/* --- ポータルメニュー（近接：フィールド直下／対比：影で浮かせる）--- */
+.single-select__menu {
+  position: absolute;
+  z-index: 10;
+  margin-top: var(--ss-menu-gap);
+  border: var(--ss-border-width) solid var(--ss-border-color);
+  background: var(--ss-bg);
+  box-shadow: var(--ss-menu-shadow);
+  box-sizing: border-box;
+}
+
+/* --- オプション（反復：等間隔の行／対比：hover・選択で面を出す）--- */
+.single-select__option {
+  display: block;
+  width: 100%;
+  padding: var(--ss-option-pad-y) var(--ss-pad-x);
+  border: none;
+  background: transparent;
+  color: var(--ss-fg);
+  font-size: var(--ss-field-size);
+  font-family: inherit;
+  line-height: var(--control-line-height, 1.4);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.single-select__option:hover {
+  background: var(--ss-bg-hover);
+}
+
+.single-select__option[data-ui-single-select-selected="true"] {
+  background: var(--ss-bg-selected);
+}
+
+/* --- アクセシビリティ配慮（他コンポーネントと同思想で踏襲）--- */
+@media (forced-colors: active) {
+  .single-select__trigger,
+  .single-select__native,
+  .single-select__menu {
+    border: 1px solid CanvasText;
+    forced-color-adjust: none;
+  }
+
+  .single-select__option[data-ui-single-select-selected="true"] {
+    background: Highlight;
+    color: HighlightText;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .single-select__chevron,
+  .single-select__option,
+  .single-select__trigger,
+  .single-select__native {
+    transition: none;
+  }
+}
