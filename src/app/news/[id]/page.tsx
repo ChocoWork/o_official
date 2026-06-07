@@ -115,20 +115,32 @@ export default async function NewsDetailPage({
         <nav aria-label="Breadcrumb" className="mb-4 sm:mb-5">
           <ol className="flex items-center gap-2 text-[#474747]" style={metaTextStyle}>
             <li>
-              <Link href={`/news${navCategoryParam}`} className="hover:text-black transition-colors underline underline-offset-2">
-                NEWS
+              <Link href={`/news${navCategoryParam}`} className="group relative inline-flex text-[#474747] transition-colors hover:text-black">
+                <span>NEWS</span>
+                <span
+                  aria-hidden="true"
+                  className="underline-animation-left2right scale-x-0 group-hover:scale-x-100"
+                />
               </Link>
             </li>
-            <li aria-hidden="true">/</li>
+            <li aria-hidden="true">
+              <i className="ri-arrow-right-s-line" />
+            </li>
             <li>
               <Link
                 href={`/news?category=${encodeURIComponent(article.category)}`}
-                className="hover:text-black transition-colors underline underline-offset-2"
+                className="group relative inline-flex text-[#474747] transition-colors hover:text-black"
               >
-                {article.category}
+                <span>{article.category}</span>
+                <span
+                  aria-hidden="true"
+                  className="underline-animation-left2right scale-x-0 group-hover:scale-x-100"
+                />
               </Link>
             </li>
-            <li aria-hidden="true">/</li>
+            <li aria-hidden="true">
+              <i className="ri-arrow-right-s-line" />
+            </li>
             <li className="truncate" aria-current="page">{article.title}</li>
           </ol>
         </nav>

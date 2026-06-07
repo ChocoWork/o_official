@@ -222,7 +222,7 @@ export default function ItemDetailClient({ id }: Props) {
 
   // 現在選択中のカラー名（alt テキスト用）
   const activeColorName = color || "";
-  const breadcrumbTextStyle = { fontSize: 'var(--lk-size-xs)' } as const;
+  const metaTextStyle = { fontFamily: 'acumin-pro, sans-serif', fontSize: 'var(--lk-size-2xs)' } as const;
   const itemNameStyle = { fontSize: 'var(--lk-size-3xl)' } as const;
   const optionTitleStyle = { fontSize: 'var(--lk-size-xs)' } as const;
   const bodyTextStyle = { fontSize: 'var(--lk-size-sm)' } as const;
@@ -232,11 +232,11 @@ export default function ItemDetailClient({ id }: Props) {
     <div>
       <div className="element-width">
       {/* パンくずナビゲーション (FR-ITEM-DETAIL-010) */}
-      <nav aria-label="breadcrumb" className="mb-6 lg:mb-8">
+      {/* <nav aria-label="breadcrumb" className="mb-6 lg:mb-8">
         <ol className="flex items-center gap-2 tracking-widest text-[#888]" style={breadcrumbTextStyle}>
           <li>
-            <Link href="/" className="hover:text-black transition-colors">
-              HOME
+            <Link href="/item" className="hover:text-black transition-colors">
+              ITEM
             </Link>
           </li>
           <li aria-hidden="true">
@@ -244,7 +244,7 @@ export default function ItemDetailClient({ id }: Props) {
           </li>
           <li>
             <Link href="/item" className="hover:text-black transition-colors">
-              ITEMS
+              {item.category}
             </Link>
           </li>
           <li aria-hidden="true">
@@ -253,6 +253,38 @@ export default function ItemDetailClient({ id }: Props) {
           <li className="text-black truncate max-w-[200px]" aria-current="page">
             {item.name}
           </li>
+        </ol>
+      </nav> */}
+      <nav aria-label="Breadcrumb" className="mb-4 sm:mb-5">
+        <ol className="flex items-center gap-2 text-[#474747]" style={metaTextStyle}>
+          <li>
+            <Link href={`/item`} className="group relative inline-flex text-[#474747] transition-colors hover:text-black">
+              <span>ITEM</span>
+              <span
+                aria-hidden="true"
+                className="underline-animation-left2right scale-x-0 group-hover:scale-x-100"
+              />
+            </Link>
+          </li>
+          <li aria-hidden="true">
+            <i className="ri-arrow-right-s-line" />
+          </li>
+          <li>
+            <Link
+              href={`/item?category=${encodeURIComponent(item.category)}`}
+              className="group relative inline-flex text-[#474747] transition-colors hover:text-black"
+            >
+              <span>{item.category}</span>
+              <span
+                aria-hidden="true"
+                className="underline-animation-left2right scale-x-0 group-hover:scale-x-100"
+              />
+            </Link>
+          </li>
+          <li aria-hidden="true">
+            <i className="ri-arrow-right-s-line" />
+          </li>
+          <li className="truncate" aria-current="page">{item.name}</li>
         </ol>
       </nav>
 
