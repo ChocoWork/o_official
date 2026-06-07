@@ -1,32 +1,37 @@
 import "./Button.css";
-import type { ButtonProps } from './Button_types';
-import Link from 'next/link';
-import type {
-  AnchorHTMLAttributes,
-} from 'react';
+import type { ButtonProps } from "./Button_types";
+import Link from "next/link";
+import type { AnchorHTMLAttributes } from "react";
 
 export function Button({
   href,
-  variant = 'primary',
-  size = 'md',
-  shape = 'square',
+  variant = "primary",
+  size = "md",
+  shape = "square",
   className,
-  type = 'button',
+  type = "button",
   disabled,
   children,
   ...props
 }: ButtonProps) {
+  const uiSize = size === "compact" ? "4xs" : size;
+
   const dataAttrs = {
-    'data-ui-button': 'true',
-    'data-ui-button-variant': variant,
-    'data-ui-button-size': size,
-    'data-ui-button-shape': shape,
-    'data-ui-button-disabled': disabled ? 'true' : undefined,
+    "data-ui-button": "true",
+    "data-ui-button-variant": variant,
+    "data-ui-button-size": size,
+    "data-ui-size": uiSize,
+    "data-ui-button-shape": shape,
+    "data-ui-button-disabled": disabled ? "true" : undefined,
   } as const;
 
   if (href) {
     const anchorProps = props as AnchorHTMLAttributes<HTMLAnchorElement>;
-    const { onClick: anchorOnClick, tabIndex: anchorTabIndex, ...restAnchorProps } = anchorProps;
+    const {
+      onClick: anchorOnClick,
+      tabIndex: anchorTabIndex,
+      ...restAnchorProps
+    } = anchorProps;
 
     return (
       <Link

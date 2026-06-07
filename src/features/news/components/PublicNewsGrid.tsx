@@ -1,24 +1,24 @@
 "use client";
 
-import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { TagLabel } from '@/components/ui/TagLabel/TagLabel';
-import { Button } from '@/components/ui/Button/Button';
-import { Drawer } from '@/components/ui/Drawer/Drawer';
-import { SectionTitle } from '@/components/ui/SectionTitle/SectionTitle';
-import { MultiSelect } from '@/components/ui/MultiSelect/MultiSelect';
-import { categories } from '@/lib/news-data';
-import { cn } from '@/lib/utils';
-import { PublicNewsArticle } from '@/features/news/types';
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { TagLabel } from "@/components/ui/TagLabel/TagLabel";
+import { Button } from "@/components/ui/Button/Button";
+import { Drawer } from "@/components/ui/Drawer/Drawer";
+import { SectionTitle } from "@/components/ui/SectionTitle/SectionTitle";
+import { MultiSelect } from "@/components/ui/MultiSelect/MultiSelect";
+import { categories } from "@/lib/news-data";
+import { cn } from "@/lib/utils";
+import { PublicNewsArticle } from "@/features/news/types";
 
 const NEWS_CATEGORIES = categories;
 const TAB_SCROLL_CONTAINER_CLASS =
-  'w-full overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden';
+  "w-full overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden";
 type NewsCategory = (typeof NEWS_CATEGORIES)[number];
 
 type PublicNewsGridHomeProps = {
-  variant: 'home';
+  variant: "home";
   articles?: PublicNewsArticle[];
   /** 未指定時は 6 */
   fetchLimit?: number;
@@ -26,7 +26,7 @@ type PublicNewsGridHomeProps = {
 };
 
 type PublicNewsGridCatalogProps = {
-  variant: 'catalog';
+  variant: "catalog";
   articles?: PublicNewsArticle[];
   initialCategory?: NewsCategory;
   className?: string;
@@ -37,23 +37,25 @@ type PublicNewsGridProps = PublicNewsGridHomeProps | PublicNewsGridCatalogProps;
 
 function parseCategorySelection(
   categoryParam: string | null,
-  fallback: NewsCategory = 'ALL',
+  fallback: NewsCategory = "ALL",
 ): NewsCategory[] {
   if (!categoryParam || categoryParam.trim().length === 0) {
     return [fallback];
   }
 
   const parsed = categoryParam
-    .split(',')
+    .split(",")
     .map((value) => value.trim().toUpperCase())
-    .filter((value): value is NewsCategory => NEWS_CATEGORIES.includes(value as NewsCategory));
+    .filter((value): value is NewsCategory =>
+      NEWS_CATEGORIES.includes(value as NewsCategory),
+    );
 
   if (parsed.length === 0) {
-    return ['ALL'];
+    return ["ALL"];
   }
 
-  if (parsed.includes('ALL')) {
-    return ['ALL'];
+  if (parsed.includes("ALL")) {
+    return ["ALL"];
   }
 
   return [...new Set(parsed)];
@@ -68,33 +70,42 @@ function isSameSelection(left: NewsCategory[], right: NewsCategory[]): boolean {
 
 export function PublicNewsGrid(props: PublicNewsGridProps) {
   const { variant, className } = props;
-  const catalogProps = props.variant === 'catalog' ? props : null;
+  const catalogProps = props.variant === "catalog" ? props : null;
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const categoryQuery = searchParams.get('category');
-  const [fetchedArticles, setFetchedArticles] = useState<PublicNewsArticle[]>([]);
+  const categoryQuery = searchParams.get("category");
+  const [fetchedArticles, setFetchedArticles] = useState<PublicNewsArticle[]>(
+    [],
+  );
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState<boolean>(false);
-  const [selectedCategories, setSelectedCategories] = useState<NewsCategory[]>(() => {
-    if (catalogProps) {
-      return parseCategorySelection(categoryQuery, catalogProps.initialCategory ?? 'ALL');
-    }
-    return ['ALL'];
-  });
+  const [selectedCategories, setSelectedCategories] = useState<NewsCategory[]>(
+    () => {
+      if (catalogProps) {
+        return parseCategorySelection(
+          categoryQuery,
+          catalogProps.initialCategory ?? "ALL",
+        );
+      }
+      return ["ALL"];
+    },
+  );
 
   const syncCategoryQuery = (nextSelection: NewsCategory[]): void => {
-    if (variant !== 'catalog') {
+    if (variant !== "catalog") {
       return;
     }
 
     const params = new URLSearchParams(searchParams.toString());
-    const normalizedSelection = nextSelection.filter((value) => value !== 'ALL');
+    const normalizedSelection = nextSelection.filter(
+      (value) => value !== "ALL",
+    );
     if (normalizedSelection.length > 0) {
-      params.set('category', normalizedSelection.join(','));
+      params.set("category", normalizedSelection.join(","));
     } else {
-      params.delete('category');
+      params.delete("category");
     }
 
     const query = params.toString();
@@ -109,7 +120,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
 
     const nextSelection = parseCategorySelection(
       categoryQuery,
-      catalogProps.initialCategory ?? 'ALL',
+      catalogProps.initialCategory ?? "ALL",
     );
 
     setSelectedCategories((current) =>
@@ -117,10 +128,11 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
     );
   }, [catalogProps, categoryQuery]);
 
-  const shouldFetch = typeof props.articles === 'undefined';
-  const fetchLimit = variant === 'home' ? (props.fetchLimit ?? 6) : undefined;
+  const shouldFetch = typeof props.articles === "undefined";
+  const fetchLimit = variant === "home" ? (props.fetchLimit ?? 6) : undefined;
   // Over-fetch by 1 to detect whether more articles exist beyond fetchLimit
-  const overFetchLimit = typeof fetchLimit === 'number' ? fetchLimit + 1 : undefined;
+  const overFetchLimit =
+    typeof fetchLimit === "number" ? fetchLimit + 1 : undefined;
 
   useEffect(() => {
     if (!shouldFetch) {
@@ -128,26 +140,28 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
     }
 
     const query = new URLSearchParams();
-    if (typeof overFetchLimit === 'number') {
-      query.set('limit', String(overFetchLimit));
+    if (typeof overFetchLimit === "number") {
+      query.set("limit", String(overFetchLimit));
     }
 
-    const url = query.toString() ? `/api/news?${query.toString()}` : '/api/news';
+    const url = query.toString()
+      ? `/api/news?${query.toString()}`
+      : "/api/news";
 
     const fetchNews = async () => {
       try {
         setLoading(true);
-        const response = await fetch(url, { cache: 'no-store' });
+        const response = await fetch(url, { cache: "no-store" });
         if (!response.ok) {
-          throw new Error('Failed to fetch news');
+          throw new Error("Failed to fetch news");
         }
         const data = (await response.json()) as PublicNewsArticle[];
         setFetchedArticles(data);
         setError(null);
       } catch (fetchError) {
-        console.error('Failed to fetch public news:', fetchError);
+        console.error("Failed to fetch public news:", fetchError);
         setFetchedArticles([]);
-        setError('ニュースデータの取得に失敗しました');
+        setError("ニュースデータの取得に失敗しました");
       } finally {
         setLoading(false);
       }
@@ -157,11 +171,13 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
   }, [shouldFetch, overFetchLimit]);
 
   const sourceArticles = useMemo(
-    () => (typeof props.articles === 'undefined' ? fetchedArticles : props.articles),
+    () =>
+      typeof props.articles === "undefined" ? fetchedArticles : props.articles,
     [fetchedArticles, props.articles],
   );
 
-  const hasMoreArticles = typeof fetchLimit === 'number' && sourceArticles.length > fetchLimit;
+  const hasMoreArticles =
+    typeof fetchLimit === "number" && sourceArticles.length > fetchLimit;
 
   const resolvedArticles = useMemo(
     () => sourceArticles.slice(0, fetchLimit ?? sourceArticles.length),
@@ -169,7 +185,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
   );
 
   const displayArticles = useMemo(() => {
-    if (variant !== 'catalog' || selectedCategories.includes('ALL')) {
+    if (variant !== "catalog" || selectedCategories.includes("ALL")) {
       return resolvedArticles;
     }
     return resolvedArticles.filter((article) =>
@@ -180,9 +196,11 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
   const resolveBuildHref = (article: PublicNewsArticle): string => {
     if (catalogProps) {
       if (catalogProps.buildHref) return catalogProps.buildHref(article);
-      const normalizedSelection = selectedCategories.filter((value) => value !== 'ALL');
+      const normalizedSelection = selectedCategories.filter(
+        (value) => value !== "ALL",
+      );
       if (normalizedSelection.length > 0) {
-        return `/news/${article.id}?category=${encodeURIComponent(normalizedSelection.join(','))}`;
+        return `/news/${article.id}?category=${encodeURIComponent(normalizedSelection.join(","))}`;
       }
       return `/news/${article.id}`;
     }
@@ -194,17 +212,17 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
     let nextSelection: NewsCategory[];
     if (typedValues.length === 0) {
       // 全解除 → ALL に戻す
-      nextSelection = ['ALL'];
+      nextSelection = ["ALL"];
       setSelectedCategories(nextSelection);
       syncCategoryQuery(nextSelection);
       return;
     }
 
-    const hadAll = selectedCategories.includes('ALL');
-    const hasAll = typedValues.includes('ALL');
+    const hadAll = selectedCategories.includes("ALL");
+    const hasAll = typedValues.includes("ALL");
     if (!hadAll && hasAll) {
       // ALL が追加された → ALL のみにリセット
-      nextSelection = ['ALL'];
+      nextSelection = ["ALL"];
       setSelectedCategories(nextSelection);
       syncCategoryQuery(nextSelection);
       return;
@@ -212,7 +230,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
 
     if (hadAll && typedValues.length > 1) {
       // ALL 選択中に他が追加された → ALL を外して他のみに
-      nextSelection = typedValues.filter((v) => v !== 'ALL') as NewsCategory[];
+      nextSelection = typedValues.filter((v) => v !== "ALL") as NewsCategory[];
       setSelectedCategories(nextSelection);
       syncCategoryQuery(nextSelection);
       return;
@@ -235,40 +253,44 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
       className="tracking-widest"
       expandLabelHitArea={false}
       renderOptionLabel={(option) => (
-        <span style={{ fontSize: 'var(--lk-size-4xs)' }}>{option.label}</span>
+        <span style={{ fontSize: "var(--lk-size-4xs)" }}>{option.label}</span>
       )}
     />
   );
 
   const mobileFilterStickyStyle = {
-    top: 'var(--site-header-height)',
-    transform: 'translateY(calc(var(--site-header-offset) - var(--site-header-height)))',
+    top: "var(--site-header-height)",
+    transform:
+      "translateY(calc(var(--site-header-offset) - var(--site-header-height)))",
   } as const;
 
   const desktopFilterStickyStyle = {
-    top: 'var(--site-header-offset)',
+    top: "var(--site-header-offset)",
   } as const;
 
   const renderMobileFilterBar = (interactive: boolean) => (
     <div
-      data-filter-bar={interactive ? 'floating' : 'placeholder'}
+      data-filter-bar={interactive ? "floating" : "placeholder"}
       aria-hidden={interactive ? undefined : true}
       className={cn(
-        'flex items-center justify-between border-b border-black/5 bg-white/95 py-[13px] backdrop-blur',
-        !interactive && 'pointer-events-none invisible',
+        "flex items-center justify-between border-b border-black/5 bg-white/95 py-[13px] backdrop-blur",
+        !interactive && "pointer-events-none invisible",
       )}
     >
       <Button
-        data-filter-button={interactive ? 'floating' : 'placeholder'}
+        data-filter-button={interactive ? "floating" : "placeholder"}
         onClick={interactive ? () => setIsFilterDrawerOpen(true) : undefined}
         variant="secondary"
-        size="compact"
+        size="4xs"
         className="tracking-[0.15em] uppercase"
-        aria-haspopup={interactive ? 'dialog' : undefined}
+        aria-haspopup={interactive ? "dialog" : undefined}
         aria-expanded={interactive ? isFilterDrawerOpen : undefined}
         tabIndex={interactive ? undefined : -1}
       >
-        <div className="w-4 h-4 flex items-center justify-center" aria-hidden="true">
+        <div
+          className="w-4 h-4 flex items-center justify-center"
+          aria-hidden="true"
+        >
           <i className="ri-equalizer-line text-base" />
         </div>
         FILTER
@@ -277,20 +299,22 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
   );
 
   // Mobile: show only 3 articles on home variant (hidden lg:block hides them below lg breakpoint)
-  const resolvedMobileLimit = variant === 'home' ? 3 : undefined;
-  const shouldLimitOnMobile = typeof resolvedMobileLimit === 'number';
-  const hasHiddenItemsOnMobile = shouldLimitOnMobile && resolvedArticles.length > resolvedMobileLimit;
+  const resolvedMobileLimit = variant === "home" ? 3 : undefined;
+  const shouldLimitOnMobile = typeof resolvedMobileLimit === "number";
+  const hasHiddenItemsOnMobile =
+    shouldLimitOnMobile && resolvedArticles.length > resolvedMobileLimit;
 
   const renderGrid = () => (
-    <div className={cn('w-full border-t border-black/10', className)}>
+    <div className={cn("w-full border-t border-black/10", className)}>
       {displayArticles.map((article, index) => {
-        const hideOnMobile = shouldLimitOnMobile && index >= resolvedMobileLimit!;
+        const hideOnMobile =
+          shouldLimitOnMobile && index >= resolvedMobileLimit!;
 
         return (
           <Link
             key={article.id}
             href={resolveBuildHref(article)}
-            className={hideOnMobile ? 'hidden md:block' : 'block'}
+            className={hideOnMobile ? "hidden md:block" : "block"}
           >
             <article className="py-[13px] sm:py-[13px] md:py-[21px] xl:py-[21px] border-b border-black/5 group cursor-pointer">
               <div className="flex-1 items-start">
@@ -298,9 +322,12 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
                 <div className="flex items-center gap-3 mb-[var(--lk-size-4xs)] flex-shrink-0">
                   <span
                     className="flex-shrink-0 text-[#474747] tracking-widest whitespace-nowrap"
-                    style={{ fontFamily: 'acumin-pro, sans-serif', fontSize: 'var(--lk-size-4xs)' }}
+                    style={{
+                      fontFamily: "acumin-pro, sans-serif",
+                      fontSize: "var(--lk-size-4xs)",
+                    }}
                   >
-                    {article.published_date.replace(/-/g, '.')}
+                    {article.published_date.replace(/-/g, ".")}
                   </span>
                   {/* Category tag: mobile only */}
                   <div className="flex items-center">
@@ -312,17 +339,19 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
 
                 {/* Content column */}
                 <div className="flex-1 min-w-0">
-
                   <h4
                     className="mb-[calc(var(--lk-size-sm)/var(--phi))] group-hover:text-black/50 transition-colors duration-300 leading-snug"
-                    style={{ fontSize: 'var(--lk-size-sm)' }}
+                    style={{ fontSize: "var(--lk-size-sm)" }}
                   >
                     {article.title}
                   </h4>
 
                   <p
                     className="leading-[1.8] line-clamp-2 sm:line-clamp-3 text-[#474747]"
-                    style={{ fontFamily: 'acumin-pro, sans-serif', fontSize: 'var(--lk-size-2xs)' }}
+                    style={{
+                      fontFamily: "acumin-pro, sans-serif",
+                      fontSize: "var(--lk-size-2xs)",
+                    }}
                   >
                     {article.content}
                   </p>
@@ -337,30 +366,24 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
 
   const renderEmpty = (message: string) => (
     <div className="text-center py-20">
-      <p className="text-lg text-[#474747]">
-        {message}
-      </p>
+      <p className="text-lg text-[#474747]">{message}</p>
     </div>
   );
 
   const renderError = () => (
     <div className="text-center py-20">
-      <p className="text-lg text-red-500">
-        {error}
-      </p>
+      <p className="text-lg text-red-500">{error}</p>
     </div>
   );
 
   const renderLoading = () => (
     <div className="text-center py-20">
-      <p className="text-lg text-[#474747]">
-        読み込み中...
-      </p>
+      <p className="text-lg text-[#474747]">読み込み中...</p>
     </div>
   );
 
   // home variant rendering
-  if (variant === 'home') {
+  if (variant === "home") {
     return (
       <section id="news" className="section-space">
         <div className="element-width">
@@ -371,7 +394,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
           ) : error ? (
             renderError()
           ) : resolvedArticles.length === 0 ? (
-            renderEmpty('現在、公開されている記事はありません')
+            renderEmpty("現在、公開されている記事はありません")
           ) : (
             <>
               {renderGrid()}
@@ -401,7 +424,10 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
       >
         <div className="flex h-full flex-col px-5 py-4 sm:px-6 sm:py-5">
           <div className="flex items-center justify-between border-b border-black/10 pb-3">
-            <h2 className="text-[11px] tracking-[0.15em] text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+            <h2
+              className="text-[11px] tracking-[0.15em] text-black"
+              style={{ fontFamily: "acumin-pro, sans-serif" }}
+            >
               FILTER
             </h2>
             <button
@@ -409,15 +435,13 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
               onClick={() => setIsFilterDrawerOpen(false)}
               aria-label="Close filter drawer"
               className="leading-none text-black"
-              style={{ fontSize: 'var(--lk-size-2xl)' }}
+              style={{ fontSize: "var(--lk-size-2xl)" }}
             >
               ×
             </button>
           </div>
 
-          <div className="pt-4">
-            {renderCategoryFilter()}
-          </div>
+          <div className="pt-4">{renderCategoryFilter()}</div>
         </div>
       </Drawer>
 
@@ -427,9 +451,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
           className="hidden lg:block w-[176px] xl:w-[208px] flex-shrink-0 sticky h-[calc(100vh-var(--site-header-offset))] overflow-visible transition-[top,height] duration-300 ease-in-out"
           style={desktopFilterStickyStyle}
         >
-          <div
-            className="h-full overflow-y-auto border-r border-black/5 px-[10px] xl:px-[16px] py-[21px] xl:py-[34px]"
-          >
+          <div className="h-full overflow-y-auto border-r border-black/5 px-[10px] xl:px-[16px] py-[21px] xl:py-[34px]">
             <div className={TAB_SCROLL_CONTAINER_CLASS}>
               <div className="flex justify-center min-w-max w-full">
                 {renderCategoryFilter()}
@@ -441,22 +463,23 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
           <div className="sm:-mt-1 md:-mt-2 lg:hidden">
             {renderMobileFilterBar(false)}
           </div>
-          <div className="fixed inset-x-0 z-30 lg:hidden transition-transform duration-300 ease-in-out bg-white" style={mobileFilterStickyStyle}>
+          <div
+            className="fixed inset-x-0 z-30 lg:hidden transition-transform duration-300 ease-in-out bg-white"
+            style={mobileFilterStickyStyle}
+          >
             <div className="element-width px-6 md:px-[45px]">
               {renderMobileFilterBar(true)}
             </div>
           </div>
-          {loading ? (
-            renderLoading()
-          ) : error ? (
-            renderError()
-          ) : resolvedArticles.length === 0 ? (
-            renderEmpty('現在、公開されている記事はありません')
-          ) : displayArticles.length === 0 ? (
-            renderEmpty('該当カテゴリの記事はありません')
-          ) : (
-            renderGrid()
-          )}
+          {loading
+            ? renderLoading()
+            : error
+              ? renderError()
+              : resolvedArticles.length === 0
+                ? renderEmpty("現在、公開されている記事はありません")
+                : displayArticles.length === 0
+                  ? renderEmpty("該当カテゴリの記事はありません")
+                  : renderGrid()}
         </div>
       </div>
     </>

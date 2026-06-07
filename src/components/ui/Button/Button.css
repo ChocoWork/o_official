@@ -1,5 +1,5 @@
 [data-ui-button] {
-  --button-font-size: var(--control-button-font-size-md);
+  --button-font-size: var(--ui-font-size, var(--lk-size-md));
   --button-pad-ratio: calc(1 / var(--phi));
   --pad-x: calc(var(--button-font-size) / var(--sqrt-phi));
   --pad-y: calc(
@@ -58,30 +58,6 @@
   --button-hover-bg: #2a2a2a;
   --button-hover-color: #ffffff;
   --button-hover-border-color: #2a2a2a;
-}
-
-[data-ui-button][data-ui-button-size="compact"] {
-  --button-font-size: var(--lk-size-4xs);
-}
-
-[data-ui-button][data-ui-button-size="xs"] {
-  --button-font-size: var(--lk-size-xs);
-}
-
-[data-ui-button][data-ui-button-size="sm"] {
-  --button-font-size: var(--lk-size-sm);
-}
-
-[data-ui-button][data-ui-button-size="md"] {
-  --button-font-size: var(--lk-size-md);
-}
-
-[data-ui-button][data-ui-button-size="lg"] {
-  --button-font-size: var(--lk-size-lg);
-}
-
-[data-ui-button][data-ui-button-size="xl"] {
-  --button-font-size: var(--lk-size-xl);
 }
 
 [data-ui-button][data-ui-button-shape="rounded"] {

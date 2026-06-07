@@ -1,47 +1,56 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Image from 'next/image';
-import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Accordion } from '@/components/ui/Accordion/Accordion';
-import { Button } from '@/components/ui/Button/Button';
-import { MultiSelect } from '@/components/ui/MultiSelect/MultiSelect';
-import { SingleSelect } from '@/components/ui/SingleSelect/SingleSelect';
-import { SectionTitle } from '@/components/ui/SectionTitle/SectionTitle';
-import { Drawer } from '@/components/ui/Drawer/Drawer';
-import { Slider } from '@/components/ui/Slider/Slider';
-import { Item } from '@/types/item';
-import { usePublicItems } from '@/features/items/hooks/usePublicItems';
-import { CollectionSeason, parseItemCollectionMeta } from '@/lib/items/collection-utils';
-import { cn } from '@/lib/utils';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Accordion } from "@/components/ui/Accordion/Accordion";
+import { Button } from "@/components/ui/Button/Button";
+import { MultiSelect } from "@/components/ui/MultiSelect/MultiSelect";
+import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
+import { SectionTitle } from "@/components/ui/SectionTitle/SectionTitle";
+import { Drawer } from "@/components/ui/Drawer/Drawer";
+import { Slider } from "@/components/ui/Slider/Slider";
+import { Item } from "@/types/item";
+import { usePublicItems } from "@/features/items/hooks/usePublicItems";
+import {
+  CollectionSeason,
+  parseItemCollectionMeta,
+} from "@/lib/items/collection-utils";
+import { cn } from "@/lib/utils";
 
-const ITEM_CATEGORIES = ['ALL', 'TOPS', 'BOTTOMS', 'OUTERWEAR', 'ACCESSORIES'] as const;
+const ITEM_CATEGORIES = [
+  "ALL",
+  "TOPS",
+  "BOTTOMS",
+  "OUTERWEAR",
+  "ACCESSORIES",
+] as const;
 const SORT_OPTIONS = [
-  { value: 'newest', label: 'NEWEST' },
-  { value: 'popular', label: 'POPULAR' },
-  { value: 'price_asc', label: 'PRICE LOW TO HIGH' },
-  { value: 'price_desc', label: 'PRICE HIGH TO LOW' },
+  { value: "newest", label: "NEWEST" },
+  { value: "popular", label: "POPULAR" },
+  { value: "price_asc", label: "PRICE LOW TO HIGH" },
+  { value: "price_desc", label: "PRICE HIGH TO LOW" },
 ] as const;
 const FILTER_SIDEBAR_SCROLL_CONTAINER_CLASS =
-  'h-full overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden border-r border-black/5 px-[13px] xl:px-[21px] py-[21px] xl:py-[34px]';
+  "h-full overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden border-r border-black/5 px-[13px] xl:px-[21px] py-[21px] xl:py-[34px]";
 const FILTER_DRAWER_CLASS =
-  '[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden';
+  "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden";
 const FILTER_ACTIONS_CLASS =
   "relative sticky bottom-0 z-40 space-y-2 bg-white pt-4 pb-1 before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:bg-white before:content-[''] after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-screen after:bg-white after:content-['']";
 
-type ItemCategory = typeof ITEM_CATEGORIES[number];
-type ItemSort = (typeof SORT_OPTIONS)[number]['value'];
+type ItemCategory = (typeof ITEM_CATEGORIES)[number];
+type ItemSort = (typeof SORT_OPTIONS)[number]["value"];
 
 type PublicItemGridHomeProps = {
-  variant: 'home';
+  variant: "home";
   items?: Item[];
   fetchLimit?: number;
   className?: string;
 };
 
 type PublicItemGridCatalogProps = {
-  variant: 'catalog';
+  variant: "catalog";
   items: Item[];
   initialHasMore: boolean;
   pageSize: number;
@@ -55,8 +64,14 @@ type ItemsApiPayload = {
   hasMore: boolean;
 };
 
-type StockFilter = 'all' | 'in' | 'out';
-type DrawerSectionKey = 'category' | 'color' | 'stock' | 'size' | 'season' | 'price';
+type StockFilter = "all" | "in" | "out";
+type DrawerSectionKey =
+  | "category"
+  | "color"
+  | "stock"
+  | "size"
+  | "season"
+  | "price";
 
 type ColorSwatch = {
   name: string;
@@ -64,39 +79,43 @@ type ColorSwatch = {
 };
 
 function parseSort(sort: string | null): ItemSort {
-  return SORT_OPTIONS.some((entry) => entry.value === sort) ? (sort as ItemSort) : 'newest';
+  return SORT_OPTIONS.some((entry) => entry.value === sort)
+    ? (sort as ItemSort)
+    : "newest";
 }
 
-function parseIntQuery(value: string | null): number | '' {
+function parseIntQuery(value: string | null): number | "" {
   if (!value) {
-    return '';
+    return "";
   }
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed < 0) {
-    return '';
+    return "";
   }
   return parsed;
 }
 
 function parseStock(value: string | null): StockFilter {
-  if (value === 'in' || value === 'out') {
+  if (value === "in" || value === "out") {
     return value;
   }
-  return 'all';
+  return "all";
 }
 
 function parseSeasons(value: string | null): CollectionSeason[] {
   if (!value) {
-    return ['AW', 'SS'];
+    return ["AW", "SS"];
   }
 
   const tokens = value
-    .split(',')
+    .split(",")
     .map((entry) => entry.trim().toUpperCase())
-    .filter((entry): entry is CollectionSeason => entry === 'AW' || entry === 'SS');
+    .filter(
+      (entry): entry is CollectionSeason => entry === "AW" || entry === "SS",
+    );
 
   if (tokens.length === 0) {
-    return ['AW', 'SS'];
+    return ["AW", "SS"];
   }
 
   return Array.from(new Set(tokens));
@@ -106,9 +125,10 @@ function parseCategories(value: string | null): ItemCategory[] {
   if (!value) {
     return [];
   }
-  const tokens = value.split(',').map((t) => t.trim().toUpperCase());
+  const tokens = value.split(",").map((t) => t.trim().toUpperCase());
   return tokens.filter(
-    (t): t is ItemCategory => ITEM_CATEGORIES.includes(t as ItemCategory) && t !== 'ALL',
+    (t): t is ItemCategory =>
+      ITEM_CATEGORIES.includes(t as ItemCategory) && t !== "ALL",
   );
 }
 
@@ -116,14 +136,20 @@ function parseSizes(value: string | null): string[] {
   if (!value) {
     return [];
   }
-  return value.split(',').map((t) => t.trim()).filter(Boolean);
+  return value
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
 }
 
 function parseColors(value: string | null): string[] {
   if (!value) {
     return [];
   }
-  return value.split(',').map((t) => t.trim()).filter(Boolean);
+  return value
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
 }
 
 function normalizeColor(value: string): string {
@@ -131,14 +157,18 @@ function normalizeColor(value: string): string {
 }
 
 function extractCollection(item: Item): string | null {
-  if (!item.product_details || typeof item.product_details !== 'object' || Array.isArray(item.product_details)) {
+  if (
+    !item.product_details ||
+    typeof item.product_details !== "object" ||
+    Array.isArray(item.product_details)
+  ) {
     return null;
   }
-  if (!('collection' in item.product_details)) {
+  if (!("collection" in item.product_details)) {
     return null;
   }
   const raw = (item.product_details as Record<string, unknown>).collection;
-  if (typeof raw !== 'string' || raw.trim().length === 0) {
+  if (typeof raw !== "string" || raw.trim().length === 0) {
     return null;
   }
   return raw;
@@ -151,10 +181,10 @@ function extractColors(item: Item): string[] {
 
   return item.colors
     .map((entry) => {
-      if (typeof entry === 'string') {
+      if (typeof entry === "string") {
         return entry;
       }
-      if (entry && typeof entry === 'object' && 'name' in entry) {
+      if (entry && typeof entry === "object" && "name" in entry) {
         return String((entry as { name: string }).name);
       }
       return null;
@@ -169,13 +199,16 @@ function extractColorSwatches(item: Item): ColorSwatch[] {
 
   return item.colors
     .map((entry) => {
-      if (typeof entry === 'string') {
+      if (typeof entry === "string") {
         return { name: entry, hex: null };
       }
-      if (entry && typeof entry === 'object' && 'name' in entry) {
+      if (entry && typeof entry === "object" && "name" in entry) {
         const name = String((entry as { name: string }).name);
-        const hexValue = 'hex' in entry ? String((entry as { hex?: string }).hex ?? '') : '';
-        const normalizedHex = /^#[0-9a-fA-F]{6}$/.test(hexValue) ? hexValue : null;
+        const hexValue =
+          "hex" in entry ? String((entry as { hex?: string }).hex ?? "") : "";
+        const normalizedHex = /^#[0-9a-fA-F]{6}$/.test(hexValue)
+          ? hexValue
+          : null;
         return { name, hex: normalizedHex };
       }
       return null;
@@ -184,8 +217,8 @@ function extractColorSwatches(item: Item): ColorSwatch[] {
 }
 
 function isItemInStock(item: Item): boolean {
-  const soldOutText = `${item.description ?? ''}`.toLowerCase();
-  if (soldOutText.includes('sold out') || soldOutText.includes('在庫切れ')) {
+  const soldOutText = `${item.description ?? ""}`.toLowerCase();
+  if (soldOutText.includes("sold out") || soldOutText.includes("在庫切れ")) {
     return false;
   }
   if (Array.isArray(item.sizes) && item.sizes.length === 0) {
@@ -205,40 +238,65 @@ export function PublicItemGrid(props: PublicItemGridProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const isSelfFetch = variant === 'home' ? typeof props.items === 'undefined' : false;
-  const fetchLimit = variant === 'home' ? (props.fetchLimit ?? 8) : undefined;
-  const overFetchLimit = typeof fetchLimit === 'number' ? fetchLimit + 1 : undefined;
-  const { items: fetchedItems, loading, error } = usePublicItems({
+  const isSelfFetch =
+    variant === "home" ? typeof props.items === "undefined" : false;
+  const fetchLimit = variant === "home" ? (props.fetchLimit ?? 8) : undefined;
+  const overFetchLimit =
+    typeof fetchLimit === "number" ? fetchLimit + 1 : undefined;
+  const {
+    items: fetchedItems,
+    loading,
+    error,
+  } = usePublicItems({
     limit: overFetchLimit,
     enabled: isSelfFetch,
   });
 
-  const [loadedItems, setLoadedItems] = useState<Item[]>(variant === 'catalog' ? props.items : []);
-  const [hasMore, setHasMore] = useState<boolean>(variant === 'catalog' ? props.initialHasMore : false);
+  const [loadedItems, setLoadedItems] = useState<Item[]>(
+    variant === "catalog" ? props.items : [],
+  );
+  const [hasMore, setHasMore] = useState<boolean>(
+    variant === "catalog" ? props.initialHasMore : false,
+  );
   const [nextPage, setNextPage] = useState<number>(2);
   const [isFetchingMore, setIsFetchingMore] = useState<boolean>(false);
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const latestQueryRef = useRef<string>(searchParams.toString());
 
-  const selectedCategoryQuery = searchParams.get('category');
-  const selectedSortQuery = searchParams.get('sort');
-  const selectedCollectionQuery = searchParams.get('collection');
-  const selectedSizeQuery = searchParams.get('size');
-  const selectedColorQuery = searchParams.get('color');
-  const selectedStockQuery = searchParams.get('stock');
-  const selectedCollectionYearMinQuery = searchParams.get('collectionYearMin');
-  const selectedCollectionYearMaxQuery = searchParams.get('collectionYearMax');
-  const selectedCollectionSeasonsQuery = searchParams.get('collectionSeasons');
-  const selectedPriceMinQuery = searchParams.get('priceMin');
-  const selectedPriceMaxQuery = searchParams.get('priceMax');
+  const selectedCategoryQuery = searchParams.get("category");
+  const selectedSortQuery = searchParams.get("sort");
+  const selectedCollectionQuery = searchParams.get("collection");
+  const selectedSizeQuery = searchParams.get("size");
+  const selectedColorQuery = searchParams.get("color");
+  const selectedStockQuery = searchParams.get("stock");
+  const selectedCollectionYearMinQuery = searchParams.get("collectionYearMin");
+  const selectedCollectionYearMaxQuery = searchParams.get("collectionYearMax");
+  const selectedCollectionSeasonsQuery = searchParams.get("collectionSeasons");
+  const selectedPriceMinQuery = searchParams.get("priceMin");
+  const selectedPriceMaxQuery = searchParams.get("priceMax");
 
-  const selectedCategories = useMemo(() => parseCategories(selectedCategoryQuery), [selectedCategoryQuery]);
-  const selectedSort = useMemo(() => parseSort(selectedSortQuery), [selectedSortQuery]);
-  const selectedCollection = selectedCollectionQuery ?? '';
-  const selectedSizes = useMemo(() => parseSizes(selectedSizeQuery), [selectedSizeQuery]);
-  const selectedColors = useMemo(() => parseColors(selectedColorQuery), [selectedColorQuery]);
-  const selectedStock = useMemo(() => parseStock(selectedStockQuery), [selectedStockQuery]);
+  const selectedCategories = useMemo(
+    () => parseCategories(selectedCategoryQuery),
+    [selectedCategoryQuery],
+  );
+  const selectedSort = useMemo(
+    () => parseSort(selectedSortQuery),
+    [selectedSortQuery],
+  );
+  const selectedCollection = selectedCollectionQuery ?? "";
+  const selectedSizes = useMemo(
+    () => parseSizes(selectedSizeQuery),
+    [selectedSizeQuery],
+  );
+  const selectedColors = useMemo(
+    () => parseColors(selectedColorQuery),
+    [selectedColorQuery],
+  );
+  const selectedStock = useMemo(
+    () => parseStock(selectedStockQuery),
+    [selectedStockQuery],
+  );
   const selectedCollectionYearMin = useMemo(
     () => parseIntQuery(selectedCollectionYearMinQuery),
     [selectedCollectionYearMinQuery],
@@ -251,21 +309,36 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     () => parseSeasons(selectedCollectionSeasonsQuery),
     [selectedCollectionSeasonsQuery],
   );
-  const selectedPriceMin = useMemo(() => parseIntQuery(selectedPriceMinQuery), [selectedPriceMinQuery]);
-  const selectedPriceMax = useMemo(() => parseIntQuery(selectedPriceMaxQuery), [selectedPriceMaxQuery]);
+  const selectedPriceMin = useMemo(
+    () => parseIntQuery(selectedPriceMinQuery),
+    [selectedPriceMinQuery],
+  );
+  const selectedPriceMax = useMemo(
+    () => parseIntQuery(selectedPriceMaxQuery),
+    [selectedPriceMaxQuery],
+  );
 
   const [draftCollection, setDraftCollection] = useState(selectedCollection);
-  const [draftCategories, setDraftCategories] = useState<ItemCategory[]>(selectedCategories);
+  const [draftCategories, setDraftCategories] =
+    useState<ItemCategory[]>(selectedCategories);
   const [draftSizes, setDraftSizes] = useState<string[]>(selectedSizes);
   const [draftColors, setDraftColors] = useState<string[]>(selectedColors);
   const [draftStock, setDraftStock] = useState<StockFilter>(selectedStock);
-  const [draftCollectionYearMin, setDraftCollectionYearMin] = useState<number | ''>(selectedCollectionYearMin);
-  const [draftCollectionYearMax, setDraftCollectionYearMax] = useState<number | ''>(selectedCollectionYearMax);
-  const [draftCollectionSeasons, setDraftCollectionSeasons] = useState<CollectionSeason[]>(selectedCollectionSeasons);
-  const [draftPriceRange, setDraftPriceRange] = useState<[number, number]>([0, 100]);
+  const [draftCollectionYearMin, setDraftCollectionYearMin] = useState<
+    number | ""
+  >(selectedCollectionYearMin);
+  const [draftCollectionYearMax, setDraftCollectionYearMax] = useState<
+    number | ""
+  >(selectedCollectionYearMax);
+  const [draftCollectionSeasons, setDraftCollectionSeasons] = useState<
+    CollectionSeason[]
+  >(selectedCollectionSeasons);
+  const [draftPriceRange, setDraftPriceRange] = useState<[number, number]>([
+    0, 100,
+  ]);
 
   useEffect(() => {
-    if (variant !== 'catalog') {
+    if (variant !== "catalog") {
       return;
     }
 
@@ -312,13 +385,16 @@ export function PublicItemGrid(props: PublicItemGridProps) {
   );
 
   const sourceItems = useMemo(() => {
-    if (variant === 'home') {
+    if (variant === "home") {
       return props.items ?? fetchedItems;
     }
     return loadedItems;
   }, [variant, props, fetchedItems, loadedItems]);
 
-  const hasMoreHomeItems = variant === 'home' && typeof fetchLimit === 'number' && sourceItems.length > fetchLimit;
+  const hasMoreHomeItems =
+    variant === "home" &&
+    typeof fetchLimit === "number" &&
+    sourceItems.length > fetchLimit;
   const resolvedItems = useMemo(
     () => sourceItems.slice(0, fetchLimit ?? sourceItems.length),
     [sourceItems, fetchLimit],
@@ -356,7 +432,10 @@ export function PublicItemGrid(props: PublicItemGridProps) {
   const collectionYearBounds = useMemo(() => {
     const years = resolvedItems
       .map((item) => parseItemCollectionMeta(item).year)
-      .filter((year): year is number => typeof year === 'number' && Number.isFinite(year));
+      .filter(
+        (year): year is number =>
+          typeof year === "number" && Number.isFinite(year),
+      );
 
     if (years.length === 0) {
       return { min: 2000, max: new Date().getFullYear() };
@@ -373,10 +452,10 @@ export function PublicItemGrid(props: PublicItemGridProps) {
       return;
     }
 
-    if (selectedCollectionYearMin === '') {
+    if (selectedCollectionYearMin === "") {
       setDraftCollectionYearMin(collectionYearBounds.min);
     }
-    if (selectedCollectionYearMax === '') {
+    if (selectedCollectionYearMax === "") {
       setDraftCollectionYearMax(collectionYearBounds.max);
     }
   }, [
@@ -392,7 +471,9 @@ export function PublicItemGrid(props: PublicItemGridProps) {
       return { min: 0, max: 100000 };
     }
 
-    const prices = resolvedItems.map((item) => item.price).filter((price) => Number.isFinite(price));
+    const prices = resolvedItems
+      .map((item) => item.price)
+      .filter((price) => Number.isFinite(price));
     return {
       min: Math.min(...prices),
       max: Math.max(...prices),
@@ -400,27 +481,39 @@ export function PublicItemGrid(props: PublicItemGridProps) {
   }, [resolvedItems]);
 
   useEffect(() => {
-    const min = selectedPriceMin === '' ? priceBounds.min : selectedPriceMin;
-    const max = selectedPriceMax === '' ? priceBounds.max : selectedPriceMax;
+    const min = selectedPriceMin === "" ? priceBounds.min : selectedPriceMin;
+    const max = selectedPriceMax === "" ? priceBounds.max : selectedPriceMax;
     setDraftPriceRange([Math.min(min, max), Math.max(min, max)]);
-  }, [priceBounds.min, priceBounds.max, selectedPriceMin, selectedPriceMax, isFilterDrawerOpen]);
+  }, [
+    priceBounds.min,
+    priceBounds.max,
+    selectedPriceMin,
+    selectedPriceMax,
+    isFilterDrawerOpen,
+  ]);
 
   const displayItems = useMemo(() => {
-    if (variant === 'home') {
+    if (variant === "home") {
       return resolvedItems;
     }
 
     return resolvedItems.filter((item) => {
       const categoryOk =
         selectedCategories.length === 0 ||
-        selectedCategories.includes(item.category.toUpperCase() as ItemCategory);
+        selectedCategories.includes(
+          item.category.toUpperCase() as ItemCategory,
+        );
 
       const collection = extractCollection(item);
-      const collectionOk = !selectedCollection || (collection && collection.toLowerCase() === selectedCollection.toLowerCase());
+      const collectionOk =
+        !selectedCollection ||
+        (collection &&
+          collection.toLowerCase() === selectedCollection.toLowerCase());
 
       const sizeOk =
         selectedSizes.length === 0 ||
-        (Array.isArray(item.sizes) && selectedSizes.some((s) => item.sizes!.includes(s)));
+        (Array.isArray(item.sizes) &&
+          selectedSizes.some((s) => item.sizes!.includes(s)));
 
       const colorOk =
         selectedColors.length === 0 ||
@@ -430,21 +523,26 @@ export function PublicItemGrid(props: PublicItemGridProps) {
 
       const collectionMeta = parseItemCollectionMeta(item);
       const collectionYearMinOk =
-        selectedCollectionYearMin === '' ||
-        (typeof collectionMeta.year === 'number' && collectionMeta.year >= selectedCollectionYearMin);
+        selectedCollectionYearMin === "" ||
+        (typeof collectionMeta.year === "number" &&
+          collectionMeta.year >= selectedCollectionYearMin);
       const collectionYearMaxOk =
-        selectedCollectionYearMax === '' ||
-        (typeof collectionMeta.year === 'number' && collectionMeta.year <= selectedCollectionYearMax);
+        selectedCollectionYearMax === "" ||
+        (typeof collectionMeta.year === "number" &&
+          collectionMeta.year <= selectedCollectionYearMax);
       const collectionSeasonOk =
         selectedCollectionSeasons.length === 2 ||
-        (collectionMeta.season !== null && selectedCollectionSeasons.includes(collectionMeta.season));
+        (collectionMeta.season !== null &&
+          selectedCollectionSeasons.includes(collectionMeta.season));
 
-      const priceMinOk = selectedPriceMin === '' || item.price >= selectedPriceMin;
-      const priceMaxOk = selectedPriceMax === '' || item.price <= selectedPriceMax;
+      const priceMinOk =
+        selectedPriceMin === "" || item.price >= selectedPriceMin;
+      const priceMaxOk =
+        selectedPriceMax === "" || item.price <= selectedPriceMax;
 
       const stockOk =
-        selectedStock === 'all' ||
-        (selectedStock === 'in' ? isItemInStock(item) : !isItemInStock(item));
+        selectedStock === "all" ||
+        (selectedStock === "in" ? isItemInStock(item) : !isItemInStock(item));
 
       return (
         categoryOk &&
@@ -477,74 +575,77 @@ export function PublicItemGrid(props: PublicItemGridProps) {
   const applyDraftFilters = useCallback(() => {
     updateQuery((params) => {
       if (draftCollection) {
-        params.set('collection', draftCollection);
+        params.set("collection", draftCollection);
       } else {
-        params.delete('collection');
+        params.delete("collection");
       }
 
       if (draftCategories.length > 0) {
-        params.set('category', draftCategories.join(','));
+        params.set("category", draftCategories.join(","));
       } else {
-        params.delete('category');
+        params.delete("category");
       }
 
       if (draftSizes.length > 0) {
-        params.set('size', draftSizes.join(','));
+        params.set("size", draftSizes.join(","));
       } else {
-        params.delete('size');
+        params.delete("size");
       }
 
       if (draftColors.length > 0) {
-        params.set('color', draftColors.join(','));
+        params.set("color", draftColors.join(","));
       } else {
-        params.delete('color');
+        params.delete("color");
       }
 
-      if (draftStock !== 'all') {
-        params.set('stock', draftStock);
+      if (draftStock !== "all") {
+        params.set("stock", draftStock);
       } else {
-        params.delete('stock');
+        params.delete("stock");
       }
 
-      if (draftCollectionYearMin !== '') {
+      if (draftCollectionYearMin !== "") {
         if (draftCollectionYearMin !== collectionYearBounds.min) {
-          params.set('collectionYearMin', String(draftCollectionYearMin));
+          params.set("collectionYearMin", String(draftCollectionYearMin));
         } else {
-          params.delete('collectionYearMin');
+          params.delete("collectionYearMin");
         }
       } else {
-        params.delete('collectionYearMin');
+        params.delete("collectionYearMin");
       }
 
-      if (draftCollectionYearMax !== '') {
+      if (draftCollectionYearMax !== "") {
         if (draftCollectionYearMax !== collectionYearBounds.max) {
-          params.set('collectionYearMax', String(draftCollectionYearMax));
+          params.set("collectionYearMax", String(draftCollectionYearMax));
         } else {
-          params.delete('collectionYearMax');
+          params.delete("collectionYearMax");
         }
       } else {
-        params.delete('collectionYearMax');
+        params.delete("collectionYearMax");
       }
 
-      if (draftCollectionSeasons.length === 0 || draftCollectionSeasons.length === 2) {
-        params.delete('collectionSeasons');
+      if (
+        draftCollectionSeasons.length === 0 ||
+        draftCollectionSeasons.length === 2
+      ) {
+        params.delete("collectionSeasons");
       } else {
-        params.set('collectionSeasons', draftCollectionSeasons.join(','));
+        params.set("collectionSeasons", draftCollectionSeasons.join(","));
       }
 
       const draftPriceMin = Math.min(draftPriceRange[0], draftPriceRange[1]);
       const draftPriceMax = Math.max(draftPriceRange[0], draftPriceRange[1]);
 
       if (draftPriceMin !== priceBounds.min) {
-        params.set('priceMin', String(draftPriceMin));
+        params.set("priceMin", String(draftPriceMin));
       } else {
-        params.delete('priceMin');
+        params.delete("priceMin");
       }
 
       if (draftPriceMax !== priceBounds.max) {
-        params.set('priceMax', String(draftPriceMax));
+        params.set("priceMax", String(draftPriceMax));
       } else {
-        params.delete('priceMax');
+        params.delete("priceMax");
       }
     });
   }, [
@@ -570,35 +671,39 @@ export function PublicItemGrid(props: PublicItemGridProps) {
   }, [applyDraftFilters]);
 
   const resetDraftFilters = useCallback(() => {
-    setDraftCollection('');
+    setDraftCollection("");
     setDraftCategories([]);
     setDraftSizes([]);
     setDraftColors([]);
-    setDraftStock('all');
-    setDraftCollectionYearMin('');
-    setDraftCollectionYearMax('');
-    setDraftCollectionSeasons(['AW', 'SS']);
+    setDraftStock("all");
+    setDraftCollectionYearMin("");
+    setDraftCollectionYearMax("");
+    setDraftCollectionSeasons(["AW", "SS"]);
     setDraftPriceRange([priceBounds.min, priceBounds.max]);
   }, [priceBounds.max, priceBounds.min]);
 
   const mobileFilterStickyStyle = {
-    top: 'var(--site-header-height)',
-    transform: 'translateY(calc(var(--site-header-offset) - var(--site-header-height)))',
+    top: "var(--site-header-height)",
+    transform:
+      "translateY(calc(var(--site-header-offset) - var(--site-header-height)))",
   } as const;
 
   const desktopFilterStickyStyle = {
-    top: 'var(--site-header-offset)',
+    top: "var(--site-header-offset)",
   } as const;
 
   const renderSortSelect = (className: string) => (
     <div className={className}>
       <SingleSelect
         variant="dropdown"
-        options={SORT_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+        options={SORT_OPTIONS.map((option) => ({
+          value: option.value,
+          label: option.label,
+        }))}
         value={selectedSort}
         onValueChange={(nextSort) => {
           updateQuery((params) => {
-            params.set('sort', nextSort);
+            params.set("sort", nextSort);
           });
         }}
         size="xs"
@@ -608,7 +713,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
   );
 
   useEffect(() => {
-    if (variant !== 'catalog') {
+    if (variant !== "catalog") {
       return;
     }
 
@@ -631,30 +736,34 @@ export function PublicItemGrid(props: PublicItemGridProps) {
         setIsFetchingMore(true);
         try {
           const params = new URLSearchParams(searchParams.toString());
-          params.set('page', String(nextPage));
-          params.set('pageSize', String(props.pageSize));
+          params.set("page", String(nextPage));
+          params.set("pageSize", String(props.pageSize));
 
-          const response = await fetch(`/api/items?${params.toString()}`, { cache: 'no-store' });
+          const response = await fetch(`/api/items?${params.toString()}`, {
+            cache: "no-store",
+          });
           if (!response.ok) {
-            throw new Error('Failed to fetch next items page');
+            throw new Error("Failed to fetch next items page");
           }
 
           const payload = (await response.json()) as ItemsApiPayload;
           setLoadedItems((prev) => {
             const existingKeys = new Set(prev.map(itemKey));
-            const deduped = payload.items.filter((item) => !existingKeys.has(itemKey(item)));
+            const deduped = payload.items.filter(
+              (item) => !existingKeys.has(itemKey(item)),
+            );
             return [...prev, ...deduped];
           });
           setHasMore(payload.hasMore);
           setNextPage((prev) => prev + 1);
         } catch (fetchError) {
-          console.error('Failed to fetch next items page:', fetchError);
+          console.error("Failed to fetch next items page:", fetchError);
         } finally {
           setIsFetchingMore(false);
         }
       },
       {
-        rootMargin: '300px 0px 300px 0px',
+        rootMargin: "300px 0px 300px 0px",
         threshold: 0,
       },
     );
@@ -663,22 +772,24 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     return () => observer.disconnect();
   }, [variant, hasMore, isFetchingMore, nextPage, props, searchParams]);
 
-  const resolvedMobileLimit = variant === 'home' ? 6 : undefined;
-  const shouldLimitOnMobile = typeof resolvedMobileLimit === 'number';
-  const hasHiddenItemsOnTablet = shouldLimitOnMobile && resolvedItems.length > resolvedMobileLimit;
+  const resolvedMobileLimit = variant === "home" ? 6 : undefined;
+  const shouldLimitOnMobile = typeof resolvedMobileLimit === "number";
+  const hasHiddenItemsOnTablet =
+    shouldLimitOnMobile && resolvedItems.length > resolvedMobileLimit;
 
   const renderGrid = () => (
-    <div className='grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-[8px] sm:gap-[10px] md:gap-[13px] lg:gap-[21px]'>
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-[8px] sm:gap-[10px] md:gap-[13px] lg:gap-[21px]">
       {displayItems.map((item, index) => {
-        const hideOnMobile = shouldLimitOnMobile && index >= resolvedMobileLimit!;
-        const itemNameClassName = 'font-brand tracking-tight';
+        const hideOnMobile =
+          shouldLimitOnMobile && index >= resolvedMobileLimit!;
+        const itemNameClassName = "font-brand tracking-tight";
 
         return (
           <Link
             key={item.id}
             href={`/item/${item.id}`}
             data-testid="item-card-link"
-            className={`${hideOnMobile ? 'hidden lg:block' : ''} mb-[8px] sm:mb-[10px] md:mb-[12px]`}
+            className={`${hideOnMobile ? "hidden lg:block" : ""} mb-[8px] sm:mb-[10px] md:mb-[12px]`}
           >
             <div className="group cursor-pointer" data-testid="item-card">
               <div className="aspect-[3/4] bg-[#f5f5f5] mb-[2px] sm:mb-[6px] md:mb-[8px] overflow-hidden">
@@ -702,15 +813,25 @@ export function PublicItemGrid(props: PublicItemGridProps) {
                 <h3
                   className={itemNameClassName}
                   data-testid="item-name"
-                  style={{ fontSize: variant === 'home' ? 'var(--lk-size-2xs)' : 'var(--lk-size-2xs)' }}
+                  style={{
+                    fontSize:
+                      variant === "home"
+                        ? "var(--lk-size-2xs)"
+                        : "var(--lk-size-2xs)",
+                  }}
                 >
                   {item.name}
                 </h3>
                 <p
                   data-testid="item-price"
-                  style={{ fontSize: variant === 'home' ? 'var(--lk-size-3xs)' : 'var(--lk-size-3xs)' }}
+                  style={{
+                    fontSize:
+                      variant === "home"
+                        ? "var(--lk-size-3xs)"
+                        : "var(--lk-size-3xs)",
+                  }}
                 >
-                  ¥{item.price.toLocaleString('ja-JP')}
+                  ¥{item.price.toLocaleString("ja-JP")}
                 </p>
               </div>
             </div>
@@ -722,94 +843,123 @@ export function PublicItemGrid(props: PublicItemGridProps) {
 
   const renderMobileFilterBar = (interactive: boolean) => (
     <div
-      data-filter-bar={interactive ? 'floating' : 'placeholder'}
+      data-filter-bar={interactive ? "floating" : "placeholder"}
       aria-hidden={interactive ? undefined : true}
       className={cn(
-        'flex items-center justify-between border-b border-black/5 bg-white py-[13px]',
-        !interactive && 'pointer-events-none invisible',
+        "flex items-center justify-between border-b border-black/5 bg-white py-[13px]",
+        !interactive && "pointer-events-none invisible",
       )}
     >
       <Button
-        data-filter-button={interactive ? 'floating' : 'placeholder'}
+        data-filter-button={interactive ? "floating" : "placeholder"}
         onClick={interactive ? () => setIsFilterDrawerOpen(true) : undefined}
         variant="text"
-        size="compact"
+        size="4xs"
         className="tracking-widest"
-        aria-haspopup={interactive ? 'dialog' : undefined}
+        aria-haspopup={interactive ? "dialog" : undefined}
         aria-expanded={interactive ? isFilterDrawerOpen : undefined}
         tabIndex={interactive ? undefined : -1}
       >
         FILTER
       </Button>
 
-      {interactive ? renderSortSelect('relative -mt-[3px] translate-x-[4px] w-[9.75rem] sm:w-[10.5rem]') : null}
+      {interactive
+        ? renderSortSelect(
+            "relative -mt-[3px] translate-x-[4px] w-[9.75rem] sm:w-[10.5rem]",
+          )
+        : null}
     </div>
   );
 
   const renderFilterSections = () => {
-    const filterSectionKeys: DrawerSectionKey[] = ['category', 'stock', 'season', 'price'];
+    const filterSectionKeys: DrawerSectionKey[] = [
+      "category",
+      "stock",
+      "season",
+      "price",
+    ];
     if (availableColorSwatches.length > 0) {
-      filterSectionKeys.splice(1, 0, 'color');
+      filterSectionKeys.splice(1, 0, "color");
     }
     if (availableSizes.length > 0) {
-      filterSectionKeys.splice(filterSectionKeys.indexOf('season'), 0, 'size');
+      filterSectionKeys.splice(filterSectionKeys.indexOf("season"), 0, "size");
     }
     const categoryOptions = [
-      { value: 'ALL', label: 'ALL' },
-      ...ITEM_CATEGORIES.filter((category) => category !== 'ALL').map((category) => ({ value: category, label: category })),
+      { value: "ALL", label: "ALL" },
+      ...ITEM_CATEGORIES.filter((category) => category !== "ALL").map(
+        (category) => ({ value: category, label: category }),
+      ),
     ];
     const stockOptions = [
-      { value: 'ALL', label: 'ALL' },
-      { value: 'in', label: 'IN STOCK' },
-      { value: 'out', label: 'OUT OF STOCK' },
+      { value: "ALL", label: "ALL" },
+      { value: "in", label: "IN STOCK" },
+      { value: "out", label: "OUT OF STOCK" },
     ];
     const sizeOptions = [
-      { value: 'ALL', label: 'ALL' },
+      { value: "ALL", label: "ALL" },
       ...availableSizes.map((size) => ({ value: size, label: size })),
     ];
     const seasonOptions = [
-      { value: 'ALL', label: 'ALL' },
-      ...(['AW', 'SS'] as const).map((season) => ({ value: season, label: season })),
+      { value: "ALL", label: "ALL" },
+      ...(["AW", "SS"] as const).map((season) => ({
+        value: season,
+        label: season,
+      })),
     ];
     const colorOptions = [
-      { value: 'ALL', label: 'ALL' },
-      ...availableColorSwatches.map((swatch) => ({ value: swatch.name, label: swatch.name })),
+      { value: "ALL", label: "ALL" },
+      ...availableColorSwatches.map((swatch) => ({
+        value: swatch.name,
+        label: swatch.name,
+      })),
     ];
-    const colorSwatchHexByName = new Map(availableColorSwatches.map((swatch) => [swatch.name, swatch.hex]));
+    const colorSwatchHexByName = new Map(
+      availableColorSwatches.map((swatch) => [swatch.name, swatch.hex]),
+    );
 
-    const normalizeAllSelection = (values: string[], currentValues: string[]) => {
-      const nextWithoutAll = values.filter((value) => value !== 'ALL');
+    const normalizeAllSelection = (
+      values: string[],
+      currentValues: string[],
+    ) => {
+      const nextWithoutAll = values.filter((value) => value !== "ALL");
       if (values.length === 0) {
         return [];
       }
-      if (values.includes('ALL')) {
+      if (values.includes("ALL")) {
         return currentValues.length === 0 ? nextWithoutAll : [];
       }
       return nextWithoutAll;
     };
 
-    const categoryValues = draftCategories.length === 0 ? ['ALL'] : draftCategories;
-    const stockValues = draftStock === 'all' ? ['ALL'] : [draftStock];
-    const sizeValues = draftSizes.length === 0 ? ['ALL'] : draftSizes;
-    const seasonValues = draftCollectionSeasons.length === 2 ? ['ALL'] : draftCollectionSeasons;
-    const colorValues = draftColors.length === 0 ? ['ALL'] : draftColors;
+    const categoryValues =
+      draftCategories.length === 0 ? ["ALL"] : draftCategories;
+    const stockValues = draftStock === "all" ? ["ALL"] : [draftStock];
+    const sizeValues = draftSizes.length === 0 ? ["ALL"] : draftSizes;
+    const seasonValues =
+      draftCollectionSeasons.length === 2 ? ["ALL"] : draftCollectionSeasons;
+    const colorValues = draftColors.length === 0 ? ["ALL"] : draftColors;
 
     return (
       <div className="space-y-5">
         <Accordion
           items={[
             {
-              key: 'category',
-              title: 'CATEGORY',
+              key: "category",
+              title: "CATEGORY",
               content: (
                 <div className="space-y-3">
                   <MultiSelect
                     options={categoryOptions}
                     values={categoryValues}
                     onChange={(values) => {
-                      const nextValues = normalizeAllSelection(values, draftCategories);
+                      const nextValues = normalizeAllSelection(
+                        values,
+                        draftCategories,
+                      );
                       setDraftCategories(
-                        nextValues.filter((value): value is ItemCategory => value !== 'ALL'),
+                        nextValues.filter(
+                          (value): value is ItemCategory => value !== "ALL",
+                        ),
                       );
                     }}
                     variant="panel"
@@ -825,37 +975,48 @@ export function PublicItemGrid(props: PublicItemGridProps) {
             ...(availableColorSwatches.length > 0
               ? [
                   {
-                    key: 'color',
-                    title: 'COLOR',
+                    key: "color",
+                    title: "COLOR",
                     content: (
                       <div className="space-y-3">
                         <MultiSelect
                           options={colorOptions}
-                                values={colorValues}
-                                onChange={(values) => {
-                                  const nextValues = normalizeAllSelection(values, draftColors);
-                                  setDraftColors(nextValues.filter((value): value is string => value !== 'ALL'));
-                                }}
+                          values={colorValues}
+                          onChange={(values) => {
+                            const nextValues = normalizeAllSelection(
+                              values,
+                              draftColors,
+                            );
+                            setDraftColors(
+                              nextValues.filter(
+                                (value): value is string => value !== "ALL",
+                              ),
+                            );
+                          }}
                           variant="panel"
                           size="xs"
                           checkStyle="fill"
                           shape="square"
                           expandLabelHitArea={false}
                           className="space-y-2"
-                          renderOptionLabel={(option) => (
-                                  option.value === 'ALL' ? (
-                                    <span>{option.label}</span>
-                                  ) : (
-                            <span className="inline-flex items-center gap-2">
-                              <span
-                                aria-hidden="true"
-                                className="inline-block h-3 w-3 rounded-full border border-black/20"
-                                style={{ backgroundColor: colorSwatchHexByName.get(option.value) ?? '#ffffff' }}
-                              />
+                          renderOptionLabel={(option) =>
+                            option.value === "ALL" ? (
                               <span>{option.label}</span>
-                                  </span>
-                                  )
-                          )}
+                            ) : (
+                              <span className="inline-flex items-center gap-2">
+                                <span
+                                  aria-hidden="true"
+                                  className="inline-block h-3 w-3 rounded-full border border-black/20"
+                                  style={{
+                                    backgroundColor:
+                                      colorSwatchHexByName.get(option.value) ??
+                                      "#ffffff",
+                                  }}
+                                />
+                                <span>{option.label}</span>
+                              </span>
+                            )
+                          }
                         />
                       </div>
                     ),
@@ -863,17 +1024,23 @@ export function PublicItemGrid(props: PublicItemGridProps) {
                 ]
               : []),
             {
-              key: 'stock',
-              title: 'STOCK',
+              key: "stock",
+              title: "STOCK",
               content: (
                 <div className="space-y-3">
                   <MultiSelect
                     options={stockOptions}
                     values={stockValues}
                     onChange={(values) => {
-                      const nextValues = normalizeAllSelection(values, draftStock === 'all' ? [] : [draftStock]);
-                      const nextValue = nextValues.find((value): value is 'in' | 'out' => value === 'in' || value === 'out');
-                      setDraftStock(nextValue ?? 'all');
+                      const nextValues = normalizeAllSelection(
+                        values,
+                        draftStock === "all" ? [] : [draftStock],
+                      );
+                      const nextValue = nextValues.find(
+                        (value): value is "in" | "out" =>
+                          value === "in" || value === "out",
+                      );
+                      setDraftStock(nextValue ?? "all");
                     }}
                     variant="panel"
                     size="xs"
@@ -888,17 +1055,24 @@ export function PublicItemGrid(props: PublicItemGridProps) {
             ...(availableSizes.length > 0
               ? [
                   {
-                    key: 'size',
-                    title: 'SIZE',
+                    key: "size",
+                    title: "SIZE",
                     content: (
                       <div className="space-y-3">
                         <MultiSelect
                           options={sizeOptions}
-                                values={sizeValues}
-                                onChange={(values) => {
-                                  const nextValues = normalizeAllSelection(values, draftSizes);
-                                  setDraftSizes(nextValues.filter((value): value is string => value !== 'ALL'));
-                                }}
+                          values={sizeValues}
+                          onChange={(values) => {
+                            const nextValues = normalizeAllSelection(
+                              values,
+                              draftSizes,
+                            );
+                            setDraftSizes(
+                              nextValues.filter(
+                                (value): value is string => value !== "ALL",
+                              ),
+                            );
+                          }}
                           variant="panel"
                           size="xs"
                           checkStyle="fill"
@@ -912,8 +1086,8 @@ export function PublicItemGrid(props: PublicItemGridProps) {
                 ]
               : []),
             {
-              key: 'season',
-              title: 'SEASON',
+              key: "season",
+              title: "SEASON",
               content: (
                 <div className="space-y-3">
                   <MultiSelect
@@ -922,12 +1096,17 @@ export function PublicItemGrid(props: PublicItemGridProps) {
                     onChange={(values) => {
                       const nextValues = normalizeAllSelection(
                         values,
-                        draftCollectionSeasons.length === 2 ? [] : draftCollectionSeasons,
+                        draftCollectionSeasons.length === 2
+                          ? []
+                          : draftCollectionSeasons,
                       );
                       const nextSeasons = nextValues.filter(
-                        (value): value is CollectionSeason => value === 'AW' || value === 'SS',
+                        (value): value is CollectionSeason =>
+                          value === "AW" || value === "SS",
                       );
-                      setDraftCollectionSeasons(nextSeasons.length === 0 ? ['AW', 'SS'] : nextSeasons);
+                      setDraftCollectionSeasons(
+                        nextSeasons.length === 0 ? ["AW", "SS"] : nextSeasons,
+                      );
                     }}
                     variant="panel"
                     size="xs"
@@ -940,8 +1119,8 @@ export function PublicItemGrid(props: PublicItemGridProps) {
               ),
             },
             {
-              key: 'price',
-              title: 'PRICE',
+              key: "price",
+              title: "PRICE",
               content: (
                 <div className="space-y-3">
                   <Slider
@@ -951,7 +1130,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
                     max={priceBounds.max}
                     step={1000}
                     onRangeChange={setDraftPriceRange}
-                    valueDisplay={`¥${Math.min(draftPriceRange[0], draftPriceRange[1]).toLocaleString('ja-JP')} - ¥${Math.max(draftPriceRange[0], draftPriceRange[1]).toLocaleString('ja-JP')}`}
+                    valueDisplay={`¥${Math.min(draftPriceRange[0], draftPriceRange[1]).toLocaleString("ja-JP")} - ¥${Math.max(draftPriceRange[0], draftPriceRange[1]).toLocaleString("ja-JP")}`}
                   />
                 </div>
               ),
@@ -988,7 +1167,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     );
   };
 
-  if (variant === 'home') {
+  if (variant === "home") {
     if (isSelfFetch && error) {
       return (
         <section id="items" className="w-full pb-14 sm:pb-16 md:pb-20">
@@ -1005,9 +1184,13 @@ export function PublicItemGrid(props: PublicItemGridProps) {
           <SectionTitle title="ITEMS" />
 
           {isSelfFetch && loading ? (
-            <div className="text-center py-12 text-[#474747]">読み込み中...</div>
+            <div className="text-center py-12 text-[#474747]">
+              読み込み中...
+            </div>
           ) : resolvedItems.length === 0 ? (
-            <div className="text-center py-12 text-[#474747]">公開中のITEMがありません</div>
+            <div className="text-center py-12 text-[#474747]">
+              公開中のITEMがありません
+            </div>
           ) : (
             <div id="sym:success">
               {renderGrid()}
@@ -1051,20 +1234,28 @@ export function PublicItemGrid(props: PublicItemGridProps) {
           </div>
 
           <div className="hidden lg:flex mb-2 sm:mb-4 md:mb-6 items-center justify-end">
-            {renderSortSelect('relative -mt-[3px] w-[10.5rem]')}
+            {renderSortSelect("relative -mt-[3px] w-[10.5rem]")}
           </div>
 
           {renderGrid()}
 
           {displayItems.length === 0 && (
             <div className="text-center py-12">
-              <p className="text-base tracking-widest text-gray-500">商品が見つかりません</p>
+              <p className="text-base tracking-widest text-gray-500">
+                商品が見つかりません
+              </p>
             </div>
           )}
 
-          <div ref={sentinelRef} data-testid="item-infinite-sentinel" className="h-8" />
+          <div
+            ref={sentinelRef}
+            data-testid="item-infinite-sentinel"
+            className="h-8"
+          />
           {isFetchingMore && (
-            <div className="text-center text-sm text-[#474747] pb-4">読み込み中...</div>
+            <div className="text-center text-sm text-[#474747] pb-4">
+              読み込み中...
+            </div>
           )}
         </div>
       </div>
@@ -1079,11 +1270,11 @@ export function PublicItemGrid(props: PublicItemGridProps) {
         <div className="px-5 py-4 sm:px-6 sm:py-5">
           <div className="flex items-center justify-end pb-3">
             <Button
-              variant='text'
-              size='xl'
+              variant="text"
+              size="xl"
               onClick={closeDrawerAndApplyFilters}
               className="leading-none text-black"
-              style={{ fontSize: 'var(--lk-size-2xl)' }}
+              style={{ fontSize: "var(--lk-size-2xl)" }}
             >
               ×
             </Button>
