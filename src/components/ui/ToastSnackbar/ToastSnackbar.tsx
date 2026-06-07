@@ -1,25 +1,24 @@
+// File: src/components/ui/ToastSnackbar/ToastSnackbar.tsx
+import '@/components/ui/ToastSnackbar/ToastSnackbar.css';
 import { cn } from '@/lib/utils';
+import type {
+  ToastSnackbarProps,
+  UIToastSnackbarVariant,
+} from '@/components/ui/ToastSnackbar/ToastSnackbar_type';
 
-export type ToastVariant = 'success' | 'error' | 'info';
-
-import { ComponentSize } from '@/components/ui/types';
-
-export interface ToastSnackbarProps {
-  open?: boolean;
-  message: string;
-  variant?: ToastVariant;
-  showIcon?: boolean;
-  actionLabel?: string;
-  onAction?: () => void;
-  className?: string;
-  size?: ComponentSize;
-}
+const VARIANT_ICON_CLASS: Record<UIToastSnackbarVariant, string> = {
+  success: 'ri-check-line',
+  error: 'ri-error-warning-line',
+  info: 'ri-information-line',
+};
 
 export function ToastSnackbar({
   open = true,
   message,
   variant = 'success',
+  shape = 'rounded',
   showIcon = true,
+  icon,
   actionLabel,
   onAction,
   className,
@@ -29,66 +28,37 @@ export function ToastSnackbar({
     return null;
   }
 
-  const iconClass =
-    variant === 'error'
-      ? 'ri-error-warning-line'
-      : variant === 'info'
-      ? 'ri-information-line'
-      : 'ri-check-line';
+  const rootDataAttrs = {
+    'data-ui-toast-snackbar': 'true',
+    'data-ui-toast-snackbar-variant': variant,
+    'data-ui-toast-snackbar-shape': shape,
+    'data-ui-toast-snackbar-size': size,
+  } as const;
 
-  const frameMap: Record<ComponentSize, string> = {
-    xs: 'h-8 px-3',
-    sm: 'h-8 px-3',
-    md: 'h-10 px-4',
-    lg: 'h-12 px-5',
-    xl: 'h-12 px-5',
-  };
-  const textMap: Record<ComponentSize, string> = {
-    xs: 'text-xs',
-    sm: 'text-xs',
-    md: 'text-sm',
-    lg: 'text-sm',
-    xl: 'text-sm',
-  };
-  const iconSizeMap: Record<ComponentSize, string> = {
-    xs: 'text-sm',
-    sm: 'text-sm',
-    md: 'text-base',
-    lg: 'text-lg',
-    xl: 'text-lg',
-  };
-  const gapMap: Record<ComponentSize, string> = {
-    xs: 'gap-2',
-    sm: 'gap-2',
-    md: 'gap-2',
-    lg: 'gap-3',
-    xl: 'gap-3',
-  };
-
-  const frame = frameMap[size];
-  const textSize = textMap[size];
-  const iconSize = iconSizeMap[size];
-  const gap = gapMap[size];
+  const iconNode = icon ?? (
+    <i className={VARIANT_ICON_CLASS[variant]} aria-hidden="true" />
+  );
 
   return (
     <div
-      className={cn(
-        'w-fit max-w-full bg-black text-white shadow-2xl animate-[slideIn_0.3s_ease-out] flex items-center',
-        frame,
-        className,
-      )}
+      className={cn('toast-snackbar', className)}
+      {...rootDataAttrs}
+      role="status"
+      aria-live="polite"
     >
-      <div className={cn('flex items-center', gap)}>
+      <div className="toast-snackbar__body">
         {showIcon ? (
-          <div className="flex items-center justify-center">
-            <i className={cn(iconClass, iconSize)}></i>
-          </div>
+          <span className="toast-snackbar__icon" aria-hidden="true">
+            {iconNode}
+          </span>
         ) : null}
-        <span className={cn('tracking-widest', textSize)} style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-          {message}
-        </span>
+        <span className="toast-snackbar__message">{message}</span>
         {actionLabel && onAction ? (
-          <button type="button" onClick={onAction} className={cn('tracking-widest underline underline-offset-2', textSize)}>
+          <button
+            type="button"
+            className="toast-snackbar__action"
+            onClick={onAction}
+          >
             {actionLabel}
           </button>
         ) : null}
