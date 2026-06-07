@@ -1,0 +1,190 @@
+/* File: src/components/ui/Tooltip/Tooltip.css */
+[data-ui-tooltip] {
+  /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
+  --tooltip-font-size: var(--lk-size-xs);
+
+  /*
+   * 横パディング＝font × φ、縦パディング＝font / φ。
+   *   → 横 > 縦（BannerAlert と同方針）。
+   * 小型 UI のため縦はさらに φ 圧縮して詰める。
+   */
+  --tooltip-pad-x: calc(var(--tooltip-font-size) * var(--phi));
+  --tooltip-pad-y: calc(var(--tooltip-font-size) / (var(--phi) * var(--phi)));
+
+  /* 近接：トリガーとツールチップ本体のオフセット＝font / φ で統一 */
+  --tooltip-offset: calc(var(--tooltip-font-size) / var(--phi));
+
+  /* 角丸＝font / φ²（BannerAlert より一段締めて小型感を出す）*/
+  --tooltip-radius: calc(var(--tooltip-font-size) / (var(--phi) * var(--phi)));
+
+  /* 矢印半幅＝font / φ²（本文サイズと連動して反復スケール）*/
+  --tooltip-arrow-size: calc(var(--tooltip-font-size) / (var(--phi) * var(--phi)));
+
+  /* 行間（対比：本文の可読性を担保）*/
+  --tooltip-line-height: var(--control-line-height, 1.4);
+
+  /* z-index も φ 由来で導出（直値を排す）*/
+  --tooltip-z: calc(var(--phi) * var(--phi) * var(--phi) * var(--phi) * 10);
+
+  /* 色トークン（BannerAlert と同系統。ハードコードは一箇所に集約）*/
+  --tooltip-bg: #111111;
+  --tooltip-color: #ffffff;
+
+  /* フェード時間（120ms：Button / BannerAlert と反復）*/
+  --tooltip-transition: 120ms ease;
+
+  position: relative;
+  display: inline-flex;
+}
+
+/* --- サイズ展開（反復：BannerAlert / Avatar と同一の公比スケールを再利用）--- */
+[data-ui-tooltip][data-ui-tooltip-size="xs"] {
+  --tooltip-font-size: var(--lk-size-3xs);
+}
+
+[data-ui-tooltip][data-ui-tooltip-size="sm"] {
+  --tooltip-font-size: var(--lk-size-2xs);
+}
+
+[data-ui-tooltip][data-ui-tooltip-size="md"] {
+  --tooltip-font-size: var(--lk-size-xs);
+}
+
+[data-ui-tooltip][data-ui-tooltip-size="lg"] {
+  --tooltip-font-size: var(--lk-size-sm);
+}
+
+[data-ui-tooltip][data-ui-tooltip-size="xl"] {
+  --tooltip-font-size: var(--lk-size-md);
+}
+
+/* --- トリガー（整列：子要素をそのまま内包し中央そろえ）--- */
+.tooltip__trigger {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* --- ツールチップ本体（近接：トリガー直近に浮かせる／対比：暗背景に白文字）--- */
+.tooltip__content {
+  position: absolute;
+  z-index: var(--tooltip-z);
+  display: inline-block;
+  width: max-content;
+  max-width: calc(var(--tooltip-font-size) * var(--phi) * var(--phi) * 10);
+  padding: var(--tooltip-pad-y) var(--tooltip-pad-x);
+  border-radius: var(--tooltip-radius);
+  background: var(--tooltip-bg);
+  color: var(--tooltip-color);
+  font-family: acumin-pro, sans-serif;
+  font-size: var(--tooltip-font-size);
+  line-height: var(--tooltip-line-height);
+  font-weight: 400;
+  white-space: normal;
+  box-sizing: border-box;
+  pointer-events: none;
+
+  /* 既定は非表示。hover / focus-within で対比的に出現 */
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--tooltip-transition), visibility var(--tooltip-transition);
+}
+
+/* --- 矢印（反復：本体と同色／整列：辺の中央に配置）--- */
+.tooltip__arrow {
+  position: absolute;
+  width: 0;
+  height: 0;
+  border-style: solid;
+}
+
+/* --- 出現トリガー（対比：通常は隠し、操作時のみ前面化）--- */
+[data-ui-tooltip]:hover .tooltip__content,
+[data-ui-tooltip]:focus-within .tooltip__content {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* =========================================================
+   配置展開（placement：top / bottom / left / right）
+   各方向で本体オフセットと矢印の向きを反復的に切り替える
+   ========================================================= */
+
+/* --- top（既定）--- */
+[data-ui-tooltip][data-ui-tooltip-placement="top"] .tooltip__content {
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: var(--tooltip-offset);
+}
+
+[data-ui-tooltip][data-ui-tooltip-placement="top"] .tooltip__arrow {
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: var(--tooltip-arrow-size) var(--tooltip-arrow-size) 0 var(--tooltip-arrow-size);
+  border-color: var(--tooltip-bg) transparent transparent transparent;
+}
+
+/* --- bottom --- */
+[data-ui-tooltip][data-ui-tooltip-placement="bottom"] .tooltip__content {
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: var(--tooltip-offset);
+}
+
+[data-ui-tooltip][data-ui-tooltip-placement="bottom"] .tooltip__arrow {
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 0 var(--tooltip-arrow-size) var(--tooltip-arrow-size) var(--tooltip-arrow-size);
+  border-color: transparent transparent var(--tooltip-bg) transparent;
+}
+
+/* --- left --- */
+[data-ui-tooltip][data-ui-tooltip-placement="left"] .tooltip__content {
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-right: var(--tooltip-offset);
+}
+
+[data-ui-tooltip][data-ui-tooltip-placement="left"] .tooltip__arrow {
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  border-width: var(--tooltip-arrow-size) 0 var(--tooltip-arrow-size) var(--tooltip-arrow-size);
+  border-color: transparent transparent transparent var(--tooltip-bg);
+}
+
+/* --- right --- */
+[data-ui-tooltip][data-ui-tooltip-placement="right"] .tooltip__content {
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: var(--tooltip-offset);
+}
+
+[data-ui-tooltip][data-ui-tooltip-placement="right"] .tooltip__arrow {
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  border-width: var(--tooltip-arrow-size) var(--tooltip-arrow-size) var(--tooltip-arrow-size) 0;
+  border-color: transparent var(--tooltip-bg) transparent transparent;
+}
+
+/* --- アクセシビリティ配慮（BannerAlert / Button と同思想で踏襲）--- */
+@media (forced-colors: active) {
+  .tooltip__content {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+    forced-color-adjust: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tooltip__content {
+    transition: none;
+  }
+}
