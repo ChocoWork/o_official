@@ -1,0 +1,213 @@
+/* File: src/components/ui/Toolbar/Toolbar.css */
+[data-ui-toolbar] {
+  /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
+  --toolbar-font-size: var(--lk-size-xs);
+
+  /* バー横パディング＝font × φ（横を広く）*/
+  --toolbar-pad-x: calc(var(--toolbar-font-size) * var(--phi));
+
+  /* 近接：セクション内アイテム間ギャップ＝font / φ で統一 */
+  --toolbar-gap: calc(var(--toolbar-font-size) / var(--phi));
+
+  /* アイコン径＝font × φ（本文ラベルより一段大きく対比）*/
+  --toolbar-icon-size: calc(var(--toolbar-font-size) * var(--phi));
+
+  /*
+   * アイテム高さ＝font × φ²（クリック領域を十分に確保）。
+   * アイコンのみボタン幅も同値にして正方形を反復。
+   */
+  --toolbar-item-size: calc(var(--toolbar-font-size) * var(--phi) * var(--phi));
+
+  /* アイコン＋ラベル間ギャップ＝font / φ（近接）*/
+  --toolbar-item-gap: calc(var(--toolbar-font-size) / var(--phi));
+
+  /* ラベル付きアイテムの横パディング＝font / φ */
+  --toolbar-item-pad-x: calc(var(--toolbar-font-size) / var(--phi));
+
+  /* 角丸＝font / φ²（BannerAlert の締めと同方針）*/
+  --toolbar-radius: calc(var(--toolbar-font-size) / (var(--phi) * var(--phi)));
+
+  /* 枠線＝font / φ³（min 1px）：BannerAlert と同式で反復 */
+  --toolbar-border-width: 1px;
+
+  /* 区切り線：太さは枠線と同じ、高さ＝アイテムの φ 圧縮 */
+  --toolbar-divider-width: var(--toolbar-border-width);
+  --toolbar-divider-height: calc(var(--toolbar-item-size) / var(--phi));
+
+  /* 区切り線の左右マージン＝font / φ²（近接でグループを示唆）*/
+  --toolbar-divider-margin: calc(var(--toolbar-font-size) / (var(--phi) * var(--phi)));
+
+  /* 行間 */
+  --toolbar-line-height: var(--control-line-height, 1.4);
+
+  /* トランジション（120ms：BannerAlert / Button と反復）*/
+  --toolbar-transition: 120ms ease;
+
+  /* 色トークン（BannerAlert と同系統。ハードコードは一箇所に集約）*/
+  --toolbar-bg-plain: #ffffff;
+  --toolbar-bg-subtle: #f5f5f5;
+  --toolbar-fg: #000000;
+  --toolbar-border-color: rgba(0, 0, 0, 0.2);
+  --toolbar-divider-color: rgba(0, 0, 0, 0.2);
+  --toolbar-hover-on-plain: #f5f5f5;
+  --toolbar-hover-on-subtle: rgba(0, 0, 0, 0.04);
+
+  /* 既定（バリアントで上書き）*/
+  --toolbar-bg: var(--toolbar-bg-plain);
+  --toolbar-hover: var(--toolbar-hover-on-plain);
+
+  /* 整列：左右セクションを両端、中央セクションを伸縮配置 */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  padding-left: var(--toolbar-pad-x);
+  padding-right: var(--toolbar-pad-x);
+  border: var(--toolbar-border-width) solid var(--toolbar-border-color);
+  background: var(--toolbar-bg);
+  color: var(--toolbar-fg);
+  font-family: acumin-pro, sans-serif;
+  box-sizing: border-box;
+}
+
+/* --- サイズ展開（反復：BannerAlert / Avatar と同一の公比スケールを再利用）--- */
+[data-ui-toolbar][data-ui-toolbar-size="xs"] {
+  --toolbar-font-size: var(--lk-size-3xs);
+}
+
+[data-ui-toolbar][data-ui-toolbar-size="sm"] {
+  --toolbar-font-size: var(--lk-size-2xs);
+}
+
+[data-ui-toolbar][data-ui-toolbar-size="md"] {
+  --toolbar-font-size: var(--lk-size-xs);
+}
+
+[data-ui-toolbar][data-ui-toolbar-size="lg"] {
+  --toolbar-font-size: var(--lk-size-sm);
+}
+
+[data-ui-toolbar][data-ui-toolbar-size="xl"] {
+  --toolbar-font-size: var(--lk-size-md);
+}
+
+/* --- バリアント展開（対比：背景トーンと hover 膜を切り替え）--- */
+[data-ui-toolbar][data-ui-toolbar-variant="default"] {
+  --toolbar-bg: var(--toolbar-bg-plain);
+  --toolbar-hover: var(--toolbar-hover-on-plain);
+}
+
+[data-ui-toolbar][data-ui-toolbar-variant="muted"] {
+  --toolbar-bg: var(--toolbar-bg-subtle);
+  --toolbar-hover: var(--toolbar-hover-on-subtle);
+}
+
+/* --- セクション（整列：左右中央の三分割）--- */
+.toolbar__section {
+  display: flex;
+  align-items: center;
+  gap: var(--toolbar-gap);
+  min-width: 0;
+}
+
+.toolbar__section--left {
+  justify-content: flex-start;
+}
+
+/* 中央：可変幅で伸縮し中央そろえ（整列の主役）*/
+.toolbar__section--center {
+  flex: 1 1 0%;
+  justify-content: center;
+}
+
+.toolbar__section--right {
+  justify-content: flex-end;
+}
+
+/* --- アイテムラッパ（区切り線とボタンを 1 グループ化：近接）--- */
+.toolbar__item-wrap {
+  display: flex;
+  align-items: center;
+}
+
+/* --- アイテムボタン（整列：中央／反復：共通の hover トランジション）--- */
+.toolbar__item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--toolbar-item-gap);
+  height: var(--toolbar-item-size);
+  width: var(--toolbar-item-size); /* 既定はアイコンのみ＝正方形 */
+  padding: 0;
+  border: none;
+  border-radius: var(--toolbar-radius);
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color var(--toolbar-transition);
+}
+
+/* ラベルありは幅を内容に合わせ、左右パディングで余白を確保（対比：アイコン専用と差別化）*/
+.toolbar__item[data-ui-toolbar-item-has-label="true"] {
+  width: auto;
+  padding-left: var(--toolbar-item-pad-x);
+  padding-right: var(--toolbar-item-pad-x);
+}
+
+.toolbar__item:hover {
+  background: var(--toolbar-hover);
+}
+
+/* --- アイコン（整列：中央／対比：ラベルより一段大きい）--- */
+.toolbar__item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: var(--toolbar-icon-size);
+  height: var(--toolbar-icon-size);
+  font-size: var(--toolbar-icon-size);
+  line-height: 1;
+}
+
+/* --- ラベル（対比：アイコンより小さい本文サイズ）--- */
+.toolbar__item-label {
+  font-size: var(--toolbar-font-size);
+  line-height: var(--toolbar-line-height);
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+/* --- 区切り線（反復：枠線と同色・同太さ／近接：グループ境界を示す）--- */
+.toolbar__divider {
+  flex: 0 0 auto;
+  width: var(--toolbar-divider-width);
+  height: var(--toolbar-divider-height);
+  margin-left: var(--toolbar-divider-margin);
+  margin-right: var(--toolbar-divider-margin);
+  background: var(--toolbar-divider-color);
+}
+
+/* --- アクセシビリティ配慮（BannerAlert / Button と同思想で踏襲）--- */
+@media (forced-colors: active) {
+  [data-ui-toolbar] {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+
+  .toolbar__item {
+    forced-color-adjust: none;
+  }
+
+  .toolbar__divider {
+    background: CanvasText;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toolbar__item {
+    transition: none;
+  }
+}
