@@ -1,0 +1,270 @@
+/* File: src/components/ui/Dropdown/Dropdown.css */
+[data-ui-dropdown] {
+  /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
+  --dropdown-font-size: var(--lk-size-xs);
+
+  /* トリガー：横パディング＝font × φ、縦＝font / φ（横 > 縦）*/
+  --dropdown-trigger-pad-x: calc(var(--dropdown-font-size) * var(--phi));
+  --dropdown-trigger-pad-y: calc(var(--dropdown-font-size) / var(--phi));
+
+  /* トリガー内ギャップ（ラベルとキャレット）＝font / φ（近接）*/
+  --dropdown-trigger-gap: calc(var(--dropdown-font-size) / var(--phi));
+
+  /* キャレット径＝font × φ（ラベルより一段大きく対比）*/
+  --dropdown-caret-size: calc(var(--dropdown-font-size) * var(--phi));
+
+  /* メニュー項目：横パディング＝font × φ、縦＝font / φ（トリガーと反復）*/
+  --dropdown-item-pad-x: calc(var(--dropdown-font-size) * var(--phi));
+  --dropdown-item-pad-y: calc(var(--dropdown-font-size) / var(--phi));
+
+  /* 項目内ギャップ（アイコンとラベル）＝font / φ（近接）*/
+  --dropdown-item-gap: calc(var(--dropdown-font-size) / var(--phi));
+
+  /* 項目アイコン径＝font × φ（ラベルより一段大きく対比）*/
+  --dropdown-item-icon-size: calc(var(--dropdown-font-size) * var(--phi));
+
+  /*
+   * メニュー幅。
+   *   下限＝font × φ⁴ × 10、上限はビューポート、内容に追従。
+   *   → サイズに比例して伸縮（直値 w-40/56/64 を置換）。
+   */
+  --dropdown-menu-min-width: calc(
+    var(--dropdown-font-size) * var(--phi) * var(--phi) * var(--phi) * var(--phi) * 10
+  );
+
+  /* トリガーとメニューの縦オフセット＝font / φ（近接）*/
+  --dropdown-menu-offset: calc(var(--dropdown-font-size) / var(--phi));
+
+  /* 角丸＝font / φ²（BannerAlert と同方針）*/
+  --dropdown-radius: calc(var(--dropdown-font-size) / (var(--phi) * var(--phi)));
+
+  /* 枠線＝font / φ³（min 1px）：BannerAlert と同式で反復 */
+  --dropdown-border-width: 1px;
+
+  /* トリガー枠は強調（accent）＝枠線 × φ²、BannerAlert の accent と同式 */
+  --dropdown-trigger-border-width: var(--dropdown-border-width);
+
+  /* 区切り線：太さは枠線と同じ、縦マージン＝font / φ³（近接）*/
+  --dropdown-divider-height: var(--dropdown-border-width);
+  --dropdown-divider-margin: calc(var(--dropdown-font-size) / (var(--phi) * var(--phi) * var(--phi)));
+
+  /* 字間（トリガーは tracking-widest 相当を φ 由来で）*/
+  --dropdown-trigger-tracking: calc(var(--dropdown-font-size) / (var(--phi) * var(--phi) * var(--phi)));
+
+  /* 行間 */
+  --dropdown-line-height: var(--control-line-height, 1.4);
+
+  /* z-index も φ 由来で導出（直値を排す）*/
+  --dropdown-z: calc(var(--phi) * var(--phi) * var(--phi) * var(--phi) * 10);
+
+  /* シャドウ寸法＝font / φ²（直値の影を排し φ 連動）*/
+  --dropdown-shadow-blur: calc(var(--dropdown-font-size) / (var(--phi) * var(--phi)));
+  --dropdown-shadow-y: calc(var(--dropdown-font-size) / (var(--phi) * var(--phi) * var(--phi)));
+
+  /* トランジション（120ms：BannerAlert / Button と反復）*/
+  --dropdown-transition: 120ms ease;
+  --dropdown-transition-slow: 300ms ease;
+
+  /* 色トークン（BannerAlert と同系統。ハードコードは一箇所に集約）*/
+  --dropdown-bg-plain: #ffffff;
+  --dropdown-bg-subtle: #f5f5f5;
+  --dropdown-fg: #000000;
+  --dropdown-fg-on-emphasis: #ffffff;
+  --dropdown-emphasis: #000000;
+  --dropdown-border-color: rgba(0, 0, 0, 0.2);
+  --dropdown-divider-color: rgba(0, 0, 0, 0.1);
+  --dropdown-shadow-color: rgba(0, 0, 0, 0.15);
+  --dropdown-hover-on-plain: #f5f5f5;
+
+  position: relative;
+  display: inline-block;
+  font-family: acumin-pro, sans-serif;
+  box-sizing: border-box;
+}
+
+/* --- サイズ展開（反復：BannerAlert / Avatar と同一の公比スケールを再利用）--- */
+[data-ui-dropdown][data-ui-dropdown-size="xs"] {
+  --dropdown-font-size: var(--lk-size-3xs);
+}
+
+[data-ui-dropdown][data-ui-dropdown-size="sm"] {
+  --dropdown-font-size: var(--lk-size-2xs);
+}
+
+[data-ui-dropdown][data-ui-dropdown-size="md"] {
+  --dropdown-font-size: var(--lk-size-xs);
+}
+
+[data-ui-dropdown][data-ui-dropdown-size="lg"] {
+  --dropdown-font-size: var(--lk-size-sm);
+}
+
+[data-ui-dropdown][data-ui-dropdown-size="xl"] {
+  --dropdown-font-size: var(--lk-size-md);
+}
+
+/* --- トリガー共通（整列：中央そろえ）--- */
+.dropdown__trigger {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+/* hover で開くタイプ（素のラッパ：装飾なし）*/
+.dropdown__trigger--bare {
+  gap: var(--dropdown-trigger-gap);
+}
+
+/* クリックで開くタイプ（対比：枠線つきボタン／hover で白黒反転）*/
+.dropdown__trigger--button {
+  gap: var(--dropdown-trigger-gap);
+  padding: var(--dropdown-trigger-pad-y) var(--dropdown-trigger-pad-x);
+  border: var(--dropdown-trigger-border-width) solid var(--dropdown-emphasis);
+  border-radius: var(--dropdown-radius);
+  background: var(--dropdown-bg-plain);
+  color: var(--dropdown-fg);
+  font-family: inherit;
+  font-size: var(--dropdown-font-size);
+  line-height: var(--dropdown-line-height);
+  letter-spacing: var(--dropdown-trigger-tracking);
+  white-space: nowrap;
+  transition: background-color var(--dropdown-transition-slow), color var(--dropdown-transition-slow);
+}
+
+.dropdown__trigger--button:hover {
+  background: var(--dropdown-emphasis);
+  color: var(--dropdown-fg-on-emphasis);
+}
+
+.dropdown__trigger-label {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* キャレット（対比：ラベルより一段大きい／開閉で回転）*/
+.dropdown__trigger-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: var(--dropdown-caret-size);
+  height: var(--dropdown-caret-size);
+  font-size: var(--dropdown-caret-size);
+  line-height: 1;
+  transition: transform var(--dropdown-transition);
+}
+
+[data-ui-dropdown][data-ui-dropdown-open="true"] .dropdown__trigger-caret {
+  transform: rotate(180deg);
+}
+
+/* --- メニュー（近接：トリガー直下／整列：align で左右寄せ）--- */
+.dropdown__menu {
+  position: absolute;
+  top: 100%;
+  z-index: var(--dropdown-z);
+  margin-top: var(--dropdown-menu-offset);
+  min-width: var(--dropdown-menu-min-width);
+  max-width: 100vw;
+  width: max-content;
+  border: var(--dropdown-border-width) solid var(--dropdown-border-color);
+  border-radius: var(--dropdown-radius);
+  background: var(--dropdown-bg-plain);
+  box-shadow: 0 var(--dropdown-shadow-y) var(--dropdown-shadow-blur) var(--dropdown-shadow-color);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+[data-ui-dropdown][data-ui-dropdown-align="left"] .dropdown__menu {
+  left: 0;
+}
+
+[data-ui-dropdown][data-ui-dropdown-align="right"] .dropdown__menu {
+  right: 0;
+}
+
+/* --- 項目ラッパ（区切り線と項目を 1 グループ化：近接）--- */
+.dropdown__item-wrap {
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- 項目（整列：左そろえ／反復：共通 hover）--- */
+.dropdown__item {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--dropdown-item-gap);
+  width: 100%;
+  padding: var(--dropdown-item-pad-y) var(--dropdown-item-pad-x);
+  border: none;
+  background: transparent;
+  color: var(--dropdown-fg);
+  font-family: inherit;
+  font-size: var(--dropdown-font-size);
+  line-height: var(--dropdown-line-height);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dropdown-transition);
+  box-sizing: border-box;
+}
+
+.dropdown__item:hover {
+  background: var(--dropdown-hover-on-plain);
+}
+
+/* 項目アイコン（対比：ラベルより一段大きい）*/
+.dropdown__item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: var(--dropdown-item-icon-size);
+  height: var(--dropdown-item-icon-size);
+  font-size: var(--dropdown-item-icon-size);
+  line-height: 1;
+}
+
+.dropdown__item-label {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+/* --- 区切り線（反復：枠線と同色系／近接：グループ境界）--- */
+.dropdown__divider {
+  height: var(--dropdown-divider-height);
+  margin-top: var(--dropdown-divider-margin);
+  margin-bottom: var(--dropdown-divider-margin);
+  background: var(--dropdown-divider-color);
+}
+
+/* --- アクセシビリティ配慮（BannerAlert / Button と同思想で踏襲）--- */
+@media (forced-colors: active) {
+  .dropdown__trigger--button {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+    forced-color-adjust: none;
+  }
+
+  .dropdown__menu {
+    border: 1px solid CanvasText;
+    background: Canvas;
+  }
+
+  .dropdown__item {
+    color: CanvasText;
+  }
+
+  .dropdown__divider {
+    background: CanvasText;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dropdown__trigger--button,
+  .dropdown__trigger-caret,
+  .dropdown__item {
+    transition: none;
+  }
+}
