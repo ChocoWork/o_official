@@ -1,27 +1,7 @@
-import "./FloatingButton.css"
+// File: src/components/ui/FloatingButton/FloatingButton.tsx
+import '@/components/ui/FloatingButton/FloatingButton.css';
 import { cn } from '@/lib/utils';
-import type { ReactNode } from 'react';
-import { ComponentSize } from '@/components/ui/types';
-import { Button } from '../Button/Button';
-import type { UIButtonSize } from '@/components/ui/Button/Button_types';
-
-export interface FloatingButtonAction {
-  key: string;
-  iconClass: string;
-  onClick: () => void;
-}
-
-export interface FloatingButtonProps {
-  icon?: ReactNode;
-  label: string;
-  onClick: () => void;
-  actions?: FloatingButtonAction[];
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
-  fixed?: boolean;
-  className?: string;
-  size?: ComponentSize;
-}
+import type { FloatingButtonProps } from '@/components/ui/FloatingButton/FloatingButton_type';
 
 export function FloatingButton({
   icon,
@@ -35,61 +15,68 @@ export function FloatingButton({
   size = 'md',
 }: FloatingButtonProps) {
   const hasActions = Boolean(actions && actions.length > 0);
-  const buttonSizeMap: Record<ComponentSize, UIButtonSize> = {
-    xs: 'xs',
-    sm: 'sm',
-    md: 'md',
-    lg: 'lg',
-    xl: 'xl',
+
+  const rootDataAttrs = {
+    'data-ui-floating-button': 'true',
+    'data-ui-floating-button-size': size,
+    'data-ui-floating-button-mode': hasActions ? 'speed-dial' : 'single',
+    'data-ui-floating-button-fixed': fixed ? 'true' : undefined,
+    'data-ui-floating-button-open': open ? 'true' : undefined,
+  } as const;
+
+  const handleMainClick = () => {
+    if (hasActions) {
+      onOpenChange?.(!open);
+      return;
+    }
+    onClick();
   };
-  const buttonSize = buttonSizeMap[size];
-  const actionsOffsetClass = size === 'xs' || size === 'sm' ? 'bottom-12' : size === 'lg' ? 'bottom-20' : size === 'xl' ? 'bottom-24' : 'bottom-16';
 
   return (
-    <div className={cn('relative', fixed ? 'fixed bottom-6 right-6 z-40' : null, className)}>
-      {hasActions && open ? (
-        <div className={cn('absolute right-0 mb-3 space-y-3', actionsOffsetClass)}>
-          {actions?.map((action) => (
-            <Button
-              key={action.key}
-              size={buttonSize}
-              variant="ghost"
-              className={cn('flex items-center justify-center border border-black/20 bg-white shadow-lg transition-all hover:bg-[#f5f5f5]', 'px-0', 'aspect-square')}
-              onClick={action.onClick}
-            >
-              <i className={cn(action.iconClass, 'text-xl')}></i>
-            </Button>
-          ))}
-        </div>
-      ) : null}
-
-      <Button
-        size={buttonSize}
-        variant="ghost"
-        onClick={() => {
-          if (hasActions) {
-            onOpenChange?.(!open);
-            return;
-          }
-          onClick();
-        }}
-        className={cn(
-          hasActions
-            ? 'flex items-center justify-center bg-black text-white shadow-2xl transition-all hover:bg-[#474747] px-0 aspect-square'
-            : 'inline-flex min-w-14 items-center justify-center gap-2 rounded-full bg-black px-5 text-white shadow-sm transition-colors hover:bg-[#474747]',
-        )}
-      >
-        {hasActions ? (
-          <div className="flex h-6 w-6 items-center justify-center">
-            <i className={cn(open ? 'ri-close-line' : 'ri-add-line', 'text-2xl transition-transform')}></i>
+    <div className={cn('floating-button-shell', className)} {...rootDataAttrs}>
+      <div className="floating-button">
+        {hasActions && open ? (
+          <div className="floating-button__actions" role="menu">
+            {actions?.map((action) => (
+              <button
+                key={action.key}
+                type="button"
+                className="floating-button__action"
+                role="menuitem"
+                onClick={action.onClick}
+              >
+                <span className="floating-button__action-icon" aria-hidden="true">
+                  <i className={action.iconClass} />
+                </span>
+              </button>
+            ))}
           </div>
-        ) : (
-          <>
-            {icon}
-            <span className="text-xs tracking-wider">{label}</span>
-          </>
-        )}
-      </Button>
+        ) : null}
+
+        <button
+          type="button"
+          className="floating-button__main"
+          aria-haspopup={hasActions ? 'menu' : undefined}
+          aria-expanded={hasActions ? open : undefined}
+          aria-label={hasActions ? label : undefined}
+          onClick={handleMainClick}
+        >
+          {hasActions ? (
+            <span className="floating-button__main-icon" aria-hidden="true">
+              <i className={open ? 'ri-close-line' : 'ri-add-line'} />
+            </span>
+          ) : (
+            <>
+              {icon ? (
+                <span className="floating-button__main-icon" aria-hidden="true">
+                  {icon}
+                </span>
+              ) : null}
+              <span className="floating-button__main-label">{label}</span>
+            </>
+          )}
+        </button>
+      </div>
     </div>
   );
 }

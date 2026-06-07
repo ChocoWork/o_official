@@ -1,0 +1,258 @@
+/* File: src/components/ui/FloatingButton/FloatingButton.css */
+[data-ui-floating-button] {
+  /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
+  --fab-font-size: var(--lk-size-xs);
+
+  /*
+   * メイン円形ボタン径＝font × φ³（タップ領域を十分に確保）。
+   * アクションボタン径はメインの φ 圧縮（対比：従＜主）。
+   */
+  --fab-main-size: calc(var(--fab-font-size) * var(--phi) * var(--phi));
+  --fab-action-size: calc(var(--fab-main-size));
+
+  /* メインアイコン径＝font × φ²（speed-dial の +/× 用）*/
+  --fab-main-icon-size: calc(var(--fab-font-size));
+
+  /* アクションアイコン径＝font × φ（メインアイコンより一段小さく対比）*/
+  --fab-action-icon-size: calc(var(--fab-font-size));
+
+  /* 単独モード：横パディング＝font × φ、ラベルとアイコンのギャップ＝font / φ */
+  --fab-single-pad-x: calc(var(--fab-font-size) * var(--phi));
+  --fab-single-gap: calc(var(--fab-font-size) / var(--phi));
+
+  /* 単独モード最小幅＝font × φ⁴（横長ピル形を保証）*/
+  --fab-single-min-width: calc(var(--fab-font-size) * var(--phi) * var(--phi) * var(--phi) * var(--phi));
+
+  /* 近接：アクション同士の縦ギャップ＝font / φ */
+  --fab-action-gap: calc(var(--fab-font-size) / var(--phi));
+
+  /* メインとアクション群の縦オフセット＝メイン径 ＋ font / φ（近接かつ重ならない）*/
+  --fab-actions-offset: calc(var(--fab-main-size) + calc(var(--fab-font-size) / var(--phi)));
+
+  /* 固定配置時の画面端マージン＝font × φ²（直値 bottom-6/right-6 を置換）*/
+  --fab-fixed-inset: calc(var(--fab-font-size) * var(--phi) * var(--phi));
+
+  /* 枠線＝font / φ³（min 1px）：BannerAlert と同式で反復 */
+  --fab-border-width: 1px;
+
+  /* 字間（tracking-wider 相当を φ 由来で）*/
+  --fab-label-tracking: calc(var(--fab-font-size) / (var(--phi) * var(--phi) * var(--phi)));
+
+  /* 行間 */
+  --fab-line-height: var(--control-line-height, 1.4);
+
+  /* z-index も φ 由来で導出（直値 z-40 を置換）*/
+  --fab-z: calc(var(--phi) * var(--phi) * var(--phi) * var(--phi) * 10);
+
+  /* シャドウ寸法＝font 連動（直値の影を排す）*/
+  --fab-shadow-blur: calc(var(--fab-font-size) / var(--phi));
+  --fab-shadow-y: calc(var(--fab-font-size) / (var(--phi) * var(--phi)));
+  --fab-shadow-blur-strong: calc(var(--fab-font-size) * var(--phi));
+  --fab-shadow-y-strong: calc(var(--fab-font-size) / var(--phi));
+
+  /* トランジション（120ms：BannerAlert / Button と反復）*/
+  --fab-transition: 120ms ease;
+
+  /* 色トークン（BannerAlert と同系統。ハードコードは一箇所に集約）*/
+  --fab-bg-emphasis: #111111;
+  --fab-bg-emphasis-hover: #474747;
+  --fab-fg-emphasis: #ffffff;
+  --fab-bg-plain: #ffffff;
+  --fab-fg: #000000;
+  --fab-border-color: rgba(0, 0, 0, 0.2);
+  --fab-hover-on-plain: #f5f5f5;
+  --fab-shadow-color: rgba(0, 0, 0, 0.15);
+  --fab-shadow-color-strong: rgba(0, 0, 0, 0.25);
+
+  display: inline-block;
+  font-family: acumin-pro, sans-serif;
+  box-sizing: border-box;
+}
+
+.floating-button {
+  position: relative;
+  display: inline-block;
+}
+
+/* --- 固定配置（直値を排し φ 由来 inset・z で右下固定）--- */
+[data-ui-floating-button][data-ui-floating-button-fixed="true"] {
+  position: fixed;
+  right: var(--fab-fixed-inset);
+  bottom: var(--fab-fixed-inset);
+  z-index: var(--fab-z);
+}
+
+/* --- サイズ展開（反復：BannerAlert / Avatar と同一の公比スケールを再利用）--- */
+[data-ui-floating-button][data-ui-floating-button-size="xs"] {
+  --fab-font-size: var(--lk-size-xs);
+}
+
+[data-ui-floating-button][data-ui-floating-button-size="sm"] {
+  --fab-font-size: var(--lk-size-sm);
+}
+
+[data-ui-floating-button][data-ui-floating-button-size="md"] {
+  --fab-font-size: var(--lk-size-md);
+}
+
+[data-ui-floating-button][data-ui-floating-button-size="lg"] {
+  --fab-font-size: var(--lk-size-lg);
+}
+
+[data-ui-floating-button][data-ui-floating-button-size="xl"] {
+  --fab-font-size: var(--lk-size-xl);
+}
+
+/* --- アクション群（近接：メイン直上に縦積み／整列：右端そろえ）--- */
+.floating-button__actions {
+  position: absolute;
+  left: 50%;
+  bottom: var(--fab-actions-offset);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--fab-action-gap);
+  transform: translateX(-50%);
+}
+
+/* --- アクションボタン（対比：白地・枠線つきの従ボタン／反復：円形）--- */
+.floating-button__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--fab-action-size);
+  height: var(--fab-action-size);
+  padding: 0;
+  border: var(--fab-border-width) solid var(--fab-border-color);
+  border-radius: 50%;
+  background: var(--fab-bg-plain);
+  color: var(--fab-fg);
+  box-shadow: 0 var(--fab-shadow-y) var(--fab-shadow-blur) var(--fab-shadow-color);
+  cursor: pointer;
+  transition: background-color var(--fab-transition);
+}
+
+.floating-button__action:hover {
+  background: var(--fab-hover-on-plain);
+}
+
+.floating-button__action-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--fab-action-icon-size);
+  height: var(--fab-action-icon-size);
+  font-size: var(--fab-action-icon-size);
+  line-height: 1;
+  text-align: center;
+}
+
+.floating-button__action-icon > i {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+/* --- メインボタン（対比：emphasis 背景・白文字の主ボタン）--- */
+.floating-button__main {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: var(--fab-bg-emphasis);
+  color: var(--fab-fg-emphasis);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background-color var(--fab-transition), transform var(--fab-transition);
+}
+
+.floating-button__main:hover {
+  background: var(--fab-bg-emphasis-hover);
+}
+
+/* speed-dial モード：円形・強い影（対比：浮遊感を強調）*/
+[data-ui-floating-button][data-ui-floating-button-mode="speed-dial"] .floating-button__main {
+  width: var(--fab-main-size);
+  height: var(--fab-main-size);
+  padding: 0;
+  border-radius: 50%;
+  box-shadow: 0 var(--fab-shadow-y-strong) var(--fab-shadow-blur-strong) var(--fab-shadow-color-strong);
+}
+
+/* single モード：横長ピル形（対比：ラベルを伴う） */
+[data-ui-floating-button][data-ui-floating-button-mode="single"] .floating-button__main {
+  gap: var(--fab-single-gap);
+  min-width: var(--fab-single-min-width);
+  height: var(--fab-main-size);
+  padding-left: var(--fab-single-pad-x);
+  padding-right: var(--fab-single-pad-x);
+  border-radius: calc(var(--fab-main-size) / 2);
+  box-shadow: 0 var(--fab-shadow-y) var(--fab-shadow-blur) var(--fab-shadow-color);
+}
+
+/* メインアイコン（speed-dial の +/×：開閉で回転：対比的に状態提示）*/
+.floating-button__main-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: var(--fab-main-icon-size);
+  height: var(--fab-main-icon-size);
+  font-size: var(--fab-main-icon-size);
+  line-height: 1;
+  text-align: center;
+  transform-origin: center center;
+  transition: transform var(--fab-transition);
+}
+
+.floating-button__main-icon > i {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+[data-ui-floating-button][data-ui-floating-button-open="true"] .floating-button__main-icon {
+  transform: rotate(135deg);
+}
+
+/* single モードのアイコンは本文サイズに合わせる（ラベルとの整列） */
+[data-ui-floating-button][data-ui-floating-button-mode="single"] .floating-button__main-icon {
+  width: var(--fab-action-icon-size);
+  height: var(--fab-action-icon-size);
+  font-size: var(--fab-action-icon-size);
+}
+
+/* ラベル（整列：アイコンと中央そろえ／対比：本文サイズ）*/
+.floating-button__main-label {
+  font-size: var(--fab-font-size);
+  line-height: var(--fab-line-height);
+  letter-spacing: var(--fab-label-tracking);
+  white-space: nowrap;
+}
+
+/* --- アクセシビリティ配慮（BannerAlert / Button と同思想で踏襲）--- */
+@media (forced-colors: active) {
+  .floating-button__main,
+  .floating-button__action {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+    forced-color-adjust: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .floating-button__main,
+  .floating-button__main-icon,
+  .floating-button__action {
+    transition: none;
+  }
+}
