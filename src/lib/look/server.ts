@@ -1,6 +1,14 @@
-import { createPublicClient, createServiceRoleClient } from '@/lib/supabase/server';
-import { signLookImageUrls } from '@/lib/storage/look-images';
-import type { LookSeasonType, PublicLook, PublicLookLinkedItem } from './public';
+import {
+  createPublicClient,
+  createServiceRoleClient,
+} from "@/lib/supabase/server";
+import { signLookImageUrls } from "@/lib/storage/look-images";
+import { signItemImageUrl } from "@/lib/storage/item-images";
+import type {
+  LookSeasonType,
+  PublicLook,
+  PublicLookLinkedItem,
+} from "./public";
 
 type LookRow = {
   id: number;
@@ -29,28 +37,114 @@ export async function getPublishedLooks(limit?: number): Promise<PublicLook[]> {
   const supabase = await createPublicClient();
 
   let query = supabase
-    .from('looks')
-    .select('id,season_year,season_type,theme,theme_description,image_urls,created_at')
-    .eq('status', 'published')
-    .order('created_at', { ascending: false });
+    .from("looks")
+    .select(
+      "id,season_year,season_type,theme,theme_description,image_urls,created_at",
+    )
+    .eq("status", "published")
+    .order("created_at", { ascending: false });
 
-  if (typeof limit === 'number') {
+  if (typeof limit === "number") {
     query = query.limit(limit);
   }
 
   const { data: lookRows, error: looksError } = await query;
 
   if (looksError || !lookRows) {
-    console.error('Failed to fetch published looks:', looksError);
+    console.error("Failed to fetch published looks:", looksError);
     return [];
   }
 
   return hydrateLooks(lookRows as LookRow[]);
 }
 
-export async function getPublishedLookById(id: number): Promise<PublicLook | null> {
-  const looks = await getPublishedLooks();
-  return looks.find((look) => look.id === id) ?? null;
+export async function getPublishedLookById(
+  id: number,
+): Promise<PublicLook | null> {
+  const [supabase, serviceSupabase] = await Promise.all([
+    createPublicClient(),
+    createServiceRoleClient(),
+  ]);
+
+  const { data: lookRow, error: lookError } = await supabase
+    .from("looks")
+    .select(
+      "id,season_year,season_type,theme,theme_description,image_urls,created_at",
+    )
+    .eq("status", "published")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (lookError || !lookRow) {
+    console.error("Failed to fetch published look detail:", lookError);
+    return null;
+  }
+
+  const { data: lookItemRows, error: lookItemsError } = await supabase
+    .from("look_items")
+    .select("look_id,item_id")
+    .eq("look_id", id);
+
+  if (lookItemsError || !lookItemRows) {
+    console.error(
+      "Failed to fetch look items for detail view:",
+      lookItemsError,
+    );
+  }
+
+  const uniqueItemIds = Array.from(
+    new Set(((lookItemRows ?? []) as LookItemRow[]).map((row) => row.item_id)),
+  );
+  const itemMap = new Map<number, PublicLookLinkedItem>();
+
+  if (uniqueItemIds.length > 0) {
+    const { data: itemRows, error: itemRowsError } = await supabase
+      .from("items")
+      .select("id,category,name,price,image_url")
+      .in("id", uniqueItemIds)
+      .eq("status", "published");
+
+    if (itemRowsError) {
+      console.error(
+        "Failed to fetch linked items for detail view:",
+        itemRowsError,
+      );
+    } else {
+      const signedItemRows = await Promise.all(
+        (itemRows ?? []).map(async (row) => ({
+          ...row,
+          image_url: await signItemImageUrl(serviceSupabase, row.image_url),
+        })),
+      );
+
+      for (const row of signedItemRows as ItemRow[]) {
+        itemMap.set(row.id, {
+          category: row.category,
+          id: row.id,
+          name: row.name,
+          price: row.price,
+          imageUrl: row.image_url,
+        });
+      }
+    }
+  }
+
+  const linkedItems: PublicLookLinkedItem[] = [];
+  for (const lookItemRow of (lookItemRows ?? []) as LookItemRow[]) {
+    const item = itemMap.get(lookItemRow.item_id);
+    if (item) {
+      linkedItems.push(item);
+    }
+  }
+
+  const rawUrls = Array.isArray(lookRow.image_urls) ? lookRow.image_urls : [];
+  const imageUrls = await signLookImageUrls(serviceSupabase, rawUrls);
+
+  return {
+    ...mapLookRowToPublicLook(lookRow as LookRow),
+    imageUrls,
+    linkedItems,
+  };
 }
 
 async function hydrateLooks(lookRows: LookRow[]): Promise<PublicLook[]> {
@@ -67,30 +161,39 @@ async function hydrateLooks(lookRows: LookRow[]): Promise<PublicLook[]> {
   const lookIds = lookRows.map((look) => look.id);
 
   const { data: lookItemRows, error: lookItemsError } = await supabase
-    .from('look_items')
-    .select('look_id,item_id')
-    .in('look_id', lookIds);
+    .from("look_items")
+    .select("look_id,item_id")
+    .in("look_id", lookIds);
 
   if (lookItemsError || !lookItemRows) {
-    console.error('Failed to fetch look items:', lookItemsError);
+    console.error("Failed to fetch look items:", lookItemsError);
     return lookRows.map(mapLookRowToPublicLook);
   }
 
-  const uniqueItemIds = Array.from(new Set((lookItemRows as LookItemRow[]).map((row) => row.item_id)));
+  const uniqueItemIds = Array.from(
+    new Set((lookItemRows as LookItemRow[]).map((row) => row.item_id)),
+  );
 
   const itemMap = new Map<number, PublicLookLinkedItem>();
 
   if (uniqueItemIds.length > 0) {
     const { data: itemRows, error: itemRowsError } = await supabase
-      .from('items')
-      .select('id,category,name,price,image_url')
-      .in('id', uniqueItemIds)
-      .eq('status', 'published');
+      .from("items")
+      .select("id,category,name,price,image_url")
+      .in("id", uniqueItemIds)
+      .eq("status", "published");
 
     if (itemRowsError) {
-      console.error('Failed to fetch linked items:', itemRowsError);
+      console.error("Failed to fetch linked items:", itemRowsError);
     } else {
-      for (const row of (itemRows ?? []) as ItemRow[]) {
+      const signedItemRows = await Promise.all(
+        (itemRows ?? []).map(async (row) => ({
+          ...row,
+          image_url: await signItemImageUrl(serviceSupabase, row.image_url),
+        })),
+      );
+
+      for (const row of signedItemRows as ItemRow[]) {
         itemMap.set(row.id, {
           category: row.category,
           id: row.id,

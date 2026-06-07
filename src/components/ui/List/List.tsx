@@ -1,9 +1,9 @@
-import "./List.css"
-import { cn } from '@/lib/utils';
-import Link from 'next/link';
-import Image from 'next/image';
-import type { ReactNode } from 'react';
-import { ComponentSize } from '@/components/ui/types';
+import "./List.css";
+import { cn } from "@/lib/utils";
+import Link from "next/link";
+import Image from "next/image";
+import type { ReactNode } from "react";
+import { ComponentSize } from "@/components/ui/types";
 
 interface BaseListProps<T> {
   items: readonly T[];
@@ -15,11 +15,11 @@ interface BaseListProps<T> {
 
 interface CustomListProps<T> extends BaseListProps<T> {
   renderItem: (item: T, index: number) => ReactNode;
-  variant?: 'custom';
+  variant?: "custom";
 }
 
 interface ShowcaseListProps<T> extends BaseListProps<T> {
-  variant: 'showcase';
+  variant: "showcase";
   getName: (item: T) => string;
   getCategory: (item: T) => string;
   getPrice: (item: T) => ReactNode;
@@ -32,110 +32,141 @@ interface ShowcaseListProps<T> extends BaseListProps<T> {
 
 export type ListProps<T> = CustomListProps<T> | ShowcaseListProps<T>;
 
-const showcaseSizeMap: Record<ComponentSize, {
-  rowPadding: string;
-  rowGap: string;
-  previewHeight: string;
-  previewIconBox: string;
-  titleSize: string;
-  categorySize: string;
-  rightSize: string;
-  iconSize: string;
-}> = {
+const showcaseSizeMap: Record<
+  ComponentSize,
+  {
+    rowPadding: string;
+    rowGap: string;
+    previewHeight: string;
+    previewIconBox: string;
+    titleSize: string;
+    categorySize: string;
+    rightSize: string;
+    iconSize: string;
+  }
+> = {
   xs: {
-    rowPadding: 'px-3 py-2',
-    rowGap: 'gap-3',
-    previewHeight: 'h-10',
-    previewIconBox: 'w-10 h-10',
-    titleSize: 'text-xs',
-    categorySize: 'text-[10px]',
-    rightSize: 'text-xs',
-    iconSize: 'text-lg',
+    rowPadding: "px-3 py-2",
+    rowGap: "gap-3",
+    previewHeight: "h-10",
+    previewIconBox: "w-10 h-10",
+    titleSize: "text-xs",
+    categorySize: "text-[10px]",
+    rightSize: "text-xs",
+    iconSize: "text-lg",
   },
   sm: {
-    rowPadding: 'px-3 py-2',
-    rowGap: 'gap-3',
-    previewHeight: 'h-10',
-    previewIconBox: 'w-10 h-10',
-    titleSize: 'text-xs',
-    categorySize: 'text-[10px]',
-    rightSize: 'text-xs',
-    iconSize: 'text-lg',
+    rowPadding: "px-3 py-2",
+    rowGap: "gap-3",
+    previewHeight: "h-10",
+    previewIconBox: "w-10 h-10",
+    titleSize: "text-xs",
+    categorySize: "text-[10px]",
+    rightSize: "text-xs",
+    iconSize: "text-lg",
   },
   md: {
-    rowPadding: 'px-4 py-3',
-    rowGap: 'gap-4',
-    previewHeight: 'h-12',
-    previewIconBox: 'w-12 h-12',
-    titleSize: 'text-sm',
-    categorySize: 'text-xs',
-    rightSize: 'text-sm',
-    iconSize: 'text-xl',
+    rowPadding: "px-4 py-3",
+    rowGap: "gap-4",
+    previewHeight: "h-12",
+    previewIconBox: "w-12 h-12",
+    titleSize: "text-sm",
+    categorySize: "text-xs",
+    rightSize: "text-sm",
+    iconSize: "text-xl",
   },
   lg: {
-    rowPadding: 'px-5 py-4',
-    rowGap: 'gap-5',
-    previewHeight: 'h-14',
-    previewIconBox: 'w-14 h-14',
-    titleSize: 'text-base',
-    categorySize: 'text-sm',
-    rightSize: 'text-base',
-    iconSize: 'text-2xl',
+    rowPadding: "px-5 py-4",
+    rowGap: "gap-5",
+    previewHeight: "h-14",
+    previewIconBox: "w-14 h-14",
+    titleSize: "text-base",
+    categorySize: "text-sm",
+    rightSize: "text-base",
+    iconSize: "text-2xl",
   },
   xl: {
-    rowPadding: 'px-5 py-4',
-    rowGap: 'gap-5',
-    previewHeight: 'h-14',
-    previewIconBox: 'w-14 h-14',
-    titleSize: 'text-base',
-    categorySize: 'text-sm',
-    rightSize: 'text-base',
-    iconSize: 'text-2xl',
+    rowPadding: "px-5 py-4",
+    rowGap: "gap-5",
+    previewHeight: "h-14",
+    previewIconBox: "w-14 h-14",
+    titleSize: "text-base",
+    categorySize: "text-sm",
+    rightSize: "text-base",
+    iconSize: "text-2xl",
   },
 };
 
-export function List<T>({ items, itemKey, className, size = 'md', ...props }: ListProps<T>) {
+export function List<T>({
+  items,
+  itemKey,
+  className,
+  size = "md",
+  ...props
+}: ListProps<T>) {
   const gapMap: Record<ComponentSize, string> = {
-    xs: 'space-y-1',
-    sm: 'space-y-1',
-    md: 'space-y-2',
-    lg: 'space-y-4',
-    xl: 'space-y-4',
+    xs: "space-y-1",
+    sm: "space-y-1",
+    md: "space-y-2",
+    lg: "space-y-4",
+    xl: "space-y-4",
   };
   const textSizeMap: Record<ComponentSize, string> = {
-    xs: 'text-sm',
-    sm: 'text-sm',
-    md: 'text-base',
-    lg: 'text-lg',
-    xl: 'text-lg',
+    xs: "text-sm",
+    sm: "text-sm",
+    md: "text-base",
+    lg: "text-lg",
+    xl: "text-lg",
   };
   const gapClass = gapMap[size];
   const itemTextClass = textSizeMap[size];
-  const isShowcaseVariant = props.variant === 'showcase';
+  const isShowcaseVariant = props.variant === "showcase";
   const showcaseClasses = showcaseSizeMap[size];
-  const titleStyle = size === 'xs' ? { fontFamily: 'acumin-pro, sans-serif', fontSize: 'var(--lk-size-xs)' } : { fontFamily: 'acumin-pro, sans-serif' };
-  const categoryStyle = size === 'xs' ? { fontFamily: 'acumin-pro, sans-serif', fontSize: 'var(--lk-size-4xs)' } : { fontFamily: 'acumin-pro, sans-serif' };
-  const rightStyle = size === 'xs' ? { fontFamily: 'acumin-pro, sans-serif', fontSize: 'var(--lk-size-xs)' } : { fontFamily: 'acumin-pro, sans-serif' };
+  const titleStyle =
+    size === "xs"
+      ? { fontFamily: "acumin-pro, sans-serif", fontSize: "var(--lk-size-xs)" }
+      : { fontFamily: "acumin-pro, sans-serif" };
+  const categoryStyle =
+    size === "xs"
+      ? { fontFamily: "acumin-pro, sans-serif", fontSize: "var(--lk-size-4xs)" }
+      : { fontFamily: "acumin-pro, sans-serif" };
+  const rightStyle =
+    size === "xs"
+      ? { fontFamily: "acumin-pro, sans-serif", fontSize: "var(--lk-size-xs)" }
+      : { fontFamily: "acumin-pro, sans-serif" };
 
   return (
     <ul className={cn(gapClass, className)}>
       {items.map((item, index) => (
-        <li key={itemKey ? itemKey(item, index) : index} className={cn(!isShowcaseVariant && itemTextClass, isShowcaseVariant && 'hover:bg-[#f5f5f5]')}>
+        <li
+          key={itemKey ? itemKey(item, index) : index}
+          className={cn(
+            !isShowcaseVariant && itemTextClass,
+            isShowcaseVariant && "hover:bg-[#f5f5f5]",
+          )}
+        >
           {isShowcaseVariant ? (
             props.getHref ? (
               <Link
                 href={props.getHref(item)}
                 className={cn(
-                  'flex items-center justify-between',
+                  "flex items-center justify-between",
                   showcaseClasses.rowPadding,
-                  index < items.length - 1 && 'border-b border-black/10',
+                  index < items.length - 1 && "border-b border-black/10",
                 )}
               >
-                <div className={cn('flex items-center', showcaseClasses.rowGap)}>
-                  <div className={cn('relative flex shrink-0 items-center justify-center overflow-hidden', showcaseClasses.previewHeight)}>
+                <div
+                  className={cn("flex items-center", showcaseClasses.rowGap)}
+                >
+                  <div
+                    className={cn(
+                      "relative flex shrink-0 items-center justify-center overflow-hidden",
+                      showcaseClasses.previewHeight,
+                    )}
+                  >
                     {props.getImage ? (
                       <Image
-                        src={props.getImage(item) || '/placeholder.png'}
+                        src={props.getImage(item) || "/placeholder.png"}
                         alt={props.getName(item)}
                         width={96}
                         height={144}
@@ -144,42 +175,81 @@ export function List<T>({ items, itemKey, className, size = 'md', ...props }: Li
                         className="h-full w-auto object-contain"
                       />
                     ) : (
-                      <div className={cn('flex items-center justify-center bg-[#f5f5f5]', showcaseClasses.previewIconBox)}>
-                        <i className={cn('ri-image-line text-black/40', showcaseClasses.iconSize)}></i>
+                      <div
+                        className={cn(
+                          "flex items-center justify-center bg-[#f5f5f5]",
+                          showcaseClasses.previewIconBox,
+                        )}
+                      >
+                        <i
+                          className={cn(
+                            "ri-image-line text-black/40",
+                            showcaseClasses.iconSize,
+                          )}
+                        ></i>
                       </div>
                     )}
                   </div>
                   <div>
-                    <p className={cn('text-black mb-1', showcaseClasses.titleSize)} style={titleStyle}>
+                    <p
+                      className={cn(
+                        "text-black mb-1",
+                        showcaseClasses.titleSize,
+                      )}
+                      style={titleStyle}
+                    >
                       {props.getName(item)}
                     </p>
-                    <p className={cn('text-black/40 tracking-wider', showcaseClasses.categorySize)} style={categoryStyle}>
+                    <p
+                      className={cn(
+                        "text-black/40 tracking-wider",
+                        showcaseClasses.categorySize,
+                      )}
+                      style={categoryStyle}
+                    >
                       {props.getCategory(item)}
                     </p>
                   </div>
                 </div>
-                <div className={cn('flex items-center', showcaseClasses.rowGap)}>
-                  <span className={cn('text-black', showcaseClasses.rightSize)} style={rightStyle}>
+                <div
+                  className={cn("flex items-center", showcaseClasses.rowGap)}
+                >
+                  <span
+                    className={cn("text-black", showcaseClasses.rightSize)}
+                    style={rightStyle}
+                  >
                     {props.getPrice(item)}
                   </span>
                   <div className="w-5 h-5 flex items-center justify-center">
-                    <i className={cn('ri-arrow-right-s-line text-black/40', showcaseClasses.iconSize)}></i>
+                    <i
+                      className={cn(
+                        "ri-arrow-right-s-line text-black/40",
+                        showcaseClasses.iconSize,
+                      )}
+                    ></i>
                   </div>
                 </div>
               </Link>
             ) : (
               <div
                 className={cn(
-                  'flex cursor-pointer items-center justify-between transition-colors hover:bg-[#f5f5f5]',
+                  "flex cursor-pointer items-center justify-between transition-colors hover:bg-[#f5f5f5]",
                   showcaseClasses.rowPadding,
-                  index < items.length - 1 && 'border-b border-black/10',
+                  index < items.length - 1 && "border-b border-black/10",
                 )}
               >
-                <div className={cn('flex items-center', showcaseClasses.rowGap)}>
-                  <div className={cn('relative flex shrink-0 items-center justify-center overflow-hidden', showcaseClasses.previewHeight)}>
+                <div
+                  className={cn("flex items-center", showcaseClasses.rowGap)}
+                >
+                  <div
+                    className={cn(
+                      "relative flex shrink-0 items-center justify-center overflow-hidden",
+                      showcaseClasses.previewHeight,
+                    )}
+                  >
                     {props.getImage ? (
                       <Image
-                        src={props.getImage(item) || '/placeholder.png'}
+                        src={props.getImage(item) || "/placeholder.png"}
                         alt={props.getName(item)}
                         width={96}
                         height={144}
@@ -188,26 +258,58 @@ export function List<T>({ items, itemKey, className, size = 'md', ...props }: Li
                         className="h-full w-auto object-contain"
                       />
                     ) : (
-                      <div className={cn('flex items-center justify-center bg-[#f5f5f5]', showcaseClasses.previewIconBox)}>
-                        <i className={cn('ri-image-line text-black/40', showcaseClasses.iconSize)}></i>
+                      <div
+                        className={cn(
+                          "flex items-center justify-center bg-[#f5f5f5]",
+                          showcaseClasses.previewIconBox,
+                        )}
+                      >
+                        <i
+                          className={cn(
+                            "ri-image-line text-black/40",
+                            showcaseClasses.iconSize,
+                          )}
+                        ></i>
                       </div>
                     )}
                   </div>
                   <div>
-                    <p className={cn('text-black mb-1', showcaseClasses.titleSize)} style={titleStyle}>
+                    <p
+                      className={cn(
+                        "text-black mb-1",
+                        showcaseClasses.titleSize,
+                      )}
+                      style={titleStyle}
+                    >
                       {props.getName(item)}
                     </p>
-                    <p className={cn('text-black/40 tracking-wider', showcaseClasses.categorySize)} style={categoryStyle}>
+                    <p
+                      className={cn(
+                        "text-black/40 tracking-wider",
+                        showcaseClasses.categorySize,
+                      )}
+                      style={categoryStyle}
+                    >
                       {props.getCategory(item)}
                     </p>
                   </div>
                 </div>
-                <div className={cn('flex items-center', showcaseClasses.rowGap)}>
-                  <span className={cn('text-black', showcaseClasses.rightSize)} style={rightStyle}>
+                <div
+                  className={cn("flex items-center", showcaseClasses.rowGap)}
+                >
+                  <span
+                    className={cn("text-black", showcaseClasses.rightSize)}
+                    style={rightStyle}
+                  >
                     {props.getPrice(item)}
                   </span>
                   <div className="w-5 h-5 flex items-center justify-center">
-                    <i className={cn('ri-arrow-right-s-line text-black/40', showcaseClasses.iconSize)}></i>
+                    <i
+                      className={cn(
+                        "ri-arrow-right-s-line text-black/40",
+                        showcaseClasses.iconSize,
+                      )}
+                    ></i>
                   </div>
                 </div>
               </div>
