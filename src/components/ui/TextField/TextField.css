@@ -1,0 +1,199 @@
+/* File: src/components/ui/TextField/TextField.css */
+[data-ui-text-field] {
+  /* 入力本文の基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
+  --field-font-size: var(--lk-size-md);
+
+  /* ラベル/補足/エラーは入力本文より φ で一段小さく（対比・階層）*/
+  --field-label-size: calc(var(--field-font-size) / var(--phi));
+
+  /*
+   * 入力の高さ＝font × φ²（横長プロポーションを黄金比で確保）。
+   * 横パディング＝font × φ／縦パディングは高さで吸収するため font / φ。
+   */
+  --field-height: calc(var(--field-font-size) * var(--phi) * var(--phi));
+  --field-pad-x: calc(var(--field-font-size) * var(--phi));
+  --field-pad-y: calc(var(--field-font-size) / var(--phi));
+
+  /* アイコン径＝font（本文と同階層で整列）、左寄せ位置は pad-x と揃える */
+  --field-icon-size: var(--field-font-size);
+  --field-icon-inset: var(--field-pad-x);
+  /* アイコンがある場合の左パディング＝pad-x + icon + gap（近接：アイコンと文字を一定間隔）*/
+  --field-icon-gap: calc(var(--field-font-size) / var(--phi));
+  --field-pad-x-with-icon: calc(var(--field-pad-x) + var(--field-icon-size) + var(--field-icon-gap));
+
+  /* 縦方向のグループ間隔＝font / φ（近接：ラベル/入力/補足を 1 グループ化）*/
+  --field-stack-gap: calc(var(--field-font-size) / var(--phi));
+
+  /* 字間（tracking）も font から導出（対比・可読性）*/
+  --field-letter-spacing: calc(var(--field-font-size) / (var(--phi) * var(--phi) * var(--phi)));
+
+  /* 角丸は font / φ。枠線は 1px 固定、focus リングは φ から導出 */
+  --field-radius: calc(var(--field-font-size) / var(--phi));
+  --field-border-width: 1px;
+  --field-ring-width: 1px;
+
+  /* 色トークン（BannerAlert と同系統。ハードコードは一箇所に集約）*/
+  --field-bg: #ffffff;
+  --field-fg: #000000;
+  --field-fg-label: rgba(0, 0, 0, 0.8);
+  --field-fg-muted: rgba(0, 0, 0, 0.6);
+  --field-fg-helper: #474747;
+  --field-border-color: rgba(0, 0, 0, 0.2);
+  --field-border-focus: #000000;
+  --field-bg-disabled: #f5f5f5;
+  --field-border-disabled: rgba(0, 0, 0, 0.1);
+  --field-fg-disabled: rgba(0, 0, 0, 0.4);
+  --field-error-color: #ef4444;
+  --field-error-text: #dc2626;
+
+  /* shape の既定（rounded）。square で 0 に上書き */
+  --field-shape-radius: var(--field-radius);
+
+  /* 整列：ラベル/入力/補足を縦積み・左そろえで 1 グループ化（近接）*/
+  display: flex;
+  flex-direction: column;
+  gap: var(--field-stack-gap);
+  font-family: acumin-pro, sans-serif;
+  box-sizing: border-box;
+}
+
+/* --- 形状展開（shape：rounded / square）--- */
+[data-ui-text-field][data-ui-text-field-shape="rounded"] {
+  --field-shape-radius: var(--field-radius);
+}
+
+[data-ui-text-field][data-ui-text-field-shape="square"] {
+  --field-shape-radius: 0;
+}
+
+/* --- サイズ展開（反復：BannerAlert / Avatar と同一の公比スケールを再利用）--- */
+[data-ui-text-field][data-ui-text-field-size="xs"] {
+  --field-font-size: var(--lk-size-xs);
+}
+
+[data-ui-text-field][data-ui-text-field-size="sm"] {
+  --field-font-size: var(--lk-size-sm);
+}
+
+[data-ui-text-field][data-ui-text-field-size="md"] {
+  --field-font-size: var(--lk-size-md);
+}
+
+[data-ui-text-field][data-ui-text-field-size="lg"] {
+  --field-font-size: var(--lk-size-lg);
+}
+
+[data-ui-text-field][data-ui-text-field-size="xl"] {
+  --field-font-size: var(--lk-size-xl);
+}
+
+/* --- ラベル（対比：入力本文より一段小さく・やや淡く／整列：左そろえ）--- */
+.text-field__label {
+  display: block;
+  font-size: var(--field-label-size);
+  letter-spacing: var(--field-letter-spacing);
+  color: var(--field-fg-label);
+  line-height: var(--control-line-height, 1.4);
+}
+
+/* --- コントロール枠（アイコンと入力を重ねる相対基準）--- */
+.text-field__control {
+  position: relative;
+  display: block;
+}
+
+/* --- 先頭アイコン（整列：縦中央／近接：入力左端に寄せる）--- */
+.text-field__icon {
+  position: absolute;
+  left: var(--field-icon-inset);
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--field-icon-size);
+  height: var(--field-icon-size);
+  font-size: var(--field-icon-size);
+  line-height: 1;
+  color: var(--field-fg-muted);
+  pointer-events: none;
+}
+
+/* --- 入力本体（整列：高さ・パディングを φ で統一）--- */
+.text-field__input {
+  display: block;
+  width: 100%;
+  height: var(--field-height);
+  padding: var(--field-pad-y) var(--field-pad-x);
+  font-family: inherit;
+  font-size: var(--field-font-size);
+  line-height: var(--control-line-height, 1.4);
+  color: var(--field-fg);
+  background: var(--field-bg);
+  border: var(--field-border-width) solid var(--field-border-color);
+  border-radius: var(--field-shape-radius);
+  box-sizing: border-box;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.text-field__input::placeholder {
+  color: var(--field-fg-muted);
+}
+
+/* focus：枠を濃く＋φ 由来リングで対比 */
+.text-field__input:focus {
+  outline: none;
+  border-color: var(--field-border-focus);
+}
+
+/* アイコンがある場合は左パディングを拡張（反復：アイコン分だけ字下げ）*/
+[data-ui-text-field][data-ui-text-field-has-icon="true"] .text-field__input {
+  padding-left: var(--field-pad-x-with-icon);
+}
+
+/* disabled（対比：淡色で操作不可を明示）*/
+.text-field__input:disabled {
+  background: var(--field-bg-disabled);
+  border-color: var(--field-border-disabled);
+  color: var(--field-fg-disabled);
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+/* invalid（対比：エラー色で枠を強調）*/
+[data-ui-text-field][data-ui-text-field-invalid="true"] .text-field__input {
+  border-color: var(--field-error-color);
+}
+
+[data-ui-text-field][data-ui-text-field-invalid="true"] .text-field__input:focus {
+  border-color: var(--field-error-color);
+}
+
+/* --- 補足テキスト（対比：muted／ラベルと同サイズで反復）--- */
+.text-field__helper {
+  font-size: var(--field-label-size);
+  letter-spacing: var(--field-letter-spacing);
+  color: var(--field-fg-helper);
+  line-height: var(--control-line-height, 1.4);
+}
+
+/* --- エラーテキスト（対比：エラー色／ラベルと同サイズで反復）--- */
+.text-field__error {
+  font-size: var(--field-label-size);
+  letter-spacing: var(--field-letter-spacing);
+  color: var(--field-error-text);
+  line-height: var(--control-line-height, 1.4);
+}
+
+/* --- アクセシビリティ配慮（BannerAlert と同思想で踏襲）--- */
+@media (forced-colors: active) {
+  .text-field__input {
+    border: 1px solid CanvasText;
+    background: Field;
+    color: FieldText;
+  }
+
+  .text-field__input:focus {
+    outline: 1px solid Highlight;
+  }
+}
