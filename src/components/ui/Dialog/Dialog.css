@@ -27,7 +27,7 @@
   /* パネル最大幅＝font × φ⁷（現在のルートフォントスケールで自然なダイアログ幅に着地）*/
   --dialog-max-width: calc(
     var(--dialog-font-size) * var(--phi) * var(--phi) * var(--phi) *
-    var(--phi) * var(--phi) * var(--phi) * var(--phi)
+      var(--phi) * var(--phi) * var(--phi) * var(--phi)
   );
 
   /* オーバーレイ外周マージン＝font × φ（小画面でも端に貼り付かせない）*/
@@ -39,7 +39,9 @@
 
   /* 影（強度は φ から導出した広がりで対比をつける）*/
   --dialog-shadow-blur: calc(var(--dialog-font-size) * var(--phi) * var(--phi));
-  --dialog-shadow-spread: calc(var(--dialog-font-size) / (var(--phi) * var(--phi)));
+  --dialog-shadow-spread: calc(
+    var(--dialog-font-size) / (var(--phi) * var(--phi))
+  );
 
   /* 色トークン（BannerAlert と同系統。ハードコードは一箇所に集約）*/
   --dialog-scrim: rgba(0, 0, 0, 0.4);
@@ -106,7 +108,8 @@
   background: var(--dialog-bg);
   color: var(--dialog-fg);
   border-radius: var(--dialog-shape-radius);
-  box-shadow: 0 var(--dialog-shadow-spread) var(--dialog-shadow-blur) var(--dialog-shadow-color);
+  box-shadow: 0 var(--dialog-shadow-spread) var(--dialog-shadow-blur)
+    var(--dialog-shadow-color);
   box-sizing: border-box;
 }
 
@@ -123,7 +126,7 @@
   margin: 0;
   font-family: var(--font-title, acumin-pro, sans-serif);
   font-size: var(--dialog-title-size);
-  line-height: var(--control-line-height, 1.4);
+  line-height: var(--sqrt-phi, 1.4);
   letter-spacing: -0.01em;
   font-weight: 600;
   color: var(--dialog-fg);

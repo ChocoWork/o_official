@@ -4,11 +4,17 @@
   --sheet-pad-ratio: calc(1 / var(--phi));
 
   /* 項目高さ：Button の min-height 算出（line-height + 2 * pad-ratio）と同思想 */
-  --sheet-item-height-ratio: calc(var(--control-line-height) + (var(--sheet-pad-ratio) * 2));
-  --sheet-item-height: calc(var(--sheet-font-size) * var(--sheet-item-height-ratio));
+  --sheet-item-height-ratio: calc(
+    var(--sqrt-phi) + (var(--sheet-pad-ratio) * 2)
+  );
+  --sheet-item-height: calc(
+    var(--sheet-font-size) * var(--sheet-item-height-ratio)
+  );
 
   /* 横パディングは φ を乗じてテキストの呼吸を確保 */
-  --sheet-item-pad-inline: calc(var(--sheet-font-size) * var(--sheet-pad-ratio) * var(--phi));
+  --sheet-item-pad-inline: calc(
+    var(--sheet-font-size) * var(--sheet-pad-ratio) * var(--phi)
+  );
 
   /* アイコンとラベルの間隔（近接：密結合な小ギャップ = font / φ²）*/
   --sheet-item-gap: calc(var(--sheet-font-size) / (var(--phi) * var(--phi)));
@@ -17,7 +23,9 @@
   --sheet-icon-box: calc(var(--sheet-font-size) * var(--phi));
 
   /* パネル外周マージン・最大幅も φ から導出 */
-  --sheet-panel-gap: calc(var(--sheet-font-size) * var(--sheet-pad-ratio) * var(--phi));
+  --sheet-panel-gap: calc(
+    var(--sheet-font-size) * var(--sheet-pad-ratio) * var(--phi)
+  );
   --sheet-panel-pad: calc(var(--sheet-font-size) * var(--sheet-pad-ratio));
   --sheet-panel-max-width: 28rem;
 
@@ -95,8 +103,9 @@
   padding: var(--sheet-panel-pad);
   background: var(--sheet-panel-bg);
   border-radius: var(--sheet-panel-radius);
-  box-shadow: 0 calc(var(--sheet-font-size) * 1.5) calc(var(--sheet-font-size) * 3) rgb(0 0 0 / 0.25);
-  font-family: 'acumin-pro', sans-serif;
+  box-shadow: 0 calc(var(--sheet-font-size) * 1.5)
+    calc(var(--sheet-font-size) * 3) rgb(0 0 0 / 0.25);
+  font-family: "acumin-pro", sans-serif;
 }
 
 /* --- 項目グループ（近接：関連アクションをまとめる）--- */
@@ -119,10 +128,12 @@
   background: transparent;
   color: var(--sheet-color);
   font-size: var(--sheet-font-size);
-  line-height: var(--control-line-height);
+  line-height: var(--sqrt-phi);
   text-align: left;
   cursor: pointer;
-  transition: background-color 180ms ease, color 180ms ease;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease;
 }
 
 .action-sheet__item[data-ui-action-sheet-destructive="true"] {
@@ -178,7 +189,9 @@
 /* --- アクセシビリティ配慮（Button と同思想で踏襲）--- */
 @media (prefers-reduced-motion: reduce) {
   .action-sheet__item {
-    transition: background-color 180ms ease, color 180ms ease;
+    transition:
+      background-color 180ms ease,
+      color 180ms ease;
   }
 }
 

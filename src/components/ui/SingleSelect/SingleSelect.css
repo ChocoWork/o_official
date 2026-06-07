@@ -10,9 +10,8 @@
    *   → BannerAlert 同様、横は広く縦は詰める。
    */
   --ss-field-height: calc(var(--ss-font-size) * var(--phi) * var(--phi));
-  --ss-pad-x: calc(var(--ss-font-size) / var(--lk-halfstep));
+  --ss-pad-x: calc(var(--ss-font-size) / var(--sqrt-phi));
   --ss-pad-y: calc(var(--ss-font-size) / var(--phi));
-
 
   /* ラベルと操作部の縦間隔＝font / φ（近接でグループ化）*/
   --ss-label-gap: calc(var(--ss-font-size) / var(--phi));
@@ -27,7 +26,9 @@
   --ss-trigger-gap: calc((var(--ss-font-size) / var(--phi)) / var(--phi));
 
   /* メニューとフィールドの隙間＝font / φ³ */
-  --ss-menu-gap: calc(var(--ss-font-size) / (var(--phi) * var(--phi) * var(--phi)));
+  --ss-menu-gap: calc(
+    var(--ss-font-size) / (var(--phi) * var(--phi) * var(--phi))
+  );
 
   /* オプション縦パディング＝font / φ（行の押しやすさを確保）*/
   --ss-option-pad-y: calc(var(--ss-font-size) / var(--phi));
@@ -77,7 +78,7 @@
 [data-ui-single-select][data-ui-single-select-size="compact"],
 .single-select__menu[data-ui-single-select-size="compact"] {
   --ss-font-size: var(--lk-size-4xs);
-  --ss-pad-x: calc((var(--ss-font-size) / var(--lk-halfstep)) * 0.75);
+  --ss-pad-x: calc((var(--ss-font-size) / var(--sqrt-phi)) * 0.75);
   --ss-pad-y: calc((var(--ss-font-size) / var(--phi)) * 0.75);
   --ss-option-pad-y: calc((var(--ss-font-size) / var(--phi)) * 0.75);
 }
@@ -139,7 +140,7 @@
   color: var(--ss-fg);
   font-size: var(--ss-field-size);
   font-family: inherit;
-  line-height: var(--control-line-height, 1.4);
+  line-height: var(--sqrt-phi, 1.4);
   cursor: pointer;
   transition: border-color 120ms ease;
   box-sizing: border-box;
@@ -184,7 +185,8 @@
 }
 
 /* プレースホルダ表示（対比：muted）*/
-.single-select__trigger[data-ui-single-select-placeholder="true"] .single-select__value {
+.single-select__trigger[data-ui-single-select-placeholder="true"]
+  .single-select__value {
   color: var(--ss-fg-placeholder);
 }
 
@@ -266,7 +268,7 @@
   color: var(--ss-fg);
   font-size: var(--ss-field-size);
   font-family: inherit;
-  line-height: var(--control-line-height, 1.4);
+  line-height: var(--sqrt-phi, 1.4);
   text-align: left;
   cursor: pointer;
   transition: background-color 120ms ease;

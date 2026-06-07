@@ -3,7 +3,7 @@
   --avatar-font-size: var(--lk-size-md);
 
   /* 径の算出比率（font × (line-height + 2/φ) × φ）*/
-  --avatar-size-ratio: calc(var(--control-line-height) + (2 / var(--phi)));
+  --avatar-size-ratio: calc(var(--sqrt-phi) + (2 / var(--phi)));
 
   /*
    * 重要：--avatar-size を「変数として固定計算」してしまうと、
@@ -77,7 +77,9 @@
    * font × ratio × φ / φ² = font × ratio / φ として直接評価する。
    * （= --avatar-size / φ² と数学的に等価）
    */
-  font-size: calc(var(--avatar-font-size) * var(--avatar-size-ratio) / var(--phi));
+  font-size: calc(
+    var(--avatar-font-size) * var(--avatar-size-ratio) / var(--phi)
+  );
 
   line-height: 1;
   font-weight: 400;
@@ -92,13 +94,20 @@
    * ステータス径＝本体径 / φ²
    * = font × ratio × φ / φ² = font × ratio / φ（ラベルと同径）
    */
-  --avatar-status-size: calc(var(--avatar-font-size) * var(--avatar-size-ratio) / var(--phi));
+  --avatar-status-size: calc(
+    var(--avatar-font-size) * var(--avatar-size-ratio) / var(--phi)
+  );
 
   /* 枠線：ステータス径 / φ³（最小 1px 保証）*/
-  --avatar-status-border: max(1px, calc(var(--avatar-status-size) / (var(--phi) * var(--phi) * var(--phi))));
+  --avatar-status-border: max(
+    1px,
+    calc(var(--avatar-status-size) / (var(--phi) * var(--phi) * var(--phi)))
+  );
 
   /* 角オフセット：ステータス径 / -φ²（角に食い込ませる）*/
-  --avatar-status-offset: calc(var(--avatar-status-size) / (var(--phi) * var(--phi)) * -1);
+  --avatar-status-offset: calc(
+    var(--avatar-status-size) / (var(--phi) * var(--phi)) * -1
+  );
 
   position: absolute;
   bottom: var(--avatar-status-offset);

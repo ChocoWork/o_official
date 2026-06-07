@@ -35,10 +35,12 @@
   --toolbar-divider-height: calc(var(--toolbar-item-size) / var(--phi));
 
   /* 区切り線の左右マージン＝font / φ²（近接でグループを示唆）*/
-  --toolbar-divider-margin: calc(var(--toolbar-font-size) / (var(--phi) * var(--phi)));
+  --toolbar-divider-margin: calc(
+    var(--toolbar-font-size) / (var(--phi) * var(--phi))
+  );
 
   /* 行間 */
-  --toolbar-line-height: var(--control-line-height, 1.4);
+  --toolbar-line-height: var(--sqrt-phi, 1.4);
 
   /* トランジション（120ms：BannerAlert / Button と反復）*/
   --toolbar-transition: 120ms ease;

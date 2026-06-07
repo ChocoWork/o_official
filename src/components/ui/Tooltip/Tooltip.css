@@ -18,10 +18,12 @@
   --tooltip-radius: calc(var(--tooltip-font-size) / (var(--phi) * var(--phi)));
 
   /* 矢印半幅＝font / φ²（本文サイズと連動して反復スケール）*/
-  --tooltip-arrow-size: calc(var(--tooltip-font-size) / (var(--phi) * var(--phi)));
+  --tooltip-arrow-size: calc(
+    var(--tooltip-font-size) / (var(--phi) * var(--phi))
+  );
 
   /* 行間（対比：本文の可読性を担保）*/
-  --tooltip-line-height: var(--control-line-height, 1.4);
+  --tooltip-line-height: var(--sqrt-phi, 1.4);
 
   /* z-index も φ 由来で導出（直値を排す）*/
   --tooltip-z: calc(var(--phi) * var(--phi) * var(--phi) * var(--phi) * 10);
@@ -86,7 +88,9 @@
   /* 既定は非表示。hover / focus-within で対比的に出現 */
   opacity: 0;
   visibility: hidden;
-  transition: opacity var(--tooltip-transition), visibility var(--tooltip-transition);
+  transition:
+    opacity var(--tooltip-transition),
+    visibility var(--tooltip-transition);
 }
 
 /* --- 矢印（反復：本体と同色／整列：辺の中央に配置）--- */
@@ -121,7 +125,8 @@
   top: 100%;
   left: 50%;
   transform: translateX(-50%);
-  border-width: var(--tooltip-arrow-size) var(--tooltip-arrow-size) 0 var(--tooltip-arrow-size);
+  border-width: var(--tooltip-arrow-size) var(--tooltip-arrow-size) 0
+    var(--tooltip-arrow-size);
   border-color: var(--tooltip-bg) transparent transparent transparent;
 }
 
@@ -137,7 +142,8 @@
   bottom: 100%;
   left: 50%;
   transform: translateX(-50%);
-  border-width: 0 var(--tooltip-arrow-size) var(--tooltip-arrow-size) var(--tooltip-arrow-size);
+  border-width: 0 var(--tooltip-arrow-size) var(--tooltip-arrow-size)
+    var(--tooltip-arrow-size);
   border-color: transparent transparent var(--tooltip-bg) transparent;
 }
 
@@ -153,7 +159,8 @@
   left: 100%;
   top: 50%;
   transform: translateY(-50%);
-  border-width: var(--tooltip-arrow-size) 0 var(--tooltip-arrow-size) var(--tooltip-arrow-size);
+  border-width: var(--tooltip-arrow-size) 0 var(--tooltip-arrow-size)
+    var(--tooltip-arrow-size);
   border-color: transparent transparent transparent var(--tooltip-bg);
 }
 
@@ -169,7 +176,8 @@
   right: 100%;
   top: 50%;
   transform: translateY(-50%);
-  border-width: var(--tooltip-arrow-size) var(--tooltip-arrow-size) var(--tooltip-arrow-size) 0;
+  border-width: var(--tooltip-arrow-size) var(--tooltip-arrow-size)
+    var(--tooltip-arrow-size) 0;
   border-color: transparent var(--tooltip-bg) transparent transparent;
 }
 

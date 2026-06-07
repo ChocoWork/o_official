@@ -27,13 +27,17 @@ html {
   --fab-single-gap: calc(var(--fab-font-size) / var(--phi));
 
   /* 単独モード最小幅＝font × φ⁴（横長ピル形を保証）*/
-  --fab-single-min-width: calc(var(--fab-font-size) * var(--phi) * var(--phi) * var(--phi) * var(--phi));
+  --fab-single-min-width: calc(
+    var(--fab-font-size) * var(--phi) * var(--phi) * var(--phi) * var(--phi)
+  );
 
   /* 近接：アクション同士の縦ギャップ＝font / φ */
   --fab-action-gap: calc(var(--fab-font-size) / var(--phi));
 
   /* メインとアクション群の縦オフセット＝メイン径 ＋ font / φ（近接かつ重ならない）*/
-  --fab-actions-offset: calc(var(--fab-main-size) + calc(var(--fab-font-size) / var(--phi)));
+  --fab-actions-offset: calc(
+    var(--fab-main-size) + calc(var(--fab-font-size) / var(--phi))
+  );
 
   /* 固定配置時の画面端マージン＝font × φ²（直値 bottom-6/right-6 を置換）*/
   --fab-fixed-inset: calc(var(--fab-font-size) * var(--phi) * var(--phi));
@@ -42,10 +46,12 @@ html {
   --fab-border-width: 1px;
 
   /* 字間（tracking-wider 相当を φ 由来で）*/
-  --fab-label-tracking: calc(var(--fab-font-size) / (var(--phi) * var(--phi) * var(--phi)));
+  --fab-label-tracking: calc(
+    var(--fab-font-size) / (var(--phi) * var(--phi) * var(--phi))
+  );
 
   /* 行間 */
-  --fab-line-height: var(--control-line-height, 1.4);
+  --fab-line-height: var(--sqrt-phi, 1.4);
 
   /* z-index も φ 由来で導出（直値 z-40 を置換）*/
   --fab-z: calc(var(--phi) * var(--phi) * var(--phi) * var(--phi) * 10);
@@ -137,7 +143,8 @@ html {
   border-radius: 50%;
   background: var(--fab-bg-plain);
   color: var(--fab-fg);
-  box-shadow: 0 var(--fab-shadow-y) var(--fab-shadow-blur) var(--fab-shadow-color);
+  box-shadow: 0 var(--fab-shadow-y) var(--fab-shadow-blur)
+    var(--fab-shadow-color);
   cursor: pointer;
   transition: background-color var(--fab-transition);
 }
@@ -189,23 +196,27 @@ html {
 }
 
 /* speed-dial モード：円形・強い影（対比：浮遊感を強調）*/
-[data-ui-floating-button][data-ui-floating-button-mode="speed-dial"] .floating-button__main {
+[data-ui-floating-button][data-ui-floating-button-mode="speed-dial"]
+  .floating-button__main {
   width: var(--fab-main-size);
   height: var(--fab-main-size);
   padding: 0;
   border-radius: 50%;
-  box-shadow: 0 var(--fab-shadow-y-strong) var(--fab-shadow-blur-strong) var(--fab-shadow-color-strong);
+  box-shadow: 0 var(--fab-shadow-y-strong) var(--fab-shadow-blur-strong)
+    var(--fab-shadow-color-strong);
 }
 
 /* single モード：横長ピル形（対比：ラベルを伴う） */
-[data-ui-floating-button][data-ui-floating-button-mode="single"] .floating-button__main {
+[data-ui-floating-button][data-ui-floating-button-mode="single"]
+  .floating-button__main {
   gap: var(--fab-single-gap);
   min-width: var(--fab-single-min-width);
   height: var(--fab-main-size);
   padding-left: var(--fab-single-pad-x);
   padding-right: var(--fab-single-pad-x);
   border-radius: calc(var(--fab-main-size) / 2);
-  box-shadow: 0 var(--fab-shadow-y) var(--fab-shadow-blur) var(--fab-shadow-color);
+  box-shadow: 0 var(--fab-shadow-y) var(--fab-shadow-blur)
+    var(--fab-shadow-color);
 }
 
 /*
@@ -245,12 +256,14 @@ html {
  *   グリフを差し替えない＝字形の中心・見かけサイズが変わらないため、
  *   「右に動く／大きくなる」錯覚が発生しない。
  */
-[data-ui-floating-button][data-ui-floating-button-open="true"] .floating-button__main-icon {
+[data-ui-floating-button][data-ui-floating-button-open="true"]
+  .floating-button__main-icon {
   transform: rotate(45deg);
 }
 
 /* single モードのアイコンは本文サイズに合わせる（ラベルとの整列） */
-[data-ui-floating-button][data-ui-floating-button-mode="single"] .floating-button__main-icon {
+[data-ui-floating-button][data-ui-floating-button-mode="single"]
+  .floating-button__main-icon {
   font-size: var(--fab-action-icon-size);
 }
 

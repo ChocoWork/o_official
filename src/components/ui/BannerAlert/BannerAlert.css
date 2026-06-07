@@ -29,8 +29,13 @@
 
   /* 角丸・枠線・強調ボーダー（直値を排し φ から導出）*/
   --banner-radius: calc(var(--banner-font-size) / var(--phi));
-  --banner-border-width: max(1px, calc(var(--banner-font-size) / (var(--phi) * var(--phi) * var(--phi))));
-  --banner-accent-width: calc(var(--banner-border-width) * var(--phi) * var(--phi));
+  --banner-border-width: max(
+    1px,
+    calc(var(--banner-font-size) / (var(--phi) * var(--phi) * var(--phi)))
+  );
+  --banner-accent-width: calc(
+    var(--banner-border-width) * var(--phi) * var(--phi)
+  );
 
   /* 色トークン（Avatar / Button と同系統。ハードコードは一箇所に集約）*/
   --banner-bg-emphasis: #111111;
@@ -75,7 +80,8 @@
 }
 
 /* square では内側要素（閉じるボタン）の角も揃えて反復させる */
-[data-ui-banner-alert][data-ui-banner-alert-shape="square"] .banner-alert__dismiss {
+[data-ui-banner-alert][data-ui-banner-alert-shape="square"]
+  .banner-alert__dismiss {
   border-radius: 0;
 }
 
@@ -160,7 +166,7 @@
 .banner-alert__title {
   margin: 0;
   font-size: var(--banner-font-size);
-  line-height: var(--control-line-height, 1.4);
+  line-height: var(--sqrt-phi, 1.4);
   font-weight: 400;
   color: inherit;
 }

@@ -72,12 +72,10 @@ h5 {
 :root {
   --radius: 0.625rem;
   --phi: 1.618;
-  --control-line-height: 1.272;
-  --control-pad-ratio: calc(
-    var(--control-line-height) / (var(--phi) * var(--phi))
-  );
+  --sqrt-phi: 1.272;
+  --control-pad-ratio: calc(var(--sqrt-phi) / (var(--phi) * var(--phi)));
   --control-height-ratio: calc(
-    var(--control-line-height) + (var(--control-pad-ratio) * 2)
+    var(--sqrt-phi) + (var(--control-pad-ratio) * 2)
   );
   --site-header-height: 52px;
   --site-header-offset: 0px;
@@ -113,12 +111,11 @@ h5 {
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
 
-  --lk-halfstep: 1.272;
   --lk-quarterstep: 1.128;
   --lk-eighthstep: 1.062;
 
   --lk-wholestep-dec: 0.618;
-  --lk-halfstep-dec: 0.272;
+  --sqrt-phi-dec: 0.272;
   --lk-quarterstep-dec: 0.128;
   --lk-eighthstep-dec: 0.062;
 
@@ -172,12 +169,12 @@ h5 {
   --lk-size-xl-unitless: calc(var(--lk-size-lg-unitless) * var(--phi));
   --lk-size-2xl-unitless: calc(var(--lk-size-xl-unitless) * var(--phi));
 
-  --lk-look-related-items-line-height: var(--lk-halfstep);
+  --lk-look-related-items-line-height: var(--sqrt-phi);
   --lk-look-related-items-visible-gap: calc(
     var(--lk-size-xs) * var(--lk-wholestep-dec)
   );
   --lk-look-related-items-leading-compensation: calc(
-    var(--lk-size-xs) * var(--lk-halfstep-dec)
+    var(--lk-size-xs) * var(--sqrt-phi-dec)
   );
   --lk-look-related-items-stack-gap: max(
     0px,
@@ -438,7 +435,7 @@ html[data-header-visible="false"] {
   .header-drawer-primary-link {
     font-size: var(--lk-size-md);
     letter-spacing: 0.18em;
-    line-height: var(--control-line-height);
+    line-height: var(--sqrt-phi);
     padding: calc(var(--lk-size-md) * var(--control-pad-ratio)) 0
       calc(var(--lk-size-md) * var(--control-pad-ratio))
       var(--header-drawer-content-indent);
@@ -660,4 +657,62 @@ html[data-header-visible="false"] {
 .look-related-item-text {
   font-size: var(--lk-size-xs);
   line-height: var(--lk-look-related-items-line-height);
+}
+
+[data-ui-size="8xs"] {
+  --ui-font-size: var(--lk-size-8xs);
+}
+[data-ui-size="7xs"] {
+  --ui-font-size: var(--lk-size-7xs);
+}
+[data-ui-size="6xs"] {
+  --ui-font-size: var(--lk-size-6xs);
+}
+[data-ui-size="5xs"] {
+  --ui-font-size: var(--lk-size-5xs);
+}
+[data-ui-size="4xs"] {
+  --ui-font-size: var(--lk-size-4xs);
+}
+[data-ui-size="3xs"] {
+  --ui-font-size: var(--lk-size-3xs);
+}
+[data-ui-size="2xs"] {
+  --ui-font-size: var(--lk-size-2xs);
+}
+[data-ui-size="xs"] {
+  --ui-font-size: var(--lk-size-xs);
+}
+[data-ui-size="sm"] {
+  --ui-font-size: var(--lk-size-sm);
+}
+[data-ui-size="md"] {
+  --ui-font-size: var(--lk-size-md);
+}
+[data-ui-size="lg"] {
+  --ui-font-size: var(--lk-size-lg);
+}
+[data-ui-size="xl"] {
+  --ui-font-size: var(--lk-size-xl);
+}
+[data-ui-size="2xl"] {
+  --ui-font-size: var(--lk-size-2xl);
+}
+[data-ui-size="3xl"] {
+  --ui-font-size: var(--lk-size-3xl);
+}
+[data-ui-size="4xl"] {
+  --ui-font-size: var(--lk-size-4xl);
+}
+[data-ui-size="5xl"] {
+  --ui-font-size: var(--lk-size-5xl);
+}
+[data-ui-size="6xl"] {
+  --ui-font-size: var(--lk-size-6xl);
+}
+[data-ui-size="7xl"] {
+  --ui-font-size: var(--lk-size-7xl);
+}
+[data-ui-size="8xl"] {
+  --ui-font-size: var(--lk-size-8xl);
 }

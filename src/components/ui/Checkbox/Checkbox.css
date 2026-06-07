@@ -1,16 +1,27 @@
-
 [data-ui-checkbox] {
   --checkbox-font-size: var(--lk-size-md);
-  --checkbox-control-size: calc(var(--checkbox-font-size) * var(--lk-quarterstep));
+  --checkbox-control-size: calc(
+    var(--checkbox-font-size) * var(--lk-quarterstep)
+  );
   --checkbox-gap: calc(var(--checkbox-control-size) * var(--lk-wholestep-dec));
-  --checkbox-padding-block-expanded: calc(var(--checkbox-font-size) * var(--control-pad-ratio));
-  --checkbox-padding-block-compact: calc(var(--checkbox-padding-block-expanded) / 2);
+  --checkbox-padding-block-expanded: calc(
+    var(--checkbox-font-size) * var(--control-pad-ratio)
+  );
+  --checkbox-padding-block-compact: calc(
+    var(--checkbox-padding-block-expanded) / 2
+  );
   --checkbox-padding-block: var(--checkbox-padding-block-compact);
   --checkbox-padding-inline: calc(var(--checkbox-gap) * 0.75);
   --checkbox-row-radius: 0;
-  --checkbox-control-radius: calc(var(--checkbox-control-size) / (var(--phi) + 1));
-  --checkbox-hit-height-expanded: calc(var(--checkbox-font-size) * var(--control-height-ratio));
-  --checkbox-hit-height-compact: calc(var(--checkbox-font-size) * (var(--control-line-height) + var(--control-pad-ratio)));
+  --checkbox-control-radius: calc(
+    var(--checkbox-control-size) / (var(--phi) + 1)
+  );
+  --checkbox-hit-height-expanded: calc(
+    var(--checkbox-font-size) * var(--control-height-ratio)
+  );
+  --checkbox-hit-height-compact: calc(
+    var(--checkbox-font-size) * (var(--sqrt-phi) + var(--control-pad-ratio))
+  );
   --checkbox-hit-height: var(--checkbox-hit-height-compact);
   --checkbox-surface: transparent;
   --checkbox-surface-hover: transparent;
@@ -32,14 +43,14 @@
   background: var(--checkbox-surface);
   color: var(--checkbox-text);
   font-size: var(--checkbox-font-size);
-  line-height: var(--control-line-height);
+  line-height: var(--sqrt-phi);
   text-align: left;
   cursor: default;
   transition:
-  background-color 180ms ease,
-  color 180ms ease,
-  box-shadow 180ms ease,
-  transform 180ms ease;
+    background-color 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
 }
 
 [data-ui-checkbox][data-ui-checkbox-size="xs"] {
@@ -142,7 +153,9 @@
 
 [data-ui-checkbox-input]:focus-visible {
   outline: 2px solid transparent;
-  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--checkbox-focus-ring);
+  box-shadow:
+    0 0 0 2px #ffffff,
+    0 0 0 4px var(--checkbox-focus-ring);
 }
 
 [data-ui-checkbox-label] {
@@ -165,14 +178,19 @@
   background-color: transparent !important;
 }
 
-[data-ui-checkbox][data-ui-checkbox-expand-hit-area="false"] [data-ui-checkbox-label] {
+[data-ui-checkbox][data-ui-checkbox-expand-hit-area="false"]
+  [data-ui-checkbox-label] {
   cursor: pointer;
 }
 
 @media (prefers-reduced-motion: reduce) {
   [data-ui-checkbox],
   [data-ui-checkbox-input] {
-    transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease, box-shadow 180ms ease;
+    transition:
+      background-color 180ms ease,
+      border-color 180ms ease,
+      color 180ms ease,
+      box-shadow 180ms ease;
   }
 }
 

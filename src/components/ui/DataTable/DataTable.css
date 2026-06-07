@@ -12,7 +12,9 @@
   --table-cell-pad-y: calc(var(--table-font-size) / var(--phi));
 
   /* ヘッダーは本文よりさらに縦を φ 圧縮して帯状にまとめる（対比・グループ化）*/
-  --table-header-pad-y: calc(var(--table-font-size) / (var(--phi) * var(--phi)));
+  --table-header-pad-y: calc(
+    var(--table-font-size) / (var(--phi) * var(--phi))
+  );
 
   /* 本文セルは基準サイズ、ヘッダーは φ で一段小さく（対比・階層）*/
   --table-cell-font-size: var(--table-font-size);
@@ -22,10 +24,12 @@
   --table-empty-font-size: var(--table-header-font-size);
 
   /* ヘッダーの字間（トラッキング）＝font / φ³（広めにとって帯を引き締める）*/
-  --table-header-tracking: calc(var(--table-font-size) / (var(--phi) * var(--phi) * var(--phi)));
+  --table-header-tracking: calc(
+    var(--table-font-size) / (var(--phi) * var(--phi) * var(--phi))
+  );
 
   /* 行高は φ から導出（密度の反復）*/
-  --table-line-height: var(--control-line-height, 1.4);
+  --table-line-height: var(--sqrt-phi, 1.4);
 
   /* 枠線（直値を排し φ から導出）*/
   --table-border-width: 1px;
@@ -34,7 +38,9 @@
   --table-radius: calc(var(--table-font-size) / var(--phi));
 
   /* 空表示時の最小高＝font × φ²（潰れ防止）*/
-  --table-empty-min-height: calc(var(--table-font-size) * var(--phi) * var(--phi));
+  --table-empty-min-height: calc(
+    var(--table-font-size) * var(--phi) * var(--phi)
+  );
 
   /* 色トークン（BannerAlert / Avatar / Button と同系統。ハードコードは一箇所に集約）*/
   --table-bg: #ffffff;

@@ -32,7 +32,10 @@
   /* 枠線（直値を排し φ³ から導出。最小 1px を保証）*/
   --card-border-width: max(
     1px,
-    calc(var(--card-font-size) / (var(--phi) * var(--phi) * var(--phi) * var(--phi)))
+    calc(
+      var(--card-font-size) /
+        (var(--phi) * var(--phi) * var(--phi) * var(--phi))
+    )
   );
 
   /* オーバーレイ操作の余白＝font / φ（メディア四隅からの近接距離）*/
@@ -148,7 +151,7 @@
   margin: 0;
   font-size: var(--card-title-size);
   font-weight: 400;
-  line-height: var(--control-line-height, 1.4);
+  line-height: var(--sqrt-phi, 1.4);
   color: var(--card-fg);
 }
 

@@ -21,13 +21,19 @@
 
   /* 枠線は 1px 固定。左アクセント線のみ φ 由来で強調 */
   --toast-border-width: 1px;
-  --toast-accent-width: calc(var(--toast-font-size) / (var(--phi) * var(--phi)));
+  --toast-accent-width: calc(
+    var(--toast-font-size) / (var(--phi) * var(--phi))
+  );
 
   /* 字間（tracking）も font から導出。φ で控えめに広げる（対比・可読性）*/
-  --toast-letter-spacing: calc(var(--toast-font-size) / (var(--phi) * var(--phi) * var(--phi)));
+  --toast-letter-spacing: calc(
+    var(--toast-font-size) / (var(--phi) * var(--phi) * var(--phi))
+  );
 
   /* 影：縦オフセット＝font / φ²、ぼかし＝font × φ（直値を排し φ から導出）*/
-  --toast-shadow-offset-y: calc(var(--toast-font-size) / (var(--phi) * var(--phi)));
+  --toast-shadow-offset-y: calc(
+    var(--toast-font-size) / (var(--phi) * var(--phi))
+  );
   --toast-shadow-blur: calc(var(--toast-font-size) * var(--phi));
 
   /* アニメーション距離＝font × φ、所要時間は控えめに固定トークン化 */
@@ -65,7 +71,8 @@
   border-radius: var(--toast-shape-radius);
   background: var(--toast-bg);
   color: var(--toast-color);
-  box-shadow: 0 var(--toast-shadow-offset-y) var(--toast-shadow-blur) var(--toast-shadow-color);
+  box-shadow: 0 var(--toast-shadow-offset-y) var(--toast-shadow-blur)
+    var(--toast-shadow-color);
   font-family: acumin-pro, sans-serif;
   box-sizing: border-box;
   animation: toast-snackbar-slide-in var(--toast-anim-duration) ease-out;
@@ -155,7 +162,7 @@
 .toast-snackbar__message {
   min-width: 0;
   font-size: var(--toast-font-size);
-  line-height: var(--control-line-height, 1.4);
+  line-height: var(--sqrt-phi, 1.4);
   letter-spacing: var(--toast-letter-spacing);
   white-space: nowrap;
   overflow: hidden;
@@ -172,7 +179,7 @@
   color: inherit;
   font-family: inherit;
   font-size: var(--toast-font-size);
-  line-height: var(--control-line-height, 1.4);
+  line-height: var(--sqrt-phi, 1.4);
   letter-spacing: var(--toast-letter-spacing);
   text-decoration: underline;
   text-underline-offset: var(--toast-border-width);

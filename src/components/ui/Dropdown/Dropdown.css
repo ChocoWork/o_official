@@ -29,14 +29,17 @@
    *   → サイズに比例して伸縮（直値 w-40/56/64 を置換）。
    */
   --dropdown-menu-min-width: calc(
-    var(--dropdown-font-size) * var(--phi) * var(--phi) * var(--phi) * var(--phi) * 10
+    var(--dropdown-font-size) * var(--phi) * var(--phi) * var(--phi) *
+      var(--phi) * 10
   );
 
   /* トリガーとメニューの縦オフセット＝font / φ（近接）*/
   --dropdown-menu-offset: calc(var(--dropdown-font-size) / var(--phi));
 
   /* 角丸＝font / φ²（BannerAlert と同方針）*/
-  --dropdown-radius: calc(var(--dropdown-font-size) / (var(--phi) * var(--phi)));
+  --dropdown-radius: calc(
+    var(--dropdown-font-size) / (var(--phi) * var(--phi))
+  );
 
   /* 枠線＝font / φ³（min 1px）：BannerAlert と同式で反復 */
   --dropdown-border-width: 1px;
@@ -46,20 +49,28 @@
 
   /* 区切り線：太さは枠線と同じ、縦マージン＝font / φ³（近接）*/
   --dropdown-divider-height: var(--dropdown-border-width);
-  --dropdown-divider-margin: calc(var(--dropdown-font-size) / (var(--phi) * var(--phi) * var(--phi)));
+  --dropdown-divider-margin: calc(
+    var(--dropdown-font-size) / (var(--phi) * var(--phi) * var(--phi))
+  );
 
   /* 字間（トリガーは tracking-widest 相当を φ 由来で）*/
-  --dropdown-trigger-tracking: calc(var(--dropdown-font-size) / (var(--phi) * var(--phi) * var(--phi)));
+  --dropdown-trigger-tracking: calc(
+    var(--dropdown-font-size) / (var(--phi) * var(--phi) * var(--phi))
+  );
 
   /* 行間 */
-  --dropdown-line-height: var(--control-line-height, 1.4);
+  --dropdown-line-height: var(--sqrt-phi, 1.4);
 
   /* z-index も φ 由来で導出（直値を排す）*/
   --dropdown-z: calc(var(--phi) * var(--phi) * var(--phi) * var(--phi) * 10);
 
   /* シャドウ寸法＝font / φ²（直値の影を排し φ 連動）*/
-  --dropdown-shadow-blur: calc(var(--dropdown-font-size) / (var(--phi) * var(--phi)));
-  --dropdown-shadow-y: calc(var(--dropdown-font-size) / (var(--phi) * var(--phi) * var(--phi)));
+  --dropdown-shadow-blur: calc(
+    var(--dropdown-font-size) / (var(--phi) * var(--phi))
+  );
+  --dropdown-shadow-y: calc(
+    var(--dropdown-font-size) / (var(--phi) * var(--phi) * var(--phi))
+  );
 
   /* トランジション（120ms：BannerAlert / Button と反復）*/
   --dropdown-transition: 120ms ease;
@@ -128,7 +139,9 @@
   line-height: var(--dropdown-line-height);
   letter-spacing: var(--dropdown-trigger-tracking);
   white-space: nowrap;
-  transition: background-color var(--dropdown-transition-slow), color var(--dropdown-transition-slow);
+  transition:
+    background-color var(--dropdown-transition-slow),
+    color var(--dropdown-transition-slow);
 }
 
 .dropdown__trigger--button:hover {
@@ -170,7 +183,8 @@
   border: var(--dropdown-border-width) solid var(--dropdown-border-color);
   border-radius: var(--dropdown-radius);
   background: var(--dropdown-bg-plain);
-  box-shadow: 0 var(--dropdown-shadow-y) var(--dropdown-shadow-blur) var(--dropdown-shadow-color);
+  box-shadow: 0 var(--dropdown-shadow-y) var(--dropdown-shadow-blur)
+    var(--dropdown-shadow-color);
   overflow: hidden;
   box-sizing: border-box;
 }

@@ -2,14 +2,18 @@
   --stepper-font-size: var(--lk-size-md);
 
   /* φ による各種寸法の導出（直値を使わない） */
-  --stepper-control-ratio: calc(var(--control-line-height) + (2 / var(--phi)));
-  --stepper-control-size: calc(var(--stepper-font-size) * var(--stepper-control-ratio));
+  --stepper-control-ratio: calc(var(--sqrt-phi) + (2 / var(--phi)));
+  --stepper-control-size: calc(
+    var(--stepper-font-size) * var(--stepper-control-ratio)
+  );
 
   /* 入力幅は正方形コントロールに φ を乗じた黄金比的バランス */
   --stepper-input-width: calc(var(--stepper-control-size) * var(--phi));
 
   /* アイコンボックスはコントロールを φ^2 で割ったサイズ（中央の余白を黄金比で確保） */
-  --stepper-icon-box: calc(var(--stepper-control-size) / (var(--phi) * var(--phi)));
+  --stepper-icon-box: calc(
+    var(--stepper-control-size) / (var(--phi) * var(--phi))
+  );
 
   /* ラベルと本体の間隔（近接：関連はするが分離） */
   --stepper-label-gap: calc(var(--stepper-font-size) / var(--phi));
@@ -57,7 +61,7 @@
   display: block;
   font-size: var(--stepper-label-size);
   letter-spacing: 0.12em;
-  line-height: var(--control-line-height);
+  line-height: var(--sqrt-phi);
   color: rgb(0 0 0 / 0.8);
 }
 
@@ -85,7 +89,10 @@
   background: transparent;
   color: var(--stepper-color);
   cursor: pointer;
-  transition: background-color 180ms ease, color 180ms ease, opacity 180ms ease;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease,
+    opacity 180ms ease;
 }
 
 .stepper__control:disabled {
@@ -129,7 +136,7 @@
   background: transparent;
   color: var(--stepper-color);
   font-size: var(--stepper-font-size);
-  line-height: var(--control-line-height);
+  line-height: var(--sqrt-phi);
   text-align: center;
   appearance: none;
   -moz-appearance: textfield;
@@ -154,7 +161,9 @@
 /* --- アクセシビリティ配慮（Button と同じ思想で踏襲）--- */
 @media (prefers-reduced-motion: reduce) {
   .stepper__control {
-    transition: background-color 180ms ease, color 180ms ease;
+    transition:
+      background-color 180ms ease,
+      color 180ms ease;
   }
 }
 
