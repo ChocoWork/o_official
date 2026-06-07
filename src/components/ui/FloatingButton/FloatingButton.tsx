@@ -62,8 +62,10 @@ export function FloatingButton({
           onClick={handleMainClick}
         >
           {hasActions ? (
+            /* speed-dial：常に ＋ グリフを描画し、開時は CSS で 45° 回転して × に見せる
+               （グリフ差し替えによる字形中心ずれ・見かけサイズ変化を排除）*/
             <span className="floating-button__main-icon" aria-hidden="true">
-              <i className={open ? 'ri-close-line' : 'ri-add-line'} />
+              <i className="ri-add-line" />
             </span>
           ) : (
             <>

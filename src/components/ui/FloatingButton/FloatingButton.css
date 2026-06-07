@@ -1,19 +1,25 @@
 /* File: src/components/ui/FloatingButton/FloatingButton.css */
+
+/* 固定配置の横位置が開閉でブレないよう、スクロールバー幅を常時予約 */
+html {
+  scrollbar-gutter: stable;
+}
+
 [data-ui-floating-button] {
   /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
   --fab-font-size: var(--lk-size-xs);
 
   /*
-   * メイン円形ボタン径＝font × φ³（タップ領域を十分に確保）。
-   * アクションボタン径はメインの φ 圧縮（対比：従＜主）。
+   * メイン円形ボタン径＝font × φ²（タップ領域を十分に確保）。
+   * アクションボタン径はメインと同径（対比は色・影でつける）。
    */
   --fab-main-size: calc(var(--fab-font-size) * var(--phi) * var(--phi));
   --fab-action-size: calc(var(--fab-main-size));
 
-  /* メインアイコン径＝font × φ²（speed-dial の +/× 用）*/
-  --fab-main-icon-size: calc(var(--fab-font-size));
+  /* メインアイコン径＝font × φ（speed-dial の +/× 用）*/
+  --fab-main-icon-size: calc(var(--fab-font-size) * var(--phi));
 
-  /* アクションアイコン径＝font × φ（メインアイコンより一段小さく対比）*/
+  /* アクションアイコン径＝font（メインアイコンより一段小さく対比）*/
   --fab-action-icon-size: calc(var(--fab-font-size));
 
   /* 単独モード：横パディング＝font × φ、ラベルとアイコンのギャップ＝font / φ */
@@ -32,7 +38,7 @@
   /* 固定配置時の画面端マージン＝font × φ²（直値 bottom-6/right-6 を置換）*/
   --fab-fixed-inset: calc(var(--fab-font-size) * var(--phi) * var(--phi));
 
-  /* 枠線＝font / φ³（min 1px）：BannerAlert と同式で反復 */
+  /* 枠線（min 1px）*/
   --fab-border-width: 1px;
 
   /* 字間（tracking-wider 相当を φ 由来で）*/
@@ -69,6 +75,10 @@
   box-sizing: border-box;
 }
 
+.floating-button-shell {
+  display: inline-block;
+}
+
 .floating-button {
   position: relative;
   display: inline-block;
@@ -103,7 +113,7 @@
   --fab-font-size: var(--lk-size-xl);
 }
 
-/* --- アクション群（近接：メイン直上に縦積み／整列：右端そろえ）--- */
+/* --- アクション群（近接：メイン直上に縦積み／整列：メイン中心そろえ）--- */
 .floating-button__actions {
   position: absolute;
   left: 50%;
@@ -137,27 +147,31 @@
 }
 
 .floating-button__action-icon {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--fab-action-icon-size);
-  height: var(--fab-action-icon-size);
+  width: 1em;
+  height: 1em;
   font-size: var(--fab-action-icon-size);
   line-height: 1;
   text-align: center;
 }
 
 .floating-button__action-icon > i {
-  display: inline-flex;
+  position: absolute;
+  inset: 0;
+  display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
   height: 100%;
+  font-size: inherit;
   line-height: 1;
-  vertical-align: middle;
 }
 
 /* --- メインボタン（対比：emphasis 背景・白文字の主ボタン）--- */
+/* transform は使わない（回転はアイコンのみ）。transition も background-color のみに限定。*/
 .floating-button__main {
   display: inline-flex;
   align-items: center;
@@ -167,7 +181,7 @@
   color: var(--fab-fg-emphasis);
   cursor: pointer;
   font-family: inherit;
-  transition: background-color var(--fab-transition), transform var(--fab-transition);
+  transition: background-color var(--fab-transition);
 }
 
 .floating-button__main:hover {
@@ -194,14 +208,19 @@
   box-shadow: 0 var(--fab-shadow-y) var(--fab-shadow-blur) var(--fab-shadow-color);
 }
 
-/* メインアイコン（speed-dial の +/×：開閉で回転：対比的に状態提示）*/
+/*
+ * メインアイコン。
+ *   width/height を 1em に固定し font-size と完全一致させることで、
+ *   グリフのバウンディングボックスを安定させる（中央寄せのサブピクセルブレを抑止）。
+ */
 .floating-button__main-icon {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  width: var(--fab-main-icon-size);
-  height: var(--fab-main-icon-size);
+  width: 1em;
+  height: 1em;
   font-size: var(--fab-main-icon-size);
   line-height: 1;
   text-align: center;
@@ -210,23 +229,28 @@
 }
 
 .floating-button__main-icon > i {
-  display: inline-flex;
+  position: absolute;
+  inset: 0;
+  display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
   height: 100%;
+  font-size: inherit;
   line-height: 1;
-  vertical-align: middle;
 }
 
+/*
+ * 開時は ＋ グリフを 45° 回転して × に見せる。
+ *   グリフを差し替えない＝字形の中心・見かけサイズが変わらないため、
+ *   「右に動く／大きくなる」錯覚が発生しない。
+ */
 [data-ui-floating-button][data-ui-floating-button-open="true"] .floating-button__main-icon {
-  transform: rotate(135deg);
+  transform: rotate(45deg);
 }
 
 /* single モードのアイコンは本文サイズに合わせる（ラベルとの整列） */
 [data-ui-floating-button][data-ui-floating-button-mode="single"] .floating-button__main-icon {
-  width: var(--fab-action-icon-size);
-  height: var(--fab-action-icon-size);
   font-size: var(--fab-action-icon-size);
 }
 
