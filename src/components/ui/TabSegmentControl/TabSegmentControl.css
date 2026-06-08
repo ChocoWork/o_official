@@ -1,0 +1,236 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   TabSegmentControl
+   Design: Proximity · Alignment · Repetition · Contrast
+   Spacing: derived from golden ratio  φ = 1.618 · √φ = 1.272
+   ═══════════════════════════════════════════════════════════════════════ */
+
+[data-ui-tab-segment] {
+  /* ── Scale ─────────────────────────────────────────────────────────── */
+  --tab-font-size: var(--ui-font-size, var(--lk-size-xs));
+
+  /* ── Spacing (φ-derived) ───────────────────────────────────────────── */
+  /* pad-x: font ÷ √φ  →  moderate horizontal breathing room            */
+  --tab-pad-x: calc(var(--tab-font-size) / var(--sqrt-phi));
+  /* pad-y: font × (φ−1) ÷ √φ  →  tighter vertical rhythm               */
+  --tab-pad-y: calc(var(--tab-font-size) * var(--lk-wholestep-dec) / var(--sqrt-phi));
+  /* indicator line: font × (√φ−1)/2  →  thin, proportional            */
+  --tab-indicator-h: max(1px, calc(var(--tab-font-size) * var(--lk-quarterstep-dec)));
+  /* indicator pad: pad-y + line height  →  text clears the line        */
+  --tab-indicator-pad: calc(var(--tab-pad-y) + var(--tab-indicator-h));
+  /* item gap (tabs / tabs-standard): font × φ  →  golden spacing       */
+  --tab-item-gap: calc(var(--tab-font-size) * var(--phi));
+
+  /* ── Color tokens ──────────────────────────────────────────────────── */
+  --tab-border-color: rgb(17 17 17 / 0.2);
+  --tab-surface-bg: #f5f5f5;
+  --tab-surface-hover-bg: #e5e5e5;
+  --tab-active-bg: #111111;
+  --tab-active-color: #ffffff;
+  --tab-color: #111111;
+  --tab-muted-color: rgb(17 17 17 / 0.4);
+  --tab-hover-color: rgb(17 17 17 / 0.7);
+
+  /* ── Typography ────────────────────────────────────────────────────── */
+  --tab-letter-spacing: 0.1em;
+
+  /* ── Layout (近接: inline container groups related items) ──────────── */
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--tab-font-size);
+  letter-spacing: var(--tab-letter-spacing);
+}
+
+/* ── Item base (反復: shared foundation for every variant) ─────────────── */
+[data-ui-tab-item] {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--tab-pad-y) var(--tab-pad-x);
+  background: transparent;
+  border: none;
+  color: var(--tab-muted-color);
+  font-size: inherit;
+  font-family: inherit;
+  letter-spacing: inherit;
+  line-height: var(--sqrt-phi);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Variant: segment
+   近接: border encloses all items into one unified control
+   対比: solid fill (active) vs plain text (inactive)
+   ══════════════════════════════════════════════════════════════════════ */
+[data-ui-tab-segment][data-ui-tab-variant="segment"] {
+  overflow: hidden;
+  border: 1px solid var(--tab-border-color);
+  background: #ffffff;
+}
+
+[data-ui-tab-segment][data-ui-tab-variant="segment"] [data-ui-tab-item] {
+  color: var(--tab-color);
+}
+
+[data-ui-tab-segment][data-ui-tab-variant="segment"] [data-ui-tab-item][data-ui-tab-active="true"] {
+  background: var(--tab-active-bg);
+  color: var(--tab-active-color);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Variant: tabs
+   近接: border-bottom frames the row, anchoring all tabs together
+   対比: indicator line (active) vs none (inactive)
+   ══════════════════════════════════════════════════════════════════════ */
+[data-ui-tab-segment][data-ui-tab-variant="tabs"] {
+  border-bottom: 1px solid var(--tab-border-color);
+}
+
+[data-ui-tab-segment][data-ui-tab-variant="tabs"] [data-ui-tab-item] {
+  position: relative;
+  padding-bottom: var(--tab-indicator-pad);
+}
+
+[data-ui-tab-segment][data-ui-tab-variant="tabs"] [data-ui-tab-item][data-ui-tab-active="true"] {
+  color: var(--tab-color);
+}
+
+[data-ui-tab-segment][data-ui-tab-variant="tabs"] [data-ui-tab-item][data-ui-tab-active="true"]::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: var(--tab-indicator-h);
+  background: var(--tab-active-bg);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Variant: segment-pill
+   近接: rounded container + pill items form a tightly coupled group
+   対比: filled pill (active) vs text-only (inactive)
+   ══════════════════════════════════════════════════════════════════════ */
+[data-ui-tab-segment][data-ui-tab-variant="segment-pill"] {
+  /* outer pad: font × (√φ−1)  →  compact, proportional inset           */
+  --tab-pill-outer-pad: calc(var(--tab-font-size) * var(--lk-eighthstep-dec));
+  background: var(--tab-surface-bg);
+  border-radius: 9999px;
+  padding: var(--tab-pill-outer-pad);
+}
+
+[data-ui-tab-segment][data-ui-tab-variant="segment-pill"] [data-ui-tab-item] {
+  /* pill pad-x: pad-x × φ  →  wider, proportionally pill-shaped        */
+  padding-inline: calc(var(--tab-pad-x) * var(--phi));
+  border-radius: 9999px;
+  color: rgb(17 17 17 / 0.6);
+}
+
+[data-ui-tab-segment][data-ui-tab-variant="segment-pill"] [data-ui-tab-item][data-ui-tab-active="true"] {
+  background: var(--tab-active-bg);
+  color: var(--tab-active-color);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Variant: tabs-standard
+   整列: gap aligns independent items on a shared invisible baseline
+   対比: indicator line (active) vs none (inactive)
+   ══════════════════════════════════════════════════════════════════════ */
+[data-ui-tab-segment][data-ui-tab-variant="tabs-standard"] {
+  display: flex;
+  gap: var(--tab-item-gap);
+}
+
+[data-ui-tab-segment][data-ui-tab-variant="tabs-standard"] [data-ui-tab-item] {
+  position: relative;
+  padding-bottom: var(--tab-indicator-pad);
+}
+
+[data-ui-tab-segment][data-ui-tab-variant="tabs-standard"] [data-ui-tab-item][data-ui-tab-active="true"] {
+  color: var(--tab-color);
+}
+
+[data-ui-tab-segment][data-ui-tab-variant="tabs-standard"] [data-ui-tab-item][data-ui-tab-active="true"]::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: var(--tab-indicator-h);
+  background: var(--tab-active-bg);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Orientation: vertical
+   整列: items stack full-width, flush to the left edge
+   対比: solid fill (active) vs surface bg (inactive)
+   ══════════════════════════════════════════════════════════════════════ */
+[data-ui-tab-segment][data-ui-tab-orientation="vertical"] {
+  --tab-letter-spacing: 0.05em;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+[data-ui-tab-segment][data-ui-tab-orientation="vertical"] [data-ui-tab-item] {
+  /* vert pad-y ≈ font-size (because φ × (φ−1) = 1)  →  generous block  */
+  /* vert pad-x: font × φ  →  wide inset matching original px-6         */
+  padding: var(--tab-font-size) calc(var(--tab-font-size) * var(--phi));
+  width: 100%;
+  justify-content: flex-start;
+  background: var(--tab-surface-bg);
+  color: var(--tab-color);
+}
+
+[data-ui-tab-segment][data-ui-tab-orientation="vertical"] [data-ui-tab-item][data-ui-tab-active="true"] {
+  background: var(--tab-active-bg);
+  color: var(--tab-active-color);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Hover (反復: uniform interaction pattern across all variants)
+   ══════════════════════════════════════════════════════════════════════ */
+@media (hover: hover) and (pointer: fine) {
+  [data-ui-tab-item]:not([data-ui-tab-active="true"]):hover {
+    color: var(--tab-hover-color);
+  }
+
+  [data-ui-tab-segment][data-ui-tab-variant="segment"] [data-ui-tab-item]:not([data-ui-tab-active="true"]):hover {
+    background: rgb(17 17 17 / 0.05);
+    color: var(--tab-color);
+  }
+
+  [data-ui-tab-segment][data-ui-tab-orientation="vertical"] [data-ui-tab-item]:not([data-ui-tab-active="true"]):hover {
+    background: var(--tab-surface-hover-bg);
+    color: var(--tab-color);
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Focus (反復: same ring pattern as Button)
+   ══════════════════════════════════════════════════════════════════════ */
+[data-ui-tab-item]:focus-visible {
+  outline: 2px solid transparent;
+  box-shadow:
+    0 0 0 2px #ffffff,
+    0 0 0 4px #111111;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-ui-tab-item] {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  [data-ui-tab-segment] {
+    forced-color-adjust: auto;
+  }
+
+  [data-ui-tab-item][data-ui-tab-active="true"] {
+    background: Highlight;
+    color: HighlightText;
+  }
+}
