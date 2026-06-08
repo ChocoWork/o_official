@@ -1,0 +1,164 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   SwitchToggle
+   Design: Proximity · Alignment · Repetition · Contrast
+   Geometry: derived from golden ratio  φ = 1.618 · √φ = 1.272
+
+   Key invariant — because φ × (φ − 1) = 1:
+     thumb   = track-h / φ
+     translate = thumb  (the thumb travels exactly one thumb-width)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+[data-ui-switch] {
+  /* ── Scale ─────────────────────────────────────────────────────────── */
+  /* track-h: base font × φ → at lk-size-md (~15px) gives ~24px track   */
+  --switch-track-h: calc(var(--lk-size-md) * var(--phi));
+  /* track-w: track-h × φ → compact 1:φ proportion                      */
+  --switch-track-w: calc(var(--switch-track-h) * var(--phi));
+  /* thumb: track-h / φ → occupies the golden minor portion of track-h  */
+  --switch-thumb-size: calc(var(--switch-track-h) / var(--phi));
+  /* inset: equal gap on all sides centers the thumb exactly             */
+  --switch-inset: calc((var(--switch-track-h) - var(--switch-thumb-size)) / 2);
+  /* translate: equals thumb-size (φ × (φ−1) = 1 makes this exact)      */
+  --switch-translate: var(--switch-thumb-size);
+  /* label font follows the component-size token                         */
+  --switch-label-font: var(--ui-font-size, var(--lk-size-md));
+  /* gap: label-font / √φ → proportional breathing room                 */
+  --switch-gap: calc(var(--switch-label-font) / var(--sqrt-phi));
+
+  /* ── Color tokens ──────────────────────────────────────────────────── */
+  --switch-track-on: #111111;
+  --switch-track-off: rgb(17 17 17 / 0.2);
+  --switch-thumb-color: #ffffff;
+
+  /* ── Layout (近接: label and track form one inseparable unit) ─────── */
+  display: inline-flex;
+  align-items: center;
+  gap: var(--switch-gap);
+  cursor: pointer;
+}
+
+/* ── Size variants (反復: same φ-proportions hold at every scale step) ── */
+[data-ui-switch][data-ui-size="xs"],
+[data-ui-switch][data-ui-size="sm"] {
+  /* 2 type-scale steps below md × φ → track ≈ 19px                     */
+  --switch-track-h: calc(var(--lk-size-2xs) * var(--phi));
+}
+
+[data-ui-switch][data-ui-size="md"] {
+  --switch-track-h: calc(var(--lk-size-md) * var(--phi));
+}
+
+[data-ui-switch][data-ui-size="lg"],
+[data-ui-switch][data-ui-size="xl"] {
+  /* 2 type-scale steps above md × φ → track ≈ 33px                     */
+  --switch-track-h: calc(var(--lk-size-2xl) * var(--phi));
+}
+
+/* ── Full-width (整列: label and track anchor to opposite edges) ──────── */
+[data-ui-switch][data-ui-switch-fullwidth="true"] {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+}
+
+/* ── Disabled (対比: 1/φ² ≈ 0.382 opacity signals unavailability) ─────── */
+[data-ui-switch][data-ui-switch-disabled="true"] {
+  opacity: calc(1 / (var(--phi) * var(--phi)));
+  cursor: not-allowed;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Label text
+   整列: font-size tied to --switch-label-font scales with size prop
+   ══════════════════════════════════════════════════════════════════════ */
+[data-ui-switch-label] {
+  font-size: var(--switch-label-font);
+  color: #111111;
+  line-height: var(--sqrt-phi);
+  user-select: none;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Track
+   近接: encloses the thumb — label + track = one visual control unit
+   対比: on = solid black; off = rgb(0 0 0 / 0.2), clearly different
+   ══════════════════════════════════════════════════════════════════════ */
+[data-ui-switch-track] {
+  position: relative;
+  flex-shrink: 0;
+  width: var(--switch-track-w);
+  height: var(--switch-track-h);
+  border-radius: 9999px;
+  background: var(--switch-track-off);
+  border: none;
+  padding: 0;
+  cursor: inherit;
+  transition: background-color 180ms ease;
+}
+
+[data-ui-switch][data-ui-switch-checked="true"] [data-ui-switch-track] {
+  background: var(--switch-track-on);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Thumb
+   整列: equal inset on all sides → precise center alignment
+   対比: white circle reads clearly against both on/off backgrounds
+   反復: same pill radius (9999px) as the track — shapes echo each other
+   ══════════════════════════════════════════════════════════════════════ */
+[data-ui-switch-thumb] {
+  position: absolute;
+  top: var(--switch-inset);
+  left: var(--switch-inset);
+  width: var(--switch-thumb-size);
+  height: var(--switch-thumb-size);
+  border-radius: 9999px;
+  background: var(--switch-thumb-color);
+  transform: translateX(0);
+  transition: transform 180ms ease;
+}
+
+[data-ui-switch][data-ui-switch-checked="true"] [data-ui-switch-thumb] {
+  transform: translateX(var(--switch-translate));
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Focus (反復: same double-ring pattern as Button)
+   ══════════════════════════════════════════════════════════════════════ */
+[data-ui-switch-track]:focus-visible {
+  outline: 2px solid transparent;
+  box-shadow:
+    0 0 0 2px #ffffff,
+    0 0 0 4px #111111;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Accessibility
+   ══════════════════════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  [data-ui-switch-track],
+  [data-ui-switch-thumb] {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  [data-ui-switch-track] {
+    forced-color-adjust: auto;
+    border: 1px solid ButtonText;
+    background: ButtonFace;
+  }
+
+  [data-ui-switch][data-ui-switch-checked="true"] [data-ui-switch-track] {
+    background: Highlight;
+    border-color: Highlight;
+  }
+
+  [data-ui-switch-thumb] {
+    background: ButtonText;
+  }
+
+  [data-ui-switch][data-ui-switch-checked="true"] [data-ui-switch-thumb] {
+    background: HighlightText;
+  }
+}
