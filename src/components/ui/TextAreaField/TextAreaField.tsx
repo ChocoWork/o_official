@@ -1,38 +1,59 @@
-import { cn } from '@/lib/utils';
-import type { CSSProperties, TextareaHTMLAttributes } from 'react';
-import { controlBaseClass } from '../shared';
-import { ComponentSize } from '@/components/ui/types';
+// File: src/components/ui/TextAreaField/TextAreaField.tsx
+import "@/components/ui/TextAreaField/TextAreaField.css";
+import { cn } from "@/lib/utils";
+import type { TextAreaFieldProps } from "@/components/ui/TextAreaField/TextAreaField_type";
 
-export interface TextAreaFieldProps extends Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'size'> {
-  label?: string;
-  /** sm/md/lg を受け取り、行数を調整 */
-  size?: ComponentSize;
-}
-
-export function TextAreaField({ label, className, id, rows, size = 'md', ...props }: TextAreaFieldProps) {
+export function TextAreaField({
+  label,
+  helperText,
+  errorText,
+  className,
+  id,
+  rows = 4,
+  shape = "rounded",
+  size = "md",
+  ...props
+}: TextAreaFieldProps) {
   const fieldId = id ?? props.name;
-  const labelStyle: CSSProperties = { fontSize: 'var(--lk-size-xs)' };
-  const fieldStyle: CSSProperties = {
-    fontSize:
-      size === 'xs'
-        ? 'var(--lk-size-xs)'
-        : size === 'sm'
-          ? 'var(--lk-size-sm)'
-          : size === 'lg'
-            ? 'var(--lk-size-lg)'
-            : size === 'xl'
-              ? 'var(--lk-size-xl)'
-              : 'var(--lk-size-md)',
-    ...(props.style ?? {}),
-  };
-  const computedRows =
-    rows ??
-    (size === 'sm' ? 2 : size === 'lg' ? 6 : 4);
+  const errorId = fieldId ? `${fieldId}-error` : undefined;
+  const helperId = fieldId ? `${fieldId}-helper` : undefined;
+
+  const describedBy =
+    [
+      errorText && errorId ? errorId : null,
+      !errorText && helperText && helperId ? helperId : null,
+    ]
+      .filter(Boolean)
+      .join(" ") || undefined;
+
+  const rootDataAttrs = {
+    "data-ui-text-area-field": "true",
+    "data-ui-text-area-field-shape": shape,
+    "data-ui-text-area-field-size": size,
+    "data-ui-text-area-field-invalid": errorText ? "true" : undefined,
+  } as const;
 
   return (
-    <label className="block space-y-2">
-      {label ? <span className="block text-xs tracking-widest text-black/80" style={labelStyle}>{label}</span> : null}
-      <textarea id={fieldId} rows={computedRows} className={cn(controlBaseClass, 'resize-none', className)} style={fieldStyle} {...props} />
+    <label className="text-area-field" {...rootDataAttrs}>
+      {label ? <span className="text-area-field__label">{label}</span> : null}
+      <textarea
+        id={fieldId}
+        rows={rows}
+        aria-describedby={describedBy}
+        aria-invalid={errorText ? true : undefined}
+        className={cn("text-area-field__input", className)}
+        {...props}
+      />
+      {errorText ? (
+        <span id={errorId} role="alert" className="text-area-field__error">
+          {errorText}
+        </span>
+      ) : null}
+      {!errorText && helperText ? (
+        <span id={helperId} className="text-area-field__helper">
+          {helperText}
+        </span>
+      ) : null}
     </label>
   );
 }

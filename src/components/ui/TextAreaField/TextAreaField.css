@@ -1,0 +1,171 @@
+/* File: src/components/ui/TextAreaField/TextAreaField.css */
+[data-ui-text-area-field] {
+  /* 入力本文の基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
+  --field-font-size: var(--lk-size-md);
+
+  /* ラベル/補足/エラーは入力本文より φ で一段小さく（対比・階層）*/
+  --field-label-size: calc(var(--field-font-size) / var(--phi));
+
+  /*
+   * 横パディング＝font × φ／縦パディング＝font / φ（TextField と同じ比率で反復）。
+   *   テキストエリアは複数行のため縦は font / φ をそのまま使う。
+   */
+  --field-pad-x: calc(var(--field-font-size) * var(--phi));
+  --field-pad-y: calc(var(--field-font-size) / var(--phi));
+
+  /* 縦方向のグループ間隔＝font / φ（近接：ラベル/入力/補足を 1 グループ化）*/
+  --field-stack-gap: calc(var(--field-font-size) / var(--phi));
+
+  /* 字間（tracking）も font から導出（対比・可読性）*/
+  --field-letter-spacing: calc(
+    var(--field-font-size) / (var(--phi) * var(--phi) * var(--phi))
+  );
+
+  /* 角丸は font / φ。枠線は 1px 固定（TextField と統一）*/
+  --field-radius: calc(var(--field-font-size) / var(--phi));
+  --field-border-width: 1px;
+
+  /* 行の高さ（対比：本文より広めにとって複数行の可読性を確保）*/
+  --field-line-height: 1.6;
+
+  /* 色トークン（TextField と同系統。ハードコードは一箇所に集約）*/
+  --field-bg: #ffffff;
+  --field-fg: #000000;
+  --field-fg-label: rgba(0, 0, 0, 0.8);
+  --field-fg-muted: rgba(0, 0, 0, 0.6);
+  --field-fg-helper: #474747;
+  --field-border-color: rgba(0, 0, 0, 0.2);
+  --field-border-focus: #000000;
+  --field-bg-disabled: #f5f5f5;
+  --field-border-disabled: rgba(0, 0, 0, 0.1);
+  --field-fg-disabled: rgba(0, 0, 0, 0.4);
+  --field-error-color: #ef4444;
+  --field-error-text: #dc2626;
+
+  /* shape の既定（rounded）。square で 0 に上書き */
+  --field-shape-radius: var(--field-radius);
+
+  /* 整列：ラベル/入力/補足を縦積み・左そろえで 1 グループ化（近接）*/
+  display: flex;
+  flex-direction: column;
+  gap: var(--field-stack-gap);
+  font-family: acumin-pro, sans-serif;
+  box-sizing: border-box;
+}
+
+/* --- 形状展開（shape：rounded / square）--- */
+[data-ui-text-area-field][data-ui-text-area-field-shape="rounded"] {
+  --field-shape-radius: var(--field-radius);
+}
+
+[data-ui-text-area-field][data-ui-text-area-field-shape="square"] {
+  --field-shape-radius: 0;
+}
+
+/* --- サイズ展開（反復：TextField / BannerAlert / Avatar と同一の公比スケールを再利用）--- */
+[data-ui-text-area-field][data-ui-text-area-field-size="xs"] {
+  --field-font-size: var(--lk-size-xs);
+}
+
+[data-ui-text-area-field][data-ui-text-area-field-size="sm"] {
+  --field-font-size: var(--lk-size-sm);
+}
+
+[data-ui-text-area-field][data-ui-text-area-field-size="md"] {
+  --field-font-size: var(--lk-size-md);
+}
+
+[data-ui-text-area-field][data-ui-text-area-field-size="lg"] {
+  --field-font-size: var(--lk-size-lg);
+}
+
+[data-ui-text-area-field][data-ui-text-area-field-size="xl"] {
+  --field-font-size: var(--lk-size-xl);
+}
+
+/* --- ラベル（対比：入力本文より一段小さく・やや淡く／整列：左そろえ）--- */
+.text-area-field__label {
+  display: block;
+  font-size: var(--field-label-size);
+  letter-spacing: var(--field-letter-spacing);
+  color: var(--field-fg-label);
+  line-height: var(--control-line-height, 1.4);
+}
+
+/* --- 入力本体（整列：パディングを φ で統一／リサイズは縦のみ許可）--- */
+.text-area-field__input {
+  display: block;
+  width: 100%;
+  padding: var(--field-pad-y) var(--field-pad-x);
+  font-family: inherit;
+  font-size: var(--field-font-size);
+  line-height: var(--field-line-height);
+  letter-spacing: var(--field-letter-spacing);
+  color: var(--field-fg);
+  background: var(--field-bg);
+  border: var(--field-border-width) solid var(--field-border-color);
+  border-radius: var(--field-shape-radius);
+  box-sizing: border-box;
+  resize: vertical;
+  transition: border-color 120ms ease;
+}
+
+.text-area-field__input::placeholder {
+  color: var(--field-fg-muted);
+}
+
+/* focus：枠線の色だけ濃く（太さは 1px のまま・TextField と統一）*/
+.text-area-field__input:focus {
+  outline: none;
+  border-color: var(--field-border-focus);
+}
+
+/* disabled（対比：淡色で操作不可を明示）*/
+.text-area-field__input:disabled {
+  background: var(--field-bg-disabled);
+  border-color: var(--field-border-disabled);
+  color: var(--field-fg-disabled);
+  opacity: 1;
+  cursor: not-allowed;
+  resize: none;
+}
+
+/* invalid（対比：エラー色で枠を強調）*/
+[data-ui-text-area-field][data-ui-text-area-field-invalid="true"]
+  .text-area-field__input {
+  border-color: var(--field-error-color);
+}
+
+[data-ui-text-area-field][data-ui-text-area-field-invalid="true"]
+  .text-area-field__input:focus {
+  border-color: var(--field-error-color);
+}
+
+/* --- 補足テキスト（対比：muted／ラベルと同サイズで反復）--- */
+.text-area-field__helper {
+  font-size: var(--field-label-size);
+  letter-spacing: var(--field-letter-spacing);
+  color: var(--field-fg-helper);
+  line-height: var(--control-line-height, 1.4);
+}
+
+/* --- エラーテキスト（対比：エラー色／ラベルと同サイズで反復）--- */
+.text-area-field__error {
+  font-size: var(--field-label-size);
+  letter-spacing: var(--field-letter-spacing);
+  color: var(--field-error-text);
+  line-height: var(--control-line-height, 1.4);
+}
+
+/* --- アクセシビリティ配慮（TextField / BannerAlert と同思想で踏襲）--- */
+@media (forced-colors: active) {
+  .text-area-field__input {
+    border: 1px solid CanvasText;
+    background: Field;
+    color: FieldText;
+  }
+
+  .text-area-field__input:focus {
+    outline: 1px solid Highlight;
+  }
+}
