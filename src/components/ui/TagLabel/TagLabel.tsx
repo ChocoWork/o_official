@@ -1,36 +1,24 @@
-import "./TagLabel.css"
-import type { ReactNode } from 'react';
-import type { ComponentSize } from '@/components/ui/types';
-
-export interface TagLabelProps {
-  children: ReactNode;
-  variant?: 'solid' | 'outline' | 'subtle';
-  rounded?: boolean;
-  removable?: boolean;
-  onRemove?: () => void;
-  className?: string;
-  /** tag size */
-  size?: ComponentSize;
-}
+import "./TagLabel.css";
+import type { TagLabelProps } from "@/components/ui/TagLabel/TagLabel_type";
 
 export function TagLabel({
   children,
-  variant = 'outline',
+  variant = "outline",
   rounded = false,
   removable = false,
   onRemove,
   className,
-  size = 'md',
+  size = "md",
 }: TagLabelProps) {
-  const isRemovable = removable && typeof onRemove === 'function';
+  const isRemovable = removable && typeof onRemove === "function";
 
   return (
     <span
       data-ui-tag-label="true"
       data-ui-tag-label-variant={variant}
       data-ui-tag-label-size={size}
-      data-ui-tag-label-rounded={rounded ? 'true' : undefined}
-      data-ui-tag-label-removable={isRemovable ? 'true' : undefined}
+      data-ui-tag-label-rounded={rounded ? "true" : undefined}
+      data-ui-tag-label-removable={isRemovable ? "true" : undefined}
       className={className}
     >
       {children}
@@ -41,7 +29,11 @@ export function TagLabel({
           aria-label="Remove tag"
           onClick={onRemove}
         >
-          <i aria-hidden="true" className="ri-close-line" data-ui-tag-label-remove-icon="true"></i>
+          <i
+            aria-hidden="true"
+            className="ri-close-line"
+            data-ui-tag-label-remove-icon="true"
+          ></i>
         </button>
       ) : null}
     </span>
