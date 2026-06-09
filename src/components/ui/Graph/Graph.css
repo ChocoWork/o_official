@@ -1,0 +1,170 @@
+[data-ui-graph] {
+  /* Typography */
+  --graph-font-size: var(--lk-size-xs);
+
+  /* Spacing — all derived from golden ratio (phi = 1.618, sqrt-phi = 1.272) */
+  --graph-row-gap: var(--lk-size-sm);
+  --graph-label-gap: calc(var(--lk-size-xs) / var(--phi));
+  --graph-track-height: calc(var(--lk-size-xs) / var(--phi));
+  --graph-bar-gap: calc(var(--lk-size-xs) / var(--phi));
+  --graph-legend-swatch-size: var(--lk-size-2xs);
+  --graph-legend-item-gap: calc(var(--lk-size-xs) / var(--phi));
+  --graph-legend-col-gap: var(--lk-size-md);
+  --graph-legend-row-gap: var(--lk-size-md);
+  --graph-legend-top-gap: calc(var(--lk-size-md) * var(--phi));
+
+  /* Heights: each step is phi × previous */
+  --graph-height-sm: 10rem;
+  --graph-height-md: calc(var(--graph-height-sm) * var(--phi));
+  --graph-height-lg: calc(var(--graph-height-md) * var(--phi));
+  --graph-height: var(--graph-height-md);
+
+  /* Donut SVG inscribed within the container via phi */
+  --graph-donut-size: calc(var(--graph-height) / var(--phi));
+
+  /* Colors */
+  --graph-bar-bg: #111111;
+  --graph-bar-hover-bg: #474747;
+  --graph-track-bg: #f0f0f0;
+  --graph-fill-bg: #111111;
+  --graph-label-color: #474747;
+  --graph-value-color: #111111;
+
+  font-size: var(--graph-font-size);
+  font-family: "acumin-pro", sans-serif;
+}
+
+/* ── Size variants ─────────────────────────────────────── */
+
+[data-ui-graph][data-ui-graph-size="sm"] {
+  --graph-height: var(--graph-height-sm);
+}
+
+[data-ui-graph][data-ui-graph-size="lg"] {
+  --graph-height: var(--graph-height-lg);
+}
+
+/* ── Progress (default) ────────────────────────────────── */
+
+[data-ui-graph][data-ui-graph-variant="progress"] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--graph-row-gap);
+}
+
+[data-ui-graph][data-ui-graph-variant="progress"] [data-graph-row-header] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--graph-label-gap);
+}
+
+[data-ui-graph][data-ui-graph-variant="progress"] [data-graph-label] {
+  color: var(--graph-label-color);
+}
+
+[data-ui-graph][data-ui-graph-variant="progress"] [data-graph-value] {
+  color: var(--graph-value-color);
+}
+
+[data-ui-graph][data-ui-graph-variant="progress"] [data-graph-track] {
+  height: var(--graph-track-height);
+  overflow: hidden;
+  border-radius: calc(var(--graph-track-height) / 2);
+  background: var(--graph-track-bg);
+}
+
+[data-ui-graph][data-ui-graph-variant="progress"] [data-graph-fill] {
+  height: 100%;
+  background: var(--graph-fill-bg);
+  transition: width 300ms ease;
+}
+
+/* ── Bar chart ─────────────────────────────────────────── */
+
+[data-ui-graph][data-ui-graph-variant="bars"] {
+  display: flex;
+  gap: var(--graph-bar-gap);
+  height: var(--graph-height);
+}
+
+[data-ui-graph][data-ui-graph-variant="bars"] [data-graph-bar-col] {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  gap: var(--graph-label-gap);
+}
+
+[data-ui-graph][data-ui-graph-variant="bars"] [data-graph-bar] {
+  width: 100%;
+  background: var(--graph-bar-bg);
+  cursor: pointer;
+  transition: background-color 180ms ease;
+}
+
+[data-ui-graph][data-ui-graph-variant="bars"] [data-graph-label] {
+  color: var(--graph-label-color);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-ui-graph][data-ui-graph-variant="bars"] [data-graph-bar]:hover {
+    background: var(--graph-bar-hover-bg);
+  }
+}
+
+/* ── Donut chart ───────────────────────────────────────── */
+
+[data-ui-graph][data-ui-graph-variant="donut"] [data-graph-donut-wrap] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--graph-height);
+}
+
+[data-ui-graph][data-ui-graph-variant="donut"] [data-graph-donut-svg-wrap] {
+  position: relative;
+  width: var(--graph-donut-size);
+  height: var(--graph-donut-size);
+}
+
+[data-ui-graph][data-ui-graph-variant="donut"] [data-graph-donut-svg-wrap] svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+[data-ui-graph][data-ui-graph-variant="donut"] [data-graph-legend] {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  column-gap: var(--graph-legend-col-gap);
+  row-gap: var(--graph-legend-row-gap);
+  margin-top: var(--graph-legend-top-gap);
+}
+
+[data-ui-graph] [data-graph-legend-item] {
+  display: flex;
+  align-items: center;
+  gap: var(--graph-legend-item-gap);
+}
+
+[data-ui-graph] [data-graph-legend-swatch] {
+  flex-shrink: 0;
+  width: var(--graph-legend-swatch-size);
+  height: var(--graph-legend-swatch-size);
+}
+
+[data-ui-graph] [data-graph-legend-text] {
+  color: var(--graph-label-color);
+}
+
+/* ── Motion ────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  [data-ui-graph][data-ui-graph-variant="progress"] [data-graph-fill],
+  [data-ui-graph][data-ui-graph-variant="bars"] [data-graph-bar] {
+    transition: none;
+  }
+}
