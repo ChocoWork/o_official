@@ -1,0 +1,171 @@
+/*
+ * SearchField.css
+ *
+ * φ (1.618) / √φ (1.272) を軸にしたスペーシング設計。
+ * 設計4原則:
+ *   近接  — アイコン・テキスト・クリアボタンを --_pad-x 基準で密に束ねる
+ *   整列  — アイコンとクリアボタンを top:50% + translateY で入力と同一軸に揃える
+ *   反復  — 検索アイコン / クリアボタンに同一サイズ・同一 transition を適用
+ *   対比  — 非アクティブ要素は opacity 0.6、hover/focus で #000 に遷移
+ */
+
+[data-ui-search-field] {
+  --_phi:      var(--phi, 1.618);
+  --_sqrt-phi: var(--sqrt-phi, 1.272);
+  --_font-size: var(--ui-font-size, var(--lk-size-md));
+
+  /* コンテナ高さ = font-size × φ²  (黄金比の 2 乗で縦横比を確定) */
+  --_height: calc(var(--_font-size) * var(--_phi) * var(--_phi));
+
+  /* アイコンサイズ = font-size × √φ  (Rating と同じ比率) */
+  --_icon-size: calc(var(--_font-size) * var(--_sqrt-phi));
+
+  /* 水平 pad = font-size ÷ √φ  (Button.css と同パターン) */
+  --_pad-x: calc(var(--_font-size) / var(--_sqrt-phi));
+
+  /* input 左 padding = pad-x + icon-size + pad-x  (近接: アイコンを適切に囲む) */
+  --_input-pl: calc(2 * var(--_pad-x) + var(--_icon-size));
+
+  /* ラベル↔input wrapper 間 = font-size × (φ−1) = font-size × 0.618 */
+  --_label-gap: calc(var(--_font-size) * calc(var(--_phi) - 1));
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--_label-gap);
+}
+
+/* ── グループラベル ── */
+[data-ui-search-field-label] {
+  display: block;
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  color: rgba(0, 0, 0, 0.8);
+}
+
+/* ── wrapper (アイコン / input / クリアボタンの相対配置コンテナ) ── */
+[data-ui-search-field-wrapper] {
+  position: relative;
+  height: var(--_height);
+}
+
+/* ── 検索アイコン (整列: 垂直中央、反復: icon-size を統一) ── */
+[data-ui-search-field-icon] {
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  left: var(--_pad-x);
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width:  var(--_icon-size);
+  height: var(--_icon-size);
+  font-size: var(--_icon-size);
+  /* 対比: 入力テキストより薄く */
+  color: rgba(0, 0, 0, 0.6);
+}
+
+/* ── input ── */
+[data-ui-search-field-input] {
+  width: 100%;
+  height: 100%;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left:  var(--_input-pl);
+  padding-right: var(--_pad-x);
+  font-size: var(--_font-size);
+  color: #000;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  outline: none;
+  transition:
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+[data-ui-search-field-input]:focus {
+  border-color: #000;
+}
+
+[data-ui-search-field-input]:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* クリアボタンが DOM に存在するとき、右 padding を左と対称に広げる */
+[data-ui-search-field-wrapper]:has([data-ui-search-field-clear]) [data-ui-search-field-input] {
+  padding-right: var(--_input-pl);
+}
+
+/* ブラウザ既定の search UI を非表示 */
+[data-ui-search-field-input]::-webkit-search-decoration,
+[data-ui-search-field-input]::-webkit-search-cancel-button,
+[data-ui-search-field-input]::-webkit-search-results-button,
+[data-ui-search-field-input]::-webkit-search-results-decoration {
+  display: none;
+}
+
+[data-ui-search-field-input]::-ms-clear,
+[data-ui-search-field-input]::-ms-reveal {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* ── クリアボタン (整列: 右端に垂直中央、反復: アイコンと同一サイズ) ── */
+[data-ui-search-field-clear] {
+  position: absolute;
+  top: 50%;
+  right: var(--_pad-x);
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width:  var(--_icon-size);
+  height: var(--_icon-size);
+  font-size: var(--_icon-size);
+  /* 対比: 非アクティブは薄く */
+  color: rgba(0, 0, 0, 0.6);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-ui-search-field-clear]:hover {
+    color: #000;
+  }
+}
+
+[data-ui-search-field-clear]:focus-visible {
+  outline: 2px solid transparent;
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 0 4px #111;
+  border-radius: 2px;
+}
+
+/* ── アクセシビリティ ── */
+@media (prefers-reduced-motion: reduce) {
+  [data-ui-search-field-input],
+  [data-ui-search-field-clear] {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  [data-ui-search-field-input] {
+    forced-color-adjust: auto;
+    border-color: ButtonText;
+    background: Field;
+    color: FieldText;
+  }
+
+  [data-ui-search-field-icon],
+  [data-ui-search-field-clear] {
+    forced-color-adjust: auto;
+    color: ButtonText;
+  }
+}
