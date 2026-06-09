@@ -1,23 +1,7 @@
-import "./Rating.css"
-import { cn } from '@/lib/utils';
+import "./Rating.css";
+import type { RatingProps } from "./Rating_type";
 
-import { ComponentSize } from '@/components/ui/types';
-
-export interface RatingProps {
-  value: number;
-  max?: number;
-  onChange?: (value: number) => void;
-  label?: string;
-  readOnly?: boolean;
-  showValue?: boolean;
-  valueText?: string;
-  className?: string;
-  /**
-   * Component size. Determines star dimensions and font-size of icons/text.
-   * Defaults to 'md' to maintain previous behaviour.
-   */
-  size?: ComponentSize;
-}
+export type { RatingProps } from "./Rating_type";
 
 export function Rating({
   value,
@@ -32,52 +16,50 @@ export function Rating({
 }: RatingProps) {
   const interactive = Boolean(onChange) && !readOnly;
 
-  // compute sizing classes for star container and icon
-  const starSizeClass =
-    size === 'sm'
-      ? 'h-4 w-4 text-xl'
-      : size === 'lg'
-      ? 'h-8 w-8 text-3xl'
-      : 'h-6 w-6 text-2xl';
-
-  // determine text size for optional value display
-  const valueTextClass = size === 'sm' ? 'text-xs' : size === 'lg' ? 'text-base' : 'text-sm';
-
   return (
-    <div className={cn('space-y-3', className)}>
-      {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
-      <div className="flex items-center gap-2">
+    <div
+      data-ui-rating=""
+      data-ui-size={size}
+      className={className}
+    >
+      {label && <span data-ui-rating-label="">{label}</span>}
+      <div data-ui-rating-stars="">
         {Array.from({ length: max }).map((_, index) => {
           const score = index + 1;
           const filled = score <= value;
-
-          const star = (
-            <span data-testid="rating-star" className={cn('flex items-center justify-center', starSizeClass)}>
-              <i className={cn('text-black', filled ? 'ri-star-fill' : 'ri-star-line')}></i>
-            </span>
-          );
+          const iconClass = filled ? 'ri-star-fill' : 'ri-star-line';
 
           if (interactive) {
             return (
               <button
                 key={score}
                 type="button"
-                className="cursor-pointer"
+                data-ui-rating-star=""
+                data-testid="rating-star"
                 onClick={() => onChange?.(score)}
                 aria-label={`rating-${score}`}
               >
-                {star}
+                <i className={iconClass} aria-hidden="true" />
               </button>
             );
           }
 
           return (
-            <span key={score} aria-hidden="true">
-              {star}
+            <span
+              key={score}
+              data-ui-rating-star=""
+              data-testid="rating-star"
+              aria-hidden="true"
+            >
+              <i className={iconClass} />
             </span>
           );
         })}
-        {showValue ? <span className={cn('ml-3 text-black', valueTextClass)}>{valueText ?? `${value} / ${max}`}</span> : null}
+        {showValue && (
+          <span data-ui-rating-value="">
+            {valueText ?? `${value} / ${max}`}
+          </span>
+        )}
       </div>
     </div>
   );

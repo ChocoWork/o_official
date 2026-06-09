@@ -1,0 +1,106 @@
+/*
+ * Rating.css
+ *
+ * φ (1.618) / √φ (1.272) を軸にしたスペーシング設計。
+ * 設計4原則:
+ *   近接  — 星同士は font-size÷φ の gap で密集させ、値テキストは ×(φ−1) で分離
+ *   整列  — [data-ui-rating-stars] を flex で同一ベースラインに揃える
+ *   反復  — 全星に同一サイズ・同一 transition ルールを繰り返す
+ *   対比  — インタラクティブ hover で opacity 変化、filled/empty はアイコン差で区別
+ */
+
+[data-ui-rating] {
+  --_phi:      var(--phi, 1.618);
+  --_sqrt-phi: var(--sqrt-phi, 1.272);
+  --_font-size: var(--ui-font-size, var(--lk-size-md));
+
+  /* 星サイズ = font-size × φ */
+  --_star-size: calc(var(--_font-size) * var(--_phi));
+
+  /* 星間 gap = font-size ÷ φ  (近接: 密に束ねる) */
+  --_star-gap:  calc(var(--_font-size) / var(--_phi));
+
+  /* 値テキスト左マージン = font-size × (φ−1)  (近接: 星群と分離) */
+  --_val-gap:   calc(var(--_font-size) * calc(var(--_phi) - 1));
+
+  /* ラベル↔星列 間の gap = 同上 */
+  --_label-gap: calc(var(--_font-size) * calc(var(--_phi) - 1));
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--_label-gap);
+}
+
+/* ── グループラベル ── */
+[data-ui-rating-label] {
+  display: block;
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  color: rgba(0, 0, 0, 0.8);
+}
+
+/* ── 星列コンテナ (整列) ── */
+[data-ui-rating-stars] {
+  display: flex;
+  align-items: center;
+  gap: var(--_star-gap);
+}
+
+/* ── 星ラッパー: button / span 共通 (反復) ── */
+[data-ui-rating-star] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width:  var(--_star-size);
+  height: var(--_star-size);
+  font-size: var(--_star-size);
+  color: #000;
+  flex-shrink: 0;
+  transition: opacity 160ms ease;
+}
+
+/* button リセット */
+button[data-ui-rating-star] {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* 対比: インタラクティブ hover で明示的フィードバック */
+@media (hover: hover) and (pointer: fine) {
+  button[data-ui-rating-star]:hover {
+    opacity: 0.55;
+  }
+}
+
+button[data-ui-rating-star]:focus-visible {
+  outline: 2px solid transparent;
+  box-shadow:
+    0 0 0 2px #ffffff,
+    0 0 0 4px #111111;
+  border-radius: 2px;
+}
+
+/* ── 値テキスト (対比: 星群との視覚的分離) ── */
+[data-ui-rating-value] {
+  font-size: var(--_font-size);
+  line-height: var(--_sqrt-phi);
+  color: #000;
+  margin-left: var(--_val-gap);
+}
+
+/* ── アクセシビリティ ── */
+@media (prefers-reduced-motion: reduce) {
+  [data-ui-rating-star] {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  [data-ui-rating-star] {
+    forced-color-adjust: auto;
+    color: ButtonText;
+  }
+}
