@@ -1,0 +1,136 @@
+/*
+ * RadioButtonGroup.css
+ *
+ * 黄金比 (φ ≈ 1.618, √φ ≈ 1.272) を軸にしたスペーシング設計。
+ * 設計4原則:
+ *   近接  — ラジオとラベルを φ 逆数 gap で引き寄せ、選択肢間は φ gap で分離
+ *   整列  — items を flex で同一軸に揃える
+ *   反復  — 各 item が同じ padding・border ルールを繰り返す
+ *   対比  — disabled は opacity 0.4、boxed hover は border 強調で状態を明示
+ */
+
+/* ── CSS 変数のフォールバック ── */
+[data-ui-radio-group] {
+  --_phi: var(--phi, 1.618);
+  --_sqrt-phi: var(--sqrt-phi, 1.272);
+
+  /* md baseline */
+  --_font-size: var(--ui-font-size, var(--lk-size-md));
+
+  /* ラジオ円サイズ = font-size × √φ */
+  --_radio-size: calc(var(--_font-size) * var(--_sqrt-phi));
+
+  /* ラジオ↔ラベル gap = font-size ÷ √φ  (近接: タイトに束ねる) */
+  --_item-gap: calc(var(--_font-size) / var(--_sqrt-phi));
+
+  /* 選択肢間 gap = font-size × φ  (近接: 選択肢同士は分離) */
+  --_group-gap: calc(var(--_font-size) * var(--_phi));
+
+  /* boxed padding: x÷√φ, y = x÷φ  → x:y = φ (黄金比率) */
+  --_pad-x: calc(var(--_font-size) / var(--_sqrt-phi));
+  --_pad-y: calc(var(--_pad-x) / var(--_phi));
+
+  /* グループラベル↔items 間 = font-size × (φ−1) = font-size × 0.618 */
+  --_header-gap: calc(var(--_font-size) * calc(var(--_phi) - 1));
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--_header-gap);
+}
+
+/* ── グループラベル ── */
+[data-ui-radio-group-label] {
+  display: block;
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  color: rgba(0, 0, 0, 0.8);
+}
+
+/* ── items コンテナ ── */
+[data-ui-radio-items] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--_group-gap);
+}
+
+[data-ui-radio-group][data-ui-radio-direction="row"] [data-ui-radio-items] {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+/* ── 個別 item ── */
+[data-ui-radio-item] {
+  display: flex;
+  align-items: center;
+  gap: var(--_item-gap);
+  cursor: pointer;
+}
+
+/* 対比: disabled は視覚的に退く */
+[data-ui-radio-item][data-ui-radio-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+/* 反復: boxed は全 item に同じ枠線ルール */
+[data-ui-radio-item][data-ui-radio-variant="boxed"] {
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  padding: var(--_pad-y) var(--_pad-x);
+  transition: border-color 160ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-ui-radio-item][data-ui-radio-variant="boxed"]:not(
+      [data-ui-radio-disabled="true"]
+    ):hover {
+    border-color: #000;
+  }
+}
+
+/* ── ラジオ入力 ── */
+[data-ui-radio-input] {
+  flex-shrink: 0;
+  width: var(--_radio-size);
+  height: var(--_radio-size);
+  cursor: inherit;
+  accent-color: #000;
+}
+
+/* ── ラベルテキスト ── */
+[data-ui-radio-item-label] {
+  font-size: var(--_font-size);
+  line-height: var(--_sqrt-phi);
+  color: #000;
+  transition: color 160ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-ui-radio-item][data-ui-radio-variant="simple"]:not(
+      [data-ui-radio-disabled="true"]
+    ):hover
+    [data-ui-radio-item-label] {
+    color: #474747;
+  }
+}
+
+/* ── 説明テキスト ── */
+[data-ui-radio-item-desc] {
+  font-size: 0.75rem;
+  line-height: var(--_sqrt-phi);
+  color: #474747;
+}
+
+/* ── アクセシビリティ ── */
+@media (prefers-reduced-motion: reduce) {
+  [data-ui-radio-item][data-ui-radio-variant="boxed"],
+  [data-ui-radio-item-label] {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  [data-ui-radio-item][data-ui-radio-variant="boxed"] {
+    forced-color-adjust: auto;
+    border-color: ButtonText;
+  }
+}
