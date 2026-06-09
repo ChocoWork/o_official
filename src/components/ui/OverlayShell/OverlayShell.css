@@ -1,0 +1,97 @@
+/* ── Backdrop ───────────────────────────────────────────
+   対比: 黒半透明のスクリムでパネルを白背景から際立たせる
+   整列: flex center でパネルを常に視覚的重心に配置する    */
+
+[data-ui-overlay] {
+  --overlay-backdrop-bg: rgb(0 0 0 / 0.4);
+  --overlay-backdrop-pad: var(--lk-size-sm);
+  --overlay-z: 50;
+
+  position: fixed;
+  inset: 0;
+  z-index: var(--overlay-z);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--overlay-backdrop-pad);
+  background: var(--overlay-backdrop-bg);
+}
+
+/* ── Panel ──────────────────────────────────────────────
+   max-width = lk-size-md × 40 ≈ 36rem
+   (40 × 0.5em/char ≈ 80 文字の適正行長に対応する タイポグラフィ基準)
+   padding = lk-size-md × φ (黄金比パディング)             */
+
+[data-ui-overlay-panel] {
+  --overlay-pad: calc(var(--lk-size-md) * var(--phi));
+  --overlay-max-width: calc(var(--lk-size-md) * 40);
+  --overlay-header-gap: var(--lk-size-md);
+  --overlay-title-size: var(--lk-size-3xl);
+  --overlay-close-size: var(--lk-size-4xl);
+  --overlay-border-color: rgb(0 0 0 / 0.1);
+  --overlay-close-color: #474747;
+  --overlay-close-hover-color: #111111;
+
+  position: relative;
+  width: 100%;
+  max-width: var(--overlay-max-width);
+  padding: var(--overlay-pad);
+  background: #ffffff;
+  border: 1px solid var(--overlay-border-color);
+}
+
+/* ── Header ─────────────────────────────────────────────
+   整列: タイトルを左端・閉じるボタンを右端に整列
+   近接: header-gap でヘッダーとコンテンツの距離を明示     */
+
+[data-ui-overlay-panel] [data-overlay-header] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--overlay-header-gap);
+}
+
+/* 対比: タイトルは濃色かつ tracking-tight で権威を持たせる
+   グローバル h3 = Didot serif を継承し、エディトリアルな格を表現 */
+
+[data-ui-overlay-panel] [data-overlay-title] {
+  margin: 0;
+  font-size: var(--overlay-title-size);
+  font-weight: 400;
+  letter-spacing: -0.025em;
+  color: #111111;
+}
+
+/* 対比: 閉じるボタンは #474747 (ミュート) でタイトルと明確に階層を分ける
+   ホバーで #111111 に強まり、インタラクティブな余地を示す            */
+
+[data-ui-overlay-panel] [data-overlay-close] {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+  color: var(--overlay-close-color);
+  font-size: var(--overlay-close-size);
+  line-height: 1;
+  transition: color 180ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-ui-overlay-panel] [data-overlay-close]:hover {
+    color: var(--overlay-close-hover-color);
+  }
+}
+
+[data-ui-overlay-panel] [data-overlay-close]:focus-visible {
+  outline: 2px solid transparent;
+  box-shadow:
+    0 0 0 2px #ffffff,
+    0 0 0 4px #111111;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-ui-overlay-panel] [data-overlay-close] {
+    transition: none;
+  }
+}

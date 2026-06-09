@@ -1,26 +1,26 @@
-import "./OverlayShell.css"
-import { cn } from '@/lib/utils';
-import type { ReactNode } from 'react';
+import "./OverlayShell.css";
+import type { BaseOverlayProps } from "./OverlayShell_types";
 
-export interface BaseOverlayProps {
-  open: boolean;
-  onClose: () => void;
-  title?: string;
-  children: ReactNode;
-  className?: string;
-}
+export type { BaseOverlayProps } from "./OverlayShell_types";
 
 export function OverlayShell({ open, onClose, title, children, className }: BaseOverlayProps) {
-  if (!open) {
-    return null;
-  }
+  if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className={cn('w-full max-w-xl border border-black/10 bg-white p-6', className)}>
-        <div className="mb-4 flex items-center justify-between">
-          {title ? <h3 className="text-lg tracking-tight text-black">{title}</h3> : <span />}
-          <button type="button" onClick={onClose} className="text-xl text-[#474747] hover:text-black" aria-label="close">
+    <div data-ui-overlay="">
+      <div data-ui-overlay-panel="" className={className}>
+        <div data-overlay-header="">
+          {title ? (
+            <h3 data-overlay-title="">{title}</h3>
+          ) : (
+            <span aria-hidden="true" />
+          )}
+          <button
+            data-overlay-close=""
+            type="button"
+            onClick={onClose}
+            aria-label="close"
+          >
             ×
           </button>
         </div>
