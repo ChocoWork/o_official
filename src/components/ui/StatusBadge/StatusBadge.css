@@ -1,0 +1,142 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   StatusBadge
+   Design: Proximity · Alignment · Repetition · Contrast
+   Spacing: derived from golden ratio  φ = 1.618 · √φ = 1.272
+   ═══════════════════════════════════════════════════════════════════════ */
+
+[data-ui-badge] {
+  /* ── Scale ─────────────────────────────────────────────────────────── */
+  --badge-font-size: var(--ui-font-size, var(--lk-size-xs));
+
+  /* ── Spacing (φ-derived) ───────────────────────────────────────────── */
+  /* pad-x: font ÷ √φ  →  balanced horizontal breathing room            */
+  --badge-pad-x: calc(var(--badge-font-size) / var(--sqrt-phi));
+  /* pad-y: font × (φ−1) ÷ (φ × √φ)  →  compact vertical — badges sit  */
+  /*        inline and must not interrupt the surrounding line-height    */
+  --badge-pad-y: calc(var(--badge-font-size) * var(--lk-wholestep-dec) / var(--phi) / var(--sqrt-phi));
+
+  /* ── Count-badge geometry ──────────────────────────────────────────── */
+  /* count-h: font × √φ  →  container taller than the glyph by √φ ratio */
+  --badge-count-h: calc(var(--badge-font-size) * var(--sqrt-phi));
+  /* min-w = count-h  →  single digit renders as a perfect pill/circle   */
+  --badge-count-min-w: var(--badge-count-h);
+  /* multi-digit pad-x: font ÷ φ²  →  proportional inset for wider text */
+  --badge-count-pad-x: calc(var(--badge-font-size) / var(--phi) / var(--phi));
+
+  /* ── Dot-badge geometry ────────────────────────────────────────────── */
+  /* dot: font ÷ φ  →  thumb occupies the golden minor fraction          */
+  --badge-dot-size: calc(var(--badge-font-size) / var(--phi));
+
+  /* ── Color tokens ──────────────────────────────────────────────────── */
+  --badge-ink: #111111;
+  --badge-ink-inverse: #ffffff;
+  --badge-border-color: #111111;
+
+  /* ── Layout (整列: inline-flex + center keeps badge on text baseline) ─ */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Variant: dot
+   近接: small circle sits flush beside its parent element
+   対比: solid black disc on any background signals a new state
+   ══════════════════════════════════════════════════════════════════════ */
+[data-ui-badge][data-ui-badge-variant="dot"] {
+  width: var(--badge-dot-size);
+  height: var(--badge-dot-size);
+  border-radius: 9999px;
+  background: var(--badge-ink);
+  flex-shrink: 0;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Variant: count
+   反復: pill shape echoes the rounded corners used across the system
+   対比: black fill + white numeral — maximum legibility at small size
+   ══════════════════════════════════════════════════════════════════════ */
+[data-ui-badge][data-ui-badge-variant="count"] {
+  height: var(--badge-count-h);
+  min-width: var(--badge-count-min-w);
+  padding-inline: 0;
+  border-radius: 9999px;
+  background: var(--badge-ink);
+  color: var(--badge-ink-inverse);
+  font-size: var(--badge-font-size);
+  font-family: "acumin-pro", sans-serif;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* multi-digit: pad widens the pill while min-w keeps single digits circular */
+[data-ui-badge][data-ui-badge-variant="count"][data-ui-badge-multi="true"] {
+  padding-inline: var(--badge-count-pad-x);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Variant: text
+   近接: tight padding binds the label to its tonal background
+   整列: leading-none + padding keeps badge height predictable inline
+   ══════════════════════════════════════════════════════════════════════ */
+[data-ui-badge][data-ui-badge-variant="text"] {
+  padding: var(--badge-pad-y) var(--badge-pad-x);
+  font-size: var(--badge-font-size);
+  font-family: "acumin-pro", sans-serif;
+  line-height: 1;
+  letter-spacing: 0.1em;
+}
+
+/* ── Tones (対比: four distinct visual weights map to four status levels) ─ */
+
+/* neutral — no background; label text alone carries the message          */
+[data-ui-badge][data-ui-badge-variant="text"][data-ui-badge-tone="neutral"] {
+  color: var(--badge-ink);
+}
+
+/* positive — solid fill signals successful / active status              */
+[data-ui-badge][data-ui-badge-variant="text"][data-ui-badge-tone="positive"] {
+  background: var(--badge-ink);
+  color: var(--badge-ink-inverse);
+}
+
+/* warning — outline signals intermediate / pending status               */
+[data-ui-badge][data-ui-badge-variant="text"][data-ui-badge-tone="warning"] {
+  background: var(--badge-ink-inverse);
+  color: var(--badge-ink);
+  border: 1px solid var(--badge-border-color);
+}
+
+/* danger — same solid fill as positive; label differentiates the meaning */
+[data-ui-badge][data-ui-badge-variant="text"][data-ui-badge-tone="danger"] {
+  background: var(--badge-ink);
+  color: var(--badge-ink-inverse);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Accessibility
+   ══════════════════════════════════════════════════════════════════════ */
+@media (forced-colors: active) {
+  [data-ui-badge][data-ui-badge-variant="dot"],
+  [data-ui-badge][data-ui-badge-variant="count"] {
+    forced-color-adjust: auto;
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  [data-ui-badge][data-ui-badge-variant="text"][data-ui-badge-tone="positive"],
+  [data-ui-badge][data-ui-badge-variant="text"][data-ui-badge-tone="danger"] {
+    forced-color-adjust: auto;
+    background: Highlight;
+    color: HighlightText;
+    border: 1px solid Highlight;
+  }
+
+  [data-ui-badge][data-ui-badge-variant="text"][data-ui-badge-tone="warning"] {
+    forced-color-adjust: auto;
+    background: ButtonFace;
+    color: ButtonText;
+    border: 1px solid ButtonText;
+  }
+}
