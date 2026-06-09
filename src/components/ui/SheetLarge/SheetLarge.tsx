@@ -1,7 +1,6 @@
-import { cn } from '@/lib/utils';
 import type { BaseOverlayProps } from '../OverlayShell/OverlayShell';
-import { SheetMedium } from '../SheetMedium/SheetMedium';
+import { Sheet } from '../Sheet/Sheet';
 
-export function SheetLarge(props: BaseOverlayProps) {
-  return <SheetMedium {...props} className={cn('max-h-[90vh]', props.className)} />;
+export function SheetLarge({ className, ...props }: BaseOverlayProps) {
+  return <Sheet size="lg" {...props} className={className} />;
 }

@@ -1,0 +1,159 @@
+/*
+ * Sheet.css
+ *
+ * φ (1.618) / √φ (1.272) を軸にしたスペーシング設計。
+ * 設計4原則:
+ *   近接  — パッディング・ヘッダーギャップを同一変数系列で比例配置
+ *   整列  — items-end でシートを画面下端に固定、ヘッダー内は justify-between
+ *   反復  — padding / header-gap / close-size を同一 φ 乗算チェーンで統一
+ *   対比  — 半透明バックドロップで白シートを際立たせ、hover 時は bg-#f5f5f5
+ */
+
+[data-ui-sheet] {
+  --_phi: var(--phi, 1.618);
+  --_sqrt-phi: var(--sqrt-phi, 1.272);
+
+  /* コンテンツ padding = lk-size-md × φ × √φ  (≈ 1.80rem ≈ p-7) */
+  --_pad: calc(var(--lk-size-md) * var(--_phi) * var(--_sqrt-phi));
+
+  /* ヘッダー↔コンテンツ gap = pad ÷ √φ  (≈ 1.41rem ≈ mb-6) */
+  --_header-gap: calc(var(--_pad) / var(--_sqrt-phi));
+
+  /* タイトルフォントサイズ = lk-size-md × φ  (≈ 1.42rem ≈ text-2xl) */
+  --_title-size: calc(var(--lk-size-md) * var(--_phi));
+
+  /* 閉じるボタン領域 = title-size × √φ  (≈ 1.80rem ≈ h-8) */
+  --_close-size: calc(var(--_title-size) * var(--_sqrt-phi));
+
+  /* 閉じるアイコン = close-size ÷ φ  (≈ 1.11rem ≈ text-xl) */
+  --_close-icon: calc(var(--_close-size) / var(--_phi));
+
+  /* シートの最大高さ: md = 50vh, lg = 90vh */
+  --_max-h: 50vh;
+
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end; /* 整列: シートを画面下端に揃える */
+  justify-content: center;
+}
+
+/* ── サイズバリアント ── */
+
+[data-ui-sheet][data-ui-size="3xs"] {
+  --_max-h: 10vh;
+}
+[data-ui-sheet][data-ui-size="2xs"] {
+  --_max-h: 20vh;
+}
+[data-ui-sheet][data-ui-size="xs"] {
+  --_max-h: 30vh;
+}
+[data-ui-sheet][data-ui-size="sm"] {
+  --_max-h: 40vh;
+}
+[data-ui-sheet][data-ui-size="md"] {
+  --_max-h: 50vh;
+}
+[data-ui-sheet][data-ui-size="lg"] {
+  --_max-h: 60vh;
+}
+[data-ui-sheet][data-ui-size="xl"] {
+  --_max-h: 70vh;
+}
+[data-ui-sheet][data-ui-size="2xl"] {
+  --_max-h: 80vh;
+}
+[data-ui-sheet][data-ui-size="3xl"] {
+  --_max-h: 90vh;
+}
+
+/* ── バックドロップ (対比: 白シートをスクリムで際立たせる) ── */
+[data-ui-sheet-backdrop] {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+/* ── シートパネル ── */
+[data-ui-sheet-panel] {
+  position: relative;
+  width: 100%;
+  max-height: var(--_max-h);
+  overflow-y: auto;
+  background: #fff;
+  padding: var(--_pad);
+}
+
+/* ── ヘッダー (整列: タイトル左端・閉じる右端) ── */
+[data-ui-sheet-header] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* 近接: ヘッダーとコンテンツの距離を明示 */
+  margin-bottom: var(--_header-gap);
+}
+
+/* ── タイトル (対比: セリフ体 + tracking-tight で格調を与える) ── */
+[data-ui-sheet-title] {
+  margin: 0;
+  font-size: var(--_title-size);
+  font-family: Didot, serif;
+  font-weight: 400;
+  letter-spacing: -0.025em;
+  color: #000;
+  line-height: var(--_sqrt-phi);
+}
+
+/* ── 閉じるボタン (反復: 同一サイズ・同一 transition) ── */
+[data-ui-sheet-close] {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--_close-size);
+  height: var(--_close-size);
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: #000;
+  font-size: var(--_close-icon);
+  line-height: 1;
+  transition: background-color 180ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-ui-sheet-close]:hover {
+    background-color: #f5f5f5;
+  }
+}
+
+[data-ui-sheet-close]:focus-visible {
+  outline: 2px solid transparent;
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 0 4px #111;
+}
+
+/* ── アクセシビリティ ── */
+@media (prefers-reduced-motion: reduce) {
+  [data-ui-sheet-close] {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  [data-ui-sheet-backdrop] {
+    forced-color-adjust: auto;
+    background: rgba(0, 0, 0, 0.4);
+  }
+
+  [data-ui-sheet-panel] {
+    forced-color-adjust: auto;
+    border: 1px solid ButtonText;
+    background: Canvas;
+  }
+}
