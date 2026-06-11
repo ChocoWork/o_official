@@ -33,6 +33,7 @@ export function ToastSnackbar({
     'data-ui-toast-snackbar-variant': variant,
     'data-ui-toast-snackbar-shape': shape,
     'data-ui-toast-snackbar-size': size,
+    'data-ui-size': size,
   } as const;
 
   const iconNode = icon ?? (

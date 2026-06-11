@@ -1,7 +1,7 @@
 /* File: src/components/ui/ToastSnackbar/ToastSnackbar.css */
 [data-ui-toast-snackbar] {
-  /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
-  --toast-font-size: var(--lk-size-md);
+  /* 基準フォントサイズ（--ui-font-size 経由で 8XS〜8XL 全サイズに連動）*/
+  --toast-font-size: var(--ui-font-size, var(--lk-size-md));
 
   /*
    * 横パディング＝font × φ、縦パディング＝font / φ。
@@ -99,26 +99,6 @@
   --toast-shape-radius: 0;
 }
 
-/* --- サイズ展開（反復：BannerAlert / Avatar と同一の公比スケールを再利用）--- */
-[data-ui-toast-snackbar][data-ui-toast-snackbar-size="xs"] {
-  --toast-font-size: var(--lk-size-3xs);
-}
-
-[data-ui-toast-snackbar][data-ui-toast-snackbar-size="sm"] {
-  --toast-font-size: var(--lk-size-2xs);
-}
-
-[data-ui-toast-snackbar][data-ui-toast-snackbar-size="md"] {
-  --toast-font-size: var(--lk-size-xs);
-}
-
-[data-ui-toast-snackbar][data-ui-toast-snackbar-size="lg"] {
-  --toast-font-size: var(--lk-size-sm);
-}
-
-[data-ui-toast-snackbar][data-ui-toast-snackbar-size="xl"] {
-  --toast-font-size: var(--lk-size-md);
-}
 
 /* --- バリアント展開（対比：背景/枠線/強調線で状態を区別）--- */
 [data-ui-toast-snackbar][data-ui-toast-snackbar-variant="success"] {
