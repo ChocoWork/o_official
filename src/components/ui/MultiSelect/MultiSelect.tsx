@@ -74,9 +74,9 @@ export function MultiSelect({
 
   if (variant === 'buttons') {
     return (
-      <div className={cn('space-y-2', className)} ref={wrapperRef} data-ui-multiselect="true" data-ui-multiselect-variant={variant}>
+      <div className={cn('space-y-2', className)} ref={wrapperRef} data-ui-multiselect="true" data-ui-multiselect-variant={variant} data-ui-size={size}>
         {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
-        <div className="flex gap-3 flex-wrap">
+        <div className="multiselect__button-list">
           {options.map((option) => (
             <Button
               key={option.value}
@@ -100,9 +100,9 @@ export function MultiSelect({
 
   if (variant === 'panel') {
     return (
-      <div className={cn('space-y-2', className)} ref={wrapperRef} data-ui-multiselect="true" data-ui-multiselect-variant={variant}>
+      <div className={cn('space-y-2', className)} ref={wrapperRef} data-ui-multiselect="true" data-ui-multiselect-variant={variant} data-ui-size={size}>
         {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
-        <div className="space-y-2">
+        <div className="multiselect__option-list">
           {options.map((option) => renderOptionItem(option))}
         </div>
       </div>
@@ -111,7 +111,7 @@ export function MultiSelect({
 
   if (variant === 'dropdown') {
     return (
-      <div className={cn('space-y-2', className)} ref={wrapperRef} data-ui-multiselect="true" data-ui-multiselect-variant={variant}>
+      <div className={cn('space-y-2', className)} ref={wrapperRef} data-ui-multiselect="true" data-ui-multiselect-variant={variant} data-ui-size={size}>
         {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
         <div className="relative">
           <button
@@ -129,7 +129,7 @@ export function MultiSelect({
             </span>
           </button>
           {open ? (
-            <div className="absolute left-0 right-0 top-full z-10 mt-1" data-ui-multiselect-panel="true">
+            <div className="multiselect__option-list absolute left-0 right-0 top-full z-10 mt-1 p-1" data-ui-multiselect-panel="true">
               {options.map((option) => renderOptionItem(option))}
             </div>
           ) : null}
