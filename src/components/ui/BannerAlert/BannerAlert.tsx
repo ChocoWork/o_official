@@ -21,6 +21,7 @@ export function BannerAlert({
     'data-ui-banner-alert-variant': variant,
     'data-ui-banner-alert-shape': shape,
     'data-ui-banner-alert-size': size,
+    'data-ui-size': size,
   } as const;
 
   return (

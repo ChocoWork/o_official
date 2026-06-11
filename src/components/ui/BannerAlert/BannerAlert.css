@@ -1,6 +1,6 @@
 [data-ui-banner-alert] {
   /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
-  --banner-font-size: var(--lk-size-md);
+  --banner-font-size: var(--ui-font-size, var(--lk-size-md));
 
   /*
    * 横パディング＝font × φ。
@@ -29,10 +29,7 @@
 
   /* 角丸・枠線・強調ボーダー（直値を排し φ から導出）*/
   --banner-radius: calc(var(--banner-font-size) / var(--phi));
-  --banner-border-width: max(
-    1px,
-    calc(var(--banner-font-size) / (var(--phi) * var(--phi) * var(--phi)))
-  );
+  --banner-border-width: 1px;
   --banner-accent-width: calc(
     var(--banner-border-width) * var(--phi) * var(--phi)
   );
@@ -83,27 +80,6 @@
 [data-ui-banner-alert][data-ui-banner-alert-shape="square"]
   .banner-alert__dismiss {
   border-radius: 0;
-}
-
-/* --- サイズ展開（反復：Avatar と同一の公比スケールを再利用）--- */
-[data-ui-banner-alert][data-ui-banner-alert-size="xs"] {
-  --banner-font-size: var(--lk-size-3xs);
-}
-
-[data-ui-banner-alert][data-ui-banner-alert-size="sm"] {
-  --banner-font-size: var(--lk-size-2xs);
-}
-
-[data-ui-banner-alert][data-ui-banner-alert-size="md"] {
-  --banner-font-size: var(--lk-size-xs);
-}
-
-[data-ui-banner-alert][data-ui-banner-alert-size="lg"] {
-  --banner-font-size: var(--lk-size-sm);
-}
-
-[data-ui-banner-alert][data-ui-banner-alert-size="xl"] {
-  --banner-font-size: var(--lk-size-md);
 }
 
 /* --- バリアント展開（対比：背景/枠線/強調線で状態を区別）--- */
