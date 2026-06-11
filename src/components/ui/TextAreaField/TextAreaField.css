@@ -6,12 +6,12 @@
   /* ラベル/補足/エラーは入力本文より φ で一段小さく（対比・階層）*/
   --field-label-size: calc(var(--field-font-size) / var(--phi));
 
-  /*
-   * 横パディング＝font × φ／縦パディング＝font / φ（TextField と同じ比率で反復）。
-   *   テキストエリアは複数行のため縦は font / φ をそのまま使う。
-   */
-  --field-pad-x: calc(var(--field-font-size) * var(--phi));
-  --field-pad-y: calc(var(--field-font-size) / var(--phi));
+  /* Button / TextField と同じ padding ルール */
+  --pad-x: calc(var(--field-font-size) / var(--sqrt-phi));
+  --pad-y: calc(
+    (var(--field-font-size) * var(--sqrt-phi)) / (var(--phi) * var(--phi))
+  );
+  --gap-icon2text: calc(var(--pad-x) / var(--phi));
 
   /* 縦方向のグループ間隔＝font / φ（近接：ラベル/入力/補足を 1 グループ化）*/
   --field-stack-gap: calc(var(--field-font-size) / var(--phi));
@@ -76,7 +76,7 @@
 .text-area-field__input {
   display: block;
   width: 100%;
-  padding: var(--field-pad-y) var(--field-pad-x);
+  padding: var(--pad-y) var(--pad-x);
   font-family: inherit;
   font-size: var(--field-font-size);
   line-height: var(--field-line-height);
