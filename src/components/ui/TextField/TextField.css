@@ -6,21 +6,25 @@
   /* ラベル/補足/エラーは入力本文より φ で一段小さく（対比・階層）*/
   --field-label-size: calc(var(--field-font-size) / var(--phi));
 
-  /*
-   * 入力の高さ＝font × φ²（横長プロポーションを黄金比で確保）。
-   * 横パディング＝font × φ／縦パディングは高さで吸収するため font / φ。
-   */
-  --field-height: calc(var(--field-font-size) * var(--phi) * var(--phi));
-  --field-pad-x: calc(var(--field-font-size) * var(--phi));
-  --field-pad-y: calc(var(--field-font-size) / var(--phi));
+  /* Button と同じ padding ルール */
+  --pad-x: calc(var(--field-font-size) / var(--sqrt-phi));
+  --pad-y: calc(
+    (var(--field-font-size) * var(--sqrt-phi)) / (var(--phi) * var(--phi))
+  );
+  --gap-icon2text: calc(var(--pad-x) / var(--phi));
+
+  /* 高さ = 2×pad-y + line-height + 2×border → Button と揃う */
+  --field-height: calc(
+    2 * var(--pad-y) + var(--field-font-size) * var(--sqrt-phi) +
+      2 * var(--field-border-width)
+  );
 
   /* アイコン径＝font（本文と同階層で整列）、左寄せ位置は pad-x と揃える */
   --field-icon-size: var(--field-font-size);
-  --field-icon-inset: var(--field-pad-x);
-  /* アイコンがある場合の左パディング＝pad-x + icon + gap（近接：アイコンと文字を一定間隔）*/
-  --field-icon-gap: calc(var(--field-font-size) / var(--phi));
+  --field-icon-inset: var(--pad-x);
+  /* アイコンがある場合の左パディング＝pad-x + icon + gap-icon2text */
   --field-pad-x-with-icon: calc(
-    var(--field-pad-x) + var(--field-icon-size) + var(--field-icon-gap)
+    var(--pad-x) + var(--field-icon-size) + var(--gap-icon2text)
   );
 
   /* 縦方向のグループ間隔＝font / φ（近接：ラベル/入力/補足を 1 グループ化）*/
@@ -108,7 +112,7 @@
   display: block;
   width: 100%;
   height: var(--field-height);
-  padding: var(--field-pad-y) var(--field-pad-x);
+  padding: var(--pad-y) var(--pad-x);
   font-family: inherit;
   font-size: var(--field-font-size);
   line-height: var(--sqrt-phi, 1.4);
