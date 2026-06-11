@@ -1,5 +1,5 @@
 [data-ui-checkbox] {
-  --checkbox-font-size: var(--lk-size-md);
+  --checkbox-font-size: var(--ui-font-size, var(--lk-size-md));
   --checkbox-control-size: calc(
     var(--checkbox-font-size) * var(--lk-quarterstep)
   );
@@ -51,26 +51,6 @@
     color 180ms ease,
     box-shadow 180ms ease,
     transform 180ms ease;
-}
-
-[data-ui-checkbox][data-ui-checkbox-size="xs"] {
-  --checkbox-font-size: var(--lk-size-2xs);
-}
-
-[data-ui-checkbox][data-ui-checkbox-size="sm"] {
-  --checkbox-font-size: var(--lk-size-xs);
-}
-
-[data-ui-checkbox][data-ui-checkbox-size="md"] {
-  --checkbox-font-size: var(--lk-size-sm);
-}
-
-[data-ui-checkbox][data-ui-checkbox-size="lg"] {
-  --checkbox-font-size: var(--lk-size-md);
-}
-
-[data-ui-checkbox][data-ui-checkbox-size="xl"] {
-  --checkbox-font-size: var(--lk-size-lg);
 }
 
 [data-ui-checkbox][data-ui-checkbox-expand-hit-area="true"] {

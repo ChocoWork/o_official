@@ -20,6 +20,7 @@ export function Checkbox({
   const rootProps = {
     'data-ui-checkbox': 'true',
     'data-ui-checkbox-size': size,
+    'data-ui-size': size,
     'data-ui-checkbox-check-style': checkStyle,
     'data-ui-checkbox-shape': shape,
     'data-ui-checkbox-disabled': disabled ? 'true' : 'false',
