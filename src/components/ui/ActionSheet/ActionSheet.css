@@ -1,6 +1,6 @@
 [data-ui-action-sheet] {
   /* --- スケール基準（Button と同じ φ ベースのトークン体系を踏襲）--- */
-  --sheet-font-size: var(--lk-size-md);
+  --sheet-font-size: var(--ui-font-size, var(--lk-size-md));
   --sheet-pad-ratio: calc(1 / var(--phi));
 
   /* 項目高さ：Button の min-height 算出（line-height + 2 * pad-ratio）と同思想 */
@@ -54,27 +54,6 @@
 [data-ui-action-sheet][data-ui-action-sheet-shape="square"] {
   --sheet-panel-radius: 0;
   --sheet-item-radius: 0;
-}
-
-/* --- サイズ展開（反復：Button と同一の公比スケールを再利用）--- */
-[data-ui-action-sheet][data-ui-action-sheet-size="xs"] {
-  --sheet-font-size: var(--lk-size-xs);
-}
-
-[data-ui-action-sheet][data-ui-action-sheet-size="sm"] {
-  --sheet-font-size: var(--lk-size-sm);
-}
-
-[data-ui-action-sheet][data-ui-action-sheet-size="md"] {
-  --sheet-font-size: var(--lk-size-md);
-}
-
-[data-ui-action-sheet][data-ui-action-sheet-size="lg"] {
-  --sheet-font-size: var(--lk-size-lg);
-}
-
-[data-ui-action-sheet][data-ui-action-sheet-size="xl"] {
-  --sheet-font-size: var(--lk-size-xl);
 }
 
 /* --- オーバーレイ（最前面・下寄せ中央）--- */

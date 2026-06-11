@@ -34,6 +34,7 @@ export function ActionSheet({
   const rootDataAttrs = {
     'data-ui-action-sheet': 'true',
     'data-ui-action-sheet-size': size,
+    'data-ui-size': size,
     'data-ui-action-sheet-shape': shape,
   } as const;
 
