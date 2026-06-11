@@ -1,19 +1,24 @@
 [data-ui-stepper] {
   --stepper-font-size: var(--ui-font-size, var(--lk-size-md));
 
-  /* φ による各種寸法の導出（直値を使わない） */
-  --stepper-control-ratio: calc(var(--sqrt-phi) + (2 / var(--phi)));
-  --stepper-control-size: calc(
-    var(--stepper-font-size) * var(--stepper-control-ratio)
+  /* Button / TextField と同じ padding ルール */
+  --pad-x: calc(var(--stepper-font-size) / var(--sqrt-phi));
+  --pad-y: calc(
+    (var(--stepper-font-size) * var(--sqrt-phi)) / (var(--phi) * var(--phi))
   );
+  --gap-icon2text: calc(var(--pad-x) / var(--phi));
+
+  /* アイコン径＝font × √φ（Button icon-only と同じ） */
+  --stepper-icon-box: calc(var(--stepper-font-size) * var(--sqrt-phi));
+
+  /*
+   * 正方形コントロール＝アイコン + 上下 pad-y（Button icon-only と同構造）。
+   * グループ高さ = control-size + 2×border = Button 高さと一致。
+   */
+  --stepper-control-size: calc(2 * var(--pad-y) + var(--stepper-icon-box));
 
   /* 入力幅は正方形コントロールに φ を乗じた黄金比的バランス */
   --stepper-input-width: calc(var(--stepper-control-size) * var(--phi));
-
-  /* アイコンボックスはコントロールを φ^2 で割ったサイズ（中央の余白を黄金比で確保） */
-  --stepper-icon-box: calc(
-    var(--stepper-control-size) / (var(--phi) * var(--phi))
-  );
 
   /* ラベルと本体の間隔（近接：関連はするが分離） */
   --stepper-label-gap: calc(var(--stepper-font-size) / var(--phi));

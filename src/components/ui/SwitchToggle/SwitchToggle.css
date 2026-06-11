@@ -22,8 +22,11 @@
   --switch-translate: var(--switch-thumb-size);
   /* label font follows the component-size token                         */
   --switch-label-font: var(--ui-font-size, var(--lk-size-md));
-  /* gap: label-font / √φ → proportional breathing room                 */
-  --switch-gap: calc(var(--switch-label-font) / var(--sqrt-phi));
+  /* Button / Checkbox と同じ control↔text 間隔ルール                     */
+  --pad-x: calc(var(--switch-label-font) / var(--sqrt-phi));
+  --gap-icon2text: calc(var(--pad-x) / var(--phi));
+  /* gap: track↔label = gap-icon2text（Checkbox / Radio と統一）         */
+  --switch-gap: var(--gap-icon2text);
 
   /* ── Color tokens ──────────────────────────────────────────────────── */
   --switch-track-on: #111111;

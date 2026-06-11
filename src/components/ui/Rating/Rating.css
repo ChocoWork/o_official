@@ -14,14 +14,21 @@
   --_sqrt-phi: var(--sqrt-phi, 1.272);
   --_font-size: var(--ui-font-size, var(--lk-size-md));
 
+  /* Button / Checkbox と同じ control↔text 間隔ルール */
+  --pad-x: calc(var(--_font-size) / var(--_sqrt-phi));
+  --pad-y: calc(
+    (var(--_font-size) * var(--_sqrt-phi)) / (var(--_phi) * var(--_phi))
+  );
+  --gap-icon2text: calc(var(--pad-x) / var(--_phi));
+
   /* 星サイズ = font-size × φ */
   --_star-size: calc(var(--_font-size) * var(--_phi));
 
   /* 星間 gap = font-size ÷ φ  (近接: 密に束ねる) */
   --_star-gap:  calc(var(--_font-size) / var(--_phi));
 
-  /* 値テキスト左マージン = font-size × (φ−1)  (近接: 星群と分離) */
-  --_val-gap:   calc(var(--_font-size) * calc(var(--_phi) - 1));
+  /* 値テキスト左マージン = gap-icon2text  (星群=icon ↔ 値=text の近接) */
+  --_val-gap:   var(--gap-icon2text);
 
   /* ラベル↔星列 間の gap = 同上 */
   --_label-gap: calc(var(--_font-size) * calc(var(--_phi) - 1));
