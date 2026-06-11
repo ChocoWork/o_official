@@ -1,7 +1,7 @@
 /* File: src/components/ui/DataTable/DataTable.css */
 [data-ui-data-table] {
   /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
-  --table-font-size: var(--lk-size-xs);
+  --table-font-size: var(--ui-font-size, var(--lk-size-xs));
 
   /*
    * セル横パディング＝font × φ。
@@ -59,27 +59,6 @@
   background: var(--table-bg);
   font-family: acumin-pro, sans-serif;
   box-sizing: border-box;
-}
-
-/* --- サイズ展開（反復：BannerAlert / Avatar と同一の公比スケールを再利用）--- */
-[data-ui-data-table][data-ui-data-table-size="xs"] {
-  --table-font-size: var(--lk-size-3xs);
-}
-
-[data-ui-data-table][data-ui-data-table-size="sm"] {
-  --table-font-size: var(--lk-size-2xs);
-}
-
-[data-ui-data-table][data-ui-data-table-size="md"] {
-  --table-font-size: var(--lk-size-xs);
-}
-
-[data-ui-data-table][data-ui-data-table-size="lg"] {
-  --table-font-size: var(--lk-size-sm);
-}
-
-[data-ui-data-table][data-ui-data-table-size="xl"] {
-  --table-font-size: var(--lk-size-md);
 }
 
 /* --- テーブル本体（整列：幅いっぱい・境界を結合）--- */
