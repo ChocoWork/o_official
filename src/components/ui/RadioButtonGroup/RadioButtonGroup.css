@@ -41,7 +41,7 @@
 /* ── グループラベル ── */
 [data-ui-radio-group-label] {
   display: block;
-  font-size: 0.75rem;
+  font-size: calc(var(--_font-size) / var(--_sqrt-phi));
   letter-spacing: 0.1em;
   color: rgba(0, 0, 0, 0.8);
 }
@@ -115,7 +115,7 @@
 
 /* ── 説明テキスト ── */
 [data-ui-radio-item-desc] {
-  font-size: 0.75rem;
+  font-size: calc(var(--_font-size) / var(--_sqrt-phi));
   line-height: var(--_sqrt-phi);
   color: #474747;
 }
