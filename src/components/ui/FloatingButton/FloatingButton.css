@@ -1,5 +1,3 @@
-/* File: src/components/ui/FloatingButton/FloatingButton.css */
-
 /* 固定配置の横位置が開閉でブレないよう、スクロールバー幅を常時予約 */
 html {
   scrollbar-gutter: stable;
@@ -7,7 +5,7 @@ html {
 
 [data-ui-floating-button] {
   /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
-  --fab-font-size: var(--lk-size-xs);
+  --fab-font-size: var(--ui-font-size, var(--lk-size-xs));
 
   /*
    * メイン円形ボタン径＝font × φ²（タップ領域を十分に確保）。
@@ -96,27 +94,6 @@ html {
   right: var(--fab-fixed-inset);
   bottom: var(--fab-fixed-inset);
   z-index: var(--fab-z);
-}
-
-/* --- サイズ展開（反復：BannerAlert / Avatar と同一の公比スケールを再利用）--- */
-[data-ui-floating-button][data-ui-floating-button-size="xs"] {
-  --fab-font-size: var(--lk-size-xs);
-}
-
-[data-ui-floating-button][data-ui-floating-button-size="sm"] {
-  --fab-font-size: var(--lk-size-sm);
-}
-
-[data-ui-floating-button][data-ui-floating-button-size="md"] {
-  --fab-font-size: var(--lk-size-md);
-}
-
-[data-ui-floating-button][data-ui-floating-button-size="lg"] {
-  --fab-font-size: var(--lk-size-lg);
-}
-
-[data-ui-floating-button][data-ui-floating-button-size="xl"] {
-  --fab-font-size: var(--lk-size-xl);
 }
 
 /* --- アクション群（近接：メイン直上に縦積み／整列：メイン中心そろえ）--- */

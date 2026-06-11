@@ -1,6 +1,5 @@
-// File: src/components/ui/FloatingButton/FloatingButton_type.ts
-import type { ReactNode } from 'react';
-import type { ComponentSize } from '@/components/ui/types';
+import type { ReactNode } from "react";
+import type { ComponentSize } from "@/components/ui/types";
 
 export interface FloatingButtonAction {
   key: string;
