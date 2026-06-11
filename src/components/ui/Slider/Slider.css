@@ -1,0 +1,206 @@
+/*
+ * Slider.css
+ *
+ * φ (1.618) / √φ (1.272) を軸にしたスペーシング設計。
+ * 設計4原則:
+ *   近接  — ヘッダー行（label + value）を justify-between で束ね、スライダーと --_gap で分離
+ *   整列  — thumb / track / fill を top:50%+translateY で共通ベースラインに揃える
+ *   反復  — single / range どちらも同一 --_thumb-size / --_track-h / --_offset を使用
+ *   対比  — track は rgba(0,0,0,0.2)、fill / thumb は #000 で塗り分ける
+ */
+
+[data-ui-slider] {
+  --_phi: var(--phi, 1.618);
+  --_sqrt-phi: var(--sqrt-phi, 1.272);
+  --_font-size: var(--ui-font-size, var(--lk-size-md));
+
+  /* サムサイズ = font-size × √φ  → size が変われば thumb も連動 */
+  --_thumb-size: var(--_font-size);
+
+  /* トラック高さ = 2px 固定（細線）。size 連動はサム側が担う。
+     分数DPR（Windows 125/150% スケーリング）では single / range がページ上の別 Y に乗り、
+     Blink のペイントスナップ（CSS 整数グリッド基準）の差で片方だけにじみ太さ差に見える。
+     対策は Slider.tsx の useTrackPaintSnap（トラック cssTop を q×DPR∈ℤ となる
+     q の倍数へ margin-top でナッジ）。JS 無効時は下記 translateY センタリングで従来描画。 */
+  --_track-h: 2px;
+
+  /*
+   * バー端をサム中心に揃えるオフセット = thumb-size ÷ 2
+   *   track は全幅(0 → container)、input だけを ±offset 張り出す。
+   *   min 時: サム中心 = input_left + thumb/2 = −offset + offset = 0 = トラック左端
+   *   max 時: サム中心 = container_width = トラック右端
+   *   → サムの半分がトラック外へ出る
+   */
+  --_offset: calc(var(--_thumb-size) / 2);
+
+  /* webkit: サムを垂直センタリングする margin-top = -(thumb - track) / 2 */
+  --_thumb-mt: calc((var(--_thumb-size) - var(--_track-h)) / -2);
+
+  /* ヘッダー↔スライダー gap = font-size × √φ  (≈ 1.11rem ≈ space-y-4) */
+  --_gap: calc(var(--_font-size) * var(--_sqrt-phi));
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--_gap);
+}
+
+/* ── ヘッダー行 (整列: label 左端、value 右端) ── */
+[data-ui-slider-header] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+[data-ui-slider-label] {
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  color: rgba(0, 0, 0, 0.8);
+}
+
+[data-ui-slider-value] {
+  font-size: var(--_font-size);
+  color: #000;
+}
+
+/* ================================================================
+   track-wrap / track / fill
+   single / range 共通構造
+   ================================================================ */
+
+/* track-wrap: サムサイズで外枠を確保。input は絶対配置で張り出す。
+   height = thumb-size にすることで size 変更時の layout ギャップを保証。 */
+[data-ui-slider-track-wrap] {
+  position: relative;
+  height: var(--_thumb-size);
+}
+
+/*
+ * track: 全幅 (内側に収めない)
+ *   サムは input が ±offset 張り出すことでトラック端で中心が揃う
+ */
+[data-ui-slider-track] {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  top: 50%;
+  height: var(--_track-h);
+  transform: translateY(-50%);
+  overflow: hidden;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.2); /* 対比: トラックは薄色 */
+}
+
+/* fill: #000 でアクティブ範囲を明示 (対比) */
+[data-ui-slider-fill] {
+  position: absolute;
+  inset-block: 0;
+  border-radius: 9999px;
+  background: #000;
+}
+
+/* ================================================================
+   input 共通ルール (single / range 両方に適用)
+   input を ±offset ずつ張り出す → バー端とサム中心が一致
+   ================================================================ */
+
+[data-ui-slider-input],
+[data-ui-slider-range-input] {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--_offset) * -1);
+  width: calc(100% + var(--_thumb-size)); /* = 100% + 2×offset */
+  height: var(--_thumb-size);
+  transform: translateY(-50%);
+  appearance: none;
+  background: transparent;
+  accent-color: transparent;
+  outline: none;
+}
+
+/* single: トラック全域でドラッグ可 */
+[data-ui-slider-input] {
+  pointer-events: auto;
+  cursor: pointer;
+  z-index: 10;
+}
+
+/* range: トラック面は透過、thumb のみ操作対象 (反復: 2 input に同一ルール) */
+[data-ui-slider-range-input] {
+  pointer-events: none;
+}
+
+[data-ui-slider-range-input][data-ui-range-role="min"] {
+  z-index: 20;
+}
+[data-ui-slider-range-input][data-ui-range-role="max"] {
+  z-index: 30;
+}
+
+/* ================================================================
+   webkit pseudo-elements (single / range 共通)
+   ================================================================ */
+
+/* track 疑似要素は透明 — 視覚は [data-ui-slider-track] が担う */
+[data-ui-slider-input]::-webkit-slider-runnable-track,
+[data-ui-slider-range-input]::-webkit-slider-runnable-track {
+  height: var(--_track-h);
+  background: transparent;
+}
+
+/* 反復: single / range どちらも同一サムルール */
+[data-ui-slider-input]::-webkit-slider-thumb,
+[data-ui-slider-range-input]::-webkit-slider-thumb {
+  appearance: none;
+  width: var(--_thumb-size);
+  height: var(--_thumb-size);
+  border-radius: 50%;
+  background: #000;
+  cursor: pointer;
+  margin-top: var(--_thumb-mt);
+}
+
+[data-ui-slider-range-input]::-webkit-slider-thumb {
+  pointer-events: auto;
+}
+
+/* ================================================================
+   moz pseudo-elements
+   ================================================================ */
+
+[data-ui-slider-input]::-moz-range-track,
+[data-ui-slider-range-input]::-moz-range-track {
+  height: var(--_track-h);
+  background: transparent;
+}
+
+[data-ui-slider-input]::-moz-range-progress,
+[data-ui-slider-range-input]::-moz-range-progress {
+  background: transparent;
+}
+
+[data-ui-slider-input]::-moz-range-thumb,
+[data-ui-slider-range-input]::-moz-range-thumb {
+  width: var(--_thumb-size);
+  height: var(--_thumb-size);
+  border-radius: 50%;
+  border: none;
+  background: #000;
+  cursor: pointer;
+}
+
+[data-ui-slider-range-input]::-moz-range-thumb {
+  pointer-events: auto;
+}
+
+/* ── アクセシビリティ ── */
+@media (forced-colors: active) {
+  [data-ui-slider-input],
+  [data-ui-slider-range-input] {
+    forced-color-adjust: auto;
+  }
+
+  [data-ui-slider-track],
+  [data-ui-slider-fill] {
+    forced-color-adjust: auto;
+  }
+}
