@@ -20,7 +20,7 @@
   background: var(--tag-label-bg);
   color: var(--tag-label-color);
   font-family: "acumin-pro", sans-serif;
-  font-size: var(--lk-size-md);
+  font-size: var(--ui-font-size, var(--lk-size-md));
   line-height: var(--sqrt-phi);
   font-weight: 400;
   letter-spacing: 0.1em;
@@ -29,25 +29,6 @@
   user-select: none;
 }
 
-[data-ui-tag-label][data-ui-tag-label-size="xs"] {
-  font-size: var(--lk-size-8xs);
-}
-
-[data-ui-tag-label][data-ui-tag-label-size="sm"] {
-  font-size: var(--lk-size-7xs);
-}
-
-[data-ui-tag-label][data-ui-tag-label-size="md"] {
-  font-size: var(--lk-size-6xs);
-}
-
-[data-ui-tag-label][data-ui-tag-label-size="lg"] {
-  font-size: var(--lk-size-5xs);
-}
-
-[data-ui-tag-label][data-ui-tag-label-size="xl"] {
-  font-size: var(--lk-size-4xs);
-}
 
 [data-ui-tag-label][data-ui-tag-label-variant="solid"] {
   --tag-label-bg: #111111;

@@ -17,6 +17,7 @@ export function TagLabel({
       data-ui-tag-label="true"
       data-ui-tag-label-variant={variant}
       data-ui-tag-label-size={size}
+      data-ui-size={size}
       data-ui-tag-label-rounded={rounded ? "true" : undefined}
       data-ui-tag-label-removable={isRemovable ? "true" : undefined}
       className={className}
