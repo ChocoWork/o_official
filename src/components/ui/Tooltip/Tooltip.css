@@ -1,7 +1,7 @@
 /* File: src/components/ui/Tooltip/Tooltip.css */
 [data-ui-tooltip] {
-  /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
-  --tooltip-font-size: var(--lk-size-xs);
+  /* 基準フォントサイズ（--ui-font-size 経由で 8XS〜8XL 全サイズに連動）*/
+  --tooltip-font-size: var(--ui-font-size, var(--lk-size-xs));
 
   /*
    * 横パディング＝font × φ、縦パディング＝font / φ。
@@ -39,26 +39,6 @@
   display: inline-flex;
 }
 
-/* --- サイズ展開（反復：BannerAlert / Avatar と同一の公比スケールを再利用）--- */
-[data-ui-tooltip][data-ui-tooltip-size="xs"] {
-  --tooltip-font-size: var(--lk-size-3xs);
-}
-
-[data-ui-tooltip][data-ui-tooltip-size="sm"] {
-  --tooltip-font-size: var(--lk-size-2xs);
-}
-
-[data-ui-tooltip][data-ui-tooltip-size="md"] {
-  --tooltip-font-size: var(--lk-size-xs);
-}
-
-[data-ui-tooltip][data-ui-tooltip-size="lg"] {
-  --tooltip-font-size: var(--lk-size-sm);
-}
-
-[data-ui-tooltip][data-ui-tooltip-size="xl"] {
-  --tooltip-font-size: var(--lk-size-md);
-}
 
 /* --- トリガー（整列：子要素をそのまま内包し中央そろえ）--- */
 .tooltip__trigger {

@@ -14,6 +14,7 @@ export function Tooltip({
     'data-ui-tooltip': 'true',
     'data-ui-tooltip-size': size,
     'data-ui-tooltip-placement': placement,
+    'data-ui-size': size,
   } as const;
 
   return (
