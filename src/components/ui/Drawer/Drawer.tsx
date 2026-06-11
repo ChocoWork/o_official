@@ -19,6 +19,7 @@ export function Drawer({
     'data-ui-drawer': 'true',
     'data-ui-drawer-side': side,
     'data-ui-drawer-size': size,
+    'data-ui-size': size,
   } as const;
 
   return (

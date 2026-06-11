@@ -1,7 +1,7 @@
 /* File: src/components/ui/Drawer/Drawer.css */
 [data-ui-drawer] {
   /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
-  --drawer-font-size: var(--lk-size-xs);
+  --drawer-font-size: var(--ui-font-size, var(--lk-size-xs));
 
   /*
   /* パネル最大幅＝font × φ⁷（Dialog と同一導出で反復させ、Drawer の適正幅を確保）。
@@ -44,27 +44,6 @@
   position: fixed;
   inset: 0;
   z-index: var(--drawer-z);
-}
-
-/* --- サイズ展開（反復：Dialog / BannerAlert と同一の公比スケールを再利用）--- */
-[data-ui-drawer][data-ui-drawer-size="xs"] {
-  --drawer-font-size: var(--lk-size-3xs);
-}
-
-[data-ui-drawer][data-ui-drawer-size="sm"] {
-  --drawer-font-size: var(--lk-size-2xs);
-}
-
-[data-ui-drawer][data-ui-drawer-size="md"] {
-  --drawer-font-size: var(--lk-size-xs);
-}
-
-[data-ui-drawer][data-ui-drawer-size="lg"] {
-  --drawer-font-size: var(--lk-size-sm);
-}
-
-[data-ui-drawer][data-ui-drawer-size="xl"] {
-  --drawer-font-size: var(--lk-size-md);
 }
 
 /* --- 背景スクリム（対比：背後を暗転させ panel を前面に浮かせる）--- */
