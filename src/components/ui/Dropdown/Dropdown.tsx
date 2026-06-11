@@ -35,6 +35,7 @@ export function Dropdown({
   const rootDataAttrs = {
     'data-ui-dropdown': 'true',
     'data-ui-dropdown-size': size,
+    'data-ui-size': size,
     'data-ui-dropdown-align': align,
     'data-ui-dropdown-open': open ? 'true' : undefined,
   } as const;

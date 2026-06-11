@@ -1,7 +1,7 @@
 /* File: src/components/ui/Dropdown/Dropdown.css */
 [data-ui-dropdown] {
   /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
-  --dropdown-font-size: var(--lk-size-xs);
+  --dropdown-font-size: var(--ui-font-size, var(--lk-size-xs));
 
   /* トリガー：横パディング＝font × φ、縦＝font / φ（横 > 縦）*/
   --dropdown-trigger-pad-x: calc(var(--dropdown-font-size) * var(--phi));
@@ -91,27 +91,6 @@
   display: inline-block;
   font-family: acumin-pro, sans-serif;
   box-sizing: border-box;
-}
-
-/* --- サイズ展開（反復：BannerAlert / Avatar と同一の公比スケールを再利用）--- */
-[data-ui-dropdown][data-ui-dropdown-size="xs"] {
-  --dropdown-font-size: var(--lk-size-3xs);
-}
-
-[data-ui-dropdown][data-ui-dropdown-size="sm"] {
-  --dropdown-font-size: var(--lk-size-2xs);
-}
-
-[data-ui-dropdown][data-ui-dropdown-size="md"] {
-  --dropdown-font-size: var(--lk-size-xs);
-}
-
-[data-ui-dropdown][data-ui-dropdown-size="lg"] {
-  --dropdown-font-size: var(--lk-size-sm);
-}
-
-[data-ui-dropdown][data-ui-dropdown-size="xl"] {
-  --dropdown-font-size: var(--lk-size-md);
 }
 
 /* --- トリガー共通（整列：中央そろえ）--- */
