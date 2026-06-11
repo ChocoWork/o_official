@@ -3,34 +3,36 @@
   /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
   --cp-font-size: var(--ui-font-size, var(--lk-size-xs));
 
-  /*
-   * スウォッチ径＝font × φ²（操作対象として指で押せる面を確保）。
-   *   font がサイズ別に変わるため、円・プリセット・カラーボックスが一括連動。
-   */
-  --cp-swatch-size: calc(var(--cp-font-size) * var(--phi) * var(--phi));
+  /* Button / TextField と同じ padding ルール */
+  --pad-x: calc(var(--cp-font-size) / var(--sqrt-phi));
+  --pad-y: calc(
+    (var(--cp-font-size) * var(--sqrt-phi)) / (var(--phi) * var(--phi))
+  );
+  --gap-icon2text: calc(var(--pad-x) / var(--phi));
 
-  /* カラーボックス（custom）：幅＝径 × φ の横長、高さ＝径（対比：矩形で区別）*/
-  --cp-color-box-height: var(--cp-swatch-size);
-  --cp-color-box-width: calc(var(--cp-swatch-size) * var(--phi));
+  /* 高さ＝Button と同式（2×pad-y + line-height + 2×border）*/
+  --cp-control-height: calc(
+    2 * var(--pad-y) + var(--cp-font-size) * var(--sqrt-phi) + 2px
+  );
 
-  /* 近接：スウォッチ間ギャップ＝font / φ */
+  /* スウォッチ径＝Button 高さ（円の直径をボタン高さに揃える）*/
+  --cp-swatch-size: var(--cp-control-height);
+
+  /* カラーボックス（custom）：高さ＝Button、幅＝高さ × φ の横長 */
+  --cp-color-box-height: var(--cp-control-height);
+  --cp-color-box-width: calc(var(--cp-control-height) * var(--phi));
+
+  /* 近接：スウォッチ間ギャップ＝font */
   --cp-swatch-gap: var(--cp-font-size);
 
-  /* custom 行のギャップ＝font（やや広めに離して 2 要素を区別）*/
-  --cp-row-gap: var(--cp-font-size);
+  /* custom 行：カラーボックス↔HEX 入力＝gap-icon2text（icon↔text）*/
+  --cp-row-gap: var(--gap-icon2text);
 
   /* ラベルと操作部の縦間隔＝font / φ（グループ化）*/
   --cp-label-gap: calc(var(--cp-font-size) / var(--phi));
 
-  /* HEX 入力のパディング（横＝font / φ、縦＝font / φ²）*/
-  --cp-input-pad-x: calc(var(--cp-font-size) / var(--phi));
-  --cp-input-pad-y: calc(var(--cp-font-size) / (var(--phi) * var(--phi)));
-
-  /* 枠線（直値を排し φ³ から導出。最小 1px）*/
-  --cp-border-width: max(
-    1px,
-    calc(var(--cp-font-size) / (var(--phi) * var(--phi) * var(--phi)))
-  );
+  /* 枠線 1px（円・カラーボックス・HEX 入力で共通）*/
+  --cp-border-width: 1px;
 
   /*
    * --- 選択リング（外周を黒い円で囲う）---
@@ -39,7 +41,7 @@
    *   box-shadow を二重に重ね、内側＝白の隙間、外側＝黒のリングを作る。
    */
   --cp-ring-gap: max(2px, calc(var(--cp-font-size) / (var(--phi) * var(--phi) * var(--phi))));
-  --cp-ring-width: max(1px, calc(var(--cp-font-size) / (var(--phi) * var(--phi) * var(--phi) * var(--phi))));
+  --cp-ring-width: 1px;
 
   /* ラベル字間（ラベル/カテゴリ系で反復する tracking）*/
   --cp-tracking: 0.15em;
@@ -148,11 +150,13 @@
 .color-picker__hex-input {
   flex: 1 1 auto;
   min-width: 0;
-  padding: var(--cp-input-pad-y) var(--cp-input-pad-x);
+  height: var(--cp-control-height);
+  padding: var(--pad-y) var(--pad-x);
   border: var(--cp-border-width) solid var(--cp-border-color);
   background: var(--cp-field-bg);
   color: var(--cp-field-fg);
   font-size: var(--cp-hex-size);
+  line-height: var(--sqrt-phi);
   text-transform: uppercase;
   transition: border-color 120ms ease;
 }

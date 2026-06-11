@@ -2,9 +2,16 @@
   /* 基準フォントサイズ（--ui-font-size 経由で 8XS〜8XL 全サイズに連動）*/
   --pagecontrol-font-size: var(--ui-font-size, var(--lk-size-sm));
 
-  /* Button size: font × φ²（全サイズでフォントに比例して伸縮）*/
+  /* Button / TextField と同じ padding ルール */
+  --pad-x: calc(var(--pagecontrol-font-size) / var(--sqrt-phi));
+  --pad-y: calc(
+    (var(--pagecontrol-font-size) * var(--sqrt-phi)) / (var(--phi) * var(--phi))
+  );
+  --gap-icon2text: calc(var(--pad-x) / var(--phi));
+
+  /* Button size: 正方形＝Button と同式（2×pad-y + line-height + 2×border）*/
   --pagecontrol-btn-size: calc(
-    var(--pagecontrol-font-size) * var(--phi) * var(--phi)
+    2 * var(--pad-y) + var(--pagecontrol-font-size) * var(--sqrt-phi) + 2px
   );
 
   /* Typography */
@@ -33,6 +40,7 @@
 
 [data-ui-pagecontrol] [data-pagecontrol-btn] {
   appearance: none;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
