@@ -48,10 +48,23 @@
     opacity 180ms ease;
 }
 
-[data-ui-button].icon-only {
-  width: var(--pad-y);
-  min-width: var(--pad-y);
-  aspect-ratio: 1 / 1;
+[data-ui-button][data-ui-button-variant="icon-only"] {
+  --button-bg: #ffffff;
+  --button-color: #111111;
+  --button-border-color: #111111;
+  --button-hover-bg: #111111;
+  --button-hover-color: #ffffff;
+  --button-hover-border-color: #111111;
+  --button-disabled-bg: #f2f2f2;
+  --button-disabled-color: #8c8c8c;
+  --button-disabled-border-color: #d9d9d9;
+  padding-inline: var(--pad-y);
+}
+
+[data-ui-button][data-ui-button-variant="icon-only"] > * {
+  width: calc(var(--button-font-size) * var(--sqrt-phi));
+  height: calc(var(--button-font-size) * var(--sqrt-phi));
+  font-size: calc(var(--button-font-size) * var(--sqrt-phi));
 }
 
 [data-ui-button][data-ui-button-variant="primary"] {

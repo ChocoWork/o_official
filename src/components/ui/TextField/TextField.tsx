@@ -1,7 +1,7 @@
 // File: src/components/ui/TextField/TextField.tsx
-import '@/components/ui/TextField/TextField.css';
-import { cn } from '@/lib/utils';
-import type { TextFieldProps } from '@/components/ui/TextField/TextField_type';
+import "@/components/ui/TextField/TextField.css";
+import { cn } from "@/lib/utils";
+import type { TextFieldProps } from "@/components/ui/TextField/TextField_type";
 
 export function TextField({
   label,
@@ -10,8 +10,8 @@ export function TextField({
   leadingIcon,
   className,
   id,
-  shape = 'rounded',
-  size = 'md',
+  shape = "square",
+  size = "md",
   ...props
 }: TextFieldProps) {
   const fieldId = id ?? props.name;
@@ -24,15 +24,15 @@ export function TextField({
       !errorText && helperText && helperId ? helperId : null,
     ]
       .filter(Boolean)
-      .join(' ') || undefined;
+      .join(" ") || undefined;
 
   const rootDataAttrs = {
-    'data-ui-text-field': 'true',
-    'data-ui-text-field-shape': shape,
-    'data-ui-text-field-size': size,
-    'data-ui-text-field-invalid': errorText ? 'true' : undefined,
-    'data-ui-text-field-has-icon': leadingIcon ? 'true' : undefined,
-    'data-ui-size': size,
+    "data-ui-text-field": "true",
+    "data-ui-text-field-shape": shape,
+    "data-ui-text-field-size": size,
+    "data-ui-text-field-invalid": errorText ? "true" : undefined,
+    "data-ui-text-field-has-icon": leadingIcon ? "true" : undefined,
+    "data-ui-size": size,
   } as const;
 
   return (
@@ -48,7 +48,7 @@ export function TextField({
           id={fieldId}
           aria-describedby={describedBy}
           aria-invalid={errorText ? true : undefined}
-          className={cn('text-field__input', className)}
+          className={cn("text-field__input", className)}
           {...props}
         />
       </span>

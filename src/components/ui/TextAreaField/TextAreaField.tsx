@@ -10,7 +10,7 @@ export function TextAreaField({
   className,
   id,
   rows = 4,
-  shape = "rounded",
+  shape = "square",
   size = "md",
   ...props
 }: TextAreaFieldProps) {
