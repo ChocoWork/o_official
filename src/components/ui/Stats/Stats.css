@@ -1,0 +1,105 @@
+/*
+ * Stats.css
+ *
+ * φ(1.618) / √φ(1.272) を軸にしたスケール設計。Button.css と同様、
+ * --ui-font-size（data-ui-size 連動）を起点に全寸法を導出し直値を排除。
+ *
+ * デザイン4原則:
+ *   近接  — value↔label を最小 gap で束ね、icon は一段広い gap で上に分離。card 間は更に広い grid-gap。
+ *   整列  — icon / value / label を card 左端の共通軸に揃える。
+ *   反復  — 全 card が同一トークン（pad / border / typography）を共有し grid で等間隔反復。
+ *   対比  — value は大・Didot serif・#000、label は小・sans・薄墨。border は薄 → hover で濃。
+ */
+
+[data-ui-stats] {
+  --_font-size: var(--ui-font-size, var(--lk-size-md));
+
+  /* タイポ階層（対比）: value = font × φ × √φ、label = font ÷ √φ、icon = font × φ² */
+  --_value-size: calc(var(--_font-size) * var(--phi) * var(--sqrt-phi));
+  --_label-size: calc(var(--_font-size) / var(--sqrt-phi));
+  --_icon-size: calc(var(--_font-size) * var(--phi) * var(--phi));
+
+  /* 余白（近接）: card padding = font × φ、内側 gap は φ で段階的に縮小、card 間は padding 同値で最遠 */
+  --_pad: calc(var(--_font-size) * var(--phi));
+  --_gap-icon: calc(var(--_pad) / var(--phi)); /* icon ↔ value */
+  --_gap-label: calc(
+    var(--_pad) / var(--phi) / var(--phi)
+  ); /* value ↔ label（最近接） */
+  --_grid-gap: var(--_pad); /* card ↔ card（最遠） */
+
+  /* 反復: 広幅時の列数。狭幅は 1 列。 */
+  --_columns: 4;
+
+  /* 対比: 罫線・配色 */
+  --_card-border: rgba(0, 0, 0, 0.2);
+  --_card-border-hover: #000;
+  --_value-color: #000;
+  --_label-color: rgba(0, 0, 0, 0.6);
+  --_icon-color: #000;
+
+  --_value-font: font-brand;
+  --_label-font: font-brand;
+  --_label-tracking: 0.1em;
+
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--_grid-gap);
+}
+
+/* 反復: 広幅で等幅 --_columns 列に展開 */
+@media (min-width: 48rem) {
+  [data-ui-stats] {
+    grid-template-columns: repeat(var(--_columns), minmax(0, 1fr));
+  }
+}
+
+/* card: 反復する単位。整列の基準は左端。 */
+[data-ui-stats-card] {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: var(--_pad);
+  border: 1px solid var(--_card-border);
+  transition: border-color 180ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-ui-stats-card]:hover {
+    border-color: var(--_card-border-hover); /* 対比: hover で罫線を濃く */
+  }
+}
+
+/* icon: value の上に --_gap-icon で分離（近接） */
+[data-ui-stats-icon] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--_gap-icon);
+  font-size: var(--_icon-size);
+  line-height: 1;
+  color: var(--_icon-color);
+}
+
+/* value: 大きく Didot（対比の主役）。直下に label を密着（近接）。 */
+[data-ui-stats-value] {
+  margin-bottom: var(--_gap-label);
+  font-family: var(--_value-font);
+  font-size: var(--_value-size);
+  line-height: 1;
+  color: var(--_value-color);
+}
+
+/* label: 小さく sans・薄墨・字間広め（対比） */
+[data-ui-stats-label] {
+  font-family: var(--_label-font);
+  font-size: var(--_label-size);
+  letter-spacing: var(--_label-tracking);
+  line-height: var(--sqrt-phi);
+  color: var(--_label-color);
+}
+
+@media (forced-colors: active) {
+  [data-ui-stats-card] {
+    forced-color-adjust: auto;
+  }
+}

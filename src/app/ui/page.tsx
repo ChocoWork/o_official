@@ -1203,7 +1203,7 @@ export default function Page() {
               items={statsItems.map((item) => ({
                 label: item.label,
                 value: item.value,
-                icon: <i className={`${item.iconClass} text-3xl text-black`}></i>,
+                icon: <i className={item.iconClass}></i>,
               }))}
              size={demoSize}/>
           </section>

@@ -7,34 +7,42 @@ const items: StatItem[] = [
 ];
 
 describe('Stats component', () => {
-  test('default md size applies mid padding and text', () => {
+  test('renders value, label, and icon with the data-ui contract', () => {
     const { container } = render(<Stats items={items} />);
-    // find card by border class
-    const card = container.querySelector('div.border');
-    expect(card).toHaveClass('p-6');
-    const icon = screen.getByTestId('icon');
-    expect(icon.parentElement).toHaveClass('h-10');
-    const value = screen.getByText('1');
-    expect(value).toHaveClass('text-3xl');
+    const root = container.querySelector('[data-ui-stats]');
+    expect(root).toHaveAttribute('data-ui-size', 'md');
+    expect(container.querySelector('[data-ui-stats-card]')).toBeInTheDocument();
+    expect(screen.getByTestId('icon').parentElement).toHaveAttribute('data-ui-stats-icon', '');
+    expect(screen.getByText('1')).toHaveAttribute('data-ui-stats-value', '');
+    expect(screen.getByText('A')).toHaveAttribute('data-ui-stats-label', '');
   });
 
-  test('sm size shrinks padding, icon, and value', () => {
-    const { container } = render(<Stats items={items} size="sm" />);
-    const card = container.querySelector('div.border');
-    expect(card).toHaveClass('p-4');
-    const icon = screen.getByTestId('icon');
-    expect(icon.parentElement).toHaveClass('h-6');
-    const value = screen.getByText('1');
-    expect(value).toHaveClass('text-2xl');
+  test('size is reflected on data-ui-size', () => {
+    const { container, rerender } = render(<Stats items={items} size="sm" />);
+    expect(container.querySelector('[data-ui-stats]')).toHaveAttribute('data-ui-size', 'sm');
+    rerender(<Stats items={items} size="lg" />);
+    expect(container.querySelector('[data-ui-stats]')).toHaveAttribute('data-ui-size', 'lg');
   });
 
-  test('lg size increases padding, icon, and value', () => {
-    const { container } = render(<Stats items={items} size="lg" />);
-    const card = container.querySelector('div.border');
-    expect(card).toHaveClass('p-8');
-    const icon = screen.getByTestId('icon');
-    expect(icon.parentElement).toHaveClass('h-12');
-    const value = screen.getByText('1');
-    expect(value).toHaveClass('text-4xl');
+  test('forwards className props to the matching elements', () => {
+    const { container } = render(
+      <Stats
+        items={items}
+        className="root-x"
+        cardClassName="card-x"
+        valueClassName="val-x"
+        labelClassName="lab-x"
+      />,
+    );
+    expect(container.querySelector('[data-ui-stats]')).toHaveClass('root-x');
+    expect(container.querySelector('[data-ui-stats-card]')).toHaveClass('card-x');
+    expect(screen.getByText('1')).toHaveClass('val-x');
+    expect(screen.getByText('A')).toHaveClass('lab-x');
+  });
+
+  test('renders without an icon wrapper when icon is omitted', () => {
+    const { container } = render(<Stats items={[{ label: 'B', value: '2' }]} />);
+    expect(container.querySelector('[data-ui-stats-icon]')).toBeNull();
+    expect(screen.getByText('2')).toHaveAttribute('data-ui-stats-value', '');
   });
 });
