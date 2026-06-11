@@ -1,5 +1,5 @@
 [data-ui-multiselect-trigger] {
-  --multiselect-font-size: 14px;
+  --multiselect-font-size: var(--ui-font-size, var(--lk-size-sm));
   --multiselect-pad-block: calc(
     var(--multiselect-font-size) * var(--control-pad-ratio)
   );
@@ -34,26 +34,6 @@
     box-shadow 180ms ease;
 }
 
-[data-ui-multiselect-trigger][data-ui-multiselect-size="xs"] {
-  --multiselect-font-size: 10px;
-}
-
-[data-ui-multiselect-trigger][data-ui-multiselect-size="sm"] {
-  --multiselect-font-size: 11px;
-}
-
-[data-ui-multiselect-trigger][data-ui-multiselect-size="md"] {
-  --multiselect-font-size: 14px;
-}
-
-[data-ui-multiselect-trigger][data-ui-multiselect-size="lg"] {
-  --multiselect-font-size: 16px;
-}
-
-[data-ui-multiselect-trigger][data-ui-multiselect-size="xl"] {
-  --multiselect-font-size: 18px;
-}
-
 [data-ui-multiselect-trigger]:focus-visible {
   outline: 2px solid transparent;
   box-shadow:
@@ -72,8 +52,8 @@
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  width: 1rem;
-  height: 1rem;
+  width: 1em;
+  height: 1em;
 }
 
 [data-ui-multiselect-panel] {

@@ -118,6 +118,7 @@ export function MultiSelect({
             type="button"
             data-ui-multiselect-trigger="true"
             data-ui-multiselect-size={size}
+            data-ui-size={size}
             onClick={() => setOpen((previous) => !previous)}
             aria-haspopup="listbox"
             aria-expanded={open}
