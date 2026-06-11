@@ -19,7 +19,9 @@ export function Graph({
   const dataAttrs = {
     "data-ui-graph": "true",
     "data-ui-graph-variant": variant,
-    ...(typeof size === "string" ? { "data-ui-graph-size": size } : {}),
+    ...(typeof size === "string"
+      ? { "data-ui-graph-size": size, "data-ui-size": size }
+      : {}),
   } as const;
 
   const rootStyle =

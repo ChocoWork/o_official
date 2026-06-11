@@ -1,23 +1,25 @@
 [data-ui-graph] {
-  /* Typography */
-  --graph-font-size: var(--lk-size-xs);
+  /* 基準フォントサイズ（--ui-font-size 経由で 8XS〜8XL 全サイズに連動）*/
+  --graph-font-size: var(--ui-font-size, var(--lk-size-xs));
 
-  /* Spacing — all derived from golden ratio (phi = 1.618, sqrt-phi = 1.272) */
-  --graph-row-gap: var(--lk-size-sm);
-  --graph-label-gap: calc(var(--lk-size-xs) / var(--phi));
-  --graph-track-height: calc(var(--lk-size-xs) / var(--phi));
-  --graph-bar-gap: calc(var(--lk-size-xs) / var(--phi));
-  --graph-legend-swatch-size: var(--lk-size-2xs);
-  --graph-legend-item-gap: calc(var(--lk-size-xs) / var(--phi));
-  --graph-legend-col-gap: var(--lk-size-md);
-  --graph-legend-row-gap: var(--lk-size-md);
-  --graph-legend-top-gap: calc(var(--lk-size-md) * var(--phi));
+  /* Spacing — all derived from --graph-font-size via golden ratio */
+  --graph-row-gap: calc(var(--graph-font-size) * var(--phi));
+  --graph-label-gap: calc(var(--graph-font-size) / var(--phi));
+  --graph-track-height: calc(var(--graph-font-size) / var(--phi));
+  --graph-bar-gap: calc(var(--graph-font-size) / var(--phi));
+  --graph-legend-swatch-size: calc(var(--graph-font-size) / var(--sqrt-phi));
+  --graph-legend-item-gap: calc(var(--graph-font-size) / var(--phi));
+  --graph-legend-col-gap: calc(var(--graph-font-size) * var(--phi) * var(--phi));
+  --graph-legend-row-gap: calc(var(--graph-font-size) * var(--phi) * var(--phi));
+  --graph-legend-top-gap: calc(
+    var(--graph-font-size) * var(--phi) * var(--phi) * var(--phi)
+  );
 
-  /* Heights: each step is phi × previous */
-  --graph-height-sm: 10rem;
-  --graph-height-md: calc(var(--graph-height-sm) * var(--phi));
-  --graph-height-lg: calc(var(--graph-height-md) * var(--phi));
-  --graph-height: var(--graph-height-md);
+  /* Height — φ⁶ × font-size（全サイズでフォントに比例して伸縮）*/
+  --graph-height: calc(
+    var(--graph-font-size) * var(--phi) * var(--phi) * var(--phi) *
+    var(--phi) * var(--phi) * var(--phi)
+  );
 
   /* Donut SVG inscribed within the container via phi */
   --graph-donut-size: calc(var(--graph-height) / var(--phi));
@@ -32,16 +34,6 @@
 
   font-size: var(--graph-font-size);
   font-family: "acumin-pro", sans-serif;
-}
-
-/* ── Size variants ─────────────────────────────────────── */
-
-[data-ui-graph][data-ui-graph-size="sm"] {
-  --graph-height: var(--graph-height-sm);
-}
-
-[data-ui-graph][data-ui-graph-size="lg"] {
-  --graph-height: var(--graph-height-lg);
 }
 
 /* ── Progress (default) ────────────────────────────────── */
