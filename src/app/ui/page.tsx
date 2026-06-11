@@ -427,7 +427,11 @@ export default function Page() {
             >
               Checkbox
             </h2>
-            <div className="space-y-4">
+            <div
+              className="flex flex-col"
+              data-ui-size={demoSize}
+              style={{ gap: 'calc(var(--ui-font-size, var(--lk-size-md)) / var(--sqrt-phi, 1.272))' }}
+            >
               <Checkbox
                 checked={checkboxTerms}
                 shape='rounded'

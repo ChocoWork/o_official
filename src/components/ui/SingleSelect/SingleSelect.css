@@ -4,34 +4,38 @@
   /* 基準フォントサイズ（--ui-font-size 経由で 8XS〜8XL 全サイズに連動）*/
   --ss-font-size: var(--ui-font-size, var(--lk-size-xs));
 
-  /*
-   * フィールド高さ＝font × φ²（タップしやすい操作面）。
-   * 横パディング＝font × φ、縦パディング＝font / φ。
-   *   → BannerAlert 同様、横は広く縦は詰める。
-   */
-  --ss-field-height: calc(var(--ss-font-size) * var(--phi) * var(--phi));
-  --ss-pad-x: calc(var(--ss-font-size) / var(--sqrt-phi));
-  --ss-pad-y: calc(var(--ss-font-size) / var(--phi));
+  /* Button / TextField と同じ padding ルール */
+  --pad-x: calc(var(--ss-font-size) / var(--sqrt-phi));
+  --pad-y: calc(
+    (var(--ss-font-size) * var(--sqrt-phi)) / (var(--phi) * var(--phi))
+  );
+  --gap-icon2text: calc(var(--pad-x) / var(--phi));
+
+  /* フィールド高さ＝Button と同式（2×pad-y + line-height + 2×border）*/
+  --ss-field-height: calc(
+    2 * var(--pad-y) + var(--ss-font-size) * var(--sqrt-phi) +
+      2 * var(--ss-border-width)
+  );
 
   /* ラベルと操作部の縦間隔＝font / φ（近接でグループ化）*/
   --ss-label-gap: calc(var(--ss-font-size) / var(--phi));
 
-  /* シェブロン径＝font × φ（操作系を本文より一段大きく対比）*/
-  --ss-chevron-size: calc(var(--ss-font-size) * var(--phi));
+  /* シェブロン径＝line-height（コンテンツエリアに収め、回転時も中央を保つ）*/
+  --ss-chevron-size: calc(var(--ss-font-size) * var(--sqrt-phi));
 
-  /* シェブロンの右端オフセット＝font / φ（近接：右端に寄せる）*/
-  --ss-chevron-offset: calc(var(--ss-font-size) / var(--phi));
+  /* シェブロンの右端オフセット＝pad-x（フィールド右辺と揃える）*/
+  --ss-chevron-offset: var(--pad-x);
 
-  /* トリガー内のテキストとシェブロンの間隔＝font / φ² */
-  --ss-trigger-gap: calc((var(--ss-font-size) / var(--phi)) / var(--phi));
+  /* トリガー内のテキスト↔シェブロン間＝gap-icon2text（icon→text 近接ルール）*/
+  --ss-trigger-gap: var(--gap-icon2text);
 
   /* メニューとフィールドの隙間＝font / φ³ */
   --ss-menu-gap: calc(
     var(--ss-font-size) / (var(--phi) * var(--phi) * var(--phi))
   );
 
-  /* オプション縦パディング＝font / φ（行の押しやすさを確保）*/
-  --ss-option-pad-y: calc(var(--ss-font-size) / var(--phi));
+  /* オプション縦パディング＝pad-y（統一ルール）*/
+  --ss-option-pad-y: var(--pad-y);
 
   /* 枠線（直値を排し φ³ から導出。最小 1px）*/
   --ss-border-width: 1px;
@@ -70,9 +74,12 @@
 [data-ui-single-select][data-ui-single-select-size="compact"],
 .single-select__menu[data-ui-single-select-size="compact"] {
   --ss-font-size: var(--lk-size-4xs);
-  --ss-pad-x: calc((var(--ss-font-size) / var(--sqrt-phi)) * 0.75);
-  --ss-pad-y: calc((var(--ss-font-size) / var(--phi)) * 0.75);
-  --ss-option-pad-y: calc((var(--ss-font-size) / var(--phi)) * 0.75);
+  --pad-x: calc(var(--ss-font-size) / var(--sqrt-phi) * 0.75);
+  --pad-y: calc(
+    (var(--ss-font-size) * var(--sqrt-phi)) / (var(--phi) * var(--phi)) * 0.75
+  );
+  --gap-icon2text: calc(var(--pad-x) / var(--phi));
+  --ss-option-pad-y: var(--pad-y);
 }
 
 /* --- ラベル（対比：字間を広げ muted で操作部と区別）--- */
@@ -105,7 +112,7 @@
   align-items: center;
   width: 100%;
   height: var(--ss-field-height);
-  padding: var(--ss-pad-y) var(--ss-pad-x);
+  padding: var(--pad-y) var(--pad-x);
   border: var(--ss-border-width) solid var(--ss-border-color);
   border-radius: 0;
   background: var(--ss-bg);
@@ -234,7 +241,7 @@
 .single-select__option {
   display: block;
   width: 100%;
-  padding: var(--ss-option-pad-y) var(--ss-pad-x);
+  padding: var(--ss-option-pad-y) var(--pad-x);
   border: none;
   background: transparent;
   color: var(--ss-fg);

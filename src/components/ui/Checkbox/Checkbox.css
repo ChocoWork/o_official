@@ -3,15 +3,20 @@
   --checkbox-control-size: calc(
     var(--checkbox-font-size) * var(--lk-quarterstep)
   );
-  --checkbox-gap: calc(var(--checkbox-control-size) * var(--lk-wholestep-dec));
-  --checkbox-padding-block-expanded: calc(
-    var(--checkbox-font-size) * var(--control-pad-ratio)
+
+  /* Button / TextField / RadioButtonGroup と同じ padding ルール */
+  --pad-x: calc(var(--checkbox-font-size) / var(--sqrt-phi));
+  --pad-y: calc(
+    (var(--checkbox-font-size) * var(--sqrt-phi)) / (var(--phi) * var(--phi))
   );
-  --checkbox-padding-block-compact: calc(
-    var(--checkbox-padding-block-expanded) / 2
-  );
+  --gap-icon2text: calc(var(--pad-x) / var(--phi));
+
+  /* チェック→ラベル gap = gap-icon2text（icon→text 近接ルール） */
+  --checkbox-gap: var(--gap-icon2text);
+  --checkbox-padding-block-expanded: var(--pad-y);
+  --checkbox-padding-block-compact: calc(var(--pad-y) / 2);
   --checkbox-padding-block: var(--checkbox-padding-block-compact);
-  --checkbox-padding-inline: calc(var(--checkbox-gap) * 0.75);
+  --checkbox-padding-inline: var(--pad-x);
   --checkbox-row-radius: 0;
   --checkbox-control-radius: calc(
     var(--checkbox-control-size) / (var(--phi) + 1)
