@@ -31,6 +31,7 @@ export function TextAreaField({
     "data-ui-text-area-field-shape": shape,
     "data-ui-text-area-field-size": size,
     "data-ui-text-area-field-invalid": errorText ? "true" : undefined,
+    "data-ui-size": size,
   } as const;
 
   return (

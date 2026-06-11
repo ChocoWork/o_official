@@ -1,7 +1,7 @@
 /* File: src/components/ui/TextAreaField/TextAreaField.css */
 [data-ui-text-area-field] {
-  /* 入力本文の基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
-  --field-font-size: var(--lk-size-md);
+  /* 入力本文の基準フォントサイズ（--ui-font-size 経由で 8XS〜8XL 全サイズに連動）*/
+  --field-font-size: var(--ui-font-size, var(--lk-size-md));
 
   /* ラベル/補足/エラーは入力本文より φ で一段小さく（対比・階層）*/
   --field-label-size: calc(var(--field-font-size) / var(--phi));
@@ -62,26 +62,6 @@
   --field-shape-radius: 0;
 }
 
-/* --- サイズ展開（反復：TextField / BannerAlert / Avatar と同一の公比スケールを再利用）--- */
-[data-ui-text-area-field][data-ui-text-area-field-size="xs"] {
-  --field-font-size: var(--lk-size-xs);
-}
-
-[data-ui-text-area-field][data-ui-text-area-field-size="sm"] {
-  --field-font-size: var(--lk-size-sm);
-}
-
-[data-ui-text-area-field][data-ui-text-area-field-size="md"] {
-  --field-font-size: var(--lk-size-md);
-}
-
-[data-ui-text-area-field][data-ui-text-area-field-size="lg"] {
-  --field-font-size: var(--lk-size-lg);
-}
-
-[data-ui-text-area-field][data-ui-text-area-field-size="xl"] {
-  --field-font-size: var(--lk-size-xl);
-}
 
 /* --- ラベル（対比：入力本文より一段小さく・やや淡く／整列：左そろえ）--- */
 .text-area-field__label {
