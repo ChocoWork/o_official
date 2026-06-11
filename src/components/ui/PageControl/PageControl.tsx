@@ -18,6 +18,7 @@ export function PageControl({
     <nav
       data-ui-pagecontrol="true"
       data-ui-pagecontrol-size={size}
+      data-ui-size={size}
       className={className}
       aria-label="pagination"
     >

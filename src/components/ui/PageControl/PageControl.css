@@ -1,19 +1,18 @@
 [data-ui-pagecontrol] {
-  /* Button size: lk-size-md × φ² × eighthstep ≈ 2.5rem (40px) で md を導出
-     √φ 等比ステップ: sm = md/√φ ≈ 32px, lg = md×√φ ≈ 51px               */
-  --pagecontrol-btn-size-md: calc(
-    var(--lk-size-md) * var(--phi) * var(--phi) * var(--lk-eighthstep)
+  /* 基準フォントサイズ（--ui-font-size 経由で 8XS〜8XL 全サイズに連動）*/
+  --pagecontrol-font-size: var(--ui-font-size, var(--lk-size-sm));
+
+  /* Button size: font × φ²（全サイズでフォントに比例して伸縮）*/
+  --pagecontrol-btn-size: calc(
+    var(--pagecontrol-font-size) * var(--phi) * var(--phi)
   );
-  --pagecontrol-btn-size-sm: calc(var(--pagecontrol-btn-size-md) / var(--sqrt-phi));
-  --pagecontrol-btn-size-lg: calc(var(--pagecontrol-btn-size-md) * var(--sqrt-phi));
-  --pagecontrol-btn-size: var(--pagecontrol-btn-size-md);
 
-  /* Typography (md を基準にサイズを設定) */
-  --pagecontrol-text-size: var(--lk-size-sm);
-  --pagecontrol-icon-size: calc(var(--lk-size-sm) * var(--lk-eighthstep));
+  /* Typography */
+  --pagecontrol-text-size: var(--pagecontrol-font-size);
+  --pagecontrol-icon-size: calc(var(--pagecontrol-font-size) * var(--phi));
 
-  /* Spacing: gap = lk-size-md / φ (ボタン間の黄金比ギャップ) */
-  --pagecontrol-gap: calc(var(--lk-size-md) / var(--phi));
+  /* Spacing: gap = font / φ（ボタン間の黄金比ギャップ）*/
+  --pagecontrol-gap: calc(var(--pagecontrol-font-size) / var(--phi));
 
   /* Colors */
   --pagecontrol-border-color: rgb(0 0 0 / 0.2);
@@ -27,23 +26,6 @@
   justify-content: center;
   gap: var(--pagecontrol-gap);
   font-family: "acumin-pro", sans-serif;
-}
-
-/* ── Size variants ──────────────────────────────────────
-   反復: xs/sm・lg/xl を同一トークンに束ね、md を基準とする */
-
-[data-ui-pagecontrol][data-ui-pagecontrol-size="xs"],
-[data-ui-pagecontrol][data-ui-pagecontrol-size="sm"] {
-  --pagecontrol-btn-size: var(--pagecontrol-btn-size-sm);
-  --pagecontrol-text-size: var(--lk-size-xs);
-  --pagecontrol-icon-size: var(--lk-size-xs);
-}
-
-[data-ui-pagecontrol][data-ui-pagecontrol-size="lg"],
-[data-ui-pagecontrol][data-ui-pagecontrol-size="xl"] {
-  --pagecontrol-btn-size: var(--pagecontrol-btn-size-lg);
-  --pagecontrol-text-size: var(--lk-size-md);
-  --pagecontrol-icon-size: calc(var(--lk-size-md) * var(--lk-eighthstep));
 }
 
 /* ── Button base ────────────────────────────────────────
