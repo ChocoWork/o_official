@@ -28,6 +28,7 @@ export function ColorPicker({
     'data-ui-color-picker': 'true',
     'data-ui-color-picker-variant': variant,
     'data-ui-color-picker-size': size,
+    'data-ui-size': size,
   } as const;
 
   // --- preset：スウォッチを横並びで選択 ---

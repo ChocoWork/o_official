@@ -1,7 +1,7 @@
 /* File: src/components/ui/ColorPicker/ColorPicker.css */
 [data-ui-color-picker] {
   /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
-  --cp-font-size: var(--lk-size-xs);
+  --cp-font-size: var(--ui-font-size, var(--lk-size-xs));
 
   /*
    * スウォッチ径＝font × φ²（操作対象として指で押せる面を確保）。
@@ -59,29 +59,6 @@
 
   font-family: acumin-pro, sans-serif;
   box-sizing: border-box;
-}
-
-/* --- サイズ展開（反復：他コンポーネントと同一の公比スケールを再利用）---
- * font-size 1 変数の上書きで、スウォッチ径・カラーボックス・ギャップ・枠線・リングが一括連動。
- */
-[data-ui-color-picker][data-ui-color-picker-size="xs"] {
-  --cp-font-size: var(--lk-size-8xs);
-}
-
-[data-ui-color-picker][data-ui-color-picker-size="sm"] {
-  --cp-font-size: var(--lk-size-7xs);
-}
-
-[data-ui-color-picker][data-ui-color-picker-size="md"] {
-  --cp-font-size: var(--lk-size-6xs);
-}
-
-[data-ui-color-picker][data-ui-color-picker-size="lg"] {
-  --cp-font-size: var(--lk-size-5xs);
-}
-
-[data-ui-color-picker][data-ui-color-picker-size="xl"] {
-  --cp-font-size: var(--lk-size-4xs);
 }
 
 /* --- preset / custom コンテナ（近接：ラベルと操作部を縦に密接配置）--- */
