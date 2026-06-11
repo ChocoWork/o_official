@@ -1,6 +1,6 @@
 [data-ui-avatar] {
   /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
-  --avatar-font-size: var(--lk-size-md);
+  --avatar-font-size: var(--ui-font-size, var(--lk-size-md));
 
   /* 径の算出比率（font × (line-height + 2/φ) × φ）*/
   --avatar-size-ratio: calc(var(--sqrt-phi) + (2 / var(--phi)));
@@ -29,27 +29,6 @@
   height: calc(var(--avatar-font-size) * var(--avatar-size-ratio) * var(--phi));
 
   flex: 0 0 auto;
-}
-
-/* --- サイズ展開（この 1 変数を変えるだけで width/height/ラベル/ステータスが追従）--- */
-[data-ui-avatar][data-ui-avatar-size="xs"] {
-  --avatar-font-size: var(--lk-size-8xs);
-}
-
-[data-ui-avatar][data-ui-avatar-size="sm"] {
-  --avatar-font-size: var(--lk-size-7xs);
-}
-
-[data-ui-avatar][data-ui-avatar-size="md"] {
-  --avatar-font-size: var(--lk-size-6xs);
-}
-
-[data-ui-avatar][data-ui-avatar-size="lg"] {
-  --avatar-font-size: var(--lk-size-5xs);
-}
-
-[data-ui-avatar][data-ui-avatar-size="xl"] {
-  --avatar-font-size: var(--lk-size-4xs);
 }
 
 /* --- 画像（整列：円形に切り抜き中央寄せ）--- */

@@ -14,6 +14,7 @@ export function Avatar({
   const rootDataAttrs = {
     'data-ui-avatar': 'true',
     'data-ui-avatar-size': size,
+    'data-ui-size': size,
   } as const;
 
   return (
