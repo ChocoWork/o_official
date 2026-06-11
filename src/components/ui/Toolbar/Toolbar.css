@@ -1,7 +1,7 @@
 /* File: src/components/ui/Toolbar/Toolbar.css */
 [data-ui-toolbar] {
-  /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
-  --toolbar-font-size: var(--lk-size-xs);
+  /* 基準フォントサイズ（--ui-font-size 経由で 8XS〜8XL 全サイズに連動）*/
+  --toolbar-font-size: var(--ui-font-size, var(--lk-size-xs));
 
   /* バー横パディング＝font × φ（横を広く）*/
   --toolbar-pad-x: calc(var(--toolbar-font-size) * var(--phi));
@@ -72,26 +72,6 @@
   box-sizing: border-box;
 }
 
-/* --- サイズ展開（反復：BannerAlert / Avatar と同一の公比スケールを再利用）--- */
-[data-ui-toolbar][data-ui-toolbar-size="xs"] {
-  --toolbar-font-size: var(--lk-size-3xs);
-}
-
-[data-ui-toolbar][data-ui-toolbar-size="sm"] {
-  --toolbar-font-size: var(--lk-size-2xs);
-}
-
-[data-ui-toolbar][data-ui-toolbar-size="md"] {
-  --toolbar-font-size: var(--lk-size-xs);
-}
-
-[data-ui-toolbar][data-ui-toolbar-size="lg"] {
-  --toolbar-font-size: var(--lk-size-sm);
-}
-
-[data-ui-toolbar][data-ui-toolbar-size="xl"] {
-  --toolbar-font-size: var(--lk-size-md);
-}
 
 /* --- バリアント展開（対比：背景トーンと hover 膜を切り替え）--- */
 [data-ui-toolbar][data-ui-toolbar-variant="default"] {

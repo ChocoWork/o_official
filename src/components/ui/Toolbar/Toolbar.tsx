@@ -18,6 +18,7 @@ export function Toolbar({
     'data-ui-toolbar': 'true',
     'data-ui-toolbar-variant': variant,
     'data-ui-toolbar-size': size,
+    'data-ui-size': size,
   } as const;
 
   const renderItem = (item: ToolbarItem) => (
