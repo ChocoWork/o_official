@@ -16,6 +16,7 @@ export function MapView({
       <div
         data-ui-mapview="true"
         data-ui-mapview-size={size}
+        data-ui-size={size}
         data-ui-mapview-variant="embed"
         className={className}
       >
@@ -38,6 +39,7 @@ export function MapView({
     <div
       data-ui-mapview="true"
       data-ui-mapview-size={size}
+      data-ui-size={size}
       data-ui-mapview-variant="default"
       className={className}
     >

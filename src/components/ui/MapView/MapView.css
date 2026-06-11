@@ -1,26 +1,20 @@
 [data-ui-mapview] {
-  /* Heights: φ-geometric progression anchored to lk-size-md × φ⁵
-     sm ≈ 10rem, md ≈ 16rem, lg ≈ 26rem                            */
-  --mapview-height-sm: calc(
-    var(--lk-size-md) * var(--phi) * var(--phi) * var(--phi) * var(--phi) * var(--phi)
+  /* 基準フォントサイズ（--ui-font-size 経由で 8XS〜8XL 全サイズに連動）*/
+  --mapview-font-size: var(--ui-font-size, var(--lk-size-xs));
+
+  /* Height — φ⁶ × font-size（全サイズでフォントに比例して伸縮）*/
+  --mapview-height: calc(
+    var(--mapview-font-size) * var(--phi) * var(--phi) * var(--phi) *
+    var(--phi) * var(--phi) * var(--phi)
   );
-  --mapview-height-md: calc(var(--mapview-height-sm) * var(--phi));
-  --mapview-height-lg: calc(var(--mapview-height-md) * var(--phi));
-  --mapview-height: var(--mapview-height-md);
 
-  /* Widths: φ-golden section steps
-     sm = 1/φ ≈ 61.8%,  md = 1/√φ ≈ 78.6%,  lg = 100%           */
-  --mapview-width-sm: calc(100% / var(--phi));
-  --mapview-width-md: calc(100% / var(--sqrt-phi));
-  --mapview-width-lg: 100%;
-  --mapview-width: var(--mapview-width-md);
+  /* Spacing */
+  --mapview-spacing: calc(var(--mapview-font-size) * var(--sqrt-phi));
 
-  /* Spacing: xs font-size × √φ (same horizontal measure as pad-x in List) */
-  --mapview-spacing: calc(var(--lk-size-xs) * var(--sqrt-phi));
-
-  /* Typography */
-  --mapview-title-size: var(--lk-size-xs);
-  --mapview-text-size: var(--lk-size-sm);
+  /* Typography
+     対比: title は font ÷ √φ でワンステップ小さく、text は font そのまま */
+  --mapview-title-size: calc(var(--mapview-font-size) / var(--sqrt-phi));
+  --mapview-text-size: var(--mapview-font-size);
 
   /* Colors */
   --mapview-bg: #f5f5f5;
@@ -32,23 +26,8 @@
   background: var(--mapview-bg);
   border: 1px solid var(--mapview-border-color);
   margin-inline: auto;
-  width: var(--mapview-width);
+  width: 100%;
   font-family: "acumin-pro", sans-serif;
-}
-
-/* ── Size variants ──────────────────────────────────────
-   反復: xs/sm・lg/xl を同一トークンに束ね、md を基準とする  */
-
-[data-ui-mapview][data-ui-mapview-size="xs"],
-[data-ui-mapview][data-ui-mapview-size="sm"] {
-  --mapview-width: var(--mapview-width-sm);
-  --mapview-height: var(--mapview-height-sm);
-}
-
-[data-ui-mapview][data-ui-mapview-size="lg"],
-[data-ui-mapview][data-ui-mapview-size="xl"] {
-  --mapview-width: var(--mapview-width-lg);
-  --mapview-height: var(--mapview-height-lg);
 }
 
 /* ── Embed variant ──────────────────────────────────────
