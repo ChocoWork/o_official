@@ -42,6 +42,7 @@ export function Stepper({
     'data-ui-stepper': 'true',
     'data-ui-stepper-variant': variant,
     'data-ui-stepper-size': size,
+    'data-ui-size': size,
   } as const;
 
   const decreaseButton = (

@@ -1,5 +1,5 @@
 [data-ui-stepper] {
-  --stepper-font-size: var(--lk-size-md);
+  --stepper-font-size: var(--ui-font-size, var(--lk-size-md));
 
   /* φ による各種寸法の導出（直値を使わない） */
   --stepper-control-ratio: calc(var(--sqrt-phi) + (2 / var(--phi)));
@@ -29,26 +29,6 @@
   --stepper-radius: 0;
 }
 
-/* --- サイズ展開（反復：Button と同一の公比スケールを再利用）--- */
-[data-ui-stepper][data-ui-stepper-size="xs"] {
-  --stepper-font-size: var(--lk-size-xs);
-}
-
-[data-ui-stepper][data-ui-stepper-size="sm"] {
-  --stepper-font-size: var(--lk-size-sm);
-}
-
-[data-ui-stepper][data-ui-stepper-size="md"] {
-  --stepper-font-size: var(--lk-size-md);
-}
-
-[data-ui-stepper][data-ui-stepper-size="lg"] {
-  --stepper-font-size: var(--lk-size-lg);
-}
-
-[data-ui-stepper][data-ui-stepper-size="xl"] {
-  --stepper-font-size: var(--lk-size-xl);
-}
 
 /* --- ラッパー（field 用：ラベルと本体の縦並び）--- */
 .stepper__wrapper {
