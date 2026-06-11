@@ -1,6 +1,6 @@
 [data-ui-list] {
-  /* Base unit — overridden per size variant */
-  --list-unit: var(--lk-size-sm);
+  /* 基準unit（--ui-font-size 経由で 8XS〜8XL 全サイズに連動）*/
+  --list-unit: var(--ui-font-size, var(--lk-size-sm));
 
   /* Typography
      対比: title は unit そのまま、category は unit ÷ √φ でワンステップ小さく */
@@ -15,10 +15,10 @@
   --list-inner-gap: calc(var(--list-unit) * var(--sqrt-phi));
   --list-row-gap: calc(var(--list-unit) / var(--phi));
 
-  /* Preview thumbnail
-     近接: サムネイルサイズはフォントサイズと独立した φ ステップで定義
-     md = lk-size-md × φ² × √φ ≈ 3rem (48 px) */
-  --list-preview-size: calc(var(--lk-size-md) * var(--phi) * var(--phi) * var(--sqrt-phi));
+  /* Preview thumbnail — unit × φ³（全サイズで unit に比例して伸縮）*/
+  --list-preview-size: calc(
+    var(--list-unit) * var(--phi) * var(--phi) * var(--phi)
+  );
 
   /* Icon */
   --list-icon-size: calc(var(--list-unit) * var(--phi));
@@ -37,22 +37,6 @@
   gap: var(--list-row-gap);
   font-family: "acumin-pro", sans-serif;
   font-size: var(--list-title-size);
-}
-
-/* ── Size variants ──────────────────────────────────────
-   反復: xs/sm・lg/xl をそれぞれ同一 unit に統一し、
-   サムネイルは φ² / φ²√φ / φ³ の等比ステップ          */
-
-[data-ui-list][data-ui-list-size="xs"],
-[data-ui-list][data-ui-list-size="sm"] {
-  --list-unit: var(--lk-size-xs);
-  --list-preview-size: calc(var(--lk-size-md) * var(--phi) * var(--phi));
-}
-
-[data-ui-list][data-ui-list-size="lg"],
-[data-ui-list][data-ui-list-size="xl"] {
-  --list-unit: var(--lk-size-md);
-  --list-preview-size: calc(var(--lk-size-md) * var(--phi) * var(--phi) * var(--phi));
 }
 
 /* ── Showcase variant ───────────────────────────────── */

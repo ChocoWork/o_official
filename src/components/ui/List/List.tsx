@@ -12,7 +12,7 @@ export function List<T>({
 }: ListProps<T>) {
   if (props.variant !== "showcase") {
     return (
-      <ul data-ui-list="true" data-ui-list-size={size} className={className}>
+      <ul data-ui-list="true" data-ui-list-size={size} data-ui-size={size} className={className}>
         {items.map((item, index) => (
           <li key={itemKey ? itemKey(item, index) : index} data-list-item="">
             {props.renderItem(item, index)}
@@ -26,6 +26,7 @@ export function List<T>({
     <ul
       data-ui-list="true"
       data-ui-list-size={size}
+      data-ui-size={size}
       data-ui-list-variant="showcase"
       className={className}
     >
