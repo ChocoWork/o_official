@@ -44,6 +44,7 @@ export function Accordion({
     <div
       data-ui-accordion
       data-ui-accordion-size={size}
+      data-ui-size={size}
       data-ui-accordion-hover-highlight={highlightOnHover ? 'true' : 'false'}
       data-ui-accordion-show-underline={showUnderline ? 'true' : 'false'}
       className={className}

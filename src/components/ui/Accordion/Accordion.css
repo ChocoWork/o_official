@@ -1,21 +1,30 @@
-[data-ui-accordion][data-ui-accordion-size="xs"] {
-  --accordion-font-size: var(--lk-size-xs);
-}
-
-[data-ui-accordion][data-ui-accordion-size="sm"] {
-  --accordion-font-size: var(--lk-size-sm);
-}
-
-[data-ui-accordion][data-ui-accordion-size="md"] {
-  --accordion-font-size: var(--lk-size-md);
-}
-
-[data-ui-accordion][data-ui-accordion-size="lg"] {
-  --accordion-font-size: var(--lk-size-lg);
-}
-
-[data-ui-accordion][data-ui-accordion-size="xl"] {
-  --accordion-font-size: var(--lk-size-xl);
+[data-ui-accordion] {
+  --accordion-font-size: var(--ui-font-size, var(--lk-size-md));
+  --accordion-line-height: var(--sqrt-phi);
+  --accordion-pad-block: calc(
+    var(--accordion-font-size) * var(--control-pad-ratio)
+  );
+  --accordion-pad-inline: 1em;
+  --accordion-min-height: calc(
+    var(--accordion-font-size) * var(--control-height-ratio)
+  );
+  --accordion-gap: var(--control-button-gap);
+  --accordion-icon-box-size: 1em;
+  --accordion-item-gap: 0;
+  --accordion-trigger-border-width: 1px;
+  --accordion-border-color: var(--border);
+  --accordion-surface: var(--card);
+  --accordion-surface-hover: var(--muted);
+  --accordion-surface-active: var(--accent);
+  --accordion-title-color: var(--foreground);
+  --accordion-content-color: var(--muted-foreground);
+  --accordion-focus-ring: var(--ring);
+  width: 100%;
+  max-width: 42rem;
+  overflow: hidden;
+  border: 1px solid var(--accordion-border-color);
+  background: var(--accordion-surface);
+  color: var(--accordion-title-color);
 }
 
 [data-ui-accordion][data-ui-accordion-hover-highlight="true"] {
@@ -158,33 +167,4 @@
   [data-ui-accordion-icon] {
     color: CanvasText;
   }
-}
-
-[data-ui-accordion] {
-  --accordion-font-size: var(--lk-size-md);
-  --accordion-line-height: var(--sqrt-phi);
-  --accordion-pad-block: calc(
-    var(--accordion-font-size) * var(--control-pad-ratio)
-  );
-  --accordion-pad-inline: 1em;
-  --accordion-min-height: calc(
-    var(--accordion-font-size) * var(--control-height-ratio)
-  );
-  --accordion-gap: var(--control-button-gap);
-  --accordion-icon-box-size: 1em;
-  --accordion-item-gap: 0;
-  --accordion-trigger-border-width: 1px;
-  --accordion-border-color: var(--border);
-  --accordion-surface: var(--card);
-  --accordion-surface-hover: var(--muted);
-  --accordion-surface-active: var(--accent);
-  --accordion-title-color: var(--foreground);
-  --accordion-content-color: var(--muted-foreground);
-  --accordion-focus-ring: var(--ring);
-  width: 100%;
-  max-width: 42rem;
-  overflow: hidden;
-  border: 1px solid var(--accordion-border-color);
-  background: var(--accordion-surface);
-  color: var(--accordion-title-color);
 }
