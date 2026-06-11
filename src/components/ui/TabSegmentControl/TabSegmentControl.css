@@ -8,15 +8,15 @@
   /* ── Scale ─────────────────────────────────────────────────────────── */
   --tab-font-size: var(--ui-font-size, var(--lk-size-xs));
 
-  /* ── Spacing (φ-derived) ───────────────────────────────────────────── */
-  /* pad-x: font ÷ √φ  →  moderate horizontal breathing room            */
+  /* ── Spacing (φ-derived, mirrors Button rules) ────────────────────── */
+  /* pad-x: font ÷ √φ  →  same as Button                               */
   --tab-pad-x: calc(var(--tab-font-size) / var(--sqrt-phi));
-  /* pad-y: font × (φ−1) ÷ √φ  →  tighter vertical rhythm               */
-  --tab-pad-y: calc(var(--tab-font-size) * var(--lk-wholestep-dec) / var(--sqrt-phi));
+  /* pad-y: font × √φ ÷ φ²  →  same as Button                          */
+  --tab-pad-y: calc((var(--tab-font-size) * var(--sqrt-phi)) / (var(--phi) * var(--phi)));
+  /* gap-icon2text: pad-x ÷ φ  →  same as Button                       */
+  --tab-gap-icon2text: calc(var(--tab-pad-x) / var(--phi));
   /* indicator line: font × (√φ−1)/2  →  thin, proportional            */
   --tab-indicator-h: max(1px, calc(var(--tab-font-size) * var(--lk-quarterstep-dec)));
-  /* indicator pad: pad-y + line height  →  text clears the line        */
-  --tab-indicator-pad: calc(var(--tab-pad-y) + var(--tab-indicator-h));
   /* item gap (tabs / tabs-standard): font × φ  →  golden spacing       */
   --tab-item-gap: calc(var(--tab-font-size) * var(--phi));
 
@@ -93,7 +93,7 @@
 
 [data-ui-tab-segment][data-ui-tab-variant="tabs"] [data-ui-tab-item] {
   position: relative;
-  padding-bottom: var(--tab-indicator-pad);
+  padding-bottom: var(--tab-pad-y);
 }
 
 [data-ui-tab-segment][data-ui-tab-variant="tabs"] [data-ui-tab-item][data-ui-tab-active="true"] {
@@ -125,6 +125,8 @@
 [data-ui-tab-segment][data-ui-tab-variant="segment-pill"] [data-ui-tab-item] {
   /* pill pad-x: pad-x × φ  →  wider, proportionally pill-shaped        */
   padding-inline: calc(var(--tab-pad-x) * var(--phi));
+  /* pad-y: adjusted so outer-pad + item-pad-y matches Button height     */
+  padding-block: calc(var(--tab-pad-y) - var(--tab-pill-outer-pad) + 1px);
   border-radius: 9999px;
   color: rgb(17 17 17 / 0.6);
 }
@@ -146,7 +148,7 @@
 
 [data-ui-tab-segment][data-ui-tab-variant="tabs-standard"] [data-ui-tab-item] {
   position: relative;
-  padding-bottom: var(--tab-indicator-pad);
+  padding-block: calc(var(--tab-pad-y) + 1px);
 }
 
 [data-ui-tab-segment][data-ui-tab-variant="tabs-standard"] [data-ui-tab-item][data-ui-tab-active="true"] {
