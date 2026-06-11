@@ -159,6 +159,7 @@ export function SingleSelect({
     'data-ui-single-select': 'true',
     'data-ui-single-select-size': size,
     'data-ui-single-select-bordered': bordered ? 'true' : 'false',
+    'data-ui-size': size,
   } as const;
 
   // --- dropdown：ポータル描画のカスタムリスト ---
@@ -200,6 +201,7 @@ export function SingleSelect({
                   ref={dropdownRef}
                   className="single-select__menu"
                   data-ui-single-select-size={size}
+                  data-ui-size={size}
                   style={{
                     top: dropdownPos.top,
                     left: dropdownPos.left,

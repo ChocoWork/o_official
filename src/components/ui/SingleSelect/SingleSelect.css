@@ -1,8 +1,8 @@
 /* File: src/components/ui/SingleSelect/SingleSelect.css */
 [data-ui-single-select],
 .single-select__menu {
-  /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
-  --ss-font-size: var(--lk-size-xs);
+  /* 基準フォントサイズ（--ui-font-size 経由で 8XS〜8XL 全サイズに連動）*/
+  --ss-font-size: var(--ui-font-size, var(--lk-size-xs));
 
   /*
    * フィールド高さ＝font × φ²（タップしやすい操作面）。
@@ -67,40 +67,12 @@
   display: block;
 }
 
-/* --- サイズ展開（反復：他コンポーネントと同一の公比スケールを再利用）---
- * font-size 1 変数の上書きで、高さ・パディング・シェブロン・枠線が一括連動。
- */
-[data-ui-single-select][data-ui-single-select-size="xs"],
-.single-select__menu[data-ui-single-select-size="xs"] {
-  --ss-font-size: var(--lk-size-3xs);
-}
-
 [data-ui-single-select][data-ui-single-select-size="compact"],
 .single-select__menu[data-ui-single-select-size="compact"] {
   --ss-font-size: var(--lk-size-4xs);
   --ss-pad-x: calc((var(--ss-font-size) / var(--sqrt-phi)) * 0.75);
   --ss-pad-y: calc((var(--ss-font-size) / var(--phi)) * 0.75);
   --ss-option-pad-y: calc((var(--ss-font-size) / var(--phi)) * 0.75);
-}
-
-[data-ui-single-select][data-ui-single-select-size="sm"],
-.single-select__menu[data-ui-single-select-size="sm"] {
-  --ss-font-size: var(--lk-size-2xs);
-}
-
-[data-ui-single-select][data-ui-single-select-size="md"],
-.single-select__menu[data-ui-single-select-size="md"] {
-  --ss-font-size: var(--lk-size-xs);
-}
-
-[data-ui-single-select][data-ui-single-select-size="lg"],
-.single-select__menu[data-ui-single-select-size="lg"] {
-  --ss-font-size: var(--lk-size-sm);
-}
-
-[data-ui-single-select][data-ui-single-select-size="xl"],
-.single-select__menu[data-ui-single-select-size="xl"] {
-  --ss-font-size: var(--lk-size-md);
 }
 
 /* --- ラベル（対比：字間を広げ muted で操作部と区別）--- */
