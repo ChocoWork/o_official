@@ -20,15 +20,19 @@
   /* ラジオ円サイズ = font-size × √φ */
   --_radio-size: calc(var(--_font-size) * var(--_sqrt-phi));
 
-  /* ラジオ↔ラベル gap = font-size ÷ √φ  (近接: タイトに束ねる) */
-  --_item-gap: calc(var(--_font-size) / var(--_sqrt-phi));
+  /* Button / TextField と同じ padding ルール */
+  --pad-x: calc(var(--_font-size) / var(--_sqrt-phi));
+  --pad-y: calc(
+    (var(--_font-size) * var(--_sqrt-phi)) / (var(--_phi) * var(--_phi))
+  );
+  --gap-icon2text: calc(var(--pad-x) / var(--_phi));
 
-  /* 選択肢間 gap = font-size × φ  (近接: 選択肢同士は分離) */
-  --_group-gap: calc(var(--_font-size) * var(--_phi));
-
-  /* boxed padding: x÷√φ, y = x÷φ  → x:y = φ (黄金比率) */
-  --_pad-x: calc(var(--_font-size) / var(--_sqrt-phi));
-  --_pad-y: calc(var(--_pad-x) / var(--_phi));
+  /*
+   * ラジオ円↔ラベル gap = --gap-icon2text（icon→text と同じ近接ルール）
+   * 選択肢間 gap = --pad-x（gap-icon2text × φ = golden ratio 階層）
+   */
+  --_item-gap: var(--gap-icon2text);
+  --_group-gap: var(--pad-x);
 
   /* グループラベル↔items 間 = font-size × (φ−1) = font-size × 0.618 */
   --_header-gap: calc(var(--_font-size) * calc(var(--_phi) - 1));
@@ -75,7 +79,7 @@
 /* 反復: boxed は全 item に同じ枠線ルール */
 [data-ui-radio-item][data-ui-radio-variant="boxed"] {
   border: 1px solid rgba(0, 0, 0, 0.2);
-  padding: var(--_pad-y) var(--_pad-x);
+  padding: var(--pad-y) var(--pad-x);
   transition: border-color 160ms ease;
 }
 
