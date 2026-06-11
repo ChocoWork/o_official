@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import type { ComponentSize } from '@/components/ui/types';
 
 export interface BaseOverlayProps {
   open: boolean;
@@ -6,4 +7,5 @@ export interface BaseOverlayProps {
   title?: string;
   children: ReactNode;
   className?: string;
+  size?: ComponentSize;
 }

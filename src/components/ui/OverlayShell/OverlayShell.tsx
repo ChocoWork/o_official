@@ -3,11 +3,11 @@ import type { BaseOverlayProps } from "./OverlayShell_types";
 
 export type { BaseOverlayProps } from "./OverlayShell_types";
 
-export function OverlayShell({ open, onClose, title, children, className }: BaseOverlayProps) {
+export function OverlayShell({ open, onClose, title, children, className, size = 'md' }: BaseOverlayProps) {
   if (!open) return null;
 
   return (
-    <div data-ui-overlay="">
+    <div data-ui-overlay="" data-ui-size={size}>
       <div data-ui-overlay-panel="" className={className}>
         <div data-overlay-header="">
           {title ? (

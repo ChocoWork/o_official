@@ -3,8 +3,10 @@
    整列: flex center でパネルを常に視覚的重心に配置する    */
 
 [data-ui-overlay] {
+  /* 基準フォントサイズ（--ui-font-size 経由で 8XS〜8XL 全サイズに連動）*/
+  --overlay-font-size: var(--ui-font-size, var(--lk-size-md));
   --overlay-backdrop-bg: rgb(0 0 0 / 0.4);
-  --overlay-backdrop-pad: var(--lk-size-sm);
+  --overlay-backdrop-pad: calc(var(--overlay-font-size) * var(--sqrt-phi));
   --overlay-z: 50;
 
   position: fixed;
@@ -18,16 +20,15 @@
 }
 
 /* ── Panel ──────────────────────────────────────────────
-   max-width = lk-size-md × 40 ≈ 36rem
-   (40 × 0.5em/char ≈ 80 文字の適正行長に対応する タイポグラフィ基準)
-   padding = lk-size-md × φ (黄金比パディング)             */
+   max-width = font × 40（適正行長をサイズに連動）
+   padding   = font × φ（黄金比パディング）             */
 
 [data-ui-overlay-panel] {
-  --overlay-pad: calc(var(--lk-size-md) * var(--phi));
-  --overlay-max-width: calc(var(--lk-size-md) * 40);
-  --overlay-header-gap: var(--lk-size-md);
-  --overlay-title-size: var(--lk-size-3xl);
-  --overlay-close-size: var(--lk-size-4xl);
+  --overlay-pad: calc(var(--overlay-font-size) * var(--phi));
+  --overlay-max-width: calc(var(--overlay-font-size) * 40);
+  --overlay-header-gap: var(--overlay-font-size);
+  --overlay-title-size: calc(var(--overlay-font-size) * var(--sqrt-phi));
+  --overlay-close-size: calc(var(--overlay-font-size) * var(--phi));
   --overlay-border-color: rgb(0 0 0 / 0.1);
   --overlay-close-color: #474747;
   --overlay-close-hover-color: #111111;
