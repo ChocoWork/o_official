@@ -32,6 +32,7 @@ export function TextField({
     'data-ui-text-field-size': size,
     'data-ui-text-field-invalid': errorText ? 'true' : undefined,
     'data-ui-text-field-has-icon': leadingIcon ? 'true' : undefined,
+    'data-ui-size': size,
   } as const;
 
   return (
