@@ -1,15 +1,15 @@
-import '@/components/ui/ActionSheet/ActionSheet.css';
-import { useEffect, useRef } from 'react';
-import { cn } from '@/lib/utils';
-import type { ActionSheetProps } from '@/components/ui/ActionSheet/ActionSheet_types';
+import "@/components/ui/ActionSheet/ActionSheet.css";
+import { useEffect, useRef } from "react";
+import { cn } from "@/lib/utils";
+import type { ActionSheetProps } from "@/components/ui/ActionSheet/ActionSheet_types";
 
 export function ActionSheet({
   open,
   onClose,
   actions,
-  size = 'md',
-  shape = 'rounded',
-  cancelLabel = 'キャンセル',
+  size = "md",
+  shape = "square",
+  cancelLabel = "キャンセル",
   className,
 }: ActionSheetProps) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -19,12 +19,12 @@ export function ActionSheet({
       return;
     }
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (event.key === "Escape") {
         onClose();
       }
     };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
   }, [open, onClose]);
 
   if (!open) {
@@ -32,10 +32,10 @@ export function ActionSheet({
   }
 
   const rootDataAttrs = {
-    'data-ui-action-sheet': 'true',
-    'data-ui-action-sheet-size': size,
-    'data-ui-size': size,
-    'data-ui-action-sheet-shape': shape,
+    "data-ui-action-sheet": "true",
+    "data-ui-action-sheet-size": size,
+    "data-ui-size": size,
+    "data-ui-action-sheet-shape": shape,
   } as const;
 
   return (
@@ -48,7 +48,7 @@ export function ActionSheet({
       <div className="action-sheet__backdrop" aria-hidden="true" />
       <div
         ref={panelRef}
-        className={cn('action-sheet__panel', className)}
+        className={cn("action-sheet__panel", className)}
         role="dialog"
         aria-modal="true"
         onClick={(event) => event.stopPropagation()}
@@ -59,7 +59,9 @@ export function ActionSheet({
               key={action.key}
               type="button"
               className="action-sheet__item"
-              data-ui-action-sheet-destructive={action.destructive ? 'true' : undefined}
+              data-ui-action-sheet-destructive={
+                action.destructive ? "true" : undefined
+              }
               onClick={() => {
                 action.onSelect();
                 onClose();
@@ -68,7 +70,7 @@ export function ActionSheet({
               <span className="action-sheet__item-inner">
                 {action.iconClass ? (
                   <span className="action-sheet__icon-box" aria-hidden="true">
-                    <i className={cn(action.iconClass, 'action-sheet__icon')} />
+                    <i className={cn(action.iconClass, "action-sheet__icon")} />
                   </span>
                 ) : null}
                 <span className="action-sheet__label">{action.label}</span>
