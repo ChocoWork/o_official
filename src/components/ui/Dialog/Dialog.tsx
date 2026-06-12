@@ -25,6 +25,7 @@ export function Dialog({
     'data-ui-dialog': 'true',
     'data-ui-dialog-shape': shape,
     'data-ui-dialog-size': size,
+    'data-ui-size': size,
   } as const;
 
   return (

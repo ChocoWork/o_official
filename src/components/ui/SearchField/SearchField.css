@@ -14,17 +14,18 @@
   --_sqrt-phi: var(--sqrt-phi, 1.272);
   --_font-size: var(--ui-font-size, var(--lk-size-md));
 
-  /* コンテナ高さ = font-size × φ²  (黄金比の 2 乗で縦横比を確定) */
-  --_height: calc(var(--_font-size) * var(--_phi) * var(--_phi));
-
-  /* アイコンサイズ = font-size × √φ  (Rating と同じ比率) */
-  --_icon-size: calc(var(--_font-size) * var(--_sqrt-phi));
-
-  /* 水平 pad = font-size ÷ √φ  (Button.css と同パターン) */
+  /* pad-x: font ÷ √φ — same as Button */
   --_pad-x: calc(var(--_font-size) / var(--_sqrt-phi));
+  /* pad-y: font × √φ ÷ φ² — same as Button */
+  --_pad-y: calc((var(--_font-size) * var(--_sqrt-phi)) / (var(--_phi) * var(--_phi)));
+  /* gap-icon2text: pad-x ÷ φ — same as Button */
+  --_gap-icon2text: calc(var(--_pad-x) / var(--_phi));
 
-  /* input 左 padding = pad-x + icon-size + pad-x  (近接: アイコンを適切に囲む) */
-  --_input-pl: calc(2 * var(--_pad-x) + var(--_icon-size));
+  /* アイコンサイズ = font-size (1em) — 脇役アイコンはテキストと同等の視覚的重さに */
+  --_icon-size: var(--_font-size);
+
+  /* input 左 padding = pad-x + icon-size + gap-icon2text */
+  --_input-pl: calc(var(--_pad-x) + var(--_icon-size) + var(--_gap-icon2text));
 
   /* ラベル↔input wrapper 間 = font-size × (φ−1) = font-size × 0.618 */
   --_label-gap: calc(var(--_font-size) * calc(var(--_phi) - 1));
@@ -45,7 +46,6 @@
 /* ── wrapper (アイコン / input / クリアボタンの相対配置コンテナ) ── */
 [data-ui-search-field-wrapper] {
   position: relative;
-  height: var(--_height);
 }
 
 /* ── 検索アイコン (整列: 垂直中央、反復: icon-size を統一) ── */
@@ -68,12 +68,11 @@
 /* ── input ── */
 [data-ui-search-field-input] {
   width: 100%;
-  height: 100%;
-  padding-top: 0;
-  padding-bottom: 0;
+  padding-block: var(--_pad-y);
   padding-left:  var(--_input-pl);
   padding-right: var(--_pad-x);
   font-size: var(--_font-size);
+  line-height: var(--_sqrt-phi);
   color: #000;
   background: #fff;
   border: 1px solid rgba(0, 0, 0, 0.2);

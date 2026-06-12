@@ -1,7 +1,7 @@
 /* File: src/components/ui/Dialog/Dialog.css */
 [data-ui-dialog] {
-  /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
-  --dialog-font-size: var(--lk-size-xs);
+  /* 基準フォントサイズ（--ui-font-size 経由で 8XS〜8XL 全サイズに連動）*/
+  --dialog-font-size: var(--ui-font-size, var(--lk-size-xs));
 
   /*
    * パネル内パディング＝font × φ²（本文より一段ゆとりを持たせ、面の余白で要素群を浮かせる）。
@@ -71,26 +71,6 @@
   --dialog-shape-radius: 0;
 }
 
-/* --- サイズ展開（反復：BannerAlert と同一の公比スケールを再利用）--- */
-[data-ui-dialog][data-ui-dialog-size="xs"] {
-  --dialog-font-size: var(--lk-size-3xs);
-}
-
-[data-ui-dialog][data-ui-dialog-size="sm"] {
-  --dialog-font-size: var(--lk-size-2xs);
-}
-
-[data-ui-dialog][data-ui-dialog-size="md"] {
-  --dialog-font-size: var(--lk-size-xs);
-}
-
-[data-ui-dialog][data-ui-dialog-size="lg"] {
-  --dialog-font-size: var(--lk-size-sm);
-}
-
-[data-ui-dialog][data-ui-dialog-size="xl"] {
-  --dialog-font-size: var(--lk-size-md);
-}
 
 /* --- 背景スクリム（対比：背後を暗転させ panel を前面に浮かせる）--- */
 .dialog-overlay__scrim {
