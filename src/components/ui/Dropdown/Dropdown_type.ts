@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import type { ComponentSize } from '@/components/ui/types';
 
 export type UIDropdownAlign = 'left' | 'right';
+export type UIDropdownShape = 'rounded' | 'square' | 'pill';
 
 export interface DropdownItem {
   key: string;
@@ -23,4 +24,6 @@ export interface DropdownProps {
   openOnHover?: boolean;
   /** トリガーに対するメニューの揃え。left（既定）/ right */
   align?: UIDropdownAlign;
+  /** 角の形状。square（既定）/ rounded / pill */
+  shape?: UIDropdownShape;
 }

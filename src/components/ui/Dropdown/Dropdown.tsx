@@ -13,6 +13,7 @@ export function Dropdown({
   size = 'md',
   openOnHover = false,
   align = 'left',
+  shape = 'square',
 }: DropdownProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -37,6 +38,7 @@ export function Dropdown({
     'data-ui-dropdown-size': size,
     'data-ui-size': size,
     'data-ui-dropdown-align': align,
+    'data-ui-dropdown-shape': shape,
     'data-ui-dropdown-open': open ? 'true' : undefined,
   } as const;
 

@@ -77,6 +77,15 @@
   box-sizing: border-box;
 }
 
+/* --- 角の形状（Button と同方針：トリガー・メニューの角丸を切替）--- */
+[data-ui-dropdown][data-ui-dropdown-shape="square"] {
+  --dropdown-radius: 0;
+}
+
+[data-ui-dropdown][data-ui-dropdown-shape="pill"] {
+  --dropdown-radius: 9999px;
+}
+
 /* --- トリガー共通（整列：中央そろえ）--- */
 .dropdown__trigger {
   display: inline-flex;
