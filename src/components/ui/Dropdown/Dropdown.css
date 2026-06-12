@@ -1,36 +1,20 @@
 /* File: src/components/ui/Dropdown/Dropdown.css */
 [data-ui-dropdown] {
-  /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
-  --dropdown-font-size: var(--ui-font-size, var(--lk-size-xs));
+  --dropdown-font-size: var(--ui-font-size, var(--lk-size-md));
 
-  /* トリガー：横パディング＝font × φ、縦＝font / φ（横 > 縦）*/
-  --dropdown-trigger-pad-x: calc(var(--dropdown-font-size) * var(--phi));
-  --dropdown-trigger-pad-y: calc(var(--dropdown-font-size) / var(--phi));
+  /* Button padding rules */
+  --pad-x: calc(var(--dropdown-font-size) / var(--sqrt-phi));
+  --pad-y: calc(
+    (var(--dropdown-font-size) * var(--sqrt-phi)) / (var(--phi) * var(--phi))
+  );
+  --gap-icon2text: calc(var(--pad-x) / var(--phi));
 
-  /* トリガー内ギャップ（ラベルとキャレット）＝font / φ（近接）*/
-  --dropdown-trigger-gap: calc(var(--dropdown-font-size) / var(--phi));
+  /* icon / caret size = line-height */
+  --dropdown-icon-size: calc(var(--dropdown-font-size) * var(--sqrt-phi));
 
-  /* キャレット径＝font × φ（ラベルより一段大きく対比）*/
-  --dropdown-caret-size: calc(var(--dropdown-font-size) * var(--phi));
-
-  /* メニュー項目：横パディング＝font × φ、縦＝font / φ（トリガーと反復）*/
-  --dropdown-item-pad-x: calc(var(--dropdown-font-size) * var(--phi));
-  --dropdown-item-pad-y: calc(var(--dropdown-font-size) / var(--phi));
-
-  /* 項目内ギャップ（アイコンとラベル）＝font / φ（近接）*/
-  --dropdown-item-gap: calc(var(--dropdown-font-size) / var(--phi));
-
-  /* 項目アイコン径＝font × φ（ラベルより一段大きく対比）*/
-  --dropdown-item-icon-size: calc(var(--dropdown-font-size) * var(--phi));
-
-  /*
-   * メニュー幅。
-   *   下限＝font × φ⁴ × 10、上限はビューポート、内容に追従。
-   *   → サイズに比例して伸縮（直値 w-40/56/64 を置換）。
-   */
+  /* メニュー幅の下限：トリガー幅 または font×φ³×3（≈186px at md）の大きい方 */
   --dropdown-menu-min-width: calc(
-    var(--dropdown-font-size) * var(--phi) * var(--phi) * var(--phi) *
-      var(--phi) * 10
+    var(--dropdown-font-size) * var(--phi) * var(--phi) * var(--phi) * 3
   );
 
   /* トリガーとメニューの縦オフセット＝font / φ（近接）*/
@@ -102,13 +86,13 @@
 
 /* hover で開くタイプ（素のラッパ：装飾なし）*/
 .dropdown__trigger--bare {
-  gap: var(--dropdown-trigger-gap);
+  gap: var(--gap-icon2text);
 }
 
 /* クリックで開くタイプ（対比：枠線つきボタン／hover で白黒反転）*/
 .dropdown__trigger--button {
-  gap: var(--dropdown-trigger-gap);
-  padding: var(--dropdown-trigger-pad-y) var(--dropdown-trigger-pad-x);
+  gap: var(--gap-icon2text);
+  padding: var(--pad-y) var(--pad-x);
   border: var(--dropdown-trigger-border-width) solid var(--dropdown-emphasis);
   border-radius: var(--dropdown-radius);
   background: var(--dropdown-bg-plain);
@@ -133,20 +117,25 @@
   align-items: center;
 }
 
-/* キャレット（対比：ラベルより一段大きい／開閉で回転）*/
+/* キャレット（コンテナは固定サイズ・位置不変）*/
 .dropdown__trigger-caret {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  width: var(--dropdown-caret-size);
-  height: var(--dropdown-caret-size);
-  font-size: var(--dropdown-caret-size);
+  width: var(--dropdown-icon-size);
+  height: var(--dropdown-icon-size);
+  font-size: var(--dropdown-icon-size);
   line-height: 1;
+}
+
+/* アイコン自身を回転（コンテナは動かさず視覚中心で in-place 回転）*/
+.dropdown__trigger-caret > i {
+  display: block;
   transition: transform var(--dropdown-transition);
 }
 
-[data-ui-dropdown][data-ui-dropdown-open="true"] .dropdown__trigger-caret {
+[data-ui-dropdown][data-ui-dropdown-open="true"] .dropdown__trigger-caret > i {
   transform: rotate(180deg);
 }
 
@@ -156,7 +145,7 @@
   top: 100%;
   z-index: var(--dropdown-z);
   margin-top: var(--dropdown-menu-offset);
-  min-width: var(--dropdown-menu-min-width);
+  min-width: max(var(--dropdown-menu-min-width), 100%);
   max-width: 100vw;
   width: max-content;
   border: var(--dropdown-border-width) solid var(--dropdown-border-color);
@@ -187,9 +176,9 @@
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: var(--dropdown-item-gap);
+  gap: var(--gap-icon2text);
   width: 100%;
-  padding: var(--dropdown-item-pad-y) var(--dropdown-item-pad-x);
+  padding: var(--pad-y) var(--pad-x);
   border: none;
   background: transparent;
   color: var(--dropdown-fg);
@@ -212,9 +201,9 @@
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  width: var(--dropdown-item-icon-size);
-  height: var(--dropdown-item-icon-size);
-  font-size: var(--dropdown-item-icon-size);
+  width: var(--dropdown-icon-size);
+  height: var(--dropdown-icon-size);
+  font-size: var(--dropdown-icon-size);
   line-height: 1;
 }
 
@@ -256,7 +245,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .dropdown__trigger--button,
-  .dropdown__trigger-caret,
+  .dropdown__trigger-caret > i,
   .dropdown__item {
     transition: none;
   }

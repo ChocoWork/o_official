@@ -30,13 +30,7 @@
   --card-label-size: calc(var(--card-font-size) / var(--phi));
 
   /* 枠線（直値を排し φ³ から導出。最小 1px を保証）*/
-  --card-border-width: max(
-    1px,
-    calc(
-      var(--card-font-size) /
-        (var(--phi) * var(--phi) * var(--phi) * var(--phi))
-    )
-  );
+  --card-border-width: 1px;
 
   /* オーバーレイ操作の余白＝font / φ（メディア四隅からの近接距離）*/
   --card-overlay-offset: calc(var(--card-font-size) / var(--phi));
