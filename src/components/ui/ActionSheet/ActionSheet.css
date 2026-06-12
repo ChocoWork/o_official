@@ -1,40 +1,28 @@
 [data-ui-action-sheet] {
   /* --- スケール基準（Button と同じ φ ベースのトークン体系を踏襲）--- */
   --sheet-font-size: var(--ui-font-size, var(--lk-size-md));
-  --sheet-pad-ratio: calc(1 / var(--phi));
 
-  /* 項目高さ：Button の min-height 算出（line-height + 2 * pad-ratio）と同思想 */
-  --sheet-item-height-ratio: calc(
-    var(--sqrt-phi) + (var(--sheet-pad-ratio) * 2)
-  );
-  --sheet-item-height: calc(
-    var(--sheet-font-size) * var(--sheet-item-height-ratio)
-  );
+  /* ── Padding rules — same formula as Button ────────────────────────── */
+  --pad-x: calc(var(--sheet-font-size) / var(--sqrt-phi));
+  --pad-y: calc((var(--sheet-font-size) * var(--sqrt-phi)) / (var(--phi) * var(--phi)));
+  --gap-icon2text: calc(var(--pad-x) / var(--phi));
 
-  /* 横パディングは φ を乗じてテキストの呼吸を確保 */
-  --sheet-item-pad-inline: calc(
-    var(--sheet-font-size) * var(--sheet-pad-ratio) * var(--phi)
-  );
+  /* アイコンボックス = line-height（Button icon-only と同サイズ）*/
+  --sheet-icon-box: calc(var(--sheet-font-size) * var(--sqrt-phi));
 
-  /* アイコンとラベルの間隔（近接：密結合な小ギャップ = font / φ²）*/
-  --sheet-item-gap: calc(var(--sheet-font-size) / (var(--phi) * var(--phi)));
-
-  /* アイコンボックス（整列：固定枠でラベル開始位置を揃える）*/
-  --sheet-icon-box: calc(var(--sheet-font-size) * var(--phi));
-
-  /* パネル外周マージン・最大幅も φ から導出 */
-  --sheet-panel-gap: calc(
-    var(--sheet-font-size) * var(--sheet-pad-ratio) * var(--phi)
-  );
-  --sheet-panel-pad: calc(var(--sheet-font-size) * var(--sheet-pad-ratio));
-  --sheet-panel-max-width: 28rem;
+  /* パネル外周マージン（スクリーン端からの余白 = pad-x × φ）*/
+  --sheet-panel-gap: calc(var(--pad-x) * var(--phi));
+  /* パネル内パディング（項目を囲む余白 = pad-y）*/
+  --sheet-panel-pad: var(--pad-y);
+  /* 最大幅：desktop で ~58%、mobile で ~89% に収まるサイズ */
+  --sheet-panel-max-width: 24rem;
 
   /* 角丸トークン（shape で切替。既定は rounded）*/
   --sheet-panel-radius: var(--control-button-radius-rounded);
   --sheet-item-radius: calc(var(--sheet-panel-radius) / var(--phi));
 
   /* グループ間の区切り余白（近接：アクション群とキャンセルを分離）*/
-  --sheet-divider-gap: calc(var(--sheet-font-size) * var(--sheet-pad-ratio));
+  --sheet-divider-gap: var(--pad-y);
 
   /* 色トークン（Button と同系統。ハードコードは一箇所に集約）*/
   --sheet-panel-bg: #ffffff;
@@ -99,9 +87,8 @@
   display: flex;
   align-items: center;
   width: 100%;
-  min-height: var(--sheet-item-height);
-  padding-block: 0;
-  padding-inline: var(--sheet-item-pad-inline);
+  padding-block: var(--pad-y);
+  padding-inline: var(--pad-x);
   border: 0;
   border-radius: var(--sheet-item-radius);
   background: transparent;
@@ -134,7 +121,7 @@
 .action-sheet__item-inner {
   display: inline-flex;
   align-items: center;
-  gap: var(--sheet-item-gap);
+  gap: var(--gap-icon2text);
 }
 
 /* --- アイコン枠（整列：固定サイズでラベル開始位置を統一）--- */
@@ -149,7 +136,7 @@
 
 .action-sheet__icon {
   display: inline-flex;
-  font-size: var(--sheet-icon-box);
+  font-size: calc(var(--sheet-font-size) * var(--sqrt-phi));
   line-height: 1;
 }
 
