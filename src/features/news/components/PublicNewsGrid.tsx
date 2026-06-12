@@ -331,7 +331,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
                   </span>
                   {/* Category tag: mobile only */}
                   <div className="flex items-center">
-                    <TagLabel className="font-acumin" size="xs">
+                    <TagLabel className="font-acumin" size="8xs">
                       {article.category}
                     </TagLabel>
                   </div>

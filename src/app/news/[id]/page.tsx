@@ -3,9 +3,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { categories } from "@/lib/news-data";
-import { Button } from '@/components/ui/Button/Button';
-import { TagLabel } from '@/components/ui/TagLabel/TagLabel';
-import { getPublishedNewsDetailById, getPublishedNewsNavigation } from '@/features/news/services/public';
+import { Button } from "@/components/ui/Button/Button";
+import { TagLabel } from "@/components/ui/TagLabel/TagLabel";
+import {
+  getPublishedNewsDetailById,
+  getPublishedNewsNavigation,
+} from "@/features/news/services/public";
 
 interface NewsDetailPageProps {
   params: Promise<{
@@ -22,21 +25,23 @@ function resolveCategoryListParam(category: string | undefined): string | null {
   }
 
   const parsed = category
-    .split(',')
+    .split(",")
     .map((value) => value.trim().toUpperCase())
     .filter((value): value is (typeof categories)[number] =>
       categories.includes(value as (typeof categories)[number]),
     )
-    .filter((value) => value !== 'ALL');
+    .filter((value) => value !== "ALL");
 
   if (parsed.length === 0) {
     return null;
   }
 
-  return [...new Set(parsed)].join(',');
+  return [...new Set(parsed)].join(",");
 }
 
-function resolveCategory(category: string | undefined): (typeof categories)[number] {
+function resolveCategory(
+  category: string | undefined,
+): (typeof categories)[number] {
   const normalizedCategory = (category ?? "ALL").toUpperCase();
   return categories.includes(normalizedCategory as (typeof categories)[number])
     ? (normalizedCategory as (typeof categories)[number])
@@ -48,10 +53,14 @@ function buildDescription(content: string): string {
   if (normalized.length === 0) {
     return "Le Fil des Heuresのニュース詳細ページです。";
   }
-  return normalized.length > 120 ? `${normalized.slice(0, 120)}...` : normalized;
+  return normalized.length > 120
+    ? `${normalized.slice(0, 120)}...`
+    : normalized;
 }
 
-export async function generateMetadata({ params }: NewsDetailPageProps): Promise<Metadata> {
+export async function generateMetadata({
+  params,
+}: NewsDetailPageProps): Promise<Metadata> {
   const resolvedParams = await params;
   const article = await getPublishedNewsDetailById(resolvedParams.id);
 
@@ -74,9 +83,11 @@ export default async function NewsDetailPage({
 }: NewsDetailPageProps) {
   const resolvedParams = await params;
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
-  const persistedCategoryList = resolveCategoryListParam(resolvedSearchParams?.category);
+  const persistedCategoryList = resolveCategoryListParam(
+    resolvedSearchParams?.category,
+  );
   const activeCategory = resolveCategory(resolvedSearchParams?.category);
-  
+
   const article = await getPublishedNewsDetailById(resolvedParams.id, {
     category: activeCategory,
   });
@@ -85,27 +96,30 @@ export default async function NewsDetailPage({
     notFound();
   }
 
-  const { prevArticle, nextArticle } = await getPublishedNewsNavigation(resolvedParams.id, {
-    category: activeCategory,
-  });
+  const { prevArticle, nextArticle } = await getPublishedNewsNavigation(
+    resolvedParams.id,
+    {
+      category: activeCategory,
+    },
+  );
 
   const navCategoryParam = persistedCategoryList
     ? `?category=${encodeURIComponent(persistedCategoryList)}`
     : "";
 
   const metaTextStyle = {
-    fontFamily: 'acumin-pro, sans-serif',
-    fontSize: 'var(--lk-size-2xs)',
+    fontFamily: "acumin-pro, sans-serif",
+    fontSize: "var(--lk-size-2xs)",
   } as const;
 
   const actionLabelStyle = {
-    fontFamily: 'acumin-pro, sans-serif',
-    fontSize: 'var(--lk-size-4xs)',
+    fontFamily: "acumin-pro, sans-serif",
+    fontSize: "var(--lk-size-4xs)",
   } as const;
 
   const actionTitleStyle = {
-    fontFamily: 'acumin-pro, sans-serif',
-    fontSize: 'var(--lk-size-sm)',
+    fontFamily: "acumin-pro, sans-serif",
+    fontSize: "var(--lk-size-sm)",
   } as const;
 
   return (
@@ -113,9 +127,15 @@ export default async function NewsDetailPage({
       {/* Article Header */}
       <div className="mb-8 sm:mb-10">
         <nav aria-label="Breadcrumb" className="mb-4 sm:mb-5">
-          <ol className="flex items-center gap-2 text-[#474747]" style={metaTextStyle}>
+          <ol
+            className="flex items-center gap-2 text-[#474747]"
+            style={metaTextStyle}
+          >
             <li>
-              <Link href={`/news${navCategoryParam}`} className="group relative inline-flex text-[#474747] transition-colors hover:text-black">
+              <Link
+                href={`/news${navCategoryParam}`}
+                className="group relative inline-flex text-[#474747] transition-colors hover:text-black"
+              >
                 <span>NEWS</span>
                 <span
                   aria-hidden="true"
@@ -141,7 +161,9 @@ export default async function NewsDetailPage({
             <li aria-hidden="true">
               <i className="ri-arrow-right-s-line" />
             </li>
-            <li className="truncate" aria-current="page">{article.title}</li>
+            <li className="truncate" aria-current="page">
+              {article.title}
+            </li>
           </ol>
         </nav>
 
@@ -150,13 +172,15 @@ export default async function NewsDetailPage({
             className="text-[#474747] tracking-widest"
             style={metaTextStyle}
           >
-            {article.published_date.replace(/-/g, '.')}
+            {article.published_date.replace(/-/g, ".")}
           </span>
-          <TagLabel className="font-acumin" size="md">
+          <TagLabel className="font-acumin" size="7xs">
             {article.category}
           </TagLabel>
         </div>
-        <h1 className="leading-snug" style={{ fontSize: 'var(--lk-size-3xl)' }}>{article.title}</h1>
+        <h1 className="leading-snug" style={{ fontSize: "var(--lk-size-3xl)" }}>
+          {article.title}
+        </h1>
       </div>
 
       {/* Article Content */}
@@ -164,20 +188,21 @@ export default async function NewsDetailPage({
         className="border-t border-black/10 pt-8 sm:pt-10"
         style={{ fontFamily: "acumin-pro, sans-serif" }}
       >
-        {article.detailed_content.split("\n\n").map((paragraph: string, index: number) => (
-          <p
-            key={index}
-            className="text-[#474747] leading-loose mb-5 sm:mb-7 whitespace-pre-line"
-            style={{ fontSize: 'var(--lk-size-sm)' }}
-          >
-            {paragraph}
-          </p>
-        ))}
+        {article.detailed_content
+          .split("\n\n")
+          .map((paragraph: string, index: number) => (
+            <p
+              key={index}
+              className="text-[#474747] leading-loose mb-5 sm:mb-7 whitespace-pre-line"
+              style={{ fontSize: "var(--lk-size-sm)" }}
+            >
+              {paragraph}
+            </p>
+          ))}
       </div>
 
       {/* Navigation */}
       <div className="mt-12 sm:mt-16 pt-6 sm:pt-8 border-t border-[#d5d0c9]">
-
         {/* Mobile layout: PREV/NEXT row → VIEW ALL centered */}
         <div className="sm:hidden">
           <div className="flex items-start justify-between mb-5">
@@ -242,7 +267,11 @@ export default async function NewsDetailPage({
 
           {/* VIEW ALL centered */}
           <div className="flex justify-center pt-2">
-            <Button href={`/news${navCategoryParam}`} size="sm" className="font-acumin">
+            <Button
+              href={`/news${navCategoryParam}`}
+              size="sm"
+              className="font-acumin"
+            >
               VIEW ALL
             </Button>
           </div>
@@ -280,7 +309,11 @@ export default async function NewsDetailPage({
           )}
 
           {/* View All Button */}
-          <Button href={`/news${navCategoryParam}`} size="sm" className="justify-self-center font-acumin">
+          <Button
+            href={`/news${navCategoryParam}`}
+            size="sm"
+            className="justify-self-center font-acumin"
+          >
             VIEW ALL
           </Button>
 
@@ -313,7 +346,6 @@ export default async function NewsDetailPage({
             <div />
           )}
         </div>
-
       </div>
     </div>
   );
