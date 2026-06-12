@@ -1,31 +1,31 @@
 // File: src/components/ui/Dialog/Dialog.tsx
-import '@/components/ui/Dialog/Dialog.css';
-import { Button } from '@/components/ui/Button/Button';
-import { cn } from '@/lib/utils';
-import type { DialogProps } from '@/components/ui/Dialog/Dialog_types';
+import "@/components/ui/Dialog/Dialog.css";
+import { Button } from "@/components/ui/Button/Button";
+import { cn } from "@/lib/utils";
+import type { DialogProps } from "@/components/ui/Dialog/Dialog_types";
 
 export function Dialog({
   open,
   onClose,
-  title = 'Dialog Title',
+  title = "Dialog Title",
   description,
-  cancelText = 'CANCEL',
-  confirmText = 'CONFIRM',
+  cancelText = "CANCEL",
+  confirmText = "CONFIRM",
   onConfirm,
   children,
   className,
-  shape = 'rounded',
-  size = 'md',
+  shape = "square",
+  size = "md",
 }: DialogProps) {
   if (!open) {
     return null;
   }
 
   const rootDataAttrs = {
-    'data-ui-dialog': 'true',
-    'data-ui-dialog-shape': shape,
-    'data-ui-dialog-size': size,
-    'data-ui-size': size,
+    "data-ui-dialog": "true",
+    "data-ui-dialog-shape": shape,
+    "data-ui-dialog-size": size,
+    "data-ui-size": size,
   } as const;
 
   return (
@@ -37,7 +37,7 @@ export function Dialog({
     >
       <div className="dialog-overlay__scrim" aria-hidden="true" />
       <div
-        className={cn('dialog-panel', className)}
+        className={cn("dialog-panel", className)}
         onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"

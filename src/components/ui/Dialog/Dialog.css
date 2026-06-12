@@ -3,11 +3,19 @@
   /* 基準フォントサイズ（--ui-font-size 経由で 8XS〜8XL 全サイズに連動）*/
   --dialog-font-size: var(--ui-font-size, var(--lk-size-xs));
 
-  /*
-   * パネル内パディング＝font × φ²（本文より一段ゆとりを持たせ、面の余白で要素群を浮かせる）。
-   * 縦横を同値にして整列の安定感を出す。
-   */
-  --dialog-pad: calc(var(--dialog-font-size) * var(--phi) * var(--phi));
+  /* ── Padding rules — same formula as Button ────────────────────────── */
+  /* pad-x: font ÷ √φ */
+  --pad-x: calc(var(--dialog-font-size) / var(--sqrt-phi));
+  /* pad-y: font × √φ ÷ φ² */
+  --pad-y: calc((var(--dialog-font-size) * var(--sqrt-phi)) / (var(--phi) * var(--phi)));
+  /* gap-icon2text: pad-x ÷ φ */
+  --gap-icon2text: calc(var(--pad-x) / var(--phi));
+
+  /* ── Panel padding — scaled by φ² for content-area breathing room ─── */
+  /* pad-x × φ² = font × φ^1.5 */
+  --dialog-pad-x: calc(var(--pad-x) * var(--phi) * var(--phi));
+  /* pad-y × φ² = font × √φ */
+  --dialog-pad-y: calc(var(--pad-y) * var(--phi) * var(--phi));
 
   /* タイトル＝font × φ（本文より一段大きく対比をつける）*/
   --dialog-title-size: calc(var(--dialog-font-size) * var(--phi));
@@ -15,14 +23,14 @@
   /* 説明文＝font（本文基準。色 muted で階層化）*/
   --dialog-description-size: var(--dialog-font-size);
 
-  /* 近接：タイトル直下の説明文との間隔＝font / φ（密接グループ化）*/
-  --dialog-title-gap: calc(var(--dialog-font-size) / var(--phi));
+  /* 近接：タイトル直下の説明文との間隔＝gap-icon2text（最小グループ間隔）*/
+  --dialog-title-gap: var(--gap-icon2text);
 
-  /* 対比：本文ブロックとアクション列の間隔＝font × φ（グループ間は広く離す）*/
-  --dialog-actions-gap-top: calc(var(--dialog-font-size) * var(--phi));
+  /* 対比：本文ブロックとアクション列の間隔＝pad-x（グループ間は広く離す）*/
+  --dialog-actions-gap-top: var(--pad-x);
 
-  /* 近接：アクションボタン間の横ギャップ＝font / φ */
-  --dialog-actions-gap: calc(var(--dialog-font-size) / var(--phi));
+  /* 近接：アクションボタン間の横ギャップ＝gap-icon2text */
+  --dialog-actions-gap: var(--gap-icon2text);
 
   /* パネル最大幅＝font × φ⁷（現在のルートフォントスケールで自然なダイアログ幅に着地）*/
   --dialog-max-width: calc(
@@ -30,8 +38,8 @@
       var(--phi) * var(--phi) * var(--phi) * var(--phi)
   );
 
-  /* オーバーレイ外周マージン＝font × φ（小画面でも端に貼り付かせない）*/
-  --dialog-edge-margin: calc(var(--dialog-font-size) * var(--phi));
+  /* オーバーレイ外周マージン＝pad-x × φ（小画面でも端に貼り付かせない）*/
+  --dialog-edge-margin: calc(var(--pad-x) * var(--phi));
 
   /* 角丸（直値を排し φ から導出）*/
   --dialog-radius: calc(var(--dialog-font-size) / var(--phi));
@@ -97,7 +105,7 @@
 .dialog-panel__body {
   display: flex;
   flex-direction: column;
-  padding: var(--dialog-pad);
+  padding: var(--dialog-pad-y) var(--dialog-pad-x);
   min-width: 0;
 }
 
