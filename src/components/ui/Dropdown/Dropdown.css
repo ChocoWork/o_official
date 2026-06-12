@@ -136,7 +136,7 @@
 }
 
 [data-ui-dropdown][data-ui-dropdown-open="true"] .dropdown__trigger-caret > i {
-  transform: rotate(180deg);
+  transform: rotateX(180deg);
 }
 
 /* --- メニュー（近接：トリガー直下／整列：align で左右寄せ）--- */
