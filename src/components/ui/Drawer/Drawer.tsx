@@ -10,6 +10,7 @@ export function Drawer({
   children,
   className,
   size = 'md',
+  shape = 'square',
 }: DrawerProps) {
   if (!open) {
     return null;
@@ -18,6 +19,7 @@ export function Drawer({
   const rootDataAttrs = {
     'data-ui-drawer': 'true',
     'data-ui-drawer-side': side,
+    'data-ui-drawer-shape': shape,
     'data-ui-drawer-size': size,
     'data-ui-size': size,
   } as const;

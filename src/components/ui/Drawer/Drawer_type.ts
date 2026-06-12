@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import type { ComponentSize } from '@/components/ui/types';
 
 export type UIDrawerSide = 'left' | 'right';
+export type UIDrawerShape = 'rounded' | 'square';
 
 export interface DrawerProps {
   open: boolean;
@@ -13,4 +14,6 @@ export interface DrawerProps {
   className?: string;
   /** demo size: xs/sm/md/lg/xl */
   size?: ComponentSize;
+  /** 角の形状。square（既定）/ rounded */
+  shape?: UIDrawerShape;
 }

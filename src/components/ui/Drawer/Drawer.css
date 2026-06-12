@@ -46,6 +46,11 @@
   z-index: var(--drawer-z);
 }
 
+/* --- 角の形状（Button / Dropdown と同方針：内側エッジの角丸を切替）--- */
+[data-ui-drawer][data-ui-drawer-shape="square"] {
+  --drawer-radius: 0;
+}
+
 /* --- 背景スクリム（対比：背後を暗転させ panel を前面に浮かせる）--- */
 .drawer-overlay__scrim {
   position: absolute;
