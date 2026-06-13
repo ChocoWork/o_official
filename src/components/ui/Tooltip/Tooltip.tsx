@@ -8,12 +8,14 @@ export function Tooltip({
   className,
   contentClassName,
   placement = 'top',
+  shape = 'square',
   size = 'md',
 }: TooltipProps) {
   const rootDataAttrs = {
     'data-ui-tooltip': 'true',
     'data-ui-tooltip-size': size,
     'data-ui-tooltip-placement': placement,
+    'data-ui-tooltip-shape': shape,
     'data-ui-size': size,
   } as const;
 

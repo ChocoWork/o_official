@@ -1,39 +1,39 @@
 // File: src/components/ui/ToastSnackbar/ToastSnackbar.tsx
-import '@/components/ui/ToastSnackbar/ToastSnackbar.css';
-import { cn } from '@/lib/utils';
+import "@/components/ui/ToastSnackbar/ToastSnackbar.css";
+import { cn } from "@/lib/utils";
 import type {
   ToastSnackbarProps,
   UIToastSnackbarVariant,
-} from '@/components/ui/ToastSnackbar/ToastSnackbar_type';
+} from "@/components/ui/ToastSnackbar/ToastSnackbar_type";
 
 const VARIANT_ICON_CLASS: Record<UIToastSnackbarVariant, string> = {
-  success: 'ri-check-line',
-  error: 'ri-error-warning-line',
-  info: 'ri-information-line',
+  success: "ri-check-line",
+  error: "ri-error-warning-line",
+  info: "ri-information-line",
 };
 
 export function ToastSnackbar({
   open = true,
   message,
-  variant = 'success',
-  shape = 'rounded',
+  variant = "success",
+  shape = "square",
   showIcon = true,
   icon,
   actionLabel,
   onAction,
   className,
-  size = 'md',
+  size = "md",
 }: ToastSnackbarProps) {
   if (!open) {
     return null;
   }
 
   const rootDataAttrs = {
-    'data-ui-toast-snackbar': 'true',
-    'data-ui-toast-snackbar-variant': variant,
-    'data-ui-toast-snackbar-shape': shape,
-    'data-ui-toast-snackbar-size': size,
-    'data-ui-size': size,
+    "data-ui-toast-snackbar": "true",
+    "data-ui-toast-snackbar-variant": variant,
+    "data-ui-toast-snackbar-shape": shape,
+    "data-ui-toast-snackbar-size": size,
+    "data-ui-size": size,
   } as const;
 
   const iconNode = icon ?? (
@@ -42,7 +42,7 @@ export function ToastSnackbar({
 
   return (
     <div
-      className={cn('toast-snackbar', className)}
+      className={cn("toast-snackbar", className)}
       {...rootDataAttrs}
       role="status"
       aria-live="polite"
