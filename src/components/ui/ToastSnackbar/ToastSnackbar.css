@@ -3,18 +3,13 @@
   /* 基準フォントサイズ（--ui-font-size 経由で 8XS〜8XL 全サイズに連動）*/
   --toast-font-size: var(--ui-font-size, var(--lk-size-md));
 
-  /*
-   * 横パディング＝font × φ、縦パディング＝font / φ。
-   *   → トースト＝横長 1 行が主体なので、縦はさらに φ 圧縮して詰める。
-   */
-  --toast-pad-x: calc(var(--toast-font-size) * var(--phi));
-  --toast-pad-y: calc(var(--toast-font-size) / (var(--phi) * var(--phi)));
+  /* Button と同じ padding / gap ルール */
+  --pad-x: calc(var(--toast-font-size) / var(--sqrt-phi));
+  --pad-y: calc((var(--toast-font-size) * var(--sqrt-phi)) / (var(--phi) * var(--phi)));
+  --gap-icon2text: calc(var(--pad-x) / var(--phi));
 
-  /* 近接：アイコン/本文/アクション間のギャップは font / φ で統一 */
-  --toast-gap: calc(var(--toast-font-size) / var(--phi));
-
-  /* アイコン径＝font × φ（本文より一段大きく対比をつける）*/
-  --toast-icon-size: calc(var(--toast-font-size) * var(--phi));
+  /* アイコン径 = line-height (= font-size × √φ)。Button の icon-only と同一 */
+  --toast-icon-size: calc(var(--toast-font-size) * var(--sqrt-phi));
 
   /* 角丸（直値を排し φ から導出）*/
   --toast-radius: calc(var(--toast-font-size) / var(--phi));
@@ -67,13 +62,15 @@
   width: fit-content;
   max-width: 100%;
 
-  padding: var(--toast-pad-y) var(--toast-pad-x);
+  padding: var(--pad-y) var(--pad-x);
+  border: 1px solid transparent;
   border-radius: var(--toast-shape-radius);
   background: var(--toast-bg);
   color: var(--toast-color);
   box-shadow: 0 var(--toast-shadow-offset-y) var(--toast-shadow-blur)
     var(--toast-shadow-color);
   font-family: acumin-pro, sans-serif;
+  line-height: var(--sqrt-phi);
   box-sizing: border-box;
   animation: toast-snackbar-slide-in var(--toast-anim-duration) ease-out;
 }
@@ -122,7 +119,7 @@
 .toast-snackbar__body {
   display: flex;
   align-items: center;
-  gap: var(--toast-gap);
+  gap: var(--gap-icon2text);
   min-width: 0;
 }
 

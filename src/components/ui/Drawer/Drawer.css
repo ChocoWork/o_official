@@ -9,21 +9,20 @@
    */
   --drawer-max-width: calc(
     var(--drawer-font-size) * var(--phi) * var(--phi) * var(--phi) *
-    var(--phi) * var(--phi) * var(--phi) * var(--phi)
+      var(--phi) * var(--phi) * var(--phi) * var(--phi)
   );
 
   /* 角丸（直値を排し φ から導出。内側エッジのみ丸める対比演出に使用）*/
   --drawer-radius: calc(var(--drawer-font-size) / var(--phi));
 
   /* 枠線（直値を排し φ³ から導出。極小サイズでも消えないよう max(1px,…)）*/
-  --drawer-border-width: max(
-    1px,
-    calc(var(--drawer-font-size) / (var(--phi) * var(--phi) * var(--phi)))
-  );
+  --drawer-border-width: max(1px);
 
   /* 影（強度は φ から導出した広がりで対比をつける）*/
   --drawer-shadow-blur: calc(var(--drawer-font-size) * var(--phi) * var(--phi));
-  --drawer-shadow-spread: calc(var(--drawer-font-size) / (var(--phi) * var(--phi)));
+  --drawer-shadow-spread: calc(
+    var(--drawer-font-size) / (var(--phi) * var(--phi))
+  );
 
   /* スライドイン距離＝最大幅（画面外から完全に出し入れ）*/
   --drawer-slide-distance: var(--drawer-max-width);
@@ -69,7 +68,8 @@
   overflow-y: auto;
   background: var(--drawer-bg);
   color: var(--drawer-fg);
-  box-shadow: 0 0 var(--drawer-shadow-blur) var(--drawer-shadow-spread) var(--drawer-shadow-color);
+  box-shadow: 0 0 var(--drawer-shadow-blur) var(--drawer-shadow-spread)
+    var(--drawer-shadow-color);
   box-sizing: border-box;
 }
 
