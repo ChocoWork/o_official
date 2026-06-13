@@ -7,22 +7,21 @@ html {
   /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
   --fab-font-size: var(--ui-font-size, var(--lk-size-xs));
 
+  /* Button と同じ padding / gap ルール */
+  --pad-x: calc(var(--fab-font-size) / var(--sqrt-phi));
+  --pad-y: calc((var(--fab-font-size) * var(--sqrt-phi)) / (var(--phi) * var(--phi)));
+  --gap-icon2text: calc(var(--pad-x) / var(--phi));
+
   /*
-   * メイン円形ボタン径＝font × φ²（タップ領域を十分に確保）。
-   * アクションボタン径はメインと同径（対比は色・影でつける）。
+   * メイン・アクションボタン径 = Button 高さ式
+   *   = 2×pad-y + font×√φ + 2px（border 分）
    */
-  --fab-main-size: calc(var(--fab-font-size) * var(--phi) * var(--phi));
+  --fab-main-size: calc(2 * var(--pad-y) + var(--fab-font-size) * var(--sqrt-phi) + 2px);
   --fab-action-size: calc(var(--fab-main-size));
 
-  /* メインアイコン径＝font × φ（speed-dial の +/× 用）*/
-  --fab-main-icon-size: calc(var(--fab-font-size) * var(--phi));
-
-  /* アクションアイコン径＝font（メインアイコンより一段小さく対比）*/
-  --fab-action-icon-size: calc(var(--fab-font-size));
-
-  /* 単独モード：横パディング＝font × φ、ラベルとアイコンのギャップ＝font / φ */
-  --fab-single-pad-x: calc(var(--fab-font-size) * var(--phi));
-  --fab-single-gap: calc(var(--fab-font-size) / var(--phi));
+  /* アイコン径 = line-height（= font × √φ）。Button icon-only と同一 */
+  --fab-main-icon-size: calc(var(--fab-font-size) * var(--sqrt-phi));
+  --fab-action-icon-size: calc(var(--fab-font-size) * var(--sqrt-phi));
 
   /* 単独モード最小幅＝font × φ⁴（横長ピル形を保証）*/
   --fab-single-min-width: calc(
@@ -186,12 +185,12 @@ html {
 /* single モード：横長ピル形（対比：ラベルを伴う） */
 [data-ui-floating-button][data-ui-floating-button-mode="single"]
   .floating-button__main {
-  gap: var(--fab-single-gap);
+  gap: var(--gap-icon2text);
   min-width: var(--fab-single-min-width);
-  height: var(--fab-main-size);
-  padding-left: var(--fab-single-pad-x);
-  padding-right: var(--fab-single-pad-x);
+  padding: var(--pad-y) var(--pad-x);
+  border: 1px solid transparent;
   border-radius: calc(var(--fab-main-size) / 2);
+  line-height: var(--sqrt-phi);
   box-shadow: 0 var(--fab-shadow-y) var(--fab-shadow-blur)
     var(--fab-shadow-color);
 }
