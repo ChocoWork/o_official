@@ -16,12 +16,14 @@ export function DataTable<T>({
   rowClassName,
   hoverableRows = false,
   striped = false,
+  shape = 'square',
   size = 'md',
 }: DataTableProps<T>) {
   const rootDataAttrs = {
     'data-ui-data-table': 'true',
     'data-ui-data-table-size': size,
     'data-ui-size': size,
+    'data-ui-data-table-shape': shape,
     'data-ui-data-table-hoverable': hoverableRows ? 'true' : undefined,
     'data-ui-data-table-striped': striped ? 'true' : undefined,
   } as const;

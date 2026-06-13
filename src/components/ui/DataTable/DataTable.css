@@ -3,29 +3,21 @@
   /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
   --table-font-size: var(--ui-font-size, var(--lk-size-xs));
 
-  /*
-   * セル横パディング＝font × φ。
-   * セル縦パディング＝font / φ。
-   *   横を広く・縦を詰めることで行を走査しやすくする（整列・可読性）。
-   */
-  --table-cell-pad-x: calc(var(--table-font-size) * var(--phi));
-  --table-cell-pad-y: calc(var(--table-font-size) / var(--phi));
+  /* Button と同じ padding / gap ルール */
+  --pad-x: calc(var(--table-font-size) / var(--sqrt-phi));
+  --pad-y: calc((var(--table-font-size) * var(--sqrt-phi)) / (var(--phi) * var(--phi)));
+  --gap-icon2text: calc(var(--pad-x) / var(--phi));
 
-  /* ヘッダーは本文よりさらに縦を φ 圧縮して帯状にまとめる（対比・グループ化）*/
-  --table-header-pad-y: calc(
-    var(--table-font-size) / (var(--phi) * var(--phi))
-  );
-
-  /* 本文セルは基準サイズ、ヘッダーは φ で一段小さく（対比・階層）*/
+  /* セル・ヘッダー共通フォントサイズ（ヘッダーを body と揃えて視認性を改善）*/
   --table-cell-font-size: var(--table-font-size);
-  --table-header-font-size: calc(var(--table-font-size) / var(--phi));
+  --table-header-font-size: var(--table-font-size);
 
-  /* 空表示メッセージはヘッダーと同階層の控えめサイズ（反復）*/
-  --table-empty-font-size: var(--table-header-font-size);
+  /* 空表示メッセージは控えめに一段小さく */
+  --table-empty-font-size: calc(var(--table-font-size) / var(--sqrt-phi));
 
-  /* ヘッダーの字間（トラッキング）＝font / φ³（広めにとって帯を引き締める）*/
+  /* ヘッダーの字間＝font / φ⁵（控えめなトラッキング）*/
   --table-header-tracking: calc(
-    var(--table-font-size) / (var(--phi) * var(--phi) * var(--phi))
+    var(--table-font-size) / (var(--phi) * var(--phi) * var(--phi) * var(--phi) * var(--phi))
   );
 
   /* 行高は φ から導出（密度の反復）*/
@@ -36,6 +28,7 @@
 
   /* 角丸＝font / φ（コンテナのみ。内部は反復のため共有）*/
   --table-radius: calc(var(--table-font-size) / var(--phi));
+  --table-shape-radius: 0;
 
   /* 空表示時の最小高＝font × φ²（潰れ防止）*/
   --table-empty-min-height: calc(
@@ -55,7 +48,7 @@
   display: block;
   overflow: auto;
   border: var(--table-border-width) solid var(--table-border-color);
-  border-radius: var(--table-radius);
+  border-radius: var(--table-shape-radius);
   background: var(--table-bg);
   font-family: acumin-pro, sans-serif;
   box-sizing: border-box;
@@ -74,9 +67,9 @@
 }
 
 .data-table__th {
-  padding: var(--table-header-pad-y) var(--table-cell-pad-x);
+  padding: var(--pad-y) var(--pad-x);
   font-size: var(--table-header-font-size);
-  font-weight: 400;
+  font-weight: 600;
   line-height: var(--table-line-height);
   letter-spacing: var(--table-header-tracking);
   color: var(--table-fg-muted);
@@ -87,7 +80,7 @@
 
 /* --- ボディセル（近接：行内で密接配置／対比：本文は濃く）--- */
 .data-table__td {
-  padding: var(--table-cell-pad-y) var(--table-cell-pad-x);
+  padding: var(--pad-y) var(--pad-x);
   font-size: var(--table-cell-font-size);
   line-height: var(--table-line-height);
   color: var(--table-fg);
@@ -131,12 +124,21 @@
 
 /* --- 空表示（近接：中央へ集約／対比：muted）--- */
 .data-table__empty-cell {
-  padding: var(--table-cell-pad-x) var(--table-cell-pad-x);
+  padding: var(--pad-x) var(--pad-x);
   height: var(--table-empty-min-height);
   font-size: var(--table-empty-font-size);
   line-height: var(--table-line-height);
   color: var(--table-fg-muted);
   text-align: center;
+}
+
+/* --- shape 展開 --- */
+[data-ui-data-table][data-ui-data-table-shape="square"] {
+  --table-shape-radius: 0;
+}
+
+[data-ui-data-table][data-ui-data-table-shape="rounded"] {
+  --table-shape-radius: var(--table-radius);
 }
 
 /* --- アクセシビリティ配慮（BannerAlert / Avatar / Button と同思想で踏襲）--- */

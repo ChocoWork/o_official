@@ -16,6 +16,8 @@ export interface TableColumn<T> {
   align?: 'left' | 'center' | 'right';
 }
 
+export type UIDataTableShape = 'square' | 'rounded';
+
 export interface DataTableProps<T> {
   columns: readonly TableColumn<T>[];
   rows: readonly T[];
@@ -29,6 +31,8 @@ export interface DataTableProps<T> {
   hoverableRows?: boolean;
   /** 偶数行に薄い面を敷く（反復／可読性） */
   striped?: boolean;
+  /** 角の形状。square（既定）/ rounded */
+  shape?: UIDataTableShape;
   /** demo size: xs/sm/md/lg/xl */
   size?: ComponentSize;
 }
