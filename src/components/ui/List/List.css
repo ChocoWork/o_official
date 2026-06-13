@@ -10,8 +10,10 @@
   /* Spacing
      整列: pad-x ÷ pad-y = √φ × √φ = φ (黄金比パディング)
      反復: inner-gap = pad-x (水平方向の間隔を統一) */
-  --list-pad-y: calc(var(--list-unit) / var(--sqrt-phi));
-  --list-pad-x: calc(var(--list-unit) * var(--sqrt-phi));
+  --list-pad-x: calc(var(--list-unit) / var(--sqrt-phi));
+  --list-pad-y: calc(
+    (var(--list-unit) * var(--sqrt-phi)) / (var(--phi) * var(--phi))
+  );
   --list-inner-gap: calc(var(--list-unit) * var(--sqrt-phi));
   --list-row-gap: calc(var(--list-unit) / var(--phi));
 
@@ -46,7 +48,8 @@
 }
 
 /* 近接: 行間はボーダー1本で区切り、padding は行内に収める */
-[data-ui-list][data-ui-list-variant="showcase"] [data-list-item]:not(:last-child) {
+[data-ui-list][data-ui-list-variant="showcase"]
+  [data-list-item]:not(:last-child) {
   border-bottom: 1px solid var(--list-border-color);
 }
 
@@ -62,12 +65,14 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  [data-ui-list][data-ui-list-variant="showcase"] [data-list-showcase-row]:hover {
+  [data-ui-list][data-ui-list-variant="showcase"]
+    [data-list-showcase-row]:hover {
     background: var(--list-hover-bg);
   }
 }
 
-[data-ui-list][data-ui-list-variant="showcase"] [data-list-showcase-row]:focus-visible {
+[data-ui-list][data-ui-list-variant="showcase"]
+  [data-list-showcase-row]:focus-visible {
   outline: 2px solid transparent;
   box-shadow:
     0 0 0 2px #ffffff,
