@@ -2,30 +2,27 @@
   /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
   --banner-font-size: var(--ui-font-size, var(--lk-size-md));
 
-  /*
-   * 横パディング＝font × φ。
-   * 縦パディング＝font / φ。
-   *   → font = φ のとき pad_y = φ / φ = 1（ご指定の目安に一致）。
-   *   ただし info / warning は後段でさらに φ 圧縮して詰める。
-   */
-  --banner-pad-x: calc(var(--banner-font-size) * var(--phi));
-  --banner-pad-y: calc(var(--banner-font-size) / var(--phi));
+  /* Buttonと同一ルール
+     pad-x = font / √φ
+     pad-y = (font × √φ) / φ²
+     gap   = pad-x / φ  (gap-icon2text) */
+  --banner-pad-x: calc(var(--banner-font-size) / var(--sqrt-phi));
+  --banner-pad-y: calc((var(--banner-font-size) * var(--sqrt-phi)) / (var(--phi) * var(--phi)));
+  --banner-gap: calc(var(--banner-pad-x) / var(--phi));
 
-  /* 近接：アイコン/本文/閉じるボタン間のギャップは font / φ で統一 */
-  --banner-gap: calc(var(--banner-font-size) / var(--phi));
-
-  /* アイコン径＝font × φ（本文より一段大きく対比をつける）*/
-  --banner-icon-size: calc(var(--banner-font-size) * var(--phi));
+  /* アイコン径＝font × √φ（line-heightと同値でButtonの高さに揃える）*/
+  --banner-icon-size: calc(var(--banner-font-size) * var(--sqrt-phi));
 
   /* 説明文は本文より φ で一段小さく（対比・階層）*/
   --banner-description-size: calc(var(--banner-font-size));
 
-  /* タイトルと説明文の縦間隔＝font / φ²（近接でグループ化）*/
-  --banner-text-gap: calc(var(--banner-font-size) / (var(--phi) * var(--phi)));
+  /* タイトルと説明文の縦間隔 = half-leading
+     視覚ギャップ = half-leading×3 ≈ 0.204*font < pad-y(0.486*font) で近接原則を満たす */
+  --banner-text-gap: calc(var(--banner-font-size) * (var(--sqrt-phi) - 1) / 2);
 
-  /* 閉じるボタン径＝font × φ、ヒット領域はアイコンの φ 倍 */
-  --banner-dismiss-icon-size: var(--banner-icon-size);
-  --banner-dismiss-size: calc(var(--banner-dismiss-icon-size) * var(--phi));
+  /* 閉じるボタン＝line-height（Bannerの高さに影響させない）*/
+  --banner-dismiss-icon-size: var(--banner-font-size);
+  --banner-dismiss-size: var(--banner-icon-size);
 
   /* 角丸・枠線・強調ボーダー（直値を排し φ から導出）*/
   --banner-radius: calc(var(--banner-font-size) / var(--phi));
@@ -64,7 +61,7 @@
   background: var(--banner-bg);
   color: var(--banner-color);
   font-family: acumin-pro, sans-serif;
-  box-sizing: border-box;
+  box-sizing: content-box;
 }
 
 /* --- 形状展開（shape：rounded / square）--- */
@@ -86,15 +83,11 @@
 [data-ui-banner-alert][data-ui-banner-alert-variant="info"] {
   --banner-bg: var(--banner-bg-emphasis);
   --banner-color: var(--banner-fg-emphasis);
-  /* info は 1 行主体になりやすいため縦をさらに φ 圧縮して詰める */
-  --banner-pad-y: calc(var(--banner-font-size) / (var(--phi) * var(--phi)));
 }
 
 [data-ui-banner-alert][data-ui-banner-alert-variant="warning"] {
   --banner-bg: var(--banner-bg-subtle);
   --banner-color: var(--banner-fg);
-  /* warning も同様に縦を φ 圧縮 */
-  --banner-pad-y: calc(var(--banner-font-size) / (var(--phi) * var(--phi)));
   border: var(--banner-border-width) solid var(--banner-border-color);
 }
 
@@ -155,7 +148,7 @@
 .banner-alert__description {
   margin: 0;
   font-size: var(--banner-description-size);
-  line-height: 1.6;
+  line-height: var(--sqrt-phi);
   color: var(--banner-fg-muted);
 }
 

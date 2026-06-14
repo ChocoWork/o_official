@@ -1,31 +1,35 @@
-import '@/components/ui/BannerAlert/BannerAlert.css';
-import { cn } from '@/lib/utils';
-import type { BannerAlertProps } from '@/components/ui/BannerAlert/BannerAlert_types';
+import "@/components/ui/BannerAlert/BannerAlert.css";
+import { cn } from "@/lib/utils";
+import type { BannerAlertProps } from "@/components/ui/BannerAlert/BannerAlert_types";
 
 export function BannerAlert({
   title,
   message,
   description,
-  variant = 'info',
-  shape = 'rounded',
+  variant = "info",
+  shape = "square",
   icon,
   dismissible = false,
   onDismiss,
   className,
-  size = 'md',
+  size = "md",
 }: BannerAlertProps) {
-  const contentText = message ?? title ?? '';
+  const contentText = message ?? title ?? "";
 
   const rootDataAttrs = {
-    'data-ui-banner-alert': 'true',
-    'data-ui-banner-alert-variant': variant,
-    'data-ui-banner-alert-shape': shape,
-    'data-ui-banner-alert-size': size,
-    'data-ui-size': size,
+    "data-ui-banner-alert": "true",
+    "data-ui-banner-alert-variant": variant,
+    "data-ui-banner-alert-shape": shape,
+    "data-ui-banner-alert-size": size,
+    "data-ui-size": size,
   } as const;
 
   return (
-    <div className={cn('banner-alert', className)} {...rootDataAttrs} role="alert">
+    <div
+      className={cn("banner-alert", className)}
+      {...rootDataAttrs}
+      role="alert"
+    >
       <div className="banner-alert__body">
         {icon ? (
           <span className="banner-alert__icon" aria-hidden="true">
@@ -36,7 +40,9 @@ export function BannerAlert({
           {contentText ? (
             <p
               className="banner-alert__title"
-              data-ui-banner-alert-has-description={description ? 'true' : undefined}
+              data-ui-banner-alert-has-description={
+                description ? "true" : undefined
+              }
             >
               {contentText}
             </p>
