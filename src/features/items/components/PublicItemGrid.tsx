@@ -33,12 +33,12 @@ const SORT_OPTIONS = [
   { value: "price_asc", label: "PRICE LOW TO HIGH" },
   { value: "price_desc", label: "PRICE HIGH TO LOW" },
 ] as const;
-const FILTER_SIDEBAR_SCROLL_CONTAINER_CLASS =
-  "h-full overflow-y-auto overscroll-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden border-r border-black/5 px-[13px] xl:px-[21px] py-[21px] xl:py-[34px]";
+const FILTER_SIDEBAR_SCROLL_CLASS =
+  "flex-1 min-h-0 overflow-y-auto overscroll-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden border-r border-black/5 px-[13px] xl:px-[21px] pt-[21px] xl:pt-[34px] pb-4";
+const FILTER_SIDEBAR_ACTIONS_CLASS =
+  "flex-shrink-0 border-r border-black/5 px-[13px] xl:px-[21px] pb-[21px] xl:pb-[34px] pt-4 bg-white space-y-2";
 const FILTER_DRAWER_CLASS =
   "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden";
-const FILTER_ACTIONS_CLASS =
-  "relative sticky bottom-0 z-40 space-y-2 bg-white pt-4 pb-1 before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:bg-white before:content-['']";
 
 type ItemCategory = (typeof ITEM_CATEGORIES)[number];
 type ItemSort = (typeof SORT_OPTIONS)[number]["value"];
@@ -867,9 +867,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
       </Button>
 
       {interactive
-        ? renderSortSelect(
-            "relative -mt-[3px] w-[9.75rem] sm:w-[10.5rem]",
-          )
+        ? renderSortSelect("relative -mt-[3px] w-[9.75rem] sm:w-[10.5rem]")
         : null}
     </div>
   );
@@ -1145,30 +1143,32 @@ export function PublicItemGrid(props: PublicItemGridProps) {
           size={menuSize}
           className="!max-w-none !overflow-visible !border-0"
         />
-
-        <div className={FILTER_ACTIONS_CLASS}>
-          <Button
-            type="button"
-            variant="primary"
-            size="xs"
-            onClick={applyDraftFilters}
-            className="w-full tracking-[0.18em]"
-          >
-            APPLY
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            size="xs"
-            onClick={resetDraftFilters}
-            className="w-full tracking-[0.18em]"
-          >
-            RESET
-          </Button>
-        </div>
       </div>
     );
   };
+
+  const renderFilterActions = (size: ComponentSize = "xs") => (
+    <>
+      <Button
+        type="button"
+        variant="primary"
+        size={size}
+        onClick={applyDraftFilters}
+        className="w-full tracking-[0.18em]"
+      >
+        APPLY
+      </Button>
+      <Button
+        type="button"
+        variant="secondary"
+        size={size}
+        onClick={resetDraftFilters}
+        className="w-full tracking-[0.18em]"
+      >
+        RESET
+      </Button>
+    </>
+  );
 
   if (variant === "home") {
     if (isSelfFetch && error) {
@@ -1215,11 +1215,14 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     <>
       <div className="flex w-full">
         <aside
-          className="hidden lg:block w-[199px] xl:w-[233px] flex-shrink-0 sticky h-[calc(100vh-var(--site-header-offset))] overflow-visible transition-[top,height] duration-300 ease-in-out"
+          className="hidden lg:flex flex-col w-[199px] xl:w-[233px] flex-shrink-0 sticky h-[calc(100vh-var(--site-header-offset))] overflow-hidden transition-[top,height] duration-300 ease-in-out"
           style={desktopFilterStickyStyle}
         >
-          <div className={FILTER_SIDEBAR_SCROLL_CONTAINER_CLASS}>
+          <div className={FILTER_SIDEBAR_SCROLL_CLASS}>
             {renderFilterSections("3xs")}
+          </div>
+          <div className={FILTER_SIDEBAR_ACTIONS_CLASS}>
+            {renderFilterActions("xs")}
           </div>
         </aside>
 
@@ -1271,17 +1274,18 @@ export function PublicItemGrid(props: PublicItemGridProps) {
         className={FILTER_DRAWER_CLASS}
       >
         <div
-          style={{
-            paddingInline: "calc(var(--lk-size-sm) * var(--phi))",
-            paddingBlock: "calc(var(--lk-size-sm) * var(--sqrt-phi))",
-          }}
+          className="flex flex-col h-full"
+          style={{ paddingInline: "calc(var(--lk-size-sm) * var(--phi))" }}
         >
           <div
-            className="flex items-center justify-end"
-            style={{ paddingBottom: "calc(var(--lk-size-sm) / var(--sqrt-phi))" }}
+            className="flex flex-shrink-0 items-center justify-end"
+            style={{
+              paddingTop: "calc(var(--lk-size-sm) * var(--sqrt-phi))",
+              paddingBottom: "calc(var(--lk-size-sm) / var(--sqrt-phi))",
+            }}
           >
             <Button
-              variant="icon-only"
+              variant="text"
               size="xs"
               onClick={closeDrawerAndApplyFilters}
               aria-label="Close filter drawer"
@@ -1290,7 +1294,18 @@ export function PublicItemGrid(props: PublicItemGridProps) {
             </Button>
           </div>
 
-          {renderFilterSections("xs")}
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pb-4">
+            {renderFilterSections("xs")}
+          </div>
+
+          <div
+            className="flex-shrink-0 space-y-2 bg-white pt-4"
+            style={{
+              paddingBottom: "calc(var(--lk-size-sm) * var(--sqrt-phi))",
+            }}
+          >
+            {renderFilterActions("xs")}
+          </div>
         </div>
       </Drawer>
     </>

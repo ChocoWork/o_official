@@ -242,7 +242,10 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
     syncCategoryQuery(nextSelection);
   };
 
-  const renderCategoryFilter = (size: ComponentSize = "3xs", expandHitArea = false) => (
+  const renderCategoryFilter = (
+    size: ComponentSize = "3xs",
+    expandHitArea = false,
+  ) => (
     <MultiSelect
       variant="panel"
       options={NEWS_CATEGORIES.map((c) => ({ value: c, label: c }))}
@@ -424,16 +427,21 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
         >
           <div
             className="flex items-center justify-between border-b border-black/10"
-            style={{ paddingBottom: "calc(var(--lk-size-sm) / var(--sqrt-phi))" }}
+            style={{
+              paddingBottom: "calc(var(--lk-size-sm) / var(--sqrt-phi))",
+            }}
           >
             <h2
               className="tracking-[0.15em] text-black"
-              style={{ fontFamily: "acumin-pro, sans-serif", fontSize: "var(--lk-size-4xs)" }}
+              style={{
+                fontFamily: "acumin-pro, sans-serif",
+                fontSize: "var(--lk-size-4xs)",
+              }}
             >
               FILTER
             </h2>
             <Button
-              variant="icon-only"
+              variant="text"
               size="xs"
               onClick={() => setIsFilterDrawerOpen(false)}
               aria-label="Close filter drawer"
@@ -442,7 +450,9 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
             </Button>
           </div>
 
-          <div style={{ marginTop: "calc(var(--lk-size-sm) / var(--sqrt-phi))" }}>
+          <div
+            style={{ marginTop: "calc(var(--lk-size-sm) / var(--sqrt-phi))" }}
+          >
             {renderCategoryFilter("xs", true)}
           </div>
         </div>
