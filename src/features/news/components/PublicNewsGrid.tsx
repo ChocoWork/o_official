@@ -11,6 +11,7 @@ import { MultiSelect } from "@/components/ui/MultiSelect/MultiSelect";
 import { categories } from "@/lib/news-data";
 import { cn } from "@/lib/utils";
 import { PublicNewsArticle } from "@/features/news/types";
+import type { ComponentSize } from "@/components/ui/types";
 
 const NEWS_CATEGORIES = categories;
 const TAB_SCROLL_CONTAINER_CLASS =
@@ -241,7 +242,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
     syncCategoryQuery(nextSelection);
   };
 
-  const renderCategoryFilter = () => (
+  const renderCategoryFilter = (size: ComponentSize = "3xs", expandHitArea = false) => (
     <MultiSelect
       variant="panel"
       options={NEWS_CATEGORIES.map((c) => ({ value: c, label: c }))}
@@ -249,12 +250,9 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
       onChange={applyCategorySelection}
       shape="square"
       checkStyle="fill"
-      size="xs"
+      size={size}
       className="tracking-widest"
-      expandLabelHitArea={false}
-      renderOptionLabel={(option) => (
-        <span style={{ fontSize: "var(--lk-size-4xs)" }}>{option.label}</span>
-      )}
+      expandLabelHitArea={expandHitArea}
     />
   );
 
@@ -287,12 +285,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
         aria-expanded={interactive ? isFilterDrawerOpen : undefined}
         tabIndex={interactive ? undefined : -1}
       >
-        <div
-          className="w-4 h-4 flex items-center justify-center"
-          aria-hidden="true"
-        >
-          <i className="ri-equalizer-line text-base" />
-        </div>
+        <i className="ri-equalizer-line" aria-hidden="true" />
         FILTER
       </Button>
     </div>
@@ -422,26 +415,36 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
         size="sm"
         className="max-w-[280px] sm:max-w-sm"
       >
-        <div className="flex h-full flex-col px-5 py-4 sm:px-6 sm:py-5">
-          <div className="flex items-center justify-between border-b border-black/10 pb-3">
+        <div
+          className="flex h-full flex-col"
+          style={{
+            paddingInline: "calc(var(--lk-size-sm) * var(--phi))",
+            paddingBlock: "calc(var(--lk-size-sm) * var(--sqrt-phi))",
+          }}
+        >
+          <div
+            className="flex items-center justify-between border-b border-black/10"
+            style={{ paddingBottom: "calc(var(--lk-size-sm) / var(--sqrt-phi))" }}
+          >
             <h2
-              className="text-[11px] tracking-[0.15em] text-black"
-              style={{ fontFamily: "acumin-pro, sans-serif" }}
+              className="tracking-[0.15em] text-black"
+              style={{ fontFamily: "acumin-pro, sans-serif", fontSize: "var(--lk-size-4xs)" }}
             >
               FILTER
             </h2>
-            <button
-              type="button"
+            <Button
+              variant="icon-only"
+              size="xs"
               onClick={() => setIsFilterDrawerOpen(false)}
               aria-label="Close filter drawer"
-              className="leading-none text-black"
-              style={{ fontSize: "var(--lk-size-2xl)" }}
             >
-              ×
-            </button>
+              <i className="ri-close-line" aria-hidden="true" />
+            </Button>
           </div>
 
-          <div className="pt-4">{renderCategoryFilter()}</div>
+          <div style={{ marginTop: "calc(var(--lk-size-sm) / var(--sqrt-phi))" }}>
+            {renderCategoryFilter("xs", true)}
+          </div>
         </div>
       </Drawer>
 
@@ -451,11 +454,15 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
           className="hidden lg:block w-[176px] xl:w-[208px] flex-shrink-0 sticky h-[calc(100vh-var(--site-header-offset))] overflow-visible transition-[top,height] duration-300 ease-in-out"
           style={desktopFilterStickyStyle}
         >
-          <div className="h-full overflow-y-auto border-r border-black/5 px-[10px] xl:px-[16px] py-[21px] xl:py-[34px]">
+          <div
+            className="h-full overflow-y-auto border-r border-black/5"
+            style={{
+              paddingInline: "calc(var(--lk-size-xs) / var(--sqrt-phi))",
+              paddingBlock: "calc(var(--lk-size-xs) * var(--phi))",
+            }}
+          >
             <div className={TAB_SCROLL_CONTAINER_CLASS}>
-              <div className="flex justify-center min-w-max w-full">
-                {renderCategoryFilter()}
-              </div>
+              {renderCategoryFilter("3xs")}
             </div>
           </div>
         </aside>
