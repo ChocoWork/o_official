@@ -3,26 +3,28 @@
   /* 基準フォントサイズ（--ui-font-size 経由で 8XS〜8XL 全サイズに連動）*/
   --toolbar-font-size: var(--ui-font-size, var(--lk-size-xs));
 
-  /* バー横パディング＝font × φ（横を広く）*/
-  --toolbar-pad-x: calc(var(--toolbar-font-size) * var(--phi));
+  /* Buttonと同一ルール
+     pad-x = font / √φ
+     pad-y = (font × √φ) / φ²
+     gap   = pad-x / φ  (gap-icon2text) */
+  --toolbar-pad-x: calc(var(--toolbar-font-size) / var(--sqrt-phi));
+  --toolbar-pad-y: calc((var(--toolbar-font-size) * var(--sqrt-phi)) / (var(--phi) * var(--phi)));
+  --toolbar-gap-icon2text: calc(var(--toolbar-pad-x) / var(--phi));
 
-  /* 近接：セクション内アイテム間ギャップ＝font / φ で統一 */
-  --toolbar-gap: calc(var(--toolbar-font-size) / var(--phi));
+  /* セクション内アイテム間ギャップ = gap-icon2text */
+  --toolbar-gap: var(--toolbar-gap-icon2text);
 
-  /* アイコン径＝font × φ（本文ラベルより一段大きく対比）*/
-  --toolbar-icon-size: calc(var(--toolbar-font-size) * var(--phi));
+  /* アイコン径 = line-height（font × √φ）*/
+  --toolbar-icon-size: calc(var(--toolbar-font-size) * var(--sqrt-phi));
 
-  /*
-   * アイテム高さ＝font × φ²（クリック領域を十分に確保）。
-   * アイコンのみボタン幅も同値にして正方形を反復。
-   */
-  --toolbar-item-size: calc(var(--toolbar-font-size) * var(--phi) * var(--phi));
+  /* アイテム高さ = 2×pad-y + font×√φ（Toolbarの border 2px を除いた Button高さ）*/
+  --toolbar-item-size: calc(2 * var(--toolbar-pad-y) + var(--toolbar-font-size) * var(--sqrt-phi));
 
-  /* アイコン＋ラベル間ギャップ＝font / φ（近接）*/
-  --toolbar-item-gap: calc(var(--toolbar-font-size) / var(--phi));
+  /* アイコン＋ラベル間ギャップ = gap-icon2text */
+  --toolbar-item-gap: var(--toolbar-gap-icon2text);
 
-  /* ラベル付きアイテムの横パディング＝font / φ */
-  --toolbar-item-pad-x: calc(var(--toolbar-font-size) / var(--phi));
+  /* ラベル付きアイテムの横パディング = pad-x */
+  --toolbar-item-pad-x: var(--toolbar-pad-x);
 
   /* 角丸＝font / φ²（BannerAlert の締めと同方針）*/
   --toolbar-radius: calc(var(--toolbar-font-size) / (var(--phi) * var(--phi)));

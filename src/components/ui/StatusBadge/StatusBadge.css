@@ -8,20 +8,21 @@
   /* ── Scale ─────────────────────────────────────────────────────────── */
   --badge-font-size: var(--ui-font-size, var(--lk-size-xs));
 
-  /* ── Spacing (φ-derived) ───────────────────────────────────────────── */
-  /* pad-x: font ÷ √φ  →  balanced horizontal breathing room            */
+  /* ── Spacing — Buttonと同一ルール ─────────────────────────────────── */
+  /* pad-x = font / √φ                                                   */
   --badge-pad-x: calc(var(--badge-font-size) / var(--sqrt-phi));
-  /* pad-y: font × (φ−1) ÷ (φ × √φ)  →  compact vertical — badges sit  */
-  /*        inline and must not interrupt the surrounding line-height    */
-  --badge-pad-y: calc(var(--badge-font-size) * var(--lk-wholestep-dec) / var(--phi) / var(--sqrt-phi));
+  /* pad-y = (font × √φ) / φ²                                            */
+  --badge-pad-y: calc((var(--badge-font-size) * var(--sqrt-phi)) / (var(--phi) * var(--phi)));
+  /* gap-icon2text = pad-x / φ                                            */
+  --badge-gap-icon2text: calc(var(--badge-pad-x) / var(--phi));
 
   /* ── Count-badge geometry ──────────────────────────────────────────── */
-  /* count-h: font × √φ  →  container taller than the glyph by √φ ratio */
+  /* count-h: font × √φ  →  line-heightに揃えた高さ                      */
   --badge-count-h: calc(var(--badge-font-size) * var(--sqrt-phi));
-  /* min-w = count-h  →  single digit renders as a perfect pill/circle   */
+  /* min-w = count-h  →  1桁は正円に                                     */
   --badge-count-min-w: var(--badge-count-h);
-  /* multi-digit pad-x: font ÷ φ²  →  proportional inset for wider text */
-  --badge-count-pad-x: calc(var(--badge-font-size) / var(--phi) / var(--phi));
+  /* multi-digit pad-x = gap-icon2text（pad-x / φ）                       */
+  --badge-count-pad-x: var(--badge-gap-icon2text);
 
   /* ── Dot-badge geometry ────────────────────────────────────────────── */
   /* dot: font ÷ φ  →  thumb occupies the golden minor fraction          */

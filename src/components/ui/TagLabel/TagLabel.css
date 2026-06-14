@@ -1,26 +1,34 @@
 [data-ui-tag-label] {
-  --tag-label-pad-block: calc(1em * var(--control-pad-ratio));
-  --tag-label-pad-inline: 1em;
-  --tag-label-min-height: calc(
-    (1em * var(--sqrt-phi)) + (var(--tag-label-pad-block) * 2)
-  );
-  --tag-label-gap: calc(1em / var(--phi));
+  /* 基準フォントサイズ */
+  --tag-font-size: var(--ui-font-size, var(--lk-size-md));
+
+  /* Buttonと同一ルール
+     pad-x = font / √φ
+     pad-y = (font × √φ) / φ²
+     gap   = pad-x / φ  (gap-icon2text) */
+  --tag-pad-x: calc(var(--tag-font-size) / var(--sqrt-phi));
+  --tag-pad-y: calc((var(--tag-font-size) * var(--sqrt-phi)) / (var(--phi) * var(--phi)));
+  --tag-gap: calc(var(--tag-pad-x) / var(--phi));
+
+  /* removeボタン径 = line-height（タグ高さに影響させない）*/
+  --tag-remove-size: calc(var(--tag-font-size) * var(--sqrt-phi));
+
   --tag-label-radius: 0;
   --tag-label-bg: transparent;
   --tag-label-color: #111111;
   --tag-label-border-color: #111111;
+
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--tag-label-gap);
-  min-height: var(--tag-label-min-height);
-  padding: var(--tag-label-pad-block) var(--tag-label-pad-inline);
+  gap: var(--tag-gap);
+  padding: var(--tag-pad-y) var(--tag-pad-x);
   border: 1px solid var(--tag-label-border-color);
   border-radius: var(--tag-label-radius);
   background: var(--tag-label-bg);
   color: var(--tag-label-color);
   font-family: "acumin-pro", sans-serif;
-  font-size: var(--ui-font-size, var(--lk-size-md));
+  font-size: var(--tag-font-size);
   line-height: var(--sqrt-phi);
   font-weight: 400;
   letter-spacing: 0.1em;
@@ -58,9 +66,8 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 1.25em;
-  height: 1.25em;
-  margin-inline-end: -0.125em;
+  width: var(--tag-remove-size);
+  height: var(--tag-remove-size);
   padding: 0;
   border: 0;
   border-radius: inherit;
