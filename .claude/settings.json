@@ -9,7 +9,14 @@
       "Bash(node -e ' *)",
       "Bash(npx playwright *)",
       "Bash(Remove-Item \"e2e\\\\slider-track-measure.spec.ts\" -Force)",
-      "Bash(Write-Output \"deleted\")"
+      "Bash(Write-Output \"deleted\")",
+      "Bash(where psql *)",
+      "Bash(where supabase *)",
+      "Bash(npx supabase *)",
+      "Bash(git fetch *)",
+      "Bash(git push *)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
     ]
   }
 }

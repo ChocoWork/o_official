@@ -8,6 +8,7 @@ import { EmptyPage } from '@/components/ui/EmptyPage/EmptyPage';
 import { Button } from '@/components/ui/Button/Button';
 import { Stepper } from '@/components/ui/Stepper/Stepper';
 import { TextField } from '@/components/ui/TextField/TextField';
+import { MAX_CART_ITEM_QUANTITY } from '@/features/cart/services/cart-stock';
 
 interface CartItem {
   id: string;
@@ -441,6 +442,7 @@ export default function CartPage() {
                         <Stepper
                           value={item.quantity}
                           min={1}
+                          max={MAX_CART_ITEM_QUANTITY}
                           onChange={(value) => handleQuantityChange(item.id, value)}
                           size="sm"/>
                       </div>
