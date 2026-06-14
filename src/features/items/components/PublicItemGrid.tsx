@@ -11,6 +11,7 @@ import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
 import { SectionTitle } from "@/components/ui/SectionTitle/SectionTitle";
 import { Drawer } from "@/components/ui/Drawer/Drawer";
 import { Slider } from "@/components/ui/Slider/Slider";
+import type { ComponentSize } from "@/components/ui/types";
 import { Item } from "@/types/item";
 import { usePublicItems } from "@/features/items/hooks/usePublicItems";
 import {
@@ -33,7 +34,7 @@ const SORT_OPTIONS = [
   { value: "price_desc", label: "PRICE HIGH TO LOW" },
 ] as const;
 const FILTER_SIDEBAR_SCROLL_CONTAINER_CLASS =
-  "h-full overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden border-r border-black/5 px-[13px] xl:px-[21px] py-[21px] xl:py-[34px]";
+  "h-full overflow-y-auto overscroll-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden border-r border-black/5 px-[13px] xl:px-[21px] py-[21px] xl:py-[34px]";
 const FILTER_DRAWER_CLASS =
   "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden";
 const FILTER_ACTIONS_CLASS =
@@ -708,6 +709,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
         }}
         size="xs"
         bordered={false}
+        className="tracking-[0.1em]"
       />
     </div>
   );
@@ -854,8 +856,9 @@ export function PublicItemGrid(props: PublicItemGridProps) {
         data-filter-button={interactive ? "floating" : "placeholder"}
         onClick={interactive ? () => setIsFilterDrawerOpen(true) : undefined}
         variant="text"
-        size="4xs"
-        className="tracking-widest"
+        size="xs"
+        className="tracking-[0.1em]"
+        style={{ marginLeft: "calc(-1 * var(--pad-x) - 1px)" }}
         aria-haspopup={interactive ? "dialog" : undefined}
         aria-expanded={interactive ? isFilterDrawerOpen : undefined}
         tabIndex={interactive ? undefined : -1}
@@ -865,13 +868,13 @@ export function PublicItemGrid(props: PublicItemGridProps) {
 
       {interactive
         ? renderSortSelect(
-            "relative -mt-[3px] translate-x-[4px] w-[9.75rem] sm:w-[10.5rem]",
+            "relative -mt-[3px] w-[9.75rem] sm:w-[10.5rem]",
           )
         : null}
     </div>
   );
 
-  const renderFilterSections = () => {
+  const renderFilterSections = (menuSize: ComponentSize = "xs") => {
     const filterSectionKeys: DrawerSectionKey[] = [
       "category",
       "stock",
@@ -963,7 +966,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
                       );
                     }}
                     variant="panel"
-                    size="xs"
+                    size={menuSize}
                     checkStyle="fill"
                     shape="square"
                     expandLabelHitArea={false}
@@ -994,7 +997,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
                             );
                           }}
                           variant="panel"
-                          size="xs"
+                          size={menuSize}
                           checkStyle="fill"
                           shape="square"
                           expandLabelHitArea={false}
@@ -1043,7 +1046,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
                       setDraftStock(nextValue ?? "all");
                     }}
                     variant="panel"
-                    size="xs"
+                    size={menuSize}
                     checkStyle="fill"
                     shape="square"
                     expandLabelHitArea={false}
@@ -1074,7 +1077,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
                             );
                           }}
                           variant="panel"
-                          size="xs"
+                          size={menuSize}
                           checkStyle="fill"
                           shape="square"
                           expandLabelHitArea={false}
@@ -1109,7 +1112,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
                       );
                     }}
                     variant="panel"
-                    size="xs"
+                    size={menuSize}
                     checkStyle="fill"
                     shape="square"
                     expandLabelHitArea={false}
@@ -1139,7 +1142,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
           openMode="multiple"
           defaultOpenKeys={filterSectionKeys}
           highlightOnHover={false}
-          size="xs"
+          size={menuSize}
           className="!max-w-none !overflow-visible !border-0"
         />
 
@@ -1216,7 +1219,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
           style={desktopFilterStickyStyle}
         >
           <div className={FILTER_SIDEBAR_SCROLL_CONTAINER_CLASS}>
-            {renderFilterSections()}
+            {renderFilterSections("3xs")}
           </div>
         </aside>
 
@@ -1228,7 +1231,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
             className="fixed inset-x-0 z-30 lg:hidden bg-white transition-transform duration-300 ease-in-out before:pointer-events-none before:absolute before:inset-x-0 before:-top-px before:h-px before:bg-white before:content-['']"
             style={mobileFilterStickyStyle}
           >
-            <div className="element-width px-6 md:px-[45px]">
+            <div className="element-width px-5 md:px-[41px]">
               {renderMobileFilterBar(true)}
             </div>
           </div>
@@ -1267,20 +1270,27 @@ export function PublicItemGrid(props: PublicItemGridProps) {
         size="md"
         className={FILTER_DRAWER_CLASS}
       >
-        <div className="px-5 py-4 sm:px-6 sm:py-5">
-          <div className="flex items-center justify-end pb-3">
+        <div
+          style={{
+            paddingInline: "calc(var(--lk-size-sm) * var(--phi))",
+            paddingBlock: "calc(var(--lk-size-sm) * var(--sqrt-phi))",
+          }}
+        >
+          <div
+            className="flex items-center justify-end"
+            style={{ paddingBottom: "calc(var(--lk-size-sm) / var(--sqrt-phi))" }}
+          >
             <Button
-              variant="text"
-              size="xl"
+              variant="icon-only"
+              size="xs"
               onClick={closeDrawerAndApplyFilters}
-              className="leading-none text-black"
-              style={{ fontSize: "var(--lk-size-2xl)" }}
+              aria-label="Close filter drawer"
             >
-              ×
+              <i className="ri-close-line" aria-hidden="true" />
             </Button>
           </div>
 
-          {renderFilterSections()}
+          {renderFilterSections("xs")}
         </div>
       </Drawer>
     </>
