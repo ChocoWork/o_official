@@ -29,8 +29,6 @@ interface CartItem {
 }
 
 export default function CartPage() {
-  const xsTextStyle: React.CSSProperties = { fontSize: "var(--lk-size-xs)" };
-  const mdTextStyle: React.CSSProperties = { fontSize: "var(--lk-size-md)" };
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -325,13 +323,16 @@ export default function CartPage() {
         </div>
         <span
           className="relative text-sm tracking-wider text-white mix-blend-difference"
-          style={{ fontFamily: "Didot, serif", ...mdTextStyle }}
+          style={{ fontFamily: "Didot, serif", fontSize: "var(--lk-size-md)" }}
         >
           Loading
         </span>
         <p
           className="absolute bottom-6 left-6 text-xs tracking-wider text-black/40 mix-blend-difference"
-          style={{ fontFamily: "acumin-pro, sans-serif", ...xsTextStyle }}
+          style={{
+            fontFamily: "acumin-pro, sans-serif",
+            fontSize: "var(--lk-size-xs)",
+          }}
         >
           BARS REVEAL
         </p>
@@ -450,7 +451,10 @@ export default function CartPage() {
                 {/* Detail — 近接: 2 groups (name+price top / attrs+stepper bottom) */}
                 <div className="flex-1 flex flex-col justify-between">
                   {/* Top: name + price / action buttons */}
-                  <div className="flex items-start justify-between">
+                  <div
+                    className="flex items-start justify-between"
+                    style={{ gap: "var(--gap-icon2text)" }}
+                  >
                     <Link
                       href={`/item/${item.items.id}`}
                       className="flex flex-col"
@@ -477,25 +481,29 @@ export default function CartPage() {
                         onClick={() => handleToggleWishlist(item.item_id)}
                         disabled={togglingWishlist === item.item_id.toString()}
                         variant="ghost"
-                        size="sm"
-                        className="w-8 h-8 flex items-center justify-center text-[#474747] hover:text-black hover:bg-transparent transition-colors cursor-pointer disabled:opacity-30 px-0 py-0"
+                        size="4xs"
+                        iconOnly
                       >
-                        <i
-                          className={`text-xl ${
-                            wishlistedItems.has(item.item_id)
-                              ? "ri-heart-fill text-red-500"
-                              : "ri-heart-line"
-                          }`}
-                        />
+                        <div className="w-4 h-4 flex items-center justify-center">
+                          <i
+                            className={`text-base ${
+                              wishlistedItems.has(item.item_id)
+                                ? "ri-heart-fill text-red-500"
+                                : "ri-heart-line"
+                            }`}
+                          />
+                        </div>
                       </Button>
                       <Button
                         onClick={() => handleRemove(item.id)}
                         disabled={updatingId === item.id}
                         variant="ghost"
-                        size="sm"
-                        className="w-8 h-8 flex items-center justify-center text-[#474747] hover:text-black transition-colors cursor-pointer disabled:opacity-30 px-0 py-0"
+                        size="4xs"
+                        iconOnly
                       >
-                        <i className="ri-close-line text-xl" />
+                        <div className="w-4 h-4 flex items-center justify-center">
+                          <i className="ri-close-line text-base" />
+                        </div>
                       </Button>
                     </div>
                   </div>
@@ -530,7 +538,7 @@ export default function CartPage() {
                       min={1}
                       max={MAX_CART_ITEM_QUANTITY}
                       onChange={(value) => handleQuantityChange(item.id, value)}
-                      size="xs"
+                      size="4xs"
                     />
                   </div>
 
@@ -538,10 +546,7 @@ export default function CartPage() {
                   {syncErrorByItem[item.id] && (
                     <div
                       className="text-red-600 flex items-center justify-between"
-                      style={{
-                        marginTop: "var(--pad-y)",
-                        gap: "var(--pad-x)",
-                      }}
+                      style={{ gap: "var(--pad-x)" }}
                     >
                       <span style={{ fontSize: "var(--lk-size-xs)" }}>
                         {syncErrorByItem[item.id]}
@@ -598,7 +603,7 @@ export default function CartPage() {
             style={{ padding: "calc(var(--lk-size-md) * var(--sqrt-phi))" }}
           >
             <p
-              className="font-bold tracking-wider text-[#474747] border-b border-black/10"
+              className="font-bold font-display tracking-wider text-[#474747] border-b border-black/10"
               style={{
                 fontSize: "var(--lk-size-sm)",
                 paddingBottom: "var(--pad-y)",

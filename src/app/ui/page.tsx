@@ -383,7 +383,7 @@ export default function Page() {
                 >
                   ICON ONLY
                 </p>
-                <Button variant="icon-only" size={buttonDemoSize} aria-label="Add to wishlist">
+                <Button variant="ghost" iconOnly size={buttonDemoSize} aria-label="Add to wishlist">
                   <div className="w-4 h-4 flex items-center justify-center">
                     <i className="ri-heart-line text-base"></i>
                   </div>

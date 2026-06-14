@@ -8,6 +8,7 @@ export function Button({
   variant = "primary",
   size = "md",
   shape = "square",
+  iconOnly,
   className,
   type = "button",
   disabled,
@@ -22,6 +23,7 @@ export function Button({
     "data-ui-button-size": size,
     "data-ui-size": uiSize,
     "data-ui-button-shape": shape,
+    "data-ui-button-icon-only": iconOnly ? "true" : undefined,
     "data-ui-button-disabled": disabled ? "true" : undefined,
   } as const;
 
