@@ -14,6 +14,7 @@ import {
   formatPostalCodeInput,
   normalizePostalCode,
 } from "@/features/checkout/utils/postal-code.util";
+import "./account.css";
 
 type AccountTab = "profile" | "shipping" | "orders";
 
@@ -506,9 +507,9 @@ function AccountPageContent() {
   }
 
   return (
-    <div className="element-width">
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-12">
-        <div className="lg:col-span-1">
+    <div className="account-page element-width">
+      <div className="account-layout">
+        <div>
           <TabSegmentControl
             items={[
               { key: "profile", label: "プロフィール" },
@@ -522,7 +523,7 @@ function AccountPageContent() {
             className="space-y-2"
             itemStyle={accountTextMdStyle}
           />
-          <div className="mt-6 pt-6 border-t border-black/10">
+          <div className="account-sidebar-logout">
             <Button
               type="button"
               variant="secondary"
@@ -544,75 +545,46 @@ function AccountPageContent() {
           </div>
         </div>
 
-        <div className="lg:col-span-3 min-w-0">
+        <div className="min-w-0">
           {activeTab === "profile" ? (
-            <div className="space-y-6">
+            <div className="account-sections">
               {isLoadingProfile ? (
-                <p className="text-[#474747]" style={accountTextMdStyle}>
-                  読み込み中...
-                </p>
+                <p className="text-[#474747] account-feedback">読み込み中...</p>
               ) : null}
               {profileMessage ? (
-                <p className="text-green-700" style={accountTextMdStyle}>
+                <p className="text-green-700 account-feedback">
                   {profileMessage}
                 </p>
               ) : null}
               {profileError ? (
-                <p className="text-red-600" style={accountTextMdStyle}>
-                  {profileError}
-                </p>
+                <p className="text-red-600 account-feedback">{profileError}</p>
               ) : null}
 
               {!isLoadingProfile && hasSavedProfile && !isEditingProfile ? (
-                <div className="border border-black/10 p-6 space-y-4">
-                  <div>
-                    <p
-                      className="text-[#474747] mb-1 tracking-wider"
-                      style={accountTextXsStyle}
-                    >
-                      メールアドレス
-                    </p>
-                    <p
-                      className="text-black break-all"
-                      style={accountTextMdStyle}
-                    >
+                <div className="account-card account-groups">
+                  <div className="account-field">
+                    <p className="account-label">メールアドレス</p>
+                    <p className="account-value break-all">
                       {savedProfile.email || "-"}
                     </p>
                   </div>
-                  <div>
-                    <p
-                      className="text-[#474747] mb-1 tracking-wider"
-                      style={accountTextXsStyle}
-                    >
-                      氏名
-                    </p>
-                    <p className="text-black" style={accountTextMdStyle}>
+                  <div className="account-field">
+                    <p className="account-label">氏名</p>
+                    <p className="account-value">
                       {savedProfile.fullName || "-"}
                     </p>
                   </div>
-                  <div>
-                    <p
-                      className="text-[#474747] mb-1 tracking-wider"
-                      style={accountTextXsStyle}
-                    >
-                      フリガナ
-                    </p>
-                    <p className="text-black" style={accountTextMdStyle}>
+                  <div className="account-field">
+                    <p className="account-label">フリガナ</p>
+                    <p className="account-value">
                       {savedProfile.kanaName || "-"}
                     </p>
                   </div>
-                  <div>
-                    <p
-                      className="text-[#474747] mb-1 tracking-wider"
-                      style={accountTextXsStyle}
-                    >
-                      電話番号
-                    </p>
-                    <p className="text-black" style={accountTextMdStyle}>
-                      {savedProfile.phone || "-"}
-                    </p>
+                  <div className="account-field">
+                    <p className="account-label">電話番号</p>
+                    <p className="account-value">{savedProfile.phone || "-"}</p>
                   </div>
-                  <div className="flex flex-wrap gap-3">
+                  <div className="account-actions">
                     <Button
                       type="button"
                       size="sm"
@@ -636,7 +608,7 @@ function AccountPageContent() {
 
               {!isLoadingProfile && (!hasSavedProfile || isEditingProfile) ? (
                 <form
-                  className="space-y-6 border border-black/10 p-6"
+                  className="account-form account-card"
                   onSubmit={handleProfileSave}
                 >
                   <TextField
@@ -675,7 +647,7 @@ function AccountPageContent() {
                     onChange={handleProfileFieldChange}
                     size="md"
                   />
-                  <div className="flex flex-wrap gap-3">
+                  <div className="account-actions">
                     <Button
                       type="submit"
                       size="lg"
@@ -710,81 +682,52 @@ function AccountPageContent() {
           ) : null}
 
           {activeTab === "shipping" ? (
-            <div className="space-y-6">
+            <div className="account-sections">
               {isLoadingProfile ? (
-                <p className="text-[#474747]" style={accountTextMdStyle}>
-                  読み込み中...
-                </p>
+                <p className="text-[#474747] account-feedback">読み込み中...</p>
               ) : null}
               {profileMessage ? (
-                <p className="text-green-700" style={accountTextMdStyle}>
+                <p className="text-green-700 account-feedback">
                   {profileMessage}
                 </p>
               ) : null}
               {profileError ? (
-                <p className="text-red-600" style={accountTextMdStyle}>
-                  {profileError}
-                </p>
+                <p className="text-red-600 account-feedback">{profileError}</p>
               ) : null}
 
               {!isLoadingProfile && hasSavedShipping && !isEditingShipping ? (
-                <div className="border border-black/10 p-6 space-y-4">
-                  <div>
-                    <p
-                      className="text-[#474747] mb-1 tracking-wider"
-                      style={accountTextXsStyle}
-                    >
-                      郵便番号
-                    </p>
-                    <p className="text-black" style={accountTextMdStyle}>
+                <div className="account-card account-groups">
+                  <div className="account-field">
+                    <p className="account-label">郵便番号</p>
+                    <p className="account-value">
                       {savedProfile.address.postalCode || "-"}
                     </p>
                   </div>
-                  <div>
-                    <p
-                      className="text-[#474747] mb-1 tracking-wider"
-                      style={accountTextXsStyle}
-                    >
-                      都道府県
-                    </p>
-                    <p className="text-black" style={accountTextMdStyle}>
+                  <div className="account-field">
+                    <p className="account-label">都道府県</p>
+                    <p className="account-value">
                       {savedProfile.address.prefecture || "-"}
                     </p>
                   </div>
-                  <div>
-                    <p
-                      className="text-[#474747] mb-1 tracking-wider"
-                      style={accountTextXsStyle}
-                    >
-                      市区町村
-                    </p>
-                    <p className="text-black" style={accountTextMdStyle}>
+                  <div className="account-field">
+                    <p className="account-label">市区町村</p>
+                    <p className="account-value">
                       {savedProfile.address.city || "-"}
                     </p>
                   </div>
-                  <div>
-                    <p
-                      className="text-[#474747] mb-1 tracking-wider"
-                      style={accountTextXsStyle}
-                    >
-                      番地
-                    </p>
-                    <p className="text-black" style={accountTextMdStyle}>
+                  <div className="account-field">
+                    <p className="account-label">番地</p>
+                    <p className="account-value">
                       {savedProfile.address.address || "-"}
                     </p>
                   </div>
-                  <div>
-                    <p
-                      className="text-[#474747] mb-1 tracking-wider"
-                      style={accountTextXsStyle}
-                    >
-                      建物名・部屋番号
-                    </p>
-                    <p className="text-black" style={accountTextMdStyle}>
+                  <div className="account-field">
+                    <p className="account-label">建物名・部屋番号</p>
+                    <p className="account-value">
                       {savedProfile.address.building || "-"}
                     </p>
                   </div>
-                  <div className="flex flex-wrap gap-3">
+                  <div className="account-actions">
                     <Button
                       type="button"
                       size="sm"
@@ -808,7 +751,7 @@ function AccountPageContent() {
 
               {!isLoadingProfile && (!hasSavedShipping || isEditingShipping) ? (
                 <form
-                  className="space-y-6 border border-black/10 p-6"
+                  className="account-form account-card"
                   onSubmit={handleShippingSave}
                 >
                   <TextField
@@ -856,7 +799,7 @@ function AccountPageContent() {
                     onChange={handleAddressFieldChange}
                     size="md"
                   />
-                  <div className="flex flex-wrap gap-3">
+                  <div className="account-actions">
                     <Button
                       type="submit"
                       size="lg"
@@ -891,20 +834,18 @@ function AccountPageContent() {
           ) : null}
 
           {activeTab === "orders" ? (
-            <div className="space-y-6">
+            <div className="account-sections">
               {isLoadingOrders ? (
-                <p className="text-[#474747]" style={accountTextMdStyle}>
+                <p className="text-[#474747] account-feedback">
                   注文履歴を読み込み中...
                 </p>
               ) : null}
               {ordersError ? (
-                <p className="text-red-600" style={accountTextMdStyle}>
-                  {ordersError}
-                </p>
+                <p className="text-red-600 account-feedback">{ordersError}</p>
               ) : null}
               {!isLoadingOrders && !ordersError && orders.length === 0 ? (
-                <div className="border border-black/10 p-8">
-                  <p className="text-black mb-2" style={accountTextLgStyle}>
+                <div className="account-card account-field">
+                  <p className="text-black" style={accountTextLgStyle}>
                     注文履歴はまだありません
                   </p>
                   <p className="text-[#474747]" style={accountTextMdStyle}>
@@ -914,85 +855,61 @@ function AccountPageContent() {
               ) : null}
 
               {orders.map((order) => (
-                <article
-                  key={order.id}
-                  className="border border-black/10 p-8 space-y-6"
-                >
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pb-6 border-b border-black/10">
-                    <div className="flex flex-wrap items-baseline gap-1">
-                      <p className="text-sm text-[#474747]">注文番号：</p>
+                <article key={order.id} className="account-card account-groups">
+                  <div className="account-order-head">
+                    <div className="account-order-meta">
+                      <p className="account-label">注文番号</p>
                       <p className="text-black" style={accountTextLgStyle}>
                         {order.orderNumber}
                       </p>
                     </div>
-                    <div className="flex flex-wrap items-baseline gap-1">
-                      <p className="text-sm text-[#474747]">注文日：</p>
-                      <p className="text-black" style={accountTextMdStyle}>
-                        {order.orderDate}
-                      </p>
+                    <div className="account-order-meta">
+                      <p className="account-label">注文日</p>
+                      <p className="account-value">{order.orderDate}</p>
                     </div>
                   </div>
 
-                  <div className="space-y-4">
+                  <div className="account-order-items">
                     {order.items.map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex flex-col gap-3 border-b border-black/5 pb-4 last:border-b-0 last:pb-0"
-                      >
-                        <div className="flex items-start gap-4">
-                          {item.imageUrl ? (
-                            <Image
-                              src={item.imageUrl}
-                              alt={item.name}
-                              width={80}
-                              height={80}
-                              className="rounded object-cover"
-                            />
-                          ) : null}
-                          <div className="min-w-0">
-                            <p
-                              className="text-black"
-                              style={accountTextMdStyle}
-                            >
-                              {item.name}
-                            </p>
-                            <p
-                              className="text-[#474747]"
-                              style={accountTextXsStyle}
-                            >
-                              数量: {item.quantity}
-                              {item.color ? ` / カラー: ${item.color}` : ""}
-                              {item.size ? ` / サイズ: ${item.size}` : ""}
-                            </p>
-                            <p className="text-sm text-black">{item.amount}</p>
-                          </div>
+                      <div key={item.id} className="account-order-item">
+                        {item.imageUrl ? (
+                          <Image
+                            src={item.imageUrl}
+                            alt={item.name}
+                            width={80}
+                            height={80}
+                            className="rounded object-cover"
+                          />
+                        ) : null}
+                        <div className="account-order-lines">
+                          <p style={{ fontSize: "var(--lk-size-sm)" }}>
+                            {item.name}
+                          </p>
+                          <p className="account-label">
+                            数量: {item.quantity}
+                            {item.color ? ` / カラー: ${item.color}` : ""}
+                            {item.size ? ` / サイズ: ${item.size}` : ""}
+                          </p>
+                          <p className="account-value">{item.amount}</p>
                         </div>
                       </div>
                     ))}
                   </div>
 
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pt-6 border-t border-black/10">
-                    <div className="flex flex-wrap items-center gap-4">
-                      <span className="inline-flex items-center px-4 py-2 text-xs tracking-wider bg-[#f5f5f5] text-black">
-                        {order.status}
-                      </span>
-                      <p className="text-xs text-[#474747]">
-                        商品点数: {order.itemCount}点
+                  <div className="account-order-foot">
+                    <span className="account-status">{order.status}</span>
+                    <div className="account-order-meta">
+                      <p className="account-label">商品点数</p>
+                      <p className="text-black" style={accountTextXlStyle}>
+                        {order.itemCount}点
                       </p>
-                      <div className="flex items-baseline gap-2">
-                        <p className="text-sm text-[#474747]">合計</p>
-                        <p className="text-black" style={accountTextXlStyle}>
-                          {order.totalAmount}
-                        </p>
-                      </div>
                     </div>
-                    {/* <Link
-                      href={order.detailHref}
-                      className="text-black underline underline-offset-4"
-                      style={accountTextMdStyle}
-                    >
-                      注文詳細を見る
-                    </Link> */}
+                    <div className="account-order-meta">
+                      <p className="account-label">合計</p>
+                      <p className="text-black" style={accountTextXlStyle}>
+                        {order.totalAmount}
+                      </p>
+                    </div>
                   </div>
                 </article>
               ))}

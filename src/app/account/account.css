@@ -1,0 +1,155 @@
+/* Account page spacing & typography rhythm.
+   Derived from the project's golden-ratio control tokens so that every
+   margin / padding / gap traces back to one base font size. */
+.account-page {
+  --account-font: var(--lk-size-md);
+
+  /* base control paddings (same formulas as Button / TextField) */
+  --pad-x: calc(var(--account-font) / var(--sqrt-phi));
+  --pad-y: calc(
+    (var(--account-font) * var(--sqrt-phi)) / (var(--phi) * var(--phi))
+  );
+  --gap-icon2text: calc(var(--pad-x) / var(--phi));
+
+  /* one proximity scale built from --pad-x */
+  --gap-tight: var(--gap-icon2text); /* label → value (近接: tightest) */
+  --gap-group: var(--pad-x); /* field ↔ field inside a group */
+  --gap-block: calc(var(--pad-x) * var(--sqrt-phi)); /* group ↔ group */
+  --gap-section: calc(var(--pad-x) * var(--phi)); /* card ↔ card */
+  --gap-layout: calc(
+    var(--pad-x) * var(--phi) * var(--phi)
+  ); /* sidebar ↔ content */
+
+  --card-pad: calc(var(--pad-x) * var(--phi));
+}
+
+/* layout: sidebar ↔ content (整列 + 近接) */
+.account-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--gap-section);
+}
+@media (min-width: 1024px) {
+  .account-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
+    gap: var(--gap-layout);
+  }
+}
+
+/* repeated card shell (反復) */
+.account-card {
+  border: 1px solid rgb(0 0 0 / 0.1);
+  padding: var(--card-pad);
+}
+
+/* vertical stacks at each proximity level */
+.account-sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-section);
+}
+.account-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-block);
+}
+.account-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-group);
+}
+
+/* label/value pair — proximity keeps them close, contrast tells them apart */
+.account-field {
+  display: flex;
+  flex-direction: column;
+  /* gap: var(--gap-tight); */
+}
+.account-label {
+  font-size: var(--lk-size-xs);
+  letter-spacing: 0.08em;
+  color: #767676;
+}
+.account-value {
+  font-size: var(--lk-size-md);
+  color: #000;
+}
+
+/* section heading (対比: clear top of hierarchy) */
+.account-heading {
+  font-size: var(--lk-size-xl);
+  letter-spacing: 0.02em;
+  color: #000;
+}
+
+/* aligned action row (整列) */
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-group);
+}
+
+.account-feedback {
+  font-size: var(--lk-size-md);
+}
+
+/* sidebar */
+.account-sidebar-logout {
+  margin-top: var(--gap-section);
+  padding-top: var(--gap-section);
+  border-top: 1px solid rgb(0 0 0 / 0.1);
+}
+
+/* order card internals */
+.account-order-head,
+.account-order-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--gap-group) var(--gap-block);
+}
+.account-order-head {
+  padding-bottom: var(--card-pad);
+  border-bottom: 1px solid rgb(0 0 0 / 0.1);
+}
+.account-order-foot {
+  align-items: center;
+  padding-top: var(--card-pad);
+  border-top: 1px solid rgb(0 0 0 / 0.1);
+}
+.account-order-meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--gap-tight);
+}
+.account-order-items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-block);
+}
+.account-order-item {
+  display: flex;
+  gap: var(--gap-group);
+  align-items: flex-start;
+  padding-bottom: var(--gap-block);
+  border-bottom: 1px solid rgb(0 0 0 / 0.06);
+}
+.account-order-item:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.account-order-lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-tight);
+  min-width: 0;
+}
+.account-status {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--pad-y) var(--pad-x);
+  font-size: var(--lk-size-xs);
+  letter-spacing: 0.08em;
+  background: #f5f5f5;
+  color: #000;
+}
