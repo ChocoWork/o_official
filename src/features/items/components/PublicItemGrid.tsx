@@ -38,7 +38,7 @@ const FILTER_SIDEBAR_SCROLL_CONTAINER_CLASS =
 const FILTER_DRAWER_CLASS =
   "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden";
 const FILTER_ACTIONS_CLASS =
-  "relative sticky bottom-0 z-40 space-y-2 bg-white pt-4 pb-1 before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:bg-white before:content-[''] after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-screen after:bg-white after:content-['']";
+  "relative sticky bottom-0 z-40 space-y-2 bg-white pt-4 pb-1 before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:bg-white before:content-['']";
 
 type ItemCategory = (typeof ITEM_CATEGORIES)[number];
 type ItemSort = (typeof SORT_OPTIONS)[number]["value"];
