@@ -964,9 +964,9 @@ function AccountPageContent() {
                               {item.color ? ` / カラー: ${item.color}` : ""}
                               {item.size ? ` / サイズ: ${item.size}` : ""}
                             </p>
+                            <p className="text-sm text-black">{item.amount}</p>
                           </div>
                         </div>
-                        <p className="text-sm text-black">{item.amount}</p>
                       </div>
                     ))}
                   </div>
