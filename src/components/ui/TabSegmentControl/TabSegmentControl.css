@@ -12,11 +12,16 @@
   /* pad-x: font ÷ √φ  →  same as Button                               */
   --tab-pad-x: calc(var(--tab-font-size) / var(--sqrt-phi));
   /* pad-y: font × √φ ÷ φ²  →  same as Button                          */
-  --tab-pad-y: calc((var(--tab-font-size) * var(--sqrt-phi)) / (var(--phi) * var(--phi)));
+  --tab-pad-y: calc(
+    (var(--tab-font-size) * var(--sqrt-phi)) / (var(--phi) * var(--phi))
+  );
   /* gap-icon2text: pad-x ÷ φ  →  same as Button                       */
   --tab-gap-icon2text: calc(var(--tab-pad-x) / var(--phi));
   /* indicator line: font × (√φ−1)/2  →  thin, proportional            */
-  --tab-indicator-h: max(1px, calc(var(--tab-font-size) * var(--lk-quarterstep-dec)));
+  --tab-indicator-h: max(
+    1px,
+    calc(var(--tab-font-size) * var(--lk-quarterstep-dec))
+  );
   /* item gap (tabs / tabs-standard): font × φ  →  golden spacing       */
   --tab-item-gap: calc(var(--tab-font-size) * var(--phi));
 
@@ -69,7 +74,6 @@
    ══════════════════════════════════════════════════════════════════════ */
 [data-ui-tab-segment][data-ui-tab-variant="segment"] {
   overflow: hidden;
-  border: 1px solid var(--tab-border-color);
   background: #ffffff;
 }
 
@@ -77,7 +81,8 @@
   color: var(--tab-color);
 }
 
-[data-ui-tab-segment][data-ui-tab-variant="segment"] [data-ui-tab-item][data-ui-tab-active="true"] {
+[data-ui-tab-segment][data-ui-tab-variant="segment"]
+  [data-ui-tab-item][data-ui-tab-active="true"] {
   background: var(--tab-active-bg);
   color: var(--tab-active-color);
 }
@@ -96,11 +101,13 @@
   padding-bottom: var(--tab-pad-y);
 }
 
-[data-ui-tab-segment][data-ui-tab-variant="tabs"] [data-ui-tab-item][data-ui-tab-active="true"] {
+[data-ui-tab-segment][data-ui-tab-variant="tabs"]
+  [data-ui-tab-item][data-ui-tab-active="true"] {
   color: var(--tab-color);
 }
 
-[data-ui-tab-segment][data-ui-tab-variant="tabs"] [data-ui-tab-item][data-ui-tab-active="true"]::after {
+[data-ui-tab-segment][data-ui-tab-variant="tabs"]
+  [data-ui-tab-item][data-ui-tab-active="true"]::after {
   content: "";
   position: absolute;
   inset-inline: 0;
@@ -131,7 +138,8 @@
   color: rgb(17 17 17 / 0.6);
 }
 
-[data-ui-tab-segment][data-ui-tab-variant="segment-pill"] [data-ui-tab-item][data-ui-tab-active="true"] {
+[data-ui-tab-segment][data-ui-tab-variant="segment-pill"]
+  [data-ui-tab-item][data-ui-tab-active="true"] {
   background: var(--tab-active-bg);
   color: var(--tab-active-color);
 }
@@ -151,11 +159,13 @@
   padding-block: calc(var(--tab-pad-y) + 1px);
 }
 
-[data-ui-tab-segment][data-ui-tab-variant="tabs-standard"] [data-ui-tab-item][data-ui-tab-active="true"] {
+[data-ui-tab-segment][data-ui-tab-variant="tabs-standard"]
+  [data-ui-tab-item][data-ui-tab-active="true"] {
   color: var(--tab-color);
 }
 
-[data-ui-tab-segment][data-ui-tab-variant="tabs-standard"] [data-ui-tab-item][data-ui-tab-active="true"]::after {
+[data-ui-tab-segment][data-ui-tab-variant="tabs-standard"]
+  [data-ui-tab-item][data-ui-tab-active="true"]::after {
   content: "";
   position: absolute;
   inset-inline: 0;
@@ -186,7 +196,8 @@
   color: var(--tab-color);
 }
 
-[data-ui-tab-segment][data-ui-tab-orientation="vertical"] [data-ui-tab-item][data-ui-tab-active="true"] {
+[data-ui-tab-segment][data-ui-tab-orientation="vertical"]
+  [data-ui-tab-item][data-ui-tab-active="true"] {
   background: var(--tab-active-bg);
   color: var(--tab-active-color);
 }
@@ -199,12 +210,14 @@
     color: var(--tab-hover-color);
   }
 
-  [data-ui-tab-segment][data-ui-tab-variant="segment"] [data-ui-tab-item]:not([data-ui-tab-active="true"]):hover {
+  [data-ui-tab-segment][data-ui-tab-variant="segment"]
+    [data-ui-tab-item]:not([data-ui-tab-active="true"]):hover {
     background: rgb(17 17 17 / 0.05);
     color: var(--tab-color);
   }
 
-  [data-ui-tab-segment][data-ui-tab-orientation="vertical"] [data-ui-tab-item]:not([data-ui-tab-active="true"]):hover {
+  [data-ui-tab-segment][data-ui-tab-orientation="vertical"]
+    [data-ui-tab-item]:not([data-ui-tab-active="true"]):hover {
     background: var(--tab-surface-hover-bg);
     color: var(--tab-color);
   }
