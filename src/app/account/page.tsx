@@ -509,7 +509,8 @@ function AccountPageContent() {
   return (
     <div className="account-page element-width">
       <div className="account-layout">
-        <div>
+        {/* sidebar: desktop only */}
+        <div className="hidden lg:block">
           <TabSegmentControl
             items={[
               { key: "profile", label: "プロフィール" },
@@ -546,6 +547,21 @@ function AccountPageContent() {
         </div>
 
         <div className="min-w-0">
+          {/* mobile/tablet: tabs-standard tab bar */}
+          <div className="account-mobile-tabs lg:hidden">
+            <TabSegmentControl
+              items={[
+                { key: "profile", label: "プロフィール" },
+                { key: "shipping", label: "配送情報" },
+                { key: "orders", label: "購入履歴" },
+              ]}
+              activeKey={activeTab}
+              onChange={handleTabChange}
+              variant="tabs-standard"
+              size="sm"
+            />
+          </div>
+
           {activeTab === "profile" ? (
             <div className="account-sections">
               {isLoadingProfile ? (
@@ -915,6 +931,28 @@ function AccountPageContent() {
               ))}
             </div>
           ) : null}
+
+          {/* mobile/tablet: logout below content */}
+          <div className="account-sidebar-logout lg:hidden">
+            <Button
+              type="button"
+              variant="secondary"
+              size="md"
+              className="w-full font-acumin"
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+            >
+              {isLoggingOut ? "ログアウト中..." : "ログアウト"}
+            </Button>
+            {logoutError ? (
+              <p
+                className="mt-3 text-red-600 font-acumin"
+                style={accountTextXsStyle}
+              >
+                {logoutError}
+              </p>
+            ) : null}
+          </div>
         </div>
       </div>
     </div>

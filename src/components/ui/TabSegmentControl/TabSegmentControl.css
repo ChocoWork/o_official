@@ -151,7 +151,7 @@
    ══════════════════════════════════════════════════════════════════════ */
 [data-ui-tab-segment][data-ui-tab-variant="tabs-standard"] {
   display: flex;
-  gap: var(--tab-item-gap);
+  gap: var(--tab-gap-icon2text);
 }
 
 [data-ui-tab-segment][data-ui-tab-variant="tabs-standard"] [data-ui-tab-item] {

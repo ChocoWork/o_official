@@ -42,21 +42,29 @@
   padding: var(--card-pad);
 }
 
+/* mobile tab bar */
+.account-mobile-tabs {
+  margin-bottom: var(--gap-section);
+}
+
 /* vertical stacks at each proximity level */
 .account-sections {
   display: flex;
   flex-direction: column;
   gap: var(--gap-section);
+  width: 100%;
 }
 .account-groups {
   display: flex;
   flex-direction: column;
   gap: var(--gap-block);
+  width: 100%;
 }
 .account-form {
   display: flex;
   flex-direction: column;
   gap: var(--gap-group);
+  width: 100%;
 }
 
 /* label/value pair — proximity keeps them close, contrast tells them apart */
