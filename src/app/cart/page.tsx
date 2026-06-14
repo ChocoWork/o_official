@@ -30,12 +30,7 @@ interface CartItem {
 
 export default function CartPage() {
   const xsTextStyle: React.CSSProperties = { fontSize: "var(--lk-size-xs)" };
-  const smTextStyle: React.CSSProperties = { fontSize: "var(--lk-size-sm)" };
   const mdTextStyle: React.CSSProperties = { fontSize: "var(--lk-size-md)" };
-  const lgTextStyle: React.CSSProperties = { fontSize: "var(--lk-size-lg)" };
-  const headingTextStyle: React.CSSProperties = {
-    fontSize: "var(--lk-size-3xl)",
-  };
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -329,13 +324,13 @@ export default function CartPage() {
           />
         </div>
         <span
-          className="relative text-sm tracking-widest text-white mix-blend-difference"
+          className="relative text-sm tracking-wider text-white mix-blend-difference"
           style={{ fontFamily: "Didot, serif", ...mdTextStyle }}
         >
           Loading
         </span>
         <p
-          className="absolute bottom-6 left-6 text-xs tracking-widest text-black/40 mix-blend-difference"
+          className="absolute bottom-6 left-6 text-xs tracking-wider text-black/40 mix-blend-difference"
           style={{ fontFamily: "acumin-pro, sans-serif", ...xsTextStyle }}
         >
           BARS REVEAL
@@ -357,13 +352,47 @@ export default function CartPage() {
   }
 
   return (
-    <div className="element-width">
+    <div
+      className="element-width"
+      style={
+        {
+          "--pad-x": "calc(var(--lk-size-md) / var(--sqrt-phi))",
+          "--pad-y":
+            "calc((var(--lk-size-md) * var(--sqrt-phi)) / (var(--phi) * var(--phi)))",
+          "--gap-icon2text":
+            "calc(var(--lk-size-md) / var(--sqrt-phi) / var(--phi))",
+        } as React.CSSProperties
+      }
+    >
+      {/* Page heading — 対比: display font vs tiny item count label */}
+      {/* <div
+        className="flex items-baseline justify-between border-b border-black/10"
+        style={{
+          paddingBottom: "var(--pad-y)",
+          marginBottom: "calc(var(--lk-size-md) * var(--sqrt-phi) * var(--phi))",
+        }}
+      >
+        <h1
+          className="font-display tracking-tight"
+          style={{ fontSize: "var(--lk-size-4xl)" }}
+        >
+          Cart
+        </h1>
+        <span
+          className="tracking-widest text-[#474747]"
+          style={{ fontSize: "var(--lk-size-2xs)" }}
+        >
+          {cartItems.length} {cartItems.length === 1 ? "ITEM" : "ITEMS"}
+        </span>
+      </div> */}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-        <div className="lg:col-span-2 space-y-6">
+        {/* Items column */}
+        <div className="lg:col-span-2">
           {error && (
             <div
-              className="text-sm text-red-500 p-4 border border-red-300 bg-red-50"
-              style={mdTextStyle}
+              className="text-red-500 border border-red-300 bg-red-50 mb-6"
+              style={{ fontSize: "var(--lk-size-md)", padding: "var(--pad-x)" }}
             >
               {error}
             </div>
@@ -371,10 +400,14 @@ export default function CartPage() {
 
           {hasSyncError && (
             <div
-              className="text-sm text-amber-700 p-4 border border-amber-300 bg-amber-50 flex items-center justify-between gap-4"
-              style={mdTextStyle}
+              className="text-amber-700 border border-amber-300 bg-amber-50 flex items-center justify-between mb-6"
+              style={{
+                fontSize: "var(--lk-size-xs)",
+                padding: "var(--pad-x)",
+                gap: "var(--pad-x)",
+              }}
             >
-              <span style={mdTextStyle}>
+              <span>
                 数量の更新に失敗した商品があります。再試行または再同期してください。
               </span>
               <Button
@@ -388,199 +421,265 @@ export default function CartPage() {
             </div>
           )}
 
-          {cartItems.length === 0 ? (
-            <EmptyPage
-              iconClassName="ri-shopping-bag-line"
-              label="カートは空です"
-              buttonLabel="CONTINUE SHOPPING"
-              href="/item"
-            />
-          ) : (
-            <>
-              {cartItems.map((item) => {
-                if (!item.items) {
-                  // this should not happen because we filter on fetch, but defensive
-                  return null;
-                }
-                return (
-                  <div
-                    key={item.id}
-                    className="flex gap-6 border-b border-black/10 pb-6 relative group"
-                  >
+          {cartItems.map((item) => {
+            if (!item.items) return null;
+            return (
+              <div
+                key={item.id}
+                className="border-b border-black/10 flex"
+                style={{
+                  paddingTop: "calc(var(--lk-size-md) * var(--sqrt-phi))",
+                  paddingBottom: "calc(var(--lk-size-md) * var(--sqrt-phi))",
+                  gap: "calc(var(--lk-size-md) * var(--sqrt-phi))",
+                }}
+              >
+                {/* Thumbnail */}
+                <Link
+                  href={`/item/${item.items.id}`}
+                  className="w-24 h-32 bg-[#f5f5f5] flex-shrink-0 overflow-hidden relative"
+                >
+                  <Image
+                    alt={item.items.name}
+                    className="w-full h-full object-cover object-top hover:scale-105 transition-transform duration-500"
+                    src={item.items.image_url}
+                    fill
+                    sizes="96px"
+                  />
+                </Link>
+
+                {/* Detail — 近接: 2 groups (name+price top / attrs+stepper bottom) */}
+                <div className="flex-1 flex flex-col justify-between">
+                  {/* Top: name + price / action buttons */}
+                  <div className="flex items-start justify-between">
                     <Link
-                      href={`/item/${item.id}`}
-                      className="w-32 h-40 bg-[#f5f5f5] flex-shrink-0 overflow-hidden relative"
+                      href={`/item/${item.items.id}`}
+                      className="flex flex-col"
+                      style={{ gap: "var(--gap-icon2text)" }}
                     >
-                      <Image
-                        alt={item.items.name}
-                        className="w-full h-full object-cover object-top hover:scale-105 transition-transform duration-500"
-                        src={item.items.image_url}
-                        fill
-                        sizes="128px"
-                      />
+                      <span
+                        className="hover:text-[#474747] transition-colors"
+                        style={{ fontSize: "var(--lk-size-sm)" }}
+                      >
+                        {item.items.name}
+                      </span>
+                      <span
+                        className="text-[#474747]"
+                        style={{ fontSize: "var(--lk-size-xs)" }}
+                      >
+                        ¥{item.items.price.toLocaleString("ja-JP")}
+                      </span>
                     </Link>
-                    <div className="flex-1">
-                      <div className="flex justify-between items-start mb-2">
-                        <Link href={`/item/${item.items.id}`}>
-                          <p
-                            className="hover:text-[#474747] transition-colors cursor-pointer"
-                            style={{ fontSize: "var(--lk-size-xs)" }}
-                          >
-                            {item.items.name}
-                          </p>
-                          <p style={{ fontSize: "var(--lk-size-xs)" }}>
-                            ¥{item.items.price.toLocaleString("ja-JP")}
-                          </p>
-                        </Link>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            onClick={() => handleToggleWishlist(item.item_id)}
-                            disabled={
-                              togglingWishlist === item.item_id.toString()
-                            }
-                            variant="ghost"
-                            size="sm"
-                            className="w-8 h-8 flex items-center justify-center text-[#474747] hover:text-black hover:bg-transparent transition-colors cursor-pointer disabled:opacity-30 px-0 py-0"
-                          >
-                            <i
-                              className={`text-xl ${wishlistedItems.has(item.item_id) ? "ri-heart-fill text-red-500" : "ri-heart-line"}`}
-                            />
-                          </Button>
-                          <Button
-                            onClick={() => handleRemove(item.id)}
-                            disabled={updatingId === item.id}
-                            variant="ghost"
-                            size="sm"
-                            className="w-8 h-8 flex items-center justify-center text-[#474747] hover:text-black transition-colors cursor-pointer disabled:opacity-30 px-0 py-0"
-                          >
-                            <i className="ri-close-line text-xl"></i>
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          {item.color && (
-                            <p
-                              className="text-[#474747]"
-                              style={{ fontSize: "var(--lk-size-2xs)" }}
-                            >
-                              COLOR: {item.color}
-                            </p>
-                          )}
-                          {item.size && (
-                            <p
-                              className="text-[#474747]"
-                              style={{ fontSize: "var(--lk-size-2xs)" }}
-                            >
-                              SIZE: {item.size}
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Stepper
-                            value={item.quantity}
-                            min={1}
-                            max={MAX_CART_ITEM_QUANTITY}
-                            onChange={(value) =>
-                              handleQuantityChange(item.id, value)
-                            }
-                            size="xs"
-                          />
-                        </div>
-                      </div>
-                      {syncErrorByItem[item.id] && (
-                        <div className="mt-3 text-xs text-red-600 flex items-center justify-between gap-3">
-                          <span style={xsTextStyle}>
-                            {syncErrorByItem[item.id]}
-                          </span>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              onClick={() => handleRetryUpdate(item.id)}
-                              variant="secondary"
-                              size="sm"
-                            >
-                              再試行
-                            </Button>
-                            <Button
-                              onClick={handleResyncFromServer}
-                              disabled={resyncing}
-                              variant="ghost"
-                              size="sm"
-                            >
-                              最新状態を再取得
-                            </Button>
-                          </div>
-                        </div>
-                      )}
+                    <div
+                      className="flex items-center"
+                      style={{ gap: "var(--gap-icon2text)" }}
+                    >
+                      <Button
+                        onClick={() => handleToggleWishlist(item.item_id)}
+                        disabled={togglingWishlist === item.item_id.toString()}
+                        variant="ghost"
+                        size="sm"
+                        className="w-8 h-8 flex items-center justify-center text-[#474747] hover:text-black hover:bg-transparent transition-colors cursor-pointer disabled:opacity-30 px-0 py-0"
+                      >
+                        <i
+                          className={`text-xl ${
+                            wishlistedItems.has(item.item_id)
+                              ? "ri-heart-fill text-red-500"
+                              : "ri-heart-line"
+                          }`}
+                        />
+                      </Button>
+                      <Button
+                        onClick={() => handleRemove(item.id)}
+                        disabled={updatingId === item.id}
+                        variant="ghost"
+                        size="sm"
+                        className="w-8 h-8 flex items-center justify-center text-[#474747] hover:text-black transition-colors cursor-pointer disabled:opacity-30 px-0 py-0"
+                      >
+                        <i className="ri-close-line text-xl" />
+                      </Button>
                     </div>
                   </div>
-                );
-              })}
 
-              <div className="pt-6">
-                <Link
-                  href="/item"
-                  className="inline-flex items-center gap-2 text-sm text-black hover:text-[#474747] transition-colors cursor-pointer"
-                  style={mdTextStyle}
-                >
-                  <i className="ri-arrow-left-line"></i>買い物を続ける
-                </Link>
+                  {/* Bottom: attributes + stepper */}
+                  <div className="flex items-end justify-between">
+                    <div
+                      className="flex flex-col"
+                      style={{ gap: "var(--gap-icon2text)" }}
+                    >
+                      {item.color && (
+                        <span
+                          className="tracking-wider text-[#474747]"
+                          style={{ fontSize: "var(--lk-size-2xs)" }}
+                        >
+                          COLOR <span className="text-black/30">/</span>{" "}
+                          {item.color}
+                        </span>
+                      )}
+                      {item.size && (
+                        <span
+                          className="tracking-wider text-[#474747]"
+                          style={{ fontSize: "var(--lk-size-2xs)" }}
+                        >
+                          SIZE <span className="text-black/30">/</span>{" "}
+                          {item.size}
+                        </span>
+                      )}
+                    </div>
+                    <Stepper
+                      value={item.quantity}
+                      min={1}
+                      max={MAX_CART_ITEM_QUANTITY}
+                      onChange={(value) => handleQuantityChange(item.id, value)}
+                      size="xs"
+                    />
+                  </div>
+
+                  {/* Per-item sync error */}
+                  {syncErrorByItem[item.id] && (
+                    <div
+                      className="text-red-600 flex items-center justify-between"
+                      style={{
+                        marginTop: "var(--pad-y)",
+                        gap: "var(--pad-x)",
+                      }}
+                    >
+                      <span style={{ fontSize: "var(--lk-size-xs)" }}>
+                        {syncErrorByItem[item.id]}
+                      </span>
+                      <div
+                        className="flex items-center"
+                        style={{ gap: "var(--gap-icon2text)" }}
+                      >
+                        <Button
+                          onClick={() => handleRetryUpdate(item.id)}
+                          variant="secondary"
+                          size="sm"
+                        >
+                          再試行
+                        </Button>
+                        <Button
+                          onClick={handleResyncFromServer}
+                          disabled={resyncing}
+                          variant="ghost"
+                          size="sm"
+                        >
+                          最新状態を再取得
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
-            </>
-          )}
+            );
+          })}
+
+          {/* Continue shopping */}
+          <div
+            style={{ paddingTop: "calc(var(--lk-size-md) * var(--sqrt-phi))" }}
+          >
+            <Link
+              href="/item"
+              className="inline-flex items-center text-black hover:text-[#474747] transition-colors tracking-wider"
+              style={{
+                fontSize: "var(--lk-size-2xs)",
+                gap: "var(--gap-icon2text)",
+              }}
+            >
+              <i className="ri-arrow-left-line" />
+              CONTINUE SHOPPING
+            </Link>
+          </div>
         </div>
 
+        {/* Order summary — 反復: all labels share tracking-widest 2xs uppercase */}
         <div className="lg:col-span-1">
-          <div className="border border-black/10 p-8 sticky top-32">
-            <h2
-              className="text-2xl text-black mb-6 tracking-tight font-display"
-              style={headingTextStyle}
+          <div
+            className="border border-black/10 sticky top-32"
+            style={{ padding: "calc(var(--lk-size-md) * var(--sqrt-phi))" }}
+          >
+            <p
+              className="font-bold tracking-wider text-[#474747] border-b border-black/10"
+              style={{
+                fontSize: "var(--lk-size-sm)",
+                paddingBottom: "var(--pad-y)",
+                marginBottom: "calc(var(--lk-size-md) * var(--sqrt-phi))",
+              }}
             >
-              Order Summary
-            </h2>
-            <div className="mb-6">
+              ORDER SUMMARY
+            </p>
+
+            {/* Promo code */}
+            <div
+              style={{
+                marginBottom: "calc(var(--lk-size-md) * var(--sqrt-phi))",
+              }}
+            >
               <label
-                className="block text-xs text-[#474747] mb-2 tracking-wider"
-                style={xsTextStyle}
+                className="block tracking-wider text-[#474747]"
+                style={{
+                  fontSize: "var(--lk-size-2xs)",
+                  marginBottom: "var(--pad-y)",
+                }}
               >
                 プロモーションコード
               </label>
-              <div className="flex gap-2">
+              <div className="flex" style={{ gap: "var(--gap-icon2text)" }}>
                 <TextField
                   placeholder="コードを入力"
-                  className="flex-1 px-4 py-3 border border-black/20 text-sm focus:outline-none focus:border-black transition-colors"
+                  className="flex-1"
                   type="text"
-                  style={mdTextStyle}
-                  size="md"
+                  style={{ fontSize: "var(--lk-size-md)" }}
+                  size="xs"
                 />
-                <Button size="md">適用</Button>
+                <Button size="xs">適用</Button>
               </div>
             </div>
 
-            <div className="space-y-4 mb-8 pb-8 border-b border-black/10">
-              <div className="flex justify-between">
-                <span className="text-sm text-[#474747]" style={mdTextStyle}>
+            {/* Line items — 整列: labels left / amounts right, consistent baseline */}
+            <div
+              className="border-b border-black/10 flex flex-col"
+              style={{
+                gap: "var(--pad-x)",
+                paddingBottom: "calc(var(--lk-size-md) * var(--sqrt-phi))",
+                marginBottom: "calc(var(--lk-size-md) * var(--sqrt-phi))",
+              }}
+            >
+              <div className="flex justify-between items-baseline">
+                <span
+                  className="tracking-wider text-[#474747]"
+                  style={{ fontSize: "var(--lk-size-2xs)" }}
+                >
                   小計
                 </span>
-                <span className="text-sm text-black" style={mdTextStyle}>
+                <span style={{ fontSize: "var(--lk-size-xs)" }}>
                   ¥{subtotal.toLocaleString("ja-JP")}
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-[#474747]" style={mdTextStyle}>
-                  配送料
+              <div className="flex justify-between items-baseline">
+                <span
+                  className="tracking-wider text-[#474747]"
+                  style={{ fontSize: "var(--lk-size-2xs)" }}
+                >
+                  送料
                 </span>
-                <span className="text-sm text-black" style={mdTextStyle}>
-                  無料
-                </span>
+                <span style={{ fontSize: "var(--lk-size-xs)" }}>無料</span>
               </div>
             </div>
 
-            <div className="flex justify-between mb-8">
-              <span className="text-lg text-black" style={lgTextStyle}>
+            {/* Total — 対比: 2xs label / 4xl amount */}
+            <div
+              className="flex items-baseline justify-between"
+              style={{
+                marginBottom: "calc(var(--lk-size-md) * var(--sqrt-phi))",
+              }}
+            >
+              <span
+                className="tracking-wider text-[#474747]"
+                style={{ fontSize: "var(--lk-size-2xs)" }}
+              >
                 合計
               </span>
-              <span className="text-2xl text-black" style={headingTextStyle}>
+              <span style={{ fontSize: "var(--lk-size-lg)" }}>
                 ¥{total.toLocaleString("ja-JP")}
               </span>
             </div>
@@ -589,7 +688,7 @@ export default function CartPage() {
               href="/checkout"
               variant="primary"
               size="lg"
-              className="w-full mb-4"
+              className="w-full"
             >
               ご購入手続きへ
             </Button>
