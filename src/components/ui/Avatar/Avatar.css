@@ -2,15 +2,18 @@
   /* 基準フォントサイズ（サイズ別セレクタでこの 1 変数だけを上書きする）*/
   --avatar-font-size: var(--ui-font-size, var(--lk-size-md));
 
-  /* 径の算出比率（font × (line-height + 2/φ) × φ）*/
-  --avatar-size-ratio: calc(var(--sqrt-phi) + (2 / var(--phi)));
+  /* Buttonと同一ルール
+     pad-x = font / √φ
+     pad-y = (font × √φ) / φ²
+     gap   = pad-x / φ  (Avatar隣接テキストとのギャップ用) */
+  --avatar-pad-x: calc(var(--avatar-font-size) / var(--sqrt-phi));
+  --avatar-pad-y: calc((var(--avatar-font-size) * var(--sqrt-phi)) / (var(--phi) * var(--phi)));
+  --avatar-gap-icon2text: calc(var(--avatar-pad-x) / var(--phi));
 
-  /*
-   * 重要：--avatar-size を「変数として固定計算」してしまうと、
-   * サイズ別セレクタで --avatar-font-size を変えても再評価されない。
-   * そのため派生計算は width/height など実プロパティ側で行い、
-   * 常に最新の --avatar-font-size を参照させる。
-   */
+  /* 径 = 2×pad-y + font×√φ + 2px（Buttonと同じ高さ）*/
+  --avatar-size: calc(
+    2 * var(--avatar-pad-y) + var(--avatar-font-size) * var(--sqrt-phi) + 2px
+  );
 
   /* 色トークン（Button と同系統。ハードコードは一箇所に集約）*/
   --avatar-bg: #111111;
@@ -23,11 +26,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-
-  /* 本体径：font × ratio × φ を直接評価（font 変化に追従）*/
-  width: calc(var(--avatar-font-size) * var(--avatar-size-ratio) * var(--phi));
-  height: calc(var(--avatar-font-size) * var(--avatar-size-ratio) * var(--phi));
-
+  width: var(--avatar-size);
+  height: var(--avatar-size);
   flex: 0 0 auto;
 }
 
@@ -51,14 +51,8 @@
   background: var(--avatar-bg);
   color: var(--avatar-color);
 
-  /*
-   * ラベルサイズも径から逆算するが、径は変数化していないため
-   * font × ratio × φ / φ² = font × ratio / φ として直接評価する。
-   * （= --avatar-size / φ² と数学的に等価）
-   */
-  font-size: calc(
-    var(--avatar-font-size) * var(--avatar-size-ratio) / var(--phi)
-  );
+  /* コンテンツ = line-height と同サイズ（Buttonの内容高さと揃える）*/
+  font-size: calc(var(--avatar-font-size) * var(--sqrt-phi));
 
   line-height: 1;
   font-weight: 400;
@@ -69,13 +63,8 @@
 
 /* --- ステータス（近接：角に密接配置／対比：色で状態区別）--- */
 .avatar__status {
-  /*
-   * ステータス径＝本体径 / φ²
-   * = font × ratio × φ / φ² = font × ratio / φ（ラベルと同径）
-   */
-  --avatar-status-size: calc(
-    var(--avatar-font-size) * var(--avatar-size-ratio) / var(--phi)
-  );
+  /* ステータス径 = pad-x（= font/√φ）*/
+  --avatar-status-size: var(--avatar-pad-x);
 
   /* 枠線：ステータス径 / φ³（最小 1px 保証）*/
   --avatar-status-border: max(
