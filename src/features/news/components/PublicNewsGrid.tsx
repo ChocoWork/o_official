@@ -281,14 +281,14 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
       <Button
         data-filter-button={interactive ? "floating" : "placeholder"}
         onClick={interactive ? () => setIsFilterDrawerOpen(true) : undefined}
-        variant="secondary"
-        size="4xs"
-        className="tracking-[0.15em] uppercase"
+        variant="text"
+        size="xs"
+        className="tracking-[0.1em]"
+        style={{ marginLeft: "calc(-1 * var(--pad-x) - 1px)" }}
         aria-haspopup={interactive ? "dialog" : undefined}
         aria-expanded={interactive ? isFilterDrawerOpen : undefined}
         tabIndex={interactive ? undefined : -1}
       >
-        <i className="ri-equalizer-line" aria-hidden="true" />
         FILTER
       </Button>
     </div>
@@ -426,7 +426,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
           }}
         >
           <div
-            className="flex items-center justify-between border-b border-black/10"
+            className="flex items-center justify-between"
             style={{
               paddingBottom: "calc(var(--lk-size-sm) / var(--sqrt-phi))",
             }}

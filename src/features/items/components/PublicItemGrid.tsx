@@ -1275,19 +1275,30 @@ export function PublicItemGrid(props: PublicItemGridProps) {
       >
         <div
           className="flex flex-col h-full"
-          style={{ paddingInline: "calc(var(--lk-size-sm) * var(--phi))" }}
+          style={{
+            paddingInline: "calc(var(--lk-size-sm) * var(--phi))",
+            paddingBlock: "calc(var(--lk-size-sm) * var(--sqrt-phi))",
+          }}
         >
           <div
-            className="flex flex-shrink-0 items-center justify-end"
+            className="flex items-center justify-between"
             style={{
-              paddingTop: "calc(var(--lk-size-sm) * var(--sqrt-phi))",
               paddingBottom: "calc(var(--lk-size-sm) / var(--sqrt-phi))",
             }}
           >
+            <h2
+              className="tracking-[0.15em] text-black"
+              style={{
+                fontFamily: "acumin-pro, sans-serif",
+                fontSize: "var(--lk-size-4xs)",
+              }}
+            >
+              FILTER
+            </h2>
             <Button
               variant="text"
               size="xs"
-              onClick={closeDrawerAndApplyFilters}
+              onClick={() => setIsFilterDrawerOpen(false)}
               aria-label="Close filter drawer"
             >
               <i className="ri-close-line" aria-hidden="true" />
