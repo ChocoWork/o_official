@@ -240,6 +240,7 @@ export default function ContactPage() {
                 ]}
                 size="md"
                 variant="dropdown"
+                block
                 className="w-full"
                 aria-describedby={fieldDescribedBy('inquiryType')}
                 aria-invalid={Boolean(errors.inquiryType)}

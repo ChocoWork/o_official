@@ -20,6 +20,7 @@ export function SingleSelect({
   disabled,
   size = 'md',
   bordered = true,
+  block = false,
   ...props
 }: SingleSelectProps) {
   const selectId = id ?? props.name;
@@ -59,7 +60,7 @@ export function SingleSelect({
   }, [open, variant]);
 
   useLayoutEffect(() => {
-    if (variant !== 'dropdown') {
+    if (variant !== 'dropdown' || block) {
       setTriggerMinWidth(null);
       return;
     }
@@ -118,7 +119,7 @@ export function SingleSelect({
     return () => {
       cancelled = true;
     };
-  }, [options, size, variant]);
+  }, [options, size, variant, block]);
 
   // reposition dropdown when it opens
   useEffect(() => {
@@ -159,6 +160,7 @@ export function SingleSelect({
     'data-ui-single-select': 'true',
     'data-ui-single-select-size': size,
     'data-ui-single-select-bordered': bordered ? 'true' : 'false',
+    'data-ui-single-select-block': block ? 'true' : undefined,
     'data-ui-size': size,
   } as const;
 

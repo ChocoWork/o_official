@@ -15,4 +15,6 @@ export interface SingleSelectProps
   /** demo-friendly size: compact/xs/sm/md/lg/xl default md */
   size?: UISingleSelectSize;
   bordered?: boolean;
+  /** dropdown: トリガーを全幅にしテキスト左・シェブロン右で配置（フォーム用）。既定 false（コンパクト右寄せ）*/
+  block?: boolean;
 }

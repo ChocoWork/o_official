@@ -155,6 +155,17 @@
   text-align: left;
 }
 
+/* --- block（フォーム用：全幅・テキスト左／シェブロン右で両端そろえ）--- */
+[data-ui-single-select-block="true"] .single-select__wrapper {
+  justify-content: stretch;
+}
+
+[data-ui-single-select-block="true"] .single-select__trigger {
+  width: 100%;
+  min-width: 0;
+  justify-content: space-between;
+}
+
 /* disabled（対比：淡色・薄枠・操作不可）*/
 .single-select__trigger[data-ui-single-select-disabled="true"] {
   cursor: not-allowed;
