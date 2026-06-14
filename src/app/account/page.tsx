@@ -918,15 +918,15 @@ function AccountPageContent() {
                   key={order.id}
                   className="border border-black/10 p-8 space-y-6"
                 >
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between pb-6 border-b border-black/10">
-                    <div>
-                      <p className="text-sm text-[#474747] mb-1">注文番号</p>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pb-6 border-b border-black/10">
+                    <div className="flex flex-wrap items-baseline gap-1">
+                      <p className="text-sm text-[#474747]">注文番号：</p>
                       <p className="text-black" style={accountTextLgStyle}>
                         {order.orderNumber}
                       </p>
                     </div>
-                    <div className="sm:text-right">
-                      <p className="text-sm text-[#474747] mb-1">注文日</p>
+                    <div className="flex flex-wrap items-baseline gap-1">
+                      <p className="text-sm text-[#474747]">注文日：</p>
                       <p className="text-black" style={accountTextMdStyle}>
                         {order.orderDate}
                       </p>
