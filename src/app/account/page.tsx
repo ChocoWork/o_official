@@ -972,29 +972,27 @@ function AccountPageContent() {
                   </div>
 
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pt-6 border-t border-black/10">
-                    <div>
+                    <div className="flex flex-wrap items-center gap-4">
                       <span className="inline-flex items-center px-4 py-2 text-xs tracking-wider bg-[#f5f5f5] text-black">
                         {order.status}
                       </span>
-                      <p className="mt-3 text-xs text-[#474747]">
+                      <p className="text-xs text-[#474747]">
                         商品点数: {order.itemCount}点
                       </p>
-                    </div>
-                    <div className="sm:text-right flex flex-col gap-3 sm:items-end">
-                      <div className="flex flex-wrap items-baseline gap-3 sm:justify-end">
+                      <div className="flex items-baseline gap-2">
                         <p className="text-sm text-[#474747]">合計</p>
                         <p className="text-black" style={accountTextXlStyle}>
                           {order.totalAmount}
                         </p>
                       </div>
-                      <Link
-                        href={order.detailHref}
-                        className="text-black underline underline-offset-4"
-                        style={accountTextMdStyle}
-                      >
-                        注文詳細を見る
-                      </Link>
                     </div>
+                    {/* <Link
+                      href={order.detailHref}
+                      className="text-black underline underline-offset-4"
+                      style={accountTextMdStyle}
+                    >
+                      注文詳細を見る
+                    </Link> */}
                   </div>
                 </article>
               ))}
