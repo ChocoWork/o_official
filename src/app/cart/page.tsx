@@ -387,9 +387,9 @@ export default function CartPage() {
         </span>
       </div> */}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
         {/* Items column */}
-        <div className="lg:col-span-2">
+        <div className="md:col-span-2">
           {error && (
             <div
               className="text-red-500 border border-red-300 bg-red-50 mb-6"
@@ -597,7 +597,7 @@ export default function CartPage() {
         </div>
 
         {/* Order summary — 反復: all labels share tracking-widest 2xs uppercase */}
-        <div className="lg:col-span-1">
+        <div className="md:col-span-1">
           <div
             className="border border-black/10 sticky top-32"
             style={{ padding: "calc(var(--lk-size-md) * var(--sqrt-phi))" }}
