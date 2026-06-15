@@ -601,19 +601,12 @@ function AccountPageContent() {
                     <p className="account-value">{savedProfile.phone || "-"}</p>
                   </div>
                   <div className="account-actions">
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="px-8 font-acumin"
-                      onClick={() => setIsEditingProfile(true)}
-                    >
+                    <Button size="sm" onClick={() => setIsEditingProfile(true)}>
                       変更する
                     </Button>
                     <Button
-                      type="button"
                       variant="secondary"
                       size="sm"
-                      className="px-8 font-acumin"
                       onClick={handleProfileDelete}
                     >
                       削除する
@@ -627,46 +620,46 @@ function AccountPageContent() {
                   className="account-form account-card"
                   onSubmit={handleProfileSave}
                 >
+                  <p className="account-label">メールアドレス</p>
                   <TextField
-                    label="メールアドレス"
                     className="bg-[#f5f5f5]"
                     type="email"
                     name="email"
                     value={profileForm.email}
                     readOnly
-                    size="md"
+                    size="sm"
                   />
+                  <p className="account-label">氏名</p>
                   <TextField
-                    label="氏名"
                     type="text"
                     name="fullName"
                     autoComplete="name"
                     value={profileForm.fullName}
                     onChange={handleProfileFieldChange}
-                    size="md"
+                    size="sm"
                   />
+                  <p className="account-label">フリガナ</p>
                   <TextField
-                    label="フリガナ"
                     type="text"
                     name="kanaName"
                     value={profileForm.kanaName}
                     onChange={handleProfileFieldChange}
-                    size="md"
+                    size="sm"
                   />
+                  <p className="account-label">電話番号</p>
                   <TextField
-                    label="電話番号"
                     type="tel"
                     name="phone"
                     autoComplete="tel"
                     inputMode="numeric"
                     value={profileForm.phone}
                     onChange={handleProfileFieldChange}
-                    size="md"
+                    size="sm"
                   />
                   <div className="account-actions">
                     <Button
                       type="submit"
-                      size="lg"
+                      size="sm"
                       className="font-acumin"
                       disabled={isSavingProfile}
                     >
@@ -680,7 +673,7 @@ function AccountPageContent() {
                       <Button
                         type="button"
                         variant="secondary"
-                        size="lg"
+                        size="sm"
                         className="font-acumin"
                         onClick={() => {
                           setProfileForm(savedProfile);
@@ -720,27 +713,16 @@ function AccountPageContent() {
                     </p>
                   </div>
                   <div className="account-field">
-                    <p className="account-label">都道府県</p>
+                    <p className="account-label">住所</p>
                     <p className="account-value">
-                      {savedProfile.address.prefecture || "-"}
-                    </p>
-                  </div>
-                  <div className="account-field">
-                    <p className="account-label">市区町村</p>
-                    <p className="account-value">
-                      {savedProfile.address.city || "-"}
-                    </p>
-                  </div>
-                  <div className="account-field">
-                    <p className="account-label">番地</p>
-                    <p className="account-value">
-                      {savedProfile.address.address || "-"}
-                    </p>
-                  </div>
-                  <div className="account-field">
-                    <p className="account-label">建物名・部屋番号</p>
-                    <p className="account-value">
-                      {savedProfile.address.building || "-"}
+                      {[
+                        savedProfile.address.prefecture,
+                        savedProfile.address.city,
+                        savedProfile.address.address,
+                        savedProfile.address.building,
+                      ]
+                        .filter(Boolean)
+                        .join("") || "-"}
                     </p>
                   </div>
                   <div className="account-actions">
@@ -770,58 +752,53 @@ function AccountPageContent() {
                   className="account-form account-card"
                   onSubmit={handleShippingSave}
                 >
+                  <p className="account-label">郵便番号</p>
                   <TextField
-                    label="郵便番号"
                     type="text"
                     name="postalCode"
                     autoComplete="postal-code"
                     inputMode="numeric"
                     value={profileForm.address.postalCode}
                     onChange={handleAddressFieldChange}
-                    size="md"
+                    size="sm"
                   />
+                  <p className="account-label">都道府県</p>
                   <TextField
-                    label="都道府県"
                     type="text"
                     name="prefecture"
                     autoComplete="address-level1"
                     value={profileForm.address.prefecture}
                     onChange={handleAddressFieldChange}
-                    size="md"
+                    size="sm"
                   />
+                  <p className="account-label">市区町村</p>
                   <TextField
-                    label="市区町村"
                     type="text"
                     name="city"
                     autoComplete="address-level2"
                     value={profileForm.address.city}
                     onChange={handleAddressFieldChange}
-                    size="md"
+                    size="sm"
                   />
+                  <p className="account-label">番地</p>
                   <TextField
-                    label="番地"
                     type="text"
                     name="address"
                     autoComplete="street-address"
                     value={profileForm.address.address}
                     onChange={handleAddressFieldChange}
-                    size="md"
+                    size="sm"
                   />
+                  <p className="account-label">建物名・部屋番号</p>
                   <TextField
-                    label="建物名・部屋番号"
                     type="text"
                     name="building"
                     value={profileForm.address.building}
                     onChange={handleAddressFieldChange}
-                    size="md"
+                    size="sm"
                   />
                   <div className="account-actions">
-                    <Button
-                      type="submit"
-                      size="lg"
-                      className="font-acumin"
-                      disabled={isSavingProfile}
-                    >
+                    <Button type="submit" size="sm" disabled={isSavingProfile}>
                       {isSavingProfile
                         ? "保存中..."
                         : hasSavedShipping
@@ -832,8 +809,7 @@ function AccountPageContent() {
                       <Button
                         type="button"
                         variant="secondary"
-                        size="lg"
-                        className="font-acumin"
+                        size="sm"
                         onClick={() => {
                           setProfileForm(savedProfile);
                           setIsEditingShipping(false);
