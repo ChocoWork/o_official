@@ -365,28 +365,6 @@ export default function CartPage() {
         } as React.CSSProperties
       }
     >
-      {/* Page heading — 対比: display font vs tiny item count label */}
-      {/* <div
-        className="flex items-baseline justify-between border-b border-black/10"
-        style={{
-          paddingBottom: "var(--pad-y)",
-          marginBottom: "calc(var(--lk-size-md) * var(--sqrt-phi) * var(--phi))",
-        }}
-      >
-        <h1
-          className="font-display tracking-tight"
-          style={{ fontSize: "var(--lk-size-4xl)" }}
-        >
-          Cart
-        </h1>
-        <span
-          className="tracking-widest text-[#474747]"
-          style={{ fontSize: "var(--lk-size-2xs)" }}
-        >
-          {cartItems.length} {cartItems.length === 1 ? "ITEM" : "ITEMS"}
-        </span>
-      </div> */}
-
       <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
         {/* Items column */}
         <div className="md:col-span-2">
