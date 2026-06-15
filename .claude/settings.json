@@ -17,7 +17,9 @@
       "Bash(git push *)",
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(node -e \"const p = require\\('./node_modules/@types/react/package.json'\\); console.log\\(p.version\\)\")"
+      "Bash(node -e \"const p = require\\('./node_modules/@types/react/package.json'\\); console.log\\(p.version\\)\")",
+      "PowerShell(npx tsc --noEmit)",
+      "PowerShell(npx eslint src/app/account/page.tsx src/app/checkout/page.tsx src/app/api/profile/addresses/route.ts)"
     ]
   }
 }

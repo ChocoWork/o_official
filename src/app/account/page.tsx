@@ -34,6 +34,11 @@ type ProfileForm = {
   address: ProfileAddress;
 };
 
+type ShippingAddress = ProfileAddress & {
+  id: string;
+  isDefault: boolean;
+};
+
 type OrderSummary = {
   id: string;
   orderNumber: string;
@@ -97,8 +102,31 @@ function normalizeAccountTab(tabParam: string | null): AccountTab {
   return "profile";
 }
 
-function hasAddressValue(address: ProfileAddress) {
-  return Object.values(address).some((value) => value.trim().length > 0);
+function formatAddressLines(address: ProfileAddress) {
+  return (
+    [
+      address.prefecture,
+      address.city,
+      address.address,
+      address.building,
+    ]
+      .filter(Boolean)
+      .join("") || "-"
+  );
+}
+
+function defaultAddressFields(list: ShippingAddress[]): ProfileAddress {
+  const def = list.find((item) => item.isDefault) ?? list[0];
+  if (!def) {
+    return EMPTY_ADDRESS;
+  }
+  return {
+    postalCode: def.postalCode,
+    prefecture: def.prefecture,
+    city: def.city,
+    address: def.address,
+    building: def.building,
+  };
 }
 
 function AccountPageContent() {
@@ -115,8 +143,14 @@ function AccountPageContent() {
   const [profileForm, setProfileForm] =
     React.useState<ProfileForm>(EMPTY_PROFILE);
   const [orders, setOrders] = React.useState<OrderSummary[]>([]);
+  const [addresses, setAddresses] = React.useState<ShippingAddress[]>([]);
+  const [addressForm, setAddressForm] =
+    React.useState<ProfileAddress>(EMPTY_ADDRESS);
+  // null = 一覧表示, "new" = 追加フォーム, その他 = 該当idの編集フォーム
+  const [editingAddressId, setEditingAddressId] = React.useState<
+    string | null
+  >(null);
   const [isEditingProfile, setIsEditingProfile] = React.useState(false);
-  const [isEditingShipping, setIsEditingShipping] = React.useState(false);
   const [isLoadingProfile, setIsLoadingProfile] = React.useState(true);
   const [isLoadingOrders, setIsLoadingOrders] = React.useState(false);
   const [isSavingProfile, setIsSavingProfile] = React.useState(false);
@@ -191,6 +225,33 @@ function AccountPageContent() {
     }
   }, []);
 
+  const fetchAddresses = React.useCallback(async () => {
+    try {
+      const response = await clientFetch("/api/profile/addresses", {
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error("配送情報の取得に失敗しました");
+      }
+
+      const data = (await response.json()) as { addresses?: ShippingAddress[] };
+      const list = Array.isArray(data.addresses)
+        ? data.addresses.map((item) => ({
+            id: item.id,
+            postalCode: formatPostalCodeInput(item.postalCode ?? ""),
+            prefecture: item.prefecture ?? "",
+            city: item.city ?? "",
+            address: item.address ?? "",
+            building: item.building ?? "",
+            isDefault: Boolean(item.isDefault),
+          }))
+        : [];
+      setAddresses(list);
+    } catch (error) {
+      console.error("Failed to fetch addresses:", error);
+    }
+  }, []);
+
   const fetchOrders = React.useCallback(async () => {
     setIsLoadingOrders(true);
     setOrdersError(null);
@@ -226,7 +287,8 @@ function AccountPageContent() {
     }
 
     void fetchProfile();
-  }, [fetchProfile, isAuthResolved, isLoggedIn]);
+    void fetchAddresses();
+  }, [fetchProfile, fetchAddresses, isAuthResolved, isLoggedIn]);
 
   React.useEffect(() => {
     if (!isAuthResolved || !isLoggedIn || activeTab !== "orders") {
@@ -243,7 +305,7 @@ function AccountPageContent() {
     setProfileMessage(null);
     setProfileError(null);
     setIsEditingProfile(false);
-    setIsEditingShipping(false);
+    setEditingAddressId(null);
   };
 
   const handleProfileFieldChange = (
@@ -263,14 +325,10 @@ function AccountPageContent() {
     const { name, value } = event.target;
     const nextValue =
       name === "postalCode" ? formatPostalCodeInput(value) : value;
-    const nextAddress = {
-      ...profileForm.address,
-      [name]: nextValue,
-    };
 
-    setProfileForm((prev) => ({
+    setAddressForm((prev) => ({
       ...prev,
-      address: nextAddress,
+      [name]: nextValue,
     }));
 
     if (name !== "postalCode") {
@@ -300,16 +358,13 @@ function AccountPageContent() {
         return;
       }
 
-      setProfileForm((prev) => ({
+      setAddressForm((prev) => ({
         ...prev,
-        address: {
-          ...prev.address,
-          postalCode: formatPostalCodeInput(cleanedPostalCode),
-          prefecture: data.address?.prefecture || prev.address.prefecture,
-          city: data.address?.city || prev.address.city,
-          address: data.address?.address || prev.address.address,
-          building: prev.address.building,
-        },
+        postalCode: formatPostalCodeInput(cleanedPostalCode),
+        prefecture: data.address?.prefecture || prev.prefecture,
+        city: data.address?.city || prev.city,
+        address: data.address?.address || prev.address,
+        building: prev.building,
       }));
     } catch (error) {
       console.error("Postal code lookup error:", error);
@@ -372,18 +427,103 @@ function AccountPageContent() {
     setProfileForm(normalizedProfile);
   };
 
-  const handleShippingSave = async (event: React.FormEvent) => {
+  const persistAddresses = async (nextAddresses: ShippingAddress[]) => {
+    const payload = {
+      addresses: nextAddresses.map((item) => ({
+        id: item.id,
+        postalCode: normalizePostalCode(item.postalCode),
+        prefecture: item.prefecture.trim(),
+        city: item.city.trim(),
+        address: item.address.trim(),
+        building: item.building.trim(),
+        isDefault: item.isDefault,
+      })),
+    };
+
+    const response = await clientFetch("/api/profile/addresses", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw new Error("配送情報の保存に失敗しました");
+    }
+
+    const data = (await response.json()) as { addresses?: ShippingAddress[] };
+    const list = Array.isArray(data.addresses)
+      ? data.addresses.map((item) => ({
+          id: item.id,
+          postalCode: formatPostalCodeInput(item.postalCode ?? ""),
+          prefecture: item.prefecture ?? "",
+          city: item.city ?? "",
+          address: item.address ?? "",
+          building: item.building ?? "",
+          isDefault: Boolean(item.isDefault),
+        }))
+      : [];
+
+    setAddresses(list);
+    // プロフィールPOSTがミラー(profiles.address)を上書きしても整合するよう同期
+    const nextDefault = defaultAddressFields(list);
+    setSavedProfile((prev) => ({ ...prev, address: nextDefault }));
+    setProfileForm((prev) => ({ ...prev, address: nextDefault }));
+    return list;
+  };
+
+  const openAddAddress = () => {
+    setAddressForm(EMPTY_ADDRESS);
+    setEditingAddressId("new");
+    setProfileMessage(null);
+    setProfileError(null);
+  };
+
+  const openEditAddress = (target: ShippingAddress) => {
+    setAddressForm({
+      postalCode: target.postalCode,
+      prefecture: target.prefecture,
+      city: target.city,
+      address: target.address,
+      building: target.building,
+    });
+    setEditingAddressId(target.id);
+    setProfileMessage(null);
+    setProfileError(null);
+  };
+
+  const cancelAddressEdit = () => {
+    setEditingAddressId(null);
+    setAddressForm(EMPTY_ADDRESS);
+    setProfileError(null);
+  };
+
+  const handleAddressSave = async (event: React.FormEvent) => {
     event.preventDefault();
     setIsSavingProfile(true);
     setProfileMessage(null);
     setProfileError(null);
 
     try {
-      await persistProfile(profileForm);
-      setIsEditingShipping(false);
+      let nextAddresses: ShippingAddress[];
+      if (editingAddressId === "new") {
+        const newAddress: ShippingAddress = {
+          id: crypto.randomUUID(),
+          ...addressForm,
+          isDefault: addresses.length === 0,
+        };
+        nextAddresses = [...addresses, newAddress];
+      } else {
+        nextAddresses = addresses.map((item) =>
+          item.id === editingAddressId ? { ...item, ...addressForm } : item,
+        );
+      }
+
+      await persistAddresses(nextAddresses);
+      setEditingAddressId(null);
+      setAddressForm(EMPTY_ADDRESS);
       setProfileMessage("配送情報を保存しました");
     } catch (error) {
-      console.error("Shipping save error:", error);
+      console.error("Address save error:", error);
       setProfileError("配送情報を保存できませんでした");
     } finally {
       setIsSavingProfile(false);
@@ -436,24 +576,43 @@ function AccountPageContent() {
     }
   };
 
-  const handleShippingDelete = async () => {
+  const handleAddressDelete = async (id: string) => {
     setProfileMessage(null);
     setProfileError(null);
 
     try {
-      const nextProfile = {
-        ...profileForm,
-        address: {
-          ...EMPTY_ADDRESS,
-        },
-      };
-      setProfileForm(nextProfile);
-      await persistProfile(nextProfile);
-      setIsEditingShipping(false);
+      const remaining = addresses.filter((item) => item.id !== id);
+      // メインを削除したら先頭を自動メイン化
+      const nextAddresses =
+        remaining.length > 0 && !remaining.some((item) => item.isDefault)
+          ? remaining.map((item, index) => ({
+              ...item,
+              isDefault: index === 0,
+            }))
+          : remaining;
+
+      await persistAddresses(nextAddresses);
       setProfileMessage("配送情報を削除しました");
     } catch (error) {
-      console.error("Shipping delete error:", error);
+      console.error("Address delete error:", error);
       setProfileError("配送情報を削除できませんでした");
+    }
+  };
+
+  const handleSetMainAddress = async (id: string) => {
+    setProfileMessage(null);
+    setProfileError(null);
+
+    try {
+      const nextAddresses = addresses.map((item) => ({
+        ...item,
+        isDefault: item.id === id,
+      }));
+      await persistAddresses(nextAddresses);
+      setProfileMessage("メインの配送先を変更しました");
+    } catch (error) {
+      console.error("Set main address error:", error);
+      setProfileError("メインの配送先を変更できませんでした");
     }
   };
 
@@ -475,7 +634,7 @@ function AccountPageContent() {
     savedProfile.kanaName.trim().length > 0 ||
     savedProfile.phone.trim().length > 0;
 
-  const hasSavedShipping = hasAddressValue(savedProfile.address);
+  const isEditingAddress = editingAddressId !== null;
 
   if (!isAuthResolved) {
     return (
@@ -704,53 +863,84 @@ function AccountPageContent() {
                 <p className="text-red-600 account-feedback">{profileError}</p>
               ) : null}
 
-              {!isLoadingProfile && hasSavedShipping && !isEditingShipping ? (
-                <div className="account-card account-groups">
-                  <div className="account-field">
-                    <p className="account-label">郵便番号</p>
-                    <p className="account-value">
-                      {savedProfile.address.postalCode || "-"}
-                    </p>
-                  </div>
-                  <div className="account-field">
-                    <p className="account-label">住所</p>
-                    <p className="account-value">
-                      {[
-                        savedProfile.address.prefecture,
-                        savedProfile.address.city,
-                        savedProfile.address.address,
-                        savedProfile.address.building,
-                      ]
-                        .filter(Boolean)
-                        .join("") || "-"}
-                    </p>
-                  </div>
+              {!isLoadingProfile && !isEditingAddress ? (
+                <>
+                  {addresses.length === 0 ? (
+                    <div className="account-card account-groups">
+                      <p className="text-black" style={accountTextLgStyle}>
+                        登録済みの配送先はありません
+                      </p>
+                      <p className="text-[#474747]" style={accountTextMdStyle}>
+                        配送先を追加すると購入時に選択できます。
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {addresses.map((item) => (
+                    <div key={item.id} className="account-card account-groups">
+                      {item.isDefault ? (
+                        <span className="account-status">メイン</span>
+                      ) : null}
+                      <div className="account-field">
+                        <p className="account-label">郵便番号</p>
+                        <p className="account-value">{item.postalCode || "-"}</p>
+                      </div>
+                      <div className="account-field">
+                        <p className="account-label">住所</p>
+                        <p className="account-value">
+                          {formatAddressLines(item)}
+                        </p>
+                      </div>
+                      <div className="account-actions">
+                        {!item.isDefault ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="font-acumin"
+                            onClick={() => handleSetMainAddress(item.id)}
+                          >
+                            メインにする
+                          </Button>
+                        ) : null}
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="font-acumin"
+                          onClick={() => openEditAddress(item)}
+                        >
+                          変更する
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="font-acumin"
+                          onClick={() => handleAddressDelete(item.id)}
+                        >
+                          削除する
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+
                   <div className="account-actions">
                     <Button
                       type="button"
                       size="sm"
-                      className="px-8 font-acumin"
-                      onClick={() => setIsEditingShipping(true)}
+                      className="font-acumin"
+                      onClick={openAddAddress}
                     >
-                      変更する
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      className="px-8 font-acumin"
-                      onClick={handleShippingDelete}
-                    >
-                      削除する
+                      住所を追加
                     </Button>
                   </div>
-                </div>
+                </>
               ) : null}
 
-              {!isLoadingProfile && (!hasSavedShipping || isEditingShipping) ? (
+              {!isLoadingProfile && isEditingAddress ? (
                 <form
                   className="account-form account-card"
-                  onSubmit={handleShippingSave}
+                  onSubmit={handleAddressSave}
                 >
                   <p className="account-label">郵便番号</p>
                   <TextField
@@ -758,7 +948,7 @@ function AccountPageContent() {
                     name="postalCode"
                     autoComplete="postal-code"
                     inputMode="numeric"
-                    value={profileForm.address.postalCode}
+                    value={addressForm.postalCode}
                     onChange={handleAddressFieldChange}
                     size="sm"
                   />
@@ -767,7 +957,7 @@ function AccountPageContent() {
                     type="text"
                     name="prefecture"
                     autoComplete="address-level1"
-                    value={profileForm.address.prefecture}
+                    value={addressForm.prefecture}
                     onChange={handleAddressFieldChange}
                     size="sm"
                   />
@@ -776,7 +966,7 @@ function AccountPageContent() {
                     type="text"
                     name="city"
                     autoComplete="address-level2"
-                    value={profileForm.address.city}
+                    value={addressForm.city}
                     onChange={handleAddressFieldChange}
                     size="sm"
                   />
@@ -785,7 +975,7 @@ function AccountPageContent() {
                     type="text"
                     name="address"
                     autoComplete="street-address"
-                    value={profileForm.address.address}
+                    value={addressForm.address}
                     onChange={handleAddressFieldChange}
                     size="sm"
                   />
@@ -793,7 +983,7 @@ function AccountPageContent() {
                   <TextField
                     type="text"
                     name="building"
-                    value={profileForm.address.building}
+                    value={addressForm.building}
                     onChange={handleAddressFieldChange}
                     size="sm"
                   />
@@ -801,24 +991,18 @@ function AccountPageContent() {
                     <Button type="submit" size="sm" disabled={isSavingProfile}>
                       {isSavingProfile
                         ? "保存中..."
-                        : hasSavedShipping
-                          ? "変更を保存"
-                          : "保存する"}
+                        : editingAddressId === "new"
+                          ? "保存する"
+                          : "変更を保存"}
                     </Button>
-                    {hasSavedShipping ? (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => {
-                          setProfileForm(savedProfile);
-                          setIsEditingShipping(false);
-                          setProfileError(null);
-                        }}
-                      >
-                        キャンセル
-                      </Button>
-                    ) : null}
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={cancelAddressEdit}
+                    >
+                      キャンセル
+                    </Button>
                   </div>
                 </form>
               ) : null}

@@ -176,6 +176,16 @@ type CheckoutProfileResponse = {
   };
 };
 
+type SavedAddress = {
+  id: string;
+  postalCode: string;
+  prefecture: string;
+  city: string;
+  address: string;
+  building: string;
+  isDefault: boolean;
+};
+
 
 function CheckoutPageContent() {
   const xsTextStyle: React.CSSProperties = { fontSize: 'var(--lk-size-xs)' };
@@ -270,6 +280,10 @@ function CheckoutPageContent() {
     phone,
   } = shippingForm;
 
+  // 保存済み配送先（複数住所から選択）
+  const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState<string>('');
+
   // フィールドごとのバリデーションエラー (FR-CHECKOUT-004)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
@@ -301,6 +315,54 @@ function CheckoutPageContent() {
 
     void fetchProfileDefaults();
   }, []);
+
+  React.useEffect(() => {
+    const fetchSavedAddresses = async () => {
+      try {
+        const response = await clientFetch('/api/profile/addresses', { cache: 'no-store' });
+        if (!response.ok) {
+          return;
+        }
+
+        const data = (await response.json()) as { addresses?: SavedAddress[] };
+        const list = Array.isArray(data.addresses) ? data.addresses : [];
+        setSavedAddresses(list);
+
+        const initial = list.find((item) => item.isDefault) ?? list[0];
+        if (initial) {
+          setSelectedAddressId(initial.id);
+        }
+      } catch (error) {
+        console.error('保存済み配送先の取得に失敗しました', error);
+      }
+    };
+
+    void fetchSavedAddresses();
+  }, []);
+
+  const handleSelectSavedAddress = (id: string) => {
+    setSelectedAddressId(id);
+    const target = savedAddresses.find((item) => item.id === id);
+    if (!target) {
+      return;
+    }
+
+    setShippingForm((prev) => ({
+      ...prev,
+      postalCode: formatPostalCodeInput(target.postalCode ?? ''),
+      prefecture: target.prefecture ?? '',
+      city: target.city ?? '',
+      address: target.address ?? '',
+      building: target.building ?? '',
+    }));
+    setFieldErrors((prev) => ({
+      ...prev,
+      postalCode: '',
+      prefecture: '',
+      city: '',
+      address: '',
+    }));
+  };
 
   const validateShippingForm = (): boolean => {
     const errors: Record<string, string> = {};
@@ -734,6 +796,23 @@ function CheckoutPageContent() {
                 <form onSubmit={handleShippingNext} noValidate>
                   <div>
                     <div className="space-y-6">
+                      {savedAddresses.length > 0 && (
+                        <SingleSelect
+                          label="保存済みの配送先"
+                          variant="dropdown"
+                          value={selectedAddressId}
+                          onValueChange={handleSelectSavedAddress}
+                          options={[
+                            { value: '', label: '新しい住所を入力' },
+                            ...savedAddresses.map((item) => ({
+                              value: item.id,
+                              label: `${item.isDefault ? '【メイン】' : ''}${formatPostalCodeInput(item.postalCode ?? '')} ${[item.prefecture, item.city, item.address, item.building].filter(Boolean).join('')}`.trim(),
+                            })),
+                          ]}
+                          size="md"
+                        />
+                      )}
+
                       <TextField required label="メールアドレス" type="email" name="email" autoComplete="email" value={shippingForm.email} onChange={handleShippingChange} size="md" errorText={fieldErrors.email} />
 
                       <TextField required label="氏名" type="text" name="fullName" autoComplete="name" value={shippingForm.fullName} onChange={handleShippingChange} size="md" errorText={fieldErrors.fullName} />
