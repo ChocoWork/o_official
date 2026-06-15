@@ -507,10 +507,10 @@ function AccountPageContent() {
   }
 
   return (
-    <div className="account-page element-width">
+    <div className="account-page w-full md:max-w-7xl md:mx-auto">
       <div className="account-layout">
-        {/* sidebar: desktop only */}
-        <div className="hidden lg:block">
+        {/* sidebar: tablet and above */}
+        <div className="hidden md:block">
           <TabSegmentControl
             items={[
               { key: "profile", label: "プロフィール" },
@@ -548,7 +548,7 @@ function AccountPageContent() {
 
         <div className="min-w-0">
           {/* mobile/tablet: tabs-standard tab bar */}
-          <div className="account-mobile-tabs lg:hidden">
+          <div className="account-mobile-tabs md:hidden">
             <TabSegmentControl
               items={[
                 { key: "profile", label: "プロフィール" },
@@ -860,7 +860,7 @@ function AccountPageContent() {
                 <p className="text-red-600 account-feedback">{ordersError}</p>
               ) : null}
               {!isLoadingOrders && !ordersError && orders.length === 0 ? (
-                <div className="account-card account-field">
+                <div className="account-card account-groups">
                   <p className="text-black" style={accountTextLgStyle}>
                     注文履歴はまだありません
                   </p>
@@ -933,7 +933,7 @@ function AccountPageContent() {
           ) : null}
 
           {/* mobile/tablet: logout below content */}
-          <div className="account-sidebar-logout lg:hidden">
+          <div className="account-sidebar-logout md:hidden">
             <Button
               type="button"
               variant="secondary"

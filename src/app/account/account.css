@@ -29,7 +29,7 @@
   grid-template-columns: 1fr;
   gap: var(--gap-section);
 }
-@media (min-width: 1024px) {
+@media (min-width: 768px) {
   .account-layout {
     grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
     gap: var(--gap-layout);
@@ -71,7 +71,6 @@
 .account-field {
   display: flex;
   flex-direction: column;
-  /* gap: var(--gap-tight); */
 }
 .account-label {
   font-size: var(--lk-size-xs);
