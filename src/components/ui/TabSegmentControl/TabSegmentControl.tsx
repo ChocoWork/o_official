@@ -1,5 +1,6 @@
 import "./TabSegmentControl.css";
 import type { TabSegmentControlProps } from './TabSegmentControl_type';
+import { Button } from '@/components/ui/Button/Button';
 
 export type { TabSegmentControlItem, TabSegmentControlProps } from './TabSegmentControl_type';
 
@@ -25,9 +26,9 @@ export function TabSegmentControl({
       {items.map((item) => {
         const isActive = item.key === activeKey;
         return (
-          <button
+          <Button
             key={item.key}
-            type="button"
+            variant="text"
             data-ui-tab-item=""
             data-ui-tab-active={isActive ? 'true' : undefined}
             role="tab"
@@ -36,7 +37,7 @@ export function TabSegmentControl({
             onClick={() => onChange(item.key)}
           >
             {item.label}
-          </button>
+          </Button>
         );
       })}
     </div>

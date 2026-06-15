@@ -73,7 +73,7 @@
   flex-direction: column;
 }
 .account-label {
-  font-size: var(--lk-size-xs);
+  font-size: var(--lk-size-2xs);
   letter-spacing: 0.08em;
   color: #767676;
 }

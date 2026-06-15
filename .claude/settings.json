@@ -16,7 +16,8 @@
       "Bash(git fetch *)",
       "Bash(git push *)",
       "Bash(git add *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(node -e \"const p = require\\('./node_modules/@types/react/package.json'\\); console.log\\(p.version\\)\")"
     ]
   }
 }
