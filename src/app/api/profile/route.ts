@@ -24,17 +24,21 @@ const profilePayloadSchema = z.object({
 	}),
 });
 
+type StoredAddress = {
+	postalCode?: string | null;
+	prefecture?: string | null;
+	city?: string | null;
+	address?: string | null;
+	building?: string | null;
+	isDefault?: boolean | null;
+};
+
 type ProfileRow = {
 	display_name: string | null;
 	kana_name: string | null;
 	phone: string | null;
-	address: {
-		postalCode?: string | null;
-		prefecture?: string | null;
-		city?: string | null;
-		address?: string | null;
-		building?: string | null;
-	} | null;
+	address: StoredAddress | null;
+	addresses: StoredAddress[] | null;
 	optional_name: string | null;
 	optional_phone: string | null;
 };
@@ -76,7 +80,7 @@ function isMissingOptionalProfileColumnError(error: SupabaseRouteError | null) {
 	}
 
 	const text = [error.message, error.details, error.hint].filter(Boolean).join(' ');
-	return /optional_name|optional_phone|updated_at/i.test(text);
+	return /optional_name|optional_phone|updated_at|addresses/i.test(text);
 }
 
 function normalizeAddress(address: ProfileRow['address']) {
@@ -89,14 +93,20 @@ function normalizeAddress(address: ProfileRow['address']) {
 	};
 }
 
-function hasAddressValue(address: ReturnType<typeof normalizeAddress>) {
-	return Object.values(address).some((value) => value.trim().length > 0);
+// 返却する単一 address は addresses 配列のデフォルトから導出（無ければ legacy address カラム）
+function resolveProfileAddress(row: Pick<ProfileRow, 'address' | 'addresses'> | null) {
+	const list = row?.addresses;
+	if (Array.isArray(list) && list.length > 0) {
+		const def = list.find((item) => item?.isDefault) ?? list[0];
+		return normalizeAddress(def ?? null);
+	}
+	return normalizeAddress(row?.address ?? null);
 }
 
 async function fetchProfileRow(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
 	const primaryResult = await supabase
 		.from('profiles')
-		.select('display_name, kana_name, phone, address, optional_name, optional_phone')
+		.select('display_name, kana_name, phone, address, addresses, optional_name, optional_phone')
 		.eq('user_id', userId)
 		.maybeSingle<ProfileRow>();
 
@@ -104,11 +114,12 @@ async function fetchProfileRow(supabase: Awaited<ReturnType<typeof createClient>
 		return primaryResult;
 	}
 
+	// optional_* / addresses 列が無い旧スキーマへのフォールバック
 	const fallbackResult = await supabase
 		.from('profiles')
 		.select('display_name, kana_name, phone, address')
 		.eq('user_id', userId)
-		.maybeSingle<LegacyProfileRow>();
+		.maybeSingle<Omit<LegacyProfileRow, 'addresses'>>();
 
 	if (fallbackResult.error) {
 		return fallbackResult;
@@ -118,6 +129,7 @@ async function fetchProfileRow(supabase: Awaited<ReturnType<typeof createClient>
 		data: fallbackResult.data
 			? {
 					...fallbackResult.data,
+					addresses: null,
 					optional_name: null,
 					optional_phone: null,
 			  }
@@ -126,31 +138,30 @@ async function fetchProfileRow(supabase: Awaited<ReturnType<typeof createClient>
 	};
 }
 
-function buildProfileUpsertPayload(userId: string, fullName: string, kanaName: string, phone: string, address: ReturnType<typeof normalizeAddress>) {
+// 住所は /api/profile/addresses が単一の真実の源。プロフィール保存では address/addresses を触らない。
+function buildProfileUpsertPayload(userId: string, fullName: string, kanaName: string, phone: string) {
 	return {
 		user_id: userId,
 		display_name: fullName || null,
 		kana_name: kanaName || null,
 		phone: phone || null,
-		address: hasAddressValue(address) ? address : null,
 		optional_name: fullName || null,
 		optional_phone: phone || null,
 		updated_at: new Date().toISOString(),
 	};
 }
 
-function buildLegacyProfileUpsertPayload(userId: string, fullName: string, kanaName: string, phone: string, address: ReturnType<typeof normalizeAddress>) {
+function buildLegacyProfileUpsertPayload(userId: string, fullName: string, kanaName: string, phone: string) {
 	return {
 		user_id: userId,
 		display_name: fullName || null,
 		kana_name: kanaName || null,
 		phone: phone || null,
-		address: hasAddressValue(address) ? address : null,
 	};
 }
 
-async function upsertProfileRow(supabase: Awaited<ReturnType<typeof createClient>>, userId: string, fullName: string, kanaName: string, phone: string, address: ReturnType<typeof normalizeAddress>) {
-	const primaryResult = await supabase.from('profiles').upsert(buildProfileUpsertPayload(userId, fullName, kanaName, phone, address), {
+async function upsertProfileRow(supabase: Awaited<ReturnType<typeof createClient>>, userId: string, fullName: string, kanaName: string, phone: string) {
+	const primaryResult = await supabase.from('profiles').upsert(buildProfileUpsertPayload(userId, fullName, kanaName, phone), {
 		onConflict: 'user_id',
 	});
 
@@ -158,7 +169,7 @@ async function upsertProfileRow(supabase: Awaited<ReturnType<typeof createClient
 		return primaryResult;
 	}
 
-	return supabase.from('profiles').upsert(buildLegacyProfileUpsertPayload(userId, fullName, kanaName, phone, address), {
+	return supabase.from('profiles').upsert(buildLegacyProfileUpsertPayload(userId, fullName, kanaName, phone), {
 		onConflict: 'user_id',
 	});
 }
@@ -216,7 +227,7 @@ export async function GET(request: NextRequest) {
 		fullName: profile?.display_name ?? profile?.optional_name ?? '',
 		kanaName: profile?.kana_name ?? '',
 		phone: formatPhoneNumberInput(profile?.phone ?? profile?.optional_phone ?? ''),
-		address: normalizeAddress(profile?.address ?? null),
+		address: resolveProfileAddress(profile ?? null),
 	});
 }
 
@@ -260,14 +271,17 @@ export async function POST(request: NextRequest) {
 	const fullName = parsedBody.data.fullName.trim();
 	const kanaName = parsedBody.data.kanaName.trim();
 	const phone = formatPhoneNumberInput(parsedBody.data.phone.trim());
-	const address = normalizeAddress(parsedBody.data.address);
+	// 住所は /api/profile/addresses が管理。プロフィール保存では更新しない。
 
-	const { error } = await upsertProfileRow(supabase, user.id, fullName, kanaName, phone, address);
+	const { error } = await upsertProfileRow(supabase, user.id, fullName, kanaName, phone);
 
 	if (error) {
 		console.error('Profile upsert error:', error);
 		return NextResponse.json({ error: 'Database error' }, { status: 500 });
 	}
+
+	// レスポンスの address は現在の保存値（addresses のデフォルト）を返す
+	const { data: refreshed } = await fetchProfileRow(supabase, user.id);
 
 	const response = NextResponse.json({
 		success: true,
@@ -275,7 +289,7 @@ export async function POST(request: NextRequest) {
 		fullName,
 		kanaName,
 		phone,
-		address,
+		address: resolveProfileAddress(refreshed ?? null),
 	});
 
 	if (hasRotatedCsrfToken(csrfResult)) {

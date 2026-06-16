@@ -262,6 +262,8 @@
   text-align: left;
   cursor: pointer;
   transition: background-color 120ms ease;
+  /* ラベルに改行(\n)を含む場合に複数行表示する（住所の2行表示など）*/
+  white-space: pre-line;
 }
 
 .single-select__option:hover {

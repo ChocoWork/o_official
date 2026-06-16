@@ -104,12 +104,7 @@ function normalizeAccountTab(tabParam: string | null): AccountTab {
 
 function formatAddressLines(address: ProfileAddress) {
   return (
-    [
-      address.prefecture,
-      address.city,
-      address.address,
-      address.building,
-    ]
+    [address.prefecture, address.city, address.address, address.building]
       .filter(Boolean)
       .join("") || "-"
   );
@@ -147,9 +142,9 @@ function AccountPageContent() {
   const [addressForm, setAddressForm] =
     React.useState<ProfileAddress>(EMPTY_ADDRESS);
   // null = 一覧表示, "new" = 追加フォーム, その他 = 該当idの編集フォーム
-  const [editingAddressId, setEditingAddressId] = React.useState<
-    string | null
-  >(null);
+  const [editingAddressId, setEditingAddressId] = React.useState<string | null>(
+    null,
+  );
   const [isEditingProfile, setIsEditingProfile] = React.useState(false);
   const [isLoadingProfile, setIsLoadingProfile] = React.useState(true);
   const [isLoadingOrders, setIsLoadingOrders] = React.useState(false);
@@ -372,17 +367,11 @@ function AccountPageContent() {
   };
 
   const persistProfile = async (nextProfile: ProfileForm = profileForm) => {
+    // 住所は配送タブ(/api/profile/addresses)が管理。プロフィール保存では送らない。
     const payload = {
       fullName: nextProfile.fullName.trim(),
       kanaName: nextProfile.kanaName.trim(),
       phone: formatPhoneNumberInput(nextProfile.phone.trim()),
-      address: {
-        postalCode: normalizePostalCode(nextProfile.address.postalCode),
-        prefecture: nextProfile.address.prefecture.trim(),
-        city: nextProfile.address.city.trim(),
-        address: nextProfile.address.address.trim(),
-        building: nextProfile.address.building.trim(),
-      },
     };
 
     const response = await clientFetch("/api/profile", {
@@ -672,7 +661,7 @@ function AccountPageContent() {
         <div className="hidden md:block">
           <TabSegmentControl
             items={[
-              { key: "profile", label: "プロフィール" },
+              { key: "profile", label: "お客様情報" },
               { key: "shipping", label: "配送情報" },
               { key: "orders", label: "購入履歴" },
             ]}
@@ -710,7 +699,7 @@ function AccountPageContent() {
           <div className="account-mobile-tabs md:hidden">
             <TabSegmentControl
               items={[
-                { key: "profile", label: "プロフィール" },
+                { key: "profile", label: "お客様情報" },
                 { key: "shipping", label: "配送情報" },
                 { key: "orders", label: "購入履歴" },
               ]}
@@ -738,12 +727,6 @@ function AccountPageContent() {
               {!isLoadingProfile && hasSavedProfile && !isEditingProfile ? (
                 <div className="account-card account-groups">
                   <div className="account-field">
-                    <p className="account-label">メールアドレス</p>
-                    <p className="account-value break-all">
-                      {savedProfile.email || "-"}
-                    </p>
-                  </div>
-                  <div className="account-field">
                     <p className="account-label">氏名</p>
                     <p className="account-value">
                       {savedProfile.fullName || "-"}
@@ -753,6 +736,12 @@ function AccountPageContent() {
                     <p className="account-label">フリガナ</p>
                     <p className="account-value">
                       {savedProfile.kanaName || "-"}
+                    </p>
+                  </div>
+                  <div className="account-field">
+                    <p className="account-label">メールアドレス</p>
+                    <p className="account-value break-all">
+                      {savedProfile.email || "-"}
                     </p>
                   </div>
                   <div className="account-field">
@@ -779,15 +768,6 @@ function AccountPageContent() {
                   className="account-form account-card"
                   onSubmit={handleProfileSave}
                 >
-                  <p className="account-label">メールアドレス</p>
-                  <TextField
-                    className="bg-[#f5f5f5]"
-                    type="email"
-                    name="email"
-                    value={profileForm.email}
-                    readOnly
-                    size="sm"
-                  />
                   <p className="account-label">氏名</p>
                   <TextField
                     type="text"
@@ -803,6 +783,15 @@ function AccountPageContent() {
                     name="kanaName"
                     value={profileForm.kanaName}
                     onChange={handleProfileFieldChange}
+                    size="sm"
+                  />
+                  <p className="account-label">メールアドレス</p>
+                  <TextField
+                    className="bg-[#f5f5f5]"
+                    type="email"
+                    name="email"
+                    value={profileForm.email}
+                    readOnly
                     size="sm"
                   />
                   <p className="account-label">電話番号</p>
@@ -883,7 +872,9 @@ function AccountPageContent() {
                       ) : null}
                       <div className="account-field">
                         <p className="account-label">郵便番号</p>
-                        <p className="account-value">{item.postalCode || "-"}</p>
+                        <p className="account-value">
+                          {item.postalCode || "-"}
+                        </p>
                       </div>
                       <div className="account-field">
                         <p className="account-label">住所</p>

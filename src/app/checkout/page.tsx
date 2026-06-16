@@ -9,6 +9,7 @@ import { CheckoutProvider, PaymentElement, useCheckout } from '@stripe/react-str
 import { Button } from '@/components/ui/Button/Button';
 import { Checkbox } from '@/components/ui/Checkbox/Checkbox';
 import { useCart } from '@/contexts/CartContext';
+import { useLogin } from '@/contexts/LoginContext';
 import { clientFetch } from '@/lib/client-fetch';
 import { formatPhoneNumberInput } from '@/features/account/utils/profile-format.util';
 import {
@@ -153,9 +154,8 @@ const stripeAppearance: Appearance = {
 };
 
 const CHECKOUT_STEPS = [
-  { id: 1, label: '配送情報' },
-  { id: 2, label: 'お支払い方法' },
-  { id: 3, label: 'ご注文内容の確認' },
+  { id: 1, label: '注文を確定する' },
+  { id: 2, label: 'ご注文内容の確認' },
 ];
 
 type CheckoutPaymentMethod =
@@ -166,6 +166,7 @@ type CheckoutPaymentMethod =
 type CheckoutProfileResponse = {
   email?: string;
   fullName?: string;
+  kanaName?: string;
   phone?: string;
   address?: {
     postalCode?: string;
@@ -191,7 +192,6 @@ function CheckoutPageContent() {
   const xsTextStyle: React.CSSProperties = { fontSize: 'var(--lk-size-xs)' };
   const mdTextStyle: React.CSSProperties = { fontSize: 'var(--lk-size-md)' };
   const lgTextStyle: React.CSSProperties = { fontSize: 'var(--lk-size-lg)' };
-  const xlTextStyle: React.CSSProperties = { fontSize: 'var(--lk-size-xl)' };
   const summaryHeadingStyle: React.CSSProperties = { fontSize: 'var(--lk-size-3xl)' };
   // cart data for order summary (mirrors cart/page.tsx)
   interface CartItem {
@@ -247,6 +247,16 @@ function CheckoutPageContent() {
   const [customSessionLoading, setCustomSessionLoading] = useState(false);
   const [customCheckoutClientSecret, setCustomCheckoutClientSecret] = useState<string | null>(null);
   const [customCheckoutSessionId, setCustomCheckoutSessionId] = useState<string | null>(null);
+  // 配送先が確定し決済UIへ進める状態 (保存済み住所ユーザーは自動、手入力は確認後)
+  const [paymentReady, setPaymentReady] = useState(false);
+  // 確認ステップ表示用に確定時の金額(Stripe値引反映後)を保持
+  const [confirmedSummary, setConfirmedSummary] = useState<{
+    subtotal: string;
+    discount: string;
+    shipping: string;
+    total: string;
+    discountMinor: number;
+  } | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [profileSaveError, setProfileSaveError] = useState<string | null>(null);
   const [confirmingPayment, setConfirmingPayment] = useState(false);
@@ -362,6 +372,10 @@ function CheckoutPageContent() {
       city: '',
       address: '',
     }));
+    // 既存セッションを破棄し、新しい配送先で再生成させる
+    setCustomCheckoutClientSecret(null);
+    setCustomCheckoutSessionId(null);
+    setPaymentReady(false);
   };
 
   const validateShippingForm = (): boolean => {
@@ -463,12 +477,26 @@ function CheckoutPageContent() {
     setCheckoutError(null);
   }, [paymentMethod]);
 
+  const hasSavedAddress = savedAddresses.length > 0;
+
+  // 保存済み配送先 + プロフィール連絡先が揃えば自動的に決済へ進める
   React.useEffect(() => {
-    if (step !== 2) return;
+    if (paymentReady) return;
+    if (!hasSavedAddress) return;
+    if (!shippingForm.email.trim() || !shippingForm.fullName.trim() || !shippingForm.phone.trim()) {
+      return;
+    }
+    setPaymentReady(true);
+  }, [hasSavedAddress, paymentReady, shippingForm.email, shippingForm.fullName, shippingForm.phone]);
+
+  // 配送先確定後に Stripe セッションを生成
+  React.useEffect(() => {
+    if (step !== 1) return;
+    if (!paymentReady) return;
     if (customCheckoutClientSecret) return;
 
     void createCustomCheckoutSession();
-  }, [step, customCheckoutClientSecret, createCustomCheckoutSession]);
+  }, [step, paymentReady, customCheckoutClientSecret, createCustomCheckoutSession]);
 
   React.useEffect(() => {
     const sessionId = searchParams.get('session_id');
@@ -568,7 +596,7 @@ function CheckoutPageContent() {
     }
   };
 
-  const handleShippingNext = async (e: React.FormEvent) => {
+  const handleProceedToPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     setProfileSaveError(null);
 
@@ -577,23 +605,15 @@ function CheckoutPageContent() {
     }
 
     if (shippingForm.saveProfile) {
-      const payload = {
-        fullName: shippingForm.fullName.trim(),
-        phone: formatPhoneNumberInput(shippingForm.phone.trim()),
-        address: {
-          postalCode: normalizePostalCode(shippingForm.postalCode),
-          prefecture: shippingForm.prefecture.trim(),
-          city: shippingForm.city.trim(),
-          address: shippingForm.address.trim(),
-          building: shippingForm.building.trim(),
-        },
-      };
-
-      if (payload.fullName || payload.phone || Object.values(payload.address).some((value) => value.length > 0)) {
+      // 氏名/電話はプロフィールへ、住所は配送先API(addresses)へ保存
+      if (shippingForm.fullName.trim() || shippingForm.phone.trim()) {
         const profileResponse = await clientFetch('/api/profile', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({
+            fullName: shippingForm.fullName.trim(),
+            phone: formatPhoneNumberInput(shippingForm.phone.trim()),
+          }),
         });
 
         if (!profileResponse.ok) {
@@ -601,9 +621,43 @@ function CheckoutPageContent() {
           return;
         }
       }
+
+      const newAddress = {
+        postalCode: normalizePostalCode(shippingForm.postalCode),
+        prefecture: shippingForm.prefecture.trim(),
+        city: shippingForm.city.trim(),
+        address: shippingForm.address.trim(),
+        building: shippingForm.building.trim(),
+      };
+
+      if (Object.values(newAddress).some((value) => value.length > 0)) {
+        const addressResponse = await clientFetch('/api/profile/addresses', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            addresses: [
+              ...savedAddresses.map((item) => ({ ...item, isDefault: false })),
+              { ...newAddress, isDefault: true },
+            ],
+          }),
+        });
+
+        if (!addressResponse.ok) {
+          setProfileSaveError('配送先の保存に失敗しました。再度お試しください。');
+          return;
+        }
+      }
     }
 
-    setStep(2);
+    setPaymentReady(true);
+  };
+
+  // 配送先を編集するためにセッションを破棄して入力へ戻す
+  const handleEditShipping = () => {
+    setPaymentReady(false);
+    setCustomCheckoutClientSecret(null);
+    setCustomCheckoutSessionId(null);
+    setCheckoutError(null);
   };
 
 
@@ -653,10 +707,119 @@ function CheckoutPageContent() {
     }
   };
 
-  const Step2ConfirmButton = () => {
+  // プロモーションコード入力 (Stripe Checkout の promotion code を適用/解除)
+  const PromoCodeField = () => {
+    const checkout = useCheckout();
+    const [code, setCode] = useState('');
+    const [applying, setApplying] = useState(false);
+    const [promoError, setPromoError] = useState<string | null>(null);
+
+    if (checkout.type !== 'success') {
+      return null;
+    }
+
+    const applied = checkout.checkout.discountAmounts?.[0] ?? null;
+
+    const handleApply = async () => {
+      const trimmed = code.trim();
+      if (!trimmed) return;
+      setApplying(true);
+      setPromoError(null);
+      try {
+        const result = await checkout.checkout.applyPromotionCode(trimmed);
+        if (result.type === 'error') {
+          setPromoError(result.error.message ?? 'コードを適用できませんでした。');
+          return;
+        }
+        setCode('');
+      } finally {
+        setApplying(false);
+      }
+    };
+
+    const handleRemove = async () => {
+      setApplying(true);
+      setPromoError(null);
+      try {
+        await checkout.checkout.removePromotionCode();
+      } finally {
+        setApplying(false);
+      }
+    };
+
+    return (
+      <div className="mb-8">
+        <label className="block tracking-wider text-[#474747] mb-2" style={xsTextStyle}>
+          プロモーションコード
+        </label>
+        {applied ? (
+          <div className="flex items-center justify-between gap-3 rounded-xs border border-black/10 px-4 py-3">
+            <span className="text-sm text-black" style={mdTextStyle}>
+              {applied.promotionCode ?? applied.displayName}
+            </span>
+            <Button type="button" variant="text" size="xs" onClick={handleRemove} disabled={applying}>
+              削除
+            </Button>
+          </div>
+        ) : (
+          <div className="flex" style={{ gap: 'var(--gap-icon2text)' }}>
+            <TextField
+              placeholder="コードを入力"
+              className="flex-1"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              size="sm"
+            />
+            <Button type="button" size="sm" onClick={handleApply} disabled={applying || !code.trim()}>
+              {applying ? '適用中...' : '適用'}
+            </Button>
+          </div>
+        )}
+        {promoError && <p className="text-xs text-red-600 mt-2">{promoError}</p>}
+      </div>
+    );
+  };
+
+  // Stripe を正とした金額内訳 (小計 / 値引 / 送料 / 合計)。税込みのため消費税行なし。
+  const StripeOrderTotals = () => {
+    const checkout = useCheckout();
+    if (checkout.type !== 'success') {
+      return null;
+    }
+    const t = checkout.checkout.total;
+    const hasDiscount = t.discount.minorUnitsAmount > 0;
+
+    return (
+      <div className="space-y-4 mb-8 pb-8 border-b border-black/10">
+        <div className="flex justify-between">
+          <span className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>小計</span>
+          <span className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>{t.subtotal.amount}</span>
+        </div>
+        {hasDiscount && (
+          <div className="flex justify-between">
+            <span className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>値引</span>
+            <span className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>-{t.discount.amount}</span>
+          </div>
+        )}
+        <div className="flex justify-between">
+          <span className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>配送料</span>
+          <span className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+            {t.shippingRate.minorUnitsAmount === 0 ? '無料' : t.shippingRate.amount}
+          </span>
+        </div>
+        <div className="flex justify-between pt-4">
+          <span className="text-lg text-black" style={{ fontFamily: 'acumin-pro, sans-serif', ...lgTextStyle }}>合計</span>
+          <span className="text-2xl text-black" style={{ fontFamily: 'Didot, serif', ...summaryHeadingStyle }}>{t.total.amount}</span>
+        </div>
+      </div>
+    );
+  };
+
+  // 決済を確定し確認ステップへ。確定時の金額をスナップショット。
+  const ConfirmPaymentButton = () => {
     const checkout = useCheckout();
 
-    const handleStep2Next = async () => {
+    const handleConfirmPayment = async () => {
       if (checkout.type !== 'success') {
         setCheckoutError('決済フォームの初期化が完了していません。少し待ってから再度お試しください。');
         return;
@@ -666,6 +829,7 @@ function CheckoutPageContent() {
       setConfirmingPayment(true);
 
       try {
+        const t = checkout.checkout.total;
         const result = await checkout.checkout.confirm({
           redirect: 'if_required',
           returnUrl: `${window.location.origin}/checkout?session_id={CHECKOUT_SESSION_ID}`,
@@ -676,8 +840,14 @@ function CheckoutPageContent() {
           return;
         }
 
-        // カード等の非リダイレクト決済はここで確定し、確認ステップへ遷移
-        setStep(3);
+        setConfirmedSummary({
+          subtotal: t.subtotal.amount,
+          discount: t.discount.amount,
+          shipping: t.shippingRate.minorUnitsAmount === 0 ? '無料' : t.shippingRate.amount,
+          total: t.total.amount,
+          discountMinor: t.discount.minorUnitsAmount,
+        });
+        setStep(2);
       } catch (error) {
         setCheckoutError(
           error instanceof Error ? error.message : '決済の確定中にエラーが発生しました。'
@@ -692,13 +862,75 @@ function CheckoutPageContent() {
         type="button"
         size="lg"
         className="flex-1"
-        onClick={handleStep2Next}
+        onClick={handleConfirmPayment}
         disabled={customSessionLoading || confirmingPayment || !customCheckoutClientSecret}
       >
-        {confirmingPayment ? '決済処理中...' : '次へ'}
+        {confirmingPayment ? '決済処理中...' : '確認へ進む'}
       </Button>
     );
   };
+
+  // 注文明細 (カート商品リスト)。フックなしの共有表示。
+  const OrderItems = () => (
+    <div className="space-y-6 mb-8 pb-8 border-b border-black/10">
+      {cartItems.map((item) => {
+        const product = item.items;
+        if (!product) return null;
+
+        return (
+          <div className="flex gap-4" key={item.id}>
+            <div className="w-20 h-24 flex-shrink-0 overflow-hidden relative">
+              <Image alt={product.name} className="image" src={product.image_url} width={400} height={500} />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm text-black mb-1" style={{ fontFamily: 'acumin-pro, sans-serif', ...mdTextStyle }}>{product.name}</p>
+              <p className="text-xs text-[#474747] mb-1" style={{ fontFamily: 'acumin-pro, sans-serif', ...xsTextStyle }}>{item.color} / {item.size}</p>
+              <p className="text-xs text-[#474747] mb-1" style={{ fontFamily: 'acumin-pro, sans-serif', ...xsTextStyle }}>数量: {item.quantity}</p>
+              <p className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif', ...mdTextStyle }}>¥{product.price.toLocaleString()}</p>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  // セッション未生成時のカート由来の金額内訳 (値引なし・税込み)。
+  const CartTotals = () => (
+    <>
+      <div className="space-y-4 mb-8 pb-8 border-b border-black/10">
+        <div className="flex justify-between">
+          <span className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>小計</span>
+          <span className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>¥{subtotal.toLocaleString()}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>配送料</span>
+          <span className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>{shipping === 0 ? '無料' : `¥${shipping.toLocaleString()}`}</span>
+        </div>
+        <div className="flex justify-between pt-4">
+          <span className="text-lg text-black" style={{ fontFamily: 'acumin-pro, sans-serif', ...lgTextStyle }}>合計</span>
+          <span className="text-2xl text-black" style={{ fontFamily: 'Didot, serif', ...summaryHeadingStyle }}>¥{total.toLocaleString()}</span>
+        </div>
+      </div>
+    </>
+  );
+
+  // お客様情報カード (氏名・電話・メール)。読み取り専用表示。
+  const CustomerInfoCard = () => (
+    <div className="p-6 bg-[#f5f5f5] text-sm">
+      {shippingForm.fullName && <p className="mb-1">{shippingForm.fullName}</p>}
+      {shippingForm.phone && <p className="mb-1">{shippingForm.phone}</p>}
+      {shippingForm.email && <p>{shippingForm.email}</p>}
+    </div>
+  );
+
+  // 配送先カード (住所のみ)。読み取り専用表示。
+  const AddressCard = () => (
+    <div className="p-6 bg-[#f5f5f5] text-sm">
+      {shippingForm.postalCode && <p className="mb-1">〒{shippingForm.postalCode}</p>}
+      <p className="mb-1">{shippingForm.prefecture}{shippingForm.city}{shippingForm.address}</p>
+      {shippingForm.building && <p>{shippingForm.building}</p>}
+    </div>
+  );
 
   const [completed, setCompleted] = useState<boolean>(false);
 
@@ -788,112 +1020,218 @@ function CheckoutPageContent() {
           </div>
         </div>
 
+        {/* STEP 1 (ready): プロバイダで両列を包み、サイドバーで金額/プロモを表示 */}
+        {step === 1 && customCheckoutClientSecret ? (
+          <CheckoutProvider
+            stripe={stripePromise}
+            options={{
+              clientSecret: customCheckoutClientSecret,
+              elementsOptions: { appearance: stripeAppearance },
+            }}
+          >
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+              {/* 左: お客様情報 → 配送先 → 支払方法 → 確認 */}
+              <div className="lg:col-span-2 space-y-10">
+                <section>
+                  <h3 className="text-sm text-[#474747] mb-4 tracking-wider font-brand">お客様情報</h3>
+                  <CustomerInfoCard />
+                </section>
+
+                <section>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm text-[#474747] tracking-wider font-brand">配送先</h3>
+                    {!hasSavedAddress && (
+                      <Button type="button" variant="text" size="xs" onClick={handleEditShipping}>
+                        変更する
+                      </Button>
+                    )}
+                  </div>
+                  {hasSavedAddress && (
+                    <div className="mb-4">
+                      <SingleSelect
+                        label="保存済みの配送先"
+                        variant="dropdown"
+                        block
+                        value={selectedAddressId}
+                        onValueChange={handleSelectSavedAddress}
+                        options={savedAddresses.map((item) => ({
+                          value: item.id,
+                          label: `〒${formatPostalCodeInput(item.postalCode ?? '')}\n${[item.prefecture, item.city, item.address, item.building].filter(Boolean).join('')}`,
+                        }))}
+                        size="md"
+                      />
+                    </div>
+                  )}
+                  <AddressCard />
+                </section>
+
+                <section>
+                  <h3 className="text-sm text-[#474747] mb-4 tracking-wider font-brand">支払方法の選択</h3>
+                  <div className="rounded-xs border border-black/10 p-6 bg-white">
+                    <PaymentElement
+                      options={{
+                        layout: {
+                          type: 'accordion',
+                          defaultCollapsed: false,
+                          radios: 'always',
+                          spacedAccordionItems: false,
+                        },
+                      }}
+                      onChange={(event) => {
+                        const selectedType = event.value?.type;
+                        if (selectedType === 'paypay') {
+                          setPaymentMethod('stripe_paypay');
+                          return;
+                        }
+                        if (selectedType === 'konbini') {
+                          setPaymentMethod('stripe_konbini');
+                          return;
+                        }
+                        setPaymentMethod('stripe_card');
+                      }}
+                    />
+                    {checkoutError && (
+                      <div className="mt-4 space-y-3">
+                        <p className="text-sm text-red-600">{checkoutError}</p>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => {
+                            setCheckoutError(null);
+                            setCustomCheckoutClientSecret(null);
+                            setCustomCheckoutSessionId(null);
+                            void createCustomCheckoutSession();
+                          }}
+                        >
+                          再試行する
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                <div className="mt-4">
+                  <ConfirmPaymentButton />
+                </div>
+              </div>
+
+              {/* 右: 注文内容 → プロモ → 金額 */}
+              <div className="lg:col-span-1">
+                <div className="border border-black/10 p-8 sticky top-32">
+                  <h2 className="mb-8 font-brand font-semibold">注文内容</h2>
+                  {cartItems.length === 0 ? (
+                    <p className="text-sm text-gray-500">カートに商品がありません</p>
+                  ) : (
+                    <>
+                      <OrderItems />
+                      <PromoCodeField />
+                      <StripeOrderTotals />
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </CheckoutProvider>
+        ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
           <div className="lg:col-span-2">
-            {/* Render shipping form when step 1, payment form when step 2 */}
-              {/* Shipping form (step 1) */}
-              {step === 1 && (
-                <form onSubmit={handleShippingNext} noValidate>
-                  <div>
-                    <div className="space-y-6">
-                      {savedAddresses.length > 0 && (
-                        <SingleSelect
-                          label="保存済みの配送先"
-                          variant="dropdown"
-                          value={selectedAddressId}
-                          onValueChange={handleSelectSavedAddress}
-                          options={[
-                            { value: '', label: '新しい住所を入力' },
-                            ...savedAddresses.map((item) => ({
-                              value: item.id,
-                              label: `${item.isDefault ? '【メイン】' : ''}${formatPostalCodeInput(item.postalCode ?? '')} ${[item.prefecture, item.city, item.address, item.building].filter(Boolean).join('')}`.trim(),
-                            })),
-                          ]}
-                          size="md"
-                        />
-                      )}
-
-                      <TextField required label="メールアドレス" type="email" name="email" autoComplete="email" value={shippingForm.email} onChange={handleShippingChange} size="md" errorText={fieldErrors.email} />
-
-                      <TextField required label="氏名" type="text" name="fullName" autoComplete="name" value={shippingForm.fullName} onChange={handleShippingChange} size="md" errorText={fieldErrors.fullName} />
-
-                      <TextField required label="郵便番号" placeholder="123-4567" type="text" name="postalCode" autoComplete="postal-code" value={shippingForm.postalCode} onChange={handleShippingChange} size="md" errorText={fieldErrors.postalCode} />
-
-                      <SingleSelect
-                        name="prefecture"
-                        required
-                        label="都道府県"
-                        variant="dropdown"
-                        autoComplete="address-level1"
-                        value={shippingForm.prefecture}
-                        onValueChange={(prefecture) => {
-                          setShippingForm((prev) => ({
-                            ...prev,
-                            prefecture,
-                          }));
-                          if (prefecture) {
-                            setFieldErrors((prev) => ({ ...prev, prefecture: '' }));
-                          }
-                        }}
-                        options={[
-                          { value: '', label: '選択してください' },
-                          ...PREFECTURES.map((prefecture) => ({
-                            value: prefecture,
-                            label: prefecture,
-                          })),
-                        ]}
-                       size="md"/>
-                      {fieldErrors.prefecture && (
-                        <span id="prefecture-error" role="alert" className="block text-xs text-red-600 -mt-4">
-                          {fieldErrors.prefecture}
-                        </span>
-                      )}
-
-                      <TextField required label="市区町村" type="text" name="city" autoComplete="address-level2" value={shippingForm.city} onChange={handleShippingChange} size="md" errorText={fieldErrors.city} />
-
-                      <TextField required label="番地" type="text" name="address" autoComplete="street-address" value={shippingForm.address} onChange={handleShippingChange} size="md" errorText={fieldErrors.address} />
-
-                      <TextField label="建物名・部屋番号（任意）" type="text" name="building" value={shippingForm.building} onChange={handleShippingChange} size="md" />
-
-                      <TextField required label="電話番号" placeholder="090-1234-5678" type="tel" name="phone" autoComplete="tel" inputMode="numeric" value={shippingForm.phone} onChange={handleShippingChange} size="md" errorText={fieldErrors.phone} />
-
-                      <Checkbox
-                        id="saveProfile"
-                        name="saveProfile"
-                        checked={shippingForm.saveProfile}
-                        onChange={handleShippingChange}
-                        label="氏名と電話番号を保存する"
-                       size="lg"/>
-                    </div>
+              {/* STEP 1 (配送先入力 / 保存済み住所なし) */}
+              {step === 1 && !customCheckoutClientSecret && !hasSavedAddress && (
+                <form onSubmit={handleProceedToPayment} noValidate>
+                  <h3 className="text-sm text-[#474747] mb-6 tracking-wider font-brand">配送先</h3>
+                  <div className="space-y-6">
+                    <TextField required label="メールアドレス" type="email" name="email" autoComplete="email" value={shippingForm.email} onChange={handleShippingChange} size="md" errorText={fieldErrors.email} />
+                    <TextField required label="氏名" type="text" name="fullName" autoComplete="name" value={shippingForm.fullName} onChange={handleShippingChange} size="md" errorText={fieldErrors.fullName} />
+                    <TextField required label="郵便番号" placeholder="123-4567" type="text" name="postalCode" autoComplete="postal-code" value={shippingForm.postalCode} onChange={handleShippingChange} size="md" errorText={fieldErrors.postalCode} />
+                    <SingleSelect
+                      name="prefecture"
+                      required
+                      label="都道府県"
+                      variant="dropdown"
+                      autoComplete="address-level1"
+                      value={shippingForm.prefecture}
+                      onValueChange={(prefecture) => {
+                        setShippingForm((prev) => ({ ...prev, prefecture }));
+                        if (prefecture) {
+                          setFieldErrors((prev) => ({ ...prev, prefecture: '' }));
+                        }
+                      }}
+                      options={[
+                        { value: '', label: '選択してください' },
+                        ...PREFECTURES.map((prefecture) => ({ value: prefecture, label: prefecture })),
+                      ]}
+                      size="md"
+                    />
+                    {fieldErrors.prefecture && (
+                      <span id="prefecture-error" role="alert" className="block text-xs text-red-600 -mt-4">
+                        {fieldErrors.prefecture}
+                      </span>
+                    )}
+                    <TextField required label="市区町村" type="text" name="city" autoComplete="address-level2" value={shippingForm.city} onChange={handleShippingChange} size="md" errorText={fieldErrors.city} />
+                    <TextField required label="番地" type="text" name="address" autoComplete="street-address" value={shippingForm.address} onChange={handleShippingChange} size="md" errorText={fieldErrors.address} />
+                    <TextField label="建物名・部屋番号（任意）" type="text" name="building" value={shippingForm.building} onChange={handleShippingChange} size="md" />
+                    <TextField required label="電話番号" placeholder="090-1234-5678" type="tel" name="phone" autoComplete="tel" inputMode="numeric" value={shippingForm.phone} onChange={handleShippingChange} size="md" errorText={fieldErrors.phone} />
+                    <Checkbox
+                      id="saveProfile"
+                      name="saveProfile"
+                      checked={shippingForm.saveProfile}
+                      onChange={handleShippingChange}
+                      label="この配送先を保存する"
+                      size="lg"
+                    />
                   </div>
 
+                  {(profileSaveError || checkoutError) && (
+                    <p className="text-sm text-red-600 mt-6" role="alert">{profileSaveError || checkoutError}</p>
+                  )}
+
                   <div className="flex gap-4 mt-12">
-                    {profileSaveError && (
-                      <p className="text-sm text-red-600" role="alert">{profileSaveError}</p>
-                    )}
-                    <Button type="submit" size="lg" className="flex-1">次へ</Button>
+                    <Button type="submit" size="lg" className="flex-1" disabled={customSessionLoading}>
+                      {customSessionLoading ? '準備中...' : 'お支払いに進む'}
+                    </Button>
                   </div>
                 </form>
               )}
 
-              {/* Confirmation (step 3) */}
-              {step === 3 && (
+              {/* STEP 1 (セッション準備中 / 保存済み住所あり) */}
+              {step === 1 && !customCheckoutClientSecret && hasSavedAddress && (
+                <div className="rounded-xs border border-black/10 p-6 bg-white">
+                  <p className="text-sm text-[#474747]" style={mdTextStyle}>決済フォームを準備しています...</p>
+                  {checkoutError && (
+                    <div className="mt-4 space-y-3">
+                      <p className="text-sm text-red-600">{checkoutError}</p>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          setCheckoutError(null);
+                          void createCustomCheckoutSession();
+                        }}
+                      >
+                        再試行する
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* STEP 2: ご注文内容の確認 */}
+              {step === 2 && (
                 <form onSubmit={handleConfirm}>
                   <div>
                     <div className="space-y-8">
                       <div>
-                        <h3 className="text-sm text-[#474747] mb-4 tracking-wider font-brand">配送先</h3>
-                        <div className="p-6 bg-[#f5f5f5] text-sm">
-                          {shippingForm.fullName && <p className="mb-1">{shippingForm.fullName}</p>}
-                          {shippingForm.postalCode && <p className="mb-1">〒{shippingForm.postalCode}</p>}
-                          <p className="mb-1">{shippingForm.prefecture}{shippingForm.city}{shippingForm.address}</p>
-                          {shippingForm.building && <p className="mb-1">{shippingForm.building}</p>}
-                          {shippingForm.phone && <p className="mb-1">{shippingForm.phone}</p>}
-                          {shippingForm.email && <p>{shippingForm.email}</p>}
-                        </div>
+                        <h3 className="text-sm text-[#474747] mb-4 tracking-wider font-brand">お客様情報</h3>
+                        <CustomerInfoCard />
                       </div>
                       <div>
-                        <h3 className="text-sm text-[#474747] mb-4 tracking-wider font-brand">お支払い方法</h3>
+                        <h3 className="text-sm text-[#474747] mb-4 tracking-wider font-brand">配送先</h3>
+                        <AddressCard />
+                      </div>
+                      <div>
+                        <h3 className="text-sm text-[#474747] mb-4 tracking-wider font-brand">支払方法</h3>
                         <div className="p-6 bg-[#f5f5f5] text-sm">
                           <p>
                             {paymentMethod === 'stripe_card'
@@ -914,132 +1252,14 @@ function CheckoutPageContent() {
                   )}
 
                   <div className="flex gap-4 mt-12">
-                    <Button type="button" variant="secondary" size="lg" onClick={() => setStep(2)}>戻る</Button>
+                    <Button type="button" variant="secondary" size="lg" onClick={() => setStep(1)}>戻る</Button>
                     <Button type="submit" size="lg" className="flex-1" disabled={confirmingOrder}>
-                      {confirmingOrder ? '注文確定中...' : '注文を確定する'}
+                      {confirmingOrder ? '注文確定中...' : '注文する'}
                     </Button>
                   </div>
                 </form>
               )}
 
-              {/* Payment form (step 2) */}
-              {step === 2 && (
-                <div>
-                  {customSessionLoading && (
-                    <div className="rounded-xs border border-black/10 p-6 bg-white">
-                      <h3 className="text-lg font-semibold mb-4 font-brand" style={xlTextStyle}>お支払い方法</h3>
-                      <p className="text-sm text-[#474747]" style={mdTextStyle}>決済フォームを準備しています...</p>
-                    </div>
-                  )}
-
-                  {!customSessionLoading && customCheckoutClientSecret && (
-                    <CheckoutProvider
-                      stripe={stripePromise}
-                      options={{
-                        clientSecret: customCheckoutClientSecret,
-                        elementsOptions: {
-                          appearance: stripeAppearance,
-                        },
-                      }}
-                    >
-                      <div className="space-y-6">
-                        <div className="rounded-xs border border-black/10 p-6 bg-white">
-                          <h3 className="text-lg font-semibold mb-4 font-brand" style={xlTextStyle}>お支払い方法</h3>
-
-                          <PaymentElement
-                            options={{
-                              layout: {
-                                type: 'accordion',
-                                defaultCollapsed: false,
-                                radios: 'always',
-                                spacedAccordionItems: false,
-                              },
-                            }}
-                            onChange={(event) => {
-                              const selectedType = event.value?.type;
-                              if (selectedType === 'paypay') {
-                                setPaymentMethod('stripe_paypay');
-                                return;
-                              }
-
-                              if (selectedType === 'konbini') {
-                                setPaymentMethod('stripe_konbini');
-                                return;
-                              }
-
-                              setPaymentMethod('stripe_card');
-                            }}
-                          />
-
-                          <p className="text-xs text-[#474747] mt-4" aria-live="polite" style={xsTextStyle}>
-                            選択中: {paymentMethod === 'stripe_paypay' ? 'PayPay' : paymentMethod === 'stripe_konbini' ? 'コンビニ決済' : 'カード決済'}
-                          </p>
-
-                          <p className="text-xs text-[#474747] mt-2" style={mdTextStyle}>
-                            Checkout Sessions APIのカスタムUIモードを利用します。「次へ」で決済を確定します。
-                          </p>
-
-                          {checkoutError && (
-                            <div className="mt-4 space-y-3">
-                              <p className="text-sm text-red-600">{checkoutError}</p>
-                              <Button
-                                type="button"
-                                variant="secondary"
-                                size="sm"
-                                onClick={() => {
-                                  setCheckoutError(null);
-                                  setCustomCheckoutClientSecret(null);
-                                  setCustomCheckoutSessionId(null);
-                                  void createCustomCheckoutSession();
-                                }}
-                              >
-                                再試行する
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="flex gap-4 mt-12">
-                          <Button type="button" variant="secondary" size="lg" onClick={() => setStep(1)}>
-                            戻る
-                          </Button>
-                          <Step2ConfirmButton />
-                        </div>
-                      </div>
-                    </CheckoutProvider>
-                  )}
-
-                  {!customSessionLoading && !customCheckoutClientSecret && (
-                    <div className="space-y-6">
-                      {checkoutError && (
-                        <div className="rounded-xs border border-red-200 bg-red-50 p-4 space-y-3">
-                          <p className="text-sm text-red-600">{checkoutError}</p>
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => {
-                              setCheckoutError(null);
-                              void createCustomCheckoutSession();
-                            }}
-                          >
-                            再試行する
-                          </Button>
-                        </div>
-                      )}
-
-                      <div className="flex gap-4 mt-12">
-                        <Button type="button" variant="secondary" size="lg" onClick={() => setStep(1)}>
-                          戻る
-                        </Button>
-                        <Button type="button" size="lg" className="flex-1" disabled>
-                          次へ
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
           </div>
 
 
@@ -1051,82 +1271,47 @@ function CheckoutPageContent() {
                 <p className="text-sm text-gray-500">カートに商品がありません</p>
               ) : (
                 <>
-                  <div className="space-y-6 mb-8 pb-8 border-b border-black/10">
-                    {cartItems.map((item) => {
-                      // defensive guard; the fetch logic filters out null items but keep typing safe
-                      const product = item.items;
-                      if (!product) return null;
+                  <OrderItems />
 
-                      return (
-                        <div className="flex gap-4" key={item.id}>
-                          <div className="w-20 h-24 flex-shrink-0 overflow-hidden relative">
-                            <Image
-                              alt={product.name}
-                              className="image"
-                              src={product.image_url}
-                              width={400}
-                              height={500}
-                            />
-                          </div>
-                          <div className="flex-1">
-                            <p className="text-sm text-black mb-1" style={{ fontFamily: 'acumin-pro, sans-serif', ...mdTextStyle }}>
-                              {product.name}
-                            </p>
-                            <p className="text-xs text-[#474747] mb-1" style={{ fontFamily: 'acumin-pro, sans-serif', ...xsTextStyle }}>
-                              {item.color} / {item.size}
-                            </p>
-                            <p className="text-xs text-[#474747] mb-1" style={{ fontFamily: 'acumin-pro, sans-serif', ...xsTextStyle }}>
-                              数量: {item.quantity}
-                            </p>
-                            <p className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif', ...mdTextStyle }}>
-                              ¥{product.price.toLocaleString()}
-                            </p>
-                          </div>
+                  {/* step1(決済準備完了)時は金額をメイン列のStripe表示に委ねる */}
+                  {step === 1 && !customCheckoutClientSecret && <CartTotals />}
+
+                  {step === 2 && (
+                    <>
+                      <div className="space-y-4 mb-8 pb-8 border-b border-black/10">
+                        <div className="flex justify-between">
+                          <span className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>小計</span>
+                          <span className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                            {confirmedSummary ? confirmedSummary.subtotal : `¥${subtotal.toLocaleString()}`}
+                          </span>
                         </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="space-y-4 mb-8 pb-8 border-b border-black/10">
-                    <div className="flex justify-between">
-                      <span className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-                        小計
-                      </span>
-                      <span className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-                        ¥{subtotal.toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-                        消費税（10%）
-                      </span>
-                      <span className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-                        ¥{tax.toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-                        配送料
-                      </span>
-                      <span className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-                        {shipping === 0 ? '無料' : `¥${shipping.toLocaleString()}`}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex justify-between">
-                    <span className="text-lg text-black" style={{ fontFamily: 'acumin-pro, sans-serif', ...lgTextStyle }}>
-                      合計
-                    </span>
-                    <span className="text-2xl text-black" style={{ fontFamily: 'Didot, serif', ...summaryHeadingStyle }}>
-                      ¥{total.toLocaleString()}
-                    </span>
-                  </div>
+                        {confirmedSummary && confirmedSummary.discountMinor > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>値引</span>
+                            <span className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>-{confirmedSummary.discount}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between">
+                          <span className="text-sm text-[#474747]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>配送料</span>
+                          <span className="text-sm text-black" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+                            {confirmedSummary ? confirmedSummary.shipping : (shipping === 0 ? '無料' : `¥${shipping.toLocaleString()}`)}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-lg text-black" style={{ fontFamily: 'acumin-pro, sans-serif', ...lgTextStyle }}>合計</span>
+                        <span className="text-2xl text-black" style={{ fontFamily: 'Didot, serif', ...summaryHeadingStyle }}>
+                          {confirmedSummary ? confirmedSummary.total : `¥${total.toLocaleString()}`}
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </div>
           </div>
         </div>
+        )}
       </div>
     </div>
   );

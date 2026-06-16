@@ -85,8 +85,9 @@ async function finalizeOrderDirectlyFromDraft(params: {
   paymentIntentId: string;
   orderStatus: 'pending' | 'paid';
   userId: string | null;
+  discountAmount: number;
 }) {
-  const { draftData, paymentIntentId, orderStatus, userId } = params;
+  const { draftData, paymentIntentId, orderStatus, userId, discountAmount } = params;
   const itemsSnapshot = (draftData.items_snapshot ?? []) as CheckoutDraftItemsSnapshot;
 
   const { data: itemRows, error: itemsError } = await supabase
@@ -130,6 +131,7 @@ async function finalizeOrderDirectlyFromDraft(params: {
       status: orderStatus,
       subtotal_amount: draftData.subtotal_amount,
       shipping_amount: draftData.shipping_amount,
+      discount_amount: discountAmount,
       total_amount: draftData.total_amount,
       currency: draftData.currency,
       shipping_email: mapShippingSnapshotValue(draftData.shipping_snapshot, 'email'),
@@ -352,6 +354,8 @@ export async function POST(req: NextRequest) {
 
     const resolvedCurrency = session.currency?.toLowerCase() ?? null;
     const resolvedAmount = session.amount_total ?? null;
+    // プロモーションコード適用時の値引額 (税込・割引後が amount_total)
+    const resolvedDiscount = session.total_details?.amount_discount ?? 0;
     if (!resolvedCurrency || !resolvedAmount) {
       return NextResponse.json(
         { error: 'Checkout session amount is missing' },
@@ -401,7 +405,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (draftData.total_amount !== resolvedAmount) {
+    // 割引後の請求額 + 値引額 が割引前 draft 合計と一致することを検証
+    if (draftData.total_amount !== resolvedAmount + resolvedDiscount) {
       return NextResponse.json(
         { error: 'Checkout session amount does not match draft total' },
         { status: 400 }
@@ -413,6 +418,15 @@ export async function POST(req: NextRequest) {
         { error: 'Unsupported currency' },
         { status: 400 }
       );
+    }
+
+    // draft を割引後の実請求額に同期 (RPC / フォールバックの整合用)
+    if (resolvedDiscount > 0) {
+      await supabase
+        .from('checkout_drafts')
+        .update({ total_amount: resolvedAmount, discount_amount: resolvedDiscount })
+        .eq('id', draftId);
+      draftData.total_amount = resolvedAmount;
     }
 
     const { data: existingOrder } = await supabase
@@ -471,6 +485,7 @@ export async function POST(req: NextRequest) {
           paymentIntentId: resolvedPaymentIntentId,
           orderStatus: session.payment_status === 'paid' ? 'paid' : 'pending',
           userId: activeUserId,
+          discountAmount: resolvedDiscount,
         });
 
         if (fallbackResult.data && activeUserId) {

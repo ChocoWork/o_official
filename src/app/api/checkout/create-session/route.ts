@@ -371,6 +371,7 @@ export async function POST(req: NextRequest) {
         ui_mode: 'custom',
         mode: 'payment',
         line_items: lineItems,
+        allow_promotion_codes: true,
         metadata: {
           draft_id: createdDraft.id,
           session_id: sessionId,

@@ -4,8 +4,6 @@ import type {
   CheckoutItemSnapshotRow,
 } from '@/features/checkout/services/checkout-draft.service';
 
-export const CHECKOUT_TAX_RATE = 0.1;
-
 export const checkoutDisplayedAmountsSchema = z
   .object({
     subtotalAmount: z.number().int().min(0),
@@ -20,7 +18,8 @@ export type CheckoutDisplayedAmounts = z.infer<typeof checkoutDisplayedAmountsSc
 export function calculateCheckoutAmountsFromSubtotal(
   subtotalAmount: number
 ): CheckoutDisplayedAmounts {
-  const taxAmount = Math.floor(subtotalAmount * CHECKOUT_TAX_RATE);
+  // 価格は税込みのため消費税は加算しない (taxAmount は互換のため 0 で保持)
+  const taxAmount = 0;
   const shippingAmount = 0;
   const totalAmount = subtotalAmount + taxAmount + shippingAmount;
 

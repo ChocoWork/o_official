@@ -1,0 +1,23 @@
+{
+  "skill_name": "nextjs-implement",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Next.js 16のApp Routerで、products一覧ページと詳細ページを作ってください。params/searchParamsを正しく扱い、一覧はuse cacheで高速化、更新時はServer Actionからキャッシュ無効化してください。TypeScriptでお願いします。",
+      "expected_output": "App Router配下のファイル構成と、非同期params/searchParams対応、use cache、updateTagまたはrevalidateTag(profile付き)を含む実装提案またはコードが返る。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "既存のmiddleware.tsを持つNext.jsプロジェクトを16系に寄せたいです。proxy.ts移行方針、Route Handlerの使い分け、auth保護ルートの実装差分を具体的に出してください。",
+      "expected_output": "middleware.tsからproxy.tsへの移行案、認証境界の実装、必要な注意点が具体的手順で示される。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "ブログ管理画面を作っています。投稿作成フォームはServer Actionで保存し、投稿一覧はタグキャッシュで管理したいです。read-your-writesが必要な場所とSWRで良い場所を分けて設計してください。",
+      "expected_output": "updateTagとrevalidateTag('max')の適切な使い分け、Server Action中心の設計、UI反映手順が整理される。",
+      "files": []
+    }
+  ]
+}

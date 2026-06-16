@@ -7,7 +7,6 @@ import { useCart } from "@/contexts/CartContext";
 import { EmptyPage } from "@/components/ui/EmptyPage/EmptyPage";
 import { Button } from "@/components/ui/Button/Button";
 import { Stepper } from "@/components/ui/Stepper/Stepper";
-import { TextField } from "@/components/ui/TextField/TextField";
 import { MAX_CART_ITEM_QUANTITY } from "@/features/cart/services/cart-stock";
 
 interface CartItem {
@@ -590,33 +589,6 @@ export default function CartPage() {
             >
               ORDER SUMMARY
             </p>
-
-            {/* Promo code */}
-            <div
-              style={{
-                marginBottom: "calc(var(--lk-size-md) * var(--sqrt-phi))",
-              }}
-            >
-              <label
-                className="block tracking-wider text-[#474747]"
-                style={{
-                  fontSize: "var(--lk-size-2xs)",
-                  marginBottom: "var(--pad-y)",
-                }}
-              >
-                プロモーションコード
-              </label>
-              <div className="flex" style={{ gap: "var(--gap-icon2text)" }}>
-                <TextField
-                  placeholder="コードを入力"
-                  className="flex-1"
-                  type="text"
-                  style={{ fontSize: "var(--lk-size-md)" }}
-                  size="xs"
-                />
-                <Button size="xs">適用</Button>
-              </div>
-            </div>
 
             {/* Line items — 整列: labels left / amounts right, consistent baseline */}
             <div

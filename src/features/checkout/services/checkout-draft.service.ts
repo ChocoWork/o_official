@@ -101,8 +101,6 @@ export const checkoutShippingSchema = z
   })
   .optional();
 
-export type CheckoutShippingSnapshot = z.infer<typeof checkoutShippingSchema>;
-
 export type CheckoutCartSnapshotRow = {
   id: string;
   item_id: number;
