@@ -187,6 +187,9 @@ type SavedAddress = {
   isDefault: boolean;
 };
 
+// プルダウンの「新規」選択肢を表すセンチネル値
+const NEW_ADDRESS_VALUE = '__new__';
+
 
 function CheckoutPageContent() {
   const xsTextStyle: React.CSSProperties = { fontSize: 'var(--lk-size-xs)' };
@@ -359,6 +362,31 @@ function CheckoutPageContent() {
 
   const handleSelectSavedAddress = (id: string) => {
     setSelectedAddressId(id);
+
+    // 「新規」選択時は住所をクリアして入力フォームへ戻す
+    if (id === NEW_ADDRESS_VALUE) {
+      setShippingForm((prev) => ({
+        ...prev,
+        postalCode: '',
+        prefecture: '',
+        city: '',
+        address: '',
+        building: '',
+      }));
+      setFieldErrors((prev) => ({
+        ...prev,
+        postalCode: '',
+        prefecture: '',
+        city: '',
+        address: '',
+      }));
+      setPaymentReady(false);
+      setCustomCheckoutClientSecret(null);
+      setCustomCheckoutSessionId(null);
+      setCheckoutError(null);
+      return;
+    }
+
     const target = savedAddresses.find((item) => item.id === id);
     if (!target) {
       return;
@@ -486,15 +514,26 @@ function CheckoutPageContent() {
 
   const hasSavedAddress = savedAddresses.length > 0;
 
+  // 配送先プルダウンの選択肢（先頭に「新規」、以降に保存済み住所）
+  const addressOptions = [
+    { value: NEW_ADDRESS_VALUE, label: '新規' },
+    ...savedAddresses.map((item) => ({
+      value: item.id,
+      label: `〒${formatPostalCodeInput(item.postalCode ?? '')}\n${[item.prefecture, item.city, item.address, item.building].filter(Boolean).join('')}`,
+    })),
+  ];
+
   // 保存済み配送先 + プロフィール連絡先が揃えば自動的に決済へ進める
   React.useEffect(() => {
     if (paymentReady) return;
     if (!hasSavedAddress) return;
+    // 「新規」入力中は自動で決済へ進めない（入力フォームを維持）
+    if (selectedAddressId === NEW_ADDRESS_VALUE) return;
     if (!shippingForm.email.trim() || !shippingForm.fullName.trim() || !shippingForm.phone.trim()) {
       return;
     }
     setPaymentReady(true);
-  }, [hasSavedAddress, paymentReady, shippingForm.email, shippingForm.fullName, shippingForm.phone]);
+  }, [hasSavedAddress, paymentReady, selectedAddressId, shippingForm.email, shippingForm.fullName, shippingForm.phone]);
 
   // 配送先確定後に Stripe セッションを生成
   React.useEffect(() => {
@@ -1128,15 +1167,12 @@ function CheckoutPageContent() {
                         block
                         value={selectedAddressId}
                         onValueChange={handleSelectSavedAddress}
-                        options={savedAddresses.map((item) => ({
-                          value: item.id,
-                          label: `〒${formatPostalCodeInput(item.postalCode ?? '')}\n${[item.prefecture, item.city, item.address, item.building].filter(Boolean).join('')}`,
-                        }))}
+                        options={addressOptions}
                         size="md"
                       />
                     </div>
                   )}
-                  <AddressCard />
+                  {(!hasSavedAddress || selectedAddressId === NEW_ADDRESS_VALUE) && <AddressCard />}
                 </section>
 
                 <section>
@@ -1210,8 +1246,8 @@ function CheckoutPageContent() {
         ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
           <div className="lg:col-span-2">
-              {/* STEP 1 (配送先入力 / 保存済み住所なし) */}
-              {step === 1 && !customCheckoutClientSecret && !hasSavedAddress && (
+              {/* STEP 1 (配送先入力 / 保存済み住所なし or 新規選択) */}
+              {step === 1 && !customCheckoutClientSecret && (!hasSavedAddress || selectedAddressId === NEW_ADDRESS_VALUE) && (
                 <form onSubmit={handleProceedToPayment} noValidate>
                   <section className="mb-10">
                     <h3 className="text-sm text-[#474747] mb-6 tracking-wider font-brand">お客様情報</h3>
@@ -1220,6 +1256,17 @@ function CheckoutPageContent() {
 
                   <h3 className="text-sm text-[#474747] mb-6 tracking-wider font-brand">配送先</h3>
                   <div className="space-y-6">
+                    {hasSavedAddress && (
+                      <SingleSelect
+                        label="保存済みの配送先"
+                        variant="dropdown"
+                        block
+                        value={selectedAddressId}
+                        onValueChange={handleSelectSavedAddress}
+                        options={addressOptions}
+                        size="md"
+                      />
+                    )}
                     <TextField required label="郵便番号" placeholder="123-4567" type="text" name="postalCode" autoComplete="postal-code" value={shippingForm.postalCode} onChange={handleShippingChange} size="md" errorText={fieldErrors.postalCode} />
                     <SingleSelect
                       name="prefecture"
@@ -1271,7 +1318,7 @@ function CheckoutPageContent() {
               )}
 
               {/* STEP 1 (セッション準備中 / 保存済み住所あり) */}
-              {step === 1 && !customCheckoutClientSecret && hasSavedAddress && (
+              {step === 1 && !customCheckoutClientSecret && hasSavedAddress && selectedAddressId !== NEW_ADDRESS_VALUE && (
                 <div className="rounded-xs border border-black/10 p-6 bg-white">
                   <p className="text-sm text-[#474747]" style={mdTextStyle}>決済フォームを準備しています...</p>
                   {checkoutError && (
