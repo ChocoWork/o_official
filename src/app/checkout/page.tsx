@@ -268,9 +268,11 @@ function CheckoutPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { updateCartCount } = useCart();
+  const { isLoggedIn } = useLogin();
   const [shippingForm, setShippingForm] = useState({
     email: '',
     fullName: '',
+    kanaName: '',
     postalCode: '',
     prefecture: '',
     city: '',
@@ -279,6 +281,10 @@ function CheckoutPageContent() {
     phone: '',
     saveProfile: false,
   });
+  // お客様情報の編集トグル (ログイン済+設定済の読み取り表示 ⇔ 編集フォーム)
+  const [editingCustomer, setEditingCustomer] = useState(false);
+  const [savingCustomer, setSavingCustomer] = useState(false);
+  const [customerError, setCustomerError] = useState<string | null>(null);
   const {
     email,
     fullName,
@@ -311,6 +317,7 @@ function CheckoutPageContent() {
           ...prev,
           email: prev.email || (typeof data.email === 'string' ? data.email : ''),
           fullName: prev.fullName || (typeof data.fullName === 'string' ? data.fullName : ''),
+          kanaName: prev.kanaName || (typeof data.kanaName === 'string' ? data.kanaName : ''),
           postalCode: prev.postalCode || formatPostalCodeInput(typeof data.address?.postalCode === 'string' ? data.address.postalCode : ''),
           prefecture: prev.prefecture || (typeof data.address?.prefecture === 'string' ? data.address.prefecture : ''),
           city: prev.city || (typeof data.address?.city === 'string' ? data.address.city : ''),
@@ -914,14 +921,81 @@ function CheckoutPageContent() {
     </>
   );
 
-  // お客様情報カード (氏名・電話・メール)。読み取り専用表示。
-  const CustomerInfoCard = () => (
-    <div className="p-6 bg-[#f5f5f5] text-sm">
-      {shippingForm.fullName && <p className="mb-1">{shippingForm.fullName}</p>}
-      {shippingForm.phone && <p className="mb-1">{shippingForm.phone}</p>}
-      {shippingForm.email && <p>{shippingForm.email}</p>}
-    </div>
-  );
+  // お客様情報。ログイン済+氏名/メール設定済なら読み取り表示、それ以外は編集フォーム。
+  const handleSaveCustomer = async () => {
+    setSavingCustomer(true);
+    setCustomerError(null);
+    try {
+      const response = await clientFetch('/api/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: shippingForm.fullName.trim(),
+          kanaName: shippingForm.kanaName.trim(),
+          phone: formatPhoneNumberInput(shippingForm.phone.trim()),
+        }),
+      });
+      if (!response.ok) {
+        throw new Error('save failed');
+      }
+      setEditingCustomer(false);
+    } catch {
+      setCustomerError('お客様情報の保存に失敗しました。再度お試しください。');
+    } finally {
+      setSavingCustomer(false);
+    }
+  };
+
+  const CustomerInfoSection = () => {
+    // 仕様: ログイン済+氏名/メール設定済で読み取り表示。電話は注文時必須のため未設定なら編集を促す。
+    const showReadonly =
+      isLoggedIn &&
+      shippingForm.fullName.trim().length > 0 &&
+      shippingForm.email.trim().length > 0 &&
+      shippingForm.phone.trim().length > 0 &&
+      !editingCustomer;
+
+    if (showReadonly) {
+      return (
+        <div className="p-6 bg-[#f5f5f5] text-sm space-y-4">
+          <div>
+            <p className="text-xs text-[#474747] tracking-wider mb-1" style={xsTextStyle}>氏名</p>
+            <p className="text-black">{shippingForm.fullName || '-'}</p>
+          </div>
+          <div>
+            <p className="text-xs text-[#474747] tracking-wider mb-1" style={xsTextStyle}>フリガナ</p>
+            <p className="text-black">{shippingForm.kanaName || '-'}</p>
+          </div>
+          <div>
+            <p className="text-xs text-[#474747] tracking-wider mb-1" style={xsTextStyle}>メールアドレス</p>
+            <p className="text-black break-all">{shippingForm.email || '-'}</p>
+          </div>
+          <div>
+            <p className="text-xs text-[#474747] tracking-wider mb-1" style={xsTextStyle}>電話番号</p>
+            <p className="text-black">{shippingForm.phone || '-'}</p>
+          </div>
+          <Button type="button" size="sm" onClick={() => setEditingCustomer(true)}>
+            変更する
+          </Button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-6">
+        <TextField required label="氏名" type="text" name="fullName" autoComplete="name" value={shippingForm.fullName} onChange={handleShippingChange} size="md" errorText={fieldErrors.fullName} />
+        <TextField label="フリガナ" type="text" name="kanaName" value={shippingForm.kanaName} onChange={handleShippingChange} size="md" />
+        <TextField required label="メールアドレス" type="email" name="email" autoComplete="email" value={shippingForm.email} onChange={handleShippingChange} size="md" errorText={fieldErrors.email} readOnly={isLoggedIn} className={isLoggedIn ? 'bg-[#f5f5f5]' : undefined} />
+        <TextField required label="電話番号" placeholder="090-1234-5678" type="tel" name="phone" autoComplete="tel" inputMode="numeric" value={shippingForm.phone} onChange={handleShippingChange} size="md" errorText={fieldErrors.phone} />
+        {customerError && <p className="text-sm text-red-600" role="alert">{customerError}</p>}
+        {isLoggedIn && (
+          <Button type="button" size="sm" onClick={handleSaveCustomer} disabled={savingCustomer}>
+            {savingCustomer ? '保存中...' : '変更を保存'}
+          </Button>
+        )}
+      </div>
+    );
+  };
 
   // 配送先カード (住所のみ)。読み取り専用表示。
   const AddressCard = () => (
@@ -1034,7 +1108,7 @@ function CheckoutPageContent() {
               <div className="lg:col-span-2 space-y-10">
                 <section>
                   <h3 className="text-sm text-[#474747] mb-4 tracking-wider font-brand">お客様情報</h3>
-                  <CustomerInfoCard />
+                  <CustomerInfoSection />
                 </section>
 
                 <section>
@@ -1139,10 +1213,13 @@ function CheckoutPageContent() {
               {/* STEP 1 (配送先入力 / 保存済み住所なし) */}
               {step === 1 && !customCheckoutClientSecret && !hasSavedAddress && (
                 <form onSubmit={handleProceedToPayment} noValidate>
+                  <section className="mb-10">
+                    <h3 className="text-sm text-[#474747] mb-6 tracking-wider font-brand">お客様情報</h3>
+                    <CustomerInfoSection />
+                  </section>
+
                   <h3 className="text-sm text-[#474747] mb-6 tracking-wider font-brand">配送先</h3>
                   <div className="space-y-6">
-                    <TextField required label="メールアドレス" type="email" name="email" autoComplete="email" value={shippingForm.email} onChange={handleShippingChange} size="md" errorText={fieldErrors.email} />
-                    <TextField required label="氏名" type="text" name="fullName" autoComplete="name" value={shippingForm.fullName} onChange={handleShippingChange} size="md" errorText={fieldErrors.fullName} />
                     <TextField required label="郵便番号" placeholder="123-4567" type="text" name="postalCode" autoComplete="postal-code" value={shippingForm.postalCode} onChange={handleShippingChange} size="md" errorText={fieldErrors.postalCode} />
                     <SingleSelect
                       name="prefecture"
@@ -1171,7 +1248,6 @@ function CheckoutPageContent() {
                     <TextField required label="市区町村" type="text" name="city" autoComplete="address-level2" value={shippingForm.city} onChange={handleShippingChange} size="md" errorText={fieldErrors.city} />
                     <TextField required label="番地" type="text" name="address" autoComplete="street-address" value={shippingForm.address} onChange={handleShippingChange} size="md" errorText={fieldErrors.address} />
                     <TextField label="建物名・部屋番号（任意）" type="text" name="building" value={shippingForm.building} onChange={handleShippingChange} size="md" />
-                    <TextField required label="電話番号" placeholder="090-1234-5678" type="tel" name="phone" autoComplete="tel" inputMode="numeric" value={shippingForm.phone} onChange={handleShippingChange} size="md" errorText={fieldErrors.phone} />
                     <Checkbox
                       id="saveProfile"
                       name="saveProfile"
@@ -1224,7 +1300,12 @@ function CheckoutPageContent() {
                     <div className="space-y-8">
                       <div>
                         <h3 className="text-sm text-[#474747] mb-4 tracking-wider font-brand">お客様情報</h3>
-                        <CustomerInfoCard />
+                        <div className="p-6 bg-[#f5f5f5] text-sm">
+                          {shippingForm.fullName && <p className="mb-1">{shippingForm.fullName}</p>}
+                          {shippingForm.kanaName && <p className="mb-1">{shippingForm.kanaName}</p>}
+                          {shippingForm.email && <p className="mb-1 break-all">{shippingForm.email}</p>}
+                          {shippingForm.phone && <p>{shippingForm.phone}</p>}
+                        </div>
                       </div>
                       <div>
                         <h3 className="text-sm text-[#474747] mb-4 tracking-wider font-brand">配送先</h3>
