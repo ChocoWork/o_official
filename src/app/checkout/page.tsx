@@ -1037,7 +1037,7 @@ function CheckoutPageContent() {
     const hasDiscount = t.discount.minorUnitsAmount > 0;
 
     return (
-      <div className="space-y-4 mb-8 pb-8 border-b border-black/10">
+      <div className="space-y-4 mt-8 pt-8 border-t border-black/10">
         <div className="flex justify-between">
           <span
             className="text-sm text-[#474747]"
@@ -1084,7 +1084,7 @@ function CheckoutPageContent() {
               : t.shippingRate.amount}
           </span>
         </div>
-        <div className="flex justify-between pt-4">
+        <div className="flex justify-between pt-4 border-t border-black/10">
           <span
             className="text-lg text-black"
             style={{ fontFamily: "acumin-pro, sans-serif", ...lgTextStyle }}
