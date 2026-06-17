@@ -17,4 +17,6 @@ export interface SingleSelectProps
   bordered?: boolean;
   /** dropdown: トリガーを全幅にしテキスト左・シェブロン右で配置（フォーム用）。既定 false（コンパクト右寄せ）*/
   block?: boolean;
+  /** dropdown: 選択値ラベルの改行(\n)を複数行表示する（住所の2行表示など）。既定 false */
+  multiline?: boolean;
 }

@@ -190,6 +190,19 @@
   line-height: 1;
 }
 
+/* multiline：選択値ラベルの改行(\n)を複数行表示（住所の2行表示など）。トリガー高さ可変 */
+[data-ui-single-select-multiline="true"] .single-select__trigger {
+  height: auto;
+  align-items: center;
+}
+
+[data-ui-single-select-multiline="true"] .single-select__value {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: pre-line;
+  line-height: var(--sqrt-phi, 1.4);
+}
+
 /* --- ネイティブ select（整列：シェブロン領域ぶん右パディング確保）--- */
 .single-select__native {
   appearance: none;

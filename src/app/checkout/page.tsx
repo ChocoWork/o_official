@@ -276,6 +276,8 @@ function CheckoutPageContent() {
   const [editingCustomer, setEditingCustomer] = useState(false);
   const [savingCustomer, setSavingCustomer] = useState(false);
   const [customerError, setCustomerError] = useState<string | null>(null);
+  // 編集開始前のお客様情報（キャンセルで復元）
+  const customerSnapshotRef = useRef<{ fullName: string; kanaName: string; phone: string } | null>(null);
   const {
     email,
     fullName,
@@ -397,10 +399,9 @@ function CheckoutPageContent() {
       city: '',
       address: '',
     }));
-    // 既存セッションを破棄し、新しい配送先で再生成させる
-    setCustomCheckoutClientSecret(null);
-    setCustomCheckoutSessionId(null);
-    setPaymentReady(false);
+    // セッションは維持し、ドラフトのみ同期 effect で更新（画面全体の再読み込みを避ける）。
+    // 同期完了まで Confirm をゲートするためキーをリセット。
+    setSyncedShippingKey(null);
   };
 
   const validateShippingForm = (): boolean => {
@@ -500,7 +501,27 @@ function CheckoutPageContent() {
     }
   }, [paymentMethod, subtotal, shipping, tax, total, email, fullName, postalCode, prefecture, city, address, building, phone]);
 
-
+  // 配送先変更時、Stripe セッションは作り直さずドラフトの shipping_snapshot だけ更新する
+  // （clientSecret 不変＝決済フォーム/プロモを再読み込みさせない）
+  const updateDraftShipping = React.useCallback(async () => {
+    if (!customCheckoutSessionId) return;
+    try {
+      const response = await clientFetch('/api/checkout/update-shipping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          checkoutSessionId: customCheckoutSessionId,
+          shipping: { email, fullName, postalCode, prefecture, city, address, building, phone },
+        }),
+      });
+      if (!response.ok) return;
+      setSyncedShippingKey(
+        shippingKeyOf({ email, fullName, postalCode, prefecture, city, address, building, phone })
+      );
+    } catch (error) {
+      console.error('配送先の同期に失敗しました', error);
+    }
+  }, [customCheckoutSessionId, email, fullName, postalCode, prefecture, city, address, building, phone]);
 
   React.useEffect(() => {
     setCheckoutError(null);
@@ -538,19 +559,18 @@ function CheckoutPageContent() {
     void createCustomCheckoutSession();
   }, [step, paymentReady, customCheckoutClientSecret, createCustomCheckoutSession]);
 
-  // 「新規」入力中、住所が有効かつ変更されたらドラフトを再生成して同期（デバウンス）
+  // 配送先（新規入力・保存済み切替）が変わったらドラフトのみ更新して同期（デバウンス）
   React.useEffect(() => {
     if (step !== 1) return;
-    if (selectedAddressId !== NEW_ADDRESS_VALUE) return;
-    if (!customCheckoutClientSecret) return;
+    if (!customCheckoutClientSecret || !customCheckoutSessionId) return;
     if (!isShippingComplete(shippingForm)) return;
     if (shippingKeyOf(shippingForm) === syncedShippingKey) return;
 
     const timer = setTimeout(() => {
-      void createCustomCheckoutSession();
-    }, 700);
+      void updateDraftShipping();
+    }, 500);
     return () => clearTimeout(timer);
-  }, [step, selectedAddressId, customCheckoutClientSecret, shippingForm, syncedShippingKey, createCustomCheckoutSession]);
+  }, [step, customCheckoutClientSecret, customCheckoutSessionId, shippingForm, syncedShippingKey, updateDraftShipping]);
 
   React.useEffect(() => {
     const sessionId = searchParams.get('session_id');
@@ -828,13 +848,14 @@ function CheckoutPageContent() {
           </div>
         ) : (
           <div className="flex" style={{ gap: 'var(--gap-icon2text)' }}>
-            <TextField
-              placeholder="コードを入力"
-              className="flex-1"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              size="sm"
-            />
+            <div className="flex-1">
+              <TextField
+                placeholder="コードを入力"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                size="sm"
+              />
+            </div>
             <Button type="button" size="sm" onClick={handleApply} disabled={applying || !code.trim()}>
               {applying ? '適用中...' : '適用'}
             </Button>
@@ -930,10 +951,8 @@ function CheckoutPageContent() {
       }
     };
 
-    // 「新規」入力住所が現セッションのドラフトに未反映なら確定不可（古い/空住所での注文を防止）
-    const addressOutOfSync =
-      selectedAddressId === NEW_ADDRESS_VALUE &&
-      (!isShippingComplete(shippingForm) || shippingKeyOf(shippingForm) !== syncedShippingKey);
+    // 表示中の配送先が現セッションのドラフトに未反映なら確定不可（古い/空住所での注文を防止）
+    const addressOutOfSync = shippingKeyOf(shippingForm) !== syncedShippingKey;
 
     return (
       <Button
@@ -1019,6 +1038,16 @@ function CheckoutPageContent() {
     }
   };
 
+  // 編集をキャンセルし、開始前の値へ戻す
+  const handleCancelCustomer = () => {
+    const snap = customerSnapshotRef.current;
+    if (snap) {
+      setShippingForm((prev) => ({ ...prev, ...snap }));
+    }
+    setCustomerError(null);
+    setEditingCustomer(false);
+  };
+
   const CustomerInfoSection = () => {
     // 仕様: ログイン済+氏名/メール設定済で読み取り表示。電話は注文時必須のため未設定なら編集を促す。
     const showReadonly =
@@ -1047,7 +1076,18 @@ function CheckoutPageContent() {
             <p className="text-xs text-[#474747] tracking-wider mb-1" style={xsTextStyle}>電話番号</p>
             <p className="text-black">{shippingForm.phone || '-'}</p>
           </div>
-          <Button type="button" size="sm" onClick={() => setEditingCustomer(true)}>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => {
+              customerSnapshotRef.current = {
+                fullName: shippingForm.fullName,
+                kanaName: shippingForm.kanaName,
+                phone: shippingForm.phone,
+              };
+              setEditingCustomer(true);
+            }}
+          >
             変更する
           </Button>
         </div>
@@ -1055,16 +1095,23 @@ function CheckoutPageContent() {
     }
 
     return (
-      <div className="space-y-6">
+      <div className="rounded-xs border border-black/10 p-6 bg-white space-y-6">
         <TextField required label="氏名" type="text" name="fullName" autoComplete="name" value={shippingForm.fullName} onChange={handleShippingChange} size="md" errorText={fieldErrors.fullName} />
         <TextField label="フリガナ" type="text" name="kanaName" value={shippingForm.kanaName} onChange={handleShippingChange} size="md" />
         <TextField required label="メールアドレス" type="email" name="email" autoComplete="email" value={shippingForm.email} onChange={handleShippingChange} size="md" errorText={fieldErrors.email} readOnly={isLoggedIn} className={isLoggedIn ? 'bg-[#f5f5f5]' : undefined} />
         <TextField required label="電話番号" placeholder="090-1234-5678" type="tel" name="phone" autoComplete="tel" inputMode="numeric" value={shippingForm.phone} onChange={handleShippingChange} size="md" errorText={fieldErrors.phone} />
         {customerError && <p className="text-sm text-red-600" role="alert">{customerError}</p>}
         {isLoggedIn && (
-          <Button type="button" size="sm" onClick={handleSaveCustomer} disabled={savingCustomer}>
-            {savingCustomer ? '保存中...' : '変更を保存'}
-          </Button>
+          <div className="flex gap-4">
+            <Button type="button" size="sm" onClick={handleSaveCustomer} disabled={savingCustomer}>
+              {savingCustomer ? '保存中...' : '変更を保存'}
+            </Button>
+            {editingCustomer && (
+              <Button type="button" variant="secondary" size="sm" onClick={handleCancelCustomer} disabled={savingCustomer}>
+                キャンセル
+              </Button>
+            )}
+          </div>
         )}
       </div>
     );
@@ -1220,9 +1267,9 @@ function CheckoutPageContent() {
               elementsOptions: { appearance: stripeAppearance },
             }}
           >
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
               {/* 左: お客様情報 → 配送先 → 支払方法 → 確認 */}
-              <div className="lg:col-span-2 space-y-10">
+              <div className="order-2 md:order-1 md:col-span-2 space-y-10">
                 <section>
                   <h3 className="text-sm text-[#474747] mb-4 tracking-wider font-brand">お客様情報</h3>
                   <CustomerInfoSection />
@@ -1243,6 +1290,7 @@ function CheckoutPageContent() {
                         label="保存済みの配送先"
                         variant="dropdown"
                         block
+                        multiline
                         value={selectedAddressId}
                         onValueChange={handleSelectSavedAddress}
                         options={addressOptions}
@@ -1251,10 +1299,10 @@ function CheckoutPageContent() {
                     </div>
                   )}
                   {selectedAddressId === NEW_ADDRESS_VALUE ? (
-                    <div className="space-y-6">{renderAddressFields()}</div>
-                  ) : (
+                    <div className="rounded-xs border border-black/10 p-6 bg-white space-y-6">{renderAddressFields()}</div>
+                  ) : !hasSavedAddress ? (
                     <AddressCard />
-                  )}
+                  ) : null}
                 </section>
 
                 <section>
@@ -1307,14 +1355,14 @@ function CheckoutPageContent() {
                   <p className="text-sm text-red-600 mt-4" role="alert">{profileSaveError}</p>
                 )}
 
-                <div className="mt-4">
+                <div className="mt-4 flex">
                   <ConfirmPaymentButton />
                 </div>
               </div>
 
               {/* 右: 注文内容 → プロモ → 金額 */}
-              <div className="lg:col-span-1">
-                <div className="border border-black/10 p-8 sticky top-32">
+              <div className="order-1 md:order-2 md:col-span-1">
+                <div className="border border-black/10 p-8 md:sticky md:top-32">
                   <h2 className="mb-8 font-brand font-semibold">注文内容</h2>
                   {cartItems.length === 0 ? (
                     <p className="text-sm text-gray-500">カートに商品がありません</p>
@@ -1330,8 +1378,8 @@ function CheckoutPageContent() {
             </div>
           </CheckoutProvider>
         ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-          <div className="lg:col-span-2">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
+          <div className="order-2 md:order-1 md:col-span-2">
               {/* STEP 1 (配送先入力 / 保存済み住所なし or 新規選択) */}
               {step === 1 && !customCheckoutClientSecret && (!hasSavedAddress || selectedAddressId === NEW_ADDRESS_VALUE) && (
                 <form onSubmit={handleProceedToPayment} noValidate>
@@ -1341,18 +1389,21 @@ function CheckoutPageContent() {
                   </section>
 
                   <h3 className="text-sm text-[#474747] mb-6 tracking-wider font-brand">配送先</h3>
-                  <div className="space-y-6">
-                    {hasSavedAddress && (
+                  {hasSavedAddress && (
+                    <div className="mb-4">
                       <SingleSelect
                         label="保存済みの配送先"
                         variant="dropdown"
                         block
+                        multiline
                         value={selectedAddressId}
                         onValueChange={handleSelectSavedAddress}
                         options={addressOptions}
                         size="md"
                       />
-                    )}
+                    </div>
+                  )}
+                  <div className="rounded-xs border border-black/10 p-6 bg-white space-y-6">
                     {renderAddressFields()}
                   </div>
 
@@ -1442,8 +1493,8 @@ function CheckoutPageContent() {
           </div>
 
 
-          <div className="lg:col-span-1">
-            <div className="border border-black/10 p-8 sticky top-32">
+          <div className="order-1 md:order-2 md:col-span-1">
+            <div className="border border-black/10 p-8 md:sticky md:top-32">
               <h2 className="mb-8 font-brand font-semibold">注文内容</h2>
 
               {cartItems.length === 0 ? (

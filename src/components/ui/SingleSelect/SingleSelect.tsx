@@ -21,6 +21,7 @@ export function SingleSelect({
   size = 'md',
   bordered = true,
   block = false,
+  multiline = false,
   ...props
 }: SingleSelectProps) {
   const selectId = id ?? props.name;
@@ -161,6 +162,7 @@ export function SingleSelect({
     'data-ui-single-select-size': size,
     'data-ui-single-select-bordered': bordered ? 'true' : 'false',
     'data-ui-single-select-block': block ? 'true' : undefined,
+    'data-ui-single-select-multiline': multiline ? 'true' : undefined,
     'data-ui-size': size,
   } as const;
 
