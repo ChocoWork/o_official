@@ -42,48 +42,40 @@ export function CartItemRow({
       style={{
         paddingTop: "calc(var(--lk-size-md) * var(--sqrt-phi))",
         paddingBottom: "calc(var(--lk-size-md) * var(--sqrt-phi))",
-        gap: "calc(var(--lk-size-md) * var(--sqrt-phi))",
+        gap: "calc(var(--lk-size-md) / var(--sqrt-phi))",
       }}
     >
       <Link
         href={`/item/${product.id}`}
-        className="w-24 h-32 bg-[#f5f5f5] flex-shrink-0 overflow-hidden relative"
+        className="w-20 h-24 flex-shrink-0 overflow-hidden relative"
       >
         <Image
           alt={product.name}
           className="w-full h-full object-cover object-top hover:scale-105 transition-transform duration-500"
           src={product.image_url}
           fill
-          sizes="96px"
+          sizes="80px"
         />
       </Link>
 
-      <div className="flex-1 flex flex-col justify-between">
+      <div
+        className="flex-1 flex flex-col"
+        style={{ gap: "calc(var(--lk-size-md) / var(--sqrt-phi) / var(--phi))" }}
+      >
         <div
           className="flex items-start justify-between"
-          style={{ gap: "var(--gap-icon2text)" }}
+          style={{ gap: "calc(var(--lk-size-md) / var(--sqrt-phi) / var(--phi))" }}
         >
           <Link
             href={`/item/${product.id}`}
-            className="flex flex-col"
-            style={{ gap: "var(--gap-icon2text)" }}
+            className="hover:text-[#474747] transition-colors"
+            style={{ fontSize: "var(--lk-size-md)" }}
           >
-            <span
-              className="hover:text-[#474747] transition-colors"
-              style={{ fontSize: "var(--lk-size-sm)" }}
-            >
-              {product.name}
-            </span>
-            <span
-              className="text-[#474747]"
-              style={{ fontSize: "var(--lk-size-xs)" }}
-            >
-              ¥{product.price.toLocaleString("ja-JP")}
-            </span>
+            {product.name}
           </Link>
           <div
-            className="flex items-center"
-            style={{ gap: "var(--gap-icon2text)" }}
+            className="flex items-center flex-shrink-0"
+            style={{ gap: "calc(var(--lk-size-md) / var(--sqrt-phi) / var(--phi))" }}
           >
             <Button
               onClick={() => onToggleWishlist(item.item_id)}
@@ -114,28 +106,19 @@ export function CartItemRow({
           </div>
         </div>
 
-        <div className="flex items-end justify-between">
-          <div
-            className="flex flex-col"
-            style={{ gap: "var(--gap-icon2text)" }}
+        {(item.color || item.size) && (
+          <span
+            className="tracking-[0.08em] text-[#474747]"
+            style={{ fontSize: "var(--lk-size-2xs)" }}
           >
-            {item.color && (
-              <span
-                className="tracking-wider text-[#474747]"
-                style={{ fontSize: "var(--lk-size-2xs)" }}
-              >
-                COLOR <span className="text-black/30">/</span> {item.color}
-              </span>
-            )}
-            {item.size && (
-              <span
-                className="tracking-wider text-[#474747]"
-                style={{ fontSize: "var(--lk-size-2xs)" }}
-              >
-                SIZE <span className="text-black/30">/</span> {item.size}
-              </span>
-            )}
-          </div>
+            {[item.color, item.size].filter(Boolean).join(" / ")}
+          </span>
+        )}
+
+        <div className="flex items-end justify-between">
+          <span style={{ fontSize: "var(--lk-size-md)" }}>
+            ¥{product.price.toLocaleString("ja-JP")}
+          </span>
           <Stepper
             value={item.quantity}
             min={1}
@@ -148,12 +131,12 @@ export function CartItemRow({
         {syncError && (
           <div
             className="text-red-600 flex items-center justify-between"
-            style={{ gap: "var(--pad-x)" }}
+            style={{ gap: "calc(var(--lk-size-md) / var(--sqrt-phi))" }}
           >
             <span style={{ fontSize: "var(--lk-size-xs)" }}>{syncError}</span>
             <div
               className="flex items-center"
-              style={{ gap: "var(--gap-icon2text)" }}
+              style={{ gap: "calc(var(--lk-size-md) / var(--sqrt-phi) / var(--phi))" }}
             >
               <Button onClick={() => onRetryUpdate(item.id)} variant="secondary" size="sm">
                 再試行
