@@ -1058,23 +1058,14 @@ function AccountPageContent() {
                           />
                         ) : null}
                         <div className="account-order-lines">
-                          <p style={{ fontSize: "var(--lk-size-sm)" }}>
-                            {item.name}
-                          </p>
+                          <p className="account-value">{item.name}</p>
                           <div>
+                            <p className="account-label">
+                              {item.color} / {item.size}
+                            </p>
                             <p className="account-label">
                               数量: {item.quantity}
                             </p>
-                            {item.color ? (
-                              <p className="account-label">
-                                COLOR: {item.color}
-                              </p>
-                            ) : null}
-                            {item.size ? (
-                              <p className="account-label">
-                                SIZE : {item.size}
-                              </p>
-                            ) : null}
                           </div>
                           <p className="account-value">{item.amount}</p>
                         </div>

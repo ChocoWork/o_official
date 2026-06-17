@@ -1,9 +1,9 @@
-import React from 'react';
-import Image from 'next/image';
-import { Trash2, Heart } from 'lucide-react';
-import { CartItem as CartItemType } from '../types/cart';
-import { Button } from '@/components/ui/Button/Button';
-import { Stepper } from '@/components/ui/Stepper/Stepper';
+import React from "react";
+import Image from "next/image";
+import { Trash2, Heart } from "lucide-react";
+import { CartItem as CartItemType } from "../types/cart";
+import { Button } from "@/components/ui/Button/Button";
+import { Stepper } from "@/components/ui/Stepper/Stepper";
 
 interface CartItemProps {
   item: CartItemType;
@@ -53,12 +53,17 @@ export const CartItem: React.FC<CartItemProps> = ({
                   min={1}
                   max={item.inStock ? Number.MAX_SAFE_INTEGER : item.quantity}
                   onChange={handleQuantityChange}
-                 size="md"/>
+                  size="md"
+                />
               </div>
             </div>
-            
+
             <div className="flex space-x-2">
-              <Button variant="ghost" size="sm" className="p-2 text-gray-400 hover:text-red-500 transition-colors duration-200">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="p-2 text-gray-400 hover:text-red-500 transition-colors duration-200"
+              >
                 <Heart className="w-5 h-5" />
               </Button>
               <Button
