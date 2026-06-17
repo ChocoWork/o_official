@@ -1170,10 +1170,12 @@ function CheckoutPageContent() {
             </div>
             <div className="checkout-item-lines">
               <p className="checkout-value">{product.name}</p>
-              <p className="checkout-label">
-                {item.color} / {item.size}
-              </p>
-              <p className="checkout-label">数量: {item.quantity}</p>
+              <div>
+                <p className="checkout-label">
+                  {item.color} / {item.size}
+                </p>
+                <p className="checkout-label">数量: {item.quantity}</p>
+              </div>
               <p className="checkout-value">
                 ¥{product.price.toLocaleString()}
               </p>
@@ -1485,7 +1487,7 @@ function CheckoutPageContent() {
 
   if (completed) {
     return (
-      <div className="checkout-page pb-10 sm:pb-14 px-6 lg:px-12">
+      <div className="checkout-page md:px-10 lg:px-12">
         <div
           className="max-w-3xl mx-auto text-center"
           style={{
@@ -1600,8 +1602,8 @@ function CheckoutPageContent() {
   }
 
   return (
-    <div className="checkout-page pb-10 sm:pb-14">
-      <div className="element-width">
+    <div className="checkout-page px-6 md:px-10 lg:px-12">
+      <div className="element-width max-w-6xl">
         <div className="checkout-steps">
           <div className="checkout-steps-track">
             {CHECKOUT_STEPS.map((checkoutStep, index) => {
@@ -1647,7 +1649,7 @@ function CheckoutPageContent() {
           >
             <div className="checkout-grid grid grid-cols-1 md:grid-cols-1 lg:grid-cols-3">
               {/* 左: お客様情報 → 配送先 → 支払方法 → 確認 */}
-              <div className="order-2 md:order-1 md:col-span-1 lg:col-span-2 checkout-sections">
+              <div className="order-2 lg:order-1 md:col-span-1 lg:col-span-2 checkout-sections">
                 <section className="checkout-section">
                   <h3 className="checkout-heading font-brand">お客様情報</h3>
                   <CustomerInfoSection />
@@ -1751,7 +1753,7 @@ function CheckoutPageContent() {
               </div>
 
               {/* 右: 注文内容 → プロモ → 金額 */}
-              <div className="order-1 md:order-2 md:col-span-1 lg:col-span-1">
+              <div className="order-1 lg:order-2 md:col-span-1 lg:col-span-1">
                 <div className="checkout-summary md:sticky md:top-32">
                   <h2 className="checkout-summary-title">ORDER SUMMARY</h2>
                   {cartItems.length === 0 ? (
@@ -1774,7 +1776,7 @@ function CheckoutPageContent() {
           </CheckoutProvider>
         ) : (
           <div className="checkout-grid grid grid-cols-1 md:grid-cols-1 lg:grid-cols-3">
-            <div className="order-2 md:order-1 md:col-span-1 lg:col-span-2">
+            <div className="order-2 lg:order-1 md:col-span-1 lg:col-span-2">
               {/* STEP 1 (配送先入力 / 保存済み住所なし or 新規選択) */}
               {step === 1 &&
                 !customCheckoutClientSecret &&
@@ -1931,7 +1933,7 @@ function CheckoutPageContent() {
               )}
             </div>
 
-            <div className="order-1 md:order-2 md:col-span-1 lg:col-span-1">
+            <div className="order-1 lg:order-2 md:col-span-1 lg:col-span-1">
               <div className="checkout-summary md:sticky md:top-32">
                 <h2 className="checkout-summary-title">ORDER SUMMARY</h2>
 
@@ -2003,7 +2005,7 @@ export default function CheckoutPage() {
   return (
     <Suspense
       fallback={
-        <div className="pb-10 sm:pb-14 px-6 lg:px-12">
+        <div className="md:px-10 lg:px-12">
           <div className="max-w-6xl mx-auto">
             <p className="text-sm text-[#474747]">読み込み中...</p>
           </div>
