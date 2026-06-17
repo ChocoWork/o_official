@@ -20,56 +20,7 @@ import {
 import { calculateCheckoutAmountsFromSubtotal } from '@/features/checkout/services/checkout-pricing.service';
 import { SingleSelect } from '@/components/ui/SingleSelect/SingleSelect';
 import { TextField } from '@/components/ui/TextField/TextField';
-
-const PREFECTURES = [
-  '北海道',
-  '青森県',
-  '岩手県',
-  '宮城県',
-  '秋田県',
-  '山形県',
-  '福島県',
-  '茨城県',
-  '栃木県',
-  '群馬県',
-  '埼玉県',
-  '千葉県',
-  '東京都',
-  '神奈川県',
-  '新潟県',
-  '富山県',
-  '石川県',
-  '福井県',
-  '山梨県',
-  '長野県',
-  '岐阜県',
-  '静岡県',
-  '愛知県',
-  '三重県',
-  '滋賀県',
-  '京都府',
-  '大阪府',
-  '兵庫県',
-  '奈良県',
-  '和歌山県',
-  '鳥取県',
-  '島根県',
-  '岡山県',
-  '広島県',
-  '山口県',
-  '徳島県',
-  '香川県',
-  '愛媛県',
-  '高知県',
-  '福岡県',
-  '佐賀県',
-  '長崎県',
-  '熊本県',
-  '大分県',
-  '宮崎県',
-  '鹿児島県',
-  '沖縄県',
-];
+import { PREFECTURES } from '@/lib/constants/prefectures';
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '');
 
@@ -190,6 +141,43 @@ type SavedAddress = {
 // プルダウンの「新規」選択肢を表すセンチネル値
 const NEW_ADDRESS_VALUE = '__new__';
 
+type ShippingFormFields = {
+  email: string;
+  fullName: string;
+  postalCode: string;
+  prefecture: string;
+  city: string;
+  address: string;
+  building: string;
+  phone: string;
+};
+
+// 注文に必要な配送先が揃っているか（fieldErrors を更新しない純粋判定）
+function isShippingComplete(form: ShippingFormFields): boolean {
+  if (!form.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return false;
+  if (!form.fullName.trim()) return false;
+  if (!form.postalCode.trim() || !/^\d{3}-?\d{4}$/.test(form.postalCode)) return false;
+  if (!form.prefecture) return false;
+  if (!form.city.trim()) return false;
+  if (!form.address.trim()) return false;
+  if (!form.phone.trim() || !/^[\d\-+()]{10,}$/.test(form.phone.replace(/\s/g, ''))) return false;
+  return true;
+}
+
+// 配送先の同一性キー（再生成の要否判定用）
+function shippingKeyOf(form: ShippingFormFields): string {
+  return [
+    form.email,
+    form.fullName,
+    form.postalCode,
+    form.prefecture,
+    form.city,
+    form.address,
+    form.building,
+    form.phone,
+  ].join('|');
+}
+
 
 function CheckoutPageContent() {
   const xsTextStyle: React.CSSProperties = { fontSize: 'var(--lk-size-xs)' };
@@ -302,6 +290,8 @@ function CheckoutPageContent() {
   // 保存済み配送先（複数住所から選択）
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<string>('');
+  // 現在のセッションのドラフトに反映済みの配送先キー（「新規」入力時の同期判定）
+  const [syncedShippingKey, setSyncedShippingKey] = useState<string | null>(null);
 
   // フィールドごとのバリデーションエラー (FR-CHECKOUT-004)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -363,7 +353,9 @@ function CheckoutPageContent() {
   const handleSelectSavedAddress = (id: string) => {
     setSelectedAddressId(id);
 
-    // 「新規」選択時は住所をクリアして入力フォームへ戻す
+    // 「新規」選択時は住所欄をクリアして編集フォームを表示する。
+    // セッションは破棄せず、決済フォーム/プロモ表示を維持したまま編集させる
+    // （入力済み住所がドラフトへ反映されるまでは Confirm をゲート: syncedShippingKey）。
     if (id === NEW_ADDRESS_VALUE) {
       setShippingForm((prev) => ({
         ...prev,
@@ -380,9 +372,7 @@ function CheckoutPageContent() {
         city: '',
         address: '',
       }));
-      setPaymentReady(false);
-      setCustomCheckoutClientSecret(null);
-      setCustomCheckoutSessionId(null);
+      setSyncedShippingKey(null);
       setCheckoutError(null);
       return;
     }
@@ -499,6 +489,10 @@ function CheckoutPageContent() {
       const normalizedClientSecret = decodeURIComponent(data.clientSecret);
       setCustomCheckoutClientSecret(normalizedClientSecret);
       setCustomCheckoutSessionId(data.checkoutSessionId);
+      // POST した配送先と同一キーを「同期済み」として記録（Confirm ゲート解除用）
+      setSyncedShippingKey(
+        shippingKeyOf({ email, fullName, postalCode, prefecture, city, address, building, phone })
+      );
     } catch (error) {
       setCheckoutError(error instanceof Error ? error.message : '決済セッションの初期化に失敗しました。');
     } finally {
@@ -543,6 +537,20 @@ function CheckoutPageContent() {
 
     void createCustomCheckoutSession();
   }, [step, paymentReady, customCheckoutClientSecret, createCustomCheckoutSession]);
+
+  // 「新規」入力中、住所が有効かつ変更されたらドラフトを再生成して同期（デバウンス）
+  React.useEffect(() => {
+    if (step !== 1) return;
+    if (selectedAddressId !== NEW_ADDRESS_VALUE) return;
+    if (!customCheckoutClientSecret) return;
+    if (!isShippingComplete(shippingForm)) return;
+    if (shippingKeyOf(shippingForm) === syncedShippingKey) return;
+
+    const timer = setTimeout(() => {
+      void createCustomCheckoutSession();
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [step, selectedAddressId, customCheckoutClientSecret, shippingForm, syncedShippingKey, createCustomCheckoutSession]);
 
   React.useEffect(() => {
     const sessionId = searchParams.get('session_id');
@@ -642,6 +650,58 @@ function CheckoutPageContent() {
     }
   };
 
+  // 「この配送先を保存する」がONのとき、氏名/電話をプロフィールへ・住所を配送先APIへ保存。
+  // 成功(または保存対象なし)で true、失敗で false。
+  const persistSavedProfileAndAddress = async (): Promise<boolean> => {
+    if (!shippingForm.saveProfile) {
+      return true;
+    }
+
+    if (shippingForm.fullName.trim() || shippingForm.phone.trim()) {
+      const profileResponse = await clientFetch('/api/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: shippingForm.fullName.trim(),
+          phone: formatPhoneNumberInput(shippingForm.phone.trim()),
+        }),
+      });
+
+      if (!profileResponse.ok) {
+        setProfileSaveError('プロフィールの保存に失敗しました。再度お試しください。');
+        return false;
+      }
+    }
+
+    const newAddress = {
+      postalCode: normalizePostalCode(shippingForm.postalCode),
+      prefecture: shippingForm.prefecture.trim(),
+      city: shippingForm.city.trim(),
+      address: shippingForm.address.trim(),
+      building: shippingForm.building.trim(),
+    };
+
+    if (Object.values(newAddress).some((value) => value.length > 0)) {
+      const addressResponse = await clientFetch('/api/profile/addresses', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          addresses: [
+            ...savedAddresses.map((item) => ({ ...item, isDefault: false })),
+            { ...newAddress, isDefault: true },
+          ],
+        }),
+      });
+
+      if (!addressResponse.ok) {
+        setProfileSaveError('配送先の保存に失敗しました。再度お試しください。');
+        return false;
+      }
+    }
+
+    return true;
+  };
+
   const handleProceedToPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     setProfileSaveError(null);
@@ -650,49 +710,8 @@ function CheckoutPageContent() {
       return;
     }
 
-    if (shippingForm.saveProfile) {
-      // 氏名/電話はプロフィールへ、住所は配送先API(addresses)へ保存
-      if (shippingForm.fullName.trim() || shippingForm.phone.trim()) {
-        const profileResponse = await clientFetch('/api/profile', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            fullName: shippingForm.fullName.trim(),
-            phone: formatPhoneNumberInput(shippingForm.phone.trim()),
-          }),
-        });
-
-        if (!profileResponse.ok) {
-          setProfileSaveError('プロフィールの保存に失敗しました。再度お試しください。');
-          return;
-        }
-      }
-
-      const newAddress = {
-        postalCode: normalizePostalCode(shippingForm.postalCode),
-        prefecture: shippingForm.prefecture.trim(),
-        city: shippingForm.city.trim(),
-        address: shippingForm.address.trim(),
-        building: shippingForm.building.trim(),
-      };
-
-      if (Object.values(newAddress).some((value) => value.length > 0)) {
-        const addressResponse = await clientFetch('/api/profile/addresses', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            addresses: [
-              ...savedAddresses.map((item) => ({ ...item, isDefault: false })),
-              { ...newAddress, isDefault: true },
-            ],
-          }),
-        });
-
-        if (!addressResponse.ok) {
-          setProfileSaveError('配送先の保存に失敗しました。再度お試しください。');
-          return;
-        }
-      }
+    if (!(await persistSavedProfileAndAddress())) {
+      return;
     }
 
     setPaymentReady(true);
@@ -875,6 +894,14 @@ function CheckoutPageContent() {
       setConfirmingPayment(true);
 
       try {
+        // 「新規」入力住所は確定前に（保存ONなら）住所帳へ保存
+        if (selectedAddressId === NEW_ADDRESS_VALUE) {
+          setProfileSaveError(null);
+          if (!(await persistSavedProfileAndAddress())) {
+            return;
+          }
+        }
+
         const t = checkout.checkout.total;
         const result = await checkout.checkout.confirm({
           redirect: 'if_required',
@@ -903,13 +930,20 @@ function CheckoutPageContent() {
       }
     };
 
+    // 「新規」入力住所が現セッションのドラフトに未反映なら確定不可（古い/空住所での注文を防止）
+    const addressOutOfSync =
+      selectedAddressId === NEW_ADDRESS_VALUE &&
+      (!isShippingComplete(shippingForm) || shippingKeyOf(shippingForm) !== syncedShippingKey);
+
     return (
       <Button
         type="button"
         size="lg"
         className="flex-1"
         onClick={handleConfirmPayment}
-        disabled={customSessionLoading || confirmingPayment || !customCheckoutClientSecret}
+        disabled={
+          customSessionLoading || confirmingPayment || !customCheckoutClientSecret || addressOutOfSync
+        }
       >
         {confirmingPayment ? '決済処理中...' : '確認へ進む'}
       </Button>
@@ -1045,6 +1079,50 @@ function CheckoutPageContent() {
     </div>
   );
 
+  // 配送先の住所入力欄。Branch A(新規) と Branch B1 で共有（コンポーネント化せず
+  // クロージャで返すことで PaymentElement の再マウントを避ける）。
+  const renderAddressFields = () => (
+    <>
+      <TextField required label="郵便番号" placeholder="123-4567" type="text" name="postalCode" autoComplete="postal-code" value={shippingForm.postalCode} onChange={handleShippingChange} size="md" errorText={fieldErrors.postalCode} />
+      <SingleSelect
+        name="prefecture"
+        required
+        label="都道府県"
+        variant="dropdown"
+        block
+        autoComplete="address-level1"
+        value={shippingForm.prefecture}
+        onValueChange={(prefecture) => {
+          setShippingForm((prev) => ({ ...prev, prefecture }));
+          if (prefecture) {
+            setFieldErrors((prev) => ({ ...prev, prefecture: '' }));
+          }
+        }}
+        options={[
+          { value: '', label: '選択してください' },
+          ...PREFECTURES.map((prefecture) => ({ value: prefecture, label: prefecture })),
+        ]}
+        size="md"
+      />
+      {fieldErrors.prefecture && (
+        <span id="prefecture-error" role="alert" className="block text-xs text-red-600 -mt-4">
+          {fieldErrors.prefecture}
+        </span>
+      )}
+      <TextField required label="市区町村" type="text" name="city" autoComplete="address-level2" value={shippingForm.city} onChange={handleShippingChange} size="md" errorText={fieldErrors.city} />
+      <TextField required label="番地" type="text" name="address" autoComplete="street-address" value={shippingForm.address} onChange={handleShippingChange} size="md" errorText={fieldErrors.address} />
+      <TextField label="建物名・部屋番号（任意）" type="text" name="building" value={shippingForm.building} onChange={handleShippingChange} size="md" />
+      <Checkbox
+        id="saveProfile"
+        name="saveProfile"
+        checked={shippingForm.saveProfile}
+        onChange={handleShippingChange}
+        label="この配送先を保存する"
+        size="lg"
+      />
+    </>
+  );
+
   const [completed, setCompleted] = useState<boolean>(false);
 
   if (cartLoading) {
@@ -1172,7 +1250,11 @@ function CheckoutPageContent() {
                       />
                     </div>
                   )}
-                  {(!hasSavedAddress || selectedAddressId === NEW_ADDRESS_VALUE) && <AddressCard />}
+                  {selectedAddressId === NEW_ADDRESS_VALUE ? (
+                    <div className="space-y-6">{renderAddressFields()}</div>
+                  ) : (
+                    <AddressCard />
+                  )}
                 </section>
 
                 <section>
@@ -1221,6 +1303,10 @@ function CheckoutPageContent() {
                   </div>
                 </section>
 
+                {profileSaveError && (
+                  <p className="text-sm text-red-600 mt-4" role="alert">{profileSaveError}</p>
+                )}
+
                 <div className="mt-4">
                   <ConfirmPaymentButton />
                 </div>
@@ -1267,42 +1353,7 @@ function CheckoutPageContent() {
                         size="md"
                       />
                     )}
-                    <TextField required label="郵便番号" placeholder="123-4567" type="text" name="postalCode" autoComplete="postal-code" value={shippingForm.postalCode} onChange={handleShippingChange} size="md" errorText={fieldErrors.postalCode} />
-                    <SingleSelect
-                      name="prefecture"
-                      required
-                      label="都道府県"
-                      variant="dropdown"
-                      autoComplete="address-level1"
-                      value={shippingForm.prefecture}
-                      onValueChange={(prefecture) => {
-                        setShippingForm((prev) => ({ ...prev, prefecture }));
-                        if (prefecture) {
-                          setFieldErrors((prev) => ({ ...prev, prefecture: '' }));
-                        }
-                      }}
-                      options={[
-                        { value: '', label: '選択してください' },
-                        ...PREFECTURES.map((prefecture) => ({ value: prefecture, label: prefecture })),
-                      ]}
-                      size="md"
-                    />
-                    {fieldErrors.prefecture && (
-                      <span id="prefecture-error" role="alert" className="block text-xs text-red-600 -mt-4">
-                        {fieldErrors.prefecture}
-                      </span>
-                    )}
-                    <TextField required label="市区町村" type="text" name="city" autoComplete="address-level2" value={shippingForm.city} onChange={handleShippingChange} size="md" errorText={fieldErrors.city} />
-                    <TextField required label="番地" type="text" name="address" autoComplete="street-address" value={shippingForm.address} onChange={handleShippingChange} size="md" errorText={fieldErrors.address} />
-                    <TextField label="建物名・部屋番号（任意）" type="text" name="building" value={shippingForm.building} onChange={handleShippingChange} size="md" />
-                    <Checkbox
-                      id="saveProfile"
-                      name="saveProfile"
-                      checked={shippingForm.saveProfile}
-                      onChange={handleShippingChange}
-                      label="この配送先を保存する"
-                      size="lg"
-                    />
+                    {renderAddressFields()}
                   </div>
 
                   {(profileSaveError || checkoutError) && (

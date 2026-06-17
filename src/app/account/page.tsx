@@ -8,6 +8,8 @@ import { useLogin } from "@/contexts/LoginContext";
 import { Button } from "@/components/ui/Button/Button";
 import { TabSegmentControl } from "@/components/ui/TabSegmentControl/TabSegmentControl";
 import { TextField } from "@/components/ui/TextField/TextField";
+import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
+import { PREFECTURES } from "@/lib/constants/prefectures";
 import { clientFetch } from "@/lib/client-fetch";
 import { formatPhoneNumberInput } from "@/features/account/utils/profile-format.util";
 import {
@@ -944,12 +946,19 @@ function AccountPageContent() {
                     size="sm"
                   />
                   <p className="account-label">都道府県</p>
-                  <TextField
-                    type="text"
+                  <SingleSelect
                     name="prefecture"
+                    variant="dropdown"
+                    block
                     autoComplete="address-level1"
                     value={addressForm.prefecture}
-                    onChange={handleAddressFieldChange}
+                    onValueChange={(prefecture) =>
+                      setAddressForm((prev) => ({ ...prev, prefecture }))
+                    }
+                    options={[
+                      { value: "", label: "選択してください" },
+                      ...PREFECTURES.map((p) => ({ value: p, label: p })),
+                    ]}
                     size="sm"
                   />
                   <p className="account-label">市区町村</p>
