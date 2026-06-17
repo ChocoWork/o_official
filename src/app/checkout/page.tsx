@@ -40,11 +40,11 @@ const stripeAppearance: Appearance = {
     colorTextSecondary: "#474747",
     colorDanger: "#dc2626",
     fontFamily: "acumin-pro, sans-serif",
-    fontSizeBase: "16px",
+    fontSizeBase: "13px",
     fontWeightNormal: "400",
     fontWeightMedium: "600",
     borderRadius: "0.375rem",
-    spacingUnit: "4px",
+    spacingUnit: "3px",
   },
   rules: {
     ".Input": {
@@ -53,7 +53,7 @@ const stripeAppearance: Appearance = {
       backgroundColor: "#ffffff",
       color: "#000000",
       fontFamily: "acumin-pro, sans-serif",
-      padding: "0.75rem 1rem",
+      padding: "0.5rem 0.75rem",
     },
     ".Input:focus": {
       borderColor: "#000000",
@@ -66,7 +66,7 @@ const stripeAppearance: Appearance = {
     ".Label": {
       color: "#474747",
       fontWeight: "600",
-      fontSize: "0.75rem",
+      fontSize: "0.6875rem",
       letterSpacing: "0.05em",
     },
 
@@ -76,7 +76,7 @@ const stripeAppearance: Appearance = {
       borderRadius: "0.375rem",
       fontFamily: "acumin-pro, sans-serif",
       fontWeight: "600",
-      padding: "0.75rem 1rem",
+      padding: "0.5rem 0.75rem",
     },
     ".Button:hover": {
       backgroundColor: "#474747",
@@ -92,6 +92,7 @@ const stripeAppearance: Appearance = {
       border: "1px solid rgba(0,0,0,0.2)",
       backgroundColor: "#ffffff",
       color: "#000000",
+      padding: "0.5rem 0.75rem",
     },
     ".Tab--selected": {
       backgroundColor: "#000000",
