@@ -1,0 +1,222 @@
+/* Checkout page spacing & typography rhythm.
+   Mirrors account.css: every margin / padding / gap traces back to one base
+   font size via the project's golden-ratio control tokens (近接/整列/反復/対比). */
+.checkout-page {
+  --co-font: var(--lk-size-md);
+
+  /* base control paddings (same formulas as Button / TextField / account) */
+  --pad-x: calc(var(--co-font) / var(--sqrt-phi));
+  --pad-y: calc((var(--co-font) * var(--sqrt-phi)) / (var(--phi) * var(--phi)));
+  --gap-icon2text: calc(var(--pad-x) / var(--phi));
+
+  /* one proximity scale built from --pad-x */
+  --gap-tight: var(--gap-icon2text); /* label → value (近接: tightest) */
+  --gap-group: var(--pad-x); /* field ↔ field inside a group */
+  --gap-block: calc(
+    var(--pad-x) * var(--sqrt-phi)
+  ); /* heading ↔ body, group ↔ group */
+  --gap-section: calc(var(--pad-x) * var(--phi)); /* section ↔ section */
+  --gap-layout: calc(
+    var(--pad-x) * var(--phi) * var(--phi)
+  ); /* column ↔ column */
+
+  --card-pad: calc(var(--pad-x) * var(--phi));
+}
+
+/* layout: content ↔ summary (整列 + 近接). Responsive columns stay in Tailwind. */
+.checkout-grid {
+  display: grid;
+  gap: var(--gap-layout);
+}
+
+/* vertical stacks at each proximity level (近接) */
+.checkout-sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-section);
+}
+.checkout-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-block);
+}
+.checkout-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-group);
+}
+.checkout-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-group);
+}
+
+/* section heading — overline label tier (対比: muted, tracked, smallest) */
+.checkout-heading {
+  font-size: var(--lk-size-2xs);
+  letter-spacing: 0.15em;
+  color: #474747;
+}
+
+/* repeated shells (反復) */
+.checkout-box {
+  border: 1px solid rgb(0 0 0 / 0.1);
+  background: #fff;
+  padding: var(--card-pad);
+}
+.checkout-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-tight);
+  background: #f5f5f5;
+  padding: var(--card-pad);
+  font-size: var(--lk-size-md);
+  line-height: var(--sqrt-phi);
+}
+
+/* label / value pair (近接 keeps them close, 対比 tells them apart) */
+.checkout-field {
+  display: flex;
+  flex-direction: column;
+}
+.checkout-label {
+  font-size: var(--lk-size-2xs);
+  letter-spacing: 0.08em;
+  color: #474747;
+}
+.checkout-value {
+  font-size: var(--lk-size-md);
+  color: #000;
+}
+
+/* order summary card */
+.checkout-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-block);
+  border: 1px solid rgb(0 0 0 / 0.1);
+  padding: var(--card-pad);
+}
+.checkout-summary-title {
+  font-size: var(--lk-size-lg);
+}
+
+/* line-item list */
+.checkout-items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-group);
+  padding-bottom: var(--card-pad);
+  border-bottom: 1px solid rgb(0 0 0 / 0.1);
+}
+.checkout-item {
+  display: flex;
+  gap: var(--gap-group);
+  align-items: flex-start;
+}
+.checkout-item-lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-tight);
+  min-width: 0;
+}
+
+/* amount rows + grand total (対比) */
+.checkout-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-group);
+}
+.checkout-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: var(--lk-size-sm);
+}
+.checkout-row-muted {
+  color: #474747;
+}
+.checkout-total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-top: var(--card-pad);
+  border-top: 1px solid rgb(0 0 0 / 0.1);
+}
+.checkout-total-label {
+  font-size: var(--lk-size-lg);
+  color: #000;
+}
+.checkout-total {
+  font-family: Didot, serif;
+  font-size: var(--lk-size-3xl);
+  color: #000;
+}
+
+/* promo field */
+.checkout-promo {
+  display: flex;
+  gap: var(--gap-icon2text);
+}
+.checkout-promo-field {
+  flex: 1 1 auto;
+}
+
+/* step progress indicator (整列 + 対比) */
+.checkout-steps {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--gap-layout);
+}
+.checkout-steps-track {
+  display: flex;
+  align-items: flex-start;
+}
+.checkout-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  width: calc(
+    var(--co-font) * var(--phi) * var(--phi) * var(--phi) * var(--phi)
+  );
+}
+.checkout-step-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--co-font) * var(--phi) * var(--sqrt-phi));
+  height: calc(var(--co-font) * var(--phi) * var(--sqrt-phi));
+  border-radius: 9999px;
+  border: 1px solid rgb(0 0 0 / 0.2);
+  color: #474747;
+  font-size: var(--lk-size-sm);
+}
+.checkout-step-badge[data-active="true"] {
+  background: #000;
+  border-color: #000;
+  color: #fff;
+}
+.checkout-step-label {
+  margin-top: var(--gap-tight);
+  font-size: var(--lk-size-2xs);
+  letter-spacing: 0.08em;
+  line-height: var(--sqrt-phi);
+  color: #474747;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: keep-all;
+}
+.checkout-step-label[data-active="true"] {
+  color: #000;
+}
+.checkout-step-connector {
+  width: calc(var(--co-font) * var(--phi) * var(--phi));
+  height: 1px;
+  margin-top: calc(var(--co-font) * var(--phi) * var(--sqrt-phi) / 2);
+  background: rgb(0 0 0 / 0.2);
+}
+.checkout-step-connector[data-active="true"] {
+  background: #000;
+}

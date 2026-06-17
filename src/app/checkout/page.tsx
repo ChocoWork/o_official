@@ -25,6 +25,7 @@ import { calculateCheckoutAmountsFromSubtotal } from "@/features/checkout/servic
 import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
 import { TextField } from "@/components/ui/TextField/TextField";
 import { PREFECTURES } from "@/lib/constants/prefectures";
+import "./checkout.css";
 
 const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "",
@@ -189,12 +190,7 @@ function shippingKeyOf(form: ShippingFormFields): string {
 }
 
 function CheckoutPageContent() {
-  const xsTextStyle: React.CSSProperties = { fontSize: "var(--lk-size-xs)" };
   const mdTextStyle: React.CSSProperties = { fontSize: "var(--lk-size-md)" };
-  const lgTextStyle: React.CSSProperties = { fontSize: "var(--lk-size-lg)" };
-  const summaryHeadingStyle: React.CSSProperties = {
-    fontSize: "var(--lk-size-3xl)",
-  };
   // cart data for order summary (mirrors cart/page.tsx)
   interface CartItem {
     id: string;
@@ -979,16 +975,14 @@ function CheckoutPageContent() {
     };
 
     return (
-      <div className="mb-8">
-        <label
-          className="block tracking-wider text-[#474747] mb-2"
-          style={xsTextStyle}
-        >
-          プロモーションコード
-        </label>
+      <div className="checkout-section">
+        <label className="checkout-label">プロモーションコード</label>
         {applied ? (
-          <div className="flex items-center justify-between gap-3 rounded-xs border border-black/10 px-4 py-3">
-            <span className="text-sm text-black" style={mdTextStyle}>
+          <div
+            className="checkout-box flex items-center justify-between"
+            style={{ gap: "var(--gap-group)" }}
+          >
+            <span className="checkout-value">
               {applied.promotionCode ?? applied.displayName}
             </span>
             <Button
@@ -1002,8 +996,8 @@ function CheckoutPageContent() {
             </Button>
           </div>
         ) : (
-          <div className="flex" style={{ gap: "var(--gap-icon2text)" }}>
-            <div className="flex-1">
+          <div className="checkout-promo">
+            <div className="checkout-promo-field">
               <TextField
                 placeholder="コードを入力"
                 value={code}
@@ -1022,7 +1016,12 @@ function CheckoutPageContent() {
           </div>
         )}
         {promoError && (
-          <p className="text-xs text-red-600 mt-2">{promoError}</p>
+          <p
+            className="text-red-600"
+            style={{ fontSize: "var(--lk-size-2xs)" }}
+          >
+            {promoError}
+          </p>
         )}
       </div>
     );
@@ -1038,66 +1037,34 @@ function CheckoutPageContent() {
     const hasDiscount = t.discount.minorUnitsAmount > 0;
 
     return (
-      <div className="space-y-4 mt-8 pt-8 border-t border-black/10">
-        <div className="flex justify-between">
-          <span
-            className="text-sm text-[#474747]"
-            style={{ fontFamily: "acumin-pro, sans-serif" }}
-          >
-            小計
-          </span>
-          <span
-            className="text-sm text-black"
-            style={{ fontFamily: "acumin-pro, sans-serif" }}
-          >
-            {t.subtotal.amount}
-          </span>
+      <div
+        className="checkout-rows"
+        style={{
+          paddingTop: "var(--card-pad)",
+          borderTop: "1px solid rgb(0 0 0 / 0.1)",
+        }}
+      >
+        <div className="checkout-row">
+          <span className="checkout-row-muted">小計</span>
+          <span>{t.subtotal.amount}</span>
         </div>
         {hasDiscount && (
-          <div className="flex justify-between">
-            <span
-              className="text-sm text-[#474747]"
-              style={{ fontFamily: "acumin-pro, sans-serif" }}
-            >
-              値引
-            </span>
-            <span
-              className="text-sm text-black"
-              style={{ fontFamily: "acumin-pro, sans-serif" }}
-            >
-              -{t.discount.amount}
-            </span>
+          <div className="checkout-row">
+            <span className="checkout-row-muted">値引</span>
+            <span>-{t.discount.amount}</span>
           </div>
         )}
-        <div className="flex justify-between">
-          <span
-            className="text-sm text-[#474747]"
-            style={{ fontFamily: "acumin-pro, sans-serif" }}
-          >
-            配送料
-          </span>
-          <span
-            className="text-sm text-black"
-            style={{ fontFamily: "acumin-pro, sans-serif" }}
-          >
+        <div className="checkout-row">
+          <span className="checkout-row-muted">配送料</span>
+          <span>
             {t.shippingRate.minorUnitsAmount === 0
               ? "無料"
               : t.shippingRate.amount}
           </span>
         </div>
-        <div className="flex justify-between pt-4 border-t border-black/10">
-          <span
-            className="text-lg text-black"
-            style={{ fontFamily: "acumin-pro, sans-serif", ...lgTextStyle }}
-          >
-            合計
-          </span>
-          <span
-            className="text-2xl text-black"
-            style={{ fontFamily: "Didot, serif", ...summaryHeadingStyle }}
-          >
-            {t.total.amount}
-          </span>
+        <div className="checkout-total-row">
+          <span className="checkout-total-label">合計</span>
+          <span className="checkout-total">{t.total.amount}</span>
         </div>
       </div>
     );
@@ -1185,13 +1152,13 @@ function CheckoutPageContent() {
 
   // 注文明細 (カート商品リスト)。フックなしの共有表示。
   const OrderItems = () => (
-    <div className="space-y-6 mb-8 pb-8 border-b border-black/10">
+    <div className="checkout-items">
       {cartItems.map((item) => {
         const product = item.items;
         if (!product) return null;
 
         return (
-          <div className="flex gap-4" key={item.id}>
+          <div className="checkout-item" key={item.id}>
             <div className="w-20 h-24 flex-shrink-0 overflow-hidden relative">
               <Image
                 alt={product.name}
@@ -1201,29 +1168,13 @@ function CheckoutPageContent() {
                 height={500}
               />
             </div>
-            <div className="flex-1">
-              <p
-                className="text-sm text-black mb-1"
-                style={{ fontFamily: "acumin-pro, sans-serif", ...mdTextStyle }}
-              >
-                {product.name}
-              </p>
-              <p
-                className="text-xs text-[#474747] mb-1"
-                style={{ fontFamily: "acumin-pro, sans-serif", ...xsTextStyle }}
-              >
+            <div className="checkout-item-lines">
+              <p className="checkout-value">{product.name}</p>
+              <p className="checkout-label">
                 {item.color} / {item.size}
               </p>
-              <p
-                className="text-xs text-[#474747] mb-1"
-                style={{ fontFamily: "acumin-pro, sans-serif", ...xsTextStyle }}
-              >
-                数量: {item.quantity}
-              </p>
-              <p
-                className="text-sm text-black"
-                style={{ fontFamily: "acumin-pro, sans-serif", ...mdTextStyle }}
-              >
+              <p className="checkout-label">数量: {item.quantity}</p>
+              <p className="checkout-value">
                 ¥{product.price.toLocaleString()}
               </p>
             </div>
@@ -1235,52 +1186,20 @@ function CheckoutPageContent() {
 
   // セッション未生成時のカート由来の金額内訳 (値引なし・税込み)。
   const CartTotals = () => (
-    <>
-      <div className="space-y-4 mb-8 pb-8 border-b border-black/10">
-        <div className="flex justify-between">
-          <span
-            className="text-sm text-[#474747]"
-            style={{ fontFamily: "acumin-pro, sans-serif" }}
-          >
-            小計
-          </span>
-          <span
-            className="text-sm text-black"
-            style={{ fontFamily: "acumin-pro, sans-serif" }}
-          >
-            ¥{subtotal.toLocaleString()}
-          </span>
-        </div>
-        <div className="flex justify-between">
-          <span
-            className="text-sm text-[#474747]"
-            style={{ fontFamily: "acumin-pro, sans-serif" }}
-          >
-            配送料
-          </span>
-          <span
-            className="text-sm text-black"
-            style={{ fontFamily: "acumin-pro, sans-serif" }}
-          >
-            {shipping === 0 ? "無料" : `¥${shipping.toLocaleString()}`}
-          </span>
-        </div>
-        <div className="flex justify-between pt-4">
-          <span
-            className="text-lg text-black"
-            style={{ fontFamily: "acumin-pro, sans-serif", ...lgTextStyle }}
-          >
-            合計
-          </span>
-          <span
-            className="text-2xl text-black"
-            style={{ fontFamily: "Didot, serif", ...summaryHeadingStyle }}
-          >
-            ¥{total.toLocaleString()}
-          </span>
-        </div>
+    <div className="checkout-rows">
+      <div className="checkout-row">
+        <span className="checkout-row-muted">小計</span>
+        <span>¥{subtotal.toLocaleString()}</span>
       </div>
-    </>
+      <div className="checkout-row">
+        <span className="checkout-row-muted">配送料</span>
+        <span>{shipping === 0 ? "無料" : `¥${shipping.toLocaleString()}`}</span>
+      </div>
+      <div className="checkout-total-row">
+        <span className="checkout-total-label">合計</span>
+        <span className="checkout-total">¥{total.toLocaleString()}</span>
+      </div>
+    </div>
   );
 
   // お客様情報。ログイン済+氏名/メール設定済なら読み取り表示、それ以外は編集フォーム。
@@ -1329,42 +1248,24 @@ function CheckoutPageContent() {
 
     if (showReadonly) {
       return (
-        <div className="p-6 bg-[#f5f5f5] text-sm space-y-4">
-          <div>
-            <p
-              className="text-xs text-[#474747] tracking-wider mb-1"
-              style={xsTextStyle}
-            >
-              氏名
-            </p>
-            <p className="text-black">{shippingForm.fullName || "-"}</p>
+        <div className="checkout-card" style={{ gap: "var(--gap-group)" }}>
+          <div className="checkout-field">
+            <p className="checkout-label">氏名</p>
+            <p className="checkout-value">{shippingForm.fullName || "-"}</p>
           </div>
-          <div>
-            <p
-              className="text-xs text-[#474747] tracking-wider mb-1"
-              style={xsTextStyle}
-            >
-              フリガナ
-            </p>
-            <p className="text-black">{shippingForm.kanaName || "-"}</p>
+          <div className="checkout-field">
+            <p className="checkout-label">フリガナ</p>
+            <p className="checkout-value">{shippingForm.kanaName || "-"}</p>
           </div>
-          <div>
-            <p
-              className="text-xs text-[#474747] tracking-wider mb-1"
-              style={xsTextStyle}
-            >
-              メールアドレス
+          <div className="checkout-field">
+            <p className="checkout-label">メールアドレス</p>
+            <p className="checkout-value break-all">
+              {shippingForm.email || "-"}
             </p>
-            <p className="text-black break-all">{shippingForm.email || "-"}</p>
           </div>
-          <div>
-            <p
-              className="text-xs text-[#474747] tracking-wider mb-1"
-              style={xsTextStyle}
-            >
-              電話番号
-            </p>
-            <p className="text-black">{shippingForm.phone || "-"}</p>
+          <div className="checkout-field">
+            <p className="checkout-label">電話番号</p>
+            <p className="checkout-value">{shippingForm.phone || "-"}</p>
           </div>
           <Button
             type="button"
@@ -1385,7 +1286,7 @@ function CheckoutPageContent() {
     }
 
     return (
-      <div className="rounded-xs border border-black/10 p-6 bg-white space-y-6">
+      <div className="checkout-box checkout-form">
         <TextField
           required
           label="氏名"
@@ -1432,12 +1333,16 @@ function CheckoutPageContent() {
           errorText={fieldErrors.phone}
         />
         {customerError && (
-          <p className="text-sm text-red-600" role="alert">
+          <p
+            className="text-red-600"
+            style={{ fontSize: "var(--lk-size-sm)" }}
+            role="alert"
+          >
             {customerError}
           </p>
         )}
         {isLoggedIn && (
-          <div className="flex gap-4">
+          <div className="checkout-actions">
             <Button
               type="button"
               size="sm"
@@ -1465,11 +1370,9 @@ function CheckoutPageContent() {
 
   // 配送先カード (住所のみ)。読み取り専用表示。
   const AddressCard = () => (
-    <div className="p-6 bg-[#f5f5f5] text-sm">
-      {shippingForm.postalCode && (
-        <p className="mb-1">〒{shippingForm.postalCode}</p>
-      )}
-      <p className="mb-1">
+    <div className="checkout-card">
+      {shippingForm.postalCode && <p>〒{shippingForm.postalCode}</p>}
+      <p>
         {shippingForm.prefecture}
         {shippingForm.city}
         {shippingForm.address}
@@ -1521,7 +1424,8 @@ function CheckoutPageContent() {
         <span
           id="prefecture-error"
           role="alert"
-          className="block text-xs text-red-600 -mt-4"
+          className="block text-red-600"
+          style={{ fontSize: "var(--lk-size-2xs)" }}
         >
           {fieldErrors.prefecture}
         </span>
@@ -1581,34 +1485,39 @@ function CheckoutPageContent() {
 
   if (completed) {
     return (
-      <div className="pb-10 sm:pb-14 px-6 lg:px-12">
-        <div className="max-w-3xl mx-auto text-center">
-          <h1 className="mb-4" style={lgTextStyle}>
-            Thank you for your order
-          </h1>
-          <p className="text-lg text-[#474747] mb-12" style={mdTextStyle}>
-            ご注文を承りました。確認メールをお送りしましたのでご確認ください。
-          </p>
+      <div className="checkout-page pb-10 sm:pb-14 px-6 lg:px-12">
+        <div
+          className="max-w-3xl mx-auto text-center"
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "var(--gap-section)",
+          }}
+        >
+          <div className="checkout-section" style={{ alignItems: "center" }}>
+            <h1 style={{ fontSize: "var(--lk-size-4xl)" }}>
+              Thank you for your order
+            </h1>
+            <p style={{ fontSize: "var(--lk-size-md)", color: "#474747" }}>
+              ご注文を承りました。確認メールをお送りしましたのでご確認ください。
+            </p>
+          </div>
 
-          <div className="bg-[#f5f5f5] p-8 mb-12 text-left">
-            <div className="grid grid-cols-2 gap-6">
-              <div>
-                <p
-                  className="text-xs text-[#474747] mb-2 tracking-wider"
-                  style={xsTextStyle}
-                >
-                  注文番号
-                </p>
-                <p className="text-lg text-black">{completedOrderId ?? "—"}</p>
+          <div
+            className="text-left"
+            style={{ background: "#f5f5f5", padding: "var(--card-pad)" }}
+          >
+            <div
+              className="grid grid-cols-2"
+              style={{ gap: "var(--gap-block)" }}
+            >
+              <div className="checkout-field">
+                <p className="checkout-label">注文番号</p>
+                <p className="checkout-value">{completedOrderId ?? "—"}</p>
               </div>
-              <div>
-                <p
-                  className="text-xs text-[#474747] mb-2 tracking-wider"
-                  style={xsTextStyle}
-                >
-                  注文日
-                </p>
-                <p className="text-lg text-black">
+              <div className="checkout-field">
+                <p className="checkout-label">注文日</p>
+                <p className="checkout-value">
                   {new Date().toLocaleDateString("ja-JP", {
                     year: "numeric",
                     month: "long",
@@ -1619,47 +1528,59 @@ function CheckoutPageContent() {
             </div>
           </div>
 
-          <div className="space-y-6 mb-12">
-            <div className="flex items-start gap-4 p-6 border border-black/10">
-              <div className="w-12 h-12 flex items-center justify-center bg-black text-white rounded-full flex-shrink-0">
-                <i className="ri-mail-line text-xl"></i>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "var(--gap-block)",
+            }}
+          >
+            {[
+              {
+                icon: "ri-mail-line",
+                title: "確認メールを送信しました",
+                body: "ご登録のメールアドレスに注文確認メールをお送りしました。メールが届かない場合は、迷惑メールフォルダをご確認ください。",
+              },
+              {
+                icon: "ri-truck-line",
+                title: "配送について",
+                body: "商品は2-5営業日以内に発送いたします。発送完了後、追跡番号をメールでお知らせいたします。",
+              },
+              {
+                icon: "ri-customer-service-line",
+                title: "お問い合わせ",
+                body: "ご不明な点がございましたら、お気軽にお問い合わせください。カスタマーサポートが対応いたします。",
+              },
+            ].map((card) => (
+              <div
+                key={card.icon}
+                className="checkout-box flex items-start text-left"
+                style={{ gap: "var(--gap-group)" }}
+              >
+                <div className="w-12 h-12 flex items-center justify-center bg-black text-white rounded-full flex-shrink-0">
+                  <i className={`${card.icon} text-xl`}></i>
+                </div>
+                <div
+                  className="checkout-field"
+                  style={{ gap: "var(--gap-tight)" }}
+                >
+                  <h3 style={{ fontSize: "var(--lk-size-lg)", color: "#000" }}>
+                    {card.title}
+                  </h3>
+                  <p
+                    style={{ fontSize: "var(--lk-size-sm)", color: "#474747" }}
+                  >
+                    {card.body}
+                  </p>
+                </div>
               </div>
-              <div className="text-left">
-                <h3 className="text-lg text-black mb-2">
-                  確認メールを送信しました
-                </h3>
-                <p className="text-sm text-[#474747]">
-                  ご登録のメールアドレスに注文確認メールをお送りしました。メールが届かない場合は、迷惑メールフォルダをご確認ください。
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-4 p-6 border border-black/10">
-              <div className="w-12 h-12 flex items-center justify-center bg-black text-white rounded-full flex-shrink-0">
-                <i className="ri-truck-line text-xl"></i>
-              </div>
-              <div className="text-left">
-                <h3 className="text-lg text-black mb-2">配送について</h3>
-                <p className="text-sm text-[#474747]">
-                  商品は2-5営業日以内に発送いたします。発送完了後、追跡番号をメールでお知らせいたします。
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-4 p-6 border border-black/10">
-              <div className="w-12 h-12 flex items-center justify-center bg-black text-white rounded-full flex-shrink-0">
-                <i className="ri-customer-service-line text-xl"></i>
-              </div>
-              <div className="text-left">
-                <h3 className="text-lg text-black mb-2">お問い合わせ</h3>
-                <p className="text-sm text-[#474747]">
-                  ご不明な点がございましたら、お気軽にお問い合わせください。カスタマーサポートが対応いたします。
-                </p>
-              </div>
-            </div>
+            ))}
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+          <div
+            className="flex flex-col sm:flex-row justify-center"
+            style={{ gap: "var(--gap-group)" }}
+          >
             <Link
               href="/item"
               className="px-12 py-4 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap"
@@ -1679,34 +1600,39 @@ function CheckoutPageContent() {
   }
 
   return (
-    <div className="pb-10 sm:pb-14">
+    <div className="checkout-page pb-10 sm:pb-14">
       <div className="element-width">
-        <div className="flex items-center justify-center mb-12">
-          <div className="flex items-start">
-            {CHECKOUT_STEPS.map((checkoutStep, index) => (
-              <React.Fragment key={checkoutStep.id}>
-                <div className="w-24 sm:w-32 flex flex-col items-center text-center">
-                  <div
-                    className={`flex items-center justify-center w-10 h-10 rounded-full border-2 ${step >= checkoutStep.id ? "bg-black border-black text-white" : "border-black/20 text-[#474747]"}`}
-                  >
-                    <span className="text-sm" style={mdTextStyle}>
+        <div className="checkout-steps">
+          <div className="checkout-steps-track">
+            {CHECKOUT_STEPS.map((checkoutStep, index) => {
+              const isActive = step >= checkoutStep.id;
+              return (
+                <React.Fragment key={checkoutStep.id}>
+                  <div className="checkout-step">
+                    <div
+                      className="checkout-step-badge"
+                      data-active={isActive ? "true" : undefined}
+                    >
                       {checkoutStep.id}
+                    </div>
+                    <span
+                      className="checkout-step-label"
+                      data-active={isActive ? "true" : undefined}
+                    >
+                      {checkoutStep.label}
                     </span>
                   </div>
-                  <span
-                    className={`mt-3 text-xs sm:text-sm leading-tight ${step >= checkoutStep.id ? "text-black" : "text-[#474747]"}`}
-                    style={xsTextStyle}
-                  >
-                    {checkoutStep.label}
-                  </span>
-                </div>
-                {index < CHECKOUT_STEPS.length - 1 && (
-                  <div
-                    className={`${step >= checkoutStep.id + 1 ? "bg-black" : "bg-black/20"} w-10 sm:w-16 h-0.5 mt-5`}
-                  ></div>
-                )}
-              </React.Fragment>
-            ))}
+                  {index < CHECKOUT_STEPS.length - 1 && (
+                    <div
+                      className="checkout-step-connector"
+                      data-active={
+                        step >= checkoutStep.id + 1 ? "true" : undefined
+                      }
+                    ></div>
+                  )}
+                </React.Fragment>
+              );
+            })}
           </div>
         </div>
 
@@ -1719,21 +1645,17 @@ function CheckoutPageContent() {
               elementsOptions: { appearance: stripeAppearance },
             }}
           >
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12">
+            <div className="checkout-grid grid grid-cols-1 md:grid-cols-1 lg:grid-cols-3">
               {/* 左: お客様情報 → 配送先 → 支払方法 → 確認 */}
-              <div className="order-2 md:order-1 md:col-span-1 lg:col-span-2 space-y-10">
-                <section>
-                  <h3 className="text-sm text-[#474747] mb-4 tracking-wider font-brand">
-                    お客様情報
-                  </h3>
+              <div className="order-2 md:order-1 md:col-span-1 lg:col-span-2 checkout-sections">
+                <section className="checkout-section">
+                  <h3 className="checkout-heading font-brand">お客様情報</h3>
                   <CustomerInfoSection />
                 </section>
 
-                <section>
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm text-[#474747] tracking-wider font-brand">
-                      配送先
-                    </h3>
+                <section className="checkout-section">
+                  <div className="flex items-center justify-between">
+                    <h3 className="checkout-heading font-brand">配送先</h3>
                     {!hasSavedAddress && (
                       <Button
                         type="button"
@@ -1746,21 +1668,18 @@ function CheckoutPageContent() {
                     )}
                   </div>
                   {hasSavedAddress && (
-                    <div className="mb-4">
-                      <SingleSelect
-                        label="保存済みの配送先"
-                        variant="dropdown"
-                        block
-                        multiline
-                        value={selectedAddressId}
-                        onValueChange={handleSelectSavedAddress}
-                        options={addressOptions}
-                        size="md"
-                      />
-                    </div>
+                    <SingleSelect
+                      variant="dropdown"
+                      block
+                      multiline
+                      value={selectedAddressId}
+                      onValueChange={handleSelectSavedAddress}
+                      options={addressOptions}
+                      size="md"
+                    />
                   )}
                   {selectedAddressId === NEW_ADDRESS_VALUE ? (
-                    <div className="rounded-xs border border-black/10 p-6 bg-white space-y-6">
+                    <div className="checkout-box checkout-form">
                       {renderAddressFields()}
                     </div>
                   ) : !hasSavedAddress ? (
@@ -1768,11 +1687,11 @@ function CheckoutPageContent() {
                   ) : null}
                 </section>
 
-                <section>
-                  <h3 className="text-sm text-[#474747] mb-4 tracking-wider font-brand">
+                <section className="checkout-section">
+                  <h3 className="checkout-heading font-brand">
                     支払方法の選択
                   </h3>
-                  <div className="rounded-xs border border-black/10 p-6 bg-white">
+                  <div className="checkout-box">
                     <PaymentElement
                       options={{
                         layout: {
@@ -1817,22 +1736,29 @@ function CheckoutPageContent() {
                 </section>
 
                 {profileSaveError && (
-                  <p className="text-sm text-red-600 mt-4" role="alert">
+                  <p
+                    className="text-red-600"
+                    style={{ fontSize: "var(--lk-size-sm)" }}
+                    role="alert"
+                  >
                     {profileSaveError}
                   </p>
                 )}
 
-                <div className="mt-4 flex">
+                <div className="flex">
                   <ConfirmPaymentButton />
                 </div>
               </div>
 
               {/* 右: 注文内容 → プロモ → 金額 */}
               <div className="order-1 md:order-2 md:col-span-1 lg:col-span-1">
-                <div className="border border-black/10 p-8 md:sticky md:top-32">
-                  <h2 className="mb-8 font-brand font-semibold">注文内容</h2>
+                <div className="checkout-summary md:sticky md:top-32">
+                  <h2 className="checkout-summary-title">ORDER SUMMARY</h2>
                   {cartItems.length === 0 ? (
-                    <p className="text-sm text-gray-500">
+                    <p
+                      className="text-gray-500"
+                      style={{ fontSize: "var(--lk-size-sm)" }}
+                    >
                       カートに商品がありません
                     </p>
                   ) : (
@@ -1847,26 +1773,28 @@ function CheckoutPageContent() {
             </div>
           </CheckoutProvider>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12">
+          <div className="checkout-grid grid grid-cols-1 md:grid-cols-1 lg:grid-cols-3">
             <div className="order-2 md:order-1 md:col-span-1 lg:col-span-2">
               {/* STEP 1 (配送先入力 / 保存済み住所なし or 新規選択) */}
               {step === 1 &&
                 !customCheckoutClientSecret &&
                 (!hasSavedAddress ||
                   selectedAddressId === NEW_ADDRESS_VALUE) && (
-                  <form onSubmit={handleProceedToPayment} noValidate>
-                    <section className="mb-10">
-                      <h3 className="text-sm text-[#474747] mb-6 tracking-wider font-brand">
+                  <form
+                    onSubmit={handleProceedToPayment}
+                    noValidate
+                    className="checkout-sections"
+                  >
+                    <section className="checkout-section">
+                      <h3 className="checkout-heading font-brand">
                         お客様情報
                       </h3>
                       <CustomerInfoSection />
                     </section>
 
-                    <h3 className="text-sm text-[#474747] mb-6 tracking-wider font-brand">
-                      配送先
-                    </h3>
-                    {hasSavedAddress && (
-                      <div className="mb-4">
+                    <section className="checkout-section">
+                      <h3 className="checkout-heading font-brand">配送先</h3>
+                      {hasSavedAddress && (
                         <SingleSelect
                           label="保存済みの配送先"
                           variant="dropdown"
@@ -1877,19 +1805,23 @@ function CheckoutPageContent() {
                           options={addressOptions}
                           size="md"
                         />
+                      )}
+                      <div className="checkout-box checkout-form">
+                        {renderAddressFields()}
                       </div>
-                    )}
-                    <div className="rounded-xs border border-black/10 p-6 bg-white space-y-6">
-                      {renderAddressFields()}
-                    </div>
+                    </section>
 
                     {(profileSaveError || checkoutError) && (
-                      <p className="text-sm text-red-600 mt-6" role="alert">
+                      <p
+                        className="text-red-600"
+                        style={{ fontSize: "var(--lk-size-sm)" }}
+                        role="alert"
+                      >
                         {profileSaveError || checkoutError}
                       </p>
                     )}
 
-                    <div className="flex gap-4 mt-12">
+                    <div className="checkout-actions">
                       <Button
                         type="submit"
                         size="lg"
@@ -1907,8 +1839,13 @@ function CheckoutPageContent() {
                 !customCheckoutClientSecret &&
                 hasSavedAddress &&
                 selectedAddressId !== NEW_ADDRESS_VALUE && (
-                  <div className="rounded-xs border border-black/10 p-6 bg-white">
-                    <p className="text-sm text-[#474747]" style={mdTextStyle}>
+                  <div className="checkout-box">
+                    <p
+                      style={{
+                        fontSize: "var(--lk-size-sm)",
+                        color: "#474747",
+                      }}
+                    >
                       決済フォームを準備しています...
                     </p>
                     {checkoutError && (
@@ -1932,58 +1869,47 @@ function CheckoutPageContent() {
 
               {/* STEP 2: ご注文内容の確認 */}
               {step === 2 && (
-                <form onSubmit={handleConfirm}>
-                  <div>
-                    <div className="space-y-8">
-                      <div>
-                        <h3 className="text-sm text-[#474747] mb-4 tracking-wider font-brand">
-                          お客様情報
-                        </h3>
-                        <div className="p-6 bg-[#f5f5f5] text-sm">
-                          {shippingForm.fullName && (
-                            <p className="mb-1">{shippingForm.fullName}</p>
-                          )}
-                          {shippingForm.kanaName && (
-                            <p className="mb-1">{shippingForm.kanaName}</p>
-                          )}
-                          {shippingForm.email && (
-                            <p className="mb-1 break-all">
-                              {shippingForm.email}
-                            </p>
-                          )}
-                          {shippingForm.phone && <p>{shippingForm.phone}</p>}
-                        </div>
-                      </div>
-                      <div>
-                        <h3 className="text-sm text-[#474747] mb-4 tracking-wider font-brand">
-                          配送先
-                        </h3>
-                        <AddressCard />
-                      </div>
-                      <div>
-                        <h3 className="text-sm text-[#474747] mb-4 tracking-wider font-brand">
-                          支払方法
-                        </h3>
-                        <div className="p-6 bg-[#f5f5f5] text-sm">
-                          <p>
-                            {paymentMethod === "stripe_card"
-                              ? "カード決済"
-                              : paymentMethod === "stripe_paypay"
-                                ? "PayPay"
-                                : paymentMethod === "stripe_konbini"
-                                  ? "コンビニ決済"
-                                  : "銀行振込"}
-                          </p>
-                        </div>
-                      </div>
+                <form onSubmit={handleConfirm} className="checkout-sections">
+                  <section className="checkout-section">
+                    <h3 className="checkout-heading font-brand">お客様情報</h3>
+                    <div className="checkout-card">
+                      {shippingForm.fullName && <p>{shippingForm.fullName}</p>}
+                      {shippingForm.kanaName && <p>{shippingForm.kanaName}</p>}
+                      {shippingForm.email && (
+                        <p className="break-all">{shippingForm.email}</p>
+                      )}
+                      {shippingForm.phone && <p>{shippingForm.phone}</p>}
                     </div>
-                  </div>
+                  </section>
+                  <section className="checkout-section">
+                    <h3 className="checkout-heading font-brand">配送先</h3>
+                    <AddressCard />
+                  </section>
+                  <section className="checkout-section">
+                    <h3 className="checkout-heading font-brand">支払方法</h3>
+                    <div className="checkout-card">
+                      <p>
+                        {paymentMethod === "stripe_card"
+                          ? "カード決済"
+                          : paymentMethod === "stripe_paypay"
+                            ? "PayPay"
+                            : paymentMethod === "stripe_konbini"
+                              ? "コンビニ決済"
+                              : "銀行振込"}
+                      </p>
+                    </div>
+                  </section>
 
                   {confirmError && (
-                    <p className="text-sm text-red-600 mt-6">{confirmError}</p>
+                    <p
+                      className="text-red-600"
+                      style={{ fontSize: "var(--lk-size-sm)" }}
+                    >
+                      {confirmError}
+                    </p>
                   )}
 
-                  <div className="flex gap-4 mt-12">
+                  <div className="checkout-actions">
                     <Button
                       type="button"
                       variant="secondary"
@@ -2006,11 +1932,14 @@ function CheckoutPageContent() {
             </div>
 
             <div className="order-1 md:order-2 md:col-span-1 lg:col-span-1">
-              <div className="border border-black/10 p-8 md:sticky md:top-32">
-                <h2 className="mb-8 font-brand font-semibold">注文内容</h2>
+              <div className="checkout-summary md:sticky md:top-32">
+                <h2 className="checkout-summary-title">ORDER SUMMARY</h2>
 
                 {cartItems.length === 0 ? (
-                  <p className="text-sm text-gray-500">
+                  <p
+                    className="text-gray-500"
+                    style={{ fontSize: "var(--lk-size-sm)" }}
+                  >
                     カートに商品がありません
                   </p>
                 ) : (
@@ -2023,87 +1952,41 @@ function CheckoutPageContent() {
                     )}
 
                     {step === 2 && (
-                      <>
-                        <div className="space-y-4 mb-8 pb-8 border-b border-black/10">
-                          <div className="flex justify-between">
-                            <span
-                              className="text-sm text-[#474747]"
-                              style={{ fontFamily: "acumin-pro, sans-serif" }}
-                            >
-                              小計
-                            </span>
-                            <span
-                              className="text-sm text-black"
-                              style={{ fontFamily: "acumin-pro, sans-serif" }}
-                            >
-                              {confirmedSummary
-                                ? confirmedSummary.subtotal
-                                : `¥${subtotal.toLocaleString()}`}
-                            </span>
-                          </div>
-                          {confirmedSummary &&
-                            confirmedSummary.discountMinor > 0 && (
-                              <div className="flex justify-between">
-                                <span
-                                  className="text-sm text-[#474747]"
-                                  style={{
-                                    fontFamily: "acumin-pro, sans-serif",
-                                  }}
-                                >
-                                  値引
-                                </span>
-                                <span
-                                  className="text-sm text-black"
-                                  style={{
-                                    fontFamily: "acumin-pro, sans-serif",
-                                  }}
-                                >
-                                  -{confirmedSummary.discount}
-                                </span>
-                              </div>
-                            )}
-                          <div className="flex justify-between">
-                            <span
-                              className="text-sm text-[#474747]"
-                              style={{ fontFamily: "acumin-pro, sans-serif" }}
-                            >
-                              配送料
-                            </span>
-                            <span
-                              className="text-sm text-black"
-                              style={{ fontFamily: "acumin-pro, sans-serif" }}
-                            >
-                              {confirmedSummary
-                                ? confirmedSummary.shipping
-                                : shipping === 0
-                                  ? "無料"
-                                  : `¥${shipping.toLocaleString()}`}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="flex justify-between">
-                          <span
-                            className="text-lg text-black"
-                            style={{
-                              fontFamily: "acumin-pro, sans-serif",
-                              ...lgTextStyle,
-                            }}
-                          >
-                            合計
+                      <div className="checkout-rows">
+                        <div className="checkout-row">
+                          <span className="checkout-row-muted">小計</span>
+                          <span>
+                            {confirmedSummary
+                              ? confirmedSummary.subtotal
+                              : `¥${subtotal.toLocaleString()}`}
                           </span>
-                          <span
-                            className="text-2xl text-black"
-                            style={{
-                              fontFamily: "Didot, serif",
-                              ...summaryHeadingStyle,
-                            }}
-                          >
+                        </div>
+                        {confirmedSummary &&
+                          confirmedSummary.discountMinor > 0 && (
+                            <div className="checkout-row">
+                              <span className="checkout-row-muted">値引</span>
+                              <span>-{confirmedSummary.discount}</span>
+                            </div>
+                          )}
+                        <div className="checkout-row">
+                          <span className="checkout-row-muted">配送料</span>
+                          <span>
+                            {confirmedSummary
+                              ? confirmedSummary.shipping
+                              : shipping === 0
+                                ? "無料"
+                                : `¥${shipping.toLocaleString()}`}
+                          </span>
+                        </div>
+                        <div className="checkout-total-row">
+                          <span className="checkout-total-label">合計</span>
+                          <span className="checkout-total">
                             {confirmedSummary
                               ? confirmedSummary.total
                               : `¥${total.toLocaleString()}`}
                           </span>
                         </div>
-                      </>
+                      </div>
                     )}
                   </>
                 )}
