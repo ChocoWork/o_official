@@ -69,7 +69,7 @@ export default function CartPage() {
 
   return (
     <div
-      className="element-width"
+      className="max-w-5xl mx-auto w-full"
       style={
         {
           "--pad-x": "calc(var(--lk-size-md) / var(--sqrt-phi))",
@@ -78,8 +78,8 @@ export default function CartPage() {
         } as React.CSSProperties
       }
     >
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
-        <div className="md:col-span-2">
+      <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-8">
+        <div>
           {error && (
             <div
               className="text-red-500 border border-red-300 bg-red-50 mb-6"
@@ -135,7 +135,7 @@ export default function CartPage() {
           </div>
         </div>
 
-        <div className="md:col-span-1">
+        <div>
           <OrderSummary subtotal={subtotal} />
         </div>
       </div>
