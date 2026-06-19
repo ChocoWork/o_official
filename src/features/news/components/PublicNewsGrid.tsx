@@ -312,7 +312,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
             href={resolveBuildHref(article)}
             className={hideOnMobile ? "hidden md:block" : "block"}
           >
-            <article className="relative py-[13px] sm:py-[13px] md:py-[21px] xl:py-[21px] lg:px-[13px] border-b border-black/5 cursor-pointer group">
+            <article className="relative py-[21px] md:py-[34px] lg:px-[13px] border-b border-black/5 cursor-pointer group">
               {/* Top: left → right */}
               <span aria-hidden="true" className="pointer-events-none absolute top-0 left-0 h-px w-0 bg-black transition-[width] duration-500 ease-out group-hover:w-full" />
               {/* Bottom: right → left */}
@@ -393,7 +393,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
   const renderLoading = () => (
     <div className="w-full border-t border-black/10">
       {[...Array(5)].map((_, i) => (
-        <div key={i} className="py-[13px] md:py-[21px] border-b border-black/5 animate-pulse">
+        <div key={i} className="py-[21px] md:py-[34px] border-b border-black/5 animate-pulse">
           <div className="flex items-center gap-3 mb-2">
             <div className="h-[10px] w-20 rounded-sm bg-black/8" />
             <div className="h-[10px] w-14 rounded-sm bg-black/8" />
@@ -496,7 +496,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
             className="h-full overflow-y-auto border-r border-black/5"
             style={{
               paddingInline: "calc(var(--lk-size-xs) / var(--sqrt-phi))",
-              paddingBlock: "calc(var(--lk-size-xs) * var(--phi))",
+              paddingBlock: "calc(var(--lk-size-sm) * var(--phi) * var(--phi)) calc(var(--lk-size-xs) * var(--phi))",
             }}
           >
             <div className={TAB_SCROLL_CONTAINER_CLASS}>
