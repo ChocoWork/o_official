@@ -22,14 +22,14 @@ export function LookImageGallery({ theme, imageUrls }: LookImageGalleryProps) {
 
   return (
     <div className="space-y-4">
-      <div className="w-full aspect-[3/4] relative">
+      <div className="w-full aspect-[3/4] relative overflow-hidden">
         <Image
           data-testid="look-main-image"
           key={`${theme}:${selectedImage}`}
           src={selectedImage}
           alt={`${theme} - ${selectedIndex + 1}枚目`}
           fill
-          className="w-full h-full object-cover object-top"
+          className="w-full h-full object-cover object-top motion-safe:animate-in motion-safe:fade-in motion-safe:duration-300"
           sizes="(min-width: 1024px) 50vw, 100vw"
           priority
           unoptimized

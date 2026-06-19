@@ -67,7 +67,7 @@ function LookCard({ look }: LookCardProps) {
             alt={look.theme}
             fill
             unoptimized
-            className="h-full w-full object-cover object-top transition-transform duration-500 group-hover:scale-105"
+            className="h-full w-full object-cover object-top transition-transform duration-500 motion-safe:group-hover:scale-105"
           />
         </div>
       </Link>
@@ -75,7 +75,7 @@ function LookCard({ look }: LookCardProps) {
         <Link href={`/look/${look.id}`} className="inline-block">
           <p
             className=" text-black/50 tracking-widest mb-[3px] sm:mb-[5px]"
-            style={{ fontSize: "var(--lk-size-7xs)" }}
+            style={{ fontSize: "var(--lk-size-3xs)" }}
           >
             {formatLookSeason(look.seasonYear, look.seasonType)} COLLECTION
           </p>
@@ -118,7 +118,7 @@ function LookCard({ look }: LookCardProps) {
 function renderEmptyState(message: string) {
   return (
     <div className="py-20 text-center">
-      <p className="text-lg text-[#474747]">{message}</p>
+      <p className="text-[#474747]" style={{ fontSize: "var(--lk-size-md)" }}>{message}</p>
     </div>
   );
 }
@@ -199,7 +199,7 @@ function PublicLookCatalog({
       checkStyle="fill"
       size="xs"
       className="tracking-widest"
-      expandLabelHitArea={false}
+      expandLabelHitArea={true}
       renderOptionLabel={(option) => (
         <span style={{ fontSize: "var(--lk-size-4xs)" }}>{option.label}</span>
       )}
@@ -247,23 +247,30 @@ function PublicLookCatalog({
         open={isFilterDrawerOpen}
         onClose={() => setIsFilterDrawerOpen(false)}
         side="left"
-        size="sm"
-        className="max-w-[280px] sm:max-w-sm"
+        size="md"
+        className="[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
       >
-        <div className="flex h-full flex-col px-5 py-4 sm:px-6 sm:py-5">
-          <div className="flex items-center justify-between border-b border-black/10 pb-3">
-            <button
-              type="button"
+        <div
+          className="flex flex-col h-full"
+          style={{
+            paddingInline: "calc(var(--lk-size-sm) * var(--phi))",
+            paddingTop: "calc(var(--lk-size-sm) * var(--sqrt-phi))",
+          }}
+        >
+          <div className="flex justify-end pb-[13px]">
+            <Button
+              variant="text"
+              size="xs"
               onClick={() => setIsFilterDrawerOpen(false)}
               aria-label="Close filter drawer"
-              className="leading-none text-black"
-              style={{ fontSize: "var(--lk-size-2xl)" }}
             >
-              ×
-            </button>
+              <i className="ri-close-line" aria-hidden="true" />
+            </Button>
           </div>
 
-          <div className="pt-4">{renderSeasonFilter()}</div>
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pb-[21px]">
+            {renderSeasonFilter()}
+          </div>
         </div>
       </Drawer>
 

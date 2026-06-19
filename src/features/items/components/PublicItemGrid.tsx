@@ -1275,24 +1275,10 @@ export function PublicItemGrid(props: PublicItemGridProps) {
           className="flex flex-col h-full"
           style={{
             paddingInline: "calc(var(--lk-size-sm) * var(--phi))",
-            paddingBlock: "calc(var(--lk-size-sm) * var(--sqrt-phi))",
+            paddingTop: "calc(var(--lk-size-sm) * var(--sqrt-phi))",
           }}
         >
-          <div
-            className="flex items-center justify-between"
-            style={{
-              paddingBottom: "calc(var(--lk-size-sm) / var(--sqrt-phi))",
-            }}
-          >
-            <h2
-              className="tracking-[0.15em] text-black"
-              style={{
-                fontFamily: "acumin-pro, sans-serif",
-                fontSize: "var(--lk-size-4xs)",
-              }}
-            >
-              FILTER
-            </h2>
+          <div className="flex justify-end pb-[13px]">
             <Button
               variant="text"
               size="xs"
@@ -1303,16 +1289,11 @@ export function PublicItemGrid(props: PublicItemGridProps) {
             </Button>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pb-4">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pb-[13px]">
             {renderFilterSections("xs")}
           </div>
 
-          <div
-            className="flex-shrink-0 space-y-2 bg-white pt-4"
-            style={{
-              paddingBottom: "calc(var(--lk-size-sm) * var(--sqrt-phi))",
-            }}
-          >
+          <div className="flex-shrink-0 space-y-[8px] bg-white pt-[13px] pb-[21px]">
             {renderFilterActions("xs")}
           </div>
         </div>

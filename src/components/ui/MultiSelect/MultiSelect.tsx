@@ -48,7 +48,7 @@ export function MultiSelect({
         expandLabelHitArea={expandLabelHitArea}
         className={cn(
           'w-full justify-start px-3 transition-colors',
-          expandLabelHitArea ? 'py-1.5 hover:bg-[#f5f5f5]' : 'py-[3px]',
+          expandLabelHitArea ? 'py-1.5' : 'py-[3px]',
           'text-[#474747] tracking-widest',
         )}
         inputClassName={cn(

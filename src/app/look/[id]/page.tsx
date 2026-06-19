@@ -46,7 +46,7 @@ export default async function LookDetailPage({ params }: Props) {
       <div>
         <div className="element-width text-center">
           <h1>Look not found</h1>
-          <Link href="/look" className="text-sm text-[#474747] hover:text-black mt-4 inline-block">
+          <Link href="/look" className="text-[#474747] hover:text-black mt-4 inline-block" style={{ fontSize: 'var(--lk-size-xs)' }}>
             Back to Lookbook
           </Link>
         </div>
@@ -67,39 +67,39 @@ export default async function LookDetailPage({ params }: Props) {
     return (
         <div>
             <div className="element-width">
-                <div className="mb-6">
-                    <Link href="/look" className="text-sm text-[#474747] hover:text-black inline-block" aria-label="Back to Lookbook">
+                <div className="mb-[21px]">
+                    <Link href="/look" className="text-[#474747] hover:text-black inline-block" style={{ fontSize: 'var(--lk-size-xs)' }} aria-label="Back to Lookbook">
                         Back to Lookbook
                     </Link>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20">
-                    <div className="space-y-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-[34px] lg:gap-[55px]">
+                    <div className="space-y-[13px]">
                         <LookImageGallery theme={currentLook.theme} imageUrls={currentLook.imageUrls} />
                     </div>
 
-                    <div className="lg:pt-8 space-y-10">
+                    <div className="lg:pt-[34px] space-y-[34px]">
                         <div>
-                            <p className="text-[#474747] tracking-widest mb-4" style={{ fontSize: 'var(--lk-size-xs)' }}>
+                            <p className="text-[#474747] tracking-widest mb-[13px]" style={{ fontSize: 'var(--lk-size-xs)' }}>
                                 {seasonLabel}
                             </p>
-                            <h1 className="mb-3" style={{ fontSize: 'var(--lk-size-3xl)' }}>
+                            <h1 className="mb-[13px]" style={{ fontSize: 'var(--lk-size-3xl)' }}>
                                 {currentLook.theme}
                             </h1>
                         </div>
 
-                        <div className="border-t border-[#d5d0c9] pt-8">
+                        <div className="border-t border-[#d5d0c9] pt-[34px]">
                             <p className="text-[#474747] leading-[2]" style={{ fontSize: 'var(--lk-size-md)' }}>
                                 {currentLook.themeDescription || ' '}
                             </p>
                         </div>
 
-                        <div className="border-t border-[#d5d0c9] pt-8">
-                            <h3 className="text-black tracking-widest mb-6 font-brand" style={{ fontSize: 'var(--lk-size-lg)' }}>
+                        <div className="border-t border-[#d5d0c9] pt-[34px]">
+                            <h3 className="text-black tracking-widest mb-[21px] font-brand" style={{ fontSize: 'var(--lk-size-lg)' }}>
                                 STYLING ITEMS
                             </h3>
                             {currentLook.linkedItems.length === 0 ? (
-                                <p className="text-sm text-[#474747]">
+                                <p className="text-[#474747]" style={{ fontSize: 'var(--lk-size-sm)' }}>
                                     紐づけ商品はありません
                                 </p>
                             ) : (
@@ -118,9 +118,9 @@ export default async function LookDetailPage({ params }: Props) {
                             )}
                         </div>
 
-                        <div className="flex items-center justify-between pt-4">
+                        <div className="flex items-center justify-between pt-[13px]">
                             {prevLook ? (
-                                <Link href={`/look/${prevLook.id}`} aria-label={`Previous look: ${prevLook.theme}`} className="group flex items-center space-x-3 cursor-pointer">
+                                <Link href={`/look/${prevLook.id}`} aria-label={`Previous look: ${prevLook.theme}`} className="group flex items-center space-x-[13px] cursor-pointer">
                                     <i className="ri-arrow-left-line w-5 h-5 flex items-center justify-center text-[#474747] group-hover:text-black transition-colors"></i>
                                     <div>
                                         <p className="text-[#999] tracking-widest" style={{ fontSize: 'var(--lk-size-xs)' }}>
@@ -135,7 +135,7 @@ export default async function LookDetailPage({ params }: Props) {
                                 <div />
                             )}
                             {nextLook ? (
-                                <Link href={`/look/${nextLook.id}`} aria-label={`Next look: ${nextLook.theme}`} className="group flex items-center space-x-3 cursor-pointer text-right">
+                                <Link href={`/look/${nextLook.id}`} aria-label={`Next look: ${nextLook.theme}`} className="group flex items-center space-x-[13px] cursor-pointer text-right">
                                     <div>
                                         <p className="text-[#999] tracking-widest" style={{ fontSize: 'var(--lk-size-xs)' }}>
                                             NEXT

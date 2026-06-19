@@ -443,31 +443,17 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
         open={isFilterDrawerOpen}
         onClose={() => setIsFilterDrawerOpen(false)}
         side="left"
-        size="sm"
-        className="max-w-[280px] sm:max-w-sm"
+        size="md"
+        className="[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
       >
         <div
-          className="flex h-full flex-col"
+          className="flex flex-col h-full"
           style={{
             paddingInline: "calc(var(--lk-size-sm) * var(--phi))",
-            paddingBlock: "calc(var(--lk-size-sm) * var(--sqrt-phi))",
+            paddingTop: "calc(var(--lk-size-sm) * var(--sqrt-phi))",
           }}
         >
-          <div
-            className="flex items-center justify-between"
-            style={{
-              paddingBottom: "calc(var(--lk-size-sm) / var(--sqrt-phi))",
-            }}
-          >
-            <h2
-              className="tracking-[0.15em] text-black"
-              style={{
-                fontFamily: "acumin-pro, sans-serif",
-                fontSize: "var(--lk-size-4xs)",
-              }}
-            >
-              FILTER
-            </h2>
+          <div className="flex justify-end pb-[13px]">
             <Button
               variant="text"
               size="xs"
@@ -478,9 +464,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
             </Button>
           </div>
 
-          <div
-            style={{ marginTop: "calc(var(--lk-size-sm) / var(--sqrt-phi))" }}
-          >
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pb-[21px]">
             {renderCategoryFilter("xs", true)}
           </div>
         </div>

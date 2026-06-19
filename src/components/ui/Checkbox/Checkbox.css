@@ -61,9 +61,13 @@
 [data-ui-checkbox][data-ui-checkbox-expand-hit-area="true"] {
   --checkbox-padding-block: var(--checkbox-padding-block-expanded);
   --checkbox-hit-height: var(--checkbox-hit-height-expanded);
-  --checkbox-surface-hover: #f1f1f1;
-  --checkbox-surface-active: #eaeaea;
+  --checkbox-surface-hover: transparent;
+  --checkbox-surface-active: transparent;
   cursor: pointer;
+}
+
+[data-ui-checkbox][data-ui-checkbox-expand-hit-area="true"]:not([data-ui-checkbox-disabled="true"]):hover {
+  color: var(--checkbox-text-strong);
 }
 
 [data-ui-checkbox][data-ui-checkbox-expand-hit-area="false"] {
