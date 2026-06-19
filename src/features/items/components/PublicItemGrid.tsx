@@ -34,7 +34,7 @@ const SORT_OPTIONS = [
   { value: "price_desc", label: "PRICE HIGH TO LOW" },
 ] as const;
 const FILTER_SIDEBAR_SCROLL_CLASS =
-  "flex-1 min-h-0 overflow-y-auto overscroll-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden border-r border-black/5 px-[13px] xl:px-[21px] pt-[21px] xl:pt-[34px] pb-4";
+  "flex-1 min-h-0 overflow-y-auto overscroll-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden border-r border-black/5 px-[13px] xl:px-[21px] pt-[8px] xl:pt-[21px] pb-4";
 const FILTER_SIDEBAR_ACTIONS_CLASS =
   "flex-shrink-0 border-r border-black/5 px-[13px] xl:px-[21px] pb-[21px] xl:pb-[34px] pt-4 bg-white space-y-2";
 const FILTER_DRAWER_CLASS =
@@ -815,12 +815,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
                 <h3
                   className={itemNameClassName}
                   data-testid="item-name"
-                  style={{
-                    fontSize:
-                      variant === "home"
-                        ? "var(--lk-size-2xs)"
-                        : "var(--lk-size-2xs)",
-                  }}
+                  style={{ fontSize: "var(--lk-size-2xs)" }}
                 >
                   {item.name}
                 </h3>
@@ -1226,7 +1221,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
           </div>
         </aside>
 
-        <div className="flex-1 min-w-0 w-full max-w-full px-0 md:px-[21px] lg:px-[21px] xl:px-[34px] 2xl:px-[55px] py-0 xl:py-[34px]">
+        <div className="flex-1 min-w-0 w-full max-w-full px-0 md:px-[21px] lg:px-[21px] xl:px-[34px] 2xl:px-[55px] py-0 xl:py-[21px]">
           <div className="sm:-mt-1 md:-mt-2 lg:hidden">
             {renderMobileFilterBar(false)}
           </div>
@@ -1247,7 +1242,10 @@ export function PublicItemGrid(props: PublicItemGridProps) {
 
           {displayItems.length === 0 && (
             <div className="text-center py-12">
-              <p className="text-base tracking-widest text-gray-500">
+              <p
+                className="tracking-widest text-[#474747]"
+                style={{ fontSize: "var(--lk-size-xs)" }}
+              >
                 商品が見つかりません
               </p>
             </div>

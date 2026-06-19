@@ -73,6 +73,7 @@ export default function ItemDetailClient({ id }: Props) {
   const [quantity, setQuantity] = useState<number>(1);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [addingToCart, setAddingToCart] = useState(false);
+  const [addedToCart, setAddedToCart] = useState(false);
   const [togglingWishlist, setTogglingWishlist] = useState(false);
   const [isButtonVisible, setIsButtonVisible] = useState(false);
   // 未選択バリデーションエラーを alert() の代わりにインライン表示する
@@ -169,6 +170,8 @@ export default function ItemDetailClient({ id }: Props) {
       if (!response.ok) throw new Error("カートへの追加に失敗しました");
       await updateCartCount();
       setQuantity(1);
+      setAddedToCart(true);
+      setTimeout(() => setAddedToCart(false), 2000);
     } catch (err) {
       setValidationError(
         err instanceof Error ? err.message : "エラーが発生しました",
@@ -193,9 +196,34 @@ export default function ItemDetailClient({ id }: Props) {
 
   if (loading) {
     return (
-      <div className="pb-12 px-6 lg:px-12">
-        <div className="element-width text-center">
-          <div className="text-base tracking-widest">読み込み中...</div>
+      <div>
+        <div className="element-width">
+          <div className="mb-4 sm:mb-5 h-3 w-44 bg-black/5 animate-pulse" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-[5fr_7fr] gap-8 md:gap-6 lg:gap-12 xl:gap-16 lg:w-fit">
+            <div className="aspect-[3/4] bg-black/5 animate-pulse" />
+            <div className="space-y-6 pt-1">
+              <div className="space-y-2">
+                <div className="h-5 w-3/4 bg-black/5 animate-pulse" />
+                <div className="h-4 w-1/4 bg-black/5 animate-pulse" />
+              </div>
+              <div className="space-y-2">
+                <div className="h-3 w-12 bg-black/5 animate-pulse" />
+                <div className="flex gap-2">
+                  <div className="h-8 w-16 bg-black/5 animate-pulse" />
+                  <div className="h-8 w-16 bg-black/5 animate-pulse" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="h-3 w-10 bg-black/5 animate-pulse" />
+                <div className="flex gap-2">
+                  <div className="h-8 w-10 bg-black/5 animate-pulse" />
+                  <div className="h-8 w-10 bg-black/5 animate-pulse" />
+                  <div className="h-8 w-10 bg-black/5 animate-pulse" />
+                </div>
+              </div>
+              <div className="h-10 w-full bg-black/5 animate-pulse" />
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -404,11 +432,11 @@ export default function ItemDetailClient({ id }: Props) {
 
           <div className="space-y-4 lg:space-y-6">
             <div>
-              <h2 style={itemNameStyle}>{item.name}</h2>
+              <h1 style={itemNameStyle}>{item.name}</h1>
               <div className="flex items-center gap-3 mt-1">
-                <h4 className="font-brand">
+                <p className="font-brand">
                   ¥{item.price.toLocaleString("ja-JP")}
-                </h4>
+                </p>
                 {/* 在庫状態バッジ (FR-ITEM-DETAIL-007) */}
                 <StockBadge stockStatus={stockStatus} />
               </div>
@@ -555,6 +583,11 @@ export default function ItemDetailClient({ id }: Props) {
               >
                 {isSoldOut ? (
                   "SOLD OUT"
+                ) : addedToCart ? (
+                  <div className="gap-2 flex items-center justify-center">
+                    <i className="ri-check-line text-base" />
+                    ADDED
+                  </div>
                 ) : addingToCart ? (
                   "追加中..."
                 ) : (
@@ -607,6 +640,11 @@ export default function ItemDetailClient({ id }: Props) {
         >
           {isSoldOut ? (
             "SOLD OUT"
+          ) : addedToCart ? (
+            <div className="gap-2 flex items-center justify-center">
+              <i className="ri-check-line text-base" />
+              ADDED
+            </div>
           ) : addingToCart ? (
             "追加中..."
           ) : (

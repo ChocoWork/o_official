@@ -55,18 +55,22 @@ export function RelatedItems({ currentItemId, category }: Props) {
       aria-labelledby="related-items-heading"
       className="mt-16 lg:mt-24 border-t border-black/10 pt-10"
     >
-      <h2 id="related-items-heading" className="mb-8">
+      <h2
+        id="related-items-heading"
+        className="mb-8 tracking-[0.15em]"
+        style={{ fontFamily: "acumin-pro, sans-serif", fontSize: "var(--lk-size-xs)" }}
+      >
         YOU MAY ALSO LIKE
       </h2>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 lg:gap-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-[21px] lg:gap-[34px]">
         {items.map((item) => (
           <Link
             key={item.id}
             href={`/item/${item.id}`}
             data-testid="item-card"
-            className="group"
+            className="group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2"
           >
-            <div className="relative aspect-[3/4] bg-[#f5f5f5] overflow-hidden mb-2">
+            <div className="relative aspect-[3/4] bg-[#f5f5f5] overflow-hidden mb-[8px]">
               {item.image_url ? (
                 <Image
                   src={item.image_url}
@@ -81,10 +85,13 @@ export function RelatedItems({ currentItemId, category }: Props) {
                 </div>
               )}
             </div>
-            <p className="text-xs md:text-sm text-black tracking-tight line-clamp-2">
+            <p
+              className="text-black tracking-tight line-clamp-2"
+              style={{ fontSize: "var(--lk-size-2xs)" }}
+            >
               {item.name}
             </p>
-            <p className="text-xs md:text-sm text-black">
+            <p className="text-black" style={{ fontSize: "var(--lk-size-3xs)" }}>
               ¥{item.price.toLocaleString('ja-JP')}
             </p>
           </Link>
