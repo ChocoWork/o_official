@@ -221,7 +221,7 @@ function PublicLookCatalog({
       data-filter-bar={interactive ? "floating" : "placeholder"}
       aria-hidden={interactive ? undefined : true}
       className={cn(
-        "flex items-center justify-between border-b border-black/5 bg-white/95 py-[13px] backdrop-blur",
+        "flex items-center justify-between py-[13px]",
         !interactive && "pointer-events-none invisible",
       )}
     >
@@ -289,11 +289,11 @@ function PublicLookCatalog({
         </aside>
 
         <div className="flex-1 min-w-0 w-full max-w-full px-0 py-0 md:px-[21px] lg:px-[21px] xl:px-[34px] 2xl:px-[55px] xl:py-[34px]">
-          <div className="lg:hidden">
+          <div className="lg:hidden border-b border-black/5">
             {renderMobileFilterBar(false)}
           </div>
           <div
-            className="fixed inset-x-0 z-30 lg:hidden bg-white transition-transform duration-300 ease-in-out"
+            className="fixed inset-x-0 z-30 lg:hidden bg-white border-b border-black/5 transition-transform duration-300 ease-in-out"
             style={mobileFilterStickyStyle}
           >
             <div className="element-width px-6 md:px-[45px]">
