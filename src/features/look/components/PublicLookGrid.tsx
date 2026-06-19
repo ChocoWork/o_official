@@ -228,10 +228,10 @@ function PublicLookCatalog({
       <Button
         data-filter-button={interactive ? "floating" : "placeholder"}
         onClick={interactive ? () => setIsFilterDrawerOpen(true) : undefined}
-        variant="secondary"
-        size="4xs"
-        className="tracking-widest"
-        aria-label={interactive ? "Open filter drawer FILTER" : undefined}
+        variant="text"
+        size="xs"
+        className="tracking-[0.1em]"
+        style={{ marginLeft: "calc(-1 * var(--pad-x) - 1px)" }}
         aria-haspopup={interactive ? "dialog" : undefined}
         aria-expanded={interactive ? isFilterDrawerOpen : undefined}
         tabIndex={interactive ? undefined : -1}
@@ -289,11 +289,11 @@ function PublicLookCatalog({
         </aside>
 
         <div className="flex-1 min-w-0 w-full max-w-full px-0 py-0 md:px-[21px] lg:px-[21px] xl:px-[34px] 2xl:px-[55px] xl:py-[34px]">
-          <div className="sm:-mt-1 md:-mt-2 lg:hidden">
+          <div className="lg:hidden">
             {renderMobileFilterBar(false)}
           </div>
           <div
-            className="fixed inset-x-0 z-30 transition-transform duration-300 ease-in-out lg:hidden"
+            className="fixed inset-x-0 z-30 lg:hidden bg-white transition-transform duration-300 ease-in-out"
             style={mobileFilterStickyStyle}
           >
             <div className="element-width px-6 md:px-[45px]">
