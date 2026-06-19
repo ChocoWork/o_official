@@ -504,7 +504,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
             </div>
           </div>
         </aside>
-        <div className="flex-1 min-w-0 w-full max-w-full px-0 md:px-[21px] lg:px-[16px] xl:px-[21px] 2xl:px-[34px] py-0 xl:py-[34px]">
+        <div className="flex-1 min-w-0 w-full max-w-full px-0 md:px-[21px] lg:px-[16px] xl:px-[21px] 2xl:px-[34px] py-0 xl:pb-[34px]">
           <div className="sm:-mt-1 md:-mt-2 lg:hidden">
             {renderMobileFilterBar(false)}
           </div>
