@@ -174,7 +174,7 @@ export default async function NewsDetailPage({
           >
             {article.published_date.replace(/-/g, ".")}
           </span>
-          <TagLabel className="font-acumin" size="7xs">
+          <TagLabel className="font-acumin" size="4xs">
             {article.category}
           </TagLabel>
         </div>
@@ -193,7 +193,7 @@ export default async function NewsDetailPage({
           .map((paragraph: string, index: number) => (
             <p
               key={index}
-              className="text-[#474747] leading-loose mb-5 sm:mb-7 whitespace-pre-line"
+              className="text-[#474747] leading-[1.7] mb-5 sm:mb-7 whitespace-pre-line"
               style={{ fontSize: "var(--lk-size-sm)" }}
             >
               {paragraph}
@@ -213,8 +213,8 @@ export default async function NewsDetailPage({
                 aria-label={`前の記事: ${prevArticle.title}`}
                 className="group flex items-start gap-2 max-w-[45%]"
               >
-                <span className="flex-shrink-0 w-4 h-4 flex items-center justify-center text-[#474747] group-hover:text-black transition-colors mt-0.5 text-sm">
-                  ←
+                <span className="flex-shrink-0 w-4 h-4 flex items-center justify-center text-[#474747] group-hover:text-black transition-colors mt-0.5">
+                  <i className="ri-arrow-left-line" aria-hidden="true" />
                 </span>
                 <div className="min-w-0">
                   <p
@@ -256,8 +256,8 @@ export default async function NewsDetailPage({
                     {nextArticle.title}
                   </p>
                 </div>
-                <span className="flex-shrink-0 w-4 h-4 flex items-center justify-center text-[#474747] group-hover:text-black transition-colors mt-0.5 text-sm">
-                  →
+                <span className="flex-shrink-0 w-4 h-4 flex items-center justify-center text-[#474747] group-hover:text-black transition-colors mt-0.5">
+                  <i className="ri-arrow-right-line" aria-hidden="true" />
                 </span>
               </Link>
             ) : (
@@ -287,7 +287,7 @@ export default async function NewsDetailPage({
               className="group flex items-center gap-3 justify-self-start"
             >
               <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center text-[#474747] group-hover:text-black transition-colors">
-                ←
+                <i className="ri-arrow-left-line" aria-hidden="true" />
               </span>
               <div className="min-w-0">
                 <p
@@ -339,7 +339,7 @@ export default async function NewsDetailPage({
                 </p>
               </div>
               <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center text-[#474747] group-hover:text-black transition-colors">
-                →
+                <i className="ri-arrow-right-line" aria-hidden="true" />
               </span>
             </Link>
           ) : (

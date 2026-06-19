@@ -312,7 +312,15 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
             href={resolveBuildHref(article)}
             className={hideOnMobile ? "hidden md:block" : "block"}
           >
-            <article className="py-[13px] sm:py-[13px] md:py-[21px] xl:py-[21px] border-b border-black/5 group cursor-pointer">
+            <article className="relative py-[13px] sm:py-[13px] md:py-[21px] xl:py-[21px] lg:px-[13px] border-b border-black/5 cursor-pointer group">
+              {/* Top: left → right */}
+              <span aria-hidden="true" className="pointer-events-none absolute top-0 left-0 h-px w-0 bg-black transition-[width] duration-500 ease-out group-hover:w-full" />
+              {/* Bottom: right → left */}
+              <span aria-hidden="true" className="pointer-events-none absolute bottom-0 right-0 h-px w-0 bg-black transition-[width] duration-500 ease-out group-hover:w-full" />
+              {/* Right: top → bottom, starts after horizontal finishes (lg+ only) */}
+              <span aria-hidden="true" className="hidden lg:block pointer-events-none absolute top-0 right-0 w-px h-0 bg-black transition-[height] duration-500 ease-out group-hover:h-full group-hover:delay-500" />
+              {/* Left: bottom → top, starts after horizontal finishes (lg+ only) */}
+              <span aria-hidden="true" className="hidden lg:block pointer-events-none absolute bottom-0 left-0 w-px h-0 bg-black transition-[height] duration-500 ease-out group-hover:h-full group-hover:delay-500" />
               <div className="flex-1 items-start">
                 {/* Date column: inline with category on mobile, fixed-width on sm+ */}
                 <div className="flex items-center gap-3 mb-[var(--lk-size-4xs)] flex-shrink-0">
@@ -325,9 +333,9 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
                   >
                     {article.published_date.replace(/-/g, ".")}
                   </span>
-                  {/* Category tag: mobile only */}
+                  {/* Category tag */}
                   <div className="flex items-center">
-                    <TagLabel className="font-acumin" size="8xs">
+                    <TagLabel className="font-acumin" size="6xs">
                       {article.category}
                     </TagLabel>
                   </div>
@@ -336,7 +344,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
                 {/* Content column */}
                 <div className="flex-1 min-w-0">
                   <h4
-                    className="mb-[calc(var(--lk-size-sm)/var(--phi))] group-hover:text-black/50 transition-colors duration-300 leading-snug"
+                    className="mb-[calc(var(--lk-size-sm)/var(--phi))] leading-snug"
                     style={{ fontSize: "var(--lk-size-sm)" }}
                   >
                     {article.title}
@@ -361,20 +369,40 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
   );
 
   const renderEmpty = (message: string) => (
-    <div className="text-center py-20">
-      <p className="text-lg text-[#474747]">{message}</p>
+    <div className="flex flex-col items-center justify-center py-20 gap-3">
+      <p
+        className="text-[#474747] tracking-widest"
+        style={{ fontFamily: "acumin-pro, sans-serif", fontSize: "var(--lk-size-sm)" }}
+      >
+        {message}
+      </p>
     </div>
   );
 
   const renderError = () => (
-    <div className="text-center py-20">
-      <p className="text-lg text-red-500">{error}</p>
+    <div className="flex flex-col items-center justify-center py-20 gap-3">
+      <p
+        className="text-red-500 tracking-widest"
+        style={{ fontFamily: "acumin-pro, sans-serif", fontSize: "var(--lk-size-sm)" }}
+      >
+        {error}
+      </p>
     </div>
   );
 
   const renderLoading = () => (
-    <div className="text-center py-20">
-      <p className="text-lg text-[#474747]">読み込み中...</p>
+    <div className="w-full border-t border-black/10">
+      {[...Array(5)].map((_, i) => (
+        <div key={i} className="py-[13px] md:py-[21px] border-b border-black/5 animate-pulse">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="h-[10px] w-20 rounded-sm bg-black/8" />
+            <div className="h-[10px] w-14 rounded-sm bg-black/8" />
+          </div>
+          <div className="h-[13px] w-2/3 rounded-sm bg-black/8 mb-[10px]" />
+          <div className="h-[11px] w-full rounded-sm bg-black/5 mb-1.5" />
+          <div className="h-[11px] w-4/5 rounded-sm bg-black/5" />
+        </div>
+      ))}
     </div>
   );
 
