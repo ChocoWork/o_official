@@ -51,7 +51,7 @@ export default async function Home() {
               width={2752} // ←mainphoto.pngの実際の横幅に合わせて調整してください
               height={1536} // ←mainphoto.pngの実際の縦幅に合わせて調整してください
               priority
-              sizes="100vw"
+              sizes="(max-width: 1023px) 300vw, 100vw"
               className="image opacity-90"
             />
             <div
