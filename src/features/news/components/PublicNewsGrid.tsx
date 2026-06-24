@@ -69,6 +69,21 @@ function isSameSelection(left: NewsCategory[], right: NewsCategory[]): boolean {
   return left.every((value, index) => value === right[index]);
 }
 
+// N-6: プレビュー用に軽量 Markdown 記法を除去（見出し記号/強調/コード/引用/リンク等）
+function toPlainPreview(raw: string): string {
+  return raw
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "") // 画像
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1") // リンク → テキスト
+    .replace(/`{1,3}([^`]*)`{1,3}/g, "$1") // インライン/ブロックコード
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "") // 見出し
+    .replace(/^\s{0,3}>\s?/gm, "") // 引用
+    .replace(/^\s{0,3}[-*+]\s+/gm, "") // 箇条書き
+    .replace(/(\*\*|__)(.*?)\1/g, "$2") // 太字
+    .replace(/(\*|_)(.*?)\1/g, "$2") // 斜体
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 export function PublicNewsGrid(props: PublicNewsGridProps) {
   const { variant, className } = props;
   const catalogProps = props.variant === "catalog" ? props : null;
@@ -300,6 +315,9 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
   const hasHiddenItemsOnMobile =
     shouldLimitOnMobile && resolvedArticles.length > resolvedMobileLimit;
 
+  // N-2: 見出し階層。catalog は ページ h1 → 記事 h2、home は SectionTitle h2 → 記事 h3
+  const ArticleTitleTag = (variant === "home" ? "h3" : "h2") as "h2" | "h3";
+
   const renderGrid = () => (
     <div className={cn("w-full border-t border-black/10", className)}>
       {displayArticles.map((article, index) => {
@@ -313,42 +331,40 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
             className={hideOnMobile ? "hidden md:block" : "block"}
           >
             <article className="relative py-[21px] md:py-[34px] lg:px-[13px] border-b border-black/5 cursor-pointer group">
+              {/* N-7: 控えめな上下ラインのみ（delay付き4辺アニメ→簡素化、duration短縮） */}
               {/* Top: left → right */}
-              <span aria-hidden="true" className="pointer-events-none absolute top-0 left-0 h-px w-0 bg-black transition-[width] duration-500 ease-out group-hover:w-full" />
+              <span aria-hidden="true" className="pointer-events-none absolute top-0 left-0 h-px w-0 bg-black transition-[width] duration-300 ease-out group-hover:w-full" />
               {/* Bottom: right → left */}
-              <span aria-hidden="true" className="pointer-events-none absolute bottom-0 right-0 h-px w-0 bg-black transition-[width] duration-500 ease-out group-hover:w-full" />
-              {/* Right: top → bottom, starts after horizontal finishes (lg+ only) */}
-              <span aria-hidden="true" className="hidden lg:block pointer-events-none absolute top-0 right-0 w-px h-0 bg-black transition-[height] duration-500 ease-out group-hover:h-full group-hover:delay-500" />
-              {/* Left: bottom → top, starts after horizontal finishes (lg+ only) */}
-              <span aria-hidden="true" className="hidden lg:block pointer-events-none absolute bottom-0 left-0 w-px h-0 bg-black transition-[height] duration-500 ease-out group-hover:h-full group-hover:delay-500" />
-              <div className="flex-1 items-start">
-                {/* Date column: inline with category on mobile, fixed-width on sm+ */}
-                <div className="flex items-center gap-3 mb-[var(--lk-size-4xs)] flex-shrink-0">
-                  <span
-                    className="flex-shrink-0 text-[#474747] tracking-widest whitespace-nowrap"
-                    style={{
-                      fontFamily: "acumin-pro, sans-serif",
-                      fontSize: "var(--lk-size-4xs)",
-                    }}
-                  >
-                    {article.published_date.replace(/-/g, ".")}
-                  </span>
-                  {/* Category tag */}
-                  <div className="flex items-center">
-                    <TagLabel className="font-acumin" size="6xs">
-                      {article.category}
-                    </TagLabel>
-                  </div>
-                </div>
-
-                {/* Content column */}
+              <span aria-hidden="true" className="pointer-events-none absolute bottom-0 right-0 h-px w-0 bg-black transition-[width] duration-300 ease-out group-hover:w-full" />
+              <div className="flex items-start">
                 <div className="flex-1 min-w-0">
-                  <h4
+                  {/* Date column: inline with category on mobile, fixed-width on sm+ */}
+                  <div className="flex items-center gap-3 mb-[var(--lk-size-4xs)] flex-shrink-0">
+                    <time
+                      dateTime={article.published_date}
+                      className="flex-shrink-0 text-[#474747] tracking-widest whitespace-nowrap"
+                      style={{
+                        fontFamily: "acumin-pro, sans-serif",
+                        fontSize: "var(--lk-size-4xs)",
+                      }}
+                    >
+                      {article.published_date.replace(/-/g, ".")}
+                    </time>
+                    {/* Category tag */}
+                    <div className="flex items-center">
+                      <TagLabel className="font-acumin" size="6xs">
+                        {article.category}
+                      </TagLabel>
+                    </div>
+                  </div>
+
+                  {/* Content column */}
+                  <ArticleTitleTag
                     className="mb-[calc(var(--lk-size-sm)/var(--phi))] leading-snug"
                     style={{ fontSize: "var(--lk-size-sm)" }}
                   >
                     {article.title}
-                  </h4>
+                  </ArticleTitleTag>
 
                   <p
                     className="leading-[1.8] line-clamp-2 sm:line-clamp-3 text-[#474747]"
@@ -357,7 +373,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
                       fontSize: "var(--lk-size-2xs)",
                     }}
                   >
-                    {article.content}
+                    {toPlainPreview(article.content)}
                   </p>
                 </div>
               </div>
