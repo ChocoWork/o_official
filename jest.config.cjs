@@ -2,8 +2,10 @@ module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'jsdom',
   moduleNameMapper: {
-    '^@/(.*)$': '<rootDir>/src/$1',
+    // css must be matched before the '@/' alias, otherwise '@/...css' imports
+    // resolve to real CSS files (which ts-jest can't transform) instead of the stub.
     '\\.(css)$': '<rootDir>/tests/styleMock.js',
+    '^@/(.*)$': '<rootDir>/src/$1',
   },
   transform: {
     '^.+\\.(ts|tsx)$': 'ts-jest',

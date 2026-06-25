@@ -39,6 +39,19 @@ const FILTER_SIDEBAR_ACTIONS_CLASS =
   "flex-shrink-0 border-r border-black/5 px-[13px] xl:px-[21px] pb-[21px] xl:pb-[34px] pt-4 bg-white space-y-2";
 const FILTER_DRAWER_CLASS =
   "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden";
+// FILTER 内タイポグラフィ／余白。stein（ssstein.com）と HYKE（hyke.jp）の FILTER を
+// 参考に、フィルターのスペーシングをこのスコープ内だけに適用する（共有 Accordion /
+// MultiSelect の他用途には影響させない）。
+// - 親（セクション見出し）↔ 子（選択肢）の間隔: stein 参考でゆったり取る（pt 約1.25em）
+// - 子（選択肢）↔ 子の間隔: stein/HYKE 両方参考で行ピッチを約27pxに広げる（gap 約0.5em）
+// - 見出しの字間: 両サイト参考の控えめなトラッキング（0.06em）
+// 文字サイズは現状の 3xs（約11.4px）/ xs（約12.9px）が stein(10px)〜HYKE(13px) の
+// 帯に収まっているため据え置く。実体のスタイルは globals.css の .filter-sections に定義。
+const FILTER_SECTIONS_SPACING_CLASS = "filter-sections";
+// APPLYボタンを廃止し、フィルタ操作が止まってから自動適用するまでのデバウンス時間。
+// 検索・フィルタ入力の自動適用は 300ms 前後が一般的なベストプラクティス
+// （ユーザーが操作を止めたと判断できる最小待機。連続操作中の過剰なリクエストを防ぐ）。
+const FILTER_APPLY_DEBOUNCE_MS = 300;
 
 type ItemCategory = (typeof ITEM_CATEGORIES)[number];
 type ItemSort = (typeof SORT_OPTIONS)[number]["value"];
@@ -65,7 +78,7 @@ type ItemsApiPayload = {
   hasMore: boolean;
 };
 
-type StockFilter = "all" | "in" | "out";
+type StockValue = "in" | "out";
 type DrawerSectionKey =
   | "category"
   | "color"
@@ -96,16 +109,22 @@ function parseIntQuery(value: string | null): number | "" {
   return parsed;
 }
 
-function parseStock(value: string | null): StockFilter {
-  if (value === "in" || value === "out") {
-    return value;
+// STOCK は in/out のマルチセレクト。空配列は「ALL（絞り込みなし）」を表す。
+function parseStockList(value: string | null): StockValue[] {
+  if (!value) {
+    return [];
   }
-  return "all";
+  const tokens = value
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter((entry): entry is StockValue => entry === "in" || entry === "out");
+  return Array.from(new Set(tokens));
 }
 
+// SEASON も AW/SS のマルチセレクト。空配列は「ALL（絞り込みなし）」を表す。
 function parseSeasons(value: string | null): CollectionSeason[] {
   if (!value) {
-    return ["AW", "SS"];
+    return [];
   }
 
   const tokens = value
@@ -114,10 +133,6 @@ function parseSeasons(value: string | null): CollectionSeason[] {
     .filter(
       (entry): entry is CollectionSeason => entry === "AW" || entry === "SS",
     );
-
-  if (tokens.length === 0) {
-    return ["AW", "SS"];
-  }
 
   return Array.from(new Set(tokens));
 }
@@ -295,7 +310,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     [selectedColorQuery],
   );
   const selectedStock = useMemo(
-    () => parseStock(selectedStockQuery),
+    () => parseStockList(selectedStockQuery),
     [selectedStockQuery],
   );
   const selectedCollectionYearMin = useMemo(
@@ -324,7 +339,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     useState<ItemCategory[]>(selectedCategories);
   const [draftSizes, setDraftSizes] = useState<string[]>(selectedSizes);
   const [draftColors, setDraftColors] = useState<string[]>(selectedColors);
-  const [draftStock, setDraftStock] = useState<StockFilter>(selectedStock);
+  const [draftStock, setDraftStock] = useState<StockValue[]>(selectedStock);
   const [draftCollectionYearMin, setDraftCollectionYearMin] = useState<
     number | ""
   >(selectedCollectionYearMin);
@@ -378,12 +393,22 @@ export function PublicItemGrid(props: PublicItemGridProps) {
       const params = new URLSearchParams(latestQueryRef.current);
       mutator(params);
       const query = params.toString();
+      // 変化がなければ何もしない（自動適用デバウンスの空振り・ループを防ぐ）。
+      if (query === latestQueryRef.current) {
+        return;
+      }
       latestQueryRef.current = query;
       const nextUrl = query.length > 0 ? `${pathname}?${query}` : pathname;
       router.push(nextUrl, { scroll: false });
     },
     [pathname, router],
   );
+
+  // URL（searchParams）が変わるたびに latestQueryRef を同期し、
+  // pushQuery 経由の更新後も updateQuery の楽観的連結が整合するようにする。
+  useEffect(() => {
+    latestQueryRef.current = searchParams.toString();
+  }, [searchParams]);
 
   const sourceItems = useMemo(() => {
     if (variant === "home") {
@@ -467,18 +492,30 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     collectionYearBounds.max,
   ]);
 
+  // 価格スライダーの上下限は「これまでに読み込んだ全商品の最大レンジ」を保持する。
+  // 価格フィルタ適用後はサーバーが範囲内の商品だけを返すため、resolvedItems から
+  // 都度算出すると上限が適用値まで縮み、最大価格まで再スライドできなくなる。
+  // これを防ぐため、既知のレンジを広げる方向にのみ更新する。
+  const priceBoundsRef = useRef<{ min: number; max: number } | null>(null);
   const priceBounds = useMemo(() => {
-    if (resolvedItems.length === 0) {
-      return { min: 0, max: 100000 };
-    }
-
     const prices = resolvedItems
       .map((item) => item.price)
       .filter((price) => Number.isFinite(price));
-    return {
-      min: Math.min(...prices),
-      max: Math.max(...prices),
-    };
+
+    if (prices.length === 0) {
+      return priceBoundsRef.current ?? { min: 0, max: 100000 };
+    }
+
+    const computed = { min: Math.min(...prices), max: Math.max(...prices) };
+    const prev = priceBoundsRef.current;
+    const next = prev
+      ? {
+          min: Math.min(prev.min, computed.min),
+          max: Math.max(prev.max, computed.max),
+        }
+      : computed;
+    priceBoundsRef.current = next;
+    return next;
   }, [resolvedItems]);
 
   useEffect(() => {
@@ -531,19 +568,23 @@ export function PublicItemGrid(props: PublicItemGridProps) {
         selectedCollectionYearMax === "" ||
         (typeof collectionMeta.year === "number" &&
           collectionMeta.year <= selectedCollectionYearMax);
+      // 空配列 or 両方選択（AW+SS）は絞り込みなし。
       const collectionSeasonOk =
+        selectedCollectionSeasons.length === 0 ||
         selectedCollectionSeasons.length === 2 ||
-        (collectionMeta.season !== null &&
-          selectedCollectionSeasons.includes(collectionMeta.season));
+        (item.season != null &&
+          selectedCollectionSeasons.includes(item.season));
 
       const priceMinOk =
         selectedPriceMin === "" || item.price >= selectedPriceMin;
       const priceMaxOk =
         selectedPriceMax === "" || item.price <= selectedPriceMax;
 
+      // 空配列 or 両方選択（in+out）は絞り込みなし。
       const stockOk =
-        selectedStock === "all" ||
-        (selectedStock === "in" ? isItemInStock(item) : !isItemInStock(item));
+        selectedStock.length === 0 ||
+        selectedStock.length === 2 ||
+        (selectedStock.includes("in") ? isItemInStock(item) : !isItemInStock(item));
 
       return (
         categoryOk &&
@@ -599,8 +640,8 @@ export function PublicItemGrid(props: PublicItemGridProps) {
         params.delete("color");
       }
 
-      if (draftStock !== "all") {
-        params.set("stock", draftStock);
+      if (draftStock.length > 0) {
+        params.set("stock", draftStock.join(","));
       } else {
         params.delete("stock");
       }
@@ -625,13 +666,10 @@ export function PublicItemGrid(props: PublicItemGridProps) {
         params.delete("collectionYearMax");
       }
 
-      if (
-        draftCollectionSeasons.length === 0 ||
-        draftCollectionSeasons.length === 2
-      ) {
-        params.delete("collectionSeasons");
-      } else {
+      if (draftCollectionSeasons.length > 0) {
         params.set("collectionSeasons", draftCollectionSeasons.join(","));
+      } else {
+        params.delete("collectionSeasons");
       }
 
       const draftPriceMin = Math.min(draftPriceRange[0], draftPriceRange[1]);
@@ -671,15 +709,29 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     setIsFilterDrawerOpen(false);
   }, [applyDraftFilters]);
 
+  // デスクトップのサイドバー（ドラフト即時反映）では、フィルタ操作が
+  // FILTER_APPLY_DEBOUNCE_MS の間止まったら自動でドラフトを適用する。
+  // applyDraftFilters はドラフト値に依存する useCallback なので、操作のたびに
+  // タイマーがリセットされ、最後の操作からの待機後に1回だけ適用される。
+  // モバイル・タブレットは Drawer を開いて操作するため、開いている間は
+  // 時間経過で適用せず、Drawer を閉じたとき（closeDrawerAndApplyFilters）に適用する。
+  useEffect(() => {
+    if (variant !== "catalog" || isFilterDrawerOpen) {
+      return;
+    }
+    const timer = setTimeout(applyDraftFilters, FILTER_APPLY_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [variant, isFilterDrawerOpen, applyDraftFilters]);
+
   const resetDraftFilters = useCallback(() => {
     setDraftCollection("");
     setDraftCategories([]);
     setDraftSizes([]);
     setDraftColors([]);
-    setDraftStock("all");
+    setDraftStock([]);
     setDraftCollectionYearMin("");
     setDraftCollectionYearMax("");
-    setDraftCollectionSeasons(["AW", "SS"]);
+    setDraftCollectionSeasons([]);
     setDraftPriceRange([priceBounds.min, priceBounds.max]);
   }, [priceBounds.max, priceBounds.min]);
 
@@ -689,8 +741,12 @@ export function PublicItemGrid(props: PublicItemGridProps) {
       "translateY(calc(var(--site-header-offset) - var(--site-header-height)))",
   } as const;
 
+  // デスクトップのフィルターは常にヘッダー高さ分だけ下げた位置に固定する。
+  // --site-header-offset（ヘッダー自動非表示でスクロール中に 0 へ変化）に追従させると
+  // 右側のITEMをスクロールしたときにフィルターが上下に動いてしまうため、
+  // 定数の --site-header-height に固定して動かさない。
   const desktopFilterStickyStyle = {
-    top: "var(--site-header-offset)",
+    top: "var(--site-header-height)",
   } as const;
 
   const renderSortSelect = (className: string) => (
@@ -707,9 +763,9 @@ export function PublicItemGrid(props: PublicItemGridProps) {
             params.set("sort", nextSort);
           });
         }}
-        size="xs"
+        size="3xs"
         bordered={false}
-        className="tracking-[0.1em]"
+        className="tracking-[0.06em]"
       />
     </div>
   );
@@ -785,6 +841,10 @@ export function PublicItemGrid(props: PublicItemGridProps) {
         const hideOnMobile =
           shouldLimitOnMobile && index >= resolvedMobileLimit!;
         const itemNameClassName = "font-brand tracking-tight";
+        // I-4: 在庫切れ / カラースウォッチ / コレクション(SS/AW) を控えめに提示（catalogのみ）
+        const showMeta = variant === "catalog";
+        const soldOut = showMeta && !isItemInStock(item);
+        const swatches = showMeta ? extractColorSwatches(item) : [];
 
         return (
           <Link
@@ -794,7 +854,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
             className={`${hideOnMobile ? "hidden lg:block" : ""} mb-[8px] sm:mb-[10px] md:mb-[12px]`}
           >
             <div className="group cursor-pointer" data-testid="item-card">
-              <div className="aspect-[3/4] bg-[#f5f5f5] mb-[2px] sm:mb-[6px] md:mb-[8px] overflow-hidden">
+              <div className="relative aspect-[3/4] bg-[#f5f5f5] mb-[2px] sm:mb-[6px] md:mb-[8px] overflow-hidden">
                 {item.image_url ? (
                   <Image
                     src={item.image_url}
@@ -806,30 +866,64 @@ export function PublicItemGrid(props: PublicItemGridProps) {
                     data-testid="item-image"
                   />
                 ) : (
-                  <div className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500">
-                    No Image
+                  // I-8: 未スタイルの「No Image」を中央寄せのプレースホルダに
+                  <div className="flex h-full w-full items-center justify-center text-[#999]">
+                    <span className="tracking-widest" style={{ fontSize: "var(--lk-size-3xs)" }}>
+                      NO IMAGE
+                    </span>
                   </div>
                 )}
+                {soldOut ? (
+                  <span
+                    className="absolute top-0 left-0 bg-black text-white px-[8px] py-[3px] tracking-widest"
+                    style={{ fontSize: "var(--lk-size-4xs)" }}
+                  >
+                    SOLD OUT
+                  </span>
+                ) : null}
               </div>
               <div>
-                <h3
-                  className={itemNameClassName}
-                  data-testid="item-name"
-                  style={{ fontSize: "var(--lk-size-2xs)" }}
-                >
-                  {item.name}
-                </h3>
+                <div className="flex items-start justify-between gap-2">
+                  <h3
+                    className={itemNameClassName}
+                    data-testid="item-name"
+                    style={{ fontSize: "var(--lk-size-2xs)" }}
+                  >
+                    {item.name}
+                  </h3>
+                  {showMeta && item.season ? (
+                    <span
+                      className="flex-shrink-0 font-brand tracking-widest text-[#999]"
+                      style={{ fontSize: "var(--lk-size-4xs)" }}
+                    >
+                      {item.season}
+                    </span>
+                  ) : null}
+                </div>
                 <p
                   data-testid="item-price"
-                  style={{
-                    fontSize:
-                      variant === "home"
-                        ? "var(--lk-size-3xs)"
-                        : "var(--lk-size-3xs)",
-                  }}
+                  className="text-black font-medium"
+                  style={{ fontSize: "var(--lk-size-2xs)" }}
                 >
                   ¥{item.price.toLocaleString("ja-JP")}
                 </p>
+                {swatches.length > 0 ? (
+                  <div className="mt-[4px] flex items-center gap-[4px]" aria-label={`カラー ${swatches.length}色`}>
+                    {swatches.slice(0, 4).map((swatch) => (
+                      <span
+                        key={swatch.name}
+                        title={swatch.name}
+                        className="inline-block h-[10px] w-[10px] rounded-full border border-black/15"
+                        style={{ backgroundColor: swatch.hex ?? "transparent" }}
+                      />
+                    ))}
+                    {swatches.length > 4 ? (
+                      <span className="text-[#999]" style={{ fontSize: "var(--lk-size-4xs)" }}>
+                        +{swatches.length - 4}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             </div>
           </Link>
@@ -851,8 +945,8 @@ export function PublicItemGrid(props: PublicItemGridProps) {
         data-filter-button={interactive ? "floating" : "placeholder"}
         onClick={interactive ? () => setIsFilterDrawerOpen(true) : undefined}
         variant="text"
-        size="xs"
-        className="tracking-[0.1em]"
+        size="3xs"
+        className="tracking-[0.06em]"
         style={{ marginLeft: "calc(-1 * var(--pad-x) - 1px)" }}
         aria-haspopup={interactive ? "dialog" : undefined}
         aria-expanded={interactive ? isFilterDrawerOpen : undefined}
@@ -929,14 +1023,14 @@ export function PublicItemGrid(props: PublicItemGridProps) {
 
     const categoryValues =
       draftCategories.length === 0 ? ["ALL"] : draftCategories;
-    const stockValues = draftStock === "all" ? ["ALL"] : [draftStock];
+    const stockValues = draftStock.length === 0 ? ["ALL"] : draftStock;
     const sizeValues = draftSizes.length === 0 ? ["ALL"] : draftSizes;
     const seasonValues =
-      draftCollectionSeasons.length === 2 ? ["ALL"] : draftCollectionSeasons;
+      draftCollectionSeasons.length === 0 ? ["ALL"] : draftCollectionSeasons;
     const colorValues = draftColors.length === 0 ? ["ALL"] : draftColors;
 
     return (
-      <div className="space-y-5">
+      <div className={cn("space-y-5", FILTER_SECTIONS_SPACING_CLASS)}>
         <Accordion
           items={[
             {
@@ -1030,13 +1124,14 @@ export function PublicItemGrid(props: PublicItemGridProps) {
                     onChange={(values) => {
                       const nextValues = normalizeAllSelection(
                         values,
-                        draftStock === "all" ? [] : [draftStock],
+                        draftStock,
                       );
-                      const nextValue = nextValues.find(
-                        (value): value is "in" | "out" =>
-                          value === "in" || value === "out",
+                      setDraftStock(
+                        nextValues.filter(
+                          (value): value is StockValue =>
+                            value === "in" || value === "out",
+                        ),
                       );
-                      setDraftStock(nextValue ?? "all");
                     }}
                     variant="panel"
                     size={menuSize}
@@ -1092,16 +1187,13 @@ export function PublicItemGrid(props: PublicItemGridProps) {
                     onChange={(values) => {
                       const nextValues = normalizeAllSelection(
                         values,
-                        draftCollectionSeasons.length === 2
-                          ? []
-                          : draftCollectionSeasons,
-                      );
-                      const nextSeasons = nextValues.filter(
-                        (value): value is CollectionSeason =>
-                          value === "AW" || value === "SS",
+                        draftCollectionSeasons,
                       );
                       setDraftCollectionSeasons(
-                        nextSeasons.length === 0 ? ["AW", "SS"] : nextSeasons,
+                        nextValues.filter(
+                          (value): value is CollectionSeason =>
+                            value === "AW" || value === "SS",
+                        ),
                       );
                     }}
                     variant="panel"
@@ -1143,26 +1235,119 @@ export function PublicItemGrid(props: PublicItemGridProps) {
   };
 
   const renderFilterActions = (size: ComponentSize = "xs") => (
-    <>
-      <Button
-        type="button"
-        variant="primary"
-        size={size}
-        onClick={applyDraftFilters}
-        className="w-full tracking-[0.18em]"
-      >
-        APPLY
-      </Button>
-      <Button
-        type="button"
-        variant="secondary"
-        size={size}
-        onClick={resetDraftFilters}
-        className="w-full tracking-[0.18em]"
-      >
-        RESET
-      </Button>
-    </>
+    <Button
+      type="button"
+      variant="secondary"
+      size={size}
+      onClick={resetDraftFilters}
+      className="w-full tracking-[0.18em]"
+    >
+      RESET
+    </Button>
+  );
+
+  // I-2: 全フィルタ解除（sort は維持）
+  // searchParams（フック値）ベースでURL更新。latestQueryRef を参照しないため
+  // チップ生成（render中）の closure が ref を捕捉しない（react-hooks/refs 回避）。
+  // latestQueryRef は下の useEffect で searchParams から同期する。
+  const pushQuery = (mutate: (params: URLSearchParams) => void) => {
+    const params = new URLSearchParams(searchParams.toString());
+    mutate(params);
+    const query = params.toString();
+    router.push(query.length > 0 ? `${pathname}?${query}` : pathname, {
+      scroll: false,
+    });
+  };
+
+  const clearAllFilters = () =>
+    pushQuery((params) => {
+      [
+        "category",
+        "collection",
+        "size",
+        "color",
+        "stock",
+        "collectionSeasons",
+        "collectionYearMin",
+        "collectionYearMax",
+        "priceMin",
+        "priceMax",
+      ].forEach((key) => params.delete(key));
+    });
+
+  const removeListValue = (key: string, value: string) =>
+    pushQuery((params) => {
+      const current = (params.get(key) ?? "")
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+      const next = current.filter(
+        (entry) => entry.toUpperCase() !== value.toUpperCase(),
+      );
+      if (next.length > 0) {
+        params.set(key, next.join(","));
+      } else {
+        params.delete(key);
+      }
+    });
+
+  // I-5: 適用中フィルタのチップ（×で個別解除）
+  const appliedChips: { key: string; label: string; onRemove: () => void }[] = [];
+  selectedCategories.forEach((c) =>
+    appliedChips.push({ key: `cat-${c}`, label: c, onRemove: () => removeListValue("category", c) }),
+  );
+  selectedColors.forEach((c) =>
+    appliedChips.push({ key: `col-${c}`, label: c, onRemove: () => removeListValue("color", c) }),
+  );
+  selectedSizes.forEach((s) =>
+    appliedChips.push({ key: `size-${s}`, label: s, onRemove: () => removeListValue("size", s) }),
+  );
+  if (selectedCollection) {
+    appliedChips.push({
+      key: "collection",
+      label: selectedCollection,
+      onRemove: () => pushQuery((params) => params.delete("collection")),
+    });
+  }
+  selectedCollectionSeasons.forEach((season) =>
+    appliedChips.push({
+      key: `season-${season}`,
+      label: season,
+      onRemove: () => removeListValue("collectionSeasons", season),
+    }),
+  );
+  selectedStock.forEach((stock) =>
+    appliedChips.push({
+      key: `stock-${stock}`,
+      label: stock === "in" ? "在庫あり" : "在庫切れ",
+      onRemove: () => removeListValue("stock", stock),
+    }),
+  );
+  if (selectedPriceMin !== "" || selectedPriceMax !== "") {
+    const minLabel = (selectedPriceMin === "" ? priceBounds.min : selectedPriceMin).toLocaleString("ja-JP");
+    const maxLabel = (selectedPriceMax === "" ? priceBounds.max : selectedPriceMax).toLocaleString("ja-JP");
+    appliedChips.push({
+      key: "price",
+      label: `¥${minLabel}〜¥${maxLabel}`,
+      onRemove: () =>
+        pushQuery((params) => {
+          params.delete("priceMin");
+          params.delete("priceMax");
+        }),
+    });
+  }
+
+  // I-6: 追加読み込みのスケルトン（NEWS と統一）
+  const renderSkeletonCards = (count = 4) => (
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-[8px] sm:gap-[10px] md:gap-[13px] lg:gap-[21px] mt-[8px]">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="animate-pulse">
+          <div className="aspect-[3/4] bg-black/8 mb-[8px]" />
+          <div className="h-[10px] w-2/3 bg-black/8 mb-[6px]" />
+          <div className="h-[10px] w-1/3 bg-black/5" />
+        </div>
+      ))}
+    </div>
   );
 
   if (variant === "home") {
@@ -1210,7 +1395,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     <>
       <div className="flex w-full">
         <aside
-          className="hidden lg:flex flex-col w-[199px] xl:w-[233px] flex-shrink-0 sticky h-[calc(100vh-var(--site-header-offset))] overflow-hidden transition-[top,height] duration-300 ease-in-out"
+          className="hidden lg:flex flex-col w-[233px] xl:w-[288px] flex-shrink-0 sticky h-[calc(100vh-var(--site-header-height))] overflow-hidden"
           style={desktopFilterStickyStyle}
         >
           <div className={FILTER_SIDEBAR_SCROLL_CLASS}>
@@ -1221,7 +1406,10 @@ export function PublicItemGrid(props: PublicItemGridProps) {
           </div>
         </aside>
 
-        <div className="flex-1 min-w-0 w-full max-w-full px-0 md:px-[21px] lg:px-[21px] xl:px-[34px] 2xl:px-[55px] py-0 xl:py-[21px]">
+        <div
+          data-testid="item-content-column"
+          className="flex-1 min-w-0 w-full max-w-full px-0 md:px-[21px] lg:pl-[34px] lg:pr-[21px] xl:pl-[55px] xl:pr-[34px] 2xl:pl-[89px] 2xl:pr-[55px] py-0 xl:py-[21px]"
+        >
           <div className="sm:-mt-1 md:-mt-2 lg:hidden">
             {renderMobileFilterBar(false)}
           </div>
@@ -1243,11 +1431,16 @@ export function PublicItemGrid(props: PublicItemGridProps) {
           {displayItems.length === 0 && (
             <div className="text-center py-12">
               <p
-                className="tracking-widest text-[#474747]"
+                className="tracking-widest text-[#474747] mb-4"
                 style={{ fontSize: "var(--lk-size-xs)" }}
               >
                 商品が見つかりません
               </p>
+              {appliedChips.length > 0 ? (
+                <Button type="button" variant="secondary" size="xs" onClick={clearAllFilters}>
+                  条件をリセット
+                </Button>
+              ) : null}
             </div>
           )}
 
@@ -1256,11 +1449,8 @@ export function PublicItemGrid(props: PublicItemGridProps) {
             data-testid="item-infinite-sentinel"
             className="h-8"
           />
-          {isFetchingMore && (
-            <div className="text-center text-sm text-[#474747] pb-4">
-              読み込み中...
-            </div>
-          )}
+          {/* I-6: 追加読み込みはスケルトンに統一 */}
+          {isFetchingMore && renderSkeletonCards()}
         </div>
       </div>
 

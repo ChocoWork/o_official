@@ -257,21 +257,26 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
     syncCategoryQuery(nextSelection);
   };
 
+  // ITEM 一覧の Accordion 内 MultiSelect の子要素（選択肢）と同一の見た目・間隔に揃える。
+  // .filter-sections（globals.css）で選択肢同士の間隔（option-list gap 0.5em）を ITEM と
+  // 共通化し、MultiSelect 自体のプロパティ（panel / fill / square / space-y-2）も一致させる。
   const renderCategoryFilter = (
     size: ComponentSize = "3xs",
     expandHitArea = false,
   ) => (
-    <MultiSelect
-      variant="panel"
-      options={NEWS_CATEGORIES.map((c) => ({ value: c, label: c }))}
-      values={selectedCategories}
-      onChange={applyCategorySelection}
-      shape="square"
-      checkStyle="fill"
-      size={size}
-      className="tracking-widest"
-      expandLabelHitArea={expandHitArea}
-    />
+    <div className="filter-sections">
+      <MultiSelect
+        variant="panel"
+        options={NEWS_CATEGORIES.map((c) => ({ value: c, label: c }))}
+        values={selectedCategories}
+        onChange={applyCategorySelection}
+        shape="square"
+        checkStyle="fill"
+        size={size}
+        className="space-y-2"
+        expandLabelHitArea={expandHitArea}
+      />
+    </div>
   );
 
   const mobileFilterStickyStyle = {
@@ -297,8 +302,8 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
         data-filter-button={interactive ? "floating" : "placeholder"}
         onClick={interactive ? () => setIsFilterDrawerOpen(true) : undefined}
         variant="text"
-        size="xs"
-        className="tracking-[0.1em]"
+        size="3xs"
+        className="tracking-[0.06em]"
         style={{ marginLeft: "calc(-1 * var(--pad-x) - 1px)" }}
         aria-haspopup={interactive ? "dialog" : undefined}
         aria-expanded={interactive ? isFilterDrawerOpen : undefined}
@@ -504,7 +509,10 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
             </div>
           </div>
         </aside>
-        <div className="flex-1 min-w-0 w-full max-w-full px-0 md:px-[21px] lg:px-[16px] xl:px-[21px] 2xl:px-[34px] py-0 xl:pb-[34px]">
+        <div
+          data-testid="news-content-column"
+          className="flex-1 min-w-0 w-full max-w-full px-0 md:px-[21px] lg:pl-[34px] lg:pr-[16px] xl:pl-[55px] xl:pr-[21px] 2xl:pl-[89px] 2xl:pr-[34px] py-0 xl:pb-[34px]"
+        >
           <div className="sm:-mt-1 md:-mt-2 lg:hidden">
             {renderMobileFilterBar(false)}
           </div>

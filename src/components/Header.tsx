@@ -98,6 +98,12 @@ const Header = () => {
     return () => window.removeEventListener("scroll", syncHeaderVisibility);
   }, []);
 
+  // Sync header visibility to the root element so CSS-driven elements
+  // (e.g. the catalog FILTER bar via --site-header-offset) follow the header.
+  React.useLayoutEffect(() => {
+    document.documentElement.dataset.headerVisible = isHidden ? "false" : "true";
+  }, [isHidden]);
+
   const isActiveMenuItem = (href: string) => {
     if (href === "/") return pathname === "/";
     return pathname === href || pathname.startsWith(`${href}/`);
