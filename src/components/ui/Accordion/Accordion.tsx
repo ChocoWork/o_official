@@ -15,6 +15,7 @@ export function Accordion({
   size = 'md',
   highlightOnHover = true,
   showUnderline = true,
+  showTopline = false,
   openMode = 'single',
   defaultOpenKeys = [],
 }: AccordionProps) {
@@ -47,6 +48,7 @@ export function Accordion({
       data-ui-size={size}
       data-ui-accordion-hover-highlight={highlightOnHover ? 'true' : 'false'}
       data-ui-accordion-show-underline={showUnderline ? 'true' : 'false'}
+      data-ui-accordion-show-topline={showTopline ? 'true' : 'false'}
       className={className}
     >
       {items.map((item) => {

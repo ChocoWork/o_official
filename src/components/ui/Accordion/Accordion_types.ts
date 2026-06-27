@@ -24,6 +24,8 @@ export interface AccordionProps {
   highlightOnHover?: boolean;
   /** controls whether trigger rows render an underline */
   showUnderline?: boolean;
+  /** controls whether each item renders a top border line instead of bottom underline */
+  showTopline?: boolean;
   /** #sym:size: single keeps current behavior, multiple allows opening multiple items */
   openMode?: 'single' | 'multiple';
 }
