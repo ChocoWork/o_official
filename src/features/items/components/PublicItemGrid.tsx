@@ -496,27 +496,41 @@ export function PublicItemGrid(props: PublicItemGridProps) {
   // 価格フィルタ適用後はサーバーが範囲内の商品だけを返すため、resolvedItems から
   // 都度算出すると上限が適用値まで縮み、最大価格まで再スライドできなくなる。
   // これを防ぐため、既知のレンジを広げる方向にのみ更新する。
-  const priceBoundsRef = useRef<{ min: number; max: number } | null>(null);
-  const priceBounds = useMemo(() => {
+  // 現在の resolvedItems から算出した価格レンジ（純粋・ref 不使用）。商品が無ければ null。
+  const itemPriceBounds = useMemo(() => {
     const prices = resolvedItems
       .map((item) => item.price)
       .filter((price) => Number.isFinite(price));
-
     if (prices.length === 0) {
-      return priceBoundsRef.current ?? { min: 0, max: 100000 };
+      return null;
     }
-
-    const computed = { min: Math.min(...prices), max: Math.max(...prices) };
-    const prev = priceBoundsRef.current;
-    const next = prev
-      ? {
-          min: Math.min(prev.min, computed.min),
-          max: Math.max(prev.max, computed.max),
-        }
-      : computed;
-    priceBoundsRef.current = next;
-    return next;
+    return { min: Math.min(...prices), max: Math.max(...prices) };
   }, [resolvedItems]);
+
+  // これまでに見た最大レンジを保持（広げる方向にのみ更新）。
+  // 価格フィルタ適用後はサーバーが範囲内の商品だけ返すため、resolvedItems 由来の
+  // 値だけだと上限が縮み、最大価格まで再スライドできなくなる。それを防ぐ。
+  const [accumulatedPriceBounds, setAccumulatedPriceBounds] = useState<{
+    min: number;
+    max: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!itemPriceBounds) {
+      return;
+    }
+    setAccumulatedPriceBounds((prev) =>
+      prev
+        ? {
+            min: Math.min(prev.min, itemPriceBounds.min),
+            max: Math.max(prev.max, itemPriceBounds.max),
+          }
+        : itemPriceBounds,
+    );
+  }, [itemPriceBounds]);
+
+  const priceBounds = accumulatedPriceBounds ??
+    itemPriceBounds ?? { min: 0, max: 100000 };
 
   useEffect(() => {
     const min = selectedPriceMin === "" ? priceBounds.min : selectedPriceMin;
