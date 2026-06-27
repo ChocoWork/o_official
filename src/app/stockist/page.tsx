@@ -16,9 +16,17 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default function StockistPage() {
+export default async function StockistPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  // フィルター（region/pref）クエリを読む PublicStockistCatalog が useSearchParams を
+  // 使うため、searchParams を await して動的レンダリングへ切り替える。
+  await searchParams;
+
   return (
-    <div className="element-width w-full">
+    <div className="max-w-[1680px] mx-auto w-full">
       <PublicStockistGrid variant="catalog"/>
     </div>
   );
