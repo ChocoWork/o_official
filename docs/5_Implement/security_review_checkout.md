@@ -64,3 +64,28 @@
 2. metadata から session_id 除去（Medium）
 3. IP 信頼境界と redirect origin 固定化（Medium）
 4. webhook エラーメッセージ最小化（Low）
+
+---
+
+## セキュリティ再レビュー（2026-06-27 / dynamic workflow）
+
+- 手法: security-check skill + `scripts/page-audit.sh src/app/checkout`
+- スコープ: UI到達 21 ファイル / 関連Route 13 件（CartContext/LoginModal 経由で auth・cart 系も到達）
+- 既存指摘は保持。差分・未記載論点のみ追記。
+
+### 追加指摘
+
+| ファイル名 | よくない点 | 修正提案 | ステータス | 調査結果 | 優先度 |
+|---|---|---|---|---|---|
+| [src/app/api/checkout/create-session/route.ts](../../src/app/api/checkout/create-session/route.ts) | 金額はサーバ再計算（`calculateCheckoutAmountsFromCartRows`）し、`displayedAmounts` 不一致は 409 で拒否。Stripe line_items は DB 価格を使用し、クライアント金額改ざんを遮断 | 現行維持 | Fixed | L226-260。価格はサーバ確定 | Info |
+| [src/app/api/checkout/create-session/route.ts](../../src/app/api/checkout/create-session/route.ts) | 認証ユーザは `requireCsrfOrDeny` で CSRF 検証、ゲストは `proxy.ts` 同一オリジン + `SameSite=Lax`。IP+セッション二重レート制限、在庫検証、audit 完備 | 現行維持。CSRF トークンのローテーションも適切 | Fixed | L112-151, L210-220。`proxy.ts` L9 に `/api/checkout/create-session` 含む | Info |
+| [src/app/api/checkout/create-session/route.ts](../../src/app/api/checkout/create-session/route.ts) | service role クライアントで `carts` を `session_id` 一致でのみ参照（RLS バイパスのため認可は session_id 突合に依存） | `generateSessionId` の不可推測性を維持。可能なら checkout 系のみ user バインド/署名付き突合を追加 | Partially Fixed | L59-62 service role、L168-171 session_id スコープ | Low |
+
+### 機械監査の偽陽性整理
+
+- create-session/update-shipping/cart/profile 等「auth check なし」(HIGH)=大半が偽陽性。checkout はゲスト session_id 設計、profile 系は `resolveRequestUser` で認証（`page-audit.sh` の検出パターン更新済）。
+
+### 重点結論
+
+1. 決済セッション生成は価格整合（サーバ再計算）・CSRF・レート制限・在庫検証で堅牢。新規 High/Critical なし。
+2. session_id 突合のみが認可境界である点（Low）に留意し、不可推測性の維持が前提。

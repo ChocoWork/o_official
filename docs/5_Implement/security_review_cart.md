@@ -49,3 +49,29 @@
 2. 在庫実数の非返却化（Medium）
 3. GET /api/cart の no-store 明示（Medium）
 4. 残り Medium/Low を順次解消
+
+---
+
+## セキュリティ再レビュー（2026-06-27 / dynamic workflow）
+
+- 手法: security-check skill + `scripts/page-audit.sh src/app/cart`
+- スコープ: UI到達 14 ファイル / 関連Route 2 件（`/api/cart`, `/api/wishlist`）
+- 既存指摘は保持。差分・未記載論点のみ追記。
+
+### 追加指摘
+
+| ファイル名 | よくない点 | 修正提案 | ステータス | 調査結果 | 優先度 |
+|---|---|---|---|---|---|
+| [src/app/api/cart/route.ts](../../src/app/api/cart/route.ts), [src/app/api/cart/[id]/route.ts](../../src/app/api/cart/[id]/route.ts) | 状態変更 POST/PUT/DELETE の CSRF 防御は `proxy.ts` の同一オリジン判定に一元依存。route 層は `x-csrf-token` を受領しても検証しない | route 層でも同一オリジン/CSRF を検証し多層化。`proxy.ts` の `STATE_CHANGING_PATH_PREFIXES` 変更時に保護が失われない設計とする | Open | `proxy.ts` L9 に `/api/cart` を含むため現状保護。route 単体では未検証 | Low |
+| [src/app/api/cart/route.ts](../../src/app/api/cart/route.ts) | 在庫チェック→書込が非原子的（TOCTOU）。checkout 側で再検証されるため実害限定 | 条件付き update / RPC で原子化 | Open | L224-313 check-then-write | Low |
+| [src/app/api/cart/route.ts](../../src/app/api/cart/route.ts) | `addCartItemSchema` による zod 検証、IP+セッション二重レート制限、公開商品のみ参照、audit ログは良好。`cartSupabase` は service role だが `session_id` で行スコープ | session_id の不可推測性（`generateSessionId`）と Cookie `SameSite=Lax`/HttpOnly を維持 | Fixed | L159-197 検証・レート制限。[proxy.ts](../../src/proxy.ts) で session 自動採番 | Info |
+
+### 機械監査の偽陽性整理
+
+- cart/wishlist「auth check なし」(HIGH)=偽陽性。ゲストカートは設計上ログイン不要、`session_id` が認可境界。
+- 「same-origin/CSRF なし」(HIGH)→実体は Low。`proxy.ts` 層で同一オリジン強制済み（route 単体の DiD 欠如のみ）。
+
+### 重点結論
+
+1. カート操作は zod・レート制限・audit・proxy 同一オリジンで実効的に保護。
+2. 改善は route 層 CSRF の多層化（Low）と在庫 TOCTOU の原子化（Low）。

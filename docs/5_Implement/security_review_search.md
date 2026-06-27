@@ -95,3 +95,22 @@
 1. 検索ページの `Referrer-Policy` 制御導入（Medium）
 2. 検索系 API/Service の raw error ログ最小化（Medium）
 3. サジェスト呼び出しにデバウンス＋最小入力長を導入（Low）
+---
+
+## セキュリティ再レビュー（2026-06-27 / dynamic workflow）
+
+- 手法: security-check skill + `scripts/page-audit.sh src/app/search`
+- スコープ: UI到達 10 ファイル / 関連Route 2 件（`/api/search`, `/api/suggest`）
+- 既存指摘は保持。差分・未記載論点のみ追記。
+
+### 追加指摘
+
+| ファイル名 | よくない点 | 修正提案 | ステータス | 調査結果 | 優先度 |
+|---|---|---|---|---|---|
+| [src/app/api/suggest/route.ts](../../src/app/api/suggest/route.ts) | コメントは「PostgREST フィルタ構文文字 `,().` を境界で拒否」と記すが、実際の `CONTROL_CHAR_RE` は制御文字（0x00-0x1F,0x7F）のみ拒否で `,().` は通過。実防御は RPC のバインド変数化に依存しており、コメントと実装が乖離（多層防御の誤認リスク） | コメントを実装に一致させる。あるいは記載どおり境界で PostgREST メタ文字も弾く defense-in-depth を実装 | Open | L5-19 のコメントと正規表現が不一致。`executeSearch`/`getSearchSuggestions` は `supabase.rpc('search_*',{search_query})` でパラメータ化済（injection 実害なし） | Low |
+| [src/features/search/services/search.service.ts](../../src/features/search/services/search.service.ts) | 検索は RPC バインド変数で実行し、フィルタ文字列連結を排除。`q` は zod で max100・制御文字拒否。レート制限（preview/public 別枠）も付与 | RPC 内部の ILIKE 特殊文字エスケープが維持されていることを DB 関数側で確認 | Fixed | L176-180, L287-291。コメント L119-121 のとおりエスケープは RPC 責務 | Info |
+
+### 重点結論
+
+1. 検索/サジェストは RPC パラメータ化で filter-string injection を遮断済み。実 injection なし。
+2. suggest のサニタイズコメントと実装の乖離（Low）を是正し、誤認防止と DiD を明確化。

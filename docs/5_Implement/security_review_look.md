@@ -107,3 +107,23 @@
 3. `src/app/look/page.tsx` の `revalidate` 方針を署名 TTL と整合（Medium）
 4. `src/lib/storage/look-images.ts` のパス正規化/拒否条件を強化（Low）
 5. 将来 `src/app/api/looks/route.ts` を導入する場合は検証・制限・キャッシュ制御を集約（Low）
+---
+
+## セキュリティ再レビュー（2026-06-27 / dynamic workflow）
+
+- 手法: security-check skill + `scripts/page-audit.sh src/app/look`
+- スコープ: UI到達 16 ファイル / 関連Route 0 件（UI入力からのAPI呼び出しなし＝サーバ側で公開データを取得し表示）
+- 既存指摘は保持。差分・未記載論点のみ追記。
+
+### 確認結果（追加指摘なし）
+
+| 観点 | 結果 |
+|---|---|
+| 入力経路 | 画面からの送信入力・fetch なし。一覧フィルタはサーバ取得済みデータに対するクライアント側絞り込み |
+| XSS | `dangerouslySetInnerHTML` は src 全体で不使用。本文/テーマ等は React 自動エスケープで描画 |
+| セキュアヘッダ | CSP(nonce)/HSTS/X-Frame-Options 等は [proxy.ts](../../src/proxy.ts) で全レスポンスに付与 |
+| 動的セグメント | [id] はサーバ側 Supabase クエリで parameterized 突合（injection 面なし）。公開済みのみ返却 |
+
+### 重点結論
+
+このページは入力/状態変更を持たない公開コンテンツ表示で、今回スコープ（UI入力対策・関連API処理）で新規の脆弱性は未確認。

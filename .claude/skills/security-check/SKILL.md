@@ -135,11 +135,28 @@ description: OWASP Top 10 (2021) / OWASP ASVS v4.0.3 / OWASP Secure Headers Proj
 
 すべての監査で以下を**必ず**実行する：
 
+### 1. `audit.sh` — プロジェクト/ファイル単位の OWASP 机上監査
+
 ```bash
-bash .claude/skills/security-check/scripts/audit.sh [対象パス]
+bash .claude/skills/security-check/scripts/audit.sh [対象パス...]
+bash .claude/skills/security-check/scripts/audit.sh --files-only <files...>   # プロジェクト全体検査(A04-A06/静的解析)を省き高速・低ノイズ
+bash .claude/skills/security-check/scripts/audit.sh --report out.md <paths>    # Markdown 出力
 ```
 
-引数なしの場合はプロジェクト全体（`app/`, `components/`, `lib/`, `pages/`, `next.config.*`, `middleware.*`）を対象とする。
+引数なしの場合はプロジェクト全体（`src/`, `app/`, `components/`, `lib/`, `pages/`, `next.config.*`, `middleware.*` / `proxy.ts`）を対象とする。Next.js 16 の `proxy.ts`（旧 `middleware.ts`）のセキュアヘッダ/CSP nonce も認識する。
+
+### 2. `page-audit.sh` — ページ単位のセキュリティ監査（再利用前提）
+
+UI ページを起点に `@/`・相対 import を辿って **到達クロージャ** を解決し、`/api/...` 参照から **関連 Route Handler**（動的 `[id]` も自動解決）を特定。`audit.sh --files-only` を当該集合に限定実行し、加えて入力処理フォーカス検査（zod 検証の有無 / 状態変更メソッドの same-origin・CSRF・認証の有無 / UI への searchParams 反映）を行い Markdown を出力する。
+
+```bash
+bash .claude/skills/security-check/scripts/page-audit.sh <page-path> --name <名前> [--out report.md]
+bash .claude/skills/security-check/scripts/page-audit.sh src/app/contact --name contact
+bash .claude/skills/security-check/scripts/page-audit.sh "src/app/item/[id]" --scope-only   # 到達ファイルのみ表示
+```
+
+- 出力先の慣例: `docs/5_Implement/security_review_<ページ名>.md`
+- 「auth/CSRF なし」検出はゲストセッション設計の公開エンドポイントや `resolveRequestUser` 認証 route で**偽陽性**になり得る。必ず真偽を分類して報告する。
 
 ## 出力フォーマット（監査レポート）
 

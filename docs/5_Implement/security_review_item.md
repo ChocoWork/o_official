@@ -99,3 +99,22 @@
 2. 公開一覧サービスを `createPublicClient()` 化（Low）
 3. 署名 URL 失敗時の `rawUrl` 返却を停止（Low）
 4. バリデーションエラー応答を最小化（Low）
+---
+
+## セキュリティ再レビュー（2026-06-27 / dynamic workflow）
+
+- 手法: security-check skill + `scripts/page-audit.sh src/app/item`（UI到達クロージャ→関連Route自動解決→OWASP机上 + 入力フォーカス検査）
+- スコープ: UI到達 24 ファイル / 関連Route 1 件（`/api/items`）
+- 既存指摘は保持。差分・未記載論点のみ追記。
+
+### 追加指摘
+
+| ファイル名 | よくない点 | 修正提案 | ステータス | 調査結果 | 優先度 |
+|---|---|---|---|---|---|
+| [src/app/api/items/route.ts](../../src/app/api/items/route.ts) | モジュールスコープの `itemsListResponseCache`(Map) に上限・追い出しがなく、キーが任意文字列の `size`/`color`/`collection`（最大長のみ検証）を含む。多様なフィルタ組合せを大量送出するとキー爆発でメモリ枯渇（DoS）し得る | LRU化（件数上限+TTL追い出し）に変更。キーは検証済み列挙値のみで構成し、自由文字列フィルタはキー対象から除外、または上限件数で打ち切る | Open | L13 `new Map()`、L226 `set` のみで `delete`/上限なし。TTL 30s 経過分も明示削除されない | Medium |
+| [src/app/api/items/route.ts](../../src/app/api/items/route.ts) | category の enum 検証・`SAFE_STRING_REGEX`・price/page の zod coerce・`items:list` レート制限・公開列のみ返却は良好 | 現行維持 | Fixed | L82-130 で zod 一括検証、不正は 400 | Info |
+
+### 重点結論
+
+1. 唯一の新規 Medium は応答キャッシュの無制限増大（A04/CWE-770）。LRU+TTL 追い出しで解消。
+2. フィルタ入力検証・レート制限・データ層の parameterized クエリ（[src/lib/items/public.ts](../../src/lib/items/public.ts)）は良好で injection 面なし。

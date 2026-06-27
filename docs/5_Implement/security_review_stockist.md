@@ -95,3 +95,23 @@
 1. 管理 API の `Cache-Control: private, no-store` 明示（Medium）
 2. 監査ログ用 IP の正規化（信頼済み境界ベース）と非信頼値分離（Low）
 3. バリデーションエラー応答の縮約（Low）
+---
+
+## セキュリティ再レビュー（2026-06-27 / dynamic workflow）
+
+- 手法: security-check skill + `scripts/page-audit.sh src/app/stockist`
+- スコープ: UI到達 17 ファイル / 関連Route 0 件（UI入力からのAPI呼び出しなし＝サーバ側で公開データを取得し表示）
+- 既存指摘は保持。差分・未記載論点のみ追記。
+
+### 確認結果（追加指摘なし）
+
+| 観点 | 結果 |
+|---|---|
+| 入力経路 | 画面からの送信入力・fetch なし。地域・都道府県フィルタはサーバ取得済み一覧へのクライアント側絞り込み |
+| XSS | `dangerouslySetInnerHTML` は src 全体で不使用。本文/テーマ等は React 自動エスケープで描画 |
+| セキュアヘッダ | CSP(nonce)/HSTS/X-Frame-Options 等は [proxy.ts](../../src/proxy.ts) で全レスポンスに付与 |
+| 動的セグメント | [id] はサーバ側 Supabase クエリで parameterized 突合（injection 面なし）。公開済みのみ返却 |
+
+### 重点結論
+
+このページは入力/状態変更を持たない公開コンテンツ表示で、今回スコープ（UI入力対策・関連API処理）で新規の脆弱性は未確認。

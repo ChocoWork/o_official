@@ -102,3 +102,26 @@
 1. wishlist 件数上限 + GET ページング + 署名処理の並列上限制御（Medium）
 2. `POST /api/wishlist` の rate limit 発火時監査ログ追加（Low）
 3. `DELETE /api/wishlist/[id]` の rate limit 発火時監査ログ追加（Low）
+---
+
+## セキュリティ再レビュー（2026-06-27 / dynamic workflow）
+
+- 手法: security-check skill + `scripts/page-audit.sh src/app/wishlist`
+- スコープ: UI到達 7 ファイル / 関連Route 2 件（`/api/wishlist`, `/api/cart`）
+- 既存指摘は保持。差分・未記載論点のみ追記。
+
+### 追加指摘
+
+| ファイル名 | よくない点 | 修正提案 | ステータス | 調査結果 | 優先度 |
+|---|---|---|---|---|---|
+| [src/app/api/wishlist/route.ts](../../src/app/api/wishlist/route.ts), [src/app/api/wishlist/[id]/route.ts](../../src/app/api/wishlist/[id]/route.ts) | 状態変更系の CSRF 防御が `proxy.ts` 同一オリジン判定に一元依存。route 層は未検証 | route 層でも同一オリジン/CSRF を検証し多層化 | Open | `proxy.ts` L9 に `/api/wishlist` 含む。route 単体では未検証 | Low |
+| [src/app/api/wishlist/route.ts](../../src/app/api/wishlist/route.ts) | `z.coerce.number().int().positive()` で item_id 検証、IP+セッション二重レート制限、公開商品のみ、重複(23505)を 409 で処理、audit ログ。GET は RLS バインドの request client を使用 | 現行維持 | Fixed | L12-14, L46-81, L196-299 | Info |
+
+### 機械監査の偽陽性整理
+
+- 「auth check なし」(HIGH)=偽陽性（ゲストセッション設計）。「CSRF なし」(HIGH)→Low（proxy 同一オリジンで保護）。
+
+### 重点結論
+
+1. お気に入り API は zod・二重レート制限・proxy 同一オリジンで保護され、新規 High/Critical なし。
+2. route 層 CSRF の多層化（Low）のみ改善候補。

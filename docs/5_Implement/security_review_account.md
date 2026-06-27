@@ -44,3 +44,28 @@
 2. profile/orders の no-store を統一（Medium）
 3. register 永続化の整合性修正（Medium）
 4. 残り Low 項目を順次ハードニング
+
+---
+
+## セキュリティ再レビュー（2026-06-27 / dynamic workflow）
+
+- 手法: security-check skill + `scripts/page-audit.sh src/app/account`
+- スコープ: UI到達 19 ファイル / 関連Route 9 件（profile/addresses/orders + LoginModal 経由の auth 系）
+- 既存指摘は保持。差分・未記載論点のみ追記。
+
+### 追加指摘
+
+| ファイル名 | よくない点 | 修正提案 | ステータス | 調査結果 | 優先度 |
+|---|---|---|---|---|---|
+| [src/app/api/profile/route.ts](../../src/app/api/profile/route.ts), [src/app/api/profile/addresses/route.ts](../../src/app/api/profile/addresses/route.ts) | 認証（`resolveRequestUser`）+ CSRF（`requireCsrfOrDeny`）+ zod 検証 + `user_id` 所有権スコープ + CSRF トークンローテーション。IDOR/CSRF 対策は適切 | 現行維持 | Fixed | profile L234-301, addresses zod `max(20)` + 各フィールド上限 | Info |
+| [src/app/api/auth/*（identify/otp/verify/logout）](../../src/app/api/auth/), [src/proxy.ts](../../src/proxy.ts) | アカウント画面のログイン導線が叩く `/api/auth/*` の状態変更系は `proxy.ts` 保護プレフィックス外。詳細は [security_review_login.md](./security_review_login.md)・[auth_verified](./security_review_auth_verified.md) に集約 | `/api/auth/` 状態変更系を `proxy.ts` 同一オリジン保護に追加（多層化） | Open | `proxy.ts` L9 は cart/checkout/wishlist のみ | Low |
+
+### 機械監査の偽陽性整理
+
+- profile/addresses「auth check なし」(HIGH)=偽陽性。`resolveRequestUser` で認証済（`page-audit.sh` 検出パターンに `resolveRequestUser` 追加済）。
+- identify/otp/logout の指摘=ログイン機能の責務（login レビュー参照）。
+
+### 重点結論
+
+1. プロフィール/住所更新は認証・CSRF・zod・所有権で堅牢。PII 露出は本人限定。
+2. `/api/auth/*` 状態変更系の proxy 同一オリジン未保護（Low）を多層化推奨。

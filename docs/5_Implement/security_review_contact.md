@@ -61,3 +61,27 @@
 2. email_hash の HMAC 化（Medium）
 3. turnstile 厳格検証追加（Medium）
 4. 宛先フォールバック/ログ最小化（Low）
+
+---
+
+## セキュリティ再レビュー（2026-06-27 / dynamic workflow）
+
+- 手法: security-check skill + `scripts/page-audit.sh src/app/contact`
+- スコープ: UI到達 11 ファイル / 関連Route 1 件（`/api/contact`）
+- 既存指摘は保持。差分・未記載論点のみ追記。
+
+### 追加指摘
+
+| ファイル名 | よくない点 | 修正提案 | ステータス | 調査結果 | 優先度 |
+|---|---|---|---|---|---|
+| [src/app/api/contact/route.ts](../../src/app/api/contact/route.ts) | zod 厳格検証（型/長さ/enum）、honeypot（`website`）、`isSameOriginRequest`、IP+メール二重レート制限、audit（email はハッシュ化）。公開フォームとして堅牢 | 現行維持 | Fixed | L9-16, L38-115, L160 email_hash | Info |
+| [src/app/api/contact/route.ts](../../src/app/api/contact/route.ts) | name/subject/message を通知メール本文（plaintext）へ埋め込み。ヘッダではなく本文のため SMTP ヘッダインジェクションは不成立だが、HTML メール化時は要エスケープ | 現行の plaintext を維持。HTML テンプレ化する場合は本文を必ずエスケープ/サニタイズ | Fixed | L164-174 で本文連結。To は環境変数固定 | Info |
+
+### 機械監査の偽陽性整理
+
+- 「auth check なし」(HIGH)=偽陽性。問い合わせは意図的な公開エンドポイント（同一オリジン+honeypot+レート制限で保護）。
+
+### 重点結論
+
+1. 問い合わせフォームは zod・honeypot・同一オリジン・二重レート制限・PIIハッシュ化で堅牢。新規指摘なし。
+2. 将来 HTML メール化する場合のみ本文エスケープに留意。

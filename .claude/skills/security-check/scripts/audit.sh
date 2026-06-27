@@ -36,6 +36,7 @@ declare -a FINDINGS
 
 OUTPUT_FORMAT="text"
 REPORT_FILE=""
+FILES_ONLY=false
 TARGETS=()
 
 # ============================================================
@@ -45,6 +46,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --json) OUTPUT_FORMAT="json"; shift ;;
     --report) REPORT_FILE="$2"; shift 2 ;;
+    --files-only) FILES_ONLY=true; shift ;;
     --help|-h)
       cat <<EOF
 Security Audit Script
@@ -68,7 +70,7 @@ done
 
 # デフォルトターゲット
 if [ ${#TARGETS[@]} -eq 0 ]; then
-  for dir in app pages components lib hooks utils middleware.ts middleware.js next.config.js next.config.mjs next.config.ts; do
+  for dir in app src pages components lib hooks utils middleware.ts middleware.js src/middleware.ts proxy.ts src/proxy.ts next.config.js next.config.mjs next.config.ts; do
     [ -e "$dir" ] && TARGETS+=("$dir")
   done
 fi
@@ -213,7 +215,7 @@ echo "$SOURCE_FILES" | while IFS= read -r file; do
   done < <(grep -nE "['\"]Access-Control-Allow-Origin['\"][[:space:]]*[:,][[:space:]]*['\"]\\*['\"]" "$file" 2>/dev/null)
 
   # Middleware のみで認可していないか（簡易ヒューリスティック）
-  if [[ "$(basename "$file")" == "middleware.ts" || "$(basename "$file")" == "middleware.js" ]]; then
+  if [[ "$(basename "$file")" == "middleware.ts" || "$(basename "$file")" == "middleware.js" || "$(basename "$file")" == "proxy.ts" ]]; then
     if grep -qE "auth|session" "$file"; then
       add_finding "INFO" "A01-005" \
         "Middleware-based auth detected" \
@@ -388,6 +390,11 @@ echo "$SOURCE_FILES" | while IFS= read -r file; do
 done
 
 # ============================================================
+# [A04-A06] Project-global checks (skipped with --files-only)
+# ============================================================
+if [ "$FILES_ONLY" != true ]; then
+
+# ============================================================
 # [A04] Insecure Design
 # ============================================================
 print_section "A04:2021 — Insecure Design"
@@ -433,27 +440,28 @@ for config in next.config.js next.config.mjs next.config.ts; do
       pass_check "next.config: poweredByHeader disabled"
     fi
 
-    # セキュリティヘッダの存在確認
-    if ! grep -qE "Content-Security-Policy" "$config"; then
+    # セキュリティヘッダの存在確認（next.config だけでなく proxy/middleware も対象）
+    HEADER_SRC=("$config" proxy.ts src/proxy.ts middleware.ts src/middleware.ts)
+    if ! grep -rqsE "Content-Security-Policy" "${HEADER_SRC[@]}"; then
       add_finding "HIGH" "A05-002" \
         "CSP header not configured" \
         "$config" "" \
-        "No Content-Security-Policy found in next.config" \
+        "No Content-Security-Policy found in next.config / proxy / middleware" \
         "A05:2021" "V14.4.3" "CWE-693" \
-        "Add CSP header in headers() function or middleware"
+        "Add CSP header in headers() function or proxy/middleware"
     else
-      pass_check "next.config: CSP configured"
+      pass_check "CSP configured (next.config / proxy / middleware)"
     fi
 
-    if ! grep -qE "Strict-Transport-Security" "$config"; then
+    if ! grep -rqsE "Strict-Transport-Security" "${HEADER_SRC[@]}"; then
       add_finding "HIGH" "A05-003" \
         "HSTS header not configured" \
         "$config" "" \
-        "Strict-Transport-Security header not found" \
+        "Strict-Transport-Security header not found in next.config / proxy / middleware" \
         "A05:2021" "V14.4.5, V9.1.3" "CWE-319" \
         "Add HSTS: 'max-age=63072000; includeSubDomains; preload'"
     else
-      pass_check "next.config: HSTS configured"
+      pass_check "HSTS configured (next.config / proxy / middleware)"
     fi
 
     # CSP unsafe-inline / unsafe-eval
@@ -476,8 +484,8 @@ for config in next.config.js next.config.mjs next.config.ts; do
   fi
 done
 
-# Middleware での CSP nonce 実装確認
-for mw in middleware.ts middleware.js; do
+# Middleware / proxy (Next.js 16 renamed middleware -> proxy) での CSP nonce 実装確認
+for mw in middleware.ts middleware.js src/middleware.ts proxy.ts src/proxy.ts; do
   if [ -f "$mw" ]; then
     if grep -qE "Content-Security-Policy" "$mw"; then
       if grep -qE "nonce|randomUUID|randomBytes" "$mw"; then
@@ -597,6 +605,8 @@ if [ -f "package.json" ]; then
     fi
   fi
 fi
+
+fi  # end FILES_ONLY guard for [A04-A06]
 
 # ============================================================
 # [A07] Identification and Authentication Failures
@@ -724,6 +734,7 @@ echo "$SOURCE_FILES" | while IFS= read -r file; do
 done
 
 # images.remotePatterns の wildcard
+if [ "$FILES_ONLY" != true ]; then
 for cfg in next.config.js next.config.mjs next.config.ts; do
   if [ -f "$cfg" ]; then
     if grep -qE "hostname[[:space:]]*:[[:space:]]*['\"]\\*\\*?['\"]" "$cfg"; then
@@ -736,6 +747,7 @@ for cfg in next.config.js next.config.mjs next.config.ts; do
     fi
   fi
 done
+fi  # end FILES_ONLY guard for images.remotePatterns
 
 # ============================================================
 # [Bonus] CSRF / File Upload / その他
@@ -795,6 +807,7 @@ done
 # ============================================================
 # 静的解析ツール統合（任意）
 # ============================================================
+if [ "$FILES_ONLY" != true ]; then
 print_section "Static Analysis Tools (if available)"
 
 # ESLint
@@ -858,6 +871,8 @@ if command -v semgrep >/dev/null 2>&1; then
       "Review semgrep findings"
   fi
 fi
+
+fi  # end FILES_ONLY guard for Static Analysis Tools
 
 # ============================================================
 # サマリ

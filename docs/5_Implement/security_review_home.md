@@ -71,3 +71,23 @@ HOME は clickjacking と公開条件（published 制約）の基礎防御は有
 2. 公開取得の `createPublicClient` 統一（Medium）
 3. preview パーサ厳格化（Low）
 4. クライアント詳細ログ最小化（Low）
+
+---
+
+## セキュリティ再レビュー（2026-06-27 / dynamic workflow）
+
+- 手法: security-check skill + `scripts/page-audit.sh src/app/page.tsx`
+- スコープ: UI到達 43 ファイル / 関連Route 3 件（`/api/items`, `/api/news`, `/api/search`）
+- 既存指摘は保持。差分・未記載論点のみ追記。
+
+### 追加指摘
+
+| ファイル名 | よくない点 | 修正提案 | ステータス | 調査結果 | 優先度 |
+|---|---|---|---|---|---|
+| [src/app/api/news/route.ts](../../src/app/api/news/route.ts) | `category` クエリを無検証で `getPublishedNews` に渡す（長さ上限・許可リストなし）。`limit` は正規表現+clamp で検証済。parameterized クエリのため injection はないが、items 系と比べ入力検証が非一貫 | `category` を zod で長さ上限・許可リスト（または列挙）検証し 400 を返す。items の `stringFilterSchema` と平仄を合わせる | Open | L22 `searchParams.get('category') ?? undefined` を素通し。L25-32 で limit のみ検証 | Low |
+| [src/app/api/items/route.ts](../../src/app/api/items/route.ts) | ホームの商品グリッドが参照。応答キャッシュの無制限増大は item レビュー参照（[security_review_item.md](./security_review_item.md)） | 同上（LRU+TTL 追い出し） | Open | item レビューに集約 | Medium |
+
+### 重点結論
+
+1. ホームは公開データ集約（items/news/search preview）で、表示は React 自動エスケープ。直接の XSS/IDOR なし。
+2. `/api/news` の category 入力検証の非一貫（Low）と、共有する items 応答キャッシュの無制限増大（Medium・item に集約）が改善候補。

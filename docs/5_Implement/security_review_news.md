@@ -97,3 +97,22 @@
 1. `news-images` の署名対象 path/host allowlist 実装（Medium）
 2. 一覧取得の service role 依存点を最小化（DTO分離 + 署名対象の明確化）（Medium）
 3. `/api/news` の共通セキュリティヘッダ適用とログ最小化（Low）
+---
+
+## セキュリティ再レビュー（2026-06-27 / dynamic workflow）
+
+- 手法: security-check skill + `scripts/page-audit.sh src/app/news`
+- スコープ: UI到達 21 ファイル / 関連Route 1 件（`/api/news`）
+- 既存指摘は保持。差分・未記載論点のみ追記。
+
+### 追加指摘
+
+| ファイル名 | よくない点 | 修正提案 | ステータス | 調査結果 | 優先度 |
+|---|---|---|---|---|---|
+| [src/app/api/news/route.ts](../../src/app/api/news/route.ts) | `category` クエリを無検証で `getPublishedNews` に渡す（長さ上限・許可リストなし）。`limit` は正規表現+clamp 検証済。parameterized のため injection はないが入力検証が非一貫 | `category` を zod で長さ上限・許可リスト検証し 400。items 系（`stringFilterSchema`）と平仄を合わせる | Open | L22 で category 素通し、L25-32 で limit のみ検証。`news:list` レート制限は付与済 | Low |
+| [src/features/news/components/PublicNewsGrid.tsx](../../src/features/news/components/PublicNewsGrid.tsx) | 記事本文は React 自動エスケープで描画（`dangerouslySetInnerHTML` 不使用）。stored-XSS 面なし | 現行維持 | Fixed | src 全体で `dangerouslySetInnerHTML` 不使用を確認 | Info |
+
+### 重点結論
+
+1. NEWS 一覧/詳細は公開データ表示で stored-XSS 面なし。
+2. `/api/news` の `category` 入力検証の非一貫（Low）のみ改善候補。

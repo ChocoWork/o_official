@@ -98,3 +98,27 @@
 1. 署名対象パスの allowlist 化と拒否時ハンドリング実装（Medium）
 2. 署名失敗時 rawUrl 返却の停止（Low）
 3. signedUrlCache の上限制御とメトリクス監視（Low）
+---
+
+## セキュリティ再レビュー（2026-06-27 / dynamic workflow）
+
+- 手法: security-check skill + `scripts/page-audit.sh "src/app/item/[id]"`
+- スコープ: UI到達 15 ファイル / 関連Route 3 件（`/api/items/[id]`, `/api/cart`, `/api/wishlist`）
+- 既存指摘は保持。差分・未記載論点のみ追記。
+
+### 追加指摘
+
+| ファイル名 | よくない点 | 修正提案 | ステータス | 調査結果 | 優先度 |
+|---|---|---|---|---|---|
+| [src/app/api/items/[id]/route.ts](../../src/app/api/items/[id]/route.ts) | id を `z.coerce.number().int().positive()` で検証、未公開は 404、`stock_quantity` は `stockStatus` に変換して生値を秘匿、`no-store` 付与。良好 | 現行維持 | Fixed | L43-93。公開列のみ返却し在庫数を直出ししない | Info |
+| [src/app/api/cart/route.ts](../../src/app/api/cart/route.ts), [src/app/api/wishlist/route.ts](../../src/app/api/wishlist/route.ts) | 詳細ページからの「カート/お気に入り追加」POST。route 層に same-origin/CSRF 検証がなく、防御は `proxy.ts` の同一オリジン判定に依存（クライアントが送る `x-csrf-token` は route で未検証） | 多層防御として route 側でも同一オリジン or CSRF を検証。`proxy.ts` の保護プレフィックス変更時に防御が消えない構成にする | Open | `proxy.ts` `STATE_CHANGING_PATH_PREFIXES` に `/api/cart`・`/api/wishlist` 含むため現状は保護。route 単体では未検証 | Low |
+| [src/app/api/cart/route.ts](../../src/app/api/cart/route.ts) | 在庫チェック（select）→ insert/update が非原子的で TOCTOU。並行追加で在庫超過の余地（checkout で再検証されるため実害限定） | 数量加算と在庫判定を単一トランザクション/RPC（条件付き update）に集約 | Open | L224-313 で check-then-write。最終防御は checkout 側の inventory 再検証 | Low |
+
+### 機械監査の偽陽性整理
+
+- cart/wishlist「auth check なし」(HIGH)=偽陽性。ゲストセッション（`session_id` Cookie）が認可境界の設計で、ログイン不要は仕様。
+
+### 重点結論
+
+1. 商品詳細 API は堅牢（zod・404・在庫秘匿・no-store）。
+2. カート/お気に入り追加の CSRF は `proxy.ts` で実効的に保護済み。route 層の多層防御化（Low）と在庫 TOCTOU（Low）が改善候補。
