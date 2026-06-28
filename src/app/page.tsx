@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/Button/Button";
 import { getPublishedItems } from "@/lib/items/public";
 import { getPublishedLooks } from "@/lib/look/server";
 import { getPublishedNews } from "@/features/news/services/public";
+import { getHomePublicStockists } from "@/features/stockist/services/public";
 
 const HOME_LOOK_FETCH_COUNT = 7;
 
@@ -29,10 +30,11 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function Home() {
-  const [homeItems, homeLooks, homeNews] = await Promise.all([
+  const [homeItems, homeLooks, homeNews, homeStockists] = await Promise.all([
     getPublishedItems(9),
     getPublishedLooks(HOME_LOOK_FETCH_COUNT),
     getPublishedNews({ limit: 6 }),
+    getHomePublicStockists(),
   ]);
 
   ReactDOM.preload("/mainphoto.png", {
@@ -181,7 +183,7 @@ export default async function Home() {
         </section>
 
         {/* STOCKIST セクション */}
-        <PublicStockistGrid variant="home" />
+        <PublicStockistGrid variant="home" stockists={homeStockists} />
       </div>
     </div>
   );
