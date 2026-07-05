@@ -19,14 +19,14 @@ jest.mock('@/lib/browser-location', () => ({
 }));
 
 const TestConsumer = () => {
-  const { isLoggedIn, isAdmin, isAuthResolved, sendOtp, verifyOtp, loginWithGoogle, logout } = useLogin();
+  const { isLoggedIn, isAdmin, isAuthResolved, login, verifyOtp, loginWithGoogle, logout } = useLogin();
 
   return (
     <div>
       <div>logged:{isLoggedIn ? 'yes' : 'no'}</div>
       <div>admin:{isAdmin ? 'yes' : 'no'}</div>
       <div>resolved:{isAuthResolved ? 'yes' : 'no'}</div>
-      <button onClick={() => void sendOtp('user@example.com')}>send-otp</button>
+      <button onClick={() => void login('user@example.com', 'password123')}>login</button>
       <button onClick={() => void verifyOtp('user@example.com', '12345678')}>verify-otp</button>
       <button onClick={() => void loginWithGoogle({ next: '/account' })}>google-login</button>
       <button onClick={() => void logout()}>logout</button>
@@ -86,7 +86,7 @@ describe('LoginContext', () => {
     expect(screen.getByText('admin:yes')).toBeInTheDocument();
   });
 
-  test('sendOtp posts identify request with fixed redirect target', async () => {
+  test('login posts credentials to the login endpoint', async () => {
     const user = userEvent.setup();
 
     render(
@@ -95,16 +95,17 @@ describe('LoginContext', () => {
       </LoginProvider>
     );
 
-    await user.click(screen.getByText('send-otp'));
+    await user.click(screen.getByText('login'));
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledWith('/api/auth/identify', {
+      expect(global.fetch).toHaveBeenCalledWith('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
         body: JSON.stringify({
           email: 'user@example.com',
+          password: 'password123',
           turnstileToken: undefined,
-          redirect_to: '/auth/verified',
         }),
       });
     });

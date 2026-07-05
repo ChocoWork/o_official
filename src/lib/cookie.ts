@@ -5,6 +5,7 @@ export const refreshCookieName = 'sb-refresh-token';
 export const accessCookieName = 'sb-access-token';
 export const csrfCookieName = 'sb-csrf-token';
 export const passwordResetSessionCookieName = 'sb-password-reset-session';
+export const loginTwoFactorSessionCookieName = 'sb-login-2fa-session';
 export const sessionCookieName = 'session_id';
 
 const SESSION_ID_BYTES = 16;
@@ -73,6 +74,15 @@ export function cookieOptionsForPasswordReset(maxAgeSeconds: number) {
   };
 }
 
+export function cookieOptionsForLoginTwoFactor(maxAgeSeconds: number) {
+  return {
+    ...getBaseCookieOptions(),
+    maxAge: maxAgeSeconds,
+    httpOnly: true,
+    sameSite: 'strict' as const,
+  };
+}
+
 export function clearCookieOptions() {
   return {
     ...getBaseCookieOptions(),
@@ -85,12 +95,14 @@ const cookieHelper = {
   accessCookieName,
   csrfCookieName,
   passwordResetSessionCookieName,
+  loginTwoFactorSessionCookieName,
   sessionCookieName,
   cookieOptionsForRefresh,
   cookieOptionsForAccess,
   cookieOptionsForCsrf,
   cookieOptionsForSession,
   cookieOptionsForPasswordReset,
+  cookieOptionsForLoginTwoFactor,
   generateSessionId,
   clearCookieOptions,
 };

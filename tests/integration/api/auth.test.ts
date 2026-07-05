@@ -19,7 +19,12 @@ jest.mock('next/server', () => ({
 
 jest.mock('@/lib/supabase/server', () => ({
   createClient: jest.fn(),
+  createPublicClient: jest.fn(),
   createServiceRoleClient: jest.fn(),
+}));
+
+jest.mock('@/features/auth/middleware/rateLimit', () => ({
+  enforceRateLimit: jest.fn().mockResolvedValue(undefined),
 }));
 
 let loginHandler: any;
@@ -38,47 +43,50 @@ describe('Auth API integration (mocked supabase)', () => {
 
   beforeEach(() => {
     // default service client to satisfy audit/logging and password reset inserts
-    const { createServiceRoleClient, createClient } = require('@/lib/supabase/server');
+    const { createServiceRoleClient, createClient, createPublicClient } = require('@/lib/supabase/server');
     createServiceRoleClient.mockReturnValue({ from: jest.fn().mockReturnValue({ insert: jest.fn().mockResolvedValue({}) }), auth: { admin: { updateUserById: jest.fn().mockResolvedValue({}) } } });
     createClient.mockResolvedValue({ auth: { signInWithPassword: jest.fn().mockResolvedValue({ data: null, error: null }) } });
+    createPublicClient.mockResolvedValue({ auth: { signInWithPassword: jest.fn().mockResolvedValue({ data: null, error: null }), signInWithOtp: jest.fn().mockResolvedValue({ error: null }) } });
     process.env.MAIL_FROM_ADDRESS = 'no-reply@example.com';
+    process.env.JWT_SECRET = 'test-jwt-secret';
   });
 
   afterEach(() => jest.resetAllMocks());
 
-  test('login success returns 200 with access_token and user', async () => {
-    const { createClient } = require('@/lib/supabase/server');
+  test('login (step 1) verifies password, sends OTP and returns step=otp', async () => {
+    const { createPublicClient } = require('@/lib/supabase/server');
+    const signInWithOtp = jest.fn().mockResolvedValue({ error: null });
     const fakeClient = {
       auth: {
         signInWithPassword: jest.fn().mockResolvedValue({
           data: { session: { access_token: 'a', refresh_token: 'r', expires_at: Date.now() }, user: { id: 'u', email: 'user@example.com' } },
           error: null,
         }),
+        signInWithOtp,
       },
     };
-    createClient.mockResolvedValue(fakeClient);
+    createPublicClient.mockResolvedValue(fakeClient);
 
     const req = new Request('http://localhost/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'user@example.com', password: 'password123' }) });
 
     const res: any = await loginHandler(req);
     const body = await res.json();
     expect(res.status).toBe(200);
-    expect(body.access_token).toBeDefined();
-    expect(body.user.email).toBe('user@example.com');
-
-    // audit log should be written
-    const { createServiceRoleClient } = require('@/lib/supabase/server');
-    expect(createServiceRoleClient().from).toHaveBeenCalledWith('audit_logs');
+    expect(body.step).toBe('otp');
+    expect(body.access_token).toBeUndefined();
+    expect(signInWithOtp).toHaveBeenCalledWith({ email: 'user@example.com', options: { shouldCreateUser: false } });
+    expect(res.cookies.get('sb-login-2fa-session')).toBeDefined();
   });
 
   test('login invalid credentials returns 401', async () => {
-    const { createClient } = require('@/lib/supabase/server');
+    const { createPublicClient } = require('@/lib/supabase/server');
     const fakeClient = {
       auth: {
         signInWithPassword: jest.fn().mockResolvedValue({ data: null, error: { message: 'invalid' } }),
+        signInWithOtp: jest.fn().mockResolvedValue({ error: null }),
       },
     };
-    createClient.mockResolvedValue(fakeClient);
+    createPublicClient.mockResolvedValue(fakeClient);
 
     const req = new Request('http://localhost/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'user@example.com', password: 'wrongpass' }) });
 

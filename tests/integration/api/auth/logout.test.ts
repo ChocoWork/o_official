@@ -37,7 +37,7 @@ describe('Logout API integration (mocked supabase & headers)', () => {
   beforeEach(() => {
     jest.resetAllMocks();
     // default: no cookie
-    cookies.mockReturnValue({ get: jest.fn().mockReturnValue(undefined) });
+    cookies.mockReturnValue({ get: jest.fn().mockReturnValue(undefined), getAll: jest.fn().mockReturnValue([]) });
     // default: no CSRF header (optional since logout can work without CSRF check in some flows)
     headers.mockReturnValue({ get: jest.fn().mockReturnValue(null) });
   });
@@ -66,7 +66,7 @@ describe('Logout API integration (mocked supabase & headers)', () => {
     const csrfHash = await tokenHashSha256(csrfToken);
     
     // Arrange: provide cookie and mock DB update chain
-    cookies.mockReturnValue({ get: jest.fn().mockReturnValue({ value: 'old-refresh' }) });
+    cookies.mockReturnValue({ get: jest.fn().mockReturnValue({ value: 'old-refresh' }), getAll: jest.fn().mockReturnValue([]) });
     headers.mockReturnValue({ get: jest.fn().mockReturnValue(csrfToken) }); // Valid CSRF header
 
     const eqMock = jest.fn().mockResolvedValue({});
@@ -104,7 +104,7 @@ describe('Logout API integration (mocked supabase & headers)', () => {
     const csrfToken = 'valid-csrf-token';
     const csrfHash = await tokenHashSha256(csrfToken);
 
-    cookies.mockReturnValue({ get: jest.fn().mockReturnValue({ value: 'old-refresh' }) });
+    cookies.mockReturnValue({ get: jest.fn().mockReturnValue({ value: 'old-refresh' }), getAll: jest.fn().mockReturnValue([]) });
     headers.mockReturnValue({ get: jest.fn().mockReturnValue(csrfToken) });
 
     const updateMock = jest.fn(() => { throw new Error('db fail'); });
@@ -127,5 +127,29 @@ describe('Logout API integration (mocked supabase & headers)', () => {
     expect(sessionCookie.maxAge).toBe(0);
     expect(refreshCookie).toBeDefined();
     expect(refreshCookie.maxAge).toBe(0);
+  });
+
+  test('clears leftover @supabase/ssr auth cookies set by OAuth login', async () => {
+    // Google OAuth ログインが残す sb-<ref>-auth-token[.N] も消えること
+    cookies.mockReturnValue({
+      get: jest.fn().mockReturnValue(undefined),
+      getAll: jest.fn().mockReturnValue([
+        { name: 'sb-abcdefgh-auth-token', value: 'x' },
+        { name: 'sb-abcdefgh-auth-token.0', value: 'y' },
+        { name: 'unrelated-cookie', value: 'z' },
+      ]),
+    });
+
+    const res: any = await logoutHandler();
+    expect(res.status).toBe(200);
+
+    const ssrCookie = res.cookies.get('sb-abcdefgh-auth-token');
+    const ssrChunk = res.cookies.get('sb-abcdefgh-auth-token.0');
+    const unrelated = res.cookies.get('unrelated-cookie');
+    expect(ssrCookie).toBeDefined();
+    expect(ssrCookie.maxAge).toBe(0);
+    expect(ssrChunk).toBeDefined();
+    expect(ssrChunk.maxAge).toBe(0);
+    expect(unrelated).toBeUndefined();
   });
 });

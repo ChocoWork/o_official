@@ -71,12 +71,12 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## Talking Style
 
-# cavemanのルール（英語向け）
+### cavemanのルール（英語向け）
 
 Drop: articles (a/an/the), filler (just/really/basically),
 pleasantries (sure/certainly), hedging
 
-# genshijinのルール（日本語向け）
+### genshijinのルール（日本語向け）
 
 削除対象:
 
@@ -87,3 +87,30 @@ pleasantries (sure/certainly), hedging
 - 冗長接続（〜ということになりますので→だから）
 - 自明な助詞（が/の/を/に/で/は/と/も）— 意味通じるなら省略
 - 情報水増し — 聞かれたことだけ答える
+
+## 前提条件
+
+docs\1_RequirementsDifinition\brand.md に私の服のブランドのコンセプトとペルソナと世界観を記載しているので、作業前に理解すること。
+
+### 要求管理ルール
+
+ユーザーから機能・UI の変更・追加依頼を受けたら、実装と同時に以下をセットで作成する。
+
+**1. docs\2_Specs\spec.md に追記**
+
+トレーサビリティテーブルに1行追加：
+
+```
+| FREQ-XX | 要求の内容 | FREQ-XX-REQ-01 | 要件の内容 | FREQ-XX-AC-01 | 受け付け基準の内容 |
+```
+
+- FREQ-XX は既存の最大番号の次の番号
+- 受け付け基準は「〇〇が表示されること」「〇〇が表示されないこと」など検証可能な形で書く
+
+**2. e2e\FR-{CATEGORY}-{NNN}-{description}.spec.ts を作成**
+
+- CATEGORY: HEADER / HOME / ITEM / LOOK / NEWS / ABOUT / CONTACT / STOCKIST / ACCOUNT / LOGIN / SEARCH / CHECKOUT / CART / WISHLIST 等
+- NNN: そのカテゴリ内の連番（既存ファイルを確認して次の番号を使う）
+- description: kebab-case の短い説明
+- テスト内容は受け付け基準（AC）を検証するコードにする
+- mobile（390px）/ tablet（768px）/ desktop（1280px）の3ビューポートでテストする

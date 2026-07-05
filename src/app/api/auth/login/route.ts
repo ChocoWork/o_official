@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createPublicClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
 import { LoginRequestSchema } from '@/features/auth/schemas/login';
 import { formatZodError } from '@/features/auth/schemas/common';
 
-const ACCESS_TOKEN_MAX_AGE = 15 * 60; // 15 minutes
-const REFRESH_TOKEN_MAX_AGE = 7 * 24 * 60 * 60; // 7 days
-
+// ステップ1: メール + パスワードを検証し、成功したらメール OTP を送信する。
+// セッションはまだ発行せず、OTP 検証成功時（/api/auth/otp/verify）に確定する。
 export async function POST(request: Request) {
   try {
     // Enforce IP-level rate limit for login attempts
@@ -32,84 +31,57 @@ export async function POST(request: Request) {
       console.error('Rate limit middleware error (login-account):', e);
     }
 
-    const { email, password } = parsed.data;
+    const { email, password, turnstileToken } = parsed.data;
 
-    const supabase = await createClient();
+    const siteKeyConfigured = !!process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+    if (siteKeyConfigured) {
+      const { verifyTurnstile } = await import('@/lib/turnstile');
+      const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null;
+      const turnstile = await verifyTurnstile(turnstileToken, ip);
+      if (!turnstile.ok) {
+        await logAudit({ action: 'login', actor_email: email, outcome: 'failure', detail: turnstile.error || 'turnstile_failed' });
+        return NextResponse.json({ error: 'Bot detection failed' }, { status: 403 });
+      }
+    }
+
+    // 匿名クライアントでパスワード検証のみ行う（セッション Cookie の副作用を持たない）。
+    const supabase = await createPublicClient();
 
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
-    if (error || !data.session) {
+    if (error || !data.session || !data.user) {
       await logAudit({ action: 'login', actor_email: email, outcome: 'failure', detail: error?.message || 'invalid credentials' });
-      return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+      return NextResponse.json({ error: 'メールアドレスまたはパスワードが正しくありません。' }, { status: 401 });
     }
 
-    const session = data.session;
+    // パスワード検証済み。第2要素としてメール OTP を送信する（未登録ユーザーは作成しない）。
+    const { error: otpError } = await supabase.auth.signInWithOtp({
+      email,
+      options: { shouldCreateUser: false },
+    });
 
-    // Return access token in JSON; set refresh token only as HttpOnly cookie
-    const res = NextResponse.json({ access_token: session.access_token, user: data.user }, { status: 200 });
-
-    // set refresh cookie using helpers
-    // Synchronously set cookies and persist session info (tests expect DB call to have happened)
-    try {
-      const {
-        refreshCookieName,
-        accessCookieName,
-        sessionCookieName,
-        cookieOptionsForRefresh,
-        cookieOptionsForAccess,
-        csrfCookieName,
-        cookieOptionsForCsrf,
-        cookieOptionsForSession,
-        generateSessionId,
-      } = await import('@/lib/cookie');
-      const SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
-
-      res.cookies.set({ name: sessionCookieName, value: generateSessionId(), ...cookieOptionsForSession(SESSION_COOKIE_MAX_AGE) });
-      res.cookies.set({ name: accessCookieName, value: session.access_token ?? '', ...cookieOptionsForAccess(ACCESS_TOKEN_MAX_AGE) });
-      res.cookies.set({ name: refreshCookieName, value: session.refresh_token ?? '', ...cookieOptionsForRefresh(REFRESH_TOKEN_MAX_AGE) });
-
-      // Generate CSRF token and set non-httpOnly cookie; persist its hash alongside session
-      const { generateCsrfToken } = await import('@/lib/csrf');
-      const { tokenHashSha256 } = await import('@/lib/hash');
-      const csrfToken = generateCsrfToken();
-      res.cookies.set({ name: csrfCookieName, value: csrfToken, ...cookieOptionsForCsrf(REFRESH_TOKEN_MAX_AGE) });
-
-      // Persist hashed refresh & csrf token into sessions table using service role client
-      const service = await (await import('@/lib/supabase/server')).createServiceRoleClient();
-      const { resetPrivilegedMfaVerification } = await import('@/features/auth/services/mfa-metadata');
-
-      const resetResult = await resetPrivilegedMfaVerification(service, data.user ?? null);
-      if (!resetResult.ok) {
-        await logAudit({
-          action: 'login',
-          actor_email: email,
-          outcome: 'error',
-          detail: `failed_to_reset_privileged_mfa:${resetResult.error}`,
-          resource_id: data.user?.id,
-        });
-        return NextResponse.json({ error: 'ログイン処理に失敗しました。' }, { status: 500 });
-      }
-
-      const refreshToken = session.refresh_token ?? '';
-      const refreshHash = await tokenHashSha256(refreshToken);
-      const csrfHash = await tokenHashSha256(csrfToken);
-
-      const expiresAt = session.expires_at ? new Date(session.expires_at).toISOString() : null;
-
-      await service.from('sessions').insert([
-        {
-          user_id: data.user?.id,
-          refresh_token_hash: refreshHash,
-          csrf_token_hash: csrfHash,
-          expires_at: expiresAt,
-          last_seen_at: new Date().toISOString(),
-        },
-      ]);
-    } catch (e) {
-      console.error('Failed to set cookies/persist session:', e);
+    if (otpError) {
+      await logAudit({ action: 'login', actor_email: email, outcome: 'error', detail: `otp_send_failed: ${otpError.message}`, resource_id: data.user.id });
+      return NextResponse.json({ error: '認証コードの送信に失敗しました。時間をおいて再度お試しください。' }, { status: 500 });
     }
 
-    await logAudit({ action: 'login', actor_email: email, outcome: 'success', resource_id: data.user?.id });
+    // 「パスワード検証済み」を表す短命の署名 Cookie を発行。OTP 検証時に必須とする。
+    const { createLoginTwoFactorSessionToken, loginTwoFactorSessionMaxAgeSeconds } = await import('@/features/auth/services/login-2fa-session');
+    const { loginTwoFactorSessionCookieName, cookieOptionsForLoginTwoFactor } = await import('@/lib/cookie');
+
+    const pendingToken = createLoginTwoFactorSessionToken({ userId: data.user.id, email });
+
+    const res = NextResponse.json(
+      { step: 'otp', message: '認証コードを送信しました。メールに届いたコードを入力してください。' },
+      { status: 200 },
+    );
+    res.cookies.set({
+      name: loginTwoFactorSessionCookieName,
+      value: pendingToken,
+      ...cookieOptionsForLoginTwoFactor(loginTwoFactorSessionMaxAgeSeconds),
+    });
+
+    await logAudit({ action: 'login', actor_email: email, outcome: 'password_verified', detail: 'otp_sent', resource_id: data.user.id });
 
     return res;
   } catch (err) {

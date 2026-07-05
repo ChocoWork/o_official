@@ -19,6 +19,7 @@ jest.mock('next/server', () => ({
 
 jest.mock('@/lib/supabase/server', () => ({
   createClient: jest.fn(),
+  createPublicClient: jest.fn(),
   createServiceRoleClient: jest.fn(),
 }));
 
@@ -28,6 +29,10 @@ jest.mock('next/headers', () => ({
 
 jest.mock('@/lib/audit', () => ({
   logAudit: jest.fn(),
+}));
+
+jest.mock('@/features/auth/services/mfa-metadata', () => ({
+  resetPrivilegedMfaVerification: jest.fn().mockResolvedValue({ ok: true }),
 }));
 
 jest.mock('@/features/auth/middleware/rateLimit', () => ({
@@ -46,6 +51,7 @@ const sessionService = require('@/features/auth/services/session');
 
 let registerHandler: any;
 let loginHandler: any;
+let verifyOtpHandler: any;
 let refreshHandler: any;
 let logoutHandler: any;
 
@@ -53,6 +59,7 @@ describe('Auth full flow integration (register -> login -> refresh -> logout)', 
   beforeAll(() => {
     registerHandler = require('@/app/api/auth/register/route').POST;
     loginHandler = require('@/app/api/auth/login/route').POST;
+    verifyOtpHandler = require('@/app/api/auth/otp/verify/route').POST;
     refreshHandler = require('@/app/api/auth/refresh/route').POST;
     logoutHandler = require('@/app/api/auth/logout/route').POST;
   });
@@ -74,7 +81,7 @@ describe('Auth full flow integration (register -> login -> refresh -> logout)', 
     // REGISTER (admin create user)
     process.env.ADMIN_API_KEY = 'adm';
     const fakeServiceAdmin = { auth: { admin: { createUser: jest.fn().mockResolvedValue({ data: { user: { id: 'u-seq', email: 'seq@example.com' } }, error: null }) } }, from: jest.fn() };
-    const { createServiceRoleClient, createClient } = require('@/lib/supabase/server');
+    const { createServiceRoleClient } = require('@/lib/supabase/server');
     createServiceRoleClient.mockReturnValue(fakeServiceAdmin);
 
     const regReq = new Request('http://localhost/api/auth/register', { method: 'POST', headers: { 'content-type': 'application/json', 'x-admin-token': 'adm' }, body: JSON.stringify({ email: 'seq@example.com', password: 'password123' }) });
@@ -84,27 +91,53 @@ describe('Auth full flow integration (register -> login -> refresh -> logout)', 
     expect(regBody.email).toBe('seq@example.com');
     expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'register', outcome: 'success' }));
 
-    // LOGIN
-    const fakeClient = { auth: { signInWithPassword: jest.fn().mockResolvedValue({ data: { session: { access_token: 'a1', refresh_token: 'r1', expires_at: Date.now() + 3600 }, user: { id: 'u-seq', email: 'seq@example.com' } }, error: null }) } };
-    createClient.mockResolvedValue(fakeClient);
-    const fromMock = jest.fn(() => ({ insert: jest.fn().mockResolvedValue({}) }));
-    createServiceRoleClient.mockReturnValue({ from: fromMock });
+    // LOGIN step 1: verify password + send email OTP (no session issued yet)
+    process.env.JWT_SECRET = 'test-jwt-secret';
+    const { createPublicClient } = require('@/lib/supabase/server');
+    const sessionFixture = { access_token: 'a1', refresh_token: 'r1', expires_at: Date.now() + 3600 };
+    const userFixture = { id: 'u-seq', email: 'seq@example.com' };
+    const fakePublicClient = {
+      auth: {
+        signInWithPassword: jest.fn().mockResolvedValue({ data: { session: sessionFixture, user: userFixture }, error: null }),
+        signInWithOtp: jest.fn().mockResolvedValue({ data: {}, error: null }),
+      },
+    };
+    createPublicClient.mockResolvedValue(fakePublicClient);
 
     const loginReq = new Request('http://localhost/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'seq@example.com', password: 'password123' }) });
     const loginRes: any = await loginHandler(loginReq);
     const loginBody = await loginRes.json();
     expect(loginRes.status).toBe(200);
-    expect(loginBody.access_token).toBeDefined();
-    // inspect cookie set by login
-    const refreshCookie = loginRes.cookies.get('sb-refresh-token');
-    const sessionCookie = loginRes.cookies.get('session_id');
+    expect(loginBody.step).toBe('otp');
+    expect(loginBody.access_token).toBeUndefined();
+    expect(fakePublicClient.auth.signInWithOtp).toHaveBeenCalledWith({ email: 'seq@example.com', options: { shouldCreateUser: false } });
+    const pendingCookie = loginRes.cookies.get('sb-login-2fa-session');
+    expect(pendingCookie).toBeDefined();
+    expect(loginRes.cookies.get('sb-refresh-token')).toBeUndefined();
+    expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'login', outcome: 'password_verified' }));
+
+    // LOGIN step 2: verify OTP -> issue session
+    const verifyServiceClient = {
+      auth: { verifyOtp: jest.fn().mockResolvedValue({ data: { session: sessionFixture, user: userFixture }, error: null }) },
+      from: jest.fn(() => ({ insert: jest.fn().mockResolvedValue({ error: null }) })),
+    };
+    createServiceRoleClient.mockReturnValue(verifyServiceClient);
+
+    const otpReq = new Request('http://localhost/api/auth/otp/verify', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: `sb-login-2fa-session=${encodeURIComponent(pendingCookie.value)}` },
+      body: JSON.stringify({ email: 'seq@example.com', code: '12345678' }),
+    });
+    const otpRes: any = await verifyOtpHandler(otpReq);
+    expect(otpRes.status).toBe(200);
+    const refreshCookie = otpRes.cookies.get('sb-refresh-token');
+    const sessionCookie = otpRes.cookies.get('session_id');
     expect(sessionCookie).toBeDefined();
     expect(typeof sessionCookie.value).toBe('string');
     expect(sessionCookie.value.length).toBeGreaterThan(0);
     expect(refreshCookie).toBeDefined();
     expect(refreshCookie.value).toBe('r1');
-    expect(createServiceRoleClient().from).toHaveBeenCalledWith('sessions');
-    expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'login', outcome: 'success' }));
+    expect(verifyServiceClient.from).toHaveBeenCalledWith('sessions');
 
     // REFRESH - simulate cookie store having the refresh token from login
     cookies.mockReturnValue({ get: jest.fn().mockReturnValue({ value: refreshCookie.value }) });

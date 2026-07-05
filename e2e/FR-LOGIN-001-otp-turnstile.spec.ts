@@ -1,12 +1,13 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('FR-LOGIN-001 OTP login', () => {
-  test('renders the OTP flow and advances to code entry after sending a code', async ({ page }) => {
-    await page.route('**/api/auth/identify', async (route) => {
+test.describe('FR-LOGIN-001 password + OTP login', () => {
+  test('verifies password then advances to OTP code entry', async ({ page }) => {
+    await page.route('**/api/auth/login', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
+          step: 'otp',
           message: '認証コードを送信しました。メールに届いたコードを入力してください。',
         }),
       });
@@ -21,7 +22,8 @@ test.describe('FR-LOGIN-001 OTP login', () => {
     }
 
     await page.getByLabel('EMAIL').fill('user@example.com');
-    await page.getByRole('button', { name: 'メールで認証コードを受け取る' }).click();
+    await page.getByLabel('PASSWORD').fill('password123');
+    await page.getByRole('button', { name: 'ログイン' }).click();
 
     await expect(page.getByLabel('認証コード 1 桁目')).toBeVisible();
     await expect(page.getByText(/後に再送可能/)).toBeVisible();

@@ -1,11 +1,15 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
-import Script from 'next/script';
-import { ResetRequestSchema, ResetSessionConfirmSchema } from '@/features/auth/schemas/password-reset';
-import { z } from 'zod';
-import { Button } from '@/components/ui/Button/Button';
-import { TextField } from '@/components/ui/TextField/TextField';
+import React, { useEffect, useState } from "react";
+import Link from "next/link";
+import Script from "next/script";
+import {
+  ResetRequestSchema,
+  ResetSessionConfirmSchema,
+} from "@/features/auth/schemas/password-reset";
+import { z } from "zod";
+import { Button } from "@/components/ui/Button/Button";
+import { TextField } from "@/components/ui/TextField/TextField";
 
 declare global {
   interface Window {
@@ -13,27 +17,34 @@ declare global {
   }
 }
 
+// 見出しはページの最上位アンカー。対比の原則により最大サイズ（2xl）とする。
+const headingTextStyle: React.CSSProperties = {
+  fontSize: "var(--lk-size-2xl)",
+};
+
 export default function PasswordResetPage() {
-  const [email, setEmail] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [turnstileToken, setTurnstileToken] = useState('');
+  const [email, setEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [isConfirmMode, setIsConfirmMode] = useState(false);
   const [isResolvingSession, setIsResolvingSession] = useState(true);
+  const [showPassword, setShowPassword] = useState(false);
+  const [resetComplete, setResetComplete] = useState(false);
 
-  const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '';
+  const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "";
 
   useEffect(() => {
     let active = true;
 
     const resolveResetSession = async () => {
       try {
-        const response = await fetch('/api/auth/password-reset/session', {
-          method: 'GET',
-          cache: 'no-store',
-          headers: { Accept: 'application/json' },
+        const response = await fetch("/api/auth/password-reset/session", {
+          method: "GET",
+          cache: "no-store",
+          headers: { Accept: "application/json" },
         });
 
         if (!response.ok) {
@@ -47,7 +58,7 @@ export default function PasswordResetPage() {
 
         if (body.ready) {
           setIsConfirmMode(true);
-          setEmail(typeof body.email === 'string' ? body.email : '');
+          setEmail(typeof body.email === "string" ? body.email : "");
         } else {
           setIsConfirmMode(false);
         }
@@ -71,7 +82,8 @@ export default function PasswordResetPage() {
 
   useEffect(() => {
     if (!siteKey) return;
-    window.onTurnstileReset = (tokenValue: string) => setTurnstileToken(tokenValue);
+    window.onTurnstileReset = (tokenValue: string) =>
+      setTurnstileToken(tokenValue);
     return () => {
       if (window.onTurnstileReset) {
         delete window.onTurnstileReset;
@@ -85,39 +97,47 @@ export default function PasswordResetPage() {
     setMessage(null);
 
     try {
-      ResetRequestSchema.parse({ email, turnstileToken: turnstileToken || undefined });
+      ResetRequestSchema.parse({
+        email,
+        turnstileToken: turnstileToken || undefined,
+      });
     } catch (err) {
       if (err instanceof z.ZodError) {
-        setError(err.issues.map((i) => i.message).join(' '));
+        setError(err.issues.map((i) => i.message).join("\n"));
       } else {
-        setError('入力に誤りがあります');
+        setError("入力に誤りがあります");
       }
       return;
     }
 
     if (siteKey && !turnstileToken) {
-      setError('ボット検証を完了してください');
+      setError("ボット検証を完了してください");
       return;
     }
 
     setLoading(true);
     try {
-      const resp = await fetch('/api/auth/password-reset/request', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, turnstileToken: turnstileToken || undefined }),
+      const resp = await fetch("/api/auth/password-reset/request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          turnstileToken: turnstileToken || undefined,
+        }),
       });
 
       if (!resp.ok) {
         const body = await resp.json().catch(() => null);
-        setError(body?.error || '送信に失敗しました');
+        setError(body?.error || "送信に失敗しました");
         return;
       }
 
-      setMessage('パスワード再設定メールを送信しました。受信トレイをご確認ください。');
+      setMessage(
+        "パスワード再設定メールを送信しました。受信トレイをご確認ください。",
+      );
     } catch (err) {
       console.error(err);
-      setError('送信に失敗しました');
+      setError("送信に失敗しました");
     } finally {
       setLoading(false);
     }
@@ -132,41 +152,42 @@ export default function PasswordResetPage() {
       ResetSessionConfirmSchema.parse({ new_password: newPassword });
     } catch (err) {
       if (err instanceof z.ZodError) {
-        setError(err.issues.map((i) => i.message).join(' '));
+        setError(err.issues.map((i) => i.message).join("\n"));
       } else {
-        setError('入力に誤りがあります');
+        setError("入力に誤りがあります");
       }
       return;
     }
 
     setLoading(true);
     try {
-      const resp = await fetch('/api/auth/password-reset/confirm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const resp = await fetch("/api/auth/password-reset/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ new_password: newPassword }),
       });
 
       if (!resp.ok) {
         const body = await resp.json().catch(() => null);
-        setError(body?.error || '再設定に失敗しました');
+        setError(body?.error || "再設定に失敗しました");
         return;
       }
 
-      setMessage('パスワードを更新しました。ログインしてください。');
+      setMessage("パスワードを更新しました。");
       setIsConfirmMode(false);
-      setEmail('');
-      setNewPassword('');
+      setResetComplete(true);
+      setEmail("");
+      setNewPassword("");
     } catch (err) {
       console.error(err);
-      setError('再設定に失敗しました');
+      setError("再設定に失敗しました");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="pb-10 sm:pb-14 px-6 lg:px-12">
+    <div className="w-full max-w-md mx-auto px-4 sm:px-6 pt-2">
       {siteKey ? (
         <Script
           id="turnstile-reset-script"
@@ -174,49 +195,108 @@ export default function PasswordResetPage() {
           strategy="afterInteractive"
         />
       ) : null}
-      <div className="w-full max-w-md mx-auto px-6">
-        <h1 className="mb-6">
-          {isConfirmMode ? 'パスワード再設定' : 'パスワード再設定の申請'}
-        </h1>
-        <form className="space-y-6" onSubmit={isConfirmMode ? handleConfirm : handleRequest}>
-          <TextField
-            id="email"
-            label="EMAIL"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            type="email"
-            disabled={isConfirmMode || isResolvingSession}
-           size="md"/>
-
-          {isConfirmMode ? (
-            <TextField
-              id="newPassword"
-              label="NEW PASSWORD"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              required
-              type="password"
-             size="md"/>
-          ) : (
-            siteKey ? (
-              <div className="pt-2">
-                <div className="cf-turnstile" data-sitekey={siteKey} data-callback="onTurnstileReset"></div>
-              </div>
-            ) : null
-          )}
-
-          <Button
-            type="submit"
-            className="w-full disabled:opacity-50"
-            size="lg"
-            disabled={loading || isResolvingSession}
+      <div className="border border-black/20 bg-white rounded-2xl overflow-hidden">
+        <div className="pt-8 sm:pt-10 px-6 pb-10">
+          <h1
+            className="font-brand text-center tracking-widest mb-8"
+            style={headingTextStyle}
           >
-            {isResolvingSession ? '確認中...' : isConfirmMode ? 'パスワードを更新' : '再設定メールを送信'}
-          </Button>
-        </form>
-        {error ? <p className="text-sm text-red-600 mt-4">{error}</p> : null}
-        {message ? <p className="text-sm text-green-600 mt-4">{message}</p> : null}
+            {isConfirmMode ? "パスワード再設定" : "パスワード再設定"}
+          </h1>
+          <form
+            className="space-y-6"
+            onSubmit={isConfirmMode ? handleConfirm : handleRequest}
+          >
+            <TextField
+              id="email"
+              label="EMAIL"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              type="email"
+              autoComplete="email"
+              disabled={isConfirmMode || isResolvingSession}
+              shape="rounded"
+              size="lg"
+              className="min-h-[2.75rem]"
+            />
+
+            {isConfirmMode ? (
+              <div>
+                <TextField
+                  id="newPassword"
+                  label="NEW PASSWORD"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="new-password"
+                  helperText="8文字以上128文字以内"
+                  shape="rounded"
+                  size="lg"
+                  className="min-h-[2.75rem]"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-pressed={showPassword}
+                  className="mt-2 text-xs underline underline-offset-4 hover:text-[#474747] transition-colors"
+                >
+                  {showPassword ? "パスワードを非表示" : "パスワードを表示"}
+                </button>
+              </div>
+            ) : siteKey ? (
+              <div className="pt-2">
+                <div
+                  className="cf-turnstile"
+                  data-sitekey={siteKey}
+                  data-callback="onTurnstileReset"
+                ></div>
+              </div>
+            ) : null}
+
+            <Button
+              type="submit"
+              className="w-full"
+              size="xl"
+              shape="rounded"
+              style={{ minHeight: "3rem" }}
+              disabled={
+                loading ||
+                isResolvingSession ||
+                (isConfirmMode ? !newPassword : !email)
+              }
+            >
+              {isResolvingSession
+                ? "確認中..."
+                : isConfirmMode
+                  ? "パスワードを更新"
+                  : "再設定メールを送信"}
+            </Button>
+          </form>
+          {error ? (
+            <p
+              role="alert"
+              className="text-sm text-red-600 mt-4 whitespace-pre-line"
+            >
+              {error}
+            </p>
+          ) : null}
+          {message ? (
+            <p role="status" className="text-sm mt-4 flex items-center gap-2">
+              <span aria-hidden="true">✓</span>
+              {message}
+            </p>
+          ) : null}
+          {resetComplete ? (
+            <Link
+              href="/login"
+              className="mt-4 inline-block text-sm underline underline-offset-4 hover:text-[#474747] transition-colors"
+            >
+              ログインへ
+            </Link>
+          ) : null}
+        </div>
       </div>
     </div>
   );

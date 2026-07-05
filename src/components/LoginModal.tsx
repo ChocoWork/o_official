@@ -1,23 +1,20 @@
 "use client";
 
 import React, { useRef, useState } from "react";
-import Link from 'next/link';
-import Script from 'next/script';
+import Link from "next/link";
+import Script from "next/script";
 import { useLogin } from "@/contexts/LoginContext";
-import { z } from 'zod';
-import { IdentifyRequestSchema } from '@/features/auth/schemas/identify';
-import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/Button/Button';
-
-declare global {
-  interface Window {
-    onTurnstileSuccess?: (token: string) => void;
-  }
-}
+import { z } from "zod";
+import { LoginRequestSchema } from "@/features/auth/schemas/login";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/Button/Button";
+import { TextField } from "@/components/ui/TextField/TextField";
+import { useTurnstileWidget } from "@/hooks/useTurnstileWidget";
 
 interface LoginModalProps {
   open: boolean;
   onClose?: () => void;
+  onSwitchToRegister?: () => void;
 }
 
 type AuthMeResponse = {
@@ -27,54 +24,64 @@ type AuthMeResponse = {
   };
 };
 
-const isPrivilegedRole = (role: unknown): boolean => role === 'admin' || role === 'supporter';
+const isPrivilegedRole = (role: unknown): boolean =>
+  role === "admin" || role === "supporter";
 
 const OTP_LENGTH = 8;
-const EMPTY_OTP_DIGITS = Array.from({ length: OTP_LENGTH }, () => '');
+const EMPTY_OTP_DIGITS = Array.from({ length: OTP_LENGTH }, () => "");
 
 const formatOtpCountdown = (timeRemaining: number) => {
   const minutes = Math.floor(timeRemaining / 60);
   const seconds = timeRemaining % 60;
-  return `${minutes}分 ${String(seconds).padStart(2, '0')}秒後に再送可能`;
+  return `${minutes}分 ${String(seconds).padStart(2, "0")}秒後に再送可能`;
 };
 
-const xsTextStyle: React.CSSProperties = { fontSize: 'var(--lk-size-xs)' };
-const mdTextStyle: React.CSSProperties = { fontSize: 'var(--lk-size-md)' };
-const lgTextStyle: React.CSSProperties = { fontSize: 'var(--lk-size-lg)' };
+const xsTextStyle: React.CSSProperties = { fontSize: "var(--lk-size-xs)" };
+const mdTextStyle: React.CSSProperties = { fontSize: "var(--lk-size-md)" };
+const lgTextStyle: React.CSSProperties = { fontSize: "var(--lk-size-lg)" };
 
-const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
-  const { sendOtp, verifyOtp, loginWithGoogle } = useLogin();
+const LoginModal: React.FC<LoginModalProps> = ({
+  open,
+  onClose,
+  onSwitchToRegister,
+}) => {
+  const { login, verifyOtp, loginWithGoogle } = useLogin();
   const router = useRouter();
-  const emailRef = useRef<HTMLInputElement>(null);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const otpInputRefs = useRef<Array<HTMLInputElement | null>>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [otpSent, setOtpSent] = useState(false);
   const [otpDigits, setOtpDigits] = useState<string[]>(EMPTY_OTP_DIGITS);
-  const [turnstileToken, setTurnstileToken] = useState<string>('');
+  const [turnstileToken, setTurnstileToken] = useState<string>("");
   const [otpSentTime, setOtpSentTime] = useState<Date | null>(null);
   const [timeRemaining, setTimeRemaining] = useState(0);
-  const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '';
-  const otpCode = otpDigits.join('');
+  const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "";
+  const otpCode = otpDigits.join("");
+  const { containerRef: turnstileRef, renderWidget: renderTurnstile } =
+    useTurnstileWidget(siteKey, setTurnstileToken);
 
   const resolvePostLoginPath = React.useCallback(async (): Promise<string> => {
     try {
-      const response = await fetch('/api/auth/me', {
-        method: 'GET',
-        cache: 'no-store',
-        credentials: 'same-origin',
+      const response = await fetch("/api/auth/me", {
+        method: "GET",
+        cache: "no-store",
+        credentials: "same-origin",
       });
 
-      const body = (await response.json().catch(() => null)) as AuthMeResponse | null;
+      const body = (await response
+        .json()
+        .catch(() => null)) as AuthMeResponse | null;
       const authenticated = response.ok && body?.authenticated === true;
       if (!authenticated) {
-        return '/login';
+        return "/login";
       }
 
-      return isPrivilegedRole(body?.user?.role) ? '/auth/verified' : '/account';
+      return isPrivilegedRole(body?.user?.role) ? "/auth/verified" : "/account";
     } catch {
-      return '/account';
+      return "/account";
     }
   }, []);
 
@@ -87,12 +94,12 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
   };
 
   const handleOtpChange = (index: number, value: string) => {
-    const numbersOnly = value.replace(/\D/g, '');
+    const numbersOnly = value.replace(/\D/g, "");
 
     if (!numbersOnly) {
       setOtpDigits((prev) => {
         const next = [...prev];
-        next[index] = '';
+        next[index] = "";
         return next;
       });
       return;
@@ -115,18 +122,21 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
     focusOtpInput(nextIndex);
   };
 
-  const handleOtpKeyDown = (index: number, event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Backspace') {
+  const handleOtpKeyDown = (
+    index: number,
+    event: React.KeyboardEvent<HTMLInputElement>,
+  ) => {
+    if (event.key === "Backspace") {
       event.preventDefault();
       setOtpDigits((prev) => {
         const next = [...prev];
         if (next[index]) {
-          next[index] = '';
+          next[index] = "";
           return next;
         }
 
         if (index > 0) {
-          next[index - 1] = '';
+          next[index - 1] = "";
           setTimeout(() => focusOtpInput(index - 1), 0);
         }
 
@@ -135,20 +145,23 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
       return;
     }
 
-    if (event.key === 'ArrowLeft' && index > 0) {
+    if (event.key === "ArrowLeft" && index > 0) {
       event.preventDefault();
       focusOtpInput(index - 1);
     }
 
-    if (event.key === 'ArrowRight' && index < OTP_LENGTH - 1) {
+    if (event.key === "ArrowRight" && index < OTP_LENGTH - 1) {
       event.preventDefault();
       focusOtpInput(index + 1);
     }
   };
 
-  const handleOtpPaste = (index: number, event: React.ClipboardEvent<HTMLInputElement>) => {
+  const handleOtpPaste = (
+    index: number,
+    event: React.ClipboardEvent<HTMLInputElement>,
+  ) => {
     event.preventDefault();
-    const pasted = event.clipboardData.getData('text').replace(/\D/g, '');
+    const pasted = event.clipboardData.getData("text").replace(/\D/g, "");
     if (!pasted) return;
 
     setOtpDigits((prev) => {
@@ -168,44 +181,47 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
     focusOtpInput(nextIndex);
   };
 
-  const handleSendOtp = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const email = emailRef.current?.value || "";
 
     try {
-      IdentifyRequestSchema.parse({ email, turnstileToken: turnstileToken || undefined });
+      LoginRequestSchema.parse({
+        email,
+        password,
+        turnstileToken: turnstileToken || undefined,
+      });
       setError(null);
     } catch (err) {
       if (err instanceof z.ZodError) {
-        setError(err.issues.map((i) => i.message).join(' '));
+        setError(err.issues.map((i) => i.message).join(" "));
       } else {
-        setError('入力に誤りがあります');
+        setError("入力に誤りがあります");
       }
       return;
     }
 
     if (siteKey && !turnstileToken) {
-      setError('ボット検証を完了してください');
+      setError("ボット検証を完了してください");
       return;
     }
 
     setLoading(true);
     setSuccess(null);
     try {
-      const res = await sendOtp(email, turnstileToken || undefined);
+      const res = await login(email, password, turnstileToken || undefined);
       if (!res.success) {
-        setError(res.error || 'メール送信に失敗しました');
+        setError(res.error || "ログインに失敗しました");
       } else {
         setOtpSent(true);
         setOtpSentTime(new Date());
         setTimeRemaining(60);
         setOtpDigits([...EMPTY_OTP_DIGITS]);
         setTimeout(() => focusOtpInput(0), 0);
-        setSuccess(res.message || '認証コードを送信しました。');
+        setSuccess(res.message || "認証コードを送信しました。");
       }
     } catch (err) {
-      console.error('Unexpected OTP send error', err);
-      setError('メール送信に失敗しました');
+      console.error("Unexpected login error", err);
+      setError("ログインに失敗しました");
     } finally {
       setLoading(false);
     }
@@ -213,11 +229,10 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    const email = emailRef.current?.value || '';
     const code = otpCode;
 
     if (code.length !== OTP_LENGTH) {
-      setError('認証コードは8桁で入力してください');
+      setError("認証コードは8桁で入力してください");
       return;
     }
 
@@ -226,30 +241,20 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
     try {
       const res = await verifyOtp(email, code);
       if (!res.success) {
-        setError(res.error || '認証コードの確認に失敗しました');
+        setError(res.error || "認証コードの確認に失敗しました");
         return;
       }
-      setSuccess(res.message || '認証に成功しました。');
+      setSuccess(res.message || "認証に成功しました。");
       onClose?.();
       const nextPath = await resolvePostLoginPath();
       router.replace(nextPath);
     } catch (err) {
-      console.error('Unexpected OTP verify error', err);
-      setError('認証コードの確認に失敗しました');
+      console.error("Unexpected OTP verify error", err);
+      setError("認証コードの確認に失敗しました");
     } finally {
       setLoading(false);
     }
   };
-
-  React.useEffect(() => {
-    if (!siteKey) return;
-    window.onTurnstileSuccess = (token: string) => setTurnstileToken(token);
-    return () => {
-      if (window.onTurnstileSuccess) {
-        delete window.onTurnstileSuccess;
-      }
-    };
-  }, [siteKey]);
 
   React.useEffect(() => {
     if (!otpSentTime) return;
@@ -277,34 +282,88 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
           id="turnstile-login-script"
           src="https://challenges.cloudflare.com/turnstile/v0/api.js"
           strategy="afterInteractive"
+          onReady={renderTurnstile}
         />
       ) : null}
       <Button
         type="button"
         onClick={() => {
-          void loginWithGoogle({ next: '/auth/verified' });
+          void loginWithGoogle({ next: "/auth/verified" });
         }}
         variant="secondary"
-        size="lg"
-        className="w-full flex items-center justify-center gap-3 mb-8"
+        size="xl"
+        shape="rounded"
+        className="w-full flex items-center justify-center gap-3 mb-4 sm:mb-8"
+        style={{ minHeight: "3rem" }}
       >
         <i className="ri-google-fill text-lg"></i>Googleでサインイン
       </Button>
-      <div className="relative mb-8">
-        <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-black/20"></div></div>
-        <div className="relative flex justify-center"><span className="px-4 bg-white text-[#474747]" style={mdTextStyle}>OR</span></div>
-      </div>
-      <form className="space-y-6 mb-8" onSubmit={otpSent ? handleVerifyOtp : handleSendOtp}>
-        <div>
-          <label htmlFor="email" className="block tracking-widest mb-2" style={mdTextStyle}>EMAIL</label>
-          <input id="email" ref={emailRef} required className="w-full px-4 py-3 border border-black/20 focus:border-black outline-none transition-colors duration-300" style={mdTextStyle} type="email" disabled={otpSent} />
+      <div className="relative mb-4 sm:mb-8">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-black/20"></div>
         </div>
+        <div className="relative flex justify-center">
+          <span className="px-4 bg-white text-[#474747]" style={mdTextStyle}>
+            OR
+          </span>
+        </div>
+      </div>
+      <form
+        className="space-y-4 sm:space-y-6 mb-6 sm:mb-8"
+        onSubmit={otpSent ? handleVerifyOtp : handleLogin}
+      >
+        <TextField
+          id="email"
+          label="EMAIL"
+          type="email"
+          shape="rounded"
+          size="lg"
+          className="min-h-[2.5rem] sm:min-h-[2.75rem]"
+          required
+          autoComplete="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          disabled={otpSent}
+        />
+        {!otpSent ? (
+          <div>
+            <TextField
+              id="password"
+              label="PASSWORD"
+              type="password"
+              shape="rounded"
+              size="lg"
+              className="min-h-[2.5rem] sm:min-h-[2.75rem]"
+              required
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+            <div className="mt-2 text-right">
+              <Link
+                href="/auth/password-reset"
+                className="text-[#474747] underline underline-offset-4 hover:text-black transition-colors"
+                style={xsTextStyle}
+              >
+                パスワードをお忘れの方はこちら
+              </Link>
+            </div>
+          </div>
+        ) : null}
         {otpSent ? (
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label htmlFor="otp" className="block tracking-widest" style={mdTextStyle}>認証コード</label>
+              <label
+                htmlFor="otp"
+                className="block tracking-widest"
+                style={mdTextStyle}
+              >
+                認証コード
+              </label>
               {timeRemaining > 0 ? (
-                <span className="text-[#474747]" style={xsTextStyle}>{formatOtpCountdown(timeRemaining)}</span>
+                <span className="text-[#474747]" style={xsTextStyle}>
+                  {formatOtpCountdown(timeRemaining)}
+                </span>
               ) : (
                 <Button
                   type="button"
@@ -313,23 +372,28 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
                   className="text-xs underline text-[#474747] hover:text-black transition-colors px-0 py-0"
                   style={xsTextStyle}
                   onClick={async () => {
-                    const email = emailRef.current?.value || '';
                     setLoading(true);
                     setError(null);
                     try {
-                      const res = await sendOtp(email, turnstileToken || undefined);
+                      const res = await login(
+                        email,
+                        password,
+                        turnstileToken || undefined,
+                      );
                       if (!res.success) {
-                        setError(res.error || 'メール送信に失敗しました');
+                        setError(res.error || "メール送信に失敗しました");
                       } else {
                         setOtpSentTime(new Date());
                         setTimeRemaining(60);
                         setOtpDigits([...EMPTY_OTP_DIGITS]);
                         setTimeout(() => focusOtpInput(0), 0);
-                        setSuccess(res.message || '認証コードを再送信しました。');
+                        setSuccess(
+                          res.message || "認証コードを再送信しました。",
+                        );
                       }
                     } catch (err) {
-                      console.error('Unexpected OTP resend error', err);
-                      setError('メール送信に失敗しました');
+                      console.error("Unexpected OTP resend error", err);
+                      setError("メール送信に失敗しました");
                     } finally {
                       setLoading(false);
                     }
@@ -339,7 +403,10 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
                 </Button>
               )}
             </div>
-            <div className="flex items-center justify-between gap-2" id="otp">
+            <div
+              className="flex items-center justify-between gap-1.5 sm:gap-2"
+              id="otp"
+            >
               {Array.from({ length: OTP_LENGTH }).map((_, index) => (
                 <input
                   key={index}
@@ -347,14 +414,16 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
                     otpInputRefs.current[index] = el;
                   }}
                   value={otpDigits[index]}
-                  onChange={(event) => handleOtpChange(index, event.target.value)}
+                  onChange={(event) =>
+                    handleOtpChange(index, event.target.value)
+                  }
                   onKeyDown={(event) => handleOtpKeyDown(index, event)}
                   onPaste={(event) => handleOtpPaste(index, event)}
-                  className="w-10 h-11 border border-black/20 text-center outline-none transition-colors duration-200 focus:border-black"
+                  className="flex-1 min-w-0 h-11 border border-black/20 rounded-lg text-center outline-none transition-colors duration-200 focus:border-black"
                   style={lgTextStyle}
                   type="text"
                   inputMode="numeric"
-                  autoComplete={index === 0 ? 'one-time-code' : 'off'}
+                  autoComplete={index === 0 ? "one-time-code" : "off"}
                   maxLength={1}
                   aria-label={`認証コード ${index + 1} 桁目`}
                 />
@@ -364,28 +433,29 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
         ) : null}
         {siteKey ? (
           <div className="pt-2">
-            <div className="cf-turnstile" data-sitekey={siteKey} data-callback="onTurnstileSuccess"></div>
+            <div ref={turnstileRef}></div>
           </div>
         ) : null}
-        <Button type="submit" size="lg" className="w-full disabled:opacity-50" disabled={loading || (otpSent && otpCode.length !== OTP_LENGTH)}>
-          {loading ? '処理中...' : otpSent ? 'サインイン' : 'メールで認証コードを受け取る'}
+        <Button
+          type="submit"
+          size="xl"
+          shape="rounded"
+          className="w-full"
+          style={{ minHeight: "3rem" }}
+          disabled={
+            loading ||
+            (!otpSent && (!email || !password)) ||
+            (otpSent && otpCode.length !== OTP_LENGTH)
+          }
+        >
+          {loading ? "処理中..." : otpSent ? "サインイン" : "ログイン"}
         </Button>
-        {!otpSent ? (
-          <div className="text-right">
-            <Link
-              href="/auth/password-reset"
-              className="text-[#474747] underline underline-offset-4 hover:text-black transition-colors"
-              style={mdTextStyle}
-            >
-              パスワードを忘れた方はこちら
-            </Link>
-          </div>
-        ) : null}
         {otpSent ? (
           <Button
             type="button"
             variant="ghost"
-            className="w-full py-3 border border-black/20 tracking-widest hover:bg-black/5 transition-all duration-300"
+            shape="rounded"
+            className="w-full py-3 border border-black/20 rounded-lg tracking-widest hover:bg-black/5 transition-all duration-300"
             style={mdTextStyle}
             onClick={() => {
               setOtpSent(false);
@@ -395,23 +465,44 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
               setSuccess(null);
               setOtpDigits([...EMPTY_OTP_DIGITS]);
             }}
-           size="md">
+            size="md"
+          >
             メールアドレスを変更
           </Button>
         ) : null}
-        {error ? <p className="text-red-600 mt-2" style={mdTextStyle}>{error}</p> : null}
-        {success ? <p className="text-green-600 mt-2" style={mdTextStyle}>{success}</p> : null}
+        {error ? (
+          <p role="alert" className="text-red-600 mt-2" style={mdTextStyle}>
+            {error}
+          </p>
+        ) : null}
+        {success ? (
+          <p
+            role="status"
+            className="mt-2 flex items-center gap-2"
+            style={mdTextStyle}
+          >
+            <span aria-hidden="true">✓</span>
+            {success}
+          </p>
+        ) : null}
       </form>
-      <div className="relative mb-16">
-        <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-black/20"></div></div>
-      </div>
-      <p className="max-w-[360px] mx-auto px-2 text-[#474747] text-center leading-6 mb-8 break-keep [text-wrap:pretty]" style={xsTextStyle}>
-        続行することで、
-        <a href="/terms" className="underline hover:text-black transition-colors">利用規約</a>
-        および
-        <a href="/privacy" className="underline hover:text-black transition-colors">プライバシーポリシー</a>に<br />
-        同意したものとみなされます。
-      </p>
+      {onSwitchToRegister ? (
+        <>
+          <hr className="mb-6 sm:mb-8 border-black/20" />
+          <p
+            className="text-center mb-6 sm:mb-12 text-[#474747]"
+            style={mdTextStyle}
+          >
+            <button
+              type="button"
+              onClick={onSwitchToRegister}
+              className="ml-1 underline underline-offset-4 hover:text-black transition-colors"
+            >
+              会員登録はこちら
+            </button>
+          </p>
+        </>
+      ) : null}
     </div>
   );
 };

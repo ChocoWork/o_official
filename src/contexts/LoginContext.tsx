@@ -17,7 +17,9 @@ interface LoginContextType {
   userRole: UserRole;
   isMfaVerified: boolean;
   isAuthResolved: boolean;
-  sendOtp: (email: string, turnstileToken?: string) => Promise<{ success: boolean; error?: string; message?: string }>;
+  refreshAuthState: () => Promise<void>;
+  login: (email: string, password: string, turnstileToken?: string) => Promise<{ success: boolean; error?: string; message?: string }>;
+  register: (email: string, password: string, turnstileToken?: string) => Promise<{ success: boolean; error?: string; message?: string }>;
   verifyOtp: (email: string, code: string) => Promise<{ success: boolean; error?: string; message?: string }>;
   loginWithGoogle: (params?: { next?: string }) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<{ success: boolean; error?: string }>;
@@ -77,18 +79,19 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [applyAuthState]);
 
-  const sendOtp = async (email: string, turnstileToken?: string) => {
+  const login = async (email: string, password: string, turnstileToken?: string) => {
     try {
-      const { IdentifyRequestSchema } = await import('@/features/auth/schemas/identify');
-      const parsed = IdentifyRequestSchema.safeParse({ email, turnstileToken });
+      const { LoginRequestSchema } = await import('@/features/auth/schemas/login');
+      const parsed = LoginRequestSchema.safeParse({ email, password, turnstileToken });
       if (!parsed.success) {
         return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ') };
       }
 
-      const resp = await fetch('/api/auth/identify', {
+      const resp = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, turnstileToken, redirect_to: '/auth/verified' }),
+        credentials: 'same-origin',
+        body: JSON.stringify({ email, password, turnstileToken }),
       });
 
       const body: unknown = await resp.json().catch(() => null);
@@ -96,18 +99,53 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
         const message =
           typeof body === 'object' && body && 'error' in body && typeof (body as { error?: unknown }).error === 'string'
             ? (body as { error: string }).error
-            : 'メール送信に失敗しました';
+            : 'ログインに失敗しました';
         return { success: false, error: message };
       }
 
       const message =
         typeof body === 'object' && body && 'message' in body && typeof (body as { message?: unknown }).message === 'string'
           ? (body as { message: string }).message
-          : 'メールを送信しました。受信したリンクをご確認ください。';
+          : '認証コードを送信しました。メールに届いたコードを入力してください。';
 
       return { success: true, message };
     } catch (e) {
-      console.error('OTP send error', e);
+      console.error('Login error', e);
+      return { success: false, error: '内部エラーが発生しました' };
+    }
+  };
+
+  const register = async (email: string, password: string, turnstileToken?: string) => {
+    try {
+      const { RegisterRequestSchema } = await import('@/features/auth/schemas/register');
+      const parsed = RegisterRequestSchema.safeParse({ email, password, turnstileToken });
+      if (!parsed.success) {
+        return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ') };
+      }
+
+      const resp = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, turnstileToken, redirect_to: '/auth/verified' }),
+      });
+
+      const body: unknown = await resp.json().catch(() => null);
+      if (!resp.ok) {
+        const message =
+          typeof body === 'object' && body && 'error' in body && typeof (body as { error?: unknown }).error === 'string'
+            ? (body as { error: string }).error
+            : '登録に失敗しました';
+        return { success: false, error: message };
+      }
+
+      const message =
+        typeof body === 'object' && body && 'message' in body && typeof (body as { message?: unknown }).message === 'string'
+          ? (body as { message: string }).message
+          : '確認メールを送信しました。メールのリンクから登録を完了してください。';
+
+      return { success: true, message };
+    } catch (e) {
+      console.error('Register error', e);
       return { success: false, error: '内部エラーが発生しました' };
     }
   };
@@ -123,6 +161,7 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
       const resp = await fetch('/api/auth/otp/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
         body: JSON.stringify({ email, code }),
       });
 
@@ -171,7 +210,13 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
         throw new Error('ログアウトに失敗しました');
       }
 
-      await supabase.auth.signOut();
+      // クライアント SDK のサインアウトはベストエフォート。
+      // （セッション未保持などで失敗しても、サーバ側 Cookie は既にクリア済みのためログアウトは成立させる）
+      try {
+        await supabase.auth.signOut();
+      } catch (signOutError) {
+        console.warn('Client signOut failed (ignored):', signOutError);
+      }
       setIsLoggedIn(false);
       setIsAdmin(false);
       setUserRole('user');
@@ -198,7 +243,9 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
         userRole,
         isMfaVerified,
         isAuthResolved,
-        sendOtp,
+        refreshAuthState: syncAuthState,
+        login,
+        register,
         verifyOtp,
         loginWithGoogle,
         logout,

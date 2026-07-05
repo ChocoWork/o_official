@@ -1,11 +1,12 @@
 import { expect, Page } from '@playwright/test';
 
 export async function mockOtpAuthentication(page: Page, email = 'user@example.com') {
-  await page.route('**/api/auth/identify', async (route) => {
+  await page.route('**/api/auth/login', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
+        step: 'otp',
         message: '認証コードを送信しました。メールに届いたコードを入力してください。',
       }),
     });
@@ -48,7 +49,8 @@ export async function loginAndOpenAccount(page: Page, email = 'user@example.com'
   }
 
   await page.getByLabel('EMAIL').fill(email);
-  await page.getByRole('button', { name: 'メールで認証コードを受け取る' }).click();
+  await page.getByLabel('PASSWORD').fill('password123');
+  await page.getByRole('button', { name: 'ログイン' }).click();
 
   for (let index = 0; index < 8; index += 1) {
     await page.getByLabel(`認証コード ${index + 1} 桁目`).fill(String((index + 1) % 10));

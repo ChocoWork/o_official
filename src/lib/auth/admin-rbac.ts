@@ -15,6 +15,8 @@ export type PermissionCode =
   | 'admin.stockists.manage'
   | 'admin.orders.read'
   | 'admin.orders.manage'
+  | 'admin.contact.read'
+  | 'admin.contact.manage'
   | 'admin.audit.read';
 
 type AuthzSuccess = {
@@ -47,9 +49,17 @@ const legacyPermissionMap: Record<AppRole, Set<PermissionCode>> = {
     'admin.stockists.manage',
     'admin.orders.read',
     'admin.orders.manage',
+    'admin.contact.read',
+    'admin.contact.manage',
     'admin.audit.read',
   ]),
-  supporter: new Set<PermissionCode>(['admin.orders.read', 'admin.orders.manage', 'admin.users.read']),
+  supporter: new Set<PermissionCode>([
+    'admin.orders.read',
+    'admin.orders.manage',
+    'admin.users.read',
+    'admin.contact.read',
+    'admin.contact.manage',
+  ]),
   user: new Set<PermissionCode>([]),
 };
 

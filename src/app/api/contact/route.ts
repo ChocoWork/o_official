@@ -3,8 +3,10 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import sendMail from '@/lib/mail';
 import { getRequestOrigin } from '@/lib/redirect';
-import { createServiceRoleClient } from '@/lib/supabase/server';
+import { createClient, createServiceRoleClient, resolveRequestUser } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
+import { buildReplyAddress } from '@/lib/contact/reply-address';
+import { toOrderNumber } from '@/lib/orders/order-number';
 
 const contactSchema = z.object({
   name: z.string().trim().min(1).max(100),
@@ -12,8 +14,62 @@ const contactSchema = z.object({
   inquiryType: z.enum(['product', 'order', 'other']),
   subject: z.string().trim().min(1).max(150),
   message: z.string().trim().min(1).max(500),
+  orderNumber: z.string().trim().max(32).optional().default(''),
   website: z.string().optional().default(''),
 });
+
+type OrderLinkRow = {
+  id: string;
+  shipping_email: string | null;
+  user_id: string | null;
+};
+
+/**
+ * Resolve an order UUID from a user-entered order number (ORD-XXXXXXXX), only
+ * when the requester owns the order (matching email or authenticated user id).
+ * Returns null when nothing matches — the inquiry is still accepted, just not linked.
+ */
+async function resolveLinkedOrderId(
+  service: Awaited<ReturnType<typeof createServiceRoleClient>>,
+  orderNumber: string,
+  email: string,
+  userId: string | null
+): Promise<string | null> {
+  const normalized = orderNumber.trim().toUpperCase();
+  if (!normalized) {
+    return null;
+  }
+
+  const candidates = new Map<string, OrderLinkRow>();
+
+  const { data: byEmail } = await service
+    .from('orders')
+    .select('id, shipping_email, user_id')
+    .ilike('shipping_email', email)
+    .limit(50);
+  for (const row of (byEmail ?? []) as OrderLinkRow[]) {
+    candidates.set(row.id, row);
+  }
+
+  if (userId) {
+    const { data: byUser } = await service
+      .from('orders')
+      .select('id, shipping_email, user_id')
+      .eq('user_id', userId)
+      .limit(50);
+    for (const row of (byUser ?? []) as OrderLinkRow[]) {
+      candidates.set(row.id, row);
+    }
+  }
+
+  for (const row of candidates.values()) {
+    if (toOrderNumber(row.id) === normalized) {
+      return row.id;
+    }
+  }
+
+  return null;
+}
 
 const inquiryTypeLabelMap: Record<string, string> = {
   product: '商品について',
@@ -90,7 +146,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { name, email, inquiryType, subject, message, website } = parsed.data;
+    const { name, email, inquiryType, subject, message, orderNumber, website } = parsed.data;
 
     if (website.trim().length > 0) {
       await logAudit({
@@ -118,6 +174,20 @@ export async function POST(request: Request) {
     const clientIp = getClientIp(request);
     const userAgent = request.headers.get('user-agent');
 
+    // ログイン済みなら user_id を記録（ゲストは null）
+    let userId: string | null = null;
+    try {
+      const authClient = await createClient(request);
+      const {
+        data: { user },
+      } = await resolveRequestUser(authClient, request);
+      userId = user?.id ?? null;
+    } catch {
+      userId = null;
+    }
+
+    const linkedOrderId = await resolveLinkedOrderId(service, orderNumber, email, userId);
+
     const { data: inquiryData, error: inquiryError } = await service
       .from('contact_inquiries')
       .insert([
@@ -127,6 +197,8 @@ export async function POST(request: Request) {
           inquiry_type: inquiryType,
           subject,
           message,
+          user_id: userId,
+          order_id: linkedOrderId,
           submitted_ip: clientIp,
           user_agent: userAgent,
         },
@@ -147,6 +219,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: '問い合わせ履歴の保存に失敗しました。' }, { status: 500 });
     }
 
+    // スレッド最初のメッセージとして本文を contact_messages に保存（チャット表示用）
+    await service.from('contact_messages').insert([
+      {
+        inquiry_id: inquiryData.id,
+        sender_role: 'user',
+        author_id: userId,
+        body: message,
+        channel: 'web',
+      },
+    ]);
+
     await logAudit({
       action: 'contact.submit',
       outcome: 'success',
@@ -158,6 +241,7 @@ export async function POST(request: Request) {
       metadata: {
         inquiry_type: inquiryType,
         email_hash: hashText(email.toLowerCase()),
+        order_linked: linkedOrderId ? true : false,
       },
     });
 
@@ -193,6 +277,45 @@ export async function POST(request: Request) {
           metadata: {
             inquiry_type: inquiryType,
           },
+        });
+      }
+    }
+
+    // 顧客への確認メール（Reply-To でメール返信をスレッドに取り込めるようにする）
+    if (process.env.MAIL_FROM_ADDRESS) {
+      const confirmationText = [
+        `${name} 様`,
+        '',
+        'お問い合わせいただきありがとうございます。',
+        '以下の内容で受け付けました。担当者より改めてご連絡いたします。',
+        '',
+        `種別: ${inquiryTypeLabelMap[inquiryType] ?? inquiryType}`,
+        `件名: ${subject}`,
+        '本文:',
+        message,
+        '',
+        'ご返信の際は、本メールにそのままご返信ください。',
+        '',
+        'Le Fil des Heures',
+      ].join('\n');
+
+      try {
+        await sendMail({
+          to: email,
+          subject: `【Le Fil des Heures】お問い合わせを受け付けました（${subject}）`,
+          text: confirmationText,
+          replyTo: buildReplyAddress(inquiryData.id) ?? undefined,
+        });
+      } catch (mailError) {
+        console.warn('Contact acknowledgement mail failed. History is saved:', mailError);
+        await logAudit({
+          action: 'contact.submit.ack_mail',
+          outcome: 'error',
+          resource: 'contact',
+          resource_id: inquiryData.id,
+          detail: 'ack_mail_send_failed',
+          ip: clientIp,
+          user_agent: userAgent,
         });
       }
     }

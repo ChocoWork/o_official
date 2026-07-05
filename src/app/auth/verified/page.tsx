@@ -2,7 +2,18 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useLogin } from '@/contexts/LoginContext';
 import { Button } from '@/components/ui/Button/Button';
+import { SingleSelect } from '@/components/ui/SingleSelect/SingleSelect';
+
+function Spinner() {
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-black/20 border-t-black align-[-2px]"
+    />
+  );
+}
 
 type UserRole = 'admin' | 'supporter' | 'user';
 
@@ -47,11 +58,16 @@ type VerifyMfaResponse = {
 
 const isUserRole = (role: unknown): role is UserRole => role === 'admin' || role === 'supporter' || role === 'user';
 
+// ブランド世界観（Le Fil des Heures）に合わせたタイポ階層。対比のため見出しを最大に。
+const authTitleStyle: React.CSSProperties = { fontSize: 'var(--lk-size-4xl)' };
+const authBodyStyle: React.CSSProperties = { fontSize: 'var(--lk-size-lg)' };
+const authNoteStyle: React.CSSProperties = { fontSize: 'var(--lk-size-sm)' };
+
 type PageMode = 'loading' | 'unauthenticated' | 'non-privileged' | 'mfa-challenge';
 
 export default function VerifiedPage() {
   const [mode, setMode] = useState<PageMode>('loading');
-  const [message, setMessage] = useState<string>('確認完了。認証状態を確認しています…');
+  const [message, setMessage] = useState<string>('サインインを確認しています…');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [otpCode, setOtpCode] = useState('');
@@ -63,6 +79,7 @@ export default function VerifiedPage() {
   const [totpUri, setTotpUri] = useState<string | null>(null);
   const [hasAutoEnrollAttempted, setHasAutoEnrollAttempted] = useState(false);
   const router = useRouter();
+  const { refreshAuthState } = useLogin();
 
   const loadMfaStatus = React.useCallback(async () => {
     const statusResponse = await fetch('/api/auth/mfa/status', {
@@ -245,6 +262,11 @@ export default function VerifiedPage() {
         throw new Error('2要素認証コードの検証に失敗しました。');
       }
 
+      // グローバルな認証状態（isMfaVerified 等）を再同期してから遷移する。
+      // これを省くと /admin がリロードするまで古い isMfaVerified=false を読み、
+      // 「2要素認証が必要です」が誤表示される。
+      await refreshAuthState();
+
       setMessage('2要素認証が完了しました。管理画面へ移動します…');
       router.replace('/admin');
     } catch (error) {
@@ -257,30 +279,48 @@ export default function VerifiedPage() {
 
   const renderBody = () => {
     if (mode === 'loading') {
-      return <p className="mb-4">{message}</p>;
+      return (
+        <p
+          className="flex items-center justify-center gap-2 text-[#474747]"
+          role="status"
+          aria-live="polite"
+          style={authBodyStyle}
+        >
+          <Spinner />
+          {message}
+        </p>
+      );
     }
 
     if (mode === 'unauthenticated') {
       return (
-        <>
-          <p className="mb-4">ログインが必要です。ログイン後に再度お試しください。</p>
-          <a href="/login" className="text-blue-600">ログインページへ</a>
-        </>
+        <div className="space-y-6">
+          <p className="text-black" style={authBodyStyle}>ログインが必要です。ログイン後に再度お試しください。</p>
+          <a href="/login" className="inline-block underline underline-offset-4 hover:text-[#474747] transition-colors">ログインページへ</a>
+        </div>
       );
     }
 
     if (mode === 'non-privileged') {
       return (
-        <>
-          <p className="mb-4">{message}</p>
-          <a href="/account" className="text-blue-600">アカウントへ</a>
-        </>
+        <div className="space-y-6">
+          <p
+            className="flex items-center justify-center gap-2 text-[#474747]"
+            role="status"
+            aria-live="polite"
+            style={authBodyStyle}
+          >
+            <Spinner />
+            {message}
+          </p>
+          <a href="/account" className="inline-block underline underline-offset-4 hover:text-[#474747] transition-colors">アカウントへ</a>
+        </div>
       );
     }
 
     return (
-      <div className="space-y-4">
-        <p>{message}</p>
+      <div className="space-y-4 text-left">
+        <p style={authBodyStyle}>{message}</p>
         <p className="text-xs text-[#474747]">
           ここで入力するのは、Google Authenticator などの認証アプリに表示される 6〜8 桁のワンタイムコードです。
         </p>
@@ -291,36 +331,44 @@ export default function VerifiedPage() {
             className="h-48 w-48 border border-black/20 p-2"
           />
         ) : null}
-        {totpSecret ? (
-          <p className="text-xs text-[#474747] break-all">シークレット: {totpSecret}</p>
-        ) : null}
-        {totpUri ? (
-          <p className="text-xs text-[#474747] break-all">セットアップURI: {totpUri}</p>
-        ) : null}
-        {enrollFactorId && !qrCodeSvg ? (
-          <p className="text-xs text-[#474747]">
-            QRコードが表示されない場合は、Google Authenticator の「セットアップキーを入力」から上記シークレットまたはセットアップURIを使って登録できます。
-          </p>
+        {totpSecret || totpUri ? (
+          <details className="text-xs text-[#474747]">
+            <summary className="cursor-pointer underline underline-offset-4 hover:text-black transition-colors">
+              手動で入力する場合はこちら
+            </summary>
+            <div className="mt-2 space-y-2">
+              {totpSecret ? <p className="break-all">シークレット: {totpSecret}</p> : null}
+              {totpUri ? <p className="break-all">セットアップURI: {totpUri}</p> : null}
+              <p>
+                QRコードが表示されない場合は、Google Authenticator の「セットアップキーを入力」から上記シークレットまたはセットアップURIを使って登録できます。
+              </p>
+            </div>
+          </details>
         ) : null}
 
         {!qrCodeSvg && !enrollFactorId && verifiedFactors.length === 0 ? (
-          <Button type="button" onClick={() => void handleEnrollTotp()} disabled={isProcessing} variant="secondary" size="md">
+          <Button
+            type="button"
+            onClick={() => void handleEnrollTotp()}
+            disabled={isProcessing}
+            variant="secondary"
+            size="xl"
+            shape="rounded"
+            className="w-full"
+            style={{ minHeight: '3rem' }}
+          >
             {isProcessing ? '登録中...' : '2要素認証（TOTP）を登録'}
           </Button>
         ) : null}
 
         {verifiedFactors.length > 1 && !enrollFactorId ? (
-          <select
+          <SingleSelect
+            label="認証要素"
+            block
             value={selectedFactorId ?? ''}
-            onChange={(event) => setSelectedFactorId(event.target.value || null)}
-            className="w-full border border-black/20 px-3 py-2 text-sm"
-          >
-            {verifiedFactors.map((factor) => (
-              <option key={factor.id} value={factor.id}>
-                {factor.label}
-              </option>
-            ))}
-          </select>
+            onValueChange={(value) => setSelectedFactorId(value || null)}
+            options={verifiedFactors.map((factor) => ({ value: factor.id, label: factor.label }))}
+          />
         ) : null}
 
         {(enrollFactorId || verifiedFactors.length > 0) ? (
@@ -329,12 +377,22 @@ export default function VerifiedPage() {
               type="text"
               inputMode="numeric"
               autoComplete="one-time-code"
+              aria-label="認証コード（6〜8桁）"
               value={otpCode}
               onChange={(event) => setOtpCode(event.target.value.replace(/\D/g, '').slice(0, 8))}
               placeholder="6〜8桁の認証コード"
-              className="w-full border border-black/20 px-3 py-2 text-sm"
+              className="w-full h-11 border border-black/20 rounded-lg px-3 text-center tracking-[0.4em] outline-none transition-colors duration-200 focus:border-black"
+              style={authBodyStyle}
             />
-            <Button type="button" onClick={handleVerifyMfa} disabled={isProcessing} size="md">
+            <Button
+              type="button"
+              onClick={handleVerifyMfa}
+              disabled={isProcessing}
+              size="xl"
+              shape="rounded"
+              className="w-full"
+              style={{ minHeight: '3rem' }}
+            >
               {isProcessing ? '検証中...' : '2要素認証を完了'}
             </Button>
           </div>
@@ -344,10 +402,21 @@ export default function VerifiedPage() {
   };
 
   return (
-    <div className="max-w-xl mx-auto p-6">
-      <h1 className="mb-4">認証確認</h1>
-      {renderBody()}
-      {errorMessage ? <p className="mt-4 text-sm text-red-700">{errorMessage}</p> : null}
+    <div className="flex min-h-[calc(100dvh-6.5rem)] w-full flex-col items-center justify-center px-6 py-16 text-center">
+      {/* ブランドフォント Didot（h1 既定）。認証確認をブランドの一場面として見せる */}
+      <h1 className="mb-4 tracking-[0.18em]" style={authTitleStyle}>
+        Le Fil des Heures
+      </h1>
+      {/* 糸のモチーフ：一本の細いヘアライン（Le Fil des Heures＝時間の糸） */}
+      <span aria-hidden="true" className="mb-8 block h-10 w-px bg-black/30" />
+
+      <div className="w-full max-w-md">{renderBody()}</div>
+
+      {errorMessage ? (
+        <p role="alert" className="mt-6 text-red-600" style={authNoteStyle}>
+          {errorMessage}
+        </p>
+      ) : null}
     </div>
   );
 }

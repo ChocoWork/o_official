@@ -4,6 +4,7 @@ type MailPayload = {
   text?: string;
   html?: string;
   from?: string;
+  replyTo?: string;
 };
 
 export async function sendMail(payload: MailPayload) {
@@ -12,6 +13,10 @@ export async function sendMail(payload: MailPayload) {
   switch (provider) {
     case 'ses': {
       const adapter = await import('./mail/adapters/ses');
+      return adapter.sendMail(payload);
+    }
+    case 'resend': {
+      const adapter = await import('./mail/adapters/resend');
       return adapter.sendMail(payload);
     }
     default:

@@ -75,10 +75,11 @@
 }
 
 
-/* --- ラベル（対比：入力本文より一段小さく・やや淡く／整列：左そろえ）--- */
+/* --- ラベル（対比：入力本文より半段小さく・やや淡く／整列：左そろえ）--- */
 .text-field__label {
   display: block;
-  font-size: var(--field-label-size);
+  /* ラベルは font-size から導出。helper/error より一段大きく可読性を確保 */
+  font-size: calc(var(--field-font-size) / var(--sqrt-phi));
   letter-spacing: var(--field-letter-spacing);
   color: var(--field-fg-label);
   line-height: var(--sqrt-phi, 1.4);

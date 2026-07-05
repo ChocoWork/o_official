@@ -50,7 +50,8 @@ test.describe('FR-CHECKOUT-012 account profile defaults', () => {
 
     await page.goto('/login');
     await page.getByLabel('EMAIL').fill('user@example.com');
-    await page.getByRole('button', { name: 'メールで認証コードを受け取る' }).click();
+    await page.getByLabel('PASSWORD').fill('password123');
+    await page.getByRole('button', { name: 'ログイン' }).click();
 
     for (let index = 0; index < 8; index += 1) {
       await page.getByLabel(`認証コード ${index + 1} 桁目`).fill(String((index + 1) % 10));

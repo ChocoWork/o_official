@@ -6,11 +6,12 @@ type MailPayload = {
   text?: string;
   html?: string;
   from?: string;
+  replyTo?: string;
 };
 
 const REGION = process.env.AWS_REGION || 'us-east-1';
 
-export async function sendMail({ to, subject, html, text, from }: MailPayload) {
+export async function sendMail({ to, subject, html, text, from, replyTo }: MailPayload) {
   const sender = from || process.env.MAIL_FROM_ADDRESS;
   if (!sender) throw new Error('MAIL_FROM_ADDRESS must be set');
 
@@ -26,6 +27,7 @@ export async function sendMail({ to, subject, html, text, from }: MailPayload) {
       Subject: { Charset: 'UTF-8', Data: subject },
     },
     Source: sender,
+    ...(replyTo ? { ReplyToAddresses: [replyTo] } : {}),
   };
 
   const cmd = new SendEmailCommand(params);

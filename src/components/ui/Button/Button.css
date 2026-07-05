@@ -8,7 +8,10 @@
   --gap-icon2text: calc(var(--pad-x) / var(--phi));
 
   --button-radius-default: 9999px;
-  --button-radius-rounded: var(--control-button-radius-rounded);
+  /* rounded: input と揃う中庸な角丸（8px, --radius-md）。
+     shadcn の rounded-md / Bootstrap・Ant の 6-8px と同水準。
+     従来の --control-button-radius-rounded(14-20px) は input(9px) より過度に丸く不均衡だった。 */
+  --button-radius-rounded: var(--radius-md);
   --button-bg: #111111;
   --button-color: #ffffff;
   --button-border-color: #111111;

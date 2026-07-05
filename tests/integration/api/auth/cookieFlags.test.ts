@@ -19,6 +19,7 @@ jest.mock('next/server', () => ({
 
 jest.mock('@/lib/supabase/server', () => ({
   createClient: jest.fn(),
+  createPublicClient: jest.fn(),
   createServiceRoleClient: jest.fn(),
 }));
 
@@ -34,6 +35,10 @@ const { cookies } = require('next/headers');
 // cover the middleware behavior.
 jest.mock('@/lib/csrfMiddleware', () => ({
   requireCsrfOrDeny: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('@/features/auth/middleware/rateLimit', () => ({
+  enforceRateLimit: jest.fn().mockResolvedValue(undefined),
 }));
 
 describe('Auth cookie flags (integration, mocked)', () => {
@@ -58,31 +63,33 @@ describe('Auth cookie flags (integration, mocked)', () => {
     cookies.mockReturnValue({ get: jest.fn().mockReturnValue(undefined) });
   });
 
-  test('login sets refresh cookie HttpOnly=true, SameSite=lax and csrf cookie HttpOnly=false, SameSite=lax', async () => {
+  test('login (step 1) sets pending-2FA cookie HttpOnly=true, SameSite=strict and issues no session cookies', async () => {
     process.env.NODE_ENV = 'production';
+    process.env.JWT_SECRET = 'test-jwt-secret';
+    delete process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
-    // mock supabase client signInWithPassword
-    const { createClient, createServiceRoleClient } = require('@/lib/supabase/server');
-    createClient.mockReturnValue({ auth: { signInWithPassword: jest.fn().mockResolvedValue({ data: { session: { access_token: 'a', refresh_token: 'r', expires_at: new Date().toISOString() }, user: { id: 'u1' } }, error: null }) } });
-
-    const fromMock = jest.fn(() => ({ insert: jest.fn().mockResolvedValue({}) }));
-    createServiceRoleClient.mockReturnValue({ from: fromMock });
+    // 新フロー: パスワード検証 + OTP 送信のみ（セッション Cookie は発行しない）
+    const { createPublicClient } = require('@/lib/supabase/server');
+    createPublicClient.mockResolvedValue({
+      auth: {
+        signInWithPassword: jest.fn().mockResolvedValue({ data: { session: { access_token: 'a', refresh_token: 'r', expires_at: new Date().toISOString() }, user: { id: 'u1', email: 'u@example.com' } }, error: null }),
+        signInWithOtp: jest.fn().mockResolvedValue({ data: {}, error: null }),
+      },
+    });
 
     // call handler
-    const req: any = { json: async () => ({ email: 'u@example.com', password: 'passw0rd' }) };
+    const req: any = { headers: { get: () => null }, json: async () => ({ email: 'u@example.com', password: 'passw0rd' }) };
     const res: any = await loginHandler(req);
 
-    const refreshCookie = res.cookies.get('sb-refresh-token');
-    const csrfCookie = res.cookies.get('sb-csrf-token');
+    const pendingCookie = res.cookies.get('sb-login-2fa-session');
+    expect(pendingCookie).toBeDefined();
+    expect(pendingCookie.httpOnly).toBe(true);
+    expect(pendingCookie.sameSite).toBe('strict');
+    expect(pendingCookie.secure).toBe(true);
 
-    expect(refreshCookie).toBeDefined();
-    expect(refreshCookie.httpOnly).toBe(true);
-    expect(refreshCookie.sameSite).toBe('lax');
-    expect(refreshCookie.secure).toBe(true);
-
-    expect(csrfCookie).toBeDefined();
-    expect(csrfCookie.httpOnly).toBe(false);
-    expect(csrfCookie.sameSite).toBe('lax');
+    // セッション Cookie は step 1 では発行されない（OTP 検証時に発行）
+    expect(res.cookies.get('sb-refresh-token')).toBeUndefined();
+    expect(res.cookies.get('sb-access-token')).toBeUndefined();
   });
 
   test('refresh sets new refresh cookie and csrf cookie with proper flags', async () => {

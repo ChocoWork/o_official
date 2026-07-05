@@ -38,6 +38,14 @@ export async function POST(request: Request) {
 
     const { email, code } = parsed.data;
 
+    // 「パスワード検証済み」の署名 Cookie を必須とする（パスワードを迂回した OTP 単独ログインを防ぐ）。
+    const { readLoginTwoFactorSessionFromCookieHeader } = await import('@/features/auth/services/login-2fa-session');
+    const pending = readLoginTwoFactorSessionFromCookieHeader(request.headers.get('cookie'));
+    if (!pending || pending.email !== email) {
+      await logAudit({ action: 'auth.otp.verify', actor_email: email, outcome: 'failure', detail: 'missing_or_invalid_password_session' });
+      return NextResponse.json({ error: 'セッションの有効期限が切れました。もう一度ログインしてください。' }, { status: 401 });
+    }
+
     const supabase = await createServiceRoleClient();
     const result = await tryVerifyOtpWithTypes(supabase, email, code);
 
@@ -53,6 +61,11 @@ export async function POST(request: Request) {
       },
       { status: 200 },
     );
+
+    // 使い捨ての「パスワード検証済み」Cookie を破棄する。
+    const { loginTwoFactorSessionCookieName, clearCookieOptions } = await import('@/lib/cookie');
+    res.cookies.set({ name: loginTwoFactorSessionCookieName, value: '', ...clearCookieOptions() });
+
     const { persistSessionAndCookies } = await import('@/features/auth/services/register');
     const persistResult = await persistSessionAndCookies(res, result.data.session, result.data.user);
 

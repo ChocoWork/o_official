@@ -1,9 +1,10 @@
 /**
  * Login API Integration Tests
  * タスク: [AUTH-01-06]
- * 対応 REQ: REQ-AUTH-002
- * 対応 ARCH-ID: ARCH-AUTH-02
- * 仕様書: docs/specs/01_auth.md §4.2
+ * 対応 REQ: REQ-AUTH-002 / FREQ-58（メール + パスワード + メールOTP の2要素認証 step1）
+ *
+ * 新フロー: /api/auth/login はパスワードを検証し、成功したらメール OTP を送信して
+ * 「パスワード検証済み」の署名 Cookie を発行する（セッションはまだ発行しない）。
  */
 
 // Mock rate limit middleware
@@ -11,26 +12,22 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({
   enforceRateLimit: jest.fn().mockResolvedValue(undefined),
 }));
 
-// Mock Supabase client
+// Mock Supabase client (public client: password check + OTP send)
 jest.mock('@/lib/supabase/server', () => {
   const mockSignInWithPassword = jest.fn();
-  
-  const createMockClient = jest.fn(async () => ({
+  const mockSignInWithOtp = jest.fn();
+
+  const createMockPublicClient = jest.fn(async () => ({
     auth: {
       signInWithPassword: mockSignInWithPassword,
+      signInWithOtp: mockSignInWithOtp,
     },
   }));
 
-  const createMockServiceRoleClient = jest.fn(() => ({
-    from: jest.fn(() => ({
-      insert: jest.fn().mockResolvedValue({ data: [{ id: 'session-id' }], error: null }),
-    })),
-  }));
-
   return {
-    createClient: createMockClient,
-    createServiceRoleClient: createMockServiceRoleClient,
+    createPublicClient: createMockPublicClient,
     __mockSignInWithPassword: mockSignInWithPassword,
+    __mockSignInWithOtp: mockSignInWithOtp,
   };
 });
 
@@ -39,42 +36,22 @@ jest.mock('@/lib/audit', () => ({
   logAudit: jest.fn().mockResolvedValue(undefined),
 }));
 
-// Mock hash utilities
-jest.mock('@/lib/hash', () => ({
-  tokenHashSha256: jest.fn((token: string) => `hashed_${token}`),
+// Mock the signed pending-2FA token service
+jest.mock('@/features/auth/services/login-2fa-session', () => ({
+  createLoginTwoFactorSessionToken: jest.fn(() => 'mock-pending-token'),
+  loginTwoFactorSessionMaxAgeSeconds: 600,
 }));
 
-// Mock cookie utilities
+// Mock cookie utilities used by the login route
 jest.mock('@/lib/cookie', () => ({
-  refreshCookieName: 'sb-refresh-token',
-  accessCookieName: 'sb-access-token',
-  csrfCookieName: 'csrf-token',
-  cookieOptionsForRefresh: jest.fn(() => ({
+  loginTwoFactorSessionCookieName: 'sb-login-2fa-session',
+  cookieOptionsForLoginTwoFactor: jest.fn(() => ({
     httpOnly: true,
     secure: true,
-    sameSite: 'lax' as const,
+    sameSite: 'strict' as const,
     path: '/',
-    maxAge: 7 * 24 * 60 * 60,
+    maxAge: 600,
   })),
-  cookieOptionsForAccess: jest.fn(() => ({
-    httpOnly: true,
-    secure: true,
-    sameSite: 'lax' as const,
-    path: '/',
-    maxAge: 15 * 60,
-  })),
-  cookieOptionsForCsrf: jest.fn(() => ({
-    httpOnly: false,
-    secure: true,
-    sameSite: 'lax' as const,
-    path: '/',
-    maxAge: 7 * 24 * 60 * 60,
-  })),
-}));
-
-// Mock CSRF utilities
-jest.mock('@/lib/csrf', () => ({
-  generateCsrfToken: jest.fn(() => 'mock-csrf-token'),
 }));
 
 // Mock NextResponse
@@ -101,9 +78,15 @@ jest.mock('next/server', () => ({
   },
 }));
 
-const { __mockSignInWithPassword } = require('@/lib/supabase/server');
+const { __mockSignInWithPassword, __mockSignInWithOtp } = require('@/lib/supabase/server');
 const { logAudit } = require('@/lib/audit');
 let loginHandler: any;
+
+const validSession = {
+  access_token: 'mock-access-token',
+  refresh_token: 'mock-refresh-token',
+  expires_at: Math.floor(Date.now() / 1000) + 3600,
+};
 
 describe('POST /api/auth/login - Integration Tests', () => {
   beforeAll(async () => {
@@ -112,103 +95,58 @@ describe('POST /api/auth/login - Integration Tests', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    delete process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+    __mockSignInWithOtp.mockResolvedValue({ data: {}, error: null });
   });
 
   describe('正常系', () => {
-    test('[SUCCESS] 正しいメール・パスワードで 200 + セッション Cookie 発行', async () => {
-      // Arrange
-      const mockSession = {
-        access_token: 'mock-access-token',
-        refresh_token: 'mock-refresh-token',
-        expires_at: Math.floor(Date.now() / 1000) + 3600,
-      };
-      const mockUser = {
-        id: 'user-123',
-        email: 'test@example.com',
-      };
-
+    test('[SUCCESS] 正しいメール・パスワードで 200 + OTP 送信 + pending Cookie', async () => {
+      const mockUser = { id: 'user-123', email: 'test@example.com' };
       __mockSignInWithPassword.mockResolvedValue({
-        data: { session: mockSession, user: mockUser },
+        data: { session: validSession, user: mockUser },
         error: null,
       });
 
       const req = new Request('http://localhost/api/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          email: 'test@example.com',
-          password: 'ValidPassword123!',
-        }),
+        body: JSON.stringify({ email: 'test@example.com', password: 'ValidPassword123!' }),
       });
 
-      // Act
       const res: any = await loginHandler(req);
       const body = await res.json();
 
-      // Assert
       expect(res.status).toBe(200);
-      expect(body.access_token).toBe('mock-access-token');
-      expect(body.user).toEqual(mockUser);
+      expect(body.step).toBe('otp');
 
-      // Cookie が設定されていることを確認
-      const refreshCookie = res.cookies.get('sb-refresh-token');
-      const accessCookie = res.cookies.get('sb-access-token');
-      const csrfCookie = res.cookies.get('csrf-token');
+      // OTP は shouldCreateUser: false で送信される（未登録ユーザーは作成しない）
+      expect(__mockSignInWithOtp).toHaveBeenCalledWith({
+        email: 'test@example.com',
+        options: { shouldCreateUser: false },
+      });
 
-      expect(refreshCookie).toBeDefined();
-      expect(refreshCookie.value).toBe('mock-refresh-token');
-      expect(accessCookie).toBeDefined();
-      expect(accessCookie.value).toBe('mock-access-token');
-      expect(csrfCookie).toBeDefined();
+      // 「パスワード検証済み」Cookie が設定され、セッション Cookie は設定されない
+      const pendingCookie = res.cookies.get('sb-login-2fa-session');
+      expect(pendingCookie).toBeDefined();
+      expect(pendingCookie.value).toBe('mock-pending-token');
+      expect(res.cookies.get('sb-access-token')).toBeUndefined();
+      expect(res.cookies.get('sb-refresh-token')).toBeUndefined();
 
-      // 監査ログが記録されていることを確認
+      // レスポンス本体にトークンを含めない
+      expect(body.access_token).toBeUndefined();
+
       expect(logAudit).toHaveBeenCalledWith({
         action: 'login',
         actor_email: 'test@example.com',
-        outcome: 'success',
+        outcome: 'password_verified',
+        detail: 'otp_sent',
         resource_id: 'user-123',
       });
-    });
-
-    test('[SUCCESS] sessions テーブルにレコードが作成される', async () => {
-      const mockSession = {
-        access_token: 'access-token',
-        refresh_token: 'refresh-token',
-        expires_at: Math.floor(Date.now() / 1000) + 3600,
-      };
-      const mockUser = {
-        id: 'user-456',
-        email: 'user@example.com',
-      };
-
-      __mockSignInWithPassword.mockResolvedValue({
-        data: { session: mockSession, user: mockUser },
-        error: null,
-      });
-
-      const req = new Request('http://localhost/api/auth/login', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          email: 'user@example.com',
-          password: 'Password123!',
-        }),
-      });
-
-      const res: any = await loginHandler(req);
-
-      expect(res.status).toBe(200);
-
-      // セッションの保存を確認（モックなので、実際にテーブルにデータが入る前提のテスト）
-      // 実際の呼び出しは内部で行われているため、ここでは成功レスポンスを確認する
-      const body = await res.json();
-      expect(body.access_token).toBeDefined();
-      expect(body.user).toBeDefined();
     });
   });
 
   describe('異常系', () => {
-    test('[ERROR] 誤ったパスワードで 401 Unauthorized', async () => {
+    test('[ERROR] 誤ったパスワードで 401（OTP は送信しない）', async () => {
       __mockSignInWithPassword.mockResolvedValue({
         data: { session: null, user: null },
         error: { message: 'Invalid login credentials' },
@@ -217,19 +155,16 @@ describe('POST /api/auth/login - Integration Tests', () => {
       const req = new Request('http://localhost/api/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          email: 'test@example.com',
-          password: 'WrongPassword',
-        }),
+        body: JSON.stringify({ email: 'test@example.com', password: 'WrongPassword' }),
       });
 
       const res: any = await loginHandler(req);
       const body = await res.json();
 
       expect(res.status).toBe(401);
-      expect(body.error).toBe('Invalid credentials');
+      expect(body.error).toBe('メールアドレスまたはパスワードが正しくありません。');
+      expect(__mockSignInWithOtp).not.toHaveBeenCalled();
 
-      // 失敗ログが記録されていることを確認
       expect(logAudit).toHaveBeenCalledWith({
         action: 'login',
         actor_email: 'test@example.com',
@@ -238,7 +173,7 @@ describe('POST /api/auth/login - Integration Tests', () => {
       });
     });
 
-    test('[ERROR] 存在しないメールで 401 Unauthorized', async () => {
+    test('[ERROR] 存在しないメールで 401', async () => {
       __mockSignInWithPassword.mockResolvedValue({
         data: { session: null, user: null },
         error: { message: 'Invalid login credentials' },
@@ -247,50 +182,39 @@ describe('POST /api/auth/login - Integration Tests', () => {
       const req = new Request('http://localhost/api/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          email: 'nonexistent@example.com',
-          password: 'SomePassword123!',
-        }),
+        body: JSON.stringify({ email: 'nonexistent@example.com', password: 'SomePassword123!' }),
       });
 
       const res: any = await loginHandler(req);
       const body = await res.json();
 
       expect(res.status).toBe(401);
-      expect(body.error).toBe('Invalid credentials');
+      expect(body.error).toBe('メールアドレスまたはパスワードが正しくありません。');
     });
 
-    test('[VALIDATION] 不正なメールフォーマットで 400 Bad Request', async () => {
+    test('[VALIDATION] 不正なメールフォーマットで 400', async () => {
       const req = new Request('http://localhost/api/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          email: 'invalid-email',
-          password: 'Password123!',
-        }),
+        body: JSON.stringify({ email: 'invalid-email', password: 'Password123!' }),
       });
 
       const res: any = await loginHandler(req);
-
       expect(res.status).toBe(400);
     });
 
-    test('[VALIDATION] パスワードが短すぎる場合 400 Bad Request', async () => {
+    test('[VALIDATION] パスワードが短すぎる場合 400', async () => {
       const req = new Request('http://localhost/api/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          email: 'test@example.com',
-          password: 'short',
-        }),
+        body: JSON.stringify({ email: 'test@example.com', password: 'short' }),
       });
 
       const res: any = await loginHandler(req);
-
       expect(res.status).toBe(400);
     });
 
-    test('[ERROR] セッションなしで 401 Unauthorized', async () => {
+    test('[ERROR] セッションなしで 401', async () => {
       __mockSignInWithPassword.mockResolvedValue({
         data: { session: null, user: { id: 'user-789', email: 'test@example.com' } },
         error: null,
@@ -299,15 +223,29 @@ describe('POST /api/auth/login - Integration Tests', () => {
       const req = new Request('http://localhost/api/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          email: 'test@example.com',
-          password: 'Password123!',
-        }),
+        body: JSON.stringify({ email: 'test@example.com', password: 'Password123!' }),
       });
 
       const res: any = await loginHandler(req);
-
       expect(res.status).toBe(401);
+    });
+
+    test('[ERROR] OTP 送信失敗で 500', async () => {
+      __mockSignInWithPassword.mockResolvedValue({
+        data: { session: validSession, user: { id: 'user-123', email: 'test@example.com' } },
+        error: null,
+      });
+      __mockSignInWithOtp.mockResolvedValue({ data: {}, error: { message: 'mailer error' } });
+
+      const req = new Request('http://localhost/api/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: 'test@example.com', password: 'Password123!' }),
+      });
+
+      const res: any = await loginHandler(req);
+      expect(res.status).toBe(500);
+      expect(res.cookies.get('sb-login-2fa-session')).toBeUndefined();
     });
   });
 
@@ -316,25 +254,18 @@ describe('POST /api/auth/login - Integration Tests', () => {
       const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
 
       __mockSignInWithPassword.mockResolvedValue({
-        data: {
-          session: { access_token: 'token', refresh_token: 'refresh', expires_at: Date.now() },
-          user: { id: 'user-id', email: 'test@example.com' },
-        },
+        data: { session: validSession, user: { id: 'user-id', email: 'test@example.com' } },
         error: null,
       });
 
       const req = new Request('http://localhost/api/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          email: 'test@example.com',
-          password: 'Password123!',
-        }),
+        body: JSON.stringify({ email: 'test@example.com', password: 'Password123!' }),
       });
 
       await loginHandler(req);
 
-      // IP レベルのレート制限が呼ばれていることを確認
       expect(enforceRateLimit).toHaveBeenCalledWith({
         request: req,
         endpoint: 'auth:login',
@@ -342,7 +273,6 @@ describe('POST /api/auth/login - Integration Tests', () => {
         windowSeconds: 600,
       });
 
-      // アカウントレベルのレート制限が呼ばれていることを確認
       expect(enforceRateLimit).toHaveBeenCalledWith({
         request: req,
         endpoint: 'auth:login',
@@ -350,41 +280,6 @@ describe('POST /api/auth/login - Integration Tests', () => {
         windowSeconds: 600,
         subject: 'test@example.com',
       });
-    });
-
-    test('[SECURITY] リフレッシュトークンは HttpOnly Cookie で設定される', async () => {
-      __mockSignInWithPassword.mockResolvedValue({
-        data: {
-          session: {
-            access_token: 'access',
-            refresh_token: 'refresh',
-            expires_at: Math.floor(Date.now() / 1000) + 3600,
-          },
-          user: { id: 'user-id', email: 'test@example.com' },
-        },
-        error: null,
-      });
-
-      const req = new Request('http://localhost/api/auth/login', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          email: 'test@example.com',
-          password: 'Password123!',
-        }),
-      });
-
-      const res: any = await loginHandler(req);
-      const body = await res.json();
-
-      // レスポンス本体にはリフレッシュトークンが含まれないことを確認
-      expect(body.refresh_token).toBeUndefined();
-      expect(body.access_token).toBeDefined();
-
-      // Cookie にのみリフレッシュトークンが設定されていることを確認
-      const refreshCookie = res.cookies.get('sb-refresh-token');
-      expect(refreshCookie).toBeDefined();
-      expect(refreshCookie.value).toBe('refresh');
     });
   });
 });

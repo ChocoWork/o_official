@@ -43,8 +43,8 @@
   /* ラベル字間（ラベル系で反復する tracking）*/
   --ss-tracking: 0.15em;
 
-  /* テキストサイズ（ラベルは本文より φ で一段小さく対比）*/
-  --ss-label-size: calc(var(--ss-font-size) / var(--phi));
+  /* テキストサイズ（ラベルは本文より sqrt-φ で半段小さく対比し可読性を確保）*/
+  --ss-label-size: calc(var(--ss-font-size) / var(--sqrt-phi));
   --ss-field-size: var(--ss-font-size);
 
   /* 色トークン（他コンポーネントと同系統。集約）*/

@@ -41,20 +41,16 @@ export async function POST() {
         // after creating it below.
         const { requireCsrfOrDeny } = await import('@/lib/csrfMiddleware');
         csrfResult = await requireCsrfOrDeny();
-        if (isCsrfDenyResponse(csrfResult)) {
-          const denyResponse = NextResponse.json(csrfResult._body, { status: csrfResult.status });
-          if (csrfResult.headers) {
-            for (const [key, value] of Object.entries(csrfResult.headers)) {
-              denyResponse.headers.set(key, value);
-            }
-          }
-          return denyResponse;
-        }
 
-        await service
-          .from('sessions')
-          .update({ revoked_at: new Date().toISOString() })
-          .eq('refresh_token_hash', hash);
+        // CSRF が有効な場合のみサーバ側セッションを失効させる。
+        // 失効可否に関わらず Cookie は必ずクリアし、ユーザーが確実にログアウトできるようにする
+        // （ログアウトは冪等で、CSRF 拒否でも Cookie が残らないようにする）。
+        if (!isCsrfDenyResponse(csrfResult)) {
+          await service
+            .from('sessions')
+            .update({ revoked_at: new Date().toISOString() })
+            .eq('refresh_token_hash', hash);
+        }
       } catch (dbErr) {
         console.error('Failed to mark session revoked:', dbErr);
       }
@@ -64,16 +60,40 @@ export async function POST() {
     const res = NextResponse.json({ ok: true }, { status: 200 });
 
     // If CSRF rotation returned a new token, set it as a csrf cookie on the response.
-    const { refreshCookieName, accessCookieName, csrfCookieName, sessionCookieName, clearCookieOptions, cookieOptionsForCsrf } = await import('@/lib/cookie');
+    const {
+      refreshCookieName,
+      accessCookieName,
+      csrfCookieName,
+      sessionCookieName,
+      loginTwoFactorSessionCookieName,
+      passwordResetSessionCookieName,
+      clearCookieOptions,
+      cookieOptionsForCsrf,
+    } = await import('@/lib/cookie');
     if (hasRotatedCsrfToken(csrfResult)) {
       res.cookies.set({ name: csrfCookieName, value: csrfResult.rotatedCsrfToken, ...cookieOptionsForCsrf(0) });
     }
 
-    // Clear cookies using helpers
-    res.cookies.set({ name: sessionCookieName, value: '', ...clearCookieOptions() });
-    res.cookies.set({ name: refreshCookieName, value: '', ...clearCookieOptions() });
-    res.cookies.set({ name: accessCookieName, value: '', ...clearCookieOptions() });
-    res.cookies.set({ name: csrfCookieName, value: '', ...clearCookieOptions() });
+    // アプリ独自の認証 Cookie をクリア
+    for (const name of [
+      sessionCookieName,
+      refreshCookieName,
+      accessCookieName,
+      csrfCookieName,
+      loginTwoFactorSessionCookieName,
+      passwordResetSessionCookieName,
+    ]) {
+      res.cookies.set({ name, value: '', ...clearCookieOptions() });
+    }
+
+    // Google OAuth ログインが設定する @supabase/ssr の認証 Cookie（sb-<ref>-auth-token[.N]）もクリアする。
+    // これを残すと、独自の access-token Cookie を消してもリロード時に SSR クライアントが
+    // 当該 Cookie を読んで再認証してしまい、ログアウトが効かなくなる。
+    for (const cookie of cookieStore.getAll()) {
+      if (/^sb-.*-auth-token(\.\d+)?$/.test(cookie.name)) {
+        res.cookies.set({ name: cookie.name, value: '', ...clearCookieOptions() });
+      }
+    }
 
     return res;
   } catch (err) {

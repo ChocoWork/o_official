@@ -1,6 +1,6 @@
 "use client"; // これを追加
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/Button/Button';
 import { SingleSelect } from '@/components/ui/SingleSelect/SingleSelect';
 import { TextAreaField } from '@/components/ui/TextAreaField/TextAreaField';
@@ -11,6 +11,7 @@ type ContactFormData = {
   email: string;
   inquiryType: string;
   subject: string;
+  orderNumber: string;
   message: string;
   website: string;
 };
@@ -28,6 +29,7 @@ export default function ContactPage() {
     email: '',
     inquiryType: '',
     subject: '',
+    orderNumber: '',
     message: '',
     website: '',
   });
@@ -36,8 +38,44 @@ export default function ContactPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
   const [showThanksModal, setShowThanksModal] = useState(false);
+  const thanksDialogRef = useRef<HTMLDivElement>(null);
 
   const messageCount = formData.message.length;
+
+  // サンクスモーダル: フォーカス移動・Tabトラップ・Escで閉じる・閉じたら元の要素へ復帰
+  useEffect(() => {
+    if (!showThanksModal) return;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    thanksDialogRef.current?.querySelector<HTMLElement>('button')?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowThanksModal(false);
+        return;
+      }
+      if (event.key === 'Tab') {
+        const focusables = thanksDialogRef.current?.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        );
+        if (!focusables || focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      previouslyFocused?.focus?.();
+    };
+  }, [showThanksModal]);
 
   const isFormValid =
     formData.name.trim().length > 0 &&
@@ -157,6 +195,7 @@ export default function ContactPage() {
         email: '',
         inquiryType: '',
         subject: '',
+        orderNumber: '',
         message: '',
         website: '',
       });
@@ -175,6 +214,7 @@ export default function ContactPage() {
         <div className="space-y-2 sm:space-y-3">
           <h1 style={pageTitleStyle}>Contact / お問い合わせ</h1>
           <p className="text-sm lg:text-base text-[#474747] leading-relaxed tracking-tight" style={bodyTextStyle}>ご質問やお問い合わせは、以下のフォームよりご連絡ください。</p>
+          <p className="text-[#474747] leading-relaxed tracking-tight" style={helperTextStyle}>内容を確認のうえ、通常3営業日以内に担当者よりご返信いたします。お急ぎの場合や返信が届かない場合は、迷惑メールフォルダーもご確認ください。</p>
         </div>
 
         <div className="mt-8 sm:mt-10 lg:mt-12 pb-8 sm:pb-10">
@@ -205,7 +245,6 @@ export default function ContactPage() {
                 aria-describedby={fieldDescribedBy('name')}
                 aria-invalid={Boolean(errors.name)}
               />
-              {errors.name ? <p id="name-error" className="text-xs text-red-600" role="alert">{errors.name}</p> : null}
 
               <TextField
                 id="email"
@@ -222,10 +261,9 @@ export default function ContactPage() {
                 aria-describedby={fieldDescribedBy('email')}
                 aria-invalid={Boolean(errors.email)}
               />
-              {errors.email ? <p id="email-error" className="text-xs text-red-600" role="alert">{errors.email}</p> : null}
 
               <SingleSelect
-                name="inquiry"
+                name="inquiryType"
                 label="お問い合わせ内容"
                 value={formData.inquiryType}
                 onValueChange={(value) => {
@@ -262,29 +300,55 @@ export default function ContactPage() {
                 aria-describedby={fieldDescribedBy('subject')}
                 aria-invalid={Boolean(errors.subject)}
               />
-              {errors.subject ? <p id="subject-error" className="text-xs text-red-600" role="alert">{errors.subject}</p> : null}
 
-              <TextAreaField
-                id="message"
-                label="MESSAGE / メッセージ *"
-                name="message"
-                required
-                rows={6}
-                maxLength={MAX_MESSAGE_LENGTH}
-                size="md"
-                className="w-full"
-                value={formData.message}
-                onChange={(event) => handleFieldChange('message', event.target.value)}
-                onBlur={(event) => handleFieldBlur('message', event.target.value)}
-                aria-describedby={fieldDescribedBy('message') ? `${fieldDescribedBy('message')} message-counter` : 'message-counter'}
-                aria-invalid={Boolean(errors.message)}
-              />
-              <div className="flex items-center justify-between">
-                {errors.message ? <p id="message-error" className="text-xs text-red-600" role="alert" style={helperTextStyle}>{errors.message}</p> : <span />}
-                <p id="message-counter" className="text-xs text-[#474747]" style={helperTextStyle}>{messageCount} / {MAX_MESSAGE_LENGTH}</p>
+              <div>
+                <TextField
+                  id="orderNumber"
+                  label="ORDER NO. / 注文番号（任意）"
+                  type="text"
+                  name="orderNumber"
+                  size="md"
+                  className="w-full"
+                  placeholder="ORD-XXXXXXXX"
+                  value={formData.orderNumber}
+                  onChange={(event) => handleFieldChange('orderNumber', event.target.value)}
+                  aria-describedby="orderNumber-help"
+                />
+                <p id="orderNumber-help" className="mt-1.5 text-xs text-[#474747]" style={helperTextStyle}>
+                  {formData.inquiryType === 'order'
+                    ? 'ご注文に関するお問い合わせは、注文確認メールに記載の注文番号（ORD-…）をご入力ください。'
+                    : 'ご注文に関するお問い合わせの場合は、注文番号（ORD-…）をご入力いただくとスムーズです。'}
+                </p>
               </div>
 
-              {submitSuccess ? <p className="text-sm text-green-700" role="status" style={bodyTextStyle}>{submitSuccess}</p> : null}
+              <div>
+                <TextAreaField
+                  id="message"
+                  label="MESSAGE / メッセージ *"
+                  name="message"
+                  required
+                  rows={6}
+                  maxLength={MAX_MESSAGE_LENGTH}
+                  size="md"
+                  className="w-full"
+                  value={formData.message}
+                  onChange={(event) => handleFieldChange('message', event.target.value)}
+                  onBlur={(event) => handleFieldBlur('message', event.target.value)}
+                  aria-describedby={fieldDescribedBy('message') ? `${fieldDescribedBy('message')} message-counter` : 'message-counter'}
+                  aria-invalid={Boolean(errors.message)}
+                />
+                <div className="mt-1.5 flex items-center justify-between">
+                  {errors.message ? <p id="message-error" className="text-xs text-red-600" role="alert" style={helperTextStyle}>{errors.message}</p> : <span />}
+                  <p id="message-counter" className="text-xs text-[#474747]" style={helperTextStyle}>{messageCount} / {MAX_MESSAGE_LENGTH}</p>
+                </div>
+              </div>
+
+              {submitSuccess ? (
+                <p className="text-sm flex items-center gap-2" role="status" style={bodyTextStyle}>
+                  <span aria-hidden="true">✓</span>
+                  {submitSuccess}
+                </p>
+              ) : null}
               {submitError ? <p className="text-sm text-red-600" role="alert" style={bodyTextStyle}>{submitError}</p> : null}
 
               <Button type="submit" size="lg" className="w-full " disabled={!isFormValid || isSubmitting}>
@@ -294,9 +358,19 @@ export default function ContactPage() {
         </div>
 
         {showThanksModal ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="送信完了">
-            <div className="w-full max-w-md bg-white p-6 sm:p-8 text-center space-y-4">
-              <h3>お問い合わせありがとうございます</h3>
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+            onClick={() => setShowThanksModal(false)}
+          >
+            <div
+              ref={thanksDialogRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="thanks-modal-title"
+              className="w-full max-w-md bg-white p-6 sm:p-8 text-center space-y-4"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <h3 id="thanks-modal-title">お問い合わせありがとうございます</h3>
               <p className="text-sm text-[#474747]" style={bodyTextStyle}>内容を確認のうえ、担当者よりご連絡いたします。</p>
               <Button type="button" size="md" className="w-full" onClick={() => setShowThanksModal(false)}>
                 閉じる
