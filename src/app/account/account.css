@@ -32,7 +32,8 @@
 @media (min-width: 768px) {
   .account-layout {
     grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
-    gap: var(--gap-layout);
+    /* サイドバー↔本文の間隔を黄金比で1段階（×√φ）広げる */
+    gap: calc(var(--gap-layout) * var(--sqrt-phi));
   }
 }
 
@@ -45,6 +46,34 @@
 /* mobile tab bar */
 .account-mobile-tabs {
   margin-bottom: var(--gap-section);
+}
+
+/* mobile tab bar: match Header's PC nav-menu hover/active underline behavior
+   (always-black label, underline slides in on hover, stays on active) */
+.account-mobile-tabs [data-ui-tab-segment][data-ui-tab-variant="tabs-standard"] [data-ui-tab-item] {
+  color: #111111;
+}
+.account-mobile-tabs [data-ui-tab-segment][data-ui-tab-variant="tabs-standard"] [data-ui-tab-item]::after {
+  content: "";
+  position: absolute;
+  inset-inline: var(--tab-pad-x);
+  bottom: 0;
+  height: 1px;
+  background: #111111;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 300ms;
+}
+.account-mobile-tabs [data-ui-tab-segment][data-ui-tab-variant="tabs-standard"] [data-ui-tab-item][data-ui-tab-active="true"]::after {
+  transform: scaleX(1);
+}
+@media (hover: hover) and (pointer: fine) {
+  .account-mobile-tabs [data-ui-tab-segment][data-ui-tab-variant="tabs-standard"] [data-ui-tab-item]:not([data-ui-tab-active="true"]):hover {
+    color: #111111;
+  }
+  .account-mobile-tabs [data-ui-tab-segment][data-ui-tab-variant="tabs-standard"] [data-ui-tab-item]:not([data-ui-tab-active="true"]):hover::after {
+    transform: scaleX(1);
+  }
 }
 
 /* vertical stacks at each proximity level */
@@ -65,6 +94,96 @@
   flex-direction: column;
   gap: var(--gap-group);
   width: 100%;
+}
+
+/* お客様情報の表示ビュー: ラベル左/値右の行（TextField underline + leadingText）を縦に積む。
+   各行の下線がそのまま区切り線になり、値は右寄せで対比を作る。 */
+.account-profile-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-group);
+  width: 100%;
+}
+.account-profile-view .account-actions {
+  margin-top: var(--gap-block);
+}
+/* ラベル（氏名/フリガナ/メールアドレス/電話番号）の色。
+   TextField underline 既定の --field-fg-muted は rgba(0,0,0,.2)（≒#ccc, コントラスト1.6:1）で
+   視認性が低いため、当ページの他ラベル（account-label＝郵便番号・購入履歴の日付など）と同じ
+   #767676 に統一する（WCAG AA 4.54:1 / 反復）。編集フォームのフォーカス時は下の規則で黒に上書き */
+.account-profile-view .text-field__leading-text {
+  color: #767676;
+}
+/* 表示ビューは読み取り専用。クリック/フォーカスしても下線を黒にせず淡色のまま維持する */
+.account-profile-view
+  [data-ui-text-field-shape="underline"][data-ui-text-field-has-leading-text="true"]
+  .text-field__control:focus-within {
+  border-bottom-color: var(--field-border-color);
+}
+/* 編集フォームでは、カーソルがある（フォーカス中の）編集可能フィールドの下線を黒にする。
+   readOnly のメールアドレスは対象外（淡色のまま） */
+.account-profile-edit
+  [data-ui-text-field-shape="underline"][data-ui-text-field-has-leading-text="true"]
+  .text-field__control:has(.text-field__input:read-write):focus-within {
+  border-bottom-color: var(--field-border-focus);
+}
+/* 下線に合わせ、左側の見出し文字（leadingText）もフォーカス中は黒にする */
+.account-profile-edit
+  [data-ui-text-field-shape="underline"][data-ui-text-field-has-leading-text="true"]
+  .text-field__control:has(.text-field__input:read-write):focus-within
+  .text-field__leading-text {
+  color: var(--field-fg);
+}
+
+/* 配送先の都道府県セレクトを、TextField underline + leadingText の行
+   （ラベル左／値右・下線区切り）と同じ見た目に揃える。
+   φ 由来の pad-x / label-size を TextField sm と同式で再現し、行の高さと
+   字下げを一致させる。SingleSelect 自体の枠は消し（bordered=false）、下線は行に引く。 */
+.account-select-field {
+  --asf-font-size: var(--lk-size-sm);
+  --asf-pad-x: calc(var(--asf-font-size) / var(--sqrt-phi));
+  --asf-gap: calc(var(--asf-pad-x) / var(--phi));
+  display: flex;
+  align-items: center;
+  gap: var(--asf-gap);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  transition: border-bottom-color 120ms ease;
+}
+.account-select-field:focus-within {
+  border-bottom-color: #000000;
+}
+.account-select-field__label {
+  flex: 0 0 auto;
+  padding-inline-start: var(--asf-pad-x);
+  font-size: calc(var(--asf-font-size) / var(--sqrt-phi));
+  letter-spacing: calc(
+    var(--asf-font-size) / (var(--phi) * var(--phi) * var(--phi))
+  );
+  color: #767676;
+  line-height: var(--sqrt-phi, 1.4);
+  white-space: nowrap;
+}
+.account-select-field .single-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 都道府県セレクトは右にシェブロン装飾ぶんの余白を持つため、値の右端が
+   他フィールドより内側に来る。テキスト入力（右寄せ値）の右パディングを
+   そのシェブロン幅（径＋値↔シェブロン間隔）ぶん広げ、全フィールドの行末を揃える。
+   計算は SingleSelect sm と同トークン（--lk-size-sm / √φ / φ）で導出。 */
+.account-address-edit {
+  --addr-chevron-gutter: calc(
+    var(--lk-size-sm) * var(--sqrt-phi) + var(--lk-size-sm) / var(--sqrt-phi) /
+      var(--phi)
+  );
+}
+.account-address-edit
+  [data-ui-text-field-shape="underline"]
+  .text-field__input {
+  padding-right: calc(
+    var(--lk-size-sm) / var(--sqrt-phi) + var(--addr-chevron-gutter)
+  );
 }
 
 /* label/value pair — proximity keeps them close, contrast tells them apart */
@@ -107,28 +226,126 @@
   border-top: 1px solid rgb(0 0 0 / 0.1);
 }
 
-/* order card internals */
-.account-order-head,
-.account-order-foot {
+/* 購入履歴タブ: 年別タイムライン */
+.account-order-year {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--gap-group) var(--gap-block);
+  flex-direction: column;
+  gap: var(--gap-group);
 }
-.account-order-head {
-  padding-bottom: var(--card-pad);
-  border-bottom: 1px solid rgb(0 0 0 / 0.1);
+/* 年見出し（対比: グループの最上位） */
+.account-order-year-label {
+  font-size: var(--lk-size-2xl);
+  letter-spacing: 0.04em;
+  color: #000;
+  line-height: 1;
 }
-.account-order-foot {
-  align-items: center;
-  padding-top: var(--card-pad);
+/* 縦ライン（糸モチーフ: Le Fil des Heures＝時間の糸）。連続の法則で年内の注文をつなぐ */
+.account-order-year-body {
+  position: relative;
+  /* 縦線 ↔ カードの間隔。丸の left オフセットと同じ変数で連動させる */
+  --timeline-gap: var(--gap-layout);
+  padding-left: var(--timeline-gap);
+}
+.account-order-year-body::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgb(0 0 0 / 0.2);
+}
+.account-order-timeline {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-section);
+}
+.account-order-entry {
+  position: relative;
+}
+/* 注文カード間の区切り線（グレーの横線）。2件目以降の上に引く */
+.account-order-entry + .account-order-entry {
   border-top: 1px solid rgb(0 0 0 / 0.1);
+  padding-top: var(--gap-section);
 }
-.account-order-meta {
+/* 行全体を注文詳細へのリンクに（Fitts: ターゲット拡大） */
+.account-order-entry-link {
   display: flex;
-  align-items: baseline;
-  gap: var(--gap-tight);
+  align-items: center;
+  gap: var(--gap-group);
 }
+.account-order-entry-thumb {
+  display: block;
+  width: 4rem;
+  height: auto;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  background: #f5f5f5;
+  flex-shrink: 0;
+}
+.account-order-entry-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-tight);
+  min-width: 0;
+}
+/* モバイルは一段縮小して注文番号を省略なしで収める（sm 以上で md に拡大） */
+.account-order-entry-text,
+.account-order-entry-number {
+  font-size: var(--lk-size-xs);
+}
+.account-order-entry-number {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (min-width: 640px) {
+  .account-order-entry-thumb {
+    width: 4.5rem;
+  }
+  .account-order-entry-text,
+  .account-order-entry-number {
+    font-size: var(--lk-size-md);
+  }
+}
+.account-order-entry-status {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-tight);
+  align-items: flex-end;
+  text-align: right;
+  flex-shrink: 0;
+}
+.account-order-entry-date {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-icon2text);
+  font-size: var(--lk-size-2xs);
+  letter-spacing: 0.08em;
+  color: #767676;
+}
+.account-order-entry-date .ri-arrow-right-line,
+.account-order-entry-date .ri-arrow-left-line {
+  transition: transform 150ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .account-order-entry-link:hover .ri-arrow-right-line,
+  .account-inquiry-item:hover .ri-arrow-right-line {
+    transform: translateX(3px);
+  }
+  .account-order-entry-link:hover .ri-arrow-left-line {
+    transform: translateX(-3px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .account-order-entry-date .ri-arrow-right-line,
+  .account-order-entry-date .ri-arrow-left-line {
+    transition: none;
+  }
+}
+
 .account-order-items {
   display: flex;
   flex-direction: column;
@@ -151,6 +368,22 @@
   gap: var(--gap-tight);
   min-width: 0;
 }
+/* リンク型アクションのタップ領域を拡大（WCAG 2.5.8: 24px 以上）。
+   文字位置は baseline 整列のまま、当たり判定だけ広げる */
+.account-page [data-ui-button][data-ui-button-variant="link"] {
+  padding-block: 0.5rem;
+}
+
+/* subtle アクション（+ 住所を追加）: デザインはそのまま、
+   文字を 10px → xs に引き上げ（対比: 操作として読める最小サイズ）、
+   タップ領域を 24px 以上に拡大（WCAG 2.5.8 / Fitts）、
+   淡色を account-label と同じ #767676 に統一（反復・コントラスト 4.5:1） */
+.account-page [data-ui-button][data-ui-button-variant="subtle"] {
+  --button-color: #767676;
+  font-size: var(--lk-size-xs);
+  padding-block: 0.5rem;
+}
+
 .account-status {
   display: inline-flex;
   align-items: center;
@@ -159,4 +392,110 @@
   letter-spacing: 0.08em;
   background: #f5f5f5;
   color: #000;
+}
+
+/* お問い合わせ一覧: 件名＋種別を左、状態＋日時を右に。行下にグレーの区切り線（整列・近接） */
+.account-inquiry-list {
+  display: flex;
+  flex-direction: column;
+}
+/* 2列グリッド: 1行目=件名｜状態、2行目=種別｜日時。各行で左右の高さをそろえる */
+.account-inquiry-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  column-gap: var(--gap-group);
+  row-gap: var(--gap-tight);
+  padding: var(--card-pad) 0;
+  border-bottom: 1px solid rgb(0 0 0 / 0.1);
+}
+.account-inquiry-subject {
+  min-width: 0;
+}
+/* 右列は右寄せ */
+.account-inquiry-status,
+.account-inquiry-date {
+  justify-self: end;
+  text-align: right;
+}
+/* 状態ラベル（小）: 小さく、文字数に関係なく同じ幅にそろえる（整列）。
+   お問い合わせ／購入履歴タブ共通 */
+.account-status-sm {
+  justify-content: center;
+  min-width: 5em;
+  padding: calc(var(--pad-y) * 0.5) calc(var(--pad-x) * 0.5);
+  font-size: var(--lk-size-3xs);
+}
+
+/* 配送先カード: 住所｜操作｜MAIN/メインにする を1行に整列（整列＋対比）。
+   MAIN バッジ・メインにするボタンはカード端まで裁ち落とし、フルハイトの黒面で右端に対比を作る */
+.account-address-row {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-group);
+}
+.account-address-row .account-value {
+  flex: 1;
+  min-width: 0;
+}
+/* 郵便番号と住所を2行で表示（近接: 同一住所の情報をまとめる）。
+   ラベル→値と同じ最小間隔（--gap-tight）で反復 */
+.account-address-value {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-tight);
+}
+/* 郵便番号: 補助情報として一段小さく淡色に（対比）。
+   書式は account-label・購入履歴の日付と同じ 2xs + #767676（反復） */
+.account-address-postal {
+  font-size: var(--lk-size-2xs);
+  letter-spacing: 0.08em;
+  color: #767676;
+}
+.account-address-buttons {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--gap-group);
+  flex-shrink: 0;
+}
+/* MAIN バッジ / MAINにするボタン: カード padding を相殺してフルハイトで右端まで裁ち落とす（対比・整列） */
+.account-address-badge,
+.account-address-main-btn {
+  align-self: stretch;
+  flex-shrink: 0;
+  /* 「MAIN」「MAINにする」で横幅をそろえる（整列）。
+     モバイルは住所列の折返しを減らすため一段狭くする（近接: 情報の圧迫を回避） */
+  width: 6rem;
+  margin: calc(-1 * var(--card-pad)) calc(-1 * var(--card-pad))
+    calc(-1 * var(--card-pad)) 0;
+  /* MAIN バッジと同じ文字サイズにそろえる（反復） */
+  font-size: var(--lk-size-xs);
+}
+@media (min-width: 640px) {
+  .account-address-badge,
+  .account-address-main-btn {
+    width: 7.5rem;
+  }
+}
+/* MAINにするボタン: 白抜き・黒文字。
+   カード枠と二重にならないよう自前の枠は消し、左側だけカード枠と同色・同太さの区切り線を引く（整列）。
+   枠を none にすることで左線が上下端まで届き、角の隙間をなくす */
+.account-address-main-btn {
+  --button-bg: #ffffff;
+  --button-color: #000000;
+  --button-hover-bg: #ffffff;
+  --button-hover-color: #000000;
+  border: none;
+  box-shadow: inset 1px 0 0 0 rgb(0 0 0 / 0.1);
+}
+.account-address-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-inline: calc(var(--pad-x) * 2);
+  font-size: var(--lk-size-xs);
+  letter-spacing: 0.12em;
+  background: #000;
+  color: #fff;
 }

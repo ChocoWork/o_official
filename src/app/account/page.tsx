@@ -9,6 +9,9 @@ import { Button } from "@/components/ui/Button/Button";
 import { TabSegmentControl } from "@/components/ui/TabSegmentControl/TabSegmentControl";
 import { TextField } from "@/components/ui/TextField/TextField";
 import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import AccountInquiries from "@/components/AccountInquiries";
+import { formatOrderStatus } from "@/lib/orders/order-status";
 import { PREFECTURES } from "@/lib/constants/prefectures";
 import { clientFetch } from "@/lib/client-fetch";
 import { formatPhoneNumberInput } from "@/features/account/utils/profile-format.util";
@@ -18,7 +21,7 @@ import {
 } from "@/features/checkout/utils/postal-code.util";
 import "./account.css";
 
-type AccountTab = "profile" | "shipping" | "orders";
+type AccountTab = "profile" | "shipping" | "orders" | "inquiries";
 
 type ProfileAddress = {
   postalCode: string;
@@ -41,6 +44,18 @@ type ShippingAddress = ProfileAddress & {
   isDefault: boolean;
 };
 
+type OrderItem = {
+  id: string;
+  itemId: number | null;
+  name: string;
+  imageUrl?: string | null;
+  color?: string | null;
+  size?: string | null;
+  quantity: number;
+  amount: string;
+  stockStatus: "in_stock" | "low_stock" | "sold_out" | "unknown";
+};
+
 type OrderSummary = {
   id: string;
   orderNumber: string;
@@ -48,15 +63,11 @@ type OrderSummary = {
   status: string;
   totalAmount: string;
   itemCount: number;
-  items: Array<{
-    id: string;
-    name: string;
-    imageUrl?: string | null;
-    color?: string | null;
-    size?: string | null;
-    quantity: number;
-    amount: string;
-  }>;
+  shippingFullName: string;
+  shippingEmail: string;
+  shippingPhone: string;
+  shippingAddress: string;
+  items: OrderItem[];
   detailHref: string;
 };
 
@@ -85,11 +96,12 @@ const accountTextMdStyle: React.CSSProperties = {
 const accountTextLgStyle: React.CSSProperties = {
   fontSize: "var(--lk-size-lg)",
 };
-const accountTextXlStyle: React.CSSProperties = {
-  fontSize: "var(--lk-size-xl)",
-};
 const accountPageTitleStyle: React.CSSProperties = {
   fontSize: "var(--lk-size-4xl)",
+};
+// 未ログインゲートの見出しは画面の主役。対比のため通常の ACCOUNT 見出しより大きくする。
+const accountGateTitleStyle: React.CSSProperties = {
+  fontSize: "var(--lk-size-6xl)",
 };
 
 function normalizeAccountTab(tabParam: string | null): AccountTab {
@@ -97,7 +109,7 @@ function normalizeAccountTab(tabParam: string | null): AccountTab {
     return "shipping";
   }
 
-  if (tabParam === "orders") {
+  if (tabParam === "orders" || tabParam === "inquiries") {
     return tabParam;
   }
 
@@ -110,6 +122,21 @@ function formatAddressLines(address: ProfileAddress) {
       .filter(Boolean)
       .join("") || "-"
   );
+}
+
+// 注文日の年ごとに区切る（APIは注文日降順で返すため連続グループ化で足りる）
+function groupOrdersByYear(orders: OrderSummary[]) {
+  const groups: { year: string; orders: OrderSummary[] }[] = [];
+  for (const order of orders) {
+    const year = order.orderDate.slice(0, 4);
+    const last = groups[groups.length - 1];
+    if (last && last.year === year) {
+      last.orders.push(order);
+    } else {
+      groups.push({ year, orders: [order] });
+    }
+  }
+  return groups;
 }
 
 function defaultAddressFields(list: ShippingAddress[]): ProfileAddress {
@@ -143,6 +170,8 @@ function AccountPageContent() {
   const [addresses, setAddresses] = React.useState<ShippingAddress[]>([]);
   const [addressForm, setAddressForm] =
     React.useState<ProfileAddress>(EMPTY_ADDRESS);
+  const [originalAddressForm, setOriginalAddressForm] =
+    React.useState<ProfileAddress>(EMPTY_ADDRESS);
   // null = 一覧表示, "new" = 追加フォーム, その他 = 該当idの編集フォーム
   const [editingAddressId, setEditingAddressId] = React.useState<string | null>(
     null,
@@ -158,6 +187,11 @@ function AccountPageContent() {
   const [ordersError, setOrdersError] = React.useState<string | null>(null);
   const [logoutError, setLogoutError] = React.useState<string | null>(null);
   const [isLoggingOut, setIsLoggingOut] = React.useState(false);
+  // AC-3 / AC-4: 破壊的操作の確認ダイアログ
+  const [confirmProfileDelete, setConfirmProfileDelete] = React.useState(false);
+  const [confirmAddressDeleteId, setConfirmAddressDeleteId] = React.useState<
+    string | null
+  >(null);
   const latestPostalLookupRef = React.useRef("");
   const rawTabFromQuery = searchParams.get("tab");
 
@@ -464,19 +498,22 @@ function AccountPageContent() {
 
   const openAddAddress = () => {
     setAddressForm(EMPTY_ADDRESS);
+    setOriginalAddressForm(EMPTY_ADDRESS);
     setEditingAddressId("new");
     setProfileMessage(null);
     setProfileError(null);
   };
 
   const openEditAddress = (target: ShippingAddress) => {
-    setAddressForm({
+    const initial = {
       postalCode: target.postalCode,
       prefecture: target.prefecture,
       city: target.city,
       address: target.address,
       building: target.building,
-    });
+    };
+    setAddressForm(initial);
+    setOriginalAddressForm(initial);
     setEditingAddressId(target.id);
     setProfileMessage(null);
     setProfileError(null);
@@ -614,9 +651,13 @@ function AccountPageContent() {
     const result = await logout();
     if (!result.success) {
       setLogoutError(result.error || "ログアウトに失敗しました");
+      setIsLoggingOut(false);
+      return;
     }
 
-    setIsLoggingOut(false);
+    // ログアウト後はアカウントページに留まらずホームへ遷移する。
+    // ハードナビゲーションで完全リロードし、クリア済み Cookie で認証状態を再評価する。
+    window.location.assign("/");
   };
 
   const hasSavedProfile =
@@ -625,9 +666,16 @@ function AccountPageContent() {
     savedProfile.kanaName.trim().length > 0 ||
     savedProfile.phone.trim().length > 0;
 
+  const isProfileChanged =
+    profileForm.fullName.trim() !== savedProfile.fullName.trim() ||
+    profileForm.kanaName.trim() !== savedProfile.kanaName.trim() ||
+    profileForm.phone.trim() !== savedProfile.phone.trim();
+
   const isEditingAddress = editingAddressId !== null;
 
-  if (!isAuthResolved) {
+  // ログアウト直後は isLoggedIn=false になるが、ホームへのハードナビゲーションが
+  // 完了するまで未ログインゲートを描画しない。一瞬ゲートが見える問題を防ぐ。
+  if (!isAuthResolved || isLoggingOut) {
     return (
       <div className="max-w-3xl mx-auto text-center">
         <p className="text-[#474747] mb-8" style={accountTextLgStyle}>
@@ -639,17 +687,25 @@ function AccountPageContent() {
 
   if (!isLoggedIn) {
     return (
-      <div className="max-w-3xl mx-auto text-center">
-        <div className="w-20 h-20 flex items-center justify-center mx-auto mb-8">
-          <i className="ri-user-line text-6xl text-[#474747]"></i>
-        </div>
-        <h1 className="mb-4" style={accountPageTitleStyle}>
-          会員情報
+      <div className="flex min-h-[calc(100dvh-6.5rem)] w-full flex-col items-center justify-center px-6 text-center">
+        {/* ブランドフォント Didot（h1 既定）でエレガントに見せる */}
+        <h1 className="mb-3 tracking-[0.2em]" style={accountGateTitleStyle}>
+          ACCOUNT
         </h1>
-        <p className="text-[#474747] mb-8" style={accountTextLgStyle}>
-          会員情報を確認するにはログインが必要です
+
+        <p className="mb-9 text-black" style={accountTextLgStyle}>
+          会員情報の確認には、ログインが必要です。
         </p>
-        <Button href="/login" variant="primary" size="lg">
+        {/* 糸のモチーフ：一本の細いヘアライン（Le Fil des Heures＝時間の糸） */}
+        <span aria-hidden="true" className="mb-6 block h-10 w-px bg-black/30" />
+
+        <Button
+          href="/login"
+          variant="primary"
+          size="lg"
+          shape="rounded"
+          className="min-w-[220px]"
+        >
           ログイン
         </Button>
       </div>
@@ -657,7 +713,14 @@ function AccountPageContent() {
   }
 
   return (
-    <div className="account-page w-full md:max-w-7xl md:mx-auto">
+    <div className="account-page w-full md:max-w-3xl md:mx-auto">
+      {/* AC-5: ログイン後も現在地を示す h1 を表示 */}
+      <h1
+        className="mb-[21px] sm:mb-[26px] tracking-widest"
+        style={accountPageTitleStyle}
+      >
+        ACCOUNT
+      </h1>
       <div className="account-layout">
         {/* sidebar: tablet and above */}
         <div className="hidden md:block">
@@ -666,6 +729,7 @@ function AccountPageContent() {
               { key: "profile", label: "お客様情報" },
               { key: "shipping", label: "配送情報" },
               { key: "orders", label: "購入履歴" },
+              { key: "inquiries", label: "お問い合わせ" },
             ]}
             activeKey={activeTab}
             onChange={handleTabChange}
@@ -704,6 +768,7 @@ function AccountPageContent() {
                 { key: "profile", label: "お客様情報" },
                 { key: "shipping", label: "配送情報" },
                 { key: "orders", label: "購入履歴" },
+                { key: "inquiries", label: "お問い合わせ" },
               ]}
               activeKey={activeTab}
               onChange={handleTabChange}
@@ -715,51 +780,56 @@ function AccountPageContent() {
           {activeTab === "profile" ? (
             <div className="account-sections">
               {isLoadingProfile ? (
-                <p className="text-[#474747] account-feedback">読み込み中...</p>
-              ) : null}
-              {profileMessage ? (
-                <p className="text-green-700 account-feedback">
-                  {profileMessage}
-                </p>
-              ) : null}
-              {profileError ? (
-                <p className="text-red-600 account-feedback">{profileError}</p>
+                <div
+                  className="account-card account-groups animate-pulse"
+                  aria-hidden="true"
+                >
+                  <div className="h-3 w-1/4 bg-black/8 mb-2" />
+                  <div className="h-4 w-2/3 bg-black/8 mb-5" />
+                  <div className="h-3 w-1/4 bg-black/8 mb-2" />
+                  <div className="h-4 w-1/2 bg-black/8 mb-5" />
+                  <div className="h-3 w-1/4 bg-black/8 mb-2" />
+                  <div className="h-4 w-3/4 bg-black/8" />
+                </div>
               ) : null}
 
               {!isLoadingProfile && hasSavedProfile && !isEditingProfile ? (
-                <div className="account-card account-groups">
-                  <div className="account-field">
-                    <p className="account-label">氏名</p>
-                    <p className="account-value">
-                      {savedProfile.fullName || "-"}
-                    </p>
-                  </div>
-                  <div className="account-field">
-                    <p className="account-label">フリガナ</p>
-                    <p className="account-value">
-                      {savedProfile.kanaName || "-"}
-                    </p>
-                  </div>
-                  <div className="account-field">
-                    <p className="account-label">メールアドレス</p>
-                    <p className="account-value break-all">
-                      {savedProfile.email || "-"}
-                    </p>
-                  </div>
-                  <div className="account-field">
-                    <p className="account-label">電話番号</p>
-                    <p className="account-value">{savedProfile.phone || "-"}</p>
-                  </div>
+                <div className="account-profile-view">
+                  <TextField
+                    shape="underline"
+                    size="sm"
+                    leadingText="氏名"
+                    value={savedProfile.fullName || "-"}
+                    readOnly
+                  />
+                  <TextField
+                    shape="underline"
+                    size="sm"
+                    leadingText="フリガナ"
+                    value={savedProfile.kanaName || "-"}
+                    readOnly
+                  />
+                  <TextField
+                    shape="underline"
+                    size="sm"
+                    leadingText="メールアドレス"
+                    value={savedProfile.email || "-"}
+                    readOnly
+                  />
+                  <TextField
+                    shape="underline"
+                    size="sm"
+                    leadingText="電話番号"
+                    value={savedProfile.phone || "-"}
+                    readOnly
+                  />
                   <div className="account-actions">
-                    <Button size="sm" onClick={() => setIsEditingProfile(true)}>
-                      変更する
-                    </Button>
                     <Button
                       variant="secondary"
                       size="sm"
-                      onClick={handleProfileDelete}
+                      onClick={() => setIsEditingProfile(true)}
                     >
-                      削除する
+                      編集
                     </Button>
                   </div>
                 </div>
@@ -767,56 +837,62 @@ function AccountPageContent() {
 
               {!isLoadingProfile && (!hasSavedProfile || isEditingProfile) ? (
                 <form
-                  className="account-form account-card"
+                  className="account-profile-view account-profile-edit"
                   onSubmit={handleProfileSave}
                 >
-                  <p className="account-label">氏名</p>
                   <TextField
+                    shape="underline"
+                    size="sm"
+                    leadingText="氏名"
                     type="text"
                     name="fullName"
                     autoComplete="name"
                     value={profileForm.fullName}
                     onChange={handleProfileFieldChange}
-                    size="sm"
                   />
-                  <p className="account-label">フリガナ</p>
                   <TextField
+                    shape="underline"
+                    size="sm"
+                    leadingText="フリガナ"
                     type="text"
                     name="kanaName"
                     value={profileForm.kanaName}
                     onChange={handleProfileFieldChange}
-                    size="sm"
                   />
-                  <p className="account-label">メールアドレス</p>
                   <TextField
-                    className="bg-[#f5f5f5]"
+                    shape="underline"
+                    size="sm"
+                    leadingText="メールアドレス"
                     type="email"
                     name="email"
                     value={profileForm.email}
                     readOnly
-                    size="sm"
                   />
-                  <p className="account-label">電話番号</p>
                   <TextField
+                    shape="underline"
+                    size="sm"
+                    leadingText="電話番号"
                     type="tel"
                     name="phone"
                     autoComplete="tel"
                     inputMode="numeric"
                     value={profileForm.phone}
                     onChange={handleProfileFieldChange}
-                    size="sm"
                   />
                   <div className="account-actions">
                     <Button
                       type="submit"
                       size="sm"
                       className="font-acumin"
-                      disabled={isSavingProfile}
+                      disabled={
+                        isSavingProfile ||
+                        (hasSavedProfile && !isProfileChanged)
+                      }
                     >
                       {isSavingProfile
                         ? "保存中..."
                         : hasSavedProfile
-                          ? "変更を保存"
+                          ? "保存"
                           : "保存する"}
                     </Button>
                     {hasSavedProfile ? (
@@ -843,15 +919,15 @@ function AccountPageContent() {
           {activeTab === "shipping" ? (
             <div className="account-sections">
               {isLoadingProfile ? (
-                <p className="text-[#474747] account-feedback">読み込み中...</p>
-              ) : null}
-              {profileMessage ? (
-                <p className="text-green-700 account-feedback">
-                  {profileMessage}
-                </p>
-              ) : null}
-              {profileError ? (
-                <p className="text-red-600 account-feedback">{profileError}</p>
+                <div
+                  className="account-card account-groups animate-pulse"
+                  aria-hidden="true"
+                >
+                  <div className="h-3 w-1/4 bg-black/8 mb-2" />
+                  <div className="h-4 w-2/3 bg-black/8 mb-5" />
+                  <div className="h-3 w-1/4 bg-black/8 mb-2" />
+                  <div className="h-4 w-3/4 bg-black/8" />
+                </div>
               ) : null}
 
               {!isLoadingProfile && !isEditingAddress ? (
@@ -867,64 +943,66 @@ function AccountPageContent() {
                     </div>
                   ) : null}
 
-                  {addresses.map((item) => (
-                    <div key={item.id} className="account-card account-groups">
-                      {item.isDefault ? (
-                        <span className="account-status">メイン</span>
-                      ) : null}
-                      <div className="account-field">
-                        <p className="account-label">郵便番号</p>
-                        <p className="account-value">
-                          {item.postalCode || "-"}
-                        </p>
-                      </div>
-                      <div className="account-field">
-                        <p className="account-label">住所</p>
-                        <p className="account-value">
-                          {formatAddressLines(item)}
-                        </p>
-                      </div>
-                      <div className="account-actions">
-                        {!item.isDefault ? (
+                  {[...addresses]
+                    .sort(
+                      (a, b) => (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0),
+                    )
+                    .map((item) => (
+                      <div
+                        key={item.id}
+                        className="account-card account-address-row"
+                      >
+                        <div className="account-value account-address-value">
+                          <span className="account-address-postal font-acumin">
+                            {item.postalCode ? `〒${item.postalCode}` : "-"}
+                          </span>
+                          <span>{formatAddressLines(item)}</span>
+                        </div>
+                        <div className="account-address-buttons">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            className="font-acumin"
+                            onClick={() => openEditAddress(item)}
+                          >
+                            編集
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            className="font-acumin"
+                            onClick={() => setConfirmAddressDeleteId(item.id)}
+                          >
+                            削除
+                          </Button>
+                        </div>
+                        {item.isDefault ? (
+                          <span className="account-address-badge font-acumin">
+                            MAIN
+                          </span>
+                        ) : (
                           <Button
                             type="button"
                             size="sm"
-                            className="font-acumin"
+                            className="font-acumin account-address-main-btn"
                             onClick={() => handleSetMainAddress(item.id)}
                           >
-                            メインにする
+                            MAINにする
                           </Button>
-                        ) : null}
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          className="font-acumin"
-                          onClick={() => openEditAddress(item)}
-                        >
-                          変更する
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          className="font-acumin"
-                          onClick={() => handleAddressDelete(item.id)}
-                        >
-                          削除する
-                        </Button>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    ))}
 
                   <div className="account-actions">
                     <Button
                       type="button"
-                      size="sm"
+                      variant="subtle"
                       className="font-acumin"
                       onClick={openAddAddress}
                     >
-                      住所を追加
+                      + 住所を追加
                     </Button>
                   </div>
                 </>
@@ -932,73 +1010,100 @@ function AccountPageContent() {
 
               {!isLoadingProfile && isEditingAddress ? (
                 <form
-                  className="account-form account-card"
+                  className="account-profile-view account-profile-edit account-address-edit"
                   onSubmit={handleAddressSave}
                 >
-                  <p className="account-label">郵便番号</p>
                   <TextField
+                    shape="underline"
+                    size="sm"
+                    leadingText="郵便番号"
                     type="text"
                     name="postalCode"
                     autoComplete="postal-code"
                     inputMode="numeric"
                     value={addressForm.postalCode}
                     onChange={handleAddressFieldChange}
-                    size="sm"
                   />
-                  <p className="account-label">都道府県</p>
-                  <SingleSelect
-                    name="prefecture"
-                    variant="dropdown"
-                    block
-                    autoComplete="address-level1"
-                    value={addressForm.prefecture}
-                    onValueChange={(prefecture) =>
-                      setAddressForm((prev) => ({ ...prev, prefecture }))
-                    }
-                    options={[
-                      { value: "", label: "選択してください" },
-                      ...PREFECTURES.map((p) => ({ value: p, label: p })),
-                    ]}
-                    size="sm"
-                  />
-                  <p className="account-label">市区町村</p>
+                  {/* 都道府県は select だが、他フィールド（underline + leadingText）と
+                      同じラベル左／値右の行に揃える */}
+                  <div className="account-select-field">
+                    <span className="account-select-field__label">
+                      都道府県
+                    </span>
+                    <SingleSelect
+                      name="prefecture"
+                      aria-label="都道府県"
+                      variant="dropdown"
+                      bordered={false}
+                      autoComplete="address-level1"
+                      value={addressForm.prefecture}
+                      onValueChange={(prefecture) =>
+                        setAddressForm((prev) => ({ ...prev, prefecture }))
+                      }
+                      options={[
+                        { value: "", label: "選択してください" },
+                        ...PREFECTURES.map((p) => ({ value: p, label: p })),
+                      ]}
+                      size="sm"
+                    />
+                  </div>
                   <TextField
+                    shape="underline"
+                    size="sm"
+                    leadingText="市区町村"
                     type="text"
                     name="city"
                     autoComplete="address-level2"
                     value={addressForm.city}
                     onChange={handleAddressFieldChange}
-                    size="sm"
                   />
-                  <p className="account-label">番地</p>
                   <TextField
+                    shape="underline"
+                    size="sm"
+                    leadingText="番地"
                     type="text"
                     name="address"
                     autoComplete="street-address"
                     value={addressForm.address}
                     onChange={handleAddressFieldChange}
-                    size="sm"
                   />
-                  <p className="account-label">建物名・部屋番号</p>
                   <TextField
+                    shape="underline"
+                    size="sm"
+                    leadingText="建物名・部屋番号"
                     type="text"
                     name="building"
                     value={addressForm.building}
                     onChange={handleAddressFieldChange}
-                    size="sm"
                   />
                   <div className="account-actions">
-                    <Button type="submit" size="sm" disabled={isSavingProfile}>
+                    <Button
+                      type="submit"
+                      size="sm"
+                      className="font-acumin"
+                      disabled={
+                        isSavingProfile ||
+                        (editingAddressId !== "new" &&
+                          addressForm.postalCode ===
+                            originalAddressForm.postalCode &&
+                          addressForm.prefecture ===
+                            originalAddressForm.prefecture &&
+                          addressForm.city === originalAddressForm.city &&
+                          addressForm.address === originalAddressForm.address &&
+                          addressForm.building === originalAddressForm.building)
+                      }
+                    >
                       {isSavingProfile
                         ? "保存中..."
                         : editingAddressId === "new"
                           ? "保存する"
-                          : "変更を保存"}
+                          : "保存"}
                     </Button>
                     <Button
                       type="button"
                       variant="secondary"
                       size="sm"
+                      className="font-acumin"
                       onClick={cancelAddressEdit}
                     >
                       キャンセル
@@ -1012,9 +1117,19 @@ function AccountPageContent() {
           {activeTab === "orders" ? (
             <div className="account-sections">
               {isLoadingOrders ? (
-                <p className="text-[#474747] account-feedback">
-                  注文履歴を読み込み中...
-                </p>
+                <div className="space-y-4" aria-hidden="true">
+                  {Array.from({ length: 2 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="account-card account-groups animate-pulse"
+                    >
+                      <div className="h-3 w-1/3 bg-black/8 mb-2" />
+                      <div className="h-4 w-1/2 bg-black/8 mb-5" />
+                      <div className="h-16 w-full bg-black/5 mb-4" />
+                      <div className="h-8 w-32 bg-black/8" />
+                    </div>
+                  ))}
+                </div>
               ) : null}
               {ordersError ? (
                 <p className="text-red-600 account-feedback">{ordersError}</p>
@@ -1030,68 +1145,70 @@ function AccountPageContent() {
                 </div>
               ) : null}
 
-              {orders.map((order) => (
-                <article key={order.id} className="account-card account-groups">
-                  <div className="account-order-head">
-                    <div className="account-order-meta">
-                      <p className="account-label">注文番号</p>
-                      <p className="text-black" style={accountTextLgStyle}>
-                        {order.orderNumber}
-                      </p>
-                    </div>
-                    <div className="account-order-meta">
-                      <p className="account-label">注文日</p>
-                      <p className="account-value">{order.orderDate}</p>
-                    </div>
+              {/* 年別タイムライン: 年見出し + 縦ライン（糸モチーフ）+ 注文行（連続の法則） */}
+              {groupOrdersByYear(orders).map((group) => (
+                <section key={group.year} className="account-order-year">
+                  <h2 className="account-order-year-label font-acumin">
+                    {group.year}
+                  </h2>
+                  <div className="account-order-year-body">
+                    <ul className="account-order-timeline">
+                      {group.orders.map((order) => {
+                        const thumbnail = order.items.find(
+                          (item) => item.imageUrl,
+                        )?.imageUrl;
+                        return (
+                          <li key={order.id} className="account-order-entry">
+                            <Link
+                              href={order.detailHref}
+                              className="account-order-entry-link"
+                            >
+                              {thumbnail ? (
+                                <Image
+                                  src={thumbnail}
+                                  alt=""
+                                  width={56}
+                                  height={75}
+                                  className="account-order-entry-thumb"
+                                />
+                              ) : (
+                                <span
+                                  className="account-order-entry-thumb"
+                                  aria-hidden="true"
+                                />
+                              )}
+                              <div className="account-order-entry-main">
+                                <p className="account-order-entry-number font-acumin text-black">
+                                  {order.orderNumber}
+                                </p>
+                                <p className="account-order-entry-text font-acumin text-black">
+                                  {order.totalAmount}
+                                </p>
+                              </div>
+                              <div className="account-order-entry-status">
+                                <span className="account-status account-status-sm">
+                                  {formatOrderStatus(order.status)}
+                                </span>
+                                <p className="account-order-entry-date font-acumin">
+                                  {order.orderDate.replace(/[/-]/g, ".")}
+                                  <i
+                                    className="ri-arrow-right-line"
+                                    aria-hidden="true"
+                                  />
+                                </p>
+                              </div>
+                            </Link>
+                          </li>
+                        );
+                      })}
+                    </ul>
                   </div>
-
-                  <div className="account-order-items">
-                    {order.items.map((item) => (
-                      <div key={item.id} className="account-order-item">
-                        {item.imageUrl ? (
-                          <Image
-                            src={item.imageUrl}
-                            alt={item.name}
-                            width={80}
-                            height={80}
-                            className="rounded object-cover"
-                          />
-                        ) : null}
-                        <div className="account-order-lines">
-                          <p className="account-value">{item.name}</p>
-                          <div>
-                            <p className="account-label">
-                              {item.color} / {item.size}
-                            </p>
-                            <p className="account-label">
-                              数量: {item.quantity}
-                            </p>
-                          </div>
-                          <p className="account-value">{item.amount}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="account-order-foot">
-                    <span className="account-status">{order.status}</span>
-                    <div className="account-order-meta">
-                      <p className="account-label">商品点数</p>
-                      <p className="text-black" style={accountTextXlStyle}>
-                        {order.itemCount}点
-                      </p>
-                    </div>
-                    <div className="account-order-meta">
-                      <p className="account-label">合計</p>
-                      <p className="text-black" style={accountTextXlStyle}>
-                        {order.totalAmount}
-                      </p>
-                    </div>
-                  </div>
-                </article>
+                </section>
               ))}
             </div>
           ) : null}
+
+          {activeTab === "inquiries" ? <AccountInquiries /> : null}
 
           {/* mobile/tablet: logout below content */}
           <div className="account-sidebar-logout md:hidden">
@@ -1116,6 +1233,68 @@ function AccountPageContent() {
           </div>
         </div>
       </div>
+
+      {/* AC-7: フィードバックを操作地点に近い固定トーストで通知 */}
+      {profileMessage ? (
+        <div
+          role="status"
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-[90vw] bg-black text-white px-5 py-3 shadow-lg flex items-center gap-3"
+          style={accountTextMdStyle}
+        >
+          <span className="flex items-center gap-2">
+            <span aria-hidden="true">✓</span>
+            {profileMessage}
+          </span>
+          <button
+            type="button"
+            onClick={() => setProfileMessage(null)}
+            aria-label="通知を閉じる"
+            className="flex-shrink-0 opacity-70 hover:opacity-100 transition-opacity"
+          >
+            <i className="ri-close-line" aria-hidden="true" />
+          </button>
+        </div>
+      ) : null}
+      {profileError ? (
+        <div
+          role="alert"
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-[90vw] border border-red-300 bg-white text-red-600 px-5 py-3 shadow-lg flex items-center gap-3"
+          style={accountTextMdStyle}
+        >
+          <span>{profileError}</span>
+          <button
+            type="button"
+            onClick={() => setProfileError(null)}
+            aria-label="通知を閉じる"
+            className="flex-shrink-0 opacity-70 hover:opacity-100 transition-opacity"
+          >
+            <i className="ri-close-line" aria-hidden="true" />
+          </button>
+        </div>
+      ) : null}
+
+      <ConfirmDialog
+        open={confirmProfileDelete}
+        title="プロフィール情報を消去しますか？"
+        description="氏名・フリガナ・電話番号が消去されます。この操作は元に戻せません。"
+        confirmLabel="消去する"
+        onConfirm={() => {
+          setConfirmProfileDelete(false);
+          void handleProfileDelete();
+        }}
+        onCancel={() => setConfirmProfileDelete(false)}
+      />
+      <ConfirmDialog
+        open={confirmAddressDeleteId !== null}
+        title="この配送先を削除しますか？"
+        description="この操作は元に戻せません。"
+        onConfirm={() => {
+          const id = confirmAddressDeleteId;
+          setConfirmAddressDeleteId(null);
+          if (id) void handleAddressDelete(id);
+        }}
+        onCancel={() => setConfirmAddressDeleteId(null)}
+      />
     </div>
   );
 }
