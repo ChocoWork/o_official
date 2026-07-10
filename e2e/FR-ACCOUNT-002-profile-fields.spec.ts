@@ -51,11 +51,11 @@ test.describe('FR-ACCOUNT-002 profile fields', () => {
     await loginAndOpenAccount(page);
 
     await expect(page.getByText('メールアドレス')).toBeVisible();
-    await expect(page.getByText('user@example.com')).toBeVisible();
-    await expect(page.getByText('山田 花子')).toBeVisible();
-    await expect(page.getByText('090-1111-2222')).toBeVisible();
+    await expect(page.getByLabel('メールアドレス')).toHaveValue('user@example.com');
+    await expect(page.getByLabel('氏名')).toHaveValue('山田 花子');
+    await expect(page.getByLabel('電話番号')).toHaveValue('090-1111-2222');
 
-    await page.getByRole('button', { name: '変更する' }).click();
+    await page.getByRole('button', { name: '編集' }).click();
     await page.getByLabel('氏名').fill('佐藤 花子');
     await page.getByLabel('電話番号').fill('08033334444');
     await expect(page.getByLabel('電話番号')).toHaveValue('080-3333-4444');

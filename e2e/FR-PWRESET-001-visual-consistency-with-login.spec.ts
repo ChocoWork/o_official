@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 
-// FREQ-70: パスワード再設定ページの見た目を /login と統一すること
+// FREQ-70 / FREQ-92: パスワード再設定ページの見た目を /login と統一すること
+// （FREQ-92 でログインの下線ミニマルデザインへ刷新：FREQ-70 の角丸カードを置換）
 const viewports = [
   { name: 'mobile', width: 390, height: 844 },
   { name: 'tablet', width: 768, height: 1024 },
@@ -17,14 +18,33 @@ for (const viewport of viewports) {
       await page.goto('/auth/password-reset');
     });
 
-    test('has a rounded card and rounded submit button like login', async ({ page }) => {
-      // FREQ-70-AC-01: 角丸カード枠＋角丸送信ボタン
-      const card = page.locator('form').locator('xpath=..').locator('xpath=..');
+    test('has no card frame and a square submit button (minimal design like login)', async ({ page }) => {
+      // FREQ-92: 角丸カードを撤去し、送信ボタンは直角（ログインの下線ミニマルデザインへ統一）
+      const container = page.locator('form').locator('xpath=..').locator('xpath=..');
       const submit = page.getByRole('button', { name: '再設定メールを送信' });
-      expect(await radiusOf(card)).toBeGreaterThan(0);
-      const btnRadius = await radiusOf(submit);
-      expect(btnRadius).toBeGreaterThanOrEqual(4);
-      expect(btnRadius).toBeLessThanOrEqual(12);
+      const frame = await container.evaluate((el) => ({
+        borderWidth: parseFloat(getComputedStyle(el).borderTopWidth),
+        radius: parseFloat(getComputedStyle(el).borderTopLeftRadius),
+      }));
+      expect(frame.borderWidth).toBe(0);
+      expect(frame.radius).toBe(0);
+      expect(await radiusOf(submit)).toBe(0);
+    });
+
+    test('email input is an underline field with a leading mail icon', async ({ page }) => {
+      // FREQ-92: 入力欄は下線のみ＋先頭アイコン（ログインと同じ）
+      await expect(page.locator('i.ri-mail-line')).toBeVisible();
+      const styles = await page.locator('#email').evaluate((el) => {
+        const s = getComputedStyle(el);
+        return {
+          top: s.borderTopStyle,
+          bottom: s.borderBottomStyle,
+          radius: parseFloat(s.borderTopLeftRadius),
+        };
+      });
+      expect(styles.bottom).toBe('solid');
+      expect(styles.top).toBe('none');
+      expect(styles.radius).toBe(0);
     });
 
     test('is centered full-height with footer not visible', async ({ page }) => {

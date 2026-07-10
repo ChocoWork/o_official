@@ -57,7 +57,8 @@ export async function loginAndOpenAccount(page: Page, email = 'user@example.com'
   }
 
   await page.locator('form button[type="submit"]').click();
-  await page.waitForURL('**/');
+  // 認証フロー刷新後、ログイン成功時のリダイレクト先は /account
+  await page.waitForURL('**/account');
 
   const origin = new URL(page.url()).origin;
   await page.context().addCookies([

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { PublicStockistGrid } from '@/features/stockist/components/PublicStockistGrid';
+import { getPublicStockists } from '@/features/stockist/services/public';
 
 export async function generateMetadata(): Promise<Metadata> {
   const title = 'STOCKIST | Le Fil des Heures';
@@ -21,13 +22,15 @@ export default async function StockistPage({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  // フィルター（region/pref）クエリを読む PublicStockistCatalog が useSearchParams を
+  // フィルター（region/pref）クエリを読む PublicStockistGrid（catalog）が useSearchParams を
   // 使うため、searchParams を await して動的レンダリングへ切り替える。
   await searchParams;
 
+  const stockists = await getPublicStockists();
+
   return (
     <div className="max-w-[1680px] mx-auto w-full">
-      <PublicStockistGrid variant="catalog"/>
+      <PublicStockistGrid variant="catalog" stockists={stockists} />
     </div>
   );
 }

@@ -29,10 +29,11 @@ for (const viewport of viewports) {
     });
 
     test('forgot-password link is smaller than body text', async ({ page }) => {
-      // FREQ-67-AC-02: 「パスワードをお忘れの方はこちら」font < 本文（会員登録はこちら）font
+      // FREQ-67-AC-02: 「パスワードをお忘れの方はこちら」font < 本文（タブ見出し）font
+      // （FREQ-90 でタブ内「会員登録はこちら」導線は撤去。同じ本文 md スケールのタブ見出しを基準にする）
       const forgot = page.getByRole('link', { name: 'パスワードをお忘れの方はこちら' });
-      const signup = page.getByRole('button', { name: '会員登録はこちら' });
-      expect(await fontPx(forgot)).toBeLessThan(await fontPx(signup));
+      const body = page.getByRole('tab', { name: 'ログイン' });
+      expect(await fontPx(forgot)).toBeLessThan(await fontPx(body));
     });
 
     test('primary login button is the tallest control', async ({ page }) => {

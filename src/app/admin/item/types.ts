@@ -31,8 +31,16 @@ export type ItemResponse = {
   colors: Array<{ name: string; hex: string }>;
   sizes: string[];
   product_details: string;
+  material?: string | null;
+  origin?: string | null;
+  sewing_region?: string | null;
+  care?: string | null;
+  season?: 'SS' | 'AW' | null;
   status: ItemStatus;
+  stock_quantity?: number | null;
 };
+
+export type SeasonValue = '' | 'SS' | 'AW';
 
 export interface ItemFormValues {
   name: string;
@@ -41,7 +49,12 @@ export interface ItemFormValues {
   category: Category;
   colors: Array<{ name: string; hex: string }>;
   sizes: string[];
-  productDetails: string;
+  material: string;
+  origin: string;
+  sewingRegion: string;
+  care: string;
+  season: SeasonValue;
   status: ItemStatus;
+  stockQuantity?: number | null;
   previewUrls?: string[];
 }

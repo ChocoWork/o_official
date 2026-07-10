@@ -60,7 +60,7 @@ test.describe('FR-ACCOUNT-010 authenticated order history fetch', () => {
 		});
 
 		await loginAndOpenAccount(page);
-		await page.getByRole('button', { name: '購入履歴' }).click();
+		await page.getByRole('tab', { name: '購入履歴' }).click();
 
 		await expect.poll(() => ordersCookieHeader).toContain('sb-access-token=test-access-token');
 		await expect(page.getByText('ORD-0001')).toBeVisible();

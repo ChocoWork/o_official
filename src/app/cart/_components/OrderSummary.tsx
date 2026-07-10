@@ -48,15 +48,26 @@ export function OrderSummary({ subtotal }: OrderSummaryProps) {
 
       <div
         className="flex items-baseline justify-between"
-        style={{ marginBottom: "calc(var(--lk-size-md) * var(--sqrt-phi))" }}
+        style={{ marginBottom: "var(--pad-y)" }}
       >
         <span className="tracking-wider text-[#474747]" style={{ fontSize: "var(--lk-size-2xs)" }}>
-          合計
+          合計（税込）
         </span>
         <span style={{ fontSize: "var(--lk-size-lg)" }}>
           ¥{subtotal.toLocaleString("ja-JP")}
         </span>
       </div>
+
+      {/* CT-4 / CT-5: 表示は税込。送料・最終金額は注文手続きで確定する旨を補記 */}
+      <p
+        className="text-[#474747]"
+        style={{
+          fontSize: "var(--lk-size-3xs)",
+          marginBottom: "calc(var(--lk-size-md) * var(--sqrt-phi))",
+        }}
+      >
+        価格は税込表示です。送料・最終金額はご購入手続きで確定します。
+      </p>
 
       <Button href="/checkout" variant="primary" size="lg" className="w-full">
         ご購入手続きへ

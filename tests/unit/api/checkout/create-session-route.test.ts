@@ -21,7 +21,7 @@ const mockDraftInsertSingle = jest.fn().mockResolvedValue({
   data: {
     id: 'draft-123',
     session_id: 'sess-abc',
-    total_amount: 5500,
+    total_amount: 5000,
     currency: 'jpy',
   },
   error: null,
@@ -67,11 +67,13 @@ import { POST } from '@/app/api/checkout/create-session/route';
 
 function makeRequest(body: Record<string, unknown>, sessionId = 'sess-abc'): NextRequest {
   const requestBody = {
+    // 価格は税込み (taxAmount/shippingAmount は 0、total=subtotal)。
+    // calculateCheckoutAmountsFromSubtotal と一致させる。
     displayedAmounts: {
       subtotalAmount: 5000,
-      taxAmount: 500,
+      taxAmount: 0,
       shippingAmount: 0,
-      totalAmount: 5500,
+      totalAmount: 5000,
     },
     ...body,
   };
@@ -132,14 +134,18 @@ describe('POST /api/checkout/create-session', () => {
     });
   });
 
-  it('paymentMethod 未指定なら payment_method_types を送信しない', async () => {
+  it('custom UI は card / paypay / konbini を payment_method_types で送信する', async () => {
     mockCreate.mockResolvedValue({ client_secret: 'secret', id: 'cs_test' });
 
     const req = makeRequest({ uiMode: 'custom' });
     const res = await POST(req);
 
     expect(mockCreate).toHaveBeenCalledTimes(1);
-    expect((mockCreate.mock.calls[0][0] as Record<string, unknown>)).not.toHaveProperty('payment_method_types');
+    expect((mockCreate.mock.calls[0][0] as Record<string, unknown>).payment_method_types).toEqual([
+      'card',
+      'paypay',
+      'konbini',
+    ]);
     expect((mockCreate.mock.calls[0][0] as { metadata: { draft_id: string } }).metadata.draft_id).toBe('draft-123');
     expect((res as { status: number }).status).toBe(200);
     expect(mockEnforceRateLimit).toHaveBeenCalledWith(

@@ -74,6 +74,7 @@ const Header = () => {
   const pathname = usePathname();
   const { isLoggedIn, userRole } = useLogin();
   const canManage = userRole === "admin" || userRole === "supporter";
+  const isAdmin = userRole === "admin";
   const { cartCount } = useCart();
 
   const lastScrollY = React.useRef(0);
@@ -187,6 +188,18 @@ const Header = () => {
                 ></span>
               </Link>
             ))}
+            {isAdmin && (
+              <Link href="/loading" className="header-nav-title group">
+                LOADING
+                <span
+                  className={`underline-animation-left2right ${
+                    isActiveMenuItem("/loading")
+                      ? "scale-x-100"
+                      : "scale-x-0 group-hover:scale-x-100"
+                  }`}
+                ></span>
+              </Link>
+            )}
             {canManage && (
               <Link href="/admin" className="header-nav-title group">
                 MANAGE
@@ -312,6 +325,21 @@ const Header = () => {
                     {item.label}
                   </Link>
                 ))}
+                {isAdmin ? (
+                  <Link
+                    href="/loading"
+                    onClick={() => setDrawerOpen(false)}
+                    aria-current={
+                      isActiveMenuItem("/loading") ? "page" : undefined
+                    }
+                    data-active={
+                      isActiveMenuItem("/loading") ? "true" : undefined
+                    }
+                    className="header-drawer-primary-link"
+                  >
+                    LOADING
+                  </Link>
+                ) : null}
                 {canManage ? (
                   <Link
                     href="/admin"

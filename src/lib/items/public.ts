@@ -3,7 +3,7 @@ import { signItemImageFields } from '@/lib/storage/item-images';
 import type { Item } from '@/types/item';
 
 const ITEM_SELECT_COLUMNS =
-  'id, name, description, price, category, image_url, image_urls, colors, sizes, product_details';
+  'id, name, description, price, category, image_url, image_urls, colors, sizes, product_details, material, origin, sewing_region, care, season';
 
 export type PublicItemDto = Omit<Item, 'status' | 'created_at' | 'updated_at'>;
 
@@ -75,8 +75,15 @@ export async function getPublishedItemsPage(queryInput: PublishedItemsQuery = {}
     .select(ITEM_SELECT_COLUMNS, { count: 'planned' })
     .eq('status', 'published');
 
-  if (queryInput.category && queryInput.category.toUpperCase() !== 'ALL') {
-    query = query.eq('category', queryInput.category.toUpperCase());
+  // category はカンマ区切りで複数指定可能。複数選択時は OR（IN）で絞り込む。
+  const categories = (queryInput.category ?? '')
+    .split(',')
+    .map((value) => value.trim().toUpperCase())
+    .filter((value) => value.length > 0 && value !== 'ALL');
+  if (categories.length === 1) {
+    query = query.eq('category', categories[0]);
+  } else if (categories.length > 1) {
+    query = query.in('category', categories);
   }
 
   if (queryInput.size) {

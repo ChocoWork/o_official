@@ -137,6 +137,25 @@
   padding: 0;
 }
 
+[data-ui-button][data-ui-button-variant="subtle"] {
+  --button-bg: transparent;
+  --button-color: rgba(0, 0, 0, 0.3);
+  --button-border-color: transparent;
+  --button-hover-bg: transparent;
+  --button-hover-color: #000000;
+  --button-hover-border-color: transparent;
+  --button-disabled-bg: transparent;
+  --button-disabled-color: rgba(0, 0, 0, 0.15);
+  --button-disabled-border-color: transparent;
+  min-height: auto;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+
 [data-ui-button-disabled="true"],
 [data-ui-button]:disabled {
   background: var(--button-disabled-bg);

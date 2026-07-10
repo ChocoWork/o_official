@@ -83,11 +83,13 @@ export function CartItemRow({
               variant="ghost"
               size="4xs"
               iconOnly
+              aria-label="ウィッシュリストに追加"
+              className="min-h-[44px] min-w-[44px]"
             >
               <div className="w-4 h-4 flex items-center justify-center">
                 <i
                   className={`text-base ${
-                    isWishlisted ? "ri-heart-fill text-red-500" : "ri-heart-line"
+                    isWishlisted ? "ri-heart-fill text-black" : "ri-heart-line"
                   }`}
                 />
               </div>
@@ -98,6 +100,8 @@ export function CartItemRow({
               variant="ghost"
               size="4xs"
               iconOnly
+              aria-label="カートから削除"
+              className="min-h-[44px] min-w-[44px]"
             >
               <div className="w-4 h-4 flex items-center justify-center">
                 <i className="ri-close-line text-base" />
@@ -116,15 +120,21 @@ export function CartItemRow({
         )}
 
         <div className="flex items-end justify-between">
-          <span style={{ fontSize: "var(--lk-size-md)" }}>
-            ¥{product.price.toLocaleString("ja-JP")}
-          </span>
+          <div className="flex flex-col" style={{ gap: "calc(var(--lk-size-md) / var(--sqrt-phi) / var(--phi) / var(--phi))" }}>
+            <span className="text-[#474747]" style={{ fontSize: "var(--lk-size-2xs)" }}>
+              単価 ¥{product.price.toLocaleString("ja-JP")}
+            </span>
+            {/* CT-3: 行ごとの小計（単価×数量） */}
+            <span style={{ fontSize: "var(--lk-size-md)" }}>
+              ¥{(product.price * item.quantity).toLocaleString("ja-JP")}
+            </span>
+          </div>
           <Stepper
             value={item.quantity}
             min={1}
             max={MAX_CART_ITEM_QUANTITY}
             onChange={(value) => onQuantityChange(item.id, value)}
-            size="4xs"
+            size="xs"
           />
         </div>
 

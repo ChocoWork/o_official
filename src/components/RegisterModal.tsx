@@ -20,6 +20,8 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ onSwitchToLogin }) => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sentMessage, setSentMessage] = useState<string | null>(null);
@@ -110,40 +112,18 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ onSwitchToLogin }) => {
           onReady={renderTurnstile}
         />
       ) : null}
-      <Button
-        type="button"
-        onClick={() => {
-          void loginWithGoogle({ next: "/auth/verified" });
-        }}
-        variant="secondary"
-        size="xl"
-        shape="rounded"
-        className="w-full flex items-center justify-center gap-3 mb-4 sm:mb-8"
-        style={{ minHeight: "3rem" }}
-      >
-        <i className="ri-google-fill text-lg"></i>Googleで登録
-      </Button>
-      <div className="relative mb-4 sm:mb-8">
-        <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-black/20"></div>
-        </div>
-        <div className="relative flex justify-center">
-          <span className="px-4 bg-white text-[#474747]" style={mdTextStyle}>
-            OR
-          </span>
-        </div>
-      </div>
       <form
-        className="space-y-4 sm:space-y-6 mb-6 sm:mb-8"
+        className="space-y-4 sm:space-y-6 mb-4 sm:mb-8"
         onSubmit={handleRegister}
       >
         <TextField
           id="email"
-          label="EMAIL"
+          aria-label="Email"
+          placeholder="Email"
           type="email"
-          shape="rounded"
+          shape="underline"
           size="lg"
-          className="min-h-[2.5rem] sm:min-h-[2.75rem]"
+          leadingIcon={<i className="ri-mail-line" aria-hidden="true"></i>}
           required
           autoComplete="email"
           value={email}
@@ -151,11 +131,28 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ onSwitchToLogin }) => {
         />
         <TextField
           id="password"
-          label="PASSWORD"
-          type="password"
-          shape="rounded"
+          aria-label="Password"
+          placeholder="Password"
+          type={showPassword ? "text" : "password"}
+          shape="underline"
           size="lg"
-          className="min-h-[2.5rem] sm:min-h-[2.75rem]"
+          leadingIcon={<i className="ri-lock-line" aria-hidden="true"></i>}
+          trailingIcon={
+            <button
+              type="button"
+              className="text-field__toggle"
+              onClick={() => setShowPassword((prev) => !prev)}
+              aria-label={
+                showPassword ? "パスワードを非表示" : "パスワードを表示"
+              }
+              aria-pressed={showPassword}
+            >
+              <i
+                className={showPassword ? "ri-eye-line" : "ri-eye-off-line"}
+                aria-hidden="true"
+              ></i>
+            </button>
+          }
           required
           autoComplete="new-password"
           value={password}
@@ -163,11 +160,32 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ onSwitchToLogin }) => {
         />
         <TextField
           id="confirm-password"
-          label="PASSWORD（確認）"
-          type="password"
-          shape="rounded"
+          aria-label="Confirm Password"
+          placeholder="Confirm Password"
+          type={showConfirmPassword ? "text" : "password"}
+          shape="underline"
           size="lg"
-          className="min-h-[2.5rem] sm:min-h-[2.75rem]"
+          leadingIcon={<i className="ri-lock-line" aria-hidden="true"></i>}
+          trailingIcon={
+            <button
+              type="button"
+              className="text-field__toggle"
+              onClick={() => setShowConfirmPassword((prev) => !prev)}
+              aria-label={
+                showConfirmPassword
+                  ? "確認用パスワードを非表示"
+                  : "確認用パスワードを表示"
+              }
+              aria-pressed={showConfirmPassword}
+            >
+              <i
+                className={
+                  showConfirmPassword ? "ri-eye-line" : "ri-eye-off-line"
+                }
+                aria-hidden="true"
+              ></i>
+            </button>
+          }
           required
           autoComplete="new-password"
           value={confirmPassword}
@@ -181,7 +199,6 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ onSwitchToLogin }) => {
         <Button
           type="submit"
           size="xl"
-          shape="rounded"
           className="w-full"
           style={{ minHeight: "3rem" }}
           disabled={loading || !email || !password || !confirmPassword}
@@ -194,23 +211,31 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ onSwitchToLogin }) => {
           </p>
         ) : null}
       </form>
-      {onSwitchToLogin ? (
-        <>
-          <hr className="mb-4 sm:mb-8 border-black/20" />
-          <p
-            className="text-center mb-4 sm:mb-12 text-[#474747]"
-            style={mdTextStyle}
+      <div className="relative mb-4 sm:mb-8">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-black/20"></div>
+        </div>
+        <div className="relative flex justify-center">
+          <span
+            className="px-4 bg-white text-[#474747] tracking-widest"
+            style={xsTextStyle}
           >
-            <button
-              type="button"
-              onClick={onSwitchToLogin}
-              className="ml-1 underline underline-offset-4 hover:text-black transition-colors"
-            >
-              既にアカウントをお持ちの方はこちら
-            </button>
-          </p>
-        </>
-      ) : null}
+            OR
+          </span>
+        </div>
+      </div>
+      <Button
+        type="button"
+        onClick={() => {
+          void loginWithGoogle({ next: "/auth/verified" });
+        }}
+        variant="secondary"
+        size="xl"
+        className="w-full flex items-center justify-center gap-3"
+        style={{ minHeight: "3rem" }}
+      >
+        <i className="ri-google-fill text-lg"></i>Googleで登録
+      </Button>
     </div>
   );
 };

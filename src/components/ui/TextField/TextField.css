@@ -26,6 +26,10 @@
   --field-pad-x-with-icon: calc(
     var(--pad-x) + var(--field-icon-size) + var(--gap-icon2text)
   );
+  /* 右端要素がある場合の右パディング（左アイコンと対称）*/
+  --field-pad-x-with-trailing: calc(
+    var(--pad-x) + var(--field-icon-size) + var(--gap-icon2text)
+  );
 
   /* 縦方向のグループ間隔＝font / φ（近接：ラベル/入力/補足を 1 グループ化）*/
   --field-stack-gap: calc(var(--field-font-size) / var(--phi));
@@ -74,6 +78,89 @@
   --field-shape-radius: 0;
 }
 
+/* underline：枠を消して下線のみ。Button と同じ黄金比の系（x=font-size / y=φ）で構成する。
+   - 先頭アイコン径＝x·√φ（図の x√y「テキストボックス高」＝Button の icon-only 径）。
+     本文（x）より √φ 倍大きくして対比を付ける（reference: text 11px ↔ icon 16px ≒ ×√φ）。
+   - 入力の左字下げ＝アイコン径 + gap-icon2text（gap=pad-x/φ、図の x/y 内側スケール由来）。
+     アイコン径を √φ 倍にしたぶん字下げも自動で広がる（reference の pl≈34px 相当）。
+   - 下線は resting=淡色（black/10）・focus=黒。アイコン/プレースホルダは black/20。
+   - 字間は φ 由来の控えめなトラッキング（reference: tracking-wider）。 */
+[data-ui-text-field][data-ui-text-field-shape="underline"] {
+  --field-shape-radius: 0;
+  /* 外側スペース＝図の内側スペーシング x/y（＝font/φ）。
+     .text-field__icon は left、.text-field__trailing は right にこの値を使うので、
+     左アイコンの左・右アイコンの右に x/y 相当の余白が入る。 */
+  --field-icon-inset: calc(var(--field-font-size) / var(--phi));
+  /* 先頭アイコン径＝x·√φ（図の x√y「テキストボックス高」＝Button の icon-only 径） */
+  --field-icon-size: calc(var(--field-font-size) * var(--sqrt-phi));
+  --field-border-color: rgba(0, 0, 0, 0.1);
+  --field-fg-muted: rgba(0, 0, 0, 0.2);
+  /* 入力の左右字下げ＝外側 x/y ＋ アイコン径 ＋ アイコン→本文 x/y。
+     アイコン↔本文の間隔も x/y に揃え、アイコンを両側 x/y で囲んで対比を整える。 */
+  --field-pad-x-with-icon: calc(
+    var(--field-icon-inset) + var(--field-icon-size) + var(--field-icon-inset)
+  );
+  --field-pad-x-with-trailing: calc(
+    var(--field-icon-inset) + var(--field-icon-size) + var(--field-icon-inset)
+  );
+}
+
+[data-ui-text-field][data-ui-text-field-shape="underline"] .text-field__input {
+  border: 0;
+  border-bottom: var(--field-border-width) solid var(--field-border-color);
+  border-radius: 0;
+  background: transparent;
+  letter-spacing: calc(
+    var(--field-font-size) * var(--lk-eighthstep-dec) / var(--phi) / var(--phi)
+  );
+}
+
+[data-ui-text-field][data-ui-text-field-shape="underline"]
+  .text-field__input:focus {
+  border-bottom-color: var(--field-border-focus);
+}
+
+
+/* --- 先頭テキスト（leadingText）：WITH ICON の応用でアイコン枠の代わりに文言を左へ置く。
+   制御枠を flex にして [ラベル文言][入力] を横並びにし、入力値は右寄せで表示する（定義リスト風）。
+   文言幅は可変なので絶対配置ではなく flex で領域を確保する。 */
+[data-ui-text-field][data-ui-text-field-has-leading-text="true"] .text-field__control {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-icon2text);
+}
+
+/* 文言はラベルと同階層（本文より √φ 小さく・muted）。折り返さず左端に固定 */
+.text-field__leading-text {
+  flex: 0 0 auto;
+  padding-inline-start: var(--pad-x);
+  font-size: calc(var(--field-font-size) / var(--sqrt-phi));
+  letter-spacing: var(--field-letter-spacing);
+  color: var(--field-fg-muted);
+  line-height: var(--sqrt-phi, 1.4);
+  white-space: nowrap;
+}
+
+/* 入力は残り幅いっぱい・値は右寄せ（ラベル左／値右の対比を作る） */
+[data-ui-text-field][data-ui-text-field-has-leading-text="true"] .text-field__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: right;
+}
+
+/* underline × leadingText：下線を入力ではなく制御枠へ移し、文言下も含めて全幅に引く */
+[data-ui-text-field][data-ui-text-field-shape="underline"][data-ui-text-field-has-leading-text="true"]
+  .text-field__control {
+  border-bottom: var(--field-border-width) solid var(--field-border-color);
+}
+[data-ui-text-field][data-ui-text-field-shape="underline"][data-ui-text-field-has-leading-text="true"]
+  .text-field__input {
+  border-bottom: 0;
+}
+[data-ui-text-field][data-ui-text-field-shape="underline"][data-ui-text-field-has-leading-text="true"]
+  .text-field__control:focus-within {
+  border-bottom-color: var(--field-border-focus);
+}
 
 /* --- ラベル（対比：入力本文より半段小さく・やや淡く／整列：左そろえ）--- */
 .text-field__label {
@@ -140,6 +227,45 @@
 /* アイコンがある場合は左パディングを拡張（反復：アイコン分だけ字下げ）*/
 [data-ui-text-field][data-ui-text-field-has-icon="true"] .text-field__input {
   padding-left: var(--field-pad-x-with-icon);
+}
+
+/* 右端要素がある場合は右パディングを拡張（左アイコンと対称）*/
+[data-ui-text-field][data-ui-text-field-has-trailing="true"]
+  .text-field__input {
+  padding-right: var(--field-pad-x-with-trailing);
+}
+
+/* --- 右端要素（整列：縦中央／近接：入力右端に寄せる。操作可）--- */
+.text-field__trailing {
+  position: absolute;
+  right: var(--field-icon-inset);
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--field-fg-muted);
+}
+
+/* --- 表示切替などのアイコンボタン（reset＋muted→hoverで濃く）--- */
+.text-field__toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--field-icon-size);
+  height: var(--field-icon-size);
+  font-size: var(--field-icon-size);
+  line-height: 1;
+  color: var(--field-fg-muted);
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+
+.text-field__toggle:hover {
+  color: var(--field-fg);
 }
 
 /* disabled（対比：淡色で操作不可を明示）*/

@@ -50,7 +50,7 @@ test.describe('FR-ACCOUNT-009 authenticated profile fetch', () => {
 
 		await expect.poll(() => profileCookieHeader).toContain('sb-access-token=test-access-token');
 		await expect(page.getByText('メールアドレス')).toBeVisible();
-		await expect(page.getByText('user@example.com')).toBeVisible();
+		await expect(page.getByLabel('メールアドレス')).toHaveValue('user@example.com');
 		await expect(page.getByText('プロフィールを読み込めませんでした')).toHaveCount(0);
 	});
 });

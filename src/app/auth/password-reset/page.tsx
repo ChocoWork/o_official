@@ -195,108 +195,113 @@ export default function PasswordResetPage() {
           strategy="afterInteractive"
         />
       ) : null}
-      <div className="border border-black/20 bg-white rounded-2xl overflow-hidden">
-        <div className="pt-8 sm:pt-10 px-6 pb-10">
-          <h1
-            className="font-brand text-center tracking-widest mb-8"
-            style={headingTextStyle}
-          >
-            {isConfirmMode ? "パスワード再設定" : "パスワード再設定"}
-          </h1>
-          <form
-            className="space-y-6"
-            onSubmit={isConfirmMode ? handleConfirm : handleRequest}
-          >
-            <TextField
-              id="email"
-              label="EMAIL"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              type="email"
-              autoComplete="email"
-              disabled={isConfirmMode || isResolvingSession}
-              shape="rounded"
-              size="lg"
-              className="min-h-[2.75rem]"
-            />
+      <div className="px-6 pt-6 sm:pt-10 lg:pt-[55px]">
+        <h1
+          className="font-brand text-center tracking-widest mb-8"
+          style={headingTextStyle}
+        >
+          パスワード再設定
+        </h1>
+        <form
+          className="space-y-4 sm:space-y-6"
+          onSubmit={isConfirmMode ? handleConfirm : handleRequest}
+        >
+          <TextField
+            id="email"
+            aria-label="Email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            type="email"
+            autoComplete="email"
+            disabled={isConfirmMode || isResolvingSession}
+            shape="underline"
+            size="lg"
+            leadingIcon={<i className="ri-mail-line" aria-hidden="true"></i>}
+          />
 
-            {isConfirmMode ? (
-              <div>
-                <TextField
-                  id="newPassword"
-                  label="NEW PASSWORD"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  required
-                  type={showPassword ? "text" : "password"}
-                  autoComplete="new-password"
-                  helperText="8文字以上128文字以内"
-                  shape="rounded"
-                  size="lg"
-                  className="min-h-[2.75rem]"
-                />
+          {isConfirmMode ? (
+            <TextField
+              id="newPassword"
+              aria-label="New Password"
+              placeholder="New Password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              required
+              type={showPassword ? "text" : "password"}
+              autoComplete="new-password"
+              helperText="8文字以上128文字以内"
+              shape="underline"
+              size="lg"
+              leadingIcon={<i className="ri-lock-line" aria-hidden="true"></i>}
+              trailingIcon={
                 <button
                   type="button"
+                  className="text-field__toggle"
                   onClick={() => setShowPassword((v) => !v)}
+                  aria-label={
+                    showPassword ? "パスワードを非表示" : "パスワードを表示"
+                  }
                   aria-pressed={showPassword}
-                  className="mt-2 text-xs underline underline-offset-4 hover:text-[#474747] transition-colors"
                 >
-                  {showPassword ? "パスワードを非表示" : "パスワードを表示"}
+                  <i
+                    className={showPassword ? "ri-eye-line" : "ri-eye-off-line"}
+                    aria-hidden="true"
+                  ></i>
                 </button>
-              </div>
-            ) : siteKey ? (
-              <div className="pt-2">
-                <div
-                  className="cf-turnstile"
-                  data-sitekey={siteKey}
-                  data-callback="onTurnstileReset"
-                ></div>
-              </div>
-            ) : null}
-
-            <Button
-              type="submit"
-              className="w-full"
-              size="xl"
-              shape="rounded"
-              style={{ minHeight: "3rem" }}
-              disabled={
-                loading ||
-                isResolvingSession ||
-                (isConfirmMode ? !newPassword : !email)
               }
-            >
-              {isResolvingSession
-                ? "確認中..."
-                : isConfirmMode
-                  ? "パスワードを更新"
-                  : "再設定メールを送信"}
-            </Button>
-          </form>
-          {error ? (
-            <p
-              role="alert"
-              className="text-sm text-red-600 mt-4 whitespace-pre-line"
-            >
-              {error}
-            </p>
+            />
+          ) : siteKey ? (
+            <div className="pt-2">
+              <div
+                className="cf-turnstile"
+                data-sitekey={siteKey}
+                data-callback="onTurnstileReset"
+              ></div>
+            </div>
           ) : null}
-          {message ? (
-            <p role="status" className="text-sm mt-4 flex items-center gap-2">
-              <span aria-hidden="true">✓</span>
-              {message}
-            </p>
-          ) : null}
-          {resetComplete ? (
-            <Link
-              href="/login"
-              className="mt-4 inline-block text-sm underline underline-offset-4 hover:text-[#474747] transition-colors"
-            >
-              ログインへ
-            </Link>
-          ) : null}
-        </div>
+
+          <Button
+            type="submit"
+            className="w-full"
+            size="xl"
+            style={{ minHeight: "3rem" }}
+            disabled={
+              loading ||
+              isResolvingSession ||
+              (isConfirmMode ? !newPassword : !email)
+            }
+          >
+            {isResolvingSession
+              ? "確認中..."
+              : isConfirmMode
+                ? "パスワードを更新"
+                : "再設定メールを送信"}
+          </Button>
+        </form>
+        {error ? (
+          <p
+            role="alert"
+            className="text-sm text-red-600 mt-4 whitespace-pre-line"
+          >
+            {error}
+          </p>
+        ) : null}
+        {message ? (
+          <p role="status" className="text-sm mt-4 flex items-center gap-2">
+            <span aria-hidden="true">✓</span>
+            {message}
+          </p>
+        ) : null}
+        {resetComplete ? (
+          <Link
+            href="/login"
+            className="mt-4 inline-block text-sm underline underline-offset-4 hover:text-[#474747] transition-colors"
+          >
+            ログインへ
+          </Link>
+        ) : null}
       </div>
     </div>
   );

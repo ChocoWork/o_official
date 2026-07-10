@@ -51,7 +51,7 @@ function renderHighlightedText(text: string, query: string): React.ReactNode {
 
   return segments.map((segment, index) => {
     if (segment.toLowerCase() === normalizedQuery.toLowerCase()) {
-      return <mark key={`${segment}-${index}`} className="bg-[#f2e6bf] px-0.5 text-black">{segment}</mark>;
+      return <mark key={`${segment}-${index}`} className="bg-black/10 px-0.5 text-black font-medium">{segment}</mark>;
     }
     return <React.Fragment key={`${segment}-${index}`}>{segment}</React.Fragment>;
   });
@@ -87,12 +87,12 @@ function SearchResultCard({ result, query }: { result: SearchResult; query: stri
   const bodyTextStyle = { fontSize: 'var(--lk-size-md)' } as const;
 
   return (
-    <Link href={result.href} className="block rounded-2xl border border-black/10 bg-white p-5 transition-colors hover:border-black/30">
+    <Link href={result.href} className="block border border-black/10 bg-white p-5 transition-colors hover:border-black/30">
       <div className="mb-3 flex items-center justify-between gap-3">
         <TagLabel size="sm">{getResultTypeLabel(result.type)}</TagLabel>
         <span className="tracking-widest text-black/50" style={metaTextStyle}>{result.meta}</span>
       </div>
-      <h2 className="mb-2">{renderHighlightedText(result.title, query)}</h2>
+      <h3 className="mb-2">{renderHighlightedText(result.title, query)}</h3>
       <p className="leading-relaxed text-[#474747]" style={bodyTextStyle}>{renderHighlightedText(result.description, query)}</p>
     </Link>
   );
@@ -333,19 +333,19 @@ export function SearchPageClient() {
         </form>
 
         {displayedSuggestionButtons.length > 0 ? (
-          <div className="rounded-2xl border border-black/10 bg-[#fafafa] p-4">
+          <div className="border border-black/10 bg-black/[0.02] p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
-              <p className="text-xs tracking-widest text-black/50">
+              <p id="search-suggestions-label" className="text-xs tracking-widest text-black/50">
                 {inputValue.trim().length > 0 ? 'SUGGESTIONS' : 'RECENT SEARCHES'}
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2" role="group" aria-labelledby="search-suggestions-label">
               {displayedSuggestionButtons.map((entry) => (
                 <button
                   key={entry.key}
                   type="button"
                   onClick={entry.onSelect}
-                  className="rounded-full border border-black/15 bg-white px-4 py-2 text-black transition-colors hover:border-black/40"
+                  className="border border-black/15 bg-white px-4 py-2 text-black transition-colors hover:border-black/40"
                   style={mdTextStyle}
                 >
                   {entry.label}
@@ -364,10 +364,10 @@ export function SearchPageClient() {
         itemStyle={mdTextStyle}
       />
 
-      {errorMessage ? <p className="text-[#b42318]" style={mdTextStyle}>{errorMessage}</p> : null}
+      {errorMessage ? <p role="alert" className="text-red-600" style={mdTextStyle}>{errorMessage}</p> : null}
 
       {!query ? (
-        <section className="space-y-4 rounded-[28px] border border-black/10 bg-[#fafafa] p-5 sm:p-6">
+        <section className="space-y-4 border border-black/10 bg-black/[0.02] p-5 sm:p-6">
           <h2 style={x2lTextStyle}>START YOUR SEARCH</h2>
           <p className="leading-relaxed text-[#474747]" style={mdTextStyle}>
             気になる商品名やトピックを入力すると、商品・ルック・ニュースを横断した結果を表示します。
@@ -379,9 +379,22 @@ export function SearchPageClient() {
           </div>
         </section>
       ) : isLoading ? (
-        <p className="text-[#474747]" style={mdTextStyle}>検索中です…</p>
+        // SR-7: テキストのみから結果カードのスケルトンへ
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-hidden="true">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="border border-black/10 bg-white p-5 animate-pulse">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="h-4 w-12 bg-black/8" />
+                <div className="h-3 w-16 bg-black/8" />
+              </div>
+              <div className="h-4 w-2/3 bg-black/8 mb-3" />
+              <div className="h-3 w-full bg-black/5 mb-1.5" />
+              <div className="h-3 w-4/5 bg-black/5" />
+            </div>
+          ))}
+        </div>
       ) : results?.empty ? (
-        <section className="space-y-5 rounded-[28px] border border-black/10 bg-[#fafafa] p-5 sm:p-6">
+        <section className="space-y-5 border border-black/10 bg-black/[0.02] p-5 sm:p-6">
           <div className="space-y-2">
             <h2 className="tracking-tight text-black font-display" style={x3lTextStyle}>「{query}」の検索結果はありません</h2>
             <p className="leading-relaxed text-[#474747]" style={mdTextStyle}>
@@ -416,14 +429,6 @@ export function SearchPageClient() {
           </div>
         </div>
       )}
-
-      {query ? (
-        <div className="border-t border-black/10 pt-6">
-          <Link href={`/?q=${encodeURIComponent(query)}`} className="tracking-widest text-black/60 transition-colors hover:text-black" style={mdTextStyle}>
-            VIEW PREVIEW ON HOME
-          </Link>
-        </div>
-      ) : null}
     </div>
   );
 }

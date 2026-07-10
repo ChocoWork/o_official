@@ -49,6 +49,16 @@ function formatDateTime(value: string): string {
   return date.toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
+// 一覧の日時: 購入履歴タブと同じ「YYYY.MM.DD」表記
+function formatDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}.${m}.${d}`;
+}
+
 export default function AccountInquiries() {
   const [threads, setThreads] = useState<ThreadListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -204,21 +214,26 @@ export default function AccountInquiries() {
         </div>
       ) : null}
 
-      {threads.map((thread) => (
-        <button
-          key={thread.id}
-          type="button"
-          onClick={() => setSelectedId(thread.id)}
-          className="account-card account-groups w-full text-left"
-        >
-          <div className="flex items-center justify-between gap-2">
-            <span className="account-status">{STATUS_LABELS[thread.status]}</span>
-            <span className="account-label">{formatDateTime(thread.last_message_at)}</span>
-          </div>
-          <p className="account-value mt-2">{thread.subject}</p>
-          <p className="account-label">{TYPE_LABELS[thread.inquiry_type]}</p>
-        </button>
-      ))}
+      {threads.length > 0 ? (
+        <div className="account-inquiry-list">
+          {threads.map((thread) => (
+            <button
+              key={thread.id}
+              type="button"
+              onClick={() => setSelectedId(thread.id)}
+              className="account-inquiry-item w-full text-left"
+            >
+              <p className="account-value account-inquiry-subject">{thread.subject}</p>
+              <span className="account-status account-status-sm account-inquiry-status">{STATUS_LABELS[thread.status]}</span>
+              <p className="account-label">{TYPE_LABELS[thread.inquiry_type]}</p>
+              <span className="account-order-entry-date account-inquiry-date">
+                {formatDate(thread.last_message_at)}
+                <i className="ri-arrow-right-line" aria-hidden="true" />
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

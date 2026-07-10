@@ -57,7 +57,7 @@ test.describe('FR-ACCOUNT-006 extended profile fields', () => {
 
     await loginAndOpenAccount(page);
 
-    await page.getByRole('button', { name: '変更する' }).click();
+    await page.getByRole('button', { name: '編集' }).click();
     await page.getByLabel('フリガナ').fill('サトウ ハナコ');
     await page.getByLabel('氏名').fill('佐藤 花子');
     await page.getByLabel('電話番号').fill('08033334444');

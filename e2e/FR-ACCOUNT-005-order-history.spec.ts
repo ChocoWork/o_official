@@ -67,13 +67,15 @@ test.describe('FR-ACCOUNT-005 order history', () => {
     });
 
     await loginAndOpenAccount(page);
-    await page.getByRole('button', { name: '購入履歴' }).click();
+    await page.getByRole('tab', { name: '購入履歴' }).click();
 
     await expect(page.getByText('ORD-0001')).toBeVisible();
     await expect(page.getByText('決済完了')).toBeVisible();
-    await expect(page.getByRole('link', { name: '注文詳細を見る' })).toHaveAttribute('href', '/account/orders/order-1');
+    // FREQ-88: 行全体が注文詳細へのリンク
+    const orderRow = page.getByRole('link', { name: /ORD-0001/ });
+    await expect(orderRow).toHaveAttribute('href', '/account/orders/order-1');
 
-    await page.getByRole('link', { name: '注文詳細を見る' }).click();
+    await orderRow.click();
     await expect(page).toHaveURL(/\/account\/orders\/order-1/);
     await expect(page.getByRole('heading', { name: '注文詳細' })).toBeVisible();
     await expect(page.getByText('東京都渋谷区神宮前1-2-3 青山ハイツ 101')).toBeVisible();

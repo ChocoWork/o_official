@@ -42,59 +42,54 @@ const AuthTabs: React.FC<AuthTabsProps> = ({ initialTab }) => {
 
   return (
     <div className="w-full max-w-md mx-auto px-4 sm:px-6 pt-2">
-      <div className="border border-black/20 bg-white rounded-2xl overflow-hidden">
-        <div
-          role="tablist"
-          aria-label="ログイン / 会員登録"
-          className="grid grid-cols-2"
-        >
-          {TABS.map(({ key, label }) => {
-            const selected = key === activeTab;
-            return (
-              <button
-                key={key}
-                ref={(el) => {
-                  tabRefs.current[key] = el;
-                }}
-                type="button"
-                role="tab"
-                id={`auth-tab-${key}`}
-                aria-selected={selected}
-                aria-controls="auth-panel"
-                tabIndex={selected ? 0 : -1}
-                onClick={() => switchTab(key)}
-                onKeyDown={handleTabKeyDown}
-                className={`min-h-[48px] px-4 tracking-widest transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-4px] ${
-                  selected
-                    ? "bg-white text-black focus-visible:outline-black"
-                    : "bg-[#efefef] text-[#595959] hover:bg-[#e5e5e5] focus-visible:outline-black"
-                }`}
-                style={mdTextStyle}
-              >
-                {label}
-              </button>
-            );
-          })}
-        </div>
-        <div
-          role="tabpanel"
-          id="auth-panel"
-          aria-labelledby={`auth-tab-${activeTab}`}
-          className="pt-6 sm:pt-10"
-        >
-          {activeTab === "login" ? (
-            <>
-              <LoginModal
-                open={true}
-                onSwitchToRegister={() => switchTab("register")}
-              />
-            </>
-          ) : (
-            <>
-              <RegisterModal onSwitchToLogin={() => switchTab("login")} />
-            </>
-          )}
-        </div>
+      <div
+        role="tablist"
+        aria-label="ログイン / 会員登録"
+        className="grid grid-cols-2 px-6"
+      >
+        {TABS.map(({ key, label }) => {
+          const selected = key === activeTab;
+          return (
+            <button
+              key={key}
+              ref={(el) => {
+                tabRefs.current[key] = el;
+              }}
+              type="button"
+              role="tab"
+              id={`auth-tab-${key}`}
+              aria-selected={selected}
+              aria-controls="auth-panel"
+              tabIndex={selected ? 0 : -1}
+              onClick={() => switchTab(key)}
+              onKeyDown={handleTabKeyDown}
+              className={`min-h-[48px] px-4 tracking-widest border-b transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-black ${
+                selected
+                  ? "border-black text-black"
+                  : "border-black/20 text-[#a3a3a3] hover:text-[#595959]"
+              }`}
+              style={mdTextStyle}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+      <div
+        role="tabpanel"
+        id="auth-panel"
+        aria-labelledby={`auth-tab-${activeTab}`}
+        className="pt-6 sm:pt-10 lg:pt-[55px]"
+      >
+        {activeTab === "login" ? (
+          <>
+            <LoginModal open={true} />
+          </>
+        ) : (
+          <>
+            <RegisterModal onSwitchToLogin={() => switchTab("login")} />
+          </>
+        )}
       </div>
     </div>
   );

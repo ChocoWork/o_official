@@ -39,7 +39,7 @@ test.describe('FR-ACCOUNT-001 account tabs layout', () => {
     await expect(page.getByRole('button', { name: '配送情報' })).toBeVisible();
     await expect(page.getByRole('button', { name: '購入履歴' })).toBeVisible();
     await expect(page.getByText('メールアドレス')).toBeVisible();
-    await expect(page.getByText('user@example.com')).toBeVisible();
+    await expect(page.getByLabel('メールアドレス')).toHaveValue('user@example.com');
 
     await page.getByRole('button', { name: '配送情報' }).click();
     await expect(page).toHaveURL(/tab=shipping/);

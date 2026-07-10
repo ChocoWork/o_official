@@ -24,23 +24,25 @@ for (const viewport of viewports) {
       expect(bg).not.toBe('rgb(17, 17, 17)');
     });
 
-    test('tabs use fill-only distinction with no divider borders', async ({ page }) => {
-      // FREQ-65-AC-05: タブに区切り線（border）を入れず塗りのみで統一
+    test('tabs use an underline (bottom border only), no box borders', async ({ page }) => {
+      // FREQ-90: タブは下線（border-bottom）のみで区別し、四方を囲む枠線は持たない
+      // （FREQ-65-AC-05 の「塗りのみ・border なし」は下線デザインへ置き換え）
       const tabs = page.getByRole('tab');
       const count = await tabs.count();
       for (let i = 0; i < count; i += 1) {
         const widths = await tabs.nth(i).evaluate((el) => {
           const cs = getComputedStyle(el);
-          return [
-            cs.borderTopWidth,
-            cs.borderRightWidth,
-            cs.borderBottomWidth,
-            cs.borderLeftWidth,
-          ].map((w) => parseFloat(w));
+          return {
+            top: parseFloat(cs.borderTopWidth),
+            right: parseFloat(cs.borderRightWidth),
+            bottom: parseFloat(cs.borderBottomWidth),
+            left: parseFloat(cs.borderLeftWidth),
+          };
         });
-        for (const w of widths) {
-          expect(w).toBe(0);
-        }
+        expect(widths.bottom).toBeGreaterThan(0);
+        expect(widths.top).toBe(0);
+        expect(widths.right).toBe(0);
+        expect(widths.left).toBe(0);
       }
     });
 

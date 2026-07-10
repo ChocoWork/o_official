@@ -8,6 +8,8 @@ export function TextField({
   helperText,
   errorText,
   leadingIcon,
+  leadingText,
+  trailingIcon,
   className,
   id,
   shape = "square",
@@ -32,6 +34,8 @@ export function TextField({
     "data-ui-text-field-size": size,
     "data-ui-text-field-invalid": errorText ? "true" : undefined,
     "data-ui-text-field-has-icon": leadingIcon ? "true" : undefined,
+    "data-ui-text-field-has-leading-text": leadingText ? "true" : undefined,
+    "data-ui-text-field-has-trailing": trailingIcon ? "true" : undefined,
     "data-ui-size": size,
   } as const;
 
@@ -44,6 +48,9 @@ export function TextField({
             {leadingIcon}
           </span>
         ) : null}
+        {leadingText ? (
+          <span className="text-field__leading-text">{leadingText}</span>
+        ) : null}
         <input
           id={fieldId}
           aria-describedby={describedBy}
@@ -51,6 +58,9 @@ export function TextField({
           className={cn("text-field__input", className)}
           {...props}
         />
+        {trailingIcon ? (
+          <span className="text-field__trailing">{trailingIcon}</span>
+        ) : null}
       </span>
       {errorText ? (
         <span id={errorId} role="alert" className="text-field__error">

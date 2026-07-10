@@ -61,6 +61,7 @@ describe('GET /api/orders', () => {
 						order_items: [
 							{
 								id: 'line-1',
+								item_id: 10,
 								item_name: 'Silk Blouse',
 								item_image_url: 'item-image.jpg',
 								color: 'Black',
@@ -77,6 +78,16 @@ describe('GET /api/orders', () => {
 
 		createClient.mockResolvedValue({
 			from: jest.fn().mockReturnValue(orderQuery),
+		});
+
+		createServiceRoleClient.mockResolvedValue({
+			from: jest.fn().mockReturnValue({
+				select: jest.fn().mockReturnThis(),
+				in: jest.fn().mockResolvedValue({
+					data: [{ id: 10, stock_quantity: 5 }],
+					error: null,
+				}),
+			}),
 		});
 
 		const { GET } = require('@/app/api/orders/route');
@@ -96,15 +107,21 @@ describe('GET /api/orders', () => {
 					status: '決済完了',
 					totalAmount: expect.stringMatching(/^[¥￥]12,000$/),
 					itemCount: 1,
+					shippingFullName: '',
+					shippingEmail: '',
+					shippingPhone: '',
+					shippingAddress: '',
 					items: [
 						{
 							id: 'line-1',
+							itemId: 10,
 							name: 'Silk Blouse',
 							imageUrl: 'https://cdn.example.com/signed-image.jpg',
 							color: 'Black',
 							size: 'M',
 							quantity: 1,
 							amount: expect.stringMatching(/^[¥￥]12,000$/),
+							stockStatus: 'in_stock',
 						},
 					],
 					detailHref: '/account/orders/order-1',
@@ -147,7 +164,11 @@ describe('GET /api/orders/[id]', () => {
 				id: 'order-1',
 				created_at: '2026-04-01T00:00:00.000Z',
 				status: 'paid',
-				total_amount: 12000,
+				payment_intent_id: 'pi_123',
+				subtotal_amount: 12000,
+				shipping_amount: 500,
+				discount_amount: 1000,
+				total_amount: 11500,
 				currency: 'jpy',
 				shipping_full_name: '山田 花子',
 				shipping_email: 'user@example.com',
@@ -160,6 +181,7 @@ describe('GET /api/orders/[id]', () => {
 				order_items: [
 					{
 						id: 'line-1',
+						item_id: 10,
 						item_name: 'Silk Blouse',
 						item_image_url: 'item-image.jpg',
 						color: 'Black',
@@ -180,6 +202,30 @@ describe('GET /api/orders/[id]', () => {
 			}),
 		});
 
+		createServiceRoleClient.mockResolvedValue({
+			from: jest.fn().mockImplementation((table: string) => {
+				if (table === 'checkout_drafts') {
+					return {
+						select: jest.fn().mockReturnThis(),
+						eq: jest.fn().mockReturnThis(),
+						limit: jest.fn().mockReturnThis(),
+						maybeSingle: jest.fn().mockResolvedValue({
+							data: { payment_method: 'stripe_card' },
+							error: null,
+						}),
+					};
+				}
+
+				return {
+					select: jest.fn().mockReturnThis(),
+					in: jest.fn().mockResolvedValue({
+						data: [{ id: 10, stock_quantity: 5 }],
+						error: null,
+					}),
+				};
+			}),
+		});
+
 		const { GET } = require('@/app/api/orders/[id]/route');
 		const response: { status: number; json: () => Promise<unknown>; headers: Map<string, string> } = await GET(
 			new Request('http://localhost/api/orders/order-1'),
@@ -192,8 +238,20 @@ describe('GET /api/orders/[id]', () => {
 		expect(body).toMatchObject({
 			id: 'order-1',
 			orderNumber: 'ORD-ORDER-1',
-			status: '決済完了',
-			totalAmount: expect.stringMatching(/^[¥￥]12,000$/),
+			orderDate: '2026/04/01 09:00',
+			status: 'paid',
+			subtotalAmount: expect.stringMatching(/^[¥￥]12,000$/),
+			shippingAmount: expect.stringMatching(/^[¥￥]500$/),
+			discountAmount: expect.stringMatching(/^-[¥￥]1,000$/),
+			totalAmount: expect.stringMatching(/^[¥￥]11,500$/),
+			paymentMethod: 'クレジットカード',
+			items: [
+				expect.objectContaining({
+					id: 'line-1',
+					itemId: 10,
+					stockStatus: 'in_stock',
+				}),
+			],
 		});
 	});
 

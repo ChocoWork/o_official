@@ -22,9 +22,9 @@ for (const viewport of viewports) {
       await expect(loginTab).toBeVisible();
       await expect(registerTab).toBeVisible();
       await expect(loginTab).toHaveAttribute('aria-selected', 'true');
-      await expect(page.getByLabel('EMAIL')).toBeVisible();
-      await expect(page.getByLabel('PASSWORD', { exact: true })).toBeVisible();
-      await expect(page.getByLabel('PASSWORD（確認）')).toHaveCount(0);
+      await expect(page.getByLabel('Email')).toBeVisible();
+      await expect(page.getByLabel('Password', { exact: true })).toBeVisible();
+      await expect(page.getByLabel('Confirm Password')).toHaveCount(0);
     });
 
     test('switches to register form when register tab is clicked', async ({ page }) => {
@@ -33,7 +33,7 @@ for (const viewport of viewports) {
       // FREQ-63-AC-02: 新規登録タブを押すとPASSWORD（確認）が表示され、URLは /login のまま
       await page.getByRole('tab', { name: '会員登録' }).click();
       await expect(page.getByRole('tab', { name: '会員登録' })).toHaveAttribute('aria-selected', 'true');
-      await expect(page.getByLabel('PASSWORD（確認）')).toBeVisible();
+      await expect(page.getByLabel('Confirm Password')).toBeVisible();
       await expect(page).toHaveURL(/\/login$/);
     });
 
@@ -42,28 +42,27 @@ for (const viewport of viewports) {
 
       await page.getByRole('tab', { name: '会員登録' }).click();
       await expect(page.getByRole('tab', { name: '会員登録' })).toHaveAttribute('aria-selected', 'true');
-      await expect(page.getByLabel('PASSWORD（確認）')).toBeVisible();
+      await expect(page.getByLabel('Confirm Password')).toBeVisible();
 
       await page.getByRole('tab', { name: 'ログイン' }).click();
       await expect(page.getByRole('tab', { name: 'ログイン' })).toHaveAttribute('aria-selected', 'true');
-      await expect(page.getByLabel('PASSWORD', { exact: true })).toBeVisible();
+      await expect(page.getByLabel('Password', { exact: true })).toBeVisible();
       await expect(page).toHaveURL(/\/login$/);
     });
 
-    test('the "既にアカウントをお持ちの方はこちら" control is a tab-switch button, not a link', async ({ page }) => {
+    test('タブ内の切替リンクは撤去され、切替はタブのみで行う', async ({ page }) => {
       await page.goto('/login');
-      await page.getByRole('tab', { name: '会員登録' }).click();
 
-      // FREQ-63-AC-03: リンクではなくタブ切替ボタンで、押すとログインタブに切り替わりURLは /login のまま
+      // FREQ-90: タブ内の「会員登録はこちら」「既にアカウントをお持ちの方はこちら」導線は撤去
       await expect(
-        page.getByRole('link', { name: '既にアカウントをお持ちの方はこちら' }),
+        page.getByRole('button', { name: '会員登録はこちら' }),
       ).toHaveCount(0);
 
-      await page
-        .getByRole('button', { name: '既にアカウントをお持ちの方はこちら' })
-        .click();
-      await expect(page.getByRole('tab', { name: 'ログイン' })).toHaveAttribute('aria-selected', 'true');
-      await expect(page.getByLabel('PASSWORD', { exact: true })).toBeVisible();
+      await page.getByRole('tab', { name: '会員登録' }).click();
+      await expect(
+        page.getByRole('button', { name: '既にアカウントをお持ちの方はこちら' }),
+      ).toHaveCount(0);
+      await expect(page.getByLabel('Confirm Password')).toBeVisible();
       await expect(page).toHaveURL(/\/login$/);
     });
   });

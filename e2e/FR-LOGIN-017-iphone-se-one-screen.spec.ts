@@ -21,7 +21,7 @@ test.describe('FR-LOGIN-017 iPhone SE one screen', () => {
     await page.setViewportSize({ width: 375, height: 667 });
     await page.goto('/login');
     await page.getByRole('tab', { name: '会員登録' }).click();
-    await expect(page.getByLabel('PASSWORD（確認）')).toBeVisible();
+    await expect(page.getByLabel('Confirm Password')).toBeVisible();
 
     const card = await page.locator('#auth-panel').locator('xpath=..').boundingBox();
     const footer = await page.locator('footer').boundingBox();
@@ -36,10 +36,10 @@ test.describe('FR-LOGIN-017 iPhone SE one screen', () => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/login');
 
-    // Google ボタンの下マージンが sm:mb-8（32px）であること（mb-6=24px でないこと）
-    const googleMb = await page
-      .getByRole('button', { name: /Google/ })
+    // フォーム下マージン（form ↔ OR）が sm:mb-8（32px）であること（mobile の mb-4=16px でないこと）
+    const formMb = await page
+      .locator('form')
       .evaluate((el) => getComputedStyle(el).marginBottom);
-    expect(googleMb).toBe('32px');
+    expect(formMb).toBe('32px');
   });
 });
