@@ -1,17 +1,23 @@
-import type { Metadata } from 'next';
-import type { CSSProperties, ReactNode } from 'react';
-import Link from 'next/link';
-import { getSiteUrl } from '@/lib/redirect';
+import type { Metadata } from "next";
+import type { CSSProperties, ReactNode } from "react";
+import Link from "next/link";
+import { getSiteUrl } from "@/lib/redirect";
 
-const pageTitleStyle: CSSProperties = { fontSize: 'var(--lk-size-4xl)' };
-const labelStyle: CSSProperties = { fontSize: 'var(--lk-size-sm)' };
-const bodyTextStyle: CSSProperties = { fontSize: 'var(--lk-size-md)' };
-const noteStyle: CSSProperties = { fontSize: 'var(--lk-size-sm)' };
+const pageTitleStyle: CSSProperties = { fontSize: "var(--lk-size-5xl)" };
+const labelStyle: CSSProperties = { fontSize: "var(--lk-size-md)" };
+const bodyTextStyle: CSSProperties = {
+  fontSize: "var(--lk-size-xs)",
+  lineHeight: 1.9,
+};
+const noteStyle: CSSProperties = {
+  fontSize: "var(--lk-size-2xs)",
+  lineHeight: 1.9,
+};
 
 export async function generateMetadata(): Promise<Metadata> {
-  const title = '特定商取引法に基づく表記 | Le Fil des Heures';
+  const title = "Legal Notice | Le Fil des Heures";
   const description =
-    'Le Fil des Heures の特定商取引法に基づく表記です。販売事業者・支払方法・引渡時期・返品についてご案内します。';
+    "Le Fil des Heures の特定商取引法に基づく表記です。販売事業者・支払方法・引渡時期・返品についてご案内します。";
 
   return {
     title,
@@ -19,7 +25,7 @@ export async function generateMetadata(): Promise<Metadata> {
     openGraph: {
       title,
       description,
-      images: ['/mainphoto.png'],
+      images: ["/mainphoto.png"],
     },
   };
 }
@@ -30,84 +36,130 @@ export default function LegalPage() {
   const siteUrl = getSiteUrl();
 
   const rows: LegalRow[] = [
-    { label: '販売事業者', value: 'Le Fil des Heures（運営者氏名：※要記入）' },
-    { label: '運営統括責任者', value: '※要記入' },
+    { label: "販売業者", value: "Le Fil des Heures" },
+    { label: "運営統括責任者", value: "櫻井 雅也" },
     {
-      label: '所在地',
-      value:
-        'ご請求に応じて遅滞なく開示いたします。お問い合わせフォームよりご請求ください。',
-    },
-    {
-      label: '電話番号',
-      value:
-        'ご請求に応じて遅滞なく開示いたします。お問い合わせフォームよりご請求ください。',
-    },
-    {
-      label: 'お問い合わせ',
+      label: "所在地",
       value: (
-        <Link
-          href="/contact"
-          className="underline underline-offset-4 hover:text-black transition-colors"
-        >
-          お問い合わせフォーム
-        </Link>
+        <>
+          〒980-0021
+          <br />
+          宮城県仙台市青葉区中央2丁目11-19 仙南ビル 4階-A
+        </>
       ),
     },
-    { label: '販売URL', value: siteUrl },
-    { label: '販売価格', value: '各商品ページに表示する価格（消費税込み）' },
     {
-      label: '商品代金以外の必要料金',
-      value: '消費税、送料（ご注文手続き時に表示します）',
+      label: "電話番号",
+      value: (
+        <>
+          080-9637-0468
+          <br />
+          ※
+          本電話番号は、特定商取引法の遵守にあたり、代表番号を記載するものです。商品返品等カスタマー対応は致し兼ねます。必要の際は、下記お問い合わせフォームよりご連絡下さいますようお願いいたします。
+          <br />
+          <br />
+          <Link
+            href="/contact"
+            className="underline underline-offset-4 hover:text-black transition-colors"
+          >
+            お問い合わせフォーム
+          </Link>
+        </>
+      ),
+    },
+    { label: "ウェブサイト", value: siteUrl },
+    {
+      label: "販売価格",
+      value: "各商品ページにてご確認ください（表示価格は消費税込みです）。",
     },
     {
-      label: '支払方法',
-      value: 'クレジットカード／PayPay／コンビニ決済',
+      label: "商品以外の必要代金",
+      value: (
+        <>
+          送料　　　　：無料（商品価格に含みます）
+          <br />
+          決済手数料　：コンビニ決済をご利用の場合は、別途コンビニ決済手数料をお客様にご負担いただきます。
+          <br />
+          試着サービス：往復配送料・クリーニング代等を含む所定の試着サービス料金を含む金額をお客様にご負担いただきます。
+        </>
+      ),
     },
     {
-      label: '支払時期',
+      label: "支払方法・支払時期",
+      value: (
+        <>
+          クレジットカード決済：ご注文時にお支払いが確定します。
+          <br />
+          PayPay：ご注文時にお支払いが確定します。
+          <br />
+          コンビニ決済：ご注文後に発行される払込番号の期限（ご注文から7日以内）までに、選択したコンビニでお支払いください。
+          <span className="mt-1 block text-[#767676]" style={noteStyle}>
+            ※
+            コンビニ決済をご選択の場合、期限までにお支払いが確認できないときは、ご注文をキャンセルさせていただくことがあります。
+          </span>
+        </>
+      ),
+    },
+    {
+      label: "商品の引渡時期",
       value:
-        '各決済手段の定めに従い、ご注文時に確定します。コンビニ決済の場合は、所定の期限内にお支払いください。',
+        "当社の商品は原則として受注生産です。在庫がある場合は、ご注文（コンビニ決済の場合はご入金）確認後、通常3〜7営業日以内に発送いたします。在庫がなく受注生産となる場合は、一定数のご注文がまとまった時点で製造を開始し、注文確定後、発送までに数週間から2ヶ月以上お時間をいただく場合があります。発送時期の目安は、各商品ページまたは注文確定時のご案内にてお知らせします。",
     },
     {
-      label: '商品の引渡時期',
-      value:
-        '受注生産のため、ご注文（コンビニ決済の場合はご入金）確認後、◯営業日以内に発送いたします（※日数 要記入）。',
-    },
-    {
-      label: '返品・交換',
-      value:
-        '受注生産のため、お客様のご都合による返品・交換はお受けできません。商品の不良または誤配送の場合に限り、商品到着後7日以内にお問い合わせフォームよりご連絡いただくことで、当社負担にて対応いたします。',
+      label: "返品・交換・キャンセルについて",
+      value: (
+        <>
+          <p>
+            ご注文後のお客様都合による返品・交換・キャンセルは、原則としてお受けできません。
+          </p>
+          <p className="mt-4">
+            初期不良（仕様上明らかな不具合がある場合）または誤送（ご注文と異なる商品が届いた場合）に限り、商品到着後7日以内にお問い合わせフォームよりご連絡いただいた場合に、返品・交換・修理を承ります。この場合、該当商品を当店までご返送いただく必要がございます。7日を過ぎたご連絡は、未使用であってもお受けできません。
+          </p>
+          <p className="mt-4">
+            サイズ交換をご希望の場合は、未使用品かつ在庫があるものに限り対応いたします。
+          </p>
+          <p className="mt-4">以下の場合は、返品・交換をお受けできません。</p>
+          <ul className="mt-1 list-disc list-inside">
+            <li>商品到着後7日以上経過したもの</li>
+            <li>お客様が一度ご使用になったもの</li>
+            <li>お客様が破損・汚損されたもの</li>
+            <li>お客様が加工・修理されたもの</li>
+            <li>
+              商品の箱・タグ・説明書などの付属品を汚損・破損・紛失された場合
+            </li>
+          </ul>
+          <p className="mt-4">
+            返品にかかる送料は、お客様のご負担となります。ただし、初期不良・誤送など当社の責めに帰すべき理由による場合は、当社が負担いたします。
+          </p>
+          <p className="mt-4">
+            当社の商品は、素材の風合いを活かして一点一点丁寧に仕立てております。製造過程で避けられない細かな傷や掠れ、天然素材特有のへこみ・色むら・黒点などは、素材の個性および良品として取り扱っておりますので、これらを理由とする返品・交換はご容赦ください。
+          </p>
+        </>
+      ),
     },
   ];
 
   return (
     <div className="w-full max-w-4xl mx-auto">
-      <h1 className="mb-8" style={pageTitleStyle}>
-        特定商取引法に基づく表記
+      <h1 className="mb-10" style={pageTitleStyle}>
+        Legal Notice / 特定商取引法に基づく表記
       </h1>
 
-      <dl className="border-t border-black/10">
+      <dl className="space-y-8">
         {rows.map((row) => (
-          <div
-            key={row.label}
-            className="flex flex-col sm:flex-row gap-1 sm:gap-8 border-b border-black/10 py-4"
-          >
+          <div key={row.label}>
             <dt
-              className="font-brand text-black sm:w-52 flex-shrink-0 tracking-wide"
+              className="mb-3 font-brand text-black tracking-wide"
               style={labelStyle}
             >
               {row.label}
             </dt>
-            <dd className="text-[#474747] leading-relaxed" style={bodyTextStyle}>
+            <dd className="text-[#474747]" style={bodyTextStyle}>
               {row.value}
             </dd>
           </div>
         ))}
       </dl>
-
-      <p className="mt-8 text-[#474747] leading-relaxed" style={noteStyle}>
-        ※「要記入」の項目は、事業開始時に正式な情報を記載してください。所在地・電話番号は、特定商取引法の規定に基づき、ご請求があった場合に遅滞なく開示する運用としています。
-      </p>
     </div>
   );
 }

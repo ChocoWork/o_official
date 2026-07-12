@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceRoleClient, resolveRequestUser } from '@/lib/supabase/server';
 import { signItemImageUrl } from '@/lib/storage/item-images';
+import { toOrderNumber } from '@/lib/orders/order-number';
 
 const NO_STORE_HEADERS = {
 	'Cache-Control': 'no-store',
@@ -8,6 +9,7 @@ const NO_STORE_HEADERS = {
 
 type OrderItemRow = {
 	id: string;
+	item_id: number | null;
 	item_name: string;
 	item_image_url: string | null;
 	color: string | null;
@@ -22,8 +24,25 @@ type OrderRow = {
 	status: 'pending' | 'paid' | 'failed' | 'cancelled';
 	total_amount: number;
 	currency: string;
+	shipping_full_name: string | null;
+	shipping_email: string | null;
+	shipping_phone: string | null;
+	shipping_postal_code: string | null;
+	shipping_prefecture: string | null;
+	shipping_city: string | null;
+	shipping_address: string | null;
+	shipping_building: string | null;
 	order_items: OrderItemRow[] | null;
 };
+
+type StockStatus = 'in_stock' | 'low_stock' | 'sold_out' | 'unknown';
+
+function toStockStatus(qty: number | null): StockStatus {
+	if (qty === null) return 'unknown';
+	if (qty === 0) return 'sold_out';
+	if (qty <= 4) return 'low_stock';
+	return 'in_stock';
+}
 
 function formatCurrency(amount: number, currency: string) {
 	try {
@@ -66,8 +85,16 @@ function mapStatusLabel(status: OrderRow['status']) {
 	return '未決済';
 }
 
-function toOrderNumber(id: string) {
-	return `ORD-${id.slice(0, 8).toUpperCase()}`;
+function formatShippingAddress(order: OrderRow): string {
+	return [
+		order.shipping_postal_code ? `〒${order.shipping_postal_code}` : null,
+		order.shipping_prefecture,
+		order.shipping_city,
+		order.shipping_address,
+		order.shipping_building,
+	]
+		.filter(Boolean)
+		.join(' ');
 }
 
 export async function GET(request: NextRequest) {
@@ -90,8 +117,17 @@ export async function GET(request: NextRequest) {
 			status,
 			total_amount,
 			currency,
+			shipping_full_name,
+			shipping_email,
+			shipping_phone,
+			shipping_postal_code,
+			shipping_prefecture,
+			shipping_city,
+			shipping_address,
+			shipping_building,
 			order_items (
 				id,
+				item_id,
 				item_name,
 				item_image_url,
 				color,
@@ -108,7 +144,28 @@ export async function GET(request: NextRequest) {
 		return NextResponse.json({ error: 'Failed to fetch orders' }, { status: 500, headers: NO_STORE_HEADERS });
 	}
 
+	// 全注文に含まれるitem_idを収集してまとめて在庫照会
+	const allItemIds = [
+		...new Set(
+			((data ?? []) as OrderRow[])
+				.flatMap((o) => (o.order_items ?? []).map((i) => i.item_id))
+				.filter((id): id is number => id !== null),
+		),
+	];
+
 	const signSupabase = await createServiceRoleClient();
+
+	const stockMap = new Map<number, StockStatus>();
+	if (allItemIds.length > 0) {
+		const { data: stockRows } = await signSupabase
+			.from('items')
+			.select('id, stock_quantity')
+			.in('id', allItemIds);
+		for (const row of stockRows ?? []) {
+			stockMap.set(row.id, toStockStatus(row.stock_quantity));
+		}
+	}
+
 	const response = await Promise.all(((data ?? []) as OrderRow[]).map(async (order) => ({
 		id: order.id,
 		orderNumber: toOrderNumber(order.id),
@@ -116,14 +173,20 @@ export async function GET(request: NextRequest) {
 		status: mapStatusLabel(order.status),
 		totalAmount: formatCurrency(order.total_amount, order.currency),
 		itemCount: (order.order_items ?? []).reduce((sum, item) => sum + item.quantity, 0),
+		shippingFullName: order.shipping_full_name ?? '',
+		shippingEmail: order.shipping_email ?? '',
+		shippingPhone: order.shipping_phone ?? '',
+		shippingAddress: formatShippingAddress(order),
 		items: await Promise.all((order.order_items ?? []).map(async (item) => ({
 			id: item.id,
+			itemId: item.item_id,
 			name: item.item_name,
 			imageUrl: await signItemImageUrl(signSupabase, item.item_image_url),
 			color: item.color,
 			size: item.size,
 			quantity: item.quantity,
 			amount: formatCurrency(item.line_total, order.currency),
+			stockStatus: item.item_id !== null ? (stockMap.get(item.item_id) ?? 'unknown') : 'unknown',
 		}))),
 		detailHref: `/account/orders/${order.id}`,
 	})));
