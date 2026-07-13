@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getPublishedItemsPage, ItemSort } from '@/lib/items/public';
-import { parseItemCollectionMeta } from '@/lib/items/collection-utils';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { logAudit } from '@/lib/audit';
 
@@ -13,10 +12,16 @@ const ITEMS_LIST_CACHE_TTL_MS = 30_000;
 
 const itemsListResponseCache = new Map<string, { expiresAtMs: number; body: Record<string, unknown> }>();
 
+const CATEGORY_TOKEN_VALUES = ['TOPS', 'BOTTOMS', 'OUTERWEAR', 'ACCESSORIES', 'ALL'] as const;
+const categoryTokenSchema = z.enum(CATEGORY_TOKEN_VALUES);
+
 const stringFilterSchema = z.object({
-  // category は DB enum に対応した値のみ許可（'ALL' はフロント正規化用として許容）
+  // category はカンマ区切りで複数指定可能（OR 検索）。形式のみ検証し、各トークンは後段で enum 検証する。
+  // 'ALL' はフロントの全カテゴリ選択用エイリアスとして許容。
   category: z
-    .enum(['TOPS', 'BOTTOMS', 'OUTERWEAR', 'ACCESSORIES', 'ALL'])
+    .string()
+    .max(60)
+    .regex(/^[A-Za-z,]*$/)
     .optional(),
   size: z.string().max(50).regex(SAFE_STRING_REGEX).optional(),
   color: z.string().max(50).regex(SAFE_STRING_REGEX).optional(),
@@ -98,16 +103,30 @@ export async function GET(request: Request) {
       collectionSeasons: collectionSeasonsRaw,
     } = parsedStringFilters.data;
 
-    // 'ALL' はフロントの全カテゴリ選択用エイリアスなので undefined に正規化
-    const category = rawCategory === 'ALL' ? undefined : rawCategory;
+    // カンマ区切りの category を各トークンに分解して enum 検証し、'ALL'/空は除外。
+    // 複数残ればカンマ結合して OR 検索（getPublishedItemsPage 側で IN に展開）。
+    const categoryTokens = (rawCategory ?? '')
+      .split(',')
+      .map((value) => value.trim().toUpperCase())
+      .filter((value) => value.length > 0);
+    const hasInvalidCategory = categoryTokens.some(
+      (token) => !categoryTokenSchema.safeParse(token).success,
+    );
+    if (hasInvalidCategory) {
+      return NextResponse.json(
+        { error: 'Invalid filter parameter', details: { category: ['Invalid category'] } },
+        { status: 400 },
+      );
+    }
+    const selectedCategories = categoryTokens.filter((token) => token !== 'ALL');
+    const category =
+      selectedCategories.length > 0 ? selectedCategories.join(',') : undefined;
 
     const parsedPage = parseOptionalIntParam(searchParams, 'page', z.coerce.number().int().positive());
     const parsedPageSize = parseOptionalIntParam(searchParams, 'pageSize', z.coerce.number().int().positive().max(60));
     const parsedLimit = parseOptionalIntParam(searchParams, 'limit', z.coerce.number().int().positive().max(60));
     const parsedPriceMin = parseOptionalIntParam(searchParams, 'priceMin', z.coerce.number().int().nonnegative());
     const parsedPriceMax = parseOptionalIntParam(searchParams, 'priceMax', z.coerce.number().int().nonnegative());
-    const parsedCollectionYearMin = parseOptionalIntParam(searchParams, 'collectionYearMin', z.coerce.number().int().nonnegative());
-    const parsedCollectionYearMax = parseOptionalIntParam(searchParams, 'collectionYearMax', z.coerce.number().int().nonnegative());
     const parsedSort = sortSchema.safeParse(searchParams.get('sort'));
 
     const selectedSeasons = (collectionSeasonsRaw ?? '')
@@ -129,8 +148,6 @@ export async function GET(request: Request) {
       color: color ?? null,
       collection: collection ?? null,
       collectionSeasons: selectedSeasons,
-      collectionYearMin: parsedCollectionYearMin.success ? parsedCollectionYearMin.data : null,
-      collectionYearMax: parsedCollectionYearMax.success ? parsedCollectionYearMax.data : null,
       priceMin: parsedPriceMin.success ? parsedPriceMin.data : null,
       priceMax: parsedPriceMax.success ? parsedPriceMax.data : null,
       page,
@@ -179,18 +196,11 @@ export async function GET(request: Request) {
               : false;
           }));
 
-      const collectionMeta = parseItemCollectionMeta(item);
-      const collectionYearMinOk =
-        !parsedCollectionYearMin.success ||
-        (typeof collectionMeta.year === 'number' && collectionMeta.year >= parsedCollectionYearMin.data);
-      const collectionYearMaxOk =
-        !parsedCollectionYearMax.success ||
-        (typeof collectionMeta.year === 'number' && collectionMeta.year <= parsedCollectionYearMax.data);
       const collectionSeasonOk =
         selectedSeasons.length === 0 ||
-        (collectionMeta.season !== null && selectedSeasons.includes(collectionMeta.season));
+        (item.season != null && selectedSeasons.includes(item.season));
 
-      return collectionOk && colorOk && collectionYearMinOk && collectionYearMaxOk && collectionSeasonOk;
+      return collectionOk && colorOk && collectionSeasonOk;
     });
 
     const responseTimeMs = Date.now() - startedAt;
@@ -207,8 +217,6 @@ export async function GET(request: Request) {
         collection: collection ?? null,
         size: size ?? null,
         color: color ?? null,
-        collectionYearMin: parsedCollectionYearMin.success ? parsedCollectionYearMin.data : null,
-        collectionYearMax: parsedCollectionYearMax.success ? parsedCollectionYearMax.data : null,
         collectionSeasons: selectedSeasons.length > 0 ? selectedSeasons : null,
         priceMin: parsedPriceMin.success ? parsedPriceMin.data : null,
         priceMax: parsedPriceMax.success ? parsedPriceMax.data : null,

@@ -35,6 +35,11 @@ export function CartItemRow({
 }: CartItemRowProps) {
   if (!item.items) return null;
   const product = item.items;
+  // ラベル(COLOR/SIZE)は値より一段小さく・字間も狭めて従属させる（対比）
+  const variantLabelStyle = {
+    fontSize: "var(--lk-size-4xs)",
+    letterSpacing: "0.02em",
+  } as const;
 
   return (
     <div
@@ -47,98 +52,131 @@ export function CartItemRow({
     >
       <Link
         href={`/item/${product.id}`}
-        className="w-20 h-24 flex-shrink-0 overflow-hidden relative"
+        className="w-16 self-start flex-shrink-0 overflow-hidden relative block"
       >
         <Image
           alt={product.name}
-          className="w-full h-full object-cover object-top hover:scale-105 transition-transform duration-500"
+          className="w-full h-auto object-contain hover:scale-105 transition-transform duration-500"
           src={product.image_url}
-          fill
-          sizes="80px"
+          width={0}
+          height={0}
+          sizes="64px"
         />
       </Link>
 
-      <div
-        className="flex-1 flex flex-col"
-        style={{ gap: "calc(var(--lk-size-md) / var(--sqrt-phi) / var(--phi))" }}
-      >
+      <div className="flex-1 flex flex-col justify-between gap-y-4 sm:gap-y-0">
+        {/* 上段: 商品名・バリアント */}
         <div
-          className="flex items-start justify-between"
-          style={{ gap: "calc(var(--lk-size-md) / var(--sqrt-phi) / var(--phi))" }}
+          className="flex flex-col"
+          style={{ gap: "calc(var(--lk-size-md) / var(--sqrt-phi) / var(--phi) / var(--phi))" }}
         >
-          <Link
-            href={`/item/${product.id}`}
-            className="hover:text-[#474747] transition-colors"
-            style={{ fontSize: "var(--lk-size-md)" }}
-          >
-            {product.name}
-          </Link>
           <div
-            className="flex items-center flex-shrink-0"
+            className="flex items-start justify-between"
             style={{ gap: "calc(var(--lk-size-md) / var(--sqrt-phi) / var(--phi))" }}
           >
-            <Button
-              onClick={() => onToggleWishlist(item.item_id)}
-              disabled={isTogglingWishlist}
-              variant="ghost"
-              size="4xs"
-              iconOnly
-              aria-label="ウィッシュリストに追加"
-              className="min-h-[44px] min-w-[44px]"
+            <Link
+              href={`/item/${product.id}`}
+              className="font-brand tracking-tight hover:text-[#474747] transition-colors"
+              style={{ fontSize: "var(--lk-size-2xs)" }}
             >
-              <div className="w-4 h-4 flex items-center justify-center">
-                <i
-                  className={`text-base ${
-                    isWishlisted ? "ri-heart-fill text-black" : "ri-heart-line"
-                  }`}
-                />
-              </div>
-            </Button>
-            <Button
-              onClick={() => onRemove(item.id)}
-              disabled={isUpdating}
-              variant="ghost"
-              size="4xs"
-              iconOnly
-              aria-label="カートから削除"
-              className="min-h-[44px] min-w-[44px]"
+              {product.name}
+            </Link>
+            <div
+              className="flex items-center flex-shrink-0"
+              style={{ gap: "calc(var(--lk-size-md) / var(--sqrt-phi) / var(--phi))" }}
             >
-              <div className="w-4 h-4 flex items-center justify-center">
-                <i className="ri-close-line text-base" />
-              </div>
-            </Button>
+              <Button
+                onClick={() => onToggleWishlist(item.item_id)}
+                disabled={isTogglingWishlist}
+                variant="ghost"
+                size="4xs"
+                iconOnly
+                aria-label="ウィッシュリストに追加"
+              >
+                <div className="w-4 h-4 flex items-center justify-center">
+                  <i
+                    className={`text-base ${
+                      isWishlisted ? "ri-heart-fill text-red-500" : "ri-heart-line"
+                    }`}
+                  />
+                </div>
+              </Button>
+              <Button
+                onClick={() => onRemove(item.id)}
+                disabled={isUpdating}
+                variant="ghost"
+                size="4xs"
+                iconOnly
+                aria-label="カートから削除"
+              >
+                <div className="w-4 h-4 flex items-center justify-center">
+                  <i className="ri-close-line text-base" />
+                </div>
+              </Button>
+            </div>
           </div>
+
+          {/* バリアント（色/サイズ）: ラベル(COLOR/SIZE)＋値の2行。
+              対比=ラベルは値より小さく淡い色で従属、値を優先。整列=ラベル/コロン/値を列で揃える。
+              反復=両行で同一ルール。近接=行間を詰めて1グループに。 */}
+          {(item.color || item.size) && (
+            <div
+              data-testid="cart-variant"
+              className="text-[#474747] grid grid-cols-[auto_auto_1fr] items-baseline w-fit"
+              style={{
+                fontSize: "var(--lk-size-3xs)",
+                rowGap: "calc(var(--lk-size-md) / var(--sqrt-phi) / var(--phi) / var(--phi) / var(--phi))",
+              }}
+            >
+              {item.color && (
+                <>
+                  <span data-variant-label className="text-[#767676]" style={variantLabelStyle}>
+                    COLOR
+                  </span>
+                  <span aria-hidden="true" className="text-[#767676]" style={variantLabelStyle}>
+                    ：
+                  </span>
+                  <span>{item.color}</span>
+                </>
+              )}
+              {item.size && (
+                <>
+                  <span data-variant-label className="text-[#767676]" style={variantLabelStyle}>
+                    SIZE
+                  </span>
+                  <span aria-hidden="true" className="text-[#767676]" style={variantLabelStyle}>
+                    ：
+                  </span>
+                  <span>{item.size}</span>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
-        {(item.color || item.size) && (
-          <span
-            className="tracking-[0.08em] text-[#474747]"
-            style={{ fontSize: "var(--lk-size-2xs)" }}
-          >
-            {[item.color, item.size].filter(Boolean).join(" / ")}
-          </span>
-        )}
-
-        <div className="flex items-end justify-between">
-          <div className="flex flex-col" style={{ gap: "calc(var(--lk-size-md) / var(--sqrt-phi) / var(--phi) / var(--phi))" }}>
-            <span className="text-[#474747]" style={{ fontSize: "var(--lk-size-2xs)" }}>
-              単価 ¥{product.price.toLocaleString("ja-JP")}
+        {/* 下段: 単価と数量。画像下端に揃える */}
+        <div
+          className="flex flex-col"
+          style={{ gap: "calc(var(--lk-size-md) / var(--sqrt-phi))" }}
+        >
+          <div className="flex items-end justify-between">
+            {/* 単価 */}
+            <span
+              className="text-black font-medium"
+              style={{ fontSize: "var(--lk-size-2xs)" }}
+            >
+              ¥{product.price.toLocaleString("ja-JP")}
             </span>
-            {/* CT-3: 行ごとの小計（単価×数量） */}
-            <span style={{ fontSize: "var(--lk-size-md)" }}>
-              ¥{(product.price * item.quantity).toLocaleString("ja-JP")}
-            </span>
+            <Stepper
+              value={item.quantity}
+              min={1}
+              max={MAX_CART_ITEM_QUANTITY}
+              onChange={(value) => onQuantityChange(item.id, value)}
+              size="2xs"
+            />
           </div>
-          <Stepper
-            value={item.quantity}
-            min={1}
-            max={MAX_CART_ITEM_QUANTITY}
-            onChange={(value) => onQuantityChange(item.id, value)}
-            size="xs"
-          />
-        </div>
 
-        {syncError && (
+          {syncError && (
           <div
             className="text-red-600 flex items-center justify-between"
             style={{ gap: "calc(var(--lk-size-md) / var(--sqrt-phi))" }}
@@ -157,6 +195,7 @@ export function CartItemRow({
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   );

@@ -28,29 +28,34 @@ export default function CartPage() {
   } = useCartItems();
 
   if (loading) {
+    // CT-1: 黒バー明滅 + デバッグ文言を廃し、カートレイアウトの控えめなスケルトンに
     return (
-      <div className="relative aspect-video bg-white flex items-center justify-center overflow-hidden border border-black/10">
-        <div className="absolute inset-0 flex flex-col">
-          {[0, 200, 400, 600, 800].map((delay) => (
-            <div
-              key={delay}
-              className="flex-1 bg-black animate-[barReveal_2s_ease-in-out_infinite_alternate]"
-              style={{ animationDelay: `${delay}ms` }}
-            />
-          ))}
+      <div className="max-w-5xl mx-auto w-full">
+        <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-8" aria-hidden="true">
+          <div>
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="border-b border-black/10 flex gap-4 py-6 animate-pulse">
+                <div className="w-20 h-24 flex-shrink-0 bg-black/8" />
+                <div className="flex-1 flex flex-col gap-2">
+                  <div className="h-4 w-2/3 bg-black/8" />
+                  <div className="h-3 w-1/4 bg-black/5" />
+                  <div className="mt-auto flex items-end justify-between">
+                    <div className="h-4 w-20 bg-black/8" />
+                    <div className="h-7 w-24 bg-black/5" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div>
+            <div className="border border-black/10 p-6 animate-pulse space-y-4">
+              <div className="h-4 w-1/3 bg-black/8" />
+              <div className="h-3 w-full bg-black/5" />
+              <div className="h-3 w-full bg-black/5" />
+              <div className="h-10 w-full bg-black/8 mt-4" />
+            </div>
+          </div>
         </div>
-        <span
-          className="relative text-sm tracking-wider text-white mix-blend-difference"
-          style={{ fontFamily: "Didot, serif", fontSize: "var(--lk-size-md)" }}
-        >
-          Loading
-        </span>
-        <p
-          className="absolute bottom-6 left-6 text-xs tracking-wider text-black/40 mix-blend-difference"
-          style={{ fontFamily: "acumin-pro, sans-serif", fontSize: "var(--lk-size-xs)" }}
-        >
-          BARS REVEAL
-        </p>
       </div>
     );
   }
@@ -82,7 +87,8 @@ export default function CartPage() {
         <div>
           {error && (
             <div
-              className="text-red-500 border border-red-300 bg-red-50 mb-6"
+              role="alert"
+              className="text-red-600 border border-black/15 bg-black/[0.02] mb-6"
               style={{ fontSize: "var(--lk-size-md)", padding: "var(--pad-x)" }}
             >
               {error}
@@ -91,10 +97,14 @@ export default function CartPage() {
 
           {hasSyncError && (
             <div
-              className="text-amber-700 border border-amber-300 bg-amber-50 flex items-center justify-between mb-6"
+              role="status"
+              className="text-[#474747] border border-black/20 bg-black/[0.02] flex items-center justify-between mb-6"
               style={{ fontSize: "var(--lk-size-xs)", padding: "var(--pad-x)", gap: "var(--pad-x)" }}
             >
-              <span>数量の更新に失敗した商品があります。再試行または再同期してください。</span>
+              <span className="flex items-center gap-2">
+                <i className="ri-error-warning-line" aria-hidden="true" />
+                数量の更新に失敗した商品があります。再試行または再同期してください。
+              </span>
               <Button
                 onClick={handleResyncFromServer}
                 disabled={resyncing}
@@ -126,10 +136,14 @@ export default function CartPage() {
           <div style={{ paddingTop: "calc(var(--lk-size-md) * var(--sqrt-phi))" }}>
             <Link
               href="/item"
-              className="inline-flex items-center text-black hover:text-[#474747] transition-colors tracking-wider"
-              style={{ fontSize: "var(--lk-size-2xs)", gap: "var(--gap-icon2text)" }}
+              className="group inline-flex items-center text-[#767676]"
+              style={{
+                fontSize: "var(--lk-size-2xs)",
+                gap: "var(--gap-icon2text)",
+                letterSpacing: "0.08em",
+              }}
             >
-              <i className="ri-arrow-left-line" />
+              <i className="ri-arrow-left-line transition-transform duration-150 group-hover:-translate-x-[3px] motion-reduce:transition-none" />
               CONTINUE SHOPPING
             </Link>
           </div>
