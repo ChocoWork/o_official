@@ -44,7 +44,7 @@ export default async function ItemPage({
   searchParams?: Promise<ItemPageSearchParams>;
 }) {
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
-  const pageSize = 12;
+  const pageSize = 20;
 
   const initialResult = await getPublishedItemsPage({
     category: resolvedSearchParams?.category,
@@ -57,7 +57,7 @@ export default async function ItemPage({
   });
 
   return (
-    <div className="element-width w-full">
+    <div className="max-w-[1680px] mx-auto w-full">
       <PublicItemGrid
         variant="catalog"
         items={initialResult.items}

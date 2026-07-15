@@ -431,7 +431,7 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
     }
 
     return (
-      <div className="stockist-grid-catalog grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="stockist-grid-catalog grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
         {displayStockists.map((shop) => (
           <StockistCard key={shop.id} shop={shop} />
         ))}
@@ -451,7 +451,7 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
           </div>
         </aside>
 
-        <div className="flex-1 min-w-0 w-full max-w-full px-0 md:px-[21px] lg:pl-[34px] lg:pr-[21px] xl:pl-[55px] xl:pr-[34px] py-0 xl:py-[21px]">
+        <div className="flex-1 min-w-0 w-full max-w-full px-0 md:px-[21px] lg:pl-[34px] lg:pr-[21px] xl:pl-[55px] xl:pr-[34px] 2xl:pl-[89px] 2xl:pr-[55px] py-0 xl:py-[21px]">
           <div className="sm:-mt-1 md:-mt-2 lg:hidden">{renderMobileFilterBar(false)}</div>
           <div
             className="fixed inset-x-0 z-30 lg:hidden bg-white transition-transform duration-300 ease-in-out before:pointer-events-none before:absolute before:inset-x-0 before:-top-px before:h-px before:bg-white before:content-['']"

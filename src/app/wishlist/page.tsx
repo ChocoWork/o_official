@@ -2,9 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { useCart } from '@/contexts/CartContext';
 import { EmptyPage } from '@/components/ui/EmptyPage/EmptyPage';
+import { ItemCardInfo, ItemCardMedia } from '@/features/items/components/ItemCard';
+import { extractColorSwatches } from '@/lib/items/colors';
+import { isItemInStock } from '@/lib/items/stock-label';
 
 interface WishlistItem {
   id: string;
@@ -115,10 +117,12 @@ function parseWishlistResponse(payload: unknown): WishlistItem[] {
   return parsed;
 }
 
-const wishlistTextXsStyle: React.CSSProperties = { fontSize: 'var(--lk-size-xs)' };
 const wishlistTextMdStyle: React.CSSProperties = { fontSize: 'var(--lk-size-md)' };
 const wishlistTextLgStyle: React.CSSProperties = { fontSize: 'var(--lk-size-lg)' };
-const wishlistIcon2xlStyle: React.CSSProperties = { fontSize: 'var(--lk-size-2xl)' };
+const wishlistIconLgStyle: React.CSSProperties = { fontSize: 'var(--lk-size-lg)' };
+// 削除済み/フォールバック用の文字サイズ。商品カードは ItemCard（ITEM 一覧と共通）を使う。
+const wishlistCardNameStyle: React.CSSProperties = { fontSize: 'var(--lk-size-2xs)' };
+const wishlistCardButtonStyle: React.CSSProperties = { fontSize: 'var(--lk-size-2xs)' };
 
 export default function Page() {
   const [wishlistItems, setWishlistItems] = useState<WishlistItem[]>([]);
@@ -163,12 +167,13 @@ export default function Page() {
       }
 
       setWishlistItems(wishlistItems.filter((item) => item.id !== wishlistId));
-      
+
       // Update wishlist in context
       await updateWishlist();
     } catch (err) {
       console.error('Error removing from wishlist:', err);
-      alert(err instanceof Error ? err.message : 'エラーが発生しました');
+      // WL-2: ネイティブ alert を廃し、他箇所と同じインライン通知に統一
+      setActionMessage(err instanceof Error ? err.message : '削除に失敗しました。時間をおいて再度お試しください。');
     } finally {
       setRemovingId(null);
     }
@@ -221,8 +226,21 @@ export default function Page() {
 
   if (loading) {
     return (
-      <div className="text-center py-12">
-        <div className="tracking-widest" style={wishlistTextLgStyle}>読み込み中...</div>
+      <div className="max-w-7xl mx-auto w-full">
+        <div className="flex items-center justify-between mb-8">
+          <h1 className="tracking-widest" style={wishlistTextLgStyle}>WISHLIST</h1>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-[2px] sm:gap-x-[3px] lg:gap-x-[4px] gap-y-[16px] sm:gap-y-[20px] md:gap-y-[24px] lg:gap-y-[28px]" aria-hidden="true">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="animate-pulse">
+              <div className="aspect-[3/4] bg-black/8 mb-[8px]" />
+              <div className="h-[10px] w-1/3 bg-black/8 mb-[6px]" />
+              <div className="h-[10px] w-2/3 bg-black/8 mb-[6px]" />
+              <div className="h-[10px] w-1/4 bg-black/8 mb-[8px]" />
+              <div className="h-8 w-full bg-black/5" />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -248,73 +266,111 @@ export default function Page() {
   }
 
   return (
-    <>
-      <div className="flex items-center justify-between mb-8">
+    <div className="max-w-7xl mx-auto w-full">
+      <div className="flex items-baseline justify-between mb-8 gap-4">
+        <h1 className="tracking-widest" style={wishlistTextLgStyle}>WISHLIST</h1>
         <p className="text-[#474747]" style={wishlistTextMdStyle}>{wishlistItems.length}点のアイテム</p>
       </div>
+      {/* WL-3: 操作地点（カード）に近い視認性のため、固定トーストで通知 */}
       {actionMessage ? (
-        <p className="mb-4 text-[#474747]" role="status" style={wishlistTextMdStyle}>{actionMessage}</p>
+        <div
+          role="status"
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-[90vw] bg-black text-white px-5 py-3 shadow-lg flex items-center gap-3"
+          style={wishlistTextMdStyle}
+        >
+          <span>{actionMessage}</span>
+          <button
+            type="button"
+            onClick={() => setActionMessage(null)}
+            aria-label="通知を閉じる"
+            className="flex-shrink-0 opacity-70 hover:opacity-100 transition-opacity"
+          >
+            <i className="ri-close-line" aria-hidden="true" />
+          </button>
+        </div>
       ) : null}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8" role="list" aria-label="ウィッシュリスト商品一覧">
-        {wishlistItems.map((item) => (
-          <article key={item.id} className="group relative" role="listitem">
-            {item.items ? (
-              <Link className="block" href={`/item/${item.items.id}`}>
-                <div className="aspect-[4/5] bg-[#f5f5f5] mb-4 overflow-hidden relative">
-                  <Image
-                    alt={item.items.name}
-                    className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500"
-                    src={item.items.image_url}
-                    fill
-                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-[2px] sm:gap-x-[3px] lg:gap-x-[4px] gap-y-[16px] sm:gap-y-[20px] md:gap-y-[24px] lg:gap-y-[28px]" role="list" aria-label="ウィッシュリスト商品一覧">
+        {wishlistItems.map((item) => {
+          // カードの見た目は ITEM 一覧（PublicItemGrid）と共通の ItemCard に統一。
+          // 色（カラースウォッチ）と数量（在庫：残り〇点／受注生産）を表示する。
+          const product = item.items;
+          const swatches = product ? extractColorSwatches(product.colors) : [];
+          const soldOut = product ? !isItemInStock(product) : false;
+
+          return (
+            <article key={item.id} className="group relative" role="listitem">
+              {product ? (
+                <Link className="block" href={`/item/${product.id}`}>
+                  <ItemCardMedia
+                    imageUrl={product.image_url}
+                    alt={product.name}
+                    soldOut={soldOut}
                   />
-                </div>
-              </Link>
-            ) : (
-              <div className="aspect-[4/5] bg-[#f5f5f5] mb-4 flex items-center justify-center px-4 text-center text-[#474747]" style={wishlistTextMdStyle}>
-                商品情報を取得できませんでした
-              </div>
-            )}
-            <button
-              onClick={() => handleRemove(item.id)}
-              disabled={removingId === item.id}
-              aria-label="ウィッシュリストから削除"
-              className="absolute top-4 right-4 w-10 h-10 bg-white flex items-center justify-center hover:bg-black hover:text-white transition-all duration-300 cursor-pointer opacity-0 group-hover:opacity-100 disabled:opacity-30"
-            >
-              <i className="ri-close-line" style={wishlistIcon2xlStyle} />
-            </button>
-            {item.items ? (
-              <>
-                <Link href={`/item/${item.items.id}`}>
-                  <p className="text-[#474747] mb-2 tracking-wider" style={wishlistTextXsStyle}>
-                    {item.items.category}
-                  </p>
-                  <h3 className="text-black mb-2 hover:text-[#474747] transition-colors font-brand" style={wishlistTextLgStyle}>
-                    {item.items.name}
-                  </h3>
-                  <p className="text-black mb-3" style={wishlistTextMdStyle}>
-                    ¥{item.items.price.toLocaleString('ja-JP')}
-                  </p>
                 </Link>
-                <button
-                  type="button"
-                  onClick={() => handleAddToCart(item)}
-                  disabled={addingToCartId === item.id}
-                  className="w-full border border-black text-black py-2 hover:bg-black hover:text-white transition-colors disabled:opacity-40"
-                  style={wishlistTextMdStyle}
-                >
-                  {addingToCartId === item.id ? '追加中...' : 'カートに追加'}
-                </button>
-              </>
-            ) : (
-              <div className="space-y-2">
-                <p className="text-[#474747] tracking-wider" style={wishlistTextXsStyle}>不明なカテゴリ</p>
-                <h3 className="text-black font-brand" style={wishlistTextLgStyle}>削除済み商品</h3>
-              </div>
-            )}
-          </article>
-        ))}
+              ) : (
+                <div className="aspect-[3/4] bg-[#f5f5f5] mb-[2px] sm:mb-[6px] md:mb-[8px] flex items-center justify-center px-4 text-center text-[#474747]" style={wishlistCardNameStyle}>
+                  商品情報を取得できませんでした
+                </div>
+              )}
+              <button
+                onClick={() => handleRemove(item.id)}
+                disabled={removingId === item.id}
+                aria-label="ウィッシュリストから削除"
+                className="absolute top-2 right-2 w-9 h-9 bg-white flex items-center justify-center hover:bg-black hover:text-white transition-all duration-300 cursor-pointer [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 disabled:opacity-30"
+              >
+                <i className="ri-close-line" style={wishlistIconLgStyle} />
+              </button>
+              {product ? (
+                <>
+                  <Link href={`/item/${product.id}`}>
+                    <ItemCardInfo
+                      name={product.name}
+                      price={product.price}
+                      swatches={swatches}
+                    />
+                  </Link>
+                  {/* WL-5: 複数サイズ品はボタン挙動と文言を実態に合わせ、詳細ページへ誘導 */}
+                  <div className="px-[8px] mt-[8px]">
+                    {product.sizes && product.sizes.length > 1 ? (
+                      <Link
+                        href={`/item/${product.id}`}
+                        className="block w-full border border-black text-black text-center py-[6px] hover:bg-black hover:text-white transition-colors"
+                        style={wishlistCardButtonStyle}
+                      >
+                        サイズを選択
+                      </Link>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleAddToCart(item)}
+                        disabled={addingToCartId === item.id}
+                        className="w-full border border-black text-black py-[6px] hover:bg-black hover:text-white transition-colors disabled:opacity-40"
+                        style={wishlistCardButtonStyle}
+                      >
+                        {addingToCartId === item.id ? '追加中...' : 'カートに追加'}
+                      </button>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="px-[8px] mt-[8px] space-y-[8px]">
+                  <h3 className="text-black font-brand tracking-tight" style={wishlistCardNameStyle}>削除済み商品</h3>
+                  {/* WL-6: 削除済みエントリを片付ける明示CTA */}
+                  <button
+                    type="button"
+                    onClick={() => handleRemove(item.id)}
+                    disabled={removingId === item.id}
+                    className="w-full border border-black/30 text-[#474747] py-[6px] hover:border-black hover:text-black transition-colors disabled:opacity-40"
+                    style={wishlistCardButtonStyle}
+                  >
+                    {removingId === item.id ? '処理中...' : 'リストから外す'}
+                  </button>
+                </div>
+              )}
+            </article>
+          );
+        })}
       </div>
-    </>
+    </div>
   );
 }

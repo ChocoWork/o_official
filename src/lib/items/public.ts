@@ -3,7 +3,7 @@ import { signItemImageFields } from '@/lib/storage/item-images';
 import type { Item } from '@/types/item';
 
 const ITEM_SELECT_COLUMNS =
-  'id, name, description, price, category, image_url, image_urls, colors, sizes, product_details, material, origin, sewing_region, care, season';
+  'id, name, description, price, category, image_url, image_urls, colors, sizes, product_details, material, origin, sewing_region, care, season, stock_quantity';
 
 export type PublicItemDto = Omit<Item, 'status' | 'created_at' | 'updated_at'>;
 

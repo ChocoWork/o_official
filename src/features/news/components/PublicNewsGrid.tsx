@@ -494,13 +494,12 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
       <div className="flex w-full">
         {/* Category filter */}
         <aside
-          className="hidden lg:block w-[176px] xl:w-[208px] flex-shrink-0 sticky h-[calc(100vh-var(--site-header-offset))] overflow-visible transition-[top,height] duration-300 ease-in-out"
+          className="hidden lg:block w-[233px] xl:w-[288px] flex-shrink-0 sticky h-[calc(100vh-var(--site-header-offset))] overflow-visible transition-[top,height] duration-300 ease-in-out"
           style={desktopFilterStickyStyle}
         >
           <div
-            className="h-full overflow-y-auto border-r border-black/5"
+            className="h-full overflow-y-auto border-r border-black/5 px-[13px] xl:px-[21px]"
             style={{
-              paddingInline: "calc(var(--lk-size-xs) / var(--sqrt-phi))",
               paddingBlock: "calc(var(--lk-size-sm) * var(--phi) * var(--phi)) calc(var(--lk-size-xs) * var(--phi))",
             }}
           >

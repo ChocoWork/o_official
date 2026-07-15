@@ -32,7 +32,7 @@ export default async function LookPage({
   const loadedLooks = await getPublishedLooks();
 
   return (
-    <div className="element-width w-full">
+    <div className="max-w-[1680px] mx-auto w-full">
       <PublicLookGrid variant="catalog" looks={loadedLooks} initialSeason={initialSeason} />
     </div>
   );

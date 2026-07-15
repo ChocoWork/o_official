@@ -27,7 +27,7 @@ const DEFAULT_HOME_GRID_CLASS =
 // 近接: カードは独立した要素。横間隔は維持しつつ、行間（縦）を広げて
 // カード行どうしを明確に分離する（縦 gap > 横 gap）。
 const DEFAULT_CATALOG_GRID_CLASS =
-  "grid grid-cols-2 gap-x-4 gap-y-8 sm:gap-x-6 sm:gap-y-10 md:grid-cols-3 md:gap-x-8 md:gap-y-12 lg:grid-cols-3 lg:gap-x-10 lg:gap-y-14 xl:gap-x-12 xl:gap-y-16";
+  "grid grid-cols-2 gap-x-4 gap-y-8 sm:gap-x-6 sm:gap-y-10 md:grid-cols-3 md:gap-x-8 md:gap-y-12 lg:grid-cols-3 lg:gap-x-10 lg:gap-y-14 xl:grid-cols-4 xl:gap-x-12 xl:gap-y-16";
 const LOOK_SEASON_FILTER_OPTIONS = LOOK_SEASON_OPTIONS.map((season) => ({
   value: season,
   label: season,
@@ -291,13 +291,12 @@ function PublicLookCatalog({
       <div className="flex w-full">
         {/* デスクトップ: NEWS と同様に SEASON フィルターを左サイドバーに配置 */}
         <aside
-          className="hidden lg:block w-[176px] xl:w-[208px] flex-shrink-0 sticky h-[calc(100vh-var(--site-header-offset))] overflow-visible transition-[top,height] duration-300 ease-in-out"
+          className="hidden lg:block w-[233px] xl:w-[288px] flex-shrink-0 sticky h-[calc(100vh-var(--site-header-offset))] overflow-visible transition-[top,height] duration-300 ease-in-out"
           style={desktopFilterStickyStyle}
         >
           <div
-            className="h-full overflow-y-auto border-r border-black/5"
+            className="h-full overflow-y-auto border-r border-black/5 px-[13px] xl:px-[21px]"
             style={{
-              paddingInline: "calc(var(--lk-size-xs) / var(--sqrt-phi))",
               paddingBlock:
                 "calc(var(--lk-size-sm) * var(--phi) * var(--phi)) calc(var(--lk-size-xs) * var(--phi))",
             }}

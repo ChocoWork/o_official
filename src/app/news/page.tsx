@@ -32,7 +32,7 @@ export default async function NewsPage({
   const articles = await getPublishedNews({ category: activeCategory });
 
   return (
-    <div className="element-width w-full">
+    <div className="max-w-[1680px] mx-auto w-full">
       <PublicNewsGrid
         variant="catalog"
         articles={articles}

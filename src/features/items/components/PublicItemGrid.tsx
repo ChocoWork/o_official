@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Accordion } from "@/components/ui/Accordion/Accordion";
@@ -18,6 +17,9 @@ import {
   CollectionSeason,
   parseItemCollectionMeta,
 } from "@/lib/items/collection-utils";
+import { extractColorSwatches } from "@/lib/items/colors";
+import { isItemInStock } from "@/lib/items/stock-label";
+import { ItemCardInfo, ItemCardMedia } from "./ItemCard";
 import { cn } from "@/lib/utils";
 
 const ITEM_CATEGORIES = [
@@ -86,11 +88,6 @@ type DrawerSectionKey =
   | "size"
   | "season"
   | "price";
-
-type ColorSwatch = {
-  name: string;
-  hex: string | null;
-};
 
 function parseSort(sort: string | null): ItemSort {
   return SORT_OPTIONS.some((entry) => entry.value === sort)
@@ -206,41 +203,6 @@ function extractColors(item: Item): string[] {
       return null;
     })
     .filter((entry): entry is string => Boolean(entry));
-}
-
-function extractColorSwatches(item: Item): ColorSwatch[] {
-  if (!Array.isArray(item.colors)) {
-    return [];
-  }
-
-  return item.colors
-    .map((entry) => {
-      if (typeof entry === "string") {
-        return { name: entry, hex: null };
-      }
-      if (entry && typeof entry === "object" && "name" in entry) {
-        const name = String((entry as { name: string }).name);
-        const hexValue =
-          "hex" in entry ? String((entry as { hex?: string }).hex ?? "") : "";
-        const normalizedHex = /^#[0-9a-fA-F]{6}$/.test(hexValue)
-          ? hexValue
-          : null;
-        return { name, hex: normalizedHex };
-      }
-      return null;
-    })
-    .filter((entry): entry is ColorSwatch => Boolean(entry));
-}
-
-function isItemInStock(item: Item): boolean {
-  const soldOutText = `${item.description ?? ""}`.toLowerCase();
-  if (soldOutText.includes("sold out") || soldOutText.includes("在庫切れ")) {
-    return false;
-  }
-  if (Array.isArray(item.sizes) && item.sizes.length === 0) {
-    return false;
-  }
-  return true;
 }
 
 function itemKey(item: Item): string {
@@ -442,7 +404,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     const map = new Map<string, string | null>();
 
     for (const item of resolvedItems) {
-      for (const swatch of extractColorSwatches(item)) {
+      for (const swatch of extractColorSwatches(item.colors)) {
         const key = swatch.name.toUpperCase();
         if (!map.has(key) || (map.get(key) === null && swatch.hex)) {
           map.set(key, swatch.hex);
@@ -850,95 +812,33 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     shouldLimitOnMobile && resolvedItems.length > resolvedMobileLimit;
 
   const renderGrid = () => (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-[8px] sm:gap-[10px] md:gap-[13px] lg:gap-[21px]">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-[2px] sm:gap-x-[3px] lg:gap-x-[4px] gap-y-[16px] sm:gap-y-[20px] md:gap-y-[24px] lg:gap-y-[28px]">
       {displayItems.map((item, index) => {
         const hideOnMobile =
           shouldLimitOnMobile && index >= resolvedMobileLimit!;
-        const itemNameClassName = "font-brand tracking-tight";
-        // I-4: 在庫切れ / カラースウォッチ / コレクション(SS/AW) を控えめに提示（catalogのみ）
-        const showMeta = variant === "catalog";
-        const soldOut = showMeta && !isItemInStock(item);
-        const swatches = showMeta ? extractColorSwatches(item) : [];
+        // ホーム / 一覧で共通のカード。カラースウォッチ（色）を表示する。
+        const soldOut = !isItemInStock(item);
+        const swatches = extractColorSwatches(item.colors);
 
         return (
           <Link
             key={item.id}
             href={`/item/${item.id}`}
             data-testid="item-card-link"
-            className={`${hideOnMobile ? "hidden lg:block" : ""} mb-[8px] sm:mb-[10px] md:mb-[12px]`}
+            className={hideOnMobile ? "hidden lg:block" : undefined}
           >
             <div className="group cursor-pointer" data-testid="item-card">
-              <div className="relative aspect-[3/4] bg-[#f5f5f5] mb-[2px] sm:mb-[6px] md:mb-[8px] overflow-hidden">
-                {item.image_url ? (
-                  <Image
-                    src={item.image_url}
-                    alt={item.name}
-                    width={600}
-                    height={800}
-                    className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500"
-                    priority={false}
-                    data-testid="item-image"
-                  />
-                ) : (
-                  // I-8: 未スタイルの「No Image」を中央寄せのプレースホルダに
-                  <div className="flex h-full w-full items-center justify-center text-[#999]">
-                    <span className="tracking-widest" style={{ fontSize: "var(--lk-size-3xs)" }}>
-                      NO IMAGE
-                    </span>
-                  </div>
-                )}
-                {soldOut ? (
-                  <span
-                    className="absolute top-0 left-0 bg-black text-white px-[8px] py-[3px] tracking-widest"
-                    style={{ fontSize: "var(--lk-size-4xs)" }}
-                  >
-                    SOLD OUT
-                  </span>
-                ) : null}
-              </div>
-              <div>
-                <div className="flex items-start justify-between gap-2">
-                  <h3
-                    className={itemNameClassName}
-                    data-testid="item-name"
-                    style={{ fontSize: "var(--lk-size-2xs)" }}
-                  >
-                    {item.name}
-                  </h3>
-                  {showMeta && item.season ? (
-                    <span
-                      className="flex-shrink-0 font-brand tracking-widest text-[#999]"
-                      style={{ fontSize: "var(--lk-size-4xs)" }}
-                    >
-                      {item.season}
-                    </span>
-                  ) : null}
-                </div>
-                <p
-                  data-testid="item-price"
-                  className="text-black font-medium"
-                  style={{ fontSize: "var(--lk-size-2xs)" }}
-                >
-                  ¥{item.price.toLocaleString("ja-JP")}
-                </p>
-                {swatches.length > 0 ? (
-                  <div className="mt-[4px] flex items-center gap-[4px]" aria-label={`カラー ${swatches.length}色`}>
-                    {swatches.slice(0, 4).map((swatch) => (
-                      <span
-                        key={swatch.name}
-                        title={swatch.name}
-                        className="inline-block h-[10px] w-[10px] rounded-full border border-black/15"
-                        style={{ backgroundColor: swatch.hex ?? "transparent" }}
-                      />
-                    ))}
-                    {swatches.length > 4 ? (
-                      <span className="text-[#999]" style={{ fontSize: "var(--lk-size-4xs)" }}>
-                        +{swatches.length - 4}
-                      </span>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
+              <ItemCardMedia
+                imageUrl={item.image_url}
+                alt={item.name}
+                soldOut={soldOut}
+              />
+              <ItemCardInfo
+                name={item.name}
+                price={item.price}
+                swatches={swatches}
+                season={item.season ?? null}
+              />
             </div>
           </Link>
         );
@@ -1353,7 +1253,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
 
   // I-6: 追加読み込みのスケルトン（NEWS と統一）
   const renderSkeletonCards = (count = 4) => (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-[8px] sm:gap-[10px] md:gap-[13px] lg:gap-[21px] mt-[8px]">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-[2px] sm:gap-x-[3px] lg:gap-x-[4px] gap-y-[16px] sm:gap-y-[20px] md:gap-y-[24px] lg:gap-y-[28px] mt-[8px]">
       {Array.from({ length: count }).map((_, i) => (
         <div key={i} className="animate-pulse">
           <div className="aspect-[3/4] bg-black/8 mb-[8px]" />
