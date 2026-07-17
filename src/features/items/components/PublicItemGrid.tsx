@@ -7,7 +7,7 @@ import { Accordion } from "@/components/ui/Accordion/Accordion";
 import { Button } from "@/components/ui/Button/Button";
 import { MultiSelect } from "@/components/ui/MultiSelect/MultiSelect";
 import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
-import { SectionTitle } from "@/components/ui/SectionTitle/SectionTitle";
+import { HomeSectionHeader } from "@/features/home/components/HomeSectionHeader";
 import { Drawer } from "@/components/ui/Drawer/Drawer";
 import { Slider } from "@/components/ui/Slider/Slider";
 import type { ComponentSize } from "@/components/ui/types";
@@ -379,10 +379,6 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     return loadedItems;
   }, [variant, props, fetchedItems, loadedItems]);
 
-  const hasMoreHomeItems =
-    variant === "home" &&
-    typeof fetchLimit === "number" &&
-    sourceItems.length > fetchLimit;
   const resolvedItems = useMemo(
     () => sourceItems.slice(0, fetchLimit ?? sourceItems.length),
     [sourceItems, fetchLimit],
@@ -808,8 +804,6 @@ export function PublicItemGrid(props: PublicItemGridProps) {
 
   const resolvedMobileLimit = variant === "home" ? 6 : undefined;
   const shouldLimitOnMobile = typeof resolvedMobileLimit === "number";
-  const hasHiddenItemsOnTablet =
-    shouldLimitOnMobile && resolvedItems.length > resolvedMobileLimit;
 
   const renderGrid = () => (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-[2px] sm:gap-x-[3px] lg:gap-x-[4px] gap-y-[16px] sm:gap-y-[20px] md:gap-y-[24px] lg:gap-y-[28px]">
@@ -1278,7 +1272,11 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     return (
       <section id="items" className="section-space">
         <div className="element-width">
-          <SectionTitle title="ITEMS" />
+          <HomeSectionHeader
+            title="ITEMS"
+            viewAllHref="/item"
+            viewAllAriaLabel="VIEW ALL ITEMS"
+          />
 
           {isSelfFetch && loading ? (
             <div className="text-center py-12 text-[#474747]">
@@ -1289,16 +1287,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
               公開中のITEMがありません
             </div>
           ) : (
-            <div id="sym:success">
-              {renderGrid()}
-              {(hasHiddenItemsOnTablet || hasMoreHomeItems) && (
-                <div className="text-center mt-6 md:mt-8 lg:mt-12">
-                  <Button href="/item" variant="secondary" size="xs">
-                    VIEW ALL ITEMS
-                  </Button>
-                </div>
-              )}
-            </div>
+            <div id="sym:success">{renderGrid()}</div>
           )}
         </div>
       </section>

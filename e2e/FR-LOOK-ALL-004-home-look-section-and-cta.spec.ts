@@ -8,7 +8,10 @@ test.describe('FR-LOOK-ALL-004 HOMEのLOOKセクション', () => {
     await expect(lookSection).toBeVisible();
 
     // 1カード内に /look リンクが複数あるため、カード画像で件数を判定する。
-    const lookCards = lookSection.locator('a[href^="/look/"] img');
+    // FREQ-132 のホバー用 2 枚目画像はカード数に含めない。
+    const lookCards = lookSection.locator(
+      'a[href^="/look/"] img:not([data-testid="look-card-image-hover"])',
+    );
     const cardCount = await lookCards.count();
     expect(cardCount).toBeGreaterThan(0);
     expect(cardCount).toBeLessThanOrEqual(6);

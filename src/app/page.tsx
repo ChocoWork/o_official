@@ -109,7 +109,7 @@ export default async function Home() {
                     className="about-main-text"
                     style={{ fontSize: "var(--lk-size-sm)" }}
                   >
-                    長く着られる服だけをつくる。それが、唯一の基準。
+                    長く着られる服だけをつくる。それが、唯一のこだわり。
                   </p>
                   <p
                     className="about-main-text"
@@ -124,7 +124,7 @@ export default async function Home() {
                     {
                       en: "TIMELSS & UNISEX",
                       ja: "タイムレス＆ユニセックス",
-                      body: "時代も性別もサイズも超えてフリーな着こなしを。古着になっても時を超えて誰かに手に取ってもらえるように。",
+                      body: "時代も性別もサイズも超えてフリーな着こなしを。古着になっても時を超えて誰かに手に取ってもらえる服を。",
                     },
                     {
                       en: "NATURAL FIBERS",
@@ -134,7 +134,7 @@ export default async function Home() {
                     {
                       en: "MADE TO ORDER",
                       ja: "国内受注生産",
-                      body: "必要なときに、必要な人に、必要な分だけ。日本の技術を次世代に紡ぎます。",
+                      body: "必要なときに、必要な人に、必要な分だけ。日本の技術を次世代に紡ぐ。",
                     },
                   ].map((pillar) => (
                     <div key={pillar.en} className="py-[13px] sm:py-[16px]">

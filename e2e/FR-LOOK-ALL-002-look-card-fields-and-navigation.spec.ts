@@ -13,19 +13,29 @@ test.describe('FR-LOOK-ALL-002 ルックカード表示と遷移', () => {
     const imageAlt = await firstImage.getAttribute('alt');
     expect((imageAlt ?? '').length).toBeGreaterThan(0);
 
+    // FREQ-127: シーズンラベルは「2026AW」形式（年とシーズンの間に空白なし）
     const hasSeasonThemeText = await page
       .locator('p')
-      .filter({ hasText: /\b(SS|AW)\b/ })
+      .filter({ hasText: /\d{4}(SS|AW)/ })
       .first()
       .isVisible()
       .catch(() => false);
     expect(hasSeasonThemeText).toBeTruthy();
 
-    const linkedItemOrEmpty = page.getByText('紐づけ商品なし').first();
-    const linkedItemLink = page.locator('a[href^="/item/"]').first();
-    const linkedItemVisible = await linkedItemLink.isVisible().catch(() => false);
-    const emptyVisible = await linkedItemOrEmpty.isVisible().catch(() => false);
-    expect(linkedItemVisible || emptyVisible).toBeTruthy();
+    // FREQ-133: PC ではカード下の関連アイテムリストは非表示になり、
+    // 紐づけ商品名はホバー時のオーバーレイ（overlay-items）に表示される。
+    const overlayItems = page
+      .locator('[data-testid="look-card-overlay-items"]')
+      .first();
+    const hasLinkedItems = (await overlayItems.count()) > 0;
+    if (hasLinkedItems) {
+      const cardWithItems = page
+        .locator('a[href^="/look/"]:has([data-testid="look-card-overlay-items"])')
+        .first();
+      await cardWithItems.hover();
+      await expect(overlayItems).toBeVisible();
+      await expect(overlayItems.locator('span').first()).not.toBeEmpty();
+    }
 
     const detailHref = await firstLookImageLink.getAttribute('href');
     expect(detailHref).toMatch(/^\/look\/[\w-]+$/);

@@ -5,13 +5,12 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/Button/Button";
-import { SectionTitle } from "@/components/ui/SectionTitle/SectionTitle";
+import { HomeSectionHeader } from "@/features/home/components/HomeSectionHeader";
 import { Drawer } from "@/components/ui/Drawer/Drawer";
 import { MultiSelect } from "@/components/ui/MultiSelect/MultiSelect";
 import type { ComponentSize } from "@/components/ui/types";
 import {
   filterLooksBySeason,
-  formatLookSeason,
   LOOK_SEASON_OPTIONS,
   normalizeLookSeasonSelection,
   resolveLookSeasonFilter,
@@ -23,11 +22,10 @@ import { cn } from "@/lib/utils";
 
 const FIXED_LOOK_COUNT = 6;
 const DEFAULT_HOME_GRID_CLASS =
-  "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8";
-// 近接: カードは独立した要素。横間隔は維持しつつ、行間（縦）を広げて
-// カード行どうしを明確に分離する（縦 gap > 横 gap）。
+  "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6 lg:gap-4 xl:gap-6";
+// 近接: カード間隔は縦横同じ gap にして、グリッド全体を均質に見せる。
 const DEFAULT_CATALOG_GRID_CLASS =
-  "grid grid-cols-2 gap-x-4 gap-y-8 sm:gap-x-6 sm:gap-y-10 md:grid-cols-3 md:gap-x-8 md:gap-y-12 lg:grid-cols-3 lg:gap-x-10 lg:gap-y-14 xl:grid-cols-4 xl:gap-x-12 xl:gap-y-16";
+  "grid grid-cols-2 gap-4 sm:gap-6 md:grid-cols-3 md:gap-8 lg:grid-cols-3 lg:gap-4 xl:grid-cols-4 xl:gap-6";
 const LOOK_SEASON_FILTER_OPTIONS = LOOK_SEASON_OPTIONS.map((season) => ({
   value: season,
   label: season,
@@ -61,28 +59,99 @@ type PublicLookGridCatalogProps = {
 type PublicLookGridProps = PublicLookGridHomeProps | PublicLookGridCatalogProps;
 
 function LookCard({ look }: LookCardProps) {
+  const seasonLabel = `${look.seasonYear}${look.seasonType}`;
+
   return (
     <div>
       <Link href={`/look/${look.id}`} className="group block">
-        <div className="relative mb-3 aspect-[2/3] overflow-hidden bg-[#f5f5f5] sm:mb-4">
+        <div className="relative mb-3 aspect-[2/3] overflow-hidden bg-[#f5f5f5] sm:mb-4 lg:mb-0">
           <Image
             src={look.imageUrls[0] || "/placeholder.png"}
             alt={look.theme}
             fill
             sizes="(min-width: 1024px) 33vw, 50vw"
-            className="h-full w-full object-cover object-top transition-transform duration-500 motion-safe:group-hover:scale-105"
+            className="h-full w-full object-cover object-top"
           />
+          {/* ホバー時: 2枚目の画像があればクロスフェードで表示（ズームはしない） */}
+          {look.imageUrls[1] ? (
+            <Image
+              src={look.imageUrls[1]}
+              alt={look.theme}
+              fill
+              sizes="(min-width: 1024px) 33vw, 50vw"
+              data-testid="look-card-image-hover"
+              className="h-full w-full object-cover object-top opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+            />
+          ) : null}
+          {/* PC のみ: シーズンとテーマを画像下部に白文字で重ねて表示。
+              白文字の視認性確保のため下部に黒グラデーションを敷く。
+              多段ストップでイージングを近似し、上端へ滑らかに消す。
+              ホバー時はシーズン・テーマが消え、関連アイテムと価格に入れ替わる */}
+          <div
+            data-testid="look-card-overlay"
+            className="absolute inset-x-0 bottom-0 hidden lg:block bg-[linear-gradient(to_top,rgba(0,0,0,0.55)_0%,rgba(0,0,0,0.38)_30%,rgba(0,0,0,0.2)_55%,rgba(0,0,0,0.08)_78%,rgba(0,0,0,0)_100%)] px-[13px] pb-[13px] pt-[89px] text-white"
+          >
+            {/* タイトル群と関連アイテム群を同一グリッドセルに重ね、
+                last baseline 揃えで「最終行の文字の下のライン」を一致させる
+                （フォントサイズ差による行ボックス余白のずれを吸収する） */}
+            <div className="grid">
+              <div
+                data-testid="look-card-overlay-title"
+                className={cn(
+                  "col-start-1 row-start-1 [align-self:last_baseline]",
+                  look.linkedItems.length > 0 &&
+                    "transition-opacity duration-300 group-hover:opacity-0",
+                )}
+              >
+                <p
+                  className="tracking-widest mb-[2px]"
+                  style={{ fontSize: "var(--lk-size-3xs)" }}
+                >
+                  {seasonLabel}
+                </p>
+                <h3
+                  className="font-display uppercase"
+                  style={{ fontSize: "var(--lk-size-2xl)" }}
+                >
+                  {look.theme}
+                </h3>
+              </div>
+              {look.linkedItems.length > 0 ? (
+                <div
+                  data-testid="look-card-overlay-items"
+                  className="col-start-1 row-start-1 [align-self:last_baseline] flex flex-col gap-[2px] opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+                >
+                  {look.linkedItems.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-baseline justify-between gap-2"
+                      style={{ fontSize: "var(--lk-size-2xs)" }}
+                    >
+                      <span>{item.name}</span>
+                      <span className="whitespace-nowrap">
+                        {currencyFormatter.format(item.price)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
         </div>
       </Link>
       <div>
-        <Link href={`/look/${look.id}`} className="inline-block">
+        <Link
+          href={`/look/${look.id}`}
+          data-testid="look-card-caption"
+          className="inline-block lg:hidden"
+        >
           {/* 近接: コレクション時期と名前は同一グループとして密に（mb 小）、
               別グループの関連アイテムとの間は広く取る（h3 の mb 大）。 */}
           <p
             className=" text-black/50 tracking-widest mb-[2px]"
             style={{ fontSize: "var(--lk-size-3xs)" }}
           >
-            {formatLookSeason(look.seasonYear, look.seasonType)} COLLECTION
+            {seasonLabel}
           </p>
           <h3
             className="mb-[8px] sm:mb-[13px] font-brand transition-colors hover:text-[#474747] "
@@ -91,9 +160,11 @@ function LookCard({ look }: LookCardProps) {
             {look.theme}
           </h3>
         </Link>
-        {/* L-7: 関連商品が無い場合は運用用語を出さず行ごと非表示 */}
+        {/* L-7: 関連商品が無い場合は運用用語を出さず行ごと非表示。
+            PC（lg 以上）はホバーでオーバーレイに関連アイテムを表示するため、
+            カード下のリストは出さない */}
         {look.linkedItems.length > 0 ? (
-          <div className="look-related-items flex flex-col">
+          <div className="look-related-items flex flex-col lg:hidden">
             {look.linkedItems.map((item) => (
               <Link
                 key={item.id}
@@ -105,7 +176,10 @@ function LookCard({ look }: LookCardProps) {
                   <span style={{ fontSize: "var(--lk-size-2xs)" }}>
                     {item.name}
                   </span>
-                  <span className="whitespace-nowrap" style={{ fontSize: "var(--lk-size-2xs)" }}>
+                  <span
+                    className="whitespace-nowrap"
+                    style={{ fontSize: "var(--lk-size-2xs)" }}
+                  >
                     {currencyFormatter.format(item.price)}
                   </span>
                 </div>
@@ -326,7 +400,11 @@ function PublicLookCatalog({
           ) : displayLooks.length === 0 ? (
             renderEmptyState(
               "該当シーズンのLOOKがありません",
-              <Button variant="secondary" size="xs" onClick={() => handleSeasonSelection(["ALL"])}>
+              <Button
+                variant="secondary"
+                size="xs"
+                onClick={() => handleSeasonSelection(["ALL"])}
+              >
                 すべて見る
               </Button>,
             )
@@ -347,33 +425,26 @@ export function PublicLookGrid(props: PublicLookGridProps) {
   const { variant, className, looks } = props;
 
   if (variant === "home") {
-    const hasMoreLooks = looks.length > FIXED_LOOK_COUNT;
     const resolvedLooks = looks.slice(0, FIXED_LOOK_COUNT);
     const gridClassName = className ?? DEFAULT_HOME_GRID_CLASS;
 
     return (
       <section id="look" className="section-space">
         <div className="element-width">
-          <SectionTitle title="LOOK" />
+          <HomeSectionHeader
+            title="LOOK"
+            viewAllHref="/look"
+            viewAllAriaLabel="VIEW ALL LOOKS"
+          />
 
           {resolvedLooks.length === 0 ? (
             renderEmptyState("公開中のLOOKがありません")
           ) : (
-            <>
-              <div className={gridClassName}>
-                {resolvedLooks.map((look) => (
-                  <LookCard key={look.id} look={look} variant="home" />
-                ))}
-              </div>
-
-              {hasMoreLooks && (
-                <div className="mt-6 text-center md:mt-8 lg:mt-12">
-                  <Button href="/look" variant="secondary" size="xs">
-                    VIEW LOOKBOOK
-                  </Button>
-                </div>
-              )}
-            </>
+            <div className={gridClassName}>
+              {resolvedLooks.map((look) => (
+                <LookCard key={look.id} look={look} variant="home" />
+              ))}
+            </div>
           )}
         </div>
       </section>

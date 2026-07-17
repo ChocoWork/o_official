@@ -68,6 +68,10 @@ function assertPhiSpacing(pairs: RelatedItemsGapMeasurement[], scopeLabel: strin
 }
 
 test.describe('FR-LOOK-ALL-007 related item spacing', () => {
+  // FREQ-133 により PC（lg 以上）はカード下の関連アイテムを非表示にするため、
+  // 表示されるタブレット幅で計測する。
+  test.use({ viewport: { width: 768, height: 1024 } });
+
   test('HOME の LOOK セクションで関連商品の見た目 gap が phi 比率に一致する', async ({ page }) => {
     await test.step('HOME の LOOK セクションを開く', async () => {
       await page.goto('/');

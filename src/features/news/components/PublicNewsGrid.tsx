@@ -6,7 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { TagLabel } from "@/components/ui/TagLabel/TagLabel";
 import { Button } from "@/components/ui/Button/Button";
 import { Drawer } from "@/components/ui/Drawer/Drawer";
-import { SectionTitle } from "@/components/ui/SectionTitle/SectionTitle";
+import { HomeSectionHeader } from "@/features/home/components/HomeSectionHeader";
 import { MultiSelect } from "@/components/ui/MultiSelect/MultiSelect";
 import { categories } from "@/lib/news-data";
 import { cn } from "@/lib/utils";
@@ -192,9 +192,6 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
     [fetchedArticles, props.articles],
   );
 
-  const hasMoreArticles =
-    typeof fetchLimit === "number" && sourceArticles.length > fetchLimit;
-
   const resolvedArticles = useMemo(
     () => sourceArticles.slice(0, fetchLimit ?? sourceArticles.length),
     [sourceArticles, fetchLimit],
@@ -317,10 +314,8 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
   // Mobile: show only 3 articles on home variant (hidden lg:block hides them below lg breakpoint)
   const resolvedMobileLimit = variant === "home" ? 3 : undefined;
   const shouldLimitOnMobile = typeof resolvedMobileLimit === "number";
-  const hasHiddenItemsOnMobile =
-    shouldLimitOnMobile && resolvedArticles.length > resolvedMobileLimit;
 
-  // N-2: 見出し階層。catalog は ページ h1 → 記事 h2、home は SectionTitle h2 → 記事 h3
+  // N-2: 見出し階層。catalog は ページ h1 → 記事 h2、home は セクション h2 → 記事 h3
   const ArticleTitleTag = (variant === "home" ? "h3" : "h2") as "h2" | "h3";
 
   const renderGrid = () => (
@@ -432,7 +427,11 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
     return (
       <section id="news" className="section-space">
         <div className="element-width">
-          <SectionTitle title="NEWS" />
+          <HomeSectionHeader
+            title="NEWS"
+            viewAllHref="/news"
+            viewAllAriaLabel="VIEW ALL NEWS"
+          />
 
           {loading ? (
             renderLoading()
@@ -441,16 +440,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
           ) : resolvedArticles.length === 0 ? (
             renderEmpty("現在、公開されている記事はありません")
           ) : (
-            <>
-              {renderGrid()}
-              {(hasHiddenItemsOnMobile || hasMoreArticles) && (
-                <div className="text-center mt-6 md:mt-8 lg:mt-12">
-                  <Button href="/news" variant="secondary" size="xs">
-                    VIEW ALL NEWS
-                  </Button>
-                </div>
-              )}
-            </>
+            renderGrid()
           )}
         </div>
       </section>

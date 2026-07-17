@@ -54,10 +54,11 @@ function assertProximity(gaps: CardGap[], label: string): void {
   }
 }
 
+// FREQ-133 により PC（lg 以上）はカード下のテキスト（時期・名前・関連アイテム）を
+// 表示しないため、近接の検証は mobile / tablet のみ対象とする。
 const VIEWPORTS = [
   { name: 'mobile', width: 390, height: 844 },
   { name: 'tablet', width: 768, height: 1024 },
-  { name: 'desktop', width: 1280, height: 800 },
 ] as const;
 
 test.describe('FR-LOOK-ALL-011 カードテキストの近接', () => {

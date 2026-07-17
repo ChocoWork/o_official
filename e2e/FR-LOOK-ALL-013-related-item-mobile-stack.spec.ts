@@ -42,18 +42,21 @@ test.describe('FR-LOOK-ALL-013 関連アイテムのモバイル縦積み', () =
     expect(layout!.priceTop).toBeGreaterThanOrEqual(layout!.nameBottom);
   });
 
-  for (const vp of [
-    { name: 'tablet', width: 768, height: 1024 },
-    { name: 'desktop', width: 1280, height: 800 },
-  ] as const) {
-    test(`${vp.name} では商品名と価格が同一行に並ぶ`, async ({ page }) => {
-      await page.setViewportSize({ width: vp.width, height: vp.height });
-      await page.goto('/look');
-      await expect(page.locator('main')).toBeVisible();
+  test('tablet では商品名と価格が同一行に並ぶ', async ({ page }) => {
+    await page.setViewportSize({ width: 768, height: 1024 });
+    await page.goto('/look');
+    await expect(page.locator('main')).toBeVisible();
 
-      const layout = await readFirstRelatedItemLayout(page);
-      expect(layout, `${vp.name} に関連アイテムが見つかりませんでした`).not.toBeNull();
-      expect(layout!.sameRow, `${vp.name} では同一行であるべき`).toBe(true);
-    });
-  }
+    const layout = await readFirstRelatedItemLayout(page);
+    expect(layout, 'tablet に関連アイテムが見つかりませんでした').not.toBeNull();
+    expect(layout!.sameRow, 'tablet では同一行であるべき').toBe(true);
+  });
+
+  // FREQ-133: desktop はカード下の関連アイテムリスト自体を表示しない
+  test('desktop ではカード下の関連アイテムが表示されない', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto('/look');
+    await expect(page.locator('main')).toBeVisible();
+    await expect(page.locator('main a.look-related-item-text').first()).toBeHidden();
+  });
 });
