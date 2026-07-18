@@ -12,9 +12,10 @@ test.describe('FR-LOOK-ALL-004 HOMEのLOOKセクション', () => {
     const lookCards = lookSection.locator(
       'a[href^="/look/"] img:not([data-testid="look-card-image-hover"])',
     );
+    // FREQ-148: DOM には最大8件描画される（xl 未満は先頭6件のみ表示）
     const cardCount = await lookCards.count();
     expect(cardCount).toBeGreaterThan(0);
-    expect(cardCount).toBeLessThanOrEqual(6);
+    expect(cardCount).toBeLessThanOrEqual(8);
 
     const viewLookbook = page.getByRole('link', { name: 'VIEW LOOKBOOK' });
     const hasCta = await viewLookbook.isVisible().catch(() => false);

@@ -63,6 +63,8 @@ type PublicItemGridHomeProps = {
   variant: "home";
   items?: Item[];
   fetchLimit?: number;
+  /** FREQ-147: 公開 ITEM の総数。各ブレークポイントの表示数より多い場合のみ VIEW ALL を表示する */
+  totalCount?: number;
   className?: string;
 };
 
@@ -219,7 +221,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
 
   const isSelfFetch =
     variant === "home" ? typeof props.items === "undefined" : false;
-  const fetchLimit = variant === "home" ? (props.fetchLimit ?? 8) : undefined;
+  const fetchLimit = variant === "home" ? (props.fetchLimit ?? 10) : undefined;
   const overFetchLimit =
     typeof fetchLimit === "number" ? fetchLimit + 1 : undefined;
   const {
@@ -803,14 +805,24 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     return () => observer.disconnect();
   }, [variant, hasMore, isFetchingMore, nextPage, props, searchParams]);
 
-  const resolvedMobileLimit = variant === "home" ? 6 : undefined;
-  const shouldLimitOnMobile = typeof resolvedMobileLimit === "number";
+  // FREQ-147: ホームは lg 未満 6 件 / lg 8 件 / xl 10 件を表示
+  // （DB からは常に 10 件取得し、CSS で出し分ける）
+  const homeCardVisibilityClass = (index: number): string | undefined => {
+    if (variant !== "home") {
+      return undefined;
+    }
+    if (index >= 8) {
+      return "hidden xl:block";
+    }
+    if (index >= 6) {
+      return "hidden lg:block";
+    }
+    return undefined;
+  };
 
   const renderGrid = () => (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-[2px] sm:gap-x-[3px] lg:gap-x-[4px] gap-y-[16px] sm:gap-y-[20px] md:gap-y-[24px] lg:gap-y-[28px]">
       {displayItems.map((item, index) => {
-        const hideOnMobile =
-          shouldLimitOnMobile && index >= resolvedMobileLimit!;
         // ホーム / 一覧で共通のカード。カラースウォッチ（色）を表示する。
         const soldOut = !isItemInStock(item);
         const swatches = extractColorSwatches(item.colors);
@@ -820,7 +832,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
             key={item.id}
             href={`/item/${item.id}`}
             data-testid="item-card-link"
-            className={hideOnMobile ? "hidden lg:block" : undefined}
+            className={homeCardVisibilityClass(index)}
           >
             <div className="group cursor-pointer" data-testid="item-card">
               <ItemCardMedia
@@ -1270,6 +1282,17 @@ export function PublicItemGrid(props: PublicItemGridProps) {
       );
     }
 
+    // FREQ-147: 各ブレークポイントの表示数（lg 未満 6 / lg 8 / xl 10）より
+    // 公開 ITEM の総数が多い場合のみ、その帯域で VIEW ALL を表示する
+    const viewAllVisibilityClass =
+      typeof props.totalCount === "number"
+        ? cn(
+            props.totalCount > 6 ? "flex" : "hidden",
+            props.totalCount > 8 ? "lg:flex" : "lg:hidden",
+            props.totalCount > 10 ? "xl:flex" : "xl:hidden",
+          )
+        : undefined;
+
     return (
       <section id="items" className="section-space">
         <div className="element-width">
@@ -1287,7 +1310,11 @@ export function PublicItemGrid(props: PublicItemGridProps) {
             <div id="sym:success">{renderGrid()}</div>
           )}
 
-          <HomeSectionViewAll href="/item" ariaLabel="VIEW ALL ITEMS" />
+          <HomeSectionViewAll
+            href="/item"
+            ariaLabel="VIEW ALL ITEMS"
+            className={viewAllVisibilityClass}
+          />
         </div>
       </section>
     );

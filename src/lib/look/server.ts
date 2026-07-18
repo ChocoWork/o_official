@@ -58,6 +58,23 @@ export async function getPublishedLooks(limit?: number): Promise<PublicLook[]> {
   return hydrateLooks(lookRows as LookRow[]);
 }
 
+// FREQ-148: ホームの VIEW ALL 表示判定用に公開 LOOK の総数を返す
+export async function getPublishedLooksCount(): Promise<number> {
+  const supabase = await createPublicClient();
+
+  const { count, error } = await supabase
+    .from("looks")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "published");
+
+  if (error) {
+    console.error("Failed to count published looks:", error);
+    return 0;
+  }
+
+  return count ?? 0;
+}
+
 export async function getPublishedLookById(
   id: number,
 ): Promise<PublicLook | null> {

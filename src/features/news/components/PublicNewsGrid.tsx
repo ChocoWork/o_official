@@ -24,6 +24,8 @@ type PublicNewsGridHomeProps = {
   articles?: PublicNewsArticle[];
   /** 未指定時は 6 */
   fetchLimit?: number;
+  /** FREQ-149: 公開 NEWS の総数。表示数（6 件）より多い場合のみ VIEW ALL を表示する */
+  totalCount?: number;
   className?: string;
 };
 
@@ -312,24 +314,17 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
     </div>
   );
 
-  // Mobile: show only 3 articles on home variant (hidden lg:block hides them below lg breakpoint)
-  const resolvedMobileLimit = variant === "home" ? 3 : undefined;
-  const shouldLimitOnMobile = typeof resolvedMobileLimit === "number";
-
   // N-2: 見出し階層。catalog は ページ h1 → 記事 h2、home は セクション h2 → 記事 h3
   const ArticleTitleTag = (variant === "home" ? "h3" : "h2") as "h2" | "h3";
 
   const renderGrid = () => (
     <div className={cn("w-full border-t border-black/10", className)}>
-      {displayArticles.map((article, index) => {
-        const hideOnMobile =
-          shouldLimitOnMobile && index >= resolvedMobileLimit!;
-
+      {displayArticles.map((article) => {
         return (
           <Link
             key={article.id}
             href={resolveBuildHref(article)}
-            className={hideOnMobile ? "hidden md:block" : "block"}
+            className="block"
           >
             <article className="relative py-[21px] md:py-[34px] lg:px-[13px] border-b border-black/5 cursor-pointer group">
               {/* N-7: 控えめな上下ラインのみ（delay付き4辺アニメ→簡素化、duration短縮） */}
@@ -425,6 +420,14 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
 
   // home variant rendering
   if (variant === "home") {
+    // FREQ-149: 表示数（6 件）より公開 NEWS の総数が多い場合のみ VIEW ALL を表示する
+    const viewAllVisibilityClass =
+      typeof props.totalCount === "number"
+        ? props.totalCount > (fetchLimit ?? 6)
+          ? "flex"
+          : "hidden"
+        : undefined;
+
     return (
       <section id="news" className="section-space">
         <div className="element-width">
@@ -440,7 +443,11 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
             renderGrid()
           )}
 
-          <HomeSectionViewAll href="/news" ariaLabel="VIEW ALL NEWS" />
+          <HomeSectionViewAll
+            href="/news"
+            ariaLabel="VIEW ALL NEWS"
+            className={viewAllVisibilityClass}
+          />
         </div>
       </section>
     );

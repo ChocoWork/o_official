@@ -34,6 +34,23 @@ export async function getPublishedNews(options?: GetPublishedNewsOptions): Promi
   );
 }
 
+// FREQ-149: ホームの VIEW ALL 表示判定用に公開 NEWS の総数を返す
+export async function getPublishedNewsCount(): Promise<number> {
+  const supabase = await createPublicClient();
+
+  const { count, error } = await supabase
+    .from('news_articles')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'published');
+
+  if (error) {
+    console.error('Failed to count published news:', error);
+    return 0;
+  }
+
+  return count ?? 0;
+}
+
 export async function getPublishedNewsDetailById(
   id: string,
   options?: { category?: string },

@@ -59,6 +59,23 @@ export async function getPublishedItems(limit?: number): Promise<PublicItemDto[]
   return signedItems;
 }
 
+// FREQ-147: ホームの VIEW ALL 表示判定用に公開 ITEM の総数を返す
+export async function getPublishedItemsCount(): Promise<number> {
+  const supabase = await createClient();
+
+  const { count, error } = await supabase
+    .from('items')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'published');
+
+  if (error) {
+    console.error('Failed to count published items:', error);
+    return 0;
+  }
+
+  return count ?? 0;
+}
+
 export async function getPublishedItemsPage(queryInput: PublishedItemsQuery = {}): Promise<PublishedItemsPage> {
   const supabase = await createClient();
 

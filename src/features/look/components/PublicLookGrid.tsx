@@ -21,7 +21,8 @@ import {
 } from "@/lib/look/public";
 import { cn } from "@/lib/utils";
 
-const FIXED_LOOK_COUNT = 6;
+// FREQ-148: ホームは常に 8 件分を描画し、xl 未満 6 件 / xl 8 件を CSS で出し分ける
+const HOME_LOOK_RENDER_COUNT = 8;
 // ホーム LOOK セクションと /look 一覧で共通のグリッド定義（FREQ-141）。
 // FREQ-140: lg 未満は画像下に情報パネルが付くため、行間（row-gap）を
 // カード内最大余白（画像↔パネル 13px/21px）の φ² 倍（34px/55px・フィボナッチ）
@@ -42,11 +43,14 @@ const currencyFormatter = new Intl.NumberFormat("ja-JP", {
 
 type LookCardProps = {
   look: PublicLook;
+  className?: string;
 };
 
 type PublicLookGridHomeProps = {
   variant: "home";
   looks: PublicLook[];
+  /** FREQ-148: 公開 LOOK の総数。各ブレークポイントの表示数より多い場合のみ VIEW ALL を表示する */
+  totalCount?: number;
   className?: string;
 };
 
@@ -59,7 +63,7 @@ type PublicLookGridCatalogProps = {
 
 type PublicLookGridProps = PublicLookGridHomeProps | PublicLookGridCatalogProps;
 
-function LookCard({ look }: LookCardProps) {
+function LookCard({ look, className }: LookCardProps) {
   // FREQ-138: lg 未満の情報パネルは「{年} {シーズン}」形式（例: 2026 AW）
   const seasonLabel = `${look.seasonYear} ${look.seasonType}`;
   // FREQ-127: lg 以上のオーバーレイは「2026AW」形式（空白なし）
@@ -70,7 +74,7 @@ function LookCard({ look }: LookCardProps) {
     // 情報パネル側にのみ内側余白を設ける）。lg 以上は枠線なしの従来表示
     <div
       data-testid="look-card"
-      className="border border-black/10 lg:border-0"
+      className={cn("border border-black/10 lg:border-0", className)}
     >
       <Link href={`/look/${look.id}`} className="group block">
         {/* FREQ-139: 画像とパネルの間隔はフィボナッチ（13px / 21px）で
@@ -228,14 +232,16 @@ function LookCard({ look }: LookCardProps) {
 type LookCardGridProps = {
   looks: PublicLook[];
   className?: string;
+  /** FREQ-148: ホームでカードをブレークポイント別に出し分けるためのクラス */
+  cardClassName?: (index: number) => string | undefined;
 };
 
 // ホーム LOOK セクションと /look 一覧で共通のカードグリッド描画
-function LookCardGrid({ looks, className }: LookCardGridProps) {
+function LookCardGrid({ looks, className, cardClassName }: LookCardGridProps) {
   return (
     <div className={className ?? DEFAULT_LOOK_GRID_CLASS}>
-      {looks.map((look) => (
-        <LookCard key={look.id} look={look} />
+      {looks.map((look, index) => (
+        <LookCard key={look.id} look={look} className={cardClassName?.(index)} />
       ))}
     </div>
   );
@@ -469,7 +475,17 @@ export function PublicLookGrid(props: PublicLookGridProps) {
   const { variant, className, looks } = props;
 
   if (variant === "home") {
-    const resolvedLooks = looks.slice(0, FIXED_LOOK_COUNT);
+    const resolvedLooks = looks.slice(0, HOME_LOOK_RENDER_COUNT);
+
+    // FREQ-148: 各ブレークポイントの表示数（xl 未満 6 / xl 8）より
+    // 公開 LOOK の総数が多い場合のみ、その帯域で VIEW ALL を表示する
+    const viewAllVisibilityClass =
+      typeof props.totalCount === "number"
+        ? cn(
+            props.totalCount > 6 ? "flex" : "hidden",
+            props.totalCount > 8 ? "xl:flex" : "xl:hidden",
+          )
+        : undefined;
 
     return (
       <section id="look" className="section-space">
@@ -479,10 +495,20 @@ export function PublicLookGrid(props: PublicLookGridProps) {
           {resolvedLooks.length === 0 ? (
             renderEmptyState("公開中のLOOKがありません")
           ) : (
-            <LookCardGrid looks={resolvedLooks} className={className} />
+            <LookCardGrid
+              looks={resolvedLooks}
+              className={className}
+              cardClassName={(index) =>
+                index >= 6 ? "hidden xl:block" : undefined
+              }
+            />
           )}
 
-          <HomeSectionViewAll href="/look" ariaLabel="VIEW ALL LOOKS" />
+          <HomeSectionViewAll
+            href="/look"
+            ariaLabel="VIEW ALL LOOKS"
+            className={viewAllVisibilityClass}
+          />
         </div>
       </section>
     );

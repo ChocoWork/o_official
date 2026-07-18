@@ -8,12 +8,25 @@ import { PublicStockistGrid } from "@/features/stockist/components/PublicStockis
 import { SearchHomePreview } from "@/features/search/components/SearchHomePreview";
 import { SectionTitle } from "@/components/ui/SectionTitle/SectionTitle";
 import { Button } from "@/components/ui/Button/Button";
-import { getPublishedItems } from "@/lib/items/public";
-import { getPublishedLooks } from "@/lib/look/server";
-import { getPublishedNews } from "@/features/news/services/public";
+import {
+  getPublishedItems,
+  getPublishedItemsCount,
+} from "@/lib/items/public";
+import {
+  getPublishedLooks,
+  getPublishedLooksCount,
+} from "@/lib/look/server";
+import {
+  getPublishedNews,
+  getPublishedNewsCount,
+} from "@/features/news/services/public";
 import { getHomePublicStockists } from "@/features/stockist/services/public";
 
-const HOME_LOOK_FETCH_COUNT = 7;
+// FREQ-147〜149: 各セクションの取得件数（表示数の最大値。ビューポートに
+// よらず固定件数を取得し、表示側でブレークポイント別に出し分ける）
+const HOME_ITEM_FETCH_COUNT = 10;
+const HOME_LOOK_FETCH_COUNT = 8;
+const HOME_NEWS_FETCH_COUNT = 6;
 
 export async function generateMetadata(): Promise<Metadata> {
   return {
@@ -30,11 +43,22 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function Home() {
-  const [homeItems, homeLooks, homeNews, homeStockists] = await Promise.all([
-    getPublishedItems(9),
+  const [
+    homeItems,
+    homeLooks,
+    homeNews,
+    homeStockists,
+    itemTotalCount,
+    lookTotalCount,
+    newsTotalCount,
+  ] = await Promise.all([
+    getPublishedItems(HOME_ITEM_FETCH_COUNT),
     getPublishedLooks(HOME_LOOK_FETCH_COUNT),
-    getPublishedNews({ limit: 6 }),
+    getPublishedNews({ limit: HOME_NEWS_FETCH_COUNT }),
     getHomePublicStockists(),
+    getPublishedItemsCount(),
+    getPublishedLooksCount(),
+    getPublishedNewsCount(),
   ]);
 
   ReactDOM.preload("/mainphoto.png", {
@@ -89,13 +113,25 @@ export default async function Home() {
         <SearchHomePreview />
 
         {/* Item セクション */}
-        <PublicItemGrid variant="home" items={homeItems} />
+        <PublicItemGrid
+          variant="home"
+          items={homeItems}
+          totalCount={itemTotalCount}
+        />
 
         {/* Look セクション */}
-        <PublicLookGrid variant="home" looks={homeLooks} />
+        <PublicLookGrid
+          variant="home"
+          looks={homeLooks}
+          totalCount={lookTotalCount}
+        />
 
         {/* News セクション */}
-        <PublicNewsGrid variant="home" articles={homeNews} />
+        <PublicNewsGrid
+          variant="home"
+          articles={homeNews}
+          totalCount={newsTotalCount}
+        />
 
         {/* ABOUT セクション（CONCEPT 統合：思想・差別化・ブランド概要を集約） */}
         <section id="about" className="section-space-about">
