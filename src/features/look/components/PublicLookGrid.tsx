@@ -64,6 +64,7 @@ type PublicLookGridCatalogProps = {
 type PublicLookGridProps = PublicLookGridHomeProps | PublicLookGridCatalogProps;
 
 function LookCard({ look, className }: LookCardProps) {
+  const router = useRouter();
   // FREQ-138: lg 未満の情報パネルは「{年} {シーズン}」形式（例: 2026 AW）
   const seasonLabel = `${look.seasonYear} ${look.seasonType}`;
   // FREQ-127: lg 以上のオーバーレイは「2026AW」形式（空白なし）
@@ -134,18 +135,41 @@ function LookCard({ look, className }: LookCardProps) {
               {look.linkedItems.length > 0 ? (
                 <div
                   data-testid="look-card-overlay-items"
-                  className="col-start-1 row-start-1 [align-self:last_baseline] flex flex-col gap-[2px] opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+                  className="col-start-1 row-start-1 [align-self:last_baseline] flex flex-col gap-[2px] opacity-0 pointer-events-none transition-opacity duration-300 group-hover:opacity-100 group-hover:pointer-events-auto"
                 >
+                  {/* FREQ-150: 各行はアイテムページへのリンクとして振る舞う。
+                      カード全体が /look リンク（a 要素）内のためアンカーはネスト
+                      できず、role="link" + router.push で遷移する。ホバー時は
+                      メニューと同じ左→右の下線アニメーション（白）を出す */}
                   {look.linkedItems.map((item) => (
                     <div
                       key={item.id}
-                      className="flex items-baseline justify-between gap-2"
+                      role="link"
+                      tabIndex={0}
+                      data-testid="look-card-overlay-item"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        router.push(`/item/${item.id}`);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          router.push(`/item/${item.id}`);
+                        }
+                      }}
+                      className="group/item relative flex items-baseline justify-between gap-2"
                       style={{ fontSize: "var(--lk-size-2xs)" }}
                     >
                       <span>{item.name}</span>
                       <span className="whitespace-nowrap">
                         {currencyFormatter.format(item.price)}
                       </span>
+                      <span
+                        aria-hidden="true"
+                        className="underline-animation-left2right bg-white scale-x-0 group-hover/item:scale-x-100"
+                      />
                     </div>
                   ))}
                 </div>
@@ -196,11 +220,13 @@ function LookCard({ look, className }: LookCardProps) {
               className="mt-[8px] mb-[8px] border-t border-black/10 sm:mt-[13px] sm:mb-[13px] lg:hidden"
             />
             <div className="look-related-items flex flex-col lg:hidden">
+              {/* FREQ-151: PC オーバーレイ（FREQ-150）と同様に、ホバーで
+                  メニュー共通の左→右下線アニメーション（黒）を表示する */}
               {look.linkedItems.map((item) => (
                 <Link
                   key={item.id}
                   href={`/item/${item.id}`}
-                  className="look-related-item-text block text-black"
+                  className="look-related-item-text group/item relative block text-black"
                 >
                   {/* モバイルは商品名と価格を縦積み（折り返し回避）。sm 以上は横並びで価格を右端に。 */}
                   {/* FREQ-144: 商品名・価格は ITEM カード（ItemCardInfo）と同じ見た目に揃える。
@@ -219,6 +245,10 @@ function LookCard({ look, className }: LookCardProps) {
                       ¥{item.price.toLocaleString("ja-JP")}
                     </span>
                   </div>
+                  <span
+                    aria-hidden="true"
+                    className="underline-animation-left2right scale-x-0 group-hover/item:scale-x-100"
+                  />
                 </Link>
               ))}
             </div>
