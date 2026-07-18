@@ -1,7 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
 
-// FREQ-55: LOOK 一覧（catalog）グリッドの縦方向 gap を横方向 gap より広げ、
-// カード行どうしを明確に分離する。モバイルでは従来値（16px）より広げる。
+// FREQ-55 / FREQ-140: LOOK 一覧（catalog）グリッドの縦方向 gap を
+// lg 未満（mobile/tablet）で横方向 gap より広げ、カード行どうしを明確に分離する。
+// モバイルでは従来値（16px）より広げる。
+// desktop（lg 以上）は FREQ-137 により縦横同値（FR-LOOK-ALL-024 で検証）。
 
 async function readGridGap(
   page: Page,
@@ -25,7 +27,6 @@ async function readGridGap(
 const VIEWPORTS = [
   { name: 'mobile', width: 390, height: 844 },
   { name: 'tablet', width: 768, height: 1024 },
-  { name: 'desktop', width: 1280, height: 800 },
 ] as const;
 
 test.describe('FR-LOOK-ALL-012 LOOK グリッドの行間', () => {

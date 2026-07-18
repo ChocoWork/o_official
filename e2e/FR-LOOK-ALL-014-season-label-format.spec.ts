@@ -1,12 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
 
-// FREQ-127: LOOK カードのシーズンラベルは「2026AW」形式
-// （COLLECTION なし・年とシーズンの間の空白なし）で表示する。
+// FREQ-138: mobile/tablet のキャプションは「2026 AW」形式
+// （COLLECTION なし・年とシーズンの間に半角スペース1つ）。
+// FREQ-127/128: desktop はオーバーレイに「2026AW」形式（空白なし）で表示する。
 
 const VIEWPORTS = [
-  { name: 'mobile', width: 390, height: 844 },
-  { name: 'tablet', width: 768, height: 1024 },
-  { name: 'desktop', width: 1280, height: 800 },
+  { name: 'mobile', width: 390, height: 844, format: /^\d{4} (SS|AW)$/ },
+  { name: 'tablet', width: 768, height: 1024, format: /^\d{4} (SS|AW)$/ },
+  { name: 'desktop', width: 1280, height: 800, format: /^\d{4}(SS|AW)$/ },
 ] as const;
 
 // mobile/tablet はキャプション、desktop はオーバーレイに表示される（FREQ-128）。
@@ -24,35 +25,37 @@ async function readVisibleSeasonLabels(page: Page, scopeSelector: string): Promi
   });
 }
 
-function assertSeasonLabelFormat(labels: string[], context: string): void {
+function assertSeasonLabelFormat(labels: string[], format: RegExp, context: string): void {
   expect(labels.length, `${context} にシーズンラベルが見つかりませんでした`).toBeGreaterThan(0);
   for (const label of labels) {
-    // AC-01: 「{4桁年}{SS|AW}」形式（例: 2026AW）
-    expect(label, `${context} label="${label}"`).toMatch(/^\d{4}(SS|AW)$/);
-    // AC-02: COLLECTION を含まない / AC-03: 空白を含まない
+    // AC-01: mobile/tablet は「{4桁年} {SS|AW}」形式（例: 2026 AW）、
+    // desktop は「{4桁年}{SS|AW}」形式（例: 2026AW）
+    expect(label, `${context} label="${label}"`).toMatch(format);
+    // AC-02: COLLECTION を含まない
     expect(label).not.toContain('COLLECTION');
-    expect(label).not.toMatch(/\s/);
   }
 }
 
-test.describe('FR-LOOK-ALL-014 シーズンラベルの表記（2026AW 形式）', () => {
+test.describe('FR-LOOK-ALL-014 シーズンラベルの表記', () => {
   for (const vp of VIEWPORTS) {
-    test(`${vp.name} HOME の LOOK セクションで {年}{SS|AW} 形式になる`, async ({ page }) => {
+    test(`${vp.name} HOME の LOOK セクションで所定形式になる`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/');
       await expect(page.locator('#look')).toBeVisible();
       assertSeasonLabelFormat(
         await readVisibleSeasonLabels(page, '#look'),
+        vp.format,
         `HOME#look ${vp.name}`,
       );
     });
 
-    test(`${vp.name} /look 一覧で {年}{SS|AW} 形式になる`, async ({ page }) => {
+    test(`${vp.name} /look 一覧で所定形式になる`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/look');
       await expect(page.locator('main')).toBeVisible();
       assertSeasonLabelFormat(
         await readVisibleSeasonLabels(page, 'main'),
+        vp.format,
         `/look ${vp.name}`,
       );
     });

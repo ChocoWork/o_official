@@ -21,11 +21,12 @@ import {
 import { cn } from "@/lib/utils";
 
 const FIXED_LOOK_COUNT = 6;
-const DEFAULT_HOME_GRID_CLASS =
-  "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6 lg:gap-4 xl:gap-6";
-// 近接: カード間隔は縦横同じ gap にして、グリッド全体を均質に見せる。
-const DEFAULT_CATALOG_GRID_CLASS =
-  "grid grid-cols-2 gap-4 sm:gap-6 md:grid-cols-3 md:gap-8 lg:grid-cols-3 lg:gap-4 xl:grid-cols-4 xl:gap-6";
+// ホーム LOOK セクションと /look 一覧で共通のグリッド定義（FREQ-141）。
+// FREQ-140: lg 未満は画像下に情報パネルが付くため、行間（row-gap）を
+// カード内最大余白（画像↔パネル 13px/21px）の φ² 倍（34px/55px・フィボナッチ）
+// に広げてカード同士を明確に分離する（近接）。lg 以上は従来どおり縦横同値（FREQ-137）。
+const DEFAULT_LOOK_GRID_CLASS =
+  "grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 gap-y-[34px] sm:gap-6 sm:gap-y-[55px] lg:gap-4 xl:gap-6";
 const LOOK_SEASON_FILTER_OPTIONS = LOOK_SEASON_OPTIONS.map((season) => ({
   value: season,
   label: season,
@@ -40,7 +41,6 @@ const currencyFormatter = new Intl.NumberFormat("ja-JP", {
 
 type LookCardProps = {
   look: PublicLook;
-  variant: "home" | "catalog";
 };
 
 type PublicLookGridHomeProps = {
@@ -59,12 +59,22 @@ type PublicLookGridCatalogProps = {
 type PublicLookGridProps = PublicLookGridHomeProps | PublicLookGridCatalogProps;
 
 function LookCard({ look }: LookCardProps) {
-  const seasonLabel = `${look.seasonYear}${look.seasonType}`;
+  // FREQ-138: lg 未満の情報パネルは「{年} {シーズン}」形式（例: 2026 AW）
+  const seasonLabel = `${look.seasonYear} ${look.seasonType}`;
+  // FREQ-127: lg 以上のオーバーレイは「2026AW」形式（空白なし）
+  const overlaySeasonLabel = `${look.seasonYear}${look.seasonType}`;
 
   return (
-    <div>
+    // FREQ-142: lg 未満のみカード全体をグレー枠線で囲む（画像は枠に密着、
+    // 情報パネル側にのみ内側余白を設ける）。lg 以上は枠線なしの従来表示
+    <div
+      data-testid="look-card"
+      className="border border-black/10 lg:border-0"
+    >
       <Link href={`/look/${look.id}`} className="group block">
-        <div className="relative mb-3 aspect-[2/3] overflow-hidden bg-[#f5f5f5] sm:mb-4 lg:mb-0">
+        {/* FREQ-139: 画像とパネルの間隔はフィボナッチ（13px / 21px）で
+            罫線余白（8/13）と同系列に統一（反復・整列） */}
+        <div className="relative mb-[13px] aspect-[2/3] overflow-hidden bg-[#f5f5f5] sm:mb-[21px] lg:mb-0">
           <Image
             src={look.imageUrls[0] || "/placeholder.png"}
             alt={look.theme}
@@ -107,7 +117,7 @@ function LookCard({ look }: LookCardProps) {
                   className="tracking-widest mb-[2px]"
                   style={{ fontSize: "var(--lk-size-3xs)" }}
                 >
-                  {seasonLabel}
+                  {overlaySeasonLabel}
                 </p>
                 <h3
                   className="font-display uppercase"
@@ -139,55 +149,93 @@ function LookCard({ look }: LookCardProps) {
           </div>
         </div>
       </Link>
-      <div>
+      {/* FREQ-138: lg 未満のみの情報パネル
+          （シーズン / セリフ体タイトル / 罫線 / 関連アイテム+価格）。
+          lg 以上は画像上のオーバーレイに表示するため非表示 */}
+      {/* FREQ-142: 枠線との間に水平・下余白（13px / sm 21px）を確保。lg は枠線なしのため 0 */}
+      <div className="px-[13px] pb-[13px] sm:px-[21px] sm:pb-[21px] lg:p-0">
         <Link
           href={`/look/${look.id}`}
           data-testid="look-card-caption"
           className="inline-block lg:hidden"
         >
           {/* 近接: コレクション時期と名前は同一グループとして密に（mb 小）、
-              別グループの関連アイテムとの間は広く取る（h3 の mb 大）。 */}
+              別グループの関連アイテムとは罫線で区切る。 */}
+          {/* FREQ-143: mobile/tablet のシーズン表記は、色をより黒く・字を太くして
+              視認性と存在感を高める。字間は詰め気味に整える（FREQ-145）。 */}
           <p
-            className=" text-black/50 tracking-widest mb-[2px]"
+            className="text-black/80 font-medium tracking-[0.04em] mb-[2px]"
             style={{ fontSize: "var(--lk-size-3xs)" }}
           >
             {seasonLabel}
           </p>
+          {/* FREQ-139: 対比 — タイトルは関連アイテム文字（2xs）の φ 倍で
+              階層を明快にする。行間は見出し用の √φ */}
           <h3
-            className="mb-[8px] sm:mb-[13px] font-brand transition-colors hover:text-[#474747] "
-            style={{ fontSize: "var(--lk-size-2xs)" }}
+            className="font-display uppercase transition-colors hover:text-[#474747]"
+            style={{
+              fontSize: "calc(var(--lk-size-2xs) * var(--phi))",
+              lineHeight: "var(--sqrt-phi)",
+            }}
           >
             {look.theme}
           </h3>
         </Link>
         {/* L-7: 関連商品が無い場合は運用用語を出さず行ごと非表示。
             PC（lg 以上）はホバーでオーバーレイに関連アイテムを表示するため、
-            カード下のリストは出さない */}
+            カード下の罫線とリストは出さない */}
         {look.linkedItems.length > 0 ? (
-          <div className="look-related-items flex flex-col lg:hidden">
-            {look.linkedItems.map((item) => (
-              <Link
-                key={item.id}
-                href={`/item/${item.id}`}
-                className="look-related-item-text block text-[#474747] transition-colors hover:text-black"
-              >
-                {/* モバイルは商品名と価格を縦積み（折り返し回避）。sm 以上は従来の横並び。 */}
-                <div className="flex flex-col gap-[2px] sm:flex-row sm:items-center sm:justify-between sm:gap-2">
-                  <span style={{ fontSize: "var(--lk-size-2xs)" }}>
-                    {item.name}
-                  </span>
-                  <span
-                    className="whitespace-nowrap"
-                    style={{ fontSize: "var(--lk-size-2xs)" }}
-                  >
-                    {currencyFormatter.format(item.price)}
-                  </span>
-                </div>
-              </Link>
-            ))}
-          </div>
+          <>
+            <hr
+              data-testid="look-card-divider"
+              className="mt-[8px] mb-[8px] border-t border-black/10 sm:mt-[13px] sm:mb-[13px] lg:hidden"
+            />
+            <div className="look-related-items flex flex-col lg:hidden">
+              {look.linkedItems.map((item) => (
+                <Link
+                  key={item.id}
+                  href={`/item/${item.id}`}
+                  className="look-related-item-text block text-black"
+                >
+                  {/* モバイルは商品名と価格を縦積み（折り返し回避）。sm 以上は横並びで価格を右端に。 */}
+                  {/* FREQ-144: 商品名・価格は ITEM カード（ItemCardInfo）と同じ見た目に揃える。
+                      名前=font-brand tracking-tight / weight 400、価格=text-black / weight 400、¥表記。 */}
+                  <div className="flex flex-col gap-[2px] sm:flex-row sm:items-center sm:justify-between sm:gap-2">
+                    <span
+                      className="font-brand tracking-tight min-w-0"
+                      style={{ fontSize: "var(--lk-size-2xs)", fontWeight: 400 }}
+                    >
+                      {item.name}
+                    </span>
+                    <span
+                      className="whitespace-nowrap text-black"
+                      style={{ fontSize: "var(--lk-size-2xs)", fontWeight: 400 }}
+                    >
+                      ¥{item.price.toLocaleString("ja-JP")}
+                    </span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+type LookCardGridProps = {
+  looks: PublicLook[];
+  className?: string;
+};
+
+// ホーム LOOK セクションと /look 一覧で共通のカードグリッド描画
+function LookCardGrid({ looks, className }: LookCardGridProps) {
+  return (
+    <div className={className ?? DEFAULT_LOOK_GRID_CLASS}>
+      {looks.map((look) => (
+        <LookCard key={look.id} look={look} />
+      ))}
     </div>
   );
 }
@@ -267,7 +315,6 @@ function PublicLookCatalog({
     () => filterLooksBySeason(looks, selectedSeason),
     [looks, selectedSeason],
   );
-  const gridClassName = className ?? DEFAULT_CATALOG_GRID_CLASS;
 
   // NEWS 一覧の renderCategoryFilter と同一構造に揃える。.filter-sections で
   // 選択肢同士の間隔（option-list gap）を NEWS と共通化し、size / expandHitArea も
@@ -381,7 +428,7 @@ function PublicLookCatalog({
 
         <div
           data-testid="look-content-column"
-          className="flex-1 min-w-0 w-full max-w-full px-0 md:px-[21px] lg:pl-[34px] lg:pr-[16px] xl:pl-[55px] xl:pr-[21px] 2xl:pl-[89px] 2xl:pr-[34px] py-0 xl:pb-[34px]"
+          className="flex-1 min-w-0 w-full max-w-full px-[13px] sm:px-[16px] md:px-[21px] lg:pl-[34px] lg:pr-[16px] xl:pl-[55px] xl:pr-[21px] 2xl:pl-[89px] 2xl:pr-[34px] py-0 xl:pb-[34px]"
         >
           <div className="sm:-mt-1 md:-mt-2 lg:hidden">
             {renderMobileFilterBar(false)}
@@ -409,11 +456,7 @@ function PublicLookCatalog({
               </Button>,
             )
           ) : (
-            <div className={gridClassName}>
-              {displayLooks.map((look) => (
-                <LookCard key={look.id} look={look} variant="catalog" />
-              ))}
-            </div>
+            <LookCardGrid looks={displayLooks} className={className} />
           )}
         </div>
       </div>
@@ -426,7 +469,6 @@ export function PublicLookGrid(props: PublicLookGridProps) {
 
   if (variant === "home") {
     const resolvedLooks = looks.slice(0, FIXED_LOOK_COUNT);
-    const gridClassName = className ?? DEFAULT_HOME_GRID_CLASS;
 
     return (
       <section id="look" className="section-space">
@@ -440,11 +482,7 @@ export function PublicLookGrid(props: PublicLookGridProps) {
           {resolvedLooks.length === 0 ? (
             renderEmptyState("公開中のLOOKがありません")
           ) : (
-            <div className={gridClassName}>
-              {resolvedLooks.map((look) => (
-                <LookCard key={look.id} look={look} variant="home" />
-              ))}
-            </div>
+            <LookCardGrid looks={resolvedLooks} className={className} />
           )}
         </div>
       </section>

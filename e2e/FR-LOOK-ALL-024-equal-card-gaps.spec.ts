@@ -27,11 +27,10 @@ const PAGES = [
   { label: '/look 一覧', path: '/look', scope: 'main' },
 ] as const;
 
-const VIEWPORTS = [
-  { name: 'mobile', width: 390, height: 844 },
-  { name: 'tablet', width: 768, height: 1024 },
-  { name: 'desktop', width: 1280, height: 800 },
-] as const;
+// FREQ-140 により lg 未満は row-gap を column-gap より広げるため、
+// 縦横同値の検証は desktop（lg 以上）のみを対象とする
+// （mobile/tablet の gap は FR-LOOK-ALL-027 で検証）。
+const VIEWPORTS = [{ name: 'desktop', width: 1280, height: 800 }] as const;
 
 test.describe('FR-LOOK-ALL-024 LOOK グリッドの縦横 gap が等しい', () => {
   for (const target of PAGES) {
@@ -49,13 +48,11 @@ test.describe('FR-LOOK-ALL-024 LOOK グリッドの縦横 gap が等しい', () 
           `${target.label} に LOOK グリッドが見つかりませんでした`,
         ).not.toBeNull();
 
-        // AC-01: 全ビューポートで縦横の gap が同値
+        // AC-01（FREQ-140 により lg 以上のみ）: 縦横の gap が同値
         expect(gaps!.rowGap).toBe(gaps!.columnGap);
 
         // AC-02: デスクトップ（1280px）では縦横とも 24px（gap-6）
-        if (vp.name === 'desktop') {
-          expect(gaps!.rowGap).toBe(24);
-        }
+        expect(gaps!.rowGap).toBe(24);
       });
     }
   }
