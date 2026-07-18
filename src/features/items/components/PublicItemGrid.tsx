@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button/Button";
 import { MultiSelect } from "@/components/ui/MultiSelect/MultiSelect";
 import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
 import { HomeSectionHeader } from "@/features/home/components/HomeSectionHeader";
+import { HomeSectionViewAll } from "@/features/home/components/HomeSectionViewAll";
 import { Drawer } from "@/components/ui/Drawer/Drawer";
 import { Slider } from "@/components/ui/Slider/Slider";
 import type { ComponentSize } from "@/components/ui/types";
@@ -1272,11 +1273,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     return (
       <section id="items" className="section-space">
         <div className="element-width">
-          <HomeSectionHeader
-            title="ITEMS"
-            viewAllHref="/item"
-            viewAllAriaLabel="VIEW ALL ITEMS"
-          />
+          <HomeSectionHeader title="ITEMS" />
 
           {isSelfFetch && loading ? (
             <div className="text-center py-12 text-[#474747]">
@@ -1289,6 +1286,8 @@ export function PublicItemGrid(props: PublicItemGridProps) {
           ) : (
             <div id="sym:success">{renderGrid()}</div>
           )}
+
+          <HomeSectionViewAll href="/item" ariaLabel="VIEW ALL ITEMS" />
         </div>
       </section>
     );

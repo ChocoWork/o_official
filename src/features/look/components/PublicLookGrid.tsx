@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/Button/Button";
 import { HomeSectionHeader } from "@/features/home/components/HomeSectionHeader";
+import { HomeSectionViewAll } from "@/features/home/components/HomeSectionViewAll";
 import { Drawer } from "@/components/ui/Drawer/Drawer";
 import { MultiSelect } from "@/components/ui/MultiSelect/MultiSelect";
 import type { ComponentSize } from "@/components/ui/types";
@@ -473,17 +474,15 @@ export function PublicLookGrid(props: PublicLookGridProps) {
     return (
       <section id="look" className="section-space">
         <div className="element-width">
-          <HomeSectionHeader
-            title="LOOK"
-            viewAllHref="/look"
-            viewAllAriaLabel="VIEW ALL LOOKS"
-          />
+          <HomeSectionHeader title="LOOK" />
 
           {resolvedLooks.length === 0 ? (
             renderEmptyState("公開中のLOOKがありません")
           ) : (
             <LookCardGrid looks={resolvedLooks} className={className} />
           )}
+
+          <HomeSectionViewAll href="/look" ariaLabel="VIEW ALL LOOKS" />
         </div>
       </section>
     );

@@ -7,6 +7,7 @@ import { TagLabel } from "@/components/ui/TagLabel/TagLabel";
 import { Button } from "@/components/ui/Button/Button";
 import { Drawer } from "@/components/ui/Drawer/Drawer";
 import { HomeSectionHeader } from "@/features/home/components/HomeSectionHeader";
+import { HomeSectionViewAll } from "@/features/home/components/HomeSectionViewAll";
 import { MultiSelect } from "@/components/ui/MultiSelect/MultiSelect";
 import { categories } from "@/lib/news-data";
 import { cn } from "@/lib/utils";
@@ -427,11 +428,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
     return (
       <section id="news" className="section-space">
         <div className="element-width">
-          <HomeSectionHeader
-            title="NEWS"
-            viewAllHref="/news"
-            viewAllAriaLabel="VIEW ALL NEWS"
-          />
+          <HomeSectionHeader title="NEWS" />
 
           {loading ? (
             renderLoading()
@@ -442,6 +439,8 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
           ) : (
             renderGrid()
           )}
+
+          <HomeSectionViewAll href="/news" ariaLabel="VIEW ALL NEWS" />
         </div>
       </section>
     );
