@@ -401,6 +401,11 @@ export default function ItemDetailClient({ id }: Props) {
     fontSize: "var(--lk-size-xs)",
     lineHeight: 1.65,
   } as const;
+  // 説明文は本文より1段階小さくする (FREQ-170)
+  const descriptionTextStyle = {
+    fontSize: "var(--lk-size-2xs)",
+    lineHeight: 1.65,
+  } as const;
   return (
     <div>
       <div className="element-width 2xl:max-w-[90rem]">
@@ -410,7 +415,7 @@ export default function ItemDetailClient({ id }: Props) {
         >
           <div
             data-testid="item-detail-layout"
-            className="grid grid-cols-1 gap-y-3.5 md:-mx-5 md:grid-cols-[58%_42%] md:gap-0"
+            className="grid grid-cols-1 gap-y-3.5 md:-mx-5 md:grid-cols-[58%_42%] md:gap-0 lg:mx-0 lg:grid-cols-[auto_minmax(18.125rem,23.75rem)] lg:justify-center lg:gap-x-14"
           >
             <div className="md:-ml-5 md:w-[calc(100%+1.25rem)] lg:ml-0 lg:w-full">
               {/* モバイル: 横スクロールカルーセル (FREQ-162)
@@ -466,13 +471,16 @@ export default function ItemDetailClient({ id }: Props) {
                 className="hidden w-full flex-row items-start gap-2 md:flex"
               >
                 {thumbnailImages.length > 1 && (
-                  <div className="hidden max-h-[calc(100svh-5rem)] w-12 flex-col gap-2 overflow-y-auto px-[2px] py-[2px] lg:flex">
+                  <div
+                    data-testid="item-detail-thumbnail-list"
+                    className="hidden flex-none flex-col gap-2 p-[2px] lg:flex"
+                  >
                     {thumbnailImages.map((imgUrl: string, index: number) => (
                       <button
                         key={index}
                         type="button"
                         aria-label={`${item.name} ${index + 1}枚目を表示`}
-                        className={`relative aspect-[2/3] w-12 flex-shrink-0 overflow-hidden cursor-pointer focus-visible:outline-none transition-opacity duration-200 ${
+                        className={`relative aspect-[2/3] w-16 flex-shrink-0 overflow-hidden cursor-pointer focus-visible:outline-none transition-opacity duration-200 ${
                           selectedImageIndex === index
                             ? "ring-2 ring-black opacity-100"
                             : "opacity-50 hover:opacity-90"
@@ -484,7 +492,7 @@ export default function ItemDetailClient({ id }: Props) {
                           alt={`${item.name} サムネイル${index + 1}枚目`}
                           fill
                           className="object-cover object-top"
-                          sizes="48px"
+                          sizes="64px"
                         />
                       </button>
                     ))}
@@ -493,7 +501,7 @@ export default function ItemDetailClient({ id }: Props) {
 
                 <div
                   data-testid="item-detail-main-image-frame"
-                  className="relative aspect-[2/3] min-w-0 flex-1 overflow-hidden bg-white"
+                  className="relative aspect-[2/3] min-w-0 flex-1 overflow-hidden bg-white lg:h-[min(48rem,calc(100svh-5rem))] lg:w-auto lg:flex-none"
                 >
                   {mainImage ? (
                     <Image
@@ -519,7 +527,7 @@ export default function ItemDetailClient({ id }: Props) {
 
             <div
               data-testid="item-detail-information"
-              className="space-y-3.5 md:sticky md:top-36 md:mx-auto md:w-[max(18.125rem,calc(100%-8.75rem))] md:self-start md:space-y-5"
+              className="space-y-3.5 md:sticky md:top-36 md:mx-auto md:w-[max(18.125rem,calc(100%-8.75rem))] md:self-start md:space-y-5 lg:mx-0 lg:w-full"
             >
               <div data-testid="item-detail-identity">
                 <h1
@@ -551,7 +559,7 @@ export default function ItemDetailClient({ id }: Props) {
                 >
                   <p
                     className="text-[#474747] leading-relaxed"
-                    style={bodyTextStyle}
+                    style={descriptionTextStyle}
                   >
                     {item.description}
                   </p>

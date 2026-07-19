@@ -101,20 +101,14 @@ test.describe('FR-ITEM-DETAIL-024 reference responsive proportions', () => {
   test.describe('desktop 1280x800', () => {
     test.use({ viewport: { width: 1280, height: 800 } });
 
-    test('FREQ-162-AC-03: 58/42 split with existing vertical thumbnails', async ({
+    // 58/42 分割・情報欄幅指定は FREQ-168（中央寄せ2カラム）で置換。
+    // 本テストは残存要件（縦サムネイル表示・2:3比率・非オーバーフロー）のみ検証する
+    test('FREQ-162-AC-03: existing vertical thumbnails beside main image', async ({
       page,
     }) => {
       await openItemDetail(page);
 
-      const layout = await box(page.getByTestId('item-detail-layout'));
-      const images = await box(page.getByTestId('item-detail-desktop-images'));
       const mainImage = await box(page.getByTestId('item-detail-main-image-frame'));
-      const information = await box(page.getByTestId('item-detail-information'));
-      expect(layout.x).toBeCloseTo(0, 0);
-      expect(layout.width).toBeCloseTo(1280, 0);
-      expect(images.width / layout.width).toBeCloseTo(0.58, 2);
-      expect(information.width).toBeCloseTo(398, 0);
-      expect(information.x).toBeCloseTo(812, 0);
       expect(mainImage.width / mainImage.height).toBeCloseTo(2 / 3, 2);
 
       const thumbnails = page
@@ -174,7 +168,11 @@ test.describe('FR-ITEM-DETAIL-024 reference responsive proportions', () => {
           const information = await box(
             page.getByTestId('item-detail-information'),
           );
-          expect(layout.width).toBeCloseTo(device.width, 0);
+          // 1024px 以上は FREQ-168 の中央寄せグリッド（-mx-5 解除）のため
+          // レイアウト幅はコンテナ幅（device.width - 40px）になる
+          const expectedLayoutWidth =
+            device.width >= 1024 ? device.width - 40 : device.width;
+          expect(layout.width).toBeCloseTo(expectedLayoutWidth, 0);
           expect(information.x + information.width).toBeLessThanOrEqual(
             device.width,
           );
