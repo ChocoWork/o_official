@@ -132,7 +132,7 @@ export default async function LookDetailPage({ params }: Props) {
                 <List<(typeof currentLook.linkedItems)[number]>
                   items={currentLook.linkedItems}
                   itemKey={(item) => String(item.id)}
-                  className="space-y-px border-y border-black/20"
+                  className="border-y border-black/10"
                   variant="showcase"
                   getName={(item) => item.name}
                   getCategory={(item) => item.category}
