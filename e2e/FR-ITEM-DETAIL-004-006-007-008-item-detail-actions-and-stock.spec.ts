@@ -40,4 +40,66 @@ test.describe('FR-ITEM-DETAIL-004/006/007/008 item detail actions and stock', ()
     await expect(page.getByTestId('stock-status')).toHaveText('SOLD OUT');
     await expect(page.getByRole('button', { name: 'SOLD OUT' }).first()).toBeDisabled();
   });
+
+  test('Observerの初回通知を待たず本体CTAが画面外なら固定CTAを表示する', async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(window, 'IntersectionObserver', {
+        configurable: true,
+        value: class {
+          observe() {}
+          unobserve() {}
+          disconnect() {}
+          takeRecords() {
+            return [];
+          }
+        },
+      });
+    });
+
+    const item = sampleItemDetail({ sizes: ['M'] });
+    await mockCartApis(page, []);
+    await mockItemDetailApis(page, item, []);
+
+    await page.setViewportSize({ width: 390, height: 500 });
+    await page.goto('/item/101');
+
+    await expect(page.getByTestId('item-actions-main')).not.toBeInViewport();
+    await expect(page.getByTestId('item-actions-fixed')).toBeVisible();
+  });
+
+  test('モバイル固定CTAは本体CTAより上にいる間だけ表示される', async ({ page }) => {
+    const item = sampleItemDetail({ sizes: ['M'] });
+    await mockCartApis(page, []);
+    await mockItemDetailApis(page, item, []);
+
+    await page.setViewportSize({ width: 390, height: 500 });
+    await page.goto('/item/101');
+    await page.addStyleTag({
+      content: "body::after { content: ''; display: block; height: 1000px; }",
+    });
+
+    const mainActions = page.getByTestId('item-actions-main');
+    const fixedActions = page.getByTestId('item-actions-fixed');
+
+    await expect(mainActions).not.toBeInViewport();
+    await expect(fixedActions).toBeVisible();
+
+    await mainActions.scrollIntoViewIfNeeded();
+    await expect(mainActions).toBeInViewport();
+    await expect(fixedActions).toHaveCount(0);
+
+    await mainActions.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      window.scrollTo(0, window.scrollY + rect.bottom + window.innerHeight);
+    });
+    await expect(mainActions).not.toBeInViewport();
+    await expect
+      .poll(() => mainActions.evaluate((element) => element.getBoundingClientRect().bottom))
+      .toBeLessThan(0);
+    await expect(fixedActions).toHaveCount(0);
+
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect(mainActions).not.toBeInViewport();
+    await expect(fixedActions).toBeVisible();
+  });
 });

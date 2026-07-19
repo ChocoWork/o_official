@@ -70,6 +70,9 @@ export function ItemForm({
   const [productDetails, setProductDetails] = useState(
     initialValues?.productDetails ?? 'Material : \nMade in : '
   );
+  const [material, setMaterial] = useState(initialValues?.material ?? '');
+  const [madeIn, setMadeIn] = useState(initialValues?.origin ?? '');
+  const [care, setCare] = useState(initialValues?.care ?? '');
 
   // load preview urls after mount or when initialValues change
   useEffect(() => {
@@ -325,6 +328,9 @@ export function ItemForm({
       formData.append('price', String(parsedPrice));
       formData.append('category', category);
       formData.append('productDetails', trimmedDetails);
+      formData.append('material', material.trim());
+      formData.append('origin', madeIn.trim());
+      formData.append('care', care.trim());
       formData.append('status', status);
       formData.append('sizes', JSON.stringify(normalizedSizes));
       formData.append('colors', JSON.stringify(normalizedColors));
@@ -540,6 +546,33 @@ export function ItemForm({
             size="md"
           />
 
+
+          <TextField
+            label="MATERIAL（素材）"
+            placeholder="例: Wool 100%"
+            type="text"
+            value={material}
+            onChange={(e) => setMaterial(e.target.value)}
+            size="md"
+          />
+
+          <TextField
+            label="CARE（お手入れ方法）"
+            placeholder="例: ドライクリーニング"
+            type="text"
+            value={care}
+            onChange={(e) => setCare(e.target.value)}
+            size="md"
+          />
+
+          <TextField
+            label="MADE IN（生産国）"
+            placeholder="例: Japan"
+            type="text"
+            value={madeIn}
+            onChange={(e) => setMadeIn(e.target.value)}
+            size="md"
+          />
 
           <TextAreaField
             required

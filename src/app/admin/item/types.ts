@@ -49,11 +49,12 @@ export interface ItemFormValues {
   category: Category;
   colors: Array<{ name: string; hex: string }>;
   sizes: string[];
+  productDetails: string;
   material: string;
   origin: string;
-  sewingRegion: string;
+  sewingRegion?: string;
   care: string;
-  season: SeasonValue;
+  season?: SeasonValue;
   status: ItemStatus;
   stockQuantity?: number | null;
   previewUrls?: string[];

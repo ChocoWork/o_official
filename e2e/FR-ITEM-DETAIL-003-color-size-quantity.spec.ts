@@ -15,8 +15,10 @@ test.describe('FR-ITEM-DETAIL-003 カラー・サイズ・数量選択', () => {
       return;
     }
 
-    // カラーセクション配下のボタンが存在する
-    const colorButtons = page.locator('h3:has-text("COLOR") + div button');
+    // カラースウォッチボタンが存在する（FREQ-153: aria-label にカラー名）
+    const colorButtons = page
+      .getByTestId('item-spec-table')
+      .locator('button[aria-pressed][aria-label]');
     await expect(colorButtons.first()).toBeVisible();
 
     // 最初のボタンが初期選択状態
@@ -36,20 +38,15 @@ test.describe('FR-ITEM-DETAIL-003 カラー・サイズ・数量選択', () => {
       return;
     }
 
-    const sizeButtons = page.locator('h3:has-text("SIZE") + div button');
+    // サイズはテキストボタン（FREQ-153: aria-label なし）
+    const sizeButtons = page
+      .getByTestId('item-spec-table')
+      .locator('button[aria-pressed]:not([aria-label])');
     await expect(sizeButtons.first()).toBeVisible();
 
     await sizeButtons.first().click();
     await expect(sizeButtons.first()).toHaveAttribute('aria-pressed', 'true');
   });
 
-  test('数量ステッパーが表示される', async ({ page }) => {
-    const item = await fetchFirstItemViaApi(page);
-    test.skip(!item, '公開商品データがないためスキップ');
-
-    await page.goto(`/item/${item!.id}`);
-    await page.waitForLoadState('networkidle');
-
-    await expect(page.locator('text=QUANTITY')).toBeVisible();
-  });
+  // 数量ステッパーは FREQ-154 で削除された（FR-ITEM-DETAIL-016 で非表示を検証）
 });

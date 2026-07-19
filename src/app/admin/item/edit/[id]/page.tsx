@@ -49,6 +49,9 @@ export default function AdminItemEditPage() {
           colors: item.colors ?? [],
           sizes: item.sizes ?? [],
           productDetails: item.product_details ?? '',
+          material: item.material ?? '',
+          origin: item.origin ?? '',
+          care: item.care ?? '',
           status: item.status,
           previewUrls: existingImages,
         };
