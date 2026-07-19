@@ -76,17 +76,6 @@ export default async function LookDetailPage({ params }: Props) {
   return (
     <div>
       <div className="element-width">
-        <div className="mb-[21px]">
-          <Link
-            href="/look"
-            className="text-[#474747] hover:text-black inline-block"
-            style={{ fontSize: "var(--lk-size-xs)" }}
-            aria-label="Back to Lookbook"
-          >
-            Back to Lookbook
-          </Link>
-        </div>
-
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-[34px] lg:gap-[55px]">
           <div className="space-y-[13px]">
             <LookImageGallery
@@ -132,7 +121,7 @@ export default async function LookDetailPage({ params }: Props) {
                 <List<(typeof currentLook.linkedItems)[number]>
                   items={currentLook.linkedItems}
                   itemKey={(item) => String(item.id)}
-                  className="border-y border-black/10"
+                  className="border-y border-black/10 [--list-preview-scale:var(--sqrt-phi)]"
                   variant="showcase"
                   getName={(item) => item.name}
                   getCategory={(item) => item.category}

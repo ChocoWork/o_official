@@ -14,12 +14,14 @@
   --list-pad-y: calc(
     (var(--list-unit) * var(--sqrt-phi)) / (var(--phi) * var(--phi))
   );
-  --list-inner-gap: calc(var(--list-unit) * var(--sqrt-phi));
+  --list-inner-gap: calc(var(--list-unit) * var(--phi));
   --list-row-gap: calc(var(--list-unit) / var(--phi));
 
-  /* Preview thumbnail — unit × φ³（全サイズで unit に比例して伸縮）*/
+  /* Preview thumbnail — unit × φ³（全サイズで unit に比例して伸縮）
+     --list-preview-scale を親から渡すと倍率を調整できる（既定 1）*/
   --list-preview-size: calc(
-    var(--list-unit) * var(--phi) * var(--phi) * var(--phi)
+    var(--list-unit) * var(--phi) * var(--phi) * var(--phi) *
+      var(--list-preview-scale, 1)
   );
 
   /* Icon */
