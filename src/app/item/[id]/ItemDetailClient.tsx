@@ -143,7 +143,7 @@ export default function ItemDetailClient({ id }: Props) {
   // 未選択バリデーションエラーを alert() の代わりにインライン表示する
   const [validationError, setValidationError] = useState<string | null>(null);
   const cartButtonRef = useRef<HTMLDivElement>(null);
-  const carouselRef = useRef<HTMLDivElement>(null);
+  const tabletCarouselRef = useRef<HTMLDivElement>(null);
 
   const isWishlisted = item ? wishlistedItems.has(item.id) : false;
   const stockStatus = item ? resolveStockStatus(item) : "unknown";
@@ -235,9 +235,21 @@ export default function ItemDetailClient({ id }: Props) {
     };
   }, [item]);
 
-  const handleCarouselScroll = () => {
-    const el = carouselRef.current;
+  // タブレットカルーセルの前後送りボタン: 指定インデックスのスライドへスクロールする (FREQ-172)
+  const scrollTabletCarouselTo = (index: number) => {
+    const el = tabletCarouselRef.current;
     if (!el) return;
+    const firstSlide = el.children[0] as HTMLElement | undefined;
+    if (!firstSlide) return;
+    const gap = parseFloat(getComputedStyle(el).columnGap) || 0;
+    el.scrollTo({
+      left: index * (firstSlide.offsetWidth + gap),
+      behavior: "smooth",
+    });
+  };
+
+  const handleCarouselScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
     const firstSlide = el.children[0] as HTMLElement | undefined;
     if (!firstSlide) return;
     // ピーク表示 (FREQ-158) によりスライド幅 < コンテナ幅のため、
@@ -425,7 +437,6 @@ export default function ItemDetailClient({ id }: Props) {
                 {/* ピーク表示: 左右 px-5 の余白を設け、2枚以上のときは
                     前後スライドの端が余白部分に見える (FREQ-158) */}
                 <div
-                  ref={carouselRef}
                   data-testid="item-detail-carousel"
                   className="flex w-full touch-pan-x snap-x snap-mandatory scroll-px-5 gap-0.5 overflow-x-scroll px-5"
                   style={
@@ -482,7 +493,7 @@ export default function ItemDetailClient({ id }: Props) {
                         aria-label={`${item.name} ${index + 1}枚目を表示`}
                         className={`relative aspect-[2/3] w-16 flex-shrink-0 overflow-hidden cursor-pointer focus-visible:outline-none transition-opacity duration-200 ${
                           selectedImageIndex === index
-                            ? "ring-2 ring-black opacity-100"
+                            ? "ring-1 ring-black opacity-100"
                             : "opacity-50 hover:opacity-90"
                         }`}
                         onClick={() => setSelectedImageIndex(index)}
@@ -499,9 +510,86 @@ export default function ItemDetailClient({ id }: Props) {
                   </div>
                 )}
 
+                {/* タブレット (md〜lg未満): サムネイルがないため、モバイル同様
+                    スワイプ（横スクロール + スナップ）で画像を切り替える (FREQ-171)。
+                    前後の画像があるときは左下・右下に送りボタンを表示する (FREQ-172) */}
+                <div className="relative min-w-0 flex-1 lg:hidden">
+                  <div
+                    ref={tabletCarouselRef}
+                    data-testid="item-detail-tablet-carousel"
+                    className="flex w-full touch-pan-x snap-x snap-mandatory gap-0.5 overflow-x-scroll"
+                    style={
+                      {
+                        scrollbarWidth: "none",
+                        msOverflowStyle: "none",
+                      } as React.CSSProperties
+                    }
+                    onScroll={handleCarouselScroll}
+                  >
+                    {thumbnailImages.map((imgUrl: string, index: number) => (
+                      <div
+                        key={index}
+                        data-testid="item-detail-tablet-carousel-slide"
+                        className="relative aspect-[2/3] w-full flex-shrink-0 snap-start overflow-hidden bg-white"
+                      >
+                        {imgUrl ? (
+                          <Image
+                            src={imgUrl}
+                            alt={
+                              activeColorName
+                                ? `${item.name} - ${activeColorName} - ${index + 1}枚目`
+                                : `${item.name} - ${index + 1}枚目`
+                            }
+                            fill
+                            className="object-contain object-center"
+                            priority={index === 0}
+                            sizes="61vw"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-gray-400">
+                            No Image
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {selectedImageIndex > 0 && (
+                    <button
+                      type="button"
+                      data-testid="item-detail-tablet-carousel-prev"
+                      aria-label="前の画像を表示"
+                      className="absolute bottom-2 left-5 flex h-11 w-11 cursor-pointer items-center justify-center text-black transition-opacity duration-200 hover:opacity-60 focus-visible:outline-none"
+                      onClick={() =>
+                        scrollTabletCarouselTo(selectedImageIndex - 1)
+                      }
+                    >
+                      <i
+                        className="ri-arrow-left-s-line text-2xl"
+                        aria-hidden="true"
+                      />
+                    </button>
+                  )}
+                  {selectedImageIndex < thumbnailImages.length - 1 && (
+                    <button
+                      type="button"
+                      data-testid="item-detail-tablet-carousel-next"
+                      aria-label="次の画像を表示"
+                      className="absolute bottom-2 right-2 flex h-11 w-11 cursor-pointer items-center justify-center text-black transition-opacity duration-200 hover:opacity-60 focus-visible:outline-none"
+                      onClick={() =>
+                        scrollTabletCarouselTo(selectedImageIndex + 1)
+                      }
+                    >
+                      <i
+                        className="ri-arrow-right-s-line text-2xl"
+                        aria-hidden="true"
+                      />
+                    </button>
+                  )}
+                </div>
+
                 <div
                   data-testid="item-detail-main-image-frame"
-                  className="relative aspect-[2/3] min-w-0 flex-1 overflow-hidden bg-white lg:h-[min(48rem,calc(100svh-5rem))] lg:w-auto lg:flex-none"
+                  className="relative hidden aspect-[2/3] overflow-hidden bg-white lg:block lg:h-[min(48rem,calc(100svh-5rem))] lg:w-auto lg:flex-none"
                 >
                   {mainImage ? (
                     <Image
@@ -595,7 +683,7 @@ export default function ItemDetailClient({ id }: Props) {
                             aria-label={colorOption.name}
                             aria-pressed={color === colorOption.name}
                             title={colorOption.name}
-                            className={`h-6 w-6 border p-[5px] cursor-pointer transition-colors duration-200 focus-visible:outline-none ${
+                            className={`h-6 w-6 border p-[3px] cursor-pointer transition-colors duration-200 focus-visible:outline-none ${
                               color === colorOption.name
                                 ? "border-black"
                                 : "border-transparent hover:border-black/30"

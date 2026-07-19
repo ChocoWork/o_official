@@ -47,7 +47,7 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 800 }]) {
       await expect(block).toBeVisible();
 
       // メイン画像コンテナ（サムネイル列の兄弟要素）
-      const mainImage = block.locator('> div.relative').first();
+      const mainImage = page.getByTestId('item-detail-main-image-frame');
       await expect(mainImage).toBeVisible();
 
       const thumb0 = await thumbs.nth(0).boundingBox();
@@ -80,10 +80,11 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 800 }]) {
         .getAttribute('src');
 
       await thumbs.nth(1).click();
-      await expect(thumbs.nth(1)).toHaveClass(/ring-2/);
+      await expect(thumbs.nth(1)).toHaveClass(/ring-1/);
 
-      const mainImg = desktopImageBlock(page)
-        .locator('> div.relative img')
+      const mainImg = page
+        .getByTestId('item-detail-main-image-frame')
+        .locator('img')
         .first();
       await expect(mainImg).toHaveAttribute('src', secondThumbSrc!);
     });

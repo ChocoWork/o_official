@@ -76,12 +76,12 @@ test.describe('FR-ITEM-DETAIL-031 desktop thumbnail size and no scroll', () => {
         const list = page.getByTestId('item-detail-thumbnail-list');
         const second = list.locator('button').nth(1);
         await second.click();
-        await expect(second).toHaveClass(/ring-2/);
+        await expect(second).toHaveClass(/ring-1/);
 
         const listBox = await box(list);
         const secondBox = await box(second);
-        // ring-2 はボタンの外側2pxに描画されるため、その分を含めて列内に収まること
-        expect(secondBox.x + secondBox.width + 2).toBeLessThanOrEqual(
+        // ring-1 はボタンの外側1pxに描画されるため、その分を含めて列内に収まること
+        expect(secondBox.x + secondBox.width + 1).toBeLessThanOrEqual(
           listBox.x + listBox.width + 0.5,
         );
       });

@@ -74,7 +74,10 @@ test.describe('FR-ITEM-DETAIL-024 reference responsive proportions', () => {
 
       await expect(page.getByTestId('item-detail-carousel')).toBeHidden();
       const images = page.getByTestId('item-detail-desktop-images');
-      const mainImage = page.getByTestId('item-detail-main-image-frame');
+      // タブレット帯のメイン画像は FREQ-171 でスワイプカルーセルに置換
+      const mainImage = page
+        .getByTestId('item-detail-tablet-carousel-slide')
+        .first();
       const information = page.getByTestId('item-detail-information');
       await expect(images).toBeVisible();
 

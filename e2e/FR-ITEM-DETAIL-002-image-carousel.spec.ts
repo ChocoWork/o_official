@@ -53,6 +53,6 @@ test.describe('FR-ITEM-DETAIL-002 画像カルーセル', () => {
 
     await thumbnails.nth(1).click();
     // リング状のアクティブスタイルが2枚目に適用される
-    await expect(thumbnails.nth(1)).toHaveClass(/ring-2/);
+    await expect(thumbnails.nth(1)).toHaveClass(/ring-1/);
   });
 });
