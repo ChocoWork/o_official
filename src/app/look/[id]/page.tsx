@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { formatLookSeason } from "@/lib/look/public";
 import { getPublishedLookById, getPublishedLooks } from "@/lib/look/server";
@@ -8,6 +9,47 @@ import { LookImageGallery } from "@/features/look/components/LookImageGallery";
 type Props = {
   params: Promise<{ id: string }>;
 };
+
+/* FREQ-182: ナビアイコンはアイコンフォント（フォントラスタライズによる
+   にじみ・線幅固定）ではなく、細線ストロークのインライン SVG で描画する。 */
+const NAV_ICON_ARROW_LEFT = <path d="M20 12H4M10 6l-6 6 6 6" />;
+const NAV_ICON_ARROW_RIGHT = <path d="M4 12h16M14 6l6 6-6 6" />;
+const NAV_ICON_GRID = (
+  <>
+    <rect x="4" y="4" width="6.5" height="6.5" />
+    <rect x="13.5" y="4" width="6.5" height="6.5" />
+    <rect x="4" y="13.5" width="6.5" height="6.5" />
+    <rect x="13.5" y="13.5" width="6.5" height="6.5" />
+  </>
+);
+
+function NavIcon({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <svg
+      data-testid="look-detail-nav-icon"
+      viewBox="0 0 24 24"
+      width="1em"
+      height="1em"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1}
+      strokeLinecap="square"
+      strokeLinejoin="miter"
+      aria-hidden="true"
+      focusable="false"
+      className={`block ${className ?? ""}`}
+      style={{ fontSize: "var(--lk-size-7xl)" }}
+    >
+      {children}
+    </svg>
+  );
+}
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
@@ -140,16 +182,14 @@ export default async function LookDetailPage({ params }: Props) {
                   className="group flex cursor-pointer flex-col items-center gap-[13px] py-[13px]"
                 >
                   <p
-                    className="text-[#474747] transition-colors group-hover:text-black"
+                    className="text-black tracking-wider transition-colors group-hover:text-[#474747]"
                     style={{ fontSize: "var(--lk-size-2xs)" }}
                   >
                     PREV LOOK
                   </p>
-                  <i
-                    className="ri-arrow-left-line leading-none text-[#474747] transition-colors group-hover:text-black"
-                    style={{ fontSize: "var(--lk-size-6xl)" }}
-                    aria-hidden="true"
-                  ></i>
+                  <NavIcon className="text-black transition-colors group-hover:text-[#474747]">
+                    {NAV_ICON_ARROW_LEFT}
+                  </NavIcon>
                 </Link>
               ) : (
                 <div
@@ -157,15 +197,14 @@ export default async function LookDetailPage({ params }: Props) {
                   className="flex flex-col items-center gap-[13px] py-[13px] opacity-30"
                 >
                   <p
-                    className="text-[#474747] tracking-widest"
+                    className="text-black tracking-wider"
                     style={{ fontSize: "var(--lk-size-2xs)" }}
                   >
                     PREV LOOK
                   </p>
-                  <i
-                    className="ri-arrow-left-line leading-none text-[#474747]"
-                    style={{ fontSize: "var(--lk-size-6xl)" }}
-                  ></i>
+                  <NavIcon className="text-black">
+                    {NAV_ICON_ARROW_LEFT}
+                  </NavIcon>
                 </div>
               )}
               <Link
@@ -174,16 +213,14 @@ export default async function LookDetailPage({ params }: Props) {
                 className="group flex cursor-pointer flex-col items-center gap-[13px] py-[13px]"
               >
                 <p
-                  className="text-[#474747] tracking-wider transition-colors group-hover:text-black"
+                  className="text-black tracking-wider transition-colors group-hover:text-[#474747]"
                   style={{ fontSize: "var(--lk-size-2xs)" }}
                 >
                   LOOK LIST
                 </p>
-                <i
-                  className="ri-function-line leading-none text-[#474747] transition-colors group-hover:text-black"
-                  style={{ fontSize: "var(--lk-size-6xl)" }}
-                  aria-hidden="true"
-                ></i>
+                <NavIcon className="text-black transition-colors group-hover:text-[#474747]">
+                  {NAV_ICON_GRID}
+                </NavIcon>
               </Link>
               {nextLook ? (
                 <Link
@@ -192,16 +229,14 @@ export default async function LookDetailPage({ params }: Props) {
                   className="group flex cursor-pointer flex-col items-center gap-[13px] py-[13px]"
                 >
                   <p
-                    className="text-[#474747] tracking-wider transition-colors group-hover:text-black"
+                    className="text-black tracking-wider transition-colors group-hover:text-[#474747]"
                     style={{ fontSize: "var(--lk-size-2xs)" }}
                   >
                     NEXT LOOK
                   </p>
-                  <i
-                    className="ri-arrow-right-line leading-none text-[#474747] transition-colors group-hover:text-black"
-                    style={{ fontSize: "var(--lk-size-6xl)" }}
-                    aria-hidden="true"
-                  ></i>
+                  <NavIcon className="text-black transition-colors group-hover:text-[#474747]">
+                    {NAV_ICON_ARROW_RIGHT}
+                  </NavIcon>
                 </Link>
               ) : (
                 <div
@@ -209,15 +244,14 @@ export default async function LookDetailPage({ params }: Props) {
                   className="flex flex-col items-center gap-[13px] py-[13px] opacity-30"
                 >
                   <p
-                    className="text-[#474747] tracking-wider"
+                    className="text-black tracking-wider"
                     style={{ fontSize: "var(--lk-size-2xs)" }}
                   >
                     NEXT LOOK
                   </p>
-                  <i
-                    className="ri-arrow-right-line leading-none text-[#474747]"
-                    style={{ fontSize: "var(--lk-size-6xl)" }}
-                  ></i>
+                  <NavIcon className="text-black">
+                    {NAV_ICON_ARROW_RIGHT}
+                  </NavIcon>
                 </div>
               )}
             </nav>
