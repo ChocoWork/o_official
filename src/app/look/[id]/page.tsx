@@ -126,58 +126,101 @@ export default async function LookDetailPage({ params }: Props) {
               )}
             </div>
 
-            <div className="flex items-center justify-between pt-[13px]">
+            {/* FREQ-181: PREV LOOK / LOOK LIST / NEXT LOOK の3カラムナビ
+                （ラベル上・アイコン下、縦の区切り線で3等分） */}
+            <nav
+              data-testid="look-detail-bottom-nav"
+              aria-label="Look navigation"
+              className="grid grid-cols-3 divide-x divide-black/10 pt-[13px]"
+            >
               {prevLook ? (
                 <Link
                   href={`/look/${prevLook.id}`}
                   aria-label={`Previous look: ${prevLook.theme}`}
-                  className="group flex items-center space-x-[13px] cursor-pointer"
+                  className="group flex cursor-pointer flex-col items-center gap-[13px] py-[13px]"
                 >
-                  <i className="ri-arrow-left-line w-5 h-5 flex items-center justify-center text-[#474747] group-hover:text-black transition-colors"></i>
-                  <div>
-                    <p
-                      className="text-[#999] tracking-widest"
-                      style={{ fontSize: "var(--lk-size-xs)" }}
-                    >
-                      PREV
-                    </p>
-                    <p
-                      className="text-[#474747] group-hover:text-black transition-colors"
-                      style={{ fontSize: "var(--lk-size-md)" }}
-                    >
-                      {prevLook.theme}
-                    </p>
-                  </div>
+                  <p
+                    className="text-[#474747] transition-colors group-hover:text-black"
+                    style={{ fontSize: "var(--lk-size-2xs)" }}
+                  >
+                    PREV LOOK
+                  </p>
+                  <i
+                    className="ri-arrow-left-line leading-none text-[#474747] transition-colors group-hover:text-black"
+                    style={{ fontSize: "var(--lk-size-6xl)" }}
+                    aria-hidden="true"
+                  ></i>
                 </Link>
               ) : (
-                <div />
+                <div
+                  aria-hidden="true"
+                  className="flex flex-col items-center gap-[13px] py-[13px] opacity-30"
+                >
+                  <p
+                    className="text-[#474747] tracking-widest"
+                    style={{ fontSize: "var(--lk-size-2xs)" }}
+                  >
+                    PREV LOOK
+                  </p>
+                  <i
+                    className="ri-arrow-left-line leading-none text-[#474747]"
+                    style={{ fontSize: "var(--lk-size-6xl)" }}
+                  ></i>
+                </div>
               )}
+              <Link
+                href="/look"
+                aria-label="Look list"
+                className="group flex cursor-pointer flex-col items-center gap-[13px] py-[13px]"
+              >
+                <p
+                  className="text-[#474747] tracking-wider transition-colors group-hover:text-black"
+                  style={{ fontSize: "var(--lk-size-2xs)" }}
+                >
+                  LOOK LIST
+                </p>
+                <i
+                  className="ri-function-line leading-none text-[#474747] transition-colors group-hover:text-black"
+                  style={{ fontSize: "var(--lk-size-6xl)" }}
+                  aria-hidden="true"
+                ></i>
+              </Link>
               {nextLook ? (
                 <Link
                   href={`/look/${nextLook.id}`}
                   aria-label={`Next look: ${nextLook.theme}`}
-                  className="group flex items-center space-x-[13px] cursor-pointer text-right"
+                  className="group flex cursor-pointer flex-col items-center gap-[13px] py-[13px]"
                 >
-                  <div>
-                    <p
-                      className="text-[#999] tracking-widest"
-                      style={{ fontSize: "var(--lk-size-xs)" }}
-                    >
-                      NEXT
-                    </p>
-                    <p
-                      className="text-[#474747] group-hover:text-black transition-colors"
-                      style={{ fontSize: "var(--lk-size-md)" }}
-                    >
-                      {nextLook.theme}
-                    </p>
-                  </div>
-                  <i className="ri-arrow-right-line w-5 h-5 flex items-center justify-center text-[#474747] group-hover:text-black transition-colors"></i>
+                  <p
+                    className="text-[#474747] tracking-wider transition-colors group-hover:text-black"
+                    style={{ fontSize: "var(--lk-size-2xs)" }}
+                  >
+                    NEXT LOOK
+                  </p>
+                  <i
+                    className="ri-arrow-right-line leading-none text-[#474747] transition-colors group-hover:text-black"
+                    style={{ fontSize: "var(--lk-size-6xl)" }}
+                    aria-hidden="true"
+                  ></i>
                 </Link>
               ) : (
-                <div />
+                <div
+                  aria-hidden="true"
+                  className="flex flex-col items-center gap-[13px] py-[13px] opacity-30"
+                >
+                  <p
+                    className="text-[#474747] tracking-wider"
+                    style={{ fontSize: "var(--lk-size-2xs)" }}
+                  >
+                    NEXT LOOK
+                  </p>
+                  <i
+                    className="ri-arrow-right-line leading-none text-[#474747]"
+                    style={{ fontSize: "var(--lk-size-6xl)" }}
+                  ></i>
+                </div>
               )}
-            </div>
+            </nav>
           </div>
         </div>
       </div>
