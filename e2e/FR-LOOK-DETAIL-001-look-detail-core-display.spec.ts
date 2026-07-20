@@ -6,7 +6,8 @@ test.describe('FR-LOOK-DETAIL-001 ルック詳細の基本表示', () => {
     await gotoFirstLookDetail(page);
 
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-    await expect(page.locator('img').first()).toBeVisible();
+    // FREQ-179: ビューポートによって表示されるギャラリーが異なるため、可視の画像を検証する
+    await expect(page.locator('img:visible').first()).toBeVisible();
     await expect(page.locator('p').filter({ hasText: /SS|AW|20\d{2}/ }).first()).toBeVisible();
   });
 });

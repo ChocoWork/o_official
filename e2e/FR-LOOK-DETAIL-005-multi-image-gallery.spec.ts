@@ -8,9 +8,9 @@ test.describe('FR-LOOK-DETAIL-005 複数画像ギャラリー', () => {
     const mainImage = page.locator('[data-testid="look-main-image"]');
     await expect(mainImage).toBeVisible();
 
+    // FREQ-179: ITEM 詳細と同様、サムネイル縦列は画像が2枚以上のときのみ表示される
     const thumbs = page.locator('[data-testid="look-thumb-button"]');
     const count = await thumbs.count();
-    expect(count).toBeGreaterThan(0);
 
     if (count > 1) {
       const beforeSrc = await mainImage.getAttribute('src');

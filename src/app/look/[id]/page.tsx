@@ -47,13 +47,6 @@ export default async function LookDetailPage({ params }: Props) {
       <div>
         <div className="element-width text-center">
           <h1>Look not found</h1>
-          <Link
-            href="/look"
-            className="text-[#474747] hover:text-black mt-4 inline-block"
-            style={{ fontSize: "var(--lk-size-xs)" }}
-          >
-            Back to Lookbook
-          </Link>
         </div>
       </div>
     );
@@ -103,7 +96,7 @@ export default async function LookDetailPage({ params }: Props) {
             <div className="">
               <p
                 className="text-[#474747] leading-[2]"
-                style={{ fontSize: "var(--lk-size-md)" }}
+                style={{ fontSize: "var(--lk-size-2xs)" }}
               >
                 {currentLook.themeDescription || " "}
               </p>
