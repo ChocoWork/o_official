@@ -471,7 +471,7 @@ function PublicLookCatalog({
             {renderMobileFilterBar(false)}
           </div>
           <div
-            className="fixed inset-x-0 z-30 lg:hidden bg-white border-b border-black/5 transition-transform duration-300 ease-in-out"
+            className="fixed inset-x-0 z-30 lg:hidden bg-white transition-transform duration-300 ease-in-out"
             style={mobileFilterStickyStyle}
           >
             <div className="element-width px-6 md:px-[45px]">

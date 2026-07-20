@@ -559,7 +559,9 @@ export function PublicItemGrid(props: PublicItemGridProps) {
       const stockOk =
         selectedStock.length === 0 ||
         selectedStock.length === 2 ||
-        (selectedStock.includes("in") ? isItemInStock(item) : !isItemInStock(item));
+        (selectedStock.includes("in")
+          ? isItemInStock(item)
+          : !isItemInStock(item));
 
       return (
         categoryOk &&
@@ -858,7 +860,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
       data-filter-bar={interactive ? "floating" : "placeholder"}
       aria-hidden={interactive ? undefined : true}
       className={cn(
-        "flex items-center justify-between border-b border-black/5 bg-white py-[13px]",
+        "flex items-center justify-between bg-white py-[13px]",
         !interactive && "pointer-events-none invisible",
       )}
     >
@@ -1213,15 +1215,28 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     });
 
   // I-5: 適用中フィルタのチップ（×で個別解除）
-  const appliedChips: { key: string; label: string; onRemove: () => void }[] = [];
+  const appliedChips: { key: string; label: string; onRemove: () => void }[] =
+    [];
   selectedCategories.forEach((c) =>
-    appliedChips.push({ key: `cat-${c}`, label: c, onRemove: () => removeListValue("category", c) }),
+    appliedChips.push({
+      key: `cat-${c}`,
+      label: c,
+      onRemove: () => removeListValue("category", c),
+    }),
   );
   selectedColors.forEach((c) =>
-    appliedChips.push({ key: `col-${c}`, label: c, onRemove: () => removeListValue("color", c) }),
+    appliedChips.push({
+      key: `col-${c}`,
+      label: c,
+      onRemove: () => removeListValue("color", c),
+    }),
   );
   selectedSizes.forEach((s) =>
-    appliedChips.push({ key: `size-${s}`, label: s, onRemove: () => removeListValue("size", s) }),
+    appliedChips.push({
+      key: `size-${s}`,
+      label: s,
+      onRemove: () => removeListValue("size", s),
+    }),
   );
   if (selectedCollection) {
     appliedChips.push({
@@ -1245,8 +1260,12 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     }),
   );
   if (selectedPriceMin !== "" || selectedPriceMax !== "") {
-    const minLabel = (selectedPriceMin === "" ? priceBounds.min : selectedPriceMin).toLocaleString("ja-JP");
-    const maxLabel = (selectedPriceMax === "" ? priceBounds.max : selectedPriceMax).toLocaleString("ja-JP");
+    const minLabel = (
+      selectedPriceMin === "" ? priceBounds.min : selectedPriceMin
+    ).toLocaleString("ja-JP");
+    const maxLabel = (
+      selectedPriceMax === "" ? priceBounds.max : selectedPriceMax
+    ).toLocaleString("ja-JP");
     appliedChips.push({
       key: "price",
       label: `¥${minLabel}〜¥${maxLabel}`,
@@ -1366,7 +1385,12 @@ export function PublicItemGrid(props: PublicItemGridProps) {
                 商品が見つかりません
               </p>
               {appliedChips.length > 0 ? (
-                <Button type="button" variant="secondary" size="xs" onClick={clearAllFilters}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="xs"
+                  onClick={clearAllFilters}
+                >
                   条件をリセット
                 </Button>
               ) : null}
