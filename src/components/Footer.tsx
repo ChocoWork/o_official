@@ -16,10 +16,10 @@ const shopLinks: FooterLinkItem[] = [
 ];
 
 const informationLinks: FooterLinkItem[] = [
-  { label: "ABOUT", href: "/about" },
   { label: "LOOK", href: "/look" },
   { label: "NEWS", href: "/news" },
   { label: "STOCKIST", href: "/stockist" },
+  { label: "ABOUT", href: "/about" },
   { label: "CONTACT", href: "/contact" },
 ];
 
