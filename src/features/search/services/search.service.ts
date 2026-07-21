@@ -1,4 +1,8 @@
-import { createClient } from '@/lib/supabase/server';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
+import { signItemImageUrl } from '@/lib/storage/item-images';
+import { signLookImageUrl } from '@/lib/storage/look-images';
+import { signNewsImageUrl } from '@/lib/storage/news-images';
 import type { SearchResult, SearchResultsResponse, SearchResultType, SearchSuggestion, SearchTab } from '@/features/search/types/search.types';
 
 type SearchExecutionOptions = {
@@ -21,6 +25,7 @@ type SearchItemRow = {
   description: string | null;
   category: string;
   image_url: string | null;
+  price: number;
 };
 
 type SearchLookRow = {
@@ -116,6 +121,11 @@ function formatLookSeason(seasonYear: number, seasonType: 'SS' | 'AW'): string {
   return `${seasonYear} ${seasonType}`;
 }
 
+// ITEM のメタ表示は ItemCard と同じ「¥{カンマ区切り}」形式に揃える。
+function formatItemPrice(price: number): string {
+  return `¥${price.toLocaleString('ja-JP')}`;
+}
+
 // buildLikePattern removed: user input is now passed as a bind parameter to
 // search_items / search_looks / search_news RPC functions, which escape ILIKE
 // special characters internally (OWASP A03 – Injection prevention).
@@ -128,18 +138,41 @@ function mapPopularItem(item: SearchItemRow): SearchResult {
     description: item.description ?? item.category,
     href: `/item/${item.id}`,
     imageUrl: item.image_url ?? null,
-    meta: item.category,
+    meta: formatItemPrice(item.price),
   };
 }
 
-async function getPopularItems(limit: number): Promise<SearchResult[]> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from('items')
-    .select('id, name, description, category, image_url')
-    .eq('status', 'published')
-    .order('created_at', { ascending: false })
-    .limit(limit);
+// 画像バケットは private（migrations 030 / 044）で、配信は署名付き URL が前提。
+// DB に保存されている public URL のままでは 400 になるため、種別ごとの署名関数を通す。
+async function signResultImages(
+  supabase: SupabaseClient,
+  results: SearchResult[],
+): Promise<SearchResult[]> {
+  return Promise.all(
+    results.map(async (result) => {
+      if (!result.imageUrl) {
+        return result;
+      }
+
+      let signedUrl: string | null;
+      if (result.type === 'item') {
+        signedUrl = await signItemImageUrl(supabase, result.imageUrl);
+      } else if (result.type === 'look') {
+        signedUrl = await signLookImageUrl(supabase, result.imageUrl);
+      } else {
+        signedUrl = await signNewsImageUrl(supabase, result.imageUrl);
+      }
+
+      return { ...result, imageUrl: signedUrl };
+    }),
+  );
+}
+
+// FREQ-186: POPULAR ITEMS は購入数（status='paid' の注文数量合計）の多い順。
+// 集計元の orders / order_items は RLS で本人・管理者のみに制限されているため、
+// RPC は service_role 限定で、service role クライアントから呼ぶ。
+async function getPopularItems(supabase: SupabaseClient, limit: number): Promise<SearchResult[]> {
+  const { data, error } = await supabase.rpc('get_popular_items', { limit_count: limit });
 
   if (error) {
     console.error('Failed to fetch popular items:', error);
@@ -154,7 +187,8 @@ export async function executeSearch(options: SearchExecutionOptions): Promise<Se
   const tab = options.tab ?? 'all';
   const limitPerType = typeof options.limitPerType === 'number' ? options.limitPerType : 6;
 
-  const popularItems = await getPopularItems(4);
+  const signSupabase = await createServiceRoleClient();
+  const popularItems = await signResultImages(signSupabase, await getPopularItems(signSupabase, 4));
 
   if (query.length === 0) {
     return {
@@ -207,7 +241,8 @@ export async function executeSearch(options: SearchExecutionOptions): Promise<Se
         description: buildSnippet(item.description ?? item.category, query, item.category),
         href: `/item/${item.id}`,
         imageUrl: item.image_url ?? null,
-        meta: item.category,
+        // FREQ-201: ITEM のメタは種別カテゴリではなく価格を表示する
+        meta: formatItemPrice(item.price),
         score,
       }];
     })
@@ -249,7 +284,8 @@ export async function executeSearch(options: SearchExecutionOptions): Promise<Se
         description: buildSnippet(article.content, query, article.category),
         href: `/news/${article.id}`,
         imageUrl: article.image_url ?? null,
-        meta: article.category,
+        // FREQ-184: 参考デザインに合わせ、NEWS のメタは公開日（YYYY.MM.DD）を表示する
+        meta: article.published_date.replace(/-/g, '.'),
         score,
       }];
     })
@@ -263,16 +299,29 @@ export async function executeSearch(options: SearchExecutionOptions): Promise<Se
     all: rankedItems.length + rankedLooks.length + rankedNews.length,
   };
 
+  const [signedItems, signedLooks, signedNews] = await Promise.all([
+    signResultImages(signSupabase, rankedItems),
+    signResultImages(signSupabase, rankedLooks),
+    signResultImages(signSupabase, rankedNews),
+  ]);
+
   return {
     query,
     tab,
-    items: rankedItems,
-    looks: rankedLooks,
-    news: rankedNews,
+    items: signedItems,
+    looks: signedLooks,
+    news: signedNews,
     counts,
     popularItems,
     empty: counts.all === 0,
   };
+}
+
+// FREQ-190: サジェストは「入力語がラベル自体に含まれる候補」に限る。
+// 説明文や本文だけにヒットした候補を出すと、ラベルに入力語が現れず、なぜその候補が
+// 出たのか利用者が判断できない（ハイライトも当たらない）。
+function labelContainsQuery(label: string, query: string): boolean {
+  return normalizeText(label).includes(normalizeText(query));
 }
 
 export async function getSearchSuggestions(query: string, limit = 8): Promise<SearchSuggestion[]> {
@@ -298,21 +347,21 @@ export async function getSearchSuggestions(query: string, limit = 8): Promise<Se
 
   items.forEach((item) => {
     const score = rankText([item.name, item.description ?? '', item.category], normalizedQuery);
-    if (score > 0) {
+    if (score > 0 && labelContainsQuery(item.name, normalizedQuery)) {
       suggestions.push({ label: item.name, type: 'item', href: `/search?q=${encodeURIComponent(item.name)}&tab=item`, score });
     }
   });
 
   looks.forEach((look) => {
     const score = rankText([look.theme, look.theme_description ?? ''], normalizedQuery);
-    if (score > 0) {
+    if (score > 0 && labelContainsQuery(look.theme, normalizedQuery)) {
       suggestions.push({ label: look.theme, type: 'look', href: `/search?q=${encodeURIComponent(look.theme)}&tab=look`, score });
     }
   });
 
   newsArticles.forEach((article) => {
     const score = rankText([article.title, article.content, article.category], normalizedQuery);
-    if (score > 0) {
+    if (score > 0 && labelContainsQuery(article.title, normalizedQuery)) {
       suggestions.push({ label: article.title, type: 'news', href: `/search?q=${encodeURIComponent(article.title)}&tab=news`, score });
     }
   });

@@ -310,6 +310,13 @@ html[data-header-visible="false"] {
     font-size: var(--lk-size-2xs);
   }
 
+  /* letter-spacing は最後の文字の右にも字間を作るため、幅 100% の下線は
+     その分だけ右へはみ出す。tracking-widest と同じ 0.1em を差し引いて
+     文字の真下に揃える（search ページの種別フィルタと同じ扱い）。 */
+  .header-nav-title .underline-animation-left2right {
+    width: calc(100% - 0.1em);
+  }
+
   .header-menu-button[data-ui-button] {
     display: flex !important;
   }

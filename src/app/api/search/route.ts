@@ -6,7 +6,11 @@ import type { SearchTab } from '@/features/search/types/search.types';
 const searchSchema = z.object({
   q: z.string().trim().max(100).optional().default(''),
   tab: z.enum(['all', 'item', 'look', 'news']).optional().default('all'),
-  preview: z.coerce.boolean().optional().default(false),
+  // z.coerce.boolean() は Boolean(value) なので 'false' も true になる。
+  // preview 未指定時に 'false' を渡すと常に preview 扱いとなり、レート上限が
+  // search:public(120) ではなく search:preview(20)、件数も 8 ではなく 3 に
+  // 落ちてしまうため、明示的に 'true' のときだけ true とする。
+  preview: z.string().optional().default('false').transform((value) => value === 'true'),
 });
 
 export async function GET(request: NextRequest) {
