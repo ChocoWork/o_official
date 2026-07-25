@@ -1,9 +1,20 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/Button/Button';
 import { SingleSelect } from '@/components/ui/SingleSelect/SingleSelect';
 import { TabSegmentControl } from '@/components/ui/TabSegmentControl/TabSegmentControl';
 import type { SelectOption } from '@/components/ui/types';
 import { clientFetch } from '@/lib/client-fetch';
+import CostProfitSection from '@/components/CostProfitSection';
+import {
+	SOURCE_METRICS,
+	MONTHLY_KPI_FORMULAS,
+	sourceStorageKey,
+	kpiOverrideStorageKey,
+	parseSeasonKey,
+	nextSeasonKey,
+	currentSeasonKey,
+	type SourceMetricDef,
+} from '@/lib/kpi/monthly-metrics';
 
 type PeriodKpiMetrics = {
 	period: string;
@@ -27,6 +38,10 @@ type PeriodKpiMetrics = {
 	paidOrderCount: number;
 	customerCount: number;
 	repeatCustomerCount: number;
+	setOrderCount: number;
+	cancelledOrderCount: number;
+	soldItemCount: number;
+	publishedItemCount: number;
 };
 
 export type AdminKpiData = {
@@ -74,15 +89,6 @@ const KPI_SUB_TABS = [
 ] as const;
 
 type KpiSubTabKey = (typeof KPI_SUB_TABS)[number]['key'];
-
-// シーズン切替は表示のみ（データ連動なし）。
-const KPI_SEASON_OPTIONS = [
-	{ key: '2026SS', label: '2026 S/S' },
-	{ key: '2026AW', label: '2026 A/W' },
-	{ key: '2027SS', label: '2027 S/S' },
-	{ key: '2027AW', label: '2027 A/W' },
-	{ key: '2028SS', label: '2028 S/S' },
-] as const;
 
 // バックエンド実データに接続済みの指標。
 const CONNECTED_KPI_METRICS: Record<
@@ -339,6 +345,54 @@ function formatKpiValue(value: number, unit: string): string {
 	return `${YEN_FORMATTER.format(Math.round(value))}${unit}`;
 }
 
+// 月次記録タブ：order 由来の源データを現在月の PeriodKpiMetrics から機械取得するマップ。
+const ORDER_SOURCE_ACCESSORS: Record<string, (metric: PeriodKpiMetrics) => number> = {
+	paid_sales: (m) => m.salesAmount,
+	paid_orders: (m) => m.paidOrderCount,
+	all_orders: (m) => m.orderCount,
+	set_orders: (m) => m.setOrderCount,
+	cancelled_orders: (m) => m.cancelledOrderCount,
+	customers: (m) => m.customerCount,
+	repeat_customers: (m) => m.repeatCustomerCount,
+	sold_items: (m) => m.soldItemCount,
+	published_items: (m) => m.publishedItemCount,
+};
+
+// KPIキー→単位（KPI_CARD_DEFINITIONS の unitLabel から接頭辞を除いたもの）。
+const KPI_UNIT_BY_KEY: Record<string, string> = Object.fromEntries(
+	KPI_CARD_DEFINITIONS.map((definition) => [definition.key, kpiUnit(definition.unitLabel)]),
+);
+
+// 入力文字列を数値へ。空文字・非数値は null。カンマと空白は無視する。
+function parseNumericInput(value: string): number | null {
+	const normalized = value.replace(/[,\s]/g, '');
+	if (normalized === '') {
+		return null;
+	}
+	const parsed = Number(normalized);
+	return Number.isFinite(parsed) ? parsed : null;
+}
+
+// 'YYYY-MM' → '7月'（列見出し用）。
+function monthColumnLabel(monthKey: string): string {
+	const matched = monthKey.match(/^\d{4}-(\d{2})$/);
+	return matched ? `${Number.parseInt(matched[1], 10)}月` : monthKey;
+}
+
+// ブランドの最初のシーズン。これ以前（2025 A/W 以前）はシーズンボタンに表示しない。
+const FIRST_SEASON = '2026SS';
+
+// シーズンキー → '2026年4月〜9月' / '2026年10月〜2027年3月'。
+function formatSeasonRangeLabel(season: string): string {
+	const parsed = parseSeasonKey(season);
+	if (!parsed) {
+		return season;
+	}
+	return parsed.type === 'SS'
+		? `${parsed.year}年4月〜9月`
+		: `${parsed.year}年10月〜${parsed.year + 1}年3月`;
+}
+
 // 年平均成長率（CAGR）。first→last を (期間数-1) 乗根で年率化する。
 function computeCagr(first: number, last: number, periodCount: number): number | null {
 	if (periodCount < 2 || first <= 0 || last <= 0) {
@@ -408,16 +462,6 @@ function calculateProgressPercent(currentValue: number, targetValue: number, dir
 	}
 
 	return (targetValue / currentValue) * 100;
-}
-
-function cloneKpiTargetValues(values: Record<string, Record<string, string>>): Record<string, Record<string, string>> {
-	const cloned: Record<string, Record<string, string>> = {};
-
-	for (const [kpiKey, seasonValues] of Object.entries(values)) {
-		cloned[kpiKey] = { ...seasonValues };
-	}
-
-	return cloned;
 }
 
 function buildSparklinePoints(data: number[], width: number, height: number): string {
@@ -710,60 +754,82 @@ function TrendChart({
 
 export default function KpiSection({ data, isLoading, errorMessage, onRetry }: KpiSectionProps) {
 	const [activeSubTab, setActiveSubTab] = useState<KpiSubTabKey>('progress');
-	const [selectedSeason, setSelectedSeason] = useState<string>(KPI_SEASON_OPTIONS[0].key);
+	const [selectedSeason, setSelectedSeason] = useState<string>('');
 	const [trendGranularity, setTrendGranularity] = useState<TrendGranularity>('year');
 	const [trendKpiKey, setTrendKpiKey] = useState<string>('sales');
 	const [targetData, setTargetData] = useState<KpiTargetData | null>(null);
-	const [editableTargetValues, setEditableTargetValues] = useState<Record<string, Record<string, string>>>({});
-	const [originalTargetValues, setOriginalTargetValues] = useState<Record<string, Record<string, string>>>({});
-	const [isTargetLoading, setIsTargetLoading] = useState(false);
-	const [isTargetSaving, setIsTargetSaving] = useState(false);
-	const [targetErrorMessage, setTargetErrorMessage] = useState<string | null>(null);
-	const [targetSuccessMessage, setTargetSuccessMessage] = useState<string | null>(null);
 
+	// 目標データはKPIカード（目標&進捗タブ）と推移グラフの目標線で参照する。
 	const fetchKpiTargets = useCallback(async () => {
 		try {
-			setIsTargetLoading(true);
-			setTargetErrorMessage(null);
-			setTargetSuccessMessage(null);
-
-			const response = await clientFetch('/api/admin/kpi/targets', {
-				cache: 'no-store',
-			});
-
+			const response = await clientFetch('/api/admin/kpi/targets', { cache: 'no-store' });
 			if (!response.ok) {
-				if (response.status === 401) {
-					throw new Error('KPI目標の取得に失敗しました。再ログインしてください。');
-				}
-
-				if (response.status === 403) {
-					throw new Error('KPI目標を編集する権限がありません。');
-				}
-
 				throw new Error('KPI目標の取得に失敗しました。');
 			}
-
 			const json = (await response.json()) as { data: KpiTargetData };
-			const nextValues = cloneKpiTargetValues(json.data.values);
-
 			setTargetData(json.data);
-			setEditableTargetValues(nextValues);
-			setOriginalTargetValues(cloneKpiTargetValues(nextValues));
 		} catch (error) {
-			console.error('Failed to fetch KPI targets:', {
-				errorType: error instanceof Error ? 'Error' : typeof error,
-				errorMessage: error instanceof Error ? error.message : String(error),
-				fullError: error,
-			});
-			setTargetErrorMessage(error instanceof Error ? error.message : 'KPI目標の取得に失敗しました。');
-		} finally {
-			setIsTargetLoading(false);
+			console.error('Failed to fetch KPI targets:', error);
 		}
 	}, []);
 
 	useEffect(() => {
 		void fetchKpiTargets();
 	}, [fetchKpiTargets]);
+
+	// --- 月次記録タブ：選択シーズン（6ヶ月）の算出元データ入力とKPI自動計算 ---
+	// 値は { 'YYYY-MM': { 'src:*'|'kpi:*': 入力文字列 } } のネスト。
+	const [recordMonthKeys, setRecordMonthKeys] = useState<string[]>([]);
+	const [editableRecordValues, setEditableRecordValues] = useState<Record<string, Record<string, string>>>({});
+	const [originalRecordValues, setOriginalRecordValues] = useState<Record<string, Record<string, string>>>({});
+	const [isRecordLoading, setIsRecordLoading] = useState(false);
+	const [isRecordSaving, setIsRecordSaving] = useState(false);
+	const [recordErrorMessage, setRecordErrorMessage] = useState<string | null>(null);
+	const [recordSuccessMessage, setRecordSuccessMessage] = useState<string | null>(null);
+
+	const fetchMonthlyRecord = useCallback(async (season: string) => {
+		try {
+			setIsRecordLoading(true);
+			setRecordErrorMessage(null);
+			setRecordSuccessMessage(null);
+
+			const response = await clientFetch(`/api/admin/kpi/monthly-record?season=${encodeURIComponent(season)}`, {
+				cache: 'no-store',
+			});
+			if (!response.ok) {
+				if (response.status === 403) {
+					throw new Error('月次記録を編集する権限がありません。');
+				}
+				throw new Error('月次記録の取得に失敗しました。');
+			}
+
+			const json = (await response.json()) as {
+				data: { season: string; monthKeys: string[]; values: Record<string, Record<string, number>> };
+			};
+
+			const nextValues: Record<string, Record<string, string>> = {};
+			for (const monthKey of json.data.monthKeys) {
+				const monthValues = json.data.values[monthKey] ?? {};
+				nextValues[monthKey] = Object.fromEntries(
+					Object.entries(monthValues).map(([key, value]) => [key, String(value)]),
+				);
+			}
+
+			setRecordMonthKeys(json.data.monthKeys);
+			setEditableRecordValues(nextValues);
+			setOriginalRecordValues(structuredClone(nextValues));
+		} catch (error) {
+			console.error('Failed to fetch monthly record:', error);
+			setRecordErrorMessage(error instanceof Error ? error.message : '月次記録の取得に失敗しました。');
+		} finally {
+			setIsRecordLoading(false);
+		}
+	}, []);
+
+	// シーズン切替に追従して6ヶ月分を読み込む。
+	useEffect(() => {
+		void fetchMonthlyRecord(selectedSeason);
+	}, [fetchMonthlyRecord, selectedSeason]);
 
 	const monthlyKpiMap = useMemo(() => {
 		if (!data) {
@@ -947,156 +1013,6 @@ export default function KpiSection({ data, isLoading, errorMessage, onRetry }: K
 		});
 	}, [currentSeasonMetric, monthlyKpiSeries, targetData]);
 
-	const hasTargetChanges = useMemo(() => {
-		if (!targetData) {
-			return false;
-		}
-
-		for (const definition of targetData.definitions) {
-			for (const season of targetData.seasons) {
-				const currentValue = editableTargetValues[definition.key]?.[season] ?? '';
-				const originalValue = originalTargetValues[definition.key]?.[season] ?? '';
-
-				if (currentValue !== originalValue) {
-					return true;
-				}
-			}
-		}
-
-		return false;
-	}, [editableTargetValues, originalTargetValues, targetData]);
-
-	const targetTableLayout = useMemo(() => {
-		const seasonCount = targetData?.seasons.length ?? 0;
-		const fixedTotal = 44;
-		const seasonWidth = seasonCount > 0 ? `${(56 / seasonCount).toFixed(4)}%` : '0%';
-
-		return {
-			kpiWidth: '16%',
-			definitionWidth: '20%',
-			priorityWidth: '8%',
-			seasonWidth,
-			definitionLeft: '16%',
-			priorityLeft: '36%',
-			fixedTotal,
-		};
-	}, [targetData]);
-
-	const handleTargetValueChange = (kpiKey: string, season: string, value: string) => {
-		setTargetSuccessMessage(null);
-		setEditableTargetValues((prev) => ({
-			...prev,
-			[kpiKey]: {
-				...(prev[kpiKey] ?? {}),
-				[season]: value,
-			},
-		}));
-	};
-
-	const handleSaveKpiTargets = useCallback(async () => {
-		if (!targetData) {
-			return;
-		}
-
-		const updates: Array<{ season: string; kpiKey: string; value: string }> = [];
-
-		for (const definition of targetData.definitions) {
-			for (const season of targetData.seasons) {
-				const currentValue = editableTargetValues[definition.key]?.[season] ?? '';
-				const originalValue = originalTargetValues[definition.key]?.[season] ?? '';
-
-				if (currentValue === originalValue) {
-					continue;
-				}
-
-				updates.push({
-					season,
-					kpiKey: definition.key,
-					value: currentValue,
-				});
-			}
-		}
-
-		if (updates.length === 0) {
-			setTargetSuccessMessage('変更はありません。');
-			return;
-		}
-
-		try {
-			setIsTargetSaving(true);
-			setTargetErrorMessage(null);
-			setTargetSuccessMessage(null);
-
-			const response = await clientFetch('/api/admin/kpi/targets', {
-				method: 'PUT',
-				headers: {
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify({ updates }),
-			});
-
-			const responseData = await response.json();
-
-			if (!response.ok) {
-				if (response.status === 401) {
-					throw new Error('KPI目標の更新に失敗しました。再ログインしてください。');
-				}
-
-				if (response.status === 403) {
-					throw new Error('KPI目標を編集する権限がありません。');
-				}
-
-				if (response.status === 503) {
-					const detailsMsg = responseData.details ? `\n詳細: ${responseData.details}` : '';
-					throw new Error(`${responseData.error}${detailsMsg}`);
-				}
-
-				const details = responseData.details ? `: ${JSON.stringify(responseData.details)}` : '';
-				const errorMsg = responseData.error || 'KPI目標の更新に失敗しました。';
-				throw new Error(`${errorMsg}${details}`);
-			}
-
-			const json = responseData as { data: KpiTargetData };
-			const nextValues = cloneKpiTargetValues(json.data.values);
-
-			setTargetData(json.data);
-			setEditableTargetValues(nextValues);
-			setOriginalTargetValues(cloneKpiTargetValues(nextValues));
-			setTargetSuccessMessage('KPI目標を保存しました。');
-		} catch (error) {
-			let saveErrorMessage = 'KPI目標の更新に失敗しました。';
-
-			if (error instanceof Error) {
-				saveErrorMessage = error.message;
-			} else if (typeof error === 'string') {
-				saveErrorMessage = error;
-			} else if (error && typeof error === 'object') {
-				try {
-					const errorObj = error as Record<string, unknown>;
-					if (typeof errorObj.message === 'string') {
-						saveErrorMessage = errorObj.message;
-					} else if (typeof errorObj.error === 'string') {
-						saveErrorMessage = errorObj.error;
-					} else {
-						saveErrorMessage = JSON.stringify(error, null, 2);
-					}
-				} catch {
-					// keep default message
-				}
-			}
-
-			console.error('Failed to save KPI targets:', {
-				errorType: error instanceof Error ? 'Error' : typeof error,
-				errorMessage: saveErrorMessage,
-				fullError: error,
-			});
-
-			setTargetErrorMessage(saveErrorMessage);
-		} finally {
-			setIsTargetSaving(false);
-		}
-	}, [editableTargetValues, originalTargetValues, targetData]);
-
 	// 各カード右上の編集ボタンから、現在シーズンの目標値を直接編集する。
 	const [editingCardKey, setEditingCardKey] = useState<string | null>(null);
 	const [editingCardValue, setEditingCardValue] = useState('');
@@ -1155,11 +1071,8 @@ export default function KpiSection({ data, isLoading, errorMessage, onRetry }: K
 				}
 
 				const json = responseData as { data: KpiTargetData };
-				const nextValues = cloneKpiTargetValues(json.data.values);
 
 				setTargetData(json.data);
-				setEditableTargetValues(nextValues);
-				setOriginalTargetValues(cloneKpiTargetValues(nextValues));
 				setEditingCardKey(null);
 				setEditingCardValue('');
 			} catch (error) {
@@ -1171,17 +1084,227 @@ export default function KpiSection({ data, isLoading, errorMessage, onRetry }: K
 		[editingCardValue, targetData],
 	);
 
-	// シーズン切替は表示のみ（データ連動なし）。サブタブの下に配置する。
+	// 月キー → 現在月の PeriodKpiMetrics（order 由来の源データを機械取得するため）。
+	const monthMetricByKey = useMemo(() => {
+		const map = new Map<string, PeriodKpiMetrics>();
+		if (!data) {
+			return map;
+		}
+		for (const entry of data.monthlyKpiByYear) {
+			entry.metrics.forEach((metric, index) => {
+				map.set(`${entry.year}-${String(index + 1).padStart(2, '0')}`, metric);
+			});
+		}
+		return map;
+	}, [data]);
+
+	// order 由来の源データを月ごとに機械取得する（{ monthKey: { sourceKey: value } }）。
+	const orderAutoByMonth = useMemo<Record<string, Record<string, number>>>(() => {
+		const result: Record<string, Record<string, number>> = {};
+		for (const monthKey of recordMonthKeys) {
+			const metric = monthMetricByKey.get(monthKey);
+			result[monthKey] = {};
+			if (metric) {
+				for (const [key, accessor] of Object.entries(ORDER_SOURCE_ACCESSORS)) {
+					result[monthKey][key] = accessor(metric);
+				}
+			}
+		}
+		return result;
+	}, [recordMonthKeys, monthMetricByKey]);
+
+	const getSourceCellValue = useCallback(
+		(monthKey: string, sourceKey: string): string => editableRecordValues[monthKey]?.[sourceStorageKey(sourceKey)] ?? '',
+		[editableRecordValues],
+	);
+
+	const getKpiCellValue = useCallback(
+		(monthKey: string, kpiKey: string): string => editableRecordValues[monthKey]?.[kpiOverrideStorageKey(kpiKey)] ?? '',
+		[editableRecordValues],
+	);
+
+	// 各月の源データの実効値。手動上書き最優先、order 由来は自動値へフォールバック、manual 未入力は undefined。
+	const resolvedSourceByMonth = useMemo<Record<string, Record<string, number | undefined>>>(() => {
+		const result: Record<string, Record<string, number | undefined>> = {};
+		for (const monthKey of recordMonthKeys) {
+			const resolved: Record<string, number | undefined> = {};
+			for (const metric of SOURCE_METRICS) {
+				const override = parseNumericInput(editableRecordValues[monthKey]?.[sourceStorageKey(metric.key)] ?? '');
+				if (override !== null) {
+					resolved[metric.key] = override;
+				} else if (metric.group === 'order') {
+					resolved[metric.key] = orderAutoByMonth[monthKey]?.[metric.key];
+				} else {
+					resolved[metric.key] = undefined;
+				}
+			}
+			result[monthKey] = resolved;
+		}
+		return result;
+	}, [recordMonthKeys, editableRecordValues, orderAutoByMonth]);
+
+	// 各月・各KPIの自動計算値（表示テキスト）。
+	const kpiComputedByMonth = useMemo<Record<string, Record<string, string>>>(() => {
+		const result: Record<string, Record<string, string>> = {};
+		for (const monthKey of recordMonthKeys) {
+			const source = resolvedSourceByMonth[monthKey] ?? {};
+			const perKpi: Record<string, string> = {};
+			for (const formula of MONTHLY_KPI_FORMULAS) {
+				const computed = formula.compute(source);
+				perKpi[formula.key] = computed === null ? '—' : formatKpiValue(computed, KPI_UNIT_BY_KEY[formula.key] ?? '');
+			}
+			result[monthKey] = perKpi;
+		}
+		return result;
+	}, [recordMonthKeys, resolvedSourceByMonth]);
+
+	const hasRecordChanges = useMemo(() => {
+		for (const monthKey of recordMonthKeys) {
+			const keys = new Set([
+				...Object.keys(editableRecordValues[monthKey] ?? {}),
+				...Object.keys(originalRecordValues[monthKey] ?? {}),
+			]);
+			for (const key of keys) {
+				if ((editableRecordValues[monthKey]?.[key] ?? '') !== (originalRecordValues[monthKey]?.[key] ?? '')) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}, [recordMonthKeys, editableRecordValues, originalRecordValues]);
+
+	const handleRecordValueChange = useCallback((monthKey: string, storageKey: string, value: string) => {
+		setRecordSuccessMessage(null);
+		setEditableRecordValues((prev) => ({
+			...prev,
+			[monthKey]: { ...(prev[monthKey] ?? {}), [storageKey]: value },
+		}));
+	}, []);
+
+	const handleSaveMonthlyRecord = useCallback(async () => {
+		const updates: Array<{ monthKey: string; metricKey: string; value: number | '' }> = [];
+
+		for (const monthKey of recordMonthKeys) {
+			const keys = new Set([
+				...Object.keys(editableRecordValues[monthKey] ?? {}),
+				...Object.keys(originalRecordValues[monthKey] ?? {}),
+			]);
+			for (const key of keys) {
+				const current = (editableRecordValues[monthKey]?.[key] ?? '').trim();
+				const original = (originalRecordValues[monthKey]?.[key] ?? '').trim();
+				if (current === original) {
+					continue;
+				}
+				if (current === '') {
+					updates.push({ monthKey, metricKey: key, value: '' });
+					continue;
+				}
+				const parsed = parseNumericInput(current);
+				if (parsed === null) {
+					setRecordErrorMessage(`数値で入力してください（${monthColumnLabel(monthKey)}）。`);
+					return;
+				}
+				updates.push({ monthKey, metricKey: key, value: parsed });
+			}
+		}
+
+		if (updates.length === 0) {
+			setRecordSuccessMessage('変更はありません。');
+			return;
+		}
+
+		try {
+			setIsRecordSaving(true);
+			setRecordErrorMessage(null);
+			setRecordSuccessMessage(null);
+
+			const response = await clientFetch('/api/admin/kpi/monthly-record', {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ season: selectedSeason, updates }),
+			});
+
+			const responseData = await response.json();
+
+			if (!response.ok) {
+				if (response.status === 503) {
+					throw new Error(`${responseData.error}${responseData.details ? `\n詳細: ${responseData.details}` : ''}`);
+				}
+				throw new Error(responseData?.error || '月次記録の保存に失敗しました。');
+			}
+
+			const json = responseData as {
+				data: { season: string; monthKeys: string[]; values: Record<string, Record<string, number>> };
+			};
+			const nextValues: Record<string, Record<string, string>> = {};
+			for (const monthKey of json.data.monthKeys) {
+				const monthValues = json.data.values[monthKey] ?? {};
+				nextValues[monthKey] = Object.fromEntries(
+					Object.entries(monthValues).map(([key, value]) => [key, String(value)]),
+				);
+			}
+			setRecordMonthKeys(json.data.monthKeys);
+			setEditableRecordValues(nextValues);
+			setOriginalRecordValues(structuredClone(nextValues));
+			setRecordSuccessMessage('月次記録を保存しました。');
+		} catch (error) {
+			setRecordErrorMessage(error instanceof Error ? error.message : '月次記録の保存に失敗しました。');
+		} finally {
+			setIsRecordSaving(false);
+		}
+	}, [recordMonthKeys, editableRecordValues, originalRecordValues, selectedSeason]);
+
+	// シーズンボタンの選択肢：FIRST_SEASON（2026 S/S）から次シーズンまでを連続で並べ、
+	// 新しい順（次 → 現在 → 前 → その前…）にする。2025 A/W 以前は表示しない。
+	const seasonInfo = useMemo(() => {
+		const current = targetData?.currentSeason ?? currentSeasonKey();
+		const latest = nextSeasonKey(current); // 次シーズンまで表示
+		const options: { key: string; label: string }[] = [];
+		let cursor = FIRST_SEASON;
+		for (let index = 0; index < 40 && seasonSortKey(cursor) <= seasonSortKey(latest); index += 1) {
+			options.push({ key: cursor, label: formatSeasonLabel(cursor) });
+			cursor = nextSeasonKey(cursor);
+		}
+		options.reverse();
+		return { current, options };
+	}, [targetData]);
+
+	const seasonOptions = seasonInfo.options;
+
+	// ユーザーがシーズンを手動選択したか。未操作の間は現在シーズンに追従する。
+	const seasonManuallySelectedRef = useRef(false);
+
+	// 初期表示・データ更新時の選択シーズン制御。
+	// 未操作: 常に現在シーズン（今の月に紐づくシーズン）を選択。操作後: 無効になった時のみ現在へ補正。
+	useEffect(() => {
+		if (seasonInfo.options.length === 0) {
+			return;
+		}
+		if (!seasonManuallySelectedRef.current) {
+			if (selectedSeason !== seasonInfo.current) {
+				setSelectedSeason(seasonInfo.current);
+			}
+			return;
+		}
+		if (!seasonInfo.options.some((option) => option.key === selectedSeason)) {
+			setSelectedSeason(seasonInfo.current);
+		}
+	}, [seasonInfo, selectedSeason]);
+
+	// シーズン切替。サブタブの下に配置し、月次記録・コスト等の対象シーズンを決める。
 	const seasonSelector = (
 		<div className="mb-6 flex flex-wrap items-center gap-1.5">
-			{KPI_SEASON_OPTIONS.map((season) => (
+			{seasonOptions.map((season) => (
 				<Button
 					key={season.key}
 					variant="outline"
 					size="2xs"
 					shape="rounded"
 					selected={season.key === selectedSeason}
-					onClick={() => setSelectedSeason(season.key)}
+					onClick={() => {
+						seasonManuallySelectedRef.current = true;
+						setSelectedSeason(season.key);
+					}}
 					className="font-acumin tracking-wider"
 				>
 					{season.label}
@@ -1236,6 +1359,17 @@ export default function KpiSection({ data, isLoading, errorMessage, onRetry }: K
 			{activeSubTab === 'trend' ? granularitySelector : seasonSelector}
 		</>
 	);
+
+	if (activeSubTab === 'cost') {
+		const selectedSeasonLabel =
+			seasonOptions.find((season) => season.key === selectedSeason)?.label ?? formatSeasonLabel(selectedSeason);
+		return (
+			<section>
+				{subTabBar}
+				<CostProfitSection seasonKey={selectedSeason} seasonLabel={selectedSeasonLabel} />
+			</section>
+		);
+	}
 
 	if (isLoading) {
 		return (
@@ -1389,81 +1523,123 @@ export default function KpiSection({ data, isLoading, errorMessage, onRetry }: K
 			) : null}
 
 			{activeSubTab === 'targets' ? (
-				<div className="space-y-4 border border-[#d4d4d4] p-6">
+				<div className="space-y-4">
 					<div className="flex flex-wrap items-center justify-between gap-3">
 						<div>
-							<p className="font-acumin text-sm tracking-widest text-black">シーズン別 KPI 目標管理</p>
+							<p className="font-acumin text-sm tracking-widest text-black">
+								月次記録
+								<span className="ml-1 text-[#888888]">{formatSeasonRangeLabel(selectedSeason)}</span>
+							</p>
 							<p className="font-acumin text-xs text-[#474747]">
-								複数年のシーズン目標を編集できます。現在シーズン: {targetData?.currentSeason ?? '-'}
+								シーズンの各月について、KPIを算出するための元データを記録します。注文系は自動取得（上書き可）、SNS・広告系は手入力です。
 							</p>
 						</div>
 						<div className="flex items-center gap-2">
-							<Button variant="secondary" size="sm" className="font-acumin" onClick={() => void fetchKpiTargets()}>
+							<Button variant="secondary" size="sm" className="font-acumin" onClick={() => void fetchMonthlyRecord(selectedSeason)}>
 								再取得
 							</Button>
 							<Button
 								variant="primary"
 								size="sm"
 								className="font-acumin"
-								onClick={() => void handleSaveKpiTargets()}
-								disabled={!hasTargetChanges || isTargetSaving || isTargetLoading}
+								onClick={() => void handleSaveMonthlyRecord()}
+								disabled={!hasRecordChanges || isRecordSaving || isRecordLoading}
 							>
-								{isTargetSaving ? '保存中...' : '保存'}
+								{isRecordSaving ? '保存中...' : '保存'}
 							</Button>
 						</div>
 					</div>
 
-					{targetErrorMessage ? <p className="font-acumin text-xs text-red-700">{targetErrorMessage}</p> : null}
-					{targetSuccessMessage ? <p className="font-acumin text-xs text-green-700">{targetSuccessMessage}</p> : null}
+					{recordErrorMessage ? <p className="whitespace-pre-line font-acumin text-xs text-red-700">{recordErrorMessage}</p> : null}
+					{recordSuccessMessage ? <p className="font-acumin text-xs text-green-700">{recordSuccessMessage}</p> : null}
 
-					{isTargetLoading ? (
-						<p className="font-acumin text-sm text-[#474747]">KPI目標を読み込み中...</p>
-					) : targetData ? (
+					{/* 算出元データ（シーズン6ヶ月の入力グリッド） */}
+					<div className="space-y-4 border border-[#d4d4d4] p-6">
+						<div className="flex items-center justify-between gap-3">
+							<p className="font-acumin text-sm tracking-widest text-black">算出元データ</p>
+							<span className="font-acumin text-[11px] text-[#888888]">月別の実績値</span>
+						</div>
 						<div className="w-full overflow-x-auto">
-							<table className="w-full table-fixed border-collapse">
-								<colgroup>
-									<col style={{ width: targetTableLayout.kpiWidth }} />
-									<col style={{ width: targetTableLayout.definitionWidth }} />
-									<col style={{ width: targetTableLayout.priorityWidth }} />
-									{targetData.seasons.map((season) => (
-										<col key={`col-${season}`} style={{ width: targetTableLayout.seasonWidth }} />
-									))}
-								</colgroup>
+							<table className="w-full min-w-[560px] border-collapse">
 								<thead>
 									<tr className="border-b border-[#d4d4d4]">
-										<th className="sticky left-0 z-20 bg-white py-2 pr-3 text-left font-acumin text-xs text-[#474747]">KPI</th>
-										<th className="sticky z-20 bg-white py-2 pr-3 text-left font-acumin text-xs text-[#474747]" style={{ left: targetTableLayout.definitionLeft }}>
-											定義
-										</th>
-										<th className="sticky z-20 bg-white py-2 pr-3 text-left font-acumin text-xs text-[#474747]" style={{ left: targetTableLayout.priorityLeft }}>
-											必要性
-										</th>
-										{targetData.seasons.map((season) => (
-											<th key={season} className="px-1.5 py-2 text-left font-acumin text-xs text-[#474747]">
-												{season}
+										<th className="sticky left-0 z-20 min-w-[168px] bg-white py-2 pr-3 text-left font-acumin text-xs text-[#474747]">項目</th>
+										{recordMonthKeys.map((monthKey) => (
+											<th key={monthKey} className="whitespace-nowrap px-1.5 py-2 text-right font-acumin text-xs text-[#474747]">
+												{monthColumnLabel(monthKey)}
 											</th>
 										))}
 									</tr>
 								</thead>
 								<tbody>
-									{targetData.definitions.map((definition) => (
-										<tr key={definition.key} className="border-b border-[#ededed] align-top">
-											<td className="sticky left-0 z-10 bg-white py-2 pr-3 font-acumin text-xs text-black">{definition.label}</td>
-											<td className="sticky z-10 bg-white py-2 pr-3 font-acumin text-xs text-[#474747]" style={{ left: targetTableLayout.definitionLeft }}>
-												{definition.definition}
+									{SOURCE_METRICS.map((metric: SourceMetricDef) => (
+										<tr key={metric.key} className="border-b border-[#ededed] align-top">
+											<td className="sticky left-0 z-10 min-w-[168px] bg-white py-2 pr-3 font-acumin text-xs text-black">
+												<span className="flex items-center gap-1.5">
+													{metric.label}
+													<span className="rounded-full bg-[#ededed] px-1.5 py-0.5 font-acumin text-[10px] tracking-wider text-[#888888]">
+														{metric.group === 'order' ? '自動' : '手入力'}
+													</span>
+												</span>
 											</td>
-											<td className="sticky z-10 bg-white py-2 pr-3 font-acumin text-xs text-[#474747]" style={{ left: targetTableLayout.priorityLeft }}>
-												{definition.priority}
+											{recordMonthKeys.map((monthKey) => {
+												const autoValue = metric.group === 'order' ? orderAutoByMonth[monthKey]?.[metric.key] : undefined;
+												const placeholder = autoValue !== undefined ? formatKpiValue(autoValue, metric.unit) : metric.unit;
+												return (
+													<td key={`${metric.key}-${monthKey}`} className="px-1.5 py-2">
+														<input
+															type="text"
+															inputMode="decimal"
+															className="w-full min-w-[64px] rounded-none border border-[#d4d4d4] px-2 py-1 text-right font-acumin text-xs text-black tabular-nums focus:border-black focus:outline-none"
+															value={getSourceCellValue(monthKey, metric.key)}
+															onChange={(event) => handleRecordValueChange(monthKey, sourceStorageKey(metric.key), event.target.value)}
+															placeholder={placeholder}
+															aria-label={`${metric.label} ${monthColumnLabel(monthKey)}の値`}
+														/>
+													</td>
+												);
+											})}
+										</tr>
+									))}
+								</tbody>
+							</table>
+						</div>
+					</div>
+
+					{/* KPI（各月の自動計算・上書き可） */}
+					<div className="space-y-4 border border-[#d4d4d4] p-6">
+						<div className="flex items-center justify-between gap-3">
+							<p className="font-acumin text-sm tracking-widest text-black">KPI（自動計算）</p>
+							<span className="font-acumin text-[11px] text-[#888888]">全{MONTHLY_KPI_FORMULAS.length}指標</span>
+						</div>
+						<div className="w-full overflow-x-auto">
+							<table className="w-full min-w-[560px] border-collapse">
+								<thead>
+									<tr className="border-b border-[#d4d4d4]">
+										<th className="sticky left-0 z-20 min-w-[168px] bg-white py-2 pr-3 text-left font-acumin text-xs text-[#474747]">KPI</th>
+										{recordMonthKeys.map((monthKey) => (
+											<th key={monthKey} className="whitespace-nowrap px-1.5 py-2 text-right font-acumin text-xs text-[#474747]">
+												{monthColumnLabel(monthKey)}
+											</th>
+										))}
+									</tr>
+								</thead>
+								<tbody>
+									{MONTHLY_KPI_FORMULAS.map((formula) => (
+										<tr key={formula.key} className="border-b border-[#ededed] align-top">
+											<td className="sticky left-0 z-10 min-w-[168px] bg-white py-2 pr-3 font-acumin text-xs text-black" title={`算出式: ${formula.formulaText}`}>
+												{formula.label}
 											</td>
-											{targetData.seasons.map((season) => (
-												<td key={`${definition.key}-${season}`} className="px-1.5 py-2">
+											{recordMonthKeys.map((monthKey) => (
+												<td key={`${formula.key}-${monthKey}`} className="px-1.5 py-2">
 													<input
 														type="text"
-														className="w-full rounded-none border border-[#d4d4d4] px-2 py-1 font-acumin text-xs text-black focus:border-black focus:outline-none"
-														value={editableTargetValues[definition.key]?.[season] ?? ''}
-														onChange={(event) => handleTargetValueChange(definition.key, season, event.target.value)}
-														aria-label={`${definition.label} ${season}`}
-														title={season}
+														inputMode="decimal"
+														className="w-full min-w-[64px] rounded-none border border-[#d4d4d4] px-2 py-1 text-right font-acumin text-xs text-black tabular-nums focus:border-black focus:outline-none"
+														value={getKpiCellValue(monthKey, formula.key)}
+														onChange={(event) => handleRecordValueChange(monthKey, kpiOverrideStorageKey(formula.key), event.target.value)}
+														placeholder={kpiComputedByMonth[monthKey]?.[formula.key] ?? '—'}
+														aria-label={`${formula.label} ${monthColumnLabel(monthKey)}の記録値（上書き）`}
 													/>
 												</td>
 											))}
@@ -1472,18 +1648,20 @@ export default function KpiSection({ data, isLoading, errorMessage, onRetry }: K
 								</tbody>
 							</table>
 						</div>
-					) : (
-						<p className="font-acumin text-sm text-[#474747]">KPI目標データがありません。</p>
-					)}
+					</div>
+
+					<p className="font-acumin text-xs text-[#888888]">
+						※ 対象シーズンは上部のシーズンボタン（例: 2026 S/S = 4〜9月）で切り替えます。注文系の元データは各月の注文実績から自動取得し、空欄なら自動値、入力するとその値で上書きします。
+					</p>
+					<p className="font-acumin text-xs text-[#888888]">
+						※ SNS・広告系の元データ（リーチ数・広告費など）は手入力です。Instagram等のAPI自動取得は今後対応予定です。
+					</p>
+					<p className="font-acumin text-xs text-[#888888]">
+						※ KPI欄は算出元データからの自動計算値（プレースホルダ表示）で、数値を入力するとその月の記録値として上書きします。
+					</p>
 				</div>
 			) : null}
 
-			{activeSubTab === 'cost' ? (
-				<div className="border border-[#d4d4d4] p-6">
-					<p className="font-acumin text-sm tracking-widest text-black">コスト & 利益</p>
-					<p className="mt-2 font-acumin text-xs text-[#474747]">原価・粗利・広告費などのコスト分析ビューは準備中です。</p>
-				</div>
-			) : null}
 		</section>
 	);
 }

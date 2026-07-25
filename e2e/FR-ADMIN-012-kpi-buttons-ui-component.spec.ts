@@ -99,7 +99,7 @@ for (const viewport of viewports) {
       // FREQ-214-AC-01
       await openKpi(page);
 
-      const inactiveSeason = page.getByRole('button', { name: '2027 S/S' });
+      const inactiveSeason = page.getByRole('button', { name: '2026 A/W' });
       await expect(inactiveSeason).toBeVisible();
       await expect(inactiveSeason).toHaveAttribute('data-ui-button', 'true');
       await expect(inactiveSeason).toHaveAttribute('data-ui-button-variant', 'outline');
@@ -119,17 +119,17 @@ for (const viewport of viewports) {
       await openKpi(page);
 
       const activeSeason = page.getByRole('button', { name: '2026 S/S' });
-      const inactiveSeason = page.getByRole('button', { name: '2027 S/S' });
+      const inactiveSeason = page.getByRole('button', { name: '2026 A/W' });
 
       await expect(activeSeason).toHaveAttribute('aria-pressed', 'true');
       await expect(inactiveSeason).toHaveAttribute('aria-pressed', 'false');
 
-      const style = await activeSeason.evaluate((el) => {
-        const s = getComputedStyle(el);
-        return { color: s.color, background: s.backgroundColor };
-      });
-      expect(style.background).toBe('rgb(17, 17, 17)');
-      expect(style.color).toBe('rgb(255, 255, 255)');
+      // 選択状態は既定選択の反映（effect）＋背景トランジションで一瞬 alpha が残るため確定値をポーリング。
+      await expect
+        .poll(async () => activeSeason.evaluate((el) => getComputedStyle(el).backgroundColor))
+        .toBe('rgb(17, 17, 17)');
+      const color = await activeSeason.evaluate((el) => getComputedStyle(el).color);
+      expect(color).toBe('rgb(255, 255, 255)');
 
       const activeBox = await activeSeason.boundingBox();
       const inactiveBox = await inactiveSeason.boundingBox();

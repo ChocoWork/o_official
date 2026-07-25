@@ -132,7 +132,8 @@ for (const viewport of viewports) {
 
       // FREQ-226 でタブ名を「月次目標」から「月次記録」に変更
       await page.getByRole('tab', { name: '月次記録' }).click();
-      await expect(page.getByText('シーズン別 KPI 目標管理')).toBeVisible();
+      // FREQ-227 で内容をシーズン別目標管理表から月次記録の入力UIへ刷新
+      await expect(page.getByText('算出元データ', { exact: true })).toBeVisible();
     });
 
     test('横方向のページスクロールが発生しない', async ({ page }) => {

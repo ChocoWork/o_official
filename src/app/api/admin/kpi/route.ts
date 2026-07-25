@@ -225,6 +225,10 @@ function toKpiMetricsResponse(
   paidOrderCount: number;
   customerCount: number;
   repeatCustomerCount: number;
+  setOrderCount: number;
+  cancelledOrderCount: number;
+  soldItemCount: number;
+  publishedItemCount: number;
 } {
   const cvr = accumulator.allOrders === 0 ? 0 : (accumulator.paidOrders / accumulator.allOrders) * 100;
   const aov = accumulator.paidOrders === 0 ? 0 : accumulator.paidSales / accumulator.paidOrders;
@@ -266,6 +270,10 @@ function toKpiMetricsResponse(
     paidOrderCount: accumulator.paidOrders,
     customerCount,
     repeatCustomerCount,
+    setOrderCount: accumulator.setOrderCount,
+    cancelledOrderCount: accumulator.cancelledOrders,
+    soldItemCount: accumulator.soldItemIds.size,
+    publishedItemCount: publishedItemsCount,
   };
 }
 
