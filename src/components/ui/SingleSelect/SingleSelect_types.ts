@@ -4,6 +4,8 @@ import type { ComponentSize, SelectOption } from '@/components/ui/types';
 
 export type UISingleSelectVariant = 'native' | 'dropdown';
 export type UISingleSelectSize = ComponentSize | 'compact';
+export type UISingleSelectShape = 'square' | 'rounded';
+export type UISingleSelectAlign = 'left' | 'right';
 
 export interface SingleSelectProps
   extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'size'> {
@@ -14,6 +16,10 @@ export interface SingleSelectProps
   onValueChange?: (value: string) => void;
   /** demo-friendly size: compact/xs/sm/md/lg/xl default md */
   size?: UISingleSelectSize;
+  /** 角の形状。square（既定）/ rounded */
+  shape?: UISingleSelectShape;
+  /** dropdown: トリガー内の選択値の揃え。right（既定：シェブロン寄せ）/ left（左寄せ・シェブロンは右端） */
+  align?: UISingleSelectAlign;
   bordered?: boolean;
   /** dropdown: トリガーを全幅にしテキスト左・シェブロン右で配置（フォーム用）。既定 false（コンパクト右寄せ）*/
   block?: boolean;

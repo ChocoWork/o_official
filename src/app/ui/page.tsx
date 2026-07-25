@@ -356,6 +356,28 @@ export default function Page() {
                   className="text-xs tracking-widest mb-4 text-black/80"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 >
+                  OUTLINE
+                </p>
+                <Button variant="outline" className="w-full" size={buttonDemoSize}>
+                  OUTLINE BUTTON
+                </Button>
+              </div>
+              <div>
+                <p
+                  className="text-xs tracking-widest mb-4 text-black/80"
+                  style={{ fontFamily: "acumin-pro, sans-serif" }}
+                >
+                  SELECTED
+                </p>
+                <Button variant="outline" selected className="w-full" size={buttonDemoSize}>
+                  SELECTED BUTTON
+                </Button>
+              </div>
+              <div>
+                <p
+                  className="text-xs tracking-widest mb-4 text-black/80"
+                  style={{ fontFamily: "acumin-pro, sans-serif" }}
+                >
                   TEXT
                 </p>
                 <Button variant="text" className="w-full" size={buttonDemoSize}>

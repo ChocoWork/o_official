@@ -55,10 +55,16 @@
   padding-inline: var(--pad-y);
 }
 
+/* アイコンの一辺は √φ em。line-height を 1 に落として、字送り由来の高さが
+   この正方形をはみ出さないようにする（アイコン単体を直接子に置いても成立させる）。 */
 [data-ui-button][data-ui-button-icon-only="true"] > * {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: calc(var(--button-font-size) * var(--sqrt-phi));
   height: calc(var(--button-font-size) * var(--sqrt-phi));
   font-size: calc(var(--button-font-size) * var(--sqrt-phi));
+  line-height: 1;
 }
 
 [data-ui-button][data-ui-button-variant="primary"] {
@@ -89,6 +95,20 @@
   --button-disabled-bg: #f2f2f2;
   --button-disabled-color: #8c8c8c;
   --button-disabled-border-color: #d9d9d9;
+}
+
+/* secondary より一段静かな枠線ボタン。枠と文字を Graphite Grey 寄りに落とし、
+   ホバーでは塗りつぶさず黒枠・黒文字にコントラストだけ上げる。 */
+[data-ui-button][data-ui-button-variant="outline"] {
+  --button-bg: transparent;
+  --button-color: #474747;
+  --button-border-color: #d4d4d4;
+  --button-hover-bg: transparent;
+  --button-hover-color: #111111;
+  --button-hover-border-color: #111111;
+  --button-disabled-bg: transparent;
+  --button-disabled-color: #b4b4b4;
+  --button-disabled-border-color: #e8e8e8;
 }
 
 [data-ui-button][data-ui-button-variant="danger"] {
@@ -154,6 +174,17 @@
   box-shadow: none;
   font-size: 10px;
   letter-spacing: 0.05em;
+}
+
+/* トグルの選択状態。余白・角丸・字送りは variant のまま（＝黄金比計算のまま）で、
+   色だけを塗りつぶしに反転させる。全 variant の後に置いて上書きする。 */
+[data-ui-button][data-ui-button-selected="true"] {
+  --button-bg: #111111;
+  --button-color: #ffffff;
+  --button-border-color: #111111;
+  --button-hover-bg: #2a2a2a;
+  --button-hover-color: #ffffff;
+  --button-hover-border-color: #2a2a2a;
 }
 
 [data-ui-button-disabled="true"],

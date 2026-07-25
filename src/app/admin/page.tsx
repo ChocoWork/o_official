@@ -3,7 +3,8 @@
 
 import { Suspense, useMemo, useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
-import AdminTabs, { type TabType } from '@/components/AdminTabs';
+import { type TabType } from '@/components/AdminTabs';
+import AdminSideNav from '@/components/AdminSideNav';
 import { useLogin } from '@/contexts/LoginContext';
 import { clientFetch } from '@/lib/client-fetch';
 import KpiSection, { type AdminKpiData } from '@/components/KpiSection';
@@ -642,10 +643,15 @@ function AdminPageContent() {
   };
 
   return (
-    <div>
-      <div className="element-width">
-        <AdminTabs activeTab={activeTab} onTabChange={handleTabChange} tabs={visibleTabs} rightContent={tabRightContent} />
-        {renderContent()}
+    <div className="w-full min-w-0 md:-mx-5">
+      <div className="flex min-w-0 flex-col gap-6 md:flex-row md:gap-0">
+        <aside className="w-full min-w-0 md:w-56 md:shrink-0">
+          <AdminSideNav activeTab={activeTab} onTabChange={handleTabChange} tabs={visibleTabs} />
+        </aside>
+        <div className="min-w-0 flex-1 md:px-8">
+          {tabRightContent ? <div className="mb-6 flex justify-end">{tabRightContent}</div> : null}
+          {renderContent()}
+        </div>
       </div>
     </div>
   );

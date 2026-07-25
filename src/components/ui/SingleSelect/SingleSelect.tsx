@@ -19,6 +19,8 @@ export function SingleSelect({
   defaultValue,
   disabled,
   size = 'md',
+  shape = 'square',
+  align = 'right',
   bordered = true,
   block = false,
   multiline = false,
@@ -160,6 +162,8 @@ export function SingleSelect({
   const rootDataAttrs = {
     'data-ui-single-select': 'true',
     'data-ui-single-select-size': size,
+    'data-ui-single-select-shape': shape,
+    'data-ui-single-select-align': align,
     'data-ui-single-select-bordered': bordered ? 'true' : 'false',
     'data-ui-single-select-block': block ? 'true' : undefined,
     'data-ui-single-select-multiline': multiline ? 'true' : undefined,
@@ -191,6 +195,7 @@ export function SingleSelect({
             }}
             aria-haspopup="listbox"
             aria-expanded={open}
+            aria-label={props['aria-label']}
             disabled={disabled}
           >
             <span className="single-select__value">{selectedLabel}</span>
@@ -205,6 +210,7 @@ export function SingleSelect({
                   ref={dropdownRef}
                   className="single-select__menu"
                   data-ui-single-select-size={size}
+                  data-ui-single-select-shape={shape}
                   data-ui-size={size}
                   style={{
                     top: dropdownPos.top,

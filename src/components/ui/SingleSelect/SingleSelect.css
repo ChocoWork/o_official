@@ -34,11 +34,22 @@
     var(--ss-font-size) / (var(--phi) * var(--phi) * var(--phi))
   );
 
+  /* メニュー高さの上限＝font × φ⁶。オプション1件の高さ（2×pad-y + font×√φ
+     ＝ font×2.2438）のちょうど8件分にあたるため、9件目以降はスクロールになる。 */
+  --ss-menu-max-height: calc(
+    var(--ss-font-size) * var(--phi) * var(--phi) * var(--phi) * var(--phi) *
+      var(--phi) * var(--phi)
+  );
+
   /* オプション縦パディング＝pad-y（統一ルール）*/
   --ss-option-pad-y: var(--pad-y);
 
   /* 枠線（直値を排し φ³ から導出。最小 1px）*/
   --ss-border-width: 1px;
+
+  /* 角丸。既定は square（0）。shape="rounded" は Button の rounded と同じ
+     --radius-md（8px）を使い、隣に並ぶボタンと角を揃える。 */
+  --ss-radius: 0;
 
   /* ラベル字間（ラベル系で反復する tracking）*/
   --ss-tracking: 0.15em;
@@ -69,6 +80,12 @@
 /* --- ルートレイアウト（近接：ラベルと操作部を縦に密接配置）--- */
 [data-ui-single-select] {
   display: block;
+}
+
+/* --- 角の形状（Button / Dropdown と同方針：フィールドとメニューの角丸を切替）--- */
+[data-ui-single-select][data-ui-single-select-shape="rounded"],
+.single-select__menu[data-ui-single-select-shape="rounded"] {
+  --ss-radius: var(--radius-md);
 }
 
 [data-ui-single-select][data-ui-single-select-size="compact"],
@@ -114,7 +131,7 @@
   height: var(--ss-field-height);
   padding: var(--pad-y) var(--pad-x);
   border: var(--ss-border-width) solid var(--ss-border-color);
-  border-radius: 0;
+  border-radius: var(--ss-radius);
   background: var(--ss-bg);
   color: var(--ss-fg);
   font-size: var(--ss-field-size);
@@ -153,6 +170,12 @@
   width: fit-content;
   min-width: var(--ss-trigger-min-width, 0px);
   text-align: left;
+}
+
+/* align="left"：選択値を左端、シェブロンを右端へ両端そろえ（幅は fit-content のまま）。
+   既定の right はシェブロン側に寄せる従来の見た目を維持する。 */
+[data-ui-single-select-align="left"] .single-select__trigger {
+  justify-content: space-between;
 }
 
 /* --- block（フォーム用：全幅・テキスト左／シェブロン右で両端そろえ）--- */
@@ -255,7 +278,11 @@
   position: absolute;
   z-index: var(--lk-z-popover, 1000);
   margin-top: var(--ss-menu-gap);
+  max-height: var(--ss-menu-max-height);
+  overflow-x: hidden;
+  overflow-y: auto;
   border: var(--ss-border-width) solid var(--ss-border-color);
+  border-radius: var(--ss-radius);
   background: var(--ss-bg);
   box-shadow: var(--ss-menu-shadow);
   box-sizing: border-box;

@@ -1,0 +1,175 @@
+import { test, expect, Page } from '@playwright/test';
+
+// FREQ-219: KPI一覧の行をプルダウンと同じ19指標に
+const viewports = [
+  { name: 'mobile', width: 390, height: 844 },
+  { name: 'tablet', width: 768, height: 1024 },
+  { name: 'desktop', width: 1280, height: 900 },
+];
+
+const KPI_LABELS = [
+  'リーチ数',
+  '保存率',
+  'プロフィール遷移率',
+  'ストーリー視聴数',
+  'ストーリー到達率',
+  'リンククリック率',
+  'CVR',
+  '客単価（AOV）',
+  'セット購入率',
+  '売上',
+  '在庫消化率',
+  'CPA',
+  'ROAS',
+  'CPC',
+  'CPM',
+  'LTV',
+  'リピート率',
+  '返品率',
+  '離脱率',
+];
+
+function metric(period: string, sales: number, aov: number, cvr: number, orders: number, customers: number) {
+  return {
+    period,
+    salesAmount: sales,
+    formattedSales: `¥${sales.toLocaleString()}`,
+    cvr,
+    formattedCvr: `${cvr}%`,
+    aov,
+    formattedAov: `¥${aov.toLocaleString()}`,
+    setPurchaseRate: 12,
+    formattedSetPurchaseRate: '12%',
+    inventoryConsumptionRate: 68,
+    formattedInventoryConsumptionRate: '68%',
+    ltv: 112300,
+    formattedLtv: '¥112,300',
+    repeatRate: 30,
+    formattedRepeatRate: '30%',
+    returnRate: 5,
+    formattedReturnRate: '5%',
+    orderCount: orders,
+    paidOrderCount: orders,
+    customerCount: customers,
+    repeatCustomerCount: 10,
+  };
+}
+
+function months(seed: number) {
+  return ['1月', '2月', '3月'].map((m, i) =>
+    metric(m, 40000 + i * 30000 * seed, 20000 + i * 800, 0.9 + i * 0.3, 3 + i, i + seed),
+  );
+}
+
+async function mockAdminApis(page: Page): Promise<void> {
+  await page.route('**/api/auth/me', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        authenticated: true,
+        user: { id: 'admin-1', email: 'admin@example.com', role: 'admin', mfaVerified: true },
+      }),
+    });
+  });
+
+  await page.route('**/api/admin/kpi', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          targetYear: 2026,
+          monthlyYearOptions: [2025, 2026],
+          monthlyKpiByYear: [
+            { year: 2025, metrics: months(1) },
+            { year: 2026, metrics: months(2) },
+          ],
+          seasonalKpi: [metric('2026SS', 1240000, 24800, 1.6, 50, 3100)],
+        },
+      }),
+    });
+  });
+
+  await page.route('**/api/admin/kpi/targets', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          currentSeason: '2026SS',
+          seasons: ['2026SS'],
+          definitions: [{ key: 'cvr', label: 'CVR', definition: '', priority: '◎' }],
+          values: { cvr: { '2026SS': '3.0%' } },
+        },
+      }),
+    });
+  });
+}
+
+async function openTrendTab(page: Page) {
+  await page.goto('/admin');
+  await page.getByText('リーチ数', { exact: true }).waitFor();
+  await page.getByRole('tab', { name: '過去推移' }).click();
+}
+
+// KPI一覧の tbody（過去推移タブに表は1つだけ）
+function trendTableBody(page: Page) {
+  return page.locator('table tbody');
+}
+
+for (const viewport of viewports) {
+  test.describe(`FR-ADMIN-017 trend table all KPIs (${viewport.name})`, () => {
+    test.beforeEach(async ({ page }) => {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      await mockAdminApis(page);
+    });
+
+    test('行がプルダウンと同じ19指標になる', async ({ page }) => {
+      // FREQ-219-AC-01
+      await openTrendTab(page);
+
+      const rows = trendTableBody(page).locator('tr');
+      await expect(rows).toHaveCount(KPI_LABELS.length);
+
+      // 並び順がプルダウンの選択肢と一致する
+      const labels = await rows.evaluateAll((elements) =>
+        elements.map((el) => el.querySelector('td')?.textContent?.replace('参考', '').trim() ?? ''),
+      );
+      expect(labels).toEqual(KPI_LABELS);
+
+      // 旧行は消えている
+      await expect(page.getByRole('cell', { name: '注文数' })).toHaveCount(0);
+      await expect(page.getByRole('cell', { name: '新規ユーザー数' })).toHaveCount(0);
+    });
+
+    test('参考値の行にバッジが付き、値が指標ごとの単位で表示される', async ({ page }) => {
+      // FREQ-219-AC-02
+      await openTrendTab(page);
+
+      const reachRow = trendTableBody(page).locator('tr').filter({ hasText: 'リーチ数' });
+      const salesRow = trendTableBody(page).locator('tr').filter({ hasText: '売上' });
+
+      await expect(reachRow.getByText('参考', { exact: true })).toBeVisible();
+      await expect(salesRow.getByText('参考', { exact: true })).toHaveCount(0);
+
+      await expect(salesRow.locator('td').nth(1)).toHaveText(/^¥[\d,]+$/);
+
+      const cvrRow = trendTableBody(page).locator('tr').filter({ hasText: 'CVR' });
+      await expect(cvrRow.locator('td').nth(1)).toHaveText(/%$/);
+    });
+
+    test('成長率(CAGR)列が維持され、横スクロールしない', async ({ page }) => {
+      // FREQ-219-AC-03
+      await openTrendTab(page);
+
+      await expect(page.getByRole('columnheader', { name: '成長率(CAGR)' })).toBeVisible();
+
+      const hasHorizontalOverflow = await page.evaluate(() => {
+        const doc = document.documentElement;
+        return doc.scrollWidth > doc.clientWidth + 1;
+      });
+      expect(hasHorizontalOverflow).toBe(false);
+    });
+  });
+}

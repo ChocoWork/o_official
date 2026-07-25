@@ -9,6 +9,7 @@ export function Button({
   size = "md",
   shape = "square",
   iconOnly,
+  selected,
   className,
   type = "button",
   disabled,
@@ -24,6 +25,7 @@ export function Button({
     "data-ui-size": uiSize,
     "data-ui-button-shape": shape,
     "data-ui-button-icon-only": iconOnly ? "true" : undefined,
+    "data-ui-button-selected": selected ? "true" : undefined,
     "data-ui-button-disabled": disabled ? "true" : undefined,
   } as const;
 
@@ -52,6 +54,7 @@ export function Button({
 
   return (
     <button
+      aria-pressed={selected}
       {...props}
       type={type}
       disabled={disabled}
