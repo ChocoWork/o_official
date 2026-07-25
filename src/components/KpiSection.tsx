@@ -69,7 +69,7 @@ type KpiProgressDirection = 'atLeast' | 'atMost';
 const KPI_SUB_TABS = [
 	{ key: 'progress', label: '目標 & 進捗' },
 	{ key: 'trend', label: '過去推移' },
-	{ key: 'targets', label: '月次目標' },
+	{ key: 'targets', label: '月次記録' },
 	{ key: 'cost', label: 'コスト & 利益' },
 ] as const;
 
@@ -354,6 +354,8 @@ type ResolvedKpiCard = {
 	unitLabel: string;
 	icon: string;
 	description: string;
+	// 月次記録タブの「定義」列（総売上・売上÷注文数 等）。ツールチップに併記する。
+	definition: string;
 	valueText: string;
 	targetText: string;
 	percentText: string;
@@ -493,12 +495,15 @@ function KpiCard({
 			<div className="mb-3 flex items-center gap-2.5">
 				<span
 					role="img"
-					aria-label={`${card.label}：${card.description}`}
+					aria-label={`${card.label}：${card.description}${card.definition ? `（定義: ${card.definition}）` : ''}`}
 					className="group relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#ededed] text-[#474747]"
 				>
 					<i className={`${card.icon} text-base`} aria-hidden="true" />
 					<span className="pointer-events-none absolute bottom-full left-0 z-30 mb-2 hidden w-max max-w-[220px] rounded-md bg-[#111111] px-2.5 py-1.5 text-left font-acumin text-[11px] font-normal leading-snug text-white shadow-md group-hover:block">
 						{card.description}
+						{card.definition ? (
+							<span className="mt-1 block text-white/70">定義: {card.definition}</span>
+						) : null}
 					</span>
 				</span>
 				<div className="min-w-0">
@@ -891,9 +896,12 @@ export default function KpiSection({ data, isLoading, errorMessage, onRetry }: K
 
 	const kpiCards = useMemo<ResolvedKpiCard[]>(() => {
 		const currentSeason = targetData?.currentSeason ?? '';
+		// 月次記録タブの定義（kpi_key→定義文）。カードのツールチップに併記するため参照する。
+		const definitionByKey = new Map((targetData?.definitions ?? []).map((entry) => [entry.key, entry.definition]));
 
 		return KPI_CARD_DEFINITIONS.map((definition) => {
 			const rawTarget = targetData?.values[definition.targetKey]?.[currentSeason] ?? '';
+			const targetDefinition = definitionByKey.get(definition.targetKey) ?? '';
 
 			if (definition.connectedKey) {
 				const accessor = CONNECTED_KPI_METRICS[definition.connectedKey];
@@ -911,6 +919,7 @@ export default function KpiSection({ data, isLoading, errorMessage, onRetry }: K
 					unitLabel: definition.unitLabel,
 					icon: definition.icon,
 					description: KPI_DESCRIPTIONS[definition.key] ?? '',
+					definition: targetDefinition,
 					valueText: metric ? accessor.formatted(metric) : '—',
 					targetText: rawTarget || '—',
 					percentText: percent === null ? '—' : `${percent.toFixed(1)}%`,
@@ -928,6 +937,7 @@ export default function KpiSection({ data, isLoading, errorMessage, onRetry }: K
 				unitLabel: definition.unitLabel,
 				icon: definition.icon,
 				description: KPI_DESCRIPTIONS[definition.key] ?? '',
+				definition: targetDefinition,
 				valueText: sample.valueText,
 				targetText: rawTarget || sample.targetText,
 				percentText: `${sample.percent.toFixed(1)}%`,

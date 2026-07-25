@@ -121,7 +121,7 @@ for (const viewport of viewports) {
       await expect(page.getByText('参考', { exact: true }).first()).toBeVisible();
     });
 
-    test('サブタブ切替で過去推移・月次目標の表が表示される', async ({ page }) => {
+    test('サブタブ切替で過去推移・月次記録の表が表示される', async ({ page }) => {
       // FREQ-202-AC-03
       await page.goto('/admin');
       await expect(page.getByText('リーチ数', { exact: true })).toBeVisible();
@@ -130,7 +130,8 @@ for (const viewport of viewports) {
       // FREQ-215 で見出しは「主要KPI推移」から「{選択KPI}推移」（既定=売上）に変更
       await expect(page.getByText('売上推移', { exact: true })).toBeVisible();
 
-      await page.getByRole('tab', { name: '月次目標' }).click();
+      // FREQ-226 でタブ名を「月次目標」から「月次記録」に変更
+      await page.getByRole('tab', { name: '月次記録' }).click();
       await expect(page.getByText('シーズン別 KPI 目標管理')).toBeVisible();
     });
 
