@@ -584,7 +584,11 @@ export default function CostProfitSection({
       !Number.isFinite(amount) ||
       amount <= 0
     ) {
-      setFormMessage("日付・支出概要・1円以上の金額を入力してください。");
+      const summaryLabel =
+        form.entryType === "income" ? "収入概要" : "支出概要";
+      setFormMessage(
+        `日付・${summaryLabel}・1円以上の金額を入力してください。`,
+      );
       return;
     }
     const typeLabel = form.entryType === "income" ? "収入" : "支出";
@@ -613,7 +617,7 @@ export default function CostProfitSection({
         memo: "",
       }));
       setFormMessage(
-        `${typeLabel}をSupabaseへ保存し、仕訳帳と財務サマリーへ反映しました。`,
+        `${typeLabel}を保存し、仕訳帳と財務サマリーへ反映しました。`,
       );
     } catch (error) {
       setFormMessage(
@@ -626,7 +630,8 @@ export default function CostProfitSection({
     }
   };
 
-  // 種別（支出/収入）切替。勘定科目・支出概要はその種別の先頭にリセット。
+  // 種別（支出/収入）切替。勘定科目・概要はその種別の先頭にリセットし、
+  // テンプレートは種別ごとに別管理のため選択状態も解除する。
   const handleEntryTypeChange = (entryType: EntryType) => {
     setForm((current) => ({
       ...current,
@@ -635,6 +640,9 @@ export default function CostProfitSection({
       item: shiyouOptionsFor(entryType)[0],
       paymentMethod: paymentOptionsFor(entryType)[0],
     }));
+    setSelectedTemplateName("");
+    setIsSavingTemplate(false);
+    setNewTemplateName("");
   };
 
   const handleAddPartner = async () => {
@@ -817,9 +825,7 @@ export default function CostProfitSection({
         product: selectedProduct,
       });
       await loadFinanceData();
-      setDataMessage(
-        `${selectedProduct.name}の原価・売価をSupabaseへ保存しました。`,
-      );
+      setDataMessage(`${selectedProduct.name}の原価・売価を保存しました。`);
     } catch (error) {
       setDataMessage(
         error instanceof Error
@@ -836,7 +842,7 @@ export default function CostProfitSection({
       setIsSaving(true);
       setDataMessage(null);
       await postMutation({ operation: "plan.update", seasonKey, plan });
-      setDataMessage("財務前提をSupabaseへ保存しました。");
+      setDataMessage("財務前提を保存しました。");
     } catch (error) {
       setDataMessage(
         error instanceof Error
@@ -1129,6 +1135,7 @@ export default function CostProfitSection({
   const renderEntryTable = (
     title: string,
     rows: Expense[],
+    summaryHeading: string,
     paymentHeading: string,
   ) => (
     <div className={`${panelClassName} min-w-0`}>
@@ -1147,7 +1154,7 @@ export default function CostProfitSection({
               {[
                 "日付",
                 "勘定科目",
-                "支出概要",
+                summaryHeading,
                 "取引先",
                 "金額",
                 paymentHeading,
@@ -1209,6 +1216,11 @@ export default function CostProfitSection({
   const isIncomeForm = form.entryType === "income";
   const entryTypeLabel = isIncomeForm ? "収入" : "支出";
   const paymentFieldLabel = isIncomeForm ? "入金方法" : "出金方法";
+  const summaryFieldLabel = isIncomeForm ? "収入概要" : "支出概要";
+  // 種別ごとに別管理するテンプレート。
+  const visibleTemplates = templates.filter(
+    (template) => template.entryType === form.entryType,
+  );
 
   const expensesView = (
     <div className="space-y-5">
@@ -1222,8 +1234,8 @@ export default function CostProfitSection({
       </div>
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-5">
-          {renderEntryTable("支出一覧", expenses, "出金方法")}
-          {renderEntryTable("収入一覧", incomes, "入金方法")}
+          {renderEntryTable("支出一覧", expenses, "支出概要", "出金方法")}
+          {renderEntryTable("収入一覧", incomes, "収入概要", "入金方法")}
         </div>
 
         <aside className={`${panelClassName} h-fit`}>
@@ -1269,7 +1281,7 @@ export default function CostProfitSection({
                 placeholder="（テンプレートを選択）"
                 options={[
                   { value: "", label: "（テンプレートを選択）" },
-                  ...templates.map((template) => ({
+                  ...visibleTemplates.map((template) => ({
                     value: template.name,
                     label: template.name,
                   })),
@@ -1350,13 +1362,13 @@ export default function CostProfitSection({
             </label>
             <div className="block">
               <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
-                支出概要 <span className="text-red-700">*</span>
+                {summaryFieldLabel} <span className="text-red-700">*</span>
               </span>
               <SingleSelect
                 variant="dropdown"
                 block
                 size="md"
-                aria-label="支出概要"
+                aria-label={summaryFieldLabel}
                 className="font-acumin"
                 options={shiyouOptionsFor(form.entryType).map((option) => ({
                   value: option,
@@ -1520,7 +1532,7 @@ export default function CostProfitSection({
               onClick={() => void handleAddExpense()}
               disabled={isSaving}
             >
-              {isSaving ? "保存中..." : `${entryTypeLabel}をSupabaseへ保存`}
+              {isSaving ? "保存中..." : "保存"}
             </Button>
           </div>
         </aside>
@@ -1880,7 +1892,7 @@ export default function CostProfitSection({
               onClick={() => void handleSaveProduct()}
               disabled={isSaving}
             >
-              {isSaving ? "保存中..." : "商品原価をSupabaseへ保存"}
+              {isSaving ? "保存中..." : "保存"}
             </Button>
           </div>
         </aside>

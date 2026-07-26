@@ -193,8 +193,9 @@ describe('CostProfitSection', () => {
 		// 種別トグルを「収入」に。
 		fireEvent.click(screen.getByRole('button', { name: '収入', pressed: false }));
 
-		// 収入用の勘定科目・支出概要が選べる。
-		fireEvent.click(screen.getByRole('button', { name: '支出概要' }));
+		// 収入時は「収入概要」ラベルになり、収入用の選択肢が選べる。
+		expect(screen.getByRole('button', { name: '収入概要' })).toBeInTheDocument();
+		fireEvent.click(screen.getByRole('button', { name: '収入概要' }));
 		fireEvent.click(screen.getByRole('option', { name: 'オンライン販売' }));
 		fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '120000' } });
 		fireEvent.click(screen.getByRole('button', { name: '収入をSupabaseへ保存' }));
@@ -209,5 +210,33 @@ describe('CostProfitSection', () => {
 
 		// 収入一覧の件数見出しが1件になる。
 		expect(await screen.findByText('収入一覧（1件）')).toBeInTheDocument();
+	});
+
+	it('テンプレートは支出・収入で別管理される', async () => {
+		render(<CostProfitSection seasonKey="2026SS" seasonLabel="2026 S/S" />);
+		await screen.findByText('Supabaseと同期済み');
+
+		fireEvent.click(screen.getByRole('tab', { name: '収支入力' }));
+
+		// 支出のテンプレートを1件作る。
+		fireEvent.click(screen.getByRole('button', { name: '支出概要' }));
+		fireEvent.click(screen.getByRole('option', { name: '縫製外注' }));
+		fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '50000' } });
+		fireEvent.click(screen.getByRole('button', { name: 'テンプレート' }));
+		fireEvent.click(screen.getByRole('option', { name: '＋ 現在の入力を保存' }));
+		fireEvent.change(screen.getByPlaceholderText('テンプレート名'), { target: { value: '縫製外注（支出）' } });
+		fireEvent.click(screen.getByRole('button', { name: '保存' }));
+		expect(await screen.findByText('テンプレートを保存しました。')).toBeInTheDocument();
+
+		// 支出テンプレートは支出のプルダウンに出る。
+		fireEvent.click(screen.getByRole('button', { name: 'テンプレート' }));
+		expect(await screen.findByRole('option', { name: '縫製外注（支出）' })).toBeInTheDocument();
+		// ドロップダウンを閉じる。
+		fireEvent.click(screen.getByRole('option', { name: '（テンプレートを選択）' }));
+
+		// 収入へ切替すると、支出テンプレートは選択肢に出ない。
+		fireEvent.click(screen.getByRole('button', { name: '収入', pressed: false }));
+		fireEvent.click(screen.getByRole('button', { name: 'テンプレート' }));
+		expect(screen.queryByRole('option', { name: '縫製外注（支出）' })).not.toBeInTheDocument();
 	});
 });

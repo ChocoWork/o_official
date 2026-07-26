@@ -84,11 +84,14 @@ async function mockAdminApis(page: Page): Promise<void> {
   await page.route('**/api/admin/kpi/cost-profit**', (route) => {
     const req = route.request();
     if (req.method() === 'POST') {
-      const body = req.postDataJSON() as { operation: string; expense?: Record<string, unknown> };
+      const body = req.postDataJSON() as { operation: string; expense?: Record<string, unknown>; template?: Record<string, unknown> };
       if (body.operation === 'expense.create' && body.expense) {
         const entry = { id: (nextId += 1), ...body.expense };
         if (body.expense.entryType === 'income') finance.incomes.unshift(entry);
         else finance.expenses.unshift(entry);
+      }
+      if (body.operation === 'template.create' && body.template) {
+        finance.templates = [...finance.templates.filter((t) => t.name !== body.template!.name), body.template];
       }
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true }) });
       return;
@@ -130,8 +133,9 @@ for (const viewport of viewports) {
       await openIncomeExpenseTab(page);
 
       await page.getByRole('button', { name: '収入', exact: true }).click();
-      // 収入用の勘定科目・支出概要が選べる。
-      await page.getByRole('button', { name: '支出概要' }).click();
+      // 収入時は「収入概要」ラベルになり、収入用の選択肢が選べる。
+      await expect(page.getByRole('button', { name: '収入概要' })).toBeVisible();
+      await page.getByRole('button', { name: '収入概要' }).click();
       await page.getByRole('option', { name: 'オンライン販売' }).click();
       await page.getByPlaceholder('0').fill('120000');
       await page.getByRole('button', { name: '収入をSupabaseへ保存' }).click();
@@ -142,6 +146,32 @@ for (const viewport of viewports) {
       // 財務サマリーの売上に収入合計が反映される。
       await page.getByRole('tab', { name: '財務サマリー' }).click();
       await expect(page.getByText('¥120,000').first()).toBeVisible();
+    });
+
+    test('テンプレートは支出・収入で別管理される', async ({ page }) => {
+      // FREQ-236-AC-02
+      await mockAdminApis(page);
+      await openIncomeExpenseTab(page);
+
+      // 支出でテンプレートを1件作る。
+      await page.getByRole('button', { name: '支出概要' }).click();
+      await page.getByRole('option', { name: '縫製外注' }).click();
+      await page.getByPlaceholder('0').fill('50000');
+      await page.getByRole('button', { name: 'テンプレート' }).click();
+      await page.getByRole('option', { name: '＋ 現在の入力を保存' }).click();
+      await page.getByPlaceholder('テンプレート名').fill('縫製外注（支出）');
+      await page.getByRole('button', { name: '保存', exact: true }).click();
+      await expect(page.getByText('テンプレートを保存しました。')).toBeVisible();
+
+      // 支出のプルダウンには出る。
+      await page.getByRole('button', { name: 'テンプレート' }).click();
+      await expect(page.getByRole('option', { name: '縫製外注（支出）' })).toBeVisible();
+      await page.getByRole('option', { name: '（テンプレートを選択）' }).click();
+
+      // 収入へ切り替えると出ない。
+      await page.getByRole('button', { name: '収入', exact: true }).click();
+      await page.getByRole('button', { name: 'テンプレート' }).click();
+      await expect(page.getByRole('option', { name: '縫製外注（支出）' })).toHaveCount(0);
     });
 
     test('横方向のページスクロールが発生しない', async ({ page }) => {
