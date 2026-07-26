@@ -4,26 +4,156 @@ import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
 import { TabSegmentControl } from "@/components/ui/TabSegmentControl/TabSegmentControl";
 import { clientFetch } from "@/lib/client-fetch";
 import {
+  ACCOUNTS,
+  accountByCode,
+  accountByName,
   expenseAccounts,
   incomeAccounts,
+  type AccountType,
   type BusinessType,
 } from "@/lib/finance/accounts";
+import {
+  buildCashFlow,
+  CASH_FLOW_CATEGORY_LABELS,
+  type CashFlowCategory,
+} from "@/lib/finance/cash-flow";
+import {
+  buildCumulativeSummary,
+  type CumulativeEntry,
+} from "@/lib/finance/cumulative";
+import {
+  DEPRECIATION_METHOD_LABELS,
+  depreciationSchedule,
+  straightLineRate,
+  type DepreciationMethod,
+  type FixedAsset,
+} from "@/lib/finance/depreciation";
+import {
+  currentSeasonKey,
+  formatSeasonLabel,
+  seasonOptionsDescending,
+} from "@/lib/kpi/monthly-metrics";
+import { fiscalYearOf } from "@/lib/finance/fiscal-year";
+import {
+  buildDepreciationEntries,
+  buildGeneralLedger,
+  buildJournal,
+  buildTrialBalance,
+  type EntryType,
+  type FinanceEntry,
+} from "@/lib/finance/journal";
+import {
+  buildBalanceSheet,
+  buildProfitAndLoss,
+} from "@/lib/finance/statements";
+import {
+  BREAKDOWN_ACCOUNT_CODES,
+  buildBalanceSheetComparison,
+  buildBlueReturnDeduction,
+  buildMonthlySummary,
+  buildPartnerBreakdown,
+} from "@/lib/finance/blue-return";
+import {
+  buildAllowanceEntries,
+  buildClosingBalances,
+  buildInventoryEntries,
+  EMPTY_YEAR_END_ADJUSTMENT,
+  verifyOpeningBalances,
+  type YearEndAdjustment,
+} from "@/lib/finance/year-end";
+import {
+  activeConditionCount,
+  EMPTY_ENTRY_FILTER,
+  filterEntries,
+  isFilterActive,
+  type EntryFilter,
+} from "@/lib/finance/entry-filter";
 
 type CostProfitTab = "summary" | "expenses" | "journal" | "products" | "tax";
 
-type EntryType = "expense" | "income";
+// 帳簿タブ内のサブビュー。主要簿（仕訳帳・総勘定元帳）＋補助簿＋検証用の試算表。
+type LedgerTab = "journal" | "general" | "trial" | "assets" | "closing";
 
-type Expense = {
-  id: number;
-  entryType: EntryType;
-  date: string;
-  category: string;
-  item: string;
-  partner: string;
-  amount: number;
-  paymentMethod: string;
-  memo: string;
+const LEDGER_TABS: Array<{ key: LedgerTab; label: string }> = [
+  { key: "journal", label: "仕訳帳" },
+  { key: "general", label: "総勘定元帳" },
+  { key: "assets", label: "固定資産台帳" },
+  { key: "trial", label: "合計残高試算表" },
+  { key: "closing", label: "決算" },
+];
+
+// 固定資産に使う勘定科目（有形・無形固定資産）。
+const FIXED_ASSET_ACCOUNT_SECTIONS = [
+  "有形固定資産",
+  "無形固定資産",
+] as const;
+
+const EMPTY_ASSET_FORM = {
+  name: "",
+  account: "工具器具備品",
+  acquiredOn: new Date().toLocaleDateString("sv-SE"),
+  acquisitionCost: "",
+  method: "straightLine" as DepreciationMethod,
+  usefulLife: "6",
+  businessUseRatio: "100",
+  disposedOn: "",
 };
+
+// 税務レポート内のページ。青色申告決算書（一般用）の様式に対応させる。
+type TaxPage = "page1" | "page2" | "page3" | "page4";
+
+const BLUE_RETURN_PAGES: Array<{ key: TaxPage; label: string }> = [
+  { key: "page1", label: "1P 損益計算書" },
+  { key: "page2", label: "2P 月別・内訳" },
+  { key: "page3", label: "3P 減価償却" },
+  { key: "page4", label: "4P 貸借対照表" },
+];
+
+const REVISION_OPERATION_LABELS: Record<EntryRevision["operation"], string> = {
+  insert: "登録",
+  update: "訂正",
+  delete: "削除",
+};
+
+const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
+  asset: "資産",
+  liability: "負債",
+  equity: "純資産",
+  revenue: "収益",
+  expense: "費用",
+};
+
+
+/** 証憑（電子取引データ）。ファイル本体は非公開バケットにある。 */
+type Receipt = {
+  id: number;
+  storagePath: string;
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+  createdAt: string;
+};
+
+/** 訂正削除履歴の1件（電子帳簿保存法の真実性の要件）。 */
+type RevisionSnapshot = {
+  date: string | null;
+  category: string | null;
+  item: string | null;
+  partner: string | null;
+  amount: string | null;
+};
+
+type EntryRevision = {
+  id: number;
+  entryId: number;
+  operation: "insert" | "update" | "delete";
+  changedAt: string;
+  before: RevisionSnapshot;
+  after: RevisionSnapshot;
+};
+
+// 取引1件。仕訳エンジン（src/lib/finance/journal.ts）と同じ形＋証憑。
+type Expense = FinanceEntry & { receipts?: Receipt[] };
 
 type ExpenseTemplate = {
   name: string;
@@ -64,13 +194,25 @@ type FinancePlan = {
 
 type CostProfitResponse = {
   data: {
-    seasonKey: string;
+    fiscalYear: number;
+    seasonKey: string | null;
     businessType: BusinessType;
     plan: FinancePlan;
     expenses: Expense[];
     incomes: Expense[];
     products: Product[];
     partners: string[];
+    fixedAssets: FixedAsset[];
+    closing: {
+      closingInventoryGoods: number;
+      closingInventoryMaterials: number;
+      allowanceForDoubtful: number;
+      closingBalances: Record<string, number>;
+      closedAt: string | null;
+    };
+    previousClosingBalances: Record<string, number> | null;
+    revisions: EntryRevision[];
+    cumulativeEntries: CumulativeEntry[];
     templates: ExpenseTemplate[];
   };
 };
@@ -157,6 +299,22 @@ const EXPENSE_PAYMENT_OPTIONS = [
   "商品券",
   "仮受消費税",
 ];
+
+// 取引フォームの初期値。新規登録と訂正の取消でリセットに使う。
+const emptyEntryForm = {
+  entryType: "expense" as EntryType,
+  date: new Date().toLocaleDateString("sv-SE"),
+  // 勘定科目は選択肢が多いため既定値を置かず、明示的に選ばせる。
+  category: "",
+  item: SHIYOU_OPTIONS[0],
+  partner: "",
+  amount: "",
+  paymentMethod: EXPENSE_PAYMENT_OPTIONS[0],
+  memo: "",
+  // コレクション別分析用の任意タグ（空文字＝未設定）。会計期間には影響しない。
+  seasonTag: "",
+};
+
 // 勘定科目の選択肢。種別（出金/入金）と事業形態（個人/法人）の両方で絞り込む。
 // ラベルは決算書区分を前置きして、長いリストでも探しやすくする。
 function accountOptionsFor(
@@ -203,13 +361,6 @@ const panelClassName = "border border-[#d4d4d4] bg-white p-4 sm:p-5";
 
 function sumProductUnitCost(product: Product): number {
   return Object.values(product.costs).reduce((sum, value) => sum + value, 0);
-}
-
-function paymentAccount(paymentMethod: string): string {
-  if (paymentMethod === "現金" || paymentMethod === "交通系IC") return "現金";
-  if (paymentMethod === "口座振替" || paymentMethod === "銀行振込")
-    return "普通預金";
-  return "未払金";
 }
 
 function exportCsv(filename: string, rows: Array<Array<string | number>>) {
@@ -310,17 +461,53 @@ function EmptyIcon({ icon }: { icon: string }) {
 }
 
 export default function CostProfitSection({
-  seasonKey,
-  seasonLabel,
+  fiscalYear,
+  fiscalYearLabel,
 }: {
-  seasonKey: string;
-  seasonLabel: string;
+  fiscalYear: number;
+  fiscalYearLabel: string;
 }) {
   const [activeTab, setActiveTab] = useState<CostProfitTab>("summary");
+  const [ledgerTab, setLedgerTab] = useState<LedgerTab>("journal");
+  const [taxPage, setTaxPage] = useState<TaxPage>("page1");
+  // e-Tax申告（または優良な電子帳簿保存）の有無で青色申告特別控除の上限が変わる。
+  const [usesEtax, setUsesEtax] = useState(true);
+  // 取引管理の検索条件（電子帳簿保存法の検索要件）。
+  const [filter, setFilter] = useState<EntryFilter>(EMPTY_ENTRY_FILTER);
+  // 総勘定元帳で表示中の科目コード（未選択なら残高のある先頭科目）。
+  const [ledgerAccountCode, setLedgerAccountCode] = useState("");
+  // 商品原価タブ専用のシーズン軸。会計期間（暦年）とは独立して切り替える。
+  const seasonOptions = useMemo(
+    () => seasonOptionsDescending(currentSeasonKey()),
+    [],
+  );
+  const [seasonKey, setSeasonKey] = useState(
+    () => seasonOptions[0]?.key ?? currentSeasonKey(),
+  );
+  const seasonLabel = formatSeasonLabel(seasonKey);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [incomes, setIncomes] = useState<Expense[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [partners, setPartners] = useState<string[]>([]);
+  const [fixedAssets, setFixedAssets] = useState<FixedAsset[]>([]);
+  // 決算整理の入力値と締め状態。前年度のスナップショットが当年度の期首残高になる。
+  const [adjustment, setAdjustment] = useState<YearEndAdjustment>(
+    EMPTY_YEAR_END_ADJUSTMENT,
+  );
+  const [closedAt, setClosedAt] = useState<string | null>(null);
+  const [previousClosingBalances, setPreviousClosingBalances] = useState<
+    Record<string, number> | null
+  >(null);
+  const [closingMessage, setClosingMessage] = useState<string | null>(null);
+  // 訂正削除履歴（電子帳簿保存法の真実性の要件）。
+  const [revisions, setRevisions] = useState<EntryRevision[]>([]);
+  // 開業以来累計の集計元（当年度末までの全取引の最小データ）。
+  const [cumulativeEntries, setCumulativeEntries] = useState<CumulativeEntry[]>(
+    [],
+  );
+  // 証憑の添付中の取引ID・メッセージ。
+  const [uploadingEntryId, setUploadingEntryId] = useState<number | null>(null);
+  const [receiptMessage, setReceiptMessage] = useState<string | null>(null);
   const [templates, setTemplates] = useState<ExpenseTemplate[]>([]);
   const [plan, setPlan] = useState<FinancePlan>(EMPTY_PLAN);
   const [businessType, setBusinessType] =
@@ -331,18 +518,13 @@ export default function CostProfitSection({
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [dataMessage, setDataMessage] = useState<string | null>(null);
-  const [form, setForm] = useState({
-    entryType: "expense" as EntryType,
-    date: new Date().toLocaleDateString("sv-SE"),
-    // 勘定科目は選択肢が多いため既定値を置かず、明示的に選ばせる。
-    category: "",
-    item: SHIYOU_OPTIONS[0],
-    partner: "",
-    amount: "",
-    paymentMethod: EXPENSE_PAYMENT_OPTIONS[0],
-    memo: "",
-  });
+  const [form, setForm] = useState(emptyEntryForm);
   const [formMessage, setFormMessage] = useState<string | null>(null);
+  // 訂正中の取引ID。null なら新規登録モード。
+  const [editingEntryId, setEditingEntryId] = useState<number | null>(null);
+  // 固定資産の登録フォーム
+  const [assetForm, setAssetForm] = useState(EMPTY_ASSET_FORM);
+  const [assetMessage, setAssetMessage] = useState<string | null>(null);
   // 取引先の新規登録用の一時状態
   const [isAddingPartner, setIsAddingPartner] = useState(false);
   const [newPartnerName, setNewPartnerName] = useState("");
@@ -355,8 +537,9 @@ export default function CostProfitSection({
     try {
       setIsDataLoading(true);
       setDataMessage(null);
+      // 会計データは年度で、商品原価だけシーズンで取得する。
       const response = await clientFetch(
-        `/api/admin/kpi/cost-profit?season=${encodeURIComponent(seasonKey)}`,
+        `/api/admin/kpi/cost-profit?year=${fiscalYear}&season=${encodeURIComponent(seasonKey)}`,
         {
           cache: "no-store",
         },
@@ -379,6 +562,21 @@ export default function CostProfitSection({
       setIncomes(payload.data.incomes ?? []);
       setProducts(payload.data.products);
       setPartners(payload.data.partners ?? []);
+      setFixedAssets(payload.data.fixedAssets ?? []);
+      const loadedClosing = payload.data.closing;
+      setAdjustment(
+        loadedClosing
+          ? {
+              closingInventoryGoods: loadedClosing.closingInventoryGoods,
+              closingInventoryMaterials: loadedClosing.closingInventoryMaterials,
+              allowanceForDoubtful: loadedClosing.allowanceForDoubtful,
+            }
+          : EMPTY_YEAR_END_ADJUSTMENT,
+      );
+      setClosedAt(loadedClosing?.closedAt ?? null);
+      setPreviousClosingBalances(payload.data.previousClosingBalances ?? null);
+      setRevisions(payload.data.revisions ?? []);
+      setCumulativeEntries(payload.data.cumulativeEntries ?? []);
       setTemplates(payload.data.templates ?? []);
       setSelectedProductId(
         payload.data.products[0]?.id ?? `${seasonKey}-ITEM-001`,
@@ -391,6 +589,12 @@ export default function CostProfitSection({
       setIncomes([]);
       setProducts([]);
       setPartners([]);
+      setFixedAssets([]);
+      setAdjustment(EMPTY_YEAR_END_ADJUSTMENT);
+      setClosedAt(null);
+      setPreviousClosingBalances(null);
+      setRevisions([]);
+      setCumulativeEntries([]);
       setTemplates([]);
       setSelectedProductId(`${seasonKey}-ITEM-001`);
       setDataMessage(
@@ -401,7 +605,7 @@ export default function CostProfitSection({
     } finally {
       setIsDataLoading(false);
     }
-  }, [seasonKey]);
+  }, [fiscalYear, seasonKey]);
 
   useEffect(() => {
     void loadFinanceData();
@@ -432,58 +636,29 @@ export default function CostProfitSection({
     }
   }, []);
 
-  // 収入登録があればその合計を売上高として採用し、無ければ財務前提の手入力値を使う。
-  const incomeTotal = useMemo(
-    () => incomes.reduce((sum, income) => sum + income.amount, 0),
-    [incomes],
-  );
-  const revenue = incomes.length > 0 ? incomeTotal : plan.salesRevenue;
-
-  const accounting = useMemo(() => {
-    const productCost = products.reduce(
-      (sum, product) =>
-        sum + sumProductUnitCost(product) * product.plannedQuantity,
-      0,
+  // 財務3表はすべて仕訳の実残高から導出する（架空の係数は使わない）。
+  // 期首残高は「前年度の決算スナップショット」が最優先。無ければ手入力の期首残高を使う。
+  // これで 翌年期首BS = 当年期末BS が保たれる。
+  const openingBalances = useMemo(() => {
+    if (previousClosingBalances) {
+      return new Map<string, number>(
+        Object.entries(previousClosingBalances).filter(
+          ([, amount]) => amount !== 0,
+        ),
+      );
+    }
+    return new Map<string, number>(
+      (
+        [
+          ["1010", plan.openingCash],
+          ["1120", plan.accountsReceivable],
+          ["1535", plan.fixedAssets],
+          ["2020", plan.accountsPayable],
+          ["2910", plan.openingCapital],
+        ] as Array<[string, number]>
+      ).filter(([, amount]) => amount > 0),
     );
-    const operatingExpenses = expenses.reduce(
-      (sum, expense) => sum + expense.amount,
-      0,
-    );
-    const grossProfit = revenue - productCost;
-    const operatingProfit = grossProfit - operatingExpenses;
-    const taxEstimate = Math.max(0, Math.round(operatingProfit * 0.3));
-    const netIncome = operatingProfit - taxEstimate;
-    const inventory = Math.round(productCost * 0.5);
-    const operatingCashFlow =
-      netIncome + inventory + Math.round(productCost * 0.15);
-    const investingCashFlow = -plan.fixedAssets;
-    const financingCashFlow = 0;
-    const endingCash =
-      plan.openingCash +
-      operatingCashFlow +
-      investingCashFlow +
-      financingCashFlow;
-    const totalAssets =
-      endingCash + inventory + plan.accountsReceivable + plan.fixedAssets;
-    const retainedEarnings =
-      totalAssets - plan.accountsPayable - taxEstimate - plan.openingCapital;
-
-    return {
-      productCost,
-      operatingExpenses,
-      grossProfit,
-      operatingProfit,
-      taxEstimate,
-      netIncome,
-      inventory,
-      operatingCashFlow,
-      investingCashFlow,
-      financingCashFlow,
-      endingCash,
-      totalAssets,
-      retainedEarnings,
-    };
-  }, [expenses, plan, products, revenue]);
+  }, [plan, previousClosingBalances]);
 
   const seasonForecast = useMemo(() => {
     const sales = products.reduce(
@@ -504,16 +679,6 @@ export default function CostProfitSection({
     };
   }, [products]);
 
-  const categoryTotals = useMemo(() => {
-    const totals = new Map<string, number>();
-    expenses.forEach((expense) =>
-      totals.set(
-        expense.category,
-        (totals.get(expense.category) ?? 0) + expense.amount,
-      ),
-    );
-    return [...totals.entries()].sort((a, b) => b[1] - a[1]);
-  }, [expenses]);
 
   const emptyProduct = useMemo<Product>(
     () => ({
@@ -545,40 +710,101 @@ export default function CostProfitSection({
       ? (selectedGrossProfit / selectedProduct.sellingPrice) * 100
       : 0;
 
-  const journalRows = useMemo(() => {
-    const base = [
-      {
-        date: "2026-05-31",
-        number: "JE-20260531-001",
-        debit: "売掛金",
-        amount: revenue,
-        credit: "売上高",
-        description: `${seasonLabel} 売上計上`,
-        partner: "オンラインストア",
-      },
-      {
-        date: "2026-05-31",
-        number: "JE-20260531-002",
-        debit: "売上原価",
-        amount: accounting.productCost,
-        credit: "商品",
-        description: `${seasonLabel} 売上原価振替`,
-        partner: "—",
-      },
-    ];
-    return [
-      ...base,
-      ...expenses.map((expense) => ({
-        date: expense.date,
-        number: `JE-${expense.date.replaceAll("-", "")}-${String(expense.id).padStart(3, "0")}`,
-        debit: expense.category,
-        amount: expense.amount,
-        credit: paymentAccount(expense.paymentMethod),
-        description: expense.item,
-        partner: expense.partner || expense.memo || "—",
-      })),
-    ].sort((a, b) => b.date.localeCompare(a.date));
-  }, [accounting.productCost, expenses, revenue, seasonLabel]);
+  // 固定資産は年度をまたいで償却する。当年度分の明細を台帳から算出する。
+  const depreciation = useMemo(
+    () => depreciationSchedule(fixedAssets, fiscalYear),
+    [fixedAssets, fiscalYear],
+  );
+
+  // 帳簿・財務3表は取引管理に入力された実データと決算整理仕訳だけから作る。
+  // 仕訳 → 総勘定元帳 → 合計残高試算表 → 損益計算書・貸借対照表 の順に導出する。
+  const journal = useMemo(
+    () => [
+      ...buildJournal([...expenses, ...incomes], businessType),
+      // 決算整理仕訳（減価償却・棚卸・引当金）。
+      ...buildDepreciationEntries(depreciation.rows, fiscalYear),
+      ...buildInventoryEntries(adjustment, openingBalances, fiscalYear),
+      ...buildAllowanceEntries(adjustment, fiscalYear),
+    ],
+    [
+      expenses,
+      incomes,
+      businessType,
+      depreciation.rows,
+      fiscalYear,
+      adjustment,
+      openingBalances,
+    ],
+  );
+  const ledger = useMemo(
+    () => buildGeneralLedger(journal, openingBalances),
+    [journal, openingBalances],
+  );
+  const trialBalance = useMemo(() => buildTrialBalance(ledger), [ledger]);
+  const profitAndLoss = useMemo(
+    () => buildProfitAndLoss(trialBalance),
+    [trialBalance],
+  );
+  const balanceSheet = useMemo(
+    () => buildBalanceSheet(trialBalance),
+    [trialBalance],
+  );
+  // C/F は直接法。現金・預金元帳の動きを相手科目で営業/投資/財務に分類する。
+  const cashFlow = useMemo(
+    () => buildCashFlow(ledger, accountByName),
+    [ledger],
+  );
+  // 翌年度へ繰り越す期首残高。決算サブビューと財務概要の元入金表示で使う。
+  const carryForward = useMemo(
+    () => buildClosingBalances(trialBalance, businessType),
+    [trialBalance, businessType],
+  );
+
+  // 開業以来累計。BSは時点なので累積が期末残高に現れるが、損益は期間なので
+  // 年度で切ると積み上げが見えない。ブランドの体力を別枠の指標として出す。
+  const cumulative = useMemo(
+    () => buildCumulativeSummary(cumulativeEntries, fixedAssets, fiscalYear),
+    [cumulativeEntries, fixedAssets, fiscalYear],
+  );
+
+  // コスト構成は費用科目の残高だけを使う。分母（費用合計）と分子の集合を必ず一致させる。
+  // 取引の勘定科目をそのまま集計すると資産科目（固定資産の取得など）が混ざり比率が壊れる。
+  const costComposition = useMemo(
+    () =>
+      trialBalance.rows
+        .filter((row) => row.account.type === "expense")
+        .map((row) => ({
+          label: row.account.name,
+          amount: row.debitBalance - row.creditBalance,
+        }))
+        .filter((row) => row.amount > 0)
+        .sort((a, b) => b.amount - a.amount),
+    [trialBalance],
+  );
+
+  // 仕訳帳の表示行（借方1行・貸方1行を1行に畳んだ形）。新しい順に並べる。
+  const journalRows = useMemo(
+    () =>
+      journal
+        .map((entry) => {
+          const debitLine = entry.lines.find((line) => line.debit > 0);
+          const creditLine = entry.lines.find((line) => line.credit > 0);
+          return {
+            date: entry.date,
+            number: entry.number,
+            debit: debitLine?.account.name ?? "—",
+            credit: creditLine?.account.name ?? "—",
+            amount: debitLine?.debit ?? 0,
+            description: entry.description,
+            partner: entry.partner || "—",
+          };
+        })
+        .sort(
+          (a, b) =>
+            b.date.localeCompare(a.date) || b.number.localeCompare(a.number),
+        ),
+    [journal],
+  );
 
   const handleAddExpense = async () => {
     const amount = Number(form.amount);
@@ -596,43 +822,91 @@ export default function CostProfitSection({
       );
       return;
     }
+    // 会計期間は日付から決まる。選択中の年度外の日付は保存しても一覧に出ないため弾く。
+    if (fiscalYearOf(form.date) !== fiscalYear) {
+      setFormMessage(
+        `日付は選択中の会計期間（${fiscalYear}/01/01〜${fiscalYear}/12/31）の範囲で入力してください。`,
+      );
+      return;
+    }
     const typeLabel = form.entryType === "income" ? "収入" : "支出";
+    // 訂正は削除＋再登録にしない。expense.update で履歴を1本につなぐ
+    // （電子帳簿保存法の真実性の要件）。
+    const isEditing = editingEntryId !== null;
+    const expense = {
+      entryType: form.entryType,
+      date: form.date,
+      category: form.category,
+      item: form.item.trim(),
+      partner: form.partner.trim(),
+      amount: Math.round(amount),
+      paymentMethod: form.paymentMethod,
+      memo: form.memo.trim(),
+      seasonTag: form.seasonTag || null,
+    };
+
     try {
       setIsSaving(true);
       setFormMessage(null);
-      await postMutation({
-        operation: "expense.create",
-        seasonKey,
-        expense: {
-          entryType: form.entryType,
-          date: form.date,
-          category: form.category,
-          item: form.item.trim(),
-          partner: form.partner.trim(),
-          amount: Math.round(amount),
-          paymentMethod: form.paymentMethod,
-          memo: form.memo.trim(),
-        },
-      });
-      await loadFinanceData();
-      setForm((current) => ({
-        ...current,
-        item: shiyouOptionsFor(current.entryType)[0],
-        amount: "",
-        memo: "",
-      }));
-      setFormMessage(
-        `${typeLabel}を保存し、仕訳帳と財務概要へ反映しました。`,
+      await postMutation(
+        isEditing
+          ? {
+            operation: "expense.update",
+            fiscalYear,
+            expenseId: editingEntryId,
+            expense,
+          }
+          : { operation: "expense.create", fiscalYear, expense },
       );
+      await loadFinanceData();
+      if (isEditing) {
+        setEditingEntryId(null);
+        setForm(emptyEntryForm);
+        setFormMessage(`${typeLabel}を訂正しました。履歴に記録されます。`);
+      } else {
+        setForm((current) => ({
+          ...current,
+          item: shiyouOptionsFor(current.entryType)[0],
+          amount: "",
+          memo: "",
+        }));
+        setFormMessage(
+          `${typeLabel}を保存し、仕訳帳と財務概要へ反映しました。`,
+        );
+      }
     } catch (error) {
       setFormMessage(
         error instanceof Error
           ? error.message
-          : `${typeLabel}の保存に失敗しました。`,
+          : `${typeLabel}の${isEditing ? "訂正" : "保存"}に失敗しました。`,
       );
     } finally {
       setIsSaving(false);
     }
+  };
+
+  /** 一覧の行を訂正フォームへ読み込む。 */
+  const handleStartEdit = (entry: Expense) => {
+    setEditingEntryId(entry.id);
+    setSelectedTemplateName("");
+    setFormMessage(null);
+    setForm({
+      entryType: entry.entryType,
+      date: entry.date,
+      category: entry.category,
+      item: entry.item,
+      partner: entry.partner,
+      amount: String(entry.amount),
+      paymentMethod: entry.paymentMethod,
+      memo: entry.memo,
+      seasonTag: entry.seasonTag ?? "",
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingEntryId(null);
+    setForm(emptyEntryForm);
+    setFormMessage(null);
   };
 
   // 種別（支出/収入）切替。勘定科目は種別で選択肢が変わるため未選択に戻し、
@@ -666,7 +940,7 @@ export default function CostProfitSection({
       setFormMessage(null);
       await postMutation({
         operation: "businessType.update",
-        seasonKey,
+        fiscalYear,
         businessType: next,
       });
     } catch (error) {
@@ -691,7 +965,6 @@ export default function CostProfitSection({
       setFormMessage(null);
       await postMutation({
         operation: "partner.create",
-        seasonKey,
         partnerName: name,
       });
       await loadFinanceData();
@@ -751,7 +1024,6 @@ export default function CostProfitSection({
       setFormMessage(null);
       await postMutation({
         operation: "template.create",
-        seasonKey,
         template: {
           name,
           entryType: form.entryType,
@@ -787,7 +1059,6 @@ export default function CostProfitSection({
       setFormMessage(null);
       await postMutation({
         operation: "template.delete",
-        seasonKey,
         templateName: selectedTemplateName,
       });
       await loadFinanceData();
@@ -832,7 +1103,7 @@ export default function CostProfitSection({
       setIncomes((current) => current.filter((item) => item.id !== expense.id));
       await postMutation({
         operation: "expense.delete",
-        seasonKey,
+        fiscalYear,
         expenseId: expense.id,
       });
       await loadFinanceData();
@@ -876,7 +1147,7 @@ export default function CostProfitSection({
     try {
       setIsSaving(true);
       setDataMessage(null);
-      await postMutation({ operation: "plan.update", seasonKey, plan });
+      await postMutation({ operation: "plan.update", fiscalYear, plan });
       setDataMessage("財務前提を保存しました。");
     } catch (error) {
       setDataMessage(
@@ -890,7 +1161,7 @@ export default function CostProfitSection({
   };
 
   const handleJournalExport = () => {
-    exportCsv(`${seasonLabel.replaceAll("/", "-")}_仕訳帳.csv`, [
+    exportCsv(`${fiscalYearLabel}_仕訳帳.csv`, [
       [
         "取引日",
         "仕訳番号",
@@ -914,42 +1185,266 @@ export default function CostProfitSection({
     ]);
   };
 
+  const handleGeneralLedgerExport = () => {
+    if (!selectedLedger) return;
+    exportCsv(
+      `${fiscalYearLabel}_総勘定元帳_${selectedLedger.account.name}.csv`,
+      [
+        ["日付", "仕訳番号", "相手科目", "摘要", "取引先", "借方", "貸方", "残高"],
+        ["", "", "", "前期繰越", "", "", "", selectedLedger.openingBalance],
+        ...selectedLedger.rows.map((row) => [
+          row.date,
+          row.number,
+          row.counterAccount,
+          row.description,
+          row.partner,
+          row.debit,
+          row.credit,
+          row.balance,
+        ]),
+        [
+          "",
+          "",
+          "",
+          "合計",
+          "",
+          selectedLedger.debitTotal,
+          selectedLedger.creditTotal,
+          selectedLedger.closingBalance,
+        ],
+      ],
+    );
+  };
+
+  const handleTrialBalanceExport = () => {
+    exportCsv(`${fiscalYearLabel}_合計残高試算表.csv`, [
+      [
+        "コード",
+        "勘定科目",
+        "会計区分",
+        "借方合計",
+        "貸方合計",
+        "借方残高",
+        "貸方残高",
+      ],
+      ...trialBalance.rows.map((row) => [
+        row.account.code,
+        row.account.name,
+        ACCOUNT_TYPE_LABELS[row.account.type],
+        row.debitTotal,
+        row.creditTotal,
+        row.debitBalance,
+        row.creditBalance,
+      ]),
+      [
+        "",
+        "合計",
+        "",
+        trialBalance.debitTotal,
+        trialBalance.creditTotal,
+        trialBalance.debitBalanceTotal,
+        trialBalance.creditBalanceTotal,
+      ],
+    ]);
+  };
+
+  // 財務3表のエクスポート。すべて仕訳の実残高から出力する。
+  const handleStatementExport = (statement: "pl" | "bs" | "cf") => {
+    if (statement === "pl") {
+      exportCsv(`${fiscalYearLabel}_損益計算書.csv`, [
+        ["区分", "科目", "金額"],
+        ...profitAndLoss.sections.flatMap((section) => [
+          ...section.lines.map((line) => [
+            section.section,
+            line.account.name,
+            line.amount,
+          ]),
+          [section.section, "小計", section.total],
+        ]),
+        ["", "", ""],
+        ["集計", "売上（収入）金額", profitAndLoss.sales],
+        ["集計", "差引原価", profitAndLoss.costOfSales],
+        ["集計", "差引金額（売上総利益）", profitAndLoss.grossProfit],
+        ["集計", "経費", profitAndLoss.operatingExpenses],
+        ["集計", "差引金額", profitAndLoss.operatingProfit],
+        ["集計", "当期純利益", profitAndLoss.netIncome],
+      ]);
+      return;
+    }
+    if (statement === "bs") {
+      exportCsv(`${fiscalYearLabel}_貸借対照表.csv`, [
+        ["区分", "決算書区分", "科目", "金額"],
+        ...balanceSheet.assetSections.flatMap((section) =>
+          section.lines.map((line) => [
+            "資産",
+            section.section,
+            line.account.name,
+            line.amount,
+          ]),
+        ),
+        ["資産", "", "資産合計", balanceSheet.assetTotal],
+        ...balanceSheet.liabilitySections.flatMap((section) =>
+          section.lines.map((line) => [
+            "負債",
+            section.section,
+            line.account.name,
+            line.amount,
+          ]),
+        ),
+        ["負債", "", "負債合計", balanceSheet.liabilityTotal],
+        ...balanceSheet.equitySections.flatMap((section) =>
+          section.lines.map((line) => [
+            "純資産",
+            section.section,
+            line.account.name,
+            line.amount,
+          ]),
+        ),
+        ["純資産", "", "当期純利益", balanceSheet.netIncome],
+        [
+          "純資産",
+          "",
+          "負債・純資産合計",
+          balanceSheet.liabilityAndEquityTotal,
+        ],
+        ["検算", "", "貸借差額", balanceSheet.difference],
+      ]);
+      return;
+    }
+    exportCsv(`${fiscalYearLabel}_キャッシュフロー計算書.csv`, [
+      ["活動区分", "相手科目", "金額"],
+      ["", "期首現金・預金", cashFlow.openingCash],
+      ...(["operating", "investing", "financing"] as CashFlowCategory[]).flatMap(
+        (category) => [
+          ...cashFlow.lines
+            .filter((line) => line.category === category)
+            .map((line) => [
+              CASH_FLOW_CATEGORY_LABELS[category],
+              line.account,
+              line.amount,
+            ]),
+          [CASH_FLOW_CATEGORY_LABELS[category], "小計", cashFlow[category]],
+        ],
+      ),
+      ["", "期末現金・預金", cashFlow.closingCash],
+      ["検算", "差額", cashFlow.difference],
+    ]);
+  };
+
   const summaryView = (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <span className="border border-[#d4d4d4] px-3 py-1.5 font-acumin text-xs text-[#474747]">
-          {seasonLabel}・見込み
+          {fiscalYearLabel}（{fiscalYear}/01/01〜{fiscalYear}/12/31）
         </span>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            className="font-acumin"
+            onClick={() => handleStatementExport("pl")}
+          >
+            <i className="ri-download-line mr-1.5" aria-hidden="true" />
+            損益計算書CSV
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="font-acumin"
+            onClick={() => handleStatementExport("bs")}
+          >
+            <i className="ri-download-line mr-1.5" aria-hidden="true" />
+            貸借対照表CSV
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="font-acumin"
+            onClick={() => handleStatementExport("cf")}
+          >
+            <i className="ri-download-line mr-1.5" aria-hidden="true" />
+            キャッシュフローCSV
+          </Button>
+        </div>
       </div>
 
+      {/* 開業以来の累計。年度PLでは見えないブランドの体力を示す。 */}
+      <section
+        className={`${panelClassName} bg-[#fafafa]`}
+        aria-label="開業以来の累計"
+      >
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="font-acumin text-sm font-medium tracking-widest text-black">
+            開業以来の累計
+          </h3>
+          <span className="font-acumin text-[11px] text-[#707070]">
+            {cumulative.firstYear
+              ? `${cumulative.firstYear}年〜${fiscalYear}年（${fiscalYear - cumulative.firstYear + 1}期）・${cumulative.entryCount}件`
+              : "取引がまだありません"}
+          </span>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
+          {[
+            { label: "累計売上", value: cumulative.sales },
+            { label: "累計費用", value: cumulative.expenses },
+            {
+              label: "累計利益",
+              value: cumulative.netIncome,
+              positive: cumulative.netIncome >= 0,
+            },
+            { label: "累計設備投資", value: cumulative.capitalInvestment },
+            {
+              label: "元入金（期末）",
+              value: carryForward.get("2910") ?? 0,
+            },
+          ].map((item) => (
+            <div key={item.label} className="min-w-0">
+              <span className="block font-acumin text-[11px] text-[#474747]">
+                {item.label}
+              </span>
+              <p
+                className={`mt-1 font-acumin text-base font-medium tabular-nums ${item.positive === false ? "text-red-700" : "text-black"}`}
+              >
+                {currency(item.value)}
+              </p>
+            </div>
+          ))}
+        </div>
+        <p className="mt-3 font-acumin text-[10px] leading-relaxed text-[#707070]">
+          ※
+          貸借対照表は時点の表なので期末残高に累積が現れます。損益は期間の表のため、開業以来の積み上げはこの欄で確認してください。
+        </p>
+      </section>
+
+      {/* すべて当年度の仕訳残高。見込みではなく実績。 */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <MetricCard
-          label="売上（見込み）"
-          value={currency(revenue)}
-          note={incomes.length > 0 ? "収入登録の合計" : "Supabase登録値"}
+          label="売上（収入）金額"
+          value={currency(profitAndLoss.sales)}
+          note={`${incomes.length}件の収入を集計`}
           positive
         />
         <MetricCard
-          label="製造原価"
-          value={currency(accounting.productCost)}
-          note={`原価率 ${percent(revenue > 0 ? (accounting.productCost / revenue) * 100 : 0)}`}
+          label="売上原価"
+          value={currency(profitAndLoss.costOfSales)}
+          note={`原価率 ${percent(profitAndLoss.sales > 0 ? (profitAndLoss.costOfSales / profitAndLoss.sales) * 100 : 0)}`}
         />
         <MetricCard
-          label="営業利益（見込み）"
-          value={currency(accounting.operatingProfit)}
-          note="経費・製造原価控除後"
-          positive={accounting.operatingProfit >= 0}
+          label="差引金額（営業利益）"
+          value={currency(profitAndLoss.operatingProfit)}
+          note="売上原価・経費控除後"
+          positive={profitAndLoss.operatingProfit >= 0}
         />
         <MetricCard
-          label="シーズン粗利率"
-          value={percent(seasonForecast.grossMargin)}
-          note="売価シミュレーション連動"
-          positive
+          label="当期純利益"
+          value={currency(profitAndLoss.netIncome)}
+          note="収益 − 費用"
+          positive={profitAndLoss.netIncome >= 0}
         />
         <MetricCard
-          label="期末現金（見込み）"
-          value={currency(accounting.endingCash)}
-          note={`期首 ${currency(plan.openingCash)}`}
+          label="期末現金・預金"
+          value={currency(cashFlow.closingCash)}
+          note={`期首 ${currency(cashFlow.openingCash)}`}
         />
       </div>
 
@@ -1009,77 +1504,86 @@ export default function CostProfitSection({
           </span>
         </div>
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+          {/* すべて仕訳の実残高から導出する。売上原価は期首棚卸＋当期仕入−期末棚卸。 */}
           <StatementTable
             title="損益計算書（P/L）"
             rows={[
-              { label: "売上高", value: revenue },
+              { label: "売上（収入）金額", value: profitAndLoss.sales },
               {
                 label: "売上原価",
-                value: -accounting.productCost,
+                value: -profitAndLoss.costOfSales,
                 muted: true,
               },
-              { label: "売上総利益", value: accounting.grossProfit },
+              { label: "売上総利益", value: profitAndLoss.grossProfit },
               {
-                label: "販売費及び一般管理費",
-                value: -accounting.operatingExpenses,
+                label: "経費",
+                value: -profitAndLoss.operatingExpenses,
+                muted: true,
+              },
+              { label: "差引金額", value: profitAndLoss.operatingProfit },
+              {
+                label: "営業外・特別損益",
+                value:
+                  profitAndLoss.nonOperatingBalance
+                  + profitAndLoss.extraordinaryBalance,
                 muted: true,
               },
               {
-                label: "税金見込み",
-                value: -accounting.taxEstimate,
+                label: "繰入・繰戻額等",
+                value: profitAndLoss.provisionBalance,
                 muted: true,
               },
             ]}
             totalLabel="当期純利益"
-            totalValue={accounting.netIncome}
+            totalValue={profitAndLoss.netIncome}
           />
           <StatementTable
             title="貸借対照表（B/S）"
             rows={[
-              { label: "現金及び預金", value: accounting.endingCash },
-              { label: "売掛金", value: plan.accountsReceivable },
-              { label: "商品・棚卸資産", value: accounting.inventory },
-              { label: "固定資産", value: plan.fixedAssets },
-              {
-                label: "買掛金・未払金",
-                value: -plan.accountsPayable,
+              ...balanceSheet.assetSections.map((section) => ({
+                label: section.section,
+                value: section.total,
+              })),
+              ...balanceSheet.liabilitySections.map((section) => ({
+                label: section.section,
+                value: -section.total,
                 muted: true,
-              },
-              {
-                label: "未払税金",
-                value: -accounting.taxEstimate,
+              })),
+              ...balanceSheet.equitySections.map((section) => ({
+                label: section.section,
+                value: -section.total,
                 muted: true,
-              },
+              })),
               {
-                label: "元入金・利益剰余金",
-                value: -(plan.openingCapital + accounting.retainedEarnings),
+                label: "当期純利益",
+                value: -balanceSheet.netIncome,
                 muted: true,
               },
             ]}
             totalLabel="貸借差額"
-            totalValue={0}
+            totalValue={balanceSheet.difference}
           />
           <StatementTable
             title="キャッシュ・フロー計算書（C/F）"
             rows={[
-              { label: "期首現金残高", value: plan.openingCash },
-              {
-                label: "営業活動によるCF",
-                value: accounting.operatingCashFlow,
-              },
-              {
-                label: "投資活動によるCF",
-                value: accounting.investingCashFlow,
-              },
-              {
-                label: "財務活動によるCF",
-                value: accounting.financingCashFlow,
-              },
+              { label: "期首現金・預金", value: cashFlow.openingCash },
+              { label: "営業活動によるCF", value: cashFlow.operating },
+              { label: "投資活動によるCF", value: cashFlow.investing },
+              { label: "財務活動によるCF", value: cashFlow.financing },
             ]}
-            totalLabel="期末現金残高"
-            totalValue={accounting.endingCash}
+            totalLabel="期末現金・預金"
+            totalValue={cashFlow.closingCash}
           />
         </div>
+        {/* 直接法なので期首＋増減＝期末が必ず一致する。ずれたら資金科目の判定漏れ。 */}
+        <p
+          className={`mt-2 font-acumin text-[11px] ${cashFlow.difference === 0 ? "text-[#707070]" : "text-red-700"}`}
+          role="status"
+        >
+          {cashFlow.difference === 0
+            ? "C/F 検算：期首 + 営業CF + 投資CF + 財務CF = 期末（一致）"
+            : `C/F 検算：差額 ${currency(cashFlow.difference)}（不一致）`}
+        </p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(300px,0.8fr)]">
@@ -1089,71 +1593,94 @@ export default function CostProfitSection({
               コスト構成
             </h3>
             <span className="font-acumin text-xs text-[#707070]">
-              合計{" "}
-              {currency(accounting.productCost + accounting.operatingExpenses)}
+              合計 {currency(profitAndLoss.expenseTotal)}
             </span>
           </div>
           <div className="space-y-3">
-            {[
-              ["商品原価（製造）", accounting.productCost],
-              ...categoryTotals.slice(0, 5),
-            ].map(([label, value]) => {
-              const numericValue = Number(value);
-              const totalCost =
-                accounting.productCost + accounting.operatingExpenses;
+            {costComposition.slice(0, 6).map((row) => {
+              const totalCost = profitAndLoss.expenseTotal;
               const ratio =
-                totalCost > 0 ? (numericValue / totalCost) * 100 : 0;
+                totalCost > 0 ? (row.amount / totalCost) * 100 : 0;
               return (
                 <div
-                  key={String(label)}
-                  className="grid grid-cols-[minmax(110px,1fr)_minmax(120px,2fr)_80px] items-center gap-3"
+                  key={row.label}
+                  className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto] items-center gap-3"
                 >
                   <span className="truncate font-acumin text-xs text-[#474747]">
-                    {label}
+                    {row.label}
                   </span>
-                  <div className="h-1.5 bg-[#ededed]">
+                  <div className="h-1.5 overflow-hidden bg-[#ededed]">
                     <div
                       className="h-full bg-black"
-                      style={{ width: `${Math.max(2, ratio)}%` }}
+                      style={{
+                        width: `${Math.min(100, Math.max(2, ratio))}%`,
+                      }}
                     />
                   </div>
-                  <span className="text-right font-acumin text-xs text-black tabular-nums">
-                    {currency(numericValue)}
+                  <span className="whitespace-nowrap text-right font-acumin text-xs text-black tabular-nums">
+                    {currency(row.amount)}
                   </span>
                 </div>
               );
             })}
           </div>
         </div>
+        {/* 資金の増減内訳（直接法）。相手科目ごとの実際の入出金。 */}
         <div className={panelClassName}>
-          <h3 className="font-acumin text-sm font-medium tracking-widest text-black">
-            シーズン全体の見込み
-          </h3>
-          <div className="mt-3">
-            {[
-              ["売上（商品計画）", seasonForecast.sales],
-              ["製造原価", seasonForecast.manufacturingCost],
-              ["粗利益", seasonForecast.grossProfit],
-            ].map(([label, value], index) => (
-              <div
-                key={String(label)}
-                className={`flex items-center justify-between py-3 ${index < 2 ? "border-b border-[#ededed]" : "border-t border-black font-medium"}`}
-              >
-                <span className="font-acumin text-xs text-black">{label}</span>
-                <span
-                  className={`font-acumin text-sm tabular-nums ${index === 2 ? "text-[#16844b]" : "text-black"}`}
-                >
-                  {currency(Number(value))}
-                </span>
-              </div>
-            ))}
-            <div className="flex items-center justify-between py-2">
-              <span className="font-acumin text-xs text-black">粗利率</span>
-              <span className="font-acumin text-sm font-medium text-[#16844b]">
-                {percent(seasonForecast.grossMargin)}
-              </span>
-            </div>
+          <div className="mb-3 flex items-baseline justify-between gap-2">
+            <h3 className="font-acumin text-sm font-medium tracking-widest text-black">
+              資金の増減内訳
+            </h3>
+            <span className="font-acumin text-[11px] text-[#707070]">
+              直接法
+            </span>
           </div>
+          {cashFlow.lines.length === 0 ? (
+            <p className="font-acumin text-xs text-[#707070]">
+              現金・預金の入出金がまだありません。
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {(
+                ["operating", "investing", "financing"] as CashFlowCategory[]
+              ).map((category) => {
+                const lines = cashFlow.lines.filter(
+                  (line) => line.category === category,
+                );
+                if (lines.length === 0) return null;
+                return (
+                  <div key={category}>
+                    <p className="font-acumin text-[11px] text-[#474747]">
+                      {CASH_FLOW_CATEGORY_LABELS[category]}
+                    </p>
+                    {lines.map((line) => (
+                      <div
+                        key={`${category}-${line.account}`}
+                        className="flex items-center justify-between border-b border-[#ededed] py-2"
+                      >
+                        <span className="truncate font-acumin text-xs text-black">
+                          {line.account}
+                        </span>
+                        <span
+                          className={`font-acumin text-xs tabular-nums ${line.amount >= 0 ? "text-[#16844b]" : "text-black"}`}
+                        >
+                          {currency(line.amount)}
+                        </span>
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-between py-1.5">
+                      <span className="font-acumin text-[11px] text-[#707070]">
+                        小計
+                      </span>
+                      <span className="font-acumin text-xs font-medium text-black tabular-nums">
+                        {currency(cashFlow[category])}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1185,6 +1712,8 @@ export default function CostProfitSection({
                 "取引先",
                 "金額",
                 paymentHeading,
+                "シーズン",
+                "証憑",
                 "メモ",
                 "操作",
               ].map((heading) => (
@@ -1218,10 +1747,76 @@ export default function CostProfitSection({
                 <td className="whitespace-nowrap px-2 py-3 font-acumin text-xs text-black">
                   {entry.paymentMethod}
                 </td>
+                <td className="whitespace-nowrap px-2 py-3 font-acumin text-xs text-[#474747]">
+                  {entry.seasonTag ? formatSeasonLabel(entry.seasonTag) : "—"}
+                </td>
+                {/* 電子取引データは紙で保存できないため、ファイルを取引行へ紐付ける。 */}
+                <td className="whitespace-nowrap px-2 py-3">
+                  <div className="flex items-center gap-1.5">
+                    {(entry.receipts ?? []).map((receipt) => (
+                      <span
+                        key={receipt.id}
+                        className="inline-flex items-center gap-0.5"
+                      >
+                        <button
+                          type="button"
+                          className="font-acumin text-[11px] text-black underline underline-offset-4"
+                          aria-label={`${receipt.fileName}を開く`}
+                          onClick={() => void handleOpenReceipt(receipt)}
+                        >
+                          <i
+                            className="ri-attachment-2 mr-0.5"
+                            aria-hidden="true"
+                          />
+                          {receipt.mimeType === "application/pdf"
+                            ? "PDF"
+                            : "画像"}
+                        </button>
+                        <button
+                          type="button"
+                          className="text-[#888888] hover:text-black"
+                          aria-label={`${receipt.fileName}を削除`}
+                          onClick={() => void handleDeleteReceipt(receipt)}
+                          disabled={isSaving}
+                        >
+                          <i
+                            className="ri-close-line text-[13px]"
+                            aria-hidden="true"
+                          />
+                        </button>
+                      </span>
+                    ))}
+                    <label className="cursor-pointer font-acumin text-[11px] text-[#474747] underline underline-offset-4 hover:text-black">
+                      {uploadingEntryId === entry.id ? "添付中..." : "＋添付"}
+                      <input
+                        type="file"
+                        accept="application/pdf,image/jpeg,image/png,image/webp,image/heic"
+                        className="hidden"
+                        aria-label={`${entry.item}に証憑を添付`}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          event.target.value = "";
+                          if (file) void handleAttachReceipt(entry, file);
+                        }}
+                        disabled={uploadingEntryId !== null}
+                      />
+                    </label>
+                  </div>
+                </td>
                 <td className="max-w-36 truncate px-2 py-3 font-acumin text-xs text-[#474747]">
                   {entry.memo || "—"}
                 </td>
-                <td className="px-2 py-3 text-center">
+                <td className="whitespace-nowrap px-2 py-3 text-center">
+                  {/* 訂正は削除＋再登録にしない（履歴が途切れるため）。 */}
+                  <button
+                    type="button"
+                    className="inline-flex h-7 w-7 items-center justify-center border border-transparent text-[#474747] hover:border-[#d4d4d4] hover:text-black"
+                    aria-label={`${entry.item}を訂正`}
+                    onClick={() => handleStartEdit(entry)}
+                    disabled={isSaving}
+                  >
+                    <EmptyIcon icon="ri-pencil-line" />
+                  </button>
                   <button
                     type="button"
                     className="inline-flex h-7 w-7 items-center justify-center border border-transparent text-[#474747] hover:border-[#d4d4d4] hover:text-black"
@@ -1249,18 +1844,315 @@ export default function CostProfitSection({
     (template) => template.entryType === form.entryType,
   );
 
+  // 検索は取引管理の一覧表示にだけ効かせる。帳簿・財務概要・税務レポートは
+  // 年度の全件で集計しないと決算書として成立しないため、絞り込みを反映しない。
+  const filteredExpenses = useMemo(
+    () => filterEntries(expenses, filter),
+    [expenses, filter],
+  );
+  const filteredIncomes = useMemo(
+    () => filterEntries(incomes, filter),
+    [incomes, filter],
+  );
+  const filterActive = isFilterActive(filter);
+  const filterConditionCount = activeConditionCount(filter);
+  const updateFilter = (patch: Partial<EntryFilter>) =>
+    setFilter((current) => ({ ...current, ...patch }));
+
+  // 絞り込みの選択肢は当年度の実データから作る（使われていない科目を出さない）。
+  const allEntries = useMemo(() => [...expenses, ...incomes], [
+    expenses,
+    incomes,
+  ]);
+  const filterAccountOptions = useMemo(
+    () =>
+      [...new Set(allEntries.map((entry) => entry.category))]
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b, "ja")),
+    [allEntries],
+  );
+  const filterPartnerOptions = useMemo(
+    () =>
+      [...new Set(allEntries.map((entry) => entry.partner))]
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b, "ja")),
+    [allEntries],
+  );
+
+  const filterFieldClassName =
+    "h-9 w-full border border-[#d4d4d4] bg-white px-2 font-acumin text-xs text-black outline-none transition-colors focus:border-black";
+
+  // 電子帳簿保存法の検索要件（日付・金額・取引先／範囲指定／条件の組み合わせ）を満たす検索パネル。
+  const searchPanel = (
+    <section className={panelClassName} aria-label="取引の検索">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h4 className="font-acumin text-sm font-medium tracking-widest text-black">
+          取引を検索
+        </h4>
+        <div className="flex items-center gap-3">
+          <span className="font-acumin text-[11px] text-[#707070]">
+            {filterActive
+              ? `${filterConditionCount}条件で絞り込み中：支出${filteredExpenses.length}件 / 収入${filteredIncomes.length}件`
+              : `全${allEntries.length}件`}
+          </span>
+          {filterActive ? (
+            <Button
+              variant="secondary"
+              size="2xs"
+              className="font-acumin"
+              onClick={() => setFilter(EMPTY_ENTRY_FILTER)}
+            >
+              条件をクリア
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div>
+          <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+            取引年月日（範囲）
+          </span>
+          <div className="flex items-center gap-1.5">
+            <input
+              type="date"
+              aria-label="取引年月日（開始）"
+              value={filter.dateFrom}
+              onChange={(event) => updateFilter({ dateFrom: event.target.value })}
+              className={filterFieldClassName}
+            />
+            <span className="font-acumin text-[11px] text-[#707070]">〜</span>
+            <input
+              type="date"
+              aria-label="取引年月日（終了）"
+              value={filter.dateTo}
+              onChange={(event) => updateFilter({ dateTo: event.target.value })}
+              className={filterFieldClassName}
+            />
+          </div>
+        </div>
+
+        <div>
+          <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+            取引金額（範囲）
+          </span>
+          <div className="flex items-center gap-1.5">
+            <input
+              type="number"
+              min="0"
+              placeholder="下限"
+              aria-label="取引金額（下限）"
+              value={filter.amountFrom}
+              onChange={(event) =>
+                updateFilter({ amountFrom: event.target.value })
+              }
+              className={filterFieldClassName}
+            />
+            <span className="font-acumin text-[11px] text-[#707070]">〜</span>
+            <input
+              type="number"
+              min="0"
+              placeholder="上限"
+              aria-label="取引金額（上限）"
+              value={filter.amountTo}
+              onChange={(event) =>
+                updateFilter({ amountTo: event.target.value })
+              }
+              className={filterFieldClassName}
+            />
+          </div>
+        </div>
+
+        <div>
+          <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+            取引先
+          </span>
+          <SingleSelect
+            variant="dropdown"
+            block
+            size="sm"
+            aria-label="絞り込み：相手先"
+            className="font-acumin"
+            options={[
+              { value: "", label: "すべて" },
+              ...filterPartnerOptions.map((partner) => ({
+                value: partner,
+                label: partner,
+              })),
+            ]}
+            value={filter.partner}
+            onValueChange={(value) => updateFilter({ partner: value })}
+          />
+        </div>
+
+        <div>
+          <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+            勘定科目
+          </span>
+          <SingleSelect
+            variant="dropdown"
+            block
+            size="sm"
+            aria-label="絞り込み：科目"
+            className="font-acumin"
+            options={[
+              { value: "", label: "すべて" },
+              ...filterAccountOptions.map((account) => ({
+                value: account,
+                label: account,
+              })),
+            ]}
+            value={filter.account}
+            onValueChange={(value) => updateFilter({ account: value })}
+          />
+        </div>
+
+        <div>
+          <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+            種別
+          </span>
+          <SingleSelect
+            variant="dropdown"
+            block
+            size="sm"
+            aria-label="絞り込み：収支区分"
+            className="font-acumin"
+            options={[
+              { value: "", label: "支出・収入" },
+              { value: "expense", label: "支出のみ" },
+              { value: "income", label: "収入のみ" },
+            ]}
+            value={filter.entryType}
+            onValueChange={(value) =>
+              updateFilter({ entryType: value as EntryFilter["entryType"] })
+            }
+          />
+        </div>
+
+        <div className="sm:col-span-2">
+          <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+            キーワード（概要・メモ・取引先）
+          </span>
+          <input
+            type="search"
+            placeholder="部分一致で検索"
+            aria-label="絞り込み：キーワード"
+            value={filter.keyword}
+            onChange={(event) => updateFilter({ keyword: event.target.value })}
+            className={filterFieldClassName}
+          />
+        </div>
+      </div>
+
+      <p className="mt-3 font-acumin text-[10px] leading-relaxed text-[#707070]">
+        ※
+        電子帳簿保存法の検索要件（取引年月日・取引金額・取引先／日付と金額の範囲指定／2以上の条件の組み合わせ）に対応しています。
+      </p>
+    </section>
+  );
+
   const expensesView = (
     <div className="space-y-5">
+      {searchPanel}
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-5">
-          {renderEntryTable("支出一覧", expenses, "支出概要", "出金方法")}
-          {renderEntryTable("収入一覧", incomes, "収入概要", "入金方法")}
+          {renderEntryTable(
+            "支出一覧",
+            filteredExpenses,
+            "支出概要",
+            "出金方法",
+          )}
+          {renderEntryTable("収入一覧", filteredIncomes, "収入概要", "入金方法")}
+
+          {/* 電子帳簿保存法の真実性の要件：訂正・削除の履歴を確認できるようにする。
+              履歴はDBトリガーが記録し、アプリからは書き換えられない。 */}
+          <details className={panelClassName}>
+            <summary className="cursor-pointer font-acumin text-sm font-medium tracking-widest text-black">
+              訂正・削除の履歴（{revisions.length}件）
+            </summary>
+            <p className="mt-2 font-acumin text-[10px] leading-relaxed text-[#707070]">
+              電子帳簿保存法の真実性の要件により、取引の削除は論理削除として記録し、訂正の前後を保持します。
+            </p>
+            {revisions.length === 0 ? (
+              <p className="mt-3 font-acumin text-xs text-[#707070]">
+                履歴はまだありません。
+              </p>
+            ) : (
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full min-w-[720px] border-collapse">
+                  <thead>
+                    <tr className="border-b border-[#d4d4d4]">
+                      {[
+                        "変更日時",
+                        "区分",
+                        "取引ID",
+                        "変更前",
+                        "変更後",
+                      ].map((heading) => (
+                        <th
+                          key={heading}
+                          className="px-2 py-2 text-left font-acumin text-[11px] font-normal text-[#474747]"
+                        >
+                          {heading}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {revisions.map((revision) => (
+                      <tr
+                        key={revision.id}
+                        className="border-b border-[#ededed]"
+                      >
+                        <td className="whitespace-nowrap px-2 py-3 font-acumin text-[11px] text-[#474747]">
+                          {new Date(revision.changedAt).toLocaleString("ja-JP")}
+                        </td>
+                        <td
+                          className={`whitespace-nowrap px-2 py-3 font-acumin text-xs ${revision.operation === "delete" ? "text-red-700" : revision.operation === "update" ? "text-[#a16600]" : "text-[#474747]"}`}
+                        >
+                          {REVISION_OPERATION_LABELS[revision.operation]}
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-3 font-acumin text-[11px] text-[#474747]">
+                          #{revision.entryId}
+                        </td>
+                        <td className="px-2 py-3 font-acumin text-[11px] text-[#474747]">
+                          {revision.operation === "insert"
+                            ? "—"
+                            : `${revision.before.date ?? ""} ${revision.before.category ?? ""} ${revision.before.item ?? ""} ${revision.before.amount ? currency(Number(revision.before.amount)) : ""}`.trim()}
+                        </td>
+                        <td className="px-2 py-3 font-acumin text-[11px] text-black">
+                          {revision.operation === "delete"
+                            ? "（削除）"
+                            : `${revision.after.date ?? ""} ${revision.after.category ?? ""} ${revision.after.item ?? ""} ${revision.after.amount ? currency(Number(revision.after.amount)) : ""}`.trim()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </details>
         </div>
 
         <aside className={`${panelClassName} h-fit`}>
           <h4 className="font-acumin text-sm font-medium tracking-widest text-black">
-            新規{entryTypeLabel}を登録
+            {editingEntryId === null
+              ? `新規${entryTypeLabel}を登録`
+              : `${entryTypeLabel}を訂正（#${editingEntryId}）`}
           </h4>
+          {editingEntryId !== null ? (
+            <p className="mt-1 font-acumin text-[10px] leading-relaxed text-[#707070]">
+              訂正内容は変更前後が履歴に記録されます（削除・再登録はしません）。
+            </p>
+          ) : null}
+          {receiptMessage ? (
+            <p
+              className={`mt-2 font-acumin text-xs ${/失敗|ください/.test(receiptMessage) ? "text-red-700" : "text-[#16844b]"}`}
+              role="status"
+            >
+              {receiptMessage}
+            </p>
+          ) : null}
           <div className="mt-4 space-y-3">
             <div className="block">
               <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
@@ -1393,6 +2285,7 @@ export default function CostProfitSection({
               </span>
               <input
                 type="date"
+                aria-label="取引日"
                 value={form.date}
                 onChange={(event) =>
                   setForm((current) => ({
@@ -1545,6 +2438,32 @@ export default function CostProfitSection({
                 }
               />
             </div>
+            <div className="block">
+              <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+                シーズンタグ（任意）
+              </span>
+              <SingleSelect
+                variant="dropdown"
+                block
+                size="md"
+                aria-label="シーズンタグ"
+                className="font-acumin"
+                options={[
+                  { value: "", label: "（なし）" },
+                  ...seasonOptions.map((season) => ({
+                    value: season.key,
+                    label: season.label,
+                  })),
+                ]}
+                value={form.seasonTag}
+                onValueChange={(value) =>
+                  setForm((current) => ({ ...current, seasonTag: value }))
+                }
+              />
+              <span className="mt-1 block font-acumin text-[10px] text-[#707070]">
+                コレクション別の採算分析にのみ使用。会計期間は日付で決まる。
+              </span>
+            </div>
             <label className="block">
               <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
                 メモ
@@ -1569,6 +2488,17 @@ export default function CostProfitSection({
                 {formMessage}
               </p>
             ) : null}
+            {editingEntryId !== null ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                className="w-full font-acumin"
+                onClick={handleCancelEdit}
+                disabled={isSaving}
+              >
+                訂正を取消
+              </Button>
+            ) : null}
             <Button
               variant="primary"
               size="sm"
@@ -1576,7 +2506,11 @@ export default function CostProfitSection({
               onClick={() => void handleAddExpense()}
               disabled={isSaving}
             >
-              {isSaving ? "保存中..." : "保存"}
+              {isSaving
+                ? "保存中..."
+                : editingEntryId === null
+                  ? "保存"
+                  : "訂正を保存"}
             </Button>
           </div>
         </aside>
@@ -1584,8 +2518,1571 @@ export default function CostProfitSection({
     </div>
   );
 
+  const selectedLedger =
+    ledger.find((row) => row.account.code === ledgerAccountCode) ?? ledger[0];
+
+  const fixedAssetAccountOptions = useMemo(
+    () =>
+      ACCOUNTS.filter(
+        (account) =>
+          (
+            FIXED_ASSET_ACCOUNT_SECTIONS as readonly string[]
+          ).includes(account.section)
+          && (account.scope === "common" || account.scope === businessType),
+      ).map((account) => ({
+        value: account.name,
+        label: `${account.section} / ${account.name}`,
+      })),
+    [businessType],
+  );
+
+  const handleSaveFixedAsset = async () => {
+    const cost = Number(assetForm.acquisitionCost);
+    if (!assetForm.name.trim() || !assetForm.account || !assetForm.acquiredOn) {
+      setAssetMessage("資産名・勘定科目・取得日を入力してください。");
+      return;
+    }
+    if (!Number.isFinite(cost) || cost <= 0) {
+      setAssetMessage("取得価額は1円以上で入力してください。");
+      return;
+    }
+    try {
+      setIsSaving(true);
+      setAssetMessage(null);
+      await postMutation({
+        operation: "fixedAsset.upsert",
+        asset: {
+          id: 0,
+          name: assetForm.name.trim(),
+          account: assetForm.account,
+          acquiredOn: assetForm.acquiredOn,
+          acquisitionCost: Math.round(cost),
+          usefulLife: Math.max(1, Number(assetForm.usefulLife) || 1),
+          method: assetForm.method,
+          businessUseRatio: Math.min(
+            100,
+            Math.max(1, Number(assetForm.businessUseRatio) || 100),
+          ),
+          disposedOn: assetForm.disposedOn || null,
+          memo: "",
+        },
+      });
+      await loadFinanceData();
+      setAssetForm(EMPTY_ASSET_FORM);
+      setAssetMessage("固定資産を登録し、減価償却費へ反映しました。");
+    } catch (error) {
+      setAssetMessage(
+        error instanceof Error
+          ? error.message
+          : "固定資産の保存に失敗しました。",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteFixedAsset = async (asset: FixedAsset) => {
+    try {
+      setIsSaving(true);
+      setAssetMessage(null);
+      await postMutation({
+        operation: "fixedAsset.delete",
+        assetId: asset.id,
+      });
+      await loadFinanceData();
+      setAssetMessage(`${asset.name}を台帳から削除しました。`);
+    } catch (error) {
+      setAssetMessage(
+        error instanceof Error
+          ? error.message
+          : "固定資産の削除に失敗しました。",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // 決算整理仕訳（自動生成分）。伝票番号の D/I/A サフィックスで判別する。
+  const closingEntries = useMemo(
+    () => journal.filter((entry) => entry.entryId < 0),
+    [journal],
+  );
+
+  // 翌年度へ繰り越す期首残高。
+  const carryForwardCheck = useMemo(
+    () => verifyOpeningBalances(carryForward),
+    [carryForward],
+  );
+  const carryForwardRows = useMemo(
+    () =>
+      [...carryForward.entries()]
+        .map(([code, amount]) => {
+          const account = accountByCode(code);
+          const onDebitSide = account?.normalSide === "debit";
+          return {
+            code,
+            name: account?.name ?? code,
+            debit: onDebitSide
+              ? Math.max(amount, 0)
+              : Math.max(-amount, 0),
+            credit: onDebitSide
+              ? Math.max(-amount, 0)
+              : Math.max(amount, 0),
+          };
+        })
+        .sort((a, b) => a.code.localeCompare(b.code)),
+    [carryForward],
+  );
+
+  const handleSaveClosing = async () => {
+    try {
+      setIsSaving(true);
+      setClosingMessage(null);
+      await postMutation({
+        operation: "closing.update",
+        fiscalYear,
+        adjustment,
+      });
+      await loadFinanceData();
+      setClosingMessage("決算整理を保存しました。");
+    } catch (error) {
+      setClosingMessage(
+        error instanceof Error
+          ? error.message
+          : "決算整理の保存に失敗しました。",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleFinalizeClosing = async () => {
+    // 貸借が一致しない状態で締めると翌年度の期首が壊れる。
+    if (!carryForwardCheck.isBalanced) {
+      setClosingMessage(
+        "翌年度期首の貸借が一致していません。試算表を確認してください。",
+      );
+      return;
+    }
+    try {
+      setIsSaving(true);
+      setClosingMessage(null);
+      await postMutation({
+        operation: "closing.finalize",
+        fiscalYear,
+        adjustment,
+        closingBalances: Object.fromEntries(carryForward),
+      });
+      await loadFinanceData();
+      setClosingMessage(
+        `${fiscalYearLabel}を締めました。期末残高が${fiscalYear + 1}年の期首残高になります。`,
+      );
+    } catch (error) {
+      setClosingMessage(
+        error instanceof Error ? error.message : "決算の確定に失敗しました。",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleReopenClosing = async () => {
+    try {
+      setIsSaving(true);
+      setClosingMessage(null);
+      await postMutation({ operation: "closing.reopen", fiscalYear });
+      await loadFinanceData();
+      setClosingMessage("決算を解除しました。取引の修正が反映されます。");
+    } catch (error) {
+      setClosingMessage(
+        error instanceof Error ? error.message : "決算の解除に失敗しました。",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // --- 証憑（電子取引データ）---
+  const handleAttachReceipt = async (entry: Expense, file: File) => {
+    try {
+      setUploadingEntryId(entry.id);
+      setReceiptMessage(null);
+      const formData = new FormData();
+      formData.append("entryId", String(entry.id));
+      formData.append("file", file);
+
+      const response = await clientFetch(
+        "/api/admin/kpi/cost-profit/receipt",
+        { method: "POST", body: formData },
+      );
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string }
+        | null;
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "証憑のアップロードに失敗しました。");
+      }
+      await loadFinanceData();
+      setReceiptMessage(`${file.name} を添付しました。`);
+    } catch (error) {
+      setReceiptMessage(
+        error instanceof Error
+          ? error.message
+          : "証憑のアップロードに失敗しました。",
+      );
+    } finally {
+      setUploadingEntryId(null);
+    }
+  };
+
+  const handleOpenReceipt = async (receipt: Receipt) => {
+    try {
+      setReceiptMessage(null);
+      const response = await clientFetch(
+        `/api/admin/kpi/cost-profit/receipt?path=${encodeURIComponent(receipt.storagePath)}`,
+        { cache: "no-store" },
+      );
+      const payload = (await response.json().catch(() => null)) as
+        | { data?: { url: string }; error?: string }
+        | null;
+      if (!response.ok || !payload?.data?.url) {
+        throw new Error(payload?.error ?? "証憑の取得に失敗しました。");
+      }
+      window.open(payload.data.url, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      setReceiptMessage(
+        error instanceof Error ? error.message : "証憑の取得に失敗しました。",
+      );
+    }
+  };
+
+  const handleDeleteReceipt = async (receipt: Receipt) => {
+    try {
+      setIsSaving(true);
+      setReceiptMessage(null);
+      await postMutation({
+        operation: "receipt.delete",
+        receiptId: receipt.id,
+      });
+      await loadFinanceData();
+      setReceiptMessage(`${receipt.fileName} を削除しました。`);
+    } catch (error) {
+      setReceiptMessage(
+        error instanceof Error ? error.message : "証憑の削除に失敗しました。",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // --- 青色申告決算書（一般用）1〜4ページ ---
+  const monthlySummary = useMemo(
+    () => buildMonthlySummary(journal, fiscalYear),
+    [journal, fiscalYear],
+  );
+  const deductionCalc = useMemo(
+    () => buildBlueReturnDeduction(profitAndLoss.netIncome, usesEtax),
+    [profitAndLoss.netIncome, usesEtax],
+  );
+  const breakdownOf = (codes: readonly string[]) =>
+    buildPartnerBreakdown(journal, codes);
+  const wagesBreakdown = useMemo(
+    () => breakdownOf(BREAKDOWN_ACCOUNT_CODES.wages),
+    [journal],
+  );
+  const familyWagesBreakdown = useMemo(
+    () => breakdownOf(BREAKDOWN_ACCOUNT_CODES.familyWages),
+    [journal],
+  );
+  const interestBreakdown = useMemo(
+    () => breakdownOf(BREAKDOWN_ACCOUNT_CODES.interest),
+    [journal],
+  );
+  const rentBreakdown = useMemo(
+    () => breakdownOf(BREAKDOWN_ACCOUNT_CODES.rent),
+    [journal],
+  );
+  const professionalFeesBreakdown = useMemo(
+    () => breakdownOf(BREAKDOWN_ACCOUNT_CODES.professionalFees),
+    [journal],
+  );
+  // 4ページの貸借対照表は期首（前年末）と期末の2時点。
+  // 期末は決算振替の「前」の残高（事業主貸・事業主借を残し、所得は別行で示す）。
+  const closingBalanceSheetBalances = useMemo(() => {
+    const balances = new Map<string, number>();
+    for (const row of trialBalance.rows) {
+      if (row.account.type === "revenue" || row.account.type === "expense") {
+        continue;
+      }
+      const balance =
+        row.account.normalSide === "debit"
+          ? row.debitBalance - row.creditBalance
+          : row.creditBalance - row.debitBalance;
+      if (balance !== 0) balances.set(row.account.code, balance);
+    }
+    return balances;
+  }, [trialBalance]);
+
+  const balanceSheetComparison = useMemo(() => {
+    const base = buildBalanceSheetComparison(
+      openingBalances,
+      closingBalanceSheetBalances,
+    );
+    // 決算書の資本の部には「青色申告特別控除前の所得金額」が独立した行で載る。
+    // 期首の所得は前年度の締めで元入金へ振り替わっているため0。
+    return {
+      ...base,
+      liabilitiesAndEquity: [
+        ...base.liabilitiesAndEquity,
+        {
+          code: "9999",
+          name: "青色申告特別控除前の所得金額",
+          opening: 0,
+          closing: profitAndLoss.netIncome,
+        },
+      ],
+      closingLiabilityEquityTotal:
+        base.closingLiabilityEquityTotal + profitAndLoss.netIncome,
+    };
+  }, [openingBalances, closingBalanceSheetBalances, profitAndLoss.netIncome]);
+
+  // 1ページ 損益計算書の行。決算書の並び順に合わせる。
+  const page1Rows = useMemo(
+    () => [
+      { label: "売上（収入）金額", value: profitAndLoss.sales },
+      {
+        label: "期首商品（製品）棚卸高",
+        value: profitAndLoss.openingInventory,
+        indent: true,
+      },
+      { label: "当期仕入高", value: profitAndLoss.purchases, indent: true },
+      {
+        label: "期末商品（製品）棚卸高",
+        value: profitAndLoss.closingInventory,
+        indent: true,
+      },
+      { label: "差引原価", value: profitAndLoss.costOfSales },
+      { label: "差引金額（売上総利益）", value: profitAndLoss.grossProfit },
+      { label: "経費", value: profitAndLoss.operatingExpenses },
+      { label: "差引金額", value: profitAndLoss.operatingProfit },
+      { label: "営業外損益", value: profitAndLoss.nonOperatingBalance },
+      { label: "特別損益", value: profitAndLoss.extraordinaryBalance },
+      { label: "繰入・繰戻額等", value: profitAndLoss.provisionBalance },
+      {
+        label: "青色申告特別控除前の所得金額",
+        value: profitAndLoss.netIncome,
+        emphasis: true,
+      },
+      {
+        label: "青色申告特別控除額",
+        value: -deductionCalc.deduction,
+      },
+      {
+        label: "所得金額",
+        value: deductionCalc.incomeAfterDeduction,
+        emphasis: true,
+      },
+    ] as Array<{
+      label: string;
+      value: number;
+      indent?: boolean;
+      emphasis?: boolean;
+    }>,
+    [profitAndLoss, deductionCalc],
+  );
+
+  // 1ページの経費内訳。経費区分の科目だけを金額降順で並べる。
+  const expenseDetailRows = useMemo(
+    () =>
+      (
+        profitAndLoss.sections.find((section) => section.section === "経費")
+          ?.lines ?? []
+      )
+        .slice()
+        .sort((a, b) => b.amount - a.amount),
+    [profitAndLoss.sections],
+  );
+
+  const renderBreakdownPanel = (
+    title: string,
+    rows: ReturnType<typeof buildPartnerBreakdown>,
+  ) => (
+    <div className={panelClassName}>
+      <h4 className="font-acumin text-sm font-medium tracking-widest text-black">
+        {title}
+      </h4>
+      {rows.length === 0 ? (
+        <p className="mt-3 font-acumin text-xs text-[#707070]">
+          該当する取引がありません。
+        </p>
+      ) : (
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full min-w-[320px] border-collapse">
+            <thead>
+              <tr className="border-b border-[#d4d4d4]">
+                {["支払先", "件数", "金額"].map((heading) => (
+                  <th
+                    key={heading}
+                    className="px-2 py-2 text-left font-acumin text-[11px] font-normal text-[#474747]"
+                  >
+                    {heading}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.partner} className="border-b border-[#ededed]">
+                  <td className="px-2 py-2 font-acumin text-xs text-black">
+                    {row.partner}
+                  </td>
+                  <td className="px-2 py-2 text-right font-acumin text-xs text-[#474747] tabular-nums">
+                    {row.count}
+                  </td>
+                  <td className="px-2 py-2 text-right font-acumin text-xs text-black tabular-nums">
+                    {currency(row.amount)}
+                  </td>
+                </tr>
+              ))}
+              <tr className="border-t border-black">
+                <td
+                  colSpan={2}
+                  className="px-2 py-2 font-acumin text-xs font-medium text-black"
+                >
+                  計
+                </td>
+                <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                  {currency(rows.reduce((sum, row) => sum + row.amount, 0))}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+
+  const handleBlueReturnExport = (page: TaxPage) => {
+    const prefix = `${fiscalYearLabel}_青色申告決算書`;
+    if (page === "page1") {
+      exportCsv(`${prefix}1P_損益計算書.csv`, [
+        ["科目", "金額"],
+        ...page1Rows.map((row) => [row.label, row.value]),
+        ["", ""],
+        ["経費の内訳", ""],
+        ...expenseDetailRows.map((row) => [row.account.name, row.amount]),
+      ]);
+      return;
+    }
+    if (page === "page2") {
+      exportCsv(`${prefix}2P_月別売上仕入.csv`, [
+        ["月", "売上（収入）金額", "仕入金額"],
+        ...monthlySummary.rows.map((row) => [
+          `${row.month}月`,
+          row.sales,
+          row.purchases,
+        ]),
+        ["雑収入", monthlySummary.miscIncome, ""],
+        [
+          "計",
+          monthlySummary.salesTotal + monthlySummary.miscIncome,
+          monthlySummary.purchasesTotal,
+        ],
+        ["", "", ""],
+        ["給料賃金の内訳", "件数", "金額"],
+        ...wagesBreakdown.map((row) => [row.partner, row.count, row.amount]),
+        ["専従者給与の内訳", "件数", "金額"],
+        ...familyWagesBreakdown.map((row) => [
+          row.partner,
+          row.count,
+          row.amount,
+        ]),
+        ["", "", ""],
+        ["青色申告特別控除額の計算", "", ""],
+        ["青色申告特別控除前の所得金額", deductionCalc.incomeBeforeDeduction, ""],
+        ["控除限度額", deductionCalc.limit, ""],
+        ["青色申告特別控除額", deductionCalc.deduction, ""],
+        ["所得金額", deductionCalc.incomeAfterDeduction, ""],
+      ]);
+      return;
+    }
+    if (page === "page3") {
+      exportCsv(`${prefix}3P_減価償却費.csv`, [
+        [
+          "減価償却資産の名称",
+          "取得年月",
+          "取得価額",
+          "償却方法",
+          "耐用年数",
+          "償却率",
+          "本年中の償却期間",
+          "本年分の償却費",
+          "事業専用割合",
+          "本年分の必要経費算入額",
+          "未償却残高",
+        ],
+        ...depreciation.rows.map((row) => [
+          row.asset.name,
+          row.asset.acquiredOn.slice(0, 7),
+          row.asset.acquisitionCost,
+          DEPRECIATION_METHOD_LABELS[row.asset.method],
+          row.asset.method === "straightLine" ? row.asset.usefulLife : "",
+          row.asset.method === "straightLine"
+            ? straightLineRate(row.asset.usefulLife).toFixed(3)
+            : "",
+          row.asset.method === "straightLine" ? `${row.months}/12` : "",
+          row.depreciation,
+          `${row.asset.businessUseRatio}%`,
+          row.businessExpense,
+          row.closingBookValue,
+        ]),
+        [
+          "計",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          depreciation.depreciationTotal,
+          "",
+          depreciation.businessExpenseTotal,
+          depreciation.closingBookValueTotal,
+        ],
+        ["", "", "", "", "", "", "", "", "", "", ""],
+        ["利子割引料の内訳", "件数", "金額"],
+        ...interestBreakdown.map((row) => [row.partner, row.count, row.amount]),
+        ["地代家賃の内訳", "件数", "金額"],
+        ...rentBreakdown.map((row) => [row.partner, row.count, row.amount]),
+        ["税理士・弁護士等の報酬・料金の内訳", "件数", "金額"],
+        ...professionalFeesBreakdown.map((row) => [
+          row.partner,
+          row.count,
+          row.amount,
+        ]),
+      ]);
+      return;
+    }
+    exportCsv(`${prefix}4P_貸借対照表.csv`, [
+      ["区分", "科目", "期首", "期末"],
+      ...balanceSheetComparison.assets.map((row) => [
+        "資産",
+        row.name,
+        row.opening,
+        row.closing,
+      ]),
+      [
+        "資産",
+        "合計",
+        balanceSheetComparison.openingAssetTotal,
+        balanceSheetComparison.closingAssetTotal,
+      ],
+      ...balanceSheetComparison.liabilitiesAndEquity.map((row) => [
+        "負債・資本",
+        row.name,
+        row.opening,
+        row.closing,
+      ]),
+      [
+        "負債・資本",
+        "合計",
+        balanceSheetComparison.openingLiabilityEquityTotal,
+        balanceSheetComparison.closingLiabilityEquityTotal,
+      ],
+    ]);
+  };
+
+  const handleFixedAssetExport = () => {
+    exportCsv(`${fiscalYearLabel}_固定資産台帳.csv`, [
+      [
+        "資産名",
+        "勘定科目",
+        "取得日",
+        "取得価額",
+        "償却方法",
+        "耐用年数",
+        "期首簿価",
+        "使用月数",
+        "当期償却費",
+        "事業専用割合",
+        "必要経費算入額",
+        "期末簿価",
+        "減価償却累計額",
+        "除却日",
+      ],
+      ...depreciation.rows.map((row) => [
+        row.asset.name,
+        row.asset.account,
+        row.asset.acquiredOn,
+        row.asset.acquisitionCost,
+        DEPRECIATION_METHOD_LABELS[row.asset.method],
+        row.asset.method === "straightLine" ? row.asset.usefulLife : "",
+        row.openingBookValue,
+        row.asset.method === "straightLine" ? row.months : "",
+        row.depreciation,
+        `${row.asset.businessUseRatio}%`,
+        row.businessExpense,
+        row.closingBookValue,
+        row.accumulated,
+        row.asset.disposedOn ?? "",
+      ]),
+      [
+        "合計",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        depreciation.depreciationTotal,
+        "",
+        depreciation.businessExpenseTotal,
+        depreciation.closingBookValueTotal,
+        depreciation.accumulatedTotal,
+        "",
+      ],
+    ]);
+  };
+
+  const generalLedgerView = (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="min-w-56">
+          <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+            勘定科目
+          </span>
+          <SingleSelect
+            variant="dropdown"
+            block
+            size="md"
+            aria-label="元帳の勘定科目"
+            className="font-acumin"
+            options={ledger.map((row) => ({
+              value: row.account.code,
+              label: `${row.account.code} ${row.account.name}`,
+            }))}
+            value={selectedLedger?.account.code ?? ""}
+            onValueChange={setLedgerAccountCode}
+          />
+        </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          className="font-acumin"
+          onClick={handleGeneralLedgerExport}
+          disabled={!selectedLedger}
+        >
+          <i className="ri-download-line mr-1.5" aria-hidden="true" />
+          総勘定元帳CSV
+        </Button>
+      </div>
+
+      {!selectedLedger ? (
+        <p className="font-acumin text-xs text-[#707070]">
+          取引管理に取引を入力すると、科目ごとの元帳が作成されます。
+        </p>
+      ) : (
+        <div className={`${panelClassName} min-w-0`}>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h4 className="font-acumin text-sm font-medium tracking-widest text-black">
+              {selectedLedger.account.name}
+              <span className="ml-2 font-normal text-[11px] text-[#707070]">
+                {selectedLedger.account.section} /{" "}
+                {ACCOUNT_TYPE_LABELS[selectedLedger.account.type]} /{" "}
+                {selectedLedger.account.normalSide === "debit"
+                  ? "借方残"
+                  : "貸方残"}
+              </span>
+            </h4>
+            <span className="font-acumin text-xs text-black">
+              期末残高 {currency(selectedLedger.closingBalance)}
+            </span>
+          </div>
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full min-w-[780px] border-collapse">
+              <thead>
+                <tr className="border-b border-[#d4d4d4]">
+                  {[
+                    "日付",
+                    "仕訳番号",
+                    "相手科目",
+                    "摘要",
+                    "取引先",
+                    "借方",
+                    "貸方",
+                    "残高",
+                  ].map((heading) => (
+                    <th
+                      key={heading}
+                      className="px-2 py-2 text-left font-acumin text-[11px] font-normal text-[#474747]"
+                    >
+                      {heading}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b border-[#ededed] bg-[#fafafa]">
+                  <td
+                    colSpan={7}
+                    className="px-2 py-2 font-acumin text-[11px] text-[#474747]"
+                  >
+                    前期繰越
+                  </td>
+                  <td className="px-2 py-2 text-right font-acumin text-xs text-black tabular-nums">
+                    {currency(selectedLedger.openingBalance)}
+                  </td>
+                </tr>
+                {selectedLedger.rows.map((row, index) => (
+                  <tr
+                    key={`${row.number}-${index}`}
+                    className="border-b border-[#ededed]"
+                  >
+                    <td className="whitespace-nowrap px-2 py-3 font-acumin text-xs text-black">
+                      {row.date.replaceAll("-", "/")}
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-3 font-acumin text-[11px] text-[#474747]">
+                      {row.number}
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-3 font-acumin text-xs text-black">
+                      {row.counterAccount}
+                    </td>
+                    <td className="px-2 py-3 font-acumin text-xs text-black">
+                      {row.description}
+                    </td>
+                    <td className="px-2 py-3 font-acumin text-xs text-[#474747]">
+                      {row.partner || "—"}
+                    </td>
+                    <td className="px-2 py-3 text-right font-acumin text-xs text-black tabular-nums">
+                      {row.debit > 0 ? currency(row.debit) : "—"}
+                    </td>
+                    <td className="px-2 py-3 text-right font-acumin text-xs text-black tabular-nums">
+                      {row.credit > 0 ? currency(row.credit) : "—"}
+                    </td>
+                    <td className="px-2 py-3 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                      {currency(row.balance)}
+                    </td>
+                  </tr>
+                ))}
+                <tr className="border-t border-black">
+                  <td
+                    colSpan={5}
+                    className="px-2 py-2 font-acumin text-xs font-medium text-black"
+                  >
+                    合計
+                  </td>
+                  <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                    {currency(selectedLedger.debitTotal)}
+                  </td>
+                  <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                    {currency(selectedLedger.creditTotal)}
+                  </td>
+                  <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                    {currency(selectedLedger.closingBalance)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  const fixedAssetsView = (
+    <div className="space-y-5">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          label="当期減価償却費"
+          value={currency(depreciation.depreciationTotal)}
+          note={`${depreciation.rows.length}件`}
+        />
+        <MetricCard
+          label="必要経費算入額"
+          value={currency(depreciation.businessExpenseTotal)}
+          note="家事按分後"
+        />
+        <MetricCard
+          label="期末帳簿価額"
+          value={currency(depreciation.closingBookValueTotal)}
+          note="貸借対照表の固定資産"
+        />
+        <MetricCard
+          label="減価償却累計額"
+          value={currency(depreciation.accumulatedTotal)}
+          note="取得以来の累計"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className={`${panelClassName} min-w-0`}>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h4 className="font-acumin text-sm font-medium tracking-widest text-black">
+              減価償却費の計算（{fiscalYearLabel}）
+            </h4>
+            <Button
+              variant="secondary"
+              size="2xs"
+              className="font-acumin"
+              onClick={handleFixedAssetExport}
+            >
+              <i className="ri-download-line mr-1" aria-hidden="true" />
+              台帳CSV
+            </Button>
+          </div>
+          {depreciation.rows.length === 0 ? (
+            <p className="mt-4 font-acumin text-xs text-[#707070]">
+              固定資産を登録すると、取得日と耐用年数から当期の減価償却費が自動計算されます。
+            </p>
+          ) : (
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full min-w-[1020px] border-collapse">
+                <thead>
+                  <tr className="border-b border-[#d4d4d4]">
+                    {[
+                      "資産名",
+                      "勘定科目",
+                      "取得日",
+                      "取得価額",
+                      "償却方法",
+                      "耐用年数",
+                      "期首簿価",
+                      "月数",
+                      "当期償却費",
+                      "事業割合",
+                      "必要経費",
+                      "期末簿価",
+                      "操作",
+                    ].map((heading) => (
+                      <th
+                        key={heading}
+                        className="px-2 py-2 text-left font-acumin text-[11px] font-normal text-[#474747]"
+                      >
+                        {heading}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {depreciation.rows.map((row) => (
+                    <tr
+                      key={row.asset.id}
+                      className="border-b border-[#ededed]"
+                    >
+                      <td className="px-2 py-3 font-acumin text-xs text-black">
+                        {row.asset.name}
+                        {row.asset.disposedOn ? (
+                          <span className="ml-1 font-acumin text-[10px] text-[#a16600]">
+                            （{row.asset.disposedOn.replaceAll("-", "/")}除却）
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-3 font-acumin text-xs text-[#474747]">
+                        {row.asset.account}
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-3 font-acumin text-xs text-black">
+                        {row.asset.acquiredOn.replaceAll("-", "/")}
+                      </td>
+                      <td className="px-2 py-3 text-right font-acumin text-xs text-black tabular-nums">
+                        {currency(row.asset.acquisitionCost)}
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-3 font-acumin text-[11px] text-[#474747]">
+                        {DEPRECIATION_METHOD_LABELS[row.asset.method]}
+                      </td>
+                      <td className="px-2 py-3 text-right font-acumin text-xs text-[#474747] tabular-nums">
+                        {row.asset.method === "straightLine"
+                          ? `${row.asset.usefulLife}年`
+                          : "—"}
+                      </td>
+                      <td className="px-2 py-3 text-right font-acumin text-xs text-black tabular-nums">
+                        {currency(row.openingBookValue)}
+                      </td>
+                      <td className="px-2 py-3 text-right font-acumin text-xs text-[#474747] tabular-nums">
+                        {row.asset.method === "straightLine"
+                          ? `${row.months}/12`
+                          : "—"}
+                      </td>
+                      <td className="px-2 py-3 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                        {currency(row.depreciation)}
+                      </td>
+                      <td className="px-2 py-3 text-right font-acumin text-xs text-[#474747] tabular-nums">
+                        {row.asset.businessUseRatio}%
+                      </td>
+                      <td className="px-2 py-3 text-right font-acumin text-xs text-black tabular-nums">
+                        {currency(row.businessExpense)}
+                      </td>
+                      <td className="px-2 py-3 text-right font-acumin text-xs text-black tabular-nums">
+                        {currency(row.closingBookValue)}
+                      </td>
+                      <td className="px-2 py-3 text-center">
+                        <button
+                          type="button"
+                          className="inline-flex h-7 w-7 items-center justify-center border border-transparent text-[#474747] hover:border-[#d4d4d4] hover:text-black"
+                          aria-label={`${row.asset.name}を削除`}
+                          onClick={() => void handleDeleteFixedAsset(row.asset)}
+                          disabled={isSaving}
+                        >
+                          <EmptyIcon icon="ri-delete-bin-line" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="border-t border-black">
+                    <td
+                      colSpan={8}
+                      className="px-2 py-2 font-acumin text-xs font-medium text-black"
+                    >
+                      合計
+                    </td>
+                    <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                      {currency(depreciation.depreciationTotal)}
+                    </td>
+                    <td />
+                    <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                      {currency(depreciation.businessExpenseTotal)}
+                    </td>
+                    <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                      {currency(depreciation.closingBookValueTotal)}
+                    </td>
+                    <td />
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="mt-4 font-acumin text-[10px] leading-relaxed text-[#707070]">
+            ※
+            定額法は「取得価額×償却率×使用月数/12」で計算し、残存簿価1円まで償却します。
+            一括償却資産（10万円以上20万円未満）は月割せず3年均等、即時償却は取得年に全額を計上します。
+          </p>
+        </div>
+
+        <aside className={`${panelClassName} h-fit`}>
+          <h4 className="font-acumin text-sm font-medium tracking-widest text-black">
+            固定資産を登録
+          </h4>
+          <div className="mt-4 space-y-3">
+            <label className="block">
+              <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+                資産名 <span className="text-red-700">*</span>
+              </span>
+              <input
+                type="text"
+                value={assetForm.name}
+                onChange={(event) =>
+                  setAssetForm((current) => ({
+                    ...current,
+                    name: event.target.value,
+                  }))
+                }
+                className={inputClassName}
+                placeholder="工業用ミシン"
+              />
+            </label>
+
+            <div className="block">
+              <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+                勘定科目 <span className="text-red-700">*</span>
+              </span>
+              <SingleSelect
+                variant="dropdown"
+                block
+                size="md"
+                aria-label="固定資産の勘定科目"
+                className="font-acumin"
+                options={fixedAssetAccountOptions}
+                value={assetForm.account}
+                onValueChange={(value) =>
+                  setAssetForm((current) => ({ ...current, account: value }))
+                }
+              />
+            </div>
+
+            <label className="block">
+              <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+                取得日 <span className="text-red-700">*</span>
+              </span>
+              <input
+                type="date"
+                value={assetForm.acquiredOn}
+                onChange={(event) =>
+                  setAssetForm((current) => ({
+                    ...current,
+                    acquiredOn: event.target.value,
+                  }))
+                }
+                className={inputClassName}
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+                取得価額 <span className="text-red-700">*</span>
+              </span>
+              <input
+                type="number"
+                min="1"
+                value={assetForm.acquisitionCost}
+                onChange={(event) =>
+                  setAssetForm((current) => ({
+                    ...current,
+                    acquisitionCost: event.target.value,
+                  }))
+                }
+                className={inputClassName}
+                placeholder="0"
+              />
+            </label>
+
+            <div className="block">
+              <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+                償却方法
+              </span>
+              <SingleSelect
+                variant="dropdown"
+                block
+                size="md"
+                aria-label="償却方法"
+                className="font-acumin"
+                options={(
+                  Object.keys(
+                    DEPRECIATION_METHOD_LABELS,
+                  ) as DepreciationMethod[]
+                ).map((method) => ({
+                  value: method,
+                  label: DEPRECIATION_METHOD_LABELS[method],
+                }))}
+                value={assetForm.method}
+                onValueChange={(value) =>
+                  setAssetForm((current) => ({
+                    ...current,
+                    method: value as DepreciationMethod,
+                  }))
+                }
+              />
+            </div>
+
+            {assetForm.method === "straightLine" ? (
+              <label className="block">
+                <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+                  耐用年数（償却率{" "}
+                  {straightLineRate(Number(assetForm.usefulLife) || 1).toFixed(
+                    3,
+                  )}
+                  ）
+                </span>
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={assetForm.usefulLife}
+                  onChange={(event) =>
+                    setAssetForm((current) => ({
+                      ...current,
+                      usefulLife: event.target.value,
+                    }))
+                  }
+                  className={inputClassName}
+                />
+              </label>
+            ) : null}
+
+            <label className="block">
+              <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+                事業専用割合（%）
+              </span>
+              <input
+                type="number"
+                min="1"
+                max="100"
+                value={assetForm.businessUseRatio}
+                onChange={(event) =>
+                  setAssetForm((current) => ({
+                    ...current,
+                    businessUseRatio: event.target.value,
+                  }))
+                }
+                className={inputClassName}
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+                除却日（任意）
+              </span>
+              <input
+                type="date"
+                value={assetForm.disposedOn}
+                onChange={(event) =>
+                  setAssetForm((current) => ({
+                    ...current,
+                    disposedOn: event.target.value,
+                  }))
+                }
+                className={inputClassName}
+              />
+            </label>
+
+            {assetMessage ? (
+              <p
+                className={`font-acumin text-xs ${/失敗|ください/.test(assetMessage) ? "text-red-700" : "text-[#16844b]"}`}
+                role="status"
+              >
+                {assetMessage}
+              </p>
+            ) : null}
+
+            <Button
+              variant="primary"
+              size="sm"
+              className="w-full font-acumin"
+              onClick={() => void handleSaveFixedAsset()}
+              disabled={isSaving}
+            >
+              {isSaving ? "保存中..." : "固定資産を保存"}
+            </Button>
+          </div>
+        </aside>
+      </div>
+    </div>
+  );
+
+  const closingView = (
+    <div className="space-y-5">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="min-w-0 space-y-5">
+          <div className={panelClassName}>
+            <h4 className="font-acumin text-sm font-medium tracking-widest text-black">
+              決算整理の内訳（{fiscalYearLabel}）
+            </h4>
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full min-w-[560px] border-collapse">
+                <thead>
+                  <tr className="border-b border-[#d4d4d4]">
+                    {["決算整理", "借方", "貸方", "金額"].map((heading) => (
+                      <th
+                        key={heading}
+                        className="px-2 py-2 text-left font-acumin text-[11px] font-normal text-[#474747]"
+                      >
+                        {heading}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {closingEntries.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={4}
+                        className="px-2 py-4 font-acumin text-xs text-[#707070]"
+                      >
+                        決算整理仕訳はまだありません。固定資産の登録と実地棚卸の入力で自動生成されます。
+                      </td>
+                    </tr>
+                  ) : (
+                    closingEntries.map((entry) => {
+                      const debitLine = entry.lines.find(
+                        (line) => line.debit > 0,
+                      );
+                      const creditLine = entry.lines.find(
+                        (line) => line.credit > 0,
+                      );
+                      return (
+                        <tr
+                          key={entry.number}
+                          className="border-b border-[#ededed]"
+                        >
+                          <td className="px-2 py-3 font-acumin text-xs text-black">
+                            {entry.description}
+                          </td>
+                          <td className="whitespace-nowrap px-2 py-3 font-acumin text-xs text-black">
+                            {debitLine?.account.name ?? "—"}
+                          </td>
+                          <td className="whitespace-nowrap px-2 py-3 font-acumin text-xs text-black">
+                            {creditLine?.account.name ?? "—"}
+                          </td>
+                          <td className="px-2 py-3 text-right font-acumin text-xs text-black tabular-nums">
+                            {currency(creditLine?.credit ?? 0)}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className={panelClassName}>
+            <h4 className="font-acumin text-sm font-medium tracking-widest text-black">
+              翌年度（{fiscalYear + 1}年）へ繰り越す期首残高
+            </h4>
+            <p className="mt-1 font-acumin text-[10px] leading-relaxed text-[#707070]">
+              損益科目は0にし、
+              {businessType === "soleProprietor"
+                ? "元入金 = 当年元入金 + 当期純利益 + 事業主借 − 事業主貸 として事業主貸借を精算します。"
+                : "当期純利益を繰越利益剰余金へ振り替えます。"}
+            </p>
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full min-w-[420px] border-collapse">
+                <thead>
+                  <tr className="border-b border-[#d4d4d4]">
+                    {["コード", "勘定科目", "借方", "貸方"].map((heading) => (
+                      <th
+                        key={heading}
+                        className="px-2 py-2 text-left font-acumin text-[11px] font-normal text-[#474747]"
+                      >
+                        {heading}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {carryForwardRows.map((row) => (
+                    <tr key={row.code} className="border-b border-[#ededed]">
+                      <td className="whitespace-nowrap px-2 py-3 font-acumin text-[11px] text-[#474747]">
+                        {row.code}
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-3 font-acumin text-xs text-black">
+                        {row.name}
+                      </td>
+                      <td className="px-2 py-3 text-right font-acumin text-xs text-black tabular-nums">
+                        {row.debit > 0 ? currency(row.debit) : "—"}
+                      </td>
+                      <td className="px-2 py-3 text-right font-acumin text-xs text-black tabular-nums">
+                        {row.credit > 0 ? currency(row.credit) : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="border-t border-black">
+                    <td
+                      colSpan={2}
+                      className="px-2 py-2 font-acumin text-xs font-medium text-black"
+                    >
+                      合計
+                    </td>
+                    <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                      {currency(carryForwardCheck.debitTotal)}
+                    </td>
+                    <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                      {currency(carryForwardCheck.creditTotal)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p
+              className={`mt-3 font-acumin text-xs ${carryForwardCheck.isBalanced ? "text-[#16844b]" : "text-red-700"}`}
+              role="status"
+            >
+              <i
+                className={`mr-1.5 ${carryForwardCheck.isBalanced ? "ri-checkbox-circle-fill" : "ri-error-warning-fill"}`}
+                aria-hidden="true"
+              />
+              {carryForwardCheck.isBalanced
+                ? "翌年度期首の貸借が一致（翌年期首BS = 当年期末BS）"
+                : `翌年度期首の貸借が不一致：差額 ${currency(carryForwardCheck.debitTotal - carryForwardCheck.creditTotal)}`}
+            </p>
+          </div>
+        </div>
+
+        <aside className={`${panelClassName} h-fit`}>
+          <h4 className="font-acumin text-sm font-medium tracking-widest text-black">
+            決算整理を入力
+          </h4>
+          <p className="mt-1 font-acumin text-[10px] text-[#707070]">
+            期首棚卸高は前年度の期末棚卸高が自動で引き継がれます。
+          </p>
+          <div className="mt-4 space-y-3">
+            <label className="block">
+              <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+                期末商品（製品）棚卸高
+              </span>
+              <input
+                type="number"
+                min="0"
+                aria-label="期末商品棚卸高"
+                value={adjustment.closingInventoryGoods || ""}
+                onChange={(event) =>
+                  setAdjustment((current) => ({
+                    ...current,
+                    closingInventoryGoods: Math.max(
+                      0,
+                      Math.round(Number(event.target.value) || 0),
+                    ),
+                  }))
+                }
+                className={inputClassName}
+                placeholder="0"
+                disabled={Boolean(closedAt)}
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+                期末材料棚卸高
+              </span>
+              <input
+                type="number"
+                min="0"
+                aria-label="期末材料棚卸高"
+                value={adjustment.closingInventoryMaterials || ""}
+                onChange={(event) =>
+                  setAdjustment((current) => ({
+                    ...current,
+                    closingInventoryMaterials: Math.max(
+                      0,
+                      Math.round(Number(event.target.value) || 0),
+                    ),
+                  }))
+                }
+                className={inputClassName}
+                placeholder="0"
+                disabled={Boolean(closedAt)}
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+                貸倒引当金繰入額
+              </span>
+              <input
+                type="number"
+                min="0"
+                aria-label="貸倒引当金繰入額"
+                value={adjustment.allowanceForDoubtful || ""}
+                onChange={(event) =>
+                  setAdjustment((current) => ({
+                    ...current,
+                    allowanceForDoubtful: Math.max(
+                      0,
+                      Math.round(Number(event.target.value) || 0),
+                    ),
+                  }))
+                }
+                className={inputClassName}
+                placeholder="0"
+                disabled={Boolean(closedAt)}
+              />
+            </label>
+
+            <div className="border-t border-[#d4d4d4] pt-3">
+              <div className="flex items-center justify-between">
+                <span className="font-acumin text-[11px] text-[#474747]">
+                  減価償却費（自動）
+                </span>
+                <span className="font-acumin text-xs text-black tabular-nums">
+                  {currency(depreciation.businessExpenseTotal)}
+                </span>
+              </div>
+              <p className="mt-1 font-acumin text-[10px] text-[#707070]">
+                固定資産台帳から自動計算されます。
+              </p>
+            </div>
+
+            {closingMessage ? (
+              <p
+                className={`font-acumin text-xs ${/失敗|ください|一致し/.test(closingMessage) ? "text-red-700" : "text-[#16844b]"}`}
+                role="status"
+              >
+                {closingMessage}
+              </p>
+            ) : null}
+
+            {closedAt ? (
+              <>
+                <p className="font-acumin text-xs text-[#16844b]">
+                  <i
+                    className="ri-lock-line mr-1.5"
+                    aria-hidden="true"
+                  />
+                  {new Date(closedAt).toLocaleDateString("ja-JP")}
+                  に決算を確定済み
+                </p>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="w-full font-acumin"
+                  onClick={() => void handleReopenClosing()}
+                  disabled={isSaving}
+                >
+                  決算を解除して修正する
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="w-full font-acumin"
+                  onClick={() => void handleSaveClosing()}
+                  disabled={isSaving}
+                >
+                  決算整理を保存
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  className="w-full font-acumin"
+                  onClick={() => void handleFinalizeClosing()}
+                  disabled={isSaving || !carryForwardCheck.isBalanced}
+                >
+                  {isSaving ? "処理中..." : `${fiscalYearLabel}を締める`}
+                </Button>
+                <p className="font-acumin text-[10px] leading-relaxed text-[#707070]">
+                  締めると期末残高が確定し、翌年度の期首残高になります。以後は取引の変更が決算書へ反映されません。
+                </p>
+              </>
+            )}
+          </div>
+        </aside>
+      </div>
+    </div>
+  );
+
+  const trialBalanceView = (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p
+          className={`font-acumin text-xs ${trialBalance.isBalanced ? "text-[#16844b]" : "text-red-700"}`}
+          role="status"
+        >
+          <i
+            className={`mr-1.5 ${trialBalance.isBalanced ? "ri-checkbox-circle-fill" : "ri-error-warning-fill"}`}
+            aria-hidden="true"
+          />
+          {trialBalance.isBalanced
+            ? "貸借一致（借方合計 = 貸方合計）"
+            : `貸借不一致：差額 ${currency(trialBalance.difference)}`}
+        </p>
+        <Button
+          variant="secondary"
+          size="sm"
+          className="font-acumin"
+          onClick={handleTrialBalanceExport}
+        >
+          <i className="ri-download-line mr-1.5" aria-hidden="true" />
+          試算表CSV
+        </Button>
+      </div>
+      <div className={`${panelClassName} min-w-0`}>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[820px] border-collapse">
+            <thead>
+              <tr className="border-b border-[#d4d4d4]">
+                {[
+                  "コード",
+                  "勘定科目",
+                  "会計区分",
+                  "借方合計",
+                  "貸方合計",
+                  "借方残高",
+                  "貸方残高",
+                ].map((heading) => (
+                  <th
+                    key={heading}
+                    className="px-2 py-2 text-left font-acumin text-[11px] font-normal text-[#474747]"
+                  >
+                    {heading}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {trialBalance.rows.map((row) => (
+                <tr
+                  key={row.account.code}
+                  className="border-b border-[#ededed]"
+                >
+                  <td className="whitespace-nowrap px-2 py-3 font-acumin text-[11px] text-[#474747]">
+                    {row.account.code}
+                  </td>
+                  <td className="whitespace-nowrap px-2 py-3 font-acumin text-xs text-black">
+                    {row.account.name}
+                  </td>
+                  <td className="whitespace-nowrap px-2 py-3 font-acumin text-[11px] text-[#474747]">
+                    {ACCOUNT_TYPE_LABELS[row.account.type]}
+                  </td>
+                  <td className="px-2 py-3 text-right font-acumin text-xs text-black tabular-nums">
+                    {row.debitTotal > 0 ? currency(row.debitTotal) : "—"}
+                  </td>
+                  <td className="px-2 py-3 text-right font-acumin text-xs text-black tabular-nums">
+                    {row.creditTotal > 0 ? currency(row.creditTotal) : "—"}
+                  </td>
+                  <td className="px-2 py-3 text-right font-acumin text-xs text-black tabular-nums">
+                    {row.debitBalance > 0 ? currency(row.debitBalance) : "—"}
+                  </td>
+                  <td className="px-2 py-3 text-right font-acumin text-xs text-black tabular-nums">
+                    {row.creditBalance > 0 ? currency(row.creditBalance) : "—"}
+                  </td>
+                </tr>
+              ))}
+              <tr className="border-t border-black">
+                <td
+                  colSpan={3}
+                  className="px-2 py-2 font-acumin text-xs font-medium text-black"
+                >
+                  合計
+                </td>
+                <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                  {currency(trialBalance.debitTotal)}
+                </td>
+                <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                  {currency(trialBalance.creditTotal)}
+                </td>
+                <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                  {currency(trialBalance.debitBalanceTotal)}
+                </td>
+                <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                  {currency(trialBalance.creditBalanceTotal)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+
   const journalView = (
     <div className="space-y-5">
+      {/* 主要簿（仕訳帳・総勘定元帳）と検証用の合計残高試算表。入力は取引管理に一本化する。 */}
+      <div className="overflow-x-auto">
+        <TabSegmentControl
+          variant="segment-pill"
+          size="sm"
+          items={LEDGER_TABS}
+          activeKey={ledgerTab}
+          onChange={(key) => setLedgerTab(key as LedgerTab)}
+        />
+      </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <MetricCard
+          label="仕訳件数"
+          value={`${journal.length}件`}
+          note={`${fiscalYearLabel} 集計`}
+        />
+        <MetricCard
+          label="借方合計"
+          value={currency(trialBalance.debitTotal)}
+          note="複式簿記"
+        />
+        <MetricCard
+          label="貸方合計"
+          value={currency(trialBalance.creditTotal)}
+          note={
+            trialBalance.isBalanced
+              ? "差額 ¥0（一致）"
+              : `差額 ${currency(trialBalance.difference)}（不一致）`
+          }
+          positive={trialBalance.isBalanced}
+        />
+      </div>
+
+      {ledgerTab === "general" ? generalLedgerView : null}
+      {ledgerTab === "assets" ? fixedAssetsView : null}
+      {ledgerTab === "trial" ? trialBalanceView : null}
+      {ledgerTab === "closing" ? closingView : null}
+      {ledgerTab !== "journal" ? null : (
+      <>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <Button
           variant="secondary"
@@ -1596,28 +4093,6 @@ export default function CostProfitSection({
           <i className="ri-download-line mr-1.5" aria-hidden="true" />
           仕訳帳CSV
         </Button>
-      </div>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <MetricCard
-          label="仕訳件数"
-          value={`${journalRows.length}件`}
-          note={`${seasonLabel} 集計`}
-        />
-        <MetricCard
-          label="借方合計"
-          value={currency(
-            journalRows.reduce((sum, row) => sum + row.amount, 0),
-          )}
-          note="複式簿記"
-        />
-        <MetricCard
-          label="貸方合計"
-          value={currency(
-            journalRows.reduce((sum, row) => sum + row.amount, 0),
-          )}
-          note="差額 ¥0（一致）"
-          positive
-        />
       </div>
       <div className={`${panelClassName} min-w-0`}>
         <div className="overflow-x-auto">
@@ -1676,11 +4151,32 @@ export default function CostProfitSection({
           </table>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 
   const productView = (
     <div className="space-y-5">
+      {/* 商品原価だけはコレクション単位（シーズン）で見る。会計期間とは独立した軸。 */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="mr-1 font-acumin text-[11px] text-[#707070]">
+          シーズン
+        </span>
+        {seasonOptions.map((season) => (
+          <Button
+            key={season.key}
+            variant="outline"
+            size="2xs"
+            shape="rounded"
+            selected={season.key === seasonKey}
+            onClick={() => setSeasonKey(season.key)}
+            className="font-acumin tracking-wider"
+          >
+            {season.label}
+          </Button>
+        ))}
+      </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <MetricCard
           label="製造原価 合計"
@@ -2041,12 +4537,20 @@ export default function CostProfitSection({
             size="sm"
             className="font-acumin"
             onClick={() =>
-              exportCsv("青色申告_損益計算書.csv", [
+              exportCsv(`${fiscalYearLabel}_青色申告_損益計算書.csv`, [
                 ["科目", "金額"],
-                ["売上高", revenue],
-                ["売上原価", accounting.productCost],
-                ["必要経費", accounting.operatingExpenses],
-                ["青色申告控除前所得", accounting.operatingProfit],
+                ["売上（収入）金額", profitAndLoss.sales],
+                ["期首商品（製品）棚卸高", profitAndLoss.openingInventory],
+                ["当期仕入高", profitAndLoss.purchases],
+                ["期末商品（製品）棚卸高", profitAndLoss.closingInventory],
+                ["差引原価", profitAndLoss.costOfSales],
+                ["差引金額（売上総利益）", profitAndLoss.grossProfit],
+                ["経費", profitAndLoss.operatingExpenses],
+                ["差引金額", profitAndLoss.operatingProfit],
+                ["営業外損益", profitAndLoss.nonOperatingBalance],
+                ["特別損益", profitAndLoss.extraordinaryBalance],
+                ["繰入・繰戻額等", profitAndLoss.provisionBalance],
+                ["当期純利益", profitAndLoss.netIncome],
               ])
             }
           >
@@ -2055,172 +4559,488 @@ export default function CostProfitSection({
         </div>
       </div>
 
+      {/* すべて当年度の仕訳残高から算出。税額は所得控除前の概算であることを明記する。 */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <MetricCard
-          label="事業所得（見込み）"
-          value={currency(accounting.operatingProfit)}
-          note="青色申告控除前"
-          positive
+          label="事業所得"
+          value={currency(profitAndLoss.netIncome)}
+          note="青色申告特別控除前"
+          positive={profitAndLoss.netIncome >= 0}
         />
         <MetricCard
-          label="売上合計"
-          value={currency(revenue)}
-          note="課税売上"
+          label="売上（収入）金額"
+          value={currency(profitAndLoss.sales)}
+          note="売上値引・返品控除後"
+        />
+        <MetricCard
+          label="売上原価"
+          value={currency(profitAndLoss.costOfSales)}
+          note="期首棚卸＋仕入−期末棚卸"
         />
         <MetricCard
           label="必要経費"
-          value={currency(accounting.operatingExpenses)}
-          note={`${expenses.length}件を集計`}
+          value={currency(profitAndLoss.operatingExpenses)}
+          note={`減価償却費 ${currency(depreciation.businessExpenseTotal)}を含む`}
         />
         <MetricCard
-          label="所得税（概算）"
-          value={currency(Math.round(accounting.operatingProfit * 0.2))}
-          note="概算税率20%"
-        />
-        <MetricCard
-          label="住民税（概算）"
-          value={currency(Math.round(accounting.operatingProfit * 0.1))}
-          note="概算税率10%"
+          label="青色申告特別控除後"
+          value={currency(deductionCalc.incomeAfterDeduction)}
+          note={`控除 ${currency(deductionCalc.deduction)}（上限 ${currency(deductionCalc.limit)}）`}
+          positive
         />
         <MetricCard
           label="帳簿貸借差額"
-          value={currency(0)}
-          note="一致を確認済み"
-          positive
+          value={currency(balanceSheet.difference)}
+          note={
+            balanceSheet.isBalanced
+              ? "資産 = 負債 + 純資産"
+              : "不一致：帳簿タブで確認"
+          }
+          positive={balanceSheet.isBalanced}
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.75fr)]">
+      {/* 青色申告決算書（一般用）の様式に1:1対応させる。 */}
+      <div className="overflow-x-auto">
+        <TabSegmentControl
+          variant="segment-pill"
+          size="sm"
+          items={BLUE_RETURN_PAGES}
+          activeKey={taxPage}
+          onChange={(key) => setTaxPage(key as TaxPage)}
+        />
+      </div>
+
+      {taxPage === "page1" ? (
         <div className={panelClassName}>
-          <h4 className="font-acumin text-sm font-medium tracking-widest text-black">
-            作成可能な帳簿・申告資料
-          </h4>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h4 className="font-acumin text-sm font-medium tracking-widest text-black">
+              1ページ 損益計算書
+            </h4>
+            <Button
+              variant="secondary"
+              size="2xs"
+              className="font-acumin"
+              onClick={() => handleBlueReturnExport("page1")}
+            >
+              <i className="ri-download-line mr-1" aria-hidden="true" />
+              CSV
+            </Button>
+          </div>
           <div className="mt-3 overflow-x-auto">
-            <table className="w-full min-w-[620px] border-collapse">
-              <thead>
-                <tr className="border-b border-[#d4d4d4]">
-                  {["帳簿名", "用途", "対象期間", "ステータス", "出力"].map(
-                    (heading) => (
-                      <th
-                        key={heading}
-                        className="px-2 py-2 text-left font-acumin text-[11px] font-normal text-[#474747]"
-                      >
-                        {heading}
-                      </th>
-                    ),
-                  )}
-                </tr>
-              </thead>
+            <table className="w-full min-w-[420px] border-collapse">
               <tbody>
-                {[
-                  [
-                    "仕訳帳",
-                    "全取引の複式仕訳",
-                    "2026/01/01〜12/31",
-                    "作成可能",
-                  ],
-                  [
-                    "総勘定元帳",
-                    "勘定科目別の取引",
-                    "2026/01/01〜12/31",
-                    "作成可能",
-                  ],
-                  [
-                    "青色申告決算書 1ページ",
-                    "損益計算書",
-                    "2026年度",
-                    "作成可能",
-                  ],
-                  [
-                    "青色申告決算書 4ページ",
-                    "貸借対照表",
-                    "2026/12/31時点",
-                    "作成可能",
-                  ],
-                  ["現金出納帳", "現金取引の記録", "2026年度", "確認中"],
-                ].map((row) => (
-                  <tr key={row[0]} className="border-b border-[#ededed]">
-                    <td className="px-2 py-3 font-acumin text-xs font-medium text-black">
-                      {row[0]}
-                    </td>
-                    <td className="px-2 py-3 font-acumin text-xs text-[#474747]">
-                      {row[1]}
-                    </td>
-                    <td className="whitespace-nowrap px-2 py-3 font-acumin text-xs text-[#474747]">
-                      {row[2]}
+                {page1Rows.map((row) => (
+                  <tr
+                    key={row.label}
+                    className={
+                      row.emphasis
+                        ? "border-t border-black"
+                        : "border-b border-[#ededed]"
+                    }
+                  >
+                    <td
+                      className={`px-2 py-2.5 font-acumin text-xs ${row.emphasis ? "font-medium text-black" : "text-[#474747]"} ${row.indent ? "pl-6" : ""}`}
+                    >
+                      {row.label}
                     </td>
                     <td
-                      className={`px-2 py-3 font-acumin text-xs ${row[3] === "作成可能" ? "text-[#16844b]" : "text-[#a16600]"}`}
+                      className={`px-2 py-2.5 text-right font-acumin text-xs tabular-nums ${row.emphasis ? "font-medium text-black" : "text-black"}`}
                     >
-                      {row[3]}
-                    </td>
-                    <td className="px-2 py-3">
-                      <button
-                        type="button"
-                        className="font-acumin text-xs text-black underline underline-offset-4"
-                        onClick={handleJournalExport}
-                      >
-                        CSV
-                      </button>
+                      {currency(row.value)}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <p className="mt-4 font-acumin text-[11px] leading-relaxed text-[#707070]">
-            ※
-            本画面の税額は経営判断用の概算です。実際の申告内容は税理士または所轄税務署へご確認ください。
-          </p>
+          <div className="mt-4 border-t border-[#d4d4d4] pt-3">
+            <p className="font-acumin text-[11px] text-[#474747]">
+              経費の内訳
+            </p>
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full min-w-[360px] border-collapse">
+                <tbody>
+                  {expenseDetailRows.length === 0 ? (
+                    <tr>
+                      <td className="px-2 py-2 font-acumin text-xs text-[#707070]">
+                        経費の登録がありません。
+                      </td>
+                    </tr>
+                  ) : (
+                    expenseDetailRows.map((row) => (
+                      <tr
+                        key={row.account.code}
+                        className="border-b border-[#ededed]"
+                      >
+                        <td className="px-2 py-2 font-acumin text-xs text-[#474747]">
+                          {row.account.name}
+                        </td>
+                        <td className="px-2 py-2 text-right font-acumin text-xs text-black tabular-nums">
+                          {currency(row.amount)}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
+      ) : null}
 
-        <aside className={panelClassName}>
-          <h4 className="font-acumin text-sm font-medium tracking-widest text-black">
-            確定申告準備チェックリスト
-          </h4>
-          <div className="mt-4 space-y-3">
-            {[
-              ["帳簿の入力", true],
-              ["仕訳の貸借一致", true],
-              ["経費の確認", true],
-              ["棚卸資産の確認", true],
-              ["減価償却費の確認", false],
-              ["青色申告決算書の出力", false],
-              ["電子申告（e-Tax）", false],
-            ].map(([label, complete]) => (
-              <div
-                key={String(label)}
-                className="flex items-center justify-between gap-4"
+      {taxPage === "page2" ? (
+        <div className="space-y-5">
+          <div className={panelClassName}>
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h4 className="font-acumin text-sm font-medium tracking-widest text-black">
+                2ページ 月別売上（収入）金額及び仕入金額
+              </h4>
+              <Button
+                variant="secondary"
+                size="2xs"
+                className="font-acumin"
+                onClick={() => handleBlueReturnExport("page2")}
               >
-                <span className="font-acumin text-xs text-black">{label}</span>
-                <span
-                  className={`flex items-center gap-1.5 font-acumin text-xs ${complete ? "text-[#16844b]" : "text-[#888888]"}`}
+                <i className="ri-download-line mr-1" aria-hidden="true" />
+                CSV
+              </Button>
+            </div>
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full min-w-[360px] border-collapse">
+                <thead>
+                  <tr className="border-b border-[#d4d4d4]">
+                    {["月", "売上（収入）金額", "仕入金額"].map((heading) => (
+                      <th
+                        key={heading}
+                        className="px-2 py-2 text-left font-acumin text-[11px] font-normal text-[#474747]"
+                      >
+                        {heading}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {monthlySummary.rows.map((row) => (
+                    <tr key={row.month} className="border-b border-[#ededed]">
+                      <td className="whitespace-nowrap px-2 py-2 font-acumin text-xs text-[#474747]">
+                        {row.month}月
+                      </td>
+                      <td className="px-2 py-2 text-right font-acumin text-xs text-black tabular-nums">
+                        {currency(row.sales)}
+                      </td>
+                      <td className="px-2 py-2 text-right font-acumin text-xs text-black tabular-nums">
+                        {currency(row.purchases)}
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="border-b border-[#ededed]">
+                    <td className="px-2 py-2 font-acumin text-xs text-[#474747]">
+                      雑収入
+                    </td>
+                    <td className="px-2 py-2 text-right font-acumin text-xs text-black tabular-nums">
+                      {currency(monthlySummary.miscIncome)}
+                    </td>
+                    <td className="px-2 py-2" />
+                  </tr>
+                  <tr className="border-t border-black">
+                    <td className="px-2 py-2 font-acumin text-xs font-medium text-black">
+                      計
+                    </td>
+                    <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                      {currency(
+                        monthlySummary.salesTotal + monthlySummary.miscIncome,
+                      )}
+                    </td>
+                    <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                      {currency(monthlySummary.purchasesTotal)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {renderBreakdownPanel("給料賃金の内訳", wagesBreakdown)}
+          {renderBreakdownPanel("専従者給与の内訳", familyWagesBreakdown)}
+
+          <div className={panelClassName}>
+            <h4 className="font-acumin text-sm font-medium tracking-widest text-black">
+              青色申告特別控除額の計算
+            </h4>
+            <label className="mt-3 flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={usesEtax}
+                onChange={(event) => setUsesEtax(event.target.checked)}
+                className="h-4 w-4 accent-black"
+              />
+              <span className="font-acumin text-xs text-black">
+                e-Taxで申告する（または優良な電子帳簿保存を行う）
+              </span>
+            </label>
+            <div className="mt-3">
+              {[
+                ["青色申告特別控除前の所得金額", deductionCalc.incomeBeforeDeduction],
+                ["控除限度額", deductionCalc.limit],
+                ["青色申告特別控除額", deductionCalc.deduction],
+                ["所得金額", deductionCalc.incomeAfterDeduction],
+              ].map(([label, value], index) => (
+                <div
+                  key={String(label)}
+                  className={`flex items-center justify-between py-2 ${index === 3 ? "border-t border-black font-medium" : "border-b border-[#ededed]"}`}
                 >
-                  <i
-                    className={
-                      complete ? "ri-checkbox-circle-fill" : "ri-time-line"
-                    }
-                    aria-hidden="true"
-                  />
-                  {complete ? "完了" : "要確認"}
-                </span>
+                  <span className="font-acumin text-xs text-black">{label}</span>
+                  <span className="font-acumin text-xs text-black tabular-nums">
+                    {currency(Number(value))}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <p className="mt-3 font-acumin text-[10px] leading-relaxed text-[#707070]">
+              ※
+              65万円控除には 複式簿記による記帳・貸借対照表と損益計算書の添付・期限内申告 に加えて
+              e-Tax申告または優良な電子帳簿保存が必要です（国税庁 No.2070）。
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      {taxPage === "page3" ? (
+        <div className="space-y-5">
+          <div className={panelClassName}>
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h4 className="font-acumin text-sm font-medium tracking-widest text-black">
+                3ページ 減価償却費の計算
+              </h4>
+              <Button
+                variant="secondary"
+                size="2xs"
+                className="font-acumin"
+                onClick={() => handleBlueReturnExport("page3")}
+              >
+                <i className="ri-download-line mr-1" aria-hidden="true" />
+                CSV
+              </Button>
+            </div>
+            {depreciation.rows.length === 0 ? (
+              <p className="mt-3 font-acumin text-xs text-[#707070]">
+                固定資産台帳に資産を登録すると、この欄が自動作成されます。
+              </p>
+            ) : (
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full min-w-[860px] border-collapse">
+                  <thead>
+                    <tr className="border-b border-[#d4d4d4]">
+                      {[
+                        "減価償却資産の名称",
+                        "取得年月",
+                        "取得価額",
+                        "償却の基礎になる金額",
+                        "償却方法",
+                        "耐用年数",
+                        "償却率",
+                        "本年中の償却期間",
+                        "本年分の償却費",
+                        "事業専用割合",
+                        "本年分の必要経費算入額",
+                        "未償却残高",
+                      ].map((heading) => (
+                        <th
+                          key={heading}
+                          className="px-2 py-2 text-left font-acumin text-[11px] font-normal text-[#474747]"
+                        >
+                          {heading}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {depreciation.rows.map((row) => (
+                      <tr
+                        key={row.asset.id}
+                        className="border-b border-[#ededed]"
+                      >
+                        <td className="px-2 py-3 font-acumin text-xs text-black">
+                          {row.asset.name}
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-3 font-acumin text-xs text-[#474747]">
+                          {row.asset.acquiredOn.slice(0, 7).replace("-", "/")}
+                        </td>
+                        <td className="px-2 py-3 text-right font-acumin text-xs text-black tabular-nums">
+                          {currency(row.asset.acquisitionCost)}
+                        </td>
+                        <td className="px-2 py-3 text-right font-acumin text-xs text-black tabular-nums">
+                          {currency(row.asset.acquisitionCost)}
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-3 font-acumin text-[11px] text-[#474747]">
+                          {DEPRECIATION_METHOD_LABELS[row.asset.method]}
+                        </td>
+                        <td className="px-2 py-3 text-right font-acumin text-xs text-[#474747] tabular-nums">
+                          {row.asset.method === "straightLine"
+                            ? `${row.asset.usefulLife}年`
+                            : "—"}
+                        </td>
+                        <td className="px-2 py-3 text-right font-acumin text-xs text-[#474747] tabular-nums">
+                          {row.asset.method === "straightLine"
+                            ? straightLineRate(row.asset.usefulLife).toFixed(3)
+                            : "—"}
+                        </td>
+                        <td className="px-2 py-3 text-right font-acumin text-xs text-[#474747] tabular-nums">
+                          {row.asset.method === "straightLine"
+                            ? `${row.months}/12`
+                            : "—"}
+                        </td>
+                        <td className="px-2 py-3 text-right font-acumin text-xs text-black tabular-nums">
+                          {currency(row.depreciation)}
+                        </td>
+                        <td className="px-2 py-3 text-right font-acumin text-xs text-[#474747] tabular-nums">
+                          {row.asset.businessUseRatio}%
+                        </td>
+                        <td className="px-2 py-3 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                          {currency(row.businessExpense)}
+                        </td>
+                        <td className="px-2 py-3 text-right font-acumin text-xs text-black tabular-nums">
+                          {currency(row.closingBookValue)}
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="border-t border-black">
+                      <td
+                        colSpan={8}
+                        className="px-2 py-2 font-acumin text-xs font-medium text-black"
+                      >
+                        計
+                      </td>
+                      <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                        {currency(depreciation.depreciationTotal)}
+                      </td>
+                      <td />
+                      <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                        {currency(depreciation.businessExpenseTotal)}
+                      </td>
+                      <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                        {currency(depreciation.closingBookValueTotal)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {renderBreakdownPanel("利子割引料の内訳", interestBreakdown)}
+          {renderBreakdownPanel("地代家賃の内訳", rentBreakdown)}
+          {renderBreakdownPanel(
+            "税理士・弁護士等の報酬・料金の内訳",
+            professionalFeesBreakdown,
+          )}
+        </div>
+      ) : null}
+
+      {taxPage === "page4" ? (
+        <div className={panelClassName}>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h4 className="font-acumin text-sm font-medium tracking-widest text-black">
+              4ページ 貸借対照表（{fiscalYear}/12/31時点）
+            </h4>
+            <Button
+              variant="secondary"
+              size="2xs"
+              className="font-acumin"
+              onClick={() => handleBlueReturnExport("page4")}
+            >
+              <i className="ri-download-line mr-1" aria-hidden="true" />
+              CSV
+            </Button>
+          </div>
+          <div className="mt-3 grid grid-cols-1 gap-5 lg:grid-cols-2">
+            {(
+              [
+                ["資産", balanceSheetComparison.assets],
+                ["負債・資本", balanceSheetComparison.liabilitiesAndEquity],
+              ] as const
+            ).map(([side, rows]) => (
+              <div key={side} className="min-w-0">
+                <p className="font-acumin text-[11px] text-[#474747]">{side}</p>
+                <div className="mt-2 overflow-x-auto">
+                  <table className="w-full min-w-[300px] border-collapse">
+                    <thead>
+                      <tr className="border-b border-[#d4d4d4]">
+                        {["科目", "期首", "期末"].map((heading) => (
+                          <th
+                            key={heading}
+                            className="px-2 py-2 text-left font-acumin text-[11px] font-normal text-[#474747]"
+                          >
+                            {heading}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={3}
+                            className="px-2 py-3 font-acumin text-xs text-[#707070]"
+                          >
+                            残高がありません。
+                          </td>
+                        </tr>
+                      ) : (
+                        rows.map((row) => (
+                          <tr
+                            key={row.code}
+                            className="border-b border-[#ededed]"
+                          >
+                            <td className="whitespace-nowrap px-2 py-2 font-acumin text-xs text-black">
+                              {row.name}
+                            </td>
+                            <td className="px-2 py-2 text-right font-acumin text-xs text-[#474747] tabular-nums">
+                              {currency(row.opening)}
+                            </td>
+                            <td className="px-2 py-2 text-right font-acumin text-xs text-black tabular-nums">
+                              {currency(row.closing)}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                      <tr className="border-t border-black">
+                        <td className="px-2 py-2 font-acumin text-xs font-medium text-black">
+                          合計
+                        </td>
+                        <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                          {currency(
+                            side === "資産"
+                              ? balanceSheetComparison.openingAssetTotal
+                              : balanceSheetComparison.openingLiabilityEquityTotal,
+                          )}
+                        </td>
+                        <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                          {currency(
+                            side === "資産"
+                              ? balanceSheetComparison.closingAssetTotal
+                              : balanceSheetComparison.closingLiabilityEquityTotal,
+                          )}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             ))}
           </div>
-          <div className="mt-5 border-t border-[#d4d4d4] pt-4">
-            <p className="font-acumin text-[11px] text-[#707070]">
-              申告準備の進捗
-            </p>
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#ededed]">
-              <div className="h-full w-[57%] bg-black" />
-            </div>
-            <div className="mt-2 flex justify-between font-acumin text-[11px] text-[#474747]">
-              <span>4 / 7 項目</span>
-              <span>57%</span>
-            </div>
-          </div>
-        </aside>
-      </div>
+          <p className="mt-4 font-acumin text-[10px] leading-relaxed text-[#707070]">
+            ※
+            期末の負債・資本には当期純利益（元入金への振替前）を含みます。製造原価の計算欄は原価計算を行う場合のみ記入が必要です。
+          </p>
+        </div>
+      ) : null}
+
+      <p className="font-acumin text-[11px] leading-relaxed text-[#707070]">
+        ※
+        本画面の数値は帳簿から自動集計した参考値です。実際の申告内容は税理士または所轄税務署へご確認ください。
+      </p>
     </div>
   );
 

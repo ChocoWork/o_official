@@ -117,15 +117,15 @@ for (const viewport of viewports) {
       await expect(page.getByRole('tab', { name: 'コスト & 利益' })).toHaveCount(0);
     });
 
-    test('ACCOUNTING タブに5つのサブタブとシーズン選択が並ぶ', async ({ page }) => {
-      // FREQ-238-AC-03
+    test('ACCOUNTING タブに5つのサブタブと暦年選択が並ぶ', async ({ page }) => {
+      // FREQ-238-AC-03（会計期間の軸は FREQ-241 でシーズン→暦年へ変更）
       await page.goto('/admin');
       await page.getByRole('button', { name: 'ACCOUNTING' }).click();
 
       for (const label of ACCOUNTING_SUB_TABS) {
         await expect(page.getByRole('tab', { name: label })).toBeVisible();
       }
-      await expect(page.getByRole('button', { name: '2026 S/S' })).toBeVisible();
+      await expect(page.getByRole('button', { name: '2026年', exact: true })).toBeVisible();
 
       await page.getByRole('tab', { name: '取引管理' }).click();
       await expect(page.getByRole('heading', { name: '支出一覧（0件）' })).toBeVisible();
