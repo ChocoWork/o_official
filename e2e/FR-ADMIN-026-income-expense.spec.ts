@@ -130,7 +130,7 @@ for (const viewport of viewports) {
       await openIncomeExpenseTab(page);
 
       await page.getByRole('button', { name: '収入', exact: true }).click();
-      // 収入用の勘定科目・摘要が選べる。
+      // 収入用の勘定科目・支出概要が選べる。
       await page.getByRole('button', { name: '支出概要' }).click();
       await page.getByRole('option', { name: 'オンライン販売' }).click();
       await page.getByPlaceholder('0').fill('120000');

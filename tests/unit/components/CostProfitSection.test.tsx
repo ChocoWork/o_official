@@ -85,7 +85,7 @@ describe('CostProfitSection', () => {
 		await screen.findByText('Supabaseと同期済み');
 
 		fireEvent.click(screen.getByRole('tab', { name: '収支入力' }));
-		// 摘要は黄金比UIの SingleSelect（dropdown）。トリガーを開いて選択肢を押す。
+		// 支出概要は黄金比UIの SingleSelect（dropdown）。トリガーを開いて選択肢を押す。
 		fireEvent.click(screen.getByRole('button', { name: '支出概要' }));
 		fireEvent.click(screen.getByRole('option', { name: '展示会・イベント' }));
 		fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '45000' } });
@@ -93,7 +93,7 @@ describe('CostProfitSection', () => {
 
 		expect(await screen.findByText('支出をSupabaseへ保存し、仕訳帳と財務サマリーへ反映しました。')).toBeInTheDocument();
 
-		// 仕訳帳タブには摘要のプルダウン選択肢が無いため、摘要テキストが一意に現れる。
+		// 仕訳帳タブには支出概要のプルダウン選択肢が無いため、支出概要テキストが一意に現れる。
 		fireEvent.click(screen.getByRole('tab', { name: '帳簿（仕訳一覧）' }));
 		expect(screen.getByText('展示会・イベント')).toBeInTheDocument();
 	});
@@ -121,7 +121,7 @@ describe('CostProfitSection', () => {
 
 		fireEvent.click(screen.getByRole('tab', { name: '収支入力' }));
 
-		// 摘要と金額を入力してからテンプレート保存。
+		// 支出概要と金額を入力してからテンプレート保存。
 		fireEvent.click(screen.getByRole('button', { name: '支出概要' }));
 		fireEvent.click(screen.getByRole('option', { name: '縫製外注' }));
 		fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '50000' } });
@@ -129,7 +129,7 @@ describe('CostProfitSection', () => {
 		fireEvent.click(screen.getByRole('button', { name: 'テンプレート' }));
 		fireEvent.click(screen.getByRole('option', { name: '＋ 現在の入力を保存' }));
 
-		// 名前の初期値は「摘要 / 金額」。
+		// 名前の初期値は「支出概要 / 金額」。
 		const nameInput = screen.getByPlaceholderText('テンプレート名') as HTMLInputElement;
 		expect(nameInput.value).toBe('縫製外注 / ¥50,000');
 		fireEvent.change(nameInput, { target: { value: '縫製外注（定番）' } });
@@ -137,7 +137,7 @@ describe('CostProfitSection', () => {
 
 		expect(await screen.findByText('テンプレートを保存しました。')).toBeInTheDocument();
 
-		// 別の摘要へ変更してから、テンプレートを選び直すと摘要・金額が戻る。
+		// 別の支出概要へ変更してから、テンプレートを選び直すと支出概要・金額が戻る。
 		fireEvent.click(screen.getByRole('button', { name: '支出概要' }));
 		fireEvent.click(screen.getByRole('option', { name: '広告出稿' }));
 
@@ -193,7 +193,7 @@ describe('CostProfitSection', () => {
 		// 種別トグルを「収入」に。
 		fireEvent.click(screen.getByRole('button', { name: '収入', pressed: false }));
 
-		// 収入用の勘定科目・摘要が選べる。
+		// 収入用の勘定科目・支出概要が選べる。
 		fireEvent.click(screen.getByRole('button', { name: '支出概要' }));
 		fireEvent.click(screen.getByRole('option', { name: 'オンライン販売' }));
 		fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '120000' } });

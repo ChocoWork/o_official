@@ -1350,13 +1350,13 @@ export default function CostProfitSection({
             </label>
             <div className="block">
               <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
-                <span className="text-red-700">*</span>
+                支出概要 <span className="text-red-700">*</span>
               </span>
               <SingleSelect
                 variant="dropdown"
                 block
                 size="md"
-                aria-label=""
+                aria-label="支出概要"
                 className="font-acumin"
                 options={shiyouOptionsFor(form.entryType).map((option) => ({
                   value: option,

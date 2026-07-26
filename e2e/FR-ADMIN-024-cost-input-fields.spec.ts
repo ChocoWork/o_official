@@ -1,6 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 
-// FREQ-230: コスト入力タブ = カテゴリ→勘定科目 / 項目→摘要(固定プルダウン) / 取引先(選択+新規登録)
+// FREQ-230: コスト入力タブ = カテゴリ→勘定科目 / 項目→支出概要(固定プルダウン) / 取引先(選択+新規登録)
 const viewports = [
   { name: 'mobile', width: 390, height: 844 },
   { name: 'tablet', width: 768, height: 1024 },
@@ -135,7 +135,7 @@ for (const viewport of viewports) {
       await expect(page.getByText('カテゴリ', { exact: true })).toHaveCount(0);
     });
 
-    test('「摘要（使用用途）」がプルダウンで、選んだ経費が仕訳帳に反映される', async ({ page }) => {
+    test('「支出概要」がプルダウンで、選んだ経費が仕訳帳に反映される', async ({ page }) => {
       // FREQ-230-AC-02
       await mockAdminApis(page);
       await openCostInputTab(page);
