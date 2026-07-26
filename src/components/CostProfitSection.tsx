@@ -3,6 +3,11 @@ import { Button } from "@/components/ui/Button/Button";
 import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
 import { TabSegmentControl } from "@/components/ui/TabSegmentControl/TabSegmentControl";
 import { clientFetch } from "@/lib/client-fetch";
+import {
+  expenseAccounts,
+  incomeAccounts,
+  type BusinessType,
+} from "@/lib/finance/accounts";
 
 type CostProfitTab = "summary" | "expenses" | "journal" | "products" | "tax";
 
@@ -60,6 +65,7 @@ type FinancePlan = {
 type CostProfitResponse = {
   data: {
     seasonKey: string;
+    businessType: BusinessType;
     plan: FinancePlan;
     expenses: Expense[];
     incomes: Expense[];
@@ -70,9 +76,9 @@ type CostProfitResponse = {
 };
 
 const COST_PROFIT_TABS: Array<{ key: CostProfitTab; label: string }> = [
-  { key: "summary", label: "財務サマリー" },
-  { key: "expenses", label: "収支入力" },
-  { key: "journal", label: "帳簿（仕訳一覧）" },
+  { key: "summary", label: "財務概要" },
+  { key: "expenses", label: "取引管理" },
+  { key: "journal", label: "帳簿" },
   { key: "products", label: "商品原価" },
   { key: "tax", label: "税務レポート" },
 ];
@@ -90,20 +96,10 @@ const COST_LABELS: Array<{
   { key: "finishing", label: "検品・仕上げ費", color: "#d7d7d7" },
 ];
 
-// 勘定科目（旧「カテゴリ」）— 支出用
-const CATEGORY_OPTIONS = [
-  "販売費・マーケティング",
-  "材料費",
-  "外注費",
-  "人件費",
-  "地代家賃",
-  "荷造運賃",
-  "通信費",
-  "消耗品費",
-  "旅費交通費",
-  "水道光熱費",
-  "諸会費",
-  "その他経費",
+// 事業形態。勘定科目の適用形態（共通/個人/法人）の絞り込みに使う。
+const BUSINESS_TYPE_OPTIONS: Array<{ value: BusinessType; label: string }> = [
+  { value: "soleProprietor", label: "個人事業主" },
+  { value: "corporation", label: "法人" },
 ];
 // — 支出用の固定リスト
 const SHIYOU_OPTIONS = [
@@ -118,14 +114,6 @@ const SHIYOU_OPTIONS = [
   "打合せ・交通",
   "システム・ツール利用料",
   "その他",
-];
-// 勘定科目 — 収入用
-const INCOME_CATEGORY_OPTIONS = [
-  "売上高",
-  "雑収入",
-  "受取利息",
-  "補助金・助成金",
-  "その他収入",
 ];
 // — 収入用の固定リスト
 const INCOME_SHIYOU_OPTIONS = [
@@ -169,10 +157,22 @@ const EXPENSE_PAYMENT_OPTIONS = [
   "商品券",
   "仮受消費税",
 ];
-// 種別ごとの選択肢を返す。
-function categoryOptionsFor(entryType: EntryType): string[] {
-  return entryType === "income" ? INCOME_CATEGORY_OPTIONS : CATEGORY_OPTIONS;
+// 勘定科目の選択肢。種別（出金/入金）と事業形態（個人/法人）の両方で絞り込む。
+// ラベルは決算書区分を前置きして、長いリストでも探しやすくする。
+function accountOptionsFor(
+  entryType: EntryType,
+  businessType: BusinessType,
+): Array<{ value: string; label: string }> {
+  const accounts =
+    entryType === "income"
+      ? incomeAccounts(businessType)
+      : expenseAccounts(businessType);
+  return accounts.map((account) => ({
+    value: account.name,
+    label: `${account.section} / ${account.name}`,
+  }));
 }
+// 種別ごとの選択肢を返す。
 function shiyouOptionsFor(entryType: EntryType): string[] {
   return entryType === "income" ? INCOME_SHIYOU_OPTIONS : SHIYOU_OPTIONS;
 }
@@ -323,6 +323,8 @@ export default function CostProfitSection({
   const [partners, setPartners] = useState<string[]>([]);
   const [templates, setTemplates] = useState<ExpenseTemplate[]>([]);
   const [plan, setPlan] = useState<FinancePlan>(EMPTY_PLAN);
+  const [businessType, setBusinessType] =
+    useState<BusinessType>("soleProprietor");
   const [selectedProductId, setSelectedProductId] = useState(
     `${seasonKey}-ITEM-001`,
   );
@@ -332,7 +334,8 @@ export default function CostProfitSection({
   const [form, setForm] = useState({
     entryType: "expense" as EntryType,
     date: new Date().toLocaleDateString("sv-SE"),
-    category: CATEGORY_OPTIONS[0],
+    // 勘定科目は選択肢が多いため既定値を置かず、明示的に選ばせる。
+    category: "",
     item: SHIYOU_OPTIONS[0],
     partner: "",
     amount: "",
@@ -371,6 +374,7 @@ export default function CostProfitSection({
       }
 
       setPlan(payload.data.plan);
+      setBusinessType(payload.data.businessType ?? "soleProprietor");
       setExpenses(payload.data.expenses);
       setIncomes(payload.data.incomes ?? []);
       setProducts(payload.data.products);
@@ -581,13 +585,14 @@ export default function CostProfitSection({
     if (
       !form.date ||
       !form.item.trim() ||
+      !form.category.trim() ||
       !Number.isFinite(amount) ||
       amount <= 0
     ) {
       const summaryLabel =
         form.entryType === "income" ? "収入概要" : "支出概要";
       setFormMessage(
-        `日付・${summaryLabel}・1円以上の金額を入力してください。`,
+        `日付・${summaryLabel}・勘定科目・1円以上の金額を入力してください。`,
       );
       return;
     }
@@ -617,7 +622,7 @@ export default function CostProfitSection({
         memo: "",
       }));
       setFormMessage(
-        `${typeLabel}を保存し、仕訳帳と財務サマリーへ反映しました。`,
+        `${typeLabel}を保存し、仕訳帳と財務概要へ反映しました。`,
       );
     } catch (error) {
       setFormMessage(
@@ -630,19 +635,49 @@ export default function CostProfitSection({
     }
   };
 
-  // 種別（支出/収入）切替。勘定科目・概要はその種別の先頭にリセットし、
+  // 種別（支出/収入）切替。勘定科目は種別で選択肢が変わるため未選択に戻し、
+  // 概要・入出金方法はその種別の先頭にリセットする。
   // テンプレートは種別ごとに別管理のため選択状態も解除する。
   const handleEntryTypeChange = (entryType: EntryType) => {
     setForm((current) => ({
       ...current,
       entryType,
-      category: categoryOptionsFor(entryType)[0],
+      category: "",
       item: shiyouOptionsFor(entryType)[0],
       paymentMethod: paymentOptionsFor(entryType)[0],
     }));
     setSelectedTemplateName("");
     setIsSavingTemplate(false);
     setNewTemplateName("");
+  };
+
+  // 事業形態切替。勘定科目の選択肢が変わるため、選択済みの科目が
+  // 新しい選択肢に無ければ未選択へ戻す。
+  const handleBusinessTypeChange = async (next: BusinessType) => {
+    setBusinessType(next);
+    setForm((current) => {
+      const stillAvailable = accountOptionsFor(current.entryType, next).some(
+        (option) => option.value === current.category,
+      );
+      return stillAvailable ? current : { ...current, category: "" };
+    });
+    try {
+      setIsSaving(true);
+      setFormMessage(null);
+      await postMutation({
+        operation: "businessType.update",
+        seasonKey,
+        businessType: next,
+      });
+    } catch (error) {
+      setFormMessage(
+        error instanceof Error
+          ? error.message
+          : "事業形態の保存に失敗しました。",
+      );
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleAddPartner = async () => {
@@ -882,14 +917,6 @@ export default function CostProfitSection({
   const summaryView = (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h3 className="font-acumin text-lg font-medium tracking-wider text-black">
-            経営・財務サマリー
-          </h3>
-          <p className="mt-1 font-acumin text-xs text-[#707070]">
-            売上・費用・商品原価から、財務3表とシーズン利益を自動集計します。
-          </p>
-        </div>
         <span className="border border-[#d4d4d4] px-3 py-1.5 font-acumin text-xs text-[#474747]">
           {seasonLabel}・見込み
         </span>
@@ -1224,14 +1251,6 @@ export default function CostProfitSection({
 
   const expensesView = (
     <div className="space-y-5">
-      <div>
-        <h3 className="font-acumin text-lg font-medium tracking-wider text-black">
-          収支を入力する
-        </h3>
-        <p className="mt-1 font-acumin text-xs text-[#707070]">
-          登録した支出・収入は仕訳帳・損益計算書・キャッシュフローへ自動で反映されます。収入は売上高として集計されます。
-        </p>
-      </div>
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-5">
           {renderEntryTable("支出一覧", expenses, "支出概要", "出金方法")}
@@ -1267,6 +1286,29 @@ export default function CostProfitSection({
                   );
                 })}
               </div>
+            </div>
+            <div className="block">
+              <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+                事業形態 <span className="text-red-700">*</span>
+              </span>
+              <SingleSelect
+                variant="dropdown"
+                block
+                size="md"
+                aria-label="事業形態"
+                className="font-acumin"
+                options={BUSINESS_TYPE_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: option.label,
+                }))}
+                value={businessType}
+                onValueChange={(value) =>
+                  void handleBusinessTypeChange(value as BusinessType)
+                }
+              />
+              <p className="mt-1 font-acumin text-[11px] text-[#707070]">
+                選んだ事業形態で使える勘定科目だけを表示します。
+              </p>
             </div>
             <div className="block">
               <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
@@ -1324,6 +1366,7 @@ export default function CostProfitSection({
                     variant="primary"
                     size="sm"
                     className="shrink-0 font-acumin"
+                    aria-label="テンプレートを保存"
                     onClick={() => void handleSaveTemplate()}
                     disabled={isSaving}
                   >
@@ -1390,10 +1433,11 @@ export default function CostProfitSection({
                 size="md"
                 aria-label="勘定科目"
                 className="font-acumin"
-                options={categoryOptionsFor(form.entryType).map((option) => ({
-                  value: option,
-                  label: option,
-                }))}
+                placeholder="（勘定科目を選択）"
+                options={[
+                  { value: "", label: "（勘定科目を選択）" },
+                  ...accountOptionsFor(form.entryType, businessType),
+                ]}
                 value={form.category}
                 onValueChange={(value) =>
                   setForm((current) => ({ ...current, category: value }))
@@ -1543,14 +1587,6 @@ export default function CostProfitSection({
   const journalView = (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h3 className="font-acumin text-lg font-medium tracking-wider text-black">
-            帳簿（仕訳一覧）
-          </h3>
-          <p className="mt-1 font-acumin text-xs text-[#707070]">
-            複式簿記の仕訳データです。借方・貸方の合計は一致しています。
-          </p>
-        </div>
         <Button
           variant="secondary"
           size="sm"
@@ -1645,14 +1681,6 @@ export default function CostProfitSection({
 
   const productView = (
     <div className="space-y-5">
-      <div>
-        <h3 className="font-acumin text-lg font-medium tracking-wider text-black">
-          商品原価（製造コストの可視化）
-        </h3>
-        <p className="mt-1 font-acumin text-xs text-[#707070]">
-          製造原価と予定生産数から、適正な売価・粗利益・シーズン見込みを確認できます。
-        </p>
-      </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <MetricCard
           label="製造原価 合計"
@@ -1999,14 +2027,6 @@ export default function CostProfitSection({
   const taxView = (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h3 className="font-acumin text-lg font-medium tracking-wider text-black">
-            税務レポート（青色申告用）
-          </h3>
-          <p className="mt-1 font-acumin text-xs text-[#707070]">
-            複式簿記の帳簿と青色申告決算書の作成に必要な数値を確認できます。
-          </p>
-        </div>
         <div className="flex gap-2">
           <Button
             variant="secondary"

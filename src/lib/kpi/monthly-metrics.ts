@@ -157,3 +157,37 @@ export function currentSeasonKey(now: Date = new Date()): string {
 	}
 	return `${year - 1}AW`;
 }
+
+// 表示対象の最初のシーズン。これ以前（2025 A/W 以前）はシーズン選択に出さない。
+export const FIRST_SEASON = '2026SS';
+
+// シーズンキーの表示用ラベル（2026SS → 2026 S/S）。
+export function formatSeasonLabel(season: string): string {
+	const matched = season.match(/^(\d{4})(SS|AW)$/);
+	if (!matched) {
+		return season;
+	}
+	return `${matched[1]} ${matched[2] === 'SS' ? 'S/S' : 'A/W'}`;
+}
+
+// シーズンの新旧比較用の数値（大きいほど新しい）。
+export function seasonSortKey(season: string): number {
+	const matched = season.match(/^(\d{4})(SS|AW)$/);
+	if (!matched) {
+		return 0;
+	}
+	return Number(matched[1]) * 2 + (matched[2] === 'AW' ? 1 : 0);
+}
+
+// シーズン選択の選択肢：FIRST_SEASON から次シーズンまでを新しい順（次 → 現在 → 前…）で返す。
+export function seasonOptionsDescending(currentSeason: string): Array<{ key: string; label: string }> {
+	const latest = nextSeasonKey(currentSeason);
+	const options: Array<{ key: string; label: string }> = [];
+	let cursor = FIRST_SEASON;
+	for (let index = 0; index < 40 && seasonSortKey(cursor) <= seasonSortKey(latest); index += 1) {
+		options.push({ key: cursor, label: formatSeasonLabel(cursor) });
+		cursor = nextSeasonKey(cursor);
+	}
+	options.reverse();
+	return options;
+}

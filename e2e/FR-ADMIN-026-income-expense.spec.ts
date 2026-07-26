@@ -102,8 +102,8 @@ async function mockAdminApis(page: Page): Promise<void> {
 
 async function openIncomeExpenseTab(page: Page) {
   await page.goto('/admin');
-  await page.getByRole('tab', { name: 'コスト & 利益' }).click();
-  await page.getByRole('tab', { name: '収支入力' }).click();
+  await page.getByRole('button', { name: 'ACCOUNTING' }).click();
+  await page.getByRole('tab', { name: '取引管理' }).click();
   await page.getByRole('button', { name: '支出', exact: true }).waitFor();
 }
 
@@ -113,16 +113,16 @@ for (const viewport of viewports) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
     });
 
-    test('タブ名が「収支入力」で、支出一覧と収入一覧が並ぶ', async ({ page }) => {
+    test('タブ名が「取引管理」で、支出一覧と収入一覧が並ぶ', async ({ page }) => {
       // FREQ-233-AC-01
       await mockAdminApis(page);
       await page.goto('/admin');
-      await page.getByRole('tab', { name: 'コスト & 利益' }).click();
+      await page.getByRole('button', { name: 'ACCOUNTING' }).click();
 
-      await expect(page.getByRole('tab', { name: '収支入力' })).toBeVisible();
+      await expect(page.getByRole('tab', { name: '取引管理' })).toBeVisible();
       await expect(page.getByRole('tab', { name: 'コスト入力' })).toHaveCount(0);
 
-      await page.getByRole('tab', { name: '収支入力' }).click();
+      await page.getByRole('tab', { name: '取引管理' }).click();
       await expect(page.getByText('支出一覧（0件）')).toBeVisible();
       await expect(page.getByText('収入一覧（0件）')).toBeVisible();
     });
@@ -137,14 +137,16 @@ for (const viewport of viewports) {
       await expect(page.getByRole('button', { name: '収入概要' })).toBeVisible();
       await page.getByRole('button', { name: '収入概要' }).click();
       await page.getByRole('option', { name: 'オンライン販売' }).click();
+      await page.getByRole('button', { name: '勘定科目' }).click();
+      await page.getByRole('option', { name: '売上（収入）金額 / 売上高', exact: true }).click();
       await page.getByPlaceholder('0').fill('120000');
-      await page.getByRole('button', { name: '収入をSupabaseへ保存' }).click();
+      await page.getByRole('button', { name: '保存', exact: true }).click();
 
-      await expect(page.getByText('収入をSupabaseへ保存し、仕訳帳と財務サマリーへ反映しました。')).toBeVisible();
+      await expect(page.getByText('収入を保存し、仕訳帳と財務概要へ反映しました。')).toBeVisible();
       await expect(page.getByText('収入一覧（1件）')).toBeVisible();
 
-      // 財務サマリーの売上に収入合計が反映される。
-      await page.getByRole('tab', { name: '財務サマリー' }).click();
+      // 財務概要の売上に収入合計が反映される。
+      await page.getByRole('tab', { name: '財務概要' }).click();
       await expect(page.getByText('¥120,000').first()).toBeVisible();
     });
 
@@ -157,20 +159,20 @@ for (const viewport of viewports) {
       await page.getByRole('button', { name: '支出概要' }).click();
       await page.getByRole('option', { name: '縫製外注' }).click();
       await page.getByPlaceholder('0').fill('50000');
-      await page.getByRole('button', { name: 'テンプレート' }).click();
+      await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
       await page.getByRole('option', { name: '＋ 現在の入力を保存' }).click();
       await page.getByPlaceholder('テンプレート名').fill('縫製外注（支出）');
-      await page.getByRole('button', { name: '保存', exact: true }).click();
+      await page.getByRole('button', { name: 'テンプレートを保存' }).click();
       await expect(page.getByText('テンプレートを保存しました。')).toBeVisible();
 
       // 支出のプルダウンには出る。
-      await page.getByRole('button', { name: 'テンプレート' }).click();
+      await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
       await expect(page.getByRole('option', { name: '縫製外注（支出）' })).toBeVisible();
       await page.getByRole('option', { name: '（テンプレートを選択）' }).click();
 
       // 収入へ切り替えると出ない。
       await page.getByRole('button', { name: '収入', exact: true }).click();
-      await page.getByRole('button', { name: 'テンプレート' }).click();
+      await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
       await expect(page.getByRole('option', { name: '縫製外注（支出）' })).toHaveCount(0);
     });
 

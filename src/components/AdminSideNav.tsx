@@ -9,6 +9,7 @@ interface AdminSideNavProps {
 // 各タブのアイコン（remixicon の細線ストローク）。
 const TAB_ICONS: Record<TabType, string> = {
   KPI: 'ri-bar-chart-2-line',
+  ACCOUNTING: 'ri-calculator-line',
   NEWS: 'ri-article-line',
   ITEM: 'ri-shopping-bag-line',
   LOOK: 'ri-image-line',

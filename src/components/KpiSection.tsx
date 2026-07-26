@@ -4,15 +4,16 @@ import { SingleSelect } from '@/components/ui/SingleSelect/SingleSelect';
 import { TabSegmentControl } from '@/components/ui/TabSegmentControl/TabSegmentControl';
 import type { SelectOption } from '@/components/ui/types';
 import { clientFetch } from '@/lib/client-fetch';
-import CostProfitSection from '@/components/CostProfitSection';
 import {
 	SOURCE_METRICS,
 	MONTHLY_KPI_FORMULAS,
 	sourceStorageKey,
 	kpiOverrideStorageKey,
 	parseSeasonKey,
-	nextSeasonKey,
 	currentSeasonKey,
+	formatSeasonLabel,
+	seasonSortKey,
+	seasonOptionsDescending,
 	type SourceMetricDef,
 } from '@/lib/kpi/monthly-metrics';
 
@@ -85,7 +86,6 @@ const KPI_SUB_TABS = [
 	{ key: 'progress', label: '目標 & 進捗' },
 	{ key: 'trend', label: '過去推移' },
 	{ key: 'targets', label: '月次記録' },
-	{ key: 'cost', label: 'コスト & 利益' },
 ] as const;
 
 type KpiSubTabKey = (typeof KPI_SUB_TABS)[number]['key'];
@@ -219,22 +219,6 @@ type TrendPoint = TrendMetricValues & {
 };
 
 const YEN_FORMATTER = new Intl.NumberFormat('ja-JP');
-
-function formatSeasonLabel(period: string): string {
-	const matched = period.match(/^(\d{4})(SS|AW)$/);
-	if (!matched) {
-		return period;
-	}
-	return `${matched[1]} ${matched[2] === 'SS' ? 'S/S' : 'A/W'}`;
-}
-
-function seasonSortKey(period: string): number {
-	const matched = period.match(/^(\d{4})(SS|AW)$/);
-	if (!matched) {
-		return 0;
-	}
-	return Number(matched[1]) * 2 + (matched[2] === 'AW' ? 1 : 0);
-}
 
 // 月（暦年 year の monthNumber）が属するシーズンキー。
 // SS=4〜9月（当年）、AW=10〜12月（当年）/ 1〜3月（前年AW）。
@@ -378,9 +362,6 @@ function monthColumnLabel(monthKey: string): string {
 	const matched = monthKey.match(/^\d{4}-(\d{2})$/);
 	return matched ? `${Number.parseInt(matched[1], 10)}月` : monthKey;
 }
-
-// ブランドの最初のシーズン。これ以前（2025 A/W 以前）はシーズンボタンに表示しない。
-const FIRST_SEASON = '2026SS';
 
 // シーズンキー → '2026年4月〜9月' / '2026年10月〜2027年3月'。
 function formatSeasonRangeLabel(season: string): string {
@@ -1258,15 +1239,7 @@ export default function KpiSection({ data, isLoading, errorMessage, onRetry }: K
 	// 新しい順（次 → 現在 → 前 → その前…）にする。2025 A/W 以前は表示しない。
 	const seasonInfo = useMemo(() => {
 		const current = targetData?.currentSeason ?? currentSeasonKey();
-		const latest = nextSeasonKey(current); // 次シーズンまで表示
-		const options: { key: string; label: string }[] = [];
-		let cursor = FIRST_SEASON;
-		for (let index = 0; index < 40 && seasonSortKey(cursor) <= seasonSortKey(latest); index += 1) {
-			options.push({ key: cursor, label: formatSeasonLabel(cursor) });
-			cursor = nextSeasonKey(cursor);
-		}
-		options.reverse();
-		return { current, options };
+		return { current, options: seasonOptionsDescending(current) };
 	}, [targetData]);
 
 	const seasonOptions = seasonInfo.options;
@@ -1359,17 +1332,6 @@ export default function KpiSection({ data, isLoading, errorMessage, onRetry }: K
 			{activeSubTab === 'trend' ? granularitySelector : seasonSelector}
 		</>
 	);
-
-	if (activeSubTab === 'cost') {
-		const selectedSeasonLabel =
-			seasonOptions.find((season) => season.key === selectedSeason)?.label ?? formatSeasonLabel(selectedSeason);
-		return (
-			<section>
-				{subTabBar}
-				<CostProfitSection seasonKey={selectedSeason} seasonLabel={selectedSeasonLabel} />
-			</section>
-		);
-	}
 
 	if (isLoading) {
 		return (

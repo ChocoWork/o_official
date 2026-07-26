@@ -73,11 +73,16 @@ h5 {
  * Admin pages use Acumin consistently, including headings and portalled UI.
  * Remix Icon elements are excluded because their glyphs require the
  * "remixicon" icon font.
+ * サイト共通のヘッダー・フッター（.site-chrome）は管理画面でも他ページと
+ * 同じ表示にするため、body側の一括指定から除外する。
  */
 .admin-font-scope,
 .admin-font-scope *:not([class^="ri-"]):not([class*=" ri-"]),
 body.admin-font-active,
-body.admin-font-active *:not([class^="ri-"]):not([class*=" ri-"]) {
+body.admin-font-active
+  *:not([class^="ri-"]):not([class*=" ri-"]):not(.site-chrome):not(
+    .site-chrome *
+  ) {
   font-family: "acumin-pro", sans-serif !important;
 }
 

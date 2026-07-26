@@ -4,6 +4,7 @@ import CostProfitSection from '@/components/CostProfitSection';
 function setupFinanceFetch() {
 	const data = {
 		seasonKey: '2026SS',
+		businessType: 'soleProprietor',
 		plan: {
 			salesRevenue: 3240000,
 			openingCash: 420000,
@@ -75,7 +76,7 @@ describe('CostProfitSection', () => {
 		expect(screen.getByText('損益計算書（P/L）')).toBeInTheDocument();
 		expect(screen.getByText('貸借対照表（B/S）')).toBeInTheDocument();
 		expect(screen.getByText('キャッシュ・フロー計算書（C/F）')).toBeInTheDocument();
-		expect(screen.getByRole('tab', { name: '帳簿（仕訳一覧）' })).toBeInTheDocument();
+		expect(screen.getByRole('tab', { name: '帳簿' })).toBeInTheDocument();
 		expect(screen.getByRole('tab', { name: '商品原価' })).toBeInTheDocument();
 		expect(screen.getByRole('tab', { name: '税務レポート' })).toBeInTheDocument();
 	});
@@ -84,17 +85,19 @@ describe('CostProfitSection', () => {
 		render(<CostProfitSection seasonKey="2026SS" seasonLabel="2026 S/S" />);
 		await screen.findByText('Supabaseと同期済み');
 
-		fireEvent.click(screen.getByRole('tab', { name: '収支入力' }));
+		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 		// 支出概要は黄金比UIの SingleSelect（dropdown）。トリガーを開いて選択肢を押す。
 		fireEvent.click(screen.getByRole('button', { name: '支出概要' }));
 		fireEvent.click(screen.getByRole('option', { name: '展示会・イベント' }));
+		fireEvent.click(screen.getByRole('button', { name: '勘定科目' }));
+		fireEvent.click(screen.getByRole('option', { name: '経費 / 広告宣伝費' }));
 		fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '45000' } });
-		fireEvent.click(screen.getByRole('button', { name: '支出をSupabaseへ保存' }));
+		fireEvent.click(screen.getByRole('button', { name: '保存' }));
 
-		expect(await screen.findByText('支出をSupabaseへ保存し、仕訳帳と財務サマリーへ反映しました。')).toBeInTheDocument();
+		expect(await screen.findByText('支出を保存し、仕訳帳と財務概要へ反映しました。')).toBeInTheDocument();
 
 		// 仕訳帳タブには支出概要のプルダウン選択肢が無いため、支出概要テキストが一意に現れる。
-		fireEvent.click(screen.getByRole('tab', { name: '帳簿（仕訳一覧）' }));
+		fireEvent.click(screen.getByRole('tab', { name: '帳簿' }));
 		expect(screen.getByText('展示会・イベント')).toBeInTheDocument();
 	});
 
@@ -102,7 +105,7 @@ describe('CostProfitSection', () => {
 		render(<CostProfitSection seasonKey="2026SS" seasonLabel="2026 S/S" />);
 		await screen.findByText('Supabaseと同期済み');
 
-		fireEvent.click(screen.getByRole('tab', { name: '収支入力' }));
+		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 		// 取引先も SingleSelect（dropdown）。開いて「＋新規登録」を選ぶ。
 		fireEvent.click(screen.getByRole('button', { name: '取引先' }));
 		fireEvent.click(screen.getByRole('option', { name: '＋ 新規登録' }));
@@ -119,7 +122,7 @@ describe('CostProfitSection', () => {
 		render(<CostProfitSection seasonKey="2026SS" seasonLabel="2026 S/S" />);
 		await screen.findByText('Supabaseと同期済み');
 
-		fireEvent.click(screen.getByRole('tab', { name: '収支入力' }));
+		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 
 		// 支出概要と金額を入力してからテンプレート保存。
 		fireEvent.click(screen.getByRole('button', { name: '支出概要' }));
@@ -133,7 +136,7 @@ describe('CostProfitSection', () => {
 		const nameInput = screen.getByPlaceholderText('テンプレート名') as HTMLInputElement;
 		expect(nameInput.value).toBe('縫製外注 / ¥50,000');
 		fireEvent.change(nameInput, { target: { value: '縫製外注（定番）' } });
-		fireEvent.click(screen.getByRole('button', { name: '保存' }));
+		fireEvent.click(screen.getByRole('button', { name: 'テンプレートを保存' }));
 
 		expect(await screen.findByText('テンプレートを保存しました。')).toBeInTheDocument();
 
@@ -159,8 +162,8 @@ describe('CostProfitSection', () => {
 		expect(sellingPriceInput).toHaveValue(30000);
 		expect(screen.getAllByText('¥21,000').length).toBeGreaterThan(0);
 
-		fireEvent.click(screen.getByRole('button', { name: '商品原価をSupabaseへ保存' }));
-		await waitFor(() => expect(screen.getByText('ドローストリングシャツの原価・売価をSupabaseへ保存しました。')).toBeInTheDocument());
+		fireEvent.click(screen.getByRole('button', { name: '保存' }));
+		await waitFor(() => expect(screen.getByText('ドローストリングシャツの原価・売価を保存しました。')).toBeInTheDocument());
 	});
 
 	it('ゴミ箱ボタンで経費をSupabaseから削除する', async () => {
@@ -168,7 +171,7 @@ describe('CostProfitSection', () => {
 		render(<CostProfitSection seasonKey="2026SS" seasonLabel="2026 S/S" />);
 		await screen.findByText('Supabaseと同期済み');
 
-		fireEvent.click(screen.getByRole('tab', { name: '収支入力' }));
+		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 		const deleteButton = screen.getByRole('button', { name: 'Instagram広告費を削除' });
 		fireEvent.click(deleteButton);
 
@@ -188,7 +191,7 @@ describe('CostProfitSection', () => {
 		render(<CostProfitSection seasonKey="2026SS" seasonLabel="2026 S/S" />);
 		await screen.findByText('Supabaseと同期済み');
 
-		fireEvent.click(screen.getByRole('tab', { name: '収支入力' }));
+		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 
 		// 種別トグルを「収入」に。
 		fireEvent.click(screen.getByRole('button', { name: '収入', pressed: false }));
@@ -197,10 +200,12 @@ describe('CostProfitSection', () => {
 		expect(screen.getByRole('button', { name: '収入概要' })).toBeInTheDocument();
 		fireEvent.click(screen.getByRole('button', { name: '収入概要' }));
 		fireEvent.click(screen.getByRole('option', { name: 'オンライン販売' }));
+		fireEvent.click(screen.getByRole('button', { name: '勘定科目' }));
+		fireEvent.click(screen.getByRole('option', { name: '売上（収入）金額 / 売上高' }));
 		fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '120000' } });
-		fireEvent.click(screen.getByRole('button', { name: '収入をSupabaseへ保存' }));
+		fireEvent.click(screen.getByRole('button', { name: '保存' }));
 
-		expect(await screen.findByText('収入をSupabaseへ保存し、仕訳帳と財務サマリーへ反映しました。')).toBeInTheDocument();
+		expect(await screen.findByText('収入を保存し、仕訳帳と財務概要へ反映しました。')).toBeInTheDocument();
 
 		// entryType=income のPOSTが送られる。
 		expect(mockFetch).toHaveBeenCalledWith(
@@ -216,7 +221,7 @@ describe('CostProfitSection', () => {
 		render(<CostProfitSection seasonKey="2026SS" seasonLabel="2026 S/S" />);
 		await screen.findByText('Supabaseと同期済み');
 
-		fireEvent.click(screen.getByRole('tab', { name: '収支入力' }));
+		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 
 		// 支出のテンプレートを1件作る。
 		fireEvent.click(screen.getByRole('button', { name: '支出概要' }));
@@ -225,7 +230,7 @@ describe('CostProfitSection', () => {
 		fireEvent.click(screen.getByRole('button', { name: 'テンプレート' }));
 		fireEvent.click(screen.getByRole('option', { name: '＋ 現在の入力を保存' }));
 		fireEvent.change(screen.getByPlaceholderText('テンプレート名'), { target: { value: '縫製外注（支出）' } });
-		fireEvent.click(screen.getByRole('button', { name: '保存' }));
+		fireEvent.click(screen.getByRole('button', { name: 'テンプレートを保存' }));
 		expect(await screen.findByText('テンプレートを保存しました。')).toBeInTheDocument();
 
 		// 支出テンプレートは支出のプルダウンに出る。

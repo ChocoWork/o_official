@@ -8,6 +8,7 @@ import AdminSideNav from '@/components/AdminSideNav';
 import { useLogin } from '@/contexts/LoginContext';
 import { clientFetch } from '@/lib/client-fetch';
 import KpiSection, { type AdminKpiData } from '@/components/KpiSection';
+import AccountingSection from '@/components/AccountingSection';
 import NewsSection from '@/components/NewsSection';
 import ItemSection from '@/components/ItemSection';
 import LookSection from '@/components/LookSection';
@@ -18,7 +19,7 @@ import { Button } from '@/components/ui/Button/Button';
 import { DateTimePicker } from '@/components/ui/DateTimePicker/DateTimePicker';
 import { SearchField } from '@/components/ui/SearchField/SearchField';
 
-const allAdminTabs: TabType[] = ['KPI', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER'];
+const allAdminTabs: TabType[] = ['KPI', 'ACCOUNTING', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER'];
 const supporterTabs: TabType[] = ['ORDER'];
 const ORDER_STATUS_FILTERS = [
   { label: 'すべて', value: 'all' },
@@ -508,6 +509,9 @@ function AdminPageContent() {
       case 'KPI':
         if (userRole !== 'admin') return null;
         return <KpiSection data={kpiData} isLoading={isKpiLoading} errorMessage={kpiErrorMessage} onRetry={fetchKpi} />;
+      case 'ACCOUNTING':
+        if (userRole !== 'admin') return null;
+        return <AccountingSection />;
       case 'NEWS':
         if (userRole !== 'admin') return null;
         return <NewsSection />;

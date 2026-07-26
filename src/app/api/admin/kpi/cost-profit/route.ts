@@ -9,6 +9,9 @@ const moneySchema = z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 
 const entryTypeSchema = z.enum(['expense', 'income']).default('expense');
 
+// 事業形態。勘定科目マスタ（src/lib/finance/accounts.ts）の適用形態と対応する。
+const businessTypeSchema = z.enum(['soleProprietor', 'corporation']);
+
 const expenseSchema = z.object({
 	entryType: entryTypeSchema,
 	date: z.string().date(),
@@ -90,6 +93,11 @@ const mutationSchema = z.discriminatedUnion('operation', [
 		seasonKey: seasonKeySchema,
 		templateName: z.string().trim().min(1).max(160),
 	}),
+	z.object({
+		operation: z.literal('businessType.update'),
+		seasonKey: seasonKeySchema,
+		businessType: businessTypeSchema,
+	}),
 ]);
 
 type FinancePlanRow = {
@@ -100,7 +108,10 @@ type FinancePlanRow = {
 	fixed_assets: number;
 	accounts_payable: number;
 	opening_capital: number;
+	business_type: BusinessType;
 };
+
+type BusinessType = z.infer<typeof businessTypeSchema>;
 
 type EntryType = 'expense' | 'income';
 
@@ -273,7 +284,7 @@ export async function GET(request: Request) {
 		const [planResult, expensesResult, productsResult, partnersResult, templatesResult] = await Promise.all([
 			supabase
 				.from('admin_finance_seasons')
-				.select('season_key, sales_revenue, opening_cash, accounts_receivable, fixed_assets, accounts_payable, opening_capital')
+				.select('season_key, sales_revenue, opening_cash, accounts_receivable, fixed_assets, accounts_payable, opening_capital, business_type')
 				.eq('season_key', parsedSeason.data)
 				.maybeSingle(),
 			supabase
@@ -308,11 +319,13 @@ export async function GET(request: Request) {
 		}
 
 		const entries = ((expensesResult.data ?? []) as ExpenseRow[]).map(mapExpense);
+		const planRow = (planResult.data as FinancePlanRow | null) ?? null;
 
 		return NextResponse.json({
 			data: {
 				seasonKey: parsedSeason.data,
-				plan: mapPlan((planResult.data as FinancePlanRow | null) ?? null),
+				businessType: planRow?.business_type ?? 'soleProprietor',
+				plan: mapPlan(planRow),
 				expenses: entries.filter((entry) => entry.entryType === 'expense'),
 				incomes: entries.filter((entry) => entry.entryType === 'income'),
 				products: ((productsResult.data ?? []) as ProductRow[]).map(mapProduct),
@@ -463,6 +476,18 @@ export async function POST(request: Request) {
 
 			if (error) throw error;
 			resourceId = parsed.data.templateName;
+		} else if (parsed.data.operation === 'businessType.update') {
+			const { error } = await supabase
+				.from('admin_finance_seasons')
+				.upsert(
+					{
+						season_key: parsed.data.seasonKey,
+						business_type: parsed.data.businessType,
+					},
+					{ onConflict: 'season_key' },
+				);
+
+			if (error) throw error;
 		} else {
 			const plan = parsed.data.plan;
 			const { error } = await supabase

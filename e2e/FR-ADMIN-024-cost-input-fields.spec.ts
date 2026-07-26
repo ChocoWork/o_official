@@ -114,8 +114,8 @@ async function mockAdminApis(page: Page): Promise<void> {
 
 async function openCostInputTab(page: Page) {
   await page.goto('/admin');
-  await page.getByRole('tab', { name: 'コスト & 利益' }).click();
-  await page.getByRole('tab', { name: '収支入力' }).click();
+  await page.getByRole('button', { name: 'ACCOUNTING' }).click();
+  await page.getByRole('tab', { name: '取引管理' }).click();
   // プルダウンは黄金比UIの SingleSelect（dropdown）。トリガーは button。
   await page.getByRole('button', { name: '勘定科目' }).waitFor();
 }
@@ -143,12 +143,14 @@ for (const viewport of viewports) {
       // SingleSelect（dropdown）: トリガーを開いて選択肢を押す。
       await page.getByRole('button', { name: '支出概要' }).click();
       await page.getByRole('option', { name: '展示会・イベント' }).click();
+      await page.getByRole('button', { name: '勘定科目' }).click();
+      await page.getByRole('option', { name: '経費 / 広告宣伝費', exact: true }).click();
       await page.getByPlaceholder('0').fill('45000');
-      await page.getByRole('button', { name: '支出をSupabaseへ保存' }).click();
+      await page.getByRole('button', { name: '保存', exact: true }).click();
 
-      await expect(page.getByText('支出をSupabaseへ保存し、仕訳帳と財務サマリーへ反映しました。')).toBeVisible();
+      await expect(page.getByText('支出を保存し、仕訳帳と財務概要へ反映しました。')).toBeVisible();
 
-      await page.getByRole('tab', { name: '帳簿（仕訳一覧）' }).click();
+      await page.getByRole('tab', { name: '帳簿', exact: true }).click();
       await expect(page.getByText('展示会・イベント')).toBeVisible();
     });
 

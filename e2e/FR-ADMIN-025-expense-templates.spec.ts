@@ -101,9 +101,9 @@ async function mockAdminApis(page: Page): Promise<void> {
 
 async function openCostInputTab(page: Page) {
   await page.goto('/admin');
-  await page.getByRole('tab', { name: 'コスト & 利益' }).click();
-  await page.getByRole('tab', { name: '収支入力' }).click();
-  await page.getByRole('button', { name: 'テンプレート' }).waitFor();
+  await page.getByRole('button', { name: 'ACCOUNTING' }).click();
+  await page.getByRole('tab', { name: '取引管理' }).click();
+  await page.getByRole('button', { name: 'テンプレート', exact: true }).waitFor();
 }
 
 for (const viewport of viewports) {
@@ -121,15 +121,15 @@ for (const viewport of viewports) {
       await page.getByRole('option', { name: '縫製外注' }).click();
       await page.getByPlaceholder('0').fill('50000');
 
-      await page.getByRole('button', { name: 'テンプレート' }).click();
+      await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
       await page.getByRole('option', { name: '＋ 現在の入力を保存' }).click();
 
       await expect(page.getByPlaceholder('テンプレート名')).toHaveValue('縫製外注 / ¥50,000');
       await page.getByPlaceholder('テンプレート名').fill('縫製外注（定番）');
-      await page.getByRole('button', { name: '保存', exact: true }).click();
+      await page.getByRole('button', { name: 'テンプレートを保存' }).click();
 
       await expect(page.getByText('テンプレートを保存しました。')).toBeVisible();
-      await page.getByRole('button', { name: 'テンプレート' }).click();
+      await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
       await expect(page.getByRole('option', { name: '縫製外注（定番）' })).toBeVisible();
     });
 
@@ -142,10 +142,10 @@ for (const viewport of viewports) {
       await page.getByRole('button', { name: '支出概要' }).click();
       await page.getByRole('option', { name: '縫製外注' }).click();
       await page.getByPlaceholder('0').fill('50000');
-      await page.getByRole('button', { name: 'テンプレート' }).click();
+      await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
       await page.getByRole('option', { name: '＋ 現在の入力を保存' }).click();
       await page.getByPlaceholder('テンプレート名').fill('縫製外注（定番）');
-      await page.getByRole('button', { name: '保存', exact: true }).click();
+      await page.getByRole('button', { name: 'テンプレートを保存' }).click();
       await expect(page.getByText('テンプレートを保存しました。')).toBeVisible();
 
       // 別の支出概要・金額へ変更。
@@ -154,7 +154,7 @@ for (const viewport of viewports) {
       await page.getByPlaceholder('0').fill('12000');
 
       // テンプレートを選び直すと戻る。
-      await page.getByRole('button', { name: 'テンプレート' }).click();
+      await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
       await page.getByRole('option', { name: '縫製外注（定番）' }).click();
 
       await expect(page.getByRole('button', { name: '支出概要' })).toHaveText(/縫製外注/);
@@ -166,16 +166,16 @@ for (const viewport of viewports) {
       await mockAdminApis(page);
       await openCostInputTab(page);
 
-      await page.getByRole('button', { name: 'テンプレート' }).click();
+      await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
       await page.getByRole('option', { name: '＋ 現在の入力を保存' }).click();
       await page.getByPlaceholder('テンプレート名').fill('使い捨て');
-      await page.getByRole('button', { name: '保存', exact: true }).click();
+      await page.getByRole('button', { name: 'テンプレートを保存' }).click();
       await expect(page.getByText('テンプレートを保存しました。')).toBeVisible();
 
       await page.getByRole('button', { name: '選択中のテンプレートを削除' }).click();
       await expect(page.getByText('テンプレートを削除しました。')).toBeVisible();
 
-      await page.getByRole('button', { name: 'テンプレート' }).click();
+      await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
       await expect(page.getByRole('option', { name: '使い捨て' })).toHaveCount(0);
     });
 

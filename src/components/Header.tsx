@@ -162,8 +162,9 @@ const Header = () => {
 
   return (
     <>
+      {/* site-chrome: 管理画面のフォント一括指定から除外し、他ページと同じ表示にする。 */}
       <header
-        className={`fixed top-0 left-0 right-0 bg-white z-50 h-[52px] sm:h-[54px] md:h-[56px] xl:h-[60px] transition-transform duration-300 ease-in-out ${isHidden ? "-translate-y-full" : "translate-y-0"}`}
+        className={`site-chrome fixed top-0 left-0 right-0 bg-white z-50 h-[52px] sm:h-[54px] md:h-[56px] xl:h-[60px] transition-transform duration-300 ease-in-out ${isHidden ? "-translate-y-full" : "translate-y-0"}`}
       >
         <div className="header-position">
           {/* サイトタイトル */}
@@ -279,7 +280,7 @@ const Header = () => {
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         size="md"
-        className="!border-l-0"
+        className="site-chrome !border-l-0"
       >
         <div className="header-drawer-shell">
           <div className="header-drawer-top-row">
