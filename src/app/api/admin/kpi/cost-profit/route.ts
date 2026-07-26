@@ -7,10 +7,14 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 const seasonKeySchema = z.string().regex(/^\d{4}(SS|AW)$/);
 const moneySchema = z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 
+const entryTypeSchema = z.enum(['expense', 'income']).default('expense');
+
 const expenseSchema = z.object({
+	entryType: entryTypeSchema,
 	date: z.string().date(),
 	category: z.string().trim().min(1).max(80),
 	item: z.string().trim().min(1).max(160),
+	partner: z.string().trim().max(160).default(''),
 	amount: moneySchema.min(1),
 	paymentMethod: z.string().trim().min(1).max(80),
 	memo: z.string().trim().max(500).default(''),
@@ -63,6 +67,29 @@ const mutationSchema = z.discriminatedUnion('operation', [
 		seasonKey: seasonKeySchema,
 		plan: planSchema,
 	}),
+	z.object({
+		operation: z.literal('partner.create'),
+		seasonKey: seasonKeySchema,
+		partnerName: z.string().trim().min(1).max(160),
+	}),
+	z.object({
+		operation: z.literal('template.create'),
+		seasonKey: seasonKeySchema,
+		template: z.object({
+			name: z.string().trim().min(1).max(160),
+			entryType: entryTypeSchema,
+			category: z.string().trim().min(1).max(80),
+			item: z.string().trim().min(1).max(160),
+			amount: moneySchema,
+			paymentMethod: z.string().trim().min(1).max(80),
+			memo: z.string().trim().max(500).default(''),
+		}),
+	}),
+	z.object({
+		operation: z.literal('template.delete'),
+		seasonKey: seasonKeySchema,
+		templateName: z.string().trim().min(1).max(160),
+	}),
 ]);
 
 type FinancePlanRow = {
@@ -75,9 +102,28 @@ type FinancePlanRow = {
 	opening_capital: number;
 };
 
+type EntryType = 'expense' | 'income';
+
 type ExpenseRow = {
 	id: number;
+	entry_type: EntryType;
 	expense_date: string;
+	category: string;
+	item_name: string;
+	partner: string;
+	amount: number;
+	payment_method: string;
+	memo: string;
+};
+
+type PartnerRow = {
+	id: number;
+	name: string;
+};
+
+type ExpenseTemplateRow = {
+	name: string;
+	entry_type: EntryType;
 	category: string;
 	item_name: string;
 	amount: number;
@@ -145,12 +191,26 @@ function mapPlan(row: FinancePlanRow | null) {
 function mapExpense(row: ExpenseRow) {
 	return {
 		id: Number(row.id),
+		entryType: row.entry_type ?? 'expense',
 		date: row.expense_date,
+		category: row.category,
+		item: row.item_name,
+		partner: row.partner ?? '',
+		amount: Number(row.amount),
+		paymentMethod: row.payment_method,
+		memo: row.memo,
+	};
+}
+
+function mapTemplate(row: ExpenseTemplateRow) {
+	return {
+		name: row.name,
+		entryType: row.entry_type ?? 'expense',
 		category: row.category,
 		item: row.item_name,
 		amount: Number(row.amount),
 		paymentMethod: row.payment_method,
-		memo: row.memo,
+		memo: row.memo ?? '',
 	};
 }
 
@@ -173,14 +233,6 @@ function mapProduct(row: ProductRow) {
 	};
 }
 
-async function ensureSeasonRow(seasonKey: string) {
-	const supabase = await createServiceRoleClient();
-	const { error } = await supabase
-		.from('admin_finance_seasons')
-		.upsert({ season_key: seasonKey }, { onConflict: 'season_key', ignoreDuplicates: true });
-	return error;
-}
-
 async function applyCsrfProtection() {
 	const { requireCsrfOrDeny } = await import('@/lib/csrfMiddleware');
 	return requireCsrfOrDeny();
@@ -197,11 +249,11 @@ function isRotatedCsrf(value: unknown): value is { rotatedCsrfToken: string } {
 
 async function attachRotatedCsrf(response: NextResponse, csrfResult: unknown) {
 	if (!isRotatedCsrf(csrfResult)) return response;
-	const { csrfCookieName, cookieOptionsForCsrf } = await import('@/lib/cookie');
+	const { csrfCookieName, csrfCookieMaxAgeSeconds, cookieOptionsForCsrf } = await import('@/lib/cookie');
 	response.cookies.set({
 		name: csrfCookieName,
 		value: csrfResult.rotatedCsrfToken,
-		...cookieOptionsForCsrf(0),
+		...cookieOptionsForCsrf(csrfCookieMaxAgeSeconds),
 	});
 	return response;
 }
@@ -218,7 +270,7 @@ export async function GET(request: Request) {
 		}
 
 		const supabase = await createServiceRoleClient();
-		const [planResult, expensesResult, productsResult] = await Promise.all([
+		const [planResult, expensesResult, productsResult, partnersResult, templatesResult] = await Promise.all([
 			supabase
 				.from('admin_finance_seasons')
 				.select('season_key, sales_revenue, opening_cash, accounts_receivable, fixed_assets, accounts_payable, opening_capital')
@@ -226,7 +278,7 @@ export async function GET(request: Request) {
 				.maybeSingle(),
 			supabase
 				.from('admin_finance_expenses')
-				.select('id, expense_date, category, item_name, amount, payment_method, memo')
+				.select('id, entry_type, expense_date, category, item_name, partner, amount, payment_method, memo')
 				.eq('season_key', parsedSeason.data)
 				.order('expense_date', { ascending: false })
 				.order('id', { ascending: false }),
@@ -235,21 +287,37 @@ export async function GET(request: Request) {
 				.select('sku, name, category, production_method, planned_quantity, selling_price, material_cost, sewing_cost, pattern_cost, accessories_cost, processing_cost, finishing_cost')
 				.eq('season_key', parsedSeason.data)
 				.order('sku', { ascending: true }),
+			// 取引先マスタはシーズン非依存（グローバル）。
+			supabase
+				.from('admin_finance_partners')
+				.select('id, name')
+				.order('name', { ascending: true }),
+			// 経費入力テンプレートもシーズン非依存（グローバル）。
+			supabase
+				.from('admin_finance_expense_templates')
+				.select('name, entry_type, category, item_name, amount, payment_method, memo')
+				.order('name', { ascending: true }),
 		]);
 
-		const queryError = planResult.error || expensesResult.error || productsResult.error;
+		const queryError =
+			planResult.error || expensesResult.error || productsResult.error || partnersResult.error || templatesResult.error;
 		if (queryError) {
 			if (isMissingFinanceTable(queryError)) return missingMigrationResponse();
 			console.error('GET /api/admin/kpi/cost-profit query error:', queryError);
 			return NextResponse.json({ error: '会計データの取得に失敗しました。' }, { status: 500 });
 		}
 
+		const entries = ((expensesResult.data ?? []) as ExpenseRow[]).map(mapExpense);
+
 		return NextResponse.json({
 			data: {
 				seasonKey: parsedSeason.data,
 				plan: mapPlan((planResult.data as FinancePlanRow | null) ?? null),
-				expenses: ((expensesResult.data ?? []) as ExpenseRow[]).map(mapExpense),
+				expenses: entries.filter((entry) => entry.entryType === 'expense'),
+				incomes: entries.filter((entry) => entry.entryType === 'income'),
 				products: ((productsResult.data ?? []) as ProductRow[]).map(mapProduct),
+				partners: ((partnersResult.data ?? []) as PartnerRow[]).map((row) => row.name),
+				templates: ((templatesResult.data ?? []) as ExpenseTemplateRow[]).map(mapTemplate),
 			},
 		});
 	} catch (error) {
@@ -279,30 +347,34 @@ export async function POST(request: Request) {
 		}
 
 		operation = parsed.data.operation;
-		const seasonError = await ensureSeasonRow(parsed.data.seasonKey);
-		if (seasonError) {
-			if (isMissingFinanceTable(seasonError)) return missingMigrationResponse();
-			throw seasonError;
-		}
-
 		const supabase = await createServiceRoleClient();
 		let resourceId = parsed.data.seasonKey;
 
 		if (parsed.data.operation === 'expense.create') {
+			const { error: seasonError } = await supabase
+				.from('admin_finance_seasons')
+				.upsert(
+					{ season_key: parsed.data.seasonKey },
+					{ onConflict: 'season_key', ignoreDuplicates: true },
+				);
+			if (seasonError) throw seasonError;
+
 			const expense = parsed.data.expense;
 			const { data, error } = await supabase
 				.from('admin_finance_expenses')
 				.insert({
 					season_key: parsed.data.seasonKey,
+					entry_type: expense.entryType,
 					expense_date: expense.date,
 					category: expense.category,
 					item_name: expense.item,
+					partner: expense.partner,
 					amount: expense.amount,
 					payment_method: expense.paymentMethod,
 					memo: expense.memo,
 					created_by: authz.userId,
 				})
-				.select('id, expense_date, category, item_name, amount, payment_method, memo')
+				.select('id, entry_type, expense_date, category, item_name, partner, amount, payment_method, memo')
 				.single();
 
 			if (error) throw error;
@@ -313,15 +385,22 @@ export async function POST(request: Request) {
 				.delete()
 				.eq('id', parsed.data.expenseId)
 				.eq('season_key', parsed.data.seasonKey)
-				.select('id')
-				.maybeSingle();
+				.select('id');
 
 			if (error) throw error;
-			if (!data) {
+			if (!data?.length) {
 				return NextResponse.json({ error: '経費が見つかりません。' }, { status: 404 });
 			}
 			resourceId = String(parsed.data.expenseId);
 		} else if (parsed.data.operation === 'product.upsert') {
+			const { error: seasonError } = await supabase
+				.from('admin_finance_seasons')
+				.upsert(
+					{ season_key: parsed.data.seasonKey },
+					{ onConflict: 'season_key', ignoreDuplicates: true },
+				);
+			if (seasonError) throw seasonError;
+
 			const product = parsed.data.product;
 			const { error } = await supabase
 				.from('admin_product_costs')
@@ -344,6 +423,46 @@ export async function POST(request: Request) {
 
 			if (error) throw error;
 			resourceId = `${parsed.data.seasonKey}:${product.id}`;
+		} else if (parsed.data.operation === 'partner.create') {
+			// 取引先マスタはシーズン非依存（グローバル）。既存名は重複無視。
+			const { error } = await supabase
+				.from('admin_finance_partners')
+				.upsert(
+					{ name: parsed.data.partnerName, created_by: authz.userId },
+					{ onConflict: 'name', ignoreDuplicates: true },
+				);
+
+			if (error) throw error;
+			resourceId = parsed.data.partnerName;
+		} else if (parsed.data.operation === 'template.create') {
+			// 経費入力テンプレート（グローバル）。同名は上書き（編集）。
+			const template = parsed.data.template;
+			const { error } = await supabase
+				.from('admin_finance_expense_templates')
+				.upsert(
+					{
+						name: template.name,
+						entry_type: template.entryType,
+						category: template.category,
+						item_name: template.item,
+						amount: template.amount,
+						payment_method: template.paymentMethod,
+						memo: template.memo,
+						created_by: authz.userId,
+					},
+					{ onConflict: 'name' },
+				);
+
+			if (error) throw error;
+			resourceId = template.name;
+		} else if (parsed.data.operation === 'template.delete') {
+			const { error } = await supabase
+				.from('admin_finance_expense_templates')
+				.delete()
+				.eq('name', parsed.data.templateName);
+
+			if (error) throw error;
+			resourceId = parsed.data.templateName;
 		} else {
 			const plan = parsed.data.plan;
 			const { error } = await supabase

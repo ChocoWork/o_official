@@ -71,24 +71,22 @@ function isAppRole(role: unknown): role is AppRole {
   return role === 'admin' || role === 'supporter' || role === 'user';
 }
 
-async function resolveTokenRole(userId: string): Promise<AppRole> {
-  try {
-    const service = await createServiceRoleClient();
-    const { data, error } = await service.auth.admin.getUserById(userId);
-
-    if (error || !data.user) {
-      console.error('[RBAC.resolveTokenRole] Error fetching user:', error);
-      return 'user';
-    }
-
-    const rawRole = data.user.app_metadata?.role;
-    const role = isAppRole(rawRole) ? rawRole : 'user';
-    console.log(`[RBAC.resolveTokenRole] User ${userId} -> role: ${role} (raw: ${rawRole})`);
-    return role;
-  } catch (err) {
-    console.error('[RBAC.resolveTokenRole] Exception:', err);
+// The role is read from the already-verified access token (app_metadata),
+// the same source isMfaVerified uses. Avoid a second Auth Admin API round-trip:
+// projects on the new API key format (sb_secret_*) have the GoTrue admin
+// endpoint reject that key, which previously degraded the role to 'user'.
+function resolveTokenRole(user: { app_metadata?: unknown } | null | undefined): AppRole {
+  if (!user || typeof user !== 'object') {
     return 'user';
   }
+
+  const appMetadata = user.app_metadata;
+  if (!appMetadata || typeof appMetadata !== 'object') {
+    return 'user';
+  }
+
+  const rawRole = (appMetadata as Record<string, unknown>)['role'];
+  return isAppRole(rawRole) ? rawRole : 'user';
 }
 
 function isMfaVerified(user: { app_metadata?: unknown } | null | undefined): boolean {
@@ -179,7 +177,7 @@ export async function authorizeAdminPermission(requiredPermission: PermissionCod
 
     console.log(`[RBAC] Authorizing ${user.id} for ${requiredPermission}`);
 
-    const tokenRole = await resolveTokenRole(user.id);
+    const tokenRole = resolveTokenRole(user);
     console.log(`[RBAC] Token role: ${tokenRole}`);
 
     const aclPermissions = await resolveAclPermissions(user.id);

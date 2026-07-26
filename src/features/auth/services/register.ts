@@ -105,8 +105,8 @@ export async function persistSessionAndCookies(res: NextResponse, session: Persi
 
     // persist hashed refresh & csrf token into sessions table
     const refreshToken = session.refresh_token ?? '';
-    const refreshHash = tokenHashSha256(refreshToken);
-    const csrfHash = tokenHashSha256(csrfToken);
+    const refreshHash = await tokenHashSha256(refreshToken);
+    const csrfHash = await tokenHashSha256(csrfToken);
 
     const expiresAt = session.expires_at ? new Date(session.expires_at).toISOString() : null;
 

@@ -13,8 +13,11 @@ function setupFinanceFetch() {
 			openingCapital: 1091000,
 		},
 		expenses: [
-			{ id: 1, date: '2026-05-24', category: '販売費・マーケティング', item: 'Instagram広告費', amount: 32000, paymentMethod: 'クレジットカード', memo: '広告' },
-		],
+			{ id: 1, entryType: 'expense', date: '2026-05-24', category: '販売費・マーケティング', item: 'Instagram広告費', partner: '', amount: 32000, paymentMethod: 'クレジットカード', memo: '広告' },
+		] as Array<Record<string, unknown>>,
+		incomes: [] as Array<Record<string, unknown>>,
+		partners: [] as string[],
+		templates: [] as Array<{ name: string; entryType: string; category: string; item: string; amount: number; paymentMethod: string; memo: string }>,
 		products: [
 			{
 				id: 'LFDH-SS26-T001',
@@ -32,10 +35,25 @@ function setupFinanceFetch() {
 		if ((init?.method ?? 'GET') === 'POST') {
 			const body = JSON.parse(String(init?.body ?? '{}'));
 			if (body.operation === 'expense.create') {
-				data.expenses.unshift({ id: 2, ...body.expense });
+				const entry = { id: Math.floor(Math.random() * 1e6) + 2, ...body.expense };
+				if (body.expense.entryType === 'income') data.incomes.unshift(entry);
+				else data.expenses.unshift(entry);
 			}
 			if (body.operation === 'product.upsert') {
 				data.products = data.products.map((product) => product.id === body.product.id ? body.product : product);
+			}
+			if (body.operation === 'expense.delete') {
+				data.expenses = data.expenses.filter((expense) => expense.id !== body.expenseId);
+				data.incomes = data.incomes.filter((income) => income.id !== body.expenseId);
+			}
+			if (body.operation === 'partner.create') {
+				if (!data.partners.includes(body.partnerName)) data.partners.push(body.partnerName);
+			}
+			if (body.operation === 'template.create') {
+				data.templates = [...data.templates.filter((t) => t.name !== body.template.name), body.template];
+			}
+			if (body.operation === 'template.delete') {
+				data.templates = data.templates.filter((t) => t.name !== body.templateName);
 			}
 			return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 		}
@@ -66,16 +84,68 @@ describe('CostProfitSection', () => {
 		render(<CostProfitSection seasonKey="2026SS" seasonLabel="2026 S/S" />);
 		await screen.findByText('Supabaseと同期済み');
 
-		fireEvent.click(screen.getByRole('tab', { name: 'コスト入力' }));
-		fireEvent.change(screen.getByPlaceholderText('例：Instagram広告費'), { target: { value: '展示会什器レンタル' } });
+		fireEvent.click(screen.getByRole('tab', { name: '収支入力' }));
+		// 摘要は黄金比UIの SingleSelect（dropdown）。トリガーを開いて選択肢を押す。
+		fireEvent.click(screen.getByRole('button', { name: '支出概要' }));
+		fireEvent.click(screen.getByRole('option', { name: '展示会・イベント' }));
 		fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '45000' } });
-		fireEvent.click(screen.getByRole('button', { name: 'Supabaseへ保存' }));
+		fireEvent.click(screen.getByRole('button', { name: '支出をSupabaseへ保存' }));
 
-		expect(await screen.findByText('経費をSupabaseへ保存し、仕訳帳と財務サマリーへ反映しました。')).toBeInTheDocument();
-		expect(await screen.findByText('展示会什器レンタル')).toBeInTheDocument();
+		expect(await screen.findByText('支出をSupabaseへ保存し、仕訳帳と財務サマリーへ反映しました。')).toBeInTheDocument();
 
+		// 仕訳帳タブには摘要のプルダウン選択肢が無いため、摘要テキストが一意に現れる。
 		fireEvent.click(screen.getByRole('tab', { name: '帳簿（仕訳一覧）' }));
-		expect(screen.getByText('展示会什器レンタル')).toBeInTheDocument();
+		expect(screen.getByText('展示会・イベント')).toBeInTheDocument();
+	});
+
+	it('取引先を新規登録して選択肢に追加する', async () => {
+		render(<CostProfitSection seasonKey="2026SS" seasonLabel="2026 S/S" />);
+		await screen.findByText('Supabaseと同期済み');
+
+		fireEvent.click(screen.getByRole('tab', { name: '収支入力' }));
+		// 取引先も SingleSelect（dropdown）。開いて「＋新規登録」を選ぶ。
+		fireEvent.click(screen.getByRole('button', { name: '取引先' }));
+		fireEvent.click(screen.getByRole('option', { name: '＋ 新規登録' }));
+		fireEvent.change(screen.getByPlaceholderText('取引先名を入力'), { target: { value: '丸善テキスタイル' } });
+		fireEvent.click(screen.getByRole('button', { name: '登録' }));
+
+		expect(await screen.findByText('取引先を登録しました。')).toBeInTheDocument();
+		// 登録後に取引先ドロップダウンを開き直すと、選択肢に追加されている。
+		fireEvent.click(screen.getByRole('button', { name: '取引先' }));
+		expect(await screen.findByRole('option', { name: '丸善テキスタイル' })).toBeInTheDocument();
+	});
+
+	it('入力をテンプレート保存し、選択して経費フォームへ反映する', async () => {
+		render(<CostProfitSection seasonKey="2026SS" seasonLabel="2026 S/S" />);
+		await screen.findByText('Supabaseと同期済み');
+
+		fireEvent.click(screen.getByRole('tab', { name: '収支入力' }));
+
+		// 摘要と金額を入力してからテンプレート保存。
+		fireEvent.click(screen.getByRole('button', { name: '支出概要' }));
+		fireEvent.click(screen.getByRole('option', { name: '縫製外注' }));
+		fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '50000' } });
+
+		fireEvent.click(screen.getByRole('button', { name: 'テンプレート' }));
+		fireEvent.click(screen.getByRole('option', { name: '＋ 現在の入力を保存' }));
+
+		// 名前の初期値は「摘要 / 金額」。
+		const nameInput = screen.getByPlaceholderText('テンプレート名') as HTMLInputElement;
+		expect(nameInput.value).toBe('縫製外注 / ¥50,000');
+		fireEvent.change(nameInput, { target: { value: '縫製外注（定番）' } });
+		fireEvent.click(screen.getByRole('button', { name: '保存' }));
+
+		expect(await screen.findByText('テンプレートを保存しました。')).toBeInTheDocument();
+
+		// 別の摘要へ変更してから、テンプレートを選び直すと摘要・金額が戻る。
+		fireEvent.click(screen.getByRole('button', { name: '支出概要' }));
+		fireEvent.click(screen.getByRole('option', { name: '広告出稿' }));
+
+		fireEvent.click(screen.getByRole('button', { name: 'テンプレート' }));
+		fireEvent.click(await screen.findByRole('option', { name: '縫製外注（定番）' }));
+
+		expect(screen.getByRole('button', { name: '支出概要' })).toHaveTextContent('縫製外注');
+		expect((screen.getByPlaceholderText('0') as HTMLInputElement).value).toBe('50000');
 	});
 
 	it('商品原価と売価を編集すると粗利シミュレーションを更新する', async () => {
@@ -91,5 +161,53 @@ describe('CostProfitSection', () => {
 
 		fireEvent.click(screen.getByRole('button', { name: '商品原価をSupabaseへ保存' }));
 		await waitFor(() => expect(screen.getByText('ドローストリングシャツの原価・売価をSupabaseへ保存しました。')).toBeInTheDocument());
+	});
+
+	it('ゴミ箱ボタンで経費をSupabaseから削除する', async () => {
+		const mockFetch = setupFinanceFetch();
+		render(<CostProfitSection seasonKey="2026SS" seasonLabel="2026 S/S" />);
+		await screen.findByText('Supabaseと同期済み');
+
+		fireEvent.click(screen.getByRole('tab', { name: '収支入力' }));
+		const deleteButton = screen.getByRole('button', { name: 'Instagram広告費を削除' });
+		fireEvent.click(deleteButton);
+
+		await waitFor(() => expect(screen.queryByText('Instagram広告費')).not.toBeInTheDocument());
+		expect(await screen.findByText('支出をSupabaseから削除しました。')).toBeInTheDocument();
+		expect(mockFetch).toHaveBeenCalledWith(
+			'/api/admin/kpi/cost-profit',
+			expect.objectContaining({
+				method: 'POST',
+				body: expect.stringContaining('"operation":"expense.delete"'),
+			}),
+		);
+	});
+
+	it('種別を収入に切り替えて収入を登録し、収入一覧へ反映する', async () => {
+		const mockFetch = setupFinanceFetch();
+		render(<CostProfitSection seasonKey="2026SS" seasonLabel="2026 S/S" />);
+		await screen.findByText('Supabaseと同期済み');
+
+		fireEvent.click(screen.getByRole('tab', { name: '収支入力' }));
+
+		// 種別トグルを「収入」に。
+		fireEvent.click(screen.getByRole('button', { name: '収入', pressed: false }));
+
+		// 収入用の勘定科目・摘要が選べる。
+		fireEvent.click(screen.getByRole('button', { name: '支出概要' }));
+		fireEvent.click(screen.getByRole('option', { name: 'オンライン販売' }));
+		fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '120000' } });
+		fireEvent.click(screen.getByRole('button', { name: '収入をSupabaseへ保存' }));
+
+		expect(await screen.findByText('収入をSupabaseへ保存し、仕訳帳と財務サマリーへ反映しました。')).toBeInTheDocument();
+
+		// entryType=income のPOSTが送られる。
+		expect(mockFetch).toHaveBeenCalledWith(
+			'/api/admin/kpi/cost-profit',
+			expect.objectContaining({ method: 'POST', body: expect.stringContaining('"entryType":"income"') }),
+		);
+
+		// 収入一覧の件数見出しが1件になる。
+		expect(await screen.findByText('収入一覧（1件）')).toBeInTheDocument();
 	});
 });

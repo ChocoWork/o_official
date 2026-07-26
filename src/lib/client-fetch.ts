@@ -29,7 +29,23 @@ export async function clientFetch(
   const needsCsrfToken = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
 
   if (needsCsrfToken && !headers.has('x-csrf-token')) {
-    const csrfToken = getCsrfTokenFromCookie();
+    let csrfToken = getCsrfTokenFromCookie();
+
+    // A previous CSRF rotation may have left an authenticated browser without
+    // the readable CSRF cookie. Refresh the session once to issue a matching
+    // cookie/hash pair before sending the state-changing request.
+    if (!csrfToken && endpoint !== '/api/auth/refresh') {
+      const refreshResponse = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
+
+      if (refreshResponse.ok) {
+        csrfToken = getCsrfTokenFromCookie();
+      }
+    }
+
     if (csrfToken) {
       headers.set('x-csrf-token', csrfToken);
     }

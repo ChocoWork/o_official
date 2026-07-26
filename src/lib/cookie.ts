@@ -7,6 +7,7 @@ export const csrfCookieName = 'sb-csrf-token';
 export const passwordResetSessionCookieName = 'sb-password-reset-session';
 export const loginTwoFactorSessionCookieName = 'sb-login-2fa-session';
 export const sessionCookieName = 'session_id';
+export const csrfCookieMaxAgeSeconds = 7 * 24 * 60 * 60;
 
 const SESSION_ID_BYTES = 16;
 

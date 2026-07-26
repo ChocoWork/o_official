@@ -75,4 +75,34 @@ describe('clientFetch', () => {
     const headers = options.headers as Headers;
     expect(headers.get('x-csrf-token')).toBe('%01legacy-csrf-token');
   });
+
+  test('CSRF Cookie がない場合はセッションを更新してから元のPOSTを送る', async () => {
+    cookieGetterSpy = jest
+      .spyOn(document, 'cookie', 'get')
+      .mockReturnValueOnce('foo=bar')
+      .mockReturnValue('foo=bar; sb-csrf-token=recovered-token');
+
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: true });
+
+    await clientFetch('/api/admin/kpi/cost-profit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ operation: 'plan.update' }),
+    });
+
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(global.fetch).toHaveBeenNthCalledWith(1, '/api/auth/refresh', {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+    });
+
+    const [, options] = (global.fetch as jest.Mock).mock.calls[1] as [
+      string,
+      RequestInit & { headers: Headers }
+    ];
+    expect((options.headers as Headers).get('x-csrf-token')).toBe('recovered-token');
+  });
 });

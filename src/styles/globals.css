@@ -69,6 +69,18 @@ h5 {
   font-family: "acumin-pro", sans-serif;
 }
 
+/*
+ * Admin pages use Acumin consistently, including headings and portalled UI.
+ * Remix Icon elements are excluded because their glyphs require the
+ * "remixicon" icon font.
+ */
+.admin-font-scope,
+.admin-font-scope *:not([class^="ri-"]):not([class*=" ri-"]),
+body.admin-font-active,
+body.admin-font-active *:not([class^="ri-"]):not([class*=" ri-"]) {
+  font-family: "acumin-pro", sans-serif !important;
+}
+
 :root {
   --radius: 0.625rem;
   --phi: 1.618;
