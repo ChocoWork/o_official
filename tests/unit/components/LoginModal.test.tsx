@@ -46,8 +46,8 @@ describe('LoginModal', () => {
 
     render(<LoginModal open={true} onClose={jest.fn()} />);
 
-    await user.type(screen.getByLabelText('EMAIL'), 'user@example.com');
-    await user.type(screen.getByLabelText('PASSWORD'), 'password123');
+    await user.type(screen.getByLabelText('Email'), 'user@example.com');
+    await user.type(screen.getByLabelText('Password'), 'password123');
     await user.click(screen.getByRole('button', { name: 'ログイン' }));
 
     await waitFor(() => expect(loginMock).toHaveBeenCalledWith('user@example.com', 'password123', undefined));

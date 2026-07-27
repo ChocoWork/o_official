@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 const PHI = 1.618;
 const EIGHTHSTEP = 1.062;
@@ -26,7 +26,7 @@ function expectClose(actual: number, expected: number, label: string) {
   ).toBeLessThanOrEqual(PX_TOLERANCE);
 }
 
-async function measureStockistSpacing(path: string, page: Parameters<typeof test>[0]['page']): Promise<StockistSpacingMetrics> {
+async function measureStockistSpacing(path: string, page: Page): Promise<StockistSpacingMetrics> {
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.goto(path);
   await page.waitForLoadState('networkidle');

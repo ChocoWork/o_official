@@ -134,18 +134,36 @@ describe('POST /api/checkout/create-session', () => {
     });
   });
 
-  it('custom UI は card / paypay / konbini を payment_method_types で送信する', async () => {
+  // 支払方法は「常に card/paypay/konbini を送る」方式から、
+  // ユーザーが明示的に選んだ 1 種類だけを送る方式へ変わっている。
+  // 未選択（auto）のときは payment_method_types を省略し、Stripe 側の設定に委ねる。
+  it.each([
+    ['stripe_card', ['card']],
+    ['stripe_paypay', ['paypay']],
+    ['stripe_konbini', ['konbini']],
+  ])('custom UI は選択された支払方法 %s だけを送信する', async (paymentMethod, expected) => {
+    mockCreate.mockResolvedValue({ client_secret: 'secret', id: 'cs_test' });
+
+    const req = makeRequest({ uiMode: 'custom', paymentMethod });
+    const res = await POST(req);
+
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    expect((mockCreate.mock.calls[0][0] as Record<string, unknown>).payment_method_types).toEqual(
+      expected,
+    );
+    expect((res as { status: number }).status).toBe(200);
+  });
+
+  it('支払方法を選ばない場合は payment_method_types を送らない', async () => {
     mockCreate.mockResolvedValue({ client_secret: 'secret', id: 'cs_test' });
 
     const req = makeRequest({ uiMode: 'custom' });
     const res = await POST(req);
 
     expect(mockCreate).toHaveBeenCalledTimes(1);
-    expect((mockCreate.mock.calls[0][0] as Record<string, unknown>).payment_method_types).toEqual([
-      'card',
-      'paypay',
-      'konbini',
-    ]);
+    expect(
+      (mockCreate.mock.calls[0][0] as Record<string, unknown>).payment_method_types,
+    ).toBeUndefined();
     expect((mockCreate.mock.calls[0][0] as { metadata: { draft_id: string } }).metadata.draft_id).toBe('draft-123');
     expect((res as { status: number }).status).toBe(200);
     expect(mockEnforceRateLimit).toHaveBeenCalledWith(
@@ -202,7 +220,7 @@ describe('POST /api/checkout/create-session', () => {
     const res = await POST(req);
 
     expect((res as { status: number }).status).toBe(409);
-    expect((res as { body: { error: string } }).body.error).toBe('out_of_stock');
+    expect((res as unknown as { body: { error: string } }).body.error).toBe('out_of_stock');
   });
 
   it('items 取得時に status=published を必須化する', async () => {
@@ -227,7 +245,7 @@ describe('POST /api/checkout/create-session', () => {
     const res = await POST(req);
 
     expect((res as { status: number }).status).toBe(400);
-    expect((res as { body: { error: string } }).body.error).toBe('Invalid request body');
+    expect((res as unknown as { body: { error: string } }).body.error).toBe('Invalid request body');
     expect(mockCreate).not.toHaveBeenCalled();
   });
 });

@@ -71,7 +71,7 @@ describe('CostProfitSection', () => {
 
 	it('財務3表と青色申告向けのサブタブを表示する', async () => {
 		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
-		await screen.findByText('Supabaseと同期済み');
+		await screen.findByText('同期済み');
 
 		expect(screen.getByText('損益計算書（P/L）')).toBeInTheDocument();
 		expect(screen.getByText('貸借対照表（B/S）')).toBeInTheDocument();
@@ -83,7 +83,7 @@ describe('CostProfitSection', () => {
 
 	it('登録した経費を一覧と仕訳帳へ反映する', async () => {
 		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
-		await screen.findByText('Supabaseと同期済み');
+		await screen.findByText('同期済み');
 
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 		// 支出概要は黄金比UIの SingleSelect（dropdown）。トリガーを開いて選択肢を押す。
@@ -103,7 +103,7 @@ describe('CostProfitSection', () => {
 
 	it('取引先を新規登録して選択肢に追加する', async () => {
 		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
-		await screen.findByText('Supabaseと同期済み');
+		await screen.findByText('同期済み');
 
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 		// 取引先も SingleSelect（dropdown）。開いて「＋新規登録」を選ぶ。
@@ -120,7 +120,7 @@ describe('CostProfitSection', () => {
 
 	it('入力をテンプレート保存し、選択して経費フォームへ反映する', async () => {
 		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
-		await screen.findByText('Supabaseと同期済み');
+		await screen.findByText('同期済み');
 
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 
@@ -153,7 +153,7 @@ describe('CostProfitSection', () => {
 
 	it('商品原価と売価を編集すると粗利シミュレーションを更新する', async () => {
 		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
-		await screen.findByText('Supabaseと同期済み');
+		await screen.findByText('同期済み');
 
 		fireEvent.click(screen.getByRole('tab', { name: '商品原価' }));
 		const sellingPriceInput = screen.getByRole('spinbutton', { name: '売価（1点あたり）' });
@@ -169,7 +169,7 @@ describe('CostProfitSection', () => {
 	it('ゴミ箱ボタンで経費をSupabaseから削除する', async () => {
 		const mockFetch = setupFinanceFetch();
 		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
-		await screen.findByText('Supabaseと同期済み');
+		await screen.findByText('同期済み');
 
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 		const deleteButton = screen.getByRole('button', { name: 'Instagram広告費を削除' });
@@ -189,7 +189,7 @@ describe('CostProfitSection', () => {
 	it('種別を収入に切り替えて収入を登録し、収入一覧へ反映する', async () => {
 		const mockFetch = setupFinanceFetch();
 		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
-		await screen.findByText('Supabaseと同期済み');
+		await screen.findByText('同期済み');
 
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 
@@ -219,7 +219,7 @@ describe('CostProfitSection', () => {
 
 	it('テンプレートは支出・収入で別管理される', async () => {
 		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
-		await screen.findByText('Supabaseと同期済み');
+		await screen.findByText('同期済み');
 
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 

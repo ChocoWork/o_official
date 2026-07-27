@@ -114,3 +114,32 @@ docs\1_RequirementsDifinition\brand.md に私の服のブランドのコンセ�
 - description: kebab-case の短い説明
 - テスト内容は受け付け基準（AC）を検証するコードにする
 - mobile（390px）/ tablet（768px）/ desktop（1280px）の3ビューポートでテストする
+
+### E2E 実行ルール
+
+**E2E は必ず本番ビルド（`next build && next start`）に対して実行する。dev サーバーでは実行しない。**
+
+`playwright.config.ts` の `webServer` が既定で `npm run build && npm run start` を起動するので、通常は `npx playwright test`（または `npm run test:e2e`）を叩くだけでよい。
+
+```bash
+npm run test:e2e                      # 全件（本番ビルド）
+npx playwright test e2e/FR-ADMIN-031  # 部分実行（本番ビルド）
+```
+
+**理由:** dev サーバーはリクエストのたびにオンデマンドコンパイルするため、件数が増えると `page.goto` が 30 秒返らない・要素が描画されない、という**実装とは無関係な失敗**を出す。実測で 288 件 22 分の直列実行で 9 件失敗し、同じテストを単体実行すると 111/111 パスした。この偽の失敗を実装のバグと誤診すると、直す必要のないコードを触ることになる。
+
+**注意（必読）:** `reuseExistingServer: true` のため、**`npm run dev` が :3000 で動いたままだと Playwright はそれを再利用し、黙って dev サーバーに対してテストしてしまう**。E2E を回す前に dev サーバーを止めること。
+
+```powershell
+Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue
+```
+
+意図的に dev サーバーで動かす場合のみ `E2E_DEV_SERVER=1` を付ける（デバッグ用途に限る。この結果を回帰の合否判断に使わない）。
+
+**失敗したときの切り分け:** 失敗が実装由来か環境由来かを、原因を推測で断定せず次の順で確認する。
+
+1. 失敗したテストだけを単体で再実行する → パスするなら実装の欠陥ではない
+2. 同一テストの他ビューポートが同じ実行内でパスしているか見る → パスしていれば環境由来の疑いが濃い
+3. エラーが `page.goto` / `locator.click` のタイムアウトか、アサーション内容の不一致かを区別する → 前者はサーバー側、後者は実装側
+
+`retries` を上げて通すのは症状を隠すだけなので採らない。

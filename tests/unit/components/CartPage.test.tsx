@@ -58,7 +58,7 @@ describe('CartPage', () => {
 
     // wait for loading to finish and EmptyCart to appear
     await waitFor(() => {
-      expect(screen.getByText(/カートは空です/i)).toBeInTheDocument();
+      expect(screen.getByText(/YOUR CART IS EMPTY/i)).toBeInTheDocument();
     });
   });
 
@@ -82,11 +82,11 @@ describe('CartPage', () => {
       },
     ];
 
-    let resolveFirst: (value?: any) => void;
+    let resolveFirst: (value?: any) => void = () => {};
     const firstPromise = new Promise((res) => {
       resolveFirst = res;
     });
-    let resolveSecond: (value?: any) => void;
+    let resolveSecond: (value?: any) => void = () => {};
     const secondPromise = new Promise((res) => {
       resolveSecond = res;
     });
@@ -122,7 +122,7 @@ describe('CartPage', () => {
 
     // wait for second PATCH to be issued (may happen after debounce)
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
-    expect(fetch.mock.calls[2][1]).toMatchObject({ method: 'PATCH' });
+    expect((fetch as unknown as jest.Mock).mock.calls[2][1]).toMatchObject({ method: 'PATCH' });
 
     // clean up second promise resolution
     resolveSecond({ ok: true, json: async () => ({ quantity: 4 }) });

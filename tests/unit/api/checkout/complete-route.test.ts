@@ -57,8 +57,6 @@ function makeRequest(body: Record<string, unknown>, sessionId = 'sess-abc'): Nex
   return req;
 }
 
-const cartData = [{ item_id: 1, quantity: 1, color: 'BLACK', size: 'M' }];
-const itemsData = [{ id: 1, name: 'テストシャツ', price: 5000, image_url: null, stock_quantity: 10, status: 'published' }];
 
 function setupBaseSupabase(existingOrder: { id: string; status: string } | null = null) {
   mockFrom.mockImplementation((table: string) => {
@@ -153,7 +151,7 @@ describe('POST /api/checkout/complete', () => {
 
     expect((res as { status: number }).status).toBe(200);
     expect(mockRpc).not.toHaveBeenCalled();
-    expect((res as { body: { orderId: string } }).body.orderId).toBe('existing-order');
+    expect((res as unknown as { body: { orderId: string } }).body.orderId).toBe('existing-order');
   });
 
   test('checkout session に draft_id が無い場合は 400 を返す', async () => {
@@ -191,7 +189,7 @@ describe('POST /api/checkout/complete', () => {
     const res = await POST(makeRequest({ checkoutSessionId: 'cs_test' }));
 
     expect((res as { status: number }).status).toBe(409);
-    expect((res as { body: { error: string } }).body.error).toBe('out_of_stock');
+    expect((res as unknown as { body: { error: string } }).body.error).toBe('out_of_stock');
   });
 
   test('finalize_order_from_checkout_draft が ITEM_NOT_PUBLISHED を返した場合は 409 を返す', async () => {
@@ -212,7 +210,7 @@ describe('POST /api/checkout/complete', () => {
     const res = await POST(makeRequest({ checkoutSessionId: 'cs_test' }));
 
     expect((res as { status: number }).status).toBe(409);
-    expect((res as { body: { error: string } }).body.error).toBe('item_not_published');
+    expect((res as unknown as { body: { error: string } }).body.error).toBe('item_not_published');
   });
 
   test('shipping.postalCode が不正な形式の場合は 400 を返す', async () => {
@@ -226,7 +224,7 @@ describe('POST /api/checkout/complete', () => {
     );
 
     expect((res as { status: number }).status).toBe(400);
-    expect((res as { body: { error: string } }).body.error).toBe('Invalid request body');
+    expect((res as unknown as { body: { error: string } }).body.error).toBe('Invalid request body');
     expect(mockRetrieveCheckoutSession).not.toHaveBeenCalled();
   });
 });

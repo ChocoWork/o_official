@@ -60,8 +60,11 @@ export function useCartItems() {
 
   useEffect(() => {
     fetchCart({ showLoading: true });
+    // cleanup 実行時には ref の中身が差し替わっている可能性があるため、
+    // エフェクト実行時点の参照をローカルへ退避しておく。
+    const timers = pendingTimers.current;
     return () => {
-      Object.values(pendingTimers.current).forEach(clearTimeout);
+      Object.values(timers).forEach(clearTimeout);
     };
   }, [fetchCart]);
 

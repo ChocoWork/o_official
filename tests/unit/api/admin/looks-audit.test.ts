@@ -1,3 +1,5 @@
+export {};
+
 jest.mock('@/lib/supabase/server', () => ({
   createServiceRoleClient: jest.fn(),
 }));

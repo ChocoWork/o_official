@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button/Button";
 import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
 import { TabSegmentControl } from "@/components/ui/TabSegmentControl/TabSegmentControl";
+import { ToastSnackbar } from "@/components/ui/ToastSnackbar/ToastSnackbar";
 import { clientFetch } from "@/lib/client-fetch";
 import {
   ACCOUNTS,
@@ -517,7 +518,31 @@ export default function CostProfitSection({
   );
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  // dataMessage はエラー専用（null = 正常）。ヘッダーには「同期済み」等の短い状態だけを出し、
+  // 詳細な文言は右下の Toast へ回す。成功メッセージも Toast のみ。
   const [dataMessage, setDataMessage] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; variant: "success" | "error" } | null>(null);
+
+  const notifySuccess = useCallback((message: string) => {
+    setDataMessage(null);
+    setToast({ message, variant: "success" });
+  }, []);
+
+  const notifyError = useCallback((error: unknown, fallback: string) => {
+    const message = error instanceof Error ? error.message : fallback;
+    setDataMessage(message);
+    setToast({ message, variant: "error" });
+  }, []);
+
+  // 成功は放置しても消えるようにする。エラーは読み切れるよう残し、閉じる操作に任せる。
+  useEffect(() => {
+    if (toast?.variant !== "success") {
+      return;
+    }
+    const timer = window.setTimeout(() => setToast(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
   const [form, setForm] = useState(emptyEntryForm);
   const [formMessage, setFormMessage] = useState<string | null>(null);
   // 訂正中の取引ID。null なら新規登録モード。
@@ -597,15 +622,11 @@ export default function CostProfitSection({
       setCumulativeEntries([]);
       setTemplates([]);
       setSelectedProductId(`${seasonKey}-ITEM-001`);
-      setDataMessage(
-        error instanceof Error
-          ? error.message
-          : "会計データの取得に失敗しました。",
-      );
+      notifyError(error, "会計データの取得に失敗しました。");
     } finally {
       setIsDataLoading(false);
     }
-  }, [fiscalYear, seasonKey]);
+  }, [fiscalYear, seasonKey, notifyError]);
 
   useEffect(() => {
     void loadFinanceData();
@@ -1107,15 +1128,11 @@ export default function CostProfitSection({
         expenseId: expense.id,
       });
       await loadFinanceData();
-      setDataMessage(`${typeLabel}をSupabaseから削除しました。`);
+      notifySuccess(`${typeLabel}をSupabaseから削除しました。`);
     } catch (error) {
       setExpenses(previousExpenses);
       setIncomes(previousIncomes);
-      setDataMessage(
-        error instanceof Error
-          ? error.message
-          : `${typeLabel}の削除に失敗しました。`,
-      );
+      notifyError(error, `${typeLabel}の削除に失敗しました。`);
     } finally {
       setIsSaving(false);
     }
@@ -1131,13 +1148,9 @@ export default function CostProfitSection({
         product: selectedProduct,
       });
       await loadFinanceData();
-      setDataMessage(`${selectedProduct.name}の原価・売価を保存しました。`);
+      notifySuccess(`${selectedProduct.name}の原価・売価を保存しました。`);
     } catch (error) {
-      setDataMessage(
-        error instanceof Error
-          ? error.message
-          : "商品原価の保存に失敗しました。",
-      );
+      notifyError(error, "商品原価の保存に失敗しました。");
     } finally {
       setIsSaving(false);
     }
@@ -1148,13 +1161,9 @@ export default function CostProfitSection({
       setIsSaving(true);
       setDataMessage(null);
       await postMutation({ operation: "plan.update", fiscalYear, plan });
-      setDataMessage("財務前提を保存しました。");
+      notifySuccess("財務前提を保存しました。");
     } catch (error) {
-      setDataMessage(
-        error instanceof Error
-          ? error.message
-          : "財務前提の保存に失敗しました。",
-      );
+      notifyError(error, "財務前提の保存に失敗しました。");
     } finally {
       setIsSaving(false);
     }
@@ -2783,27 +2792,29 @@ export default function CostProfitSection({
     () => buildBlueReturnDeduction(profitAndLoss.netIncome, usesEtax),
     [profitAndLoss.netIncome, usesEtax],
   );
-  const breakdownOf = (codes: readonly string[]) =>
-    buildPartnerBreakdown(journal, codes);
+  const breakdownOf = useCallback(
+    (codes: readonly string[]) => buildPartnerBreakdown(journal, codes),
+    [journal],
+  );
   const wagesBreakdown = useMemo(
     () => breakdownOf(BREAKDOWN_ACCOUNT_CODES.wages),
-    [journal],
+    [breakdownOf],
   );
   const familyWagesBreakdown = useMemo(
     () => breakdownOf(BREAKDOWN_ACCOUNT_CODES.familyWages),
-    [journal],
+    [breakdownOf],
   );
   const interestBreakdown = useMemo(
     () => breakdownOf(BREAKDOWN_ACCOUNT_CODES.interest),
-    [journal],
+    [breakdownOf],
   );
   const rentBreakdown = useMemo(
     () => breakdownOf(BREAKDOWN_ACCOUNT_CODES.rent),
-    [journal],
+    [breakdownOf],
   );
   const professionalFeesBreakdown = useMemo(
     () => breakdownOf(BREAKDOWN_ACCOUNT_CODES.professionalFees),
-    [journal],
+    [breakdownOf],
   );
   // 4ページの貸借対照表は期首（前年末）と期末の2時点。
   // 期末は決算振替の「前」の残高（事業主貸・事業主借を残し、所得は別行で示す）。
@@ -5046,40 +5057,57 @@ export default function CostProfitSection({
 
   return (
     <div className="min-w-0">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <p
-          className={`font-acumin text-xs ${dataMessage?.includes("失敗") || dataMessage?.includes("未作成") ? "text-red-700" : "text-[#16844b]"}`}
-          role="status"
-        >
-          {isDataLoading
-            ? "Supabaseから会計データを読み込み中..."
-            : (dataMessage ?? "Supabaseと同期済み")}
-        </p>
-        <Button
-          variant="secondary"
-          size="2xs"
-          className="font-acumin"
-          onClick={() => void loadFinanceData()}
-          disabled={isDataLoading || isSaving}
-        >
-          <i className="ri-refresh-line mr-1" aria-hidden="true" />
-          再読み込み
-        </Button>
-      </div>
-      <div className="mb-5 overflow-x-auto border-b border-[#d4d4d4]">
-        <TabSegmentControl
-          variant="tabs-standard"
-          size="sm"
-          items={COST_PROFIT_TABS}
-          activeKey={activeTab}
-          onChange={(key) => setActiveTab(key as CostProfitTab)}
-        />
+      {/* タブ行の右端に同期ステータスと再読み込みを並べる。詳細な文言は右下の Toast へ。 */}
+      <div className="mb-5 flex items-end gap-3 border-b border-[#d4d4d4]">
+        <div className="min-w-0 flex-1 overflow-x-auto">
+          <TabSegmentControl
+            variant="tabs-standard"
+            size="sm"
+            items={COST_PROFIT_TABS}
+            activeKey={activeTab}
+            onChange={(key) => setActiveTab(key as CostProfitTab)}
+          />
+        </div>
+        <div className="flex shrink-0 items-center gap-2 pb-2">
+          <span
+            className={`font-acumin text-[11px] ${dataMessage ? "text-red-700" : "text-[#16844b]"}`}
+            role="status"
+          >
+            {isDataLoading ? "読み込み中" : dataMessage ? "同期エラー" : "同期済み"}
+          </span>
+          <Button
+            variant="secondary"
+            size="2xs"
+            className="font-acumin"
+            onClick={() => void loadFinanceData()}
+            disabled={isDataLoading || isSaving}
+          >
+            <i className="ri-refresh-line mr-1" aria-hidden="true" />
+            再読み込み
+          </Button>
+        </div>
       </div>
       {activeTab === "summary" ? summaryView : null}
       {activeTab === "expenses" ? expensesView : null}
       {activeTab === "journal" ? journalView : null}
       {activeTab === "products" ? productView : null}
       {activeTab === "tax" ? taxView : null}
+
+      {/* エラー・完了の詳細は画面右下の Toast に出す。成功は自動で消し、エラーは操作で閉じる。 */}
+      {toast ? (
+        <div
+          className="fixed bottom-4 right-4 z-50 max-w-[min(92vw,420px)]"
+          role={toast.variant === "error" ? "alert" : "status"}
+          data-testid="finance-toast"
+        >
+          <ToastSnackbar
+            message={toast.message}
+            variant={toast.variant}
+            actionLabel="閉じる"
+            onAction={() => setToast(null)}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -1,6 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
-async function fillShippingForm(page: Parameters<typeof test>[0]['page']) {
+async function fillShippingForm(page: Page) {
   await page.fill('input[name="email"]', 'test@example.com');
   await page.fill('input[name="fullName"]', 'テスト太郎');
   await page.fill('input[name="postalCode"]', '100-0001');

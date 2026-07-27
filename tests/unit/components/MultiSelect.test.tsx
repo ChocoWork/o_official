@@ -23,8 +23,6 @@ describe('MultiSelect component', () => {
 
     expect(root).toBeInTheDocument();
     expect(root).toHaveAttribute('data-ui-checkbox-expand-hit-area', 'false');
-    expect(root).toHaveClass('py-[3px]');
-    expect(root).not.toHaveClass('hover:bg-[#f5f5f5]');
     expect(container.querySelectorAll('[data-ui-checkbox]').length).toBe(2);
   });
 
@@ -44,7 +42,5 @@ describe('MultiSelect component', () => {
 
     expect(root).toBeInTheDocument();
     expect(root).toHaveAttribute('data-ui-checkbox-expand-hit-area', 'true');
-    expect(root).toHaveClass('py-1.5');
-    expect(root).toHaveClass('hover:bg-[#f5f5f5]');
   });
 });

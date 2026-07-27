@@ -1,3 +1,5 @@
+export {};
+
 // Ensure ADMIN_API_KEY exists so public flow is reachable (route expects env var)
 process.env.ADMIN_API_KEY = process.env.ADMIN_API_KEY || 'test-admin-key';
 
@@ -24,7 +26,7 @@ describe('POST /api/auth/register (public)', () => {
     const req = new Request('http://localhost/api/auth/register', {
       method: 'POST',
       body: JSON.stringify({ email: 'test@example.com', password: 'Passw0rd!', emailRedirectTo: '/auth/verified' }),
-      headers: { 'x-admin-token': process.env.ADMIN_API_KEY, 'content-type': 'application/json' },
+      headers: { 'x-admin-token': process.env.ADMIN_API_KEY ?? '', 'content-type': 'application/json' },
     });
     const resp = await route.POST(req as any);
     // resp is the object returned by our mocked NextResponse.json

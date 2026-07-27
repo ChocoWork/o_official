@@ -1,3 +1,5 @@
+export {};
+
 jest.mock('next/server', () => ({
   NextResponse: {
     json: (body: any, init?: any) => {

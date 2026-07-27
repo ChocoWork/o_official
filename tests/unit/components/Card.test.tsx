@@ -1,54 +1,39 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import { Card } from '@/components/ui/Card';
+import { Card } from '@/components/ui/Card/Card';
 
-// simple helper to render card with title/price
-function renderCard(size?: 'sm' | 'md' | 'lg') {
+// Card は CSS ファイル方式へ移行済み。余白やフォントサイズの実値は CSS の責務なので、
+// ここでは size / bordered / interactive などの属性契約と描画内容だけを検証する。
+function renderCard(props: Partial<React.ComponentProps<typeof Card>> = {}) {
   return render(
-    <Card
-      category="TOPS"
-      title="Sample"
-      price="¥1,000"
-      size={size}
-    />
+    <Card category="TOPS" title="Sample" price="¥1,000" {...props} />,
   );
 }
 
+const cardOf = (container: HTMLElement) => container.querySelector('[data-ui-card]');
+
 describe('Card component', () => {
-  test('defaults to medium padding and text size', () => {
+  test('既定は md サイズ', () => {
     const { container } = renderCard();
-    const article = container.querySelector('article');
-    expect(article).toHaveClass('p-6');
-    const title = screen.getByText('Sample');
-    expect(title).toHaveClass('text-base');
-    const price = screen.getByText('¥1,000');
-    expect(price).toHaveClass('text-base');
+    expect(cardOf(container)).toHaveAttribute('data-ui-card-size', 'md');
   });
 
-  test('small size uses smaller padding and font sizes', () => {
-    const { container } = renderCard('sm');
-    const article = container.querySelector('article');
-    expect(article).toHaveClass('p-4');
-    const title = screen.getByText('Sample');
-    expect(title).toHaveClass('text-sm');
-    const price = screen.getByText('¥1,000');
-    expect(price).toHaveClass('text-sm');
+  test('size を指定すると data-ui-card-size に反映される', () => {
+    for (const size of ['sm', 'md', 'lg'] as const) {
+      const { container } = renderCard({ size });
+      expect(cardOf(container)).toHaveAttribute('data-ui-card-size', size);
+    }
   });
-  
-  test('renders optional label', () => {
-    render(
-      <Card category="TOPS" title="A" price="¥1" label="Label" />
-    );
+
+  test('カテゴリ・タイトル・価格を表示する', () => {
+    renderCard();
+    expect(screen.getByText('TOPS')).toBeInTheDocument();
+    expect(screen.getByText('Sample')).toBeInTheDocument();
+    expect(screen.getByText('¥1,000')).toBeInTheDocument();
+  });
+
+  test('label を渡すと表示する', () => {
+    renderCard({ label: 'Label' });
     expect(screen.getByText('Label')).toBeInTheDocument();
-  });
-
-  test('large size uses larger padding and font sizes', () => {
-    const { container } = renderCard('lg');
-    const article = container.querySelector('article');
-    expect(article).toHaveClass('p-8');
-    const title = screen.getByText('Sample');
-    expect(title).toHaveClass('text-lg');
-    const price = screen.getByText('¥1,000');
-    expect(price).toHaveClass('text-lg');
   });
 });

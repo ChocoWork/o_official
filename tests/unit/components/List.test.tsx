@@ -12,22 +12,28 @@ describe('List component', () => {
   const items = ['a', 'b', 'c'];
   const renderItem = (item: string) => <span>{item}</span>;
 
-  test('renders with default size (md) gap', () => {
+  // List は CSS ファイル方式へ移行済み。行間（space-y-2 など）は CSS の責務なので、
+  // ここでは size / variant の属性契約と項目の描画だけを検証する。
+  const listOf = (container: HTMLElement) => container.querySelector('[data-ui-list]');
+
+  test('項目をすべて描画する', () => {
     const { container } = render(<List items={items} renderItem={renderItem} />);
-    const ul = container.querySelector('ul');
-    expect(ul).toHaveClass('space-y-2');
+    expect(container.querySelectorAll('li')).toHaveLength(items.length);
   });
 
-  test('size prop adjusts spacing', () => {
-    const { rerender, container } = render(
+  test('既定は md サイズ', () => {
+    const { container } = render(<List items={items} renderItem={renderItem} />);
+    expect(listOf(container)).toHaveAttribute('data-ui-list-size', 'md');
+  });
+
+  test('size は data-ui-list-size に反映される', () => {
+    const { container, rerender } = render(
       <List items={items} renderItem={renderItem} size="sm" />
     );
-    let ul = container.querySelector('ul');
-    expect(ul).toHaveClass('space-y-1');
+    expect(listOf(container)).toHaveAttribute('data-ui-list-size', 'sm');
 
     rerender(<List items={items} renderItem={renderItem} size="lg" />);
-    ul = container.querySelector('ul');
-    expect(ul).toHaveClass('space-y-4');
+    expect(listOf(container)).toHaveAttribute('data-ui-list-size', 'lg');
   });
 
   describe('showcase variant', () => {
@@ -63,7 +69,7 @@ describe('List component', () => {
       expect(document.querySelector('.ri-image-line')).toBeInTheDocument();
     });
 
-    test('renders image when getImage returns url and li has hover class', () => {
+    test('getImage が URL を返すと画像を描画する', () => {
       render(
         <List
           items={showcaseItems}
@@ -79,10 +85,12 @@ describe('List component', () => {
       );
       const img = document.querySelector('img');
       expect(img).toHaveAttribute('src', expect.stringContaining('/foo.png'));
-      expect(img).toHaveClass('object-contain');
-      // the li wrapper should include hover bg class
-      const li = document.querySelector('li');
-      expect(li).toHaveClass('hover:bg-[#f5f5f5]');
+      // 画像の見た目とホバー背景は List.css の責務なので、
+      // ここでは showcase variant として描画されたことだけを確認する。
+      expect(document.querySelector('[data-ui-list]')).toHaveAttribute(
+        'data-ui-list-variant',
+        'showcase',
+      );
     });
   });
 });

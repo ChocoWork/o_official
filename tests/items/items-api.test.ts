@@ -1,3 +1,5 @@
+export {};
+
 jest.mock('next/server', () => ({
   NextResponse: {
     json: (body: unknown, init?: { status?: number }) => ({
@@ -11,12 +13,23 @@ jest.mock('@/lib/items/public', () => ({
   getPublishedItemsPage: jest.fn(),
 }));
 
+// 一覧はレート制限と監査ログを経由する。実物は DB を叩くのでモックする。
+jest.mock('@/features/auth/middleware/rateLimit', () => ({
+  enforceRateLimit: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('@/lib/audit', () => ({
+  logAudit: jest.fn().mockResolvedValue(undefined),
+}));
+
 const route = require('@/app/api/items/route');
 const { getPublishedItemsPage } = require('@/lib/items/public');
+const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
 
 describe('GET /api/items', () => {
   beforeEach(() => {
     getPublishedItemsPage.mockReset();
+    enforceRateLimit.mockResolvedValue(undefined);
   });
 
   test('フィルタ/ソート/ページング結果を返す', async () => {

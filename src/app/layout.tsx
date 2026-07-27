@@ -16,6 +16,11 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],  // 使用する文字セット（ここではラテン文字）
 });
 
+// nonce ベースの CSP はリクエスト毎に値が変わるため、静的プリレンダと両立しない。
+// 静的生成すると nonce の無い HTML が焼き込まれ、本番でインラインスクリプトが
+// CSP に弾かれてハイドレートしなくなる（src/proxy.ts の buildCsp を参照）。
+export const dynamic = 'force-dynamic';
+
 // ページ全体のメタデータを定義
 export const metadata: Metadata = {
   title: "Le Fil des Heures",  // ページのタイトル

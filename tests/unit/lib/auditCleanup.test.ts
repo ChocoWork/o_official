@@ -1,3 +1,5 @@
+export {};
+
 jest.mock('@/lib/supabase/server', () => ({ createServiceRoleClient: jest.fn(), }));
 
 const { createServiceRoleClient } = require('@/lib/supabase/server');
@@ -6,7 +8,8 @@ const { cleanupAuditLogs } = require('@/lib/auditCleanup');
 describe('cleanupAuditLogs', () => {
   it('deletes rows older than retention cutoff', async () => {
     const deleteMock = jest.fn().mockReturnThis();
-    const ltMock = jest.fn().mockResolvedValue({ data: [{ id: '1' }, { id: '2' }], error: null });
+    // 実装は delete({ count: 'exact' }) の count を件数として返す。
+    const ltMock = jest.fn().mockResolvedValue({ data: [{ id: '1' }, { id: '2' }], count: 2, error: null });
 
     // chain: from('audit_logs').delete().lt('created_at', cutoff)
     const fromMock = jest.fn().mockReturnValue({ delete: deleteMock });
@@ -18,7 +21,7 @@ describe('cleanupAuditLogs', () => {
 
     expect(createServiceRoleClient).toHaveBeenCalled();
     expect(fromMock).toHaveBeenCalledWith('audit_logs');
-    expect(deleteMock).toHaveBeenCalled();
+    expect(deleteMock).toHaveBeenCalledWith({ count: 'exact' });
     expect(ltMock).toHaveBeenCalledWith('created_at', expect.any(String));
     expect(result.deleted).toBe(2);
   });

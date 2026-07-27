@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 type PublicItemDetail = {
   id: number;
@@ -8,7 +8,7 @@ type PublicItemDetail = {
   stock_quantity?: number | null;
 };
 
-async function clearSessionCollections(page: Parameters<typeof test>[0]['page']) {
+async function clearSessionCollections(page: Page) {
   await page.goto('/wishlist');
   await page.waitForLoadState('networkidle').catch(() => undefined);
 
@@ -36,7 +36,7 @@ async function clearSessionCollections(page: Parameters<typeof test>[0]['page'])
   });
 }
 
-async function findMergeableItem(page: Parameters<typeof test>[0]['page']): Promise<PublicItemDetail | null> {
+async function findMergeableItem(page: Page): Promise<PublicItemDetail | null> {
   for (let id = 1; id <= 50; id += 1) {
     const detailResponse = await page.request.get(`/api/items/${id}`);
     if (!detailResponse.ok()) {
@@ -176,7 +176,7 @@ test.describe('FR-WISHLIST-007 カートに追加ボタン', () => {
     await page.getByRole('button', { name: 'カートに追加' }).first().click();
 
     await expect.poll(async () => {
-      return page.evaluate(async ({ itemId, color, size }) => {
+      return page.evaluate(async ({ itemId }) => {
         const response = await fetch('/api/cart');
         if (!response.ok) {
           return { rowCount: 0, quantity: 0, color: null, size: null };
@@ -194,7 +194,7 @@ test.describe('FR-WISHLIST-007 カートに追加ボタン', () => {
           color: matchingRows[0]?.color ?? null,
           size: matchingRows[0]?.size ?? null,
         };
-      }, { itemId: item!.id, color: expectedColor, size: expectedSize });
+      }, { itemId: item!.id });
     }).toEqual({
       rowCount: 1,
       quantity: 2,

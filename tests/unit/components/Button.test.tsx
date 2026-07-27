@@ -42,30 +42,33 @@ describe('Button component', () => {
     expect(element).toBeInTheDocument();
   });
 
-  test('button and link apply cursor styles correctly', () => {
-    // enabled button
+  test('無効状態は data-ui-button-disabled で表す', () => {
+    // カーソル形状は Button.css の責務なので、ここでは状態の属性契約だけを見る。
     render(<Button>Click</Button>);
-    const btn = screen.getByRole('button', { name: 'Click' });
-    expect(btn).toHaveClass('cursor-pointer');
+    expect(screen.getByRole('button', { name: 'Click' })).not.toHaveAttribute('data-ui-button-disabled');
 
-    // disabled button
     render(<Button disabled>Disabled</Button>);
-    const btnDis = screen.getByRole('button', { name: 'Disabled' });
-    expect(btnDis).toHaveClass('cursor-not-allowed');
+    expect(screen.getByRole('button', { name: 'Disabled' })).toHaveAttribute('data-ui-button-disabled', 'true');
 
-    // enabled link
     render(<Button href="/foo">Link</Button>);
-    const link = screen.getByRole('link', { name: 'Link' });
-    // anchor defaults to pointer cursor; our component adds no extra class but should still include cursor-pointer
-    expect(link).toHaveClass('cursor-pointer');
+    expect(screen.getByRole('link', { name: 'Link' })).not.toHaveAttribute('data-ui-button-disabled');
 
-    // disabled link also shows not-allowed and removes pointer
     render(
       <Button href="/foo" disabled>
         LinkDisabled
       </Button>
     );
-    const linkDis = screen.getByRole('link', { name: 'LinkDisabled' });
-    expect(linkDis).toHaveClass('cursor-not-allowed');
+    expect(screen.getByRole('link', { name: 'LinkDisabled' })).toHaveAttribute('data-ui-button-disabled', 'true');
+  });
+
+  test('variant と size を属性へ出す', () => {
+    render(
+      <Button variant="secondary" size="lg">
+        Styled
+      </Button>
+    );
+    const btn = screen.getByRole('button', { name: 'Styled' });
+    expect(btn).toHaveAttribute('data-ui-button-variant', 'secondary');
+    expect(btn).toHaveAttribute('data-ui-button-size', 'lg');
   });
 });

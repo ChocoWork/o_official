@@ -4,11 +4,11 @@ describe('cookie helpers', () => {
   const originalNodeEnv = process.env.NODE_ENV;
 
   afterEach(() => {
-    process.env.NODE_ENV = originalNodeEnv;
+    (process.env as Record<string, string | undefined>).NODE_ENV = originalNodeEnv;
   });
 
   test('refresh cookie options: HttpOnly true, SameSite lax, secure in production', () => {
-    process.env.NODE_ENV = 'production';
+    (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
     const options = cookieOptionsForRefresh(60 * 60 * 24);
     expect(options.httpOnly).toBe(true);
     expect(options.sameSite).toBe('lax');
@@ -17,7 +17,7 @@ describe('cookie helpers', () => {
   });
 
   test('csrf cookie options: HttpOnly false, SameSite lax', () => {
-    process.env.NODE_ENV = 'development';
+    (process.env as Record<string, string | undefined>).NODE_ENV = 'development';
     const options = cookieOptionsForCsrf(3600);
     expect(options.httpOnly).toBe(false);
     expect(options.sameSite).toBe('lax');

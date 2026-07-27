@@ -21,7 +21,7 @@ test.describe('FR-NEWS-ALL-008 mobile filter initial offset', () => {
       const filterBar = filterButton?.closest('div[class*="border-b"]');
       const firstArticle = document.querySelector('main article');
 
-      const rect = (element: Element | null) => {
+      const rect = (element: Element | null | undefined) => {
         if (!element) {
           return null;
         }

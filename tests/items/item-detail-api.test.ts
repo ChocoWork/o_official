@@ -1,3 +1,5 @@
+export {};
+
 jest.mock('next/server', () => ({
   NextResponse: {
     json: (body: unknown, init?: { status?: number }) => ({
@@ -9,6 +11,13 @@ jest.mock('next/server', () => ({
 
 jest.mock('@/lib/supabase/server', () => ({
   createClient: jest.fn(),
+  // 画像URLの署名にサービスロールのクライアントを使う。
+  createServiceRoleClient: jest.fn().mockResolvedValue({}),
+}));
+
+// 署名処理そのものはストレージ側の責務なので、ここでは素通しにする。
+jest.mock('@/lib/storage/item-images', () => ({
+  signItemImageFields: jest.fn(async (_client: unknown, row: unknown) => row),
 }));
 
 jest.mock('@/features/auth/middleware/rateLimit', () => ({
@@ -84,6 +93,8 @@ describe('GET /api/items/[id]', () => {
     enforceRateLimit.mockResolvedValue({
       status: 429,
       json: async () => ({ error: 'Too many requests' }),
+      // 実装は返す前に Cache-Control: no-store を付与する。
+      headers: new Map<string, string>(),
     });
 
     const request = new Request('http://localhost/api/items/101');

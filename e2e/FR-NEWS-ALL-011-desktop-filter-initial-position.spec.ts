@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 type DesktopFilterMetrics = {
   headerBottom: number;
@@ -6,7 +6,7 @@ type DesktopFilterMetrics = {
   firstArticleTop: number;
 };
 
-async function collectDesktopFilterMetrics(page: Parameters<typeof test>[0]['page']): Promise<DesktopFilterMetrics> {
+async function collectDesktopFilterMetrics(page: Page): Promise<DesktopFilterMetrics> {
   const metrics = await page.evaluate(() => {
     const header = document.querySelector('header');
     const firstFilter = document.querySelector('aside input[type="checkbox"]');
@@ -27,7 +27,11 @@ async function collectDesktopFilterMetrics(page: Parameters<typeof test>[0]['pag
     throw new Error(`Failed to collect desktop filter metrics: ${JSON.stringify(metrics)}`);
   }
 
-  return metrics;
+  return {
+    headerBottom: metrics.headerBottom,
+    firstFilterTop: metrics.firstFilterTop,
+    firstArticleTop: metrics.firstArticleTop,
+  };
 }
 
 test.describe('FR-NEWS-ALL-011 desktop filter initial position', () => {

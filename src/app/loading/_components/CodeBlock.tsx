@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 
-export default function CodeBlock({ code, label }: { code: string; label: string }) {
+// label は呼び出し側の記述互換のため型に残すが、本文では使用しない。
+export default function CodeBlock({ code }: { code: string; label: string }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 

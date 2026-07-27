@@ -1,3 +1,5 @@
+export {};
+
 jest.mock('@/lib/supabase/server', () => ({
   createClient: jest.fn(),
   resolveRequestUser: jest.fn(),
@@ -38,7 +40,7 @@ describe('GET /api/auth/me', () => {
     });
 
     const { GET } = await handlerImport();
-    const response: { status: number; json: () => Promise<unknown>; headers: Map<string, string> } = await GET(
+    const response = await GET(
       new Request('http://localhost:3000/api/auth/me', {
         headers: {
           cookie: 'sb-access-token=test-token',

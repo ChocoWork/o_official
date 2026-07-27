@@ -1,3 +1,5 @@
+export {};
+
 jest.mock('next/server', () => ({
   NextResponse: {
     json: (body: any, init?: any) => {
@@ -54,7 +56,7 @@ describe('Auth cookie flags (integration, mocked)', () => {
   });
 
   afterAll(() => {
-    process.env.NODE_ENV = ORIGINAL_NODE_ENV;
+    (process.env as Record<string, string | undefined>).NODE_ENV = ORIGINAL_NODE_ENV;
   });
 
   beforeEach(() => {
@@ -64,7 +66,7 @@ describe('Auth cookie flags (integration, mocked)', () => {
   });
 
   test('login (step 1) sets pending-2FA cookie HttpOnly=true, SameSite=strict and issues no session cookies', async () => {
-    process.env.NODE_ENV = 'production';
+    (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
     process.env.JWT_SECRET = 'test-jwt-secret';
     delete process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
@@ -93,7 +95,7 @@ describe('Auth cookie flags (integration, mocked)', () => {
   });
 
   test('refresh sets new refresh cookie and csrf cookie with proper flags', async () => {
-    process.env.NODE_ENV = 'production';
+    (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
     // Provide existing cookie
     cookies.mockReturnValue({ get: jest.fn().mockReturnValue({ value: 'old-refresh' }) });
 
@@ -105,11 +107,26 @@ describe('Auth cookie flags (integration, mocked)', () => {
     (global as any).fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ access_token: 'new-a', refresh_token: 'new-r', expires_in: 3600, user: { id: 'u1' } }) });
 
     const { createServiceRoleClient } = require('@/lib/supabase/server');
+    // refresh はセッション行を引いて再利用検知を行うので select 系も必要。
+    const sessionRow = {
+      id: 'sess-1',
+      user_id: 'u1',
+      refresh_token_hash: 'old-hash',
+      current_jti: 'jti-1',
+      previous_refresh_token_hash: null,
+      quarantined: false,
+      revoked_at: null,
+    };
     const fromMock = jest.fn(() => ({
+      select: jest.fn().mockReturnValue({
+        eq: jest.fn().mockReturnValue({
+          maybeSingle: jest.fn().mockResolvedValue({ data: sessionRow, error: null }),
+        }),
+      }),
       update: jest.fn().mockReturnValue({ eq: jest.fn().mockResolvedValue({}) }),
       insert: jest.fn().mockResolvedValue({}),
     }));
-    createServiceRoleClient.mockReturnValue({ from: fromMock });
+    createServiceRoleClient.mockResolvedValue({ from: fromMock });
 
     const res: any = await refreshHandler();
 
@@ -130,11 +147,20 @@ describe('Auth cookie flags (integration, mocked)', () => {
 
   test('logout clears cookies (maxAge=0) and clear cookie options preserve httpOnly flag for refresh cookie', async () => {
     // provide cookie so logout triggers revoke path
-    cookies.mockReturnValue({ get: jest.fn().mockReturnValue({ value: 'old-refresh' }) });
+    // logout は @supabase/ssr の sb-*-auth-token も一括クリアするため getAll を使う。
+    cookies.mockReturnValue({
+      get: jest.fn().mockReturnValue({ value: 'old-refresh' }),
+      getAll: jest.fn().mockReturnValue([
+        { name: 'sb-abcdefgh-auth-token', value: 'x' },
+        { name: 'unrelated-cookie', value: 'y' },
+      ]),
+    });
 
     const { createServiceRoleClient } = require('@/lib/supabase/server');
-    const fromMock = jest.fn(() => ({ update: jest.fn().mockResolvedValue({}) }));
-    createServiceRoleClient.mockReturnValue({ from: fromMock });
+    const fromMock = jest.fn(() => ({
+      update: jest.fn().mockReturnValue({ eq: jest.fn().mockResolvedValue({}) }),
+    }));
+    createServiceRoleClient.mockResolvedValue({ from: fromMock });
 
     const res: any = await logoutHandler();
 

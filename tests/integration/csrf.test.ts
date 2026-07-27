@@ -1,3 +1,5 @@
+export {};
+
 jest.mock('next/headers', () => ({
   cookies: jest.fn(),
   headers: jest.fn(),

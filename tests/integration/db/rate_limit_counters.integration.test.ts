@@ -1,3 +1,5 @@
+export {};
+
 const { Pool } = require('pg');
 
 // Integration test for rate_limit_counters table. Requires DATABASE_URL env var.
@@ -10,7 +12,8 @@ describe('integration: rate_limit_counters', () => {
     return;
   }
 
-  let pool;
+  // pg は型定義パッケージが無く require が any を返すため、明示的に any を置く。
+  let pool: any;
   beforeAll(() => {
     pool = new Pool({ connectionString: DATABASE_URL });
   });

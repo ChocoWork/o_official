@@ -4,6 +4,10 @@ jest.mock('@/lib/cookie', () => ({
   refreshCookieName: 'refresh',
   accessCookieName: 'access',
   csrfCookieName: 'csrf',
+  // ログイン時に session_id を引き直す（セッション固定攻撃対策）ために必要。
+  sessionCookieName: 'session_id',
+  cookieOptionsForSession: (age: number) => ({ httpOnly: true, maxAge: age }),
+  generateSessionId: () => 'rotated-session-id',
   cookieOptionsForRefresh: (age: number) => ({ httpOnly: true, maxAge: age }),
   cookieOptionsForAccess: (age: number) => ({ httpOnly: true, maxAge: age }),
   cookieOptionsForCsrf: (age: number) => ({ httpOnly: false, maxAge: age }),
@@ -67,9 +71,7 @@ describe('persistSessionAndCookies', () => {
   });
 });
 
-export {};
-import { persistSessionAndCookies } from '@/features/auth/services/register';
-
+// persistSessionAndCookies は上部の require で読み込み済み。
 describe('register service', () => {
   test('exports persistSessionAndCookies', async () => {
     expect(typeof persistSessionAndCookies).toBe('function');

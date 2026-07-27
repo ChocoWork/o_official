@@ -63,10 +63,18 @@ describe('postal-code service', () => {
   });
 
   test('invalid postal code returns null without fetching', async () => {
-    const fetchSpy = jest.spyOn(global, 'fetch');
-    const result = await fetchAddressByPostalCode('123');
-    expect(result).toBeNull();
-    expect(fetchSpy).not.toHaveBeenCalled();
-    fetchSpy.mockRestore();
+    // 前のテストの後始末で global.fetch が undefined に戻ることがあるため、
+    // spyOn ではなく差し替えで検証する。
+    const fetchMock = jest.fn();
+    const originalFetch = global.fetch;
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    try {
+      const result = await fetchAddressByPostalCode('123');
+      expect(result).toBeNull();
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 });

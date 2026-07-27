@@ -63,7 +63,7 @@ describe('PATCH /api/cart/[id]', () => {
     });
 
     expect((res as { status: number }).status).toBe(409);
-    expect((res as { body: { error: string } }).body.error).toBe('insufficient_stock');
+    expect((res as unknown as { body: { error: string } }).body.error).toBe('insufficient_stock');
     expect(mockRpc).toHaveBeenCalledWith('update_cart_item_quantity_secure', {
       _cart_id: 'cart-1',
       _session_id: 'sess-abc',
@@ -82,7 +82,7 @@ describe('PATCH /api/cart/[id]', () => {
     });
 
     expect((res as { status: number }).status).toBe(404);
-    expect((res as { body: { error: string } }).body.error).toBe('Cart item not found');
+    expect((res as unknown as { body: { error: string } }).body.error).toBe('Cart item not found');
   });
 
   test('permission denied は 403 を返す', async () => {
@@ -96,7 +96,7 @@ describe('PATCH /api/cart/[id]', () => {
     });
 
     expect((res as { status: number }).status).toBe(403);
-    expect((res as { body: { error: string } }).body.error).toBe('Forbidden');
+    expect((res as unknown as { body: { error: string } }).body.error).toBe('Forbidden');
   });
 });
 

@@ -19,7 +19,6 @@ test('Slider pixel-level debug', async ({ browser }) => {
     const cssVars = await page.evaluate((sz) => {
       const sliders = document.querySelectorAll('[data-ui-slider]');
       return Array.from(sliders).map((el, i) => {
-        const cs = window.getComputedStyle(el);
         const isRange = !!el.querySelector('[data-ui-slider-range-input]');
         const track = el.querySelector('[data-ui-slider-track]') as HTMLElement;
         const trackCs = track ? window.getComputedStyle(track) : null;

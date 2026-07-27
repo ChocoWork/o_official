@@ -1,3 +1,5 @@
+export {};
+
 jest.mock('@/lib/supabase/server', () => ({ createServiceRoleClient: jest.fn(), }));
 jest.mock('next/headers', () => ({ headers: jest.fn(), cookies: jest.fn() }));
 jest.mock('next/server', () => ({ NextResponse: { json: (body: any, init?: any) => ({ status: init?.status ?? 200, _body: body }) } }));

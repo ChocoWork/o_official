@@ -142,13 +142,15 @@ describe('GET /api/auth/oauth/callback - Error Cases', () => {
     );
   });
 
-  test('[SUCCESS] token交換成功で Cookie 発行 + 303 リダイレクト', async () => {
+  // /auth/verified は admin / supporter 向けの着地点。
+  // 一般ユーザーが next=/auth/verified を指定しても /account へ振り替える。
+  test('[SUCCESS] token交換成功で Cookie 発行 + 303 リダイレクト（一般ユーザーは /account）', async () => {
     const { GET } = await handlerImport();
     const req = new Request('http://localhost:3000/api/auth/oauth/callback?code=good-code&next=%2Fauth%2Fverified');
-    const res: { status: number; headers: Map<string, string> } = await GET(req);
+    const res = await GET(req);
 
     expect(res.status).toBe(303);
-    expect(res.headers.get('location')).toBe('http://localhost:3000/auth/verified');
+    expect(res.headers.get('location')).toBe('http://localhost:3000/account');
     expect(res.headers.get('Cache-Control')).toBe('no-store');
     expect(res.headers.get('Referrer-Policy')).toBe('no-referrer');
 
@@ -197,10 +199,10 @@ describe('GET /api/auth/oauth/callback - Error Cases', () => {
 
     const { GET } = await handlerImport();
     const req = new Request('http://localhost:3000/api/auth/oauth/callback?code=good-code-2&next=%2Fauth%2Fverified');
-    const res: { status: number; headers: Map<string, string> } = await GET(req);
+    const res = await GET(req);
 
     expect(res.status).toBe(303);
-    expect(res.headers.get('location')).toBe('http://localhost:3000/auth/verified');
+    expect(res.headers.get('location')).toBe('http://localhost:3000/account');
 
     const { logAudit } = require('@/lib/audit');
     expect(logAudit).toHaveBeenCalledWith(

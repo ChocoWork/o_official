@@ -16,7 +16,7 @@ describe('Slider component', () => {
       />,
     );
 
-    const [minimumSlider, maximumSlider] = screen.getAllByRole('slider');
+    const [minimumSlider] = screen.getAllByRole('slider');
     fireEvent.change(minimumSlider, { target: { value: '1' } });
 
     expect(handleRangeChange).toHaveBeenLastCalledWith([1000, 89000]);

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 type LayoutSample = {
   label: string;
@@ -11,7 +11,7 @@ type LayoutSample = {
   mainTop: number | null;
 };
 
-async function collectScrollGapSamples(page: Parameters<typeof test>[0]['page']): Promise<LayoutSample[]> {
+async function collectScrollGapSamples(page: Page): Promise<LayoutSample[]> {
   const samples: LayoutSample[] = [];
 
   const capture = async (label: string) => {
@@ -25,7 +25,7 @@ async function collectScrollGapSamples(page: Parameters<typeof test>[0]['page'])
       const contentContainer = stickyContainer?.parentElement;
       const main = document.querySelector('main');
 
-      const rect = (element: Element | null) => {
+      const rect = (element: Element | null | undefined) => {
         if (!element) {
           return null;
         }

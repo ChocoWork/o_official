@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 const viewports = [
   { name: 'mobile', width: 390, height: 844 },
@@ -18,7 +18,7 @@ for (const vp of viewports) {
       await page.goto('/legal');
     });
 
-    const dd = (page) =>
+    const dd = (page: Page) =>
       page
         .locator('dt', { hasText: /^返品・交換・キャンセルについて$/ })
         .locator('xpath=following-sibling::dd[1]');

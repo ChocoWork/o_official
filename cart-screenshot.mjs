@@ -1,4 +1,4 @@
-﻿const { chromium } = require('@playwright/test');
+import { chromium } from '@playwright/test';
 (async () => {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();

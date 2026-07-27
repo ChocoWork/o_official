@@ -1,3 +1,5 @@
+export {};
+
 const { Pool } = require('pg');
 
 // Integration tests for sessions table. Requires DATABASE_URL (service role / admin) in env.
@@ -11,7 +13,8 @@ describe('integration: sessions table', () => {
     return;
   }
 
-  let pool;
+  // pg は型定義パッケージが無く require が any を返すため、明示的に any を置く。
+  let pool: any;
   beforeAll(() => {
     pool = new Pool({ connectionString: DATABASE_URL });
   });
@@ -51,7 +54,7 @@ describe('integration: sessions table', () => {
 
       // Confirm index exists for sessions (index presence check)
       const idx = await client.query("SELECT indexname FROM pg_indexes WHERE tablename = 'sessions' AND schemaname = 'public'");
-      const idxNames = idx.rows.map(r => r.indexname);
+      const idxNames = idx.rows.map((r: { indexname: string }) => r.indexname);
       expect(idxNames).toContain('idx_sessions_user_id');
 
       // Test FK cascade: delete user and session should be removed (within transaction)

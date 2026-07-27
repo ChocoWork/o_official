@@ -1,35 +1,44 @@
 import React from 'react';
-import { render } from '@testing-library/react';
-import { ActionSheet, ActionSheetAction } from '@/components/ui/ActionSheet';
+import { render, screen } from '@testing-library/react';
+import { ActionSheet } from '@/components/ui/ActionSheet/ActionSheet';
+import type { ActionSheetAction } from '@/components/ui/ActionSheet/ActionSheet_types';
 
-describe('ActionSheet sizing', () => {
+// ActionSheet は CSS ファイル方式へ移行済み。余白・文字サイズは CSS の責務なので、
+// ここでは size / destructive の属性契約と、アクションの描画を検証する。
+describe('ActionSheet', () => {
   const actions: ActionSheetAction[] = [
     { key: 'a', label: 'Action A', onSelect: jest.fn() },
     { key: 'b', label: 'Action B', onSelect: jest.fn(), destructive: true },
   ];
 
-  test('default md buttons have medium padding and text', () => {
-    const { container } = render(
-      <ActionSheet open onClose={() => {}} actions={actions} />
-    );
-    const buttons = container.querySelectorAll('button');
-    expect(buttons[0]).toHaveClass('px-6', 'py-4', 'text-sm');
-    expect(buttons[1]).toHaveClass('px-6', 'py-4', 'text-sm');
+  const sheetOf = (container: HTMLElement) => container.querySelector('[data-ui-action-sheet]');
+
+  test('アクションを描画する', () => {
+    render(<ActionSheet open onClose={() => {}} actions={actions} />);
+
+    expect(screen.getByRole('button', { name: 'Action A' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Action B' })).toBeInTheDocument();
   });
 
-  test('sm size shrinks padding and text', () => {
-    const { container } = render(
-      <ActionSheet open onClose={() => {}} actions={actions} size="sm" />
-    );
-    const btn = container.querySelector('button');
-    expect(btn).toHaveClass('px-4', 'py-2', 'text-xs');
+  test('既定は md サイズ', () => {
+    const { container } = render(<ActionSheet open onClose={() => {}} actions={actions} />);
+    expect(sheetOf(container)).toHaveAttribute('data-ui-action-sheet-size', 'md');
   });
 
-  test('lg size increases padding and text', () => {
-    const { container } = render(
-      <ActionSheet open onClose={() => {}} actions={actions} size="lg" />
-    );
-    const btn = container.querySelector('button');
-    expect(btn).toHaveClass('px-8', 'py-6', 'text-base');
+  test('size は data-ui-action-sheet-size に反映される', () => {
+    for (const size of ['sm', 'md', 'lg'] as const) {
+      const { container } = render(
+        <ActionSheet open onClose={() => {}} actions={actions} size={size} />,
+      );
+      expect(sheetOf(container)).toHaveAttribute('data-ui-action-sheet-size', size);
+    }
+  });
+
+  test('destructive なアクションにフラグが立つ', () => {
+    const { container } = render(<ActionSheet open onClose={() => {}} actions={actions} />);
+
+    const flagged = container.querySelectorAll('[data-ui-action-sheet-destructive="true"]');
+    expect(flagged).toHaveLength(1);
+    expect(flagged[0]).toHaveTextContent('Action B');
   });
 });

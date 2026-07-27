@@ -325,6 +325,9 @@ export default function VerifiedPage() {
           ここで入力するのは、Google Authenticator などの認証アプリに表示される 6〜8 桁のワンタイムコードです。
         </p>
         {qrCodeSvg ? (
+          // TOTP の QR は実行時生成の data URI。next/image の最適化対象にならず、
+          // 外部ローダーへ秘密情報を渡すことにもなるため素の <img> を使う。
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={qrCodeSvg}
             alt="TOTP QR code"

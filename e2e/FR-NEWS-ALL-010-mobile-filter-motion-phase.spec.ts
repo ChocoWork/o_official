@@ -1,4 +1,4 @@
-import { devices, expect, test } from '@playwright/test';
+import { devices, expect, test, type Page } from '@playwright/test';
 
 type MotionSample = {
   frame: number;
@@ -7,7 +7,7 @@ type MotionSample = {
   headerBottom: number | null;
 };
 
-async function collectMotionSamples(page: Parameters<typeof test>[0]['page']): Promise<MotionSample[]> {
+async function collectMotionSamples(page: Page): Promise<MotionSample[]> {
   const samples: MotionSample[] = [];
 
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'auto' }));
@@ -43,7 +43,7 @@ async function collectMotionSamples(page: Parameters<typeof test>[0]['page']): P
   return samples;
 }
 
-async function collectPreHideSamples(page: Parameters<typeof test>[0]['page']): Promise<MotionSample[]> {
+async function collectPreHideSamples(page: Page): Promise<MotionSample[]> {
   const samples: MotionSample[] = [];
 
   for (const scrollY of [0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48]) {
@@ -76,7 +76,7 @@ async function collectPreHideSamples(page: Parameters<typeof test>[0]['page']): 
   return samples;
 }
 
-async function collectWheelSamples(page: Parameters<typeof test>[0]['page']): Promise<MotionSample[]> {
+async function collectWheelSamples(page: Page): Promise<MotionSample[]> {
   const samples: MotionSample[] = [];
 
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'auto' }));

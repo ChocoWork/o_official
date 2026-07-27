@@ -125,8 +125,18 @@ export function proxy(request: NextRequest) {
     return NextResponse.json({ error: 'Forbidden origin' }, { status: 403 });
   }
 
-  const response = NextResponse.next();
   const nonce = generateNonce();
+  const csp = buildCsp(nonce);
+
+  // CSP はリクエストヘッダーにも載せる。Next.js はここから nonce を読み取って
+  // 自前のインラインスクリプト（ハイドレーション用）に nonce 属性を付与する。
+  // レスポンスにしか設定しないと Next は nonce の存在を知れず、本番ビルドで
+  // 全インラインスクリプトが CSP に弾かれてハイドレートしなくなる。
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set('Content-Security-Policy', csp);
+  requestHeaders.set('x-nonce', nonce);
+
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
 
   let sessionId = request.cookies.get(sessionCookieName)?.value;
   if (!sessionId) {
@@ -134,7 +144,7 @@ export function proxy(request: NextRequest) {
     response.cookies.set(sessionCookieName, sessionId, cookieOptionsForSession(SESSION_COOKIE_MAX_AGE));
   }
 
-  response.headers.set('Content-Security-Policy', buildCsp(nonce));
+  response.headers.set('Content-Security-Policy', csp);
   response.headers.set('Referrer-Policy', 'no-referrer');
   response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   response.headers.set('X-Content-Type-Options', 'nosniff');

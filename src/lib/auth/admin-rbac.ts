@@ -37,7 +37,7 @@ export type AuthzResult = AuthzSuccess | AuthzFailure;
 
 // Legacy role-to-permission map is preserved for UI/consistency checks only.
 // Authorization decisions are made from DB ACL permissions, not from app_metadata.role.
-const legacyPermissionMap: Record<AppRole, Set<PermissionCode>> = {
+export const legacyPermissionMap: Record<AppRole, Set<PermissionCode>> = {
   admin: new Set<PermissionCode>([
     'admin.users.read',
     'admin.users.manage',

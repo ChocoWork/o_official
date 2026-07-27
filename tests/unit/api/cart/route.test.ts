@@ -91,21 +91,21 @@ describe('POST /api/cart', () => {
     const res = await POST(makeRequest({ item_id: 1, quantity: 2, color: 'BLACK', size: 'L' }));
 
     expect((res as { status: number }).status).toBe(409);
-    expect((res as { body: { error: string } }).body.error).toBe('insufficient_stock');
+    expect((res as unknown as { body: { error: string } }).body.error).toBe('insufficient_stock');
   });
 
   test('数量上限を超える場合は 400 を返す', async () => {
     const res = await POST(makeRequest({ item_id: 1, quantity: 999, color: 'BLACK', size: 'L' }));
 
     expect((res as { status: number }).status).toBe(400);
-    expect((res as { body: { error: string } }).body.error).toBe('Invalid request body');
+    expect((res as unknown as { body: { error: string } }).body.error).toBe('Invalid request body');
   });
 
   test('許容外文字を含む color/size は 400 を返す', async () => {
     const res = await POST(makeRequest({ item_id: 1, quantity: 1, color: '<script>', size: 'M' }));
 
     expect((res as { status: number }).status).toBe(400);
-    expect((res as { body: { error: string } }).body.error).toBe('Invalid request body');
+    expect((res as unknown as { body: { error: string } }).body.error).toBe('Invalid request body');
     expect(mockLogAudit).toHaveBeenCalled();
   });
 });

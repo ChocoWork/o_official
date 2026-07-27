@@ -3,6 +3,15 @@ import { defineConfig, devices } from '@playwright/test';
 const resolvedBaseUrl = process.env.BASE_URL || 'http://localhost:3000';
 
 /**
+ * E2E は本番ビルド（next build && next start）に対して実行する。
+ * dev サーバーはリクエストのたびにオンデマンドコンパイルするため、
+ * 長時間の回帰では page.goto が 30 秒返らない偽の失敗を出す。
+ * （288 件 22 分の直列実行で 9 件失敗 → 同じテストを単体実行すると 111/111 パス）
+ * dev サーバーで動かしたい場合のみ E2E_DEV_SERVER=1 を付ける。
+ */
+const useDevServer = process.env.E2E_DEV_SERVER === '1';
+
+/**
  * See https://playwright.dev/docs/test-configuration.
  */
 export default defineConfig({
@@ -45,11 +54,12 @@ export default defineConfig({
     // },
   ],
 
-  /* Run your local dev server before starting the tests */
+  /* テスト前にサーバーを起動する（既定は本番ビルド） */
   webServer: {
-    command: 'npm run dev',
+    command: useDevServer ? 'npm run dev' : 'npm run build && npm run start',
     url: `${resolvedBaseUrl}/item`,
     reuseExistingServer: true, // 既存のサーバーを再利用
-    timeout: 120 * 1000,
+    // ビルドを含むため dev より長く待つ。
+    timeout: (useDevServer ? 120 : 300) * 1000,
   },
 });

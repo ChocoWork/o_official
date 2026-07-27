@@ -1,5 +1,3 @@
-import { jest } from '@jest/globals';
-
 jest.mock('@/lib/supabase/server', () => ({
   createServiceRoleClient: jest.fn(),
 }));

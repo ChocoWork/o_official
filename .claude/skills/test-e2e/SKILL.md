@@ -1,230 +1,111 @@
 ---
 name: test-e2e
-description: 'playwright-cli を使った E2E テストの実行スキル。ブラウザを headless モードで起動し、テスト結果をスクリーンショットとして screenshots/ 配下の日付付きフォルダーに保存する。E2E テストを実行する際には、必ずこのスキルに従ってください。'
+description: 'Playwright による E2E テストの実行スキル。本番ビルド（next build && next start）に対して e2e/*.spec.ts を実行し、失敗が実装由来か環境由来かを切り分ける。E2E テストを実行・デバッグする際には必ずこのスキルに従うこと。'
 ---
 
-# E2E テストスキル
+# E2E テスト実行スキル
 
-## 概要
+`e2e/FR-{CATEGORY}-{NNN}-{description}.spec.ts` を Playwright で実行する手順。
 
-本スキルは、`playwright-cli` を使って {ProjectName} アプリケーションの E2E テストを実行し、テスト結果をスクリーンショットとして記録するための手順を定義する。
-すべてのスクリーンショットは `screenshots/` 配下の日付付きフォルダーに保存される。
+## 鉄則
 
----
+**E2E は本番ビルドに対して実行する。dev サーバーでは実行しない。**
 
-## 前提条件
+dev サーバーはリクエストのたびにオンデマンドコンパイルする。件数が増えると `page.goto` が 30 秒返らない・要素が描画されないという、**実装とは無関係な失敗**を出す。実測で 288 件 22 分の直列実行で 9 件失敗し、同じテストを単体実行すると 111/111 パスした。
 
-- Aspire AppHost が起動済みであること（`cd src && dotnet run --project AppHost`）
-- Web アプリケーションがアクセス可能であること
-- `playwright-cli` が利用可能であること
+この偽の失敗を実装のバグと誤診すると、直す必要のないコードを触ることになる。
 
----
+## 実行
 
-## 実行手順
+`playwright.config.ts` の `webServer` が既定で `npm run build && npm run start` を起動する。通常は叩くだけでよい。
 
-### Step 1: スクリーンショット保存先の作成
-
-テスト実行ごとに一意のフォルダーを `screenshots/` 配下に作成する。
-
-**フォルダー命名規則:**
-
-```
-screenshots/{YYYYMMDD}-{HHmmss}-{テスト名}/
+```bash
+npm run test:e2e                                  # 全件
+npx playwright test e2e/FR-ADMIN-031              # ファイル指定
+npx playwright test e2e/FR-ADMIN-03               # 前方一致で複数ファイル
+npx playwright test --reporter=line               # 全件実行時はこちらが読みやすい
 ```
 
-- `YYYYMMDD-HHmmss` — テスト開始時刻（ローカルタイム）
-- `テスト名` — テストの目的を英語で簡潔に表す（kebab-case）
+全件は 20 分超になる。`run_in_background` で回し、完了通知を待つ。
 
-**例:**
+### 事前確認（必須）
 
-```
-screenshots/20260327-143052-chat-send-message/
-screenshots/20260327-150000-data-management-upload/
-screenshots/20260327-160000-admin-user-crud/
-screenshots/20260327-170000-full-regression/
-```
-
-**作成コマンド（PowerShell）:**
+`reuseExistingServer: true` のため、**`npm run dev` が :3000 で動いたままだと Playwright はそれを再利用し、黙って dev サーバーに対してテストしてしまう**。実行前に必ず止める。
 
 ```powershell
-$testName = "chat-send-message"  # テストに応じて変更
-$timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$folder = "screenshots/${timestamp}-${testName}"
-New-Item -ItemType Directory -Path $folder -Force
+Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue
 ```
 
-### Step 2: ブラウザの起動（headless モード）
+### dev サーバーで動かす場合
+
+デバッグ中に再ビルドを避けたいときのみ。
 
 ```bash
-playwright-cli open --browser=chromium
+E2E_DEV_SERVER=1 npx playwright test e2e/FR-ADMIN-031
 ```
 
-> **注意:** `playwright-cli` は現時点で headless フラグを直接サポートしていない場合がある。
-> その場合は `run-code` で headless コンテキストを作成する:
->
-> ```bash
-> playwright-cli open
-> ```
+**この結果を回帰の合否判断に使わない。** 通っても通らなくても、最終確認は本番ビルドでやり直す。
 
-### Step 3: 画面サイズの設定
+## 失敗の切り分け
 
-一貫したスクリーンショットのため、画面サイズを固定する。
+原因を推測で断定しない。次の順で確認する。
+
+### 1. エラーの種類を見る
+
+| エラー | 意味 |
+|---|---|
+| `page.goto: Test timeout` / `net::ERR_ABORTED` | ページが返ってこない → サーバー側 |
+| `locator.click: Test timeout`（要素が出ない） | ページが描画されていない → サーバー側の疑い |
+| `expect(locator).toBeVisible() failed` | 要素は無いが描画は進んだ → 実装側の疑い |
+| 期待値と実際値の不一致 | 実装側 |
+
+### 2. 失敗したテストだけを単体で再実行する
+
+パスするなら実装の欠陥ではない。
 
 ```bash
-playwright-cli resize 1920 1080
+npx playwright test e2e/FR-ADMIN-024-cost-input-fields.spec.ts
 ```
 
-### Step 4: テスト対象ページへの遷移
+### 3. 同一テストの他ビューポートを見る
 
-Web アプリケーションの URL に遷移する。Aspire 経由で起動している場合、URL はダッシュボードから確認する。
+mobile / tablet / desktop の 3 ビューポートで同じテストが走る。**同じ実行内で desktop だけ落ちて mobile/tablet が通っている**なら、環境由来の疑いが濃い。
 
-```bash
-playwright-cli goto https://localhost:3000
+### 4. 実行ごとに失敗する組が入れ替わるか見る
+
+入れ替わるならフレーク。同じテストが毎回落ちるなら実装の欠陥。
+
+### やってはいけないこと
+
+- `retries` を上げて通す — 症状を隠すだけ
+- 切り分けずに「フレークだろう」と断定する — 逆に本物のバグを見逃す
+- 単体でパスしたことだけを根拠に「実装は正しい」と結論する — 上の 1〜4 を揃えて判断する
+
+## テストを書くとき
+
+`.claude/CLAUDE.md` の要求管理ルールに従う。
+
+- 1 つの受け付け基準（AC）につき 1 つの `test()`。コメントに `// FREQ-XXX-AC-01` を書いて spec と対応付ける
+- mobile（390px）/ tablet（768px）/ desktop（1280px）の 3 ビューポートで回す
+- API は `page.route()` でモックする。実 DB に依存させない
+- 各ファイルに横スクロール検証を 1 件入れる
+
+```ts
+const hasHorizontalOverflow = await page.evaluate(() => {
+  const doc = document.documentElement;
+  return doc.scrollWidth > doc.clientWidth + 1;
+});
+expect(hasHorizontalOverflow).toBe(false);
 ```
 
-### Step 5: スクリーンショットの撮影
+### ロケーターの注意点
 
-各操作ステップでスクリーンショットを撮影する。ファイル名は連番 + 操作内容とする。
+実際に踏んだもの。
 
-**命名規則:**
+- `page.route()` の glob で `?` は**1 文字ワイルドカード**。`**/api/foo?**` はクエリ付き URL にマッチしない。`**/api/foo**` にして、ハンドラ内で `new URL(req.url())` を見て分岐する
+- `getByRole(name)` は**部分一致**。`{ name: '勘定科目' }` は `aria-label="勘定科目で絞り込み"` にもマッチする。衝突するなら `exact: true` か、ラベル自体を重ならない文言にする
 
-```
-{連番2桁}-{操作内容}.png
-```
+## 参考
 
-**例:**
-
-```bash
-playwright-cli screenshot --filename=screenshots/20260327-143052-chat-send-message/01-initial-page.png
-playwright-cli screenshot --filename=screenshots/20260327-143052-chat-send-message/02-new-session-created.png
-playwright-cli screenshot --filename=screenshots/20260327-143052-chat-send-message/03-message-typed.png
-playwright-cli screenshot --filename=screenshots/20260327-143052-chat-send-message/04-message-sent.png
-playwright-cli screenshot --filename=screenshots/20260327-143052-chat-send-message/05-ai-response.png
-```
-
-### Step 6: テスト完了・ブラウザの終了
-
-```bash
-playwright-cli close
-```
-
----
-
-## テストシナリオテンプレート
-
-以下は典型的なテストシナリオの実行例。テスト対象に応じてカスタマイズして使用する。
-
-### チャット画面の基本テスト
-
-```bash
-# 1. 準備
-$testName = "chat-basic"
-$timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$folder = "screenshots/${timestamp}-${testName}"
-New-Item -ItemType Directory -Path $folder -Force
-
-# 2. ブラウザ起動・遷移
-playwright-cli open
-playwright-cli resize 1920 1080
-playwright-cli goto https://localhost:3000/chat
-
-# 3. テスト実行とスクリーンショット
-playwright-cli screenshot --filename=${folder}/01-chat-initial.png
-
-# 新規セッション作成
-playwright-cli click {新規セッションボタンのref}
-playwright-cli screenshot --filename=${folder}/02-new-session.png
-
-# メッセージ送信
-playwright-cli fill {入力欄のref} "テストメッセージ"
-playwright-cli screenshot --filename=${folder}/03-message-typed.png
-playwright-cli click {送信ボタンのref}
-
-# AI 応答待ち（snapshot で状態確認しながら待つ）
-playwright-cli snapshot
-playwright-cli screenshot --filename=${folder}/04-response-received.png
-
-# 4. 終了
-playwright-cli close
-```
-
-### データ管理画面のテスト
-
-```bash
-$testName = "data-management"
-$timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$folder = "screenshots/${timestamp}-${testName}"
-New-Item -ItemType Directory -Path $folder -Force
-
-playwright-cli open
-playwright-cli resize 1920 1080
-playwright-cli goto https://localhost:3000/data-management
-
-playwright-cli screenshot --filename=${folder}/01-data-list.png
-
-# 検索テスト
-playwright-cli fill {検索欄のref} "テスト"
-playwright-cli screenshot --filename=${folder}/02-search-result.png
-
-playwright-cli close
-```
-
-### 管理画面（ユーザー管理）のテスト
-
-```bash
-$testName = "admin-users"
-$timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$folder = "screenshots/${timestamp}-${testName}"
-New-Item -ItemType Directory -Path $folder -Force
-
-playwright-cli open
-playwright-cli resize 1920 1080
-playwright-cli goto https://localhost:3000/admin/users
-
-playwright-cli screenshot --filename=${folder}/01-users-list.png
-
-# ユーザー追加ダイアログ
-playwright-cli click {追加ボタンのref}
-playwright-cli screenshot --filename=${folder}/02-add-user-dialog.png
-
-playwright-cli close
-```
-
----
-
-## ルール
-
-### 必須
-
-1. **headless モードで実行する** — GUI を表示しない
-2. **screenshots/ 配下に日付フォルダーを必ず作成する** — ルート直下にスクリーンショットを保存しない
-3. **フォルダー名は `YYYYMMDD-HHmmss-テスト名` 形式** にする
-4. **スクリーンショットのファイル名は `連番2桁-操作内容.png`** にする
-5. **テスト前に画面サイズを `1920x1080` に設定する**
-6. **テスト完了後は必ず `playwright-cli close` でブラウザを終了する**
-7. **各操作ステップでスクリーンショットを撮影する** — 後からテスト結果を確認できるようにする
-
-### 推奨
-
-- テスト開始時に Aspire ダッシュボードのスクリーンショットを撮り、全サービスの状態を記録する
-- エラー発生時もスクリーンショットを撮影してから対処する
-- `snapshot` コマンドで DOM の状態を確認してから操作する（ref の特定に必要）
-- 待機が必要な場合は `snapshot` を繰り返して状態遷移を確認する
-
-### 禁止
-
-- `screenshots/` ルート直下へのスクリーンショット保存
-- タイムスタンプのないフォルダー名の使用
-- テスト終了時にブラウザを閉じ忘れること
-
----
-
-## トラブルシューティング
-
-| 問題 | 対処法 |
-|------|--------|
-| ブラウザが起動しない | `playwright-cli kill-all` で残存プロセスを終了してから再試行 |
-| ページが表示されない | Aspire ダッシュボードで Web アプリの起動状態を確認 |
-| ref が見つからない | `playwright-cli snapshot` で最新の DOM 構造を確認 |
-| スクリーンショットが保存されない | フォルダーが存在するか確認。`--filename` のパスが正しいか確認 |
-| SSL 証明書エラー | 開発環境では `https://localhost` の自己署名証明書を許可する |
+- ブラウザを対話的に操作して調べる場合は `playwright-cli` スキル
+- Jest（単体テスト）は `test-jest` スキル

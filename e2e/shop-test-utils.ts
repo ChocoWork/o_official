@@ -42,6 +42,7 @@ export type MockItemDetail = {
   colors: Array<{ hex: string; name: string }>;
   sizes: string[];
   product_details: string[];
+  material?: string | null;
   stockStatus?: 'in_stock' | 'low_stock' | 'sold_out' | 'unknown';
   stock_quantity?: number | null;
 };

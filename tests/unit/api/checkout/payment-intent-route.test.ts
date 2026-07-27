@@ -47,6 +47,6 @@ describe('POST /api/checkout/payment-intent', () => {
     const req = makeRequest({ currency: 'jpy', paymentMethod: 'stripe_card' });
     const res = await POST(req);
     expect((res as { status: number }).status).toBe(410);
-    expect((res as { body: { error: string } }).body.error).toContain('deprecated');
+    expect((res as unknown as { body: { error: string } }).body.error).toContain('deprecated');
   });
 });

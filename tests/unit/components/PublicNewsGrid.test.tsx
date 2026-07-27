@@ -61,15 +61,20 @@ describe('PublicNewsGrid catalog filter drawer', () => {
 
     await user.click(screen.getByRole('button', { name: 'FILTER' }));
 
+    // ドロワー内の FILTER 見出しは廃止され、閉じるボタンだけが残っている。
+    // 属性契約でドロワー本体を特定する。
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'FILTER' })).toBeInTheDocument();
+      expect(document.querySelector('[data-ui-drawer]')).toBeInTheDocument();
     });
 
-    const drawer = screen.getByRole('heading', { name: 'FILTER' }).closest('aside');
+    const drawer = document.querySelector<HTMLElement>('[data-ui-drawer]');
 
     if (!drawer) {
       throw new Error('Filter drawer not found');
     }
+
+    expect(drawer).toHaveAttribute('data-ui-drawer-side', 'left');
+    expect(within(drawer).getByRole('button', { name: 'Close filter drawer' })).toBeInTheDocument();
 
     expect(within(drawer).getByRole('checkbox', { name: 'ALL' })).toBeInTheDocument();
     expect(within(drawer).getByRole('checkbox', { name: 'COLLABORATION' })).toBeInTheDocument();

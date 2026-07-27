@@ -1,3 +1,5 @@
+export {};
+
 jest.mock('next/server', () => ({
   NextResponse: {
     json: (body: any, init?: any) => {
@@ -25,6 +27,8 @@ jest.mock('@/lib/supabase/server', () => ({
 
 jest.mock('next/headers', () => ({
   cookies: jest.fn(),
+  // セッション失効の記録で IP / UA を読むために headers() も使う。
+  headers: jest.fn(() => new Map<string, string>()),
 }));
 
 jest.mock('@/lib/audit', () => ({
@@ -145,8 +149,25 @@ describe('Auth full flow integration (register -> login -> refresh -> logout)', 
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'svc_key';
 
     (global as any).fetch.mockResolvedValue({ ok: true, json: async () => ({ access_token: 'a2', refresh_token: 'r2', expires_in: 3600, user: { id: 'u-seq', email: 'seq@example.com' } }) });
-    const serviceFromMock = jest.fn(() => ({ update: jest.fn().mockResolvedValue({}), insert: jest.fn().mockResolvedValue({}) }));
-    createServiceRoleClient.mockReturnValue({ from: serviceFromMock });
+    const sessionRow = {
+      id: 'sess-seq',
+      user_id: 'u-seq',
+      refresh_token_hash: 'old-hash',
+      current_jti: 'jti-seq',
+      previous_refresh_token_hash: null,
+      quarantined: false,
+      revoked_at: null,
+    };
+    const serviceFromMock = jest.fn(() => ({
+      select: jest.fn().mockReturnValue({
+        eq: jest.fn().mockReturnValue({
+          maybeSingle: jest.fn().mockResolvedValue({ data: sessionRow, error: null }),
+        }),
+      }),
+      update: jest.fn().mockReturnValue({ eq: jest.fn().mockResolvedValue({}) }),
+      insert: jest.fn().mockResolvedValue({}),
+    }));
+    createServiceRoleClient.mockResolvedValue({ from: serviceFromMock });
 
     const refreshRes: any = await refreshHandler();
     const refreshBody = await refreshRes.json();
@@ -155,10 +176,13 @@ describe('Auth full flow integration (register -> login -> refresh -> logout)', 
     // new cookie should be set
     const newCookie = refreshRes.cookies.get('sb-refresh-token');
     expect(newCookie.value).toBe('r2');
-    expect(createServiceRoleClient().from).toHaveBeenCalledWith('sessions');
+    expect(serviceFromMock).toHaveBeenCalledWith('sessions');
 
     // LOGOUT - cookie store has latest refresh token
-    cookies.mockReturnValue({ get: jest.fn().mockReturnValue({ value: newCookie.value }) });
+    cookies.mockReturnValue({
+      get: jest.fn().mockReturnValue({ value: newCookie.value }),
+      getAll: jest.fn().mockReturnValue([{ name: 'sb-abcdefgh-auth-token', value: 'x' }]),
+    });
     const logoutRes: any = await logoutHandler();
     const logoutBody = await logoutRes.json();
     expect(logoutRes.status).toBe(200);

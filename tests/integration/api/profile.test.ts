@@ -1,3 +1,5 @@
+export {};
+
 jest.mock('@/lib/supabase/server', () => ({
 	createClient: jest.fn(),
 	resolveRequestUser: jest.fn(),
@@ -90,7 +92,7 @@ describe('GET /api/profile', () => {
 		const body = await res.json();
 
 		expect(res.status).toBe(200);
-		expect(builder.select).toHaveBeenNthCalledWith(1, 'display_name, kana_name, phone, address, optional_name, optional_phone');
+		expect(builder.select).toHaveBeenNthCalledWith(1, 'display_name, kana_name, phone, address, addresses, optional_name, optional_phone');
 		expect(builder.select).toHaveBeenNthCalledWith(2, 'display_name, kana_name, phone, address');
 		expect(body).toMatchObject({
 			email: 'user@example.com',
@@ -115,8 +117,27 @@ describe('GET /api/profile', () => {
 
 	test('POST は電話番号を整形して保存する', async () => {
 		const upsert = jest.fn().mockResolvedValue({ error: null });
+		// 保存後にレスポンス用の現在値を読み直すので、select 系も用意する。
+		const builder = createProfileQueryBuilder([
+			{
+				data: {
+					display_name: '山田 花子',
+					kana_name: 'ヤマダ ハナコ',
+					phone: '090-1234-5678',
+					address: {
+						postalCode: '1500001',
+						prefecture: '東京都',
+						city: '渋谷区',
+						address: '神宮前1-2-3',
+						building: '青山ハイツ 101',
+					},
+				},
+				error: null,
+			},
+		]);
 		createClient.mockResolvedValue({
 			from: jest.fn().mockReturnValue({
+				...builder,
 				upsert,
 			}),
 		});
@@ -176,8 +197,11 @@ describe('GET /api/profile', () => {
 	test('POST は CSRF ローテーションを受けて CSRF cookie を返す', async () => {
 		requireCsrfOrDeny.mockResolvedValue({ rotatedCsrfToken: 'new-csrf-token' });
 		const upsert = jest.fn().mockResolvedValue({ error: null });
+		// 保存後にレスポンス用の現在値を読み直すので、select 系も用意する。
+		const builder = createProfileQueryBuilder([{ data: null, error: null }]);
 		createClient.mockResolvedValue({
 			from: jest.fn().mockReturnValue({
+				...builder,
 				upsert,
 			}),
 		});

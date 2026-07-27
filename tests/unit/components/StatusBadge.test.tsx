@@ -2,40 +2,57 @@ import React from 'react';
 import { render } from '@testing-library/react';
 import { StatusBadge } from '@/components/ui/StatusBadge/StatusBadge';
 
-describe('StatusBadge sizing', () => {
-  test('text variant default md', () => {
+// StatusBadge は Tailwind ユーティリティ直書きから CSS ファイル方式へ移行済み。
+// 見た目の値（px-3 / h-5 など）は CSS 側の責務なので、ここでは
+// 「どの variant / size で描画したか」という属性契約だけを検証する。
+describe('StatusBadge', () => {
+  const badgeOf = (container: HTMLElement) => container.querySelector('[data-ui-badge]');
+
+  test('既定は text variant / md サイズ', () => {
     const { container } = render(<StatusBadge>Label</StatusBadge>);
-    const badge = container.querySelector('span');
-    expect(badge).toHaveClass('px-3', 'py-1', 'text-xs');
+    const badge = badgeOf(container);
+
+    expect(badge).toHaveAttribute('data-ui-badge-variant', 'text');
+    expect(badge).toHaveAttribute('data-ui-size', 'md');
+    expect(badge).toHaveTextContent('Label');
   });
 
-  test('text variant sm and lg', () => {
-    const { container: c1 } = render(<StatusBadge size="sm">Small</StatusBadge>);
-    expect(c1.querySelector('span')).toHaveClass('px-2', 'py-[2px]', 'text-[10px]');
-
-    const { container: c2 } = render(<StatusBadge size="lg">Large</StatusBadge>);
-    expect(c2.querySelector('span')).toHaveClass('px-4', 'py-2', 'text-sm');
+  test('size を指定すると data-ui-size に反映される', () => {
+    for (const size of ['sm', 'md', 'lg'] as const) {
+      const { container } = render(<StatusBadge size={size}>Label</StatusBadge>);
+      expect(badgeOf(container)).toHaveAttribute('data-ui-size', size);
+    }
   });
 
-  test('dot variant respects size map', () => {
-    const { container: cSm } = render(<StatusBadge variant="dot" size="sm" />);
-    expect(cSm.querySelector('span')).toHaveClass('h-1', 'w-1');
+  test('dot variant は size を保ったまま variant を切り替える', () => {
+    for (const size of ['sm', 'md', 'lg'] as const) {
+      const { container } = render(<StatusBadge variant="dot" size={size} />);
+      const badge = badgeOf(container);
 
-    const { container: cMd } = render(<StatusBadge variant="dot" size="md" />);
-    expect(cMd.querySelector('span')).toHaveClass('h-2', 'w-2');
-
-    const { container: cLg } = render(<StatusBadge variant="dot" size="lg" />);
-    expect(cLg.querySelector('span')).toHaveClass('h-3', 'w-3');
+      expect(badge).toHaveAttribute('data-ui-badge-variant', 'dot');
+      expect(badge).toHaveAttribute('data-ui-size', size);
+    }
   });
 
-  test('count variant sizes and padding', () => {
-    const { container: cSm } = render(<StatusBadge variant="count" count={5} size="sm" />);
-    expect(cSm.querySelector('span')).toHaveClass('h-4', 'text-xs');
+  test('count variant は件数を表示し size を反映する', () => {
+    const { container } = render(<StatusBadge variant="count" count={12} size="lg" />);
+    const badge = badgeOf(container);
 
-    const { container: cMd } = render(<StatusBadge variant="count" count={12} size="md" />);
-    expect(cMd.querySelector('span')).toHaveClass('h-5', 'text-xs');
+    expect(badge).toHaveAttribute('data-ui-badge-variant', 'count');
+    expect(badge).toHaveAttribute('data-ui-size', 'lg');
+    expect(badge).toHaveTextContent('12');
+  });
 
-    const { container: cLg } = render(<StatusBadge variant="count" count={123} size="lg" />);
-    expect(cLg.querySelector('span')).toHaveClass('h-6', 'text-sm');
+  test('桁数が多い count は multi フラグが立つ', () => {
+    const { container: single } = render(<StatusBadge variant="count" count={5} />);
+    expect(badgeOf(single)).not.toHaveAttribute('data-ui-badge-multi');
+
+    const { container: multi } = render(<StatusBadge variant="count" count={123} />);
+    expect(badgeOf(multi)).toHaveAttribute('data-ui-badge-multi', 'true');
+  });
+
+  test('tone は text variant の属性として出る', () => {
+    const { container } = render(<StatusBadge tone="danger">NG</StatusBadge>);
+    expect(badgeOf(container)).toHaveAttribute('data-ui-badge-tone', 'danger');
   });
 });

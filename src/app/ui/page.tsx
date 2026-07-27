@@ -123,7 +123,7 @@ export default function Page() {
   const [activeSegment, setActiveSegment] = useState<(typeof segmentOptions)[number]>("TOPS");
 
   // helper maps for the drawer demo buttons
-  const navItemClassMap: Record<ComponentSize, string> = {
+  const navItemClassMap: Partial<Record<ComponentSize, string>> = {
     xs: 'px-3 py-2 text-[11px]',
     sm: 'px-4 py-3 text-xs',
     md: 'px-4 py-4 text-sm',

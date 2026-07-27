@@ -50,40 +50,40 @@ describe('NewsSection category label', () => {
     jest.resetAllMocks();
   });
 
-  it('renders category with border (TagLabel outline variant)', async () => {
+  // カテゴリは TagLabel の outline variant で描画する。枠線の見た目は
+  // TagLabel.css の責務なので、ここでは variant の属性契約だけを検証する。
+  it('カテゴリを TagLabel の outline variant で描画する', async () => {
     render(<NewsSection />);
 
     await waitFor(() => {
       expect(screen.getByText('SUSTAINABILITY')).toBeInTheDocument();
     });
 
-    const categoryEl = screen.getByText('SUSTAINABILITY');
-    // TagLabel variant="outline" applies border and border-black
-    expect(categoryEl).toHaveClass('border');
-    expect(categoryEl).toHaveClass('border-black');
+    const categoryEl = screen.getByText('SUSTAINABILITY').closest('[data-ui-tag-label]');
+    expect(categoryEl).not.toBeNull();
+    expect(categoryEl).toHaveAttribute('data-ui-tag-label-variant', 'outline');
   });
 
-  it('renders all category labels as TagLabel outline', async () => {
+  it('すべてのカテゴリを TagLabel で描画する', async () => {
     render(<NewsSection />);
 
     await waitFor(() => {
       expect(screen.getByText('COLLABORATION')).toBeInTheDocument();
     });
 
-    const collab = screen.getByText('COLLABORATION');
-    expect(collab).toHaveClass('border');
-    expect(collab).toHaveClass('border-black');
+    const collab = screen.getByText('COLLABORATION').closest('[data-ui-tag-label]');
+    expect(collab).not.toBeNull();
+    expect(collab).toHaveAttribute('data-ui-tag-label-variant', 'outline');
   });
 
-  it('does not render category as plain span without border', async () => {
+  it('素の span では描画しない', async () => {
     render(<NewsSection />);
 
     await waitFor(() => {
       expect(screen.getByText('SUSTAINABILITY')).toBeInTheDocument();
     });
 
-    const categoryEl = screen.getByText('SUSTAINABILITY');
-    // Must not be the old plain-text span (which had text-[#474747] but no border)
-    expect(categoryEl).not.toHaveClass('text-\\[\\#474747\\]');
+    // TagLabel を経由していれば必ず data-ui-tag-label が祖先に付く。
+    expect(screen.getByText('SUSTAINABILITY').closest('[data-ui-tag-label]')).not.toBeNull();
   });
 });

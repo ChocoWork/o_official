@@ -60,7 +60,7 @@ describe('DELETE /api/wishlist/[id]', () => {
     });
 
     expect((res as { status: number }).status).toBe(400);
-    expect((res as { body: { error: string } }).body.error).toBe('Invalid wishlist id');
+    expect((res as unknown as { body: { error: string } }).body.error).toBe('Invalid wishlist id');
     expect(mockDelete).not.toHaveBeenCalled();
   });
 
