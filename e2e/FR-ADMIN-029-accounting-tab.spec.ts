@@ -125,7 +125,9 @@ for (const viewport of viewports) {
       for (const label of ACCOUNTING_SUB_TABS) {
         await expect(page.getByRole('tab', { name: label })).toBeVisible();
       }
-      await expect(page.getByRole('button', { name: '2026年', exact: true })).toBeVisible();
+      // 年度選択はタブ行右端のドロップダウン（FREQ-253-REQ-06）。
+      await expect(page.getByRole('button', { name: '会計年' })).toBeVisible();
+      await expect(page.getByText('2026年', { exact: true })).toBeVisible();
 
       await page.getByRole('tab', { name: '取引管理' }).click();
       await expect(page.getByRole('heading', { name: '支出一覧（0件）' })).toBeVisible();

@@ -147,8 +147,9 @@ for (const viewport of viewports) {
 
       await expect(page.getByText('¥870,000').first()).toBeVisible();
       // 当期仕入高200,000がそのまま売上原価になる（棚卸なし）
-      const plPanel = page.locator('div').filter({ hasText: /^損益計算書（P\/L）/ }).first();
-      await expect(plPanel).toContainText('売上（収入）金額');
+      const plPanel = page.getByRole('region', { name: '損益計算書（P/L）' });
+      await expect(plPanel).toContainText('売上高');
+      await expect(plPanel).toContainText('売上原価');
     });
 
     test('減価償却費が経費に入り、資産が直接減額される', async ({ page }) => {
@@ -171,7 +172,7 @@ for (const viewport of viewports) {
       // FREQ-245-AC-03
       await openSummary(page);
 
-      const bsPanel = page.locator('div').filter({ hasText: /^貸借対照表（B\/S）/ }).first();
+      const bsPanel = page.getByRole('region', { name: '貸借対照表（B/S）' });
       await expect(bsPanel).toContainText('貸借差額');
       await expect(bsPanel).toContainText('¥0');
 
@@ -184,13 +185,13 @@ for (const viewport of viewports) {
       // 銀行: +900,000 − 600,000 = 300,000／現金: −30,000 → 期末 270,000
       await openSummary(page);
 
-      const cfPanel = page.locator('div')
-        .filter({ hasText: /^キャッシュ・フロー計算書（C\/F）/ })
-        .first();
-      await expect(cfPanel).toContainText('期末現金・預金');
+      const cfPanel = page.getByRole('region', {
+        name: 'キャッシュ・フロー計算書（C/F）',
+      });
+      await expect(cfPanel).toContainText('期末残高');
       await expect(cfPanel).toContainText('¥270,000');
       // 固定資産取得は投資活動
-      await expect(cfPanel).toContainText('¥-600,000');
+      await expect(cfPanel).toContainText('-¥600,000');
     });
 
     test('固定税率の税額概算が表示されない', async ({ page }) => {

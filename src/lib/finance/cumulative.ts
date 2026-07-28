@@ -23,6 +23,13 @@ export type CumulativeSummary = {
   sales: number;
   /** 累計費用（減価償却費を含む） */
   expenses: number;
+  /**
+   * 累計売上原価。棚卸は年度をまたぐと期首＝前年期末で相殺されるため、
+   * 累計では実質「当期仕入高の積み上げ」になる。
+   */
+  costOfSales: number;
+  /** 累計販売費及び一般管理費（経費。減価償却費を含む） */
+  operatingExpenses: number;
   /** 累計利益 = 累計収益 − 累計費用 */
   netIncome: number;
   /** 累計設備投資（固定資産の取得価額） */
@@ -32,6 +39,11 @@ export type CumulativeSummary = {
   /** 最初の取引があった年（開業年の目安）。取引がなければ null。 */
   firstYear: number | null;
 };
+
+/** 売上原価を構成する決算書区分。overview.ts の構成比と同じ区分で揃える。 */
+const COST_OF_SALES_SECTIONS = ["期首商品（製品）棚卸高", "当期仕入高"];
+/** 販売費及び一般管理費として扱う決算書区分（青色申告決算書の「経費」）。 */
+const SGA_SECTION = "経費";
 
 function yearOf(date: string): number {
   return Number.parseInt(date.slice(0, 4), 10);
@@ -68,6 +80,8 @@ export function buildCumulativeSummary(
 
   let sales = 0;
   let expenses = 0;
+  let costOfSales = 0;
+  let operatingExpenses = 0;
   let firstYear: number | null = null;
 
   for (const entry of target) {
@@ -78,7 +92,14 @@ export function buildCumulativeSummary(
     if (account.type === "revenue") {
       sales += debited ? -entry.amount : entry.amount;
     } else if (account.type === "expense") {
-      expenses += debited ? entry.amount : -entry.amount;
+      const delta = debited ? entry.amount : -entry.amount;
+      expenses += delta;
+      // 費用の内訳。どちらにも当たらない営業外費用等は合計にだけ効く。
+      if (COST_OF_SALES_SECTIONS.includes(account.section)) {
+        costOfSales += delta;
+      } else if (account.section === SGA_SECTION) {
+        operatingExpenses += delta;
+      }
     }
 
     const year = yearOf(entry.date);
@@ -86,16 +107,21 @@ export function buildCumulativeSummary(
   }
 
   // 減価償却費は仕訳ではなく固定資産台帳から生成されるため別途足す。
+  // 決算書上は「経費」なので販管費にも積む。
   const acquiredAssets = assets.filter(
     (asset) => asset.acquiredOn <= yearEnd,
   );
   for (const asset of acquiredAssets) {
-    expenses += cumulativeDepreciationExpense(asset, throughYear);
+    const depreciation = cumulativeDepreciationExpense(asset, throughYear);
+    expenses += depreciation;
+    operatingExpenses += depreciation;
   }
 
   return {
     sales,
     expenses,
+    costOfSales,
+    operatingExpenses,
     netIncome: sales - expenses,
     capitalInvestment: acquiredAssets.reduce(
       (sum, asset) => sum + asset.acquisitionCost,

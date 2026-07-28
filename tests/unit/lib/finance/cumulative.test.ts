@@ -155,3 +155,61 @@ describe('buildCumulativeSummary', () => {
 		expect(summary.netIncome).toBe(599_800);
 	});
 });
+
+describe('buildCumulativeSummary の費用内訳', () => {
+	it('売上原価（当期仕入高）と販管費（経費）を分けて累計する', () => {
+		const summary = buildCumulativeSummary(
+			[
+				entry({ date: '2025-03-01', amount: 300_000, category: '仕入高' }),
+				entry({ date: '2026-03-01', amount: 200_000, category: '仕入高' }),
+				entry({ date: '2026-04-01', amount: 120_000, category: '広告宣伝費' }),
+			],
+			[],
+			2026,
+		);
+
+		expect(summary.costOfSales).toBe(500_000);
+		expect(summary.operatingExpenses).toBe(120_000);
+		// 内訳の合計は累計費用に一致する
+		expect(summary.costOfSales + summary.operatingExpenses).toBe(summary.expenses);
+	});
+
+	it('仕入値引・返品は累計売上原価から控除する', () => {
+		const summary = buildCumulativeSummary(
+			[
+				entry({ date: '2026-03-01', amount: 300_000, category: '仕入高' }),
+				entry({
+					date: '2026-03-10',
+					amount: 50_000,
+					entryType: 'income',
+					category: '仕入値引・返品',
+				}),
+			],
+			[],
+			2026,
+		);
+
+		expect(summary.costOfSales).toBe(250_000);
+		expect(summary.operatingExpenses).toBe(0);
+	});
+
+	it('減価償却費は販管費（経費）へ積む', () => {
+		const summary = buildCumulativeSummary([], [ASSET], 2026);
+
+		expect(summary.operatingExpenses).toBe(100_200);
+		expect(summary.costOfSales).toBe(0);
+		expect(summary.expenses).toBe(100_200);
+	});
+
+	it('営業外費用は内訳に入らないが累計費用には効く', () => {
+		const summary = buildCumulativeSummary(
+			[entry({ date: '2026-06-01', amount: 10_000, category: '支払利息' })],
+			[],
+			2026,
+		);
+
+		expect(summary.costOfSales).toBe(0);
+		expect(summary.operatingExpenses).toBe(0);
+		expect(summary.expenses).toBe(10_000);
+	});
+});

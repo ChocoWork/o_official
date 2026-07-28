@@ -1,7 +1,7 @@
 import { test, expect, Page } from '@playwright/test';
 
 // FREQ-251: 会計画面ヘッダーの整理。
-// 再読み込みはタブ行の右端へ、常時表示は短い状態ラベルのみ、
+// 更新（再読み込み）はタブ行の右端へ、常時表示は短い状態ラベルのみ、
 // 詳細な文言（エラー・完了）は右下の Toast へ。
 const viewports = [
   { name: 'mobile', width: 390, height: 844 },
@@ -139,11 +139,11 @@ for (const viewport of viewports) {
       await mockAdminApis(page);
     });
 
-    test('再読み込みボタンがタブ行と同じ高さで右端に並ぶ', async ({ page }) => {
+    test('更新ボタンがタブ行と同じ高さで右端に並ぶ', async ({ page }) => {
       // FREQ-251-AC-01
       await openAccounting(page);
 
-      const reload = page.getByRole('button', { name: '再読み込み' });
+      const reload = page.getByRole('button', { name: '更新' });
       const tab = page.getByRole('tab', { name: '財務概要' });
       await expect(reload).toBeVisible();
 

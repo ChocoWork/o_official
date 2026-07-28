@@ -1,0 +1,132 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   Panel
+   Design: Proximity · Alignment · Repetition · Contrast
+   Spacing: derived from golden ratio  φ = 1.618 · √φ = 1.272
+
+   Card が「商品の面」なのに対し、Panel は「情報の面」。
+   見出し＋本文を1枚の面に載せ、ダッシュボードの区画を作る。
+   ═══════════════════════════════════════════════════════════════════════ */
+
+[data-ui-panel] {
+  /* ── Scale ─────────────────────────────────────────────────────────── */
+  --panel-font-size: var(--lk-size-xs);
+
+  /*
+   * パディング＝font × φ。Card と同じ比率を反復し、
+   * ダッシュボード上でカードと面の重さを揃える。
+   */
+  --panel-pad: calc(var(--panel-font-size) * var(--phi));
+
+  /* 見出し ↔ 本文＝font（グループ境界なのでやや広く取る）*/
+  --panel-header-gap: var(--panel-font-size);
+
+  /* 見出し ↔ 操作の最小間隔＝font / φ（近接：同一行のまとまりを保つ）*/
+  --panel-actions-gap: calc(var(--panel-font-size) / var(--phi));
+
+  /* 見出しは本文と同階層。字間を開けて区別する（対比）*/
+  --panel-title-size: var(--panel-font-size);
+  --panel-title-tracking: 0.15em;
+
+  /* ── Color tokens（Card と同系統。ハードコードはここに集約）─────────── */
+  --panel-bg: #ffffff;
+  --panel-bg-muted: #fafafa;
+  --panel-fg: #000000;
+  --panel-border-color: #d4d4d4;
+  --panel-border-width: 1px;
+
+  /* ── Radius（rounded は input と同じ 8px＝--radius-md）───────────────── */
+  --panel-radius: 0;
+
+  font-family: acumin-pro, sans-serif;
+  box-sizing: border-box;
+  display: block;
+  min-width: 0;
+  padding: var(--panel-pad);
+  background: var(--panel-bg);
+  color: var(--panel-fg);
+  border: var(--panel-border-width) solid var(--panel-border-color);
+  border-radius: var(--panel-radius);
+}
+
+/* --- サイズ展開（反復：Card / Avatar と同一の公比スケール）------------- */
+[data-ui-panel][data-ui-panel-size="3xs"] {
+  --panel-font-size: var(--lk-size-5xs);
+}
+
+[data-ui-panel][data-ui-panel-size="2xs"] {
+  --panel-font-size: var(--lk-size-4xs);
+}
+
+[data-ui-panel][data-ui-panel-size="xs"] {
+  --panel-font-size: var(--lk-size-3xs);
+}
+
+[data-ui-panel][data-ui-panel-size="sm"] {
+  --panel-font-size: var(--lk-size-2xs);
+}
+
+[data-ui-panel][data-ui-panel-size="md"] {
+  --panel-font-size: var(--lk-size-xs);
+}
+
+[data-ui-panel][data-ui-panel-size="lg"] {
+  --panel-font-size: var(--lk-size-sm);
+}
+
+[data-ui-panel][data-ui-panel-size="xl"] {
+  --panel-font-size: var(--lk-size-md);
+}
+
+/* --- 面の性格 --------------------------------------------------------- */
+[data-ui-panel][data-ui-panel-tone="muted"] {
+  background: var(--panel-bg-muted);
+}
+
+/* --- 角丸 ------------------------------------------------------------- */
+[data-ui-panel][data-ui-panel-radius="rounded"] {
+  --panel-radius: var(--radius-md);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Header
+   整列: 見出しと操作を同一ベースラインに載せ、両端で揃える
+   近接: 見出し行と本文の間だけを font ぶん空け、面の中の階層を作る
+   ══════════════════════════════════════════════════════════════════════ */
+[data-ui-panel-header] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--panel-actions-gap);
+  min-width: 0;
+}
+
+/* 折り返さない指定：操作は右端に留め、見出し側だけを縮める */
+[data-ui-panel-header][data-ui-panel-header-nowrap="true"] {
+  flex-wrap: nowrap;
+}
+
+[data-ui-panel-title] {
+  min-width: 0;
+  margin: 0;
+  font-size: var(--panel-title-size);
+  font-weight: 500;
+  letter-spacing: var(--panel-title-tracking);
+  line-height: 1;
+}
+
+[data-ui-panel-actions] {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--panel-actions-gap);
+}
+
+/* 見出しがあるときだけ本文を押し下げる（見出し無しの面は余白を足さない）*/
+[data-ui-panel-header] + [data-ui-panel-body] {
+  margin-top: var(--panel-header-gap);
+}
+
+[data-ui-panel-body] {
+  min-width: 0;
+}

@@ -33,6 +33,17 @@
   --badge-ink-inverse: #ffffff;
   --badge-border-color: #111111;
 
+  /* accent（opt-in）: 状態を色で示すときだけ使う。既定はモノクロのまま。 */
+  --badge-accent-positive: #16844b;
+  --badge-accent-positive-bg: #eef5f0;
+  --badge-accent-warning: #b45309;
+  --badge-accent-warning-bg: #fdf6ec;
+  --badge-accent-danger: #b91c1c;
+  --badge-accent-danger-bg: #fbeeee;
+
+  /* ── Radius ────────────────────────────────────────────────────────── */
+  --badge-radius: 0;
+
   /* ── Layout (整列: inline-flex + center keeps badge on text baseline) ─ */
   display: inline-flex;
   align-items: center;
@@ -87,6 +98,36 @@
   font-family: "acumin-pro", sans-serif;
   line-height: 1;
   letter-spacing: 0.1em;
+  border-radius: var(--badge-radius);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Height: control
+   整列: 隣に並ぶ Button / SingleSelect と同じ φ 式で高さを出し、
+         ツールバー上でコントロール群として一列に揃える。
+         （2 × pad-y + font × √φ + 2 × border）
+   ══════════════════════════════════════════════════════════════════════ */
+[data-ui-badge][data-ui-badge-variant="text"][data-ui-badge-height="control"] {
+  --badge-border-width: 1px;
+  /* 枠線は既定でコントロールと同じ淡いグレー。accent 指定時は状態色が勝つ。 */
+  --badge-control-border-color: rgba(0, 0, 0, 0.2);
+  height: calc(
+    2 * var(--badge-pad-y) + var(--badge-font-size) * var(--sqrt-phi) + 2 *
+      var(--badge-border-width)
+  );
+  line-height: var(--sqrt-phi);
+  border: var(--badge-border-width) solid var(--badge-control-border-color);
+  /* 中身（ドット＋ラベル）を近接ルールで束ねる */
+  gap: var(--badge-gap-icon2text);
+}
+
+/* ── Shape（反復: Button と同じ 8px／全丸の2段階）───────────────────── */
+[data-ui-badge][data-ui-badge-shape="rounded"] {
+  --badge-radius: var(--radius-md);
+}
+
+[data-ui-badge][data-ui-badge-shape="pill"] {
+  --badge-radius: 9999px;
 }
 
 /* ── Tones (対比: four distinct visual weights map to four status levels) ─ */
@@ -113,6 +154,41 @@
 [data-ui-badge][data-ui-badge-variant="text"][data-ui-badge-tone="danger"] {
   background: var(--badge-ink);
   color: var(--badge-ink-inverse);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Accent（opt-in）
+   対比: 面は淡く、文字と枠は濃く。塗り潰さないので隣接する黒文字を殺さない。
+   ══════════════════════════════════════════════════════════════════════ */
+[data-ui-badge][data-ui-badge-variant="text"][data-ui-badge-accent="true"] {
+  background: var(--badge-accent-bg);
+  color: var(--badge-accent-ink);
+  border: 1px solid var(--badge-accent-ink);
+}
+
+[data-ui-badge][data-ui-badge-accent="true"][data-ui-badge-tone="positive"] {
+  --badge-accent-ink: var(--badge-accent-positive);
+  --badge-accent-bg: var(--badge-accent-positive-bg);
+}
+
+[data-ui-badge][data-ui-badge-accent="true"][data-ui-badge-tone="warning"] {
+  --badge-accent-ink: var(--badge-accent-warning);
+  --badge-accent-bg: var(--badge-accent-warning-bg);
+}
+
+[data-ui-badge][data-ui-badge-accent="true"][data-ui-badge-tone="danger"] {
+  --badge-accent-ink: var(--badge-accent-danger);
+  --badge-accent-bg: var(--badge-accent-danger-bg);
+}
+
+[data-ui-badge][data-ui-badge-accent="true"][data-ui-badge-tone="neutral"] {
+  --badge-accent-ink: var(--badge-ink);
+  --badge-accent-bg: transparent;
+}
+
+/* dot は面を持たないので、accent では地色そのものを状態色に置き換える */
+[data-ui-badge][data-ui-badge-variant="dot"][data-ui-badge-accent="true"] {
+  background: var(--badge-accent-ink);
 }
 
 /* ══════════════════════════════════════════════════════════════════════

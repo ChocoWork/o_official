@@ -146,7 +146,8 @@ async function mockAdminApis(page: Page): Promise<void> {
 async function openSummary(page: Page) {
   await page.goto('/admin');
   await page.getByRole('button', { name: 'ACCOUNTING' }).click();
-  await expect(page.getByRole('heading', { name: '開業以来の累計' })).toBeVisible();
+  // 累計は独立パネルをやめ、利益構造のトグルへ移した（FREQ-255）。
+  await expect(page.getByRole('heading', { name: '利益構造' })).toBeVisible();
 }
 
 for (const viewport of viewports) {
@@ -156,12 +157,27 @@ for (const viewport of viewports) {
       await mockAdminApis(page);
     });
 
-    test('財務概要の先頭に累計パネルと5指標が出る', async ({ page }) => {
-      // FREQ-250-AC-03
+    test('利益構造は年度と累計を切り替えられる', async ({ page }) => {
+      // FREQ-250-AC-03（FREQ-255 で独立パネルから利益構造のトグルへ移設）
       await openSummary(page);
 
-      const panel = page.getByRole('region', { name: '開業以来の累計' });
-      for (const label of ['累計売上', '累計費用', '累計利益', '累計設備投資', '元入金（期末）']) {
+      const panel = page.getByRole('region', { name: '利益構造' });
+      // 既定は年度
+      await expect(panel.getByRole('button', { name: '年度' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      await expect(panel.getByText('売上高', { exact: true })).toBeVisible();
+
+      await panel.getByRole('button', { name: '累計' }).click();
+      for (const label of [
+        '累計売上高',
+        '累計売上原価',
+        '累計販売費及び一般管理費',
+        '累計利益',
+        '累計設備投資',
+        '元入金（期末）',
+      ]) {
         await expect(panel.getByText(label, { exact: true })).toBeVisible();
       }
     });
@@ -169,25 +185,29 @@ for (const viewport of viewports) {
     test('前年度を含む累計値が計算される', async ({ page }) => {
       // FREQ-250-AC-01 / AC-02
       await openSummary(page);
-      const panel = page.getByRole('region', { name: '開業以来の累計' });
+      const panel = page.getByRole('region', { name: '利益構造' });
+      await panel.getByRole('button', { name: '累計' }).click();
 
-      // 累計売上 = 300,000 + 500,000
+      // 累計売上高 = 300,000 + 500,000
       await expect(panel).toContainText('¥800,000');
-      // 累計費用 = 仕入300,000 + 減価償却100,200（固定資産の取得600,000は含めない）
-      await expect(panel).toContainText('¥400,200');
+      // 累計売上原価 = 仕入300,000
+      await expect(panel).toContainText('¥300,000');
+      // 累計販管費 = 減価償却100,200（固定資産の取得600,000は費用でない）
+      await expect(panel).toContainText('¥100,200');
       // 累計利益 = 800,000 − 400,200
       await expect(panel).toContainText('¥399,800');
       // 累計設備投資 = 600,000
       await expect(panel).toContainText('¥600,000');
     });
 
-    test('集計期間と件数が見出し横に出る', async ({ page }) => {
+    test('集計期間と件数が利益構造に出る', async ({ page }) => {
       // FREQ-250-AC-04
       await openSummary(page);
-      const panel = page.getByRole('region', { name: '開業以来の累計' });
+      const panel = page.getByRole('region', { name: '利益構造' });
+      await panel.getByRole('button', { name: '累計' }).click();
 
       // 開業年2025〜2026年で2期、取引5件
-      await expect(panel).toContainText('2025年〜2026年（2期）・5件');
+      await expect(panel).toContainText('2025年〜2026年（2期）・5件の積み上げ');
     });
 
     test('横方向のページスクロールが発生しない', async ({ page }) => {

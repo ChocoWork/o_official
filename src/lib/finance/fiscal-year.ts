@@ -3,8 +3,11 @@
 // すべてこの軸で切る。シーズン（S/S・A/W）は商品原価専用の分析軸で、
 // A/W が 10月〜翌3月と暦年をまたぐため会計期間には使えない。
 
-/** 表示対象の最初の年度。これ以前は年度選択に出さない。 */
-export const FIRST_FISCAL_YEAR = 2026;
+/**
+ * 表示対象の最初の会計期間。これ以前は年度選択に出さない。
+ * 2025年から費用が発生しているため、2025年を起点にする。
+ */
+export const FIRST_FISCAL_YEAR = 2025;
 
 /** 現在（JST）の暦年。 */
 export function currentFiscalYear(now: Date = new Date()): number {

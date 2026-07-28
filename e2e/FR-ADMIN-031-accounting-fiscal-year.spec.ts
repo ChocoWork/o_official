@@ -169,7 +169,9 @@ for (const viewport of viewports) {
       // FREQ-241-AC-01
       await openAccounting(page);
 
-      await expect(page.getByRole('button', { name: '2026年', exact: true })).toBeVisible();
+      // 年度選択はタブ行右端のドロップダウン（FREQ-253-REQ-06）。
+      await expect(page.getByRole('button', { name: '会計年' })).toBeVisible();
+      await expect(page.getByText('2026年', { exact: true })).toBeVisible();
       await expect(page.getByText('会計期間 2026/01/01〜2026/12/31')).toBeVisible();
       // 会計期間の切替軸にシーズンは出さない。
       await expect(page.getByRole('button', { name: '2026 S/S', exact: true })).toHaveCount(0);
