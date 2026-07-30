@@ -126,7 +126,18 @@ async function openEntries(page: Page) {
   await page.goto('/admin');
   await page.getByRole('button', { name: 'ACCOUNTING' }).click();
   await page.getByRole('tab', { name: '取引管理', exact: true }).click();
-  await expect(page.getByText('取引を検索')).toBeVisible();
+  await expect(page.getByRole('heading', { name: '取引管理', exact: true })).toBeVisible();
+}
+
+/** FREQ-257 以降、検索条件は「詳細条件」Drawer の中にある。 */
+async function openFilterDrawer(page: Page) {
+  await page.getByRole('button', { name: '詳細条件' }).click();
+  await expect(page.getByLabel('取引年月日（開始）')).toBeVisible();
+}
+
+/** 条件を適用して Drawer を閉じ、一覧の件数を読めるようにする。 */
+async function applyFilter(page: Page) {
+  await page.getByRole('button', { name: '適用して閉じる' }).click();
 }
 
 for (const viewport of viewports) {
@@ -139,6 +150,7 @@ for (const viewport of viewports) {
     test('検索パネルに電帳法の必須条件がそろっている', async ({ page }) => {
       // FREQ-243-AC-01
       await openEntries(page);
+      await openFilterDrawer(page);
 
       await expect(page.getByLabel('取引年月日（開始）')).toBeVisible();
       await expect(page.getByLabel('取引年月日（終了）')).toBeVisible();
@@ -149,30 +161,37 @@ for (const viewport of viewports) {
       await expect(page.getByRole('button', { name: '絞り込み：収支区分' })).toBeVisible();
       await expect(page.getByLabel('絞り込み：キーワード')).toBeVisible();
 
-      await expect(page.getByText('全5件')).toBeVisible();
+      await expect(page.getByText('条件なし')).toBeVisible();
+      await applyFilter(page);
+      await expect(page.getByText('1-5 / 5件')).toBeVisible();
     });
 
     test('金額・日付は片側のみの範囲指定でも絞り込める', async ({ page }) => {
       // FREQ-243-AC-02
       await openEntries(page);
+      await openFilterDrawer(page);
 
-      // 下限のみ：120,000以上 → 収入2件（120,000 / 250,000）、支出0件
+      // 下限のみ：120,000以上 → 収入2件（120,000 / 250,000）だけが残る
       await page.getByLabel('取引金額（下限）').fill('120000');
-      await expect(page.getByText('支出一覧（0件）')).toBeVisible();
-      await expect(page.getByText('収入一覧（2件）')).toBeVisible();
+      await applyFilter(page);
+      await expect(page.getByText('1-2 / 2件')).toBeVisible();
 
+      await openFilterDrawer(page);
       await page.getByRole('button', { name: '条件をクリア' }).click();
-      await expect(page.getByText('全5件')).toBeVisible();
+      await applyFilter(page);
+      await expect(page.getByText('1-5 / 5件')).toBeVisible();
 
       // 終了のみ：2026-01-31以前 → 支出1件のみ
+      await openFilterDrawer(page);
       await page.getByLabel('取引年月日（終了）').fill('2026-01-31');
-      await expect(page.getByText('支出一覧（1件）')).toBeVisible();
-      await expect(page.getByText('収入一覧（0件）')).toBeVisible();
+      await applyFilter(page);
+      await expect(page.getByText('1-1 / 1件')).toBeVisible();
     });
 
     test('2以上の条件を組み合わせられる', async ({ page }) => {
       // FREQ-243-AC-03
       await openEntries(page);
+      await openFilterDrawer(page);
 
       // 取引先 A社（支出1件・収入1件）× 2026-06-01以降 → 収入1件だけ残る
       await page.getByRole('button', { name: '絞り込み：相手先' }).click();
@@ -180,17 +199,21 @@ for (const viewport of viewports) {
       await page.getByLabel('取引年月日（開始）').fill('2026-06-01');
 
       await expect(page.getByText(/2条件で絞り込み中/)).toBeVisible();
-      await expect(page.getByText('支出一覧（0件）')).toBeVisible();
-      await expect(page.getByText('収入一覧（1件）')).toBeVisible();
-      await expect(page.getByText('年末締め')).toBeVisible();
+      await applyFilter(page);
+      await expect(page.getByText('1-1 / 1件')).toBeVisible();
+      await expect(
+        page.getByRole('region', { name: '取引一覧' }).getByText('卸売 / A社'),
+      ).toBeVisible();
     });
 
     test('絞り込みは帳簿の集計に影響しない', async ({ page }) => {
       // FREQ-243-AC-04
       await openEntries(page);
+      await openFilterDrawer(page);
 
       await page.getByLabel('取引金額（下限）').fill('200000');
-      await expect(page.getByText('支出一覧（0件）')).toBeVisible();
+      await applyFilter(page);
+      await expect(page.getByText('1-1 / 1件')).toBeVisible();
 
       // 帳簿は年度の全件（5件）で集計されたままであること。
       await page.getByRole('tab', { name: '帳簿', exact: true }).click();
@@ -198,9 +221,10 @@ for (const viewport of viewports) {
 
       // 取引管理へ戻って条件をクリアすると全件表示に戻る。
       await page.getByRole('tab', { name: '取引管理', exact: true }).click();
+      await openFilterDrawer(page);
       await page.getByRole('button', { name: '条件をクリア' }).click();
-      await expect(page.getByText('支出一覧（3件）')).toBeVisible();
-      await expect(page.getByText('収入一覧（2件）')).toBeVisible();
+      await applyFilter(page);
+      await expect(page.getByText('1-5 / 5件')).toBeVisible();
     });
 
     test('横方向のページスクロールが発生しない', async ({ page }) => {

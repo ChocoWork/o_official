@@ -104,6 +104,8 @@ async function openIncomeExpenseTab(page: Page) {
   await page.goto('/admin');
   await page.getByRole('button', { name: 'ACCOUNTING' }).click();
   await page.getByRole('tab', { name: '取引管理' }).click();
+  // FREQ-257 以降、取引の入力欄は「新規取引」Drawer の中にある。
+  await page.getByRole('button', { name: '新規取引' }).click();
   await page.getByRole('button', { name: '支出', exact: true }).waitFor();
 }
 
@@ -113,7 +115,7 @@ for (const viewport of viewports) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
     });
 
-    test('タブ名が「取引管理」で、支出一覧と収入一覧が並ぶ', async ({ page }) => {
+    test('タブ名が「取引管理」で、支出・収入が1つの一覧に並ぶ', async ({ page }) => {
       // FREQ-233-AC-01
       await mockAdminApis(page);
       await page.goto('/admin');
@@ -123,8 +125,9 @@ for (const viewport of viewports) {
       await expect(page.getByRole('tab', { name: 'コスト入力' })).toHaveCount(0);
 
       await page.getByRole('tab', { name: '取引管理' }).click();
-      await expect(page.getByText('支出一覧（0件）')).toBeVisible();
-      await expect(page.getByText('収入一覧（0件）')).toBeVisible();
+      // FREQ-257 以降、支出・収入は1つの表に統合されている。
+      await expect(page.getByRole('heading', { name: '取引管理', exact: true })).toBeVisible();
+      await expect(page.getByText('該当する取引がありません。')).toBeVisible();
     });
 
     test('種別を収入にして登録すると収入一覧と売上へ反映される', async ({ page }) => {
@@ -143,7 +146,7 @@ for (const viewport of viewports) {
       await page.getByRole('button', { name: '保存', exact: true }).click();
 
       await expect(page.getByText('収入を保存し、仕訳帳と財務概要へ反映しました。')).toBeVisible();
-      await expect(page.getByText('収入一覧（1件）')).toBeVisible();
+      await expect(page.getByText('1-1 / 1件')).toBeVisible();
 
       // 財務概要の売上に収入合計が反映される。
       await page.getByRole('tab', { name: '財務概要' }).click();

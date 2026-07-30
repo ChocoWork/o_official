@@ -128,6 +128,8 @@ for (const viewport of viewports) {
       // FREQ-240-AC-02
       await openAccounting(page);
       await page.getByRole('tab', { name: '取引管理', exact: true }).click();
+      // FREQ-257 以降、取引の入力欄は「新規取引」Drawer の中にある。
+      await page.getByRole('button', { name: '新規取引' }).click();
 
       await page.getByRole('button', { name: '支出概要' }).click();
       await page.getByRole('option', { name: '展示会・イベント' }).click();
@@ -145,8 +147,8 @@ for (const viewport of viewports) {
       await openAccounting(page);
 
       await page.getByRole('tab', { name: '取引管理', exact: true }).click();
-      await expect(page.getByText('支出一覧（0件）')).toBeVisible();
-      await expect(page.getByText('収入一覧（0件）')).toBeVisible();
+      await expect(page.getByRole('heading', { name: '取引管理', exact: true })).toBeVisible();
+      await expect(page.getByText('該当する取引がありません。')).toBeVisible();
 
       await page.getByRole('tab', { name: '帳簿', exact: true }).click();
       await expect(page.getByText('仕訳件数')).toBeVisible();

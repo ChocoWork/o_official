@@ -1,0 +1,116 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   FileDropZone
+   Design: Proximity · Alignment · Repetition · Contrast
+   Spacing: derived from golden ratio  φ = 1.618 · √φ = 1.272
+   ═══════════════════════════════════════════════════════════════════════ */
+
+[data-ui-file-drop-zone] {
+  /* 基準フォントサイズ（--ui-font-size 経由で全サイズに連動） */
+  --dz-font-size: var(--ui-font-size, var(--lk-size-xs));
+
+  /* Button と同じ padding ルールを φ² 分だけ広げ、投下面として成立させる */
+  --dz-pad-x: calc(var(--dz-font-size) / var(--sqrt-phi));
+  --dz-pad-y: calc(var(--dz-pad-x) * var(--phi));
+  --dz-gap: calc(var(--dz-font-size) / var(--phi));
+
+  /* アイコンは本文の φ 倍。図と文字の主従を作る */
+  --dz-icon-size: calc(var(--dz-font-size) * var(--phi));
+
+  /* 補足は本文の 1/√φ。3段の情報階層をフォントサイズだけで作る */
+  --dz-hint-font-size: calc(var(--dz-font-size) / var(--sqrt-phi));
+
+  --dz-border-width: 1px;
+  --dz-radius: 0;
+
+  /* Colors — StatusBadge / DataTable と同系統 */
+  --dz-border-color: #d4d4d4;
+  --dz-border-color-active: #111111;
+  --dz-bg: #ffffff;
+  --dz-bg-active: #f5f5f5;
+  --dz-ink: #111111;
+  --dz-ink-muted: #707070;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--dz-gap);
+  padding: var(--dz-pad-y) var(--dz-pad-x);
+  border: var(--dz-border-width) dashed var(--dz-border-color);
+  border-radius: var(--dz-radius);
+  background: var(--dz-bg);
+  font-family: "acumin-pro", sans-serif;
+  font-size: var(--dz-font-size);
+  line-height: var(--sqrt-phi);
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease;
+  box-sizing: border-box;
+}
+
+/* 入力は視覚的に隠すが、label 経由でクリック・フォーカスできる状態を保つ */
+[data-ui-file-drop-zone] [data-ui-file-drop-zone-input] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+[data-ui-file-drop-zone] [data-ui-file-drop-zone-icon] {
+  font-size: var(--dz-icon-size);
+  line-height: 1;
+  color: var(--dz-ink-muted);
+}
+
+[data-ui-file-drop-zone] [data-ui-file-drop-zone-label] {
+  color: var(--dz-ink);
+}
+
+[data-ui-file-drop-zone] [data-ui-file-drop-zone-hint] {
+  font-size: var(--dz-hint-font-size);
+  color: var(--dz-ink-muted);
+}
+
+/* ── Shape（反復: Button / Panel と同じ 8px）──────────────────────────── */
+[data-ui-file-drop-zone][data-ui-file-drop-zone-shape="rounded"] {
+  --dz-radius: var(--radius-md);
+}
+
+/* ── States（対比: 受け入れ可能な瞬間だけ枠と面を濃くする）────────────── */
+[data-ui-file-drop-zone][data-ui-file-drop-zone-dragover="true"],
+[data-ui-file-drop-zone]:focus-within {
+  --dz-border-color: var(--dz-border-color-active);
+  background: var(--dz-bg-active);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-ui-file-drop-zone]:hover:not([data-ui-file-drop-zone-disabled="true"]) {
+    --dz-border-color: var(--dz-border-color-active);
+  }
+}
+
+[data-ui-file-drop-zone][data-ui-file-drop-zone-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-ui-file-drop-zone] {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  [data-ui-file-drop-zone] {
+    border: 1px dashed CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+}

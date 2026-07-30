@@ -130,8 +130,8 @@ for (const viewport of viewports) {
       await expect(page.getByText('2026年', { exact: true })).toBeVisible();
 
       await page.getByRole('tab', { name: '取引管理' }).click();
-      await expect(page.getByRole('heading', { name: '支出一覧（0件）' })).toBeVisible();
-      await expect(page.getByRole('heading', { name: '収入一覧（0件）' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: '取引管理', exact: true })).toBeVisible();
+      await expect(page.getByText('該当する取引がありません。')).toBeVisible();
     });
 
     test('横方向のページスクロールが発生しない', async ({ page }) => {

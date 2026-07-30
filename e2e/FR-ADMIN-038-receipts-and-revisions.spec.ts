@@ -205,16 +205,22 @@ for (const viewport of viewports) {
       await page.getByRole('tab', { name: '取引管理', exact: true }).click();
 
       await expect(page.getByRole('columnheader', { name: '証憑' }).first()).toBeVisible();
-      // 添付済みの取引はPDFリンクが出る
+      // FREQ-257 以降、証憑は列のアイコンから Drawer で開く。
+      // 添付済みは黒のクリップ、未添付は橙の警告アイコン。
+      await expect(page.locator('[data-receipt-state="attached"]').first()).toBeVisible();
+      await expect(page.locator('[data-receipt-state="missing"]').first()).toBeVisible();
+
+      // 添付済みの取引を開くと、保存済みのPDFを開くリンクが出る
+      await page.locator('[data-receipt-state="attached"]').first().click();
       await expect(page.getByRole('button', { name: 'invoice.pdfを開く' })).toBeVisible();
-      // 未添付の取引にも「＋添付」がある
-      await expect(page.getByText('＋添付').first()).toBeVisible();
     });
 
     test('証憑をアップロードできる', async ({ page }) => {
       await openAccounting(page);
       await page.getByRole('tab', { name: '取引管理', exact: true }).click();
 
+      // FREQ-257 以降、投下面は証憑 Drawer の中にある。
+      await page.getByRole('button', { name: 'システム・ツール利用料の証憑' }).click();
       await page.getByLabel('システム・ツール利用料に証憑を添付').setInputFiles({
         name: 'receipt.pdf',
         mimeType: 'application/pdf',
@@ -233,16 +239,15 @@ for (const viewport of viewports) {
       await openAccounting(page);
       await page.getByRole('tab', { name: '取引管理', exact: true }).click();
 
-      const history = page.getByText('訂正・削除の履歴（3件）');
-      await expect(history).toBeVisible();
-      await history.click();
+      // FREQ-257 以降、履歴は既定で開いている。
+      await expect(page.getByText('訂正・削除の履歴（3件）')).toBeVisible();
 
       await expect(page.getByRole('columnheader', { name: '変更前' })).toBeVisible();
       await expect(page.getByRole('columnheader', { name: '変更後' })).toBeVisible();
 
       // 削除・訂正・登録の3区分が並ぶ（新しい順）
       await expect(page.getByRole('cell', { name: '削除', exact: true })).toBeVisible();
-      await expect(page.getByRole('cell', { name: '訂正', exact: true })).toBeVisible();
+      await expect(page.getByRole('cell', { name: '訂正', exact: true }).first()).toBeVisible();
       await expect(page.getByRole('cell', { name: '登録', exact: true })).toBeVisible();
 
       // 訂正行に変更前後の金額が出る

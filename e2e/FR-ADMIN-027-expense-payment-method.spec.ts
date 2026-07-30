@@ -89,6 +89,8 @@ async function openIncomeExpenseTab(page: Page) {
   await page.goto('/admin');
   await page.getByRole('button', { name: 'ACCOUNTING' }).click();
   await page.getByRole('tab', { name: '取引管理' }).click();
+  // FREQ-257 以降、取引の入力欄は「新規取引」Drawer の中にある。
+  await page.getByRole('button', { name: '新規取引' }).click();
   await page.getByRole('button', { name: '支出', exact: true }).waitFor();
 }
 
@@ -98,13 +100,13 @@ for (const viewport of viewports) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
     });
 
-    test('支出フォームのラベルが「出金方法」で、支出一覧見出しにも出金方法がある', async ({ page }) => {
+    test('支出フォームのラベルが「出金方法」になる', async ({ page }) => {
       // FREQ-234-AC-01
       await mockAdminApis(page);
       await openIncomeExpenseTab(page);
 
       await expect(page.getByRole('button', { name: '出金方法' })).toBeVisible();
-      await expect(page.getByRole('columnheader', { name: '出金方法' }).first()).toBeVisible();
+      // FREQ-257 で一覧の列は絞られ、入出金方法は入力 Drawer と CSV に残る。
       await expect(page.getByText('支払い方法', { exact: true })).toHaveCount(0);
     });
 

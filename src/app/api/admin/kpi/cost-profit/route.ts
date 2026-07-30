@@ -968,7 +968,8 @@ export async function POST(request: Request) {
 			metadata: { operation, scope: scopeLabel },
 		});
 
-		return attachRotatedCsrf(NextResponse.json({ success: true }), csrfResult);
+		// resourceId を返すのは、作成直後の取引へ証憑を添付するため（新規登録時の一括アップロード）。
+		return attachRotatedCsrf(NextResponse.json({ success: true, resourceId }), csrfResult);
 	} catch (error) {
 		if (isMissingFinanceTable(error)) return missingMigrationResponse();
 

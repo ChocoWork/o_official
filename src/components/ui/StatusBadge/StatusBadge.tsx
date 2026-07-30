@@ -13,6 +13,7 @@ export function StatusBadge({
   shape = 'square',
   accent = false,
   height = 'auto',
+  style,
 }: StatusBadgeProps) {
   if (variant === 'dot') {
     return (
@@ -23,6 +24,7 @@ export function StatusBadge({
         data-ui-badge-accent={accent ? 'true' : undefined}
         data-ui-size={size}
         className={className}
+        style={style}
       />
     );
   }
@@ -36,6 +38,7 @@ export function StatusBadge({
         data-ui-badge-multi={isMulti ? 'true' : undefined}
         data-ui-size={size}
         className={className}
+        style={style}
       >
         {count}
       </span>
@@ -52,6 +55,7 @@ export function StatusBadge({
       data-ui-badge-height={height}
       data-ui-size={size}
       className={className}
+      style={style}
     >
       {children}
     </span>

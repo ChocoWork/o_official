@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import type { ComponentSize } from '@/components/ui/types';
 
 export type StatusBadgeTone = 'neutral' | 'positive' | 'warning' | 'danger';
@@ -14,6 +14,11 @@ export interface StatusBadgeProps {
   variant?: StatusBadgeVariant;
   count?: number | string;
   className?: string;
+  /**
+   * 個別の色指定。凡例のスウォッチのように、tone の4段階では表せない
+   * データ由来の色を当てるときだけ使う（状態表現には tone / accent を使う）。
+   */
+  style?: CSSProperties;
   size?: ComponentSize;
   shape?: StatusBadgeShape;
   /**

@@ -72,6 +72,21 @@
   transition: width 300ms ease;
 }
 
+/* inline: ラベル｜track｜値 を1行に。ラベル・値の列幅は内容なりで、track が伸びる。 */
+[data-ui-graph][data-ui-graph-variant="progress"][data-ui-graph-layout="inline"]
+  [data-graph-row] {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--graph-label-gap);
+}
+
+[data-ui-graph][data-ui-graph-variant="progress"][data-ui-graph-layout="inline"]
+  [data-graph-value] {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
 /* ── Bar chart ─────────────────────────────────────────── */
 
 [data-ui-graph][data-ui-graph-variant="bars"] {
@@ -126,6 +141,19 @@
   display: block;
   width: 100%;
   height: 100%;
+}
+
+/* 中央のラベル（合計値）。ドーナツの穴に重ねる（近接：図と総量を1つにまとめる）。 */
+[data-ui-graph][data-ui-graph-variant="donut"] [data-graph-donut-center] {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--graph-font-size) / (var(--phi) * var(--phi)));
+  text-align: center;
+  pointer-events: none;
 }
 
 [data-ui-graph][data-ui-graph-variant="donut"] [data-graph-legend] {

@@ -11,14 +11,20 @@ export function Graph({
   className,
   legendClassName,
   size = "md",
+  showLegend = true,
+  centerLabel,
+  layout = "stacked",
 }: GraphProps) {
   if (data.length === 0) return null;
 
-  const max = maxValue ?? Math.max(...data.map((d) => d.value), 1);
+  const magnitudeOf = (datum: GraphProps["data"][number]) =>
+    Math.abs(datum.magnitude ?? datum.value);
+  const max = maxValue ?? Math.max(...data.map(magnitudeOf), 1);
 
   const dataAttrs = {
     "data-ui-graph": "true",
     "data-ui-graph-variant": variant,
+    "data-ui-graph-layout": layout,
     ...(typeof size === "string"
       ? { "data-ui-graph-size": size, "data-ui-size": size }
       : {}),
@@ -79,8 +85,12 @@ export function Graph({
                 })}
               </g>
             </svg>
+            {centerLabel !== undefined ? (
+              <div data-graph-donut-center="">{centerLabel}</div>
+            ) : null}
           </div>
         </div>
+        {!showLegend ? null : (
         <div data-graph-legend="" className={legendClassName}>
           {data.map((item, i) => {
             const color =
@@ -101,26 +111,51 @@ export function Graph({
             );
           })}
         </div>
+        )}
       </div>
     );
   }
 
   return (
     <div {...dataAttrs} className={className} style={rootStyle}>
-      {data.map((item) => (
-        <div key={item.label} data-graph-row="">
-          <div data-graph-row-header="">
-            <span data-graph-label="">{item.label}</span>
-            <span data-graph-value="">{item.value}</span>
-          </div>
+      {data.map((item) => {
+        const track = (
           <div data-graph-track="">
             <div
               data-graph-fill=""
-              style={{ width: `${Math.min(100, (item.value / max) * 100)}%` }}
+              style={{
+                width: `${Math.min(100, (magnitudeOf(item) / max) * 100)}%`,
+                ...(item.color ? { background: item.color } : {}),
+              }}
             />
           </div>
-        </div>
-      ))}
+        );
+        const label = <span data-graph-label="">{item.label}</span>;
+        const value = (
+          <span data-graph-value="">{item.formattedValue ?? item.value}</span>
+        );
+
+        // inline は「ラベル｜track｜値」を1行に並べる（近接：1指標を1行に束ねる）。
+        if (layout === "inline") {
+          return (
+            <div key={item.label} data-graph-row="">
+              {label}
+              {track}
+              {value}
+            </div>
+          );
+        }
+
+        return (
+          <div key={item.label} data-graph-row="">
+            <div data-graph-row-header="">
+              {label}
+              {value}
+            </div>
+            {track}
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -121,7 +121,7 @@ for (const viewport of viewports) {
       // 見出しが確実に描画されるタブを開く。
       await page.getByRole('button', { name: 'ACCOUNTING' }).click();
       await page.getByRole('tab', { name: '取引管理' }).click();
-      await expect(page.getByRole('heading', { name: '支出一覧（0件）' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: '取引管理', exact: true })).toBeVisible();
 
       // h1〜h5 は既定で Didot。管理コンテンツ内では Acumin に統一されたままであること。
       const contentFont = await firstFontFamily(page, '.admin-font-scope h4');

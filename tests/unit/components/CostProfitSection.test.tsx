@@ -65,6 +65,11 @@ function setupFinanceFetch() {
 }
 
 describe('CostProfitSection', () => {
+	// ACCOUNTING の全サブタブを1コンポーネントで描くため、1回の render が重い。
+	// 単体では各テスト1秒前後で終わるが、全スイート並列実行の負荷下では
+	// 既定の5秒を超えることがあるので、この describe だけ上限を上げる。
+	jest.setTimeout(30000);
+
 	beforeEach(() => {
 		setupFinanceFetch();
 	});
@@ -86,6 +91,8 @@ describe('CostProfitSection', () => {
 		await screen.findByText('同期済み');
 
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
+		// FREQ-257 以降、取引の入力欄は「新規取引」Drawer の中にある。
+		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
 		// 支出概要は黄金比UIの SingleSelect（dropdown）。トリガーを開いて選択肢を押す。
 		fireEvent.click(screen.getByRole('button', { name: '支出概要' }));
 		fireEvent.click(screen.getByRole('option', { name: '展示会・イベント' }));
@@ -106,6 +113,8 @@ describe('CostProfitSection', () => {
 		await screen.findByText('同期済み');
 
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
+		// FREQ-257 以降、取引の入力欄は「新規取引」Drawer の中にある。
+		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
 		// 取引先も SingleSelect（dropdown）。開いて「＋新規登録」を選ぶ。
 		fireEvent.click(screen.getByRole('button', { name: '取引先' }));
 		fireEvent.click(screen.getByRole('option', { name: '＋ 新規登録' }));
@@ -123,6 +132,8 @@ describe('CostProfitSection', () => {
 		await screen.findByText('同期済み');
 
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
+		// FREQ-257 以降、取引の入力欄は「新規取引」Drawer の中にある。
+		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
 
 		// 支出概要と金額を入力してからテンプレート保存。
 		fireEvent.click(screen.getByRole('button', { name: '支出概要' }));
@@ -172,8 +183,9 @@ describe('CostProfitSection', () => {
 		await screen.findByText('同期済み');
 
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
-		const deleteButton = screen.getByRole('button', { name: 'Instagram広告費を削除' });
-		fireEvent.click(deleteButton);
+		// FREQ-257 以降、削除は行から開く訂正 Drawer の中にある。
+		fireEvent.click(screen.getByRole('button', { name: 'Instagram広告費を訂正' }));
+		fireEvent.click(screen.getByRole('button', { name: 'Instagram広告費を削除' }));
 
 		await waitFor(() => expect(screen.queryByText('Instagram広告費')).not.toBeInTheDocument());
 		expect(await screen.findByText('支出をSupabaseから削除しました。')).toBeInTheDocument();
@@ -192,6 +204,8 @@ describe('CostProfitSection', () => {
 		await screen.findByText('同期済み');
 
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
+		// FREQ-257 以降、取引の入力欄は「新規取引」Drawer の中にある。
+		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
 
 		// 種別トグルを「収入」に。
 		fireEvent.click(screen.getByRole('button', { name: '収入', pressed: false }));
@@ -213,8 +227,9 @@ describe('CostProfitSection', () => {
 			expect.objectContaining({ method: 'POST', body: expect.stringContaining('"entryType":"income"') }),
 		);
 
-		// 収入一覧の件数見出しが1件になる。
-		expect(await screen.findByText('収入一覧（1件）')).toBeInTheDocument();
+		// 統合された一覧に、既存の支出1件と登録した収入1件が並ぶ。
+		expect(await screen.findByText('1-2 / 2件')).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'オンライン販売を訂正' })).toBeInTheDocument();
 	});
 
 	it('テンプレートは支出・収入で別管理される', async () => {
@@ -222,6 +237,8 @@ describe('CostProfitSection', () => {
 		await screen.findByText('同期済み');
 
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
+		// FREQ-257 以降、取引の入力欄は「新規取引」Drawer の中にある。
+		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
 
 		// 支出のテンプレートを1件作る。
 		fireEvent.click(screen.getByRole('button', { name: '支出概要' }));

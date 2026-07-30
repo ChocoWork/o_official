@@ -6,7 +6,17 @@ import {
   type ReactNode,
 } from "react";
 import { Button } from "@/components/ui/Button/Button";
+import { Checkbox } from "@/components/ui/Checkbox/Checkbox";
+import {
+  DataTable,
+  type TableColumn,
+} from "@/components/ui/DataTable/DataTable";
+import { Drawer } from "@/components/ui/Drawer/Drawer";
+import { FileDropZone } from "@/components/ui/FileDropZone/FileDropZone";
+import { Graph } from "@/components/ui/Graph/Graph";
+import { PageControl } from "@/components/ui/PageControl/PageControl";
 import { Panel } from "@/components/ui/Panel/Panel";
+import { SearchField } from "@/components/ui/SearchField/SearchField";
 import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
 import { StatusBadge } from "@/components/ui/StatusBadge/StatusBadge";
 import { TabSegmentControl } from "@/components/ui/TabSegmentControl/TabSegmentControl";
@@ -136,6 +146,99 @@ const REVISION_OPERATION_LABELS: Record<EntryRevision["operation"], string> = {
   update: "訂正",
   delete: "削除",
 };
+
+// --- 取引管理の一覧（状態・タブ・確認キュー）------------------------------
+//
+// 取引1件の「状態」は次の優先順で1つに決める。証憑の有無は別軸（証憑列）で示す。
+//   訂正あり ＞ 要確認 ＞ 登録済み
+type EntryState = "registered" | "review" | "revised";
+
+const ENTRY_STATE_LABELS: Record<EntryState, string> = {
+  registered: "登録済み",
+  review: "要確認",
+  revised: "訂正あり",
+};
+
+// 状態色は StatusBadge の accent と同じトークン（正常＝黒・要対応＝橙・訂正＝赤）。
+const ENTRY_STATE_TONES: Record<EntryState, "neutral" | "warning" | "danger"> = {
+  registered: "neutral",
+  review: "warning",
+  revised: "danger",
+};
+
+const ENTRY_STATE_COLORS: Record<EntryState, string> = {
+  registered: "#111111",
+  review: "#b45309",
+  revised: "#b91c1c",
+};
+
+/** 証憑の有無。ドーナツと凡例で共有する色。 */
+const RECEIPT_ATTACHED_COLOR = "#111111";
+const RECEIPT_MISSING_COLOR = "#b45309";
+
+/** 収支バーの色。収入＝黒、支出＝グレー、収支＝緑（プラス）／赤（マイナス）。 */
+const BALANCE_INCOME_COLOR = "#111111";
+const BALANCE_EXPENSE_COLOR = "#8a8a8a";
+const BALANCE_POSITIVE_COLOR = "#16844b";
+const BALANCE_NEGATIVE_COLOR = "#b91c1c";
+
+/** 一覧の絞り込みタブ。件数はタブ内で表示する。 */
+type EntryListTab = "all" | "noReceipt" | "review" | "revised";
+
+/** 1ページあたりの表示件数。 */
+const ENTRY_PAGE_SIZE = 20;
+
+/** 確認キューの1グループ。優先順に並べて右カラムへ出す。 */
+type ReviewQueueKey = "noReceipt" | "amount" | "account" | "revised";
+
+const REVIEW_QUEUE_DEFS: Array<{
+  key: ReviewQueueKey;
+  label: string;
+  icon: string;
+  tone: "warning" | "danger";
+  tab: EntryListTab;
+}> = [
+  {
+    key: "noReceipt",
+    label: "証憑未添付",
+    icon: "ri-attachment-2",
+    tone: "warning",
+    tab: "noReceipt",
+  },
+  {
+    key: "amount",
+    label: "金額確認",
+    icon: "ri-error-warning-line",
+    tone: "warning",
+    tab: "review",
+  },
+  {
+    key: "account",
+    label: "勘定科目確認",
+    icon: "ri-file-list-3-line",
+    tone: "warning",
+    tab: "review",
+  },
+  {
+    key: "revised",
+    label: "訂正内容確認",
+    icon: "ri-pencil-line",
+    tone: "danger",
+    tab: "revised",
+  },
+];
+
+// 電子帳簿保存法の検索要件に対する対応状況。実装済みの機能だけを並べる。
+const DENCHOHO_CHECKLIST: Array<{ label: string; note: string }> = [
+  { label: "日付検索", note: "対応済み" },
+  { label: "金額検索", note: "対応済み" },
+  { label: "取引先検索", note: "対応済み" },
+  { label: "訂正履歴", note: "対応済み" },
+];
+
+/** 証憑に受け付けるファイル形式（Storage 側の検証と揃える）。 */
+const RECEIPT_ACCEPT =
+  "application/pdf,image/jpeg,image/png,image/webp,image/heic";
 
 const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
   asset: "資産",
@@ -1021,7 +1124,19 @@ export default function CostProfitSection({
   // e-Tax申告（または優良な電子帳簿保存）の有無で青色申告特別控除の上限が変わる。
   const [usesEtax, setUsesEtax] = useState(true);
   // 取引管理の検索条件（電子帳簿保存法の検索要件）。
+  // キーワードだけは一覧上の検索欄に常設し、それ以外は「詳細条件」Drawer で編集する。
   const [filter, setFilter] = useState<EntryFilter>(EMPTY_ENTRY_FILTER);
+  // 一覧の絞り込みタブ・ページ・選択行。
+  const [entryListTab, setEntryListTab] = useState<EntryListTab>("all");
+  const [entryPage, setEntryPage] = useState(1);
+  const [selectedEntryIds, setSelectedEntryIds] = useState<number[]>([]);
+  // 取引の登録・訂正は Drawer で行う。一覧の文脈を残したまま入力できるようにする。
+  const [isEntryDrawerOpen, setIsEntryDrawerOpen] = useState(false);
+  const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
+  // 証憑 Drawer の対象取引ID。新規登録時は保存前のファイルを pendingReceipts に溜める。
+  const [receiptDrawerEntryIds, setReceiptDrawerEntryIds] = useState<number[]>([]);
+  const [pendingReceipts, setPendingReceipts] = useState<File[]>([]);
+  const [isRevisionHistoryOpen, setIsRevisionHistoryOpen] = useState(true);
   // 総勘定元帳で表示中の科目コード（未選択なら残高のある先頭科目）。
   const [ledgerAccountCode, setLedgerAccountCode] = useState("");
   // 商品原価タブ専用のシーズン軸。会計期間（暦年）とは独立して切り替える。
@@ -1188,6 +1303,7 @@ export default function CostProfitSection({
     const payload = (await response.json().catch(() => null)) as {
       error?: string;
       reason?: string;
+      resourceId?: string;
     } | null;
     if (!response.ok) {
       if (response.status === 403 && payload?.reason === "MFA required") {
@@ -1202,6 +1318,7 @@ export default function CostProfitSection({
       }
       throw new Error(payload?.error ?? "会計データの保存に失敗しました。");
     }
+    return payload;
   }, []);
 
   // 財務3表はすべて仕訳の実残高から導出する（架空の係数は使わない）。
@@ -1547,7 +1664,7 @@ export default function CostProfitSection({
     try {
       setIsSaving(true);
       setFormMessage(null);
-      await postMutation(
+      const result = await postMutation(
         isEditing
           ? {
             operation: "expense.update",
@@ -1557,11 +1674,22 @@ export default function CostProfitSection({
           }
           : { operation: "expense.create", fiscalYear, expense },
       );
+      // 新規登録では取引IDが保存後に決まるため、Drawer で受けた証憑はここでまとめて送る。
+      const createdId = Number(result?.resourceId);
+      if (!isEditing && Number.isFinite(createdId) && pendingReceipts.length > 0) {
+        for (const file of pendingReceipts) {
+          await uploadReceiptFile(createdId, file);
+        }
+        setPendingReceipts([]);
+      }
       await loadFinanceData();
+      // 保存が通ったら Drawer を閉じるので、完了の知らせは画面右下の Toast に出す。
+      // Drawer 内の formMessage は入力を直させたいエラー専用にする。
+      setFormMessage(null);
       if (isEditing) {
         setEditingEntryId(null);
         setForm(emptyEntryForm);
-        setFormMessage(`${typeLabel}を訂正しました。履歴に記録されます。`);
+        notifySuccess(`${typeLabel}を訂正しました。履歴に記録されます。`);
       } else {
         setForm((current) => ({
           ...current,
@@ -1569,10 +1697,9 @@ export default function CostProfitSection({
           amount: "",
           memo: "",
         }));
-        setFormMessage(
-          `${typeLabel}を保存し、仕訳帳と財務概要へ反映しました。`,
-        );
+        notifySuccess(`${typeLabel}を保存し、仕訳帳と財務概要へ反映しました。`);
       }
+      setIsEntryDrawerOpen(false);
     } catch (error) {
       setFormMessage(
         error instanceof Error
@@ -1584,11 +1711,13 @@ export default function CostProfitSection({
     }
   };
 
-  /** 一覧の行を訂正フォームへ読み込む。 */
+  /** 一覧の行を訂正フォームへ読み込み、入力用の Drawer を開く。 */
   const handleStartEdit = (entry: Expense) => {
     setEditingEntryId(entry.id);
     setSelectedTemplateName("");
     setFormMessage(null);
+    setPendingReceipts([]);
+    setIsEntryDrawerOpen(true);
     setForm({
       entryType: entry.entryType,
       date: entry.date,
@@ -1606,6 +1735,18 @@ export default function CostProfitSection({
     setEditingEntryId(null);
     setForm(emptyEntryForm);
     setFormMessage(null);
+    setPendingReceipts([]);
+    setIsEntryDrawerOpen(false);
+  };
+
+  /** 新規登録の Drawer を開く。訂正中だった内容は破棄する。 */
+  const handleOpenNewEntry = () => {
+    setEditingEntryId(null);
+    setForm(emptyEntryForm);
+    setFormMessage(null);
+    setSelectedTemplateName("");
+    setPendingReceipts([]);
+    setIsEntryDrawerOpen(true);
   };
 
   // 種別（支出/収入）切替。勘定科目は種別で選択肢が変わるため未選択に戻し、
@@ -2715,155 +2856,6 @@ export default function CostProfitSection({
     </div>
   );
 
-  const renderEntryTable = (
-    title: string,
-    rows: Expense[],
-    summaryHeading: string,
-    paymentHeading: string,
-  ) => (
-    <div className={`${panelClassName} min-w-0`}>
-      <div className="mb-3 flex items-center justify-between">
-        <h4 className="font-acumin text-sm font-medium tracking-widest text-black">
-          {title}（{rows.length}件）
-        </h4>
-        <span className="font-acumin text-xs text-[#474747]">
-          合計 {currency(rows.reduce((sum, row) => sum + row.amount, 0))}
-        </span>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[860px] border-collapse">
-          <thead>
-            <tr className="border-b border-[#d4d4d4]">
-              {[
-                "日付",
-                "勘定科目",
-                summaryHeading,
-                "取引先",
-                "金額",
-                paymentHeading,
-                "シーズン",
-                "証憑",
-                "メモ",
-                "操作",
-              ].map((heading) => (
-                <th
-                  key={heading}
-                  className="px-2 py-2 text-left font-acumin text-[11px] font-normal text-[#474747]"
-                >
-                  {heading}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((entry) => (
-              <tr key={entry.id} className="border-b border-[#ededed]">
-                <td className="whitespace-nowrap px-2 py-3 font-acumin text-xs text-black">
-                  {entry.date.replaceAll("-", "/")}
-                </td>
-                <td className="whitespace-nowrap px-2 py-3 font-acumin text-xs text-black">
-                  {entry.category}
-                </td>
-                <td className="px-2 py-3 font-acumin text-xs text-black">
-                  {entry.item}
-                </td>
-                <td className="whitespace-nowrap px-2 py-3 font-acumin text-xs text-black">
-                  {entry.partner || "—"}
-                </td>
-                <td className="whitespace-nowrap px-2 py-3 text-right font-acumin text-xs text-black tabular-nums">
-                  {currency(entry.amount)}
-                </td>
-                <td className="whitespace-nowrap px-2 py-3 font-acumin text-xs text-black">
-                  {entry.paymentMethod}
-                </td>
-                <td className="whitespace-nowrap px-2 py-3 font-acumin text-xs text-[#474747]">
-                  {entry.seasonTag ? formatSeasonLabel(entry.seasonTag) : "—"}
-                </td>
-                {/* 電子取引データは紙で保存できないため、ファイルを取引行へ紐付ける。 */}
-                <td className="whitespace-nowrap px-2 py-3">
-                  <div className="flex items-center gap-1.5">
-                    {(entry.receipts ?? []).map((receipt) => (
-                      <span
-                        key={receipt.id}
-                        className="inline-flex items-center gap-0.5"
-                      >
-                        <button
-                          type="button"
-                          className="font-acumin text-[11px] text-black underline underline-offset-4"
-                          aria-label={`${receipt.fileName}を開く`}
-                          onClick={() => void handleOpenReceipt(receipt)}
-                        >
-                          <i
-                            className="ri-attachment-2 mr-0.5"
-                            aria-hidden="true"
-                          />
-                          {receipt.mimeType === "application/pdf"
-                            ? "PDF"
-                            : "画像"}
-                        </button>
-                        <button
-                          type="button"
-                          className="text-[#888888] hover:text-black"
-                          aria-label={`${receipt.fileName}を削除`}
-                          onClick={() => void handleDeleteReceipt(receipt)}
-                          disabled={isSaving}
-                        >
-                          <i
-                            className="ri-close-line text-[13px]"
-                            aria-hidden="true"
-                          />
-                        </button>
-                      </span>
-                    ))}
-                    <label className="cursor-pointer font-acumin text-[11px] text-[#474747] underline underline-offset-4 hover:text-black">
-                      {uploadingEntryId === entry.id ? "添付中..." : "＋添付"}
-                      <input
-                        type="file"
-                        accept="application/pdf,image/jpeg,image/png,image/webp,image/heic"
-                        className="hidden"
-                        aria-label={`${entry.item}に証憑を添付`}
-                        onChange={(event) => {
-                          const file = event.target.files?.[0];
-                          event.target.value = "";
-                          if (file) void handleAttachReceipt(entry, file);
-                        }}
-                        disabled={uploadingEntryId !== null}
-                      />
-                    </label>
-                  </div>
-                </td>
-                <td className="max-w-36 truncate px-2 py-3 font-acumin text-xs text-[#474747]">
-                  {entry.memo || "—"}
-                </td>
-                <td className="whitespace-nowrap px-2 py-3 text-center">
-                  {/* 訂正は削除＋再登録にしない（履歴が途切れるため）。 */}
-                  <button
-                    type="button"
-                    className="inline-flex h-7 w-7 items-center justify-center border border-transparent text-[#474747] hover:border-[#d4d4d4] hover:text-black"
-                    aria-label={`${entry.item}を訂正`}
-                    onClick={() => handleStartEdit(entry)}
-                    disabled={isSaving}
-                  >
-                    <EmptyIcon icon="ri-pencil-line" />
-                  </button>
-                  <button
-                    type="button"
-                    className="inline-flex h-7 w-7 items-center justify-center border border-transparent text-[#474747] hover:border-[#d4d4d4] hover:text-black"
-                    aria-label={`${entry.item}を削除`}
-                    onClick={() => void handleDeleteExpense(entry)}
-                    disabled={isSaving}
-                  >
-                    <EmptyIcon icon="ri-delete-bin-line" />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-
   const isIncomeForm = form.entryType === "income";
   const entryTypeLabel = isIncomeForm ? "収入" : "支出";
   const paymentFieldLabel = isIncomeForm ? "入金方法" : "出金方法";
@@ -2911,33 +2903,431 @@ export default function CostProfitSection({
   const filterFieldClassName =
     "h-9 w-full border border-[#d4d4d4] bg-white px-2 font-acumin text-xs text-black outline-none transition-colors focus:border-black";
 
-  // 電子帳簿保存法の検索要件（日付・金額・取引先／範囲指定／条件の組み合わせ）を満たす検索パネル。
-  const searchPanel = (
-    <section className={panelClassName} aria-label="取引の検索">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h4 className="font-acumin text-sm font-medium tracking-widest text-black">
-          取引を検索
-        </h4>
-        <div className="flex items-center gap-3">
-          <span className="font-acumin text-[11px] text-[#707070]">
-            {filterActive
-              ? `${filterConditionCount}条件で絞り込み中：支出${filteredExpenses.length}件 / 収入${filteredIncomes.length}件`
-              : `全${allEntries.length}件`}
+  // ── 取引管理 ───────────────────────────────────────────────────────────
+  // 支出・収入を1つの表に統合する。会計上どちらも「取引」で、状態・証憑・
+  // 訂正履歴の運用も同じなので、2つの表に割ると確認漏れの原因になる。
+
+  // 訂正履歴のある取引（電子帳簿保存法の真実性の要件で残る update 履歴）。
+  const revisedEntryIds = useMemo(
+    () =>
+      new Set(
+        revisions
+          .filter((revision) => revision.operation === "update")
+          .map((revision) => revision.entryId),
+      ),
+    [revisions],
+  );
+
+  // 同一日付・同一取引先・同一金額は二重入力の疑いがあるため金額の確認対象にする。
+  const duplicateEntryIds = useMemo(() => {
+    const groups = new Map<string, number[]>();
+    for (const entry of allEntries) {
+      const key = `${entry.date}|${entry.partner}|${entry.amount}`;
+      groups.set(key, [...(groups.get(key) ?? []), entry.id]);
+    }
+    return new Set(
+      [...groups.values()].filter((ids) => ids.length > 1).flat(),
+    );
+  }, [allEntries]);
+
+  // 勘定科目マスタに無い科目は決算書の区分が決まらないので確認対象にする。
+  const unknownAccountEntryIds = useMemo(
+    () =>
+      new Set(
+        allEntries
+          .filter((entry) => !accountByName(entry.category))
+          .map((entry) => entry.id),
+      ),
+    [allEntries],
+  );
+
+  const entryStateOf = useCallback(
+    (entry: Expense): EntryState => {
+      if (revisedEntryIds.has(entry.id)) return "revised";
+      if (duplicateEntryIds.has(entry.id) || unknownAccountEntryIds.has(entry.id)) {
+        return "review";
+      }
+      return "registered";
+    },
+    [revisedEntryIds, duplicateEntryIds, unknownAccountEntryIds],
+  );
+
+  const hasReceipt = (entry: Expense) => (entry.receipts ?? []).length > 0;
+
+  // 一覧は日付の新しい順。同日は登録の新しい順（id 降順）で並べる。
+  const entryRows = useMemo<Expense[]>(
+    () =>
+      [...filteredExpenses, ...filteredIncomes].sort((a, b) =>
+        a.date === b.date ? b.id - a.id : a.date < b.date ? 1 : -1,
+      ),
+    [filteredExpenses, filteredIncomes],
+  );
+
+  const entryTabCounts = useMemo(
+    () => ({
+      all: entryRows.length,
+      noReceipt: entryRows.filter((entry) => !hasReceipt(entry)).length,
+      review: entryRows.filter((entry) => entryStateOf(entry) === "review").length,
+      revised: entryRows.filter((entry) => entryStateOf(entry) === "revised").length,
+    }),
+    [entryRows, entryStateOf],
+  );
+
+  const tabbedEntryRows = useMemo(() => {
+    if (entryListTab === "noReceipt") {
+      return entryRows.filter((entry) => !hasReceipt(entry));
+    }
+    if (entryListTab === "review") {
+      return entryRows.filter((entry) => entryStateOf(entry) === "review");
+    }
+    if (entryListTab === "revised") {
+      return entryRows.filter((entry) => entryStateOf(entry) === "revised");
+    }
+    return entryRows;
+  }, [entryRows, entryListTab, entryStateOf]);
+
+  const entryTotalPages = Math.max(
+    1,
+    Math.ceil(tabbedEntryRows.length / ENTRY_PAGE_SIZE),
+  );
+  // 絞り込みで件数が減ってもページ番号が範囲外に残らないようにする。
+  const currentEntryPage = Math.min(entryPage, entryTotalPages);
+  const pagedEntryRows = tabbedEntryRows.slice(
+    (currentEntryPage - 1) * ENTRY_PAGE_SIZE,
+    currentEntryPage * ENTRY_PAGE_SIZE,
+  );
+  const entryRangeStart =
+    tabbedEntryRows.length === 0 ? 0 : (currentEntryPage - 1) * ENTRY_PAGE_SIZE + 1;
+  const entryRangeEnd = Math.min(
+    currentEntryPage * ENTRY_PAGE_SIZE,
+    tabbedEntryRows.length,
+  );
+
+  // 取引ステータス（ドーナツ）。合計は一覧に出ている件数と一致させる。
+  const entryStatusCounts = useMemo(() => {
+    let review = 0;
+    let revised = 0;
+    for (const entry of entryRows) {
+      const state = entryStateOf(entry);
+      if (state === "review") review += 1;
+      else if (state === "revised") revised += 1;
+    }
+    return {
+      registered: entryRows.length - review - revised,
+      review,
+      revised,
+      total: entryRows.length,
+    };
+  }, [entryRows, entryStateOf]);
+
+  // 証憑ステータス（ドーナツ）。電子取引データの保存漏れを一目で出す。
+  const receiptStatusCounts = useMemo(() => {
+    const attached = entryRows.filter(hasReceipt).length;
+    return {
+      attached,
+      missing: entryRows.length - attached,
+      total: entryRows.length,
+    };
+  }, [entryRows]);
+
+  // 今月の収支。選択中の会計年が当年でなければ、その年の12月を対象にする。
+  const monthlyBalance = useMemo(() => {
+    const now = new Date();
+    const month = now.getFullYear() === fiscalYear ? now.getMonth() + 1 : 12;
+    const prefix = `${fiscalYear}-${String(month).padStart(2, "0")}`;
+    const sum = (rows: Expense[]) =>
+      rows
+        .filter((entry) => entry.date.startsWith(prefix))
+        .reduce((total, entry) => total + entry.amount, 0);
+    const income = sum(incomes);
+    const expense = sum(expenses);
+    return { month, income, expense, balance: income - expense };
+  }, [expenses, incomes, fiscalYear]);
+
+  // 確認キュー。優先順（証憑 → 金額 → 科目 → 訂正）に並べ、空のグループは出さない。
+  const reviewQueue = useMemo(() => {
+    const rowsFor = (key: ReviewQueueKey) => {
+      if (key === "noReceipt") return entryRows.filter((entry) => !hasReceipt(entry));
+      if (key === "amount") return entryRows.filter((entry) => duplicateEntryIds.has(entry.id));
+      if (key === "account") {
+        return entryRows.filter((entry) => unknownAccountEntryIds.has(entry.id));
+      }
+      return entryRows.filter((entry) => revisedEntryIds.has(entry.id));
+    };
+    return REVIEW_QUEUE_DEFS.map((def) => ({ ...def, rows: rowsFor(def.key) })).filter(
+      (group) => group.rows.length > 0,
+    );
+  }, [entryRows, duplicateEntryIds, unknownAccountEntryIds, revisedEntryIds]);
+
+  const selectedEntries = entryRows.filter((entry) =>
+    selectedEntryIds.includes(entry.id),
+  );
+  const pageAllSelected =
+    pagedEntryRows.length > 0
+    && pagedEntryRows.every((entry) => selectedEntryIds.includes(entry.id));
+
+  const toggleEntrySelection = (entryId: number) =>
+    setSelectedEntryIds((current) =>
+      current.includes(entryId)
+        ? current.filter((id) => id !== entryId)
+        : [...current, entryId],
+    );
+
+  const togglePageSelection = () =>
+    setSelectedEntryIds((current) => {
+      const pageIds = pagedEntryRows.map((entry) => entry.id);
+      return pageAllSelected
+        ? current.filter((id) => !pageIds.includes(id))
+        : [...new Set([...current, ...pageIds])];
+    });
+
+  const changeEntryListTab = (tab: EntryListTab) => {
+    setEntryListTab(tab);
+    setEntryPage(1);
+  };
+
+  const handleEntryCsvExport = (rows: Expense[], filename: string) => {
+    exportCsv(filename, [
+      [
+        "取引ID",
+        "日付",
+        "種別",
+        "勘定科目",
+        "摘要",
+        "取引先",
+        "金額",
+        "入出金方法",
+        "シーズン",
+        "証憑",
+        "状態",
+        "メモ",
+      ],
+      ...rows.map((entry) => [
+        entry.id,
+        entry.date,
+        entry.entryType === "income" ? "収入" : "支出",
+        entry.category,
+        entry.item,
+        entry.partner,
+        entry.amount,
+        entry.paymentMethod,
+        entry.seasonTag ? formatSeasonLabel(entry.seasonTag) : "",
+        hasReceipt(entry) ? "添付済み" : "未添付",
+        ENTRY_STATE_LABELS[entryStateOf(entry)],
+        entry.memo,
+      ]),
+    ]);
+  };
+
+  /** 証憑 Drawer を開く。複数IDなら選択中の取引をまとめて扱う。 */
+  const openReceiptDrawer = (entryIds: number[]) => {
+    setReceiptMessage(null);
+    setReceiptDrawerEntryIds(entryIds);
+  };
+
+  const receiptDrawerEntries = entryRows.filter((entry) =>
+    receiptDrawerEntryIds.includes(entry.id),
+  );
+
+  // 取引ごとの最終更新（訂正履歴の最新1件）。一覧の「更新履歴」列に出す。
+  const latestRevisionOf = (entryId: number) =>
+    revisions
+      .filter((revision) => revision.entryId === entryId)
+      .sort((a, b) => (a.changedAt < b.changedAt ? 1 : -1))[0];
+
+  const entryColumns: Array<TableColumn<Expense>> = [
+    {
+      key: "select",
+      header: "",
+      className: "w-10",
+      align: "center",
+      render: (entry) => (
+        <Checkbox
+          size="2xs"
+          label=""
+          aria-label={`${entry.item}を選択`}
+          checked={selectedEntryIds.includes(entry.id)}
+          onChange={() => toggleEntrySelection(entry.id)}
+        />
+      ),
+    },
+    {
+      key: "date",
+      header: "日付",
+      cellClassName: "whitespace-nowrap tabular-nums",
+      render: (entry) => entry.date.replaceAll("-", "/"),
+    },
+    {
+      key: "entryType",
+      header: "種別",
+      cellClassName: "whitespace-nowrap",
+      render: (entry) => (entry.entryType === "income" ? "収入" : "支出"),
+    },
+    {
+      key: "category",
+      header: "勘定科目",
+      cellClassName: "whitespace-nowrap",
+      render: (entry) => entry.category,
+    },
+    {
+      key: "item",
+      header: "摘要・取引先",
+      render: (entry) => (
+        // 行の入口。クリックで訂正 Drawer を開き、削除もその中に置く。
+        <button
+          type="button"
+          className="block max-w-[12rem] truncate text-left underline-offset-4 hover:underline"
+          aria-label={`${entry.item}を訂正`}
+          onClick={() => handleStartEdit(entry)}
+          disabled={isSaving}
+        >
+          {entry.partner ? `${entry.item} / ${entry.partner}` : entry.item}
+        </button>
+      ),
+    },
+    {
+      key: "amount",
+      header: "金額",
+      align: "right",
+      cellClassName: "whitespace-nowrap tabular-nums",
+      render: (entry) => currency(entry.amount),
+    },
+    {
+      key: "receipt",
+      header: "証憑",
+      align: "center",
+      render: (entry) => {
+        const attached = hasReceipt(entry);
+        return (
+          <button
+            type="button"
+            className={`inline-flex h-7 w-7 items-center justify-center rounded-sm transition-colors hover:bg-[#f0f0f0] ${attached ? "text-black" : "text-[#b45309]"}`}
+            aria-label={`${entry.item}の証憑`}
+            data-receipt-state={attached ? "attached" : "missing"}
+            onClick={() => openReceiptDrawer([entry.id])}
+          >
+            <i
+              className={attached ? "ri-attachment-2" : "ri-file-warning-line"}
+              aria-hidden="true"
+            />
+          </button>
+        );
+      },
+    },
+    {
+      key: "revision",
+      header: "更新履歴",
+      cellClassName: "whitespace-nowrap",
+      render: (entry) => {
+        const revision = latestRevisionOf(entry.id);
+        if (!revision) {
+          return <span className="text-[#909090]">—</span>;
+        }
+        const changedAt = new Date(revision.changedAt);
+        return (
+          <span className="block font-acumin text-[11px] leading-tight text-[#474747] tabular-nums">
+            <span className="block">
+              {changedAt.toLocaleDateString("ja-JP", {
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+              })}
+            </span>
+            <span className="block">
+              {changedAt.toLocaleTimeString("ja-JP", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </span>
           </span>
-          {filterActive ? (
-            <Button
-              variant="secondary"
-              size="2xs"
-              className="font-acumin"
-              onClick={() => setFilter(EMPTY_ENTRY_FILTER)}
-            >
-              条件をクリア
-            </Button>
-          ) : null}
-        </div>
+        );
+      },
+    },
+    {
+      key: "state",
+      header: "状態",
+      align: "center",
+      render: (entry) => {
+        const state = entryStateOf(entry);
+        return (
+          <StatusBadge
+            variant="text"
+            shape="pill"
+            size="3xs"
+            tone={ENTRY_STATE_TONES[state]}
+            accent
+            className="font-acumin"
+          >
+            {ENTRY_STATE_LABELS[state]}
+          </StatusBadge>
+        );
+      },
+    },
+  ];
+
+  /** サマリー3枚の間に置く流れの矢印。狭い画面では出さない。 */
+  const summaryChevron = (
+    <div
+      className="hidden items-center justify-center text-[#b5b5b5] xl:flex"
+      aria-hidden="true"
+    >
+      <i className="ri-arrow-right-s-line text-lg" />
+    </div>
+  );
+
+  const donutLegendRow = (
+    label: string,
+    count: number,
+    color: string,
+    accent: boolean,
+  ) => (
+    <div key={label} className="flex items-center justify-between gap-3">
+      <span className="flex items-center gap-2">
+        <StatusBadge
+          variant="dot"
+          size="4xs"
+          tone={accent ? "warning" : "neutral"}
+          className="shrink-0"
+          // 凡例の色はドーナツの扇と1対1で対応させる。
+          style={{ background: color }}
+        />
+        <span className="font-acumin text-xs text-[#474747]">{label}</span>
+      </span>
+      <span
+        className="font-acumin text-xs tabular-nums"
+        style={{ color: accent ? color : "#111111" }}
+      >
+        {count}件
+      </span>
+    </div>
+  );
+
+  // 電子帳簿保存法の検索要件（日付・金額・取引先／範囲指定／条件の組み合わせ）は
+  // 「詳細条件」Drawer に集約する。一覧上には常設のキーワード検索だけを置く。
+  const filterDrawer = (
+    <Drawer
+      open={isFilterDrawerOpen}
+      onClose={() => setIsFilterDrawerOpen(false)}
+      side="right"
+      size="md"
+      shape="square"
+      className="flex w-[min(92vw,420px)] flex-col bg-white"
+    >
+      <div className="flex items-center justify-between border-b border-[#d4d4d4] px-5 py-4">
+        <h4 className="font-acumin text-sm font-medium tracking-widest text-black">
+          詳細条件
+        </h4>
+        <button
+          type="button"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-sm text-[#474747] hover:bg-[#f0f0f0] hover:text-black"
+          aria-label="詳細条件を閉じる"
+          onClick={() => setIsFilterDrawerOpen(false)}
+        >
+          <i className="ri-close-line text-lg" aria-hidden="true" />
+        </button>
       </div>
 
-      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
         <div>
           <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
             取引年月日（範囲）
@@ -2972,9 +3362,7 @@ export default function CostProfitSection({
               placeholder="下限"
               aria-label="取引金額（下限）"
               value={filter.amountFrom}
-              onChange={(event) =>
-                updateFilter({ amountFrom: event.target.value })
-              }
+              onChange={(event) => updateFilter({ amountFrom: event.target.value })}
               className={filterFieldClassName}
             />
             <span className="font-acumin text-[11px] text-[#707070]">〜</span>
@@ -2984,9 +3372,7 @@ export default function CostProfitSection({
               placeholder="上限"
               aria-label="取引金額（上限）"
               value={filter.amountTo}
-              onChange={(event) =>
-                updateFilter({ amountTo: event.target.value })
-              }
+              onChange={(event) => updateFilter({ amountTo: event.target.value })}
               className={filterFieldClassName}
             />
           </div>
@@ -3002,6 +3388,7 @@ export default function CostProfitSection({
             size="sm"
             aria-label="絞り込み：相手先"
             className="font-acumin"
+            placeholder="すべて"
             options={[
               { value: "", label: "すべて" },
               ...filterPartnerOptions.map((partner) => ({
@@ -3024,6 +3411,7 @@ export default function CostProfitSection({
             size="sm"
             aria-label="絞り込み：科目"
             className="font-acumin"
+            placeholder="すべて"
             options={[
               { value: "", label: "すべて" },
               ...filterAccountOptions.map((account) => ({
@@ -3046,6 +3434,7 @@ export default function CostProfitSection({
             size="sm"
             aria-label="絞り込み：収支区分"
             className="font-acumin"
+            placeholder="支出・収入"
             options={[
               { value: "", label: "支出・収入" },
               { value: "expense", label: "支出のみ" },
@@ -3058,9 +3447,9 @@ export default function CostProfitSection({
           />
         </div>
 
-        <div className="sm:col-span-2">
+        <div>
           <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
-            キーワード（概要・メモ・取引先）
+            キーワード（取引ID・概要・メモ・取引先）
           </span>
           <input
             type="search"
@@ -3071,99 +3460,163 @@ export default function CostProfitSection({
             className={filterFieldClassName}
           />
         </div>
+
+        <p className="font-acumin text-[10px] leading-relaxed text-[#707070]">
+          ※
+          電子帳簿保存法の検索要件（取引年月日・取引金額・取引先／日付と金額の範囲指定／2以上の条件の組み合わせ）に対応しています。
+        </p>
       </div>
 
-      <p className="mt-3 font-acumin text-[10px] leading-relaxed text-[#707070]">
-        ※
-        電子帳簿保存法の検索要件（取引年月日・取引金額・取引先／日付と金額の範囲指定／2以上の条件の組み合わせ）に対応しています。
-      </p>
-    </section>
+      <div className="flex items-center justify-between gap-2 border-t border-[#d4d4d4] px-5 py-4">
+        <span className="font-acumin text-[11px] text-[#707070]">
+          {filterActive ? `${filterConditionCount}条件で絞り込み中` : "条件なし"}
+        </span>
+        <div className="flex gap-2">
+          <Button
+            variant="secondary"
+            size="2xs"
+            shape="rounded"
+            className="font-acumin"
+            onClick={() => {
+              setFilter(EMPTY_ENTRY_FILTER);
+              setEntryPage(1);
+            }}
+          >
+            条件をクリア
+          </Button>
+          <Button
+            variant="primary"
+            size="2xs"
+            shape="rounded"
+            className="font-acumin"
+            onClick={() => setIsFilterDrawerOpen(false)}
+          >
+            適用して閉じる
+          </Button>
+        </div>
+      </div>
+    </Drawer>
   );
 
-  const expensesView = (
-    <div className="space-y-5">
-      {searchPanel}
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="min-w-0 space-y-5">
-          {renderEntryTable(
-            "支出一覧",
-            filteredExpenses,
-            "支出概要",
-            "出金方法",
-          )}
-          {renderEntryTable("収入一覧", filteredIncomes, "収入概要", "入金方法")}
+  // 証憑（電子取引データ）の追加。ドラッグ＆ドロップとクリック選択の両方を受ける。
+  const receiptDrawer = (
+    <Drawer
+      open={receiptDrawerEntries.length > 0}
+      onClose={() => setReceiptDrawerEntryIds([])}
+      side="right"
+      size="md"
+      shape="square"
+      className="flex w-[min(92vw,460px)] flex-col bg-white"
+    >
+      <div className="flex items-center justify-between border-b border-[#d4d4d4] px-5 py-4">
+        <h4 className="font-acumin text-sm font-medium tracking-widest text-black">
+          証憑を追加
+        </h4>
+        <button
+          type="button"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-sm text-[#474747] hover:bg-[#f0f0f0] hover:text-black"
+          aria-label="証憑の追加を閉じる"
+          onClick={() => setReceiptDrawerEntryIds([])}
+        >
+          <i className="ri-close-line text-lg" aria-hidden="true" />
+        </button>
+      </div>
 
-          {/* 電子帳簿保存法の真実性の要件：訂正・削除の履歴を確認できるようにする。
-              履歴はDBトリガーが記録し、アプリからは書き換えられない。 */}
-          <details className={panelClassName}>
-            <summary className="cursor-pointer font-acumin text-sm font-medium tracking-widest text-black">
-              訂正・削除の履歴（{revisions.length}件）
-            </summary>
-            <p className="mt-2 font-acumin text-[10px] leading-relaxed text-[#707070]">
-              電子帳簿保存法の真実性の要件により、取引の削除は論理削除として記録し、訂正の前後を保持します。
-            </p>
-            {revisions.length === 0 ? (
-              <p className="mt-3 font-acumin text-xs text-[#707070]">
-                履歴はまだありません。
-              </p>
-            ) : (
-              <div className="mt-3 overflow-x-auto">
-                <table className="w-full min-w-[720px] border-collapse">
-                  <thead>
-                    <tr className="border-b border-[#d4d4d4]">
-                      {[
-                        "変更日時",
-                        "区分",
-                        "取引ID",
-                        "変更前",
-                        "変更後",
-                      ].map((heading) => (
-                        <th
-                          key={heading}
-                          className="px-2 py-2 text-left font-acumin text-[11px] font-normal text-[#474747]"
-                        >
-                          {heading}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {revisions.map((revision) => (
-                      <tr
-                        key={revision.id}
-                        className="border-b border-[#ededed]"
-                      >
-                        <td className="whitespace-nowrap px-2 py-3 font-acumin text-[11px] text-[#474747]">
-                          {new Date(revision.changedAt).toLocaleString("ja-JP")}
-                        </td>
-                        <td
-                          className={`whitespace-nowrap px-2 py-3 font-acumin text-xs ${revision.operation === "delete" ? "text-red-700" : revision.operation === "update" ? "text-[#a16600]" : "text-[#474747]"}`}
-                        >
-                          {REVISION_OPERATION_LABELS[revision.operation]}
-                        </td>
-                        <td className="whitespace-nowrap px-2 py-3 font-acumin text-[11px] text-[#474747]">
-                          #{revision.entryId}
-                        </td>
-                        <td className="px-2 py-3 font-acumin text-[11px] text-[#474747]">
-                          {revision.operation === "insert"
-                            ? "—"
-                            : `${revision.before.date ?? ""} ${revision.before.category ?? ""} ${revision.before.item ?? ""} ${revision.before.amount ? currency(Number(revision.before.amount)) : ""}`.trim()}
-                        </td>
-                        <td className="px-2 py-3 font-acumin text-[11px] text-black">
-                          {revision.operation === "delete"
-                            ? "（削除）"
-                            : `${revision.after.date ?? ""} ${revision.after.category ?? ""} ${revision.after.item ?? ""} ${revision.after.amount ? currency(Number(revision.after.amount)) : ""}`.trim()}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </details>
-        </div>
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4">
+        {receiptMessage ? (
+          <p
+            className={`font-acumin text-xs ${/失敗|ください/.test(receiptMessage) ? "text-red-700" : "text-[#16844b]"}`}
+            role="status"
+          >
+            {receiptMessage}
+          </p>
+        ) : null}
+        {receiptDrawerEntries.map((entry) => (
+          <div
+            key={entry.id}
+            className="rounded-sm border border-[#ededed] p-3"
+          >
+            <div className="mb-2 flex items-baseline justify-between gap-2">
+              <span className="font-acumin text-xs text-black">
+                {entry.date.replaceAll("-", "/")} / {entry.category} /{" "}
+                {entry.item}
+              </span>
+              <span className="shrink-0 font-acumin text-xs tabular-nums text-black">
+                {currency(entry.amount)}
+              </span>
+            </div>
+            {(entry.receipts ?? []).length > 0 ? (
+              <ul className="mb-2 space-y-1">
+                {(entry.receipts ?? []).map((receipt) => (
+                  <li
+                    key={receipt.id}
+                    className="flex items-center justify-between gap-2"
+                  >
+                    <button
+                      type="button"
+                      className="truncate font-acumin text-[11px] text-black underline underline-offset-4"
+                      aria-label={`${receipt.fileName}を開く`}
+                      onClick={() => void handleOpenReceipt(receipt)}
+                    >
+                      <i className="ri-attachment-2 mr-1" aria-hidden="true" />
+                      {receipt.fileName}
+                    </button>
+                    <button
+                      type="button"
+                      className="shrink-0 text-[#888888] hover:text-black"
+                      aria-label={`${receipt.fileName}を削除`}
+                      onClick={() => void handleDeleteReceipt(receipt)}
+                      disabled={isSaving}
+                    >
+                      <i className="ri-close-line text-[13px]" aria-hidden="true" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            <FileDropZone
+              size="2xs"
+              shape="rounded"
+              accept={RECEIPT_ACCEPT}
+              multiple
+              busy={uploadingEntryId === entry.id}
+              busyLabel="添付中..."
+              disabled={uploadingEntryId !== null && uploadingEntryId !== entry.id}
+              aria-label={`${entry.item}に証憑を添付`}
+              label="ドラッグ＆ドロップ／クリックで選択"
+              hint="PDF・JPEG・PNG・WebP・HEIC（20MBまで）"
+              onFiles={(files) => void handleAttachReceipts(entry, files)}
+            />
+          </div>
+        ))}
+      </div>
 
-        <aside className={`${panelClassName} h-fit`}>
+      <div className="flex justify-end border-t border-[#d4d4d4] px-5 py-4">
+        <Button
+          variant="secondary"
+          size="2xs"
+          shape="rounded"
+          className="font-acumin"
+          onClick={() => setReceiptDrawerEntryIds([])}
+        >
+          閉じる
+        </Button>
+      </div>
+    </Drawer>
+  );
+
+  // 取引の登録・訂正。一覧の文脈を残すため右からの Drawer に入れる。
+  const entryDrawer = (
+    <Drawer
+      open={isEntryDrawerOpen}
+      onClose={handleCancelEdit}
+      side="right"
+      size="md"
+      shape="square"
+      className="flex w-[min(92vw,460px)] flex-col bg-white"
+    >
+      <div className="flex items-center justify-between border-b border-[#d4d4d4] px-5 py-4">
+        <div>
           <h4 className="font-acumin text-sm font-medium tracking-widest text-black">
             {editingEntryId === null
               ? `新規${entryTypeLabel}を登録`
@@ -3174,376 +3627,998 @@ export default function CostProfitSection({
               訂正内容は変更前後が履歴に記録されます（削除・再登録はしません）。
             </p>
           ) : null}
-          {receiptMessage ? (
-            <p
-              className={`mt-2 font-acumin text-xs ${/失敗|ください/.test(receiptMessage) ? "text-red-700" : "text-[#16844b]"}`}
-              role="status"
-            >
-              {receiptMessage}
-            </p>
-          ) : null}
-          <div className="mt-4 space-y-3">
-            <div className="block">
-              <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
-                種別 <span className="text-red-700">*</span>
-              </span>
-              <div
-                className="grid grid-cols-2 gap-2"
-                role="group"
-                aria-label="種別"
-              >
-                {(["expense", "income"] as EntryType[]).map((type) => {
-                  const active = form.entryType === type;
-                  return (
-                    <button
-                      key={type}
-                      type="button"
-                      aria-pressed={active}
-                      onClick={() => handleEntryTypeChange(type)}
-                      className={`h-10 border font-acumin text-sm transition-colors ${active ? "border-black bg-black text-white" : "border-[#d4d4d4] bg-white text-[#474747] hover:border-black"}`}
-                    >
-                      {type === "income" ? "収入" : "支出"}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="block">
-              <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
-                事業形態 <span className="text-red-700">*</span>
-              </span>
-              <SingleSelect
-                variant="dropdown"
-                block
-                size="md"
-                aria-label="事業形態"
-                className="font-acumin"
-                options={BUSINESS_TYPE_OPTIONS.map((option) => ({
-                  value: option.value,
-                  label: option.label,
-                }))}
-                value={businessType}
-                onValueChange={(value) =>
-                  void handleBusinessTypeChange(value as BusinessType)
-                }
-              />
-              <p className="mt-1 font-acumin text-[11px] text-[#707070]">
-                選んだ事業形態で使える勘定科目だけを表示します。
-              </p>
-            </div>
-            <div className="block">
-              <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
-                テンプレート
-              </span>
-              <SingleSelect
-                variant="dropdown"
-                block
-                size="md"
-                aria-label="テンプレート"
-                className="font-acumin"
-                placeholder="（テンプレートを選択）"
-                options={[
-                  { value: "", label: "（テンプレートを選択）" },
-                  ...visibleTemplates.map((template) => ({
-                    value: template.name,
-                    label: template.name,
-                  })),
-                  {
-                    value: SAVE_TEMPLATE_SENTINEL,
-                    label: "＋ 現在の入力を保存",
-                  },
-                ]}
-                value={
-                  isSavingTemplate
-                    ? SAVE_TEMPLATE_SENTINEL
-                    : selectedTemplateName
-                }
-                onValueChange={handleTemplateSelect}
-              />
-              {selectedTemplateName && !isSavingTemplate ? (
-                <div className="mt-2 flex justify-end">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="shrink-0 font-acumin"
-                    aria-label="選択中のテンプレートを削除"
-                    onClick={() => void handleDeleteTemplate()}
-                    disabled={isSaving}
-                  >
-                    削除
-                  </Button>
-                </div>
-              ) : null}
-              {isSavingTemplate ? (
-                <div className="mt-2 flex gap-2">
-                  <input
-                    value={newTemplateName}
-                    onChange={(event) => setNewTemplateName(event.target.value)}
-                    className={inputClassName}
-                    placeholder="テンプレート名"
-                    aria-label="テンプレート名"
-                  />
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    className="shrink-0 font-acumin"
-                    aria-label="テンプレートを保存"
-                    onClick={() => void handleSaveTemplate()}
-                    disabled={isSaving}
-                  >
-                    保存
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="shrink-0 font-acumin"
-                    onClick={() => {
-                      setIsSavingTemplate(false);
-                      setNewTemplateName("");
-                    }}
-                    disabled={isSaving}
-                  >
-                    取消
-                  </Button>
-                </div>
-              ) : null}
-            </div>
-            <label className="block">
-              <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
-                日付 <span className="text-red-700">*</span>
-              </span>
-              <input
-                type="date"
-                aria-label="取引日"
-                value={form.date}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    date: event.target.value,
-                  }))
-                }
-                className={inputClassName}
-              />
-            </label>
-            <div className="block">
-              <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
-                {summaryFieldLabel} <span className="text-red-700">*</span>
-              </span>
-              <SingleSelect
-                variant="dropdown"
-                block
-                size="md"
-                aria-label={summaryFieldLabel}
-                className="font-acumin"
-                options={shiyouOptionsFor(form.entryType).map((option) => ({
-                  value: option,
-                  label: option,
-                }))}
-                value={form.item}
-                onValueChange={(value) =>
-                  setForm((current) => ({ ...current, item: value }))
-                }
-              />
-            </div>
-            <div className="block">
-              <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
-                勘定科目 <span className="text-red-700">*</span>
-              </span>
-              <SingleSelect
-                variant="dropdown"
-                block
-                size="md"
-                aria-label="勘定科目"
-                className="font-acumin"
-                placeholder="（勘定科目を選択）"
-                options={[
-                  { value: "", label: "（勘定科目を選択）" },
-                  ...accountOptionsFor(form.entryType, businessType),
-                ]}
-                value={form.category}
-                onValueChange={(value) =>
-                  setForm((current) => ({ ...current, category: value }))
-                }
-              />
-            </div>
+        </div>
+        <button
+          type="button"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-sm text-[#474747] hover:bg-[#f0f0f0] hover:text-black"
+          aria-label="取引の入力を閉じる"
+          onClick={handleCancelEdit}
+        >
+          <i className="ri-close-line text-lg" aria-hidden="true" />
+        </button>
+      </div>
 
-            <div className="block">
-              <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
-                取引先
-              </span>
-              <SingleSelect
-                variant="dropdown"
-                block
-                size="md"
-                aria-label="取引先"
-                className="font-acumin"
-                placeholder="（指定なし）"
-                options={[
-                  { value: "", label: "（指定なし）" },
-                  ...partners.map((option) => ({
-                    value: option,
-                    label: option,
-                  })),
-                  { value: NEW_PARTNER_SENTINEL, label: "＋ 新規登録" },
-                ]}
-                value={isAddingPartner ? NEW_PARTNER_SENTINEL : form.partner}
-                onValueChange={(value) => {
-                  if (value === NEW_PARTNER_SENTINEL) {
-                    setIsAddingPartner(true);
-                    return;
-                  }
-                  setIsAddingPartner(false);
-                  setForm((current) => ({ ...current, partner: value }));
-                }}
-              />
-              {isAddingPartner ? (
-                <div className="mt-2 flex gap-2">
-                  <input
-                    value={newPartnerName}
-                    onChange={(event) => setNewPartnerName(event.target.value)}
-                    className={inputClassName}
-                    placeholder="取引先名を入力"
-                    aria-label="新規取引先名"
-                  />
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    className="shrink-0 font-acumin"
-                    onClick={() => void handleAddPartner()}
-                    disabled={isSaving}
-                  >
-                    登録
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="shrink-0 font-acumin"
-                    onClick={() => {
-                      setIsAddingPartner(false);
-                      setNewPartnerName("");
-                    }}
-                    disabled={isSaving}
-                  >
-                    取消
-                  </Button>
-                </div>
-              ) : null}
-            </div>
-            <label className="block">
-              <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
-                金額 <span className="text-red-700">*</span>
-              </span>
-              <input
-                type="number"
-                min="1"
-                value={form.amount}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    amount: event.target.value,
-                  }))
-                }
-                className={inputClassName}
-                placeholder="0"
-              />
-            </label>
-            <div className="block">
-              <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
-                {paymentFieldLabel}
-              </span>
-              <SingleSelect
-                variant="dropdown"
-                block
-                size="md"
-                aria-label={paymentFieldLabel}
-                className="font-acumin"
-                options={paymentOptionsFor(form.entryType).map((option) => ({
-                  value: option,
-                  label: option,
-                }))}
-                value={form.paymentMethod}
-                onValueChange={(value) =>
-                  setForm((current) => ({ ...current, paymentMethod: value }))
-                }
-              />
-            </div>
-            <div className="block">
-              <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
-                シーズンタグ（任意）
-              </span>
-              <SingleSelect
-                variant="dropdown"
-                block
-                size="md"
-                aria-label="シーズンタグ"
-                className="font-acumin"
-                options={[
-                  { value: "", label: "（なし）" },
-                  ...seasonOptions.map((season) => ({
-                    value: season.key,
-                    label: season.label,
-                  })),
-                ]}
-                value={form.seasonTag}
-                onValueChange={(value) =>
-                  setForm((current) => ({ ...current, seasonTag: value }))
-                }
-              />
-              <span className="mt-1 block font-acumin text-[10px] text-[#707070]">
-                コレクション別の採算分析にのみ使用。会計期間は日付で決まる。
-              </span>
-            </div>
-            <label className="block">
-              <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
-                メモ
-              </span>
-              <textarea
-                value={form.memo}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    memo: event.target.value,
-                  }))
-                }
-                className={`${inputClassName} h-20 py-2`}
-                placeholder="任意のメモを入力"
-              />
-            </label>
-            {formMessage ? (
-              <p
-                className={`font-acumin text-xs ${/失敗|ください/.test(formMessage) ? "text-red-700" : "text-[#16844b]"}`}
-                role="status"
-              >
-                {formMessage}
-              </p>
-            ) : null}
-            {editingEntryId !== null ? (
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
+        <div className="block">
+          <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+            種別 <span className="text-red-700">*</span>
+          </span>
+          <div className="grid grid-cols-2 gap-2" role="group" aria-label="種別">
+            {(["expense", "income"] as EntryType[]).map((type) => {
+              const active = form.entryType === type;
+              return (
+                <button
+                  key={type}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => handleEntryTypeChange(type)}
+                  className={`h-10 rounded-sm border font-acumin text-sm transition-colors ${active ? "border-black bg-black text-white" : "border-[#d4d4d4] bg-white text-[#474747] hover:border-black"}`}
+                >
+                  {type === "income" ? "収入" : "支出"}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div className="block">
+          <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+            事業形態 <span className="text-red-700">*</span>
+          </span>
+          <SingleSelect
+            variant="dropdown"
+            block
+            size="md"
+            aria-label="事業形態"
+            className="font-acumin"
+            options={BUSINESS_TYPE_OPTIONS.map((option) => ({
+              value: option.value,
+              label: option.label,
+            }))}
+            value={businessType}
+            onValueChange={(value) =>
+              void handleBusinessTypeChange(value as BusinessType)
+            }
+          />
+          <p className="mt-1 font-acumin text-[11px] text-[#707070]">
+            選んだ事業形態で使える勘定科目だけを表示します。
+          </p>
+        </div>
+        <div className="block">
+          <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+            テンプレート
+          </span>
+          <SingleSelect
+            variant="dropdown"
+            block
+            size="md"
+            aria-label="テンプレート"
+            className="font-acumin"
+            placeholder="（テンプレートを選択）"
+            options={[
+              { value: "", label: "（テンプレートを選択）" },
+              ...visibleTemplates.map((template) => ({
+                value: template.name,
+                label: template.name,
+              })),
+              { value: SAVE_TEMPLATE_SENTINEL, label: "＋ 現在の入力を保存" },
+            ]}
+            value={isSavingTemplate ? SAVE_TEMPLATE_SENTINEL : selectedTemplateName}
+            onValueChange={handleTemplateSelect}
+          />
+          {selectedTemplateName && !isSavingTemplate ? (
+            <div className="mt-2 flex justify-end">
               <Button
                 variant="secondary"
                 size="sm"
-                className="w-full font-acumin"
-                onClick={handleCancelEdit}
+                className="shrink-0 font-acumin"
+                aria-label="選択中のテンプレートを削除"
+                onClick={() => void handleDeleteTemplate()}
                 disabled={isSaving}
               >
-                訂正を取消
+                削除
               </Button>
-            ) : null}
+            </div>
+          ) : null}
+          {isSavingTemplate ? (
+            <div className="mt-2 flex gap-2">
+              <input
+                value={newTemplateName}
+                onChange={(event) => setNewTemplateName(event.target.value)}
+                className={inputClassName}
+                placeholder="テンプレート名"
+                aria-label="テンプレート名"
+              />
+              <Button
+                variant="primary"
+                size="sm"
+                className="shrink-0 font-acumin"
+                aria-label="テンプレートを保存"
+                onClick={() => void handleSaveTemplate()}
+                disabled={isSaving}
+              >
+                保存
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="shrink-0 font-acumin"
+                onClick={() => {
+                  setIsSavingTemplate(false);
+                  setNewTemplateName("");
+                }}
+                disabled={isSaving}
+              >
+                取消
+              </Button>
+            </div>
+          ) : null}
+        </div>
+        <label className="block">
+          <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+            日付 <span className="text-red-700">*</span>
+          </span>
+          <input
+            type="date"
+            aria-label="取引日"
+            value={form.date}
+            onChange={(event) =>
+              setForm((current) => ({ ...current, date: event.target.value }))
+            }
+            className={inputClassName}
+          />
+        </label>
+        <div className="block">
+          <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+            {summaryFieldLabel} <span className="text-red-700">*</span>
+          </span>
+          <SingleSelect
+            variant="dropdown"
+            block
+            size="md"
+            aria-label={summaryFieldLabel}
+            className="font-acumin"
+            options={shiyouOptionsFor(form.entryType).map((option) => ({
+              value: option,
+              label: option,
+            }))}
+            value={form.item}
+            onValueChange={(value) =>
+              setForm((current) => ({ ...current, item: value }))
+            }
+          />
+        </div>
+        <div className="block">
+          <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+            勘定科目 <span className="text-red-700">*</span>
+          </span>
+          <SingleSelect
+            variant="dropdown"
+            block
+            size="md"
+            aria-label="勘定科目"
+            className="font-acumin"
+            placeholder="（勘定科目を選択）"
+            options={[
+              { value: "", label: "（勘定科目を選択）" },
+              ...accountOptionsFor(form.entryType, businessType),
+            ]}
+            value={form.category}
+            onValueChange={(value) =>
+              setForm((current) => ({ ...current, category: value }))
+            }
+          />
+        </div>
+
+        <div className="block">
+          <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+            取引先
+          </span>
+          <SingleSelect
+            variant="dropdown"
+            block
+            size="md"
+            aria-label="取引先"
+            className="font-acumin"
+            placeholder="（指定なし）"
+            options={[
+              { value: "", label: "（指定なし）" },
+              ...partners.map((option) => ({ value: option, label: option })),
+              { value: NEW_PARTNER_SENTINEL, label: "＋ 新規登録" },
+            ]}
+            value={isAddingPartner ? NEW_PARTNER_SENTINEL : form.partner}
+            onValueChange={(value) => {
+              if (value === NEW_PARTNER_SENTINEL) {
+                setIsAddingPartner(true);
+                return;
+              }
+              setIsAddingPartner(false);
+              setForm((current) => ({ ...current, partner: value }));
+            }}
+          />
+          {isAddingPartner ? (
+            <div className="mt-2 flex gap-2">
+              <input
+                value={newPartnerName}
+                onChange={(event) => setNewPartnerName(event.target.value)}
+                className={inputClassName}
+                placeholder="取引先名を入力"
+                aria-label="新規取引先名"
+              />
+              <Button
+                variant="primary"
+                size="sm"
+                className="shrink-0 font-acumin"
+                onClick={() => void handleAddPartner()}
+                disabled={isSaving}
+              >
+                登録
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="shrink-0 font-acumin"
+                onClick={() => {
+                  setIsAddingPartner(false);
+                  setNewPartnerName("");
+                }}
+                disabled={isSaving}
+              >
+                取消
+              </Button>
+            </div>
+          ) : null}
+        </div>
+        <label className="block">
+          <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+            金額 <span className="text-red-700">*</span>
+          </span>
+          <input
+            type="number"
+            min="1"
+            value={form.amount}
+            onChange={(event) =>
+              setForm((current) => ({ ...current, amount: event.target.value }))
+            }
+            className={inputClassName}
+            placeholder="0"
+          />
+        </label>
+        <div className="block">
+          <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+            {paymentFieldLabel}
+          </span>
+          <SingleSelect
+            variant="dropdown"
+            block
+            size="md"
+            aria-label={paymentFieldLabel}
+            className="font-acumin"
+            options={paymentOptionsFor(form.entryType).map((option) => ({
+              value: option,
+              label: option,
+            }))}
+            value={form.paymentMethod}
+            onValueChange={(value) =>
+              setForm((current) => ({ ...current, paymentMethod: value }))
+            }
+          />
+        </div>
+        <div className="block">
+          <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+            シーズンタグ（任意）
+          </span>
+          <SingleSelect
+            variant="dropdown"
+            block
+            size="md"
+            aria-label="シーズンタグ"
+            className="font-acumin"
+            placeholder="（なし）"
+            options={[
+              { value: "", label: "（なし）" },
+              ...seasonOptions.map((season) => ({
+                value: season.key,
+                label: season.label,
+              })),
+            ]}
+            value={form.seasonTag}
+            onValueChange={(value) =>
+              setForm((current) => ({ ...current, seasonTag: value }))
+            }
+          />
+          <span className="mt-1 block font-acumin text-[10px] text-[#707070]">
+            コレクション別の採算分析にのみ使用。会計期間は日付で決まる。
+          </span>
+        </div>
+        <label className="block">
+          <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+            メモ
+          </span>
+          <textarea
+            value={form.memo}
+            onChange={(event) =>
+              setForm((current) => ({ ...current, memo: event.target.value }))
+            }
+            className={`${inputClassName} h-20 py-2`}
+            placeholder="任意のメモを入力"
+          />
+        </label>
+
+        {/* 証憑。新規登録では取引IDが未確定なので、保存時にまとめて送る。 */}
+        <div className="block">
+          <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+            証憑（電子取引データ）
+          </span>
+          {editingEntryId === null ? (
+            <>
+              <FileDropZone
+                size="2xs"
+                shape="rounded"
+                accept={RECEIPT_ACCEPT}
+                multiple
+                aria-label="新規取引に証憑を添付"
+                label="ドラッグ＆ドロップ／クリックで選択"
+                hint="PDF・JPEG・PNG・WebP・HEIC（20MBまで）"
+                onFiles={(files) =>
+                  setPendingReceipts((current) => [...current, ...files])
+                }
+              />
+              {pendingReceipts.length > 0 ? (
+                <ul className="mt-2 space-y-1">
+                  {pendingReceipts.map((file, index) => (
+                    <li
+                      key={`${file.name}-${index}`}
+                      className="flex items-center justify-between gap-2"
+                    >
+                      <span className="truncate font-acumin text-[11px] text-black">
+                        <i className="ri-attachment-2 mr-1" aria-hidden="true" />
+                        {file.name}
+                      </span>
+                      <button
+                        type="button"
+                        className="shrink-0 text-[#888888] hover:text-black"
+                        aria-label={`${file.name}を添付から外す`}
+                        onClick={() =>
+                          setPendingReceipts((current) =>
+                            current.filter((_, i) => i !== index),
+                          )
+                        }
+                      >
+                        <i className="ri-close-line text-[13px]" aria-hidden="true" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-1 font-acumin text-[10px] text-[#707070]">
+                  保存と同時に添付します。
+                </p>
+              )}
+            </>
+          ) : (
             <Button
-              variant="primary"
-              size="sm"
+              variant="outline"
+              size="2xs"
+              shape="rounded"
               className="w-full font-acumin"
-              onClick={() => void handleAddExpense()}
-              disabled={isSaving}
+              onClick={() => openReceiptDrawer([editingEntryId])}
             >
-              {isSaving
-                ? "保存中..."
-                : editingEntryId === null
-                  ? "保存"
-                  : "訂正を保存"}
+              <i className="ri-attachment-2 mr-1" aria-hidden="true" />
+              証憑を管理
             </Button>
+          )}
+        </div>
+
+        {formMessage ? (
+          <p
+            className={`font-acumin text-xs ${/失敗|ください/.test(formMessage) ? "text-red-700" : "text-[#16844b]"}`}
+            role="status"
+          >
+            {formMessage}
+          </p>
+        ) : null}
+      </div>
+
+      <div className="flex gap-2 border-t border-[#d4d4d4] px-5 py-4">
+        {editingEntryId !== null ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            iconOnly
+            className="shrink-0 font-acumin"
+            aria-label={`${form.item}を削除`}
+            onClick={() => {
+              const target = entryRows.find((entry) => entry.id === editingEntryId);
+              if (target) {
+                setIsEntryDrawerOpen(false);
+                setEditingEntryId(null);
+                void handleDeleteExpense(target);
+              }
+            }}
+            disabled={isSaving}
+          >
+            <EmptyIcon icon="ri-delete-bin-line" />
+          </Button>
+        ) : null}
+        <Button
+          variant="secondary"
+          size="sm"
+          className="flex-1 font-acumin"
+          onClick={handleCancelEdit}
+          disabled={isSaving}
+        >
+          {editingEntryId === null ? "取消" : "訂正を取消"}
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          className="flex-1 font-acumin"
+          onClick={() => void handleAddExpense()}
+          disabled={isSaving}
+        >
+          {isSaving ? "保存中..." : editingEntryId === null ? "保存" : "訂正を保存"}
+        </Button>
+      </div>
+    </Drawer>
+  );
+
+  const expensesView = (
+    <div className="space-y-5">
+      {/* 見出し＋常設のキーワード検索と主要操作。詳細な条件は Drawer へ。 */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-baseline gap-3">
+          <h3 className="font-acumin text-base font-medium tracking-widest text-black">
+            取引管理
+          </h3>
+          <span className="font-acumin text-xs text-[#707070]">
+            {entryRows.length}件
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <SearchField
+            size="2xs"
+            aria-label="取引を検索"
+            placeholder="取引ID・取引先・摘要で検索"
+            className="w-full font-acumin sm:w-[280px]"
+            value={filter.keyword}
+            showClearButton
+            onClear={() => {
+              updateFilter({ keyword: "" });
+              setEntryPage(1);
+            }}
+            onChange={(event) => {
+              updateFilter({ keyword: event.target.value });
+              setEntryPage(1);
+            }}
+          />
+          <Button
+            variant="outline"
+            size="2xs"
+            shape="rounded"
+            className="font-acumin"
+            onClick={() => setIsFilterDrawerOpen(true)}
+          >
+            <i className="ri-equalizer-line mr-1" aria-hidden="true" />
+            詳細条件
+            {filterConditionCount > 0 ? (
+              <StatusBadge
+                variant="count"
+                size="4xs"
+                count={filterConditionCount}
+                className="ml-1.5"
+              />
+            ) : null}
+          </Button>
+          <Button
+            variant="outline"
+            size="2xs"
+            shape="rounded"
+            className="font-acumin"
+            aria-label="表示中の取引をCSV出力"
+            onClick={() =>
+              handleEntryCsvExport(entryRows, `取引管理_${fiscalYear}.csv`)
+            }
+          >
+            <i className="ri-download-2-line mr-1" aria-hidden="true" />
+            CSV出力
+          </Button>
+          <Button
+            variant="primary"
+            size="2xs"
+            shape="rounded"
+            className="font-acumin"
+            onClick={handleOpenNewEntry}
+          >
+            <i className="ri-add-line mr-1" aria-hidden="true" />
+            新規取引
+          </Button>
+        </div>
+      </div>
+
+      {/* 取引 → 証憑 → 収支。左から右へ確認が進む並びにする。 */}
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)]">
+        <Panel
+          radius="rounded"
+          headingLevel={4}
+          aria-label="取引ステータス"
+          title={<span className={panelTitleClassName}>取引ステータス</span>}
+        >
+          <div className="flex items-center gap-4">
+            <Graph
+              variant="donut"
+              size={120}
+              showLegend={false}
+              className="shrink-0"
+              centerLabel={
+                <>
+                  <span className="font-acumin text-[10px] text-[#707070]">
+                    合計
+                  </span>
+                  <span className="font-acumin text-xs text-black tabular-nums">
+                    {entryStatusCounts.total}件
+                  </span>
+                </>
+              }
+              data={[
+                {
+                  label: "登録済み",
+                  value: entryStatusCounts.registered,
+                  color: ENTRY_STATE_COLORS.registered,
+                },
+                {
+                  label: "要確認",
+                  value: entryStatusCounts.review,
+                  color: ENTRY_STATE_COLORS.review,
+                },
+                {
+                  label: "訂正",
+                  value: entryStatusCounts.revised,
+                  color: ENTRY_STATE_COLORS.revised,
+                },
+              ]}
+            />
+            <div className="min-w-0 flex-1 space-y-2">
+              {donutLegendRow(
+                "登録済み",
+                entryStatusCounts.registered,
+                ENTRY_STATE_COLORS.registered,
+                false,
+              )}
+              {donutLegendRow(
+                "要確認",
+                entryStatusCounts.review,
+                ENTRY_STATE_COLORS.review,
+                true,
+              )}
+              {donutLegendRow(
+                "訂正",
+                entryStatusCounts.revised,
+                ENTRY_STATE_COLORS.revised,
+                true,
+              )}
+            </div>
           </div>
+        </Panel>
+
+        {summaryChevron}
+
+        <Panel
+          radius="rounded"
+          headingLevel={4}
+          aria-label="証憑ステータス"
+          title={<span className={panelTitleClassName}>証憑ステータス</span>}
+        >
+          <div className="flex items-center gap-4">
+            <Graph
+              variant="donut"
+              size={120}
+              showLegend={false}
+              className="shrink-0"
+              centerLabel={
+                <>
+                  <span className="font-acumin text-[10px] text-[#707070]">
+                    合計
+                  </span>
+                  <span className="font-acumin text-xs text-black tabular-nums">
+                    {receiptStatusCounts.total}件
+                  </span>
+                </>
+              }
+              data={[
+                {
+                  label: "添付済み",
+                  value: receiptStatusCounts.attached,
+                  color: RECEIPT_ATTACHED_COLOR,
+                },
+                {
+                  label: "未添付",
+                  value: receiptStatusCounts.missing,
+                  color: RECEIPT_MISSING_COLOR,
+                },
+              ]}
+            />
+            <div className="min-w-0 flex-1 space-y-2">
+              {donutLegendRow(
+                "添付済み",
+                receiptStatusCounts.attached,
+                RECEIPT_ATTACHED_COLOR,
+                false,
+              )}
+              {donutLegendRow(
+                "未添付",
+                receiptStatusCounts.missing,
+                RECEIPT_MISSING_COLOR,
+                true,
+              )}
+            </div>
+          </div>
+        </Panel>
+
+        {summaryChevron}
+
+        <Panel
+          radius="rounded"
+          headingLevel={4}
+          aria-label="今月の収支"
+          title={<span className={panelTitleClassName}>今月の収支</span>}
+          actions={
+            <span className="font-acumin text-[11px] text-[#707070] tabular-nums">
+              {fiscalYear}/{String(monthlyBalance.month).padStart(2, "0")}
+            </span>
+          }
+        >
+          <Graph
+            variant="progress"
+            layout="inline"
+            size="xs"
+            className="font-acumin"
+            data={[
+              {
+                label: "収入",
+                value: monthlyBalance.income,
+                formattedValue: currency(monthlyBalance.income),
+                color: BALANCE_INCOME_COLOR,
+              },
+              {
+                label: "支出",
+                value: monthlyBalance.expense,
+                formattedValue: currency(monthlyBalance.expense),
+                color: BALANCE_EXPENSE_COLOR,
+              },
+              {
+                label: "収支",
+                value: monthlyBalance.balance,
+                magnitude: Math.abs(monthlyBalance.balance),
+                formattedValue: deltaCurrency(monthlyBalance.balance),
+                color:
+                  monthlyBalance.balance >= 0
+                    ? BALANCE_POSITIVE_COLOR
+                    : BALANCE_NEGATIVE_COLOR,
+              },
+            ]}
+          />
+        </Panel>
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 2xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="min-w-0 space-y-5">
+          <Panel radius="rounded" aria-label="取引一覧">
+            {/* 状態で束ねたタブ。件数を出して、確認すべき塊の大きさを先に見せる。 */}
+            <div className="border-b border-[#d4d4d4]">
+              <TabSegmentControl
+                variant="tabs-standard"
+                size="2xs"
+                activeKey={entryListTab}
+                onChange={(key) => changeEntryListTab(key as EntryListTab)}
+                items={[
+                  { key: "all", label: "すべて" },
+                  { key: "noReceipt", label: `証憑未添付（${entryTabCounts.noReceipt}）` },
+                  { key: "review", label: `要確認（${entryTabCounts.review}）` },
+                  { key: "revised", label: `訂正あり（${entryTabCounts.revised}）` },
+                ]}
+              />
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Checkbox
+                  size="2xs"
+                  className="font-acumin"
+                  label={
+                    selectedEntryIds.length > 0
+                      ? `${selectedEntryIds.length}件選択中`
+                      : "すべて選択"
+                  }
+                  aria-label="表示中の取引をすべて選択"
+                  checked={pageAllSelected}
+                  onChange={togglePageSelection}
+                />
+                <Button
+                  variant="outline"
+                  size="2xs"
+                  shape="rounded"
+                  className="font-acumin"
+                  disabled={selectedEntries.length === 0}
+                  onClick={() => openReceiptDrawer(selectedEntryIds)}
+                >
+                  <i className="ri-attachment-2 mr-1" aria-hidden="true" />
+                  証憑を追加
+                </Button>
+                <Button
+                  variant="outline"
+                  size="2xs"
+                  shape="rounded"
+                  className="font-acumin"
+                  aria-label="選択中の取引をCSV出力"
+                  disabled={selectedEntries.length === 0}
+                  onClick={() =>
+                    handleEntryCsvExport(
+                      selectedEntries,
+                      `取引管理_選択_${fiscalYear}.csv`,
+                    )
+                  }
+                >
+                  <i className="ri-download-2-line mr-1" aria-hidden="true" />
+                  CSV出力
+                </Button>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="font-acumin text-[11px] text-[#707070] tabular-nums">
+                  {entryRangeStart}-{entryRangeEnd} / {tabbedEntryRows.length}件
+                </span>
+                <PageControl
+                  size="3xs"
+                  page={currentEntryPage}
+                  totalPages={entryTotalPages}
+                  maxVisiblePages={6}
+                  previousAriaLabel="前のページ"
+                  nextAriaLabel="次のページ"
+                  onPageChange={setEntryPage}
+                />
+              </div>
+            </div>
+
+            <div className="mt-3">
+              <DataTable
+                size="2xs"
+                shape="rounded"
+                hoverableRows
+                columns={entryColumns}
+                rows={pagedEntryRows}
+                rowKey={(entry) => String(entry.id)}
+                emptyLabel="該当する取引がありません。"
+                tableClassName="min-w-[640px]"
+                containerClassName="font-acumin"
+              />
+            </div>
+          </Panel>
+
+          {/* 電子帳簿保存法の真実性の要件：訂正・削除の履歴を確認できるようにする。
+              履歴はDBトリガーが記録し、アプリからは書き換えられない。 */}
+          <Panel
+            radius="rounded"
+            headingLevel={4}
+            aria-label="訂正・削除の履歴"
+            title={
+              <button
+                type="button"
+                className="flex items-center gap-1.5 font-acumin text-sm font-medium tracking-widest text-black"
+                aria-expanded={isRevisionHistoryOpen}
+                onClick={() => setIsRevisionHistoryOpen((current) => !current)}
+              >
+                <i
+                  className={
+                    isRevisionHistoryOpen
+                      ? "ri-arrow-down-s-line"
+                      : "ri-arrow-right-s-line"
+                  }
+                  aria-hidden="true"
+                />
+                訂正・削除の履歴（{revisions.length}件）
+              </button>
+            }
+            actions={
+              revisions.length > 0 ? (
+                <Button
+                  variant="outline"
+                  size="2xs"
+                  shape="rounded"
+                  className="font-acumin"
+                  onClick={() => setIsRevisionHistoryOpen(true)}
+                >
+                  すべて表示
+                </Button>
+              ) : undefined
+            }
+          >
+            <p className="font-acumin text-[10px] leading-relaxed text-[#707070]">
+              電子帳簿保存法の真実性の要件により、取引の削除は論理削除として記録し、訂正の前後を保持します。
+            </p>
+            {!isRevisionHistoryOpen ? null : revisions.length === 0 ? (
+              <p className="mt-3 font-acumin text-xs text-[#707070]">
+                履歴はまだありません。
+              </p>
+            ) : (
+              <div className="mt-3">
+                <DataTable
+                  size="2xs"
+                  shape="rounded"
+                  columns={[
+                    {
+                      key: "changedAt",
+                      header: "変更日時",
+                      cellClassName: "whitespace-nowrap tabular-nums",
+                      render: (revision: EntryRevision) =>
+                        new Date(revision.changedAt).toLocaleString("ja-JP"),
+                    },
+                    {
+                      key: "operation",
+                      header: "操作",
+                      cellClassName: "whitespace-nowrap",
+                      render: (revision: EntryRevision) => (
+                        <span
+                          style={{
+                            color:
+                              revision.operation === "delete"
+                                ? ENTRY_STATE_COLORS.revised
+                                : revision.operation === "update"
+                                  ? ENTRY_STATE_COLORS.review
+                                  : "#474747",
+                          }}
+                        >
+                          {REVISION_OPERATION_LABELS[revision.operation]}
+                        </span>
+                      ),
+                    },
+                    {
+                      key: "entryId",
+                      header: "取引ID",
+                      cellClassName: "whitespace-nowrap",
+                      render: (revision: EntryRevision) => `#${revision.entryId}`,
+                    },
+                    {
+                      key: "before",
+                      header: "変更前",
+                      render: (revision: EntryRevision) =>
+                        revision.operation === "insert"
+                          ? "—"
+                          : `${revision.before.date ?? ""} ${revision.before.category ?? ""} ${revision.before.item ?? ""} ${revision.before.amount ? currency(Number(revision.before.amount)) : ""}`.trim(),
+                    },
+                    {
+                      key: "after",
+                      header: "変更後",
+                      render: (revision: EntryRevision) =>
+                        revision.operation === "delete"
+                          ? "（削除）"
+                          : `${revision.after.date ?? ""} ${revision.after.category ?? ""} ${revision.after.item ?? ""} ${revision.after.amount ? currency(Number(revision.after.amount)) : ""}`.trim(),
+                    },
+                  ]}
+                  rows={revisions}
+                  rowKey={(revision) => String(revision.id)}
+                  tableClassName="min-w-[720px]"
+                  containerClassName="font-acumin"
+                />
+              </div>
+            )}
+          </Panel>
+        </div>
+
+        <aside className="space-y-5">
+          {/* 確認キュー。件数の多い作業ではなく、優先順に片付ける導線を出す。 */}
+          <Panel
+            radius="rounded"
+            headingLevel={4}
+            aria-label="確認キュー"
+            title={<span className={panelTitleClassName}>確認キュー（優先順）</span>}
+          >
+            {reviewQueue.length === 0 ? (
+              <p className="font-acumin text-xs text-[#707070]">
+                確認が必要な取引はありません。
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {reviewQueue.map((group) => {
+                  const head = group.rows[0];
+                  const color =
+                    group.tone === "danger"
+                      ? ENTRY_STATE_COLORS.revised
+                      : ENTRY_STATE_COLORS.review;
+                  return (
+                    <li key={group.key}>
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2 rounded-sm border border-[#ededed] px-3 py-2.5 text-left transition-colors hover:border-[#d4d4d4] hover:bg-[#fafafa]"
+                        aria-label={`${group.label}の取引を一覧で絞り込む`}
+                        onClick={() => changeEntryListTab(group.tab)}
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-1.5">
+                            <i
+                              className={group.icon}
+                              aria-hidden="true"
+                              style={{ color }}
+                            />
+                            <span
+                              className="font-acumin text-xs"
+                              style={{ color }}
+                            >
+                              {group.label}
+                            </span>
+                          </span>
+                          {head ? (
+                            <span className="mt-1 flex items-baseline gap-2 font-acumin text-[11px] text-[#474747]">
+                              <span className="tabular-nums">
+                                {head.date.replaceAll("-", "/")}
+                              </span>
+                              <span className="min-w-0 truncate">
+                                {head.category} / {head.item}
+                              </span>
+                              <span className="ml-auto shrink-0 tabular-nums text-black">
+                                {currency(head.amount)}
+                              </span>
+                            </span>
+                          ) : null}
+                        </span>
+                        <StatusBadge
+                          variant="text"
+                          shape="pill"
+                          size="4xs"
+                          tone={group.tone}
+                          accent
+                          className="shrink-0 font-acumin"
+                        >
+                          {group.rows.length}件
+                        </StatusBadge>
+                        <i
+                          className="ri-arrow-right-s-line shrink-0 text-[#909090]"
+                          aria-hidden="true"
+                        />
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Panel>
+
+          <Panel
+            radius="rounded"
+            headingLevel={4}
+            aria-label="電子帳簿保存法 チェックリスト"
+            title={
+              <span className={panelTitleClassName}>
+                電子帳簿保存法 チェックリスト
+              </span>
+            }
+          >
+            <ul className="space-y-2">
+              {DENCHOHO_CHECKLIST.map((item) => (
+                <li
+                  key={item.label}
+                  className="flex items-center justify-between gap-2"
+                >
+                  <span className="flex items-center gap-2">
+                    <i
+                      className="ri-checkbox-circle-fill text-[#16844b]"
+                      aria-hidden="true"
+                    />
+                    <span className="font-acumin text-xs text-black">
+                      {item.label}
+                    </span>
+                  </span>
+                  <span className="font-acumin text-[11px] text-[#707070]">
+                    {item.note}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </Panel>
         </aside>
       </div>
+
+      {filterDrawer}
+      {entryDrawer}
+      {receiptDrawer}
     </div>
   );
 
@@ -3732,26 +4807,39 @@ export default function CostProfitSection({
   };
 
   // --- 証憑（電子取引データ）---
-  const handleAttachReceipt = async (entry: Expense, file: File) => {
+  // 1ファイル分のアップロード。取引IDだけを取るので、保存直後の新規取引にも使える。
+  const uploadReceiptFile = async (entryId: number, file: File) => {
+    const formData = new FormData();
+    formData.append("entryId", String(entryId));
+    formData.append("file", file);
+
+    const response = await clientFetch("/api/admin/kpi/cost-profit/receipt", {
+      method: "POST",
+      body: formData,
+    });
+    const payload = (await response.json().catch(() => null)) as
+      | { error?: string }
+      | null;
+    if (!response.ok) {
+      throw new Error(payload?.error ?? "証憑のアップロードに失敗しました。");
+    }
+  };
+
+  /** ドロップ／選択された証憑をまとめて添付する。 */
+  const handleAttachReceipts = async (entry: Expense, files: File[]) => {
+    if (files.length === 0) return;
     try {
       setUploadingEntryId(entry.id);
       setReceiptMessage(null);
-      const formData = new FormData();
-      formData.append("entryId", String(entry.id));
-      formData.append("file", file);
-
-      const response = await clientFetch(
-        "/api/admin/kpi/cost-profit/receipt",
-        { method: "POST", body: formData },
-      );
-      const payload = (await response.json().catch(() => null)) as
-        | { error?: string }
-        | null;
-      if (!response.ok) {
-        throw new Error(payload?.error ?? "証憑のアップロードに失敗しました。");
+      for (const file of files) {
+        await uploadReceiptFile(entry.id, file);
       }
       await loadFinanceData();
-      setReceiptMessage(`${file.name} を添付しました。`);
+      setReceiptMessage(
+        files.length === 1
+          ? `${files[0].name} を添付しました。`
+          : `${files.length}件の証憑を添付しました。`,
+      );
     } catch (error) {
       setReceiptMessage(
         error instanceof Error

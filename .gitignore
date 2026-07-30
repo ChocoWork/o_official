@@ -50,3 +50,5 @@ next-env.d.ts
 /screenshots
 
 certificates
+
+/docs/ui-mocks

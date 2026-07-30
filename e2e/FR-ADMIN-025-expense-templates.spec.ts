@@ -103,6 +103,8 @@ async function openCostInputTab(page: Page) {
   await page.goto('/admin');
   await page.getByRole('button', { name: 'ACCOUNTING' }).click();
   await page.getByRole('tab', { name: '取引管理' }).click();
+  // FREQ-257 以降、取引の入力欄は「新規取引」Drawer の中にある。
+  await page.getByRole('button', { name: '新規取引' }).click();
   await page.getByRole('button', { name: 'テンプレート', exact: true }).waitFor();
 }
 

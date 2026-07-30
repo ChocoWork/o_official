@@ -88,6 +88,19 @@
     0 0 0 4px #111111;
 }
 
+/* 省略記号: ボタンと同じ正方形の枠を占め、番号列のリズムを崩さない */
+[data-ui-pagecontrol] [data-pagecontrol-ellipsis] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--pagecontrol-btn-size);
+  height: var(--pagecontrol-btn-size);
+  font-size: var(--pagecontrol-text-size);
+  color: #707070;
+  user-select: none;
+}
+
 /* ── Nav button icon ────────────────────────────────────
    対比: アイコンをテキストより一 eighthstep 大きくし、ナビ意図を明示
    近接: icon は button 内に直接配置し、最短距離で意味を伝える         */

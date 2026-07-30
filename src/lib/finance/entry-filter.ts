@@ -21,7 +21,7 @@ export type EntryFilter = {
   account: string;
   /** 種別。空文字は支出・収入の両方 */
   entryType: "" | EntryType;
-  /** 概要・メモ・取引先を対象にした部分一致 */
+  /** 取引ID・概要・メモ・取引先を対象にした部分一致 */
   keyword: string;
 };
 
@@ -73,7 +73,8 @@ export function filterEntries(
     if (filter.partner && entry.partner !== filter.partner) return false;
     if (filter.account && entry.category !== filter.account) return false;
     if (keyword) {
-      const haystack = [entry.item, entry.memo, entry.partner]
+      // 一覧の検索欄は取引IDでも引けるようにする（証憑や問い合わせからの逆引き用）。
+      const haystack = [`#${entry.id}`, entry.item, entry.memo, entry.partner]
         .join(" ")
         .toLowerCase();
       if (!haystack.includes(keyword)) return false;

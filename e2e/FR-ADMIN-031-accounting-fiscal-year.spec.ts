@@ -183,8 +183,10 @@ for (const viewport of viewports) {
       await page.getByRole('tab', { name: '取引管理', exact: true }).click();
 
       // 2026年度には初期データが1件ある。
-      await expect(page.getByText('支出一覧（1件）')).toBeVisible();
-      await expect(page.getByText('2026年度の取引')).toBeVisible();
+      await expect(page.getByText('1-1 / 1件')).toBeVisible();
+      await expect(
+        page.getByRole('region', { name: '取引一覧' }).getByText('広告出稿 / A社'),
+      ).toBeVisible();
       expect(requestedUrls.some((url) => url.includes('year=2026'))).toBe(true);
     });
 
@@ -203,24 +205,25 @@ for (const viewport of viewports) {
       await expect(page.getByRole('button', { name: '2026 S/S', exact: true })).toBeVisible();
     });
 
-    test('取引フォームにシーズンタグ（任意）があり、一覧にシーズン列が出る', async ({ page }) => {
-      // FREQ-241-AC-04
+    test('取引フォームにシーズンタグ（任意）がある', async ({ page }) => {
+      // FREQ-241-AC-04（FREQ-257 で一覧のシーズン列は CSV へ移した）
       await openAccounting(page);
       await page.getByRole('tab', { name: '取引管理', exact: true }).click();
+      await page.getByRole('button', { name: '新規取引' }).click();
 
       const seasonTag = page.getByRole('button', { name: 'シーズンタグ' });
       await expect(seasonTag).toBeVisible();
       await seasonTag.click();
       await expect(page.getByRole('option', { name: '（なし）', exact: true })).toBeVisible();
       await page.getByRole('option', { name: '（なし）', exact: true }).click();
-
-      await expect(page.getByRole('columnheader', { name: 'シーズン' }).first()).toBeVisible();
     });
 
     test('選択中の年度外の日付は保存せずエラーを出す', async ({ page }) => {
       // FREQ-241-AC-05
       await openAccounting(page);
       await page.getByRole('tab', { name: '取引管理', exact: true }).click();
+      // FREQ-257 以降、取引の入力欄は「新規取引」Drawer の中にある。
+      await page.getByRole('button', { name: '新規取引' }).click();
 
       await page.getByRole('button', { name: '支出概要' }).click();
       await page.getByRole('option', { name: '展示会・イベント' }).click();
@@ -235,7 +238,7 @@ for (const viewport of viewports) {
         page.getByText('日付は選択中の会計期間（2026/01/01〜2026/12/31）の範囲で入力してください。'),
       ).toBeVisible();
       // 行は増えない（初期の1件のまま）。
-      await expect(page.getByText('支出一覧（1件）')).toBeVisible();
+      await expect(page.getByText('1-1 / 1件')).toBeVisible();
     });
 
     test('横方向のページスクロールが発生しない', async ({ page }) => {

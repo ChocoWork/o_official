@@ -93,6 +93,8 @@ async function openIncomeExpenseTab(page: Page) {
   await page.goto('/admin');
   await page.getByRole('button', { name: 'ACCOUNTING' }).click();
   await page.getByRole('tab', { name: '取引管理' }).click();
+  // FREQ-257 以降、取引の入力欄は「新規取引」Drawer の中にある。
+  await page.getByRole('button', { name: '新規取引' }).click();
   await page.getByRole('button', { name: '支出', exact: true }).waitFor();
 }
 
@@ -159,7 +161,7 @@ for (const viewport of viewports) {
       await page.getByRole('button', { name: '保存', exact: true }).click();
 
       await expect(page.getByRole('status').filter({ hasText: '勘定科目' })).toBeVisible();
-      await expect(page.getByRole('heading', { name: '支出一覧（0件）' })).toBeVisible();
+      await expect(page.getByText('該当する取引がありません。')).toBeVisible();
     });
 
     test('横方向のページスクロールが発生しない', async ({ page }) => {
