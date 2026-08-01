@@ -11,6 +11,7 @@ import {
   DataTable,
   type TableColumn,
 } from "@/components/ui/DataTable/DataTable";
+import { Dialog } from "@/components/ui/Dialog/Dialog";
 import { Drawer } from "@/components/ui/Drawer/Drawer";
 import { FileDropZone } from "@/components/ui/FileDropZone/FileDropZone";
 import { Graph } from "@/components/ui/Graph/Graph";
@@ -51,6 +52,16 @@ import {
   type DepreciationMethod,
   type FixedAsset,
 } from "@/lib/finance/depreciation";
+import {
+  classifyAssetCandidate,
+  FIXED_ASSET_LINK_STATUS_LABELS,
+  fixedAssetCode,
+  fixedAssetLinkStatus,
+  suggestDepreciationMethod,
+  unlinkedAssetEntries,
+  type AssetCandidateClass,
+  type FixedAssetLinkStatus,
+} from "@/lib/finance/fixed-asset-link";
 import {
   currentSeasonKey,
   formatSeasonLabel,
@@ -226,6 +237,26 @@ const EMPTY_ASSET_FORM = {
   usefulLife: "6",
   businessUseRatio: "100",
   disposedOn: "",
+  // 事業供用日。空文字は取得日と同じ扱い。
+  serviceStartedOn: "",
+  // 連携する購入取引。null は直接登録。
+  entryId: null as number | null,
+};
+
+/**
+ * 固定資産の登録方法。
+ * 取引から登録が既定で、直接登録は期首残高の移行・過去資産・現物発見の例外用途。
+ */
+type AssetRegisterMode = "fromEntry" | "direct";
+
+const FIXED_ASSET_LINK_STATUS_TONES: Record<
+  FixedAssetLinkStatus,
+  "neutral" | "warning" | "danger"
+> = {
+  linked: "neutral",
+  direct: "neutral",
+  noReceipt: "warning",
+  entryMissing: "danger",
 };
 
 const REVISION_OPERATION_LABELS: Record<EntryRevision["operation"], string> = {
@@ -276,7 +307,12 @@ type EntryListTab = "all" | "noReceipt" | "review" | "revised";
 const ENTRY_PAGE_SIZE = 20;
 
 /** 確認キューの1グループ。優先順に並べて右カラムへ出す。 */
-type ReviewQueueKey = "noReceipt" | "amount" | "account" | "revised";
+type ReviewQueueKey =
+  | "noReceipt"
+  | "fixedAsset"
+  | "amount"
+  | "account"
+  | "revised";
 
 const REVIEW_QUEUE_DEFS: Array<{
   key: ReviewQueueKey;
@@ -291,6 +327,14 @@ const REVIEW_QUEUE_DEFS: Array<{
     icon: "ri-attachment-2",
     tone: "warning",
     tab: "noReceipt",
+  },
+  // 資産科目で計上済みなのに台帳が無い取引。放置すると永久に償却されない。
+  {
+    key: "fixedAsset",
+    label: "固定資産の登録待ち",
+    icon: "ri-building-line",
+    tone: "warning",
+    tab: "review",
   },
   {
     key: "amount",
@@ -365,7 +409,17 @@ type EntryRevision = {
 };
 
 // 取引1件。仕訳エンジン（src/lib/finance/journal.ts）と同じ形＋証憑。
-type Expense = FinanceEntry & { receipts?: Receipt[] };
+type Expense = FinanceEntry & {
+  receipts?: Receipt[];
+  /** 固定資産候補の確認を済ませ、費用として処理すると判断した取引。 */
+  fixedAssetExempt?: boolean;
+};
+
+/**
+ * 台帳の固定資産。購入取引への参照と事業供用日を持つ。
+ * 償却計算に供用日は要るが取引の id は要らないので、連携キーは UI 側の型で足す。
+ */
+type LedgerFixedAsset = FixedAsset & { entryId: number | null };
 
 type ExpenseTemplate = {
   name: string;
@@ -414,7 +468,7 @@ type CostProfitResponse = {
     incomes: Expense[];
     products: Product[];
     partners: string[];
-    fixedAssets: FixedAsset[];
+    fixedAssets: LedgerFixedAsset[];
     closing: {
       closingInventoryGoods: number;
       closingInventoryMaterials: number;
@@ -1264,7 +1318,7 @@ export default function CostProfitSection({
   const [incomes, setIncomes] = useState<Expense[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [partners, setPartners] = useState<string[]>([]);
-  const [fixedAssets, setFixedAssets] = useState<FixedAsset[]>([]);
+  const [fixedAssets, setFixedAssets] = useState<LedgerFixedAsset[]>([]);
   // 決算整理の入力値と締め状態。前年度のスナップショットが当年度の期首残高になる。
   const [adjustment, setAdjustment] = useState<YearEndAdjustment>(
     EMPTY_YEAR_END_ADJUSTMENT,
@@ -1324,6 +1378,16 @@ export default function CostProfitSection({
   // 固定資産の登録フォーム
   const [assetForm, setAssetForm] = useState(EMPTY_ASSET_FORM);
   const [assetMessage, setAssetMessage] = useState<string | null>(null);
+  // 登録方法。取引から登録が既定（記入漏れ・金額不一致を起こさない側）。
+  const [assetRegisterMode, setAssetRegisterMode] =
+    useState<AssetRegisterMode>("fromEntry");
+  // 詳細 Drawer で開いている資産。取引→資産→取得仕訳→償却仕訳の関係を見せる。
+  const [assetDetailId, setAssetDetailId] = useState<number | null>(null);
+  // 固定資産候補の取引を保存直後に案内するダイアログ。
+  const [assetCandidate, setAssetCandidate] = useState<{
+    entry: Expense;
+    candidateClass: AssetCandidateClass;
+  } | null>(null);
   // 取引先の新規登録用の一時状態
   const [isAddingPartner, setIsAddingPartner] = useState(false);
   const [newPartnerName, setNewPartnerName] = useState("");
@@ -1513,6 +1577,45 @@ export default function CostProfitSection({
     () => depreciationSchedule(fixedAssets, fiscalYear),
     [fixedAssets, fiscalYear],
   );
+
+  // ── 固定資産と取引の連携 ───────────────────────────────────────────────
+  const expensesById = useMemo(
+    () => new Map(expenses.map((entry) => [entry.id, entry])),
+    [expenses],
+  );
+
+  /** 台帳に未登録の固定資産取引。台帳の「取引から登録」と確認キューの両方で使う。 */
+  const unlinkedAssetEntryRows = useMemo(
+    () => unlinkedAssetEntries(expenses, fixedAssets),
+    [expenses, fixedAssets],
+  );
+
+  const assetEntryOptions = useMemo(
+    () =>
+      unlinkedAssetEntryRows.map((entry) => ({
+        value: String(entry.id),
+        label: `${entry.date.replaceAll("-", "/")}　${entry.partner || "取引先なし"}　${entry.item}　${currency(entry.amount)}`,
+      })),
+    [unlinkedAssetEntryRows],
+  );
+
+  /** 資産ID → 取引連携の状態。一覧のバッジと詳細で共有する。 */
+  const assetLinkStatuses = useMemo(() => {
+    const statuses = new Map<number, FixedAssetLinkStatus>();
+    for (const asset of fixedAssets) {
+      statuses.set(
+        asset.id,
+        fixedAssetLinkStatus(
+          asset,
+          asset.entryId === null
+            ? undefined
+            : expensesById.get(asset.entryId),
+          fiscalYear,
+        ),
+      );
+    }
+    return statuses;
+  }, [fixedAssets, expensesById, fiscalYear]);
 
   // 帳簿・財務3表は取引管理に入力された実データと決算整理仕訳だけから作る。
   // 仕訳 → 総勘定元帳 → 合計残高試算表 → 損益計算書・貸借対照表 の順に導出する。
@@ -1811,6 +1914,16 @@ export default function CostProfitSection({
           memo: "",
         }));
         notifySuccess(`${typeLabel}を保存し、仕訳帳と財務概要へ反映しました。`);
+
+        // 固定資産に該当しそうな取引は、保存直後に台帳への導線を出す。
+        // ここで拾わないと「支出だけ記録され、償却されない資産」が残る。
+        if (Number.isFinite(createdId)) {
+          const createdEntry: Expense = { id: createdId, ...expense };
+          const candidateClass = classifyAssetCandidate(createdEntry);
+          if (candidateClass) {
+            setAssetCandidate({ entry: createdEntry, candidateClass });
+          }
+        }
       }
       setIsEntryDrawerOpen(false);
     } catch (error) {
@@ -3054,15 +3167,30 @@ export default function CostProfitSection({
     [allEntries],
   );
 
+  // 台帳へ未登録の固定資産取引。資産科目に計上済みなので償却されないまま残ってしまう。
+  const unlinkedAssetEntryIds = useMemo(
+    () => new Set(unlinkedAssetEntryRows.map((entry) => entry.id)),
+    [unlinkedAssetEntryRows],
+  );
+
   const entryStateOf = useCallback(
     (entry: Expense): EntryState => {
       if (revisedEntryIds.has(entry.id)) return "revised";
-      if (duplicateEntryIds.has(entry.id) || unknownAccountEntryIds.has(entry.id)) {
+      if (
+        duplicateEntryIds.has(entry.id)
+        || unknownAccountEntryIds.has(entry.id)
+        || unlinkedAssetEntryIds.has(entry.id)
+      ) {
         return "review";
       }
       return "registered";
     },
-    [revisedEntryIds, duplicateEntryIds, unknownAccountEntryIds],
+    [
+      revisedEntryIds,
+      duplicateEntryIds,
+      unknownAccountEntryIds,
+      unlinkedAssetEntryIds,
+    ],
   );
 
   const hasReceipt = (entry: Expense) => (entry.receipts ?? []).length > 0;
@@ -3161,6 +3289,9 @@ export default function CostProfitSection({
   const reviewQueue = useMemo(() => {
     const rowsFor = (key: ReviewQueueKey) => {
       if (key === "noReceipt") return entryRows.filter((entry) => !hasReceipt(entry));
+      if (key === "fixedAsset") {
+        return entryRows.filter((entry) => unlinkedAssetEntryIds.has(entry.id));
+      }
       if (key === "amount") return entryRows.filter((entry) => duplicateEntryIds.has(entry.id));
       if (key === "account") {
         return entryRows.filter((entry) => unknownAccountEntryIds.has(entry.id));
@@ -3170,7 +3301,13 @@ export default function CostProfitSection({
     return REVIEW_QUEUE_DEFS.map((def) => ({ ...def, rows: rowsFor(def.key) })).filter(
       (group) => group.rows.length > 0,
     );
-  }, [entryRows, duplicateEntryIds, unknownAccountEntryIds, revisedEntryIds]);
+  }, [
+    entryRows,
+    duplicateEntryIds,
+    unknownAccountEntryIds,
+    unlinkedAssetEntryIds,
+    revisedEntryIds,
+  ]);
 
   const selectedEntries = entryRows.filter((entry) =>
     selectedEntryIds.includes(entry.id),
@@ -3609,6 +3746,300 @@ export default function CostProfitSection({
         </div>
       </div>
     </Drawer>
+  );
+
+  // 固定資産1件の来歴。購入取引 → 固定資産 → 取得仕訳 → 減価償却仕訳 を縦に並べ、
+  // どこが欠けているか（取引未連携・取得仕訳なし・証憑なし）を一目で分かるようにする。
+  const assetDetail = useMemo(() => {
+    if (assetDetailId === null) return null;
+    const asset = fixedAssets.find((row) => row.id === assetDetailId);
+    if (!asset) return null;
+    const entry = asset.entryId === null ? null : expensesById.get(asset.entryId);
+    return {
+      asset,
+      entry: entry ?? null,
+      status: assetLinkStatuses.get(asset.id) ?? "direct",
+      row: depreciation.rows.find((row) => row.asset.id === asset.id) ?? null,
+      // 取得仕訳は取引から、減価償却仕訳は台帳から生成される（journal.ts）。
+      acquisitionEntry:
+        asset.entryId === null
+          ? null
+          : (journal.find((item) => item.entryId === asset.entryId) ?? null),
+      depreciationEntry:
+        journal.find((item) => item.entryId === -asset.id) ?? null,
+    };
+  }, [
+    assetDetailId,
+    fixedAssets,
+    expensesById,
+    assetLinkStatuses,
+    depreciation.rows,
+    journal,
+  ]);
+
+  const assetChainArrow = (
+    <div
+      className="pl-3 font-acumin text-sm text-[#707070]"
+      aria-hidden="true"
+    >
+      ↓
+    </div>
+  );
+
+  const assetDetailDrawer = (
+    <Drawer
+      open={assetDetail !== null}
+      onClose={() => setAssetDetailId(null)}
+      side="right"
+      size="md"
+      shape="square"
+      className="flex w-[min(92vw,460px)] flex-col bg-white"
+    >
+      <div className="flex items-center justify-between border-b border-[#d4d4d4] px-5 py-4">
+        <h4 className="font-acumin text-sm font-medium tracking-widest text-black">
+          固定資産の詳細
+        </h4>
+        <button
+          type="button"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-sm text-[#474747] hover:bg-[#f0f0f0] hover:text-black"
+          aria-label="固定資産の詳細を閉じる"
+          onClick={() => setAssetDetailId(null)}
+        >
+          <i className="ri-close-line text-lg" aria-hidden="true" />
+        </button>
+      </div>
+
+      {assetDetail ? (
+        <section
+          className="min-h-0 flex-1 space-y-1 overflow-y-auto px-5 py-4"
+          aria-label="固定資産の来歴"
+        >
+          <section className="border border-[#d4d4d4] p-3">
+            <h5 className="font-acumin text-[11px] tracking-widest text-[#474747]">
+              購入取引
+            </h5>
+            {assetDetail.entry ? (
+              <>
+                <p className="mt-1 font-acumin text-xs text-black tabular-nums">
+                  {assetDetail.entry.date.replaceAll("-", "/")}
+                  {assetDetail.entry.partner || "取引先なし"}
+                  {currency(assetDetail.entry.amount)}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    size="3xs"
+                    shape="rounded"
+                    className="font-acumin"
+                    onClick={() => {
+                      const target = assetDetail.entry;
+                      if (!target) return;
+                      setAssetDetailId(null);
+                      handleStartEdit(target);
+                    }}
+                  >
+                    取引を訂正
+                  </Button>
+                  {assetDetail.entry.receipts?.length ? (
+                    <Button
+                      variant="outline"
+                      size="3xs"
+                      shape="rounded"
+                      className="font-acumin"
+                      onClick={() => {
+                        const receipt = assetDetail.entry?.receipts?.[0];
+                        if (receipt) void handleOpenReceipt(receipt);
+                      }}
+                    >
+                      証憑を開く
+                    </Button>
+                  ) : (
+                    <span className="font-acumin text-[11px] text-[#b45309]">
+                      証憑が添付されていません
+                    </span>
+                  )}
+                </div>
+              </>
+            ) : (
+              <p className="mt-1 font-acumin text-xs text-[#707070]">
+                {assetDetail.asset.entryId === null
+                  ? "購入取引なし（直接登録）"
+                  : "連携先の取引が見つかりません（削除された可能性があります）"}
+              </p>
+            )}
+          </section>
+
+          {assetChainArrow}
+
+          <section className="border border-[#d4d4d4] p-3">
+            <h5 className="font-acumin text-[11px] tracking-widest text-[#474747]">
+              固定資産
+            </h5>
+            <p className="mt-1 font-acumin text-xs text-black">
+              {fixedAssetCode(assetDetail.asset)}　{assetDetail.asset.name}
+            </p>
+            <p className="mt-1 font-acumin text-[11px] text-[#474747]">
+              {DEPRECIATION_METHOD_LABELS[assetDetail.asset.method]}
+              {assetDetail.asset.method === "straightLine"
+                ? `　耐用年数${assetDetail.asset.usefulLife}年`
+                : ""}
+              　事業専用割合{assetDetail.asset.businessUseRatio}%
+            </p>
+            {assetDetail.asset.serviceStartedOn ? (
+              <p className="mt-1 font-acumin text-[11px] text-[#474747] tabular-nums">
+                使用開始日{" "}
+                {assetDetail.asset.serviceStartedOn.replaceAll("-", "/")}
+              </p>
+            ) : null}
+          </section>
+
+          {assetChainArrow}
+
+          <section className="border border-[#d4d4d4] p-3">
+            <h5 className="font-acumin text-[11px] tracking-widest text-[#474747]">
+              取得仕訳
+            </h5>
+            {assetDetail.acquisitionEntry ? (
+              <div className="mt-1 space-y-1">
+                {assetDetail.acquisitionEntry.lines.map((line, index) => (
+                  <p
+                    key={`${line.account.code}-${index}`}
+                    className="font-acumin text-xs text-black tabular-nums"
+                  >
+                    {line.account.name}
+                    {line.debit > 0
+                      ? `${currency(line.debit)} / —`
+                      : `— / ${currency(line.credit)}`}
+                  </p>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-1 font-acumin text-xs text-[#b91c1c]">
+                取得仕訳がありません。取引管理へ購入取引を登録してください。
+              </p>
+            )}
+          </section>
+
+          {assetChainArrow}
+
+          <section className="border border-[#d4d4d4] p-3">
+            <h5 className="font-acumin text-[11px] tracking-widest text-[#474747]">
+              減価償却仕訳（{fiscalYear}年度）
+            </h5>
+            {assetDetail.depreciationEntry ? (
+              <div className="mt-1 space-y-1">
+                {assetDetail.depreciationEntry.lines.map((line, index) => (
+                  <p
+                    key={`${line.account.code}-${index}`}
+                    className="font-acumin text-xs text-black tabular-nums"
+                  >
+                    {line.account.name}
+                    {line.debit > 0
+                      ? `${currency(line.debit)} / —`
+                      : `— / ${currency(line.credit)}`}
+                  </p>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-1 font-acumin text-xs text-[#707070]">
+                当年度の償却はありません（償却済み・供用前・除却済みのいずれか）。
+              </p>
+            )}
+            {assetDetail.row ? (
+              <p className="mt-2 font-acumin text-[11px] text-[#474747] tabular-nums">
+                期末簿価 {currency(assetDetail.row.closingBookValue)}　累計{" "}
+                {currency(assetDetail.row.accumulated)}
+              </p>
+            ) : null}
+          </section>
+        </section>
+      ) : null}
+    </Drawer>
+  );
+
+  // 固定資産候補の案内。選択肢は候補クラスで変える。
+  //   asset   … 資産科目で取得仕訳が既に立っている。台帳登録から逃がしてはいけないので
+  //             「費用として処理」は出さず、科目の修正か台帳登録の二択にする。
+  //   suspect … 費用科目のまま台帳へ入れると取得仕訳と食い違う。まず科目を直させる。
+  const assetCandidateDialog = (
+    <Dialog
+      open={assetCandidate !== null}
+      onClose={() => setAssetCandidate(null)}
+      shape="square"
+      size="sm"
+      title={
+        assetCandidate?.candidateClass === "asset"
+          ? "この取引は固定資産です"
+          : "10万円以上の支出です"
+      }
+      description={
+        assetCandidate?.candidateClass === "asset"
+          ? "取得仕訳は資産として計上されています。固定資産台帳へ登録しないと減価償却されません。"
+          : "固定資産に該当しませんか。該当する場合は先に勘定科目を固定資産へ修正してください。"
+      }
+    >
+      <div className="flex flex-col gap-2">
+        {assetCandidate ? (
+          <p className="font-acumin text-xs text-[#474747] tabular-nums">
+            {assetCandidate.entry.date.replaceAll("-", "/")}
+            {assetCandidate.entry.partner || "取引先なし"}
+            {assetCandidate.entry.item}
+            {currency(assetCandidate.entry.amount)}
+          </p>
+        ) : null}
+
+        {assetCandidate?.candidateClass === "asset" ? (
+          <Button
+            variant="primary"
+            size="sm"
+            className="w-full font-acumin"
+            onClick={() => {
+              if (assetCandidate) startAssetFromEntry(assetCandidate.entry);
+            }}
+          >
+            固定資産として登録
+          </Button>
+        ) : null}
+
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full font-acumin"
+          onClick={() => {
+            const target = assetCandidate?.entry;
+            setAssetCandidate(null);
+            if (target) handleStartEdit(target);
+          }}
+        >
+          勘定科目を修正
+        </Button>
+
+        {assetCandidate?.candidateClass === "suspect" ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full font-acumin"
+            disabled={isSaving}
+            onClick={() => {
+              if (assetCandidate) {
+                void handleDismissAssetCandidate(assetCandidate.entry);
+              }
+            }}
+          >
+            このまま費用として処理
+          </Button>
+        ) : null}
+
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full font-acumin"
+          onClick={() => setAssetCandidate(null)}
+        >
+          あとで確認
+        </Button>
+      </div>
+    </Dialog>
   );
 
   // 証憑（電子取引データ）の追加。ドラッグ＆ドロップとクリック選択の両方を受ける。
@@ -4732,6 +5163,7 @@ export default function CostProfitSection({
       {filterDrawer}
       {entryDrawer}
       {receiptDrawer}
+      {assetCandidateDialog}
     </div>
   );
 
@@ -4753,6 +5185,63 @@ export default function CostProfitSection({
     [businessType],
   );
 
+  /** 資産名・科目・金額・取得日・償却方法を取引から引き継ぐ。 */
+  const fillAssetFormFromEntry = (entry: Expense) => {
+    setAssetMessage(null);
+    setAssetForm((current) => ({
+      ...current,
+      entryId: entry.id,
+      name: entry.item,
+      account: entry.category,
+      acquiredOn: entry.date,
+      acquisitionCost: String(entry.amount),
+      // 金額から償却方法の初期値を推奨する（利用者は後から変えられる）。
+      method: suggestDepreciationMethod(entry.amount),
+    }));
+  };
+
+  const applyAssetEntry = (entryId: number | null) => {
+    if (entryId === null) {
+      setAssetForm((current) => ({
+        ...current,
+        entryId: null,
+        acquisitionCost: "",
+        acquiredOn: new Date().toLocaleDateString("sv-SE"),
+      }));
+      return;
+    }
+    const entry = expensesById.get(entryId);
+    if (entry) fillAssetFormFromEntry(entry);
+  };
+
+  /** 誘導ダイアログから固定資産の登録フォームへ送る。 */
+  const startAssetFromEntry = (entry: Expense) => {
+    setAssetCandidate(null);
+    setAssetRegisterMode("fromEntry");
+    fillAssetFormFromEntry(entry);
+    setActiveTab("journal");
+    setLedgerTab("assets");
+  };
+
+  /** 固定資産候補の疑いを解いて費用として処理する（科目違いの疑いのみ）。 */
+  const handleDismissAssetCandidate = async (entry: Expense) => {
+    setAssetCandidate(null);
+    try {
+      setIsSaving(true);
+      await postMutation({
+        operation: "entry.assetExempt",
+        expenseId: entry.id,
+        exempt: true,
+      });
+      await loadFinanceData();
+      notifySuccess("費用として処理しました。確認キューから外します。");
+    } catch (error) {
+      notifyError(error, "固定資産の確認状態の保存に失敗しました。");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleSaveFixedAsset = async () => {
     const cost = Number(assetForm.acquisitionCost);
     if (!assetForm.name.trim() || !assetForm.account || !assetForm.acquiredOn) {
@@ -4761,6 +5250,10 @@ export default function CostProfitSection({
     }
     if (!Number.isFinite(cost) || cost <= 0) {
       setAssetMessage("取得価額は1円以上で入力してください。");
+      return;
+    }
+    if (assetRegisterMode === "fromEntry" && assetForm.entryId === null) {
+      setAssetMessage("連携する購入取引を選択してください。");
       return;
     }
     try {
@@ -4772,6 +5265,7 @@ export default function CostProfitSection({
           id: 0,
           name: assetForm.name.trim(),
           account: assetForm.account,
+          // 連携時はサーバー側が取引の金額・取得日で上書きする。ここは表示との整合用。
           acquiredOn: assetForm.acquiredOn,
           acquisitionCost: Math.round(cost),
           usefulLife: Math.max(1, Number(assetForm.usefulLife) || 1),
@@ -4781,12 +5275,18 @@ export default function CostProfitSection({
             Math.max(1, Number(assetForm.businessUseRatio) || 100),
           ),
           disposedOn: assetForm.disposedOn || null,
+          serviceStartedOn: assetForm.serviceStartedOn || null,
+          entryId: assetRegisterMode === "fromEntry" ? assetForm.entryId : null,
           memo: "",
         },
       });
       await loadFinanceData();
       setAssetForm(EMPTY_ASSET_FORM);
-      setAssetMessage("固定資産を登録し、減価償却費へ反映しました。");
+      setAssetMessage(
+        assetRegisterMode === "fromEntry"
+          ? "固定資産を登録し、購入取引と紐付けました。"
+          : "固定資産を登録し、減価償却費へ反映しました。",
+      );
     } catch (error) {
       setAssetMessage(
         error instanceof Error
@@ -6322,7 +6822,7 @@ export default function CostProfitSection({
         }
       }
       if (!keyword) return true;
-      return `${row.asset.name} ${row.asset.account} #${row.asset.id}`
+      return `${row.asset.name} ${row.asset.account} ${fixedAssetCode(row.asset)} #${row.asset.id}`
         .toLowerCase()
         .includes(keyword);
     });
@@ -6482,6 +6982,10 @@ export default function CostProfitSection({
   );
 
   // 償却シミュレーション。入力中のフォームをそのまま1件の資産として試算する。
+  /** 取引と連携中か。連携中は取得価額・取得日を編集させない。 */
+  const isAssetLinked =
+    assetRegisterMode === "fromEntry" && assetForm.entryId !== null;
+
   const assetSimulation = useMemo(() => {
     const cost = Math.max(0, Math.round(Number(assetForm.acquisitionCost) || 0));
     const usefulLife = Math.max(1, Number(assetForm.usefulLife) || 1);
@@ -6502,12 +7006,17 @@ export default function CostProfitSection({
       method: assetForm.method,
       businessUseRatio: ratio,
       disposedOn: null,
+      serviceStartedOn: assetForm.serviceStartedOn || null,
       memo: "",
     };
-    const acquiredYear = Number.parseInt(assetForm.acquiredOn.slice(0, 4), 10);
+    // 償却は供用日から始まるので、満年ベースの起点も供用年に合わせる。
+    const startYear = Number.parseInt(
+      (assetForm.serviceStartedOn || assetForm.acquiredOn).slice(0, 4),
+      10,
+    );
     return {
-      // 年間償却額（概算）は月割の影響を受けない満年ベース＝取得翌年の額。
-      annual: depreciationForYear(draft, acquiredYear + 1).depreciation,
+      // 年間償却額（概算）は月割の影響を受けない満年ベース＝供用翌年の額。
+      annual: depreciationForYear(draft, startYear + 1).depreciation,
       currentYear: depreciationForYear(draft, fiscalYear).depreciation,
       residual: assetForm.method === "straightLine" ? 1 : 0,
     };
@@ -6515,6 +7024,7 @@ export default function CostProfitSection({
 
   const assetsView = (
     <div className="space-y-4">
+      {assetDetailDrawer}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h3 className="font-acumin text-base font-medium tracking-widest text-black">
@@ -6607,7 +7117,40 @@ export default function CostProfitSection({
                   key: "name",
                   header: "資産名",
                   cellClassName: "whitespace-nowrap",
-                  render: (row) => row.asset.name,
+                  render: (row) => (
+                    <button
+                      type="button"
+                      className="text-left hover:underline"
+                      aria-label={`${row.asset.name}の詳細`}
+                      onClick={() => setAssetDetailId(row.asset.id)}
+                    >
+                      <span className="block text-black">{row.asset.name}</span>
+                      <span className="block text-[10px] text-[#707070] tabular-nums">
+                        {fixedAssetCode(row.asset)}
+                      </span>
+                    </button>
+                  ),
+                },
+                {
+                  key: "linkStatus",
+                  header: "状態",
+                  cellClassName: "whitespace-nowrap",
+                  render: (row) => {
+                    const status =
+                      assetLinkStatuses.get(row.asset.id) ?? "direct";
+                    return (
+                      <StatusBadge
+                        variant="text"
+                        shape="pill"
+                        size="3xs"
+                        tone={FIXED_ASSET_LINK_STATUS_TONES[status]}
+                        accent
+                        className="font-acumin"
+                      >
+                        {FIXED_ASSET_LINK_STATUS_LABELS[status]}
+                      </StatusBadge>
+                    );
+                  },
                 },
                 {
                   key: "usefulLife",
@@ -6761,6 +7304,56 @@ export default function CostProfitSection({
           }
         >
           <div className="space-y-2.5">
+            {/*
+              取得価額・取得日は取引が単一の情報源。二重入力と金額の食い違いを
+              起こさないため「取引から登録」を既定にし、直接登録は例外用途に残す。
+            */}
+            <TabSegmentControl
+              variant="tabs-standard"
+              size="2xs"
+              activeKey={assetRegisterMode}
+              onChange={(key) => {
+                const mode = key as AssetRegisterMode;
+                setAssetRegisterMode(mode);
+                setAssetMessage(null);
+                if (mode === "direct") applyAssetEntry(null);
+              }}
+              items={[
+                { key: "fromEntry", label: "取引から登録" },
+                { key: "direct", label: "直接登録" },
+              ]}
+            />
+
+            {assetRegisterMode === "fromEntry" ? (
+              <div className="block">
+                <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+                  購入取引 <span className="text-red-700">*</span>
+                </span>
+                {assetEntryOptions.length === 0 ? (
+                  <p className="font-acumin text-xs text-[#707070]">
+                    台帳へ未登録の固定資産の取引はありません。取引管理で購入取引を登録してください。
+                  </p>
+                ) : (
+                  <SingleSelect
+                    variant="dropdown"
+                    block
+                    size="sm"
+                    aria-label="連携する購入取引"
+                    className="font-acumin"
+                    options={assetEntryOptions}
+                    value={
+                      assetForm.entryId === null ? "" : String(assetForm.entryId)
+                    }
+                    onValueChange={(value) => applyAssetEntry(Number(value))}
+                  />
+                )}
+              </div>
+            ) : (
+              <p className="font-acumin text-[11px] text-[#707070]">
+                期首残高の移行・過去資産・現物発見の登録用。取得仕訳は生成されないため、別途取引管理へ登録してください。
+              </p>
+            )}
+
             <label className="block">
               <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
                 資産名 <span className="text-red-700">*</span>
@@ -6797,37 +7390,85 @@ export default function CostProfitSection({
               />
             </div>
 
-            <label className="block">
-              <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
-                取得金額 <span className="text-red-700">*</span>
-              </span>
-              <input
-                type="number"
-                min="1"
-                value={assetForm.acquisitionCost}
-                onChange={(event) =>
-                  setAssetForm((current) => ({
-                    ...current,
-                    acquisitionCost: event.target.value,
-                  }))
-                }
-                className={inputClassName}
-                placeholder="0"
-              />
-            </label>
+            {isAssetLinked ? (
+              // 連携中は取引が単一の情報源。ここで直せると食い違いが生まれるので読ませるだけにする。
+              <div className="border border-[#d4d4d4] bg-[#fafafa] p-2.5">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="font-acumin text-[11px] text-[#474747]">
+                    取得金額
+                  </span>
+                  <span
+                    className="font-acumin text-sm font-medium text-black tabular-nums"
+                    data-testid="asset-acquisition-cost-readonly"
+                  >
+                    {currency(Number(assetForm.acquisitionCost) || 0)}
+                  </span>
+                </div>
+                <div className="mt-1.5 flex items-baseline justify-between gap-2">
+                  <span className="font-acumin text-[11px] text-[#474747]">
+                    取得日
+                  </span>
+                  <span className="font-acumin text-xs text-black tabular-nums">
+                    {assetForm.acquiredOn.replaceAll("-", "/")}
+                  </span>
+                </div>
+                <p className="mt-2 font-acumin text-[11px] text-[#707070]">
+                  取得金額・取得日は取引管理で訂正できます。
+                </p>
+              </div>
+            ) : (
+              <>
+                <label className="block">
+                  <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+                    取得金額 <span className="text-red-700">*</span>
+                  </span>
+                  <input
+                    type="number"
+                    min="1"
+                    value={assetForm.acquisitionCost}
+                    onChange={(event) =>
+                      setAssetForm((current) => ({
+                        ...current,
+                        acquisitionCost: event.target.value,
+                      }))
+                    }
+                    className={inputClassName}
+                    placeholder="0"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
+                    取得日 <span className="text-red-700">*</span>
+                  </span>
+                  <input
+                    type="date"
+                    value={assetForm.acquiredOn}
+                    onChange={(event) =>
+                      setAssetForm((current) => ({
+                        ...current,
+                        acquiredOn: event.target.value,
+                      }))
+                    }
+                    className={inputClassName}
+                  />
+                </label>
+              </>
+            )}
 
             <div className="space-y-2.5">
               <label className="block">
                 <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
-                  取得日 <span className="text-red-700">*</span>
+                  使用開始日（任意・未入力なら取得日）
                 </span>
                 <input
                   type="date"
-                  value={assetForm.acquiredOn}
+                  value={assetForm.serviceStartedOn}
+                  min={assetForm.acquiredOn || undefined}
                   onChange={(event) =>
                     setAssetForm((current) => ({
                       ...current,
-                      acquiredOn: event.target.value,
+                      serviceStartedOn: event.target.value,
                     }))
                   }
                   className={inputClassName}

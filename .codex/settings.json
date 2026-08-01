@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('scripts',{}\\), indent=2\\)\\)\")",
+      "Bash(npx next *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3333/ui)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/ui)",
+      "Bash(node -e ' *)",
+      "Bash(npx playwright *)",
+      "Bash(Remove-Item \"e2e\\\\slider-track-measure.spec.ts\" -Force)",
+      "Bash(Write-Output \"deleted\")",
+      "Bash(where psql *)",
+      "Bash(where supabase *)",
+      "Bash(npx supabase *)",
+      "Bash(git fetch *)",
+      "Bash(git push *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(node -e \"const p = require\\('./node_modules/@types/react/package.json'\\); console.log\\(p.version\\)\")",
+      "PowerShell(npx tsc --noEmit)",
+      "PowerShell(npx eslint src/app/account/page.tsx src/app/checkout/page.tsx src/app/api/profile/addresses/route.ts)",
+      "PowerShell(npx eslint src/app/checkout/page.tsx src/app/cart/page.tsx src/app/api/checkout/complete/route.ts src/app/api/checkout/create-session/route.ts src/features/checkout/services/checkout-pricing.service.ts)",
+      "Bash(npx eslint *)",
+      "Bash(npx jest *)",
+      "mcp__claude_ai_Supabase__list_projects",
+      "mcp__claude_ai_Supabase__list_tables",
+      "mcp__claude_ai_Supabase__list_migrations",
+      "mcp__claude_ai_Supabase__apply_migration",
+      "mcp__claude_ai_Supabase__get_advisors",
+      "WebFetch(domain:hyke.jp)",
+      "WebFetch(domain:ssstein.com)",
+      "WebFetch(domain:auralee.jp)"
+    ]
+  }
+}

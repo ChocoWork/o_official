@@ -192,6 +192,9 @@ for (const viewport of viewports) {
     test('固定資産を登録すると fixedAsset.upsert がPOSTされる', async ({ page }) => {
       await openFixedAssets(page);
 
+      // FREQ-260 以降、登録方法の既定は「取引から登録」。
+      // ここは取引を経由しない直接登録の経路を検証する。
+      await page.getByRole('tab', { name: '直接登録', exact: true }).click();
       await page.getByPlaceholder('工業用ミシン').fill('裁断機');
       await page.getByPlaceholder('0').fill('450000');
       await page.getByRole('button', { name: '固定資産を保存' }).click();

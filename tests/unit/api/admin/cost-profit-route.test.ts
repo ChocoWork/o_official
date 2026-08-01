@@ -360,3 +360,254 @@ describe('POST /api/admin/kpi/cost-profit', () => {
 		);
 	});
 });
+
+// FREQ-260: 固定資産と購入取引の連携。
+// 取得価額・取得日は取引が単一の情報源で、台帳はサーバー側で取引に追随させる。
+describe('POST /api/admin/kpi/cost-profit（固定資産の取引連携）', () => {
+	beforeEach(() => {
+		jest.clearAllMocks();
+		authorizeMock.mockResolvedValue(ADMIN);
+	});
+
+	const assetPayload = {
+		id: 0,
+		name: '業務用PC',
+		account: '工具器具備品',
+		// クライアントが送ってくる金額・取得日。連携時はこれを採用してはいけない。
+		acquiredOn: '2020-01-01',
+		acquisitionCost: 1,
+		usefulLife: 6,
+		method: 'straightLine',
+		businessUseRatio: 100,
+		disposedOn: null,
+		serviceStartedOn: null,
+		entryId: 7,
+		memo: '',
+	};
+
+	function upsertMock(options: {
+		entry?: Record<string, unknown> | null;
+		existingAsset?: { id: number; name: string } | null;
+	}) {
+		const single = jest.fn().mockResolvedValue({ data: { id: 99 }, error: null });
+		const insert = jest.fn().mockReturnValue({ select: () => ({ single }) });
+		const assetSelect = jest.fn().mockReturnValue({
+			eq: () => ({
+				maybeSingle: () => Promise.resolve({ data: options.existingAsset ?? null, error: null }),
+			}),
+		});
+		const entrySelect = jest.fn().mockReturnValue({
+			eq: () => ({
+				is: () => ({ maybeSingle: () => Promise.resolve({ data: options.entry ?? null, error: null }) }),
+			}),
+		});
+		const from = jest.fn((table: string) =>
+			table === 'admin_finance_expenses' ? { select: entrySelect } : { select: assetSelect, insert },
+		);
+		return { from, insert };
+	}
+
+	function postAsset(asset: Record<string, unknown>) {
+		return POST(new Request('http://localhost/api/admin/kpi/cost-profit', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ operation: 'fixedAsset.upsert', asset }),
+		}));
+	}
+
+	it('連携時はクライアントの取得価額・取得日を無視して取引の値で保存する', async () => {
+		const { from, insert } = upsertMock({
+			entry: { id: 7, expense_date: '2026-08-01', amount: 300000, entry_type: 'expense', category: '工具器具備品' },
+		});
+		createServiceMock.mockResolvedValueOnce({ from } as never);
+
+		const response = await postAsset(assetPayload);
+
+		expect(response.status).toBe(200);
+		expect(insert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				acquired_on: '2026-08-01',
+				acquisition_cost: 300000,
+				entry_id: 7,
+				service_started_on: null,
+			}),
+		);
+	});
+
+	it('連携先の取引が存在しなければ400', async () => {
+		const { from } = upsertMock({ entry: null });
+		createServiceMock.mockResolvedValueOnce({ from } as never);
+
+		const response = await postAsset(assetPayload);
+		expect(response.status).toBe(400);
+		expect((await response.json()).error).toContain('連携先の取引が見つかりません');
+	});
+
+	it('取引の勘定科目が固定資産でなければ400', async () => {
+		// 消耗品費のままだと取得仕訳が費用として立ち、台帳と元帳が食い違う。
+		const { from } = upsertMock({
+			entry: { id: 7, expense_date: '2026-08-01', amount: 300000, entry_type: 'expense', category: '消耗品費' },
+		});
+		createServiceMock.mockResolvedValueOnce({ from } as never);
+
+		const response = await postAsset(assetPayload);
+		expect(response.status).toBe(400);
+		expect((await response.json()).error).toContain('消耗品費');
+	});
+
+	it('収入の取引には連携できない', async () => {
+		const { from } = upsertMock({
+			entry: { id: 7, expense_date: '2026-08-01', amount: 300000, entry_type: 'income', category: '工具器具備品' },
+		});
+		createServiceMock.mockResolvedValueOnce({ from } as never);
+
+		const response = await postAsset(assetPayload);
+		expect(response.status).toBe(400);
+	});
+
+	it('既に別の固定資産が連携している取引は409で弾く（二重計上の防止）', async () => {
+		const { from } = upsertMock({
+			entry: { id: 7, expense_date: '2026-08-01', amount: 300000, entry_type: 'expense', category: '工具器具備品' },
+			existingAsset: { id: 42, name: '業務用PC' },
+		});
+		createServiceMock.mockResolvedValueOnce({ from } as never);
+
+		const response = await postAsset(assetPayload);
+		expect(response.status).toBe(409);
+		expect((await response.json()).error).toContain('既に固定資産');
+	});
+
+	it('使用開始日が取得日より前なら400', async () => {
+		const { from } = upsertMock({
+			entry: { id: 7, expense_date: '2026-08-01', amount: 300000, entry_type: 'expense', category: '工具器具備品' },
+		});
+		createServiceMock.mockResolvedValueOnce({ from } as never);
+
+		const response = await postAsset({ ...assetPayload, serviceStartedOn: '2026-07-01' });
+		expect(response.status).toBe(400);
+	});
+
+	it('直接登録（entryId なし）はクライアントの取得価額・取得日をそのまま使う', async () => {
+		const { from, insert } = upsertMock({});
+		createServiceMock.mockResolvedValueOnce({ from } as never);
+
+		const response = await postAsset({
+			...assetPayload,
+			entryId: null,
+			acquiredOn: '2024-03-01',
+			acquisitionCost: 500000,
+		});
+
+		expect(response.status).toBe(200);
+		expect(from).not.toHaveBeenCalledWith('admin_finance_expenses');
+		expect(insert).toHaveBeenCalledWith(
+			expect.objectContaining({ acquired_on: '2024-03-01', acquisition_cost: 500000, entry_id: null }),
+		);
+	});
+
+	function expenseUpdateMock(linkedAsset: Record<string, unknown> | null) {
+		const assetUpdateEq = jest.fn().mockResolvedValue({ error: null });
+		const assetUpdate = jest.fn().mockReturnValue({ eq: assetUpdateEq });
+		const assetSelect = jest.fn().mockReturnValue({
+			eq: () => ({ maybeSingle: () => Promise.resolve({ data: linkedAsset, error: null }) }),
+		});
+		const expenseUpdate = jest.fn().mockReturnValue({
+			eq: () => ({ is: () => ({ select: () => Promise.resolve({ data: [{ id: 7 }], error: null }) }) }),
+		});
+		const from = jest.fn((table: string) =>
+			table === 'admin_finance_expenses'
+				? { update: expenseUpdate }
+				: { select: assetSelect, update: assetUpdate },
+		);
+		return { from, assetUpdate, assetUpdateEq };
+	}
+
+	function postExpenseUpdate(overrides: Record<string, unknown> = {}) {
+		return POST(new Request('http://localhost/api/admin/kpi/cost-profit', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				operation: 'expense.update',
+				fiscalYear: 2026,
+				expenseId: 7,
+				expense: {
+					entryType: 'expense',
+					date: '2026-08-01',
+					category: '工具器具備品',
+					item: '業務用PC',
+					partner: '株式会社A',
+					amount: 350000,
+					paymentMethod: '銀行',
+					memo: '',
+					...overrides,
+				},
+			}),
+		}));
+	}
+
+	it('取引の訂正に連携済みの固定資産を追随させる', async () => {
+		const { from, assetUpdate, assetUpdateEq } = expenseUpdateMock({
+			id: 42,
+			name: '業務用PC',
+			service_started_on: null,
+			disposed_on: null,
+		});
+		createServiceMock.mockResolvedValueOnce({ from } as never);
+
+		const response = await postExpenseUpdate();
+
+		expect(response.status).toBe(200);
+		expect(assetUpdate).toHaveBeenCalledWith({ acquisition_cost: 350000, acquired_on: '2026-08-01' });
+		expect(assetUpdateEq).toHaveBeenCalledWith('id', 42);
+	});
+
+	it('連携資産が無ければ台帳は触らない', async () => {
+		const { from, assetUpdate } = expenseUpdateMock(null);
+		createServiceMock.mockResolvedValueOnce({ from } as never);
+
+		const response = await postExpenseUpdate();
+
+		expect(response.status).toBe(200);
+		expect(assetUpdate).not.toHaveBeenCalled();
+	});
+
+	it('取引日を後ろへ動かして使用開始日が取得日より前になる訂正は409で差し戻す', async () => {
+		// 取引を書き換える前に弾き、取引だけ更新された中途半端な状態を作らない。
+		const { from, assetUpdate } = expenseUpdateMock({
+			id: 42,
+			name: '業務用PC',
+			service_started_on: '2026-06-01',
+			disposed_on: null,
+		});
+		createServiceMock.mockResolvedValueOnce({ from } as never);
+
+		const response = await postExpenseUpdate({ date: '2026-09-01' });
+
+		expect(response.status).toBe(409);
+		expect((await response.json()).error).toContain('業務用PC');
+		expect(from).not.toHaveBeenCalledWith('admin_finance_expenses');
+		expect(assetUpdate).not.toHaveBeenCalled();
+	});
+
+	it('固定資産候補の除外は取引内容を変えずフラグだけ立てる', async () => {
+		// updated_by を触らないので訂正履歴にも「訂正あり」としては残らない。
+		const select = jest.fn().mockResolvedValue({ data: [{ id: 7 }], error: null });
+		const isNull = jest.fn().mockReturnValue({ select });
+		const eq = jest.fn().mockReturnValue({ is: isNull });
+		const update = jest.fn().mockReturnValue({ eq });
+		const from = jest.fn().mockReturnValue({ update });
+		createServiceMock.mockResolvedValueOnce({ from } as never);
+
+		const response = await POST(new Request('http://localhost/api/admin/kpi/cost-profit', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ operation: 'entry.assetExempt', expenseId: 7, exempt: true }),
+		}));
+
+		expect(response.status).toBe(200);
+		expect(from).toHaveBeenCalledWith('admin_finance_expenses');
+		expect(update).toHaveBeenCalledWith({ fixed_asset_exempt: true });
+		expect(eq).toHaveBeenCalledWith('id', 7);
+		expect(isNull).toHaveBeenCalledWith('deleted_at', null);
+	});
+});

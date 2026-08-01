@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { logAudit } from '@/lib/audit';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { isFixedAssetAccount } from '@/lib/finance/fixed-asset-link';
 
 const seasonKeySchema = z.string().regex(/^\d{4}(SS|AW)$/);
 // 会計期間は暦年。取引・決算はすべてこの軸で扱う（シーズンは商品原価専用）。
@@ -57,6 +58,11 @@ const fixedAssetSchema = z.object({
 	method: z.enum(['straightLine', 'lumpSum3Year', 'immediate']),
 	businessUseRatio: z.coerce.number().int().min(1).max(100).default(100),
 	disposedOn: z.string().date().nullable().default(null),
+	// 事業供用日。null は取得日と同じ扱い。償却の月割はこの日から始まる。
+	serviceStartedOn: z.string().date().nullable().default(null),
+	// 取得の元になった購入取引。null は直接登録（期首残高の移行・過去資産・現物発見）。
+	// 連携時は取得価額・取得日をこの取引から取り直すので、クライアントの値は使わない。
+	entryId: z.coerce.number().int().positive().nullable().default(null),
 	memo: z.string().trim().max(500).default(''),
 });
 
@@ -115,6 +121,13 @@ const mutationSchema = z.discriminatedUnion('operation', [
 	z.object({
 		operation: z.literal('receipt.delete'),
 		receiptId: z.coerce.number().int().positive(),
+	}),
+	// 固定資産候補の確認結果（費用として処理する / 確認をやり直す）。
+	// 取引の内容は変えないため訂正履歴には残らない（migration 073）。
+	z.object({
+		operation: z.literal('entry.assetExempt'),
+		expenseId: z.coerce.number().int().positive(),
+		exempt: z.boolean(),
 	}),
 	z.object({
 		operation: z.literal('product.upsert'),
@@ -206,6 +219,7 @@ type ExpenseRow = {
 	payment_method: string;
 	memo: string;
 	season_key: string | null;
+	fixed_asset_exempt?: boolean | null;
 	admin_finance_receipts?: ReceiptRow[] | null;
 };
 
@@ -258,6 +272,8 @@ type FixedAssetRow = {
 	method: 'straightLine' | 'lumpSum3Year' | 'immediate';
 	business_use_ratio: number;
 	disposed_on: string | null;
+	service_started_on: string | null;
+	entry_id: number | null;
 	memo: string;
 };
 
@@ -340,6 +356,7 @@ function mapExpense(row: ExpenseRow) {
 		paymentMethod: row.payment_method,
 		memo: row.memo,
 		seasonTag: row.season_key ?? null,
+		fixedAssetExempt: row.fixed_asset_exempt ?? false,
 		receipts: (row.admin_finance_receipts ?? []).map((receipt) => ({
 			id: Number(receipt.id),
 			storagePath: receipt.storage_path,
@@ -420,6 +437,8 @@ function mapFixedAsset(row: FixedAssetRow) {
 		method: row.method,
 		businessUseRatio: Number(row.business_use_ratio),
 		disposedOn: row.disposed_on,
+		serviceStartedOn: row.service_started_on,
+		entryId: row.entry_id === null ? null : Number(row.entry_id),
 		memo: row.memo ?? '',
 	};
 }
@@ -506,7 +525,7 @@ export async function GET(request: Request) {
 			// 論理削除された取引は集計・表示から除く（履歴には残る）。
 			supabase
 				.from('admin_finance_expenses')
-				.select('id, entry_type, expense_date, category, item_name, partner, amount, payment_method, memo, season_key, admin_finance_receipts(id, storage_path, file_name, mime_type, file_size, created_at)')
+				.select('id, entry_type, expense_date, category, item_name, partner, amount, payment_method, memo, season_key, fixed_asset_exempt, admin_finance_receipts(id, storage_path, file_name, mime_type, file_size, created_at)')
 				.eq('fiscal_year', parsedYear.data)
 				.is('deleted_at', null)
 				.order('expense_date', { ascending: false })
@@ -531,7 +550,7 @@ export async function GET(request: Request) {
 			// 固定資産台帳もグローバル。年度をまたいで償却するため年で絞らない。
 			supabase
 				.from('admin_finance_fixed_assets')
-				.select('id, name, account, acquired_on, acquisition_cost, useful_life, method, business_use_ratio, disposed_on, memo')
+				.select('id, name, account, acquired_on, acquisition_cost, useful_life, method, business_use_ratio, disposed_on, service_started_on, entry_id, memo')
 				.order('acquired_on', { ascending: true })
 				.order('id', { ascending: true }),
 			// 当年度と前年度の決算。前年度のスナップショットが当年度の期首残高になる。
@@ -702,6 +721,30 @@ export async function POST(request: Request) {
 				if (seasonError) throw seasonError;
 			}
 
+			// 取得価額・取得日は取引が単一の情報源なので、連携済みの固定資産は取引に追随させる。
+			// ただし取引日を後ろへ動かすと台帳の使用開始日・除却日が取得日より前になり CHECK 制約に触れる。
+			// どちらを直すかは利用者の判断なので、取引を書き換える前に弾いて中途半端な状態を作らない。
+			const { data: linkedAsset, error: linkedAssetError } = await supabase
+				.from('admin_finance_fixed_assets')
+				.select('id, name, service_started_on, disposed_on')
+				.eq('entry_id', parsed.data.expenseId)
+				.maybeSingle();
+			if (linkedAssetError) throw linkedAssetError;
+
+			if (linkedAsset) {
+				const conflict = [linkedAsset.service_started_on, linkedAsset.disposed_on].some(
+					(date: string | null) => date !== null && date < expense.date,
+				);
+				if (conflict) {
+					return NextResponse.json(
+						{
+							error: `固定資産「${linkedAsset.name}」の使用開始日・除却日が取引日より前になります。先に固定資産側の日付を直してください。`,
+						},
+						{ status: 409 },
+					);
+				}
+			}
+
 			const { data, error } = await supabase
 				.from('admin_finance_expenses')
 				.update({
@@ -716,6 +759,30 @@ export async function POST(request: Request) {
 					memo: expense.memo,
 					updated_by: authz.userId,
 				})
+				.eq('id', parsed.data.expenseId)
+				.is('deleted_at', null)
+				.select('id');
+
+			if (error) throw error;
+			if (!data?.length) {
+				return NextResponse.json({ error: '取引が見つかりません。' }, { status: 404 });
+			}
+
+			if (linkedAsset) {
+				const { error: syncError } = await supabase
+					.from('admin_finance_fixed_assets')
+					.update({ acquisition_cost: expense.amount, acquired_on: expense.date })
+					.eq('id', linkedAsset.id);
+				if (syncError) throw syncError;
+			}
+
+			resourceId = String(parsed.data.expenseId);
+		} else if (parsed.data.operation === 'entry.assetExempt') {
+			// 固定資産候補の確認状態だけを更新する。updated_by は触らない
+			// （訂正者の記録を汚さないため。履歴もトリガー側で除外している）。
+			const { data, error } = await supabase
+				.from('admin_finance_expenses')
+				.update({ fixed_asset_exempt: parsed.data.exempt })
 				.eq('id', parsed.data.expenseId)
 				.is('deleted_at', null)
 				.select('id');
@@ -831,15 +898,85 @@ export async function POST(request: Request) {
 		} else if (parsed.data.operation === 'fixedAsset.upsert') {
 			// id=0 は新規登録。既存 id は更新。
 			const asset = parsed.data.asset;
+			// 取得価額・取得日は取引が単一の情報源。連携するならクライアントの値は信用せず
+			// 取引から取り直す。これで「台帳と取引で金額が違う」状態を作れなくする。
+			let acquiredOn = asset.acquiredOn;
+			let acquisitionCost = asset.acquisitionCost;
+
+			if (asset.entryId !== null) {
+				const { data: entry, error: entryError } = await supabase
+					.from('admin_finance_expenses')
+					.select('id, expense_date, amount, entry_type, category')
+					.eq('id', asset.entryId)
+					.is('deleted_at', null)
+					.maybeSingle();
+				if (entryError) throw entryError;
+
+				if (!entry) {
+					return NextResponse.json(
+						{ error: '連携先の取引が見つかりません。' },
+						{ status: 400 },
+					);
+				}
+				if (entry.entry_type !== 'expense') {
+					return NextResponse.json(
+						{ error: '収入の取引は固定資産に連携できません。' },
+						{ status: 400 },
+					);
+				}
+				// 科目が費用のままだと取得仕訳が費用として立ち、台帳と元帳が食い違う。
+				if (!isFixedAssetAccount(entry.category)) {
+					return NextResponse.json(
+						{
+							error: `取引の勘定科目「${entry.category}」は固定資産ではありません。先に取引の勘定科目を修正してください。`,
+						},
+						{ status: 400 },
+					);
+				}
+
+				// 1取引につき固定資産は1件（部分ユニークインデックスの裏付けあり）。
+				const { data: existing, error: existingError } = await supabase
+					.from('admin_finance_fixed_assets')
+					.select('id, name')
+					.eq('entry_id', asset.entryId)
+					.maybeSingle();
+				if (existingError) throw existingError;
+				if (existing && existing.id !== asset.id) {
+					return NextResponse.json(
+						{
+							error: `この取引は既に固定資産「${existing.name}」に連携されています。`,
+						},
+						{ status: 409 },
+					);
+				}
+
+				acquiredOn = entry.expense_date;
+				acquisitionCost = Number(entry.amount);
+			}
+
+			// 供用日・除却日が取得日より前になる組み合わせは DB の CHECK でも弾かれるが、
+			// 取得日を取引から取り直した結果そうなる場合があるので、先に読める文言で返す。
+			const invalidDate = [asset.serviceStartedOn, asset.disposedOn].some(
+				(date) => date !== null && date < acquiredOn,
+			);
+			if (invalidDate) {
+				return NextResponse.json(
+					{ error: '使用開始日・除却日は取得日以降で入力してください。' },
+					{ status: 400 },
+				);
+			}
+
 			const payload = {
 				name: asset.name,
 				account: asset.account,
-				acquired_on: asset.acquiredOn,
-				acquisition_cost: asset.acquisitionCost,
+				acquired_on: acquiredOn,
+				acquisition_cost: acquisitionCost,
 				useful_life: asset.usefulLife,
 				method: asset.method,
 				business_use_ratio: asset.businessUseRatio,
 				disposed_on: asset.disposedOn,
+				service_started_on: asset.serviceStartedOn,
+				entry_id: asset.entryId,
 				memo: asset.memo,
 			};
 

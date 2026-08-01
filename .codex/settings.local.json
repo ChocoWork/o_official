@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(cd c:\\\\work\\\\o_official; $output = npx tsc --noEmit 2>&1; $output | Where-Object { $_ -match \"TabSegment\" })",
+      "PowerShell(cd c:\\\\work\\\\o_official; $output = npx tsc --noEmit 2>&1; $filtered = $output | Where-Object { $_ -match \"TabSegment\" }; if \\($filtered\\) { $filtered } else { \"No TabSegment errors\" })"
+    ]
+  }
+}

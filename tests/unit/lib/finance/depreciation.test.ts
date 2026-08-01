@@ -202,3 +202,80 @@ describe('depreciationSchedule', () => {
 		expect(schedule.closingBookValueTotal + schedule.accumulatedTotal).toBe(acquiredCost);
 	});
 });
+
+describe('事業供用日（serviceStartedOn）', () => {
+	// 償却は取得した日ではなく事業の用に供した日から始まる（国税庁 No.2100）。
+
+	it('未設定なら取得日を起点にする（既存データの互換）', () => {
+		const withoutService = depreciationForYear(asset({ acquiredOn: '2026-07-01' }), 2026);
+		const withNullService = depreciationForYear(
+			asset({ acquiredOn: '2026-07-01', serviceStartedOn: null }),
+			2026,
+		);
+		// 600,000 × 0.167 × 6/12 = 50,100
+		expect(withoutService.depreciation).toBe(50_100);
+		expect(withNullService.depreciation).toBe(withoutService.depreciation);
+		expect(withNullService.months).toBe(6);
+	});
+
+	it('取得日より後に供用した年は供用月から月割する', () => {
+		const row = depreciationForYear(
+			asset({ acquiredOn: '2026-01-15', serviceStartedOn: '2026-10-01' }),
+			2026,
+		);
+		// 10月〜12月の3ヶ月 → 600,000 × 0.167 × 3/12 = 25,050
+		expect(row.months).toBe(3);
+		expect(row.depreciation).toBe(25_050);
+	});
+
+	it('取得年と供用年がずれる場合、取得年は償却せず供用年から始める', () => {
+		const target = asset({ acquiredOn: '2026-11-01', serviceStartedOn: '2027-04-01' });
+
+		const acquiredYear = depreciationForYear(target, 2026);
+		expect(acquiredYear.depreciation).toBe(0);
+		expect(acquiredYear.months).toBe(0);
+
+		const serviceYear = depreciationForYear(target, 2027);
+		// 4月〜12月の9ヶ月 → 600,000 × 0.167 × 9/12 = 75,150
+		expect(serviceYear.months).toBe(9);
+		expect(serviceYear.depreciation).toBe(75_150);
+		expect(serviceYear.openingBookValue).toBe(600_000);
+	});
+
+	it('一括償却は供用年度を1年目として3年で均等償却する', () => {
+		const target = asset({
+			acquiredOn: '2026-11-01',
+			serviceStartedOn: '2027-04-01',
+			acquisitionCost: 180_000,
+			method: 'lumpSum3Year',
+		});
+
+		expect(depreciationForYear(target, 2026).depreciation).toBe(0);
+		expect(depreciationForYear(target, 2027).depreciation).toBe(60_000);
+		expect(depreciationForYear(target, 2029).depreciation).toBe(60_000);
+		expect(depreciationForYear(target, 2029).closingBookValue).toBe(0);
+		expect(depreciationForYear(target, 2030).depreciation).toBe(0);
+	});
+
+	it('即時償却は取得年ではなく供用年に全額を償却する', () => {
+		const target = asset({
+			acquiredOn: '2026-11-01',
+			serviceStartedOn: '2027-04-01',
+			acquisitionCost: 90_000,
+			method: 'immediate',
+		});
+
+		expect(depreciationForYear(target, 2026).depreciation).toBe(0);
+		expect(depreciationForYear(target, 2027).depreciation).toBe(90_000);
+	});
+
+	it('depreciationSchedule は供用前の資産を明細から外す', () => {
+		const assets = [
+			asset({ id: 1, acquiredOn: '2026-11-01', serviceStartedOn: '2027-04-01' }),
+			asset({ id: 2, acquiredOn: '2026-03-01' }),
+		];
+		expect(depreciationSchedule(assets, 2026).rows.map((row) => row.asset.id)).toEqual([2]);
+		// 並びは従来どおり取得日順なので 2026-03-01 の id:2 が先。
+		expect(depreciationSchedule(assets, 2027).rows.map((row) => row.asset.id)).toEqual([2, 1]);
+	});
+});

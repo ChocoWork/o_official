@@ -20,6 +20,11 @@ export type FixedAsset = {
   /** 資産の勘定科目名（工具器具備品 / ソフトウェア 等） */
   account: string;
   acquiredOn: string;
+  /**
+   * 事業供用日。null は取得日と同じ。
+   * 償却は取得した日ではなく事業の用に供した日から始まる（国税庁 No.2100）。
+   */
+  serviceStartedOn?: string | null;
   acquisitionCost: number;
   usefulLife: number;
   method: DepreciationMethod;
@@ -53,15 +58,24 @@ function monthOf(date: string): number {
   return Number.parseInt(date.slice(5, 7), 10);
 }
 
-/** 当年の事業供用月数。取得年は取得月から、除却年は除却月まで（暦月単位）。 */
+/**
+ * 償却の起点となる日。事業供用日が未入力なら取得日と同じとみなす。
+ * 一括償却・即時償却の経過年数もこの日の属する年から数える（供用年度基準）。
+ */
+export function depreciationStartOn(asset: FixedAsset): string {
+  return asset.serviceStartedOn || asset.acquiredOn;
+}
+
+/** 当年の事業供用月数。供用年は供用月から、除却年は除却月まで（暦月単位）。 */
 function monthsInYear(asset: FixedAsset, fiscalYear: number): number {
-  const acquiredYear = yearOf(asset.acquiredOn);
+  const startOn = depreciationStartOn(asset);
+  const startYear = yearOf(startOn);
   const disposedYear = asset.disposedOn ? yearOf(asset.disposedOn) : null;
 
-  if (fiscalYear < acquiredYear) return 0;
+  if (fiscalYear < startYear) return 0;
   if (disposedYear !== null && fiscalYear > disposedYear) return 0;
 
-  const start = fiscalYear === acquiredYear ? monthOf(asset.acquiredOn) : 1;
+  const start = fiscalYear === startYear ? monthOf(startOn) : 1;
   const end =
     disposedYear !== null && fiscalYear === disposedYear
       ? monthOf(asset.disposedOn as string)
@@ -123,14 +137,14 @@ function residualValue(asset: FixedAsset): number {
 }
 
 /**
- * 指定年度の減価償却費。取得年から対象年まで積み上げて期首簿価を確定させるので、
+ * 指定年度の減価償却費。供用年から対象年まで積み上げて期首簿価を確定させるので、
  * 残存簿価の下限（定額法は1円）と最終年の端数処理が自然に効く。
  */
 export function depreciationForYear(
   asset: FixedAsset,
   fiscalYear: number,
 ): DepreciationForYear {
-  const acquiredYear = yearOf(asset.acquiredOn);
+  const startYear = yearOf(depreciationStartOn(asset));
   const residual = residualValue(asset);
 
   let bookValue = asset.acquisitionCost;
@@ -138,17 +152,17 @@ export function depreciationForYear(
   let depreciation = 0;
   let openingBookValue = asset.acquisitionCost;
 
-  for (let year = acquiredYear; year <= fiscalYear; year += 1) {
+  for (let year = startYear; year <= fiscalYear; year += 1) {
     openingBookValue = bookValue;
-    const theoretical = annualDepreciation(asset, year, year - acquiredYear);
+    const theoretical = annualDepreciation(asset, year, year - startYear);
     // 残存簿価を割らないように上限をかける。これが最終年の端数調整になる。
     depreciation = Math.max(0, Math.min(theoretical, bookValue - residual));
     bookValue -= depreciation;
     accumulated += depreciation;
   }
 
-  // 対象年より前に取得していない資産は当期の償却なし。
-  if (fiscalYear < acquiredYear) {
+  // 対象年より前に事業供用していない資産は当期の償却なし。
+  if (fiscalYear < startYear) {
     return {
       asset,
       openingBookValue: 0,
@@ -191,13 +205,13 @@ export type DepreciationSchedule = {
   accumulatedTotal: number;
 };
 
-/** 台帳全体の当年度償却明細。取得前・除却済みで動きのない資産は除く。 */
+/** 台帳全体の当年度償却明細。供用前・除却済みで動きのない資産は除く。 */
 export function depreciationSchedule(
   assets: readonly FixedAsset[],
   fiscalYear: number,
 ): DepreciationSchedule {
   const rows = assets
-    .filter((asset) => yearOf(asset.acquiredOn) <= fiscalYear)
+    .filter((asset) => yearOf(depreciationStartOn(asset)) <= fiscalYear)
     .map((asset) => depreciationForYear(asset, fiscalYear))
     .sort(
       (a, b) =>
