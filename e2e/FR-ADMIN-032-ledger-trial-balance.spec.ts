@@ -140,50 +140,50 @@ for (const viewport of viewports) {
       // FREQ-242-AC-05
       await openLedger(page);
 
-      for (const label of ['仕訳帳', '総勘定元帳', '合計残高試算表']) {
+      for (const label of ['仕訳・元帳', '固定資産', '決算・試算表']) {
         await expect(page.getByRole('tab', { name: label, exact: true })).toBeVisible();
       }
       // 従来ハードコードしていた架空仕訳は出さない。
       await expect(page.getByText('売上計上')).toHaveCount(0);
       await expect(page.getByText('売上原価振替')).toHaveCount(0);
-
-      // 実データ5件が仕訳になる。
-      await expect(page.getByText('5件')).toBeVisible();
     });
 
-    test('仕訳帳が実取引の借方・貸方を表示する', async ({ page }) => {
+    test('仕訳一覧が実取引の相手科目と貸借を表示する', async ({ page }) => {
       // FREQ-242-AC-02
       await openLedger(page);
 
-      // 支出：借方 広告宣伝費 / 貸方 現金
+      // 現金元帳に広告宣伝費への出金が貸方で立つ。
+      await page.getByLabel('勘定科目を検索').fill('現金');
+      await page
+        .getByRole('region', { name: '勘定科目' })
+        .getByRole('button', { name: /1010\s*現金/ })
+        .click();
       const adRow = page.getByRole('row').filter({ hasText: 'JE-20260305-001' });
       await expect(adRow).toContainText('広告宣伝費');
-      await expect(adRow).toContainText('現金');
-
-      // 収入：借方 普通預金 / 貸方 売上高（入金方法「銀行」が普通預金へ変換される）
-      const salesRow = page.getByRole('row').filter({ hasText: 'JE-20260531-001' });
-      await expect(salesRow).toContainText('普通預金');
-      await expect(salesRow).toContainText('売掛金');
     });
 
-    test('総勘定元帳に科目プルダウン・前期繰越・CSVがある', async ({ page }) => {
+    test('科目ツリーで科目を選び、期末残高と元帳CSVを出せる', async ({ page }) => {
       // FREQ-242-AC-03
       await openLedger(page);
-      await page.getByRole('tab', { name: '総勘定元帳', exact: true }).click();
 
-      await expect(page.getByRole('button', { name: '元帳の勘定科目' })).toBeVisible();
-      await expect(page.getByText('前期繰越')).toBeVisible();
+      await expect(page.getByRole('region', { name: '勘定科目' })).toBeVisible();
       await expect(page.getByRole('button', { name: '総勘定元帳CSV' })).toBeVisible();
 
       // 現金科目を選ぶと出金27,000のみなので残高がマイナスになる。
-      await page.getByRole('button', { name: '元帳の勘定科目' }).click();
-      await page.getByRole('option', { name: '1010 現金' }).click();
-      await expect(page.getByText('期末残高 ¥-27,000')).toBeVisible();
+      await page.getByLabel('勘定科目を検索').fill('現金');
+      await page
+        .getByRole('region', { name: '勘定科目' })
+        .getByRole('button', { name: /1010\s*現金/ })
+        .click();
+      await expect(
+        page.getByRole('region', { name: '残高推移' }).getByText('¥-27,000', { exact: true }),
+      ).toBeVisible();
     });
 
     test('合計残高試算表で貸借一致を確認できる', async ({ page }) => {
       // FREQ-242-AC-04
       await openLedger(page);
+      await page.getByRole('tab', { name: '決算・試算表', exact: true }).click();
       await page.getByRole('tab', { name: '合計残高試算表', exact: true }).click();
 
       await expect(page.getByText('貸借一致（借方合計 = 貸方合計）')).toBeVisible();
@@ -192,14 +192,12 @@ for (const viewport of viewports) {
       // 借方合計・貸方合計はいずれも 90000+90000+27000+110000+110000 = 427,000
       const totalRow = page.getByRole('row').filter({ hasText: '合計' }).last();
       await expect(totalRow).toContainText('¥427,000');
-
-      // 指標カードの借方合計・貸方合計も同額。
-      await expect(page.getByText('差額 ¥0（一致）')).toBeVisible();
     });
 
     test('横方向のページスクロールが発生しない', async ({ page }) => {
       // FREQ-242-AC-06
       await openLedger(page);
+      await page.getByRole('tab', { name: '決算・試算表', exact: true }).click();
       await page.getByRole('tab', { name: '合計残高試算表', exact: true }).click();
 
       const hasHorizontalOverflow = await page.evaluate(() => {

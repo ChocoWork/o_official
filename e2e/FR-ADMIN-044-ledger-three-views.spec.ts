@@ -1,0 +1,380 @@
+import { test, expect, Page } from '@playwright/test';
+
+// FREQ-258: 帳簿タブを「仕訳・元帳」「固定資産」「決算・試算表」の3枚に畳む。
+// 仕訳・元帳＝科目ツリー＋残高推移＋仕訳一覧＋仕訳詳細＋照合結果、
+// 固定資産＝サマリー4枚＋資産一覧＋償却推移＋償却シミュレーション＋償却予定表、
+// 決算・試算表＝財務3表／試算表／決算整理の切替と貸借対照表の構成・詳細。
+const viewports = [
+  { name: 'mobile', width: 390, height: 844 },
+  { name: 'tablet', width: 768, height: 1024 },
+  { name: 'desktop', width: 1280, height: 900 },
+];
+
+function metric(period: string) {
+  return {
+    period,
+    salesAmount: 0, formattedSales: '¥0',
+    cvr: 0, formattedCvr: '0.0%',
+    aov: 0, formattedAov: '¥0',
+    setPurchaseRate: 0, formattedSetPurchaseRate: '0.0%',
+    inventoryConsumptionRate: 0, formattedInventoryConsumptionRate: '0.0%',
+    ltv: 0, formattedLtv: '¥0',
+    repeatRate: 0, formattedRepeatRate: '0.0%',
+    returnRate: 0, formattedReturnRate: '0.0%',
+    orderCount: 0, paidOrderCount: 0, customerCount: 0, repeatCustomerCount: 0,
+    setOrderCount: 0, cancelledOrderCount: 0, soldItemCount: 0, publishedItemCount: 0,
+  };
+}
+
+const RECEIPT = {
+  id: 900, storagePath: '2026/6/invoice.pdf', fileName: 'invoice.pdf',
+  mimeType: 'application/pdf', fileSize: 1024, createdAt: '2026-06-18T00:00:00.000Z',
+};
+
+// 普通預金（1040）に借方・貸方の両方が立つように支出と収入を混ぜる。
+const EXPENSES = [
+  {
+    id: 1, entryType: 'expense', date: '2026-06-12', category: '荷造運賃', item: '国内配送料（6月分）',
+    partner: '物流会社C', amount: 128000, paymentMethod: '銀行', memo: '', seasonTag: null,
+    receipts: [RECEIPT],
+  },
+  {
+    id: 2, entryType: 'expense', date: '2026-06-18', category: '仕入高', item: '生地・材料仕入',
+    partner: '生地仕入先B', amount: 650000, paymentMethod: '銀行', memo: '', seasonTag: '2026SS',
+    receipts: [RECEIPT],
+  },
+  {
+    id: 3, entryType: 'expense', date: '2026-06-21', category: '広告宣伝費', item: '広告出稿',
+    partner: '広告代理店A', amount: 320000, paymentMethod: '銀行', memo: '', seasonTag: null,
+    receipts: [],
+  },
+];
+
+const INCOMES = [
+  {
+    id: 4, entryType: 'income', date: '2026-06-22', category: '売上高', item: 'オンライン販売',
+    partner: 'EC売上', amount: 1240000, paymentMethod: '銀行', memo: '', seasonTag: '2026SS',
+    receipts: [RECEIPT],
+  },
+  {
+    id: 5, entryType: 'income', date: '2026-03-15', category: '売上高', item: '卸売',
+    partner: 'セレクトショップB', amount: 780000, paymentMethod: '銀行', memo: '', seasonTag: '2026SS',
+    receipts: [RECEIPT],
+  },
+];
+
+// 定額法・一括償却の2件。予測年度の列と償却完了予定を出すのに使う。
+const FIXED_ASSETS = [
+  {
+    id: 11, name: '工業用ミシン', account: '工具器具備品', acquiredOn: '2025-06-15',
+    acquisitionCost: 600000, usefulLife: 6, method: 'straightLine',
+    businessUseRatio: 100, disposedOn: null, memo: '',
+  },
+  {
+    id: 12, name: 'ノートPC', account: '工具器具備品', acquiredOn: '2026-04-01',
+    acquisitionCost: 180000, usefulLife: 4, method: 'lumpSum3Year',
+    businessUseRatio: 80, disposedOn: null, memo: '',
+  },
+];
+
+const REVISIONS = [
+  {
+    id: 1, entryId: 2, operation: 'update', changedAt: '2026-06-20T10:15:00.000Z',
+    before: { date: '2026-06-18', category: '仕入高', item: '生地・材料仕入', partner: '生地仕入先B', amount: '600000' },
+    after: { date: '2026-06-18', category: '仕入高', item: '生地・材料仕入', partner: '生地仕入先B', amount: '650000' },
+  },
+];
+
+export async function mockAdminApis(page: Page): Promise<void> {
+  await page.route('**/api/auth/me', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ authenticated: true, user: { id: 'a', email: 'a@e.com', role: 'admin', mfaVerified: true } }),
+    }),
+  );
+
+  await page.route('**/api/admin/kpi', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          targetYear: 2026,
+          monthlyYearOptions: [2026],
+          monthlyKpiByYear: [{ year: 2026, metrics: Array.from({ length: 12 }, (_, i) => metric(`${i + 1}月`)) }],
+          seasonalKpi: [metric('2026SS')],
+        },
+      }),
+    }),
+  );
+
+  await page.route('**/api/admin/kpi/targets', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          currentSeason: '2026SS',
+          seasons: ['2026SS'],
+          definitions: [{ key: 'cvr', label: 'CVR', definition: '', priority: '◎' }],
+          values: { cvr: { '2026SS': '3.0%' } },
+        },
+      }),
+    }),
+  );
+
+  await page.route('**/api/admin/kpi/monthly-record**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: { season: '2026SS', monthKeys: [], values: {} } }),
+    }),
+  );
+
+  await page.route('**/api/admin/kpi/cost-profit**', (route) => {
+    const req = route.request();
+    if (new URL(req.url()).pathname.endsWith('/receipt')) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { url: 'https://example.com/x.pdf' } }) });
+      return;
+    }
+    if (req.method() === 'POST') {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, resourceId: '7' }) });
+      return;
+    }
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          fiscalYear: 2026,
+          seasonKey: '2026SS',
+          businessType: 'soleProprietor',
+          plan: { salesRevenue: 0, openingCash: 0, accountsReceivable: 0, fixedAssets: 0, accountsPayable: 0, openingCapital: 0 },
+          expenses: EXPENSES,
+          incomes: INCOMES,
+          products: [],
+          partners: ['物流会社C', '生地仕入先B'],
+          templates: [],
+          fixedAssets: FIXED_ASSETS,
+          closing: {
+            closingInventoryGoods: 0, closingInventoryMaterials: 0,
+            allowanceForDoubtful: 0, closingBalances: {}, closedAt: null,
+          },
+          // 期首残高（前年度末）。普通預金に前期末残高が立つ。
+          previousClosingBalances: { '1040': 3340000, '2910': 3340000 },
+          revisions: REVISIONS,
+          cumulativeEntries: [],
+        },
+      }),
+    });
+  });
+}
+
+export async function openLedgerTab(page: Page) {
+  await page.goto('/admin');
+  await page.getByRole('button', { name: 'ACCOUNTING' }).click();
+  await page.getByRole('tab', { name: '帳簿', exact: true }).click();
+  await expect(page.getByRole('tab', { name: '仕訳・元帳', exact: true })).toBeVisible();
+}
+
+for (const viewport of viewports) {
+  test.describe(`FR-ADMIN-044 ledger three views (${viewport.name})`, () => {
+    test.beforeEach(async ({ page }) => {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      await mockAdminApis(page);
+    });
+
+    test('帳簿タブのサブタブが3つ（仕訳・元帳／固定資産／決算・試算表）である', async ({ page }) => {
+      // FREQ-258-AC-01
+      await openLedgerTab(page);
+
+      for (const label of ['仕訳・元帳', '固定資産', '決算・試算表']) {
+        await expect(page.getByRole('tab', { name: label, exact: true })).toBeVisible();
+      }
+      // 旧構成の5サブタブは消えていること
+      for (const label of ['仕訳帳', '総勘定元帳', '固定資産台帳', '合計残高試算表', '決算']) {
+        await expect(page.getByRole('tab', { name: label, exact: true })).toHaveCount(0);
+      }
+    });
+
+    test('仕訳・元帳に科目ツリー・残高推移・仕訳一覧・仕訳詳細・照合結果がそろう', async ({ page }) => {
+      // FREQ-258-AC-02
+      await openLedgerTab(page);
+
+      await expect(page.getByRole('heading', { name: '仕訳・元帳', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: '仕訳帳CSV' })).toBeVisible();
+      await expect(page.getByRole('button', { name: '総勘定元帳CSV' })).toBeVisible();
+
+      // 左：科目ツリー（会計区分の見出しと科目検索）
+      await expect(page.getByRole('region', { name: '勘定科目' })).toBeVisible();
+      await expect(page.getByLabel('勘定科目を検索')).toBeVisible();
+      await expect(page.getByRole('button', { name: /^資産/ })).toBeVisible();
+
+      // 中央：残高推移と仕訳一覧
+      const trend = page.getByRole('region', { name: '残高推移' });
+      await expect(trend).toBeVisible();
+      await expect(trend.getByText('当期末残高', { exact: true })).toBeVisible();
+      await expect(trend.getByText('前期末残高', { exact: true }).first()).toBeVisible();
+      await expect(page.getByRole('region', { name: '仕訳一覧' })).toBeVisible();
+      for (const header of ['日付', '伝票No.', '相手勘定科目', '取引先', '摘要', '借方', '貸方', '残高', '証憑']) {
+        await expect(page.getByRole('columnheader', { name: header, exact: true })).toBeVisible();
+      }
+
+      // 右：仕訳詳細（借方・貸方と操作）
+      const detail = page.getByRole('region', { name: '仕訳詳細' });
+      await expect(detail).toBeVisible();
+      await expect(detail.getByText('借方', { exact: true })).toBeVisible();
+      await expect(detail.getByText('貸方', { exact: true })).toBeVisible();
+      await expect(detail.getByRole('button', { name: '証憑を表示' })).toBeVisible();
+      await expect(detail.getByRole('button', { name: '修正' })).toBeVisible();
+
+      // 下：照合結果（元帳残高＝試算表残高）
+      const reconcile = page.getByRole('region', { name: '照合結果' });
+      await expect(reconcile).toBeVisible();
+      await expect(reconcile.getByText('元帳残高（最終残高）')).toBeVisible();
+      await expect(reconcile.getByText(/試算表残高/)).toBeVisible();
+      await expect(reconcile.getByText('貸借一致')).toBeVisible();
+      await expect(reconcile.getByText('差額', { exact: true })).toBeVisible();
+    });
+
+    test('科目ツリーで科目を選ぶと仕訳一覧と照合結果が切り替わる', async ({ page }) => {
+      // FREQ-258-AC-03
+      await openLedgerTab(page);
+
+      // 普通預金（資金科目）には全取引の相手方が並ぶ
+      await page.getByLabel('勘定科目を検索').fill('普通預金');
+      await page.getByRole('button', { name: /1040\s*普通預金/ }).click();
+      await expect(page.getByRole('region', { name: '仕訳一覧' })).toContainText('仕入高');
+      await expect(page.getByRole('region', { name: '照合結果' })).toContainText('普通預金');
+
+      // 別科目に切り替えると一覧の内容が変わる
+      await page.getByLabel('勘定科目を検索').fill('広告宣伝費');
+      await page
+        .getByRole('region', { name: '勘定科目' })
+        .getByRole('button', { name: /広告宣伝費/ })
+        .last()
+        .click();
+      await expect(page.getByRole('region', { name: '仕訳一覧' })).toContainText('広告出稿');
+    });
+
+    test('固定資産にサマリー4枚・資産一覧・償却推移・シミュレーション・予定表がそろう', async ({ page }) => {
+      // FREQ-258-AC-04
+      await openLedgerTab(page);
+      await page.getByRole('tab', { name: '固定資産', exact: true }).click();
+
+      await expect(page.getByRole('heading', { name: '固定資産', exact: true })).toBeVisible();
+      for (const label of ['当期償却（2026年度）', '来期予測（2027年度）', '未償却残高', '償却完了予定（2026年度内）']) {
+        await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+      }
+      await expect(page.getByLabel('資産カテゴリ')).toBeVisible();
+
+      await expect(page.getByRole('region', { name: '資産一覧' })).toBeVisible();
+      await expect(page.getByLabel('資産を検索')).toBeVisible();
+      await expect(page.getByRole('region', { name: '減価償却推移' })).toBeVisible();
+      await expect(page.getByText('償却方法フィルター')).toBeVisible();
+      await expect(page.getByRole('button', { name: '台帳CSV' })).toBeVisible();
+      await expect(page.getByRole('button', { name: '減価償却予定表CSV' })).toBeVisible();
+
+      const simulation = page.getByRole('region', { name: '償却シミュレーション' });
+      await expect(simulation).toBeVisible();
+      await expect(simulation.getByText('年間償却額（概算）')).toBeVisible();
+      await expect(simulation.getByText('当期影響額（2026年度）')).toBeVisible();
+
+      const plan = page.getByRole('region', { name: '減価償却予定表' });
+      await expect(plan).toBeVisible();
+      await expect(plan.getByRole('columnheader', { name: /2026年度\s*（実績）/ })).toBeVisible();
+      await expect(plan.getByRole('columnheader', { name: /2027年度\s*（予測）/ })).toBeVisible();
+      await expect(plan.getByRole('columnheader', { name: '償却完了予定' })).toBeVisible();
+      await expect(plan).toContainText('工業用ミシン');
+    });
+
+    test('償却シミュレーションが入力額から年間償却額を出す', async ({ page }) => {
+      // FREQ-258-AC-05
+      await openLedgerTab(page);
+      await page.getByRole('tab', { name: '固定資産', exact: true }).click();
+
+      const simulation = page.getByRole('region', { name: '償却シミュレーション' });
+      await simulation.getByRole('spinbutton').first().fill('1000000');
+      // 耐用年数10年 → 定額法償却率 0.1 → 年間 ¥100,000
+      await simulation.getByRole('spinbutton').nth(1).fill('10');
+      await expect(simulation).toContainText('¥100,000');
+    });
+
+    test('決算・試算表に財務3表・試算表・決算整理の切替と貸借対照表の構成がある', async ({ page }) => {
+      // FREQ-258-AC-06
+      await openLedgerTab(page);
+      await page.getByRole('tab', { name: '決算・試算表', exact: true }).click();
+
+      await expect(page.getByRole('heading', { name: '決算・試算表', exact: true })).toBeVisible();
+      for (const label of ['貸借対照表', '損益計算書', 'キャッシュフロー計算書', '合計残高試算表', '決算整理']) {
+        await expect(page.getByRole('tab', { name: label, exact: true })).toBeVisible();
+      }
+      await expect(page.getByRole('button', { name: '表示中のCSV出力' })).toBeVisible();
+      await expect(page.getByRole('button', { name: '財務諸表CSV' })).toBeVisible();
+
+      // 左：構成図・12か月推移・増減要因
+      const composition = page.getByRole('region', { name: '貸借対照表の構成' });
+      await expect(composition).toBeVisible();
+      for (const label of ['流動資産', '固定資産', '流動負債', '固定負債', '純資産']) {
+        await expect(composition.getByText(label, { exact: true }).first()).toBeVisible();
+      }
+      await expect(composition.getByText('貸借一致')).toBeVisible();
+      await expect(page.getByRole('region', { name: /資産・負債・純資産の推移/ })).toBeVisible();
+      await expect(page.getByRole('region', { name: /増減要因/ })).toBeVisible();
+
+      // 右：詳細ツリーと重要差異
+      const detail = page.getByRole('region', { name: '貸借対照表 詳細' });
+      await expect(detail).toBeVisible();
+      for (const header of ['科目', '当月残高', '前月残高', '増減額', '増減率', '構成比']) {
+        await expect(detail.getByRole('columnheader', { name: header, exact: true })).toBeVisible();
+      }
+      await expect(detail.getByText('資産の部', { exact: true })).toBeVisible();
+      await expect(detail.getByText('負債の部', { exact: true })).toBeVisible();
+      await expect(detail.getByText('純資産の部', { exact: true })).toBeVisible();
+      await expect(page.getByRole('region', { name: /重要差異/ })).toBeVisible();
+    });
+
+    test('貸借対照表の比較基準を期首比に切り替えると比較列の見出しが変わる', async ({ page }) => {
+      // FREQ-258-AC-07
+      await openLedgerTab(page);
+      await page.getByRole('tab', { name: '決算・試算表', exact: true }).click();
+
+      const detail = page.getByRole('region', { name: '貸借対照表 詳細' });
+      await expect(detail.getByRole('columnheader', { name: '前月残高', exact: true })).toBeVisible();
+
+      await page.getByRole('tab', { name: '期首比', exact: true }).click();
+      await expect(detail.getByRole('columnheader', { name: '期首残高', exact: true })).toBeVisible();
+      await expect(detail.getByRole('columnheader', { name: '前月残高', exact: true })).toHaveCount(0);
+    });
+
+    test('決算・試算表から合計残高試算表と決算整理を開ける', async ({ page }) => {
+      // FREQ-258-AC-08
+      await openLedgerTab(page);
+      await page.getByRole('tab', { name: '決算・試算表', exact: true }).click();
+
+      await page.getByRole('tab', { name: '合計残高試算表', exact: true }).click();
+      for (const header of ['コード', '勘定科目', '会計区分', '借方合計', '貸方合計']) {
+        await expect(page.getByRole('columnheader', { name: header, exact: true })).toBeVisible();
+      }
+
+      await page.getByRole('tab', { name: '決算整理', exact: true }).click();
+      await expect(page.getByText('決算整理を入力')).toBeVisible();
+      await expect(page.getByRole('button', { name: '決算整理を保存' })).toBeVisible();
+      await expect(page.getByRole('button', { name: '2026年を締める' })).toBeVisible();
+    });
+
+    test('横方向のページスクロールが発生しない', async ({ page }) => {
+      // FREQ-258-AC-09
+      await openLedgerTab(page);
+
+      for (const tab of ['仕訳・元帳', '固定資産', '決算・試算表']) {
+        await page.getByRole('tab', { name: tab, exact: true }).click();
+        const overflow = await page.evaluate(
+          () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        );
+        expect(overflow, `${tab} で横スクロールが出ている`).toBeLessThanOrEqual(1);
+      }
+    });
+  });
+}

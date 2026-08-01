@@ -151,6 +151,8 @@ export function buildDepreciationEntries(
 }
 
 export type LedgerRow = {
+  /** 元になった取引の id（決算整理仕訳は負の値）。証憑・訂正履歴の突き合わせに使う。 */
+  entryId: number;
   date: string;
   number: string;
   /** 相手科目名（複合仕訳になった場合は「諸口」） */
@@ -223,6 +225,7 @@ export function buildGeneralLedger(
         sideSign(line.account) * (line.debit - line.credit);
 
       ledger.rows.push({
+        entryId: entry.entryId,
         date: entry.date,
         number: entry.number,
         counterAccount,

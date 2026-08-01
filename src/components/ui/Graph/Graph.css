@@ -180,6 +180,41 @@
   color: var(--graph-label-color);
 }
 
+/* ── Axis charts（line / stacked-bars / waterfall）──────── */
+
+[data-ui-graph][data-ui-graph-variant="line"],
+[data-ui-graph][data-ui-graph-variant="stacked-bars"],
+[data-ui-graph][data-ui-graph-variant="waterfall"] {
+  display: flex;
+  flex-direction: column;
+  /* 凡例 ↔ 図＝font（グループ境界なのでやや広く取る）*/
+  gap: var(--graph-font-size);
+}
+
+[data-ui-graph] [data-graph-plot] svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* 凡例は横並びで折り返す（donut の 2 列グリッドとは別組み）。 */
+[data-ui-graph][data-ui-graph-variant="line"] [data-graph-legend],
+[data-ui-graph][data-ui-graph-variant="stacked-bars"] [data-graph-legend] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  column-gap: var(--graph-legend-col-gap);
+  row-gap: var(--graph-legend-item-gap);
+}
+
+/* 折れ線のスウォッチは線なので、矩形より横長（φ² 倍）に取る。 */
+[data-ui-graph] [data-graph-legend-line] {
+  flex-shrink: 0;
+  width: calc(var(--graph-legend-swatch-size) * var(--phi) * var(--phi));
+  height: var(--graph-legend-swatch-size);
+}
+
 /* ── Motion ────────────────────────────────────────────── */
 
 @media (prefers-reduced-motion: reduce) {

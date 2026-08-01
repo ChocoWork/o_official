@@ -124,7 +124,7 @@ async function openFixedAssets(page: Page) {
   await page.goto('/admin');
   await page.getByRole('button', { name: 'ACCOUNTING' }).click();
   await page.getByRole('tab', { name: '帳簿', exact: true }).click();
-  await page.getByRole('tab', { name: '固定資産台帳', exact: true }).click();
+  await page.getByRole('tab', { name: '固定資産', exact: true }).click();
 }
 
 for (const viewport of viewports) {
@@ -134,11 +134,13 @@ for (const viewport of viewports) {
       await mockAdminApis(page);
     });
 
-    test('固定資産台帳サブビューと登録フォームがある', async ({ page }) => {
+    test('固定資産サブビューと登録フォームがある', async ({ page }) => {
       // FREQ-244-AC-01
       await openFixedAssets(page);
 
-      await expect(page.getByRole('heading', { name: /固定資産を登録/ })).toBeVisible();
+      await expect(
+        page.getByRole('heading', { name: /償却シミュレーション/ }),
+      ).toBeVisible();
       await expect(page.getByPlaceholder('工業用ミシン')).toBeVisible();
       await expect(page.getByRole('button', { name: '固定資産の勘定科目' })).toBeVisible();
       await expect(page.getByRole('button', { name: '償却方法' })).toBeVisible();
@@ -150,7 +152,8 @@ for (const viewport of viewports) {
       // FREQ-244-AC-02: 600,000 × 0.167 = 100,200（1月取得なので12/12）
       await openFixedAssets(page);
 
-      const sewingRow = page.getByRole('row').filter({ hasText: '工業用ミシン' });
+      const plan = page.getByRole('region', { name: '減価償却予定表' });
+      const sewingRow = plan.getByRole('row').filter({ hasText: '工業用ミシン' });
       await expect(sewingRow).toContainText('¥100,200');
       await expect(sewingRow).toContainText('12/12');
       // 期末簿価 600,000 − 100,200 = 499,800
@@ -161,7 +164,8 @@ for (const viewport of viewports) {
       // FREQ-244-AC-03: 180,000 ÷ 3 = 60,000（5月取得でも月割しない）
       await openFixedAssets(page);
 
-      const tabletRow = page.getByRole('row').filter({ hasText: 'タブレット' });
+      const plan = page.getByRole('region', { name: '減価償却予定表' });
+      const tabletRow = plan.getByRole('row').filter({ hasText: 'タブレット' });
       await expect(tabletRow).toContainText('一括償却（3年均等）');
       await expect(tabletRow).toContainText('¥60,000');
       // 月割しないので使用月数は表示しない
@@ -172,14 +176,14 @@ for (const viewport of viewports) {
       // FREQ-244-AC-04
       await openFixedAssets(page);
 
-      await expect(page.getByText('当期減価償却費')).toBeVisible();
-      await expect(page.getByText('必要経費算入額')).toBeVisible();
-      await expect(page.getByText('期末帳簿価額')).toBeVisible();
-      await expect(page.getByText('減価償却累計額')).toBeVisible();
+      await expect(page.getByText(/^当期償却（\d{4}年度）$/)).toBeVisible();
+      await expect(page.getByText('必要経費算入額', { exact: true }).first()).toBeVisible();
+      await expect(page.getByText('未償却残高', { exact: true }).first()).toBeVisible();
       await expect(page.getByRole('button', { name: '台帳CSV' })).toBeVisible();
 
       // 自宅兼用PC: 240,000 × 0.25 = 60,000 → 事業70% = 42,000
-      const pcRow = page.getByRole('row').filter({ hasText: '自宅兼用ノートPC' });
+      const plan = page.getByRole('region', { name: '減価償却予定表' });
+      const pcRow = plan.getByRole('row').filter({ hasText: '自宅兼用ノートPC' });
       await expect(pcRow).toContainText('70%');
       await expect(pcRow).toContainText('¥60,000');
       await expect(pcRow).toContainText('¥42,000');

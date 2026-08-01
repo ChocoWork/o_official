@@ -151,7 +151,9 @@ for (const viewport of viewports) {
       await expect(page.getByText('該当する取引がありません。')).toBeVisible();
 
       await page.getByRole('tab', { name: '帳簿', exact: true }).click();
-      await expect(page.getByText('仕訳件数')).toBeVisible();
+      await expect(
+        page.getByRole('heading', { name: '仕訳・元帳', exact: true }),
+      ).toBeVisible();
       await expect(page.getByRole('button', { name: '仕訳帳CSV' })).toBeVisible();
     });
 

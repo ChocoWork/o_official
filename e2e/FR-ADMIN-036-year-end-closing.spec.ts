@@ -165,7 +165,8 @@ async function openClosing(page: Page) {
   await page.goto('/admin');
   await page.getByRole('button', { name: 'ACCOUNTING' }).click();
   await page.getByRole('tab', { name: '帳簿', exact: true }).click();
-  await page.getByRole('tab', { name: '決算', exact: true }).click();
+  await page.getByRole('tab', { name: '決算・試算表', exact: true }).click();
+  await page.getByRole('tab', { name: '決算整理', exact: true }).click();
 }
 
 for (const viewport of viewports) {

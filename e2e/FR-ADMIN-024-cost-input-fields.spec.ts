@@ -152,8 +152,9 @@ for (const viewport of viewports) {
 
       await expect(page.getByText('支出を保存し、仕訳帳と財務概要へ反映しました。')).toBeVisible();
 
+      // 帳簿タブでは摘要が仕訳一覧と仕訳詳細の両方に出る。
       await page.getByRole('tab', { name: '帳簿', exact: true }).click();
-      await expect(page.getByText('展示会・イベント')).toBeVisible();
+      await expect(page.getByText('展示会・イベント').first()).toBeVisible();
     });
 
     test('「取引先」プルダウンに登録済みと「＋新規登録」がある', async ({ page }) => {

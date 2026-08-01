@@ -103,9 +103,9 @@ describe('CostProfitSection', () => {
 
 		expect(await screen.findByText('支出を保存し、仕訳帳と財務概要へ反映しました。')).toBeInTheDocument();
 
-		// 仕訳帳タブには支出概要のプルダウン選択肢が無いため、支出概要テキストが一意に現れる。
+		// 帳簿タブでは摘要が仕訳一覧と仕訳詳細の両方に出るため、件数で確認する。
 		fireEvent.click(screen.getByRole('tab', { name: '帳簿' }));
-		expect(screen.getByText('展示会・イベント')).toBeInTheDocument();
+		expect(screen.getAllByText('展示会・イベント').length).toBeGreaterThan(0);
 	});
 
 	it('取引先を新規登録して選択肢に追加する', async () => {

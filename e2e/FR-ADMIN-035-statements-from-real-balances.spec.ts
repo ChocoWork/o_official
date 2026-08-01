@@ -156,16 +156,23 @@ for (const viewport of viewports) {
       // FREQ-245-AC-02
       await openSummary(page);
 
-      // 減価償却費 100,200 が必要経費に含まれる（税務レポートのカード注記で確認）
+      // 減価償却費 100,200 が必要経費に含まれる（税務サマリーの注記で確認）
       await page.getByRole('tab', { name: '税務レポート', exact: true }).click();
-      await expect(page.getByText('減価償却費 ¥100,200を含む')).toBeVisible();
+      await expect(
+        page.getByText('減価償却費 ¥100,200を必要経費に含みます'),
+      ).toBeVisible();
 
       // 固定資産台帳の期末簿価 499,800 と元帳残高が一致する
       await page.getByRole('tab', { name: '帳簿', exact: true }).click();
-      await page.getByRole('tab', { name: '総勘定元帳', exact: true }).click();
-      await page.getByRole('button', { name: '元帳の勘定科目' }).click();
-      await page.getByRole('option', { name: '1535 工具器具備品' }).click();
-      await expect(page.getByText('期末残高 ¥499,800')).toBeVisible();
+      await page.getByRole('tab', { name: '仕訳・元帳', exact: true }).click();
+      await page.getByLabel('勘定科目を検索').fill('工具器具備品');
+      await page
+        .getByRole('region', { name: '勘定科目' })
+        .getByRole('button', { name: /1535\s*工具器具備品/ })
+        .click();
+      await expect(
+        page.getByRole('region', { name: '残高推移' }).getByText('¥499,800', { exact: true }),
+      ).toBeVisible();
     });
 
     test('貸借差額が0になる（資産 = 負債 + 純資産 + 当期純利益）', async ({ page }) => {
@@ -176,8 +183,11 @@ for (const viewport of viewports) {
       await expect(bsPanel).toContainText('貸借差額');
       await expect(bsPanel).toContainText('¥0');
 
+      // 決算書の4ページ側でも貸借の一致を示す。
       await page.getByRole('tab', { name: '税務レポート', exact: true }).click();
-      await expect(page.getByText('資産 = 負債 + 純資産')).toBeVisible();
+      await page.getByRole('tab', { name: '青色申告決算書', exact: true }).click();
+      await page.getByRole('tab', { name: '4P 貸借対照表', exact: true }).click();
+      await expect(page.getByText('貸借一致', { exact: true })).toBeVisible();
     });
 
     test('C/Fが直接法で期末残高と一致する', async ({ page }) => {
@@ -202,7 +212,9 @@ for (const viewport of viewports) {
       await expect(page.getByText('所得税（概算）')).toHaveCount(0);
       await expect(page.getByText('住民税（概算）')).toHaveCount(0);
       await expect(page.getByText('概算税率20%')).toHaveCount(0);
-      await expect(page.getByText('青色申告特別控除後')).toBeVisible();
+      // 控除は固定税率ではなく青色申告特別控除の実額として出す。
+      await expect(page.getByText('控除見込')).toBeVisible();
+      await expect(page.getByText('青色申告特別控除（上限')).toBeVisible();
     });
 
     test('財務概要からシーズン見込みが消え、資金の増減内訳が出る', async ({ page }) => {

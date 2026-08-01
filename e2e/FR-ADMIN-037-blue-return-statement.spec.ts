@@ -156,10 +156,12 @@ async function mockAdminApis(page: Page): Promise<void> {
   });
 }
 
+// FREQ-259 以降、1P〜4P は税務レポート直下ではなく「青色申告決算書」タブの中にある。
 async function openTax(page: Page) {
   await page.goto('/admin');
   await page.getByRole('button', { name: 'ACCOUNTING' }).click();
   await page.getByRole('tab', { name: '税務レポート', exact: true }).click();
+  await page.getByRole('tab', { name: '青色申告決算書', exact: true }).click();
 }
 
 for (const viewport of viewports) {
@@ -186,7 +188,7 @@ for (const viewport of viewports) {
 
       await expect(page.getByRole('heading', { name: '1ページ 損益計算書' })).toBeVisible();
       await expect(page.getByText('青色申告特別控除前の所得金額').first()).toBeVisible();
-      await expect(page.getByText('所得金額', { exact: true })).toBeVisible();
+      await expect(page.getByText('所得金額', { exact: true }).first()).toBeVisible();
       await expect(page.getByText('経費の内訳')).toBeVisible();
       // 経費内訳に給料賃金・地代家賃が並ぶ
       await expect(page.getByRole('row').filter({ hasText: '給料賃金' }).first()).toBeVisible();
@@ -197,47 +199,51 @@ for (const viewport of viewports) {
       await openTax(page);
       await page.getByRole('tab', { name: '2P 月別・内訳', exact: true }).click();
 
-      // 3月：売上200,000 − 値引30,000 = 170,000
-      const marchRow = page.getByRole('row').filter({ hasText: '3月' }).first();
-      await expect(marchRow).toContainText('¥170,000');
-
-      // 雑収入は月別と分離
-      const miscRow = page.getByRole('row').filter({ hasText: '雑収入' });
-      await expect(miscRow).toContainText('¥8,000');
+      // 月別欄は「行＝科目・列＝月」の行列。3月：売上200,000 − 値引30,000 = 170,000
+      const salesRow = page.getByRole('row').filter({ hasText: '売上金額' });
+      await expect(salesRow).toContainText('170,000');
 
       // 8月に仕入400,000
-      const augustRow = page.getByRole('row').filter({ hasText: '8月' }).first();
-      await expect(augustRow).toContainText('¥400,000');
+      const purchaseRow = page.getByRole('row').filter({ hasText: '仕入金額' });
+      await expect(purchaseRow).toContainText('400,000');
+
+      // 雑収入は月別欄と分離
+      const miscRow = page.getByRole('row').filter({ hasText: '雑収入' });
+      await expect(miscRow).toContainText('8,000');
     });
 
     test('内訳パネルが2ページ・3ページに出る', async ({ page }) => {
       // FREQ-247-AC-04
       await openTax(page);
 
+      // 支払先別の内訳はすべて2ページに集約する（FREQ-259）。
       await page.getByRole('tab', { name: '2P 月別・内訳', exact: true }).click();
       await expect(page.getByRole('heading', { name: '給料賃金の内訳' })).toBeVisible();
       await expect(page.getByRole('heading', { name: '専従者給与の内訳' })).toBeVisible();
-      await expect(page.getByRole('row').filter({ hasText: '山田太郎' })).toContainText('¥250,000');
-
-      await page.getByRole('tab', { name: '3P 減価償却', exact: true }).click();
-      await expect(page.getByRole('heading', { name: '利子割引料の内訳' })).toBeVisible();
       await expect(page.getByRole('heading', { name: '地代家賃の内訳' })).toBeVisible();
-      await expect(page.getByRole('heading', { name: '税理士・弁護士等の報酬・料金の内訳' })).toBeVisible();
+      await expect(
+        page.getByRole('heading', { name: '利子割引料・税理士等報酬の内訳' }),
+      ).toBeVisible();
+      await expect(page.getByRole('row').filter({ hasText: '山田太郎' })).toContainText('¥250,000');
       await expect(page.getByRole('row').filter({ hasText: '大家不動産' })).toContainText('¥96,000');
+      await expect(page.getByRole('row').filter({ hasText: '信用金庫' })).toContainText('¥12,000');
+      await expect(
+        page.getByRole('row').filter({ hasText: '税理士事務所' }),
+      ).toContainText('¥60,000');
     });
 
-    test('e-Taxの有無で控除限度額が65万/55万に切り替わる', async ({ page }) => {
+    test('e-Taxの有無で青色申告特別控除が65万/55万に切り替わる', async ({ page }) => {
       // FREQ-247-AC-05
+      // 申告設定（e-Tax利用）は1ページ側のサイドカラムにある（FREQ-259）。
       await openTax(page);
-      await page.getByRole('tab', { name: '2P 月別・内訳', exact: true }).click();
 
-      const etax = page.getByRole('checkbox');
+      const settings = page.getByRole('region', { name: '申告設定' });
+      const etax = settings.getByRole('checkbox');
       await expect(etax).toBeChecked();
-      const limitRow = page.locator('div').filter({ hasText: /^控除限度額/ }).first();
-      await expect(limitRow).toContainText('¥650,000');
+      await expect(settings).toContainText('¥650,000');
 
       await etax.uncheck();
-      await expect(limitRow).toContainText('¥550,000');
+      await expect(settings).toContainText('¥550,000');
     });
 
     test('3ページに減価償却費の計算欄が決算書の構成で出る', async ({ page }) => {
@@ -246,11 +252,13 @@ for (const viewport of viewports) {
       await page.getByRole('tab', { name: '3P 減価償却', exact: true }).click();
 
       await expect(page.getByRole('columnheader', { name: '償却率' })).toBeVisible();
-      await expect(page.getByRole('columnheader', { name: '未償却残高' })).toBeVisible();
+      await expect(
+        page.getByRole('columnheader', { name: '未償却残高（円）' }),
+      ).toBeVisible();
       const assetRow = page.getByRole('row').filter({ hasText: '工業用ミシン' });
       await expect(assetRow).toContainText('0.167');
-      await expect(assetRow).toContainText('¥100,200');
-      await expect(assetRow).toContainText('¥499,800');
+      await expect(assetRow).toContainText('100,200');
+      await expect(assetRow).toContainText('499,800');
     });
 
     test('4ページに貸借対照表が期首・期末2列で出て一致する', async ({ page }) => {
@@ -258,21 +266,28 @@ for (const viewport of viewports) {
       await openTax(page);
       await page.getByRole('tab', { name: '4P 貸借対照表', exact: true }).click();
 
-      await expect(page.getByText('資産', { exact: true })).toBeVisible();
-      await expect(page.getByText('負債・資本', { exact: true })).toBeVisible();
-      await expect(page.getByRole('columnheader', { name: '期首' }).first()).toBeVisible();
-      await expect(page.getByRole('columnheader', { name: '期末' }).first()).toBeVisible();
+      await expect(page.getByText('資産の部', { exact: true })).toBeVisible();
+      await expect(page.getByText('負債・資本の部', { exact: true })).toBeVisible();
+      await expect(
+        page.getByRole('columnheader', { name: '1月1日（期首）' }).first(),
+      ).toBeVisible();
+      await expect(
+        page.getByRole('columnheader', { name: '12月31日（期末）' }).first(),
+      ).toBeVisible();
       await expect(
         page.getByRole('row').filter({ hasText: '青色申告特別控除前の所得金額' }),
       ).toBeVisible();
 
       // 資産合計と負債・資本合計が一致する
-      const totals = await page.getByRole('row')
-        .filter({ hasText: '合計' })
-        .allInnerTexts();
-      expect(totals).toHaveLength(2);
-      const amounts = totals.map((text) => text.match(/¥-?[\d,]+/g)?.at(-1));
-      expect(amounts[0]).toBe(amounts[1]);
+      const assetTotal = await page.getByRole('row')
+        .filter({ hasText: '資産合計' })
+        .innerText();
+      const liabilityTotal = await page.getByRole('row')
+        .filter({ hasText: '負債・資本合計' })
+        .innerText();
+      const lastAmount = (text: string) => text.match(/¥-?[\d,]+/g)?.at(-1);
+      expect(lastAmount(assetTotal)).toBe(lastAmount(liabilityTotal));
+      await expect(page.getByText('貸借一致', { exact: true })).toBeVisible();
     });
 
     test('横方向のページスクロールが発生しない', async ({ page }) => {
