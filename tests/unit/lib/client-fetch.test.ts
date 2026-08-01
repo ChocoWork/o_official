@@ -58,6 +58,43 @@ describe('clientFetch', () => {
     expect(headers.get('x-csrf-token')).toBeNull();
   });
 
+  test('GET の一時的な通信失敗は一度だけ再試行する', async () => {
+    (global.fetch as jest.Mock)
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce({ ok: true });
+
+    const response = await clientFetch('/api/admin/kpi/cost-profit', {
+      method: 'GET',
+      cache: 'no-store',
+    });
+
+    expect(response).toEqual({ ok: true });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      2,
+      '/api/admin/kpi/cost-profit',
+      expect.objectContaining({
+        method: 'GET',
+        cache: 'no-store',
+        credentials: 'same-origin',
+      }),
+    );
+  });
+
+  test('POST の通信失敗は二重送信を避けるため再試行しない', async () => {
+    cookieGetterSpy = jest
+      .spyOn(document, 'cookie', 'get')
+      .mockReturnValue('sb-csrf-token=csrf-token-value');
+    (global.fetch as jest.Mock).mockRejectedValueOnce(
+      new TypeError('Failed to fetch'),
+    );
+
+    await expect(
+      clientFetch('/api/admin/kpi/cost-profit', { method: 'POST' }),
+    ).rejects.toThrow('Failed to fetch');
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
   test('パーセントエンコード済みの既存 CSRF Cookie をそのまま transport できる', async () => {
     cookieGetterSpy = jest
       .spyOn(document, 'cookie', 'get')

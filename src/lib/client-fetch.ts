@@ -20,6 +20,38 @@ function getCsrfTokenFromCookie(): string | undefined {
   return match.split('=').slice(1).join('=');
 }
 
+const NETWORK_RETRY_DELAY_MS = 250;
+
+function isRetryableRequest(method: string): boolean {
+  return method === 'GET' || method === 'HEAD';
+}
+
+function waitBeforeRetry(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, NETWORK_RETRY_DELAY_MS);
+  });
+}
+
+async function fetchWithNetworkRetry(
+  endpoint: string,
+  options: RequestInit,
+  method: string,
+): Promise<Response> {
+  try {
+    return await fetch(endpoint, options);
+  } catch (error) {
+    // fetch rejects only when the request itself could not be completed.
+    // Retry idempotent reads once, but never replay writes that may already
+    // have reached the server.
+    if (!(error instanceof TypeError) || !isRetryableRequest(method)) {
+      throw error;
+    }
+
+    await waitBeforeRetry();
+    return fetch(endpoint, options);
+  }
+}
+
 export async function clientFetch(
   endpoint: string,
   options?: RequestInit
@@ -51,10 +83,12 @@ export async function clientFetch(
     }
   }
 
-  return fetch(endpoint, {
+  const requestOptions: RequestInit = {
     ...options,
     method,
     headers,
     credentials: 'same-origin',
-  });
+  };
+
+  return fetchWithNetworkRetry(endpoint, requestOptions, method);
 }
