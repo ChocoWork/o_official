@@ -139,6 +139,12 @@ export interface GraphProps {
    * 実際の描画幅に近い値を渡すと文字が意図した大きさで出る。
    */
   plotWidth?: number;
+  /**
+   * 軸付きグラフの左余白（px）。既定は目盛りラベルが 3桁区切りの金額でも
+   * 収まる幅。短いラベルしか出ないときに詰めて作図領域を広げるために使う。
+   * "auto" は実際の目盛りラベルの長さから幅を決める。
+   */
+  plotPadLeft?: number | "auto";
   /** SVG の代替テキスト。軸付きグラフでは必須に近い。 */
   ariaLabel?: string;
 }

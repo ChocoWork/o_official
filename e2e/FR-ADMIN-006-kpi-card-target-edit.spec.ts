@@ -108,26 +108,27 @@ for (const viewport of viewports) {
       await mockAdminApis(page);
     });
 
-    test('各カード右上に目標編集ボタンが表示される', async ({ page }) => {
+    // FREQ-261 で編集はカード右上の鉛筆から、選択中KPIのサマリー行の「目標を編集」に一本化された。
+    test('選択中KPIのサマリーに目標編集ボタンが表示される', async ({ page }) => {
       // FREQ-207-AC-01
       await page.goto('/admin');
 
       await expect(page.getByText('リーチ数', { exact: true })).toBeVisible();
-
-      const editButtons = page.getByRole('button', { name: /の目標を編集$/ });
-      await expect(editButtons).toHaveCount(19);
+      await expect(page.getByRole('button', { name: '目標を編集' })).toHaveCount(1);
+      await expect(page.getByRole('button', { name: /の目標を編集$/ })).toHaveCount(0);
     });
 
-    test('編集ボタンから目標値を設定するとカードに反映される', async ({ page }) => {
+    test('編集ボタンから目標値を設定するとカードとサマリーに反映される', async ({ page }) => {
       // FREQ-207-AC-02
       await page.goto('/admin');
 
-      const cvrCard = page.locator('div.rounded-lg.border').filter({ hasText: 'CVR' }).first();
-      await expect(cvrCard.getByText('/ 3.0%')).toBeVisible();
+      const cvrCard = page.getByRole('button', { name: /^CVR/ });
+      await cvrCard.click();
+      await expect(cvrCard).toContainText('目標 3.0%');
 
-      await cvrCard.getByRole('button', { name: 'CVRの目標を編集' }).click();
+      await page.getByRole('button', { name: '目標を編集' }).click();
 
-      const input = cvrCard.getByLabel('CVRの目標値');
+      const input = page.getByLabel('CVRの目標値');
       await expect(input).toHaveValue('3.0%');
       await input.fill('4.5%');
 
@@ -138,25 +139,26 @@ for (const viewport of viewports) {
       });
       expect(hasOverflowWhileEditing).toBe(false);
 
-      await cvrCard.getByRole('button', { name: '目標を保存' }).click();
+      await page.getByRole('button', { name: '目標を保存' }).click();
 
-      await expect(cvrCard.getByText('/ 4.5%')).toBeVisible();
-      await expect(cvrCard.getByLabel('CVRの目標値')).toHaveCount(0);
+      await expect(cvrCard).toContainText('目標 4.5%');
+      await expect(page.getByLabel('CVRの目標値')).toHaveCount(0);
     });
 
     test('キャンセルすると目標値が変更されない', async ({ page }) => {
       // FREQ-207-AC-03
       await page.goto('/admin');
 
-      const cvrCard = page.locator('div.rounded-lg.border').filter({ hasText: 'CVR' }).first();
-      await cvrCard.getByRole('button', { name: 'CVRの目標を編集' }).click();
+      const cvrCard = page.getByRole('button', { name: /^CVR/ });
+      await cvrCard.click();
+      await page.getByRole('button', { name: '目標を編集' }).click();
 
-      const input = cvrCard.getByLabel('CVRの目標値');
+      const input = page.getByLabel('CVRの目標値');
       await input.fill('9.9%');
-      await cvrCard.getByRole('button', { name: '編集をキャンセル' }).click();
+      await page.getByRole('button', { name: '編集をキャンセル' }).click();
 
-      await expect(cvrCard.getByText('/ 3.0%')).toBeVisible();
-      await expect(cvrCard.getByText('/ 9.9%')).toHaveCount(0);
+      await expect(cvrCard).toContainText('目標 3.0%');
+      await expect(cvrCard).not.toContainText('目標 9.9%');
     });
   });
 }

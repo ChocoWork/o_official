@@ -108,8 +108,8 @@ for (const viewport of viewports) {
       await expect(kpiTab).toHaveAttribute('aria-current', 'page');
     });
 
-    test('「目標 & 進捗」にKPIカードグリッドとサンプルの参考バッジが表示される', async ({ page }) => {
-      // FREQ-202-AC-02
+    test('KPI一覧にカードグリッドとサンプルの参考バッジが表示される', async ({ page }) => {
+      // FREQ-202-AC-02（FREQ-261 でサブタブを廃止し、KPI一覧パネル内のカードに変更）
       await page.goto('/admin');
 
       await expect(page.getByText('リーチ数', { exact: true })).toBeVisible();
@@ -121,19 +121,17 @@ for (const viewport of viewports) {
       await expect(page.getByText('参考', { exact: true }).first()).toBeVisible();
     });
 
-    test('サブタブ切替で過去推移・月次記録の表が表示される', async ({ page }) => {
-      // FREQ-202-AC-03
+    test('カード選択で推移・月次記録が同一画面に表示される', async ({ page }) => {
+      // FREQ-202-AC-03（FREQ-261 でサブタブ切替から1画面構成へ）
       await page.goto('/admin');
       await expect(page.getByText('リーチ数', { exact: true })).toBeVisible();
 
-      await page.getByRole('tab', { name: '過去推移' }).click();
-      // FREQ-215 で見出しは「主要KPI推移」から「{選択KPI}推移」（既定=売上）に変更
+      // 既定は売上が選択され、推移グラフと月次記録が同時に見える
       await expect(page.getByText('売上推移', { exact: true })).toBeVisible();
+      await expect(page.getByText('月次記録を入力', { exact: true })).toBeVisible();
 
-      // FREQ-226 でタブ名を「月次目標」から「月次記録」に変更
-      await page.getByRole('tab', { name: '月次記録' }).click();
-      // FREQ-227 で内容をシーズン別目標管理表から月次記録の入力UIへ刷新
-      await expect(page.getByText('算出元データ', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: /^CVR/ }).click();
+      await expect(page.getByText('CVR推移', { exact: true })).toBeVisible();
     });
 
     test('横方向のページスクロールが発生しない', async ({ page }) => {

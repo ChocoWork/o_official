@@ -85,11 +85,15 @@ async function mockAdminApis(page: Page, salesTarget: string): Promise<void> {
   });
 }
 
-async function openTrendTab(page: Page) {
+// FREQ-261 でグラフ上の目標ラベルは廃止。解釈結果は選択中KPIの目標表示と達成率で確認する。
+async function openKpiWorkspace(page: Page) {
   await page.goto('/admin');
-  await page.getByText('リーチ数', { exact: true }).waitFor();
-  await page.getByRole('tab', { name: '過去推移' }).click();
+  await page.getByRole('heading', { name: 'KPIダッシュボード' }).waitFor();
   await expect(page.getByRole('img', { name: '売上の推移グラフ' })).toBeVisible();
+}
+
+function salesCard(page: Page) {
+  return page.getByRole('button', { name: /^売上/ });
 }
 
 for (const viewport of viewports) {
@@ -98,29 +102,32 @@ for (const viewport of viewports) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
     });
 
-    test('「約130万円」の目標が ¥1,300,000 として表示される', async ({ page }) => {
+    test('「約130万円」の目標が ¥1,300,000 として扱われる', async ({ page }) => {
       // FREQ-223-AC-01
       await mockAdminApis(page, '約130万円');
-      await openTrendTab(page);
+      await openKpiWorkspace(page);
 
-      const chart = page.locator('svg[aria-label="売上の推移グラフ"]');
-      await expect(chart.getByText('目標 ¥1,300,000', { exact: true })).toBeVisible();
-      await expect(chart.getByText('目標 ¥130', { exact: true })).toHaveCount(0);
+      await expect(salesCard(page)).toContainText('目標 ¥1,300,000');
+      await expect(salesCard(page)).not.toContainText('目標 ¥130');
+      // 実績 1,300,000 ÷ 目標 1,300,000 = 100.0%
+      await expect(salesCard(page)).toContainText('100.0%');
     });
 
-    test('範囲「600万〜1,000万円」の目標が下限 ¥6,000,000 として表示される', async ({ page }) => {
+    test('範囲「600万〜1,000万円」の目標が下限 ¥6,000,000 として扱われる', async ({ page }) => {
       // FREQ-223-AC-02
       await mockAdminApis(page, '600万〜1,000万円');
-      await openTrendTab(page);
+      await openKpiWorkspace(page);
 
-      const chart = page.locator('svg[aria-label="売上の推移グラフ"]');
-      await expect(chart.getByText('目標 ¥6,000,000', { exact: true })).toBeVisible();
+      // 範囲指定は表記のまま見せ、達成率は下限（600万）を基準に算出する
+      await expect(salesCard(page)).toContainText('600万〜1,000万円');
+      // 実績 1,300,000 ÷ 目標 6,000,000 = 21.7%
+      await expect(salesCard(page)).toContainText('21.7%');
     });
 
     test('横方向のページスクロールが発生しない', async ({ page }) => {
       // FREQ-223-AC-03
       await mockAdminApis(page, '約130万円');
-      await openTrendTab(page);
+      await openKpiWorkspace(page);
 
       const hasHorizontalOverflow = await page.evaluate(() => {
         const doc = document.documentElement;

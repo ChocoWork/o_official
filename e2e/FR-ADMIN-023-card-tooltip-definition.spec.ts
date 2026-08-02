@@ -80,8 +80,9 @@ async function mockAdminApis(page: Page): Promise<void> {
 }
 
 // 「売上」ラベル（exact）から祖先のカード div を得る。
+// FREQ-261 でカードは選択可能なボタンになった
 function salesCard(page: Page) {
-  return page.getByText('売上', { exact: true }).locator('xpath=ancestor::div[contains(@class,"rounded-lg")][1]');
+  return page.getByRole('button', { name: /^売上/ });
 }
 
 for (const viewport of viewports) {

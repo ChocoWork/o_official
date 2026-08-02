@@ -22,6 +22,10 @@ const AXIS_NUMBER = new Intl.NumberFormat("ja-JP");
 const AXIS_GRID_COLOR = "#ededed";
 const AXIS_ZERO_COLOR = "#d4d4d4";
 const AXIS_TEXT_COLOR = "#888888";
+/* plotPadLeft="auto" の見積り。目盛りラベルは fontSize 9 の等幅寄りの数字なので
+   1文字あたり約 5.2px、ラベルと軸の間に 10px を空ける。 */
+const AXIS_CHAR_WIDTH = 5.2;
+const AXIS_LABEL_GAP = 10;
 const WATERFALL_UP_COLOR = "#1e9e57";
 const WATERFALL_DOWN_COLOR = "#d64545";
 const WATERFALL_TOTAL_COLOR = "#2f6fdb";
@@ -161,6 +165,7 @@ export function Graph({
   formatValueLabel,
   plotHeight,
   plotWidth,
+  plotPadLeft,
   ariaLabel,
 }: GraphProps) {
   const dataAttrs = {
@@ -190,7 +195,6 @@ export function Graph({
     const rightIndexes = isStacked ? [] : (rightAxis?.seriesIndexes ?? []);
     const hasRightAxis = rightIndexes.length > 0;
     const padRight = hasRightAxis ? PLOT_PAD_RIGHT + 56 : PLOT_PAD_RIGHT;
-    const plotW = width - PLOT_PAD_LEFT - padRight;
     const plotH = height - PLOT_PAD_TOP - PLOT_PAD_BOTTOM;
 
     const onRightAxis = (item: GraphSeries) =>
@@ -214,6 +218,15 @@ export function Graph({
       Math.max(maxValue ?? Math.max(...bounded), ...bounded),
     );
 
+    // auto は実際の目盛りラベルの長さから左余白を決める（短い単位のとき作図領域を広く使う）。
+    const padLeft =
+      plotPadLeft === "auto"
+        ? Math.ceil(
+            Math.max(...ticks.map((tick) => axisFormat(tick).length)) * AXIS_CHAR_WIDTH,
+          ) + AXIS_LABEL_GAP
+        : (plotPadLeft ?? PLOT_PAD_LEFT);
+    const plotW = width - padLeft - padRight;
+
     // 右軸は自分の系列だけでスケールを決める。目盛りの本数は左軸と揃える。
     const rightValues = series
       .filter((item) => onRightAxis(item))
@@ -229,7 +242,7 @@ export function Graph({
 
     const slotW = plotW / Math.max(categories.length, 1);
     // 点・棒はどちらもスロットの中央に置く。棒と折れ線を重ねても軸がずれない。
-    const xOfPoint = (index: number) => PLOT_PAD_LEFT + slotW * (index + 0.5);
+    const xOfPoint = (index: number) => padLeft + slotW * (index + 0.5);
     const yOf = (value: number) =>
       PLOT_PAD_TOP + (1 - (value - lo) / (hi - lo)) * plotH;
     const yOfRight = (value: number) =>
@@ -259,7 +272,7 @@ export function Graph({
     const dividerX =
       forecastFrom === undefined
         ? null
-        : PLOT_PAD_LEFT + slotW * forecastFrom;
+        : padLeft + slotW * forecastFrom;
 
     // 予測の境界があるときは、系列ごとに（実績）（予測）の2項目へ分ける。
     const legendEntries: GraphLegendEntry[] = [
@@ -351,7 +364,7 @@ export function Graph({
             {ticks.map((tick) => (
               <g key={tick}>
                 <line
-                  x1={PLOT_PAD_LEFT}
+                  x1={padLeft}
                   x2={width - padRight}
                   y1={yOf(tick)}
                   y2={yOf(tick)}
@@ -359,7 +372,7 @@ export function Graph({
                   strokeWidth={1}
                 />
                 <text
-                  x={PLOT_PAD_LEFT - 8}
+                  x={padLeft - 8}
                   y={yOf(tick) + 3}
                   textAnchor="end"
                   fill={AXIS_TEXT_COLOR}
@@ -386,7 +399,7 @@ export function Graph({
 
             {referenceLine ? (
               <line
-                x1={PLOT_PAD_LEFT}
+                x1={padLeft}
                 x2={width - padRight}
                 y1={yOf(referenceLine.value)}
                 y2={yOf(referenceLine.value)}

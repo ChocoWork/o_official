@@ -105,9 +105,10 @@ async function mockAdminApis(page: Page, seedValues: Record<string, Record<strin
   });
 }
 
+// FREQ-261 で算出元データの入力表は「算出元データを確認」から開くドロワーへ移動した。
 async function openRecordTab(page: Page) {
   await page.goto('/admin');
-  await page.getByRole('tab', { name: '月次記録' }).click();
+  await page.getByRole('button', { name: '算出元データを確認' }).click();
   await page.getByLabel('売上額 4月の値').waitFor();
 }
 
@@ -138,7 +139,10 @@ for (const viewport of viewports) {
       await mockAdminApis(page);
       await openRecordTab(page);
 
-      await page.getByRole('button', { name: '2026 A/W' }).click();
+      await page.getByRole('button', { name: '算出元データを閉じる' }).click();
+      await page.getByRole('button', { name: '対象シーズン' }).click();
+      await page.getByRole('option', { name: '2026 A/W' }).click();
+      await page.getByRole('button', { name: '算出元データを確認' }).click();
       await expect(page.getByText('2026年10月〜2027年3月', { exact: true })).toBeVisible();
       await expect(page.getByLabel('売上額 10月の値')).toBeVisible();
       await expect(page.getByLabel('売上額 3月の値')).toBeVisible();

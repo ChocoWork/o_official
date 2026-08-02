@@ -62,13 +62,13 @@ for (const viewport of viewports) {
       await page.goto('/admin');
       await expect(page.getByText('リーチ数', { exact: true })).toBeVisible();
 
-      // KPIカードのアイコンは role="img"（19指標）
-      await expect(page.locator('span[role="img"]')).toHaveCount(19);
+      // KPIカードのアイコンは role="img"（19指標）＋選択中KPIのサマリーに1つ（FREQ-261）
+      await expect(page.locator('span[role="img"]')).toHaveCount(20);
 
-      const cpmCard = page.locator('div.rounded-lg.border').filter({ hasText: 'CPM' }).first();
+      const cpmCard = page.getByRole('button', { name: /^CPM/ });
       await expect(cpmCard.getByRole('img')).toHaveAttribute('aria-label', /表示単価/);
 
-      const ltvCard = page.locator('div.rounded-lg.border').filter({ hasText: 'LTV' }).first();
+      const ltvCard = page.getByRole('button', { name: /^LTV/ });
       await expect(ltvCard.getByRole('img')).toHaveAttribute('aria-label', /顧客生涯価値/);
     });
 
@@ -77,7 +77,7 @@ for (const viewport of viewports) {
       await page.goto('/admin');
       await expect(page.getByText('リーチ数', { exact: true })).toBeVisible();
 
-      const cpmCard = page.locator('div.rounded-lg.border').filter({ hasText: 'CPM' }).first();
+      const cpmCard = page.getByRole('button', { name: /^CPM/ });
       const tooltip = cpmCard.getByText('広告を1,000回表示するのにかかった費用（表示単価）');
 
       // ホバー前は非表示（display:none）

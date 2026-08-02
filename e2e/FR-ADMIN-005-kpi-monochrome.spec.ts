@@ -87,7 +87,8 @@ for (const viewport of viewports) {
       // FREQ-206-AC-01
       await page.goto('/admin');
 
-      const card = page.locator('div.rounded-lg.border').filter({ hasText: 'リーチ数' }).first();
+      // FREQ-261 でカードは選択可能なボタンになった
+      const card = page.getByRole('button', { name: /^リーチ数/ });
       await expect(card).toBeVisible();
 
       const styles = await card.evaluate((el) => {
@@ -98,14 +99,14 @@ for (const viewport of viewports) {
       expectMonochrome(parseRgb(styles.border));
     });
 
-    test('サブタブの下線の色が無彩色である', async ({ page }) => {
-      // FREQ-206-AC-02
+    test('パネルの枠線の色が無彩色である', async ({ page }) => {
+      // FREQ-206-AC-02（FREQ-261 でサブタブを廃止したためパネル枠線で検証する）
       await page.goto('/admin');
 
-      const subTabBar = page.locator('div.border-b').filter({ hasText: '目標 & 進捗' }).first();
-      await expect(subTabBar).toBeVisible();
+      const panel = page.locator('[data-ui-panel]').filter({ hasText: 'KPI一覧' }).first();
+      await expect(panel).toBeVisible();
 
-      const borderColor = await subTabBar.evaluate((el) => getComputedStyle(el).borderBottomColor);
+      const borderColor = await panel.evaluate((el) => getComputedStyle(el).borderBottomColor);
       expectMonochrome(parseRgb(borderColor));
     });
 

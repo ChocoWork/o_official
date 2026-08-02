@@ -7,25 +7,26 @@ const viewports = [
   { name: 'desktop', width: 1280, height: 900 },
 ];
 
+// FREQ-261 で実データ接続済みの指標を先に並べる順序に変更
 const KPI_LABELS = [
+  '売上',
+  'CVR',
+  '客単価（AOV）',
+  '在庫消化率',
+  'リピート率',
+  '返品率',
+  'ROAS',
+  'CPA',
+  'セット購入率',
+  'LTV',
   'リーチ数',
   '保存率',
   'プロフィール遷移率',
   'ストーリー視聴数',
   'ストーリー到達率',
   'リンククリック率',
-  'CVR',
-  '客単価（AOV）',
-  'セット購入率',
-  '売上',
-  '在庫消化率',
-  'CPA',
-  'ROAS',
   'CPC',
   'CPM',
-  'LTV',
-  'リピート率',
-  '返品率',
   '離脱率',
 ];
 
@@ -107,15 +108,18 @@ async function mockAdminApis(page: Page): Promise<void> {
   });
 }
 
+// FREQ-261 で全KPIの推移表はインサイト行の「内訳を見る」から開くドロワーへ移動した。
 async function openTrendTab(page: Page) {
   await page.goto('/admin');
   await page.getByText('リーチ数', { exact: true }).waitFor();
-  await page.getByRole('tab', { name: '過去推移' }).click();
+  await page.getByRole('button', { name: '内訳を見る' }).click();
 }
 
-// KPI一覧の tbody（過去推移タブに表は1つだけ）
 function trendTableBody(page: Page) {
-  return page.locator('table tbody');
+  return page
+    .locator('table')
+    .filter({ has: page.getByRole('columnheader', { name: '成長率(CAGR)' }) })
+    .locator('tbody');
 }
 
 for (const viewport of viewports) {

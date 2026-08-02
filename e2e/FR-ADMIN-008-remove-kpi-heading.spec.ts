@@ -60,7 +60,7 @@ for (const viewport of viewports) {
     test('「最終更新」表示が存在しない', async ({ page }) => {
       // FREQ-209-AC-01
       await page.goto('/admin');
-      await expect(page.getByRole('tab', { name: '目標 & 進捗' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'KPIダッシュボード' })).toBeVisible();
 
       await expect(page.getByText(/最終更新/)).toHaveCount(0);
     });
@@ -68,7 +68,7 @@ for (const viewport of viewports) {
     test('font-display の「KPI」見出しが存在しない', async ({ page }) => {
       // FREQ-209-AC-02（左ナビのKPIタブは button なので対象外）
       await page.goto('/admin');
-      await expect(page.getByRole('tab', { name: '目標 & 進捗' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'KPIダッシュボード' })).toBeVisible();
 
       await expect(page.locator('p.font-display', { hasText: 'KPI' })).toHaveCount(0);
     });
