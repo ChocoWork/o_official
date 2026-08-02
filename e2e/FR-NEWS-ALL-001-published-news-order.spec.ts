@@ -12,7 +12,7 @@ test.describe('FR-NEWS-ALL-001 published news order', () => {
 
     const dates = await cards.evaluateAll((nodes) =>
       nodes
-        .map((node) => node.querySelector('span')?.textContent?.trim() ?? '')
+        .map((node) => node.querySelector('time')?.textContent?.trim() ?? '')
         .filter((value) => /^\d{4}\.\d{2}\.\d{2}$/.test(value)),
     );
 

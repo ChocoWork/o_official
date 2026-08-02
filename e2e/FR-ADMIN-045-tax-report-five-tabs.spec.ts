@@ -299,7 +299,33 @@ for (const viewport of viewports) {
       await expect(page.getByRole('region', { name: '申告資料パッケージ' })).toBeVisible();
 
       await expect(list).toContainText('固定資産台帳');
-      await page.getByLabel('資料名を検索').fill('貸借対照表');
+      const documentSearch = page.getByRole('searchbox', { name: '資料名を検索' });
+      const documentSearchButton = page.getByRole('button', { name: '資料名を検索する' });
+
+      await expect(documentSearchButton).toBeVisible();
+
+      const searchPositions = await page.evaluate(() => {
+        const input = document.querySelector<HTMLInputElement>(
+          '[aria-label="資料名を検索"]',
+        );
+        const button = document.querySelector<HTMLButtonElement>(
+          '[aria-label="資料名を検索する"]',
+        );
+        if (!input || !button) throw new Error('申告資料の検索欄が見つかりません');
+
+        const inputRect = input.getBoundingClientRect();
+        const buttonRect = button.getBoundingClientRect();
+        return {
+          borderRadius: Number.parseFloat(getComputedStyle(input).borderTopLeftRadius),
+          inputCenter: inputRect.left + inputRect.width / 2,
+          buttonCenter: buttonRect.left + buttonRect.width / 2,
+        };
+      });
+      expect(searchPositions.borderRadius).toBeGreaterThan(0);
+      expect(searchPositions.buttonCenter).toBeGreaterThan(searchPositions.inputCenter);
+
+      await documentSearch.fill('貸借対照表');
+      await documentSearchButton.click();
       await expect(list).toContainText('貸借対照表');
       await expect(list).not.toContainText('固定資産台帳');
       await expectNoHorizontalScroll(page);

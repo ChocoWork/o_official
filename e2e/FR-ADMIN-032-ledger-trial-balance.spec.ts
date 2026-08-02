@@ -153,7 +153,8 @@ for (const viewport of viewports) {
       await openLedger(page);
 
       // 現金元帳に広告宣伝費への出金が貸方で立つ。
-      await page.getByLabel('勘定科目を検索').fill('現金');
+      await page.getByRole('searchbox', { name: '勘定科目を検索' }).fill('現金');
+      await page.getByRole('button', { name: '勘定科目を検索する' }).click();
       await page
         .getByRole('region', { name: '勘定科目' })
         .getByRole('button', { name: /1010\s*現金/ })
@@ -170,7 +171,8 @@ for (const viewport of viewports) {
       await expect(page.getByRole('button', { name: '総勘定元帳CSV' })).toBeVisible();
 
       // 現金科目を選ぶと出金27,000のみなので残高がマイナスになる。
-      await page.getByLabel('勘定科目を検索').fill('現金');
+      await page.getByRole('searchbox', { name: '勘定科目を検索' }).fill('現金');
+      await page.getByRole('button', { name: '勘定科目を検索する' }).click();
       await page
         .getByRole('region', { name: '勘定科目' })
         .getByRole('button', { name: /1010\s*現金/ })

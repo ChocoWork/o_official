@@ -296,5 +296,5 @@ export async function seedSupabaseSession(page: Page, role: 'admin' | 'supporter
 }
 
 export async function expectCartBadge(page: Page, count: number): Promise<void> {
-  await expect(page.locator('a[href="/cart"] span').filter({ hasText: String(count) })).toBeVisible();
+  await expect(page.locator('a[href="/cart"] span.absolute', { hasText: String(count) })).toBeVisible();
 }

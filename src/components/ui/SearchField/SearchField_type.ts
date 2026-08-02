@@ -5,5 +5,8 @@ export interface SearchFieldProps extends Omit<InputHTMLAttributes<HTMLInputElem
   label?: string;
   showClearButton?: boolean;
   onClear?: () => void;
+  /** 指定時は右端に検索実行ボタンを表示し、Enterキーでも実行する。 */
+  onSearch?: () => void;
+  searchButtonAriaLabel?: string;
   size?: ComponentSize;
 }

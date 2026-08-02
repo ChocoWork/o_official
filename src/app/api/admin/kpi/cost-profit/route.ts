@@ -30,23 +30,6 @@ const expenseSchema = z.object({
 	seasonTag: seasonKeySchema.nullable().default(null),
 });
 
-const productSchema = z.object({
-	id: z.string().trim().min(1).max(80),
-	name: z.string().trim().min(1).max(160),
-	category: z.string().trim().min(1).max(80),
-	productionMethod: z.string().trim().min(1).max(80),
-	plannedQuantity: z.coerce.number().int().min(0).max(1_000_000),
-	sellingPrice: moneySchema,
-	costs: z.object({
-		material: moneySchema,
-		sewing: moneySchema,
-		pattern: moneySchema,
-		accessories: moneySchema,
-		processing: moneySchema,
-		finishing: moneySchema,
-	}),
-});
-
 // 固定資産台帳。資産は年度に属さない（取得日と耐用年数から毎年償却を算出する）。
 const fixedAssetSchema = z.object({
 	id: z.coerce.number().int().nonnegative().default(0),
@@ -62,7 +45,7 @@ const fixedAssetSchema = z.object({
 	serviceStartedOn: z.string().date().nullable().default(null),
 	// 取得の元になった購入取引。null は直接登録（期首残高の移行・過去資産・現物発見）。
 	// 連携時は取得価額・取得日をこの取引から取り直すので、クライアントの値は使わない。
-	entryId: z.coerce.number().int().positive().nullable().default(null),
+	entryId: z.coerce.number().int().positive(),
 	memo: z.string().trim().max(500).default(''),
 });
 
@@ -128,11 +111,7 @@ const mutationSchema = z.discriminatedUnion('operation', [
 		operation: z.literal('entry.assetExempt'),
 		expenseId: z.coerce.number().int().positive(),
 		exempt: z.boolean(),
-	}),
-	z.object({
-		operation: z.literal('product.upsert'),
-		seasonKey: seasonKeySchema,
-		product: productSchema,
+		reason: z.string().trim().min(1).max(500).nullable(),
 	}),
 	z.object({
 		operation: z.literal('plan.update'),
@@ -220,6 +199,8 @@ type ExpenseRow = {
 	memo: string;
 	season_key: string | null;
 	fixed_asset_exempt?: boolean | null;
+	fixed_asset_exempt_reason?: string | null;
+	fixed_asset_reviewed_at?: string | null;
 	admin_finance_receipts?: ReceiptRow[] | null;
 };
 
@@ -319,7 +300,21 @@ const EMPTY_PLAN = {
 function isMissingFinanceTable(error: unknown): boolean {
 	if (!error || typeof error !== 'object') return false;
 	const typed = error as SupabaseErrorLike;
-	return typed.code === '42P01' || Boolean(typed.message?.includes('admin_finance_') || typed.message?.includes('admin_product_costs'));
+	// 42P01 はPostgres、PGRST205はPostgRESTのテーブル不存在。
+	// 権限不足（42501）や列不足は空データにせず、運用エラーとして通知する。
+	return typed.code === '42P01' || typed.code === 'PGRST205';
+}
+
+function isNoRowsError(error: unknown): boolean {
+	if (!error || typeof error !== 'object') return false;
+	return (error as SupabaseErrorLike).code === 'PGRST116';
+}
+
+function isMissingFixedAssetReviewColumn(error: unknown): boolean {
+	if (!error || typeof error !== 'object') return false;
+	const typed = error as SupabaseErrorLike;
+	return typed.code === '42703'
+		&& Boolean(typed.message?.includes('admin_finance_expenses.fixed_asset_'));
 }
 
 function missingMigrationResponse() {
@@ -330,6 +325,28 @@ function missingMigrationResponse() {
 		},
 		{ status: 503 },
 	);
+}
+
+/** 初回利用時は、未作成の会計領域を「取引0件」の正常な空状態として表示する。 */
+function emptyFinanceResponse(fiscalYear: number, seasonKey: string | null) {
+	return NextResponse.json({
+		data: {
+			fiscalYear,
+			seasonKey,
+			businessType: 'soleProprietor',
+			plan: EMPTY_PLAN,
+			expenses: [],
+			incomes: [],
+			products: [],
+			partners: [],
+			fixedAssets: [],
+			closing: mapClosing(null),
+			previousClosingBalances: null,
+			revisions: [],
+			cumulativeEntries: [],
+			templates: [],
+		},
+	});
 }
 
 function mapPlan(row: FinancePlanRow | null) {
@@ -357,6 +374,8 @@ function mapExpense(row: ExpenseRow) {
 		memo: row.memo,
 		seasonTag: row.season_key ?? null,
 		fixedAssetExempt: row.fixed_asset_exempt ?? false,
+		fixedAssetExemptReason: row.fixed_asset_exempt_reason ?? null,
+		fixedAssetReviewedAt: row.fixed_asset_reviewed_at ?? null,
 		receipts: (row.admin_finance_receipts ?? []).map((receipt) => ({
 			id: Number(receipt.id),
 			storagePath: receipt.storage_path,
@@ -508,7 +527,7 @@ export async function GET(request: Request) {
 		const supabase = await createServiceRoleClient();
 		const [
 			planResult,
-			expensesResult,
+			initialExpensesResult,
 			productsResult,
 			partnersResult,
 			templatesResult,
@@ -525,18 +544,12 @@ export async function GET(request: Request) {
 			// 論理削除された取引は集計・表示から除く（履歴には残る）。
 			supabase
 				.from('admin_finance_expenses')
-				.select('id, entry_type, expense_date, category, item_name, partner, amount, payment_method, memo, season_key, fixed_asset_exempt, admin_finance_receipts(id, storage_path, file_name, mime_type, file_size, created_at)')
+				.select('id, entry_type, expense_date, category, item_name, partner, amount, payment_method, memo, season_key, fixed_asset_exempt, fixed_asset_exempt_reason, fixed_asset_reviewed_at, admin_finance_receipts(id, storage_path, file_name, mime_type, file_size, created_at)')
 				.eq('fiscal_year', parsedYear.data)
 				.is('deleted_at', null)
 				.order('expense_date', { ascending: false })
 				.order('id', { ascending: false }),
-			seasonKey
-				? supabase
-					.from('admin_product_costs')
-					.select('sku, name, category, production_method, planned_quantity, selling_price, material_cost, sewing_cost, pattern_cost, accessories_cost, processing_cost, finishing_cost')
-					.eq('season_key', seasonKey)
-					.order('sku', { ascending: true })
-				: Promise.resolve({ data: [], error: null }),
+			Promise.resolve({ data: [], error: null }),
 			// 取引先マスタはシーズン非依存（グローバル）。
 			supabase
 				.from('admin_finance_partners')
@@ -573,11 +586,30 @@ export async function GET(request: Request) {
 				.is('deleted_at', null),
 		]);
 
+		// Migration 074 may be deployed after this application version. When the
+		// transaction table is still on the preceding schema, retry without the
+		// optional fixed-asset review fields so an empty ledger remains loadable.
+		const expensesResult = isMissingFixedAssetReviewColumn(initialExpensesResult.error)
+			? await supabase
+				.from('admin_finance_expenses')
+				.select('id, entry_type, expense_date, category, item_name, partner, amount, payment_method, memo, season_key, admin_finance_receipts(id, storage_path, file_name, mime_type, file_size, created_at)')
+				.eq('fiscal_year', parsedYear.data)
+				.is('deleted_at', null)
+				.order('expense_date', { ascending: false })
+				.order('id', { ascending: false })
+			: initialExpensesResult;
+
+		// An unconfigured fiscal year is a valid initial state. Some PostgREST
+		// versions surface maybeSingle() with no rows as PGRST116, so only ignore
+		// that specific result while preserving every other query error.
+		const planError = isNoRowsError(planResult.error) ? null : planResult.error;
 		const queryError =
-			planResult.error || expensesResult.error || productsResult.error || partnersResult.error || templatesResult.error
+			planError || expensesResult.error || productsResult.error || partnersResult.error || templatesResult.error
 			|| assetsResult.error || closingsResult.error || revisionsResult.error || cumulativeResult.error;
 		if (queryError) {
-			if (isMissingFinanceTable(queryError)) return missingMigrationResponse();
+			if (isMissingFinanceTable(queryError)) {
+				return emptyFinanceResponse(parsedYear.data, seasonKey);
+			}
 			console.error('GET /api/admin/kpi/cost-profit query error:', queryError);
 			return NextResponse.json({ error: '会計データの取得に失敗しました。' }, { status: 500 });
 		}
@@ -645,7 +677,7 @@ export async function POST(request: Request) {
 		const scopeLabel = 'fiscalYear' in parsed.data
 			? String(parsed.data.fiscalYear)
 			: 'seasonKey' in parsed.data
-				? parsed.data.seasonKey
+				? String(parsed.data.seasonKey)
 				: 'global';
 		let resourceId = scopeLabel;
 
@@ -691,6 +723,18 @@ export async function POST(request: Request) {
 			if (error) throw error;
 			resourceId = String(data.id);
 		} else if (parsed.data.operation === 'expense.delete') {
+			const { data: existingAllocations, error: allocationLookupError } = await supabase
+				.from('admin_expense_cost_allocations')
+				.select('id')
+				.eq('expense_id', parsed.data.expenseId)
+				.limit(1);
+			if (allocationLookupError) throw allocationLookupError;
+			if (existingAllocations?.length) {
+				return NextResponse.json(
+					{ error: '商品原価の配賦を解除してから支出を削除してください。' },
+					{ status: 409 },
+				);
+			}
 			// 電子帳簿保存法の真実性の要件のため物理削除しない（論理削除＋履歴）。
 			const { data, error } = await supabase
 				.from('admin_finance_expenses')
@@ -711,6 +755,30 @@ export async function POST(request: Request) {
 			resourceId = String(parsed.data.expenseId);
 		} else if (parsed.data.operation === 'expense.update') {
 			const expense = parsed.data.expense;
+			const [{ data: currentExpense, error: currentExpenseError }, { data: existingAllocations, error: allocationLookupError }] = await Promise.all([
+				supabase.from('admin_finance_expenses')
+					.select('amount, season_key, entry_type')
+					.eq('id', parsed.data.expenseId)
+					.is('deleted_at', null)
+					.maybeSingle(),
+				supabase.from('admin_expense_cost_allocations')
+					.select('id')
+					.eq('expense_id', parsed.data.expenseId)
+					.limit(1),
+			]);
+			if (currentExpenseError || allocationLookupError) throw currentExpenseError || allocationLookupError;
+			if (!currentExpense) {
+				return NextResponse.json({ error: '取引が見つかりません。' }, { status: 404 });
+			}
+			const changesAllocationBasis = Number(currentExpense.amount) !== expense.amount
+				|| currentExpense.season_key !== expense.seasonTag
+				|| currentExpense.entry_type !== expense.entryType;
+			if (changesAllocationBasis && existingAllocations?.length) {
+				return NextResponse.json(
+					{ error: '商品原価の配賦を解除してから金額・シーズン・収支種別を変更してください。' },
+					{ status: 409 },
+				);
+			}
 			if (expense.seasonTag) {
 				const { error: seasonError } = await supabase
 					.from('admin_finance_seasons')
@@ -778,11 +846,22 @@ export async function POST(request: Request) {
 
 			resourceId = String(parsed.data.expenseId);
 		} else if (parsed.data.operation === 'entry.assetExempt') {
+			if (parsed.data.exempt && !parsed.data.reason) {
+				return NextResponse.json(
+					{ error: '対象外にする理由を入力してください。' },
+					{ status: 400 },
+				);
+			}
 			// 固定資産候補の確認状態だけを更新する。updated_by は触らない
 			// （訂正者の記録を汚さないため。履歴もトリガー側で除外している）。
 			const { data, error } = await supabase
 				.from('admin_finance_expenses')
-				.update({ fixed_asset_exempt: parsed.data.exempt })
+				.update({
+					fixed_asset_exempt: parsed.data.exempt,
+					fixed_asset_exempt_reason: parsed.data.exempt ? parsed.data.reason : null,
+					fixed_asset_reviewed_at: parsed.data.exempt ? new Date().toISOString() : null,
+					fixed_asset_reviewed_by: parsed.data.exempt ? authz.userId : null,
+				})
 				.eq('id', parsed.data.expenseId)
 				.is('deleted_at', null)
 				.select('id');
@@ -824,37 +903,6 @@ export async function POST(request: Request) {
 			// Storage 側のファイルも消す。メタデータが消えた後は参照できないため。
 			await supabase.storage.from(RECEIPT_BUCKET).remove([data[0].storage_path]);
 			resourceId = String(parsed.data.receiptId);
-		} else if (parsed.data.operation === 'product.upsert') {
-			const { error: seasonError } = await supabase
-				.from('admin_finance_seasons')
-				.upsert(
-					{ season_key: parsed.data.seasonKey },
-					{ onConflict: 'season_key', ignoreDuplicates: true },
-				);
-			if (seasonError) throw seasonError;
-
-			const product = parsed.data.product;
-			const { error } = await supabase
-				.from('admin_product_costs')
-				.upsert({
-					season_key: parsed.data.seasonKey,
-					sku: product.id,
-					name: product.name,
-					category: product.category,
-					production_method: product.productionMethod,
-					planned_quantity: product.plannedQuantity,
-					selling_price: product.sellingPrice,
-					material_cost: product.costs.material,
-					sewing_cost: product.costs.sewing,
-					pattern_cost: product.costs.pattern,
-					accessories_cost: product.costs.accessories,
-					processing_cost: product.costs.processing,
-					finishing_cost: product.costs.finishing,
-					created_by: authz.userId,
-				}, { onConflict: 'season_key,sku' });
-
-			if (error) throw error;
-			resourceId = `${parsed.data.seasonKey}:${product.id}`;
 		} else if (parsed.data.operation === 'partner.create') {
 			// 取引先マスタはシーズン非依存（グローバル）。既存名は重複無視。
 			const { error } = await supabase

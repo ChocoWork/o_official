@@ -134,18 +134,18 @@ for (const viewport of viewports) {
       await mockAdminApis(page);
     });
 
-    test('固定資産サブビューと登録フォームがある', async ({ page }) => {
+    test('固定資産サブビューと候補レビューがある', async ({ page }) => {
       // FREQ-244-AC-01
       await openFixedAssets(page);
 
       await expect(
-        page.getByRole('heading', { name: /償却シミュレーション/ }),
+        page.getByRole('heading', { name: /固定資産登録/ }),
       ).toBeVisible();
-      await expect(page.getByPlaceholder('工業用ミシン')).toBeVisible();
-      await expect(page.getByRole('button', { name: '固定資産の勘定科目' })).toBeVisible();
-      await expect(page.getByRole('button', { name: '償却方法' })).toBeVisible();
-      await expect(page.getByLabel('事業専用割合（%）')).toBeVisible();
-      await expect(page.getByLabel('除却日（任意）')).toBeVisible();
+      await expect(page.getByRole('heading', { name: '固定資産の候補' })).toBeVisible();
+      await expect(page.getByText('未確認の候補はありません。')).toBeVisible();
+      await expect(page.getByRole('tab', { name: '直接登録' })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: '固定資産にする', exact: true })).toBeDisabled();
+      await expect(page.getByRole('button', { name: '固定資産にしない', exact: true })).toBeDisabled();
     });
 
     test('定額法の当期償却費が手計算と一致する', async ({ page }) => {
@@ -189,28 +189,12 @@ for (const viewport of viewports) {
       await expect(pcRow).toContainText('¥42,000');
     });
 
-    test('固定資産を登録すると fixedAsset.upsert がPOSTされる', async ({ page }) => {
+    test('取引候補がない場合は直接登録できない', async ({ page }) => {
       await openFixedAssets(page);
-
-      // FREQ-260 以降、登録方法の既定は「取引から登録」。
-      // ここは取引を経由しない直接登録の経路を検証する。
-      await page.getByRole('tab', { name: '直接登録', exact: true }).click();
-      await page.getByPlaceholder('工業用ミシン').fill('裁断機');
-      await page.getByPlaceholder('0').fill('450000');
-      await page.getByRole('button', { name: '固定資産を保存' }).click();
-
-      await expect(page.getByText('固定資産を登録し、減価償却費へ反映しました。')).toBeVisible();
-
-      const posted = await page.evaluate(() => (window as unknown as {
-        __postedOps: () => Promise<Array<Record<string, unknown>>>;
-      }).__postedOps());
-      const upsert = posted.find((body) => body.operation === 'fixedAsset.upsert');
-      expect(upsert).toBeTruthy();
-      expect((upsert as { asset: Record<string, unknown> }).asset).toMatchObject({
-        name: '裁断機',
-        acquisitionCost: 450000,
-        method: 'straightLine',
-      });
+      const simulation = page.getByRole('region', { name: '固定資産登録' });
+      await expect(simulation.getByText('未確認の候補はありません。')).toBeVisible();
+      await expect(simulation.getByRole('tab', { name: '直接登録' })).toHaveCount(0);
+      await expect(simulation.getByRole('button', { name: '固定資産として登録' })).toHaveCount(0);
     });
 
     test('横方向のページスクロールが発生しない', async ({ page }) => {

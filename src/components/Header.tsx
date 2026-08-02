@@ -72,6 +72,7 @@ const Header = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isHidden, setIsHidden] = useState(false);
   const pathname = usePathname();
+  const isAdminPage = pathname.startsWith("/admin");
   const { isLoggedIn, userRole } = useLogin();
   const canManage = userRole === "admin" || userRole === "supporter";
   const isAdmin = userRole === "admin";
@@ -162,9 +163,16 @@ const Header = () => {
 
   return (
     <>
+      {isAdminPage ? (
+        <div
+          aria-hidden="true"
+          data-site-header-background
+          className={`fixed top-0 left-0 right-0 z-10 h-[52px] bg-white transition-transform duration-300 ease-in-out sm:h-[54px] md:h-[56px] xl:h-[60px] ${isHidden ? "-translate-y-full" : "translate-y-0"}`}
+        />
+      ) : null}
       {/* site-chrome: 管理画面のフォント一括指定から除外し、他ページと同じ表示にする。 */}
       <header
-        className={`site-chrome fixed top-0 left-0 right-0 bg-white z-50 h-[52px] sm:h-[54px] md:h-[56px] xl:h-[60px] transition-transform duration-300 ease-in-out ${isHidden ? "-translate-y-full" : "translate-y-0"}`}
+        className={`site-chrome fixed top-0 left-0 right-0 h-[52px] sm:h-[54px] md:h-[56px] xl:h-[60px] transition-transform duration-300 ease-in-out ${isAdminPage ? "z-30" : "z-50 bg-white"} ${isHidden ? "-translate-y-full" : "translate-y-0"}`}
       >
         <div className="header-position">
           {/* サイトタイトル */}

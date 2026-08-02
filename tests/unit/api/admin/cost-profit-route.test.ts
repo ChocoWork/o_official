@@ -27,8 +27,10 @@ const ADMIN = {
 
 // 会計は暦年（1/1〜12/31）で切る。シーズンは商品原価の絞り込みにのみ使う任意パラメータ。
 // GET は 9 本のクエリを Promise.all で並べるため、テーブル名ごとに終端の thenable を返す。
+let financeQueryError: { code: string; message: string } | null = null;
+
 function result(data: unknown) {
-	return Promise.resolve({ data, error: null });
+	return Promise.resolve({ data, error: financeQueryError });
 }
 
 function createFinanceSupabaseMock() {
@@ -164,6 +166,7 @@ function createFinanceSupabaseMock() {
 describe('GET /api/admin/kpi/cost-profit', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
+		financeQueryError = null;
 		authorizeMock.mockResolvedValue(ADMIN);
 		createServiceMock.mockResolvedValue(createFinanceSupabaseMock() as never);
 	});
@@ -190,6 +193,30 @@ describe('GET /api/admin/kpi/cost-profit', () => {
 		expect(authorizeMock).toHaveBeenCalledWith('admin.finance.read', expect.any(Request));
 	});
 
+	it('会計テーブルが未作成でも初回利用の空データを返す', async () => {
+		financeQueryError = {
+			code: '42P01',
+			message: 'relation "admin_finance_expenses" does not exist',
+		};
+
+		const response = await GET(new Request('http://localhost/api/admin/kpi/cost-profit?year=2026'));
+		const body = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(body.data.fiscalYear).toBe(2026);
+		expect(body.data.expenses).toEqual([]);
+		expect(body.data.incomes).toEqual([]);
+		expect(body.data.fixedAssets).toEqual([]);
+		expect(body.data.plan).toEqual({
+			salesRevenue: 0,
+			openingCash: 0,
+			accountsReceivable: 0,
+			fixedAssets: 0,
+			accountsPayable: 0,
+			openingCapital: 0,
+		});
+	});
+
 	it('年度が無ければ拒否する', async () => {
 		const response = await GET(new Request('http://localhost/api/admin/kpi/cost-profit'));
 		expect(response.status).toBe(400);
@@ -208,12 +235,12 @@ describe('GET /api/admin/kpi/cost-profit', () => {
 		expect(body.data.products).toEqual([]);
 	});
 
-	it('シーズンを指定すると商品原価を返す', async () => {
+	it('シーズンを指定しても商品原価は専用APIへ委譲する', async () => {
 		const response = await GET(new Request('http://localhost/api/admin/kpi/cost-profit?year=2026&season=2026SS'));
 		const body = await response.json();
 
 		expect(response.status).toBe(200);
-		expect(body.data.products[0].costs.material).toBe(3200);
+		expect(body.data.products).toEqual([]);
 	});
 
 	it('不正なシーズンキーを拒否する', async () => {
@@ -235,7 +262,10 @@ describe('POST /api/admin/kpi/cost-profit', () => {
 		const yearEq = jest.fn().mockReturnValue({ is: isNull });
 		const idEq = jest.fn().mockReturnValue({ eq: yearEq });
 		const update = jest.fn().mockReturnValue({ eq: idEq });
-		const from = jest.fn().mockReturnValue({ update });
+		const allocationLimit = jest.fn().mockResolvedValue({ data: [], error: null });
+		const from = jest.fn((table: string) => table === 'admin_expense_cost_allocations'
+			? { select: () => ({ eq: () => ({ limit: allocationLimit }) }) }
+			: { update });
 
 		createServiceMock.mockResolvedValueOnce({ from } as never);
 
@@ -259,9 +289,9 @@ describe('POST /api/admin/kpi/cost-profit', () => {
 
 	it('該当する取引が無ければ404を返す', async () => {
 		const select = jest.fn().mockResolvedValue({ data: [], error: null });
-		const from = jest.fn().mockReturnValue({
-			update: () => ({ eq: () => ({ eq: () => ({ is: () => ({ select }) }) }) }),
-		});
+		const from = jest.fn((table: string) => table === 'admin_expense_cost_allocations'
+			? { select: () => ({ eq: () => ({ limit: () => Promise.resolve({ data: [], error: null }) }) }) }
+			: { update: () => ({ eq: () => ({ eq: () => ({ is: () => ({ select }) }) }) }) });
 		createServiceMock.mockResolvedValueOnce({ from } as never);
 
 		const response = await POST(new Request('http://localhost/api/admin/kpi/cost-profit', {
@@ -487,22 +517,12 @@ describe('POST /api/admin/kpi/cost-profit（固定資産の取引連携）', () 
 		expect(response.status).toBe(400);
 	});
 
-	it('直接登録（entryId なし）はクライアントの取得価額・取得日をそのまま使う', async () => {
-		const { from, insert } = upsertMock({});
-		createServiceMock.mockResolvedValueOnce({ from } as never);
-
+	it('取引を指定しない直接登録は400で拒否する', async () => {
 		const response = await postAsset({
 			...assetPayload,
 			entryId: null,
-			acquiredOn: '2024-03-01',
-			acquisitionCost: 500000,
 		});
-
-		expect(response.status).toBe(200);
-		expect(from).not.toHaveBeenCalledWith('admin_finance_expenses');
-		expect(insert).toHaveBeenCalledWith(
-			expect.objectContaining({ acquired_on: '2024-03-01', acquisition_cost: 500000, entry_id: null }),
-		);
+		expect(response.status).toBe(400);
 	});
 
 	function expenseUpdateMock(linkedAsset: Record<string, unknown> | null) {
@@ -514,12 +534,20 @@ describe('POST /api/admin/kpi/cost-profit（固定資産の取引連携）', () 
 		const expenseUpdate = jest.fn().mockReturnValue({
 			eq: () => ({ is: () => ({ select: () => Promise.resolve({ data: [{ id: 7 }], error: null }) }) }),
 		});
-		const from = jest.fn((table: string) =>
-			table === 'admin_finance_expenses'
-				? { update: expenseUpdate }
-				: { select: assetSelect, update: assetUpdate },
-		);
-		return { from, assetUpdate, assetUpdateEq };
+		const currentExpenseSelect = jest.fn().mockReturnValue({
+			eq: () => ({ is: () => ({ maybeSingle: () => Promise.resolve({
+				data: { amount: 350000, season_key: null, entry_type: 'expense' }, error: null,
+			}) }) }),
+		});
+		const allocationSelect = jest.fn().mockReturnValue({
+			eq: () => ({ limit: () => Promise.resolve({ data: [], error: null }) }),
+		});
+		const from = jest.fn((table: string) => {
+			if (table === 'admin_finance_expenses') return { select: currentExpenseSelect, update: expenseUpdate };
+			if (table === 'admin_expense_cost_allocations') return { select: allocationSelect };
+			return { select: assetSelect, update: assetUpdate };
+		});
+		return { from, assetUpdate, assetUpdateEq, expenseUpdate };
 	}
 
 	function postExpenseUpdate(overrides: Record<string, unknown> = {}) {
@@ -573,7 +601,7 @@ describe('POST /api/admin/kpi/cost-profit（固定資産の取引連携）', () 
 
 	it('取引日を後ろへ動かして使用開始日が取得日より前になる訂正は409で差し戻す', async () => {
 		// 取引を書き換える前に弾き、取引だけ更新された中途半端な状態を作らない。
-		const { from, assetUpdate } = expenseUpdateMock({
+		const { from, assetUpdate, expenseUpdate } = expenseUpdateMock({
 			id: 42,
 			name: '業務用PC',
 			service_started_on: '2026-06-01',
@@ -585,7 +613,7 @@ describe('POST /api/admin/kpi/cost-profit（固定資産の取引連携）', () 
 
 		expect(response.status).toBe(409);
 		expect((await response.json()).error).toContain('業務用PC');
-		expect(from).not.toHaveBeenCalledWith('admin_finance_expenses');
+		expect(expenseUpdate).not.toHaveBeenCalled();
 		expect(assetUpdate).not.toHaveBeenCalled();
 	});
 
@@ -601,12 +629,16 @@ describe('POST /api/admin/kpi/cost-profit（固定資産の取引連携）', () 
 		const response = await POST(new Request('http://localhost/api/admin/kpi/cost-profit', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ operation: 'entry.assetExempt', expenseId: 7, exempt: true }),
+			body: JSON.stringify({ operation: 'entry.assetExempt', expenseId: 7, exempt: true, reason: '修繕費として処理するため' }),
 		}));
 
 		expect(response.status).toBe(200);
 		expect(from).toHaveBeenCalledWith('admin_finance_expenses');
-		expect(update).toHaveBeenCalledWith({ fixed_asset_exempt: true });
+		expect(update).toHaveBeenCalledWith(expect.objectContaining({
+			fixed_asset_exempt: true,
+			fixed_asset_exempt_reason: '修繕費として処理するため',
+			fixed_asset_reviewed_by: 'admin-id',
+		}));
 		expect(eq).toHaveBeenCalledWith('id', 7);
 		expect(isNull).toHaveBeenCalledWith('deleted_at', null);
 	});

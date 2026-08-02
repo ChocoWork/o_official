@@ -3,7 +3,7 @@
 // 並ぶのはこの画面から出力できる資料だけ。状態は帳簿・証憑の実データから決まる。
 // 左＝資料の一覧、右＝選択した資料の中身と検証結果、下＝提出までの段取り。
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button/Button";
 import { Panel } from "@/components/ui/Panel/Panel";
 import { SearchField } from "@/components/ui/SearchField/SearchField";
@@ -163,11 +163,13 @@ export function FilingDocumentsView({
             size="2xs"
             aria-label="資料名を検索"
             placeholder="資料名を検索"
-            className="font-acumin"
+            className="font-acumin [&_[data-ui-search-field-input]]:rounded-md"
             value={keyword}
             onChange={(event) => setKeyword(event.target.value)}
             showClearButton
             onClear={() => setKeyword("")}
+            onSearch={() => setKeyword((value) => value.trim())}
+            searchButtonAriaLabel="資料名を検索する"
           />
         </div>
         <SingleSelect
@@ -235,8 +237,8 @@ export function FilingDocumentsView({
                 </thead>
                 <tbody>
                   {grouped.map(([group, documents]) => (
-                    <>
-                      <tr key={group} className="bg-[#fafafa]">
+                    <Fragment key={group}>
+                      <tr className="bg-[#fafafa]">
                         <td
                           colSpan={6}
                           className="px-2 py-1.5 font-acumin text-[11px] font-medium text-[#474747]"
@@ -311,7 +313,7 @@ export function FilingDocumentsView({
                           </tr>
                         );
                       })}
-                    </>
+                    </Fragment>
                   ))}
                 </tbody>
               </table>

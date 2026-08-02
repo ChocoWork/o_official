@@ -47,7 +47,7 @@ const FooterLinkList = ({
 const Footer = () => {
   return (
     // site-chrome: 管理画面のフォント一括指定から除外し、他ページと同じ表示にする。
-    <footer className="site-chrome bg-black text-white pt-[28px] sm:pt-[34px] md:pt-[42px] pb-[10px] sm:pb-[13px] md:pb-[16px]">
+    <footer className="site-chrome relative z-30 bg-black text-white pt-[28px] sm:pt-[34px] md:pt-[42px] pb-[10px] sm:pb-[13px] md:pb-[16px]">
       <div className="px-[13px] sm:px-[16px] md:px-[21px] lg:px-[34px] xl:px-[55px] max-w-[1280px] mx-auto">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-[13px] sm:gap-[14px] md:gap-[18px] lg:gap-[26px] mb-[28px] sm:mb-[34px] md:mb-[42px]">
           <div className="col-span-2 md:col-span-1 mb-[21px] sm:mb-[26px] md:mb-0">

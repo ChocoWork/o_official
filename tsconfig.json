@@ -6,8 +6,6 @@
       "dom.iterable",
       "esnext"
     ],
-    "baseUrl": ".",
-    "ignoreDeprecations": "5.0",
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,

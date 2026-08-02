@@ -649,7 +649,7 @@ function AdminPageContent() {
   return (
     <div className="w-full min-w-0 md:-mx-5">
       <div className="flex min-w-0 flex-col gap-6 md:flex-row md:gap-0">
-        <aside className="w-full min-w-0 md:w-56 md:shrink-0">
+        <aside className="relative z-30 w-full min-w-0 md:w-56 md:shrink-0">
           <AdminSideNav activeTab={activeTab} onTabChange={handleTabChange} tabs={visibleTabs} />
         </aside>
         <div className="min-w-0 flex-1 md:px-8">

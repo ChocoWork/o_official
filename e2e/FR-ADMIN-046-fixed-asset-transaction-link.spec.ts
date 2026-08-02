@@ -188,22 +188,14 @@ for (const viewport of viewports) {
       await mockAdminApis(page);
     });
 
-    test('固定資産の登録方法を「取引から登録／直接登録」で切り替えられ、既定は取引から登録', async ({ page }) => {
-      // FREQ-260-AC-03
+    test('直接登録を表示せず、取引管理の候補一覧を表示する', async ({ page }) => {
       await openAssets(page);
 
-      const simulation = page.getByRole('region', { name: '償却シミュレーション' });
-      const fromEntryTab = simulation.getByRole('tab', { name: '取引から登録', exact: true });
-      const directTab = simulation.getByRole('tab', { name: '直接登録', exact: true });
-
-      await expect(fromEntryTab).toBeVisible();
-      await expect(directTab).toBeVisible();
-      await expect(fromEntryTab).toHaveAttribute('aria-selected', 'true');
-
-      await directTab.click();
-      await expect(
-        simulation.getByText('取得仕訳は生成されないため、別途取引管理へ登録してください。', { exact: false }),
-      ).toBeVisible();
+      const simulation = page.getByRole('region', { name: '固定資産登録' });
+      await expect(simulation.getByRole('list', { name: '固定資産候補一覧' })).toBeVisible();
+      await expect(simulation.getByText('受注管理ソフト', { exact: true })).toBeVisible();
+      await expect(simulation.getByText('什器一式', { exact: true })).toBeVisible();
+      await expect(simulation.getByRole('tab', { name: '直接登録' })).toHaveCount(0);
 
       await expectNoHorizontalScroll(page);
     });
@@ -212,9 +204,10 @@ for (const viewport of viewports) {
       // FREQ-260-AC-04
       await openAssets(page);
 
-      const simulation = page.getByRole('region', { name: '償却シミュレーション' });
+      const simulation = page.getByRole('region', { name: '固定資産登録' });
       // 台帳へ未連携の固定資産取引（ソフトウェア 250,000）だけが候補に出る
-      await chooseOption(page, '連携する購入取引', /受注管理ソフト/);
+      await simulation.getByRole('radio', { name: /受注管理ソフト/ }).check();
+      await simulation.getByRole('button', { name: '固定資産にする', exact: true }).click();
 
       await expect(simulation.getByTestId('asset-acquisition-cost-readonly')).toHaveText('¥250,000');
       await expect(simulation.getByText('取得金額・取得日は取引管理で訂正できます。')).toBeVisible();
@@ -227,14 +220,35 @@ for (const viewport of viewports) {
       await expectNoHorizontalScroll(page);
     });
 
+    test('候補を対象外にするときは理由を必須で送信する', async ({ page }) => {
+      await openAssets(page);
+      const simulation = page.getByRole('region', { name: '固定資産登録' });
+      await simulation.getByRole('radio', { name: /什器一式/ }).check();
+      await simulation.getByRole('button', { name: '固定資産にしない', exact: true }).click();
+      const saveButton = simulation.getByRole('button', { name: '理由を保存して対象外にする' });
+      await expect(saveButton).toBeDisabled();
+      await simulation.getByRole('textbox', { name: /理由/ }).fill('修繕として処理する取引のため');
+
+      const requestPromise = page.waitForRequest((request) => request.method() === 'POST'
+        && request.postDataJSON()?.operation === 'entry.assetExempt');
+      await saveButton.click();
+      const request = await requestPromise;
+      expect(request.postDataJSON()).toMatchObject({
+        expenseId: 3,
+        exempt: true,
+        reason: '修繕として処理する取引のため',
+      });
+    });
+
     test('使用開始日を任意入力できる', async ({ page }) => {
       // FREQ-260-AC-02
       await openAssets(page);
 
+      const registration = page.getByRole('region', { name: '固定資産登録' });
+      await registration.getByRole('radio', { name: /受注管理ソフト/ }).check();
+      await registration.getByRole('button', { name: '固定資産にする', exact: true }).click();
       const serviceStarted = page.getByLabel('使用開始日（任意・未入力なら取得日）');
       await expect(serviceStarted).toBeVisible();
-
-      await chooseOption(page, '連携する購入取引', /受注管理ソフト/);
       // 取得日より前は選べない
       await expect(serviceStarted).toHaveAttribute('min', '2026-09-10');
 
@@ -353,7 +367,7 @@ for (const viewport of viewports) {
       const dialog = page.getByRole('dialog', { name: '10万円以上の支出です' });
       await expect(dialog).toBeVisible();
       await expect(dialog.getByRole('button', { name: '勘定科目を修正' })).toBeVisible();
-      await expect(dialog.getByRole('button', { name: 'このまま費用として処理' })).toBeVisible();
+      await expect(dialog.getByRole('button', { name: 'このまま費用として処理' })).toHaveCount(0);
       // 科目が費用のままなので、台帳へ直行させてはいけない
       await expect(dialog.getByRole('button', { name: '固定資産として登録' })).toHaveCount(0);
 
@@ -379,12 +393,9 @@ for (const viewport of viewports) {
         .getByRole('button', { name: '固定資産として登録' })
         .click();
 
-      const simulation = page.getByRole('region', { name: '償却シミュレーション' });
+      const simulation = page.getByRole('region', { name: '固定資産登録' });
       await expect(simulation).toBeVisible();
-      await expect(simulation.getByRole('tab', { name: '取引から登録', exact: true })).toHaveAttribute(
-        'aria-selected',
-        'true',
-      );
+      await expect(simulation.getByRole('list', { name: '固定資産候補一覧' })).toBeVisible();
       await expect(simulation.getByTestId('asset-acquisition-cost-readonly')).toHaveText('¥300,000');
 
       await expectNoHorizontalScroll(page);

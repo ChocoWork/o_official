@@ -165,7 +165,8 @@ for (const viewport of viewports) {
       // 固定資産台帳の期末簿価 499,800 と元帳残高が一致する
       await page.getByRole('tab', { name: '帳簿', exact: true }).click();
       await page.getByRole('tab', { name: '仕訳・元帳', exact: true }).click();
-      await page.getByLabel('勘定科目を検索').fill('工具器具備品');
+      await page.getByRole('searchbox', { name: '勘定科目を検索' }).fill('工具器具備品');
+      await page.getByRole('button', { name: '勘定科目を検索する' }).click();
       await page
         .getByRole('region', { name: '勘定科目' })
         .getByRole('button', { name: /1535\s*工具器具備品/ })

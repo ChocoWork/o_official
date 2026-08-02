@@ -91,9 +91,19 @@
   opacity: 0.5;
 }
 
+/* 実行ボタン付き検索は、アイコンを右端へ移しクリック可能にする。 */
+[data-ui-search-field-input][data-has-search-button="true"] {
+  padding-left: var(--_pad-x);
+  padding-right: var(--_input-pl);
+}
+
 /* クリアボタンが DOM に存在するとき、右 padding を左と対称に広げる */
 [data-ui-search-field-wrapper]:has([data-ui-search-field-clear]) [data-ui-search-field-input] {
   padding-right: var(--_input-pl);
+}
+
+[data-ui-search-field-wrapper]:has([data-ui-search-field-clear]) [data-ui-search-field-input][data-has-search-button="true"] {
+  padding-right: calc(var(--_input-pl) + var(--_icon-size) + var(--_gap-icon2text));
 }
 
 /* ブラウザ既定の search UI を非表示 */
@@ -132,6 +142,41 @@
   transition: color 160ms ease;
 }
 
+[data-ui-search-field-wrapper]:has([data-ui-search-field-submit]) [data-ui-search-field-clear] {
+  right: calc(var(--_pad-x) + var(--_icon-size) + var(--_gap-icon2text));
+}
+
+[data-ui-search-field-submit] {
+  position: absolute;
+  top: 50%;
+  right: var(--_pad-x);
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--_icon-size);
+  height: var(--_icon-size);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgba(0, 0, 0, 0.72);
+  font-size: var(--_icon-size);
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-ui-search-field-submit]:hover {
+    color: #000;
+  }
+}
+
+[data-ui-search-field-submit]:focus-visible {
+  border-radius: 2px;
+  outline: 2px solid transparent;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #111;
+}
+
 @media (hover: hover) and (pointer: fine) {
   [data-ui-search-field-clear]:hover {
     color: #000;
@@ -152,6 +197,10 @@
   [data-ui-search-field-clear] {
     transition: none;
   }
+
+  [data-ui-search-field-submit] {
+    transition: none;
+  }
 }
 
 @media (forced-colors: active) {
@@ -164,6 +213,12 @@
 
   [data-ui-search-field-icon],
   [data-ui-search-field-clear] {
+    forced-color-adjust: auto;
+    color: ButtonText;
+  }
+
+
+  [data-ui-search-field-submit] {
     forced-color-adjust: auto;
     color: ButtonText;
   }

@@ -5,6 +5,7 @@ import {
 	fixedAssetLinkStatus,
 	isFixedAssetAccount,
 	suggestDepreciationMethod,
+	pendingAssetCandidateEntries,
 	unlinkedAssetEntries,
 	type AssetCandidateEntry,
 	type LinkableFixedAsset,
@@ -52,9 +53,8 @@ describe('classifyAssetCandidate', () => {
 		expect(classifyAssetCandidate(entry({ amount: 300_000 }))).toBe('asset');
 	});
 
-	it('固定資産科目は除外フラグが立っていても asset のまま', () => {
-		// 取得仕訳が資産として立っている以上、台帳への登録から逃がしてはいけない。
-		expect(classifyAssetCandidate(entry({ fixedAssetExempt: true }))).toBe('asset');
+	it('理由付きで対象外にした固定資産科目は候補から外れる', () => {
+		expect(classifyAssetCandidate(entry({ fixedAssetExempt: true }))).toBeNull();
 	});
 
 	it('収入は候補にしない', () => {
@@ -89,6 +89,18 @@ describe('classifyAssetCandidate', () => {
 				),
 			).toBeNull();
 		});
+	});
+});
+
+describe('pendingAssetCandidateEntries', () => {
+	it('固定資産科目と高額な費用科目の疑いをまとめて返す', () => {
+		const entries = [
+			entry({ id: 1, category: '工具器具備品' }),
+			entry({ id: 2, category: '消耗品費', amount: 300_000 }),
+			entry({ id: 3, category: '地代家賃', amount: 300_000 }),
+			entry({ id: 4, category: 'ソフトウェア', fixedAssetExempt: true }),
+		];
+		expect(pendingAssetCandidateEntries(entries, []).map((row) => row.id)).toEqual([1, 2]);
 	});
 });
 

@@ -13,5 +13,14 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 		};
 	}, []);
 
-	return <div className="admin-font-scope">{children}</div>;
+	return (
+		<div className="admin-font-scope">
+			<div
+				aria-hidden="true"
+				data-admin-sidenav-background
+				className="pointer-events-none fixed inset-y-0 left-0 z-20 hidden w-56 bg-[#f4f4f4] md:block"
+			/>
+			{children}
+		</div>
+	);
 }

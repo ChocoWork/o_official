@@ -33,10 +33,30 @@ function setupFinanceFetch() {
 	};
 
 	const mockFetch = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+		if (String(_input).startsWith('/api/admin/accounting/product-costs')) {
+			return new Response(JSON.stringify({
+				data: {
+					seasonKey: '2026SS',
+					summary: {
+						projectedSales: 1488000,
+						directCost: 540000,
+						commonCost: 0,
+						unallocatedCost: 0,
+						totalExpense: 540000,
+						productGrossProfit: 948000,
+						seasonProfit: 948000,
+						seasonProfitMargin: 63.7,
+						costBreakdown: { material: 540000, sewing: 0, pattern: 0, accessories: 0, processing: 0, finishing: 0, other: 0 },
+					},
+					expenses: [],
+					items: [],
+				},
+			}), { status: 200, headers: { 'Content-Type': 'application/json' } });
+		}
 		if ((init?.method ?? 'GET') === 'POST') {
 			const body = JSON.parse(String(init?.body ?? '{}'));
 			if (body.operation === 'expense.create') {
-				const entry = { id: Math.floor(Math.random() * 1e6) + 2, ...body.expense };
+				const entry = { id: 2, ...body.expense };
 				if (body.expense.entryType === 'income') data.incomes.unshift(entry);
 				else data.expenses.unshift(entry);
 			}
@@ -162,19 +182,15 @@ describe('CostProfitSection', () => {
 		expect((screen.getByPlaceholderText('0') as HTMLInputElement).value).toBe('50000');
 	});
 
-	it('商品原価と売価を編集すると粗利シミュレーションを更新する', async () => {
+	it('商品原価タブで新しい配賦モデルのシーズン概要を表示する', async () => {
 		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 
 		fireEvent.click(screen.getByRole('tab', { name: '商品原価' }));
-		const sellingPriceInput = screen.getByRole('spinbutton', { name: '売価（1点あたり）' });
-		fireEvent.change(sellingPriceInput, { target: { value: '30000' } });
 
-		expect(sellingPriceInput).toHaveValue(30000);
-		expect(screen.getAllByText('¥21,000').length).toBeGreaterThan(0);
-
-		fireEvent.click(screen.getByRole('button', { name: '保存' }));
-		await waitFor(() => expect(screen.getByText('ドローストリングシャツの原価・売価を保存しました。')).toBeInTheDocument());
+		expect(await screen.findByRole('region', { name: '商品原価' })).toBeInTheDocument();
+		expect(screen.getByRole('tab', { name: 'シーズン概要' })).toBeInTheDocument();
+		expect(screen.getAllByText('売上見込み')).toHaveLength(2);
 	});
 
 	it('ゴミ箱ボタンで経費をSupabaseから削除する', async () => {

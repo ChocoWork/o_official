@@ -2,7 +2,7 @@ import { test, expect, Page } from '@playwright/test';
 
 // FREQ-258: 帳簿タブを「仕訳・元帳」「固定資産」「決算・試算表」の3枚に畳む。
 // 仕訳・元帳＝科目ツリー＋残高推移＋仕訳一覧＋仕訳詳細＋照合結果、
-// 固定資産＝サマリー4枚＋資産一覧＋償却推移＋償却シミュレーション＋償却予定表、
+// 固定資産＝サマリー4枚＋資産一覧＋償却推移＋固定資産登録＋償却予定表、
 // 決算・試算表＝財務3表／試算表／決算整理の切替と貸借対照表の構成・詳細。
 const viewports = [
   { name: 'mobile', width: 390, height: 844 },
@@ -47,6 +47,11 @@ const EXPENSES = [
     id: 3, entryType: 'expense', date: '2026-06-21', category: '広告宣伝費', item: '広告出稿',
     partner: '広告代理店A', amount: 320000, paymentMethod: '銀行', memo: '', seasonTag: null,
     receipts: [],
+  },
+  {
+    id: 6, entryType: 'expense', date: '2026-07-01', category: 'ソフトウェア', item: '在庫管理システム',
+    partner: 'システム会社D', amount: 1000000, paymentMethod: '銀行', memo: '', seasonTag: null,
+    fixedAssetExempt: false, receipts: [RECEIPT],
   },
 ];
 
@@ -208,7 +213,9 @@ for (const viewport of viewports) {
 
       // 左：科目ツリー（会計区分の見出しと科目検索）
       await expect(page.getByRole('region', { name: '勘定科目' })).toBeVisible();
-      await expect(page.getByLabel('勘定科目を検索')).toBeVisible();
+      await expect(page.getByRole('searchbox', { name: '勘定科目を検索' })).toBeVisible();
+      await expect(page.getByRole('button', { name: '勘定科目を検索する' })).toBeVisible();
+      await expect(page.getByRole('button', { name: '仕訳を検索する' })).toBeVisible();
       await expect(page.getByRole('button', { name: /^資産/ })).toBeVisible();
 
       // 中央：残高推移と仕訳一覧
@@ -243,13 +250,15 @@ for (const viewport of viewports) {
       await openLedgerTab(page);
 
       // 普通預金（資金科目）には全取引の相手方が並ぶ
-      await page.getByLabel('勘定科目を検索').fill('普通預金');
+      await page.getByRole('searchbox', { name: '勘定科目を検索' }).fill('普通預金');
+      await page.getByRole('button', { name: '勘定科目を検索する' }).click();
       await page.getByRole('button', { name: /1040\s*普通預金/ }).click();
       await expect(page.getByRole('region', { name: '仕訳一覧' })).toContainText('仕入高');
       await expect(page.getByRole('region', { name: '照合結果' })).toContainText('普通預金');
 
       // 別科目に切り替えると一覧の内容が変わる
-      await page.getByLabel('勘定科目を検索').fill('広告宣伝費');
+      await page.getByRole('searchbox', { name: '勘定科目を検索' }).fill('広告宣伝費');
+      await page.getByRole('button', { name: '勘定科目を検索する' }).click();
       await page
         .getByRole('region', { name: '勘定科目' })
         .getByRole('button', { name: /広告宣伝費/ })
@@ -264,22 +273,33 @@ for (const viewport of viewports) {
       await page.getByRole('tab', { name: '固定資産', exact: true }).click();
 
       await expect(page.getByRole('heading', { name: '固定資産', exact: true })).toBeVisible();
-      for (const label of ['当期償却（2026年度）', '来期予測（2027年度）', '未償却残高', '償却完了予定（2026年度内）']) {
+      for (const label of ['当期償却', '来期予測', '必要経費算入額', '登録待ち']) {
         await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
       }
-      await expect(page.getByLabel('資産カテゴリ')).toBeVisible();
+      await page.getByRole('button', { name: '絞り込み' }).click();
+      await expect(page.getByLabel('資産カテゴリで絞り込み')).toBeVisible();
 
       await expect(page.getByRole('region', { name: '資産一覧' })).toBeVisible();
-      await expect(page.getByLabel('資産を検索')).toBeVisible();
+      const assetSearch = page.getByRole('searchbox', { name: '資産を検索' });
+      await expect(assetSearch).toBeVisible();
+      await assetSearch.fill('対象外の資産名');
+      await expect(page.getByRole('region', { name: '資産一覧' })).toContainText('工業用ミシン');
+      await page.getByRole('button', { name: '資産を検索する' }).click();
+      await expect(page.getByRole('region', { name: '資産一覧' })).not.toContainText('工業用ミシン');
+      await page
+        .getByRole('region', { name: '資産一覧' })
+        .getByRole('button', { name: '入力内容をクリア' })
+        .click();
       await expect(page.getByRole('region', { name: '減価償却推移' })).toBeVisible();
       await expect(page.getByText('償却方法フィルター')).toBeVisible();
       await expect(page.getByRole('button', { name: '台帳CSV' })).toBeVisible();
       await expect(page.getByRole('button', { name: '減価償却予定表CSV' })).toBeVisible();
 
-      const simulation = page.getByRole('region', { name: '償却シミュレーション' });
+      const simulation = page.getByRole('region', { name: '固定資産登録' });
       await expect(simulation).toBeVisible();
-      await expect(simulation.getByText('年間償却額（概算）')).toBeVisible();
-      await expect(simulation.getByText('当期影響額（2026年度）')).toBeVisible();
+      await expect(simulation.getByRole('list', { name: '固定資産候補一覧' })).toBeVisible();
+      await expect(simulation.getByText('候補選択', { exact: true })).toBeVisible();
+      await expect(simulation.getByText('判定', { exact: true }).first()).toBeVisible();
 
       const plan = page.getByRole('region', { name: '減価償却予定表' });
       await expect(plan).toBeVisible();
@@ -289,15 +309,16 @@ for (const viewport of viewports) {
       await expect(plan).toContainText('工業用ミシン');
     });
 
-    test('償却シミュレーションが入力額から年間償却額を出す', async ({ page }) => {
+    test('固定資産登録が入力額から年間償却額を出す', async ({ page }) => {
       // FREQ-258-AC-05
       await openLedgerTab(page);
       await page.getByRole('tab', { name: '固定資産', exact: true }).click();
 
-      const simulation = page.getByRole('region', { name: '償却シミュレーション' });
-      await simulation.getByRole('spinbutton').first().fill('1000000');
+      const simulation = page.getByRole('region', { name: '固定資産登録' });
+      await simulation.getByRole('radio', { name: /在庫管理システム/ }).check();
+      await simulation.getByRole('button', { name: '固定資産にする', exact: true }).click();
       // 耐用年数10年 → 定額法償却率 0.1 → 年間 ¥100,000
-      await simulation.getByRole('spinbutton').nth(1).fill('10');
+      await simulation.getByRole('spinbutton').first().fill('10');
       await expect(simulation).toContainText('¥100,000');
     });
 
@@ -326,6 +347,8 @@ for (const viewport of viewports) {
       // 右：詳細ツリーと重要差異
       const detail = page.getByRole('region', { name: '貸借対照表 詳細' });
       await expect(detail).toBeVisible();
+      await expect(detail.getByRole('searchbox', { name: '科目を検索' })).toBeVisible();
+      await expect(page.getByRole('button', { name: '貸借対照表の科目を検索する' })).toBeVisible();
       for (const header of ['科目', '当月残高', '前月残高', '増減額', '増減率', '構成比']) {
         await expect(detail.getByRole('columnheader', { name: header, exact: true })).toBeVisible();
       }
@@ -333,6 +356,15 @@ for (const viewport of viewports) {
       await expect(detail.getByText('負債の部', { exact: true })).toBeVisible();
       await expect(detail.getByText('純資産の部', { exact: true })).toBeVisible();
       await expect(page.getByRole('region', { name: /重要差異/ })).toBeVisible();
+
+      await page.getByRole('tab', { name: '損益計算書', exact: true }).click();
+      const profitAndLoss = page.getByRole('region', { name: '損益計算書 詳細' });
+      await expect(profitAndLoss).toBeVisible();
+      await expect(profitAndLoss.locator('table').locator('..').locator('..')).toHaveClass(/rounded-md/);
+
+      await page.getByRole('tab', { name: 'キャッシュフロー計算書', exact: true }).click();
+      const cashFlow = page.getByRole('region', { name: 'キャッシュフロー計算書 詳細' });
+      await expect(cashFlow.locator('table').locator('..')).toHaveClass(/rounded-md/);
     });
 
     test('貸借対照表の比較基準を期首比に切り替えると比較列の見出しが変わる', async ({ page }) => {
@@ -357,11 +389,13 @@ for (const viewport of viewports) {
       for (const header of ['コード', '勘定科目', '会計区分', '借方合計', '貸方合計']) {
         await expect(page.getByRole('columnheader', { name: header, exact: true })).toBeVisible();
       }
+      await expect(page.getByRole('columnheader', { name: 'コード' }).locator('xpath=ancestor::table/parent::div')).toHaveClass(/rounded-md/);
 
       await page.getByRole('tab', { name: '決算整理', exact: true }).click();
       await expect(page.getByText('決算整理を入力')).toBeVisible();
       await expect(page.getByRole('button', { name: '決算整理を保存' })).toBeVisible();
       await expect(page.getByRole('button', { name: '2026年を締める' })).toBeVisible();
+      await expect(page.getByRole('button', { name: '決算整理を保存' })).toHaveAttribute('data-ui-button-shape', 'rounded');
     });
 
     test('横方向のページスクロールが発生しない', async ({ page }) => {

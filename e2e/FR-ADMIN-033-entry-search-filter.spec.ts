@@ -150,6 +150,12 @@ for (const viewport of viewports) {
     test('検索パネルに電帳法の必須条件がそろっている', async ({ page }) => {
       // FREQ-243-AC-01
       await openEntries(page);
+      const transactionSearch = page.getByRole('searchbox', { name: '取引を検索' });
+      await transactionSearch.fill('該当しない取引');
+      await expect(page.getByText('1-5 / 5件')).toBeVisible();
+      await page.getByRole('button', { name: '取引を検索する' }).click();
+      await expect(page.getByText('0-0 / 0件')).toBeVisible();
+      await page.getByRole('button', { name: '入力内容をクリア' }).click();
       await openFilterDrawer(page);
 
       await expect(page.getByLabel('取引年月日（開始）')).toBeVisible();

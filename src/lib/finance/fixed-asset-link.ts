@@ -52,6 +52,7 @@ export type AssetCandidateClass = "asset" | "suspect";
 /** 候補判定に必要な取引の形。`fixedAssetExempt` は確認済みで除外した印。 */
 export type AssetCandidateEntry = FinanceEntry & {
   fixedAssetExempt?: boolean;
+  fixedAssetExemptReason?: string | null;
 };
 
 /** 取引が固定資産候補か。候補でなければ null。 */
@@ -61,10 +62,10 @@ export function classifyAssetCandidate(
   // 収入は資産の取得ではない。
   if (entry.entryType !== "expense") return null;
 
-  if (isFixedAssetAccount(entry.category)) return "asset";
-
-  // 除外できるのは科目違いの疑い（suspect）だけ。資産科目は上で確定させる。
+  // 利用者が理由付きで対象外と判断した取引は、科目にかかわらず確認済み。
   if (entry.fixedAssetExempt) return null;
+
+  if (isFixedAssetAccount(entry.category)) return "asset";
 
   const isSuspectAccount = (
     SUSPECT_EXPENSE_ACCOUNTS as readonly string[]
@@ -149,6 +150,21 @@ export function unlinkedAssetEntries<T extends AssetCandidateEntry>(
   return entries.filter(
     (entry) =>
       classifyAssetCandidate(entry) === "asset" && !linkedEntryIds.has(entry.id),
+  );
+}
+
+/** 台帳で確認する未処理候補。固定資産科目と高額な費用科目の疑いをまとめて返す。 */
+export function pendingAssetCandidateEntries<T extends AssetCandidateEntry>(
+  entries: readonly T[],
+  assets: readonly LinkableFixedAsset[],
+): T[] {
+  const linkedEntryIds = new Set(
+    assets
+      .map((asset) => asset.entryId)
+      .filter((entryId): entryId is number => entryId !== null),
+  );
+  return entries.filter(
+    (entry) => classifyAssetCandidate(entry) !== null && !linkedEntryIds.has(entry.id),
   );
 }
 

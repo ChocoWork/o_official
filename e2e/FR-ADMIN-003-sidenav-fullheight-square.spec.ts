@@ -77,6 +77,53 @@ for (const viewport of viewports) {
         // md 以上ではパネルが行（本文カラム）の高さと一致する
         expect(heights.nav).toBeGreaterThanOrEqual(heights.row - 4);
       });
+
+      test('サイドナビ背景が画面全高に伸び、Header文字・Footer全体との重なり順が正しい', async ({ page }) => {
+        // FREQ-204-AC-04
+        await page.goto('/admin');
+
+        const sideNavBackground = page.locator('[data-admin-sidenav-background]');
+        const headerBackground = page.locator('[data-site-header-background]');
+        const header = page.locator('header.site-chrome');
+        const footer = page.locator('footer.site-chrome');
+
+        await expect(sideNavBackground).toBeVisible();
+
+        const layers = await page.evaluate(() => {
+          const sideNav = document.querySelector<HTMLElement>('[data-admin-sidenav-background]');
+          const headerBackground = document.querySelector<HTMLElement>('[data-site-header-background]');
+          const header = document.querySelector<HTMLElement>('header.site-chrome');
+          const footer = document.querySelector<HTMLElement>('footer.site-chrome');
+
+          if (!sideNav || !headerBackground || !header || !footer) {
+            throw new Error('Required layout layer was not found');
+          }
+
+          const sideNavRect = sideNav.getBoundingClientRect();
+          return {
+            sideNavTop: sideNavRect.top,
+            sideNavBottom: sideNavRect.bottom,
+            sideNavWidth: sideNavRect.width,
+            sideNavZ: Number.parseInt(getComputedStyle(sideNav).zIndex, 10),
+            headerBackgroundZ: Number.parseInt(getComputedStyle(headerBackground).zIndex, 10),
+            headerZ: Number.parseInt(getComputedStyle(header).zIndex, 10),
+            footerZ: Number.parseInt(getComputedStyle(footer).zIndex, 10),
+            viewportHeight: window.innerHeight,
+          };
+        });
+
+        expect(layers.sideNavTop).toBe(0);
+        expect(layers.sideNavBottom).toBe(layers.viewportHeight);
+        expect(layers.sideNavWidth).toBe(224);
+        expect(layers.headerBackgroundZ).toBeLessThan(layers.sideNavZ);
+        expect(layers.sideNavZ).toBeLessThan(layers.headerZ);
+        expect(layers.sideNavZ).toBeLessThan(layers.footerZ);
+
+        await expect(sideNavBackground).toHaveCSS('pointer-events', 'none');
+        await expect(headerBackground).toBeVisible();
+        await expect(header).toBeVisible();
+        await expect(footer).toBeAttached();
+      });
     }
 
     test('横方向のページスクロールが発生しない', async ({ page }) => {

@@ -23,11 +23,13 @@ test.describe('FR-CART-001/003/004/008 cart ui and actions', () => {
 
     await page.goto('/cart');
 
-    await expect(page.getByRole('heading', { level: 3, name: 'Silk Blouse' })).toBeVisible();
-    await expect(page.getByRole('heading', { level: 3, name: 'Tailored Pants' })).toBeVisible();
-    await expect(page.getByText('カラー: Black')).toBeVisible();
-    await expect(page.getByText('サイズ: M')).toBeVisible();
-    await expect(page.locator('a[href="/item/101"]').filter({ has: page.getByRole('heading', { name: 'Silk Blouse' }) })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Silk Blouse', exact: true }).last()).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Tailored Pants', exact: true }).last()).toBeVisible();
+    await expect(page.getByText('COLOR', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('Black', { exact: true })).toBeVisible();
+    await expect(page.getByText('SIZE', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('M', { exact: true })).toBeVisible();
+    await expect(page.locator('a[href="/item/101"]', { hasText: 'Silk Blouse' })).toBeVisible();
     await expectCartBadge(page, 3);
 
     const quantityInput = page.locator('input[type="number"]').first();
@@ -45,8 +47,8 @@ test.describe('FR-CART-001/003/004/008 cart ui and actions', () => {
       await dialog.dismiss();
     });
 
-    await page.locator('div.flex.gap-2 > button').nth(1).click();
-    await expect(page.getByRole('heading', { level: 3, name: 'Silk Blouse' })).toHaveCount(0);
+    await page.getByRole('button', { name: 'カートから削除' }).first().click();
+    await expect(page.locator('a[href="/item/101"]', { hasText: 'Silk Blouse' })).toHaveCount(0);
     await expectCartBadge(page, 2);
     expect(cartMocks.deleteIds).toContain('cart-1');
   });
