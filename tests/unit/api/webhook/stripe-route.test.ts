@@ -22,6 +22,9 @@ jest.mock('@supabase/supabase-js', () => ({
 }));
 
 const mockConstructEvent = jest.fn();
+const mockRefundList = jest.fn();
+const mockOrdersUpdate = jest.fn();
+let orderLookupData: Record<string, unknown> | null = null;
 let webhookEventState: { processing_status: string; attempt_count: number } | null = null;
 const mockWebhookEventUpsert = jest.fn();
 const mockWebhookEventUpdate = jest.fn();
@@ -29,6 +32,9 @@ jest.mock('@/lib/stripe/server', () => ({
   getStripeServerClient: jest.fn().mockReturnValue({
     webhooks: {
       constructEvent: mockConstructEvent,
+    },
+    refunds: {
+      list: mockRefundList,
     },
   }),
 }));
@@ -52,6 +58,10 @@ describe('POST /api/webhook/stripe', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     webhookEventState = null;
+    orderLookupData = null;
+    mockRefundList.mockReturnValue({
+      async *[Symbol.asyncIterator]() {},
+    });
     mockWebhookEventUpsert.mockResolvedValue({ error: null });
     mockWebhookEventUpdate.mockReturnValue({
       eq: jest.fn().mockResolvedValue({ error: null }),
@@ -76,10 +86,10 @@ describe('POST /api/webhook/stripe', () => {
         };
 
         return {
-          update: jest.fn().mockReturnValue(updateBuilder),
+          update: mockOrdersUpdate.mockReturnValue(updateBuilder),
           select: jest.fn().mockReturnThis(),
           eq: jest.fn().mockReturnThis(),
-          maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
+          maybeSingle: jest.fn().mockImplementation(() => Promise.resolve({ data: orderLookupData, error: null })),
         };
       }
 
@@ -195,5 +205,29 @@ describe('POST /api/webhook/stripe', () => {
 
     expect((response as { body: { duplicate?: boolean } }).body.duplicate).toBe(true);
     expect(mockWebhookEventUpsert).not.toHaveBeenCalled();
+  });
+
+  it('refund.updatedで成功済み返金累計を注文へ同期する', async () => {
+    orderLookupData = { id: 'order-1', status: 'paid', total_amount: 10_000 };
+    mockRefundList.mockReturnValue({
+      async *[Symbol.asyncIterator]() {
+        yield { status: 'succeeded', amount: 2_500, created: 1_786_000_000 };
+      },
+    });
+    const event = {
+      id: 'evt_refund',
+      type: 'refund.updated',
+      data: { object: { id: 're_1', payment_intent: 'pi_refund' } },
+    };
+    mockConstructEvent.mockReturnValue(event);
+
+    const response = await POST(makeRequest(event));
+
+    expect((response as { status: number }).status).toBe(200);
+    expect(mockRefundList).toHaveBeenCalledWith({ payment_intent: 'pi_refund', limit: 100 });
+    expect(mockOrdersUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      refunded_amount: 2_500,
+      status: 'paid',
+    }));
   });
 });

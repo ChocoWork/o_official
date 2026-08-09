@@ -4,6 +4,11 @@ import { z } from 'zod';
 import { logAudit } from '@/lib/audit';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { getStripeServerClient } from '@/lib/stripe/server';
+import {
+  syncOrderRefunds,
+  type OrderRefundDatabase,
+  type RefundListClient,
+} from '@/lib/stripe/order-refund-sync';
 import { createClient } from '@/lib/supabase/server';
 
 const orderIdSchema = z.string().uuid();
@@ -175,11 +180,14 @@ export async function POST(
       { idempotencyKey },
     );
 
-    const isFullRefund = (refund.amount ?? 0) >= order.total_amount;
-
-    if (isFullRefund) {
-      await supabase.from('orders').update({ status: 'cancelled' }).eq('id', order.id);
-    }
+    // A refund can remain pending (for example, Konbini requires bank details).
+    // Derive order state only from refunds Stripe confirms as succeeded.
+    const refundSync = await syncOrderRefunds({
+      database: supabase as unknown as OrderRefundDatabase,
+      stripe: stripe as unknown as RefundListClient,
+      paymentIntentId: order.payment_intent_id,
+    });
+    const isFullRefund = refundSync.refundedAmount >= order.total_amount;
 
     await logAudit({
       action: 'admin.orders.refund.create',
@@ -193,6 +201,7 @@ export async function POST(
       metadata: {
         payment_intent_id: order.payment_intent_id,
         refund_id: refund.id,
+        refund_status: refund.status,
         amount: refund.amount,
         currency: refund.currency,
         reason: refund.reason,
@@ -206,7 +215,8 @@ export async function POST(
         refundId: refund.id,
         refundAmount: refund.amount,
         currency: refund.currency,
-        orderStatus: isFullRefund ? 'cancelled' : order.status,
+        refundStatus: refund.status,
+        orderStatus: refundSync.orderStatus,
       },
       { status: 200 },
     );

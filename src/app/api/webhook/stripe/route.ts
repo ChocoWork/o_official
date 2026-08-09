@@ -17,6 +17,11 @@ import {
   failWebhookEvent,
   type WebhookEventStore,
 } from '@/lib/stripe/webhook-events';
+import {
+  syncOrderRefunds,
+  type OrderRefundDatabase,
+  type RefundListClient,
+} from '@/lib/stripe/order-refund-sync';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -447,6 +452,29 @@ async function handlePaymentIntentFailed(
   });
 }
 
+function resolvePaymentIntentId(
+  value: string | Stripe.PaymentIntent | null | undefined,
+): string | null {
+  if (typeof value === 'string') return value;
+  return value?.id ?? null;
+}
+
+async function handleRefundChanged(
+  object: Stripe.Refund | Stripe.Charge,
+  stripe: Stripe,
+): Promise<void> {
+  const paymentIntentId = resolvePaymentIntentId(object.payment_intent);
+  if (!paymentIntentId) {
+    throw new Error('Stripe refund event is missing payment_intent');
+  }
+
+  await syncOrderRefunds({
+    database: supabase as unknown as OrderRefundDatabase,
+    stripe: stripe as unknown as RefundListClient,
+    paymentIntentId,
+  });
+}
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!webhookSecret) {
@@ -523,6 +551,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         break;
       case 'payment_intent.payment_failed':
         await handlePaymentIntentFailed(req, event.data.object as Stripe.PaymentIntent);
+        break;
+      case 'refund.created':
+      case 'refund.updated':
+        await handleRefundChanged(event.data.object as Stripe.Refund, stripe);
+        break;
+      case 'charge.refunded':
+        await handleRefundChanged(event.data.object as Stripe.Charge, stripe);
         break;
       default:
         break;
