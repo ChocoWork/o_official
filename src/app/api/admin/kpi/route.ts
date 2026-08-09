@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { createClient } from '@/lib/supabase/server';
+import { toOrderSalesTransaction } from '@/lib/sales/order-sales';
 
 type OrderStatus = 'pending' | 'paid' | 'failed' | 'cancelled';
 type PublishStatus = 'private' | 'published';
@@ -11,6 +12,9 @@ type OrderMetricRow = {
   user_id: string | null;
   status: OrderStatus;
   total_amount: number;
+  refunded_amount: number | null;
+  payment_intent_id: string;
+  currency: string;
   created_at: string;
 };
 
@@ -184,8 +188,13 @@ function applyOrderToAccumulator(
     return;
   }
 
+  const sale = toOrderSalesTransaction(order);
+  if (!sale) {
+    return;
+  }
+
   accumulator.paidOrders += 1;
-  accumulator.paidSales += order.total_amount;
+  accumulator.paidSales += sale.netAmount;
 
   if (orderAggregation.totalUnits >= 2) {
     accumulator.setOrderCount += 1;
@@ -295,7 +304,7 @@ export async function GET(request: Request) {
     const [ordersResult, orderItemsResult, itemsResult] = await Promise.all([
       supabase
         .from('orders')
-        .select('id, session_id, user_id, status, total_amount, created_at')
+        .select('id, session_id, user_id, payment_intent_id, status, total_amount, refunded_amount, currency, created_at')
         .order('created_at', { ascending: false }),
       supabase.from('order_items').select('order_id, item_id, item_name, quantity, line_total, created_at'),
       supabase.from('items').select('id, status'),
