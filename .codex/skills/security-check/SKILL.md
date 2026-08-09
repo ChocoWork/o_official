@@ -1,6 +1,6 @@
 ---
 name: security-check
-description: OWASP Top 10 (2021) / OWASP ASVS v4.0.3 / OWASP Secure Headers Project / OWASP Cheat Sheet Series / NIST SP 800-218 SSDF / MDN Web Security に準拠した、Next.js + React + TypeScript アプリケーションの厳格なセキュリティ監査を行う Skill。コード変更後・PR作成前・本番リリース前に必ず起動し、scripts/audit.sh による機械的検証を実施する。
+description: OWASP Top 10 (2021) / OWASP ASVS v4.0.3 / OWASP Secure Headers Project / OWASP Cheat Sheet Series / NIST SP 800-218 SSDF / MDN Web Security に準拠した、Next.js + React + TypeScript アプリケーションの厳格なセキュリティ監査を行う Skill。コード変更後・PR作成前・本番リリース前に必ず起動し、scripts/audit.py またはOS別ラッパーによる機械的検証を実施する。
 ---
 
 # Security Check Skill
@@ -19,7 +19,7 @@ description: OWASP Top 10 (2021) / OWASP ASVS v4.0.3 / OWASP Secure Headers Proj
 
 ```
 [1] スコープ特定    → 監査対象ファイル/ディレクトリの確定
-[2] 静的解析        → scripts/audit.sh の実行（必須）
+[2] 静的解析        → scripts/audit.py またはOS別ラッパーの実行（必須）
 [3] 設定確認        → next.config.js / middleware.ts / tsconfig / env の検査
 [4] 依存関係監査    → npm audit / lockfile 整合性
 [5] 手動レビュー    → references/ の各チェックリストに沿って論点を提示
@@ -135,7 +135,24 @@ description: OWASP Top 10 (2021) / OWASP ASVS v4.0.3 / OWASP Secure Headers Proj
 
 すべての監査で以下を**必ず**実行する：
 
-### 1. `audit.sh` — プロジェクト/ファイル単位の OWASP 机上監査
+### 1. `audit.py` — プロジェクト/ファイル単位の OWASP 机上監査
+
+監査本体はPython標準ライブラリだけで動作する。OSに応じて次を使う。
+
+```powershell
+# Windows / PowerShell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .codex/skills/security-check/scripts/audit.ps1 --files-only src/lib
+
+# Pythonを直接実行
+python .codex/skills/security-check/scripts/audit.py --files-only src/lib
+```
+
+```bash
+# Git Bash / Linux / macOS（既存互換）
+bash .codex/skills/security-check/scripts/audit.sh --files-only src/lib
+```
+
+Python 3を必須とし、追加のPythonパッケージは不要。PowerShellラッパーは `py -3`、`python` の順に検出する。
 
 ```bash
 bash .claude/skills/security-check/scripts/audit.sh [対象パス...]

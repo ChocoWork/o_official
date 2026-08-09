@@ -112,10 +112,11 @@ for (const viewport of viewports) {
       // FREQ-202-AC-02（FREQ-261 でサブタブを廃止し、KPI一覧パネル内のカードに変更）
       await page.goto('/admin');
 
-      await expect(page.getByText('リーチ数', { exact: true })).toBeVisible();
-      await expect(page.getByText('CVR', { exact: true })).toBeVisible();
-      await expect(page.getByText('CPA', { exact: true })).toBeVisible();
-      await expect(page.getByText('ROAS', { exact: true })).toBeVisible();
+      await expect(page.getByText('リーチ数', { exact: true }).last()).toBeVisible();
+      await expect(page.getByText('CVR', { exact: true }).last()).toBeVisible();
+      await expect(page.getByText('CPA', { exact: true }).last()).toBeVisible();
+			await expect(page.getByRole('button', { name: /^フォロー率/ }).last()).toBeVisible();
+      await expect(page.getByText('ROAS', { exact: true }).last()).toBeVisible();
 
       // SNS・広告系カードのサンプル参考バッジ
       await expect(page.getByText('参考', { exact: true }).first()).toBeVisible();
@@ -124,26 +125,44 @@ for (const viewport of viewports) {
     test('カード選択で推移・月次記録が同一画面に表示される', async ({ page }) => {
       // FREQ-202-AC-03（FREQ-261 でサブタブ切替から1画面構成へ）
       await page.goto('/admin');
-      await expect(page.getByText('リーチ数', { exact: true })).toBeVisible();
+      await expect(page.getByText('リーチ数', { exact: true }).last()).toBeVisible();
 
       // 既定は売上が選択され、推移グラフと月次記録が同時に見える
       await expect(page.getByText('売上推移', { exact: true })).toBeVisible();
       await expect(page.getByText('月次記録を入力', { exact: true })).toBeVisible();
 
-      await page.getByRole('button', { name: /^CVR/ }).click();
+      await page.getByRole('button', { name: /^CVR/ }).last().click();
       await expect(page.getByText('CVR推移', { exact: true })).toBeVisible();
     });
 
     test('横方向のページスクロールが発生しない', async ({ page }) => {
       // FREQ-202-AC-04
       await page.goto('/admin');
-      await expect(page.getByText('リーチ数', { exact: true })).toBeVisible();
+      await expect(page.getByText('リーチ数', { exact: true }).last()).toBeVisible();
 
       const hasHorizontalOverflow = await page.evaluate(() => {
         const doc = document.documentElement;
         return doc.scrollWidth > doc.clientWidth + 1;
       });
       expect(hasHorizontalOverflow).toBe(false);
+    });
+
+    test('ファネルの全段階に閉じた枠があり、段階間に装飾線がない', async ({ page }) => {
+      await page.goto('/admin');
+      await expect(page.locator('[data-funnel-stage="awareness"]')).toBeVisible();
+
+      for (const stageKey of ['interest', 'action']) {
+        const frame = page.locator(`[data-funnel-stage="${stageKey}"] [data-funnel-stage-frame]`);
+        const borders = await frame.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth];
+        });
+        expect(borders).toEqual(['1px', '1px', '1px', '1px']);
+      }
+
+      await expect(page.locator('[data-funnel-connector] > span')).toHaveCount(0);
+      await expect(page.locator('[data-funnel-stage="interest"] [data-funnel-connector]')).toHaveCount(0);
+      await expect(page.locator('[data-funnel-stage="action"] [data-funnel-connector]')).toHaveCount(0);
     });
   });
 }

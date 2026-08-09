@@ -32,5 +32,27 @@
       "WebFetch(domain:ssstein.com)",
       "WebFetch(domain:auralee.jp)"
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:/Users/14mas/.local/bin/graphify.exe hook-guard search"
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:/Users/14mas/.local/bin/graphify.exe hook-guard read"
+          }
+        ]
+      }
+    ]
   }
 }

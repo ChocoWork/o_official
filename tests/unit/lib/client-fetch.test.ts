@@ -81,6 +81,78 @@ describe('clientFetch', () => {
     );
   });
 
+  test('GET が401ならセッション更新後に元のリクエストを一度だけ再送する', async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({ ok: false, status: 401 })
+      .mockResolvedValueOnce({ ok: true, status: 200 })
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+
+    const response = await clientFetch('/api/admin/kpi/targets', {
+      cache: 'no-store',
+    });
+
+    expect(response).toEqual({ ok: true, status: 200 });
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+    expect(global.fetch).toHaveBeenNthCalledWith(2, '/api/auth/refresh', {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+    });
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      3,
+      '/api/admin/kpi/targets',
+      expect.objectContaining({ method: 'GET', credentials: 'same-origin' }),
+    );
+  });
+
+  test('同時に401になった複数GETはセッション更新を共有してそれぞれ再送する', async () => {
+    let refreshed = false;
+    let completeRefresh: (() => void) | undefined;
+    const refreshResponse = new Promise<{ ok: boolean; status: number }>((resolve) => {
+      completeRefresh = () => {
+        refreshed = true;
+        resolve({ ok: true, status: 200 });
+      };
+    });
+    (global.fetch as jest.Mock).mockImplementation(async (endpoint: string) => {
+      if (endpoint === '/api/auth/refresh') {
+        return refreshResponse;
+      }
+
+      return refreshed
+        ? { ok: true, status: 200 }
+        : { ok: false, status: 401 };
+    });
+
+    const responses = Promise.all([
+      clientFetch('/api/admin/kpi/targets', { cache: 'no-store' }),
+      clientFetch('/api/admin/kpi/monthly-record?season=2026SS', { cache: 'no-store' }),
+    ]);
+    await Promise.resolve();
+    await Promise.resolve();
+    completeRefresh?.();
+    const [targetsResponse, monthlyResponse] = await responses;
+
+    expect(targetsResponse.status).toBe(200);
+    expect(monthlyResponse.status).toBe(200);
+    expect(
+      (global.fetch as jest.Mock).mock.calls.filter(([endpoint]) => endpoint === '/api/auth/refresh'),
+    ).toHaveLength(1);
+    expect(global.fetch).toHaveBeenCalledTimes(5);
+  });
+
+  test('POST が401でも二重送信を避けるため自動再送しない', async () => {
+    cookieGetterSpy = jest
+      .spyOn(document, 'cookie', 'get')
+      .mockReturnValue('sb-csrf-token=csrf-token-value');
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: false, status: 401 });
+
+    const response = await clientFetch('/api/admin/kpi/targets', { method: 'POST' });
+
+    expect(response.status).toBe(401);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
   test('POST の通信失敗は二重送信を避けるため再試行しない', async () => {
     cookieGetterSpy = jest
       .spyOn(document, 'cookie', 'get')

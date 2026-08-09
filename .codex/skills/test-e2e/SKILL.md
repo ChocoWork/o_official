@@ -1,6 +1,6 @@
 ---
 name: test-e2e
-description: 'Playwright による E2E テストの実行スキル。本番ビルド（next build && next start）に対して e2e/*.spec.ts を実行し、失敗が実装由来か環境由来かを切り分ける。E2E テストを実行・デバッグする際には必ずこのスキルに従うこと。'
+description: 'Playwright による E2E テストの実行スキル。常にポート3000を使用し、未起動ならサーバーを起動してから e2e/*.spec.ts を実行し、終了後もサーバーを稼働させたままにする。E2E テストを実行・デバッグする際には必ずこのスキルに従うこと。'
 ---
 
 # E2E テスト実行スキル
@@ -9,15 +9,15 @@ description: 'Playwright による E2E テストの実行スキル。本番ビ�
 
 ## 鉄則
 
-**E2E は本番ビルドに対して実行する。dev サーバーでは実行しない。**
-
-dev サーバーはリクエストのたびにオンデマンドコンパイルする。件数が増えると `page.goto` が 30 秒返らない・要素が描画されないという、**実装とは無関係な失敗**を出す。実測で 288 件 22 分の直列実行で 9 件失敗し、同じテストを単体実行すると 111/111 パスした。
-
-この偽の失敗を実装のバグと誤診すると、直す必要のないコードを触ることになる。
+- 接続先には常に `http://localhost:3000` を使う。別ポートを使わない
+- ポート3000が稼働中なら、その既存サーバーをそのまま使う
+- ポート3000が未起動なら、テスト前にサーバーをポート3000で起動し、応答可能になるまで待つ
+- テスト終了後もポート3000のプロセスをKillせず、稼働させたままにする
+- 別ポートへの切り替え、既存プロセスの再起動、テスト後の停止を行わない
 
 ## 実行
 
-`playwright.config.ts` の `webServer` が既定で `npm run build && npm run start` を起動する。通常は叩くだけでよい。
+`playwright.config.ts` の `baseURL` は常に `http://localhost:3000` を使用する。Playwrightの `webServer` 機能はテスト後にプロセスを停止する可能性があるため使わない。事前確認手順で必要な場合だけ、独立したバックグラウンドプロセスとして起動する。
 
 ```bash
 npm run test:e2e                                  # 全件
@@ -30,21 +30,30 @@ npx playwright test --reporter=line               # 全件実行時はこちら�
 
 ### 事前確認（必須）
 
-`reuseExistingServer: true` のため、**`npm run dev` が :3000 で動いたままだと Playwright はそれを再利用し、黙って dev サーバーに対してテストしてしまう**。実行前に必ず止める。
+ポート3000がListen中か確認する。未起動の場合だけ、リポジトリのルートで非表示の独立プロセスとして起動する。起動済みのPIDに対して `Stop-Process`、`taskkill`、その他の終了操作を行わない。
 
 ```powershell
-Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue
+$listener = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue
+if (-not $listener) {
+  Start-Process -FilePath 'npm.cmd' -ArgumentList 'run', 'dev' -WorkingDirectory (Get-Location).Path -WindowStyle Hidden
+}
 ```
 
-### dev サーバーで動かす場合
+起動した場合は `http://localhost:3000` が応答するまで最大120秒待つ。応答しなければテストを実行せず、起動失敗として報告する。待機中も既存プロセスを停止しない。
 
-デバッグ中に再ビルドを避けたいときのみ。
-
-```bash
-E2E_DEV_SERVER=1 npx playwright test e2e/FR-ADMIN-031
+```powershell
+$ready = $false
+for ($attempt = 0; $attempt -lt 60; $attempt++) {
+  try {
+    Invoke-WebRequest -Uri 'http://localhost:3000' -Method Head -TimeoutSec 2 -UseBasicParsing | Out-Null
+    $ready = $true
+    break
+  } catch {
+    Start-Sleep -Seconds 2
+  }
+}
+if (-not $ready) { throw 'Port 3000 server did not become ready within 120 seconds.' }
 ```
-
-**この結果を回帰の合否判断に使わない。** 通っても通らなくても、最終確認は本番ビルドでやり直す。
 
 ## 失敗の切り分け
 

@@ -9,7 +9,15 @@ test.describe('FR-LOGIN-002 Google OAuth button', () => {
   test('starts Google OAuth with account chooser enabled', async ({ page }) => {
     await page.goto('/login');
 
+    const oauthStartResponsePromise = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === '/api/auth/oauth/start';
+    });
+
     await page.getByRole('button', { name: /Googleでサインイン/i }).click();
+
+    const oauthStartResponse = await oauthStartResponsePromise;
+    expect(oauthStartResponse.status(), 'OAuth start route must redirect instead of returning 404').toBe(302);
 
     await expect
       .poll(

@@ -62,8 +62,8 @@ for (const viewport of viewports) {
       await page.goto('/admin');
       await expect(page.getByText('リーチ数', { exact: true })).toBeVisible();
 
-      // KPIカードのアイコンは role="img"（19指標）＋選択中KPIのサマリーに1つ（FREQ-261）
-      await expect(page.locator('span[role="img"]')).toHaveCount(20);
+      // KPIカードのアイコンは role="img"（20指標）＋選択中KPIのサマリーに1つ（FREQ-261）
+      await expect(page.locator('span[role="img"]')).toHaveCount(21);
 
       const cpmCard = page.getByRole('button', { name: /^CPM/ });
       await expect(cpmCard.getByRole('img')).toHaveAttribute('aria-label', /表示単価/);

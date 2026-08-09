@@ -33,7 +33,7 @@ export interface GraphDatum {
 /** 軸付きグラフ（line / stacked-bars）の1系列。値は categories と同じ順・同じ長さ。 */
 export interface GraphSeries {
   label: string;
-  values: readonly number[];
+  values: readonly (number | null)[];
   color?: string;
   /** 折れ線ではなく棒で描く（line の背面に置く）。既定は line。 */
   kind?: 'line' | 'bar';

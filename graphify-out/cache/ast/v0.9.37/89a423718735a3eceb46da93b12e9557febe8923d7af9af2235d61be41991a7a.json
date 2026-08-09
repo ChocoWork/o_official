@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_migrations_066_create_admin_finance_expense_templates_sql", "label": "066_create_admin_finance_expense_templates.sql", "file_type": "code", "source_file": "migrations/066_create_admin_finance_expense_templates.sql", "source_location": null}], "edges": []}

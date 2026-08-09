@@ -65,6 +65,15 @@ For multi-step tasks, state a brief plan:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
+### Bug Fix Verification
+
+バグ修正は、元の再現操作を実行して同じエラーが消えたことを確認するまで完了扱いにしない。
+
+- Web UI のバグは本番ビルドに対してブラウザで再現操作する
+- 対象画面の Console Error と失敗した Network 応答を確認する
+- API モックだけのテスト結果を、実API障害の修正確認として扱わない
+- 実環境を再現できない場合は未確認事項として明記し、修正完了と断定しない
+
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.

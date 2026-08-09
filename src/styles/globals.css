@@ -2,6 +2,10 @@
 @import "tw-animate-css";
 @import "remixicon/fonts/remixicon.css";
 
+/* 生成物。巨大な graph.json / graph.html を走査すると Tailwind が落ちる */
+@source not "../../graphify-out";
+@source not "../../docs/graphify-out";
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

@@ -21,6 +21,7 @@ function getCsrfTokenFromCookie(): string | undefined {
 }
 
 const NETWORK_RETRY_DELAY_MS = 250;
+let refreshSessionPromise: Promise<boolean> | null = null;
 
 function isRetryableRequest(method: string): boolean {
   return method === 'GET' || method === 'HEAD';
@@ -30,6 +31,23 @@ function waitBeforeRetry(): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, NETWORK_RETRY_DELAY_MS);
   });
+}
+
+function refreshSession(): Promise<boolean> {
+  if (!refreshSessionPromise) {
+    refreshSessionPromise = fetch('/api/auth/refresh', {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+    })
+      .then((response) => response.ok)
+      .catch(() => false)
+      .finally(() => {
+        refreshSessionPromise = null;
+      });
+  }
+
+  return refreshSessionPromise;
 }
 
 async function fetchWithNetworkRetry(
@@ -67,13 +85,7 @@ export async function clientFetch(
     // the readable CSRF cookie. Refresh the session once to issue a matching
     // cookie/hash pair before sending the state-changing request.
     if (!csrfToken && endpoint !== '/api/auth/refresh') {
-      const refreshResponse = await fetch('/api/auth/refresh', {
-        method: 'POST',
-        credentials: 'same-origin',
-        cache: 'no-store',
-      });
-
-      if (refreshResponse.ok) {
+      if (await refreshSession()) {
         csrfToken = getCsrfTokenFromCookie();
       }
     }
@@ -90,5 +102,19 @@ export async function clientFetch(
     credentials: 'same-origin',
   };
 
-  return fetchWithNetworkRetry(endpoint, requestOptions, method);
+  const response = await fetchWithNetworkRetry(endpoint, requestOptions, method);
+
+  // Access tokens can expire between the page-level auth check and subsequent
+  // API reads. Refresh once and replay only idempotent requests. Concurrent
+  // 401 responses share one refresh to avoid refresh-token replay detection.
+  if (
+    response.status === 401 &&
+    endpoint !== '/api/auth/refresh' &&
+    isRetryableRequest(method) &&
+    await refreshSession()
+  ) {
+    return fetchWithNetworkRetry(endpoint, requestOptions, method);
+  }
+
+  return response;
 }

@@ -1,6 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 
-// FREQ-219: KPI一覧の行をプルダウンと同じ19指標に
+// FREQ-219: KPI一覧の行をプルダウンと同じ20指標に
 const viewports = [
   { name: 'mobile', width: 390, height: 844 },
   { name: 'tablet', width: 768, height: 1024 },
@@ -22,6 +22,7 @@ const KPI_LABELS = [
   'リーチ数',
   '保存率',
   'プロフィール遷移率',
+  'フォロー率',
   'ストーリー視聴数',
   'ストーリー到達率',
   'リンククリック率',
@@ -62,7 +63,10 @@ function months(seed: number) {
   );
 }
 
-async function mockAdminApis(page: Page): Promise<void> {
+async function mockAdminApis(
+  page: Page,
+  monthlyRecordValues: Record<string, Record<string, number>> = {},
+): Promise<void> {
   await page.route('**/api/auth/me', async (route) => {
     await route.fulfill({
       status: 200,
@@ -106,12 +110,26 @@ async function mockAdminApis(page: Page): Promise<void> {
       }),
     });
   });
+
+  await page.route('**/api/admin/kpi/monthly-record**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          season: '2026SS',
+          monthKeys: ['2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09'],
+          values: monthlyRecordValues,
+        },
+      }),
+    });
+  });
 }
 
 // FREQ-261 で全KPIの推移表はインサイト行の「内訳を見る」から開くドロワーへ移動した。
 async function openTrendTab(page: Page) {
   await page.goto('/admin');
-  await page.getByText('リーチ数', { exact: true }).waitFor();
+  await page.getByRole('button', { name: /^リーチ数：/ }).waitFor();
   await page.getByRole('button', { name: '内訳を見る' }).click();
 }
 
@@ -129,7 +147,7 @@ for (const viewport of viewports) {
       await mockAdminApis(page);
     });
 
-    test('行がプルダウンと同じ19指標になる', async ({ page }) => {
+    test('行がプルダウンと同じ20指標になる', async ({ page }) => {
       // FREQ-219-AC-01
       await openTrendTab(page);
 
@@ -147,7 +165,7 @@ for (const viewport of viewports) {
       await expect(page.getByRole('cell', { name: '新規ユーザー数' })).toHaveCount(0);
     });
 
-    test('参考値の行にバッジが付き、値が指標ごとの単位で表示される', async ({ page }) => {
+    test('参考値の行にバッジが付き、未記録値はダッシュで表示される', async ({ page }) => {
       // FREQ-219-AC-02
       await openTrendTab(page);
 
@@ -157,10 +175,10 @@ for (const viewport of viewports) {
       await expect(reachRow.getByText('参考', { exact: true })).toBeVisible();
       await expect(salesRow.getByText('参考', { exact: true })).toHaveCount(0);
 
-      await expect(salesRow.locator('td').nth(1)).toHaveText(/^¥[\d,]+$/);
+      await expect(salesRow.locator('td').nth(1)).toHaveText('—');
 
       const cvrRow = trendTableBody(page).locator('tr').filter({ hasText: 'CVR' });
-      await expect(cvrRow.locator('td').nth(1)).toHaveText(/%$/);
+      await expect(cvrRow.locator('td').nth(1)).toHaveText('—');
     });
 
     test('成長率(CAGR)列が維持され、横スクロールしない', async ({ page }) => {
@@ -174,6 +192,41 @@ for (const viewport of viewports) {
         return doc.scrollWidth > doc.clientWidth + 1;
       });
       expect(hasHorizontalOverflow).toBe(false);
+    });
+
+    test('未記録のROASには実績推移を描画しない', async ({ page }) => {
+      // FREQ-262-AC-01
+      await page.goto('/admin');
+      await page.getByRole('button', { name: /^リーチ数：/ }).waitFor();
+      await page.getByRole('button', { name: /^ROAS：/ }).click();
+
+      await expect(page.getByLabel('ROASの推移グラフ')).toHaveCount(0);
+      await expect(page.getByText('表示できるデータがありません。', { exact: true })).toBeVisible();
+    });
+
+    test('記録済みの月だけROASの実績点を描画する', async ({ page }) => {
+      // FREQ-262-AC-01
+      await page.unroute('**/api/admin/kpi/monthly-record**');
+      await mockAdminApis(page, { '2026-05': { 'kpi:roas': 3.2 } });
+      await page.goto('/admin');
+      await page.getByRole('button', { name: /^リーチ数：/ }).waitFor();
+      await page.getByRole('button', { name: /^ROAS：/ }).click();
+
+      const graph = page.getByLabel('ROASの推移グラフ');
+      await expect(graph.locator('circle')).toHaveCount(1);
+    });
+
+    test('ROASのシーズン・年度にサンプル推移を描画しない', async ({ page }) => {
+      // FREQ-262-AC-02
+      await page.goto('/admin');
+      await page.getByRole('button', { name: /^リーチ数：/ }).waitFor();
+      await page.getByRole('button', { name: /^ROAS：/ }).click();
+
+      await page.getByRole('tab', { name: 'シーズン', exact: true }).click();
+      await expect(page.getByLabel('ROASの推移グラフ')).toHaveCount(0);
+
+      await page.getByRole('tab', { name: '年度', exact: true }).click();
+      await expect(page.getByLabel('ROASの推移グラフ')).toHaveCount(0);
     });
   });
 }

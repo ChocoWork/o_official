@@ -1,6 +1,6 @@
 // 月次記録タブの算出モデル。API（/api/admin/kpi/monthly-record）とフロント（KpiSection）で共有する。
 // - 源データ（SOURCE_METRICS）: 各KPIを算出するための元数値。order 由来は注文DBから機械取得、manual 由来はSNS・広告系で手入力。
-// - KPI算出式（MONTHLY_KPI_FORMULAS）: 源データから19指標を計算する式。KPIキーは KPI_CARD_DEFINITIONS と一致させる。
+// - KPI算出式（MONTHLY_KPI_FORMULAS）: 源データから20指標を計算する式。KPIキーは KPI_CARD_DEFINITIONS と一致させる。
 
 export type SourceMetricGroup = 'order' | 'manual';
 
@@ -27,6 +27,7 @@ export const SOURCE_METRICS: SourceMetricDef[] = [
 	{ key: 'reach', label: 'リーチ数', unit: '人', group: 'manual' },
 	{ key: 'saves', label: '保存数', unit: '回', group: 'manual' },
 	{ key: 'profile_visits', label: 'プロフィールアクセス数', unit: '回', group: 'manual' },
+	{ key: 'new_followers', label: '新規フォロー数', unit: '人', group: 'manual' },
 	{ key: 'story_views', label: 'ストーリー視聴数', unit: '回', group: 'manual' },
 	{ key: 'followers', label: 'フォロワー数', unit: '人', group: 'manual' },
 	{ key: 'story_reach', label: 'ストーリー到達数', unit: '人', group: 'manual' },
@@ -66,6 +67,7 @@ export const MONTHLY_KPI_FORMULAS: MonthlyKpiFormulaDef[] = [
 	{ key: 'reach', label: 'リーチ数', formulaText: 'リーチ数', compute: (s) => direct(s.reach) },
 	{ key: 'save_rate', label: '保存率', formulaText: '保存数 ÷ リーチ数', compute: (s) => ratio(s.saves, s.reach) },
 	{ key: 'profile_rate', label: 'プロフィール遷移率', formulaText: 'プロフィールアクセス数 ÷ リーチ数', compute: (s) => ratio(s.profile_visits, s.reach) },
+	{ key: 'follow_rate', label: 'フォロー率', formulaText: '新規フォロー数 ÷ プロフィールアクセス数', compute: (s) => ratio(s.new_followers, s.profile_visits) },
 	{ key: 'story_views', label: 'ストーリー視聴数', formulaText: 'ストーリー視聴数', compute: (s) => direct(s.story_views) },
 	{ key: 'story_reach', label: 'ストーリー到達率', formulaText: 'ストーリー到達数 ÷ フォロワー数', compute: (s) => ratio(s.story_reach, s.followers) },
 	{ key: 'link_click', label: 'リンククリック率', formulaText: 'リンククリック数 ÷ プロフィールアクセス数', compute: (s) => ratio(s.link_clicks, s.profile_visits) },
@@ -94,6 +96,75 @@ export function sourceStorageKey(metricKey: string): string {
 
 export function kpiOverrideStorageKey(kpiKey: string): string {
 	return `${KPI_OVERRIDE_PREFIX}${kpiKey}`;
+}
+
+function parseRecordedNumber(value: string | number | undefined): number | null {
+	if (value === undefined || value === '') {
+		return null;
+	}
+	const parsed = typeof value === 'number' ? value : Number(value);
+	return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function resolveRecordedKpiValue(
+	monthValues: Record<string, string | number | undefined>,
+	kpiKey: string,
+): number | null {
+	const override = parseRecordedNumber(monthValues[kpiOverrideStorageKey(kpiKey)]);
+	if (override !== null) {
+		return override;
+	}
+
+	const formula = MONTHLY_KPI_FORMULAS.find((item) => item.key === kpiKey);
+	if (!formula) {
+		return null;
+	}
+
+	const source: Record<string, number | undefined> = {};
+	for (const metric of SOURCE_METRICS) {
+		const value = parseRecordedNumber(monthValues[sourceStorageKey(metric.key)]);
+		if (value !== null) {
+			source[metric.key] = value;
+		}
+	}
+	return formula.compute(source);
+}
+
+export function findRecordedSeriesRange(values: readonly (number | null)[]): {
+	first: number;
+	last: number;
+	periodCount: number;
+} | null {
+	const firstIndex = values.findIndex((value) => value !== null);
+	if (firstIndex < 0) {
+		return null;
+	}
+
+	let lastIndex = values.length - 1;
+	while (lastIndex > firstIndex && values[lastIndex] === null) {
+		lastIndex -= 1;
+	}
+	if (lastIndex === firstIndex) {
+		return null;
+	}
+
+	return {
+		first: values[firstIndex] as number,
+		last: values[lastIndex] as number,
+		periodCount: lastIndex - firstIndex + 1,
+	};
+}
+
+export function latestAdjacentRecordedPair(values: readonly (number | null)[]): {
+	previous: number;
+	current: number;
+} | null {
+	if (values.length < 2) {
+		return null;
+	}
+	const previous = values[values.length - 2];
+	const current = values[values.length - 1];
+	return previous === null || current === null ? null : { previous, current };
 }
 
 const VALID_STORAGE_KEYS = new Set<string>([

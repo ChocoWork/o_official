@@ -10,6 +10,8 @@ import { StatusBadge } from '@/components/ui/StatusBadge/StatusBadge';
 import { TabSegmentControl } from '@/components/ui/TabSegmentControl/TabSegmentControl';
 import { TagLabel } from '@/components/ui/TagLabel/TagLabel';
 import { TextField } from '@/components/ui/TextField/TextField';
+import { KpiSalesFunnel } from '@/components/KpiSalesFunnel';
+import { MetaKpiConnection } from '@/components/MetaKpiConnection';
 import type { GraphSeries } from '@/components/ui/Graph/Graph_types';
 import type { SelectOption } from '@/components/ui/types';
 import { clientFetch } from '@/lib/client-fetch';
@@ -24,6 +26,9 @@ import {
 	seasonSortKey,
 	seasonMonthKeys,
 	seasonOptionsDescending,
+	findRecordedSeriesRange,
+	latestAdjacentRecordedPair,
+	resolveRecordedKpiValue,
 	type SourceMetricDef,
 } from '@/lib/kpi/monthly-metrics';
 
@@ -170,6 +175,7 @@ const KPI_CARD_DEFINITIONS: KpiCardDefinition[] = [
 	{ key: 'reach', label: 'リーチ数', unitLabel: '目標人', icon: 'ri-radar-line', category: '集客', direction: 'atLeast', targetKey: 'reach', sample: { valueText: '128,450', targetText: '200,000 人', percent: 64.2, spark: SPARK_UP } },
 	{ key: 'save_rate', label: '保存率', unitLabel: '目標%', icon: 'ri-bookmark-line', category: '集客', direction: 'atLeast', targetKey: 'save_rate', sample: { valueText: '18.6%', targetText: '25.0%', percent: 74.4, spark: SPARK_STRONG } },
 	{ key: 'profile_rate', label: 'プロフィール遷移率', unitLabel: '目標%', icon: 'ri-user-shared-line', category: '集客', direction: 'atLeast', targetKey: 'profile_transition_rate', sample: { valueText: '6.3%', targetText: '10.0%', percent: 63.0, spark: SPARK_UP } },
+	{ key: 'follow_rate', label: 'フォロー率', unitLabel: '目標%', icon: 'ri-user-add-line', category: '集客', direction: 'atLeast', targetKey: 'follow_rate' },
 	{ key: 'story_views', label: 'ストーリー視聴数', unitLabel: '目標回', icon: 'ri-play-circle-line', category: '集客', direction: 'atLeast', targetKey: 'story_views', sample: { valueText: '8,420', targetText: '12,000 回', percent: 70.2, spark: SPARK_UP } },
 	{ key: 'story_reach', label: 'ストーリー到達率', unitLabel: '目標%', icon: 'ri-eye-2-line', category: '集客', direction: 'atLeast', targetKey: 'story_reach_rate', sample: { valueText: '42.0%', targetText: '60.0%', percent: 70.0, spark: SPARK_GENTLE } },
 	{ key: 'link_click', label: 'リンククリック率', unitLabel: '目標%', icon: 'ri-links-line', category: '集客', direction: 'atLeast', targetKey: 'link_click_rate', sample: { valueText: '2.8%', targetText: '5.0%', percent: 56.0, spark: SPARK_UP } },
@@ -183,6 +189,7 @@ const KPI_DESCRIPTIONS: Record<string, string> = {
 	reach: '投稿や広告が届いた人数。どれだけの人の目に触れたかを表す',
 	save_rate: '投稿を見た人のうち、後で見返すために保存した人の割合',
 	profile_rate: '投稿を見た人のうち、プロフィールを訪れた人の割合',
+	follow_rate: 'プロフィールを訪れた人のうち、新しくフォローした人の割合',
 	story_views: 'ストーリーが再生された回数',
 	story_reach: 'ストーリーがフォロワーのうち何割に届いたか',
 	link_click: 'プロフィールや投稿のリンクがクリックされた割合',
@@ -298,26 +305,27 @@ const TREND_KPI_ACCESSORS: Record<string, (values: TrendMetricValues) => number>
 	return_rate: (values) => values.returnRate,
 };
 
-// 参考値KPIは期間別データを持たないため、カードと同じサンプル波形を期間数に合わせて標本化する。
-function sampleSparkSeries(spark: number[], count: number): number[] {
-	if (count <= 0 || spark.length === 0) {
-		return [];
+// 1指標の期間別の値。月次は保存済み記録だけを使い、未記録値を生成しない。
+function kpiSeriesValues(
+	definition: KpiCardDefinition,
+	points: TrendPoint[],
+	granularity: TrendGranularity,
+	monthKeys: string[],
+	recordValues: Record<string, Record<string, string>>,
+): (number | null)[] {
+	if (granularity === 'month') {
+		return monthKeys.map((monthKey) =>
+			resolveRecordedKpiValue(recordValues[monthKey] ?? {}, definition.key),
+		);
 	}
-	if (count === 1) {
-		return [spark[spark.length - 1]];
-	}
-	return Array.from({ length: count }, (_, index) => spark[Math.round((index * (spark.length - 1)) / (count - 1))]);
-}
 
-// 1指標の期間別の値。実データ接続済みは実値、参考値はサンプル波形。グラフと内訳表で共用する。
-function kpiSeriesValues(definition: KpiCardDefinition, points: TrendPoint[]): number[] {
 	const accessor = definition.connectedKey ? TREND_KPI_ACCESSORS[definition.connectedKey] : undefined;
 
 	if (accessor) {
 		return points.map(accessor);
 	}
 
-	return sampleSparkSeries(definition.sample?.spark ?? [], points.length);
+	return points.map(() => null);
 }
 
 // 1指標の「1年前」の値。実データ接続済みで、前年の期間が揃っているときだけ描く。
@@ -518,18 +526,30 @@ function KpiListCard({
 	isSelected: boolean;
 	onSelect: () => void;
 }) {
+	const achievementState = card.percent === null ? null : card.percent >= 100 ? '達成' : '未達成';
+	const statusColor = achievementState === '達成'
+		? 'border-[#b9d9f5] bg-[#eef7ff]'
+		: achievementState === '未達成'
+			? 'border-[#f1c4c4] bg-[#fff1f1]'
+			: 'border-[#e8e8e8] bg-white';
+
 	return (
 		<button
 			type="button"
 			aria-pressed={isSelected}
 			onClick={onSelect}
-			className={`flex w-full flex-col items-stretch rounded-lg p-3 text-left transition-colors ${
-				isSelected ? 'border-2 border-black bg-white' : 'border border-[#e8e8e8] bg-white hover:border-[#888888]'
+			className={`flex w-full flex-col items-stretch rounded-lg p-3 text-left transition-colors ${statusColor} ${
+				isSelected ? 'border-2 border-black' : 'border hover:border-[#888888]'
 			}`}
 		>
 			<span className="mb-2 flex items-center gap-2">
 				<KpiIcon card={card} />
 				<span className="min-w-0 flex-1 truncate font-acumin text-xs text-black">{card.label}</span>
+				{achievementState ? (
+					<span className={`shrink-0 rounded-full px-1.5 py-0.5 font-acumin text-[10px] tracking-wider ${achievementState === '達成' ? 'bg-[#d8ecff] text-[#195b91]' : 'bg-[#ffdede] text-[#9b3030]'}`}>
+						{achievementState}
+					</span>
+				) : null}
 				{card.isSample ? (
 					<span className="shrink-0 rounded-full bg-[#ededed] px-1.5 py-0.5 font-acumin text-[10px] tracking-wider text-[#888888]">
 						参考
@@ -552,12 +572,15 @@ export default function KpiSection({ data, isLoading, errorMessage, onRetry }: K
 	const [kpiKeyword, setKpiKeyword] = useState('');
 	const [trendGranularity, setTrendGranularity] = useState<TrendGranularity>('month');
 	const [targetData, setTargetData] = useState<KpiTargetData | null>(null);
+	const [targetLoadErrorMessage, setTargetLoadErrorMessage] = useState<string | null>(null);
 	const [isSourceDrawerOpen, setIsSourceDrawerOpen] = useState(false);
 	const [isBreakdownDrawerOpen, setIsBreakdownDrawerOpen] = useState(false);
+	const [isFunnelOpen, setIsFunnelOpen] = useState(true);
 
 	// 目標データはKPIカード・ヘッダーの達成率・推移グラフの目標線で参照する。
 	const fetchKpiTargets = useCallback(async () => {
 		try {
+			setTargetLoadErrorMessage(null);
 			const response = await clientFetch('/api/admin/kpi/targets', { cache: 'no-store' });
 			if (!response.ok) {
 				throw new Error('KPI目標の取得に失敗しました。');
@@ -565,13 +588,19 @@ export default function KpiSection({ data, isLoading, errorMessage, onRetry }: K
 			const json = (await response.json()) as { data: KpiTargetData };
 			setTargetData(json.data);
 		} catch (error) {
-			console.error('Failed to fetch KPI targets:', error);
+			const message = error instanceof Error ? error.message : 'KPI目標の取得に失敗しました。';
+			console.warn('Failed to fetch KPI targets:', message);
+			setTargetLoadErrorMessage(message);
 		}
 	}, []);
 
 	useEffect(() => {
+		// 主KPIの認証済みレスポンスを受け取るまで、同じ認証境界の補助APIを並行実行しない。
+		if (!data || isLoading || errorMessage) {
+			return;
+		}
 		void fetchKpiTargets();
-	}, [fetchKpiTargets]);
+	}, [data, errorMessage, fetchKpiTargets, isLoading]);
 
 	// --- 月次記録：選択シーズン（6ヶ月）の算出元データ入力とKPI自動計算 ---
 	// 月の並びはシーズンから決める（APIの取得可否に月次グラフ・入力欄を依存させない）。
@@ -616,8 +645,9 @@ export default function KpiSection({ data, isLoading, errorMessage, onRetry }: K
 			setEditableRecordValues(nextValues);
 			setOriginalRecordValues(structuredClone(nextValues));
 		} catch (error) {
-			console.error('Failed to fetch monthly record:', error);
-			setRecordErrorMessage(error instanceof Error ? error.message : '月次記録の取得に失敗しました。');
+			const message = error instanceof Error ? error.message : '月次記録の取得に失敗しました。';
+			console.warn('Failed to fetch monthly record:', message);
+			setRecordErrorMessage(message);
 		} finally {
 			setIsRecordLoading(false);
 		}
@@ -625,8 +655,11 @@ export default function KpiSection({ data, isLoading, errorMessage, onRetry }: K
 
 	// シーズン切替に追従して6ヶ月分を読み込む。
 	useEffect(() => {
+		if (!data || isLoading || errorMessage || !selectedSeason) {
+			return;
+		}
 		void fetchMonthlyRecord(selectedSeason);
-	}, [fetchMonthlyRecord, selectedSeason]);
+	}, [data, errorMessage, fetchMonthlyRecord, isLoading, selectedSeason]);
 
 	// 記録対象の月。今月がシーズンに含まれればそれを、無ければ先頭月を選ぶ。
 	useEffect(() => {
@@ -744,15 +777,23 @@ export default function KpiSection({ data, isLoading, errorMessage, onRetry }: K
 	}, [trendSeries, selectedDefinition, targetData]);
 
 	const trendActualValues = useMemo(
-		() => kpiSeriesValues(selectedDefinition, trendSeries),
-		[selectedDefinition, trendSeries],
+		() => kpiSeriesValues(
+			selectedDefinition,
+			trendSeries,
+			trendGranularity,
+			recordMonthKeys,
+			editableRecordValues,
+		),
+		[selectedDefinition, trendSeries, trendGranularity, recordMonthKeys, editableRecordValues],
 	);
 
 	const selectedUnit = kpiUnit(selectedDefinition.unitLabel);
 
 	// 実績・目標・前年の3系列。目標と前年は全期間そろっているときだけ重ねる。
 	const trendGraphSeries = useMemo<GraphSeries[]>(() => {
-		const series: GraphSeries[] = [{ label: '実績', values: trendActualValues, color: '#111111' }];
+		const series: GraphSeries[] = trendActualValues.some((value) => value !== null)
+			? [{ label: '実績', values: trendActualValues, color: '#111111' }]
+			: [];
 
 		if (trendTargets.length > 0 && trendTargets.every((value) => value !== null)) {
 			series.push({
@@ -782,17 +823,26 @@ export default function KpiSection({ data, isLoading, errorMessage, onRetry }: K
 	const trendTableRows = useMemo(
 		() =>
 			KPI_CARD_DEFINITIONS.map((definition) => {
-				const values = kpiSeriesValues(definition, trendSeries);
+				const values = kpiSeriesValues(
+					definition,
+					trendSeries,
+					trendGranularity,
+					recordMonthKeys,
+					editableRecordValues,
+				);
+				const recordedRange = findRecordedSeriesRange(values);
 				return {
 					key: definition.key,
 					label: definition.label,
 					unit: kpiUnit(definition.unitLabel),
 					isSample: !definition.connectedKey,
 					values,
-					cagr: computeCagr(values[0] ?? 0, values[values.length - 1] ?? 0, values.length),
+					cagr: recordedRange
+						? computeCagr(recordedRange.first, recordedRange.last, recordedRange.periodCount)
+						: null,
 				};
 			}),
-		[trendSeries],
+		[trendSeries, trendGranularity, recordMonthKeys, editableRecordValues],
 	);
 
 	const selectedSeasonMetric = useMemo(() => {
@@ -803,6 +853,22 @@ export default function KpiSection({ data, isLoading, errorMessage, onRetry }: K
 		const matched = data.seasonalKpi.find((metric) => metric.period === selectedSeason);
 		return matched ?? data.seasonalKpi[0] ?? null;
 	}, [data, selectedSeason]);
+
+	const selectedRecordedKpis = useMemo(() => {
+		const monthValues = editableRecordValues[selectedMonthKey] ?? {};
+		const source: Record<string, number | undefined> = {};
+		for (const metric of SOURCE_METRICS) {
+			const value = parseNumericInput(monthValues[sourceStorageKey(metric.key)] ?? '');
+			source[metric.key] = value ?? undefined;
+		}
+		const computed = new Map<string, number>();
+		for (const formula of MONTHLY_KPI_FORMULAS) {
+			const override = parseNumericInput(monthValues[kpiOverrideStorageKey(formula.key)] ?? '');
+			const value = override ?? formula.compute(source);
+			if (value !== null) computed.set(formula.key, value);
+		}
+		return computed;
+	}, [editableRecordValues, selectedMonthKey]);
 
 	const kpiCards = useMemo<ResolvedKpiCard[]>(() => {
 		// 「算出式」欄に出す定義（kpi_key→定義文）。
@@ -832,6 +898,23 @@ export default function KpiSection({ data, isLoading, errorMessage, onRetry }: K
 				rawTarget,
 			};
 
+			const recordedValue = selectedRecordedKpis.get(definition.key);
+			if (recordedValue !== undefined && !definition.connectedKey) {
+				const percent = targetNumeric !== null
+					? calculateProgressPercent(recordedValue, targetNumeric, definition.direction)
+					: null;
+				return {
+					...base,
+					valueText: formatKpiValue(recordedValue, base.unit),
+					currentValue: recordedValue,
+					targetText: formattedTarget || '—',
+					targetValue: targetNumeric,
+					percent,
+					percentText: percent === null ? '—' : `${percent.toFixed(1)}%`,
+					isSample: false,
+				};
+			}
+
 			if (definition.connectedKey) {
 				const accessor = CONNECTED_KPI_METRICS[definition.connectedKey];
 				const metric = selectedSeasonMetric;
@@ -853,7 +936,19 @@ export default function KpiSection({ data, isLoading, errorMessage, onRetry }: K
 				};
 			}
 
-			const sample = definition.sample as KpiCardSample;
+			const sample = definition.sample;
+			if (!sample) {
+				return {
+					...base,
+					valueText: '—',
+					currentValue: null,
+					targetText: formattedTarget || '—',
+					targetValue: targetNumeric,
+					percent: null,
+					percentText: '—',
+					isSample: false,
+				};
+			}
 
 			return {
 				...base,
@@ -866,7 +961,7 @@ export default function KpiSection({ data, isLoading, errorMessage, onRetry }: K
 				isSample: true,
 			};
 		});
-	}, [selectedSeasonMetric, targetData, selectedSeason]);
+	}, [selectedSeasonMetric, selectedRecordedKpis, targetData, selectedSeason]);
 
 	const selectedCard = useMemo(
 		() => kpiCards.find((card) => card.key === selectedKpiKey) ?? kpiCards[0],
@@ -1200,11 +1295,12 @@ export default function KpiSection({ data, isLoading, errorMessage, onRetry }: K
 
 	// インサイト：直近期間の増減と、目標までの残り。
 	const insight = useMemo(() => {
-		if (trendActualValues.length === 0 || !selectedCard) {
+		const current = trendActualValues[trendActualValues.length - 1] ?? null;
+		if (current === null || !selectedCard) {
 			return null;
 		}
-		const current = trendActualValues[trendActualValues.length - 1];
-		const previous = trendActualValues.length >= 2 ? trendActualValues[trendActualValues.length - 2] : null;
+		const adjacentPair = latestAdjacentRecordedPair(trendActualValues);
+		const previous = adjacentPair?.previous ?? null;
 		const changeRate = previous !== null && previous > 0 ? ((current - previous) / previous) * 100 : null;
 		const remaining =
 			selectedCard.currentValue !== null && selectedCard.targetValue !== null
@@ -1302,12 +1398,31 @@ export default function KpiSection({ data, isLoading, errorMessage, onRetry }: K
 	return (
 		<section>
 			{header}
-
 			{/* 広い画面ではKPI一覧を4列に広げ、その分だけ右カラム（推移グラフ）を狭める。 */}
 			<div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,400px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(0,780px)_minmax(0,1fr)]">
 				{/* 左：KPI一覧。カードを選ぶと右側の詳細が切り替わる。 */}
-				<Panel radius="rounded" title="KPI一覧" className="min-w-0">
+				<Panel
+					radius="rounded"
+					title="KPI一覧"
+					className="min-w-0"
+					headerWrap={false}
+					actions={(
+						<Button
+							variant="outline"
+							size="3xs"
+							shape="rounded"
+							className="shrink-0 font-acumin"
+							aria-expanded={isFunnelOpen}
+							onClick={() => setIsFunnelOpen((value) => !value)}
+						>
+							{isFunnelOpen ? '閉じる' : 'ファネルを表示'}
+							<i className={`${isFunnelOpen ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'} ml-1`} aria-hidden="true" />
+						</Button>
+					)}
+				>
 					<div className="space-y-3">
+						<MetaKpiConnection season={selectedSeason} onSynced={() => void fetchMonthlyRecord(selectedSeason)} />
+						<KpiSalesFunnel metrics={kpiCards} selectedKey={selectedCard.key} onSelect={setSelectedKpiKey} isOpen={isFunnelOpen} />
 						<div className="flex items-center justify-between gap-2">
 							<div className="flex flex-wrap items-center gap-1.5">
 								{KPI_CATEGORY_FILTERS.map((filter) => (
@@ -1453,8 +1568,10 @@ export default function KpiSection({ data, isLoading, errorMessage, onRetry }: K
 									目標を編集
 								</Button>
 							</div>
-							{targetErrorMessage ? (
-								<p className="mt-2 font-acumin text-[11px] text-red-700">{targetErrorMessage}</p>
+							{targetLoadErrorMessage || targetErrorMessage ? (
+								<p className="mt-2 font-acumin text-[11px] text-red-700">
+									{targetLoadErrorMessage ?? targetErrorMessage}
+								</p>
 							) : null}
 						</Panel>
 
@@ -1471,7 +1588,7 @@ export default function KpiSection({ data, isLoading, errorMessage, onRetry }: K
 								/>
 							}
 						>
-							{trendSeries.length > 0 ? (
+							{trendSeries.length > 0 && trendGraphSeries.length > 0 ? (
 								<Graph
 									variant="line"
 									size="sm"
@@ -1883,7 +2000,7 @@ export default function KpiSection({ data, isLoading, errorMessage, onRetry }: K
 									</td>
 									{trendSeries.map((point, index) => (
 										<td key={`${row.key}-${point.label}`} className="whitespace-nowrap px-1.5 py-2 text-right font-acumin text-xs text-black tabular-nums">
-											{formatKpiValue(row.values[index] ?? 0, row.unit)}
+											{row.values[index] === null ? '—' : formatKpiValue(row.values[index], row.unit)}
 										</td>
 									))}
 									<td className="whitespace-nowrap py-2 pl-3 text-right font-acumin text-xs text-black tabular-nums">

@@ -130,8 +130,85 @@ for (const viewport of viewports) {
       for (const month of ['4月', '5月', '6月', '7月', '8月', '9月']) {
         await expect(page.getByLabel(`売上額 ${month}の値`)).toBeVisible();
       }
-      // KPIは各月の記録値入力（19指標 × 6ヶ月）
-      await expect(page.locator('input[aria-label$="の記録値（上書き）"]')).toHaveCount(19 * 6);
+      // KPIは各月の記録値入力（20指標 × 6ヶ月）
+      await expect(page.locator('input[aria-label$="の記録値（上書き）"]')).toHaveCount(20 * 6);
+    });
+
+    test('月次記録は対象シーズン確定後に取得される', async ({ page }) => {
+      // FREQ-228-AC-01（選択シーズンの月次記録だけを取得する）
+      await mockAdminApis(page);
+      const requestedSeasons: Array<string | null> = [];
+      await page.route('**/api/admin/kpi/monthly-record**', async (route) => {
+        if (route.request().method() === 'GET') {
+          requestedSeasons.push(new URL(route.request().url()).searchParams.get('season'));
+        }
+        await route.fallback();
+      });
+
+      await page.goto('/admin');
+      await expect.poll(() => requestedSeasons.length).toBeGreaterThan(0);
+      expect(requestedSeasons).toEqual(['2026SS']);
+    });
+
+    test('access token期限切れ時もKPI補助データを再取得しConsole Errorを出さない', async ({ page }) => {
+      // FREQ-228-AC-01（認証更新後も選択シーズンの月次記録を表示する）
+      await mockAdminApis(page);
+      const consoleErrors: string[] = [];
+      page.on('console', (message) => {
+        if (message.type() === 'error') {
+          consoleErrors.push(message.text());
+        }
+      });
+
+      let targetsAttempts = 0;
+      let monthlyAttempts = 0;
+      let refreshAttempts = 0;
+      let releaseRefresh: (() => void) | undefined;
+      const bothUnauthorized = new Promise<void>((resolve) => {
+        releaseRefresh = resolve;
+      });
+      const markUnauthorizedComplete = () => {
+        if (targetsAttempts >= 1 && monthlyAttempts >= 1) {
+          releaseRefresh?.();
+        }
+      };
+
+      await page.route('**/api/auth/refresh', async (route) => {
+        refreshAttempts += 1;
+        await bothUnauthorized;
+        await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+      });
+      await page.route('**/api/admin/kpi/targets', async (route) => {
+        targetsAttempts += 1;
+        if (targetsAttempts === 1) {
+          markUnauthorizedComplete();
+          await route.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"Unauthorized"}' });
+          return;
+        }
+        await route.fallback();
+      });
+      await page.route('**/api/admin/kpi/monthly-record**', async (route) => {
+        if (route.request().method() !== 'GET') {
+          await route.fallback();
+          return;
+        }
+        monthlyAttempts += 1;
+        if (monthlyAttempts === 1) {
+          markUnauthorizedComplete();
+          await route.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"Unauthorized"}' });
+          return;
+        }
+        await route.fallback();
+      });
+
+      await page.goto('/admin');
+      await expect.poll(() => targetsAttempts).toBe(2);
+      await expect.poll(() => monthlyAttempts).toBe(2);
+      expect(refreshAttempts).toBe(1);
+      expect(consoleErrors.filter((message) =>
+        message.includes('KPI目標の取得に失敗しました。') ||
+        message.includes('月次記録の取得に失敗しました。')
+      )).toEqual([]);
     });
 
     test('シーズンをA/Wにすると10〜翌3月に切り替わる', async ({ page }) => {

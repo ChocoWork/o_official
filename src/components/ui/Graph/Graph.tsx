@@ -57,6 +57,28 @@ function seriesColor(series: GraphSeries, index: number): string {
   return series.color ?? FALLBACK_COLORS[index % FALLBACK_COLORS.length];
 }
 
+function numericSeriesValues(values: readonly (number | null)[]): number[] {
+  return values.filter((value): value is number => value !== null);
+}
+
+type IndexedLinePoint = {
+  index: number;
+  value: number;
+};
+
+function contiguousLineSegments(values: readonly (number | null)[]): IndexedLinePoint[][] {
+  return values.reduce<IndexedLinePoint[][]>((segments, value, index) => {
+    if (value === null) {
+      return segments;
+    }
+    if (index === 0 || values[index - 1] === null) {
+      segments.push([]);
+    }
+    segments[segments.length - 1].push({ index, value });
+    return segments;
+  }, []);
+}
+
 function datumColor(datum: GraphDatum): string {
   if (datum.color) return datum.color;
   if (datum.total) return WATERFALL_TOTAL_COLOR;
@@ -208,7 +230,7 @@ export function Graph({
       ? stackTotals
       : series
           .filter((item) => !onRightAxis(item))
-          .flatMap((item) => [...item.values]);
+          .flatMap((item) => numericSeriesValues(item.values));
     const bounded = [
       ...(rawValues.length > 0 ? rawValues : [0]),
       ...(referenceLine ? [referenceLine.value] : []),
@@ -230,7 +252,7 @@ export function Graph({
     // 右軸は自分の系列だけでスケールを決める。目盛りの本数は左軸と揃える。
     const rightValues = series
       .filter((item) => onRightAxis(item))
-      .flatMap((item) => [...item.values]);
+      .flatMap((item) => numericSeriesValues(item.values));
     const rightScale = hasRightAxis
       ? niceAxis(
           Math.min(...(rightValues.length > 0 ? rightValues : [0])),
@@ -442,7 +464,7 @@ export function Graph({
                   const offset = barOffsetOf(item);
                   return (
                     <g key={`bars-${item.label}`}>
-                      {item.values.map((value, index) => (
+                      {item.values.map((value, index) => value === null ? null : (
                         <rect
                           key={`${item.label}-${categories[index] ?? index}`}
                           x={xOfPoint(index) + offset - singleBarW / 2}
@@ -459,7 +481,7 @@ export function Graph({
                       ))}
                       {/* 値ラベルは棒の上。渡されたときだけ描く。 */}
                       {formatValueLabel
-                        ? item.values.map((value, index) => (
+                        ? item.values.map((value, index) => value === null ? null : (
                             <text
                               key={`${item.label}-label-${categories[index] ?? index}`}
                               x={xOfPoint(index) + offset}
@@ -518,46 +540,40 @@ export function Graph({
               const seriesIndex = series.indexOf(item);
               const color = seriesColor(item, seriesIndex);
               const y = yOfSeries(item);
-              const pointsOf = (values: readonly number[], offset: number) =>
-                values
-                  .map(
-                    (value, index) =>
-                      `${xOfPoint(index + offset).toFixed(1)},${y(value).toFixed(1)}`,
+              const pointsOf = (points: readonly IndexedLinePoint[]) =>
+                points
+                  .map(({ index, value }) =>
+                    `${xOfPoint(index).toFixed(1)},${y(value).toFixed(1)}`,
                   )
                   .join(" ");
-              // 予測の境界があるときは実線と破線の2本に分ける（境界点で繋ぐ）。
-              const segments =
-                forecastFrom === undefined || forecastFrom <= 0
-                  ? [{ values: item.values, offset: 0, dashed: item.dashed }]
-                  : [
-                      {
-                        values: item.values.slice(0, forecastFrom),
-                        offset: 0,
-                        dashed: item.dashed,
-                      },
-                      {
-                        values: item.values.slice(forecastFrom - 1),
-                        offset: forecastFrom - 1,
-                        dashed: true,
-                      },
-                    ];
+              const segments = contiguousLineSegments(item.values).flatMap((points) => {
+                if (forecastFrom === undefined || forecastFrom <= 0) {
+                  return [{ points, dashed: item.dashed }];
+                }
+                const past = points.filter((point) => point.index < forecastFrom);
+                const future = points.filter((point) => point.index >= forecastFrom - 1);
+                return [
+                  ...(past.length > 0 ? [{ points: past, dashed: item.dashed }] : []),
+                  ...(future.length > 0 ? [{ points: future, dashed: true }] : []),
+                ];
+              });
               return (
                 <g key={`line-${item.label}`}>
-                  {segments.map((segment) => (
+                  {segments.map((segment, segmentIndex) => (
                     <polyline
-                      key={`${item.label}-${segment.offset}-${segment.dashed ? "dashed" : "solid"}`}
+                      key={`${item.label}-${segmentIndex}-${segment.dashed ? "dashed" : "solid"}`}
                       fill="none"
                       stroke={color}
                       strokeWidth={2}
                       strokeLinejoin="round"
                       strokeLinecap="round"
                       strokeDasharray={segment.dashed ? "6 4" : undefined}
-                      points={pointsOf(segment.values, segment.offset)}
+                      points={pointsOf(segment.points)}
                     />
                   ))}
                   {item.hideDots
                     ? null
-                    : item.values.map((value, index) => (
+                    : item.values.map((value, index) => value === null ? null : (
                         <circle
                           key={`${item.label}-dot-${categories[index] ?? index}`}
                           cx={xOfPoint(index)}
@@ -574,7 +590,7 @@ export function Graph({
             {markers.map((marker) => {
               const target = series[marker.seriesIndex];
               const value = target?.values[marker.index];
-              if (target === undefined || value === undefined) return null;
+              if (target === undefined || value === undefined || value === null) return null;
               return (
                 <circle
                   key={`marker-${marker.seriesIndex}-${marker.index}`}
