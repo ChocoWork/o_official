@@ -11,6 +11,12 @@ import {
   type CheckoutDraftItemsSnapshot,
 } from '@/features/checkout/services/checkout-draft.service';
 import { logAudit } from '@/lib/audit';
+import {
+  beginWebhookEvent,
+  completeWebhookEvent,
+  failWebhookEvent,
+  type WebhookEventStore,
+} from '@/lib/stripe/webhook-events';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -474,42 +480,28 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const { data: existingEvent, error: existingEventError } = await supabase
-    .from('stripe_webhook_events')
-    .select('id')
-    .eq('id', event.id)
-    .maybeSingle();
-
-  if (existingEventError) {
-    console.error('[webhook] Failed to check existing event', event.id, existingEventError);
-    await logWebhookAudit(req, 'checkout.webhook.event_persist', 'error', 'Failed to check existing webhook event', {
+  const eventStore = supabase as unknown as WebhookEventStore;
+  try {
+    const disposition = await beginWebhookEvent(eventStore, {
+      id: event.id,
+      type: event.type,
+      payload: event as unknown as Record<string, unknown>,
+    });
+    if (disposition === 'duplicate') {
+      await logWebhookAudit(req, 'checkout.webhook.duplicate_skip', 'conflict', 'Completed webhook event skipped', {
+        event_id: event.id,
+        event_type: event.type,
+      });
+      return NextResponse.json({ received: true, duplicate: true });
+    }
+  } catch (error) {
+    console.error('[webhook] Failed to begin event processing', event.id, error);
+    await logWebhookAudit(req, 'checkout.webhook.event_persist', 'error', 'Failed to begin webhook event processing', {
       event_id: event.id,
       event_type: event.type,
-      error_message: existingEventError.message ?? null,
+      error_message: error instanceof Error ? error.message : 'Unknown error',
     });
-  }
-
-  if (existingEvent?.id) {
-    await logWebhookAudit(req, 'checkout.webhook.duplicate_skip', 'conflict', 'Duplicate webhook event skipped', {
-      event_id: event.id,
-      event_type: event.type,
-    });
-    return NextResponse.json({ received: true, duplicate: true });
-  }
-
-  const { error: persistError } = await supabase.from('stripe_webhook_events').insert({
-    id: event.id,
-    event_type: event.type,
-    raw_payload: event as unknown as Record<string, unknown>,
-  });
-
-  if (persistError) {
-    console.error('[webhook] Failed to persist event', event.id, persistError);
-    await logWebhookAudit(req, 'checkout.webhook.event_persist', 'error', 'Failed to persist webhook event', {
-      event_id: event.id,
-      event_type: event.type,
-      error_message: persistError.message ?? null,
-    });
+    return NextResponse.json({ error: 'Failed to persist webhook event state' }, { status: 500 });
   }
 
   try {
@@ -537,6 +529,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
   } catch (err) {
     console.error('[webhook] Error processing event', event.id, event.type, err);
+    try {
+      await failWebhookEvent(eventStore, event.id, err);
+    } catch (stateError) {
+      console.error('[webhook] Failed to persist event failure state', event.id, stateError);
+    }
     await logWebhookAudit(req, 'checkout.webhook.event_processing', 'error', 'Webhook event processing failed', {
       event_id: event.id,
       event_type: event.type,
@@ -546,6 +543,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       { error: 'Internal server error during event processing' },
       { status: 500 }
     );
+  }
+
+  try {
+    await completeWebhookEvent(eventStore, event.id);
+  } catch (error) {
+    console.error('[webhook] Failed to complete event state', event.id, error);
+    return NextResponse.json({ error: 'Failed to complete webhook event state' }, { status: 500 });
   }
 
   await logWebhookAudit(req, 'checkout.webhook.event_processing', 'success', 'Webhook event processed', {

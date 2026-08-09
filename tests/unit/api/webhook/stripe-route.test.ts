@@ -22,6 +22,9 @@ jest.mock('@supabase/supabase-js', () => ({
 }));
 
 const mockConstructEvent = jest.fn();
+let webhookEventState: { processing_status: string; attempt_count: number } | null = null;
+const mockWebhookEventUpsert = jest.fn();
+const mockWebhookEventUpdate = jest.fn();
 jest.mock('@/lib/stripe/server', () => ({
   getStripeServerClient: jest.fn().mockReturnValue({
     webhooks: {
@@ -48,15 +51,21 @@ function makeRequest(payload: unknown, signature = 'stripe-signature'): NextRequ
 describe('POST /api/webhook/stripe', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    webhookEventState = null;
+    mockWebhookEventUpsert.mockResolvedValue({ error: null });
+    mockWebhookEventUpdate.mockReturnValue({
+      eq: jest.fn().mockResolvedValue({ error: null }),
+    });
     mockFrom.mockImplementation((table: string) => {
       if (table === 'stripe_webhook_events') {
         return {
           select: jest.fn().mockReturnValue({
             eq: jest.fn().mockReturnValue({
-              maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
+              maybeSingle: jest.fn().mockImplementation(() => Promise.resolve({ data: webhookEventState, error: null })),
             }),
           }),
-          insert: jest.fn().mockResolvedValue({ error: null }),
+          upsert: mockWebhookEventUpsert,
+          update: mockWebhookEventUpdate,
         };
       }
 
@@ -150,5 +159,41 @@ describe('POST /api/webhook/stripe', () => {
       _expected_total_amount: 5500,
     }));
     expect(mockLogAudit).toHaveBeenCalled();
+  });
+
+  it('失敗済みイベントは再処理してcompletedへ更新する', async () => {
+    webhookEventState = { processing_status: 'failed', attempt_count: 1 };
+    const event = {
+      id: 'evt_retry',
+      type: 'checkout.session.expired',
+      data: { object: { id: 'cs_retry', payment_intent: 'pi_retry' } },
+    };
+    mockConstructEvent.mockReturnValue(event);
+
+    const response = await POST(makeRequest(event));
+
+    expect((response as { status: number }).status).toBe(200);
+    expect(mockWebhookEventUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({ processing_status: 'processing', attempt_count: 2 }),
+      { onConflict: 'id' },
+    );
+    expect(mockWebhookEventUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      processing_status: 'completed',
+    }));
+  });
+
+  it('完了済みイベントだけを重複として省略する', async () => {
+    webhookEventState = { processing_status: 'completed', attempt_count: 1 };
+    const event = {
+      id: 'evt_duplicate',
+      type: 'checkout.session.expired',
+      data: { object: { id: 'cs_duplicate', payment_intent: 'pi_duplicate' } },
+    };
+    mockConstructEvent.mockReturnValue(event);
+
+    const response = await POST(makeRequest(event));
+
+    expect((response as { body: { duplicate?: boolean } }).body.duplicate).toBe(true);
+    expect(mockWebhookEventUpsert).not.toHaveBeenCalled();
   });
 });
