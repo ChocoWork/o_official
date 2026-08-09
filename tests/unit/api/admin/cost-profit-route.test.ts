@@ -100,6 +100,30 @@ function createFinanceSupabaseMock() {
 				};
 			}
 
+			if (table === 'orders') {
+				return {
+					select: () => ({
+						gte: () => ({
+							lt: () => ({
+								order: () => ({
+									order: () => result([
+										{
+											id: 'order-1',
+											payment_intent_id: 'pi_1',
+											status: 'paid',
+											total_amount: 25_300,
+											refunded_amount: 500,
+											currency: 'jpy',
+											created_at: '2026-05-26T01:00:00.000Z',
+										},
+									]),
+								}),
+							}),
+						}),
+					}),
+				};
+			}
+
 			if (table === 'admin_finance_partners') {
 				return { select: () => ({ order: () => result([{ id: 1, name: '丸善テキスタイル' }]) }) };
 			}
@@ -183,9 +207,20 @@ describe('GET /api/admin/kpi/cost-profit', () => {
 		expect(body.data.expenses).toHaveLength(1);
 		expect(body.data.expenses[0].item).toBe('Instagram広告費');
 		expect(body.data.expenses[0].partner).toBe('丸善テキスタイル');
-		expect(body.data.incomes).toHaveLength(1);
+		expect(body.data.incomes).toHaveLength(2);
 		expect(body.data.incomes[0].item).toBe('オンライン販売');
 		expect(body.data.incomes[0].entryType).toBe('income');
+		expect(body.data.incomes[1]).toEqual(expect.objectContaining({
+			entryType: 'income',
+			category: '売上高',
+			item: 'オンライン注文',
+			amount: 24_800,
+			source: 'order',
+			sourceId: 'order-1',
+			readOnly: true,
+			grossAmount: 25_300,
+			refundedAmount: 500,
+		}));
 		expect(body.data.partners).toEqual(['丸善テキスタイル']);
 		expect(body.data.templates).toEqual([
 			{ name: '毎月の家賃', entryType: 'expense', category: '地代家賃', item: '打合せ・交通', amount: 80000, paymentMethod: '銀行', memo: '事務所' },

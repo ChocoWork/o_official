@@ -4,6 +4,10 @@ import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { logAudit } from '@/lib/audit';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { isFixedAssetAccount } from '@/lib/finance/fixed-asset-link';
+import {
+	toOrderSalesTransaction,
+	type OrderSalesRow,
+} from '@/lib/sales/order-sales';
 
 const seasonKeySchema = z.string().regex(/^\d{4}(SS|AW)$/);
 // 会計期間は暦年。取引・決算はすべてこの軸で扱う（シーズンは商品原価専用）。
@@ -387,6 +391,40 @@ function mapExpense(row: ExpenseRow) {
 	};
 }
 
+function formatJstDate(date: string): string {
+	return new Intl.DateTimeFormat('en-CA', {
+		timeZone: 'Asia/Tokyo',
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit',
+	}).format(new Date(date));
+}
+
+function mapOrderIncome(row: OrderSalesRow, index: number) {
+	const sale = toOrderSalesTransaction(row);
+	if (!sale) return null;
+
+	return {
+		id: -(index + 1),
+		entryType: 'income' as const,
+		date: formatJstDate(sale.date),
+		category: '売上高',
+		item: 'オンライン注文',
+		partner: '',
+		amount: sale.netAmount,
+		paymentMethod: 'Stripe',
+		memo: '',
+		seasonTag: null,
+		receipts: [],
+		source: sale.source,
+		sourceId: sale.sourceId,
+		paymentIntentId: sale.paymentIntentId,
+		readOnly: sale.readOnly,
+		grossAmount: sale.grossAmount,
+		refundedAmount: sale.refundedAmount,
+	};
+}
+
 function mapRevision(row: EntryRevisionRow) {
 	const pick = (data: Record<string, unknown> | null, key: string) =>
 		data && data[key] !== undefined && data[key] !== null
@@ -535,6 +573,7 @@ export async function GET(request: Request) {
 			closingsResult,
 			revisionsResult,
 			cumulativeResult,
+			orderSalesResult,
 		] = await Promise.all([
 			supabase
 				.from('admin_finance_years')
@@ -584,6 +623,13 @@ export async function GET(request: Request) {
 				.select('entry_type, expense_date, category, amount')
 				.lte('expense_date', `${parsedYear.data}-12-31`)
 				.is('deleted_at', null),
+			supabase
+				.from('orders')
+				.select('id, payment_intent_id, status, total_amount, refunded_amount, currency, created_at')
+				.gte('created_at', `${parsedYear.data}-01-01T00:00:00+09:00`)
+				.lt('created_at', `${parsedYear.data + 1}-01-01T00:00:00+09:00`)
+				.order('created_at', { ascending: false })
+				.order('id', { ascending: false }),
 		]);
 
 		// Migration 074 may be deployed after this application version. When the
@@ -605,7 +651,8 @@ export async function GET(request: Request) {
 		const planError = isNoRowsError(planResult.error) ? null : planResult.error;
 		const queryError =
 			planError || expensesResult.error || productsResult.error || partnersResult.error || templatesResult.error
-			|| assetsResult.error || closingsResult.error || revisionsResult.error || cumulativeResult.error;
+			|| assetsResult.error || closingsResult.error || revisionsResult.error || cumulativeResult.error
+			|| orderSalesResult.error;
 		if (queryError) {
 			if (isMissingFinanceTable(queryError)) {
 				return emptyFinanceResponse(parsedYear.data, seasonKey);
@@ -615,6 +662,9 @@ export async function GET(request: Request) {
 		}
 
 		const entries = ((expensesResult.data ?? []) as ExpenseRow[]).map(mapExpense);
+		const orderIncomes = ((orderSalesResult.data ?? []) as OrderSalesRow[])
+			.map(mapOrderIncome)
+			.filter((entry): entry is NonNullable<typeof entry> => entry !== null);
 		const planRow = (planResult.data as FinancePlanRow | null) ?? null;
 
 		const closingRows = (closingsResult.data ?? []) as YearClosingRow[];
@@ -628,7 +678,10 @@ export async function GET(request: Request) {
 				businessType: planRow?.business_type ?? 'soleProprietor',
 				plan: mapPlan(planRow),
 				expenses: entries.filter((entry) => entry.entryType === 'expense'),
-				incomes: entries.filter((entry) => entry.entryType === 'income'),
+				incomes: [
+					...entries.filter((entry) => entry.entryType === 'income'),
+					...orderIncomes,
+				],
 				products: ((productsResult.data ?? []) as ProductRow[]).map(mapProduct),
 				partners: ((partnersResult.data ?? []) as PartnerRow[]).map((row) => row.name),
 				fixedAssets: ((assetsResult.data ?? []) as FixedAssetRow[]).map(mapFixedAsset),
