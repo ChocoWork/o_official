@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { buildArchiveCsv } from '../../src/lib/legal-archive/csv';
-import { buildManifest, serializeManifest } from '../../src/lib/legal-archive/manifest';
+import { buildManifest, serializeManifest, sha256 } from '../../src/lib/legal-archive/manifest';
 import { createS3ArchiveStorageFromEnv } from '../../src/lib/legal-archive/s3-storage';
 import { storeArchiveAtomically, type ArchiveStorage } from '../../src/lib/legal-archive/storage';
 import { SupabaseArchiveStorage } from '../../src/lib/legal-archive/supabase-storage';
@@ -32,6 +32,40 @@ async function postStatus(baseUrl: string, secret: string, body: Record<string, 
     body: JSON.stringify(body),
   });
   if (!response.ok) throw new Error('Failed to update legal archive status');
+}
+
+const ANNUAL_ARTIFACTS = [
+  'orders.csv', 'order_items.csv', 'order_revisions.csv', 'database.dump.gz', 'manifest.json',
+] as const;
+
+export async function finalizeAnnualArchive(input: {
+  targets: ArchiveStorage[];
+  year: number;
+  runId: string;
+}) {
+  const sourcePrefix = `legal-archive/${input.year}/daily/${input.year}-12-31`;
+  const finalPrefix = `legal-archive/${input.year}/annual/final`;
+  const stagingPrefix = `_staging/${input.runId}-annual`;
+  try {
+    for (const target of input.targets) {
+      for (const name of ANNUAL_ARTIFACTS) {
+        const finalKey = `${finalPrefix}/${name}`;
+        if (await target.exists(finalKey)) throw new Error(`Annual archive already exists: ${target.name}`);
+        const body = await target.read(`${sourcePrefix}/${name}`);
+        const temporaryKey = `${stagingPrefix}/${name}`;
+        await target.putTemporary(temporaryKey, body, name.endsWith('.csv') ? 'text/csv; charset=utf-8' : 'application/octet-stream');
+        if (sha256(await target.read(temporaryKey)) !== sha256(body)) throw new Error('Annual archive verification failed');
+      }
+    }
+    for (const target of input.targets) {
+      for (const name of ANNUAL_ARTIFACTS) {
+        await target.promote(`${stagingPrefix}/${name}`, `${finalPrefix}/${name}`, true);
+      }
+    }
+    return { manifestPath: `${finalPrefix}/manifest.json` };
+  } finally {
+    await Promise.allSettled(input.targets.map((target) => target.removeTemporary(stagingPrefix)));
+  }
 }
 
 export async function runDailyArchive(input: {
@@ -92,11 +126,14 @@ export async function runDailyArchive(input: {
       'database.dump.gz': input.databaseDump ?? new Uint8Array(await readFile(dumpPath!)),
     };
     const finalPrefix = `legal-archive/${year}/daily/${date}`;
+    const configuredRetention = Number(environment[`LEGAL_ARCHIVE_RETENTION_YEARS_${year}`] ?? 7);
+    const retentionYears = configuredRetention === 10 ? 10 : 7;
     let manifestPath = `${finalPrefix}/manifest.json`;
     const stored = await storeArchiveAtomically({
       artifacts, targets, finalPrefix, runId, immutable: true,
       buildManifest: (storageTargets) => new TextEncoder().encode(serializeManifest(buildManifest({
         fiscalYear: year,
+        retentionYears,
         generatedAt: (input.now ?? new Date()).toISOString(),
         gitCommit: environment.GITHUB_SHA ?? 'local',
         previousManifestSha256: environment.LEGAL_ARCHIVE_PREVIOUS_MANIFEST_SHA256 ?? null,
@@ -111,6 +148,20 @@ export async function runDailyArchive(input: {
       storageTargets: targets.map((target) => target.name),
       manifestPath, manifestSha256: stored.manifestSha256,
     });
+    if (date.endsWith('-01-02')) {
+      const annualYear = year - 1;
+      await updateStatus({
+        archiveDate: date, fiscalYear: annualYear, runKind: 'annual', status: 'running',
+        storageTargets: targets.map((target) => target.name),
+      });
+      const annual = await finalizeAnnualArchive({ targets, year: annualYear, runId });
+      const annualManifest = await targets[0].read(annual.manifestPath);
+      await updateStatus({
+        archiveDate: date, fiscalYear: annualYear, runKind: 'annual', status: 'completed',
+        storageTargets: targets.map((target) => target.name),
+        manifestPath: annual.manifestPath, manifestSha256: sha256(annualManifest),
+      });
+    }
     return { date, year, manifestPath, ...stored };
   } catch (error) {
     await updateStatus({

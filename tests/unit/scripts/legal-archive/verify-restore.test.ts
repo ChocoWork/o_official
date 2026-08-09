@@ -19,7 +19,7 @@ it('verifies restored structure, counts, totals and artifact hashes', async () =
     client: client as never,
     artifacts: { 'orders.csv': csv },
     manifest: {
-      schemaVersion: 1, fiscalYear: 2026, generatedAt: '', gitCommit: '', previousManifestSha256: null,
+      schemaVersion: 1, fiscalYear: 2026, retentionYears: 7, generatedAt: '', gitCommit: '', previousManifestSha256: null,
       files: { 'orders.csv': { sha256: sha256(csv), byteSize: csv.byteLength } },
       rowCounts: { orders: 0, orderItems: 0, revisions: 0 },
       totals: { grossAmount: 0, refundedAmount: 0, netAmount: 0 }, storageTargets: [],

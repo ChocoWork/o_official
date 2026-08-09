@@ -7,6 +7,7 @@ export function sha256(value: string | Uint8Array): string {
 export type LegalArchiveManifest = {
   schemaVersion: 1;
   fiscalYear: number;
+  retentionYears: number;
   generatedAt: string;
   gitCommit: string;
   previousManifestSha256: string | null;
@@ -18,6 +19,7 @@ export type LegalArchiveManifest = {
 
 export function buildManifest(input: {
   fiscalYear: number;
+  retentionYears?: number;
   generatedAt: string;
   gitCommit: string;
   previousManifestSha256?: string | null;
@@ -37,6 +39,7 @@ export function buildManifest(input: {
   return {
     schemaVersion: 1,
     fiscalYear: input.fiscalYear,
+    retentionYears: input.retentionYears ?? 7,
     generatedAt: input.generatedAt,
     gitCommit: input.gitCommit,
     previousManifestSha256: input.previousManifestSha256 ?? null,

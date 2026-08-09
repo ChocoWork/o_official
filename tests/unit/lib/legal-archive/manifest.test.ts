@@ -14,6 +14,7 @@ describe('legal archive manifest', () => {
       storageTargets: [{ name: 'supabase', verified: true }],
     });
     expect(manifest.schemaVersion).toBe(1);
+    expect(manifest.retentionYears).toBe(7);
     expect(manifest.files['orders.csv'].byteSize).toBe(Buffer.byteLength('注文\r\n'));
     expect(serializeManifest(manifest)).toBe(`${JSON.stringify(manifest, null, 2)}\n`);
   });

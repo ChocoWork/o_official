@@ -2,7 +2,7 @@ jest.mock('@/lib/legal-archive/s3-storage', () => ({
   createS3ArchiveStorageFromEnv: () => null,
 }));
 
-import { runDailyArchive } from '@/../scripts/legal-archive/run-daily';
+import { finalizeAnnualArchive, runDailyArchive } from '@/../scripts/legal-archive/run-daily';
 import type { ArchiveStorage } from '@/lib/legal-archive/storage';
 
 it('paginates the JST calendar year and stores CSV plus database backup', async () => {
@@ -34,4 +34,23 @@ it('paginates the JST calendar year and stores CSV plus database backup', async 
   expect(fetchPage).toHaveBeenNthCalledWith(2, 2026, 'next');
   expect(values.has('legal-archive/2026/daily/2026-08-10/database.dump.gz')).toBe(true);
   expect(updateStatus).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'completed' }));
+});
+
+it('copies the final daily artifacts to an immutable annual prefix', async () => {
+  const values = new Map<string, Uint8Array>();
+  for (const name of ['orders.csv', 'order_items.csv', 'order_revisions.csv', 'database.dump.gz', 'manifest.json']) {
+    values.set(`legal-archive/2025/daily/2025-12-31/${name}`, new TextEncoder().encode(name));
+  }
+  const target: ArchiveStorage = {
+    name: 'supabase', putTemporary: async (key, body) => { values.set(key, body); },
+    promote: async (temporary, final, immutable) => {
+      if (immutable && values.has(final)) throw new Error('exists');
+      values.set(final, values.get(temporary)!);
+    },
+    exists: async (key) => values.has(key), read: async (key) => values.get(key)!,
+    removeTemporary: async () => undefined,
+  };
+  await finalizeAnnualArchive({ targets: [target], year: 2025, runId: 'annual' });
+  expect(values.has('legal-archive/2025/annual/final/manifest.json')).toBe(true);
+  await expect(finalizeAnnualArchive({ targets: [target], year: 2025, runId: 'again' })).rejects.toThrow('already exists');
 });
