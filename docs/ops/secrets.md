@@ -40,3 +40,20 @@ title: シークレット管理方針
 
 ---
 *作成: SDD Agent (追記) — 現行は手動運用、将来的に自動運用へ移行予定*
+
+## Stripe注文同期
+
+Stripe Webhookは `${APP_BASE_URL}/api/webhook/stripe` に設定し、署名シークレットを
+`STRIPE_WEBHOOK_SECRET` としてサーバー環境だけに保存します。次のイベントを購読します。
+
+- `checkout.session.completed`
+- `checkout.session.expired`
+- `payment_intent.succeeded`
+- `payment_intent.payment_failed`
+- `refund.created`
+- `refund.updated`
+- `charge.refunded`
+
+定期照合は `GET /api/cron/stripe-reconcile` を呼び出し、`Authorization: Bearer
+${CRON_SECRET}` を付与します。Stripeだけに存在する未返金の成功決済は報告対象になり、
+注文は自動作成しません。既存注文との返金額差分だけをStripeの成功済み返金から修復します。
