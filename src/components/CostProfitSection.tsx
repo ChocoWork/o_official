@@ -3297,10 +3297,18 @@ export default function CostProfitSection({
     ],
   );
 
-  const evidenceStatusOf = (entry: Expense) =>
-    entry.evidenceStatus ?? resolveEvidenceStatus(entry);
-  const hasReceipt = (entry: Expense) => evidenceStatusOf(entry) === "attached";
-  const hasEvidence = (entry: Expense) => evidenceStatusOf(entry) !== "missing";
+  const evidenceStatusOf = useCallback(
+    (entry: Expense) => entry.evidenceStatus ?? resolveEvidenceStatus(entry),
+    [],
+  );
+  const hasReceipt = useCallback(
+    (entry: Expense) => evidenceStatusOf(entry) === "attached",
+    [evidenceStatusOf],
+  );
+  const hasEvidence = useCallback(
+    (entry: Expense) => evidenceStatusOf(entry) !== "missing",
+    [evidenceStatusOf],
+  );
 
   // 一覧は日付の新しい順。同日は登録の新しい順（id 降順）で並べる。
   const entryRows = useMemo<Expense[]>(
@@ -3320,7 +3328,7 @@ export default function CostProfitSection({
       revised: entryRows.filter((entry) => entryStateOf(entry) === "revised")
         .length,
     }),
-    [entryRows, entryStateOf],
+    [entryRows, entryStateOf, hasEvidence],
   );
 
   const tabbedEntryRows = useMemo(() => {
@@ -3334,7 +3342,7 @@ export default function CostProfitSection({
       return entryRows.filter((entry) => entryStateOf(entry) === "revised");
     }
     return entryRows;
-  }, [entryRows, entryListTab, entryStateOf]);
+  }, [entryRows, entryListTab, entryStateOf, hasEvidence]);
 
   const entryTotalPages = Math.max(
     1,
@@ -3380,7 +3388,7 @@ export default function CostProfitSection({
       missing: entryRows.length - attached,
       total: entryRows.length,
     };
-  }, [entryRows]);
+  }, [entryRows, hasEvidence]);
 
   // 今月の収支。選択中の会計年が当年でなければ、その年の12月を対象にする。
   const monthlyBalance = useMemo(() => {
@@ -3423,6 +3431,7 @@ export default function CostProfitSection({
     unknownAccountEntryIds,
     unlinkedAssetEntryIds,
     revisedEntryIds,
+    hasEvidence,
   ]);
 
   const selectedEntries = entryRows.filter((entry) =>

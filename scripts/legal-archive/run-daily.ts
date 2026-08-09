@@ -16,6 +16,26 @@ function required(environment: Environment, name: string): string {
   return value;
 }
 
+function validateArchiveBaseUrl(value: string): string {
+  const url = new URL(value);
+  const ALLOWED_ARCHIVE_HOST = new Set([url.hostname]);
+  const privateHost = /^(localhost|127\.|10\.|192\.168\.|169\.254\.|0\.0\.0\.0$|\[?::1\]?$)/i.test(url.hostname)
+    || /^172\.(1[6-9]|2\d|3[01])\./.test(url.hostname);
+  if (
+    url.protocol !== 'https:' ||
+    !ALLOWED_ARCHIVE_HOST.has(url.hostname) ||
+    privateHost ||
+    url.username ||
+    url.password ||
+    (url.pathname !== '/' && url.pathname !== '') ||
+    url.search ||
+    url.hash
+  ) {
+    throw new Error('APP_BASE_URL must be a public HTTPS origin');
+  }
+  return url.origin;
+}
+
 function jstParts(now: Date): { date: string; year: number } {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -77,7 +97,7 @@ export async function runDailyArchive(input: {
   updateStatus?: (body: Record<string, unknown>) => Promise<void>;
 }) {
   const environment = input.environment ?? process.env;
-  const baseUrl = required(environment, 'APP_BASE_URL').replace(/\/$/, '');
+  const baseUrl = validateArchiveBaseUrl(required(environment, 'APP_BASE_URL'));
   const secret = required(environment, 'LEGAL_ARCHIVE_CRON_SECRET');
   const dumpPath = input.databaseDump ? null : required(environment, 'LEGAL_ARCHIVE_DATABASE_DUMP');
   const { date, year } = jstParts(input.now ?? new Date());
@@ -128,7 +148,7 @@ export async function runDailyArchive(input: {
     const finalPrefix = `legal-archive/${year}/daily/${date}`;
     const configuredRetention = Number(environment[`LEGAL_ARCHIVE_RETENTION_YEARS_${year}`] ?? 7);
     const retentionYears = configuredRetention === 10 ? 10 : 7;
-    let manifestPath = `${finalPrefix}/manifest.json`;
+    const manifestPath = `${finalPrefix}/manifest.json`;
     const stored = await storeArchiveAtomically({
       artifacts, targets, finalPrefix, runId, immutable: true,
       buildManifest: (storageTargets) => new TextEncoder().encode(serializeManifest(buildManifest({
