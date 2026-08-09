@@ -13,7 +13,11 @@ const bodySchema = z.object({
   manifestSha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
   errorCode: z.string().max(100).optional(),
 }).superRefine((value, context) => {
-  if (value.status === 'completed' && (!value.manifestPath || !value.manifestSha256)) {
+  if (
+    value.status === 'completed' &&
+    value.runKind !== 'restore_check' &&
+    (!value.manifestPath || !value.manifestSha256)
+  ) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: 'completed requires manifest', path: ['status'] });
   }
 });

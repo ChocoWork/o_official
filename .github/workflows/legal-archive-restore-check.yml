@@ -1,0 +1,87 @@
+name: Legal archive monthly restore check
+
+on:
+  schedule:
+    - cron: '0 18 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: legal-archive-restore-check
+  cancel-in-progress: false
+
+jobs:
+  restore-check:
+    runs-on: ubuntu-latest
+    container: node:20-bookworm
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: restore
+          POSTGRES_PASSWORD: restore-local-only
+          POSTGRES_DB: legal_restore
+        options: >-
+          --health-cmd "pg_isready -U restore -d legal_restore"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+      LEGAL_ARCHIVE_CRON_SECRET: ${{ secrets.LEGAL_ARCHIVE_CRON_SECRET }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      RESTORE_DATABASE_URL: postgresql://restore:restore-local-only@postgres:5432/legal_restore
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install restore tools
+        run: apt-get update && apt-get install -y --no-install-recommends postgresql-client curl gzip ca-certificates
+      - run: npm ci
+      - name: Download latest private archive
+        shell: bash
+        run: |
+          RESTORE_DIR="$RUNNER_TEMP/legal-archive-restore"
+          mkdir -p "$RESTORE_DIR"
+          ARCHIVE_DATE="$(TZ=Asia/Tokyo date +%F)"
+          ARCHIVE_YEAR="$(TZ=Asia/Tokyo date +%Y)"
+          PREFIX="legal-archive/$ARCHIVE_YEAR/daily/$ARCHIVE_DATE"
+          for file in orders.csv order_items.csv order_revisions.csv database.dump.gz manifest.json; do
+            curl --fail --silent --show-error \
+              -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+              "$NEXT_PUBLIC_SUPABASE_URL/storage/v1/object/authenticated/legal-archive/$PREFIX/$file" \
+              -o "$RESTORE_DIR/$file"
+          done
+      - name: Restore database
+        shell: bash
+        run: gzip -dc "$RUNNER_TEMP/legal-archive-restore/database.dump.gz" | pg_restore --exit-on-error --no-owner --no-privileges --dbname "$RESTORE_DATABASE_URL"
+      - name: Verify restored database
+        run: npm run archive:legal:verify-restore
+        env:
+          LEGAL_ARCHIVE_RESTORE_DIRECTORY: ${{ runner.temp }}/legal-archive-restore
+      - name: Record successful restore check
+        if: success()
+        shell: bash
+        run: |
+          curl --fail --silent --show-error -X POST \
+            -H "Authorization: Bearer $LEGAL_ARCHIVE_CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            "$APP_BASE_URL/api/cron/legal-archive/status" \
+            --data "{\"archiveDate\":\"$(TZ=Asia/Tokyo date +%F)\",\"fiscalYear\":$(TZ=Asia/Tokyo date +%Y),\"runKind\":\"restore_check\",\"status\":\"completed\",\"storageTargets\":[\"supabase\"]}"
+      - name: Record failed restore check
+        if: failure()
+        shell: bash
+        run: |
+          curl --fail --silent --show-error -X POST \
+            -H "Authorization: Bearer $LEGAL_ARCHIVE_CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            "$APP_BASE_URL/api/cron/legal-archive/status" \
+            --data "{\"archiveDate\":\"$(TZ=Asia/Tokyo date +%F)\",\"fiscalYear\":$(TZ=Asia/Tokyo date +%Y),\"runKind\":\"restore_check\",\"status\":\"failed\",\"storageTargets\":[\"supabase\"],\"errorCode\":\"RESTORE_VERIFY_FAILED\"}"
+      - name: Remove restored data
+        if: always()
+        shell: bash
+        run: rm -rf "$RUNNER_TEMP/legal-archive-restore"
