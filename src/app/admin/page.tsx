@@ -67,6 +67,9 @@ function AdminPageContent() {
   const [periodErrorMessage, setPeriodErrorMessage] = useState<string | null>(null);
   const [orderStatusFilters, setOrderStatusFilters] = useState<OrderStatusFilterValue[]>(['all']);
   const [orderSearchKeyword, setOrderSearchKeyword] = useState('');
+  const [orderReference, setOrderReference] = useState('');
+  const [orderAmountMin, setOrderAmountMin] = useState('');
+  const [orderAmountMax, setOrderAmountMax] = useState('');
   const [processingOrderIds, setProcessingOrderIds] = useState<string[]>([]);
 
   const visibleTabs = useMemo<TabType[]>(() => {
@@ -170,6 +173,34 @@ function AdminPageContent() {
         query.set('to', periodTo);
       }
 
+      if (orderSearchKeyword.trim()) {
+        query.set('counterparty', orderSearchKeyword.trim());
+      }
+
+      if (orderReference.trim()) {
+        query.set('reference', orderReference.trim());
+      }
+
+      if (orderAmountMin) {
+        query.set('amountMin', orderAmountMin);
+      }
+
+      if (orderAmountMax) {
+        query.set('amountMax', orderAmountMax);
+      }
+
+      const selectedStatus = orderStatusFilters.length === 1 ? orderStatusFilters[0] : 'all';
+      const statusMap: Partial<Record<OrderStatusFilterValue, string>> = {
+        '未決済': 'pending',
+        '決済完了': 'paid',
+        '決済失敗': 'failed',
+        'キャンセル': 'cancelled',
+      };
+      const apiStatus = statusMap[selectedStatus];
+      if (apiStatus) {
+        query.set('status', apiStatus);
+      }
+
       const response = await clientFetch(`/api/admin/orders?${query.toString()}`, {
         cache: 'no-store',
       });
@@ -206,7 +237,17 @@ function AdminPageContent() {
     } finally {
       setIsOrdersLoading(false);
     }
-  }, [ordersPage, ordersPageSize, periodFrom, periodTo]);
+  }, [
+    ordersPage,
+    ordersPageSize,
+    periodFrom,
+    periodTo,
+    orderSearchKeyword,
+    orderReference,
+    orderAmountMin,
+    orderAmountMax,
+    orderStatusFilters,
+  ]);
 
   useEffect(() => {
     if (!canAccessAdmin) {
@@ -474,10 +515,13 @@ function AdminPageContent() {
           <div className="flex items-center justify-end gap-3 whitespace-nowrap">
             <div className="w-64 shrink-0 xl:w-72">
               <SearchField
-                label=""
-                placeholder="注文ID / 顧客名 / メール"
+                label="取引先"
+                placeholder="顧客名 / メール"
                 value={orderSearchKeyword}
-                onChange={(event) => setOrderSearchKeyword(event.target.value)}
+                onChange={(event) => {
+                  setOrdersPage(1);
+                  setOrderSearchKeyword(event.target.value);
+                }}
                 showClearButton
                 onClear={() => setOrderSearchKeyword('')}
                 size='sm'
@@ -532,6 +576,50 @@ function AdminPageContent() {
           <div className="space-y-4">
             <div className="space-y-3 border-b border-black/10 pb-4">
               <div className="flex flex-wrap items-end gap-3">
+                <label className="grid gap-1 text-xs font-acumin">
+                  金額（下限）
+                  <input
+                    aria-label="金額（下限）"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={orderAmountMin}
+                    onChange={(event) => {
+                      setOrdersPage(1);
+                      setOrderAmountMin(event.target.value);
+                    }}
+                    className="h-8 w-32 border border-black/25 px-2"
+                  />
+                </label>
+                <label className="grid gap-1 text-xs font-acumin">
+                  金額（上限）
+                  <input
+                    aria-label="金額（上限）"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={orderAmountMax}
+                    onChange={(event) => {
+                      setOrdersPage(1);
+                      setOrderAmountMax(event.target.value);
+                    }}
+                    className="h-8 w-32 border border-black/25 px-2"
+                  />
+                </label>
+                <div className="w-56">
+                  <SearchField
+                    label="注文・決済ID"
+                    placeholder="注文ID / pi_..."
+                    value={orderReference}
+                    onChange={(event) => {
+                      setOrdersPage(1);
+                      setOrderReference(event.target.value);
+                    }}
+                    showClearButton
+                    onClear={() => setOrderReference('')}
+                    size="sm"
+                  />
+                </div>
                 <div className="flex items-center gap-2">
                   <DateTimePicker
                     id="orders-from"
@@ -560,7 +648,7 @@ function AdminPageContent() {
                   期間クリア
                 </Button>
                 <Button variant="secondary" size="sm" className="font-acumin" onClick={handleExportOrdersCsv}>
-                  CSVエクスポート
+                  表示中の注文をCSV出力
                 </Button>
                 <div className="flex items-center gap-2 text-xs font-acumin">
                   <span className="text-[#474747]">{ordersTotalCount}件（表示 {displayedOrders.length}件）</span>

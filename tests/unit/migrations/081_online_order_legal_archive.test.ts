@@ -30,7 +30,7 @@ describe('081_online_order_legal_archive migration', () => {
     expect(sql).toContain('after_data jsonb');
     expect(sql).toContain('record_order_revision');
     expect(sql).not.toMatch(
-      /CREATE POLICY[^;]+order_revisions[^;]+FOR (UPDATE|DELETE)/s,
+      /CREATE POLICY[\s\S]+order_revisions[\s\S]+FOR (UPDATE|DELETE)/,
     );
   });
 

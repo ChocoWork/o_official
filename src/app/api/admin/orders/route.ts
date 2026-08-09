@@ -20,12 +20,34 @@ type OrderRow = {
   }> | null;
 };
 
-const querySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
-  from: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  to: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-});
+const searchTextSchema = z.string().trim().min(1).max(200).optional();
+const querySchema = z
+  .object({
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(20),
+    from: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    to: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    amountMin: z.coerce.number().int().nonnegative().optional(),
+    amountMax: z.coerce.number().int().nonnegative().optional(),
+    counterparty: searchTextSchema,
+    reference: searchTextSchema,
+    status: z.enum(['pending', 'paid', 'failed', 'cancelled']).optional(),
+  })
+  .refine((value) => !value.from || !value.to || value.from <= value.to, {
+    message: 'from must be before or equal to to',
+    path: ['from'],
+  })
+  .refine(
+    (value) =>
+      value.amountMin === undefined ||
+      value.amountMax === undefined ||
+      value.amountMin <= value.amountMax,
+    { message: 'amountMin must be less than or equal to amountMax', path: ['amountMin'] },
+  );
+
+function escapePostgrestFilterValue(value: string): string {
+  return value.replace(/[\\%_,()]/g, (character) => `\\${character}`);
+}
 
 type PaymentIntentCacheItem = {
   expiresAt: number;
@@ -153,6 +175,11 @@ export async function GET(request: Request) {
       pageSize: requestUrl.searchParams.get('pageSize') ?? undefined,
       from: requestUrl.searchParams.get('from') ?? undefined,
       to: requestUrl.searchParams.get('to') ?? undefined,
+      amountMin: requestUrl.searchParams.get('amountMin') ?? undefined,
+      amountMax: requestUrl.searchParams.get('amountMax') ?? undefined,
+      counterparty: requestUrl.searchParams.get('counterparty') ?? undefined,
+      reference: requestUrl.searchParams.get('reference') ?? undefined,
+      status: requestUrl.searchParams.get('status') ?? undefined,
     });
 
     if (!parsedQuery.success) {
@@ -197,6 +224,30 @@ export async function GET(request: Request) {
 
     if (toIso) {
       query = query.lte('created_at', toIso);
+    }
+
+    if (parsedQuery.data.amountMin !== undefined) {
+      query = query.gte('total_amount', parsedQuery.data.amountMin);
+    }
+
+    if (parsedQuery.data.amountMax !== undefined) {
+      query = query.lte('total_amount', parsedQuery.data.amountMax);
+    }
+
+    if (parsedQuery.data.status) {
+      query = query.eq('status', parsedQuery.data.status);
+    }
+
+    if (parsedQuery.data.counterparty) {
+      const counterparty = escapePostgrestFilterValue(parsedQuery.data.counterparty);
+      query = query.or(
+        `shipping_full_name.ilike.%${counterparty}%,shipping_email.ilike.%${counterparty}%`,
+      );
+    }
+
+    if (parsedQuery.data.reference) {
+      const reference = escapePostgrestFilterValue(parsedQuery.data.reference);
+      query = query.or(`id.ilike.%${reference}%,payment_intent_id.ilike.%${reference}%`);
     }
 
     const { data, count, error } = await query;
