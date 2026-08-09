@@ -406,6 +406,12 @@ type EntryRevision = {
 // 取引1件。仕訳エンジン（src/lib/finance/journal.ts）と同じ形＋証憑。
 type Expense = FinanceEntry & {
   receipts?: Receipt[];
+  source?: "manual" | "order";
+  sourceId?: string;
+  paymentIntentId?: string;
+  readOnly?: boolean;
+  grossAmount?: number;
+  refundedAmount?: number;
   /** 固定資産候補の確認を済ませ、費用として処理すると判断した取引。 */
   fixedAssetExempt?: boolean;
   fixedAssetExemptReason?: string | null;
@@ -1984,6 +1990,7 @@ export default function CostProfitSection({
 
   /** 一覧の行を訂正フォームへ読み込み、入力用の Drawer を開く。 */
   const handleStartEdit = (entry: Expense) => {
+    if (entry.readOnly || entry.source === "order") return;
     setEditingEntryId(entry.id);
     setSelectedTemplateName("");
     setFormMessage(null);
@@ -3495,18 +3502,34 @@ export default function CostProfitSection({
     {
       key: "item",
       header: "摘要・取引先",
-      render: (entry) => (
-        // 行の入口。クリックで訂正 Drawer を開き、削除もその中に置く。
-        <button
-          type="button"
-          className="block max-w-[12rem] truncate text-left underline-offset-4 hover:underline"
-          aria-label={`${entry.item}を訂正`}
-          onClick={() => handleStartEdit(entry)}
-          disabled={isSaving}
-        >
-          {entry.partner ? `${entry.item} / ${entry.partner}` : entry.item}
-        </button>
-      ),
+      render: (entry) => {
+        const label = entry.partner ? `${entry.item} / ${entry.partner}` : entry.item;
+        if (entry.readOnly || entry.source === "order") {
+          return (
+            <div className="max-w-[14rem]">
+              <span className="block truncate">{label}</span>
+              <span className="mt-0.5 flex flex-wrap gap-1 text-[10px] text-[#707070]">
+                <span>Supabase注文</span>
+                {(entry.refundedAmount ?? 0) > 0 ? (
+                  <span>返金 {currency(entry.refundedAmount ?? 0)}</span>
+                ) : null}
+              </span>
+            </div>
+          );
+        }
+        return (
+          // 行の入口。クリックで訂正 Drawer を開き、削除もその中に置く。
+          <button
+            type="button"
+            className="block max-w-[12rem] truncate text-left underline-offset-4 hover:underline"
+            aria-label={`${entry.item}を訂正`}
+            onClick={() => handleStartEdit(entry)}
+            disabled={isSaving}
+          >
+            {label}
+          </button>
+        );
+      },
     },
     {
       key: "amount",

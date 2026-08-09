@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import CostProfitSection from '@/components/CostProfitSection';
 
-function setupFinanceFetch() {
+function setupFinanceFetch(incomes: Array<Record<string, unknown>> = []) {
 	const data = {
 		seasonKey: '2026SS',
 		businessType: 'soleProprietor',
@@ -16,7 +16,7 @@ function setupFinanceFetch() {
 		expenses: [
 			{ id: 1, entryType: 'expense', date: '2026-05-24', category: '販売費・マーケティング', item: 'Instagram広告費', partner: '', amount: 32000, paymentMethod: 'クレジットカード', memo: '広告' },
 		] as Array<Record<string, unknown>>,
-		incomes: [] as Array<Record<string, unknown>>,
+		incomes,
 		partners: [] as string[],
 		templates: [] as Array<{ name: string; entryType: string; category: string; item: string; amount: number; paymentMethod: string; memo: string }>,
 		products: [
@@ -92,6 +92,33 @@ describe('CostProfitSection', () => {
 
 	beforeEach(() => {
 		setupFinanceFetch();
+	});
+
+	it('orders由来の収入を連携済みとして表示し、訂正操作を提供しない', async () => {
+		setupFinanceFetch([{
+			id: -1,
+			entryType: 'income',
+			date: '2026-08-01',
+			category: '売上高',
+			item: 'オンライン注文',
+			partner: '購入者',
+			amount: 24800,
+			paymentMethod: 'Stripe',
+			memo: '注文 #order-1',
+			source: 'order',
+			sourceId: 'order-1',
+			readOnly: true,
+			grossAmount: 25300,
+			refundedAmount: 500,
+		}]);
+
+		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
+
+		expect(await screen.findByText('Supabase注文')).toBeInTheDocument();
+		expect(screen.getByText('返金 ¥500')).toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: 'オンライン注文を訂正' })).not.toBeInTheDocument();
 	});
 
 	it('財務3表と青色申告向けのサブタブを表示する', async () => {
