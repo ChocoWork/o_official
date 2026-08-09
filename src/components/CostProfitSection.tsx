@@ -423,6 +423,15 @@ type Expense = FinanceEntry & {
   fixedAssetReviewedAt?: string | null;
 };
 
+type LegalArchiveHealth = {
+  fiscalYear: number;
+  lastArchiveAt: string | null;
+  lastRestoreCheckAt: string | null;
+  storageTargets: string[];
+  externalStorageConfigured: boolean;
+  delayed: boolean;
+};
+
 /**
  * 台帳の固定資産。購入取引への参照と事業供用日を持つ。
  * 償却計算に供用日は要るが取引の id は要らないので、連携キーは UI 側の型で足す。
@@ -1379,6 +1388,7 @@ export default function CostProfitSection({
     `${seasonKey}-ITEM-001`,
   );
   const [isDataLoading, setIsDataLoading] = useState(true);
+  const [archiveHealth, setArchiveHealth] = useState<LegalArchiveHealth | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   // dataMessage はエラー専用（null = 正常）。ヘッダーには「同期済み」等の短い状態だけを出し、
   // 詳細な文言は右下の Toast へ回す。成功メッセージも Toast のみ。
@@ -1515,6 +1525,24 @@ export default function CostProfitSection({
   useEffect(() => {
     void loadFinanceData();
   }, [loadFinanceData]);
+
+  useEffect(() => {
+    let active = true;
+    void clientFetch(`/api/admin/legal-archive/status?year=${fiscalYear}`, {
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return response.json() as Promise<{ data?: LegalArchiveHealth }>;
+      })
+      .then((payload) => {
+        if (active && payload?.data) setArchiveHealth(payload.data);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [fiscalYear]);
 
   const postMutation = useCallback(async (body: Record<string, unknown>) => {
     const response = await clientFetch("/api/admin/kpi/cost-profit", {
@@ -4810,6 +4838,19 @@ export default function CostProfitSection({
             新規取引
           </Button>
         </div>
+      </div>
+
+      <div role="status" className="flex flex-wrap gap-2 text-xs font-acumin">
+        <span>
+          {!archiveHealth?.lastArchiveAt || !archiveHealth.lastRestoreCheckAt
+            ? "保存要件整備中"
+            : archiveHealth.delayed
+              ? "アーカイブ要確認"
+              : "注文データ保存済み"}
+        </span>
+        {archiveHealth && !archiveHealth.externalStorageConfigured ? (
+          <span className="text-[#b45309]">外部保存先 未設定</span>
+        ) : null}
       </div>
 
       {/* 取引 → 証憑 → 収支。左から右へ確認が進む並びにする。 */}

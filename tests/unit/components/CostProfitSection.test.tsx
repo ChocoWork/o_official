@@ -1,7 +1,17 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import CostProfitSection from '@/components/CostProfitSection';
 
-function setupFinanceFetch(incomes: Array<Record<string, unknown>> = []) {
+function setupFinanceFetch(
+	incomes: Array<Record<string, unknown>> = [],
+	archiveHealth: Record<string, unknown> = {
+		fiscalYear: 2026,
+		lastArchiveAt: null,
+		lastRestoreCheckAt: null,
+		storageTargets: [],
+		externalStorageConfigured: false,
+		delayed: true,
+	},
+) {
 	const data = {
 		seasonKey: '2026SS',
 		businessType: 'soleProprietor',
@@ -33,6 +43,9 @@ function setupFinanceFetch(incomes: Array<Record<string, unknown>> = []) {
 	};
 
 	const mockFetch = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+		if (String(_input).startsWith('/api/admin/legal-archive/status')) {
+			return new Response(JSON.stringify({ data: archiveHealth }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+		}
 		if (String(_input).startsWith('/api/admin/accounting/product-costs')) {
 			return new Response(JSON.stringify({
 				data: {
@@ -122,6 +135,29 @@ describe('CostProfitSection', () => {
 		expect(screen.getByRole('tab', { name: '証憑未添付（1）' })).toBeInTheDocument();
 		expect(screen.queryByRole('button', { name: 'オンライン注文の証憑' })).not.toBeInTheDocument();
 		expect(screen.queryByRole('button', { name: 'オンライン注文を訂正' })).not.toBeInTheDocument();
+	});
+
+	it('アーカイブの準備状態と外部保存先の未設定を表示する', async () => {
+		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		fireEvent.click(await screen.findByRole('tab', { name: '取引管理' }));
+		expect(await screen.findByText('保存要件整備中')).toBeInTheDocument();
+		expect(screen.getByText('外部保存先 未設定')).toBeInTheDocument();
+	});
+
+	it('24時間以内の保存と復元確認があればアーカイブ済みを表示する', async () => {
+		setupFinanceFetch([], {
+			fiscalYear: 2026,
+			lastArchiveAt: '2026-08-10T00:00:00.000Z',
+			lastRestoreCheckAt: '2026-08-02T00:00:00.000Z',
+			storageTargets: ['supabase', 'external-s3'],
+			externalStorageConfigured: true,
+			delayed: false,
+		});
+		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		fireEvent.click(await screen.findByRole('tab', { name: '取引管理' }));
+		const archiveStatus = await screen.findByText('注文データ保存済み');
+		expect(archiveStatus.closest('[role="status"]')).toHaveTextContent('注文データ保存済み');
+		expect(screen.queryByText('外部保存先 未設定')).not.toBeInTheDocument();
 	});
 
 	it('財務3表と青色申告向けのサブタブを表示する', async () => {
