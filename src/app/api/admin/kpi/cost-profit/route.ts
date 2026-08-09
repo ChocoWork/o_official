@@ -416,6 +416,7 @@ function mapOrderIncome(row: OrderSalesRow, index: number) {
 		memo: '',
 		seasonTag: null,
 		receipts: [],
+		evidenceStatus: 'system_record' as const,
 		source: sale.source,
 		sourceId: sale.sourceId,
 		paymentIntentId: sale.paymentIntentId,

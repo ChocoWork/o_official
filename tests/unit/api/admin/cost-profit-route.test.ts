@@ -216,6 +216,7 @@ describe('GET /api/admin/kpi/cost-profit', () => {
 			item: 'オンライン注文',
 			amount: 24_800,
 			source: 'order',
+			evidenceStatus: 'system_record',
 			sourceId: 'order-1',
 			readOnly: true,
 			grossAmount: 25_300,

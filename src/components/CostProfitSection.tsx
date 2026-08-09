@@ -71,6 +71,10 @@ import {
 } from "@/lib/kpi/monthly-metrics";
 import { fiscalYearOf } from "@/lib/finance/fiscal-year";
 import {
+  resolveEvidenceStatus,
+  type EvidenceStatus,
+} from "@/lib/finance/evidence-status";
+import {
   buildDepreciationEntries,
   buildGeneralLedger,
   buildJournal,
@@ -406,6 +410,7 @@ type EntryRevision = {
 // 取引1件。仕訳エンジン（src/lib/finance/journal.ts）と同じ形＋証憑。
 type Expense = FinanceEntry & {
   receipts?: Receipt[];
+  evidenceStatus?: EvidenceStatus;
   source?: "manual" | "order";
   sourceId?: string;
   paymentIntentId?: string;
@@ -3264,7 +3269,10 @@ export default function CostProfitSection({
     ],
   );
 
-  const hasReceipt = (entry: Expense) => (entry.receipts ?? []).length > 0;
+  const evidenceStatusOf = (entry: Expense) =>
+    entry.evidenceStatus ?? resolveEvidenceStatus(entry);
+  const hasReceipt = (entry: Expense) => evidenceStatusOf(entry) === "attached";
+  const hasEvidence = (entry: Expense) => evidenceStatusOf(entry) !== "missing";
 
   // 一覧は日付の新しい順。同日は登録の新しい順（id 降順）で並べる。
   const entryRows = useMemo<Expense[]>(
@@ -3278,7 +3286,7 @@ export default function CostProfitSection({
   const entryTabCounts = useMemo(
     () => ({
       all: entryRows.length,
-      noReceipt: entryRows.filter((entry) => !hasReceipt(entry)).length,
+      noReceipt: entryRows.filter((entry) => !hasEvidence(entry)).length,
       review: entryRows.filter((entry) => entryStateOf(entry) === "review")
         .length,
       revised: entryRows.filter((entry) => entryStateOf(entry) === "revised")
@@ -3289,7 +3297,7 @@ export default function CostProfitSection({
 
   const tabbedEntryRows = useMemo(() => {
     if (entryListTab === "noReceipt") {
-      return entryRows.filter((entry) => !hasReceipt(entry));
+      return entryRows.filter((entry) => !hasEvidence(entry));
     }
     if (entryListTab === "review") {
       return entryRows.filter((entry) => entryStateOf(entry) === "review");
@@ -3338,7 +3346,7 @@ export default function CostProfitSection({
 
   // 証憑ステータス（ドーナツ）。電子取引データの保存漏れを一目で出す。
   const receiptStatusCounts = useMemo(() => {
-    const attached = entryRows.filter(hasReceipt).length;
+    const attached = entryRows.filter(hasEvidence).length;
     return {
       attached,
       missing: entryRows.length - attached,
@@ -3364,7 +3372,7 @@ export default function CostProfitSection({
   const reviewQueue = useMemo(() => {
     const rowsFor = (key: ReviewQueueKey) => {
       if (key === "noReceipt")
-        return entryRows.filter((entry) => !hasReceipt(entry));
+        return entryRows.filter((entry) => !hasEvidence(entry));
       if (key === "fixedAsset") {
         return entryRows.filter((entry) => unlinkedAssetEntryIds.has(entry.id));
       }
@@ -3442,7 +3450,11 @@ export default function CostProfitSection({
         entry.amount,
         entry.paymentMethod,
         entry.seasonTag ? formatSeasonLabel(entry.seasonTag) : "",
-        hasReceipt(entry) ? "添付済み" : "未添付",
+        evidenceStatusOf(entry) === "system_record"
+          ? "注文データ保存済み"
+          : hasReceipt(entry)
+            ? "添付済み"
+            : "未添付",
         ENTRY_STATE_LABELS[entryStateOf(entry)],
         entry.memo,
       ]),
@@ -3543,6 +3555,13 @@ export default function CostProfitSection({
       header: "証憑",
       align: "center",
       render: (entry) => {
+        if (evidenceStatusOf(entry) === "system_record") {
+          return (
+            <span className="whitespace-nowrap text-xs text-[#365314]">
+              注文データ保存済み
+            </span>
+          );
+        }
         const attached = hasReceipt(entry);
         return (
           <button

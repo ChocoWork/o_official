@@ -118,6 +118,9 @@ describe('CostProfitSection', () => {
 
 		expect(await screen.findByText('Supabase注文')).toBeInTheDocument();
 		expect(screen.getByText('返金 ¥500')).toBeInTheDocument();
+		expect(screen.getByText('注文データ保存済み')).toBeInTheDocument();
+		expect(screen.getByRole('tab', { name: '証憑未添付（1）' })).toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: 'オンライン注文の証憑' })).not.toBeInTheDocument();
 		expect(screen.queryByRole('button', { name: 'オンライン注文を訂正' })).not.toBeInTheDocument();
 	});
 
