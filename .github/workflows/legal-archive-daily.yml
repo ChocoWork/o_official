@@ -1,0 +1,53 @@
+name: Legal archive daily
+
+on:
+  schedule:
+    - cron: '30 17 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: legal-archive-daily
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+      LEGAL_ARCHIVE_CRON_SECRET: ${{ secrets.LEGAL_ARCHIVE_CRON_SECRET }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      S3_ARCHIVE_BUCKET: ${{ secrets.S3_ARCHIVE_BUCKET }}
+      S3_ARCHIVE_REGION: ${{ secrets.S3_ARCHIVE_REGION }}
+      S3_ARCHIVE_ENDPOINT: ${{ secrets.S3_ARCHIVE_ENDPOINT }}
+      S3_ARCHIVE_FORCE_PATH_STYLE: ${{ vars.S3_ARCHIVE_FORCE_PATH_STYLE }}
+      LEGAL_ARCHIVE_DATABASE_DUMP: ${{ runner.temp }}/database.dump.gz
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Validate required secrets
+        shell: bash
+        run: |
+          test -n "$APP_BASE_URL"
+          test -n "$LEGAL_ARCHIVE_CRON_SECRET"
+          test -n "$NEXT_PUBLIC_SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          test -n "$SUPABASE_DB_URL"
+      - run: npm ci
+      - name: Create compressed database backup
+        shell: bash
+        run: pg_dump --format=custom --no-owner --no-privileges "$SUPABASE_DB_URL" | gzip -9 > "$LEGAL_ARCHIVE_DATABASE_DUMP"
+      - name: Store daily archive
+        run: npm run archive:legal:daily
+      - name: Remove temporary database backup
+        if: always()
+        shell: bash
+        run: rm -f "$LEGAL_ARCHIVE_DATABASE_DUMP"

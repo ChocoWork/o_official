@@ -57,7 +57,9 @@ export class S3ArchiveStorage implements ArchiveStorage {
   }
 }
 
-export function createS3ArchiveStorageFromEnv(environment = process.env): S3ArchiveStorage | null {
+export function createS3ArchiveStorageFromEnv(
+  environment: Record<string, string | undefined> = process.env,
+): S3ArchiveStorage | null {
   const bucket = environment.S3_ARCHIVE_BUCKET;
   const region = environment.S3_ARCHIVE_REGION;
   if (!bucket && !region) return null;

@@ -1,3 +1,5 @@
+export {};
+
 const authorizeMock = jest.fn();
 const createClientMock = jest.fn();
 
