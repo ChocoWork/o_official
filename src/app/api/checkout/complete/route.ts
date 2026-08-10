@@ -223,6 +223,59 @@ async function finalizeOrderDirectlyFromDraft(params: {
   return { data: insertedOrder };
 }
 
+/**
+ * ゲストのまま作られた注文を、ログイン中のユーザーへ紐付ける。
+ *
+ * 決済は既に成立しているので、紐付けに失敗してもチェックアウトは成功として返す
+ * （ここで失敗を返すと、支払い済みの客に注文失敗を見せることになる）。
+ * ただし黙って捨てると「注文履歴に出てこない」形でしか表面化しないので、
+ * 失敗も「対象0件」も監査ログに残して後から追えるようにする。
+ *
+ * @returns 実際に紐付いたら true
+ */
+async function linkOrderToUser(params: {
+  orderId: string;
+  userId: string;
+  sessionId: string;
+  checkoutSessionId: string;
+  ip: string | null;
+  userAgent: string | null;
+}): Promise<boolean> {
+  // 他人の注文を奪わないよう user_id が未設定の行だけを対象にする。
+  const { data, error } = await supabase
+    .from('orders')
+    .update({ user_id: params.userId })
+    .eq('id', params.orderId)
+    .is('user_id', null)
+    .select('id');
+
+  if (!error && data && data.length > 0) {
+    return true;
+  }
+
+  console.error(
+    'Failed to link guest order to user:',
+    error ?? 'no order row matched (already owned by another user)'
+  );
+  await logAudit({
+    action: 'checkout.link_order_to_user',
+    outcome: 'error',
+    detail: error
+      ? 'Failed to link guest order to user'
+      : 'Guest order was not linked (already owned by another user)',
+    ip: params.ip,
+    user_agent: params.userAgent,
+    metadata: {
+      session_id: params.sessionId,
+      checkout_session_id: params.checkoutSessionId,
+      order_id: params.orderId,
+      linked_user_id: params.userId,
+      error_message: error?.message ?? null,
+    },
+  });
+  return false;
+}
+
 function getClientIp(request: NextRequest): string | null {
   const forwardedFor = request.headers.get('x-forwarded-for');
   if (forwardedFor) {
@@ -436,12 +489,18 @@ export async function POST(req: NextRequest) {
       .maybeSingle<OrderRow>();
 
     if (existingOrder?.id && activeUserId && existingOrder.user_id !== activeUserId) {
-      await supabase
-        .from('orders')
-        .update({ user_id: activeUserId })
-        .eq('id', existingOrder.id)
-        .is('user_id', null);
-      existingOrder.user_id = activeUserId;
+      // 実際に紐付いたときだけ手元の値を進める（0件更新を成功扱いにしない）。
+      const linked = await linkOrderToUser({
+        orderId: existingOrder.id,
+        userId: activeUserId,
+        sessionId,
+        checkoutSessionId: parsed.data.checkoutSessionId,
+        ip: clientIp,
+        userAgent,
+      });
+      if (linked) {
+        existingOrder.user_id = activeUserId;
+      }
     }
 
     if (existingOrder) {
@@ -489,11 +548,14 @@ export async function POST(req: NextRequest) {
         });
 
         if (fallbackResult.data && activeUserId) {
-          await supabase
-            .from('orders')
-            .update({ user_id: activeUserId })
-            .eq('id', fallbackResult.data.id)
-            .is('user_id', null);
+          await linkOrderToUser({
+            orderId: fallbackResult.data.id,
+            userId: activeUserId,
+            sessionId,
+            checkoutSessionId: parsed.data.checkoutSessionId,
+            ip: clientIp,
+            userAgent,
+          });
         }
 
         if (fallbackResult.data) {
