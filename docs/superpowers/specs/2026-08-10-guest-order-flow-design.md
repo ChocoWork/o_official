@@ -220,8 +220,10 @@ ALTER TABLE public.orders
   ADD CONSTRAINT orders_shipping_info_requires_shipped_at
   CHECK (shipped_at IS NOT NULL OR (shipping_carrier IS NULL AND tracking_number IS NULL));
 
-CREATE INDEX IF NOT EXISTS idx_orders_unlinked_email
-  ON public.orders (lower(shipping_email)) WHERE user_id IS NULL;
+-- 紐付け用のインデックスは作らない。紐付けは PostgREST の ilike で引くが、
+-- ILIKE は btree を使えないため lower(shipping_email) の式インデックスは効かない。
+-- orders は16行で全表走査でも問題ない。数万件に育ったら pg_trgm の GIN か、
+-- メールを保存時に正規化する方針へ切り替える。
 ```
 
 追加する列はいずれも migration 081 の不変列リストに無いので更新できる。`record_order_revision` が変更を履歴に残す（`status` も変わるので `status_update` として記録される）。
