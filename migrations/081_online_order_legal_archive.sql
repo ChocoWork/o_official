@@ -105,11 +105,13 @@ LANGUAGE plpgsql
 SET search_path = pg_catalog
 AS $$
 BEGIN
+  -- user_id は取引事実ではなく運用項目（設計書 2.1 の不変項目に含まれない）。
+  -- 注文行はアカウント紐付け前に作られ、決済完了後に user_id を後から埋めるため、
+  -- ここで固定するとゲスト注文がアカウントに紐づかなくなる。
   IF ROW(
     OLD.id,
     OLD.session_id,
     OLD.checkout_session_id,
-    OLD.user_id,
     OLD.payment_intent_id,
     OLD.subtotal_amount,
     OLD.shipping_amount,
@@ -129,7 +131,6 @@ BEGIN
     NEW.id,
     NEW.session_id,
     NEW.checkout_session_id,
-    NEW.user_id,
     NEW.payment_intent_id,
     NEW.subtotal_amount,
     NEW.shipping_amount,
