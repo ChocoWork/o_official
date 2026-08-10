@@ -4,122 +4,85 @@
 
 ## 概要
 
-ゲスト（会員登録なし）で購入した客が、注文後に取れる手段を3つ用意する。
+ゲスト（会員登録なし）で購入した客が、注文後に注文内容と配送状況を把握できるようにする。
 
-1. **ゲスト注文照会** — 注文番号とメールで注文内容を確認する。会員登録しない客を救う
-2. **会員紐付け** — 同じメールで会員登録すると、過去のゲスト注文が購入履歴に出る
-3. **完了画面の登録誘導** — 注文完了直後に、入力済みの情報を引き継いで登録へ導く
+方針は「**ゲスト向けの照会画面は作らず、メールで完結させる**」。ゲストは注文確認メールと発送通知メールで注文内容・お届け先・追跡番号を確認する。会員登録した客は、過去のゲスト注文がマイページの購入履歴に現れる。
 
-現状はゲスト注文の `orders.user_id` が NULL のままで、後から会員登録しても購入履歴に出ない。`orders.shipping_email` は保存済みなので、紐付ける材料は揃っている。
+### 調査で判明した前提の崩れ
+
+設計中に、この方針が現状のままでは成立しないことが分かった。
+
+1. **注文確認メールが一度も送られていない。** `src/lib/orders/order-confirmation-email.ts` の `sendOrderConfirmationEmail` は定義だけで、import している箇所が0件。テストも無い。メール基盤自体は動いている（問い合わせ・パスワードリセットが `sendMail` を使用）ので、配線だけが抜けている
+2. **そのメール本文にお届け先が入っていない。** 「住所を間違えていないか」という最も多い用途を満たせない
+3. **「発送済み」という状態が存在しない。** `order_status` enum は `pending, paid, failed, cancelled` のみ。管理APIは `z.enum(['cancelled'])` でキャンセルしかできない。発送しても DB 上は `paid` のまま
+4. **追跡番号の実装が無い。** ただし完了画面（`src/app/checkout/page.tsx` L1549）が「発送完了後、追跡番号をメールでお知らせいたします」と既に客に約束している
+
+このため、当初の「紐付けと登録誘導の2本」からスコープを広げ、メールの配線と受注管理（発送）まで含める。
 
 ## 1. 全体像
 
-3つは独立して価値がある。依存は一方向のみ。
-
 | 要求 | 内容 | 依存 |
 |---|---|---|
-| FREQ-264 | ゲスト注文照会 | なし |
+| FREQ-264 | 注文確認メールを実際に送る＋お届け先を含める | なし |
 | FREQ-265 | 会員紐付け | なし |
 | FREQ-266 | 完了画面の登録誘導 | FREQ-265（住所引き継ぎのため） |
+| FREQ-267 | 発送ステータスの導入 | なし |
+| FREQ-268 | 発送通知メール | FREQ-267 |
 
-実装順は 264 → 265 → 266。
+実装順は 264 → 265 → 266 → 267 → 268。
 
-| | 画面 | API | E2E |
+264〜266（メールの配線と会員導線）と 267〜268（受注管理）は互いに独立している。実装計画は 266 の完了時点でいったん区切れる形にし、そこで止めても価値が出るようにする。
+
+| | 画面 | サーバー | E2E |
 |---|---|---|---|
-| FREQ-264 | `/orders/lookup`（新規） | `POST /api/orders/lookup`（新規） | `FR-ORDER-001`（新カテゴリ） |
+| FREQ-264 | なし | `complete/route.ts` に配線、メール本文 | 単体のみ |
 | FREQ-265 | なし | 既存2箇所にフック | `FR-ACCOUNT-030` |
 | FREQ-266 | 完了画面＋`/register` | なし | `FR-CHECKOUT-015` |
-
-DB 変更は migration 083 の1本。RLS 変更なし。
+| FREQ-267 | ADMIN の ORDER タブ、注文詳細 | status API、migration 083・084 | `FR-ADMIN-050` / `FR-ACCOUNT-031` |
+| FREQ-268 | なし | 発送通知メール | 単体のみ |
 
 ### 実装方式
 
-照会も紐付けも Route Handler ＋ service-role client で実装する。`src/app/api/contact/route.ts` が公開 POST の完成形（同一オリジン検証 → IP レート制限 → zod → ハニーポット → メール単位レート制限 → service-role → 監査ログ）なので、照会はこれを踏襲する。
+サーバー側の処理は Route Handler ＋ service-role client で実装する。`src/app/api/contact/route.ts` が公開 POST の完成形（同一オリジン検証 → レート制限 → zod → service-role → 監査ログ）で、既存コードはこの形に寄っている。
 
-Postgres RPC には寄せない。このプロジェクトの RPC は PostgREST 経由で `anon` から直接呼べる状態で、セキュリティアドバイザーが `finalize_order_from_checkout_draft` を含む複数を警告している。照会関数を足すとレート制限を迂回できる攻撃面が増える。
+Postgres RPC には寄せない。このプロジェクトの RPC は PostgREST 経由で `anon` から直接呼べる状態で、セキュリティアドバイザーが `finalize_order_from_checkout_draft` を含む複数を警告している。関数を増やすと攻撃面が広がる。
 
 `auth.users` へのトリガーも採らない。Supabase のアップグレードで壊れやすく、「ログイン毎に走らせる」を満たせない（ログインは `auth.users` を更新しないことがある）。
 
 紐付けは1つの共通関数に閉じ、呼び出し側を2箇所に限定して、両経路を E2E で押さえる。
 
-## 2. ゲスト注文照会（FREQ-264）
+### 採用しなかった案: ゲスト注文照会
 
-### 前提: 注文番号で検索できない
+注文番号とメールで注文内容を表示する公開ページ（`/orders/lookup`）を検討したが、採らない。ゲストには注文確認メールと発送通知メールが届くので、そこで用が足りる。照会画面を持つと、注文番号とメールを知る第三者が住所・電話を閲覧できる経路が増える。
 
-注文番号は `src/lib/orders/order-number.ts` の `toOrderNumber()` が `ORD-` ＋ UUID 先頭8桁で組み立てている。`orders.id` は `uuid` 型なので、PostgREST から前方一致検索ができない（uuid に `like` 演算子が無い）。
+この判断により、注文番号での前方一致検索が不要になった。`orders.id` は `uuid` 型で PostgREST から前方一致検索できないため生成列 `order_number` の追加を検討していたが、これも作らない。
 
-生成列を追加して解決する。
+## 2. 注文確認メールの配線（FREQ-264）
 
-### migration 083
+### 送信箇所
 
-```sql
-ALTER TABLE public.orders
-  ADD COLUMN IF NOT EXISTS order_number text
-  GENERATED ALWAYS AS ('ORD-' || upper(substr(id::text, 1, 8))) STORED;
+`src/app/api/checkout/complete/route.ts` の**注文が新規に確定した2経路**で、レスポンスを返す直前に `await` する。
 
--- 8桁hex は衝突しうるので一意制約は付けない。
-CREATE INDEX IF NOT EXISTS idx_orders_order_number
-  ON public.orders(order_number);
+- `finalize_order_from_checkout_draft` RPC の成功後
+- レガシースキーマ用フォールバック `finalizeOrderDirectlyFromDraft` の成功後
 
--- 紐付け（FREQ-265）の検索用。
-CREATE INDEX IF NOT EXISTS idx_orders_unlinked_email
-  ON public.orders (lower(shipping_email)) WHERE user_id IS NULL;
-```
+既存注文の早期リターン経路（同じ `payment_intent_id` で再度呼ばれたとき）では送らない。これで二重送信は起きない。
 
-migration 081 のトリガーには抵触しない。`protect_legal_order_immutable_fields` は不変列を明示列挙しており、`record_order_revision` の `to_jsonb` 差分にも現れない（`id` が不変なら生成列の値も不変）。
+`sendOrderConfirmationEmail` は既に失敗を握りつぶして監査ログだけ残す設計なので、メール障害で注文完了が壊れることはない。
 
-`orders` は 16 行、`order_items` は 18 行（2026-08-10 時点）。STORED 生成列の追加はテーブル書き換えを伴うが、この規模なら一瞬で終わる。
+Stripe Webhook 側には置かない。注文行を作るのは `complete` だけで、Webhook は `pending → paid` を切り替えるだけだから。
 
-表示側の `toOrderNumber()` はそのまま残し、DB 列は検索専用とする。両者の書式は一致させること。
+### 本文にお届け先を追加
 
-### API `POST /api/orders/lookup`
+`OrderConfirmationParams` に配送先を追加し、本文へ次を出す。
 
-検証はすべてデータを返す前に完了する。画面は受け取った結果を描くだけで、描画時の判定は無い。
+- 氏名
+- 郵便番号
+- 都道府県・市区町村・住所
+- 建物名（あれば）
+- 電話番号
 
-| # | 検証 | 落ちたとき |
-|---|---|---|
-| 1 | `isSameOriginRequest` | 403 |
-| 2 | IP レート制限 `enforceRateLimit({ endpoint: 'orders:lookup', limit: 20, windowSeconds: 3600 })` | 429（`Retry-After` 付き） |
-| 3 | zod: `orderNumber` は `/^ORD-[0-9A-Fa-f]{8}$/`、`email` はメール形式 | 400 |
-| 4 | ハニーポット `website` が空 | 403 ＋ 監査ログ |
-| 5 | メール単位レート制限 `enforceRateLimit({ endpoint: 'orders:lookup', limit: 5, windowSeconds: 3600, subject: email })` | 429 |
-| 6 | `order_number = ? AND lower(shipping_email) = lower(?)` | 404 |
-| 7 | 一意に1件へ絞れたか | 404 |
-
-6 が本体。注文番号とメールの片方だけでは絶対に返らない。2 と 5 を分けているのは、1つの IP から多数のメールを試す攻撃と、1つのメールに対し注文番号を総当たりする攻撃の両方を塞ぐため。
-
-8桁 hex は約43億通り。メール一致も要求するため総当たりは非現実的で、レート制限で塞ぐ。
-
-0件・2件以上のいずれも**同一の 404 と同一メッセージ**を返す。区別すると注文番号の存在有無が漏れる。
-
-応答には `Cache-Control: no-store` を付ける。
-
-### 返す内容
-
-会員の注文詳細と同等。
-
-- 注文番号、注文日、ステータス
-- 商品明細（画像・商品名・色・サイズ・数量・金額）
-- 小計、送料、合計
-- お届け先（氏名・郵便番号・住所・建物・電話・メール）
-
-返さないもの: 注文の UUID、`payment_intent_id`、`checkout_session_id`、`session_id`。表示に不要な内部 ID は出さない。カード情報はそもそも保持していない（Stripe 側）。
-
-### 画面 `/orders/lookup`
-
-- Client Component がフォームを持ち、`POST /api/orders/lookup` を fetch して結果を state に保持し、同一ページのフォーム位置に描画する。ルーティングもクエリ更新も行わない
-- セッションもトークンも発行しない。リロードすると state が消えてフォームに戻る
-- 結果は POST の応答なので URL に載らない。コピペ拡散・ブラウザ履歴・Referrer からの漏洩が起きない
-- ページに `noindex` を付ける
-- エラー文言は「注文番号またはメールアドレスが一致しません。ご注文確認メールをご確認のうえ、もう一度お試しください。」の1種類のみ
-
-会員の注文詳細（`src/app/account/orders/[id]/page.tsx`）と表示部品を共有する。ページが太らないよう、表示専用コンポーネントを `src/features/orders/components/` へ切り出して両者から使う。
-
-### 設計上の割り切り
-
-注文番号とメールの両方を知っている人は誰でも閲覧できる。注文確認メールを見られる人＝本人相当、という前提を置く。家族に転送されたメールから見られるのは仕様の範囲。
-
-メール内のワンタイムリンク方式ならこれを防げるが、「メールを紛失した客を救う」という照会機能の目的そのものが失われるので採らない。
+既存の項目（注文番号・商品明細・小計・送料・合計・問い合わせ案内）はそのまま残す。
 
 ## 3. 会員紐付け（FREQ-265）
 
@@ -229,28 +192,148 @@ export async function linkGuestOrdersByEmail(params: {
 
 値は一切信用しない。実際の登録は従来どおり Turnstile・パスワード規則・メール確認を通る。不正な値なら入力欄が変な文字列で埋まるだけで、確認メールは入力されたアドレスにしか届かない。
 
-## 5. エラー処理
+## 5. 発送ステータスの導入（FREQ-267）
 
-認証フローを壊さないことを原則とする。紐付けは付随処理なので、失敗してもログイン・メール確認・チェックアウトは成功させる。
+### migration は2本に分ける
+
+`ALTER TYPE ... ADD VALUE` で追加した値は同一トランザクション内で使えない。列追加や制約と混ぜず、enum の追加だけを独立させる。
+
+```sql
+-- 083: enum の追加のみ
+ALTER TYPE public.order_status ADD VALUE IF NOT EXISTS 'shipped';
+```
+
+```sql
+-- 084: 発送情報の列と、紐付け用インデックス
+ALTER TABLE public.orders
+  ADD COLUMN IF NOT EXISTS shipped_at timestamptz NULL,
+  ADD COLUMN IF NOT EXISTS shipping_carrier text NULL
+    CHECK (shipping_carrier IS NULL OR shipping_carrier IN ('yamato','sagawa','japanpost')),
+  ADD COLUMN IF NOT EXISTS tracking_number text NULL
+    CHECK (tracking_number IS NULL OR tracking_number ~ '^[0-9A-Za-z-]{1,64}$');
+
+-- ADD CONSTRAINT に IF NOT EXISTS は無いので、migration 074 と同じく
+-- DROP してから足して再実行可能にする。
+ALTER TABLE public.orders
+  DROP CONSTRAINT IF EXISTS orders_shipping_info_requires_shipped_at;
+ALTER TABLE public.orders
+  ADD CONSTRAINT orders_shipping_info_requires_shipped_at
+  CHECK (shipped_at IS NOT NULL OR (shipping_carrier IS NULL AND tracking_number IS NULL));
+
+CREATE INDEX IF NOT EXISTS idx_orders_unlinked_email
+  ON public.orders (lower(shipping_email)) WHERE user_id IS NULL;
+```
+
+追加する列はいずれも migration 081 の不変列リストに無いので更新できる。`record_order_revision` が変更を履歴に残す（`status` も変わるので `status_update` として記録される）。
+
+`orders` は 16 行、`order_items` は 18 行（2026-08-10 時点）。
+
+### 追跡URLはDBに持たない
+
+`src/lib/orders/shipping-carriers.ts` に業者ごとのラベルと URL 組み立て関数を置く。
+
+```ts
+export const SHIPPING_CARRIERS = {
+  yamato: {
+    label: 'ヤマト運輸',
+    trackingUrl: (n: string) =>
+      `https://toi.kuronekoyamato.co.jp/cgi-bin/tneko?number=${encodeURIComponent(n)}`,
+  },
+  sagawa: {
+    label: '佐川急便',
+    trackingUrl: (n: string) =>
+      `https://k2k.sagawa-exp.co.jp/p/web/okurijosearch.do?okurijoNo=${encodeURIComponent(n)}`,
+  },
+  japanpost: {
+    label: '日本郵便',
+    trackingUrl: (n: string) =>
+      `https://trackings.post.japanpost.jp/services/srv/search/direct?reqCodeNo1=${encodeURIComponent(n)}&searchKind=S002&locale=ja`,
+  },
+} as const;
+```
+
+URL 形式は業者都合で変わるのでコードで管理し、デプロイで直す。マスタ管理 UI は作らない。上記の形式は実装時にブラウザで疎通を確認すること。
+
+### 遷移規則
+
+| 遷移 | 可否 |
+|---|---|
+| `paid` → `shipped` | 許可 |
+| `pending` / `failed` / `cancelled` → `shipped` | 409 |
+| `shipped` → `shipped` | 409（二重発送防止） |
+| `shipped` → `cancelled` | 409（発送後の取消は返品フロー。今回は扱わない） |
+
+### API
+
+`src/app/api/admin/orders/[id]/status/route.ts` の zod を判別ユニオンに拡張する。
+
+```ts
+z.discriminatedUnion('status', [
+  z.object({ status: z.literal('cancelled') }),
+  z.object({
+    status: z.literal('shipped'),
+    carrier: z.enum(['yamato', 'sagawa', 'japanpost']),
+    trackingNumber: z.string().trim().min(1).max(64).regex(/^[0-9A-Za-z-]+$/),
+  }),
+])
+```
+
+更新は条件付き UPDATE 1本で行う。
+
+```sql
+UPDATE orders
+   SET status = 'shipped', shipped_at = now(),
+       shipping_carrier = :carrier, tracking_number = :tracking
+ WHERE id = :id AND status = 'paid' AND shipped_at IS NULL
+```
+
+0件なら 409、1件なら通知メールを送る。読んでから書く形にしないので、同時に2回押しても発送は1回しか成立せず、通知メールも1通しか出ない。重複送信防止の仕組みを別に作る必要がない。
+
+### 画面
+
+- `src/lib/orders/order-status.ts` に `shipped: '発送済み'` を追加
+- `src/components/OrderSection.tsx` の `OrderStatus` 型に `'発送済み'` を追加。`決済完了` の行にだけ「発送済みにする」ボタンを出し、既存の Dialog で配送業者（選択）と追跡番号（入力）を受ける。色は既存の `statusClassMap` に1行足す
+- `src/app/account/orders/[id]/page.tsx` に発送情報セクション（配送業者・追跡番号・追跡リンク）
+- 管理の一覧 API（`src/app/api/admin/orders/route.ts`）の型・`mapOrderStatusToLabel`・フィルタの `z.enum` にも `shipped` を追加
+
+## 6. 発送通知メール（FREQ-268）
+
+`src/lib/orders/order-shipped-email.ts` を新設する。`order-confirmation-email.ts` と同じ形（失敗は握りつぶして監査ログ）にする。
+
+本文に出すもの:
+
+- 氏名、注文番号
+- 商品明細
+- 配送業者、追跡番号、追跡URL
+- お届け先
+
+送信失敗しても発送処理は成功のまま（DB は既に `shipped`）。監査ログ `order.shipped.mail` / `outcome: 'error'` に残す。自動再送はしない。
+
+## 7. エラー処理
+
+認証フローとチェックアウトを壊さないことを原則とする。メール送信と紐付けは付随処理なので、失敗しても本体は成功させる。
 
 | 箇所 | 失敗時 | 理由 |
 |---|---|---|
-| 照会 API | ステータスを返して終わり | 単体の機能。失敗を隠す理由がない |
+| 注文確認メール | ログ＋監査ログのみ | 決済済みの客に注文失敗を見せない |
 | 紐付け（confirm / otp verify） | ログ＋監査ログのみ、例外を投げない | 紐付け失敗で login を 500 にするとログインできなくなる。次回ログインで再試行される |
 | 住所・氏名コピー | ログのみ。紐付けは成功扱い | 後から自分で入力できる |
 | 完了画面のカード | 表示に失敗しても注文完了は表示 | 決済済みの客に失敗を見せない |
+| 発送通知メール | ログ＋監査ログのみ。発送は成功扱い | DB は既に `shipped`。巻き戻すと二重発送の判定が壊れる |
+| 発送の UPDATE | 409 を返す | 管理者の操作なので、失敗は明示する |
 
 ### 監査ログ
 
 | action | outcome | いつ |
 |---|---|---|
-| `orders.lookup` | `success` / `failure` | 照会の成功・不一致 |
-| `orders.lookup` | `failure` | ハニーポット命中 |
+| `order.confirmation.mail` | `error` | 注文確認メールの送信失敗（既存） |
 | `orders.link_guest_orders` | `success` | 1件以上紐付いたとき（件数を metadata へ） |
 | `orders.link_guest_orders` | `error` | UPDATE 失敗 |
 | `orders.copy_guest_profile` | `error` | 住所・氏名コピー失敗のみ |
+| `admin.orders.status.update` | `success` / `failure` | 発送・キャンセル（既存の action を流用） |
+| `order.shipped.mail` | `error` | 発送通知メールの送信失敗 |
 
-## 6. テスト
+## 8. テスト
 
 ### 単体（Jest）
 
@@ -261,39 +344,62 @@ export async function linkGuestOrdersByEmail(params: {
 - メールは `lower(trim())` で比較し、`+tag` 違いは紐付かない
 - Supabase がエラーを返しても例外を投げず 0 を返す
 
-`order-lookup.test.ts`
+`order-confirmation-email.test.ts`
 
-- 注文番号の正規化（小文字入力を大文字化、`ORD-` 欠落は 400）
-- 0件と複数件がどちらも同一の 404 になる
+- 本文にお届け先（郵便番号・住所・電話）が含まれる
+- `email` または `MAIL_FROM_ADDRESS` が無いときは送らない
+
+`order-shipped.test.ts`
+
+- `paid` 以外のステータスからは 409
+- 既に `shipped_at` が入っていれば 409（二重発送防止）
+- 追跡URLが業者ごとに正しく組み立てられる
+
+### 結合（Jest）
+
+`tests/integration/api/checkout/complete.test.ts`
+
+- 注文が新規に確定した経路で `sendOrderConfirmationEmail` が1回呼ばれる
+- 同じ `payment_intent_id` で2回目を呼ぶと、既存注文の早期リターン経路に入り呼ばれない（FREQ-264-AC-03）
 
 ### E2E（Playwright / mobile 390・tablet 768・desktop 1280）
 
 既存の慣習どおり API はモックする。
 
+FREQ-264 と FREQ-268 は画面を持たないサーバー処理なので、E2E ファイルは作らず単体・結合テストで検証する。プロジェクトの要求管理ルール（FREQ ごとに E2E を作る）から意図的に外れる点をここに記録しておく。
+
 | ファイル | 検証 |
 |---|---|
-| `FR-ORDER-001-guest-order-lookup.spec.ts` | 照会成功で明細・金額・お届け先が出る／不一致で同一文言のエラー／レート制限で 429／横スクロールなし |
-| `FR-ACCOUNT-030-guest-order-linking.spec.ts` | メール確認後に過去のゲスト注文が購入履歴に出る／メール未確認では出ない |
 | `FR-CHECKOUT-015-guest-register-prompt.spec.ts` | 未ログインの完了画面にカードが出る／ログイン済みでは出ない／遷移先が `/register?email=...` |
+| `FR-ACCOUNT-030-guest-order-linking.spec.ts` | メール確認後に過去のゲスト注文が購入履歴に出る／メール未確認では出ない |
+| `FR-ACCOUNT-031-order-shipping-info.spec.ts` | 注文詳細に配送業者・追跡番号・追跡リンクが出る／未発送では出ない |
+| `FR-ADMIN-050-order-shipping.spec.ts` | 決済完了の行に「発送済みにする」が出る／発送後は出ない／未決済の行には出ない／ダイアログで業者と追跡番号を入力できる |
 
-## 7. 受け入れ基準
+## 9. 受け入れ基準
 
 `docs/2_Specs/spec.md` のトレーサビリティテーブルへ入れる形。
 
-- **FREQ-264-AC-01** 3ビューポートで、`/orders/lookup` に注文番号・メールの入力欄と送信ボタンが表示されること
-- **FREQ-264-AC-02** 正しい組で送信すると、注文番号・ステータス・商品明細・小計・送料・合計・お届け先が表示されること
-- **FREQ-264-AC-03** メールだけ誤った組と、存在しない注文番号のいずれも「注文番号またはメールアドレスが一致しません。」と表示され、区別できないこと
-- **FREQ-264-AC-04** 結果画面で横方向のページスクロールが発生しないこと
+- **FREQ-264-AC-01** 注文が確定したとき、注文時のメールアドレス宛に件名「【Le Fil des Heures】ご注文ありがとうございます（ORD-XXXXXXXX）」のメールが送信されること
+- **FREQ-264-AC-02** そのメール本文に、氏名・郵便番号・都道府県・市区町村・住所・建物名・電話番号が含まれること
+- **FREQ-264-AC-03** 同じ `payment_intent_id` で注文完了APIを2回呼んでも、メールが2通送られないこと
 - **FREQ-265-AC-01** メール確認済みの会員でログインすると、同じメールで行ったゲスト注文が購入履歴に表示されること
 - **FREQ-265-AC-02** 既に他の会員に紐付いた注文は購入履歴に表示されないこと
-- **FREQ-266-AC-01** 3ビューポートで、未ログインの注文完了画面に「会員登録へ進む」ボタンを含むカードが表示されること
+- **FREQ-266-AC-01** mobile（390px）/ tablet（768px）/ desktop（1280px）で、未ログインの注文完了画面に「会員登録へ進む」ボタンを含むカードが表示されること
 - **FREQ-266-AC-02** ログイン済みの完了画面には同カードが表示されないこと
 - **FREQ-266-AC-03** ボタンから遷移した `/register` のメール入力欄に、注文時のメールが入っていること
+- **FREQ-267-AC-01** 同3ビューポートで、ADMIN の ORDER タブの「決済完了」の注文に「発送済みにする」ボタンが表示されること
+- **FREQ-267-AC-02** 「未決済」「決済失敗」「キャンセル」「発送済み」の注文には同ボタンが表示されないこと
+- **FREQ-267-AC-03** 同ボタンから配送業者と追跡番号を入力して発送すると、一覧のステータスが「発送済み」になること
+- **FREQ-267-AC-04** 同3ビューポートで、発送済み注文の注文詳細に配送業者・追跡番号・追跡リンクが表示されること
+- **FREQ-267-AC-05** 未発送の注文詳細には発送情報のセクションが表示されないこと
+- **FREQ-268-AC-01** 発送済みにしたとき、注文時のメールアドレス宛に配送業者・追跡番号・追跡URLを含むメールが送信されること
+- **FREQ-268-AC-02** 既に発送済みの注文をもう一度発送しようとしても、メールが2通送られないこと
 
-## 8. スコープ外
+## 10. スコープ外
 
-- 照会結果からのキャンセル・返品申請（表示のみ）
-- ゲストへの注文状況更新メール
+- ゲスト向けの注文照会画面（方針として採らない）
+- 発送通知メールの再送UI（失敗は監査ログに残し、問い合わせ対応）
+- 発送後のキャンセル・返品フロー
+- 配送業者APIとの連携（追跡番号は手入力）
 - `+tag` やドット違いの同一視
-- 紐付いた件数の通知 UI
-- 照会結果を保持する短期セッション（ゲストは都度入力、会員はマイページから）
+- 紐付いた件数の通知UI
