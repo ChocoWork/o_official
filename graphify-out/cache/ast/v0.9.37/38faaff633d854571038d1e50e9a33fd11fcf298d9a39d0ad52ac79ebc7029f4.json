@@ -1,1 +1,0 @@
-{"nodes": [{"id": "$graphify-root$_migrations_024_create_postal_code_cache_sql", "label": "024_create_postal_code_cache.sql", "file_type": "code", "source_file": "migrations/024_create_postal_code_cache.sql", "source_location": null}], "edges": []}

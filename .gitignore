@@ -53,3 +53,10 @@ next-env.d.ts
 certificates
 
 /docs/ui-mocks
+
+# Graphify is installed user-wide; keep only generated graph data in this repo.
+/.agents/skills/graphify/
+/.codex/skills/graphify/
+/.codex/hooks.json*
+/.claude/*.graphify-bak
+/.graphify_*

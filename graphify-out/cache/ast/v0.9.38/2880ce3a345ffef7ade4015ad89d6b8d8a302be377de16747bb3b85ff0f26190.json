@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_migrations_032_create_search_indexes_sql", "label": "032_create_search_indexes.sql", "file_type": "code", "source_file": "migrations/032_create_search_indexes.sql", "source_location": null}], "edges": []}
