@@ -54,6 +54,11 @@ certificates
 
 /docs/ui-mocks
 
+# Local editor and maintenance artifacts (may contain credentials).
+/.tmp-vscode-codex-test/
+/.tmp-history-*
+/.claude/settings.local.json
+
 # Graphify is installed user-wide; keep only generated graph data in this repo.
 /.agents/skills/graphify/
 /.codex/skills/graphify/
