@@ -10,6 +10,16 @@ type ConfirmationItem = {
   line_total: number;
 };
 
+export type OrderConfirmationShipping = {
+  fullName: string | null;
+  postalCode: string | null;
+  prefecture: string | null;
+  city: string | null;
+  address: string | null;
+  building: string | null;
+  phone: string | null;
+};
+
 type OrderConfirmationParams = {
   orderId: string;
   email: string | null | undefined;
@@ -19,6 +29,7 @@ type OrderConfirmationParams = {
   shippingAmount: number;
   totalAmount: number;
   currency: string;
+  shipping: OrderConfirmationShipping;
 };
 
 function formatCurrency(amount: number, currency: string): string {
@@ -39,7 +50,7 @@ function formatCurrency(amount: number, currency: string): string {
  * order finalization — matching the graceful degradation used elsewhere.
  */
 export async function sendOrderConfirmationEmail(params: OrderConfirmationParams): Promise<void> {
-  const { orderId, email, fullName, items, subtotalAmount, shippingAmount, totalAmount, currency } = params;
+  const { orderId, email, fullName, items, subtotalAmount, shippingAmount, totalAmount, currency, shipping } = params;
 
   if (!email || !process.env.MAIL_FROM_ADDRESS) {
     return;
@@ -52,6 +63,15 @@ export async function sendOrderConfirmationEmail(params: OrderConfirmationParams
     const label = variant ? `${item.item_name}（${variant}）` : item.item_name;
     return `・${label} x${item.quantity}　${formatCurrency(item.line_total, currency)}`;
   });
+
+  // 空の項目で空行が出ないよう、値のある行だけを積む。
+  const shippingLines = [
+    shipping.fullName ? `${shipping.fullName} 様` : null,
+    shipping.postalCode ? `〒${shipping.postalCode}` : null,
+    [shipping.prefecture, shipping.city, shipping.address].filter(Boolean).join('') || null,
+    shipping.building || null,
+    shipping.phone || null,
+  ].filter((line): line is string => Boolean(line));
 
   const text = [
     fullName ? `${fullName} 様` : 'お客様',
@@ -67,6 +87,9 @@ export async function sendOrderConfirmationEmail(params: OrderConfirmationParams
     `小計: ${formatCurrency(subtotalAmount, currency)}`,
     `送料: ${shippingAmount > 0 ? formatCurrency(shippingAmount, currency) : '無料'}`,
     `合計: ${formatCurrency(totalAmount, currency)}`,
+    '',
+    'お届け先:',
+    ...shippingLines,
     '',
     `お問い合わせの際は、注文番号（${orderNumber}）をお問い合わせフォームにご入力ください。`,
     '',

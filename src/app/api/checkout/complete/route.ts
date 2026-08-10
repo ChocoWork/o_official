@@ -19,6 +19,7 @@ import {
 } from '@/features/checkout/services/checkout-draft.service';
 import { logAudit } from '@/lib/audit';
 import { extractAuthToken } from '@/lib/supabase/server';
+import { sendOrderConfirmationEmail } from '@/lib/orders/order-confirmation-email';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -274,6 +275,36 @@ async function linkOrderToUser(params: {
     },
   });
   return false;
+}
+
+/** draft のスナップショットから確認メールの送信パラメータを組み立てる。 */
+function buildConfirmationParams(orderId: string, draft: CheckoutDraftDetails) {
+	const shipping = draft.shipping_snapshot;
+	return {
+		orderId,
+		email: shipping?.email ?? null,
+		fullName: shipping?.fullName ?? null,
+		items: (draft.items_snapshot ?? []).map((item) => ({
+			item_name: item.item_name,
+			color: item.color,
+			size: item.size,
+			quantity: item.quantity,
+			line_total: item.line_total,
+		})),
+		subtotalAmount: draft.subtotal_amount,
+		shippingAmount: draft.shipping_amount,
+		totalAmount: draft.total_amount,
+		currency: draft.currency,
+		shipping: {
+			fullName: shipping?.fullName ?? null,
+			postalCode: shipping?.postalCode ?? null,
+			prefecture: shipping?.prefecture ?? null,
+			city: shipping?.city ?? null,
+			address: shipping?.address ?? null,
+			building: shipping?.building ?? null,
+			phone: shipping?.phone ?? null,
+		},
+	};
 }
 
 function getClientIp(request: NextRequest): string | null {
@@ -559,6 +590,10 @@ export async function POST(req: NextRequest) {
         }
 
         if (fallbackResult.data) {
+          await sendOrderConfirmationEmail(
+            buildConfirmationParams(fallbackResult.data.id, draftData as CheckoutDraftDetails),
+          );
+
           await logAudit({
             action: 'checkout.complete',
             outcome: 'success',
@@ -625,6 +660,10 @@ export async function POST(req: NextRequest) {
       });
       return NextResponse.json({ error: 'Failed to create order' }, { status: 500 });
     }
+
+    await sendOrderConfirmationEmail(
+      buildConfirmationParams(finalizedOrder.order_id, draftData as CheckoutDraftDetails),
+    );
 
     await logAudit({
       action: 'checkout.complete',

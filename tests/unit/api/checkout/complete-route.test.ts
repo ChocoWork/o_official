@@ -41,6 +41,11 @@ jest.mock('@/lib/audit', () => ({
   logAudit: (...args: unknown[]) => mockLogAudit(...args),
 }));
 
+const mockSendOrderConfirmationEmail = jest.fn().mockResolvedValue(undefined);
+jest.mock('@/lib/orders/order-confirmation-email', () => ({
+  sendOrderConfirmationEmail: (...args: unknown[]) => mockSendOrderConfirmationEmail(...args),
+}));
+
 import { POST } from '@/app/api/checkout/complete/route';
 
 function makeRequest(body: Record<string, unknown>, sessionId = 'sess-abc'): NextRequest {
@@ -226,5 +231,87 @@ describe('POST /api/checkout/complete', () => {
     expect((res as { status: number }).status).toBe(400);
     expect((res as unknown as { body: { error: string } }).body.error).toBe('Invalid request body');
     expect(mockRetrieveCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  test('注文が新規に確定したとき確認メールを1通送る', async () => {
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'checkout_drafts') {
+        return {
+          select: jest.fn().mockReturnValue({
+            eq: jest.fn().mockReturnValue({
+              maybeSingle: jest.fn().mockResolvedValue({
+                data: {
+                  id: 'draft-123',
+                  session_id: 'sess-abc',
+                  total_amount: 5500,
+                  currency: 'jpy',
+                  shipping_snapshot: {
+                    email: 'hanako@example.com',
+                    fullName: '山田 花子',
+                    postalCode: '150-0001',
+                    prefecture: '東京都',
+                    city: '渋谷区',
+                    address: '神宮前1-2-3',
+                    building: null,
+                    phone: '090-1234-5678',
+                  },
+                  items_snapshot: [],
+                },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
+      if (table === 'orders') {
+        return {
+          select: jest.fn().mockReturnThis(),
+          eq: jest.fn().mockReturnThis(),
+          maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
+        };
+      }
+
+      return {};
+    });
+
+    mockRetrieveCheckoutSession.mockResolvedValue({
+      id: 'cs_test',
+      mode: 'payment',
+      payment_status: 'paid',
+      currency: 'jpy',
+      amount_total: 5500,
+      metadata: { session_id: 'sess-abc', selected_payment_method: 'stripe_card', draft_id: 'draft-123' },
+      payment_intent: { id: 'pi_test', payment_method_types: ['card'] },
+    });
+    mockRpc.mockResolvedValue({ data: [{ order_id: 'order-paid', order_status: 'paid' }], error: null });
+
+    await POST(makeRequest({ paymentMethod: 'stripe_card', checkoutSessionId: 'cs_test' }));
+
+    expect(mockSendOrderConfirmationEmail).toHaveBeenCalledTimes(1);
+    const params = mockSendOrderConfirmationEmail.mock.calls[0][0];
+    // orderId は RPC が返した order_id と一致する
+    expect(typeof params.orderId).toBe('string');
+    // お届け先が draft の shipping_snapshot から埋まっている
+    expect(params.shipping).toEqual(
+      expect.objectContaining({ postalCode: expect.any(String) }),
+    );
+  });
+
+  test('既存注文が見つかったときは確認メールを送らない', async () => {
+    setupBaseSupabase({ id: 'existing-order', status: 'paid' });
+    mockRetrieveCheckoutSession.mockResolvedValue({
+      id: 'cs_existing',
+      mode: 'payment',
+      payment_status: 'paid',
+      currency: 'jpy',
+      amount_total: 5500,
+      metadata: { session_id: 'sess-abc', selected_payment_method: 'stripe_card', draft_id: 'draft-existing' },
+      payment_intent: { id: 'pi_existing', payment_method_types: ['card'] },
+    });
+
+    await POST(makeRequest({ paymentMethod: 'stripe_card', checkoutSessionId: 'cs_existing' }));
+
+    expect(mockSendOrderConfirmationEmail).not.toHaveBeenCalled();
   });
 });
