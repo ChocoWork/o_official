@@ -18,6 +18,9 @@ const moneySchema = z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 
 const entryTypeSchema = z.enum(['expense', 'income']).default('expense');
 
+// 要確認の理由。src/lib/finance/entry-review.ts の EntryReviewReasonId と揃える。
+const entryReviewReasonSchema = z.enum(['duplicate', 'unknownAccount', 'unlinkedAsset']);
+
 // 事業形態。勘定科目マスタ（src/lib/finance/accounts.ts）の適用形態と対応する。
 const businessTypeSchema = z.enum(['soleProprietor', 'corporation']);
 
@@ -116,6 +119,15 @@ const mutationSchema = z.discriminatedUnion('operation', [
 		expenseId: z.coerce.number().int().positive(),
 		exempt: z.boolean(),
 		reason: z.string().trim().min(1).max(500).nullable(),
+	}),
+	// 要確認の理由を1件ずつ確認済みにする／確認済みを取り消す。
+	// 取引の内容は変えないので訂正履歴には残らない（migration 082）。
+	z.object({
+		operation: z.literal('entry.reviewAck'),
+		entryRef: z.string().trim().regex(/^(entry|order):.{1,120}$/),
+		reason: entryReviewReasonSchema,
+		acknowledged: z.boolean(),
+		note: z.string().trim().max(500).default(''),
 	}),
 	z.object({
 		operation: z.literal('plan.update'),
@@ -233,6 +245,13 @@ type EntryRevisionRow = {
 	changed_at: string;
 };
 
+type EntryReviewAckRow = {
+	entry_ref: string;
+	reason: z.infer<typeof entryReviewReasonSchema>;
+	note: string;
+	reviewed_at: string;
+};
+
 type PartnerRow = {
 	id: number;
 	name: string;
@@ -347,6 +366,7 @@ function emptyFinanceResponse(fiscalYear: number, seasonKey: string | null) {
 			closing: mapClosing(null),
 			previousClosingBalances: null,
 			revisions: [],
+			reviewAcks: [],
 			cumulativeEntries: [],
 			templates: [],
 		},
@@ -575,6 +595,7 @@ export async function GET(request: Request) {
 			revisionsResult,
 			cumulativeResult,
 			orderSalesResult,
+			reviewAcksResult,
 		] = await Promise.all([
 			supabase
 				.from('admin_finance_years')
@@ -631,6 +652,10 @@ export async function GET(request: Request) {
 				.lt('created_at', `${parsedYear.data + 1}-01-01T00:00:00+09:00`)
 				.order('created_at', { ascending: false })
 				.order('id', { ascending: false }),
+			// 要確認の確認済み記録。年度に属さない（取引を直接指す）ので絞らない。
+			supabase
+				.from('admin_finance_entry_review_acks')
+				.select('entry_ref, reason, note, reviewed_at'),
 		]);
 
 		// Migration 074 may be deployed after this application version. When the
@@ -650,10 +675,16 @@ export async function GET(request: Request) {
 		// versions surface maybeSingle() with no rows as PGRST116, so only ignore
 		// that specific result while preserving every other query error.
 		const planError = isNoRowsError(planResult.error) ? null : planResult.error;
+		// Migration 082 may be deployed after this application version. A missing
+		// acknowledgement table only means nothing has been reviewed yet, so it must
+		// not blank out the whole ledger.
+		const reviewAcksError = isMissingFinanceTable(reviewAcksResult.error)
+			? null
+			: reviewAcksResult.error;
 		const queryError =
 			planError || expensesResult.error || productsResult.error || partnersResult.error || templatesResult.error
 			|| assetsResult.error || closingsResult.error || revisionsResult.error || cumulativeResult.error
-			|| orderSalesResult.error;
+			|| orderSalesResult.error || reviewAcksError;
 		if (queryError) {
 			if (isMissingFinanceTable(queryError)) {
 				return emptyFinanceResponse(parsedYear.data, seasonKey);
@@ -690,6 +721,12 @@ export async function GET(request: Request) {
 				// 前年度の期末残高スナップショット。存在すれば当年度の期首残高として使う。
 				previousClosingBalances: previousClosing?.closing_balances ?? null,
 				revisions: ((revisionsResult.data ?? []) as EntryRevisionRow[]).map(mapRevision),
+				reviewAcks: ((reviewAcksResult.data ?? []) as EntryReviewAckRow[]).map((row) => ({
+					entryRef: row.entry_ref,
+					reason: row.reason,
+					note: row.note ?? '',
+					reviewedAt: row.reviewed_at,
+				})),
 				cumulativeEntries: ((cumulativeResult.data ?? []) as CumulativeEntryRow[]).map((row) => ({
 					entryType: row.entry_type ?? 'expense',
 					date: row.expense_date,
@@ -925,6 +962,31 @@ export async function POST(request: Request) {
 				return NextResponse.json({ error: '取引が見つかりません。' }, { status: 404 });
 			}
 			resourceId = String(parsed.data.expenseId);
+		} else if (parsed.data.operation === 'entry.reviewAck') {
+			// 確認済みは理由ごとに1件。取り消しは行を消して未確認へ戻す。
+			if (parsed.data.acknowledged) {
+				const { error } = await supabase
+					.from('admin_finance_entry_review_acks')
+					.upsert(
+						{
+							entry_ref: parsed.data.entryRef,
+							reason: parsed.data.reason,
+							note: parsed.data.note,
+							reviewed_at: new Date().toISOString(),
+							reviewed_by: authz.userId,
+						},
+						{ onConflict: 'entry_ref,reason' },
+					);
+				if (error) throw error;
+			} else {
+				const { error } = await supabase
+					.from('admin_finance_entry_review_acks')
+					.delete()
+					.eq('entry_ref', parsed.data.entryRef)
+					.eq('reason', parsed.data.reason);
+				if (error) throw error;
+			}
+			resourceId = `${parsed.data.entryRef}/${parsed.data.reason}`;
 		} else if (parsed.data.operation === 'receipt.attach') {
 			// 証憑のメタデータ登録。ファイル本体は Storage へ別途アップロード済み。
 			const receipt = parsed.data.receipt;

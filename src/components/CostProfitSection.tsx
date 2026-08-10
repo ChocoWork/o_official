@@ -21,6 +21,8 @@ import { SearchField } from "@/components/ui/SearchField/SearchField";
 import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
 import { StatusBadge } from "@/components/ui/StatusBadge/StatusBadge";
 import { TabSegmentControl } from "@/components/ui/TabSegmentControl/TabSegmentControl";
+import { TextAreaField } from "@/components/ui/TextAreaField/TextAreaField";
+import { TextField } from "@/components/ui/TextField/TextField";
 import { ToastSnackbar } from "@/components/ui/ToastSnackbar/ToastSnackbar";
 import { TaxReportSection } from "@/components/tax/TaxReportSection";
 import type { TaxPage } from "@/components/tax/types";
@@ -44,6 +46,12 @@ import {
   buildCumulativeSummary,
   type CumulativeEntry,
 } from "@/lib/finance/cumulative";
+import {
+  ENTRY_REVIEW_REASONS,
+  entryReviewRef,
+  type EntryReviewReasonDef,
+  type EntryReviewReasonId,
+} from "@/lib/finance/entry-review";
 import {
   DEPRECIATION_METHOD_LABELS,
   depreciationForYear,
@@ -423,6 +431,14 @@ type Expense = FinanceEntry & {
   fixedAssetReviewedAt?: string | null;
 };
 
+/** 要確認の理由を1件、担当者が確認済みにした記録（migration 082）。 */
+type EntryReviewAck = {
+  entryRef: string;
+  reason: EntryReviewReasonId;
+  note: string;
+  reviewedAt: string;
+};
+
 type LegalArchiveHealth = {
   fiscalYear: number;
   lastArchiveAt: string | null;
@@ -495,6 +511,7 @@ type CostProfitResponse = {
     };
     previousClosingBalances: Record<string, number> | null;
     revisions: EntryRevision[];
+    reviewAcks?: EntryReviewAck[];
     cumulativeEntries: CumulativeEntry[];
     templates: ExpenseTemplate[];
   };
@@ -1373,6 +1390,12 @@ export default function CostProfitSection({
   const [closingMessage, setClosingMessage] = useState<string | null>(null);
   // 訂正削除履歴（電子帳簿保存法の真実性の要件）。
   const [revisions, setRevisions] = useState<EntryRevision[]>([]);
+  const [reviewAcks, setReviewAcks] = useState<EntryReviewAck[]>([]);
+  // 確認パネルで開いている取引と、理由ごとのメモ入力。
+  const [reviewEntryId, setReviewEntryId] = useState<number | null>(null);
+  const [reviewNotes, setReviewNotes] = useState<
+    Partial<Record<EntryReviewReasonId, string>>
+  >({});
   // 開業以来累計の集計元（当年度末までの全取引の最小データ）。
   const [cumulativeEntries, setCumulativeEntries] = useState<CumulativeEntry[]>(
     [],
@@ -1494,6 +1517,7 @@ export default function CostProfitSection({
       setClosedAt(loadedClosing?.closedAt ?? null);
       setPreviousClosingBalances(payload.data.previousClosingBalances ?? null);
       setRevisions(payload.data.revisions ?? []);
+      setReviewAcks(payload.data.reviewAcks ?? []);
       setCumulativeEntries(payload.data.cumulativeEntries ?? []);
       setTemplates(payload.data.templates ?? []);
       setSelectedProductId(
@@ -1513,6 +1537,7 @@ export default function CostProfitSection({
       setClosedAt(null);
       setPreviousClosingBalances(null);
       setRevisions([]);
+      setReviewAcks([]);
       setCumulativeEntries([]);
       setTemplates([]);
       setSelectedProductId(`${seasonKey}-ITEM-001`);
@@ -3277,24 +3302,69 @@ export default function CostProfitSection({
     [unlinkedAssetEntryRows],
   );
 
-  const entryStateOf = useCallback(
-    (entry: Expense): EntryState => {
-      if (revisedEntryIds.has(entry.id)) return "revised";
-      if (
-        duplicateEntryIds.has(entry.id) ||
-        unknownAccountEntryIds.has(entry.id) ||
-        unlinkedAssetEntryIds.has(entry.id)
-      ) {
-        return "review";
-      }
-      return "registered";
+  // 確認済み記録の索引。キーは `${取引の参照}|${理由}`。
+  const reviewAckByKey = useMemo(
+    () =>
+      new Map(reviewAcks.map((ack) => [`${ack.entryRef}|${ack.reason}`, ack])),
+    [reviewAcks],
+  );
+
+  /**
+   * この取引が引っかかっている理由と、その確認済み記録。
+   * 検知は毎回やり直すので、取引を直せば理由そのものが消える。
+   */
+  const entryReviewItemsOf = useCallback(
+    (entry: Expense) => {
+      const triggered = new Set<EntryReviewReasonId>();
+      if (duplicateEntryIds.has(entry.id)) triggered.add("duplicate");
+      if (unknownAccountEntryIds.has(entry.id)) triggered.add("unknownAccount");
+      if (unlinkedAssetEntryIds.has(entry.id)) triggered.add("unlinkedAsset");
+      const ref = entryReviewRef(entry);
+      return ENTRY_REVIEW_REASONS.filter((reason) =>
+        triggered.has(reason.id),
+      ).map((reason) => ({
+        reason,
+        ack: reviewAckByKey.get(`${ref}|${reason.id}`) ?? null,
+      }));
     },
     [
-      revisedEntryIds,
       duplicateEntryIds,
       unknownAccountEntryIds,
       unlinkedAssetEntryIds,
+      reviewAckByKey,
     ],
+  );
+
+  /** まだ確認できていない理由が1つでも残っているか。 */
+  const hasOpenReviewReason = useCallback(
+    (entry: Expense, reasonId: EntryReviewReasonId) =>
+      entryReviewItemsOf(entry).some(
+        (item) => item.reason.id === reasonId && !item.ack,
+      ),
+    [entryReviewItemsOf],
+  );
+
+  /** 重複の疑いの相手。確認パネルで見比べるために自分以外を返す。 */
+  const duplicateSiblingsOf = useCallback(
+    (entry: Expense) =>
+      allEntries.filter(
+        (other) =>
+          other.id !== entry.id &&
+          other.date === entry.date &&
+          other.partner === entry.partner &&
+          other.amount === entry.amount,
+      ),
+    [allEntries],
+  );
+
+  const entryStateOf = useCallback(
+    (entry: Expense): EntryState => {
+      if (revisedEntryIds.has(entry.id)) return "revised";
+      // 確認済みにした理由は残さない。すべて確認できたら登録済みへ戻す。
+      if (entryReviewItemsOf(entry).some((item) => !item.ack)) return "review";
+      return "registered";
+    },
+    [revisedEntryIds, entryReviewItemsOf],
   );
 
   const evidenceStatusOf = useCallback(
@@ -3409,14 +3479,19 @@ export default function CostProfitSection({
     const rowsFor = (key: ReviewQueueKey) => {
       if (key === "noReceipt")
         return entryRows.filter((entry) => !hasEvidence(entry));
+      // 確認済みにした理由はキューから外す（未対応だけを残す）。
       if (key === "fixedAsset") {
-        return entryRows.filter((entry) => unlinkedAssetEntryIds.has(entry.id));
+        return entryRows.filter((entry) =>
+          hasOpenReviewReason(entry, "unlinkedAsset"),
+        );
       }
       if (key === "amount")
-        return entryRows.filter((entry) => duplicateEntryIds.has(entry.id));
+        return entryRows.filter((entry) =>
+          hasOpenReviewReason(entry, "duplicate"),
+        );
       if (key === "account") {
         return entryRows.filter((entry) =>
-          unknownAccountEntryIds.has(entry.id),
+          hasOpenReviewReason(entry, "unknownAccount"),
         );
       }
       return entryRows.filter((entry) => revisedEntryIds.has(entry.id));
@@ -3425,14 +3500,7 @@ export default function CostProfitSection({
       ...def,
       rows: rowsFor(def.key),
     })).filter((group) => group.rows.length > 0);
-  }, [
-    entryRows,
-    duplicateEntryIds,
-    unknownAccountEntryIds,
-    unlinkedAssetEntryIds,
-    revisedEntryIds,
-    hasEvidence,
-  ]);
+  }, [entryRows, hasOpenReviewReason, revisedEntryIds, hasEvidence]);
 
   const selectedEntries = entryRows.filter((entry) =>
     selectedEntryIds.includes(entry.id),
@@ -3507,6 +3575,51 @@ export default function CostProfitSection({
   const receiptDrawerEntries = entryRows.filter((entry) =>
     receiptDrawerEntryIds.includes(entry.id),
   );
+
+  /** 確認パネルを開く。未確認の理由のメモ欄は空、確認済みは保存済みのメモを出す。 */
+  const openReviewDrawer = (entry: Expense) => {
+    setReviewNotes(
+      Object.fromEntries(
+        entryReviewItemsOf(entry).map((item) => [
+          item.reason.id,
+          item.ack?.note ?? "",
+        ]),
+      ),
+    );
+    setReviewEntryId(entry.id);
+  };
+
+  const reviewEntry = entryRows.find((entry) => entry.id === reviewEntryId);
+  const reviewItems = reviewEntry ? entryReviewItemsOf(reviewEntry) : [];
+  const reviewOpenCount = reviewItems.filter((item) => !item.ack).length;
+
+  /** 理由を1件、確認済みにする／確認済みを取り消す。 */
+  const handleReviewAck = async (
+    entry: Expense,
+    reason: EntryReviewReasonDef,
+    acknowledged: boolean,
+  ) => {
+    try {
+      setIsSaving(true);
+      await postMutation({
+        operation: "entry.reviewAck",
+        entryRef: entryReviewRef(entry),
+        reason: reason.id,
+        acknowledged,
+        note: acknowledged ? (reviewNotes[reason.id] ?? "") : "",
+      });
+      await loadFinanceData();
+      notifySuccess(
+        acknowledged
+          ? `「${reason.label}」を確認済みにしました。`
+          : `「${reason.label}」の確認を取り消しました。`,
+      );
+    } catch (error) {
+      notifyError(error, "確認結果の保存に失敗しました。");
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   // 取引ごとの最終更新（訂正履歴の最新1件）。一覧の「更新履歴」列に出す。
   const latestRevisionOf = (entryId: number) =>
@@ -3651,7 +3764,7 @@ export default function CostProfitSection({
       align: "center",
       render: (entry) => {
         const state = entryStateOf(entry);
-        return (
+        const badge = (
           <StatusBadge
             variant="text"
             shape="pill"
@@ -3662,6 +3775,39 @@ export default function CostProfitSection({
           >
             {ENTRY_STATE_LABELS[state]}
           </StatusBadge>
+        );
+        const items = entryReviewItemsOf(entry);
+        // 理由を持つ取引だけ押せる。押せる／押せないを見た目でも分ける。
+        if (items.length === 0) return badge;
+
+        const open = items.filter((item) => !item.ack).length;
+        return (
+          <button
+            type="button"
+            onClick={() => openReviewDrawer(entry)}
+            aria-label={
+              open > 0
+                ? `${entry.item}の要確認の理由を開く（未確認${open}件）`
+                : `${entry.item}の確認結果を開く`
+            }
+            className="inline-flex min-h-11 items-center gap-1 rounded-sm px-1.5 transition-colors hover:bg-[#f0f0f0] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+          >
+            {badge}
+            {open > 0 ? (
+              <span className="font-acumin text-[10px] text-[#b45309] tabular-nums">
+                {open}
+              </span>
+            ) : (
+              <i
+                className="ri-checkbox-circle-fill text-[11px] text-[#16844b]"
+                aria-hidden="true"
+              />
+            )}
+            <i
+              className="ri-arrow-right-s-line text-sm text-[#707070]"
+              aria-hidden="true"
+            />
+          </button>
         );
       },
     },
@@ -3702,6 +3848,258 @@ export default function CostProfitSection({
         {count}件
       </span>
     </div>
+  );
+
+  /**
+   * 確認パネル。「なぜ要確認か」と「何を確認すべきか」を理由ごとに示し、
+   * 1件ずつ確認済みにできるようにする。全部片づくと状態が登録済みへ戻る。
+   */
+  const reviewDrawer = (
+    <Drawer
+      open={reviewEntry !== undefined}
+      onClose={() => setReviewEntryId(null)}
+      side="right"
+      size="md"
+      shape="rounded"
+      className="flex w-[min(92vw,480px)] flex-col bg-white"
+    >
+      <div className="flex items-center justify-between border-b border-[#d4d4d4] px-5 py-4">
+        <h4 className="font-acumin text-sm font-medium tracking-widest text-black">
+          取引の確認
+        </h4>
+        <Button
+          variant="ghost"
+          size="sm"
+          shape="rounded"
+          iconOnly
+          className="h-11 w-11 text-[#474747]"
+          aria-label="取引の確認を閉じる"
+          onClick={() => setReviewEntryId(null)}
+        >
+          <i className="ri-close-line text-lg" aria-hidden="true" />
+        </Button>
+      </div>
+
+      {reviewEntry ? (
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4">
+          {/* 何の取引を見ているかを最初に固定する。 */}
+          <Panel
+            radius="rounded"
+            tone="muted"
+            size="xs"
+            className="px-3 py-2.5"
+            aria-label="確認対象の取引"
+          >
+            <p className="font-acumin text-[11px] text-[#707070] tabular-nums">
+              {reviewEntry.date.replaceAll("-", "/")}
+              {reviewEntry.entryType === "income" ? "収入" : "支出"}
+              {reviewEntry.category}
+            </p>
+            <p className="mt-1 font-acumin text-sm text-black">
+              {reviewEntry.item}
+            </p>
+            <p className="mt-0.5 font-acumin text-[11px] text-[#474747] tabular-nums">
+              {reviewEntry.partner || "取引先なし"}
+              {currency(reviewEntry.amount)}
+            </p>
+          </Panel>
+
+          <div role="status" className="font-acumin text-xs text-[#474747]">
+            {reviewOpenCount > 0 ? (
+              <span>
+                未確認{" "}
+                <span className="text-[#b45309] tabular-nums">
+                  {reviewOpenCount}
+                </span>
+                {" / "}
+                <span className="tabular-nums">{reviewItems.length}</span>
+                件。すべて確認すると「登録済み」に戻ります。
+              </span>
+            ) : (
+              <span className="text-[#16844b]">
+                <i
+                  className="ri-checkbox-circle-fill mr-1"
+                  aria-hidden="true"
+                />
+                すべて確認済みです。状態は「登録済み」になっています。
+              </span>
+            )}
+          </div>
+
+          {reviewItems.map(({ reason, ack }) => {
+            const siblings =
+              reason.id === "duplicate" ? duplicateSiblingsOf(reviewEntry) : [];
+            return (
+              <Panel
+                key={reason.id}
+                aria-label={reason.label}
+                radius="rounded"
+                size="xs"
+                className={`px-3 py-3 ${
+                  ack
+                    ? "border-[#d4d4d4] bg-white"
+                    : "border-[#f0c78a] bg-[#fffaf2]"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <h5 className="flex items-center gap-1.5 font-acumin text-xs font-medium text-black">
+                    <i
+                      className={`${reason.icon} text-sm ${
+                        ack ? "text-[#16844b]" : "text-[#b45309]"
+                      }`}
+                      aria-hidden="true"
+                    />
+                    {reason.label}
+                  </h5>
+                  <StatusBadge
+                    variant="text"
+                    shape="pill"
+                    size="3xs"
+                    tone={ack ? "neutral" : "warning"}
+                    accent
+                    className="shrink-0 font-acumin"
+                  >
+                    {ack ? "確認済み" : "未確認"}
+                  </StatusBadge>
+                </div>
+
+                <p className="mt-2 font-acumin text-[11px] leading-relaxed text-[#474747]">
+                  <span className="text-[#707070]">なぜ要確認か：</span>
+                  {reason.why}
+                </p>
+
+                {/* 検知に使った実際の値。文言だけでは自分の取引と結びつかない。 */}
+                {reason.id === "unknownAccount" ? (
+                  <p className="mt-1.5 font-acumin text-[11px] text-[#474747]">
+                    登録されていない科目名：
+                    <span className="text-black">
+                      「{reviewEntry.category}」
+                    </span>
+                  </p>
+                ) : null}
+                {reason.id === "unlinkedAsset" ? (
+                  <p className="mt-1.5 font-acumin text-[11px] text-[#474747] tabular-nums">
+                    科目 {reviewEntry.category}／取得価額{" "}
+                    {currency(reviewEntry.amount)}
+                  </p>
+                ) : null}
+                {reason.id === "duplicate" ? (
+                  <div className="mt-1.5">
+                    <p className="font-acumin text-[11px] text-[#474747]">
+                      同じ日付・取引先・金額の取引（{siblings.length}件）
+                    </p>
+                    <ul className="mt-1 space-y-1">
+                      {siblings.map((sibling) => (
+                        <li key={sibling.id}>
+                          <Panel
+                            radius="rounded"
+                            size="3xs"
+                            className="border-[#e4e4e4] bg-white px-2 py-1.5 font-acumin text-[10px] text-[#474747] tabular-nums"
+                          >
+                            {/* JSX の行頭に置いた全角スペースは落ちるので1つの式で組む。 */}
+                            {`${sibling.date.replaceAll("-", "/")}　${sibling.category}　${currency(sibling.amount)}`}
+                            <span className="mt-0.5 block truncate text-[#707070]">
+                              {sibling.item}
+                            </span>
+                          </Panel>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                <p className="mt-3 font-acumin text-[11px] text-[#707070]">
+                  確認すること
+                </p>
+                <ol className="mt-1 list-decimal space-y-1 pl-4 font-acumin text-[11px] leading-relaxed text-[#474747]">
+                  {reason.checklist.map((step) => (
+                    <li key={step}>{step}</li>
+                  ))}
+                </ol>
+
+                {ack ? (
+                  <div className="mt-3 border-t border-[#e4e4e4] pt-2.5">
+                    <p className="font-acumin text-[11px] text-[#474747] tabular-nums">
+                      確認日時{" "}
+                      {new Date(ack.reviewedAt).toLocaleString("ja-JP", {
+                        year: "numeric",
+                        month: "2-digit",
+                        day: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </p>
+                    {ack.note ? (
+                      <p className="mt-1 font-acumin text-[11px] text-black">
+                        {ack.note}
+                      </p>
+                    ) : null}
+                    <Button
+                      variant="outline"
+                      size="2xs"
+                      shape="rounded"
+                      className="mt-2 font-acumin"
+                      disabled={isSaving}
+                      onClick={() =>
+                        void handleReviewAck(reviewEntry, reason, false)
+                      }
+                    >
+                      確認を取り消す
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="mt-3 border-t border-[#f0c78a] pt-2.5">
+                    <label
+                      htmlFor={`review-note-${reason.id}`}
+                      className="block font-acumin text-[11px] text-[#707070]"
+                    >
+                      確認メモ（任意）
+                    </label>
+                    <TextAreaField
+                      id={`review-note-${reason.id}`}
+                      rows={2}
+                      shape="rounded"
+                      size="sm"
+                      maxLength={500}
+                      value={reviewNotes[reason.id] ?? ""}
+                      onChange={(event) =>
+                        setReviewNotes((current) => ({
+                          ...current,
+                          [reason.id]: event.target.value,
+                        }))
+                      }
+                      placeholder="例：注文番号が別なので別々の取引"
+                      className="mt-1 w-full font-acumin text-xs"
+                    />
+                    <Button
+                      variant="primary"
+                      size="2xs"
+                      shape="rounded"
+                      className="mt-2 font-acumin"
+                      disabled={isSaving}
+                      onClick={() =>
+                        void handleReviewAck(reviewEntry, reason, true)
+                      }
+                    >
+                      <i
+                        className="ri-check-line mr-1"
+                        aria-hidden="true"
+                      />
+                      確認済みにする
+                    </Button>
+                  </div>
+                )}
+              </Panel>
+            );
+          })}
+
+          <p className="font-acumin text-[10px] leading-relaxed text-[#707070]">
+            ※
+            確認済みにしても取引の内容は変わりません。内容を直す場合は一覧から訂正してください（訂正履歴に残ります）。
+          </p>
+        </div>
+      ) : null}
+    </Drawer>
   );
 
   // 電子帳簿保存法の検索要件（日付・金額・取引先／範囲指定／条件の組み合わせ）は
@@ -4303,7 +4701,7 @@ export default function CostProfitSection({
       onClose={handleCancelEdit}
       side="right"
       size="md"
-      shape="square"
+      shape="rounded"
       className="flex w-[min(92vw,460px)] flex-col bg-white"
     >
       <div className="flex items-center justify-between border-b border-[#d4d4d4] px-5 py-4">
@@ -4319,14 +4717,17 @@ export default function CostProfitSection({
             </p>
           ) : null}
         </div>
-        <button
-          type="button"
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-sm text-[#474747] hover:bg-[#f0f0f0] hover:text-black"
+        <Button
+          variant="ghost"
+          size="sm"
+          shape="rounded"
+          iconOnly
+          className="h-8 w-8 shrink-0 text-[#474747]"
           aria-label="取引の入力を閉じる"
           onClick={handleCancelEdit}
         >
           <i className="ri-close-line text-lg" aria-hidden="true" />
-        </button>
+        </Button>
       </div>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
@@ -4342,15 +4743,17 @@ export default function CostProfitSection({
             {(["expense", "income"] as EntryType[]).map((type) => {
               const active = form.entryType === type;
               return (
-                <button
+                <Button
                   key={type}
-                  type="button"
+                  variant={active ? "primary" : "outline"}
+                  size="md"
+                  shape="rounded"
                   aria-pressed={active}
                   onClick={() => handleEntryTypeChange(type)}
-                  className={`h-10 rounded-sm border font-acumin text-sm transition-colors ${active ? "border-black bg-black text-white" : "border-[#d4d4d4] bg-white text-[#474747] hover:border-black"}`}
+                  className="h-10 font-acumin text-sm"
                 >
                   {type === "income" ? "収入" : "支出"}
-                </button>
+                </Button>
               );
             })}
           </div>
@@ -4365,6 +4768,7 @@ export default function CostProfitSection({
             size="md"
             aria-label="事業形態"
             className="font-acumin"
+            shape="rounded"
             options={BUSINESS_TYPE_OPTIONS.map((option) => ({
               value: option.value,
               label: option.label,
@@ -4388,6 +4792,7 @@ export default function CostProfitSection({
             size="md"
             aria-label="テンプレート"
             className="font-acumin"
+            shape="rounded"
             placeholder="（テンプレートを選択）"
             options={[
               { value: "", label: "（テンプレートを選択）" },
@@ -4407,6 +4812,7 @@ export default function CostProfitSection({
               <Button
                 variant="secondary"
                 size="sm"
+                shape="rounded"
                 className="shrink-0 font-acumin"
                 aria-label="選択中のテンプレートを削除"
                 onClick={() => void handleDeleteTemplate()}
@@ -4418,9 +4824,11 @@ export default function CostProfitSection({
           ) : null}
           {isSavingTemplate ? (
             <div className="mt-2 flex gap-2">
-              <input
+              <TextField
                 value={newTemplateName}
                 onChange={(event) => setNewTemplateName(event.target.value)}
+                shape="rounded"
+                size="md"
                 className={inputClassName}
                 placeholder="テンプレート名"
                 aria-label="テンプレート名"
@@ -4428,6 +4836,7 @@ export default function CostProfitSection({
               <Button
                 variant="primary"
                 size="sm"
+                shape="rounded"
                 className="shrink-0 font-acumin"
                 aria-label="テンプレートを保存"
                 onClick={() => void handleSaveTemplate()}
@@ -4438,6 +4847,7 @@ export default function CostProfitSection({
               <Button
                 variant="secondary"
                 size="sm"
+                shape="rounded"
                 className="shrink-0 font-acumin"
                 onClick={() => {
                   setIsSavingTemplate(false);
@@ -4454,9 +4864,11 @@ export default function CostProfitSection({
           <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
             日付 <span className="text-red-700">*</span>
           </span>
-          <input
+          <TextField
             type="date"
             aria-label="取引日"
+            shape="rounded"
+            size="md"
             value={form.date}
             onChange={(event) =>
               setForm((current) => ({ ...current, date: event.target.value }))
@@ -4474,6 +4886,7 @@ export default function CostProfitSection({
             size="md"
             aria-label={summaryFieldLabel}
             className="font-acumin"
+            shape="rounded"
             options={shiyouOptionsFor(form.entryType).map((option) => ({
               value: option,
               label: option,
@@ -4494,6 +4907,7 @@ export default function CostProfitSection({
             size="md"
             aria-label="勘定科目"
             className="font-acumin"
+            shape="rounded"
             placeholder="（勘定科目を選択）"
             options={[
               { value: "", label: "（勘定科目を選択）" },
@@ -4516,6 +4930,7 @@ export default function CostProfitSection({
             size="md"
             aria-label="取引先"
             className="font-acumin"
+            shape="rounded"
             placeholder="（指定なし）"
             options={[
               { value: "", label: "（指定なし）" },
@@ -4534,9 +4949,11 @@ export default function CostProfitSection({
           />
           {isAddingPartner ? (
             <div className="mt-2 flex gap-2">
-              <input
+              <TextField
                 value={newPartnerName}
                 onChange={(event) => setNewPartnerName(event.target.value)}
+                shape="rounded"
+                size="md"
                 className={inputClassName}
                 placeholder="取引先名を入力"
                 aria-label="新規取引先名"
@@ -4544,6 +4961,7 @@ export default function CostProfitSection({
               <Button
                 variant="primary"
                 size="sm"
+                shape="rounded"
                 className="shrink-0 font-acumin"
                 onClick={() => void handleAddPartner()}
                 disabled={isSaving}
@@ -4553,6 +4971,7 @@ export default function CostProfitSection({
               <Button
                 variant="secondary"
                 size="sm"
+                shape="rounded"
                 className="shrink-0 font-acumin"
                 onClick={() => {
                   setIsAddingPartner(false);
@@ -4569,9 +4988,11 @@ export default function CostProfitSection({
           <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
             金額 <span className="text-red-700">*</span>
           </span>
-          <input
+          <TextField
             type="number"
             min="1"
+            shape="rounded"
+            size="md"
             value={form.amount}
             onChange={(event) =>
               setForm((current) => ({ ...current, amount: event.target.value }))
@@ -4590,6 +5011,7 @@ export default function CostProfitSection({
             size="md"
             aria-label={paymentFieldLabel}
             className="font-acumin"
+            shape="rounded"
             options={paymentOptionsFor(form.entryType).map((option) => ({
               value: option,
               label: option,
@@ -4610,6 +5032,7 @@ export default function CostProfitSection({
             size="md"
             aria-label="シーズンタグ"
             className="font-acumin"
+            shape="rounded"
             placeholder="（なし）"
             options={[
               { value: "", label: "（なし）" },
@@ -4631,8 +5054,10 @@ export default function CostProfitSection({
           <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
             メモ
           </span>
-          <textarea
+          <TextAreaField
             value={form.memo}
+            shape="rounded"
+            size="md"
             onChange={(event) =>
               setForm((current) => ({ ...current, memo: event.target.value }))
             }
@@ -4674,8 +5099,11 @@ export default function CostProfitSection({
                         />
                         {file.name}
                       </span>
-                      <button
-                        type="button"
+                      <Button
+                        variant="ghost"
+                        size="2xs"
+                        shape="rounded"
+                        iconOnly
                         className="shrink-0 text-[#888888] hover:text-black"
                         aria-label={`${file.name}を添付から外す`}
                         onClick={() =>
@@ -4688,7 +5116,7 @@ export default function CostProfitSection({
                           className="ri-close-line text-[13px]"
                           aria-hidden="true"
                         />
-                      </button>
+                      </Button>
                     </li>
                   ))}
                 </ul>
@@ -4727,6 +5155,7 @@ export default function CostProfitSection({
           <Button
             variant="secondary"
             size="sm"
+            shape="rounded"
             iconOnly
             className="shrink-0 font-acumin"
             aria-label={`${form.item}を削除`}
@@ -4748,6 +5177,7 @@ export default function CostProfitSection({
         <Button
           variant="secondary"
           size="sm"
+          shape="rounded"
           className="flex-1 font-acumin"
           onClick={handleCancelEdit}
           disabled={isSaving}
@@ -4757,6 +5187,7 @@ export default function CostProfitSection({
         <Button
           variant="primary"
           size="sm"
+          shape="rounded"
           className="flex-1 font-acumin"
           onClick={() => void handleAddExpense()}
           disabled={isSaving}
@@ -5356,6 +5787,7 @@ export default function CostProfitSection({
       </div>
 
       {filterDrawer}
+      {reviewDrawer}
       {entryDrawer}
       {receiptDrawer}
       {assetCandidateDialog}
