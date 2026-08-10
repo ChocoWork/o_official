@@ -27,6 +27,21 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
 
+  /*
+   * E2E は本番ビルドに対して実行する。3000 が既に起動していればそれを再利用し、
+   * 起動していなければ scripts/e2e-server.mjs が build して起動する。
+   * 起動したサーバーはテスト終了後も動いたまま残る。
+   * dev サーバーで動かすデバッグ用途のみ E2E_DEV_SERVER=1 を付ける。
+   */
+  webServer: {
+    command: 'node scripts/e2e-server.mjs',
+    url: resolvedBaseUrl,
+    reuseExistingServer: true,
+    /* next build を含むので長めに取る。 */
+    timeout: 600_000,
+    stdout: 'pipe',
+  },
+
   /* Configure projects for major browsers */
   projects: [
     {
