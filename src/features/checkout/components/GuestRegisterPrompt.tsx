@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/Button/Button';
  * メール確認が済んだあとにサーバー側で profiles へ引き継ぐ。
  */
 export function GuestRegisterPrompt({ email }: { email: string }) {
-  const href = `/register?email=${encodeURIComponent(email)}`;
+  const href = `/login?tab=register&email=${encodeURIComponent(email)}`;
 
   return (
     <section

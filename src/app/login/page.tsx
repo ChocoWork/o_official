@@ -16,6 +16,16 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default function LoginPage() {
-  return <AuthTabs initialTab="login" />;
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const tabParam = params?.tab;
+  const initialTab = tabParam === 'register' ? 'register' : 'login';
+  const emailParam = params?.email;
+  const initialEmail = typeof emailParam === 'string' ? emailParam : '';
+
+  return <AuthTabs initialTab={initialTab} initialEmail={initialEmail} />;
 }
