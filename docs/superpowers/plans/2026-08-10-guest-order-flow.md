@@ -44,7 +44,7 @@
 | `src/app/api/auth/confirm/route.ts` | メール確認成功後に紐付けを呼ぶ |
 | `src/app/api/auth/otp/verify/route.ts` | OTP 検証成功後に紐付けを呼ぶ |
 | `src/app/checkout/page.tsx` | 完了画面に `GuestRegisterPrompt` を差し込む |
-| `src/app/register/page.tsx` | `searchParams.email` をメール欄の初期値にする |
+| `src/app/login/page.tsx` | `searchParams` の `tab` / `email` を会員登録タブとメール欄の初期値にする |
 | `src/app/api/admin/orders/[id]/status/route.ts` | `shipped` 遷移を受け付ける |
 | `src/app/api/admin/orders/route.ts` | 型・ラベル変換・フィルタに `shipped` を追加 |
 | `src/components/OrderSection.tsx` | `'発送済み'` ステータスと発送操作 |
@@ -1012,12 +1012,14 @@ git commit -m "feat(orders): 紐付け時に配送先と氏名を profiles へ�
 
 ---
 
-## Task 5: 完了画面の会員登録カードと /register の初期値（FREQ-266）
+## Task 5: 完了画面の会員登録カードと /login の初期値（FREQ-266）
+
+FREQ-63 で専用の `/register` ルートは廃止され、会員登録は `/login` の会員登録タブへ一本化されている（`e2e/FR-SIGNUP-001-register-page.spec.ts` が `/register` の 404 を検証する）。誘導先はそのタブにする。
 
 **Files:**
 - Create: `src/features/checkout/components/GuestRegisterPrompt.tsx`
 - Modify: `src/app/checkout/page.tsx`
-- Modify: `src/app/register/page.tsx`
+- Modify: `src/app/login/page.tsx`
 - Test: `e2e/FR-CHECKOUT-015-guest-register-prompt.spec.ts`（新規）
 - Modify: `docs/2_Specs/spec.md`
 
@@ -1048,7 +1050,7 @@ import { Button } from '@/components/ui/Button/Button';
  * メール確認が済んだあとにサーバー側で profiles へ引き継ぐ。
  */
 export function GuestRegisterPrompt({ email }: { email: string }) {
-  const href = `/register?email=${encodeURIComponent(email)}`;
+  const href = `/login?tab=register&email=${encodeURIComponent(email)}`;
 
   return (
     <section
@@ -1093,9 +1095,9 @@ import { GuestRegisterPrompt } from '@/features/checkout/components/GuestRegiste
 ) : null}
 ```
 
-- [ ] **Step 3: /register でメールの初期値を受ける**
+- [ ] **Step 3: /login でタブとメールの初期値を受ける**
 
-`src/app/register/page.tsx` を編集し、`searchParams` の `email` をメール入力欄の初期値にする。
+`src/app/login/page.tsx` を編集し、`searchParams` の `tab=register` で会員登録タブを開き、`email` をメール入力欄の初期値にする。
 
 App Router の Client Component なら `useSearchParams()` を使う。
 
@@ -1164,13 +1166,13 @@ for (const viewport of viewports) {
       await expect(page.getByRole('region', { name: '会員登録のご案内' })).toHaveCount(0);
     });
 
-    test('カードから /register へメールを引き継いで遷移する', async ({ page }) => {
+    test('カードから /login の会員登録タブへメールを引き継いで遷移する', async ({ page }) => {
       // FREQ-266-AC-03
       await mockAuth(page, false);
       await gotoCompletedCheckout(page);
 
       await page.getByRole('link', { name: '会員登録へ進む' }).click();
-      await expect(page).toHaveURL(/\/register\?email=hanako%40example\.com/);
+      await expect(page).toHaveURL(/\/login\?tab=register&email=hanako%40example\.com/);
       await expect(page.getByLabel('メールアドレス')).toHaveValue('hanako@example.com');
     });
 
@@ -1198,14 +1200,14 @@ Expected: PASS（12件）
 - [ ] **Step 6: spec.md に追記する**
 
 ```
-| FREQ-266 | 注文完了画面から、注文時のメールを引き継いで会員登録へ誘導すること | FREQ-266-REQ-01 | 未ログインの注文完了画面に「会員登録へ進む」ボタンを含む案内カードを表示すること。ログイン済みでは表示しないこと | FREQ-266-AC-01 | mobile（390px）/ tablet（768px）/ desktop（1280px）で、未ログインの注文完了画面に「会員登録のご案内」領域と「会員登録へ進む」リンクが表示されること | FREQ-266-AC-02 | 同3ビューポートで、ログイン済みの完了画面に同領域が表示されないこと | FREQ-266-REQ-02 | ボタンから /register へ遷移し、注文時のメールをメール入力欄の初期値にすること。住所や電話は URL に含めないこと | FREQ-266-AC-03 | 同3ビューポートで、遷移先が /register?email=... となり、メール入力欄に注文時のメールが入っていること | FREQ-266-AC-04 | 同3ビューポートで横方向のページスクロールが発生しないこと |
+| FREQ-266 | 注文完了画面から、注文時のメールを引き継いで会員登録へ誘導すること | FREQ-266-REQ-01 | 未ログインの注文完了画面に「会員登録へ進む」ボタンを含む案内カードを表示すること。ログイン済みでは表示しないこと | FREQ-266-AC-01 | mobile（390px）/ tablet（768px）/ desktop（1280px）で、未ログインの注文完了画面に「会員登録のご案内」領域と「会員登録へ進む」リンクが表示されること | FREQ-266-AC-02 | 同3ビューポートで、ログイン済みの完了画面に同領域が表示されないこと | FREQ-266-REQ-02 | ボタンから /login の会員登録タブへ遷移し、注文時のメールをメール入力欄の初期値にすること。住所や電話は URL に含めないこと | FREQ-266-AC-03 | 同3ビューポートで、遷移先が /login?tab=register&email=... となり、メール入力欄に注文時のメールが入っていること | FREQ-266-AC-04 | 同3ビューポートで横方向のページスクロールが発生しないこと |
 ```
 
 - [ ] **Step 7: 型チェックとコミット**
 
 ```bash
 npx tsc --noEmit -p tsconfig.json
-git add src/features/checkout/components/GuestRegisterPrompt.tsx src/app/checkout/page.tsx src/app/register/page.tsx e2e/FR-CHECKOUT-015-guest-register-prompt.spec.ts docs/2_Specs/spec.md
+git add src/features/checkout/components/GuestRegisterPrompt.tsx src/app/checkout/page.tsx src/app/login/page.tsx e2e/FR-CHECKOUT-015-guest-register-prompt.spec.ts docs/2_Specs/spec.md
 git commit -m "feat(checkout): 注文完了画面から会員登録へ誘導する"
 ```
 
