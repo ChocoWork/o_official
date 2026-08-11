@@ -41,6 +41,11 @@ jest.mock('@/features/auth/services/register', () => ({
   persistSessionAndCookies: jest.fn().mockResolvedValue({ ok: true }),
 }));
 
+const mockLinkGuestOrdersByEmail = jest.fn().mockResolvedValue(0);
+jest.mock('@/lib/orders/link-guest-orders', () => ({
+  linkGuestOrdersByEmail: (...args: unknown[]) => mockLinkGuestOrdersByEmail(...args),
+}));
+
 describe('GET /api/auth/confirm', () => {
   const env = process.env as Record<string, string | undefined>;
   const ORIGINAL_ALLOWED = env.APP_ALLOWED_ORIGINS;
@@ -116,6 +121,37 @@ describe('GET /api/auth/confirm', () => {
     expect(res.status).toBe(303);
     expect(res.headers.get('Location')).toBe('http://example.com/auth/verified');
     expect(persistSessionAndCookies).toHaveBeenCalled();
+  });
+
+  test('メール確認に成功したらゲスト注文の紐付けを呼ぶ', async () => {
+    const { persistSessionAndCookies } = require('@/features/auth/services/register');
+    persistSessionAndCookies.mockResolvedValue({ ok: true });
+
+    const { createServiceRoleClient } = require('@/lib/supabase/server');
+    createServiceRoleClient.mockReturnValue({
+      auth: {
+        verifyOtp: jest.fn().mockResolvedValue({
+          data: {
+            session: { access_token: 'a', refresh_token: 'r' },
+            user: {
+              id: 'user-1',
+              email: 'hanako@example.com',
+              email_confirmed_at: '2026-08-10T00:00:00Z',
+            },
+          },
+          error: null,
+        }),
+      },
+    });
+
+    const { GET } = require('@/app/api/auth/confirm/route');
+    await GET(new Request('http://example.com/api/auth/confirm?token_hash=t&type=email'));
+
+    expect(mockLinkGuestOrdersByEmail).toHaveBeenCalledWith({
+      userId: 'user-1',
+      email: 'hanako@example.com',
+      emailConfirmedAt: '2026-08-10T00:00:00Z',
+    });
   });
 
   test('許可リストに無い x-forwarded-host は採用しない', async () => {

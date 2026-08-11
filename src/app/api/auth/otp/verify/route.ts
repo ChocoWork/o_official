@@ -4,6 +4,7 @@ import { logAudit } from '@/lib/audit';
 import { OtpVerifyRequestSchema } from '@/features/auth/schemas/otp';
 import { formatZodError } from '@/features/auth/schemas/common';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { linkGuestOrdersByEmail } from '@/lib/orders/link-guest-orders';
 
 async function tryVerifyOtpWithTypes(
   supabase: SupabaseClient,
@@ -79,6 +80,13 @@ export async function POST(request: Request) {
       });
       return NextResponse.json({ error: 'ログイン処理に失敗しました。' }, { status: 500 });
     }
+
+    // ログインのたびに走らせる。登録後に増えたゲスト注文も拾える。
+    await linkGuestOrdersByEmail({
+      userId: result.data.user.id,
+      email: result.data.user.email ?? email,
+      emailConfirmedAt: result.data.user.email_confirmed_at ?? null,
+    });
 
     await logAudit({
       action: 'auth.otp.verify',

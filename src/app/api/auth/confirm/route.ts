@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
 import { getRequestOrigin, sanitizeRedirectPath } from '@/lib/redirect';
+import { linkGuestOrdersByEmail } from '@/lib/orders/link-guest-orders';
 
 const DEFAULT_REDIRECT_PATH = '/account';
 type OtpType = 'signup' | 'email' | 'magiclink' | 'recovery';
@@ -86,6 +87,14 @@ export async function GET(request: Request) {
       });
       return res;
     }
+
+    // ゲストのまま買った注文をこの会員へ引き継ぐ。
+    // 失敗しても紐付けは冪等なので、次回ログインで再試行される。
+    await linkGuestOrdersByEmail({
+      userId: data.user.id,
+      email: data.user.email ?? '',
+      emailConfirmedAt: data.user.email_confirmed_at ?? null,
+    });
 
     await logAudit({
       action: 'auth.confirm',
