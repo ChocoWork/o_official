@@ -22,6 +22,7 @@ import {
   normalizePostalCode,
 } from "@/features/checkout/utils/postal-code.util";
 import { calculateCheckoutAmountsFromSubtotal } from "@/features/checkout/services/checkout-pricing.service";
+import { GuestRegisterPrompt } from "@/features/checkout/components/GuestRegisterPrompt";
 import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
 import { TextField } from "@/components/ui/TextField/TextField";
 import { PREFECTURES } from "@/lib/constants/prefectures";
@@ -1529,6 +1530,10 @@ function CheckoutPageContent() {
               </div>
             </div>
           </div>
+
+          {!isLoggedIn && shippingForm.email.trim() ? (
+            <GuestRegisterPrompt email={shippingForm.email.trim()} />
+          ) : null}
 
           <div
             style={{

@@ -13,11 +13,12 @@ const mdTextStyle: React.CSSProperties = { fontSize: "var(--lk-size-md)" };
 
 interface RegisterModalProps {
   onSwitchToLogin?: () => void;
+  initialEmail?: string;
 }
 
-const RegisterModal: React.FC<RegisterModalProps> = ({ onSwitchToLogin }) => {
+const RegisterModal: React.FC<RegisterModalProps> = ({ onSwitchToLogin, initialEmail }) => {
   const { register, loginWithGoogle } = useLogin();
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(initialEmail ?? "");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);

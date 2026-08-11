@@ -15,9 +15,10 @@ const TABS: Array<{ key: AuthTab; label: string; path: string }> = [
 
 interface AuthTabsProps {
   initialTab: AuthTab;
+  initialEmail?: string;
 }
 
-const AuthTabs: React.FC<AuthTabsProps> = ({ initialTab }) => {
+const AuthTabs: React.FC<AuthTabsProps> = ({ initialTab, initialEmail }) => {
   const [activeTab, setActiveTab] = useState<AuthTab>(initialTab);
   const tabRefs = useRef<Partial<Record<AuthTab, HTMLButtonElement | null>>>(
     {},
@@ -87,7 +88,10 @@ const AuthTabs: React.FC<AuthTabsProps> = ({ initialTab }) => {
           </>
         ) : (
           <>
-            <RegisterModal onSwitchToLogin={() => switchTab("login")} />
+            <RegisterModal
+              onSwitchToLogin={() => switchTab("login")}
+              initialEmail={initialEmail}
+            />
           </>
         )}
       </div>
