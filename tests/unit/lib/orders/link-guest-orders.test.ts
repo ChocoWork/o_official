@@ -62,6 +62,20 @@ describe('linkGuestOrdersByEmail', () => {
     expect(mockLogAudit).not.toHaveBeenCalled();
   });
 
+  test('メールに含まれる _ と % をワイルドカードとして扱わない', async () => {
+    await linkGuestOrdersByEmail({
+      userId: 'user-1',
+      email: 'john_doe%test@example.com',
+      emailConfirmedAt: '2026-08-10T00:00:00Z',
+    });
+
+    // _ と % がエスケープされ、別アドレスに一致しないこと
+    expect(mockIlike).toHaveBeenCalledWith(
+      'shipping_email',
+      'john\\_doe\\%test@example.com',
+    );
+  });
+
   test('Supabase がエラーを返しても例外を投げず 0 を返す', async () => {
     mockSelect.mockResolvedValue({ data: null, error: { message: 'boom' } });
 
