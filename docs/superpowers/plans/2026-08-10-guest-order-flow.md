@@ -509,12 +509,19 @@ export async function linkGuestOrdersByEmail(params: {
     const supabase = await createServiceRoleClient();
     // user_id IS NULL が所有権の一方向性を担保する。
     // 既に誰かのものになった注文は決して移さない。
-    // ilike はワイルドカードを含まなければ大文字小文字を無視した等値比較になる。
-    // 注文時のメールは大文字が混ざりうるので eq では取りこぼす。
+    // 注文時のメールは大文字が混ざりうるので eq では取りこぼす。ilike で
+    // 大文字小文字を無視するが、値に含まれる _ と % は ilike のワイルドカード
+    // として解釈されるため必ずエスケープする。john_doe@example.com が
+    // johnxdoe@example.com の注文にも一致してしまう。
+    const escapedEmail = normalizedEmail
+      .replace(/\\/g, '\\\\')
+      .replace(/%/g, '\\%')
+      .replace(/_/g, '\\_');
+
     const { data, error } = await supabase
       .from('orders')
       .update({ user_id: params.userId })
-      .ilike('shipping_email', normalizedEmail)
+      .ilike('shipping_email', escapedEmail)
       .is('user_id', null)
       .select('id');
 
