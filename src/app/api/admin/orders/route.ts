@@ -8,12 +8,15 @@ import { createClient } from '@/lib/supabase/server';
 type OrderRow = {
   id: string;
   payment_intent_id: string;
-  status: 'pending' | 'paid' | 'failed' | 'cancelled';
+  status: 'pending' | 'paid' | 'failed' | 'cancelled' | 'shipped';
   total_amount: number;
   currency: string;
   shipping_full_name: string | null;
   shipping_email: string | null;
   created_at: string;
+  shipped_at: string | null;
+  shipping_carrier: string | null;
+  tracking_number: string | null;
   order_items: Array<{
     item_name: string;
     quantity: number;
@@ -31,7 +34,7 @@ const querySchema = z
     amountMax: z.coerce.number().int().nonnegative().optional(),
     counterparty: searchTextSchema,
     reference: searchTextSchema,
-    status: z.enum(['pending', 'paid', 'failed', 'cancelled']).optional(),
+    status: z.enum(['pending', 'paid', 'failed', 'cancelled', 'shipped']).optional(),
   })
   .refine((value) => !value.from || !value.to || value.from <= value.to, {
     message: 'from must be before or equal to to',
@@ -81,7 +84,7 @@ function toCurrencyLabel(amount: number, currency: string): string {
   }
 }
 
-function mapOrderStatusToLabel(status: OrderRow['status']): '未決済' | '決済完了' | '決済失敗' | 'キャンセル' {
+function mapOrderStatusToLabel(status: OrderRow['status']): '未決済' | '決済完了' | '決済失敗' | 'キャンセル' | '発送済み' {
   if (status === 'paid') {
     return '決済完了';
   }
@@ -92,6 +95,10 @@ function mapOrderStatusToLabel(status: OrderRow['status']): '未決済' | '決�
 
   if (status === 'cancelled') {
     return 'キャンセル';
+  }
+
+  if (status === 'shipped') {
+    return '発送済み';
   }
 
   return '未決済';
@@ -210,6 +217,9 @@ export async function GET(request: Request) {
         shipping_full_name,
         shipping_email,
         created_at,
+        shipped_at,
+        shipping_carrier,
+        tracking_number,
         order_items (
           item_name,
           quantity
@@ -285,6 +295,9 @@ export async function GET(request: Request) {
         paymentMethod: mapPaymentMethodLabel(paymentIntent),
         paymentReference: order.payment_intent_id,
         stripePaymentStatus: paymentIntent?.status ?? null,
+        shippedAt: order.shipped_at,
+        shippingCarrier: order.shipping_carrier,
+        trackingNumber: order.tracking_number,
         canRefund:
           order.status === 'paid' &&
           paymentIntent?.status === 'succeeded' &&

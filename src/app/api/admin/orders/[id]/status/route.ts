@@ -1,13 +1,20 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
+import { SHIPPING_CARRIER_IDS } from '@/lib/orders/shipping-carriers';
+import { sendOrderShippedEmail } from '@/lib/orders/order-shipped-email';
 
 const orderIdSchema = z.string().uuid();
-const updateStatusSchema = z.object({
-  status: z.enum(['cancelled']),
-});
+const updateStatusSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('cancelled') }),
+  z.object({
+    status: z.literal('shipped'),
+    carrier: z.enum(SHIPPING_CARRIER_IDS),
+    trackingNumber: z.string().trim().min(1).max(64).regex(/^[0-9A-Za-z-]+$/),
+  }),
+]);
 
 export async function GET(
   request: Request,
@@ -77,6 +84,66 @@ export async function POST(
         },
         { status: 400 },
       );
+    }
+
+    if (parsedBody.data.status === 'shipped') {
+      const id = parsedOrderId.data;
+      const supabase = await createServiceRoleClient();
+
+      // 読んでから書く形にしない。status と shipped_at を条件に含めた
+      // UPDATE 1本で確定させることで、同時に2回押しても発送は1回しか成立せず、
+      // 通知メールも1通しか出ない。
+      const { data, error } = await supabase
+        .from('orders')
+        .update({
+          status: 'shipped',
+          shipped_at: new Date().toISOString(),
+          shipping_carrier: parsedBody.data.carrier,
+          tracking_number: parsedBody.data.trackingNumber,
+        })
+        .eq('id', id)
+        .eq('status', 'paid')
+        .is('shipped_at', null)
+        .select('id, shipping_email, shipping_full_name');
+
+      if (error) {
+        console.error('[admin.orders.status] Failed to ship order:', error);
+        return NextResponse.json({ error: '発送状態の更新に失敗しました。' }, { status: 500 });
+      }
+
+      if (!data?.length) {
+        await logAudit({
+          action: 'admin.orders.status.update',
+          actor_id: authz.userId,
+          outcome: 'failure',
+          resource: 'orders',
+          resource_id: id,
+          detail: 'not_shippable',
+        });
+        return NextResponse.json(
+          { error: '発送できる状態ではありません。決済完了の未発送注文のみ発送できます。' },
+          { status: 409 },
+        );
+      }
+
+      await logAudit({
+        action: 'admin.orders.status.update',
+        actor_id: authz.userId,
+        outcome: 'success',
+        resource: 'orders',
+        resource_id: id,
+        metadata: { status: 'shipped', carrier: parsedBody.data.carrier },
+      });
+
+      await sendOrderShippedEmail({
+        orderId: id,
+        email: data[0].shipping_email,
+        fullName: data[0].shipping_full_name,
+        carrier: parsedBody.data.carrier,
+        trackingNumber: parsedBody.data.trackingNumber,
+      });
+
+      return NextResponse.json({ success: true, status: 'shipped' }, { status: 200 });
     }
 
     const supabase = await createClient(request);
