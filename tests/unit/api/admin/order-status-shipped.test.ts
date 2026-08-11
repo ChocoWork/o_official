@@ -19,7 +19,7 @@ const mockUpdate = jest.fn(() => ({ eq: mockEqId }));
 const mockFrom = jest.fn(() => ({ update: mockUpdate }));
 
 jest.mock('@/lib/supabase/server', () => ({
-  createServiceRoleClient: jest.fn().mockResolvedValue({ from: mockFrom }),
+  createClient: jest.fn().mockResolvedValue({ from: mockFrom }),
 }));
 
 jest.mock('@/lib/auth/admin-rbac', () => ({

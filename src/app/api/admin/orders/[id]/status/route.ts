@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
-import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
+import { createClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
 import { SHIPPING_CARRIER_IDS } from '@/lib/orders/shipping-carriers';
 import { sendOrderShippedEmail } from '@/lib/orders/order-shipped-email';
@@ -30,7 +30,7 @@ export async function GET(
     {
       endpoint: `/api/admin/orders/${id}/status`,
       method: 'POST',
-      description: 'Order status update endpoint (cancel only)',
+      description: 'Order status update endpoint (cancel or shipped)',
       requiredBody: { status: 'cancelled' },
     },
     { status: 200 },
@@ -87,8 +87,7 @@ export async function POST(
     }
 
     if (parsedBody.data.status === 'shipped') {
-      const id = parsedOrderId.data;
-      const supabase = await createServiceRoleClient();
+      const supabase = await createClient(request);
 
       // 読んでから書く形にしない。status と shipped_at を条件に含めた
       // UPDATE 1本で確定させることで、同時に2回押しても発送は1回しか成立せず、
