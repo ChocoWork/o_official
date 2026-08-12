@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/Button/Button';
 import { DataTable } from '@/components/ui/DataTable/DataTable';
 import { StatusBadge } from '@/components/ui/StatusBadge/StatusBadge';
 
-export type OrderStatus = '未決済' | '決済完了' | '決済失敗' | 'キャンセル';
+export type OrderStatus = '未決済' | '決済完了' | '決済失敗' | 'キャンセル' | '発送済み';
 
 export type OrderLineItem = {
 	name: string;
@@ -34,6 +34,7 @@ interface OrderSectionProps {
 	errorMessage?: string | null;
 	onCancelOrder?: (id: string) => void;
 	onRefundOrder?: (id: string) => void;
+	onShipOrder?: (id: string) => void;
 	processingOrderIds?: string[];
 }
 
@@ -43,6 +44,7 @@ export default function OrderSection({
 	errorMessage = null,
 	onCancelOrder,
 	onRefundOrder,
+	onShipOrder,
 	processingOrderIds = [],
 }: OrderSectionProps) {
 
@@ -51,6 +53,7 @@ export default function OrderSection({
 		決済完了: 'bg-yellow-100 text-yellow-800',
 		決済失敗: 'bg-orange-100 text-orange-800',
 		キャンセル: 'bg-gray-100 text-gray-500',
+		発送済み: 'bg-green-100 text-green-800',
 	};
 
 	if (isLoading) {
@@ -136,6 +139,17 @@ export default function OrderSection({
 										disabled={isProcessing}
 									>
 										{isProcessing ? '処理中...' : '返金'}
+									</Button>
+								) : null}
+								{order.status === '決済完了' && onShipOrder ? (
+									<Button
+										variant="primary"
+										size="sm"
+										className="font-acumin"
+										onClick={() => onShipOrder(order.id)}
+										disabled={isProcessing}
+									>
+										{isProcessing ? '処理中...' : '発送済みにする'}
 									</Button>
 								) : null}
 								{actionLabelMap[order.status] && onCancelOrder ? (
