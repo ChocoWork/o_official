@@ -21,7 +21,7 @@ type OrderItemRow = {
 type OrderRow = {
 	id: string;
 	created_at: string;
-	status: 'pending' | 'paid' | 'failed' | 'cancelled';
+	status: 'pending' | 'paid' | 'failed' | 'cancelled' | 'shipped';
 	total_amount: number;
 	currency: string;
 	shipping_full_name: string | null;
@@ -80,6 +80,10 @@ function mapStatusLabel(status: OrderRow['status']) {
 
 	if (status === 'cancelled') {
 		return 'キャンセル';
+	}
+
+	if (status === 'shipped') {
+		return '発送済み';
 	}
 
 	return '未決済';

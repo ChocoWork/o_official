@@ -21,7 +21,7 @@ type OrderItemRow = {
 type OrderDetailRow = {
 	id: string;
 	created_at: string;
-	status: 'pending' | 'paid' | 'failed' | 'cancelled';
+	status: 'pending' | 'paid' | 'failed' | 'cancelled' | 'shipped';
 	payment_intent_id: string | null;
 	subtotal_amount: number;
 	shipping_amount: number;

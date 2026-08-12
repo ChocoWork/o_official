@@ -151,7 +151,7 @@ export async function POST(
       .from('orders')
       .select('id, status')
       .eq('id', parsedOrderId.data)
-      .maybeSingle<{ id: string; status: 'pending' | 'paid' | 'failed' | 'cancelled' }>();
+      .maybeSingle<{ id: string; status: 'pending' | 'paid' | 'failed' | 'cancelled' | 'shipped' }>();
 
     if (currentOrderError) {
       console.error('[admin.orders.status] Failed to fetch order:', currentOrderError);
@@ -184,6 +184,23 @@ export async function POST(
         user_agent: userAgent,
       });
       return NextResponse.json({ success: true, status: 'cancelled' }, { status: 200 });
+    }
+
+    if (currentOrder.status === 'shipped') {
+      await logAudit({
+        action: 'admin.orders.status.update',
+        actor_id: authz.userId,
+        resource: 'orders',
+        resource_id: parsedOrderId.data,
+        outcome: 'conflict',
+        detail: 'Order already shipped',
+        ip: clientIp,
+        user_agent: userAgent,
+      });
+      return NextResponse.json(
+        { error: '発送済みの注文はキャンセルできません。' },
+        { status: 409 },
+      );
     }
 
     const { data: updatedOrder, error: updateError } = await supabase

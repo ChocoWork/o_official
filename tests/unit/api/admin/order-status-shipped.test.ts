@@ -16,7 +16,11 @@ const mockIs = jest.fn(() => ({ select: mockSelect }));
 const mockEqStatus = jest.fn(() => ({ is: mockIs }));
 const mockEqId = jest.fn(() => ({ eq: mockEqStatus }));
 const mockUpdate = jest.fn(() => ({ eq: mockEqId }));
-const mockFrom = jest.fn(() => ({ update: mockUpdate }));
+
+const mockMaybeSingle = jest.fn();
+const mockSelectCurrentOrder = jest.fn(() => ({ eq: () => ({ maybeSingle: mockMaybeSingle }) }));
+
+const mockFrom = jest.fn(() => ({ update: mockUpdate, select: mockSelectCurrentOrder }));
 
 jest.mock('@/lib/supabase/server', () => ({
   createClient: jest.fn().mockResolvedValue({ from: mockFrom }),
@@ -102,5 +106,17 @@ describe('POST /api/admin/orders/[id]/status - shipped', () => {
 
     expect(res.status).toBe(400);
     expect(mockFrom).not.toHaveBeenCalled();
+  });
+
+  test('発送済みの注文はキャンセルできず 409 を返す', async () => {
+    mockMaybeSingle.mockResolvedValue({
+      data: { id: ORDER_ID, status: 'shipped' },
+      error: null,
+    });
+
+    const res: any = await POST(makeRequest({ status: 'cancelled' }), CONTEXT);
+
+    expect(res.status).toBe(409);
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 });

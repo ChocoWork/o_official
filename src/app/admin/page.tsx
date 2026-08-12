@@ -29,6 +29,7 @@ const ORDER_STATUS_FILTERS = [
   { label: '決済完了', value: '決済完了' },
   { label: '決済失敗', value: '決済失敗' },
   { label: 'キャンセル', value: 'キャンセル' },
+  { label: '発送済み', value: '発送済み' },
 ] as const;
 
 type OrderStatusFilterValue = (typeof ORDER_STATUS_FILTERS)[number]['value'];
@@ -295,7 +296,7 @@ function AdminPageContent() {
     return orders.filter((order) => {
       const matchesStatus = hasAllFilter
         ? true
-        : (orderStatusFilters as readonly string[]).includes(order.status);
+        : orderStatusFilters.includes(order.status);
       const matchesKeyword =
         normalizedKeyword.length === 0
           ? true
