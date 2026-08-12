@@ -12,10 +12,27 @@ const ORDER_ID = 'a1b2c3d4-1111-2222-3333-444455556666';
 const SHIPPED_ORDER = {
   id: ORDER_ID,
   orderNumber: 'ORD-A1B2C3D4',
+  orderDate: '2026/08/01 09:00',
   status: 'shipped',
-  createdAt: '2026-08-01T00:00:00.000Z',
-  totalAmount: 28800,
-  items: [{ itemName: 'シルクブラウス', quantity: 1, lineTotal: 28000 }],
+  subtotalAmount: '¥28,000',
+  shippingAmount: '¥800',
+  discountAmount: '¥0',
+  totalAmount: '¥28,800',
+  paymentMethod: 'クレジットカード',
+  shippingAddress: '〒100-0001 東京都 千代田区 千代田1-1 1F',
+  items: [
+    {
+      id: 'item-1',
+      itemId: 1,
+      name: 'シルクブラウス',
+      imageUrl: null,
+      color: 'ホワイト',
+      size: 'M',
+      quantity: 1,
+      amount: '¥28,000',
+      stockStatus: 'in_stock',
+    },
+  ],
   shippedAt: '2026-08-05T00:00:00.000Z',
   shippingCarrier: 'yamato',
   trackingNumber: '1234-5678-9012',
@@ -45,7 +62,7 @@ async function mockOrderDetail(page: Page, order: unknown): Promise<void> {
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ data: order }),
+      body: JSON.stringify(order),
     }),
   );
 }
