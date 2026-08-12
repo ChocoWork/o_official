@@ -57,7 +57,8 @@ async function mockAdminApis(page: Page): Promise<void> {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        data: { orders: ORDERS, totalCount: ORDERS.length, totalPages: 1 },
+        data: ORDERS,
+        pagination: { page: 1, pageSize: 20, total: ORDERS.length, totalPages: 1 },
       }),
     }),
   );
