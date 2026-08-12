@@ -169,29 +169,6 @@ export default function AccountOrderDetailPage() {
                   {order.orderNumber}
                 </p>
               </div>
-              {order.shippingCarrier && order.trackingNumber && isShippingCarrierId(order.shippingCarrier) ? (
-                <section aria-label="配送情報" className="mt-6">
-                  <h2 className="mb-2 text-[#474747] tracking-wider">配送情報</h2>
-                  <dl className="space-y-1 text-sm">
-                    <div className="flex gap-2">
-                      <dt className="text-[#707070]">配送業者</dt>
-                      <dd>{SHIPPING_CARRIERS[order.shippingCarrier].label}</dd>
-                    </div>
-                    <div className="flex gap-2">
-                      <dt className="text-[#707070]">追跡番号</dt>
-                      <dd className="tabular-nums">{order.trackingNumber}</dd>
-                    </div>
-                  </dl>
-                  <a
-                    href={SHIPPING_CARRIERS[order.shippingCarrier].trackingUrl(order.trackingNumber)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-2 inline-block text-sm underline"
-                  >
-                    配送状況を確認する
-                  </a>
-                </section>
-              ) : null}
               <div>
                 <p
                   className="text-[#474747] mb-1 tracking-wider"
@@ -204,6 +181,30 @@ export default function AccountOrderDetailPage() {
                 </p>
               </div>
             </div>
+
+            {order.shippingCarrier && order.trackingNumber && isShippingCarrierId(order.shippingCarrier) ? (
+              <section aria-label="配送情報" className="mt-6">
+                <h2 className="mb-2 text-[#474747] tracking-wider">配送情報</h2>
+                <dl className="space-y-1 text-sm">
+                  <div className="flex gap-2">
+                    <dt className="text-[#707070]">配送業者</dt>
+                    <dd>{SHIPPING_CARRIERS[order.shippingCarrier].label}</dd>
+                  </div>
+                  <div className="flex gap-2">
+                    <dt className="text-[#707070]">追跡番号</dt>
+                    <dd className="tabular-nums">{order.trackingNumber}</dd>
+                  </div>
+                </dl>
+                <a
+                  href={SHIPPING_CARRIERS[order.shippingCarrier].trackingUrl(order.trackingNumber)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 inline-block text-sm underline"
+                >
+                  配送状況を確認する
+                </a>
+              </section>
+            ) : null}
 
             {/* OD-4: 進捗の視覚化（受注→発送→配達） */}
             {progressIndex >= 0 ? (
