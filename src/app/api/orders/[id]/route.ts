@@ -36,6 +36,9 @@ type OrderDetailRow = {
 	shipping_address: string | null;
 	shipping_building: string | null;
 	shipping_phone: string | null;
+	shipped_at: string | null;
+	shipping_carrier: string | null;
+	tracking_number: string | null;
 	order_items: OrderItemRow[] | null;
 };
 
@@ -144,6 +147,9 @@ export async function GET(
 			shipping_address,
 			shipping_building,
 			shipping_phone,
+			shipped_at,
+			shipping_carrier,
+			tracking_number,
 			order_items (
 				id,
 				item_id,
@@ -219,6 +225,9 @@ export async function GET(
 		shippingEmail: data.shipping_email ?? '',
 		shippingPhone: data.shipping_phone ?? '',
 		shippingAddress: toShippingAddress(data),
+		shippedAt: data.shipped_at,
+		shippingCarrier: data.shipping_carrier,
+		trackingNumber: data.tracking_number,
 		items: await Promise.all((data.order_items ?? []).map(async (item) => ({
 			id: item.id,
 			itemId: item.item_id,

@@ -15,6 +15,7 @@ import {
   type OrderLineItem,
 } from "@/features/account/components/OrderItemRow";
 import { useReorder } from "@/features/account/hooks/useReorder";
+import { SHIPPING_CARRIERS, isShippingCarrierId } from "@/lib/orders/shipping-carriers";
 import "../../account.css";
 
 // OD-2: Tailwind 既定サイズではなくサイト共通の --lk-size-* トークンを使用
@@ -36,6 +37,9 @@ type OrderDetail = {
   paymentMethod: string;
   shippingAddress: string;
   items: OrderLineItem[];
+  shippedAt: string | null;
+  shippingCarrier: string | null;
+  trackingNumber: string | null;
 };
 
 export default function AccountOrderDetailPage() {
@@ -165,6 +169,29 @@ export default function AccountOrderDetailPage() {
                   {order.orderNumber}
                 </p>
               </div>
+              {order.shippingCarrier && order.trackingNumber && isShippingCarrierId(order.shippingCarrier) ? (
+                <section aria-label="配送情報" className="mt-6">
+                  <h2 className="mb-2 text-[#474747] tracking-wider">配送情報</h2>
+                  <dl className="space-y-1 text-sm">
+                    <div className="flex gap-2">
+                      <dt className="text-[#707070]">配送業者</dt>
+                      <dd>{SHIPPING_CARRIERS[order.shippingCarrier].label}</dd>
+                    </div>
+                    <div className="flex gap-2">
+                      <dt className="text-[#707070]">追跡番号</dt>
+                      <dd className="tabular-nums">{order.trackingNumber}</dd>
+                    </div>
+                  </dl>
+                  <a
+                    href={SHIPPING_CARRIERS[order.shippingCarrier].trackingUrl(order.trackingNumber)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-2 inline-block text-sm underline"
+                  >
+                    配送状況を確認する
+                  </a>
+                </section>
+              ) : null}
               <div>
                 <p
                   className="text-[#474747] mb-1 tracking-wider"
