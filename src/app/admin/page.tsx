@@ -754,9 +754,6 @@ function AdminPageContent() {
               open={shipOrderId !== null}
               onClose={() => setShipOrderId(null)}
               title="発送済みにする"
-              confirmText="発送する"
-              cancelText="キャンセル"
-              onConfirm={() => void handleShipOrder()}
             >
               <div className="space-y-3">
                 <div>
@@ -790,6 +787,24 @@ function AdminPageContent() {
                     placeholder="1234-5678-9012"
                     className="mt-1 h-9 w-full border border-[#d4d4d4] bg-white px-2 font-acumin text-xs text-black"
                   />
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="w-full font-acumin"
+                    onClick={() => setShipOrderId(null)}
+                  >
+                    キャンセル
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    className="w-full font-acumin"
+                    onClick={() => void handleShipOrder()}
+                  >
+                    発送する
+                  </Button>
                 </div>
               </div>
             </Dialog>
