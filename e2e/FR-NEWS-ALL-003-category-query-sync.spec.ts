@@ -8,7 +8,7 @@ test.describe('FR-NEWS-ALL-003 category query sync', () => {
     await page.waitForLoadState('networkidle');
 
     await test.step('EVENT タブを選択する', async () => {
-      await page.getByRole('button', { name: 'EVENT', exact: true }).click();
+      await page.getByRole('checkbox', { name: 'EVENT', exact: true }).click();
     });
 
     await test.step('URL に category=EVENT が反映される', async () => {

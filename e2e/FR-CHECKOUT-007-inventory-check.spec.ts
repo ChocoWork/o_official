@@ -47,9 +47,9 @@ test.describe('FR-CHECKOUT-007 決済前在庫チェック', () => {
     await page.fill('input[name="phone"]', '09000000000');
 
     await page.locator('label:has-text("都道府県") button').click();
-    await page.getByRole('button', { name: '東京都', exact: true }).click();
+    await page.getByRole('option', { name: '東京都', exact: true }).click();
 
-    await page.getByRole('button', { name: '次へ' }).first().click();
+    await page.getByRole('button', { name: 'お支払いに進む' }).first().click();
     await expect(page.getByText('以下の商品の在庫が不足しています: 在庫テスト商品（要求 2 / 在庫 1）')).toBeVisible();
   });
 });

@@ -8,7 +8,7 @@ test.describe('FR-CONTACT-002 問い合わせ種別ドロップダウン', () =>
     await expect(inquirySelectButton).toBeVisible();
     await inquirySelectButton.click();
 
-    const option = page.getByRole('button', { name: '商品について' });
+    const option = page.getByRole('option', { name: '商品について' });
     await expect(option).toBeVisible();
     await option.click();
 

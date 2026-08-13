@@ -18,7 +18,7 @@ test.describe('FR-CHECKOUT-004 フィールドバリデーション＆aria-descr
     await page.waitForLoadState('networkidle').catch(() => undefined);
 
     // 空のまま送信
-    await page.getByRole('button', { name: '次へ' }).first().click();
+    await page.getByRole('button', { name: 'お支払いに進む' }).first().click();
 
     // メールアドレスのエラーメッセージが表示される
     await expect(page.getByText('メールアドレスを入力してください')).toBeVisible();
@@ -29,7 +29,7 @@ test.describe('FR-CHECKOUT-004 フィールドバリデーション＆aria-descr
     await page.waitForLoadState('networkidle').catch(() => undefined);
 
     await page.fill('input[name="email"]', 'not-an-email');
-    await page.getByRole('button', { name: '次へ' }).first().click();
+    await page.getByRole('button', { name: 'お支払いに進む' }).first().click();
 
     await expect(page.getByText('正しいメールアドレスを入力してください')).toBeVisible();
   });
@@ -39,7 +39,7 @@ test.describe('FR-CHECKOUT-004 フィールドバリデーション＆aria-descr
     await page.waitForLoadState('networkidle').catch(() => undefined);
 
     // 空のまま送信してエラー状態にする
-    await page.getByRole('button', { name: '次へ' }).first().click();
+    await page.getByRole('button', { name: 'お支払いに進む' }).first().click();
 
     // email フィールドに aria-describedby が設定される
     const emailInput = page.locator('input[name="email"]');
@@ -56,7 +56,7 @@ test.describe('FR-CHECKOUT-004 フィールドバリデーション＆aria-descr
     await page.goto('/checkout');
     await page.waitForLoadState('networkidle').catch(() => undefined);
 
-    await page.getByRole('button', { name: '次へ' }).first().click();
+    await page.getByRole('button', { name: 'お支払いに進む' }).first().click();
     await expect(page.getByText('メールアドレスを入力してください')).toBeVisible();
 
     await page.fill('input[name="email"]', 'valid@example.com');
@@ -67,7 +67,7 @@ test.describe('FR-CHECKOUT-004 フィールドバリデーション＆aria-descr
     await page.goto('/checkout');
     await page.waitForLoadState('networkidle').catch(() => undefined);
 
-    await page.getByRole('button', { name: '次へ' }).first().click();
+    await page.getByRole('button', { name: 'お支払いに進む' }).first().click();
 
     const emailInput = page.locator('input[name="email"]');
     await expect(emailInput).toHaveAttribute('aria-invalid', 'true');

@@ -17,9 +17,10 @@ test.describe('FR-CHECKOUT-001 Stripe CheckoutProvider と PaymentElement', () =
     await page.fill('input[name="address"]', '丸の内1-1-1');
     await page.fill('input[name="phone"]', '09000000000');
     await page.getByRole('button', { name: '都道府県' }).click();
-    await page.getByRole('button', { name: '東京都' }).click();
+    // SingleSelect の選択肢は role="option"。トリガーだけが button。
+    await page.getByRole('option', { name: '東京都' }).click();
     
-    await page.getByRole('button', { name: '次へ' }).first().click();
+    await page.getByRole('button', { name: 'お支払いに進む' }).first().click();
     await page.waitForTimeout(1000);
 
     // Check if payment element or error is visible

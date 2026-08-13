@@ -8,7 +8,7 @@ async function fillShippingForm(page: Page) {
   await page.fill('input[name="address"]', '丸の内1-1-1');
   await page.fill('input[name="phone"]', '09000000000');
   await page.getByRole('button', { name: '都道府県' }).click();
-  await page.getByRole('button', { name: '東京都' }).click();
+  await page.getByRole('option', { name: '東京都' }).click();
 }
 
 test.describe('FR-CHECKOUT-008 決済エラー時の再試行導線', () => {
@@ -18,7 +18,7 @@ test.describe('FR-CHECKOUT-008 決済エラー時の再試行導線', () => {
 
     await fillShippingForm(page);
 
-    await page.getByRole('button', { name: '次へ' }).first().click();
+    await page.getByRole('button', { name: 'お支払いに進む' }).first().click();
     await page.waitForTimeout(2000);
 
     // ステップ2には「戻る」ボタンがある
@@ -31,7 +31,7 @@ test.describe('FR-CHECKOUT-008 決済エラー時の再試行導線', () => {
 
     await fillShippingForm(page);
 
-    await page.getByRole('button', { name: '次へ' }).first().click();
+    await page.getByRole('button', { name: 'お支払いに進む' }).first().click();
     await page.waitForTimeout(2000);
 
     // エラーが発生している場合は再試行ボタンが存在する

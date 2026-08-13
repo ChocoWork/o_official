@@ -5,7 +5,7 @@ test.describe('FR-NEWS-ALL-007 detail back filter restore', () => {
     await page.goto('/news');
     await page.waitForLoadState('networkidle');
 
-    await page.getByRole('button', { name: 'EVENT', exact: true }).click();
+    await page.getByRole('checkbox', { name: 'EVENT', exact: true }).click();
     await expect(page).toHaveURL(/\/news\?category=EVENT$/);
 
     await page.locator('a[href^="/news/"]').first().click();
@@ -13,10 +13,7 @@ test.describe('FR-NEWS-ALL-007 detail back filter restore', () => {
 
     await page.goBack();
     await expect(page).toHaveURL(/\/news\?category=EVENT$/);
-    await expect(page.getByRole('button', { name: 'EVENT', exact: true })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
+    await expect(page.getByRole('checkbox', { name: 'EVENT', exact: true })).toBeChecked();
   });
 
   test('複数カテゴリ選択時に詳細遷移後のブラウザ戻るでフィルタが復元される', async ({ page }) => {
@@ -25,18 +22,10 @@ test.describe('FR-NEWS-ALL-007 detail back filter restore', () => {
     await page.goto('/news');
     await page.waitForLoadState('networkidle');
 
-    const trigger = page.locator('button[aria-haspopup="listbox"]');
-    await trigger.click();
-    await page.waitForTimeout(200);
-
-    const dropdownItems = page.locator('[aria-haspopup="listbox"] ~ div label');
-    await dropdownItems.nth(1).click();
-    await page.waitForTimeout(100);
-    await dropdownItems.nth(2).click();
-    await page.waitForTimeout(200);
-
-    await page.keyboard.press('Escape');
-    await page.waitForTimeout(100);
+    // モバイルではカテゴリの絞り込みが FILTER の Drawer に入る。
+    await page.getByRole('button', { name: 'FILTER' }).click();
+    await page.getByRole('checkbox', { name: 'EVENT', exact: true }).click();
+    await page.getByRole('checkbox', { name: 'COLLECTION', exact: true }).click();
 
     await expect(page).toHaveURL(/\/news\?category=[A-Z]+(%2C|,)[A-Z]+$/);
 
@@ -47,6 +36,9 @@ test.describe('FR-NEWS-ALL-007 detail back filter restore', () => {
 
     await page.goBack();
     await expect(page).toHaveURL(/\/news\?category=[A-Z]+(%2C|,)[A-Z]+$/);
-    await expect(trigger).not.toContainText('ALL');
+    // 戻ったあとも選択が復元されている。Drawer は閉じているので開き直して確認する。
+    await page.getByRole('button', { name: 'FILTER' }).click();
+    await expect(page.getByRole('checkbox', { name: 'EVENT', exact: true })).toBeChecked();
+    await expect(page.getByRole('checkbox', { name: 'ALL', exact: true })).not.toBeChecked();
   });
 });

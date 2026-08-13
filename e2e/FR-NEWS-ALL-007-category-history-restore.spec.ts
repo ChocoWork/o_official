@@ -7,18 +7,16 @@ test.describe('FR-NEWS-ALL-007 category history restore', () => {
     await page.goto('/news');
     await page.waitForLoadState('networkidle');
 
-    await page.getByRole('button', { name: 'EVENT', exact: true }).click();
+    // カテゴリは複数選択。押すたびに選択が累積し、クエリはカンマ区切りになる。
+    await page.getByRole('checkbox', { name: 'EVENT', exact: true }).click();
     await expect(page).toHaveURL(/\/news\?category=EVENT$/);
 
-    await page.getByRole('button', { name: 'COLLECTION', exact: true }).click();
-    await expect(page).toHaveURL(/\/news\?category=COLLECTION$/);
+    await page.getByRole('checkbox', { name: 'COLLECTION', exact: true }).click();
+    await expect(page).toHaveURL(/\/news\?category=EVENT(%2C|,)COLLECTION$/);
 
     await page.goBack();
 
     await expect(page).toHaveURL(/\/news\?category=EVENT$/);
-    await expect(page.getByRole('button', { name: 'EVENT', exact: true })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
+    await expect(page.getByRole('checkbox', { name: 'EVENT', exact: true })).toBeChecked();
   });
 });

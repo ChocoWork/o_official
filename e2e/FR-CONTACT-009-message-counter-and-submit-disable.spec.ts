@@ -10,7 +10,7 @@ test.describe('FR-CONTACT-009 文字数カウンターと送信ボタン制御',
     await page.locator('input[name="name"]').fill('テスト太郎');
     await page.locator('input[name="email"]').fill('tester@example.com');
     await page.locator('button[aria-haspopup="listbox"]').first().click();
-    await page.getByRole('button', { name: '商品について' }).click();
+    await page.getByRole('option', { name: '商品について' }).click();
     await page.locator('input[name="subject"]').fill('文字数確認');
     await page.locator('textarea[name="message"]').fill('12345');
 

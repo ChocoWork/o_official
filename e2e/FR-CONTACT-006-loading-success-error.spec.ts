@@ -7,7 +7,7 @@ test.describe('FR-CONTACT-006 送信状態フィードバック', () => {
     await page.locator('input[name="name"]').fill('テスト太郎');
     await page.locator('input[name="email"]').fill('tester@example.com');
     await page.locator('button[aria-haspopup="listbox"]').first().click();
-    await page.getByRole('button', { name: 'その他' }).click();
+    await page.getByRole('option', { name: 'その他' }).click();
     await page.locator('input[name="subject"]').fill('送信状態テスト');
     await page.locator('textarea[name="message"]').fill('送信状態を確認します。');
 
