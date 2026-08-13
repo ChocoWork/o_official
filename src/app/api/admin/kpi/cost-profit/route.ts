@@ -23,6 +23,14 @@ const summaryOptionNameSchema = z.string().trim().min(1).max(160)
 // 要確認の理由。src/lib/finance/entry-review.ts の EntryReviewReasonId と揃える。
 const entryReviewReasonSchema = z.enum(['duplicate', 'unknownAccount', 'unlinkedAsset', 'revisedEntry']);
 
+const evidenceUnavailableReasonSchema = z.enum([
+	'bank_history_expired',
+	'not_issued',
+	'paper_storage',
+	'external_electronic_storage',
+	'other',
+]);
+
 // 事業形態。勘定科目マスタ（src/lib/finance/accounts.ts）の適用形態と対応する。
 const businessTypeSchema = z.enum(['soleProprietor', 'corporation']);
 
@@ -113,6 +121,16 @@ const mutationSchema = z.discriminatedUnion('operation', [
 	z.object({
 		operation: z.literal('receipt.delete'),
 		receiptId: z.coerce.number().int().positive(),
+	}),
+	z.object({
+		operation: z.literal('evidenceUnavailable.upsert'),
+		expenseId: z.coerce.number().int().positive(),
+		reason: evidenceUnavailableReasonSchema,
+		note: z.string().trim().max(500).default(''),
+	}),
+	z.object({
+		operation: z.literal('evidenceUnavailable.delete'),
+		expenseId: z.coerce.number().int().positive(),
 	}),
 	// 固定資産候補の確認結果（費用として処理する / 確認をやり直す）。
 	// 取引の内容は変えないため訂正履歴には残らない（migration 073）。
@@ -235,6 +253,16 @@ type ExpenseRow = {
 	fixed_asset_exempt_reason?: string | null;
 	fixed_asset_reviewed_at?: string | null;
 	admin_finance_receipts?: ReceiptRow[] | null;
+	admin_finance_evidence_unavailable_records?: EvidenceUnavailableRow | null;
+};
+
+type EvidenceUnavailableRow = {
+	reason: z.infer<typeof evidenceUnavailableReasonSchema>;
+	note: string | null;
+	recorded_at: string;
+	recorded_by: string | null;
+	updated_at: string;
+	updated_by: string | null;
 };
 
 type ReceiptRow = {
@@ -410,6 +438,7 @@ function mapPlan(row: FinancePlanRow | null) {
 }
 
 function mapExpense(row: ExpenseRow) {
+	const unavailable = row.admin_finance_evidence_unavailable_records;
 	return {
 		id: Number(row.id),
 		entryType: row.entry_type ?? 'expense',
@@ -432,6 +461,14 @@ function mapExpense(row: ExpenseRow) {
 			fileSize: Number(receipt.file_size),
 			createdAt: receipt.created_at,
 		})),
+		evidenceUnavailable: unavailable ? {
+			reason: unavailable.reason,
+			note: unavailable.note ?? '',
+			recordedAt: unavailable.recorded_at,
+			recordedBy: unavailable.recorded_by,
+			updatedAt: unavailable.updated_at,
+			updatedBy: unavailable.updated_by,
+		} : null,
 	};
 }
 
@@ -630,7 +667,7 @@ export async function GET(request: Request) {
 			// 論理削除された取引は集計・表示から除く（履歴には残る）。
 			supabase
 				.from('admin_finance_expenses')
-				.select('id, entry_type, expense_date, category, item_name, partner, amount, payment_method, memo, season_key, fixed_asset_exempt, fixed_asset_exempt_reason, fixed_asset_reviewed_at, admin_finance_receipts(id, storage_path, file_name, mime_type, file_size, created_at)')
+				.select('id, entry_type, expense_date, category, item_name, partner, amount, payment_method, memo, season_key, fixed_asset_exempt, fixed_asset_exempt_reason, fixed_asset_reviewed_at, admin_finance_receipts(id, storage_path, file_name, mime_type, file_size, created_at), admin_finance_evidence_unavailable_records(reason, note, recorded_at, recorded_by, updated_at, updated_by)')
 				.eq('fiscal_year', parsedYear.data)
 				.is('deleted_at', null)
 				.order('expense_date', { ascending: false })
@@ -690,7 +727,7 @@ export async function GET(request: Request) {
 		const expensesResult = isMissingFixedAssetReviewColumn(initialExpensesResult.error)
 			? await supabase
 				.from('admin_finance_expenses')
-				.select('id, entry_type, expense_date, category, item_name, partner, amount, payment_method, memo, season_key, admin_finance_receipts(id, storage_path, file_name, mime_type, file_size, created_at)')
+				.select('id, entry_type, expense_date, category, item_name, partner, amount, payment_method, memo, season_key, admin_finance_receipts(id, storage_path, file_name, mime_type, file_size, created_at), admin_finance_evidence_unavailable_records(reason, note, recorded_at, recorded_by, updated_at, updated_by)')
 				.eq('fiscal_year', parsedYear.data)
 				.is('deleted_at', null)
 				.order('expense_date', { ascending: false })
@@ -799,6 +836,16 @@ export async function POST(request: Request) {
 		}
 
 		operation = parsed.data.operation;
+		if (
+			parsed.data.operation === 'evidenceUnavailable.upsert'
+			&& (parsed.data.reason === 'bank_history_expired' || parsed.data.reason === 'other')
+			&& parsed.data.note.length === 0
+		) {
+			return NextResponse.json(
+				{ error: '補足メモを入力してください。' },
+				{ status: 400 },
+			);
+		}
 		const supabase = await createServiceRoleClient();
 		// 監査ログ用のスコープ表示。年度ベースの操作は年、商品原価はシーズン。
 		const scopeLabel = 'fiscalYear' in parsed.data
@@ -1023,6 +1070,52 @@ export async function POST(request: Request) {
 				if (error) throw error;
 			}
 			resourceId = `${parsed.data.entryRef}/${parsed.data.reason}`;
+		} else if (
+			parsed.data.operation === 'evidenceUnavailable.upsert'
+			|| parsed.data.operation === 'evidenceUnavailable.delete'
+		) {
+			const { data: targetEntry, error: targetError } = await supabase
+				.from('admin_finance_expenses')
+				.select('entry_type, deleted_at')
+				.eq('id', parsed.data.expenseId)
+				.is('deleted_at', null)
+				.maybeSingle();
+			if (targetError) throw targetError;
+			if (!targetEntry) {
+				return NextResponse.json({ error: '取引が見つかりません。' }, { status: 404 });
+			}
+			if (targetEntry.entry_type !== 'income') {
+				return NextResponse.json(
+					{ error: '証憑添付不可は手動登録の収入取引だけに記録できます。' },
+					{ status: 400 },
+				);
+			}
+
+			if (parsed.data.operation === 'evidenceUnavailable.upsert') {
+				const now = new Date().toISOString();
+				const { error } = await supabase
+					.from('admin_finance_evidence_unavailable_records')
+					.upsert(
+						{
+							entry_id: parsed.data.expenseId,
+							reason: parsed.data.reason,
+							note: parsed.data.note || null,
+							recorded_at: now,
+							recorded_by: authz.userId,
+							updated_at: now,
+							updated_by: authz.userId,
+						},
+						{ onConflict: 'entry_id' },
+					);
+				if (error) throw error;
+			} else {
+				const { error } = await supabase
+					.from('admin_finance_evidence_unavailable_records')
+					.delete()
+					.eq('entry_id', parsed.data.expenseId);
+				if (error) throw error;
+			}
+			resourceId = String(parsed.data.expenseId);
 		} else if (parsed.data.operation === 'receipt.attach') {
 			// 証憑のメタデータ登録。ファイル本体は Storage へ別途アップロード済み。
 			const receipt = parsed.data.receipt;

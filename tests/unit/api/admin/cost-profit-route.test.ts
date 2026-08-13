@@ -83,6 +83,14 @@ function createFinanceSupabaseMock() {
 						memo: '',
 						season_key: null,
 						admin_finance_receipts: [],
+						admin_finance_evidence_unavailable_records: {
+							reason: 'bank_history_expired',
+							note: '銀行へ照会したが取得できず',
+							recorded_at: '2026-08-14T01:00:00.000Z',
+							recorded_by: 'admin-id',
+							updated_at: '2026-08-14T01:00:00.000Z',
+							updated_by: 'admin-id',
+						},
 					},
 				];
 
@@ -223,6 +231,14 @@ describe('GET /api/admin/kpi/cost-profit', () => {
 		expect(body.data.incomes).toHaveLength(2);
 		expect(body.data.incomes[0].item).toBe('オンライン販売');
 		expect(body.data.incomes[0].entryType).toBe('income');
+		expect(body.data.incomes[0].evidenceUnavailable).toEqual({
+			reason: 'bank_history_expired',
+			note: '銀行へ照会したが取得できず',
+			recordedAt: '2026-08-14T01:00:00.000Z',
+			recordedBy: 'admin-id',
+			updatedAt: '2026-08-14T01:00:00.000Z',
+			updatedBy: 'admin-id',
+		});
 		expect(body.data.incomes[1]).toEqual(expect.objectContaining({
 			entryType: 'income',
 			category: '売上高',
@@ -570,6 +586,136 @@ describe('POST /api/admin/kpi/cost-profit', () => {
 
 // FREQ-260: 固定資産と購入取引の連携。
 // 取得価額・取得日は取引が単一の情報源で、台帳はサーバー側で取引に追随させる。
+describe('POST /api/admin/kpi/cost-profit（証憑添付不可）', () => {
+	beforeEach(() => {
+		jest.clearAllMocks();
+		authorizeMock.mockResolvedValue(ADMIN);
+	});
+
+	it('手動収入へ証憑添付不可の理由を保存する', async () => {
+		const upsert = jest.fn().mockResolvedValue({ error: null });
+		const from = jest.fn((table: string) => {
+			if (table === 'admin_finance_expenses') {
+				return {
+					select: () => ({
+						eq: () => ({
+							is: () => ({
+								maybeSingle: () => Promise.resolve({
+									data: { entry_type: 'income', deleted_at: null },
+									error: null,
+								}),
+							}),
+						}),
+					}),
+				};
+			}
+			return { upsert };
+		});
+		createServiceMock.mockResolvedValueOnce({ from } as never);
+
+		const response = await POST(new Request('http://localhost/api/admin/kpi/cost-profit', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				operation: 'evidenceUnavailable.upsert',
+				expenseId: 2,
+				reason: 'bank_history_expired',
+				note: '銀行へ過去明細を照会したが取得できず',
+			}),
+		}));
+
+		expect(response.status).toBe(200);
+		expect(upsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				entry_id: 2,
+				reason: 'bank_history_expired',
+				note: '銀行へ過去明細を照会したが取得できず',
+				recorded_by: 'admin-id',
+				updated_by: 'admin-id',
+			}),
+			{ onConflict: 'entry_id' },
+		);
+	});
+
+	it('銀行の閲覧期限超過は補足メモなしで保存できない', async () => {
+		const response = await POST(new Request('http://localhost/api/admin/kpi/cost-profit', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				operation: 'evidenceUnavailable.upsert',
+				expenseId: 2,
+				reason: 'bank_history_expired',
+				note: '',
+			}),
+		}));
+
+		expect(response.status).toBe(400);
+	});
+
+	it('支出には証憑添付不可を保存できない', async () => {
+		const from = jest.fn(() => ({
+			select: () => ({
+				eq: () => ({
+					is: () => ({
+						maybeSingle: () => Promise.resolve({
+							data: { entry_type: 'expense', deleted_at: null },
+							error: null,
+						}),
+					}),
+				}),
+			}),
+		}));
+		createServiceMock.mockResolvedValueOnce({ from } as never);
+
+		const response = await POST(new Request('http://localhost/api/admin/kpi/cost-profit', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				operation: 'evidenceUnavailable.upsert',
+				expenseId: 1,
+				reason: 'not_issued',
+				note: '',
+			}),
+		}));
+
+		expect(response.status).toBe(400);
+	});
+
+	it('証憑添付不可の記録を解除する', async () => {
+		const removeEq = jest.fn().mockResolvedValue({ error: null });
+		const from = jest.fn((table: string) => {
+			if (table === 'admin_finance_expenses') {
+				return {
+					select: () => ({
+						eq: () => ({
+							is: () => ({
+								maybeSingle: () => Promise.resolve({
+									data: { entry_type: 'income', deleted_at: null },
+									error: null,
+								}),
+							}),
+						}),
+					}),
+				};
+			}
+			return { delete: () => ({ eq: removeEq }) };
+		});
+		createServiceMock.mockResolvedValueOnce({ from } as never);
+
+		const response = await POST(new Request('http://localhost/api/admin/kpi/cost-profit', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				operation: 'evidenceUnavailable.delete',
+				expenseId: 2,
+			}),
+		}));
+
+		expect(response.status).toBe(200);
+		expect(removeEq).toHaveBeenCalledWith('entry_id', 2);
+	});
+});
+
 describe('POST /api/admin/kpi/cost-profit（固定資産の取引連携）', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
