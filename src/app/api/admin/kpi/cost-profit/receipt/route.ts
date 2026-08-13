@@ -163,12 +163,18 @@ export async function POST(request: Request) {
 			&& 'rotatedCsrfToken' in csrfResult
 			&& typeof csrfResult.rotatedCsrfToken === 'string'
 		) {
-			const { csrfCookieName, csrfCookieMaxAgeSeconds, cookieOptionsForCsrf } = await import('@/lib/cookie');
-			response.cookies.set({
-				name: csrfCookieName,
-				value: csrfResult.rotatedCsrfToken,
-				...cookieOptionsForCsrf(csrfCookieMaxAgeSeconds),
-			});
+			try {
+				const { csrfCookieName, csrfCookieMaxAgeSeconds, cookieOptionsForCsrf } = await import('@/lib/cookie');
+				response.cookies.set({
+					name: csrfCookieName,
+					value: csrfResult.rotatedCsrfToken,
+					...cookieOptionsForCsrf(csrfCookieMaxAgeSeconds),
+				});
+			} catch (cookieError) {
+				// Storage とメタデータは既に確定済み。レスポンス Cookie の後処理を
+				// アップロード失敗として返すと、ユーザーの再送で証憑が重複する。
+				console.error('Failed to attach rotated CSRF cookie after receipt upload:', cookieError);
+			}
 		}
 
 		return response;

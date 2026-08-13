@@ -44,6 +44,7 @@ export const INCOME_PAYMENT_METHODS = [
 // 「賃倒引当金」「借受金」は財務.md の表記ゆれ（正: 貸倒引当金 / 仮受金）。
 const ACCOUNT_NAME_BY_METHOD: Record<string, string> = {
   クレジットカード: "未払金",
+  Stripe: "クレジット売掛金",
   銀行: "普通預金",
   借入金: "短期借入金",
   賃倒引当金: "貸倒引当金",

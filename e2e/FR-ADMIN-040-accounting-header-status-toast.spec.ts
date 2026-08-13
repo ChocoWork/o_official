@@ -176,9 +176,8 @@ for (const viewport of viewports) {
       failMutations = true;
 
       await page.getByRole('tab', { name: '取引管理' }).click();
-      // FREQ-257 以降、削除は行から開く訂正 Drawer の中にある。
-      await page.getByRole('button', { name: `${EXPENSES[0].item}を訂正` }).click();
       await page.getByRole('button', { name: `${EXPENSES[0].item}を削除` }).click();
+      await page.getByRole('button', { name: '削除を確定' }).click();
 
       const toast = page.getByTestId('finance-toast');
       await expect(toast).toBeVisible();
@@ -199,9 +198,8 @@ for (const viewport of viewports) {
       failMutations = true;
 
       await page.getByRole('tab', { name: '取引管理' }).click();
-      // FREQ-257 以降、削除は行から開く訂正 Drawer の中にある。
-      await page.getByRole('button', { name: `${EXPENSES[0].item}を訂正` }).click();
       await page.getByRole('button', { name: `${EXPENSES[0].item}を削除` }).click();
+      await page.getByRole('button', { name: '削除を確定' }).click();
 
       const toast = page.getByTestId('finance-toast');
       await expect(toast).toBeVisible();

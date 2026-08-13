@@ -1,6 +1,6 @@
 // File: src/components/ui/TextField/TextField.tsx
 import "@/components/ui/TextField/TextField.css";
-import { cn } from "@/lib/utils";
+import { clsx } from "clsx";
 import type { TextFieldProps } from "@/components/ui/TextField/TextField_type";
 
 export function TextField({
@@ -55,7 +55,7 @@ export function TextField({
           id={fieldId}
           aria-describedby={describedBy}
           aria-invalid={errorText ? true : undefined}
-          className={cn("text-field__input", className)}
+          className={clsx("text-field__input", className)}
           {...props}
         />
         {trailingIcon ? (

@@ -21,8 +21,8 @@
     var(--field-font-size) / (var(--phi) * var(--phi) * var(--phi))
   );
 
-  /* 角丸は font / φ。枠線は 1px 固定（TextField と統一）*/
-  --field-radius: calc(var(--field-font-size) / var(--phi));
+  /* rounded は Button / SingleSelect / Panel と同じ 8px トークンで統一する。 */
+  --field-radius: var(--radius-md);
   --field-border-width: 1px;
 
   /* 行の高さ（対比：本文より広めにとって複数行の可読性を確保）*/

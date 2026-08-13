@@ -25,6 +25,7 @@ describe('CSRF middleware', () => {
     headers.mockReturnValue({ get: jest.fn().mockReturnValue(undefined) });
     const res = await requireCsrfOrDeny();
     expect(res.status).toBe(403);
+    expect(res._body).toEqual({ error: 'Forbidden', reason: 'CSRF validation failed' });
   });
 
   test('header mismatched vs stored -> 403', async () => {
@@ -38,22 +39,21 @@ describe('CSRF middleware', () => {
 
     const res = await requireCsrfOrDeny();
     expect(res.status).toBe(403);
+    expect(res._body).toEqual({ error: 'Forbidden', reason: 'CSRF validation failed' });
   });
 
-  test('header matches stored -> allowed', async () => {
+  test('header matches stored -> allowed without rotating the stored hash', async () => {
     cookies.mockReturnValue({ get: jest.fn().mockReturnValue({ value: 'rtok' }) });
     headers.mockReturnValue({ get: jest.fn().mockReturnValue('header-token') });
     const storedHash = await tokenHashSha256('header-token');
     const maybeSingle = jest.fn().mockResolvedValue({ data: { csrf_token_hash: storedHash } });
     const eqSelect = jest.fn().mockReturnValue({ maybeSingle });
     const select = jest.fn().mockReturnValue({ eq: eqSelect });
-    const eqUpdate = jest.fn().mockResolvedValue({});
-    const update = jest.fn().mockReturnValue({ eq: eqUpdate });
+    const update = jest.fn();
     createServiceRoleClient.mockReturnValue({ from: jest.fn().mockReturnValue({ select, update }) });
 
-    const res: any = await requireCsrfOrDeny();
-    // When CSRF verification succeeds, the middleware rotates the token
-    expect(res).toBeDefined();
-    expect(res.rotatedCsrfToken).toBeDefined();
+    const res = await requireCsrfOrDeny();
+    expect(res).toBeUndefined();
+    expect(update).not.toHaveBeenCalled();
   });
 });

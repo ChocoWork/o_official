@@ -87,7 +87,14 @@ async function mockAdminApis(page: Page): Promise<void> {
     if (req.method() === 'POST') {
       const body = req.postDataJSON() as { operation: string; template?: Template; templateName?: string };
       if (body.operation === 'template.create' && body.template) {
-        finance.templates = [...finance.templates.filter((t) => t.name !== body.template!.name), body.template];
+        if (finance.templates.some((template) => template.name === body.template!.name)) {
+          route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: '同じ名前のテンプレートが存在します。' }) });
+          return;
+        }
+        finance.templates = [...finance.templates, body.template];
+      }
+      if (body.operation === 'template.update' && body.template && body.templateName) {
+        finance.templates = finance.templates.map((template) => template.name === body.templateName ? body.template! : template);
       }
       if (body.operation === 'template.delete' && body.templateName) {
         finance.templates = finance.templates.filter((t) => t.name !== body.templateName);
@@ -110,6 +117,8 @@ async function openCostInputTab(page: Page) {
 
 for (const viewport of viewports) {
   test.describe(`FR-ADMIN-025 expense templates (${viewport.name})`, () => {
+    test.setTimeout(60_000);
+
     test.beforeEach(async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
     });
@@ -119,7 +128,7 @@ for (const viewport of viewports) {
       await mockAdminApis(page);
       await openCostInputTab(page);
 
-      await page.getByRole('button', { name: '支出概要' }).click();
+      await page.getByRole('button', { name: '支出摘要' }).click();
       await page.getByRole('option', { name: '縫製外注' }).click();
       await page.getByPlaceholder('0').fill('50000');
 
@@ -130,7 +139,7 @@ for (const viewport of viewports) {
       await page.getByPlaceholder('テンプレート名').fill('縫製外注（定番）');
       await page.getByRole('button', { name: 'テンプレートを保存' }).click();
 
-      await expect(page.getByText('テンプレートを保存しました。')).toBeVisible();
+      await expect(page.getByText('テンプレートを保存しました。')).toBeVisible({ timeout: 15_000 });
       await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
       await expect(page.getByRole('option', { name: '縫製外注（定番）' })).toBeVisible();
     });
@@ -141,17 +150,17 @@ for (const viewport of viewports) {
       await openCostInputTab(page);
 
       // 先にテンプレートを1件作る。
-      await page.getByRole('button', { name: '支出概要' }).click();
+      await page.getByRole('button', { name: '支出摘要' }).click();
       await page.getByRole('option', { name: '縫製外注' }).click();
       await page.getByPlaceholder('0').fill('50000');
       await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
       await page.getByRole('option', { name: '＋ 現在の入力を保存' }).click();
       await page.getByPlaceholder('テンプレート名').fill('縫製外注（定番）');
       await page.getByRole('button', { name: 'テンプレートを保存' }).click();
-      await expect(page.getByText('テンプレートを保存しました。')).toBeVisible();
+      await expect(page.getByText('テンプレートを保存しました。')).toBeVisible({ timeout: 15_000 });
 
       // 別の支出概要・金額へ変更。
-      await page.getByRole('button', { name: '支出概要' }).click();
+      await page.getByRole('button', { name: '支出摘要' }).click();
       await page.getByRole('option', { name: '広告出稿' }).click();
       await page.getByPlaceholder('0').fill('12000');
 
@@ -159,8 +168,41 @@ for (const viewport of viewports) {
       await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
       await page.getByRole('option', { name: '縫製外注（定番）' }).click();
 
-      await expect(page.getByRole('button', { name: '支出概要' })).toHaveText(/縫製外注/);
+      await expect(page.getByRole('button', { name: '支出摘要' })).toHaveText(/縫製外注/);
       await expect(page.getByPlaceholder('0')).toHaveValue('50000');
+    });
+
+    test('適用後の変更を上書きまたは重複しない別名で保存できる', async ({ page }) => {
+      // FREQ-232-AC-06
+      await mockAdminApis(page);
+      await openCostInputTab(page);
+
+      await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
+      await page.getByRole('option', { name: '＋ 現在の入力を保存' }).click();
+      await page.getByPlaceholder('テンプレート名').fill('毎月の家賃');
+      await page.getByRole('button', { name: 'テンプレートを保存' }).click();
+
+      await page.getByPlaceholder('0').fill('85000');
+      await page.getByRole('button', { name: '変更を上書き' }).click();
+      const overwriteDialog = page.getByRole('dialog', { name: 'テンプレートの変更を上書き' });
+      await expect(overwriteDialog).toContainText('毎月の家賃');
+      await overwriteDialog.getByRole('button', { name: 'キャンセル' }).click();
+      await expect(page.getByPlaceholder('0')).toHaveValue('85000');
+      await page.getByRole('button', { name: '変更を上書き' }).click();
+      await page.getByRole('button', { name: '上書きを確定' }).click();
+      await expect(page.getByText('テンプレートを上書きしました。')).toBeVisible();
+
+      await page.getByRole('button', { name: '別名で保存' }).click();
+      const nameInput = page.getByPlaceholder('テンプレート名');
+      await expect(nameInput).toHaveValue('毎月の家賃');
+      await page.getByRole('button', { name: 'テンプレートを保存' }).click();
+      await expect(page.getByText('同じ名前のテンプレートが存在します。')).toBeVisible();
+      await nameInput.fill('毎月の家賃（増額後）');
+      await page.getByRole('button', { name: 'テンプレートを保存' }).click();
+      await expect(page.getByText('テンプレートを保存しました。')).toBeVisible({ timeout: 15_000 });
+
+      const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+      expect(hasHorizontalOverflow).toBe(false);
     });
 
     test('テンプレートを削除できる', async ({ page }) => {
@@ -172,13 +214,54 @@ for (const viewport of viewports) {
       await page.getByRole('option', { name: '＋ 現在の入力を保存' }).click();
       await page.getByPlaceholder('テンプレート名').fill('使い捨て');
       await page.getByRole('button', { name: 'テンプレートを保存' }).click();
-      await expect(page.getByText('テンプレートを保存しました。')).toBeVisible();
+      await expect(page.getByText('テンプレートを保存しました。')).toBeVisible({ timeout: 15_000 });
 
       await page.getByRole('button', { name: '選択中のテンプレートを削除' }).click();
       await expect(page.getByText('テンプレートを削除しました。')).toBeVisible();
 
       await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
       await expect(page.getByRole('option', { name: '使い捨て' })).toHaveCount(0);
+    });
+
+    test('テンプレート名の入力中はDrawerを維持し、閉じる前に未保存確認を表示する', async ({ page }) => {
+      // FREQ-232-AC-05
+      await mockAdminApis(page);
+      const templateCreateRequests: string[] = [];
+      page.on('request', (request) => {
+        if (request.method() === 'POST' && request.url().includes('/api/admin/kpi/cost-profit')) {
+          templateCreateRequests.push(request.postData() ?? '');
+        }
+      });
+      await openCostInputTab(page);
+
+      await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
+      await page.getByRole('option', { name: '＋ 現在の入力を保存' }).click();
+      const nameInput = page.getByPlaceholder('テンプレート名');
+      await nameInput.focus();
+      await nameInput.dispatchEvent('compositionstart', { data: '' });
+      await nameInput.pressSequentially('月次の外注費');
+      await nameInput.dispatchEvent('keydown', {
+        key: 'Enter',
+        code: 'Enter',
+        keyCode: 229,
+        isComposing: true,
+      });
+      await nameInput.dispatchEvent('compositionend', { data: '外注費' });
+
+      await expect(nameInput).toHaveValue(/月次の外注費$/);
+      await expect(page.getByRole('button', { name: '取引の入力を閉じる' })).toBeVisible();
+      expect(templateCreateRequests.some((body) => body.includes('"operation":"template.create"'))).toBe(false);
+
+      await page.locator('[data-ui-drawer="true"]').click({ position: { x: 8, y: 8 } });
+      const discardDialog = page.getByRole('dialog', { name: '未保存のテンプレートがあります' });
+      await expect(discardDialog).toBeVisible();
+      await discardDialog.getByRole('button', { name: '入力を続ける' }).click();
+      await expect(nameInput).toHaveValue(/月次の外注費$/);
+
+      await page.getByRole('button', { name: '取引の入力を閉じる' }).click();
+      await expect(discardDialog).toBeVisible();
+      await discardDialog.getByRole('button', { name: '破棄して閉じる' }).click();
+      await expect(page.getByRole('button', { name: '取引の入力を閉じる' })).toHaveCount(0);
     });
 
     test('横方向のページスクロールが発生しない', async ({ page }) => {

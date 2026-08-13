@@ -21,4 +21,6 @@ export type ComponentSize =
 export interface SelectOption {
   value: string;
   label: string;
+  actionLabel?: string;
+  onAction?: () => void;
 }

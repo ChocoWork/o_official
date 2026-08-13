@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import CostProfitSection from '@/components/CostProfitSection';
 
 function setupFinanceFetch(
@@ -11,10 +11,21 @@ function setupFinanceFetch(
 		externalStorageConfigured: false,
 		delayed: true,
 	},
+	deleteFails = false,
+	statusOptions: {
+		businessType?: 'soleProprietor' | 'corporation';
+		revisions?: Array<Record<string, unknown>>;
+		reviewAcks?: Array<Record<string, unknown>>;
+		entryCategory?: string;
+		postError?: { status: number; payload: Record<string, unknown> };
+		cumulativeEntries?: Array<Record<string, unknown>>;
+		expenses?: Array<Record<string, unknown>>;
+		templates?: Array<{ name: string; entryType: string; category: string; item: string; amount: number; paymentMethod: string; memo: string }>;
+	} = {},
 ) {
 	const data = {
 		seasonKey: '2026SS',
-		businessType: 'soleProprietor',
+		businessType: statusOptions.businessType ?? 'soleProprietor',
 		plan: {
 			salesRevenue: 3240000,
 			openingCash: 420000,
@@ -23,12 +34,16 @@ function setupFinanceFetch(
 			accountsPayable: 430000,
 			openingCapital: 1091000,
 		},
-		expenses: [
-			{ id: 1, entryType: 'expense', date: '2026-05-24', category: '販売費・マーケティング', item: 'Instagram広告費', partner: '', amount: 32000, paymentMethod: 'クレジットカード', memo: '広告' },
+		expenses: statusOptions.expenses ?? [
+			{ id: 1, entryType: 'expense', date: '2026-05-24', category: statusOptions.entryCategory ?? '販売費・マーケティング', item: 'Instagram広告費', partner: '', amount: 32000, paymentMethod: 'クレジットカード', memo: '広告' },
 		] as Array<Record<string, unknown>>,
 		incomes,
+		cumulativeEntries: statusOptions.cumulativeEntries ?? [],
 		partners: [] as string[],
-		templates: [] as Array<{ name: string; entryType: string; category: string; item: string; amount: number; paymentMethod: string; memo: string }>,
+		templates: statusOptions.templates ?? [] as Array<{ name: string; entryType: string; category: string; item: string; amount: number; paymentMethod: string; memo: string }>,
+		summaryOptions: [{ id: 11, entryType: 'expense', name: '外注検品', isCustom: true }],
+		revisions: statusOptions.revisions ?? [],
+		reviewAcks: statusOptions.reviewAcks ?? [],
 		products: [
 			{
 				id: 'LFDH-SS26-T001',
@@ -68,6 +83,18 @@ function setupFinanceFetch(
 		}
 		if ((init?.method ?? 'GET') === 'POST') {
 			const body = JSON.parse(String(init?.body ?? '{}'));
+			if (statusOptions.postError) {
+				return new Response(JSON.stringify(statusOptions.postError.payload), {
+					status: statusOptions.postError.status,
+					headers: { 'Content-Type': 'application/json' },
+				});
+			}
+			if (body.operation === 'expense.delete' && deleteFails) {
+				return new Response(JSON.stringify({ error: '商品原価の配賦を解除してください。' }), {
+					status: 409,
+					headers: { 'Content-Type': 'application/json' },
+				});
+			}
 			if (body.operation === 'expense.create') {
 				const entry = { id: 2, ...body.expense };
 				if (body.expense.entryType === 'income') data.incomes.unshift(entry);
@@ -84,10 +111,25 @@ function setupFinanceFetch(
 				if (!data.partners.includes(body.partnerName)) data.partners.push(body.partnerName);
 			}
 			if (body.operation === 'template.create') {
+				if (data.templates.some((template) => template.name === body.template.name)) {
+					return new Response(JSON.stringify({ error: '同じ名前のテンプレートが存在します。' }), {
+						status: 409,
+						headers: { 'Content-Type': 'application/json' },
+					});
+				}
 				data.templates = [...data.templates.filter((t) => t.name !== body.template.name), body.template];
+			}
+			if (body.operation === 'template.update') {
+				data.templates = data.templates.map((template) => template.name === body.templateName ? body.template : template);
 			}
 			if (body.operation === 'template.delete') {
 				data.templates = data.templates.filter((t) => t.name !== body.templateName);
+			}
+			if (body.operation === 'summaryOption.create') {
+				data.summaryOptions.push({ id: 12, entryType: body.entryType, name: body.name.trim(), isCustom: true });
+			}
+			if (body.operation === 'summaryOption.delete') {
+				data.summaryOptions = data.summaryOptions.filter((option) => option.id !== body.summaryOptionId);
 			}
 			return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 		}
@@ -105,6 +147,31 @@ describe('CostProfitSection', () => {
 
 	beforeEach(() => {
 		setupFinanceFetch();
+	});
+
+	it('財務概要で借入先別と支払先別の累計・決済・残高を確認できる', async () => {
+		const loan = { id: 10, entryType: 'income', date: '2026-03-01', category: '役員借入金', item: '運転資金', partner: '山田太郎', amount: 1_000_000, paymentMethod: '銀行', memo: '' };
+		const repayment = { id: 11, entryType: 'expense', date: '2026-08-01', category: '役員借入金', item: '一部返済', partner: '山田太郎', amount: 300_000, paymentMethod: '銀行', memo: '' };
+		const payable = { id: 12, entryType: 'expense', date: '2026-07-01', category: '仕入高', item: '生地仕入', partner: '生地商店', amount: 120_000, paymentMethod: '買掛金', memo: '' };
+		setupFinanceFetch([loan], undefined, false, {
+			businessType: 'corporation',
+			expenses: [repayment, payable],
+			cumulativeEntries: [loan, repayment, payable],
+		});
+
+		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+
+		const funding = screen.getByRole('region', { name: '借入・事業主資金' });
+		expect(within(funding).getByRole('table', { name: '借入・事業主資金' })).toBeInTheDocument();
+		expect(within(funding).getByText('山田太郎')).toBeInTheDocument();
+		expect(within(funding).getAllByText('¥1,000,000').length).toBeGreaterThan(0);
+		expect(within(funding).getAllByText('¥300,000').length).toBeGreaterThan(0);
+		expect(within(funding).getAllByText('¥700,000').length).toBeGreaterThan(0);
+
+		const payables = screen.getByRole('region', { name: 'その他の支払債務' });
+		expect(within(payables).getByText('生地商店')).toBeInTheDocument();
+		expect(within(payables).getAllByText('買掛金').length).toBeGreaterThan(0);
 	});
 
 	it('orders由来の収入を連携済みとして表示し、訂正操作を提供しない', async () => {
@@ -135,6 +202,124 @@ describe('CostProfitSection', () => {
 		expect(screen.getByRole('tab', { name: '証憑未添付（1）' })).toBeInTheDocument();
 		expect(screen.queryByRole('button', { name: 'オンライン注文の証憑' })).not.toBeInTheDocument();
 		expect(screen.queryByRole('button', { name: 'オンライン注文を訂正' })).not.toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: 'オンライン注文を編集' })).not.toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: 'オンライン注文を削除' })).not.toBeInTheDocument();
+	});
+
+	it('摘要プルダウンの先頭から共有候補を追加できる', async () => {
+		const fetchMock = setupFinanceFetch();
+		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		fireEvent.click(await screen.findByRole('tab', { name: '取引管理' }));
+		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
+
+		const summary = screen.getByRole('button', { name: '支出摘要' });
+		fireEvent.click(summary);
+		const options = screen.getAllByRole('option');
+		expect(options[0]).toHaveTextContent('＋ 新しい項目を追加');
+		fireEvent.click(options[0]);
+		fireEvent.change(screen.getByRole('textbox', { name: '新しい支出摘要' }), { target: { value: ' 撮影立会費 ' } });
+		fireEvent.click(screen.getByRole('button', { name: '支出摘要を保存' }));
+
+		expect(await screen.findByRole('button', { name: '支出摘要' })).toHaveTextContent('撮影立会費');
+		expect(fetchMock).toHaveBeenCalledWith(
+			'/api/admin/kpi/cost-profit',
+			expect.objectContaining({ body: expect.stringContaining('summaryOption.create') }),
+		);
+	});
+
+	it('ユーザー追加摘要には削除アクションを表示する', async () => {
+		setupFinanceFetch();
+		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		fireEvent.click(await screen.findByRole('tab', { name: '取引管理' }));
+		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
+		fireEvent.click(screen.getByRole('button', { name: '支出摘要' }));
+
+		expect(screen.getByRole('button', { name: '外注検品を削除' })).toBeInTheDocument();
+	});
+
+	it('手動取引の操作列から編集Drawerを開く', async () => {
+		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
+
+		expect(screen.getByRole('columnheader', { name: '操作' })).toBeInTheDocument();
+		expect(screen.getByText('Instagram広告費').closest('button')).toBeNull();
+		fireEvent.click(screen.getByRole('button', { name: 'Instagram広告費を編集' }));
+
+		const drawerHeading = await screen.findByRole('heading', { name: '支出を訂正（#1）' });
+		expect(drawerHeading).toBeInTheDocument();
+		expect(
+			drawerHeading.closest('[data-ui-drawer]')?.querySelector('[aria-label="Instagram広告費を削除"]'),
+		).toBeNull();
+	});
+
+	it('削除アイコンは確認後にだけ取引を論理削除する', async () => {
+		const mockFetch = setupFinanceFetch();
+		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
+
+		fireEvent.click(screen.getByRole('button', { name: 'Instagram広告費を削除' }));
+		expect(screen.getByRole('dialog', { name: '取引を削除' })).toHaveTextContent('Instagram広告費');
+		expect(mockFetch).not.toHaveBeenCalledWith(
+			'/api/admin/kpi/cost-profit',
+			expect.objectContaining({ method: 'POST', body: expect.stringContaining('"operation":"expense.delete"') }),
+		);
+
+		fireEvent.click(screen.getByRole('button', { name: '削除を確定' }));
+		await waitFor(() => expect(screen.queryByText('Instagram広告費')).not.toBeInTheDocument());
+		expect(mockFetch).toHaveBeenCalledWith(
+			'/api/admin/kpi/cost-profit',
+			expect.objectContaining({ method: 'POST', body: expect.stringContaining('"operation":"expense.delete"') }),
+		);
+	});
+
+	it('削除確認をキャンセルすると取引を残す', async () => {
+		const mockFetch = setupFinanceFetch();
+		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
+
+		fireEvent.click(screen.getByRole('button', { name: 'Instagram広告費を削除' }));
+		fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }));
+
+		expect(screen.getByRole('button', { name: 'Instagram広告費を編集' })).toBeInTheDocument();
+		expect(screen.queryByRole('dialog', { name: '取引を削除' })).not.toBeInTheDocument();
+		expect(mockFetch).not.toHaveBeenCalledWith(
+			'/api/admin/kpi/cost-profit',
+			expect.objectContaining({ method: 'POST', body: expect.stringContaining('"operation":"expense.delete"') }),
+		);
+	});
+
+	it('削除確認はキーボードフォーカスを管理する', async () => {
+		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
+		const deleteButton = screen.getByRole('button', { name: 'Instagram広告費を削除' });
+
+		deleteButton.focus();
+		fireEvent.click(deleteButton);
+		await waitFor(() => expect(screen.getByRole('button', { name: '削除を確定' })).toHaveFocus());
+		fireEvent.keyDown(document, { key: 'Escape' });
+
+		await waitFor(() => expect(deleteButton).toHaveFocus());
+	});
+
+	it('削除に失敗すると行を復元して確認ダイアログに理由を表示する', async () => {
+		setupFinanceFetch([], undefined, true);
+		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
+
+		fireEvent.click(screen.getByRole('button', { name: 'Instagram広告費を削除' }));
+		fireEvent.click(screen.getByRole('button', { name: '削除を確定' }));
+
+		const deleteDialog = await screen.findByRole('dialog', { name: '取引を削除' });
+		await waitFor(() =>
+			expect(deleteDialog.querySelector('[role="alert"]')).toHaveTextContent('商品原価の配賦を解除してください。'),
+		);
+		expect(screen.getByRole('button', { name: 'Instagram広告費を編集' })).toBeInTheDocument();
+		expect(deleteDialog).toBeInTheDocument();
 	});
 
 	it('アーカイブの準備状態と外部保存先の未設定を表示する', async () => {
@@ -180,7 +365,7 @@ describe('CostProfitSection', () => {
 		// FREQ-257 以降、取引の入力欄は「新規取引」Drawer の中にある。
 		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
 		// 支出概要は黄金比UIの SingleSelect（dropdown）。トリガーを開いて選択肢を押す。
-		fireEvent.click(screen.getByRole('button', { name: '支出概要' }));
+		fireEvent.click(screen.getByRole('button', { name: '支出摘要' }));
 		fireEvent.click(screen.getByRole('option', { name: '展示会・イベント' }));
 		fireEvent.click(screen.getByRole('button', { name: '勘定科目' }));
 		fireEvent.click(screen.getByRole('option', { name: '経費 / 広告宣伝費' }));
@@ -222,7 +407,7 @@ describe('CostProfitSection', () => {
 		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
 
 		// 支出概要と金額を入力してからテンプレート保存。
-		fireEvent.click(screen.getByRole('button', { name: '支出概要' }));
+		fireEvent.click(screen.getByRole('button', { name: '支出摘要' }));
 		fireEvent.click(screen.getByRole('option', { name: '縫製外注' }));
 		fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '50000' } });
 
@@ -232,20 +417,187 @@ describe('CostProfitSection', () => {
 		// 名前の初期値は「支出概要 / 金額」。
 		const nameInput = screen.getByPlaceholderText('テンプレート名') as HTMLInputElement;
 		expect(nameInput.value).toBe('縫製外注 / ¥50,000');
+		fireEvent.compositionStart(nameInput);
 		fireEvent.change(nameInput, { target: { value: '縫製外注（定番）' } });
+		fireEvent.keyDown(nameInput, { key: 'Enter', code: 'Enter', keyCode: 229, isComposing: true });
+		fireEvent.compositionEnd(nameInput, { data: '定番' });
+
+		expect(screen.getByPlaceholderText('テンプレート名')).toHaveValue('縫製外注（定番）');
+		expect(screen.getByRole('button', { name: 'テンプレートを保存' })).toBeVisible();
 		fireEvent.click(screen.getByRole('button', { name: 'テンプレートを保存' }));
 
 		expect(await screen.findByText('テンプレートを保存しました。')).toBeInTheDocument();
 
 		// 別の支出概要へ変更してから、テンプレートを選び直すと支出概要・金額が戻る。
-		fireEvent.click(screen.getByRole('button', { name: '支出概要' }));
+		fireEvent.click(screen.getByRole('button', { name: '支出摘要' }));
 		fireEvent.click(screen.getByRole('option', { name: '広告出稿' }));
 
 		fireEvent.click(screen.getByRole('button', { name: 'テンプレート' }));
 		fireEvent.click(await screen.findByRole('option', { name: '縫製外注（定番）' }));
 
-		expect(screen.getByRole('button', { name: '支出概要' })).toHaveTextContent('縫製外注');
+		expect(screen.getByRole('button', { name: '支出摘要' })).toHaveTextContent('縫製外注');
 		expect((screen.getByPlaceholderText('0') as HTMLInputElement).value).toBe('50000');
+	});
+
+	it('テンプレート名の未保存中は閉じる前に確認し、入力を保持または破棄できる', async () => {
+		const mockFetch = setupFinanceFetch();
+		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+
+		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
+		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
+		fireEvent.click(screen.getByRole('button', { name: '収入', pressed: false }));
+		fireEvent.click(screen.getByRole('button', { name: 'テンプレート' }));
+		fireEvent.click(screen.getByRole('option', { name: '＋ 現在の入力を保存' }));
+
+		const nameInput = screen.getByPlaceholderText('テンプレート名');
+		fireEvent.compositionStart(nameInput);
+		fireEvent.change(nameInput, { target: { value: '月次の外注費' } });
+		fireEvent.keyDown(nameInput, {
+			key: 'Enter',
+			code: 'Enter',
+			keyCode: 229,
+			isComposing: true,
+		});
+		fireEvent.compositionEnd(nameInput, { data: '外注費' });
+
+		expect(screen.getByPlaceholderText('テンプレート名')).toHaveValue('月次の外注費');
+		expect(
+			mockFetch.mock.calls.some(([, init]) =>
+				String((init as RequestInit | undefined)?.body).includes('"operation":"template.create"'),
+			),
+		).toBe(false);
+
+		fireEvent.click(screen.getByRole('button', { name: '取引の入力を閉じる' }));
+		expect(screen.getByRole('dialog', { name: '未保存のテンプレートがあります' })).toBeInTheDocument();
+		await waitFor(() => expect(screen.getByRole('button', { name: '入力を続ける' })).toHaveFocus());
+		fireEvent.keyDown(document, { key: 'Escape' });
+		await waitFor(() => expect(screen.getByPlaceholderText('テンプレート名')).toHaveFocus());
+		expect(screen.getByPlaceholderText('テンプレート名')).toHaveValue('月次の外注費');
+
+		fireEvent.click(screen.getByRole('button', { name: '取引の入力を閉じる' }));
+		fireEvent.click(screen.getByRole('button', { name: '入力を続ける' }));
+		expect(screen.getByPlaceholderText('テンプレート名')).toHaveValue('月次の外注費');
+
+		const entryDialog = screen.getByRole('dialog');
+		const drawerOverlay = entryDialog.parentElement;
+		expect(drawerOverlay).not.toBeNull();
+		fireEvent.click(drawerOverlay!);
+		expect(screen.getByRole('dialog', { name: '未保存のテンプレートがあります' })).toBeInTheDocument();
+		fireEvent.click(screen.getByRole('button', { name: '入力を続ける' }));
+		expect(screen.getByPlaceholderText('テンプレート名')).toHaveValue('月次の外注費');
+
+		const cancelButtons = screen.getAllByRole('button', { name: '取消' });
+		fireEvent.click(cancelButtons[cancelButtons.length - 1]);
+		expect(screen.getByRole('dialog', { name: '未保存のテンプレートがあります' })).toBeInTheDocument();
+		fireEvent.click(screen.getByRole('button', { name: '破棄して閉じる' }));
+		expect(screen.queryByPlaceholderText('テンプレート名')).not.toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: '取引の入力を閉じる' })).not.toBeInTheDocument();
+	});
+
+	it('選択したテンプレートの変更を確認後に上書きする', async () => {
+		const mockFetch = setupFinanceFetch([], undefined, false, {
+			templates: [{ name: '毎月の家賃', entryType: 'expense', category: '地代家賃', item: '打合せ・交通', amount: 80000, paymentMethod: '銀行', memo: '事務所' }],
+		});
+		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
+		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
+		fireEvent.click(screen.getByRole('button', { name: 'テンプレート' }));
+		fireEvent.click(screen.getByRole('option', { name: '毎月の家賃' }));
+		fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '85000' } });
+
+		fireEvent.click(screen.getByRole('button', { name: '変更を上書き' }));
+		expect(screen.getByRole('dialog', { name: 'テンプレートの変更を上書き' })).toHaveTextContent('毎月の家賃');
+		expect(mockFetch.mock.calls.some(([, init]) => String((init as RequestInit | undefined)?.body).includes('template.update'))).toBe(false);
+
+		fireEvent.click(screen.getByRole('button', { name: '上書きを確定' }));
+		expect(await screen.findByText('テンプレートを上書きしました。')).toBeInTheDocument();
+		expect(mockFetch.mock.calls.some(([, init]) => {
+			const body = String((init as RequestInit | undefined)?.body);
+			return body.includes('template.update') && body.includes('"amount":85000');
+		})).toBe(true);
+	});
+
+	it('上書き確認を取り消すと変更内容を保持する', async () => {
+		setupFinanceFetch([], undefined, false, {
+			templates: [{ name: '毎月の家賃', entryType: 'expense', category: '地代家賃', item: '打合せ・交通', amount: 80000, paymentMethod: '銀行', memo: '事務所' }],
+		});
+		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
+		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
+		fireEvent.click(screen.getByRole('button', { name: 'テンプレート' }));
+		fireEvent.click(screen.getByRole('option', { name: '毎月の家賃' }));
+		fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '85000' } });
+
+		fireEvent.click(screen.getByRole('button', { name: '変更を上書き' }));
+		fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }));
+
+		expect(screen.queryByRole('dialog', { name: 'テンプレートの変更を上書き' })).not.toBeInTheDocument();
+		expect(screen.getByPlaceholderText('0')).toHaveValue(85000);
+	});
+
+	it('選択したテンプレートを別名で保存し、既存名への保存は拒否する', async () => {
+		const mockFetch = setupFinanceFetch([], undefined, false, {
+			templates: [{ name: '毎月の家賃', entryType: 'expense', category: '地代家賃', item: '打合せ・交通', amount: 80000, paymentMethod: '銀行', memo: '事務所' }],
+		});
+		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
+		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
+		fireEvent.click(screen.getByRole('button', { name: 'テンプレート' }));
+		fireEvent.click(screen.getByRole('option', { name: '毎月の家賃' }));
+		fireEvent.click(screen.getByRole('button', { name: '別名で保存' }));
+
+		const nameInput = screen.getByRole('textbox', { name: 'テンプレート名' });
+		expect(nameInput).toHaveValue('毎月の家賃');
+		fireEvent.click(screen.getByRole('button', { name: 'テンプレートを保存' }));
+		expect(await screen.findByText('同じ名前のテンプレートが存在します。')).toBeInTheDocument();
+		expect(mockFetch.mock.calls.filter(([, init]) => String((init as RequestInit | undefined)?.body).includes('template.create'))).toHaveLength(0);
+
+		fireEvent.change(nameInput, { target: { value: '毎月の家賃（増額後）' } });
+		fireEvent.click(screen.getByRole('button', { name: 'テンプレートを保存' }));
+		expect(await screen.findByText('テンプレートを保存しました。')).toBeInTheDocument();
+		expect(mockFetch.mock.calls.some(([, init]) => String((init as RequestInit | undefined)?.body).includes('毎月の家賃（増額後）'))).toBe(true);
+	});
+
+	it.each([
+		[{ status: 403, payload: { reason: 'CSRF validation failed' } }, 'セキュリティ確認に失敗しました。ページを再読み込みして、もう一度保存してください。'],
+		[{ status: 403, payload: { reason: 'MFA required' } }, '保存には2要素認証が必要です。認証画面で2FAを完了してから、もう一度保存してください。'],
+		[{ status: 403, payload: { permission: 'admin.finance.manage' } }, '会計データの保存には財務管理権限が必要です。'],
+	] as const)('取引先登録の403理由に応じた案内を表示する', async (postError, message) => {
+		setupFinanceFetch([], undefined, false, { postError });
+		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
+		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
+		fireEvent.click(screen.getByRole('button', { name: '取引先' }));
+		fireEvent.click(screen.getByRole('option', { name: '＋ 新規登録' }));
+		fireEvent.change(screen.getByPlaceholderText('取引先名を入力'), { target: { value: '新規取引先' } });
+		fireEvent.click(screen.getByRole('button', { name: '登録' }));
+
+		expect(await screen.findByText(message)).toBeInTheDocument();
+	});
+
+	it('テンプレート名の取消では取引Drawerを閉じない', async () => {
+		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+
+		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
+		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
+		fireEvent.click(screen.getByRole('button', { name: 'テンプレート' }));
+		fireEvent.click(screen.getByRole('option', { name: '＋ 現在の入力を保存' }));
+		fireEvent.change(screen.getByPlaceholderText('テンプレート名'), {
+			target: { value: '保存しない名前' },
+		});
+
+		const cancelButtons = screen.getAllByRole('button', { name: '取消' });
+		fireEvent.click(cancelButtons[0]);
+
+		expect(screen.queryByPlaceholderText('テンプレート名')).not.toBeInTheDocument();
+		expect(screen.getByRole('button', { name: '取引の入力を閉じる' })).toBeInTheDocument();
+		expect(screen.queryByRole('dialog', { name: '未保存のテンプレートがあります' })).not.toBeInTheDocument();
 	});
 
 	it('商品原価タブで新しい配賦モデルのシーズン概要を表示する', async () => {
@@ -259,15 +611,14 @@ describe('CostProfitSection', () => {
 		expect(screen.getAllByText('売上見込み')).toHaveLength(2);
 	});
 
-	it('ゴミ箱ボタンで経費をSupabaseから削除する', async () => {
+	it('行末の削除ボタンで経費をSupabaseから削除する', async () => {
 		const mockFetch = setupFinanceFetch();
 		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
-		// FREQ-257 以降、削除は行から開く訂正 Drawer の中にある。
-		fireEvent.click(screen.getByRole('button', { name: 'Instagram広告費を訂正' }));
 		fireEvent.click(screen.getByRole('button', { name: 'Instagram広告費を削除' }));
+		fireEvent.click(screen.getByRole('button', { name: '削除を確定' }));
 
 		await waitFor(() => expect(screen.queryByText('Instagram広告費')).not.toBeInTheDocument());
 		expect(await screen.findByText('支出をSupabaseから削除しました。')).toBeInTheDocument();
@@ -293,8 +644,8 @@ describe('CostProfitSection', () => {
 		fireEvent.click(screen.getByRole('button', { name: '収入', pressed: false }));
 
 		// 収入時は「収入概要」ラベルになり、収入用の選択肢が選べる。
-		expect(screen.getByRole('button', { name: '収入概要' })).toBeInTheDocument();
-		fireEvent.click(screen.getByRole('button', { name: '収入概要' }));
+		expect(screen.getByRole('button', { name: '収入摘要' })).toBeInTheDocument();
+		fireEvent.click(screen.getByRole('button', { name: '収入摘要' }));
 		fireEvent.click(screen.getByRole('option', { name: 'オンライン販売' }));
 		fireEvent.click(screen.getByRole('button', { name: '勘定科目' }));
 		fireEvent.click(screen.getByRole('option', { name: '売上（収入）金額 / 売上高' }));
@@ -311,7 +662,7 @@ describe('CostProfitSection', () => {
 
 		// 統合された一覧に、既存の支出1件と登録した収入1件が並ぶ。
 		expect(await screen.findByText('1-2 / 2件')).toBeInTheDocument();
-		expect(screen.getByRole('button', { name: 'オンライン販売を訂正' })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'オンライン販売を編集' })).toBeInTheDocument();
 	});
 
 	it('テンプレートは支出・収入で別管理される', async () => {
@@ -323,7 +674,7 @@ describe('CostProfitSection', () => {
 		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
 
 		// 支出のテンプレートを1件作る。
-		fireEvent.click(screen.getByRole('button', { name: '支出概要' }));
+		fireEvent.click(screen.getByRole('button', { name: '支出摘要' }));
 		fireEvent.click(screen.getByRole('option', { name: '縫製外注' }));
 		fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '50000' } });
 		fireEvent.click(screen.getByRole('button', { name: 'テンプレート' }));
@@ -342,5 +693,60 @@ describe('CostProfitSection', () => {
 		fireEvent.click(screen.getByRole('button', { name: '収入', pressed: false }));
 		fireEvent.click(screen.getByRole('button', { name: 'テンプレート' }));
 		expect(screen.queryByRole('option', { name: '縫製外注（支出）' })).not.toBeInTheDocument();
+	});
+
+	it('法人の訂正取引は訂正内容を確認するまで要確認になる', async () => {
+		setupFinanceFetch([], undefined, false, {
+			businessType: 'corporation',
+			entryCategory: '広告宣伝費',
+			revisions: [{
+				id: 1,
+				entryId: 1,
+				operation: 'update',
+				before: { date: '2026-05-24', category: '広告宣伝費', item: '広告費', partner: '', amount: '30000' },
+				after: { date: '2026-05-24', category: '販売費・マーケティング', item: 'Instagram広告費', partner: '', amount: '32000' },
+				changedAt: '2026-08-12T00:00:00.000Z',
+			}],
+		});
+		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
+
+		const row = screen.getByText('Instagram広告費').closest('tr');
+		expect(row).not.toBeNull();
+		expect(within(row!).getByText('要確認')).toBeInTheDocument();
+		fireEvent.click(within(row!).getByRole('button', { name: /要確認の理由を開く/ }));
+		expect(screen.getByText('訂正内容の確認')).toBeInTheDocument();
+	});
+
+	it('法人の訂正確認が完了していれば登録済みになる', async () => {
+		setupFinanceFetch([], undefined, false, {
+			businessType: 'corporation',
+			entryCategory: '広告宣伝費',
+			revisions: [{ id: 1, entryId: 1, operation: 'update', before: { date: '2026-05-24', category: '広告宣伝費', item: '広告費', partner: '', amount: '30000' }, after: { date: '2026-05-24', category: '販売費・マーケティング', item: 'Instagram広告費', partner: '', amount: '32000' }, changedAt: '2026-08-12T00:00:00.000Z' }],
+			reviewAcks: [{ entryRef: 'entry:1', reason: 'revisedEntry', note: '', reviewedAt: '2026-08-12T01:00:00.000Z' }],
+		});
+		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
+
+		const row = screen.getByText('Instagram広告費').closest('tr');
+		expect(row).not.toBeNull();
+		expect(within(row!).getByText('登録済み')).toBeInTheDocument();
+	});
+
+	it('個人事業主の訂正取引は他に問題がなければ登録済みになる', async () => {
+		setupFinanceFetch([], undefined, false, {
+			businessType: 'soleProprietor',
+			entryCategory: '広告宣伝費',
+			revisions: [{ id: 1, entryId: 1, operation: 'update', before: { date: '2026-05-24', category: '広告宣伝費', item: '広告費', partner: '', amount: '30000' }, after: { date: '2026-05-24', category: '販売費・マーケティング', item: 'Instagram広告費', partner: '', amount: '32000' }, changedAt: '2026-08-12T00:00:00.000Z' }],
+		});
+		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
+
+		const row = screen.getByText('Instagram広告費').closest('tr');
+		expect(row).not.toBeNull();
+		expect(within(row!).getByText('登録済み')).toBeInTheDocument();
 	});
 });

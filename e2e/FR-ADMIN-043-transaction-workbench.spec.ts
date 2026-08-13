@@ -211,7 +211,22 @@ for (const viewport of viewports) {
       await expect(review).toBeVisible();
       await expect(review).toHaveCSS('color', 'rgb(180, 83, 9)');
 
-      await expect(table.getByText('登録済み', { exact: true }).first()).toBeVisible();
+      const reviewButton = table
+        .getByRole('button', { name: /の要確認の理由を開く（未確認\d+件）/ })
+        .first();
+      const registered = table.getByText('登録済み', { exact: true }).first();
+      await expect(reviewButton).toHaveText(/^要確認$/);
+      await expect(registered).toBeVisible();
+
+      const reviewBox = await review.boundingBox();
+      const registeredBox = await registered.boundingBox();
+      expect(reviewBox?.width).toBe(registeredBox?.width);
+      expect(reviewBox?.x).toBe(registeredBox?.x);
+      await expect(review).toHaveCSS('white-space', 'nowrap');
+      await expect(registered).toHaveCSS('white-space', 'nowrap');
+      expect(
+        await registered.evaluate((badge) => badge.scrollWidth <= badge.clientWidth),
+      ).toBe(true);
     });
 
     test('サマリー3枚が角丸8pxの白い面で並ぶ', async ({ page }) => {
@@ -289,8 +304,60 @@ for (const viewport of viewports) {
       await expect(page.getByLabel('取引日')).toBeVisible();
       await page.getByRole('button', { name: '取引の入力を閉じる' }).click();
 
-      await page.getByRole('button', { name: '広告出稿を訂正' }).click();
+      await page.getByRole('button', { name: '広告出稿を編集' }).click();
       await expect(page.getByRole('heading', { name: '支出を訂正（#1）' })).toBeVisible();
+    });
+
+    test('行末の操作列から削除確認を開き、キャンセルと確定を選べる', async ({ page }) => {
+      // FREQ-257-AC-10
+      await openEntries(page);
+
+      const table = page.getByLabel('取引一覧');
+      await expect(table.getByRole('columnheader', { name: '操作' })).toBeVisible();
+      await page.getByRole('button', { name: '広告出稿を削除' }).click();
+      const dialog = page.getByRole('dialog', { name: '取引を削除' });
+      await expect(dialog).toContainText('広告出稿 / A社');
+      await expect(dialog).toContainText('¥10,000');
+      await dialog.getByRole('button', { name: 'キャンセル' }).click();
+      await expect(dialog).toBeHidden();
+
+      await page.getByRole('button', { name: '広告出稿を削除' }).click();
+      await dialog.getByRole('button', { name: '削除を確定' }).click();
+      await expect(page.getByText('支出をSupabaseから削除しました。')).toBeVisible();
+    });
+
+    test('新規取引フォームは既存UIコンポーネントの角丸を使う', async ({ page }) => {
+      // FREQ-257-AC-06
+      await openEntries(page);
+      await page.getByRole('button', { name: '新規取引' }).click();
+
+      const drawer = page
+        .locator('[data-ui-drawer]')
+        .filter({ has: page.getByRole('heading', { name: '新規支出を登録' }) });
+      await expect(drawer).toHaveAttribute('data-ui-drawer-shape', 'rounded');
+      await expect(
+        drawer
+          .getByRole('button', { name: '事業形態' })
+          .locator('xpath=ancestor::*[@data-ui-single-select][1]'),
+      ).toHaveAttribute('data-ui-single-select-shape', 'rounded');
+      await expect(drawer.getByLabel('取引日').locator('..').locator('..')).toHaveAttribute(
+        'data-ui-text-field-shape',
+        'rounded',
+      );
+      await expect(drawer.getByLabel('取引日')).toHaveCSS('border-radius', '8px');
+      await expect(drawer.getByLabel(/^金額/)).toHaveCSS('border-radius', '8px');
+      await expect(drawer.getByPlaceholder('任意のメモを入力')).toHaveCSS(
+        'border-radius',
+        '8px',
+      );
+      await expect(drawer.getByRole('button', { name: '取消', exact: true })).toHaveAttribute(
+        'data-ui-button-shape',
+        'rounded',
+      );
+      await expect(drawer.getByRole('button', { name: '保存', exact: true })).toHaveAttribute(
+        'data-ui-button-shape',
+        'rounded',
+      );
     });
 
     test('証憑はドラッグ＆ドロップとクリック選択の両方で追加できる', async ({ page }) => {
@@ -363,12 +430,15 @@ test.describe('FR-ADMIN-043 screenshot', () => {
       });
 
       // 表の列が面からはみ出さない（横スクロールで隠れない）こと。
-      const fits = await page.evaluate(() => {
-        const container = document.querySelector('[data-ui-data-table]');
-        if (!container) return false;
-        return container.scrollWidth <= container.clientWidth + 1;
+      const dimensions = await page.evaluate(() => {
+        const container = document.querySelector(
+          '[aria-label="取引一覧"] [data-ui-data-table]',
+        );
+        if (!container) return null;
+        return { clientWidth: container.clientWidth, scrollWidth: container.scrollWidth };
       });
-      expect(fits).toBe(true);
+      expect(dimensions).not.toBeNull();
+      expect(dimensions!.scrollWidth).toBeLessThanOrEqual(dimensions!.clientWidth + 1);
     });
   }
 });

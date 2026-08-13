@@ -306,6 +306,11 @@
   white-space: pre-line;
 }
 
+.single-select__option-row { display: flex; align-items: stretch; }
+.single-select__option-row .single-select__option { flex: 1; width: auto; }
+.single-select__option-action { border: 0; background: transparent; color: #707070; padding: 0 12px; cursor: pointer; }
+.single-select__option-action:hover { background: var(--ss-bg-hover); color: #b91c1c; }
+
 .single-select__option:hover {
   background: var(--ss-bg-hover);
 }

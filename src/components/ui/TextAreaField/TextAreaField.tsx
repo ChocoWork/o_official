@@ -1,6 +1,6 @@
 // File: src/components/ui/TextAreaField/TextAreaField.tsx
 import "@/components/ui/TextAreaField/TextAreaField.css";
-import { cn } from "@/lib/utils";
+import { clsx } from "clsx";
 import type { TextAreaFieldProps } from "@/components/ui/TextAreaField/TextAreaField_type";
 
 export function TextAreaField({
@@ -42,7 +42,7 @@ export function TextAreaField({
         rows={rows}
         aria-describedby={describedBy}
         aria-invalid={errorText ? true : undefined}
-        className={cn("text-area-field__input", className)}
+        className={clsx("text-area-field__input", className)}
         {...props}
       />
       {errorText ? (

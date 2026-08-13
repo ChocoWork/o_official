@@ -14,6 +14,8 @@
 
 - `FREQ-232-REQ-04`: 収入・支出のテンプレート名入力中は、文字入力、IME 変換、Enter による文字確定で取引 Drawer またはテンプレート名欄を閉じない。保存前に背景、右上の閉じる、取引 Drawer 下部の取消から離脱しようとした場合は、未保存確認 Dialog を表示する。
 - `FREQ-232-AC-05`: mobile（390px）/ tablet（768px）/ desktop（1280px）で、日本語を含むテンプレート名を入力しても `template.create` は送信されず入力が保持される。「入力を続ける」では Drawer と入力値を維持し、「破棄して閉じる」でのみ取引 Drawer を閉じる。テンプレート名欄の「取消」は名前入力だけを終了し、取引 Drawer は閉じない。
+- `FREQ-232-REQ-05`: 新規取引または既存取引の編集で保存済みテンプレートを適用した後、変更したフォーム内容を「変更を上書き」で同じテンプレートへ保存、または「別名で保存」で新しいテンプレートとして保存できること。上書きは対象名を示す確認 Dialog で確定してから実行する。別名保存で既存名を指定した場合は既存内容を変更せず、「同じ名前のテンプレートが存在します。」と表示する。
+- `FREQ-232-AC-06`: mobile（390px）/ tablet（768px）/ desktop（1280px）で、保存済みテンプレート適用後に金額等を変更し、上書き確認の取消では入力値が保持され、確定では `template.update` が送信されること。「別名で保存」は元の名前を初期表示し、同名では `template.create` を送信せず重複エラーを表示し、異なる名前では新規保存できること。
 
 ### FREQ-257 取引管理・操作列の追加
 
@@ -273,11 +275,11 @@
 
 - **FR-ABOUT-001** `MUST`: ブランド哲学（Brand Philosophy）を紹介するセクションを表示する。
   - レビュー: テキストと画像の2カラムグリッドで表示。要件を満たしている。
-- **FR-ABOUT-002** `MUST`: 品質・クラフトマンシップ（Quality & Craftsmanship）を紹介するセクションを表示する。
+- **FR-ABOUT-002** `MUST`: ブランドが服づくりを行う理由を伝える `WHY WE MAKE / なぜ、つくるのか` セクションを表示し、ブランドの考え方と Founder の言葉を掲載する。
   - レビュー: 2セクション目として画像とテキストを逆順配置で表示。要件を満たしている。
-- **FR-ABOUT-003** `MUST`: `Timeless` / `Sustainable` / `Thoughtful` の価値観をアイコン付き3カラムで掲載する。
+- **FR-ABOUT-003** `MUST`: `OUR COMMITMENTS / 取り組み` セクションに、`TIMELESS / UNISEX`、`NATURAL FIBERS`、`DOMESTIC, MADE TO ORDER` の3原則を番号・日本語見出し・説明文付きで掲載する。
   - レビュー: Remixicon アイコン（`ri-time-line`, `ri-leaf-line`, `ri-heart-line`）付きで3カラム表示。要件を満たしている。
-- **FR-ABOUT-004** `MUST`: 画像とテキストを交互に配置したレスポンシブレイアウトでブランドストーリーを伝える。
+- **FR-ABOUT-004** `MUST`: `COLLECTION / 商品設計思想` セクションと、`VIEW COLLECTION`・`VIEW LOOKBOOK` のCTAを表示する。mobile（390px）ではCTAを縦並び、tablet（768px）以上では横並びとし、横方向のページスクロールを発生させない。
   - レビュー: 1セクション目は画像左・テキスト右、2セクション目は `lg:order-2` / `lg:order-1` で逆順。要件を満たしている。
 - **FR-ABOUT-005** `SHOULD`: ページに `h1` を含む見出し階層を明示し、`generateMetadata` で `title` / `description` を設定する。
   - レビュー: ページ内に `h1` がなく `h2` から始まる（アクセシビリティ・SEO の問題）。`generateMetadata` エクスポートもなし。

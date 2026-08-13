@@ -220,22 +220,21 @@ export function SingleSelect({
                   role="listbox"
                 >
                   {options.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      className="single-select__option"
-                      data-ui-single-select-selected={
-                        resolvedValue === option.value ? 'true' : undefined
-                      }
-                      role="option"
-                      aria-selected={resolvedValue === option.value}
-                      onClick={() => {
-                        onValueChange?.(option.value);
-                        setOpen(false);
-                      }}
-                    >
-                      {option.label}
-                    </button>
+                    <div key={option.value} className="single-select__option-row">
+                      <button type="button" className="single-select__option"
+                        data-ui-single-select-selected={resolvedValue === option.value ? 'true' : undefined}
+                        role="option" aria-selected={resolvedValue === option.value}
+                        onClick={() => { onValueChange?.(option.value); setOpen(false); }}>
+                        {option.label}
+                      </button>
+                      {option.onAction && option.actionLabel ? (
+                        <button type="button" className="single-select__option-action"
+                          aria-label={option.actionLabel}
+                          onClick={(event) => { event.preventDefault(); event.stopPropagation(); option.onAction?.(); }}>
+                          <i className="ri-delete-bin-line" aria-hidden="true" />
+                        </button>
+                      ) : null}
+                    </div>
                   ))}
                 </div>,
                 document.body,

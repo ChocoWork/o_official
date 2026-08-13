@@ -1,5 +1,10 @@
 import { ACCOUNTS, accountByName } from '@/lib/finance/accounts';
 import {
+	EXPENSE_PAYMENT_METHODS,
+	INCOME_PAYMENT_METHODS,
+	paymentMethodAccountName,
+} from '@/lib/finance/payment-methods';
+import {
 	buildGeneralLedger,
 	buildJournal,
 	buildTrialBalance,
@@ -61,6 +66,54 @@ describe('buildJournal', () => {
 		expect(journal.lines[0].debit).toBe(120000);
 		expect(journal.lines[1].account.name).toBe('売上高');
 		expect(journal.lines[1].credit).toBe(120000);
+	});
+
+	it('Stripe注文はクレジット売掛金を借方、売上高を貸方に立てる', () => {
+		const [journal] = buildJournal(
+			[entry({
+				id: 1,
+				amount: 59600,
+				entryType: 'income',
+				category: '売上高',
+				item: 'オンライン注文',
+				paymentMethod: 'Stripe',
+			})],
+			'soleProprietor',
+		);
+
+		expect(journal.lines[0]).toMatchObject({
+			account: {
+				code: '1130',
+				name: 'クレジット売掛金',
+				type: 'asset',
+				normalSide: 'debit',
+			},
+			debit: 59600,
+			credit: 0,
+		});
+		expect(journal.lines[1]).toMatchObject({
+			account: { name: '売上高' },
+			debit: 0,
+			credit: 59600,
+		});
+		expect(journal.lines.some((line) => line.account.code === '9999')).toBe(false);
+	});
+
+	it('すべての入出金方法が登録済み勘定科目へ解決される', () => {
+		const methods = [
+			...EXPENSE_PAYMENT_METHODS.map((method) => ({ direction: 'expense' as const, method })),
+			...INCOME_PAYMENT_METHODS.map((method) => ({ direction: 'income' as const, method })),
+			{ direction: 'income' as const, method: 'Stripe' },
+		];
+
+		for (const { direction, method } of methods) {
+			const accountName = paymentMethodAccountName(
+				method,
+				'soleProprietor',
+				direction,
+			);
+			expect(accountByName(accountName)).toBeDefined();
+		}
 	});
 
 	it('プライベートは事業形態と方向で振替先が変わる', () => {

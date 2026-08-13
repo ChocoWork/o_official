@@ -27,7 +27,7 @@
 
 **Interfaces:**
 - Consumes: `FinanceEntry`, `BusinessType`, and `ReadonlyMap<string, number>` opening balances.
-- Produces: `buildCounterpartyBalances(entries, businessType, throughDate, openingBalances): CounterpartyBalanceSummary`.
+- Produces: `buildCounterpartyBalances(entries, businessType, throughDate, officialBalances): CounterpartyBalanceSummary`.
 
 - [ ] **Step 1: Write failing aggregation tests**
 
@@ -55,7 +55,7 @@ Expected: FAIL because `counterparty-balances.ts` does not exist.
 
 - [ ] **Step 3: Implement the minimal pure aggregator**
 
-Build journal entries with `buildJournal`, inspect only the specified account-code sets, add credit to `received`, debit to `settled`, and calculate `openingBalance + received - settled`. Add non-zero opening balances as `繰越・相手先未設定` rows.
+Build journal entries with `buildJournal`, inspect only the specified account-code sets, add credit to `received`, and debit to `settled`. Reconcile per-account counterparty balances to the selected-year general-ledger closing balance and add only an unattributed difference as `繰越・相手先未設定`. For `事業主借`, retain lifetime received/settled totals but derive the current balance from selected-year activity because year-end closing transfers prior balances to `元入金`.
 
 - [ ] **Step 4: Run the focused test and verify GREEN**
 

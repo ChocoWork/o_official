@@ -66,6 +66,16 @@ const INCOMES = [
     partner: 'セレクトショップB', amount: 780000, paymentMethod: '銀行', memo: '', seasonTag: '2026SS',
     receipts: [RECEIPT],
   },
+  {
+    id: 7, entryType: 'income', date: '2026-07-05', category: '売上高', item: 'オンライン注文',
+    partner: '', amount: 59600, paymentMethod: 'Stripe', memo: '', seasonTag: null,
+    receipts: [],
+  },
+  {
+    id: 8, entryType: 'income', date: '2026-07-05', category: '売上高', item: 'オンライン注文',
+    partner: '', amount: 22222, paymentMethod: 'Stripe', memo: '', seasonTag: null,
+    receipts: [],
+  },
 ];
 
 // 定額法・一括償却の2件。予測年度の列と償却完了予定を出すのに使う。
@@ -245,6 +255,36 @@ for (const viewport of viewports) {
       await expect(reconcile.getByText('差額', { exact: true })).toBeVisible();
     });
 
+    test('ワイドデスクトップでは仕訳一覧を左2列へ広げて仕訳詳細を右列に通す', async ({ page }) => {
+      test.skip(viewport.name !== 'desktop');
+      await page.setViewportSize({ width: 1920, height: 1080 });
+      await openLedgerTab(page);
+
+      await expect(page.getByRole('heading', { name: '残高推移', exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: '仕訳一覧', exact: true })).toBeVisible();
+
+      const accountBox = await page.getByRole('region', { name: '勘定科目' }).boundingBox();
+      const trendBox = await page.getByRole('region', { name: '残高推移' }).boundingBox();
+      const listBox = await page.getByRole('region', { name: '仕訳一覧' }).boundingBox();
+      const detailBox = await page.getByRole('region', { name: '仕訳詳細' }).boundingBox();
+      expect(accountBox).not.toBeNull();
+      expect(trendBox).not.toBeNull();
+      expect(listBox).not.toBeNull();
+      expect(detailBox).not.toBeNull();
+      expect(accountBox?.width).toBeGreaterThanOrEqual(215);
+      expect(accountBox?.width).toBeLessThanOrEqual(225);
+      expect(detailBox?.width).toBeGreaterThanOrEqual(302);
+      expect(detailBox?.width).toBeLessThanOrEqual(312);
+      expect(Math.abs(listBox!.x - accountBox!.x)).toBeLessThanOrEqual(1);
+      expect(
+        Math.abs(listBox!.x + listBox!.width - (trendBox!.x + trendBox!.width)),
+      ).toBeLessThanOrEqual(1);
+      expect(Math.abs(detailBox!.y - trendBox!.y)).toBeLessThanOrEqual(1);
+      expect(
+        Math.abs(detailBox!.y + detailBox!.height - (listBox!.y + listBox!.height)),
+      ).toBeLessThanOrEqual(1);
+    });
+
     test('科目ツリーで科目を選ぶと仕訳一覧と照合結果が切り替わる', async ({ page }) => {
       // FREQ-258-AC-03
       await openLedgerTab(page);
@@ -265,6 +305,60 @@ for (const viewport of viewports) {
         .last()
         .click();
       await expect(page.getByRole('region', { name: '仕訳一覧' })).toContainText('広告出稿');
+    });
+
+    test('Stripe注文は売上高元帳の貸方と伝票全体の正式科目で表示する', async ({ page }) => {
+      await openLedgerTab(page);
+
+      await page.getByRole('searchbox', { name: '勘定科目を検索' }).fill('売上高');
+      await page.getByRole('button', { name: '勘定科目を検索する' }).click();
+      await page
+        .getByRole('region', { name: '勘定科目' })
+        .getByRole('button', { name: /4010\s*売上高/ })
+        .last()
+        .click();
+
+      const list = page.getByRole('region', { name: '仕訳一覧' });
+      const orderRow = list.getByRole('row').filter({ hasText: 'オンライン注文' }).first();
+      await orderRow.getByRole('button', { name: /の明細を表示/ }).click();
+      const cells = orderRow.getByRole('cell');
+      await expect(cells.nth(5)).toHaveText('—');
+      await expect(cells.nth(6)).toHaveText('22,222');
+
+      const detail = page.getByRole('region', { name: '仕訳詳細' });
+      await expect(detail).toContainText(
+        '一覧は選択中の勘定科目の元帳行、以下は伝票全体の仕訳です。',
+      );
+      await expect(detail.getByText('クレジット売掛金', { exact: true })).toBeVisible();
+      await expect(detail.getByText('売上高', { exact: true })).toBeVisible();
+      await expect(detail.getByText('¥22,222', { exact: true })).toHaveCount(2);
+      await expect(detail.getByText('Stripe', { exact: true })).toHaveCount(0);
+    });
+
+    test('関連仕訳のオンライン注文を語中で折り返さない', async ({ page }) => {
+      await openLedgerTab(page);
+
+      await page.getByRole('searchbox', { name: '勘定科目を検索' }).fill('売上高');
+      await page.getByRole('button', { name: '勘定科目を検索する' }).click();
+      await page
+        .getByRole('region', { name: '勘定科目' })
+        .getByRole('button', { name: /4010\s*売上高/ })
+        .last()
+        .click();
+
+      const list = page.getByRole('region', { name: '仕訳一覧' });
+      await list
+        .getByRole('row')
+        .filter({ hasText: 'オンライン注文' })
+        .first()
+        .getByRole('button', { name: /の明細を表示/ })
+        .click();
+
+      const relatedDescription = page
+        .getByRole('region', { name: '仕訳詳細' })
+        .getByText('（オンライン注文）', { exact: true })
+        .first();
+      await expect(relatedDescription).toHaveCSS('white-space', 'nowrap');
     });
 
     test('固定資産にサマリー4枚・資産一覧・償却推移・シミュレーション・予定表がそろう', async ({ page }) => {

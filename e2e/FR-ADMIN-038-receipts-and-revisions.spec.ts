@@ -272,7 +272,7 @@ for (const viewport of viewports) {
         }
       });
 
-      await page.getByRole('button', { name: '広告出稿を訂正' }).click();
+      await page.getByRole('button', { name: '広告出稿を編集' }).click();
 
       // フォームが訂正モードになり、当該取引の値が読み込まれる
       await expect(page.getByRole('heading', { name: '支出を訂正（#1）' })).toBeVisible();

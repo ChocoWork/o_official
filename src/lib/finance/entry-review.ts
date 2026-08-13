@@ -9,7 +9,8 @@
 export type EntryReviewReasonId =
   | "duplicate"
   | "unknownAccount"
-  | "unlinkedAsset";
+  | "unlinkedAsset"
+  | "revisedEntry";
 
 export type EntryReviewReasonDef = {
   id: EntryReviewReasonId;
@@ -55,6 +56,17 @@ export const ENTRY_REVIEW_REASONS: readonly EntryReviewReasonDef[] = [
       "取得価額が10万円以上か確認する",
       "固定資産なら台帳へ登録し、この取引と紐付ける",
       "少額など資産にしない場合は、費用として対象外にする",
+    ],
+  },
+  {
+    id: "revisedEntry",
+    label: "訂正内容の確認",
+    icon: "ri-file-edit-line",
+    why: "法人の取引が訂正されています。訂正前後の内容と証憑が一致しているか確認する必要があります。",
+    checklist: [
+      "更新履歴で訂正前後の金額・日付・勘定科目を見比べる",
+      "訂正後の内容が証憑と一致しているか確認する",
+      "問題がなければ確認済みにする",
     ],
   },
 ];

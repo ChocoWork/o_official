@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -44,14 +45,21 @@ import {
 } from "@/lib/finance/cash-flow";
 import {
   buildCumulativeSummary,
-  type CumulativeEntry,
 } from "@/lib/finance/cumulative";
+import {
+  buildCounterpartyBalances,
+  type CounterpartyBalanceSection,
+} from "@/lib/finance/counterparty-balances";
 import {
   ENTRY_REVIEW_REASONS,
   entryReviewRef,
   type EntryReviewReasonDef,
   type EntryReviewReasonId,
 } from "@/lib/finance/entry-review";
+import {
+  resolveTransactionStatus,
+  type TransactionStatus,
+} from "@/lib/finance/transaction-status";
 import {
   DEPRECIATION_METHOD_LABELS,
   depreciationForYear,
@@ -274,14 +282,12 @@ const REVISION_OPERATION_LABELS: Record<EntryRevision["operation"], string> = {
 
 // --- 取引管理の一覧（状態・タブ・確認キュー）------------------------------
 //
-// 取引1件の「状態」は次の優先順で1つに決める。証憑の有無は別軸（証憑列）で示す。
-//   訂正あり ＞ 要確認 ＞ 登録済み
-type EntryState = "registered" | "review" | "revised";
+// 取引の状態は未確認理由の有無で決める。訂正履歴は状態と分離して保持する。
+type EntryState = TransactionStatus;
 
 const ENTRY_STATE_LABELS: Record<EntryState, string> = {
   registered: "登録済み",
   review: "要確認",
-  revised: "訂正あり",
 };
 
 // 状態色は StatusBadge の accent と同じトークン（正常＝黒・要対応＝橙・訂正＝赤）。
@@ -289,14 +295,13 @@ const ENTRY_STATE_TONES: Record<EntryState, "neutral" | "warning" | "danger"> =
   {
     registered: "neutral",
     review: "warning",
-    revised: "danger",
   };
 
 const ENTRY_STATE_COLORS: Record<EntryState, string> = {
   registered: "#111111",
   review: "#b45309",
-  revised: "#b91c1c",
 };
+const CORRECTION_HISTORY_COLOR = "#b91c1c";
 
 /** 証憑の有無。ドーナツと凡例で共有する色。 */
 const RECEIPT_ATTACHED_COLOR = "#111111";
@@ -463,6 +468,7 @@ type ExpenseTemplate = {
   paymentMethod: string;
   memo: string;
 };
+type SummaryOption = { id: number; entryType: EntryType; name: string; isCustom: true };
 
 type ProductCostKey =
   | "material"
@@ -512,8 +518,9 @@ type CostProfitResponse = {
     previousClosingBalances: Record<string, number> | null;
     revisions: EntryRevision[];
     reviewAcks?: EntryReviewAck[];
-    cumulativeEntries: CumulativeEntry[];
+    cumulativeEntries: FinanceEntry[];
     templates: ExpenseTemplate[];
+    summaryOptions?: SummaryOption[];
   };
 };
 
@@ -643,6 +650,7 @@ function paymentOptionsFor(entryType: EntryType): string[] {
 const NEW_PARTNER_SENTINEL = "__new_partner__";
 // テンプレートセレクトの「＋現在の入力を保存」を表す番兵値
 const SAVE_TEMPLATE_SENTINEL = "__save_template__";
+const ADD_SUMMARY_OPTION_SENTINEL = "__add_summary_option__";
 const EMPTY_PLAN: FinancePlan = {
   salesRevenue: 0,
   openingCash: 0,
@@ -1397,13 +1405,14 @@ export default function CostProfitSection({
     Partial<Record<EntryReviewReasonId, string>>
   >({});
   // 開業以来累計の集計元（当年度末までの全取引の最小データ）。
-  const [cumulativeEntries, setCumulativeEntries] = useState<CumulativeEntry[]>(
+  const [cumulativeEntries, setCumulativeEntries] = useState<FinanceEntry[]>(
     [],
   );
   // 証憑の添付中の取引ID・メッセージ。
   const [uploadingEntryId, setUploadingEntryId] = useState<number | null>(null);
   const [receiptMessage, setReceiptMessage] = useState<string | null>(null);
   const [templates, setTemplates] = useState<ExpenseTemplate[]>([]);
+  const [summaryOptions, setSummaryOptions] = useState<SummaryOption[]>([]);
   const [plan, setPlan] = useState<FinancePlan>(EMPTY_PLAN);
   const [businessType, setBusinessType] =
     useState<BusinessType>("soleProprietor");
@@ -1445,11 +1454,33 @@ export default function CostProfitSection({
   const [formMessage, setFormMessage] = useState<string | null>(null);
   // 訂正中の取引ID。null なら新規登録モード。
   const [editingEntryId, setEditingEntryId] = useState<number | null>(null);
+  const [deleteEntry, setDeleteEntry] = useState<Expense | null>(null);
+  const [deleteDialogError, setDeleteDialogError] = useState<string | null>(null);
+  const deleteTriggerRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!deleteEntry) return;
+
+    if (!isSaving) {
+      window.requestAnimationFrame(() => {
+        document
+          .querySelector<HTMLElement>("[data-entry-delete-confirm]")
+          ?.focus();
+      });
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || isSaving) return;
+      setDeleteEntry(null);
+      setDeleteDialogError(null);
+      window.requestAnimationFrame(() => deleteTriggerRef.current?.focus());
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [deleteEntry, isSaving]);
   // 固定資産の登録フォーム
   const [assetForm, setAssetForm] = useState(EMPTY_ASSET_FORM);
   const [assetMessage, setAssetMessage] = useState<string | null>(null);
   // 登録方法。取引から登録が既定（記入漏れ・金額不一致を起こさない側）。
-  const [assetExclusionEntryId, setAssetExclusionEntryId] = useState<
+  const [, setAssetExclusionEntryId] = useState<
     number | null
   >(null);
   const [assetExclusionReason, setAssetExclusionReason] = useState("");
@@ -1472,6 +1503,33 @@ export default function CostProfitSection({
   const [selectedTemplateName, setSelectedTemplateName] = useState("");
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
   const [newTemplateName, setNewTemplateName] = useState("");
+  const [isTemplateOverwriteDialogOpen, setIsTemplateOverwriteDialogOpen] =
+    useState(false);
+  const [isAddingSummaryOption, setIsAddingSummaryOption] = useState(false);
+  const [newSummaryOptionName, setNewSummaryOptionName] = useState("");
+  const [isTemplateDiscardDialogOpen, setIsTemplateDiscardDialogOpen] =
+    useState(false);
+  useEffect(() => {
+    if (!isTemplateDiscardDialogOpen) return;
+
+    window.requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLButtonElement>("[data-template-discard-continue]")
+        ?.focus();
+    });
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || isSaving) return;
+      event.preventDefault();
+      setIsTemplateDiscardDialogOpen(false);
+      window.requestAnimationFrame(() => {
+        document
+          .querySelector<HTMLInputElement>("[data-template-name-input]")
+          ?.focus();
+      });
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isSaving, isTemplateDiscardDialogOpen]);
 
   const loadFinanceData = useCallback(async () => {
     try {
@@ -1520,6 +1578,7 @@ export default function CostProfitSection({
       setReviewAcks(payload.data.reviewAcks ?? []);
       setCumulativeEntries(payload.data.cumulativeEntries ?? []);
       setTemplates(payload.data.templates ?? []);
+      setSummaryOptions(payload.data.summaryOptions ?? []);
       setSelectedProductId(
         payload.data.products[0]?.id ?? `${seasonKey}-ITEM-001`,
       );
@@ -1540,6 +1599,7 @@ export default function CostProfitSection({
       setReviewAcks([]);
       setCumulativeEntries([]);
       setTemplates([]);
+      setSummaryOptions([]);
       setSelectedProductId(`${seasonKey}-ITEM-001`);
       notifyError(error, "会計データの取得に失敗しました。");
     } finally {
@@ -1578,6 +1638,7 @@ export default function CostProfitSection({
     const payload = (await response.json().catch(() => null)) as {
       error?: string;
       reason?: string;
+      permission?: string;
       resourceId?: string;
     } | null;
     if (!response.ok) {
@@ -1586,10 +1647,16 @@ export default function CostProfitSection({
           "保存には2要素認証が必要です。認証画面で2FAを完了してから、もう一度保存してください。",
         );
       }
-      if (response.status === 403) {
+      if (response.status === 403 && payload?.reason === "CSRF validation failed") {
         throw new Error(
           "セキュリティ確認に失敗しました。ページを再読み込みして、もう一度保存してください。",
         );
+      }
+      if (response.status === 403 && payload?.permission === "admin.finance.manage") {
+        throw new Error("会計データの保存には財務管理権限が必要です。");
+      }
+      if (response.status === 403) {
+        throw new Error("会計データを保存する権限がありません。");
       }
       throw new Error(payload?.error ?? "会計データの保存に失敗しました。");
     }
@@ -1772,6 +1839,17 @@ export default function CostProfitSection({
     () => buildCumulativeSummary(cumulativeEntries, fixedAssets, fiscalYear),
     [cumulativeEntries, fixedAssets, fiscalYear],
   );
+  const counterpartyBalances = useMemo(() => {
+    const officialBalances = new Map(
+      ledger.map((account) => [account.account.code, account.closingBalance]),
+    );
+    return buildCounterpartyBalances(
+      cumulativeEntries,
+      businessType,
+      `${fiscalYear}-12-31`,
+      officialBalances,
+    );
+  }, [cumulativeEntries, businessType, fiscalYear, ledger]);
 
   // ここから財務概要の派生値。すべて上の仕訳・元帳・試算表から導く。
   // 資金推移。月次＝月末の資金残高、通期＝期首からの累積増減。
@@ -1840,7 +1918,7 @@ export default function CostProfitSection({
     ],
   );
 
-  // 構成比。売上高は収入概要別、売上原価と販管費は勘定科目別に集計する。
+  // 構成比。売上高は収入摘要別、売上原価と販管費は勘定科目別に集計する。
   const salesComposition = useMemo(
     () => buildSalesComposition(incomes),
     [incomes],
@@ -1953,7 +2031,7 @@ export default function CostProfitSection({
       amount <= 0
     ) {
       const summaryLabel =
-        form.entryType === "income" ? "収入概要" : "支出概要";
+        form.entryType === "income" ? "収入摘要" : "支出摘要";
       setFormMessage(
         `日付・${summaryLabel}・勘定科目・1円以上の金額を入力してください。`,
       );
@@ -2067,12 +2145,33 @@ export default function CostProfitSection({
     });
   };
 
-  const handleCancelEdit = () => {
+  const closeEntryDrawer = () => {
     setEditingEntryId(null);
     setForm(emptyEntryForm);
     setFormMessage(null);
     setPendingReceipts([]);
+    setSelectedTemplateName("");
+    setIsSavingTemplate(false);
+    setNewTemplateName("");
+    setIsTemplateDiscardDialogOpen(false);
+    setIsTemplateOverwriteDialogOpen(false);
     setIsEntryDrawerOpen(false);
+  };
+
+  const handleCancelEdit = () => {
+    if (isSaving) return;
+    if (isSavingTemplate) {
+      setIsTemplateDiscardDialogOpen(true);
+      return;
+    }
+    closeEntryDrawer();
+  };
+
+  const continueTemplateEditing = () => {
+    setIsTemplateDiscardDialogOpen(false);
+    window.requestAnimationFrame(() => {
+      document.querySelector<HTMLInputElement>("[data-template-name-input]")?.focus();
+    });
   };
 
   /** 新規登録の Drawer を開く。訂正中だった内容は破棄する。 */
@@ -2099,6 +2198,46 @@ export default function CostProfitSection({
     setSelectedTemplateName("");
     setIsSavingTemplate(false);
     setNewTemplateName("");
+    setIsAddingSummaryOption(false);
+    setNewSummaryOptionName("");
+  };
+
+  const handleSaveSummaryOption = async () => {
+    const name = newSummaryOptionName.trim();
+    if (!name) {
+      setFormMessage(`${form.entryType === "income" ? "収入" : "支出"}摘要を入力してください。`);
+      return;
+    }
+    try {
+      setIsSaving(true);
+      await postMutation({ operation: "summaryOption.create", entryType: form.entryType, name });
+      await loadFinanceData();
+      setForm((current) => ({ ...current, item: name }));
+      setIsAddingSummaryOption(false);
+      setNewSummaryOptionName("");
+      notifySuccess(`${form.entryType === "income" ? "収入" : "支出"}摘要を追加しました。`);
+    } catch (error) {
+      notifyError(error, "摘要の追加に失敗しました。");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteSummaryOption = async (option: SummaryOption) => {
+    if (!window.confirm(`摘要「${option.name}」を削除しますか？`)) return;
+    try {
+      setIsSaving(true);
+      await postMutation({ operation: "summaryOption.delete", summaryOptionId: option.id });
+      await loadFinanceData();
+      if (form.item === option.name) {
+        setForm((current) => ({ ...current, item: shiyouOptionsFor(current.entryType)[0] }));
+      }
+      notifySuccess("摘要を削除しました。");
+    } catch (error) {
+      notifyError(error, "摘要の削除に失敗しました。");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // 事業形態切替。勘定科目の選択肢が変わるため、選択済みの科目が
@@ -2136,6 +2275,10 @@ export default function CostProfitSection({
       setFormMessage("取引先名を入力してください。");
       return;
     }
+    if (name.length > 160) {
+      setFormMessage("取引先名は160文字以内で入力してください。");
+      return;
+    }
     try {
       setIsSaving(true);
       setFormMessage(null);
@@ -2158,10 +2301,10 @@ export default function CostProfitSection({
     }
   };
 
-  // テンプレート選択：勘定科目・支出概要・金額・支払い方法・メモをフォームへ反映する。
+  // テンプレート選択：勘定科目・支出摘要・金額・支払い方法・メモをフォームへ反映する。
   const handleTemplateSelect = (value: string) => {
     if (value === SAVE_TEMPLATE_SENTINEL) {
-      // 保存時の名前の初期値は「支出概要 / 金額」。保存前に変更可能。
+      // 保存時の名前の初期値は「支出摘要 / 金額」。保存前に変更可能。
       setNewTemplateName(
         `${form.item} / ${currency(Number(form.amount) || 0)}`,
       );
@@ -2195,6 +2338,10 @@ export default function CostProfitSection({
       setFormMessage("テンプレート名を入力してください。");
       return;
     }
+    if (templates.some((template) => template.name === name)) {
+      setFormMessage("同じ名前のテンプレートが存在します。");
+      return;
+    }
     try {
       setIsSaving(true);
       setFormMessage(null);
@@ -2224,6 +2371,44 @@ export default function CostProfitSection({
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleOverwriteTemplate = async () => {
+    if (!selectedTemplateName) return;
+    try {
+      setIsSaving(true);
+      setFormMessage(null);
+      await postMutation({
+        operation: "template.update",
+        templateName: selectedTemplateName,
+        template: {
+          name: selectedTemplateName,
+          entryType: form.entryType,
+          category: form.category,
+          item: form.item,
+          amount: Math.max(0, Math.round(Number(form.amount) || 0)),
+          paymentMethod: form.paymentMethod,
+          memo: form.memo.trim(),
+        },
+      });
+      await loadFinanceData();
+      setIsTemplateOverwriteDialogOpen(false);
+      setFormMessage("テンプレートを上書きしました。");
+    } catch (error) {
+      setFormMessage(
+        error instanceof Error
+          ? error.message
+          : "テンプレートの上書きに失敗しました。",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleStartSaveTemplateAs = () => {
+    setNewTemplateName(selectedTemplateName);
+    setIsSavingTemplate(true);
+    setFormMessage(null);
   };
 
   const handleDeleteTemplate = async () => {
@@ -2265,7 +2450,7 @@ export default function CostProfitSection({
     });
   };
 
-  const handleDeleteExpense = async (expense: Expense) => {
+  const handleDeleteExpense = async (expense: Expense): Promise<boolean> => {
     const previousExpenses = expenses;
     const previousIncomes = incomes;
     const typeLabel = expense.entryType === "income" ? "収入" : "支出";
@@ -2284,13 +2469,31 @@ export default function CostProfitSection({
       });
       await loadFinanceData();
       notifySuccess(`${typeLabel}をSupabaseから削除しました。`);
+      return true;
     } catch (error) {
       setExpenses(previousExpenses);
       setIncomes(previousIncomes);
       notifyError(error, `${typeLabel}の削除に失敗しました。`);
+      setDeleteDialogError(
+        error instanceof Error ? error.message : `${typeLabel}の削除に失敗しました。`,
+      );
+      return false;
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const closeDeleteDialog = () => {
+    if (isSaving) return;
+    setDeleteEntry(null);
+    setDeleteDialogError(null);
+    window.requestAnimationFrame(() => deleteTriggerRef.current?.focus());
+  };
+
+  const confirmDeleteEntry = async () => {
+    if (!deleteEntry || isSaving) return;
+    const deleted = await handleDeleteExpense(deleteEntry);
+    if (deleted) closeDeleteDialog();
   };
 
   const handleSaveProduct = async () => {
@@ -2333,7 +2536,7 @@ export default function CostProfitSection({
         "借方金額",
         "貸方勘定科目",
         "貸方金額",
-        "支出概要",
+        "支出摘要",
         "取引先・補助科目",
       ],
       ...journalRows.map((row) => [
@@ -2502,6 +2705,61 @@ export default function CostProfitSection({
       ["", "期末現金・預金", cashFlow.closingCash],
       ["検算", "差額", cashFlow.difference],
     ]);
+  };
+
+  const counterpartyBalancePanel = (
+    title: "借入・事業主資金" | "その他の支払債務",
+    section: CounterpartyBalanceSection,
+  ) => {
+    const funding = title === "借入・事業主資金";
+    return (
+      <Panel radius="rounded" aria-label={title} title={<span className={panelTitleClassName}>{title}</span>}>
+        <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {[
+            [funding ? "借入・投入累計" : "発生累計", section.totals.received],
+            [funding ? "返済・引出済み" : "支払・返還済み", section.totals.settled],
+            ["残高", section.totals.balance],
+          ].map(([label, amount]) => (
+            <div key={String(label)} className={`${boxRadiusClassName} border border-[#ededed] p-3`}>
+              <p className="font-acumin text-[11px] text-[#707070]">{label}</p>
+              <p className="mt-1 font-acumin text-sm font-medium text-black tabular-nums">{currency(Number(amount))}</p>
+            </div>
+          ))}
+        </div>
+        {section.rows.length === 0 ? (
+          <p className="font-acumin text-xs text-[#707070]">該当する残高はありません。</p>
+        ) : (
+          <div className="max-w-full overflow-x-auto">
+            <table aria-label={title} className="w-full min-w-[760px] border-collapse">
+              <thead>
+                <tr className="border-b border-[#d4d4d4]">
+                  {[funding ? "借入先" : "支払先", "区分", funding ? "借入・投入累計" : "発生累計", funding ? "返済・引出済み" : "支払・返還済み", "残高", "最終入出金日"].map((heading, index) => (
+                    <th key={heading} scope="col" className={`px-2 py-2 font-acumin text-[11px] font-normal text-[#474747] ${index >= 2 && index <= 4 ? "text-right" : "text-left"}`}>{heading}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {section.rows.map((row) => (
+                  <tr key={`${row.accountCode}-${row.counterparty}`} className="border-b border-[#ededed]">
+                    <td className="px-2 py-2 font-acumin text-xs text-black">{row.counterparty}</td>
+                    <td className="whitespace-nowrap px-2 py-2 font-acumin text-xs text-black">{row.accountName}</td>
+                    <td className="whitespace-nowrap px-2 py-2 text-right font-acumin text-xs text-black tabular-nums">{currency(row.received)}</td>
+                    <td className="whitespace-nowrap px-2 py-2 text-right font-acumin text-xs text-black tabular-nums">{currency(row.settled)}</td>
+                    <td className={`whitespace-nowrap px-2 py-2 text-right font-acumin text-xs font-medium tabular-nums ${row.balance < 0 ? "text-red-700" : "text-black"}`}>
+                      {currency(row.balance)}{row.balance < 0 ? <span className="ml-1 text-[10px]">要確認</span> : null}
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-2 font-acumin text-xs text-[#474747] tabular-nums">{row.lastActivityDate?.replaceAll("-", "/") ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {funding && section.rows.some((row) => row.ownerFunding) ? (
+          <p className="mt-3 font-acumin text-[11px] leading-relaxed text-[#707070]">事業主借の残高は事業主資金残高です。法的な返済義務額ではなく、決算時に元入金へ振り替えられます。</p>
+        ) : null}
+      </Panel>
+    );
   };
 
   const summaryView = (
@@ -3154,6 +3412,11 @@ export default function CostProfitSection({
         </div>
       </details>
 
+      <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
+        {counterpartyBalancePanel("借入・事業主資金", counterpartyBalances.funding)}
+        {counterpartyBalancePanel("その他の支払債務", counterpartyBalances.payables)}
+      </div>
+
       {/* 資金の増減内訳（直接法）。相手科目ごとの実際の入出金。 */}
       <Panel
         radius="rounded"
@@ -3216,7 +3479,10 @@ export default function CostProfitSection({
   const isIncomeForm = form.entryType === "income";
   const entryTypeLabel = isIncomeForm ? "収入" : "支出";
   const paymentFieldLabel = isIncomeForm ? "入金方法" : "出金方法";
-  const summaryFieldLabel = isIncomeForm ? "収入概要" : "支出概要";
+  const summaryFieldLabel = isIncomeForm ? "収入摘要" : "支出摘要";
+  const customSummaryOptions = summaryOptions.filter(
+    (option) => option.entryType === form.entryType,
+  );
   // 種別ごとに別管理するテンプレート。
   const visibleTemplates = templates.filter(
     (template) => template.entryType === form.entryType,
@@ -3319,6 +3585,9 @@ export default function CostProfitSection({
       if (duplicateEntryIds.has(entry.id)) triggered.add("duplicate");
       if (unknownAccountEntryIds.has(entry.id)) triggered.add("unknownAccount");
       if (unlinkedAssetEntryIds.has(entry.id)) triggered.add("unlinkedAsset");
+      if (businessType === "corporation" && revisedEntryIds.has(entry.id)) {
+        triggered.add("revisedEntry");
+      }
       const ref = entryReviewRef(entry);
       return ENTRY_REVIEW_REASONS.filter((reason) =>
         triggered.has(reason.id),
@@ -3332,6 +3601,8 @@ export default function CostProfitSection({
       unknownAccountEntryIds,
       unlinkedAssetEntryIds,
       reviewAckByKey,
+      businessType,
+      revisedEntryIds,
     ],
   );
 
@@ -3359,12 +3630,16 @@ export default function CostProfitSection({
 
   const entryStateOf = useCallback(
     (entry: Expense): EntryState => {
-      if (revisedEntryIds.has(entry.id)) return "revised";
-      // 確認済みにした理由は残さない。すべて確認できたら登録済みへ戻す。
-      if (entryReviewItemsOf(entry).some((item) => !item.ack)) return "review";
-      return "registered";
+      const openReviewReasons = entryReviewItemsOf(entry)
+        .filter((item) => !item.ack)
+        .map((item) => item.reason.id);
+      return resolveTransactionStatus({
+        businessType,
+        revised: revisedEntryIds.has(entry.id),
+        openReviewReasons,
+      });
     },
-    [revisedEntryIds, entryReviewItemsOf],
+    [businessType, revisedEntryIds, entryReviewItemsOf],
   );
 
   const evidenceStatusOf = useCallback(
@@ -3395,10 +3670,9 @@ export default function CostProfitSection({
       noReceipt: entryRows.filter((entry) => !hasEvidence(entry)).length,
       review: entryRows.filter((entry) => entryStateOf(entry) === "review")
         .length,
-      revised: entryRows.filter((entry) => entryStateOf(entry) === "revised")
-        .length,
+      revised: entryRows.filter((entry) => revisedEntryIds.has(entry.id)).length,
     }),
-    [entryRows, entryStateOf, hasEvidence],
+    [entryRows, entryStateOf, hasEvidence, revisedEntryIds],
   );
 
   const tabbedEntryRows = useMemo(() => {
@@ -3409,10 +3683,10 @@ export default function CostProfitSection({
       return entryRows.filter((entry) => entryStateOf(entry) === "review");
     }
     if (entryListTab === "revised") {
-      return entryRows.filter((entry) => entryStateOf(entry) === "revised");
+      return entryRows.filter((entry) => revisedEntryIds.has(entry.id));
     }
     return entryRows;
-  }, [entryRows, entryListTab, entryStateOf, hasEvidence]);
+  }, [entryRows, entryListTab, entryStateOf, hasEvidence, revisedEntryIds]);
 
   const entryTotalPages = Math.max(
     1,
@@ -3436,16 +3710,13 @@ export default function CostProfitSection({
   // 取引ステータス（ドーナツ）。合計は一覧に出ている件数と一致させる。
   const entryStatusCounts = useMemo(() => {
     let review = 0;
-    let revised = 0;
     for (const entry of entryRows) {
       const state = entryStateOf(entry);
       if (state === "review") review += 1;
-      else if (state === "revised") revised += 1;
     }
     return {
-      registered: entryRows.length - review - revised,
+      registered: entryRows.length - review,
       review,
-      revised,
       total: entryRows.length,
     };
   }, [entryRows, entryStateOf]);
@@ -3494,13 +3765,15 @@ export default function CostProfitSection({
           hasOpenReviewReason(entry, "unknownAccount"),
         );
       }
-      return entryRows.filter((entry) => revisedEntryIds.has(entry.id));
+      return entryRows.filter((entry) =>
+        hasOpenReviewReason(entry, "revisedEntry"),
+      );
     };
     return REVIEW_QUEUE_DEFS.map((def) => ({
       ...def,
       rows: rowsFor(def.key),
     })).filter((group) => group.rows.length > 0);
-  }, [entryRows, hasOpenReviewReason, revisedEntryIds, hasEvidence]);
+  }, [entryRows, hasOpenReviewReason, hasEvidence]);
 
   const selectedEntries = entryRows.filter((entry) =>
     selectedEntryIds.includes(entry.id),
@@ -3680,16 +3953,9 @@ export default function CostProfitSection({
           );
         }
         return (
-          // 行の入口。クリックで訂正 Drawer を開き、削除もその中に置く。
-          <button
-            type="button"
-            className="block max-w-[12rem] truncate text-left underline-offset-4 hover:underline"
-            aria-label={`${entry.item}を訂正`}
-            onClick={() => handleStartEdit(entry)}
-            disabled={isSaving}
-          >
+          <span className="block max-w-[12rem] truncate">
             {label}
-          </button>
+          </span>
         );
       },
     },
@@ -3771,14 +4037,20 @@ export default function CostProfitSection({
             size="3xs"
             tone={ENTRY_STATE_TONES[state]}
             accent
-            className="font-acumin"
+            className="w-[72px] whitespace-nowrap justify-center font-acumin"
           >
             {ENTRY_STATE_LABELS[state]}
           </StatusBadge>
         );
         const items = entryReviewItemsOf(entry);
         // 理由を持つ取引だけ押せる。押せる／押せないを見た目でも分ける。
-        if (items.length === 0) return badge;
+        if (items.length === 0) {
+          return (
+            <span className="inline-flex min-h-11 w-28 items-center px-1.5">
+              {badge}
+            </span>
+          );
+        }
 
         const open = items.filter((item) => !item.ack).length;
         return (
@@ -3790,24 +4062,58 @@ export default function CostProfitSection({
                 ? `${entry.item}の要確認の理由を開く（未確認${open}件）`
                 : `${entry.item}の確認結果を開く`
             }
-            className="inline-flex min-h-11 items-center gap-1 rounded-sm px-1.5 transition-colors hover:bg-[#f0f0f0] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+            className="inline-flex min-h-11 w-28 items-center gap-1 rounded-sm px-1.5 transition-colors hover:bg-[#f0f0f0] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
           >
             {badge}
-            {open > 0 ? (
-              <span className="font-acumin text-[10px] text-[#b45309] tabular-nums">
-                {open}
-              </span>
-            ) : (
+            {open === 0 ? (
               <i
                 className="ri-checkbox-circle-fill text-[11px] text-[#16844b]"
                 aria-hidden="true"
               />
-            )}
+            ) : null}
             <i
               className="ri-arrow-right-s-line text-sm text-[#707070]"
               aria-hidden="true"
             />
           </button>
+        );
+      },
+    },
+    {
+      key: "actions",
+      header: "操作",
+      align: "center",
+      className: "w-32",
+      cellClassName: "whitespace-nowrap",
+      render: (entry) => {
+        if (entry.readOnly || entry.source === "order") {
+          return <span className="text-[#909090]">—</span>;
+        }
+        return (
+          <div className="inline-flex items-center gap-1">
+            <button
+              type="button"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-sm text-black transition-colors hover:bg-[#f0f0f0] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label={`${entry.item}を編集`}
+              onClick={() => handleStartEdit(entry)}
+              disabled={isSaving}
+            >
+              <i className="ri-edit-line" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-sm text-[#b91c1c] transition-colors hover:bg-[#fef2f2] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b91c1c] disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label={`${entry.item}を削除`}
+              onClick={(event) => {
+                deleteTriggerRef.current = event.currentTarget;
+                setDeleteDialogError(null);
+                setDeleteEntry(entry);
+              }}
+              disabled={isSaving}
+            >
+              <i className="ri-delete-bin-line" aria-hidden="true" />
+            </button>
+          </div>
         );
       },
     },
@@ -4697,7 +5003,11 @@ export default function CostProfitSection({
   // 取引の登録・訂正。一覧の文脈を残すため右からの Drawer に入れる。
   const entryDrawer = (
     <Drawer
-      open={isEntryDrawerOpen}
+      open={
+        isEntryDrawerOpen &&
+        !isTemplateDiscardDialogOpen &&
+        !isTemplateOverwriteDialogOpen
+      }
       onClose={handleCancelEdit}
       side="right"
       size="md"
@@ -4808,7 +5118,27 @@ export default function CostProfitSection({
             onValueChange={handleTemplateSelect}
           />
           {selectedTemplateName && !isSavingTemplate ? (
-            <div className="mt-2 flex justify-end">
+            <div className="mt-2 flex flex-wrap justify-end gap-2">
+              <Button
+                variant="primary"
+                size="sm"
+                shape="rounded"
+                className="shrink-0 font-acumin"
+                onClick={() => setIsTemplateOverwriteDialogOpen(true)}
+                disabled={isSaving}
+              >
+                変更を上書き
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                shape="rounded"
+                className="shrink-0 font-acumin"
+                onClick={handleStartSaveTemplateAs}
+                disabled={isSaving}
+              >
+                別名で保存
+              </Button>
               <Button
                 variant="secondary"
                 size="sm"
@@ -4827,6 +5157,7 @@ export default function CostProfitSection({
               <TextField
                 value={newTemplateName}
                 onChange={(event) => setNewTemplateName(event.target.value)}
+                data-template-name-input
                 shape="rounded"
                 size="md"
                 className={inputClassName}
@@ -4887,15 +5218,38 @@ export default function CostProfitSection({
             aria-label={summaryFieldLabel}
             className="font-acumin"
             shape="rounded"
-            options={shiyouOptionsFor(form.entryType).map((option) => ({
-              value: option,
-              label: option,
-            }))}
+            options={[
+              { value: ADD_SUMMARY_OPTION_SENTINEL, label: "＋ 新しい項目を追加" },
+              ...shiyouOptionsFor(form.entryType).map((option) => ({ value: option, label: option })),
+              ...customSummaryOptions.map((option) => ({
+                value: option.name,
+                label: option.name,
+                actionLabel: `${option.name}を削除`,
+                onAction: () => void handleDeleteSummaryOption(option),
+              })),
+            ]}
             value={form.item}
-            onValueChange={(value) =>
-              setForm((current) => ({ ...current, item: value }))
-            }
+            onValueChange={(value) => {
+              if (value === ADD_SUMMARY_OPTION_SENTINEL) {
+                setIsAddingSummaryOption(true);
+                setNewSummaryOptionName("");
+                return;
+              }
+              setForm((current) => ({ ...current, item: value }));
+            }}
           />
+          {isAddingSummaryOption ? (
+            <div className="mt-2 flex gap-2">
+              <TextField value={newSummaryOptionName}
+                onChange={(event) => setNewSummaryOptionName(event.target.value)}
+                aria-label={`新しい${summaryFieldLabel}`} placeholder={`新しい${summaryFieldLabel}`}
+                shape="rounded" size="md" className={inputClassName} maxLength={160} />
+              <Button type="button" variant="primary" size="sm" shape="rounded"
+                aria-label={`${summaryFieldLabel}を保存`} onClick={() => void handleSaveSummaryOption()} disabled={isSaving}>保存</Button>
+              <Button type="button" variant="secondary" size="sm" shape="rounded"
+                onClick={() => { setIsAddingSummaryOption(false); setNewSummaryOptionName(""); }} disabled={isSaving}>取消</Button>
+            </div>
+          ) : null}
         </div>
         <div className="block">
           <span className="mb-1 block font-acumin text-[11px] text-[#474747]">
@@ -5151,29 +5505,6 @@ export default function CostProfitSection({
       </div>
 
       <div className="flex gap-2 border-t border-[#d4d4d4] px-5 py-4">
-        {editingEntryId !== null ? (
-          <Button
-            variant="secondary"
-            size="sm"
-            shape="rounded"
-            iconOnly
-            className="shrink-0 font-acumin"
-            aria-label={`${form.item}を削除`}
-            onClick={() => {
-              const target = entryRows.find(
-                (entry) => entry.id === editingEntryId,
-              );
-              if (target) {
-                setIsEntryDrawerOpen(false);
-                setEditingEntryId(null);
-                void handleDeleteExpense(target);
-              }
-            }}
-            disabled={isSaving}
-          >
-            <EmptyIcon icon="ri-delete-bin-line" />
-          </Button>
-        ) : null}
         <Button
           variant="secondary"
           size="sm"
@@ -5200,6 +5531,75 @@ export default function CostProfitSection({
         </Button>
       </div>
     </Drawer>
+  );
+
+  const templateDiscardDialog = (
+    <Dialog
+      open={isTemplateDiscardDialogOpen}
+      onClose={continueTemplateEditing}
+      title="未保存のテンプレートがあります"
+      description="テンプレート名はまだ保存されていません。入力内容を破棄して取引画面を閉じますか？"
+      shape="rounded"
+      size="sm"
+    >
+      <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+        <Button
+          data-template-discard-continue
+          variant="secondary"
+          size="sm"
+          shape="rounded"
+          className="font-acumin"
+          onClick={continueTemplateEditing}
+          disabled={isSaving}
+        >
+          入力を続ける
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          shape="rounded"
+          className="bg-[#b91c1c] font-acumin text-white hover:bg-[#991b1b]"
+          onClick={closeEntryDrawer}
+          disabled={isSaving}
+        >
+          破棄して閉じる
+        </Button>
+      </div>
+    </Dialog>
+  );
+
+  const templateOverwriteDialog = (
+    <Dialog
+      open={isTemplateOverwriteDialogOpen}
+      onClose={() => setIsTemplateOverwriteDialogOpen(false)}
+      title="テンプレートの変更を上書き"
+      description={`「${selectedTemplateName}」を現在の入力内容で上書きします。よろしいですか？`}
+      shape="rounded"
+      size="sm"
+    >
+      <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+        <Button
+          variant="secondary"
+          size="sm"
+          shape="rounded"
+          className="font-acumin"
+          onClick={() => setIsTemplateOverwriteDialogOpen(false)}
+          disabled={isSaving}
+        >
+          キャンセル
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          shape="rounded"
+          className="font-acumin"
+          onClick={() => void handleOverwriteTemplate()}
+          disabled={isSaving}
+        >
+          上書きを確定
+        </Button>
+      </div>
+    </Dialog>
   );
 
   const expensesView = (
@@ -5328,11 +5728,6 @@ export default function CostProfitSection({
                   value: entryStatusCounts.review,
                   color: ENTRY_STATE_COLORS.review,
                 },
-                {
-                  label: "訂正",
-                  value: entryStatusCounts.revised,
-                  color: ENTRY_STATE_COLORS.revised,
-                },
               ]}
             />
             <div className="min-w-0 flex-1 space-y-2">
@@ -5346,12 +5741,6 @@ export default function CostProfitSection({
                 "要確認",
                 entryStatusCounts.review,
                 ENTRY_STATE_COLORS.review,
-                true,
-              )}
-              {donutLegendRow(
-                "訂正",
-                entryStatusCounts.revised,
-                ENTRY_STATE_COLORS.revised,
                 true,
               )}
             </div>
@@ -5554,7 +5943,7 @@ export default function CostProfitSection({
                 rows={pagedEntryRows}
                 rowKey={(entry) => String(entry.id)}
                 emptyLabel="該当する取引がありません。"
-                tableClassName="min-w-[640px]"
+                    tableClassName="min-w-[640px] !table-fixed"
                 containerClassName="font-acumin"
               />
             </div>
@@ -5627,7 +6016,7 @@ export default function CostProfitSection({
                           style={{
                             color:
                               revision.operation === "delete"
-                                ? ENTRY_STATE_COLORS.revised
+                                ? CORRECTION_HISTORY_COLOR
                                 : revision.operation === "update"
                                   ? ENTRY_STATE_COLORS.review
                                   : "#474747",
@@ -5691,7 +6080,7 @@ export default function CostProfitSection({
                   const head = group.rows[0];
                   const color =
                     group.tone === "danger"
-                      ? ENTRY_STATE_COLORS.revised
+                      ? CORRECTION_HISTORY_COLOR
                       : ENTRY_STATE_COLORS.review;
                   return (
                     <li key={group.key}>
@@ -5789,8 +6178,67 @@ export default function CostProfitSection({
       {filterDrawer}
       {reviewDrawer}
       {entryDrawer}
+      {templateDiscardDialog}
+      {templateOverwriteDialog}
       {receiptDrawer}
       {assetCandidateDialog}
+      <Dialog
+        open={deleteEntry !== null}
+        onClose={closeDeleteDialog}
+        title="取引を削除"
+        description="この操作は一覧から取引を削除します。訂正・削除履歴には記録が残ります。"
+        shape="rounded"
+        size="sm"
+      >
+        {deleteEntry ? (
+          <div className="space-y-4">
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 font-acumin text-xs">
+              <dt className="text-[#707070]">日付</dt>
+              <dd className="tabular-nums">{deleteEntry.date.replaceAll("-", "/")}</dd>
+              <dt className="text-[#707070]">種別</dt>
+              <dd>{deleteEntry.entryType === "income" ? "収入" : "支出"}</dd>
+              <dt className="text-[#707070]">摘要・取引先</dt>
+              <dd>
+                {deleteEntry.partner
+                  ? `${deleteEntry.item} / ${deleteEntry.partner}`
+                  : deleteEntry.item}
+              </dd>
+              <dt className="text-[#707070]">金額</dt>
+              <dd className="tabular-nums">{currency(deleteEntry.amount)}</dd>
+            </dl>
+            {deleteDialogError ? (
+              <p className="font-acumin text-xs text-red-700" role="alert">
+                {deleteDialogError}
+              </p>
+            ) : null}
+            <div className="flex gap-2 border-t border-[#d4d4d4] pt-4">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                shape="rounded"
+                className="flex-1 font-acumin"
+                onClick={closeDeleteDialog}
+                disabled={isSaving}
+              >
+                キャンセル
+              </Button>
+              <Button
+                type="button"
+                data-entry-delete-confirm="true"
+                variant="primary"
+                size="sm"
+                shape="rounded"
+                className="flex-1 bg-[#b91c1c] font-acumin text-white hover:bg-[#991b1b]"
+                onClick={() => void confirmDeleteEntry()}
+                disabled={isSaving}
+              >
+                {isSaving ? "削除中…" : "削除を確定"}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Dialog>
     </div>
   );
 
@@ -6748,10 +7196,11 @@ export default function CostProfitSection({
       </div>
 
       {/* 科目 → 残高推移と仕訳 → 明細。左から右へ絞り込みが進む並びにする。 */}
-      <div className="grid grid-cols-1 items-start gap-4 2xl:grid-cols-[240px_minmax(0,1fr)_230px]">
+      <div className="grid grid-cols-1 items-start gap-4 2xl:grid-cols-[220px_minmax(0,1fr)_307px]">
         <Panel
           radius="rounded"
           headingLevel={4}
+          className="2xl:col-start-1 2xl:row-start-1"
           aria-label="勘定科目"
           title={<span className={panelTitleClassName}>勘定科目</span>}
         >
@@ -6866,17 +7315,14 @@ export default function CostProfitSection({
           )}
         </Panel>
 
-        <div className="min-w-0 space-y-4">
+        <div className="min-w-0 space-y-4 2xl:contents">
           <Panel
             radius="rounded"
             headingLevel={4}
+            className="2xl:col-start-2 2xl:row-start-1"
             aria-label="残高推移"
             title={
-              <span className={panelTitleClassName}>
-                {selectedLedger
-                  ? `${selectedLedger.account.code} ${selectedLedger.account.name}　残高推移`
-                  : "残高推移"}
-              </span>
+              <span className={panelTitleClassName}>残高推移</span>
             }
           >
             {!selectedLedger ? (
@@ -6963,13 +7409,10 @@ export default function CostProfitSection({
             radius="rounded"
             headingLevel={4}
             size="2xs"
+            className="2xl:col-span-2 2xl:col-start-1 2xl:row-start-2"
             aria-label="仕訳一覧"
             title={
-              <span className={panelTitleClassName}>
-                {selectedLedger
-                  ? `仕訳一覧（${selectedLedger.account.code} ${selectedLedger.account.name}）`
-                  : "仕訳一覧"}
-              </span>
+              <span className={panelTitleClassName}>仕訳一覧</span>
             }
           >
             <div className="flex flex-wrap items-center gap-2">
@@ -7192,7 +7635,7 @@ export default function CostProfitSection({
         <Panel
           radius="rounded"
           headingLevel={4}
-          className="h-fit"
+          className="h-fit 2xl:col-start-3 2xl:row-span-2 2xl:row-start-1 2xl:h-full"
           aria-label="仕訳詳細"
           title={<span className={panelTitleClassName}>仕訳詳細</span>}
         >
@@ -7229,6 +7672,10 @@ export default function CostProfitSection({
                 {ledgerDetailRow("取引先", selectedLedgerRow.partner || "—")}
                 {ledgerDetailRow("摘要", selectedLedgerRow.description)}
               </div>
+
+              <p className="font-acumin text-[11px] leading-relaxed text-[#707070]">
+                一覧は選択中の勘定科目の元帳行、以下は伝票全体の仕訳です。
+              </p>
 
               <div className="grid grid-cols-2 gap-3 border-t border-[#ededed] pt-3">
                 {(["debit", "credit"] as const).map((side) => {
@@ -7287,7 +7734,7 @@ export default function CostProfitSection({
                         <span className="font-acumin text-[11px] text-black underline">
                           {entry.number}
                         </span>
-                        <span className="ml-1 font-acumin text-[11px] text-[#707070]">
+                        <span className="ml-1 whitespace-nowrap font-acumin text-[11px] text-[#707070]">
                           （{entry.description}）
                         </span>
                       </li>

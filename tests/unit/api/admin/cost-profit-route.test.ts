@@ -116,6 +116,15 @@ function createFinanceSupabaseMock() {
 											currency: 'jpy',
 											created_at: '2026-05-26T01:00:00.000Z',
 										},
+										{
+											id: 'order-fully-refunded',
+											payment_intent_id: 'pi_refunded',
+											status: 'cancelled',
+											total_amount: 59_600,
+											refunded_amount: 59_600,
+											currency: 'jpy',
+											created_at: '2026-07-05T01:00:00.000Z',
+										},
 									]),
 								}),
 							}),
@@ -145,6 +154,10 @@ function createFinanceSupabaseMock() {
 							]),
 					}),
 				};
+			}
+
+			if (table === 'admin_finance_summary_options') {
+				return { select: () => ({ order: () => result([{ id: 11, entry_type: 'expense', name: '外注検品' }]) }) };
 			}
 
 			if (table === 'admin_finance_fixed_assets') {
@@ -223,6 +236,16 @@ describe('GET /api/admin/kpi/cost-profit', () => {
 			refundedAmount: 500,
 		}));
 		expect(body.data.partners).toEqual(['丸善テキスタイル']);
+		expect(body.data.cumulativeEntries[0]).toEqual(expect.objectContaining({
+			id: 1,
+			entryType: 'expense',
+			date: '2026-05-24',
+			category: '広告宣伝費',
+			item: 'Instagram広告費',
+			partner: '丸善テキスタイル',
+			amount: 32000,
+			paymentMethod: 'クレジットカード',
+		}));
 		expect(body.data.templates).toEqual([
 			{ name: '毎月の家賃', entryType: 'expense', category: '地代家賃', item: '打合せ・交通', amount: 80000, paymentMethod: '銀行', memo: '事務所' },
 		]);
@@ -393,9 +416,9 @@ describe('POST /api/admin/kpi/cost-profit', () => {
 		);
 	});
 
-	it('経費テンプレートを同名上書きでupsertする', async () => {
-		const upsert = jest.fn().mockResolvedValue({ error: null });
-		const from = jest.fn().mockReturnValue({ upsert });
+	it('新規テンプレートをinsertする', async () => {
+		const insert = jest.fn().mockResolvedValue({ error: null });
+		const from = jest.fn().mockReturnValue({ insert });
 		createServiceMock.mockResolvedValueOnce({ from } as never);
 
 		const response = await POST(new Request('http://localhost/api/admin/kpi/cost-profit', {
@@ -411,7 +434,7 @@ describe('POST /api/admin/kpi/cost-profit', () => {
 		expect(response.status).toBe(200);
 		expect(body.success).toBe(true);
 		expect(from).toHaveBeenCalledWith('admin_finance_expense_templates');
-		expect(upsert).toHaveBeenCalledWith(
+		expect(insert).toHaveBeenCalledWith(
 			{
 				name: '毎月の家賃',
 				entry_type: 'expense',
@@ -422,7 +445,125 @@ describe('POST /api/admin/kpi/cost-profit', () => {
 				memo: '事務所',
 				created_by: 'admin-id',
 			},
-			{ onConflict: 'name' },
+		);
+	});
+
+	it('新規テンプレートの名前が重複した場合は409を返す', async () => {
+		const insert = jest.fn().mockResolvedValue({ error: { code: '23505', message: 'duplicate key' } });
+		const from = jest.fn().mockReturnValue({ insert });
+		createServiceMock.mockResolvedValueOnce({ from } as never);
+
+		const response = await POST(new Request('http://localhost/api/admin/kpi/cost-profit', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				operation: 'template.create',
+				template: { name: '毎月の家賃', entryType: 'expense', category: '地代家賃', item: '打合せ・交通', amount: 80000, paymentMethod: '銀行', memo: '事務所' },
+			}),
+		}));
+
+		expect(response.status).toBe(409);
+		expect(await response.json()).toEqual({ error: '同じ名前のテンプレートが存在します。' });
+	});
+
+	it('選択中のテンプレートだけを現在の入力内容で更新する', async () => {
+		const maybeSingle = jest.fn().mockResolvedValue({ data: { name: '毎月の家賃' }, error: null });
+		const select = jest.fn().mockReturnValue({ maybeSingle });
+		const eq = jest.fn().mockReturnValue({ select });
+		const update = jest.fn().mockReturnValue({ eq });
+		const from = jest.fn().mockReturnValue({ update });
+		createServiceMock.mockResolvedValueOnce({ from } as never);
+
+		const response = await POST(new Request('http://localhost/api/admin/kpi/cost-profit', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				operation: 'template.update',
+				templateName: '毎月の家賃',
+				template: { name: '毎月の家賃', entryType: 'expense', category: '地代家賃', item: '事務所家賃', amount: 85000, paymentMethod: '銀行', memo: '更新後' },
+			}),
+		}));
+
+		expect(response.status).toBe(200);
+		expect(update).toHaveBeenCalledWith(expect.objectContaining({ item_name: '事務所家賃', amount: 85000, memo: '更新後' }));
+		expect(eq).toHaveBeenCalledWith('name', '毎月の家賃');
+	});
+
+	it('上書き対象のテンプレートが存在しない場合は404を返す', async () => {
+		const maybeSingle = jest.fn().mockResolvedValue({ data: null, error: null });
+		const select = jest.fn().mockReturnValue({ maybeSingle });
+		const eq = jest.fn().mockReturnValue({ select });
+		const update = jest.fn().mockReturnValue({ eq });
+		createServiceMock.mockResolvedValueOnce({ from: jest.fn().mockReturnValue({ update }) } as never);
+
+		const response = await POST(new Request('http://localhost/api/admin/kpi/cost-profit', {
+			method: 'POST',
+			body: JSON.stringify({
+				operation: 'template.update',
+				templateName: '削除済みテンプレート',
+				template: { name: '削除済みテンプレート', entryType: 'expense', category: '地代家賃', item: '事務所家賃', amount: 85000, paymentMethod: '銀行', memo: '' },
+			}),
+		}));
+
+		expect(response.status).toBe(404);
+		expect(await response.json()).toEqual({ error: 'テンプレートが見つかりません。選択し直してください。' });
+	});
+
+	it('共有摘要候補を正規化して追加する', async () => {
+		const single = jest.fn().mockResolvedValue({ data: { id: 8, entry_type: 'expense', name: '撮影立会費' }, error: null });
+		const select = jest.fn().mockReturnValue({ single });
+		const insert = jest.fn().mockReturnValue({ select });
+		const from = jest.fn().mockReturnValue({ insert });
+		createServiceMock.mockResolvedValueOnce({ from } as never);
+
+		const response = await POST(new Request('http://localhost/api/admin/kpi/cost-profit', {
+			method: 'POST', body: JSON.stringify({ operation: 'summaryOption.create', entryType: 'expense', name: ' 撮影立会費 ' }),
+		}));
+
+		expect(response.status).toBe(200);
+		expect(insert).toHaveBeenCalledWith(expect.objectContaining({ entry_type: 'expense', name: '撮影立会費' }));
+	});
+
+	it('使用中の共有摘要候補は削除しない', async () => {
+		const from = jest.fn((table: string) => {
+			if (table === 'admin_finance_summary_options') return { select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: { id: 8, entry_type: 'expense', name: '撮影立会費' }, error: null }) }) }) };
+			if (table === 'admin_finance_expenses') return { select: () => ({ eq: () => ({ eq: () => ({ is: () => ({ limit: () => Promise.resolve({ data: [{ id: 1 }], error: null }) }) }) }) }) };
+			return { select: () => ({ eq: () => ({ eq: () => ({ limit: () => Promise.resolve({ data: [], error: null }) }) }) }) };
+		});
+		createServiceMock.mockResolvedValueOnce({ from } as never);
+
+		const response = await POST(new Request('http://localhost/api/admin/kpi/cost-profit', {
+			method: 'POST', body: JSON.stringify({ operation: 'summaryOption.delete', summaryOptionId: 8 }),
+		}));
+
+		expect(response.status).toBe(409);
+		expect((await response.json()).error).toContain('使用中');
+	});
+
+	it('法人の訂正内容を確認済みにできる', async () => {
+		const upsert = jest.fn().mockResolvedValue({ error: null });
+		const from = jest.fn().mockReturnValue({ upsert });
+		createServiceMock.mockResolvedValueOnce({ from } as never);
+
+		const response = await POST(new Request('http://localhost/api/admin/kpi/cost-profit', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				operation: 'entry.reviewAck',
+				entryRef: 'entry:28',
+				reason: 'revisedEntry',
+				acknowledged: true,
+				note: '訂正前後と証憑を確認',
+			}),
+		}));
+
+		expect(response.status).toBe(200);
+		expect(upsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				entry_ref: 'entry:28',
+				reason: 'revisedEntry',
+			}),
+			{ onConflict: 'entry_ref,reason' },
 		);
 	});
 });

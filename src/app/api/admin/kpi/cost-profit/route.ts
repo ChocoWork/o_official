@@ -17,9 +17,11 @@ const RECEIPT_BUCKET = 'finance-receipts';
 const moneySchema = z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 
 const entryTypeSchema = z.enum(['expense', 'income']).default('expense');
+const summaryOptionNameSchema = z.string().trim().min(1).max(160)
+  .refine((name) => !name.startsWith('__'), 'Reserved summary option name');
 
 // 要確認の理由。src/lib/finance/entry-review.ts の EntryReviewReasonId と揃える。
-const entryReviewReasonSchema = z.enum(['duplicate', 'unknownAccount', 'unlinkedAsset']);
+const entryReviewReasonSchema = z.enum(['duplicate', 'unknownAccount', 'unlinkedAsset', 'revisedEntry']);
 
 // 事業形態。勘定科目マスタ（src/lib/finance/accounts.ts）の適用形態と対応する。
 const businessTypeSchema = z.enum(['soleProprietor', 'corporation']);
@@ -151,9 +153,24 @@ const mutationSchema = z.discriminatedUnion('operation', [
 		}),
 	}),
 	z.object({
+		operation: z.literal('template.update'),
+		templateName: z.string().trim().min(1).max(160),
+		template: z.object({
+			name: z.string().trim().min(1).max(160),
+			entryType: entryTypeSchema,
+			category: z.string().trim().min(1).max(80),
+			item: z.string().trim().min(1).max(160),
+			amount: moneySchema,
+			paymentMethod: z.string().trim().min(1).max(80),
+			memo: z.string().trim().max(500).default(''),
+		}),
+	}),
+	z.object({
 		operation: z.literal('template.delete'),
 		templateName: z.string().trim().min(1).max(160),
 	}),
+	z.object({ operation: z.literal('summaryOption.create'), entryType: entryTypeSchema, name: summaryOptionNameSchema }),
+	z.object({ operation: z.literal('summaryOption.delete'), summaryOptionId: z.coerce.number().int().positive() }),
 	z.object({
 		operation: z.literal('businessType.update'),
 		fiscalYear: fiscalYearSchema,
@@ -230,10 +247,14 @@ type ReceiptRow = {
 };
 
 type CumulativeEntryRow = {
+	id: number;
 	entry_type: EntryType;
 	expense_date: string;
 	category: string;
+	item_name: string;
+	partner: string;
 	amount: number;
+	payment_method: string;
 };
 
 type EntryRevisionRow = {
@@ -290,6 +311,8 @@ type ExpenseTemplateRow = {
 	payment_method: string;
 	memo: string;
 };
+
+type SummaryOptionRow = { id: number; entry_type: EntryType; name: string };
 
 type ProductRow = {
 	sku: string;
@@ -369,6 +392,7 @@ function emptyFinanceResponse(fiscalYear: number, seasonKey: string | null) {
 			reviewAcks: [],
 			cumulativeEntries: [],
 			templates: [],
+			summaryOptions: [],
 		},
 	});
 }
@@ -422,7 +446,7 @@ function formatJstDate(date: string): string {
 
 function mapOrderIncome(row: OrderSalesRow, index: number) {
 	const sale = toOrderSalesTransaction(row);
-	if (!sale) return null;
+	if (!sale || sale.netAmount <= 0) return null;
 
 	return {
 		id: -(index + 1),
@@ -596,6 +620,7 @@ export async function GET(request: Request) {
 			cumulativeResult,
 			orderSalesResult,
 			reviewAcksResult,
+			summaryOptionsResult,
 		] = await Promise.all([
 			supabase
 				.from('admin_finance_years')
@@ -639,10 +664,10 @@ export async function GET(request: Request) {
 				.order('changed_at', { ascending: false })
 				.order('id', { ascending: false })
 				.limit(200),
-			// 開業以来累計の集計用。損益の判定に必要な最小限の列だけを取る。
+			// 開業以来累計と借入先別残高の集計用。仕訳再構築に必要な最小限の列を取る。
 			supabase
 				.from('admin_finance_expenses')
-				.select('entry_type, expense_date, category, amount')
+				.select('id, entry_type, expense_date, category, item_name, partner, amount, payment_method')
 				.lte('expense_date', `${parsedYear.data}-12-31`)
 				.is('deleted_at', null),
 			supabase
@@ -656,6 +681,7 @@ export async function GET(request: Request) {
 			supabase
 				.from('admin_finance_entry_review_acks')
 				.select('entry_ref, reason, note, reviewed_at'),
+			supabase.from('admin_finance_summary_options').select('id, entry_type, name').order('name', { ascending: true }),
 		]);
 
 		// Migration 074 may be deployed after this application version. When the
@@ -684,7 +710,8 @@ export async function GET(request: Request) {
 		const queryError =
 			planError || expensesResult.error || productsResult.error || partnersResult.error || templatesResult.error
 			|| assetsResult.error || closingsResult.error || revisionsResult.error || cumulativeResult.error
-			|| orderSalesResult.error || reviewAcksError;
+			|| orderSalesResult.error || reviewAcksError
+			|| (isMissingFinanceTable(summaryOptionsResult.error) ? null : summaryOptionsResult.error);
 		if (queryError) {
 			if (isMissingFinanceTable(queryError)) {
 				return emptyFinanceResponse(parsedYear.data, seasonKey);
@@ -728,12 +755,21 @@ export async function GET(request: Request) {
 					reviewedAt: row.reviewed_at,
 				})),
 				cumulativeEntries: ((cumulativeResult.data ?? []) as CumulativeEntryRow[]).map((row) => ({
+					id: Number(row.id),
 					entryType: row.entry_type ?? 'expense',
 					date: row.expense_date,
 					category: row.category,
+					item: row.item_name,
+					partner: row.partner ?? '',
 					amount: Number(row.amount),
+					paymentMethod: row.payment_method,
+					memo: '',
+					seasonTag: null,
 				})),
 				templates: ((templatesResult.data ?? []) as ExpenseTemplateRow[]).map(mapTemplate),
+				summaryOptions: ((summaryOptionsResult.data ?? []) as SummaryOptionRow[]).map((row) => ({
+					id: Number(row.id), entryType: row.entry_type, name: row.name, isCustom: true,
+				})),
 			},
 		});
 	} catch (error) {
@@ -1031,12 +1067,11 @@ export async function POST(request: Request) {
 			if (error) throw error;
 			resourceId = parsed.data.partnerName;
 		} else if (parsed.data.operation === 'template.create') {
-			// 経費入力テンプレート（グローバル）。同名は上書き（編集）。
+			// 新規作成では同名を上書きしない。別名保存の誤上書きをDBでも防ぐ。
 			const template = parsed.data.template;
 			const { error } = await supabase
 				.from('admin_finance_expense_templates')
-				.upsert(
-					{
+				.insert({
 						name: template.name,
 						entry_type: template.entryType,
 						category: template.category,
@@ -1045,11 +1080,42 @@ export async function POST(request: Request) {
 						payment_method: template.paymentMethod,
 						memo: template.memo,
 						created_by: authz.userId,
-					},
-					{ onConflict: 'name' },
-				);
+					});
+
+			if (error) {
+				if ((error as SupabaseErrorLike).code === '23505') {
+					return NextResponse.json(
+						{ error: '同じ名前のテンプレートが存在します。' },
+						{ status: 409 },
+					);
+				}
+				throw error;
+			}
+			resourceId = template.name;
+		} else if (parsed.data.operation === 'template.update') {
+			const template = parsed.data.template;
+			const { data, error } = await supabase
+				.from('admin_finance_expense_templates')
+				.update({
+					name: template.name,
+					entry_type: template.entryType,
+					category: template.category,
+					item_name: template.item,
+					amount: template.amount,
+					payment_method: template.paymentMethod,
+					memo: template.memo,
+				})
+				.eq('name', parsed.data.templateName)
+				.select('name')
+				.maybeSingle();
 
 			if (error) throw error;
+			if (!data) {
+				return NextResponse.json(
+					{ error: 'テンプレートが見つかりません。選択し直してください。' },
+					{ status: 404 },
+				);
+			}
 			resourceId = template.name;
 		} else if (parsed.data.operation === 'template.delete') {
 			const { error } = await supabase
@@ -1059,6 +1125,34 @@ export async function POST(request: Request) {
 
 			if (error) throw error;
 			resourceId = parsed.data.templateName;
+		} else if (parsed.data.operation === 'summaryOption.create') {
+			const name = parsed.data.name.trim();
+			const normalizedName = name.toLocaleLowerCase('ja');
+			const { data, error } = await supabase.from('admin_finance_summary_options')
+				.insert({ entry_type: parsed.data.entryType, name, normalized_name: normalizedName, created_by: authz.userId })
+				.select('id, entry_type, name').single();
+			if (error) {
+				if ((error as SupabaseErrorLike).code === '23505') return NextResponse.json({ error: '同じ摘要が既に登録されています。' }, { status: 409 });
+				throw error;
+			}
+			resourceId = String(data.id);
+		} else if (parsed.data.operation === 'summaryOption.delete') {
+			const { data: option, error: optionError } = await supabase.from('admin_finance_summary_options')
+				.select('id, entry_type, name').eq('id', parsed.data.summaryOptionId).maybeSingle();
+			if (optionError) throw optionError;
+			if (!option) return NextResponse.json({ error: '摘要候補が見つかりません。' }, { status: 404 });
+			const [entryUse, templateUse] = await Promise.all([
+				supabase.from('admin_finance_expenses').select('id').eq('entry_type', option.entry_type).eq('item_name', option.name).is('deleted_at', null).limit(1),
+				supabase.from('admin_finance_expense_templates').select('id').eq('entry_type', option.entry_type).eq('item_name', option.name).limit(1),
+			]);
+			if (entryUse.error) throw entryUse.error;
+			if (templateUse.error) throw templateUse.error;
+			if ((entryUse.data?.length ?? 0) > 0 || (templateUse.data?.length ?? 0) > 0) {
+				return NextResponse.json({ error: 'この摘要は取引またはテンプレートで使用中のため削除できません。' }, { status: 409 });
+			}
+			const { error } = await supabase.from('admin_finance_summary_options').delete().eq('id', option.id);
+			if (error) throw error;
+			resourceId = String(option.id);
 		} else if (parsed.data.operation === 'fixedAsset.upsert') {
 			// id=0 は新規登録。既存 id は更新。
 			const asset = parsed.data.asset;
