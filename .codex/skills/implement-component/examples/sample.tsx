@@ -52,6 +52,7 @@ export default async function ProfilePage(): Promise<JSX.Element> {
 }
 
 // File: components/feature/ProfileForm.tsx
+// eslint-disable-next-line @typescript-eslint/no-unused-expressions -- 複数ファイル例に含める Client Component ディレクティブ。
 'use client';
 
 import { useState, useTransition } from 'react';
@@ -146,6 +147,7 @@ export function ProfileForm({
 }
 
 // File: components/feature/ProfileForm.tsx
+// eslint-disable-next-line @typescript-eslint/no-unused-expressions -- 複数ファイル例に含める Client Component ディレクティブ。
 'use client';
 
 import { useState, useTransition } from 'react';
@@ -240,6 +242,7 @@ export function ProfileForm({
 }
 
 // File: app/actions/update-profile.ts
+// eslint-disable-next-line @typescript-eslint/no-unused-expressions -- 複数ファイル例に含める Server Action ディレクティブ。
 'use server';
 
 import { revalidatePath } from 'next/cache';
