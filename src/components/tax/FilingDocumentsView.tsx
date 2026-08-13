@@ -145,7 +145,7 @@ export function FilingDocumentsView({
           icon="ri-error-warning-line"
           label="証憑不足"
           value={`${inventory.missingReceiptCount} 件`}
-          note={`未添付の取引 ${entryCounts.withoutReceipt} 件`}
+          note={`未添付 ${entryCounts.withoutReceipt} 件 / 理由記録済み ${entryCounts.unavailableRecorded} 件`}
           tone={inventory.missingReceiptCount > 0 ? "warning" : "positive"}
         />
         <TaxMetricCard

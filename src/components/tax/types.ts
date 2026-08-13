@@ -44,6 +44,7 @@ export type EntryCounts = {
   total: number;
   withReceipt: number;
   withoutReceipt: number;
+  unavailableRecorded: number;
   expense: number;
   income: number;
 };

@@ -305,6 +305,7 @@ const CORRECTION_HISTORY_COLOR = "#b91c1c";
 
 /** 証憑の有無。ドーナツと凡例で共有する色。 */
 const RECEIPT_ATTACHED_COLOR = "#111111";
+const RECEIPT_UNAVAILABLE_COLOR = "#6b7280";
 const RECEIPT_MISSING_COLOR = "#b45309";
 
 /** 収支バーの色。収入＝黒、支出＝グレー、収支＝緑（プラス）／赤（マイナス）。 */
@@ -402,6 +403,33 @@ type Receipt = {
   createdAt: string;
 };
 
+type EvidenceUnavailableReason =
+  | "bank_history_expired"
+  | "not_issued"
+  | "paper_storage"
+  | "external_electronic_storage"
+  | "other";
+
+type EvidenceUnavailableRecord = {
+  reason: EvidenceUnavailableReason;
+  note: string;
+  recordedAt: string;
+  recordedBy?: string | null;
+  updatedAt: string;
+  updatedBy?: string | null;
+};
+
+const EVIDENCE_UNAVAILABLE_REASON_OPTIONS = [
+  { value: "bank_history_expired", label: "銀行の閲覧期限超過" },
+  { value: "not_issued", label: "証憑が発行されていない" },
+  { value: "paper_storage", label: "紙で保管している" },
+  { value: "external_electronic_storage", label: "外部で電子保存している" },
+  { value: "other", label: "その他" },
+];
+
+const evidenceUnavailableReasonRequiresNote = (reason: string) =>
+  reason === "bank_history_expired" || reason === "other";
+
 /** 訂正削除履歴の1件（電子帳簿保存法の真実性の要件）。 */
 type RevisionSnapshot = {
   date: string | null;
@@ -424,6 +452,7 @@ type EntryRevision = {
 type Expense = FinanceEntry & {
   receipts?: Receipt[];
   evidenceStatus?: EvidenceStatus;
+  evidenceUnavailable?: EvidenceUnavailableRecord | null;
   source?: "manual" | "order";
   sourceId?: string;
   paymentIntentId?: string;
@@ -1369,6 +1398,18 @@ export default function CostProfitSection({
     [],
   );
   const [pendingReceipts, setPendingReceipts] = useState<File[]>([]);
+  const [receiptUnavailableFormOpen, setReceiptUnavailableFormOpen] =
+    useState(false);
+  const [receiptUnavailableReason, setReceiptUnavailableReason] = useState<
+    EvidenceUnavailableReason | ""
+  >("");
+  const [receiptUnavailableNote, setReceiptUnavailableNote] = useState("");
+  const [pendingUnavailableFormOpen, setPendingUnavailableFormOpen] =
+    useState(false);
+  const [pendingUnavailableReason, setPendingUnavailableReason] = useState<
+    EvidenceUnavailableReason | ""
+  >("");
+  const [pendingUnavailableNote, setPendingUnavailableNote] = useState("");
   const [isRevisionHistoryOpen, setIsRevisionHistoryOpen] = useState(true);
   // 総勘定元帳で表示中の科目コード（未選択なら残高のある先頭科目）。
   const [ledgerAccountCode, setLedgerAccountCode] = useState("");
@@ -2044,6 +2085,20 @@ export default function CostProfitSection({
       );
       return;
     }
+    if (
+      form.entryType === "income" &&
+      pendingUnavailableFormOpen &&
+      (!pendingUnavailableReason ||
+        (evidenceUnavailableReasonRequiresNote(pendingUnavailableReason) &&
+          !pendingUnavailableNote.trim()))
+    ) {
+      setFormMessage(
+        !pendingUnavailableReason
+          ? "証憑を添付できない理由を選択してください。"
+          : "この理由では補足メモを入力してください。",
+      );
+      return;
+    }
     const typeLabel = form.entryType === "income" ? "収入" : "支出";
     // 訂正は削除＋再登録にしない。expense.update で履歴を1本につなぐ
     // （電子帳簿保存法の真実性の要件）。
@@ -2085,6 +2140,33 @@ export default function CostProfitSection({
         }
         setPendingReceipts([]);
       }
+      if (
+        !isEditing &&
+        expense.entryType === "income" &&
+        Number.isFinite(createdId) &&
+        pendingUnavailableReason
+      ) {
+        try {
+          await postMutation({
+            operation: "evidenceUnavailable.upsert",
+            expenseId: createdId,
+            reason: pendingUnavailableReason,
+            note: pendingUnavailableNote.trim(),
+          });
+        } catch {
+          await loadFinanceData();
+          setIsEntryDrawerOpen(false);
+          setPendingUnavailableFormOpen(false);
+          setPendingUnavailableReason("");
+          setPendingUnavailableNote("");
+          setToast({
+            message:
+              "収入は登録しましたが、証憑を添付できない理由を保存できませんでした。取引の証憑管理から再度記録してください。",
+            variant: "error",
+          });
+          return;
+        }
+      }
       await loadFinanceData();
       // 保存が通ったら Drawer を閉じるので、完了の知らせは画面右下の Toast に出す。
       // Drawer 内の formMessage は入力を直させたいエラー専用にする。
@@ -2113,6 +2195,9 @@ export default function CostProfitSection({
         }
       }
       setIsEntryDrawerOpen(false);
+      setPendingUnavailableFormOpen(false);
+      setPendingUnavailableReason("");
+      setPendingUnavailableNote("");
     } catch (error) {
       setFormMessage(
         error instanceof Error
@@ -3723,13 +3808,20 @@ export default function CostProfitSection({
 
   // 証憑ステータス（ドーナツ）。電子取引データの保存漏れを一目で出す。
   const receiptStatusCounts = useMemo(() => {
-    const attached = entryRows.filter(hasEvidence).length;
+    const attached = entryRows.filter((entry) => {
+      const status = evidenceStatusOf(entry);
+      return status === "attached" || status === "system_record";
+    }).length;
+    const unavailable = entryRows.filter(
+      (entry) => evidenceStatusOf(entry) === "unavailable_recorded",
+    ).length;
     return {
       attached,
-      missing: entryRows.length - attached,
+      unavailable,
+      missing: entryRows.length - attached - unavailable,
       total: entryRows.length,
     };
-  }, [entryRows, hasEvidence]);
+  }, [entryRows, evidenceStatusOf]);
 
   // 今月の収支。選択中の会計年が当年でなければ、その年の12月を対象にする。
   const monthlyBalance = useMemo(() => {
@@ -3830,6 +3922,8 @@ export default function CostProfitSection({
         entry.seasonTag ? formatSeasonLabel(entry.seasonTag) : "",
         evidenceStatusOf(entry) === "system_record"
           ? "注文データ保存済み"
+          : evidenceStatusOf(entry) === "unavailable_recorded"
+            ? "理由記録済み"
           : hasReceipt(entry)
             ? "添付済み"
             : "未添付",
@@ -3842,6 +3936,10 @@ export default function CostProfitSection({
   /** 証憑 Drawer を開く。複数IDなら選択中の取引をまとめて扱う。 */
   const openReceiptDrawer = (entryIds: number[]) => {
     setReceiptMessage(null);
+    const entry = entryRows.find((candidate) => candidate.id === entryIds[0]);
+    setReceiptUnavailableFormOpen(Boolean(entry?.evidenceUnavailable));
+    setReceiptUnavailableReason(entry?.evidenceUnavailable?.reason ?? "");
+    setReceiptUnavailableNote(entry?.evidenceUnavailable?.note ?? "");
     setReceiptDrawerEntryIds(entryIds);
   };
 
@@ -3978,6 +4076,19 @@ export default function CostProfitSection({
             <span className="whitespace-nowrap text-xs text-[#365314]">
               注文データ保存済み
             </span>
+          );
+        }
+        if (evidenceStatusOf(entry) === "unavailable_recorded") {
+          return (
+            <button
+              type="button"
+              className="whitespace-nowrap text-xs text-[#4b5563] underline decoration-dotted underline-offset-4"
+              aria-label={`${entry.item}の証憑`}
+              data-receipt-state="unavailable-recorded"
+              onClick={() => openReceiptDrawer([entry.id])}
+            >
+              理由記録済み
+            </button>
           );
         }
         const attached = hasReceipt(entry);
@@ -4984,6 +5095,115 @@ export default function CostProfitSection({
               hint="PDF・JPEG・PNG・WebP・HEIC（20MBまで）"
               onFiles={(files) => void handleAttachReceipts(entry, files)}
             />
+            {entry.entryType === "income" && entry.source !== "order" ? (
+              <div className="mt-3 border-t border-[#ededed] pt-3">
+                {entry.evidenceUnavailable && !receiptUnavailableFormOpen ? (
+                  <div className="space-y-2">
+                    <p className="font-acumin text-[11px] font-medium text-[#474747]">
+                      理由記録済み：
+                      {EVIDENCE_UNAVAILABLE_REASON_OPTIONS.find(
+                        (option) =>
+                          option.value === entry.evidenceUnavailable?.reason,
+                      )?.label ?? entry.evidenceUnavailable.reason}
+                    </p>
+                    {entry.evidenceUnavailable.note ? (
+                      <p className="font-acumin text-[11px] text-[#707070]">
+                        {entry.evidenceUnavailable.note}
+                      </p>
+                    ) : null}
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="2xs"
+                        shape="rounded"
+                        onClick={() => setReceiptUnavailableFormOpen(true)}
+                      >
+                        理由を変更
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="2xs"
+                        shape="rounded"
+                        disabled={isSaving}
+                        onClick={() =>
+                          void handleDeleteEvidenceUnavailable(entry)
+                        }
+                      >
+                        未添付に戻す
+                      </Button>
+                    </div>
+                  </div>
+                ) : receiptUnavailableFormOpen ? (
+                  <div className="space-y-2">
+                    <SingleSelect
+                      variant="dropdown"
+                      block
+                      size="sm"
+                      aria-label="添付できない理由"
+                      placeholder="理由を選択"
+                      options={EVIDENCE_UNAVAILABLE_REASON_OPTIONS}
+                      value={receiptUnavailableReason}
+                      onValueChange={(value) =>
+                        setReceiptUnavailableReason(
+                          value as EvidenceUnavailableReason | "",
+                        )
+                      }
+                    />
+                    <TextAreaField
+                      aria-label="補足メモ"
+                      value={receiptUnavailableNote}
+                      maxLength={500}
+                      shape="rounded"
+                      size="sm"
+                      placeholder="取得できなかった事情や保管場所を記録"
+                      onChange={(event) =>
+                        setReceiptUnavailableNote(event.target.value)
+                      }
+                    />
+                    <p className="font-acumin text-[10px] leading-relaxed text-[#707070]">
+                      この記録は証憑の代わりにはなりません。取得できる資料や取引内容が分かる記録は、可能な範囲で別途保存してください。
+                    </p>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="primary"
+                        size="2xs"
+                        shape="rounded"
+                        disabled={
+                          isSaving ||
+                          !receiptUnavailableReason ||
+                          (evidenceUnavailableReasonRequiresNote(
+                            receiptUnavailableReason,
+                          ) && !receiptUnavailableNote.trim())
+                        }
+                        onClick={() =>
+                          void handleSaveEvidenceUnavailable(entry)
+                        }
+                      >
+                        理由を保存
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="2xs"
+                        shape="rounded"
+                        onClick={() => setReceiptUnavailableFormOpen(false)}
+                      >
+                        キャンセル
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="2xs"
+                    shape="rounded"
+                    className="w-full font-acumin"
+                    onClick={() => setReceiptUnavailableFormOpen(true)}
+                  >
+                    証憑添付不可
+                  </Button>
+                )}
+              </div>
+            ) : null}
           </div>
         ))}
       </div>
@@ -5481,6 +5701,64 @@ export default function CostProfitSection({
                   保存と同時に添付します。
                 </p>
               )}
+              {form.entryType === "income" ? (
+                <div className="mt-3 border-t border-[#ededed] pt-3">
+                  {pendingUnavailableFormOpen ? (
+                    <div className="space-y-2">
+                      <SingleSelect
+                        variant="dropdown"
+                        block
+                        size="sm"
+                        aria-label="添付できない理由"
+                        placeholder="理由を選択"
+                        options={EVIDENCE_UNAVAILABLE_REASON_OPTIONS}
+                        value={pendingUnavailableReason}
+                        onValueChange={(value) =>
+                          setPendingUnavailableReason(
+                            value as EvidenceUnavailableReason | "",
+                          )
+                        }
+                      />
+                      <TextAreaField
+                        aria-label="補足メモ"
+                        value={pendingUnavailableNote}
+                        maxLength={500}
+                        shape="rounded"
+                        size="sm"
+                        placeholder="取得できなかった事情や保管場所を記録"
+                        onChange={(event) =>
+                          setPendingUnavailableNote(event.target.value)
+                        }
+                      />
+                      <p className="font-acumin text-[10px] leading-relaxed text-[#707070]">
+                        この記録は証憑の代わりにはなりません。取得できる資料や取引内容が分かる記録は、可能な範囲で別途保存してください。
+                      </p>
+                      <Button
+                        variant="ghost"
+                        size="2xs"
+                        shape="rounded"
+                        onClick={() => {
+                          setPendingUnavailableFormOpen(false);
+                          setPendingUnavailableReason("");
+                          setPendingUnavailableNote("");
+                        }}
+                      >
+                        未添付に戻す
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="2xs"
+                      shape="rounded"
+                      className="w-full font-acumin"
+                      onClick={() => setPendingUnavailableFormOpen(true)}
+                    >
+                      証憑添付不可
+                    </Button>
+                  )}
+                </div>
+              ) : null}
             </>
           ) : (
             <Button
@@ -5784,6 +6062,11 @@ export default function CostProfitSection({
                   value: receiptStatusCounts.missing,
                   color: RECEIPT_MISSING_COLOR,
                 },
+                {
+                  label: "理由記録済み",
+                  value: receiptStatusCounts.unavailable,
+                  color: RECEIPT_UNAVAILABLE_COLOR,
+                },
               ]}
             />
             <div className="min-w-0 flex-1 space-y-2">
@@ -5791,6 +6074,12 @@ export default function CostProfitSection({
                 "添付済み",
                 receiptStatusCounts.attached,
                 RECEIPT_ATTACHED_COLOR,
+                false,
+              )}
+              {donutLegendRow(
+                "理由記録済み",
+                receiptStatusCounts.unavailable,
+                RECEIPT_UNAVAILABLE_COLOR,
                 false,
               )}
               {donutLegendRow(
@@ -6572,6 +6861,55 @@ export default function CostProfitSection({
     } catch (error) {
       setReceiptMessage(
         error instanceof Error ? error.message : "証憑の削除に失敗しました。",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveEvidenceUnavailable = async (entry: Expense) => {
+    if (!receiptUnavailableReason) return;
+    try {
+      setIsSaving(true);
+      setReceiptMessage(null);
+      await postMutation({
+        operation: "evidenceUnavailable.upsert",
+        expenseId: entry.id,
+        reason: receiptUnavailableReason,
+        note: receiptUnavailableNote.trim(),
+      });
+      await loadFinanceData();
+      setReceiptUnavailableFormOpen(false);
+      setReceiptMessage("証憑を添付できない理由を記録しました。");
+    } catch (error) {
+      setReceiptMessage(
+        error instanceof Error
+          ? error.message
+          : "証憑を添付できない理由の保存に失敗しました。",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteEvidenceUnavailable = async (entry: Expense) => {
+    try {
+      setIsSaving(true);
+      setReceiptMessage(null);
+      await postMutation({
+        operation: "evidenceUnavailable.delete",
+        expenseId: entry.id,
+      });
+      await loadFinanceData();
+      setReceiptUnavailableReason("");
+      setReceiptUnavailableNote("");
+      setReceiptUnavailableFormOpen(false);
+      setReceiptMessage("証憑ステータスを未添付に戻しました。");
+    } catch (error) {
+      setReceiptMessage(
+        error instanceof Error
+          ? error.message
+          : "証憑ステータスを未添付に戻せませんでした。",
       );
     } finally {
       setIsSaving(false);
@@ -10017,7 +10355,10 @@ export default function CostProfitSection({
         const pending = monthRows.filter(
           (row) =>
             row.entryId >= 0 &&
-            (entriesById.get(row.entryId)?.receipts ?? []).length === 0,
+            (() => {
+              const entry = entriesById.get(row.entryId);
+              return entry ? evidenceStatusOf(entry) === "missing" : true;
+            })(),
         ).length;
 
         return {
@@ -10039,6 +10380,7 @@ export default function CostProfitSection({
     comparisonMonthIndex,
     amountOfSectionsAt,
     entriesById,
+    evidenceStatusOf,
   ]);
 
   const toggleBsGroup = (key: string) =>
@@ -11215,16 +11557,23 @@ export default function CostProfitSection({
   const taxEntryCounts = useMemo(() => {
     const all = [...expenses, ...incomes];
     const withReceipt = all.filter(
-      (entry) => (entry.receipts?.length ?? 0) > 0,
+      (entry) => {
+        const status = evidenceStatusOf(entry);
+        return status === "attached" || status === "system_record";
+      },
+    ).length;
+    const unavailableRecorded = all.filter(
+      (entry) => evidenceStatusOf(entry) === "unavailable_recorded",
     ).length;
     return {
       total: all.length,
       withReceipt,
-      withoutReceipt: all.length - withReceipt,
+      withoutReceipt: all.length - withReceipt - unavailableRecorded,
+      unavailableRecorded,
       expense: expenses.length,
       income: incomes.length,
     };
-  }, [expenses, incomes]);
+  }, [expenses, incomes, evidenceStatusOf]);
 
   // 税務レポートは5枚（税務サマリー／青色申告決算書／税務調整／税務カレンダー／申告資料）。
   // 集計はここまでで済ませ、TaxReportSection は描画だけを受け持つ。

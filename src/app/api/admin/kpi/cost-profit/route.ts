@@ -253,7 +253,7 @@ type ExpenseRow = {
 	fixed_asset_exempt_reason?: string | null;
 	fixed_asset_reviewed_at?: string | null;
 	admin_finance_receipts?: ReceiptRow[] | null;
-	admin_finance_evidence_unavailable_records?: EvidenceUnavailableRow | null;
+	admin_finance_evidence_unavailable_records?: EvidenceUnavailableRow[] | EvidenceUnavailableRow | null;
 };
 
 type EvidenceUnavailableRow = {
@@ -438,7 +438,10 @@ function mapPlan(row: FinancePlanRow | null) {
 }
 
 function mapExpense(row: ExpenseRow) {
-	const unavailable = row.admin_finance_evidence_unavailable_records;
+	const unavailableRelation = row.admin_finance_evidence_unavailable_records;
+	const unavailable = Array.isArray(unavailableRelation)
+		? unavailableRelation[0] ?? null
+		: unavailableRelation;
 	return {
 		id: Number(row.id),
 		entryType: row.entry_type ?? 'expense',

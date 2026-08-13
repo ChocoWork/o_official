@@ -100,6 +100,24 @@ function setupFinanceFetch(
 				if (body.expense.entryType === 'income') data.incomes.unshift(entry);
 				else data.expenses.unshift(entry);
 			}
+			if (body.operation === 'evidenceUnavailable.upsert') {
+				data.incomes = data.incomes.map((income) => income.id === body.expenseId
+					? {
+						...income,
+						evidenceUnavailable: {
+							reason: body.reason,
+							note: body.note,
+							recordedAt: '2026-08-14T01:00:00.000Z',
+							updatedAt: '2026-08-14T01:00:00.000Z',
+						},
+					}
+					: income);
+			}
+			if (body.operation === 'evidenceUnavailable.delete') {
+				data.incomes = data.incomes.map((income) => income.id === body.expenseId
+					? { ...income, evidenceUnavailable: null }
+					: income);
+			}
 			if (body.operation === 'product.upsert') {
 				data.products = data.products.map((product) => product.id === body.product.id ? body.product : product);
 			}
@@ -131,7 +149,10 @@ function setupFinanceFetch(
 			if (body.operation === 'summaryOption.delete') {
 				data.summaryOptions = data.summaryOptions.filter((option) => option.id !== body.summaryOptionId);
 			}
-			return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+			return new Response(JSON.stringify({
+				success: true,
+				...(body.operation === 'expense.create' ? { resourceId: '2' } : {}),
+			}), { status: 200, headers: { 'Content-Type': 'application/json' } });
 		}
 		return new Response(JSON.stringify({ data }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 	});
@@ -147,6 +168,53 @@ describe('CostProfitSection', () => {
 
 	beforeEach(() => {
 		setupFinanceFetch();
+	});
+
+	it('手動収入の証憑添付不可理由を記録して解除できる', async () => {
+		const mockFetch = setupFinanceFetch([
+			{
+				id: 2,
+				entryType: 'income',
+				date: '2026-05-25',
+				category: '売上高',
+				item: '銀行振込売上',
+				partner: '取引先A',
+				amount: 120000,
+				paymentMethod: '普通預金',
+				memo: '',
+				receipts: [],
+			},
+		]);
+		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+
+		fireEvent.click(await screen.findByRole('tab', { name: '取引管理' }));
+		fireEvent.click(await screen.findByRole('button', { name: '銀行振込売上の証憑' }));
+		fireEvent.click(screen.getByRole('button', { name: '証憑添付不可' }));
+		fireEvent.click(screen.getByRole('button', { name: '添付できない理由' }));
+		fireEvent.click(screen.getByRole('option', { name: '銀行の閲覧期限超過' }));
+		expect(screen.getByRole('button', { name: '理由を保存' })).toBeDisabled();
+
+		fireEvent.change(screen.getByLabelText('補足メモ'), {
+			target: { value: '銀行へ過去明細を照会したが取得できず' },
+		});
+		fireEvent.click(screen.getByRole('button', { name: '理由を保存' }));
+
+		await waitFor(() => expect(mockFetch).toHaveBeenCalledWith(
+			'/api/admin/kpi/cost-profit',
+			expect.objectContaining({
+				method: 'POST',
+				body: expect.stringContaining('evidenceUnavailable.upsert'),
+			}),
+		));
+		expect((await screen.findAllByText('理由記録済み')).length).toBeGreaterThan(0);
+		fireEvent.click(screen.getByRole('button', { name: '未添付に戻す' }));
+		await waitFor(() => expect(mockFetch).toHaveBeenCalledWith(
+			'/api/admin/kpi/cost-profit',
+			expect.objectContaining({
+				method: 'POST',
+				body: expect.stringContaining('evidenceUnavailable.delete'),
+			}),
+		));
 	});
 
 	it('財務概要で借入先別と支払先別の累計・決済・残高を確認できる', async () => {
@@ -650,6 +718,9 @@ describe('CostProfitSection', () => {
 		fireEvent.click(screen.getByRole('button', { name: '勘定科目' }));
 		fireEvent.click(screen.getByRole('option', { name: '売上（収入）金額 / 売上高' }));
 		fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '120000' } });
+		fireEvent.click(screen.getByRole('button', { name: '証憑添付不可' }));
+		fireEvent.click(screen.getByRole('button', { name: '添付できない理由' }));
+		fireEvent.click(screen.getByRole('option', { name: '証憑が発行されていない' }));
 		fireEvent.click(screen.getByRole('button', { name: '保存' }));
 
 		expect(await screen.findByText('収入を保存し、仕訳帳と財務概要へ反映しました。')).toBeInTheDocument();
@@ -658,6 +729,13 @@ describe('CostProfitSection', () => {
 		expect(mockFetch).toHaveBeenCalledWith(
 			'/api/admin/kpi/cost-profit',
 			expect.objectContaining({ method: 'POST', body: expect.stringContaining('"entryType":"income"') }),
+		);
+		expect(mockFetch).toHaveBeenCalledWith(
+			'/api/admin/kpi/cost-profit',
+			expect.objectContaining({
+				method: 'POST',
+				body: expect.stringContaining('evidenceUnavailable.upsert'),
+			}),
 		);
 
 		// 統合された一覧に、既存の支出1件と登録した収入1件が並ぶ。

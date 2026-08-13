@@ -172,7 +172,7 @@ export function TaxCalendarView({
           icon="ri-search-eye-line"
           label="証憑不足"
           value={`${entryCounts.withoutReceipt} 件`}
-          note="証憑が添付されていない取引"
+          note={`未添付の取引（理由記録済み ${entryCounts.unavailableRecorded} 件は別管理）`}
           tone={entryCounts.withoutReceipt > 0 ? "warning" : "positive"}
         />
         <TaxMetricCard

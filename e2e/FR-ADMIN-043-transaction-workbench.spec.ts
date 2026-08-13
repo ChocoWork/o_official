@@ -361,6 +361,27 @@ for (const viewport of viewports) {
       );
     });
 
+    test('手動収入で証憑添付不可の理由を選択できる', async ({ page }) => {
+      // FREQ-269-AC-01
+      await openEntries(page);
+      await page.getByRole('button', { name: '新規取引' }).click();
+      let drawer = page.locator('[data-ui-drawer]').filter({
+        has: page.getByRole('heading', { name: '新規支出を登録' }),
+      });
+
+      await drawer.getByRole('button', { name: '収入', pressed: false }).click();
+      drawer = page.locator('[data-ui-drawer]').filter({
+        has: page.getByRole('heading', { name: '新規収入を登録' }),
+      });
+      await drawer.getByRole('button', { name: '証憑添付不可' }).click();
+      await drawer.getByRole('button', { name: '添付できない理由' }).click();
+      await page.getByRole('option', { name: '銀行の閲覧期限超過' }).click();
+
+      await expect(drawer.getByLabel('補足メモ')).toBeVisible();
+      await expect(drawer.getByText('この記録は証憑の代わりにはなりません。')).toBeVisible();
+      await expect(drawer.getByRole('button', { name: '未添付に戻す' })).toBeVisible();
+    });
+
     test('証憑はドラッグ＆ドロップとクリック選択の両方で追加できる', async ({ page }) => {
       // FREQ-257-AC-07
       await openEntries(page);
