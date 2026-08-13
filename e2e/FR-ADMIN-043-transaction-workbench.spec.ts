@@ -188,24 +188,22 @@ for (const viewport of viewports) {
       await openEntries(page);
 
       await expect(page.getByText('6件').first()).toBeVisible();
-      for (const header of ['日付', '種別', '勘定科目', '摘要・取引先', '金額', '証憑', '更新履歴', '状態']) {
-        await expect(page.getByRole('columnheader', { name: header, exact: true })).toBeVisible();
+      const table = page.getByRole('region', { name: '取引一覧' });
+      for (const header of ['日付', '種別', '勘定科目', '摘要', '取引先', '金額', '証憑', '更新履歴', '状態', '操作']) {
+        await expect(table.getByRole('columnheader', { name: header, exact: true })).toBeVisible();
       }
+      await expect(table.getByRole('columnheader', { name: '摘要・取引先', exact: true })).toHaveCount(0);
 
       // 旧構成の2表は消えていること
       await expect(page.getByText(/^支出一覧/)).toHaveCount(0);
       await expect(page.getByText(/^収入一覧/)).toHaveCount(0);
     });
 
-    test('状態が訂正あり・要確認・登録済みで色分けされる', async ({ page }) => {
+    test('個人事業主では訂正履歴だけの取引を登録済みとして扱う', async ({ page }) => {
       // FREQ-257-AC-02
       await openEntries(page);
 
       const table = page.getByRole('region', { name: '取引一覧' });
-
-      const revised = table.getByText('訂正あり', { exact: true }).first();
-      await expect(revised).toBeVisible();
-      await expect(revised).toHaveCSS('color', 'rgb(185, 28, 28)');
 
       const review = table.getByText('要確認', { exact: true }).first();
       await expect(review).toBeVisible();
@@ -214,9 +212,12 @@ for (const viewport of viewports) {
       const reviewButton = table
         .getByRole('button', { name: /の要確認の理由を開く（未確認\d+件）/ })
         .first();
-      const registered = table.getByText('登録済み', { exact: true }).first();
       await expect(reviewButton).toHaveText(/^要確認$/);
+
+      const revisedRow = table.getByText('広告出稿', { exact: true }).locator('xpath=ancestor::tr[1]');
+      const registered = revisedRow.getByText('登録済み', { exact: true });
       await expect(registered).toBeVisible();
+      await expect(revisedRow.getByText('訂正あり', { exact: true })).toHaveCount(0);
 
       const reviewBox = await review.boundingBox();
       const registeredBox = await registered.boundingBox();
@@ -285,9 +286,9 @@ for (const viewport of viewports) {
       await page.getByRole('button', { name: '適用して閉じる' }).click();
 
       await expect(page.getByText('1-1 / 1件')).toBeVisible();
-      await expect(
-        page.getByRole('region', { name: '取引一覧' }).getByText('卸売 / A社'),
-      ).toBeVisible();
+      const table = page.getByRole('region', { name: '取引一覧' });
+      const row = table.getByText('卸売', { exact: true }).locator('xpath=ancestor::tr[1]');
+      await expect(row.getByText('A社', { exact: true })).toBeVisible();
     });
 
     test('新規取引と訂正はDrawerで入力する', async ({ page }) => {
@@ -391,7 +392,7 @@ for (const viewport of viewports) {
       const queue = page.getByRole('region', { name: '確認キュー' });
       await expect(queue.getByText('証憑未添付')).toBeVisible();
       await expect(queue.getByText('金額確認')).toBeVisible();
-      await expect(queue.getByText('訂正内容確認')).toBeVisible();
+      await expect(queue.getByText('訂正内容確認')).toHaveCount(0);
 
       await queue.getByRole('button', { name: '証憑未添付の取引を一覧で絞り込む' }).click();
       await expect(page.getByRole('tab', { name: '証憑未添付（1）' })).toHaveAttribute('aria-selected', 'true');
@@ -413,6 +414,38 @@ for (const viewport of viewports) {
       });
       expect(hasHorizontalOverflow).toBe(false);
     });
+
+    test('摘要と取引先を折り返さず、狭い画面では表内を横スクロールできる', async ({ page }) => {
+      await openEntries(page);
+
+      const tableContainer = page.locator(
+        '[aria-label="取引一覧"] [data-ui-data-table]',
+      );
+      const summary = tableContainer.getByText('生地・材料仕入', { exact: true }).first();
+      const partner = tableContainer.getByText('B社', { exact: true }).first();
+      const summaryCell = summary.locator('xpath=ancestor-or-self::td[1]');
+      const partnerCell = partner.locator('xpath=ancestor-or-self::td[1]');
+
+      await expect(summary).toBeVisible();
+      await expect(partner).toBeVisible();
+      await expect(summaryCell).not.toHaveCSS('text-overflow', 'ellipsis');
+      await expect(partnerCell).not.toHaveCSS('text-overflow', 'ellipsis');
+      await expect(summaryCell).toHaveCSS('white-space', 'nowrap');
+      await expect(partnerCell).toHaveCSS('white-space', 'nowrap');
+
+      const dimensions = await tableContainer.evaluate((element) => ({
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+      }));
+      if (viewport.name === 'mobile' || viewport.name === 'tablet') {
+        expect(dimensions.scrollWidth).toBeGreaterThan(dimensions.clientWidth);
+        const scrollLeft = await tableContainer.evaluate((element) => {
+          element.scrollLeft = element.scrollWidth;
+          return element.scrollLeft;
+        });
+        expect(scrollLeft).toBeGreaterThan(0);
+      }
+    });
   });
 }
 
@@ -429,16 +462,25 @@ test.describe('FR-ADMIN-043 screenshot', () => {
         fullPage: true,
       });
 
-      // 表の列が面からはみ出さない（横スクロールで隠れない）こと。
+      // 全文を折り返さず保持し、必要な場合はページ全体ではなく表内だけで横スクロールする。
       const dimensions = await page.evaluate(() => {
         const container = document.querySelector(
           '[aria-label="取引一覧"] [data-ui-data-table]',
         );
         if (!container) return null;
-        return { clientWidth: container.clientWidth, scrollWidth: container.scrollWidth };
+        return {
+          clientWidth: container.clientWidth,
+          scrollWidth: container.scrollWidth,
+          overflowX: getComputedStyle(container).overflowX,
+        };
       });
       expect(dimensions).not.toBeNull();
-      expect(dimensions!.scrollWidth).toBeLessThanOrEqual(dimensions!.clientWidth + 1);
+      expect(dimensions!.scrollWidth).toBeGreaterThanOrEqual(dimensions!.clientWidth);
+      expect(dimensions!.overflowX).toBe('auto');
+      const hasPageOverflow = await page.evaluate(
+        () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+      );
+      expect(hasPageOverflow).toBe(false);
     });
   }
 });

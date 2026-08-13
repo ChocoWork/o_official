@@ -749,4 +749,69 @@ describe('CostProfitSection', () => {
 		expect(row).not.toBeNull();
 		expect(within(row!).getByText('登録済み')).toBeInTheDocument();
 	});
+
+	it('取引一覧で摘要と取引先を独立列にして全文を非折り返し表示する', async () => {
+		setupFinanceFetch([], undefined, false, {
+			expenses: [{
+				id: 1,
+				entryType: 'expense',
+				date: '2026-05-24',
+				category: '外注工賃',
+				item: 'サンプル制作と最終仕様確認',
+				partner: '丸善テキスタイル株式会社',
+				amount: 73_145,
+				paymentMethod: '銀行',
+				memo: '',
+			}],
+		});
+
+		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
+
+		const summaryHeader = screen.getByRole('columnheader', { name: '摘要' });
+		const table = summaryHeader.closest('table');
+		expect(table).not.toBeNull();
+		expect(within(table!).getByRole('columnheader', { name: '取引先' })).toBeInTheDocument();
+		expect(within(table!).queryByRole('columnheader', { name: '摘要・取引先' })).not.toBeInTheDocument();
+
+		const summary = within(table!).getByText('サンプル制作と最終仕様確認');
+		const partner = within(table!).getByText('丸善テキスタイル株式会社');
+		expect(summary.closest('td')).not.toBe(partner.closest('td'));
+		expect(summary.closest('td')).toHaveClass('whitespace-nowrap');
+		expect(partner.closest('td')).toHaveClass('whitespace-nowrap');
+		expect(summary).not.toHaveClass('truncate');
+		expect(partner).not.toHaveClass('truncate');
+		expect(table).toHaveClass('min-w-max', '!table-auto', '[&_td]:whitespace-nowrap');
+		expect(table!.parentElement).toHaveClass('[--pad-x:calc(var(--table-font-size)/var(--phi))]');
+	});
+
+	it('取引一覧で取引先未設定と注文補足を省略せず表示する', async () => {
+		setupFinanceFetch([{
+			id: -1,
+			entryType: 'income',
+			date: '2026-08-01',
+			category: '売上高',
+			item: 'オンラインストア注文 #1001',
+			partner: '',
+			amount: 73_145,
+			refundedAmount: 5_000,
+			paymentMethod: 'Stripe',
+			memo: '',
+			source: 'order',
+			readOnly: true,
+		}]);
+
+		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
+
+		const summary = screen.getByText('オンラインストア注文 #1001');
+		const row = summary.closest('tr');
+		expect(row).not.toBeNull();
+		expect(within(row!).getByText('取引先なし')).toBeInTheDocument();
+		expect(within(row!).getByText('Supabase注文')).toBeInTheDocument();
+		expect(within(row!).getByText('返金 ¥5,000')).toBeInTheDocument();
+		expect(summary).not.toHaveClass('truncate');
+	});
 });

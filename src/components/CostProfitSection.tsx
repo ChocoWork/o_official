@@ -3936,14 +3936,14 @@ export default function CostProfitSection({
     },
     {
       key: "item",
-      header: "摘要・取引先",
+      header: "摘要",
+      cellClassName: "whitespace-nowrap",
       render: (entry) => {
-        const label = entry.partner ? `${entry.item} / ${entry.partner}` : entry.item;
         if (entry.readOnly || entry.source === "order") {
           return (
-            <div className="max-w-[14rem]">
-              <span className="block truncate">{label}</span>
-              <span className="mt-0.5 flex flex-wrap gap-1 text-[10px] text-[#707070]">
+            <div className="whitespace-nowrap">
+              <span className="block">{entry.item}</span>
+              <span className="mt-0.5 flex flex-nowrap gap-1 text-[10px] text-[#707070]">
                 <span>Supabase注文</span>
                 {(entry.refundedAmount ?? 0) > 0 ? (
                   <span>返金 {currency(entry.refundedAmount ?? 0)}</span>
@@ -3952,12 +3952,14 @@ export default function CostProfitSection({
             </div>
           );
         }
-        return (
-          <span className="block max-w-[12rem] truncate">
-            {label}
-          </span>
-        );
+        return <span className="block">{entry.item}</span>;
       },
+    },
+    {
+      key: "partner",
+      header: "取引先",
+      cellClassName: "whitespace-nowrap",
+      render: (entry) => entry.partner || "取引先なし",
     },
     {
       key: "amount",
@@ -5943,8 +5945,8 @@ export default function CostProfitSection({
                 rows={pagedEntryRows}
                 rowKey={(entry) => String(entry.id)}
                 emptyLabel="該当する取引がありません。"
-                    tableClassName="min-w-[640px] !table-fixed"
-                containerClassName="font-acumin"
+                tableClassName="min-w-max !table-auto [&_td]:whitespace-nowrap"
+                containerClassName="font-acumin [--pad-x:calc(var(--table-font-size)/var(--phi))]"
               />
             </div>
           </Panel>
