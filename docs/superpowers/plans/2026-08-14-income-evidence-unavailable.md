@@ -88,7 +88,7 @@ git commit -m "feat(accounting): add unavailable evidence state"
 ### Task 2: 添付不可記録のDBテーブルとRLSを追加する
 
 **Files:**
-- Create: `supabase/migrations/087_finance_evidence_unavailable_records.sql`
+- Create: `migrations/087_finance_evidence_unavailable_records.sql`
 - Create: `tests/unit/migrations/087_finance_evidence_unavailable_records.test.ts`
 
 **Interfaces:**
@@ -390,7 +390,7 @@ Expected: PASS。生成物由来の既知エラーが出た場合はソースと
 Run:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .codex/skills/security-check/scripts/audit.ps1 --files-only src/lib/finance/evidence-status.ts src/app/api/admin/kpi/cost-profit/route.ts src/components/CostProfitSection.tsx src/components/tax supabase/migrations/087_finance_evidence_unavailable_records.sql
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .codex/skills/security-check/scripts/audit.ps1 --files-only src/lib/finance/evidence-status.ts src/app/api/admin/kpi/cost-profit/route.ts src/components/CostProfitSection.tsx src/components/tax migrations/087_finance_evidence_unavailable_records.sql
 ```
 
 Expected: Critical/Highなし、GO。入力検証、認可、RLS、監査ログ、過剰情報露出を確認する。
