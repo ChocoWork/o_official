@@ -8,7 +8,6 @@ import { test, expect } from '@playwright/test';
 const viewports = [
   { name: 'mobile', width: 390, height: 844 },
   { name: 'tablet', width: 768, height: 1024 },
-  { name: 'desktop', width: 1280, height: 800 },
 ];
 
 test.describe('FR-HEADER-003 Drawer SNS アイコン白黒フィルター', () => {
@@ -59,4 +58,12 @@ test.describe('FR-HEADER-003 Drawer SNS アイコン白黒フィルター', () =
       expect(filter).toMatch(/invert\(1\)/);
     });
   }
+
+  test('desktop (1280px): Drawer SNS icons are not rendered', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto('/');
+
+    await expect(page.getByRole('button', { name: 'Open menu' })).toBeHidden();
+    await expect(page.locator('.header-drawer-follow-icon')).toHaveCount(0);
+  });
 });

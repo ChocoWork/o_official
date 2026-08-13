@@ -20,7 +20,9 @@ type EmptyPageMetrics = {
   rootPaddingLeftPx: number;
   expectedFigureGapPx: number;
   expectedStackGapPx: number;
-  expectedPaddingPx: number;
+  expectedPaddingBlockPx: number;
+  expectedPaddingInlinePx: number;
+  expectedLabelFontSizePx: number;
 };
 
 function assertClose(actual: number, expected: number, label: string): void {
@@ -38,7 +40,7 @@ test.describe('FR-CART-011 empty page phi spacing', () => {
     const emptyPage = page.locator('.empty-page');
     await expect(emptyPage).toBeVisible();
 
-    const metrics = await emptyPage.evaluate<EmptyPageMetrics>((root) => {
+    const metrics: EmptyPageMetrics = await emptyPage.evaluate((root) => {
       const parsePx = (value: string): number => Number.parseFloat(value.replace('px', ''));
       const inner = root.querySelector<HTMLElement>('.empty-page__inner');
       const figure = root.querySelector<HTMLElement>('.empty-page__figure');
@@ -56,9 +58,11 @@ test.describe('FR-CART-011 empty page phi spacing', () => {
       const labelStyle = window.getComputedStyle(label);
 
       const iconFontSizePx = parsePx(iconStyle.fontSize);
-      const expectedFigureGapPx = iconFontSizePx * 0.618;
-      const expectedStackGapPx = iconFontSizePx * 0.272;
-      const expectedPaddingPx = iconFontSizePx * 0.062;
+      const expectedFigureGapPx = iconFontSizePx * 0.236;
+      const expectedStackGapPx = iconFontSizePx;
+      const expectedPaddingBlockPx = iconFontSizePx;
+      const expectedPaddingInlinePx = iconFontSizePx * 0.618;
+      const expectedLabelFontSizePx = iconFontSizePx * 0.618;
 
       return {
         rootDisplay: rootStyle.display,
@@ -77,7 +81,9 @@ test.describe('FR-CART-011 empty page phi spacing', () => {
         rootPaddingLeftPx: parsePx(rootStyle.paddingLeft),
         expectedFigureGapPx,
         expectedStackGapPx,
-        expectedPaddingPx,
+        expectedPaddingBlockPx,
+        expectedPaddingInlinePx,
+        expectedLabelFontSizePx,
       };
     });
 
@@ -88,12 +94,12 @@ test.describe('FR-CART-011 empty page phi spacing', () => {
     expect(metrics.innerFlexDirection).toBe('column');
     expect(metrics.innerAlignItems).toBe('center');
 
-    assertClose(metrics.labelFontSizePx, metrics.iconFontSizePx, 'icon/label font-size parity');
+    assertClose(metrics.labelFontSizePx, metrics.expectedLabelFontSizePx, 'label font size');
     assertClose(metrics.figureGapPx, metrics.expectedFigureGapPx, 'figure gap');
     assertClose(metrics.stackGapPx, metrics.expectedStackGapPx, 'stack gap');
-    assertClose(metrics.rootPaddingTopPx, metrics.expectedPaddingPx, 'root padding top');
-    assertClose(metrics.rootPaddingRightPx, metrics.expectedPaddingPx, 'root padding right');
-    assertClose(metrics.rootPaddingBottomPx, metrics.expectedPaddingPx, 'root padding bottom');
-    assertClose(metrics.rootPaddingLeftPx, metrics.expectedPaddingPx, 'root padding left');
+    assertClose(metrics.rootPaddingTopPx, metrics.expectedPaddingBlockPx, 'root padding top');
+    assertClose(metrics.rootPaddingRightPx, metrics.expectedPaddingInlinePx, 'root padding right');
+    assertClose(metrics.rootPaddingBottomPx, metrics.expectedPaddingBlockPx, 'root padding bottom');
+    assertClose(metrics.rootPaddingLeftPx, metrics.expectedPaddingInlinePx, 'root padding left');
   });
 });

@@ -2,7 +2,10 @@ const mockSelect = jest.fn();
 const mockIs = jest.fn(() => ({ select: mockSelect }));
 const mockIlike = jest.fn(() => ({ is: mockIs }));
 const mockUpdate = jest.fn(() => ({ ilike: mockIlike }));
-const mockFrom = jest.fn((_table: string): any => ({ update: mockUpdate }));
+const mockFrom = jest.fn((table: string): any => {
+  void table;
+  return { update: mockUpdate };
+});
 
 jest.mock('@/lib/supabase/server', () => ({
   createServiceRoleClient: jest.fn().mockResolvedValue({ from: mockFrom }),

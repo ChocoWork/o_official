@@ -101,6 +101,10 @@ async function mockAdminApis(page: Page): Promise<void> {
   });
 }
 
+function kpiListPanel(page: Page) {
+  return page.locator('[data-ui-panel]').filter({ hasText: 'KPI一覧' }).first();
+}
+
 for (const viewport of viewports) {
   test.describe(`FR-ADMIN-006 KPI card target edit (${viewport.name})`, () => {
     test.beforeEach(async ({ page }) => {
@@ -113,7 +117,7 @@ for (const viewport of viewports) {
       // FREQ-207-AC-01
       await page.goto('/admin');
 
-      await expect(page.getByText('リーチ数', { exact: true })).toBeVisible();
+      await expect(kpiListPanel(page).getByRole('button', { name: /^リーチ数：/ })).toBeVisible();
       await expect(page.getByRole('button', { name: '目標を編集' })).toHaveCount(1);
       await expect(page.getByRole('button', { name: /の目標を編集$/ })).toHaveCount(0);
     });
@@ -122,7 +126,7 @@ for (const viewport of viewports) {
       // FREQ-207-AC-02
       await page.goto('/admin');
 
-      const cvrCard = page.getByRole('button', { name: /^CVR/ });
+      const cvrCard = kpiListPanel(page).getByRole('button', { name: /^CVR：/ });
       await cvrCard.click();
       await expect(cvrCard).toContainText('目標 3.0%');
 
@@ -149,7 +153,7 @@ for (const viewport of viewports) {
       // FREQ-207-AC-03
       await page.goto('/admin');
 
-      const cvrCard = page.getByRole('button', { name: /^CVR/ });
+      const cvrCard = kpiListPanel(page).getByRole('button', { name: /^CVR：/ });
       await cvrCard.click();
       await page.getByRole('button', { name: '目標を編集' }).click();
 

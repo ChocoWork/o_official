@@ -686,19 +686,17 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     setIsFilterDrawerOpen(false);
   }, [applyDraftFilters]);
 
-  // デスクトップのサイドバー（ドラフト即時反映）では、フィルタ操作が
-  // FILTER_APPLY_DEBOUNCE_MS の間止まったら自動でドラフトを適用する。
+  // フィルタ操作が FILTER_APPLY_DEBOUNCE_MS の間止まったら、表示形式に
+  // かかわらず自動でドラフトを適用する。
   // applyDraftFilters はドラフト値に依存する useCallback なので、操作のたびに
   // タイマーがリセットされ、最後の操作からの待機後に1回だけ適用される。
-  // モバイル・タブレットは Drawer を開いて操作するため、開いている間は
-  // 時間経過で適用せず、Drawer を閉じたとき（closeDrawerAndApplyFilters）に適用する。
   useEffect(() => {
-    if (variant !== "catalog" || isFilterDrawerOpen) {
+    if (variant !== "catalog") {
       return;
     }
     const timer = setTimeout(applyDraftFilters, FILTER_APPLY_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [variant, isFilterDrawerOpen, applyDraftFilters]);
+  }, [variant, applyDraftFilters]);
 
   const resetDraftFilters = useCallback(() => {
     setDraftCollection("");

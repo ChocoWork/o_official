@@ -8,7 +8,6 @@ import { test, expect } from '@playwright/test';
 const viewports = [
   { name: 'mobile', width: 390, height: 844 },
   { name: 'tablet', width: 768, height: 1024 },
-  { name: 'desktop', width: 1280, height: 800 },
 ];
 
 test.describe('FR-HEADER-002 Drawer SNS アイコン中央配置', () => {
@@ -41,4 +40,12 @@ test.describe('FR-HEADER-002 Drawer SNS アイコン中央配置', () => {
       }
     });
   }
+
+  test('desktop (1280px): Drawer SNS section is not rendered', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto('/');
+
+    await expect(page.getByRole('button', { name: 'Open menu' })).toBeHidden();
+    await expect(page.locator('.header-drawer-follow')).toHaveCount(0);
+  });
 });

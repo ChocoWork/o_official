@@ -82,7 +82,15 @@ async function mockAdminApis(page: Page): Promise<void> {
 // 「売上」ラベル（exact）から祖先のカード div を得る。
 // FREQ-261 でカードは選択可能なボタンになった
 function salesCard(page: Page) {
-  return page.getByRole('button', { name: /^売上/ });
+  return page
+    .locator('[data-ui-panel]')
+    .filter({ hasText: 'KPI一覧' })
+    .first()
+    .getByRole('button', { name: /^売上：/ });
+}
+
+function kpiListPanel(page: Page) {
+  return page.locator('[data-ui-panel]').filter({ hasText: 'KPI一覧' }).first();
 }
 
 for (const viewport of viewports) {
@@ -95,7 +103,7 @@ for (const viewport of viewports) {
     test('カードアイコンの aria-label に定義が含まれる', async ({ page }) => {
       // FREQ-225-AC-01
       await page.goto('/admin');
-      await expect(page.getByText('リーチ数', { exact: true })).toBeVisible();
+      await expect(kpiListPanel(page).getByRole('button', { name: /^リーチ数：/ })).toBeVisible();
 
       await expect(salesCard(page).getByRole('img')).toHaveAttribute('aria-label', /総売上/);
     });
@@ -103,7 +111,7 @@ for (const viewport of viewports) {
     test('ホバーで定義行が表示される（ホバー前は非表示）', async ({ page }) => {
       // FREQ-225-AC-02
       await page.goto('/admin');
-      await expect(page.getByText('リーチ数', { exact: true })).toBeVisible();
+      await expect(kpiListPanel(page).getByRole('button', { name: /^リーチ数：/ })).toBeVisible();
 
       const card = salesCard(page);
       const definitionLine = card.getByText('定義: 総売上');
@@ -116,7 +124,7 @@ for (const viewport of viewports) {
     test('（ホバーなしで）横方向のページスクロールが発生しない', async ({ page }) => {
       // FREQ-225-AC-03
       await page.goto('/admin');
-      await expect(page.getByText('リーチ数', { exact: true })).toBeVisible();
+      await expect(kpiListPanel(page).getByRole('button', { name: /^リーチ数：/ })).toBeVisible();
 
       const hasHorizontalOverflow = await page.evaluate(() => {
         const doc = document.documentElement;

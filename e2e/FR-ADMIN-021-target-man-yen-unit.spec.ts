@@ -93,7 +93,11 @@ async function openKpiWorkspace(page: Page) {
 }
 
 function salesCard(page: Page) {
-  return page.getByRole('button', { name: /^売上/ });
+  return page
+    .locator('[data-ui-panel]')
+    .filter({ hasText: 'KPI一覧' })
+    .first()
+    .getByRole('button', { name: /^売上：/ });
 }
 
 for (const viewport of viewports) {

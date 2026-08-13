@@ -114,6 +114,10 @@ async function openKpiWorkspace(page: Page): Promise<void> {
   await expect(page.getByRole('heading', { name: 'KPIダッシュボード' })).toBeVisible();
 }
 
+function kpiListPanel(page: Page) {
+  return page.locator('[data-ui-panel]').filter({ hasText: 'KPI一覧' }).first();
+}
+
 for (const viewport of viewports) {
   test.describe(`FR-ADMIN-048 KPI unified workspace (${viewport.name})`, () => {
     test.beforeEach(async ({ page }) => {
@@ -139,16 +143,16 @@ for (const viewport of viewports) {
 
       const cards = page.getByRole('button', { pressed: false }).filter({ hasText: '目標' });
       await expect(page.getByText('KPI一覧', { exact: true })).toBeVisible();
-      await expect(page.getByRole('button', { name: /^売上/ })).toHaveAttribute('aria-pressed', 'true');
+      await expect(kpiListPanel(page).getByRole('button', { name: /^売上：/ })).toHaveAttribute('aria-pressed', 'true');
       await expect(cards.first()).toBeVisible();
 
-      const cvrCard = page.getByRole('button', { name: /^CVR/ });
+      const cvrCard = kpiListPanel(page).getByRole('button', { name: /^CVR：/ });
       await cvrCard.click();
       await expect(cvrCard).toHaveAttribute('aria-pressed', 'true');
 
       await page.getByRole('button', { name: '広告', exact: true }).click();
-      await expect(page.getByRole('button', { name: /^ROAS/ })).toBeVisible();
-      await expect(page.getByRole('button', { name: /^売上/ })).toHaveCount(0);
+      await expect(kpiListPanel(page).getByRole('button', { name: /^ROAS：/ })).toBeVisible();
+      await expect(kpiListPanel(page).getByRole('button', { name: /^売上：/ })).toHaveCount(0);
     });
 
     test('選択中KPIの現在値・目標・達成率と目標編集が表示される', async ({ page }) => {

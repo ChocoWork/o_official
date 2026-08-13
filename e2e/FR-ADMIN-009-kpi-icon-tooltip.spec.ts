@@ -50,6 +50,10 @@ async function mockAdminApis(page: Page): Promise<void> {
   });
 }
 
+function kpiListPanel(page: Page) {
+  return page.locator('[data-ui-panel]').filter({ hasText: 'KPI一覧' }).first();
+}
+
 for (const viewport of viewports) {
   test.describe(`FR-ADMIN-009 KPI icon tooltip (${viewport.name})`, () => {
     test.beforeEach(async ({ page }) => {
@@ -60,24 +64,24 @@ for (const viewport of viewports) {
     test('各KPIアイコンに説明の aria-label が付与される', async ({ page }) => {
       // FREQ-210-AC-01
       await page.goto('/admin');
-      await expect(page.getByText('リーチ数', { exact: true })).toBeVisible();
+      await expect(kpiListPanel(page).getByRole('button', { name: /^リーチ数：/ })).toBeVisible();
 
       // KPIカードのアイコンは role="img"（20指標）＋選択中KPIのサマリーに1つ（FREQ-261）
       await expect(page.locator('span[role="img"]')).toHaveCount(21);
 
-      const cpmCard = page.getByRole('button', { name: /^CPM/ });
+      const cpmCard = kpiListPanel(page).getByRole('button', { name: /^CPM：/ });
       await expect(cpmCard.getByRole('img')).toHaveAttribute('aria-label', /表示単価/);
 
-      const ltvCard = page.getByRole('button', { name: /^LTV/ });
+      const ltvCard = kpiListPanel(page).getByRole('button', { name: /^LTV：/ });
       await expect(ltvCard.getByRole('img')).toHaveAttribute('aria-label', /顧客生涯価値/);
     });
 
     test('アイコンをホバーすると説明ツールチップが表示される', async ({ page }) => {
       // FREQ-210-AC-02
       await page.goto('/admin');
-      await expect(page.getByText('リーチ数', { exact: true })).toBeVisible();
+      await expect(kpiListPanel(page).getByRole('button', { name: /^リーチ数：/ })).toBeVisible();
 
-      const cpmCard = page.getByRole('button', { name: /^CPM/ });
+      const cpmCard = kpiListPanel(page).getByRole('button', { name: /^CPM：/ });
       const tooltip = cpmCard.getByText('広告を1,000回表示するのにかかった費用（表示単価）');
 
       // ホバー前は非表示（display:none）
@@ -90,7 +94,7 @@ for (const viewport of viewports) {
     test('（ホバーなしで）横方向のページスクロールが発生しない', async ({ page }) => {
       // FREQ-210-AC-03
       await page.goto('/admin');
-      await expect(page.getByText('リーチ数', { exact: true })).toBeVisible();
+      await expect(kpiListPanel(page).getByRole('button', { name: /^リーチ数：/ })).toBeVisible();
 
       const hasHorizontalOverflow = await page.evaluate(() => {
         const doc = document.documentElement;

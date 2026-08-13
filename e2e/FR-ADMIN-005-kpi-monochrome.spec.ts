@@ -76,6 +76,10 @@ function expectMonochrome([r, g, b]: [number, number, number]): void {
   expect(g).toBe(b);
 }
 
+function kpiListPanel(page: Page) {
+  return page.locator('[data-ui-panel]').filter({ hasText: 'KPI一覧' }).first();
+}
+
 for (const viewport of viewports) {
   test.describe(`FR-ADMIN-005 KPI monochrome (${viewport.name})`, () => {
     test.beforeEach(async ({ page }) => {
@@ -88,7 +92,7 @@ for (const viewport of viewports) {
       await page.goto('/admin');
 
       // FREQ-261 でカードは選択可能なボタンになった
-      const card = page.getByRole('button', { name: /^リーチ数/ });
+      const card = kpiListPanel(page).getByRole('button', { name: /^リーチ数：/ });
       await expect(card).toBeVisible();
 
       const styles = await card.evaluate((el) => {
@@ -113,7 +117,7 @@ for (const viewport of viewports) {
     test('横方向のページスクロールが発生しない', async ({ page }) => {
       // FREQ-206-AC-03
       await page.goto('/admin');
-      await expect(page.getByText('リーチ数', { exact: true })).toBeVisible();
+      await expect(kpiListPanel(page).getByRole('button', { name: /^リーチ数：/ })).toBeVisible();
 
       const hasHorizontalOverflow = await page.evaluate(() => {
         const doc = document.documentElement;
