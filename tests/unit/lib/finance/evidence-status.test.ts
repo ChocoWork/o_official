@@ -1,21 +1,28 @@
 import { resolveEvidenceStatus } from '@/lib/finance/evidence-status';
 
 describe('resolveEvidenceStatus', () => {
-  it('treats online orders as a saved system record', () => {
-    expect(resolveEvidenceStatus({ source: 'order', receipts: [] })).toBe(
+  test.each([
+    [
+      { source: 'order', receipts: [], evidenceUnavailable: {} },
       'system_record',
-    );
-  });
-
-  it('requires evidence for manual entries without receipts', () => {
-    expect(resolveEvidenceStatus({ source: 'manual', receipts: [] })).toBe(
-      'missing',
-    );
-  });
-
-  it('marks manual entries with receipts as attached', () => {
-    expect(
-      resolveEvidenceStatus({ source: 'manual', receipts: [{ id: 1 }] }),
-    ).toBe('attached');
-  });
+    ],
+    [
+      { source: 'manual', receipts: [{}], evidenceUnavailable: {} },
+      'attached',
+    ],
+    [
+      {
+        source: 'manual',
+        receipts: [],
+        evidenceUnavailable: { reason: 'not_issued' },
+      },
+      'unavailable_recorded',
+    ],
+    [{ source: 'manual', receipts: [] }, 'missing'],
+  ] as const)(
+    'returns %s when evidence inputs are prioritized',
+    (entry, expected) => {
+      expect(resolveEvidenceStatus(entry)).toBe(expected);
+    },
+  );
 });
