@@ -1,7 +1,10 @@
 import { readFileSync } from 'node:fs';
 
 it('defines isolated monthly restore verification', () => {
-  const yaml = readFileSync('.github/workflows/legal-archive-restore-check.yml', 'utf8');
+  // Windows のチェックアウトでは CRLF になるため、複数行にまたがる一致が
+  // 落ちる。改行を正規化してから比較する。
+  const yaml = readFileSync('.github/workflows/legal-archive-restore-check.yml', 'utf8')
+    .replace(/\r\n/g, '\n');
   expect(yaml).toContain("cron: '0 18 1 * *'");
   expect(yaml).toContain('workflow_dispatch:');
   expect(yaml).toContain('services:\n      postgres:');

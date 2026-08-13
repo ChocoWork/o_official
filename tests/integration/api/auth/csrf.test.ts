@@ -44,7 +44,9 @@ describe('CSRF integration (mocked)', () => {
     cookies.mockReturnValue({ get: jest.fn().mockReturnValue({ value: 'old-refresh' }) });
   });
 
-  test('logout with valid CSRF header rotates token and returns 200 with new csrf cookie', async () => {
+  // ローテーションはログイン・セッション更新に限定した。ミューテーションのたびに
+  // 回すと、失敗した要求でも Cookie と DB がずれて以降が全部 403 になるため。
+  test('logout with valid CSRF header passes without rotating', async () => {
     // Prepare header token and hash storage
     const headerToken = 'csrf-old-token';
     headers.mockReturnValue({ get: jest.fn().mockReturnValue(headerToken) });
@@ -63,13 +65,12 @@ describe('CSRF integration (mocked)', () => {
     createServiceRoleClient.mockReturnValue({ from });
 
     const result: any = await requireCsrfOrDeny();
-    expect(result).toBeDefined();
-    expect(result.rotatedCsrfToken).toBeDefined();
-    expect(result.rotatedCsrfToken).not.toBe(headerToken);
+    // 検証を通ったので拒否レスポンスは返らない。
+    expect(result).toBeUndefined();
 
-    // confirm that the DB update path was attempted
-    const svc = require('@/lib/supabase/server');
-    expect(svc.createServiceRoleClient().from).toHaveBeenCalledWith('sessions');
+    // 照合のために sessions は読む。書き込み（ローテーション）はしない。
+    expect(from).toHaveBeenCalledWith('sessions');
+    expect(update).not.toHaveBeenCalled();
   });
 
   test('logout without CSRF header returns 403', async () => {

@@ -35,7 +35,10 @@ describe('CSRF middleware integration', () => {
     expect(res.status).toBe(403);
   });
 
-  test('valid CSRF header rotates token', async () => {
+  // ローテーションはログイン・セッション更新に限定した。ミューテーションのたびに
+  // 回すと、失敗した要求でも Cookie と DB がずれて以降が全部 403 になるため。
+  // 検証を通ったときは何も返さない（＝通過）のが新しい契約。
+  test('valid CSRF header passes without rotating', async () => {
     const { tokenHashSha256 } = await import('@/lib/hash');
     const refreshToken = 'refresh-token';
     const csrfToken = 'csrf-token';
@@ -59,7 +62,31 @@ describe('CSRF middleware integration', () => {
     const { requireCsrfOrDeny } = await import('@/lib/csrfMiddleware');
     const res: any = await requireCsrfOrDeny();
 
-    expect(res).toBeDefined();
-    expect(res.rotatedCsrfToken).toBeDefined();
+    // 検証を通ったので拒否レスポンスは返らない。
+    expect(res).toBeUndefined();
+  });
+
+  test('CSRF hash mismatch returns 403', async () => {
+    const { tokenHashSha256 } = await import('@/lib/hash');
+    const otherHash = await tokenHashSha256('someone-elses-token');
+
+    cookies.mockReturnValue({ get: jest.fn().mockReturnValue({ value: 'refresh-token' }) });
+    headers.mockReturnValue({ get: jest.fn().mockReturnValue('csrf-token') });
+
+    const { createServiceRoleClient } = require('@/lib/supabase/server');
+    createServiceRoleClient.mockReturnValue({
+      from: () => ({
+        select: jest.fn().mockReturnValue({
+          eq: jest.fn().mockReturnValue({
+            maybeSingle: jest.fn().mockResolvedValue({ data: { csrf_token_hash: otherHash } }),
+          }),
+        }),
+      }),
+    });
+
+    const { requireCsrfOrDeny } = await import('@/lib/csrfMiddleware');
+    const res: any = await requireCsrfOrDeny();
+
+    expect(res.status).toBe(403);
   });
 });

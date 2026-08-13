@@ -2,7 +2,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 it('defines the daily JST archive workflow contract', () => {
-  const yaml = readFileSync(resolve('.github/workflows/legal-archive-daily.yml'), 'utf8');
+  // Windows のチェックアウトでは CRLF になるため、複数行にまたがる一致が
+  // 落ちる。改行を正規化してから比較する。
+  const yaml = readFileSync(resolve('.github/workflows/legal-archive-daily.yml'), 'utf8')
+    .replace(/\r\n/g, '\n');
   expect(yaml).toContain("cron: '30 17 * * *'");
   expect(yaml).toContain('workflow_dispatch:');
   expect(yaml).toContain('permissions:\n  contents: read');
