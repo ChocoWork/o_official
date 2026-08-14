@@ -171,9 +171,9 @@ for (const viewport of viewports) {
         .getByRole('region', { name: '勘定科目' })
         .getByRole('button', { name: /1535\s*工具器具備品/ })
         .click();
-      await expect(
-        page.getByRole('region', { name: '残高推移' }).getByText('¥499,800', { exact: true }),
-      ).toBeVisible();
+      const reconcile = page.getByRole('region', { name: '照合結果' });
+      await expect(reconcile).toContainText('工具器具備品');
+      await expect(reconcile).toContainText('¥499,800');
     });
 
     test('貸借差額が0になる（資産 = 負債 + 純資産 + 当期純利益）', async ({ page }) => {

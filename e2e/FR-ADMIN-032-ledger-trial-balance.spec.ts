@@ -170,16 +170,16 @@ for (const viewport of viewports) {
       await expect(page.getByRole('region', { name: '勘定科目' })).toBeVisible();
       await expect(page.getByRole('button', { name: '総勘定元帳CSV' })).toBeVisible();
 
-      // 現金科目を選ぶと出金27,000のみなので残高がマイナスになる。
+      // 現金科目を選ぶと照合結果の元帳残高が -27,000 になる。
       await page.getByRole('searchbox', { name: '勘定科目を検索' }).fill('現金');
       await page.getByRole('button', { name: '勘定科目を検索する' }).click();
       await page
         .getByRole('region', { name: '勘定科目' })
         .getByRole('button', { name: /1010\s*現金/ })
         .click();
-      await expect(
-        page.getByRole('region', { name: '残高推移' }).getByText('¥-27,000', { exact: true }),
-      ).toBeVisible();
+      const reconcile = page.getByRole('region', { name: '照合結果' });
+      await expect(reconcile).toContainText('現金');
+      await expect(reconcile).toContainText('¥-27,000');
     });
 
     test('合計残高試算表で貸借一致を確認できる', async ({ page }) => {

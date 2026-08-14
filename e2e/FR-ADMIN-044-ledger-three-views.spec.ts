@@ -1,7 +1,7 @@
 import { test, expect, Page } from '@playwright/test';
 
 // FREQ-258: 帳簿タブを「仕訳・元帳」「固定資産」「決算・試算表」の3枚に畳む。
-// 仕訳・元帳＝科目ツリー＋残高推移＋仕訳一覧＋仕訳詳細＋照合結果、
+// 仕訳・元帳＝科目ツリー＋月次累積収支推移＋仕訳一覧＋仕訳詳細＋照合結果、
 // 固定資産＝サマリー4枚＋資産一覧＋償却推移＋固定資産登録＋償却予定表、
 // 決算・試算表＝財務3表／試算表／決算整理の切替と貸借対照表の構成・詳細。
 const viewports = [
@@ -179,7 +179,12 @@ export async function mockAdminApis(page: Page): Promise<void> {
           // 期首残高（前年度末）。普通預金に前期末残高が立つ。
           previousClosingBalances: { '1040': 3340000, '2910': 3340000 },
           revisions: REVISIONS,
-          cumulativeEntries: [],
+          cumulativeEntries: [
+            { id: 101, entryType: 'income', date: '2025-12-20', category: '売上高', item: '前年売上', partner: '', amount: 100000, paymentMethod: '銀行', memo: '' },
+            { id: 102, entryType: 'expense', date: '2025-12-25', category: '広告宣伝費', item: '前年広告', partner: '', amount: 30000, paymentMethod: 'クレジットカード', memo: '' },
+            { id: 103, entryType: 'income', date: '2026-01-10', category: '売上高', item: '当年売上', partner: '', amount: 20000, paymentMethod: '現金', memo: '' },
+            { id: 104, entryType: 'expense', date: '2026-02-05', category: '広告宣伝費', item: '当年広告', partner: '', amount: 5000, paymentMethod: '銀行', memo: '' },
+          ],
         },
       }),
     });
@@ -213,7 +218,7 @@ for (const viewport of viewports) {
       }
     });
 
-    test('仕訳・元帳に科目ツリー・残高推移・仕訳一覧・仕訳詳細・照合結果がそろう', async ({ page }) => {
+    test('仕訳・元帳に科目ツリー・月次累積収支推移・仕訳一覧・仕訳詳細・照合結果がそろう', async ({ page }) => {
       // FREQ-258-AC-02
       await openLedgerTab(page);
 
@@ -228,11 +233,19 @@ for (const viewport of viewports) {
       await expect(page.getByRole('button', { name: '仕訳を検索する' })).toBeVisible();
       await expect(page.getByRole('button', { name: /^資産/ })).toBeVisible();
 
-      // 中央：残高推移と仕訳一覧
-      const trend = page.getByRole('region', { name: '残高推移' });
+      // 中央：全取引の月次累積収支推移と仕訳一覧
+      const trend = page.getByRole('region', { name: '月次累積収支推移' });
       await expect(trend).toBeVisible();
-      await expect(trend.getByText('当期末残高', { exact: true })).toBeVisible();
-      await expect(trend.getByText('前期末残高', { exact: true }).first()).toBeVisible();
+      await expect(trend.getByRole('img', { name: '2026年の月次累積収支推移' })).toBeVisible();
+      for (const [label, value] of [
+        ['期首残高', '¥70,000'],
+        ['当年収入', '¥20,000'],
+        ['当年支出', '¥5,000'],
+        ['当年末残高', '¥85,000'],
+      ] as const) {
+        await expect(trend.getByText(label, { exact: true }).locator('..')).toContainText(value);
+      }
+      await expect(trend).toContainText('取引管理に入力した全収入・全支出による管理指標です。');
       await expect(page.getByRole('region', { name: '仕訳一覧' })).toBeVisible();
       for (const header of ['日付', '伝票No.', '相手勘定科目', '取引先', '摘要', '借方', '貸方', '残高', '証憑']) {
         await expect(page.getByRole('columnheader', { name: header, exact: true })).toBeVisible();
@@ -260,11 +273,11 @@ for (const viewport of viewports) {
       await page.setViewportSize({ width: 1920, height: 1080 });
       await openLedgerTab(page);
 
-      await expect(page.getByRole('heading', { name: '残高推移', exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: '月次累積収支推移', exact: true })).toBeVisible();
       await expect(page.getByRole('heading', { name: '仕訳一覧', exact: true })).toBeVisible();
 
       const accountBox = await page.getByRole('region', { name: '勘定科目' }).boundingBox();
-      const trendBox = await page.getByRole('region', { name: '残高推移' }).boundingBox();
+      const trendBox = await page.getByRole('region', { name: '月次累積収支推移' }).boundingBox();
       const listBox = await page.getByRole('region', { name: '仕訳一覧' }).boundingBox();
       const detailBox = await page.getByRole('region', { name: '仕訳詳細' }).boundingBox();
       expect(accountBox).not.toBeNull();
@@ -285,7 +298,7 @@ for (const viewport of viewports) {
       ).toBeLessThanOrEqual(1);
     });
 
-    test('科目ツリーで科目を選ぶと仕訳一覧と照合結果が切り替わる', async ({ page }) => {
+    test('科目ツリーで科目を選んでも月次累積収支推移は固定され、仕訳一覧と照合結果は切り替わる', async ({ page }) => {
       // FREQ-258-AC-03
       await openLedgerTab(page);
 
@@ -295,6 +308,9 @@ for (const viewport of viewports) {
       await page.getByRole('button', { name: /1040\s*普通預金/ }).click();
       await expect(page.getByRole('region', { name: '仕訳一覧' })).toContainText('仕入高');
       await expect(page.getByRole('region', { name: '照合結果' })).toContainText('普通預金');
+      const trend = page.getByRole('region', { name: '月次累積収支推移' });
+      await expect(trend.getByText('当年末残高', { exact: true }).locator('..')).toContainText('¥85,000');
+      const trendTextBeforeAccountSelection = await trend.textContent();
 
       // 別科目に切り替えると一覧の内容が変わる
       await page.getByRole('searchbox', { name: '勘定科目を検索' }).fill('広告宣伝費');
@@ -305,6 +321,8 @@ for (const viewport of viewports) {
         .last()
         .click();
       await expect(page.getByRole('region', { name: '仕訳一覧' })).toContainText('広告出稿');
+      await expect(page.getByRole('region', { name: '照合結果' })).toContainText('広告宣伝費');
+      await expect(trend).toHaveText(trendTextBeforeAccountSelection ?? '');
     });
 
     test('Stripe注文は売上高元帳の貸方と伝票全体の正式科目で表示する', async ({ page }) => {
