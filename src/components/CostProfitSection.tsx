@@ -2810,7 +2810,7 @@ export default function CostProfitSection({
           {[
             [funding ? "借入・投入累計" : "発生累計", section.totals.received],
             [funding ? "返済・引出済み" : "支払・返還済み", section.totals.settled],
-            ["残高", section.totals.balance],
+            [funding ? "返済残高" : "残高", section.totals.balance],
           ].map(([label, amount]) => (
             <div key={String(label)} className={`${boxRadiusClassName} border border-[#ededed] p-3`}>
               <p className="font-acumin text-[11px] text-[#707070]">{label}</p>
@@ -2825,7 +2825,7 @@ export default function CostProfitSection({
             <table aria-label={title} className="w-full min-w-[760px] border-collapse">
               <thead>
                 <tr className="border-b border-[#d4d4d4]">
-                  {[funding ? "借入先" : "支払先", "区分", funding ? "借入・投入累計" : "発生累計", funding ? "返済・引出済み" : "支払・返還済み", "残高", "最終入出金日"].map((heading, index) => (
+                  {[funding ? "借入先" : "支払先", "区分", funding ? "借入・投入累計" : "発生累計", funding ? "返済・引出済み" : "支払・返還済み", funding ? "返済残高" : "残高", "最終入出金日"].map((heading, index) => (
                     <th key={heading} scope="col" className={`px-2 py-2 font-acumin text-[11px] font-normal text-[#474747] ${index >= 2 && index <= 4 ? "text-right" : "text-left"}`}>{heading}</th>
                   ))}
                 </tr>

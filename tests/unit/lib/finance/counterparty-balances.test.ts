@@ -6,7 +6,7 @@ function entry(partial: Partial<FinanceEntry> & Pick<FinanceEntry, 'id' | 'amoun
 }
 
 describe('buildCounterpartyBalances', () => {
-	it('借入先別に累計借入、返済、帳簿残高を集計する', () => {
+	it('借入先別に累計借入、返済、返済残高を集計する', () => {
 		const result = buildCounterpartyBalances([
 			entry({ id: 1, amount: 1_000_000, date: '2025-03-01', entryType: 'income', category: '役員借入金', partner: '山田太郎' }),
 			entry({ id: 2, amount: 300_000, date: '2026-08-01', category: '役員借入金', partner: '山田太郎' }),
@@ -14,12 +14,14 @@ describe('buildCounterpartyBalances', () => {
 		expect(result.funding.rows).toContainEqual({ counterparty: '山田太郎', accountCode: '2120', accountName: '役員借入金', received: 1_000_000, settled: 300_000, balance: 700_000, lastActivityDate: '2026-08-01', ownerFunding: false, unattributedOpening: false });
 	});
 
-	it('私費払いを事業主借として扱い、全期間累計と当年度残高を分ける', () => {
+	it('私費払いの返済残高を全期間の投入累計から引出済みを差し引いて算出する', () => {
 		const result = buildCounterpartyBalances([
 			entry({ id: 1, amount: 50_000, date: '2025-06-01', paymentMethod: 'プライベート', partner: '事業主' }),
 			entry({ id: 2, amount: 20_000, date: '2026-06-01', paymentMethod: 'プライベート', partner: '事業主' }),
 		], 'soleProprietor', '2026-12-31', new Map([['2920', 20_000]]));
-		expect(result.funding.rows[0]).toMatchObject({ received: 70_000, balance: 20_000, ownerFunding: true });
+		expect(result.funding.rows[0]).toMatchObject({ received: 70_000, settled: 0, balance: 70_000, ownerFunding: true });
+		expect(result.funding.totals.balance).toBe(70_000);
+		expect(result.funding.rows).not.toContainEqual(expect.objectContaining({ unattributedOpening: true }));
 	});
 
 	it('買掛金をその他の支払債務へ分離する', () => {
@@ -31,8 +33,8 @@ describe('buildCounterpartyBalances', () => {
 		expect(result.payables.rows[0]).toMatchObject({ counterparty: '生地商店', received: 120_000, settled: 40_000, balance: 80_000 });
 	});
 
-	it('帳簿との差額を相手先不明の繰越として残す', () => {
-		const result = buildCounterpartyBalances([], 'corporation', '2026-12-31', new Map([['2120', 250_000]]));
-		expect(result.funding.rows[0]).toMatchObject({ counterparty: '繰越・相手先未設定', balance: 250_000, unattributedOpening: true });
+	it('その他の支払債務は帳簿との差額を相手先不明の繰越として残す', () => {
+		const result = buildCounterpartyBalances([], 'corporation', '2026-12-31', new Map([['2020', 250_000]]));
+		expect(result.payables.rows[0]).toMatchObject({ counterparty: '繰越・相手先未設定', balance: 250_000, unattributedOpening: true });
 	});
 });

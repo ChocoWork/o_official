@@ -50,7 +50,7 @@ export type CounterpartyBalanceSummary = {
   payables: CounterpartyBalanceSection;
 };
 
-type MutableRow = CounterpartyBalanceRow & { currentYearBalance: number };
+type MutableRow = CounterpartyBalanceRow;
 
 function emptySection(): CounterpartyBalanceSection {
   return {
@@ -82,8 +82,8 @@ function totalsOf(rows: readonly CounterpartyBalanceRow[]) {
 
 /**
  * 記録開始から対象日までの仕訳を相手先・対象科目別に集計する。
- * 現在残高は総勘定元帳の正式残高へ科目単位で照合し、履歴だけでは
- * 相手先を特定できない差額を「繰越・相手先未設定」として残す。
+ * 借入・事業主資金は受入累計から返済・引出済みを差し引き、
+ * その他の支払債務だけを総勘定元帳の正式残高へ科目単位で照合する。
  */
 export function buildCounterpartyBalances(
   entries: readonly FinanceEntry[],
@@ -91,7 +91,6 @@ export function buildCounterpartyBalances(
   throughDate: string,
   officialBalances: ReadonlyMap<string, number>,
 ): CounterpartyBalanceSummary {
-  const yearStart = `${throughDate.slice(0, 4)}-01-01`;
   const targetEntries = entries.filter((entry) => entry.date <= throughDate);
   const rows = new Map<string, MutableRow>();
 
@@ -108,7 +107,6 @@ export function buildCounterpartyBalances(
         received: 0,
         settled: 0,
         balance: 0,
-        currentYearBalance: 0,
         lastActivityDate: null,
         ownerFunding: line.account.code === OWNER_FUNDING_ACCOUNT_CODE,
         unattributedOpening: false,
@@ -117,9 +115,6 @@ export function buildCounterpartyBalances(
       row.received += line.credit;
       row.settled += line.debit;
       row.balance += line.credit - line.debit;
-      if (journalEntry.date >= yearStart) {
-        row.currentYearBalance += line.credit - line.debit;
-      }
       if (!row.lastActivityDate || journalEntry.date > row.lastActivityDate) {
         row.lastActivityDate = journalEntry.date;
       }
@@ -127,15 +122,11 @@ export function buildCounterpartyBalances(
     }
   }
 
-  // 事業主借は前年末に元入金へ振り替わるため、履歴累計は保持しつつ
-  // 現在残高には選択年度内の増減だけを使う。
-  for (const row of rows.values()) {
-    if (row.ownerFunding) row.balance = row.currentYearBalance;
-  }
-
   const targetCodes = new Set([
-    ...[...rows.values()].map((row) => row.accountCode),
-    ...[...officialBalances.keys()].filter((code) => sectionForAccount(code)),
+    ...[...rows.values()]
+      .filter((row) => sectionForAccount(row.accountCode) === 'payables')
+      .map((row) => row.accountCode),
+    ...[...officialBalances.keys()].filter((code) => sectionForAccount(code) === 'payables'),
   ]);
 
   for (const accountCode of targetCodes) {
@@ -154,7 +145,6 @@ export function buildCounterpartyBalances(
       received: Math.max(difference, 0),
       settled: Math.max(-difference, 0),
       balance: difference,
-      currentYearBalance: 0,
       lastActivityDate: null,
       ownerFunding: accountCode === OWNER_FUNDING_ACCOUNT_CODE,
       unattributedOpening: true,

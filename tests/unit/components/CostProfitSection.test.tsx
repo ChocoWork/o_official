@@ -282,10 +282,13 @@ describe('CostProfitSection', () => {
 		expect(within(funding).getAllByText('¥1,000,000').length).toBeGreaterThan(0);
 		expect(within(funding).getAllByText('¥300,000').length).toBeGreaterThan(0);
 		expect(within(funding).getAllByText('¥700,000').length).toBeGreaterThan(0);
+		expect(within(funding).getAllByText('返済残高')).toHaveLength(2);
+		expect(within(funding).queryByText('残高', { exact: true })).not.toBeInTheDocument();
 
 		const payables = screen.getByRole('region', { name: 'その他の支払債務' });
 		expect(within(payables).getByText('生地商店')).toBeInTheDocument();
 		expect(within(payables).getAllByText('買掛金').length).toBeGreaterThan(0);
+		expect(within(payables).getAllByText('残高', { exact: true })).toHaveLength(2);
 	});
 
 	it('orders由来の収入を連携済みとして表示し、訂正操作を提供しない', async () => {
