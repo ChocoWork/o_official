@@ -46,6 +46,7 @@ import {
 import {
   buildCumulativeSummary,
 } from "@/lib/finance/cumulative";
+import { buildCumulativeBalanceTrend } from "@/lib/finance/cumulative-balance-trend";
 import {
   buildCounterpartyBalances,
   type CounterpartyBalanceSection,
@@ -215,8 +216,6 @@ const DEPRECIATION_BAR_COLOR = "#c3d5f2";
 
 /** 残高推移の色。当期は黒の実線、前期末は灰の破線、異常値は橙の点。 */
 const LEDGER_TREND_COLOR = "#111111";
-const LEDGER_OPENING_COLOR = "#909090";
-const LEDGER_ANOMALY_COLOR = "#e9a23b";
 
 /** 元帳の月ラベル。残高推移の横軸に使う。 */
 const LEDGER_MONTH_LABELS = [
@@ -1879,6 +1878,10 @@ export default function CostProfitSection({
   const cumulative = useMemo(
     () => buildCumulativeSummary(cumulativeEntries, fixedAssets, fiscalYear),
     [cumulativeEntries, fixedAssets, fiscalYear],
+  );
+  const cumulativeBalanceTrend = useMemo(
+    () => buildCumulativeBalanceTrend(cumulativeEntries, fiscalYear),
+    [cumulativeEntries, fiscalYear],
   );
   const counterpartyBalances = useMemo(() => {
     const officialBalances = new Map(
@@ -7307,40 +7310,7 @@ export default function CostProfitSection({
         : [...current, key],
     );
 
-  // 選択中の科目の月末残高。期首残高から各月の増減を積む。
-  const ledgerMonthlyPoints = useMemo(() => {
-    if (!selectedLedger) return [];
-    const sign = selectedLedger.account.normalSide === "debit" ? 1 : -1;
-    const net = new Array<number>(12).fill(0);
-    for (const row of selectedLedger.rows) {
-      if (Number.parseInt(row.date.slice(0, 4), 10) !== fiscalYear) continue;
-      const month = Number.parseInt(row.date.slice(5, 7), 10);
-      if (!Number.isFinite(month) || month < 1 || month > 12) continue;
-      net[month - 1] += sign * (row.debit - row.credit);
-    }
-    let balance = selectedLedger.openingBalance;
-    return net.map((value) => {
-      balance += value;
-      return { balance, net: value };
-    });
-  }, [selectedLedger, fiscalYear]);
-
-  // 異常値＝月次増減の絶対値が、動きのあった月の平均の2倍を超えた月。
-  // 閾値は係数ではなく実データの平均から決めるので、規模に依らず効く。
-  const ledgerAnomalyMonths = useMemo(() => {
-    const moves = ledgerMonthlyPoints
-      .map((point) => Math.abs(point.net))
-      .filter((value) => value > 0);
-    if (moves.length < 3) return [];
-    const average = moves.reduce((sum, value) => sum + value, 0) / moves.length;
-    return ledgerMonthlyPoints
-      .map((point, index) => ({ index, move: Math.abs(point.net) }))
-      .filter((point) => point.move > average * 2)
-      .map((point) => point.index);
-  }, [ledgerMonthlyPoints]);
-
   const ledgerClosingBalance = selectedLedger?.closingBalance ?? 0;
-  const ledgerOpeningBalance = selectedLedger?.openingBalance ?? 0;
 
   // 取引・仕訳を id / 伝票番号で引く索引。元帳行から証憑と明細へ辿る。
   const entriesById = useMemo(() => {
@@ -7660,89 +7630,55 @@ export default function CostProfitSection({
             radius="rounded"
             headingLevel={4}
             className="2xl:col-start-2 2xl:row-start-1"
-            aria-label="残高推移"
+            aria-label="月次累積収支推移"
             title={
-              <span className={panelTitleClassName}>残高推移</span>
+              <span className={panelTitleClassName}>月次累積収支推移</span>
             }
           >
-            {!selectedLedger ? (
-              <p className="font-acumin text-xs text-[#707070]">
-                科目を選ぶと、月末残高の推移が表示されます。
-              </p>
-            ) : (
-              <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_180px]">
-                <div className="min-w-0">
-                  <Graph
-                    variant="line"
-                    size="2xs"
-                    plotHeight={220}
-                    unitLabel="（円）"
-                    className="font-acumin"
-                    ariaLabel={`${selectedLedger.account.name}の月末残高推移`}
-                    categories={LEDGER_MONTH_LABELS}
-                    referenceLine={{
-                      value: ledgerOpeningBalance,
-                      color: LEDGER_OPENING_COLOR,
-                    }}
-                    markers={ledgerAnomalyMonths.map((index) => ({
-                      seriesIndex: 0,
-                      index,
-                      color: LEDGER_ANOMALY_COLOR,
-                    }))}
-                    series={[
-                      {
-                        label: "当期残高",
-                        color: LEDGER_TREND_COLOR,
-                        values: ledgerMonthlyPoints.map(
-                          (point) => point.balance,
-                        ),
-                      },
-                    ]}
-                    extraLegend={[
-                      {
-                        label: "前期末残高",
-                        color: LEDGER_OPENING_COLOR,
-                        kind: "line",
-                        dashed: true,
-                      },
-                      {
-                        label: "異常値",
-                        color: LEDGER_ANOMALY_COLOR,
-                        kind: "dot",
-                      },
-                    ]}
-                  />
-                </div>
-                <div
-                  className={`${boxRadiusClassName} border border-[#ededed] p-3`}
-                >
-                  <p className="font-acumin text-[11px] text-[#707070]">
-                    当期末残高
-                  </p>
-                  <p className="font-acumin text-lg font-medium text-black tabular-nums">
-                    {currency(ledgerClosingBalance)}
-                  </p>
-                  <p className="mt-3 font-acumin text-[11px] text-[#707070]">
-                    前期末残高
-                  </p>
-                  <p className="font-acumin text-base text-black tabular-nums">
-                    {currency(ledgerOpeningBalance)}
-                  </p>
-                  <p className="mt-3 border-t border-[#ededed] pt-2 font-acumin text-[11px] text-[#707070]">
-                    差額
-                  </p>
-                  <p
-                    className={`font-acumin text-base font-medium tabular-nums ${
-                      ledgerClosingBalance - ledgerOpeningBalance >= 0
-                        ? "text-[#16844b]"
-                        : "text-red-700"
-                    }`}
-                  >
-                    {deltaCurrency(ledgerClosingBalance - ledgerOpeningBalance)}
-                  </p>
-                </div>
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_180px]">
+              <div className="min-w-0">
+                <Graph
+                  variant="line"
+                  size="2xs"
+                  plotHeight={220}
+                  unitLabel="（円）"
+                  className="font-acumin"
+                  ariaLabel={`${fiscalYear}年の月次累積収支推移`}
+                  categories={LEDGER_MONTH_LABELS}
+                  series={[
+                    {
+                      label: "累積収支",
+                      color: LEDGER_TREND_COLOR,
+                      values: cumulativeBalanceTrend.monthly.map(
+                        (point) => point.balance,
+                      ),
+                    },
+                  ]}
+                />
+                <p className="mt-2 font-acumin text-[10px] text-[#707070]">
+                  取引管理に入力した全収入・全支出による管理指標です。現金預金・利益・純資産・科目別元帳の残高ではありません。
+                </p>
               </div>
-            )}
+              <dl
+                className={`${boxRadiusClassName} grid grid-cols-2 gap-x-3 gap-y-3 border border-[#ededed] p-3`}
+              >
+                {[
+                  { label: "期首残高", value: cumulativeBalanceTrend.openingBalance },
+                  { label: "当年収入", value: cumulativeBalanceTrend.annualIncome },
+                  { label: "当年支出", value: cumulativeBalanceTrend.annualExpense },
+                  { label: "当年末残高", value: cumulativeBalanceTrend.closingBalance },
+                ].map(({ label, value }) => (
+                  <div key={label}>
+                    <dt className="font-acumin text-[11px] text-[#707070]">
+                      {label}
+                    </dt>
+                    <dd className="mt-1 font-acumin text-base font-medium text-black tabular-nums">
+                      {currency(value)}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
           </Panel>
 
           <Panel

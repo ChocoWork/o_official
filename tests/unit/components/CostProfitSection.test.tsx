@@ -166,6 +166,47 @@ describe('CostProfitSection', () => {
 	// 既定の5秒を超えることがあるので、この describe だけ上限を上げる。
 	jest.setTimeout(30000);
 
+	it('月次累積収支推移は科目選択と独立して全取引の累積値を表示する', async () => {
+		setupFinanceFetch([], undefined, false, {
+			cumulativeEntries: [
+				{ id: 1, entryType: 'income', date: '2025-12-20', category: '売上高', item: '前年売上', partner: '', amount: 100000, paymentMethod: '銀行', memo: '' },
+				{ id: 2, entryType: 'expense', date: '2025-12-25', category: '広告宣伝費', item: '前年広告', partner: '', amount: 30000, paymentMethod: 'クレジットカード', memo: '' },
+				{ id: 3, entryType: 'income', date: '2026-01-10', category: '売上高', item: '当年売上', partner: '', amount: 20000, paymentMethod: '現金', memo: '' },
+				{ id: 4, entryType: 'expense', date: '2026-03-15', category: '旅費交通費', item: '当年交通費', partner: '', amount: 5000, paymentMethod: 'プライベート', memo: '' },
+			],
+		});
+		const { rerender } = render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+		fireEvent.click(screen.getByRole('tab', { name: '帳簿' }));
+
+		const trend = await screen.findByRole('region', { name: '月次累積収支推移' });
+		expect(within(trend).getByRole('img', { name: '2026年の月次累積収支推移' })).toBeInTheDocument();
+		for (const [label, value] of [
+			['期首残高', '¥70,000'],
+			['当年収入', '¥20,000'],
+			['当年支出', '¥5,000'],
+			['当年末残高', '¥85,000'],
+		] as const) {
+			const summary = within(trend).getByText(label).parentElement;
+			expect(summary).toHaveTextContent(`${label}${value}`);
+		}
+		expect(within(trend).getByText('取引管理に入力した全収入・全支出による管理指標です。現金預金・利益・純資産・科目別元帳の残高ではありません。')).toBeInTheDocument();
+		const trendTextBeforeAccountSelection = trend.textContent;
+
+		const accountTree = screen.getByRole('region', { name: '勘定科目' });
+		fireEvent.click(within(accountTree).getByRole('button', { name: /販売費・マーケティング/ }));
+
+		expect(trend).toHaveTextContent(trendTextBeforeAccountSelection ?? '');
+		const journalList = screen.getByRole('region', { name: '仕訳一覧' });
+		expect(within(journalList).getByText('Instagram広告費')).toBeInTheDocument();
+		expect(screen.getByRole('region', { name: '照合結果' })).toHaveTextContent('販売費・マーケティング');
+
+		rerender(<CostProfitSection fiscalYear={2025} fiscalYearLabel="2025年" />);
+		const priorYearTrend = await screen.findByRole('region', { name: '月次累積収支推移' });
+		expect(within(priorYearTrend).getByRole('img', { name: '2025年の月次累積収支推移' })).toBeInTheDocument();
+		expect(within(priorYearTrend).getByText('当年末残高').parentElement).toHaveTextContent('¥70,000');
+	});
+
 	beforeEach(() => {
 		setupFinanceFetch();
 	});
