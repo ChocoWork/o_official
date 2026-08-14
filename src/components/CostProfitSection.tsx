@@ -7345,7 +7345,7 @@ export default function CostProfitSection({
   ];
 
   // 中央の仕訳一覧。選択中の科目の元帳行を新しい順に並べ、期間・貸借・語で絞る。
-  const filteredLedgerRows = useMemo(() => {
+  const filteredLedgerRows = (() => {
     if (!selectedLedger) return [];
     const keyword = ledgerRowKeyword.trim().toLowerCase();
     const quarter =
@@ -7369,7 +7369,7 @@ export default function CostProfitSection({
         (a, b) =>
           b.date.localeCompare(a.date) || b.number.localeCompare(a.number),
       );
-  }, [selectedLedger, ledgerRowKeyword, ledgerPeriod, ledgerSideFilter]);
+  })();
 
   const ledgerTotalPages = Math.max(
     1,
@@ -7403,7 +7403,7 @@ export default function CostProfitSection({
   const selectedLedgerReceipts = selectedLedgerEntry?.receipts ?? [];
 
   // 関連仕訳＝同日・同取引先の別伝票。資金移動の相手側を辿る導線。
-  const relatedJournalEntries = useMemo(() => {
+  const relatedJournalEntries = (() => {
     if (!selectedLedgerRow) return [];
     return journal
       .filter(
@@ -7415,15 +7415,15 @@ export default function CostProfitSection({
             : true),
       )
       .slice(0, 4);
-  }, [journal, selectedLedgerRow]);
+  })();
 
   // 更新履歴＝訂正削除履歴（DBトリガーが記録する。アプリからは書き換えられない）。
-  const selectedLedgerRevisions = useMemo(() => {
+  const selectedLedgerRevisions = (() => {
     if (!selectedLedgerRow) return [];
     return revisions
       .filter((revision) => revision.entryId === selectedLedgerRow.entryId)
       .sort((a, b) => a.changedAt.localeCompare(b.changedAt));
-  }, [revisions, selectedLedgerRow]);
+  })();
 
   // 照合結果。元帳の最終残高と試算表の残高は同じ元データから導くので必ず一致する。
   // 一致しないときは仕訳の変換か期首残高が壊れている。
