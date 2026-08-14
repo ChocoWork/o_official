@@ -165,6 +165,7 @@ function createFinanceSupabaseMock() {
 									entry_type: 'expense',
 									category: '地代家賃',
 									item_name: '打合せ・交通',
+									partner: null,
 									amount: 80000,
 									payment_method: '銀行',
 									memo: '事務所',
@@ -276,7 +277,7 @@ describe('GET /api/admin/kpi/cost-profit', () => {
 			paymentMethod: 'クレジットカード',
 		}));
 		expect(body.data.templates).toEqual([
-			{ name: '毎月の家賃', entryType: 'expense', category: '地代家賃', item: '打合せ・交通', amount: 80000, paymentMethod: '銀行', memo: '事務所' },
+			{ name: '毎月の家賃', entryType: 'expense', category: '地代家賃', item: '打合せ・交通', partner: '', amount: 80000, paymentMethod: '銀行', memo: '事務所' },
 		]);
 		expect(authorizeMock).toHaveBeenCalledWith('admin.finance.read', expect.any(Request));
 	});
@@ -469,7 +470,7 @@ describe('POST /api/admin/kpi/cost-profit', () => {
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
 				operation: 'template.create',
-				template: { name: '毎月の家賃', entryType: 'expense', category: '地代家賃', item: '打合せ・交通', amount: 80000, paymentMethod: '銀行', memo: '事務所' },
+				template: { name: '毎月の家賃', entryType: 'expense', category: '地代家賃', item: '打合せ・交通', partner: '不動産会社', amount: 80000, paymentMethod: '銀行', memo: '事務所' },
 			}),
 		}));
 		const body = await response.json();
@@ -483,6 +484,7 @@ describe('POST /api/admin/kpi/cost-profit', () => {
 				entry_type: 'expense',
 				category: '地代家賃',
 				item_name: '打合せ・交通',
+				partner: '不動産会社',
 				amount: 80000,
 				payment_method: '銀行',
 				memo: '事務所',
@@ -501,7 +503,7 @@ describe('POST /api/admin/kpi/cost-profit', () => {
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
 				operation: 'template.create',
-				template: { name: '毎月の家賃', entryType: 'expense', category: '地代家賃', item: '打合せ・交通', amount: 80000, paymentMethod: '銀行', memo: '事務所' },
+				template: { name: '毎月の家賃', entryType: 'expense', category: '地代家賃', item: '打合せ・交通', partner: '不動産会社', amount: 80000, paymentMethod: '銀行', memo: '事務所' },
 			}),
 		}));
 
@@ -523,12 +525,12 @@ describe('POST /api/admin/kpi/cost-profit', () => {
 			body: JSON.stringify({
 				operation: 'template.update',
 				templateName: '毎月の家賃',
-				template: { name: '毎月の家賃', entryType: 'expense', category: '地代家賃', item: '事務所家賃', amount: 85000, paymentMethod: '銀行', memo: '更新後' },
+				template: { name: '毎月の家賃', entryType: 'expense', category: '地代家賃', item: '事務所家賃', partner: '新しい不動産会社', amount: 85000, paymentMethod: '銀行', memo: '更新後' },
 			}),
 		}));
 
 		expect(response.status).toBe(200);
-		expect(update).toHaveBeenCalledWith(expect.objectContaining({ item_name: '事務所家賃', amount: 85000, memo: '更新後' }));
+		expect(update).toHaveBeenCalledWith(expect.objectContaining({ item_name: '事務所家賃', partner: '新しい不動産会社', amount: 85000, memo: '更新後' }));
 		expect(eq).toHaveBeenCalledWith('name', '毎月の家賃');
 	});
 

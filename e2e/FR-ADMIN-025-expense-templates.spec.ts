@@ -7,7 +7,7 @@ const viewports = [
   { name: 'desktop', width: 1280, height: 900 },
 ];
 
-type Template = { name: string; category: string; item: string; amount: number; paymentMethod: string; memo: string };
+type Template = { name: string; category: string; item: string; partner: string; amount: number; paymentMethod: string; memo: string };
 
 function metric(period: string) {
   return {
@@ -25,7 +25,7 @@ function metric(period: string) {
   };
 }
 
-async function mockAdminApis(page: Page): Promise<void> {
+async function mockAdminApis(page: Page) {
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,
@@ -78,7 +78,7 @@ async function mockAdminApis(page: Page): Promise<void> {
     expenses: [] as Array<Record<string, unknown>>,
     incomes: [] as Array<Record<string, unknown>>,
     products: [] as Array<Record<string, unknown>>,
-    partners: [] as string[],
+    partners: ['旧取引先', '新取引先'] as string[],
     templates: [] as Template[],
   };
 
@@ -104,6 +104,8 @@ async function mockAdminApis(page: Page): Promise<void> {
     }
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: finance }) });
   });
+
+  return finance;
 }
 
 async function openCostInputTab(page: Page) {
@@ -174,7 +176,7 @@ for (const viewport of viewports) {
 
     test('適用後の変更を上書きまたは重複しない別名で保存できる', async ({ page }) => {
       // FREQ-232-AC-06
-      await mockAdminApis(page);
+      const finance = await mockAdminApis(page);
       await openCostInputTab(page);
 
       await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
@@ -182,7 +184,12 @@ for (const viewport of viewports) {
       await page.getByPlaceholder('テンプレート名').fill('毎月の家賃');
       await page.getByRole('button', { name: 'テンプレートを保存' }).click();
 
+      await page.getByLabel('取引日').fill('2026-06-15');
+      await page.getByRole('button', { name: 'シーズンタグ' }).click();
+      await page.getByRole('option', { name: '2026 S/S' }).click();
       await page.getByPlaceholder('0').fill('85000');
+      await page.getByRole('button', { name: '取引先' }).click();
+      await page.getByRole('option', { name: '新取引先' }).click();
       await page.getByRole('button', { name: '変更を上書き' }).click();
       const overwriteDialog = page.getByRole('dialog', { name: 'テンプレートの変更を上書き' });
       await expect(overwriteDialog).toContainText('毎月の家賃');
@@ -191,6 +198,15 @@ for (const viewport of viewports) {
       await page.getByRole('button', { name: '変更を上書き' }).click();
       await page.getByRole('button', { name: '上書きを確定' }).click();
       await expect(page.getByText('テンプレートを上書きしました。')).toBeVisible();
+      expect(finance.templates.find((template) => template.name === '毎月の家賃')?.partner).toBe('新取引先');
+
+      await page.getByRole('button', { name: '取引先' }).click();
+      await page.getByRole('option', { name: '旧取引先' }).click();
+      await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
+      await page.getByRole('option', { name: '毎月の家賃' }).click();
+      await expect(page.getByRole('button', { name: '取引先' })).toHaveText(/新取引先/);
+      await expect(page.getByLabel('取引日')).toHaveValue('2026-06-15');
+      await expect(page.getByRole('button', { name: 'シーズンタグ' })).toHaveText(/2026 S\/S/);
 
       await page.getByRole('button', { name: '別名で保存' }).click();
       const nameInput = page.getByPlaceholder('テンプレート名');

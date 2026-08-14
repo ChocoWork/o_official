@@ -20,7 +20,8 @@ function setupFinanceFetch(
 		postError?: { status: number; payload: Record<string, unknown> };
 		cumulativeEntries?: Array<Record<string, unknown>>;
 		expenses?: Array<Record<string, unknown>>;
-		templates?: Array<{ name: string; entryType: string; category: string; item: string; amount: number; paymentMethod: string; memo: string }>;
+		partners?: string[];
+		templates?: Array<{ name: string; entryType: string; category: string; item: string; partner: string; amount: number; paymentMethod: string; memo: string }>;
 	} = {},
 ) {
 	const data = {
@@ -39,8 +40,8 @@ function setupFinanceFetch(
 		] as Array<Record<string, unknown>>,
 		incomes,
 		cumulativeEntries: statusOptions.cumulativeEntries ?? [],
-		partners: [] as string[],
-		templates: statusOptions.templates ?? [] as Array<{ name: string; entryType: string; category: string; item: string; amount: number; paymentMethod: string; memo: string }>,
+		partners: statusOptions.partners ?? [],
+		templates: statusOptions.templates ?? [] as Array<{ name: string; entryType: string; category: string; item: string; partner: string; amount: number; paymentMethod: string; memo: string }>,
 		summaryOptions: [{ id: 11, entryType: 'expense', name: '外注検品', isCustom: true }],
 		revisions: statusOptions.revisions ?? [],
 		reviewAcks: statusOptions.reviewAcks ?? [],
@@ -610,7 +611,8 @@ describe('CostProfitSection', () => {
 
 	it('選択したテンプレートの変更を確認後に上書きする', async () => {
 		const mockFetch = setupFinanceFetch([], undefined, false, {
-			templates: [{ name: '毎月の家賃', entryType: 'expense', category: '地代家賃', item: '打合せ・交通', amount: 80000, paymentMethod: '銀行', memo: '事務所' }],
+			partners: ['旧取引先', '新取引先'],
+			templates: [{ name: '毎月の家賃', entryType: 'expense', category: '地代家賃', item: '打合せ・交通', partner: '旧取引先', amount: 80000, paymentMethod: '銀行', memo: '事務所' }],
 		});
 		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
@@ -618,6 +620,8 @@ describe('CostProfitSection', () => {
 		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
 		fireEvent.click(screen.getByRole('button', { name: 'テンプレート' }));
 		fireEvent.click(screen.getByRole('option', { name: '毎月の家賃' }));
+		fireEvent.click(screen.getByRole('button', { name: '取引先' }));
+		fireEvent.click(screen.getByRole('option', { name: '新取引先' }));
 		fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '85000' } });
 
 		fireEvent.click(screen.getByRole('button', { name: '変更を上書き' }));
@@ -628,13 +632,13 @@ describe('CostProfitSection', () => {
 		expect(await screen.findByText('テンプレートを上書きしました。')).toBeInTheDocument();
 		expect(mockFetch.mock.calls.some(([, init]) => {
 			const body = String((init as RequestInit | undefined)?.body);
-			return body.includes('template.update') && body.includes('"amount":85000');
+			return body.includes('template.update') && body.includes('"partner":"新取引先"') && body.includes('"amount":85000');
 		})).toBe(true);
 	});
 
 	it('上書き確認を取り消すと変更内容を保持する', async () => {
 		setupFinanceFetch([], undefined, false, {
-			templates: [{ name: '毎月の家賃', entryType: 'expense', category: '地代家賃', item: '打合せ・交通', amount: 80000, paymentMethod: '銀行', memo: '事務所' }],
+			templates: [{ name: '毎月の家賃', entryType: 'expense', category: '地代家賃', item: '打合せ・交通', partner: '', amount: 80000, paymentMethod: '銀行', memo: '事務所' }],
 		});
 		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
@@ -653,7 +657,7 @@ describe('CostProfitSection', () => {
 
 	it('選択したテンプレートを別名で保存し、既存名への保存は拒否する', async () => {
 		const mockFetch = setupFinanceFetch([], undefined, false, {
-			templates: [{ name: '毎月の家賃', entryType: 'expense', category: '地代家賃', item: '打合せ・交通', amount: 80000, paymentMethod: '銀行', memo: '事務所' }],
+			templates: [{ name: '毎月の家賃', entryType: 'expense', category: '地代家賃', item: '打合せ・交通', partner: '', amount: 80000, paymentMethod: '銀行', memo: '事務所' }],
 		});
 		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');

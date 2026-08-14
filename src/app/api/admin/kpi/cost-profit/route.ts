@@ -165,6 +165,7 @@ const mutationSchema = z.discriminatedUnion('operation', [
 			entryType: entryTypeSchema,
 			category: z.string().trim().min(1).max(80),
 			item: z.string().trim().min(1).max(160),
+			partner: z.string().trim().max(160).default(''),
 			amount: moneySchema,
 			paymentMethod: z.string().trim().min(1).max(80),
 			memo: z.string().trim().max(500).default(''),
@@ -178,6 +179,7 @@ const mutationSchema = z.discriminatedUnion('operation', [
 			entryType: entryTypeSchema,
 			category: z.string().trim().min(1).max(80),
 			item: z.string().trim().min(1).max(160),
+			partner: z.string().trim().max(160).default(''),
 			amount: moneySchema,
 			paymentMethod: z.string().trim().min(1).max(80),
 			memo: z.string().trim().max(500).default(''),
@@ -335,6 +337,7 @@ type ExpenseTemplateRow = {
 	entry_type: EntryType;
 	category: string;
 	item_name: string;
+	partner: string | null;
 	amount: number;
 	payment_method: string;
 	memo: string;
@@ -543,6 +546,7 @@ function mapTemplate(row: ExpenseTemplateRow) {
 		entryType: row.entry_type ?? 'expense',
 		category: row.category,
 		item: row.item_name,
+		partner: row.partner ?? '',
 		amount: Number(row.amount),
 		paymentMethod: row.payment_method,
 		memo: row.memo ?? '',
@@ -684,7 +688,7 @@ export async function GET(request: Request) {
 			// 経費入力テンプレートもシーズン非依存（グローバル）。
 			supabase
 				.from('admin_finance_expense_templates')
-				.select('name, entry_type, category, item_name, amount, payment_method, memo')
+				.select('name, entry_type, category, item_name, partner, amount, payment_method, memo')
 				.order('name', { ascending: true }),
 			// 固定資産台帳もグローバル。年度をまたいで償却するため年で絞らない。
 			supabase
@@ -1217,6 +1221,7 @@ export async function POST(request: Request) {
 					entry_type: template.entryType,
 					category: template.category,
 					item_name: template.item,
+					partner: template.partner,
 					amount: template.amount,
 					payment_method: template.paymentMethod,
 					memo: template.memo,

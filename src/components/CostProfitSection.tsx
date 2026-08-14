@@ -492,6 +492,7 @@ type ExpenseTemplate = {
   entryType: EntryType;
   category: string;
   item: string;
+  partner: string;
   amount: number;
   paymentMethod: string;
   memo: string;
@@ -2412,6 +2413,7 @@ export default function CostProfitSection({
         entryType: template.entryType,
         category: template.category,
         item: template.item,
+        partner: template.partner,
         amount: template.amount > 0 ? String(template.amount) : "",
         paymentMethod: template.paymentMethod,
         memo: template.memo,
@@ -2440,6 +2442,7 @@ export default function CostProfitSection({
           entryType: form.entryType,
           category: form.category,
           item: form.item,
+          partner: form.partner.trim(),
           amount: Math.max(0, Math.round(Number(form.amount) || 0)),
           paymentMethod: form.paymentMethod,
           memo: form.memo.trim(),
@@ -2474,6 +2477,7 @@ export default function CostProfitSection({
           entryType: form.entryType,
           category: form.category,
           item: form.item,
+          partner: form.partner.trim(),
           amount: Math.max(0, Math.round(Number(form.amount) || 0)),
           paymentMethod: form.paymentMethod,
           memo: form.memo.trim(),
