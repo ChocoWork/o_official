@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_migrations_088_persist_finance_template_partner_sql", "label": "088_persist_finance_template_partner.sql", "file_type": "code", "source_file": "migrations/088_persist_finance_template_partner.sql", "source_location": null}], "edges": []}
