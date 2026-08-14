@@ -30,6 +30,7 @@ const ADMIN = {
 let financeQueryError: { code: string; message: string } | null = null;
 let cumulativeRowsOverride: Array<Record<string, unknown>> | null = null;
 let cumulativeRangeCalls: Array<[number, number]> = [];
+let cumulativePageLimit: number | null = null;
 
 function result(data: unknown) {
 	return Promise.resolve({ data, error: financeQueryError });
@@ -109,7 +110,7 @@ function createFinanceSupabaseMock() {
 							is: () => ({
 								order: () => ({ order: () => ({ range: (from: number, to: number) => {
 									cumulativeRangeCalls.push([from, to]);
-									return result(rows.slice(from, to + 1));
+									return Promise.resolve({ data: rows.slice(from, Math.min(to + 1, from + (cumulativePageLimit ?? Number.MAX_SAFE_INTEGER))), count: rows.length, error: financeQueryError });
 								} }) }),
 							}),
 						}),
@@ -223,6 +224,7 @@ describe('GET /api/admin/kpi/cost-profit', () => {
 		financeQueryError = null;
 		cumulativeRowsOverride = null;
 		cumulativeRangeCalls = [];
+		cumulativePageLimit = null;
 		authorizeMock.mockResolvedValue(ADMIN);
 		createServiceMock.mockResolvedValue(createFinanceSupabaseMock() as never);
 	});
@@ -332,6 +334,20 @@ describe('GET /api/admin/kpi/cost-profit', () => {
 	it('不正なシーズンキーを拒否する', async () => {
 		const response = await GET(new Request('http://localhost/api/admin/kpi/cost-profit?year=2026&season=invalid'));
 		expect(response.status).toBe(400);
+	});
+
+	it('累積取引はmax_rows相当500件でも1001件を全件返す', async () => {
+		cumulativePageLimit = 500;
+		cumulativeRowsOverride = Array.from({ length: 1001 }, (_, index) => ({
+			id: index + 1, entry_type: index % 2 === 0 ? 'income' : 'expense',
+			expense_date: `2026-01-${String((index % 28) + 1).padStart(2, '0')}`,
+			category: 'テスト', item_name: `取引${index + 1}`, partner: '', amount: index + 1, payment_method: '銀行',
+		}));
+		const response = await GET(new Request('http://localhost/api/admin/kpi/cost-profit?year=2026'));
+		const body = await response.json();
+		expect(body.data.cumulativeEntries).toHaveLength(1001);
+		expect(body.data.cumulativeEntries.at(-1)).toEqual(expect.objectContaining({ id: 1001 }));
+		expect(cumulativeRangeCalls).toEqual([[0, 999], [500, 1499], [1000, 1999]]);
 	});
 });
 
@@ -473,20 +489,6 @@ describe('POST /api/admin/kpi/cost-profit', () => {
 				created_by: 'admin-id',
 			},
 		);
-	});
-
-	it('累積取引は1001件でも安定順序のページングで全件を返す', async () => {
-		cumulativeRowsOverride = Array.from({ length: 1001 }, (_, index) => ({
-			id: index + 1,
-			entry_type: index % 2 === 0 ? 'income' : 'expense',
-			expense_date: `2026-01-${String((index % 28) + 1).padStart(2, '0')}`,
-			category: 'テスト', item_name: `取引${index + 1}`, partner: '', amount: index + 1, payment_method: '銀行',
-		}));
-		const response = await GET(new Request('http://localhost/api/admin/kpi/cost-profit?year=2026'));
-		const body = await response.json();
-		expect(body.data.cumulativeEntries).toHaveLength(1001);
-		expect(body.data.cumulativeEntries.at(-1)).toEqual(expect.objectContaining({ id: 1001 }));
-		expect(cumulativeRangeCalls).toEqual([[0, 999], [1000, 1999]]);
 	});
 
 	it('新規テンプレートの名前が重複した場合は409を返す', async () => {

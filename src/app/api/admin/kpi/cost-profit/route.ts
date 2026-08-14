@@ -723,10 +723,10 @@ export async function GET(request: Request) {
 		const cumulativeEntries: CumulativeEntryRow[] = [];
 		let cumulativeError: unknown = null;
 		const cumulativePageSize = 1000;
-		for (let from = 0; ; from += cumulativePageSize) {
+		for (let from = 0; ;) {
 			const page = await supabase
 				.from('admin_finance_expenses')
-				.select('id, entry_type, expense_date, category, item_name, partner, amount, payment_method')
+				.select('id, entry_type, expense_date, category, item_name, partner, amount, payment_method', { count: 'exact' })
 				.lte('expense_date', `${parsedYear.data}-12-31`)
 				.is('deleted_at', null)
 				.order('expense_date', { ascending: true })
@@ -738,7 +738,8 @@ export async function GET(request: Request) {
 			}
 			const rows = (page.data ?? []) as CumulativeEntryRow[];
 			cumulativeEntries.push(...rows);
-			if (rows.length < cumulativePageSize) break;
+			if (rows.length === 0 || (page.count !== null && cumulativeEntries.length >= page.count)) break;
+			from += rows.length;
 		}
 		const cumulativeResult = { data: cumulativeEntries, error: cumulativeError };
 
@@ -1190,6 +1191,7 @@ export async function POST(request: Request) {
 						entry_type: template.entryType,
 						category: template.category,
 						item_name: template.item,
+						partner: template.partner,
 						amount: template.amount,
 						payment_method: template.paymentMethod,
 						memo: template.memo,
