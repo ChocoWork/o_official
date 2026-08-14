@@ -237,6 +237,9 @@ for (const viewport of viewports) {
       const trend = page.getByRole('region', { name: '月次累積収支推移' });
       await expect(trend).toBeVisible();
       await expect(trend.getByRole('img', { name: '2026年の月次累積収支推移' })).toBeVisible();
+      for (const month of Array.from({ length: 12 }, (_, index) => `${index + 1}月`)) {
+        await expect(trend.getByText(month, { exact: true })).toBeVisible();
+      }
       for (const [label, value] of [
         ['期首残高', '¥70,000'],
         ['当年収入', '¥20,000'],
