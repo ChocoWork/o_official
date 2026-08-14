@@ -50,7 +50,7 @@ next-env.d.ts
 .vscode/mcp.json
 
 /screenshots
-
+/e2e/screenshots
 certificates
 
 /docs/ui-mocks
