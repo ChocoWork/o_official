@@ -181,6 +181,10 @@ describe('CostProfitSection', () => {
 
 		const trend = await screen.findByRole('region', { name: '月次累積収支推移' });
 		expect(within(trend).getByRole('img', { name: '2026年の月次累積収支推移' })).toBeInTheDocument();
+		const accessibleTable = within(trend).getByRole('table', { name: '月次累積収支推移の月別累積収支' });
+		expect(accessibleTable).toHaveTextContent('1月¥90,000');
+		expect(accessibleTable).toHaveTextContent('3月¥85,000');
+		expect(within(trend).getByRole('img', { name: '2026年の月次累積収支推移' })).toHaveAttribute('aria-describedby', 'cumulative-balance-trend-2026-table');
 		for (const [label, value] of [
 			['期首残高', '¥70,000'],
 			['当年収入', '¥20,000'],

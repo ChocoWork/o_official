@@ -147,4 +147,5 @@ export interface GraphProps {
   plotPadLeft?: number | "auto";
   /** SVG の代替テキスト。軸付きグラフでは必須に近い。 */
   ariaLabel?: string;
+  ariaDescribedBy?: string;
 }

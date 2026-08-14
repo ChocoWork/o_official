@@ -28,6 +28,8 @@ const ADMIN = {
 // 会計は暦年（1/1〜12/31）で切る。シーズンは商品原価の絞り込みにのみ使う任意パラメータ。
 // GET は 9 本のクエリを Promise.all で並べるため、テーブル名ごとに終端の thenable を返す。
 let financeQueryError: { code: string; message: string } | null = null;
+let cumulativeRowsOverride: Array<Record<string, unknown>> | null = null;
+let cumulativeRangeCalls: Array<[number, number]> = [];
 
 function result(data: unknown) {
 	return Promise.resolve({ data, error: financeQueryError });
@@ -57,7 +59,7 @@ function createFinanceSupabaseMock() {
 			}
 
 			if (table === 'admin_finance_expenses') {
-				const rows = [
+				const rows = cumulativeRowsOverride ?? [
 					{
 						id: 1,
 						entry_type: 'expense',
@@ -103,7 +105,14 @@ function createFinanceSupabaseMock() {
 							}),
 						}),
 						// 開業以来累計：選択年度の年末までを取る
-						lte: () => ({ is: () => result(rows) }),
+						lte: () => ({
+							is: () => ({
+								order: () => ({ order: () => ({ range: (from: number, to: number) => {
+									cumulativeRangeCalls.push([from, to]);
+									return result(rows.slice(from, to + 1));
+								} }) }),
+							}),
+						}),
 					}),
 				};
 			}
@@ -212,6 +221,8 @@ describe('GET /api/admin/kpi/cost-profit', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
 		financeQueryError = null;
+		cumulativeRowsOverride = null;
+		cumulativeRangeCalls = [];
 		authorizeMock.mockResolvedValue(ADMIN);
 		createServiceMock.mockResolvedValue(createFinanceSupabaseMock() as never);
 	});
@@ -462,6 +473,20 @@ describe('POST /api/admin/kpi/cost-profit', () => {
 				created_by: 'admin-id',
 			},
 		);
+	});
+
+	it('累積取引は1001件でも安定順序のページングで全件を返す', async () => {
+		cumulativeRowsOverride = Array.from({ length: 1001 }, (_, index) => ({
+			id: index + 1,
+			entry_type: index % 2 === 0 ? 'income' : 'expense',
+			expense_date: `2026-01-${String((index % 28) + 1).padStart(2, '0')}`,
+			category: 'テスト', item_name: `取引${index + 1}`, partner: '', amount: index + 1, payment_method: '銀行',
+		}));
+		const response = await GET(new Request('http://localhost/api/admin/kpi/cost-profit?year=2026'));
+		const body = await response.json();
+		expect(body.data.cumulativeEntries).toHaveLength(1001);
+		expect(body.data.cumulativeEntries.at(-1)).toEqual(expect.objectContaining({ id: 1001 }));
+		expect(cumulativeRangeCalls).toEqual([[0, 999], [1000, 1999]]);
 	});
 
 	it('新規テンプレートの名前が重複した場合は409を返す', async () => {

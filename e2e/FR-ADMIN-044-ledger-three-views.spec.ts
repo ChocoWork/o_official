@@ -328,6 +328,43 @@ for (const viewport of viewports) {
       await expect(trend).toHaveText(trendTextBeforeAccountSelection ?? '');
     });
 
+    test('2科目選択でも月次累積表は不変で、総勘定元帳CSVは選択科目へ追従する', async ({ page }) => {
+      test.skip(viewport.name !== 'desktop');
+      await openLedgerTab(page);
+      const trend = page.getByRole('region', { name: '月次累積収支推移' });
+      const table = trend.getByRole('table', { name: '月次累積収支推移の月別累積収支' });
+      const before = await table.textContent();
+
+      const tree = page.getByRole('region', { name: '勘定科目' });
+      await page.getByRole('searchbox', { name: '勘定科目を検索' }).fill('普通預金');
+      await page.getByRole('button', { name: '勘定科目を検索する' }).click();
+      await tree.getByRole('button', { name: /1040\s*普通預金/ }).click();
+      await expect(table).toHaveText(before ?? '');
+      const firstDownload = page.waitForEvent('download');
+      await page.getByRole('button', { name: '総勘定元帳CSV' }).click();
+      const first = await firstDownload;
+      expect(first.suggestedFilename()).toContain('普通預金');
+      const firstStream = await first.createReadStream();
+      expect(firstStream).not.toBeNull();
+      const firstChunks: Buffer[] = [];
+      for await (const chunk of firstStream!) firstChunks.push(Buffer.from(chunk));
+      expect(Buffer.concat(firstChunks).toString('utf8')).toContain('普通預金');
+
+      await page.getByRole('searchbox', { name: '勘定科目を検索' }).fill('広告宣伝費');
+      await page.getByRole('button', { name: '勘定科目を検索する' }).click();
+      await tree.getByRole('button', { name: /広告宣伝費/ }).last().click();
+      await expect(table).toHaveText(before ?? '');
+      const secondDownload = page.waitForEvent('download');
+      await page.getByRole('button', { name: '総勘定元帳CSV' }).click();
+      const second = await secondDownload;
+      expect(second.suggestedFilename()).toContain('広告宣伝費');
+      const secondStream = await second.createReadStream();
+      expect(secondStream).not.toBeNull();
+      const secondChunks: Buffer[] = [];
+      for await (const chunk of secondStream!) secondChunks.push(Buffer.from(chunk));
+      expect(Buffer.concat(secondChunks).toString('utf8')).toContain('広告宣伝費');
+    });
+
     test('Stripe注文は売上高元帳の貸方と伝票全体の正式科目で表示する', async ({ page }) => {
       await openLedgerTab(page);
 

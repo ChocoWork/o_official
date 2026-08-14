@@ -7644,6 +7644,7 @@ export default function CostProfitSection({
                   unitLabel="（円）"
                   className="font-acumin"
                   ariaLabel={`${fiscalYear}年の月次累積収支推移`}
+                  ariaDescribedBy={`cumulative-balance-trend-${fiscalYear}-table`}
                   categories={LEDGER_MONTH_LABELS}
                   series={[
                     {
@@ -7655,12 +7656,19 @@ export default function CostProfitSection({
                     },
                   ]}
                 />
+                <table id={`cumulative-balance-trend-${fiscalYear}-table`} className="sr-only">
+                  <caption>月次累積収支推移の月別累積収支</caption>
+                  <thead><tr><th scope="col">月</th><th scope="col">累積収支</th></tr></thead>
+                  <tbody>{cumulativeBalanceTrend.monthly.map((point) => (
+                    <tr key={point.month}><th scope="row">{point.month}月</th><td>{currency(point.balance)}</td></tr>
+                  ))}</tbody>
+                </table>
                 <p className="mt-2 font-acumin text-[10px] text-[#707070]">
                   取引管理に入力した全収入・全支出による管理指標です。現金預金・利益・純資産・科目別元帳の残高ではありません。
                 </p>
               </div>
               <dl
-                className={`${boxRadiusClassName} grid grid-cols-2 gap-x-3 gap-y-3 border border-[#ededed] p-3`}
+                className={`${boxRadiusClassName} grid grid-cols-2 gap-x-3 gap-y-3 border border-[#ededed] p-3 xl:grid-cols-1`}
               >
                 {[
                   { label: "期首残高", value: cumulativeBalanceTrend.openingBalance },

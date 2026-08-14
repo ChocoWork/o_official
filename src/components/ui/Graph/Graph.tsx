@@ -189,6 +189,7 @@ export function Graph({
   plotWidth,
   plotPadLeft,
   ariaLabel,
+  ariaDescribedBy,
 }: GraphProps) {
   const dataAttrs = {
     "data-ui-graph": "true",
@@ -340,6 +341,7 @@ export function Graph({
             viewBox={`0 0 ${width} ${height}`}
             role="img"
             aria-label={ariaLabel}
+            aria-describedby={ariaDescribedBy}
           >
             <defs>
               {series.map((item, index) =>

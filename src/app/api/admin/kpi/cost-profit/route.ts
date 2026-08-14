@@ -657,7 +657,7 @@ export async function GET(request: Request) {
 			assetsResult,
 			closingsResult,
 			revisionsResult,
-			cumulativeResult,
+			_cumulativePlaceholder,
 			orderSalesResult,
 			reviewAcksResult,
 			summaryOptionsResult,
@@ -705,11 +705,7 @@ export async function GET(request: Request) {
 				.order('id', { ascending: false })
 				.limit(200),
 			// 開業以来累計と借入先別残高の集計用。仕訳再構築に必要な最小限の列を取る。
-			supabase
-				.from('admin_finance_expenses')
-				.select('id, entry_type, expense_date, category, item_name, partner, amount, payment_method')
-				.lte('expense_date', `${parsedYear.data}-12-31`)
-				.is('deleted_at', null),
+			Promise.resolve({ data: [], error: null }),
 			supabase
 				.from('orders')
 				.select('id, payment_intent_id, status, total_amount, refunded_amount, currency, created_at')
@@ -723,6 +719,28 @@ export async function GET(request: Request) {
 				.select('entry_ref, reason, note, reviewed_at'),
 			supabase.from('admin_finance_summary_options').select('id, entry_type, name').order('name', { ascending: true }),
 		]);
+
+		const cumulativeEntries: CumulativeEntryRow[] = [];
+		let cumulativeError: unknown = null;
+		const cumulativePageSize = 1000;
+		for (let from = 0; ; from += cumulativePageSize) {
+			const page = await supabase
+				.from('admin_finance_expenses')
+				.select('id, entry_type, expense_date, category, item_name, partner, amount, payment_method')
+				.lte('expense_date', `${parsedYear.data}-12-31`)
+				.is('deleted_at', null)
+				.order('expense_date', { ascending: true })
+				.order('id', { ascending: true })
+				.range(from, from + cumulativePageSize - 1);
+			if (page.error) {
+				cumulativeError = page.error;
+				break;
+			}
+			const rows = (page.data ?? []) as CumulativeEntryRow[];
+			cumulativeEntries.push(...rows);
+			if (rows.length < cumulativePageSize) break;
+		}
+		const cumulativeResult = { data: cumulativeEntries, error: cumulativeError };
 
 		// Migration 074 may be deployed after this application version. When the
 		// transaction table is still on the preceding schema, retry without the
