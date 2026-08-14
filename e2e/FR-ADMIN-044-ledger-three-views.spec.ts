@@ -348,7 +348,7 @@ for (const viewport of viewports) {
       expect(firstStream).not.toBeNull();
       const firstChunks: Buffer[] = [];
       for await (const chunk of firstStream!) firstChunks.push(Buffer.from(chunk));
-      expect(Buffer.concat(firstChunks).toString('utf8')).toContain('普通預金');
+      expect(Buffer.concat(firstChunks).toString('utf8')).toContain('生地・材料仕入');
 
       await page.getByRole('searchbox', { name: '勘定科目を検索' }).fill('広告宣伝費');
       await page.getByRole('button', { name: '勘定科目を検索する' }).click();
@@ -362,7 +362,10 @@ for (const viewport of viewports) {
       expect(secondStream).not.toBeNull();
       const secondChunks: Buffer[] = [];
       for await (const chunk of secondStream!) secondChunks.push(Buffer.from(chunk));
-      expect(Buffer.concat(secondChunks).toString('utf8')).toContain('広告宣伝費');
+      const secondCsv = Buffer.concat(secondChunks).toString('utf8');
+      expect(secondCsv).toContain('普通預金');
+      expect(secondCsv).toContain('広告出稿');
+      expect(secondCsv).not.toContain('生地・材料仕入');
     });
 
     test('Stripe注文は売上高元帳の貸方と伝票全体の正式科目で表示する', async ({ page }) => {
