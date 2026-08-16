@@ -615,9 +615,9 @@
     "semantic_hash": "451f4283ed79a204aee93342cb691758"
   },
   "src/app/item/page.tsx": {
-    "mtime": 1784032971.4636538,
-    "ast_hash": "757d58eb41f6769a75203fa51cf38d76",
-    "semantic_hash": "757d58eb41f6769a75203fa51cf38d76"
+    "mtime": 1786888047.377853,
+    "ast_hash": "ec2f3fe45e3fbf8d2d727b54a975953e",
+    "semantic_hash": ""
   },
   "src/app/layout.tsx": {
     "mtime": 1785106717.3518043,
@@ -675,9 +675,9 @@
     "semantic_hash": "d94013ccaf78c56815f9b02707071046"
   },
   "src/app/look/page.tsx": {
-    "mtime": 1784032965.4770586,
-    "ast_hash": "658dac1b529eca278a1979d4262bf252",
-    "semantic_hash": "658dac1b529eca278a1979d4262bf252"
+    "mtime": 1786888048.7986093,
+    "ast_hash": "285ca3db41bc6781c485fbfc4d9f3b70",
+    "semantic_hash": ""
   },
   "src/app/news/NewsCategoryTabs.tsx": {
     "mtime": 1778887680.2143493,
@@ -690,9 +690,9 @@
     "semantic_hash": "355ce796d475f33905f9a84a0a13dd5c"
   },
   "src/app/news/page.tsx": {
-    "mtime": 1784032963.5264192,
-    "ast_hash": "1d5ae6c6ec462f41d79c5093948308e9",
-    "semantic_hash": "1d5ae6c6ec462f41d79c5093948308e9"
+    "mtime": 1786888050.9246407,
+    "ast_hash": "ddd47c9a022eefa6519894eb771d96bc",
+    "semantic_hash": ""
   },
   "src/app/page.tsx": {
     "mtime": 1784354128.606566,
@@ -3615,8 +3615,8 @@
     "semantic_hash": ""
   },
   "e2e/FR-ITEM-ALL-024-wide-layout.spec.ts": {
-    "mtime": 1784033075.778864,
-    "ast_hash": "dbb1a5277362da94f5a3cccacefd73a2",
+    "mtime": 1786888263.535161,
+    "ast_hash": "c941acea8c091433d7e344539d896420",
     "semantic_hash": ""
   },
   "e2e/FR-ITEM-ALL-025-filter-width-gap-unified.spec.ts": {
@@ -4695,8 +4695,8 @@
     "semantic_hash": ""
   },
   "docs/2_Specs/spec.md": {
-    "mtime": 1786886026.3069336,
-    "ast_hash": "19b9805d99227c51f139f91765db8675",
+    "mtime": 1786888269.340039,
+    "ast_hash": "5d9901dad0da3bb3b8df246d9b34f9e5",
     "semantic_hash": ""
   },
   "docs/3_ArchitectureDesign/auth-structure.md": {
@@ -8297,6 +8297,21 @@
   "e2e/FR-HOME-016-item-card-no-scrollbar.spec.ts": {
     "mtime": 1786864701.7448986,
     "ast_hash": "e935e8650da637b9abd25c55e91e2b1d",
+    "semantic_hash": ""
+  },
+  "e2e/FR-ITEM-ALL-030-desktop-filter-left-edge.spec.ts": {
+    "mtime": 1786888104.2246773,
+    "ast_hash": "b1cbdee2c8db040d44b6c21c82ee1e45",
+    "semantic_hash": ""
+  },
+  "e2e/FR-LOOK-ALL-035-desktop-filter-left-edge.spec.ts": {
+    "mtime": 1786888104.2904456,
+    "ast_hash": "028e1a00b599ef8326a17f0e316293c9",
+    "semantic_hash": ""
+  },
+  "e2e/FR-NEWS-ALL-017-desktop-filter-left-edge.spec.ts": {
+    "mtime": 1786888096.7888615,
+    "ast_hash": "c2e6400842f61a35235aae97e9e189cc",
     "semantic_hash": ""
   }
 }

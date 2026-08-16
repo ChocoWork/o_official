@@ -31,22 +31,22 @@ test.describe('FR-ITEM-ALL-024 一覧ページのワイドレイアウト', () =
     expect(columnCount).toBe(5);
   });
 
-  test('FREQ-118-AC-01/04: コンテナ最大幅が 1680px（超ワイドでも上限で頭打ち）', async ({ page }) => {
+  // FREQ-274 で ITEM / NEWS / LOOK の 1680px 上限は撤廃し、フルブリードに変更した
+  // （フィルターを画面左端に寄せるため）。旧 AC-01/04 はここでは超ワイド時に
+  // 1280px より広いことのみを検証する。
+  test('FREQ-118-AC-01/04: 超ワイドでもコンテナが 1280px より広い', async ({ page }) => {
     await page.setViewportSize({ width: 1920, height: 1000 });
 
     await gotoItemList(page);
     const itemWidth = await contentColumnContainerWidth(page, 'item-content-column');
-    expect(itemWidth).toBeLessThanOrEqual(1681);
     expect(itemWidth).toBeGreaterThan(1280); // 旧 max-w-7xl(1280px) より広い
 
     await page.goto('/news');
     const newsWidth = await contentColumnContainerWidth(page, 'news-content-column');
-    expect(newsWidth).toBeLessThanOrEqual(1681);
     expect(newsWidth).toBeGreaterThan(1280);
 
     await page.goto('/look');
     const lookWidth = await contentColumnContainerWidth(page, 'look-content-column');
-    expect(lookWidth).toBeLessThanOrEqual(1681);
     expect(lookWidth).toBeGreaterThan(1280);
   });
 

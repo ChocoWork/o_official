@@ -57,7 +57,7 @@ export default async function ItemPage({
   });
 
   return (
-    <div className="max-w-[1680px] mx-auto w-full">
+    <div className="w-full">
       <PublicItemGrid
         variant="catalog"
         items={initialResult.items}
