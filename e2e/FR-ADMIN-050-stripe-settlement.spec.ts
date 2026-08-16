@@ -1,7 +1,7 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockAdminApis } from './FR-ADMIN-044-ledger-three-views.spec';
 
-// FREQ-259: Stripe決済・実額手数料・成功返金・Payout・銀行着金確認を ACCOUNTING に反映する。
+// FREQ-270: Stripe決済・実額手数料・成功返金・Payout・銀行着金確認を ACCOUNTING に反映する。
 // 財務概要に Stripe決済残高／Stripe入金途上／Payout一覧と銀行着金確認を出し、
 // 仕訳・元帳には Stripe 原始記録から投影した仕訳を並べる。
 const viewports = [
@@ -118,7 +118,7 @@ for (const viewport of viewports) {
     });
 
     test('Stripe決済残高と入金途上とPayoutを財務概要に表示する', async ({ page }) => {
-      // FREQ-259-AC-01
+      // FREQ-270-AC-01
       await openAccountingSummary(page);
 
       const settlement = page.getByLabel('Stripe精算');
@@ -128,7 +128,7 @@ for (const viewport of viewports) {
     });
 
     test('照合済みPayoutの銀行着金を確認できる', async ({ page }) => {
-      // FREQ-259-AC-02
+      // FREQ-270-AC-02
       await openAccountingSummary(page);
 
       await page.getByRole('button', { name: 'Payout po_1 の銀行着金を確認' }).click();
@@ -140,7 +140,7 @@ for (const viewport of viewports) {
     });
 
     test('Stripe仕訳を仕訳・元帳へ相手勘定つきで並べる', async ({ page }) => {
-      // FREQ-259-AC-03
+      // FREQ-270-AC-03
       await openAccountingSummary(page);
       await page.getByRole('tab', { name: '帳簿', exact: true }).click();
       await expect(page.getByRole('tab', { name: '仕訳・元帳', exact: true })).toBeVisible();
