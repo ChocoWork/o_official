@@ -1,6 +1,7 @@
-import Image from "next/image";
+﻿import Image from "next/image";
 import type { ReactNode } from "react";
 import type { ColorSwatch } from "@/lib/items/colors";
+import { ItemCardImageCarousel } from "./ItemImageCarousel";
 
 // ホーム ITEM セクション / ITEM 一覧 / WISHLIST で共有する商品カードの見た目。
 // media（画像＋SOLD OUT）と info（名称＋カラー／価格＋SEASON＋在庫）に分割し、
@@ -8,19 +9,51 @@ import type { ColorSwatch } from "@/lib/items/colors";
 
 export function ItemCardMedia({
   imageUrl,
+  imageUrls,
   alt,
   soldOut = false,
   priority = false,
   children,
 }: {
   imageUrl?: string | null;
+  /** FREQ-271: 2枚以上あるときはカード内をスワイプ / 三角ボタンで切り替える */
+  imageUrls?: string[] | null;
   alt: string;
   soldOut?: boolean;
   priority?: boolean;
   children?: ReactNode;
 }) {
+  const frameClass = "relative aspect-[3/4] bg-[#f5f5f5] overflow-hidden";
+  const soldOutBadge = soldOut ? (
+    <span
+      className="absolute top-0 left-0 bg-black text-white px-[8px] py-[3px] tracking-widest"
+      style={{ fontSize: "var(--lk-size-4xs)" }}
+    >
+      SOLD OUT
+    </span>
+  ) : null;
+
+  if (imageUrls && imageUrls.length > 1) {
+    return (
+      <div className="mb-[2px] sm:mb-[6px] md:mb-[8px]">
+        <ItemCardImageCarousel
+          imageUrls={imageUrls}
+          alt={alt}
+          priority={priority}
+          frameClassName={frameClass}
+          overlay={
+            <>
+              {soldOutBadge}
+              {children}
+            </>
+          }
+        />
+      </div>
+    );
+  }
+
   return (
-    <div className="relative aspect-[3/4] bg-[#f5f5f5] mb-[2px] sm:mb-[6px] md:mb-[8px] overflow-hidden">
+    <div className={`${frameClass} mb-[2px] sm:mb-[6px] md:mb-[8px]`}>
       {imageUrl ? (
         <Image
           src={imageUrl}
@@ -41,14 +74,7 @@ export function ItemCardMedia({
           </span>
         </div>
       )}
-      {soldOut ? (
-        <span
-          className="absolute top-0 left-0 bg-black text-white px-[8px] py-[3px] tracking-widest"
-          style={{ fontSize: "var(--lk-size-4xs)" }}
-        >
-          SOLD OUT
-        </span>
-      ) : null}
+      {soldOutBadge}
       {children}
     </div>
   );

@@ -9,6 +9,12 @@ import { Item, ItemStockStatus } from "@/types/item";
 import { useCart } from "@/contexts/CartContext";
 import { Button } from "@/components/ui/Button/Button";
 import { RelatedItems } from "@/features/items/components/RelatedItems";
+import {
+  CarouselArrowButton,
+  CarouselSegmentIndicator,
+  carouselIndexFromScroll,
+  scrollCarouselTo,
+} from "@/features/items/components/ItemImageCarousel";
 
 type Props = { id: string };
 
@@ -144,6 +150,7 @@ export default function ItemDetailClient({ id }: Props) {
   const [validationError, setValidationError] = useState<string | null>(null);
   const cartButtonRef = useRef<HTMLDivElement>(null);
   const tabletCarouselRef = useRef<HTMLDivElement>(null);
+  const mobileCarouselRef = useRef<HTMLDivElement>(null);
 
   const isWishlisted = item ? wishlistedItems.has(item.id) : false;
   const stockStatus = item ? resolveStockStatus(item) : "unknown";
@@ -237,26 +244,23 @@ export default function ItemDetailClient({ id }: Props) {
 
   // タブレットカルーセルの前後送りボタン: 指定インデックスのスライドへスクロールする (FREQ-172)
   const scrollTabletCarouselTo = (index: number) => {
-    const el = tabletCarouselRef.current;
-    if (!el) return;
-    const firstSlide = el.children[0] as HTMLElement | undefined;
-    if (!firstSlide) return;
-    const gap = parseFloat(getComputedStyle(el).columnGap) || 0;
-    el.scrollTo({
-      left: index * (firstSlide.offsetWidth + gap),
-      behavior: "smooth",
-    });
+    setSelectedImageIndex(index);
+    scrollCarouselTo(tabletCarouselRef.current, index);
+  };
+
+  // モバイルカルーセル: インジケータの線をタップしたときの移動 (FREQ-271)
+  const scrollMobileCarouselTo = (index: number) => {
+    setSelectedImageIndex(index);
+    scrollCarouselTo(mobileCarouselRef.current, index);
   };
 
   const handleCarouselScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const el = e.currentTarget;
-    const firstSlide = el.children[0] as HTMLElement | undefined;
-    if (!firstSlide) return;
     // ピーク表示 (FREQ-158) によりスライド幅 < コンテナ幅のため、
     // スライド幅 + gap を1スライド分の移動量としてインデックスを算出する
-    const gap = parseFloat(getComputedStyle(el).columnGap) || 0;
-    const stride = firstSlide.offsetWidth + gap;
-    setSelectedImageIndex(Math.round(el.scrollLeft / stride));
+    const index = carouselIndexFromScroll(e.currentTarget);
+    if (index !== null) {
+      setSelectedImageIndex(index);
+    }
   };
 
   const handleAddToCart = async () => {
@@ -437,6 +441,7 @@ export default function ItemDetailClient({ id }: Props) {
                 {/* ピーク表示: 左右 px-5 の余白を設け、2枚以上のときは
                     前後スライドの端が余白部分に見える (FREQ-158) */}
                 <div
+                  ref={mobileCarouselRef}
                   data-testid="item-detail-carousel"
                   className="flex w-full touch-pan-x snap-x snap-mandatory scroll-px-5 gap-0.5 overflow-x-scroll px-5"
                   style={
@@ -474,6 +479,15 @@ export default function ItemDetailClient({ id }: Props) {
                     </div>
                   ))}
                 </div>
+                {/* FREQ-271: 画像下のセグメント線インジケータ。カルーセルと同じ px-5 に揃える */}
+                <CarouselSegmentIndicator
+                  testId="item-detail-carousel-indicator"
+                  count={thumbnailImages.length}
+                  selectedIndex={selectedImageIndex}
+                  onSelect={scrollMobileCarouselTo}
+                  label={`${item.name} の画像インジケータ`}
+                  className="px-5"
+                />
               </div>
 
               {/* タブレット・デスクトップ: 画像領域 58%。lg 以上はサムネイル縦列（左）も表示 */}
@@ -513,102 +527,144 @@ export default function ItemDetailClient({ id }: Props) {
                 {/* タブレット (md〜lg未満): サムネイルがないため、モバイル同様
                     スワイプ（横スクロール + スナップ）で画像を切り替える (FREQ-171)。
                     前後の画像があるときは左下・右下に送りボタンを表示する (FREQ-172) */}
-                <div className="relative min-w-0 flex-1 lg:hidden">
-                  <div
-                    ref={tabletCarouselRef}
-                    data-testid="item-detail-tablet-carousel"
-                    className="flex w-full touch-pan-x snap-x snap-mandatory gap-0.5 overflow-x-scroll"
-                    style={
-                      {
-                        scrollbarWidth: "none",
-                        msOverflowStyle: "none",
-                      } as React.CSSProperties
-                    }
-                    onScroll={handleCarouselScroll}
-                  >
-                    {thumbnailImages.map((imgUrl: string, index: number) => (
-                      <div
-                        key={index}
-                        data-testid="item-detail-tablet-carousel-slide"
-                        className="relative aspect-[2/3] w-full flex-shrink-0 snap-start overflow-hidden bg-white"
+                <div className="min-w-0 flex-1 lg:hidden">
+                  {/* 送りボタンは画像枠に対して配置する（インジケータの高さを含めない） */}
+                  <div className="relative">
+                    <div
+                      ref={tabletCarouselRef}
+                      data-testid="item-detail-tablet-carousel"
+                      className="flex w-full touch-pan-x snap-x snap-mandatory gap-0.5 overflow-x-scroll"
+                      style={
+                        {
+                          scrollbarWidth: "none",
+                          msOverflowStyle: "none",
+                        } as React.CSSProperties
+                      }
+                      onScroll={handleCarouselScroll}
+                    >
+                      {thumbnailImages.map((imgUrl: string, index: number) => (
+                        <div
+                          key={index}
+                          data-testid="item-detail-tablet-carousel-slide"
+                          className="relative aspect-[2/3] w-full flex-shrink-0 snap-start overflow-hidden bg-white"
+                        >
+                          {imgUrl ? (
+                            <Image
+                              src={imgUrl}
+                              alt={
+                                activeColorName
+                                  ? `${item.name} - ${activeColorName} - ${index + 1}枚目`
+                                  : `${item.name} - ${index + 1}枚目`
+                              }
+                              fill
+                              className="object-contain object-center"
+                              priority={index === 0}
+                              sizes="61vw"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-gray-400">
+                              No Image
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    {selectedImageIndex > 0 && (
+                      <button
+                        type="button"
+                        data-testid="item-detail-tablet-carousel-prev"
+                        aria-label="前の画像を表示"
+                        className="absolute bottom-2 left-5 flex h-11 w-11 cursor-pointer items-center justify-center text-black transition-opacity duration-200 hover:opacity-60 focus-visible:outline-none"
+                        onClick={() =>
+                          scrollTabletCarouselTo(selectedImageIndex - 1)
+                        }
                       >
-                        {imgUrl ? (
-                          <Image
-                            src={imgUrl}
-                            alt={
-                              activeColorName
-                                ? `${item.name} - ${activeColorName} - ${index + 1}枚目`
-                                : `${item.name} - ${index + 1}枚目`
-                            }
-                            fill
-                            className="object-contain object-center"
-                            priority={index === 0}
-                            sizes="61vw"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-gray-400">
-                            No Image
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                        <i
+                          className="ri-arrow-left-s-line text-2xl"
+                          aria-hidden="true"
+                        />
+                      </button>
+                    )}
+                    {selectedImageIndex < thumbnailImages.length - 1 && (
+                      <button
+                        type="button"
+                        data-testid="item-detail-tablet-carousel-next"
+                        aria-label="次の画像を表示"
+                        className="absolute bottom-2 right-2 flex h-11 w-11 cursor-pointer items-center justify-center text-black transition-opacity duration-200 hover:opacity-60 focus-visible:outline-none"
+                        onClick={() =>
+                          scrollTabletCarouselTo(selectedImageIndex + 1)
+                        }
+                      >
+                        <i
+                          className="ri-arrow-right-s-line text-2xl"
+                          aria-hidden="true"
+                        />
+                      </button>
+                    )}
                   </div>
-                  {selectedImageIndex > 0 && (
-                    <button
-                      type="button"
-                      data-testid="item-detail-tablet-carousel-prev"
-                      aria-label="前の画像を表示"
-                      className="absolute bottom-2 left-5 flex h-11 w-11 cursor-pointer items-center justify-center text-black transition-opacity duration-200 hover:opacity-60 focus-visible:outline-none"
-                      onClick={() =>
-                        scrollTabletCarouselTo(selectedImageIndex - 1)
-                      }
-                    >
-                      <i
-                        className="ri-arrow-left-s-line text-2xl"
-                        aria-hidden="true"
-                      />
-                    </button>
-                  )}
-                  {selectedImageIndex < thumbnailImages.length - 1 && (
-                    <button
-                      type="button"
-                      data-testid="item-detail-tablet-carousel-next"
-                      aria-label="次の画像を表示"
-                      className="absolute bottom-2 right-2 flex h-11 w-11 cursor-pointer items-center justify-center text-black transition-opacity duration-200 hover:opacity-60 focus-visible:outline-none"
-                      onClick={() =>
-                        scrollTabletCarouselTo(selectedImageIndex + 1)
-                      }
-                    >
-                      <i
-                        className="ri-arrow-right-s-line text-2xl"
-                        aria-hidden="true"
-                      />
-                    </button>
-                  )}
+                  {/* FREQ-271: 画像下のセグメント線インジケータ */}
+                  <CarouselSegmentIndicator
+                    testId="item-detail-tablet-carousel-indicator"
+                    count={thumbnailImages.length}
+                    selectedIndex={selectedImageIndex}
+                    onSelect={scrollTabletCarouselTo}
+                    label={`${item.name} の画像インジケータ`}
+                  />
                 </div>
 
-                <div
-                  data-testid="item-detail-main-image-frame"
-                  className="relative hidden aspect-[2/3] overflow-hidden bg-white lg:block lg:h-[min(48rem,calc(100svh-5rem))] lg:w-auto lg:flex-none"
-                >
-                  {mainImage ? (
-                    <Image
-                      src={mainImage}
-                      alt={
-                        activeColorName
-                          ? `${item.name} - ${activeColorName} - ${selectedImageIndex + 1}枚目`
-                          : `${item.name} - ${selectedImageIndex + 1}枚目`
-                      }
-                      fill
-                      className="object-contain object-center"
-                      priority
-                      sizes="(max-width: 1023px) 61vw, 54vw"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-gray-400">
-                      No Image
-                    </div>
-                  )}
+                {/* デスクトップ (lg 以上): メイン画像。左右の三角ボタンで切り替え、
+                    画像下にセグメント線インジケータを表示する (FREQ-271) */}
+                <div className="hidden flex-col lg:flex lg:w-auto lg:flex-none">
+                  <div
+                    data-testid="item-detail-main-image-frame"
+                    className="relative aspect-[2/3] overflow-hidden bg-white lg:h-[min(48rem,calc(100svh-5rem))] lg:w-auto"
+                  >
+                    {mainImage ? (
+                      <Image
+                        src={mainImage}
+                        alt={
+                          activeColorName
+                            ? `${item.name} - ${activeColorName} - ${selectedImageIndex + 1}枚目`
+                            : `${item.name} - ${selectedImageIndex + 1}枚目`
+                        }
+                        fill
+                        className="object-contain object-center"
+                        priority
+                        sizes="(max-width: 1023px) 61vw, 54vw"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-gray-400">
+                        No Image
+                      </div>
+                    )}
+                    {selectedImageIndex > 0 && (
+                      <CarouselArrowButton
+                        direction="prev"
+                        testId="item-detail-main-image-prev"
+                        onClick={() =>
+                          setSelectedImageIndex(selectedImageIndex - 1)
+                        }
+                        className="absolute left-0 top-1/2 -translate-y-1/2"
+                      />
+                    )}
+                    {selectedImageIndex < thumbnailImages.length - 1 && (
+                      <CarouselArrowButton
+                        direction="next"
+                        testId="item-detail-main-image-next"
+                        onClick={() =>
+                          setSelectedImageIndex(selectedImageIndex + 1)
+                        }
+                        className="absolute right-0 top-1/2 -translate-y-1/2"
+                      />
+                    )}
+                  </div>
+                  <CarouselSegmentIndicator
+                    testId="item-detail-main-image-indicator"
+                    count={thumbnailImages.length}
+                    selectedIndex={selectedImageIndex}
+                    onSelect={setSelectedImageIndex}
+                    label={`${item.name} の画像インジケータ`}
+                  />
                 </div>
               </div>
             </div>

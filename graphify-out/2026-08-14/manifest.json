@@ -760,8 +760,8 @@
     "semantic_hash": "4cafc4f03f6367720d6863c67efd3879"
   },
   "src/components/CostProfitSection.tsx": {
-    "mtime": 1786697626.21287,
-    "ast_hash": "25c00b2638a8edeb4e462a5b99a4e00a",
+    "mtime": 1786710177.5732772,
+    "ast_hash": "8f6029ba1793c266b53d359917d2896a",
     "semantic_hash": ""
   },
   "src/components/KpiSalesFunnel.tsx": {
@@ -2105,8 +2105,8 @@
     "semantic_hash": "f427492d4f7b685960c0bbe6e59a539a"
   },
   "tests/unit/components/CostProfitSection.test.tsx": {
-    "mtime": 1786695744.03429,
-    "ast_hash": "9a83f29d33a2e338dd14935c609c6b65",
+    "mtime": 1786710092.6920109,
+    "ast_hash": "1715e17628021f8fe1f63f5a43dace8e",
     "semantic_hash": ""
   },
   "tests/unit/components/Dialog.test.tsx": {
@@ -5289,71 +5289,6 @@
     "ast_hash": "b357d2807d4e0f9bacddce3e806455f2",
     "semantic_hash": "b357d2807d4e0f9bacddce3e806455f2"
   },
-  "e2e/screenshots/debug-input-hidden.png": {
-    "mtime": 1786624411.9253953,
-    "ast_hash": "21e1a31aa8f1c81f90e9775fa11ac997",
-    "semantic_hash": ""
-  },
-  "e2e/screenshots/debug-normal.png": {
-    "mtime": 1786624411.656274,
-    "ast_hash": "6bbc00adbd9c013a617829c90a33a560",
-    "semantic_hash": ""
-  },
-  "e2e/screenshots/debug-track-red.png": {
-    "mtime": 1786624412.2689614,
-    "ast_hash": "7f5f3f62c115b2d5e7efc59f4343ba1f",
-    "semantic_hash": ""
-  },
-  "e2e/screenshots/slider-2x-lg.png": {
-    "mtime": 1786624511.2241776,
-    "ast_hash": "be35bf21c982f97d7cc4b4f4e3049b18",
-    "semantic_hash": ""
-  },
-  "e2e/screenshots/slider-2x-md.png": {
-    "mtime": 1786624510.4032547,
-    "ast_hash": "6bbc00adbd9c013a617829c90a33a560",
-    "semantic_hash": ""
-  },
-  "e2e/screenshots/slider-2x-sm.png": {
-    "mtime": 1786624509.7426422,
-    "ast_hash": "d40fd0d17226d7f14e672261f94d232c",
-    "semantic_hash": ""
-  },
-  "e2e/screenshots/slider-2x-xl.png": {
-    "mtime": 1786624511.9787047,
-    "ast_hash": "bf8fa1035c66ae680d93b00b0006a0cd",
-    "semantic_hash": ""
-  },
-  "e2e/screenshots/slider-2x-xs.png": {
-    "mtime": 1786624509.072613,
-    "ast_hash": "4b018d4f3f320884b6b891bb0809c33b",
-    "semantic_hash": ""
-  },
-  "e2e/screenshots/slider-lg.png": {
-    "mtime": 1786624497.7112565,
-    "ast_hash": "68d35db92bb1de00cacedc5bdf2b4cb3",
-    "semantic_hash": ""
-  },
-  "e2e/screenshots/slider-md.png": {
-    "mtime": 1786624497.0807927,
-    "ast_hash": "16a162e52aded67607e4e6c4590303ea",
-    "semantic_hash": ""
-  },
-  "e2e/screenshots/slider-sm.png": {
-    "mtime": 1786624496.5289736,
-    "ast_hash": "07e339eb48dbf331f8c4bf91ab608caa",
-    "semantic_hash": ""
-  },
-  "e2e/screenshots/slider-xl.png": {
-    "mtime": 1786624498.4339297,
-    "ast_hash": "f48de7f5bf3afe84107fd0d12fce1de7",
-    "semantic_hash": ""
-  },
-  "e2e/screenshots/slider-xs.png": {
-    "mtime": 1786624495.9090319,
-    "ast_hash": "ebaf8a20972c0c2a20f059515cee9957",
-    "semantic_hash": ""
-  },
   ".claude/skills/implement-component/examples/sample.tsx": {
     "mtime": 1777543281.8265333,
     "ast_hash": "bd034366a0c0fb2383145e242a6d476b",
@@ -8110,8 +8045,8 @@
     "semantic_hash": ""
   },
   "docs/superpowers/specs/2026-08-13-counterparty-balance-design.md": {
-    "mtime": 1786582946.3244762,
-    "ast_hash": "79e6fb18eac8424c941c62c0ecad558a",
+    "mtime": 1786710385.9418173,
+    "ast_hash": "8520b1239206a471f35102ec052eebeb",
     "semantic_hash": ""
   },
   "docs/superpowers/plans/2026-08-13-counterparty-balance.md": {
@@ -8120,13 +8055,13 @@
     "semantic_hash": ""
   },
   "src/lib/finance/counterparty-balances.ts": {
-    "mtime": 1786592804.9953592,
-    "ast_hash": "2dc05aef8cd3a40848b3e01d29a8b6f8",
+    "mtime": 1786710061.9297473,
+    "ast_hash": "21aa1edebe92c7f929fb96fcf6e7a3ac",
     "semantic_hash": ""
   },
   "tests/unit/lib/finance/counterparty-balances.test.ts": {
-    "mtime": 1786592940.2826545,
-    "ast_hash": "e3cdc12806c41d9576e843eef7eac8ac",
+    "mtime": 1786710065.9830952,
+    "ast_hash": "d27ab5fae2dcbdb04bd6f64a9a40b0a0",
     "semantic_hash": ""
   },
   "src/lib/finance/transaction-status.ts": {
@@ -8232,6 +8167,16 @@
   "tests/unit/lib/finance/cumulative-balance-trend.test.ts": {
     "mtime": 1786691728.1997702,
     "ast_hash": "85479a34eb230feae6a510238ea969f3",
+    "semantic_hash": ""
+  },
+  "docs/superpowers/specs/2026-08-14-funding-repayment-balance-design.md": {
+    "mtime": 1786709272.2223978,
+    "ast_hash": "d0b8c23b2b301a91b8f8a4ee801b173f",
+    "semantic_hash": ""
+  },
+  "docs/superpowers/plans/2026-08-14-funding-repayment-balance.md": {
+    "mtime": 1786709602.7917085,
+    "ast_hash": "e2b1baddefa6596c1d3d70a9c8293f91",
     "semantic_hash": ""
   }
 }

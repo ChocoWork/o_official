@@ -837,6 +837,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
             <div className="group cursor-pointer" data-testid="item-card">
               <ItemCardMedia
                 imageUrl={item.image_url}
+                imageUrls={item.image_urls}
                 alt={item.name}
                 soldOut={soldOut}
               />

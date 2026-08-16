@@ -1,1 +1,0 @@
-{"nodes": [{"id": "$graphify-root$_migrations_019_add_public_select_policy_to_look_items_sql", "label": "019_add_public_select_policy_to_look_items.sql", "file_type": "code", "source_file": "migrations/019_add_public_select_policy_to_look_items.sql", "source_location": null}], "edges": []}
