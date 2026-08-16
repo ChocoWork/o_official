@@ -2,9 +2,18 @@ import { createStripeAccountingDatabase } from '@/lib/stripe/supabase-accounting
 
 type Result = { data: unknown; error: { message: string } | null };
 
+type Builder = {
+  select: jest.Mock;
+  insert: jest.Mock;
+  update: jest.Mock;
+  eq: jest.Mock;
+  maybeSingle: jest.Mock;
+  single: jest.Mock;
+};
+
 function fakeClient(result: Result) {
   const calls: Array<Record<string, unknown>> = [];
-  const builder = {
+  const builder: Builder = {
     select: jest.fn(() => builder),
     insert: jest.fn((values: unknown) => {
       calls.push({ op: 'insert', values });

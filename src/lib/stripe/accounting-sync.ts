@@ -19,7 +19,7 @@ type StripeAccountingClient = {
   refunds?: RetrieveApi;
   payouts?: RetrieveApi;
   balanceTransactions?: RetrieveApi & {
-    list(params: { payout: string; limit: number }): AsyncIterable<StripeObject>;
+    list?(params: { payout: string; limit: number }): AsyncIterable<StripeObject>;
   };
 };
 
@@ -166,7 +166,11 @@ export async function syncPayoutAccounting(input: {
 
   let transactionCount = 0;
   let reconciledNet = 0;
-  for await (const transaction of balanceApi.list({ payout: input.payoutId, limit: 100 })) {
+  const listBalanceTransactions = requiredApi(balanceApi.list, 'BalanceTransaction list');
+  for await (const transaction of listBalanceTransactions.call(balanceApi, {
+    payout: input.payoutId,
+    limit: 100,
+  })) {
     transactionCount += 1;
     reconciledNet += Number(transaction.net);
     await saveBalanceTransaction({

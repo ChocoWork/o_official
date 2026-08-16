@@ -76,7 +76,7 @@ describe('Stripe accounting synchronization', () => {
 
     const result = await syncRefundAccounting({ stripe, database: db, refundId: 're_1' });
 
-    expect(result.refund.succeededAt).toBe('2026-08-15T01:00:00.000Z');
+    expect(result.refund?.succeededAt).toBe('2026-08-15T01:00:00.000Z');
   });
 
   it('reads every balance transaction in an automatic payout', async () => {
