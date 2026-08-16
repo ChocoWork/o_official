@@ -102,6 +102,10 @@ import {
   type LedgerAccount,
 } from "@/lib/finance/journal";
 import {
+  buildStripeJournal,
+  mergeJournalEntries,
+} from "@/lib/finance/stripe-journal";
+import {
   buildBalanceSheet,
   buildProfitAndLoss,
 } from "@/lib/finance/statements";
@@ -1879,9 +1883,63 @@ export default function CostProfitSection({
 
   // 帳簿・財務3表は取引管理に入力された実データと決算整理仕訳だけから作る。
   // 仕訳 → 総勘定元帳 → 合計残高試算表 → 損益計算書・貸借対照表 の順に導出する。
+  // Stripe原始記録が投影済みの注文は、注文由来の売上仕訳ではなく
+  // Stripe仕訳（売上・手数料・返金・入金途上・普通預金）で表現する。
+  const stripeProjectedPaymentIntents = useMemo(
+    () =>
+      new Set(
+        stripeAccounting.balanceTransactions
+          .filter((row) => row.reporting_category === "charge" && row.payment_intent_id)
+          .map((row) => String(row.payment_intent_id)),
+      ),
+    [stripeAccounting.balanceTransactions],
+  );
+  const stripeJournalOrders = useMemo(
+    () =>
+      incomes
+        .filter(
+          (income) =>
+            income.source === "order" &&
+            income.paymentIntentId &&
+            stripeProjectedPaymentIntents.has(income.paymentIntentId),
+        )
+        .map((income) => ({
+          id: String(income.sourceId),
+          paymentIntentId: income.paymentIntentId as string,
+          totalAmount: income.grossAmount ?? income.amount,
+          currency: "jpy",
+        })),
+    [incomes, stripeProjectedPaymentIntents],
+  );
+  const stripeJournal = useMemo(
+    () =>
+      buildStripeJournal({
+        orders: stripeJournalOrders,
+        balanceTransactions: stripeAccounting.balanceTransactions as never,
+        refunds: stripeAccounting.refunds as never,
+        payouts: stripeAccounting.payouts as never,
+      }),
+    [stripeJournalOrders, stripeAccounting],
+  );
+  const journalIncomes = useMemo(
+    () =>
+      incomes.filter(
+        (income) =>
+          !(
+            income.source === "order" &&
+            income.paymentIntentId &&
+            stripeProjectedPaymentIntents.has(income.paymentIntentId)
+          ),
+      ),
+    [incomes, stripeProjectedPaymentIntents],
+  );
+
   const journal = useMemo(
     () => [
-      ...buildJournal([...expenses, ...incomes], businessType),
+      ...mergeJournalEntries(
+        buildJournal([...expenses, ...journalIncomes], businessType),
+        stripeJournal,
+      ),
       // 決算整理仕訳（減価償却・棚卸・引当金）。
       ...buildDepreciationEntries(depreciation.rows, fiscalYear),
       ...buildInventoryEntries(adjustment, openingBalances, fiscalYear),
@@ -1889,7 +1947,8 @@ export default function CostProfitSection({
     ],
     [
       expenses,
-      incomes,
+      journalIncomes,
+      stripeJournal,
       businessType,
       depreciation.rows,
       fiscalYear,
