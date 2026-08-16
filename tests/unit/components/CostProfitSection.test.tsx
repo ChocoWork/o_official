@@ -22,6 +22,7 @@ function setupFinanceFetch(
 		expenses?: Array<Record<string, unknown>>;
 		partners?: string[];
 		templates?: Array<{ name: string; entryType: string; category: string; item: string; partner: string; amount: number; paymentMethod: string; memo: string }>;
+		stripeAccounting?: Record<string, unknown>;
 	} = {},
 ) {
 	const data = {
@@ -45,6 +46,12 @@ function setupFinanceFetch(
 		summaryOptions: [{ id: 11, entryType: 'expense', name: '外注検品', isCustom: true }],
 		revisions: statusOptions.revisions ?? [],
 		reviewAcks: statusOptions.reviewAcks ?? [],
+		stripeAccounting: statusOptions.stripeAccounting ?? {
+			balanceTransactions: [],
+			refunds: [],
+			payouts: [],
+			summary: { stripeBalance: 0, inTransitBalance: 0, unmatchedPayoutCount: 0 },
+		},
 		products: [
 			{
 				id: 'LFDH-SS26-T001',
@@ -80,6 +87,20 @@ function setupFinanceFetch(
 					expenses: [],
 					items: [],
 				},
+			}), { status: 200, headers: { 'Content-Type': 'application/json' } });
+		}
+		if (String(_input).startsWith('/api/admin/accounting/stripe-payouts/')) {
+			const body = JSON.parse(String(init?.body ?? '{}'));
+			const payoutId = String(_input).split('/')[5];
+			const payouts = (data.stripeAccounting.payouts ?? []) as Array<Record<string, unknown>>;
+			data.stripeAccounting = {
+				...data.stripeAccounting,
+				payouts: payouts.map((payout) => payout.id === payoutId
+					? { ...payout, bank_arrival_date: body.bankArrivalDate, bank_confirmed_at: '2026-08-16T00:00:00.000Z' }
+					: payout),
+			} as Record<string, unknown>;
+			return new Response(JSON.stringify({
+				data: { payoutId, bankArrivalDate: body.bankArrivalDate, bankConfirmedAt: '2026-08-16T00:00:00.000Z', bankConfirmedBy: 'admin-1' },
 			}), { status: 200, headers: { 'Content-Type': 'application/json' } });
 		}
 		if ((init?.method ?? 'GET') === 'POST') {
@@ -214,6 +235,85 @@ describe('CostProfitSection', () => {
 
 	beforeEach(() => {
 		setupFinanceFetch();
+	});
+
+	it('Stripe精算の残高とPayoutを財務概要に表示する', async () => {
+		setupFinanceFetch([], undefined, false, {
+			stripeAccounting: {
+				balanceTransactions: [],
+				refunds: [],
+				payouts: [
+					{
+						id: 'po_1', amount: 9_640, currency: 'jpy', status: 'paid', automatic: true,
+						arrival_date: '2026-08-18', reconciliation_status: 'matched',
+						bank_arrival_date: null, bank_confirmed_at: null,
+					},
+				],
+				summary: { stripeBalance: 9_640, inTransitBalance: 9_640, unmatchedPayoutCount: 0 },
+			},
+		});
+		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+
+		expect(await screen.findByRole('button', { name: 'Payout po_1 の銀行着金を確認' })).toBeEnabled();
+		expect(screen.getByText('Stripe決済残高')).toBeVisible();
+		expect(screen.getByText('Stripe入金途上')).toBeVisible();
+	});
+
+	it('照合未完了のPayoutは銀行着金を確認させない', async () => {
+		setupFinanceFetch([], undefined, false, {
+			stripeAccounting: {
+				balanceTransactions: [],
+				refunds: [],
+				payouts: [
+					{
+						id: 'po_mismatch', amount: 5_000, currency: 'jpy', status: 'paid', automatic: true,
+						arrival_date: '2026-08-18', reconciliation_status: 'mismatch',
+						bank_arrival_date: null, bank_confirmed_at: null,
+					},
+					{
+						id: 'po_pending', amount: 3_000, currency: 'jpy', status: 'pending', automatic: true,
+						arrival_date: '2026-08-20', reconciliation_status: 'matched',
+						bank_arrival_date: null, bank_confirmed_at: null,
+					},
+				],
+				summary: { stripeBalance: 8_000, inTransitBalance: 0, unmatchedPayoutCount: 1 },
+			},
+		});
+		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+
+		expect(await screen.findByRole('button', { name: 'Payout po_mismatch の銀行着金を確認' })).toBeDisabled();
+		expect(screen.getByRole('button', { name: 'Payout po_pending の銀行着金を確認' })).toBeDisabled();
+		expect(screen.getAllByText('照合未完了').length).toBeGreaterThan(0);
+		expect(screen.getByText('送金前')).toBeVisible();
+	});
+
+	it('銀行着金日を入力してPayoutを確認済みにする', async () => {
+		const mockFetch = setupFinanceFetch([], undefined, false, {
+			stripeAccounting: {
+				balanceTransactions: [],
+				refunds: [],
+				payouts: [
+					{
+						id: 'po_1', amount: 9_640, currency: 'jpy', status: 'paid', automatic: true,
+						arrival_date: '2026-08-18', reconciliation_status: 'matched',
+						bank_arrival_date: null, bank_confirmed_at: null,
+					},
+				],
+				summary: { stripeBalance: 9_640, inTransitBalance: 9_640, unmatchedPayoutCount: 0 },
+			},
+		});
+		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+
+		fireEvent.click(await screen.findByRole('button', { name: 'Payout po_1 の銀行着金を確認' }));
+		fireEvent.change(screen.getByLabelText('銀行着金日'), { target: { value: '2026-08-16' } });
+		fireEvent.click(screen.getByRole('button', { name: '着金を確定' }));
+
+		await waitFor(() => {
+			expect(mockFetch).toHaveBeenCalledWith(
+				'/api/admin/accounting/stripe-payouts/po_1/confirm',
+				expect.objectContaining({ method: 'POST' }),
+			);
+		});
 	});
 
 	it('手動収入の証憑添付不可理由を記録して解除できる', async () => {

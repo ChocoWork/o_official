@@ -550,8 +550,48 @@ type CostProfitResponse = {
     cumulativeEntries: FinanceEntry[];
     templates: ExpenseTemplate[];
     summaryOptions?: SummaryOption[];
+    stripeAccounting?: StripeAccounting;
   };
 };
+
+/** Stripe原始記録はDB行のまま扱う。仕訳投影（buildStripeJournal）と同じ形を保つ。 */
+type StripePayoutRecord = {
+  id: string;
+  amount: number;
+  currency: string;
+  status: string;
+  automatic: boolean;
+  arrival_date: string | null;
+  reconciliation_status: string;
+  bank_arrival_date: string | null;
+  bank_confirmed_at: string | null;
+};
+
+type StripeAccounting = {
+  balanceTransactions: Array<Record<string, unknown>>;
+  refunds: Array<Record<string, unknown>>;
+  payouts: StripePayoutRecord[];
+  summary: {
+    stripeBalance: number;
+    inTransitBalance: number;
+    unmatchedPayoutCount: number;
+  };
+};
+
+const EMPTY_STRIPE_ACCOUNTING: StripeAccounting = {
+  balanceTransactions: [],
+  refunds: [],
+  payouts: [],
+  summary: { stripeBalance: 0, inTransitBalance: 0, unmatchedPayoutCount: 0 },
+};
+
+/** 銀行着金を確認できるのは、送金済みかつ照合済みで未確認のPayoutだけ。 */
+function payoutConfirmBlockReason(payout: StripePayoutRecord): string | null {
+  if (payout.bank_confirmed_at) return '確認済み';
+  if (payout.status !== 'paid') return '送金前';
+  if (payout.reconciliation_status !== 'matched') return '照合未完了';
+  return null;
+}
 
 const COST_PROFIT_TABS: Array<{ key: CostProfitTab; label: string }> = [
   { key: "summary", label: "財務概要" },
@@ -1454,6 +1494,11 @@ export default function CostProfitSection({
   const [receiptMessage, setReceiptMessage] = useState<string | null>(null);
   const [templates, setTemplates] = useState<ExpenseTemplate[]>([]);
   const [summaryOptions, setSummaryOptions] = useState<SummaryOption[]>([]);
+  const [stripeAccounting, setStripeAccounting] = useState<StripeAccounting>(EMPTY_STRIPE_ACCOUNTING);
+  const [confirmingPayout, setConfirmingPayout] = useState<StripePayoutRecord | null>(null);
+  const [bankArrivalDate, setBankArrivalDate] = useState("");
+  const [payoutConfirmError, setPayoutConfirmError] = useState<string | null>(null);
+  const [isConfirmingPayout, setIsConfirmingPayout] = useState(false);
   const [plan, setPlan] = useState<FinancePlan>(EMPTY_PLAN);
   const [businessType, setBusinessType] =
     useState<BusinessType>("soleProprietor");
@@ -1620,6 +1665,7 @@ export default function CostProfitSection({
       setCumulativeEntries(payload.data.cumulativeEntries ?? []);
       setTemplates(payload.data.templates ?? []);
       setSummaryOptions(payload.data.summaryOptions ?? []);
+      setStripeAccounting(payload.data.stripeAccounting ?? EMPTY_STRIPE_ACCOUNTING);
       setSelectedProductId(
         payload.data.products[0]?.id ?? `${seasonKey}-ITEM-001`,
       );
@@ -1641,6 +1687,7 @@ export default function CostProfitSection({
       setCumulativeEntries([]);
       setTemplates([]);
       setSummaryOptions([]);
+      setStripeAccounting(EMPTY_STRIPE_ACCOUNTING);
       setSelectedProductId(`${seasonKey}-ITEM-001`);
       notifyError(error, "会計データの取得に失敗しました。");
     } finally {
@@ -2854,6 +2901,174 @@ export default function CostProfitSection({
     );
   };
 
+  const confirmPayoutArrival = async () => {
+    if (!confirmingPayout) return;
+    setIsConfirmingPayout(true);
+    setPayoutConfirmError(null);
+    try {
+      const response = await clientFetch(
+        `/api/admin/accounting/stripe-payouts/${confirmingPayout.id}/confirm`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ bankArrivalDate }),
+        },
+      );
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        setPayoutConfirmError(payload?.error ?? "銀行着金の確認に失敗しました。");
+        return;
+      }
+      setConfirmingPayout(null);
+      await loadFinanceData();
+    } catch (error) {
+      notifyError(error, "銀行着金の確認に失敗しました。");
+    } finally {
+      setIsConfirmingPayout(false);
+    }
+  };
+
+  const stripeSettlementView = (
+    <Panel
+      radius="rounded"
+      className="min-w-0"
+      aria-label="Stripe精算"
+      title={<span className={panelTitleClassName}>Stripe精算</span>}
+    >
+      <div className="space-y-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="rounded-sm bg-[#f7f7f7] px-3 py-2">
+            <p className="font-acumin text-[10px] text-[#707070]">Stripe決済残高</p>
+            <p className="font-acumin text-[16px] text-[#111111]">
+              {currency(stripeAccounting.summary.stripeBalance)}
+            </p>
+          </div>
+          <div className="rounded-sm bg-[#f7f7f7] px-3 py-2">
+            <p className="font-acumin text-[10px] text-[#707070]">Stripe入金途上</p>
+            <p className="font-acumin text-[16px] text-[#111111]">
+              {currency(stripeAccounting.summary.inTransitBalance)}
+            </p>
+          </div>
+        </div>
+        {stripeAccounting.summary.unmatchedPayoutCount > 0 ? (
+          <p className="font-acumin text-[11px] text-[#b45309]">
+            照合できていないPayoutが{stripeAccounting.summary.unmatchedPayoutCount}件あります。
+          </p>
+        ) : null}
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] border-collapse font-acumin text-[11px]">
+            <thead>
+              <tr className="border-b border-[#e5e5e5] text-left text-[#707070]">
+                <th scope="col" className="px-2 py-1.5">Payout ID</th>
+                <th scope="col" className="px-2 py-1.5 text-right">金額</th>
+                <th scope="col" className="px-2 py-1.5">Stripe状態</th>
+                <th scope="col" className="px-2 py-1.5">予定着金日</th>
+                <th scope="col" className="px-2 py-1.5">照合</th>
+                <th scope="col" className="px-2 py-1.5">銀行確認</th>
+                <th scope="col" className="px-2 py-1.5">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stripeAccounting.payouts.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-2 py-3 text-center text-[#707070]">
+                    Payoutはまだありません。
+                  </td>
+                </tr>
+              ) : (
+                stripeAccounting.payouts.map((payout) => {
+                  const blockReason = payoutConfirmBlockReason(payout);
+                  return (
+                    <tr key={payout.id} className="border-b border-[#f0f0f0] text-[#111111]">
+                      <td className="px-2 py-1.5">{payout.id}</td>
+                      <td className="px-2 py-1.5 text-right">{currency(payout.amount)}</td>
+                      <td className="px-2 py-1.5">{payout.status}</td>
+                      <td className="px-2 py-1.5">{payout.arrival_date ?? "-"}</td>
+                      <td className="px-2 py-1.5">
+                        {payout.reconciliation_status === "matched" ? "照合済み" : "照合未完了"}
+                      </td>
+                      <td className="px-2 py-1.5">{payout.bank_arrival_date ?? "未確認"}</td>
+                      <td className="px-2 py-1.5">
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            shape="rounded"
+                            className="font-acumin"
+                            disabled={blockReason !== null}
+                            aria-label={`Payout ${payout.id} の銀行着金を確認`}
+                            onClick={() => {
+                              setConfirmingPayout(payout);
+                              setBankArrivalDate(payout.arrival_date ?? "");
+                              setPayoutConfirmError(null);
+                            }}
+                          >
+                            銀行着金を確認
+                          </Button>
+                          {blockReason ? (
+                            <span className="text-[10px] text-[#707070]">{blockReason}</span>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </Panel>
+  );
+
+  const payoutConfirmDialog = (
+    <Dialog
+      open={confirmingPayout !== null}
+      onClose={() => setConfirmingPayout(null)}
+      shape="rounded"
+      size="sm"
+      title="銀行着金の確認"
+      description={
+        confirmingPayout
+          ? `Payout ${confirmingPayout.id}（${currency(confirmingPayout.amount)}）の着金日を記録します。`
+          : ""
+      }
+    >
+      <div className="space-y-3">
+        <TextField
+          type="date"
+          label="銀行着金日"
+          value={bankArrivalDate}
+          onChange={(event) => setBankArrivalDate(event.target.value)}
+        />
+        {payoutConfirmError ? (
+          <p className="font-acumin text-[11px] text-[#b91c1c]">{payoutConfirmError}</p>
+        ) : null}
+        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <Button
+            variant="secondary"
+            size="sm"
+            shape="rounded"
+            className="font-acumin"
+            onClick={() => setConfirmingPayout(null)}
+          >
+            キャンセル
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            shape="rounded"
+            className="font-acumin"
+            disabled={isConfirmingPayout || bankArrivalDate === ""}
+            onClick={() => void confirmPayoutArrival()}
+          >
+            着金を確定
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+
   const summaryView = (
     <div className="space-y-4">
       {/* 上段：左に資金の現在地（推移・キャッシュブリッジ）、右に直近の予定と要対応。 */}
@@ -3565,6 +3780,8 @@ export default function CostProfitSection({
           </div>
         )}
       </Panel>
+
+      {stripeSettlementView}
     </div>
   );
 
@@ -11646,6 +11863,7 @@ export default function CostProfitSection({
         />
       ) : null}
       {activeTab === "tax" ? taxView : null}
+      {payoutConfirmDialog}
 
       {/* エラー・完了の詳細は画面右下の Toast に出す。成功は自動で消し、エラーは操作で閉じる。 */}
       {toast ? (
