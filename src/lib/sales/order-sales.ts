@@ -22,17 +22,27 @@ export type OrderSalesTransaction = {
   readOnly: true;
 };
 
+export type OrderSalesOptions = {
+  /**
+   * 対応する Stripe 原始記録が投影済みの注文は総額売上を保持し、
+   * 返金は返金日の `売上値引・返品` として別途仕訳へ計上する。
+   */
+  hasStripeAccounting?: boolean;
+};
+
 export function toOrderSalesTransaction(
   row: OrderSalesRow,
+  options: OrderSalesOptions = {},
 ): OrderSalesTransaction | null {
   const grossAmount = Math.max(0, Number(row.total_amount));
-  const refundedAmount = Math.min(
+  const legacyRefundedAmount = Math.min(
     Math.max(0, Number(row.refunded_amount ?? 0)),
     grossAmount,
   );
+  const refundedAmount = options.hasStripeAccounting ? 0 : legacyRefundedAmount;
 
   const isPaidSale = row.status === 'paid';
-  const isRefundedSale = row.status === 'cancelled' && refundedAmount > 0;
+  const isRefundedSale = row.status === 'cancelled' && legacyRefundedAmount > 0;
   if (!isPaidSale && !isRefundedSale) {
     return null;
   }

@@ -44,6 +44,27 @@ describe('toOrderSalesTransaction', () => {
     expect(toOrderSalesTransaction({ ...paidOrder, status: 'pending' })).toBeNull();
   });
 
+  it('keeps gross order revenue when Stripe source records exist', () => {
+    expect(
+      toOrderSalesTransaction({ ...paidOrder, refunded_amount: 3_000 }, { hasStripeAccounting: true }),
+    ).toMatchObject({ grossAmount: 10_000, refundedAmount: 0, netAmount: 10_000 });
+  });
+
+  it('uses the legacy refunded net only before source records are backfilled', () => {
+    expect(
+      toOrderSalesTransaction({ ...paidOrder, refunded_amount: 3_000 }, { hasStripeAccounting: false })?.netAmount,
+    ).toBe(7_000);
+  });
+
+  it('keeps a fully refunded cancelled order visible under the new projection', () => {
+    expect(
+      toOrderSalesTransaction(
+        { ...paidOrder, status: 'cancelled', refunded_amount: 10_000 },
+        { hasStripeAccounting: true },
+      ),
+    ).toMatchObject({ grossAmount: 10_000, netAmount: 10_000 });
+  });
+
   it('clamps malformed refund values to the order total', () => {
     expect(toOrderSalesTransaction({ ...paidOrder, refunded_amount: 12_000 })?.netAmount).toBe(0);
     expect(toOrderSalesTransaction({ ...paidOrder, refunded_amount: -1 })?.refundedAmount).toBe(0);

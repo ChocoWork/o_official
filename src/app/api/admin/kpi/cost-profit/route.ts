@@ -424,6 +424,7 @@ function emptyFinanceResponse(fiscalYear: number, seasonKey: string | null) {
 			cumulativeEntries: [],
 			templates: [],
 			summaryOptions: [],
+			stripeAccounting: emptyStripeAccounting(),
 		},
 	});
 }
@@ -487,8 +488,57 @@ function formatJstDate(date: string): string {
 	}).format(new Date(date));
 }
 
-function mapOrderIncome(row: OrderSalesRow, index: number) {
-	const sale = toOrderSalesTransaction(row);
+type StripeAccountingRow = Record<string, unknown>;
+
+type StripeAccountingPayload = {
+	balanceTransactions: StripeAccountingRow[];
+	refunds: StripeAccountingRow[];
+	payouts: StripeAccountingRow[];
+	summary: {
+		stripeBalance: number;
+		inTransitBalance: number;
+		unmatchedPayoutCount: number;
+	};
+};
+
+function emptyStripeAccounting(): StripeAccountingPayload {
+	return {
+		balanceTransactions: [],
+		refunds: [],
+		payouts: [],
+		summary: { stripeBalance: 0, inTransitBalance: 0, unmatchedPayoutCount: 0 },
+	};
+}
+
+/**
+ * Stripe決済残高＝原始記録の純額合計。Payout済みは負の純額で控除され、
+ * 銀行着金未確認のPayout金額が入金途上（1150）に残る。
+ */
+function buildStripeAccounting(
+	balanceTransactions: StripeAccountingRow[],
+	refunds: StripeAccountingRow[],
+	payouts: StripeAccountingRow[],
+): StripeAccountingPayload {
+	const stripeBalance = balanceTransactions.reduce((sum, row) => sum + Number(row.net ?? 0), 0);
+	// 仕訳（1150 Stripe入金途上）は照合済みPayoutだけを振り替えるため、残高も同じ条件で数える。
+	const inTransitBalance = payouts.reduce(
+		(sum, row) =>
+			row.status === 'paid' && row.reconciliation_status === 'matched' && !row.bank_confirmed_at
+				? sum + Number(row.amount ?? 0)
+				: sum,
+		0,
+	);
+	const unmatchedPayoutCount = payouts.filter((row) => row.reconciliation_status !== 'matched').length;
+	return {
+		balanceTransactions,
+		refunds,
+		payouts,
+		summary: { stripeBalance, inTransitBalance, unmatchedPayoutCount },
+	};
+}
+
+function mapOrderIncome(row: OrderSalesRow, index: number, hasStripeAccounting: boolean) {
+	const sale = toOrderSalesTransaction(row, { hasStripeAccounting });
 	if (!sale || sale.netAmount <= 0) return null;
 
 	return {
@@ -724,6 +774,48 @@ export async function GET(request: Request) {
 			supabase.from('admin_finance_summary_options').select('id, entry_type, name').order('name', { ascending: true }),
 		]);
 
+		// Stripe精算の原始記録（migration 089）。未適用でも会計データ全体は表示できる。
+		const fiscalYearStart = `${parsedYear.data}-01-01T00:00:00+09:00`;
+		const fiscalYearEnd = `${parsedYear.data + 1}-01-01T00:00:00+09:00`;
+		const [stripeTransactionsResult, stripeRefundsResult, stripePayoutsResult] = await Promise.all([
+			supabase
+				.from('stripe_balance_transactions')
+				.select('*')
+				.gte('stripe_created_at', fiscalYearStart)
+				.lt('stripe_created_at', fiscalYearEnd)
+				.order('stripe_created_at', { ascending: true }),
+			supabase
+				.from('stripe_refunds')
+				.select('*')
+				.gte('stripe_created_at', fiscalYearStart)
+				.lt('stripe_created_at', fiscalYearEnd)
+				.order('stripe_created_at', { ascending: true }),
+			supabase
+				.from('stripe_payouts')
+				.select('*')
+				.gte('stripe_created_at', fiscalYearStart)
+				.lt('stripe_created_at', fiscalYearEnd)
+				.order('stripe_created_at', { ascending: true }),
+		]);
+		const stripeQueryError =
+			stripeTransactionsResult.error || stripeRefundsResult.error || stripePayoutsResult.error;
+		if (stripeQueryError && !isMissingFinanceTable(stripeQueryError)) {
+			console.error('GET /api/admin/kpi/cost-profit stripe query error:', stripeQueryError);
+			return NextResponse.json({ error: '会計データの取得に失敗しました。' }, { status: 500 });
+		}
+		const stripeAccounting = stripeQueryError
+			? emptyStripeAccounting()
+			: buildStripeAccounting(
+				(stripeTransactionsResult.data ?? []) as StripeAccountingRow[],
+				(stripeRefundsResult.data ?? []) as StripeAccountingRow[],
+				(stripePayoutsResult.data ?? []) as StripeAccountingRow[],
+			);
+		const projectedPaymentIntents = new Set(
+			stripeAccounting.balanceTransactions
+				.filter((row) => row.reporting_category === 'charge' && row.payment_intent_id)
+				.map((row) => String(row.payment_intent_id)),
+		);
+
 		const cumulativeEntries: CumulativeEntryRow[] = [];
 		let cumulativeError: unknown = null;
 		const cumulativePageSize = 1000;
@@ -785,7 +877,7 @@ export async function GET(request: Request) {
 
 		const entries = ((expensesResult.data ?? []) as ExpenseRow[]).map(mapExpense);
 		const orderIncomes = ((orderSalesResult.data ?? []) as OrderSalesRow[])
-			.map(mapOrderIncome)
+			.map((row, index) => mapOrderIncome(row, index, projectedPaymentIntents.has(row.payment_intent_id)))
 			.filter((entry): entry is NonNullable<typeof entry> => entry !== null);
 		const planRow = (planResult.data as FinancePlanRow | null) ?? null;
 
@@ -833,6 +925,7 @@ export async function GET(request: Request) {
 				summaryOptions: ((summaryOptionsResult.data ?? []) as SummaryOptionRow[]).map((row) => ({
 					id: Number(row.id), entryType: row.entry_type, name: row.name, isCustom: true,
 				})),
+				stripeAccounting,
 			},
 		});
 	} catch (error) {

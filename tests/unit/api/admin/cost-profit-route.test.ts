@@ -32,6 +32,10 @@ let cumulativeRowsOverride: Array<Record<string, unknown>> | null = null;
 let cumulativeRangeCalls: Array<[number, number]> = [];
 let cumulativePageLimit: number | null = null;
 
+let stripeBalanceTransactionRows: Array<Record<string, unknown>> = [];
+let stripeRefundRows: Array<Record<string, unknown>> = [];
+let stripePayoutRows: Array<Record<string, unknown>> = [];
+
 function result(data: unknown) {
 	return Promise.resolve({ data, error: financeQueryError });
 }
@@ -151,6 +155,18 @@ function createFinanceSupabaseMock() {
 				};
 			}
 
+			if (table === 'stripe_balance_transactions') {
+				return { select: () => ({ gte: () => ({ lt: () => ({ order: () => result(stripeBalanceTransactionRows) }) }) }) };
+			}
+
+			if (table === 'stripe_refunds') {
+				return { select: () => ({ gte: () => ({ lt: () => ({ order: () => result(stripeRefundRows) }) }) }) };
+			}
+
+			if (table === 'stripe_payouts') {
+				return { select: () => ({ gte: () => ({ lt: () => ({ order: () => result(stripePayoutRows) }) }) }) };
+			}
+
 			if (table === 'admin_finance_partners') {
 				return { select: () => ({ order: () => result([{ id: 1, name: '丸善テキスタイル' }]) }) };
 			}
@@ -226,6 +242,9 @@ describe('GET /api/admin/kpi/cost-profit', () => {
 		cumulativeRowsOverride = null;
 		cumulativeRangeCalls = [];
 		cumulativePageLimit = null;
+		stripeBalanceTransactionRows = [];
+		stripeRefundRows = [];
+		stripePayoutRows = [];
 		authorizeMock.mockResolvedValue(ADMIN);
 		createServiceMock.mockResolvedValue(createFinanceSupabaseMock() as never);
 	});
@@ -280,6 +299,119 @@ describe('GET /api/admin/kpi/cost-profit', () => {
 			{ name: '毎月の家賃', entryType: 'expense', category: '地代家賃', item: '打合せ・交通', partner: '', amount: 80000, paymentMethod: '銀行', memo: '事務所' },
 		]);
 		expect(authorizeMock).toHaveBeenCalledWith('admin.finance.read', expect.any(Request));
+	});
+
+	it('Stripe原始記録と精算サマリーを返す', async () => {
+		stripeBalanceTransactionRows = [
+			{
+				id: 'txn_1', source_id: 'ch_1', payment_intent_id: 'pi_1', order_id: 'order-1',
+				payout_id: null, type: 'charge', reporting_category: 'charge',
+				amount: 10_000, fee: 360, net: 9_640, currency: 'jpy', status: 'available',
+				available_on: '2026-05-28', stripe_created_at: '2026-05-26T01:00:00.000Z',
+			},
+		];
+
+		const body = await (await GET(new Request('http://localhost/api/admin/kpi/cost-profit?year=2026'))).json();
+
+		expect(body.data.stripeAccounting).toMatchObject({
+			balanceTransactions: expect.any(Array),
+			refunds: expect.any(Array),
+			payouts: expect.any(Array),
+			summary: {
+				stripeBalance: 9_640,
+				inTransitBalance: 0,
+				unmatchedPayoutCount: 0,
+			},
+		});
+		expect(body.data.stripeAccounting.balanceTransactions).toHaveLength(1);
+	});
+
+	it('Stripe投影済みの注文は総額売上を保つ', async () => {
+		stripeBalanceTransactionRows = [
+			{
+				id: 'txn_1', source_id: 'ch_1', payment_intent_id: 'pi_1', order_id: 'order-1',
+				payout_id: null, type: 'charge', reporting_category: 'charge',
+				amount: 25_300, fee: 900, net: 24_400, currency: 'jpy', status: 'available',
+				available_on: '2026-05-28', stripe_created_at: '2026-05-26T01:00:00.000Z',
+			},
+		];
+
+		const body = await (await GET(new Request('http://localhost/api/admin/kpi/cost-profit?year=2026'))).json();
+
+		expect(body.data.incomes[1]).toEqual(expect.objectContaining({
+			sourceId: 'order-1',
+			amount: 25_300,
+			grossAmount: 25_300,
+			refundedAmount: 0,
+		}));
+	});
+
+	it('入金途上と未照合Payoutを集計する', async () => {
+		stripeBalanceTransactionRows = [
+			{
+				id: 'txn_1', source_id: 'ch_1', payment_intent_id: 'pi_1', order_id: 'order-1',
+				payout_id: null, type: 'charge', reporting_category: 'charge',
+				amount: 10_000, fee: 360, net: 9_640, currency: 'jpy', status: 'available',
+				stripe_created_at: '2026-05-26T01:00:00.000Z',
+			},
+			{
+				id: 'txn_payout', source_id: 'po_1', payment_intent_id: null, order_id: null,
+				payout_id: 'po_1', type: 'payout', reporting_category: 'payout',
+				amount: -9_640, fee: 0, net: -9_640, currency: 'jpy', status: 'available',
+				stripe_created_at: '2026-05-30T01:00:00.000Z',
+			},
+		];
+		stripePayoutRows = [
+			{
+				id: 'po_1', amount: 9_640, currency: 'jpy', status: 'paid', automatic: true,
+				arrival_date: '2026-06-01', stripe_created_at: '2026-05-30T01:00:00.000Z',
+				paid_at: '2026-05-30T01:00:00.000Z', reconciliation_status: 'matched',
+				reconciled_net: 9_640, bank_confirmed_at: null, bank_arrival_date: null,
+			},
+			{
+				id: 'po_2', amount: 5_000, currency: 'jpy', status: 'paid', automatic: true,
+				arrival_date: '2026-06-10', stripe_created_at: '2026-06-08T01:00:00.000Z',
+				paid_at: '2026-06-08T01:00:00.000Z', reconciliation_status: 'mismatch',
+				reconciled_net: 4_000, bank_confirmed_at: null, bank_arrival_date: null,
+			},
+		];
+
+		const body = await (await GET(new Request('http://localhost/api/admin/kpi/cost-profit?year=2026'))).json();
+
+		expect(body.data.stripeAccounting.summary).toEqual({
+			stripeBalance: 0,
+			inTransitBalance: 9_640,
+			unmatchedPayoutCount: 1,
+		});
+	});
+
+	it('Stripe精算テーブルが未作成でも会計データを返す', async () => {
+		createServiceMock.mockResolvedValue({
+			...createFinanceSupabaseMock(),
+			from: jest.fn((table: string) => {
+				if (table.startsWith('stripe_')) {
+					return {
+						select: () => ({ gte: () => ({ lt: () => ({ order: () => Promise.resolve({
+							data: null,
+							error: { code: '42P01', message: `relation "${table}" does not exist` },
+						}) }) }) }),
+					};
+				}
+				return createFinanceSupabaseMock().from(table);
+			}),
+		} as never);
+
+		const response = await GET(new Request('http://localhost/api/admin/kpi/cost-profit?year=2026'));
+		const body = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(body.data.expenses).toHaveLength(1);
+		expect(body.data.stripeAccounting).toEqual({
+			balanceTransactions: [],
+			refunds: [],
+			payouts: [],
+			summary: { stripeBalance: 0, inTransitBalance: 0, unmatchedPayoutCount: 0 },
+		});
 	});
 
 	it('会計テーブルが未作成でも初回利用の空データを返す', async () => {
