@@ -24,6 +24,9 @@ jest.mock('@supabase/supabase-js', () => ({
 const mockConstructEvent = jest.fn();
 const mockRefundList = jest.fn();
 const mockOrdersUpdate = jest.fn();
+const mockSyncPaymentIntentAccounting = jest.fn().mockResolvedValue({ disposition: 'inserted' });
+const mockSyncRefundAccounting = jest.fn().mockResolvedValue({ disposition: 'inserted' });
+const mockSyncPayoutAccounting = jest.fn().mockResolvedValue({ reconciliationStatus: 'matched' });
 let orderLookupData: Record<string, unknown> | null = null;
 let webhookEventState: { processing_status: string; attempt_count: number } | null = null;
 const mockWebhookEventUpsert = jest.fn();
@@ -37,6 +40,16 @@ jest.mock('@/lib/stripe/server', () => ({
       list: mockRefundList,
     },
   }),
+}));
+
+jest.mock('@/lib/stripe/accounting-sync', () => ({
+  syncPaymentIntentAccounting: (...args: unknown[]) => mockSyncPaymentIntentAccounting(...args),
+  syncRefundAccounting: (...args: unknown[]) => mockSyncRefundAccounting(...args),
+  syncPayoutAccounting: (...args: unknown[]) => mockSyncPayoutAccounting(...args),
+}));
+
+jest.mock('@/lib/stripe/supabase-accounting-database', () => ({
+  createStripeAccountingDatabase: jest.fn().mockReturnValue({}),
 }));
 
 jest.mock('@/lib/audit', () => ({
@@ -229,5 +242,21 @@ describe('POST /api/webhook/stripe', () => {
       refunded_amount: 2_500,
       status: 'paid',
     }));
+    expect(mockSyncRefundAccounting).toHaveBeenCalledWith(expect.objectContaining({ refundId: 're_1' }));
+  });
+
+  it.each([
+    ['payment_intent.succeeded', { id: 'pi_1', metadata: {} }, mockSyncPaymentIntentAccounting],
+    ['payout.reconciliation_completed', { id: 'po_1' }, mockSyncPayoutAccounting],
+    ['payout.paid', { id: 'po_1' }, mockSyncPayoutAccounting],
+    ['payout.failed', { id: 'po_1' }, mockSyncPayoutAccounting],
+  ])('%sを会計同期へ1回だけ渡す', async (type, object, synchronizer) => {
+    const event = { id: `evt_${type}`, type, data: { object } };
+    mockConstructEvent.mockReturnValue(event);
+
+    const response = await POST(makeRequest(event));
+
+    expect((response as { status: number }).status).toBe(200);
+    expect(synchronizer).toHaveBeenCalledTimes(1);
   });
 });

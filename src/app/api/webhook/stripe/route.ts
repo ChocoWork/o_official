@@ -22,6 +22,12 @@ import {
   type OrderRefundDatabase,
   type RefundListClient,
 } from '@/lib/stripe/order-refund-sync';
+import {
+  syncPaymentIntentAccounting,
+  syncPayoutAccounting,
+  syncRefundAccounting,
+} from '@/lib/stripe/accounting-sync';
+import { createStripeAccountingDatabase } from '@/lib/stripe/supabase-accounting-database';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -475,6 +481,37 @@ async function handleRefundChanged(
   });
 }
 
+type AccountingStripeClient = Parameters<typeof syncPayoutAccounting>[0]['stripe'];
+
+/**
+ * 注文更新とは独立に、Stripe原始記録（Balance Transaction / Refund / Payout）を同期する。
+ */
+async function syncAccountingForEvent(event: Stripe.Event, stripe: Stripe): Promise<void> {
+  const database = createStripeAccountingDatabase(supabase);
+  const client = stripe as unknown as AccountingStripeClient;
+  const object = event.data.object as { id?: string };
+  if (!object?.id) {
+    return;
+  }
+
+  switch (event.type) {
+    case 'payment_intent.succeeded':
+      await syncPaymentIntentAccounting({ stripe: client, database, paymentIntentId: object.id });
+      break;
+    case 'refund.created':
+    case 'refund.updated':
+      await syncRefundAccounting({ stripe: client, database, refundId: object.id });
+      break;
+    case 'payout.paid':
+    case 'payout.failed':
+    case 'payout.reconciliation_completed':
+      await syncPayoutAccounting({ stripe: client, database, payoutId: object.id });
+      break;
+    default:
+      break;
+  }
+}
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!webhookSecret) {
@@ -562,6 +599,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       default:
         break;
     }
+
+    await syncAccountingForEvent(event, stripe);
   } catch (err) {
     console.error('[webhook] Error processing event', event.id, event.type, err);
     try {
