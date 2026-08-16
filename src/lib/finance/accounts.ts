@@ -51,6 +51,7 @@ export const ACCOUNTS: readonly Account[] = [
   { code: "1120", type: "asset", normalSide: "debit", name: "売掛金", section: "売上債権", cashOut: true, cashIn: true, scope: "common" },
   { code: "1130", type: "asset", normalSide: "debit", name: "クレジット売掛金", section: "売上債権", cashOut: true, cashIn: true, scope: "common" },
   { code: "1140", type: "asset", normalSide: "debit", name: "電子記録債権", section: "売上債権", cashOut: true, cashIn: true, scope: "common" },
+  { code: "1150", type: "asset", normalSide: "debit", name: "Stripe入金途上", section: "その他流動資産", cashOut: false, cashIn: false, scope: "common" },
   { code: "1210", type: "asset", normalSide: "debit", name: "有価証券", section: "有価証券", cashOut: true, cashIn: true, scope: "common" },
   { code: "1310", type: "asset", normalSide: "debit", name: "商品", section: "棚卸資産", cashOut: false, cashIn: false, scope: "common" },
   { code: "1320", type: "asset", normalSide: "debit", name: "製品", section: "棚卸資産", cashOut: false, cashIn: false, scope: "common" },

@@ -26,8 +26,8 @@ function entry(partial: Partial<FinanceEntry> & Pick<FinanceEntry, 'id' | 'amoun
 }
 
 describe('勘定科目マスタ', () => {
-	it('159科目すべてに会計区分と貸借を持つ', () => {
-		expect(ACCOUNTS).toHaveLength(159);
+	it('160科目すべてに会計区分と貸借を持つ', () => {
+		expect(ACCOUNTS).toHaveLength(160);
 		for (const account of ACCOUNTS) {
 			expect(['asset', 'liability', 'equity', 'revenue', 'expense']).toContain(account.type);
 			expect(['debit', 'credit']).toContain(account.normalSide);

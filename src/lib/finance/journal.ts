@@ -40,6 +40,8 @@ export type JournalLine = {
 
 export type JournalEntry = {
   entryId: number;
+  /** 外部原始記録から決定的に生成した仕訳の冪等キー。 */
+  sourceKey?: string;
   /** 伝票番号 JE-YYYYMMDD-NNN */
   number: string;
   date: string;
