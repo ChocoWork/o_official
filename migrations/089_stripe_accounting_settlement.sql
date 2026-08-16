@@ -93,6 +93,12 @@ REVOKE ALL ON public.stripe_balance_transactions FROM anon, authenticated;
 REVOKE ALL ON public.stripe_refunds FROM anon, authenticated;
 REVOKE ALL ON public.stripe_payouts FROM anon, authenticated;
 
+-- Supabase の既定権限で service_role には ALL が付くため、
+-- 原始記録を消せないよう DELETE と TRUNCATE を明示的に剥がす。
+REVOKE ALL ON public.stripe_balance_transactions FROM service_role;
+REVOKE ALL ON public.stripe_refunds FROM service_role;
+REVOKE ALL ON public.stripe_payouts FROM service_role;
+
 GRANT SELECT, INSERT, UPDATE ON public.stripe_balance_transactions TO service_role;
 GRANT SELECT, INSERT, UPDATE ON public.stripe_refunds TO service_role;
 GRANT SELECT, INSERT, UPDATE ON public.stripe_payouts TO service_role;

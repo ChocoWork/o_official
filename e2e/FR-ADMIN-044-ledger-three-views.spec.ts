@@ -236,9 +236,11 @@ for (const viewport of viewports) {
       // 中央：全取引の月次累積収支推移と仕訳一覧
       const trend = page.getByRole('region', { name: '月次累積収支推移' });
       await expect(trend).toBeVisible();
-      await expect(trend.getByRole('img', { name: '2026年の月次累積収支推移' })).toBeVisible();
+      const trendChart = trend.getByRole('img', { name: '2026年の月次累積収支推移' });
+      await expect(trendChart).toBeVisible();
+      // 同じ月ラベルはグラフと説明テーブルの両方にあるので、グラフ側だけを見る。
       for (const month of Array.from({ length: 12 }, (_, index) => `${index + 1}月`)) {
-        await expect(trend.getByText(month, { exact: true })).toBeVisible();
+        await expect(trendChart.getByText(month, { exact: true })).toBeVisible();
       }
       for (const [label, value] of [
         ['期首残高', '¥70,000'],
