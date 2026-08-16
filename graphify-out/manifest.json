@@ -4695,8 +4695,8 @@
     "semantic_hash": ""
   },
   "docs/2_Specs/spec.md": {
-    "mtime": 1786866164.7092922,
-    "ast_hash": "53a0b34d45b4c4e9dbcb7d70af301c7f",
+    "mtime": 1786886026.3069336,
+    "ast_hash": "19b9805d99227c51f139f91765db8675",
     "semantic_hash": ""
   },
   "docs/3_ArchitectureDesign/auth-structure.md": {
@@ -8275,13 +8275,13 @@
     "semantic_hash": ""
   },
   "e2e/FR-ITEM-DETAIL-038-image-carousel-indicator.spec.ts": {
-    "mtime": 1786859298.9281964,
-    "ast_hash": "fa3d8d9d25ada0d678ac774288ac1378",
+    "mtime": 1786886075.2169034,
+    "ast_hash": "136b7d522ef3ec2403dcda160db33ad3",
     "semantic_hash": ""
   },
   "src/features/items/components/ItemImageCarousel.tsx": {
-    "mtime": 1786866143.9859626,
-    "ast_hash": "91b2f04e65fc72eac6b78dcf504c4098",
+    "mtime": 1786886011.8765054,
+    "ast_hash": "5888cfa03167589cd671192fc3247ec2",
     "semantic_hash": ""
   },
   "e2e/FR-HOME-015-item-card-desktop-hover.spec.ts": {

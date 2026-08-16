@@ -4695,8 +4695,8 @@
     "semantic_hash": ""
   },
   "docs/2_Specs/spec.md": {
-    "mtime": 1786864691.5519333,
-    "ast_hash": "c8eff41a4f29699be513519a4343b475",
+    "mtime": 1786866164.7092922,
+    "ast_hash": "53a0b34d45b4c4e9dbcb7d70af301c7f",
     "semantic_hash": ""
   },
   "docs/3_ArchitectureDesign/auth-structure.md": {
@@ -7576,67 +7576,67 @@
   },
   ".claude/launch.json": {
     "mtime": 1781172498.683929,
-    "ast_hash": "",
+    "ast_hash": "f0823d85f96a9cce264cd2d42ab55d17",
     "semantic_hash": ""
   },
   ".claude/settings.json": {
     "mtime": 1786267331.7574985,
-    "ast_hash": "",
+    "ast_hash": "d6921475a23253c7bd3d53b4f404ca66",
     "semantic_hash": ""
   },
   ".claude/skills/implement-nextjs/evals/evals.json": {
     "mtime": 1777450364.1909268,
-    "ast_hash": "",
+    "ast_hash": "c794c48a3c96498112be79cc5cd6253b",
     "semantic_hash": ""
   },
   ".claude/skills/implement-stripe/assets/checkout_session.template.json": {
     "mtime": 1777713473.5523765,
-    "ast_hash": "",
+    "ast_hash": "17d5e140486b76ac7ff97dbaf1ea1078",
     "semantic_hash": ""
   },
   ".codex/launch.json": {
     "mtime": 1781172498.683929,
-    "ast_hash": "",
+    "ast_hash": "f0823d85f96a9cce264cd2d42ab55d17",
     "semantic_hash": ""
   },
   ".codex/settings.json": {
     "mtime": 1783726896.4830608,
-    "ast_hash": "",
+    "ast_hash": "62996438b9db2c22cfbf5e007adaa183",
     "semantic_hash": ""
   },
   ".codex/settings.local.json": {
     "mtime": 1780927466.5749502,
-    "ast_hash": "",
+    "ast_hash": "e52a58ea1e0315e91775b72098779750",
     "semantic_hash": ""
   },
   ".codex/skills/implement-nextjs/evals/evals.json": {
     "mtime": 1777450364.1909268,
-    "ast_hash": "",
+    "ast_hash": "c794c48a3c96498112be79cc5cd6253b",
     "semantic_hash": ""
   },
   ".codex/skills/implement-stripe/assets/checkout_session.template.json": {
     "mtime": 1777713473.5523765,
-    "ast_hash": "",
+    "ast_hash": "17d5e140486b76ac7ff97dbaf1ea1078",
     "semantic_hash": ""
   },
   ".github/skills/implement-nextjs/evals/evals.json": {
     "mtime": 1777450364.1909268,
-    "ast_hash": "",
+    "ast_hash": "c794c48a3c96498112be79cc5cd6253b",
     "semantic_hash": ""
   },
   ".github/skills/implement-stripe/assets/checkout_session.template.json": {
     "mtime": 1777713473.5523765,
-    "ast_hash": "",
+    "ast_hash": "17d5e140486b76ac7ff97dbaf1ea1078",
     "semantic_hash": ""
   },
   ".vscode/settings.json": {
     "mtime": 1775872078.0990345,
-    "ast_hash": "",
+    "ast_hash": "6bd94cc63281c595ddf942cabe3cc9ea",
     "semantic_hash": ""
   },
   ".vscode/tasks.json": {
     "mtime": 1768118846.4116716,
-    "ast_hash": "",
+    "ast_hash": "4f00539c337a0a0c4e0c1b8296faccba",
     "semantic_hash": ""
   },
   "migrations/080_stripe_order_reconciliation.sql": {
@@ -7646,7 +7646,7 @@
   },
   "skills-lock.json": {
     "mtime": 1778295488.241915,
-    "ast_hash": "",
+    "ast_hash": "561755e28c9cea84ffed77856eae91a6",
     "semantic_hash": ""
   },
   ".claude/skills/security-check/scripts/audit.ps1": {
@@ -8280,8 +8280,8 @@
     "semantic_hash": ""
   },
   "src/features/items/components/ItemImageCarousel.tsx": {
-    "mtime": 1786864674.465166,
-    "ast_hash": "3a88d109e55ff6958dbcd2d93a4b5d8d",
+    "mtime": 1786866143.9859626,
+    "ast_hash": "91b2f04e65fc72eac6b78dcf504c4098",
     "semantic_hash": ""
   },
   "e2e/FR-HOME-015-item-card-desktop-hover.spec.ts": {
@@ -8290,8 +8290,8 @@
     "semantic_hash": ""
   },
   "tests/unit/components/ItemCardImageCarousel.test.tsx": {
-    "mtime": 1786864725.097261,
-    "ast_hash": "812d6b2a682c46abe143f3732afc4395",
+    "mtime": 1786866171.756736,
+    "ast_hash": "824bebad3bc98a7b442b7a3bbba631d9",
     "semantic_hash": ""
   },
   "e2e/FR-HOME-016-item-card-no-scrollbar.spec.ts": {

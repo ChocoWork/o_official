@@ -62,7 +62,8 @@ export function CarouselSegmentIndicator({
   return (
     <div
       data-testid={testId}
-      className={`flex w-full gap-[2px] ${className ?? ""}`}
+      // 参考サイト同様、線と線の間に隙間を作らず1本の線を分割した見た目にする
+      className={`flex w-full ${className ?? ""}`}
       role="tablist"
       aria-label={label}
     >
