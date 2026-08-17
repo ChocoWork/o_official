@@ -7,7 +7,7 @@ import { Accordion } from "@/components/ui/Accordion/Accordion";
 import { Button } from "@/components/ui/Button/Button";
 import { MultiSelect } from "@/components/ui/MultiSelect/MultiSelect";
 import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
-import { HomeSectionHeader } from "@/features/home/components/HomeSectionHeader";
+import { SectionTitle } from "@/components/ui/SectionTitle/SectionTitle";
 import { HomeSectionViewAll } from "@/features/home/components/HomeSectionViewAll";
 import { Drawer } from "@/components/ui/Drawer/Drawer";
 import { Slider } from "@/components/ui/Slider/Slider";
@@ -821,7 +821,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
   };
 
   const renderGrid = () => (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-[2px] sm:gap-x-[3px] lg:gap-x-[4px] gap-y-[16px] sm:gap-y-[20px] md:gap-y-[24px] lg:gap-y-[28px]">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-0.5 sm:gap-x-0.75 lg:gap-x-1 gap-y-4 sm:gap-y-5 md:gap-y-6 lg:gap-y-7">
       {displayItems.map((item, index) => {
         // ホーム / 一覧で共通のカード。カラースウォッチ（色）を表示する。
         const soldOut = !isItemInStock(item);
@@ -859,7 +859,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
       data-filter-bar={interactive ? "floating" : "placeholder"}
       aria-hidden={interactive ? undefined : true}
       className={cn(
-        "flex items-center justify-between bg-white py-[13px]",
+        "flex items-center justify-between bg-white py-3.25",
         !interactive && "pointer-events-none invisible",
       )}
     >
@@ -1150,7 +1150,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
           defaultOpenKeys={filterSectionKeys}
           highlightOnHover={false}
           size={menuSize}
-          className="!max-w-none !overflow-visible !border-0"
+          className="max-w-none! overflow-visible! border-0!"
         />
       </div>
     );
@@ -1278,12 +1278,12 @@ export function PublicItemGrid(props: PublicItemGridProps) {
 
   // I-6: 追加読み込みのスケルトン（NEWS と統一）
   const renderSkeletonCards = (count = 4) => (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-[2px] sm:gap-x-[3px] lg:gap-x-[4px] gap-y-[16px] sm:gap-y-[20px] md:gap-y-[24px] lg:gap-y-[28px] mt-[8px]">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-0.5 sm:gap-x-0.75 lg:gap-x-1 gap-y-4 sm:gap-y-5 md:gap-y-6 lg:gap-y-7 mt-2">
       {Array.from({ length: count }).map((_, i) => (
         <div key={i} className="animate-pulse">
-          <div className="aspect-[3/4] bg-black/8 mb-[8px]" />
-          <div className="h-[10px] w-2/3 bg-black/8 mb-[6px]" />
-          <div className="h-[10px] w-1/3 bg-black/5" />
+          <div className="aspect-3/4 bg-black/8 mb-2" />
+          <div className="h-2.5 w-2/3 bg-black/8 mb-1.5" />
+          <div className="h-2.5 w-1/3 bg-black/5" />
         </div>
       ))}
     </div>
@@ -1314,7 +1314,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     return (
       <section id="items" className="section-space">
         <div className="element-width">
-          <HomeSectionHeader title="ITEMS" />
+          <SectionTitle title="ITEMS" />
 
           {isSelfFetch && loading ? (
             <div className="text-center py-12 text-[#474747]">
@@ -1342,7 +1342,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     <>
       <div className="flex w-full">
         <aside
-          className="hidden lg:flex flex-col w-[233px] xl:w-[288px] flex-shrink-0 sticky h-[calc(100vh-var(--site-header-height))] overflow-hidden"
+          className="hidden lg:flex flex-col w-58.25 xl:w-[288px] shrink-0 sticky h-[calc(100vh-var(--site-header-height))] overflow-hidden"
           style={desktopFilterStickyStyle}
         >
           <div className={FILTER_SIDEBAR_SCROLL_CLASS}>
@@ -1355,7 +1355,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
 
         <div
           data-testid="item-content-column"
-          className="flex-1 min-w-0 w-full max-w-full px-0 md:px-[21px] lg:pl-[34px] lg:pr-[21px] xl:pl-[55px] xl:pr-[34px] 2xl:pl-[89px] 2xl:pr-[55px] py-0 xl:py-[21px]"
+          className="flex-1 min-w-0 w-full max-w-full px-0 md:px-5.25 lg:pl-8.5 lg:pr-5.25 xl:pl-13.75 xl:pr-8.5 2xl:pl-22.25 2xl:pr-13.75 py-0 xl:py-5.25"
         >
           <div className="sm:-mt-1 md:-mt-2 lg:hidden">
             {renderMobileFilterBar(false)}
@@ -1364,7 +1364,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
             className="fixed inset-x-0 z-30 lg:hidden bg-white transition-transform duration-300 ease-in-out before:pointer-events-none before:absolute before:inset-x-0 before:-top-px before:h-px before:bg-white before:content-['']"
             style={mobileFilterStickyStyle}
           >
-            <div className="element-width px-5 md:px-[41px]">
+            <div className="element-width px-5 md:px-10.25">
               {renderMobileFilterBar(true)}
             </div>
           </div>
@@ -1420,7 +1420,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
             paddingTop: "calc(var(--lk-size-sm) * var(--sqrt-phi))",
           }}
         >
-          <div className="flex justify-end pb-[13px]">
+          <div className="flex justify-end pb-3.25">
             <Button
               variant="text"
               size="xs"
@@ -1431,11 +1431,11 @@ export function PublicItemGrid(props: PublicItemGridProps) {
             </Button>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pb-[13px]">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pb-3.25">
             {renderFilterSections("xs")}
           </div>
 
-          <div className="flex-shrink-0 space-y-[8px] bg-white pt-[13px] pb-[21px]">
+          <div className="shrink-0 space-y-2 bg-white pt-3.25 pb-5.25">
             {renderFilterActions("xs")}
           </div>
         </div>

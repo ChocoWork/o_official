@@ -312,10 +312,10 @@ export default function ItemDetailClient({ id }: Props) {
   if (loading) {
     return (
       <div>
-        <div className="element-width 2xl:max-w-[90rem]">
+        <div className="element-width 2xl:max-w-360">
           <div className="mb-4 sm:mb-5 h-3 w-44 bg-black/5 animate-pulse" />
           <div className="grid grid-cols-1 gap-8 md:-mx-5 md:grid-cols-[58%_42%] md:gap-0">
-            <div className="aspect-[2/3] bg-black/5 animate-pulse" />
+            <div className="aspect-2/3 bg-black/5 animate-pulse" />
             <div className="space-y-6 pt-1 md:sticky md:top-36 md:mx-auto md:w-[max(18.125rem,calc(100%-8.75rem))] md:self-start">
               <div className="space-y-2">
                 <div className="h-5 w-3/4 bg-black/5 animate-pulse" />
@@ -424,7 +424,7 @@ export default function ItemDetailClient({ id }: Props) {
   } as const;
   return (
     <div>
-      <div className="element-width 2xl:max-w-[90rem]">
+      <div className="element-width 2xl:max-w-360">
         <div
           data-testid="item-detail-first-view"
           className="min-h-[calc(100svh-4rem)]"
@@ -456,7 +456,7 @@ export default function ItemDetailClient({ id }: Props) {
                     <div
                       key={index}
                       data-testid="item-detail-carousel-slide"
-                      className="relative aspect-[2/3] w-[calc(100vw-2.5rem)] flex-shrink-0 snap-start overflow-hidden bg-white"
+                      className="relative aspect-2/3 w-[calc(100vw-2.5rem)] shrink-0 snap-start overflow-hidden bg-white"
                     >
                       {imgUrl ? (
                         <Image
@@ -498,14 +498,14 @@ export default function ItemDetailClient({ id }: Props) {
                 {thumbnailImages.length > 1 && (
                   <div
                     data-testid="item-detail-thumbnail-list"
-                    className="hidden flex-none flex-col gap-2 p-[2px] lg:flex"
+                    className="hidden flex-none flex-col gap-2 p-0.5 lg:flex"
                   >
                     {thumbnailImages.map((imgUrl: string, index: number) => (
                       <button
                         key={index}
                         type="button"
                         aria-label={`${item.name} ${index + 1}枚目を表示`}
-                        className={`relative aspect-[2/3] w-16 flex-shrink-0 overflow-hidden cursor-pointer focus-visible:outline-none transition-opacity duration-200 ${
+                        className={`relative aspect-2/3 w-16 shrink-0 overflow-hidden cursor-pointer focus-visible:outline-none transition-opacity duration-200 ${
                           selectedImageIndex === index
                             ? "ring-1 ring-black opacity-100"
                             : "opacity-50 hover:opacity-90"
@@ -546,7 +546,7 @@ export default function ItemDetailClient({ id }: Props) {
                         <div
                           key={index}
                           data-testid="item-detail-tablet-carousel-slide"
-                          className="relative aspect-[2/3] w-full flex-shrink-0 snap-start overflow-hidden bg-white"
+                          className="relative aspect-2/3 w-full shrink-0 snap-start overflow-hidden bg-white"
                         >
                           {imgUrl ? (
                             <Image
@@ -617,7 +617,7 @@ export default function ItemDetailClient({ id }: Props) {
                 <div className="hidden flex-col lg:flex lg:w-auto lg:flex-none">
                   <div
                     data-testid="item-detail-main-image-frame"
-                    className="relative aspect-[2/3] overflow-hidden bg-white lg:h-[min(48rem,calc(100svh-5rem))] lg:w-auto"
+                    className="relative aspect-2/3 overflow-hidden bg-white lg:h-[min(48rem,calc(100svh-5rem))] lg:w-auto"
                   >
                     {mainImage ? (
                       <Image
@@ -739,7 +739,7 @@ export default function ItemDetailClient({ id }: Props) {
                             aria-label={colorOption.name}
                             aria-pressed={color === colorOption.name}
                             title={colorOption.name}
-                            className={`h-6 w-6 border p-[3px] cursor-pointer transition-colors duration-200 focus-visible:outline-none ${
+                            className={`h-6 w-6 border p-0.75 cursor-pointer transition-colors duration-200 focus-visible:outline-none ${
                               color === colorOption.name
                                 ? "border-black"
                                 : "border-transparent hover:border-black/30"

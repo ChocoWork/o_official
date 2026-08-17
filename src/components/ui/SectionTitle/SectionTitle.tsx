@@ -1,14 +1,26 @@
-import "./SectionTitle.css"
-import clsx from 'clsx';
+import "./SectionTitle.css";
+import clsx from "clsx";
 
+// ITEMS / LOOK / NEWS / ABOUT / STOCKIST など全セクション共通の見出し。
+// 文字サイズは hyke.jp の NEW IN / NEWS に合わせ、1024px 未満 20px・以上 28px。
 type SectionTitleProps = {
   title: string;
+  className?: string;
 };
 
-export function SectionTitle({ title }: SectionTitleProps) {
+export function SectionTitle({ title, className }: SectionTitleProps) {
   return (
-    <div className={clsx('text-left mb-[11px] sm:mb-[26px] md:mb-[34px] lg:mb-[55px]')}>
-      <h2 className={clsx('underline underline-offset-8 decoration-black decoration-1 mb-[16px] sm:mb-[18px] md:mb-[20px] tracking-tight')} style={{ fontSize: 'var(--lk-size-3xl)' }}>
+    <div
+      className={clsx(
+        "text-left mb-2.75 sm:mb-6.5 md:mb-8.5 lg:mb-13.75",
+        className,
+      )}
+    >
+      <h2
+        className={clsx(
+          "text-[20px] lg:text-[28px] leading-none underline underline-offset-8 decoration-black decoration-1 mb-4 sm:mb-4.5 md:mb-5 tracking-tight",
+        )}
+      >
         {title}
       </h2>
     </div>

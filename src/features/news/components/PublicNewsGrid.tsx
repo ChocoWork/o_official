@@ -6,7 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { TagLabel } from "@/components/ui/TagLabel/TagLabel";
 import { Button } from "@/components/ui/Button/Button";
 import { Drawer } from "@/components/ui/Drawer/Drawer";
-import { HomeSectionHeader } from "@/features/home/components/HomeSectionHeader";
+import { SectionTitle } from "@/components/ui/SectionTitle/SectionTitle";
 import { HomeSectionViewAll } from "@/features/home/components/HomeSectionViewAll";
 import { MultiSelect } from "@/components/ui/MultiSelect/MultiSelect";
 import { categories } from "@/lib/news-data";
@@ -431,7 +431,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
     return (
       <section id="news" className="section-space">
         <div className="element-width">
-          <HomeSectionHeader title="NEWS" />
+          <SectionTitle title="NEWS" />
 
           {loading ? (
             renderLoading()
