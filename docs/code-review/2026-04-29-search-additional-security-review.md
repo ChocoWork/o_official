@@ -1,4 +1,5 @@
 # Code Review: search 追加セキュリティレビュー
+
 **Ready for Production**: No
 **Critical Issues**: 0
 
@@ -21,12 +22,14 @@
 ## Priority 2 (Should Fix)
 
 ### 1. Referrer 制御不足で検索語が外部送信されうる
+
 - Files: src/app/search/page.tsx, src/features/search/components/SearchPageClient.tsx
 - Issue: `/search?q=...` を仕様で保持しているが、検索ページに明示的な `Referrer-Policy` がなく、外部遷移時にクエリ付き URL が `Referer` として送信される余地がある。
 - Why this matters: 個人情報入力があった場合に検索語が第三者オリジンへ漏えいするリスクがある（OWASP A01/A05）。
 - Suggested fix: `Referrer-Policy: strict-origin-when-cross-origin` または `no-referrer` を適用し、必要に応じメタタグでも補完する。
 
 ### 2. 検索例外の raw error ログ出力
+
 - Files: src/app/api/search/route.ts, src/app/api/suggest/route.ts, src/features/search/services/search.service.ts
 - Issue: 例外オブジェクトをそのまま `console.error` 出力しており、運用環境によっては検索語や SQL 実行情報がログに残る可能性がある。
 - Why this matters: ログ経由の情報露出と監査ノイズ増大を招く（OWASP A09）。
@@ -35,6 +38,7 @@
 ## Recommended Changes
 
 ### 3. サジェスト API 呼び出しのクライアント側抑制不足
+
 - Files: src/features/search/components/SearchPageClient.tsx
 - Issue: 入力ごとに `/api/suggest` を即時呼び出しし、デバウンスと最小入力長がない。
 - Why this matters: Bot/自動入力で容易に高頻度トラフィックを誘発し、可用性劣化を起こしやすい（A04: Insecure Design）。

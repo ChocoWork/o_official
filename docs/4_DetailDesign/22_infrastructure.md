@@ -52,7 +52,7 @@
 
 ### プロジェクト構成
 
-```
+```text
 src/
 ├── app/                  # Next.js App Router ページ・APIルート
 ├── components/           # 共通UIコンポーネント
@@ -106,10 +106,10 @@ src/
 
 ### データベースとデータ準備
 
-4. **DB スキーマ設計 & マイグレーション**（見積: 中） — `migrations/` 配下  
+1. **DB スキーマ設計 & マイグレーション**（見積: 中） — `migrations/` 配下  
    `items`/`variants`/`carts`/`cart_items`/`orders`/`order_items` を定義。
 
-5. **開発用シードデータ作成**（見積: 小） — `scripts/seed.sql`
+2. **開発用シードデータ作成**（見積: 小） — `scripts/seed.sql`
 
 ---
 
@@ -203,56 +203,56 @@ paths:
 
 ### 商品 API / PDP
 
-6. **商品詳細 API** (`GET /api/items/[id]`)（見積: 中） — `src/app/api/items/[id]/route.ts`
+1. **商品詳細 API** (`GET /api/items/[id]`)（見積: 中） — `src/app/api/items/[id]/route.ts`
 
-7. **商品一覧 API の検索/フィルタ拡張**（見積: 中） — `src/app/api/items/route.ts`
+2. **商品一覧 API の検索/フィルタ拡張**（見積: 中） — `src/app/api/items/route.ts`
 
-8. **PDP を API 駆動化（フロント連携）**（見積: 中） — `src/app/item/[id]/page.tsx`
+3. **PDP を API 駆動化（フロント連携）**（見積: 中） — `src/app/item/[id]/page.tsx`
 
 ### カート
 
-9. **carts テーブルとカート CRUD API**（見積: 中） — `src/app/api/cart/route.ts`
+1. **carts テーブルとカート CRUD API**（見積: 中） — `src/app/api/cart/route.ts`
 
-10. **カートの Cookie / セッション同期ロジック**（見積: 小） — `src/app/components/Cart.tsx`, `CartItem.tsx`
+2. **カートの Cookie / セッション同期ロジック**（見積: 小） — `src/app/components/Cart.tsx`, `CartItem.tsx`
 
-11. **カート UI の API 同期**（見積: 小） — `src/app/components/Cart.tsx`, `CartSummary.tsx`
+3. **カート UI の API 同期**（見積: 小） — `src/app/components/Cart.tsx`, `CartSummary.tsx`
 
 ### 決済・注文
 
-12. **Stripe 初期化ユーティリティ**（見積: 小） — `src/lib/stripe.ts`
+ 1. **Stripe 初期化ユーティリティ**（見積: 小） — `src/lib/stripe.ts`
 
-13. **支払い作成 API（Checkout）**（見積: 大） — `src/app/api/checkout/create-payment-intent/route.ts`
+ 2. **支払い作成 API（Checkout）**（見積: 大） — `src/app/api/checkout/create-payment-intent/route.ts`
 
-14. **Stripe Webhook と注文保存**（見積: 中） — `src/app/api/checkout/webhook/route.ts`, `src/app/api/orders/route.ts`
+ 3. **Stripe Webhook と注文保存**（見積: 中） — `src/app/api/checkout/webhook/route.ts`, `src/app/api/orders/route.ts`
 
-15. **注文確認メール送信（SES）**（見積: 中） — `src/app/api/notifications/email.ts`
+ 4. **注文確認メール送信（SES）**（見積: 中） — `src/app/api/notifications/email.ts`
 
 ### アカウント / 管理
 
-16. **アカウント：注文履歴表示**（見積: 中） — `src/app/account/page.tsx`, `src/app/api/orders/route.ts`
+ 1. **アカウント：注文履歴表示**（見積: 中） — `src/app/account/page.tsx`, `src/app/api/orders/route.ts`
 
-17. **管理 API：商品 CRUD（最小）**（見積: 大） — `src/app/api/admin/items/route.ts`
+ 2. **管理 API：商品 CRUD（最小）**（見積: 大） — `src/app/api/admin/items/route.ts`
 
-18. **管理 UI：最小商品編集画面**（見積: 大） — `src/app/admin/page.tsx`
+ 3. **管理 UI：最小商品編集画面**（見積: 大） — `src/app/admin/page.tsx`
 
 ### 検索・UI 改善
 
-19. **フィルタ状態を URL に反映**（見積: 中） — `src/app/components/FilterSidebar.tsx`
+ 1. **フィルタ状態を URL に反映**（見積: 中） — `src/app/components/FilterSidebar.tsx`
 
-20. **無限スクロール／ページネーション実装**（見積: 中） — カテゴリ/一覧ページ
+ 2. **無限スクロール／ページネーション実装**（見積: 中） — カテゴリ/一覧ページ
 
 ### 開発運用 / 品質 / ドキュメント
 
-21. **ローカル開発：Stripe CLI & Supabase 設定手順**（見積: 小） — `README.md`
+ 1. **ローカル開発：Stripe CLI & Supabase 設定手順**（見積: 小） — `README.md`
 
-22. **E2E テスト（主要購入フロー）**（見積: 中） — `e2e/`（Playwright 設定）
+ 2. **E2E テスト（主要購入フロー）**（見積: 中） — `e2e/`（Playwright 設定）
 
-23. **Webhook 署名検証とシークレット管理**（見積: 小）
+ 3. **Webhook 署名検証とシークレット管理**（見積: 小）
 
-24. **CI：Lint/Tests ワークフロー追加**（見積: 小）
+ 4. **CI：Lint/Tests ワークフロー追加**（見積: 小）
 
-25. **ドキュメント更新（環境変数と起動手順）**（見積: 小）
+ 5. **ドキュメント更新（環境変数と起動手順）**（見積: 小）
 
-26. **入力検証・CSP などセキュリティチェック**（見積: 小）
+ 6. **入力検証・CSP などセキュリティチェック**（見積: 小）
 
-27. **将来：CSV インポート**（低優先、見積: 大）
+ 7. **将来：CSV インポート**（低優先、見積: 大）

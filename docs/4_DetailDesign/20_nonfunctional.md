@@ -153,6 +153,7 @@ flowchart LR
 ```
 
 ### 備考
+
 - Mermaid 図は Markdown Preview Enhanced (MPE) で表示してください。
 - 図の色やノードは運用チームの好みに合わせて調整可能です。
 
@@ -207,7 +208,7 @@ flowchart LR
 
 ## CI/CD パイプライン設計（OPS-CICD）
 
-```
+```text
 Lint → Unit Test → Integration Test → Contract Test → E2E Test → Canary Deploy → Blue-Green 昇格
 ```
 

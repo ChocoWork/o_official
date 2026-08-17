@@ -16,10 +16,10 @@
   --lk-size-5xs: calc(var(--lk-size-4xs) / var(--lk-eighthstep));
   --lk-size-6xs: calc(var(--lk-size-5xs) / var(--lk-eighthstep));
   --lk-size-7xs: calc(var(--lk-size-6xs) / var(--lk-eighthstep));
-  --lk-size-lg: calc(var(--lk-size-md) * var(--lk-eighthstep));
-  --lk-size-xl: calc(var(--lk-size-lg) * var(--lk-quarterstep));
-  --lk-size-2xl: calc(var(--lk-size-xl) * var(--lk-quarterstep));
-  --lk-size-3xl: calc(var(--lk-size-2xl) * var(--lk-quarterstep));
+  --lk-size-lg: calc(var(--lk-size-md) *var(--lk-eighthstep));
+  --lk-size-xl: calc(var(--lk-size-lg)* var(--lk-quarterstep));
+  --lk-size-2xl: calc(var(--lk-size-xl) *var(--lk-quarterstep));
+  --lk-size-3xl: calc(var(--lk-size-2xl)* var(--lk-quarterstep));
   --lk-size-4xl: calc(var(--lk-size-3xl) * var(--lk-quarterstep));
 
 ## デザインシステム・UI コンポーネント

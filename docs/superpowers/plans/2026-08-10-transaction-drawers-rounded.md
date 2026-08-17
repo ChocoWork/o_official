@@ -21,10 +21,12 @@
 ### Task 1: 角丸要件を回帰テストとして固定する
 
 **Files:**
+
 - Modify: `e2e/FR-ADMIN-043-transaction-workbench.spec.ts`
 - Modify: `e2e/FR-ADMIN-049-entry-review-acknowledgement.spec.ts`
 
 **Interfaces:**
+
 - Consumes: `Drawer` の `data-ui-drawer-shape`、各 UI コンポーネントの `data-ui-*` 属性
 - Produces: 取引入力・確認画面の角丸契約を検証する Playwright テスト
 
@@ -45,11 +47,13 @@
 ### Task 2: 既存 UI コンポーネントで角丸を実装する
 
 **Files:**
+
 - Modify: `src/components/CostProfitSection.tsx`
 - Modify only if existing API is insufficient: `src/components/ui/*/*_type.ts`, matching component and CSS
 - Test only if a UI prop is added: `tests/unit/components/<Component>.test.tsx`
 
 **Interfaces:**
+
 - Consumes: `Drawer shape="rounded"`、`Button shape="rounded"`、`SingleSelect shape="rounded"`、`TextField shape="rounded"`、`TextAreaField shape="rounded"`、`Panel radius="rounded"`
 - Produces: 既存 UI API のみで角丸が統一された2つの Drawer
 

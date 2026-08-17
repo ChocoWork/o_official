@@ -57,7 +57,7 @@ Transform tasks into verifiable goals:
 
 For multi-step tasks, state a brief plan:
 
-```
+```text
 1. [Step] → verify: [check]
 2. [Step] → verify: [check]
 3. [Step] → verify: [check]
@@ -100,7 +100,7 @@ docs\1_RequirementsDifinition\brand.md に私の服のブランドのコンセ�
 
 トレーサビリティテーブルに1行追加：
 
-```
+```text
 | FREQ-XX | 要求の内容 | FREQ-XX-REQ-01 | 要件の内容 | FREQ-XX-AC-01 | 受け付け基準の内容 |
 ```
 

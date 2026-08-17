@@ -95,6 +95,7 @@
 1. 検索ページの `Referrer-Policy` 制御導入（Medium）
 2. 検索系 API/Service の raw error ログ最小化（Medium）
 3. サジェスト呼び出しにデバウンス＋最小入力長を導入（Low）
+
 ---
 
 ## セキュリティ再レビュー（2026-06-27 / dynamic workflow）

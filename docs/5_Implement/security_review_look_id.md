@@ -92,7 +92,7 @@
 
 1. 公開 look 詳細本体の High は追加なし（既存指摘の優先度は維持）。
 2. 追加で優先すべきは、関連サービス層の **情報露出抑制（admin-rbac）** と **画像署名の fail-safe 化（look-images）**。
-3. `src/app/api/looks/[id]/route.ts` は未実装のため、将来追加時は `id` 検証、`Cache-Control`, レート制限を初期実装に含める。 
+3. `src/app/api/looks/[id]/route.ts` は未実装のため、将来追加時は `id` 検証、`Cache-Control`, レート制限を初期実装に含める。
 
 ### 追加推奨対応順序
 
@@ -100,6 +100,7 @@
 2. `signLookImageUrl()` を fail-open から fail-safe へ変更（Medium）
 3. RBAC 詳細ログの削減（Low）
 4. admin looks API の route param 検証を統一（Low）
+
 ---
 
 ## セキュリティ再レビュー（2026-06-27 / dynamic workflow）

@@ -19,7 +19,7 @@
 
 ## アーキテクチャ図
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │             フロントエンド（Next.js Client）                 │
 ├─────────────────────────────────────────────────────────────┤
@@ -85,7 +85,7 @@ Permission Codes:
 
 ### シナリオ：Supporter が items list を GET しようとする
 
-```
+```text
 1. API: GET /api/admin/items
    ├─ authorizeAdminPermission('admin.items.read')
    │  ├─ token role='supporter' → legacyPermissionMap 確認 → false
@@ -105,7 +105,7 @@ Permission Codes:
 
 ### シナリオ：Admin が item を PUT して更新する
 
-```
+```text
 1. API: PUT /api/admin/items/123
    ├─ authorizeAdminPermission('admin.items.manage')
    │  ├─ token role='admin' → true (高速)
@@ -131,6 +131,7 @@ Permission Codes:
 - **src/app/components/AdminTabs.tsx**: tabs prop で dynamic tab render
 
 ### API
+
 - **src/lib/auth/admin-rbac.ts**: `authorizeAdminPermission(code)` ヘルパー
 - **src/app/api/admin/users/route.ts**: GET (read), PATCH (manage) に guard
 - **src/app/api/admin/items/route.ts**: GET/POST に permission guard
@@ -143,6 +144,7 @@ Permission Codes:
 - **src/app/api/admin/item-color-presets/[id]/route.ts**: DELETE に permission guard
 
 ### DB
+
 - **migrations/023_add_acl_rbac_tables_and_policies.sql**: 全 ACL テーブル + RLS ポリシー + backfill
 
 ---
@@ -152,15 +154,18 @@ Permission Codes:
 ### トークンロール (auth.app_metadata.role)
 
 **利点:**
+
 - 高速（DB クエリ不要）
 - オフライン判定可能
 - JWT 検証済み
 
 **用途:**
+
 - UI 表示/非表示（Header, Tab filtering）
 - API の第一段階判定（admin → 即座に true）
 
 **設定方法:**
+
 ```typescript
 // Auth admin 経由：
 await admin.auth.admin.updateUserById(userId, {
@@ -171,17 +176,20 @@ await admin.auth.admin.updateUserById(userId, {
 ### DB ACL (user_roles + role_permissions)
 
 **利点:**
+
 - 権限のシングルソースオブトゥルース
 - 時間制限 (expires_at) 対応可能
 - 監査ログが自動で詳細記録
 - 将来：細粒度権限 (店舗単位など) に拡張可能
 
 **用途:**
+
 - API の権限判定（Supporter など細粒度の確認）
 - RLS ポリシー強制
 - 監査・コンプライアンス
 
 **設定方法:**
+
 ```typescript
 // 新規ユーザーに Supporter 権限を付与
 await supabase.from('user_roles').insert({
@@ -199,12 +207,14 @@ await supabase.from('user_roles').insert({
 新しい権限コード (e.g., `admin.orders.manage`) を追加する場合：
 
 1. **Migration で permission を追加**
+
    ```sql
    INSERT INTO permissions (code, description) 
    VALUES ('admin.orders.manage', 'Order management');
    ```
 
 2. **`admin-rbac.ts` で PermissionCode 型を拡張**
+
    ```typescript
    export type PermissionCode = 
      | 'admin.items.read'
@@ -213,6 +223,7 @@ await supabase.from('user_roles').insert({
    ```
 
 3. **必要な role_permissions を migration で設定**
+
    ```sql
    INSERT INTO role_permissions (role_id, permission_id)
    SELECT r.id, p.id 
@@ -221,12 +232,14 @@ await supabase.from('user_roles').insert({
    ```
 
 4. **API ルートに guard を追加**
+
    ```typescript
    const authz = await authorizeAdminPermission('admin.orders.manage');
    if (!authz.ok) return authz.response;
    ```
 
 5. **テーブルに RLS ポリシーを追加** (該当テーブルがある場合)
+
    ```sql
    CREATE POLICY "admin_orders_manage" 
    ON orders FOR UPDATE

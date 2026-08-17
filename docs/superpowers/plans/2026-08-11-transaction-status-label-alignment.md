@@ -20,10 +20,12 @@
 ### Task 1: 状態ラベルの幅統一と件数非表示
 
 **Files:**
+
 - Modify: `src/components/CostProfitSection.tsx:3760-3810`
 - Test: `e2e/FR-ADMIN-043-transaction-workbench.spec.ts`
 
 **Interfaces:**
+
 - Consumes: `StatusBadge.className`、`entryReviewItemsOf(entry)`、`openReviewDrawer(entry)`
 - Produces: 同一幅の状態ラベル、視覚的な件数を含まない要確認ボタン
 

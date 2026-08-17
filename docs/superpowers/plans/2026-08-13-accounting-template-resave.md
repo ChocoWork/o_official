@@ -22,10 +22,12 @@
 ### Task 1: API の新規作成と上書きを分離する
 
 **Files:**
+
 - Modify: `src/app/api/admin/kpi/cost-profit/route.ts`
 - Test: `tests/unit/api/admin/cost-profit-route.test.ts`
 
 **Interfaces:**
+
 - Consumes: 既存の `postSchema`、`admin_finance_expense_templates`、`postMutation` JSON 契約
 - Produces: `template.create` は重複を拒否し、`template.update` は `{ templateName, template }` を受け取る
 
@@ -54,10 +56,12 @@
 ### Task 2: 上書き確認と別名保存 UI を実装する
 
 **Files:**
+
 - Modify: `src/components/CostProfitSection.tsx`
 - Test: `tests/unit/components/CostProfitSection.test.tsx`
 
 **Interfaces:**
+
 - Consumes: Task 1 の `template.create` と `template.update`
 - Produces: 選択時に「変更を上書き」「別名で保存」「削除」を表示し、上書き確認 Dialog を管理する
 
@@ -86,10 +90,12 @@
 ### Task 3: 仕様と3画面幅の操作を固定する
 
 **Files:**
+
 - Modify: `docs/2_Specs/spec.md`
 - Modify: `e2e/FR-ADMIN-025-expense-templates.spec.ts`
 
 **Interfaces:**
+
 - Consumes: Task 2 の表示文言と操作フロー
 - Produces: 上書き、別名保存、重複拒否の受入基準とE2E回帰テスト
 
@@ -112,9 +118,11 @@
 ### Task 4: 最終検証と知識グラフ更新
 
 **Files:**
+
 - Modify: `graphify-out/*`（`graphify update .` の生成物）
 
 **Interfaces:**
+
 - Consumes: Tasks 1-3 の完成差分
 - Produces: 検証済み実装と更新済みコードグラフ
 

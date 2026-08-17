@@ -33,12 +33,14 @@ Critical Issues: 4
 ## Priority 1 (Must Fix) ⛔
 
 ### 1. Stockist 管理 API の変更系エンドポイントに CSRF 検証がない
+
 - Files: src/app/api/admin/stockists/route.ts, src/app/api/admin/stockists/[id]/route.ts, src/lib/supabase/server.ts, src/lib/cookie.ts
 - Issue: 管理 API は Cookie ベースの認証トークンも受け付けますが、POST/PUT/PATCH/DELETE で requireCsrfOrDeny 相当の検証がありません。
 - Why this matters: SameSite=Lax は一定の緩和になりますが、状態変更 API の CSRF 防御を Cookie 属性だけに依存しています。設計上も CSRF ミドルウェアが存在するため、防御層が欠けています。
 - Suggested fix: stockist の変更系 API で CSRF 検証を必須化し、失敗時は 403 を返す。Cookie 認証を許可する全管理系更新 API に同じ方針を適用する。
 
 ### 2. Stockist 管理 API にレート制限がない
+
 - Files: src/app/api/admin/stockists/route.ts, src/app/api/admin/stockists/[id]/route.ts
 - Issue: 一覧取得・作成・更新・削除・公開切替の全てにレート制限や異常利用抑止がありません。
 - Why this matters: 管理トークンやセッションが漏えいした場合に、短時間で大量の列挙・改ざん・削除を実行できます。認可があっても濫用耐性は別途必要です。
@@ -47,12 +49,14 @@ Critical Issues: 4
 ## Important Issues
 
 ### 3. Stockist 管理操作の監査ログが残らない
+
 - Files: src/app/api/admin/stockists/route.ts, src/app/api/admin/stockists/[id]/route.ts, src/lib/audit.ts
 - Issue: stockist の作成、更新、公開切替、削除で logAudit が呼ばれておらず、変更主体と変更内容の監査証跡が残りません。
 - Why this matters: 不正操作や誤操作の追跡、インシデント調査、公開状態の変更履歴確認が困難になります。
 - Suggested fix: 成功/失敗の両方を logAudit へ記録し、actor_id、resource、resource_id、変更内容の要約を残す。重要操作は DB 側の監査トリガーも検討する。
 
 ### 4. DB に RLS はあるが、実運用の管理経路では service role によりバイパスされている
+
 - Files: src/app/api/admin/stockists/route.ts, src/app/api/admin/stockists/[id]/route.ts, src/lib/supabase/server.ts, migrations/027_create_stockists_and_acl.sql
 - Issue: migrations では stockists の RLS を定義していますが、管理 API は常に createServiceRoleClient() を使うため、DB の policy が最終防衛線として機能していません。
 - Why this matters: ルート側の認可ロジックに欠陥が入った場合、DB 側で拒否できず、全件読み書きが通ります。Zero Trust と最小権限の観点で防御が一層減っています。

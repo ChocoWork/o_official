@@ -95,6 +95,7 @@
 1. 管理 API の `Cache-Control: private, no-store` 明示（Medium）
 2. 監査ログ用 IP の正規化（信頼済み境界ベース）と非信頼値分離（Low）
 3. バリデーションエラー応答の縮約（Low）
+
 ---
 
 ## セキュリティ再レビュー（2026-06-27 / dynamic workflow）

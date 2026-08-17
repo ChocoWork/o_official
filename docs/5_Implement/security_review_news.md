@@ -97,6 +97,7 @@
 1. `news-images` の署名対象 path/host allowlist 実装（Medium）
 2. 一覧取得の service role 依存点を最小化（DTO分離 + 署名対象の明確化）（Medium）
 3. `/api/news` の共通セキュリティヘッダ適用とログ最小化（Low）
+
 ---
 
 ## セキュリティ再レビュー（2026-06-27 / dynamic workflow）

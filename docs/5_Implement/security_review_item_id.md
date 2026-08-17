@@ -98,6 +98,7 @@
 1. 署名対象パスの allowlist 化と拒否時ハンドリング実装（Medium）
 2. 署名失敗時 rawUrl 返却の停止（Low）
 3. signedUrlCache の上限制御とメトリクス監視（Low）
+
 ---
 
 ## セキュリティ再レビュー（2026-06-27 / dynamic workflow）

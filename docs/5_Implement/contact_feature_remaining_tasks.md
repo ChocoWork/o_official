@@ -24,11 +24,14 @@
 ゲストのメール返信取り込みを有効化する最後の1ステップ。**本番デプロイURLが必要なため保留**。
 
 ### 1. Resend Webhook 作成
+
 - イベント `email.received` を **本番URL** `https://<本番ドメイン>/api/contact/inbound` に配信する Webhook を作成（`create-webhook`）。
 - 作成時に得られる **署名シークレット（whsec_…）を `RESEND_WEBHOOK_SECRET` に設定**。
 
 ### 2. 本番環境変数（Vercel 等ホスティング）
+
 `.env.local` と同じ値を本番にも設定する。特に:
+
 | 変数 | 値 | 用途 |
 | --- | --- | --- |
 | `CONTACT_INBOUND_DOMAIN` | `mail.lefildesheures.com` | 返信アドレス `reply+{id}.{token}@<domain>` の生成 |
@@ -45,6 +48,7 @@
 - 設定後の確認: ゲストが確認メールに返信 → `/api/contact/inbound` が 200 → MANAGE の該当スレッドに `channel=email` メッセージが追加されること。
 
 ## 関連ファイル
+
 - 受信 Webhook: `src/app/api/contact/inbound/route.ts`
 - 返信アドレス生成/検証: `src/lib/contact/reply-address.ts`
 - 送信メール: `src/app/api/contact/route.ts`（確認）/ `src/app/api/admin/contact/[id]/reply/route.ts`（返信）/ `src/lib/orders/order-confirmation-email.ts`（注文確認）

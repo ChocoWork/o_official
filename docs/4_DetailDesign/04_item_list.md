@@ -50,17 +50,26 @@
 ### 修正計画（実装前）
 
 1. サーバデータ取得層の拡張
-  - `src/lib/items/public.ts` の取得関数を拡張し、`category`/`collection`/`size`/`color`/`priceMin`/`priceMax`/`sort`/`page`/`pageSize` を受け取れるようにする
-2. ITEM 一覧ページのサーバ実装
-  - `src/app/item/page.tsx` で `searchParams` を解釈し、サーバ側で初期フィルタ済みデータを取得
-  - `generateMetadata` を実装
-3. 一覧 UI の機能拡張
-  - `src/features/items/components/PublicItemGrid.tsx` に URL 同期、複合フィルタ、ソート、無限スクロール、カテゴリ表示、バッジ表示を追加
-4. API 拡張
-  - `src/app/api/items/route.ts` でクエリバリデーション（Zod）とサーバ側フィルタ/ソート/ページングを追加
-5. テスト整備
-  - Playwright 要件別試験を追加
-  - `tests/items/` に API 単体・性能テストを追加
+
+- `src/lib/items/public.ts` の取得関数を拡張し、`category`/`collection`/`size`/`color`/`priceMin`/`priceMax`/`sort`/`page`/`pageSize` を受け取れるようにする
+
+1. ITEM 一覧ページのサーバ実装
+
+- `src/app/item/page.tsx` で `searchParams` を解釈し、サーバ側で初期フィルタ済みデータを取得
+- `generateMetadata` を実装
+
+1. 一覧 UI の機能拡張
+
+- `src/features/items/components/PublicItemGrid.tsx` に URL 同期、複合フィルタ、ソート、無限スクロール、カテゴリ表示、バッジ表示を追加
+
+1. API 拡張
+
+- `src/app/api/items/route.ts` でクエリバリデーション（Zod）とサーバ側フィルタ/ソート/ページングを追加
+
+1. テスト整備
+
+- Playwright 要件別試験を追加
+- `tests/items/` に API 単体・性能テストを追加
 
 ### Playwright試験ファイル（要件別・実装前に作成）
 

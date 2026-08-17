@@ -9,13 +9,16 @@ refs:
 # 認証 (Auth) — 構造設計（初稿）
 
 ## 概要
+
 このドキュメントは `docs/specs/01_auth.md` と `docs/seq/01_auth_seq.md` を元に、認証ドメインの**構造設計（要求—アーキテクチャのトレーサビリティ）**をまとめたものです。構造設計に合意後、詳細設計（API/DB/セキュリティ）を `docs/DetailDesign/auth-detailed.md` または `src/features/auth/design.md` にて作成します。
 
 ## 参照ファイル
+
 - `docs/specs/01_auth.md`
 - `docs/seq/01_auth_seq.md`
 
 ## 1. 要求抽出（要件ID を付与）
+
 以下は仕様から抽出した主要要求（自動割当：`REQ-AUTH-XXX`）です。各要求は該当箇所を引用しています。
 
 - REQ-AUTH-001 — 新規登録（Register）: `docs/specs/01_auth.md` §4.1（メール登録、確認メール、/api/auth/confirm による自動ログイン、トークンワンタイム化）
@@ -30,6 +33,7 @@ refs:
 - REQ-AUTH-010 — 環境変数・シークレット管理: `docs/specs/01_auth.md` §3
 
 ## 2. 要求 → アーキテクチャID マッピング（実装ファイル例付き）
+
 | 要求ID | 要求（短） | アーキテクチャID | アーキテクチャ要素（説明） | 実装ファイル（推奨例） | ステータス |
 |---|---|---:|---|---|---|
 | REQ-AUTH-001 | 新規登録/確認 | ARCH-AUTH-01 | 登録 API, `/api/auth/register`, `/api/auth/confirm`, 確認メールフロー | `src/app/api/auth/register/route.ts`, `src/app/api/auth/confirm/route.ts`, `src/features/auth/services/register.ts`, `src/features/auth/schemas/register.ts`, `tests/integration/api/auth/register.test.ts` | ✅ 実装済・テスト済 |
@@ -46,6 +50,7 @@ refs:
 > 注: 上表のアーキテクチャID はユニークで、詳細設計（`docs/DetailDesign/auth-detailed.md`）の各セクションは対応する ARCH-ID を参照して記述します。
 
 ## 3. 高レベルアーキテクチャ図
+
 ```mermaid
 flowchart LR
   User["ユーザ"]
@@ -66,7 +71,8 @@ flowchart LR
 ```
 
 ## 4. 推奨ディレクトリ構成
-```
+
+```text
 src/features/auth/
   ├─ api/
   │   ├─ register/
@@ -87,6 +93,7 @@ docs/DetailDesign/
 ```
 
 ## 5. 実装ファイルの現状（存在チェック）
+
 | アーキテクチャID | 推奨実装パス | 現状 | 既存ファイルパス | 備考 |
 |---|---|---|---|---|
 | ARCH-AUTH-01 | `src/app/api/auth/register/route.ts` | ✅ 存在・実装済 | `src/app/api/auth/register/route.ts` | 管理者作成・公開登録の両対応完了 |
@@ -109,20 +116,25 @@ docs/DetailDesign/
 > 注: 上表はワークスペースをスキャンして自動作成しました。実装の上でファイルの重複や配置変更・削除を提案する場合は、必ず `削除提案フロー` に従ってください。
 
 ## 6. 削除提案
+
 - 既存コード（例: 不要なヘルパ、重複実装）が見つかった場合は、同様のフローで削除/統合を提案してください。
 
 ## 5. 重要設計決定（ADR: 要約）
+
 - セッション管理はサーバ側 Cookie を採用（HttpOnly, Secure, SameSite=Lax）。
 - Refresh トークンは DB にハッシュ保存し、JTI を sessions.current_jti に保存してローテーション。再利用検出は quarantine → 通知 → 必要に応じ全セッション失効。
 
 ## 6. 未解決の質問（確認が必要な事項）
+
 - SUPABASE_SERVICE_ROLE_KEY の保管/アクセス承認フローはどのチームで保持・承認するか？（運用担当）
 - OAuth での既存アカウント衝突時のポリシー（自動マージ vs 別口座）を確定してください
 
 ### ユーザーテーブル方針（決定: 2026-02-01）
+
 - **決定**: `auth.users` を認証のソース・オブ・トゥルース（source-of-truth）とし、アプリ側のプロフィール情報は `public.profiles` テーブル（`user_id` -> `auth.users.id`）に格納します。`migrations/002_create_profiles.sql` を追加し、`public.users` のデータを移行して `public.users` は `public.users_deprecated` にリネームして保持しました。
 
 ## 7. 次のアクション
+
 1. ✅ **完了**: 構造設計のレビューと承認を得ました
 2. ✅ **完了**: ARCH-IDs を参照して詳細設計 (`docs/DetailDesign/auth-detailed.md`) を作成しました
 3. ✅ **完了**: 主要エンドポイントの実装を完了しました
@@ -145,6 +157,7 @@ docs/DetailDesign/
 ## 8. テスト実行結果サマリー（2026-02-14）
 
 ### 統合テスト
+
 - ✅ `tests/integration/api/auth/register.test.ts`: 2/2 成功
 - ✅ `tests/integration/api/auth/login.test.ts`: 9/9 成功
 - ✅ `tests/integration/api/auth/logout.test.ts`: 3/3 成功
@@ -155,6 +168,7 @@ docs/DetailDesign/
 - ✅ `tests/integration/auth-flow.test.ts`: 完全フロー成功
 
 ### カバレッジ状況
+
 - 認証エンドポイント: 90%+ (主要フロー完全カバー)
 - セキュリティ機能: 85%+ (CSRF, レート制限, 監査ログ)
 - エラーハンドリング: 80%+ (バリデーション, 異常系)
@@ -162,6 +176,7 @@ docs/DetailDesign/
 ## 9. Supabase Auth 統合の実装状況（2026-02-14）
 
 ### 設計採用実績
+
 - ✅ **ID 管理層**: Supabase Auth（`auth.users`, JWT 発行、メール検証）
 - ✅ **セッション層**: アプリ実装（Cookie, JTI ローテーション, sessions テーブル）
 - ✅ **セキュリティ層**: アプリ実装（レート制限、監査ログ、CSRF）
@@ -169,6 +184,7 @@ docs/DetailDesign/
 ### 実装済みコンポーネント
 
 #### Core Infrastructure
+
 - `src/lib/supabase/server.ts`: Supabase クライアント（一般/サービスロール）
 - `src/lib/cookie.ts`: Cookie ヘルパー（HttpOnly, Secure, SameSite）
 - `src/lib/csrf.ts`: CSRF トークン管理
@@ -177,6 +193,7 @@ docs/DetailDesign/
 - `src/lib/turnstile.ts`: Cloudflare Turnstile 検証
 
 #### Auth Endpoints（Supabase 統合済み）
+
 - `POST /api/auth/register`: `signUp()` / `createUser()` 使用
 - `GET /api/auth/confirm`: `verifyOtp()` (service role) 使用
 - `POST /api/auth/login`: `signInWithPassword()` 使用
@@ -187,6 +204,7 @@ docs/DetailDesign/
 - `GET /api/auth/oauth/callback`: OAuth コード交換
 
 #### Session Management
+
 - `src/features/auth/services/session.ts`: JTI 管理、再利用検出
 - `src/features/auth/services/refresh.ts`: リフレッシュロジック
 - `src/features/auth/services/register.ts`: セッション作成
@@ -194,6 +212,7 @@ docs/DetailDesign/
 ### アーキテクチャ検証結果
 
 #### ✅ 成功している点
+
 1. **明確な責任分離**
    - Supabase: 認証情報管理、トークン発行
    - アプリ: セッション管理、セキュリティポリシー
@@ -208,6 +227,7 @@ docs/DetailDesign/
    - カスタム監査要件を実装可能
 
 #### 🚧 改善推奨項目
+
 1. **メール送信の完全移行**
    - 現状: Supabase デフォルトメール使用
    - 推奨: Amazon SES への完全移行（ブランディング、配信性向上）
@@ -236,6 +256,7 @@ docs/DetailDesign/
 | RLS ポリシー | 🚧 部分実装 | 適用推奨 |
 
 ### 次のアクション（優先度順）
+
 1. 🔴 **高**: RLS ポリシー適用（セキュリティ必須）
 2. 🔴 **高**: Service role key チェック強化
 3. 🔴 **高**: Amazon SES メール統合

@@ -21,10 +21,12 @@
 ### Task 1: 元帳レイアウトと汎用見出し
 
 **Files:**
+
 - Modify: `e2e/FR-ADMIN-044-ledger-three-views.spec.ts`
 - Modify: `src/components/CostProfitSection.tsx`
 
 **Interfaces:**
+
 - Consumes: `Panel`の`aria-label`と既存の`ledgerView`
 - Produces: 2XL時の220px／可変／307pxレイアウト、左2列の仕訳一覧、固定見出し
 

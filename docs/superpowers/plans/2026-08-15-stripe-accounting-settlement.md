@@ -68,10 +68,12 @@
 ### Task 1: Stripe会計原始記録のDB契約
 
 **Files:**
+
 - Create: `migrations/089_stripe_accounting_settlement.sql`
 - Create: `tests/unit/migrations/089_stripe_accounting_settlement.test.ts`
 
 **Interfaces:**
+
 - Produces: `public.stripe_balance_transactions`、`public.stripe_refunds`、`public.stripe_payouts`
 - Produces: Stripe ID主キー、金額整合性制約、RLS、service role専用アクセス
 - Consumes: `public.orders(id, payment_intent_id, total_amount, currency)`、`auth.users(id)`
@@ -152,11 +154,13 @@ git -c safe.directory=C:/work/o_official commit -m "feat(accounting): add Stripe
 ### Task 2: Stripe原始記録の型と冪等保存
 
 **Files:**
+
 - Create: `src/lib/stripe/accounting-types.ts`
 - Create: `src/lib/stripe/accounting-store.ts`
 - Create: `tests/unit/lib/stripe/accounting-store.test.ts`
 
 **Interfaces:**
+
 - Produces: `StripeBalanceTransactionRow`、`StripeRefundRow`、`StripePayoutRow`
 - Produces: `upsertBalanceTransaction()`、`upsertRefund()`、`upsertPayout()`
 - Consumes: Supabase service-role互換の`StripeAccountingDatabase`
@@ -238,10 +242,12 @@ git -c safe.directory=C:/work/o_official commit -m "feat(stripe): persist accoun
 ### Task 3: Stripe決済・返金・Payout同期
 
 **Files:**
+
 - Create: `src/lib/stripe/accounting-sync.ts`
 - Create: `tests/unit/lib/stripe/accounting-sync.test.ts`
 
 **Interfaces:**
+
 - Produces: `syncPaymentIntentAccounting()`
 - Produces: `syncRefundAccounting()`
 - Produces: `syncPayoutAccounting()`
@@ -337,6 +343,7 @@ git -c safe.directory=C:/work/o_official commit -m "feat(stripe): reconcile fees
 ### Task 4: Stripe原始記録からの会計仕訳投影
 
 **Files:**
+
 - Create: `src/lib/finance/stripe-journal.ts`
 - Create: `tests/unit/lib/finance/stripe-journal.test.ts`
 - Modify: `src/lib/finance/accounts.ts`
@@ -345,6 +352,7 @@ git -c safe.directory=C:/work/o_official commit -m "feat(stripe): reconcile fees
 - Modify: `docs/Other/財務.md`
 
 **Interfaces:**
+
 - Produces: `buildStripeJournal(input: StripeJournalInput): JournalEntry[]`
 - Produces: `mergeJournalEntries(base, generated): JournalEntry[]`
 - Produces: 勘定科目`1150 Stripe入金途上`
@@ -453,6 +461,7 @@ git -c safe.directory=C:/work/o_official commit -m "feat(accounting): project St
 ### Task 5: Webhookと定期照合への統合
 
 **Files:**
+
 - Modify: `src/app/api/webhook/stripe/route.ts`
 - Modify: `src/app/api/cron/stripe-reconcile/route.ts`
 - Modify: `src/lib/stripe/reconcile-orders.ts`
@@ -465,6 +474,7 @@ git -c safe.directory=C:/work/o_official commit -m "feat(accounting): project St
 - Create: `tests/unit/api/admin/stripe-backfill-route.test.ts`
 
 **Interfaces:**
+
 - Consumes: Task 3の同期関数
 - Produces: Webhookイベントからの会計同期、Cronによる欠落補完、既存注文限定バックフィル
 - Produces: `POST /api/admin/accounting/stripe-backfill`
@@ -565,12 +575,14 @@ git -c safe.directory=C:/work/o_official commit -m "feat(stripe): sync accountin
 ### Task 6: 注文売上の段階移行とACCOUNTING API
 
 **Files:**
+
 - Modify: `src/lib/sales/order-sales.ts`
 - Modify: `tests/unit/lib/sales/order-sales.test.ts`
 - Modify: `src/app/api/admin/kpi/cost-profit/route.ts`
 - Modify: `tests/unit/api/admin/cost-profit-route.test.ts`
 
 **Interfaces:**
+
 - Produces: 新投影済み注文の総額売上と、旧注文の互換フォールバック
 - Produces: `stripeAccounting` APIレスポンス
 - Consumes: Task 1の3テーブル、Task 4の投影入力
@@ -641,10 +653,12 @@ git -c safe.directory=C:/work/o_official commit -m "feat(accounting): expose Str
 ### Task 7: 銀行着金確認API
 
 **Files:**
+
 - Create: `src/app/api/admin/accounting/stripe-payouts/[id]/confirm/route.ts`
 - Create: `tests/unit/api/admin/stripe-payout-confirm-route.test.ts`
 
 **Interfaces:**
+
 - Produces: `POST /api/admin/accounting/stripe-payouts/:id/confirm`
 - Request: `{ bankArrivalDate: "YYYY-MM-DD" }`
 - Response: `{ data: { payoutId, bankArrivalDate, bankConfirmedAt, bankConfirmedBy } }`
@@ -710,12 +724,14 @@ git -c safe.directory=C:/work/o_official commit -m "feat(accounting): confirm St
 ### Task 8: ACCOUNTING UIと仕訳・元帳統合
 
 **Files:**
+
 - Modify: `src/components/CostProfitSection.tsx`
 - Modify: `tests/unit/components/CostProfitSection.test.tsx`
 - Modify: `e2e/FR-ADMIN-044-ledger-three-views.spec.ts`
 - Create: `e2e/FR-ADMIN-050-stripe-settlement.spec.ts`
 
 **Interfaces:**
+
 - Consumes: Task 6の`stripeAccounting`、Task 7の確認API、Task 4の仕訳投影
 - Produces: Stripe残高カード、Payout一覧、銀行着金確認、売上・返金別行表示
 
@@ -796,9 +812,11 @@ git -c safe.directory=C:/work/o_official commit -m "feat(accounting): show Strip
 ### Task 9: 統合検証・セキュリティ監査・Graphify
 
 **Files:**
+
 - Modify only if a verification failure proves a task-scoped defect.
 
 **Interfaces:**
+
 - Consumes: Tasks 1-8の完成物
 - Produces: 検証記録、更新済みGraphify、最終コミット状態
 

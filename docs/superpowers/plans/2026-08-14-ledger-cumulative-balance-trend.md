@@ -39,10 +39,12 @@
 ### Task 1: 月次累積収支の純粋集計
 
 **Files:**
+
 - Create: `src/lib/finance/cumulative-balance-trend.ts`
 - Create: `tests/unit/lib/finance/cumulative-balance-trend.test.ts`
 
 **Interfaces:**
+
 - Consumes: `FinanceEntry[]`、`fiscalYear: number`
 - Produces: `buildCumulativeBalanceTrend(entries: FinanceEntry[], fiscalYear: number): CumulativeBalanceTrend`
 - Produces: `CumulativeBalanceTrend = { openingBalance; annualIncome; annualExpense; closingBalance; monthly }`
@@ -182,10 +184,12 @@ git -c safe.directory=C:/work/o_official commit -m "feat(accounting): calculate 
 ### Task 2: 固定グラフUIと科目選択の分離
 
 **Files:**
+
 - Modify: `src/components/CostProfitSection.tsx:1878-1894,7290-7350,7660-7735`
 - Modify: `tests/unit/components/CostProfitSection.test.tsx`
 
 **Interfaces:**
+
 - Consumes: `buildCumulativeBalanceTrend(cumulativeEntries, fiscalYear)`
 - Produces: region `月次累積収支推移`、graph name `${fiscalYear}年の月次累積収支推移`
 - Produces: `期首残高`、`当年収入`、`当年支出`、`当年末残高`
@@ -269,12 +273,14 @@ git -c safe.directory=C:/work/o_official commit -m "feat(accounting): fix cumula
 ### Task 3: E2E契約と仕様の同期
 
 **Files:**
+
 - Modify: `e2e/FR-ADMIN-044-ledger-three-views.spec.ts:216-238,288-310`
 - Modify: `e2e/FR-ADMIN-032-ledger-trial-balance.spec.ts:166-183`
 - Modify: `e2e/FR-ADMIN-035-statements-from-real-balances.spec.ts:159-176`
 - Modify: `docs/2_Specs/spec.md:1443`
 
 **Interfaces:**
+
 - Consumes: Task 2の固定region、4サマリー、科目選択で不変な値
 - Produces: FREQ-258-REQ/AC-02・03とE2Eが同じ契約を表す状態
 
@@ -330,9 +336,11 @@ git -c safe.directory=C:/work/o_official commit -m "test(accounting): align cumu
 ### Task 4: 全体検証とGraphify更新
 
 **Files:**
+
 - Modify: `graphify-out/*` through `graphify update .`
 
 **Interfaces:**
+
 - Consumes: Tasks 1-3
 - Produces: fresh verification evidence and current graph
 

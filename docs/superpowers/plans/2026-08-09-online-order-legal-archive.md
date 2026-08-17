@@ -53,10 +53,12 @@
 ### Task 1: Database immutability and append-only history
 
 **Files:**
+
 - Create: `migrations/081_online_order_legal_archive.sql`
 - Create: `tests/unit/migrations/081_online_order_legal_archive.test.ts`
 
 **Interfaces:**
+
 - Consumes: `public.orders`, `public.order_items`, `public.stripe_webhook_events`, `public.has_permission(text)`
 - Produces: `public.order_revisions`, `public.legal_archive_runs`, deletion guards, immutable-field guards, `legal-archive` private bucket
 
@@ -156,6 +158,7 @@ git commit -m "feat(finance): protect online order evidence"
 ### Task 2: Evidence status model and transaction UI behavior
 
 **Files:**
+
 - Create: `src/lib/finance/evidence-status.ts`
 - Create: `tests/unit/lib/finance/evidence-status.test.ts`
 - Modify: `src/app/api/admin/kpi/cost-profit/route.ts`
@@ -163,6 +166,7 @@ git commit -m "feat(finance): protect online order evidence"
 - Modify: `tests/unit/components/CostProfitSection.test.tsx`
 
 **Interfaces:**
+
 - Consumes: finance entry `{ source?: 'manual' | 'order'; receipts?: unknown[] }`
 - Produces: `resolveEvidenceStatus(entry): 'attached' | 'missing' | 'system_record'`, API field `evidenceStatus`
 
@@ -250,6 +254,7 @@ git commit -m "feat(finance): recognize archived order evidence"
 ### Task 3: Statutory order search
 
 **Files:**
+
 - Modify: `src/app/api/admin/orders/route.ts`
 - Modify: `tests/integration/api/orders.test.ts`
 - Modify: `src/app/admin/page.tsx`
@@ -257,6 +262,7 @@ git commit -m "feat(finance): recognize archived order evidence"
 - Create: `tests/unit/components/AdminOrderSearch.test.tsx`
 
 **Interfaces:**
+
 - Consumes: query parameters `from`, `to`, `amountMin`, `amountMax`, `counterparty`, `reference`, `status`
 - Produces: filtered, paginated order results without changing response row shape
 
@@ -333,6 +339,7 @@ git commit -m "feat(orders): add statutory transaction search"
 ### Task 4: Authenticated export query and API
 
 **Files:**
+
 - Create: `src/lib/legal-archive/types.ts`
 - Create: `src/lib/legal-archive/cron-auth.ts`
 - Create: `src/lib/legal-archive/export-query.ts`
@@ -342,6 +349,7 @@ git commit -m "feat(orders): add statutory transaction search"
 - Create: `tests/unit/api/cron/legal-archive-export-route.test.ts`
 
 **Interfaces:**
+
 - Consumes: `year: number`, `cursor?: string`, service-role Supabase client
 - Produces: `LegalArchivePage { orders; orderItems; revisions; nextCursor; totals }`
 
@@ -416,12 +424,14 @@ git commit -m "feat(archive): expose protected legal export"
 ### Task 5: Deterministic CSV and hash-chain manifest
 
 **Files:**
+
 - Create: `src/lib/legal-archive/csv.ts`
 - Create: `src/lib/legal-archive/manifest.ts`
 - Create: `tests/unit/lib/legal-archive/csv.test.ts`
 - Create: `tests/unit/lib/legal-archive/manifest.test.ts`
 
 **Interfaces:**
+
 - Produces: `buildArchiveCsv(pageSet): { ordersCsv; itemsCsv; revisionsCsv; totals }`
 - Produces: `buildManifest(input): LegalArchiveManifest`
 
@@ -492,6 +502,7 @@ git commit -m "feat(archive): build deterministic legal snapshots"
 ### Task 6: Storage adapters and atomic archive upload
 
 **Files:**
+
 - Modify: `package.json`
 - Modify: `package-lock.json`
 - Create: `src/lib/legal-archive/storage.ts`
@@ -502,6 +513,7 @@ git commit -m "feat(archive): build deterministic legal snapshots"
 - Create: `tests/unit/lib/legal-archive/s3-storage.test.ts`
 
 **Interfaces:**
+
 - Produces: `ArchiveStorage` with `putTemporary`, `promote`, `exists`, `read`, `removeTemporary`
 - Produces: `storeArchiveAtomically({ artifacts, targets, finalPrefix, runId })`
 
@@ -568,6 +580,7 @@ git commit -m "feat(archive): add private storage adapters"
 ### Task 7: Daily archive CLI, run-status API and workflow
 
 **Files:**
+
 - Create: `scripts/legal-archive/run-daily.ts`
 - Create: `src/app/api/cron/legal-archive/status/route.ts`
 - Create: `tests/unit/scripts/legal-archive/run-daily.test.ts`
@@ -578,6 +591,7 @@ git commit -m "feat(archive): add private storage adapters"
 - Modify: `.env.example`
 
 **Interfaces:**
+
 - Consumes: export API pages, `database.dump.gz`, storage configuration
 - Produces: `legal-archive/YYYY/daily/YYYY-MM-DD/*`, completed/failed `legal_archive_runs`
 
@@ -635,6 +649,7 @@ git commit -m "feat(archive): automate daily legal snapshots"
 ### Task 8: Monthly restore verification
 
 **Files:**
+
 - Create: `scripts/legal-archive/verify-restore.ts`
 - Create: `tests/unit/scripts/legal-archive/verify-restore.test.ts`
 - Create: `.github/workflows/legal-archive-restore-check.yml`
@@ -642,6 +657,7 @@ git commit -m "feat(archive): automate daily legal snapshots"
 - Modify: `package.json`
 
 **Interfaces:**
+
 - Consumes: restored temporary PostgreSQL, latest manifest and CSV artifacts
 - Produces: restore-check result posted to `legal_archive_runs`
 
@@ -691,12 +707,14 @@ git commit -m "feat(archive): verify monthly database recovery"
 ### Task 9: Archive health API and admin warning
 
 **Files:**
+
 - Create: `src/app/api/admin/legal-archive/status/route.ts`
 - Create: `tests/unit/api/admin/legal-archive-status-route.test.ts`
 - Modify: `src/components/CostProfitSection.tsx`
 - Modify: `tests/unit/components/CostProfitSection.test.tsx`
 
 **Interfaces:**
+
 - Produces: `{ fiscalYear; lastArchiveAt; lastRestoreCheckAt; storageTargets; externalStorageConfigured; delayed }`
 
 - [ ] **Step 1: Write failing admin status API tests**
@@ -751,12 +769,14 @@ git commit -m "feat(finance): show legal archive health"
 ### Task 10: Annual finalization, retention and operations documentation
 
 **Files:**
+
 - Modify: `scripts/legal-archive/run-daily.ts`
 - Modify: `tests/unit/scripts/legal-archive/run-daily.test.ts`
 - Create: `docs/ops/legal-archive.md`
 - Modify: `.env.example`
 
 **Interfaces:**
+
 - Produces: immutable `legal-archive/YYYY/annual/final/*` and documented recovery procedure
 
 - [ ] **Step 1: Write failing annual-finalization tests**
@@ -813,10 +833,12 @@ git commit -m "docs(archive): define retention and recovery operations"
 ### Task 11: Full verification, security audit and graph refresh
 
 **Files:**
+
 - Modify only if a verification failure requires a scoped correction.
 - Generated: `graphify-out/**`
 
 **Interfaces:**
+
 - Consumes: all prior tasks
 - Produces: verified implementation and current code graph
 

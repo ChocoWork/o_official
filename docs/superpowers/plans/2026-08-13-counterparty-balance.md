@@ -22,10 +22,12 @@
 ### Task 1: Pure Counterparty Balance Aggregation
 
 **Files:**
+
 - Create: `src/lib/finance/counterparty-balances.ts`
 - Create: `tests/unit/lib/finance/counterparty-balances.test.ts`
 
 **Interfaces:**
+
 - Consumes: `FinanceEntry`, `BusinessType`, and `ReadonlyMap<string, number>` opening balances.
 - Produces: `buildCounterpartyBalances(entries, businessType, throughDate, officialBalances): CounterpartyBalanceSummary`.
 
@@ -66,10 +68,12 @@ Expected: PASS.
 ### Task 2: Extend the Existing Cumulative API Payload
 
 **Files:**
+
 - Modify: `src/app/api/admin/kpi/cost-profit/route.ts`
 - Modify: `tests/unit/api/admin/cost-profit-route.test.ts`
 
 **Interfaces:**
+
 - Consumes: existing `admin_finance_expenses` rows up to selected year-end.
 - Produces: `cumulativeEntries` containing `id`, `entryType`, `date`, `category`, `item`, `partner`, `amount`, and `paymentMethod`.
 
@@ -96,10 +100,12 @@ Expected: PASS.
 ### Task 3: Render Both Tables in the Financial Summary
 
 **Files:**
+
 - Modify: `src/components/CostProfitSection.tsx`
 - Modify: `tests/unit/components/CostProfitSection.test.tsx`
 
 **Interfaces:**
+
 - Consumes: extended cumulative entries and `buildCounterpartyBalances`.
 - Produces: accessible panels named `借入・事業主資金` and `その他の支払債務`.
 
@@ -126,9 +132,11 @@ Expected: PASS.
 ### Task 4: Verification and Repository Integration
 
 **Files:**
+
 - Modify: `graphify-out/*` through `graphify update .`
 
 **Interfaces:**
+
 - Consumes: completed feature and tests.
 - Produces: verified build state and refreshed knowledge graph.
 

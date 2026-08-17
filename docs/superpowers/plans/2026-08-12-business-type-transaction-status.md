@@ -21,11 +21,13 @@
 ### Task 1: 純粋なステータス判定と確認理由
 
 **Files:**
+
 - Create: `src/lib/finance/transaction-status.ts`
 - Create: `tests/unit/lib/finance/transaction-status.test.ts`
 - Modify: `src/lib/finance/entry-review.ts`
 
 **Interfaces:**
+
 - Consumes: `BusinessType`、訂正履歴の有無、未確認理由の有無
 - Produces: `resolveTransactionStatus({ businessType, revised, openReviewReasons }): 'registered' | 'review'` と `EntryReviewReasonId` の `revisedEntry`
 
@@ -67,12 +69,14 @@ Expected: PASS for all four business/status cases.
 ### Task 2: API and database acceptance of correction acknowledgement
 
 **Files:**
+
 - Create: `migrations/085_finance_revised_entry_review_ack.sql`
 - Create: `tests/unit/migrations/085_finance_revised_entry_review_ack.test.ts`
 - Modify: `src/app/api/admin/kpi/cost-profit/route.ts`
 - Modify: `tests/unit/api/admin/cost-profit-route.test.ts`
 
 **Interfaces:**
+
 - Consumes: `entry.reviewAck` mutation with `reason: 'revisedEntry'`
 - Produces: an upsert/delete in `admin_finance_entry_review_acks` accepted by both Zod and the database check constraint
 
@@ -97,11 +101,13 @@ Expected: PASS.
 ### Task 3: Apply business-specific status consistently in the UI
 
 **Files:**
+
 - Modify: `src/components/CostProfitSection.tsx`
 - Modify: `tests/unit/components/CostProfitSection.test.tsx`
 - Modify: `docs/2_Specs/spec.md`
 
 **Interfaces:**
+
 - Consumes: `resolveTransactionStatus`, `businessType`, `revisedEntryIds`, and existing `reviewAckByKey`
 - Produces: consistent list badge, review drawer, donut counts, tabs, and CSV status
 

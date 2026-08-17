@@ -1,10 +1,12 @@
 # Code Review: Auth Security Hardening
+
 **Ready for Production**: No
 **Critical Issues**: 3
 
 ## Priority 1 (Must Fix) ⛔
 
 ### 1. Account-based rate limiting is effectively bypassed
+
 - Files:
   - [src/features/auth/ratelimit/index.ts](src/features/auth/ratelimit/index.ts#L16)
   - [migrations/033_auth_security_hardening.sql](migrations/033_auth_security_hardening.sql#L48)
@@ -22,6 +24,7 @@
   - 少なくとも RPC の衝突条件とテーブル制約を一致させる必要があります。
 
 ### 2. Password reset breaks for users outside the first 200 accounts
+
 - Files:
   - [src/app/api/auth/password-reset/request/route.ts](src/app/api/auth/password-reset/request/route.ts#L44)
   - [src/app/api/auth/password-reset/confirm/route.ts](src/app/api/auth/password-reset/confirm/route.ts#L52)
@@ -35,6 +38,7 @@
   - 可能なら email ではなく user_id を発行時点で固定する設計に戻すべきです。
 
 ### 3. Admin create-user UI is now broken by CSRF enforcement
+
 - Files:
   - [src/app/api/admin/create-user/route.ts](src/app/api/admin/create-user/route.ts#L16)
   - [src/app/admin/create-user/page.tsx](src/app/admin/create-user/page.tsx#L28)
@@ -49,6 +53,7 @@
 ## Recommended Changes
 
 ### 4. Internal authorization error details are exposed to clients
+
 - File:
   - [src/lib/auth/admin-rbac.ts](src/lib/auth/admin-rbac.ts#L164)
 - Issue:

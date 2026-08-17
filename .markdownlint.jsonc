@@ -1,0 +1,19 @@
+{
+  // spec.md のトレーサビリティテーブルは 1 行に REQ / AC を可変個ぶら下げる形式で、
+  // 日本語の長文セルも含む。行長・列数・列揃えの規則は成立しないため無効化する。
+  "MD013": false, // line-length
+  "MD056": false, // table-column-count
+  "MD060": false, // table-column-style
+
+  // 同名の小見出しを章ごとに繰り返す構成のため、兄弟見出し内のみ重複を禁止する。
+  "MD024": { "siblings_only": true },
+
+  // 手順の見出しに **1. ...** の強調を使う記法を全ドキュメントで採用している。
+  "MD036": false, // no-emphasis-as-heading
+
+  // front matter の title は見出しとして数えない（本文冒頭に H1 を別途置く運用）。
+  "MD025": { "front_matter_title": "" },
+
+  // テーブルセル内の改行に <br>、折りたたみに <details>/<summary> を使う。
+  "MD033": { "allowed_elements": ["br", "details", "summary"] }
+}

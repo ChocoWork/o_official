@@ -40,10 +40,12 @@
 ### Task 1: Database invariants for refunds and retryable webhook events
 
 **Files:**
+
 - Create: `migrations/080_stripe_order_reconciliation.sql`
 - Create: `tests/unit/migrations/080_stripe_order_reconciliation.test.ts`
 
 **Interfaces:**
+
 - Produces: `orders.refunded_amount`, `orders.refunded_at`, `orders.payment_status_updated_at`
 - Produces: `stripe_webhook_events.processing_status`, `attempt_count`, `completed_at`, `last_error`
 
@@ -104,6 +106,7 @@ git commit -m "feat(finance): add Stripe reconciliation state"
 ### Task 2: Shared order sales model
 
 **Files:**
+
 - Create: `src/lib/sales/order-sales.ts`
 - Create: `tests/unit/lib/sales/order-sales.test.ts`
 - Modify: `src/app/api/admin/kpi/route.ts`
@@ -111,6 +114,7 @@ git commit -m "feat(finance): add Stripe reconciliation state"
 - Modify: `tests/unit/api/admin/cost-profit-route.test.ts`
 
 **Interfaces:**
+
 - Produces: `OrderSalesRow`
 - Produces: `OrderSalesTransaction`
 - Produces: `toOrderSalesTransaction(row: OrderSalesRow): OrderSalesTransaction | null`
@@ -180,12 +184,14 @@ git commit -m "feat(finance): share order sales across transactions and KPI"
 ### Task 3: Retryable webhook event lifecycle
 
 **Files:**
+
 - Create: `src/lib/stripe/webhook-events.ts`
 - Create: `tests/unit/lib/stripe/webhook-events.test.ts`
 - Modify: `src/app/api/webhook/stripe/route.ts`
 - Modify: `tests/unit/api/webhook/stripe-route.test.ts`
 
 **Interfaces:**
+
 - Produces: `beginWebhookEvent(event): Promise<'process' | 'duplicate'>`
 - Produces: `completeWebhookEvent(eventId): Promise<void>`
 - Produces: `failWebhookEvent(eventId, error): Promise<void>`
@@ -249,6 +255,7 @@ git commit -m "fix(stripe): retry failed webhook events"
 ### Task 4: Stripe refund synchronization
 
 **Files:**
+
 - Create: `src/lib/stripe/order-refund-sync.ts`
 - Create: `tests/unit/lib/stripe/order-refund-sync.test.ts`
 - Modify: `src/app/api/webhook/stripe/route.ts`
@@ -256,6 +263,7 @@ git commit -m "fix(stripe): retry failed webhook events"
 - Modify: `tests/unit/api/webhook/stripe-route.test.ts`
 
 **Interfaces:**
+
 - Produces: `syncOrderRefunds(paymentIntentId: string): Promise<OrderRefundSyncResult>`
 - Consumes: Stripe `refunds.list({ payment_intent })`
 - Updates: `orders.refunded_amount`, `refunded_at`, `payment_status_updated_at`, and full-refund status
@@ -311,10 +319,12 @@ git commit -m "fix(stripe): synchronize confirmed refunds to orders"
 ### Task 5: Transaction management presentation
 
 **Files:**
+
 - Modify: `src/components/CostProfitSection.tsx`
 - Modify: `tests/unit/components/CostProfitSection.test.tsx`
 
 **Interfaces:**
+
 - Consumes: finance income fields `source`, `sourceId`, `readOnly`, `grossAmount`, `refundedAmount`
 - Produces: read-only order income rows with source and refund labels
 
@@ -356,6 +366,7 @@ git commit -m "feat(finance): show Stripe orders in transaction management"
 ### Task 6: Reconciliation and operational readiness
 
 **Files:**
+
 - Create: `src/lib/stripe/reconcile-orders.ts`
 - Create: `src/app/api/cron/stripe-reconcile/route.ts`
 - Create: `tests/unit/lib/stripe/reconcile-orders.test.ts`
@@ -364,6 +375,7 @@ git commit -m "feat(finance): show Stripe orders in transaction management"
 - Modify: `docs/ops/secrets.md`
 
 **Interfaces:**
+
 - Produces: `reconcileStripeOrders(): Promise<StripeOrderReconciliationReport>`
 - Produces: authenticated `GET /api/cron/stripe-reconcile`
 - Consumes: `CRON_SECRET`, Stripe Payment Intents/refunds, Supabase orders
@@ -418,10 +430,12 @@ git commit -m "feat(stripe): add order reconciliation job"
 ### Task 7: Full verification and live-data audit
 
 **Files:**
+
 - Modify: `docs/superpowers/plans/2026-08-09-stripe-order-reconciliation.md` (checkboxes only)
 - Generated: `graphify-out/graph.json`
 
 **Interfaces:**
+
 - Consumes: all earlier tasks
 - Produces: evidence that transaction management, KPI, Stripe, and Supabase agree
 
@@ -466,4 +480,3 @@ graphify update .
 git add graphify-out/graph.json graphify-out/manifest.json
 git commit -m "chore(graph): update Stripe reconciliation graph"
 ```
-

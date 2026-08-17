@@ -21,16 +21,20 @@ Le Fil des Heures の本質は：
 ### Core Design Principles
 
 #### 1. Temporal Minimalism
+
 要素は「少ない」のではなく、「必要なものだけが残っている状態」。
 
 #### 2. Intentional Asymmetry
+
 完全なグリッドではなく、**意図的なズレ**を許容  
 → 編集的・建築的な緊張感を生む
 
 #### 3. Spatial Hierarchy over Decoration
+
 装飾ではなく「空間構造」で意味を伝える
 
 #### 4. Typography as Identity
+
 フォントの階層がブランドそのものになる
 
 ---
@@ -76,7 +80,6 @@ Le Fil des Heures の本質は：
 NG: border: 1px solid #ddd
 OK: bg-white → bg-[#F4F1ED]
 
-
 ---
 
 ## 3. Typography
@@ -84,9 +87,11 @@ OK: bg-white → bg-[#F4F1ED]
 ### Font System
 
 #### Display（思想・空気感）
+
 - Didot / Playfair Display / Noto Serif JP
 
 #### Body（機能・可読性）
+
 - Inter / Helvetica Now / Noto Sans JP
 
 ---
@@ -130,6 +135,7 @@ OK: bg-white → bg-[#F4F1ED]
 ---
 
 ### Spacing Scale
+
 4px / 8px / 12px / 16px / 24px / 32px / 48px / 64px / 96px
 
 ---
@@ -176,9 +182,9 @@ OK: bg-white → bg-[#F4F1ED]
 ---
 
 ### Glassmorphism（限定使用）
+
 backdrop-filter: blur(12px);
 background: rgba(255,255,255,0.7);
-
 
 ---
 
@@ -186,7 +192,6 @@ background: rgba(255,255,255,0.7);
 
 - 基本：shadowなし
 - 必要時：0 10px 30px rgba(0,0,0,0.05)
-
 
 ---
 
@@ -297,6 +302,7 @@ module.exports = {
 ```
 
 > Tailwind トークン移行手順:
+>
 > 1. `:root` / `.dark` の CSS 変数を `tailwind.config.js` の対応トークンへマップする
 > 2. コンポーネントクラスを段階的に Tailwind トークンへ置換する
 > 3. ダークテーマの振る舞いはデザイン担当と合意する（Sand Beige はダークで使用しない等）
@@ -326,16 +332,19 @@ module.exports = {
 ### Buttons
 
 #### Primary
+
 - bg: black
 - text: white
 - hover: opacity 0.85
 
 #### Secondary
+
 - border: black
 - bg: transparent
 - hover: black bg
 
 #### Accessibility
+
 - 最小高さ：44px
 - focus ring 必須
 
@@ -355,8 +364,8 @@ module.exports = {
 - border: 1px solid rgba(0,0,0,0.2)
 
 #### Focus State
-- outline: 2px solid black;
 
+- outline: 2px solid black;
 
 ---
 
@@ -394,7 +403,6 @@ module.exports = {
 @media (prefers-reduced-motion: reduce) {
 animation: none;
 }
-
 
 ---
 

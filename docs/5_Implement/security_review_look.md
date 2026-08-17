@@ -107,6 +107,7 @@
 3. `src/app/look/page.tsx` の `revalidate` 方針を署名 TTL と整合（Medium）
 4. `src/lib/storage/look-images.ts` のパス正規化/拒否条件を強化（Low）
 5. 将来 `src/app/api/looks/route.ts` を導入する場合は検証・制限・キャッシュ制御を集約（Low）
+
 ---
 
 ## セキュリティ再レビュー（2026-06-27 / dynamic workflow）

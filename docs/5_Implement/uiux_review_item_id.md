@@ -74,6 +74,7 @@
 - **コレクション**: ITEM/PDPから「年」を撤廃。SS/AW のみ管理画面で入力し、`season` カラムでフィルタ（[uiux_review_item.md] の SEASON フィルタも item.season 参照に変更）。
 
 ### 変更ファイル
+
 - DBマイグレーション: [migrations/055_add_item_structured_details.sql](../../migrations/055_add_item_structured_details.sql)（material/origin/sewing_region/care/season 追加・追加のみで後方互換）
 - 型: [src/types/item.ts](../../src/types/item.ts) / [src/app/admin/item/types.ts](../../src/app/admin/item/types.ts)
 - 管理画面: [src/app/admin/item/ItemForm.tsx](../../src/app/admin/item/ItemForm.tsx)（4項目＋SS/AW入力）/ [edit/[id]/page.tsx](../../src/app/admin/item/edit/[id]/page.tsx)
@@ -82,6 +83,7 @@
 - 一覧フィルタ: [src/features/items/components/PublicItemGrid.tsx](../../src/features/items/components/PublicItemGrid.tsx)（SEASONを item.season 参照に）
 
 ### 要対応（デプロイ前）
+
 - **マイグレーション 055 の適用が必須**（未適用だと `season` 等の列が無く API がエラー）。本番DBへの適用は未実施。適用方法（手動 / Supabase）をご指示ください。
 - 既存ITEMは新フィールドが空 → 旧 `product_details` テキストでフォールバック表示。管理画面から順次再入力で構造化表示に切替。
 - TypeScript 型チェック（`tsc --noEmit`）で本変更のエラーが無いことを確認済み。

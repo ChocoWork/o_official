@@ -17,6 +17,7 @@
 ---
 
 ## セキュリティレビュー結果
+
 | ファイル名 | よくない点 | 修正提案 | ステータス | 優先度 |
 |---|---|---|---|---|
 | [src/app/api/auth/otp/verify/route.ts](../../src/app/api/auth/otp/verify/route.ts) | 認証成功時に access token / refresh token を JSON と localStorage に露出しており、XSS 1 回でセッション奪取が成立する | トークンは HttpOnly Cookie のみで扱い、API レスポンスから除去する | Fixed | High |

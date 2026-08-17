@@ -99,6 +99,7 @@
 2. 公開一覧サービスを `createPublicClient()` 化（Low）
 3. 署名 URL 失敗時の `rawUrl` 返却を停止（Low）
 4. バリデーションエラー応答を最小化（Low）
+
 ---
 
 ## セキュリティ再レビュー（2026-06-27 / dynamic workflow）

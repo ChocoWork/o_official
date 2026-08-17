@@ -102,6 +102,7 @@
 1. `news-images` の署名対象パス allowlist 検証を導入（Medium）
 2. 署名失敗時 `rawUrl` 返却を停止し安全フォールバックへ変更（Low）
 3. 署名失敗/拒否イベントの構造化監査ログを追加（Low）
+
 ---
 
 ## セキュリティ再レビュー（2026-06-27 / dynamic workflow）

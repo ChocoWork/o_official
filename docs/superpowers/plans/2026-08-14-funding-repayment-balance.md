@@ -21,10 +21,12 @@
 ### Task 1: Funding Balance Aggregation
 
 **Files:**
+
 - Modify: `tests/unit/lib/finance/counterparty-balances.test.ts`
 - Modify: `src/lib/finance/counterparty-balances.ts`
 
 **Interfaces:**
+
 - Consumes: existing `buildCounterpartyBalances(entries, businessType, throughDate, officialBalances)` arguments.
 - Produces: existing `CounterpartyBalanceSummary`; each funding row has `balance === received - settled`, and `funding.totals.balance` is the sum of those row balances.
 
@@ -66,10 +68,12 @@ Expected: PASS with all aggregation cases green.
 ### Task 2: Funding Labels
 
 **Files:**
+
 - Modify: `tests/unit/components/CostProfitSection.test.tsx`
 - Modify: `src/components/CostProfitSection.tsx`
 
 **Interfaces:**
+
 - Consumes: existing `counterpartyBalancePanel(title, section)` rendering inputs.
 - Produces: two visible 「返済残高」 labels inside the funding region and existing 「残高」 labels inside the payables region.
 
@@ -102,9 +106,11 @@ Expected: PASS.
 ### Task 3: Verification and Integration
 
 **Files:**
+
 - Modify: `graphify-out/*` through `graphify update .`
 
 **Interfaces:**
+
 - Consumes: completed aggregation and label changes.
 - Produces: verified source state, current graph, and a scoped master commit.
 

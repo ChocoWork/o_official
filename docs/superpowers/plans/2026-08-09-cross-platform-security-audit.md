@@ -20,9 +20,11 @@
 ### Task 1: CLI契約テスト
 
 **Files:**
+
 - Create: `.codex/skills/security-check/tests/test_audit.py`
 
 **Interfaces:**
+
 - Consumes: `audit.py [--files-only] [--json] [--report FILE] [paths...]`
 - Produces: 終了コード、JSON、Markdownレポート
 
@@ -34,10 +36,12 @@
 ### Task 2: Python監査本体
 
 **Files:**
+
 - Create: `.codex/skills/security-check/scripts/audit.py`
 - Create: `.claude/skills/security-check/scripts/audit.py` as a compatibility entry point delegating to the canonical implementation
 
 **Interfaces:**
+
 - Consumes: CLI引数とTypeScript/JavaScriptソース
 - Produces: `Finding`一覧、集計、text/JSON/Markdown出力
 
@@ -50,6 +54,7 @@
 ### Task 3: OS別ラッパーとスキル説明
 
 **Files:**
+
 - Modify: `.codex/skills/security-check/scripts/audit.sh`
 - Modify: `.claude/skills/security-check/scripts/audit.sh`
 - Create: `.codex/skills/security-check/scripts/audit.ps1`
@@ -58,6 +63,7 @@
 - Modify: `.claude/skills/security-check/SKILL.md`
 
 **Interfaces:**
+
 - Consumes: ラッパーに渡された全引数
 - Produces: Python監査と同じ標準出力・終了コード
 
@@ -69,9 +75,11 @@
 ### Task 4: 最終検証
 
 **Files:**
+
 - Test: `.codex/skills/security-check/tests/test_audit.py`
 
 **Interfaces:**
+
 - Consumes: 完成した監査スクリプト
 - Produces: 再現可能な検証結果
 

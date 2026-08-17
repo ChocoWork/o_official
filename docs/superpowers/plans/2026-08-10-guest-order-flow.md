@@ -62,6 +62,7 @@
 現状 `sendOrderConfirmationEmail` は定義だけで、import している箇所が0件。注文確認メールは一度も送られていない。本文にお届け先も無い。
 
 **Files:**
+
 - Modify: `src/lib/orders/order-confirmation-email.ts`
 - Modify: `src/app/api/checkout/complete/route.ts`
 - Test: `tests/unit/lib/orders/order-confirmation-email.test.ts`（新規）
@@ -69,6 +70,7 @@
 - Modify: `docs/2_Specs/spec.md`
 
 **Interfaces:**
+
 - Produces: `sendOrderConfirmationEmail(params: OrderConfirmationParams): Promise<void>`。`OrderConfirmationParams` に `shipping: OrderConfirmationShipping` を追加する
 
 ```ts
@@ -298,49 +300,49 @@ import { sendOrderConfirmationEmail } from '@/lib/orders/order-confirmation-emai
 ```ts
 /** draft のスナップショットから確認メールの送信パラメータを組み立てる。 */
 function buildConfirmationParams(orderId: string, draft: CheckoutDraftDetails) {
-	const shipping = draft.shipping_snapshot;
-	return {
-		orderId,
-		email: shipping?.email ?? null,
-		fullName: shipping?.fullName ?? null,
-		items: (draft.items_snapshot ?? []).map((item) => ({
-			item_name: item.item_name,
-			color: item.color,
-			size: item.size,
-			quantity: item.quantity,
-			line_total: item.line_total,
-		})),
-		subtotalAmount: draft.subtotal_amount,
-		shippingAmount: draft.shipping_amount,
-		totalAmount: draft.total_amount,
-		currency: draft.currency,
-		shipping: {
-			fullName: shipping?.fullName ?? null,
-			postalCode: shipping?.postalCode ?? null,
-			prefecture: shipping?.prefecture ?? null,
-			city: shipping?.city ?? null,
-			address: shipping?.address ?? null,
-			building: shipping?.building ?? null,
-			phone: shipping?.phone ?? null,
-		},
-	};
+ const shipping = draft.shipping_snapshot;
+ return {
+  orderId,
+  email: shipping?.email ?? null,
+  fullName: shipping?.fullName ?? null,
+  items: (draft.items_snapshot ?? []).map((item) => ({
+   item_name: item.item_name,
+   color: item.color,
+   size: item.size,
+   quantity: item.quantity,
+   line_total: item.line_total,
+  })),
+  subtotalAmount: draft.subtotal_amount,
+  shippingAmount: draft.shipping_amount,
+  totalAmount: draft.total_amount,
+  currency: draft.currency,
+  shipping: {
+   fullName: shipping?.fullName ?? null,
+   postalCode: shipping?.postalCode ?? null,
+   prefecture: shipping?.prefecture ?? null,
+   city: shipping?.city ?? null,
+   address: shipping?.address ?? null,
+   building: shipping?.building ?? null,
+   phone: shipping?.phone ?? null,
+  },
+ };
 }
 ```
 
 フォールバック成功の分岐（`if (fallbackResult.data) {` の中、`logAudit` の前）に1行入れる。
 
 ```ts
-				await sendOrderConfirmationEmail(
-					buildConfirmationParams(fallbackResult.data.id, draftData as CheckoutDraftDetails),
-				);
+    await sendOrderConfirmationEmail(
+     buildConfirmationParams(fallbackResult.data.id, draftData as CheckoutDraftDetails),
+    );
 ```
 
 RPC 成功後、`finalizedOrder` を解釈した後の成功 `logAudit` の前にも入れる。
 
 ```ts
-		await sendOrderConfirmationEmail(
-			buildConfirmationParams(finalizedOrder.orderId, draftData as CheckoutDraftDetails),
-		);
+  await sendOrderConfirmationEmail(
+   buildConfirmationParams(finalizedOrder.orderId, draftData as CheckoutDraftDetails),
+  );
 ```
 
 既存注文の早期リターン経路には**入れない**。ここが二重送信を防ぐ唯一の仕組み。
@@ -354,7 +356,7 @@ Expected: PASS（既存テストも含めて全件）
 
 `docs/2_Specs/spec.md` の末尾に1行足す。
 
-```
+```text
 | FREQ-264 | 注文確定時に注文確認メールを送信し、本文にお届け先を含めること | FREQ-264-REQ-01 | 注文が新規に確定した経路で、注文時のメールアドレス宛に件名「【Le Fil des Heures】ご注文ありがとうございます（ORD-XXXXXXXX）」のメールを送信すること | FREQ-264-AC-01 | 注文確定時に sendOrderConfirmationEmail が1回呼ばれること | FREQ-264-REQ-02 | メール本文に氏名・郵便番号・都道府県・市区町村・住所・建物名・電話番号を含めること | FREQ-264-AC-02 | メール本文に「お届け先」「〒150-0001」「東京都渋谷区神宮前1-2-3」「レジデンス101」「090-1234-5678」が含まれること | FREQ-264-REQ-03 | 同じ payment_intent_id で注文完了APIを再度呼んでもメールを再送しないこと | FREQ-264-AC-03 | 既存注文が見つかる経路では sendOrderConfirmationEmail が呼ばれないこと |
 ```
 
@@ -371,10 +373,12 @@ git commit -m "feat(orders): 注文確認メールを配線しお届け先を追
 ## Task 2: ゲスト注文を会員へ紐付ける共通関数（FREQ-265 前半）
 
 **Files:**
+
 - Create: `src/lib/orders/link-guest-orders.ts`
 - Test: `tests/unit/lib/orders/link-guest-orders.test.ts`
 
 **Interfaces:**
+
 - Produces:
 
 ```ts
@@ -571,6 +575,7 @@ git commit -m "feat(orders): メール一致でゲスト注文を会員へ紐付
 ログインは2段階で、`/api/auth/login` はパスワード検証と OTP 送信だけを行う。セッションが立つのは `/api/auth/otp/verify` なので、フックはそちらに置く。
 
 **Files:**
+
 - Modify: `src/app/api/auth/confirm/route.ts`
 - Modify: `src/app/api/auth/otp/verify/route.ts`
 - Test: `tests/integration/api/auth/confirm.test.ts`（既存に追加）
@@ -578,6 +583,7 @@ git commit -m "feat(orders): メール一致でゲスト注文を会員へ紐付
 - Test: `e2e/FR-ACCOUNT-030-guest-order-linking.spec.ts`（新規）
 
 **Interfaces:**
+
 - Consumes: Task 2 の `linkGuestOrdersByEmail({ userId, email, emailConfirmedAt })`
 
 - [ ] **Step 1: 失敗するテストを書く**
@@ -773,7 +779,7 @@ Expected: PASS（9件）
 
 - [ ] **Step 8: spec.md に追記する**
 
-```
+```text
 | FREQ-265 | 同じメールアドレスで会員登録したとき、過去のゲスト注文を購入履歴に表示すること | FREQ-265-REQ-01 | メール確認済みの会員に対し、注文時のメールが一致し user_id が未設定のゲスト注文を紐付けること。メール確認前は紐付けないこと | FREQ-265-AC-01 | mobile（390px）/ tablet（768px）/ desktop（1280px）で、紐付いたゲスト注文が購入履歴に表示されること | FREQ-265-REQ-02 | 既に他の会員に紐付いた注文は移さないこと | FREQ-265-AC-02 | 同3ビューポートで、紐付いていない注文が購入履歴に表示されないこと | FREQ-265-AC-03 | 同3ビューポートで横方向のページスクロールが発生しないこと |
 ```
 
@@ -790,10 +796,12 @@ git commit -m "feat(auth): メール確認とOTP検証でゲスト注文を会�
 ## Task 4: 紐付け時に住所と氏名を profiles へ引き継ぐ
 
 **Files:**
+
 - Modify: `src/lib/orders/link-guest-orders.ts`
 - Test: `tests/unit/lib/orders/link-guest-orders.test.ts`（既存に追加）
 
 **Interfaces:**
+
 - Produces: `linkGuestOrdersByEmail` の内部で `copyGuestProfileFromOrder` を呼ぶ。外向きのシグネチャは変えない
 
 - [ ] **Step 1: 失敗するテストを書く**
@@ -1017,6 +1025,7 @@ git commit -m "feat(orders): 紐付け時に配送先と氏名を profiles へ�
 FREQ-63 で専用の `/register` ルートは廃止され、会員登録は `/login` の会員登録タブへ一本化されている（`e2e/FR-SIGNUP-001-register-page.spec.ts` が `/register` の 404 を検証する）。誘導先はそのタブにする。
 
 **Files:**
+
 - Create: `src/features/checkout/components/GuestRegisterPrompt.tsx`
 - Modify: `src/app/checkout/page.tsx`
 - Modify: `src/app/login/page.tsx`
@@ -1024,6 +1033,7 @@ FREQ-63 で専用の `/register` ルートは廃止され、会員登録は `/lo
 - Modify: `docs/2_Specs/spec.md`
 
 **Interfaces:**
+
 - Produces:
 
 ```ts
@@ -1199,7 +1209,7 @@ Expected: PASS（12件）
 
 - [ ] **Step 6: spec.md に追記する**
 
-```
+```text
 | FREQ-266 | 注文完了画面から、注文時のメールを引き継いで会員登録へ誘導すること | FREQ-266-REQ-01 | 未ログインの注文完了画面に「会員登録へ進む」ボタンを含む案内カードを表示すること。ログイン済みでは表示しないこと | FREQ-266-AC-01 | mobile（390px）/ tablet（768px）/ desktop（1280px）で、未ログインの注文完了画面に「会員登録のご案内」領域と「会員登録へ進む」リンクが表示されること | FREQ-266-AC-02 | 同3ビューポートで、ログイン済みの完了画面に同領域が表示されないこと | FREQ-266-REQ-02 | ボタンから /login の会員登録タブへ遷移し、注文時のメールをメール入力欄の初期値にすること。住所や電話は URL に含めないこと | FREQ-266-AC-03 | 同3ビューポートで、遷移先が /login?tab=register&email=... となり、メール入力欄に注文時のメールが入っていること | FREQ-266-AC-04 | 同3ビューポートで横方向のページスクロールが発生しないこと |
 ```
 
@@ -1222,12 +1232,14 @@ git commit -m "feat(checkout): 注文完了画面から会員登録へ誘導す�
 `order_status` enum は `pending, paid, failed, cancelled` のみで `shipped` が無い。
 
 **Files:**
+
 - Create: `migrations/083_order_status_shipped.sql`
 - Create: `migrations/084_order_shipping_info.sql`
 - Create: `src/lib/orders/shipping-carriers.ts`
 - Test: `tests/unit/lib/orders/shipping-carriers.test.ts`（新規）
 
 **Interfaces:**
+
 - Produces:
 
 ```ts
@@ -1414,11 +1426,13 @@ git commit -m "feat(orders): 発送ステータスのDB基盤と配送業者マ�
 ## Task 7: 発送API（FREQ-267 中盤）
 
 **Files:**
+
 - Modify: `src/app/api/admin/orders/[id]/status/route.ts`
 - Modify: `src/app/api/admin/orders/route.ts`
 - Test: `tests/unit/api/admin/order-status-shipped.test.ts`（新規）
 
 **Interfaces:**
+
 - Consumes: Task 6 の `ShippingCarrierId` / `SHIPPING_CARRIER_IDS`
 - Produces: `POST /api/admin/orders/[id]/status` が `{ status: 'shipped', carrier, trackingNumber }` を受け付ける
 
@@ -1555,74 +1569,74 @@ import { sendOrderShippedEmail } from '@/lib/orders/order-shipped-email';
 
 ```ts
 const updateStatusSchema = z.discriminatedUnion('status', [
-	z.object({ status: z.literal('cancelled') }),
-	z.object({
-		status: z.literal('shipped'),
-		carrier: z.enum(SHIPPING_CARRIER_IDS),
-		trackingNumber: z.string().trim().min(1).max(64).regex(/^[0-9A-Za-z-]+$/),
-	}),
+ z.object({ status: z.literal('cancelled') }),
+ z.object({
+  status: z.literal('shipped'),
+  carrier: z.enum(SHIPPING_CARRIER_IDS),
+  trackingNumber: z.string().trim().min(1).max(64).regex(/^[0-9A-Za-z-]+$/),
+ }),
 ]);
 ```
 
 キャンセル処理の分岐の前に、発送の分岐を追加する。
 
 ```ts
-	if (parsedBody.data.status === 'shipped') {
-		// 読んでから書く形にしない。status と shipped_at を条件に含めた
-		// UPDATE 1本で確定させることで、同時に2回押しても発送は1回しか成立せず、
-		// 通知メールも1通しか出ない。
-		const { data, error } = await supabase
-			.from('orders')
-			.update({
-				status: 'shipped',
-				shipped_at: new Date().toISOString(),
-				shipping_carrier: parsedBody.data.carrier,
-				tracking_number: parsedBody.data.trackingNumber,
-			})
-			.eq('id', id)
-			.eq('status', 'paid')
-			.is('shipped_at', null)
-			.select('id, shipping_email, shipping_full_name');
+ if (parsedBody.data.status === 'shipped') {
+  // 読んでから書く形にしない。status と shipped_at を条件に含めた
+  // UPDATE 1本で確定させることで、同時に2回押しても発送は1回しか成立せず、
+  // 通知メールも1通しか出ない。
+  const { data, error } = await supabase
+   .from('orders')
+   .update({
+    status: 'shipped',
+    shipped_at: new Date().toISOString(),
+    shipping_carrier: parsedBody.data.carrier,
+    tracking_number: parsedBody.data.trackingNumber,
+   })
+   .eq('id', id)
+   .eq('status', 'paid')
+   .is('shipped_at', null)
+   .select('id, shipping_email, shipping_full_name');
 
-		if (error) {
-			console.error('[admin.orders.status] Failed to ship order:', error);
-			return NextResponse.json({ error: '発送状態の更新に失敗しました。' }, { status: 500 });
-		}
+  if (error) {
+   console.error('[admin.orders.status] Failed to ship order:', error);
+   return NextResponse.json({ error: '発送状態の更新に失敗しました。' }, { status: 500 });
+  }
 
-		if (!data?.length) {
-			await logAudit({
-				action: 'admin.orders.status.update',
-				actor_id: authz.userId,
-				outcome: 'failure',
-				resource: 'orders',
-				resource_id: id,
-				detail: 'not_shippable',
-			});
-			return NextResponse.json(
-				{ error: '発送できる状態ではありません。決済完了の未発送注文のみ発送できます。' },
-				{ status: 409 },
-			);
-		}
+  if (!data?.length) {
+   await logAudit({
+    action: 'admin.orders.status.update',
+    actor_id: authz.userId,
+    outcome: 'failure',
+    resource: 'orders',
+    resource_id: id,
+    detail: 'not_shippable',
+   });
+   return NextResponse.json(
+    { error: '発送できる状態ではありません。決済完了の未発送注文のみ発送できます。' },
+    { status: 409 },
+   );
+  }
 
-		await logAudit({
-			action: 'admin.orders.status.update',
-			actor_id: authz.userId,
-			outcome: 'success',
-			resource: 'orders',
-			resource_id: id,
-			metadata: { status: 'shipped', carrier: parsedBody.data.carrier },
-		});
+  await logAudit({
+   action: 'admin.orders.status.update',
+   actor_id: authz.userId,
+   outcome: 'success',
+   resource: 'orders',
+   resource_id: id,
+   metadata: { status: 'shipped', carrier: parsedBody.data.carrier },
+  });
 
-		await sendOrderShippedEmail({
-			orderId: id,
-			email: data[0].shipping_email,
-			fullName: data[0].shipping_full_name,
-			carrier: parsedBody.data.carrier,
-			trackingNumber: parsedBody.data.trackingNumber,
-		});
+  await sendOrderShippedEmail({
+   orderId: id,
+   email: data[0].shipping_email,
+   fullName: data[0].shipping_full_name,
+   carrier: parsedBody.data.carrier,
+   trackingNumber: parsedBody.data.trackingNumber,
+  });
 
-		return NextResponse.json({ success: true, status: 'shipped' }, { status: 200 });
-	}
+  return NextResponse.json({ success: true, status: 'shipped' }, { status: 200 });
+ }
 ```
 
 - [ ] **Step 4: 一覧APIに shipped を通す**
@@ -1634,9 +1648,9 @@ const updateStatusSchema = z.discriminatedUnion('status', [
 - `mapOrderStatusToLabel` に分岐を足す
 
 ```ts
-	if (status === 'shipped') {
-		return '発送済み';
-	}
+ if (status === 'shipped') {
+  return '発送済み';
+ }
 ```
 
 - `.select(...)` の列に `shipped_at, shipping_carrier, tracking_number` を足し、レスポンスに含める
@@ -1675,11 +1689,13 @@ git commit -m "feat(admin): 注文を発送済みにするAPIを追加"
 ## Task 8: 発送通知メール（FREQ-268）
 
 **Files:**
+
 - Modify: `src/lib/orders/order-shipped-email.ts`（Task 7 の仮実装を置き換える）
 - Test: `tests/unit/lib/orders/order-shipped-email.test.ts`（新規）
 - Modify: `docs/2_Specs/spec.md`
 
 **Interfaces:**
+
 - Consumes: Task 6 の `SHIPPING_CARRIERS` / `ShippingCarrierId`
 - Produces:
 
@@ -1839,7 +1855,7 @@ Expected: PASS（7件）
 
 - [ ] **Step 5: spec.md に追記する**
 
-```
+```text
 | FREQ-268 | 注文を発送済みにしたとき、配送業者と追跡番号を含む発送通知メールを送信すること | FREQ-268-REQ-01 | 発送が成立したとき、注文時のメールアドレス宛に配送業者名・追跡番号・追跡URLを含むメールを送信すること | FREQ-268-AC-01 | 発送時に送信されるメール本文に「ヤマト運輸」「1234-5678-9012」と追跡URLが含まれること | FREQ-268-REQ-02 | 既に発送済みの注文を再度発送しようとした場合、メールを再送しないこと | FREQ-268-AC-02 | 更新対象が0件のとき sendOrderShippedEmail が呼ばれないこと | FREQ-268-REQ-03 | メール送信に失敗しても発送処理は成功として扱い、監査ログに記録すること | FREQ-268-AC-03 | 送信失敗時に例外を投げず、action=order.shipped.mail / outcome=error の監査ログが記録されること |
 ```
 
@@ -1856,12 +1872,14 @@ git commit -m "feat(orders): 発送通知メールを追加"
 ## Task 9: 管理画面の発送操作（FREQ-267 後半）
 
 **Files:**
+
 - Modify: `src/components/OrderSection.tsx`
 - Modify: `src/app/admin/page.tsx`
 - Test: `e2e/FR-ADMIN-050-order-shipping.spec.ts`（新規）
 - Modify: `docs/2_Specs/spec.md`
 
 **Interfaces:**
+
 - Consumes: Task 6 の `SHIPPING_CARRIERS` / `SHIPPING_CARRIER_IDS` / `ShippingCarrierId`
 - Produces: `OrderSectionProps` に `onShipOrder?: (id: string) => void` を追加。`OrderStatus` に `'発送済み'` を追加
 
@@ -1878,13 +1896,13 @@ export type OrderStatus = '未決済' | '決済完了' | '決済失敗' | 'キ�
 `statusClassMap` に1行足す。
 
 ```ts
-		発送済み: 'bg-green-100 text-green-800',
+  発送済み: 'bg-green-100 text-green-800',
 ```
 
 props に発送ハンドラを足す。
 
 ```ts
-	onShipOrder?: (id: string) => void;
+ onShipOrder?: (id: string) => void;
 ```
 
 `export default function OrderSection({ ... })` の分割代入にも `onShipOrder,` を足す。
@@ -1892,17 +1910,17 @@ props に発送ハンドラを足す。
 操作列に発送ボタンを足す。既存のキャンセルボタンの前に置く。
 
 ```tsx
-								{order.status === '決済完了' && onShipOrder ? (
-									<Button
-										variant="primary"
-										size="sm"
-										className="font-acumin"
-										onClick={() => onShipOrder(order.id)}
-										disabled={isProcessing}
-									>
-										{isProcessing ? '処理中...' : '発送済みにする'}
-									</Button>
-								) : null}
+        {order.status === '決済完了' && onShipOrder ? (
+         <Button
+          variant="primary"
+          size="sm"
+          className="font-acumin"
+          onClick={() => onShipOrder(order.id)}
+          disabled={isProcessing}
+         >
+          {isProcessing ? '処理中...' : '発送済みにする'}
+         </Button>
+        ) : null}
 ```
 
 `actionLabelMap` は触らない。発送済みの行はキャンセルもできない（`actionLabelMap['発送済み']` が undefined なのでボタンが出ない）。
@@ -2169,7 +2187,7 @@ Expected: PASS（9件）
 
 - [ ] **Step 5: spec.md に追記する**
 
-```
+```text
 | FREQ-267 | 注文を発送済みにでき、配送業者と追跡番号を記録・表示すること | FREQ-267-REQ-01 | ADMIN の ORDER タブで、決済完了かつ未発送の注文にのみ「発送済みにする」操作を出すこと | FREQ-267-AC-01 | mobile（390px）/ tablet（768px）/ desktop（1280px）で、決済完了の注文にのみ「発送済みにする」ボタンが表示されること | FREQ-267-REQ-02 | 発送時に配送業者と追跡番号を入力させ、発送後は一覧のステータスを「発送済み」にすること | FREQ-267-AC-02 | 同3ビューポートで、配送業者と追跡番号を入力して発送すると一覧のステータスが「発送済み」になり、発送ボタンが消えること | FREQ-267-REQ-03 | 決済完了以外のステータスや発送済みの注文は発送できないこと | FREQ-267-AC-03 | 更新対象が0件のとき409を返すこと | FREQ-267-AC-04 | 同3ビューポートで横方向のページスクロールが発生しないこと |
 ```
 
@@ -2186,11 +2204,13 @@ git commit -m "feat(admin): 注文を発送済みにする操作を追加"
 ## Task 10: 注文詳細に発送情報を表示する（FREQ-267 表示側）
 
 **Files:**
+
 - Modify: `src/app/account/orders/[id]/page.tsx`
 - Test: `e2e/FR-ACCOUNT-031-order-shipping-info.spec.ts`（新規）
 - Modify: `docs/2_Specs/spec.md`
 
 **Interfaces:**
+
 - Consumes: Task 6 の `SHIPPING_CARRIERS` / `isShippingCarrierId`
 
 `src/lib/orders/order-status.ts` は既に `shipped: '発送済み'` と `resolveOrderProgressIndex` の `shipped → 2` を持っているので、ステータス表示と進捗バーは変更不要。
@@ -2243,7 +2263,7 @@ import { SHIPPING_CARRIERS, isShippingCarrierId } from '@/lib/orders/shipping-ca
 
 `target="_blank"` には必ず `rel="noopener noreferrer"` を付ける。付けないと遷移先から `window.opener` 経由で元のページを操作できる。
 
-取得元は `src/app/api/orders/[id]/route.ts`（詳細ページ L72 の `clientFetch(\`/api/orders/${params.id}\`)`）。この route の `select` に `shipped_at, shipping_carrier, tracking_number` を足し、レスポンスのマッピングで `shippedAt` / `shippingCarrier` / `trackingNumber` として返す。
+取得元は `src/app/api/orders/[id]/route.ts`（詳細ページ L72 の `clientFetch(\`/api/orders/${params.id}\`)`）。この route の`select` に `shipped_at, shipping_carrier, tracking_number` を足し、レスポンスのマッピングで `shippedAt` / `shippingCarrier` / `trackingNumber` として返す。
 
 一覧側（`src/app/api/orders/route.ts`）は今回触らない。購入履歴の一覧に追跡番号は出さない。
 
@@ -2356,7 +2376,7 @@ Expected: PASS（9件）
 
 Task 9 で追加した FREQ-267 の行の末尾に、追跡表示の REQ と AC を足す。
 
-```
+```text
  | FREQ-267-REQ-04 | 発送済みの注文詳細に配送業者・追跡番号・追跡リンクを表示し、未発送では表示しないこと | FREQ-267-AC-05 | 同3ビューポートで、発送済みの注文詳細に「配送情報」領域と「ヤマト運輸」「1234-5678-9012」「配送状況を確認する」リンクが表示されること | FREQ-267-AC-06 | 同3ビューポートで、未発送の注文詳細に「配送情報」領域が表示されないこと |
 ```
 
@@ -2377,6 +2397,7 @@ Expected: 型チェック・Jest 全件・E2E 39件すべて PASS
 ## Task 11: グラフの更新と最終確認
 
 **Files:**
+
 - Modify: `graphify-out/`（自動生成）
 
 - [ ] **Step 1: 知識グラフを更新する**

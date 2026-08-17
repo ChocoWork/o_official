@@ -53,7 +53,7 @@ ALTER TABLE admin_kpi_targets ENABLE ROW LEVEL SECURITY;
 -- No direct user policies. Access through admin API with service role only.
 ```
 
-5. 「RUN」を押して実行
+1. 「RUN」を押して実行
 
 ## トラブルシューティング
 
@@ -62,6 +62,7 @@ ALTER TABLE admin_kpi_targets ENABLE ROW LEVEL SECURITY;
 **原因**: エラーハンドリングの問題。通常、以下の4つの理由が考えられます。
 
 **対応策**:
+
 1. **ブラウザのコンソールを開く** (F12 → Console タブ)
 2. **詳細なエラーログを確認**
    - `Failed to save KPI targets:` で始まるログを探す
@@ -113,6 +114,7 @@ npm run dev
 5. **Response** タブで API の返却値を確認
 
 例：成功時は以下のような形式:
+
 ```json
 {
   "data": {
@@ -125,6 +127,7 @@ npm run dev
 ```
 
 例：失敗時は以下のような形式:
+
 ```json
 {
   "error": "Failed to update KPI targets",

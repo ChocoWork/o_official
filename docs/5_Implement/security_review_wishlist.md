@@ -102,6 +102,7 @@
 1. wishlist 件数上限 + GET ページング + 署名処理の並列上限制御（Medium）
 2. `POST /api/wishlist` の rate limit 発火時監査ログ追加（Low）
 3. `DELETE /api/wishlist/[id]` の rate limit 発火時監査ログ追加（Low）
+
 ---
 
 ## セキュリティ再レビュー（2026-06-27 / dynamic workflow）

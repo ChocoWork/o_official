@@ -26,10 +26,12 @@
 ### Task 1: 証憑状態ドメインを4状態へ拡張する
 
 **Files:**
+
 - Modify: `src/lib/finance/evidence-status.ts`
 - Create: `tests/unit/lib/finance/evidence-status.test.ts`
 
 **Interfaces:**
+
 - Consumes: `{ source?, receipts?, evidenceUnavailable? }`
 - Produces: `EvidenceStatus = 'attached' | 'missing' | 'system_record' | 'unavailable_recorded'` と `resolveEvidenceStatus(entry): EvidenceStatus`
 
@@ -88,10 +90,12 @@ git commit -m "feat(accounting): add unavailable evidence state"
 ### Task 2: 添付不可記録のDBテーブルとRLSを追加する
 
 **Files:**
+
 - Create: `migrations/087_finance_evidence_unavailable_records.sql`
 - Create: `tests/unit/migrations/087_finance_evidence_unavailable_records.test.ts`
 
 **Interfaces:**
+
 - Consumes: `admin_finance_expenses(id)`、`auth.uid()`、既存admin権限関数
 - Produces: `admin_finance_evidence_unavailable_records` と理由CHECK制約、RLS policies
 
@@ -132,10 +136,12 @@ git commit -m "feat(accounting): persist unavailable evidence records"
 ### Task 3: cost-profit APIへ取得・登録・解除を追加する
 
 **Files:**
+
 - Modify: `src/app/api/admin/kpi/cost-profit/route.ts`
 - Modify: `tests/unit/api/admin/cost-profit-route.test.ts`
 
 **Interfaces:**
+
 - Consumes: `evidenceUnavailable.upsert` / `evidenceUnavailable.delete`
 - Produces: GET responseの `evidenceUnavailable: { reason, note, recordedAt, recordedBy, updatedAt, updatedBy } | null`
 
@@ -192,10 +198,12 @@ git commit -m "feat(accounting): manage unavailable evidence records"
 ### Task 4: 取引入力と証憑Drawerへ「証憑添付不可」を追加する
 
 **Files:**
+
 - Modify: `src/components/CostProfitSection.tsx`
 - Modify: `tests/unit/components/CostProfitSection.test.tsx`
 
 **Interfaces:**
+
 - Consumes: Task 3のAPI operation、Task 1の状態判定
 - Produces: 新規収入・既存収入の理由入力、解除、後日添付、全削除後復帰UI
 
@@ -244,10 +252,12 @@ git commit -m "feat(accounting): record unavailable income evidence"
 ### Task 5: 一覧・ドーナツ・フィルター・CSV・帳簿を三値対応する
 
 **Files:**
+
 - Modify: `src/components/CostProfitSection.tsx`
 - Modify: `tests/unit/components/CostProfitSection.test.tsx`
 
 **Interfaces:**
+
 - Consumes: `evidenceStatusOf(entry)`
 - Produces: すべての取引管理表示・出力で共通の証憑状態
 
@@ -289,6 +299,7 @@ git commit -m "feat(accounting): report unavailable evidence separately"
 ### Task 6: 税務レポートを理由記録済み独立集計へ変更する
 
 **Files:**
+
 - Modify: `src/components/tax/types.ts`
 - Modify: `src/components/tax/FilingDocumentsView.tsx`
 - Modify: `src/components/tax/TaxCalendarView.tsx`
@@ -298,6 +309,7 @@ git commit -m "feat(accounting): report unavailable evidence separately"
 - Test existing relevant files under: `tests/unit/components/tax/`
 
 **Interfaces:**
+
 - Consumes: `EvidenceStatus`
 - Produces: `EntryCounts` の `withReceipt`、`unavailableRecorded`、`withoutReceipt`
 
@@ -339,11 +351,13 @@ git commit -m "feat(accounting): distinguish unavailable evidence in tax reports
 ### Task 7: 仕様同期、E2E、セキュリティ、全体検証
 
 **Files:**
+
 - Modify: `docs/2_Specs/spec.md`
 - Modify or Create: `e2e/FR-ADMIN-038-receipts-and-revisions.spec.ts`
 - Modify: `docs/superpowers/specs/2026-08-14-income-evidence-unavailable-design.md` only if implementation reveals an approved clarification
 
 **Interfaces:**
+
 - Consumes: 完成したAPI/UI
 - Produces: 仕様の受入条件と3 viewportの回帰証拠
 

@@ -181,6 +181,7 @@
 > 元ファイル: `docs/4_DetailDesign/auth-detailed.md`
 
 ### 対応 ARCH-ID
+
 - ARCH-AUTH-01: Register / Confirm
 - ARCH-AUTH-02: Login
 - ARCH-AUTH-03: Refresh / JTI
@@ -195,18 +196,22 @@
 ### OAuth: 既存アカウント衝突時のポリシー
 
 #### 概要
+
 OAuth ログインでプロバイダから返るメールアドレスが既存アカウントのメールと一致した場合、衝突（同一メールに対する既存アカウントの可能性）が発生します。
 
 #### 推奨ポリシー
+
 1. **検証されたメール (`email_verified=true`) の場合**
    - ユーザーに「アカウント連携（Link accounts）」を促す画面を表示し、ユーザーの明示的承認を得た上で OAuth アカウントを既存アカウントにリンクする。再ログイン（メール確認リンク or パスワード確認）を要求して本人確認を強化する。
 2. **検証されていないメール or メール欠如の場合**
    - ユーザーに既存アカウントへのリンクを手動で要求し、メール確認フローを通じて照合する。自動マージは行わない。
 
 #### 自動マージについての注意点
+
 - 自動マージは利便性が高い一方で、アカウント乗っ取りのリスクを増加させます。初期実装では自動マージを採用しないことを推奨します。
 
 #### 実装上の要件
+
 - OAuth callback で provider の `email` と `email_verified` を取得すること
 - 既存メール一致時は「リンク提案ページ」へリダイレクトし、ユーザーの承認を得る
 - リンク後の audit event を残す（`auth.oauth.link`）
@@ -215,7 +220,9 @@ OAuth ログインでプロバイダから返るメールアドレスが既存�
 ### OAuth 詳細設計
 
 #### DB マイグレーション
+
 - `migrations/011_create_oauth_requests.sql` — oauth_requests テーブル
+
   ```sql
   CREATE TABLE oauth_requests (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -232,22 +239,26 @@ OAuth ログインでプロバイダから返るメールアドレスが既存�
   ```
 
 #### ユーザー／プロフィール方針（設計決定）
+
 - `auth.users` を認証のソース・オブ・トゥルースとし、アプリ側のプロフィール情報は `public.profiles` に格納する。
 - `profiles.user_id` は `auth.users(id)` を参照する主キーとし、表示名・電話・住所などの可変情報を保持する。
 
 #### state / PKCE 保存方針
+
 - 保存: Redis（推奨）または Postgres（`oauth_requests`）
 - TTL: 10 分（5〜15 分の許容）
 - 再利用検出: `used_at` がセット済みまたは `expires_at` を過ぎていたら拒否（監査ログ記録）
 - cleanup: 定期ジョブで expired/used を削除
 
 #### Exchange & エラーハンドリング
+
 - callback で code をサーバ側で交換（code_verifier 使用）
 - 交換失敗: `502 Bad Gateway`（Provider 側問題）& audit log `auth.oauth.callback.exchange_failure`
 - PKCE 検証失敗: `401 Unauthorized` & audit `auth.oauth.callback.pkce_failure`
 - state 無効: `400 Bad Request` & audit `auth.oauth.callback.invalid_state`
 
 #### テスト計画
+
 - 単体: state/PKCE の生成・検証・期限切れ・再利用検出ユニットテスト
 - 結合: Provider モックで code 交換の正常系/異常系テスト
 - セキュリティ: id_token JWKS 署名検証、リプレイ攻撃検出テスト
@@ -261,6 +272,7 @@ OAuth ログインでプロバイダから返るメールアドレスが既存�
 ### 実装状況サマリ
 
 #### 完了している実装
+
 1. **Supabase Auth 統合の基本実装** — Service role client、確認フロー（`verifyOtp`）
 2. **セッション管理** — `sessions` テーブル管理、JTI ローテーション + 再利用検出、refresh_token_hash 保存
 3. **セキュリティ実装** — Cookie 設定（HttpOnly/Secure/SameSite）、レート制限、監査ログ、CSRF トークン管理、Turnstile 検証
@@ -274,11 +286,13 @@ OAuth ログインでプロバイダから返るメールアドレスが既存�
 **現状**: `/api/auth/register` では Supabase の確認メール機能を使用。ブランディングカスタマイズが困難。
 
 **修正方針**:
+
 - Supabase Dashboard → Authentication → Email Templates → "Confirm signup" を無効化
 - アプリ側で `email_confirmation_tokens` テーブルを作成し、テーブルに保存したトークンを SES 経由で送信
 - `/api/auth/confirm` を `verifyOtp` から `email_confirmation_tokens` テーブル検証に変更
 
 **新規マイグレーション**: `migrations/012_create_email_confirmation_tokens.sql`
+
 ```sql
 CREATE TABLE IF NOT EXISTS email_confirmation_tokens (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -301,6 +315,7 @@ CREATE INDEX idx_email_confirmation_tokens_expires ON email_confirmation_tokens(
 **新規マイグレーション**: `migrations/013_enable_rls_policies.sql`
 
 主要ポリシー:
+
 - `profiles`: ユーザーは自分のプロフィールのみ閲覧・更新可能
 - `sessions`: service role のみアクセス / ユーザー自身のセッション一覧は閲覧可
 - `audit_logs`, `rate_limit_counters`, `oauth_requests`, `password_reset_tokens`, `email_confirmation_tokens`: service role のみ
@@ -311,6 +326,7 @@ CREATE INDEX idx_email_confirmation_tokens_expires ON email_confirmation_tokens(
 #### 3. OAuth リンク提案 UI の実装（優先度: 🟡 中）
 
 **新規ファイル**:
+
 - `src/app/auth/oauth/link-proposal/page.tsx` — パスワード再認証付きリンク提案画面
 - `src/app/api/auth/oauth/link-confirm/route.ts` — リンク確認 API（Zod バリデーション付き）
 
@@ -344,7 +360,7 @@ CREATE INDEX idx_email_confirmation_tokens_expires ON email_confirmation_tokens(
 
 #### 新規登録フロー
 
-```
+```text
 クライアント          Supabase Auth          アプリ API             DB
      |                     |                     |                    |
      | POST /api/auth/register                    |                    |
@@ -373,7 +389,7 @@ CREATE INDEX idx_email_confirmation_tokens_expires ON email_confirmation_tokens(
 
 #### ログインフロー
 
-```
+```text
 クライアント          Supabase Auth          アプリ API             DB
      |                     |                     |                    |
      | POST /api/auth/login {email, password}     |                    |
@@ -393,7 +409,7 @@ CREATE INDEX idx_email_confirmation_tokens_expires ON email_confirmation_tokens(
 
 #### リフレッシュフロー（JTI ローテーション）
 
-```
+```text
 クライアント          アプリ API             DB                 Supabase Auth
      |                     |                    |                    |
      | POST /api/auth/refresh (Cookie)           |                    |
@@ -449,6 +465,7 @@ CREATE INDEX idx_email_confirmation_tokens_expires ON email_confirmation_tokens(
 - 管理画面からセッション列挙・個別リボーク・全失効が操作可能。
 
 **新規ファイル**:
+
 - `src/workers/cleanup-expired-tokens.ts` — password_reset_tokens / email_confirmation_tokens / oauth_requests の期限切れレコード削除
 - `src/workers/cleanup-revoked-sessions.ts` — 失効済みセッションの削除（30 日保持後）
 - `src/app/api/cron/cleanup-tokens/route.ts` — Vercel Cron エンドポイント（`CRON_SECRET` 検証）
@@ -461,6 +478,7 @@ CREATE INDEX idx_email_confirmation_tokens_expires ON email_confirmation_tokens(
 #### 5. Service Role Key チェック強化（優先度: 🔴 高）
 
 `src/lib/supabase/server.ts` の `createServiceRoleClient` に以下を追加:
+
 - `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` 未設定時の詳細エラーログ
 - JWT 形式チェック（`eyJ` で始まるか確認）
 - 最小長チェック（100 文字以上）

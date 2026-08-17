@@ -1,8 +1,10 @@
 # Code Review: Checkout
+
 **Ready for Production**: No
 **Critical Issues**: 4
 
 ## Review Scope
+
 - src/app/checkout/page.tsx
 - src/features/checkout/services/postal-code.service.ts
 - src/features/checkout/utils/postal-code.util.ts
@@ -23,6 +25,7 @@
 - docs/3_ArchitectureDesign/auth-structure.md
 
 ## Pass Plan
+
 1. Frontend/input/PCI/XSS
 2. API/backend/authn-authz/CSRF/rate limit/idempotency/webhook verification
 3. DB/RLS/order integrity/audit/secrets
@@ -30,6 +33,7 @@
 ## Priority 1 (Must Fix) ⛔
 
 ### 1. Paid amount is not cryptographically bound to the ordered cart snapshot
+
 - Files:
   - src/app/api/checkout/complete/route.ts
   - src/app/api/webhook/stripe/route.ts
@@ -46,6 +50,7 @@
   - Finalize orders only from the stored snapshot and verify Stripe amount/currency against the snapshot before inserting the order.
 
 ### 2. Public complete endpoint accepts non-Stripe offline methods without proof of payment or auth gates
+
 - File:
   - src/app/api/checkout/complete/route.ts
 - Issue:
@@ -58,6 +63,7 @@
   - If offline methods are required, move them behind an explicit allowlisted flow with server-side authorization, anti-automation controls, and dedicated operational handling.
 
 ### 3. State-changing checkout endpoints do not enforce the project CSRF design
+
 - Files:
   - src/app/api/checkout/create-session/route.ts
   - src/app/api/checkout/complete/route.ts
@@ -72,6 +78,7 @@
   - Send X-CSRF-Token from the client via the existing CSRF cookie pattern.
 
 ### 4. Public checkout endpoints and postal-code proxy have no abuse throttling
+
 - Files:
   - src/app/api/checkout/create-session/route.ts
   - src/app/api/checkout/complete/route.ts
@@ -91,6 +98,7 @@
 ## Recommended Changes
 
 ### 5. Checkout and webhook flows lack durable security audit events
+
 - Files:
   - src/app/api/checkout/create-session/route.ts
   - src/app/api/checkout/complete/route.ts
@@ -104,5 +112,6 @@
   - Emit structured audit events for checkout session creation, order finalization success/failure, webhook signature failures, duplicate event skips, and unusual completion attempts.
 
 ## Residual Notes
+
 - PCI scope is reduced correctly on the frontend because card entry is delegated to Stripe Elements/PaymentElement; no direct card field handling was found in the reviewed checkout UI.
 - Webhook signature verification is present and correctly uses the raw request body.

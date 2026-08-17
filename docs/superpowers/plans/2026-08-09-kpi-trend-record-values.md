@@ -21,10 +21,12 @@
 ### Task 1: 月次記録からKPI実績値を解決する
 
 **Files:**
+
 - Modify: `src/lib/kpi/monthly-metrics.ts`
 - Test: `tests/unit/lib/kpi/monthly-metrics.test.ts`
 
 **Interfaces:**
+
 - Consumes: `Record<string, string | number | undefined>` 形式の1か月分保存値、既存の `MONTHLY_KPI_FORMULAS`、`sourceStorageKey()`、`kpiOverrideStorageKey()`
 - Produces: `resolveRecordedKpiValue(monthValues, kpiKey): number | null`
 
@@ -99,11 +101,13 @@ git commit -m "test(kpi): resolve recorded monthly values"
 ### Task 2: Graphで欠損値を補間せず描画する
 
 **Files:**
+
 - Modify: `src/components/ui/Graph/Graph_types.ts`
 - Modify: `src/components/ui/Graph/Graph.tsx`
 - Create: `tests/unit/components/Graph.test.tsx`
 
 **Interfaces:**
+
 - Consumes: `GraphSeries.values: readonly (number | null)[]`
 - Produces: 欠損を軸計算から除外し、nullで分割された連続区間ごとにpolylineを描画するGraph
 
@@ -176,10 +180,12 @@ git commit -m "fix(graph): preserve gaps in line series"
 ### Task 3: KPI推移を記録値系列へ切り替える
 
 **Files:**
+
 - Modify: `src/components/KpiSection.tsx`
 - Modify: `e2e/FR-ADMIN-017-trend-table-all-kpis.spec.ts`
 
 **Interfaces:**
+
 - Consumes: `resolveRecordedKpiValue(monthValues, kpiKey)`、欠損対応済み `GraphSeries`
 - Produces: 月次は保存記録のみ、シーズン・年度は接続済みKPIのみを返す `kpiSeriesValues(...): (number | null)[]`
 
@@ -263,6 +269,7 @@ git commit -m "fix(kpi): chart recorded trend values only"
 ### Task 4: 全体検証
 
 **Files:**
+
 - Verify: `src/lib/kpi/monthly-metrics.ts`
 - Verify: `src/components/ui/Graph/Graph_types.ts`
 - Verify: `src/components/ui/Graph/Graph.tsx`
@@ -272,6 +279,7 @@ git commit -m "fix(kpi): chart recorded trend values only"
 - Verify: `e2e/FR-ADMIN-017-trend-table-all-kpis.spec.ts`
 
 **Interfaces:**
+
 - Consumes: Tasks 1〜3の実装
 - Produces: FREQ-262-AC-01、FREQ-262-AC-02を満たす検証結果
 

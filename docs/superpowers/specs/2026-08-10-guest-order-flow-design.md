@@ -144,7 +144,7 @@ export async function linkGuestOrdersByEmail(params: {
 
 配送先をクエリで渡すと、住所・電話が URL・ブラウザ履歴・Referrer に残る。2段構えにする。
 
-```
+```text
 完了画面
   └ [会員登録へ進む] → /register?email=hanako%40example.com
                           （メールのみ。氏名も住所も載せない）
@@ -171,7 +171,7 @@ export async function linkGuestOrdersByEmail(params: {
 
 `src/app/checkout/page.tsx` の注文番号表示ブロック（L1517 付近）の下にカードを1枚追加する。
 
-```
+```text
 ┌────────────────────────────────┐
 │  次回から入力不要になります      │
 │                                │

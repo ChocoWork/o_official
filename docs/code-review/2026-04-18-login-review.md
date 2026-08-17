@@ -1,8 +1,10 @@
 # Code Review: Login / Auth
+
 **Ready for Production**: No
 **Critical Issues**: 6
 
 ## Scope
+
 - src/app/login/page.tsx
 - src/components/LoginModal.tsx
 - src/contexts/LoginContext.tsx
@@ -12,10 +14,12 @@
 - related auth utilities and migrations
 
 ## Spec Basis
+
 - docs/4_DetailDesign/14_login.md
 - docs/4_DetailDesign/01_auth_seq.md
 
 ## Review Plan
+
 - Pass 1: Frontend, token exposure, XSS, error handling
 - Pass 2: API/backend, authn/authz, CSRF, rate limiting, OAuth, session management
 - Pass 3: DB/RLS, audit, secrets, account-link consistency
@@ -23,6 +27,7 @@
 ## Priority 1 (Must Fix) ⛔
 
 ### 1. Client-side token exposure breaks the HttpOnly session model
+
 - Files:
   - src/contexts/LoginContext.tsx
   - src/lib/supabase/client.ts
@@ -42,6 +47,7 @@
   - Configure the browser Supabase client with persistSession: false and detectSessionInUrl: false for this flow unless a separate hardened client strategy is approved.
 
 ### 2. OAuth implementation bypasses the server-managed state/PKCE flow defined in the design
+
 - Files:
   - src/contexts/LoginContext.tsx
   - src/app/auth/callback/page.tsx
@@ -58,6 +64,7 @@
   - Remove client-side exchangeCodeForSession from the page flow.
 
 ### 3. Sensitive auth information is logged on both client and server paths
+
 - Files:
   - src/app/auth/callback/page.tsx
   - src/lib/supabase/server.ts
@@ -71,6 +78,7 @@
   - Log only request IDs and high-level outcomes.
 
 ### 4. Password reset token is delivered and processed as a client-visible query parameter
+
 - Files:
   - src/app/api/auth/password-reset/request/route.ts
   - src/app/auth/password-reset/page.tsx
@@ -84,6 +92,7 @@
   - Avoid putting email addresses into reset URLs when not strictly required.
 
 ### 5. Refresh/session reuse detection required by the design is not actually enforced
+
 - Files:
   - src/app/api/auth/refresh/route.ts
   - src/features/auth/services/session.ts
@@ -99,6 +108,7 @@
   - On mismatch or reuse, quarantine and revoke all sessions for the user and emit an audit event.
 
 ### 6. Sensitive auth tables lack visible RLS / policy hardening in migrations
+
 - Files:
   - migrations/004_create_sessions.sql
   - migrations/005_create_rate_limit_counters.sql
@@ -116,6 +126,7 @@
 ## Important Issues
 
 ### 7. Password reset flow still depends on deprecated public.users instead of auth.users
+
 - Files:
   - src/app/api/auth/password-reset/request/route.ts
   - src/app/api/auth/password-reset/confirm/route.ts
@@ -129,6 +140,7 @@
   - Resolve the user via Supabase Auth admin APIs or auth.users-backed mechanisms only.
 
 ### 8. password_reset_tokens storage is referenced in code but not found in reviewed migrations
+
 - Files:
   - src/app/api/auth/password-reset/request/route.ts
   - src/app/api/auth/password-reset/confirm/route.ts
@@ -140,5 +152,6 @@
   - Add a migration for password_reset_tokens with expiry indexes, one-time-use enforcement, and restricted RLS/policies.
 
 ## Residual Risks
+
 - WAF/CDN settings are documented but not verifiable from this repository.
 - Supabase dashboard OTP mode and Google provider configuration remain partially operational checks outside code.

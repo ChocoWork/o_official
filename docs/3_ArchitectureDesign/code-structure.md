@@ -1,6 +1,7 @@
 # Code Structure & File-Splitting Rules
 
 ## 概要
+
 このドキュメントは、Next.js (App Router) + TypeScript プロジェクト向けのファイル分割・命名・配置ルールを定義します。
 目的は可読性・保守性・移行容易性を高め、レビューやテストを容易にすることです。
 
@@ -9,6 +10,7 @@
 ---
 
 ## 参照資料
+
 - Google Android/Front-end architecture 原則
 - Microsoft Azure Well-Architected
 - Apple Human Interface / Platform guidelines
@@ -16,6 +18,7 @@
 ---
 
 ## 設計原則（要点）
+
 1. 関心の分離 (Separation of Concerns)
 2. 単一責任と最小公開（SRP, Encapsulation）
 3. 機能単位の配置（Feature-based modules）
@@ -25,6 +28,7 @@
 ---
 
 ## Next.js 実装指針（重要）
+
 以下は Next.js (App Router) + TypeScript を前提に、EC サイト実装で特に重要な運用ルールです。
 
 - Layout / Template の使い分け
@@ -53,6 +57,7 @@
 ---
 
 ## ワークスペース現状の要約（主要パス）
+
 - ルートレイアウト: `src/app/layout.tsx`
 - グローバルスタイル: `src/app/globals.css`
 - ページ/ルート: `src/app/*.tsx` と `src/app/<route>/page.tsx` / `src/app/<route>/[id]/page.tsx`
@@ -66,6 +71,7 @@
 ---
 
 ## 実務的ルール（抜粋）
+
 1. 機能単位で配置する: `src/features/<feature>/` または `src/app/<route>/` にまとめ、関連ファイルを近接配置する。
 2. 共有 UI は `src/components/ui/`、アプリ固有は `src/components/` に配置する。
 3. ファイル命名: コンポーネントは `PascalCase.tsx`、hooks は `useXxx.ts`、サービスは `xxx.service.ts`。
@@ -82,6 +88,7 @@
 ---
 
 ## 命名規約（短記）
+
 - Component: `MyButton.tsx`
 - Hook: `useCart.ts`
 - Service: `cart.service.ts`
@@ -95,7 +102,7 @@
 
 小規模（feature 内配置）:
 
-```
+```text
 src/features/product/
   ├─ ProductCard.tsx
   ├─ product.hook.ts
@@ -106,7 +113,7 @@ src/features/product/
 
 中規模（feature フォルダ）:
 
-```
+```text
 src/features/cart/
   ├─ components/
   │   ├─ CartItem.tsx
@@ -122,6 +129,7 @@ src/features/cart/
 ---
 
 ## 移行チェックリスト（大規模リファクタ時）
+
 1. 影響の大きいルートを特定（例: checkout, cart）
 2. 小さなコンポーネントを抽出しユニットテストを追加
 3. ロジックをサービス層へ移行し、API の整合性を確認
@@ -131,12 +139,14 @@ src/features/cart/
 ---
 
 ## 例外と運用ルール
+
 - マーケティング・ランディングの長尺ページは例外を許容するが、再利用可能部分は分割すること。
 - 破壊的なデザイントークン変更は事前にデザイン担当と合意する。
 
 ---
 
 ## 運用項目（追加）
+
 以下は運用フェーズで重要な横断項目の短いガイダンスです。実務上は運用ポリシーに合わせて調整してください。
 
 - キャッシュと CDN
@@ -168,6 +178,7 @@ src/features/cart/
 ---
 
 ## copilot-instructions.md に追加する短文（推奨）
+
 プロジェクト標準のコード分割ルールは `docs/specs/code-structure.md` を参照してください。
 
 ---
