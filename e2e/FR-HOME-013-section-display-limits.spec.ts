@@ -2,8 +2,8 @@ import { test, expect, type Page } from '@playwright/test';
 
 // FREQ-147〜149: ホーム各セクションの取得件数・ブレークポイント別表示数・
 // VIEW ALL ボタンの条件表示を検証する。
-// - ITEM: 取得10件 / 表示 lg未満6・lg8・xl10
-// - LOOK: 取得8件 / 表示 xl未満6・xl8
+// - ITEM: 描画8件 / 表示 2xl未満6・2xl8（FREQ-276 でグリッド列数に合わせて変更）
+// - LOOK: 取得8件 / 表示 2xl未満6・2xl8（FREQ-277 でグリッド列数に合わせて変更）
 // - NEWS: 取得6件 / 全サイズ6件表示
 // VIEW ALL は「公開総数 > その帯域の表示数」の場合のみ表示される。
 // DOM からは総数がフェッチ上限を超えるかどうか判定できないため、
@@ -26,14 +26,14 @@ const sections: SectionSpec[] = [
   {
     sectionId: 'items',
     cardSelector: '[data-testid="item-card-link"]',
-    fetchLimit: 10,
-    displayLimits: { mobile: 6, tablet: 6, desktop: 10 },
+    fetchLimit: 8,
+    displayLimits: { mobile: 6, tablet: 6, desktop: 6 },
   },
   {
     sectionId: 'look',
     cardSelector: '[data-testid="look-card"]',
     fetchLimit: 8,
-    displayLimits: { mobile: 6, tablet: 6, desktop: 8 },
+    displayLimits: { mobile: 6, tablet: 6, desktop: 6 },
   },
   {
     sectionId: 'news',

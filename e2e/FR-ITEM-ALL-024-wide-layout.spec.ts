@@ -4,6 +4,8 @@ import { gotoItemList } from './item-list-test-utils';
 // FREQ-118: NEWS / ITEM / LOOK / STOCKIST の一覧をワイドレイアウト化する
 // （コンテナ最大幅 1680px / デスクトップの ITEM グリッド5列）。
 // レイアウトは xl 以上（デスクトップ）で有効なため、横1680pxで検証する。
+// ※ FREQ-276 で ITEM の列数を 2 / md 3 / 2xl 4 に変更したため、1680px（2xl）の
+//   期待列数は 5 → 4 になった。
 
 async function contentColumnContainerWidth(page: Page, testId: string): Promise<number> {
   const column = page.locator(`[data-testid="${testId}"]`).first();
@@ -16,7 +18,7 @@ async function contentColumnContainerWidth(page: Page, testId: string): Promise<
 }
 
 test.describe('FR-ITEM-ALL-024 一覧ページのワイドレイアウト', () => {
-  test('FREQ-118-AC-02: 横1680pxで ITEM グリッドが5列で表示される', async ({ page }) => {
+  test('FREQ-118-AC-02 / FREQ-276: 横1680pxで ITEM グリッドが4列で表示される', async ({ page }) => {
     await page.setViewportSize({ width: 1680, height: 1000 });
     await gotoItemList(page);
 
@@ -28,7 +30,7 @@ test.describe('FR-ITEM-ALL-024 一覧ページのワイドレイアウト', () =
       const cols = getComputedStyle(gridEl).gridTemplateColumns;
       return cols.split(' ').filter(Boolean).length;
     });
-    expect(columnCount).toBe(5);
+    expect(columnCount).toBe(4);
   });
 
   // FREQ-274 で ITEM / NEWS / LOOK の 1680px 上限は撤廃し、フルブリードに変更した

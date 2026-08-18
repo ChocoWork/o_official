@@ -21,14 +21,17 @@ import {
 } from "@/lib/look/public";
 import { cn } from "@/lib/utils";
 
-// FREQ-148: ホームは常に 8 件分を描画し、xl 未満 6 件 / xl 8 件を CSS で出し分ける
+// FREQ-148 / FREQ-277: ホームは常に 8 件分を描画し、2xl 未満 6 件 / 2xl 8 件を CSS で出し分ける
 const HOME_LOOK_RENDER_COUNT = 8;
 // ホーム LOOK セクションと /look 一覧で共通のグリッド定義（FREQ-141）。
 // FREQ-140: lg 未満は画像下に情報パネルが付くため、行間（row-gap）を
 // カード内最大余白（画像↔パネル 13px/21px）の φ² 倍（34px/55px・フィボナッチ）
 // に広げてカード同士を明確に分離する（近接）。lg 以上は従来どおり縦横同値（FREQ-137）。
+// FREQ-277: 列数は ITEM グリッド（ITEM_GRID_CLASS）と同じ 2 / md 3 / 2xl 4 に揃える。
+// 一覧ページは lg でフィルターのサイドバー（233px）が現れ、xl でさらに 288px に広がる。
+// その帯域で列を増やすとカード幅が大きく落ちるため、列の増加は 2xl だけにする。
 const DEFAULT_LOOK_GRID_CLASS =
-  "grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 gap-y-[34px] sm:gap-6 sm:gap-y-[55px] lg:gap-4 xl:gap-6";
+  "grid grid-cols-2 md:grid-cols-3 2xl:grid-cols-4 gap-4 gap-y-[34px] sm:gap-6 sm:gap-y-[55px] lg:gap-4 xl:gap-6";
 const LOOK_SEASON_FILTER_OPTIONS = LOOK_SEASON_OPTIONS.map((season) => ({
   value: season,
   label: season,
@@ -85,7 +88,7 @@ function LookCard({ look, className }: LookCardProps) {
             src={look.imageUrls[0] || "/placeholder.png"}
             alt={look.theme}
             fill
-            sizes="(min-width: 1024px) 33vw, 50vw"
+            sizes="(min-width: 1536px) 25vw, (min-width: 768px) 33vw, 50vw"
             className="h-full w-full object-cover object-top"
           />
           {/* ホバー時: 2枚目の画像があればクロスフェードで表示（ズームはしない） */}
@@ -94,7 +97,7 @@ function LookCard({ look, className }: LookCardProps) {
               src={look.imageUrls[1]}
               alt={look.theme}
               fill
-              sizes="(min-width: 1024px) 33vw, 50vw"
+              sizes="(min-width: 1536px) 25vw, (min-width: 768px) 33vw, 50vw"
               data-testid="look-card-image-hover"
               className="h-full w-full object-cover object-top opacity-0 transition-opacity duration-500 group-hover:opacity-100"
             />
@@ -507,13 +510,13 @@ export function PublicLookGrid(props: PublicLookGridProps) {
   if (variant === "home") {
     const resolvedLooks = looks.slice(0, HOME_LOOK_RENDER_COUNT);
 
-    // FREQ-148: 各ブレークポイントの表示数（xl 未満 6 / xl 8）より
+    // FREQ-148 / FREQ-277: 各ブレークポイントの表示数（2xl 未満 6 / 2xl 8）より
     // 公開 LOOK の総数が多い場合のみ、その帯域で VIEW ALL を表示する
     const viewAllVisibilityClass =
       typeof props.totalCount === "number"
         ? cn(
             props.totalCount > 6 ? "flex" : "hidden",
-            props.totalCount > 8 ? "xl:flex" : "xl:hidden",
+            props.totalCount > 8 ? "2xl:flex" : "2xl:hidden",
           )
         : undefined;
 
@@ -529,7 +532,7 @@ export function PublicLookGrid(props: PublicLookGridProps) {
               looks={resolvedLooks}
               className={className}
               cardClassName={(index) =>
-                index >= 6 ? "hidden xl:block" : undefined
+                index >= 6 ? "hidden 2xl:block" : undefined
               }
             />
           )}

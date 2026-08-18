@@ -55,6 +55,14 @@ const FILTER_SECTIONS_SPACING_CLASS = "filter-sections";
 // 検索・フィルタ入力の自動適用は 300ms 前後が一般的なベストプラクティス
 // （ユーザーが操作を止めたと判断できる最小待機。連続操作中の過剰なリクエストを防ぐ）。
 const FILTER_APPLY_DEBOUNCE_MS = 300;
+// FREQ-276: ホーム ITEM セクションと /item 一覧で共通のグリッド定義。
+// 2 列（md 未満）/ 3 列（md〜2xl 未満）/ 4 列（2xl 以上）。
+// 一覧ページは lg でフィルターのサイドバー（233px）が現れてコンテンツ幅が縮むため、
+// 同じ lg で 3→4 列に増やすと 1px またぐだけでカード幅が約 327px→185px まで落ちる。
+// lg / xl は 3 列のまま据え置き、列の増加はサイドバー幅が確定した 2xl だけにして、
+// 最小カード幅を約 245px に保つ。
+const ITEM_GRID_CLASS =
+  "grid grid-cols-2 md:grid-cols-3 2xl:grid-cols-4 gap-x-0.5 sm:gap-x-0.75 lg:gap-x-1 gap-y-4 sm:gap-y-5 md:gap-y-6 lg:gap-y-7";
 
 type ItemCategory = (typeof ITEM_CATEGORIES)[number];
 type ItemSort = (typeof SORT_OPTIONS)[number]["value"];
@@ -221,7 +229,9 @@ export function PublicItemGrid(props: PublicItemGridProps) {
 
   const isSelfFetch =
     variant === "home" ? typeof props.items === "undefined" : false;
-  const fetchLimit = variant === "home" ? (props.fetchLimit ?? 10) : undefined;
+  // FREQ-276: ホームは 2xl の 4 列 x 2 行 = 8 件が上限のため、描画対象も 8 件に揃える
+  // （9 件目以降はどの帯域でも表示されず、画像を無駄に読み込むだけになる）。
+  const fetchLimit = variant === "home" ? (props.fetchLimit ?? 8) : undefined;
   const overFetchLimit =
     typeof fetchLimit === "number" ? fetchLimit + 1 : undefined;
   const {
@@ -805,23 +815,21 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     return () => observer.disconnect();
   }, [variant, hasMore, isFetchingMore, nextPage, props, searchParams]);
 
-  // FREQ-147: ホームは lg 未満 6 件 / lg 8 件 / xl 10 件を表示
-  // （DB からは常に 10 件取得し、CSS で出し分ける）
+  // FREQ-147 / FREQ-276: ホームは 2xl 未満 6 件 / 2xl 8 件を表示（CSS で出し分ける）。
+  // 表示数は ITEM_GRID_CLASS の列数（2/3 列 → 6 件、4 列 → 8 件）と揃え、
+  // どの帯域でも最終行が埋まるようにする。
   const homeCardVisibilityClass = (index: number): string | undefined => {
     if (variant !== "home") {
       return undefined;
     }
-    if (index >= 8) {
-      return "hidden xl:block";
-    }
     if (index >= 6) {
-      return "hidden lg:block";
+      return "hidden 2xl:block";
     }
     return undefined;
   };
 
   const renderGrid = () => (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-0.5 sm:gap-x-0.75 lg:gap-x-1 gap-y-4 sm:gap-y-5 md:gap-y-6 lg:gap-y-7">
+    <div className={ITEM_GRID_CLASS}>
       {displayItems.map((item, index) => {
         // ホーム / 一覧で共通のカード。カラースウォッチ（色）を表示する。
         const soldOut = !isItemInStock(item);
@@ -1278,7 +1286,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
 
   // I-6: 追加読み込みのスケルトン（NEWS と統一）
   const renderSkeletonCards = (count = 4) => (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-0.5 sm:gap-x-0.75 lg:gap-x-1 gap-y-4 sm:gap-y-5 md:gap-y-6 lg:gap-y-7 mt-2">
+    <div className={cn(ITEM_GRID_CLASS, "mt-2")}>
       {Array.from({ length: count }).map((_, i) => (
         <div key={i} className="animate-pulse">
           <div className="aspect-3/4 bg-black/8 mb-2" />
@@ -1300,14 +1308,13 @@ export function PublicItemGrid(props: PublicItemGridProps) {
       );
     }
 
-    // FREQ-147: 各ブレークポイントの表示数（lg 未満 6 / lg 8 / xl 10）より
+    // FREQ-147 / FREQ-276: 各ブレークポイントの表示数（2xl 未満 6 / 2xl 8）より
     // 公開 ITEM の総数が多い場合のみ、その帯域で VIEW ALL を表示する
     const viewAllVisibilityClass =
       typeof props.totalCount === "number"
         ? cn(
             props.totalCount > 6 ? "flex" : "hidden",
-            props.totalCount > 8 ? "lg:flex" : "lg:hidden",
-            props.totalCount > 10 ? "xl:flex" : "xl:hidden",
+            props.totalCount > 8 ? "2xl:flex" : "2xl:hidden",
           )
         : undefined;
 

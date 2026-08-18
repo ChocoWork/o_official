@@ -33,13 +33,15 @@ test.describe('FR-LOOK-ALL-033 オーバーレイ関連 ITEM の下線アニメ�
 
       const card = page
         .locator(
-          `${target.scope} a[href^="/look/"]:has([data-testid="look-card-overlay-items"])`,
+          // FREQ-277: ホームは 2xl 未満で 7 件目以降を非表示にするため、
+          // 表示中のカードだけを対象にする（非表示カードはホバーできない）。
+          `${target.scope} a[href^="/look/"]:has([data-testid="look-card-overlay-items"]):visible`,
         )
         .first();
       await expect(
         card,
         `${target.label} に関連アイテム付きカードが見つかりませんでした`,
-      ).toBeAttached();
+      ).toBeVisible();
 
       const itemRow = card
         .locator('[data-testid="look-card-overlay-item"]')
@@ -77,13 +79,15 @@ test.describe('FR-LOOK-ALL-033 オーバーレイ関連 ITEM の下線アニメ�
 
       const card = page
         .locator(
-          `${target.scope} a[href^="/look/"]:has([data-testid="look-card-overlay-items"])`,
+          // FREQ-277: ホームは 2xl 未満で 7 件目以降を非表示にするため、
+          // 表示中のカードだけを対象にする（非表示カードはホバーできない）。
+          `${target.scope} a[href^="/look/"]:has([data-testid="look-card-overlay-items"]):visible`,
         )
         .first();
       await expect(
         card,
         `${target.label} に関連アイテム付きカードが見つかりませんでした`,
-      ).toBeAttached();
+      ).toBeVisible();
 
       await card.hover();
       const itemRow = card
