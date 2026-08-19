@@ -1,17 +1,22 @@
-'use client';
+"use client";
 
 // 同カテゴリの関連商品を最大4件取得して表示するコンポーネント
-import { useEffect, useState } from 'react';
-import Image from 'next/image';
-import Link from 'next/link';
-import { Item } from '@/types/item';
+import { useEffect, useState } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import { Item } from "@/types/item";
 
 type Props = {
   currentItemId: number;
   category: string;
 };
 
-const ITEM_CATEGORIES = new Set(['TOPS', 'BOTTOMS', 'OUTERWEAR', 'ACCESSORIES']);
+const ITEM_CATEGORIES = new Set([
+  "TOPS",
+  "BOTTOMS",
+  "OUTERWEAR",
+  "ACCESSORIES",
+]);
 
 function normalizeAllowedCategory(value: string): string | null {
   const normalized = value.trim().toUpperCase();
@@ -26,15 +31,17 @@ export function RelatedItems({ currentItemId, category }: Props) {
     const fetchRelated = async () => {
       try {
         const safeCategory = normalizeAllowedCategory(category);
-        const query = new URLSearchParams({ pageSize: '5' });
+        const query = new URLSearchParams({ pageSize: "5" });
         if (safeCategory) {
-          query.set('category', safeCategory);
+          query.set("category", safeCategory);
         }
 
         const res = await fetch(`/api/items?${query.toString()}`);
         if (!res.ok) return;
-        const payload = await res.json() as { items?: Item[] } | Item[];
-        const allItems: Item[] = Array.isArray(payload) ? payload : (payload.items ?? []);
+        const payload = (await res.json()) as { items?: Item[] } | Item[];
+        const allItems: Item[] = Array.isArray(payload)
+          ? payload
+          : (payload.items ?? []);
         // 現在の商品を除いて最大4件
         setItems(allItems.filter((i) => i.id !== currentItemId).slice(0, 4));
       } catch {
@@ -58,11 +65,14 @@ export function RelatedItems({ currentItemId, category }: Props) {
       <h2
         id="related-items-heading"
         className="mb-8 tracking-[0.15em]"
-        style={{ fontFamily: "acumin-pro, sans-serif", fontSize: "var(--lk-size-xs)" }}
+        style={{
+          fontFamily: "acumin-pro, sans-serif",
+          fontSize: "var(--lk-size-xs)",
+        }}
       >
         YOU MAY ALSO LIKE
       </h2>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-[21px] lg:gap-[34px]">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-5.25 lg:gap-8.5">
         {items.map((item) => (
           <Link
             key={item.id}
@@ -70,13 +80,13 @@ export function RelatedItems({ currentItemId, category }: Props) {
             data-testid="item-card"
             className="group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2"
           >
-            <div className="relative aspect-[3/4] bg-[#f5f5f5] overflow-hidden mb-[8px]">
+            <div className="relative aspect-3/4 bg-[#f5f5f5] overflow-hidden mb-2">
               {item.image_url ? (
                 <Image
                   src={item.image_url}
                   alt={`${item.name} - ${item.category}`}
                   fill
-                  className="object-cover object-top transition-transform duration-500 group-hover:scale-105"
+                  className="object-cover object-top"
                   sizes="(max-width: 640px) 50vw, 25vw"
                 />
               ) : (
@@ -91,8 +101,11 @@ export function RelatedItems({ currentItemId, category }: Props) {
             >
               {item.name}
             </p>
-            <p className="text-black" style={{ fontSize: "var(--lk-size-3xs)" }}>
-              ¥{item.price.toLocaleString('ja-JP')}
+            <p
+              className="text-black"
+              style={{ fontSize: "var(--lk-size-3xs)" }}
+            >
+              ¥{item.price.toLocaleString("ja-JP")}
             </p>
           </Link>
         ))}

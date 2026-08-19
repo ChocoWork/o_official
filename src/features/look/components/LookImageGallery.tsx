@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { useMemo, useRef, useState } from 'react';
-import Image from 'next/image';
+import { useMemo, useRef, useState } from "react";
+import Image from "next/image";
 
 type LookImageGalleryProps = {
   theme: string;
@@ -14,7 +14,7 @@ type LookImageGalleryProps = {
 export function LookImageGallery({ theme, imageUrls }: LookImageGalleryProps) {
   const normalizedImages = useMemo(() => {
     if (imageUrls.length === 0) {
-      return ['/placeholder.png'];
+      return ["/placeholder.png"];
     }
 
     return imageUrls;
@@ -33,7 +33,7 @@ export function LookImageGallery({ theme, imageUrls }: LookImageGalleryProps) {
     const gap = parseFloat(getComputedStyle(el).columnGap) || 0;
     el.scrollTo({
       left: index * (firstSlide.offsetWidth + gap),
-      behavior: 'smooth',
+      behavior: "smooth",
     });
   };
 
@@ -49,8 +49,8 @@ export function LookImageGallery({ theme, imageUrls }: LookImageGalleryProps) {
   };
 
   const hiddenScrollbarStyle = {
-    scrollbarWidth: 'none',
-    msOverflowStyle: 'none',
+    scrollbarWidth: "none",
+    msOverflowStyle: "none",
   } as React.CSSProperties;
 
   return (
@@ -68,7 +68,7 @@ export function LookImageGallery({ theme, imageUrls }: LookImageGalleryProps) {
             <div
               key={`${theme}:carousel:${index}:${imageUrl}`}
               data-testid="look-detail-carousel-slide"
-              className="relative aspect-[2/3] w-[calc(100vw-2.5rem)] flex-shrink-0 snap-start overflow-hidden bg-white"
+              className="relative aspect-[2/3] w-[calc(100vw-2.5rem)] shrink-0 snap-start overflow-hidden bg-white"
             >
               <Image
                 src={imageUrl}
@@ -98,7 +98,7 @@ export function LookImageGallery({ theme, imageUrls }: LookImageGalleryProps) {
             <div
               key={`${theme}:tablet:${index}:${imageUrl}`}
               data-testid="look-detail-tablet-carousel-slide"
-              className="relative aspect-[2/3] w-full flex-shrink-0 snap-start overflow-hidden bg-white"
+              className="relative aspect-[2/3] w-full shrink-0 snap-start overflow-hidden bg-white"
             >
               <Image
                 src={imageUrl}
@@ -151,10 +151,10 @@ export function LookImageGallery({ theme, imageUrls }: LookImageGalleryProps) {
                 aria-label={`${theme} の ${index + 1}枚目を表示`}
                 aria-pressed={selectedIndex === index}
                 onClick={() => setSelectedIndex(index)}
-                className={`relative aspect-[2/3] w-16 flex-shrink-0 overflow-hidden cursor-pointer focus-visible:outline-none transition-opacity duration-200 ${
+                className={`relative aspect-[2/3] w-16 shrink-0 overflow-hidden cursor-pointer focus-visible:outline-none transition-opacity duration-200 ${
                   selectedIndex === index
-                    ? 'ring-1 ring-black opacity-100'
-                    : 'opacity-50 hover:opacity-90'
+                    ? "ring-1 ring-black opacity-100"
+                    : "opacity-50 hover:opacity-90"
                 }`}
               >
                 <Image

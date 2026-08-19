@@ -206,7 +206,7 @@ export function ItemCardImageCarousel({
             <div
               key={`${index}:${imageUrl}`}
               data-testid="item-card-carousel-slide"
-              className="relative h-full w-full flex-shrink-0 snap-start"
+              className="relative h-full w-full shrink-0 snap-start"
             >
               <Image
                 src={imageUrl}

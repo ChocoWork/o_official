@@ -26,7 +26,7 @@ export function ItemCardMedia({
   const frameClass = "relative aspect-[3/4] bg-[#f5f5f5] overflow-hidden";
   const soldOutBadge = soldOut ? (
     <span
-      className="absolute top-0 left-0 bg-black text-white px-[8px] py-[3px] tracking-widest"
+      className="absolute top-0 left-0 bg-black text-white px-2 py-0.75 tracking-widest"
       style={{ fontSize: "var(--lk-size-4xs)" }}
     >
       SOLD OUT
@@ -35,7 +35,7 @@ export function ItemCardMedia({
 
   if (imageUrls && imageUrls.length > 1) {
     return (
-      <div className="mb-[2px] sm:mb-[6px] md:mb-[8px]">
+      <div className="mb-0.5 sm:mb-1.5 md:mb-2">
         <ItemCardImageCarousel
           imageUrls={imageUrls}
           alt={alt}
@@ -53,14 +53,14 @@ export function ItemCardMedia({
   }
 
   return (
-    <div className={`${frameClass} mb-[2px] sm:mb-[6px] md:mb-[8px]`}>
+    <div className={`${frameClass} mb-0.5 sm:mb-1.5 md:mb-2`}>
       {imageUrl ? (
         <Image
           src={imageUrl}
           alt={alt}
           width={600}
           height={800}
-          className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500"
+          className="w-full h-full object-cover object-top"
           priority={priority}
           data-testid="item-image"
         />
@@ -94,7 +94,7 @@ export function ItemCardInfo({
   return (
     // YOKE 参考: 商品名とカラースウォッチを同一行に横並び（縦中央そろえ）。
     // 価格・SEASON は下段。左右に同量の余白（px）。
-    <div data-testid="item-info" className="px-[8px]">
+    <div data-testid="item-info" className="px-2">
       <div className="flex items-center justify-between gap-2">
         <h3
           className="font-brand tracking-tight min-w-0"
@@ -107,14 +107,14 @@ export function ItemCardInfo({
         </h3>
         {swatches.length > 0 ? (
           <div
-            className="flex flex-shrink-0 items-center gap-[4px]"
+            className="flex shrink-0 items-center gap-1"
             aria-label={`カラー ${swatches.length}色`}
           >
             {swatches.slice(0, 4).map((swatch) => (
               <span
                 key={swatch.name}
                 title={swatch.name}
-                className="inline-block h-[10px] w-[10px] rounded-full border border-black/15"
+                className="inline-block h-2.5 w-2.5 rounded-full border border-black/15"
                 style={{ backgroundColor: swatch.hex ?? "transparent" }}
               />
             ))}
@@ -129,7 +129,7 @@ export function ItemCardInfo({
           </div>
         ) : null}
       </div>
-      <div className="flex min-w-0 items-baseline gap-[6px]">
+      <div className="flex min-w-0 items-baseline gap-1.5">
         <p
           data-testid="item-price"
           className="text-black"
@@ -139,7 +139,7 @@ export function ItemCardInfo({
         </p>
         {season ? (
           <span
-            className="flex-shrink-0 font-brand tracking-widest text-[#999]"
+            className="shrink-0 font-brand tracking-widest text-[#999]"
             style={{ fontSize: "var(--lk-size-4xs)" }}
           >
             {season}

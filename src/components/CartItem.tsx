@@ -26,7 +26,7 @@ export const CartItem: React.FC<CartItemProps> = ({
     <div className="bg-white p-6 border-t border-b border-l-0 border-r-0 border-gray-200 rounded-none transition-shadow duration-200">
       <div className="flex flex-col sm:flex-row gap-6">
         {/* 商品画像 */}
-        <div className="flex-shrink-0">
+        <div className="shrink-0">
           <Image
             src={item.image}
             alt={item.name}

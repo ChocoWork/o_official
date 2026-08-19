@@ -1,22 +1,32 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import FadeIn from '@/components/animations/FadeIn';
-import StaggerChildren from '@/components/animations/StaggerChildren';
-import PageTransition from '@/components/animations/PageTransition';
-import HoverScale from '@/components/animations/HoverScale';
-import MagneticButton from '@/components/animations/MagneticButton';
-import TextReveal from '@/components/animations/TextReveal';
-import AnimatedCounter from '@/components/animations/AnimatedCounter';
-import CodeBlock from './CodeBlock';
+import { useState } from "react";
+import FadeIn from "@/components/animations/FadeIn";
+import StaggerChildren from "@/components/animations/StaggerChildren";
+import PageTransition from "@/components/animations/PageTransition";
+import HoverScale from "@/components/animations/HoverScale";
+import MagneticButton from "@/components/animations/MagneticButton";
+import TextReveal from "@/components/animations/TextReveal";
+import AnimatedCounter from "@/components/animations/AnimatedCounter";
+import CodeBlock from "./CodeBlock";
 
 const animationComponents = [
   {
-    name: 'FadeIn',
-    description: '要素がスクロールでふわっと表示。directionで上下左右からの方向を指定。',
+    name: "FadeIn",
+    description:
+      "要素がスクロールでふわっと表示。directionで上下左右からの方向を指定。",
     demo: (
-      <FadeIn delay={0} duration={600} direction="up" distance={20} once={false}>
-        <div className="px-[21px] py-[13px] bg-black text-white text-[11px] tracking-widest" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+      <FadeIn
+        delay={0}
+        duration={600}
+        direction="up"
+        distance={20}
+        once={false}
+      >
+        <div
+          className="px-[21px] py-[13px] bg-black text-white text-[11px] tracking-widest"
+          style={{ fontFamily: "acumin-pro, sans-serif" }}
+        >
           FADE IN
         </div>
       </FadeIn>
@@ -33,10 +43,18 @@ const animationComponents = [
 </FadeIn>`,
   },
   {
-    name: 'StaggerChildren',
-    description: '子要素を順番にアニメーション表示。カードリストやメニューに最適。',
+    name: "StaggerChildren",
+    description:
+      "子要素を順番にアニメーション表示。カードリストやメニューに最適。",
     demo: (
-      <StaggerChildren staggerDelay={100} baseDelay={0} duration={400} direction="up" distance={15} once={false}>
+      <StaggerChildren
+        staggerDelay={100}
+        baseDelay={0}
+        duration={400}
+        direction="up"
+        distance={15}
+        once={false}
+      >
         <div className="flex gap-[5px]">
           <div className="w-[8px] h-[8px] bg-black rounded-full"></div>
           <div className="w-[8px] h-[8px] bg-black rounded-full"></div>
@@ -59,11 +77,15 @@ const animationComponents = [
 </StaggerChildren>`,
   },
   {
-    name: 'PageTransition',
-    description: 'ページ遷移時に全体をフェードイン。layout.tsxや各page.tsxでラップする。',
+    name: "PageTransition",
+    description:
+      "ページ遷移時に全体をフェードイン。layout.tsxや各page.tsxでラップする。",
     demo: (
       <PageTransition duration={500}>
-        <div className="px-[21px] py-[13px] border border-black text-[11px] tracking-widest" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+        <div
+          className="px-[21px] py-[13px] border border-black text-[11px] tracking-widest"
+          style={{ fontFamily: "acumin-pro, sans-serif" }}
+        >
           PAGE TRANSITION
         </div>
       </PageTransition>
@@ -75,11 +97,14 @@ const animationComponents = [
 </PageTransition>`,
   },
   {
-    name: 'HoverScale',
-    description: 'ホバーでスケールアップ。商品画像やカードに。',
+    name: "HoverScale",
+    description: "ホバーでスケールアップ。商品画像やカードに。",
     demo: (
       <HoverScale scale={1.05} duration={300}>
-        <div className="px-[21px] py-[13px] bg-black text-white text-[11px] tracking-widest" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+        <div
+          className="px-[21px] py-[13px] bg-black text-white text-[11px] tracking-widest"
+          style={{ fontFamily: "acumin-pro, sans-serif" }}
+        >
           HOVER ME
         </div>
       </HoverScale>
@@ -91,11 +116,14 @@ const animationComponents = [
 </HoverScale>`,
   },
   {
-    name: 'MagneticButton',
-    description: 'マウスに引き付けられるボタン。CTAボタンに使用。',
+    name: "MagneticButton",
+    description: "マウスに引き付けられるボタン。CTAボタンに使用。",
     demo: (
       <MagneticButton strength={0.3}>
-        <div className="px-[21px] py-[13px] bg-black text-white text-[11px] tracking-widest" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+        <div
+          className="px-[21px] py-[13px] bg-black text-white text-[11px] tracking-widest"
+          style={{ fontFamily: "acumin-pro, sans-serif" }}
+        >
           MAGNETIC
         </div>
       </MagneticButton>
@@ -107,10 +135,16 @@ const animationComponents = [
 </MagneticButton>`,
   },
   {
-    name: 'TextReveal',
-    description: '文字が1文字ずつ表示される。見出しやブランド名に。',
+    name: "TextReveal",
+    description: "文字が1文字ずつ表示される。見出しやブランド名に。",
     demo: (
-      <TextReveal text="Le Fil" className="text-[16px] text-black" stagger={50} delay={0} once={false} />
+      <TextReveal
+        text="Le Fil"
+        className="text-[16px] text-black"
+        stagger={50}
+        delay={0}
+        once={false}
+      />
     ),
     code: `import TextReveal from '@/components/animations/TextReveal';
 
@@ -122,11 +156,17 @@ const animationComponents = [
 />`,
   },
   {
-    name: 'AnimatedCounter',
-    description: '数字がスクロールでカウントアップ。KPIや統計表示に。',
+    name: "AnimatedCounter",
+    description: "数字がスクロールでカウントアップ。KPIや統計表示に。",
     demo: (
       <div className="px-[21px] py-[13px] border border-black">
-        <AnimatedCounter target={2026} prefix="" suffix="" duration={1500} className="text-[16px] text-black" />
+        <AnimatedCounter
+          target={2026}
+          prefix=""
+          suffix=""
+          duration={1500}
+          className="text-[16px] text-black"
+        />
       </div>
     ),
     code: `import AnimatedCounter from '@/components/animations/AnimatedCounter';
@@ -152,13 +192,22 @@ export default function AnimationShowcase() {
   return (
     <div className="space-y-[34px]">
       {animationComponents.map((comp) => (
-        <div key={comp.name} className="border border-black/10 p-[21px] sm:p-[26px] md:p-[34px]">
+        <div
+          key={comp.name}
+          className="border border-black/10 p-[21px] sm:p-[26px] md:p-[34px]"
+        >
           <div className="flex flex-col sm:flex-row sm:items-start gap-[13px] sm:gap-[21px] md:gap-[34px]">
-            <div className="flex-shrink-0 w-full sm:w-[200px] md:w-[233px]">
-              <p className="text-[13px] sm:text-[14px] text-black mb-[5px] sm:mb-[8px]" style={{ fontFamily: 'Didot, serif' }}>
+            <div className="shrink-0 w-full sm:w-[200px] md:w-[233px]">
+              <p
+                className="text-[13px] sm:text-[14px] text-black mb-[5px] sm:mb-[8px]"
+                style={{ fontFamily: "Didot, serif" }}
+              >
                 {comp.name}
               </p>
-              <p className="text-[10px] sm:text-[11px] text-black/50 leading-[1.7]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+              <p
+                className="text-[10px] sm:text-[11px] text-black/50 leading-[1.7]"
+                style={{ fontFamily: "acumin-pro, sans-serif" }}
+              >
                 {comp.description}
               </p>
             </div>
@@ -170,7 +219,7 @@ export default function AnimationShowcase() {
                 <button
                   onClick={() => replay(comp.name)}
                   className="mt-[13px] flex items-center gap-[5px] text-[10px] text-black/30 tracking-[0.15em] hover:text-black/60 transition-colors cursor-pointer"
-                  style={{ fontFamily: 'acumin-pro, sans-serif' }}
+                  style={{ fontFamily: "acumin-pro, sans-serif" }}
                   aria-label={`${comp.name} のアニメーションを再生`}
                 >
                   <i className="ri-restart-line w-3 h-3 flex items-center justify-center"></i>

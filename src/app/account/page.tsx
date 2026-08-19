@@ -1249,7 +1249,7 @@ function AccountPageContent() {
             type="button"
             onClick={() => setProfileMessage(null)}
             aria-label="通知を閉じる"
-            className="flex-shrink-0 opacity-70 hover:opacity-100 transition-opacity"
+            className="shrink-0 opacity-70 hover:opacity-100 transition-opacity"
           >
             <i className="ri-close-line" aria-hidden="true" />
           </button>
@@ -1266,7 +1266,7 @@ function AccountPageContent() {
             type="button"
             onClick={() => setProfileError(null)}
             aria-label="通知を閉じる"
-            className="flex-shrink-0 opacity-70 hover:opacity-100 transition-opacity"
+            className="shrink-0 opacity-70 hover:opacity-100 transition-opacity"
           >
             <i className="ri-close-line" aria-hidden="true" />
           </button>

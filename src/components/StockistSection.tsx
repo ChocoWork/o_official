@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { clientFetch } from '@/lib/client-fetch';
-import { Button } from '@/components/ui/Button/Button';
-import { Card } from '@/components/ui/Card/Card';
-import { StatusBadge } from '@/components/ui/StatusBadge/StatusBadge';
+import { useEffect, useState } from "react";
+import { clientFetch } from "@/lib/client-fetch";
+import { Button } from "@/components/ui/Button/Button";
+import { Card } from "@/components/ui/Card/Card";
+import { StatusBadge } from "@/components/ui/StatusBadge/StatusBadge";
 
 type AdminStockist = {
   id: number;
@@ -13,7 +13,7 @@ type AdminStockist = {
   phone: string;
   time: string;
   holiday: string;
-  status: 'private' | 'published';
+  status: "private" | "published";
 };
 
 export default function StockistSection() {
@@ -22,15 +22,15 @@ export default function StockistSection() {
 
   const fetchStockists = async () => {
     try {
-      const res = await clientFetch('/api/admin/stockists');
+      const res = await clientFetch("/api/admin/stockists");
       if (!res.ok) {
-        throw new Error('Failed to fetch stockists');
+        throw new Error("Failed to fetch stockists");
       }
 
       const json = await res.json();
       setStockists((json.data ?? []) as AdminStockist[]);
     } catch (error) {
-      console.error('Failed to load stockists:', error);
+      console.error("Failed to load stockists:", error);
     } finally {
       setLoading(false);
     }
@@ -40,45 +40,48 @@ export default function StockistSection() {
     void fetchStockists();
   }, []);
 
-  const handleToggleStatus = async (id: number, currentStatus: 'private' | 'published') => {
-    const nextStatus = currentStatus === 'published' ? 'private' : 'published';
+  const handleToggleStatus = async (
+    id: number,
+    currentStatus: "private" | "published",
+  ) => {
+    const nextStatus = currentStatus === "published" ? "private" : "published";
 
     try {
       const res = await clientFetch(`/api/admin/stockists/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: nextStatus }),
       });
 
       if (!res.ok) {
-        throw new Error('Failed to update status');
+        throw new Error("Failed to update status");
       }
 
       await fetchStockists();
     } catch (error) {
-      console.error('Failed to toggle stockist status:', error);
-      alert('ステータスの更新に失敗しました');
+      console.error("Failed to toggle stockist status:", error);
+      alert("ステータスの更新に失敗しました");
     }
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm('このSTOCKISTを削除してもよろしいですか？')) {
+    if (!confirm("このSTOCKISTを削除してもよろしいですか？")) {
       return;
     }
 
     try {
       const res = await clientFetch(`/api/admin/stockists/${id}`, {
-        method: 'DELETE',
+        method: "DELETE",
       });
 
       if (!res.ok) {
-        throw new Error('Failed to delete stockist');
+        throw new Error("Failed to delete stockist");
       }
 
       await fetchStockists();
     } catch (error) {
-      console.error('Failed to delete stockist:', error);
-      alert('STOCKISTの削除に失敗しました');
+      console.error("Failed to delete stockist:", error);
+      alert("STOCKISTの削除に失敗しました");
     }
   };
 
@@ -87,7 +90,11 @@ export default function StockistSection() {
   }
 
   if (stockists.length === 0) {
-    return <div className="py-12 text-center text-[#474747] font-acumin">STOCKISTがありません</div>;
+    return (
+      <div className="py-12 text-center text-[#474747] font-acumin">
+        STOCKISTがありません
+      </div>
+    );
   }
 
   return (
@@ -96,14 +103,18 @@ export default function StockistSection() {
         {stockists.map((stockist) => (
           <Card
             key={stockist.id}
-            className={`border-black/10 p-5 sm:p-6 xl:p-7 hover:border-black transition-colors duration-300 ${stockist.status === 'published' ? 'bg-[#f7fff1]' : 'bg-[#fafafa]'}`}
+            className={`border-black/10 p-5 sm:p-6 xl:p-7 hover:border-black transition-colors duration-300 ${stockist.status === "published" ? "bg-[#f7fff1]" : "bg-[#fafafa]"}`}
             size="sm"
           >
             {/* Identity: name + StatusBadge */}
             <div className="mb-3 sm:mb-4 xl:mb-5 flex items-start justify-between gap-3">
               <h3 className="leading-snug">{stockist.name}</h3>
-              <StatusBadge tone={stockist.status === 'published' ? 'positive' : 'warning'} size="md" className="flex-shrink-0">
-                {stockist.status === 'published' ? '公開中' : '非公開'}
+              <StatusBadge
+                tone={stockist.status === "published" ? "positive" : "warning"}
+                size="md"
+                className="shrink-0"
+              >
+                {stockist.status === "published" ? "公開中" : "非公開"}
               </StatusBadge>
             </div>
             {/* Divider */}
@@ -111,50 +122,60 @@ export default function StockistSection() {
             {/* Detail rows */}
             <div className="flex flex-col gap-1.5 sm:gap-2 xl:gap-2.5">
               <div className="flex items-start gap-2">
-                <i className="ri-map-pin-line text-xs sm:text-sm text-black flex-shrink-0 mt-[3px]" />
-                <p className="text-xs sm:text-sm text-[#474747] leading-relaxed">{stockist.address}</p>
+                <i className="ri-map-pin-line text-xs sm:text-sm text-black shrink-0 mt-[3px]" />
+                <p className="text-xs sm:text-sm text-[#474747] leading-relaxed">
+                  {stockist.address}
+                </p>
               </div>
               <div className="flex items-center gap-2">
-                <i className="ri-phone-line text-xs sm:text-sm text-black flex-shrink-0" />
-                <p className="text-xs sm:text-sm text-[#474747]">{stockist.phone}</p>
+                <i className="ri-phone-line text-xs sm:text-sm text-black shrink-0" />
+                <p className="text-xs sm:text-sm text-[#474747]">
+                  {stockist.phone}
+                </p>
               </div>
               <div className="flex items-center gap-2">
-                <i className="ri-time-line text-xs sm:text-sm text-black flex-shrink-0" />
-                <p className="text-xs sm:text-sm text-[#474747]">{stockist.time}</p>
+                <i className="ri-time-line text-xs sm:text-sm text-black shrink-0" />
+                <p className="text-xs sm:text-sm text-[#474747]">
+                  {stockist.time}
+                </p>
               </div>
               <div className="flex items-center gap-2">
-                <i className="ri-calendar-line text-xs sm:text-sm text-black flex-shrink-0" />
-                <p className="text-xs sm:text-sm text-[#474747]">{stockist.holiday}</p>
+                <i className="ri-calendar-line text-xs sm:text-sm text-black shrink-0" />
+                <p className="text-xs sm:text-sm text-[#474747]">
+                  {stockist.holiday}
+                </p>
               </div>
             </div>
 
             <div className="mt-8 border-t border-black/10 pt-4">
               <div className="flex space-x-2">
-              <Button
-                onClick={() => handleToggleStatus(stockist.id, stockist.status)}
-                variant="secondary"
-                size="sm"
-                className="flex-1 font-acumin"
-              >
-                {stockist.status === 'published' ? '非公開' : '公開'}
-              </Button>
-              <Button
-                href={`/admin/stockist/edit/${stockist.id}`}
-                variant="secondary"
-                size="sm"
-                className="flex-1 font-acumin"
-              >
-                編集
-              </Button>
-              <Button
-                onClick={() => handleDelete(stockist.id)}
-                variant="primary"
-                size="sm"
-                className="font-acumin"
-              >
-                削除
-              </Button>
-            </div>
+                <Button
+                  onClick={() =>
+                    handleToggleStatus(stockist.id, stockist.status)
+                  }
+                  variant="secondary"
+                  size="sm"
+                  className="flex-1 font-acumin"
+                >
+                  {stockist.status === "published" ? "非公開" : "公開"}
+                </Button>
+                <Button
+                  href={`/admin/stockist/edit/${stockist.id}`}
+                  variant="secondary"
+                  size="sm"
+                  className="flex-1 font-acumin"
+                >
+                  編集
+                </Button>
+                <Button
+                  onClick={() => handleDelete(stockist.id)}
+                  variant="primary"
+                  size="sm"
+                  className="font-acumin"
+                >
+                  削除
+                </Button>
+              </div>
             </div>
           </Card>
         ))}

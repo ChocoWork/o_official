@@ -237,13 +237,19 @@ function LookCard({ look, className }: LookCardProps) {
                   <div className="flex flex-col gap-[2px] sm:flex-row sm:items-center sm:justify-between sm:gap-2">
                     <span
                       className="font-brand tracking-tight min-w-0"
-                      style={{ fontSize: "var(--lk-size-2xs)", fontWeight: 400 }}
+                      style={{
+                        fontSize: "var(--lk-size-2xs)",
+                        fontWeight: 400,
+                      }}
                     >
                       {item.name}
                     </span>
                     <span
                       className="whitespace-nowrap text-black"
-                      style={{ fontSize: "var(--lk-size-2xs)", fontWeight: 400 }}
+                      style={{
+                        fontSize: "var(--lk-size-2xs)",
+                        fontWeight: 400,
+                      }}
                     >
                       ¥{item.price.toLocaleString("ja-JP")}
                     </span>
@@ -274,7 +280,11 @@ function LookCardGrid({ looks, className, cardClassName }: LookCardGridProps) {
   return (
     <div className={className ?? DEFAULT_LOOK_GRID_CLASS}>
       {looks.map((look, index) => (
-        <LookCard key={look.id} look={look} className={cardClassName?.(index)} />
+        <LookCard
+          key={look.id}
+          look={look}
+          className={cardClassName?.(index)}
+        />
       ))}
     </div>
   );
@@ -452,7 +462,7 @@ function PublicLookCatalog({
       <div className="flex w-full">
         {/* デスクトップ: NEWS と同様に SEASON フィルターを左サイドバーに配置 */}
         <aside
-          className="hidden lg:block w-[233px] xl:w-[288px] flex-shrink-0 sticky h-[calc(100vh-var(--site-header-offset))] overflow-visible transition-[top,height] duration-300 ease-in-out"
+          className="hidden lg:block w-[233px] xl:w-[288px] shrink-0 sticky h-[calc(100vh-var(--site-header-offset))] overflow-visible transition-[top,height] duration-300 ease-in-out"
           style={desktopFilterStickyStyle}
         >
           <div

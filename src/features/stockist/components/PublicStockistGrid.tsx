@@ -1,36 +1,38 @@
-'use client';
+"use client";
 
-import { useCallback, useMemo, useState } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Button } from '@/components/ui/Button/Button';
-import { Card } from '@/components/ui/Card/Card';
-import { Checkbox } from '@/components/ui/Checkbox/Checkbox';
-import { Drawer } from '@/components/ui/Drawer/Drawer';
-import { SectionTitle } from '@/components/ui/SectionTitle/SectionTitle';
-import type { ComponentSize } from '@/components/ui/types';
-import { PublicStockist } from '@/features/stockist/types';
+import { useCallback, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Button } from "@/components/ui/Button/Button";
+import { Card } from "@/components/ui/Card/Card";
+import { Checkbox } from "@/components/ui/Checkbox/Checkbox";
+import { Drawer } from "@/components/ui/Drawer/Drawer";
+import { SectionTitle } from "@/components/ui/SectionTitle/SectionTitle";
+import type { ComponentSize } from "@/components/ui/types";
+import { PublicStockist } from "@/features/stockist/types";
 import {
   getPrefectureFromAddress,
   getPrefectureShortLabel,
   STOCKIST_REGIONS,
-} from '@/features/stockist/region';
-import { cn } from '@/lib/utils';
+} from "@/features/stockist/region";
+import { cn } from "@/lib/utils";
 
 type PublicStockistGridHomeProps = {
-  variant: 'home';
+  variant: "home";
   stockists: PublicStockist[];
   className?: string;
 };
 
 type PublicStockistGridCatalogProps = {
-  variant: 'catalog';
+  variant: "catalog";
   stockists: PublicStockist[];
 };
 
-type PublicStockistGridProps = PublicStockistGridHomeProps | PublicStockistGridCatalogProps;
+type PublicStockistGridProps =
+  | PublicStockistGridHomeProps
+  | PublicStockistGridCatalogProps;
 
 export function PublicStockistGrid(props: PublicStockistGridProps) {
-  if (props.variant === 'catalog') {
+  if (props.variant === "catalog") {
     return <CatalogGrid stockists={props.stockists} />;
   }
   return <HomeGrid stockists={props.stockists} className={props.className} />;
@@ -45,7 +47,11 @@ function StockistCard({
   className?: string;
 }) {
   return (
-    <Card className={`stockist-card${className ? ` ${className}` : ''}`} hoverable size="sm">
+    <Card
+      className={`stockist-card${className ? ` ${className}` : ""}`}
+      hoverable
+      size="sm"
+    >
       {/* Identity section */}
       <div className="stockist-card-identity">
         <h3 className="stockist-card-title">{shop.name}</h3>
@@ -55,7 +61,10 @@ function StockistCard({
       {/* Detail rows */}
       <div className="stockist-card-details">
         <div className="stockist-card-row">
-          <i className="ri-map-pin-line stockist-card-icon stockist-card-icon--pin" aria-hidden="true" />
+          <i
+            className="ri-map-pin-line stockist-card-icon stockist-card-icon--pin"
+            aria-hidden="true"
+          />
           <a
             href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(shop.address)}`}
             target="_blank"
@@ -67,9 +76,12 @@ function StockistCard({
         </div>
         {shop.phone ? (
           <div className="stockist-card-row stockist-card-row--compact hidden sm:flex">
-            <i className="ri-phone-line stockist-card-icon" aria-hidden="true" />
+            <i
+              className="ri-phone-line stockist-card-icon"
+              aria-hidden="true"
+            />
             <a
-              href={`tel:${shop.phone.replace(/[^\d+]/g, '')}`}
+              href={`tel:${shop.phone.replace(/[^\d+]/g, "")}`}
               className="stockist-card-text hover:text-black transition-colors"
             >
               {shop.phone}
@@ -81,7 +93,10 @@ function StockistCard({
           <p className="stockist-card-text">{shop.time}</p>
         </div>
         <div className="stockist-card-row stockist-card-row--compact hidden sm:flex">
-          <i className="ri-calendar-line stockist-card-icon" aria-hidden="true" />
+          <i
+            className="ri-calendar-line stockist-card-icon"
+            aria-hidden="true"
+          />
           <p className="stockist-card-text">{shop.holiday}</p>
         </div>
       </div>
@@ -102,31 +117,38 @@ function HomeGrid({
   const count = stockists.length;
   const colsClass =
     count <= 1
-      ? 'grid grid-cols-1 max-w-sm mx-auto'
+      ? "grid grid-cols-1 max-w-sm mx-auto"
       : count === 2
-        ? 'grid grid-cols-1 sm:grid-cols-2 max-w-3xl mx-auto'
-        : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3';
+        ? "grid grid-cols-1 sm:grid-cols-2 max-w-3xl mx-auto"
+        : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3";
 
   const renderGrid = () => {
     // S-5: 空状態（取扱店舗ゼロ件）に次アクションを提示
     if (count === 0) {
       return (
         <div className="text-center py-[42px] sm:py-[55px]">
-          <p className="text-[#474747] mb-[16px] sm:mb-[21px]" style={{ fontSize: 'var(--lk-size-sm)' }}>
+          <p
+            className="text-[#474747] mb-[16px] sm:mb-[21px]"
+            style={{ fontSize: "var(--lk-size-sm)" }}
+          >
             現在、取扱店舗はございません。オンラインストアにて販売中です。
           </p>
-          <Button href="/item" variant="secondary" size="md">VIEW COLLECTION</Button>
+          <Button href="/item" variant="secondary" size="md">
+            VIEW COLLECTION
+          </Button>
         </div>
       );
     }
 
     return (
-      <div className={`stockist-grid-home ${colsClass}${className ? ` ${className}` : ''}`}>
+      <div
+        className={`stockist-grid-home ${colsClass}${className ? ` ${className}` : ""}`}
+      >
         {stockists.map((shop, index) => (
           <StockistCard
             key={shop.id}
             shop={shop}
-            className={index >= mobileLimit ? 'hidden md:block' : undefined}
+            className={index >= mobileLimit ? "hidden md:block" : undefined}
           />
         ))}
       </div>
@@ -149,7 +171,7 @@ function parsePrefList(value: string | null): string[] {
     return [];
   }
   return value
-    .split(',')
+    .split(",")
     .map((entry) => entry.trim())
     .filter(Boolean);
 }
@@ -166,7 +188,7 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
 
   // URL の pref（都道府県フルネームの csv）から有効な選択だけを取り出す。
   const selectedPrefectures = useMemo(() => {
-    const requested = parsePrefList(searchParams.get('pref'));
+    const requested = parsePrefList(searchParams.get("pref"));
     const valid = new Set(ALL_PREFECTURES);
     return requested.filter((pref) => valid.has(pref));
   }, [searchParams]);
@@ -229,7 +251,9 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
       STOCKIST_REGIONS.map((entry) => ({
         region: entry.region,
         // region.ts 定義順を保ったまま、店舗が存在する都道府県だけに絞る。
-        prefectures: entry.prefectures.filter((pref) => availablePrefectures.has(pref)),
+        prefectures: entry.prefectures.filter((pref) =>
+          availablePrefectures.has(pref),
+        ),
         isSingle: entry.prefectures.length === 1,
       })).filter((entry) => entry.prefectures.length > 0),
     [availablePrefectures],
@@ -241,9 +265,9 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
       // フルネームの定義順を保ってクエリを安定させる。
       const ordered = ALL_PREFECTURES.filter((pref) => next.includes(pref));
       if (ordered.length > 0) {
-        params.set('pref', ordered.join(','));
+        params.set("pref", ordered.join(","));
       } else {
-        params.delete('pref');
+        params.delete("pref");
       }
       const query = params.toString();
       router.push(query.length > 0 ? `${pathname}?${query}` : pathname, {
@@ -287,18 +311,20 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
       return stockists;
     }
     return stockistPrefectures
-      .filter(({ prefecture }) => prefecture !== null && selectedSet.has(prefecture))
+      .filter(
+        ({ prefecture }) => prefecture !== null && selectedSet.has(prefecture),
+      )
       .map(({ shop }) => shop);
   }, [selectedSet, stockists, stockistPrefectures]);
 
-  const renderAreaTree = (size: ComponentSize = 'xs') => (
+  const renderAreaTree = (size: ComponentSize = "xs") => (
     <div
       className="filter-sections"
       role="group"
       aria-label="エリア（地方・都道府県）で絞り込む"
     >
       <div className="flex items-center">
-        <span aria-hidden="true" className="w-[20px] flex-shrink-0" />
+        <span aria-hidden="true" className="w-[20px] shrink-0" />
         <Checkbox
           label="ALL"
           checked={selectedSet.size === 0}
@@ -316,7 +342,7 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
           const prefecture = entry.prefectures[0];
           return (
             <div key={entry.region} className="flex items-center">
-              <span aria-hidden="true" className="w-[20px] flex-shrink-0" />
+              <span aria-hidden="true" className="w-[20px] shrink-0" />
               <Checkbox
                 label={entry.region}
                 checked={selectedSet.has(prefecture)}
@@ -331,7 +357,9 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
           );
         }
 
-        const regionChecked = entry.prefectures.every((pref) => selectedSet.has(pref));
+        const regionChecked = entry.prefectures.every((pref) =>
+          selectedSet.has(pref),
+        );
         const expanded = expandedRegions.has(entry.region);
         return (
           <div key={entry.region}>
@@ -340,11 +368,13 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
                 type="button"
                 onClick={() => toggleExpand(entry.region)}
                 aria-expanded={expanded}
-                aria-label={`${entry.region}の都道府県を${expanded ? '折りたたむ' : '展開'}`}
-                className="w-[20px] flex-shrink-0 flex items-center justify-center text-[#474747] hover:text-black"
+                aria-label={`${entry.region}の都道府県を${expanded ? "折りたたむ" : "展開"}`}
+                className="w-[20px] shrink-0 flex items-center justify-center text-[#474747] hover:text-black"
               >
                 <i
-                  className={expanded ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'}
+                  className={
+                    expanded ? "ri-arrow-down-s-line" : "ri-arrow-right-s-line"
+                  }
                   aria-hidden="true"
                 />
               </button>
@@ -383,31 +413,32 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
   );
 
   const mobileFilterStickyStyle = {
-    top: 'var(--site-header-height)',
-    transform: 'translateY(calc(var(--site-header-offset) - var(--site-header-height)))',
+    top: "var(--site-header-height)",
+    transform:
+      "translateY(calc(var(--site-header-offset) - var(--site-header-height)))",
   } as const;
 
   const desktopFilterStickyStyle = {
-    top: 'var(--site-header-height)',
+    top: "var(--site-header-height)",
   } as const;
 
   const renderMobileFilterBar = (interactive: boolean) => (
     <div
-      data-filter-bar={interactive ? 'floating' : 'placeholder'}
+      data-filter-bar={interactive ? "floating" : "placeholder"}
       aria-hidden={interactive ? undefined : true}
       className={cn(
-        'flex items-center justify-between border-b border-black/5 bg-white py-[13px]',
-        !interactive && 'pointer-events-none invisible',
+        "flex items-center justify-between border-b border-black/5 bg-white py-[13px]",
+        !interactive && "pointer-events-none invisible",
       )}
     >
       <Button
-        data-filter-button={interactive ? 'floating' : 'placeholder'}
+        data-filter-button={interactive ? "floating" : "placeholder"}
         onClick={interactive ? () => setIsFilterDrawerOpen(true) : undefined}
         variant="text"
         size="3xs"
         className="tracking-[0.06em]"
-        style={{ marginLeft: 'calc(-1 * var(--pad-x) - 1px)' }}
-        aria-haspopup={interactive ? 'dialog' : undefined}
+        style={{ marginLeft: "calc(-1 * var(--pad-x) - 1px)" }}
+        aria-haspopup={interactive ? "dialog" : undefined}
         aria-expanded={interactive ? isFilterDrawerOpen : undefined}
         tabIndex={interactive ? undefined : -1}
       >
@@ -420,10 +451,18 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
     if (displayStockists.length === 0) {
       return (
         <div className="text-center py-[42px] sm:py-[55px]">
-          <p className="text-[#474747] mb-[16px] sm:mb-[21px]" style={{ fontSize: 'var(--lk-size-sm)' }}>
+          <p
+            className="text-[#474747] mb-[16px] sm:mb-[21px]"
+            style={{ fontSize: "var(--lk-size-sm)" }}
+          >
             該当する取扱店舗がございません。
           </p>
-          <Button type="button" variant="secondary" size="md" onClick={clearAll}>
+          <Button
+            type="button"
+            variant="secondary"
+            size="md"
+            onClick={clearAll}
+          >
             すべて見る
           </Button>
         </div>
@@ -443,21 +482,25 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
     <>
       <div className="flex w-full">
         <aside
-          className="hidden lg:flex flex-col w-[233px] xl:w-[288px] flex-shrink-0 sticky h-[calc(100vh-var(--site-header-height))] overflow-hidden"
+          className="hidden lg:flex flex-col w-[233px] xl:w-[288px] shrink-0 sticky h-[calc(100vh-var(--site-header-height))] overflow-hidden"
           style={desktopFilterStickyStyle}
         >
           <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden border-r border-black/5 px-[13px] xl:px-[21px] pt-[8px] xl:pt-[21px] pb-4">
-            {renderAreaTree('3xs')}
+            {renderAreaTree("3xs")}
           </div>
         </aside>
 
         <div className="flex-1 min-w-0 w-full max-w-full px-0 md:px-[21px] lg:pl-[34px] lg:pr-[21px] xl:pl-[55px] xl:pr-[34px] 2xl:pl-[89px] 2xl:pr-[55px] py-0 xl:py-[21px]">
-          <div className="sm:-mt-1 md:-mt-2 lg:hidden">{renderMobileFilterBar(false)}</div>
+          <div className="sm:-mt-1 md:-mt-2 lg:hidden">
+            {renderMobileFilterBar(false)}
+          </div>
           <div
             className="fixed inset-x-0 z-30 lg:hidden bg-white transition-transform duration-300 ease-in-out before:pointer-events-none before:absolute before:inset-x-0 before:-top-px before:h-px before:bg-white before:content-['']"
             style={mobileFilterStickyStyle}
           >
-            <div className="element-width px-5 md:px-[41px]">{renderMobileFilterBar(true)}</div>
+            <div className="element-width px-5 md:px-[41px]">
+              {renderMobileFilterBar(true)}
+            </div>
           </div>
 
           {renderGrid()}
@@ -474,8 +517,8 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
         <div
           className="flex flex-col h-full"
           style={{
-            paddingInline: 'calc(var(--lk-size-sm) * var(--phi))',
-            paddingTop: 'calc(var(--lk-size-sm) * var(--sqrt-phi))',
+            paddingInline: "calc(var(--lk-size-sm) * var(--phi))",
+            paddingTop: "calc(var(--lk-size-sm) * var(--sqrt-phi))",
           }}
         >
           <div className="flex justify-end pb-[13px]">
@@ -490,7 +533,7 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
           </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pb-[13px]">
-            {renderAreaTree('xs')}
+            {renderAreaTree("xs")}
           </div>
         </div>
       </Drawer>

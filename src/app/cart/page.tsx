@@ -31,11 +31,17 @@ export default function CartPage() {
     // CT-1: 黒バー明滅 + デバッグ文言を廃し、カートレイアウトの控えめなスケルトンに
     return (
       <div className="max-w-5xl mx-auto w-full">
-        <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-8" aria-hidden="true">
+        <div
+          className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-8"
+          aria-hidden="true"
+        >
           <div>
             {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="border-b border-black/10 flex gap-4 py-6 animate-pulse">
-                <div className="w-20 h-24 flex-shrink-0 bg-black/8" />
+              <div
+                key={i}
+                className="border-b border-black/10 flex gap-4 py-6 animate-pulse"
+              >
+                <div className="w-20 h-24 shrink-0 bg-black/8" />
                 <div className="flex-1 flex flex-col gap-2">
                   <div className="h-4 w-2/3 bg-black/8" />
                   <div className="h-3 w-1/4 bg-black/5" />
@@ -78,8 +84,10 @@ export default function CartPage() {
       style={
         {
           "--pad-x": "calc(var(--lk-size-md) / var(--sqrt-phi))",
-          "--pad-y": "calc((var(--lk-size-md) * var(--sqrt-phi)) / (var(--phi) * var(--phi)))",
-          "--gap-icon2text": "calc(var(--lk-size-md) / var(--sqrt-phi) / var(--phi))",
+          "--pad-y":
+            "calc((var(--lk-size-md) * var(--sqrt-phi)) / (var(--phi) * var(--phi)))",
+          "--gap-icon2text":
+            "calc(var(--lk-size-md) / var(--sqrt-phi) / var(--phi))",
         } as React.CSSProperties
       }
     >
@@ -99,7 +107,11 @@ export default function CartPage() {
             <div
               role="status"
               className="text-[#474747] border border-black/20 bg-black/[0.02] flex items-center justify-between mb-6"
-              style={{ fontSize: "var(--lk-size-xs)", padding: "var(--pad-x)", gap: "var(--pad-x)" }}
+              style={{
+                fontSize: "var(--lk-size-xs)",
+                padding: "var(--pad-x)",
+                gap: "var(--pad-x)",
+              }}
             >
               <span className="flex items-center gap-2">
                 <i className="ri-error-warning-line" aria-hidden="true" />
@@ -133,7 +145,9 @@ export default function CartPage() {
             />
           ))}
 
-          <div style={{ paddingTop: "calc(var(--lk-size-md) * var(--sqrt-phi))" }}>
+          <div
+            style={{ paddingTop: "calc(var(--lk-size-md) * var(--sqrt-phi))" }}
+          >
             <Link
               href="/item"
               className="group inline-flex items-center text-[#767676]"

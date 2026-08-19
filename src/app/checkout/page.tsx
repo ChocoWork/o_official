@@ -1160,7 +1160,7 @@ function CheckoutPageContent() {
 
         return (
           <div className="checkout-item" key={item.id}>
-            <div className="w-20 h-24 flex-shrink-0 overflow-hidden relative">
+            <div className="w-20 h-24 shrink-0 overflow-hidden relative">
               <Image
                 alt={product.name}
                 className="image"
@@ -1564,7 +1564,7 @@ function CheckoutPageContent() {
                 className="checkout-box flex items-start text-left"
                 style={{ gap: "var(--gap-group)" }}
               >
-                <div className="w-12 h-12 flex items-center justify-center bg-black text-white rounded-full flex-shrink-0">
+                <div className="w-12 h-12 flex items-center justify-center bg-black text-white rounded-full shrink-0">
                   <i className={`${card.icon} text-xl`}></i>
                 </div>
                 <div

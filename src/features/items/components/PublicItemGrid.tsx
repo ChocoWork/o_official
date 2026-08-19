@@ -39,7 +39,7 @@ const SORT_OPTIONS = [
 const FILTER_SIDEBAR_SCROLL_CLASS =
   "flex-1 min-h-0 overflow-y-auto overscroll-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden border-r border-black/5 px-[13px] xl:px-[21px] pt-[8px] xl:pt-[21px] pb-4";
 const FILTER_SIDEBAR_ACTIONS_CLASS =
-  "flex-shrink-0 border-r border-black/5 px-[13px] xl:px-[21px] pb-[21px] xl:pb-[34px] pt-4 bg-white space-y-2";
+  "shrink-0 border-r border-black/5 px-[13px] xl:px-[21px] pb-[21px] xl:pb-[34px] pt-4 bg-white space-y-2";
 const FILTER_DRAWER_CLASS =
   "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden";
 // FILTER 内タイポグラフィ／余白。stein（ssstein.com）と HYKE（hyke.jp）の FILTER を

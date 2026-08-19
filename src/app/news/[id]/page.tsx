@@ -213,7 +213,7 @@ export default async function NewsDetailPage({
                 aria-label={`前の記事: ${prevArticle.title}`}
                 className="group flex items-start gap-2 max-w-[45%]"
               >
-                <span className="flex-shrink-0 w-4 h-4 flex items-center justify-center text-[#474747] group-hover:text-black transition-colors mt-0.5">
+                <span className="shrink-0 w-4 h-4 flex items-center justify-center text-[#474747] group-hover:text-black transition-colors mt-0.5">
                   <i className="ri-arrow-left-line" aria-hidden="true" />
                 </span>
                 <div className="min-w-0">
@@ -256,7 +256,7 @@ export default async function NewsDetailPage({
                     {nextArticle.title}
                   </p>
                 </div>
-                <span className="flex-shrink-0 w-4 h-4 flex items-center justify-center text-[#474747] group-hover:text-black transition-colors mt-0.5">
+                <span className="shrink-0 w-4 h-4 flex items-center justify-center text-[#474747] group-hover:text-black transition-colors mt-0.5">
                   <i className="ri-arrow-right-line" aria-hidden="true" />
                 </span>
               </Link>
@@ -286,7 +286,7 @@ export default async function NewsDetailPage({
               aria-label={`前の記事: ${prevArticle.title}`}
               className="group flex items-center gap-3 justify-self-start"
             >
-              <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center text-[#474747] group-hover:text-black transition-colors">
+              <span className="shrink-0 w-5 h-5 flex items-center justify-center text-[#474747] group-hover:text-black transition-colors">
                 <i className="ri-arrow-left-line" aria-hidden="true" />
               </span>
               <div className="min-w-0">
@@ -338,7 +338,7 @@ export default async function NewsDetailPage({
                   {nextArticle.title}
                 </p>
               </div>
-              <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center text-[#474747] group-hover:text-black transition-colors">
+              <span className="shrink-0 w-5 h-5 flex items-center justify-center text-[#474747] group-hover:text-black transition-colors">
                 <i className="ri-arrow-right-line" aria-hidden="true" />
               </span>
             </Link>

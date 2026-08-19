@@ -52,11 +52,11 @@ export function CartItemRow({
     >
       <Link
         href={`/item/${product.id}`}
-        className="w-16 self-start flex-shrink-0 overflow-hidden relative block"
+        className="w-16 self-start shrink-0 overflow-hidden relative block"
       >
         <Image
           alt={product.name}
-          className="w-full h-auto object-contain hover:scale-105 transition-transform duration-500"
+          className="w-full h-auto object-contain"
           src={product.image_url}
           width={0}
           height={0}
@@ -68,11 +68,15 @@ export function CartItemRow({
         {/* 上段: 商品名・バリアント */}
         <div
           className="flex flex-col"
-          style={{ gap: "calc(var(--lk-size-md) / var(--sqrt-phi) / var(--phi) / var(--phi))" }}
+          style={{
+            gap: "calc(var(--lk-size-md) / var(--sqrt-phi) / var(--phi) / var(--phi))",
+          }}
         >
           <div
             className="flex items-start justify-between"
-            style={{ gap: "calc(var(--lk-size-md) / var(--sqrt-phi) / var(--phi))" }}
+            style={{
+              gap: "calc(var(--lk-size-md) / var(--sqrt-phi) / var(--phi))",
+            }}
           >
             <Link
               href={`/item/${product.id}`}
@@ -82,8 +86,10 @@ export function CartItemRow({
               {product.name}
             </Link>
             <div
-              className="flex items-center flex-shrink-0"
-              style={{ gap: "calc(var(--lk-size-md) / var(--sqrt-phi) / var(--phi))" }}
+              className="flex items-center shrink-0"
+              style={{
+                gap: "calc(var(--lk-size-md) / var(--sqrt-phi) / var(--phi))",
+              }}
             >
               <Button
                 onClick={() => onToggleWishlist(item.item_id)}
@@ -96,7 +102,9 @@ export function CartItemRow({
                 <div className="w-4 h-4 flex items-center justify-center">
                   <i
                     className={`text-base ${
-                      isWishlisted ? "ri-heart-fill text-red-500" : "ri-heart-line"
+                      isWishlisted
+                        ? "ri-heart-fill text-red-500"
+                        : "ri-heart-line"
                     }`}
                   />
                 </div>
@@ -125,15 +133,24 @@ export function CartItemRow({
               className="text-[#474747] grid grid-cols-[auto_auto_1fr] items-baseline w-fit"
               style={{
                 fontSize: "var(--lk-size-3xs)",
-                rowGap: "calc(var(--lk-size-md) / var(--sqrt-phi) / var(--phi) / var(--phi) / var(--phi))",
+                rowGap:
+                  "calc(var(--lk-size-md) / var(--sqrt-phi) / var(--phi) / var(--phi) / var(--phi))",
               }}
             >
               {item.color && (
                 <>
-                  <span data-variant-label className="text-[#767676]" style={variantLabelStyle}>
+                  <span
+                    data-variant-label
+                    className="text-[#767676]"
+                    style={variantLabelStyle}
+                  >
                     COLOR
                   </span>
-                  <span aria-hidden="true" className="text-[#767676]" style={variantLabelStyle}>
+                  <span
+                    aria-hidden="true"
+                    className="text-[#767676]"
+                    style={variantLabelStyle}
+                  >
                     ：
                   </span>
                   <span>{item.color}</span>
@@ -141,10 +158,18 @@ export function CartItemRow({
               )}
               {item.size && (
                 <>
-                  <span data-variant-label className="text-[#767676]" style={variantLabelStyle}>
+                  <span
+                    data-variant-label
+                    className="text-[#767676]"
+                    style={variantLabelStyle}
+                  >
                     SIZE
                   </span>
-                  <span aria-hidden="true" className="text-[#767676]" style={variantLabelStyle}>
+                  <span
+                    aria-hidden="true"
+                    className="text-[#767676]"
+                    style={variantLabelStyle}
+                  >
                     ：
                   </span>
                   <span>{item.size}</span>
@@ -177,24 +202,35 @@ export function CartItemRow({
           </div>
 
           {syncError && (
-          <div
-            className="text-red-600 flex items-center justify-between"
-            style={{ gap: "calc(var(--lk-size-md) / var(--sqrt-phi))" }}
-          >
-            <span style={{ fontSize: "var(--lk-size-xs)" }}>{syncError}</span>
             <div
-              className="flex items-center"
-              style={{ gap: "calc(var(--lk-size-md) / var(--sqrt-phi) / var(--phi))" }}
+              className="text-red-600 flex items-center justify-between"
+              style={{ gap: "calc(var(--lk-size-md) / var(--sqrt-phi))" }}
             >
-              <Button onClick={() => onRetryUpdate(item.id)} variant="secondary" size="sm">
-                再試行
-              </Button>
-              <Button onClick={onResync} disabled={resyncing} variant="ghost" size="sm">
-                最新状態を再取得
-              </Button>
+              <span style={{ fontSize: "var(--lk-size-xs)" }}>{syncError}</span>
+              <div
+                className="flex items-center"
+                style={{
+                  gap: "calc(var(--lk-size-md) / var(--sqrt-phi) / var(--phi))",
+                }}
+              >
+                <Button
+                  onClick={() => onRetryUpdate(item.id)}
+                  variant="secondary"
+                  size="sm"
+                >
+                  再試行
+                </Button>
+                <Button
+                  onClick={onResync}
+                  disabled={resyncing}
+                  variant="ghost"
+                  size="sm"
+                >
+                  最新状態を再取得
+                </Button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
         </div>
       </div>
     </div>

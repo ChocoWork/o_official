@@ -329,16 +329,22 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
             <article className="relative py-[21px] md:py-[34px] lg:px-[13px] border-b border-black/5 cursor-pointer group">
               {/* N-7: 控えめな上下ラインのみ（delay付き4辺アニメ→簡素化、duration短縮） */}
               {/* Top: left → right */}
-              <span aria-hidden="true" className="pointer-events-none absolute top-0 left-0 h-px w-0 bg-black transition-[width] duration-300 ease-out group-hover:w-full" />
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute top-0 left-0 h-px w-0 bg-black transition-[width] duration-300 ease-out group-hover:w-full"
+              />
               {/* Bottom: right → left */}
-              <span aria-hidden="true" className="pointer-events-none absolute bottom-0 right-0 h-px w-0 bg-black transition-[width] duration-300 ease-out group-hover:w-full" />
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute bottom-0 right-0 h-px w-0 bg-black transition-[width] duration-300 ease-out group-hover:w-full"
+              />
               <div className="flex items-start">
                 <div className="flex-1 min-w-0">
                   {/* Date column: inline with category on mobile, fixed-width on sm+ */}
-                  <div className="flex items-center gap-3 mb-[var(--lk-size-4xs)] flex-shrink-0">
+                  <div className="flex items-center gap-3 mb-[var(--lk-size-4xs)] shrink-0">
                     <time
                       dateTime={article.published_date}
-                      className="flex-shrink-0 text-[#474747] tracking-widest whitespace-nowrap"
+                      className="shrink-0 text-[#474747] tracking-widest whitespace-nowrap"
                       style={{
                         fontFamily: "acumin-pro, sans-serif",
                         fontSize: "var(--lk-size-4xs)",
@@ -384,7 +390,10 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
     <div className="flex flex-col items-center justify-center py-20 gap-3">
       <p
         className="text-[#474747] tracking-widest"
-        style={{ fontFamily: "acumin-pro, sans-serif", fontSize: "var(--lk-size-sm)" }}
+        style={{
+          fontFamily: "acumin-pro, sans-serif",
+          fontSize: "var(--lk-size-sm)",
+        }}
       >
         {message}
       </p>
@@ -395,7 +404,10 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
     <div className="flex flex-col items-center justify-center py-20 gap-3">
       <p
         className="text-red-500 tracking-widest"
-        style={{ fontFamily: "acumin-pro, sans-serif", fontSize: "var(--lk-size-sm)" }}
+        style={{
+          fontFamily: "acumin-pro, sans-serif",
+          fontSize: "var(--lk-size-sm)",
+        }}
       >
         {error}
       </p>
@@ -405,7 +417,10 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
   const renderLoading = () => (
     <div className="w-full border-t border-black/10">
       {[...Array(5)].map((_, i) => (
-        <div key={i} className="py-[21px] md:py-[34px] border-b border-black/5 animate-pulse">
+        <div
+          key={i}
+          className="py-[21px] md:py-[34px] border-b border-black/5 animate-pulse"
+        >
           <div className="flex items-center gap-3 mb-2">
             <div className="h-[10px] w-20 rounded-sm bg-black/8" />
             <div className="h-[10px] w-14 rounded-sm bg-black/8" />
@@ -433,15 +448,13 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
         <div className="element-width">
           <SectionTitle title="NEWS" />
 
-          {loading ? (
-            renderLoading()
-          ) : error ? (
-            renderError()
-          ) : resolvedArticles.length === 0 ? (
-            renderEmpty("現在、公開されている記事はありません")
-          ) : (
-            renderGrid()
-          )}
+          {loading
+            ? renderLoading()
+            : error
+              ? renderError()
+              : resolvedArticles.length === 0
+                ? renderEmpty("現在、公開されている記事はありません")
+                : renderGrid()}
 
           <HomeSectionViewAll
             href="/news"
@@ -490,13 +503,14 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
       <div className="flex w-full">
         {/* Category filter */}
         <aside
-          className="hidden lg:block w-[233px] xl:w-[288px] flex-shrink-0 sticky h-[calc(100vh-var(--site-header-offset))] overflow-visible transition-[top,height] duration-300 ease-in-out"
+          className="hidden lg:block w-[233px] xl:w-[288px] shrink-0 sticky h-[calc(100vh-var(--site-header-offset))] overflow-visible transition-[top,height] duration-300 ease-in-out"
           style={desktopFilterStickyStyle}
         >
           <div
             className="h-full overflow-y-auto border-r border-black/5 px-[13px] xl:px-[21px]"
             style={{
-              paddingBlock: "calc(var(--lk-size-sm) * var(--phi) * var(--phi)) calc(var(--lk-size-xs) * var(--phi))",
+              paddingBlock:
+                "calc(var(--lk-size-sm) * var(--phi) * var(--phi)) calc(var(--lk-size-xs) * var(--phi))",
             }}
           >
             <div className={TAB_SCROLL_CONTAINER_CLASS}>

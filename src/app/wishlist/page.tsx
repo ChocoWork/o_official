@@ -1,12 +1,15 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { useCart } from '@/contexts/CartContext';
-import { EmptyPage } from '@/components/ui/EmptyPage/EmptyPage';
-import { ItemCardInfo, ItemCardMedia } from '@/features/items/components/ItemCard';
-import { extractColorSwatches } from '@/lib/items/colors';
-import { isItemInStock } from '@/lib/items/stock-label';
+import React, { useState, useEffect } from "react";
+import Link from "next/link";
+import { useCart } from "@/contexts/CartContext";
+import { EmptyPage } from "@/components/ui/EmptyPage/EmptyPage";
+import {
+  ItemCardInfo,
+  ItemCardMedia,
+} from "@/features/items/components/ItemCard";
+import { extractColorSwatches } from "@/lib/items/colors";
+import { isItemInStock } from "@/lib/items/stock-label";
 
 interface WishlistItem {
   id: string;
@@ -24,15 +27,19 @@ interface WishlistItem {
 }
 
 function isColorOption(value: unknown): value is { hex: string; name: string } {
-  if (!value || typeof value !== 'object') {
+  if (!value || typeof value !== "object") {
     return false;
   }
 
   const candidate = value as Record<string, unknown>;
-  return typeof candidate.hex === 'string' && typeof candidate.name === 'string';
+  return (
+    typeof candidate.hex === "string" && typeof candidate.name === "string"
+  );
 }
 
-function isColorList(value: unknown): value is Array<{ hex: string; name: string }> | string[] {
+function isColorList(
+  value: unknown,
+): value is Array<{ hex: string; name: string }> | string[] {
   if (value === undefined) {
     return true;
   }
@@ -41,7 +48,9 @@ function isColorList(value: unknown): value is Array<{ hex: string; name: string
     return false;
   }
 
-  return value.every((entry) => typeof entry === 'string' || isColorOption(entry));
+  return value.every(
+    (entry) => typeof entry === "string" || isColorOption(entry),
+  );
 }
 
 function isSizeList(value: unknown): value is string[] {
@@ -49,19 +58,21 @@ function isSizeList(value: unknown): value is string[] {
     return true;
   }
 
-  return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+  return (
+    Array.isArray(value) && value.every((entry) => typeof entry === "string")
+  );
 }
 
-function resolveDefaultColor(item: WishlistItem['items']): string | null {
+function resolveDefaultColor(item: WishlistItem["items"]): string | null {
   if (!item?.colors || item.colors.length === 0) {
     return null;
   }
 
   const firstColor = item.colors[0];
-  return typeof firstColor === 'string' ? firstColor : firstColor.name;
+  return typeof firstColor === "string" ? firstColor : firstColor.name;
 }
 
-function resolveDefaultSize(item: WishlistItem['items']): string | null {
+function resolveDefaultSize(item: WishlistItem["items"]): string | null {
   if (!item?.sizes || item.sizes.length === 0) {
     return null;
   }
@@ -70,15 +81,15 @@ function resolveDefaultSize(item: WishlistItem['items']): string | null {
 }
 
 function isWishlistItem(value: unknown): value is WishlistItem {
-  if (!value || typeof value !== 'object') {
+  if (!value || typeof value !== "object") {
     return false;
   }
 
   const candidate = value as Record<string, unknown>;
   const hasBase =
-    typeof candidate.id === 'string'
-    && typeof candidate.item_id === 'number'
-    && typeof candidate.added_at === 'string';
+    typeof candidate.id === "string" &&
+    typeof candidate.item_id === "number" &&
+    typeof candidate.added_at === "string";
 
   if (!hasBase) {
     return false;
@@ -88,41 +99,51 @@ function isWishlistItem(value: unknown): value is WishlistItem {
     return true;
   }
 
-  if (!candidate.items || typeof candidate.items !== 'object') {
+  if (!candidate.items || typeof candidate.items !== "object") {
     return false;
   }
 
   const item = candidate.items as Record<string, unknown>;
   return (
-    typeof item.id === 'number'
-    && typeof item.name === 'string'
-    && typeof item.price === 'number'
-    && typeof item.image_url === 'string'
-    && typeof item.category === 'string'
-    && isColorList(item.colors)
-    && isSizeList(item.sizes)
+    typeof item.id === "number" &&
+    typeof item.name === "string" &&
+    typeof item.price === "number" &&
+    typeof item.image_url === "string" &&
+    typeof item.category === "string" &&
+    isColorList(item.colors) &&
+    isSizeList(item.sizes)
   );
 }
 
 function parseWishlistResponse(payload: unknown): WishlistItem[] {
   if (!Array.isArray(payload)) {
-    throw new Error('ウィッシュリストのレスポンス形式が不正です');
+    throw new Error("ウィッシュリストのレスポンス形式が不正です");
   }
 
   const parsed = payload.filter(isWishlistItem);
   if (parsed.length !== payload.length) {
-    console.warn('Invalid wishlist entries were filtered out', payload);
+    console.warn("Invalid wishlist entries were filtered out", payload);
   }
 
   return parsed;
 }
 
-const wishlistTextMdStyle: React.CSSProperties = { fontSize: 'var(--lk-size-md)' };
-const wishlistTextLgStyle: React.CSSProperties = { fontSize: 'var(--lk-size-lg)' };
-const wishlistIconLgStyle: React.CSSProperties = { fontSize: 'var(--lk-size-lg)' };
+const wishlistTextMdStyle: React.CSSProperties = {
+  fontSize: "var(--lk-size-md)",
+};
+const wishlistTextLgStyle: React.CSSProperties = {
+  fontSize: "var(--lk-size-lg)",
+};
+const wishlistIconLgStyle: React.CSSProperties = {
+  fontSize: "var(--lk-size-lg)",
+};
 // 削除済み/フォールバック用の文字サイズ。商品カードは ItemCard（ITEM 一覧と共通）を使う。
-const wishlistCardNameStyle: React.CSSProperties = { fontSize: 'var(--lk-size-2xs)' };
-const wishlistCardButtonStyle: React.CSSProperties = { fontSize: 'var(--lk-size-2xs)' };
+const wishlistCardNameStyle: React.CSSProperties = {
+  fontSize: "var(--lk-size-2xs)",
+};
+const wishlistCardButtonStyle: React.CSSProperties = {
+  fontSize: "var(--lk-size-2xs)",
+};
 
 export default function Page() {
   const [wishlistItems, setWishlistItems] = useState<WishlistItem[]>([]);
@@ -139,16 +160,16 @@ export default function Page() {
 
   const fetchWishlist = async () => {
     try {
-      const response = await fetch('/api/wishlist');
+      const response = await fetch("/api/wishlist");
       if (!response.ok) {
-        throw new Error('ウィッシュリストの取得に失敗しました');
+        throw new Error("ウィッシュリストの取得に失敗しました");
       }
       const payload = await response.json();
       const data = parseWishlistResponse(payload);
       setWishlistItems(data);
     } catch (err) {
-      console.error('Error fetching wishlist:', err);
-      setError(err instanceof Error ? err.message : 'エラーが発生しました');
+      console.error("Error fetching wishlist:", err);
+      setError(err instanceof Error ? err.message : "エラーが発生しました");
     } finally {
       setLoading(false);
     }
@@ -159,11 +180,11 @@ export default function Page() {
     setRemovingId(wishlistId);
     try {
       const response = await fetch(`/api/wishlist/${wishlistId}`, {
-        method: 'DELETE',
+        method: "DELETE",
       });
 
       if (!response.ok) {
-        throw new Error('削除に失敗しました');
+        throw new Error("削除に失敗しました");
       }
 
       setWishlistItems(wishlistItems.filter((item) => item.id !== wishlistId));
@@ -171,9 +192,13 @@ export default function Page() {
       // Update wishlist in context
       await updateWishlist();
     } catch (err) {
-      console.error('Error removing from wishlist:', err);
+      console.error("Error removing from wishlist:", err);
       // WL-2: ネイティブ alert を廃し、他箇所と同じインライン通知に統一
-      setActionMessage(err instanceof Error ? err.message : '削除に失敗しました。時間をおいて再度お試しください。');
+      setActionMessage(
+        err instanceof Error
+          ? err.message
+          : "削除に失敗しました。時間をおいて再度お試しください。",
+      );
     } finally {
       setRemovingId(null);
     }
@@ -186,10 +211,14 @@ export default function Page() {
 
     const resolvedColor = resolveDefaultColor(wishlistItem.items);
     const resolvedSize = resolveDefaultSize(wishlistItem.items);
-    const requiresSizeSelection = Array.isArray(wishlistItem.items.sizes) && wishlistItem.items.sizes.length > 1;
+    const requiresSizeSelection =
+      Array.isArray(wishlistItem.items.sizes) &&
+      wishlistItem.items.sizes.length > 1;
 
     if (requiresSizeSelection) {
-      setActionMessage('サイズ選択が必要な商品です。商品詳細ページからカートに追加してください。');
+      setActionMessage(
+        "サイズ選択が必要な商品です。商品詳細ページからカートに追加してください。",
+      );
       return;
     }
 
@@ -197,10 +226,10 @@ export default function Page() {
     setAddingToCartId(wishlistItem.id);
 
     try {
-      const response = await fetch('/api/cart', {
-        method: 'POST',
+      const response = await fetch("/api/cart", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           item_id: wishlistItem.items.id,
@@ -211,14 +240,16 @@ export default function Page() {
       });
 
       if (!response.ok) {
-        throw new Error('カートへの追加に失敗しました');
+        throw new Error("カートへの追加に失敗しました");
       }
 
       await updateCartCount();
-      setActionMessage('カートに追加しました。');
+      setActionMessage("カートに追加しました。");
     } catch (err) {
-      console.error('Error adding to cart:', err);
-      setActionMessage(err instanceof Error ? err.message : 'エラーが発生しました');
+      console.error("Error adding to cart:", err);
+      setActionMessage(
+        err instanceof Error ? err.message : "エラーが発生しました",
+      );
     } finally {
       setAddingToCartId(null);
     }
@@ -228,9 +259,14 @@ export default function Page() {
     return (
       <div className="max-w-7xl mx-auto w-full">
         <div className="flex items-center justify-between mb-8">
-          <h1 className="tracking-widest" style={wishlistTextLgStyle}>WISHLIST</h1>
+          <h1 className="tracking-widest" style={wishlistTextLgStyle}>
+            WISHLIST
+          </h1>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-[2px] sm:gap-x-[3px] lg:gap-x-[4px] gap-y-[16px] sm:gap-y-[20px] md:gap-y-[24px] lg:gap-y-[28px]" aria-hidden="true">
+        <div
+          className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-[2px] sm:gap-x-[3px] lg:gap-x-[4px] gap-y-[16px] sm:gap-y-[20px] md:gap-y-[24px] lg:gap-y-[28px]"
+          aria-hidden="true"
+        >
           {Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="animate-pulse">
               <div className="aspect-[3/4] bg-black/8 mb-[8px]" />
@@ -248,7 +284,9 @@ export default function Page() {
   if (error) {
     return (
       <div className="text-center py-12">
-        <p className="text-red-500" style={wishlistTextMdStyle}>{error}</p>
+        <p className="text-red-500" style={wishlistTextMdStyle}>
+          {error}
+        </p>
       </div>
     );
   }
@@ -268,8 +306,12 @@ export default function Page() {
   return (
     <div className="max-w-7xl mx-auto w-full">
       <div className="flex items-baseline justify-between mb-8 gap-4">
-        <h1 className="tracking-widest" style={wishlistTextLgStyle}>WISHLIST</h1>
-        <p className="text-[#474747]" style={wishlistTextMdStyle}>{wishlistItems.length}点のアイテム</p>
+        <h1 className="tracking-widest" style={wishlistTextLgStyle}>
+          WISHLIST
+        </h1>
+        <p className="text-[#474747]" style={wishlistTextMdStyle}>
+          {wishlistItems.length}点のアイテム
+        </p>
       </div>
       {/* WL-3: 操作地点（カード）に近い視認性のため、固定トーストで通知 */}
       {actionMessage ? (
@@ -283,13 +325,17 @@ export default function Page() {
             type="button"
             onClick={() => setActionMessage(null)}
             aria-label="通知を閉じる"
-            className="flex-shrink-0 opacity-70 hover:opacity-100 transition-opacity"
+            className="shrink-0 opacity-70 hover:opacity-100 transition-opacity"
           >
             <i className="ri-close-line" aria-hidden="true" />
           </button>
         </div>
       ) : null}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-[2px] sm:gap-x-[3px] lg:gap-x-[4px] gap-y-[16px] sm:gap-y-[20px] md:gap-y-[24px] lg:gap-y-[28px]" role="list" aria-label="ウィッシュリスト商品一覧">
+      <div
+        className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-[2px] sm:gap-x-[3px] lg:gap-x-[4px] gap-y-[16px] sm:gap-y-[20px] md:gap-y-[24px] lg:gap-y-[28px]"
+        role="list"
+        aria-label="ウィッシュリスト商品一覧"
+      >
         {wishlistItems.map((item) => {
           // カードの見た目は ITEM 一覧（PublicItemGrid）と共通の ItemCard に統一。
           // 色（カラースウォッチ）と数量（在庫：残り〇点／受注生産）を表示する。
@@ -308,7 +354,10 @@ export default function Page() {
                   />
                 </Link>
               ) : (
-                <div className="aspect-[3/4] bg-[#f5f5f5] mb-[2px] sm:mb-[6px] md:mb-[8px] flex items-center justify-center px-4 text-center text-[#474747]" style={wishlistCardNameStyle}>
+                <div
+                  className="aspect-[3/4] bg-[#f5f5f5] mb-[2px] sm:mb-[6px] md:mb-[8px] flex items-center justify-center px-4 text-center text-[#474747]"
+                  style={wishlistCardNameStyle}
+                >
                   商品情報を取得できませんでした
                 </div>
               )}
@@ -347,14 +396,21 @@ export default function Page() {
                         className="w-full border border-black text-black py-[6px] hover:bg-black hover:text-white transition-colors disabled:opacity-40"
                         style={wishlistCardButtonStyle}
                       >
-                        {addingToCartId === item.id ? '追加中...' : 'カートに追加'}
+                        {addingToCartId === item.id
+                          ? "追加中..."
+                          : "カートに追加"}
                       </button>
                     )}
                   </div>
                 </>
               ) : (
                 <div className="px-[8px] mt-[8px] space-y-[8px]">
-                  <h3 className="text-black font-brand tracking-tight" style={wishlistCardNameStyle}>削除済み商品</h3>
+                  <h3
+                    className="text-black font-brand tracking-tight"
+                    style={wishlistCardNameStyle}
+                  >
+                    削除済み商品
+                  </h3>
                   {/* WL-6: 削除済みエントリを片付ける明示CTA */}
                   <button
                     type="button"
@@ -363,7 +419,7 @@ export default function Page() {
                     className="w-full border border-black/30 text-[#474747] py-[6px] hover:border-black hover:text-black transition-colors disabled:opacity-40"
                     style={wishlistCardButtonStyle}
                   >
-                    {removingId === item.id ? '処理中...' : 'リストから外す'}
+                    {removingId === item.id ? "処理中..." : "リストから外す"}
                   </button>
                 </div>
               )}
