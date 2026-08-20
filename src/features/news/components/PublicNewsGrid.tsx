@@ -16,7 +16,7 @@ import type { ComponentSize } from "@/components/ui/types";
 
 const NEWS_CATEGORIES = categories;
 const TAB_SCROLL_CONTAINER_CLASS =
-  "w-full overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden";
+  "w-full overflow-x-auto pb-1 scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden";
 type NewsCategory = (typeof NEWS_CATEGORIES)[number];
 
 type PublicNewsGridHomeProps = {
@@ -294,7 +294,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
       data-filter-bar={interactive ? "floating" : "placeholder"}
       aria-hidden={interactive ? undefined : true}
       className={cn(
-        "flex items-center justify-between bg-white/95 py-[13px] backdrop-blur",
+        "flex items-center justify-between bg-white/95 py-3.25 backdrop-blur",
         !interactive && "pointer-events-none invisible",
       )}
     >
@@ -326,7 +326,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
             href={resolveBuildHref(article)}
             className="block"
           >
-            <article className="relative py-[21px] md:py-[34px] lg:px-[13px] border-b border-black/5 cursor-pointer group">
+            <article className="relative py-5.25 md:py-8.5 lg:px-3.25 border-b border-black/5 cursor-pointer group">
               {/* N-7: 控えめな上下ラインのみ（delay付き4辺アニメ→簡素化、duration短縮） */}
               {/* Top: left → right */}
               <span
@@ -341,7 +341,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
               <div className="flex items-start">
                 <div className="flex-1 min-w-0">
                   {/* Date column: inline with category on mobile, fixed-width on sm+ */}
-                  <div className="flex items-center gap-3 mb-[var(--lk-size-4xs)] shrink-0">
+                  <div className="flex items-center gap-3 mb-(--lk-size-4xs) shrink-0">
                     <time
                       dateTime={article.published_date}
                       className="shrink-0 text-[#474747] tracking-widest whitespace-nowrap"
@@ -419,15 +419,15 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
       {[...Array(5)].map((_, i) => (
         <div
           key={i}
-          className="py-[21px] md:py-[34px] border-b border-black/5 animate-pulse"
+          className="py-5.25 md:py-8.5 border-b border-black/5 animate-pulse"
         >
           <div className="flex items-center gap-3 mb-2">
-            <div className="h-[10px] w-20 rounded-sm bg-black/8" />
-            <div className="h-[10px] w-14 rounded-sm bg-black/8" />
+            <div className="h-2.5 w-20 rounded-sm bg-black/8" />
+            <div className="h-2.5 w-14 rounded-sm bg-black/8" />
           </div>
-          <div className="h-[13px] w-2/3 rounded-sm bg-black/8 mb-[10px]" />
-          <div className="h-[11px] w-full rounded-sm bg-black/5 mb-1.5" />
-          <div className="h-[11px] w-4/5 rounded-sm bg-black/5" />
+          <div className="h-3.25 w-2/3 rounded-sm bg-black/8 mb-2.5" />
+          <div className="h-2.75 w-full rounded-sm bg-black/5 mb-1.5" />
+          <div className="h-2.75 w-4/5 rounded-sm bg-black/5" />
         </div>
       ))}
     </div>
@@ -474,7 +474,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
         onClose={() => setIsFilterDrawerOpen(false)}
         side="left"
         size="md"
-        className="[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+        className="scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
       >
         <div
           className="flex flex-col h-full"
@@ -483,7 +483,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
             paddingTop: "calc(var(--lk-size-sm) * var(--sqrt-phi))",
           }}
         >
-          <div className="flex justify-end pb-[13px]">
+          <div className="flex justify-end pb-3.25">
             <Button
               variant="text"
               size="xs"
@@ -494,7 +494,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
             </Button>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pb-[21px]">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pb-5.25">
             {renderCategoryFilter("xs", true)}
           </div>
         </div>
@@ -503,11 +503,11 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
       <div className="flex w-full">
         {/* Category filter */}
         <aside
-          className="hidden lg:block w-[233px] xl:w-[288px] shrink-0 sticky h-[calc(100vh-var(--site-header-offset))] overflow-visible transition-[top,height] duration-300 ease-in-out"
+          className="hidden lg:block w-58.25 xl:w-[288px] shrink-0 sticky h-[calc(100vh-var(--site-header-offset))] overflow-visible transition-[top,height] duration-300 ease-in-out"
           style={desktopFilterStickyStyle}
         >
           <div
-            className="h-full overflow-y-auto border-r border-black/5 px-[13px] xl:px-[21px]"
+            className="h-full overflow-y-auto border-r border-black/5 px-3.25 xl:px-5.25"
             style={{
               paddingBlock:
                 "calc(var(--lk-size-sm) * var(--phi) * var(--phi)) calc(var(--lk-size-xs) * var(--phi))",
@@ -520,7 +520,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
         </aside>
         <div
           data-testid="news-content-column"
-          className="flex-1 min-w-0 w-full max-w-full px-0 md:px-[21px] lg:pl-[34px] lg:pr-[16px] xl:pl-[55px] xl:pr-[21px] 2xl:pl-[89px] 2xl:pr-[34px] py-0 xl:pb-[34px]"
+          className="flex-1 min-w-0 w-full max-w-full px-0 md:px-5.25 lg:pl-8.5 lg:pr-4 xl:pl-13.75 xl:pr-5.25 2xl:pl-22.25 2xl:pr-8.5 py-0 xl:pb-8.5"
         >
           <div className="sm:-mt-1 md:-mt-2 lg:hidden">
             {renderMobileFilterBar(false)}
@@ -529,7 +529,7 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
             className="fixed inset-x-0 z-30 lg:hidden transition-transform duration-300 ease-in-out bg-white"
             style={mobileFilterStickyStyle}
           >
-            <div className="element-width px-6 md:px-[45px]">
+            <div className="element-width px-6 md:px-11.25">
               {renderMobileFilterBar(true)}
             </div>
           </div>

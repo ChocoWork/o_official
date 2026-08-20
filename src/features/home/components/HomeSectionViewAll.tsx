@@ -18,7 +18,7 @@ export function HomeSectionViewAll({
   return (
     <div
       className={cn(
-        "mt-[34px] flex justify-center sm:mt-[42px] md:mt-[55px]",
+        "mt-8.5 flex justify-center sm:mt-10.5 md:mt-13.75",
         className,
       )}
     >
@@ -29,7 +29,7 @@ export function HomeSectionViewAll({
         shape="square"
         aria-label={ariaLabel}
         data-testid="home-section-view-all"
-        className="min-h-[52px] w-full max-w-[420px] font-brand uppercase tracking-[0.2em]"
+        className="min-h-13 w-full max-w-105 font-brand uppercase tracking-[0.2em]"
       >
         VIEW ALL
       </Button>

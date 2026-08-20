@@ -54,6 +54,7 @@ fare.blue/2020/03/design-4rule/ の原則。すべてのレイアウトはこれ
 **関連する要素を物理的に近づけ、無関係な要素とは明確に離す。**
 
 実装ルール:
+
 - フォームのラベルと入力欄は 4–8px 以内に配置
 - 関連するボタングループは 8px、無関係なセクションは 24–48px 以上離す
 - カード内要素は外部要素より内部で密に
@@ -61,9 +62,19 @@ fare.blue/2020/03/design-4rule/ の原則。すべてのレイアウトはこれ
 
 ```css
 /* 良い例 */
-.form-field { display: flex; flex-direction: column; gap: 4px; }
-.form-group { display: flex; flex-direction: column; gap: 16px; }
-.form-section + .form-section { margin-top: 40px; }
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.form-section + .form-section {
+  margin-top: 40px;
+}
 ```
 
 ### 2. 整列（Alignment）
@@ -71,6 +82,7 @@ fare.blue/2020/03/design-4rule/ の原則。すべてのレイアウトはこれ
 **要素に見えないグリッドラインを持たせ、透明な秩序を作る。**
 
 実装ルール:
+
 - 8px グリッドシステムを基準にすべてのサイズ・間隔を設定
 - テキストは基本的に左揃え（RTL言語を除く）
 - 中央揃えは見出し・CTA・ヒーローセクションのみに限定
@@ -82,6 +94,7 @@ fare.blue/2020/03/design-4rule/ の原則。すべてのレイアウトはこれ
 **同じ種類の要素は同じビジュアルルールで一貫して表現する。**
 
 実装ルール:
+
 - ボタンのスタイルは variant 3種以内（primary / secondary / ghost）
 - 同一カテゴリのアイコンはサイズ・スタイルを統一（16px or 20px or 24px）
 - カードコンポーネントは全ページで同一パターン
@@ -93,6 +106,7 @@ fare.blue/2020/03/design-4rule/ の原則。すべてのレイアウトはこれ
 **情報に優先度をつけ、重要度をビジュアルで即座に伝える。**
 
 実装ルール:
+
 - 1つのビュー内でフォントサイズのコントラスト比を最低 1.5:1 確保
 - プライマリCTAは視覚的に突出させる（色・サイズ・余白）
 - 背景と本文テキストのコントラスト比: 最低 4.5:1（WCAG AA）
@@ -106,40 +120,53 @@ fare.blue/2020/03/design-4rule/ の原則。すべてのレイアウトはこれ
 脳が無意識にパターンを認識する仕組みを活用する。
 
 ### 1. 類同の法則（Similarity）
+
 形・色・サイズが似ている要素は同じグループとして認識される。
+
 - 同カテゴリのCTAは同色に統一
 - ナビゲーションリンクは同フォントサイズ・色
 - エラー状態は常に赤・警告は黄・成功は緑
 
 ### 2. 近接の法則（Proximity）
+
 → Layer 1「近接」と同一。距離で関係性を伝える。
 
 ### 3. 共通運命の法則（Common Fate）
+
 同じ方向に動く要素は仲間として認識される。
+
 - カルーセルは要素を一緒に横スライドさせる
 - ホバー時に関連要素をまとめてアニメーション
 - スクロール連動エフェクトは意味的に関連する要素のみに適用
 
 ### 4. 閉合の法則（Closure）
+
 欠けた情報を脳が補完する。
+
 - 進捗バーで「残り」を暗示させる
 - リストの一部を隠して「続きあり」を示唆（スクロール促進）
 - 部分的に見えるカードで右にスクロール可能と示す
 
 ### 5. 連続の法則（Continuity）
+
 滑らかな流れを持つ要素は一連として認識される。
+
 - ステッパー（Step 1 → 2 → 3）は矢印または線でつなぐ
 - タイムラインは縦線で連続性を表現
 - コンテンツの読み進め方向（F字・Z字）に沿って配置
 
 ### 6. 図と地の法則（Figure-Ground）
+
 前景と背景を無意識に区別する。
+
 - モーダル背景にスクリム（半透明オーバーレイ）を使用
 - カードに `box-shadow` または背景色差で浮き上がりを表現
 - 重要要素を「浮かせ」、補助情報を「沈める」
 
 ### 7. 対称性の法則（Symmetry）
+
 対称な配置は安定感と信頼感を生む。
+
 - ランディングページのHeroは中央揃えで対称に
 - ダッシュボードのカードグリッドは均等配置
 - ナビゲーションの左右バランスを保つ
@@ -151,18 +178,22 @@ fare.blue/2020/03/design-4rule/ の原則。すべてのレイアウトはこれ
 ユーザーの意思決定・操作行動を科学的に最適化する。
 
 ### Hick's Law（ヒックの法則）
+
 **選択肢が多いほど意思決定に時間がかかる。**
 
 実装:
+
 - ナビゲーション項目は 7±2 以内
 - ドロップダウンの選択肢は 10 以内。超える場合は検索機能を追加
 - 初期表示のCTAは1つに絞る（「今すぐ購入」と「詳しく見る」を並べない）
 - オンボーディングは段階的に選択肢を提示（Progressive Disclosure）
 
 ### Fitts's Law（フィッツの法則）
+
 **ターゲットが大きく近いほど素早く操作できる。**
 
 実装:
+
 - タッチターゲットの最小サイズ: **44×44px**（Apple HIG）/ **48×48dp**（Material）
 - CTA ボタンは十分な padding（縦 12px 以上・横 24px 以上）
 - 頻繁に使うアクションは親指が届く範囲（画面下部）に配置
@@ -170,9 +201,11 @@ fare.blue/2020/03/design-4rule/ の原則。すべてのレイアウトはこれ
 - フォームの Submit ボタンは最後のフィールドの直下に配置
 
 ### Jakob's Law（ヤコブの法則）
+
 **ユーザーは他サイトで慣れたパターンを期待する。**
 
 実装:
+
 - ロゴは左上（クリックでホームへ）
 - 検索アイコンは右上
 - ハンバーガーメニューはモバイルの右上
@@ -181,27 +214,33 @@ fare.blue/2020/03/design-4rule/ の原則。すべてのレイアウトはこれ
 - フッターに会社情報・利用規約・プライバシーポリシー
 
 ### Miller's Law（ミラーの法則）
+
 **人が短期記憶に保持できる情報は 7±2 個。**
 
 実装:
+
 - リストは 7 項目以内。超える場合はカテゴリ分けまたはページネーション
 - フォームは 1 画面に最大 5–7 フィールド
 - ナビゲーションメニューは 7 項目以内
 - テーブルカラムは 5–7 列以内
 
 ### Peak-End Rule（ピーク・エンドの法則）
+
 **人は体験の「最高点」と「終了時点」で全体を評価する。**
 
 実装:
+
 - チェックアウト完了画面は特に丁寧に設計（成功アニメーション・次のステップ明示）
 - エラー体験の直後に回復を助けるガイダンスを表示
 - オンボーディングの最後のステップを「達成感」で終わらせる
 - ローディング中のスケルトンスクリーンでストレスのピークを下げる
 
 ### Doherty Threshold（ドハティの閾値）
+
 **応答時間が 400ms を超えるとユーザーは集中を失う。**
 
 実装:
+
 - 即座のフィードバック: ボタンクリック → **100ms 以内**に視覚変化
 - ページ遷移: **300ms 以内**の Skeleton UI 表示
 - API 応答が遅い場合: 即座に Optimistic UI を表示し、後で更新
@@ -221,22 +260,24 @@ fare.blue/2020/03/design-4rule/ の原則。すべてのレイアウトはこれ
 ```css
 :root {
   /* ── 基本比率 ── */
-  --phi:      1.618;   /* 黄金比 φ */
-  --sqrt-phi: 1.272;   /* √φ（見出し行間・コンパクトな行間に使用） */
+  --phi: 1.618; /* 黄金比 φ */
+  --sqrt-phi: 1.272; /* √φ（見出し行間・コンパクトな行間に使用） */
 
   /* ── 補数（小数部分） ── */
-  --lk-wholestep-dec:   0.618;  /* φ - 1     → padding比率に使用 */
-  --sqrt-phi-dec:       0.272;  /* √φ - 1    → leading補正に使用 */
-  --lk-quarterstep-dec: 0.128;  /* φ^(1/4)-1 */
-  --lk-eighthstep-dec:  0.062;  /* φ^(1/8)-1 */
+  --lk-wholestep-dec: 0.618; /* φ - 1     → padding比率に使用 */
+  --sqrt-phi-dec: 0.272; /* √φ - 1    → leading補正に使用 */
+  --lk-quarterstep-dec: 0.128; /* φ^(1/4)-1 */
+  --lk-eighthstep-dec: 0.062; /* φ^(1/8)-1 */
 
   /* ── スケールステップ ── */
-  --lk-quarterstep: 1.128;  /* φ^(1/4) ≈ 1.128（4ステップで1φ） */
-  --lk-eighthstep:  1.062;  /* φ^(1/8) ≈ 1.062（8ステップで1φ） */
+  --lk-quarterstep: 1.128; /* φ^(1/4) ≈ 1.128（4ステップで1φ） */
+  --lk-eighthstep: 1.062; /* φ^(1/8) ≈ 1.062（8ステップで1φ） */
 
   /* ── 8分ステップのべき乗（CSS calc用・事前計算） ── */
   --lk-eighthstep-2: calc(var(--lk-eighthstep) * var(--lk-eighthstep));
-  --lk-eighthstep-3: calc(var(--lk-eighthstep) * var(--lk-eighthstep) * var(--lk-eighthstep));
+  --lk-eighthstep-3: calc(
+    var(--lk-eighthstep) * var(--lk-eighthstep) * var(--lk-eighthstep)
+  );
   --lk-eighthstep-4: calc(var(--lk-eighthstep-2) * var(--lk-eighthstep-2));
   --lk-eighthstep-5: calc(var(--lk-eighthstep-2) * var(--lk-eighthstep-3));
   --lk-eighthstep-6: calc(var(--lk-eighthstep-3) * var(--lk-eighthstep-3));
@@ -245,9 +286,11 @@ fare.blue/2020/03/design-4rule/ の原則。すべてのレイアウトはこれ
   --lk-eighthstep-9: calc(var(--lk-eighthstep-4) * var(--lk-eighthstep-5));
 
   /* ── コントロール（ボタン・入力）の比率 ── */
-  --control-pad-ratio:    calc(var(--sqrt-phi) / (var(--phi) * var(--phi)));
+  --control-pad-ratio: calc(var(--sqrt-phi) / (var(--phi) * var(--phi)));
   /* √φ ÷ φ² ≈ 0.486  → padding-block に font-size × この値を掛ける */
-  --control-height-ratio: calc(var(--sqrt-phi) + (var(--control-pad-ratio) * 2));
+  --control-height-ratio: calc(
+    var(--sqrt-phi) + (var(--control-pad-ratio) * 2)
+  );
   /* 行間 + padding×2 = コントロールの高さ比率 */
 }
 ```
@@ -264,26 +307,54 @@ fare.blue/2020/03/design-4rule/ の原則。すべてのレイアウトはこれ
   /* ≈ 14px〜15px。ルートフォントサイズ(1rem)に対する相対値として機能 */
 
   /* ── 縮小方向（md を eighthstep で割る） ── */
-  --lk-size-sm:  calc(var(--lk-size-md) / var(--lk-eighthstep));    /* ≈ 13.1px */
-  --lk-size-xs:  calc(var(--lk-size-md) / var(--lk-eighthstep-2));  /* ≈ 12.3px */
-  --lk-size-2xs: calc(var(--lk-size-md) / var(--lk-eighthstep-3));  /* ≈ 11.6px */
-  --lk-size-3xs: calc(var(--lk-size-md) / var(--lk-eighthstep-4));  /* ≈ 10.9px */
-  --lk-size-4xs: calc(var(--lk-size-md) / var(--lk-eighthstep-5));  /* ≈ 10.3px */
-  --lk-size-5xs: calc(var(--lk-size-md) / var(--lk-eighthstep-6));  /* ≈  9.7px */
-  --lk-size-6xs: calc(var(--lk-size-md) / var(--lk-eighthstep-7));  /* ≈  9.1px */
-  --lk-size-7xs: calc(var(--lk-size-md) / var(--lk-eighthstep-8));  /* ≈  8.6px */
-  --lk-size-8xs: calc(var(--lk-size-md) / var(--lk-eighthstep-9));  /* ≈  8.1px */
+  --lk-size-sm: calc(var(--lk-size-md) / var(--lk-eighthstep)); /* ≈ 13.1px */
+  --lk-size-xs: calc(var(--lk-size-md) / var(--lk-eighthstep-2)); /* ≈ 12.3px */
+  --lk-size-2xs: calc(
+    var(--lk-size-md) / var(--lk-eighthstep-3)
+  ); /* ≈ 11.6px */
+  --lk-size-3xs: calc(
+    var(--lk-size-md) / var(--lk-eighthstep-4)
+  ); /* ≈ 10.9px */
+  --lk-size-4xs: calc(
+    var(--lk-size-md) / var(--lk-eighthstep-5)
+  ); /* ≈ 10.3px */
+  --lk-size-5xs: calc(
+    var(--lk-size-md) / var(--lk-eighthstep-6)
+  ); /* ≈  9.7px */
+  --lk-size-6xs: calc(
+    var(--lk-size-md) / var(--lk-eighthstep-7)
+  ); /* ≈  9.1px */
+  --lk-size-7xs: calc(
+    var(--lk-size-md) / var(--lk-eighthstep-8)
+  ); /* ≈  8.6px */
+  --lk-size-8xs: calc(
+    var(--lk-size-md) / var(--lk-eighthstep-9)
+  ); /* ≈  8.1px */
 
   /* ── 拡大方向（md を eighthstep で掛ける） ── */
-  --lk-size-lg:  calc(var(--lk-size-md) * var(--lk-eighthstep));    /* ≈ 15.9px */
-  --lk-size-xl:  calc(var(--lk-size-md) * var(--lk-eighthstep-2));  /* ≈ 16.9px */
-  --lk-size-2xl: calc(var(--lk-size-md) * var(--lk-eighthstep-3));  /* ≈ 17.9px */
-  --lk-size-3xl: calc(var(--lk-size-md) * var(--lk-eighthstep-4));  /* ≈ 19.0px */
-  --lk-size-4xl: calc(var(--lk-size-md) * var(--lk-eighthstep-5));  /* ≈ 20.2px */
-  --lk-size-5xl: calc(var(--lk-size-md) * var(--lk-eighthstep-6));  /* ≈ 21.5px */
-  --lk-size-6xl: calc(var(--lk-size-md) * var(--lk-eighthstep-7));  /* ≈ 22.8px */
-  --lk-size-7xl: calc(var(--lk-size-md) * var(--lk-eighthstep-8));  /* ≈ 24.2px */
-  --lk-size-8xl: calc(var(--lk-size-md) * var(--lk-eighthstep-9));  /* ≈ 25.7px */
+  --lk-size-lg: calc(var(--lk-size-md) * var(--lk-eighthstep)); /* ≈ 15.9px */
+  --lk-size-xl: calc(var(--lk-size-md) * var(--lk-eighthstep-2)); /* ≈ 16.9px */
+  --lk-size-2xl: calc(
+    var(--lk-size-md) * var(--lk-eighthstep-3)
+  ); /* ≈ 17.9px */
+  --lk-size-3xl: calc(
+    var(--lk-size-md) * var(--lk-eighthstep-4)
+  ); /* ≈ 19.0px */
+  --lk-size-4xl: calc(
+    var(--lk-size-md) * var(--lk-eighthstep-5)
+  ); /* ≈ 20.2px */
+  --lk-size-5xl: calc(
+    var(--lk-size-md) * var(--lk-eighthstep-6)
+  ); /* ≈ 21.5px */
+  --lk-size-6xl: calc(
+    var(--lk-size-md) * var(--lk-eighthstep-7)
+  ); /* ≈ 22.8px */
+  --lk-size-7xl: calc(
+    var(--lk-size-md) * var(--lk-eighthstep-8)
+  ); /* ≈ 24.2px */
+  --lk-size-8xl: calc(
+    var(--lk-size-md) * var(--lk-eighthstep-9)
+  ); /* ≈ 25.7px */
 }
 ```
 
@@ -292,27 +363,27 @@ fare.blue/2020/03/design-4rule/ の原則。すべてのレイアウトはこれ
 > ssstein / hyke のようなミニマル系では、ナビ・UIクロムは極小（xs 以下）・本文は sm–md・セクション見出しは xl 止まり。
 > ヒーロー大見出し・コレクション名など表示サイズが 30px 超になるものは `clamp()` + `vw` ベースの流体タイポグラフィで別途定義し、このスケールには乗せない。
 
-| 変数 | 近似値 | 用途 |
-|------|--------|------|
-| `--lk-size-8xs` | ≈ 8.1px | **使用しない**（可読限界以下） |
-| `--lk-size-7xs` | ≈ 8.6px | **使用しない**（可読限界以下） |
-| `--lk-size-6xs` | ≈ 9.1px | **使用しない** |
-| `--lk-size-5xs` | ≈ 9.7px | **使用しない** |
-| `--lk-size-4xs` | ≈10.3px | フッターコピーライト・免責表記（最小限の法的テキスト） |
-| `--lk-size-3xs` | ≈10.9px | 商品コード・SKU・日付などメタ情報 |
-| `--lk-size-2xs` | ≈11.6px | フッターリンク・タグラベル・価格補足・ブランドテーマ |
-| `--lk-size-xs`  | ≈12.3px | ナビゲーションリンク（`letter-spacing` 広め推奨）・フッターカテゴリ見出し |
-| `--lk-size-sm`  | ≈13.1px | 商品名・カードテキスト・ボタンラベル・フォームプレースホルダー |
-| `--lk-size-md`  | ≈14–15px | **本文・ドロワーリンク（スケール基準）**・アコーディオン |
-| `--lk-size-lg`  | ≈15.9px | セクションラベル・ストキストカードタイトル |
-| `--lk-size-xl`  | ≈16.9px | ヘッダーロゴ・ページ内小見出し・アイコン |
-| `--lk-size-2xl` | ≈17.9px | ソーシャルアイコン・セクション見出し（抑制された最大） |
-| `--lk-size-3xl` | ≈19.0px | キャッチコピーのサブ文（用途あれば） |
-| `--lk-size-4xl` | ≈20.2px | **使用しない**（ここより上は vw ベース流体タイポへ） |
-| `--lk-size-5xl` | ≈21.5px | **使用しない** |
-| `--lk-size-6xl` | ≈22.8px | **使用しない** |
-| `--lk-size-7xl` | ≈24.2px | **使用しない** |
-| `--lk-size-8xl` | ≈25.7px | **使用しない**（ヒーロー・コレクション名は vw で別途定義） |
+| 変数            | 近似値   | 用途                                                                      |
+| --------------- | -------- | ------------------------------------------------------------------------- |
+| `--lk-size-8xs` | ≈ 8.1px  | **使用しない**（可読限界以下）                                            |
+| `--lk-size-7xs` | ≈ 8.6px  | **使用しない**（可読限界以下）                                            |
+| `--lk-size-6xs` | ≈ 9.1px  | **使用しない**                                                            |
+| `--lk-size-5xs` | ≈ 9.7px  | **使用しない**                                                            |
+| `--lk-size-4xs` | ≈10.3px  | フッターコピーライト・免責表記（最小限の法的テキスト）                    |
+| `--lk-size-3xs` | ≈10.9px  | 商品コード・SKU・日付などメタ情報                                         |
+| `--lk-size-2xs` | ≈11.6px  | フッターリンク・タグラベル・価格補足・ブランドテーマ                      |
+| `--lk-size-xs`  | ≈12.3px  | ナビゲーションリンク（`letter-spacing` 広め推奨）・フッターカテゴリ見出し |
+| `--lk-size-sm`  | ≈13.1px  | 商品名・カードテキスト・ボタンラベル・フォームプレースホルダー            |
+| `--lk-size-md`  | ≈14–15px | **本文・ドロワーリンク（スケール基準）**・アコーディオン                  |
+| `--lk-size-lg`  | ≈15.9px  | セクションラベル・ストキストカードタイトル                                |
+| `--lk-size-xl`  | ≈16.9px  | ヘッダーロゴ・ページ内小見出し・アイコン                                  |
+| `--lk-size-2xl` | ≈17.9px  | ソーシャルアイコン・セクション見出し（抑制された最大）                    |
+| `--lk-size-3xl` | ≈19.0px  | キャッチコピーのサブ文（用途あれば）                                      |
+| `--lk-size-4xl` | ≈20.2px  | **使用しない**（ここより上は vw ベース流体タイポへ）                      |
+| `--lk-size-5xl` | ≈21.5px  | **使用しない**                                                            |
+| `--lk-size-6xl` | ≈22.8px  | **使用しない**                                                            |
+| `--lk-size-7xl` | ≈24.2px  | **使用しない**                                                            |
+| `--lk-size-8xl` | ≈25.7px  | **使用しない**（ヒーロー・コレクション名は vw で別途定義）                |
 
 ### ユニットレス値（calc() の乗除算用）
 
@@ -320,12 +391,20 @@ CSS の `calc()` で乗算・除算を行う場合、右辺はユニットレス
 
 ```css
 :root {
-  --lk-size-sm-unitless:  calc(1 / var(--phi));                          /* ≈ 0.618 */
-  --lk-size-xs-unitless:  calc(var(--lk-size-sm-unitless) / var(--phi)); /* ≈ 0.382 */
-  --lk-size-2xs-unitless: calc(var(--lk-size-xs-unitless) / var(--phi)); /* ≈ 0.236 */
-  --lk-size-lg-unitless:  calc(1 * var(--phi));                          /* ≈ 1.618 */
-  --lk-size-xl-unitless:  calc(var(--lk-size-lg-unitless) * var(--phi)); /* ≈ 2.618 */
-  --lk-size-2xl-unitless: calc(var(--lk-size-xl-unitless) * var(--phi)); /* ≈ 4.236 */
+  --lk-size-sm-unitless: calc(1 / var(--phi)); /* ≈ 0.618 */
+  --lk-size-xs-unitless: calc(
+    var(--lk-size-sm-unitless) / var(--phi)
+  ); /* ≈ 0.382 */
+  --lk-size-2xs-unitless: calc(
+    var(--lk-size-xs-unitless) / var(--phi)
+  ); /* ≈ 0.236 */
+  --lk-size-lg-unitless: calc(1 * var(--phi)); /* ≈ 1.618 */
+  --lk-size-xl-unitless: calc(
+    var(--lk-size-lg-unitless) * var(--phi)
+  ); /* ≈ 2.618 */
+  --lk-size-2xl-unitless: calc(
+    var(--lk-size-xl-unitless) * var(--phi)
+  ); /* ≈ 4.236 */
 }
 
 /* 使用例: */
@@ -344,30 +423,32 @@ CSS の `calc()` で乗算・除算を行う場合、右辺はユニットレス
 ```
 
 プロジェクト内の実例（`header-position`・`section-space`）:
+
 ```css
 /* 水平パディング：画面幅に応じてフィボナッチ値で拡大 */
-px-[13px] sm:px-[16px] md:px-[21px] lg:px-[34px] xl:px-[55px]
+px-3.25 sm:px-4 md:px-5.25 lg:px-8.5 xl:px-13.75
 
 /* 垂直パディング：セクションの上下余白 */
-py-[34px] sm:py-[42px] md:py-[55px] lg:py-[89px]
+py-8.5 sm:py-10.5 md:py-13.75 lg:py-22.25
 ```
 
 ### コントロール（ボタン・入力）の黄金比パディング
 
 ```css
 /* --control-pad-ratio = √φ ÷ φ² ≈ 0.486 */
-.btn, .input {
-  padding-block:  calc(var(--font-size) * var(--control-pad-ratio));
+.btn,
+.input {
+  padding-block: calc(var(--font-size) * var(--control-pad-ratio));
   /* font-size × 0.486 → 縦パディング */
-  line-height: var(--sqrt-phi);  /* 1.272（行間） */
+  line-height: var(--sqrt-phi); /* 1.272（行間） */
   /* 合計高さ = font-size × --control-height-ratio */
 }
 
 /* プロジェクトの実装例（header-drawer-primary-link）: */
 .header-drawer-primary-link {
   padding: calc(var(--lk-size-md) * var(--control-pad-ratio)) 0
-           calc(var(--lk-size-md) * var(--control-pad-ratio))
-           var(--header-drawer-content-indent);
+    calc(var(--lk-size-md) * var(--control-pad-ratio))
+    var(--header-drawer-content-indent);
   line-height: var(--sqrt-phi);
 }
 ```
@@ -376,13 +457,19 @@ py-[34px] sm:py-[42px] md:py-[55px] lg:py-[89px]
 
 ```css
 /* 本文（広め）: φ そのまま */
-body { line-height: 1.7; }  /* プロジェクトでは 1.7 を採用（φ≈1.618の近似） */
+body {
+  line-height: 1.7;
+} /* プロジェクトでは 1.7 を採用（φ≈1.618の近似） */
 
 /* 関連アイテム・コンパクトテキスト: √φ */
-.look-related-item-text { line-height: var(--sqrt-phi); }  /* 1.272 */
+.look-related-item-text {
+  line-height: var(--sqrt-phi);
+} /* 1.272 */
 
 /* アコーディオン・ナビリンク */
-.header-drawer-accordion [data-ui-accordion-trigger] { line-height: 1.4; }
+.header-drawer-accordion [data-ui-accordion-trigger] {
+  line-height: 1.4;
+}
 ```
 
 ### レイアウト分割（黄金比レクタングル）
@@ -392,8 +479,8 @@ body { line-height: 1.7; }  /* プロジェクトでは 1.7 を採用（φ≈1.6
 ```css
 .golden-layout {
   display: grid;
-  grid-template-columns: 38.2fr 61.8fr;  /* サイドバー : メイン */
-  gap: 34px;  /* フィボナッチ値 */
+  grid-template-columns: 38.2fr 61.8fr; /* サイドバー : メイン */
+  gap: 34px; /* フィボナッチ値 */
 }
 ```
 
@@ -449,12 +536,19 @@ body { line-height: 1.7; }  /* プロジェクトでは 1.7 を採用（φ≈1.6
 
 ```css
 /* 使用例 */
-.element { font-size: var(--lk-size-xl); }   /* ヘッダータイトル */
-.element { font-size: var(--lk-size-2xs); }  /* 小ラベル・ナビリンク */
-.element { font-size: var(--lk-size-xs); }   /* カード詳細テキスト */
+.element {
+  font-size: var(--lk-size-xl);
+} /* ヘッダータイトル */
+.element {
+  font-size: var(--lk-size-2xs);
+} /* 小ラベル・ナビリンク */
+.element {
+  font-size: var(--lk-size-xs);
+} /* カード詳細テキスト */
 ```
 
 サイズ選択の目安:
+
 ```
 --lk-size-8xl  ≈ 25.7px  大見出し（H1相当）
 --lk-size-5xl  ≈ 21.5px  中見出し（H2相当）
@@ -478,28 +572,29 @@ body { line-height: 1.7; }  /* プロジェクトでは 1.7 を採用（φ≈1.6
 ```css
 :root {
   /* ブランドカラー */
-  --color-primary:       hsl(220, 90%, 50%);
+  --color-primary: hsl(220, 90%, 50%);
   --color-primary-hover: hsl(220, 90%, 42%);
 
   /* セマンティックカラー */
   --color-success: hsl(142, 72%, 29%);
-  --color-warning: hsl(38,  92%, 50%);
-  --color-error:   hsl(0,   72%, 51%);
-  --color-info:    hsl(200, 89%, 48%);
+  --color-warning: hsl(38, 92%, 50%);
+  --color-error: hsl(0, 72%, 51%);
+  --color-info: hsl(200, 89%, 48%);
 
   /* テキスト */
-  --color-text-primary:   hsl(222, 47%, 11%);
+  --color-text-primary: hsl(222, 47%, 11%);
   --color-text-secondary: hsl(215, 16%, 47%);
-  --color-text-disabled:  hsl(214, 13%, 65%);
+  --color-text-disabled: hsl(214, 13%, 65%);
 
   /* 背景 */
-  --color-bg-base:    hsl(0, 0%, 100%);
+  --color-bg-base: hsl(0, 0%, 100%);
   --color-bg-surface: hsl(210, 40%, 98%);
   --color-bg-overlay: hsl(222, 47%, 11%, 0.5);
 }
 ```
 
 カラーの役割:
+
 - プライマリ: 最重要CTA に 1 色のみ
 - セカンダリ: 補助アクション
 - アクセント: 強調・新機能バッジ（1 色のみ）
@@ -516,19 +611,20 @@ body { line-height: 1.7; }  /* プロジェクトでは 1.7 を採用（φ≈1.6
 ```css
 /* 水平パディング: 画面幅に応じてフィボナッチ値で拡大 */
 /* header-position / section-space / section-space-about */
-px-[13px] sm:px-[16px] md:px-[21px] lg:px-[34px] xl:px-[55px]
+px-3.25 sm:px-4 md:px-5.25 lg:px-8.5 xl:px-13.75
 
 /* 垂直パディング: セクションの上下余白 */
 /* section-space / section-space-about */
-py-[34px] sm:py-[42px] md:py-[55px] lg:py-[89px]
+py-8.5 sm:py-10.5 md:py-13.75 lg:py-22.25
 
 /* ナビゲーション水平ギャップ */
 /* header-nav-position */
-lg:ml-[34px] xl:ml-[55px]
-gap-[20px] xl:gap-[28px]
+lg:ml-8.5 xl:ml-13.75
+gap-5 xl:gap-7
 ```
 
 参照用スケール:
+
 ```
 コンポーネント内 padding: var(--lk-size-xs)〜var(--lk-size-lg) で決定
 要素間 gap:               8–13px（フィボナッチ）または var(--lk-size-sm) 系
@@ -580,7 +676,7 @@ UI コンポーネント・グラフィック:    最低 3:1
 // フォーカストラップ（モーダル）
 const trapFocus = (element: HTMLElement) => {
   const focusable = element.querySelectorAll(
-    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
   );
   // Tab で最後の要素 → 最初に戻る
 };
@@ -604,16 +700,31 @@ useEffect(() => {
 
 <!-- 見出し階層を守る -->
 <h1>ページタイトル</h1>
-  <h2>セクション</h2>
-    <h3>サブセクション</h3>
+<h2>セクション</h2>
+<h3>サブセクション</h3>
 
 <!-- ランドマーク -->
-<header> <nav> <main> <aside> <footer>
-
-<!-- フォームのラベル紐付け -->
-<label for="email">メールアドレス</label>
-<input id="email" type="email" autocomplete="email" aria-describedby="email-error" />
-<span id="email-error" role="alert">有効なメールアドレスを入力してください</span>
+<header>
+  <nav>
+    <main>
+      <aside>
+        <footer>
+          <!-- フォームのラベル紐付け -->
+          <label for="email">メールアドレス</label>
+          <input
+            id="email"
+            type="email"
+            autocomplete="email"
+            aria-describedby="email-error"
+          />
+          <span id="email-error" role="alert"
+            >有効なメールアドレスを入力してください</span
+          >
+        </footer>
+      </aside>
+    </main>
+  </nav>
+</header>
 ```
 
 ### ARIA 属性の使い方
@@ -647,13 +758,20 @@ useEffect(() => {
 
 ```html
 <!-- ルート変更告知 -->
-<div aria-live="polite" aria-atomic="true" id="route-announcer" class="sr-only"></div>
+<div
+  aria-live="polite"
+  aria-atomic="true"
+  id="route-announcer"
+  class="sr-only"
+></div>
 <script>
   function announce(text) {
-    const el = document.getElementById('route-announcer');
-    el.textContent = '';
+    const el = document.getElementById("route-announcer");
+    el.textContent = "";
     // 一度空にしてから設定しないとスクリーンリーダーが変化を検知しない
-    requestAnimationFrame(() => { el.textContent = text; });
+    requestAnimationFrame(() => {
+      el.textContent = text;
+    });
   }
   // ルート変更時に announce(newPageTitle) を呼び出す
 </script>
@@ -686,13 +804,13 @@ useEffect(() => {
 
 ### フィードバック設計
 
-| アクション | フィードバック | タイミング |
-|-----------|--------------|----------|
-| ボタンクリック | 色変化 / スケール縮小 | < 100ms |
-| フォーム送信 | ローディングスピナー → 成功/エラーメッセージ | 即座 |
-| ホバー | 背景色変化 / アンダーライン | < 50ms |
-| スクロール | スクロールバー / プログレスバー | リアルタイム |
-| ファイルドロップ | ドロップゾーンのハイライト | ドラッグ開始時 |
+| アクション       | フィードバック                               | タイミング     |
+| ---------------- | -------------------------------------------- | -------------- |
+| ボタンクリック   | 色変化 / スケール縮小                        | < 100ms        |
+| フォーム送信     | ローディングスピナー → 成功/エラーメッセージ | 即座           |
+| ホバー           | 背景色変化 / アンダーライン                  | < 50ms         |
+| スクロール       | スクロールバー / プログレスバー              | リアルタイム   |
+| ファイルドロップ | ドロップゾーンのハイライト                   | ドラッグ開始時 |
 
 ### マイクロインタラクション
 
@@ -705,14 +823,18 @@ useEffect(() => {
 
 /* ホバートランジション */
 .btn {
-  transition: background-color 150ms ease, box-shadow 150ms ease;
+  transition:
+    background-color 150ms ease,
+    box-shadow 150ms ease;
 }
 
 /* フォーカスリング */
 .input:focus-visible {
   box-shadow: 0 0 0 3px hsl(220, 90%, 50%, 0.3);
   border-color: var(--color-primary);
-  transition: box-shadow 100ms ease, border-color 100ms ease;
+  transition:
+    box-shadow 100ms ease,
+    border-color 100ms ease;
 }
 ```
 
@@ -724,7 +846,9 @@ useEffect(() => {
 
 ```css
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
@@ -734,15 +858,24 @@ useEffect(() => {
 ### アフォーダンス（操作可能性の明示）
 
 ```css
-[role="button"], button, a { cursor: pointer; }
+[role="button"],
+button,
+a {
+  cursor: pointer;
+}
 
-[disabled], [aria-disabled="true"] {
+[disabled],
+[aria-disabled="true"] {
   cursor: not-allowed;
   opacity: 0.5;
 }
 
-[draggable="true"] { cursor: grab; }
-[draggable="true"]:active { cursor: grabbing; }
+[draggable="true"] {
+  cursor: grab;
+}
+[draggable="true"]:active {
+  cursor: grabbing;
+}
 ```
 
 ---
@@ -763,6 +896,7 @@ useEffect(() => {
 ```
 
 実装パターン:
+
 - フォーム: 必須フィールドのみ初期表示 → オプションは「追加」で展開
 - 設定: 基本/詳細タブで分離
 - 長文: 「続きを読む」で折りたたみ
@@ -772,11 +906,11 @@ useEffect(() => {
 
 ```tsx
 // 1. 入力制約（エラーを起こさせない）
-<input type="tel" pattern="[0-9]{10,11}" inputMode="numeric" />
+<input type="tel" pattern="[0-9]{10,11}" inputMode="numeric" />;
 
 // 2. リアルタイムバリデーション（blur時）
 const handleBlur = () => {
-  if (!isValid(value)) setError('有効な電話番号を入力してください');
+  if (!isValid(value)) setError("有効な電話番号を入力してください");
 };
 
 // 3. エラーメッセージは「何が問題か」「どう直すか」を明示
@@ -790,7 +924,7 @@ const handleBlur = () => {
   confirmLabel="削除する"
   cancelLabel="キャンセル"
   destructive
-/>
+/>;
 ```
 
 ### フォーム設計
@@ -808,7 +942,7 @@ const handleBlur = () => {
       autoComplete="name"
       required
       aria-required="true"
-      aria-describedby={error ? 'name-error' : undefined}
+      aria-describedby={error ? "name-error" : undefined}
     />
     {error && (
       <span id="name-error" role="alert" className="error">
@@ -820,6 +954,7 @@ const handleBlur = () => {
 ```
 
 フォーム設計のルール:
+
 - ラベルは常に表示（プレースホルダーのみ NG）
 - 必須/任意を明記
 - エラーはフィールドの直下に表示
@@ -836,12 +971,32 @@ const handleBlur = () => {
 
 ```css
 /* モバイルファースト（min-width で拡張） */
-.container { padding: 16px; }
+.container {
+  padding: 16px;
+}
 
-@media (min-width: 640px)  { .container { padding: 24px; } }
-@media (min-width: 768px)  { .container { padding: 32px; max-width: 768px; } }
-@media (min-width: 1024px) { .container { padding: 40px; max-width: 1024px; } }
-@media (min-width: 1280px) { .container { max-width: 1280px; } }
+@media (min-width: 640px) {
+  .container {
+    padding: 24px;
+  }
+}
+@media (min-width: 768px) {
+  .container {
+    padding: 32px;
+    max-width: 768px;
+  }
+}
+@media (min-width: 1024px) {
+  .container {
+    padding: 40px;
+    max-width: 1024px;
+  }
+}
+@media (min-width: 1280px) {
+  .container {
+    max-width: 1280px;
+  }
+}
 ```
 
 ### タッチ操作の最適化
@@ -937,7 +1092,7 @@ const handleLike = async () => {
     await api.like(id);
   } catch {
     setLiked(false);
-    showError('操作に失敗しました');
+    showError("操作に失敗しました");
   }
 };
 ```
@@ -967,10 +1122,12 @@ useEffect(() => {
 
 ```ts
 // サービス経由でルート変更を告知する
-@Injectable({ providedIn: 'root' })
+@Injectable({ providedIn: "root" })
 export class Announcer {
-  private el = document.getElementById('route-announcer');
-  say(text: string) { if (this.el) this.el.textContent = text; }
+  private el = document.getElementById("route-announcer");
+  say(text: string) {
+    if (this.el) this.el.textContent = text;
+  }
 }
 ```
 
@@ -982,7 +1139,9 @@ export class Announcer {
 </template>
 <script setup lang="ts">
 const live = ref<HTMLElement | null>(null);
-function announce(text: string) { if (live.value) live.value.textContent = text; }
+function announce(text: string) {
+  if (live.value) live.value.textContent = text;
+}
 </script>
 ```
 
@@ -991,6 +1150,7 @@ function announce(text: string) { if (live.value) live.value.textContent = text;
 ## 実装手順
 
 ### Step 1 — 要件整理
+
 ```
 1. ユーザーのゴールを1文で定義
 2. 主要デバイスを確認（モバイル/デスクトップ比率）
@@ -999,6 +1159,7 @@ function announce(text: string) { if (live.value) live.value.textContent = text;
 ```
 
 ### Step 2 — 構造設計
+
 ```
 1. セマンティックHTMLの構造を決める
 2. 情報階層（何が最も重要か）を定義
@@ -1008,6 +1169,7 @@ function announce(text: string) { if (live.value) live.value.textContent = text;
 ```
 
 ### Step 3 — 実装
+
 ```
 Layer 1:  レイアウト（近接・整列・反復・対比）
 Layer 2:  ゲシュタルト原則の適用
@@ -1037,6 +1199,7 @@ Layer 10: ナビゲーション・状態管理
 ### 開発者向け
 
 **黄金比・プロポーション**
+
 - [ ] フォントサイズに `--lk-size-*` 変数を使っているか（固定 rem 値を直書きしていないか）
 - [ ] 余白・gap に Fibonacci px（13, 21, 34, 55, 89px）または `--lk-size-*` を使っているか
 - [ ] ボタン・入力の縦パディングに `--control-pad-ratio` を使っているか
@@ -1044,11 +1207,13 @@ Layer 10: ナビゲーション・状態管理
 - [ ] Tailwind の任意値クラス（`px-[N]`）を書く場合、Fibonacci 値から選んでいるか
 
 **視覚**
+
 - [ ] コントラスト比 4.5:1 以上（本文）/ 3:1 以上（大テキスト・UI）
 - [ ] フォントサイズ最小 `--lk-size-md`（≈14–15px）
 - [ ] 1画面でCTAは1つが主役か
 
 **操作性**
+
 - [ ] タッチターゲット最小 44×44px
 - [ ] キーボードのみで全操作可能か
 - [ ] フォーカスリングが常に表示されるか（`:focus-visible`）
@@ -1056,12 +1221,14 @@ Layer 10: ナビゲーション・状態管理
 - [ ] ドラッグ操作に代替手段があるか（WCAG 2.2）
 
 **フィードバック**
+
 - [ ] 全ボタンクリックで 100ms 以内に視覚変化があるか
 - [ ] ローディング中はインジケーターがあるか（400ms 超）
 - [ ] エラーメッセージは「原因 + 解決策」で書かれているか
 - [ ] 成功時にポジティブなフィードバックがあるか
 
 **アクセシビリティ**
+
 - [ ] セマンティック HTML 要素を使い、ネイティブコントロールを優先した
 - [ ] 見出し階層（h1 → h2 → h3）が正しいか
 - [ ] 全画像に適切な alt 属性があるか
@@ -1072,6 +1239,7 @@ Layer 10: ナビゲーション・状態管理
 - [ ] モーダル・メニュー・動的更新・ルート変更時のフォーカスを管理した
 
 **モバイル**
+
 - [ ] モバイル（375px〜）で横スクロールが発生しないか
 - [ ] 重要CTAが親指の届く範囲にあるか
 - [ ] フォント・ボタンがタップしやすいサイズか
@@ -1148,15 +1316,16 @@ jobs:
 
 ```md
 アクセシビリティ・UI/UXレビュー:
-- セマンティクス / role / name:        [OK/課題あり]
-- キーボード操作とフォーカス:          [OK/課題あり]
-- 告知（非同期 / ルート変更）:         [OK/課題あり]
-- コントラスト / 視覚的フォーカス:     [OK/課題あり]
-- フォーム / エラー / ヘルプ:          [OK/課題あり]
+
+- セマンティクス / role / name: [OK/課題あり]
+- キーボード操作とフォーカス: [OK/課題あり]
+- 告知（非同期 / ルート変更）: [OK/課題あり]
+- コントラスト / 視覚的フォーカス: [OK/課題あり]
+- フォーム / エラー / ヘルプ: [OK/課題あり]
 - 黄金比プロポーション / 余白スケール: [OK/課題あり]
-- モバイルタッチターゲット:            [OK/課題あり]
-対応内容: …
-参照: WCAG 2.2 [該当達成基準]
+- モバイルタッチターゲット: [OK/課題あり]
+  対応内容: …
+  参照: WCAG 2.2 [該当達成基準]
 ```
 
 ---

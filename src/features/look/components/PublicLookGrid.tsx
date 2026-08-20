@@ -31,7 +31,7 @@ const HOME_LOOK_RENDER_COUNT = 8;
 // 一覧ページは lg でフィルターのサイドバー（233px）が現れ、xl でさらに 288px に広がる。
 // その帯域で列を増やすとカード幅が大きく落ちるため、列の増加は 2xl だけにする。
 const DEFAULT_LOOK_GRID_CLASS =
-  "grid grid-cols-2 md:grid-cols-3 2xl:grid-cols-4 gap-4 gap-y-[34px] sm:gap-6 sm:gap-y-[55px] lg:gap-4 xl:gap-6";
+  "grid grid-cols-2 md:grid-cols-3 2xl:grid-cols-4 gap-4 gap-y-8.5 sm:gap-6 sm:gap-y-13.75 lg:gap-4 xl:gap-6";
 const LOOK_SEASON_FILTER_OPTIONS = LOOK_SEASON_OPTIONS.map((season) => ({
   value: season,
   label: season,
@@ -83,7 +83,7 @@ function LookCard({ look, className }: LookCardProps) {
       <Link href={`/look/${look.id}`} className="group block">
         {/* FREQ-139: 画像とパネルの間隔はフィボナッチ（13px / 21px）で
             罫線余白（8/13）と同系列に統一（反復・整列） */}
-        <div className="relative mb-[13px] aspect-[2/3] overflow-hidden bg-[#f5f5f5] sm:mb-[21px] lg:mb-0">
+        <div className="relative mb-3.25 aspect-2/3 overflow-hidden bg-[#f5f5f5] sm:mb-5.25 lg:mb-0">
           <Image
             src={look.imageUrls[0] || "/placeholder.png"}
             alt={look.theme}
@@ -108,7 +108,7 @@ function LookCard({ look, className }: LookCardProps) {
               ホバー時はシーズン・テーマが消え、関連アイテムと価格に入れ替わる */}
           <div
             data-testid="look-card-overlay"
-            className="absolute inset-x-0 bottom-0 hidden lg:block bg-[linear-gradient(to_top,rgba(0,0,0,0.55)_0%,rgba(0,0,0,0.38)_30%,rgba(0,0,0,0.2)_55%,rgba(0,0,0,0.08)_78%,rgba(0,0,0,0)_100%)] px-[13px] pb-[13px] pt-[89px] text-white"
+            className="absolute inset-x-0 bottom-0 hidden lg:block bg-[linear-gradient(to_top,rgba(0,0,0,0.55)_0%,rgba(0,0,0,0.38)_30%,rgba(0,0,0,0.2)_55%,rgba(0,0,0,0.08)_78%,rgba(0,0,0,0)_100%)] px-3.25 pb-3.25 pt-22.25 text-white"
           >
             {/* タイトル群と関連アイテム群を同一グリッドセルに重ね、
                 last baseline 揃えで「最終行の文字の下のライン」を一致させる
@@ -117,13 +117,13 @@ function LookCard({ look, className }: LookCardProps) {
               <div
                 data-testid="look-card-overlay-title"
                 className={cn(
-                  "col-start-1 row-start-1 [align-self:last_baseline]",
+                  "col-start-1 row-start-1 self-baseline-last",
                   look.linkedItems.length > 0 &&
                     "transition-opacity duration-300 group-hover:opacity-0",
                 )}
               >
                 <p
-                  className="tracking-widest mb-[2px]"
+                  className="tracking-widest mb-0.5"
                   style={{ fontSize: "var(--lk-size-3xs)" }}
                 >
                   {overlaySeasonLabel}
@@ -138,7 +138,7 @@ function LookCard({ look, className }: LookCardProps) {
               {look.linkedItems.length > 0 ? (
                 <div
                   data-testid="look-card-overlay-items"
-                  className="col-start-1 row-start-1 [align-self:last_baseline] flex flex-col gap-[2px] opacity-0 pointer-events-none transition-opacity duration-300 group-hover:opacity-100 group-hover:pointer-events-auto"
+                  className="col-start-1 row-start-1 self-baseline-last flex flex-col gap-0.5 opacity-0 pointer-events-none transition-opacity duration-300 group-hover:opacity-100 group-hover:pointer-events-auto"
                 >
                   {/* FREQ-150: 各行はアイテムページへのリンクとして振る舞う。
                       カード全体が /look リンク（a 要素）内のためアンカーはネスト
@@ -185,7 +185,7 @@ function LookCard({ look, className }: LookCardProps) {
           （シーズン / セリフ体タイトル / 罫線 / 関連アイテム+価格）。
           lg 以上は画像上のオーバーレイに表示するため非表示 */}
       {/* FREQ-142: 枠線との間に水平・下余白（13px / sm 21px）を確保。lg は枠線なしのため 0 */}
-      <div className="px-[13px] pb-[13px] sm:px-[21px] sm:pb-[21px] lg:p-0">
+      <div className="px-3.25 pb-3.25 sm:px-5.25 sm:pb-5.25 lg:p-0">
         <Link
           href={`/look/${look.id}`}
           data-testid="look-card-caption"
@@ -196,7 +196,7 @@ function LookCard({ look, className }: LookCardProps) {
           {/* FREQ-143: mobile/tablet のシーズン表記は、色をより黒く・字を太くして
               視認性と存在感を高める。字間は詰め気味に整える（FREQ-145）。 */}
           <p
-            className="text-black/80 font-medium tracking-[0.04em] mb-[2px]"
+            className="text-black/80 font-medium tracking-[0.04em] mb-0.5"
             style={{ fontSize: "var(--lk-size-3xs)" }}
           >
             {seasonLabel}
@@ -220,7 +220,7 @@ function LookCard({ look, className }: LookCardProps) {
           <>
             <hr
               data-testid="look-card-divider"
-              className="mt-[8px] mb-[8px] border-t border-black/10 sm:mt-[13px] sm:mb-[13px] lg:hidden"
+              className="mt-2 mb-2 border-t border-black/10 sm:mt-3.25 sm:mb-3.25 lg:hidden"
             />
             <div className="look-related-items flex flex-col lg:hidden">
               {/* FREQ-151: PC オーバーレイ（FREQ-150）と同様に、ホバーで
@@ -234,7 +234,7 @@ function LookCard({ look, className }: LookCardProps) {
                   {/* モバイルは商品名と価格を縦積み（折り返し回避）。sm 以上は横並びで価格を右端に。 */}
                   {/* FREQ-144: 商品名・価格は ITEM カード（ItemCardInfo）と同じ見た目に揃える。
                       名前=font-brand tracking-tight / weight 400、価格=text-black / weight 400、¥表記。 */}
-                  <div className="flex flex-col gap-[2px] sm:flex-row sm:items-center sm:justify-between sm:gap-2">
+                  <div className="flex flex-col gap-0.5 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
                     <span
                       className="font-brand tracking-tight min-w-0"
                       style={{
@@ -406,7 +406,7 @@ function PublicLookCatalog({
       data-filter-bar={interactive ? "floating" : "placeholder"}
       aria-hidden={interactive ? undefined : true}
       className={cn(
-        "flex items-center justify-between bg-white/95 py-[13px] backdrop-blur",
+        "flex items-center justify-between bg-white/95 py-3.25 backdrop-blur",
         !interactive && "pointer-events-none invisible",
       )}
     >
@@ -433,7 +433,7 @@ function PublicLookCatalog({
         onClose={() => setIsFilterDrawerOpen(false)}
         side="left"
         size="md"
-        className="[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+        className="scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
       >
         <div
           className="flex flex-col h-full"
@@ -442,7 +442,7 @@ function PublicLookCatalog({
             paddingTop: "calc(var(--lk-size-sm) * var(--sqrt-phi))",
           }}
         >
-          <div className="flex justify-end pb-[13px]">
+          <div className="flex justify-end pb-3.25">
             <Button
               variant="text"
               size="xs"
@@ -453,7 +453,7 @@ function PublicLookCatalog({
             </Button>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pb-[21px]">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pb-5.25">
             {renderSeasonFilter("xs", true)}
           </div>
         </div>
@@ -462,11 +462,11 @@ function PublicLookCatalog({
       <div className="flex w-full">
         {/* デスクトップ: NEWS と同様に SEASON フィルターを左サイドバーに配置 */}
         <aside
-          className="hidden lg:block w-[233px] xl:w-[288px] shrink-0 sticky h-[calc(100vh-var(--site-header-offset))] overflow-visible transition-[top,height] duration-300 ease-in-out"
+          className="hidden lg:block w-58.25 xl:w-[288px] shrink-0 sticky h-[calc(100vh-var(--site-header-offset))] overflow-visible transition-[top,height] duration-300 ease-in-out"
           style={desktopFilterStickyStyle}
         >
           <div
-            className="h-full overflow-y-auto border-r border-black/5 px-[13px] xl:px-[21px]"
+            className="h-full overflow-y-auto border-r border-black/5 px-3.25 xl:px-5.25"
             style={{
               paddingBlock:
                 "calc(var(--lk-size-sm) * var(--phi) * var(--phi)) calc(var(--lk-size-xs) * var(--phi))",
@@ -478,7 +478,7 @@ function PublicLookCatalog({
 
         <div
           data-testid="look-content-column"
-          className="flex-1 min-w-0 w-full max-w-full px-[13px] sm:px-[16px] md:px-[21px] lg:pl-[34px] lg:pr-[16px] xl:pl-[55px] xl:pr-[21px] 2xl:pl-[89px] 2xl:pr-[34px] py-0 xl:pb-[34px]"
+          className="flex-1 min-w-0 w-full max-w-full px-3.25 sm:px-4 md:px-5.25 lg:pl-8.5 lg:pr-4 xl:pl-13.75 xl:pr-5.25 2xl:pl-22.25 2xl:pr-8.5 py-0 xl:pb-8.5"
         >
           <div className="sm:-mt-1 md:-mt-2 lg:hidden">
             {renderMobileFilterBar(false)}
@@ -487,7 +487,7 @@ function PublicLookCatalog({
             className="fixed inset-x-0 z-30 lg:hidden bg-white transition-transform duration-300 ease-in-out"
             style={mobileFilterStickyStyle}
           >
-            <div className="element-width px-6 md:px-[45px]">
+            <div className="element-width px-6 md:px-11.25">
               {renderMobileFilterBar(true)}
             </div>
           </div>

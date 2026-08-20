@@ -94,8 +94,8 @@ export function FilingDocumentsView({
   }, [filtered]);
 
   const selected =
-    inventory.documents.find((document) => document.key === selectedKey)
-    ?? inventory.documents[0];
+    inventory.documents.find((document) => document.key === selectedKey) ??
+    inventory.documents[0];
 
   // 段取りの進み具合。帳簿一致と証憑が終わっていれば次の段へ進める。
   const stepStates: Record<string, "done" | "current" | "idle"> = {
@@ -158,12 +158,12 @@ export function FilingDocumentsView({
       </div>
 
       <div className="flex flex-wrap items-end gap-2">
-        <div className="min-w-[180px] flex-1">
+        <div className="min-w-45 flex-1">
           <SearchField
             size="2xs"
             aria-label="資料名を検索"
             placeholder="資料名を検索"
-            className="font-acumin [&_[data-ui-search-field-input]]:rounded-md"
+            className="font-acumin **:data-ui-search-field-input:rounded-md"
             value={keyword}
             onChange={(event) => setKeyword(event.target.value)}
             showClearButton
@@ -215,7 +215,7 @@ export function FilingDocumentsView({
             </p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[680px] border-collapse">
+              <table className="w-full min-w-170 border-collapse">
                 <thead>
                   <tr className="border-b border-[#d4d4d4]">
                     {[
@@ -228,7 +228,7 @@ export function FilingDocumentsView({
                     ].map((heading) => (
                       <th
                         key={heading}
-                        className="px-2 py-2 text-left font-acumin text-[11px] font-normal text-[#474747]"
+                        className="px-2 py-2 text-left font-acumin text-2.75 font-normal text-[#474747]"
                       >
                         {heading}
                       </th>
@@ -241,7 +241,7 @@ export function FilingDocumentsView({
                       <tr className="bg-[#fafafa]">
                         <td
                           colSpan={6}
-                          className="px-2 py-1.5 font-acumin text-[11px] font-medium text-[#474747]"
+                          className="px-2 py-1.5 font-acumin text-2.75 font-medium text-[#474747]"
                         >
                           <i
                             className="ri-arrow-down-s-line mr-1"
@@ -265,10 +265,10 @@ export function FilingDocumentsView({
                               />
                               {document.name}
                             </td>
-                            <td className="whitespace-nowrap px-2 py-2.5 font-acumin text-[11px] text-[#474747] tabular-nums">
+                            <td className="whitespace-nowrap px-2 py-2.5 font-acumin text-2.75 text-[#474747] tabular-nums">
                               {document.period}
                             </td>
-                            <td className="px-2 py-2.5 text-right font-acumin text-[11px] text-[#474747] tabular-nums">
+                            <td className="px-2 py-2.5 text-right font-acumin text-2.75 text-[#474747] tabular-nums">
                               {document.entryCount === 0
                                 ? "—"
                                 : `${document.entryCount} 件`}
@@ -283,12 +283,12 @@ export function FilingDocumentsView({
                                   }
                                   aria-hidden="true"
                                 />
-                                <span className="font-acumin text-[11px] text-[#474747]">
+                                <span className="font-acumin text-2.75 text-[#474747]">
                                   {document.fileName}
                                 </span>
                               </span>
                             </td>
-                            <td className="whitespace-nowrap px-2 py-2.5 font-acumin text-[11px] text-[#474747]">
+                            <td className="whitespace-nowrap px-2 py-2.5 font-acumin text-2.75 text-[#474747]">
                               {FILING_DOCUMENT_SOURCE_LABELS[document.source]}
                             </td>
                             <td className="px-2 py-2.5">
@@ -319,7 +319,7 @@ export function FilingDocumentsView({
               </table>
             </div>
           )}
-          <p className="mt-2 font-acumin text-[10px] leading-relaxed text-[#707070]">
+          <p className="mt-2 font-acumin text-2.5 leading-relaxed text-[#707070]">
             ※
             PDF・Excelは帳簿から自動生成したファイルです。内容に問題がある場合は再生成してください。
           </p>
@@ -363,7 +363,7 @@ export function FilingDocumentsView({
                       {FILING_DOCUMENT_STATUS_LABELS[selected.status]}
                     </StateBadge>
                   </p>
-                  <p className="mt-1 font-acumin text-[10px] text-[#707070] tabular-nums">
+                  <p className="mt-1 font-acumin text-2.5 text-[#707070] tabular-nums">
                     {selected.period}
                   </p>
                 </div>
@@ -374,18 +374,15 @@ export function FilingDocumentsView({
                   [
                     ["ファイル名", selected.fileName],
                     ["関連仕訳数", `${selected.entryCount} 件`],
-                    [
-                      "入力元",
-                      FILING_DOCUMENT_SOURCE_LABELS[selected.source],
-                    ],
+                    ["入力元", FILING_DOCUMENT_SOURCE_LABELS[selected.source]],
                     ["カテゴリ", selected.category],
                   ] as const
                 ).map(([label, value]) => (
                   <div key={label} className="min-w-0">
-                    <dt className="font-acumin text-[10px] text-[#707070]">
+                    <dt className="font-acumin text-2.5 text-[#707070]">
                       {label}
                     </dt>
-                    <dd className="truncate font-acumin text-[11px] text-black tabular-nums">
+                    <dd className="truncate font-acumin text-2.75 text-black tabular-nums">
                       {value}
                     </dd>
                   </div>
@@ -416,7 +413,7 @@ export function FilingDocumentsView({
               </div>
 
               <div>
-                <p className="font-acumin text-[11px] font-medium text-black">
+                <p className="font-acumin text-2.75 font-medium text-black">
                   バリデーションチェック
                 </p>
                 <ul className="mt-1">
@@ -425,7 +422,7 @@ export function FilingDocumentsView({
                       key={label}
                       className="flex items-center justify-between gap-2 border-b border-[#ededed] py-1.5"
                     >
-                      <span className="min-w-0 truncate font-acumin text-[11px] text-[#474747]">
+                      <span className="min-w-0 truncate font-acumin text-2.75 text-[#474747]">
                         {label}
                       </span>
                       <StateBadge state={ok ? "done" : "todo"}>
@@ -462,7 +459,7 @@ export function FilingDocumentsView({
                 </span>
               }
             />
-            <p className="font-acumin text-[11px] leading-relaxed text-[#707070]">
+            <p className="font-acumin text-2.75 leading-relaxed text-[#707070]">
               申告資料の準備状況です。
               <br />
               すべての資料を整えて申告に備えましょう。
@@ -470,7 +467,7 @@ export function FilingDocumentsView({
           </div>
 
           <div className="min-w-0 overflow-x-auto">
-            <ol className="flex min-w-[420px] items-center gap-1.5">
+            <ol className="flex min-w-105 items-center gap-1.5">
               {PACKAGE_STEPS.map((step, index) => {
                 const state = stepStates[step.key];
                 return (
@@ -498,11 +495,11 @@ export function FilingDocumentsView({
                           }
                           aria-hidden="true"
                         />
-                        <span className="truncate font-acumin text-[11px] font-medium text-black">
+                        <span className="truncate font-acumin text-2.75 font-medium text-black">
                           {step.label}
                         </span>
                       </span>
-                      <span className="mt-0.5 block truncate font-acumin text-[10px] text-[#707070]">
+                      <span className="mt-0.5 block truncate font-acumin text-2.5 text-[#707070]">
                         {step.note}
                       </span>
                     </span>
@@ -541,7 +538,7 @@ export function FilingDocumentsView({
             </Button>
           </div>
         </div>
-        <p className="mt-3 font-acumin text-[10px] leading-relaxed text-[#707070]">
+        <p className="mt-3 font-acumin text-2.5 leading-relaxed text-[#707070]">
           <StatusBadge
             shape="rounded"
             size="4xs"

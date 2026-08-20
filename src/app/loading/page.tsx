@@ -1,12 +1,12 @@
 // ----------------- LOADING デザインギャラリー（Admin 専用） -----------------
-'use client';
+"use client";
 
-import { useLogin } from '@/contexts/LoginContext';
-import LoadingPatterns from './_components/LoadingPatterns';
-import FullScreenPatterns from './_components/FullScreenPatterns';
-import BrandNamePatterns from './_components/BrandNamePatterns';
-import AnimationShowcase from './_components/AnimationShowcase';
-import ContentMotionIdeas from './_components/ContentMotionIdeas';
+import { useLogin } from "@/contexts/LoginContext";
+import LoadingPatterns from "./_components/LoadingPatterns";
+import FullScreenPatterns from "./_components/FullScreenPatterns";
+import BrandNamePatterns from "./_components/BrandNamePatterns";
+import AnimationShowcase from "./_components/AnimationShowcase";
+import ContentMotionIdeas from "./_components/ContentMotionIdeas";
 
 export default function LoadingPage() {
   const { isLoggedIn, isAuthResolved, userRole } = useLogin();
@@ -19,11 +19,13 @@ export default function LoadingPage() {
     );
   }
 
-  if (!isLoggedIn || userRole !== 'admin') {
+  if (!isLoggedIn || userRole !== "admin") {
     return (
       <div className="element-width">
         <h1 className="mb-4">アクセス権限がありません</h1>
-        <p className="text-sm text-[#474747] font-acumin">このページは Admin のみ利用できます。</p>
+        <p className="text-sm text-[#474747] font-acumin">
+          このページは Admin のみ利用できます。
+        </p>
       </div>
     );
   }
@@ -231,24 +233,36 @@ export default function LoadingPage() {
         }
       `}</style>
 
-      <section className="px-5 md:px-8 lg:px-[34px] xl:px-[55px] py-[55px]">
-        <div className="max-w-[1280px] mx-auto">
-
-          <div className="mb-[55px]">
-            <h1 className="text-[22px] text-black tracking-tight mb-[13px]" style={{ fontFamily: 'Didot, serif' }}>
+      <section className="px-5 md:px-8 lg:px-8.5 xl:px-13.75 py-13.75">
+        <div className="max-w-7xl mx-auto">
+          <div className="mb-13.75">
+            <h1
+              className="text-5.5 text-black tracking-tight mb-3.25"
+              style={{ fontFamily: "Didot, serif" }}
+            >
               Loading
             </h1>
-            <p className="text-[11px] text-black/40 tracking-wider" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-              ミニマルでモードなローディング表現のコレクション — 各パターン下にコピー可能な .tsx コードを表示
+            <p
+              className="text-2.75 text-black/40 tracking-wider"
+              style={{ fontFamily: "acumin-pro, sans-serif" }}
+            >
+              ミニマルでモードなローディング表現のコレクション —
+              各パターン下にコピー可能な .tsx コードを表示
             </p>
           </div>
 
           {/* Section: Loading Patterns */}
-          <div className="mb-[34px]">
-            <h2 className="text-[16px] text-black tracking-tight mb-[5px]" style={{ fontFamily: 'Didot, serif' }}>
+          <div className="mb-8.5">
+            <h2
+              className="text-4 text-black tracking-tight mb-1.25"
+              style={{ fontFamily: "Didot, serif" }}
+            >
               Standard
             </h2>
-            <p className="text-[10px] text-black/40 tracking-wider mb-[34px]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+            <p
+              className="text-2.5 text-black/40 tracking-wider mb-8.5"
+              style={{ fontFamily: "acumin-pro, sans-serif" }}
+            >
               ベーシックなローディング表現 — 8パターン
             </p>
           </div>
@@ -256,11 +270,17 @@ export default function LoadingPage() {
           <LoadingPatterns />
 
           {/* Section: Full Screen Patterns */}
-          <div className="mt-[89px] mb-[34px]">
-            <h2 className="text-[16px] text-black tracking-tight mb-[5px]" style={{ fontFamily: 'Didot, serif' }}>
+          <div className="mt-22.25 mb-8.5">
+            <h2
+              className="text-4 text-black tracking-tight mb-1.25"
+              style={{ fontFamily: "Didot, serif" }}
+            >
               Full Screen
             </h2>
-            <p className="text-[10px] text-black/40 tracking-wider mb-[34px]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+            <p
+              className="text-2.5 text-black/40 tracking-wider mb-8.5"
+              style={{ fontFamily: "acumin-pro, sans-serif" }}
+            >
               画面全体を使ったモードなローディング表現 — 16パターン
             </p>
           </div>
@@ -268,29 +288,47 @@ export default function LoadingPage() {
           <FullScreenPatterns />
 
           {/* Section: Animation Components */}
-          <div className="mt-[89px] mb-[34px]">
-            <h2 className="text-[16px] text-black tracking-tight mb-[5px]" style={{ fontFamily: 'Didot, serif' }}>
+          <div className="mt-22.25 mb-8.5">
+            <h2
+              className="text-4 text-black tracking-tight mb-1.25"
+              style={{ fontFamily: "Didot, serif" }}
+            >
               Animation Components
             </h2>
-            <p className="text-[10px] text-black/40 tracking-wider mb-[34px]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-              全ページで使用できるアニメーションコンポーネント — コピーして各ページで使用可能
+            <p
+              className="text-2.5 text-black/40 tracking-wider mb-8.5"
+              style={{ fontFamily: "acumin-pro, sans-serif" }}
+            >
+              全ページで使用できるアニメーションコンポーネント —
+              コピーして各ページで使用可能
             </p>
           </div>
 
           <AnimationShowcase />
 
-          <div className="mt-[55px] p-[21px] sm:p-[26px] md:p-[34px] border border-black/10 bg-[#fafafa]">
-            <p className="text-[11px] sm:text-[12px] text-black/60 leading-[1.8]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-              各コンポーネントは <span className="text-black">components/animations/</span> フォルダに配置されています。使用する際はインポートして必要なプロップを設定するだけです。IntersectionObserverを使用しているため、要素が画面に入ったタイミングで自動的にアニメーションが開始されます。
+          <div className="mt-13.75 p-5.25 sm:p-6.5 md:p-8.5 border border-black/10 bg-[#fafafa]">
+            <p
+              className="text-2.75 sm:text-3 text-black/60 leading-[1.8]"
+              style={{ fontFamily: "acumin-pro, sans-serif" }}
+            >
+              各コンポーネントは{" "}
+              <span className="text-black">components/animations/</span>{" "}
+              フォルダに配置されています。使用する際はインポートして必要なプロップを設定するだけです。IntersectionObserverを使用しているため、要素が画面に入ったタイミングで自動的にアニメーションが開始されます。
             </p>
           </div>
 
           {/* Section: Brand Name Patterns */}
-          <div className="mt-[89px] mb-[34px]">
-            <h2 className="text-[16px] text-black tracking-tight mb-[5px]" style={{ fontFamily: 'Didot, serif' }}>
+          <div className="mt-22.25 mb-8.5">
+            <h2
+              className="text-4 text-black tracking-tight mb-1.25"
+              style={{ fontFamily: "Didot, serif" }}
+            >
               Brand Name
             </h2>
-            <p className="text-[10px] text-black/40 tracking-wider mb-[34px]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+            <p
+              className="text-2.5 text-black/40 tracking-wider mb-8.5"
+              style={{ fontFamily: "acumin-pro, sans-serif" }}
+            >
               Le Fil des Heures を使ったブランド表現 — 16パターン
             </p>
           </div>
@@ -298,12 +336,19 @@ export default function LoadingPage() {
           <BrandNamePatterns />
 
           {/* Section: Content Motion */}
-          <div className="mt-[89px] mb-[34px]">
-            <h2 className="text-[16px] text-black tracking-tight mb-[5px]" style={{ fontFamily: 'Didot, serif' }}>
+          <div className="mt-22.25 mb-8.5">
+            <h2
+              className="text-4 text-black tracking-tight mb-1.25"
+              style={{ fontFamily: "Didot, serif" }}
+            >
               Content Motion
             </h2>
-            <p className="text-[10px] text-black/40 tracking-wider mb-[34px]" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
-              実コンテンツ（商品・LOOK・見出し・CTA）で使えるモーションアイデア — 8パターン
+            <p
+              className="text-2.5 text-black/40 tracking-wider mb-8.5"
+              style={{ fontFamily: "acumin-pro, sans-serif" }}
+            >
+              実コンテンツ（商品・LOOK・見出し・CTA）で使えるモーションアイデア
+              — 8パターン
             </p>
           </div>
 

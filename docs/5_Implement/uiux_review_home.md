@@ -9,11 +9,11 @@
 
 ## ステータス凡例
 
-| ステータス | 意味 |
-|---|---|
-| 未対応 | 未着手 |
-| 対応中 | 一部対応・設計検討中 |
-| 対応済 | 修正完了 |
+| ステータス | 意味                 |
+| ---------- | -------------------- |
+| 未対応     | 未着手               |
+| 対応中     | 一部対応・設計検討中 |
+| 対応済     | 修正完了             |
 
 優先度: High（離脱・信頼・購入に直結）/ Mid（体験品質）/ Low（磨き込み）
 
@@ -28,33 +28,33 @@
 
 ## レビュー結果（HOME 本体）
 
-| # | 指摘場所 | 指摘理由（違反原則） | 修正提案 | 優先度 | 修正ステータス |
-|---|---|---|---|---|---|
-| H-1 | [page.tsx:56-60](../../src/app/page.tsx#L56-L60) ヒーロー | ブランド名 h1 のみで、コンセプト文・CTA が無い。コアペルソナが求める「思想・差別化（天然繊維100%/受注生産/洗える）」が第一画面でゼロ。Peak-End / Visual Hierarchy / Hick（次アクション不在） | h1 直下にコンセプト「時を紡ぐニュートラルモードな日常着」+ 一行の価値訴求、第一CTA（VIEW COLLECTION → /item）を1つだけ配置 | High | 対応済 |
-| H-2 | [page.tsx:82](../../src/app/page.tsx#L82) About文 | 「普**遂**的なデザイン」は「普**遍**的」の誤字（about/page.tsx は正しく「普遍的」）。ブランドの信頼性を損なう（コアペルソナは細部の質を見る） | 「普遍的」へ修正 | High | 対応済 |
-| H-3 | [page.tsx:48](../../src/app/page.tsx#L48) ヒーロー画像 | `alt="Hero Background"` は内容を表さない。ブランド主役画像で alt が無価値（WCAG 1.1.1） | ブランド世界観を表す alt（例「ニュートラルな日常着をまとうルックのメインビジュアル」）に変更 | Mid | 対応済 |
-| H-4 | [page.tsx:43](../../src/app/page.tsx#L43) ヒーロー | `min-h-screen` + `pt-20` でヒーローが 100vh を超え、モバイルでファーストビューに余白/見切れが生じうる。整列・モバイル最適化 | `min-h-[100svh]` 等で svh を使い、ヘッダー高ぶん内側で吸収 | Mid | 対応済 |
-| H-5 | ヒーロー全体 | スクロール誘導の手がかりが無い。ヒーローが全画面のため「下にコンテンツがある」ことが伝わりにくい（ゲシュタルト：閉合/連続） | 控えめなスクロールインジケータ（↓ / 細線）を最下部中央に追加 | Low | 対応済 |
-| H-6 | [page.tsx:100-106](../../src/app/page.tsx#L100-L106) About画像 | `unoptimized` 指定で最適化を放棄。LCP/転送量に不利（高単価ECで表示品質と速度は信頼に直結） | next/image 最適化を有効化、または事前最適化済みアセットを使用 | Low | 対応済 |
-| H-7 | About セクション | HOME の About は概要のみで、差別化（天然繊維100%・洗える・受注生産・ユニセックス・SS/AW固定）が無い。ブランド適合（供給の核/刺さる言葉） | 3つの価値（長く着られる / 天然繊維100%で洗える / 受注生産）をアイコン無しの簡潔な3項目で提示し /about へ誘導 | Mid | 対応済 |
-| H-8 | セクション順（items→look→news→about→stockist） | 信頼性を重視する層には「思想（about）」が下方すぎる。読み進め（F/Z）と認知の流れ | about の要約を search preview 直後など上位に薄く差し込む、もしくはヒーローで思想を一言示す | Low | 対応済 |
+| #   | 指摘場所                                                       | 指摘理由（違反原則）                                                                                                                                                                         | 修正提案                                                                                                                   | 優先度 | 修正ステータス |
+| --- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------ | -------------- |
+| H-1 | [page.tsx:56-60](../../src/app/page.tsx#L56-L60) ヒーロー      | ブランド名 h1 のみで、コンセプト文・CTA が無い。コアペルソナが求める「思想・差別化（天然繊維100%/受注生産/洗える）」が第一画面でゼロ。Peak-End / Visual Hierarchy / Hick（次アクション不在） | h1 直下にコンセプト「時を紡ぐニュートラルモードな日常着」+ 一行の価値訴求、第一CTA（VIEW COLLECTION → /item）を1つだけ配置 | High   | 対応済         |
+| H-2 | [page.tsx:82](../../src/app/page.tsx#L82) About文              | 「普**遂**的なデザイン」は「普**遍**的」の誤字（about/page.tsx は正しく「普遍的」）。ブランドの信頼性を損なう（コアペルソナは細部の質を見る）                                                | 「普遍的」へ修正                                                                                                           | High   | 対応済         |
+| H-3 | [page.tsx:48](../../src/app/page.tsx#L48) ヒーロー画像         | `alt="Hero Background"` は内容を表さない。ブランド主役画像で alt が無価値（WCAG 1.1.1）                                                                                                      | ブランド世界観を表す alt（例「ニュートラルな日常着をまとうルックのメインビジュアル」）に変更                               | Mid    | 対応済         |
+| H-4 | [page.tsx:43](../../src/app/page.tsx#L43) ヒーロー             | `min-h-screen` + `pt-20` でヒーローが 100vh を超え、モバイルでファーストビューに余白/見切れが生じうる。整列・モバイル最適化                                                                  | `min-h-svh` 等で svh を使い、ヘッダー高ぶん内側で吸収                                                                      | Mid    | 対応済         |
+| H-5 | ヒーロー全体                                                   | スクロール誘導の手がかりが無い。ヒーローが全画面のため「下にコンテンツがある」ことが伝わりにくい（ゲシュタルト：閉合/連続）                                                                  | 控えめなスクロールインジケータ（↓ / 細線）を最下部中央に追加                                                               | Low    | 対応済         |
+| H-6 | [page.tsx:100-106](../../src/app/page.tsx#L100-L106) About画像 | `unoptimized` 指定で最適化を放棄。LCP/転送量に不利（高単価ECで表示品質と速度は信頼に直結）                                                                                                   | next/image 最適化を有効化、または事前最適化済みアセットを使用                                                              | Low    | 対応済         |
+| H-7 | About セクション                                               | HOME の About は概要のみで、差別化（天然繊維100%・洗える・受注生産・ユニセックス・SS/AW固定）が無い。ブランド適合（供給の核/刺さる言葉）                                                     | 3つの価値（長く着られる / 天然繊維100%で洗える / 受注生産）をアイコン無しの簡潔な3項目で提示し /about へ誘導               | Mid    | 対応済         |
+| H-8 | セクション順（items→look→news→about→stockist）                 | 信頼性を重視する層には「思想（about）」が下方すぎる。読み進め（F/Z）と認知の流れ                                                                                                             | about の要約を search preview 直後など上位に薄く差し込む、もしくはヒーローで思想を一言示す                                 | Low    | 対応済         |
 
 ---
 
 ## レビュー結果（共通 Header / Footer）※全ページ共通
 
-| # | 指摘場所 | 指摘理由（違反原則） | 修正提案 | 優先度 | 修正ステータス |
-|---|---|---|---|---|---|
-| C-1 | [Header.tsx:22](../../src/components/Header.tsx#L22) / [Header.tsx:153-162](../../src/components/Header.tsx#L153-L162) | `/ui`（開発用コンポーネントギャラリー）が公開ナビ・ドロワーに露出。一般ユーザーに無意味でブランド毀損・Hick（選択肢過多） | 本番ナビから `UI` を削除（ルートも要ガード） | High | 対応済（方針変更）公開ナビから削除＋本番ビルドで `notFound()` ガード。開発環境では直アクセス可（[uiux_review_ui.md](./uiux_review_ui.md) UI-1/UI-2 と統一） |
-| C-2 | [Header.tsx:176-199](../../src/components/Header.tsx#L176-L199) アイコンリンク | クラス名が `icon-flame`（globals 定義は `icon-frame`）。タイポで 44px タップ領域が当たらず、クリック範囲が文字グリフのみ（≒20px）。Fitts / タッチターゲット44px / モバイル | `icon-frame` に修正し各アイコンを 44×44px の当たり判定に | High | 対応済 |
-| C-3 | [Header.tsx:179-189](../../src/components/Header.tsx#L179-L189) wishlist/cart/account アイコン | `aria-label` 無し（search のみ有）。スクリーンリーダーで「リンク」としか読まれない（WCAG 4.1.2 / 名前） | wishlist/cart/account/menu に aria-label を付与（cart は件数も読み上げ） | High | 対応済 |
-| C-4 | [Header.tsx:280-293](../../src/components/Header.tsx#L280-L293) ドロワーSNS | Instagram/Facebook/Twitter ボタンに href も onClick も無く**機能しない**。アフォーダンス詐称 + ブランド（SNSは集客の核） | 実SNS URL の `<a>` に変更。後述C-7と統一 | High | 対応済 |
-| C-5 | [Footer.tsx:9-15](../../src/components/Footer.tsx#L9-L15) SHOPリンク | ALL/TOPS/BOTTOMS/OUTERWEAR/ACCESSORIES が**全て `/item`**（カテゴリ未指定）。リンク文言と遷移先が不一致（Jakob / アフォーダンス） | `/item?category=TOPS` 等カテゴリ付きへ。ヘッダードロワーは実装済みなので流用 | Mid | 対応済 |
-| C-6 | [Footer.tsx:62-79](../../src/components/Footer.tsx#L62-L79) SNS | `href="#"` で遷移しない。ブランド（IG/TikTok が集客の核）の機会損失 | 実URLに。`target=_blank rel=noopener` 付与 | High | 対応済 |
-| C-7 | [Footer.tsx:62-79](../../src/components/Footer.tsx#L62-L79) SNS構成 | brand.md の集客核は **TikTok / Instagram / note**。実装は Instagram/Facebook/X で **TikTok 欠落**・Facebook は非戦略 | TikTok を追加、Facebook を見直し（note/blog 導線も検討） | Mid | 対応済 |
-| C-8 | [Footer.tsx:84-90](../../src/components/Footer.tsx#L84-L90) 法務テキスト | `footer-legal-*` は `--lk-size-4xs`（≈10px）+ `text-white/50`。極小フォント×低コントラストで可読性・WCAG 1.4.3 リスク | 文字は据え置きでも色を white/70 以上へ、最小可読サイズを再確認 | Mid | 対応済 |
-| C-9 | [Header.tsx:70-92](../../src/components/Header.tsx#L70-L92) スクロール表示制御 | 下スクロールでヘッダー全消し。検索/カート/メニューが消え、再アクセスに上スクロールが必要（発見可能性低下）。モバイルThumb-zone | 完全非表示でなく縮小（コンパクト化）に留める案を検討 | Low | 対応済 |
-| C-10 | 全ページ レイアウト | `layout.tsx` で `<Header/>`/`<Footer/>` が描画されていない（children のみ）。各ページが個別配置依存だと整合崩れ・スキップリンク等共通対応が困難 | 共通レイアウトでの Header/Footer 集約と「メインへスキップ」リンク・`<main>` ランドマーク追加を検討 | Mid | 対応済 |
+| #    | 指摘場所                                                                                                               | 指摘理由（違反原則）                                                                                                                                                       | 修正提案                                                                                           | 優先度 | 修正ステータス                                                                                                                                              |
+| ---- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C-1  | [Header.tsx:22](../../src/components/Header.tsx#L22) / [Header.tsx:153-162](../../src/components/Header.tsx#L153-L162) | `/ui`（開発用コンポーネントギャラリー）が公開ナビ・ドロワーに露出。一般ユーザーに無意味でブランド毀損・Hick（選択肢過多）                                                  | 本番ナビから `UI` を削除（ルートも要ガード）                                                       | High   | 対応済（方針変更）公開ナビから削除＋本番ビルドで `notFound()` ガード。開発環境では直アクセス可（[uiux_review_ui.md](./uiux_review_ui.md) UI-1/UI-2 と統一） |
+| C-2  | [Header.tsx:176-199](../../src/components/Header.tsx#L176-L199) アイコンリンク                                         | クラス名が `icon-flame`（globals 定義は `icon-frame`）。タイポで 44px タップ領域が当たらず、クリック範囲が文字グリフのみ（≒20px）。Fitts / タッチターゲット44px / モバイル | `icon-frame` に修正し各アイコンを 44×44px の当たり判定に                                           | High   | 対応済                                                                                                                                                      |
+| C-3  | [Header.tsx:179-189](../../src/components/Header.tsx#L179-L189) wishlist/cart/account アイコン                         | `aria-label` 無し（search のみ有）。スクリーンリーダーで「リンク」としか読まれない（WCAG 4.1.2 / 名前）                                                                    | wishlist/cart/account/menu に aria-label を付与（cart は件数も読み上げ）                           | High   | 対応済                                                                                                                                                      |
+| C-4  | [Header.tsx:280-293](../../src/components/Header.tsx#L280-L293) ドロワーSNS                                            | Instagram/Facebook/Twitter ボタンに href も onClick も無く**機能しない**。アフォーダンス詐称 + ブランド（SNSは集客の核）                                                   | 実SNS URL の `<a>` に変更。後述C-7と統一                                                           | High   | 対応済                                                                                                                                                      |
+| C-5  | [Footer.tsx:9-15](../../src/components/Footer.tsx#L9-L15) SHOPリンク                                                   | ALL/TOPS/BOTTOMS/OUTERWEAR/ACCESSORIES が**全て `/item`**（カテゴリ未指定）。リンク文言と遷移先が不一致（Jakob / アフォーダンス）                                          | `/item?category=TOPS` 等カテゴリ付きへ。ヘッダードロワーは実装済みなので流用                       | Mid    | 対応済                                                                                                                                                      |
+| C-6  | [Footer.tsx:62-79](../../src/components/Footer.tsx#L62-L79) SNS                                                        | `href="#"` で遷移しない。ブランド（IG/TikTok が集客の核）の機会損失                                                                                                        | 実URLに。`target=_blank rel=noopener` 付与                                                         | High   | 対応済                                                                                                                                                      |
+| C-7  | [Footer.tsx:62-79](../../src/components/Footer.tsx#L62-L79) SNS構成                                                    | brand.md の集客核は **TikTok / Instagram / note**。実装は Instagram/Facebook/X で **TikTok 欠落**・Facebook は非戦略                                                       | TikTok を追加、Facebook を見直し（note/blog 導線も検討）                                           | Mid    | 対応済                                                                                                                                                      |
+| C-8  | [Footer.tsx:84-90](../../src/components/Footer.tsx#L84-L90) 法務テキスト                                               | `footer-legal-*` は `--lk-size-4xs`（≈10px）+ `text-white/50`。極小フォント×低コントラストで可読性・WCAG 1.4.3 リスク                                                      | 文字は据え置きでも色を white/70 以上へ、最小可読サイズを再確認                                     | Mid    | 対応済                                                                                                                                                      |
+| C-9  | [Header.tsx:70-92](../../src/components/Header.tsx#L70-L92) スクロール表示制御                                         | 下スクロールでヘッダー全消し。検索/カート/メニューが消え、再アクセスに上スクロールが必要（発見可能性低下）。モバイルThumb-zone                                             | 完全非表示でなく縮小（コンパクト化）に留める案を検討                                               | Low    | 対応済                                                                                                                                                      |
+| C-10 | 全ページ レイアウト                                                                                                    | `layout.tsx` で `<Header/>`/`<Footer/>` が描画されていない（children のみ）。各ページが個別配置依存だと整合崩れ・スキップリンク等共通対応が困難                            | 共通レイアウトでの Header/Footer 集約と「メインへスキップ」リンク・`<main>` ランドマーク追加を検討 | Mid    | 対応済                                                                                                                                                      |
 
 > 注: C-2/C-3/C-4/C-6 は機能不全に近く、UI/UX 以前の不具合として優先対応推奨。
 
@@ -62,7 +62,7 @@
 
 ## 修正反映（2026-06-20｜共通不具合）
 
-- **C-2（対応済）**: ヘッダーアイコンのクラス誤字 `icon-flame`→`icon-frame` を修正。各アイコンリンクに `min-h-[44px]` を付与し**縦方向のタップ領域を44pxに拡大**（Fitts）。※横幅は「長いブランド名＋5アイコン」のモバイル制約上 44px 確保は不可のため据え置き（横は要デザイン判断＝モバイルのアイコン数削減 等。menuボタンも同様に要追従）。
+- **C-2（対応済）**: ヘッダーアイコンのクラス誤字 `icon-flame`→`icon-frame` を修正。各アイコンリンクに `min-h-11` を付与し**縦方向のタップ領域を44pxに拡大**（Fitts）。※横幅は「長いブランド名＋5アイコン」のモバイル制約上 44px 確保は不可のため据え置き（横は要デザイン判断＝モバイルのアイコン数削減 等。menuボタンも同様に要追従）。
 - **C-3（対応済）**: search/wishlist/cart/account に `aria-label` を付与（cart は `カート（N点）` と件数読み上げ）。menu は既存で付与済み。
 - 実装: [src/components/Header.tsx](../../src/components/Header.tsx)。
 - **C-4 / C-6 / C-7（対応済）**: SNSを一元管理する [src/lib/social.ts](../../src/lib/social.ts) を新設。Footer・ドロワーとも**実リンク化**（`target=_blank` `rel=noopener noreferrer` `aria-label` 付与）。構成を **Instagram / TikTok / X**（Facebook廃止）に変更。Instagram は実URL設定済み、TikTok・X は **URL未開設のため非表示**（`social.ts` に URL を入れると自動表示。死にリンクを出さない方針）。
@@ -105,7 +105,7 @@
 
 - **CONCEPT → ABOUT 統合**: 独立していた CONCEPT 節を廃止し、ABOUT 節へ集約。ABOUT 節を「コンセプト一文（時を紡ぐ…）＋ マニフェスト ＋ ブランド概要 ＋ ビジュアル ＋ 差別化3本柱（天然繊維/受注生産/ユニセックス）＋ READ OUR STORY → /about」の単一構成に再編。H-1/H-7 の差別化提示は ABOUT 節内に移設して**維持（対応済のまま）**。
 - **H-3（対応済）**: ヒーロー画像 alt を `Hero Background` → 「ニュートラルな日常着をまとう Le Fil des Heures のメインビジュアル」へ変更。
-- **H-4（対応済）**: ヒーロー `min-h-screen` → `min-h-[100svh]`。モバイルの動的ビューポートで見切れ/余白を抑制。
+- **H-4（対応済）**: ヒーロー `min-h-screen` → `min-h-svh`。モバイルの動的ビューポートで見切れ/余白を抑制。
 - **H-5（対応済）**: ヒーロー最下部中央に控えめなスクロールインジケータ（`SCROLL` ラベル + 細い縦線、`aria-hidden`）を追加。トーンは抑制（モノクローム/極小）でブランド世界観を維持。
 - **H-6（対応済）**: ABOUT 画像の `unoptimized` を撤去し next/image 最適化を有効化。`sizes="(min-width: 768px) 50vw, 100vw"` を付与。
 - 実装: [src/app/page.tsx](../../src/app/page.tsx)。

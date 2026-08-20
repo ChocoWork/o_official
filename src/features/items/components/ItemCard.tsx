@@ -23,7 +23,7 @@ export function ItemCardMedia({
   priority?: boolean;
   children?: ReactNode;
 }) {
-  const frameClass = "relative aspect-[3/4] bg-[#f5f5f5] overflow-hidden";
+  const frameClass = "relative aspect-3/4 bg-[#f5f5f5] overflow-hidden";
   const soldOutBadge = soldOut ? (
     <span
       className="absolute top-0 left-0 bg-black text-white px-2 py-0.75 tracking-widest"

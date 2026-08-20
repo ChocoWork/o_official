@@ -1,12 +1,12 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import CodeBlock from './CodeBlock';
-import StaggerChildren from '@/components/animations/StaggerChildren';
+import { useState, useEffect } from "react";
+import CodeBlock from "./CodeBlock";
+import StaggerChildren from "@/components/animations/StaggerChildren";
 
 const patterns = [
   {
-    name: 'PULSE',
+    name: "PULSE",
     render: (
       <div className="relative w-6 h-6">
         <div className="absolute inset-0 bg-black rounded-full animate-ping opacity-20"></div>
@@ -19,19 +19,28 @@ const patterns = [
 </div>`,
   },
   {
-    name: 'SPIN',
+    name: "SPIN",
     render: (
       <div className="w-8 h-8 border border-black/20 border-t-black rounded-full animate-spin"></div>
     ),
     code: `<div className="w-8 h-8 border border-black/20 border-t-black rounded-full animate-spin"></div>`,
   },
   {
-    name: 'TYPING',
+    name: "TYPING",
     render: (
       <div className="flex items-center gap-2">
-        <div className="w-2 h-2 bg-black rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-        <div className="w-2 h-2 bg-black rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-        <div className="w-2 h-2 bg-black rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+        <div
+          className="w-2 h-2 bg-black rounded-full animate-bounce"
+          style={{ animationDelay: "0ms" }}
+        ></div>
+        <div
+          className="w-2 h-2 bg-black rounded-full animate-bounce"
+          style={{ animationDelay: "150ms" }}
+        ></div>
+        <div
+          className="w-2 h-2 bg-black rounded-full animate-bounce"
+          style={{ animationDelay: "300ms" }}
+        ></div>
       </div>
     ),
     code: `<div className="flex items-center gap-2">
@@ -41,7 +50,7 @@ const patterns = [
 </div>`,
   },
   {
-    name: 'BREATHE',
+    name: "BREATHE",
     render: (
       <div className="relative flex items-center justify-center w-12 h-12">
         <div className="absolute inset-0 border border-black rounded-full animate-ping opacity-10"></div>
@@ -54,7 +63,7 @@ const patterns = [
 </div>`,
   },
   {
-    name: 'LINEAR',
+    name: "LINEAR",
     render: (
       <div className="w-24 h-px bg-black/10 relative overflow-hidden">
         <div className="absolute inset-y-0 left-0 w-8 bg-black animate-[slide_1.5s_ease-in-out_infinite]"></div>
@@ -71,11 +80,21 @@ const patterns = [
 }`,
   },
   {
-    name: 'SHIMMER',
+    name: "SHIMMER",
     render: (
       <div className="relative overflow-hidden">
-        <span className="text-sm tracking-widest text-black/20" style={{ fontFamily: 'Didot, serif' }}>Loading</span>
-        <span className="absolute inset-0 text-sm tracking-widest text-black animate-[shimmer_2s_linear_infinite]" style={{ fontFamily: 'Didot, serif' }}>Loading</span>
+        <span
+          className="text-sm tracking-widest text-black/20"
+          style={{ fontFamily: "Didot, serif" }}
+        >
+          Loading
+        </span>
+        <span
+          className="absolute inset-0 text-sm tracking-widest text-black animate-[shimmer_2s_linear_infinite]"
+          style={{ fontFamily: "Didot, serif" }}
+        >
+          Loading
+        </span>
       </div>
     ),
     code: `<div className="relative overflow-hidden">
@@ -91,18 +110,22 @@ const patterns = [
 }`,
   },
   {
-    name: 'SQUARE',
+    name: "SQUARE",
     render: (
       <div className="w-5 h-5 border border-black animate-[spin_2s_linear_infinite]"></div>
     ),
     code: `<div className="w-5 h-5 border border-black animate-[spin_2s_linear_infinite]"></div>`,
   },
   {
-    name: 'BARS',
+    name: "BARS",
     render: (
       <div className="flex items-center gap-1 h-6">
         {[0, 1, 2, 3, 4].map((i) => (
-          <div key={i} className="w-px h-full bg-black animate-[fadeUp_1s_ease-in-out_infinite]" style={{ animationDelay: `${i * 100}ms` }}></div>
+          <div
+            key={i}
+            className="w-px h-full bg-black animate-[fadeUp_1s_ease-in-out_infinite]"
+            style={{ animationDelay: `${i * 100}ms` }}
+          ></div>
         ))}
       </div>
     ),
@@ -122,7 +145,7 @@ const patterns = [
 }`,
   },
   {
-    name: 'DOUBLE',
+    name: "DOUBLE",
     render: (
       <div className="relative w-10 h-10">
         <div className="absolute inset-0 border border-black rounded-full animate-[spin_2s_linear_infinite]"></div>
@@ -135,9 +158,12 @@ const patterns = [
 </div>`,
   },
   {
-    name: 'ORBIT',
+    name: "ORBIT",
     render: (
-      <div className="relative w-10 h-10 animate-spin" style={{ animationDuration: '3s' }}>
+      <div
+        className="relative w-10 h-10 animate-spin"
+        style={{ animationDuration: "3s" }}
+      >
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-black rounded-full"></div>
         <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-black/40 rounded-full"></div>
         <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-black/60 rounded-full"></div>
@@ -150,7 +176,7 @@ const patterns = [
 </div>`,
   },
   {
-    name: 'SCALE',
+    name: "SCALE",
     render: (
       <div className="w-4 h-4 bg-black rounded-full animate-[scalePulse_1.5s_ease-in-out_infinite]"></div>
     ),
@@ -163,11 +189,15 @@ const patterns = [
 }`,
   },
   {
-    name: 'WAVE',
+    name: "WAVE",
     render: (
       <div className="flex items-center gap-2">
         {[0, 1, 2].map((i) => (
-          <div key={i} className="w-6 h-px bg-black animate-[wave_1.2s_ease-in-out_infinite]" style={{ animationDelay: `${i * 150}ms` }}></div>
+          <div
+            key={i}
+            className="w-6 h-px bg-black animate-[wave_1.2s_ease-in-out_infinite]"
+            style={{ animationDelay: `${i * 150}ms` }}
+          ></div>
         ))}
       </div>
     ),
@@ -187,7 +217,7 @@ const patterns = [
 }`,
   },
   {
-    name: 'CLOCK',
+    name: "CLOCK",
     render: (
       <div className="relative w-10 h-10 rounded-full border border-black/20">
         <div className="absolute top-1/2 left-1/2 w-px h-4 bg-black origin-bottom -translate-x-1/2 -translate-y-full animate-[sweep_1.5s_linear_infinite]"></div>
@@ -206,7 +236,7 @@ const patterns = [
 }`,
   },
   {
-    name: 'ELASTIC',
+    name: "ELASTIC",
     render: (
       <div className="relative w-16 h-4">
         <div className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-black rounded-full animate-[elastic_1.5s_ease-in-out_infinite]"></div>
@@ -224,11 +254,15 @@ const patterns = [
 }`,
   },
   {
-    name: 'RIPPLE',
+    name: "RIPPLE",
     render: (
       <div className="relative w-10 h-10">
         {[0, 1, 2].map((i) => (
-          <div key={i} className="absolute inset-0 border border-black rounded-full animate-[fadeRing_2s_ease-out_infinite]" style={{ animationDelay: `${i * 400}ms` }}></div>
+          <div
+            key={i}
+            className="absolute inset-0 border border-black rounded-full animate-[fadeRing_2s_ease-out_infinite]"
+            style={{ animationDelay: `${i * 400}ms` }}
+          ></div>
         ))}
       </div>
     ),
@@ -248,10 +282,20 @@ const patterns = [
 }`,
   },
   {
-    name: 'STROKE',
+    name: "STROKE",
     render: (
       <svg className="w-10 h-10" viewBox="0 0 40 40">
-        <circle cx="20" cy="20" r="16" fill="none" stroke="black" strokeWidth="1" strokeDasharray="100" strokeDashoffset="100" className="animate-[draw_2s_linear_infinite]" />
+        <circle
+          cx="20"
+          cy="20"
+          r="16"
+          fill="none"
+          stroke="black"
+          strokeWidth="1"
+          strokeDasharray="100"
+          strokeDashoffset="100"
+          className="animate-[draw_2s_linear_infinite]"
+        />
       </svg>
     ),
     code: `<svg className="w-10 h-10" viewBox="0 0 40 40">
@@ -286,12 +330,18 @@ export default function LoadingPatterns() {
       duration={400}
       direction="up"
       distance={16}
-      className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-[21px]"
+      className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5.25"
     >
       {patterns.map((p) => (
-        <div key={p.name} className="flex flex-col items-center justify-center py-[34px] px-[21px] bg-white border border-black/10">
+        <div
+          key={p.name}
+          className="flex flex-col items-center justify-center py-8.5 px-5.25 bg-white border border-black/10"
+        >
           {p.render}
-          <p className="mt-[21px] text-[10px] tracking-[0.2em] text-black/30" style={{ fontFamily: 'acumin-pro, sans-serif' }}>
+          <p
+            className="mt-5.25 text-2.5 tracking-[0.2em] text-black/30"
+            style={{ fontFamily: "acumin-pro, sans-serif" }}
+          >
             {p.name}
           </p>
           <CodeBlock code={p.code} label={p.name} />

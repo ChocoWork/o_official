@@ -297,7 +297,7 @@ export default async function NewsDetailPage({
                   PREV
                 </p>
                 <p
-                  className="text-[#474747] group-hover:text-black transition-colors max-w-[160px] md:max-w-[220px] lg:max-w-[280px] truncate"
+                  className="text-[#474747] group-hover:text-black transition-colors max-w-40 md:max-w-55 lg:max-w-70 truncate"
                   style={actionTitleStyle}
                 >
                   {prevArticle.title}
@@ -332,7 +332,7 @@ export default async function NewsDetailPage({
                   NEXT
                 </p>
                 <p
-                  className="text-[#474747] group-hover:text-black transition-colors max-w-[160px] md:max-w-[220px] lg:max-w-[280px] truncate"
+                  className="text-[#474747] group-hover:text-black transition-colors max-w-40 md:max-w-55 lg:max-w-70 truncate"
                   style={actionTitleStyle}
                 >
                   {nextArticle.title}

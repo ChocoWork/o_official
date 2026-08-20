@@ -68,7 +68,7 @@ export function LookImageGallery({ theme, imageUrls }: LookImageGalleryProps) {
             <div
               key={`${theme}:carousel:${index}:${imageUrl}`}
               data-testid="look-detail-carousel-slide"
-              className="relative aspect-[2/3] w-[calc(100vw-2.5rem)] shrink-0 snap-start overflow-hidden bg-white"
+              className="relative aspect-2/3 w-[calc(100vw-2.5rem)] shrink-0 snap-start overflow-hidden bg-white"
             >
               <Image
                 src={imageUrl}
@@ -98,7 +98,7 @@ export function LookImageGallery({ theme, imageUrls }: LookImageGalleryProps) {
             <div
               key={`${theme}:tablet:${index}:${imageUrl}`}
               data-testid="look-detail-tablet-carousel-slide"
-              className="relative aspect-[2/3] w-full shrink-0 snap-start overflow-hidden bg-white"
+              className="relative aspect-2/3 w-full shrink-0 snap-start overflow-hidden bg-white"
             >
               <Image
                 src={imageUrl}
@@ -141,7 +141,7 @@ export function LookImageGallery({ theme, imageUrls }: LookImageGalleryProps) {
         {normalizedImages.length > 1 && (
           <div
             data-testid="look-detail-thumbnail-list"
-            className="flex flex-none flex-col gap-2 p-[2px]"
+            className="flex flex-none flex-col gap-2 p-0.5"
           >
             {normalizedImages.map((imageUrl, index) => (
               <button
@@ -151,7 +151,7 @@ export function LookImageGallery({ theme, imageUrls }: LookImageGalleryProps) {
                 aria-label={`${theme} の ${index + 1}枚目を表示`}
                 aria-pressed={selectedIndex === index}
                 onClick={() => setSelectedIndex(index)}
-                className={`relative aspect-[2/3] w-16 shrink-0 overflow-hidden cursor-pointer focus-visible:outline-none transition-opacity duration-200 ${
+                className={`relative aspect-2/3 w-16 shrink-0 overflow-hidden cursor-pointer focus-visible:outline-none transition-opacity duration-200 ${
                   selectedIndex === index
                     ? "ring-1 ring-black opacity-100"
                     : "opacity-50 hover:opacity-90"
@@ -174,7 +174,7 @@ export function LookImageGallery({ theme, imageUrls }: LookImageGalleryProps) {
             max-w で従来の高さ上限 min(48rem, 100svh-5rem) 相当を超えないようにする */}
         <div
           data-testid="look-detail-main-image-frame"
-          className="relative aspect-[2/3] w-full min-w-0 max-w-[calc(min(48rem,100svh-5rem)*2/3)] overflow-hidden bg-white"
+          className="relative aspect-2/3 w-full min-w-0 max-w-[calc(min(48rem,100svh-5rem)*2/3)] overflow-hidden bg-white"
         >
           <Image
             data-testid="look-main-image"

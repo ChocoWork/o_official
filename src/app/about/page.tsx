@@ -57,8 +57,8 @@ export default function StoryPage() {
   return (
     <div className="max-w-6xl mx-auto px-1 sm:px-4 lg:px-8">
       {/* Philosophy（ブランド主語の説明） */}
-      <div className="mb-[34px] sm:mb-[55px] lg:mb-[89px] border-t border-black/10 pt-[34px] sm:pt-[55px] lg:pt-[89px]">
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,_1fr)_minmax(0,_2fr)] gap-x-[48px] gap-y-[13px] sm:gap-y-[21px]">
+      <div className="mb-8.5 sm:mb-13.75 lg:mb-22.25 border-t border-black/10 pt-8.5 sm:pt-13.75 lg:pt-22.25">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-x-12 gap-y-3.25 sm:gap-y-5.25">
           <h2 style={sectionTitleStyle}>Brand Philosophy / ブランドの思想</h2>
           <div className="about-main-space">
             <p className="about-main-text" style={bodyTextStyle}>
@@ -76,11 +76,11 @@ export default function StoryPage() {
       </div>
 
       {/* なぜ、つくるのか（市場への問題提起 + 創業者の言葉） */}
-      <div className="mb-[34px] sm:mb-[55px] lg:mb-[89px]">
-        <div className="border-t border-black/10 pt-[34px] sm:pt-[55px] lg:pt-[89px]">
-          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,_1fr)_minmax(0,_2fr)] gap-x-[48px] gap-y-[13px] sm:gap-y-[21px]">
+      <div className="mb-8.5 sm:mb-13.75 lg:mb-22.25">
+        <div className="border-t border-black/10 pt-8.5 sm:pt-13.75 lg:pt-22.25">
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-x-12 gap-y-3.25 sm:gap-y-5.25">
             <h2 style={sectionTitleStyle}>WHY WE MAKE / なぜ、つくるのか</h2>
-            <div className="space-y-[16px] sm:space-y-[21px]">
+            <div className="space-y-4 sm:space-y-5.25">
               <p className="about-main-text" style={bodyTextStyle}>
                 低価格。大量生産。機能性。それらが優先されるうちに、化学繊維を用いた、当たり障りのない形の服が増えた。ベーシックな形かつ上質な生地のアイテムをベースとして、「シルエット」と「生地」から生まれる服本来の面白さを提案します。
               </p>
@@ -99,15 +99,15 @@ export default function StoryPage() {
       </div>
 
       {/* Our Commitments（事業原則 / 手段） */}
-      <div className="mb-[34px] sm:mb-[55px] lg:mb-[89px] border-t border-black/10 pt-[34px] sm:pt-[55px] lg:pt-[89px]">
-        <h2 className="mb-[21px] sm:mb-[34px]" style={sectionTitleStyle}>
+      <div className="mb-8.5 sm:mb-13.75 lg:mb-22.25 border-t border-black/10 pt-8.5 sm:pt-13.75 lg:pt-22.25">
+        <h2 className="mb-5.25 sm:mb-8.5" style={sectionTitleStyle}>
           OUR COMMITMENTS / 取り組み
         </h2>
-        <div className="pl-[12px] sm:pl-[24px] lg:pl-[32px]">
+        <div className="pl-3 sm:pl-6 lg:pl-8">
           {principles.map((principle, index) => (
             <div
               key={principle.no}
-              className="grid grid-cols-1 sm:grid-cols-[64px_1fr] lg:grid-cols-[88px_1fr] gap-[8px] sm:gap-[32px] lg:gap-[48px]"
+              className="grid grid-cols-1 sm:grid-cols-[64px_1fr] lg:grid-cols-[88px_1fr] gap-2 sm:gap-8 lg:gap-12"
             >
               <p
                 className="font-display text-[#474747] sm:text-right"
@@ -116,7 +116,7 @@ export default function StoryPage() {
                 {principle.no}
               </p>
               <div
-                className={`border-t border-black/10 pt-[16px] sm:pt-[21px] lg:pt-[26px] pb-[16px] sm:pb-[21px] lg:pb-[26px] ${
+                className={`border-t border-black/10 pt-4 sm:pt-5.25 lg:pt-6.5 pb-4 sm:pb-5.25 lg:pb-6.5 ${
                   index === principles.length - 1 ? "border-b" : ""
                 }`}
               >
@@ -127,7 +127,7 @@ export default function StoryPage() {
                   {principle.en}
                 </p>
                 <h3
-                  className="mb-[8px] sm:mb-[10px] font-brand text-black"
+                  className="mb-2 sm:mb-2.5 font-brand text-black"
                   style={subTitleStyle}
                 >
                   {principle.ja}
@@ -142,8 +142,8 @@ export default function StoryPage() {
       </div>
 
       {/* Collection（商品設計思想 / Type A・B） */}
-      <div className="mb-[34px] sm:mb-[55px] lg:mb-[89px] border-t border-black/10 pt-[34px] sm:pt-[55px] lg:pt-[89px]">
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,_1fr)_minmax(0,_2fr)] gap-x-[48px] gap-y-[13px] sm:gap-y-[21px]">
+      <div className="mb-8.5 sm:mb-13.75 lg:mb-22.25 border-t border-black/10 pt-8.5 sm:pt-13.75 lg:pt-22.25">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-x-12 gap-y-3.25 sm:gap-y-5.25">
           <h2 style={sectionTitleStyle}>COLLECTION / 商品設計思想</h2>
           <p className="about-main-text" style={bodyTextStyle}>
             毎日に寄り添うベーシックも、もちろんそろえています。そのうえで、シルエットと生地に少しずつ変化を加えることで、一着ごとに異なる「服の面白さ」と出会えるように。普遍的なかたちを突きつめた一着から、生地の表情を味わう一着、シルエットそのものを主役にした一着まで。その日の気分で選べる服を。
@@ -152,19 +152,19 @@ export default function StoryPage() {
       </div>
 
       {/* 締めのCTA */}
-      <div className="border-t border-black/10 pt-[34px] sm:pt-[55px] lg:pt-[89px] pb-[34px] sm:pb-[42px] text-center">
+      <div className="border-t border-black/10 pt-8.5 sm:pt-13.75 lg:pt-22.25 pb-8.5 sm:pb-10.5 text-center">
         <p
-          className="font-display text-black mb-[21px] sm:mb-[26px]"
+          className="font-display text-black mb-5.25 sm:mb-6.5"
           style={taglineStyle}
         >
           時を超えて価値の続く服を。
         </p>
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-[13px] sm:gap-[16px]">
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3.25 sm:gap-4">
           <Button
             href="/item"
             variant="primary"
             size="md"
-            className="w-full sm:w-auto sm:min-w-[260px] text-center justify-center"
+            className="w-full sm:w-auto sm:min-w-65 text-center justify-center"
           >
             VIEW COLLECTION
           </Button>
@@ -172,7 +172,7 @@ export default function StoryPage() {
             href="/look"
             variant="secondary"
             size="md"
-            className="w-full sm:w-auto sm:min-w-[260px] text-center justify-center"
+            className="w-full sm:w-auto sm:min-w-65 text-center justify-center"
           >
             VIEW LOOKBOOK
           </Button>

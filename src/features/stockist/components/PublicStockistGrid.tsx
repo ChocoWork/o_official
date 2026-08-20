@@ -126,9 +126,9 @@ function HomeGrid({
     // S-5: 空状態（取扱店舗ゼロ件）に次アクションを提示
     if (count === 0) {
       return (
-        <div className="text-center py-[42px] sm:py-[55px]">
+        <div className="text-center py-10.5 sm:py-13.75">
           <p
-            className="text-[#474747] mb-[16px] sm:mb-[21px]"
+            className="text-[#474747] mb-4 sm:mb-5.25"
             style={{ fontSize: "var(--lk-size-sm)" }}
           >
             現在、取扱店舗はございません。オンラインストアにて販売中です。
@@ -324,7 +324,7 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
       aria-label="エリア（地方・都道府県）で絞り込む"
     >
       <div className="flex items-center">
-        <span aria-hidden="true" className="w-[20px] shrink-0" />
+        <span aria-hidden="true" className="w-5 shrink-0" />
         <Checkbox
           label="ALL"
           checked={selectedSet.size === 0}
@@ -333,7 +333,7 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
           shape="square"
           checkStyle="fill"
           expandLabelHitArea={false}
-          className="w-full justify-start px-3 py-[3px] text-[#474747] tracking-widest font-medium"
+          className="w-full justify-start px-3 py-0.75 text-[#474747] tracking-widest font-medium"
         />
       </div>
       {visibleRegions.map((entry) => {
@@ -342,7 +342,7 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
           const prefecture = entry.prefectures[0];
           return (
             <div key={entry.region} className="flex items-center">
-              <span aria-hidden="true" className="w-[20px] shrink-0" />
+              <span aria-hidden="true" className="w-5 shrink-0" />
               <Checkbox
                 label={entry.region}
                 checked={selectedSet.has(prefecture)}
@@ -351,7 +351,7 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
                 shape="square"
                 checkStyle="fill"
                 expandLabelHitArea={false}
-                className="w-full justify-start px-3 py-[3px] text-[#474747] tracking-widest font-medium"
+                className="w-full justify-start px-3 py-0.75 text-[#474747] tracking-widest font-medium"
               />
             </div>
           );
@@ -369,7 +369,7 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
                 onClick={() => toggleExpand(entry.region)}
                 aria-expanded={expanded}
                 aria-label={`${entry.region}の都道府県を${expanded ? "折りたたむ" : "展開"}`}
-                className="w-[20px] shrink-0 flex items-center justify-center text-[#474747] hover:text-black"
+                className="w-5 shrink-0 flex items-center justify-center text-[#474747] hover:text-black"
               >
                 <i
                   className={
@@ -386,11 +386,11 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
                 shape="square"
                 checkStyle="fill"
                 expandLabelHitArea={false}
-                className="w-full justify-start px-3 py-[3px] text-[#474747] tracking-widest font-medium"
+                className="w-full justify-start px-3 py-0.75 text-[#474747] tracking-widest font-medium"
               />
             </div>
             {expanded ? (
-              <div className="pl-[40px]">
+              <div className="pl-10">
                 {entry.prefectures.map((prefecture) => (
                   <Checkbox
                     key={prefecture}
@@ -401,7 +401,7 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
                     shape="square"
                     checkStyle="fill"
                     expandLabelHitArea={false}
-                    className="w-full justify-start px-3 py-[3px] text-[#474747] tracking-widest"
+                    className="w-full justify-start px-3 py-0.75 text-[#474747] tracking-widest"
                   />
                 ))}
               </div>
@@ -427,7 +427,7 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
       data-filter-bar={interactive ? "floating" : "placeholder"}
       aria-hidden={interactive ? undefined : true}
       className={cn(
-        "flex items-center justify-between border-b border-black/5 bg-white py-[13px]",
+        "flex items-center justify-between border-b border-black/5 bg-white py-3.25",
         !interactive && "pointer-events-none invisible",
       )}
     >
@@ -450,9 +450,9 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
   const renderGrid = () => {
     if (displayStockists.length === 0) {
       return (
-        <div className="text-center py-[42px] sm:py-[55px]">
+        <div className="text-center py-10.5 sm:py-13.75">
           <p
-            className="text-[#474747] mb-[16px] sm:mb-[21px]"
+            className="text-[#474747] mb-4 sm:mb-5.25"
             style={{ fontSize: "var(--lk-size-sm)" }}
           >
             該当する取扱店舗がございません。
@@ -482,15 +482,15 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
     <>
       <div className="flex w-full">
         <aside
-          className="hidden lg:flex flex-col w-[233px] xl:w-[288px] shrink-0 sticky h-[calc(100vh-var(--site-header-height))] overflow-hidden"
+          className="hidden lg:flex flex-col w-58.25 xl:w-[288px] shrink-0 sticky h-[calc(100vh-var(--site-header-height))] overflow-hidden"
           style={desktopFilterStickyStyle}
         >
-          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden border-r border-black/5 px-[13px] xl:px-[21px] pt-[8px] xl:pt-[21px] pb-4">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden border-r border-black/5 px-3.25 xl:px-5.25 pt-2 xl:pt-5.25 pb-4">
             {renderAreaTree("3xs")}
           </div>
         </aside>
 
-        <div className="flex-1 min-w-0 w-full max-w-full px-0 md:px-[21px] lg:pl-[34px] lg:pr-[21px] xl:pl-[55px] xl:pr-[34px] 2xl:pl-[89px] 2xl:pr-[55px] py-0 xl:py-[21px]">
+        <div className="flex-1 min-w-0 w-full max-w-full px-0 md:px-5.25 lg:pl-8.5 lg:pr-5.25 xl:pl-13.75 xl:pr-8.5 2xl:pl-22.25 2xl:pr-13.75 py-0 xl:py-5.25">
           <div className="sm:-mt-1 md:-mt-2 lg:hidden">
             {renderMobileFilterBar(false)}
           </div>
@@ -498,7 +498,7 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
             className="fixed inset-x-0 z-30 lg:hidden bg-white transition-transform duration-300 ease-in-out before:pointer-events-none before:absolute before:inset-x-0 before:-top-px before:h-px before:bg-white before:content-['']"
             style={mobileFilterStickyStyle}
           >
-            <div className="element-width px-5 md:px-[41px]">
+            <div className="element-width px-5 md:px-10.25">
               {renderMobileFilterBar(true)}
             </div>
           </div>
@@ -512,7 +512,7 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
         onClose={() => setIsFilterDrawerOpen(false)}
         side="left"
         size="md"
-        className="[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+        className="scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
       >
         <div
           className="flex flex-col h-full"
@@ -521,7 +521,7 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
             paddingTop: "calc(var(--lk-size-sm) * var(--sqrt-phi))",
           }}
         >
-          <div className="flex justify-end pb-[13px]">
+          <div className="flex justify-end pb-3.25">
             <Button
               variant="text"
               size="xs"
@@ -532,7 +532,7 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
             </Button>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pb-[13px]">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pb-3.25">
             {renderAreaTree("xs")}
           </div>
         </div>

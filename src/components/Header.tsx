@@ -103,7 +103,9 @@ const Header = () => {
   // Sync header visibility to the root element so CSS-driven elements
   // (e.g. the catalog FILTER bar via --site-header-offset) follow the header.
   React.useLayoutEffect(() => {
-    document.documentElement.dataset.headerVisible = isHidden ? "false" : "true";
+    document.documentElement.dataset.headerVisible = isHidden
+      ? "false"
+      : "true";
   }, [isHidden]);
 
   const isActiveMenuItem = (href: string) => {
@@ -167,12 +169,12 @@ const Header = () => {
         <div
           aria-hidden="true"
           data-site-header-background
-          className={`fixed top-0 left-0 right-0 z-10 h-[52px] bg-white transition-transform duration-300 ease-in-out sm:h-[54px] md:h-[56px] xl:h-[60px] ${isHidden ? "-translate-y-full" : "translate-y-0"}`}
+          className={`fixed top-0 left-0 right-0 z-10 h-13 bg-white transition-transform duration-300 ease-in-out sm:h-13.5 md:h-14 xl:h-15 ${isHidden ? "-translate-y-full" : "translate-y-0"}`}
         />
       ) : null}
       {/* site-chrome: 管理画面のフォント一括指定から除外し、他ページと同じ表示にする。 */}
       <header
-        className={`site-chrome fixed top-0 left-0 right-0 h-[52px] sm:h-[54px] md:h-[56px] xl:h-[60px] transition-transform duration-300 ease-in-out ${isAdminPage ? "z-30" : "z-50 bg-white"} ${isHidden ? "-translate-y-full" : "translate-y-0"}`}
+        className={`site-chrome fixed top-0 left-0 right-0 h-13 sm:h-13.5 md:h-14 xl:h-15 transition-transform duration-300 ease-in-out ${isAdminPage ? "z-30" : "z-50 bg-white"} ${isHidden ? "-translate-y-full" : "translate-y-0"}`}
       >
         <div className="header-position">
           {/* サイトタイトル */}
@@ -227,26 +229,26 @@ const Header = () => {
             <Link
               href="/search"
               aria-label="検索"
-              className="icon-frame min-h-[44px]"
+              className="icon-frame min-h-11"
             >
               <i className="ri-search-line icon"></i>
             </Link>
             <Link
               href="/wishlist"
               aria-label="ウィッシュリスト"
-              className="icon-frame min-h-[44px]"
+              className="icon-frame min-h-11"
             >
               <i className="ri-heart-line icon"></i>
             </Link>
             <Link
               href="/cart"
               aria-label={cartCount > 0 ? `カート（${cartCount}点）` : "カート"}
-              className="icon-frame min-h-[44px]"
+              className="icon-frame min-h-11"
             >
               <span className="relative inline-flex">
                 <i className="ri-shopping-bag-line icon"></i>
                 {cartCount > 0 && (
-                  <span className="absolute top-0 right-0 translate-x-1/2 -translate-y-1/2 min-w-[16px] h-[16px] bg-black text-white rounded-full flex items-center justify-center text-[10px] font-medium leading-[0] tabular-nums">
+                  <span className="absolute top-0 right-0 translate-x-1/2 -translate-y-1/2 min-w-4 h-4 bg-black text-white rounded-full flex items-center justify-center text-2.5 font-medium leading-0 tabular-nums">
                     {cartCount}
                   </span>
                 )}
@@ -257,7 +259,7 @@ const Header = () => {
                 <Link
                   href="/account"
                   aria-label="アカウント"
-                  className="icon-frame min-h-[44px]"
+                  className="icon-frame min-h-11"
                 >
                   <i className="ri-user-fill icon"></i>
                 </Link>
@@ -265,7 +267,7 @@ const Header = () => {
                 <Link
                   href="/login"
                   aria-label="ログイン"
-                  className="icon-frame min-h-[44px]"
+                  className="icon-frame min-h-11"
                 >
                   <i className="ri-user-line icon"></i>
                 </Link>
@@ -288,7 +290,7 @@ const Header = () => {
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         size="md"
-        className="site-chrome !border-l-0"
+        className="site-chrome border-l-0!"
       >
         <div className="header-drawer-shell">
           <div className="header-drawer-top-row">
@@ -315,7 +317,7 @@ const Header = () => {
                 highlightOnHover={false}
                 showUnderline={false}
                 showTopline={true}
-                className="header-drawer-accordion !border-0 !bg-transparent"
+                className="header-drawer-accordion border-0! bg-transparent!"
               />
               <div className="header-drawer-links">
                 {drawerStaticItems.map((item) => (

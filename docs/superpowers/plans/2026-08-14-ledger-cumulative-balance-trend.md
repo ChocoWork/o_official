@@ -25,16 +25,16 @@
 
 ## File Structure
 
-| ファイル | 責務 |
-|---|---|
-| `src/lib/finance/cumulative-balance-trend.ts` | 期首、当年収入・支出、12か月の累積収支を算出する純粋関数 |
-| `tests/unit/lib/finance/cumulative-balance-trend.test.ts` | 年跨ぎ、全取引包含、空月、負数、将来取引除外の集計契約 |
-| `src/components/CostProfitSection.tsx` | 固定グラフとサマリーを描画し、科目選択状態から分離する |
-| `tests/unit/components/CostProfitSection.test.tsx` | 表示文言、集計値、科目変更時のグラフ不変性 |
-| `e2e/FR-ADMIN-044-ledger-three-views.spec.ts` | 3ビューポートで固定グラフと科目別領域の独立性を検証 |
-| `e2e/FR-ADMIN-032-ledger-trial-balance.spec.ts` | 旧科目別グラフ期待値を元帳・照合契約へ置換 |
-| `e2e/FR-ADMIN-035-statements-from-real-balances.spec.ts` | 固定資産科目残高の検証先を照合結果へ変更 |
-| `docs/2_Specs/spec.md` | FREQ-258-REQ/AC-02・03を固定グラフ契約へ同期 |
+| ファイル                                                  | 責務                                                     |
+| --------------------------------------------------------- | -------------------------------------------------------- |
+| `src/lib/finance/cumulative-balance-trend.ts`             | 期首、当年収入・支出、12か月の累積収支を算出する純粋関数 |
+| `tests/unit/lib/finance/cumulative-balance-trend.test.ts` | 年跨ぎ、全取引包含、空月、負数、将来取引除外の集計契約   |
+| `src/components/CostProfitSection.tsx`                    | 固定グラフとサマリーを描画し、科目選択状態から分離する   |
+| `tests/unit/components/CostProfitSection.test.tsx`        | 表示文言、集計値、科目変更時のグラフ不変性               |
+| `e2e/FR-ADMIN-044-ledger-three-views.spec.ts`             | 3ビューポートで固定グラフと科目別領域の独立性を検証      |
+| `e2e/FR-ADMIN-032-ledger-trial-balance.spec.ts`           | 旧科目別グラフ期待値を元帳・照合契約へ置換               |
+| `e2e/FR-ADMIN-035-statements-from-real-balances.spec.ts`  | 固定資産科目残高の検証先を照合結果へ変更                 |
+| `docs/2_Specs/spec.md`                                    | FREQ-258-REQ/AC-02・03を固定グラフ契約へ同期             |
 
 ### Task 1: 月次累積収支の純粋集計
 
@@ -54,29 +54,46 @@
 `tests/unit/lib/finance/cumulative-balance-trend.test.ts` に以下を作る。
 
 ```typescript
-import { buildCumulativeBalanceTrend } from '@/lib/finance/cumulative-balance-trend';
-import type { FinanceEntry } from '@/lib/finance/journal';
+import { buildCumulativeBalanceTrend } from "@/lib/finance/cumulative-balance-trend";
+import type { FinanceEntry } from "@/lib/finance/journal";
 
 const entry = (
   id: number,
-  entryType: FinanceEntry['entryType'],
+  entryType: FinanceEntry["entryType"],
   date: string,
   amount: number,
   category: string,
   paymentMethod: string,
 ): FinanceEntry => ({
-  id, entryType, date, amount, category, paymentMethod,
-  item: `取引${id}`, partner: '', memo: '',
+  id,
+  entryType,
+  date,
+  amount,
+  category,
+  paymentMethod,
+  item: `取引${id}`,
+  partner: "",
+  memo: "",
 });
 
-it('前年末累積収支を期首にして全収入・全支出の12か月推移を返す', () => {
-  const result = buildCumulativeBalanceTrend([
-    entry(1, 'income', '2025-12-20', 100_000, '売上高', '銀行'),
-    entry(2, 'expense', '2025-12-25', 30_000, '広告宣伝費', 'クレジットカード'),
-    entry(3, 'income', '2026-01-10', 20_000, '売上高', '現金'),
-    entry(4, 'expense', '2026-03-15', 5_000, '旅費交通費', 'プライベート'),
-    entry(5, 'income', '2027-01-01', 999_999, '売上高', '銀行'),
-  ], 2026);
+it("前年末累積収支を期首にして全収入・全支出の12か月推移を返す", () => {
+  const result = buildCumulativeBalanceTrend(
+    [
+      entry(1, "income", "2025-12-20", 100_000, "売上高", "銀行"),
+      entry(
+        2,
+        "expense",
+        "2025-12-25",
+        30_000,
+        "広告宣伝費",
+        "クレジットカード",
+      ),
+      entry(3, "income", "2026-01-10", 20_000, "売上高", "現金"),
+      entry(4, "expense", "2026-03-15", 5_000, "旅費交通費", "プライベート"),
+      entry(5, "income", "2027-01-01", 999_999, "売上高", "銀行"),
+    ],
+    2026,
+  );
 
   expect(result.openingBalance).toBe(70_000);
   expect(result.annualIncome).toBe(20_000);
@@ -89,10 +106,11 @@ it('前年末累積収支を期首にして全収入・全支出の12か月推�
   expect(result.monthly[11].balance).toBe(85_000);
 });
 
-it('前年以前の取引がなければ期首0円で負数も保持する', () => {
-  const result = buildCumulativeBalanceTrend([
-    entry(1, 'expense', '2026-02-01', 8_000, '消耗品費', '現金'),
-  ], 2026);
+it("前年以前の取引がなければ期首0円で負数も保持する", () => {
+  const result = buildCumulativeBalanceTrend(
+    [entry(1, "expense", "2026-02-01", 8_000, "消耗品費", "現金")],
+    2026,
+  );
   expect(result.openingBalance).toBe(0);
   expect(result.monthly[0].balance).toBe(0);
   expect(result.monthly[1].balance).toBe(-8_000);
@@ -114,7 +132,7 @@ Expected: 対象moduleが存在しないためFAIL。
 `src/lib/finance/cumulative-balance-trend.ts`:
 
 ```typescript
-import type { FinanceEntry } from '@/lib/finance/journal';
+import type { FinanceEntry } from "@/lib/finance/journal";
 
 export type CumulativeBalanceTrendPoint = {
   month: number;
@@ -142,7 +160,7 @@ export function buildCumulativeBalanceTrend(
   let annualExpense = 0;
 
   for (const entry of entries) {
-    const signed = entry.entryType === 'income' ? entry.amount : -entry.amount;
+    const signed = entry.entryType === "income" ? entry.amount : -entry.amount;
     if (entry.date < yearStart) {
       openingBalance += signed;
       continue;
@@ -151,7 +169,7 @@ export function buildCumulativeBalanceTrend(
     const month = Number.parseInt(entry.date.slice(5, 7), 10);
     if (!Number.isInteger(month) || month < 1 || month > 12) continue;
     monthlyNet[month - 1] += signed;
-    if (entry.entryType === 'income') annualIncome += entry.amount;
+    if (entry.entryType === "income") annualIncome += entry.amount;
     else annualExpense += entry.amount;
   }
 
@@ -160,7 +178,13 @@ export function buildCumulativeBalanceTrend(
     balance += net;
     return { month: index + 1, net, balance };
   });
-  return { openingBalance, annualIncome, annualExpense, closingBalance: balance, monthly };
+  return {
+    openingBalance,
+    annualIncome,
+    annualExpense,
+    closingBalance: balance,
+    monthly,
+  };
 }
 ```
 
@@ -210,7 +234,7 @@ Expected: 新regionまたは固定サマリーが存在せずFAIL。
 - [ ] **Step 3: 集計状態を科目選択から分離する**
 
 ```typescript
-import { buildCumulativeBalanceTrend } from '@/lib/finance/cumulative-balance-trend';
+import { buildCumulativeBalanceTrend } from "@/lib/finance/cumulative-balance-trend";
 
 const cumulativeBalanceTrend = useMemo(
   () => buildCumulativeBalanceTrend(cumulativeEntries, fiscalYear),
@@ -231,18 +255,20 @@ const cumulativeBalanceTrend = useMemo(
   className="font-acumin"
   ariaLabel={`${fiscalYear}年の月次累積収支推移`}
   categories={LEDGER_MONTH_LABELS}
-  series={[{
-    label: '累積収支',
-    color: LEDGER_TREND_COLOR,
-    values: cumulativeBalanceTrend.monthly.map((point) => point.balance),
-  }]}
+  series={[
+    {
+      label: "累積収支",
+      color: LEDGER_TREND_COLOR,
+      values: cumulativeBalanceTrend.monthly.map((point) => point.balance),
+    },
+  ]}
 />
 ```
 
 Panel見出しと`aria-label`を`月次累積収支推移`へ変更する。右側は4サマリーへ置換し、末尾に次を表示する。
 
 ```tsx
-<p className="mt-3 border-t border-[#ededed] pt-2 font-acumin text-[10px] leading-relaxed text-[#707070]">
+<p className="mt-3 border-t border-[#ededed] pt-2 font-acumin text-2.5 leading-relaxed text-[#707070]">
   取引管理に入力した全収入・全支出による管理指標です。現金預金・利益・純資産・科目別元帳の残高ではありません。
 </p>
 ```

@@ -35,10 +35,10 @@
 
 ```ts
 const reviewButton = table
-  .getByRole('button', { name: /の要確認の理由を開く（未確認\d+件）/ })
+  .getByRole("button", { name: /の要確認の理由を開く（未確認\d+件）/ })
   .first();
-const reviewBadge = reviewButton.getByText('要確認', { exact: true });
-const registeredBadge = table.getByText('登録済み', { exact: true }).first();
+const reviewBadge = reviewButton.getByText("要確認", { exact: true });
+const registeredBadge = table.getByText("登録済み", { exact: true }).first();
 
 await expect(reviewButton).toHaveText(/^要確認$/);
 const reviewBox = await reviewBadge.boundingBox();
@@ -74,12 +74,14 @@ Expected: 件数 `1` が表示されているか、バッジ幅が異なるた�
 ```
 
 ```tsx
-{open === 0 ? (
-  <i
-    className="ri-checkbox-circle-fill text-[11px] text-[#16844b]"
-    aria-hidden="true"
-  />
-) : null}
+{
+  open === 0 ? (
+    <i
+      className="ri-checkbox-circle-fill text-2.75 text-[#16844b]"
+      aria-hidden="true"
+    />
+  ) : null;
+}
 ```
 
 - [ ] **Step 4: 対象E2Eテストを再実行する**

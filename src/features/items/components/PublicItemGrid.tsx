@@ -37,11 +37,11 @@ const SORT_OPTIONS = [
   { value: "price_desc", label: "PRICE HIGH TO LOW" },
 ] as const;
 const FILTER_SIDEBAR_SCROLL_CLASS =
-  "flex-1 min-h-0 overflow-y-auto overscroll-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden border-r border-black/5 px-[13px] xl:px-[21px] pt-[8px] xl:pt-[21px] pb-4";
+  "flex-1 min-h-0 overflow-y-auto overscroll-contain scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden border-r border-black/5 px-3.25 xl:px-5.25 pt-2 xl:pt-5.25 pb-4";
 const FILTER_SIDEBAR_ACTIONS_CLASS =
-  "shrink-0 border-r border-black/5 px-[13px] xl:px-[21px] pb-[21px] xl:pb-[34px] pt-4 bg-white space-y-2";
+  "shrink-0 border-r border-black/5 px-3.25 xl:px-5.25 pb-5.25 xl:pb-8.5 pt-4 bg-white space-y-2";
 const FILTER_DRAWER_CLASS =
-  "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden";
+  "scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden";
 // FILTER 内タイポグラフィ／余白。stein（ssstein.com）と HYKE（hyke.jp）の FILTER を
 // 参考に、フィルターのスペーシングをこのスコープ内だけに適用する（共有 Accordion /
 // MultiSelect の他用途には影響させない）。
@@ -886,7 +886,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
       </Button>
 
       {interactive
-        ? renderSortSelect("relative -mt-[3px] w-[9.75rem] sm:w-[10.5rem]")
+        ? renderSortSelect("relative -mt-0.75 w-[9.75rem] sm:w-[10.5rem]")
         : null}
     </div>
   );
@@ -1377,7 +1377,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
           </div>
 
           <div className="hidden lg:flex mb-2 sm:mb-4 md:mb-6 items-center justify-end">
-            {renderSortSelect("relative -mt-[3px] w-[10.5rem]")}
+            {renderSortSelect("relative -mt-0.75 w-[10.5rem]")}
           </div>
 
           {renderGrid()}

@@ -61,10 +61,8 @@ export function TaxAdjustmentView({
   // 消費税は仮受・仮払の残高差から。税込経理なら残高が立たないので0になる。
   const consumptionTax = useMemo(() => {
     const balanceOf = (code: string) =>
-      [
-        ...balanceSheet.assetSections,
-        ...balanceSheet.liabilitySections,
-      ].flatMap((section) => section.lines)
+      [...balanceSheet.assetSections, ...balanceSheet.liabilitySections]
+        .flatMap((section) => section.lines)
         .filter((line) => line.account.code === code)
         .reduce((sum, line) => sum + line.amount, 0);
     return {
@@ -91,8 +89,8 @@ export function TaxAdjustmentView({
   });
 
   const selected: TaxAdjustmentRow | undefined =
-    adjustments.rows.find((row) => row.key === selectedKey)
-    ?? adjustments.rows[0];
+    adjustments.rows.find((row) => row.key === selectedKey) ??
+    adjustments.rows[0];
 
   // 滝グラフ：会計上の利益から始め、加算・減算を積んで課税所得で閉じる。
   const waterfallData = [
@@ -137,8 +135,8 @@ export function TaxAdjustmentView({
 
   // 帳簿の決算値と一致しているか（青色申告決算書の所得金額と突き合わせる）。
   const matchesLedger =
-    adjustments.taxableIncome === deduction.incomeAfterDeduction
-    || adjustments.rows.some((row) => row.addition > 0);
+    adjustments.taxableIncome === deduction.incomeAfterDeduction ||
+    adjustments.rows.some((row) => row.addition > 0);
 
   return (
     <div className="space-y-4">
@@ -193,9 +191,10 @@ export function TaxAdjustmentView({
             <ul className="-mt-1">
               {navigatorItems.map((item) => {
                 const active = filter === item.key;
-                const nested = item.key !== "all"
-                  && item.key !== "add"
-                  && item.key !== "subtract";
+                const nested =
+                  item.key !== "all" &&
+                  item.key !== "add" &&
+                  item.key !== "subtract";
                 return (
                   <li key={item.key}>
                     <button
@@ -205,7 +204,7 @@ export function TaxAdjustmentView({
                       className={`flex w-full items-center justify-between gap-2 border-b border-[#ededed] px-2 py-2 text-left transition-colors hover:bg-[#faf7f2] ${boxRadiusClassName} ${active ? "bg-[#f2f2f2]" : ""} ${nested ? "pl-5" : ""}`}
                     >
                       <span
-                        className={`min-w-0 truncate font-acumin text-[11px] ${nested ? "text-[#474747]" : "font-medium text-black"}`}
+                        className={`min-w-0 truncate font-acumin text-2.75 ${nested ? "text-[#474747]" : "font-medium text-black"}`}
                       >
                         {item.label}
                       </span>
@@ -222,7 +221,7 @@ export function TaxAdjustmentView({
               })}
             </ul>
           )}
-          <p className="mt-3 font-acumin text-[10px] text-[#707070]">
+          <p className="mt-3 font-acumin text-2.5 text-[#707070]">
             ※ 件数は調整行数を表示します。
           </p>
         </Panel>
@@ -249,7 +248,7 @@ export function TaxAdjustmentView({
           }
         >
           <div className="overflow-x-auto">
-            <div className="min-w-[460px]">
+            <div className="min-w-115">
               <Graph
                 variant="waterfall"
                 data={waterfallData}
@@ -263,7 +262,7 @@ export function TaxAdjustmentView({
               />
             </div>
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 font-acumin text-[10px] text-[#474747]">
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 font-acumin text-2.5 text-[#474747]">
             <span className="inline-flex items-center gap-1.5">
               <span
                 className="inline-block h-2.5 w-4"
@@ -290,7 +289,7 @@ export function TaxAdjustmentView({
           title={
             <span className="flex flex-wrap items-baseline gap-2">
               <span className={panelTitleClassName}>税額見込</span>
-              <span className="font-acumin text-[11px] text-[#707070]">
+              <span className="font-acumin text-2.75 text-[#707070]">
                 （{fiscalYear}年度）
               </span>
             </span>
@@ -309,7 +308,7 @@ export function TaxAdjustmentView({
                 key={label}
                 className="flex items-baseline justify-between gap-2 border-b border-[#ededed] py-2"
               >
-                <span className="min-w-0 font-acumin text-[11px] text-[#474747]">
+                <span className="min-w-0 font-acumin text-2.75 text-[#474747]">
                   {label}
                 </span>
                 <span className="shrink-0 font-acumin text-xs text-black tabular-nums">
@@ -326,7 +325,7 @@ export function TaxAdjustmentView({
               </span>
             </li>
             <li className="flex items-baseline justify-between gap-2 py-2">
-              <span className="font-acumin text-[11px] text-[#474747]">
+              <span className="font-acumin text-2.75 text-[#474747]">
                 実効税率（税額合計 ÷ 課税所得）
               </span>
               <span className="font-acumin text-xs text-black tabular-nums">
@@ -335,7 +334,7 @@ export function TaxAdjustmentView({
             </li>
           </ul>
           <p
-            className={`mt-2 border border-[#ededed] bg-[#fafafa] px-3 py-2 font-acumin text-[10px] leading-relaxed text-[#707070] ${boxRadiusClassName}`}
+            className={`mt-2 border border-[#ededed] bg-[#fafafa] px-3 py-2 font-acumin text-2.5 leading-relaxed text-[#707070] ${boxRadiusClassName}`}
           >
             税率は現行税制に基づく試算です。所得控除・他の所得は含めていないため、
             実際の申告内容により変動します。
@@ -350,7 +349,7 @@ export function TaxAdjustmentView({
           aria-label="税務調整明細"
           title={<span className={panelTitleClassName}>税務調整明細</span>}
           actions={
-            <span className="font-acumin text-[10px] text-[#707070] tabular-nums">
+            <span className="font-acumin text-2.5 text-[#707070] tabular-nums">
               {visibleRows.length}件中 1〜{visibleRows.length}件を表示
             </span>
           }
@@ -361,7 +360,7 @@ export function TaxAdjustmentView({
             </p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] border-collapse">
+              <table className="w-full min-w-160 border-collapse">
                 <thead>
                   <tr className="border-b border-[#d4d4d4]">
                     {[
@@ -392,7 +391,7 @@ export function TaxAdjustmentView({
                         <td className="px-2 py-2.5 font-acumin text-xs text-black">
                           {row.label}
                         </td>
-                        <td className="whitespace-nowrap px-2 py-2.5 font-acumin text-[11px] text-[#474747]">
+                        <td className="whitespace-nowrap px-2 py-2.5 font-acumin text-2.75 text-[#474747]">
                           {row.account}
                         </td>
                         <td className="px-2 py-2.5 text-right font-acumin text-xs text-black tabular-nums">
@@ -401,8 +400,7 @@ export function TaxAdjustmentView({
                         <td
                           className="px-2 py-2.5 text-right font-acumin text-xs tabular-nums"
                           style={{
-                            color:
-                              row.addition > 0 ? TAX_ADD_COLOR : "#707070",
+                            color: row.addition > 0 ? TAX_ADD_COLOR : "#707070",
                           }}
                         >
                           {currency(row.addition)}
@@ -421,7 +419,7 @@ export function TaxAdjustmentView({
                         <td className="px-2 py-2.5 text-right font-acumin text-xs font-medium text-black tabular-nums">
                           {currency(row.taxAmount)}
                         </td>
-                        <td className="px-2 py-2.5 text-right font-acumin text-[11px] text-[#474747] tabular-nums">
+                        <td className="px-2 py-2.5 text-right font-acumin text-2.75 text-[#474747] tabular-nums">
                           {row.entryCount}
                         </td>
                         <td className="px-2 py-2.5">
@@ -477,12 +475,14 @@ export function TaxAdjustmentView({
           radius="rounded"
           className="min-w-0"
           aria-label="根拠インスペクター"
-          title={<span className={panelTitleClassName}>根拠インスペクター</span>}
+          title={
+            <span className={panelTitleClassName}>根拠インスペクター</span>
+          }
         >
           {selected ? (
             <div className="space-y-3">
               <div>
-                <p className="font-acumin text-[10px] text-[#707070]">
+                <p className="font-acumin text-2.5 text-[#707070]">
                   税務調整項目
                 </p>
                 <p className="font-acumin text-xs font-medium text-black">
@@ -492,8 +492,8 @@ export function TaxAdjustmentView({
               <div
                 className={`border border-[#ededed] bg-[#fafafa] px-3 py-2 ${boxRadiusClassName}`}
               >
-                <p className="font-acumin text-[10px] text-[#707070]">根拠</p>
-                <p className="mt-1 font-acumin text-[11px] leading-relaxed text-black">
+                <p className="font-acumin text-2.5 text-[#707070]">根拠</p>
+                <p className="mt-1 font-acumin text-2.75 leading-relaxed text-black">
                   {selected.basis}
                 </p>
               </div>
@@ -507,10 +507,10 @@ export function TaxAdjustmentView({
                   ] as const
                 ).map(([label, value]) => (
                   <div key={label} className="min-w-0">
-                    <dt className="font-acumin text-[10px] text-[#707070]">
+                    <dt className="font-acumin text-2.5 text-[#707070]">
                       {label}
                     </dt>
-                    <dd className="truncate font-acumin text-[11px] text-black tabular-nums">
+                    <dd className="truncate font-acumin text-2.75 text-black tabular-nums">
                       {value}
                     </dd>
                   </div>

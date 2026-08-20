@@ -96,7 +96,13 @@ export function TaxCalendarView({
         closedAt,
         isBalanced: balanceSheet.isBalanced,
       }),
-    [fiscalYear, entryCounts, fixedAssets.length, closedAt, balanceSheet.isBalanced],
+    [
+      fiscalYear,
+      entryCounts,
+      fixedAssets.length,
+      closedAt,
+      balanceSheet.isBalanced,
+    ],
   );
 
   const totals = useMemo(
@@ -126,7 +132,10 @@ export function TaxCalendarView({
     put(`${fiscalYear + 1}-03-15`, totals.income.total);
     put(`${fiscalYear + 1}-03-31`, totals.consumptionTax);
     put(`${fiscalYear}-08-31`, Math.round(totals.businessTax / 2));
-    put(`${fiscalYear}-11-30`, totals.businessTax - Math.round(totals.businessTax / 2));
+    put(
+      `${fiscalYear}-11-30`,
+      totals.businessTax - Math.round(totals.businessTax / 2),
+    );
     return values;
   }, [fiscalYear, totals]);
 
@@ -181,7 +190,7 @@ export function TaxCalendarView({
               value={checklist.progress}
               size={52}
               label={
-                <span className="font-acumin text-[10px] font-medium text-black tabular-nums">
+                <span className="font-acumin text-2.5 font-medium text-black tabular-nums">
                   {Math.round(checklist.progress)}%
                 </span>
               }
@@ -205,13 +214,13 @@ export function TaxCalendarView({
             </span>
           }
           actions={
-            <span className="font-acumin text-[10px] text-[#707070]">
+            <span className="font-acumin text-2.5 text-[#707070]">
               会計期間 {fiscalYear}/01〜{fiscalYear + 1}/03
             </span>
           }
         >
           <div className="overflow-x-auto">
-            <div className="min-w-[600px]">
+            <div className="min-w-150">
               {/* 月見出し。1列目は税目のラベル。 */}
               <div className="grid grid-cols-[88px_repeat(15,minmax(0,1fr))] items-end gap-x-px border-b border-[#d4d4d4] pb-1">
                 <span />
@@ -237,72 +246,75 @@ export function TaxCalendarView({
                   />
                 ) : null}
                 {kinds.map((kind) => {
-                const kindBands = bands.filter((band) => band.kind === kind);
-                const kindDeadlines = deadlines.filter(
-                  (deadline) => deadline.kind === kind,
-                );
-                return (
-                  <div
-                    key={kind}
-                    className="grid grid-cols-[88px_repeat(15,minmax(0,1fr))] items-center gap-x-px border-b border-[#ededed] py-2"
-                  >
-                    <span className="inline-flex items-center gap-1.5 pr-2 font-acumin text-[10px] text-black">
-                      <span
-                        className="inline-block h-2 w-2 shrink-0 rounded-full"
-                        style={{ background: TAX_DEADLINE_KIND_COLORS[kind] }}
-                        aria-hidden="true"
-                      />
-                      <span className="truncate">
-                        {TAX_DEADLINE_KIND_LABELS[kind]}
-                      </span>
-                    </span>
-                    {/* 帯は grid-column で月にまたがせる。期限は帯の上に点で置く。 */}
-                    <span
-                      className="grid grid-cols-[repeat(15,minmax(0,1fr))] items-center gap-x-px"
-                      style={{ gridColumn: "2 / span 15" }}
+                  const kindBands = bands.filter((band) => band.kind === kind);
+                  const kindDeadlines = deadlines.filter(
+                    (deadline) => deadline.kind === kind,
+                  );
+                  return (
+                    <div
+                      key={kind}
+                      className="grid grid-cols-[88px_repeat(15,minmax(0,1fr))] items-center gap-x-px border-b border-[#ededed] py-2"
                     >
-                      {kindBands.map((band) => (
+                      <span className="inline-flex items-center gap-1.5 pr-2 font-acumin text-2.5 text-black">
                         <span
-                          key={band.key}
-                          className={`truncate px-1.5 py-1 text-center font-acumin text-[9px] ${boxRadiusClassName}`}
-                          style={{
-                            gridColumn: `${band.fromIndex + 1} / span ${band.span}`,
-                            background: `${TAX_DEADLINE_KIND_COLORS[kind]}1f`,
-                            color: TAX_DEADLINE_KIND_COLORS[kind],
-                          }}
-                          title={band.label}
-                        >
-                          {band.label}
+                          className="inline-block h-2 w-2 shrink-0 rounded-full"
+                          style={{ background: TAX_DEADLINE_KIND_COLORS[kind] }}
+                          aria-hidden="true"
+                        />
+                        <span className="truncate">
+                          {TAX_DEADLINE_KIND_LABELS[kind]}
                         </span>
-                      ))}
-                      {kindDeadlines.map((deadline) => {
-                        const index = scheduleIndexOf(deadline.dueOn, fiscalYear);
-                        if (index === null) return null;
-                        return (
+                      </span>
+                      {/* 帯は grid-column で月にまたがせる。期限は帯の上に点で置く。 */}
+                      <span
+                        className="grid grid-cols-15 items-center gap-x-px"
+                        style={{ gridColumn: "2 / span 15" }}
+                      >
+                        {kindBands.map((band) => (
                           <span
-                            key={deadline.key}
-                            className="flex justify-center"
-                            style={{ gridColumn: `${index + 1} / span 1` }}
-                            title={`${deadline.label}（${deadline.dueOn}）`}
+                            key={band.key}
+                            className={`truncate px-1.5 py-1 text-center font-acumin text-[9px] ${boxRadiusClassName}`}
+                            style={{
+                              gridColumn: `${band.fromIndex + 1} / span ${band.span}`,
+                              background: `${TAX_DEADLINE_KIND_COLORS[kind]}1f`,
+                              color: TAX_DEADLINE_KIND_COLORS[kind],
+                            }}
+                            title={band.label}
                           >
-                            <span
-                              className="inline-block h-1.5 w-1.5 rounded-full"
-                              style={{
-                                background: TAX_DEADLINE_KIND_COLORS[kind],
-                              }}
-                              aria-hidden="true"
-                            />
+                            {band.label}
                           </span>
-                        );
-                      })}
-                    </span>
-                  </div>
-                );
+                        ))}
+                        {kindDeadlines.map((deadline) => {
+                          const index = scheduleIndexOf(
+                            deadline.dueOn,
+                            fiscalYear,
+                          );
+                          if (index === null) return null;
+                          return (
+                            <span
+                              key={deadline.key}
+                              className="flex justify-center"
+                              style={{ gridColumn: `${index + 1} / span 1` }}
+                              title={`${deadline.label}（${deadline.dueOn}）`}
+                            >
+                              <span
+                                className="inline-block h-1.5 w-1.5 rounded-full"
+                                style={{
+                                  background: TAX_DEADLINE_KIND_COLORS[kind],
+                                }}
+                                aria-hidden="true"
+                              />
+                            </span>
+                          );
+                        })}
+                      </span>
+                    </div>
+                  );
                 })}
               </div>
 
               {todayIndex !== null ? (
-                <p className="mt-2 font-acumin text-[10px] text-[#707070]">
+                <p className="mt-2 font-acumin text-2.5 text-[#707070]">
                   <span
                     className="mr-1 inline-block h-2 w-0.5 align-middle bg-[#16844b]"
                     aria-hidden="true"
@@ -324,7 +336,7 @@ export function TaxCalendarView({
             </span>
           }
           actions={
-            <span className="font-acumin text-[10px] text-[#707070] tabular-nums">
+            <span className="font-acumin text-2.5 text-[#707070] tabular-nums">
               基準日 {today.replaceAll("-", "/")}
             </span>
           }
@@ -343,7 +355,7 @@ export function TaxCalendarView({
                       (heading) => (
                         <th
                           key={heading}
-                          className="px-2 py-2 text-left font-acumin text-[11px] font-normal text-[#474747]"
+                          className="px-2 py-2 text-left font-acumin text-2.75 font-normal text-[#474747]"
                         >
                           {heading}
                         </th>
@@ -357,13 +369,13 @@ export function TaxCalendarView({
                       key={deadline.key}
                       className="border-b border-[#ededed]"
                     >
-                      <td className="whitespace-nowrap px-2 py-2.5 font-acumin text-[11px] text-black tabular-nums">
+                      <td className="whitespace-nowrap px-2 py-2.5 font-acumin text-2.75 text-black tabular-nums">
                         {deadline.dueOn.replaceAll("-", "/")}
                       </td>
-                      <td className="px-2 py-2.5 font-acumin text-[11px] text-black">
+                      <td className="px-2 py-2.5 font-acumin text-2.75 text-black">
                         {deadline.label}
                       </td>
-                      <td className="whitespace-nowrap px-2 py-2.5 font-acumin text-[11px] text-[#474747] tabular-nums">
+                      <td className="whitespace-nowrap px-2 py-2.5 font-acumin text-2.75 text-[#474747] tabular-nums">
                         あと {deadline.daysLeft}日
                       </td>
                       <td className="px-2 py-2.5">
@@ -393,7 +405,7 @@ export function TaxCalendarView({
         title={
           <span className="flex flex-wrap items-baseline gap-2">
             <span className={panelTitleClassName}>納税資金予測</span>
-            <span className="font-acumin text-[11px] text-[#707070]">
+            <span className="font-acumin text-2.75 text-[#707070]">
               （納付期限に税額を割り当てた予定）
             </span>
           </span>
@@ -411,7 +423,7 @@ export function TaxCalendarView({
         }
       >
         <div className="overflow-x-auto">
-          <div className="min-w-[560px]">
+          <div className="min-w-140">
             <Graph
               variant="line"
               categories={TAX_SCHEDULE_MONTHS}
@@ -435,7 +447,7 @@ export function TaxCalendarView({
             />
           </div>
         </div>
-        <p className="mt-2 font-acumin text-[10px] leading-relaxed text-[#707070]">
+        <p className="mt-2 font-acumin text-2.5 leading-relaxed text-[#707070]">
           ※
           税額見込を法定の納付期限に割り当てた概算です。予定納税・中間納付の額は
           前年の申告額によって決まるため含めていません。
@@ -459,10 +471,10 @@ export function TaxCalendarView({
               return (
                 <div key={group} className="min-w-0">
                   <p className="flex items-baseline justify-between gap-2 border-b border-[#d4d4d4] pb-1.5">
-                    <span className="font-acumin text-[11px] font-medium text-black">
+                    <span className="font-acumin text-2.75 font-medium text-black">
                       {group}
                     </span>
-                    <span className="font-acumin text-[11px] text-[#474747] tabular-nums">
+                    <span className="font-acumin text-2.75 text-[#474747] tabular-nums">
                       {done}/{items.length}
                     </span>
                   </p>
@@ -470,7 +482,7 @@ export function TaxCalendarView({
                     {items.map((item) => (
                       <li
                         key={item.key}
-                        className="flex items-start gap-1.5 font-acumin text-[11px]"
+                        className="flex items-start gap-1.5 font-acumin text-2.75"
                       >
                         <i
                           className={
@@ -522,14 +534,14 @@ export function TaxCalendarView({
           }
         >
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[380px] border-collapse">
+            <table className="w-full min-w-195 border-collapse">
               <thead>
                 <tr className="border-b border-[#d4d4d4]">
                   {["資料名", "関連件数", "ステータス", "不足件数"].map(
                     (heading) => (
                       <th
                         key={heading}
-                        className="px-2 py-2 text-left font-acumin text-[11px] font-normal text-[#474747]"
+                        className="px-2 py-2 text-left font-acumin text-2.75 font-normal text-[#474747]"
                       >
                         {heading}
                       </th>
@@ -550,12 +562,12 @@ export function TaxCalendarView({
                           }
                           aria-hidden="true"
                         />
-                        <span className="font-acumin text-[11px] text-black">
+                        <span className="font-acumin text-2.75 text-black">
                           {document.name}
                         </span>
                       </span>
                     </td>
-                    <td className="px-2 py-2.5 text-right font-acumin text-[11px] text-[#474747] tabular-nums">
+                    <td className="px-2 py-2.5 text-right font-acumin text-2.75 text-[#474747] tabular-nums">
                       {document.entryCount} 件
                     </td>
                     <td className="px-2 py-2.5">
@@ -572,7 +584,7 @@ export function TaxCalendarView({
                       </StateBadge>
                     </td>
                     <td
-                      className={`px-2 py-2.5 text-right font-acumin text-[11px] tabular-nums ${document.missingCount > 0 ? "text-[#b91c1c]" : "text-[#707070]"}`}
+                      className={`px-2 py-2.5 text-right font-acumin text-2.75 tabular-nums ${document.missingCount > 0 ? "text-[#b91c1c]" : "text-[#707070]"}`}
                     >
                       {document.missingCount} 件
                     </td>
@@ -581,7 +593,7 @@ export function TaxCalendarView({
               </tbody>
             </table>
           </div>
-          <p className="mt-2 font-acumin text-[10px] text-[#707070]">
+          <p className="mt-2 font-acumin text-2.5 text-[#707070]">
             必要資料 {inventory.requiredCount} 件のうち、準備完了{" "}
             {inventory.readyCount} 件（{Math.round(inventory.progress)}%）。
           </p>

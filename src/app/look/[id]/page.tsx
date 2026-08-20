@@ -111,24 +111,24 @@ export default async function LookDetailPage({ params }: Props) {
   return (
     <div>
       <div className="element-width">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-[34px] lg:gap-[55px]">
-          <div className="space-y-[13px]">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8.5 lg:gap-13.75">
+          <div className="space-y-3.25">
             <LookImageGallery
               theme={currentLook.theme}
               imageUrls={currentLook.imageUrls}
             />
           </div>
 
-          <div className="lg:pt-[34px] space-y-[34px]">
+          <div className="lg:pt-8.5 space-y-8.5">
             <div>
               <p
-                className="text-[#474747] tracking-wider mb-[13px]"
+                className="text-[#474747] tracking-wider mb-3.25"
                 style={{ fontSize: "var(--lk-size-xs)" }}
               >
                 {seasonLabel}
               </p>
               <h1
-                className="mb-[13px]"
+                className="mb-3.25"
                 style={{ fontSize: "var(--lk-size-7xl)" }}
               >
                 {currentLook.theme}
@@ -137,14 +137,14 @@ export default async function LookDetailPage({ params }: Props) {
 
             <div className="">
               <p
-                className="text-[#474747] leading-[2]"
+                className="text-[#474747] leading-loose"
                 style={{ fontSize: "var(--lk-size-2xs)" }}
               >
                 {currentLook.themeDescription || " "}
               </p>
             </div>
 
-            <div className="pt-[21px]">
+            <div className="pt-5.25">
               {currentLook.linkedItems.length === 0 ? (
                 <p
                   className="text-[#474747]"
@@ -173,13 +173,13 @@ export default async function LookDetailPage({ params }: Props) {
             <nav
               data-testid="look-detail-bottom-nav"
               aria-label="Look navigation"
-              className="grid grid-cols-3 divide-x divide-black/10 pt-[13px]"
+              className="grid grid-cols-3 divide-x divide-black/10 pt-3.25"
             >
               {prevLook ? (
                 <Link
                   href={`/look/${prevLook.id}`}
                   aria-label={`Previous look: ${prevLook.theme}`}
-                  className="group flex cursor-pointer flex-col items-center gap-[13px] py-[13px]"
+                  className="group flex cursor-pointer flex-col items-center gap-3.25 py-3.25"
                 >
                   <p
                     className="text-black tracking-wider transition-colors group-hover:text-[#474747]"
@@ -194,7 +194,7 @@ export default async function LookDetailPage({ params }: Props) {
               ) : (
                 <div
                   aria-hidden="true"
-                  className="flex flex-col items-center gap-[13px] py-[13px] opacity-30"
+                  className="flex flex-col items-center gap-3.25 py-3.25 opacity-30"
                 >
                   <p
                     className="text-black tracking-wider"
@@ -210,7 +210,7 @@ export default async function LookDetailPage({ params }: Props) {
               <Link
                 href="/look"
                 aria-label="Look list"
-                className="group flex cursor-pointer flex-col items-center gap-[13px] py-[13px]"
+                className="group flex cursor-pointer flex-col items-center gap-3.25 py-3.25"
               >
                 <p
                   className="text-black tracking-wider transition-colors group-hover:text-[#474747]"
@@ -226,7 +226,7 @@ export default async function LookDetailPage({ params }: Props) {
                 <Link
                   href={`/look/${nextLook.id}`}
                   aria-label={`Next look: ${nextLook.theme}`}
-                  className="group flex cursor-pointer flex-col items-center gap-[13px] py-[13px]"
+                  className="group flex cursor-pointer flex-col items-center gap-3.25 py-3.25"
                 >
                   <p
                     className="text-black tracking-wider transition-colors group-hover:text-[#474747]"
@@ -241,7 +241,7 @@ export default async function LookDetailPage({ params }: Props) {
               ) : (
                 <div
                   aria-hidden="true"
-                  className="flex flex-col items-center gap-[13px] py-[13px] opacity-30"
+                  className="flex flex-col items-center gap-3.25 py-3.25 opacity-30"
                 >
                   <p
                     className="text-black tracking-wider"

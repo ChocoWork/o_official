@@ -704,7 +704,7 @@ function AccountPageContent() {
           variant="primary"
           size="lg"
           shape="rounded"
-          className="min-w-[220px]"
+          className="min-w-55"
         >
           ログイン
         </Button>
@@ -716,7 +716,7 @@ function AccountPageContent() {
     <div className="account-page w-full md:max-w-3xl md:mx-auto">
       {/* AC-5: ログイン後も現在地を示す h1 を表示 */}
       <h1
-        className="mb-[21px] sm:mb-[26px] tracking-widest"
+        className="mb-5.25 sm:mb-6.5 tracking-widest"
         style={accountPageTitleStyle}
       >
         ACCOUNT

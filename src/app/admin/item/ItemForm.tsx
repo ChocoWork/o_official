@@ -1,17 +1,17 @@
-'use client';
+"use client";
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from "react";
 // preview images now handled by Card component
-import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/Button/Button';
-import { ColorPicker } from '@/components/ui/ColorPicker/ColorPicker';
-import { RadioButtonGroup } from '@/components/ui/RadioButtonGroup/RadioButtonGroup';
-import { SingleSelect } from '@/components/ui/SingleSelect/SingleSelect';
-import { MultiSelect } from '@/components/ui/MultiSelect/MultiSelect';
-import { Card } from '@/components/ui/Card/Card';
-import { TextAreaField } from '@/components/ui/TextAreaField/TextAreaField';
-import { TextField } from '@/components/ui/TextField/TextField';
-import { clientFetch } from '@/lib/client-fetch';
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/Button/Button";
+import { ColorPicker } from "@/components/ui/ColorPicker/ColorPicker";
+import { RadioButtonGroup } from "@/components/ui/RadioButtonGroup/RadioButtonGroup";
+import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
+import { MultiSelect } from "@/components/ui/MultiSelect/MultiSelect";
+import { Card } from "@/components/ui/Card/Card";
+import { TextAreaField } from "@/components/ui/TextAreaField/TextAreaField";
+import { TextField } from "@/components/ui/TextField/TextField";
+import { clientFetch } from "@/lib/client-fetch";
 import {
   CATEGORIES,
   SIZES,
@@ -19,11 +19,11 @@ import {
   ColorPresetResponse,
   ItemFormValues,
   ItemStatus,
-} from './types';
+} from "./types";
 
 interface ItemFormProps {
   submitUrl: string;
-  submitMethod: 'POST' | 'PUT';
+  submitMethod: "POST" | "PUT";
   initialValues?: ItemFormValues;
   isLoading?: boolean;
 }
@@ -45,17 +45,17 @@ export function ItemForm({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [category, setCategory] = useState<(typeof CATEGORIES)[number]>(
-    initialValues?.category ?? CATEGORIES[0]
+    initialValues?.category ?? CATEGORIES[0],
   );
-  const [itemName, setItemName] = useState(initialValues?.name ?? '');
+  const [itemName, setItemName] = useState(initialValues?.name ?? "");
   const [price, setPrice] = useState(
-    initialValues ? String(initialValues.price) : ''
+    initialValues ? String(initialValues.price) : "",
   );
   const [description, setDescription] = useState(
-    initialValues?.description ?? ''
+    initialValues?.description ?? "",
   );
   const [status, setStatus] = useState<ItemStatus>(
-    initialValues?.status ?? 'private'
+    initialValues?.status ?? "private",
   );
   const [colors, setColors] = useState<ColorInput[]>(
     () =>
@@ -63,16 +63,18 @@ export function ItemForm({
         id: String(i + 1),
         name: c.name,
         hex: c.hex,
-      })) || [{ id: '1', name: '', hex: '#000000' }]
+      })) || [{ id: "1", name: "", hex: "#000000" }],
   );
   const [savedColors, setSavedColors] = useState<ColorInput[]>([]);
-  const [selectedSizes, setSelectedSizes] = useState<Set<string>>(new Set(initialValues?.sizes ?? []));
-  const [productDetails, setProductDetails] = useState(
-    initialValues?.productDetails ?? 'Material : \nMade in : '
+  const [selectedSizes, setSelectedSizes] = useState<Set<string>>(
+    new Set(initialValues?.sizes ?? []),
   );
-  const [material, setMaterial] = useState(initialValues?.material ?? '');
-  const [madeIn, setMadeIn] = useState(initialValues?.origin ?? '');
-  const [care, setCare] = useState(initialValues?.care ?? '');
+  const [productDetails, setProductDetails] = useState(
+    initialValues?.productDetails ?? "Material : \nMade in : ",
+  );
+  const [material, setMaterial] = useState(initialValues?.material ?? "");
+  const [madeIn, setMadeIn] = useState(initialValues?.origin ?? "");
+  const [care, setCare] = useState(initialValues?.care ?? "");
 
   // load preview urls after mount or when initialValues change
   useEffect(() => {
@@ -83,9 +85,9 @@ export function ItemForm({
 
   const fetchSavedColors = async () => {
     try {
-      const response = await clientFetch('/api/admin/item-color-presets');
+      const response = await clientFetch("/api/admin/item-color-presets");
       if (!response.ok) {
-        throw new Error('Failed to fetch color presets');
+        throw new Error("Failed to fetch color presets");
       }
 
       const json = await response.json();
@@ -95,10 +97,10 @@ export function ItemForm({
           id: String(preset.id),
           name: preset.name,
           hex: preset.hex,
-        }))
+        })),
       );
     } catch (error) {
-      console.error('Failed to load color presets:', error);
+      console.error("Failed to load color presets:", error);
     }
   };
 
@@ -108,18 +110,18 @@ export function ItemForm({
 
   const updateSelectedImage = (file: File) => {
     const supportedTypes = new Set([
-      'image/jpeg',
-      'image/png',
-      'image/webp',
-      'image/gif',
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "image/gif",
     ]);
     if (!supportedTypes.has(file.type)) {
-      setSubmitError('画像は JPEG / PNG / WebP / GIF を選択してください');
+      setSubmitError("画像は JPEG / PNG / WebP / GIF を選択してください");
       return;
     }
 
     if (file.size > 5 * 1024 * 1024) {
-      setSubmitError('画像サイズは5MB以下にしてください');
+      setSubmitError("画像サイズは5MB以下にしてください");
       return;
     }
 
@@ -128,13 +130,13 @@ export function ItemForm({
     const reader = new FileReader();
     reader.onload = () => {
       const loadedResult = reader.result;
-      if (typeof loadedResult === 'string') {
+      if (typeof loadedResult === "string") {
         setImageFiles((previousFiles) => [...previousFiles, file]);
         setPreviewUrls((previousUrls) => [...previousUrls, loadedResult]);
       }
     };
     reader.onerror = () => {
-      setSubmitError('画像プレビューの読み込みに失敗しました');
+      setSubmitError("画像プレビューの読み込みに失敗しました");
     };
     reader.readAsDataURL(file);
   };
@@ -162,21 +164,21 @@ export function ItemForm({
 
   const handleColorChange = (
     id: string,
-    field: 'name' | 'hex',
-    value: string
+    field: "name" | "hex",
+    value: string,
   ) => {
     setColors(
       colors.map((color) =>
-        color.id === id ? { ...color, [field]: value } : color
-      )
+        color.id === id ? { ...color, [field]: value } : color,
+      ),
     );
   };
 
   const handleAddColor = () => {
     const newId = String(
-      Math.max(...colors.map((c) => parseInt(c.id) || 0), 0) + 1
+      Math.max(...colors.map((c) => parseInt(c.id) || 0), 0) + 1,
     );
-    setColors([...colors, { id: newId, name: '', hex: '#000000' }]);
+    setColors([...colors, { id: newId, name: "", hex: "#000000" }]);
   };
 
   const handleRemoveColor = (id: string) => {
@@ -188,61 +190,60 @@ export function ItemForm({
   const handleSaveColor = (color: ColorInput) => {
     const trimmedName = color.name.trim();
     if (!trimmedName) {
-      setSubmitError('保存するカラー名を入力してください');
+      setSubmitError("保存するカラー名を入力してください");
       return;
     }
 
     const exists = savedColors.some(
-      (saved) => saved.hex === color.hex && saved.name === trimmedName
+      (saved) => saved.hex === color.hex && saved.name === trimmedName,
     );
 
     if (exists) {
-      window.alert('このカラー名と色の組み合わせは既に保存されています。');
+      window.alert("このカラー名と色の組み合わせは既に保存されています。");
       return;
     }
 
     void (async () => {
       try {
-        const response = await clientFetch(
-          '/api/admin/item-color-presets',
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: trimmedName, hex: color.hex }),
-          }
-        );
+        const response = await clientFetch("/api/admin/item-color-presets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: trimmedName, hex: color.hex }),
+        });
 
         const json = await response.json().catch(() => null);
         if (!response.ok) {
-          setSubmitError(json?.error ?? 'カラー保存に失敗しました');
+          setSubmitError(json?.error ?? "カラー保存に失敗しました");
           return;
         }
 
         const savedPreset = json?.data as ColorPresetResponse | undefined;
         if (savedPreset) {
           setSavedColors((previous) => {
-            if (
-              previous.some((entry) => entry.id === String(savedPreset.id))
-            ) {
+            if (previous.some((entry) => entry.id === String(savedPreset.id))) {
               return previous;
             }
 
             return [
-              { id: String(savedPreset.id), name: savedPreset.name, hex: savedPreset.hex },
+              {
+                id: String(savedPreset.id),
+                name: savedPreset.name,
+                hex: savedPreset.hex,
+              },
               ...previous,
             ];
           });
         }
       } catch (error) {
-        console.error('Failed to save color preset:', error);
-        setSubmitError('カラー保存に失敗しました');
+        console.error("Failed to save color preset:", error);
+        setSubmitError("カラー保存に失敗しました");
       }
     })();
   };
 
   const handleApplySavedColor = (color: ColorInput) => {
     const newId = String(
-      Math.max(...colors.map((c) => parseInt(c.id) || 0), 0) + 1
+      Math.max(...colors.map((c) => parseInt(c.id) || 0), 0) + 1,
     );
     setColors([...colors, { id: newId, name: color.name, hex: color.hex }]);
   };
@@ -253,22 +254,23 @@ export function ItemForm({
         const response = await clientFetch(
           `/api/admin/item-color-presets/${id}`,
           {
-            method: 'DELETE',
-          }
+            method: "DELETE",
+          },
         );
 
         if (!response.ok) {
-          throw new Error('Failed to delete color preset');
+          throw new Error("Failed to delete color preset");
         }
 
-        setSavedColors((previous) => previous.filter((color) => color.id !== id));
+        setSavedColors((previous) =>
+          previous.filter((color) => color.id !== id),
+        );
       } catch (error) {
-        console.error('Failed to delete color preset:', error);
-        setSubmitError('保存済みカラーの削除に失敗しました');
+        console.error("Failed to delete color preset:", error);
+        setSubmitError("保存済みカラーの削除に失敗しました");
       }
     })();
   };
-
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -285,37 +287,37 @@ export function ItemForm({
     const normalizedSizes = Array.from(selectedSizes);
 
     if (!trimmedName) {
-      setSubmitError('商品名を入力してください');
+      setSubmitError("商品名を入力してください");
       return;
     }
 
     if (!trimmedDescription) {
-      setSubmitError('商品情報を入力してください');
+      setSubmitError("商品情報を入力してください");
       return;
     }
 
     if (!Number.isInteger(parsedPrice) || parsedPrice < 0) {
-      setSubmitError('価格は0以上の整数で入力してください');
+      setSubmitError("価格は0以上の整数で入力してください");
       return;
     }
 
     if (previewUrls.length === 0 && imageFiles.length === 0) {
-      setSubmitError('画像を1枚以上追加してください');
+      setSubmitError("画像を1枚以上追加してください");
       return;
     }
 
     if (normalizedColors.length === 0) {
-      setSubmitError('カラー名を1つ以上入力してください');
+      setSubmitError("カラー名を1つ以上入力してください");
       return;
     }
 
     if (normalizedSizes.length === 0) {
-      setSubmitError('サイズを1つ以上選択してください');
+      setSubmitError("サイズを1つ以上選択してください");
       return;
     }
 
     if (!trimmedDetails) {
-      setSubmitError('PRODUCT DETAILSを入力してください');
+      setSubmitError("PRODUCT DETAILSを入力してください");
       return;
     }
 
@@ -323,20 +325,20 @@ export function ItemForm({
 
     try {
       const formData = new FormData();
-      formData.append('name', trimmedName);
-      formData.append('description', trimmedDescription);
-      formData.append('price', String(parsedPrice));
-      formData.append('category', category);
-      formData.append('productDetails', trimmedDetails);
-      formData.append('material', material.trim());
-      formData.append('origin', madeIn.trim());
-      formData.append('care', care.trim());
-      formData.append('status', status);
-      formData.append('sizes', JSON.stringify(normalizedSizes));
-      formData.append('colors', JSON.stringify(normalizedColors));
+      formData.append("name", trimmedName);
+      formData.append("description", trimmedDescription);
+      formData.append("price", String(parsedPrice));
+      formData.append("category", category);
+      formData.append("productDetails", trimmedDetails);
+      formData.append("material", material.trim());
+      formData.append("origin", madeIn.trim());
+      formData.append("care", care.trim());
+      formData.append("status", status);
+      formData.append("sizes", JSON.stringify(normalizedSizes));
+      formData.append("colors", JSON.stringify(normalizedColors));
 
       for (const file of imageFiles) {
-        formData.append('images', file);
+        formData.append("images", file);
       }
 
       const response = await clientFetch(submitUrl, {
@@ -346,17 +348,19 @@ export function ItemForm({
 
       const responseJson = await response.json().catch(() => null);
       if (!response.ok) {
-        setSubmitError(responseJson?.error ?? '商品の保存に失敗しました');
+        setSubmitError(responseJson?.error ?? "商品の保存に失敗しました");
         return;
       }
 
       setSubmitSuccess(
-        submitMethod === 'PUT' ? '商品を更新しました' : '商品を保存しました'
+        submitMethod === "PUT" ? "商品を更新しました" : "商品を保存しました",
       );
-      router.push('/admin?tab=ITEM');
+      router.push("/admin?tab=ITEM");
     } catch (error) {
-      console.error('Failed to submit item:', error);
-      setSubmitError('通信エラーが発生しました。時間をおいて再度お試しください');
+      console.error("Failed to submit item:", error);
+      setSubmitError(
+        "通信エラーが発生しました。時間をおいて再度お試しください",
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -365,12 +369,14 @@ export function ItemForm({
   if (isLoading) {
     return (
       <main className="pt-32 pb-20">
-        <div className="max-w-4xl mx-auto px-6 lg:px-12 text-center">読み込み中...</div>
+        <div className="max-w-4xl mx-auto px-6 lg:px-12 text-center">
+          読み込み中...
+        </div>
       </main>
     );
   }
 
-  const submitLabel = submitMethod === 'PUT' ? '更新' : '保存';
+  const submitLabel = submitMethod === "PUT" ? "更新" : "保存";
 
   return (
     <main className="pt-32 pb-20">
@@ -389,7 +395,7 @@ export function ItemForm({
               tabIndex={0}
               onClick={() => fileInputRef.current?.click()}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
+                if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
                   fileInputRef.current?.click();
                 }
@@ -401,7 +407,7 @@ export function ItemForm({
               onDragLeave={() => setIsDragging(false)}
               onDrop={handleDrop}
               className={`w-full border border-black/20 text-sm px-4 py-10 text-center cursor-pointer transition-colors ${
-                isDragging ? 'border-black bg-black/5' : 'bg-white'
+                isDragging ? "border-black bg-black/5" : "bg-white"
               }`}
             >
               <input
@@ -412,9 +418,12 @@ export function ItemForm({
                 className="hidden"
               />
               <div className="space-y-2">
-                <p className="text-sm tracking-widest">画像をドラッグ&ドロップ</p>
+                <p className="text-sm tracking-widest">
+                  画像をドラッグ&ドロップ
+                </p>
                 <p className="text-xs text-black/70">
-                  またはクリックしてファイルを追加（JPEG / PNG / WebP / GIF、5MB以下）
+                  またはクリックしてファイルを追加（JPEG / PNG / WebP /
+                  GIF、5MB以下）
                 </p>
               </div>
             </div>
@@ -423,14 +432,19 @@ export function ItemForm({
           <SingleSelect
             label="カテゴリー"
             variant="dropdown"
-            options={CATEGORIES.map((itemCategory) => ({ value: itemCategory, label: itemCategory }))}
+            options={CATEGORIES.map((itemCategory) => ({
+              value: itemCategory,
+              label: itemCategory,
+            }))}
             value={category}
-            onValueChange={(val) => setCategory(val as (typeof CATEGORIES)[number])}
+            onValueChange={(val) =>
+              setCategory(val as (typeof CATEGORIES)[number])
+            }
             className="font-acumin"
             size="md"
           />
 
-          <TextField 
+          <TextField
             required
             label="商品名"
             placeholder="商品名を入力"
@@ -440,7 +454,7 @@ export function ItemForm({
             size="md"
           />
 
-          <TextField 
+          <TextField
             required
             label="価格（円）"
             placeholder="価格を入力"
@@ -448,7 +462,7 @@ export function ItemForm({
             value={price}
             onChange={(e) => setPrice(e.target.value)}
             size="md"
-         />
+          />
 
           <TextAreaField
             label="商品情報"
@@ -460,10 +474,11 @@ export function ItemForm({
             size="md"
           />
 
-
           <div>
             <div className="space-y-2 mb-4">
-              <span className="block text-xs tracking-widest text-black/80">カラー</span>
+              <span className="block text-xs tracking-widest text-black/80">
+                カラー
+              </span>
               {colors.map((color) => (
                 <div key={color.id} className="flex gap-3 items-end">
                   <TextField
@@ -471,13 +486,19 @@ export function ItemForm({
                     placeholder="カラー名"
                     type="text"
                     value={color.name}
-                    onChange={(e) => handleColorChange(color.id, 'name', e.target.value)}
-                    size="md"/>
+                    onChange={(e) =>
+                      handleColorChange(color.id, "name", e.target.value)
+                    }
+                    size="md"
+                  />
                   <ColorPicker
                     value={color.hex}
-                    onChange={(e) => handleColorChange(color.id, 'hex', e.target.value)}
+                    onChange={(e) =>
+                      handleColorChange(color.id, "hex", e.target.value)
+                    }
                     aria-label="カラーを選択"
-                    size="md"/>
+                    size="md"
+                  />
                   <Button
                     type="button"
                     onClick={() => handleSaveColor(color)}
@@ -499,7 +520,12 @@ export function ItemForm({
                 </div>
               ))}
             </div>
-            <Button type="button" onClick={handleAddColor} variant="primary" size="md">
+            <Button
+              type="button"
+              onClick={handleAddColor}
+              variant="primary"
+              size="md"
+            >
               カラーを追加
             </Button>
             {savedColors.length > 0 && (
@@ -525,7 +551,7 @@ export function ItemForm({
                         type="button"
                         onClick={() => handleRemoveSavedColor(color.id)}
                         size="md"
-                        className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 text-[10px]"
+                        className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 text-2.5"
                         aria-label="保存済みカラーを削除"
                       >
                         <i className="ri-close-line text-xs" />
@@ -545,7 +571,6 @@ export function ItemForm({
             onChange={(vals) => setSelectedSizes(new Set(vals))}
             size="md"
           />
-
 
           <TextField
             label="MATERIAL（素材）"
@@ -576,7 +601,7 @@ export function ItemForm({
 
           <TextAreaField
             required
-            label='PRODUCT DETAILS（素材・洗濯の情報）'
+            label="PRODUCT DETAILS（素材・洗濯の情報）"
             rows={6}
             value={productDetails}
             onChange={(e) => setProductDetails(e.target.value)}
@@ -589,8 +614,8 @@ export function ItemForm({
             value={status}
             onChange={(value) => setStatus(value as ItemStatus)}
             options={[
-              { value: 'private', label: '非公開' },
-              { value: 'published', label: '公開' },
+              { value: "private", label: "非公開" },
+              { value: "published", label: "公開" },
             ]}
             size="md"
           />
@@ -610,10 +635,11 @@ export function ItemForm({
           <div className="flex gap-4">
             <Button
               type="button"
-              onClick={() => router.push('/admin?tab=ITEM')}
+              onClick={() => router.push("/admin?tab=ITEM")}
               disabled={isSubmitting}
               variant="secondary"
-             size="md">
+              size="md"
+            >
               キャンセル
             </Button>
             <Button type="submit" disabled={isSubmitting} size="md">

@@ -195,7 +195,7 @@ export default function PasswordResetPage() {
           strategy="afterInteractive"
         />
       ) : null}
-      <div className="px-6 pt-6 sm:pt-10 lg:pt-[55px]">
+      <div className="px-6 pt-6 sm:pt-10 lg:pt-13.75">
         <h1
           className="font-brand text-center tracking-widest mb-8"
           style={headingTextStyle}

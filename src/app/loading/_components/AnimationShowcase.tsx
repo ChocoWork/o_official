@@ -24,7 +24,7 @@ const animationComponents = [
         once={false}
       >
         <div
-          className="px-[21px] py-[13px] bg-black text-white text-[11px] tracking-widest"
+          className="px-5.25 py-3.25 bg-black text-white text-2.75 tracking-widest"
           style={{ fontFamily: "acumin-pro, sans-serif" }}
         >
           FADE IN
@@ -55,10 +55,10 @@ const animationComponents = [
         distance={15}
         once={false}
       >
-        <div className="flex gap-[5px]">
-          <div className="w-[8px] h-[8px] bg-black rounded-full"></div>
-          <div className="w-[8px] h-[8px] bg-black rounded-full"></div>
-          <div className="w-[8px] h-[8px] bg-black rounded-full"></div>
+        <div className="flex gap-1.25">
+          <div className="w-2 h-2 bg-black rounded-full"></div>
+          <div className="w-2 h-2 bg-black rounded-full"></div>
+          <div className="w-2 h-2 bg-black rounded-full"></div>
         </div>
       </StaggerChildren>
     ),
@@ -83,7 +83,7 @@ const animationComponents = [
     demo: (
       <PageTransition duration={500}>
         <div
-          className="px-[21px] py-[13px] border border-black text-[11px] tracking-widest"
+          className="px-5.25 py-3.25 border border-black text-2.75 tracking-widest"
           style={{ fontFamily: "acumin-pro, sans-serif" }}
         >
           PAGE TRANSITION
@@ -102,7 +102,7 @@ const animationComponents = [
     demo: (
       <HoverScale scale={1.05} duration={300}>
         <div
-          className="px-[21px] py-[13px] bg-black text-white text-[11px] tracking-widest"
+          className="px-5.25 py-3.25 bg-black text-white text-2.75 tracking-widest"
           style={{ fontFamily: "acumin-pro, sans-serif" }}
         >
           HOVER ME
@@ -121,7 +121,7 @@ const animationComponents = [
     demo: (
       <MagneticButton strength={0.3}>
         <div
-          className="px-[21px] py-[13px] bg-black text-white text-[11px] tracking-widest"
+          className="px-5.25 py-3.25 bg-black text-white text-2.75 tracking-widest"
           style={{ fontFamily: "acumin-pro, sans-serif" }}
         >
           MAGNETIC
@@ -140,7 +140,7 @@ const animationComponents = [
     demo: (
       <TextReveal
         text="Le Fil"
-        className="text-[16px] text-black"
+        className="text-4 text-black"
         stagger={50}
         delay={0}
         once={false}
@@ -150,7 +150,7 @@ const animationComponents = [
 
 <TextReveal
   text="Le Fil des Heures"
-  className="text-[16px] text-black"
+  className="text-4 text-black"
   stagger={50}
   delay={0}
 />`,
@@ -159,13 +159,13 @@ const animationComponents = [
     name: "AnimatedCounter",
     description: "数字がスクロールでカウントアップ。KPIや統計表示に。",
     demo: (
-      <div className="px-[21px] py-[13px] border border-black">
+      <div className="px-5.25 py-3.25 border border-black">
         <AnimatedCounter
           target={2026}
           prefix=""
           suffix=""
           duration={1500}
-          className="text-[16px] text-black"
+          className="text-4 text-black"
         />
       </div>
     ),
@@ -176,7 +176,7 @@ const animationComponents = [
   prefix=""
   suffix=""
   duration={1500}
-  className="text-[16px] text-black"
+  className="text-4 text-black"
 />`,
   },
 ];
@@ -190,35 +190,35 @@ export default function AnimationShowcase() {
   };
 
   return (
-    <div className="space-y-[34px]">
+    <div className="space-y-8.5">
       {animationComponents.map((comp) => (
         <div
           key={comp.name}
-          className="border border-black/10 p-[21px] sm:p-[26px] md:p-[34px]"
+          className="border border-black/10 p-5.25 sm:p-6.5 md:p-8.5"
         >
-          <div className="flex flex-col sm:flex-row sm:items-start gap-[13px] sm:gap-[21px] md:gap-[34px]">
-            <div className="shrink-0 w-full sm:w-[200px] md:w-[233px]">
+          <div className="flex flex-col sm:flex-row sm:items-start gap-3.25 sm:gap-5.25 md:gap-8.5">
+            <div className="shrink-0 w-full sm:w-50 md:w-58.25">
               <p
-                className="text-[13px] sm:text-[14px] text-black mb-[5px] sm:mb-[8px]"
+                className="text-3.25 sm:text-3.5 text-black mb-1.25 sm:mb-2"
                 style={{ fontFamily: "Didot, serif" }}
               >
                 {comp.name}
               </p>
               <p
-                className="text-[10px] sm:text-[11px] text-black/50 leading-[1.7]"
+                className="text-2.5 sm:text-2.75 text-black/50 leading-[1.7]"
                 style={{ fontFamily: "acumin-pro, sans-serif" }}
               >
                 {comp.description}
               </p>
             </div>
             <div className="flex-1">
-              <div className="flex items-center justify-center min-h-[55px] sm:min-h-[68px] bg-[#fafafa] border border-black/5 mb-[13px] p-[13px]">
+              <div className="flex items-center justify-center min-h-13.75 sm:min-h-17 bg-[#fafafa] border border-black/5 mb-3.25 p-3.25">
                 <div key={replayKeys[comp.name] ?? 0}>{comp.demo}</div>
               </div>
-              <div className="flex items-start gap-[21px]">
+              <div className="flex items-start gap-5.25">
                 <button
                   onClick={() => replay(comp.name)}
-                  className="mt-[13px] flex items-center gap-[5px] text-[10px] text-black/30 tracking-[0.15em] hover:text-black/60 transition-colors cursor-pointer"
+                  className="mt-3.25 flex items-center gap-1.25 text-2.5 text-black/30 tracking-[0.15em] hover:text-black/60 transition-colors cursor-pointer"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                   aria-label={`${comp.name} のアニメーションを再生`}
                 >

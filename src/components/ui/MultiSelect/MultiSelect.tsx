@@ -1,21 +1,21 @@
 import "@/components/ui/MultiSelect/MultiSelect.css";
-import { Button } from '@/components/ui/Button/Button';
-import { Checkbox } from '@/components/ui/Checkbox/Checkbox';
-import { cn } from '@/lib/utils';
-import { useEffect, useRef, useState } from 'react';
-import type { MultiSelectProps} from '@/components/ui/MultiSelect/MultiSelect_types';
-import type { SelectOption } from '@/components/ui/types';
+import { Button } from "@/components/ui/Button/Button";
+import { Checkbox } from "@/components/ui/Checkbox/Checkbox";
+import { cn } from "@/lib/utils";
+import { useEffect, useRef, useState } from "react";
+import type { MultiSelectProps } from "@/components/ui/MultiSelect/MultiSelect_types";
+import type { SelectOption } from "@/components/ui/types";
 
 export function MultiSelect({
   options,
   values,
   onChange,
   label,
-  placeholder = '選択してください',
-  variant = 'panel',
-  size = 'md',
-  checkStyle = 'check',
-  shape = 'rounded',
+  placeholder = "選択してください",
+  variant = "panel",
+  size = "md",
+  checkStyle = "check",
+  shape = "rounded",
   expandLabelHitArea = false,
   renderOptionLabel,
   className,
@@ -33,8 +33,10 @@ export function MultiSelect({
 
   const renderOptionItem = (option: SelectOption) => {
     const isChecked = values.includes(option.value);
-    const shapeClass = shape === 'square' ? 'rounded-none' : 'rounded';
-    const optionLabel = renderOptionLabel ? renderOptionLabel(option, isChecked) : option.label;
+    const shapeClass = shape === "square" ? "rounded-none" : "rounded";
+    const optionLabel = renderOptionLabel
+      ? renderOptionLabel(option, isChecked)
+      : option.label;
 
     return (
       <Checkbox
@@ -47,12 +49,12 @@ export function MultiSelect({
         shape={shape}
         expandLabelHitArea={expandLabelHitArea}
         className={cn(
-          'w-full justify-start px-3 transition-colors',
-          expandLabelHitArea ? 'py-1.5' : 'py-[3px]',
-          'text-[#474747] tracking-widest',
+          "w-full justify-start px-3 transition-colors",
+          expandLabelHitArea ? "py-1.5" : "py-0.75",
+          "text-[#474747] tracking-widest",
         )}
         inputClassName={cn(
-          checkStyle === 'fill' ? 'h-2.5 w-2.5' : 'h-4 w-4',
+          checkStyle === "fill" ? "h-2.5 w-2.5" : "h-4 w-4",
           shapeClass,
         )}
       />
@@ -60,37 +62,50 @@ export function MultiSelect({
   };
 
   useEffect(() => {
-    if (variant !== 'dropdown' || !open) {
+    if (variant !== "dropdown" || !open) {
       return;
     }
     const handleClickOutside = (event: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+      if (
+        wrapperRef.current &&
+        !wrapperRef.current.contains(event.target as Node)
+      ) {
         setOpen(false);
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [open, variant]);
 
-  if (variant === 'buttons') {
+  if (variant === "buttons") {
     return (
-      <div className={cn('space-y-2', className)} ref={wrapperRef} data-ui-multiselect="true" data-ui-multiselect-variant={variant} data-ui-size={size}>
-        {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
+      <div
+        className={cn("space-y-2", className)}
+        ref={wrapperRef}
+        data-ui-multiselect="true"
+        data-ui-multiselect-variant={variant}
+        data-ui-size={size}
+      >
+        {label ? (
+          <span className="block text-xs tracking-widest text-black/80">
+            {label}
+          </span>
+        ) : null}
         <div className="multiselect__button-list">
           {options.map((option) => (
             <Button
               key={option.value}
               type="button"
-              variant={values.includes(option.value) ? 'primary' : 'secondary'}
+              variant={values.includes(option.value) ? "primary" : "secondary"}
               size={size}
               shape={shape}
               onClick={() => handleChange(option.value)}
               aria-pressed={values.includes(option.value)}
-              className={cn(
-                'tracking-widest whitespace-nowrap',
-              )}
+              className={cn("tracking-widest whitespace-nowrap")}
             >
-              {renderOptionLabel ? renderOptionLabel(option, values.includes(option.value)) : option.label}
+              {renderOptionLabel
+                ? renderOptionLabel(option, values.includes(option.value))
+                : option.label}
             </Button>
           ))}
         </div>
@@ -98,10 +113,20 @@ export function MultiSelect({
     );
   }
 
-  if (variant === 'panel') {
+  if (variant === "panel") {
     return (
-      <div className={cn('space-y-2', className)} ref={wrapperRef} data-ui-multiselect="true" data-ui-multiselect-variant={variant} data-ui-size={size}>
-        {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
+      <div
+        className={cn("space-y-2", className)}
+        ref={wrapperRef}
+        data-ui-multiselect="true"
+        data-ui-multiselect-variant={variant}
+        data-ui-size={size}
+      >
+        {label ? (
+          <span className="block text-xs tracking-widest text-black/80">
+            {label}
+          </span>
+        ) : null}
         <div className="multiselect__option-list">
           {options.map((option) => renderOptionItem(option))}
         </div>
@@ -109,10 +134,20 @@ export function MultiSelect({
     );
   }
 
-  if (variant === 'dropdown') {
+  if (variant === "dropdown") {
     return (
-      <div className={cn('space-y-2', className)} ref={wrapperRef} data-ui-multiselect="true" data-ui-multiselect-variant={variant} data-ui-size={size}>
-        {label ? <span className="block text-xs tracking-widest text-black/80">{label}</span> : null}
+      <div
+        className={cn("space-y-2", className)}
+        ref={wrapperRef}
+        data-ui-multiselect="true"
+        data-ui-multiselect-variant={variant}
+        data-ui-size={size}
+      >
+        {label ? (
+          <span className="block text-xs tracking-widest text-black/80">
+            {label}
+          </span>
+        ) : null}
         <div className="relative">
           <button
             type="button"
@@ -123,13 +158,24 @@ export function MultiSelect({
             aria-haspopup="listbox"
             aria-expanded={open}
           >
-            <span data-ui-multiselect-trigger-label="true">{values.length > 0 ? values.map((v) => options.find((o) => o.value === v)?.label ?? v).join(', ') : placeholder}</span>
+            <span data-ui-multiselect-trigger-label="true">
+              {values.length > 0
+                ? values
+                    .map((v) => options.find((o) => o.value === v)?.label ?? v)
+                    .join(", ")
+                : placeholder}
+            </span>
             <span data-ui-multiselect-trigger-icon="true">
-              <i className={open ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'}></i>
+              <i
+                className={open ? "ri-arrow-up-s-line" : "ri-arrow-down-s-line"}
+              ></i>
             </span>
           </button>
           {open ? (
-            <div className="multiselect__option-list absolute left-0 right-0 top-full z-10 mt-1 p-1" data-ui-multiselect-panel="true">
+            <div
+              className="multiselect__option-list absolute left-0 right-0 top-full z-10 mt-1 p-1"
+              data-ui-multiselect-panel="true"
+            >
               {options.map((option) => renderOptionItem(option))}
             </div>
           ) : null}

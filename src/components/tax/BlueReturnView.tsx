@@ -108,7 +108,7 @@ function PageSidebar({
             }
           />
           <div className="min-w-0 flex-1">
-            <p className="font-acumin text-[11px] leading-relaxed text-[#707070]">
+            <p className="font-acumin text-2.75 leading-relaxed text-[#707070]">
               必須項目のうち、入力済みの項目の割合です。
             </p>
             <div className="mt-2 space-y-1">
@@ -123,7 +123,7 @@ function PageSidebar({
                   key={label}
                   className="flex items-center justify-between gap-2"
                 >
-                  <span className="inline-flex items-center gap-1.5 font-acumin text-[11px] text-[#474747]">
+                  <span className="inline-flex items-center gap-1.5 font-acumin text-2.75 text-[#474747]">
                     <span
                       className="inline-block h-2 w-2 rounded-full"
                       style={{ background: color }}
@@ -131,7 +131,7 @@ function PageSidebar({
                     />
                     {label}
                   </span>
-                  <span className="font-acumin text-[11px] text-black tabular-nums">
+                  <span className="font-acumin text-2.75 text-black tabular-nums">
                     {count} 件
                   </span>
                 </div>
@@ -152,7 +152,7 @@ function PageSidebar({
             className="ri-database-2-line mt-0.5 shrink-0 text-base text-[#474747]"
             aria-hidden="true"
           />
-          <p className="font-acumin text-[11px] leading-relaxed text-[#707070]">
+          <p className="font-acumin text-2.75 leading-relaxed text-[#707070]">
             {sourceSummary.note}
           </p>
         </div>
@@ -240,7 +240,7 @@ function BreakdownTable({
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[200px] border-collapse">
+          <table className="w-full min-w-50 border-collapse">
             <thead>
               <tr className="border-b border-[#d4d4d4]">
                 {["支払先", "件数", "金額"].map((heading) => (
@@ -354,10 +354,11 @@ export function BlueReturnView(props: TaxReportProps) {
     page4: page4Completion,
   };
   const overallProgress =
-    (page1Completion.progress
-      + page2Completion.progress
-      + page3Completion.progress
-      + page4Completion.progress) / 4;
+    (page1Completion.progress +
+      page2Completion.progress +
+      page3Completion.progress +
+      page4Completion.progress) /
+    4;
 
   /* ── 3P 減価償却の推移・構成 ────────────────────────────────────── */
   const depreciationTrend = useMemo(() => {
@@ -369,7 +370,8 @@ export function BlueReturnView(props: TaxReportProps) {
       years,
       values: years.map((year) =>
         fixedAssets.reduce(
-          (sum, asset) => sum + depreciationForYear(asset, year).businessExpense,
+          (sum, asset) =>
+            sum + depreciationForYear(asset, year).businessExpense,
           0,
         ),
       ),
@@ -390,8 +392,8 @@ export function BlueReturnView(props: TaxReportProps) {
   );
 
   const selectedAsset =
-    depreciation.rows.find((row) => row.asset.id === selectedAssetId)
-    ?? depreciation.rows[0];
+    depreciation.rows.find((row) => row.asset.id === selectedAssetId) ??
+    depreciation.rows[0];
 
   /* ── 4P 貸借対照表の構成比 ──────────────────────────────────────── */
   const assetShares = balanceSheetComparison.assets
@@ -455,10 +457,10 @@ export function BlueReturnView(props: TaxReportProps) {
               aria-hidden="true"
             />
             <span className="min-w-0 flex-1">
-              <span className="block font-acumin text-[11px] font-medium text-black">
+              <span className="block font-acumin text-2.75 font-medium text-black">
                 {label}
               </span>
-              <span className="block font-acumin text-[10px] text-[#707070]">
+              <span className="block font-acumin text-2.5 text-[#707070]">
                 {description}
               </span>
             </span>
@@ -475,7 +477,7 @@ export function BlueReturnView(props: TaxReportProps) {
   const filingSettings = (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <span className="font-acumin text-[11px] text-[#474747]">
+        <span className="font-acumin text-2.75 text-[#474747]">
           青色申告特別控除
         </span>
         <span className="font-acumin text-xs text-black tabular-nums">
@@ -488,7 +490,7 @@ export function BlueReturnView(props: TaxReportProps) {
         label="e-Tax利用（電子申告）"
         className="font-acumin"
       />
-      <p className="font-acumin text-[10px] leading-relaxed text-[#707070]">
+      <p className="font-acumin text-2.5 leading-relaxed text-[#707070]">
         ※ 65万円控除には複式簿記・貸借対照表の添付・期限内申告に加えて
         e-Tax申告または優良な電子帳簿保存が必要です（国税庁 No.2070）。
       </p>
@@ -532,7 +534,7 @@ export function BlueReturnView(props: TaxReportProps) {
           }
         >
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[480px] border-collapse">
+            <table className="w-full min-w-120 border-collapse">
               <thead>
                 <tr className="border-b border-[#d4d4d4]">
                   {["科目", "金額", "入力元", "入力状況"].map((heading) => (
@@ -564,7 +566,7 @@ export function BlueReturnView(props: TaxReportProps) {
                       >
                         {currency(row.value)}
                       </td>
-                      <td className="whitespace-nowrap px-2 py-2 font-acumin text-[11px] text-[#474747]">
+                      <td className="whitespace-nowrap px-2 py-2 font-acumin text-2.75 text-[#474747]">
                         {source}
                       </td>
                       <td className="px-2 py-2">
@@ -588,7 +590,7 @@ export function BlueReturnView(props: TaxReportProps) {
           </div>
 
           <div className="mt-4 border-t border-[#d4d4d4] pt-3">
-            <p className="font-acumin text-[11px] text-[#474747]">経費の内訳</p>
+            <p className="font-acumin text-2.75 text-[#474747]">経費の内訳</p>
             <div className="mt-2 overflow-x-auto">
               <table className="w-full min-w-[320px] border-collapse">
                 <tbody>
@@ -607,7 +609,7 @@ export function BlueReturnView(props: TaxReportProps) {
                         <td className={tableNumberClassName}>
                           {currency(row.amount)}
                         </td>
-                        <td className="whitespace-nowrap px-2 py-2 font-acumin text-[11px] text-[#474747]">
+                        <td className="whitespace-nowrap px-2 py-2 font-acumin text-2.75 text-[#474747]">
                           仕訳・元帳
                         </td>
                       </tr>
@@ -674,14 +676,14 @@ export function BlueReturnView(props: TaxReportProps) {
           title={
             <span className="flex flex-wrap items-baseline gap-2">
               <span className={panelTitleClassName}>売上・経費・所得推移</span>
-              <span className="font-acumin text-[11px] text-[#707070]">
+              <span className="font-acumin text-2.75 text-[#707070]">
                 （12か月）
               </span>
             </span>
           }
         >
           <div className="overflow-x-auto">
-            <div className="min-w-[520px]">
+            <div className="min-w-130">
               <Graph
                 variant="line"
                 groupBars
@@ -706,7 +708,8 @@ export function BlueReturnView(props: TaxReportProps) {
                     kind: "line",
                     color: "#3d6fc4",
                     values: trendSeries.sales.map(
-                      (value, index) => value - (trendSeries.purchases[index] ?? 0),
+                      (value, index) =>
+                        value - (trendSeries.purchases[index] ?? 0),
                     ),
                   },
                 ]}
@@ -745,7 +748,7 @@ export function BlueReturnView(props: TaxReportProps) {
                         key={row.label}
                         className="flex items-center justify-between gap-2 border-b border-[#ededed] py-2"
                       >
-                        <span className="min-w-0 truncate font-acumin text-[11px] text-black">
+                        <span className="min-w-0 truncate font-acumin text-2.75 text-black">
                           {row.label}
                         </span>
                         <Button
@@ -789,19 +792,19 @@ export function BlueReturnView(props: TaxReportProps) {
           }
         >
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] border-collapse [&_td]:px-1 [&_th]:px-1 [&_td]:text-[10px] [&_th]:text-[10px]">
+            <table className="w-full min-w-140 border-collapse [&_td]:px-1 [&_th]:px-1 [&_td]:text-2.5 [&_th]:text-2.5">
               <thead>
                 <tr className="border-b border-[#d4d4d4]">
                   <th className={tableHeadClassName} />
                   {MONTH_LABELS.map((label) => (
                     <th
                       key={label}
-                      className="px-2 py-2 text-right font-acumin text-[11px] font-normal text-[#474747]"
+                      className="px-2 py-2 text-right font-acumin text-2.75 font-normal text-[#474747]"
                     >
                       {label}
                     </th>
                   ))}
-                  <th className="px-2 py-2 text-right font-acumin text-[11px] font-medium text-black">
+                  <th className="px-2 py-2 text-right font-acumin text-2.75 font-medium text-black">
                     合計
                   </th>
                 </tr>
@@ -828,12 +831,12 @@ export function BlueReturnView(props: TaxReportProps) {
                     {values.map((value, index) => (
                       <td
                         key={`${label}-${index}`}
-                        className="px-2 py-2 text-right font-acumin text-[11px] text-black tabular-nums"
+                        className="px-2 py-2 text-right font-acumin text-2.75 text-black tabular-nums"
                       >
                         {Math.round(value).toLocaleString("ja-JP")}
                       </td>
                     ))}
-                    <td className="px-2 py-2 text-right font-acumin text-[11px] font-medium text-black tabular-nums">
+                    <td className="px-2 py-2 text-right font-acumin text-2.75 font-medium text-black tabular-nums">
                       {Math.round(total).toLocaleString("ja-JP")}
                     </td>
                   </tr>
@@ -844,11 +847,11 @@ export function BlueReturnView(props: TaxReportProps) {
                   </td>
                   <td
                     colSpan={12}
-                    className="px-2 py-2 font-acumin text-[11px] text-[#707070]"
+                    className="px-2 py-2 font-acumin text-2.75 text-[#707070]"
                   >
                     月別欄の外に計上します
                   </td>
-                  <td className="px-2 py-2 text-right font-acumin text-[11px] font-medium text-black tabular-nums">
+                  <td className="px-2 py-2 text-right font-acumin text-2.75 font-medium text-black tabular-nums">
                     {Math.round(monthlySummary.miscIncome).toLocaleString(
                       "ja-JP",
                     )}
@@ -857,7 +860,7 @@ export function BlueReturnView(props: TaxReportProps) {
               </tbody>
             </table>
           </div>
-          <p className="mt-2 font-acumin text-[10px] text-[#707070]">
+          <p className="mt-2 font-acumin text-2.5 text-[#707070]">
             ※ 金額は円未満を切り捨てて表示しています。
           </p>
         </Panel>
@@ -882,7 +885,7 @@ export function BlueReturnView(props: TaxReportProps) {
           }
         >
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[360px] border-collapse">
+            <table className="w-full min-w-90 border-collapse">
               <thead>
                 <tr className="border-b border-[#d4d4d4]">
                   {["区分", "支払先・内容", "件数", "金額"].map((heading) => (
@@ -895,7 +898,10 @@ export function BlueReturnView(props: TaxReportProps) {
               <tbody>
                 {[
                   ["利子割引料", breakdowns.interest] as const,
-                  ["税理士・弁護士等報酬", breakdowns.professionalFees] as const,
+                  [
+                    "税理士・弁護士等報酬",
+                    breakdowns.professionalFees,
+                  ] as const,
                 ].flatMap(([label, rows]) =>
                   rows.length === 0
                     ? [
@@ -965,7 +971,7 @@ export function BlueReturnView(props: TaxReportProps) {
             title: "月別チェック",
             body: (
               <>
-                <p className="font-acumin text-[11px] text-[#707070]">
+                <p className="font-acumin text-2.75 text-[#707070]">
                   売上が計上されていない月を検知します。
                 </p>
                 <div className="mt-3 flex items-end justify-between gap-1">
@@ -978,7 +984,7 @@ export function BlueReturnView(props: TaxReportProps) {
                       >
                         {anomaly ? (
                           <i
-                            className="ri-error-warning-line text-[11px] text-[#d98324]"
+                            className="ri-error-warning-line text-2.75 text-[#d98324]"
                             aria-hidden="true"
                           />
                         ) : (
@@ -998,7 +1004,7 @@ export function BlueReturnView(props: TaxReportProps) {
                     );
                   })}
                 </div>
-                <p className="mt-2 font-acumin text-[10px] text-[#707070]">
+                <p className="mt-2 font-acumin text-2.5 text-[#707070]">
                   {monthlyAnomalies.length === 0
                     ? "検知された異常はありません。"
                     : `${monthlyAnomalies.map(({ index }) => `${index + 1}月`).join("・")}は仕入のみ計上されています。`}
@@ -1049,7 +1055,7 @@ export function BlueReturnView(props: TaxReportProps) {
             </p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] border-collapse [&_td]:px-1.5 [&_th]:px-1.5">
+              <table className="w-full min-w-180 border-collapse [&_td]:px-1.5 [&_th]:px-1.5">
                 <thead>
                   <tr className="border-b border-[#d4d4d4]">
                     {[
@@ -1087,11 +1093,11 @@ export function BlueReturnView(props: TaxReportProps) {
                           {row.asset.acquiredOn.slice(0, 7).replace("-", "/")}
                         </td>
                         <td className="bg-[#f2f8f4] px-2 py-2.5 text-right font-acumin text-xs text-black tabular-nums">
-                          {Math.round(
-                            row.asset.acquisitionCost,
-                          ).toLocaleString("ja-JP")}
+                          {Math.round(row.asset.acquisitionCost).toLocaleString(
+                            "ja-JP",
+                          )}
                         </td>
-                        <td className="whitespace-nowrap px-2 py-2.5 font-acumin text-[11px] text-[#474747]">
+                        <td className="whitespace-nowrap px-2 py-2.5 font-acumin text-2.75 text-[#474747]">
                           {DEPRECIATION_METHOD_LABELS[row.asset.method]}
                         </td>
                         <td className="px-2 py-2.5 text-right font-acumin text-xs text-[#474747] tabular-nums">
@@ -1156,7 +1162,7 @@ export function BlueReturnView(props: TaxReportProps) {
               </table>
             </div>
           )}
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 font-acumin text-[10px] text-[#707070]">
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 font-acumin text-2.5 text-[#707070]">
             <span className="inline-flex items-center gap-1.5">
               <span
                 className="inline-block h-2.5 w-4 bg-[#f2f8f4]"
@@ -1182,14 +1188,14 @@ export function BlueReturnView(props: TaxReportProps) {
             title={
               <span className="flex flex-wrap items-baseline gap-2">
                 <span className={panelTitleClassName}>減価償却費の推移</span>
-                <span className="font-acumin text-[11px] text-[#707070]">
+                <span className="font-acumin text-2.75 text-[#707070]">
                   （実績・予測）
                 </span>
               </span>
             }
           >
             <div className="overflow-x-auto">
-              <div className="min-w-[330px]">
+              <div className="min-w-82.5">
                 <Graph
                   variant="line"
                   categories={depreciationTrend.years.map(
@@ -1228,7 +1234,7 @@ export function BlueReturnView(props: TaxReportProps) {
                 <span className={panelTitleClassName}>
                   資産区分別 償却費内訳
                 </span>
-                <span className="font-acumin text-[11px] text-[#707070]">
+                <span className="font-acumin text-2.75 text-[#707070]">
                   （本年分）
                 </span>
               </span>
@@ -1247,10 +1253,10 @@ export function BlueReturnView(props: TaxReportProps) {
                   data={assetComposition}
                   centerLabel={
                     <span className="block text-center">
-                      <span className="block font-acumin text-[10px] text-[#707070]">
+                      <span className="block font-acumin text-2.5 text-[#707070]">
                         合計
                       </span>
-                      <span className="block font-acumin text-[11px] font-medium text-black tabular-nums">
+                      <span className="block font-acumin text-2.75 font-medium text-black tabular-nums">
                         {currency(depreciation.businessExpenseTotal)}
                       </span>
                     </span>
@@ -1268,16 +1274,16 @@ export function BlueReturnView(props: TaxReportProps) {
                           style={{ background: item.color }}
                           aria-hidden="true"
                         />
-                        <span className="truncate font-acumin text-[11px] text-[#474747]">
+                        <span className="truncate font-acumin text-2.75 text-[#474747]">
                           {item.label}
                         </span>
                       </span>
-                      <span className="shrink-0 font-acumin text-[11px] text-black tabular-nums">
+                      <span className="shrink-0 font-acumin text-2.75 text-black tabular-nums">
                         {currency(item.value)}（
                         {(
-                          (item.value
-                            / Math.max(1, depreciation.businessExpenseTotal))
-                          * 100
+                          (item.value /
+                            Math.max(1, depreciation.businessExpenseTotal)) *
+                          100
                         ).toFixed(1)}
                         %）
                       </span>
@@ -1286,7 +1292,7 @@ export function BlueReturnView(props: TaxReportProps) {
                 </ul>
               </div>
             )}
-            <p className="mt-3 font-acumin text-[10px] text-[#707070]">
+            <p className="mt-3 font-acumin text-2.5 text-[#707070]">
               ※ 端数処理により合計が一致しない場合があります。
             </p>
           </Panel>
@@ -1325,7 +1331,7 @@ export function BlueReturnView(props: TaxReportProps) {
                     key={label}
                     className="flex items-center justify-between gap-2 border-b border-[#ededed] py-2"
                   >
-                    <span className="min-w-0 truncate font-acumin text-[11px] text-black">
+                    <span className="min-w-0 truncate font-acumin text-2.75 text-black">
                       {label}
                     </span>
                     <StateBadge state={ok ? "done" : "todo"}>
@@ -1349,10 +1355,7 @@ export function BlueReturnView(props: TaxReportProps) {
                         .slice(0, 7)
                         .replace("-", "/"),
                     ],
-                    [
-                      "取得価額",
-                      currency(selectedAsset.asset.acquisitionCost),
-                    ],
+                    ["取得価額", currency(selectedAsset.asset.acquisitionCost)],
                     [
                       "償却方法",
                       DEPRECIATION_METHOD_LABELS[selectedAsset.asset.method],
@@ -1364,21 +1367,15 @@ export function BlueReturnView(props: TaxReportProps) {
                       `${selectedAsset.asset.businessUseRatio}%`,
                     ],
                     ["本年分償却費", currency(selectedAsset.depreciation)],
-                    [
-                      "必要経費算入額",
-                      currency(selectedAsset.businessExpense),
-                    ],
-                    [
-                      "未償却残高",
-                      currency(selectedAsset.closingBookValue),
-                    ],
+                    ["必要経費算入額", currency(selectedAsset.businessExpense)],
+                    ["未償却残高", currency(selectedAsset.closingBookValue)],
                   ] as const
                 ).map(([label, value]) => (
                   <div key={label} className="min-w-0">
-                    <dt className="font-acumin text-[10px] text-[#707070]">
+                    <dt className="font-acumin text-2.5 text-[#707070]">
                       {label}
                     </dt>
-                    <dd className="truncate font-acumin text-[11px] text-black tabular-nums">
+                    <dd className="truncate font-acumin text-2.75 text-black tabular-nums">
                       {value}
                     </dd>
                   </div>
@@ -1400,8 +1397,8 @@ export function BlueReturnView(props: TaxReportProps) {
 
   /* ── 4P 貸借対照表 ──────────────────────────────────────────────── */
   const balanceDifference =
-    balanceSheetComparison.closingAssetTotal
-    - balanceSheetComparison.closingLiabilityEquityTotal;
+    balanceSheetComparison.closingAssetTotal -
+    balanceSheetComparison.closingLiabilityEquityTotal;
 
   const page4View = (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
@@ -1413,7 +1410,7 @@ export function BlueReturnView(props: TaxReportProps) {
           title={
             <span className="flex flex-wrap items-baseline gap-2">
               <span className={panelTitleClassName}>4ページ 貸借対照表</span>
-              <span className="font-acumin text-[11px] text-[#707070]">
+              <span className="font-acumin text-2.75 text-[#707070]">
                 （{fiscalYear}/12/31時点）
               </span>
             </span>
@@ -1431,11 +1428,11 @@ export function BlueReturnView(props: TaxReportProps) {
               ] as const
             ).map(([side, rows, kind]) => (
               <div key={side} className="min-w-0">
-                <p className="font-acumin text-[11px] font-medium text-black">
+                <p className="font-acumin text-2.75 font-medium text-black">
                   {side}
                 </p>
                 <div className="mt-2 overflow-x-auto">
-                  <table className="w-full min-w-[240px] border-collapse [&_td]:px-1.5 [&_th]:px-1.5">
+                  <table className="w-full min-w-60 border-collapse [&_td]:px-1.5 [&_th]:px-1.5">
                     <thead>
                       <tr className="border-b border-[#d4d4d4]">
                         {["科目", "1月1日（期首）", "12月31日（期末）"].map(
@@ -1578,8 +1575,8 @@ export function BlueReturnView(props: TaxReportProps) {
                   [
                     [
                       "期首残高の一致",
-                      balanceSheetComparison.openingAssetTotal
-                        === balanceSheetComparison.openingLiabilityEquityTotal,
+                      balanceSheetComparison.openingAssetTotal ===
+                        balanceSheetComparison.openingLiabilityEquityTotal,
                     ],
                     ["期末残高の一致", balanceDifference === 0],
                   ] as const
@@ -1588,7 +1585,7 @@ export function BlueReturnView(props: TaxReportProps) {
                     key={label}
                     className="flex items-center justify-between gap-2 border-b border-[#ededed] py-2"
                   >
-                    <span className="min-w-0 truncate font-acumin text-[11px] text-black">
+                    <span className="min-w-0 truncate font-acumin text-2.75 text-black">
                       {label}
                     </span>
                     <StateBadge state={ok ? "done" : "todo"}>
@@ -1616,11 +1613,11 @@ export function BlueReturnView(props: TaxReportProps) {
                       key={row.code}
                       className="flex items-center justify-between gap-2 border-b border-[#ededed] py-2"
                     >
-                      <span className="min-w-0 truncate font-acumin text-[11px] text-black">
+                      <span className="min-w-0 truncate font-acumin text-2.75 text-black">
                         {row.name}
                       </span>
                       <span
-                        className={`shrink-0 font-acumin text-[11px] tabular-nums ${row.delta > 0 ? "text-[#16844b]" : "text-[#b91c1c]"}`}
+                        className={`shrink-0 font-acumin text-2.75 tabular-nums ${row.delta > 0 ? "text-[#16844b]" : "text-[#b91c1c]"}`}
                       >
                         {row.delta > 0 ? "+" : "△"}
                         {currency(Math.abs(row.delta)).replace("¥", "¥")}
@@ -1643,8 +1640,8 @@ export function BlueReturnView(props: TaxReportProps) {
       {/* 4ページ通しの進み具合。どのページが埋まっていないか一目で分かるようにする。 */}
       <Panel radius="rounded" className="min-w-0" aria-label="申告書全体の進捗">
         <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
-          <div className="flex min-w-[220px] flex-1 items-center gap-3">
-            <span className="whitespace-nowrap font-acumin text-[11px] font-medium text-black">
+          <div className="flex min-w-55 flex-1 items-center gap-3">
+            <span className="whitespace-nowrap font-acumin text-2.75 font-medium text-black">
               申告書全体の進捗
             </span>
             <span
@@ -1656,18 +1653,18 @@ export function BlueReturnView(props: TaxReportProps) {
                 style={{ width: `${Math.round(overallProgress)}%` }}
               />
             </span>
-            <span className="font-acumin text-[11px] text-black tabular-nums">
+            <span className="font-acumin text-2.75 text-black tabular-nums">
               {Math.round(overallProgress)}%
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-            <span className="font-acumin text-[11px] text-[#707070]">
+            <span className="font-acumin text-2.75 text-[#707070]">
               ページ別ステータス
             </span>
             {BLUE_RETURN_PAGES.map((item) => (
               <span
                 key={item.key}
-                className="inline-flex items-center gap-1.5 font-acumin text-[11px] text-[#474747]"
+                className="inline-flex items-center gap-1.5 font-acumin text-2.75 text-[#474747]"
               >
                 <span
                   className="inline-block h-2 w-2 rounded-full"

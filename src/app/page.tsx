@@ -8,14 +8,8 @@ import { PublicStockistGrid } from "@/features/stockist/components/PublicStockis
 import { SearchHomePreview } from "@/features/search/components/SearchHomePreview";
 import { SectionTitle } from "@/components/ui/SectionTitle/SectionTitle";
 import { Button } from "@/components/ui/Button/Button";
-import {
-  getPublishedItems,
-  getPublishedItemsCount,
-} from "@/lib/items/public";
-import {
-  getPublishedLooks,
-  getPublishedLooksCount,
-} from "@/lib/look/server";
+import { getPublishedItems, getPublishedItemsCount } from "@/lib/items/public";
+import { getPublishedLooks, getPublishedLooksCount } from "@/lib/look/server";
 import {
   getPublishedNews,
   getPublishedNewsCount,
@@ -69,7 +63,7 @@ export default async function Home() {
     <div className="min-h-screen w-full">
       <div className="flex flex-col w-full items-stretch">
         {/* メイン画像セクション */}
-        <section className="relative min-h-[100svh] w-full flex items-center justify-center bg-white pt-20">
+        <section className="relative min-h-svh w-full flex items-center justify-center bg-white pt-20">
           <div className="absolute inset-0 overflow-hidden">
             <Image
               src="/mainphoto.png"
@@ -82,12 +76,12 @@ export default async function Home() {
             />
             <div
               aria-hidden="true"
-              className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/60"
+              className="absolute inset-0 bg-linear-to-b from-black/40 via-transparent to-black/60"
             />
           </div>
           <div className="relative z-10 text-center px-6 max-w-4xl mx-auto">
             <h1
-              className="mb-[13px] sm:mb-[16px] md:mb-[21px] tracking-tight text-white"
+              className="mb-3.25 sm:mb-4 md:mb-5.25 tracking-tight text-white"
               style={{
                 fontFamily: "Didot, serif",
                 fontSize: "var(--lk-size-4xl)",
@@ -98,7 +92,7 @@ export default async function Home() {
           </div>
           <div
             aria-hidden="true"
-            className="absolute bottom-[26px] sm:bottom-[34px] left-1/2 -translate-x-1/2 z-10 flex flex-col items-center gap-[8px]"
+            className="absolute bottom-6.5 sm:bottom-8.5 left-1/2 -translate-x-1/2 z-10 flex flex-col items-center gap-2"
           >
             <span
               className="font-brand text-white/70 tracking-[0.3em]"
@@ -106,7 +100,7 @@ export default async function Home() {
             >
               SCROLL
             </span>
-            <span className="block h-[34px] w-px bg-white/50" />
+            <span className="block h-8.5 w-px bg-white/50" />
           </div>
         </section>
 
@@ -136,7 +130,7 @@ export default async function Home() {
         {/* ABOUT セクション（CONCEPT 統合：思想・差別化・ブランド概要を集約） */}
         <section id="about" className="section-space-about">
           <div className="element-width">
-            <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-[21px] sm:gap-[26px] md:gap-[34px] lg:gap-[55px] items-start">
+            <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-5.25 sm:gap-6.5 md:gap-8.5 lg:gap-13.75 items-start">
               {/* 左: ABOUT タイトル + テキスト全量 + 3本柱 + CTA */}
               <div className="order-2 md:order-1 flex flex-col">
                 <SectionTitle title="ABOUT" />
@@ -155,7 +149,7 @@ export default async function Home() {
                   </p>
                 </div>
                 {/* 差別化の3本柱（縦並び・仕切り線） */}
-                <div className="mt-[21px] sm:mt-[26px] md:mt-[34px] divide-y divide-black/10 border-t border-b border-black/10">
+                <div className="mt-5.25 sm:mt-6.5 md:mt-8.5 divide-y divide-black/10 border-t border-b border-black/10">
                   {[
                     {
                       en: "TIMELSS & UNISEX",
@@ -173,7 +167,7 @@ export default async function Home() {
                       body: "必要なときに、必要な人に、必要な分だけ。日本の技術を次世代に紡ぐ。",
                     },
                   ].map((pillar) => (
-                    <div key={pillar.en} className="py-[13px] sm:py-[16px]">
+                    <div key={pillar.en} className="py-3.25 sm:py-4">
                       <h3
                         className="about-secondary-title font-brand"
                         style={{ fontSize: "var(--lk-size-3xs)" }}
@@ -181,7 +175,7 @@ export default async function Home() {
                         {pillar.en}
                       </h3>
                       <p
-                        className="text-black mb-[4px] sm:mb-[6px]"
+                        className="text-black mb-1 sm:mb-1.5"
                         style={{ fontSize: "var(--lk-size-sm)" }}
                       >
                         {pillar.ja}
@@ -195,7 +189,7 @@ export default async function Home() {
                     </div>
                   ))}
                 </div>
-                <div className="mt-[21px] sm:mt-[26px] md:mt-[34px]">
+                <div className="mt-5.25 sm:mt-6.5 md:mt-8.5">
                   <Button href="/about" variant="secondary" size="xs">
                     READ OUR STORY
                   </Button>
@@ -204,7 +198,7 @@ export default async function Home() {
 
               {/* 右: 画像 */}
               <div className="order-1 md:order-2">
-                <div className="relative aspect-[3/4] overflow-hidden">
+                <div className="relative aspect-3/4 overflow-hidden">
                   <Image
                     src="/about.png"
                     alt="About Le Fil des Heures"

@@ -18,7 +18,7 @@ export function SectionTitle({ title, className }: SectionTitleProps) {
     >
       <h2
         className={clsx(
-          "text-[20px] lg:text-[28px] leading-none underline underline-offset-8 decoration-black decoration-1 mb-4 sm:mb-4.5 md:mb-5 tracking-tight",
+          "text-5 lg:text-7 leading-none underline underline-offset-8 decoration-black decoration-1 mb-4 sm:mb-4.5 md:mb-5 tracking-tight",
         )}
       >
         {title}

@@ -64,7 +64,7 @@ const AuthTabs: React.FC<AuthTabsProps> = ({ initialTab, initialEmail }) => {
               tabIndex={selected ? 0 : -1}
               onClick={() => switchTab(key)}
               onKeyDown={handleTabKeyDown}
-              className={`min-h-[48px] px-4 tracking-widest border-b transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-black ${
+              className={`min-h-12 px-4 tracking-widest border-b transition-colors duration-200 focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-black ${
                 selected
                   ? "border-black text-black"
                   : "border-black/20 text-[#a3a3a3] hover:text-[#595959]"
@@ -80,7 +80,7 @@ const AuthTabs: React.FC<AuthTabsProps> = ({ initialTab, initialEmail }) => {
         role="tabpanel"
         id="auth-panel"
         aria-labelledby={`auth-tab-${activeTab}`}
-        className="pt-6 sm:pt-10 lg:pt-[55px]"
+        className="pt-6 sm:pt-10 lg:pt-13.75"
       >
         {activeTab === "login" ? (
           <>

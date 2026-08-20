@@ -8,11 +8,11 @@
 
 ## ステータス凡例
 
-| ステータス | 意味 |
-|---|---|
-| 未対応 | 未着手 |
-| 対応中 | 一部対応・設計検討中 |
-| 対応済 | 修正完了 |
+| ステータス | 意味                 |
+| ---------- | -------------------- |
+| 未対応     | 未着手               |
+| 対応中     | 一部対応・設計検討中 |
+| 対応済     | 修正完了             |
 
 ---
 
@@ -24,15 +24,15 @@
 
 ## レビュー結果
 
-| # | 指摘場所 | 指摘理由（違反原則） | 修正提案 | 優先度 | 修正ステータス |
-|---|---|---|---|---|---|
-| SR-1 | ハイライト/背景色（[SearchPageClient.tsx:54](../../src/features/search/components/SearchPageClient.tsx#L54) `#f2e6bf`、[336](../../src/features/search/components/SearchPageClient.tsx#L336)/[370](../../src/features/search/components/SearchPageClient.tsx#L370)/[384](../../src/features/search/components/SearchPageClient.tsx#L384) `#fafafa`/cream） | ハイライトのベージュ `#f2e6bf` 等、Key Color（黒/グレー/白）外の暖色が混入。準ペルソナA「色展開が派手」を嫌う。ブランド適合/反復 | ハイライトはモノトーン（下線/太字/淡グレー網掛け）へ。背景は白〜極淡グレーに統一 | Mid | 対応済 |
-| SR-2 | 角丸（[SearchPageClient.tsx:90](../../src/features/search/components/SearchPageClient.tsx#L90) `rounded-2xl`、[348](../../src/features/search/components/SearchPageClient.tsx#L348) `rounded-full`、[370](../../src/features/search/components/SearchPageClient.tsx#L370)/[384](../../src/features/search/components/SearchPageClient.tsx#L384) `rounded-[28px]`） | 結果カード/ピル/枠が大きな角丸。サイト他所はシャープ基調で**視覚言語が不一致**。反復（一貫性）/ブランド適合 | サイトの角丸ポリシー（ほぼ直角〜`--radius`）に統一 | Mid | 対応済 |
-| SR-3 | 見出し階層（[SearchPageClient.tsx:95](../../src/features/search/components/SearchPageClient.tsx#L95),[112](../../src/features/search/components/SearchPageClient.tsx#L112)） | セクション見出しが h2、結果カードのタイトルも h2 で**同階層が重複**。WCAG 1.3.1/2.4.6 | カードタイトルは h3 に降格 | Mid | 対応済 |
-| SR-4 | エラー色（[SearchPageClient.tsx:367](../../src/features/search/components/SearchPageClient.tsx#L367) `#b42318`） | 他ページは `red-500/600`。検索だけ独自の赤トークンで不統一。反復 | エラー色を共通トークンに集約 | Low | 対応済 |
-| SR-5 | 「VIEW PREVIEW ON HOME」（[SearchPageClient.tsx:420-426](../../src/features/search/components/SearchPageClient.tsx#L420-L426)） | 検索結果ページから、機能が下位のホームプレビューへ戻す導線。意図が伝わらず混乱。アフォーダンス | 削除、または「ホームに戻る」等の明確な意図に変更 | Low | 対応済 |
-| SR-6 | サジェスト操作（[SearchPageClient.tsx:342-354](../../src/features/search/components/SearchPageClient.tsx#L342-L354)） | サジェスト/履歴がボタン群で、combobox/listbox の ARIA・上下キー選択が無い。キーボード操作性/アクセシビリティ | combobox パターン（aria-expanded/activedescendant）化を検討 | Low | 対応済 |
-| SR-7 | ローディング（[SearchPageClient.tsx:381-382](../../src/features/search/components/SearchPageClient.tsx#L381-L382)） | 「検索中です…」テキストのみ。Doherty/反復 | 結果カードのスケルトンに | Low | 対応済 |
+| #    | 指摘場所                                                                                                                                                                                                                                                                                                                                                      | 指摘理由（違反原則）                                                                                                             | 修正提案                                                                         | 優先度 | 修正ステータス |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ------ | -------------- |
+| SR-1 | ハイライト/背景色（[SearchPageClient.tsx:54](../../src/features/search/components/SearchPageClient.tsx#L54) `#f2e6bf`、[336](../../src/features/search/components/SearchPageClient.tsx#L336)/[370](../../src/features/search/components/SearchPageClient.tsx#L370)/[384](../../src/features/search/components/SearchPageClient.tsx#L384) `#fafafa`/cream）    | ハイライトのベージュ `#f2e6bf` 等、Key Color（黒/グレー/白）外の暖色が混入。準ペルソナA「色展開が派手」を嫌う。ブランド適合/反復 | ハイライトはモノトーン（下線/太字/淡グレー網掛け）へ。背景は白〜極淡グレーに統一 | Mid    | 対応済         |
+| SR-2 | 角丸（[SearchPageClient.tsx:90](../../src/features/search/components/SearchPageClient.tsx#L90) `rounded-2xl`、[348](../../src/features/search/components/SearchPageClient.tsx#L348) `rounded-full`、[370](../../src/features/search/components/SearchPageClient.tsx#L370)/[384](../../src/features/search/components/SearchPageClient.tsx#L384) `rounded-7`） | 結果カード/ピル/枠が大きな角丸。サイト他所はシャープ基調で**視覚言語が不一致**。反復（一貫性）/ブランド適合                      | サイトの角丸ポリシー（ほぼ直角〜`--radius`）に統一                               | Mid    | 対応済         |
+| SR-3 | 見出し階層（[SearchPageClient.tsx:95](../../src/features/search/components/SearchPageClient.tsx#L95),[112](../../src/features/search/components/SearchPageClient.tsx#L112)）                                                                                                                                                                                  | セクション見出しが h2、結果カードのタイトルも h2 で**同階層が重複**。WCAG 1.3.1/2.4.6                                            | カードタイトルは h3 に降格                                                       | Mid    | 対応済         |
+| SR-4 | エラー色（[SearchPageClient.tsx:367](../../src/features/search/components/SearchPageClient.tsx#L367) `#b42318`）                                                                                                                                                                                                                                              | 他ページは `red-500/600`。検索だけ独自の赤トークンで不統一。反復                                                                 | エラー色を共通トークンに集約                                                     | Low    | 対応済         |
+| SR-5 | 「VIEW PREVIEW ON HOME」（[SearchPageClient.tsx:420-426](../../src/features/search/components/SearchPageClient.tsx#L420-L426)）                                                                                                                                                                                                                               | 検索結果ページから、機能が下位のホームプレビューへ戻す導線。意図が伝わらず混乱。アフォーダンス                                   | 削除、または「ホームに戻る」等の明確な意図に変更                                 | Low    | 対応済         |
+| SR-6 | サジェスト操作（[SearchPageClient.tsx:342-354](../../src/features/search/components/SearchPageClient.tsx#L342-L354)）                                                                                                                                                                                                                                         | サジェスト/履歴がボタン群で、combobox/listbox の ARIA・上下キー選択が無い。キーボード操作性/アクセシビリティ                     | combobox パターン（aria-expanded/activedescendant）化を検討                      | Low    | 対応済         |
+| SR-7 | ローディング（[SearchPageClient.tsx:381-382](../../src/features/search/components/SearchPageClient.tsx#L381-L382)）                                                                                                                                                                                                                                           | 「検索中です…」テキストのみ。Doherty/反復                                                                                        | 結果カードのスケルトンに                                                         | Low    | 対応済         |
 
 ---
 
@@ -53,8 +53,8 @@
 
 ## 修正反映（2026-06-23）
 
-- **SR-1**: ハイライト `mark` を `#f2e6bf` → `bg-black/10`+`font-medium`（モノトーン網掛け+太字）へ。各セクション/サジェストの cream `#fafafa` → `bg-black/[0.02]`（極淡グレー）に統一。
-- **SR-2**: 結果カード `rounded-2xl`・サジェストパネル `rounded-2xl`・ピル `rounded-full`・空/開始セクション `rounded-[28px]` を全て角丸撤去（サイトのシャープ基調に統一）。
+- **SR-1**: ハイライト `mark` を `#f2e6bf` → `bg-black/10`+`font-medium`（モノトーン網掛け+太字）へ。各セクション/サジェストの cream `#fafafa` → `bg-black/2`（極淡グレー）に統一。
+- **SR-2**: 結果カード `rounded-2xl`・サジェストパネル `rounded-2xl`・ピル `rounded-full`・空/開始セクション `rounded-7` を全て角丸撤去（サイトのシャープ基調に統一）。
 - **SR-3**: 結果カードのタイトルを `h2` → `h3` に降格（セクション h2 との重複解消）。
 - **SR-4**: エラー色 `#b42318` → 共通の `text-red-600` + `role="alert"`。
 - **SR-5**: 「VIEW PREVIEW ON HOME」リンク（機能下位のホームプレビューへ戻す混乱導線）を削除。

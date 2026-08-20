@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from "@playwright/test";
 
 // FREQ-141: /look 一覧のモバイル・タブレット（lg 未満）の見た目を
 // ホーム LOOK セクションと揃える。
@@ -17,7 +17,7 @@ async function readGridGaps(
     const grid = link?.parentElement?.parentElement;
     if (!grid) return null;
     const style = getComputedStyle(grid);
-    if (style.display !== 'grid') return null;
+    if (style.display !== "grid") return null;
     return {
       rowGap: parseFloat(style.rowGap),
       columnGap: parseFloat(style.columnGap),
@@ -40,43 +40,47 @@ async function readCatalogPadding(
 }
 
 async function readHomeSectionPaddingLeft(page: Page): Promise<number> {
-  await page.goto('/');
-  const section = page.locator('#look');
+  await page.goto("/");
+  const section = page.locator("#look");
   await expect(section).toBeVisible();
   return section.evaluate((el) => parseFloat(getComputedStyle(el).paddingLeft));
 }
 
 const PANEL_VIEWPORTS = [
-  { name: 'mobile', width: 390, height: 844, padding: 13 },
-  { name: 'tablet', width: 768, height: 1024, padding: 21 },
+  { name: "mobile", width: 390, height: 844, padding: 13 },
+  { name: "tablet", width: 768, height: 1024, padding: 21 },
 ] as const;
 
-test.describe('FR-LOOK-ALL-028 /look 一覧のモバイル・タブレットをホームと揃える', () => {
+test.describe("FR-LOOK-ALL-028 /look 一覧のモバイル・タブレットをホームと揃える", () => {
   for (const vp of PANEL_VIEWPORTS) {
-    test(`${vp.name} /look の左右 padding がホーム LOOK セクションと同値`, async ({ page }) => {
+    test(`${vp.name} /look の左右 padding がホーム LOOK セクションと同値`, async ({
+      page,
+    }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
 
       // AC-01: ホーム section-space の padding と同値
       const homePadding = await readHomeSectionPaddingLeft(page);
       expect(homePadding).toBe(vp.padding);
 
-      await page.goto('/look');
+      await page.goto("/look");
       const catalogPadding = await readCatalogPadding(page);
       expect(catalogPadding.left).toBe(homePadding);
       expect(catalogPadding.right).toBe(homePadding);
     });
 
-    test(`${vp.name} /look の row-gap / column-gap がホームと一致`, async ({ page }) => {
+    test(`${vp.name} /look の row-gap / column-gap がホームと一致`, async ({
+      page,
+    }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
 
-      await page.goto('/');
-      await expect(page.locator('#look')).toBeVisible();
-      const homeGaps = await readGridGaps(page, '#look');
+      await page.goto("/");
+      await expect(page.locator("#look")).toBeVisible();
+      const homeGaps = await readGridGaps(page, "#look");
       expect(homeGaps).not.toBeNull();
 
-      await page.goto('/look');
-      await expect(page.locator('main')).toBeVisible();
-      const catalogGaps = await readGridGaps(page, 'main');
+      await page.goto("/look");
+      await expect(page.locator("main")).toBeVisible();
+      const catalogGaps = await readGridGaps(page, "main");
       expect(catalogGaps).not.toBeNull();
 
       // AC-02 / AC-03: 縦横ともホームと同値
@@ -86,17 +90,17 @@ test.describe('FR-LOOK-ALL-028 /look 一覧のモバイル・タブレットを�
   }
 
   // AC-04: desktop は従来どおり（gap 24px・左 padding 34px）
-  test('desktop /look の gap と左 padding が従来どおり', async ({ page }) => {
+  test("desktop /look の gap と左 padding が従来どおり", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.goto('/look');
-    await expect(page.locator('main')).toBeVisible();
+    await page.goto("/look");
+    await expect(page.locator("main")).toBeVisible();
 
-    const gaps = await readGridGaps(page, 'main');
+    const gaps = await readGridGaps(page, "main");
     expect(gaps).not.toBeNull();
     expect(gaps!.rowGap).toBe(24);
     expect(gaps!.columnGap).toBe(24);
 
     const padding = await readCatalogPadding(page);
-    expect(padding.left).toBe(55); // xl:pl-[55px]（1280px は xl 帯域）
+    expect(padding.left).toBe(55); // xl:pl-13.75（1280px は xl 帯域）
   });
 });

@@ -1,19 +1,19 @@
-'use client';
+"use client";
 
-import Image from 'next/image';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/Button/Button';
-import { RadioButtonGroup } from '@/components/ui/RadioButtonGroup/RadioButtonGroup';
-import { SingleSelect } from '@/components/ui/SingleSelect/SingleSelect';
-import { TextAreaField } from '@/components/ui/TextAreaField/TextAreaField';
-import { TextField } from '@/components/ui/TextField/TextField';
-import { clientFetch } from '@/lib/client-fetch';
-import { ItemSummary, LookFormValues, LookStatus, SeasonType } from './types';
+import Image from "next/image";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/Button/Button";
+import { RadioButtonGroup } from "@/components/ui/RadioButtonGroup/RadioButtonGroup";
+import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
+import { TextAreaField } from "@/components/ui/TextAreaField/TextAreaField";
+import { TextField } from "@/components/ui/TextField/TextField";
+import { clientFetch } from "@/lib/client-fetch";
+import { ItemSummary, LookFormValues, LookStatus, SeasonType } from "./types";
 
 interface LookFormProps {
   submitUrl: string;
-  submitMethod: 'POST' | 'PUT';
+  submitMethod: "POST" | "PUT";
   initialValues?: LookFormValues;
   isLoading?: boolean;
 }
@@ -28,33 +28,33 @@ export function LookForm({
 
   const now = new Date();
   const currentYear = now.getFullYear();
-  const defaultSeason: SeasonType = now.getMonth() < 6 ? 'SS' : 'AW';
+  const defaultSeason: SeasonType = now.getMonth() < 6 ? "SS" : "AW";
   const yearOptions = Array.from(
     { length: 4 },
-    (_, index) => currentYear - 1 + index
+    (_, index) => currentYear - 1 + index,
   );
 
   const [seasonYear, setSeasonYear] = useState<number>(
-    initialValues?.seasonYear ?? currentYear
+    initialValues?.seasonYear ?? currentYear,
   );
   const [seasonType, setSeasonType] = useState<SeasonType>(
-    initialValues?.seasonType ?? defaultSeason
+    initialValues?.seasonType ?? defaultSeason,
   );
-  const [theme, setTheme] = useState(initialValues?.theme ?? '');
+  const [theme, setTheme] = useState(initialValues?.theme ?? "");
   const [themeDescription, setThemeDescription] = useState(
-    initialValues?.themeDescription ?? ''
+    initialValues?.themeDescription ?? "",
   );
   const [status, setStatus] = useState<LookStatus>(
-    initialValues?.status ?? 'private'
+    initialValues?.status ?? "private",
   );
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [existingImageUrls, setExistingImageUrls] = useState<string[]>(
-    initialValues?.previewUrls ?? []
+    initialValues?.previewUrls ?? [],
   );
   const [items, setItems] = useState<ItemSummary[]>([]);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<number>>(
-    new Set(initialValues?.linkedItemIds ?? [])
+    new Set(initialValues?.linkedItemIds ?? []),
   );
   const [isLoadingItems, setIsLoadingItems] = useState(true);
   const [isDragging, setIsDragging] = useState(false);
@@ -65,12 +65,12 @@ export function LookForm({
 
   const currencyFormatter = useMemo(
     () =>
-      new Intl.NumberFormat('ja-JP', {
-        style: 'currency',
-        currency: 'JPY',
+      new Intl.NumberFormat("ja-JP", {
+        style: "currency",
+        currency: "JPY",
         maximumFractionDigits: 0,
       }),
-    []
+    [],
   );
 
   useEffect(() => {
@@ -92,16 +92,16 @@ export function LookForm({
   const fetchItems = async () => {
     setIsLoadingItems(true);
     try {
-      const response = await clientFetch('/api/admin/items');
+      const response = await clientFetch("/api/admin/items");
       if (!response.ok) {
-        throw new Error('Failed to fetch items');
+        throw new Error("Failed to fetch items");
       }
 
       const json = (await response.json()) as { data?: ItemSummary[] };
       setItems(Array.isArray(json.data) ? json.data : []);
     } catch (error) {
-      console.error('Failed to load items:', error);
-      setSubmitError('商品一覧の取得に失敗しました');
+      console.error("Failed to load items:", error);
+      setSubmitError("商品一覧の取得に失敗しました");
     } finally {
       setIsLoadingItems(false);
     }
@@ -113,18 +113,18 @@ export function LookForm({
 
   const updateSelectedImage = (file: File) => {
     const supportedTypes = new Set([
-      'image/jpeg',
-      'image/png',
-      'image/webp',
-      'image/gif',
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "image/gif",
     ]);
     if (!supportedTypes.has(file.type)) {
-      setSubmitError('画像は JPEG / PNG / WebP / GIF を選択してください');
+      setSubmitError("画像は JPEG / PNG / WebP / GIF を選択してください");
       return;
     }
 
     if (file.size > 5 * 1024 * 1024) {
-      setSubmitError('画像サイズは5MB以下にしてください');
+      setSubmitError("画像サイズは5MB以下にしてください");
       return;
     }
 
@@ -133,13 +133,13 @@ export function LookForm({
     const reader = new FileReader();
     reader.onload = () => {
       const loadedResult = reader.result;
-      if (typeof loadedResult === 'string') {
+      if (typeof loadedResult === "string") {
         setImageFiles((previousFiles) => [...previousFiles, file]);
         setPreviewUrls((previousUrls) => [...previousUrls, loadedResult]);
       }
     };
     reader.onerror = () => {
-      setSubmitError('画像プレビューの読み込みに失敗しました');
+      setSubmitError("画像プレビューの読み込みに失敗しました");
     };
     reader.readAsDataURL(file);
   };
@@ -161,8 +161,12 @@ export function LookForm({
   };
 
   const removeImage = (index: number) => {
-    setImageFiles((previousFiles) => previousFiles.filter((_, i) => i !== index));
-    setPreviewUrls((previousUrls) => previousUrls.filter((_, i) => i !== index));
+    setImageFiles((previousFiles) =>
+      previousFiles.filter((_, i) => i !== index),
+    );
+    setPreviewUrls((previousUrls) =>
+      previousUrls.filter((_, i) => i !== index),
+    );
   };
 
   const toggleItemSelection = (itemId: number) => {
@@ -187,22 +191,26 @@ export function LookForm({
     const linkedItemIds = Array.from(selectedItemIds);
 
     if (!trimmedTheme) {
-      setSubmitError('シーズンテーマを入力してください');
+      setSubmitError("シーズンテーマを入力してください");
       return;
     }
 
     if (linkedItemIds.length === 0) {
-      setSubmitError('紐づける商品を1つ以上選択してください');
+      setSubmitError("紐づける商品を1つ以上選択してください");
       return;
     }
 
-    if (submitMethod === 'POST' && imageFiles.length === 0) {
-      setSubmitError('画像を1枚以上追加してください');
+    if (submitMethod === "POST" && imageFiles.length === 0) {
+      setSubmitError("画像を1枚以上追加してください");
       return;
     }
 
-    if (submitMethod === 'PUT' && existingImageUrls.length === 0 && imageFiles.length === 0) {
-      setSubmitError('画像を1枚以上追加してください');
+    if (
+      submitMethod === "PUT" &&
+      existingImageUrls.length === 0 &&
+      imageFiles.length === 0
+    ) {
+      setSubmitError("画像を1枚以上追加してください");
       return;
     }
 
@@ -210,15 +218,15 @@ export function LookForm({
 
     try {
       const formData = new FormData();
-      formData.append('seasonYear', String(seasonYear));
-      formData.append('seasonType', seasonType);
-      formData.append('theme', trimmedTheme);
-      formData.append('themeDescription', trimmedThemeDescription);
-      formData.append('status', status);
-      formData.append('linkedItemIds', JSON.stringify(linkedItemIds));
+      formData.append("seasonYear", String(seasonYear));
+      formData.append("seasonType", seasonType);
+      formData.append("theme", trimmedTheme);
+      formData.append("themeDescription", trimmedThemeDescription);
+      formData.append("status", status);
+      formData.append("linkedItemIds", JSON.stringify(linkedItemIds));
 
       for (const image of imageFiles) {
-        formData.append('images', image);
+        formData.append("images", image);
       }
 
       const response = await clientFetch(submitUrl, {
@@ -230,20 +238,22 @@ export function LookForm({
       if (!response.ok) {
         setSubmitError(
           responseJson?.error ??
-            (submitMethod === 'PUT'
-              ? 'Lookの更新に失敗しました'
-              : 'Lookの保存に失敗しました')
+            (submitMethod === "PUT"
+              ? "Lookの更新に失敗しました"
+              : "Lookの保存に失敗しました"),
         );
         return;
       }
 
       setSubmitSuccess(
-        submitMethod === 'PUT' ? 'Lookを更新しました' : 'Lookを保存しました'
+        submitMethod === "PUT" ? "Lookを更新しました" : "Lookを保存しました",
       );
-      router.push('/admin?tab=LOOK');
+      router.push("/admin?tab=LOOK");
     } catch (error) {
-      console.error('Failed to submit look:', error);
-      setSubmitError('通信エラーが発生しました。時間をおいて再度お試しください');
+      console.error("Failed to submit look:", error);
+      setSubmitError(
+        "通信エラーが発生しました。時間をおいて再度お試しください",
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -252,7 +262,9 @@ export function LookForm({
   if (isLoading) {
     return (
       <main className="pt-32 pb-20">
-        <div className="max-w-4xl mx-auto px-6 lg:px-12 text-center">読み込み中...</div>
+        <div className="max-w-4xl mx-auto px-6 lg:px-12 text-center">
+          読み込み中...
+        </div>
       </main>
     );
   }
@@ -268,7 +280,7 @@ export function LookForm({
                 {existingImageUrls.map((url, index) => (
                   <div
                     key={`${url}-${index}`}
-                    className="relative aspect-[3/4] overflow-hidden border border-black/20"
+                    className="relative aspect-3/4 overflow-hidden border border-black/20"
                   >
                     <Image
                       src={url}
@@ -287,7 +299,7 @@ export function LookForm({
                 {previewUrls.map((url, index) => (
                   <div
                     key={index}
-                    className="relative aspect-[3/4] overflow-hidden border border-black/20"
+                    className="relative aspect-3/4 overflow-hidden border border-black/20"
                   >
                     <Image
                       src={url}
@@ -314,7 +326,7 @@ export function LookForm({
               tabIndex={0}
               onClick={() => fileInputRef.current?.click()}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
+                if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
                   fileInputRef.current?.click();
                 }
@@ -326,7 +338,7 @@ export function LookForm({
               onDragLeave={() => setIsDragging(false)}
               onDrop={handleDrop}
               className={`w-full border border-black/20 text-sm px-4 py-10 text-center cursor-pointer transition-colors ${
-                isDragging ? 'border-black bg-black/5' : 'bg-white'
+                isDragging ? "border-black bg-black/5" : "bg-white"
               }`}
             >
               <input
@@ -337,11 +349,14 @@ export function LookForm({
                 className="hidden"
               />
               <div className="space-y-2">
-                <p className="text-sm tracking-widest">画像をドラッグ&ドロップ</p>
-                <p className="text-xs text-black/70">
-                  またはクリックしてファイルを追加（JPEG / PNG / WebP / GIF、5MB以下）
+                <p className="text-sm tracking-widest">
+                  画像をドラッグ&ドロップ
                 </p>
-                {submitMethod === 'PUT' && (
+                <p className="text-xs text-black/70">
+                  またはクリックしてファイルを追加（JPEG / PNG / WebP /
+                  GIF、5MB以下）
+                </p>
+                {submitMethod === "PUT" && (
                   <p className="text-xs text-black/70">
                     新規画像を追加して保存すると、画像は新規選択分に置き換わります
                   </p>
@@ -351,9 +366,11 @@ export function LookForm({
           </div>
 
           <label className="block space-y-2">
-            <span className="block text-xs tracking-widest text-black/80">シーズン</span>
+            <span className="block text-xs tracking-widest text-black/80">
+              シーズン
+            </span>
             <div className="flex flex-wrap gap-3">
-              <div className="min-w-[140px]">
+              <div className="min-w-35">
                 <SingleSelect
                   variant="dropdown"
                   value={String(seasonYear)}
@@ -365,19 +382,23 @@ export function LookForm({
                   size="md"
                 />
               </div>
-              <div className="min-w-[110px]">
+              <div className="min-w-27.5">
                 <SingleSelect
                   variant="dropdown"
                   value={seasonType}
                   onValueChange={(val) => setSeasonType(val as SeasonType)}
                   options={[
-                    { value: 'SS', label: 'SS' },
-                    { value: 'AW', label: 'AW' },
+                    { value: "SS", label: "SS" },
+                    { value: "AW", label: "AW" },
                   ]}
                   size="md"
                 />
               </div>
-              <input type="hidden" name="season" value={`${seasonYear} ${seasonType}`} />
+              <input
+                type="hidden"
+                name="season"
+                value={`${seasonYear} ${seasonType}`}
+              />
             </div>
           </label>
 
@@ -406,7 +427,9 @@ export function LookForm({
           </div>
 
           <div>
-            <label className="block text-sm tracking-widest mb-4">紐づける商品を選択</label>
+            <label className="block text-sm tracking-widest mb-4">
+              紐づける商品を選択
+            </label>
             {isLoadingItems ? (
               <p className="text-sm text-black/70">商品を読み込み中です...</p>
             ) : items.length === 0 ? (
@@ -423,10 +446,12 @@ export function LookForm({
                       key={item.id}
                       onClick={() => toggleItemSelection(item.id)}
                       className={`border cursor-pointer transition-all duration-300 hover:border-black ${
-                        isSelected ? 'border-black ring-1 ring-black' : 'border-black/20'
+                        isSelected
+                          ? "border-black ring-1 ring-black"
+                          : "border-black/20"
                       }`}
                     >
-                      <div className="aspect-[3/4] bg-[#f5f5f5] overflow-hidden relative">
+                      <div className="aspect-3/4 bg-[#f5f5f5] overflow-hidden relative">
                         <Image
                           src={item.image_url}
                           alt={item.name}
@@ -441,8 +466,8 @@ export function LookForm({
                         <p className="text-xs text-[#474747]">
                           {currencyFormatter.format(item.price)}
                         </p>
-                        {item.status === 'private' && (
-                          <p className="mt-2 text-[10px] tracking-widest text-black/60">
+                        {item.status === "private" && (
+                          <p className="mt-2 text-2.5 tracking-widest text-black/60">
                             非公開商品
                           </p>
                         )}
@@ -461,8 +486,8 @@ export function LookForm({
               value={status}
               onChange={(value) => setStatus(value as LookStatus)}
               options={[
-                { value: 'private', label: '非公開' },
-                { value: 'published', label: '公開' },
+                { value: "private", label: "非公開" },
+                { value: "published", label: "公開" },
               ]}
               size="md"
             />
@@ -483,7 +508,7 @@ export function LookForm({
           <div className="flex gap-4">
             <Button
               type="button"
-              onClick={() => router.push('/admin?tab=LOOK')}
+              onClick={() => router.push("/admin?tab=LOOK")}
               variant="secondary"
               size="md"
             >
@@ -491,12 +516,12 @@ export function LookForm({
             </Button>
             <Button type="submit" disabled={isSubmitting} size="md">
               {isSubmitting
-                ? submitMethod === 'PUT'
-                  ? '更新中...'
-                  : '保存中...'
-                : submitMethod === 'PUT'
-                  ? '更新'
-                  : '保存'}
+                ? submitMethod === "PUT"
+                  ? "更新中..."
+                  : "保存中..."
+                : submitMethod === "PUT"
+                  ? "更新"
+                  : "保存"}
             </Button>
           </div>
         </form>

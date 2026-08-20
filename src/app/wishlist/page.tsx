@@ -264,15 +264,15 @@ export default function Page() {
           </h1>
         </div>
         <div
-          className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-[2px] sm:gap-x-[3px] lg:gap-x-[4px] gap-y-[16px] sm:gap-y-[20px] md:gap-y-[24px] lg:gap-y-[28px]"
+          className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-0.5 sm:gap-x-0.75 lg:gap-x-1 gap-y-4 sm:gap-y-5 md:gap-y-6 lg:gap-y-7"
           aria-hidden="true"
         >
           {Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="animate-pulse">
-              <div className="aspect-[3/4] bg-black/8 mb-[8px]" />
-              <div className="h-[10px] w-1/3 bg-black/8 mb-[6px]" />
-              <div className="h-[10px] w-2/3 bg-black/8 mb-[6px]" />
-              <div className="h-[10px] w-1/4 bg-black/8 mb-[8px]" />
+              <div className="aspect-3/4 bg-black/8 mb-2" />
+              <div className="h-2.5 w-1/3 bg-black/8 mb-1.5" />
+              <div className="h-2.5 w-2/3 bg-black/8 mb-1.5" />
+              <div className="h-2.5 w-1/4 bg-black/8 mb-2" />
               <div className="h-8 w-full bg-black/5" />
             </div>
           ))}
@@ -332,7 +332,7 @@ export default function Page() {
         </div>
       ) : null}
       <div
-        className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-[2px] sm:gap-x-[3px] lg:gap-x-[4px] gap-y-[16px] sm:gap-y-[20px] md:gap-y-[24px] lg:gap-y-[28px]"
+        className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-0.5 sm:gap-x-0.75 lg:gap-x-1 gap-y-4 sm:gap-y-5 md:gap-y-6 lg:gap-y-7"
         role="list"
         aria-label="ウィッシュリスト商品一覧"
       >
@@ -355,7 +355,7 @@ export default function Page() {
                 </Link>
               ) : (
                 <div
-                  className="aspect-[3/4] bg-[#f5f5f5] mb-[2px] sm:mb-[6px] md:mb-[8px] flex items-center justify-center px-4 text-center text-[#474747]"
+                  className="aspect-3/4 bg-[#f5f5f5] mb-0.5 sm:mb-1.5 md:mb-2 flex items-center justify-center px-4 text-center text-[#474747]"
                   style={wishlistCardNameStyle}
                 >
                   商品情報を取得できませんでした
@@ -379,11 +379,11 @@ export default function Page() {
                     />
                   </Link>
                   {/* WL-5: 複数サイズ品はボタン挙動と文言を実態に合わせ、詳細ページへ誘導 */}
-                  <div className="px-[8px] mt-[8px]">
+                  <div className="px-2 mt-2">
                     {product.sizes && product.sizes.length > 1 ? (
                       <Link
                         href={`/item/${product.id}`}
-                        className="block w-full border border-black text-black text-center py-[6px] hover:bg-black hover:text-white transition-colors"
+                        className="block w-full border border-black text-black text-center py-1.5 hover:bg-black hover:text-white transition-colors"
                         style={wishlistCardButtonStyle}
                       >
                         サイズを選択
@@ -393,7 +393,7 @@ export default function Page() {
                         type="button"
                         onClick={() => handleAddToCart(item)}
                         disabled={addingToCartId === item.id}
-                        className="w-full border border-black text-black py-[6px] hover:bg-black hover:text-white transition-colors disabled:opacity-40"
+                        className="w-full border border-black text-black py-1.5 hover:bg-black hover:text-white transition-colors disabled:opacity-40"
                         style={wishlistCardButtonStyle}
                       >
                         {addingToCartId === item.id
@@ -404,7 +404,7 @@ export default function Page() {
                   </div>
                 </>
               ) : (
-                <div className="px-[8px] mt-[8px] space-y-[8px]">
+                <div className="px-2 mt-2 space-y-2">
                   <h3
                     className="text-black font-brand tracking-tight"
                     style={wishlistCardNameStyle}
@@ -416,7 +416,7 @@ export default function Page() {
                     type="button"
                     onClick={() => handleRemove(item.id)}
                     disabled={removingId === item.id}
-                    className="w-full border border-black/30 text-[#474747] py-[6px] hover:border-black hover:text-black transition-colors disabled:opacity-40"
+                    className="w-full border border-black/30 text-[#474747] py-1.5 hover:border-black hover:text-black transition-colors disabled:opacity-40"
                     style={wishlistCardButtonStyle}
                   >
                     {removingId === item.id ? "処理中..." : "リストから外す"}

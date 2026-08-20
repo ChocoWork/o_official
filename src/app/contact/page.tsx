@@ -227,7 +227,7 @@ export default function ContactPage() {
     errors[name] ? `${name}-error` : undefined;
 
   return (
-    <div className="w-full max-w-[680px] mx-auto">
+    <div className="w-full max-w-170 mx-auto">
       <div className="space-y-2 sm:space-y-3">
         <h1 style={pageTitleStyle}>Contact / お問い合わせ</h1>
         <p

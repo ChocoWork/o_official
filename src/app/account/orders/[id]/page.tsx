@@ -15,7 +15,10 @@ import {
   type OrderLineItem,
 } from "@/features/account/components/OrderItemRow";
 import { useReorder } from "@/features/account/hooks/useReorder";
-import { SHIPPING_CARRIERS, isShippingCarrierId } from "@/lib/orders/shipping-carriers";
+import {
+  SHIPPING_CARRIERS,
+  isShippingCarrierId,
+} from "@/lib/orders/shipping-carriers";
 import "../../account.css";
 
 // OD-2: Tailwind 既定サイズではなくサイト共通の --lk-size-* トークンを使用
@@ -182,7 +185,9 @@ export default function AccountOrderDetailPage() {
               </div>
             </div>
 
-            {order.shippingCarrier && order.trackingNumber && isShippingCarrierId(order.shippingCarrier) ? (
+            {order.shippingCarrier &&
+            order.trackingNumber &&
+            isShippingCarrierId(order.shippingCarrier) ? (
               <section aria-label="配送情報" className="mt-6">
                 <h2 className="mb-2 text-[#474747] tracking-wider">配送情報</h2>
                 <dl className="space-y-1 text-sm">
@@ -196,7 +201,9 @@ export default function AccountOrderDetailPage() {
                   </div>
                 </dl>
                 <a
-                  href={SHIPPING_CARRIERS[order.shippingCarrier].trackingUrl(order.trackingNumber)}
+                  href={SHIPPING_CARRIERS[order.shippingCarrier].trackingUrl(
+                    order.trackingNumber,
+                  )}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="mt-2 inline-block text-sm underline"
@@ -220,7 +227,7 @@ export default function AccountOrderDetailPage() {
                       <li className="flex flex-col items-center gap-1 sm:flex-row sm:gap-2">
                         <span
                           aria-hidden="true"
-                          className={`flex h-6 w-6 items-center justify-center rounded-full border text-[10px] ${done ? "border-black bg-black text-white" : "border-black/25 text-[#999]"}`}
+                          className={`flex h-6 w-6 items-center justify-center rounded-full border text-2.5 ${done ? "border-black bg-black text-white" : "border-black/25 text-[#999]"}`}
                         >
                           {index + 1}
                         </span>

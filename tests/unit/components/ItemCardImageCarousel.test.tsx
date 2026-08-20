@@ -99,7 +99,7 @@ describe("ItemCardMedia の複数画像カルーセル", () => {
 
     const scroller = screen.getByTestId("item-card-carousel");
     expect(scroller).toHaveClass("overflow-y-hidden");
-    expect(scroller).toHaveClass("[scrollbar-width:none]");
+    expect(scroller).toHaveClass("scrollbar-none");
     expect(scroller).toHaveClass("[&::-webkit-scrollbar]:hidden");
   });
 

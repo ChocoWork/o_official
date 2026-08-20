@@ -135,10 +135,7 @@ function interleaveResults(results: SearchResultsResponse): SearchResult[] {
 
 /* FREQ-190: サジェストは一致箇所を黒・太字、それ以外を Graphite Grey で描き、
    どこが一致したのかを一目で分かるようにする（結果一覧のハイライトと対の表現）。 */
-function renderSuggestionLabel(
-  label: string,
-  query: string,
-): React.ReactNode {
+function renderSuggestionLabel(label: string, query: string): React.ReactNode {
   const normalizedQuery = query.trim();
   if (normalizedQuery.length === 0) {
     return label;
@@ -172,7 +169,7 @@ function SearchResultRow({
         href={result.href}
         className="group flex items-center gap-5 py-3 sm:gap-6 md:py-4"
       >
-        <div className="relative aspect-[3/4] w-14 shrink-0 overflow-hidden bg-[#f5f5f5]">
+        <div className="relative aspect-3/4 w-14 shrink-0 overflow-hidden bg-[#f5f5f5]">
           {result.imageUrl ? (
             <Image
               src={result.imageUrl}
@@ -186,13 +183,13 @@ function SearchResultRow({
         {/* FREQ-199: モバイルは参考デザインに合わせ、各段を1段階小さくする。
             md 以上は従来のサイズを維持する。 */}
         <div className="min-w-0 flex-1">
-          <p className="text-[length:var(--lk-size-3xs)] tracking-widest text-black/50 md:text-[length:var(--lk-size-2xs)]">
+          <p className="text-(length:--lk-size-3xs) tracking-widest text-black/50 md:text-(length:--lk-size-2xs)">
             {getResultTypeLabel(result.type)}
           </p>
-          <p className="mt-1 truncate text-[length:var(--lk-size-sm)] text-black md:text-[length:var(--lk-size-md)]">
+          <p className="mt-1 truncate text-(length:--lk-size-sm) text-black md:text-(length:--lk-size-md)">
             {renderHighlightedText(result.title, query)}
           </p>
-          <p className="mt-1 text-[length:var(--lk-size-2xs)] tracking-wide text-[#474747] md:text-[length:var(--lk-size-xs)]">
+          <p className="mt-1 text-(length:--lk-size-2xs) tracking-wide text-[#474747] md:text-(length:--lk-size-xs)">
             {result.meta}
           </p>
         </div>
@@ -219,7 +216,7 @@ function ResultListHeader({
   return (
     <div className="flex items-center justify-between gap-4 border-b border-black/10 pb-4">
       {/* FREQ-199: モバイルのみ1段階小さく */}
-      <p className="text-[length:var(--lk-size-2xs)] tracking-widest text-black md:text-[length:var(--lk-size-xs)]">
+      <p className="text-(length:--lk-size-2xs) tracking-widest text-black md:text-(length:--lk-size-xs)">
         {label}
       </p>
       {/* FREQ-196: 並び順は RELEVANCE 固定で操作もできない飾りのため、いったん非表示。
@@ -499,7 +496,10 @@ export function SearchPageClient() {
       <div className="flex flex-col gap-6 md:sticky md:top-14 md:min-h-[calc(100svh-3.5rem)] md:justify-center md:gap-10">
         {/* FREQ-198: モバイルでは見出しを表示しない。ただし h1 は文書構造として
             必要なため、削除ではなく視覚的にのみ隠す（スクリーンリーダーには残す）。 */}
-        <h1 className="sr-only tracking-wider md:not-sr-only" style={x4lTextStyle}>
+        <h1
+          className="sr-only tracking-wider md:not-sr-only"
+          style={x4lTextStyle}
+        >
           SEARCH
         </h1>
 
@@ -550,7 +550,7 @@ export function SearchPageClient() {
               /* 背後のタブは左端が揃っているうえ、書体の「A」はグリフが
                  文字ボックスより 1px 左へ食み出す。left-0 のままだとその 1px が
                  候補リストの外に覗くため、左右を 1px ずつ外へ広げて覆う。 */
-              className="absolute left-[-1px] right-[-1px] top-full z-20 border border-black/10 bg-white py-1 shadow-[0_10px_30px_rgba(0,0,0,0.08)]"
+              className="absolute -left-px -right-px top-full z-20 border border-black/10 bg-white py-1 shadow-[0_10px_30px_rgba(0,0,0,0.08)]"
             >
               {visibleSuggestions.map((suggestion, index) => (
                 <li key={`${suggestion.type}-${suggestion.label}`}>
@@ -563,9 +563,9 @@ export function SearchPageClient() {
                     onMouseEnter={() => setActiveSuggestionIndex(index)}
                     /* 選択状態は面の濃淡だけだとコントラストが足りないため、
                        黒の縦線を併用する（枠は常時確保しレイアウトをずらさない）。 */
-                    className={`flex min-h-[40px] w-full items-center justify-between gap-4 border-l-2 pl-4 pr-4 text-left transition-colors ${
+                    className={`flex min-h-10 w-full items-center justify-between gap-4 border-l-2 pl-4 pr-4 text-left transition-colors ${
                       index === activeSuggestionIndex
-                        ? "border-black bg-black/[0.04]"
+                        ? "border-black bg-black/4"
                         : "border-transparent"
                     }`}
                     style={smTextStyle}
@@ -615,7 +615,7 @@ export function SearchPageClient() {
                 style={mdTextStyle}
               >
                 <span
-                  className={`relative inline-block pb-0.5 tracking-[0.1em] transition-colors ${
+                  className={`relative inline-block pb-0.5 tracking-widest transition-colors ${
                     isActive
                       ? "text-black"
                       : "text-[#474747] group-hover:text-black"
@@ -627,7 +627,9 @@ export function SearchPageClient() {
                       tracking と同じ 0.1em を幅から差し引いて文字の真下に揃える。 */}
                   <span
                     className={`underline-animation-left2right w-[calc(100%-0.1em)] ${
-                      isActive ? "scale-x-100" : "scale-x-0 group-hover:scale-x-100"
+                      isActive
+                        ? "scale-x-100"
+                        : "scale-x-0 group-hover:scale-x-100"
                     }`}
                   />
                 </span>
@@ -678,7 +680,7 @@ export function SearchPageClient() {
                   key={index}
                   className="flex items-center gap-5 border-b border-black/10 py-4 sm:gap-6"
                 >
-                  <div className="aspect-[3/4] w-14 shrink-0 animate-pulse bg-black/8" />
+                  <div className="aspect-3/4 w-14 shrink-0 animate-pulse bg-black/8" />
                   <div className="min-w-0 flex-1 space-y-2">
                     <div className="h-2.5 w-10 animate-pulse bg-black/8" />
                     <div className="h-3.5 w-2/5 animate-pulse bg-black/8" />
@@ -700,7 +702,7 @@ export function SearchPageClient() {
             </div>
             <section>
               <div className="border-b border-black/10 pb-4">
-                <h3 className="text-[length:var(--lk-size-2xs)] tracking-widest text-black md:text-[length:var(--lk-size-xs)]">
+                <h3 className="text-(length:--lk-size-2xs) tracking-widest text-black md:text-(length:--lk-size-xs)">
                   POPULAR ITEMS
                 </h3>
               </div>
@@ -734,7 +736,7 @@ export function SearchPageClient() {
                   onClick={() =>
                     setVisibleCount((count) => count + RESULTS_PAGE_SIZE)
                   }
-                  className="border-b border-black pb-1 text-[length:var(--lk-size-2xs)] tracking-[0.2em] text-black transition-colors hover:border-[#474747] hover:text-[#474747] md:text-[length:var(--lk-size-xs)]"
+                  className="border-b border-black pb-1 text-(length:--lk-size-2xs) tracking-[0.2em] text-black transition-colors hover:border-[#474747] hover:text-[#474747] md:text-(length:--lk-size-xs)"
                 >
                   LOAD MORE
                 </button>

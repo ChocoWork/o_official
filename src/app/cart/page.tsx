@@ -96,7 +96,7 @@ export default function CartPage() {
           {error && (
             <div
               role="alert"
-              className="text-red-600 border border-black/15 bg-black/[0.02] mb-6"
+              className="text-red-600 border border-black/15 bg-black/2 mb-6"
               style={{ fontSize: "var(--lk-size-md)", padding: "var(--pad-x)" }}
             >
               {error}
@@ -106,7 +106,7 @@ export default function CartPage() {
           {hasSyncError && (
             <div
               role="status"
-              className="text-[#474747] border border-black/20 bg-black/[0.02] flex items-center justify-between mb-6"
+              className="text-[#474747] border border-black/20 bg-black/2 flex items-center justify-between mb-6"
               style={{
                 fontSize: "var(--lk-size-xs)",
                 padding: "var(--pad-x)",
@@ -157,7 +157,7 @@ export default function CartPage() {
                 letterSpacing: "0.08em",
               }}
             >
-              <i className="ri-arrow-left-line transition-transform duration-150 group-hover:-translate-x-[3px] motion-reduce:transition-none" />
+              <i className="ri-arrow-left-line transition-transform duration-150 group-hover:-translate-x-0.75 motion-reduce:transition-none" />
               CONTINUE SHOPPING
             </Link>
           </div>

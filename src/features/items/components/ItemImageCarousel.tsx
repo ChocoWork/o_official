@@ -77,7 +77,7 @@ export function CarouselSegmentIndicator({
           data-testid={testId ? `${testId}-segment` : undefined}
           data-active={selectedIndex === index ? "true" : "false"}
           // 線自体は 1px だが、タップ領域を確保するため上下に透明な余白を持たせる
-          className="group flex-1 cursor-pointer py-[6px] focus-visible:outline-none"
+          className="group flex-1 cursor-pointer py-1.5 focus-visible:outline-none"
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
@@ -127,7 +127,7 @@ export function CarouselArrowButton({
         viewBox="0 0 15 15"
         xmlns="http://www.w3.org/2000/svg"
         aria-hidden="true"
-        className={`h-[15px] w-[15px] ${direction === "prev" ? "-scale-x-100" : ""}`}
+        className={`h-3.75 w-3.75 ${direction === "prev" ? "-scale-x-100" : ""}`}
       >
         <path
           d="M8.621 7.492 6.146 5.017l.708-.707 3.182 3.182-3.182 3.182-.708-.708 2.475-2.474Z"
@@ -194,7 +194,7 @@ export function ItemCardImageCarousel({
           data-testid="item-card-carousel"
           // 縦横ともスクロールバーを出さない。scrollbar-width は Firefox 用、
           // ::-webkit-scrollbar は Chrome / Safari 用（inline style では書けない）
-          className="flex h-full w-full touch-pan-x snap-x snap-mandatory overflow-x-scroll overflow-y-hidden [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="flex h-full w-full touch-pan-x snap-x snap-mandatory overflow-x-scroll overflow-y-hidden [-ms-overflow-style:none] scrollbar-none [&::-webkit-scrollbar]:hidden"
           onScroll={(event) => {
             const index = carouselIndexFromScroll(event.currentTarget);
             if (index !== null) {
