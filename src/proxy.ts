@@ -52,8 +52,16 @@ function buildCsp(nonce: string): string {
     'https://*.stripe.com',
   ].join(' ');
 
-  const styleSources = [
+  // React の style={{}} は style *属性* になる。属性は nonce では許可できず
+  // 'unsafe-inline' しか手段がないため、style-src には常に付ける。
+  // 代わりに style-src-elem を分けて <style> / <link> は 'self' のまま締める。
+  // 属性セレクタ + background-image で値を抜く CSS exfiltration は攻撃者が
+  // <style> を注入できることが前提なので、要素側さえ塞げば成立しない。
+  const styleSources = ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'].join(' ');
+
+  const styleElemSources = [
     "'self'",
+    // dev の Next（Turbopack HMR）は <style> をインラインで差し込む
     ...(isDevelopment ? ["'unsafe-inline'"] : []),
     'https://cdn.jsdelivr.net',
   ].join(' ');
@@ -75,6 +83,7 @@ function buildCsp(nonce: string): string {
     "object-src 'none'",
     `img-src ${imgSources}`,
     `style-src ${styleSources}`,
+    `style-src-elem ${styleElemSources}`,
     "font-src 'self' https://cdn.jsdelivr.net",
     `script-src ${scriptSources}`,
     "frame-src https://challenges.cloudflare.com https://js.stripe.com https://hooks.stripe.com https://www.google.com https://maps.google.com",

@@ -23,7 +23,8 @@ export function ItemCardMedia({
   priority?: boolean;
   children?: ReactNode;
 }) {
-  const frameClass = "relative aspect-3/4 bg-[#f5f5f5] overflow-hidden";
+  const frameClass =
+    "reveal-cover relative aspect-3/4 bg-[#f5f5f5] overflow-hidden";
   const soldOutBadge = soldOut ? (
     <span
       className="absolute top-0 left-0 bg-black text-white px-2 py-0.75 tracking-widest"
@@ -94,7 +95,8 @@ export function ItemCardInfo({
   return (
     // YOKE 参考: 商品名とカラースウォッチを同一行に横並び（縦中央そろえ）。
     // 価格・SEASON は下段。左右に同量の余白（px）。
-    <div data-testid="item-info" className="px-2">
+    <div data-testid="item-info" className="reveal-mask px-2">
+      <div className="reveal-rise">
       <div className="flex items-center justify-between gap-2">
         <h3
           className="font-brand tracking-tight min-w-0"
@@ -145,6 +147,7 @@ export function ItemCardInfo({
             {season}
           </span>
         ) : null}
+      </div>
       </div>
     </div>
   );

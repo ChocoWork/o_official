@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import ScrollReveal from "@/components/animations/ScrollReveal";
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -76,14 +77,14 @@ function LookCard({ look, className }: LookCardProps) {
   return (
     // FREQ-142: lg 未満のみカード全体をグレー枠線で囲む（画像は枠に密着、
     // 情報パネル側にのみ内側余白を設ける）。lg 以上は枠線なしの従来表示
-    <div
+    <ScrollReveal
       data-testid="look-card"
       className={cn("border border-black/10 lg:border-0", className)}
     >
       <Link href={`/look/${look.id}`} className="group block">
         {/* FREQ-139: 画像とパネルの間隔はフィボナッチ（13px / 21px）で
             罫線余白（8/13）と同系列に統一（反復・整列） */}
-        <div className="relative mb-3.25 aspect-2/3 overflow-hidden bg-[#f5f5f5] sm:mb-5.25 lg:mb-0">
+        <div className="reveal-cover relative mb-3.25 aspect-2/3 overflow-hidden bg-[#f5f5f5] sm:mb-5.25 lg:mb-0">
           <Image
             src={look.imageUrls[0] || "/placeholder.png"}
             alt={look.theme}
@@ -185,7 +186,8 @@ function LookCard({ look, className }: LookCardProps) {
           （シーズン / セリフ体タイトル / 罫線 / 関連アイテム+価格）。
           lg 以上は画像上のオーバーレイに表示するため非表示 */}
       {/* FREQ-142: 枠線との間に水平・下余白（13px / sm 21px）を確保。lg は枠線なしのため 0 */}
-      <div className="px-3.25 pb-3.25 sm:px-5.25 sm:pb-5.25 lg:p-0">
+      <div className="reveal-mask px-3.25 pb-3.25 sm:px-5.25 sm:pb-5.25 lg:p-0">
+        <div className="reveal-rise">
         <Link
           href={`/look/${look.id}`}
           data-testid="look-card-caption"
@@ -263,8 +265,9 @@ function LookCard({ look, className }: LookCardProps) {
             </div>
           </>
         ) : null}
+        </div>
       </div>
-    </div>
+    </ScrollReveal>
   );
 }
 

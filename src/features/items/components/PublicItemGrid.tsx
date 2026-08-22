@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import ScrollReveal from "@/components/animations/ScrollReveal";
 import { Accordion } from "@/components/ui/Accordion/Accordion";
 import { Button } from "@/components/ui/Button/Button";
 import { MultiSelect } from "@/components/ui/MultiSelect/MultiSelect";
@@ -842,7 +843,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
             data-testid="item-card-link"
             className={homeCardVisibilityClass(index)}
           >
-            <div className="group cursor-pointer" data-testid="item-card">
+            <ScrollReveal className="group cursor-pointer" data-testid="item-card">
               <ItemCardMedia
                 imageUrl={item.image_url}
                 imageUrls={item.image_urls}
@@ -855,7 +856,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
                 swatches={swatches}
                 season={item.season ?? null}
               />
-            </div>
+            </ScrollReveal>
           </Link>
         );
       })}

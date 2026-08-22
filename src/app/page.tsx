@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import ReactDOM from "react-dom";
+import TextReveal from "@/components/animations/TextReveal";
 import { PublicLookGrid } from "@/features/look/components/PublicLookGrid";
 import { PublicItemGrid } from "@/features/items/components/PublicItemGrid";
 import { PublicNewsGrid } from "@/features/news/components/PublicNewsGrid";
@@ -80,27 +81,26 @@ export default async function Home() {
             />
           </div>
           <div className="relative z-10 text-center px-6 max-w-4xl mx-auto">
-            <h1
-              className="mb-3.25 sm:mb-4 md:mb-5.25 tracking-tight text-white"
-              style={{
-                fontFamily: "Didot, serif",
-                fontSize: "var(--lk-size-4xl)",
-              }}
-            >
-              Le Fil des Heures
-            </h1>
+            <TextReveal
+              as="h1"
+              text="Le Fil des Heures"
+              delay={100}
+              className="hero-title mb-3.25 sm:mb-4 md:mb-5.25 tracking-tight text-white"
+            />
           </div>
           <div
             aria-hidden="true"
             className="absolute bottom-6.5 sm:bottom-8.5 left-1/2 -translate-x-1/2 z-10 flex flex-col items-center gap-2"
           >
             <span
-              className="font-brand text-white/70 tracking-[0.3em]"
+              className="hero-scroll-label font-brand text-white/70 tracking-[0.3em]"
               style={{ fontSize: "var(--lk-size-4xs)" }}
             >
               SCROLL
             </span>
-            <span className="block h-8.5 w-px bg-white/50" />
+            {/* loading ページのデモは infinite だが、本番は both で 1 回だけ引く
+                （ループさせるとサイクルごとに全高からゼロへ瞬断する） */}
+            <span className="hero-thread block h-8.5 w-px bg-white/50 origin-top animate-[threadDraw_3s_ease-in-out_both]" />
           </div>
         </section>
 

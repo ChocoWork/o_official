@@ -1,25 +1,25 @@
-# Graph Report - o_official  (2026-08-19)
+# Graph Report - o_official  (2026-08-21)
 
 ## Corpus Check
-- 1635 files · ~1,079,286 words
+- 1635 files · ~1,081,041 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 10315 nodes · 14668 edges · 1060 communities (771 shown, 289 thin omitted)
+- 10315 nodes · 14661 edges · 1072 communities (779 shown, 293 thin omitted)
 - Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 255 edges (avg confidence: 0.75)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `8dc1ef07`
+- Built from commit: `72bfcb9a`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - ゲスト購入後の導線設計
-- logAudit
+- api/contact/route.ts
 - monthly-record/route.ts
 - CostProfitSection.tsx
-- hash.ts
+- createServiceRoleClient
 - mockOtpAuthentication
 - Stripe 決済・手数料・返金・入金消込設計
 - cookie.ts
@@ -29,18 +29,18 @@
 - KpiSection.tsx
 - BlueReturnView.tsx
 - Code Review: Login / Auth
-- stockists/[id]/route.ts
+- complete/route.ts
 - ui/page.tsx
 - ProductCostSection.tsx
 - lib/supabase/server.ts
 - CostProfitSection
-- A01 Broken Access Control
-- createServiceRoleClient
+- 指摘: x-forwarded-for / x-real-ip 無条件信頼によるレート制限回避 (High)
+- authorizeAdminPermission
 - implement-uiux レビュー基準スキル
 - cost-profit/route.ts
 - ItemForm.tsx
 - tax/types.ts
-- account セキュリティレビュー
+- A01 Broken Access Control
 - journal.ts
 - addresses/route.ts
 - フィッツの法則
@@ -53,9 +53,9 @@
 - item-list-test-utils.ts
 - postal-code.service.ts
 - cart-stock.ts
-- getRequestOrigin
+- logAudit
 - PublicLookGrid.tsx
-- accounting-sync.ts
+- admin/items/[id]/route.ts
 - Global Constraints
 - export/route.ts
 - TaxCalendarView.tsx
@@ -78,7 +78,7 @@
 - brand.md ブランド定義（Le Fil des Heures）
 - AnimationShowcase.tsx
 - PublicItemGrid.tsx
-- wishlist/page.tsx
+- Button.tsx
 - meta/callback/route.ts
 - gotoItemList
 - mockItemDetailApis
@@ -95,7 +95,7 @@
 - Generic Code Review Instructions
 - targets/route.ts
 - セキュリティレビュー総括 (2026-06-27 dynamic workflow)
-- Button.tsx
+- account/page.tsx
 - monthly-metrics.ts
 - export-query.ts
 - h1 起点の見出し階層
@@ -117,7 +117,7 @@
 - run_loop
 - E2E 失敗226件の分類
 - look/server.ts
-- checkout セキュリティレビュー
+- Contact 問い合わせ機能 残タスク（Resend 受信メール設定）
 - Quantum Cognitive Workflow Architecture
 - orders Table (CHECKOUT-DATA)
 - news-detail-test-utils.ts
@@ -133,9 +133,9 @@
 - FR-ACCOUNT-030-guest-order-linking.spec.ts
 - Skill: 要求定義アシスタント
 - ArchiveStorage
-- password-reset/confirm/route.ts
+- password-reset.ts
 - FR-ADMIN-046-fixed-asset-transaction-link.spec.ts
-- src/app/auth/callback/page.tsx
+- ドハティのしきい値（応答フィードバック）
 - order-status-shipped.test.ts
 - KpiSalesFunnel.tsx
 - Process
@@ -146,7 +146,7 @@
 - oauth_requests Table (state/PKCE)
 - helpers.ts
 - statements.ts
-- webhook-events.ts
+- UNIQUE(ip,endpoint,bucket) with NULL ip defeats account rate limiting
 - Process
 - Process
 - LoginModal Component
@@ -166,7 +166,7 @@
 - OWASP Cheat Sheet Series 主要サマリ
 - Global Constraints
 - File Structure
-- login-2fa-session.ts
+- src/proxy.ts (Next.js 16 proxy / 旧 middleware)
 - AccountingSection.tsx
 - システムアーキテクチャレビューワー
 - Execution Workflow (6-Phase Loop)
@@ -278,7 +278,7 @@
 - FR-CHECKOUT-003-tax-display.spec.ts
 - FR-HOME-012-view-all-button-ui.spec.ts
 - FR-ITEM-ALL-013-mobile-filter-scroll-gap.spec.ts
-- ピーク・エンドの法則
+- LoginContext.tsx
 - FR-ITEM-ALL-022-filter-typography-spacing.spec.ts
 - FR-ITEM-ALL-025-filter-width-gap-unified.spec.ts
 - FR-LOADING-001-admin-only-gallery.spec.ts
@@ -675,6 +675,7 @@
 - 実装手順
 - counterparty-balances.ts
 - FR-ITEM-DETAIL-029-desktop-main-image-viewport.spec.ts
+- LoginModal.tsx
 - フレームワーク別アダプター
 - Layer 10 — メンタルモデルとナビゲーション
 - Layer 5 — 視覚的階層（Visual Hierarchy）
@@ -827,9 +828,9 @@
 - postcss.config.mjs
 - test-mermaid-parse.js
 - verify-register.md
-- accounting-types.ts
+- accounting-sync.ts
 - FR-SEARCH-017-item-meta-price.spec.ts
-- complete/route.ts
+- create-session/route.ts
 - Slider.tsx
 - FR-ITEM-DETAIL-038-image-carousel-indicator.spec.ts
 - 会計取引テンプレート再保存設計
@@ -841,6 +842,7 @@
 - StatusBadge.tsx
 - README.md
 - Global Constraints
+- cart/[id]/route.ts
 - PublicNewsGrid.tsx
 - クロスプラットフォーム・セキュリティ監査設計
 - FR-LOGIN-011-auth-rounded-design.spec.ts
@@ -856,20 +858,30 @@
 - FR-ACCOUNT-012-login-gate-brand-design.spec.ts
 - 事業形態別の取引ステータス設計
 - FR-LOGIN-018-verified-brand-design.spec.ts
-- src/app/api/wishlist/route.ts
+- Row Level Security ポリシー
 - complete-route.test.ts
 - N-4 image_url を持つ記事のみ sm+ でサムネイル表示
 - Global Constraints
-- src/app/checkout/page.tsx
-- Code Review: look/[id]
-- LoginContext.tsx
+- ピーク・エンドの法則
+- create-session-route.test.ts
+- verified/page.tsx
+- Header.tsx
 - 収入取引の証憑添付不可記録設計
-- createStripeAccountingDatabase
+- supabase-accounting-database.ts
+- wishlist/[id]/route.ts
 - stripe-backfill/route.ts
 - FR-HOME-017-section-title-common.spec.ts
 - Panel.tsx
 - sha256
 - FR-HOME-016-item-card-no-scrollbar.spec.ts
+- AuthTabs.tsx
+- List_types.ts
+- ConfirmDialog（新規・フォーカストラップ対応）
+- LoginModal.test.tsx
+- AnimatedCounter.tsx
+- FadeIn.tsx
+- PageTransition.tsx
+- TextReveal.tsx
 - admin/legal-archive-status-route.test.ts
 - orders-search-route.test.ts
 - legal-archive-export-route.test.ts
@@ -892,14 +904,14 @@
 ## Surprising Connections (you probably didn't know these)
 - `E2E テスト（Playwright）ガイド` --conceptually_related_to--> `NFR-A11Y アクセシビリティ要件（WCAG 2.1 AA）`  [AMBIGUOUS]
   e2e/README.md → docs/2_Specs/spec.md
-- `CT-1 全画面黒バー明滅＋"BARS REVEAL"デバッグ文言` --semantically_similar_to--> `AC-7 フィードバックが操作地点から遠い`  [AMBIGUOUS] [semantically similar]
-  docs/5_Implement/uiux_review_cart.md → docs/5_Implement/uiux_review_account.md
 - `journalOf()` --calls--> `buildJournal()`  [EXTRACTED]
   tests/unit/lib/finance/blue-return.test.ts → src/lib/finance/journal.ts
 - `TECH-LIB 推奨ライブラリ（react-query / Stripe / Playwright / Jest 等）` --references--> `E2E テスト（Playwright）ガイド`  [INFERRED]
   docs/2_Specs/spec.md → e2e/README.md
 - `e2e/auth/full-flow.spec.ts（登録〜ログイン〜リフレッシュ〜ログアウト）` --implements--> `要求 → アーキテクチャID マッピング（ARCH-AUTH-01〜10）`  [INFERRED]
   e2e/README.md → docs/3_ArchitectureDesign/auth-structure.md
+- `科目の削除禁止ポリシー（有効フラグを外すのみ）` --semantically_similar_to--> `DB ACL（roles / permissions / role_permissions / user_roles）`  [INFERRED] [semantically similar]
+  docs/Other/財務.md → docs/3_ArchitectureDesign/hybrid-rbac.md
 
 ## Import Cycles
 - None detected.
@@ -933,15 +945,15 @@
 - **Untrusted forwarded-header trust boundary spanning rate limiting, proxy origin, and audit IP** — file_auth_middleware_ratelimit, file_proxy_ts, file_stockist_admin_security, x_forwarded_for_spoofing, rate_limit_bypass, trust_proxy_headers_flag, zero_trust_header_boundary [EXTRACTED 0.90]
 - **Information disclosure via raw logs and over-detailed error responses** — raw_error_logging_exposure, validation_error_detail_disclosure, internal_error_detail_leak, rbac_decision_log_verbosity, structured_audit_logging, owasp_a09_information_disclosure [EXTRACTED 0.90]
 
-## Communities (1060 total, 289 thin omitted)
+## Communities (1072 total, 293 thin omitted)
 
 ### Community 0 - "ゲスト購入後の導線設計"
 Cohesion: 0.06
 Nodes (34): 10. スコープ外, 1. 全体像, 2. 注文確認メールの配線（FREQ-264）, 3. 会員紐付け（FREQ-265）, 4. 完了画面の登録誘導（FREQ-266）, 5. 発送ステータスの導入（FREQ-267）, 6. 発送通知メール（FREQ-268）, 7. エラー処理 (+26 more)
 
-### Community 1 - "logAudit"
-Cohesion: 0.05
-Nodes (58): POST(), replySchema, GET(), PATCH(), updateStatusSchema, orderIdSchema, POST(), updateStatusSchema (+50 more)
+### Community 1 - "api/contact/route.ts"
+Cohesion: 0.06
+Nodes (44): POST(), replySchema, GET(), PATCH(), updateStatusSchema, GET(), orderIdSchema, POST() (+36 more)
 
 ### Community 2 - "monthly-record/route.ts"
 Cohesion: 0.40
@@ -951,9 +963,9 @@ Nodes (9): authorizeAsAdmin(), GET(), getRecordPayload(), MonthlyRecordRow, PUT(
 Cohesion: 0.03
 Nodes (80): ACCOUNT_TYPE_LABELS, AXIS_FORMAT, BalanceBars(), BUSINESS_TYPE_OPTIONS, CashTrendChart(), COMPARISON_COLUMN_LABELS, COMPARISON_TABS, ComparisonBasis (+72 more)
 
-### Community 4 - "hash.ts"
-Cohesion: 0.10
-Nodes (23): CsrfDenyResponse, CsrfRotateResult, hasRotatedCsrfToken(), isCsrfDenyResponse(), POST(), isReplay(), csrfHelper, generateCsrfToken() (+15 more)
+### Community 4 - "createServiceRoleClient"
+Cohesion: 0.05
+Nodes (49): DELETE(), PUT(), updateTemplateSchema, createTemplateSchema, GET(), POST(), DELETE(), colorPresetSchema (+41 more)
 
 ### Community 5 - "mockOtpAuthentication"
 Cohesion: 0.06
@@ -964,16 +976,16 @@ Cohesion: 0.05
 Nodes (41): 10. 受入条件, 11. 対象外, 1.1 元売上の物理削除を採用しない, 1.2 Payout 支払済みと銀行着金を分離する, 1.3 仕訳正本テーブルを追加しない, 1.4 注文状態と返金状態を混同しない, 1.5 手数料を固定計算しない, 1. 設計自己レビュー結果 (+33 more)
 
 ### Community 7 - "cookie.ts"
-Cohesion: 0.12
-Nodes (24): clearAuthCookies(), parseJwtJti(), POST(), accessCookieName, clearCookieOptions(), cookieHelper, cookieOptionsForAccess(), cookieOptionsForLoginTwoFactor() (+16 more)
+Cohesion: 0.07
+Nodes (47): POST(), buildSessionResponse(), GET(), base64UrlDecode(), base64UrlEncode(), createLoginTwoFactorSessionToken(), createSignature(), getLoginTwoFactorSessionSecret() (+39 more)
 
 ### Community 8 - "search.service.ts"
 Cohesion: 0.06
 Nodes (45): GET(), searchSchema, GET(), suggestSchema, SearchHomePreview(), escapeRegExp(), getResultTypeLabel(), interleaveResults() (+37 more)
 
 ### Community 9 - "src/lib/storage/news-images.ts"
-Cohesion: 0.04
-Nodes (80): Cache-Control header policy gap, Cross-Origin-Opener-Policy / Cross-Origin-Resource-Policy, Data minimization principle, Fail-open login success (session/cookie failure swallowed, 200 returned), Fail-open rawUrl fallback on signing failure, src/app/api/admin/looks/[id]/route.ts, src/app/api/admin/looks/route.ts, src/app/api/admin/stockists/[id]/route.ts (+72 more)
+Cohesion: 0.03
+Nodes (87): Cache-Control header policy gap, CONTACT_TO_EMAIL recipient fallback misconfiguration, Cross-Origin-Opener-Policy / Cross-Origin-Resource-Policy, Data minimization principle, Fail-open login success (session/cookie failure swallowed, 200 returned), Fail-open rawUrl fallback on signing failure, src/app/api/admin/looks/[id]/route.ts, src/app/api/admin/looks/route.ts (+79 more)
 
 ### Community 10 - "run-daily.ts"
 Cohesion: 0.33
@@ -989,55 +1001,55 @@ Nodes (35): ASSET_COLORS, BLUE_RETURN_PAGES, BlueReturnView(), BreakdownTable(),
 
 ### Community 13 - "Code Review: Login / Auth"
 Cohesion: 0.07
-Nodes (48): src/app/api/auth/confirm/route.ts, src/app/api/auth/identify/route.ts, src/app/api/auth/login/route.ts, src/app/api/auth/oauth/callback/route.ts, src/app/api/auth/oauth/start/route.ts, src/app/api/auth/otp/verify/route.ts, src/app/api/auth/password-reset/confirm/route.ts, src/app/api/auth/password-reset/request/route.ts (+40 more)
+Nodes (46): src/app/api/auth/confirm/route.ts, src/app/api/auth/identify/route.ts, src/app/api/auth/login/route.ts, src/app/api/auth/oauth/callback/route.ts, src/app/api/auth/oauth/start/route.ts, src/app/api/auth/otp/verify/route.ts, src/app/api/auth/password-reset/confirm/route.ts, src/app/api/auth/password-reset/request/route.ts (+38 more)
 
-### Community 14 - "stockists/[id]/route.ts"
+### Community 14 - "complete/route.ts"
 Cohesion: 0.10
-Nodes (33): DELETE(), GET(), parseStockistId(), PATCH(), patchStatusSchema, PUT(), stockistStatusSchema, updateStockistSchema (+25 more)
+Nodes (28): buildConfirmationParams(), CheckoutDraftDetails, completeCheckoutSchema, finalizeOrderDirectlyFromDraft(), getClientIp(), isLegacyCheckoutSessionColumnError(), linkOrderToUser(), mapShippingSnapshotValue() (+20 more)
 
 ### Community 15 - "ui/page.tsx"
 Cohesion: 0.07
-Nodes (32): Page(), Accordion(), ActionSheet(), ActionSheetAction, ActionSheetProps, UIActionSheetShape, Avatar(), BannerAlert() (+24 more)
+Nodes (34): Page(), Accordion(), ActionSheet(), ActionSheetAction, ActionSheetProps, UIActionSheetShape, Avatar(), BannerAlert() (+26 more)
 
 ### Community 16 - "ProductCostSection.tsx"
 Cohesion: 0.07
 Nodes (40): allocationLineSchema, AllocationRow, attachRotatedCsrf(), ExpenseRow, GET(), isRotatedCsrf(), ItemRow, itemSchema (+32 more)
 
 ### Community 17 - "lib/supabase/server.ts"
-Cohesion: 0.04
-Nodes (77): GET(), NO_STORE, schema, allowedImageTypes, DELETE(), GET(), getRequestUserAgent(), logNewsAudit() (+69 more)
+Cohesion: 0.07
+Nodes (31): buildResponse(), GET(), isUserRole(), UserRole, EnrollRequestSchema, isUserRole(), POST(), toQrImageSrc() (+23 more)
 
 ### Community 18 - "CostProfitSection"
 Cohesion: 0.06
 Nodes (45): CostProfitSection(), evidenceUnavailableReasonRequiresNote(), exportCsv(), paymentOptionsFor(), payoutConfirmBlockReason(), ratioOf(), shiyouOptionsFor(), sumProductUnitCost() (+37 more)
 
-### Community 19 - "A01 Broken Access Control"
-Cohesion: 0.07
-Nodes (68): 管理者 RBAC 権限チェック (authorizeAdminPermission), src/app/api/items/[id]/route.ts, src/app/api/items/route.ts, src/app/api/news/route.ts, Cache-Control: private, no-store, CONTACT_TO_EMAIL recipient fallback misconfiguration, item 一覧 セキュリティレビュー, look セキュリティレビュー (+60 more)
+### Community 19 - "指摘: x-forwarded-for / x-real-ip 無条件信頼によるレート制限回避 (High)"
+Cohesion: 0.08
+Nodes (57): 管理者 RBAC 権限チェック (authorizeAdminPermission), src/app/api/items/[id]/route.ts, src/app/api/items/route.ts, src/app/api/news/route.ts, Cache-Control: private, no-store, PublicItemGrid（catalog variant）, item 一覧 セキュリティレビュー, look セキュリティレビュー (+49 more)
 
-### Community 20 - "createServiceRoleClient"
-Cohesion: 0.03
-Nodes (93): applyCsrfProtection(), POST(), confirmedResponse(), PayoutRow, POST(), requestSchema, AUDIT_LOGS_SAFE_COLUMNS, GET() (+85 more)
+### Community 20 - "authorizeAdminPermission"
+Cohesion: 0.04
+Nodes (78): AUDIT_LOGS_SAFE_COLUMNS, GET(), CONTACT_STATUSES, CONTACT_TYPES, GET(), sanitizeSearchTerm(), GET(), NO_STORE (+70 more)
 
 ### Community 21 - "implement-uiux レビュー基準スキル"
-Cohesion: 0.16
-Nodes (19): brand.md（ブランドコンセプト/ペルソナ）, PublicNewsGrid.tsx, デザイン4原則: 対比, implement-uiux レビュー基準スキル, --lk-size-* タイポグラフィトークン, Miller の法則（探索負荷）, ND-6 記事本文のみ --lk-size-sm → --lk-size-md へ1段上げ, 最適行長 50-75字 (+11 more)
+Cohesion: 0.17
+Nodes (18): brand.md（ブランドコンセプト/ペルソナ）, デザイン4原則: 対比, implement-uiux レビュー基準スキル, --lk-size-* タイポグラフィトークン, Miller の法則（探索負荷）, ND-6 記事本文のみ --lk-size-sm → --lk-size-md へ1段上げ, 最適行長 50-75字, NEWS 詳細 /news/[id] (+10 more)
 
 ### Community 22 - "cost-profit/route.ts"
 Cohesion: 0.06
 Nodes (36): attachRotatedCsrf(), BusinessType, businessTypeSchema, closingAdjustmentSchema, closingBalancesSchema, CumulativeEntryRow, EMPTY_CLOSING, EMPTY_PLAN (+28 more)
 
 ### Community 23 - "ItemForm.tsx"
-Cohesion: 0.10
-Nodes (20): AdminItemEditPage(), ItemForm(), ItemFormProps, CATEGORIES, Category, ColorInput, ColorPresetResponse, ItemFormValues (+12 more)
+Cohesion: 0.06
+Nodes (33): AdminItemEditPage(), ItemForm(), ItemFormProps, CATEGORIES, Category, ColorInput, ColorPresetResponse, ItemFormValues (+25 more)
 
 ### Community 24 - "tax/types.ts"
 Cohesion: 0.17
 Nodes (11): TAX_TABS, TaxTab, BalanceSheetComparison, EntryCounts, Page1Row, TaxPage, TaxReportProps, TabSegmentControl() (+3 more)
 
-### Community 25 - "account セキュリティレビュー"
-Cohesion: 0.06
-Nodes (59): src/app/api/admin/audit-logs/route.ts, src/app/admin/create-user/page.tsx, src/app/api/admin/create-user/route.ts, src/lib/auth/admin-rbac.ts, src/app/api/admin/orders/[id]/refund/route.ts, src/app/api/admin/revoke-user-sessions/route.ts, src/app/api/admin/users/route.ts, src/lib/audit.ts (+51 more)
+### Community 25 - "A01 Broken Access Control"
+Cohesion: 0.11
+Nodes (31): src/app/api/admin/audit-logs/route.ts, src/app/api/admin/create-user/route.ts, src/lib/auth/admin-rbac.ts, src/app/api/admin/orders/[id]/refund/route.ts, src/app/api/admin/revoke-user-sessions/route.ts, src/app/api/admin/users/route.ts, src/lib/audit.ts, audit_logs (+23 more)
 
 ### Community 26 - "journal.ts"
 Cohesion: 0.11
@@ -1048,8 +1060,8 @@ Cohesion: 0.16
 Nodes (19): addressesPayloadSchema, AddressItem, addressItemSchema, CsrfDenyResponse, CsrfRotateResult, deriveAddressList(), fetchProfileAddressesRow(), GET() (+11 more)
 
 ### Community 28 - "フィッツの法則"
-Cohesion: 0.11
-Nodes (26): アフォーダンス, CT-2 ♡/削除/Stepper が size=4xs で極小, CT-3 行小計が無く数量変更の金額影響が不明, 共通 Footer コンポーネント, 共通 Header コンポーネント, PublicItemGrid（catalog variant）, フィッツの法則, ヒックの法則（選択肢過多） (+18 more)
+Cohesion: 0.14
+Nodes (22): アフォーダンス, CT-2 ♡/削除/Stepper が size=4xs で極小, 共通 Footer コンポーネント, 共通 Header コンポーネント, フィッツの法則, ヒックの法則（選択肢過多）, C-2 ヘッダーアイコン icon-flame 誤字でタップ領域欠落, C-3 wishlist/cart/account に aria-label 無し (+14 more)
 
 ### Community 29 - "オンライン注文の電子証憑・法定保存設計"
 Cohesion: 0.07
@@ -1057,7 +1069,7 @@ Nodes (29): 10. 対象外, 1.1 責務, 1.2 適用段階, 1. 全体アーキテ�
 
 ### Community 30 - "implement-uiux レビュー基準"
 Cohesion: 0.13
-Nodes (25): AC-1 購入履歴→注文詳細のリンク欠落, AC-7 フィードバックが操作地点から遠い, aria-live / role=status ライブリージョン, autoComplete 属性によるオートフィル, ブランド muted トークン #474747, CT-6 amber 警告色の使用（モノクローム逸脱）, SingleSelect 共通コンポーネント, TextField 共通コンポーネント (+17 more)
+Nodes (27): AC-1 購入履歴→注文詳細のリンク欠落, autoComplete 属性によるオートフィル, ブランド muted トークン #474747, CT-6 amber 警告色の使用（モノクローム逸脱）, api/checkout/create-session route, SingleSelect 共通コンポーネント, TextField 共通コンポーネント, CN-1 errorText と role=alert でエラー二重表示 (+19 more)
 
 ### Community 31 - "tax.ts"
 Cohesion: 0.07
@@ -1068,8 +1080,8 @@ Cohesion: 0.33
 Nodes (17): add_context_findings(), add_project_findings(), add_regex_findings(), display_path(), Finding, main(), markdown_report(), parse_args() (+9 more)
 
 ### Community 33 - "profile/route.ts"
-Cohesion: 0.16
-Nodes (21): addressSchema, buildLegacyProfileUpsertPayload(), buildProfileUpsertPayload(), clearProfileRow(), CsrfDenyResponse, CsrfRotateResult, DELETE(), fetchProfileRow() (+13 more)
+Cohesion: 0.05
+Nodes (45): applyCsrfProtection(), POST(), confirmedResponse(), PayoutRow, POST(), requestSchema, ALLOWED_MIME_TYPES, GET() (+37 more)
 
 ### Community 34 - "sync-kpi.ts"
 Cohesion: 0.14
@@ -1084,20 +1096,20 @@ Cohesion: 0.12
 Nodes (25): GET(), postalCodeSchema, CheckoutPageContent(), isShippingComplete(), shippingKeyOf(), fetchAddressByPostalCode(), getCachedAddress(), getDbCachedAddress() (+17 more)
 
 ### Community 37 - "cart-stock.ts"
-Cohesion: 0.07
-Nodes (30): DELETE(), getClientIp(), mapCartRpcError(), PATCH(), UpdatedCartRow, CartRow, cartSupabase, ExistingCartRow (+22 more)
+Cohesion: 0.11
+Nodes (20): CartRow, cartSupabase, ExistingCartRow, GET(), getClientIp(), ItemRow, POST(), publicItemSupabase (+12 more)
 
-### Community 38 - "getRequestOrigin"
-Cohesion: 0.05
-Nodes (48): ALLOWED_OTP_TYPES, buildRedirectResponse(), classifyConfirmError(), GET(), OtpType, CallbackQuerySchema, GET(), isUserRole() (+40 more)
+### Community 38 - "logAudit"
+Cohesion: 0.04
+Nodes (73): bodySchema, POST(), bodySchema, POST(), ALLOWED_OTP_TYPES, buildRedirectResponse(), classifyConfirmError(), GET() (+65 more)
 
 ### Community 39 - "PublicLookGrid.tsx"
-Cohesion: 0.07
-Nodes (35): generateMetadata(), LookDetailPage(), Props, LookPage(), LookPageSearchParams, List(), BaseListProps, CustomListProps (+27 more)
+Cohesion: 0.11
+Nodes (25): LookPage(), LookPageSearchParams, currencyFormatter, LOOK_SEASON_FILTER_OPTIONS, LookCard(), LookCardGridProps, LookCardProps, PublicLookCatalog() (+17 more)
 
-### Community 40 - "accounting-sync.ts"
-Cohesion: 0.22
-Nodes (15): syncAccountingForEvent(), upsertBalanceTransaction(), upsertPayout(), upsertRefund(), findOrder(), idOf(), iso(), requiredApi() (+7 more)
+### Community 40 - "admin/items/[id]/route.ts"
+Cohesion: 0.09
+Nodes (25): allowedImageTypes, colorSchema, DELETE(), GET(), itemCategorySchema, itemStatusSchema, parseJsonField(), PATCH() (+17 more)
 
 ### Community 41 - "Global Constraints"
 Cohesion: 0.29
@@ -1113,27 +1125,27 @@ Nodes (17): FilingDocumentsView(), PACKAGE_STEPS, boxRadiusClassName, panelTitle
 
 ### Community 44 - "ComponentSize"
 Cohesion: 0.03
-Nodes (68): AccordionItem, AccordionProps, AvatarProps, UIAvatarStatus, BannerAlertProps, UIBannerAlertShape, UIBannerAlertVariant, CardProps (+60 more)
+Nodes (62): AccordionItem, AccordionProps, AvatarProps, UIAvatarStatus, BannerAlertProps, UIBannerAlertShape, UIBannerAlertVariant, CardProps (+54 more)
 
 ### Community 45 - "rateLimit.ts"
-Cohesion: 0.05
-Nodes (51): allowedImageTypes, DELETE(), GET(), lookStatusSchema, parseJsonField(), PATCH(), patchStatusSchema, PUT() (+43 more)
+Cohesion: 0.06
+Nodes (48): allowedImageTypes, DELETE(), GET(), lookStatusSchema, parseJsonField(), PATCH(), patchStatusSchema, PUT() (+40 more)
 
 ### Community 46 - "search セキュリティレビュー"
-Cohesion: 0.13
-Nodes (24): src/app/api/search/route.ts, src/app/api/suggest/route.ts, buildLikePattern, combobox ARIA パターン（aria-expanded/activedescendant）, SearchPageClient.tsx, 検索 RPC パラメータ化（バインド変数）, search セキュリティレビュー, 指摘: search.history を localStorage に平文保存（共有端末での残存） (+16 more)
+Cohesion: 0.10
+Nodes (32): src/app/api/search/route.ts, src/app/api/suggest/route.ts, src/app/api/wishlist/[id]/route.ts, buildLikePattern, combobox ARIA パターン（aria-expanded/activedescendant）, SearchPageClient.tsx, 検索 RPC パラメータ化（バインド変数）, search セキュリティレビュー (+24 more)
 
 ### Community 47 - "admin/page.tsx"
-Cohesion: 0.04
-Nodes (56): AccountOrderDetailPage(), acuminFont, acuminLgStyle, bodyStyle, labelStyle, lgStyle, OrderDetail, AdminPage() (+48 more)
+Cohesion: 0.05
+Nodes (42): AdminPage(), AdminPageContent(), allAdminTabs, escapeCsvValue(), ForbiddenErrorBody, formatOrderItems(), ORDER_CSV_HEADERS, ORDER_STATUS_FILTERS (+34 more)
 
 ### Community 48 - "blue-return.ts"
 Cohesion: 0.17
 Nodes (16): Account, BalanceSheetSideRow, BLUE_RETURN_DEDUCTION_MAX, BLUE_RETURN_DEDUCTION_WITHOUT_ETAX, BlueReturnDeduction, BREAKDOWN_ACCOUNT_CODES, buildBalanceSheetComparison(), buildBlueReturnDeduction() (+8 more)
 
 ### Community 49 - "モノクローム Key Color（黒/グレー/白）"
-Cohesion: 0.09
-Nodes (27): 装飾アイコンの aria-hidden="true", src/components/CartItem.tsx（未使用・削除推奨）, CartItemRow, LookImageGallery.tsx, PublicLookGrid.tsx, PublicStockistGrid.tsx, ShareButtons.tsx（X / LINE / リンクコピー）, デザイン4原則: 整列（余白バランス） (+19 more)
+Cohesion: 0.10
+Nodes (26): 装飾アイコンの aria-hidden="true", VF-1 text-blue-600 のリンク色（Key Color外）, LookImageGallery.tsx, PublicLookGrid.tsx, PublicStockistGrid.tsx, ShareButtons.tsx（X / LINE / リンクコピー）, デザイン4原則: 整列（余白バランス）, デザイン4原則: 反復（一貫性） (+18 more)
 
 ### Community 50 - "devDependencies"
 Cohesion: 0.04
@@ -1164,8 +1176,8 @@ Cohesion: 0.06
 Nodes (43): src/app/actions/news.ts, src/app/api/admin/news/[id]/route.ts, src/app/api/admin/news/route.ts, src/app/api/cart/[id]/route.ts, src/app/api/cart/route.ts, carts, src/app/api/checkout/complete/route.ts, src/app/api/checkout/postal-code/route.ts (+35 more)
 
 ### Community 57 - "items/public.ts"
-Cohesion: 0.10
-Nodes (23): CATEGORY_TOKEN_VALUES, categoryTokenSchema, GET(), itemsListResponseCache, parseOptionalIntParam(), sortSchema, stringFilterSchema, ItemPage() (+15 more)
+Cohesion: 0.11
+Nodes (21): CATEGORY_TOKEN_VALUES, categoryTokenSchema, GET(), itemsListResponseCache, parseOptionalIntParam(), sortSchema, stringFilterSchema, ItemPage() (+13 more)
 
 ### Community 58 - "Next.js Implement"
 Cohesion: 0.05
@@ -1176,20 +1188,20 @@ Cohesion: 0.14
 Nodes (8): VIEWPORTS, VIEWPORTS, VIEWPORTS, LG_VIEWPORTS, VIEWPORTS, VIEWPORTS, VIEWPORTS, gotoFirstLookDetail()
 
 ### Community 60 - "brand.md ブランド定義（Le Fil des Heures）"
-Cohesion: 0.17
-Nodes (15): A-1 差別化（天然繊維100%/受注生産/ユニセックス）が皆無, A-4 同一画像の反復で情報量ゼロ, VF-1 text-blue-600 のリンク色（Key Color外）, VF-2 OTP入力が LOGIN のセグメント式と不一致, brand.md ブランド定義（Le Fil des Heures）, コンセプト「時を紡ぐニュートラルモードな日常着」, 完了画面の角丸 vs 直角 → 直角維持（FREQ-77）, デザイン4原則（近接・整列・反復・対比） (+7 more)
+Cohesion: 0.21
+Nodes (13): A-1 差別化（天然繊維100%/受注生産/ユニセックス）が皆無, A-4 同一画像の反復で情報量ゼロ, VF-2 OTP入力が LOGIN のセグメント式と不一致, brand.md ブランド定義（Le Fil des Heures）, コンセプト「時を紡ぐニュートラルモードな日常着」, 完了画面の角丸 vs 直角 → 直角維持（FREQ-77）, デザイン4原則（近接・整列・反復・対比）, ゲシュタルト原則（閉合・連続・図と地） (+5 more)
 
 ### Community 61 - "AnimationShowcase.tsx"
-Cohesion: 0.07
-Nodes (19): animationComponents, AnimationShowcase(), BrandNamePatterns(), letters, patterns, CodeBlock(), ContentMotionIdeas(), patterns (+11 more)
+Cohesion: 0.11
+Nodes (13): animationComponents, AnimationShowcase(), BrandNamePatterns(), letters, patterns, CodeBlock(), ContentMotionIdeas(), patterns (+5 more)
 
 ### Community 62 - "PublicItemGrid.tsx"
 Cohesion: 0.04
-Nodes (57): ItemActionButtonsProps, ItemDetailClient(), Props, resolveStockStatus(), generateMetadata(), Props, CartItemProps, ItemCardInfo() (+49 more)
+Nodes (72): ItemActionButtonsProps, ItemDetailClient(), Props, resolveStockStatus(), generateMetadata(), Props, isColorList(), isColorOption() (+64 more)
 
-### Community 63 - "wishlist/page.tsx"
-Cohesion: 0.10
-Nodes (25): CartItemRow(), CartItemRowProps, OrderSummary(), OrderSummaryProps, CartEntry, useCartItems(), CartPage(), isColorList() (+17 more)
+### Community 63 - "Button.tsx"
+Cohesion: 0.05
+Nodes (40): headingTextStyle, Window, CartItemRow(), CartItemRowProps, OrderSummary(), OrderSummaryProps, CartEntry, useCartItems() (+32 more)
 
 ### Community 64 - "meta/callback/route.ts"
 Cohesion: 0.20
@@ -1232,8 +1244,8 @@ Cohesion: 0.05
 Nodes (38): AI Prompt Engineering & Safety Best Practices, Anti-patterns, Automated Prompt Evaluation, Clarity, Context, and Constraints, Community Resources, Compliance, Continuous Improvement, Data Leakage Prevention (+30 more)
 
 ### Community 74 - "WCAG 2.2 AA"
-Cohesion: 0.12
-Nodes (21): A-6 h1 が clamp 独自指定で共通トークンから外れる, AC-2 編集フォームのラベルが input と未紐付け, AC-3/AC-4 プロフィール・住所削除に確認が無い, 本文16px下限の部分的逸脱（逸脱判断2）, ConfirmDialog（新規・フォーカストラップ対応）, CN-2 サンクスモーダルにフォーカス管理が無い, コントラスト下限の担保, 破壊的操作の確認（エラー防止 Layer 8） (+13 more)
+Cohesion: 0.17
+Nodes (15): A-6 h1 が clamp 独自指定で共通トークンから外れる, AC-2 編集フォームのラベルが input と未紐付け, 本文16px下限の部分的逸脱（逸脱判断2）, コントラスト下限の担保, C-8 フッター法務テキストが極小×低コントラスト, H-3 ヒーロー画像 alt が"Hero Background"で無価値, I-3 カード価格が極小（--lk-size-3xs）, label と input のプログラム的紐付け (+7 more)
 
 ### Community 75 - "テクニカルライター"
 Cohesion: 0.05
@@ -1253,11 +1265,11 @@ Nodes (19): authorizeAsAdmin(), buildDefaultTargetPayload(), buildEditableSeason
 
 ### Community 79 - "セキュリティレビュー総括 (2026-06-27 dynamic workflow)"
 Cohesion: 0.03
-Nodes (100): admin-rbac 権限判定 (authorizeAdminPermission / DB ACL 最終判定), finalize_order_from_cart RPC（FOR UPDATE 原子的在庫減算）, PII ハッシュ化した構造化監査ログ (logAudit), audit_logs entry_hash + 改ざん検知トリガー（追記専用）, Cache-Control: no-store（機微応答のキャッシュ抑止）, double-submit Cookie CSRF トークン (sb-csrf-token / x-csrf-token), honeypot フィールド (website), isSameOriginRequest（Origin/Referer 検証） (+92 more)
+Nodes (117): src/app/api/checkout/payment-intent/route.ts, admin-rbac 権限判定 (authorizeAdminPermission / DB ACL 最終判定), finalize_order_from_cart RPC（FOR UPDATE 原子的在庫減算）, PII ハッシュ化した構造化監査ログ (logAudit), audit_logs entry_hash + 改ざん検知トリガー（追記専用）, Cache-Control: no-store（機微応答のキャッシュ抑止）, double-submit Cookie CSRF トークン (sb-csrf-token / x-csrf-token), honeypot フィールド (website) (+109 more)
 
-### Community 80 - "Button.tsx"
+### Community 80 - "account/page.tsx"
 Cohesion: 0.05
-Nodes (42): accountGateTitleStyle, AccountPageContent(), accountPageTitleStyle, AccountTab, accountTextLgStyle, accountTextMdStyle, accountTextXsStyle, defaultAddressFields() (+34 more)
+Nodes (41): accountGateTitleStyle, AccountPageContent(), accountPageTitleStyle, AccountTab, accountTextLgStyle, accountTextMdStyle, accountTextXsStyle, defaultAddressFields() (+33 more)
 
 ### Community 81 - "monthly-metrics.ts"
 Cohesion: 0.13
@@ -1268,8 +1280,8 @@ Cohesion: 0.21
 Nodes (11): ArchiveQuery, assertQuery(), Cursor, decodeCursor(), encodeCursor(), fetchLegalArchivePage(), QueryResult, LegalArchiveOrder (+3 more)
 
 ### Community 83 - "h1 起点の見出し階層"
-Cohesion: 0.19
-Nodes (18): LoginModal.tsx, h1 起点の見出し階層, LG-1 login ページに h1 + ブランド枠付け, LG-3 8桁OTPボックスを可変幅化（375px折返し回避）, 8桁OTPセグメント入力（貼付/矢印キー/桁別aria-label/one-time-code）, Google + メールOTP のパスワードレス設計, L-1 「LOOK BOOK」h1 を追加, メンタルモデル整合 (+10 more)
+Cohesion: 0.18
+Nodes (19): LoginModal.tsx, PublicNewsGrid.tsx, h1 起点の見出し階層, LG-1 login ページに h1 + ブランド枠付け, LG-3 8桁OTPボックスを可変幅化（375px折返し回避）, 8桁OTPセグメント入力（貼付/矢印キー/桁別aria-label/one-time-code）, Google + メールOTP のパスワードレス設計, L-1 「LOOK BOOK」h1 を追加 (+11 more)
 
 ### Community 84 - "ハイブリッド RBAC アーキテクチャ（トークン高速パス + DB ACL 権限源）"
 Cohesion: 0.16
@@ -1288,8 +1300,8 @@ Cohesion: 0.40
 Nodes (3): PAID_ORDER, SHIPPED_ORDER, viewports
 
 ### Community 88 - "stripe/route.ts"
-Cohesion: 0.25
-Nodes (17): AccountingStripeClient, CheckoutDraftAuditSnapshot, createOrderFromDraft(), getCheckoutDraftAuditSnapshot(), getClientIp(), handleCheckoutSessionAsyncPaymentFailed(), handleCheckoutSessionAsyncPaymentSucceeded(), handleCheckoutSessionCompleted() (+9 more)
+Cohesion: 0.13
+Nodes (29): AccountingStripeClient, CheckoutDraftAuditSnapshot, createOrderFromDraft(), getCheckoutDraftAuditSnapshot(), getClientIp(), handleCheckoutSessionAsyncPaymentFailed(), handleCheckoutSessionAsyncPaymentSucceeded(), handleCheckoutSessionCompleted() (+21 more)
 
 ### Community 89 - "implement-uiux Skill"
 Cohesion: 0.06
@@ -1340,12 +1352,12 @@ Cohesion: 0.14
 Nodes (13): E2E 失敗226件の分類, 仕様判断が要る, 分類, 分類2の修正結果（2026-08-13）, 分類3の再実行結果（2026-08-13）, 分類7の再実行結果（2026-08-13）, 前提の確認: 既存のドリフトである, 対処方針の見立て (+5 more)
 
 ### Community 101 - "look/server.ts"
-Cohesion: 0.11
-Nodes (18): GET(), addWishlistItemSchema, GET(), getClientIp(), POST(), getPublishedLookById(), getPublishedLooks(), hydrateLooks() (+10 more)
+Cohesion: 0.06
+Nodes (47): formatCurrency(), formatOrderDateTime(), GET(), mapPaymentMethodLabel(), NO_STORE_HEADERS, OrderDetailRow, OrderItemRow, StockStatus (+39 more)
 
-### Community 102 - "checkout セキュリティレビュー"
-Cohesion: 0.08
-Nodes (31): 監査ログ (logAudit), src/app/api/auth/logout/route.ts, src/app/api/checkout/payment-intent/route.ts, Contact 問い合わせ機能 残タスク（Resend 受信メール設定）, HMAC 署名付き返信アドレス (reply+{id}.{token}@domain), Stripe Webhook 署名検証 (constructEvent) + 冪等性, Resend inbound Webhook の Svix 署名検証, src/lib/csrfMiddleware.ts (+23 more)
+### Community 102 - "Contact 問い合わせ機能 残タスク（Resend 受信メール設定）"
+Cohesion: 0.14
+Nodes (17): 監査ログ (logAudit), Contact 問い合わせ機能 残タスク（Resend 受信メール設定）, HMAC 署名付き返信アドレス (reply+{id}.{token}@domain), Stripe Webhook 署名検証 (constructEvent) + 冪等性, Resend inbound Webhook の Svix 署名検証, CONTACT_REPLY_SECRET / RESEND_WEBHOOK_SECRET 環境変数（コミット禁止）, inbound Webhook 未設定（本番デプロイURL待ち）, 指摘: wishlist POST/DELETE のレート制限超過時に監査ログが残らない (+9 more)
 
 ### Community 103 - "Quantum Cognitive Workflow Architecture"
 Cohesion: 0.06
@@ -1399,17 +1411,17 @@ Nodes (28): 10.1 目的, 10.2 利用者, 10.3 現状, 10.4 範囲, 10.5 制約, 
 Cohesion: 0.33
 Nodes (3): ArchiveStorage, contentType(), storeArchiveAtomically()
 
-### Community 118 - "password-reset/confirm/route.ts"
-Cohesion: 0.06
-Nodes (42): POST(), POST(), buildRedirectResponse(), GET(), POST(), buildSessionResponse(), GET(), Email (+34 more)
+### Community 118 - "password-reset.ts"
+Cohesion: 0.12
+Nodes (16): emailSchema, passwordSchema, LoginRequest, LoginRequestSchema, LoginResponse, LoginResponseSchema, ResetConfirm, ResetConfirmSchema (+8 more)
 
 ### Community 119 - "FR-ADMIN-046-fixed-asset-transaction-link.spec.ts"
 Cohesion: 0.21
 Nodes (9): EXPENSES, FIXED_ASSETS, metric(), mockAdminApis(), openAccounting(), openAssets(), openEntries(), RECEIPT (+1 more)
 
-### Community 120 - "src/app/auth/callback/page.tsx"
+### Community 120 - "ドハティのしきい値（応答フィードバック）"
 Cohesion: 0.18
-Nodes (15): AK-2 h1 が「OAuth」で開発者用語, next パラメータのオープンリダイレクト検証（良い点）, CT-1 全画面黒バー明滅＋"BARS REVEAL"デバッグ文言, ドハティのしきい値（応答フィードバック）, 空状態と回復導線, X-02 auth callback の next open redirect (Medium), L-4 0件時に「すべて見る」ボタンを併設, src/app/auth/callback/page.tsx (+7 more)
+Nodes (14): AC-7 フィードバックが操作地点から遠い, CT-1 全画面黒バー明滅＋"BARS REVEAL"デバッグ文言, CT-3 行小計が無く数量変更の金額影響が不明, ドハティのしきい値（応答フィードバック）, 空状態と回復導線, ID-4 カート追加成功のインライン通知とカート導線, L-4 0件時に「すべて見る」ボタンを併設, OD-6 金額内訳が無く合計のみ (+6 more)
 
 ### Community 121 - "order-status-shipped.test.ts"
 Cohesion: 0.17
@@ -1447,9 +1459,9 @@ Nodes (11): Token/Session Cleanup Cron Jobs, HttpOnly Auth Cookie Policy, Google
 Cohesion: 0.15
 Nodes (20): TrialBalance, TrialBalanceRow, buildBalanceSheet(), buildProfitAndLoss(), CLOSING_INVENTORY_SECTIONS, EXTRAORDINARY_SECTIONS, groupBySection(), naturalSide() (+12 more)
 
-### Community 131 - "webhook-events.ts"
-Cohesion: 0.24
-Nodes (10): beginWebhookEvent(), completeWebhookEvent(), failWebhookEvent(), QueryError, throwQueryError(), WebhookEventInput, WebhookEventRow, WebhookEventStore (+2 more)
+### Community 131 - "UNIQUE(ip,endpoint,bucket) with NULL ip defeats account rate limiting"
+Cohesion: 0.12
+Nodes (23): src/app/admin/create-user/page.tsx, src/app/api/auth/identify/route.ts, src/app/api/auth/login/route.ts, src/app/api/auth/logout/route.ts, src/features/auth/ratelimit/index.ts, src/features/auth/middleware/rateLimit.ts, clientFetch, createServiceRoleClient (+15 more)
 
 ### Community 132 - "Process"
 Cohesion: 0.07
@@ -1527,9 +1539,9 @@ Nodes (3): Global Constraints, Task 1: 状態ラベルの幅統一と件数非�
 Cohesion: 0.25
 Nodes (7): File Structure, Global Constraints, Task 1: 月次累積収支の純粋集計, Task 2: 固定グラフUIと科目選択の分離, Task 3: E2E契約と仕様の同期, Task 4: 全体検証とGraphify更新, 仕訳・元帳の月次累積収支推移 Implementation Plan
 
-### Community 151 - "login-2fa-session.ts"
-Cohesion: 0.29
-Nodes (10): base64UrlDecode(), base64UrlEncode(), createLoginTwoFactorSessionToken(), createSignature(), getLoginTwoFactorSessionSecret(), LoginTwoFactorSession, loginTwoFactorSessionMaxAgeSeconds, readLoginTwoFactorSessionFromCookieHeader() (+2 more)
+### Community 151 - "src/proxy.ts (Next.js 16 proxy / 旧 middleware)"
+Cohesion: 0.14
+Nodes (20): aria-live / role=status ライブリージョン, AK-2 h1 が「OAuth」で開発者用語, next パラメータのオープンリダイレクト検証（良い点）, HSTS preload, nonce ベース CSP (default-src 'none' / frame-ancestors 'none'), X-Frame-Options: DENY, CSP and security headers, X-02 auth callback の next open redirect (Medium) (+12 more)
 
 ### Community 152 - "AccountingSection.tsx"
 Cohesion: 0.42
@@ -1760,8 +1772,8 @@ Cohesion: 0.67
 Nodes (3): maxThumb(), openFilters(), VIEWPORTS
 
 ### Community 223 - "clientFetch"
-Cohesion: 0.03
-Nodes (78): AdminLookEditPage(), LookForm(), LookFormProps, ItemSummary, LookDetailResponse, LookFormValues, LookStatus, SeasonType (+70 more)
+Cohesion: 0.05
+Nodes (52): AccountOrderDetailPage(), acuminFont, acuminLgStyle, bodyStyle, labelStyle, lgStyle, OrderDetail, AdminLookEditPage() (+44 more)
 
 ### Community 224 - "S3ArchiveStorage"
 Cohesion: 0.20
@@ -1815,9 +1827,9 @@ Nodes (3): admin_kpi_monthly_records, trigger_admin_kpi_monthly_records_updated_
 Cohesion: 0.67
 Nodes (3): public.admin_meta_kpi_connections, public.admin_meta_kpi_sync_runs, auth.users
 
-### Community 267 - "ピーク・エンドの法則"
-Cohesion: 0.22
-Nodes (10): A-2 締めのステートメント・CTAが無く終わる, AK-1 認証失敗時に回復CTAが無い, CO-1 ステップラベルと実態が逆, CO-2 支払い確定後に確認画面が出る順序, CO-5 完了画面 h1 が英語のみ, ID-4 カート追加成功のインライン通知とカート導線, メンタルモデル整合, PR-4 更新成功後にログイン導線が無い (+2 more)
+### Community 267 - "LoginContext.tsx"
+Cohesion: 0.16
+Nodes (14): LoadingPage(), AuthStateResponseBody, isUserRole(), LoginContext, LoginContextType, LoginProvider(), OtpVerifySuccessBody, useLogin() (+6 more)
 
 ### Community 273 - "ゲスト購入後の導線 Implementation Plan"
 Cohesion: 0.13
@@ -2983,6 +2995,10 @@ Nodes (4): Step 1 — 要件整理, Step 2 — 構造設計, Step 3 — 実装, 
 Cohesion: 0.20
 Nodes (11): buildCounterpartyBalances(), CounterpartyBalanceRow, CounterpartyBalanceSection, CounterpartyBalanceSummary, emptySection(), FUNDING_ACCOUNT_CODES, MutableRow, PAYABLE_ACCOUNT_CODES (+3 more)
 
+### Community 830 - "LoginModal.tsx"
+Cohesion: 0.15
+Nodes (15): AuthMeResponse, EMPTY_OTP_DIGITS, formatOtpCountdown(), isPrivilegedRole(), lgTextStyle, LoginModal(), LoginModalProps, mdTextStyle (+7 more)
+
 ### Community 831 - "フレームワーク別アダプター"
 Cohesion: 0.50
 Nodes (4): Angular, React, Vue, フレームワーク別アダプター
@@ -3099,13 +3115,13 @@ Nodes (3): Grids for dynamic UIs (SHOULD), Tables and grids, Tables for static d
 Cohesion: 0.67
 Nodes (3): Page structure (MUST), Page title (SHOULD), Structure and semantics
 
-### Community 984 - "accounting-types.ts"
-Cohesion: 0.12
-Nodes (18): equal(), guardedUpsert(), StoreResult, StripeAccountingDatabase, StripeAccountingTable, StripeBalanceStatus, StripeBalanceTransactionInput, StripeBalanceTransactionRow (+10 more)
+### Community 984 - "accounting-sync.ts"
+Cohesion: 0.10
+Nodes (32): syncAccountingForEvent(), equal(), guardedUpsert(), StoreResult, upsertBalanceTransaction(), upsertPayout(), upsertRefund(), findOrder() (+24 more)
 
-### Community 986 - "complete/route.ts"
-Cohesion: 0.04
-Nodes (80): buildConfirmationParams(), CheckoutDraftDetails, completeCheckoutSchema, finalizeOrderDirectlyFromDraft(), getClientIp(), isLegacyCheckoutSessionColumnError(), linkOrderToUser(), mapShippingSnapshotValue() (+72 more)
+### Community 986 - "create-session/route.ts"
+Cohesion: 0.09
+Nodes (33): applyRotatedCsrfCookie(), buildShippingSnapshot(), createSessionSchema, CsrfDenyResponse, CsrfRotateResult, getClientIp(), hasRotatedCsrfToken(), isCsrfDenyResponse() (+25 more)
 
 ### Community 993 - "Slider.tsx"
 Cohesion: 0.28
@@ -3116,8 +3132,8 @@ Cohesion: 0.20
 Nodes (9): UI と操作, エラー処理, テスト方針, データフロー, 会計取引テンプレート再保存設計, 完了条件, 対象範囲, 既存動作との整合 (+1 more)
 
 ### Community 997 - "src/proxy.ts"
-Cohesion: 0.35
-Nodes (13): src/app/api/auth/me/route.ts, クリックジャッキング対策 (X-Frame-Options: DENY / frame-ancestors 'none'), Content Security Policy (nonce付き buildCsp), privacy セキュリティレビュー, terms セキュリティレビュー, 指摘: /api/auth/me が未使用の email を返却し PII 伝播面を拡大, 指摘: 全ルート共通 CSP が Stripe/Turnstile/jsDelivr/Google Maps を過許可（最小権限違反）, 指摘: resolveRequestOrigin が x-forwarded-proto/host を常時優先し Origin 検証を迂回可能 (+5 more)
+Cohesion: 0.33
+Nodes (13): src/app/api/auth/me/route.ts, クリックジャッキング対策 (X-Frame-Options: DENY / frame-ancestors 'none'), Content Security Policy (nonce付き buildCsp), privacy セキュリティレビュー, terms セキュリティレビュー, 指摘: /api/auth/me が未使用の email を返却し PII 伝播面を拡大, 指摘: 全ルート共通 CSP が Stripe/Turnstile/jsDelivr/Google Maps を過許可（最小権限違反）, 指摘: 静的公開ページでも session_id Cookie を発行し不要な永続識別子を付与 (+5 more)
 
 ### Community 999 - "Global Constraints"
 Cohesion: 0.29
@@ -3139,9 +3155,13 @@ Nodes (6): StatusBadge(), StatusBadgeHeight, StatusBadgeProps, StatusBadgeShape,
 Cohesion: 0.33
 Nodes (5): Global Constraints, Task 1: 取引一覧の列分離とレスポンシブ横スクロール, Task 2: PC・タブレット・スマートフォンの実ブラウザ回帰検証, Transaction Summary and Partner Columns Implementation Plan, 概要
 
+### Community 1009 - "cart/[id]/route.ts"
+Cohesion: 0.20
+Nodes (10): DELETE(), getClientIp(), mapCartRpcError(), PATCH(), UpdatedCartRow, mockEnforceRateLimit, mockLogAudit, mockRpc (+2 more)
+
 ### Community 1010 - "PublicNewsGrid.tsx"
-Cohesion: 0.04
-Nodes (60): getLatestNews(), NewsArticle, GET(), buildDescription(), generateMetadata(), NewsDetailPage(), NewsDetailPageProps, resolveCategory() (+52 more)
+Cohesion: 0.05
+Nodes (47): getLatestNews(), NewsArticle, GET(), NewsPage(), NewsPageSearchParams, resolveCategory(), Home(), StockistPage() (+39 more)
 
 ### Community 1011 - "クロスプラットフォーム・セキュリティ監査設計"
 Cohesion: 0.33
@@ -3171,9 +3191,9 @@ Nodes (14): File Structure, Global Constraints, Online Order Legal Archive Imple
 Cohesion: 0.25
 Nodes (7): エラー処理, ステータス判定, テスト, データと画面, 事業形態別の取引ステータス設計, 完了条件, 概要
 
-### Community 1032 - "src/app/api/wishlist/route.ts"
-Cohesion: 0.07
-Nodes (50): src/app/api/admin/looks/[id]/route.ts, src/app/api/admin/stockists/[id]/route.ts, src/app/api/admin/stockists/route.ts, src/app/api/auth/logout/route.ts, src/app/api/cart/route.ts, src/app/api/wishlist/[id]/route.ts, src/app/api/wishlist/route.ts, src/contexts/CartContext.tsx (+42 more)
+### Community 1032 - "Row Level Security ポリシー"
+Cohesion: 0.05
+Nodes (70): src/app/api/admin/items/route.ts, src/app/api/admin/looks/[id]/route.ts, src/app/api/admin/looks/route.ts, src/app/api/admin/stockists/[id]/route.ts, src/app/api/admin/stockists/route.ts, src/app/api/auth/logout/route.ts, src/app/api/cart/route.ts, src/app/api/wishlist/route.ts (+62 more)
 
 ### Community 1034 - "complete-route.test.ts"
 Cohesion: 0.22
@@ -3187,25 +3207,33 @@ Nodes (6): ArticleBody.tsx（軽量Markdownレンダラー）, ゲシュタル�
 Cohesion: 0.18
 Nodes (10): Completion Criteria, Global Constraints, Income Evidence Unavailable Records Implementation Plan, Task 1: 証憑状態ドメインを4状態へ拡張する, Task 2: 添付不可記録のDBテーブルとRLSを追加する, Task 3: cost-profit APIへ取得・登録・解除を追加する, Task 4: 取引入力と証憑Drawerへ「証憑添付不可」を追加する, Task 5: 一覧・ドーナツ・フィルター・CSV・帳簿を三値対応する (+2 more)
 
-### Community 1038 - "src/app/checkout/page.tsx"
-Cohesion: 0.19
-Nodes (16): 在庫同期エラーの再試行/再同期導線（良い点）, 完了画面のスクロール位置リセット・CTA統一（FREQ-77）, api/checkout/create-session route, CO-3 カート空でも決済フォームが描画される, EmptyPage（空状態コンポーネント）, OrderSummary（カート合計）, 空状態に次アクションを置く, エラー回復（原因＋解決策） (+8 more)
+### Community 1038 - "ピーク・エンドの法則"
+Cohesion: 0.12
+Nodes (22): A-2 締めのステートメント・CTAが無く終わる, AK-1 認証失敗時に回復CTAが無い, 在庫同期エラーの再試行/再同期導線（良い点）, 完了画面のスクロール位置リセット・CTA統一（FREQ-77）, CO-1 ステップラベルと実態が逆, CO-2 支払い確定後に確認画面が出る順序, CO-3 カート空でも決済フォームが描画される, CO-5 完了画面 h1 が英語のみ (+14 more)
 
-### Community 1039 - "Code Review: look/[id]"
-Cohesion: 0.10
-Nodes (30): src/app/api/admin/items/route.ts, src/app/api/admin/looks/route.ts, Audit logging, audit_logs, createClient, src/features/news/services/public.ts, logAudit, src/app/look/[id]/page.tsx (+22 more)
+### Community 1039 - "create-session-route.test.ts"
+Cohesion: 0.13
+Nodes (13): mockCreate, mockDraftDeleteEq, mockDraftInsert, mockDraftInsertSingle, mockDraftUpdateEq, mockEnforceRateLimit, mockEq, mockFrom (+5 more)
 
-### Community 1043 - "LoginContext.tsx"
-Cohesion: 0.03
-Nodes (72): authBodyStyle, AuthMeResponse, authNoteStyle, authTitleStyle, EnrollTotpResponse, isUserRole(), MfaStatusResponse, PageMode (+64 more)
+### Community 1042 - "verified/page.tsx"
+Cohesion: 0.17
+Nodes (11): authBodyStyle, AuthMeResponse, authNoteStyle, authTitleStyle, EnrollTotpResponse, isUserRole(), MfaStatusResponse, PageMode (+3 more)
+
+### Community 1043 - "Header.tsx"
+Cohesion: 0.05
+Nodes (38): dynamic, geistMono, geistSans, metadata, buildDescription(), generateMetadata(), NewsDetailPage(), NewsDetailPageProps (+30 more)
 
 ### Community 1044 - "収入取引の証憑添付不可記録設計"
 Cohesion: 0.18
 Nodes (10): 1. 対象と基本動作, 2. 理由入力, 3. データモデルとAPI, 4. 状態判定と画面反映, 5. エラー処理, 6. テスト, 7. 対象外, 収入取引の証憑添付不可記録設計 (+2 more)
 
-### Community 1045 - "createStripeAccountingDatabase"
-Cohesion: 0.40
-Nodes (3): createStripeAccountingDatabase(), Builder, Result
+### Community 1045 - "supabase-accounting-database.ts"
+Cohesion: 0.29
+Nodes (4): createStripeAccountingDatabase(), QueryResult, Builder, Result
+
+### Community 1046 - "wishlist/[id]/route.ts"
+Cohesion: 0.28
+Nodes (6): DELETE(), getClientIp(), wishlistIdSchema, mockDelete, mockEnforceRateLimit, mockLogAudit
 
 ### Community 1047 - "stripe-backfill/route.ts"
 Cohesion: 0.10
@@ -3222,6 +3250,22 @@ Nodes (4): Panel(), PanelProps, PanelRadius, PanelTone
 ### Community 1051 - "sha256"
 Cohesion: 0.38
 Nodes (7): main(), QueryClient, verifyRestore(), buildManifest(), LegalArchiveManifest, serializeManifest(), sha256()
+
+### Community 1055 - "AuthTabs.tsx"
+Cohesion: 0.25
+Nodes (5): AuthTab, AuthTabs(), AuthTabsProps, mdTextStyle, TABS
+
+### Community 1056 - "List_types.ts"
+Cohesion: 0.39
+Nodes (5): List(), BaseListProps, CustomListProps, ListProps, ShowcaseListProps
+
+### Community 1058 - "ConfirmDialog（新規・フォーカストラップ対応）"
+Cohesion: 0.40
+Nodes (6): AC-3/AC-4 プロフィール・住所削除に確認が無い, ConfirmDialog（新規・フォーカストラップ対応）, CN-2 サンクスモーダルにフォーカス管理が無い, 破壊的操作の確認（エラー防止 Layer 8）, モーダルのフォーカストラップ/Esc/復帰, PR-1 パスワード表示トグル・要件ヒントが無い
+
+### Community 1059 - "LoginModal.test.tsx"
+Cohesion: 0.40
+Nodes (4): loginMock, loginWithGoogleMock, replaceMock, verifyOtpMock
 
 ## Ambiguous Edges - Review These
 - `NFR-A11Y アクセシビリティ要件（WCAG 2.1 AA）` → `E2E テスト（Playwright）ガイド`  [AMBIGUOUS]
@@ -3244,9 +3288,9 @@ Nodes (7): main(), QueryClient, verifyRestore(), buildManifest(), LegalArchiveMa
   docs/code-review/2026-04-29-news-review.md · relation: references
 
 ## Knowledge Gaps
-- **4935 isolated node(s):** `AccountTab`, `ProfileAddress`, `ProfileForm`, `ShippingAddress`, `OrderItem` (+4930 more)
+- **4938 isolated node(s):** `呼び出し方`, `このスキルを呼び出すべき状況`, `Step 0 — ユーザーとコンテキストの理解`, `1. 近接（Proximity）`, `2. 整列（Alignment）` (+4933 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **289 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **293 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
