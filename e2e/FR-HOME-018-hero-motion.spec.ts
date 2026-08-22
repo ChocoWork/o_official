@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 // FREQ-278: ヒーローのモーション。
 // ブランド名は TextReveal（1文字ずつ）、縦線は loading ページの
-// Motion Ideas「THREAD DRAW」（threadDraw）。
+// Motion Ideas「THREAD DRAW」を継ぎ目なくループさせた heroThreadLoop。
 
 const VIEWPORTS = [
   { name: 'mobile', width: 390, height: 844 },
@@ -37,18 +37,17 @@ test.describe('FR-HOME-018 ヒーローのモーション', () => {
       await expect(last).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
     });
 
-    test(`${vp.name} 縦線が threadDraw で動き、ブランド名が 6xl サイズになる`, async ({
+    test(`${vp.name} 縦線が heroThreadLoop で動き、ブランド名が 6xl サイズになる`, async ({
       page,
     }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/');
       await expect(page.locator('main, body')).toBeTruthy();
 
-      // AC-02: SCROLL ラベル下の縦線。デモ用の infinite ではなく 1 回だけ引く
+      // AC-02: SCROLL ラベル下の縦線。heroThreadLoop で動き続ける
       const thread = page.locator('.hero-thread').first();
-      await expect(thread).toHaveCSS('animation-name', 'threadDraw');
-      await expect(thread).toHaveCSS('animation-iteration-count', '1');
-      await expect(thread).toHaveCSS('animation-fill-mode', 'both');
+      await expect(thread).toHaveCSS('animation-name', 'heroThreadLoop');
+      await expect(thread).toHaveCSS('animation-iteration-count', 'infinite');
 
       // AC-03: font-size が --lk-size-6xl の算出値と一致する
       const heading = page.locator('h1', { hasText: 'Le Fil des Heures' }).first();

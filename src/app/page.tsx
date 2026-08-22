@@ -93,14 +93,14 @@ export default async function Home() {
             className="absolute bottom-6.5 sm:bottom-8.5 left-1/2 -translate-x-1/2 z-10 flex flex-col items-center gap-2"
           >
             <span
-              className="hero-scroll-label font-brand text-white/70 tracking-[0.3em]"
+              className="hero-scroll-label font-brand text-white/90 tracking-[0.3em]"
               style={{ fontSize: "var(--lk-size-4xs)" }}
             >
               SCROLL
             </span>
-            {/* loading ページのデモは infinite だが、本番は both で 1 回だけ引く
-                （ループさせるとサイクルごとに全高からゼロへ瞬断する） */}
-            <span className="hero-thread block h-8.5 w-px bg-white/50 origin-top animate-[threadDraw_3s_ease-in-out_both]" />
+            {/* 縦線は上から下へ引く動きだけをひたすら繰り返す。
+                heroThreadLoop を globals.css に置き、クラスで当てる。 */}
+            <span className="hero-thread block h-8.5 w-px bg-white/90" />
           </div>
         </section>
 

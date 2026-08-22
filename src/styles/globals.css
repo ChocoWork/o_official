@@ -812,6 +812,28 @@ html[data-header-visible="false"] {
   animation: hero-scroll-in 1200ms ease 600ms both;
 }
 
+/* ヒーローの縦線。上端から下へ引き、引ききったらそのまま少し待ってから
+   即座に折り返し、また上から引き直す。
+   線が完全に消える瞬間を作らないため、始点は 0 ではなく僅かに残した長さから。
+   速さは ease-in-out（遅く始まり、途中で速く、終わりに向かってまた遅く）。
+   78% までが引く区間（2.1s の約 1.65s）、残りが引ききったままの待機。 */
+@keyframes heroThreadLoop {
+  0% {
+    transform: scaleY(0.08);
+  }
+  78% {
+    transform: scaleY(1);
+  }
+  100% {
+    transform: scaleY(1);
+  }
+}
+
+.hero-thread {
+  transform-origin: top;
+  animation: heroThreadLoop 2.1s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .hero-scroll-label,
   .hero-thread {
@@ -868,8 +890,7 @@ html[data-header-visible="false"] {
 }
 
 [data-reveal-group] .reveal-cover[data-reveal="true"]::after {
-  animation: reveal-cover-act 500ms cubic-bezier(0.08, 0.5, 0, 1) 500ms
-    forwards;
+  animation: reveal-cover-act 500ms cubic-bezier(0.08, 0.5, 0, 1) 500ms forwards;
 }
 
 [data-reveal-group] .reveal-mask {
@@ -877,8 +898,7 @@ html[data-header-visible="false"] {
 }
 
 [data-reveal-group] .reveal-mask[data-reveal="true"] .reveal-rise {
-  animation: reveal-rise-act 500ms cubic-bezier(0.08, 0.5, 0, 1) 1000ms
-    forwards;
+  animation: reveal-rise-act 500ms cubic-bezier(0.08, 0.5, 0, 1) 1000ms forwards;
 }
 
 @media (prefers-reduced-motion: reduce) {
