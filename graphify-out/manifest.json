@@ -865,9 +865,9 @@
     "semantic_hash": ""
   },
   "src/components/ui/Accordion/Accordion.tsx": {
-    "mtime": 1782219391.0026827,
-    "ast_hash": "e787d27aff13e268cc4ffcdce323141a",
-    "semantic_hash": "e787d27aff13e268cc4ffcdce323141a"
+    "mtime": 1787377003.5992384,
+    "ast_hash": "185025bf271532c475cbcef22d8f4731",
+    "semantic_hash": ""
   },
   "src/components/ui/Accordion/Accordion_types.ts": {
     "mtime": 1782219376.8510156,
@@ -1435,8 +1435,8 @@
     "semantic_hash": ""
   },
   "src/features/items/components/PublicItemGrid.tsx": {
-    "mtime": 1787360353.779589,
-    "ast_hash": "271f290f2b356c7f32e1afd94d27c3c7",
+    "mtime": 1787376995.030571,
+    "ast_hash": "9a20616927af43b9ab362a42ab5e0057",
     "semantic_hash": ""
   },
   "src/features/items/components/RelatedItems.tsx": {
@@ -4690,8 +4690,8 @@
     "semantic_hash": ""
   },
   "docs/2_Specs/spec.md": {
-    "mtime": 1787375274.9898808,
-    "ast_hash": "c662be88d8d93ebc4228b85accede705",
+    "mtime": 1787377062.6466646,
+    "ast_hash": "442208da2d812770a6f0b0fc81e51c96",
     "semantic_hash": ""
   },
   "docs/3_ArchitectureDesign/auth-structure.md": {
@@ -8352,6 +8352,11 @@
   "e2e/FR-HOME-020-hero-scroll-color.spec.ts": {
     "mtime": 1787373412.9333968,
     "ast_hash": "cf89d60acc09d80a05543d5184b447d7",
+    "semantic_hash": ""
+  },
+  "e2e/FR-ITEM-032-filter-initial-open-state.spec.ts": {
+    "mtime": 1787377090.7738743,
+    "ast_hash": "f30aa3c57af91e2fe78dce56331faa90",
     "semantic_hash": ""
   }
 }

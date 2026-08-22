@@ -329,6 +329,19 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     0, 100,
   ]);
 
+  // 読み込み時のアコーディオン初期開閉。CATEGORY は常に開き、他は URL に
+  // 既定値（ALL / 範囲未指定）以外の選択があるセクションだけ開く。
+  // マウント時に一度だけ算出し、以後の操作では再計算しない。
+  const [initialOpenKeys] = useState<DrawerSectionKey[]>(() => {
+    const keys: DrawerSectionKey[] = ["category"];
+    if (selectedColors.length > 0) keys.push("color");
+    if (selectedStock.length > 0) keys.push("stock");
+    if (selectedSizes.length > 0) keys.push("size");
+    if (selectedCollectionSeasons.length > 0) keys.push("season");
+    if (selectedPriceMin !== "" || selectedPriceMax !== "") keys.push("price");
+    return keys;
+  });
+
   useEffect(() => {
     if (variant !== "catalog") {
       return;
@@ -893,18 +906,6 @@ export function PublicItemGrid(props: PublicItemGridProps) {
   );
 
   const renderFilterSections = (menuSize: ComponentSize = "xs") => {
-    const filterSectionKeys: DrawerSectionKey[] = [
-      "category",
-      "stock",
-      "season",
-      "price",
-    ];
-    if (availableColorSwatches.length > 0) {
-      filterSectionKeys.splice(1, 0, "color");
-    }
-    if (availableSizes.length > 0) {
-      filterSectionKeys.splice(filterSectionKeys.indexOf("season"), 0, "size");
-    }
     const categoryOptions = [
       { value: "ALL", label: "ALL" },
       ...ITEM_CATEGORIES.filter((category) => category !== "ALL").map(
@@ -1156,7 +1157,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
             },
           ]}
           openMode="multiple"
-          defaultOpenKeys={filterSectionKeys}
+          defaultOpenKeys={initialOpenKeys}
           highlightOnHover={false}
           size={menuSize}
           className="max-w-none! overflow-visible! border-0!"

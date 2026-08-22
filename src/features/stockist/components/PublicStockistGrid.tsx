@@ -324,7 +324,6 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
       aria-label="エリア（地方・都道府県）で絞り込む"
     >
       <div className="flex items-center">
-        <span aria-hidden="true" className="w-5 shrink-0" />
         <Checkbox
           label="ALL"
           checked={selectedSet.size === 0}
@@ -333,7 +332,7 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
           shape="square"
           checkStyle="fill"
           expandLabelHitArea={false}
-          className="w-full justify-start px-3 py-0.75 text-[#474747] tracking-widest font-medium"
+          className="w-full justify-start py-0.75 text-[#474747] tracking-widest font-medium"
         />
       </div>
       {visibleRegions.map((entry) => {
@@ -342,7 +341,6 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
           const prefecture = entry.prefectures[0];
           return (
             <div key={entry.region} className="flex items-center">
-              <span aria-hidden="true" className="w-5 shrink-0" />
               <Checkbox
                 label={entry.region}
                 checked={selectedSet.has(prefecture)}
@@ -351,7 +349,7 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
                 shape="square"
                 checkStyle="fill"
                 expandLabelHitArea={false}
-                className="w-full justify-start px-3 py-0.75 text-[#474747] tracking-widest font-medium"
+                className="w-full justify-start py-0.75 text-[#474747] tracking-widest font-medium"
               />
             </div>
           );
@@ -364,6 +362,16 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
         return (
           <div key={entry.region}>
             <div className="flex items-center">
+              <Checkbox
+                label={entry.region}
+                checked={regionChecked}
+                onChange={() => toggleRegion(entry.prefectures)}
+                size={size}
+                shape="square"
+                checkStyle="fill"
+                expandLabelHitArea={false}
+                className="w-full justify-start py-0.75 text-[#474747] tracking-widest font-medium"
+              />
               <button
                 type="button"
                 onClick={() => toggleExpand(entry.region)}
@@ -378,19 +386,9 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
                   aria-hidden="true"
                 />
               </button>
-              <Checkbox
-                label={entry.region}
-                checked={regionChecked}
-                onChange={() => toggleRegion(entry.prefectures)}
-                size={size}
-                shape="square"
-                checkStyle="fill"
-                expandLabelHitArea={false}
-                className="w-full justify-start px-3 py-0.75 text-[#474747] tracking-widest font-medium"
-              />
             </div>
             {expanded ? (
-              <div className="pl-10">
+              <div className="pl-5">
                 {entry.prefectures.map((prefecture) => (
                   <Checkbox
                     key={prefecture}
@@ -401,7 +399,7 @@ function CatalogGrid({ stockists }: { stockists: PublicStockist[] }) {
                     shape="square"
                     checkStyle="fill"
                     expandLabelHitArea={false}
-                    className="w-full justify-start px-3 py-0.75 text-[#474747] tracking-widest"
+                    className="w-full justify-start py-0.75 text-[#474747] tracking-widest"
                   />
                 ))}
               </div>

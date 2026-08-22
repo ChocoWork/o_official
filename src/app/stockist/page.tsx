@@ -29,7 +29,7 @@ export default async function StockistPage({
   const stockists = await getPublicStockists();
 
   return (
-    <div className="max-w-[1680px] mx-auto w-full">
+    <div className="w-full">
       <PublicStockistGrid variant="catalog" stockists={stockists} />
     </div>
   );

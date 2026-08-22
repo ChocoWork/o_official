@@ -1,6 +1,6 @@
 "use client";
 import "@/components/ui/Accordion/Accordion.css"
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { AccordionProps } from '@/components/ui/Accordion/Accordion_types';
 
@@ -22,6 +22,23 @@ export function Accordion({
   const [internalOpenKey, setInternalOpenKey] = useState<string | null>(() => defaultOpenKeys[0] ?? null);
   const [internalOpenKeys, setInternalOpenKeys] = useState<string[]>(() => [...defaultOpenKeys]);
   const currentOpenKey = openKey !== undefined ? openKey : internalOpenKey;
+  const appliedDefaultKeysRef = useRef<Set<string>>(new Set(defaultOpenKeys));
+
+  // defaultOpenKeys に後から現れたキーだけを開く（項目が遅れてマウントされる場合）。
+  // 既存の開閉操作は上書きしない。
+  useEffect(() => {
+    const newKeys = defaultOpenKeys.filter(
+      (key) => !appliedDefaultKeysRef.current.has(key),
+    );
+    if (newKeys.length === 0) {
+      return;
+    }
+    newKeys.forEach((key) => appliedDefaultKeysRef.current.add(key));
+    setInternalOpenKeys((prev) => [
+      ...prev,
+      ...newKeys.filter((key) => !prev.includes(key)),
+    ]);
+  }, [defaultOpenKeys]);
 
   const setCurrentOpenKey = (key: string | null) => {
     if (onOpenChange) {
