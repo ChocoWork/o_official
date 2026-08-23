@@ -27,7 +27,7 @@ test.describe('FR-ITEM-DETAIL-034 tablet carousel arrows', () => {
   test.describe('tablet 768x1024', () => {
     test.use({ viewport: { width: 768, height: 1024 } });
 
-    test('FREQ-172-AC-01: 初期表示で右下に次ボタンが表示され、前ボタンは表示されない', async ({
+    test('FREQ-172-AC-01: 初期表示で右側・縦中央に次ボタンが表示され、前ボタンは表示されない', async ({
       page,
     }) => {
       await openItemDetail(page);
@@ -38,7 +38,7 @@ test.describe('FR-ITEM-DETAIL-034 tablet carousel arrows', () => {
         page.getByTestId('item-detail-tablet-carousel-prev'),
       ).toBeHidden();
 
-      // 画像（カルーセル表示領域）の右下に配置されている
+      // 画像（カルーセル表示領域）の右側・縦中央に配置されている（FREQ-287 で下端→中央へ変更）
       const carousel = await box(
         page.getByTestId('item-detail-tablet-carousel'),
       );
@@ -50,14 +50,17 @@ test.describe('FR-ITEM-DETAIL-034 tablet carousel arrows', () => {
       expect(nextBox.y + nextBox.height).toBeLessThanOrEqual(
         carousel.y + carousel.height,
       );
-      expect(nextBox.y).toBeGreaterThan(carousel.y + carousel.height / 2);
+      expect(nextBox.y + nextBox.height / 2).toBeCloseTo(
+        carousel.y + carousel.height / 2,
+        0,
+      );
 
       // タッチターゲット 44px 以上
       expect(nextBox.width).toBeGreaterThanOrEqual(44);
       expect(nextBox.height).toBeGreaterThanOrEqual(44);
     });
 
-    test('FREQ-172-AC-02: 次ボタンでスライドが送られ、前ボタンが左下に表示される。末尾では次ボタンが消える', async ({
+    test('FREQ-172-AC-02: 次ボタンでスライドが送られ、前ボタンが左側・縦中央に表示される。末尾では次ボタンが消える', async ({
       page,
     }) => {
       await openItemDetail(page);
@@ -72,14 +75,17 @@ test.describe('FR-ITEM-DETAIL-034 tablet carousel arrows', () => {
         .toBeGreaterThan(0);
       await expect(prev).toBeVisible();
 
-      // 前ボタンは左下に配置されている
+      // 前ボタンは左側・縦中央に配置されている（FREQ-287 で下端→中央へ変更）
       const carouselBox = await box(carousel);
       const prevBox = await box(prev);
       expect(prevBox.x).toBeGreaterThanOrEqual(carouselBox.x);
       expect(prevBox.x + prevBox.width).toBeLessThan(
         carouselBox.x + carouselBox.width / 2,
       );
-      expect(prevBox.y).toBeGreaterThan(carouselBox.y + carouselBox.height / 2);
+      expect(prevBox.y + prevBox.height / 2).toBeCloseTo(
+        carouselBox.y + carouselBox.height / 2,
+        0,
+      );
 
       // 末尾（3枚目)へ送ると次ボタンが消える
       await next.click();

@@ -18,6 +18,13 @@ import {
 
 type Props = { id: string };
 
+// 前後送りシェブロンのサイズ。タブレット（大きすぎた）と PC（小さすぎた）で見た目を
+// 揃えるため、固定 px ではなく画像枠の幅に対する比率（4.5cqw）で決める。
+// 枠幅 400px→18px / 480px→21.6px / 512px→23px。極端な枠幅でも破綻しないよう clamp する。
+// 適用先の親には @container が必要（タブレット＝送りボタンの基準枠、PC＝メイン画像枠）。
+const CAROUSEL_ARROW_ICON_CLASS =
+  "h-[clamp(1rem,4.5cqw,1.625rem)] w-[clamp(1rem,4.5cqw,1.625rem)]";
+
 type ItemActionButtonsProps = {
   addedToCart: boolean;
   addingToCart: boolean;
@@ -542,8 +549,9 @@ export default function ItemDetailClient({ id }: Props) {
                     スワイプ（横スクロール + スナップ）で画像を切り替える (FREQ-171)。
                     前後の画像があるときは左下・右下に送りボタンを表示する (FREQ-172) */}
                 <div className="min-w-0 flex-1 lg:hidden">
-                  {/* 送りボタンは画像枠に対して配置する（インジケータの高さを含めない） */}
-                  <div className="relative">
+                  {/* 送りボタンは画像枠に対して配置する（インジケータの高さを含めない）。
+                      @container 化して、シェブロンのサイズを画像枠の幅に比例させる。 */}
+                  <div className="@container relative">
                     <div
                       ref={tabletCarouselRef}
                       data-testid="item-detail-tablet-carousel"
@@ -584,36 +592,26 @@ export default function ItemDetailClient({ id }: Props) {
                       ))}
                     </div>
                     {selectedImageIndex > 0 && (
-                      <button
-                        type="button"
-                        data-testid="item-detail-tablet-carousel-prev"
-                        aria-label="前の画像を表示"
-                        className="absolute bottom-2 left-5 flex h-11 w-11 cursor-pointer items-center justify-center text-black transition-opacity duration-200 hover:opacity-60 focus-visible:outline-none"
+                      <CarouselArrowButton
+                        direction="prev"
+                        testId="item-detail-tablet-carousel-prev"
                         onClick={() =>
                           scrollTabletCarouselTo(selectedImageIndex - 1)
                         }
-                      >
-                        <i
-                          className="ri-arrow-left-s-line text-2xl"
-                          aria-hidden="true"
-                        />
-                      </button>
+                        className="absolute left-5 top-1/2 -translate-y-1/2 text-black"
+                        iconClassName={CAROUSEL_ARROW_ICON_CLASS}
+                      />
                     )}
                     {selectedImageIndex < thumbnailImages.length - 1 && (
-                      <button
-                        type="button"
-                        data-testid="item-detail-tablet-carousel-next"
-                        aria-label="次の画像を表示"
-                        className="absolute bottom-2 right-2 flex h-11 w-11 cursor-pointer items-center justify-center text-black transition-opacity duration-200 hover:opacity-60 focus-visible:outline-none"
+                      <CarouselArrowButton
+                        direction="next"
+                        testId="item-detail-tablet-carousel-next"
                         onClick={() =>
                           scrollTabletCarouselTo(selectedImageIndex + 1)
                         }
-                      >
-                        <i
-                          className="ri-arrow-right-s-line text-2xl"
-                          aria-hidden="true"
-                        />
-                      </button>
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-black"
+                        iconClassName={CAROUSEL_ARROW_ICON_CLASS}
+                      />
                     )}
                   </div>
                   {/* FREQ-271: 画像下のセグメント線インジケータ */}
@@ -631,7 +629,7 @@ export default function ItemDetailClient({ id }: Props) {
                 <div className="hidden flex-col lg:flex lg:w-auto lg:flex-none">
                   <div
                     data-testid="item-detail-main-image-frame"
-                    className="relative aspect-2/3 overflow-hidden bg-white lg:h-[min(48rem,calc(100svh-5rem))] lg:w-auto"
+                    className="@container relative aspect-2/3 overflow-hidden bg-white lg:h-[min(48rem,calc(100svh-5rem))] lg:w-auto"
                   >
                     {mainImage ? (
                       <Image
@@ -659,6 +657,7 @@ export default function ItemDetailClient({ id }: Props) {
                           setSelectedImageIndex(selectedImageIndex - 1)
                         }
                         className="absolute left-0 top-1/2 -translate-y-1/2"
+                        iconClassName={CAROUSEL_ARROW_ICON_CLASS}
                       />
                     )}
                     {selectedImageIndex < thumbnailImages.length - 1 && (
@@ -669,6 +668,7 @@ export default function ItemDetailClient({ id }: Props) {
                           setSelectedImageIndex(selectedImageIndex + 1)
                         }
                         className="absolute right-0 top-1/2 -translate-y-1/2"
+                        iconClassName={CAROUSEL_ARROW_ICON_CLASS}
                       />
                     )}
                   </div>

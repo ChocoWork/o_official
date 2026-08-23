@@ -104,11 +104,14 @@ export function CarouselArrowButton({
   direction,
   onClick,
   className,
+  iconClassName = "h-3.75 w-3.75",
   testId,
 }: {
   direction: "prev" | "next";
   onClick: () => void;
   className?: string;
+  /** シェブロン自体のサイズ。既定は 15x15。画像枠に比例させたい場合に上書きする。 */
+  iconClassName?: string;
   testId?: string;
 }) {
   return (
@@ -127,7 +130,7 @@ export function CarouselArrowButton({
         viewBox="0 0 15 15"
         xmlns="http://www.w3.org/2000/svg"
         aria-hidden="true"
-        className={`h-3.75 w-3.75 ${direction === "prev" ? "-scale-x-100" : ""}`}
+        className={`${iconClassName} ${direction === "prev" ? "-scale-x-100" : ""}`}
       >
         <path
           d="M8.621 7.492 6.146 5.017l.708-.707 3.182 3.182-3.182 3.182-.708-.708 2.475-2.474Z"
