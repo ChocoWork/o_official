@@ -605,8 +605,8 @@
     "semantic_hash": ""
   },
   "src/app/item/[id]/ItemDetailClient.tsx": {
-    "mtime": 1787496461.2114956,
-    "ast_hash": "7a548b7ce0c416e5d33bcd2ba056cf06",
+    "mtime": 1787474064.5679069,
+    "ast_hash": "47f7559ef4978f70c682c08599f26a61",
     "semantic_hash": ""
   },
   "src/app/item/[id]/page.tsx": {
@@ -7571,67 +7571,67 @@
   },
   ".claude/launch.json": {
     "mtime": 1781172498.683929,
-    "ast_hash": "f0823d85f96a9cce264cd2d42ab55d17",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   ".claude/settings.json": {
     "mtime": 1786267331.7574985,
-    "ast_hash": "d6921475a23253c7bd3d53b4f404ca66",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   ".claude/skills/implement-nextjs/evals/evals.json": {
     "mtime": 1777450364.1909268,
-    "ast_hash": "c794c48a3c96498112be79cc5cd6253b",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   ".claude/skills/implement-stripe/assets/checkout_session.template.json": {
     "mtime": 1777713473.5523765,
-    "ast_hash": "17d5e140486b76ac7ff97dbaf1ea1078",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   ".codex/launch.json": {
     "mtime": 1781172498.683929,
-    "ast_hash": "f0823d85f96a9cce264cd2d42ab55d17",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   ".codex/settings.json": {
     "mtime": 1783726896.4830608,
-    "ast_hash": "62996438b9db2c22cfbf5e007adaa183",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   ".codex/settings.local.json": {
     "mtime": 1780927466.5749502,
-    "ast_hash": "e52a58ea1e0315e91775b72098779750",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   ".codex/skills/implement-nextjs/evals/evals.json": {
     "mtime": 1777450364.1909268,
-    "ast_hash": "c794c48a3c96498112be79cc5cd6253b",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   ".codex/skills/implement-stripe/assets/checkout_session.template.json": {
     "mtime": 1777713473.5523765,
-    "ast_hash": "17d5e140486b76ac7ff97dbaf1ea1078",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   ".github/skills/implement-nextjs/evals/evals.json": {
     "mtime": 1777450364.1909268,
-    "ast_hash": "c794c48a3c96498112be79cc5cd6253b",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   ".github/skills/implement-stripe/assets/checkout_session.template.json": {
     "mtime": 1777713473.5523765,
-    "ast_hash": "17d5e140486b76ac7ff97dbaf1ea1078",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   ".vscode/settings.json": {
     "mtime": 1775872078.0990345,
-    "ast_hash": "6bd94cc63281c595ddf942cabe3cc9ea",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   ".vscode/tasks.json": {
     "mtime": 1768118846.4116716,
-    "ast_hash": "4f00539c337a0a0c4e0c1b8296faccba",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   "migrations/080_stripe_order_reconciliation.sql": {
@@ -7641,7 +7641,7 @@
   },
   "skills-lock.json": {
     "mtime": 1778295488.241915,
-    "ast_hash": "561755e28c9cea84ffed77856eae91a6",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   ".claude/skills/security-check/scripts/audit.ps1": {

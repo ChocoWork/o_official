@@ -439,10 +439,13 @@ export default function ItemDetailClient({ id }: Props) {
               最小幅 18.125rem と右端の余白を確保するための上限。余った幅は情報列が使う。
               画像列は -ml-5 で 20px 左にはみ出すため、画像とテキストの見た目の間隔は
               gap-x-3(12px) + 20px = 32px。右端も pr-3(12px) + ページの px-5(20px) で
-              同じ 32px に揃える。 */}
+              同じ 32px に揃える。lg 以上は情報列の上限を画像の幅
+              （h-[min(48rem,calc(100svh-5rem))] の 2:3 から逆算＝
+              min(32rem,calc((100svh-5rem)*2/3))）に合わせ、横幅に余裕があるときは
+              画像と同じ幅まで広げる。 */}
           <div
             data-testid="item-detail-layout"
-            className="grid grid-cols-1 gap-y-3.5 md:-ml-5 md:grid-cols-[min(32rem,56%,calc((100svh-6rem)*2/3))_minmax(18.125rem,1fr)] md:gap-x-3 md:gap-y-0 md:pr-3 lg:ml-0 lg:pr-0 lg:grid-cols-[auto_minmax(18.125rem,23.75rem)] lg:justify-center lg:gap-x-14"
+            className="grid grid-cols-1 gap-y-3.5 md:-ml-5 md:grid-cols-[min(32rem,56%,calc((100svh-6rem)*2/3))_minmax(18.125rem,1fr)] md:gap-x-3 md:gap-y-0 md:pr-3 lg:ml-0 lg:pr-0 lg:grid-cols-[auto_minmax(18.125rem,min(32rem,calc((100svh-5rem)*2/3)))] lg:justify-center lg:gap-x-14"
           >
             <div className="md:-ml-5 md:w-full lg:ml-0">
               {/* モバイル: 横スクロールカルーセル (FREQ-162)
