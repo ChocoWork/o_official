@@ -38,7 +38,7 @@ function ItemActionButtons({
   onToggleWishlist,
 }: ItemActionButtonsProps) {
   return (
-    <div className="flex w-full gap-3">
+    <div className="flex w-full gap-3 md:flex-col">
       <Button
         onClick={onAddToCart}
         disabled={addingToCart || isSoldOut}
@@ -68,16 +68,18 @@ function ItemActionButtons({
         disabled={togglingWishlist}
         variant="secondary"
         size="2xs"
-        iconOnly
         aria-label="Add to wishlist"
-        className="aspect-square px-0 hover:bg-transparent hover:text-current"
+        className="aspect-square px-0 hover:bg-transparent hover:text-current md:aspect-auto md:w-full md:px-4"
       >
-        <div className="flex h-4 w-4 items-center justify-center">
-          <i
-            className={`text-base ${
-              isWishlisted ? "ri-heart-fill text-red-500" : "ri-heart-line"
-            }`}
-          />
+        <div className="flex items-center justify-center gap-2">
+          <div className="flex h-4 w-4 items-center justify-center">
+            <i
+              className={`text-base ${
+                isWishlisted ? "ri-heart-fill text-red-500" : "ri-heart-line"
+              }`}
+            />
+          </div>
+          <span className="hidden md:inline">ADD TO WISHLIST</span>
         </div>
       </Button>
     </div>
@@ -429,11 +431,20 @@ export default function ItemDetailClient({ id }: Props) {
           data-testid="item-detail-first-view"
           className="min-h-[calc(100svh-4rem)]"
         >
+          {/* md〜lg 未満の画像列は幅基準（w-full + aspect-2/3）なので、上限がないと
+              高さが viewport を超えて画像下端が見切れる。lg の
+              h-[min(48rem,calc(100svh-5rem))] と同じ考え方を、2:3 の枠を保ったまま
+              幅側から効かせる（32rem=48rem*2/3、6rem=画像上端のオフセット 4rem＋
+              インジケータと下余白）。56% は狭い md（768px 付近）で情報列の
+              最小幅 18.125rem と右端の余白を確保するための上限。余った幅は情報列が使う。
+              画像列は -ml-5 で 20px 左にはみ出すため、画像とテキストの見た目の間隔は
+              gap-x-3(12px) + 20px = 32px。右端も pr-3(12px) + ページの px-5(20px) で
+              同じ 32px に揃える。 */}
           <div
             data-testid="item-detail-layout"
-            className="grid grid-cols-1 gap-y-3.5 md:-mx-5 md:grid-cols-[58%_42%] md:gap-0 lg:mx-0 lg:grid-cols-[auto_minmax(18.125rem,23.75rem)] lg:justify-center lg:gap-x-14"
+            className="grid grid-cols-1 gap-y-3.5 md:-ml-5 md:grid-cols-[min(32rem,56%,calc((100svh-6rem)*2/3))_minmax(18.125rem,1fr)] md:gap-x-3 md:gap-y-0 md:pr-3 lg:ml-0 lg:pr-0 lg:grid-cols-[auto_minmax(18.125rem,23.75rem)] lg:justify-center lg:gap-x-14"
           >
-            <div className="md:-ml-5 md:w-[calc(100%+1.25rem)] lg:ml-0 lg:w-full">
+            <div className="md:-ml-5 md:w-full lg:ml-0">
               {/* モバイル: 横スクロールカルーセル (FREQ-162)
                   main の px-5 を負マージンで相殺してフルブリード化し、
                   ピーク表示が main の padding でクリップされないようにする (FREQ-159) */}
@@ -671,7 +682,7 @@ export default function ItemDetailClient({ id }: Props) {
 
             <div
               data-testid="item-detail-information"
-              className="space-y-3.5 md:sticky md:top-36 md:mx-auto md:w-[max(18.125rem,calc(100%-8.75rem))] md:self-start md:space-y-5 lg:mx-0 lg:w-full"
+              className="space-y-3.5 md:sticky md:top-36 md:w-full md:self-start md:space-y-5"
             >
               <div data-testid="item-detail-identity">
                 <h1

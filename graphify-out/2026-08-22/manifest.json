@@ -865,9 +865,9 @@
     "semantic_hash": ""
   },
   "src/components/ui/Accordion/Accordion.tsx": {
-    "mtime": 1782219391.0026827,
-    "ast_hash": "e787d27aff13e268cc4ffcdce323141a",
-    "semantic_hash": "e787d27aff13e268cc4ffcdce323141a"
+    "mtime": 1787377003.5992384,
+    "ast_hash": "185025bf271532c475cbcef22d8f4731",
+    "semantic_hash": ""
   },
   "src/components/ui/Accordion/Accordion_types.ts": {
     "mtime": 1782219376.8510156,
@@ -1435,8 +1435,8 @@
     "semantic_hash": ""
   },
   "src/features/items/components/PublicItemGrid.tsx": {
-    "mtime": 1787360353.779589,
-    "ast_hash": "271f290f2b356c7f32e1afd94d27c3c7",
+    "mtime": 1787376995.030571,
+    "ast_hash": "9a20616927af43b9ab362a42ab5e0057",
     "semantic_hash": ""
   },
   "src/features/items/components/RelatedItems.tsx": {
@@ -4690,8 +4690,8 @@
     "semantic_hash": ""
   },
   "docs/2_Specs/spec.md": {
-    "mtime": 1787375274.9898808,
-    "ast_hash": "c662be88d8d93ebc4228b85accede705",
+    "mtime": 1787377062.6466646,
+    "ast_hash": "442208da2d812770a6f0b0fc81e51c96",
     "semantic_hash": ""
   },
   "docs/3_ArchitectureDesign/auth-structure.md": {
@@ -7571,67 +7571,67 @@
   },
   ".claude/launch.json": {
     "mtime": 1781172498.683929,
-    "ast_hash": "f0823d85f96a9cce264cd2d42ab55d17",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   ".claude/settings.json": {
     "mtime": 1786267331.7574985,
-    "ast_hash": "d6921475a23253c7bd3d53b4f404ca66",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   ".claude/skills/implement-nextjs/evals/evals.json": {
     "mtime": 1777450364.1909268,
-    "ast_hash": "c794c48a3c96498112be79cc5cd6253b",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   ".claude/skills/implement-stripe/assets/checkout_session.template.json": {
     "mtime": 1777713473.5523765,
-    "ast_hash": "17d5e140486b76ac7ff97dbaf1ea1078",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   ".codex/launch.json": {
     "mtime": 1781172498.683929,
-    "ast_hash": "f0823d85f96a9cce264cd2d42ab55d17",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   ".codex/settings.json": {
     "mtime": 1783726896.4830608,
-    "ast_hash": "62996438b9db2c22cfbf5e007adaa183",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   ".codex/settings.local.json": {
     "mtime": 1780927466.5749502,
-    "ast_hash": "e52a58ea1e0315e91775b72098779750",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   ".codex/skills/implement-nextjs/evals/evals.json": {
     "mtime": 1777450364.1909268,
-    "ast_hash": "c794c48a3c96498112be79cc5cd6253b",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   ".codex/skills/implement-stripe/assets/checkout_session.template.json": {
     "mtime": 1777713473.5523765,
-    "ast_hash": "17d5e140486b76ac7ff97dbaf1ea1078",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   ".github/skills/implement-nextjs/evals/evals.json": {
     "mtime": 1777450364.1909268,
-    "ast_hash": "c794c48a3c96498112be79cc5cd6253b",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   ".github/skills/implement-stripe/assets/checkout_session.template.json": {
     "mtime": 1777713473.5523765,
-    "ast_hash": "17d5e140486b76ac7ff97dbaf1ea1078",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   ".vscode/settings.json": {
     "mtime": 1775872078.0990345,
-    "ast_hash": "6bd94cc63281c595ddf942cabe3cc9ea",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   ".vscode/tasks.json": {
     "mtime": 1768118846.4116716,
-    "ast_hash": "4f00539c337a0a0c4e0c1b8296faccba",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   "migrations/080_stripe_order_reconciliation.sql": {
@@ -7641,7 +7641,7 @@
   },
   "skills-lock.json": {
     "mtime": 1778295488.241915,
-    "ast_hash": "561755e28c9cea84ffed77856eae91a6",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   ".claude/skills/security-check/scripts/audit.ps1": {
@@ -8352,6 +8352,11 @@
   "e2e/FR-HOME-020-hero-scroll-color.spec.ts": {
     "mtime": 1787373412.9333968,
     "ast_hash": "cf89d60acc09d80a05543d5184b447d7",
+    "semantic_hash": ""
+  },
+  "e2e/FR-ITEM-032-filter-initial-open-state.spec.ts": {
+    "mtime": 1787377090.7738743,
+    "ast_hash": "f30aa3c57af91e2fe78dce56331faa90",
     "semantic_hash": ""
   }
 }

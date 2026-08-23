@@ -605,8 +605,8 @@
     "semantic_hash": ""
   },
   "src/app/item/[id]/ItemDetailClient.tsx": {
-    "mtime": 1787474064.5679069,
-    "ast_hash": "47f7559ef4978f70c682c08599f26a61",
+    "mtime": 1786922255.1555748,
+    "ast_hash": "dbf8680e3b2278b10ecc1a94db17ab45",
     "semantic_hash": ""
   },
   "src/app/item/[id]/page.tsx": {
@@ -4690,8 +4690,8 @@
     "semantic_hash": ""
   },
   "docs/2_Specs/spec.md": {
-    "mtime": 1787474169.817593,
-    "ast_hash": "7df476d0866f2aa518699c55422d8bda",
+    "mtime": 1787377062.6466646,
+    "ast_hash": "442208da2d812770a6f0b0fc81e51c96",
     "semantic_hash": ""
   },
   "docs/3_ArchitectureDesign/auth-structure.md": {
@@ -7571,67 +7571,67 @@
   },
   ".claude/launch.json": {
     "mtime": 1781172498.683929,
-    "ast_hash": "",
+    "ast_hash": "f0823d85f96a9cce264cd2d42ab55d17",
     "semantic_hash": ""
   },
   ".claude/settings.json": {
     "mtime": 1786267331.7574985,
-    "ast_hash": "",
+    "ast_hash": "d6921475a23253c7bd3d53b4f404ca66",
     "semantic_hash": ""
   },
   ".claude/skills/implement-nextjs/evals/evals.json": {
     "mtime": 1777450364.1909268,
-    "ast_hash": "",
+    "ast_hash": "c794c48a3c96498112be79cc5cd6253b",
     "semantic_hash": ""
   },
   ".claude/skills/implement-stripe/assets/checkout_session.template.json": {
     "mtime": 1777713473.5523765,
-    "ast_hash": "",
+    "ast_hash": "17d5e140486b76ac7ff97dbaf1ea1078",
     "semantic_hash": ""
   },
   ".codex/launch.json": {
     "mtime": 1781172498.683929,
-    "ast_hash": "",
+    "ast_hash": "f0823d85f96a9cce264cd2d42ab55d17",
     "semantic_hash": ""
   },
   ".codex/settings.json": {
     "mtime": 1783726896.4830608,
-    "ast_hash": "",
+    "ast_hash": "62996438b9db2c22cfbf5e007adaa183",
     "semantic_hash": ""
   },
   ".codex/settings.local.json": {
     "mtime": 1780927466.5749502,
-    "ast_hash": "",
+    "ast_hash": "e52a58ea1e0315e91775b72098779750",
     "semantic_hash": ""
   },
   ".codex/skills/implement-nextjs/evals/evals.json": {
     "mtime": 1777450364.1909268,
-    "ast_hash": "",
+    "ast_hash": "c794c48a3c96498112be79cc5cd6253b",
     "semantic_hash": ""
   },
   ".codex/skills/implement-stripe/assets/checkout_session.template.json": {
     "mtime": 1777713473.5523765,
-    "ast_hash": "",
+    "ast_hash": "17d5e140486b76ac7ff97dbaf1ea1078",
     "semantic_hash": ""
   },
   ".github/skills/implement-nextjs/evals/evals.json": {
     "mtime": 1777450364.1909268,
-    "ast_hash": "",
+    "ast_hash": "c794c48a3c96498112be79cc5cd6253b",
     "semantic_hash": ""
   },
   ".github/skills/implement-stripe/assets/checkout_session.template.json": {
     "mtime": 1777713473.5523765,
-    "ast_hash": "",
+    "ast_hash": "17d5e140486b76ac7ff97dbaf1ea1078",
     "semantic_hash": ""
   },
   ".vscode/settings.json": {
     "mtime": 1775872078.0990345,
-    "ast_hash": "",
+    "ast_hash": "6bd94cc63281c595ddf942cabe3cc9ea",
     "semantic_hash": ""
   },
   ".vscode/tasks.json": {
     "mtime": 1768118846.4116716,
-    "ast_hash": "",
+    "ast_hash": "4f00539c337a0a0c4e0c1b8296faccba",
     "semantic_hash": ""
   },
   "migrations/080_stripe_order_reconciliation.sql": {
@@ -7641,7 +7641,7 @@
   },
   "skills-lock.json": {
     "mtime": 1778295488.241915,
-    "ast_hash": "",
+    "ast_hash": "561755e28c9cea84ffed77856eae91a6",
     "semantic_hash": ""
   },
   ".claude/skills/security-check/scripts/audit.ps1": {
@@ -8357,11 +8357,6 @@
   "e2e/FR-ITEM-032-filter-initial-open-state.spec.ts": {
     "mtime": 1787377090.7738743,
     "ast_hash": "f30aa3c57af91e2fe78dce56331faa90",
-    "semantic_hash": ""
-  },
-  "e2e/FR-ITEM-DETAIL-039-wishlist-button-below-cart.spec.ts": {
-    "mtime": 1787474501.6398375,
-    "ast_hash": "98f121f17ba76063fbbc02047a4cdeb2",
     "semantic_hash": ""
   }
 }
