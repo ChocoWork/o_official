@@ -1,1 +1,0 @@
-{"nodes": [{"id": "$graphify-root$_migrations_067_add_finance_entry_type_sql", "label": "067_add_finance_entry_type.sql", "file_type": "code", "source_file": "migrations/067_add_finance_entry_type.sql", "source_location": null}], "edges": []}

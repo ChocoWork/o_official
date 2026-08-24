@@ -1,1 +1,0 @@
-{"nodes": [{"id": "$graphify-root$_migrations_056_make_news_image_url_nullable_sql", "label": "056_make_news_image_url_nullable.sql", "file_type": "code", "source_file": "migrations/056_make_news_image_url_nullable.sql", "source_location": null}], "edges": []}

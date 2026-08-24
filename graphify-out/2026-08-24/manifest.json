@@ -605,8 +605,8 @@
     "semantic_hash": ""
   },
   "src/app/item/[id]/ItemDetailClient.tsx": {
-    "mtime": 1787564987.216038,
-    "ast_hash": "903eb0153186b89e397e0147431b025a",
+    "mtime": 1787566521.4646063,
+    "ast_hash": "b7a530d331616c2a431951ec395dc496",
     "semantic_hash": ""
   },
   "src/app/item/[id]/page.tsx": {
@@ -3800,8 +3800,8 @@
     "semantic_hash": ""
   },
   "e2e/FR-ITEM-DETAIL-032-description-font-size.spec.ts": {
-    "mtime": 1784435081.8724153,
-    "ast_hash": "e6a572e5fe553a09c551342660c76868",
+    "mtime": 1787566273.403736,
+    "ast_hash": "a9f3b452e30b4d4f5e2faa4b7776a1c3",
     "semantic_hash": ""
   },
   "e2e/FR-ITEM-DETAIL-033-tablet-swipe-carousel.spec.ts": {
@@ -4690,8 +4690,8 @@
     "semantic_hash": ""
   },
   "docs/2_Specs/spec.md": {
-    "mtime": 1787564638.5392694,
-    "ast_hash": "7a4055ec2d7983b17a4662872bf2db0c",
+    "mtime": 1787566288.1951284,
+    "ast_hash": "fabec9c284aba0d3d117760fcbf4aa4c",
     "semantic_hash": ""
   },
   "docs/3_ArchitectureDesign/auth-structure.md": {
@@ -8392,6 +8392,11 @@
   "src/components/ui/SpecList/SpecList_types.ts": {
     "mtime": 1787564484.6912913,
     "ast_hash": "e6610fa7dbb024e511b266ef8c150fdf",
+    "semantic_hash": ""
+  },
+  "e2e/FR-ITEM-DETAIL-043-spec-list-label-value-typography.spec.ts": {
+    "mtime": 1787566303.3635263,
+    "ast_hash": "d1999df0b3e93014cf8fddea0755f634",
     "semantic_hash": ""
   }
 }

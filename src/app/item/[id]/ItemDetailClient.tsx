@@ -210,6 +210,13 @@ export default function ItemDetailClient({ id }: Props) {
     fetchItem();
   }, [id]);
 
+  // 商品データ取得でページ高さが変わると、ブラウザのスクロール復元により
+  // 少し下にスクロールした位置で描画されることがある。読み込み直後は最上部に戻す。
+  useLayoutEffect(() => {
+    if (!item) return;
+    window.scrollTo(0, 0);
+  }, [item]);
+
   useLayoutEffect(() => {
     if (!item) return;
     const el = cartButtonRef.current;
