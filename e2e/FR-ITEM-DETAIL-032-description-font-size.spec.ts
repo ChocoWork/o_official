@@ -53,11 +53,15 @@ test.describe('FR-ITEM-DETAIL-032 description font size', () => {
         });
       expect(actual).toBeCloseTo(expected, 1);
 
-      // AC-02: 説明文が仕様テーブルの値テキスト（--lk-size-xs）より小さい
-      const materialFontSize = await page
-        .getByTestId('item-material')
+      // AC-02: 説明文が仕様テーブルの値テキスト（--lk-size-xs）より小さい。
+      // FREQ-290 で MATERIAL は SpecList へ移り、FREQ-291 でラベルと同じ字面に
+      // 揃えたため、比較対象は仕様テーブルに残る SIZE の値テキストとする。
+      const sizeValueFontSize = await page
+        .getByTestId('item-spec-table')
+        .locator('button')
+        .last()
         .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
-      expect(actual).toBeLessThan(materialFontSize);
+      expect(actual).toBeLessThan(sizeValueFontSize);
     });
   }
 });

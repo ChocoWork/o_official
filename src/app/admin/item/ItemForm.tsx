@@ -75,6 +75,9 @@ export function ItemForm({
   const [material, setMaterial] = useState(initialValues?.material ?? "");
   const [madeIn, setMadeIn] = useState(initialValues?.origin ?? "");
   const [care, setCare] = useState(initialValues?.care ?? "");
+  const [productNote, setProductNote] = useState(
+    initialValues?.productNote ?? "",
+  );
 
   // load preview urls after mount or when initialValues change
   useEffect(() => {
@@ -333,6 +336,7 @@ export function ItemForm({
       formData.append("material", material.trim());
       formData.append("origin", madeIn.trim());
       formData.append("care", care.trim());
+      formData.append("product_note", productNote.trim());
       formData.append("status", status);
       formData.append("sizes", JSON.stringify(normalizedSizes));
       formData.append("colors", JSON.stringify(normalizedColors));
@@ -587,6 +591,15 @@ export function ItemForm({
             type="text"
             value={care}
             onChange={(e) => setCare(e.target.value)}
+            size="md"
+          />
+
+          <TextField
+            label="PRODUCT NOTE（商品の注意書き）"
+            placeholder="例: 素材の特性上、摩擦により毛羽立ちが生じる場合があります。"
+            type="text"
+            value={productNote}
+            onChange={(e) => setProductNote(e.target.value)}
             size="md"
           />
 

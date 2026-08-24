@@ -29,7 +29,7 @@ test.describe('FR-ITEM-DETAIL-036 color swatch fill size', () => {
     { name: 'tablet', width: 768, height: 1024 },
     { name: 'desktop', width: 1280, height: 800 },
   ]) {
-    test(`FREQ-174: ${viewport.name}（${viewport.width}px）で外枠24pxのまま塗り四角が約16pxである`, async ({
+    test(`FREQ-296: ${viewport.name}（${viewport.width}px）でスウォッチが外形23px・塗り19pxである`, async ({
       page,
     }) => {
       await page.setViewportSize({
@@ -44,15 +44,15 @@ test.describe('FR-ITEM-DETAIL-036 color swatch fill size', () => {
         .first();
       await expect(swatch).toBeVisible();
 
-      // AC-01: 外枠は 24×24px のまま
+      // AC-01: 外形は 23×23px（1px 枠 + 1px 余白）
       const swatchBox = await box(swatch);
-      expect(swatchBox.width).toBeCloseTo(24, 0);
-      expect(swatchBox.height).toBeCloseTo(24, 0);
+      expect(swatchBox.width).toBeCloseTo(23, 0);
+      expect(swatchBox.height).toBeCloseTo(23, 0);
 
-      // AC-02: 内側の塗りつぶし四角が約 16×16px
+      // AC-02: 内側の塗りつぶし四角が 19×19px
       const fillBox = await box(swatch.locator('span'));
-      expect(fillBox.width).toBeCloseTo(16, 0);
-      expect(fillBox.height).toBeCloseTo(16, 0);
+      expect(fillBox.width).toBeCloseTo(19, 0);
+      expect(fillBox.height).toBeCloseTo(19, 0);
     });
   }
 });

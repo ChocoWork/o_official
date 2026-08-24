@@ -15,6 +15,7 @@ import {
   carouselIndexFromScroll,
   scrollCarouselTo,
 } from "@/features/items/components/ItemImageCarousel";
+import { SpecList } from "@/components/ui/SpecList/SpecList";
 
 type Props = { id: string };
 
@@ -49,7 +50,7 @@ function ItemActionButtons({
       <Button
         onClick={onAddToCart}
         disabled={addingToCart || isSoldOut}
-        size="2xs"
+        size="xs"
         className="w-full"
       >
         {isSoldOut ? (
@@ -74,7 +75,7 @@ function ItemActionButtons({
         onClick={onToggleWishlist}
         disabled={togglingWishlist}
         variant="secondary"
-        size="2xs"
+        size="xs"
         aria-label="Add to wishlist"
         className="aspect-square px-0 hover:bg-transparent hover:text-current md:aspect-auto md:w-full md:px-4"
       >
@@ -408,6 +409,7 @@ export default function ItemDetailClient({ id }: Props) {
   const materialText = item.material?.trim() || parseDetailValue("Material");
   const madeInText = item.origin?.trim() || parseDetailValue("Made in");
   const careText = item.care?.trim() || "";
+  const productNoteText = item.product_note?.trim() || "";
   const itemNameStyle = {
     fontSize: "var(--item-detail-name-size)",
     lineHeight: 1.5,
@@ -416,16 +418,41 @@ export default function ItemDetailClient({ id }: Props) {
   const priceTextStyle = {
     fontFamily: "acumin-pro, sans-serif",
     fontSize: "var(--item-detail-price-size)",
-    letterSpacing: "0.07em",
-  } as const;
-  const optionTitleStyle = {
-    fontSize: "var(--lk-size-2xs)",
-    letterSpacing: "0.07em",
   } as const;
   const bodyTextStyle = {
     fontSize: "var(--lk-size-xs)",
     lineHeight: 1.65,
   } as const;
+  // FREQ-290: ADD TO WISHLIST の下に置く仕様リストの行。値のあるものだけ並べる
+  const specRows = [
+    materialText
+      ? {
+          label: "MATERIAL",
+          value: <span data-testid="item-material">{materialText}</span>,
+        }
+      : null,
+    careText
+      ? {
+          label: "CARE",
+          value: <span data-testid="item-care">{careText}</span>,
+        }
+      : null,
+    madeInText
+      ? {
+          label: "MADE IN",
+          value: <span data-testid="item-made-in">{madeInText}</span>,
+        }
+      : null,
+    // FREQ-293: 商品ごとの注意書き
+    productNoteText
+      ? {
+          label: "PRODUCT NOTE",
+          value: <span data-testid="item-product-note">{productNoteText}</span>,
+        }
+      : null,
+  ].filter(
+    (row): row is { label: string; value: React.ReactElement } => row !== null,
+  );
   // 説明文は本文より1段階小さくする (FREQ-170)
   const descriptionTextStyle = {
     fontSize: "var(--lk-size-2xs)",
@@ -440,19 +467,19 @@ export default function ItemDetailClient({ id }: Props) {
         >
           {/* md〜lg 未満の画像列は幅基準（w-full + aspect-2/3）なので、上限がないと
               高さが viewport を超えて画像下端が見切れる。lg の
-              h-[min(48rem,calc(100svh-5rem))] と同じ考え方を、2:3 の枠を保ったまま
+              h-[min(48rem,calc(100svh-7rem))] と同じ考え方を、2:3 の枠を保ったまま
               幅側から効かせる（32rem=48rem*2/3、6rem=画像上端のオフセット 4rem＋
               インジケータと下余白）。56% は狭い md（768px 付近）で情報列の
               最小幅 18.125rem と右端の余白を確保するための上限。余った幅は情報列が使う。
               画像列は -ml-5 で 20px 左にはみ出すため、画像とテキストの見た目の間隔は
               gap-x-3(12px) + 20px = 32px。右端も pr-3(12px) + ページの px-5(20px) で
               同じ 32px に揃える。lg 以上は情報列の上限を画像の幅
-              （h-[min(48rem,calc(100svh-5rem))] の 2:3 から逆算＝
-              min(32rem,calc((100svh-5rem)*2/3))）に合わせ、横幅に余裕があるときは
+              （h-[min(48rem,calc(100svh-7rem))] の 2:3 から逆算＝
+              min(32rem,calc((100svh-7rem)*2/3))）に合わせ、横幅に余裕があるときは
               画像と同じ幅まで広げる。 */}
           <div
             data-testid="item-detail-layout"
-            className="grid grid-cols-1 gap-y-3.5 md:-ml-5 md:grid-cols-[min(32rem,56%,calc((100svh-6rem)*2/3))_minmax(18.125rem,1fr)] md:gap-x-3 md:gap-y-0 md:pr-3 lg:ml-0 lg:pr-0 lg:grid-cols-[auto_minmax(18.125rem,min(32rem,calc((100svh-5rem)*2/3)))] lg:justify-center lg:gap-x-14"
+            className="grid grid-cols-1 gap-y-3.5 md:-ml-5 md:grid-cols-[min(32rem,56%,calc((100svh-6rem)*2/3))_minmax(18.125rem,1fr)] md:gap-x-3 md:gap-y-0 md:pr-3 lg:ml-0 lg:pr-0 lg:grid-cols-[auto_minmax(18.125rem,min(32rem,calc((100svh-7rem)*2/3)))] lg:justify-center lg:gap-x-14"
           >
             <div className="md:-ml-5 md:w-full lg:ml-0">
               {/* モバイル: 横スクロールカルーセル (FREQ-162)
@@ -629,7 +656,7 @@ export default function ItemDetailClient({ id }: Props) {
                 <div className="hidden flex-col lg:flex lg:w-auto lg:flex-none">
                   <div
                     data-testid="item-detail-main-image-frame"
-                    className="@container relative aspect-2/3 overflow-hidden bg-white lg:h-[min(48rem,calc(100svh-5rem))] lg:w-auto"
+                    className="@container relative aspect-2/3 overflow-hidden bg-white lg:h-[min(48rem,calc(100svh-7rem))] lg:w-auto"
                   >
                     {mainImage ? (
                       <Image
@@ -724,19 +751,20 @@ export default function ItemDetailClient({ id }: Props) {
                 </div>
               )}
 
-              {/* 商品仕様テーブル: COLOR / SIZE / MATERIAL / CARE / MADE IN (FREQ-153)
-                  ラベル列は最長ラベルの max-content 幅を全行で共有し、値列の開始位置を揃える (FREQ-166) */}
+              {/* 商品仕様テーブル: カラー・サイズ選択 (FREQ-153)
+                  FREQ-292: COLOR / SIZE のラベルは表示しない（各行は全幅） */}
               <div
                 data-testid="item-spec-table"
                 className="grid grid-cols-[max-content_1fr] items-center gap-x-8 gap-y-3.5"
               >
-                {/* カラー選択: 色付きスウォッチ。選択中は黒枠 (FR-ITEM-DETAIL-008: aria-pressed) */}
+                {/* カラー選択: 参考サイト（roheframes）の実測に合わせ、外形 23px
+                    （1px 枠 + 1px 余白）・塗り 19px・間隔 15px。選択中は黒枠
+                    (FREQ-296 / FR-ITEM-DETAIL-008: aria-pressed) */}
                 {item.colors &&
                   Array.isArray(item.colors) &&
                   item.colors.length > 0 && (
                     <>
-                      <p style={optionTitleStyle}>COLOR</p>
-                      <div className="flex gap-2 flex-wrap">
+                      <div className="col-span-2 flex gap-[15px] flex-wrap">
                         {(
                           item.colors as unknown as Array<{
                             hex: string;
@@ -753,14 +781,14 @@ export default function ItemDetailClient({ id }: Props) {
                             aria-label={colorOption.name}
                             aria-pressed={color === colorOption.name}
                             title={colorOption.name}
-                            className={`h-6 w-6 border p-0.75 cursor-pointer transition-colors duration-200 focus-visible:outline-none ${
+                            className={`h-[23px] w-[23px] border p-px cursor-pointer transition-colors duration-200 focus-visible:outline-none ${
                               color === colorOption.name
                                 ? "border-black"
-                                : "border-transparent hover:border-black/30"
+                                : "border-[#f1f0ed] hover:border-black/30"
                             }`}
                           >
                             <span
-                              className="block w-full h-full border border-black/10"
+                              className="block w-full h-full"
                               style={{ backgroundColor: colorOption.hex }}
                             />
                           </button>
@@ -772,8 +800,7 @@ export default function ItemDetailClient({ id }: Props) {
                 {/* サイズ選択: テキスト表示。選択中は下線 (FR-ITEM-DETAIL-008: aria-pressed) */}
                 {item.sizes && item.sizes.length > 0 && (
                   <>
-                    <p style={optionTitleStyle}>SIZE</p>
-                    <div className="flex flex-wrap gap-4">
+                    <div className="col-span-2 flex flex-wrap gap-4">
                       {item.sizes.map((sizeOption: string) => (
                         <button
                           key={sizeOption}
@@ -794,33 +821,6 @@ export default function ItemDetailClient({ id }: Props) {
                         </button>
                       ))}
                     </div>
-                  </>
-                )}
-
-                {materialText && (
-                  <>
-                    <p style={optionTitleStyle}>MATERIAL</p>
-                    <p data-testid="item-material" style={bodyTextStyle}>
-                      {materialText}
-                    </p>
-                  </>
-                )}
-
-                {careText && (
-                  <>
-                    <p style={optionTitleStyle}>CARE</p>
-                    <p data-testid="item-care" style={bodyTextStyle}>
-                      {careText}
-                    </p>
-                  </>
-                )}
-
-                {madeInText && (
-                  <>
-                    <p style={optionTitleStyle}>MADE IN</p>
-                    <p data-testid="item-made-in" style={bodyTextStyle}>
-                      {madeInText}
-                    </p>
                   </>
                 )}
               </div>
@@ -844,6 +844,17 @@ export default function ItemDetailClient({ id }: Props) {
                   onToggleWishlist={handleToggleWishlist}
                 />
               </div>
+
+              {/* FREQ-290: MATERIAL / CARE / MADE IN は選択操作ではないため
+                  仕様テーブルから切り離し、ADD TO WISHLIST の下に罫線付きの
+                  仕様リストとして置く */}
+              {specRows.length > 0 && (
+                <SpecList
+                  data-testid="item-spec-list"
+                  rows={specRows}
+                  size="sm"
+                />
+              )}
             </div>
           </div>
         </div>

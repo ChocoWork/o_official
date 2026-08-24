@@ -35,6 +35,7 @@ export type ItemResponse = {
   origin?: string | null;
   sewing_region?: string | null;
   care?: string | null;
+  product_note?: string | null;
   season?: 'SS' | 'AW' | null;
   status: ItemStatus;
   stock_quantity?: number | null;
@@ -54,6 +55,7 @@ export interface ItemFormValues {
   origin: string;
   sewingRegion?: string;
   care: string;
+  productNote: string;
   season?: SeasonValue;
   status: ItemStatus;
   stockQuantity?: number | null;

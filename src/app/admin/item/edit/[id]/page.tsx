@@ -52,6 +52,7 @@ export default function AdminItemEditPage() {
           material: item.material ?? '',
           origin: item.origin ?? '',
           care: item.care ?? '',
+          productNote: item.product_note ?? '',
           status: item.status,
           previewUrls: existingImages,
         };

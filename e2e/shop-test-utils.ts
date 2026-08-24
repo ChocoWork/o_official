@@ -43,6 +43,9 @@ export type MockItemDetail = {
   sizes: string[];
   product_details: string[];
   material?: string | null;
+  care?: string | null;
+  origin?: string | null;
+  product_note?: string | null;
   stockStatus?: 'in_stock' | 'low_stock' | 'sold_out' | 'unknown';
   stock_quantity?: number | null;
 };

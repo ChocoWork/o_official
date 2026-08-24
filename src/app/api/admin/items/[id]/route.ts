@@ -20,6 +20,7 @@ const updateItemSchema = z.object({
   material: z.string().trim().max(200).optional().default(''),
   origin: z.string().trim().max(200).optional().default(''),
   care: z.string().trim().max(500).optional().default(''),
+  product_note: z.string().trim().max(500).optional().default(''),
   status: itemStatusSchema,
   sizes: z.array(z.string().trim().min(1).max(20)).min(1),
   colors: z.array(colorSchema).min(1),
@@ -107,6 +108,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       material: formData.get('material') ?? '',
       origin: formData.get('origin') ?? '',
       care: formData.get('care') ?? '',
+      product_note: formData.get('product_note') ?? '',
       status: formData.get('status'),
       sizes: parseJsonField(formData.get('sizes'), z.array(z.string())),
       colors: parseJsonField(formData.get('colors'), z.array(colorSchema)),
@@ -147,6 +149,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       material: parsedPayload.data.material || null,
       origin: parsedPayload.data.origin || null,
       care: parsedPayload.data.care || null,
+      product_note: parsedPayload.data.product_note || null,
       status: parsedPayload.data.status,
     };
 

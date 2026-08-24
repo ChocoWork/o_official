@@ -111,15 +111,23 @@ export default async function LookDetailPage({ params }: Props) {
   return (
     <div>
       <div className="element-width">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8.5 lg:gap-13.75">
-          <div className="space-y-3.25">
+        {/* ITEM 詳細ページと同じ列構成。md〜lg 未満は画像列を幅基準（w-full + aspect-2/3）で
+            組むため、viewport 高を超えないよう幅側に上限を置く（32rem=48rem*2/3）。
+            画像列は -ml-5 で 20px 左にはみ出すので、見た目の間隔は gap-x-3(12px)+20px=32px、
+            右端も pr-3(12px)+ページの px-5(20px) で 32px に揃う。lg 以上は情報列の上限を
+            画像の幅（高さ min(48rem,100svh-7rem) の 2:3 から逆算）に合わせる。 */}
+        <div
+          data-testid="look-detail-layout"
+          className="grid grid-cols-1 gap-y-8.5 md:-ml-5 md:grid-cols-[min(32rem,56%,calc((100svh-6rem)*2/3))_minmax(18.125rem,1fr)] md:gap-x-3 md:gap-y-0 md:pr-3 lg:ml-0 lg:pr-0 lg:grid-cols-[auto_minmax(18.125rem,min(32rem,calc((100svh-7rem)*2/3)))] lg:justify-center lg:gap-x-14"
+        >
+          <div className="md:-ml-5 md:w-full lg:ml-0">
             <LookImageGallery
               theme={currentLook.theme}
               imageUrls={currentLook.imageUrls}
             />
           </div>
 
-          <div className="lg:pt-8.5 space-y-8.5">
+          <div className="space-y-8.5 md:w-full md:self-start lg:pt-8.5">
             <div>
               <p
                 className="text-[#474747] tracking-wider mb-3.25"

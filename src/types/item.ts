@@ -20,6 +20,8 @@ export type Item = {
   sewing_region?: string | null;
   /** ケア方法 */
   care?: string | null;
+  /** 商品ごとの注意書き（PRODUCT NOTE） */
+  product_note?: string | null;
   /** コレクション。SS / AW のみ（年は持たない） */
   season?: 'SS' | 'AW' | null;
   status?: 'private' | 'published';

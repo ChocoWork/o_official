@@ -32,7 +32,6 @@ for (const viewport of [
 
       const table = specTable(page);
       await expect(table).toBeVisible();
-      await expect(table.getByText('COLOR', { exact: true })).toBeVisible();
 
       // スウォッチボタン: aria-pressed を持ち、テキストではなく色付き四角を表示
       const swatches = table.locator('button[aria-pressed][aria-label]');
@@ -58,7 +57,7 @@ for (const viewport of [
       test.skip(!ok, '公開商品データがないためスキップ');
 
       const table = specTable(page);
-      await expect(table.getByText('SIZE', { exact: true })).toBeVisible();
+      await expect(table).toBeVisible();
 
       // SIZE 行のボタン（aria-label なし・テキストのみ）
       const sizeButtons = table.locator(
@@ -85,7 +84,8 @@ for (const viewport of [
       test.skip(!ok, '公開商品データがないためスキップ');
 
       // 対象商品の material / origin 相当データ有無を API で確認
-      const table = specTable(page);
+      // FREQ-290: MATERIAL / CARE / MADE IN は仕様テーブルから SpecList へ移動した
+      const table = page.getByTestId('item-spec-list');
       const materialRow = table.getByTestId('item-material');
       const madeInRow = table.getByTestId('item-made-in');
       const careRow = table.getByTestId('item-care');

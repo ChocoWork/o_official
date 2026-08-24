@@ -24,9 +24,9 @@ async function openItemDetail(page: Page): Promise<void> {
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 }
 
-async function specTableGeometry(page: Page) {
-  return page.evaluate(() => {
-    const table = document.querySelector('[data-testid="item-spec-table"]');
+async function specTableGeometry(page: Page, testId: string) {
+  return page.evaluate((id) => {
+    const table = document.querySelector(`[data-testid="${id}"]`);
     if (!table) return null;
     const cells = [...table.children] as HTMLElement[];
     const rows: Array<{
@@ -50,7 +50,7 @@ async function specTableGeometry(page: Page) {
       });
     }
     return rows;
-  });
+  }, testId);
 }
 
 for (const viewport of [
@@ -66,22 +66,28 @@ for (const viewport of [
     }) => {
       await openItemDetail(page);
 
-      const rows = await specTableGeometry(page);
-      expect(rows).not.toBeNull();
-      const labels = rows!.map((row) => row.label);
-      expect(labels).toEqual(['COLOR', 'SIZE', 'MATERIAL', 'MADE IN']);
+      // FREQ-290: MATERIAL / MADE IN は SpecList へ移動した
+      // FREQ-292: 仕様テーブルの COLOR / SIZE ラベルは廃止したため SpecList のみ検証
+      const listRows = await specTableGeometry(page, 'item-spec-list');
+      expect(listRows).not.toBeNull();
+      expect(listRows!.map((row) => row.label)).toEqual([
+        'MATERIAL',
+        'MADE IN',
+      ]);
 
-      for (const row of rows!) {
+      for (const row of listRows!) {
         // AC-01: ラベルテキストが値セルへ食い込まない
         expect(row.labelTextRight).toBeLessThanOrEqual(row.valueLeft);
         // AC-02: ラベルは1行（MADE IN が折り返されない）
         expect(row.labelLineCount).toBe(1);
       }
 
-      // AC-03: 全行の値セルの左端が一致（整列）
-      const valueLefts = rows!.map((row) => row.valueLeft);
-      for (const left of valueLefts) {
-        expect(left).toBeCloseTo(valueLefts[0], 1);
+      // AC-03: 各コンテナ内で値セルの左端が一致（整列）
+      for (const group of [listRows!]) {
+        const valueLefts = group.map((row) => row.valueLeft);
+        for (const left of valueLefts) {
+          expect(left).toBeCloseTo(valueLefts[0], 1);
+        }
       }
     });
   });

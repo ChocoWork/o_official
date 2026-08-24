@@ -1,0 +1,66 @@
+/*
+ * SpecList.css
+ *
+ * ラベル / 値の 2 列を罫線で区切って並べる仕様リスト。
+ * Stats.css と同様、φ(1.618) / √φ(1.272) を軸に --ui-font-size から全寸法を導出し直値を排除。
+ *
+ * デザイン4原則:
+ *   近接  — 1行の中はラベルと値を φ 由来の gap で束ね、行間は罫線 + padding で分離。
+ *   整列  — ラベル列の幅を全行で共有し、値の左端を 1 本の軸に揃える。
+ *   反復  — 全行が同じ padding / 罫線 / タイポトークンを共有する。
+ *   対比  — ラベルと値は同じサイズ・色。対比は字間（label のみ tracking）と薄い罫線で作る。
+ */
+
+[data-ui-spec-list] {
+  --_font-size: var(--ui-font-size, var(--lk-size-md));
+
+  /* タイポ: label = font ÷ √φ。value は label と同じ字面（サイズ・色）に揃える */
+  --_label-size: calc(var(--_font-size) / var(--sqrt-phi));
+  --_value-size: var(--_label-size);
+
+  /* 余白（近接）: 行の上下 padding = font × √φ、列間 gap = font × φ */
+  --_row-pad-y: calc(var(--_font-size) * var(--sqrt-phi));
+  --_column-gap: calc(var(--_font-size) * var(--phi));
+
+  /* 整列: ラベル列の幅。値の左端をコンテナ幅の 40% に揃える。
+     ラベルが 40% に収まらない狭い幅では max-content まで広げて折り返しを防ぐ */
+  --_label-width: minmax(max-content, 40%);
+
+  /* 対比: 罫線・配色 */
+  --_rule-color: rgba(0, 0, 0, 0.1);
+  --_label-color: #000;
+  --_value-color: var(--_label-color);
+  --_label-tracking: 0.1em;
+
+  display: grid;
+  grid-template-columns: var(--_label-width) minmax(0, 1fr);
+  border-bottom: 1px solid var(--_rule-color);
+}
+
+/* 行: ラベルと値をそれぞれ grid のセルとして置き、上罫線で反復的に区切る */
+[data-ui-spec-list-label],
+[data-ui-spec-list-value] {
+  padding-top: var(--_row-pad-y);
+  padding-bottom: var(--_row-pad-y);
+  border-top: 1px solid var(--_rule-color);
+  line-height: var(--phi);
+}
+
+[data-ui-spec-list-label] {
+  padding-right: var(--_column-gap);
+  font-size: var(--_label-size);
+  letter-spacing: var(--_label-tracking);
+  color: var(--_label-color);
+}
+
+[data-ui-spec-list-value] {
+  margin: 0; /* dd の既定マージンを打ち消す */
+  font-size: var(--_value-size);
+  color: var(--_value-color);
+}
+
+@media (forced-colors: active) {
+  [data-ui-spec-list] {
+    forced-color-adjust: auto;
+  }
+}

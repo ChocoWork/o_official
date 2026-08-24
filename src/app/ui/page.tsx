@@ -34,6 +34,7 @@ import { SheetMedium } from "@/components/ui/SheetMedium/SheetMedium";
 import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
 import { Slider } from "@/components/ui/Slider/Slider";
 import { Stats } from "@/components/ui/Stats/Stats";
+import { SpecList } from "@/components/ui/SpecList/SpecList";
 import { StatusBadge } from "@/components/ui/StatusBadge/StatusBadge";
 import { Stepper } from "@/components/ui/Stepper/Stepper";
 import { SwitchToggle } from "@/components/ui/SwitchToggle/SwitchToggle";
@@ -1459,6 +1460,31 @@ export default function Page() {
               }))}
               size={demoSize}
             />
+          </section>
+
+          {/* --- SpecList --- */}
+          <section>
+            <h2
+              className="text-2xl text-black mb-8 tracking-tight"
+              style={{ fontFamily: "Didot, serif" }}
+            >
+              SpecList
+            </h2>
+            <div className="max-w-md">
+              <SpecList
+                size={demoSize}
+                rows={[
+                  { label: "MATERIAL", value: "Wool 100%" },
+                  { label: "CARE", value: "Dry clean" },
+                  { label: "MADE IN", value: "JAPAN" },
+                  {
+                    label: "PRODUCT NOTE",
+                    value:
+                      "素材の特性上、摩擦により毛羽立ちが生じる場合があります。引っかかりにご注意ください。",
+                  },
+                ]}
+              />
+            </div>
           </section>
 
           {/* --- Banner / Alert --- */}
