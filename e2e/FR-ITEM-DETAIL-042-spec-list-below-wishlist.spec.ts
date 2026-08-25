@@ -76,9 +76,8 @@ test.describe('FR-ITEM-DETAIL-042 MATERIAL / CARE / MADE IN を WISHLIST ボタ�
       });
       await openItemDetail(page);
 
-      const wishlistButton = page
-        .getByTestId('item-actions-main')
-        .getByRole('button', { name: 'Add to wishlist' });
+      // FREQ-299: md 以上は ADD TO WISHLIST を廃したのでアクション群の下端を基準にする
+      const wishlistButton = page.getByTestId('item-actions-main');
       const material = page.getByTestId('item-material');
       await expect(material).toHaveText('Wool 100%');
 

@@ -45,6 +45,9 @@ async function typographyAndSpacing(
       const expectedTitleSize = getComputedStyle(probe).fontSize;
       probe.style.fontSize = priceToken;
       const expectedPriceSize = getComputedStyle(probe).fontSize;
+      // FREQ-300: 商品名↔説明文はグループ境界トークンで決まる（px 直値では持たない）
+      probe.style.marginTop = 'var(--lk-item-detail-section-gap)';
+      const expectedSectionGap = parseFloat(getComputedStyle(probe).marginTop);
       probe.remove();
 
       return {
@@ -61,6 +64,7 @@ async function typographyAndSpacing(
         layoutRowGap: layout ? getComputedStyle(layout).rowGap : null,
         expectedTitleSize,
         expectedPriceSize,
+        expectedSectionGap,
       };
     },
     { titleToken, priceToken },
@@ -77,7 +81,6 @@ for (const viewport of [
     titleToken: 'var(--lk-size-3xl)',
     priceToken: '1rem',
     priceRowMarginTop: '8px',
-    identityToDescriptionGap: 20,
     layoutRowGap: '0px',
   },
   {
@@ -87,7 +90,6 @@ for (const viewport of [
     titleToken: 'var(--lk-size-3xl)',
     priceToken: '1rem',
     priceRowMarginTop: '8px',
-    identityToDescriptionGap: 20,
     layoutRowGap: '0px',
   },
 ]) {
@@ -108,7 +110,7 @@ for (const viewport of [
       expect(result.priceSize).toBe(result.expectedPriceSize);
       expect(result.priceRowMarginTop).toBe(viewport.priceRowMarginTop);
       expect(result.identityToDescriptionGap).toBeCloseTo(
-        viewport.identityToDescriptionGap,
+        result.expectedSectionGap,
         0,
       );
       expect(result.layoutRowGap).toBe(viewport.layoutRowGap);

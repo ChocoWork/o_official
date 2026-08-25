@@ -102,9 +102,7 @@ export function CartItemRow({
                 <div className="w-4 h-4 flex items-center justify-center">
                   <i
                     className={`text-base ${
-                      isWishlisted
-                        ? "ri-heart-fill text-red-500"
-                        : "ri-heart-line"
+                      isWishlisted ? "ri-bookmark-fill" : "ri-bookmark-line"
                     }`}
                   />
                 </div>

@@ -121,7 +121,7 @@ export default function Page() {
   const bottomNavItems = [
     { key: "HOME", iconClass: "ri-home-line" },
     { key: "SEARCH", iconClass: "ri-search-line" },
-    { key: "WISHLIST", iconClass: "ri-heart-line" },
+    { key: "WISHLIST", iconClass: "ri-bookmark-line" },
     { key: "ACCOUNT", iconClass: "ri-user-line" },
   ] as const;
   const [activeBottomNav, setActiveBottomNav] =
@@ -509,7 +509,7 @@ export default function Page() {
                   aria-label="Add to wishlist"
                 >
                   <div className="w-4 h-4 flex items-center justify-center">
-                    <i className="ri-heart-line text-base"></i>
+                    <i className="ri-bookmark-line text-base"></i>
                   </div>
                 </Button>
               </div>

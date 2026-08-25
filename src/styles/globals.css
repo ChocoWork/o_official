@@ -222,6 +222,19 @@ body.admin-font-active
         (var(--lk-size-xs) * var(--lk-quarterstep-dec))
     )
   );
+
+  /* ITEM詳細ページ 情報カラムの近接ラダー（FREQ-300）
+     base ÷ φ  → 選択肢どうし（COLOR ↔ SIZE）
+     base      → 選択とアクション（SIZE ↔ ADD TO CART）
+     base × φ  → グループ境界（商品名 / 説明文 / 選択群 / 仕様リスト） */
+  --lk-item-detail-gap-base: var(--lk-size-xs);
+  --lk-item-detail-select-gap: calc(
+    var(--lk-item-detail-gap-base) / var(--phi)
+  );
+  --lk-item-detail-action-gap: var(--lk-item-detail-gap-base);
+  --lk-item-detail-section-gap: calc(
+    var(--lk-item-detail-gap-base) * var(--phi)
+  );
 }
 
 @media (min-width: 640px) {
@@ -233,6 +246,8 @@ body.admin-font-active
 @media (min-width: 768px) {
   :root {
     --site-header-height: 56px;
+    /* FREQ-300: md 以上は本文基準（--lk-size-md）でラダーを一段広げる */
+    --lk-item-detail-gap-base: var(--lk-size-md);
   }
 }
 

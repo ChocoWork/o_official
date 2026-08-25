@@ -238,7 +238,7 @@ const Header = () => {
               aria-label="ウィッシュリスト"
               className="icon-frame min-h-11"
             >
-              <i className="ri-heart-line icon"></i>
+              <i className="ri-bookmark-line icon"></i>
             </Link>
             <Link
               href="/cart"

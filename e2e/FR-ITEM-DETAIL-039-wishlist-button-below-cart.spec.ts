@@ -27,7 +27,8 @@ test.describe('FR-ITEM-DETAIL-039 wishlist button below add to cart', () => {
     { name: 'tablet', width: 768, height: 1024 },
     { name: 'desktop', width: 1280, height: 800 },
   ]) {
-    test(`FREQ-285-AC-01: ${viewport.name}（${viewport.width}px）ではWISHLISTがADD TO CARTの下に表示される`, async ({
+    // FREQ-299 で撤回: md 以上のウィッシュリストは商品名の右のハートに集約した
+    test(`FREQ-285-AC-01: ${viewport.name}（${viewport.width}px）ではADD TO CARTの下にWISHLISTを置かない`, async ({
       page,
     }) => {
       await page.setViewportSize({
@@ -37,14 +38,9 @@ test.describe('FR-ITEM-DETAIL-039 wishlist button below add to cart', () => {
       await openItemDetail(page);
 
       const { cart, wishlist } = actions(page);
-      await expect(wishlist.getByText('ADD TO WISHLIST')).toBeVisible();
-
-      const cartBox = await cart.boundingBox();
-      const wishlistBox = await wishlist.boundingBox();
-      expect(cartBox).not.toBeNull();
-      expect(wishlistBox).not.toBeNull();
-      expect(wishlistBox!.y).toBeGreaterThan(cartBox!.y + cartBox!.height - 1);
-      expect(wishlistBox!.width).toBeCloseTo(cartBox!.width, 0);
+      await expect(cart).toBeVisible();
+      await expect(wishlist).toBeHidden();
+      await expect(page.getByTestId('item-wishlist-icon')).toBeVisible();
     });
   }
 

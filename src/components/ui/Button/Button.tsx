@@ -10,6 +10,7 @@ export function Button({
   shape = "square",
   iconOnly,
   selected,
+  selectedTone,
   className,
   type = "button",
   disabled,
@@ -26,6 +27,7 @@ export function Button({
     "data-ui-button-shape": shape,
     "data-ui-button-icon-only": iconOnly ? "true" : undefined,
     "data-ui-button-selected": selected ? "true" : undefined,
+    "data-ui-button-selected-tone": selectedTone,
     "data-ui-button-disabled": disabled ? "true" : undefined,
   } as const;
 

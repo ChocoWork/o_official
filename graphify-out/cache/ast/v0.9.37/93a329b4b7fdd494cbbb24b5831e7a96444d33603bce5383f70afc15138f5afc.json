@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_migrations_002_create_profiles_sql", "label": "002_create_profiles.sql", "file_type": "code", "source_file": "migrations/002_create_profiles.sql", "source_location": null}], "edges": []}

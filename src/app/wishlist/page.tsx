@@ -294,7 +294,7 @@ export default function Page() {
   if (wishlistItems.length === 0) {
     return (
       <EmptyPage
-        iconClassName="ri-heart-line"
+        iconClassName="ri-bookmark-line"
         label="WISHLIST IS EMPTY"
         size="xs"
         buttonLabel="Continue Shopping"

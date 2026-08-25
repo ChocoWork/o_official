@@ -2,7 +2,13 @@
 
 // 商品詳細ページのクライアントコンポーネント
 // Server Component ラッパー（page.tsx）から id を受け取り、/api/items/:id でデータを取得する
-import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  type RefObject,
+} from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Item, ItemStockStatus } from "@/types/item";
@@ -34,6 +40,8 @@ type ItemActionButtonsProps = {
   togglingWishlist: boolean;
   onAddToCart: () => void;
   onToggleWishlist: () => void;
+  /** SIZE 選択の横幅を ADD TO CART に揃えるための実測用 ref (FREQ-298) */
+  addToCartRef?: RefObject<HTMLButtonElement | null>;
 };
 
 function ItemActionButtons({
@@ -44,10 +52,12 @@ function ItemActionButtons({
   togglingWishlist,
   onAddToCart,
   onToggleWishlist,
+  addToCartRef,
 }: ItemActionButtonsProps) {
   return (
     <div className="flex w-full gap-3 md:flex-col">
       <Button
+        ref={addToCartRef}
         onClick={onAddToCart}
         disabled={addingToCart || isSoldOut}
         size="xs"
@@ -71,25 +81,27 @@ function ItemActionButtons({
           </div>
         )}
       </Button>
-      <Button
-        onClick={onToggleWishlist}
-        disabled={togglingWishlist}
-        variant="secondary"
-        size="xs"
-        aria-label="Add to wishlist"
-        className="aspect-square px-0 hover:bg-transparent hover:text-current md:aspect-auto md:w-full md:px-4"
-      >
-        <div className="flex items-center justify-center gap-2">
-          <div className="flex h-4 w-4 items-center justify-center">
-            <i
-              className={`text-base ${
-                isWishlisted ? "ri-heart-fill text-red-500" : "ri-heart-line"
-              }`}
-            />
+      {/* FREQ-299: md 以上では商品名の右のハートボタンに集約するため表示しない */}
+      <div className="md:hidden">
+        <Button
+          onClick={onToggleWishlist}
+          disabled={togglingWishlist}
+          variant="secondary"
+          size="xs"
+          aria-label="Add to wishlist"
+          className="aspect-square h-full px-0 hover:bg-transparent hover:text-current"
+        >
+          <div className="flex items-center justify-center gap-2">
+            <div className="flex h-4 w-4 items-center justify-center">
+              <i
+                className={`text-base ${
+                  isWishlisted ? "ri-bookmark-fill" : "ri-bookmark-line"
+                }`}
+              />
+            </div>
           </div>
-          <span className="hidden md:inline">ADD TO WISHLIST</span>
-        </div>
-      </Button>
+        </Button>
+      </div>
     </div>
   );
 }
@@ -159,6 +171,9 @@ export default function ItemDetailClient({ id }: Props) {
   // 未選択バリデーションエラーを alert() の代わりにインライン表示する
   const [validationError, setValidationError] = useState<string | null>(null);
   const cartButtonRef = useRef<HTMLDivElement>(null);
+  const addToCartRef = useRef<HTMLButtonElement>(null);
+  // FREQ-298: SIZE 選択の行幅を ADD TO CART ボタンの実測幅に合わせる
+  const [addToCartWidth, setAddToCartWidth] = useState<number | null>(null);
   const tabletCarouselRef = useRef<HTMLDivElement>(null);
   const mobileCarouselRef = useRef<HTMLDivElement>(null);
 
@@ -215,6 +230,21 @@ export default function ItemDetailClient({ id }: Props) {
   useLayoutEffect(() => {
     if (!item) return;
     window.scrollTo(0, 0);
+  }, [item]);
+
+  // FREQ-298: SIZE 選択の行を ADD TO CART ボタンと同じ幅にそろえる
+  useLayoutEffect(() => {
+    if (!item) return;
+    const el = addToCartRef.current;
+    if (!el) return;
+
+    const observer = new ResizeObserver(() => {
+      setAddToCartWidth(el.getBoundingClientRect().width);
+    });
+    observer.observe(el);
+    setAddToCartWidth(el.getBoundingClientRect().width);
+
+    return () => observer.disconnect();
   }, [item]);
 
   useLayoutEffect(() => {
@@ -425,10 +455,6 @@ export default function ItemDetailClient({ id }: Props) {
   const priceTextStyle = {
     fontFamily: "acumin-pro, sans-serif",
     fontSize: "var(--item-detail-price-size)",
-  } as const;
-  const bodyTextStyle = {
-    fontSize: "var(--lk-size-xs)",
-    lineHeight: 1.65,
   } as const;
   // FREQ-290: ADD TO WISHLIST の下に置く仕様リストの行。値のあるものだけ並べる
   const specRows = [
@@ -719,35 +745,60 @@ export default function ItemDetailClient({ id }: Props) {
 
             <div
               data-testid="item-detail-information"
-              className="space-y-3.5 md:sticky md:top-36 md:w-full md:self-start md:space-y-5"
+              className="flex flex-col md:sticky md:top-36 md:w-full md:self-start"
             >
-              <div data-testid="item-detail-identity">
-                <h1
-                  className="[--item-detail-name-size:var(--lk-size-2xl)] md:[--item-detail-name-size:var(--lk-size-3xl)]"
-                  style={itemNameStyle}
-                >
-                  {item.name}
-                </h1>
-                <div
-                  data-testid="item-detail-price-row"
-                  className="mt-1 flex items-center gap-3 md:mt-2"
-                >
-                  <p
-                    data-testid="item-detail-price"
-                    className="font-brand [--item-detail-price-size:var(--lk-size-md)] md:[--item-detail-price-size:1rem]"
-                    style={priceTextStyle}
+              <div
+                data-testid="item-detail-identity"
+                className="flex items-start justify-between gap-4"
+              >
+                <div className="min-w-0 flex-1">
+                  <h1
+                    className="[--item-detail-name-size:var(--lk-size-2xl)] md:[--item-detail-name-size:var(--lk-size-3xl)]"
+                    style={itemNameStyle}
                   >
-                    ¥{item.price.toLocaleString("ja-JP")}
-                  </p>
-                  {/* 在庫状態バッジ (FR-ITEM-DETAIL-007) */}
-                  <StockBadge stockStatus={stockStatus} />
+                    {item.name}
+                  </h1>
+                  <div
+                    data-testid="item-detail-price-row"
+                    className="mt-1 flex items-center gap-3 md:mt-2"
+                  >
+                    <p
+                      data-testid="item-detail-price"
+                      className="font-brand [--item-detail-price-size:var(--lk-size-md)] md:[--item-detail-price-size:1rem]"
+                      style={priceTextStyle}
+                    >
+                      ¥{item.price.toLocaleString("ja-JP")}
+                    </p>
+                    {/* 在庫状態バッジ (FR-ITEM-DETAIL-007) */}
+                    <StockBadge stockStatus={stockStatus} />
+                  </div>
+                </div>
+                {/* FREQ-299: md 以上のウィッシュリストは商品名の右端にハートのみ */}
+                <div
+                  data-testid="item-wishlist-icon"
+                  className="hidden shrink-0 md:block"
+                >
+                  <Button
+                    onClick={handleToggleWishlist}
+                    disabled={togglingWishlist}
+                    variant="ghost"
+                    size="md"
+                    iconOnly
+                    aria-label="Add to wishlist"
+                  >
+                    <i
+                      className={`text-xl ${
+                        isWishlisted ? "ri-bookmark-fill" : "ri-bookmark-line"
+                      }`}
+                    />
+                  </Button>
                 </div>
               </div>
 
               {item.description && (
                 <div
                   data-testid="item-detail-description"
-                  className="border-b border-t border-black/10 py-3 md:py-4"
+                  className="mt-[var(--lk-item-detail-section-gap)] border-b border-t border-black/10 py-3 md:py-4"
                 >
                   <p
                     className="text-[#474747] leading-relaxed"
@@ -762,7 +813,7 @@ export default function ItemDetailClient({ id }: Props) {
                   FREQ-292: COLOR / SIZE のラベルは表示しない（各行は全幅） */}
               <div
                 data-testid="item-spec-table"
-                className="grid grid-cols-[max-content_1fr] items-center gap-x-8 gap-y-3.5"
+                className="mt-[var(--lk-item-detail-section-gap)] grid grid-cols-[max-content_1fr] items-center gap-x-8 gap-y-[var(--lk-item-detail-select-gap)]"
               >
                 {/* カラー選択: 参考サイト（roheframes）の実測に合わせ、外形 23px
                     （1px 枠 + 1px 余白）・塗り 19px・間隔 15px。選択中は黒枠
@@ -804,44 +855,64 @@ export default function ItemDetailClient({ id }: Props) {
                     </>
                   )}
 
-                {/* サイズ選択: テキスト表示。選択中は下線 (FR-ITEM-DETAIL-008: aria-pressed) */}
+                {/* サイズ選択: 角の四角い枠付きボタン。白地・黒文字で、
+                    未選択はグレー枠・選択中は黒枠 (FREQ-298 / FREQ-301)
+                    行の幅は ADD TO CART と同幅。選択肢が1つのときは1/3幅
+                    (FR-ITEM-DETAIL-008: aria-pressed) */}
                 {item.sizes && item.sizes.length > 0 && (
-                  <>
-                    <div className="col-span-2 flex flex-wrap gap-4">
-                      {item.sizes.map((sizeOption: string) => (
-                        <button
-                          key={sizeOption}
-                          type="button"
-                          onClick={() => {
-                            setSize(sizeOption);
-                            setValidationError(null);
-                          }}
-                          aria-pressed={size === sizeOption}
-                          className={`pb-0.5 border-b cursor-pointer transition-colors duration-200 focus-visible:outline-none ${
-                            size === sizeOption
-                              ? "border-black"
-                              : "border-transparent hover:border-black/30"
-                          }`}
-                          style={bodyTextStyle}
-                        >
-                          {sizeOption}
-                        </button>
-                      ))}
-                    </div>
-                  </>
+                  <div
+                    data-testid="item-size-select"
+                    className="col-span-2 grid gap-2"
+                    style={{
+                      width: addToCartWidth
+                        ? `${
+                            item.sizes.length === 1
+                              ? addToCartWidth / 3
+                              : addToCartWidth
+                          }px`
+                        : "100%",
+                      gridTemplateColumns: `repeat(${item.sizes.length}, minmax(0, 1fr))`,
+                    }}
+                  >
+                    {item.sizes.map((sizeOption: string) => (
+                      <Button
+                        key={sizeOption}
+                        variant="outline"
+                        shape="square"
+                        size="3xs"
+                        selected={size === sizeOption}
+                        selectedTone="outline"
+                        className="w-full"
+                        onClick={() => {
+                          setSize(sizeOption);
+                          setValidationError(null);
+                        }}
+                      >
+                        {sizeOption}
+                      </Button>
+                    ))}
+                  </div>
                 )}
               </div>
 
               {/* バリデーションエラーメッセージ (FR-ITEM-DETAIL-008: role="alert") */}
               {validationError && (
-                <p role="alert" className="text-xs text-red-500">
+                <p
+                  role="alert"
+                  className="mt-[var(--lk-item-detail-select-gap)] text-xs text-red-500"
+                >
                   {validationError}
                 </p>
               )}
 
               {/* カート追加・ウィッシュリストボタン */}
-              <div ref={cartButtonRef} data-testid="item-actions-main">
+              <div
+                ref={cartButtonRef}
+                data-testid="item-actions-main"
+                className="mt-[var(--lk-item-detail-action-gap)]"
+              >
                 <ItemActionButtons
+                  addToCartRef={addToCartRef}
                   addedToCart={addedToCart}
                   addingToCart={addingToCart}
                   isSoldOut={isSoldOut}
@@ -858,6 +929,7 @@ export default function ItemDetailClient({ id }: Props) {
               {specRows.length > 0 && (
                 <SpecList
                   data-testid="item-spec-list"
+                  className="mt-[var(--lk-item-detail-section-gap)]"
                   rows={specRows}
                   size="sm"
                 />

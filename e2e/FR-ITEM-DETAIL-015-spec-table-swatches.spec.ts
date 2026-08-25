@@ -50,7 +50,7 @@ for (const viewport of [
       expect(innerStyle).toContain('background-color');
     });
 
-    test('FREQ-153-AC-02: SIZE がテキスト表示され選択中に下線が付く', async ({
+    test('FREQ-153-AC-02: SIZE が表示され選択中に黒枠が付く', async ({
       page,
     }) => {
       const ok = await gotoFirstItemDetail(page);
@@ -66,15 +66,19 @@ for (const viewport of [
       const count = await sizeButtons.count();
       expect(count).toBeGreaterThan(0);
 
-      // クリックで選択し、下線（border-black の border-b）が付く
+      // クリックで選択し、枠線が黒くなる（FREQ-298 で下線から、FREQ-301 で塗りから変更）
       await sizeButtons.first().click();
       await expect(sizeButtons.first()).toHaveAttribute('aria-pressed', 'true');
-      await expect(sizeButtons.first()).toHaveClass(/border-black/);
+      // hover 色を拾わないようポインタを外す
+      await page.mouse.move(0, 0);
 
-      const borderBottom = await sizeButtons
-        .first()
-        .evaluate((el) => getComputedStyle(el).borderBottomColor);
-      expect(borderBottom).toBe('rgb(0, 0, 0)');
+      await expect
+        .poll(() =>
+          sizeButtons
+            .first()
+            .evaluate((el) => getComputedStyle(el).borderTopColor),
+        )
+        .toBe('rgb(17, 17, 17)');
     });
 
     test('FREQ-153-AC-03: MATERIAL / MADE IN 行が表示され、値の無い行は表示されない', async ({
