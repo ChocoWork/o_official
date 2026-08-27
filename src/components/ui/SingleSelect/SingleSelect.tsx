@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
 import type { SingleSelectProps } from '@/components/ui/SingleSelect/SingleSelect_types';
+import { Button } from '@/components/ui/Button/Button';
 
 export function SingleSelect({
   label,
@@ -24,6 +25,7 @@ export function SingleSelect({
   bordered = true,
   block = false,
   multiline = false,
+  'data-testid': dataTestId,
   ...props
 }: SingleSelectProps) {
   const selectId = id ?? props.name;
@@ -169,6 +171,40 @@ export function SingleSelect({
     'data-ui-single-select-multiline': multiline ? 'true' : undefined,
     'data-ui-size': size,
   } as const;
+
+  // --- inline：選択肢を左寄せで横に並べるトグル群 ---
+  if (variant === 'inline') {
+    return (
+      <div
+        {...rootDataAttrs}
+        data-ui-single-select-variant="inline"
+        data-testid={dataTestId}
+        role="group"
+        aria-label={props['aria-label']}
+        className={cn('single-select', className)}
+      >
+        {label ? <span className="single-select__label">{label}</span> : null}
+        <div className="single-select__options">
+          {options.map((option) => (
+            <Button
+              key={option.value}
+              variant="text"
+              shape="square"
+              size={size}
+              selected={resolvedValue === option.value}
+              selectedTone="outline"
+              /* 2文字までは正方形の枠、3文字以上は内容なりの長方形 */
+              aspect={option.label.length <= 2 ? 'square' : 'auto'}
+              disabled={disabled}
+              onClick={() => onValueChange?.(option.value)}
+            >
+              {option.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   // --- dropdown：ポータル描画のカスタムリスト ---
   if (variant === 'dropdown') {

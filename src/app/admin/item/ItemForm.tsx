@@ -69,9 +69,6 @@ export function ItemForm({
   const [selectedSizes, setSelectedSizes] = useState<Set<string>>(
     new Set(initialValues?.sizes ?? []),
   );
-  const [productDetails, setProductDetails] = useState(
-    initialValues?.productDetails ?? "Material : \nMade in : ",
-  );
   const [material, setMaterial] = useState(initialValues?.material ?? "");
   const [madeIn, setMadeIn] = useState(initialValues?.origin ?? "");
   const [care, setCare] = useState(initialValues?.care ?? "");
@@ -282,7 +279,6 @@ export function ItemForm({
 
     const trimmedName = itemName.trim();
     const trimmedDescription = description.trim();
-    const trimmedDetails = productDetails.trim();
     const parsedPrice = Number(price);
     const normalizedColors = colors
       .map((color) => ({ name: color.name.trim(), hex: color.hex }))
@@ -295,7 +291,7 @@ export function ItemForm({
     }
 
     if (!trimmedDescription) {
-      setSubmitError("商品情報を入力してください");
+      setSubmitError("PRODUCT DETAILSを入力してください");
       return;
     }
 
@@ -319,11 +315,6 @@ export function ItemForm({
       return;
     }
 
-    if (!trimmedDetails) {
-      setSubmitError("PRODUCT DETAILSを入力してください");
-      return;
-    }
-
     setIsSubmitting(true);
 
     try {
@@ -332,7 +323,6 @@ export function ItemForm({
       formData.append("description", trimmedDescription);
       formData.append("price", String(parsedPrice));
       formData.append("category", category);
-      formData.append("productDetails", trimmedDetails);
       formData.append("material", material.trim());
       formData.append("origin", madeIn.trim());
       formData.append("care", care.trim());
@@ -469,8 +459,8 @@ export function ItemForm({
           />
 
           <TextAreaField
-            label="商品情報"
-            placeholder="商品情報を入力"
+            label="PRODUCT DETAILS"
+            placeholder="PRODUCT DETAILSを入力"
             rows={4}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
@@ -609,15 +599,6 @@ export function ItemForm({
             type="text"
             value={madeIn}
             onChange={(e) => setMadeIn(e.target.value)}
-            size="md"
-          />
-
-          <TextAreaField
-            required
-            label="PRODUCT DETAILS（素材・洗濯の情報）"
-            rows={6}
-            value={productDetails}
-            onChange={(e) => setProductDetails(e.target.value)}
             size="md"
           />
 

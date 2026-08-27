@@ -187,24 +187,26 @@
   --button-hover-border-color: #2a2a2a;
 }
 
-/* selectedTone="outline"：塗りつぶさず枠線だけで選択を示すトグル。
-   面と文字は白地・黒文字で固定し、対比は枠線の濃さ（グレー→黒）だけで作る。 */
-[data-ui-button][data-ui-button-selected-tone="outline"] {
-  --button-bg: #ffffff;
+/* selectedTone="outline"：面を塗らず枠線だけで選択を示すトグル。
+   未選択時の枠色は variant に委ねる（text なら枠なし、outline ならグレー枠）。 */
+[data-ui-button][data-ui-button-selected-tone="outline"][data-ui-button-selected="true"] {
+  --button-bg: transparent;
   --button-color: #111111;
-  --button-border-color: #d4d4d4;
-  --button-hover-bg: #ffffff;
+  --button-border-color: #111111;
+  --button-hover-bg: transparent;
   --button-hover-color: #111111;
   --button-hover-border-color: #111111;
 }
 
-[data-ui-button][data-ui-button-selected-tone="outline"][data-ui-button-selected="true"] {
-  --button-bg: #ffffff;
-  --button-color: #111111;
-  --button-border-color: #111111;
-  --button-hover-bg: #ffffff;
-  --button-hover-color: #111111;
-  --button-hover-border-color: #111111;
+/* aspect="square"：1辺を Button の高さ（2×border + 2×pad-y + line-height）に
+   揃えた正方形。ラベルが1辺より広い場合だけ min-width を超えて横に伸びる。 */
+[data-ui-button][data-ui-button-aspect="square"] {
+  --button-square-side: calc(
+    2px + (2 * var(--pad-y)) + (var(--button-font-size) * var(--sqrt-phi))
+  );
+  padding-inline: var(--pad-y);
+  min-width: var(--button-square-side);
+  min-height: var(--button-square-side);
 }
 
 [data-ui-button-disabled="true"],

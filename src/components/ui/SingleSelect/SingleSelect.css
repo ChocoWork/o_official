@@ -108,6 +108,21 @@
   color: var(--ss-fg-label);
 }
 
+/* --- inline：選択肢を左寄せで横に並べる ---
+ * 近接：選択肢間 = --pad-x（font ÷ √φ）。コントロール自身の水平単位を
+ * そのまま項目間にも反復させ、個数によらず一定の距離に保つ。
+ */
+[data-ui-single-select][data-ui-single-select-variant="inline"] {
+  --ss-option-gap: var(--pad-x);
+}
+
+.single-select__options {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: var(--ss-option-gap);
+}
+
 /* --- 操作部ラッパ（整列：シェブロンを内側に重ねる相対基準）--- */
 .single-select__wrapper {
   position: relative;

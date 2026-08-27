@@ -2,13 +2,7 @@
 
 // 商品詳細ページのクライアントコンポーネント
 // Server Component ラッパー（page.tsx）から id を受け取り、/api/items/:id でデータを取得する
-import React, {
-  useState,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  type RefObject,
-} from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Item, ItemStockStatus } from "@/types/item";
@@ -22,6 +16,8 @@ import {
   scrollCarouselTo,
 } from "@/features/items/components/ItemImageCarousel";
 import { SpecList } from "@/components/ui/SpecList/SpecList";
+import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
+import { sortSizes } from "@/lib/items/sizes";
 
 type Props = { id: string };
 
@@ -40,8 +36,6 @@ type ItemActionButtonsProps = {
   togglingWishlist: boolean;
   onAddToCart: () => void;
   onToggleWishlist: () => void;
-  /** SIZE 選択の横幅を ADD TO CART に揃えるための実測用 ref (FREQ-298) */
-  addToCartRef?: RefObject<HTMLButtonElement | null>;
 };
 
 function ItemActionButtons({
@@ -52,12 +46,10 @@ function ItemActionButtons({
   togglingWishlist,
   onAddToCart,
   onToggleWishlist,
-  addToCartRef,
 }: ItemActionButtonsProps) {
   return (
     <div className="flex w-full gap-3 md:flex-col">
       <Button
-        ref={addToCartRef}
         onClick={onAddToCart}
         disabled={addingToCart || isSoldOut}
         size="xs"
@@ -171,9 +163,6 @@ export default function ItemDetailClient({ id }: Props) {
   // 未選択バリデーションエラーを alert() の代わりにインライン表示する
   const [validationError, setValidationError] = useState<string | null>(null);
   const cartButtonRef = useRef<HTMLDivElement>(null);
-  const addToCartRef = useRef<HTMLButtonElement>(null);
-  // FREQ-298: SIZE 選択の行幅を ADD TO CART ボタンの実測幅に合わせる
-  const [addToCartWidth, setAddToCartWidth] = useState<number | null>(null);
   const tabletCarouselRef = useRef<HTMLDivElement>(null);
   const mobileCarouselRef = useRef<HTMLDivElement>(null);
 
@@ -230,21 +219,6 @@ export default function ItemDetailClient({ id }: Props) {
   useLayoutEffect(() => {
     if (!item) return;
     window.scrollTo(0, 0);
-  }, [item]);
-
-  // FREQ-298: SIZE 選択の行を ADD TO CART ボタンと同じ幅にそろえる
-  useLayoutEffect(() => {
-    if (!item) return;
-    const el = addToCartRef.current;
-    if (!el) return;
-
-    const observer = new ResizeObserver(() => {
-      setAddToCartWidth(el.getBoundingClientRect().width);
-    });
-    observer.observe(el);
-    setAddToCartWidth(el.getBoundingClientRect().width);
-
-    return () => observer.disconnect();
   }, [item]);
 
   useLayoutEffect(() => {
@@ -855,43 +829,27 @@ export default function ItemDetailClient({ id }: Props) {
                     </>
                   )}
 
-                {/* サイズ選択: 角の四角い枠付きボタン。白地・黒文字で、
-                    未選択はグレー枠・選択中は黒枠 (FREQ-298 / FREQ-301)
-                    行の幅は ADD TO CART と同幅。選択肢が1つのときは1/3幅
+                {/* サイズ選択: SingleSelect の inline 変種。左寄せで内容なりの幅、
+                    未選択は文字だけ・選択中のみ黒枠で囲む (FREQ-303 / FREQ-304)
+                    並び順は Admin の選択肢の並び（S → M → L → FREE）に合わせる (FREQ-305)
                     (FR-ITEM-DETAIL-008: aria-pressed) */}
                 {item.sizes && item.sizes.length > 0 && (
-                  <div
+                  <SingleSelect
                     data-testid="item-size-select"
-                    className="col-span-2 grid gap-2"
-                    style={{
-                      width: addToCartWidth
-                        ? `${
-                            item.sizes.length === 1
-                              ? addToCartWidth / 3
-                              : addToCartWidth
-                          }px`
-                        : "100%",
-                      gridTemplateColumns: `repeat(${item.sizes.length}, minmax(0, 1fr))`,
+                    className="col-span-2"
+                    variant="inline"
+                    size="3xs"
+                    aria-label="SIZE"
+                    options={sortSizes(item.sizes).map((sizeOption) => ({
+                      value: sizeOption,
+                      label: sizeOption,
+                    }))}
+                    value={size ?? ""}
+                    onValueChange={(next) => {
+                      setSize(next);
+                      setValidationError(null);
                     }}
-                  >
-                    {item.sizes.map((sizeOption: string) => (
-                      <Button
-                        key={sizeOption}
-                        variant="outline"
-                        shape="square"
-                        size="3xs"
-                        selected={size === sizeOption}
-                        selectedTone="outline"
-                        className="w-full"
-                        onClick={() => {
-                          setSize(sizeOption);
-                          setValidationError(null);
-                        }}
-                      >
-                        {sizeOption}
-                      </Button>
-                    ))}
-                  </div>
+                  />
                 )}
               </div>
 
@@ -912,7 +870,6 @@ export default function ItemDetailClient({ id }: Props) {
                 className="mt-[var(--lk-item-detail-action-gap)]"
               >
                 <ItemActionButtons
-                  addToCartRef={addToCartRef}
                   addedToCart={addedToCart}
                   addingToCart={addingToCart}
                   isSoldOut={isSoldOut}

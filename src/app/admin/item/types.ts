@@ -1,6 +1,7 @@
 export const CATEGORIES = ['TOPS', 'BOTTOMS', 'OUTERWEAR', 'ACCESSORIES'] as const;
 export type Category = (typeof CATEGORIES)[number];
 
+/** 選択肢の並び。表示順の正は @/lib/items/sizes の SIZE_ORDER（この並びを含む） */
 export const SIZES = ['S', 'M', 'L', 'FREE'] as const;
 export type Size = (typeof SIZES)[number];
 
@@ -50,7 +51,6 @@ export interface ItemFormValues {
   category: Category;
   colors: Array<{ name: string; hex: string }>;
   sizes: string[];
-  productDetails: string;
   material: string;
   origin: string;
   sewingRegion?: string;

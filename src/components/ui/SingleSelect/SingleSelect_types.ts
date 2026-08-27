@@ -2,7 +2,7 @@
 import type { SelectHTMLAttributes } from 'react';
 import type { ComponentSize, SelectOption } from '@/components/ui/types';
 
-export type UISingleSelectVariant = 'native' | 'dropdown';
+export type UISingleSelectVariant = 'native' | 'dropdown' | 'inline';
 export type UISingleSelectSize = ComponentSize | 'compact';
 export type UISingleSelectShape = 'square' | 'rounded';
 export type UISingleSelectAlign = 'left' | 'right';
@@ -25,4 +25,5 @@ export interface SingleSelectProps
   block?: boolean;
   /** dropdown: 選択値ラベルの改行(\n)を複数行表示する（住所の2行表示など）。既定 false */
   multiline?: boolean;
+  'data-testid'?: string;
 }

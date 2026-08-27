@@ -100,8 +100,8 @@
     "semantic_hash": "7586d1647798099a52bbd4f05ddf34ca"
   },
   "src/app/admin/item/ItemForm.tsx": {
-    "mtime": 1787828264.6948543,
-    "ast_hash": "462ac59d73c6cac8ca7811fd8fabcee7",
+    "mtime": 1787568000.5208464,
+    "ast_hash": "0008d81ca1d0c74f8010c787647a509c",
     "semantic_hash": ""
   },
   "src/app/admin/item/create/page.tsx": {
@@ -110,13 +110,13 @@
     "semantic_hash": "45f31cc164d56b184789f27e9ec10b28"
   },
   "src/app/admin/item/edit/[id]/page.tsx": {
-    "mtime": 1787828275.5319152,
-    "ast_hash": "734ee236946894c9627aa337357294fd",
+    "mtime": 1787568000.5188262,
+    "ast_hash": "59c0a8f40ccbca30ee93527d0122e773",
     "semantic_hash": ""
   },
   "src/app/admin/item/types.ts": {
-    "mtime": 1787828275.5319152,
-    "ast_hash": "fb1cabf834100aab9110f21b6c853d2c",
+    "mtime": 1787700503.5987349,
+    "ast_hash": "7e26e2a436230c8c09de09c925284f62",
     "semantic_hash": ""
   },
   "src/app/admin/layout.tsx": {
@@ -235,13 +235,13 @@
     "semantic_hash": "6bce5242f0f6d4e0d202ba45d0a475b3"
   },
   "src/app/api/admin/items/[id]/route.ts": {
-    "mtime": 1787828275.5319152,
-    "ast_hash": "0d74dd5410f49f94797b4ede455c15ef",
+    "mtime": 1787568000.5086358,
+    "ast_hash": "818f445ade835b389e411316ebbf8661",
     "semantic_hash": ""
   },
   "src/app/api/admin/items/route.ts": {
-    "mtime": 1787828275.5319152,
-    "ast_hash": "ac217a87fb202d45f76e12388c7ab2ef",
+    "mtime": 1787568045.8547359,
+    "ast_hash": "04ba8b422e6ae45c9161316a4aa8cee5",
     "semantic_hash": ""
   },
   "src/app/api/admin/kpi/cost-profit/receipt/route.ts": {
@@ -4690,8 +4690,8 @@
     "semantic_hash": ""
   },
   "docs/2_Specs/spec.md": {
-    "mtime": 1787828384.4422855,
-    "ast_hash": "568f4d6baf96dd61086b19bd78302899",
+    "mtime": 1787700503.647998,
+    "ast_hash": "8faf89dcbeaa613a40918eec8014d4b8",
     "semantic_hash": ""
   },
   "docs/3_ArchitectureDesign/auth-structure.md": {
@@ -8472,11 +8472,6 @@
   "tests/unit/items/sizes.test.ts": {
     "mtime": 1787700426.414438,
     "ast_hash": "b1ddb616ca5def001789f22a362e4f2b",
-    "semantic_hash": ""
-  },
-  "e2e/FR-ADMIN-051-item-product-details-field.spec.ts": {
-    "mtime": 1787828395.1155698,
-    "ast_hash": "e37f9a16dd9ebf030642d9dbe44e58f6",
     "semantic_hash": ""
   }
 }

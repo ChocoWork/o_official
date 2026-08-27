@@ -58,6 +58,7 @@ export default function Page() {
   const [checkboxNewsletter, setCheckboxNewsletter] = useState(false);
   const [checkboxPrivacy, setCheckboxPrivacy] = useState(false);
   const [category, setCategory] = useState("TOPS");
+  const [inlineSize, setInlineSize] = useState("M");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [mediumSheetOpen, setMediumSheetOpen] = useState(false);
   const [largeSheetOpen, setLargeSheetOpen] = useState(false);
@@ -606,6 +607,19 @@ export default function Page() {
                 options={singleSelectOptions}
                 value={category}
                 onValueChange={setCategory}
+                size={demoSize}
+              />
+            </div>
+            <div className="mt-8 max-w-md">
+              <SingleSelect
+                label="SIZE (inline)"
+                variant="inline"
+                options={["XS", "S", "M", "L", "XL", "FREE"].map((value) => ({
+                  value,
+                  label: value,
+                }))}
+                value={inlineSize}
+                onValueChange={setInlineSize}
                 size={demoSize}
               />
             </div>

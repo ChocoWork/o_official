@@ -11,6 +11,7 @@ export function Button({
   iconOnly,
   selected,
   selectedTone,
+  aspect,
   className,
   type = "button",
   disabled,
@@ -28,6 +29,7 @@ export function Button({
     "data-ui-button-icon-only": iconOnly ? "true" : undefined,
     "data-ui-button-selected": selected ? "true" : undefined,
     "data-ui-button-selected-tone": selectedTone,
+    "data-ui-button-aspect": aspect,
     "data-ui-button-disabled": disabled ? "true" : undefined,
   } as const;
 
