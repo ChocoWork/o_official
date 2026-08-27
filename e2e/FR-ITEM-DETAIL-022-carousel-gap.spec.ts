@@ -1,7 +1,8 @@
 import { test, expect, Page } from '@playwright/test';
 import { fetchItemsViaApi } from './item-list-test-utils';
 
-// FREQ-162: モバイルカルーセルのスライド間隙間を 2px にする
+// FREQ-162: モバイルカルーセルのスライド間隙間。
+// FREQ-307 で 2px 固定から画面幅比 0.625%（320px 時 2px）に変更
 
 type ItemLike = { id: string | number; image_urls?: string[] };
 
@@ -23,7 +24,7 @@ for (const viewport of [
   test.describe(`FR-ITEM-DETAIL-022 カルーセルスライド間隙間 (${viewport.name})`, () => {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
-    test('FREQ-162: 隣接スライド間の隙間が約 2px である', async ({
+    test('FREQ-307: 隣接スライド間の隙間が画面幅の 0.625% である', async ({
       page,
     }) => {
       const ok = await gotoMultiImageItem(page);
@@ -36,8 +37,7 @@ for (const viewport of [
       expect(second).not.toBeNull();
 
       const gap = second!.x - (first!.x + first!.width);
-      expect(gap).toBeGreaterThanOrEqual(1);
-      expect(gap).toBeLessThanOrEqual(3);
+      expect(gap).toBeCloseTo(viewport.width * 0.00625, 0);
     });
   });
 }

@@ -493,12 +493,16 @@ export default function ItemDetailClient({ id }: Props) {
                   main の px-5 を負マージンで相殺してフルブリード化し、
                   ピーク表示が main の padding でクリップされないようにする (FREQ-159) */}
               <div className="md:hidden -mx-5">
-                {/* ピーク表示: 左右 px-5 の余白を設け、2枚以上のときは
-                    前後スライドの端が余白部分に見える (FREQ-158) */}
+                {/* ピーク表示: 左右に余白を設け、2枚以上のときは
+                    前後スライドの端が余白部分に見える (FREQ-158)。
+                    余白は 320px 時の 20px / 280px を保つ画面幅比 6.25% で、
+                    スライド幅は残りの 87.5%（w-full）になる。
+                    隙間も 320px 時の 2px を保つ 0.625vw とし、
+                    隙間 : 余白 = 1 : 10 を全幅で維持する (FREQ-307) */}
                 <div
                   ref={mobileCarouselRef}
                   data-testid="item-detail-carousel"
-                  className="flex w-full touch-pan-x snap-x snap-mandatory scroll-px-5 gap-0.5 overflow-x-scroll px-5"
+                  className="flex w-full touch-pan-x snap-x snap-mandatory scroll-px-[6.25%] gap-[0.625vw] overflow-x-scroll px-[6.25%]"
                   style={
                     {
                       scrollbarWidth: "none",
@@ -511,7 +515,7 @@ export default function ItemDetailClient({ id }: Props) {
                     <div
                       key={index}
                       data-testid="item-detail-carousel-slide"
-                      className="relative aspect-2/3 w-[calc(100vw-2.5rem)] shrink-0 snap-start overflow-hidden bg-white"
+                      className="relative aspect-2/3 w-full shrink-0 snap-start overflow-hidden bg-white"
                     >
                       {imgUrl ? (
                         <Image
@@ -534,14 +538,14 @@ export default function ItemDetailClient({ id }: Props) {
                     </div>
                   ))}
                 </div>
-                {/* FREQ-271: 画像下のセグメント線インジケータ。カルーセルと同じ px-5 に揃える */}
+                {/* FREQ-271: 画像下のセグメント線インジケータ。カルーセルと同じ左右余白に揃える */}
                 <CarouselSegmentIndicator
                   testId="item-detail-carousel-indicator"
                   count={thumbnailImages.length}
                   selectedIndex={selectedImageIndex}
                   onSelect={scrollMobileCarouselTo}
                   label={`${item.name} の画像インジケータ`}
-                  className="px-5"
+                  className="px-[6.25%]"
                 />
               </div>
 

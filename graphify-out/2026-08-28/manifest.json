@@ -605,8 +605,8 @@
     "semantic_hash": ""
   },
   "src/app/item/[id]/ItemDetailClient.tsx": {
-    "mtime": 1787871794.1016066,
-    "ast_hash": "2d184968d9dd19c3af2ab1b75e082db4",
+    "mtime": 1787869817.2814786,
+    "ast_hash": "f2b393caf0a94c01d91e76c2242ec0c5",
     "semantic_hash": ""
   },
   "src/app/item/[id]/page.tsx": {
@@ -3750,8 +3750,8 @@
     "semantic_hash": ""
   },
   "e2e/FR-ITEM-DETAIL-022-carousel-gap.spec.ts": {
-    "mtime": 1787871794.1710124,
-    "ast_hash": "99da65dfff9cf48f1e0f672d4d2e7de6",
+    "mtime": 1784386399.8835633,
+    "ast_hash": "150d412f907d52d58cefa9aacf9da719",
     "semantic_hash": ""
   },
   "e2e/FR-ITEM-DETAIL-023-carousel-image-aspect.spec.ts": {
@@ -3760,8 +3760,8 @@
     "semantic_hash": ""
   },
   "e2e/FR-ITEM-DETAIL-024-reference-responsive-proportions.spec.ts": {
-    "mtime": 1787871794.2283032,
-    "ast_hash": "0c607f60a60f38df436c2ef7928497d0",
+    "mtime": 1787869520.9161325,
+    "ast_hash": "76a81cffcc95ef0067c3ccb6a878e8dc",
     "semantic_hash": ""
   },
   "e2e/FR-ITEM-DETAIL-025-previous-commit-typography.spec.ts": {
@@ -4690,8 +4690,8 @@
     "semantic_hash": ""
   },
   "docs/2_Specs/spec.md": {
-    "mtime": 1787871811.397076,
-    "ast_hash": "0980112b90282f07b8b2a800525270b8",
+    "mtime": 1787869536.9375625,
+    "ast_hash": "fff7b05b230460f948bd0602fe07c7f2",
     "semantic_hash": ""
   },
   "docs/3_ArchitectureDesign/auth-structure.md": {
@@ -8480,8 +8480,8 @@
     "semantic_hash": ""
   },
   "e2e/FR-ITEM-DETAIL-055-carousel-peek-ratio.spec.ts": {
-    "mtime": 1787871826.351775,
-    "ast_hash": "0d8f654e7b4d3b18094277b427087763",
+    "mtime": 1787869553.0498543,
+    "ast_hash": "1bd82f085d805281a63abb348d013493",
     "semantic_hash": ""
   }
 }

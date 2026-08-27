@@ -37,7 +37,8 @@ test.describe('FR-ITEM-DETAIL-024 reference responsive proportions', () => {
   test.describe('mobile 390x844', () => {
     test.use({ viewport: { width: 390, height: 844 } });
 
-    test('FREQ-162-AC-01: 20px inset and 2:3 slide', async ({
+    // FREQ-307: 左右余白は 20px 固定から画面幅比 6.25% に変更
+    test('FREQ-162-AC-01: 6.25% inset and 2:3 slide', async ({
       page,
     }) => {
       await openItemDetail(page);
@@ -52,10 +53,10 @@ test.describe('FR-ITEM-DETAIL-024 reference responsive proportions', () => {
       const second = await box(slides.nth(1));
       expect(carouselBox.x).toBeCloseTo(0, 0);
       expect(carouselBox.width).toBeCloseTo(390, 0);
-      expect(first.x).toBeCloseTo(20, 0);
-      expect(first.width).toBeCloseTo(350, 0);
-      expect(first.height).toBeCloseTo(525, 0);
-      expect(second.x - (first.x + first.width)).toBeCloseTo(2, 0);
+      expect(first.x).toBeCloseTo(390 * 0.0625, 0);
+      expect(first.width).toBeCloseTo(390 * 0.875, 0);
+      expect(first.height).toBeCloseTo(390 * 0.875 * 1.5, 0);
+      expect(second.x - (first.x + first.width)).toBeCloseTo(390 * 0.00625, 0);
 
       const title = page.getByRole('heading', { level: 1 });
       const titleBox = await box(title);
@@ -160,8 +161,8 @@ test.describe('FR-ITEM-DETAIL-024 reference responsive proportions', () => {
             page.getByTestId('item-detail-carousel-slide').first(),
           );
           await expect(page.getByTestId('item-detail-carousel')).toBeVisible();
-          expect(slide.x).toBeCloseTo(20, 0);
-          expect(slide.width).toBeCloseTo(device.width - 40, 0);
+          expect(slide.x).toBeCloseTo(device.width * 0.0625, 0);
+          expect(slide.width).toBeCloseTo(device.width * 0.875, 0);
           expect(slide.width / slide.height).toBeCloseTo(2 / 3, 2);
         } else {
           await expect(
