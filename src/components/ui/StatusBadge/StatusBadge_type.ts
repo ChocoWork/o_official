@@ -13,6 +13,11 @@ export interface StatusBadgeProps {
   tone?: StatusBadgeTone;
   variant?: StatusBadgeVariant;
   count?: number | string;
+  /**
+   * count の表示上限（既定 99）。超えると `99+` のように丸める。
+   * 円は2桁まで内接するので、3文字以上になったときだけ pill に開く。
+   */
+  max?: number;
   className?: string;
   /**
    * 個別の色指定。凡例のスウォッチのように、tone の4段階では表せない

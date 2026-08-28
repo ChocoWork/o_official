@@ -1743,7 +1743,7 @@ export default function Page() {
                     <i className="ri-notification-line text-2xl"></i>
                   </div>
                 </button>
-                <span className="absolute -top-1 -right-1">
+                <span className="absolute top-0 right-0 inline-flex translate-x-1/2 -translate-y-1/2">
                   <StatusBadge variant="count" count={3} size={demoSize} />
                 </span>
               </div>
@@ -1756,8 +1756,21 @@ export default function Page() {
                     <i className="ri-message-line text-2xl"></i>
                   </div>
                 </button>
-                <span className="absolute -top-1 -right-1">
+                <span className="absolute top-0 right-0 inline-flex translate-x-1/2 -translate-y-1/2">
                   <StatusBadge variant="count" count={12} size={demoSize} />
+                </span>
+              </div>
+              <div className="relative">
+                <button
+                  type="button"
+                  className="w-12 h-12 flex items-center justify-center border border-black/20 hover:bg-[#f5f5f5] transition-colors cursor-pointer"
+                >
+                  <div className="w-6 h-6 flex items-center justify-center">
+                    <i className="ri-shopping-bag-line text-2xl"></i>
+                  </div>
+                </button>
+                <span className="absolute top-0 right-0 inline-flex translate-x-1/2 -translate-y-1/2">
+                  <StatusBadge variant="count" count={128} size={demoSize} />
                 </span>
               </div>
               <div className="relative">
@@ -1769,26 +1782,20 @@ export default function Page() {
                     <i className="ri-shopping-cart-line text-2xl"></i>
                   </div>
                 </button>
-                <span className="absolute -top-1 -right-1">
+                <span className="absolute top-0 right-0 inline-flex translate-x-1/2 -translate-y-1/2">
                   <StatusBadge variant="dot" size={demoSize} />
                 </span>
               </div>
-              <div className="relative">
+              <div className="flex items-center gap-2">
                 <span
                   className="text-sm text-black"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 >
                   新着メッセージ
                 </span>
-                <span className="absolute -top-2 -right-6">
-                  <StatusBadge
-                    tone="positive"
-                    className="rounded-full px-2 py-0.5 text-2.5"
-                    size={demoSize}
-                  >
-                    NEW
-                  </StatusBadge>
-                </span>
+                <StatusBadge tone="positive" shape="pill" size="3xs">
+                  NEW
+                </StatusBadge>
               </div>
             </div>
           </section>

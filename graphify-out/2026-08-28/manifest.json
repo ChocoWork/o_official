@@ -605,8 +605,8 @@
     "semantic_hash": ""
   },
   "src/app/item/[id]/ItemDetailClient.tsx": {
-    "mtime": 1787869817.2814786,
-    "ast_hash": "f2b393caf0a94c01d91e76c2242ec0c5",
+    "mtime": 1787871794.1016066,
+    "ast_hash": "2d184968d9dd19c3af2ab1b75e082db4",
     "semantic_hash": ""
   },
   "src/app/item/[id]/page.tsx": {
@@ -720,8 +720,8 @@
     "semantic_hash": "3cd1937a7e10acc0c6101bc393c1c181"
   },
   "src/app/ui/page.tsx": {
-    "mtime": 1787699480.0209515,
-    "ast_hash": "7bd6bcef9723a9c573a55b480dc4cd90",
+    "mtime": 1787873274.2304518,
+    "ast_hash": "d5b6032e90a98b3f05e6ebe413d8f88a",
     "semantic_hash": ""
   },
   "src/app/wishlist/page.tsx": {
@@ -1195,13 +1195,13 @@
     "semantic_hash": ""
   },
   "src/components/ui/StatusBadge/StatusBadge.tsx": {
-    "mtime": 1785328031.7925117,
-    "ast_hash": "a0532ff3561c671cb3ade518fc900171",
-    "semantic_hash": "a0532ff3561c671cb3ade518fc900171"
+    "mtime": 1787873252.2039862,
+    "ast_hash": "379273f13295713d7f4bf4ea070641c4",
+    "semantic_hash": ""
   },
   "src/components/ui/StatusBadge/StatusBadge_type.ts": {
-    "mtime": 1785328021.4936576,
-    "ast_hash": "0e0fafc08ce3ba19f5b391a672e9c062",
+    "mtime": 1787873256.7055762,
+    "ast_hash": "607a1204fbdcea00379219053b888270",
     "semantic_hash": ""
   },
   "src/components/ui/Stepper/Stepper.tsx": {
@@ -3750,8 +3750,8 @@
     "semantic_hash": ""
   },
   "e2e/FR-ITEM-DETAIL-022-carousel-gap.spec.ts": {
-    "mtime": 1784386399.8835633,
-    "ast_hash": "150d412f907d52d58cefa9aacf9da719",
+    "mtime": 1787871794.1710124,
+    "ast_hash": "99da65dfff9cf48f1e0f672d4d2e7de6",
     "semantic_hash": ""
   },
   "e2e/FR-ITEM-DETAIL-023-carousel-image-aspect.spec.ts": {
@@ -3760,8 +3760,8 @@
     "semantic_hash": ""
   },
   "e2e/FR-ITEM-DETAIL-024-reference-responsive-proportions.spec.ts": {
-    "mtime": 1787869520.9161325,
-    "ast_hash": "76a81cffcc95ef0067c3ccb6a878e8dc",
+    "mtime": 1787871794.2283032,
+    "ast_hash": "0c607f60a60f38df436c2ef7928497d0",
     "semantic_hash": ""
   },
   "e2e/FR-ITEM-DETAIL-025-previous-commit-typography.spec.ts": {
@@ -4690,8 +4690,8 @@
     "semantic_hash": ""
   },
   "docs/2_Specs/spec.md": {
-    "mtime": 1787869536.9375625,
-    "ast_hash": "fff7b05b230460f948bd0602fe07c7f2",
+    "mtime": 1787873494.8475497,
+    "ast_hash": "53977405300c07d2e9ca6581bd7d9f4a",
     "semantic_hash": ""
   },
   "docs/3_ArchitectureDesign/auth-structure.md": {
@@ -8480,8 +8480,13 @@
     "semantic_hash": ""
   },
   "e2e/FR-ITEM-DETAIL-055-carousel-peek-ratio.spec.ts": {
-    "mtime": 1787869553.0498543,
-    "ast_hash": "1bd82f085d805281a63abb348d013493",
+    "mtime": 1787871826.351775,
+    "ast_hash": "0d8f654e7b4d3b18094277b427087763",
+    "semantic_hash": ""
+  },
+  "e2e/FR-UI-002-badge-count-circle.spec.ts": {
+    "mtime": 1787873527.889465,
+    "ast_hash": "dd81d0e59548f58f4fb8de7556a4968c",
     "semantic_hash": ""
   }
 }

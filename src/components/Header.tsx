@@ -9,6 +9,7 @@ import { useLogin } from "@/contexts/LoginContext";
 import { useCart } from "@/contexts/CartContext";
 import { Button } from "@/components/ui/Button/Button";
 import { Drawer } from "@/components/ui/Drawer/Drawer";
+import { StatusBadge } from "@/components/ui/StatusBadge/StatusBadge";
 import { LOOK_SEASON_OPTIONS } from "@/lib/look/public";
 import { categories as newsCategories } from "@/lib/news-data";
 import { VISIBLE_SOCIAL_LINKS } from "@/lib/social";
@@ -248,8 +249,8 @@ const Header = () => {
               <span className="relative inline-flex">
                 <i className="ri-shopping-bag-line icon"></i>
                 {cartCount > 0 && (
-                  <span className="absolute top-0 right-0 translate-x-1/2 -translate-y-1/2 min-w-4 h-4 bg-black text-white rounded-full flex items-center justify-center text-2.5 font-medium leading-0 tabular-nums">
-                    {cartCount}
+                  <span className="absolute top-0 right-0 inline-flex translate-x-1/2 -translate-y-1/2">
+                    <StatusBadge variant="count" count={cartCount} size="2xs" />
                   </span>
                 )}
               </span>

@@ -8,6 +8,7 @@ export function StatusBadge({
   tone = 'neutral',
   variant = 'text',
   count,
+  max = 99,
   className,
   size = 'md',
   shape = 'square',
@@ -30,7 +31,14 @@ export function StatusBadge({
   }
 
   if (variant === 'count') {
-    const isMulti = count !== undefined && String(count).length > 1;
+    // 上限超過は "99+" に丸める。円は2桁まで内接するので、3文字以上だけ pill に開く。
+    const label =
+      count === undefined
+        ? ''
+        : typeof count === 'number' && count > max
+          ? `${max}+`
+          : String(count);
+    const isMulti = label.length > 2;
     return (
       <span
         data-ui-badge=""
@@ -40,7 +48,7 @@ export function StatusBadge({
         className={className}
         style={style}
       >
-        {count}
+        {label}
       </span>
     );
   }

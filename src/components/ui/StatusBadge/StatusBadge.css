@@ -17,16 +17,28 @@
   --badge-gap-icon2text: calc(var(--badge-pad-x) / var(--phi));
 
   /* ── Count-badge geometry ──────────────────────────────────────────── */
-  /* count-h: font × √φ  →  line-heightに揃えた高さ                      */
+  /* 直径 = font × √φ（Button / SingleSelect と同じコントロール高さ比）   */
   --badge-count-h: calc(var(--badge-font-size) * var(--sqrt-phi));
-  /* min-w = count-h  →  1桁は正円に                                     */
+  /* min-w = 直径  →  1桁でも2桁でも正円のまま                           */
   --badge-count-min-w: var(--badge-count-h);
-  /* multi-digit pad-x = gap-icon2text（pad-x / φ）                       */
-  --badge-count-pad-x: var(--badge-gap-icon2text);
+  /* 数字 = 直径 ÷ φ  →  文字塊が円の黄金小部分に収まり、2桁でも内接する */
+  --badge-count-font: calc(var(--badge-count-h) / var(--phi));
+  /* 3文字以上（99+ など）だけ pill に開く。pad-x = 数字 ÷ φ²           */
+  --badge-count-pad-x: calc(
+    var(--badge-count-font) / (var(--phi) * var(--phi))
+  );
 
   /* ── Dot-badge geometry ────────────────────────────────────────────── */
-  /* dot: font ÷ φ  →  thumb occupies the golden minor fraction          */
-  --badge-dot-size: calc(var(--badge-font-size) / var(--phi));
+  /* dot: 直径 ÷ φ²  →  count バッジの黄金小部分                         */
+  --badge-dot-size: calc(var(--badge-count-h) / (var(--phi) * var(--phi)));
+
+  /* ── Ring ──────────────────────────────────────────────────────────── */
+  /* アイコンやアバターに重ねたとき、下の線と混ざらないよう地色で縁取る。
+     幅 = 直径 ÷ φ⁴。地色が白でない場所では --badge-ring-color を上書き。 */
+  --badge-ring-width: calc(
+    var(--badge-count-h) / (var(--phi) * var(--phi) * var(--phi) * var(--phi))
+  );
+  --badge-ring-color: #ffffff;
 
   /* ── Color tokens ──────────────────────────────────────────────────── */
   --badge-ink: #111111;
@@ -61,13 +73,16 @@
   height: var(--badge-dot-size);
   border-radius: 9999px;
   background: var(--badge-ink);
+  box-shadow: 0 0 0 var(--badge-ring-width) var(--badge-ring-color);
   flex-shrink: 0;
 }
 
 /* ══════════════════════════════════════════════════════════════════════
    Variant: count
-   反復: pill shape echoes the rounded corners used across the system
-   対比: black fill + white numeral — maximum legibility at small size
+   反復: 全丸はシステム内の pill 形と揃う
+   対比: 黒地に白の数字 — 小サイズでも最大の可読性
+   整列: 直径 = font × √φ、数字 = 直径 ÷ φ。2桁でも円に内接するので、
+         1桁でも2桁でも正円のまま。3文字以上のときだけ pill に開く。
    ══════════════════════════════════════════════════════════════════════ */
 [data-ui-badge][data-ui-badge-variant="count"] {
   height: var(--badge-count-h);
@@ -76,13 +91,17 @@
   border-radius: 9999px;
   background: var(--badge-ink);
   color: var(--badge-ink-inverse);
-  font-size: var(--badge-font-size);
+  box-shadow: 0 0 0 var(--badge-ring-width) var(--badge-ring-color);
+  font-size: var(--badge-count-font);
   font-family: "acumin-pro", sans-serif;
   line-height: 1;
+  /* 桁が変わっても字幅が動かないよう等幅数字にし、親の字間は引き継がない */
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: 0;
   flex-shrink: 0;
 }
 
-/* multi-digit: pad widens the pill while min-w keeps single digits circular */
+/* 3文字以上（99+ など）: min-w を超える分だけ pill に開く */
 [data-ui-badge][data-ui-badge-variant="count"][data-ui-badge-multi="true"] {
   padding-inline: var(--badge-count-pad-x);
 }

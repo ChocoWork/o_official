@@ -15,8 +15,8 @@
     "semantic_hash": ""
   },
   "src/components/Header.tsx": {
-    "mtime": 1787695748.7024953,
-    "ast_hash": "9647df8d25126f11cf4e2e80e0dd5ebd",
+    "mtime": 1787913725.6938045,
+    "ast_hash": "d591902c4f761b1d5774c7d57587c56a",
     "semantic_hash": ""
   },
   "src/components/ItemSection.tsx": {
@@ -720,8 +720,8 @@
     "semantic_hash": "3cd1937a7e10acc0c6101bc393c1c181"
   },
   "src/app/ui/page.tsx": {
-    "mtime": 1787699480.0209515,
-    "ast_hash": "7bd6bcef9723a9c573a55b480dc4cd90",
+    "mtime": 1787913725.7062025,
+    "ast_hash": "a3db3c043a4101ba4a5ef8da6b4b585d",
     "semantic_hash": ""
   },
   "src/app/wishlist/page.tsx": {
@@ -1195,13 +1195,13 @@
     "semantic_hash": ""
   },
   "src/components/ui/StatusBadge/StatusBadge.tsx": {
-    "mtime": 1785328031.7925117,
-    "ast_hash": "a0532ff3561c671cb3ade518fc900171",
-    "semantic_hash": "a0532ff3561c671cb3ade518fc900171"
+    "mtime": 1787873252.2039862,
+    "ast_hash": "379273f13295713d7f4bf4ea070641c4",
+    "semantic_hash": ""
   },
   "src/components/ui/StatusBadge/StatusBadge_type.ts": {
-    "mtime": 1785328021.4936576,
-    "ast_hash": "0e0fafc08ce3ba19f5b391a672e9c062",
+    "mtime": 1787873256.7055762,
+    "ast_hash": "607a1204fbdcea00379219053b888270",
     "semantic_hash": ""
   },
   "src/components/ui/Stepper/Stepper.tsx": {
@@ -4690,8 +4690,8 @@
     "semantic_hash": ""
   },
   "docs/2_Specs/spec.md": {
-    "mtime": 1787871811.397076,
-    "ast_hash": "0980112b90282f07b8b2a800525270b8",
+    "mtime": 1787913554.8372333,
+    "ast_hash": "88b15afe170a2a4442830a067d18e7e3",
     "semantic_hash": ""
   },
   "docs/3_ArchitectureDesign/auth-structure.md": {
@@ -8482,6 +8482,16 @@
   "e2e/FR-ITEM-DETAIL-055-carousel-peek-ratio.spec.ts": {
     "mtime": 1787871826.351775,
     "ast_hash": "0d8f654e7b4d3b18094277b427087763",
+    "semantic_hash": ""
+  },
+  "e2e/FR-UI-002-badge-count-circle.spec.ts": {
+    "mtime": 1787873527.889465,
+    "ast_hash": "dd81d0e59548f58f4fb8de7556a4968c",
+    "semantic_hash": ""
+  },
+  "e2e/FR-HEADER-008-cart-count-badge.spec.ts": {
+    "mtime": 1787911236.7708478,
+    "ast_hash": "a78e99ec17ab9f66dfd34dc617eca7ce",
     "semantic_hash": ""
   }
 }
