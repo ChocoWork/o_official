@@ -15,13 +15,13 @@
     "semantic_hash": ""
   },
   "src/components/Header.tsx": {
-    "mtime": 1787695748.7024953,
-    "ast_hash": "9647df8d25126f11cf4e2e80e0dd5ebd",
+    "mtime": 1787913725.6938045,
+    "ast_hash": "d591902c4f761b1d5774c7d57587c56a",
     "semantic_hash": ""
   },
   "src/components/ItemSection.tsx": {
-    "mtime": 1787142440.8519044,
-    "ast_hash": "999219faf8e86efc3b57ab8cd57b2e0a",
+    "mtime": 1787920749.3375423,
+    "ast_hash": "efa2ba4a45a00578e2df26fe475a0b98",
     "semantic_hash": ""
   },
   "src/components/KpiSection.tsx": {
@@ -100,8 +100,8 @@
     "semantic_hash": "7586d1647798099a52bbd4f05ddf34ca"
   },
   "src/app/admin/item/ItemForm.tsx": {
-    "mtime": 1787828264.6948543,
-    "ast_hash": "462ac59d73c6cac8ca7811fd8fabcee7",
+    "mtime": 1787921097.2100587,
+    "ast_hash": "22343f2f5371394b14e74ed157c836c8",
     "semantic_hash": ""
   },
   "src/app/admin/item/create/page.tsx": {
@@ -160,8 +160,8 @@
     "semantic_hash": "857dcbb38bcfebcc004159e86241b4ee"
   },
   "src/app/admin/page.tsx": {
-    "mtime": 1786574744.5024326,
-    "ast_hash": "9a818492d68246b5a035a9d91ed79016",
+    "mtime": 1787920553.8573985,
+    "ast_hash": "b34bf6675bfb872b5404ea7fb5773b31",
     "semantic_hash": ""
   },
   "src/app/admin/stockist/StockistForm.tsx": {
@@ -720,8 +720,8 @@
     "semantic_hash": "3cd1937a7e10acc0c6101bc393c1c181"
   },
   "src/app/ui/page.tsx": {
-    "mtime": 1787873274.2304518,
-    "ast_hash": "d5b6032e90a98b3f05e6ebe413d8f88a",
+    "mtime": 1787913725.7062025,
+    "ast_hash": "a3db3c043a4101ba4a5ef8da6b4b585d",
     "semantic_hash": ""
   },
   "src/app/wishlist/page.tsx": {
@@ -4690,8 +4690,8 @@
     "semantic_hash": ""
   },
   "docs/2_Specs/spec.md": {
-    "mtime": 1787873494.8475497,
-    "ast_hash": "53977405300c07d2e9ca6581bd7d9f4a",
+    "mtime": 1787920818.3375077,
+    "ast_hash": "d3a6e4f36b31c70c8c9a8fd29f67dc2a",
     "semantic_hash": ""
   },
   "docs/3_ArchitectureDesign/auth-structure.md": {
@@ -7450,8 +7450,8 @@
     "semantic_hash": ""
   },
   "DESIGN.md": {
-    "mtime": 1786979174.1184568,
-    "ast_hash": "7ad468c898b63028d5d1c32b2d94f4b7",
+    "mtime": 1787920551.5487578,
+    "ast_hash": "a049a95efe77f641e1865791080df834",
     "semantic_hash": ""
   },
   "README.md": {
@@ -8487,6 +8487,16 @@
   "e2e/FR-UI-002-badge-count-circle.spec.ts": {
     "mtime": 1787873527.889465,
     "ast_hash": "dd81d0e59548f58f4fb8de7556a4968c",
+    "semantic_hash": ""
+  },
+  "e2e/FR-HEADER-008-cart-count-badge.spec.ts": {
+    "mtime": 1787911236.7708478,
+    "ast_hash": "a78e99ec17ab9f66dfd34dc617eca7ce",
+    "semantic_hash": ""
+  },
+  "e2e/FR-ADMIN-052-admin-item-responsive.spec.ts": {
+    "mtime": 1787920779.08263,
+    "ast_hash": "7e6c86c5287ae1f1a0406dc18f0544e6",
     "semantic_hash": ""
   }
 }

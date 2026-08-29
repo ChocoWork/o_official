@@ -858,7 +858,7 @@ function AdminPageContent() {
         <aside className="relative z-30 w-full min-w-0 md:w-56 md:shrink-0">
           <AdminSideNav activeTab={activeTab} onTabChange={handleTabChange} tabs={visibleTabs} />
         </aside>
-        <div className="min-w-0 flex-1 md:px-8">
+        <div className="min-w-0 flex-1 md:px-8 lg:px-10 xl:px-14 2xl:px-20 3xl:px-24 4xl:px-32">
           {tabRightContent ? <div className="mb-6 flex justify-end">{tabRightContent}</div> : null}
           {renderContent()}
         </div>

@@ -9467,7 +9467,7 @@
       "label": "viewports",
       "file_type": "code",
       "source_file": "e2e/FR-ADMIN-052-admin-item-responsive.spec.ts",
-      "source_location": "L7",
+      "source_location": "L5",
       "_origin": "ast",
       "id": "e2e_fr_admin_052_admin_item_responsive_spec_viewports",
       "community": 1089,
@@ -9478,7 +9478,7 @@
       "label": "SECTION_TITLES",
       "file_type": "code",
       "source_file": "e2e/FR-ADMIN-052-admin-item-responsive.spec.ts",
-      "source_location": "L18",
+      "source_location": "L21",
       "_origin": "ast",
       "id": "e2e_fr_admin_052_admin_item_responsive_spec_section_titles",
       "community": 1089,
@@ -9489,7 +9489,7 @@
       "label": "buildItems()",
       "file_type": "code",
       "source_file": "e2e/FR-ADMIN-052-admin-item-responsive.spec.ts",
-      "source_location": "L27",
+      "source_location": "L30",
       "_callable": true,
       "_origin": "ast",
       "id": "e2e_fr_admin_052_admin_item_responsive_spec_builditems",
@@ -9501,7 +9501,7 @@
       "label": "mockAdminApis()",
       "file_type": "code",
       "source_file": "e2e/FR-ADMIN-052-admin-item-responsive.spec.ts",
-      "source_location": "L38",
+      "source_location": "L41",
       "_callable": true,
       "_origin": "ast",
       "id": "e2e_fr_admin_052_admin_item_responsive_spec_mockadminapis",
@@ -9513,7 +9513,7 @@
       "label": "hasHorizontalOverflow()",
       "file_type": "code",
       "source_file": "e2e/FR-ADMIN-052-admin-item-responsive.spec.ts",
-      "source_location": "L67",
+      "source_location": "L70",
       "_callable": true,
       "_origin": "ast",
       "id": "e2e_fr_admin_052_admin_item_responsive_spec_hashorizontaloverflow",
@@ -31808,7 +31808,7 @@
       "_origin": "ast",
       "id": "src_app_news_newscategorytabs",
       "community": 1030,
-      "community_name": "news/[id]/page.tsx",
+      "community_name": "news/page.tsx",
       "norm_label": "newscategorytabs.tsx"
     },
     {
@@ -31821,7 +31821,7 @@
       "_origin": "ast",
       "id": "src_app_news_newscategorytabs_newscategorytabsprops",
       "community": 1030,
-      "community_name": "news/[id]/page.tsx",
+      "community_name": "news/page.tsx",
       "norm_label": "newscategorytabsprops"
     },
     {
@@ -31833,7 +31833,7 @@
       "_origin": "ast",
       "id": "src_app_news_newscategorytabs_newscategorytabs",
       "community": 1030,
-      "community_name": "news/[id]/page.tsx",
+      "community_name": "news/page.tsx",
       "norm_label": "newscategorytabs()"
     },
     {
@@ -31843,8 +31843,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "src_app_news_id_page",
-      "community": 1030,
-      "community_name": "news/[id]/page.tsx",
+      "community": 12,
+      "community_name": "Button.tsx",
       "norm_label": "news/[id]/page.tsx"
     },
     {
@@ -31856,8 +31856,8 @@
       "_callable_class": true,
       "_origin": "ast",
       "id": "src_app_news_id_page_newsdetailpageprops",
-      "community": 1030,
-      "community_name": "news/[id]/page.tsx",
+      "community": 12,
+      "community_name": "Button.tsx",
       "norm_label": "newsdetailpageprops"
     },
     {
@@ -31868,8 +31868,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "src_app_news_id_page_resolvecategorylistparam",
-      "community": 1030,
-      "community_name": "news/[id]/page.tsx",
+      "community": 12,
+      "community_name": "Button.tsx",
       "norm_label": "resolvecategorylistparam()"
     },
     {
@@ -31880,8 +31880,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "src_app_news_id_page_resolvecategory",
-      "community": 1030,
-      "community_name": "news/[id]/page.tsx",
+      "community": 12,
+      "community_name": "Button.tsx",
       "norm_label": "resolvecategory()"
     },
     {
@@ -31892,8 +31892,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "src_app_news_id_page_builddescription",
-      "community": 1030,
-      "community_name": "news/[id]/page.tsx",
+      "community": 12,
+      "community_name": "Button.tsx",
       "norm_label": "builddescription()"
     },
     {
@@ -31904,8 +31904,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "src_app_news_id_page_generatemetadata",
-      "community": 1030,
-      "community_name": "news/[id]/page.tsx",
+      "community": 12,
+      "community_name": "Button.tsx",
       "norm_label": "generatemetadata()"
     },
     {
@@ -31916,8 +31916,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "src_app_news_id_page_newsdetailpage",
-      "community": 1030,
-      "community_name": "news/[id]/page.tsx",
+      "community": 12,
+      "community_name": "Button.tsx",
       "norm_label": "newsdetailpage()"
     },
     {
@@ -31928,7 +31928,7 @@
       "_origin": "ast",
       "id": "src_app_news_page",
       "community": 1030,
-      "community_name": "news/[id]/page.tsx",
+      "community_name": "news/page.tsx",
       "norm_label": "news/page.tsx"
     },
     {
@@ -31941,7 +31941,7 @@
       "_origin": "ast",
       "id": "src_app_news_page_newspagesearchparams",
       "community": 1030,
-      "community_name": "news/[id]/page.tsx",
+      "community_name": "news/page.tsx",
       "norm_label": "newspagesearchparams"
     },
     {
@@ -31953,7 +31953,7 @@
       "_origin": "ast",
       "id": "src_app_news_page_resolvecategory",
       "community": 1030,
-      "community_name": "news/[id]/page.tsx",
+      "community_name": "news/page.tsx",
       "norm_label": "resolvecategory()"
     },
     {
@@ -31965,7 +31965,7 @@
       "_origin": "ast",
       "id": "src_app_news_page_generatemetadata",
       "community": 1030,
-      "community_name": "news/[id]/page.tsx",
+      "community_name": "news/page.tsx",
       "norm_label": "generatemetadata()"
     },
     {
@@ -31977,7 +31977,7 @@
       "_origin": "ast",
       "id": "src_app_news_page_newspage",
       "community": 1030,
-      "community_name": "news/[id]/page.tsx",
+      "community_name": "news/page.tsx",
       "norm_label": "newspage()"
     },
     {
@@ -34243,7 +34243,7 @@
       "label": "ItemSection()",
       "file_type": "code",
       "source_file": "src/components/ItemSection.tsx",
-      "source_location": "L111",
+      "source_location": "L101",
       "_callable": true,
       "_origin": "ast",
       "id": "src_components_itemsection_itemsection",
@@ -37779,8 +37779,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "src_components_ui_emptypage_emptypage_types",
-      "community": 12,
-      "community_name": "Button.tsx",
+      "community": 44,
+      "community_name": "ComponentSize",
       "norm_label": "emptypage_types.ts"
     },
     {
@@ -37792,8 +37792,8 @@
       "_callable_class": true,
       "_origin": "ast",
       "id": "src_components_ui_emptypage_emptypage_types_emptypageprops",
-      "community": 12,
-      "community_name": "Button.tsx",
+      "community": 44,
+      "community_name": "ComponentSize",
       "norm_label": "emptypageprops"
     },
     {
@@ -43305,8 +43305,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "src_features_news_services_public_getpublishednewsnavigation",
-      "community": 1030,
-      "community_name": "news/[id]/page.tsx",
+      "community": 12,
+      "community_name": "Button.tsx",
       "norm_label": "getpublishednewsnavigation()"
     },
     {
@@ -50739,7 +50739,7 @@
       "_origin": "ast",
       "id": "src_lib_news_data",
       "community": 1030,
-      "community_name": "news/[id]/page.tsx",
+      "community_name": "news/page.tsx",
       "norm_label": "news-data.ts"
     },
     {
@@ -50750,7 +50750,7 @@
       "_origin": "ast",
       "id": "src_lib_news_data_newsdata",
       "community": 1030,
-      "community_name": "news/[id]/page.tsx",
+      "community_name": "news/page.tsx",
       "norm_label": "newsdata"
     },
     {
@@ -50761,7 +50761,7 @@
       "_origin": "ast",
       "id": "src_lib_news_data_categories",
       "community": 1030,
-      "community_name": "news/[id]/page.tsx",
+      "community_name": "news/page.tsx",
       "norm_label": "categories"
     },
     {
@@ -52981,7 +52981,7 @@
       "_origin": "ast",
       "id": "src_types_news_newsarticle",
       "community": 1030,
-      "community_name": "news/[id]/page.tsx",
+      "community_name": "news/page.tsx",
       "norm_label": "newsarticle"
     },
     {
@@ -108535,10 +108535,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 125,
+      "community": 84,
       "norm_label": "freq-19 admin \u306b\u3088\u308b kpi \u306e\u95b2\u89a7\u3068\u7ba1\u7406",
       "_origin": "semantic",
-      "community_name": "FR-ADMIN-002 KPI \u30c0\u30c3\u30b7\u30e5\u30dc\u30fc\u30c9\uff08KpiSection\u30fb\u671f\u9593\u30d5\u30a3\u30eb\u30bf\uff09",
+      "community_name": "\u30cf\u30a4\u30d6\u30ea\u30c3\u30c9 RBAC \u30a2\u30fc\u30ad\u30c6\u30af\u30c1\u30e3\uff08\u30c8\u30fc\u30af\u30f3\u9ad8\u901f\u30d1\u30b9 + DB ACL \u6a29\u9650\u6e90\uff09",
       "id": "docs_1_requirementsdifinition_requirementsdifinition_freq_19_kpi"
     },
     {
@@ -108790,7 +108790,7 @@
       "community": 125,
       "norm_label": "emotion design(\u611f\u60c5\u8a2d\u8a08\u30fb\u9867\u5ba2\u306e\u5fc3\u306e\u58f0\u306e\u30bf\u30a4\u30e0\u30e9\u30a4\u30f3)",
       "_origin": "semantic",
-      "community_name": "FR-ADMIN-002 KPI \u30c0\u30c3\u30b7\u30e5\u30dc\u30fc\u30c9\uff08KpiSection\u30fb\u671f\u9593\u30d5\u30a3\u30eb\u30bf\uff09",
+      "community_name": "Pricing \u4fa1\u683c\u54f2\u5b66\uff08\u30bb\u30fc\u30eb\u3092\u3057\u306a\u3044\uff09",
       "id": "docs_1_requirementsdifinition_brand_emotion_design"
     },
     {
@@ -108863,10 +108863,10 @@
       "author": null,
       "contributor": null,
       "rationale": "LTV\u6700\u5927\u306f\u30b3\u30a2\u306e\u30bb\u30c3\u30c8\u30a2\u30c3\u30d7\u53cd\u5fa9\u3002\u30b5\u30d63\u306fLTV\u984d\u3088\u308a\u53e4\u7740\u5e02\u5834\u3067\u306e\u6b8b\u4fa1\uff1d\u30d6\u30e9\u30f3\u30c9\u4fa1\u5024\u306e\u8a3c\u660e\u3067\u8ca2\u732e\u3059\u308b",
-      "community": 155,
+      "community": 125,
       "norm_label": "ltv\u30fb\u8cfc\u5165\u30cf\u30bf\u30fc\u30f3(\u30d8\u30eb\u30bd\u30ca\u5225 \u5e74\u9593\u652f\u51fa\u3068\u63a8\u5b9altv)",
       "_origin": "semantic",
-      "community_name": "Brand Philosophy \u2014 \u6642\u9593\u3068\u3044\u3046\u30d5\u30a3\u30eb\u30bf\u30fc\u3092\u901a\u3057\u3066\u3082\u4fa1\u5024\u304c\u843d\u3061\u306a\u3044\u670d",
+      "community_name": "Pricing \u4fa1\u683c\u54f2\u5b66\uff08\u30bb\u30fc\u30eb\u3092\u3057\u306a\u3044\uff09",
       "id": "docs_1_requirementsdifinition_brand_ltv_purchase_pattern"
     },
     {
@@ -108879,10 +108879,10 @@
       "author": null,
       "contributor": null,
       "rationale": "\u5024\u5f15\u304d\u306f\u601d\u60f3\u3068\u4fe1\u983c\u3092\u6bc0\u640d\u3059\u308b\u305f\u3081\u4fa1\u683c\u306f\u6700\u521d\u304b\u3089\u9069\u6b63\u306b\u7f6e\u304f\u3002\u4fa1\u683c\u3082\u601d\u60f3\u306e\u4e00\u90e8\u3067\u3001\u5b89\u3055\u3067\u9078\u3070\u305b\u306a\u3044",
-      "community": 155,
+      "community": 125,
       "norm_label": "pricing \u4fa1\u683c\u54f2\u5b66(\u30bb\u30fc\u30eb\u3092\u3057\u306a\u3044)",
       "_origin": "semantic",
-      "community_name": "Brand Philosophy \u2014 \u6642\u9593\u3068\u3044\u3046\u30d5\u30a3\u30eb\u30bf\u30fc\u3092\u901a\u3057\u3066\u3082\u4fa1\u5024\u304c\u843d\u3061\u306a\u3044\u670d",
+      "community_name": "Pricing \u4fa1\u683c\u54f2\u5b66\uff08\u30bb\u30fc\u30eb\u3092\u3057\u306a\u3044\uff09",
       "id": "docs_1_requirementsdifinition_brand_pricing_strategy"
     },
     {
@@ -108911,10 +108911,10 @@
       "author": null,
       "contributor": null,
       "rationale": "\u300c\u9ad8\u3044\u300d\u306e\u3067\u306f\u306a\u304f\u300c\u9577\u3044\u300d\u3002\u4fa1\u683c\u3092\u7740\u7528\u5e74\u6570\u3067\u5272\u308b\u3053\u3068\u3067\u30da\u30eb\u30bd\u30ca\u306e\u300c\u9ad8\u304f\u3066\u3082\u9577\u304f\u7740\u308c\u308b\u306a\u3089OK\u300d\u3068\u76f4\u7d50\u3055\u305b\u308b",
-      "community": 155,
+      "community": 125,
       "norm_label": "\u4fa1\u683c\u306e\u6b63\u5f53\u5316\u30ed\u30b7\u30c3\u30af(\u7740\u7528\u30b3\u30b9\u30c8=1\u56de\u3042\u305f\u308a\u306e\u30b3\u30b9\u30c8)",
       "_origin": "semantic",
-      "community_name": "Brand Philosophy \u2014 \u6642\u9593\u3068\u3044\u3046\u30d5\u30a3\u30eb\u30bf\u30fc\u3092\u901a\u3057\u3066\u3082\u4fa1\u5024\u304c\u843d\u3061\u306a\u3044\u670d",
+      "community_name": "Pricing \u4fa1\u683c\u54f2\u5b66\uff08\u30bb\u30fc\u30eb\u3092\u3057\u306a\u3044\uff09",
       "id": "docs_1_requirementsdifinition_brand_wear_cost_logic"
     },
     {
@@ -108927,10 +108927,10 @@
       "author": null,
       "contributor": null,
       "rationale": "\u5929\u7136\u7e4a\u7dad100%\u30fb\u53d7\u6ce8\u751f\u7523\u30fb\u56fd\u5185\u751f\u7523\u3068\u3044\u3046\u6838\u3067\u306f1\u4e07\u5186\u53f0\u306e\u4fa1\u683c\u5e2f\u304c\u69cb\u9020\u7684\u306b\u6210\u7acb\u3057\u306a\u3044\u305f\u3081\u3002\u63a5\u70b9\u306f\u4e16\u754c\u89b3\u306e\u30d5\u30a1\u30f3\u5316\u306b\u7559\u3081\u30b3\u30a2\u4fa1\u683c\u306f\u4e0b\u3052\u306a\u3044",
-      "community": 155,
+      "community": 125,
       "norm_label": "\u4f4e\u4e88\u7b97\u5c64(1\u301c1.5\u4e07\u5186\u4e0a\u9650)\u3092\u30bf\u30fc\u30b1\u30c3\u30c8\u304b\u3089\u5916\u3059\u6c7a\u5b9a",
       "_origin": "semantic",
-      "community_name": "Brand Philosophy \u2014 \u6642\u9593\u3068\u3044\u3046\u30d5\u30a3\u30eb\u30bf\u30fc\u3092\u901a\u3057\u3066\u3082\u4fa1\u5024\u304c\u843d\u3061\u306a\u3044\u670d",
+      "community_name": "Pricing \u4fa1\u683c\u54f2\u5b66\uff08\u30bb\u30fc\u30eb\u3092\u3057\u306a\u3044\uff09",
       "id": "docs_1_requirementsdifinition_brand_low_budget_exclusion"
     },
     {
@@ -109004,10 +109004,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 125,
+      "community": 84,
       "norm_label": "fr-admin-002 kpi \u30bf\u30c3\u30b7\u30e5\u30db\u30fc\u30c8(kpisection\u30fb\u671f\u9593\u30d5\u30a3\u30eb\u30bf)",
       "_origin": "semantic",
-      "community_name": "FR-ADMIN-002 KPI \u30c0\u30c3\u30b7\u30e5\u30dc\u30fc\u30c9\uff08KpiSection\u30fb\u671f\u9593\u30d5\u30a3\u30eb\u30bf\uff09",
+      "community_name": "\u30cf\u30a4\u30d6\u30ea\u30c3\u30c9 RBAC \u30a2\u30fc\u30ad\u30c6\u30af\u30c1\u30e3\uff08\u30c8\u30fc\u30af\u30f3\u9ad8\u901f\u30d1\u30b9 + DB ACL \u6a29\u9650\u6e90\uff09",
       "id": "docs_2_specs_spec_fr_admin_002_kpi_dashboard"
     },
     {
@@ -109019,10 +109019,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 84,
+      "community": 1010,
       "norm_label": "fr-admin-009 contact \u30bf\u30d5(\u30b9\u30ec\u30c3\u30c8\u7ba1\u7406\u30fb\u8fd4\u4fe1\u30c6\u30f3\u30d5\u30ec\u30fc\u30c8 crud)",
       "_origin": "semantic",
-      "community_name": "\u30cf\u30a4\u30d6\u30ea\u30c3\u30c9 RBAC \u30a2\u30fc\u30ad\u30c6\u30af\u30c1\u30e3\uff08\u30c8\u30fc\u30af\u30f3\u9ad8\u901f\u30d1\u30b9 + DB ACL \u6a29\u9650\u6e90\uff09",
+      "community_name": "DB ACL\uff08roles / permissions / role_permissions / user_roles\uff09",
       "id": "docs_2_specs_spec_fr_admin_009_contact"
     },
     {
@@ -109034,10 +109034,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 84,
+      "community": 1010,
       "norm_label": "freq-24 \u554f\u3044\u5408\u308f\u305b\u5b8c\u4e86\u30e1\u30fc\u30eb\u3068 reply-to \u53d6\u308a\u8fbc\u307f",
       "_origin": "semantic",
-      "community_name": "\u30cf\u30a4\u30d6\u30ea\u30c3\u30c9 RBAC \u30a2\u30fc\u30ad\u30c6\u30af\u30c1\u30e3\uff08\u30c8\u30fc\u30af\u30f3\u9ad8\u901f\u30d1\u30b9 + DB ACL \u6a29\u9650\u6e90\uff09",
+      "community_name": "DB ACL\uff08roles / permissions / role_permissions / user_roles\uff09",
       "id": "docs_2_specs_spec_freq_24_contact_mail"
     },
     {
@@ -109219,10 +109219,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1010,
+      "community": 140,
       "norm_label": "arch-auth-08 \u76e3\u67fb\u30ed\u30af(json lines\u30fb\u4fdd\u6301\u30db\u30ea\u30b7\u30fc)",
       "_origin": "semantic",
-      "community_name": "DB ACL\uff08roles / permissions / role_permissions / user_roles\uff09",
+      "community_name": "\u8981\u6c42 \u2192 \u30a2\u30fc\u30ad\u30c6\u30af\u30c1\u30e3ID \u30de\u30c3\u30d4\u30f3\u30b0\uff08ARCH-AUTH-01\u301c10\uff09",
       "id": "docs_3_architecturedesign_auth_structure_audit_log"
     },
     {
@@ -109266,10 +109266,10 @@
       "author": null,
       "contributor": null,
       "rationale": "Supabase \u3092\u8a8d\u8a3c\u60c5\u5831\u7ba1\u7406\u3068\u30c8\u30fc\u30af\u30f3\u767a\u884c\u306b\u9650\u5b9a\u3057\u3001\u30bb\u30c3\u30b7\u30e7\u30f3\u7ba1\u7406\u3068\u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30dd\u30ea\u30b7\u30fc\u306f\u30a2\u30d7\u30ea\u5074\u3067\u6301\u3064\u3053\u3068\u3067\u8cac\u4efb\u5206\u96e2\u3068\u62e1\u5f35\u6027\u3092\u78ba\u4fdd\u3059\u308b",
-      "community": 84,
+      "community": 1010,
       "norm_label": "supabase auth \u7d71\u5408(id\u7ba1\u7406\u5c64 / \u30bb\u30c3\u30b7\u30e7\u30f3\u5c64 / \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u5c64\u306e\u5206\u96e2)",
       "_origin": "semantic",
-      "community_name": "\u30cf\u30a4\u30d6\u30ea\u30c3\u30c9 RBAC \u30a2\u30fc\u30ad\u30c6\u30af\u30c1\u30e3\uff08\u30c8\u30fc\u30af\u30f3\u9ad8\u901f\u30d1\u30b9 + DB ACL \u6a29\u9650\u6e90\uff09",
+      "community_name": "DB ACL\uff08roles / permissions / role_permissions / user_roles\uff09",
       "id": "docs_3_architecturedesign_auth_structure_supabase_integration"
     },
     {
@@ -109377,10 +109377,10 @@
       "author": null,
       "contributor": null,
       "rationale": "DB \u30af\u30a8\u30ea\u4e0d\u8981\u3067\u9ad8\u901f\u3060\u304c\u8a50\u79f0\u30ea\u30b9\u30af\u304c\u3042\u308b\u305f\u3081\u3001\u3042\u304f\u307e\u3067 UI \u6700\u9069\u5316\u7528\u306e\u30d2\u30f3\u30c8\u3068\u3057\u3001\u91cd\u8981\u64cd\u4f5c\u3067\u306f\u5fc5\u305a DB ACL \u3092\u53c2\u7167\u3059\u308b",
-      "community": 84,
+      "community": 1010,
       "norm_label": "\u30c8\u30fc\u30af\u30f3\u30ed\u30fc\u30eb(auth.app_metadata.role)",
       "_origin": "semantic",
-      "community_name": "\u30cf\u30a4\u30d6\u30ea\u30c3\u30c9 RBAC \u30a2\u30fc\u30ad\u30c6\u30af\u30c1\u30e3\uff08\u30c8\u30fc\u30af\u30f3\u9ad8\u901f\u30d1\u30b9 + DB ACL \u6a29\u9650\u6e90\uff09",
+      "community_name": "DB ACL\uff08roles / permissions / role_permissions / user_roles\uff09",
       "id": "docs_3_architecturedesign_hybrid_rbac_token_role"
     },
     {
@@ -109423,10 +109423,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 84,
+      "community": 1010,
       "norm_label": "authorizeadminpermission \u30d8\u30eb\u30cf\u30fc(src/lib/auth/admin-rbac.ts)",
       "_origin": "semantic",
-      "community_name": "\u30cf\u30a4\u30d6\u30ea\u30c3\u30c9 RBAC \u30a2\u30fc\u30ad\u30c6\u30af\u30c1\u30e3\uff08\u30c8\u30fc\u30af\u30f3\u9ad8\u901f\u30d1\u30b9 + DB ACL \u6a29\u9650\u6e90\uff09",
+      "community_name": "DB ACL\uff08roles / permissions / role_permissions / user_roles\uff09",
       "id": "docs_3_architecturedesign_hybrid_rbac_authorize_admin_permission"
     },
     {
@@ -109534,7 +109534,7 @@
       "community": 125,
       "norm_label": "kpi \u6307\u6a19\u5b9a\u7fa9\u4e00\u89a7",
       "_origin": "semantic",
-      "community_name": "FR-ADMIN-002 KPI \u30c0\u30c3\u30b7\u30e5\u30dc\u30fc\u30c9\uff08KpiSection\u30fb\u671f\u9593\u30d5\u30a3\u30eb\u30bf\uff09",
+      "community_name": "Pricing \u4fa1\u683c\u54f2\u5b66\uff08\u30bb\u30fc\u30eb\u3092\u3057\u306a\u3044\uff09",
       "id": "docs_other_kpi_metric_definitions"
     },
     {
@@ -109549,7 +109549,7 @@
       "community": 125,
       "norm_label": "\u8a8d\u77e5\u301c\u6d41\u5165\u30d5\u30a1\u30cd\u30eb\u6307\u6a19(\u30ea\u30fc\u30c1\u6570 / \u4fdd\u5b58\u7387 / \u30d5\u30ed\u30d5\u9077\u79fb\u7387 / \u30b9\u30c8\u30fc\u30ea\u30fc\u5230\u9054\u7387 / \u30ea\u30f3\u30af\u30af\u30ea\u30c3\u30af\u7387)",
       "_origin": "ast",
-      "community_name": "FR-ADMIN-002 KPI \u30c0\u30c3\u30b7\u30e5\u30dc\u30fc\u30c9\uff08KpiSection\u30fb\u671f\u9593\u30d5\u30a3\u30eb\u30bf\uff09",
+      "community_name": "Pricing \u4fa1\u683c\u54f2\u5b66\uff08\u30bb\u30fc\u30eb\u3092\u3057\u306a\u3044\uff09",
       "id": "kpi_funnel_metrics"
     },
     {
@@ -109564,7 +109564,7 @@
       "community": 125,
       "norm_label": "\u58f2\u4e0a\u7cfb\u6307\u6a19(cvr / \u58f2\u4e0a / \u5ba2\u5358\u4fa1 aov / \u30bb\u30c3\u30c8\u8cfc\u5165\u7387 / \u5728\u5eab\u6d88\u5316\u7387)",
       "_origin": "ast",
-      "community_name": "FR-ADMIN-002 KPI \u30c0\u30c3\u30b7\u30e5\u30dc\u30fc\u30c9\uff08KpiSection\u30fb\u671f\u9593\u30d5\u30a3\u30eb\u30bf\uff09",
+      "community_name": "Pricing \u4fa1\u683c\u54f2\u5b66\uff08\u30bb\u30fc\u30eb\u3092\u3057\u306a\u3044\uff09",
       "id": "kpi_sales_metrics"
     },
     {
@@ -109576,10 +109576,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 155,
+      "community": 125,
       "norm_label": "\u9867\u5ba2\u7d99\u7d9a\u6307\u6a19(ltv / \u30ea\u30d2\u30fc\u30c8\u7387 / \u8fd4\u54c1\u7387 / \u96e2\u8131\u7387)",
       "_origin": "ast",
-      "community_name": "Brand Philosophy \u2014 \u6642\u9593\u3068\u3044\u3046\u30d5\u30a3\u30eb\u30bf\u30fc\u3092\u901a\u3057\u3066\u3082\u4fa1\u5024\u304c\u843d\u3061\u306a\u3044\u670d",
+      "community_name": "Pricing \u4fa1\u683c\u54f2\u5b66\uff08\u30bb\u30fc\u30eb\u3092\u3057\u306a\u3044\uff09",
       "id": "kpi_retention_metrics"
     },
     {
@@ -109594,7 +109594,7 @@
       "community": 125,
       "norm_label": "\u52d8\u5b9a\u79d1\u76ee\u30de\u30b9\u30bf(159 \u79d1\u76ee)",
       "_origin": "semantic",
-      "community_name": "FR-ADMIN-002 KPI \u30c0\u30c3\u30b7\u30e5\u30dc\u30fc\u30c9\uff08KpiSection\u30fb\u671f\u9593\u30d5\u30a3\u30eb\u30bf\uff09",
+      "community_name": "Pricing \u4fa1\u683c\u54f2\u5b66\uff08\u30bb\u30fc\u30eb\u3092\u3057\u306a\u3044\uff09",
       "id": "zaimu_chart_of_accounts"
     },
     {
@@ -109607,10 +109607,10 @@
       "author": null,
       "contributor": null,
       "rationale": "\u6709\u52b9\u306e\u521d\u671f\u5024\u306f\u30a2\u30d1\u30ec\u30eb\u30d6\u30e9\u30f3\u30c9\uff08\u500b\u4eba\u4e8b\u696d\uff09\u60f3\u5b9a\u3002\u9069\u7528\u5f62\u614b=\u500b\u4eba\u306e\u79d1\u76ee\u306f\u6cd5\u4eba\u30c6\u30ca\u30f3\u30c8\u3067\u975e\u8868\u793a\u306b\u3059\u308b",
-      "community": 166,
+      "community": 125,
       "norm_label": "\u30c6\u30ca\u30f3\u30c8\u4e0a\u66f8\u304d(\u8868\u793a\u540d / \u7a2e\u5225 / \u6709\u52b9 \u3068 \u9069\u7528\u5f62\u614b\u30d5\u30a3\u30eb\u30bf)",
       "_origin": "semantic",
-      "community_name": "Le Fil des Heures\uff08\u30d6\u30e9\u30f3\u30c9\u61b2\u6cd5\uff09",
+      "community_name": "Pricing \u4fa1\u683c\u54f2\u5b66\uff08\u30bb\u30fc\u30eb\u3092\u3057\u306a\u3044\uff09",
       "id": "zaimu_tenant_override"
     },
     {
@@ -109623,10 +109623,10 @@
       "author": null,
       "contributor": null,
       "rationale": "\u904e\u53bb\u4ed5\u8a33\u304c\u79d1\u76ee\u3092\u53c2\u7167\u3059\u308b\u305f\u3081\u3001\u5ec3\u6b62\u3057\u3066\u3082\u7269\u7406\u524a\u9664\u3057\u3066\u306f\u306a\u3089\u306a\u3044",
-      "community": 166,
+      "community": 125,
       "norm_label": "\u79d1\u76ee\u306e\u524a\u9664\u7981\u6b62\u30db\u30ea\u30b7\u30fc(\u6709\u52b9\u30d5\u30e9\u30af\u3092\u5916\u3059\u306e\u307f)",
       "_origin": "semantic",
-      "community_name": "Le Fil des Heures\uff08\u30d6\u30e9\u30f3\u30c9\u61b2\u6cd5\uff09",
+      "community_name": "Pricing \u4fa1\u683c\u54f2\u5b66\uff08\u30bb\u30fc\u30eb\u3092\u3057\u306a\u3044\uff09",
       "id": "zaimu_no_delete_policy"
     },
     {
@@ -109670,10 +109670,10 @@
       "author": null,
       "contributor": null,
       "rationale": "\u5bfe\u8c61\u306f\u7279\u6a29\u30e6\u30fc\u30b6\u30fc\u306e\u307f\u8a31\u53ef\u3057\u81ea\u5df1\u30ea\u30bb\u30c3\u30c8\u306f\u62d2\u5426\u3002confirm \u56fa\u5b9a\u5024 RESET_MFA \u3092\u5fc5\u9808\u306b\u3057\u3066\u8aa4\u64cd\u4f5c\u3092\u9632\u304e\u3001\u6210\u529f\u30fb\u5931\u6557\u3068\u3082\u306b audit_logs \u306b\u6b8b\u3059",
-      "community": 1010,
+      "community": 140,
       "norm_label": "\u7ba1\u7406\u8005\u904b\u7528: mfa \u30ea\u30bb\u30c3\u30c8(post /api/admin/users/mfa/reset)",
       "_origin": "semantic",
-      "community_name": "DB ACL\uff08roles / permissions / role_permissions / user_roles\uff09",
+      "community_name": "\u8981\u6c42 \u2192 \u30a2\u30fc\u30ad\u30c6\u30af\u30c1\u30e3ID \u30de\u30c3\u30d4\u30f3\u30b0\uff08ARCH-AUTH-01\u301c10\uff09",
       "id": "src_features_auth_design_mfa_admin_reset"
     },
     {
@@ -111108,10 +111108,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1019,
+      "community": 79,
       "norm_label": "admin \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d2\u30e5\u30fc",
       "_origin": "semantic",
-      "community_name": "admin \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc\u7dcf\u62ec (2026-06-27 dynamic workflow)",
       "id": "review_admin"
     },
     {
@@ -111123,10 +111123,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 25,
+      "community": 24,
       "norm_label": "auth/callback \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d2\u30e5\u30fc",
       "_origin": "semantic",
-      "community_name": "home \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/proxy.ts (Next.js 16 proxy / \u65e7 middleware)",
       "id": "review_auth_callback"
     },
     {
@@ -111186,7 +111186,7 @@
       "community": 903,
       "norm_label": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d2\u30e5\u30fc",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "review_checkout"
     },
     {
@@ -111231,7 +111231,7 @@
       "community": 903,
       "norm_label": "contact \u554f\u3044\u5408\u308f\u305b\u6a5f\u80fd \u6b8b\u30bf\u30b9\u30af(resend \u53d7\u4fe1\u30e1\u30fc\u30eb\u8a2d\u5b9a)",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "contact_remaining_tasks"
     },
     {
@@ -111363,7 +111363,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 993,
+      "community": 101,
       "norm_label": "a01 broken access control",
       "_origin": "semantic",
       "community_name": "A01 Broken Access Control",
@@ -111396,7 +111396,7 @@
       "community": 19,
       "norm_label": "a04 insecure design",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "owasp_a04_insecure_design"
     },
     {
@@ -111411,7 +111411,7 @@
       "community": 19,
       "norm_label": "a05 security misconfiguration",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "owasp_a05_security_misconfiguration"
     },
     {
@@ -111453,10 +111453,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 25,
+      "community": 24,
       "norm_label": "open redirect (cwe-601)",
       "_origin": "semantic",
-      "community_name": "home \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/proxy.ts (Next.js 16 proxy / \u65e7 middleware)",
       "id": "vuln_open_redirect"
     },
     {
@@ -111531,7 +111531,7 @@
       "community": 903,
       "norm_label": "fail-open(\u969c\u5bb3\u6642\u306b\u9632\u5fa1\u304b\u7121\u52b9\u5316\u3055\u308c\u308b\u8a2d\u8a08)",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "vuln_fail_open"
     },
     {
@@ -111606,7 +111606,7 @@
       "community": 903,
       "norm_label": "pii \u5e73\u6587\u4fdd\u6301\u30fb\u4fdd\u6301\u671f\u9593\u672a\u5b9a\u7fa9",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "vuln_pii_retention"
     },
     {
@@ -111648,10 +111648,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1019,
+      "community": 79,
       "norm_label": "\u6a29\u9650\u6607\u683c(rbac \u30cf\u30a4\u30cf\u30b9 / \u5171\u6709\u30c8\u30fc\u30af\u30f3)",
       "_origin": "semantic",
-      "community_name": "admin \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc\u7dcf\u62ec (2026-06-27 dynamic workflow)",
       "id": "vuln_privilege_escalation"
     },
     {
@@ -111798,10 +111798,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1019,
+      "community": 79,
       "norm_label": "pii \u30cf\u30c3\u30b7\u30e5\u5316\u3057\u305f\u69cb\u9020\u5316\u76e3\u67fb\u30ed\u30af (logaudit)",
       "_origin": "semantic",
-      "community_name": "admin \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc\u7dcf\u62ec (2026-06-27 dynamic workflow)",
       "id": "control_audit_log_pii_hash"
     },
     {
@@ -111813,10 +111813,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1019,
+      "community": 79,
       "norm_label": "rls \u30db\u30ea\u30b7\u30fc(deny by default / \u6a29\u9650\u30b9\u30b3\u30fc\u30d5)",
       "_origin": "semantic",
-      "community_name": "admin \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc\u7dcf\u62ec (2026-06-27 dynamic workflow)",
       "id": "control_rls_policy"
     },
     {
@@ -111828,10 +111828,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1019,
+      "community": 79,
       "norm_label": "service role \u30af\u30e9\u30a4\u30a2\u30f3\u30c8\u306e\u7528\u9014\u9650\u5b9a(\u7f72\u540d\u30fb\u6700\u5c0f\u6a29\u9650)",
       "_origin": "semantic",
-      "community_name": "admin \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc\u7dcf\u62ec (2026-06-27 dynamic workflow)",
       "id": "control_service_role_scope"
     },
     {
@@ -111933,10 +111933,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 25,
+      "community": 79,
       "norm_label": "cache-control: no-store(\u6a5f\u5fae\u5fdc\u7b54\u306e\u30ad\u30e3\u30c3\u30b7\u30e5\u6291\u6b62)",
       "_origin": "semantic",
-      "community_name": "home \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc\u7dcf\u62ec (2026-06-27 dynamic workflow)",
       "id": "control_cache_control_no_store"
     },
     {
@@ -111993,10 +111993,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1019,
+      "community": 79,
       "norm_label": "admin-rbac \u6a29\u9650\u5224\u5b9a (authorizeadminpermission / db acl \u6700\u7d42\u5224\u5b9a)",
       "_origin": "semantic",
-      "community_name": "admin \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc\u7dcf\u62ec (2026-06-27 dynamic workflow)",
       "id": "control_admin_rbac"
     },
     {
@@ -112056,7 +112056,7 @@
       "community": 903,
       "norm_label": "stripe webhook \u7f72\u540d\u691c\u8a3c (constructevent) + \u51aa\u7b49\u6027",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "control_stripe_webhook_signature"
     },
     {
@@ -112113,10 +112113,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1019,
+      "community": 79,
       "norm_label": "audit_logs entry_hash + \u6539\u3055\u3093\u691c\u77e5\u30c8\u30ea\u30ab\u30fc(\u8ffd\u8a18\u5c02\u7528)",
       "_origin": "semantic",
-      "community_name": "admin \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc\u7dcf\u62ec (2026-06-27 dynamic workflow)",
       "id": "control_audit_log_tamper_hash"
     },
     {
@@ -112131,7 +112131,7 @@
       "community": 903,
       "norm_label": "hmac \u7f72\u540d\u4ed8\u304d\u8fd4\u4fe1\u30a2\u30c8\u30ec\u30b9 (reply+{id}.{token}@domain)",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "control_hmac_reply_address"
     },
     {
@@ -112146,7 +112146,7 @@
       "community": 903,
       "norm_label": "resend inbound webhook \u306e svix \u7f72\u540d\u691c\u8a3c",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "control_svix_webhook_verification"
     },
     {
@@ -112218,10 +112218,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1019,
+      "community": 79,
       "norm_label": "src/lib/auth/admin-rbac.ts",
       "_origin": "semantic",
-      "community_name": "admin \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc\u7dcf\u62ec (2026-06-27 dynamic workflow)",
       "id": "lib_admin_rbac"
     },
     {
@@ -112251,7 +112251,7 @@
       "community": 1022,
       "norm_label": "src/lib/audit.ts",
       "_origin": "semantic",
-      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
+      "community_name": "\u6307\u6458: console.error \u3067 raw error / event \u539f\u6587\u3092\u51fa\u529b\u3057\u5185\u90e8\u60c5\u5831\u304c\u904e\u5270\u9732\u51fa",
       "id": "lib_audit"
     },
     {
@@ -112281,7 +112281,7 @@
       "community": 903,
       "norm_label": "src/lib/contact/reply-address.ts (buildreplyaddress)",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "lib_contact_reply_address"
     },
     {
@@ -112311,7 +112311,7 @@
       "community": 903,
       "norm_label": "/api/contact/inbound (resend \u53d7\u4fe1 webhook)",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "route_api_contact_inbound"
     },
     {
@@ -112371,7 +112371,7 @@
       "community": 903,
       "norm_label": "/api/checkout/complete",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "route_api_checkout_complete"
     },
     {
@@ -112386,7 +112386,7 @@
       "community": 903,
       "norm_label": "/api/webhook/stripe",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "route_api_webhook_stripe"
     },
     {
@@ -112443,10 +112443,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 25,
+      "community": 24,
       "norm_label": "/api/auth/me",
       "_origin": "semantic",
-      "community_name": "home \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/proxy.ts (Next.js 16 proxy / \u65e7 middleware)",
       "id": "route_api_auth_me"
     },
     {
@@ -112458,10 +112458,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 25,
+      "community": 24,
       "norm_label": "/api/auth/oauth/callback",
       "_origin": "semantic",
-      "community_name": "home \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/proxy.ts (Next.js 16 proxy / \u65e7 middleware)",
       "id": "route_api_oauth_callback"
     },
     {
@@ -112533,10 +112533,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1019,
+      "community": 79,
       "norm_label": "/api/admin/create-user",
       "_origin": "semantic",
-      "community_name": "admin \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc\u7dcf\u62ec (2026-06-27 dynamic workflow)",
       "id": "route_api_admin_create_user"
     },
     {
@@ -112548,10 +112548,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1019,
+      "community": 79,
       "norm_label": "/api/admin/audit-logs",
       "_origin": "semantic",
-      "community_name": "admin \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc\u7dcf\u62ec (2026-06-27 dynamic workflow)",
       "id": "route_api_admin_audit_logs"
     },
     {
@@ -112578,10 +112578,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1019,
+      "community": 79,
       "norm_label": "/api/admin/users",
       "_origin": "semantic",
-      "community_name": "admin \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc\u7dcf\u62ec (2026-06-27 dynamic workflow)",
       "id": "route_api_admin_users"
     },
     {
@@ -112593,10 +112593,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1019,
+      "community": 79,
       "norm_label": "/api/admin/news (+ /[id])",
       "_origin": "semantic",
-      "community_name": "admin \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc\u7dcf\u62ec (2026-06-27 dynamic workflow)",
       "id": "route_api_admin_news"
     },
     {
@@ -112668,10 +112668,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 25,
+      "community": 24,
       "norm_label": "src/app/auth/callback/page.tsx",
       "_origin": "semantic",
-      "community_name": "home \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/proxy.ts (Next.js 16 proxy / \u65e7 middleware)",
       "id": "page_auth_callback"
     },
     {
@@ -112728,10 +112728,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 30,
+      "community": 63,
       "norm_label": "src/app/cart/page.tsx",
       "_origin": "semantic",
-      "community_name": "implement-uiux \u30ec\u30d3\u30e5\u30fc\u57fa\u6e96",
+      "community_name": "\u30d4\u30fc\u30af\u30fb\u30a8\u30f3\u30c9\u306e\u6cd5\u5247",
       "id": "page_cart"
     },
     {
@@ -112743,10 +112743,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 30,
+      "community": 903,
       "norm_label": "src/app/checkout/page.tsx",
       "_origin": "semantic",
-      "community_name": "implement-uiux \u30ec\u30d3\u30e5\u30fc\u57fa\u6e96",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "page_checkout"
     },
     {
@@ -112773,10 +112773,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1019,
+      "community": 79,
       "norm_label": "src/app/admin/page.tsx",
       "_origin": "semantic",
-      "community_name": "admin \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc\u7dcf\u62ec (2026-06-27 dynamic workflow)",
       "id": "page_admin"
     },
     {
@@ -112803,10 +112803,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 25,
+      "community": 24,
       "norm_label": "x-02 auth callback \u306e next open redirect (medium)",
       "_origin": "semantic",
-      "community_name": "home \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/proxy.ts (Next.js 16 proxy / \u65e7 middleware)",
       "id": "finding_x02_open_redirect_next"
     },
     {
@@ -112956,7 +112956,7 @@
       "community": 903,
       "norm_label": "stripe webhook \u306e fail-open \u5206\u5c90 (high)",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "finding_webhook_fail_open"
     },
     {
@@ -112971,7 +112971,7 @@
       "community": 903,
       "norm_label": "/api/checkout/complete \u306b csrf \u691c\u8a3c\u306a\u3057 (high, partially fixed)",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "finding_complete_missing_csrf"
     },
     {
@@ -112986,7 +112986,7 @@
       "community": 903,
       "norm_label": "stripe_webhook_events.raw_payload \u306b\u5168\u30a4\u30d8\u30f3\u30c8\u4fdd\u5b58 (medium)",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "finding_raw_payload_pii"
     },
     {
@@ -113028,10 +113028,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1019,
+      "community": 79,
       "norm_label": "x-admin-token \u5171\u6709\u79d8\u5bc6\u3066 rbac \u30cf\u30a4\u30cf\u30b9 (high, closed)",
       "_origin": "semantic",
-      "community_name": "admin \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc\u7dcf\u62ec (2026-06-27 dynamic workflow)",
       "id": "finding_admin_shared_token_bypass"
     },
     {
@@ -113043,10 +113043,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1019,
+      "community": 79,
       "norm_label": "admin-rbac \u304b db acl \u3068 token role \u306e or \u5224\u5b9a (high, closed)",
       "_origin": "semantic",
-      "community_name": "admin \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc\u7dcf\u62ec (2026-06-27 dynamic workflow)",
       "id": "finding_rbac_or_judgement"
     },
     {
@@ -113118,10 +113118,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1019,
+      "community": 79,
       "norm_label": "\u76e3\u67fb\u7528 email_hash \u304b\u30bd\u30eb\u30c8\u306a\u3057 sha-256 (medium)",
       "_origin": "semantic",
-      "community_name": "admin \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc\u7dcf\u62ec (2026-06-27 dynamic workflow)",
       "id": "finding_contact_email_hash_unsalted"
     },
     {
@@ -113163,10 +113163,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 25,
+      "community": 24,
       "norm_label": "/api/auth/me \u306e\u904e\u5270\u30c6\u30fc\u30bf\u8fd4\u5374 (id/email) (medium)",
       "_origin": "semantic",
-      "community_name": "home \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/proxy.ts (Next.js 16 proxy / \u65e7 middleware)",
       "id": "finding_auth_me_overfetch"
     },
     {
@@ -113211,7 +113211,7 @@
       "community": 903,
       "norm_label": "pci e2e \u304b iframe>=0 \u3066\u5b9f\u8cea\u30a2\u30b5\u30fc\u30c8\u306a\u3057 (medium)",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "finding_pci_e2e_weak_assert"
     },
     {
@@ -113226,7 +113226,7 @@
       "community": 903,
       "norm_label": "inbound webhook \u672a\u8a2d\u5b9a(\u672c\u756a\u30c6\u30d5\u30ed\u30a4url\u5f85\u3061)",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "finding_contact_inbound_webhook_pending"
     },
     {
@@ -113241,7 +113241,7 @@
       "community": 903,
       "norm_label": "resend \u30c8\u30e1\u30a4\u30f3 mail.lefildesheures.com (spf/dkim/mx verified)",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "resend_domain_mail_lefildesheures"
     },
     {
@@ -113256,7 +113256,7 @@
       "community": 903,
       "norm_label": "contact_reply_secret / resend_webhook_secret \u74b0\u5883\u5909\u6570(\u30b3\u30df\u30c3\u30c8\u7981\u6b62)",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "env_contact_secrets"
     },
     {
@@ -113271,7 +113271,7 @@
       "community": 903,
       "norm_label": "contact_inquiries \u30c6\u30fc\u30d5\u30eb (migrations/041)",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "table_contact_inquiries"
     },
     {
@@ -113283,10 +113283,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1019,
+      "community": 79,
       "norm_label": "audit_logs \u30c6\u30fc\u30d5\u30eb (migrations/007)",
       "_origin": "semantic",
-      "community_name": "admin \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc\u7dcf\u62ec (2026-06-27 dynamic workflow)",
       "id": "table_audit_logs"
     },
     {
@@ -113298,10 +113298,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1019,
+      "community": 79,
       "norm_label": "orders / order_items \u30c6\u30fc\u30d5\u30eb (migrations/025, 037 admin rls)",
       "_origin": "semantic",
-      "community_name": "admin \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc\u7dcf\u62ec (2026-06-27 dynamic workflow)",
       "id": "table_orders"
     },
     {
@@ -113313,10 +113313,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1019,
+      "community": 79,
       "norm_label": "sessions \u30c6\u30fc\u30d5\u30eb (migrations/004)",
       "_origin": "semantic",
-      "community_name": "admin \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc\u7dcf\u62ec (2026-06-27 dynamic workflow)",
       "id": "table_sessions"
     },
     {
@@ -113346,7 +113346,7 @@
       "community": 19,
       "norm_label": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d2\u30e5\u30fc",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "docs_5_implement_security_review_item"
     },
     {
@@ -113361,7 +113361,7 @@
       "community": 101,
       "norm_label": "item_id \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d2\u30e5\u30fc",
       "_origin": "semantic",
-      "community_name": "src/app/api/wishlist/route.ts",
+      "community_name": "A01 Broken Access Control",
       "id": "docs_5_implement_security_review_item_id"
     },
     {
@@ -113373,10 +113373,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1022,
+      "community": 13,
       "norm_label": "login \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d2\u30e5\u30fc",
       "_origin": "semantic",
-      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
+      "community_name": "Code Review: Login / Auth",
       "id": "docs_5_implement_security_review_login"
     },
     {
@@ -113391,7 +113391,7 @@
       "community": 19,
       "norm_label": "look \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d2\u30e5\u30fc",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "docs_5_implement_security_review_look"
     },
     {
@@ -113406,7 +113406,7 @@
       "community": 19,
       "norm_label": "look_id \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d2\u30e5\u30fc",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "docs_5_implement_security_review_look_id"
     },
     {
@@ -113421,7 +113421,7 @@
       "community": 19,
       "norm_label": "news \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d2\u30e5\u30fc",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "docs_5_implement_security_review_news"
     },
     {
@@ -113436,7 +113436,7 @@
       "community": 19,
       "norm_label": "news_id \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d2\u30e5\u30fc",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "docs_5_implement_security_review_news_id"
     },
     {
@@ -113478,10 +113478,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1022,
+      "community": 13,
       "norm_label": "signup \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d2\u30e5\u30fc",
       "_origin": "semantic",
-      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
+      "community_name": "Code Review: Login / Auth",
       "id": "docs_5_implement_security_review_signup"
     },
     {
@@ -113496,7 +113496,7 @@
       "community": 19,
       "norm_label": "stockist \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d2\u30e5\u30fc",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "docs_5_implement_security_review_stockist"
     },
     {
@@ -113526,7 +113526,7 @@
       "community": 101,
       "norm_label": "wishlist \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d2\u30e5\u30fc",
       "_origin": "semantic",
-      "community_name": "src/app/api/wishlist/route.ts",
+      "community_name": "A01 Broken Access Control",
       "id": "docs_5_implement_security_review_wishlist"
     },
     {
@@ -113538,10 +113538,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1022,
+      "community": 13,
       "norm_label": "owasp a02: cryptographic failures",
       "_origin": "semantic",
-      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
+      "community_name": "Code Review: Login / Auth",
       "id": "owasp_a02_cryptographic_failures"
     },
     {
@@ -113553,10 +113553,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1022,
+      "community": 13,
       "norm_label": "owasp a07: identification and authentication failures",
       "_origin": "semantic",
-      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
+      "community_name": "Code Review: Login / Auth",
       "id": "owasp_a07_identification_authentication_failures"
     },
     {
@@ -113571,7 +113571,7 @@
       "community": 1022,
       "norm_label": "owasp a09: security logging and monitoring failures",
       "_origin": "semantic",
-      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
+      "community_name": "\u6307\u6458: console.error \u3067 raw error / event \u539f\u6587\u3092\u51fa\u529b\u3057\u5185\u90e8\u60c5\u5831\u304c\u904e\u5270\u9732\u51fa",
       "id": "owasp_a09_security_logging_monitoring_failures"
     },
     {
@@ -113583,7 +113583,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1022,
+      "community": 19,
       "norm_label": "\u30ec\u30fc\u30c8\u5236\u9650 (enforceratelimit)",
       "_origin": "semantic",
       "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
@@ -113601,7 +113601,7 @@
       "community": 101,
       "norm_label": "csrf \u30c8\u30fc\u30af\u30f3\u691c\u8a3c (requirecsrfordeny / x-csrf-token)",
       "_origin": "semantic",
-      "community_name": "src/app/api/wishlist/route.ts",
+      "community_name": "A01 Broken Access Control",
       "id": "csrf_token"
     },
     {
@@ -113613,7 +113613,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 993,
+      "community": 101,
       "norm_label": "row level security \u30db\u30ea\u30b7\u30fc",
       "_origin": "semantic",
       "community_name": "A01 Broken Access Control",
@@ -113631,7 +113631,7 @@
       "community": 19,
       "norm_label": "\u7f72\u540d url \u914d\u4fe1 (createsignedurl)",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "signed_url"
     },
     {
@@ -113646,7 +113646,7 @@
       "community": 19,
       "norm_label": "private \u30b9\u30c8\u30ec\u30fc\u30b7\u30cf\u30b1\u30c3\u30c8 (public=false)",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "private_bucket"
     },
     {
@@ -113661,7 +113661,7 @@
       "community": 19,
       "norm_label": "zod \u306b\u3088\u308b\u53d7\u3051\u53e3\u5165\u529b\u691c\u8a3c (fail-fast)",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "zod_input_validation"
     },
     {
@@ -113676,7 +113676,7 @@
       "community": 19,
       "norm_label": "\u516c\u958b\u6761\u4ef6\u30d5\u30a3\u30eb\u30bf status='published'",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "published_status_filter"
     },
     {
@@ -113691,7 +113691,7 @@
       "community": 19,
       "norm_label": "cache-control: private, no-store",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "cache_control_no_store"
     },
     {
@@ -113751,7 +113751,7 @@
       "community": 1022,
       "norm_label": "\u76e3\u67fb\u30ed\u30af (logaudit)",
       "_origin": "semantic",
-      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
+      "community_name": "\u6307\u6458: console.error \u3067 raw error / event \u539f\u6587\u3092\u51fa\u529b\u3057\u5185\u90e8\u60c5\u5831\u304c\u904e\u5270\u9732\u51fa",
       "id": "audit_log"
     },
     {
@@ -113766,7 +113766,7 @@
       "community": 19,
       "norm_label": "\u7ba1\u7406\u8005 rbac \u6a29\u9650\u30c1\u30a7\u30c3\u30af (authorizeadminpermission)",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "admin_rbac"
     },
     {
@@ -113781,7 +113781,7 @@
       "community": 19,
       "norm_label": "service role \u30af\u30e9\u30a4\u30a2\u30f3\u30c8 (createserviceroleclient)",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "service_role_client"
     },
     {
@@ -113796,7 +113796,7 @@
       "community": 19,
       "norm_label": "\u7f72\u540d\u5bfe\u8c61 object path \u306e strict allowlist \u691c\u8a3c",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "object_path_allowlist"
     },
     {
@@ -113808,10 +113808,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1022,
+      "community": 13,
       "norm_label": "httponly cookie \u306b\u3088\u308b\u30bb\u30c3\u30b7\u30e7\u30f3\u4fdd\u6301",
       "_origin": "semantic",
-      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
+      "community_name": "Code Review: Login / Auth",
       "id": "httponly_cookie"
     },
     {
@@ -113826,7 +113826,7 @@
       "community": 101,
       "norm_label": "session_id cookie(\u30b1\u30b9\u30c8\u30bb\u30c3\u30b7\u30e7\u30f3\u5883\u754c)",
       "_origin": "semantic",
-      "community_name": "src/app/api/wishlist/route.ts",
+      "community_name": "A01 Broken Access Control",
       "id": "session_id_cookie"
     },
     {
@@ -113841,7 +113841,7 @@
       "community": 101,
       "norm_label": "proxy.ts \u540c\u4e00\u30aa\u30ea\u30b7\u30f3\u5224\u5b9a (state_changing_path_prefixes)",
       "_origin": "semantic",
-      "community_name": "src/app/api/wishlist/route.ts",
+      "community_name": "A01 Broken Access Control",
       "id": "same_origin_check_proxy"
     },
     {
@@ -113853,7 +113853,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1022,
+      "community": 19,
       "norm_label": "src/features/auth/middleware/ratelimit.ts",
       "_origin": "semantic",
       "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
@@ -113886,7 +113886,7 @@
       "community": 19,
       "norm_label": "src/app/api/items/route.ts",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "api_items_route"
     },
     {
@@ -113901,7 +113901,7 @@
       "community": 101,
       "norm_label": "src/app/api/items/[id]/route.ts",
       "_origin": "semantic",
-      "community_name": "src/app/api/wishlist/route.ts",
+      "community_name": "A01 Broken Access Control",
       "id": "api_items_id_route"
     },
     {
@@ -113916,7 +113916,7 @@
       "community": 101,
       "norm_label": "src/app/api/cart/route.ts",
       "_origin": "semantic",
-      "community_name": "src/app/api/wishlist/route.ts",
+      "community_name": "A01 Broken Access Control",
       "id": "api_cart_route"
     },
     {
@@ -113931,7 +113931,7 @@
       "community": 101,
       "norm_label": "src/app/api/wishlist/route.ts",
       "_origin": "semantic",
-      "community_name": "src/app/api/wishlist/route.ts",
+      "community_name": "A01 Broken Access Control",
       "id": "api_wishlist_route"
     },
     {
@@ -113961,7 +113961,7 @@
       "community": 19,
       "norm_label": "src/app/api/news/route.ts",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "api_news_route"
     },
     {
@@ -114006,7 +114006,7 @@
       "community": 101,
       "norm_label": "src/app/api/admin/stockists/route.ts",
       "_origin": "semantic",
-      "community_name": "src/app/api/wishlist/route.ts",
+      "community_name": "A01 Broken Access Control",
       "id": "api_admin_stockists_route"
     },
     {
@@ -114018,7 +114018,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 993,
+      "community": 101,
       "norm_label": "src/app/api/admin/looks/route.ts",
       "_origin": "semantic",
       "community_name": "A01 Broken Access Control",
@@ -114033,10 +114033,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1022,
+      "community": 13,
       "norm_label": "src/app/api/auth/login/route.ts",
       "_origin": "semantic",
-      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
+      "community_name": "Code Review: Login / Auth",
       "id": "api_auth_login_route"
     },
     {
@@ -114048,10 +114048,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1022,
+      "community": 13,
       "norm_label": "src/app/api/auth/register/route.ts",
       "_origin": "semantic",
-      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
+      "community_name": "Code Review: Login / Auth",
       "id": "api_auth_register_route"
     },
     {
@@ -114078,10 +114078,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1022,
+      "community": 13,
       "norm_label": "src/app/api/auth/oauth/callback/route.ts",
       "_origin": "semantic",
-      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
+      "community_name": "Code Review: Login / Auth",
       "id": "api_auth_oauth_callback_route"
     },
     {
@@ -114111,7 +114111,7 @@
       "community": 19,
       "norm_label": "src/lib/items/public.ts",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "lib_items_public"
     },
     {
@@ -114126,7 +114126,7 @@
       "community": 19,
       "norm_label": "src/lib/look/public.ts",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "lib_look_public"
     },
     {
@@ -114141,7 +114141,7 @@
       "community": 19,
       "norm_label": "src/features/news/services/public.ts",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "news_services_public"
     },
     {
@@ -114156,7 +114156,7 @@
       "community": 19,
       "norm_label": "src/lib/storage/item-images.ts",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "lib_storage_item_images"
     },
     {
@@ -114171,7 +114171,7 @@
       "community": 19,
       "norm_label": "src/lib/storage/look-images.ts",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "lib_storage_look_images"
     },
     {
@@ -114186,7 +114186,7 @@
       "community": 19,
       "norm_label": "src/lib/storage/news-images.ts",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "lib_storage_news_images"
     },
     {
@@ -114201,7 +114201,7 @@
       "community": 19,
       "norm_label": "src/lib/auth/admin-rbac.ts",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "lib_auth_admin_rbac"
     },
     {
@@ -114216,7 +114216,7 @@
       "community": 101,
       "norm_label": "src/lib/csrf.ts",
       "_origin": "semantic",
-      "community_name": "src/app/api/wishlist/route.ts",
+      "community_name": "A01 Broken Access Control",
       "id": "lib_csrf"
     },
     {
@@ -114243,10 +114243,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 101,
+      "community": 1059,
       "norm_label": "src/contexts/cartcontext.tsx",
       "_origin": "semantic",
-      "community_name": "src/app/api/wishlist/route.ts",
+      "community_name": "src/proxy.ts",
       "id": "cart_context"
     },
     {
@@ -114303,10 +114303,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 19,
+      "community": 1019,
       "norm_label": "src/app/item/page.tsx (ssr \u4e00\u89a7)",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/app/item/page.tsx (SSR \u4e00\u89a7)",
       "id": "page_item_list"
     },
     {
@@ -114396,7 +114396,7 @@
       "community": 19,
       "norm_label": "migrations/019_add_public_select_policy_to_look_items.sql",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "migration_019_look_items_public_policy"
     },
     {
@@ -114411,7 +114411,7 @@
       "community": 19,
       "norm_label": "migrations/044_harden_item_images_bucket_private.sql",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "migration_044_item_images_private"
     },
     {
@@ -114426,7 +114426,7 @@
       "community": 19,
       "norm_label": "migrations/030_make_look_images_bucket_private.sql",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "migration_030_look_images_private"
     },
     {
@@ -114441,7 +114441,7 @@
       "community": 19,
       "norm_label": "migrations/015_add_news_articles_rls.sql",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "migration_015_news_rls"
     },
     {
@@ -114471,7 +114471,7 @@
       "community": 101,
       "norm_label": "migrations/021_create_wishlist_table.sql",
       "_origin": "semantic",
-      "community_name": "src/app/api/wishlist/route.ts",
+      "community_name": "A01 Broken Access Control",
       "id": "migration_021_wishlist_rls"
     },
     {
@@ -114483,7 +114483,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 993,
+      "community": 101,
       "norm_label": "migrations/027_create_stockists_and_acl.sql",
       "_origin": "semantic",
       "community_name": "A01 Broken Access Control",
@@ -114498,7 +114498,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1022,
+      "community": 19,
       "norm_label": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (high)",
       "_origin": "semantic",
       "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
@@ -114516,7 +114516,7 @@
       "community": 19,
       "norm_label": "\u6307\u6458: \u7f72\u540d url \u751f\u6210\u5931\u6557\u6642\u306b rawurl \u3092\u8fd4\u3059 fail-open \u30d5\u30a9\u30fc\u30eb\u30cf\u30c3\u30af",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "finding_signed_url_fail_open_rawurl"
     },
     {
@@ -114531,7 +114531,7 @@
       "community": 19,
       "norm_label": "\u6307\u6458: \u7f72\u540d\u5bfe\u8c61 object path \u306e allowlist \u304b\u306a\u304f service role \u3066\u4efb\u610f\u30aa\u30d5\u30b7\u30a7\u30af\u30c8\u7f72\u540d\u53ef",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "finding_signing_path_allowlist_missing"
     },
     {
@@ -114546,7 +114546,7 @@
       "community": 19,
       "norm_label": "\u6307\u6458: \u516c\u958b/\u30bb\u30c3\u30b7\u30e7\u30f3\u4f9d\u5b58 api \u306b cache-control \u672a\u6307\u5b9a(\u5171\u6709\u30ad\u30e3\u30c3\u30b7\u30e5\u6b8b\u7559)",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "finding_missing_cache_control"
     },
     {
@@ -114561,7 +114561,7 @@
       "community": 19,
       "norm_label": "\u6307\u6458: \u4e00\u89a7 api \u306e\u904e\u5270\u30c6\u30fc\u30bf\u8fd4\u5374(description/image_urls/image_url/price \u7b49)",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "finding_excessive_data_return"
     },
     {
@@ -114576,7 +114576,7 @@
       "community": 19,
       "norm_label": "\u6307\u6458: \u4e0a\u9650\u306a\u3057 map \u30ad\u30e3\u30c3\u30b7\u30e5\u306b\u3088\u308b\u30e1\u30e2\u30ea\u67af\u6e07 dos (cwe-770)",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "finding_unbounded_memory_cache"
     },
     {
@@ -114591,7 +114591,7 @@
       "community": 19,
       "norm_label": "\u6307\u6458: look_items \u516c\u958b\u30db\u30ea\u30b7\u30fc\u3066 private item \u306e item_id \u5217\u6319\u304b\u53ef\u80fd (high)",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "finding_look_items_item_id_enumeration"
     },
     {
@@ -114603,10 +114603,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1022,
+      "community": 13,
       "norm_label": "\u6307\u6458: access_token \u3092\u30ec\u30b9\u30db\u30f3\u30b9 json \u306b\u8fd4\u5374\u3057\u30c8\u30fc\u30af\u30f3\u7a83\u53d6\u9762\u3092\u62e1\u5927 (high)",
       "_origin": "semantic",
-      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
+      "community_name": "Code Review: Login / Auth",
       "id": "finding_access_token_in_json"
     },
     {
@@ -114618,10 +114618,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1022,
+      "community": 13,
       "norm_label": "\u6307\u6458: oauth state \u6d88\u8cbb\u304b select\u2192update \u306e\u4e8c\u6bb5\u968e\u3066 one-time \u4fdd\u8a3c\u306b\u7af6\u5408\u4f59\u5730 (high)",
       "_origin": "semantic",
-      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
+      "community_name": "Code Review: Login / Auth",
       "id": "finding_oauth_state_race"
     },
     {
@@ -114633,10 +114633,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1022,
+      "community": 13,
       "norm_label": "\u6307\u6458: \u65e2\u5b58\u30e1\u30fc\u30eb\u885d\u7a81\u6642\u306e link-proposal / link-confirm \u518d\u8a8d\u8a3c\u30d5\u30ed\u30fc\u672a\u5b9f\u88c5 (high)",
       "_origin": "semantic",
-      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
+      "community_name": "Code Review: Login / Auth",
       "id": "finding_account_link_flow_missing"
     },
     {
@@ -114648,10 +114648,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1022,
+      "community": 13,
       "norm_label": "\u6307\u6458: register \u306e 409 \u5206\u5c90\u306b\u3088\u308b\u30a2\u30ab\u30a6\u30f3\u30c8\u5217\u6319",
       "_origin": "semantic",
-      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
+      "community_name": "Code Review: Login / Auth",
       "id": "finding_account_enumeration_register"
     },
     {
@@ -114666,7 +114666,7 @@
       "community": 101,
       "norm_label": "\u6307\u6458: cart/wishlist \u306e csrf \u9632\u5fa1\u304b proxy.ts \u540c\u4e00\u30aa\u30ea\u30b7\u30f3\u5224\u5b9a\u306b\u4e00\u5143\u4f9d\u5b58(route \u5c64\u672a\u691c\u8a3c)",
       "_origin": "semantic",
-      "community_name": "src/app/api/wishlist/route.ts",
+      "community_name": "A01 Broken Access Control",
       "id": "finding_route_layer_csrf_missing"
     },
     {
@@ -114681,7 +114681,7 @@
       "community": 101,
       "norm_label": "\u6307\u6458: \u5728\u5eab check-then-write \u306e toctou(\u4e26\u884c\u8ffd\u52a0\u3066\u5728\u5eab\u8d85\u904e)",
       "_origin": "semantic",
-      "community_name": "src/app/api/wishlist/route.ts",
+      "community_name": "A01 Broken Access Control",
       "id": "finding_cart_inventory_toctou"
     },
     {
@@ -114696,7 +114696,7 @@
       "community": 101,
       "norm_label": "\u6307\u6458: availablequantity \u5b9f\u6570\u8fd4\u5374\u306b\u3088\u308b\u5728\u5eab\u63a8\u5b9a",
       "_origin": "semantic",
-      "community_name": "src/app/api/wishlist/route.ts",
+      "community_name": "A01 Broken Access Control",
       "id": "finding_inventory_quantity_disclosure"
     },
     {
@@ -114801,7 +114801,7 @@
       "community": 1022,
       "norm_label": "\u6307\u6458: console.error \u3066 raw error / event \u539f\u6587\u3092\u51fa\u529b\u3057\u5185\u90e8\u60c5\u5831\u304b\u904e\u5270\u9732\u51fa",
       "_origin": "semantic",
-      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
+      "community_name": "\u6307\u6458: console.error \u3067 raw error / event \u539f\u6587\u3092\u51fa\u529b\u3057\u5185\u90e8\u60c5\u5831\u304c\u904e\u5270\u9732\u51fa",
       "id": "finding_raw_error_logging"
     },
     {
@@ -114816,7 +114816,7 @@
       "community": 19,
       "norm_label": "\u6307\u6458: zod fielderrors / flatten() \u3092\u305d\u306e\u307e\u307e\u8fd4\u5374\u3057\u691c\u8a3c\u30eb\u30fc\u30eb\u8a73\u7d30\u3092\u958b\u793a",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "finding_validation_error_detail_disclosure"
     },
     {
@@ -114831,7 +114831,7 @@
       "community": 19,
       "norm_label": "\u6307\u6458: \u7ba1\u7406 stockists api \u306e select('*') \u306b\u3088\u308b\u5168\u30ab\u30e9\u30e0\u8fd4\u5374",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "finding_select_star_admin_stockists"
     },
     {
@@ -114846,7 +114846,7 @@
       "community": 19,
       "norm_label": "\u6307\u6458: getpublishedlookbyid \u304b\u5168 look \u53d6\u5f97+\u5168\u753b\u50cf\u7f72\u540d\u3092\u5b9f\u884c\u3057\u53ef\u7528\u6027\u4f4e\u4e0b",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "finding_full_hydration_lookbyid"
     },
     {
@@ -114858,10 +114858,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1022,
+      "community": 13,
       "norm_label": "\u6307\u6458: \u30ec\u30fc\u30c8\u5236\u9650\u5931\u6557\u3092 catch \u3066\u63e1\u308a\u6f70\u3057 fail-open \u3066\u51e6\u7406\u7d9a\u884c",
       "_origin": "semantic",
-      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
+      "community_name": "Code Review: Login / Auth",
       "id": "finding_rate_limit_fail_open"
     },
     {
@@ -114888,10 +114888,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1022,
+      "community": 13,
       "norm_label": "\u6307\u6458: resolverequestorigin \u304b x-forwarded-proto/host \u3092\u5e38\u6642\u512a\u5148\u3057 origin \u691c\u8a3c\u3092\u8fc2\u56de\u53ef\u80fd",
       "_origin": "semantic",
-      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
+      "community_name": "Code Review: Login / Auth",
       "id": "finding_forwarded_origin_trust"
     },
     {
@@ -114906,7 +114906,7 @@
       "community": 19,
       "norm_label": "\u6307\u6458: ssr \u76f4\u547c\u3072\u7d4c\u8def\u304b api \u5074\u306e\u691c\u8a3c\u30fb\u30ec\u30fc\u30c8\u5236\u9650\u30fb\u76e3\u67fb\u5883\u754c\u3092\u8fc2\u56de",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "finding_ssr_api_validation_divergence"
     },
     {
@@ -114921,7 +114921,7 @@
       "community": 19,
       "norm_label": "\u6307\u6458: category \u3092 service/api \u5883\u754c\u3066 allowlist \u691c\u8a3c\u305b\u3059\u7d20\u901a\u3057(fail-fast \u4e0d\u8db3)",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "finding_category_validation_inconsistent"
     },
     {
@@ -114936,7 +114936,7 @@
       "community": 19,
       "norm_label": "\u6307\u6458: authorizeadminpermission \u306e\u4f8b\u5916 details \u3092\u30af\u30e9\u30a4\u30a2\u30f3\u30c8\u3078\u8fd4\u5374",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
       "id": "finding_admin_rbac_error_details_leak"
     },
     {
@@ -114966,7 +114966,7 @@
       "community": 1022,
       "norm_label": "\u6307\u6458: wishlist post/delete \u306e\u30ec\u30fc\u30c8\u5236\u9650\u8d85\u904e\u6642\u306b\u76e3\u67fb\u30ed\u30af\u304b\u6b8b\u3089\u306a\u3044",
       "_origin": "semantic",
-      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
+      "community_name": "\u6307\u6458: console.error \u3067 raw error / event \u539f\u6587\u3092\u51fa\u529b\u3057\u5185\u90e8\u60c5\u5831\u304c\u904e\u5270\u9732\u51fa",
       "id": "finding_missing_audit_on_mutation_ratelimit"
     },
     {
@@ -114978,10 +114978,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1022,
+      "community": 13,
       "norm_label": "\u6307\u6458: rate_limit_counters \u306e endpoint \u306b acct:email \u5e73\u6587\u304b\u6b8b\u308b",
       "_origin": "semantic",
-      "community_name": "\u6307\u6458: x-forwarded-for / x-real-ip \u7121\u6761\u4ef6\u4fe1\u983c\u306b\u3088\u308b\u30ec\u30fc\u30c8\u5236\u9650\u56de\u907f (High)",
+      "community_name": "Code Review: Login / Auth",
       "id": "finding_ratelimit_subject_email_pii"
     },
     {
@@ -115206,10 +115206,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1035,
+      "community": 90,
       "norm_label": "\u30c8\u30cf\u30c6\u30a3\u306e\u3057\u304d\u3044\u5024(\u5fdc\u7b54\u30d5\u30a3\u30fc\u30c8\u30cf\u30c3\u30af)",
       "_origin": "semantic",
-      "community_name": "\u30c9\u30cf\u30c6\u30a3\u306e\u3057\u304d\u3044\u5024\uff08\u5fdc\u7b54\u30d5\u30a3\u30fc\u30c9\u30d0\u30c3\u30af\uff09",
+      "community_name": "\u30e2\u30ce\u30af\u30ed\u30fc\u30e0 Key Color\uff08\u9ed2/\u30b0\u30ec\u30fc/\u767d\uff09",
       "id": "doherty_threshold"
     },
     {
@@ -115372,10 +115372,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 19,
+      "community": 1019,
       "norm_label": "\u898b\u51fa\u3057\u968e\u5c64(h1\u2192h2\u2192...)",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/app/item/page.tsx (SSR \u4e00\u89a7)",
       "id": "heading_hierarchy"
     },
     {
@@ -115402,10 +115402,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 25,
+      "community": 24,
       "norm_label": "aria-live / role=status \u30e9\u30a4\u30d5\u30ea\u30fc\u30b7\u30e7\u30f3",
       "_origin": "semantic",
-      "community_name": "home \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/proxy.ts (Next.js 16 proxy / \u65e7 middleware)",
       "id": "aria_live_region"
     },
     {
@@ -115511,10 +115511,10 @@
       "author": null,
       "contributor": null,
       "rationale": "\u30e9\u30b0\u30b8\u30e5\u30a2\u30ea\u30fc\u30df\u30cb\u30de\u30eb\u3067\u306f\u6d3e\u624b\u306aCTA\u304c\u9006\u52b9\u679c\u3002\u5857\u308a(\u9ed2\u30d9\u30bf) vs \u67a0\u7dda/\u30c6\u30ad\u30b9\u30c8\u306e\u8cea\u3067\u512a\u5148\u5ea6\u3092\u8868\u73fe\u30571\u753b\u97621\u4e3b\u5f79\u306f\u9075\u5b88",
-      "community": 30,
+      "community": 903,
       "norm_label": "cta \u3092\u7a81\u51fa\u3055\u305b\u306a\u3044\u512a\u5148\u5ea6\u8868\u73fe(\u9038\u8131\u5224\u65ad3)",
       "_origin": "semantic",
-      "community_name": "implement-uiux \u30ec\u30d3\u30e5\u30fc\u57fa\u6e96",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "restrained_cta_hierarchy"
     },
     {
@@ -115527,10 +115527,10 @@
       "author": null,
       "contributor": null,
       "rationale": "\u8868\u73fe\u7684\u30a2\u30cb\u30e1\u3088\u308a\u9759\u304b\u306a\u30b9\u30b1\u30eb\u30c8\u30f3\u304c\u30d6\u30e9\u30f3\u30c9\u9069\u5408\u3002150\u2013300ms \u306e\u63a7\u3048\u3081\u306a\u6f14\u51fa\u306b\u7559\u3081\u308b",
-      "community": 1035,
+      "community": 28,
       "norm_label": "\u9759\u304b\u306a\u30b9\u30b1\u30eb\u30c8\u30f3\u4e2d\u5fc3\u306e\u30ed\u30fc\u30c6\u30a3\u30f3\u30af(\u9038\u8131\u5224\u65ad4)",
       "_origin": "semantic",
-      "community_name": "\u30c9\u30cf\u30c6\u30a3\u306e\u3057\u304d\u3044\u5024\uff08\u5fdc\u7b54\u30d5\u30a3\u30fc\u30c9\u30d0\u30c3\u30af\uff09",
+      "community_name": "\u30d5\u30a3\u30c3\u30c4\u306e\u6cd5\u5247",
       "id": "quiet_skeleton_loading"
     },
     {
@@ -115573,10 +115573,10 @@
       "author": null,
       "contributor": null,
       "rationale": "Stripe colorDanger \u3068\u4e00\u81f4\u3055\u305b\u3001\u6c7a\u6e08\u3067\u306f\u53ef\u8aad\u6027\u30fb\u4e16\u754c\u6a19\u6e96\u306e\u6163\u7fd2\u3092\u512a\u5148\uff08\u30e2\u30ce\u30af\u30ed\u30fc\u30e0\u539f\u5247\u306e\u8a31\u5bb9\u4f8b\u5916\uff09",
-      "community": 30,
+      "community": 903,
       "norm_label": "\u30a8\u30e9\u30fc\u8d64\u30c8\u30fc\u30af\u30f3 #dc2626 / text-red-600",
       "_origin": "semantic",
-      "community_name": "implement-uiux \u30ec\u30d3\u30e5\u30fc\u57fa\u6e96",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "error_red_token_dc2626"
     },
     {
@@ -115635,10 +115635,10 @@
       "author": null,
       "contributor": null,
       "rationale": "SectionTitle \u304c home variant \u5c02\u7528\u306e\u305f\u3081\u4e00\u89a7\u306b\u53ef\u8996 h1 \u304c\u7121\u304f\u3001\u73fe\u5728\u5730\u4e0d\u660e\u30fbWCAG\u30fbSEO \u4e0d\u5229",
-      "community": 19,
+      "community": 1019,
       "norm_label": "\u6a2a\u65ad\u30c6\u30fc\u30deb: \u4e00\u89a7\u30d8\u30fc\u30b7\u306e\u53ef\u8996 h1 \u4e0d\u5728",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/app/item/page.tsx (SSR \u4e00\u89a7)",
       "id": "theme_b_missing_h1"
     },
     {
@@ -115756,10 +115756,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 19,
+      "community": 1019,
       "norm_label": "sectiontitle(home variant \u5c02\u7528)",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/app/item/page.tsx (SSR \u4e00\u89a7)",
       "id": "component_section_title"
     },
     {
@@ -115786,10 +115786,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 30,
+      "community": 903,
       "norm_label": "ordersummary(\u30ab\u30fc\u30c8\u5408\u8a08)",
       "_origin": "semantic",
-      "community_name": "implement-uiux \u30ec\u30d3\u30e5\u30fc\u57fa\u6e96",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "component_order_summary"
     },
     {
@@ -115832,10 +115832,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 30,
+      "community": 903,
       "norm_label": "stripe payment element(\u30d5\u30e9\u30f3\u30c8\u30c8\u30fc\u30af\u30f3\u9069\u7528)",
       "_origin": "semantic",
-      "community_name": "implement-uiux \u30ec\u30d3\u30e5\u30fc\u57fa\u6e96",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "stripe_payment_element"
     },
     {
@@ -115848,10 +115848,10 @@
       "author": null,
       "contributor": null,
       "rationale": "payment_method_types \u30921\u624b\u6bb5\u306b\u56fa\u5b9a\u3057\u3066\u3044\u305f\u305f\u3081\u30ab\u30fc\u30c9\u306e\u307f\u8868\u793a\u3002\u6307\u5b9a\u64a4\u5ec3\u3067\u6709\u52b9\u5316\u6e08\u307f\u5168\u624b\u6bb5\u304c\u81ea\u52d5\u8868\u793a",
-      "community": 30,
+      "community": 903,
       "norm_label": "api/checkout/create-session route",
       "_origin": "semantic",
-      "community_name": "implement-uiux \u30ec\u30d3\u30e5\u30fc\u57fa\u6e96",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "checkout_create_session_route"
     },
     {
@@ -116245,10 +116245,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 19,
+      "community": 1019,
       "norm_label": "i-1 item \u4e00\u89a7\u306b\u53ef\u8996 h1 \u304b\u7121\u3044",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/app/item/page.tsx (SSR \u4e00\u89a7)",
       "id": "item_finding_i1_missing_h1"
     },
     {
@@ -116307,10 +116307,10 @@
       "author": null,
       "contributor": null,
       "rationale": "\u30a8\u30c7\u30a3\u30c8\u30ea\u30a2\u30eb\u30b0\u30ea\u30c3\u30c9\u306e\u9759\u3051\u3055\u7dad\u6301\u3068\u30a2\u30f3\u30ab\u30fc\u5185\u30a4\u30f3\u30bf\u30e9\u30af\u30c6\u30a3\u30d6\u8981\u7d20\u306e\u8907\u96d1\u5316\u56de\u907f\u3002\u30a6\u30a3\u30c3\u30b7\u30e5\u8ffd\u52a0\u306fPDP\u306b\u96c6\u7d04",
-      "community": 30,
+      "community": 903,
       "norm_label": "i-9 \u30db\u30cf\u30fc\u2661\u306f\u610f\u56f3\u7684\u306b\u975e\u63a1\u7528",
       "_origin": "semantic",
-      "community_name": "implement-uiux \u30ec\u30d3\u30e5\u30fc\u57fa\u6e96",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "item_finding_i9_hover_wishlist_rejected"
     },
     {
@@ -116444,10 +116444,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1035,
+      "community": 28,
       "norm_label": "ct-1 \u5168\u753b\u9762\u9ed2\u30cf\u30fc\u660e\u6ec5+\"bars reveal\"\u30c6\u30cf\u30c3\u30af\u6587\u8a00",
       "_origin": "semantic",
-      "community_name": "\u30c9\u30cf\u30c6\u30a3\u306e\u3057\u304d\u3044\u5024\uff08\u5fdc\u7b54\u30d5\u30a3\u30fc\u30c9\u30d0\u30c3\u30af\uff09",
+      "community_name": "\u30d5\u30a3\u30c3\u30c4\u306e\u6cd5\u5247",
       "id": "cart_finding_ct1_loading_animation"
     },
     {
@@ -116505,10 +116505,10 @@
       "author": null,
       "contributor": null,
       "rationale": "item \u5358\u4f4d\u3068\u30da\u30fc\u30b8\u5358\u4f4d\u306e \u0434\u0432\u0443\u0445\u6bb5\u69cb\u3048\u3067 implement-uiux Layer 8\uff08\u30a8\u30e9\u30fc\u56de\u5fa9\uff09\u306e\u624b\u672c",
-      "community": 30,
+      "community": 63,
       "norm_label": "\u5728\u5eab\u540c\u671f\u30a8\u30e9\u30fc\u306e\u518d\u8a66\u884c/\u518d\u540c\u671f\u5c0e\u7dda(\u826f\u3044\u70b9)",
       "_origin": "semantic",
-      "community_name": "implement-uiux \u30ec\u30d3\u30e5\u30fc\u57fa\u6e96",
+      "community_name": "\u30d4\u30fc\u30af\u30fb\u30a8\u30f3\u30c9\u306e\u6cd5\u5247",
       "id": "cart_stock_sync_error_recovery"
     },
     {
@@ -116597,10 +116597,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 30,
+      "community": 903,
       "norm_label": "\u5b8c\u4e86\u753b\u9762\u306e\u30b9\u30af\u30ed\u30fc\u30eb\u4f4d\u7f6e\u30ea\u30bb\u30c3\u30c8\u30fbcta\u7d71\u4e00(freq-77)",
       "_origin": "semantic",
-      "community_name": "implement-uiux \u30ec\u30d3\u30e5\u30fc\u57fa\u6e96",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "checkout_complete_scroll_reset"
     },
     {
@@ -116672,10 +116672,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 25,
+      "community": 24,
       "norm_label": "ak-2 h1 \u304b\u300coauth\u300d\u3066\u958b\u767a\u8005\u7528\u8a9e",
       "_origin": "semantic",
-      "community_name": "home \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/proxy.ts (Next.js 16 proxy / \u65e7 middleware)",
       "id": "auth_callback_finding_ak2_developer_wording"
     },
     {
@@ -116687,10 +116687,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 25,
+      "community": 24,
       "norm_label": "next \u30cf\u30e9\u30e1\u30fc\u30bf\u306e\u30aa\u30fc\u30d5\u30f3\u30ea\u30bf\u30a4\u30ec\u30af\u30c8\u691c\u8a3c(\u826f\u3044\u70b9)",
       "_origin": "semantic",
-      "community_name": "home \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/proxy.ts (Next.js 16 proxy / \u65e7 middleware)",
       "id": "auth_callback_open_redirect_guard"
     },
     {
@@ -117080,10 +117080,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1035,
+      "community": 90,
       "norm_label": "\u7a7a\u72b6\u614b\u3068\u56de\u5fa9\u5c0e\u7dda",
       "_origin": "semantic",
-      "community_name": "\u30c9\u30cf\u30c6\u30a3\u306e\u3057\u304d\u3044\u5024\uff08\u5fdc\u7b54\u30d5\u30a3\u30fc\u30c9\u30d0\u30c3\u30af\uff09",
+      "community_name": "\u30e2\u30ce\u30af\u30ed\u30fc\u30e0 Key Color\uff08\u9ed2/\u30b0\u30ec\u30fc/\u767d\uff09",
       "id": "empty_state_recovery"
     },
     {
@@ -117095,10 +117095,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1035,
+      "community": 90,
       "norm_label": "\u30b9\u30b1\u30eb\u30c8\u30f3\u30ed\u30fc\u30c6\u30a3\u30f3\u30af(cls\u6291\u5236)",
       "_origin": "semantic",
-      "community_name": "\u30c9\u30cf\u30c6\u30a3\u306e\u3057\u304d\u3044\u5024\uff08\u5fdc\u7b54\u30d5\u30a3\u30fc\u30c9\u30d0\u30c3\u30af\uff09",
+      "community_name": "\u30e2\u30ce\u30af\u30ed\u30fc\u30e0 Key Color\uff08\u9ed2/\u30b0\u30ec\u30fc/\u767d\uff09",
       "id": "skeleton_loading"
     },
     {
@@ -117140,10 +117140,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1035,
+      "community": 63,
       "norm_label": "role=\"status\" \u6210\u529f\u901a\u77e5",
       "_origin": "semantic",
-      "community_name": "\u30c9\u30cf\u30c6\u30a3\u306e\u3057\u304d\u3044\u5024\uff08\u5fdc\u7b54\u30d5\u30a3\u30fc\u30c9\u30d0\u30c3\u30af\uff09",
+      "community_name": "\u30d4\u30fc\u30af\u30fb\u30a8\u30f3\u30c9\u306e\u6cd5\u5247",
       "id": "role_status_notification"
     },
     {
@@ -117380,10 +117380,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1035,
+      "community": 90,
       "norm_label": "wishlist \u30d8\u30fc\u30b7 /wishlist",
       "_origin": "semantic",
-      "community_name": "\u30c9\u30cf\u30c6\u30a3\u306e\u3057\u304d\u3044\u5024\uff08\u5fdc\u7b54\u30d5\u30a3\u30fc\u30c9\u30d0\u30c3\u30af\uff09",
+      "community_name": "\u30e2\u30ce\u30af\u30ed\u30fc\u30e0 Key Color\uff08\u9ed2/\u30b0\u30ec\u30fc/\u767d\uff09",
       "id": "page_wishlist"
     },
     {
@@ -117580,10 +117580,10 @@
       "author": null,
       "contributor": null,
       "rationale": "\u300cADDED\u300d2\u79d2\u306e\u307f\u3067\u306f\u8cfc\u5165\u306e\u5c71\u5834\uff08Peak\uff09\u3092\u53d6\u308a\u3053\u307c\u3059\u3002role=status \u901a\u77e5\uff0b\u300c\u30ab\u30fc\u30c8\u3092\u898b\u308b\u300d\u2192/cart \u3092\u63d0\u793a\u3002",
-      "community": 1035,
+      "community": 63,
       "norm_label": "id-4 \u30ab\u30fc\u30c8\u8ffd\u52a0\u6210\u529f\u306e\u30a4\u30f3\u30e9\u30a4\u30f3\u901a\u77e5\u3068\u30ab\u30fc\u30c8\u5c0e\u7dda",
       "_origin": "semantic",
-      "community_name": "\u30c9\u30cf\u30c6\u30a3\u306e\u3057\u304d\u3044\u5024\uff08\u5fdc\u7b54\u30d5\u30a3\u30fc\u30c9\u30d0\u30c3\u30af\uff09",
+      "community_name": "\u30d4\u30fc\u30af\u30fb\u30a8\u30f3\u30c9\u306e\u6cd5\u5247",
       "id": "item_id_finding_id4_add_to_cart_feedback"
     },
     {
@@ -117735,10 +117735,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1035,
+      "community": 90,
       "norm_label": "l-4 0\u4ef6\u6642\u306b\u300c\u3059\u3078\u3066\u898b\u308b\u300d\u30db\u30bf\u30f3\u3092\u4f75\u8a2d",
       "_origin": "semantic",
-      "community_name": "\u30c9\u30cf\u30c6\u30a3\u306e\u3057\u304d\u3044\u5024\uff08\u5fdc\u7b54\u30d5\u30a3\u30fc\u30c9\u30d0\u30c3\u30af\uff09",
+      "community_name": "\u30e2\u30ce\u30af\u30ed\u30fc\u30e0 Key Color\uff08\u9ed2/\u30b0\u30ec\u30fc/\u767d\uff09",
       "id": "look_finding_l4_empty_state_cta"
     },
     {
@@ -118044,10 +118044,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 1035,
+      "community": 90,
       "norm_label": "s-5 \u53d6\u6271\u5e97\u8217\u30bb\u30ed\u4ef6\u6642\u306e\u7a7a\u72b6\u614b + view collection",
       "_origin": "semantic",
-      "community_name": "\u30c9\u30cf\u30c6\u30a3\u306e\u3057\u304d\u3044\u5024\uff08\u5fdc\u7b54\u30d5\u30a3\u30fc\u30c9\u30d0\u30c3\u30af\uff09",
+      "community_name": "\u30e2\u30ce\u30af\u30ed\u30fc\u30e0 Key Color\uff08\u9ed2/\u30b0\u30ec\u30fc/\u767d\uff09",
       "id": "stockist_finding_s5_empty_state"
     },
     {
@@ -118346,7 +118346,7 @@
       "community": 903,
       "norm_label": "state-changing endpoints skip csrf middleware",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "missing_csrf_enforcement"
     },
     {
@@ -118359,10 +118359,10 @@
       "author": null,
       "contributor": null,
       "rationale": "Unthrottled public routes enable enumeration, scraping, expensive Stripe object creation, and amplification against upstream APIs.",
-      "community": 903,
+      "community": 25,
       "norm_label": "public endpoints lack abuse throttling",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "home \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
       "id": "missing_rate_limiting"
     },
     {
@@ -118599,10 +118599,10 @@
       "author": null,
       "contributor": null,
       "rationale": "public = true means draft and private product images are fetchable by URL, so publication control does not actually close at items.status; needs a private bucket with signed URLs or draft/published path separation.",
-      "community": 993,
+      "community": 33,
       "norm_label": "item-images bucket is fully public regardless of item status",
       "_origin": "semantic",
-      "community_name": "A01 Broken Access Control",
+      "community_name": "Service-role client bypasses RLS",
       "id": "public_storage_bucket_exposure"
     },
     {
@@ -118951,7 +118951,7 @@
       "author": null,
       "contributor": null,
       "rationale": "Prescribed fix for the fully public item-images bucket so asset availability follows publication state.",
-      "community": 993,
+      "community": 101,
       "norm_label": "private bucket with signed url delivery",
       "_origin": "semantic",
       "community_name": "A01 Broken Access Control",
@@ -119123,7 +119123,7 @@
       "community": 903,
       "norm_label": "src/app/api/profile/route.ts",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "profile_route"
     },
     {
@@ -119393,7 +119393,7 @@
       "community": 903,
       "norm_label": "src/app/api/checkout/payment-intent/route.ts",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "checkout_payment_intent_route"
     },
     {
@@ -119406,10 +119406,10 @@
       "author": null,
       "contributor": null,
       "rationale": "Public proxy with only a process-local memory cache, so multi-instance deployments do not dampen repeated upstream abuse.",
-      "community": 903,
+      "community": 25,
       "norm_label": "src/app/api/checkout/postal-code/route.ts",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "home \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
       "id": "checkout_postal_code_route"
     },
     {
@@ -119421,10 +119421,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 903,
+      "community": 25,
       "norm_label": "src/features/checkout/services/postal-code.service.ts",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "home \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
       "id": "postal_code_service"
     },
     {
@@ -119467,10 +119467,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 903,
+      "community": 25,
       "norm_label": "src/app/api/search/route.ts",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "home \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
       "id": "search_route"
     },
     {
@@ -119482,10 +119482,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 903,
+      "community": 25,
       "norm_label": "searchhomepreview",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "home \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
       "id": "search_home_preview"
     },
     {
@@ -119543,10 +119543,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 903,
+      "community": 25,
       "norm_label": "src/app/api/items/[id]/route.ts",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "home \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
       "id": "items_id_route"
     },
     {
@@ -119648,10 +119648,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 903,
+      "community": 25,
       "norm_label": "postal_code_cache",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "home \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
       "id": "postal_code_cache"
     },
     {
@@ -119694,10 +119694,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 993,
+      "community": 33,
       "norm_label": "item-images",
       "_origin": "semantic",
-      "community_name": "A01 Broken Access Control",
+      "community_name": "Service-role client bypasses RLS",
       "id": "item_images_bucket"
     },
     {
@@ -119709,10 +119709,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 993,
+      "community": 33,
       "norm_label": "migrations/023_add_acl_rbac_tables_and_policies.sql",
       "_origin": "semantic",
-      "community_name": "A01 Broken Access Control",
+      "community_name": "Service-role client bypasses RLS",
       "id": "migration_023_acl_rbac"
     },
     {
@@ -119790,7 +119790,7 @@
       "community": 903,
       "norm_label": "docs/3_architecturedesign/auth-structure.md",
       "_origin": "semantic",
-      "community_name": "checkout \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/app/checkout/page.tsx",
       "id": "spec_auth_structure"
     },
     {
@@ -119817,10 +119817,10 @@
       "captured_at": "2026-04-18",
       "author": null,
       "contributor": null,
-      "community": 993,
+      "community": 33,
       "norm_label": "code review: look/[id]",
       "_origin": "semantic",
-      "community_name": "A01 Broken Access Control",
+      "community_name": "Service-role client bypasses RLS",
       "id": "look_detail_review_doc"
     },
     {
@@ -119832,10 +119832,10 @@
       "captured_at": "2026-04-18",
       "author": null,
       "contributor": null,
-      "community": 993,
+      "community": 33,
       "norm_label": "code review: look list",
       "_origin": "semantic",
-      "community_name": "A01 Broken Access Control",
+      "community_name": "Service-role client bypasses RLS",
       "id": "look_review_doc"
     },
     {
@@ -119850,7 +119850,7 @@
       "community": 993,
       "norm_label": "code review: news/[id] security",
       "_origin": "semantic",
-      "community_name": "A01 Broken Access Control",
+      "community_name": "Code Review: news/[id] security",
       "id": "news_id_security_review_doc"
     },
     {
@@ -119865,7 +119865,7 @@
       "community": 993,
       "norm_label": "code review: news page security",
       "_origin": "semantic",
-      "community_name": "A01 Broken Access Control",
+      "community_name": "Code Review: news/[id] security",
       "id": "news_review_doc"
     },
     {
@@ -119877,10 +119877,10 @@
       "captured_at": "2026-04-18",
       "author": null,
       "contributor": null,
-      "community": 101,
+      "community": 1059,
       "norm_label": "code review: privacy page",
       "_origin": "semantic",
-      "community_name": "src/app/api/wishlist/route.ts",
+      "community_name": "src/proxy.ts",
       "id": "privacy_review_doc"
     },
     {
@@ -119925,7 +119925,7 @@
       "community": 101,
       "norm_label": "code review: stockist",
       "_origin": "semantic",
-      "community_name": "src/app/api/wishlist/route.ts",
+      "community_name": "A01 Broken Access Control",
       "id": "stockist_review_doc"
     },
     {
@@ -119955,7 +119955,7 @@
       "community": 101,
       "norm_label": "code review: wishlist",
       "_origin": "semantic",
-      "community_name": "src/app/api/wishlist/route.ts",
+      "community_name": "A01 Broken Access Control",
       "id": "wishlist_review_doc"
     },
     {
@@ -119984,7 +119984,7 @@
       "author": null,
       "contributor": null,
       "rationale": "Privileged content mutations (news, look, stockist) leave no durable trail, blocking incident investigation and publication-history review.",
-      "community": 993,
+      "community": 101,
       "norm_label": "audit logging",
       "_origin": "semantic",
       "community_name": "A01 Broken Access Control",
@@ -120019,7 +120019,7 @@
       "community": 101,
       "norm_label": "service role client bypasses rls",
       "_origin": "semantic",
-      "community_name": "src/app/api/wishlist/route.ts",
+      "community_name": "A01 Broken Access Control",
       "id": "service_role_bypass"
     },
     {
@@ -120192,7 +120192,7 @@
       "author": null,
       "contributor": null,
       "rationale": "Explicit status filtering is required wherever service-role or joined access can bypass RLS, notably wishlist item joins and published looks linked to private items.",
-      "community": 993,
+      "community": 101,
       "norm_label": "publication status filter (status = published)",
       "_origin": "semantic",
       "community_name": "A01 Broken Access Control",
@@ -120211,7 +120211,7 @@
       "community": 101,
       "norm_label": "session_id cookie survives logout",
       "_origin": "semantic",
-      "community_name": "src/app/api/wishlist/route.ts",
+      "community_name": "A01 Broken Access Control",
       "id": "session_id_cookie_persistence"
     },
     {
@@ -120227,7 +120227,7 @@
       "community": 993,
       "norm_label": "react automatic escaping (xss control)",
       "_origin": "semantic",
-      "community_name": "A01 Broken Access Control",
+      "community_name": "Code Review: news/[id] security",
       "id": "react_auto_escaping"
     },
     {
@@ -120346,10 +120346,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 993,
+      "community": 13,
       "norm_label": "src/app/api/auth/oauth/start/route.ts",
       "_origin": "semantic",
-      "community_name": "A01 Broken Access Control",
+      "community_name": "Code Review: Login / Auth",
       "id": "api_auth_oauth_start_route"
     },
     {
@@ -120454,7 +120454,7 @@
       "community": 101,
       "norm_label": "src/app/api/auth/logout/route.ts",
       "_origin": "semantic",
-      "community_name": "src/app/api/wishlist/route.ts",
+      "community_name": "A01 Broken Access Control",
       "id": "api_auth_logout_route"
     },
     {
@@ -120514,7 +120514,7 @@
       "community": 993,
       "norm_label": "src/lib/audit.ts",
       "_origin": "semantic",
-      "community_name": "A01 Broken Access Control",
+      "community_name": "Code Review: news/[id] security",
       "id": "src_lib_audit_ts"
     },
     {
@@ -120556,10 +120556,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 101,
+      "community": 1059,
       "norm_label": "providers",
       "_origin": "semantic",
-      "community_name": "src/app/api/wishlist/route.ts",
+      "community_name": "src/proxy.ts",
       "id": "providers_context"
     },
     {
@@ -120571,10 +120571,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 101,
+      "community": 1059,
       "norm_label": "src/app/privacy/page.tsx",
       "_origin": "semantic",
-      "community_name": "src/app/api/wishlist/route.ts",
+      "community_name": "src/proxy.ts",
       "id": "privacy_page"
     },
     {
@@ -120604,7 +120604,7 @@
       "community": 993,
       "norm_label": "src/features/news/services/public.ts",
       "_origin": "semantic",
-      "community_name": "A01 Broken Access Control",
+      "community_name": "Code Review: news/[id] security",
       "id": "features_news_services_public_ts"
     },
     {
@@ -120619,7 +120619,7 @@
       "community": 993,
       "norm_label": "src/app/news/[id]/page.tsx",
       "_origin": "semantic",
-      "community_name": "A01 Broken Access Control",
+      "community_name": "Code Review: news/[id] security",
       "id": "news_detail_page"
     },
     {
@@ -120634,7 +120634,7 @@
       "community": 993,
       "norm_label": "publicnewsgrid",
       "_origin": "semantic",
-      "community_name": "A01 Broken Access Control",
+      "community_name": "Code Review: news/[id] security",
       "id": "public_news_grid"
     },
     {
@@ -120649,7 +120649,7 @@
       "community": 993,
       "norm_label": "src/app/news/page.tsx",
       "_origin": "semantic",
-      "community_name": "A01 Broken Access Control",
+      "community_name": "Code Review: news/[id] security",
       "id": "news_list_page"
     },
     {
@@ -120661,10 +120661,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 993,
+      "community": 33,
       "norm_label": "src/app/look/page.tsx",
       "_origin": "semantic",
-      "community_name": "A01 Broken Access Control",
+      "community_name": "Service-role client bypasses RLS",
       "id": "look_list_page"
     },
     {
@@ -120676,10 +120676,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 993,
+      "community": 33,
       "norm_label": "src/app/look/[id]/page.tsx",
       "_origin": "semantic",
-      "community_name": "A01 Broken Access Control",
+      "community_name": "Service-role client bypasses RLS",
       "id": "look_detail_page"
     },
     {
@@ -120694,7 +120694,7 @@
       "community": 993,
       "norm_label": "publiclookgrid",
       "_origin": "semantic",
-      "community_name": "A01 Broken Access Control",
+      "community_name": "Code Review: news/[id] security",
       "id": "public_look_grid"
     },
     {
@@ -120706,10 +120706,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 993,
+      "community": 33,
       "norm_label": "lookimagegallery",
       "_origin": "semantic",
-      "community_name": "A01 Broken Access Control",
+      "community_name": "Service-role client bypasses RLS",
       "id": "look_image_gallery"
     },
     {
@@ -120721,10 +120721,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 993,
+      "community": 33,
       "norm_label": "src/lib/look/public.ts",
       "_origin": "semantic",
-      "community_name": "A01 Broken Access Control",
+      "community_name": "Service-role client bypasses RLS",
       "id": "src_lib_look_public_ts"
     },
     {
@@ -120736,7 +120736,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 993,
+      "community": 101,
       "norm_label": "src/app/api/admin/looks/[id]/route.ts",
       "_origin": "semantic",
       "community_name": "A01 Broken Access Control",
@@ -120751,10 +120751,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 993,
+      "community": 33,
       "norm_label": "src/app/api/admin/items/route.ts",
       "_origin": "semantic",
-      "community_name": "A01 Broken Access Control",
+      "community_name": "Service-role client bypasses RLS",
       "id": "api_admin_items_route"
     },
     {
@@ -120769,7 +120769,7 @@
       "community": 101,
       "norm_label": "src/app/api/admin/stockists/[id]/route.ts",
       "_origin": "semantic",
-      "community_name": "src/app/api/wishlist/route.ts",
+      "community_name": "A01 Broken Access Control",
       "id": "api_admin_stockists_id_route"
     },
     {
@@ -120784,7 +120784,7 @@
       "community": 101,
       "norm_label": "src/features/stockist/services/public.ts",
       "_origin": "semantic",
-      "community_name": "src/app/api/wishlist/route.ts",
+      "community_name": "A01 Broken Access Control",
       "id": "features_stockist_services_public_ts"
     },
     {
@@ -120796,10 +120796,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 993,
+      "community": 33,
       "norm_label": "src/lib/auth/admin-rbac.ts",
       "_origin": "semantic",
-      "community_name": "A01 Broken Access Control",
+      "community_name": "Service-role client bypasses RLS",
       "id": "src_lib_auth_admin_rbac_ts"
     },
     {
@@ -120826,7 +120826,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 993,
+      "community": 101,
       "norm_label": "logaudit",
       "_origin": "semantic",
       "community_name": "A01 Broken Access Control",
@@ -120874,7 +120874,7 @@
       "community": 101,
       "norm_label": "createserviceroleclient",
       "_origin": "semantic",
-      "community_name": "src/app/api/wishlist/route.ts",
+      "community_name": "A01 Broken Access Control",
       "id": "create_service_role_client_fn"
     },
     {
@@ -120976,7 +120976,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 993,
+      "community": 101,
       "norm_label": "audit_logs",
       "_origin": "semantic",
       "community_name": "A01 Broken Access Control",
@@ -120991,10 +120991,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 993,
+      "community": 13,
       "norm_label": "oauth_requests",
       "_origin": "semantic",
-      "community_name": "A01 Broken Access Control",
+      "community_name": "Code Review: Login / Auth",
       "id": "oauth_requests_table"
     },
     {
@@ -121021,7 +121021,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 993,
+      "community": 101,
       "norm_label": "news_articles",
       "_origin": "semantic",
       "community_name": "A01 Broken Access Control",
@@ -121036,7 +121036,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 993,
+      "community": 101,
       "norm_label": "look_items",
       "_origin": "semantic",
       "community_name": "A01 Broken Access Control",
@@ -121051,7 +121051,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 993,
+      "community": 101,
       "norm_label": "items",
       "_origin": "semantic",
       "community_name": "A01 Broken Access Control",
@@ -121069,7 +121069,7 @@
       "community": 101,
       "norm_label": "wishlist",
       "_origin": "semantic",
-      "community_name": "src/app/api/wishlist/route.ts",
+      "community_name": "A01 Broken Access Control",
       "id": "wishlist_table"
     },
     {
@@ -121081,7 +121081,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 993,
+      "community": 101,
       "norm_label": "stockists",
       "_origin": "semantic",
       "community_name": "A01 Broken Access Control",
@@ -121129,7 +121129,7 @@
       "community": 993,
       "norm_label": "migrations/013_create_news_images_bucket.sql",
       "_origin": "semantic",
-      "community_name": "A01 Broken Access Control",
+      "community_name": "Code Review: news/[id] security",
       "id": "migration_013_news_images_bucket"
     },
     {
@@ -121141,7 +121141,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 993,
+      "community": 101,
       "norm_label": "migrations/015_add_news_articles_rls.sql",
       "_origin": "semantic",
       "community_name": "A01 Broken Access Control",
@@ -121156,10 +121156,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 993,
+      "community": 33,
       "norm_label": "migrations/016_create_items_and_item_images_bucket.sql",
       "_origin": "semantic",
-      "community_name": "A01 Broken Access Control",
+      "community_name": "Service-role client bypasses RLS",
       "id": "migration_016_items_bucket"
     },
     {
@@ -121171,10 +121171,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 993,
+      "community": 33,
       "norm_label": "migrations/018_create_looks_and_look_images_bucket.sql",
       "_origin": "semantic",
-      "community_name": "A01 Broken Access Control",
+      "community_name": "Service-role client bypasses RLS",
       "id": "migration_018_looks_bucket"
     },
     {
@@ -121186,10 +121186,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 993,
+      "community": 33,
       "norm_label": "migrations/019_add_public_select_policy_to_look_items.sql",
       "_origin": "semantic",
-      "community_name": "A01 Broken Access Control",
+      "community_name": "Service-role client bypasses RLS",
       "id": "migration_019_look_items_policy"
     },
     {
@@ -121204,7 +121204,7 @@
       "community": 101,
       "norm_label": "migrations/021_create_wishlist_table.sql",
       "_origin": "semantic",
-      "community_name": "src/app/api/wishlist/route.ts",
+      "community_name": "A01 Broken Access Control",
       "id": "migration_021_wishlist_table"
     },
     {
@@ -121279,7 +121279,7 @@
       "community": 9,
       "norm_label": "code review: contact (additional) 2026-04-29",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "review_2026_04_29_contact_additional"
     },
     {
@@ -121291,7 +121291,7 @@
       "captured_at": "2026-04-29",
       "author": null,
       "contributor": null,
-      "community": 9,
+      "community": 66,
       "norm_label": "code review: item detail 2026-04-29",
       "_origin": "semantic",
       "community_name": "src/lib/storage/news-images.ts",
@@ -121306,7 +121306,7 @@
       "captured_at": "2026-04-29",
       "author": null,
       "contributor": null,
-      "community": 9,
+      "community": 66,
       "norm_label": "code review: item list additional security review 2026-04-29",
       "_origin": "semantic",
       "community_name": "src/lib/storage/news-images.ts",
@@ -121324,7 +121324,7 @@
       "community": 66,
       "norm_label": "code review: login/auth additional security review 2026-04-29",
       "_origin": "semantic",
-      "community_name": "Code Review: Login/Auth Additional Security Review 2026-04-29",
+      "community_name": "src/lib/storage/news-images.ts",
       "id": "review_2026_04_29_login_additional"
     },
     {
@@ -121339,7 +121339,7 @@
       "community": 9,
       "norm_label": "code review: look/[id] 2026-04-29",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "review_2026_04_29_look_id"
     },
     {
@@ -121354,7 +121354,7 @@
       "community": 66,
       "norm_label": "code review: news detail (additional security) 2026-04-29",
       "_origin": "semantic",
-      "community_name": "Code Review: Login/Auth Additional Security Review 2026-04-29",
+      "community_name": "src/lib/storage/news-images.ts",
       "id": "review_2026_04_29_news_id_additional_security"
     },
     {
@@ -121369,7 +121369,7 @@
       "community": 66,
       "norm_label": "code review: news list and api 2026-04-29",
       "_origin": "semantic",
-      "community_name": "Code Review: Login/Auth Additional Security Review 2026-04-29",
+      "community_name": "src/lib/storage/news-images.ts",
       "id": "review_2026_04_29_news"
     },
     {
@@ -121399,7 +121399,7 @@
       "community": 9,
       "norm_label": "code review: search additional security review 2026-04-29",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "review_2026_04_29_search_additional_security"
     },
     {
@@ -121429,7 +121429,7 @@
       "community": 66,
       "norm_label": "docs/5.implement/security_review_login.md",
       "_origin": "semantic",
-      "community_name": "Code Review: Login/Auth Additional Security Review 2026-04-29",
+      "community_name": "src/lib/storage/news-images.ts",
       "id": "security_review_login_earlier"
     },
     {
@@ -121444,7 +121444,7 @@
       "community": 9,
       "norm_label": "src/app/api/contact/route.ts",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "file_api_contact_route"
     },
     {
@@ -121459,7 +121459,7 @@
       "community": 9,
       "norm_label": "src/lib/turnstile.ts",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "file_lib_turnstile"
     },
     {
@@ -121471,7 +121471,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 9,
+      "community": 66,
       "norm_label": "src/lib/storage/item-images.ts",
       "_origin": "semantic",
       "community_name": "src/lib/storage/news-images.ts",
@@ -121489,7 +121489,7 @@
       "community": 9,
       "norm_label": "src/app/api/items/[id]/route.ts",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "file_api_items_id_route"
     },
     {
@@ -121501,10 +121501,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 19,
+      "community": 66,
       "norm_label": "src/app/item/page.tsx",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/lib/storage/news-images.ts",
       "id": "file_item_page"
     },
     {
@@ -121549,7 +121549,7 @@
       "community": 66,
       "norm_label": "src/features/auth/middleware/ratelimit.ts",
       "_origin": "semantic",
-      "community_name": "Code Review: Login/Auth Additional Security Review 2026-04-29",
+      "community_name": "src/lib/storage/news-images.ts",
       "id": "file_auth_middleware_ratelimit"
     },
     {
@@ -121561,7 +121561,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 9,
+      "community": 66,
       "norm_label": "src/app/api/auth/login/route.ts",
       "_origin": "semantic",
       "community_name": "src/lib/storage/news-images.ts",
@@ -121579,7 +121579,7 @@
       "community": 66,
       "norm_label": "src/contexts/logincontext.tsx",
       "_origin": "semantic",
-      "community_name": "Code Review: Login/Auth Additional Security Review 2026-04-29",
+      "community_name": "src/lib/storage/news-images.ts",
       "id": "file_contexts_logincontext"
     },
     {
@@ -121594,7 +121594,7 @@
       "community": 66,
       "norm_label": "src/app/api/auth/logout/route.ts",
       "_origin": "semantic",
-      "community_name": "Code Review: Login/Auth Additional Security Review 2026-04-29",
+      "community_name": "src/lib/storage/news-images.ts",
       "id": "file_api_auth_logout_route"
     },
     {
@@ -121609,7 +121609,7 @@
       "community": 66,
       "norm_label": "src/app/login/page.tsx",
       "_origin": "semantic",
-      "community_name": "Code Review: Login/Auth Additional Security Review 2026-04-29",
+      "community_name": "src/lib/storage/news-images.ts",
       "id": "file_login_page"
     },
     {
@@ -121624,7 +121624,7 @@
       "community": 66,
       "norm_label": "src/lib/look/public.ts",
       "_origin": "semantic",
-      "community_name": "Code Review: Login/Auth Additional Security Review 2026-04-29",
+      "community_name": "src/lib/storage/news-images.ts",
       "id": "file_lib_look_public"
     },
     {
@@ -121636,7 +121636,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 9,
+      "community": 66,
       "norm_label": "src/lib/storage/look-images.ts",
       "_origin": "semantic",
       "community_name": "src/lib/storage/news-images.ts",
@@ -121654,7 +121654,7 @@
       "community": 9,
       "norm_label": "src/lib/auth/admin-rbac.ts",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "file_lib_auth_admin_rbac"
     },
     {
@@ -121669,7 +121669,7 @@
       "community": 9,
       "norm_label": "src/app/api/admin/looks/route.ts",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "file_api_admin_looks_route"
     },
     {
@@ -121684,7 +121684,7 @@
       "community": 9,
       "norm_label": "src/app/api/admin/looks/[id]/route.ts",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "file_api_admin_looks_id_route"
     },
     {
@@ -121699,7 +121699,7 @@
       "community": 9,
       "norm_label": "src/app/api/looks/[id]/route.ts",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "file_api_looks_id_route_absent"
     },
     {
@@ -121711,7 +121711,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 9,
+      "community": 66,
       "norm_label": "src/lib/storage/news-images.ts",
       "_origin": "semantic",
       "community_name": "src/lib/storage/news-images.ts",
@@ -121729,7 +121729,7 @@
       "community": 66,
       "norm_label": "src/features/news/services/public.ts",
       "_origin": "semantic",
-      "community_name": "Code Review: Login/Auth Additional Security Review 2026-04-29",
+      "community_name": "src/lib/storage/news-images.ts",
       "id": "file_features_news_services_public"
     },
     {
@@ -121744,7 +121744,7 @@
       "community": 66,
       "norm_label": "src/app/news/[id]/page.tsx",
       "_origin": "semantic",
-      "community_name": "Code Review: Login/Auth Additional Security Review 2026-04-29",
+      "community_name": "src/lib/storage/news-images.ts",
       "id": "file_news_id_page"
     },
     {
@@ -121759,7 +121759,7 @@
       "community": 66,
       "norm_label": "migrations/015_add_news_articles_rls.sql",
       "_origin": "semantic",
-      "community_name": "Code Review: Login/Auth Additional Security Review 2026-04-29",
+      "community_name": "src/lib/storage/news-images.ts",
       "id": "migration_015_add_news_articles_rls"
     },
     {
@@ -121774,7 +121774,7 @@
       "community": 9,
       "norm_label": "src/app/api/news/route.ts",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "file_api_news_route"
     },
     {
@@ -121819,7 +121819,7 @@
       "community": 9,
       "norm_label": "src/app/search/page.tsx",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "file_search_page"
     },
     {
@@ -121834,7 +121834,7 @@
       "community": 9,
       "norm_label": "src/app/api/search/route.ts",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "file_api_search_route"
     },
     {
@@ -121849,7 +121849,7 @@
       "community": 9,
       "norm_label": "src/app/api/suggest/route.ts",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "file_api_suggest_route"
     },
     {
@@ -121864,7 +121864,7 @@
       "community": 9,
       "norm_label": "src/features/search/components/searchpageclient.tsx",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "file_searchpageclient"
     },
     {
@@ -121879,7 +121879,7 @@
       "community": 9,
       "norm_label": "src/features/search/services/search.service.ts",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "file_search_service"
     },
     {
@@ -121954,7 +121954,7 @@
       "community": 9,
       "norm_label": "src/app/api/admin/stockists/route.ts",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "file_api_admin_stockists_route"
     },
     {
@@ -121999,7 +121999,7 @@
       "community": 9,
       "norm_label": "authorizeadminpermission",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "fn_authorize_admin_permission"
     },
     {
@@ -122011,7 +122011,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 9,
+      "community": 66,
       "norm_label": "signlookimageurl",
       "_origin": "semantic",
       "community_name": "src/lib/storage/news-images.ts",
@@ -122026,10 +122026,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 19,
+      "community": 66,
       "norm_label": "getpublisheditemspage",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/lib/storage/news-images.ts",
       "id": "fn_get_published_items_page"
     },
     {
@@ -122071,10 +122071,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 9,
+      "community": 131,
       "norm_label": "signedurlcache",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: Stockist (Addendum) 2026-04-29",
       "id": "signed_url_cache"
     },
     {
@@ -122089,7 +122089,7 @@
       "community": 9,
       "norm_label": "owasp a09: security logging failures / information exposure",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "owasp_a09_information_disclosure"
     },
     {
@@ -122101,7 +122101,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 9,
+      "community": 66,
       "norm_label": "signed url trust boundary weakness",
       "_origin": "semantic",
       "community_name": "src/lib/storage/news-images.ts",
@@ -122116,7 +122116,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 9,
+      "community": 66,
       "norm_label": "fail-open rawurl fallback on signing failure",
       "_origin": "semantic",
       "community_name": "src/lib/storage/news-images.ts",
@@ -122131,7 +122131,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 9,
+      "community": 66,
       "norm_label": "object path allowlist validation",
       "_origin": "semantic",
       "community_name": "src/lib/storage/news-images.ts",
@@ -122146,7 +122146,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 9,
+      "community": 66,
       "norm_label": "signing host allowlist validation",
       "_origin": "semantic",
       "community_name": "src/lib/storage/news-images.ts",
@@ -122161,7 +122161,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 9,
+      "community": 66,
       "norm_label": "supabase service role signing privilege",
       "_origin": "semantic",
       "community_name": "src/lib/storage/news-images.ts",
@@ -122191,10 +122191,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 9,
+      "community": 131,
       "norm_label": "ip-based rate limit bypass",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: Stockist (Addendum) 2026-04-29",
       "id": "rate_limit_bypass"
     },
     {
@@ -122236,7 +122236,7 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 9,
+      "community": 66,
       "norm_label": "fail-open login success (session/cookie failure swallowed, 200 returned)",
       "_origin": "semantic",
       "community_name": "src/lib/storage/news-images.ts",
@@ -122254,7 +122254,7 @@
       "community": 66,
       "norm_label": "unverified logout response (client assumes success)",
       "_origin": "semantic",
-      "community_name": "Code Review: Login/Auth Additional Security Review 2026-04-29",
+      "community_name": "src/lib/storage/news-images.ts",
       "id": "logout_response_verification"
     },
     {
@@ -122269,7 +122269,7 @@
       "community": 9,
       "norm_label": "raw error object logging exposure",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "raw_error_logging_exposure"
     },
     {
@@ -122284,7 +122284,7 @@
       "community": 9,
       "norm_label": "structured minimal audit logging",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "structured_audit_logging"
     },
     {
@@ -122314,7 +122314,7 @@
       "community": 9,
       "norm_label": "overly verbose rbac decision logs",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "rbac_decision_log_verbosity"
     },
     {
@@ -122329,7 +122329,7 @@
       "community": 9,
       "norm_label": "cache-control header policy gap",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "cache_control_header_policy"
     },
     {
@@ -122344,7 +122344,7 @@
       "community": 9,
       "norm_label": "no-store response header",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "no_store_header"
     },
     {
@@ -122359,7 +122359,7 @@
       "community": 9,
       "norm_label": "x-content-type-options / vary security headers",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "security_headers_x_content_type_options_vary"
     },
     {
@@ -122374,7 +122374,7 @@
       "community": 9,
       "norm_label": "referrer-policy header",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "referrer_policy"
     },
     {
@@ -122404,7 +122404,7 @@
       "community": 9,
       "norm_label": "missing route-param numeric schema validation",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "missing_route_param_validation"
     },
     {
@@ -122416,10 +122416,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 19,
+      "community": 66,
       "norm_label": "ssr / api defense boundary split",
       "_origin": "semantic",
-      "community_name": "item \u4e00\u89a7 \u30bb\u30ad\u30e5\u30ea\u30c6\u30a3\u30ec\u30d3\u30e5\u30fc",
+      "community_name": "src/lib/storage/news-images.ts",
       "id": "ssr_api_defense_boundary_split"
     },
     {
@@ -122449,7 +122449,7 @@
       "community": 66,
       "norm_label": "xss resistance via react text rendering (no html interpretation)",
       "_origin": "semantic",
-      "community_name": "Code Review: Login/Auth Additional Security Review 2026-04-29",
+      "community_name": "src/lib/storage/news-images.ts",
       "id": "xss_react_text_rendering"
     },
     {
@@ -122464,7 +122464,7 @@
       "community": 9,
       "norm_label": "request body size limit (413 payload too large)",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "request_body_size_limit"
     },
     {
@@ -122479,7 +122479,7 @@
       "community": 9,
       "norm_label": "email_hash unsalted sha-256 (re-identification risk)",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "unsalted_sha256_email_hash"
     },
     {
@@ -122494,7 +122494,7 @@
       "community": 9,
       "norm_label": "hmac-sha256 with secret pepper",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "hmac_sha256_pepper"
     },
     {
@@ -122509,7 +122509,7 @@
       "community": 9,
       "norm_label": "turnstile verification hardening (timeout, hostname/action check)",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "turnstile_verification_hardening"
     },
     {
@@ -122524,7 +122524,7 @@
       "community": 9,
       "norm_label": "contact_to_email recipient fallback misconfiguration",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: look/[id] 2026-04-29",
       "id": "contact_to_email_fallback"
     },
     {
@@ -122536,10 +122536,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 9,
+      "community": 131,
       "norm_label": "unbounded signedurlcache growth (memory exhaustion)",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: Stockist (Addendum) 2026-04-29",
       "id": "signed_url_cache_unbounded_growth"
     },
     {
@@ -122551,10 +122551,10 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "community": 9,
+      "community": 131,
       "norm_label": "suggest api debounce / minimum input length",
       "_origin": "semantic",
-      "community_name": "src/lib/storage/news-images.ts",
+      "community_name": "Code Review: Stockist (Addendum) 2026-04-29",
       "id": "suggest_api_debounce"
     },
     {
@@ -122584,7 +122584,7 @@
       "community": 66,
       "norm_label": "service reliability coupling (signing failure cascades to whole list)",
       "_origin": "semantic",
-      "community_name": "Code Review: Login/Auth Additional Security Review 2026-04-29",
+      "community_name": "src/lib/storage/news-images.ts",
       "id": "service_reliability_coupling"
     },
     {
@@ -134399,7 +134399,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "e2e/FR-ADMIN-052-admin-item-responsive.spec.ts",
-      "source_location": "L27",
+      "source_location": "L30",
       "weight": 1.0,
       "_origin": "ast",
       "source": "e2e_fr_admin_052_admin_item_responsive_spec",
@@ -134410,7 +134410,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "e2e/FR-ADMIN-052-admin-item-responsive.spec.ts",
-      "source_location": "L67",
+      "source_location": "L70",
       "weight": 1.0,
       "_origin": "ast",
       "source": "e2e_fr_admin_052_admin_item_responsive_spec",
@@ -134421,7 +134421,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "e2e/FR-ADMIN-052-admin-item-responsive.spec.ts",
-      "source_location": "L38",
+      "source_location": "L41",
       "weight": 1.0,
       "_origin": "ast",
       "source": "e2e_fr_admin_052_admin_item_responsive_spec",
@@ -134432,7 +134432,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "e2e/FR-ADMIN-052-admin-item-responsive.spec.ts",
-      "source_location": "L18",
+      "source_location": "L21",
       "weight": 1.0,
       "_origin": "ast",
       "source": "e2e_fr_admin_052_admin_item_responsive_spec",
@@ -134443,7 +134443,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "e2e/FR-ADMIN-052-admin-item-responsive.spec.ts",
-      "source_location": "L7",
+      "source_location": "L5",
       "weight": 1.0,
       "_origin": "ast",
       "source": "e2e_fr_admin_052_admin_item_responsive_spec",
@@ -134455,7 +134455,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "e2e/FR-ADMIN-052-admin-item-responsive.spec.ts",
-      "source_location": "L62",
+      "source_location": "L65",
       "weight": 1.0,
       "_origin": "ast",
       "source": "e2e_fr_admin_052_admin_item_responsive_spec_mockadminapis",
@@ -184358,7 +184358,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "src/components/ItemSection.tsx",
-      "source_location": "L111",
+      "source_location": "L101",
       "weight": 1.0,
       "_origin": "ast",
       "source": "src_components_itemsection",
@@ -184467,7 +184467,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/components/ItemSection.tsx",
-      "source_location": "L117",
+      "source_location": "L107",
       "weight": 1.0,
       "_origin": "ast",
       "source": "src_components_itemsection_itemsection",

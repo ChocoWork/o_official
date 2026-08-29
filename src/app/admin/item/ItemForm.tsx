@@ -1,5 +1,6 @@
 "use client";
 
+import "@/app/admin/item/item-form.css";
 import { useEffect, useRef, useState } from "react";
 // preview images now handled by Card component
 import { useRouter } from "next/navigation";
@@ -20,6 +21,16 @@ import {
   ItemFormValues,
   ItemStatus,
 } from "./types";
+
+// FREQ-310: 全セクションで同じ見出し処理を繰り返す（反復）。フィールドラベルとの
+// 対比はサイズではなく字間と罫線で作る（FREQ-291 で確立したこのプロジェクトの作法）。
+const SECTION_TITLE_CLASS =
+  "border-b border-black/10 pb-2 text-xs tracking-widest text-black/80 font-acumin";
+
+// フォームのシェル。xl 未満は1カラム、xl 以上は左=画像 / 右=入力の2カラム。
+// 4K でも行長が伸びすぎないよう 3xl で頭打ちにする。
+const FORM_SHELL_CLASS =
+  "mx-auto w-full max-w-4xl xl:max-w-6xl 3xl:max-w-7xl px-6 lg:px-12";
 
 interface ItemFormProps {
   submitUrl: string;
@@ -362,28 +373,33 @@ export function ItemForm({
 
   if (isLoading) {
     return (
-      <main className="pt-32 pb-20">
-        <div className="max-w-4xl mx-auto px-6 lg:px-12 text-center">
-          読み込み中...
-        </div>
-      </main>
+      <div className="pb-20">
+        <div className={`${FORM_SHELL_CLASS} text-center`}>読み込み中...</div>
+      </div>
     );
   }
 
   const submitLabel = submitMethod === "PUT" ? "更新" : "保存";
 
   return (
-    <main className="pt-32 pb-20">
-      <div className="max-w-4xl mx-auto px-6 lg:px-12">
-        <form className="space-y-8" onSubmit={handleSubmit}>
-          {/* image upload section same as before */}
-          <div>
-            <Card
-              label="商品画像"
-              previewUrls={previewUrls}
-              onRemovePreview={removeImage}
-              className="p-0 border-0"
-            />
+    <div className="pb-20">
+      <div className={FORM_SHELL_CLASS}>
+        <form
+          className="item-form grid gap-8 xl:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] xl:items-start xl:gap-12 3xl:gap-16"
+          onSubmit={handleSubmit}
+        >
+          {/* 左列：商品画像。xl 以上では入力欄をスクロールしても見えるよう追従させる */}
+          <section
+            data-testid="item-form-media"
+            className="item-form__fields xl:sticky xl:top-[var(--site-header-height)]">
+            <h2 className={SECTION_TITLE_CLASS}>商品画像</h2>
+            {previewUrls.length > 0 && (
+              <Card
+                previewUrls={previewUrls}
+                onRemovePreview={removeImage}
+                className="p-0 border-0"
+              />
+            )}
             <div
               role="button"
               tabIndex={0}
@@ -421,227 +437,263 @@ export function ItemForm({
                 </p>
               </div>
             </div>
-          </div>
+          </section>
 
-          <SingleSelect
-            label="カテゴリー"
-            variant="dropdown"
-            options={CATEGORIES.map((itemCategory) => ({
-              value: itemCategory,
-              label: itemCategory,
-            }))}
-            value={category}
-            onValueChange={(val) =>
-              setCategory(val as (typeof CATEGORIES)[number])
-            }
-            className="font-acumin"
-            size="md"
-          />
+          {/* 右列：入力。セクション間 > グループ間 > フィールド間 の3段で近接を作る */}
+          <div className="item-form__sections min-w-0" data-testid="item-form-fields">
+            <section className="item-form__fields">
+              <h2 className={SECTION_TITLE_CLASS}>基本情報</h2>
 
-          <TextField
-            required
-            label="商品名"
-            placeholder="商品名を入力"
-            type="text"
-            value={itemName}
-            onChange={(e) => setItemName(e.target.value)}
-            size="md"
-          />
+              <TextField
+                required
+                label="商品名"
+                placeholder="商品名を入力"
+                type="text"
+                value={itemName}
+                onChange={(e) => setItemName(e.target.value)}
+                size="md"
+              />
 
-          <TextField
-            required
-            label="価格（円）"
-            placeholder="価格を入力"
-            type="number"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-            size="md"
-          />
+              <div className="item-form__pair">
+                <SingleSelect
+                  label="カテゴリー"
+                  variant="dropdown"
+                  options={CATEGORIES.map((itemCategory) => ({
+                    value: itemCategory,
+                    label: itemCategory,
+                  }))}
+                  value={category}
+                  onValueChange={(val) =>
+                    setCategory(val as (typeof CATEGORIES)[number])
+                  }
+                  className="font-acumin"
+                  size="md"
+                />
 
-          <TextAreaField
-            label="PRODUCT DETAILS"
-            placeholder="PRODUCT DETAILSを入力"
-            rows={4}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            required
-            size="md"
-          />
+                <TextField
+                  required
+                  label="価格（円）"
+                  placeholder="価格を入力"
+                  type="number"
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
+                  size="md"
+                />
+              </div>
+            </section>
 
-          <div>
-            <div className="space-y-2 mb-4">
-              <span className="block text-xs tracking-widest text-black/80">
-                カラー
-              </span>
-              {colors.map((color) => (
-                <div key={color.id} className="flex gap-3 items-end">
-                  <TextField
-                    className="flex-1"
-                    placeholder="カラー名"
-                    type="text"
-                    value={color.name}
-                    onChange={(e) =>
-                      handleColorChange(color.id, "name", e.target.value)
-                    }
-                    size="md"
-                  />
-                  <ColorPicker
-                    value={color.hex}
-                    onChange={(e) =>
-                      handleColorChange(color.id, "hex", e.target.value)
-                    }
-                    aria-label="カラーを選択"
-                    size="md"
-                  />
+            <section className="item-form__fields">
+              <h2 className={SECTION_TITLE_CLASS}>商品説明</h2>
+
+              <TextAreaField
+                label="PRODUCT DETAILS"
+                placeholder="PRODUCT DETAILSを入力"
+                rows={4}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                required
+                size="md"
+              />
+            </section>
+
+            <section className="item-form__group">
+              <h2 className={SECTION_TITLE_CLASS}>バリエーション</h2>
+
+              <div className="item-form__group">
+                <div className="space-y-2">
+                  <span className="block text-xs tracking-widest text-black/80">
+                    カラー
+                  </span>
+                  {colors.map((color) => (
+                    <div
+                      key={color.id}
+                      className="flex flex-wrap gap-3 items-end"
+                    >
+                      <TextField
+                        className="w-full sm:w-auto sm:flex-1"
+                        placeholder="カラー名"
+                        type="text"
+                        value={color.name}
+                        onChange={(e) =>
+                          handleColorChange(color.id, "name", e.target.value)
+                        }
+                        size="md"
+                      />
+                      <ColorPicker
+                        value={color.hex}
+                        onChange={(e) =>
+                          handleColorChange(color.id, "hex", e.target.value)
+                        }
+                        aria-label="カラーを選択"
+                        size="md"
+                      />
+                      <Button
+                        type="button"
+                        onClick={() => handleSaveColor(color)}
+                        variant="secondary"
+                        size="md"
+                      >
+                        保存
+                      </Button>
+                      {colors.length > 1 && (
+                        <Button
+                          type="button"
+                          onClick={() => handleRemoveColor(color.id)}
+                          variant="danger"
+                          size="md"
+                        >
+                          削除
+                        </Button>
+                      )}
+                    </div>
+                  ))}
                   <Button
                     type="button"
-                    onClick={() => handleSaveColor(color)}
+                    onClick={handleAddColor}
                     variant="secondary"
                     size="md"
                   >
-                    保存
+                    カラーを追加
                   </Button>
-                  {colors.length > 1 && (
-                    <Button
-                      type="button"
-                      onClick={() => handleRemoveColor(color.id)}
-                      variant="danger"
-                      size="md"
-                    >
-                      削除
-                    </Button>
-                  )}
                 </div>
-              ))}
-            </div>
-            <Button
-              type="button"
-              onClick={handleAddColor}
-              variant="primary"
-              size="md"
-            >
-              カラーを追加
-            </Button>
-            {savedColors.length > 0 && (
-              <div className="mt-6">
-                <p className="text-xs tracking-widest mb-3">保存済みカラー</p>
-                <div className="flex flex-wrap gap-3">
-                  {savedColors.map((color) => (
-                    <div key={color.id} className="relative w-10 h-10">
-                      <Button
-                        type="button"
-                        onClick={() => handleApplySavedColor(color)}
-                        variant="ghost"
-                        size="md"
-                        className="relative h-10 w-10 rounded-full border-2 border-black/20 overflow-hidden p-0"
-                        aria-label={`保存済みカラー ${color.name || color.hex}`}
-                      >
-                        <span
-                          className="absolute inset-0"
-                          style={{ backgroundColor: color.hex }}
-                        />
-                      </Button>
-                      <Button
-                        type="button"
-                        onClick={() => handleRemoveSavedColor(color.id)}
-                        size="md"
-                        className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 text-2.5"
-                        aria-label="保存済みカラーを削除"
-                      >
-                        <i className="ri-close-line text-xs" />
-                      </Button>
+
+                {savedColors.length > 0 && (
+                  <div>
+                    <p className="text-xs tracking-widest mb-3">
+                      保存済みカラー
+                    </p>
+                    <div className="flex flex-wrap gap-3">
+                      {savedColors.map((color) => (
+                        <div key={color.id} className="relative w-10 h-10">
+                          <Button
+                            type="button"
+                            onClick={() => handleApplySavedColor(color)}
+                            variant="ghost"
+                            size="md"
+                            className="relative h-10 w-10 rounded-full border-2 border-black/20 overflow-hidden p-0"
+                            aria-label={`保存済みカラー ${color.name || color.hex}`}
+                          >
+                            <span
+                              className="absolute inset-0"
+                              style={{ backgroundColor: color.hex }}
+                            />
+                          </Button>
+                          <Button
+                            type="button"
+                            onClick={() => handleRemoveSavedColor(color.id)}
+                            size="md"
+                            className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 text-2.5"
+                            aria-label="保存済みカラーを削除"
+                          >
+                            <i className="ri-close-line text-xs" />
+                          </Button>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          <MultiSelect
-            label="サイズ（複数選択可能）"
-            variant="buttons"
-            options={SIZES.map((s) => ({ value: s, label: s }))}
-            values={Array.from(selectedSizes)}
-            onChange={(vals) => setSelectedSizes(new Set(vals))}
-            size="md"
-          />
+              <MultiSelect
+                label="サイズ（複数選択可能）"
+                variant="buttons"
+                options={SIZES.map((s) => ({ value: s, label: s }))}
+                values={Array.from(selectedSizes)}
+                onChange={(vals) => setSelectedSizes(new Set(vals))}
+                size="md"
+              />
+            </section>
 
-          <TextField
-            label="MATERIAL（素材）"
-            placeholder="例: Wool 100%"
-            type="text"
-            value={material}
-            onChange={(e) => setMaterial(e.target.value)}
-            size="md"
-          />
+            <section className="item-form__fields">
+              <h2 className={SECTION_TITLE_CLASS}>商品仕様</h2>
 
-          <TextField
-            label="CARE（お手入れ方法）"
-            placeholder="例: ドライクリーニング"
-            type="text"
-            value={care}
-            onChange={(e) => setCare(e.target.value)}
-            size="md"
-          />
+              <div className="item-form__pair">
+                <TextField
+                  label="MATERIAL（素材）"
+                  placeholder="例: Wool 100%"
+                  type="text"
+                  value={material}
+                  onChange={(e) => setMaterial(e.target.value)}
+                  size="md"
+                />
 
-          <TextField
-            label="PRODUCT NOTE（商品の注意書き）"
-            placeholder="例: 素材の特性上、摩擦により毛羽立ちが生じる場合があります。"
-            type="text"
-            value={productNote}
-            onChange={(e) => setProductNote(e.target.value)}
-            size="md"
-          />
+                <TextField
+                  label="CARE（お手入れ方法）"
+                  placeholder="例: ドライクリーニング"
+                  type="text"
+                  value={care}
+                  onChange={(e) => setCare(e.target.value)}
+                  size="md"
+                />
 
-          <TextField
-            label="MADE IN（生産国）"
-            placeholder="例: Japan"
-            type="text"
-            value={madeIn}
-            onChange={(e) => setMadeIn(e.target.value)}
-            size="md"
-          />
+                <TextField
+                  label="PRODUCT NOTE（商品の注意書き）"
+                  placeholder="例: 素材の特性上、摩擦により毛羽立ちが生じる場合があります。"
+                  type="text"
+                  value={productNote}
+                  onChange={(e) => setProductNote(e.target.value)}
+                  size="md"
+                />
 
-          <RadioButtonGroup
-            label="ステータス"
-            name="status"
-            value={status}
-            onChange={(value) => setStatus(value as ItemStatus)}
-            options={[
-              { value: "private", label: "非公開" },
-              { value: "published", label: "公開" },
-            ]}
-            size="md"
-          />
+                <TextField
+                  label="MADE IN（生産国）"
+                  placeholder="例: Japan"
+                  type="text"
+                  value={madeIn}
+                  onChange={(e) => setMadeIn(e.target.value)}
+                  size="md"
+                />
+              </div>
+            </section>
 
-          {submitSuccess && (
-            <p className="text-sm text-black" role="status">
-              {submitSuccess}
-            </p>
-          )}
+            <section className="item-form__fields">
+              <h2 className={SECTION_TITLE_CLASS}>公開設定</h2>
 
-          {submitError && (
-            <p className="text-sm text-red-600" role="alert">
-              {submitError}
-            </p>
-          )}
+              <RadioButtonGroup
+                label="ステータス"
+                name="status"
+                value={status}
+                onChange={(value) => setStatus(value as ItemStatus)}
+                options={[
+                  { value: "private", label: "非公開" },
+                  { value: "published", label: "公開" },
+                ]}
+                size="md"
+              />
+            </section>
 
-          <div className="flex gap-4">
-            <Button
-              type="button"
-              onClick={() => router.push("/admin?tab=ITEM")}
-              disabled={isSubmitting}
-              variant="secondary"
-              size="md"
-            >
-              キャンセル
-            </Button>
-            <Button type="submit" disabled={isSubmitting} size="md">
-              {isSubmitting ? `${submitLabel}中...` : submitLabel}
-            </Button>
+            {/* 主要 CTA。フォームが縦に長い xl 以上では末尾に貼り付けて常に見えるようにする（対比） */}
+            <div className="item-form__fields xl:sticky xl:bottom-0 xl:border-t xl:border-black/10 xl:bg-white xl:py-4">
+              {submitSuccess && (
+                <p className="text-sm text-black" role="status">
+                  {submitSuccess}
+                </p>
+              )}
+
+              {submitError && (
+                <p className="text-sm text-red-600" role="alert">
+                  {submitError}
+                </p>
+              )}
+
+              <div className="flex gap-4">
+                <Button
+                  type="button"
+                  onClick={() => router.push("/admin?tab=ITEM")}
+                  disabled={isSubmitting}
+                  variant="secondary"
+                  size="md"
+                >
+                  キャンセル
+                </Button>
+                <Button type="submit" disabled={isSubmitting} size="md">
+                  {isSubmitting ? `${submitLabel}中...` : submitLabel}
+                </Button>
+              </div>
+            </div>
           </div>
         </form>
       </div>
-    </main>
+    </div>
   );
 }

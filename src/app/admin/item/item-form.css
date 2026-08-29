@@ -1,0 +1,41 @@
+/* File: src/app/admin/item/item-form.css
+   FREQ-310: ITEM 登録・編集フォームの間隔ラダー（近接）。
+   globals.css の --lk-size-md / --phi / --sqrt-phi から導出し、新しい定数は作らない。
+   account.css と同じ「1つの base から比で段を作る」書き方に揃えている。
+   field(約24px) < group(約31px) < section(約39px) の3段で、隣り合う段の比は常に √φ。 */
+.item-form {
+  --item-form-base: calc(var(--lk-size-md) * var(--phi));
+  --item-form-gap-field: var(--item-form-base);
+  --item-form-gap-group: calc(var(--item-form-base) * var(--sqrt-phi));
+  --item-form-gap-section: calc(var(--item-form-base) * var(--phi));
+}
+
+/* セクション間 */
+.item-form__sections {
+  display: grid;
+  gap: var(--item-form-gap-section);
+}
+
+/* セクション内のフィールド間 */
+.item-form__fields {
+  display: grid;
+  gap: var(--item-form-gap-field);
+}
+
+/* セクション内で意味の切れるまとまり同士（カラー行 ↔ 保存済みカラー など） */
+.item-form__group {
+  display: grid;
+  gap: var(--item-form-gap-group);
+}
+
+/* 短いフィールドを md 以上で2列に並べ、ラベル左端を揃える（整列） */
+.item-form__pair {
+  display: grid;
+  gap: var(--item-form-gap-field);
+}
+
+@media (min-width: 48rem) {
+  .item-form__pair {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
