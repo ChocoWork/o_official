@@ -1,0 +1,6 @@
+/* 決算書の明細テーブル。セル側の指定より詳細度を1段高くして、
+   表全体のセルサイズを揃える（Tailwind の [&_td]:text-* と同じ効き方）。 */
+.blue-return-detail-table td,
+.blue-return-detail-table th {
+  font-size: var(--lk-size-6xs);
+}

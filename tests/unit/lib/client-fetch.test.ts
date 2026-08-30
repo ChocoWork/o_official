@@ -214,4 +214,72 @@ describe('clientFetch', () => {
     ];
     expect((options.headers as Headers).get('x-csrf-token')).toBe('recovered-token');
   });
+
+  // クールダウンはモジュールスコープの状態なので、ケースごとにモジュールを作り直す。
+  const loadFreshClientFetch = () => {
+    jest.resetModules();
+    return require('@/lib/client-fetch') as typeof import('@/lib/client-fetch');
+  };
+
+  test('refresh が429ならクールダウン中は再発行しない', async () => {
+    const { clientFetch: freshFetch } = loadFreshClientFetch();
+    (global.fetch as jest.Mock).mockImplementation(async (endpoint: string) => {
+      if (endpoint === '/api/auth/refresh') {
+        return { ok: false, status: 429, headers: { get: () => '30' } };
+      }
+      return { ok: false, status: 401 };
+    });
+
+    await freshFetch('/api/admin/kpi/targets', { cache: 'no-store' });
+    await freshFetch('/api/admin/kpi/targets', { cache: 'no-store' });
+
+    const refreshCalls = (global.fetch as jest.Mock).mock.calls.filter(
+      ([endpoint]) => endpoint === '/api/auth/refresh',
+    );
+    expect(refreshCalls).toHaveLength(1);
+  });
+
+  test('refresh が401ならセッション失効を通知し、その後は再発行しない', async () => {
+    const { clientFetch: freshFetch, SESSION_EXPIRED_EVENT } = loadFreshClientFetch();
+    const listener = jest.fn();
+    window.addEventListener(SESSION_EXPIRED_EVENT, listener);
+
+    (global.fetch as jest.Mock).mockImplementation(async (endpoint: string) => {
+      if (endpoint === '/api/auth/refresh') {
+        return { ok: false, status: 401, headers: { get: () => null } };
+      }
+      return { ok: false, status: 401 };
+    });
+
+    const response = await freshFetch('/api/admin/kpi/targets', { cache: 'no-store' });
+    await freshFetch('/api/admin/kpi/targets', { cache: 'no-store' });
+
+    expect(response.status).toBe(401);
+    expect(listener).toHaveBeenCalledTimes(1);
+    const refreshCalls = (global.fetch as jest.Mock).mock.calls.filter(
+      ([endpoint]) => endpoint === '/api/auth/refresh',
+    );
+    expect(refreshCalls).toHaveLength(1);
+
+    window.removeEventListener(SESSION_EXPIRED_EVENT, listener);
+  });
+
+  test('クールダウン中は CSRF Cookie 欠落のPOSTでも refresh しない', async () => {
+    const { clientFetch: freshFetch } = loadFreshClientFetch();
+    cookieGetterSpy = jest.spyOn(document, 'cookie', 'get').mockReturnValue('foo=bar');
+    (global.fetch as jest.Mock).mockImplementation(async (endpoint: string) => {
+      if (endpoint === '/api/auth/refresh') {
+        return { ok: false, status: 429, headers: { get: () => '30' } };
+      }
+      return { ok: true, status: 200 };
+    });
+
+    await freshFetch('/api/admin/kpi/targets', { method: 'POST' });
+    await freshFetch('/api/admin/kpi/cost-profit', { method: 'POST' });
+
+    const refreshCalls = (global.fetch as jest.Mock).mock.calls.filter(
+      ([endpoint]) => endpoint === '/api/auth/refresh',
+    );
+    expect(refreshCalls).toHaveLength(1);
+  });
 });

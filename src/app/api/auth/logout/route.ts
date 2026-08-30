@@ -50,6 +50,17 @@ export async function POST() {
             .from('sessions')
             .update({ revoked_at: new Date().toISOString() })
             .eq('refresh_token_hash', hash);
+
+          // 自前 sessions テーブルを消すだけでは Supabase 側のセッションが生き残り、
+          // 発行済み access token が exp まで有効なままになる。Auth 側も終了させる。
+          const { accessCookieName } = await import('@/lib/cookie');
+          const accessToken = cookieStore.get(accessCookieName)?.value;
+          if (accessToken) {
+            const { error: signOutError } = await service.auth.admin.signOut(accessToken, 'local');
+            if (signOutError) {
+              console.error('Failed to sign out Supabase session:', signOutError);
+            }
+          }
         }
       } catch (dbErr) {
         console.error('Failed to mark session revoked:', dbErr);

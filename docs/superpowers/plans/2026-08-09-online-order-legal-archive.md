@@ -25,28 +25,28 @@
 
 ## File Structure
 
-| Path | Responsibility |
-|---|---|
-| `migrations/081_online_order_legal_archive.sql` | 注文の不変性、削除禁止、変更履歴、アーカイブ実行状態、非公開バケット |
-| `src/lib/legal-archive/types.ts` | エクスポート、マニフェスト、状態APIの共有型 |
-| `src/lib/legal-archive/cron-auth.ts` | GitHub Actions用Bearer認証の固定時間比較 |
-| `src/lib/legal-archive/export-query.ts` | 暦年単位の注文・明細・履歴取得と集計 |
-| `src/lib/legal-archive/csv.ts` | 決定的CSV生成と数式インジェクション防止 |
-| `src/lib/legal-archive/manifest.ts` | SHA-256、行数、金額合計、前回ハッシュのマニフェスト生成 |
-| `src/lib/legal-archive/storage.ts` | 保存アダプターの契約と複製制御 |
-| `src/lib/legal-archive/supabase-storage.ts` | Supabase非公開Storage実装 |
-| `src/lib/legal-archive/s3-storage.ts` | S3互換Storage実装 |
-| `src/app/api/cron/legal-archive/export/route.ts` | 認証済み・ページング対応の法定エクスポートAPI |
-| `src/app/api/cron/legal-archive/status/route.ts` | ジョブが保存結果を記録するAPI |
-| `src/app/api/admin/legal-archive/status/route.ts` | 管理画面向けの非機密状態API |
-| `scripts/legal-archive/run-daily.ts` | CSV、マニフェスト、DBダンプの検証・保存CLI。`tsx`で実行 |
-| `scripts/legal-archive/verify-restore.ts` | 復元DB、CSV、マニフェストの整合性検証CLI。`tsx`で実行 |
-| `.github/workflows/legal-archive-daily.yml` | 日次アーカイブと手動再実行 |
-| `.github/workflows/legal-archive-restore-check.yml` | 月次復元確認と手動再実行 |
-| `src/lib/finance/evidence-status.ts` | 注文売上と手入力取引の証憑状態判定 |
-| `src/components/CostProfitSection.tsx` | 添付不要表示、未添付集計除外、遅延警告 |
-| `src/app/api/admin/orders/route.ts` | 日付・金額・取引先・識別子検索 |
-| `docs/ops/legal-archive.md` | 保存、再実行、年度確定、復元、外部Storage切替の運用手順 |
+| Path                                                | Responsibility                                                       |
+| --------------------------------------------------- | -------------------------------------------------------------------- |
+| `migrations/081_online_order_legal_archive.sql`     | 注文の不変性、削除禁止、変更履歴、アーカイブ実行状態、非公開バケット |
+| `src/lib/legal-archive/types.ts`                    | エクスポート、マニフェスト、状態APIの共有型                          |
+| `src/lib/legal-archive/cron-auth.ts`                | GitHub Actions用Bearer認証の固定時間比較                             |
+| `src/lib/legal-archive/export-query.ts`             | 暦年単位の注文・明細・履歴取得と集計                                 |
+| `src/lib/legal-archive/csv.ts`                      | 決定的CSV生成と数式インジェクション防止                              |
+| `src/lib/legal-archive/manifest.ts`                 | SHA-256、行数、金額合計、前回ハッシュのマニフェスト生成              |
+| `src/lib/legal-archive/storage.ts`                  | 保存アダプターの契約と複製制御                                       |
+| `src/lib/legal-archive/supabase-storage.ts`         | Supabase非公開Storage実装                                            |
+| `src/lib/legal-archive/s3-storage.ts`               | S3互換Storage実装                                                    |
+| `src/app/api/cron/legal-archive/export/route.ts`    | 認証済み・ページング対応の法定エクスポートAPI                        |
+| `src/app/api/cron/legal-archive/status/route.ts`    | ジョブが保存結果を記録するAPI                                        |
+| `src/app/api/admin/legal-archive/status/route.ts`   | 管理画面向けの非機密状態API                                          |
+| `scripts/legal-archive/run-daily.ts`                | CSV、マニフェスト、DBダンプの検証・保存CLI。`tsx`で実行              |
+| `scripts/legal-archive/verify-restore.ts`           | 復元DB、CSV、マニフェストの整合性検証CLI。`tsx`で実行                |
+| `.github/workflows/legal-archive-daily.yml`         | 日次アーカイブと手動再実行                                           |
+| `.github/workflows/legal-archive-restore-check.yml` | 月次復元確認と手動再実行                                             |
+| `src/lib/finance/evidence-status.ts`                | 注文売上と手入力取引の証憑状態判定                                   |
+| `src/components/CostProfitSection.tsx`              | 添付不要表示、未添付集計除外、遅延警告                               |
+| `src/app/api/admin/orders/route.ts`                 | 日付・金額・取引先・識別子検索                                       |
+| `docs/ops/legal-archive.md`                         | 保存、再実行、年度確定、復元、外部Storage切替の運用手順              |
 
 ---
 
@@ -65,33 +65,39 @@
 - [ ] **Step 1: Write the failing migration contract tests**
 
 ```typescript
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
-describe('081_online_order_legal_archive migration', () => {
+describe("081_online_order_legal_archive migration", () => {
   const sql = readFileSync(
-    join(process.cwd(), 'migrations', '081_online_order_legal_archive.sql'),
-    'utf8',
+    join(process.cwd(), "migrations", "081_online_order_legal_archive.sql"),
+    "utf8",
   );
 
-  it('blocks physical deletion and immutable order changes', () => {
-    expect(sql).toContain('protect_legal_order_delete');
-    expect(sql).toContain('protect_legal_order_immutable_fields');
-    expect(sql).toContain('protect_legal_order_item_delete');
-    expect(sql).toContain("RAISE EXCEPTION 'legal order records cannot be deleted'");
+  it("blocks physical deletion and immutable order changes", () => {
+    expect(sql).toContain("protect_legal_order_delete");
+    expect(sql).toContain("protect_legal_order_immutable_fields");
+    expect(sql).toContain("protect_legal_order_item_delete");
+    expect(sql).toContain(
+      "RAISE EXCEPTION 'legal order records cannot be deleted'",
+    );
   });
 
-  it('records allowed changes in an append-only history', () => {
-    expect(sql).toContain('CREATE TABLE IF NOT EXISTS public.order_revisions');
-    expect(sql).toContain('changed_fields text[]');
-    expect(sql).toContain('before_data jsonb');
-    expect(sql).toContain('after_data jsonb');
-    expect(sql).toContain('record_order_revision');
-    expect(sql).not.toMatch(/CREATE POLICY[^;]+order_revisions[^;]+FOR (UPDATE|DELETE)/s);
+  it("records allowed changes in an append-only history", () => {
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS public.order_revisions");
+    expect(sql).toContain("changed_fields text[]");
+    expect(sql).toContain("before_data jsonb");
+    expect(sql).toContain("after_data jsonb");
+    expect(sql).toContain("record_order_revision");
+    expect(sql).not.toMatch(
+      /CREATE POLICY[^;]+order_revisions[^;]+FOR (UPDATE|DELETE)/s,
+    );
   });
 
-  it('creates archive run state and a private bucket', () => {
-    expect(sql).toContain('CREATE TABLE IF NOT EXISTS public.legal_archive_runs');
+  it("creates archive run state and a private bucket", () => {
+    expect(sql).toContain(
+      "CREATE TABLE IF NOT EXISTS public.legal_archive_runs",
+    );
     expect(sql).toContain("VALUES ('legal-archive', 'legal-archive', false)");
     expect(sql).toContain("status IN ('running', 'completed', 'failed')");
   });
@@ -173,19 +179,25 @@ git commit -m "feat(finance): protect online order evidence"
 - [ ] **Step 1: Write failing evidence-status unit tests**
 
 ```typescript
-import { resolveEvidenceStatus } from '@/lib/finance/evidence-status';
+import { resolveEvidenceStatus } from "@/lib/finance/evidence-status";
 
-describe('resolveEvidenceStatus', () => {
-  it('treats online orders as a saved system record', () => {
-    expect(resolveEvidenceStatus({ source: 'order', receipts: [] })).toBe('system_record');
+describe("resolveEvidenceStatus", () => {
+  it("treats online orders as a saved system record", () => {
+    expect(resolveEvidenceStatus({ source: "order", receipts: [] })).toBe(
+      "system_record",
+    );
   });
 
-  it('requires evidence for manual entries without receipts', () => {
-    expect(resolveEvidenceStatus({ source: 'manual', receipts: [] })).toBe('missing');
+  it("requires evidence for manual entries without receipts", () => {
+    expect(resolveEvidenceStatus({ source: "manual", receipts: [] })).toBe(
+      "missing",
+    );
   });
 
-  it('marks manual entries with receipts as attached', () => {
-    expect(resolveEvidenceStatus({ source: 'manual', receipts: [{ id: 1 }] })).toBe('attached');
+  it("marks manual entries with receipts as attached", () => {
+    expect(
+      resolveEvidenceStatus({ source: "manual", receipts: [{ id: 1 }] }),
+    ).toBe("attached");
   });
 });
 ```
@@ -199,14 +211,14 @@ Expected: FAIL because the module does not exist.
 - [ ] **Step 3: Implement the minimal classifier**
 
 ```typescript
-export type EvidenceStatus = 'attached' | 'missing' | 'system_record';
+export type EvidenceStatus = "attached" | "missing" | "system_record";
 
 export function resolveEvidenceStatus(entry: {
-  source?: 'manual' | 'order';
+  source?: "manual" | "order";
   receipts?: readonly unknown[];
 }): EvidenceStatus {
-  if (entry.source === 'order') return 'system_record';
-  return (entry.receipts?.length ?? 0) > 0 ? 'attached' : 'missing';
+  if (entry.source === "order") return "system_record";
+  return (entry.receipts?.length ?? 0) > 0 ? "attached" : "missing";
 }
 ```
 
@@ -221,9 +233,13 @@ Expected: PASS.
 Extend the existing online-order test so it expects `注文データ保存済み`, does not find an attachment button for the order, and expects the `証憑未添付` tab count to remain unchanged when an order row is added.
 
 ```typescript
-expect(await screen.findByText('注文データ保存済み')).toBeInTheDocument();
-expect(screen.queryByRole('button', { name: 'オンライン注文に証憑を添付' })).not.toBeInTheDocument();
-expect(screen.getByRole('tab', { name: '証憑未添付（1）' })).toBeInTheDocument();
+expect(await screen.findByText("注文データ保存済み")).toBeInTheDocument();
+expect(
+  screen.queryByRole("button", { name: "オンライン注文に証憑を添付" }),
+).not.toBeInTheDocument();
+expect(
+  screen.getByRole("tab", { name: "証憑未添付（1）" }),
+).toBeInTheDocument();
 ```
 
 - [ ] **Step 6: Run the component test and verify RED**
@@ -271,22 +287,25 @@ git commit -m "feat(finance): recognize archived order evidence"
 Test these cases with the existing Supabase query mock:
 
 ```typescript
-it.each([
-  ['amountMin=-1'],
-  ['amountMax=1.5'],
-  ['status=unknown'],
-])('rejects invalid statutory search %s', async (query) => {
-  const response = await GET(new Request(`http://localhost/api/admin/orders?${query}`));
-  expect(response.status).toBe(400);
-});
+it.each([["amountMin=-1"], ["amountMax=1.5"], ["status=unknown"]])(
+  "rejects invalid statutory search %s",
+  async (query) => {
+    const response = await GET(
+      new Request(`http://localhost/api/admin/orders?${query}`),
+    );
+    expect(response.status).toBe(400);
+  },
+);
 
-it('applies date, amount, counterparty, reference and status filters', async () => {
-  await GET(new Request(
-    'http://localhost/api/admin/orders?from=2026-01-01&to=2026-12-31&amountMin=1000&amountMax=50000&counterparty=buyer%40example.com&reference=pi_123&status=paid',
-  ));
-  expect(mockQuery.gte).toHaveBeenCalledWith('total_amount', 1000);
-  expect(mockQuery.lte).toHaveBeenCalledWith('total_amount', 50000);
-  expect(mockQuery.eq).toHaveBeenCalledWith('status', 'paid');
+it("applies date, amount, counterparty, reference and status filters", async () => {
+  await GET(
+    new Request(
+      "http://localhost/api/admin/orders?from=2026-01-01&to=2026-12-31&amountMin=1000&amountMax=50000&counterparty=buyer%40example.com&reference=pi_123&status=paid",
+    ),
+  );
+  expect(mockQuery.gte).toHaveBeenCalledWith("total_amount", 1000);
+  expect(mockQuery.lte).toHaveBeenCalledWith("total_amount", 50000);
+  expect(mockQuery.eq).toHaveBeenCalledWith("status", "paid");
   expect(mockQuery.or).toHaveBeenCalled();
 });
 ```
@@ -356,15 +375,17 @@ git commit -m "feat(orders): add statutory transaction search"
 - [ ] **Step 1: Write failing fixed-time authorization tests**
 
 ```typescript
-import { authorizeCronBearer } from '@/lib/legal-archive/cron-auth';
+import { authorizeCronBearer } from "@/lib/legal-archive/cron-auth";
 
-it('accepts the exact configured bearer token', () => {
-  expect(authorizeCronBearer('Bearer archive-secret', 'archive-secret')).toBe(true);
+it("accepts the exact configured bearer token", () => {
+  expect(authorizeCronBearer("Bearer archive-secret", "archive-secret")).toBe(
+    true,
+  );
 });
 
-it.each([null, '', 'Bearer wrong', 'Basic archive-secret'])(
-  'rejects invalid authorization %p',
-  (value) => expect(authorizeCronBearer(value, 'archive-secret')).toBe(false),
+it.each([null, "", "Bearer wrong", "Basic archive-secret"])(
+  "rejects invalid authorization %p",
+  (value) => expect(authorizeCronBearer(value, "archive-secret")).toBe(false),
 );
 ```
 
@@ -438,18 +459,18 @@ git commit -m "feat(archive): expose protected legal export"
 - [ ] **Step 1: Write failing CSV tests**
 
 ```typescript
-it('uses fixed headers and CRLF rows', () => {
+it("uses fixed headers and CRLF rows", () => {
   const result = buildArchiveCsv(fixture);
   expect(result.ordersCsv).toMatch(/^order_id,order_date,/);
-  expect(result.ordersCsv).toContain('\r\n');
+  expect(result.ordersCsv).toContain("\r\n");
 });
 
-it.each(['=SUM(1,1)', '+1', '-1+2', '@cmd'])(
-  'neutralizes spreadsheet formula value %s',
+it.each(["=SUM(1,1)", "+1", "-1+2", "@cmd"])(
+  "neutralizes spreadsheet formula value %s",
   (value) => expect(escapeCsvCell(value)).toBe(`'${value}`),
 );
 
-it('is byte-for-byte deterministic for the same rows', () => {
+it("is byte-for-byte deterministic for the same rows", () => {
   expect(buildArchiveCsv(fixture)).toEqual(buildArchiveCsv(fixture));
 });
 ```
@@ -538,8 +559,16 @@ Expected: FAIL because the storage contract does not exist.
 ```typescript
 export interface ArchiveStorage {
   readonly name: string;
-  putTemporary(key: string, body: Uint8Array, contentType: string): Promise<void>;
-  promote(temporaryKey: string, finalKey: string, immutable: boolean): Promise<void>;
+  putTemporary(
+    key: string,
+    body: Uint8Array,
+    contentType: string,
+  ): Promise<void>;
+  promote(
+    temporaryKey: string,
+    finalKey: string,
+    immutable: boolean,
+  ): Promise<void>;
   exists(key: string): Promise<boolean>;
   read(key: string): Promise<Uint8Array>;
   removeTemporary(prefix: string): Promise<void>;
@@ -890,7 +919,7 @@ Expected: the graph includes the new legal-archive modules, routes, workflows an
 
 - [ ] **Step 8: Review the final diff**
 
-Run: `git -c safe.directory=C:/work/o_official status --short` and `git -c safe.directory=C:/work/o_official diff --check HEAD~10..HEAD`.
+Run: `git -c safe.directory=C:/work/LeFildesHeures status --short` and `git -c safe.directory=C:/work/LeFildesHeures diff --check HEAD~10..HEAD`.
 
 Expected: no whitespace errors; unrelated pre-existing changes remain uncommitted and are not included in feature commits.
 

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient, resolveRequestUser } from '@/lib/supabase/server';
+import { verifyAccessToken } from '@/lib/supabase/server';
 
 type UserRole = 'admin' | 'supporter' | 'user';
 
@@ -16,23 +16,24 @@ const buildResponse = (body: unknown) => {
 
 export async function GET(request: Request) {
   try {
-    const supabase = await createClient(request);
-    const {
-      data: { user },
-    } = await resolveRequestUser(supabase, request);
+    const verified = await verifyAccessToken(request);
 
-    if (!user) {
+    if (!verified.ok) {
       return buildResponse({ authenticated: false });
     }
 
-    const role = isUserRole(user.app_metadata?.role) ? user.app_metadata.role : 'user';
-    const mfaVerified = user.app_metadata?.admin_mfa_verified === true || user.app_metadata?.mfa_verified === true;
+    const { claims } = verified;
+    const role = isUserRole(claims.app_metadata?.role) ? claims.app_metadata.role : 'user';
+
+    // 認可側（admin-rbac）と同じ根拠で MFA を判定する。ここがずれると
+    // 画面は管理者向け UI を出すのに API は 403 という状態になる。
+    const mfaVerified = claims.aal === 'aal2';
 
     return buildResponse({
       authenticated: true,
       user: {
-        id: user.id,
-        email: user.email ?? null,
+        id: claims.sub,
+        email: claims.email ?? null,
         role,
         mfaVerified,
       },

@@ -90,8 +90,9 @@ describe('Admin revoke-user-sessions API (mocked supabase & audit)', () => {
     const eqMock = jest.fn().mockResolvedValue({});
     const updateMock = jest.fn().mockReturnValue({ eq: eqMock });
     const fromMock = jest.fn(() => ({ update: updateMock }));
+    const rpcMock = jest.fn().mockResolvedValue({ data: 2, error: null });
     const { createServiceRoleClient } = require('@/lib/supabase/server');
-    createServiceRoleClient.mockResolvedValue({ from: fromMock });
+    createServiceRoleClient.mockResolvedValue({ from: fromMock, rpc: rpcMock });
 
     const res: any = await revokeHandler(makeRequest({ user_id: 'u1' }));
     const body = await res.json();
@@ -103,6 +104,7 @@ describe('Admin revoke-user-sessions API (mocked supabase & audit)', () => {
       expect.objectContaining({ revoked_at: expect.any(String) }),
     );
     expect(eqMock).toHaveBeenCalledWith('user_id', 'u1');
+    expect(rpcMock).toHaveBeenCalledWith('revoke_auth_sessions_for_user', { p_user_id: 'u1' });
     expect(logAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'admin_revoke_user_sessions',

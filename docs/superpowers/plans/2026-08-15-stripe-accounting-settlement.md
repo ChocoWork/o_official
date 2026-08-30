@@ -92,17 +92,21 @@ npx.cmd supabase migration new stripe_accounting_settlement
 
 ```typescript
 const sql = readFileSync(
-  path.join(process.cwd(), 'migrations/089_stripe_accounting_settlement.sql'),
-  'utf8',
+  path.join(process.cwd(), "migrations/089_stripe_accounting_settlement.sql"),
+  "utf8",
 );
 
-expect(sql).toContain('CREATE TABLE public.stripe_balance_transactions');
-expect(sql).toContain('CHECK (amount - fee = net)');
-expect(sql).toContain('CREATE TABLE public.stripe_refunds');
-expect(sql).toContain('CREATE TABLE public.stripe_payouts');
-expect(sql).toContain('ENABLE ROW LEVEL SECURITY');
-expect(sql).toContain('REVOKE ALL ON public.stripe_balance_transactions FROM anon, authenticated');
-expect(sql).toContain('GRANT SELECT, INSERT, UPDATE ON public.stripe_balance_transactions TO service_role');
+expect(sql).toContain("CREATE TABLE public.stripe_balance_transactions");
+expect(sql).toContain("CHECK (amount - fee = net)");
+expect(sql).toContain("CREATE TABLE public.stripe_refunds");
+expect(sql).toContain("CREATE TABLE public.stripe_payouts");
+expect(sql).toContain("ENABLE ROW LEVEL SECURITY");
+expect(sql).toContain(
+  "REVOKE ALL ON public.stripe_balance_transactions FROM anon, authenticated",
+);
+expect(sql).toContain(
+  "GRANT SELECT, INSERT, UPDATE ON public.stripe_balance_transactions TO service_role",
+);
 ```
 
 - [ ] **Step 3: テストが正しい理由で失敗することを確認する**
@@ -145,8 +149,8 @@ Expected: PASS。
 - [ ] **Step 6: 差分を確認してコミットする**
 
 ```powershell
-git -c safe.directory=C:/work/o_official add migrations/089_stripe_accounting_settlement.sql tests/unit/migrations/089_stripe_accounting_settlement.test.ts
-git -c safe.directory=C:/work/o_official commit -m "feat(accounting): add Stripe settlement schema"
+git -c safe.directory=C:/work/LeFildesHeures add migrations/089_stripe_accounting_settlement.sql tests/unit/migrations/089_stripe_accounting_settlement.test.ts
+git -c safe.directory=C:/work/LeFildesHeures commit -m "feat(accounting): add Stripe settlement schema"
 ```
 
 ---
@@ -168,22 +172,35 @@ git -c safe.directory=C:/work/o_official commit -m "feat(accounting): add Stripe
 - [ ] **Step 1: 失敗する不変性・冪等性テストを書く**
 
 ```typescript
-it('rejects a changed immutable amount for an existing balance transaction', async () => {
-  const database = fakeDatabase({ id: 'txn_1', amount: 10_000, fee: 360, net: 9_640 });
+it("rejects a changed immutable amount for an existing balance transaction", async () => {
+  const database = fakeDatabase({
+    id: "txn_1",
+    amount: 10_000,
+    fee: 360,
+    net: 9_640,
+  });
 
-  await expect(upsertBalanceTransaction(database, {
-    id: 'txn_1', amount: 9_000, fee: 360, net: 8_640, currency: 'jpy',
-    sourceId: 'ch_1', reportingCategory: 'charge', type: 'charge',
-  })).rejects.toThrow('immutable Stripe balance transaction mismatch');
+  await expect(
+    upsertBalanceTransaction(database, {
+      id: "txn_1",
+      amount: 9_000,
+      fee: 360,
+      net: 8_640,
+      currency: "jpy",
+      sourceId: "ch_1",
+      reportingCategory: "charge",
+      type: "charge",
+    }),
+  ).rejects.toThrow("immutable Stripe balance transaction mismatch");
 });
 
-it('updates only mutable state for an identical Stripe id', async () => {
+it("updates only mutable state for an identical Stripe id", async () => {
   const result = await upsertBalanceTransaction(database, {
     ...sameFinancialIdentity,
-    status: 'available',
-    payoutId: 'po_1',
+    status: "available",
+    payoutId: "po_1",
   });
-  expect(result.disposition).toBe('updated');
+  expect(result.disposition).toBe("updated");
 });
 ```
 
@@ -200,12 +217,15 @@ Expected: モジュール未作成でFAIL。
 - [ ] **Step 3: 共有型と保存関数を実装する**
 
 ```typescript
-export type StripeStoreDisposition = 'inserted' | 'updated' | 'unchanged';
+export type StripeStoreDisposition = "inserted" | "updated" | "unchanged";
 
 export async function upsertBalanceTransaction(
   database: StripeAccountingDatabase,
   input: StripeBalanceTransactionInput,
-): Promise<{ disposition: StripeStoreDisposition; row: StripeBalanceTransactionRow }>;
+): Promise<{
+  disposition: StripeStoreDisposition;
+  row: StripeBalanceTransactionRow;
+}>;
 
 export async function upsertRefund(
   database: StripeAccountingDatabase,
@@ -233,8 +253,8 @@ Expected: PASS。
 - [ ] **Step 5: コミットする**
 
 ```powershell
-git -c safe.directory=C:/work/o_official add src/lib/stripe/accounting-types.ts src/lib/stripe/accounting-store.ts tests/unit/lib/stripe/accounting-store.test.ts
-git -c safe.directory=C:/work/o_official commit -m "feat(stripe): persist accounting source records"
+git -c safe.directory=C:/work/LeFildesHeures add src/lib/stripe/accounting-types.ts src/lib/stripe/accounting-store.ts tests/unit/lib/stripe/accounting-store.test.ts
+git -c safe.directory=C:/work/LeFildesHeures commit -m "feat(stripe): persist accounting source records"
 ```
 
 ---
@@ -256,18 +276,33 @@ git -c safe.directory=C:/work/o_official commit -m "feat(stripe): persist accoun
 - [ ] **Step 1: 決済手数料同期の失敗テストを書く**
 
 ```typescript
-it('stores the charge balance transaction with actual fee and net', async () => {
-  stripe.paymentIntents.retrieve.mockResolvedValue(paymentIntentWithLatestCharge('ch_1'));
-  stripe.charges.retrieve.mockResolvedValue(chargeWithBalanceTransaction('txn_1'));
+it("stores the charge balance transaction with actual fee and net", async () => {
+  stripe.paymentIntents.retrieve.mockResolvedValue(
+    paymentIntentWithLatestCharge("ch_1"),
+  );
+  stripe.charges.retrieve.mockResolvedValue(
+    chargeWithBalanceTransaction("txn_1"),
+  );
   stripe.balanceTransactions.retrieve.mockResolvedValue({
-    id: 'txn_1', amount: 10_000, fee: 360, net: 9_640,
-    currency: 'jpy', reporting_category: 'charge', type: 'charge',
-    source: 'ch_1', status: 'available', created: 1_754_000_000,
+    id: "txn_1",
+    amount: 10_000,
+    fee: 360,
+    net: 9_640,
+    currency: "jpy",
+    reporting_category: "charge",
+    type: "charge",
+    source: "ch_1",
+    status: "available",
+    created: 1_754_000_000,
   });
 
-  const result = await syncPaymentIntentAccounting({ stripe, database, paymentIntentId: 'pi_1' });
+  const result = await syncPaymentIntentAccounting({
+    stripe,
+    database,
+    paymentIntentId: "pi_1",
+  });
 
-  expect(result.balanceTransactionId).toBe('txn_1');
+  expect(result.balanceTransactionId).toBe("txn_1");
   expect(database.savedBalanceTransaction.fee).toBe(360);
 });
 ```
@@ -275,15 +310,23 @@ it('stores the charge balance transaction with actual fee and net', async () => 
 - [ ] **Step 2: 返金とPayoutページネーションの失敗テストを書く**
 
 ```typescript
-it('uses the refund balance transaction created time as succeededAt', async () => {
-  const result = await syncRefundAccounting({ stripe, database, refundId: 're_1' });
-  expect(result.refund.succeededAt).toBe('2026-08-15T01:00:00.000Z');
+it("uses the refund balance transaction created time as succeededAt", async () => {
+  const result = await syncRefundAccounting({
+    stripe,
+    database,
+    refundId: "re_1",
+  });
+  expect(result.refund.succeededAt).toBe("2026-08-15T01:00:00.000Z");
 });
 
-it('reads every balance transaction in an automatic payout', async () => {
-  const result = await syncPayoutAccounting({ stripe, database, payoutId: 'po_1' });
+it("reads every balance transaction in an automatic payout", async () => {
+  const result = await syncPayoutAccounting({
+    stripe,
+    database,
+    payoutId: "po_1",
+  });
   expect(result.transactionCount).toBe(101);
-  expect(result.reconciliationStatus).toBe('matched');
+  expect(result.reconciliationStatus).toBe("matched");
 });
 ```
 
@@ -334,8 +377,8 @@ Expected: PASS。
 - [ ] **Step 6: コミットする**
 
 ```powershell
-git -c safe.directory=C:/work/o_official add src/lib/stripe/accounting-sync.ts tests/unit/lib/stripe/accounting-sync.test.ts
-git -c safe.directory=C:/work/o_official commit -m "feat(stripe): reconcile fees refunds and payouts"
+git -c safe.directory=C:/work/LeFildesHeures add src/lib/stripe/accounting-sync.ts tests/unit/lib/stripe/accounting-sync.test.ts
+git -c safe.directory=C:/work/LeFildesHeures commit -m "feat(stripe): reconcile fees refunds and payouts"
 ```
 
 ---
@@ -361,38 +404,43 @@ git -c safe.directory=C:/work/o_official commit -m "feat(stripe): reconcile fees
 - [ ] **Step 1: 売上・手数料・返金の失敗テストを書く**
 
 ```typescript
-const journal = buildStripeJournal({ orders, balanceTransactions, refunds, payouts });
+const journal = buildStripeJournal({
+  orders,
+  balanceTransactions,
+  refunds,
+  payouts,
+});
 
-expect(linesOf(journal, 'stripe:sale:order-1')).toEqual([
-  line('1130', 10_000, 0),
-  line('4010', 0, 10_000),
+expect(linesOf(journal, "stripe:sale:order-1")).toEqual([
+  line("1130", 10_000, 0),
+  line("4010", 0, 10_000),
 ]);
-expect(linesOf(journal, 'stripe:fee:txn-charge-1')).toEqual([
-  line('6280', 360, 0),
-  line('1130', 0, 360),
+expect(linesOf(journal, "stripe:fee:txn-charge-1")).toEqual([
+  line("6280", 360, 0),
+  line("1130", 0, 360),
 ]);
-expect(linesOf(journal, 'stripe:refund:re_1')).toEqual([
-  line('4020', 10_000, 0),
-  line('1130', 0, 10_000),
+expect(linesOf(journal, "stripe:refund:re_1")).toEqual([
+  line("4020", 10_000, 0),
+  line("1130", 0, 10_000),
 ]);
 ```
 
 - [ ] **Step 2: Payout・銀行確認・未知分類の失敗テストを書く**
 
 ```typescript
-expect(linesOf(journal, 'stripe:payout:po_1')).toEqual([
-  line('1150', 9_640, 0),
-  line('1130', 0, 9_640),
+expect(linesOf(journal, "stripe:payout:po_1")).toEqual([
+  line("1150", 9_640, 0),
+  line("1130", 0, 9_640),
 ]);
-expect(linesOf(journal, 'stripe:bank:po_1')).toEqual([
-  line('1040', 9_640, 0),
-  line('1150', 0, 9_640),
+expect(linesOf(journal, "stripe:bank:po_1")).toEqual([
+  line("1040", 9_640, 0),
+  line("1150", 0, 9_640),
 ]);
-expect(linesOf(journal, 'stripe:payout-failure:txn_failure_1')).toEqual([
-  line('1130', 9_640, 0),
-  line('1150', 0, 9_640),
+expect(linesOf(journal, "stripe:payout-failure:txn_failure_1")).toEqual([
+  line("1130", 9_640, 0),
+  line("1150", 0, 9_640),
 ]);
-expect(journal.some((entry) => entry.number.includes('dispute'))).toBe(false);
+expect(journal.some((entry) => entry.number.includes("dispute"))).toBe(false);
 ```
 
 同じBalance Transactionの埋込`fee`と独立`stripe_fee`が同一費用を表すfixtureでは、仕訳キーにより支払手数料が1回だけ計上されるテストを追加する。
@@ -452,8 +500,8 @@ Expected: PASS。
 - [ ] **Step 7: コミットする**
 
 ```powershell
-git -c safe.directory=C:/work/o_official add src/lib/finance/stripe-journal.ts src/lib/finance/accounts.ts src/lib/finance/journal.ts tests/unit/lib/finance/stripe-journal.test.ts tests/unit/lib/finance/journal.test.ts docs/Other/財務.md
-git -c safe.directory=C:/work/o_official commit -m "feat(accounting): project Stripe settlement journal"
+git -c safe.directory=C:/work/LeFildesHeures add src/lib/finance/stripe-journal.ts src/lib/finance/accounts.ts src/lib/finance/journal.ts tests/unit/lib/finance/stripe-journal.test.ts tests/unit/lib/finance/journal.test.ts docs/Other/財務.md
+git -c safe.directory=C:/work/LeFildesHeures commit -m "feat(accounting): project Stripe settlement journal"
 ```
 
 ---
@@ -483,22 +531,25 @@ git -c safe.directory=C:/work/o_official commit -m "feat(accounting): project St
 
 ```typescript
 it.each([
-  ['payment_intent.succeeded', 'syncPaymentIntentAccounting'],
-  ['refund.updated', 'syncRefundAccounting'],
-  ['payout.reconciliation_completed', 'syncPayoutAccounting'],
-  ['payout.paid', 'syncPayoutAccounting'],
-  ['payout.failed', 'syncPayoutAccounting'],
-])('dispatches %s once through the accounting synchronizer', async (eventType, method) => {
-  mockConstructEvent.mockReturnValue(stripeEvent(eventType));
-  await POST(webhookRequest());
-  expect(accountingSync[method]).toHaveBeenCalledTimes(1);
-});
+  ["payment_intent.succeeded", "syncPaymentIntentAccounting"],
+  ["refund.updated", "syncRefundAccounting"],
+  ["payout.reconciliation_completed", "syncPayoutAccounting"],
+  ["payout.paid", "syncPayoutAccounting"],
+  ["payout.failed", "syncPayoutAccounting"],
+])(
+  "dispatches %s once through the accounting synchronizer",
+  async (eventType, method) => {
+    mockConstructEvent.mockReturnValue(stripeEvent(eventType));
+    await POST(webhookRequest());
+    expect(accountingSync[method]).toHaveBeenCalledTimes(1);
+  },
+);
 ```
 
 - [ ] **Step 2: Cronの対象範囲と失敗回復テストを書く**
 
 ```typescript
-it('does not create orders for unmatched Stripe payments', async () => {
+it("does not create orders for unmatched Stripe payments", async () => {
   const response = await GET(authorizedCronRequest());
   expect(mockOrderInsert).not.toHaveBeenCalled();
   expect(await response.json()).toMatchObject({ unmatchedPayments: 1 });
@@ -566,8 +617,8 @@ Expected: PASS。
 - [ ] **Step 8: コミットする**
 
 ```powershell
-git -c safe.directory=C:/work/o_official add src/app/api/webhook/stripe/route.ts src/app/api/cron/stripe-reconcile/route.ts src/app/api/admin/accounting/stripe-backfill/route.ts src/lib/stripe/reconcile-orders.ts src/lib/stripe/order-refund-sync.ts tests/unit/api/webhook/stripe-route.test.ts tests/unit/api/cron/stripe-reconcile-route.test.ts tests/unit/api/admin/stripe-backfill-route.test.ts tests/unit/lib/stripe/reconcile-orders.test.ts tests/unit/lib/stripe/order-refund-sync.test.ts
-git -c safe.directory=C:/work/o_official commit -m "feat(stripe): sync accounting events and payouts"
+git -c safe.directory=C:/work/LeFildesHeures add src/app/api/webhook/stripe/route.ts src/app/api/cron/stripe-reconcile/route.ts src/app/api/admin/accounting/stripe-backfill/route.ts src/lib/stripe/reconcile-orders.ts src/lib/stripe/order-refund-sync.ts tests/unit/api/webhook/stripe-route.test.ts tests/unit/api/cron/stripe-reconcile-route.test.ts tests/unit/api/admin/stripe-backfill-route.test.ts tests/unit/lib/stripe/reconcile-orders.test.ts tests/unit/lib/stripe/order-refund-sync.test.ts
+git -c safe.directory=C:/work/LeFildesHeures commit -m "feat(stripe): sync accounting events and payouts"
 ```
 
 ---
@@ -590,15 +641,19 @@ git -c safe.directory=C:/work/o_official commit -m "feat(stripe): sync accountin
 - [ ] **Step 1: 新旧切替の失敗テストを書く**
 
 ```typescript
-it('keeps gross order revenue when Stripe source records exist', () => {
-  expect(toOrderSalesTransaction(order, { hasStripeAccounting: true })).toMatchObject({
+it("keeps gross order revenue when Stripe source records exist", () => {
+  expect(
+    toOrderSalesTransaction(order, { hasStripeAccounting: true }),
+  ).toMatchObject({
     grossAmount: 10_000,
     netAmount: 10_000,
   });
 });
 
-it('uses the legacy refunded net only before source records are backfilled', () => {
-  expect(toOrderSalesTransaction(order, { hasStripeAccounting: false })?.netAmount).toBe(7_000);
+it("uses the legacy refunded net only before source records are backfilled", () => {
+  expect(
+    toOrderSalesTransaction(order, { hasStripeAccounting: false })?.netAmount,
+  ).toBe(7_000);
 });
 ```
 
@@ -644,8 +699,8 @@ Expected: PASS。
 - [ ] **Step 6: コミットする**
 
 ```powershell
-git -c safe.directory=C:/work/o_official add src/lib/sales/order-sales.ts tests/unit/lib/sales/order-sales.test.ts src/app/api/admin/kpi/cost-profit/route.ts tests/unit/api/admin/cost-profit-route.test.ts
-git -c safe.directory=C:/work/o_official commit -m "feat(accounting): expose Stripe settlement records"
+git -c safe.directory=C:/work/LeFildesHeures add src/lib/sales/order-sales.ts tests/unit/lib/sales/order-sales.test.ts src/app/api/admin/kpi/cost-profit/route.ts tests/unit/api/admin/cost-profit-route.test.ts
+git -c safe.directory=C:/work/LeFildesHeures commit -m "feat(accounting): expose Stripe settlement records"
 ```
 
 ---
@@ -668,21 +723,25 @@ git -c safe.directory=C:/work/o_official commit -m "feat(accounting): expose Str
 
 ```typescript
 it.each([
-  ['permission denied', permissionDenied(), 403],
-  ['MFA required', mfaRequired(), 403],
-  ['CSRF denied', csrfDenied(), 403],
-  ['payout not paid', payout({ status: 'pending' }), 409],
-  ['payout mismatch', payout({ reconciliation_status: 'mismatch' }), 409],
-])('%s', async (_name, setup, expectedStatus) => {
+  ["permission denied", permissionDenied(), 403],
+  ["MFA required", mfaRequired(), 403],
+  ["CSRF denied", csrfDenied(), 403],
+  ["payout not paid", payout({ status: "pending" }), 409],
+  ["payout mismatch", payout({ reconciliation_status: "mismatch" }), 409],
+])("%s", async (_name, setup, expectedStatus) => {
   setup();
-  const response = await POST(request(), { params: Promise.resolve({ id: 'po_1' }) });
+  const response = await POST(request(), {
+    params: Promise.resolve({ id: "po_1" }),
+  });
   expect(response.status).toBe(expectedStatus);
 });
 ```
 
 ```typescript
-it('returns the existing confirmation without rewriting it', async () => {
-  const response = await POST(request('2026-08-16'), { params: Promise.resolve({ id: 'po_1' }) });
+it("returns the existing confirmation without rewriting it", async () => {
+  const response = await POST(request("2026-08-16"), {
+    params: Promise.resolve({ id: "po_1" }),
+  });
   expect(response.status).toBe(200);
   expect(mockUpdate).not.toHaveBeenCalled();
 });
@@ -715,8 +774,8 @@ Expected: PASS。
 - [ ] **Step 5: コミットする**
 
 ```powershell
-git -c safe.directory=C:/work/o_official add src/app/api/admin/accounting/stripe-payouts/[id]/confirm/route.ts tests/unit/api/admin/stripe-payout-confirm-route.test.ts
-git -c safe.directory=C:/work/o_official commit -m "feat(accounting): confirm Stripe bank arrivals"
+git -c safe.directory=C:/work/LeFildesHeures add src/app/api/admin/accounting/stripe-payouts/[id]/confirm/route.ts tests/unit/api/admin/stripe-payout-confirm-route.test.ts
+git -c safe.directory=C:/work/LeFildesHeures commit -m "feat(accounting): confirm Stripe bank arrivals"
 ```
 
 ---
@@ -738,10 +797,12 @@ git -c safe.directory=C:/work/o_official commit -m "feat(accounting): confirm St
 - [ ] **Step 1: コンポーネントの失敗テストを書く**
 
 ```typescript
-expect(screen.getByText('Stripe決済残高')).toBeVisible();
-expect(screen.getByText('Stripe入金途上')).toBeVisible();
-expect(screen.getByRole('button', { name: 'Payout po_1 の銀行着金を確認' })).toBeEnabled();
-expect(screen.getByText('売上値引・返品')).toBeVisible();
+expect(screen.getByText("Stripe決済残高")).toBeVisible();
+expect(screen.getByText("Stripe入金途上")).toBeVisible();
+expect(
+  screen.getByRole("button", { name: "Payout po_1 の銀行着金を確認" }),
+).toBeEnabled();
+expect(screen.getByText("売上値引・返品")).toBeVisible();
 ```
 
 `mismatch`、`pending`、`failed`では確認ボタンが無効で理由が表示されるテストも追加する。
@@ -775,11 +836,13 @@ Expected: PASS。
 `FR-ADMIN-050`でmobile、tablet、desktopの3プロジェクトについて、次をモックデータで検証する。
 
 ```typescript
-await expect(page.getByText('Stripe決済残高')).toContainText('¥9,640');
-await expect(page.getByText('Stripe入金途上')).toContainText('¥9,640');
-await page.getByRole('button', { name: 'Payout po_1 の銀行着金を確認' }).click();
-await page.getByLabel('銀行着金日').fill('2026-08-16');
-await page.getByRole('button', { name: '着金を確定' }).click();
+await expect(page.getByText("Stripe決済残高")).toContainText("¥9,640");
+await expect(page.getByText("Stripe入金途上")).toContainText("¥9,640");
+await page
+  .getByRole("button", { name: "Payout po_1 の銀行着金を確認" })
+  .click();
+await page.getByLabel("銀行着金日").fill("2026-08-16");
+await page.getByRole("button", { name: "着金を確定" }).click();
 ```
 
 Run:
@@ -803,8 +866,8 @@ Expected: Stripe売上、手数料、返金、入金途上、普通預金の相�
 - [ ] **Step 7: コミットする**
 
 ```powershell
-git -c safe.directory=C:/work/o_official add src/components/CostProfitSection.tsx tests/unit/components/CostProfitSection.test.tsx e2e/FR-ADMIN-044-ledger-three-views.spec.ts e2e/FR-ADMIN-050-stripe-settlement.spec.ts
-git -c safe.directory=C:/work/o_official commit -m "feat(accounting): show Stripe settlement workflow"
+git -c safe.directory=C:/work/LeFildesHeures add src/components/CostProfitSection.tsx tests/unit/components/CostProfitSection.test.tsx e2e/FR-ADMIN-044-ledger-three-views.spec.ts e2e/FR-ADMIN-050-stripe-settlement.spec.ts
+git -c safe.directory=C:/work/LeFildesHeures commit -m "feat(accounting): show Stripe settlement workflow"
 ```
 
 ---
@@ -887,9 +950,9 @@ Expected: 更新成功。既存の無関係なGraphify差分は最終コミッ�
 - [ ] **Step 7: 最終差分と履歴を確認する**
 
 ```powershell
-git -c safe.directory=C:/work/o_official status --short
-git -c safe.directory=C:/work/o_official diff --check
-git -c safe.directory=C:/work/o_official log -10 --oneline
+git -c safe.directory=C:/work/LeFildesHeures status --short
+git -c safe.directory=C:/work/LeFildesHeures diff --check
+git -c safe.directory=C:/work/LeFildesHeures log -10 --oneline
 ```
 
 Expected: タスク対象ソースに未コミット差分なし。既存の無関係な差分は保存されている。

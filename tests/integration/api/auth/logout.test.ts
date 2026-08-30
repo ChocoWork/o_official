@@ -68,7 +68,12 @@ describe('Logout API integration (mocked supabase & headers)', () => {
     const csrfHash = await tokenHashSha256(csrfToken);
     
     // Arrange: provide cookie and mock DB update chain
-    cookies.mockReturnValue({ get: jest.fn().mockReturnValue({ value: 'old-refresh' }), getAll: jest.fn().mockReturnValue([]) });
+    cookies.mockReturnValue({
+      get: jest.fn((name: string) =>
+        name === 'sb-access-token' ? { value: 'old-access' } : { value: 'old-refresh' },
+      ),
+      getAll: jest.fn().mockReturnValue([]),
+    });
     headers.mockReturnValue({ get: jest.fn().mockReturnValue(csrfToken) }); // Valid CSRF header
 
     const eqMock = jest.fn().mockResolvedValue({});
@@ -77,8 +82,9 @@ describe('Logout API integration (mocked supabase & headers)', () => {
     const selectEqMock = jest.fn().mockReturnValue({ maybeSingle: maybeSingleMock });
     const selectMock = jest.fn().mockReturnValue({ eq: selectEqMock });
     const fromMock = jest.fn(() => ({ update: updateMock, select: selectMock }));
+    const signOutMock = jest.fn().mockResolvedValue({ data: null, error: null });
     const { createServiceRoleClient } = require('@/lib/supabase/server');
-    createServiceRoleClient.mockReturnValue({ from: fromMock });
+    createServiceRoleClient.mockReturnValue({ from: fromMock, auth: { admin: { signOut: signOutMock } } });
 
     // Act
     const res: any = await logoutHandler();
@@ -89,6 +95,8 @@ describe('Logout API integration (mocked supabase & headers)', () => {
     expect(body.ok).toBe(true);
     expect(createServiceRoleClient().from).toHaveBeenCalledWith('sessions');
     expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ revoked_at: expect.any(String) }));
+    // 自前テーブルだけでなく Supabase 側のセッションも終了させる
+    expect(signOutMock).toHaveBeenCalledWith('old-access', 'local');
 
     const refreshCookie = res.cookies.get('sb-refresh-token');
     const sessionCookie = res.cookies.get('session_id');

@@ -1,11 +1,17 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { JwtPayload, SupabaseClient } from '@supabase/supabase-js';
 import { cookies, headers } from 'next/headers';
 import { accessCookieName, sessionCookieName } from '@/lib/cookie';
 
 type AuthUserResponse = Awaited<ReturnType<SupabaseClient['auth']['getUser']>>;
 
-// Authorization Header から Bearer token を抽出する
-export function extractBearerToken(request?: Request): string | null {
+export type VerifiedAccessToken =
+  | { ok: true; claims: JwtPayload }
+  | { ok: false; reason: 'missing' | 'invalid' };
+
+// Authorization Header から Bearer token を抽出する。
+// Cookie を見ないためこれ単体で認可判定に使うと Cookie 認証を取りこぼす。
+// 外部へは公開せず、必ず extractAuthToken / verifyAccessToken 経由で使うこと。
+function extractBearerToken(request?: Request): string | null {
   if (!request) return null;
 
   const authHeader = request.headers.get('authorization');
@@ -57,6 +63,78 @@ export function extractSessionIdFromCookie(request?: Request): string | null {
   }
 
   return extractCookieValue(request.headers.get('cookie'), sessionCookieName);
+}
+
+// JWKS のキャッシュ（TTL 10 分）はクライアントインスタンス単位なので、検証専用クライアントは
+// モジュールレベルで 1 個だけ作って使い回す。getClaims に JWT を明示的に渡す限り
+// セッションストレージには触れないため、リクエスト間で共有しても状態は混ざらない。
+let tokenVerifierClient: SupabaseClient | null = null;
+
+async function getTokenVerifierClient(): Promise<SupabaseClient> {
+  if (!tokenVerifierClient) {
+    const { createClient: createSupabaseClient } = await import('@supabase/supabase-js');
+
+    tokenVerifierClient = createSupabaseClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+          detectSessionInUrl: false,
+        },
+      },
+    );
+  }
+
+  return tokenVerifierClient;
+}
+
+function hasAuthenticatedAudience(aud: string | string[]): boolean {
+  return Array.isArray(aud) ? aud.includes('authenticated') : aud === 'authenticated';
+}
+
+async function resolveAccessToken(request?: Request): Promise<string | null> {
+  const fromRequest = extractAuthToken(request);
+  if (fromRequest) {
+    return fromRequest;
+  }
+
+  if (request) {
+    return null;
+  }
+
+  const cookieStore = await cookies();
+  return cookieStore.get(accessCookieName)?.value ?? null;
+}
+
+/**
+ * Access token を検証して claims を返す。認可判定はこの関数だけを入口にする。
+ *
+ * getClaims は非対称鍵（本プロジェクトは ES256）なら JWKS でローカル検証し、署名と exp を確認する。
+ * ただし iss / aud は検証しないため、ここで明示的に突き合わせる。
+ */
+export async function verifyAccessToken(request?: Request): Promise<VerifiedAccessToken> {
+  const token = await resolveAccessToken(request);
+  if (!token) {
+    return { ok: false, reason: 'missing' };
+  }
+
+  const verifier = await getTokenVerifierClient();
+  const { data, error } = await verifier.auth.getClaims(token);
+
+  if (error || !data?.claims) {
+    return { ok: false, reason: 'invalid' };
+  }
+
+  const claims = data.claims;
+  const expectedIssuer = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1`;
+
+  if (claims.iss !== expectedIssuer || !hasAuthenticatedAudience(claims.aud)) {
+    return { ok: false, reason: 'invalid' };
+  }
+
+  return { ok: true, claims };
 }
 
 export async function resolveRequestUser(

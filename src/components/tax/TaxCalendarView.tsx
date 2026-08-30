@@ -190,7 +190,7 @@ export function TaxCalendarView({
               value={checklist.progress}
               size={52}
               label={
-                <span className="font-acumin text-2.5 font-medium text-black tabular-nums">
+                <span className="font-acumin lk-text-6xs font-medium text-black tabular-nums">
                   {Math.round(checklist.progress)}%
                 </span>
               }
@@ -214,7 +214,7 @@ export function TaxCalendarView({
             </span>
           }
           actions={
-            <span className="font-acumin text-2.5 text-[#707070]">
+            <span className="font-acumin lk-text-6xs text-[#707070]">
               会計期間 {fiscalYear}/01〜{fiscalYear + 1}/03
             </span>
           }
@@ -227,7 +227,7 @@ export function TaxCalendarView({
                 {TAX_SCHEDULE_MONTHS.map((label, index) => (
                   <span
                     key={label}
-                    className={`text-center font-acumin text-[9px] ${index === todayIndex ? "font-medium text-black" : "text-[#707070]"}`}
+                    className={`text-center font-acumin lk-text-7xs ${index === todayIndex ? "font-medium text-black" : "text-[#707070]"}`}
                   >
                     {label}
                   </span>
@@ -255,7 +255,7 @@ export function TaxCalendarView({
                       key={kind}
                       className="grid grid-cols-[88px_repeat(15,minmax(0,1fr))] items-center gap-x-px border-b border-[#ededed] py-2"
                     >
-                      <span className="inline-flex items-center gap-1.5 pr-2 font-acumin text-2.5 text-black">
+                      <span className="inline-flex items-center gap-1.5 pr-2 font-acumin lk-text-6xs text-black">
                         <span
                           className="inline-block h-2 w-2 shrink-0 rounded-full"
                           style={{ background: TAX_DEADLINE_KIND_COLORS[kind] }}
@@ -273,7 +273,7 @@ export function TaxCalendarView({
                         {kindBands.map((band) => (
                           <span
                             key={band.key}
-                            className={`truncate px-1.5 py-1 text-center font-acumin text-[9px] ${boxRadiusClassName}`}
+                            className={`truncate px-1.5 py-1 text-center font-acumin lk-text-7xs ${boxRadiusClassName}`}
                             style={{
                               gridColumn: `${band.fromIndex + 1} / span ${band.span}`,
                               background: `${TAX_DEADLINE_KIND_COLORS[kind]}1f`,
@@ -314,7 +314,7 @@ export function TaxCalendarView({
               </div>
 
               {todayIndex !== null ? (
-                <p className="mt-2 font-acumin text-2.5 text-[#707070]">
+                <p className="mt-2 font-acumin lk-text-6xs text-[#707070]">
                   <span
                     className="mr-1 inline-block h-2 w-0.5 align-middle bg-[#16844b]"
                     aria-hidden="true"
@@ -336,7 +336,7 @@ export function TaxCalendarView({
             </span>
           }
           actions={
-            <span className="font-acumin text-2.5 text-[#707070] tabular-nums">
+            <span className="font-acumin lk-text-6xs text-[#707070] tabular-nums">
               基準日 {today.replaceAll("-", "/")}
             </span>
           }
@@ -355,7 +355,7 @@ export function TaxCalendarView({
                       (heading) => (
                         <th
                           key={heading}
-                          className="px-2 py-2 text-left font-acumin text-2.75 font-normal text-[#474747]"
+                          className="px-2 py-2 text-left font-acumin lk-text-4xs font-normal text-[#474747]"
                         >
                           {heading}
                         </th>
@@ -369,13 +369,13 @@ export function TaxCalendarView({
                       key={deadline.key}
                       className="border-b border-[#ededed]"
                     >
-                      <td className="whitespace-nowrap px-2 py-2.5 font-acumin text-2.75 text-black tabular-nums">
+                      <td className="whitespace-nowrap px-2 py-2.5 font-acumin lk-text-4xs text-black tabular-nums">
                         {deadline.dueOn.replaceAll("-", "/")}
                       </td>
-                      <td className="px-2 py-2.5 font-acumin text-2.75 text-black">
+                      <td className="px-2 py-2.5 font-acumin lk-text-4xs text-black">
                         {deadline.label}
                       </td>
-                      <td className="whitespace-nowrap px-2 py-2.5 font-acumin text-2.75 text-[#474747] tabular-nums">
+                      <td className="whitespace-nowrap px-2 py-2.5 font-acumin lk-text-4xs text-[#474747] tabular-nums">
                         あと {deadline.daysLeft}日
                       </td>
                       <td className="px-2 py-2.5">
@@ -405,7 +405,7 @@ export function TaxCalendarView({
         title={
           <span className="flex flex-wrap items-baseline gap-2">
             <span className={panelTitleClassName}>納税資金予測</span>
-            <span className="font-acumin text-2.75 text-[#707070]">
+            <span className="font-acumin lk-text-4xs text-[#707070]">
               （納付期限に税額を割り当てた予定）
             </span>
           </span>
@@ -447,7 +447,7 @@ export function TaxCalendarView({
             />
           </div>
         </div>
-        <p className="mt-2 font-acumin text-2.5 leading-relaxed text-[#707070]">
+        <p className="mt-2 font-acumin lk-text-6xs leading-relaxed text-[#707070]">
           ※
           税額見込を法定の納付期限に割り当てた概算です。予定納税・中間納付の額は
           前年の申告額によって決まるため含めていません。
@@ -471,10 +471,10 @@ export function TaxCalendarView({
               return (
                 <div key={group} className="min-w-0">
                   <p className="flex items-baseline justify-between gap-2 border-b border-[#d4d4d4] pb-1.5">
-                    <span className="font-acumin text-2.75 font-medium text-black">
+                    <span className="font-acumin lk-text-4xs font-medium text-black">
                       {group}
                     </span>
-                    <span className="font-acumin text-2.75 text-[#474747] tabular-nums">
+                    <span className="font-acumin lk-text-4xs text-[#474747] tabular-nums">
                       {done}/{items.length}
                     </span>
                   </p>
@@ -482,7 +482,7 @@ export function TaxCalendarView({
                     {items.map((item) => (
                       <li
                         key={item.key}
-                        className="flex items-start gap-1.5 font-acumin text-2.75"
+                        className="flex items-start gap-1.5 font-acumin lk-text-4xs"
                       >
                         <i
                           className={
@@ -541,7 +541,7 @@ export function TaxCalendarView({
                     (heading) => (
                       <th
                         key={heading}
-                        className="px-2 py-2 text-left font-acumin text-2.75 font-normal text-[#474747]"
+                        className="px-2 py-2 text-left font-acumin lk-text-4xs font-normal text-[#474747]"
                       >
                         {heading}
                       </th>
@@ -562,12 +562,12 @@ export function TaxCalendarView({
                           }
                           aria-hidden="true"
                         />
-                        <span className="font-acumin text-2.75 text-black">
+                        <span className="font-acumin lk-text-4xs text-black">
                           {document.name}
                         </span>
                       </span>
                     </td>
-                    <td className="px-2 py-2.5 text-right font-acumin text-2.75 text-[#474747] tabular-nums">
+                    <td className="px-2 py-2.5 text-right font-acumin lk-text-4xs text-[#474747] tabular-nums">
                       {document.entryCount} 件
                     </td>
                     <td className="px-2 py-2.5">
@@ -584,7 +584,7 @@ export function TaxCalendarView({
                       </StateBadge>
                     </td>
                     <td
-                      className={`px-2 py-2.5 text-right font-acumin text-2.75 tabular-nums ${document.missingCount > 0 ? "text-[#b91c1c]" : "text-[#707070]"}`}
+                      className={`px-2 py-2.5 text-right font-acumin lk-text-4xs tabular-nums ${document.missingCount > 0 ? "text-[#b91c1c]" : "text-[#707070]"}`}
                     >
                       {document.missingCount} 件
                     </td>
@@ -593,7 +593,7 @@ export function TaxCalendarView({
               </tbody>
             </table>
           </div>
-          <p className="mt-2 font-acumin text-2.5 text-[#707070]">
+          <p className="mt-2 font-acumin lk-text-6xs text-[#707070]">
             必要資料 {inventory.requiredCount} 件のうち、準備完了{" "}
             {inventory.readyCount} 件（{Math.round(inventory.progress)}%）。
           </p>

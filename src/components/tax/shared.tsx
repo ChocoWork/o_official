@@ -76,7 +76,7 @@ export function TaxMetricCard({
         </span>
       )}
       <div className="min-w-0">
-        <p className="font-acumin text-2.75 tracking-wider text-[#474747]">
+        <p className="font-acumin lk-text-4xs tracking-wider text-[#474747]">
           {label}
         </p>
         {/* 桁の多い金額でも欠けないよう、字幅は詰めて折り返しを許す。 */}
@@ -84,7 +84,7 @@ export function TaxMetricCard({
           {value}
         </p>
         {note ? (
-          <p className={`mt-1 font-acumin text-2.75 ${noteColor}`}>{note}</p>
+          <p className={`mt-1 font-acumin lk-text-4xs ${noteColor}`}>{note}</p>
         ) : null}
       </div>
     </div>
@@ -145,7 +145,7 @@ export function FlowBlock({
     <div
       className={`min-w-0 flex-1 border px-3 py-2.5 ${toneClassName} ${boxRadiusClassName}`}
     >
-      <p className="font-acumin text-2.75 tracking-wider text-[#474747]">
+      <p className="font-acumin lk-text-4xs tracking-wider text-[#474747]">
         {label}
       </p>
       <p className="mt-1 font-acumin text-sm font-medium text-black tabular-nums">
@@ -153,7 +153,7 @@ export function FlowBlock({
       </p>
       <div className="mt-1 flex items-center gap-1.5">
         {note ? (
-          <span className="font-acumin text-2.5 text-[#707070]">{note}</span>
+          <span className="font-acumin lk-text-6xs text-[#707070]">{note}</span>
         ) : null}
         {actions}
       </div>
@@ -216,7 +216,7 @@ export function CountLegend({
       {items.map((item) => (
         <span
           key={item.label}
-          className="inline-flex items-center gap-1.5 font-acumin text-2.75 text-[#474747]"
+          className="inline-flex items-center gap-1.5 font-acumin lk-text-4xs text-[#474747]"
         >
           <span
             className="inline-block h-2 w-2 rounded-full"
@@ -233,7 +233,7 @@ export function CountLegend({
 
 /** 表の共通クラス。決算書系の表はどのページでも同じ罫線・字送りにする。 */
 export const tableHeadClassName =
-  "px-2 py-2 text-left font-acumin text-2.75 font-normal text-[#474747]";
+  "px-2 py-2 text-left font-acumin lk-text-4xs font-normal text-[#474747]";
 export const tableCellClassName = "px-2 py-2 font-acumin text-xs text-black";
 export const tableNumberClassName =
   "px-2 py-2 text-right font-acumin text-xs text-black tabular-nums";

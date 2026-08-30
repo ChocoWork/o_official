@@ -582,7 +582,7 @@ export function ItemForm({
                             type="button"
                             onClick={() => handleRemoveSavedColor(color.id)}
                             size="md"
-                            className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 text-2.5"
+                            className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 lk-text-6xs"
                             aria-label="保存済みカラーを削除"
                           >
                             <i className="ri-close-line text-xs" />

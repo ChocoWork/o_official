@@ -196,7 +196,7 @@ export default function AccountInquiries() {
                   <div
                     className={`max-w-[85%] whitespace-pre-wrap border p-3 text-sm ${message.sender_role === "user" ? "border-black bg-black/4" : "border-black/10 bg-white"}`}
                   >
-                    <div className="mb-1 text-2.75 text-[#474747]">
+                    <div className="mb-1 lk-text-4xs text-[#474747]">
                       {message.sender_role === "user" ? "あなた" : "サポート"}・
                       {formatDateTime(message.created_at)}
                     </div>

@@ -57,9 +57,9 @@ for (const viewport of viewports) {
       expect(tabRadius).toBe('0px');
     });
 
-    if (viewport.width >= 768) {
+    if (viewport.width >= 1024) {
       test('ナビパネルが本文と同じ高さ（画面下端）まで伸びる', async ({ page }) => {
-        // FREQ-204-AC-01（md 以上のみ）
+        // FREQ-204-AC-01（FREQ-315 でしきい値を md → lg に変更）
         await page.goto('/admin');
 
         const sideNav = page.getByRole('navigation', { name: '管理メニュー' });
@@ -74,7 +74,7 @@ for (const viewport of viewports) {
           };
         });
 
-        // md 以上ではパネルが行（本文カラム）の高さと一致する
+        // lg 以上ではパネルが行（本文カラム）の高さと一致する
         expect(heights.nav).toBeGreaterThanOrEqual(heights.row - 4);
       });
 

@@ -227,7 +227,7 @@ export default function AccountOrderDetailPage() {
                       <li className="flex flex-col items-center gap-1 sm:flex-row sm:gap-2">
                         <span
                           aria-hidden="true"
-                          className={`flex h-6 w-6 items-center justify-center rounded-full border text-2.5 ${done ? "border-black bg-black text-white" : "border-black/25 text-[#999]"}`}
+                          className={`flex h-6 w-6 items-center justify-center rounded-full border lk-text-6xs ${done ? "border-black bg-black text-white" : "border-black/25 text-[#999]"}`}
                         >
                           {index + 1}
                         </span>

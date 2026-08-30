@@ -73,3 +73,84 @@ export async function isReplay(session: Session, token: string): Promise<boolean
   if (session.previous_refresh_token_hash && session.previous_refresh_token_hash === tokenHash) return true;
   return false;
 }
+
+export const REFRESH_TOKEN_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
+const DEFAULT_ACCESS_TOKEN_MAX_AGE_SECONDS = 15 * 60;
+
+type CookieWriter = {
+  cookies: { set(cookie: { name: string; value: string } & Record<string, unknown>): unknown };
+};
+
+export type IssuedSession = {
+  accessToken: string | null | undefined;
+  refreshToken: string | null | undefined;
+  expiresIn?: number | null;
+  userId: string;
+  /** 差し替え対象の既存セッション行。無ければ新規発行として扱う。 */
+  previousSessionId?: string | null;
+  previousRefreshToken?: string | null;
+};
+
+function parseJwtJti(token: string | null | undefined): string | null {
+  if (!token) return null;
+  const segments = token.split('.');
+  if (segments.length !== 3) return null;
+
+  try {
+    const payload = JSON.parse(Buffer.from(segments[1], 'base64url').toString('utf8')) as { jti?: unknown };
+    return typeof payload.jti === 'string' ? payload.jti : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 新しく発行されたセッションを Cookie と sessions テーブルへ反映する。
+ * トークンを差し替える経路（refresh / MFA 昇格）は必ずここを通し、
+ * Cookie・CSRF・セッション行の更新手順が経路ごとにずれないようにする。
+ */
+export async function persistNewSession(response: CookieWriter, issued: IssuedSession): Promise<void> {
+  const {
+    refreshCookieName,
+    accessCookieName,
+    csrfCookieName,
+    cookieOptionsForAccess,
+    cookieOptionsForRefresh,
+    cookieOptionsForCsrf,
+  } = await import('@/lib/cookie');
+  const { generateCsrfToken } = await import('@/lib/csrf');
+
+  const accessMaxAge = issued.expiresIn || DEFAULT_ACCESS_TOKEN_MAX_AGE_SECONDS;
+  const csrfToken = generateCsrfToken();
+
+  response.cookies.set({ name: accessCookieName, value: issued.accessToken ?? '', ...cookieOptionsForAccess(accessMaxAge) });
+  response.cookies.set({ name: refreshCookieName, value: issued.refreshToken ?? '', ...cookieOptionsForRefresh(REFRESH_TOKEN_MAX_AGE_SECONDS) });
+  response.cookies.set({ name: csrfCookieName, value: csrfToken, ...cookieOptionsForCsrf(REFRESH_TOKEN_MAX_AGE_SECONDS) });
+
+  const service = await createServiceRoleClient();
+  const previousHash = issued.previousRefreshToken ? await tokenHashSha256(issued.previousRefreshToken) : null;
+
+  if (issued.previousSessionId) {
+    await service
+      .from('sessions')
+      .update({
+        revoked_at: new Date().toISOString(),
+        previous_refresh_token_hash: previousHash,
+        last_seen_at: new Date().toISOString(),
+      })
+      .eq('id', issued.previousSessionId);
+  }
+
+  await service.from('sessions').insert([
+    {
+      user_id: issued.userId,
+      refresh_token_hash: await tokenHashSha256(issued.refreshToken ?? ''),
+      previous_refresh_token_hash: previousHash,
+      current_jti: parseJwtJti(issued.refreshToken),
+      quarantined: false,
+      csrf_token_hash: await tokenHashSha256(csrfToken),
+      expires_at: issued.expiresIn ? new Date(Date.now() + issued.expiresIn * 1000).toISOString() : null,
+      last_seen_at: new Date().toISOString(),
+    },
+  ]);
+}

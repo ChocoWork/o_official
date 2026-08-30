@@ -50,6 +50,28 @@ export async function POST(request: Request) {
     try {
       const service = await createServiceRoleClient();
       await service.from('sessions').update({ revoked_at: new Date().toISOString() }).eq('user_id', user_id);
+
+      // 自前テーブルだけ更新しても Supabase 側のセッションは生き残り、発行済み
+      // access token が exp まで通ってしまう。Auth 側のセッションも削除する。
+      const { data: revokedCount, error: revokeError } = await service.rpc(
+        'revoke_auth_sessions_for_user',
+        { p_user_id: user_id },
+      );
+
+      if (revokeError) {
+        console.error('Failed to revoke Supabase sessions:', revokeError);
+        await logAudit({
+          action: 'admin_revoke_user_sessions',
+          actor_id: actorId,
+          actor_email: actorEmail,
+          resource: 'sessions',
+          resource_id: user_id,
+          outcome: 'error',
+          detail: 'auth_session_revocation_failed',
+        });
+        return NextResponse.json({ error: 'Failed to revoke sessions' }, { status: 500 });
+      }
+
       await logAudit({
         action: 'admin_revoke_user_sessions',
         actor_id: actorId,
@@ -57,6 +79,7 @@ export async function POST(request: Request) {
         resource: 'sessions',
         resource_id: user_id,
         outcome: 'success',
+        metadata: { auth_sessions_deleted: revokedCount ?? 0 },
       });
       return NextResponse.json({ ok: true }, { status: 200 });
     } catch (dbErr) {

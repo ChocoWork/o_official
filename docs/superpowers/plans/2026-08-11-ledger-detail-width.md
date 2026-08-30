@@ -33,16 +33,28 @@
 - [ ] **Step 1: 失敗するE2Eテストを書く**
 
 ```ts
-test('ワイドデスクトップでは仕訳一覧を左2列へ広げて仕訳詳細を右列に通す', async ({ page }, testInfo) => {
-  test.skip(testInfo.title.includes('(mobile)') || testInfo.title.includes('(tablet)'));
+test("ワイドデスクトップでは仕訳一覧を左2列へ広げて仕訳詳細を右列に通す", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.title.includes("(mobile)") || testInfo.title.includes("(tablet)"),
+  );
   await openLedgerTab(page);
-  await expect(page.getByRole('heading', { name: '残高推移', exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: '仕訳一覧', exact: true })).toBeVisible();
-  const detailBox = await page.getByRole('region', { name: '仕訳詳細' }).boundingBox();
+  await expect(
+    page.getByRole("heading", { name: "残高推移", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "仕訳一覧", exact: true }),
+  ).toBeVisible();
+  const detailBox = await page
+    .getByRole("region", { name: "仕訳詳細" })
+    .boundingBox();
   expect(detailBox?.width).toBeGreaterThanOrEqual(302);
   expect(detailBox?.width).toBeLessThanOrEqual(312);
   expect(Math.abs(listBox!.x - accountBox!.x)).toBeLessThanOrEqual(1);
-  expect(Math.abs(listBox!.x + listBox!.width - trendBox!.x - trendBox!.width)).toBeLessThanOrEqual(1);
+  expect(
+    Math.abs(listBox!.x + listBox!.width - trendBox!.x - trendBox!.width),
+  ).toBeLessThanOrEqual(1);
   expect(detailBox!.height).toBeGreaterThan(trendBox!.height);
 });
 ```
@@ -79,6 +91,6 @@ Expected: エラー0件、監査判定GO。
 
 Run: `graphify update .`
 
-Run: `git -c safe.directory=C:/work/o_official diff --check`
+Run: `git -c safe.directory=C:/work/LeFildesHeures diff --check`
 
 Expected: Graphify更新成功、空白エラーなし。

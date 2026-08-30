@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient, createServiceRoleClient, extractBearerToken } from '@/lib/supabase/server';
+import { createServiceRoleClient, verifyAccessToken } from '@/lib/supabase/server';
 
 export type AppRole = 'admin' | 'supporter' | 'user';
 export type PermissionCode =
@@ -71,10 +71,9 @@ function isAppRole(role: unknown): role is AppRole {
   return role === 'admin' || role === 'supporter' || role === 'user';
 }
 
-// The role is read from the already-verified access token (app_metadata),
-// the same source isMfaVerified uses. Avoid a second Auth Admin API round-trip:
-// projects on the new API key format (sb_secret_*) have the GoTrue admin
-// endpoint reject that key, which previously degraded the role to 'user'.
+// The role is read from the already-verified access token (app_metadata).
+// Avoid a second Auth Admin API round-trip: authorization is decided by the DB ACL below,
+// and this value is only carried through for responses and audit logs.
 function resolveTokenRole(user: { app_metadata?: unknown } | null | undefined): AppRole {
   if (!user || typeof user !== 'object') {
     return 'user';
@@ -89,18 +88,25 @@ function resolveTokenRole(user: { app_metadata?: unknown } | null | undefined): 
   return isAppRole(rawRole) ? rawRole : 'user';
 }
 
-function isMfaVerified(user: { app_metadata?: unknown } | null | undefined): boolean {
-  if (!user || typeof user !== 'object') {
+async function isAuthSessionActive(sessionId: string | undefined): Promise<boolean> {
+  if (!sessionId) {
     return false;
   }
 
-  const appMetadata = user.app_metadata;
-  if (!appMetadata || typeof appMetadata !== 'object') {
+  try {
+    const service = await createServiceRoleClient();
+    const { data, error } = await service.rpc('is_auth_session_active', { p_session_id: sessionId });
+
+    if (error) {
+      console.error('[RBAC.isAuthSessionActive] RPC error:', error);
+      return false;
+    }
+
+    return data === true;
+  } catch (err) {
+    console.error('[RBAC.isAuthSessionActive] Exception:', err);
     return false;
   }
-
-  const metadata = appMetadata as Record<string, unknown>;
-  return metadata['admin_mfa_verified'] === true || metadata['mfa_verified'] === true;
 }
 
 async function resolveAclPermissions(userId: string): Promise<Set<PermissionCode>> {
@@ -160,34 +166,36 @@ async function resolveAclPermissions(userId: string): Promise<Set<PermissionCode
 
 export async function authorizeAdminPermission(requiredPermission: PermissionCode, request?: Request): Promise<AuthzResult> {
   try {
-    const client = await createClient(request);
-    const bearerToken = extractBearerToken(request);
-    const {
-      data: { user },
-      error,
-    } = bearerToken ? await client.auth.getUser(bearerToken) : await client.auth.getUser();
+    const verified = await verifyAccessToken(request);
 
-    if (error || !user) {
-      console.error('[RBAC] User not found:', error);
+    if (!verified.ok) {
+      console.warn(`[RBAC] Access token rejected: ${verified.reason}`);
       return {
         ok: false,
         response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }),
       };
     }
 
-    console.log(`[RBAC] Authorizing ${user.id} for ${requiredPermission}`);
+    const { claims } = verified;
+    const userId = claims.sub;
 
-    const tokenRole = resolveTokenRole(user);
-    console.log(`[RBAC] Token role: ${tokenRole}`);
+    const tokenRole = resolveTokenRole({ app_metadata: claims.app_metadata });
 
-    const aclPermissions = await resolveAclPermissions(user.id);
-    console.log(`[RBAC] ACL permissions: ${Array.from(aclPermissions).join(', ')}`);
+    const [aclPermissions, sessionActive] = await Promise.all([
+      resolveAclPermissions(userId),
+      isAuthSessionActive(claims.session_id),
+    ]);
 
-    const hasAclPermission = aclPermissions.has(requiredPermission);
-    console.log(`[RBAC] ACL check: ${hasAclPermission}`);
+    if (!sessionActive) {
+      console.warn(`[RBAC] Session revoked for ${userId}: ${claims.session_id}`);
+      return {
+        ok: false,
+        response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }),
+      };
+    }
 
-    if (!hasAclPermission) {
-      console.warn(`[RBAC] Permission denied for ${user.id}: ${requiredPermission}`);
+    if (!aclPermissions.has(requiredPermission)) {
+      console.warn(`[RBAC] Permission denied for ${userId}: ${requiredPermission}`);
       return {
         ok: false,
         response: NextResponse.json(
@@ -197,8 +205,10 @@ export async function authorizeAdminPermission(requiredPermission: PermissionCod
       };
     }
 
-    if (!isMfaVerified(user)) {
-      console.warn(`[RBAC] MFA required for ${user.id}: ${requiredPermission}`);
+    // MFA はセッション単位の性質。app_metadata のフラグはユーザー単位で永続してしまうため、
+    // JWT の aal クレーム（Supabase 標準）で判定する。
+    if (claims.aal !== 'aal2') {
+      console.warn(`[RBAC] MFA required for ${userId}: ${requiredPermission}`);
       return {
         ok: false,
         response: NextResponse.json(
@@ -208,12 +218,11 @@ export async function authorizeAdminPermission(requiredPermission: PermissionCod
       };
     }
 
-    console.log(`[RBAC] Permission granted for ${user.id}: ${requiredPermission}`);
     return {
       ok: true,
-      userId: user.id,
+      userId,
       role: tokenRole,
-      actorEmail: user.email ?? null,
+      actorEmail: claims.email ?? null,
     };
   } catch (err) {
     console.error('[RBAC] Authorization error:', err);

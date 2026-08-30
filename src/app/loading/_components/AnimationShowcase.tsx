@@ -1,4 +1,5 @@
 "use client";
+import "../showcase.css";
 
 import { useState } from "react";
 import FadeIn from "@/components/animations/FadeIn";
@@ -24,7 +25,7 @@ const animationComponents = [
         once={false}
       >
         <div
-          className="px-5.25 py-3.25 bg-black text-white text-2.75 tracking-widest"
+          className="px-5.25 py-3.25 bg-black text-white lk-text-4xs tracking-widest"
           style={{ fontFamily: "acumin-pro, sans-serif" }}
         >
           FADE IN
@@ -83,7 +84,7 @@ const animationComponents = [
     demo: (
       <PageTransition duration={500}>
         <div
-          className="px-5.25 py-3.25 border border-black text-2.75 tracking-widest"
+          className="px-5.25 py-3.25 border border-black lk-text-4xs tracking-widest"
           style={{ fontFamily: "acumin-pro, sans-serif" }}
         >
           PAGE TRANSITION
@@ -102,7 +103,7 @@ const animationComponents = [
     demo: (
       <HoverScale scale={1.05} duration={300}>
         <div
-          className="px-5.25 py-3.25 bg-black text-white text-2.75 tracking-widest"
+          className="px-5.25 py-3.25 bg-black text-white lk-text-4xs tracking-widest"
           style={{ fontFamily: "acumin-pro, sans-serif" }}
         >
           HOVER ME
@@ -121,7 +122,7 @@ const animationComponents = [
     demo: (
       <MagneticButton strength={0.3}>
         <div
-          className="px-5.25 py-3.25 bg-black text-white text-2.75 tracking-widest"
+          className="px-5.25 py-3.25 bg-black text-white lk-text-4xs tracking-widest"
           style={{ fontFamily: "acumin-pro, sans-serif" }}
         >
           MAGNETIC
@@ -140,7 +141,7 @@ const animationComponents = [
     demo: (
       <TextReveal
         text="Le Fil"
-        className="text-4 text-black"
+        className="lk-text-lg text-black"
         stagger={50}
         delay={0}
         once={false}
@@ -150,7 +151,7 @@ const animationComponents = [
 
 <TextReveal
   text="Le Fil des Heures"
-  className="text-4 text-black"
+  className="lk-text-lg text-black"
   stagger={50}
   delay={0}
 />`,
@@ -165,7 +166,7 @@ const animationComponents = [
           prefix=""
           suffix=""
           duration={1500}
-          className="text-4 text-black"
+          className="lk-text-lg text-black"
         />
       </div>
     ),
@@ -176,7 +177,7 @@ const animationComponents = [
   prefix=""
   suffix=""
   duration={1500}
-  className="text-4 text-black"
+  className="lk-text-lg text-black"
 />`,
   },
 ];
@@ -199,13 +200,13 @@ export default function AnimationShowcase() {
           <div className="flex flex-col sm:flex-row sm:items-start gap-3.25 sm:gap-5.25 md:gap-8.5">
             <div className="shrink-0 w-full sm:w-50 md:w-58.25">
               <p
-                className="text-3.25 sm:text-3.5 text-black mb-1.25 sm:mb-2"
+                className="showcase-component-name text-black mb-1.25 sm:mb-2"
                 style={{ fontFamily: "Didot, serif" }}
               >
                 {comp.name}
               </p>
               <p
-                className="text-2.5 sm:text-2.75 text-black/50 leading-[1.7]"
+                className="showcase-component-desc text-black/50 leading-[1.7]"
                 style={{ fontFamily: "acumin-pro, sans-serif" }}
               >
                 {comp.description}
@@ -218,7 +219,7 @@ export default function AnimationShowcase() {
               <div className="flex items-start gap-5.25">
                 <button
                   onClick={() => replay(comp.name)}
-                  className="mt-3.25 flex items-center gap-1.25 text-2.5 text-black/30 tracking-[0.15em] hover:text-black/60 transition-colors cursor-pointer"
+                  className="mt-3.25 flex items-center gap-1.25 lk-text-6xs text-black/30 tracking-[0.15em] hover:text-black/60 transition-colors cursor-pointer"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                   aria-label={`${comp.name} のアニメーションを再生`}
                 >

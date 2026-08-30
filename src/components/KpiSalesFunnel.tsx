@@ -171,7 +171,7 @@ export function KpiSalesFunnel({
                     <span className="font-acumin text-xs font-medium tracking-widest text-black">
                       {index + 1}. {stage.label}
                     </span>
-                    <span className="font-acumin text-2.5 text-[#777777]">
+                    <span className="font-acumin lk-text-6xs text-[#777777]">
                       {stage.subLabel}
                     </span>
                   </div>
@@ -187,16 +187,16 @@ export function KpiSalesFunnel({
                           className={`min-h-11 rounded-md border px-2 py-1.5 text-left text-black transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black ${statusColor(metric.percent)} ${isSelected ? "border-2 border-black" : "hover:border-[#888888]"}`}
                         >
                           <span className="flex items-center justify-between gap-2">
-                            <span className="truncate font-acumin text-2.75">
+                            <span className="truncate font-acumin lk-text-4xs">
                               {metric.label}
                             </span>
-                            <span className="shrink-0 font-acumin text-[9px] text-[#666666]">
+                            <span className="shrink-0 font-acumin lk-text-7xs text-[#666666]">
                               {metric.isSample
                                 ? `参考値・${progressLabel(metric.percent)}`
                                 : progressLabel(metric.percent)}
                             </span>
                           </span>
-                          <span className="mt-1 flex flex-wrap items-center gap-1 font-acumin text-2.5 text-[#555555] tabular-nums">
+                          <span className="mt-1 flex flex-wrap items-center gap-1 font-acumin lk-text-6xs text-[#555555] tabular-nums">
                             <span>現状 {metric.valueText}</span>
                             <span aria-hidden="true">→</span>
                             <span>目標 {metric.targetText}</span>
@@ -223,10 +223,10 @@ export function KpiSalesFunnel({
                             onClick={() => onSelect(transitionMetric.key)}
                             className={`min-h-11 min-w-0 rounded-md border px-2 py-1.5 text-center text-black transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-default ${statusColor(transitionMetric.percent)} ${transitionMetric.key === selectedKey ? "border-2 border-black" : "enabled:hover:border-black"}`}
                           >
-                            <span className="block truncate font-acumin text-2.75 font-medium">
+                            <span className="block truncate font-acumin lk-text-4xs font-medium">
                               {transitionMetric.label}
                             </span>
-                            <span className="mt-0.5 block truncate font-acumin text-2.5 text-[#555555] tabular-nums">
+                            <span className="mt-0.5 block truncate font-acumin lk-text-6xs text-[#555555] tabular-nums">
                               {progressLabel(transitionMetric.percent)}・現状{" "}
                               {transitionMetric.valueText} → 目標{" "}
                               {transitionMetric.targetText}

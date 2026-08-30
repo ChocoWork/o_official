@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, ReactNode } from "react";
 import { supabase } from '@/lib/supabase/client';
 import { navigateBrowser } from '@/lib/browser-location';
-import { clientFetch } from '@/lib/client-fetch';
+import { clientFetch, SESSION_EXPIRED_EVENT } from '@/lib/client-fetch';
 
 type UserRole = 'admin' | 'supporter' | 'user';
 
@@ -234,6 +234,19 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
   React.useEffect(() => {
     void syncAuthState();
   }, [syncAuthState]);
+
+  // セッション更新が回復不能（refresh token 無効）だと clientFetch が通知してくる。
+  // 画面遷移はせず認証状態だけ落とし、各画面の未認証表示に委ねる。
+  React.useEffect(() => {
+    const handleSessionExpired = () => {
+      applyAuthState(false);
+    };
+
+    window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+    return () => {
+      window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+    };
+  }, [applyAuthState]);
 
   return (
     <LoginContext.Provider

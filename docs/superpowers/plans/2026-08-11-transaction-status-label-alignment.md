@@ -93,7 +93,7 @@ Expected: 件数 `1` が表示されているか、バッジ幅が異なるた�
 ```powershell
 npx.cmd eslint src/components/CostProfitSection.tsx e2e/FR-ADMIN-043-transaction-workbench.spec.ts
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .codex/skills/security-check/scripts/audit.ps1 --files-only src/components/CostProfitSection.tsx e2e/FR-ADMIN-043-transaction-workbench.spec.ts
-git -c safe.directory=C:/work/o_official diff --check -- src/components/CostProfitSection.tsx e2e/FR-ADMIN-043-transaction-workbench.spec.ts
+git -c safe.directory=C:/work/LeFildesHeures diff --check -- src/components/CostProfitSection.tsx e2e/FR-ADMIN-043-transaction-workbench.spec.ts
 ```
 
 Expected: エラーなし、監査結果 GO。

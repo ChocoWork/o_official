@@ -819,7 +819,7 @@ function KpiIcon({
       className={`group relative flex shrink-0 items-center justify-center rounded-full bg-[#ededed] text-[#474747] ${className ?? "h-8 w-8"}`}
     >
       <i className={`${card.icon} text-base`} aria-hidden="true" />
-      <span className="pointer-events-none absolute bottom-full left-0 z-50 mb-2 hidden w-max max-w-55 rounded-md bg-[#111111] px-2.5 py-1.5 text-left font-acumin text-2.75 font-normal leading-snug text-white shadow-md group-hover:block">
+      <span className="pointer-events-none absolute bottom-full left-0 z-50 mb-2 hidden w-max max-w-55 rounded-md bg-[#111111] px-2.5 py-1.5 text-left font-acumin lk-text-4xs font-normal leading-snug text-white shadow-md group-hover:block">
         {card.description}
         {card.definition ? (
           <span className="mt-1 block text-white/70">
@@ -866,13 +866,13 @@ function KpiListCard({
         </span>
         {achievementState ? (
           <span
-            className={`shrink-0 rounded-full px-1.5 py-0.5 font-acumin text-2.5 tracking-wider ${achievementState === "達成" ? "bg-[#d8ecff] text-[#195b91]" : "bg-[#ffdede] text-[#9b3030]"}`}
+            className={`shrink-0 rounded-full px-1.5 py-0.5 font-acumin lk-text-6xs tracking-wider ${achievementState === "達成" ? "bg-[#d8ecff] text-[#195b91]" : "bg-[#ffdede] text-[#9b3030]"}`}
           >
             {achievementState}
           </span>
         ) : null}
         {card.isSample ? (
-          <span className="shrink-0 rounded-full bg-[#ededed] px-1.5 py-0.5 font-acumin text-2.5 tracking-wider text-[#888888]">
+          <span className="shrink-0 rounded-full bg-[#ededed] px-1.5 py-0.5 font-acumin lk-text-6xs tracking-wider text-[#888888]">
             参考
           </span>
         ) : null}
@@ -880,10 +880,10 @@ function KpiListCard({
       <span className="block font-acumin text-lg leading-none text-black tabular-nums">
         {card.valueText}
       </span>
-      <span className="mt-1.5 block font-acumin text-2.75 text-[#888888] tabular-nums">
+      <span className="mt-1.5 block font-acumin lk-text-4xs text-[#888888] tabular-nums">
         目標 {card.targetText}
       </span>
-      <span className="mt-2 block font-acumin text-2.75 text-[#474747] tabular-nums">
+      <span className="mt-2 block font-acumin lk-text-4xs text-[#474747] tabular-nums">
         {card.percentText}
       </span>
       <ProgressBar percent={card.percent} className="mt-1" />
@@ -2064,7 +2064,7 @@ export default function KpiSection({
 
                 <div className="min-w-0 space-y-3 border-t border-[#ededed] pt-3">
                   <div className="min-w-0">
-                    <p className="font-acumin text-2.75 text-[#888888]">
+                    <p className="font-acumin lk-text-4xs text-[#888888]">
                       現在値
                     </p>
                     <p className="mt-1 font-acumin text-xl leading-none text-black tabular-nums">
@@ -2072,7 +2072,7 @@ export default function KpiSection({
                     </p>
                   </div>
                   <div className="min-w-0">
-                    <p className="font-acumin text-2.75 text-[#888888]">目標</p>
+                    <p className="font-acumin lk-text-4xs text-[#888888]">目標</p>
                     {isTargetEditing ? (
                       <div className="mt-1 flex items-center gap-1.5">
                         <TextField
@@ -2116,7 +2116,7 @@ export default function KpiSection({
                     )}
                   </div>
                   <div className="min-w-0">
-                    <p className="font-acumin text-2.75 text-[#888888]">
+                    <p className="font-acumin lk-text-4xs text-[#888888]">
                       達成率
                     </p>
                     <p className="mt-1 font-acumin text-xl leading-none text-black tabular-nums">
@@ -2141,7 +2141,7 @@ export default function KpiSection({
                 </Button>
               </div>
               {targetLoadErrorMessage || targetErrorMessage ? (
-                <p className="mt-2 font-acumin text-2.75 text-red-700">
+                <p className="mt-2 font-acumin lk-text-4xs text-red-700">
                   {targetLoadErrorMessage ?? targetErrorMessage}
                 </p>
               ) : null}
@@ -2231,7 +2231,7 @@ export default function KpiSection({
                 {/* 1/3幅では3列に入りきらないため、広い画面では縦に積む。 */}
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1.2fr_1fr_1fr] xl:grid-cols-1">
                   <div>
-                    <p className="mb-1 font-acumin text-2.75 text-[#888888]">
+                    <p className="mb-1 font-acumin lk-text-4xs text-[#888888]">
                       実績値
                     </p>
                     <TextField
@@ -2255,24 +2255,24 @@ export default function KpiSection({
                     />
                   </div>
                   <div>
-                    <p className="mb-1 font-acumin text-2.75 text-[#888888]">
+                    <p className="mb-1 font-acumin lk-text-4xs text-[#888888]">
                       算出元
                     </p>
                     <div className="flex items-center gap-1.5 rounded-lg border border-[#e8e8e8] p-2">
-                      <p className="min-w-0 flex-1 font-acumin text-2.75 leading-snug text-[#474747]">
+                      <p className="min-w-0 flex-1 font-acumin lk-text-4xs leading-snug text-[#474747]">
                         {selectedSourceLabel}
                       </p>
-                      <span className="shrink-0 rounded-full bg-[#ededed] px-1.5 py-0.5 font-acumin text-2.5 tracking-wider text-[#888888]">
+                      <span className="shrink-0 rounded-full bg-[#ededed] px-1.5 py-0.5 font-acumin lk-text-6xs tracking-wider text-[#888888]">
                         自動
                       </span>
                     </div>
                   </div>
                   <div>
-                    <p className="mb-1 font-acumin text-2.75 text-[#888888]">
+                    <p className="mb-1 font-acumin lk-text-4xs text-[#888888]">
                       算出式
                     </p>
                     <div className="rounded-lg border border-[#e8e8e8] p-2">
-                      <p className="font-acumin text-2.75 leading-snug text-[#474747]">
+                      <p className="font-acumin lk-text-4xs leading-snug text-[#474747]">
                         {KPI_FORMULA_BY_KEY.get(selectedDefinition.key)
                           ?.formulaText ?? "—"}
                       </p>
@@ -2281,12 +2281,12 @@ export default function KpiSection({
                 </div>
 
                 {recordErrorMessage ? (
-                  <p className="whitespace-pre-line font-acumin text-2.75 text-red-700">
+                  <p className="whitespace-pre-line font-acumin lk-text-4xs text-red-700">
                     {recordErrorMessage}
                   </p>
                 ) : null}
                 {recordSuccessMessage ? (
-                  <p className="font-acumin text-2.75 text-green-700">
+                  <p className="font-acumin lk-text-4xs text-green-700">
                     {recordSuccessMessage}
                   </p>
                 ) : null}
@@ -2320,7 +2320,7 @@ export default function KpiSection({
               radius="rounded"
               title="月次記録"
               actions={
-                <span className="font-acumin text-2.75 text-[#888888]">
+                <span className="font-acumin lk-text-4xs text-[#888888]">
                   自動取得値は上書きできます
                 </span>
               }
@@ -2481,7 +2481,7 @@ export default function KpiSection({
             radius="rounded"
             title="算出元データ"
             actions={
-              <span className="font-acumin text-2.75 text-[#888888]">
+              <span className="font-acumin lk-text-4xs text-[#888888]">
                 月別の実績値
               </span>
             }
@@ -2512,7 +2512,7 @@ export default function KpiSection({
                       <td className="sticky left-0 z-10 min-w-42 bg-white py-2 pr-3 font-acumin text-xs text-black">
                         <span className="flex items-center gap-1.5">
                           {metric.label}
-                          <span className="rounded-full bg-[#ededed] px-1.5 py-0.5 font-acumin text-2.5 tracking-wider text-[#888888]">
+                          <span className="rounded-full bg-[#ededed] px-1.5 py-0.5 font-acumin lk-text-6xs tracking-wider text-[#888888]">
                             {metric.group === "order" ? "自動" : "手入力"}
                           </span>
                         </span>
@@ -2560,7 +2560,7 @@ export default function KpiSection({
             radius="rounded"
             title="KPI（自動計算）"
             actions={
-              <span className="font-acumin text-2.75 text-[#888888]">
+              <span className="font-acumin lk-text-4xs text-[#888888]">
                 全{MONTHLY_KPI_FORMULAS.length}指標
               </span>
             }
@@ -2704,7 +2704,7 @@ export default function KpiSection({
                     <span className="flex items-center gap-1.5">
                       {row.label}
                       {row.isSample ? (
-                        <span className="rounded-full bg-[#ededed] px-1.5 py-0.5 font-acumin text-2.5 tracking-wider text-[#888888]">
+                        <span className="rounded-full bg-[#ededed] px-1.5 py-0.5 font-acumin lk-text-6xs tracking-wider text-[#888888]">
                           参考
                         </span>
                       ) : null}

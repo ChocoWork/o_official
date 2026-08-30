@@ -15,7 +15,7 @@ const patterns = [
         {letters.map((char, i) => (
           <span
             key={i}
-            className="text-4 tracking-wide text-white animate-[letterFade_2s_ease-in-out_infinite]"
+            className="lk-text-lg tracking-wide text-white animate-[letterFade_2s_ease-in-out_infinite]"
             style={{
               fontFamily: "Didot, serif",
               animationDelay: `${i * 120}ms`,
@@ -32,7 +32,7 @@ const letters = brandName.split('');
 <div className="flex">
   {letters.map((char, i) => (
     <span key={i}
-      className="text-4 tracking-wide text-white animate-[letterFade_2s_ease-in-out_infinite]"
+      className="lk-text-lg tracking-wide text-white animate-[letterFade_2s_ease-in-out_infinite]"
       style={{ fontFamily: 'Didot, serif', animationDelay: \`\${i * 120}ms\` }}>
       {char === ' ' ? '\\u00A0' : char}
     </span>
@@ -50,13 +50,13 @@ const letters = brandName.split('');
     bg: "bg-white",
     render: (
       <span
-        className="text-4.5 tracking-wider text-black animate-[brandPulse_2s_ease-in-out_infinite]"
+        className="lk-text-2xl tracking-wider text-black animate-[brandPulse_2s_ease-in-out_infinite]"
         style={{ fontFamily: "Didot, serif" }}
       >
         {brandName}
       </span>
     ),
-    code: `<span className="text-4.5 tracking-wider text-black animate-[brandPulse_2s_ease-in-out_infinite]"
+    code: `<span className="lk-text-2xl tracking-wider text-black animate-[brandPulse_2s_ease-in-out_infinite]"
   style={{ fontFamily: 'Didot, serif' }}>
   Le Fil des Heures
 </span>
@@ -73,13 +73,13 @@ const letters = brandName.split('');
     render: (
       <div className="relative">
         <span
-          className="text-4 tracking-wider text-white/10"
+          className="lk-text-lg tracking-wider text-white/10"
           style={{ fontFamily: "Didot, serif" }}
         >
           {brandName}
         </span>
         <span
-          className="absolute inset-0 text-4 tracking-wider text-white animate-[brandShimmer_2.5s_linear_infinite]"
+          className="absolute inset-0 lk-text-lg tracking-wider text-white animate-[brandShimmer_2.5s_linear_infinite]"
           style={{ fontFamily: "Didot, serif" }}
         >
           {brandName}
@@ -87,10 +87,10 @@ const letters = brandName.split('');
       </div>
     ),
     code: `<div className="relative">
-  <span className="text-4 tracking-wider text-white/10">
+  <span className="lk-text-lg tracking-wider text-white/10">
     Le Fil des Heures
   </span>
-  <span className="absolute inset-0 text-4 tracking-wider text-white animate-[brandShimmer_2.5s_linear_infinite]">
+  <span className="absolute inset-0 lk-text-lg tracking-wider text-white animate-[brandShimmer_2.5s_linear_infinite]">
     Le Fil des Heures
   </span>
 </div>
@@ -107,13 +107,13 @@ const letters = brandName.split('');
     bg: "bg-white",
     render: (
       <span
-        className="text-4 tracking-wider text-black animate-[typingReveal_3s_steps(17)_infinite] overflow-hidden whitespace-nowrap"
+        className="lk-text-lg tracking-wider text-black animate-[typingReveal_3s_steps(17)_infinite] overflow-hidden whitespace-nowrap"
         style={{ fontFamily: "Didot, serif" }}
       >
         {brandName}
       </span>
     ),
-    code: `<span className="text-4 tracking-wider text-black animate-[typingReveal_3s_steps(17)_infinite] overflow-hidden whitespace-nowrap"
+    code: `<span className="lk-text-lg tracking-wider text-black animate-[typingReveal_3s_steps(17)_infinite] overflow-hidden whitespace-nowrap"
   style={{ fontFamily: 'Didot, serif' }}>
   Le Fil des Heures
 </span>
@@ -169,7 +169,7 @@ const letters = brandName.split('');
         {letters.map((char, i) => (
           <span
             key={i}
-            className="text-4 tracking-wide text-black animate-[bounceLetter_1.2s_ease-in-out_infinite]"
+            className="lk-text-lg tracking-wide text-black animate-[bounceLetter_1.2s_ease-in-out_infinite]"
             style={{
               fontFamily: "Didot, serif",
               animationDelay: `${i * 80}ms`,
@@ -185,7 +185,7 @@ const letters = brandName.split('');
 <div className="flex">
   {letters.map((char, i) => (
     <span key={i}
-      className="text-4 tracking-wide text-black animate-[bounceLetter_1.2s_ease-in-out_infinite]"
+      className="lk-text-lg tracking-wide text-black animate-[bounceLetter_1.2s_ease-in-out_infinite]"
       style={{ fontFamily: 'Didot, serif', animationDelay: \`\${i * 80}ms\` }}>
       {char === ' ' ? '\\u00A0' : char}
     </span>
@@ -203,13 +203,13 @@ const letters = brandName.split('');
     bg: "bg-black",
     render: (
       <span
-        className="text-4 text-white animate-[letterSpace_2s_ease-in-out_infinite]"
+        className="lk-text-lg text-white animate-[letterSpace_2s_ease-in-out_infinite]"
         style={{ fontFamily: "Didot, serif" }}
       >
         {brandName}
       </span>
     ),
-    code: `<span className="text-4 text-white animate-[letterSpace_2s_ease-in-out_infinite]"
+    code: `<span className="lk-text-lg text-white animate-[letterSpace_2s_ease-in-out_infinite]"
   style={{ fontFamily: 'Didot, serif' }}>
   Le Fil des Heures
 </span>
@@ -228,7 +228,7 @@ const letters = brandName.split('');
         {letters.map((char, i) => (
           <span
             key={i}
-            className="text-4 tracking-wide text-black animate-[opacityWave_1.5s_ease-in-out_infinite]"
+            className="lk-text-lg tracking-wide text-black animate-[opacityWave_1.5s_ease-in-out_infinite]"
             style={{
               fontFamily: "Didot, serif",
               animationDelay: `${i * 100}ms`,
@@ -244,7 +244,7 @@ const letters = brandName.split('');
 <div className="flex">
   {letters.map((char, i) => (
     <span key={i}
-      className="text-4 tracking-wide text-black animate-[opacityWave_1.5s_ease-in-out_infinite]"
+      className="lk-text-lg tracking-wide text-black animate-[opacityWave_1.5s_ease-in-out_infinite]"
       style={{ fontFamily: 'Didot, serif', animationDelay: \`\${i * 100}ms\` }}>
       {char === ' ' ? '\\u00A0' : char}
     </span>
@@ -262,13 +262,13 @@ const letters = brandName.split('');
     bg: "bg-black",
     render: (
       <span
-        className="text-4.5 tracking-wider text-white animate-[blurFocus_2.5s_ease-in-out_infinite]"
+        className="lk-text-2xl tracking-wider text-white animate-[blurFocus_2.5s_ease-in-out_infinite]"
         style={{ fontFamily: "Didot, serif" }}
       >
         {brandName}
       </span>
     ),
-    code: `<span className="text-4.5 tracking-wider text-white animate-[blurFocus_2.5s_ease-in-out_infinite]"
+    code: `<span className="lk-text-2xl tracking-wider text-white animate-[blurFocus_2.5s_ease-in-out_infinite]"
   style={{ fontFamily: 'Didot, serif' }}>
   Le Fil des Heures
 </span>
@@ -285,7 +285,7 @@ const letters = brandName.split('');
     render: (
       <div className="overflow-hidden h-8">
         <span
-          className="block text-4 tracking-wider text-black animate-[slideUp_2s_ease-out_infinite]"
+          className="block lk-text-lg tracking-wider text-black animate-[slideUp_2s_ease-out_infinite]"
           style={{ fontFamily: "Didot, serif" }}
         >
           {brandName}
@@ -293,7 +293,7 @@ const letters = brandName.split('');
       </div>
     ),
     code: `<div className="overflow-hidden h-8">
-  <span className="block text-4 tracking-wider text-black animate-[slideUp_2s_ease-out_infinite]"
+  <span className="block lk-text-lg tracking-wider text-black animate-[slideUp_2s_ease-out_infinite]"
     style={{ fontFamily: 'Didot, serif' }}>
     Le Fil des Heures
   </span>
@@ -315,18 +315,18 @@ const letters = brandName.split('');
           className="absolute whitespace-nowrap animate-[hScroll_4s_linear_infinite]"
           style={{ fontFamily: "Didot, serif" }}
         >
-          <span className="text-3 tracking-widest text-white/20">
+          <span className="lk-text-3xs tracking-widest text-white/20">
             {brandName}
           </span>
-          <span className="text-3 tracking-widest text-white/20 ml-12">
+          <span className="lk-text-3xs tracking-widest text-white/20 ml-12">
             {brandName}
           </span>
-          <span className="text-3 tracking-widest text-white/20 ml-12">
+          <span className="lk-text-3xs tracking-widest text-white/20 ml-12">
             {brandName}
           </span>
         </div>
         <span
-          className="relative text-4 tracking-wider text-white"
+          className="relative lk-text-lg tracking-wider text-white"
           style={{ fontFamily: "Didot, serif" }}
         >
           {brandName}
@@ -335,14 +335,14 @@ const letters = brandName.split('');
     ),
     code: `<div className="relative w-full flex items-center justify-center">
   <div className="absolute whitespace-nowrap animate-[hScroll_4s_linear_infinite]">
-    <span className="text-3 tracking-widest text-white/20">
+    <span className="lk-text-3xs tracking-widest text-white/20">
       Le Fil des Heures
     </span>
-    <span className="text-3 tracking-widest text-white/20 ml-12">
+    <span className="lk-text-3xs tracking-widest text-white/20 ml-12">
       Le Fil des Heures
     </span>
   </div>
-  <span className="relative text-4 tracking-wider text-white">
+  <span className="relative lk-text-lg tracking-wider text-white">
     Le Fil des Heures
   </span>
 </div>
@@ -361,7 +361,7 @@ const letters = brandName.split('');
         {"Le Fil des Heures".split(" ").map((word, i) => (
           <div key={i} className="overflow-hidden">
             <span
-              className="block text-4 tracking-wider text-black animate-[stackReveal_2s_ease-out_infinite]"
+              className="block lk-text-lg tracking-wider text-black animate-[stackReveal_2s_ease-out_infinite]"
               style={{ fontFamily: "Didot", animationDelay: `${i * 200}ms` }}
             >
               {word}
@@ -373,7 +373,7 @@ const letters = brandName.split('');
     code: `<div className="flex flex-col items-center gap-0">
   {"Le Fil des Heures".split(' ').map((word, i) => (
     <div key={i} className="overflow-hidden">
-      <span className="block text-4 tracking-wider text-black animate-[stackReveal_2s_ease-out_infinite]"
+      <span className="block lk-text-lg tracking-wider text-black animate-[stackReveal_2s_ease-out_infinite]"
         style={{ fontFamily: 'Didot', animationDelay: \`\${i * 200}ms\` }}>
         {word}
       </span>
@@ -394,19 +394,19 @@ const letters = brandName.split('');
     render: (
       <div className="relative">
         <span
-          className="relative text-4 tracking-wider text-white"
+          className="relative lk-text-lg tracking-wider text-white"
           style={{ fontFamily: "Didot, serif" }}
         >
           {brandName}
         </span>
         <span
-          className="absolute inset-0 text-4 tracking-wider text-white/50 animate-[glitch_2s_linear_infinite]"
+          className="absolute inset-0 lk-text-lg tracking-wider text-white/50 animate-[glitch_2s_linear_infinite]"
           style={{ fontFamily: "Didot, serif", clipPath: "inset(0 0 50% 0)" }}
         >
           {brandName}
         </span>
         <span
-          className="absolute inset-0 text-4 tracking-wider text-white/50 animate-[glitch_2s_linear_infinite_reverse]"
+          className="absolute inset-0 lk-text-lg tracking-wider text-white/50 animate-[glitch_2s_linear_infinite_reverse]"
           style={{ fontFamily: "Didot, serif", clipPath: "inset(50% 0 0 0)" }}
         >
           {brandName}
@@ -414,14 +414,14 @@ const letters = brandName.split('');
       </div>
     ),
     code: `<div className="relative">
-  <span className="relative text-4 tracking-wider text-white">
+  <span className="relative lk-text-lg tracking-wider text-white">
     Le Fil des Heures
   </span>
-  <span className="absolute inset-0 text-4 tracking-wider text-white/50 animate-[glitch_2s_linear_infinite]"
+  <span className="absolute inset-0 lk-text-lg tracking-wider text-white/50 animate-[glitch_2s_linear_infinite]"
     style={{ clipPath: 'inset(0 0 50% 0)' }}>
     Le Fil des Heures
   </span>
-  <span className="absolute inset-0 text-4 tracking-wider text-white/50 animate-[glitch_2s_linear_infinite_reverse]"
+  <span className="absolute inset-0 lk-text-lg tracking-wider text-white/50 animate-[glitch_2s_linear_infinite_reverse]"
     style={{ clipPath: 'inset(50% 0 0 0)' }}>
     Le Fil des Heures
   </span>
@@ -445,7 +445,7 @@ const letters = brandName.split('');
         style={{ transformStyle: "preserve-3d" }}
       >
         <span
-          className="text-4 tracking-wider text-black"
+          className="lk-text-lg tracking-wider text-black"
           style={{ fontFamily: "Didot, serif" }}
         >
           {brandName}
@@ -454,7 +454,7 @@ const letters = brandName.split('');
     ),
     code: `<div className="animate-[mirrorFlip_3s_ease-in-out_infinite]"
   style={{ transformStyle: 'preserve-3d' }}>
-  <span className="text-4 tracking-wider text-black"
+  <span className="lk-text-lg tracking-wider text-black"
     style={{ fontFamily: 'Didot, serif' }}>
     Le Fil des Heures
   </span>
@@ -475,7 +475,7 @@ const letters = brandName.split('');
         style={{ transformStyle: "preserve-3d" }}
       >
         <span
-          className="text-4 tracking-wider text-white"
+          className="lk-text-lg tracking-wider text-white"
           style={{ fontFamily: "Didot, serif" }}
         >
           {brandName}
@@ -484,7 +484,7 @@ const letters = brandName.split('');
     ),
     code: `<div className="animate-[rotateWord_3s_linear_infinite]"
   style={{ transformStyle: 'preserve-3d' }}>
-  <span className="text-4 tracking-wider text-white"
+  <span className="lk-text-lg tracking-wider text-white"
     style={{ fontFamily: 'Didot, serif' }}>
     Le Fil des Heures
   </span>
@@ -502,7 +502,7 @@ const letters = brandName.split('');
     render: (
       <div className="relative">
         <span
-          className="text-4 tracking-wider text-black"
+          className="lk-text-lg tracking-wider text-black"
           style={{ fontFamily: "Didot, serif" }}
         >
           {brandName}
@@ -511,7 +511,7 @@ const letters = brandName.split('');
       </div>
     ),
     code: `<div className="relative">
-  <span className="text-4 tracking-wider text-black"
+  <span className="lk-text-lg tracking-wider text-black"
     style={{ fontFamily: 'Didot, serif' }}>
     Le Fil des Heures
   </span>
@@ -545,7 +545,7 @@ export default function BrandNamePatterns() {
         >
           {p.render}
           <p
-            className={`mt-5.25 text-2.5 tracking-[0.2em] ${p.bg === "bg-black" ? "text-white/30" : "text-black/30"}`}
+            className={`mt-5.25 lk-text-6xs tracking-[0.2em] ${p.bg === "bg-black" ? "text-white/30" : "text-black/30"}`}
             style={{ fontFamily: "acumin-pro, sans-serif" }}
           >
             {p.name}

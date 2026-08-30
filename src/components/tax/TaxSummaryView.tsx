@@ -194,7 +194,7 @@ export function TaxSummaryView({
               value={checklist.progress}
               size={52}
               label={
-                <span className="font-acumin text-2.5 font-medium text-black tabular-nums">
+                <span className="font-acumin lk-text-6xs font-medium text-black tabular-nums">
                   {Math.round(checklist.progress)}%
                 </span>
               }
@@ -218,7 +218,7 @@ export function TaxSummaryView({
               <span className={panelTitleClassName}>
                 課税売上・必要経費・所得推移
               </span>
-              <span className="font-acumin text-2.75 text-[#707070]">
+              <span className="font-acumin lk-text-4xs text-[#707070]">
                 （{fiscalYear}年1月〜12月）
               </span>
             </span>
@@ -242,7 +242,7 @@ export function TaxSummaryView({
                     type="button"
                     aria-pressed={active}
                     onClick={() => setTrendMode(mode)}
-                    className={`h-6 rounded-sm px-3 font-acumin text-2.75 transition-colors ${
+                    className={`h-6 rounded-sm px-3 font-acumin lk-text-4xs transition-colors ${
                       active
                         ? "bg-black text-white"
                         : "bg-transparent text-[#474747] hover:text-black"
@@ -283,10 +283,10 @@ export function TaxSummaryView({
                 key={item.key}
                 className="grid grid-cols-[minmax(0,auto)_minmax(0,1fr)_auto] items-center gap-2 border-b border-[#ededed] py-2"
               >
-                <span className="whitespace-nowrap font-acumin text-2.75 font-medium text-black">
+                <span className="whitespace-nowrap font-acumin lk-text-4xs font-medium text-black">
                   {item.group}
                 </span>
-                <span className="min-w-0 truncate font-acumin text-2.75 text-[#474747]">
+                <span className="min-w-0 truncate font-acumin lk-text-4xs text-[#474747]">
                   {item.label}
                 </span>
                 <StateBadge
@@ -339,7 +339,7 @@ export function TaxSummaryView({
         title={
           <span className="flex flex-wrap items-baseline gap-2">
             <span className={panelTitleClassName}>税額見込</span>
-            <span className="font-acumin text-2.75 text-[#707070]">
+            <span className="font-acumin lk-text-4xs text-[#707070]">
               （帳簿の決算値から自動連携）
             </span>
           </span>
@@ -376,7 +376,7 @@ export function TaxSummaryView({
               />
             </div>
             <p
-              className={`mt-3 border border-dashed border-[#d4d4d4] px-3 py-2 font-acumin text-2.5 leading-relaxed text-[#707070] ${boxRadiusClassName}`}
+              className={`mt-3 border border-dashed border-[#d4d4d4] px-3 py-2 font-acumin lk-text-6xs leading-relaxed text-[#707070] ${boxRadiusClassName}`}
             >
               ※
               税額は概算です。所得控除（基礎控除・社会保険料控除など）は帳簿の外にあるため
@@ -425,7 +425,7 @@ export function TaxSummaryView({
           title={
             <span className="flex flex-wrap items-baseline gap-2">
               <span className={panelTitleClassName}>要対応一覧</span>
-              <span className="font-acumin text-2.75 text-[#707070]">
+              <span className="font-acumin lk-text-4xs text-[#707070]">
                 （優先度順）
               </span>
             </span>
@@ -445,7 +445,7 @@ export function TaxSummaryView({
                       (heading) => (
                         <th
                           key={heading}
-                          className="px-2 py-2 text-left font-acumin text-2.75 font-normal text-[#474747]"
+                          className="px-2 py-2 text-left font-acumin lk-text-4xs font-normal text-[#474747]"
                         >
                           {heading}
                         </th>
@@ -458,7 +458,7 @@ export function TaxSummaryView({
                     <tr key={item.key} className="border-b border-[#ededed]">
                       <td className="whitespace-nowrap px-2 py-2.5">
                         <span
-                          className="inline-flex items-center gap-1 font-acumin text-2.75"
+                          className="inline-flex items-center gap-1 font-acumin lk-text-4xs"
                           style={{ color: PRIORITY_COLORS[item.priority] }}
                         >
                           <i
@@ -471,7 +471,7 @@ export function TaxSummaryView({
                       <td className="px-2 py-2.5 font-acumin text-xs text-black">
                         {item.label}
                       </td>
-                      <td className="whitespace-nowrap px-2 py-2.5 font-acumin text-2.75 text-[#474747] tabular-nums">
+                      <td className="whitespace-nowrap px-2 py-2.5 font-acumin lk-text-4xs text-[#474747] tabular-nums">
                         {item.key === "etax"
                           ? "未設定"
                           : (filingDeadline?.dueOn.replaceAll("-", "/") ?? "—")}
@@ -499,7 +499,7 @@ export function TaxSummaryView({
             <span className={panelTitleClassName}>申告期限・納付予定</span>
           }
           actions={
-            <span className="font-acumin text-2.5 text-[#707070] tabular-nums">
+            <span className="font-acumin lk-text-6xs text-[#707070] tabular-nums">
               基準日 {today.replaceAll("-", "/")}
             </span>
           }
@@ -549,7 +549,7 @@ export function TaxSummaryView({
                 </span>
                 <span className="shrink-0 text-right">
                   <span
-                    className={`block font-acumin text-2.75 tabular-nums ${
+                    className={`block font-acumin lk-text-4xs tabular-nums ${
                       deadline.urgency === "high"
                         ? "text-[#b45309]"
                         : "text-black"
@@ -557,7 +557,7 @@ export function TaxSummaryView({
                   >
                     {deadline.dueOn.replaceAll("-", "/")}
                   </span>
-                  <span className="block font-acumin text-2.5 text-[#707070] tabular-nums">
+                  <span className="block font-acumin lk-text-6xs text-[#707070] tabular-nums">
                     {deadline.overdue
                       ? `${Math.abs(deadline.daysLeft)}日超過`
                       : `残り ${deadline.daysLeft}日`}
@@ -569,7 +569,7 @@ export function TaxSummaryView({
         </Panel>
       </div>
 
-      <p className="font-acumin text-2.75 leading-relaxed text-[#707070]">
+      <p className="font-acumin lk-text-4xs leading-relaxed text-[#707070]">
         ※
         本画面の数値は帳簿から自動集計した参考値です。実際の申告内容は税理士または所轄税務署へご確認ください。
         減価償却費 {currency(depreciation.businessExpenseTotal)}

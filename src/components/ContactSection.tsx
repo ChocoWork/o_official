@@ -386,7 +386,7 @@ export default function ContactSection() {
                       <StatusBadge tone={STATUS_TONES[thread.status]} size="sm">
                         {STATUS_LABELS[thread.status]}
                       </StatusBadge>
-                      <span className="text-2.75 text-[#474747] font-acumin">
+                      <span className="lk-text-4xs text-[#474747] font-acumin">
                         {formatDateTime(thread.last_message_at)}
                       </span>
                     </div>
@@ -480,7 +480,7 @@ export default function ContactSection() {
                     <div
                       className={`max-w-[80%] whitespace-pre-wrap border p-3 text-sm font-acumin ${message.sender_role === "admin" ? "border-black bg-black/4" : "border-black/10 bg-white"}`}
                     >
-                      <div className="mb-1 flex items-center gap-2 text-2.75 text-[#474747]">
+                      <div className="mb-1 flex items-center gap-2 lk-text-4xs text-[#474747]">
                         <span>
                           {message.sender_role === "admin"
                             ? "管理者"

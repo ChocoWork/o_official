@@ -9,10 +9,10 @@ import { TagLabel } from "@/components/ui/TagLabel/TagLabel";
 
 // FREQ-312: 横に並ぶ枚数を公開 ITEM 一覧と一致させる。列指定は
 // PublicItemGrid の ITEM_GRID_CLASS（FREQ-276）と同じ 2 / md:3 / 2xl:4。
-// admin は md 以上でサイドナビ 224px が出るため、lg で 233px のフィルター
-// サイドバーが出る /item 一覧と条件が近く、カード幅もほぼ一致する。
-// 実測カード幅（内容幅）: 390:2列/169px(127) 768:3列/139px(95)
-// 1280:3列/293px(248) 1920:4列/357px(312) 3840:4列/821px(776)
+// FREQ-315 でサイドナビの出現位置を lg に揃えたので、lg で 233px のフィルター
+// サイドバーが出る /item 一覧とカードの条件が完全に一致する。
+// 実測カード幅（内容幅）: 390:2列/169px(152) 768:3列/213px(195)
+// 1024:3列/219px(174) 1280:3列/293px(248) 1920:4列/357px(312) 3840:4列/821px(776)
 // ガターは公開側（2〜4px）を踏襲しない。admin カードは枠線があるため詰まりすぎる。
 const ADMIN_ITEM_GRID_CLASS =
   "grid grid-cols-2 md:grid-cols-3 2xl:grid-cols-4 gap-x-3 gap-y-6 lg:gap-y-7";
@@ -36,44 +36,67 @@ function ItemCard({ item, onToggleStatus, onDelete }: ItemCardProps) {
   const priceLabel = `¥${item.price.toLocaleString()}`;
 
   return (
-    <Card className="overflow-hidden p-0" size="md">
+    <Card className="admin-item-card overflow-hidden p-0" size="md">
+      {/* FREQ-313: 画像とテキスト群は別グループ。境界に --card-media-gap（font）の
+          余白を置いて切り分ける（近接）。 */}
       <Image
         alt={item.name}
-        className="w-full aspect-3/4 object-cover"
+        className="mb-[var(--card-media-gap)] w-full aspect-3/4 object-cover"
         src={item.image_url || "/placeholder.png"}
         width={300}
         height={400}
         unoptimized
       />
-      {/* Card 自体が φ 由来の約21pxパディングを持つ（className の p-0 は
-          Card.css に負けて効かない）。ここで更に p-4 を足すと 768px 帯の
-          カード139px中66pxがパディングになり内容が潰れるため padding は持たない。 */}
+      {/* Card 自体が φ 由来のパディングを持つ（className の p-0 は Card.css に
+          負けて効かない）。lg 未満は globals.css の .admin-item-card で font/φ
+          まで詰め、狭い帯でもタグ行・操作列が1行に収まるようにしている。 */}
       <div className="space-y-3">
         {/* 公開状態は BASIC TAG（角丸なし）、カテゴリは ROUNDED TAG。
             同じ 2xs で揃えつつ、solid/outline と subtle で優先度を分ける（対比）。
-            ACCESSORIES のような長いカテゴリでも行がはみ出さず、かつ
-            カテゴリ名の長短でカード内の縦位置がずれないよう常に2段に積む（整列・反復）。 */}
-        <div className="flex w-full flex-col items-start gap-1">
+            FREQ-313: 2つを横一列に並べ、幅が足りないときはカテゴリだけを
+            省略記号で切り詰めてカードからはみ出させない。タグ同士の間隔は
+            --card-gap（font ÷ φ）。画像との境界（font）より狭く、名称↔価格の行間
+            より広い、φ ラダーの中段に置く（近接・反復）。 */}
+        <div
+          className="admin-item-card-tags flex w-full min-w-0 items-center gap-[var(--card-gap)]"
+          data-testid="admin-item-tags"
+        >
           <TagLabel
             variant={item.status === "published" ? "solid" : "outline"}
             size="2xs"
+            className="shrink-0"
           >
             {item.status === "published" ? "公開中" : "非公開"}
           </TagLabel>
-          <TagLabel
-            variant="subtle"
-            rounded
-            size="2xs"
-            className="w-full lg:w-auto lg:max-w-full"
-          >
+          <TagLabel variant="subtle" rounded size="2xs" className="min-w-0">
             <span className="block min-w-0 truncate">{item.category}</span>
           </TagLabel>
         </div>
-        <h4 className="text-base text-black font-acumin">{item.name}</h4>
-        <p className="text-sm text-black font-acumin">{priceLabel}</p>
-        {/* FREQ-310: 主要動作の編集を全幅の1行目に置き、副次的な公開切替と削除を
-            2行目に分ける（対比）。 */}
-        <div className="space-y-2 pt-2">
+        {/* FREQ-313: 商品名と価格は公開 ITEM 一覧カード（ItemCardInfo）と同じ
+            --lk-size-2xs / weight 400。2行で1つの塊なので間隔も一段詰める（近接）。 */}
+        <div className="space-y-0.5">
+          <h4
+            className="text-black font-acumin"
+            data-testid="admin-item-name"
+            style={{ fontSize: "var(--lk-size-2xs)", fontWeight: 400 }}
+          >
+            {item.name}
+          </h4>
+          <p
+            className="text-black font-acumin"
+            data-testid="admin-item-price"
+            style={{ fontSize: "var(--lk-size-2xs)", fontWeight: 400 }}
+          >
+            {priceLabel}
+          </p>
+        </div>
+        {/* FREQ-313: 編集 / 公開切替 / 削除を1行3等分で並べる（FREQ-310-REQ-02 の
+            2段構成を撤回）。列は minmax(0,1fr) なのでセル幅がボタン幅を決め、
+            左右パディングは globals.css の .admin-item-actions で 0 にしている。 */}
+        <div
+          className="admin-item-actions grid grid-cols-3 gap-1 pt-2"
+          data-testid="admin-item-actions"
+        >
           <Button
             className="w-full font-acumin"
             href={`/admin/item/edit/${item.id}`}
@@ -82,26 +105,22 @@ function ItemCard({ item, onToggleStatus, onDelete }: ItemCardProps) {
           >
             編集
           </Button>
-          {/* md 帯（768〜1023px）はカード幅が約139pxまで縮み2分割だとボタンが
-              28pxに潰れるため縦積みに戻す。lg 以上は横2分割。 */}
-          <div className="grid grid-cols-2 md:grid-cols-1 lg:grid-cols-2 gap-2">
-            <Button
-              onClick={() => onToggleStatus(item.id, item.status)}
-              variant="secondary"
-              size="sm"
-              className="font-acumin"
-            >
-              {item.status === "published" ? "非公開" : "公開"}
-            </Button>
-            <Button
-              onClick={() => onDelete(item.id)}
-              variant="secondary"
-              size="sm"
-              className="font-acumin"
-            >
-              削除
-            </Button>
-          </div>
+          <Button
+            onClick={() => onToggleStatus(item.id, item.status)}
+            variant="secondary"
+            size="sm"
+            className="w-full font-acumin"
+          >
+            {item.status === "published" ? "非公開" : "公開"}
+          </Button>
+          <Button
+            onClick={() => onDelete(item.id)}
+            variant="secondary"
+            size="sm"
+            className="w-full font-acumin"
+          >
+            削除
+          </Button>
         </div>
       </div>
     </Card>

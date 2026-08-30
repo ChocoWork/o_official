@@ -768,7 +768,7 @@ const panelTitleClassName =
 // 財務3表は3カラムに収めるため、見出しを一段詰める。入りきらない場合は
 // 見出しが2行に折り返し、CSV ボタンは右端に留まる（headerWrap={false}）。
 const statementTitleClassName =
-  "font-acumin text-3.25 font-medium leading-tight tracking-wider text-black";
+  "font-acumin lk-text-xs font-medium leading-tight tracking-wider text-black";
 
 function sumProductUnitCost(product: Product): number {
   return Object.values(product.costs).reduce((sum, value) => sum + value, 0);
@@ -808,7 +808,7 @@ function MetricCard({
       className={`rounded-md border border-[#d4d4d4] bg-white ${compact ? "px-3 py-3 text-center" : "p-4"}`}
     >
       <p
-        className={`font-acumin text-2.75 tracking-wider text-[#474747] ${compact ? "leading-none" : ""}`}
+        className={`font-acumin lk-text-4xs tracking-wider text-[#474747] ${compact ? "leading-none" : ""}`}
       >
         {label}
       </p>
@@ -819,7 +819,7 @@ function MetricCard({
       </p>
       {note ? (
         <p
-          className={`mt-2 font-acumin text-2.75 ${positive ? "text-[#16844b]" : "text-[#707070]"}`}
+          className={`mt-2 font-acumin lk-text-4xs ${positive ? "text-[#16844b]" : "text-[#707070]"}`}
         >
           {note}
         </p>
@@ -888,7 +888,7 @@ function StatementTable({
       <div className="flex items-stretch gap-3">
         <div className="min-w-0 flex-1">
           <div
-            className={`grid ${columns} items-baseline gap-x-3 border-b border-[#d4d4d4] pb-1.5 font-acumin text-2.5 text-[#707070]`}
+            className={`grid ${columns} items-baseline gap-x-3 border-b border-[#d4d4d4] pb-1.5 font-acumin lk-text-6xs text-[#707070]`}
           >
             <span>（単位：円）</span>
             <span className="text-right">金額</span>
@@ -969,7 +969,7 @@ function ProfitLadderBar({
             color: index >= 2 ? "#ffffff" : "#111111",
           }}
         >
-          <span className="font-acumin text-2.5 tabular-nums">
+          <span className="font-acumin lk-text-6xs tabular-nums">
             {percent(step.ratio)}
           </span>
         </div>
@@ -992,7 +992,7 @@ function BalanceBars({
 
   return (
     <div className="mt-4 border-t border-[#ededed] pt-3">
-      <p className="font-acumin text-2.75 text-[#474747]">財政状態のバランス</p>
+      <p className="font-acumin lk-text-4xs text-[#474747]">財政状態のバランス</p>
       <div className="mt-2 grid grid-cols-2 gap-3">
         {(
           [
@@ -1001,10 +1001,10 @@ function BalanceBars({
           ] as const
         ).map(([label, amount]) => (
           <div key={label} className="min-w-0">
-            <span className="block truncate font-acumin text-2.5 text-[#707070]">
+            <span className="block truncate font-acumin lk-text-6xs text-[#707070]">
               {label}
             </span>
-            <span className="block font-acumin text-2.75 text-black tabular-nums">
+            <span className="block font-acumin lk-text-4xs text-black tabular-nums">
               {statementCurrency(amount)}
             </span>
             <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-[#ededed]">
@@ -1020,7 +1020,7 @@ function BalanceBars({
         ))}
       </div>
       <p
-        className={`mt-2 text-center font-acumin text-2.75 tabular-nums ${difference === 0 ? "text-[#707070]" : "text-red-700"}`}
+        className={`mt-2 text-center font-acumin lk-text-4xs tabular-nums ${difference === 0 ? "text-[#707070]" : "text-red-700"}`}
       >
         貸借差額 {statementCurrency(difference)}
       </p>
@@ -1264,7 +1264,7 @@ function CompositionCard({
       aria-label={title}
       title={<span className={panelTitleClassName}>{title}</span>}
       actions={
-        <span className="font-acumin text-2.75 text-[#707070] tabular-nums">
+        <span className="font-acumin lk-text-4xs text-[#707070] tabular-nums">
           合計 {currency(total)}
         </span>
       }
@@ -1293,7 +1293,7 @@ function CompositionCard({
                     {percent(item.ratio)}
                   </span>
                 </div>
-                <span className="ml-4 block font-acumin text-2.5 text-[#707070] tabular-nums">
+                <span className="ml-4 block font-acumin lk-text-6xs text-[#707070] tabular-nums">
                   {currency(item.amount)}
                 </span>
               </li>
@@ -1331,7 +1331,7 @@ function FlowBlock({
         emphasis ? "border-black" : "border-[#d4d4d4]"
       }`}
     >
-      <p className="font-acumin text-2.75 leading-tight text-[#474747]">
+      <p className="font-acumin lk-text-4xs leading-tight text-[#474747]">
         {label}
       </p>
       <p
@@ -2966,7 +2966,7 @@ export default function CostProfitSection({
               key={String(label)}
               className={`${boxRadiusClassName} border border-[#ededed] p-3`}
             >
-              <p className="font-acumin text-2.75 text-[#707070]">{label}</p>
+              <p className="font-acumin lk-text-4xs text-[#707070]">{label}</p>
               <p className="mt-1 font-acumin text-sm font-medium text-black tabular-nums">
                 {currency(Number(amount))}
               </p>
@@ -2996,7 +2996,7 @@ export default function CostProfitSection({
                     <th
                       key={heading}
                       scope="col"
-                      className={`px-2 py-2 font-acumin text-2.75 font-normal text-[#474747] ${index >= 2 && index <= 4 ? "text-right" : "text-left"}`}
+                      className={`px-2 py-2 font-acumin lk-text-4xs font-normal text-[#474747] ${index >= 2 && index <= 4 ? "text-right" : "text-left"}`}
                     >
                       {heading}
                     </th>
@@ -3026,7 +3026,7 @@ export default function CostProfitSection({
                     >
                       {currency(row.balance)}
                       {row.balance < 0 ? (
-                        <span className="ml-1 text-2.5">要確認</span>
+                        <span className="ml-1 lk-text-6xs">要確認</span>
                       ) : null}
                     </td>
                     <td className="whitespace-nowrap px-2 py-2 font-acumin text-xs text-[#474747] tabular-nums">
@@ -3039,7 +3039,7 @@ export default function CostProfitSection({
           </div>
         )}
         {funding && section.rows.some((row) => row.ownerFunding) ? (
-          <p className="mt-3 font-acumin text-2.75 leading-relaxed text-[#707070]">
+          <p className="mt-3 font-acumin lk-text-4xs leading-relaxed text-[#707070]">
             事業主借の残高は事業主資金残高です。法的な返済義務額ではなく、決算時に元入金へ振り替えられます。
           </p>
         ) : null}
@@ -3088,30 +3088,30 @@ export default function CostProfitSection({
       <div className="space-y-3">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="rounded-sm bg-[#f7f7f7] px-3 py-2">
-            <p className="font-acumin text-2.5 text-[#707070]">
+            <p className="font-acumin lk-text-6xs text-[#707070]">
               Stripe決済残高
             </p>
-            <p className="font-acumin text-4 text-[#111111]">
+            <p className="font-acumin lk-text-lg text-[#111111]">
               {currency(stripeAccounting.summary.stripeBalance)}
             </p>
           </div>
           <div className="rounded-sm bg-[#f7f7f7] px-3 py-2">
-            <p className="font-acumin text-2.5 text-[#707070]">
+            <p className="font-acumin lk-text-6xs text-[#707070]">
               Stripe入金途上
             </p>
-            <p className="font-acumin text-4 text-[#111111]">
+            <p className="font-acumin lk-text-lg text-[#111111]">
               {currency(stripeAccounting.summary.inTransitBalance)}
             </p>
           </div>
         </div>
         {stripeAccounting.summary.unmatchedPayoutCount > 0 ? (
-          <p className="font-acumin text-2.75 text-[#b45309]">
+          <p className="font-acumin lk-text-4xs text-[#b45309]">
             照合できていないPayoutが
             {stripeAccounting.summary.unmatchedPayoutCount}件あります。
           </p>
         ) : null}
         <div className="overflow-x-auto">
-          <table className="w-full min-w-180 border-collapse font-acumin text-2.75">
+          <table className="w-full min-w-180 border-collapse font-acumin lk-text-4xs">
             <thead>
               <tr className="border-b border-[#e5e5e5] text-left text-[#707070]">
                 <th scope="col" className="px-2 py-1.5">
@@ -3189,7 +3189,7 @@ export default function CostProfitSection({
                             銀行着金を確認
                           </Button>
                           {blockReason ? (
-                            <span className="text-2.5 text-[#707070]">
+                            <span className="lk-text-6xs text-[#707070]">
                               {blockReason}
                             </span>
                           ) : null}
@@ -3227,7 +3227,7 @@ export default function CostProfitSection({
           onChange={(event) => setBankArrivalDate(event.target.value)}
         />
         {payoutConfirmError ? (
-          <p className="font-acumin text-2.75 text-[#b91c1c]">
+          <p className="font-acumin lk-text-4xs text-[#b91c1c]">
             {payoutConfirmError}
           </p>
         ) : null}
@@ -3285,7 +3285,7 @@ export default function CostProfitSection({
                       type="button"
                       aria-pressed={active}
                       onClick={() => setCashTrendMode(mode)}
-                      className={`h-6 rounded-sm px-3 font-acumin text-2.75 transition-colors ${
+                      className={`h-6 rounded-sm px-3 font-acumin lk-text-4xs transition-colors ${
                         active
                           ? "bg-black text-white"
                           : "bg-transparent text-[#474747] hover:text-black"
@@ -3298,7 +3298,7 @@ export default function CostProfitSection({
               </div>
             }
           >
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-acumin text-2.5 text-[#474747]">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-acumin lk-text-6xs text-[#474747]">
               <span className="inline-flex items-center gap-1.5">
                 <span
                   className="inline-block h-px w-5 bg-black"
@@ -3336,7 +3336,7 @@ export default function CostProfitSection({
                 />
               </div>
             </div>
-            <p className="mt-2 font-acumin text-2.5 leading-relaxed text-[#707070]">
+            <p className="mt-2 font-acumin lk-text-6xs leading-relaxed text-[#707070]">
               {trendTargets
                 ? "目標＝期首資金＋（財務前提の売上見込み − 当期費用）÷12×経過月。"
                 : "目標線は財務前提の売上見込みを入力すると表示されます。"}
@@ -3353,7 +3353,7 @@ export default function CostProfitSection({
               <span className={panelTitleClassName}>キャッシュブリッジ</span>
             }
             actions={
-              <span className="font-acumin text-2.75 text-[#707070] tabular-nums">
+              <span className="font-acumin lk-text-4xs text-[#707070] tabular-nums">
                 会計期間 {fiscalYear}/01/01〜{fiscalYear}/12/31
               </span>
             }
@@ -3393,7 +3393,7 @@ export default function CostProfitSection({
               </div>
             </div>
             <p
-              className={`mt-2 text-right font-acumin text-2.75 ${cashFlow.difference === 0 ? "text-[#16844b]" : "text-red-700"}`}
+              className={`mt-2 text-right font-acumin lk-text-4xs ${cashFlow.difference === 0 ? "text-[#16844b]" : "text-red-700"}`}
               role="status"
             >
               <i
@@ -3416,7 +3416,7 @@ export default function CostProfitSection({
               <span className={panelTitleClassName}>今後30日の資金予定</span>
             }
             actions={
-              <span className="font-acumin text-2.5 text-[#707070] tabular-nums">
+              <span className="font-acumin lk-text-6xs text-[#707070] tabular-nums">
                 {cashSchedule.from.replaceAll("-", "/")}〜
                 {cashSchedule.to.replaceAll("-", "/")}
               </span>
@@ -3444,7 +3444,7 @@ export default function CostProfitSection({
                   </span>
                 </div>
                 {group.rows.length === 0 ? (
-                  <p className="mt-2 font-acumin text-2.75 text-[#707070]">
+                  <p className="mt-2 font-acumin lk-text-4xs text-[#707070]">
                     予定なし
                   </p>
                 ) : (
@@ -3453,16 +3453,16 @@ export default function CostProfitSection({
                       key={row.id}
                       className="grid grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_auto] items-baseline gap-2 border-b border-[#ededed] py-1.5"
                     >
-                      <span className="font-acumin text-2.75 text-[#474747] tabular-nums">
+                      <span className="font-acumin lk-text-4xs text-[#474747] tabular-nums">
                         {row.date.replaceAll("-", "/")}
                       </span>
-                      <span className="truncate font-acumin text-2.75 text-black">
+                      <span className="truncate font-acumin lk-text-4xs text-black">
                         {row.partner || "—"}
                       </span>
-                      <span className="truncate font-acumin text-2.75 text-[#474747]">
+                      <span className="truncate font-acumin lk-text-4xs text-[#474747]">
                         {row.item}
                       </span>
-                      <span className="whitespace-nowrap font-acumin text-2.75 text-black tabular-nums">
+                      <span className="whitespace-nowrap font-acumin lk-text-4xs text-black tabular-nums">
                         {currency(row.amount)}
                       </span>
                     </div>
@@ -3470,7 +3470,7 @@ export default function CostProfitSection({
                 )}
               </div>
             ))}
-            <p className="mt-3 font-acumin text-2.5 leading-relaxed text-[#707070]">
+            <p className="mt-3 font-acumin lk-text-6xs leading-relaxed text-[#707070]">
               ※
               取引管理に登録済みで、日付が今後30日以内の取引を予定として集計しています。
             </p>
@@ -3711,7 +3711,7 @@ export default function CostProfitSection({
                 />
               </div>
               <p
-                className={`mt-2 text-center font-acumin text-2.75 ${cashFlow.difference === 0 ? "text-[#16844b]" : "text-red-700"}`}
+                className={`mt-2 text-center font-acumin lk-text-4xs ${cashFlow.difference === 0 ? "text-[#16844b]" : "text-red-700"}`}
                 role="status"
               >
                 <i
@@ -3726,7 +3726,7 @@ export default function CostProfitSection({
           </StatementTable>
         </div>
         <p
-          className={`mt-2 font-acumin text-2.5 ${cashFlow.difference === 0 ? "text-[#707070]" : "text-red-700"}`}
+          className={`mt-2 font-acumin lk-text-6xs ${cashFlow.difference === 0 ? "text-[#707070]" : "text-red-700"}`}
         >
           {cashFlow.difference === 0
             ? "C/F 検算：期首 + 営業CF + 投資CF + 財務CF = 期末（一致）"
@@ -3763,7 +3763,7 @@ export default function CostProfitSection({
                   type="button"
                   aria-pressed={active}
                   onClick={() => setProfitScopeMode(mode)}
-                  className={`h-6 rounded-sm px-3 font-acumin text-2.75 transition-colors ${
+                  className={`h-6 rounded-sm px-3 font-acumin lk-text-4xs transition-colors ${
                     active
                       ? "bg-black text-white"
                       : "bg-transparent text-[#474747] hover:text-black"
@@ -3776,7 +3776,7 @@ export default function CostProfitSection({
           </div>
         }
       >
-        <p className="font-acumin text-2.75 text-[#707070]">
+        <p className="font-acumin lk-text-4xs text-[#707070]">
           {isCumulativeScope
             ? cumulative.firstYear
               ? `${cumulative.firstYear}年〜${fiscalYear}年（${fiscalYear - cumulative.firstYear + 1}期）・${cumulative.entryCount}件の積み上げ`
@@ -3815,7 +3815,7 @@ export default function CostProfitSection({
                 aria-hidden="true"
               />
               <div>
-                <span className="block font-acumin text-2.75 text-[#474747]">
+                <span className="block font-acumin lk-text-4xs text-[#474747]">
                   {metric.label}
                 </span>
                 <span
@@ -3859,7 +3859,7 @@ export default function CostProfitSection({
         <summary className="cursor-pointer font-acumin text-sm font-medium tracking-widest text-black">
           財務前提を編集
         </summary>
-        <p className="mt-3 font-acumin text-2.75 leading-relaxed text-[#707070]">
+        <p className="mt-3 font-acumin lk-text-4xs leading-relaxed text-[#707070]">
           {previousClosingBalances
             ? "期首残高は前年の決算から繰り越し済みです。ここでの入力は使われません。売上見込みは資金推移の目標線にだけ使います。"
             : "開業初年度は帳簿に前年がないため、持ち込んだ残高をここで入力します。翌年以降は前年の決算から自動で繰り越します。売上見込みは資金推移の目標線に使います。"}
@@ -3874,7 +3874,7 @@ export default function CostProfitSection({
             ["openingCapital", "元入金"],
           ].map(([key, label]) => (
             <label key={key}>
-              <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+              <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
                 {label}
               </span>
               <input
@@ -3923,7 +3923,7 @@ export default function CostProfitSection({
         aria-label="資金の増減内訳"
         title={<span className={panelTitleClassName}>資金の増減内訳</span>}
         actions={
-          <span className="font-acumin text-2.75 text-[#707070]">直接法</span>
+          <span className="font-acumin lk-text-4xs text-[#707070]">直接法</span>
         }
       >
         {cashFlow.lines.length === 0 ? (
@@ -3941,7 +3941,7 @@ export default function CostProfitSection({
               if (lines.length === 0) return null;
               return (
                 <div key={category}>
-                  <p className="font-acumin text-2.75 text-[#474747]">
+                  <p className="font-acumin lk-text-4xs text-[#474747]">
                     {CASH_FLOW_CATEGORY_LABELS[category]}
                   </p>
                   {lines.map((line) => (
@@ -3960,7 +3960,7 @@ export default function CostProfitSection({
                     </div>
                   ))}
                   <div className="flex items-center justify-between py-1.5">
-                    <span className="font-acumin text-2.75 text-[#707070]">
+                    <span className="font-acumin lk-text-4xs text-[#707070]">
                       小計
                     </span>
                     <span className="font-acumin text-xs font-medium text-black tabular-nums">
@@ -4459,7 +4459,7 @@ export default function CostProfitSection({
           return (
             <div className="whitespace-nowrap">
               <span className="block">{entry.item}</span>
-              <span className="mt-0.5 flex flex-nowrap gap-1 text-2.5 text-[#707070]">
+              <span className="mt-0.5 flex flex-nowrap gap-1 lk-text-6xs text-[#707070]">
                 <span>Supabase注文</span>
                 {(entry.refundedAmount ?? 0) > 0 ? (
                   <span>返金 {currency(entry.refundedAmount ?? 0)}</span>
@@ -4537,7 +4537,7 @@ export default function CostProfitSection({
         }
         const changedAt = new Date(revision.changedAt);
         return (
-          <span className="block font-acumin text-2.75 leading-tight text-[#474747] tabular-nums">
+          <span className="block font-acumin lk-text-4xs leading-tight text-[#474747] tabular-nums">
             <span className="block">
               {changedAt.toLocaleDateString("ja-JP", {
                 year: "numeric",
@@ -4598,7 +4598,7 @@ export default function CostProfitSection({
             {badge}
             {open === 0 ? (
               <i
-                className="ri-checkbox-circle-fill text-2.75 text-[#16844b]"
+                className="ri-checkbox-circle-fill lk-text-4xs text-[#16844b]"
                 aria-hidden="true"
               />
             ) : null}
@@ -4727,7 +4727,7 @@ export default function CostProfitSection({
             className="px-3 py-2.5"
             aria-label="確認対象の取引"
           >
-            <p className="font-acumin text-2.75 text-[#707070] tabular-nums">
+            <p className="font-acumin lk-text-4xs text-[#707070] tabular-nums">
               {reviewEntry.date.replaceAll("-", "/")}
               {reviewEntry.entryType === "income" ? "収入" : "支出"}
               {reviewEntry.category}
@@ -4735,7 +4735,7 @@ export default function CostProfitSection({
             <p className="mt-1 font-acumin text-sm text-black">
               {reviewEntry.item}
             </p>
-            <p className="mt-0.5 font-acumin text-2.75 text-[#474747] tabular-nums">
+            <p className="mt-0.5 font-acumin lk-text-4xs text-[#474747] tabular-nums">
               {reviewEntry.partner || "取引先なし"}
               {currency(reviewEntry.amount)}
             </p>
@@ -4800,14 +4800,14 @@ export default function CostProfitSection({
                   </StatusBadge>
                 </div>
 
-                <p className="mt-2 font-acumin text-2.75 leading-relaxed text-[#474747]">
+                <p className="mt-2 font-acumin lk-text-4xs leading-relaxed text-[#474747]">
                   <span className="text-[#707070]">なぜ要確認か：</span>
                   {reason.why}
                 </p>
 
                 {/* 検知に使った実際の値。文言だけでは自分の取引と結びつかない。 */}
                 {reason.id === "unknownAccount" ? (
-                  <p className="mt-1.5 font-acumin text-2.75 text-[#474747]">
+                  <p className="mt-1.5 font-acumin lk-text-4xs text-[#474747]">
                     登録されていない科目名：
                     <span className="text-black">
                       「{reviewEntry.category}」
@@ -4815,14 +4815,14 @@ export default function CostProfitSection({
                   </p>
                 ) : null}
                 {reason.id === "unlinkedAsset" ? (
-                  <p className="mt-1.5 font-acumin text-2.75 text-[#474747] tabular-nums">
+                  <p className="mt-1.5 font-acumin lk-text-4xs text-[#474747] tabular-nums">
                     科目 {reviewEntry.category}／取得価額{" "}
                     {currency(reviewEntry.amount)}
                   </p>
                 ) : null}
                 {reason.id === "duplicate" ? (
                   <div className="mt-1.5">
-                    <p className="font-acumin text-2.75 text-[#474747]">
+                    <p className="font-acumin lk-text-4xs text-[#474747]">
                       同じ日付・取引先・金額の取引（{siblings.length}件）
                     </p>
                     <ul className="mt-1 space-y-1">
@@ -4831,7 +4831,7 @@ export default function CostProfitSection({
                           <Panel
                             radius="rounded"
                             size="3xs"
-                            className="border-[#e4e4e4] bg-white px-2 py-1.5 font-acumin text-2.5 text-[#474747] tabular-nums"
+                            className="border-[#e4e4e4] bg-white px-2 py-1.5 font-acumin lk-text-6xs text-[#474747] tabular-nums"
                           >
                             {/* JSX の行頭に置いた全角スペースは落ちるので1つの式で組む。 */}
                             {`${sibling.date.replaceAll("-", "/")}　${sibling.category}　${currency(sibling.amount)}`}
@@ -4845,10 +4845,10 @@ export default function CostProfitSection({
                   </div>
                 ) : null}
 
-                <p className="mt-3 font-acumin text-2.75 text-[#707070]">
+                <p className="mt-3 font-acumin lk-text-4xs text-[#707070]">
                   確認すること
                 </p>
-                <ol className="mt-1 list-decimal space-y-1 pl-4 font-acumin text-2.75 leading-relaxed text-[#474747]">
+                <ol className="mt-1 list-decimal space-y-1 pl-4 font-acumin lk-text-4xs leading-relaxed text-[#474747]">
                   {reason.checklist.map((step) => (
                     <li key={step}>{step}</li>
                   ))}
@@ -4856,7 +4856,7 @@ export default function CostProfitSection({
 
                 {ack ? (
                   <div className="mt-3 border-t border-[#e4e4e4] pt-2.5">
-                    <p className="font-acumin text-2.75 text-[#474747] tabular-nums">
+                    <p className="font-acumin lk-text-4xs text-[#474747] tabular-nums">
                       確認日時{" "}
                       {new Date(ack.reviewedAt).toLocaleString("ja-JP", {
                         year: "numeric",
@@ -4867,7 +4867,7 @@ export default function CostProfitSection({
                       })}
                     </p>
                     {ack.note ? (
-                      <p className="mt-1 font-acumin text-2.75 text-black">
+                      <p className="mt-1 font-acumin lk-text-4xs text-black">
                         {ack.note}
                       </p>
                     ) : null}
@@ -4888,7 +4888,7 @@ export default function CostProfitSection({
                   <div className="mt-3 border-t border-[#f0c78a] pt-2.5">
                     <label
                       htmlFor={`review-note-${reason.id}`}
-                      className="block font-acumin text-2.75 text-[#707070]"
+                      className="block font-acumin lk-text-4xs text-[#707070]"
                     >
                       確認メモ（任意）
                     </label>
@@ -4927,7 +4927,7 @@ export default function CostProfitSection({
             );
           })}
 
-          <p className="font-acumin text-2.5 leading-relaxed text-[#707070]">
+          <p className="font-acumin lk-text-6xs leading-relaxed text-[#707070]">
             ※
             確認済みにしても取引の内容は変わりません。内容を直す場合は一覧から訂正してください（訂正履歴に残ります）。
           </p>
@@ -4963,7 +4963,7 @@ export default function CostProfitSection({
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
         <div>
-          <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+          <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
             取引年月日（範囲）
           </span>
           <div className="flex items-center gap-1.5">
@@ -4976,7 +4976,7 @@ export default function CostProfitSection({
               }
               className={filterFieldClassName}
             />
-            <span className="font-acumin text-2.75 text-[#707070]">〜</span>
+            <span className="font-acumin lk-text-4xs text-[#707070]">〜</span>
             <input
               type="date"
               aria-label="取引年月日（終了）"
@@ -4988,7 +4988,7 @@ export default function CostProfitSection({
         </div>
 
         <div>
-          <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+          <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
             取引金額（範囲）
           </span>
           <div className="flex items-center gap-1.5">
@@ -5003,7 +5003,7 @@ export default function CostProfitSection({
               }
               className={filterFieldClassName}
             />
-            <span className="font-acumin text-2.75 text-[#707070]">〜</span>
+            <span className="font-acumin lk-text-4xs text-[#707070]">〜</span>
             <input
               type="number"
               min="0"
@@ -5019,7 +5019,7 @@ export default function CostProfitSection({
         </div>
 
         <div>
-          <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+          <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
             取引先
           </span>
           <SingleSelect
@@ -5042,7 +5042,7 @@ export default function CostProfitSection({
         </div>
 
         <div>
-          <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+          <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
             勘定科目
           </span>
           <SingleSelect
@@ -5065,7 +5065,7 @@ export default function CostProfitSection({
         </div>
 
         <div>
-          <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+          <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
             種別
           </span>
           <SingleSelect
@@ -5088,7 +5088,7 @@ export default function CostProfitSection({
         </div>
 
         <div>
-          <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+          <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
             キーワード（取引ID・概要・メモ・取引先）
           </span>
           <input
@@ -5101,14 +5101,14 @@ export default function CostProfitSection({
           />
         </div>
 
-        <p className="font-acumin text-2.5 leading-relaxed text-[#707070]">
+        <p className="font-acumin lk-text-6xs leading-relaxed text-[#707070]">
           ※
           電子帳簿保存法の検索要件（取引年月日・取引金額・取引先／日付と金額の範囲指定／2以上の条件の組み合わせ）に対応しています。
         </p>
       </div>
 
       <div className="flex items-center justify-between gap-2 border-t border-[#d4d4d4] px-5 py-4">
-        <span className="font-acumin text-2.75 text-[#707070]">
+        <span className="font-acumin lk-text-4xs text-[#707070]">
           {filterActive
             ? `${filterConditionCount}条件で絞り込み中`
             : "条件なし"}
@@ -5205,7 +5205,7 @@ export default function CostProfitSection({
           aria-label="固定資産の来歴"
         >
           <section className="border border-[#d4d4d4] p-3">
-            <h5 className="font-acumin text-2.75 tracking-widest text-[#474747]">
+            <h5 className="font-acumin lk-text-4xs tracking-widest text-[#474747]">
               購入取引
             </h5>
             {assetDetail.entry ? (
@@ -5244,7 +5244,7 @@ export default function CostProfitSection({
                       証憑を開く
                     </Button>
                   ) : (
-                    <span className="font-acumin text-2.75 text-[#b45309]">
+                    <span className="font-acumin lk-text-4xs text-[#b45309]">
                       証憑が添付されていません
                     </span>
                   )}
@@ -5262,13 +5262,13 @@ export default function CostProfitSection({
           {assetChainArrow}
 
           <section className="border border-[#d4d4d4] p-3">
-            <h5 className="font-acumin text-2.75 tracking-widest text-[#474747]">
+            <h5 className="font-acumin lk-text-4xs tracking-widest text-[#474747]">
               固定資産
             </h5>
             <p className="mt-1 font-acumin text-xs text-black">
               {fixedAssetCode(assetDetail.asset)}　{assetDetail.asset.name}
             </p>
-            <p className="mt-1 font-acumin text-2.75 text-[#474747]">
+            <p className="mt-1 font-acumin lk-text-4xs text-[#474747]">
               {DEPRECIATION_METHOD_LABELS[assetDetail.asset.method]}
               {assetDetail.asset.method === "straightLine"
                 ? `　耐用年数${assetDetail.asset.usefulLife}年`
@@ -5276,7 +5276,7 @@ export default function CostProfitSection({
               　事業専用割合{assetDetail.asset.businessUseRatio}%
             </p>
             {assetDetail.asset.serviceStartedOn ? (
-              <p className="mt-1 font-acumin text-2.75 text-[#474747] tabular-nums">
+              <p className="mt-1 font-acumin lk-text-4xs text-[#474747] tabular-nums">
                 使用開始日{" "}
                 {assetDetail.asset.serviceStartedOn.replaceAll("-", "/")}
               </p>
@@ -5286,7 +5286,7 @@ export default function CostProfitSection({
           {assetChainArrow}
 
           <section className="border border-[#d4d4d4] p-3">
-            <h5 className="font-acumin text-2.75 tracking-widest text-[#474747]">
+            <h5 className="font-acumin lk-text-4xs tracking-widest text-[#474747]">
               取得仕訳
             </h5>
             {assetDetail.acquisitionEntry ? (
@@ -5313,7 +5313,7 @@ export default function CostProfitSection({
           {assetChainArrow}
 
           <section className="border border-[#d4d4d4] p-3">
-            <h5 className="font-acumin text-2.75 tracking-widest text-[#474747]">
+            <h5 className="font-acumin lk-text-4xs tracking-widest text-[#474747]">
               減価償却仕訳（{fiscalYear}年度）
             </h5>
             {assetDetail.depreciationEntry ? (
@@ -5336,7 +5336,7 @@ export default function CostProfitSection({
               </p>
             )}
             {assetDetail.row ? (
-              <p className="mt-2 font-acumin text-2.75 text-[#474747] tabular-nums">
+              <p className="mt-2 font-acumin lk-text-4xs text-[#474747] tabular-nums">
                 期末簿価 {currency(assetDetail.row.closingBookValue)}　累計{" "}
                 {currency(assetDetail.row.accumulated)}
               </p>
@@ -5472,7 +5472,7 @@ export default function CostProfitSection({
                   >
                     <button
                       type="button"
-                      className="truncate font-acumin text-2.75 text-black underline underline-offset-4"
+                      className="truncate font-acumin lk-text-4xs text-black underline underline-offset-4"
                       aria-label={`${receipt.fileName}を開く`}
                       onClick={() => void handleOpenReceipt(receipt)}
                     >
@@ -5487,7 +5487,7 @@ export default function CostProfitSection({
                       disabled={isSaving}
                     >
                       <i
-                        className="ri-close-line text-3.25"
+                        className="ri-close-line lk-text-xs"
                         aria-hidden="true"
                       />
                     </button>
@@ -5514,7 +5514,7 @@ export default function CostProfitSection({
               <div className="mt-3 border-t border-[#ededed] pt-3">
                 {entry.evidenceUnavailable && !receiptUnavailableFormOpen ? (
                   <div className="space-y-2">
-                    <p className="font-acumin text-2.75 font-medium text-[#474747]">
+                    <p className="font-acumin lk-text-4xs font-medium text-[#474747]">
                       理由記録済み：
                       {EVIDENCE_UNAVAILABLE_REASON_OPTIONS.find(
                         (option) =>
@@ -5522,7 +5522,7 @@ export default function CostProfitSection({
                       )?.label ?? entry.evidenceUnavailable.reason}
                     </p>
                     {entry.evidenceUnavailable.note ? (
-                      <p className="font-acumin text-2.75 text-[#707070]">
+                      <p className="font-acumin lk-text-4xs text-[#707070]">
                         {entry.evidenceUnavailable.note}
                       </p>
                     ) : null}
@@ -5575,7 +5575,7 @@ export default function CostProfitSection({
                         setReceiptUnavailableNote(event.target.value)
                       }
                     />
-                    <p className="font-acumin text-2.5 leading-relaxed text-[#707070]">
+                    <p className="font-acumin lk-text-6xs leading-relaxed text-[#707070]">
                       この記録は証憑の代わりにはなりません。取得できる資料や取引内容が分かる記録は、可能な範囲で別途保存してください。
                     </p>
                     <div className="flex gap-2">
@@ -5660,7 +5660,7 @@ export default function CostProfitSection({
               : `${entryTypeLabel}を訂正（#${editingEntryId}）`}
           </h4>
           {editingEntryId !== null ? (
-            <p className="mt-1 font-acumin text-2.5 leading-relaxed text-[#707070]">
+            <p className="mt-1 font-acumin lk-text-6xs leading-relaxed text-[#707070]">
               訂正内容は変更前後が履歴に記録されます（削除・再登録はしません）。
             </p>
           ) : null}
@@ -5680,7 +5680,7 @@ export default function CostProfitSection({
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
         <div className="block">
-          <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+          <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
             種別 <span className="text-red-700">*</span>
           </span>
           <div
@@ -5707,7 +5707,7 @@ export default function CostProfitSection({
           </div>
         </div>
         <div className="block">
-          <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+          <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
             事業形態 <span className="text-red-700">*</span>
           </span>
           <SingleSelect
@@ -5726,12 +5726,12 @@ export default function CostProfitSection({
               void handleBusinessTypeChange(value as BusinessType)
             }
           />
-          <p className="mt-1 font-acumin text-2.75 text-[#707070]">
+          <p className="mt-1 font-acumin lk-text-4xs text-[#707070]">
             選んだ事業形態で使える勘定科目だけを表示します。
           </p>
         </div>
         <div className="block">
-          <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+          <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
             テンプレート
           </span>
           <SingleSelect
@@ -5830,7 +5830,7 @@ export default function CostProfitSection({
           ) : null}
         </div>
         <label className="block">
-          <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+          <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
             日付 <span className="text-red-700">*</span>
           </span>
           <TextField
@@ -5846,7 +5846,7 @@ export default function CostProfitSection({
           />
         </label>
         <div className="block">
-          <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+          <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
             {summaryFieldLabel} <span className="text-red-700">*</span>
           </span>
           <SingleSelect
@@ -5924,7 +5924,7 @@ export default function CostProfitSection({
           ) : null}
         </div>
         <div className="block">
-          <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+          <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
             勘定科目 <span className="text-red-700">*</span>
           </span>
           <SingleSelect
@@ -5947,7 +5947,7 @@ export default function CostProfitSection({
         </div>
 
         <div className="block">
-          <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+          <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
             取引先
           </span>
           <SingleSelect
@@ -6011,7 +6011,7 @@ export default function CostProfitSection({
           ) : null}
         </div>
         <label className="block">
-          <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+          <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
             金額 <span className="text-red-700">*</span>
           </span>
           <TextField
@@ -6028,7 +6028,7 @@ export default function CostProfitSection({
           />
         </label>
         <div className="block">
-          <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+          <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
             {paymentFieldLabel}
           </span>
           <SingleSelect
@@ -6049,7 +6049,7 @@ export default function CostProfitSection({
           />
         </div>
         <div className="block">
-          <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+          <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
             シーズンタグ（任意）
           </span>
           <SingleSelect
@@ -6072,12 +6072,12 @@ export default function CostProfitSection({
               setForm((current) => ({ ...current, seasonTag: value }))
             }
           />
-          <span className="mt-1 block font-acumin text-2.5 text-[#707070]">
+          <span className="mt-1 block font-acumin lk-text-6xs text-[#707070]">
             コレクション別の採算分析にのみ使用。会計期間は日付で決まる。
           </span>
         </div>
         <label className="block">
-          <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+          <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
             メモ
           </span>
           <TextAreaField
@@ -6094,7 +6094,7 @@ export default function CostProfitSection({
 
         {/* 証憑。新規登録では取引IDが未確定なので、保存時にまとめて送る。 */}
         <div className="block">
-          <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+          <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
             証憑（電子取引データ）
           </span>
           {editingEntryId === null ? (
@@ -6118,7 +6118,7 @@ export default function CostProfitSection({
                       key={`${file.name}-${index}`}
                       className="flex items-center justify-between gap-2"
                     >
-                      <span className="truncate font-acumin text-2.75 text-black">
+                      <span className="truncate font-acumin lk-text-4xs text-black">
                         <i
                           className="ri-attachment-2 mr-1"
                           aria-hidden="true"
@@ -6139,7 +6139,7 @@ export default function CostProfitSection({
                         }
                       >
                         <i
-                          className="ri-close-line text-3.25"
+                          className="ri-close-line lk-text-xs"
                           aria-hidden="true"
                         />
                       </Button>
@@ -6147,7 +6147,7 @@ export default function CostProfitSection({
                   ))}
                 </ul>
               ) : (
-                <p className="mt-1 font-acumin text-2.5 text-[#707070]">
+                <p className="mt-1 font-acumin lk-text-6xs text-[#707070]">
                   保存と同時に添付します。
                 </p>
               )}
@@ -6180,7 +6180,7 @@ export default function CostProfitSection({
                           setPendingUnavailableNote(event.target.value)
                         }
                       />
-                      <p className="font-acumin text-2.5 leading-relaxed text-[#707070]">
+                      <p className="font-acumin lk-text-6xs leading-relaxed text-[#707070]">
                         この記録は証憑の代わりにはなりません。取得できる資料や取引内容が分かる記録は、可能な範囲で別途保存してください。
                       </p>
                       <Button
@@ -6439,7 +6439,7 @@ export default function CostProfitSection({
               className="shrink-0"
               centerLabel={
                 <>
-                  <span className="font-acumin text-2.5 text-[#707070]">
+                  <span className="font-acumin lk-text-6xs text-[#707070]">
                     合計
                   </span>
                   <span className="font-acumin text-xs text-black tabular-nums">
@@ -6493,7 +6493,7 @@ export default function CostProfitSection({
               className="shrink-0"
               centerLabel={
                 <>
-                  <span className="font-acumin text-2.5 text-[#707070]">
+                  <span className="font-acumin lk-text-6xs text-[#707070]">
                     合計
                   </span>
                   <span className="font-acumin text-xs text-black tabular-nums">
@@ -6550,7 +6550,7 @@ export default function CostProfitSection({
           aria-label="今月の収支"
           title={<span className={panelTitleClassName}>今月の収支</span>}
           actions={
-            <span className="font-acumin text-2.75 text-[#707070] tabular-nums">
+            <span className="font-acumin lk-text-4xs text-[#707070] tabular-nums">
               {fiscalYear}/{String(monthlyBalance.month).padStart(2, "0")}
             </span>
           }
@@ -6660,7 +6660,7 @@ export default function CostProfitSection({
                 </Button>
               </div>
               <div className="flex items-center gap-3">
-                <span className="font-acumin text-2.75 text-[#707070] tabular-nums">
+                <span className="font-acumin lk-text-4xs text-[#707070] tabular-nums">
                   {entryRangeStart}-{entryRangeEnd} / {tabbedEntryRows.length}件
                 </span>
                 <PageControl
@@ -6728,7 +6728,7 @@ export default function CostProfitSection({
               ) : undefined
             }
           >
-            <p className="font-acumin text-2.5 leading-relaxed text-[#707070]">
+            <p className="font-acumin lk-text-6xs leading-relaxed text-[#707070]">
               電子帳簿保存法の真実性の要件により、取引の削除は論理削除として記録し、訂正の前後を保持します。
             </p>
             {!isRevisionHistoryOpen ? null : revisions.length === 0 ? (
@@ -6846,7 +6846,7 @@ export default function CostProfitSection({
                             </span>
                           </span>
                           {head ? (
-                            <span className="mt-1 flex items-baseline gap-2 font-acumin text-2.75 text-[#474747]">
+                            <span className="mt-1 flex items-baseline gap-2 font-acumin lk-text-4xs text-[#474747]">
                               <span className="tabular-nums">
                                 {head.date.replaceAll("-", "/")}
                               </span>
@@ -6906,7 +6906,7 @@ export default function CostProfitSection({
                       {item.label}
                     </span>
                   </span>
-                  <span className="font-acumin text-2.75 text-[#707070]">
+                  <span className="font-acumin lk-text-4xs text-[#707070]">
                     {item.note}
                   </span>
                 </li>
@@ -7936,7 +7936,7 @@ export default function CostProfitSection({
 
   const ledgerDetailRow = (label: string, value: ReactNode) => (
     <div className="flex items-baseline justify-between gap-3 py-1">
-      <span className="shrink-0 font-acumin text-2.75 text-[#707070]">
+      <span className="shrink-0 font-acumin lk-text-4xs text-[#707070]">
         {label}
       </span>
       <span className="min-w-0 text-right font-acumin text-xs text-black">
@@ -8023,10 +8023,10 @@ export default function CostProfitSection({
                                   className={`shrink-0 text-[#909090] ${sectionOpen ? "ri-arrow-down-s-line" : "ri-arrow-right-s-line"}`}
                                   aria-hidden="true"
                                 />
-                                <span className="min-w-0 flex-1 truncate font-acumin text-2.75 text-[#474747]">
+                                <span className="min-w-0 flex-1 truncate font-acumin lk-text-4xs text-[#474747]">
                                   {section.section}
                                 </span>
-                                <span className="shrink-0 font-acumin text-2.75 text-[#474747] tabular-nums">
+                                <span className="shrink-0 font-acumin lk-text-4xs text-[#474747] tabular-nums">
                                   {currency(section.total)}
                                 </span>
                               </button>
@@ -8052,13 +8052,13 @@ export default function CostProfitSection({
                                           selectAccount(row.account.code)
                                         }
                                       >
-                                        <span className="shrink-0 font-acumin text-2.5 text-[#909090] tabular-nums">
+                                        <span className="shrink-0 font-acumin lk-text-6xs text-[#909090] tabular-nums">
                                           {row.account.code}
                                         </span>
-                                        <span className="min-w-0 flex-1 truncate font-acumin text-2.75 text-black">
+                                        <span className="min-w-0 flex-1 truncate font-acumin lk-text-4xs text-black">
                                           {row.account.name}
                                         </span>
-                                        <span className="shrink-0 font-acumin text-2.75 text-black tabular-nums">
+                                        <span className="shrink-0 font-acumin lk-text-4xs text-black tabular-nums">
                                           {currency(row.closingBalance)}
                                         </span>
                                       </button>
@@ -8125,7 +8125,7 @@ export default function CostProfitSection({
                     ))}
                   </tbody>
                 </table>
-                <p className="mt-2 font-acumin text-2.5 text-[#707070]">
+                <p className="mt-2 font-acumin lk-text-6xs text-[#707070]">
                   取引管理に入力した全収入・全支出による管理指標です。現金預金・利益・純資産・科目別元帳の残高ではありません。
                 </p>
               </div>
@@ -8151,7 +8151,7 @@ export default function CostProfitSection({
                   },
                 ].map(({ label, value }) => (
                   <div key={label}>
-                    <dt className="font-acumin text-2.75 text-[#707070]">
+                    <dt className="font-acumin lk-text-4xs text-[#707070]">
                       {label}
                     </dt>
                     <dd className="mt-1 font-acumin text-base font-medium text-black tabular-nums">
@@ -8234,7 +8234,7 @@ export default function CostProfitSection({
               </Button>
             </div>
 
-            <p className="mt-3 font-acumin text-2.5 text-[#707070]">
+            <p className="mt-3 font-acumin lk-text-6xs text-[#707070]">
               （単位：円）
             </p>
             <div className="mt-1">
@@ -8351,7 +8351,7 @@ export default function CostProfitSection({
 
             <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <span className="font-acumin text-2.75 text-[#707070]">
+                <span className="font-acumin lk-text-4xs text-[#707070]">
                   表示件数
                 </span>
                 <SingleSelect
@@ -8380,7 +8380,7 @@ export default function CostProfitSection({
                 nextAriaLabel="次のページ"
                 onPageChange={setLedgerRowPage}
               />
-              <span className="font-acumin text-2.75 text-[#707070] tabular-nums">
+              <span className="font-acumin lk-text-4xs text-[#707070] tabular-nums">
                 {ledgerRangeStart}-{ledgerRangeEnd} /{" "}
                 {filteredLedgerRows.length}件
               </span>
@@ -8429,7 +8429,7 @@ export default function CostProfitSection({
                 {ledgerDetailRow("摘要", selectedLedgerRow.description)}
               </div>
 
-              <p className="font-acumin text-2.75 leading-relaxed text-[#707070]">
+              <p className="font-acumin lk-text-4xs leading-relaxed text-[#707070]">
                 一覧は選択中の勘定科目の元帳行、以下は伝票全体の仕訳です。
               </p>
 
@@ -8440,11 +8440,11 @@ export default function CostProfitSection({
                   );
                   return (
                     <div key={side} className="min-w-0">
-                      <p className="font-acumin text-2.75 font-medium text-black">
+                      <p className="font-acumin lk-text-4xs font-medium text-black">
                         {side === "debit" ? "借方" : "貸方"}
                       </p>
                       {lines.length === 0 ? (
-                        <p className="mt-1 font-acumin text-2.75 text-[#909090]">
+                        <p className="mt-1 font-acumin lk-text-4xs text-[#909090]">
                           —
                         </p>
                       ) : (
@@ -8453,13 +8453,13 @@ export default function CostProfitSection({
                             key={`${side}-${line.account.code}`}
                             className="mt-1"
                           >
-                            <p className="font-acumin text-2.75 text-[#707070]">
+                            <p className="font-acumin lk-text-4xs text-[#707070]">
                               科目
                               <span className="ml-2 text-black">
                                 {line.account.name}
                               </span>
                             </p>
-                            <p className="font-acumin text-2.75 text-[#707070]">
+                            <p className="font-acumin lk-text-4xs text-[#707070]">
                               金額
                               <span className="ml-2 text-black tabular-nums">
                                 {currency(
@@ -8476,21 +8476,21 @@ export default function CostProfitSection({
               </div>
 
               <div className="border-t border-[#ededed] pt-3">
-                <p className="font-acumin text-2.75 font-medium text-black">
+                <p className="font-acumin lk-text-4xs font-medium text-black">
                   関連仕訳
                 </p>
                 {relatedJournalEntries.length === 0 ? (
-                  <p className="mt-1 font-acumin text-2.75 text-[#909090]">
+                  <p className="mt-1 font-acumin lk-text-4xs text-[#909090]">
                     同日・同取引先の別仕訳はありません。
                   </p>
                 ) : (
                   <ul className="mt-1 space-y-1">
                     {relatedJournalEntries.map((entry) => (
                       <li key={entry.number}>
-                        <span className="font-acumin text-2.75 text-black underline">
+                        <span className="font-acumin lk-text-4xs text-black underline">
                           {entry.number}
                         </span>
-                        <span className="ml-1 whitespace-nowrap font-acumin text-2.75 text-[#707070]">
+                        <span className="ml-1 whitespace-nowrap font-acumin lk-text-4xs text-[#707070]">
                           （{entry.description}）
                         </span>
                       </li>
@@ -8500,11 +8500,11 @@ export default function CostProfitSection({
               </div>
 
               <div className="border-t border-[#ededed] pt-3">
-                <p className="font-acumin text-2.75 font-medium text-black">
+                <p className="font-acumin lk-text-4xs font-medium text-black">
                   更新履歴
                 </p>
                 {selectedLedgerRevisions.length === 0 ? (
-                  <p className="mt-1 font-acumin text-2.75 text-[#909090]">
+                  <p className="mt-1 font-acumin lk-text-4xs text-[#909090]">
                     訂正・削除の履歴はありません。
                   </p>
                 ) : (
@@ -8514,10 +8514,10 @@ export default function CostProfitSection({
                         key={revision.id}
                         className="flex items-baseline justify-between gap-2"
                       >
-                        <span className="font-acumin text-2.75 text-[#474747] tabular-nums">
+                        <span className="font-acumin lk-text-4xs text-[#474747] tabular-nums">
                           {new Date(revision.changedAt).toLocaleString("ja-JP")}
                         </span>
-                        <span className="font-acumin text-2.75 text-black">
+                        <span className="font-acumin lk-text-4xs text-black">
                           {REVISION_OPERATION_LABELS[revision.operation]}
                         </span>
                       </li>
@@ -8571,7 +8571,7 @@ export default function CostProfitSection({
           </span>
         }
         actions={
-          <span className="font-acumin text-2.75 text-[#707070] tabular-nums">
+          <span className="font-acumin lk-text-4xs text-[#707070] tabular-nums">
             {syncedAt
               ? `最終更新：${new Date(syncedAt).toLocaleString("ja-JP")}（自動照合）`
               : "（自動照合）"}
@@ -8580,7 +8580,7 @@ export default function CostProfitSection({
       >
         <div className="flex flex-wrap items-center gap-x-8 gap-y-4">
           <div>
-            <p className="font-acumin text-2.75 text-[#707070]">
+            <p className="font-acumin lk-text-4xs text-[#707070]">
               元帳残高（最終残高）
             </p>
             <p className="flex items-center gap-2 font-acumin text-xl font-medium text-[#16844b] tabular-nums">
@@ -8590,7 +8590,7 @@ export default function CostProfitSection({
           </div>
           <FlowOperator symbol="=" />
           <div>
-            <p className="font-acumin text-2.75 text-[#707070]">
+            <p className="font-acumin lk-text-4xs text-[#707070]">
               試算表残高
               {selectedLedger ? `（${selectedLedger.account.name}）` : ""}
             </p>
@@ -8600,7 +8600,7 @@ export default function CostProfitSection({
             </p>
           </div>
           <div className="border-l border-[#ededed] pl-8">
-            <p className="font-acumin text-2.75 text-[#707070]">差額</p>
+            <p className="font-acumin lk-text-4xs text-[#707070]">差額</p>
             <p
               className={`font-acumin text-xl font-medium tabular-nums ${
                 ledgerReconcileDifference === 0 ? "text-black" : "text-red-700"
@@ -9001,7 +9001,7 @@ export default function CostProfitSection({
                       onClick={() => setAssetDetailId(row.asset.id)}
                     >
                       <span className="block text-black">{row.asset.name}</span>
-                      <span className="block text-2.5 text-[#707070] tabular-nums">
+                      <span className="block lk-text-6xs text-[#707070] tabular-nums">
                         {fixedAssetCode(row.asset)}
                       </span>
                     </button>
@@ -9066,7 +9066,7 @@ export default function CostProfitSection({
             />
           </div>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-            <span className="font-acumin text-2.75 text-[#707070] tabular-nums">
+            <span className="font-acumin lk-text-4xs text-[#707070] tabular-nums">
               全{filteredDepreciationRows.length}件中 {assetRangeStart}-
               {assetRangeEnd}件を表示
             </span>
@@ -9188,7 +9188,7 @@ export default function CostProfitSection({
 
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-acumin text-2.75 text-[#474747]">
+              <span className="font-acumin lk-text-4xs text-[#474747]">
                 償却方法フィルター
               </span>
               {assetMethodOptions.map((option) => (
@@ -9265,13 +9265,13 @@ export default function CostProfitSection({
                 return (
                   <li key={number} className="flex min-w-0 items-center gap-1">
                     <span
-                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border font-acumin text-2.75 ${isActive ? "border-black bg-black text-white" : "border-[#d4d4d4] bg-white text-[#707070]"}`}
+                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border font-acumin lk-text-4xs ${isActive ? "border-black bg-black text-white" : "border-[#d4d4d4] bg-white text-[#707070]"}`}
                       aria-hidden="true"
                     >
                       {number}
                     </span>
                     <span
-                      className={`truncate font-acumin text-2.5 ${isActive ? "text-black" : "text-[#707070]"}`}
+                      className={`truncate font-acumin lk-text-6xs ${isActive ? "text-black" : "text-[#707070]"}`}
                     >
                       {label}
                     </span>
@@ -9286,14 +9286,14 @@ export default function CostProfitSection({
                 className="flex items-center gap-2 font-acumin text-xs font-medium text-black"
               >
                 <span
-                  className="flex h-5 w-5 items-center justify-center rounded-full bg-black text-2.5 text-white"
+                  className="flex h-5 w-5 items-center justify-center rounded-full bg-black lk-text-6xs text-white"
                   aria-hidden="true"
                 >
                   1
                 </span>
                 固定資産の候補
               </h5>
-              <p className="mt-1 font-acumin text-2.75 text-[#707070]">
+              <p className="mt-1 font-acumin lk-text-4xs text-[#707070]">
                 取引管理の登録内容から候補を表示しています。登録する取引を選ぶか、対象外の理由を記録してください。
               </p>
               {pendingAssetEntryRows.length === 0 ? (
@@ -9348,11 +9348,11 @@ export default function CostProfitSection({
                                   : "科目要確認"}
                               </StatusBadge>
                             </span>
-                            <span className="mt-1 block font-acumin text-2.5 text-[#474747] tabular-nums">
+                            <span className="mt-1 block font-acumin lk-text-6xs text-[#474747] tabular-nums">
                               {entry.date.replaceAll("-", "/")}　
                               {entry.category}　{currency(entry.amount)}
                             </span>
-                            <span className="mt-0.5 block truncate font-acumin text-2.5 text-[#707070]">
+                            <span className="mt-0.5 block truncate font-acumin lk-text-6xs text-[#707070]">
                               {entry.partner || "取引先なし"}
                             </span>
                           </span>
@@ -9373,7 +9373,7 @@ export default function CostProfitSection({
                 className="flex items-center gap-2 font-acumin text-xs font-medium text-black"
               >
                 <span
-                  className="flex h-5 w-5 items-center justify-center rounded-full bg-black text-2.5 text-white"
+                  className="flex h-5 w-5 items-center justify-center rounded-full bg-black lk-text-6xs text-white"
                   aria-hidden="true"
                 >
                   2
@@ -9415,7 +9415,7 @@ export default function CostProfitSection({
                 </Button>
               </div>
               {selectedAssetCandidate === null ? (
-                <p className="mt-1 font-acumin text-2.5 text-[#707070]">
+                <p className="mt-1 font-acumin lk-text-6xs text-[#707070]">
                   先に候補を1件選択してください。
                 </p>
               ) : null}
@@ -9431,7 +9431,7 @@ export default function CostProfitSection({
                   className="flex items-center gap-2 font-acumin text-xs font-medium text-black"
                 >
                   <span
-                    className="flex h-5 w-5 items-center justify-center rounded-full bg-black text-2.5 text-white"
+                    className="flex h-5 w-5 items-center justify-center rounded-full bg-black lk-text-6xs text-white"
                     aria-hidden="true"
                   >
                     3
@@ -9439,7 +9439,7 @@ export default function CostProfitSection({
                   対象外の理由
                 </h5>
                 <label className="mt-2 block">
-                  <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+                  <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
                     理由 <span className="text-red-700">*</span>
                   </span>
                   <textarea
@@ -9454,7 +9454,7 @@ export default function CostProfitSection({
                     className={inputClassName}
                     placeholder="例：修繕費として処理する取引のため"
                   />
-                  <span className="mt-1 block text-right font-acumin text-2.5 text-[#707070] tabular-nums">
+                  <span className="mt-1 block text-right font-acumin lk-text-6xs text-[#707070] tabular-nums">
                     {assetExclusionReason.length}/500
                   </span>
                 </label>
@@ -9492,11 +9492,11 @@ export default function CostProfitSection({
                       <p className="font-acumin text-xs text-black">
                         {entry.item}　{currency(entry.amount)}
                       </p>
-                      <p className="mt-1 font-acumin text-2.75 text-[#474747]">
+                      <p className="mt-1 font-acumin lk-text-4xs text-[#474747]">
                         理由：{entry.fixedAssetExemptReason}
                       </p>
                       {entry.fixedAssetReviewedAt ? (
-                        <p className="mt-1 font-acumin text-2.75 text-[#707070] tabular-nums">
+                        <p className="mt-1 font-acumin lk-text-4xs text-[#707070] tabular-nums">
                           判定日時：
                           {new Date(entry.fixedAssetReviewedAt).toLocaleString(
                             "ja-JP",
@@ -9520,20 +9520,20 @@ export default function CostProfitSection({
                     className="mb-2 flex items-center gap-2 font-acumin text-xs font-medium text-black"
                   >
                     <span
-                      className="flex h-5 w-5 items-center justify-center rounded-full bg-black text-2.5 text-white"
+                      className="flex h-5 w-5 items-center justify-center rounded-full bg-black lk-text-6xs text-white"
                       aria-hidden="true"
                     >
                       3
                     </span>
                     不足情報を入力
                   </h5>
-                  <p className="mb-2 font-acumin text-2.5 text-[#707070]">
+                  <p className="mb-2 font-acumin lk-text-6xs text-[#707070]">
                     取引管理で入力済みの項目は読み取り専用です。
                   </p>
                   {classifyAssetCandidate(selectedAssetCandidate) ===
                   "suspect" ? (
                     <div className="mb-2 border border-[#d99a2b] bg-[#fffaf0] p-2.5">
-                      <p className="font-acumin text-2.75 text-[#6f4b00]">
+                      <p className="font-acumin lk-text-4xs text-[#6f4b00]">
                         勘定科目が固定資産科目ではありません。先に取引管理で科目を訂正してください。
                       </p>
                       <Button
@@ -9550,7 +9550,7 @@ export default function CostProfitSection({
                     </div>
                   ) : null}
                   <div className="block">
-                    <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+                    <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
                       資産名 <span className="text-red-700">*</span>
                     </span>
                     <p className="border border-[#d4d4d4] bg-[#fafafa] p-2 font-acumin text-xs text-black">
@@ -9559,7 +9559,7 @@ export default function CostProfitSection({
                   </div>
 
                   <div className="block">
-                    <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+                    <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
                       勘定科目 <span className="text-red-700">*</span>
                     </span>
                     <p className="border border-[#d4d4d4] bg-[#fafafa] p-2 font-acumin text-xs text-black">
@@ -9571,7 +9571,7 @@ export default function CostProfitSection({
                     // 連携中は取引が単一の情報源。ここで直せると食い違いが生まれるので読ませるだけにする。
                     <div className="border border-[#d4d4d4] bg-[#fafafa] p-2.5">
                       <div className="flex items-baseline justify-between gap-2">
-                        <span className="font-acumin text-2.75 text-[#474747]">
+                        <span className="font-acumin lk-text-4xs text-[#474747]">
                           取得金額
                         </span>
                         <span
@@ -9582,14 +9582,14 @@ export default function CostProfitSection({
                         </span>
                       </div>
                       <div className="mt-1.5 flex items-baseline justify-between gap-2">
-                        <span className="font-acumin text-2.75 text-[#474747]">
+                        <span className="font-acumin lk-text-4xs text-[#474747]">
                           取得日
                         </span>
                         <span className="font-acumin text-xs text-black tabular-nums">
                           {assetForm.acquiredOn.replaceAll("-", "/")}
                         </span>
                       </div>
-                      <p className="mt-2 font-acumin text-2.75 text-[#707070]">
+                      <p className="mt-2 font-acumin lk-text-4xs text-[#707070]">
                         取得金額・取得日は取引管理で訂正できます。
                       </p>
                     </div>
@@ -9597,7 +9597,7 @@ export default function CostProfitSection({
 
                   <div className="space-y-2.5">
                     <label className="block">
-                      <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+                      <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
                         使用開始日（任意・未入力なら取得日）
                       </span>
                       <input
@@ -9614,7 +9614,7 @@ export default function CostProfitSection({
                       />
                     </label>
                     <label className="block">
-                      <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+                      <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
                         除却日（任意）
                       </span>
                       <input
@@ -9632,7 +9632,7 @@ export default function CostProfitSection({
                   </div>
 
                   <div className="block">
-                    <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+                    <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
                       償却方法
                     </span>
                     <SingleSelect
@@ -9662,7 +9662,7 @@ export default function CostProfitSection({
                   <div className="grid grid-cols-2 gap-2">
                     {assetForm.method === "straightLine" ? (
                       <label className="block">
-                        <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+                        <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
                           耐用年数（率{" "}
                           {straightLineRate(
                             Number(assetForm.usefulLife) || 1,
@@ -9685,7 +9685,7 @@ export default function CostProfitSection({
                       </label>
                     ) : null}
                     <label className="block">
-                      <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+                      <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
                         事業専用割合（%）
                       </span>
                       <input
@@ -9714,7 +9714,7 @@ export default function CostProfitSection({
                     className="mb-2 flex items-center gap-2 font-acumin text-xs font-medium text-black"
                   >
                     <span
-                      className="flex h-5 w-5 items-center justify-center rounded-full bg-black text-2.5 text-white"
+                      className="flex h-5 w-5 items-center justify-center rounded-full bg-black lk-text-6xs text-white"
                       aria-hidden="true"
                     >
                       4
@@ -9723,7 +9723,7 @@ export default function CostProfitSection({
                   </h5>
                   <div className="grid grid-cols-3 gap-2 border border-[#d4d4d4] p-2.5">
                     <div className="flex items-baseline justify-between gap-2">
-                      <span className="font-acumin text-2.5 text-[#474747]">
+                      <span className="font-acumin lk-text-6xs text-[#474747]">
                         年間償却額
                       </span>
                       <span className="font-acumin text-xs text-black tabular-nums">
@@ -9731,7 +9731,7 @@ export default function CostProfitSection({
                       </span>
                     </div>
                     <div className="flex items-baseline justify-between gap-2 border-l border-[#d4d4d4] pl-2">
-                      <span className="font-acumin text-2.5 text-[#474747]">
+                      <span className="font-acumin lk-text-6xs text-[#474747]">
                         当期影響額
                       </span>
                       <span className="font-acumin text-xs text-black tabular-nums">
@@ -9739,7 +9739,7 @@ export default function CostProfitSection({
                       </span>
                     </div>
                     <div className="flex items-baseline justify-between gap-2 border-l border-[#d4d4d4] pl-2">
-                      <span className="font-acumin text-2.5 text-[#474747]">
+                      <span className="font-acumin lk-text-6xs text-[#474747]">
                         期末残高
                       </span>
                       <span className="font-acumin text-xs text-black tabular-nums">
@@ -9816,7 +9816,7 @@ export default function CostProfitSection({
                   ].map((heading) => (
                     <th
                       key={heading}
-                      className="px-2 py-2 text-left font-acumin text-2.75 font-normal text-[#474747]"
+                      className="px-2 py-2 text-left font-acumin lk-text-4xs font-normal text-[#474747]"
                     >
                       {heading}
                     </th>
@@ -9824,7 +9824,7 @@ export default function CostProfitSection({
                   {depreciationYears.map(({ year, isForecast }) => (
                     <th
                       key={year}
-                      className={`px-2 py-2 text-right font-acumin text-2.75 font-normal ${
+                      className={`px-2 py-2 text-right font-acumin lk-text-4xs font-normal ${
                         isForecast
                           ? "bg-[#f4f8fe] text-[#2f6fdb]"
                           : "text-[#474747]"
@@ -9834,7 +9834,7 @@ export default function CostProfitSection({
                       <br />（{isForecast ? "予測" : "実績"}）
                     </th>
                   ))}
-                  <th className="px-2 py-2 text-left font-acumin text-2.75 font-normal text-[#474747]">
+                  <th className="px-2 py-2 text-left font-acumin lk-text-4xs font-normal text-[#474747]">
                     償却完了予定
                   </th>
                 </tr>
@@ -9848,7 +9848,7 @@ export default function CostProfitSection({
                     <td className="px-2 py-2.5 font-acumin text-xs text-black">
                       {plan.row.asset.name}
                     </td>
-                    <td className="whitespace-nowrap px-2 py-2.5 font-acumin text-2.75 text-[#474747] tabular-nums">
+                    <td className="whitespace-nowrap px-2 py-2.5 font-acumin lk-text-4xs text-[#474747] tabular-nums">
                       #{plan.row.asset.id}
                     </td>
                     <td className="whitespace-nowrap px-2 py-2.5 font-acumin text-xs text-black tabular-nums">
@@ -9857,7 +9857,7 @@ export default function CostProfitSection({
                     <td className="px-2 py-2.5 text-right font-acumin text-xs text-black tabular-nums">
                       {currency(plan.row.asset.acquisitionCost)}
                     </td>
-                    <td className="whitespace-nowrap px-2 py-2.5 font-acumin text-2.75 text-[#474747]">
+                    <td className="whitespace-nowrap px-2 py-2.5 font-acumin lk-text-4xs text-[#474747]">
                       {DEPRECIATION_METHOD_LABELS[plan.row.asset.method]}
                     </td>
                     <td className="px-2 py-2.5 text-right font-acumin text-xs text-[#474747] tabular-nums">
@@ -9941,7 +9941,7 @@ export default function CostProfitSection({
             </table>
           </div>
         )}
-        <p className="mt-3 font-acumin text-2.5 leading-relaxed text-[#707070]">
+        <p className="mt-3 font-acumin lk-text-6xs leading-relaxed text-[#707070]">
           ※
           予測は当期と同じ計算式（定額法は「取得価額×償却率×使用月数/12」）を将来年度に適用した値です。
           一括償却資産は3年均等、即時償却は取得年に全額を計上します。
@@ -9965,7 +9965,7 @@ export default function CostProfitSection({
                     {["決算整理", "借方", "貸方", "金額"].map((heading) => (
                       <th
                         key={heading}
-                        className="px-2 py-2 text-left font-acumin text-2.75 font-normal text-[#474747]"
+                        className="px-2 py-2 text-left font-acumin lk-text-4xs font-normal text-[#474747]"
                       >
                         {heading}
                       </th>
@@ -10020,7 +10020,7 @@ export default function CostProfitSection({
             <h4 className="font-acumin text-sm font-medium tracking-widest text-black">
               翌年度（{fiscalYear + 1}年）へ繰り越す期首残高
             </h4>
-            <p className="mt-1 font-acumin text-2.5 leading-relaxed text-[#707070]">
+            <p className="mt-1 font-acumin lk-text-6xs leading-relaxed text-[#707070]">
               損益科目は0にし、
               {businessType === "soleProprietor"
                 ? "元入金 = 当年元入金 + 当期純利益 + 事業主借 − 事業主貸 として事業主貸借を精算します。"
@@ -10033,7 +10033,7 @@ export default function CostProfitSection({
                     {["コード", "勘定科目", "借方", "貸方"].map((heading) => (
                       <th
                         key={heading}
-                        className="px-2 py-2 text-left font-acumin text-2.75 font-normal text-[#474747]"
+                        className="px-2 py-2 text-left font-acumin lk-text-4xs font-normal text-[#474747]"
                       >
                         {heading}
                       </th>
@@ -10043,7 +10043,7 @@ export default function CostProfitSection({
                 <tbody>
                   {carryForwardRows.map((row) => (
                     <tr key={row.code} className="border-b border-[#ededed]">
-                      <td className="whitespace-nowrap px-2 py-3 font-acumin text-2.75 text-[#474747]">
+                      <td className="whitespace-nowrap px-2 py-3 font-acumin lk-text-4xs text-[#474747]">
                         {row.code}
                       </td>
                       <td className="whitespace-nowrap px-2 py-3 font-acumin text-xs text-black">
@@ -10095,12 +10095,12 @@ export default function CostProfitSection({
           <h4 className="font-acumin text-sm font-medium tracking-widest text-black">
             決算整理を入力
           </h4>
-          <p className="mt-1 font-acumin text-2.5 text-[#707070]">
+          <p className="mt-1 font-acumin lk-text-6xs text-[#707070]">
             期首棚卸高は前年度の期末棚卸高が自動で引き継がれます。
           </p>
           <div className="mt-4 space-y-3">
             <label className="block">
-              <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+              <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
                 期末商品（製品）棚卸高
               </span>
               <input
@@ -10123,7 +10123,7 @@ export default function CostProfitSection({
               />
             </label>
             <label className="block">
-              <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+              <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
                 期末材料棚卸高
               </span>
               <input
@@ -10146,7 +10146,7 @@ export default function CostProfitSection({
               />
             </label>
             <label className="block">
-              <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+              <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
                 貸倒引当金繰入額
               </span>
               <input
@@ -10171,14 +10171,14 @@ export default function CostProfitSection({
 
             <div className="border-t border-[#d4d4d4] pt-3">
               <div className="flex items-center justify-between">
-                <span className="font-acumin text-2.75 text-[#474747]">
+                <span className="font-acumin lk-text-4xs text-[#474747]">
                   減価償却費（自動）
                 </span>
                 <span className="font-acumin text-xs text-black tabular-nums">
                   {currency(depreciation.businessExpenseTotal)}
                 </span>
               </div>
-              <p className="mt-1 font-acumin text-2.5 text-[#707070]">
+              <p className="mt-1 font-acumin lk-text-6xs text-[#707070]">
                 固定資産台帳から自動計算されます。
               </p>
             </div>
@@ -10232,7 +10232,7 @@ export default function CostProfitSection({
                 >
                   {isSaving ? "処理中..." : `${fiscalYearLabel}を締める`}
                 </Button>
-                <p className="font-acumin text-2.5 leading-relaxed text-[#707070]">
+                <p className="font-acumin lk-text-6xs leading-relaxed text-[#707070]">
                   締めると期末残高が確定し、翌年度の期首残高になります。以後は取引の変更が決算書へ反映されません。
                 </p>
               </>
@@ -10285,7 +10285,7 @@ export default function CostProfitSection({
                 ].map((heading) => (
                   <th
                     key={heading}
-                    className="px-2 py-2 text-left font-acumin text-2.75 font-normal text-[#474747]"
+                    className="px-2 py-2 text-left font-acumin lk-text-4xs font-normal text-[#474747]"
                   >
                     {heading}
                   </th>
@@ -10298,13 +10298,13 @@ export default function CostProfitSection({
                   key={row.account.code}
                   className="border-b border-[#ededed]"
                 >
-                  <td className="whitespace-nowrap px-2 py-3 font-acumin text-2.75 text-[#474747]">
+                  <td className="whitespace-nowrap px-2 py-3 font-acumin lk-text-4xs text-[#474747]">
                     {row.account.code}
                   </td>
                   <td className="whitespace-nowrap px-2 py-3 font-acumin text-xs text-black">
                     {row.account.name}
                   </td>
-                  <td className="whitespace-nowrap px-2 py-3 font-acumin text-2.75 text-[#474747]">
+                  <td className="whitespace-nowrap px-2 py-3 font-acumin lk-text-4xs text-[#474747]">
                     {ACCOUNT_TYPE_LABELS[row.account.type]}
                   </td>
                   <td className="px-2 py-3 text-right font-acumin text-xs text-black tabular-nums">
@@ -10834,7 +10834,7 @@ export default function CostProfitSection({
       }}
     >
       <span
-        className="font-acumin text-2.75 font-medium"
+        className="font-acumin lk-text-4xs font-medium"
         style={{ color: bsToneColor[tone] }}
       >
         {label}
@@ -10845,7 +10845,7 @@ export default function CostProfitSection({
       >
         {currency(value)}
       </span>
-      <span className="font-acumin text-2.5 text-[#707070] tabular-nums">
+      <span className="font-acumin lk-text-6xs text-[#707070] tabular-nums">
         （{bsAssetTotal === 0 ? "—" : percent((value / bsAssetTotal) * 100)}）
       </span>
     </div>
@@ -10872,13 +10872,13 @@ export default function CostProfitSection({
             </div>
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2 text-center">
-            <p className="font-acumin text-2.75 text-[#474747]">
+            <p className="font-acumin lk-text-4xs text-[#474747]">
               資産合計
               <span className="ml-1 text-black tabular-nums">
                 {currency(bsAssetTotal)}
               </span>
             </p>
-            <p className="font-acumin text-2.75 text-[#474747]">
+            <p className="font-acumin lk-text-4xs text-[#474747]">
               負債・純資産合計
               <span className="ml-1 text-black tabular-nums">
                 {currency(bsRightTotal)}
@@ -10954,7 +10954,7 @@ export default function CostProfitSection({
               },
             ]}
           />
-          <p className="mt-2 font-acumin text-2.5 text-[#707070]">
+          <p className="mt-2 font-acumin lk-text-6xs text-[#707070]">
             ※ 積み上げ高＝負債＋純資産＝資産合計（会計恒等式）。
           </p>
         </Panel>
@@ -11047,7 +11047,7 @@ export default function CostProfitSection({
                   ].map((heading, index) => (
                     <th
                       key={heading}
-                      className={`px-2 py-2 font-acumin text-2.75 font-normal text-[#474747] ${
+                      className={`px-2 py-2 font-acumin lk-text-4xs font-normal text-[#474747] ${
                         index === 0 ? "text-left" : "text-right"
                       }`}
                     >
@@ -11267,7 +11267,7 @@ export default function CostProfitSection({
               ]}
             />
           )}
-          <p className="mt-3 font-acumin text-2.5 text-[#707070]">
+          <p className="mt-3 font-acumin lk-text-6xs text-[#707070]">
             ※
             構成比は四捨五入のため、合計が100%とならない場合があります。確認状況は当月の証憑添付の有無から判定します。
           </p>
@@ -11283,7 +11283,7 @@ export default function CostProfitSection({
       aria-label="損益計算書 詳細"
       title={<span className={panelTitleClassName}>損益計算書 詳細</span>}
       actions={
-        <span className="font-acumin text-2.75 text-[#707070]">
+        <span className="font-acumin lk-text-4xs text-[#707070]">
           {fiscalYearLabel} 累計 / 構成比は売上高を100%とする
         </span>
       }
@@ -11297,7 +11297,7 @@ export default function CostProfitSection({
                   (heading, index) => (
                     <th
                       key={heading}
-                      className={`px-2 py-2 font-acumin text-2.75 font-normal text-[#474747] ${
+                      className={`px-2 py-2 font-acumin lk-text-4xs font-normal text-[#474747] ${
                         index < 2 ? "text-left" : "text-right"
                       }`}
                     >
@@ -11324,7 +11324,7 @@ export default function CostProfitSection({
                       key={`${section.section}-${line.account.code}`}
                       className="border-b border-[#ededed]"
                     >
-                      <td className="whitespace-nowrap px-2 py-2 font-acumin text-2.75 text-[#707070]">
+                      <td className="whitespace-nowrap px-2 py-2 font-acumin lk-text-4xs text-[#707070]">
                         {section.section}
                       </td>
                       <td className="px-2 py-2 font-acumin text-xs text-black">
@@ -11344,7 +11344,7 @@ export default function CostProfitSection({
                     key={`${section.section}-total`}
                     className="border-b border-[#d4d4d4] bg-[#fafafa]"
                   >
-                    <td className="whitespace-nowrap px-2 py-2 font-acumin text-2.75 text-[#474747]">
+                    <td className="whitespace-nowrap px-2 py-2 font-acumin lk-text-4xs text-[#474747]">
                       {section.section}
                     </td>
                     <td className="px-2 py-2 font-acumin text-xs font-medium text-black">
@@ -11403,7 +11403,7 @@ export default function CostProfitSection({
       }
       actions={
         <span
-          className={`font-acumin text-2.75 ${cashFlow.difference === 0 ? "text-[#707070]" : "text-red-700"}`}
+          className={`font-acumin lk-text-4xs ${cashFlow.difference === 0 ? "text-[#707070]" : "text-red-700"}`}
         >
           {cashFlow.difference === 0
             ? "検算：期首 + 各活動 = 期末（一致）"
@@ -11419,7 +11419,7 @@ export default function CostProfitSection({
                 {["区分", "科目", "金額（円）"].map((heading, index) => (
                   <th
                     key={heading}
-                    className={`px-2 py-2 font-acumin text-2.75 font-normal text-[#474747] ${
+                    className={`px-2 py-2 font-acumin lk-text-4xs font-normal text-[#474747] ${
                       index < 2 ? "text-left" : "text-right"
                     }`}
                   >
@@ -11442,7 +11442,7 @@ export default function CostProfitSection({
                       key={`${category}-${line.account}`}
                       className="border-b border-[#ededed]"
                     >
-                      <td className="whitespace-nowrap px-2 py-2 font-acumin text-2.75 text-[#707070]">
+                      <td className="whitespace-nowrap px-2 py-2 font-acumin lk-text-4xs text-[#707070]">
                         {CASH_FLOW_CATEGORY_LABELS[category]}
                       </td>
                       <td className="px-2 py-2 font-acumin text-xs text-black">
@@ -11513,7 +11513,7 @@ export default function CostProfitSection({
         <h3 className="font-acumin text-base font-medium tracking-widest text-black">
           決算・試算表
         </h3>
-        <span className="font-acumin text-2.75 text-[#707070] tabular-nums">
+        <span className="font-acumin lk-text-4xs text-[#707070] tabular-nums">
           {syncedAt
             ? `最終更新：${new Date(syncedAt).toLocaleString("ja-JP")}（自動照合）`
             : "（自動照合）"}
@@ -11609,7 +11609,7 @@ export default function CostProfitSection({
     <div className="space-y-5">
       {/* 商品原価だけはコレクション単位（シーズン）で見る。会計期間とは独立した軸。 */}
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="mr-1 font-acumin text-2.75 text-[#707070]">
+        <span className="mr-1 font-acumin lk-text-4xs text-[#707070]">
           シーズン
         </span>
         {seasonOptions.map((season) => (
@@ -11693,7 +11693,7 @@ export default function CostProfitSection({
                   ].map((heading) => (
                     <th
                       key={heading}
-                      className="px-2 py-2 text-left font-acumin text-2.75 font-normal text-[#474747]"
+                      className="px-2 py-2 text-left font-acumin lk-text-4xs font-normal text-[#474747]"
                     >
                       {heading}
                     </th>
@@ -11714,7 +11714,7 @@ export default function CostProfitSection({
                         <p className="font-acumin text-xs font-medium text-black">
                           {product.id}
                         </p>
-                        <p className="mt-0.5 font-acumin text-2.75 text-[#707070]">
+                        <p className="mt-0.5 font-acumin lk-text-4xs text-[#707070]">
                           {product.name}
                         </p>
                       </td>
@@ -11755,13 +11755,13 @@ export default function CostProfitSection({
         </div>
 
         <aside className={`${panelClassName} h-fit`}>
-          <p className="font-acumin text-2.75 text-[#707070]">
+          <p className="font-acumin lk-text-4xs text-[#707070]">
             原価内訳（1点あたり）
           </p>
           <h4 className="mt-1 font-acumin text-sm font-medium text-black">
             {selectedProduct.name}
           </h4>
-          <p className="font-acumin text-2.75 text-[#707070]">
+          <p className="font-acumin lk-text-4xs text-[#707070]">
             {selectedProduct.id}
           </p>
           <div className="mt-4 grid grid-cols-[112px_1fr] items-center gap-5">
@@ -11793,7 +11793,7 @@ export default function CostProfitSection({
                 <span className="font-acumin text-xs font-medium text-black">
                   {currency(selectedUnitCost)}
                 </span>
-                <span className="font-acumin text-[9px] text-[#707070]">
+                <span className="font-acumin lk-text-7xs text-[#707070]">
                   1点あたり
                 </span>
               </div>
@@ -11804,14 +11804,14 @@ export default function CostProfitSection({
                   key={item.key}
                   className="flex items-center justify-between gap-2"
                 >
-                  <span className="flex min-w-0 items-center gap-1.5 font-acumin text-2.5 text-[#474747]">
+                  <span className="flex min-w-0 items-center gap-1.5 font-acumin lk-text-6xs text-[#474747]">
                     <span
                       className="h-2 w-2 shrink-0 rounded-full"
                       style={{ background: item.color }}
                     />
                     <span className="truncate">{item.label}</span>
                   </span>
-                  <span className="font-acumin text-2.5 text-black tabular-nums">
+                  <span className="font-acumin lk-text-6xs text-black tabular-nums">
                     {percent(
                       selectedUnitCost > 0
                         ? (selectedProduct.costs[item.key] / selectedUnitCost) *
@@ -11829,7 +11829,7 @@ export default function CostProfitSection({
                 key={item.key}
                 className="grid grid-cols-[1fr_112px] items-center gap-3"
               >
-                <span className="font-acumin text-2.75 text-[#474747]">
+                <span className="font-acumin lk-text-4xs text-[#474747]">
                   {item.label}
                 </span>
                 <span className="relative">
@@ -11878,7 +11878,7 @@ export default function CostProfitSection({
           </h4>
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <label>
-              <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+              <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
                 売価（1点あたり）
               </span>
               <input
@@ -11897,7 +11897,7 @@ export default function CostProfitSection({
               />
             </label>
             <label>
-              <span className="mb-1 block font-acumin text-2.75 text-[#474747]">
+              <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
                 予定生産数
               </span>
               <input
@@ -11918,7 +11918,7 @@ export default function CostProfitSection({
               />
             </label>
             <div>
-              <span className="block font-acumin text-2.75 text-[#474747]">
+              <span className="block font-acumin lk-text-4xs text-[#474747]">
                 粗利益（1点あたり）
               </span>
               <p className="mt-2 font-acumin text-xl font-medium text-black">
@@ -11926,7 +11926,7 @@ export default function CostProfitSection({
               </p>
             </div>
             <div>
-              <span className="block font-acumin text-2.75 text-[#474747]">
+              <span className="block font-acumin lk-text-4xs text-[#474747]">
                 粗利率
               </span>
               <p
@@ -11936,7 +11936,7 @@ export default function CostProfitSection({
               </p>
             </div>
           </div>
-          <p className="mt-4 font-acumin text-2.75 text-[#707070]">
+          <p className="mt-4 font-acumin lk-text-4xs text-[#707070]">
             売価・数量・原価内訳を変更すると、上部の一覧とシーズン全体の見込みが即時更新されます。
           </p>
         </div>

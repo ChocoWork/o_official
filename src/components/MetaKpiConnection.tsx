@@ -96,11 +96,11 @@ export function MetaKpiConnection({
             Instagram・Meta広告連携
           </p>
           {!data.configured ? (
-            <p className="mt-1 font-acumin text-2.75 text-[#8a4b00]">
+            <p className="mt-1 font-acumin lk-text-4xs text-[#8a4b00]">
               環境変数が未設定です: {data.missing.join(", ")}
             </p>
           ) : data.connected ? (
-            <p className="mt-1 font-acumin text-2.75 text-[#555555]">
+            <p className="mt-1 font-acumin lk-text-4xs text-[#555555]">
               @{data.connection?.instagram_username || "Instagram"} ／{" "}
               {data.connection?.ad_account_name ||
                 data.connection?.ad_account_id ||
@@ -108,7 +108,7 @@ export function MetaKpiConnection({
               ／ 最終同期 {lastSynced}
             </p>
           ) : (
-            <p className="mt-1 font-acumin text-2.75 text-[#555555]">
+            <p className="mt-1 font-acumin lk-text-4xs text-[#555555]">
               未接続です。Meta Businessアカウントで認証してください。
             </p>
           )}
@@ -151,7 +151,7 @@ export function MetaKpiConnection({
         </div>
       </div>
       {message ? (
-        <p role="status" className="mt-2 font-acumin text-2.75 text-[#474747]">
+        <p role="status" className="mt-2 font-acumin lk-text-4xs text-[#474747]">
           {message}
         </p>
       ) : null}

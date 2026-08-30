@@ -83,7 +83,7 @@ function Metric({
 }) {
   return (
     <div className={PANEL}>
-      <p className="font-acumin text-2.75 tracking-wider text-[#707070]">
+      <p className="font-acumin lk-text-4xs tracking-wider text-[#707070]">
         {label}
       </p>
       <p
@@ -91,7 +91,7 @@ function Metric({
       >
         {value}
       </p>
-      <p className="mt-1 font-acumin text-2.5 text-[#888888]">{note}</p>
+      <p className="mt-1 font-acumin lk-text-6xs text-[#888888]">{note}</p>
     </div>
   );
 }
@@ -335,7 +335,7 @@ export function ProductCostSection({
           className="flex flex-wrap items-center gap-1.5"
           aria-label="シーズン選択"
         >
-          <span className="mr-1 font-acumin text-2.75 text-[#707070]">
+          <span className="mr-1 font-acumin lk-text-4xs text-[#707070]">
             シーズン
           </span>
           {seasonOptions.map((season) => (
@@ -505,7 +505,7 @@ export function ProductCostSection({
                   ).map((type) => (
                     <div
                       key={type}
-                      className="flex justify-between gap-3 font-acumin text-2.75"
+                      className="flex justify-between gap-3 font-acumin lk-text-4xs"
                     >
                       <span>{PRODUCT_COST_TYPE_LABELS[type]}</span>
                       <span>{currency(summary.costBreakdown[type])}</span>
@@ -546,7 +546,7 @@ export function ProductCostSection({
                     ].map(([label, raw, color]) => (
                       <div
                         key={String(label)}
-                        className="grid grid-cols-[36px_1fr_90px] items-center gap-2 font-acumin text-2.5"
+                        className="grid grid-cols-[36px_1fr_90px] items-center gap-2 font-acumin lk-text-6xs"
                       >
                         <span>{label}</span>
                         <div className="h-2 rounded-full bg-[#ededed]">
@@ -611,7 +611,7 @@ export function ProductCostSection({
                     ].map((label) => (
                       <th
                         key={label}
-                        className="px-2 py-2 text-left font-acumin text-2.75 font-normal text-[#707070]"
+                        className="px-2 py-2 text-left font-acumin lk-text-4xs font-normal text-[#707070]"
                       >
                         {label}
                       </th>
@@ -623,7 +623,7 @@ export function ProductCostSection({
                     <tr key={expense.id} className="border-b border-black/5">
                       <td className="px-2 py-3">
                         <span
-                          className={`rounded-full px-2 py-1 font-acumin text-2.5 ${expense.allocated ? "bg-[#e9f5ee] text-[#16844b]" : "bg-[#fff4df] text-[#a16600]"}`}
+                          className={`rounded-full px-2 py-1 font-acumin lk-text-6xs ${expense.allocated ? "bg-[#e9f5ee] text-[#16844b]" : "bg-[#fff4df] text-[#a16600]"}`}
                         >
                           {expense.allocated ? "配賦済み" : "未配賦"}
                         </span>
@@ -635,7 +635,7 @@ export function ProductCostSection({
                         <p className="font-acumin text-xs">
                           {expense.partner || "取引先なし"}
                         </p>
-                        <p className="font-acumin text-2.5 text-[#707070]">
+                        <p className="font-acumin lk-text-6xs text-[#707070]">
                           {expense.item}
                         </p>
                       </td>
@@ -706,7 +706,7 @@ export function ProductCostSection({
               >
                 <div className="flex items-start justify-between">
                   <div>
-                    <p className="font-acumin text-2.5 tracking-widest text-[#707070]">
+                    <p className="font-acumin lk-text-6xs tracking-widest text-[#707070]">
                       {item.category}
                     </p>
                     <h3 className="mt-1 font-acumin text-sm font-medium">
@@ -720,11 +720,11 @@ export function ProductCostSection({
                 </div>
                 <dl className="mt-5 grid grid-cols-2 gap-3 font-acumin text-xs">
                   <div>
-                    <dt className="text-2.5 text-[#707070]">直接原価</dt>
+                    <dt className="lk-text-6xs text-[#707070]">直接原価</dt>
                     <dd className="mt-1">{currency(item.directCost)}</dd>
                   </div>
                   <div>
-                    <dt className="text-2.5 text-[#707070]">1着原価</dt>
+                    <dt className="lk-text-6xs text-[#707070]">1着原価</dt>
                     <dd className="mt-1">
                       {item.unitCost === null
                         ? "数量未入力"
@@ -732,7 +732,7 @@ export function ProductCostSection({
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-2.5 text-[#707070]">利益見込み</dt>
+                    <dt className="lk-text-6xs text-[#707070]">利益見込み</dt>
                     <dd
                       className={`mt-1 ${item.projectedProfit < 0 ? "text-[#b42318]" : "text-[#16844b]"}`}
                     >
@@ -740,7 +740,7 @@ export function ProductCostSection({
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-2.5 text-[#707070]">必要生地</dt>
+                    <dt className="lk-text-6xs text-[#707070]">必要生地</dt>
                     <dd className="mt-1">
                       {item.requiredFabricMeters.toFixed(3)} m
                     </dd>
@@ -772,7 +772,7 @@ export function ProductCostSection({
           <div className="space-y-5">
             <div className="flex items-start justify-between">
               <div>
-                <p className="font-acumin text-2.5 tracking-widest text-[#707070]">
+                <p className="font-acumin lk-text-6xs tracking-widest text-[#707070]">
                   支出配賦
                 </p>
                 <h2 className="mt-1 font-acumin text-lg font-medium">
@@ -815,7 +815,7 @@ export function ProductCostSection({
                     </button>
                   </div>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <label className="font-acumin text-2.75 text-[#474747]">
+                    <label className="font-acumin lk-text-4xs text-[#474747]">
                       配賦先
                       <select
                         className={`${INPUT} mt-1`}
@@ -835,7 +835,7 @@ export function ProductCostSection({
                       </select>
                     </label>
                     {line.targetType === "item" ? (
-                      <label className="font-acumin text-2.75 text-[#474747]">
+                      <label className="font-acumin lk-text-4xs text-[#474747]">
                         商品
                         <select
                           className={`${INPUT} mt-1`}
@@ -859,7 +859,7 @@ export function ProductCostSection({
                     ) : (
                       <div />
                     )}
-                    <label className="font-acumin text-2.75 text-[#474747]">
+                    <label className="font-acumin lk-text-4xs text-[#474747]">
                       費用区分
                       <select
                         className={`${INPUT} mt-1`}
@@ -878,7 +878,7 @@ export function ProductCostSection({
                         ))}
                       </select>
                     </label>
-                    <label className="font-acumin text-2.75 text-[#474747]">
+                    <label className="font-acumin lk-text-4xs text-[#474747]">
                       金額
                       <input
                         className={`${INPUT} mt-1 text-right`}
@@ -896,7 +896,7 @@ export function ProductCostSection({
                       />
                     </label>
                     {line.costType === "other" ? (
-                      <label className="font-acumin text-2.75 text-[#474747] sm:col-span-2">
+                      <label className="font-acumin lk-text-4xs text-[#474747] sm:col-span-2">
                         費用名
                         <input
                           className={`${INPUT} mt-1`}
@@ -928,15 +928,15 @@ export function ProductCostSection({
             <div className="sticky bottom-0 rounded-xl border border-black/10 bg-white p-4 shadow-[0_-8px_24px_rgba(0,0,0,0.06)]">
               <div className="grid grid-cols-3 gap-3 font-acumin text-xs">
                 <div>
-                  <span className="text-2.5 text-[#707070]">支出金額</span>
+                  <span className="lk-text-6xs text-[#707070]">支出金額</span>
                   <p>{currency(selectedExpense.amount)}</p>
                 </div>
                 <div>
-                  <span className="text-2.5 text-[#707070]">配賦合計</span>
+                  <span className="lk-text-6xs text-[#707070]">配賦合計</span>
                   <p>{currency(allocationTotal)}</p>
                 </div>
                 <div>
-                  <span className="text-2.5 text-[#707070]">差額</span>
+                  <span className="lk-text-6xs text-[#707070]">差額</span>
                   <p
                     className={
                       allocationDifference === 0
@@ -1085,7 +1085,7 @@ export function ProductCostSection({
           <div className="space-y-5">
             <div className="flex justify-between">
               <div>
-                <p className="font-acumin text-2.5 tracking-widest text-[#707070]">
+                <p className="font-acumin lk-text-6xs tracking-widest text-[#707070]">
                   {selectedItem.category}
                 </p>
                 <h2 className="font-acumin text-lg font-medium">
@@ -1100,7 +1100,7 @@ export function ProductCostSection({
                 <i className="ri-close-line text-xl" />
               </button>
             </div>
-            <p className="rounded-lg bg-[#f5f5f5] p-3 font-acumin text-2.75 text-[#474747]">
+            <p className="rounded-lg bg-[#f5f5f5] p-3 font-acumin lk-text-4xs text-[#474747]">
               商品別には共通費を含まない、直接配賦された原価を表示しています。
             </p>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -1249,7 +1249,7 @@ export function ProductCostSection({
               </label>
             </div>
             <div className="rounded-xl bg-black p-4 text-white">
-              <p className="font-acumin text-2.5 text-white/60">
+              <p className="font-acumin lk-text-6xs text-white/60">
                 予定数量分の必要生地
               </p>
               <p className="mt-1 font-acumin text-2xl">

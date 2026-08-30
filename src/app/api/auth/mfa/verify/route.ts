@@ -80,7 +80,7 @@ export async function POST(request: Request) {
       console.error('[auth.mfa.verify] failed to read AAL after verification:', aalResult.error);
     }
 
-    return NextResponse.json(
+    const response = NextResponse.json(
       {
         data: {
           role,
@@ -91,6 +91,32 @@ export async function POST(request: Request) {
       },
       { status: 200 },
     );
+
+    // mfa.verify はセッションを aal2 に昇格した新しいトークン対を返す。
+    // これを Cookie に書き戻さないとブラウザは aal1 のままで、認可側の aal2 判定を通れない。
+    const sessionService = await import('@/features/auth/services/session');
+    const { cookies } = await import('next/headers');
+    const { refreshCookieName } = await import('@/lib/cookie');
+    const previousRefreshToken = (await cookies()).get(refreshCookieName)?.value ?? null;
+    const previousSession = previousRefreshToken
+      ? await sessionService.findSessionByRefreshHash(previousRefreshToken)
+      : null;
+
+    try {
+      await sessionService.persistNewSession(response, {
+        accessToken: verifyResult.data.access_token,
+        refreshToken: verifyResult.data.refresh_token,
+        expiresIn: verifyResult.data.expires_in,
+        userId: user.id,
+        previousSessionId: previousSession?.id ?? null,
+        previousRefreshToken,
+      });
+    } catch (persistError) {
+      console.error('[auth.mfa.verify] failed to persist elevated session:', persistError);
+      return NextResponse.json({ error: 'MFA状態の更新に失敗しました。' }, { status: 500 });
+    }
+
+    return response;
   } catch (error) {
     console.error('[auth.mfa.verify] unexpected error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

@@ -1,0 +1,79 @@
+/*
+ * テキストサイズの単一の実装箇所。
+ *
+ * font-size は必ずこのファイルの .lk-text-* を使う。JSX 側に px も
+ * Tailwind の text-* も書かない（Tailwind の font-size スケールは
+ * --lk-size-* と別系列なので混ぜると 2 系統になる）。
+ *
+ * 値は globals.css の --lk-size-*（--lk-size-md を基準に φ^1/8 ≈ 1.062 で
+ * 上下に展開する流体スケール）を参照するだけにして、実 px をここ以外に
+ * 持たせない。スケールの割り当てを見直すときは globals.css の
+ * --lk-size-md か、呼び出し側のクラス名だけを変える。
+ *
+ * 括弧内の px はデスクトップ（--lk-size-md = 15px）での概算。
+ * モバイル（同 14px）では全段が約 6.7% 縮む。
+ *
+ * ブレークポイントでサイズを変える場合はこのファイルではなく、
+ * コンポーネント側の CSS に @media で書く（例: SectionTitle.css）。
+ */
+
+.lk-text-8xs {
+  font-size: var(--lk-size-8xs); /* ≈ 8.7px */
+}
+.lk-text-7xs {
+  font-size: var(--lk-size-7xs); /* ≈ 9.3px */
+}
+.lk-text-6xs {
+  font-size: var(--lk-size-6xs); /* ≈ 9.9px */
+}
+.lk-text-5xs {
+  font-size: var(--lk-size-5xs); /* ≈ 10.5px */
+}
+.lk-text-4xs {
+  font-size: var(--lk-size-4xs); /* ≈ 11.1px */
+}
+.lk-text-3xs {
+  font-size: var(--lk-size-3xs); /* ≈ 11.8px */
+}
+.lk-text-2xs {
+  font-size: var(--lk-size-2xs); /* ≈ 12.5px */
+}
+.lk-text-xs {
+  font-size: var(--lk-size-xs); /* ≈ 13.3px */
+}
+.lk-text-sm {
+  font-size: var(--lk-size-sm); /* ≈ 14.1px */
+}
+.lk-text-md {
+  font-size: var(--lk-size-md); /* ≈ 15px（スケール基準） */
+}
+.lk-text-lg {
+  font-size: var(--lk-size-lg); /* ≈ 15.9px */
+}
+.lk-text-xl {
+  font-size: var(--lk-size-xl); /* ≈ 16.9px */
+}
+.lk-text-2xl {
+  font-size: var(--lk-size-2xl); /* ≈ 18.0px */
+}
+.lk-text-3xl {
+  font-size: var(--lk-size-3xl); /* ≈ 19.1px */
+}
+.lk-text-4xl {
+  font-size: var(--lk-size-4xl); /* ≈ 20.3px */
+}
+.lk-text-5xl {
+  font-size: var(--lk-size-5xl); /* ≈ 21.5px */
+}
+.lk-text-6xl {
+  font-size: var(--lk-size-6xl); /* ≈ 22.9px */
+}
+.lk-text-7xl {
+  font-size: var(--lk-size-7xl); /* ≈ 24.3px */
+}
+.lk-text-8xl {
+  font-size: var(--lk-size-8xl); /* ≈ 25.8px */
+}
+.lk-text-9xl {
+  font-size: var(--lk-size-9xl); /* ≈ 27.4px */
+}

@@ -51,7 +51,7 @@
 
 - [ ] **Step 5: 対象差分を確認する**
 
-  Run: `git -c safe.directory=C:/work/o_official diff --check -- src/app/api/admin/kpi/cost-profit/route.ts tests/unit/api/admin/cost-profit-route.test.ts`
+  Run: `git -c safe.directory=C:/work/LeFildesHeures diff --check -- src/app/api/admin/kpi/cost-profit/route.ts tests/unit/api/admin/cost-profit-route.test.ts`
 
 ### Task 2: 上書き確認と別名保存 UI を実装する
 

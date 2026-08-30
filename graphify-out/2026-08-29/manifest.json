@@ -20,8 +20,8 @@
     "semantic_hash": ""
   },
   "src/components/ItemSection.tsx": {
-    "mtime": 1787923329.206369,
-    "ast_hash": "807fb7952b2bca891f9c61badca080e3",
+    "mtime": 1787966885.926638,
+    "ast_hash": "bd7b29daabc6cec8396429e055875195",
     "semantic_hash": ""
   },
   "src/components/KpiSection.tsx": {
@@ -4690,8 +4690,8 @@
     "semantic_hash": ""
   },
   "docs/2_Specs/spec.md": {
-    "mtime": 1787923166.9563434,
-    "ast_hash": "ed89ba31b8674f98e801fdf673acfd02",
+    "mtime": 1787964556.6219225,
+    "ast_hash": "2868cc504319b73036221238d22340f7",
     "semantic_hash": ""
   },
   "docs/3_ArchitectureDesign/auth-structure.md": {
@@ -8495,8 +8495,8 @@
     "semantic_hash": ""
   },
   "e2e/FR-ADMIN-052-admin-item-responsive.spec.ts": {
-    "mtime": 1787920779.08263,
-    "ast_hash": "7e6c86c5287ae1f1a0406dc18f0544e6",
+    "mtime": 1787964521.8805258,
+    "ast_hash": "43d9d65e48c76d8680269d297adeb5c7",
     "semantic_hash": ""
   },
   "e2e/FR-ADMIN-053-item-card-tag-labels.spec.ts": {

@@ -43,7 +43,9 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({
   enforceRateLimit: jest.fn().mockResolvedValue(undefined),
 }));
 
+// persistNewSession は本物を使い、Cookie と sessions 行の更新が実際に走ることを検証する。
 jest.mock('@/features/auth/services/session', () => ({
+  ...jest.requireActual('@/features/auth/services/session'),
   findSessionByRefreshHash: jest.fn(),
   isReplay: jest.fn(),
   revokeAllSessionsForUser: jest.fn(),

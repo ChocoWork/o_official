@@ -467,7 +467,7 @@ export function LookForm({
                           {currencyFormatter.format(item.price)}
                         </p>
                         {item.status === "private" && (
-                          <p className="mt-2 text-2.5 tracking-widest text-black/60">
+                          <p className="mt-2 lk-text-6xs tracking-widest text-black/60">
                             非公開商品
                           </p>
                         )}

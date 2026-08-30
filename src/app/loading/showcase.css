@@ -1,0 +1,27 @@
+/* LOADING デザインギャラリー専用。sm でひと段上げる箇所だけをここに置く
+   （ブレークポイントを跨ぐので .lk-text-* では表現できない）。 */
+.showcase-component-name {
+  font-size: var(--lk-size-xs);
+}
+
+.showcase-component-desc {
+  font-size: var(--lk-size-6xs);
+}
+
+.showcase-note {
+  font-size: var(--lk-size-4xs);
+}
+
+@media (min-width: 640px) {
+  .showcase-component-name {
+    font-size: var(--lk-size-sm);
+  }
+
+  .showcase-component-desc {
+    font-size: var(--lk-size-4xs);
+  }
+
+  .showcase-note {
+    font-size: var(--lk-size-3xs);
+  }
+}

@@ -339,7 +339,7 @@ export default function LoadingPatterns() {
         >
           {p.render}
           <p
-            className="mt-5.25 text-2.5 tracking-[0.2em] text-black/30"
+            className="mt-5.25 lk-text-6xs tracking-[0.2em] text-black/30"
             style={{ fontFamily: "acumin-pro, sans-serif" }}
           >
             {p.name}

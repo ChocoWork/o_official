@@ -1,0 +1,11 @@
+/* hyke.jp の NEW IN / NEWS に合わせ、1024px 未満 20px 相当・以上 28px 相当。
+   ブレークポイントで段が変わるので .lk-text-* ではなくここで直接指定する。 */
+.section-title__heading {
+  font-size: var(--lk-size-4xl);
+}
+
+@media (min-width: 1024px) {
+  .section-title__heading {
+    font-size: var(--lk-size-9xl);
+  }
+}

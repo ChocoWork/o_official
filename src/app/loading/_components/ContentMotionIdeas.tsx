@@ -12,7 +12,7 @@ const patterns = [
     render: (
       <div className="flex flex-col items-center">
         <span
-          className="text-3.25 tracking-wider text-black mb-2"
+          className="lk-text-xs tracking-wider text-black mb-2"
           style={{ fontFamily: "Didot, serif" }}
         >
           Chapter
@@ -59,7 +59,7 @@ const patterns = [
           <div className="w-full h-22.25 bg-linear-to-br from-[#e8e6e2] to-[#c9c4bc] transition-transform duration-1200 ease-out group-hover:scale-[1.06]" />
         </div>
         <p
-          className="mt-2 text-2.5 tracking-[0.15em] text-black/60"
+          className="mt-2 lk-text-6xs tracking-[0.15em] text-black/60"
           style={{ fontFamily: "acumin-pro, sans-serif" }}
         >
           HOVER ME
@@ -78,7 +78,7 @@ const patterns = [
     usage: "ナビ・テキストリンクのホバー。下線が走り字間が開く。",
     render: (
       <span
-        className="group relative cursor-pointer text-3 tracking-widest text-black transition-all duration-500 hover:tracking-[0.25em]"
+        className="group relative cursor-pointer lk-text-3xs tracking-widest text-black transition-all duration-500 hover:tracking-[0.25em]"
         style={{ fontFamily: "acumin-pro, sans-serif" }}
       >
         DISCOVER
@@ -97,7 +97,7 @@ const patterns = [
       <button className="group relative overflow-hidden border border-black px-5.25 py-2 cursor-pointer">
         <span className="absolute inset-0 -translate-x-full bg-black transition-transform duration-500 ease-out group-hover:translate-x-0" />
         <span
-          className="relative text-2.5 tracking-[0.2em] text-black transition-colors duration-500 group-hover:text-white"
+          className="relative lk-text-6xs tracking-[0.2em] text-black transition-colors duration-500 group-hover:text-white"
           style={{ fontFamily: "acumin-pro, sans-serif" }}
         >
           ADD TO CART
@@ -146,7 +146,7 @@ const patterns = [
           {[0, 1, 2].map((i) => (
             <span
               key={i}
-              className="mx-8.5 text-3 tracking-[0.3em] text-black/40"
+              className="mx-8.5 lk-text-3xs tracking-[0.3em] text-black/40"
               style={{ fontFamily: "Didot, serif" }}
             >
               {brandName}
@@ -179,7 +179,7 @@ const patterns = [
         {["Le Fil", "des Heures"].map((line, i) => (
           <div key={line} className="overflow-hidden">
             <span
-              className="block text-3.5 tracking-wider text-black animate-[slideUp_3s_ease-out_infinite]"
+              className="block lk-text-sm tracking-wider text-black animate-[slideUp_3s_ease-out_infinite]"
               style={{
                 fontFamily: "Didot, serif",
                 animationDelay: `${i * 250}ms`,
@@ -232,13 +232,13 @@ export default function ContentMotionIdeas() {
           </div>
           <div className="border-t border-black/5 px-5.25 py-3.25">
             <p
-              className="text-2.5 tracking-[0.2em] text-black/60"
+              className="lk-text-6xs tracking-[0.2em] text-black/60"
               style={{ fontFamily: "acumin-pro, sans-serif" }}
             >
               {p.name}
             </p>
             <p
-              className="mt-1.25 text-2.5 text-black/40 leading-[1.7]"
+              className="mt-1.25 lk-text-6xs text-black/40 leading-[1.7]"
               style={{ fontFamily: "acumin-pro, sans-serif" }}
             >
               {p.usage}

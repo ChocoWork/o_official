@@ -1,9 +1,6 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { createServiceRoleClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
-
-const REFRESH_TOKEN_MAX_AGE = 7 * 24 * 60 * 60; // 7 days
 
 function parseJwtJti(token: string | null | undefined): string | null {
   if (!token) return null;
@@ -112,59 +109,20 @@ export async function POST(request: Request) {
     const newRefreshToken = tokenData.refresh_token;
     const expiresIn = tokenData.expires_in; // seconds
     const user = tokenData.user;
-    const newTokenJti = parseJwtJti(newRefreshToken);
 
     // Set new refresh cookie
     const res = NextResponse.json({ access_token: newAccessToken, user }, { status: 200 });
 
-    // Use cookie helpers and update CSRF
-    const {
-      refreshCookieName,
-      accessCookieName,
-      cookieOptionsForRefresh,
-      cookieOptionsForAccess,
-      csrfCookieName,
-      cookieOptionsForCsrf,
-    } = await import('@/lib/cookie');
-    res.cookies.set({ name: accessCookieName, value: newAccessToken ?? '', ...cookieOptionsForAccess(expiresIn || 15 * 60) });
-    res.cookies.set({ name: refreshCookieName, value: newRefreshToken ?? '', ...cookieOptionsForRefresh(REFRESH_TOKEN_MAX_AGE) });
-
-    const { tokenHashSha256 } = await import('@/lib/hash');
-    const { generateCsrfToken } = await import('@/lib/csrf');
-
-    const newCsrfToken = generateCsrfToken();
-    res.cookies.set({ name: csrfCookieName, value: newCsrfToken, ...cookieOptionsForCsrf(REFRESH_TOKEN_MAX_AGE) });
-
-    // Update sessions table: revoke old session row(s) and insert new one
+    // Cookie / CSRF / sessions 行の更新は refresh と MFA 昇格で共通。手順がずれないよう一本化する。
     try {
-      const service = await createServiceRoleClient();
-      const oldHash = await tokenHashSha256(refreshToken ?? '');
-      await service
-        .from('sessions')
-        .update({
-          revoked_at: new Date().toISOString(),
-          previous_refresh_token_hash: oldHash,
-          last_seen_at: new Date().toISOString(),
-        })
-        .eq('id', session.id);
-
-      const newHash = await tokenHashSha256(newRefreshToken ?? '');
-      const csrfHash = await tokenHashSha256(newCsrfToken);
-      const expiresAt = expiresIn ? new Date(Date.now() + expiresIn * 1000).toISOString() : null;
-
-      await service.from('sessions').insert([
-        {
-          user_id: session.user_id || user?.id,
-          refresh_token_hash: newHash,
-          previous_refresh_token_hash: oldHash,
-          current_jti: newTokenJti,
-          quarantined: false,
-          csrf_token_hash: csrfHash,
-          expires_at: expiresAt,
-          last_seen_at: new Date().toISOString(),
-        },
-      ]);
-
+      await sessionService.persistNewSession(res, {
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken,
+        expiresIn,
+        userId: session.user_id || user?.id,
+        previousSessionId: session.id,
+        previousRefreshToken: refreshToken,
+      });
       await logAudit({
         action: 'refresh',
         actor_id: session.user_id,

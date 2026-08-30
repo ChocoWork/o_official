@@ -317,8 +317,8 @@ Expected: 各コマンドが exit code 0。既知の生成物・環境由来エ�
 
 ```powershell
 graphify update .
-git -c safe.directory=C:/work/o_official diff --check
-git -c safe.directory=C:/work/o_official diff -- src/components/CostProfitSection.tsx tests/unit/components/CostProfitSection.test.tsx e2e/FR-ADMIN-043-transaction-workbench.spec.ts
+git -c safe.directory=C:/work/LeFildesHeures diff --check
+git -c safe.directory=C:/work/LeFildesHeures diff -- src/components/CostProfitSection.tsx tests/unit/components/CostProfitSection.test.tsx e2e/FR-ADMIN-043-transaction-workbench.spec.ts
 ```
 
 Expected: Graphify 更新が exit code 0、`diff --check` が無出力。差分が摘要・取引先列、取引一覧の局所レイアウト、対応テストに限定されている。
@@ -326,10 +326,10 @@ Expected: Graphify 更新が exit code 0、`diff --check` が無出力。差分�
 - [ ] **Step 11: 実装ファイルとテストだけをコミットする**
 
 ```powershell
-git -c safe.directory=C:/work/o_official add -- src/components/CostProfitSection.tsx tests/unit/components/CostProfitSection.test.tsx e2e/FR-ADMIN-043-transaction-workbench.spec.ts docs/superpowers/plans/2026-08-13-transaction-summary-partner-columns.md
-git -c safe.directory=C:/work/o_official diff --cached --check
-git -c safe.directory=C:/work/o_official diff --cached --stat
-git -c safe.directory=C:/work/o_official commit -m "feat(accounting): separate summary and partner columns"
+git -c safe.directory=C:/work/LeFildesHeures add -- src/components/CostProfitSection.tsx tests/unit/components/CostProfitSection.test.tsx e2e/FR-ADMIN-043-transaction-workbench.spec.ts docs/superpowers/plans/2026-08-13-transaction-summary-partner-columns.md
+git -c safe.directory=C:/work/LeFildesHeures diff --cached --check
+git -c safe.directory=C:/work/LeFildesHeures diff --cached --stat
+git -c safe.directory=C:/work/LeFildesHeures commit -m "feat(accounting): separate summary and partner columns"
 ```
 
 Expected: `master` に対象4ファイルだけがコミットされ、無関係な `graphify-out/` 差分は含まれない。

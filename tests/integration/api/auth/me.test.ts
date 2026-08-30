@@ -1,8 +1,7 @@
 export {};
 
 jest.mock('@/lib/supabase/server', () => ({
-  createClient: jest.fn(),
-  resolveRequestUser: jest.fn(),
+  verifyAccessToken: jest.fn(),
 }));
 
 jest.mock('next/server', () => ({
@@ -24,18 +23,14 @@ describe('GET /api/auth/me', () => {
   });
 
   test('returns authenticated user payload from HttpOnly cookie based session', async () => {
-    const { createClient, resolveRequestUser } = require('@/lib/supabase/server');
-    createClient.mockResolvedValue({});
-    resolveRequestUser.mockResolvedValue({
-      data: {
-        user: {
-          id: 'user-1',
-          email: 'user@example.com',
-          app_metadata: {
-            role: 'admin',
-            admin_mfa_verified: true,
-          },
-        },
+    const { verifyAccessToken } = require('@/lib/supabase/server');
+    verifyAccessToken.mockResolvedValue({
+      ok: true,
+      claims: {
+        sub: 'user-1',
+        email: 'user@example.com',
+        aal: 'aal2',
+        app_metadata: { role: 'admin' },
       },
     });
 
@@ -64,14 +59,28 @@ describe('GET /api/auth/me', () => {
     expect(response.headers.get('Referrer-Policy')).toBe('no-referrer');
   });
 
-  test('returns authenticated=false when no user is resolved', async () => {
-    const { createClient, resolveRequestUser } = require('@/lib/supabase/server');
-    createClient.mockResolvedValue({});
-    resolveRequestUser.mockResolvedValue({
-      data: {
-        user: null,
+  test('reports mfaVerified=false while the session is still aal1', async () => {
+    const { verifyAccessToken } = require('@/lib/supabase/server');
+    verifyAccessToken.mockResolvedValue({
+      ok: true,
+      claims: {
+        sub: 'user-1',
+        email: 'user@example.com',
+        aal: 'aal1',
+        app_metadata: { role: 'admin' },
       },
     });
+
+    const { GET } = await handlerImport();
+    const response = await GET(new Request('http://localhost:3000/api/auth/me'));
+    const body = (await response.json()) as { user: { mfaVerified: boolean } };
+
+    expect(body.user.mfaVerified).toBe(false);
+  });
+
+  test('returns authenticated=false when no user is resolved', async () => {
+    const { verifyAccessToken } = require('@/lib/supabase/server');
+    verifyAccessToken.mockResolvedValue({ ok: false, reason: 'missing' });
 
     const { GET } = await handlerImport();
     const response: { status: number; json: () => Promise<unknown> } = await GET(

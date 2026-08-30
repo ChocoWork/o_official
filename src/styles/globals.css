@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "remixicon/fonts/remixicon.css";
+@import "./typography.css";
 
 /* 生成物。巨大な graph.json / graph.html を走査すると Tailwind が落ちる */
 @source not "../../graphify-out";
@@ -161,6 +162,7 @@ body.admin-font-active
   --lk-eighthstep-7: calc(var(--lk-eighthstep-3) * var(--lk-eighthstep-4));
   --lk-eighthstep-8: calc(var(--lk-eighthstep-4) * var(--lk-eighthstep-4));
   --lk-eighthstep-9: calc(var(--lk-eighthstep-4) * var(--lk-eighthstep-5));
+  --lk-eighthstep-10: calc(var(--lk-eighthstep-5) * var(--lk-eighthstep-5));
 
   --lk-size-md: clamp(0.875rem, 0.84rem + 0.14vw, 0.9375rem);
 
@@ -183,6 +185,7 @@ body.admin-font-active
   --lk-size-6xl: calc(var(--lk-size-md) * var(--lk-eighthstep-7));
   --lk-size-7xl: calc(var(--lk-size-md) * var(--lk-eighthstep-8));
   --lk-size-8xl: calc(var(--lk-size-md) * var(--lk-eighthstep-9));
+  --lk-size-9xl: calc(var(--lk-size-md) * var(--lk-eighthstep-10));
 
   --control-button-gap: clamp(0.35rem, 0.3rem + 0.12vw, 0.5rem);
   --control-button-radius-rounded: clamp(0.875rem, 0.8rem + 0.35vw, 1.25rem);
@@ -794,6 +797,40 @@ html[data-header-visible="false"] {
 .header-drawer-accordion [data-ui-accordion-content] {
   padding-top: 12px;
   padding-bottom: 24px;
+}
+
+/* FREQ-313: Admin ITEM 一覧カード。
+   Card.css / Button.css / TagLabel.css も @layer の外にあるため、
+   上書きもここ（layer 外・詳細度 2）に置く。 */
+
+/* 操作列は grid-cols-3（minmax(0,1fr)）でセル幅が確定するため、ボタンの
+   左右パディングは min-width を押し上げて文字を欠けさせるだけの存在になる。0 にする。
+   文字サイズは既定（sm）を上限に、行幅が足りないときだけ行幅に比例させる。
+   3等分＋gap 4px なので1セルは約 33cqi、最長ラベル「非公開」は3文字（＝3em）。
+   9cqi なら 3em = 27cqi < セル幅となり、どの帯でもラベルが欠けない。
+   ブレークポイントではなくカード実幅に追従するので md/lg の境目で段差が出ない。 */
+.admin-item-actions {
+  container-type: inline-size;
+}
+
+.admin-item-actions [data-ui-button] {
+  --pad-x: 0px;
+  --button-font-size: min(var(--lk-size-sm), 9cqi);
+}
+
+@media (max-width: 1023.98px) {
+  /* lg 未満はカード幅が 139〜169px しかなく、既定の内側余白（font × φ ≒ 21px）
+     だけでカードの3割を占めてしまう。φ ラダーを2段下げて font / φ にし、
+     タグ行と操作列を1行に収めるための幅を内容に返す。 */
+  .admin-item-card[data-ui-card] {
+    --card-pad: calc(var(--card-font-size) / var(--phi));
+  }
+
+  /* 同じ理由でタグの左右余白も font / φ² に詰める。タグ2つを1行に並べても
+     短いカテゴリ（TOPS など）が省略されずに読める幅を確保する。 */
+  .admin-item-card-tags [data-ui-tag-label] {
+    --tag-pad-x: calc(var(--tag-font-size) / (var(--phi) * var(--phi)));
+  }
 }
 
 .header-drawer-accordion [data-ui-accordion-item]:not(:last-child) {

@@ -143,7 +143,7 @@ export default function Page() {
 
   // helper maps for the drawer demo buttons
   const navItemClassMap: Partial<Record<ComponentSize, string>> = {
-    xs: "px-3 py-2 text-2.75",
+    xs: "px-3 py-2 lk-text-4xs",
     sm: "px-4 py-3 text-xs",
     md: "px-4 py-4 text-sm",
     lg: "px-4 py-5 text-base",

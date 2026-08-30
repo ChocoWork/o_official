@@ -91,7 +91,7 @@
 
   Run: `graphify update .`
 
-  Run: `git -c safe.directory=C:/work/o_official diff --check`
+  Run: `git -c safe.directory=C:/work/LeFildesHeures diff --check`
 
   Expected: Graphify 更新成功、空白エラーなし。既存の未コミット変更は保持されている。
 

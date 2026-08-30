@@ -200,9 +200,9 @@ Expected: 2 tests PASS、typecheck exit 0。
 - [ ] **Step 5: Task 1をコミットする**
 
 ```powershell
-git -c safe.directory=C:/work/o_official add -- src/lib/finance/cumulative-balance-trend.ts tests/unit/lib/finance/cumulative-balance-trend.test.ts
-git -c safe.directory=C:/work/o_official diff --cached --check
-git -c safe.directory=C:/work/o_official commit -m "feat(accounting): calculate cumulative balance trend"
+git -c safe.directory=C:/work/LeFildesHeures add -- src/lib/finance/cumulative-balance-trend.ts tests/unit/lib/finance/cumulative-balance-trend.test.ts
+git -c safe.directory=C:/work/LeFildesHeures diff --cached --check
+git -c safe.directory=C:/work/LeFildesHeures commit -m "feat(accounting): calculate cumulative balance trend"
 ```
 
 ### Task 2: 固定グラフUIと科目選択の分離
@@ -290,10 +290,10 @@ Expected: 対象tests PASS、ESLint 0 errors、typecheck exit 0。
 両既存ファイルには着手前変更があるため、今回のhunkだけをstageする。
 
 ```powershell
-git -c safe.directory=C:/work/o_official add -p -- src/components/CostProfitSection.tsx tests/unit/components/CostProfitSection.test.tsx
-git -c safe.directory=C:/work/o_official diff --cached --check
-git -c safe.directory=C:/work/o_official diff --cached
-git -c safe.directory=C:/work/o_official commit -m "feat(accounting): fix cumulative trend across accounts"
+git -c safe.directory=C:/work/LeFildesHeures add -p -- src/components/CostProfitSection.tsx tests/unit/components/CostProfitSection.test.tsx
+git -c safe.directory=C:/work/LeFildesHeures diff --cached --check
+git -c safe.directory=C:/work/LeFildesHeures diff --cached
+git -c safe.directory=C:/work/LeFildesHeures commit -m "feat(accounting): fix cumulative trend across accounts"
 ```
 
 ### Task 3: E2E契約と仕様の同期
@@ -352,11 +352,11 @@ Expected: 対象全project PASS。失敗時は代表1件をchromium・1 worker�
 - [ ] **Step 6: Task 3を部分stageしてコミットする**
 
 ```powershell
-git -c safe.directory=C:/work/o_official add -- e2e/FR-ADMIN-044-ledger-three-views.spec.ts e2e/FR-ADMIN-032-ledger-trial-balance.spec.ts e2e/FR-ADMIN-035-statements-from-real-balances.spec.ts
-git -c safe.directory=C:/work/o_official add -p -- docs/2_Specs/spec.md
-git -c safe.directory=C:/work/o_official diff --cached --check
-git -c safe.directory=C:/work/o_official diff --cached
-git -c safe.directory=C:/work/o_official commit -m "test(accounting): align cumulative trend contract"
+git -c safe.directory=C:/work/LeFildesHeures add -- e2e/FR-ADMIN-044-ledger-three-views.spec.ts e2e/FR-ADMIN-032-ledger-trial-balance.spec.ts e2e/FR-ADMIN-035-statements-from-real-balances.spec.ts
+git -c safe.directory=C:/work/LeFildesHeures add -p -- docs/2_Specs/spec.md
+git -c safe.directory=C:/work/LeFildesHeures diff --cached --check
+git -c safe.directory=C:/work/LeFildesHeures diff --cached
+git -c safe.directory=C:/work/LeFildesHeures commit -m "test(accounting): align cumulative trend contract"
 ```
 
 ### Task 4: 全体検証とGraphify更新
@@ -407,9 +407,9 @@ Expected: exit 0、新集計関数と画面の関係がグラフへ反映され�
 - [ ] **Step 5: 最終差分と履歴を確認する**
 
 ```powershell
-git -c safe.directory=C:/work/o_official status --short
-git -c safe.directory=C:/work/o_official log -5 --oneline
-git -c safe.directory=C:/work/o_official diff --check
+git -c safe.directory=C:/work/LeFildesHeures status --short
+git -c safe.directory=C:/work/LeFildesHeures log -5 --oneline
+git -c safe.directory=C:/work/LeFildesHeures diff --check
 ```
 
 Expected: 今回の実装ファイルに未コミット差分がなく、着手前の無関係な変更だけが残る。

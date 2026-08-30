@@ -355,6 +355,9 @@ fare.blue/2020/03/design-4rule/ の原則。すべてのレイアウトはこれ
   --lk-size-8xl: calc(
     var(--lk-size-md) * var(--lk-eighthstep-9)
   ); /* ≈ 25.7px */
+  --lk-size-9xl: calc(
+    var(--lk-size-md) * var(--lk-eighthstep-10)
+  ); /* ≈ 27.4px */
 }
 ```
 
@@ -384,6 +387,73 @@ fare.blue/2020/03/design-4rule/ の原則。すべてのレイアウトはこれ
 | `--lk-size-6xl` | ≈22.8px  | **使用しない**                                                            |
 | `--lk-size-7xl` | ≈24.2px  | **使用しない**                                                            |
 | `--lk-size-8xl` | ≈25.7px  | **使用しない**（ヒーロー・コレクション名は vw で別途定義）                |
+| `--lk-size-9xl` | ≈27.4px  | セクション見出しの lg 以上（`SectionTitle`）。これがスケール上限              |
+
+### font-size の書き方（これ以外は書かない）
+
+`font-size` は **`src/styles/typography.css` の `.lk-text-*` クラスだけ**で指定する。
+`.lk-text-*` は上のスケール `--lk-size-*` を参照するだけの薄いクラスで、実 px を持つのは
+`--lk-size-md` の 1 箇所だけ。
+
+```tsx
+// ✅ 正
+<span className="lk-text-3xs tracking-wider">{sku}</span>
+
+// ❌ px 直書き。スケールの外に出る
+<span className="text-[11px]">{sku}</span>
+
+// ❌ Tailwind の font-size スケール。--lk-size-* と別系列なので 2 系統が混在する
+<span className="text-xs">{sku}</span>
+
+// ❌ Tailwind に font-size の数値スケールは存在しない（spacing だけ）。
+//    text-<数値> は CSS が 1 行も生成されず、親のサイズを黙って継承して崩れる
+<span className="text-2.75">{sku}</span>
+
+// ❌ インライン style。詳細度が最大でコンポーネント CSS から上書きできず、
+//    スケールの割り当てが呼び出し側 N 箇所に分散する
+<span style={{ fontSize: "var(--lk-size-3xs)" }}>{sku}</span>
+```
+
+**クラス経由にする理由**
+
+- `--lk-size-*` への結合が `typography.css` の 1 ファイルに閉じる。割り当てを見直すときに触るのはクラス名だけで、呼び出し側の実値を追わなくてよい。
+- 詳細度が `0,1,0` なので `Button.css` などコンポーネント CSS から素直に上書きできる。インライン style はこれができない。
+- `clsx()` やテンプレートリテラルの条件分岐にそのまま乗る。
+
+**ブレークポイントでサイズを変える場合**
+
+`.lk-text-*` は Tailwind ユーティリティではないので `sm:` `lg:` の修飾子は効かない。
+コンポーネント側の CSS に `@media` で書き、JSX にはロールを表すクラス名だけを置く。
+
+```css
+/* SectionTitle.css */
+.section-title__heading {
+  font-size: var(--lk-size-4xl);
+}
+
+@media (min-width: 1024px) {
+  .section-title__heading {
+    font-size: var(--lk-size-9xl);
+  }
+}
+```
+
+**子孫要素にまとめて効かせる場合**（テーブルのセルなど）も同じくコンポーネント CSS に書く。
+`[&_td]:text-*` のような任意バリアントは使わない。
+
+```css
+/* BlueReturnView.css */
+.blue-return-detail-table td,
+.blue-return-detail-table th {
+  font-size: var(--lk-size-6xs);
+}
+```
+
+**管理画面（`/admin`）の例外**
+
+上の使い分け表は公開ストアフロント（ssstein / hyke 参照）の方針。
+管理画面は情報密度が要件なので `7xs`〜`4xs` の極小段を使ってよい。
+公開ページには持ち込まない。
 
 ### ユニットレス値（calc() の乗除算用）
 
@@ -1200,7 +1270,8 @@ Layer 10: ナビゲーション・状態管理
 
 **黄金比・プロポーション**
 
-- [ ] フォントサイズに `--lk-size-*` 変数を使っているか（固定 rem 値を直書きしていないか）
+- [ ] `font-size` を `.lk-text-*` クラスで指定しているか（`text-[11px]` / `text-xs` / `text-<数値>` / インライン style を使っていないか）
+- [ ] ブレークポイントでサイズを変える箸所を、`sm:` `lg:` ではなくコンポーネント CSS の `@media` に置いているか
 - [ ] 余白・gap に Fibonacci px（13, 21, 34, 55, 89px）または `--lk-size-*` を使っているか
 - [ ] ボタン・入力の縦パディングに `--control-pad-ratio` を使っているか
 - [ ] 行間に `--sqrt-phi`（1.272）または `1.7`（body標準）を使っているか
@@ -1209,7 +1280,7 @@ Layer 10: ナビゲーション・状態管理
 **視覚**
 
 - [ ] コントラスト比 4.5:1 以上（本文）/ 3:1 以上（大テキスト・UI）
-- [ ] フォントサイズ最小 `--lk-size-md`（≈14–15px）
+- [ ] 公開ページのフォントサイズ最小 `--lk-size-md`（≈14–15px）。`/admin` は情報密度優先で `4xs` まで許容
 - [ ] 1画面でCTAは1つが主役か
 
 **操作性**

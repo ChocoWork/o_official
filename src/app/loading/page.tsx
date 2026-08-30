@@ -1,5 +1,6 @@
 // ----------------- LOADING デザインギャラリー（Admin 専用） -----------------
 "use client";
+import "./showcase.css";
 
 import { useLogin } from "@/contexts/LoginContext";
 import LoadingPatterns from "./_components/LoadingPatterns";
@@ -237,13 +238,13 @@ export default function LoadingPage() {
         <div className="max-w-7xl mx-auto">
           <div className="mb-13.75">
             <h1
-              className="text-5.5 text-black tracking-tight mb-3.25"
+              className="lk-text-5xl text-black tracking-tight mb-3.25"
               style={{ fontFamily: "Didot, serif" }}
             >
               Loading
             </h1>
             <p
-              className="text-2.75 text-black/40 tracking-wider"
+              className="lk-text-4xs text-black/40 tracking-wider"
               style={{ fontFamily: "acumin-pro, sans-serif" }}
             >
               ミニマルでモードなローディング表現のコレクション —
@@ -254,13 +255,13 @@ export default function LoadingPage() {
           {/* Section: Loading Patterns */}
           <div className="mb-8.5">
             <h2
-              className="text-4 text-black tracking-tight mb-1.25"
+              className="lk-text-lg text-black tracking-tight mb-1.25"
               style={{ fontFamily: "Didot, serif" }}
             >
               Standard
             </h2>
             <p
-              className="text-2.5 text-black/40 tracking-wider mb-8.5"
+              className="lk-text-6xs text-black/40 tracking-wider mb-8.5"
               style={{ fontFamily: "acumin-pro, sans-serif" }}
             >
               ベーシックなローディング表現 — 8パターン
@@ -272,13 +273,13 @@ export default function LoadingPage() {
           {/* Section: Full Screen Patterns */}
           <div className="mt-22.25 mb-8.5">
             <h2
-              className="text-4 text-black tracking-tight mb-1.25"
+              className="lk-text-lg text-black tracking-tight mb-1.25"
               style={{ fontFamily: "Didot, serif" }}
             >
               Full Screen
             </h2>
             <p
-              className="text-2.5 text-black/40 tracking-wider mb-8.5"
+              className="lk-text-6xs text-black/40 tracking-wider mb-8.5"
               style={{ fontFamily: "acumin-pro, sans-serif" }}
             >
               画面全体を使ったモードなローディング表現 — 16パターン
@@ -290,13 +291,13 @@ export default function LoadingPage() {
           {/* Section: Animation Components */}
           <div className="mt-22.25 mb-8.5">
             <h2
-              className="text-4 text-black tracking-tight mb-1.25"
+              className="lk-text-lg text-black tracking-tight mb-1.25"
               style={{ fontFamily: "Didot, serif" }}
             >
               Animation Components
             </h2>
             <p
-              className="text-2.5 text-black/40 tracking-wider mb-8.5"
+              className="lk-text-6xs text-black/40 tracking-wider mb-8.5"
               style={{ fontFamily: "acumin-pro, sans-serif" }}
             >
               全ページで使用できるアニメーションコンポーネント —
@@ -308,7 +309,7 @@ export default function LoadingPage() {
 
           <div className="mt-13.75 p-5.25 sm:p-6.5 md:p-8.5 border border-black/10 bg-[#fafafa]">
             <p
-              className="text-2.75 sm:text-3 text-black/60 leading-[1.8]"
+              className="showcase-note text-black/60 leading-[1.8]"
               style={{ fontFamily: "acumin-pro, sans-serif" }}
             >
               各コンポーネントは{" "}
@@ -320,13 +321,13 @@ export default function LoadingPage() {
           {/* Section: Brand Name Patterns */}
           <div className="mt-22.25 mb-8.5">
             <h2
-              className="text-4 text-black tracking-tight mb-1.25"
+              className="lk-text-lg text-black tracking-tight mb-1.25"
               style={{ fontFamily: "Didot, serif" }}
             >
               Brand Name
             </h2>
             <p
-              className="text-2.5 text-black/40 tracking-wider mb-8.5"
+              className="lk-text-6xs text-black/40 tracking-wider mb-8.5"
               style={{ fontFamily: "acumin-pro, sans-serif" }}
             >
               Le Fil des Heures を使ったブランド表現 — 16パターン
@@ -338,13 +339,13 @@ export default function LoadingPage() {
           {/* Section: Content Motion */}
           <div className="mt-22.25 mb-8.5">
             <h2
-              className="text-4 text-black tracking-tight mb-1.25"
+              className="lk-text-lg text-black tracking-tight mb-1.25"
               style={{ fontFamily: "Didot, serif" }}
             >
               Content Motion
             </h2>
             <p
-              className="text-2.5 text-black/40 tracking-wider mb-8.5"
+              className="lk-text-6xs text-black/40 tracking-wider mb-8.5"
               style={{ fontFamily: "acumin-pro, sans-serif" }}
             >
               実コンテンツ（商品・LOOK・見出し・CTA）で使えるモーションアイデア

@@ -20,7 +20,9 @@ const TAB_ICONS: Record<TabType, string> = {
 };
 
 // 左側の縦ナビ。薄いグレーの長方形パネル上にアイコン + ラベルを並べ、
-// 選択中タブは濃いグレーで塗りつぶす。mobile は横スクロール、md 以上で縦積み。
+// 選択中タブは濃いグレーで塗りつぶす。lg 未満は横スクロールの上部バー、lg 以上で縦積み。
+// FREQ-315: 切り替え位置は公開 ITEM 一覧のフィルター（PublicItemGrid の
+// hidden lg:flex ↔ lg:hidden）と同じ lg。サイト全体で「サイド↔上部」の境界を1つにする。
 export default function AdminSideNav({
   activeTab,
   onTabChange,
@@ -29,7 +31,7 @@ export default function AdminSideNav({
   return (
     <nav
       aria-label="管理メニュー"
-      className="flex gap-1 overflow-x-auto bg-[#f4f4f4] p-2 md:h-full md:flex-col md:overflow-visible"
+      className="flex gap-1 overflow-x-auto bg-[#f4f4f4] p-2 lg:h-full lg:flex-col lg:overflow-visible"
     >
       {tabs.map((tab) => {
         const isActive = tab === activeTab;
@@ -42,14 +44,14 @@ export default function AdminSideNav({
             data-active={isActive ? "true" : undefined}
             onClick={() => onTabChange(tab)}
             className={[
-              "flex shrink-0 items-center gap-3 border-l-0.75 px-3 py-2.5 text-left font-acumin text-xs tracking-widest transition-colors md:w-full",
+              "flex shrink-0 items-center gap-3 border-l-0.75 px-3 py-2.5 text-left font-acumin text-xs tracking-widest transition-colors lg:w-full",
               isActive
                 ? "border-black bg-[#e9e9e9] font-medium text-black"
                 : "border-transparent text-[#474747] hover:bg-[#efefef] hover:text-black",
             ].join(" ")}
           >
             <i
-              className={`${TAB_ICONS[tab]} text-[17px] leading-none`}
+              className={`${TAB_ICONS[tab]} lk-text-xl leading-none`}
               aria-hidden="true"
             />
             <span>{tab}</span>

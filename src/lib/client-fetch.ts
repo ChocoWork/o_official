@@ -21,7 +21,17 @@ function getCsrfTokenFromCookie(): string | undefined {
 }
 
 const NETWORK_RETRY_DELAY_MS = 250;
+
+// レート制限は攻撃を止めるための仕組みなので、こちらのリトライで焼き切ってはいけない。
+// 失敗の種類ごとにクールダウンを置き、その間は refresh を一切発行しない。
+const REFRESH_RATE_LIMITED_COOLDOWN_MS = 60_000;
+const REFRESH_UNAUTHENTICATED_COOLDOWN_MS = 30_000;
+const REFRESH_ERROR_COOLDOWN_MS = 5_000;
+
+export const SESSION_EXPIRED_EVENT = 'auth:session-expired';
+
 let refreshSessionPromise: Promise<boolean> | null = null;
+let refreshBlockedUntil = 0;
 
 function isRetryableRequest(method: string): boolean {
   return method === 'GET' || method === 'HEAD';
@@ -33,18 +43,75 @@ function waitBeforeRetry(): Promise<void> {
   });
 }
 
-function refreshSession(): Promise<boolean> {
-  if (!refreshSessionPromise) {
-    refreshSessionPromise = fetch('/api/auth/refresh', {
+function blockRefreshFor(durationMs: number): void {
+  refreshBlockedUntil = Date.now() + durationMs;
+}
+
+// RFC 9110 の Retry-After。秒数のみを解釈し、解釈できなければ呼び出し側の既定値に任せる。
+function parseRetryAfterMs(response: Response): number | null {
+  const header = response.headers?.get?.('Retry-After');
+  if (!header) {
+    return null;
+  }
+
+  const seconds = Number(header);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null;
+}
+
+// セッションが切れたことを画面側へ伝える。ここで画面遷移まで行うと
+// client-fetch がルーティングの責務を持つことになるため、通知だけに留める。
+function notifySessionExpired(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
+}
+
+async function performRefresh(): Promise<boolean> {
+  let response: Response;
+
+  try {
+    response = await fetch('/api/auth/refresh', {
       method: 'POST',
       credentials: 'same-origin',
       cache: 'no-store',
-    })
-      .then((response) => response.ok)
-      .catch(() => false)
-      .finally(() => {
-        refreshSessionPromise = null;
-      });
+    });
+  } catch {
+    blockRefreshFor(REFRESH_ERROR_COOLDOWN_MS);
+    return false;
+  }
+
+  if (response.ok) {
+    refreshBlockedUntil = 0;
+    return true;
+  }
+
+  if (response.status === 429) {
+    blockRefreshFor(parseRetryAfterMs(response) ?? REFRESH_RATE_LIMITED_COOLDOWN_MS);
+    return false;
+  }
+
+  if (response.status === 401) {
+    // refresh token が無効。再認証以外に回復手段がないので叩き続けない。
+    blockRefreshFor(REFRESH_UNAUTHENTICATED_COOLDOWN_MS);
+    notifySessionExpired();
+    return false;
+  }
+
+  blockRefreshFor(REFRESH_ERROR_COOLDOWN_MS);
+  return false;
+}
+
+function refreshSession(): Promise<boolean> {
+  if (Date.now() < refreshBlockedUntil) {
+    return Promise.resolve(false);
+  }
+
+  if (!refreshSessionPromise) {
+    refreshSessionPromise = performRefresh().finally(() => {
+      refreshSessionPromise = null;
+    });
   }
 
   return refreshSessionPromise;
