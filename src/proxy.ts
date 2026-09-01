@@ -5,8 +5,13 @@ import {
   generateSessionId,
   sessionCookieName,
 } from '@/lib/cookie';
+import { hasExplicitOriginConfig, isAllowedOrigin } from '@/lib/redirect';
 
-const STATE_CHANGING_PATH_PREFIXES = ['/api/cart', '/api/checkout/create-session', '/api/checkout/complete', '/api/wishlist'] as const;
+// SameSite=Lax は多層防御であって設計上の制御ではない（OWASP CSRF Cheat Sheet）ので、
+// 状態を変える API は Origin も見る。検査は POST/PUT/PATCH/DELETE 限定なので
+// OAuth コールバック等の GET には影響しない。Stripe webhook は /api/webhook 配下で対象外
+// （Origin を持たない正当な外部 POST を壊さないため）。
+const STATE_CHANGING_PATH_PREFIXES = ['/api/auth', '/api/admin', '/api/cart', '/api/checkout/create-session', '/api/checkout/complete', '/api/wishlist'] as const;
 const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
 
@@ -94,7 +99,14 @@ function buildCsp(nonce: string): string {
   ].join('; ');
 }
 
-function resolveRequestOrigin(request: NextRequest): string {
+/**
+ * 許可オリジンが未設定のときだけ使う退避。リクエストヘッダから期待値を組み立てる。
+ *
+ * クライアントが指定しうる値（x-forwarded-host）を自分で信頼するので検査としては
+ * 循環しているが、ブラウザからは迂回できない。X-Forwarded-Host はカスタムヘッダなので
+ * クロスサイトの fetch は preflight が必要になり、フォーム POST では付けられない。
+ */
+function fallbackRequestOrigin(request: NextRequest): string {
   const proto = request.headers.get('x-forwarded-proto') ?? request.nextUrl.protocol.replace(':', '');
   const host = request.headers.get('x-forwarded-host') ?? request.headers.get('host') ?? request.nextUrl.host;
   return `${proto}://${host}`;
@@ -109,28 +121,50 @@ function isProtectedStateChangingApiRequest(request: NextRequest): boolean {
   return STATE_CHANGING_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 }
 
-function isSameOriginRequest(request: NextRequest): boolean {
-  const expectedOrigin = resolveRequestOrigin(request);
+/**
+ * OWASP CSRF Cheat Sheet に従い、Origin / Referer を「既知の」オリジンと照合する。
+ *
+ * 期待値は環境変数の許可リスト（APP_ALLOWED_ORIGINS ほか。@/lib/redirect と共通）から取る。
+ * 以前はリクエストヘッダから期待値を組み立てており、攻撃者が指定できる値を
+ * 自分で信頼する形になっていた。
+ */
+function isAllowedOriginRequest(request: NextRequest): boolean {
   const originHeader = request.headers.get('origin');
   const refererHeader = request.headers.get('referer');
 
-  if (originHeader) {
-    return originHeader === expectedOrigin;
-  }
-
-  if (refererHeader) {
+  const candidate = (() => {
+    if (originHeader) return originHeader;
+    if (!refererHeader) return null;
     try {
-      return new URL(refererHeader).origin === expectedOrigin;
+      return new URL(refererHeader).origin;
     } catch {
-      return false;
+      return null;
     }
+  })();
+
+  // Origin も Referer も無い状態変更リクエストは通さない。
+  if (!candidate) {
+    return false;
   }
 
-  return false;
+  if (hasExplicitOriginConfig()) {
+    return isAllowedOrigin(candidate);
+  }
+
+  // 許可リストが未設定。ここで全拒否すると設定漏れだけで機能停止するため退避する。
+  console.warn(
+    '[proxy] APP_ALLOWED_ORIGINS 等が未設定のため、Origin 検査をリクエスト由来の値で行っています。' +
+      '本番では許可オリジンを明示してください。',
+  );
+  try {
+    return new URL(candidate).origin === fallbackRequestOrigin(request);
+  } catch {
+    return false;
+  }
 }
 
 export function proxy(request: NextRequest) {
-  if (isProtectedStateChangingApiRequest(request) && !isSameOriginRequest(request)) {
+  if (isProtectedStateChangingApiRequest(request) && !isAllowedOriginRequest(request)) {
     return NextResponse.json({ error: 'Forbidden origin' }, { status: 403 });
   }
 

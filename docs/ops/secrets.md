@@ -62,3 +62,20 @@ Stripe Webhookは `${APP_BASE_URL}/api/webhook/stripe` に設定し、署名シ�
 定期照合は `GET /api/cron/stripe-reconcile` を呼び出し、`Authorization: Bearer
 ${CRON_SECRET}` を付与します。Stripeだけに存在する未返金の成功決済は報告対象になり、
 注文は自動作成しません。既存注文との返金額差分だけをStripeの成功済み返金から修復します。
+
+## APP_ALLOWED_ORIGINS
+
+状態変更 API（`/api/auth` `/api/admin` `/api/cart` `/api/checkout/*` `/api/wishlist`）の
+CSRF 対策で、`Origin` / `Referer` を照合する許可オリジンの一覧。カンマ区切り。
+
+```
+APP_ALLOWED_ORIGINS=https://www.example.com,https://example.com
+```
+
+未設定でも `NEXT_PUBLIC_SITE_URL` / `NEXT_PUBLIC_BASE_URL` / `BASE_URL` /
+`NEXT_PUBLIC_VERCEL_URL` のいずれかがあればそれを使う。どれも無い場合は
+リクエスト由来のオリジンとの一致で判定し、警告を出す（設定漏れだけで全 API が
+403 になるのを避けるため）。**本番では必ず明示すること。**
+
+同じ一覧を `getRequestOrigin`（リダイレクト先の検証）も使う。片方だけ設定する、
+という状態は作らないこと。

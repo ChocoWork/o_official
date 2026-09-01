@@ -109,3 +109,39 @@ export function sanitizeRedirectPath(input: string | null | undefined, fallbackP
 
   return trimmed;
 }
+
+/**
+ * オリジンが許可リストに含まれるか。
+ *
+ * CSRF の Origin 検査で使う。OWASP CSRF Cheat Sheet は「**既知の**ターゲットオリジンと
+ * 照合する」ことを求めており、期待値をリクエストヘッダ（x-forwarded-host 等）から
+ * 組み立てると、クライアントが指定した値を自分で信頼することになり検査が循環する。
+ */
+export function isAllowedOrigin(origin: string | null | undefined): boolean {
+  const normalized = normalizeOrigin(origin);
+  if (!normalized) {
+    return false;
+  }
+
+  return parseAllowedOrigins().has(normalized);
+}
+
+/**
+ * 許可オリジンが環境変数で明示されているか。
+ *
+ * 未設定だと parseAllowedOrigins は localhost:3000 だけを返すため、本番で
+ * すべての状態変更 API が 403 になる。設定漏れで機能停止させないよう、
+ * 呼び出し側はこれが false のときだけリクエスト由来のオリジンへ退避する。
+ * Origin 検査はブラウザからは迂回できない（X-Forwarded-Host はカスタムヘッダなので
+ * クロスサイトの fetch は preflight が必要になり、フォーム POST では付けられない）ため、
+ * 退避しても実害は無いが、設定は入れること。
+ */
+export function hasExplicitOriginConfig(): boolean {
+  return Boolean(
+    process.env.APP_ALLOWED_ORIGINS ||
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      process.env.NEXT_PUBLIC_BASE_URL ||
+      process.env.BASE_URL ||
+      process.env.NEXT_PUBLIC_VERCEL_URL,
+  );
+}
