@@ -18,7 +18,7 @@ import {
   type StripeCheckoutPaymentMethod,
 } from '@/features/checkout/services/checkout-draft.service';
 import { logAudit } from '@/lib/audit';
-import { extractAuthToken } from '@/lib/supabase/server';
+import { extractAuthToken } from '@/lib/auth/request-token';
 import { sendOrderConfirmationEmail } from '@/lib/orders/order-confirmation-email';
 
 const supabase = createClient(

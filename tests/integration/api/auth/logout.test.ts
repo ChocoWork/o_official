@@ -21,6 +21,13 @@ jest.mock('next/server', () => ({
 
 jest.mock('@/lib/supabase/server', () => ({
   createServiceRoleClient: jest.fn(),
+  verifyAccessToken: jest.fn(),
+}));
+
+// ログアウトは期限切れトークンからも session_id を読む必要があるため
+// authenticateRequest ではなく verifyAccessToken を直接使う。
+jest.mock('@/lib/auth/authenticate', () => ({
+  verifyAccessToken: jest.fn(),
 }));
 
 jest.mock('next/headers', () => ({
@@ -42,6 +49,8 @@ describe('Logout API integration (mocked supabase & headers)', () => {
     cookies.mockReturnValue({ get: jest.fn().mockReturnValue(undefined), getAll: jest.fn().mockReturnValue([]) });
     // default: no CSRF header (optional since logout can work without CSRF check in some flows)
     headers.mockReturnValue({ get: jest.fn().mockReturnValue(null) });
+    const { verifyAccessToken } = require('@/lib/auth/authenticate');
+    verifyAccessToken.mockResolvedValue({ ok: true, claims: { session_id: 'session-1' } });
   });
 
   test('no cookie returns 200 and clears cookies', async () => {
@@ -76,15 +85,15 @@ describe('Logout API integration (mocked supabase & headers)', () => {
     });
     headers.mockReturnValue({ get: jest.fn().mockReturnValue(csrfToken) }); // Valid CSRF header
 
-    const eqMock = jest.fn().mockResolvedValue({});
+    const eqMock = jest.fn().mockReturnValue({ select: jest.fn().mockResolvedValue({ data: [{ user_id: 'user-1' }], error: null }) });
     const updateMock = jest.fn().mockReturnValue({ eq: eqMock });
     const maybeSingleMock = jest.fn().mockResolvedValue({ data: { csrf_token_hash: csrfHash } });
     const selectEqMock = jest.fn().mockReturnValue({ maybeSingle: maybeSingleMock });
     const selectMock = jest.fn().mockReturnValue({ eq: selectEqMock });
     const fromMock = jest.fn(() => ({ update: updateMock, select: selectMock }));
-    const signOutMock = jest.fn().mockResolvedValue({ data: null, error: null });
+    const rpcMock = jest.fn().mockResolvedValue({ data: 1, error: null });
     const { createServiceRoleClient } = require('@/lib/supabase/server');
-    createServiceRoleClient.mockReturnValue({ from: fromMock, auth: { admin: { signOut: signOutMock } } });
+    createServiceRoleClient.mockReturnValue({ from: fromMock, rpc: rpcMock });
 
     // Act
     const res: any = await logoutHandler();
@@ -95,8 +104,9 @@ describe('Logout API integration (mocked supabase & headers)', () => {
     expect(body.ok).toBe(true);
     expect(createServiceRoleClient().from).toHaveBeenCalledWith('sessions');
     expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ revoked_at: expect.any(String) }));
-    // 自前テーブルだけでなく Supabase 側のセッションも終了させる
-    expect(signOutMock).toHaveBeenCalledWith('old-access', 'local');
+    // 自前テーブルだけでなく Supabase 側のセッションも終了させる。
+    // access token の有効性に依存しないよう session_id クレームで RPC を叩く。
+    expect(rpcMock).toHaveBeenCalledWith('revoke_auth_session', { p_session_id: 'session-1' });
 
     const refreshCookie = res.cookies.get('sb-refresh-token');
     const sessionCookie = res.cookies.get('session_id');
@@ -161,5 +171,37 @@ describe('Logout API integration (mocked supabase & headers)', () => {
     expect(ssrChunk).toBeDefined();
     expect(ssrChunk.maxAge).toBe(0);
     expect(unrelated).toBeUndefined();
+  });
+
+  test('access token が期限切れで session_id を取れなくても Auth 側セッションを残さない', async () => {
+    const { tokenHashSha256 } = await import('@/lib/hash');
+    const csrfToken = 'valid-csrf-token';
+    const csrfHash = await tokenHashSha256(csrfToken);
+
+    cookies.mockReturnValue({
+      get: jest.fn().mockReturnValue({ value: 'old-refresh' }),
+      getAll: jest.fn().mockReturnValue([]),
+    });
+    headers.mockReturnValue({ get: jest.fn().mockReturnValue(csrfToken) });
+
+    const eqMock = jest.fn().mockReturnValue({ select: jest.fn().mockResolvedValue({ data: [{ user_id: 'user-1' }], error: null }) });
+    const maybeSingleMock = jest.fn().mockResolvedValue({ data: { csrf_token_hash: csrfHash } });
+    const fromMock = jest.fn(() => ({
+      update: jest.fn().mockReturnValue({ eq: eqMock }),
+      select: jest.fn().mockReturnValue({ eq: jest.fn().mockReturnValue({ maybeSingle: maybeSingleMock }) }),
+    }));
+    const rpcMock = jest.fn().mockResolvedValue({ data: 2, error: null });
+    const { createServiceRoleClient } = require('@/lib/supabase/server');
+    const { verifyAccessToken } = require('@/lib/auth/authenticate');
+    createServiceRoleClient.mockReturnValue({ from: fromMock, rpc: rpcMock });
+    // access Cookie が無い／期限切れで session_id が取り出せない状況
+    verifyAccessToken.mockResolvedValue({ ok: false, reason: 'missing' });
+
+    const res: any = await logoutHandler();
+
+    expect(res.status).toBe(200);
+    // 単一セッションを特定できないときは全端末を落とす。生きたサーバセッションを残さない。
+    expect(rpcMock).toHaveBeenCalledWith('revoke_auth_sessions_for_user', { p_user_id: 'user-1' });
+    expect(res.cookies.get('sb-refresh-token').maxAge).toBe(0);
   });
 });

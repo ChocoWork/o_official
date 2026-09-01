@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createServiceRoleClient, resolveRequestUser } from '@/lib/supabase/server';
+import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
+import { authenticateRequest, authFailureResponse } from '@/lib/auth/authenticate';
 import { signItemImageUrl } from '@/lib/storage/item-images';
 import { toOrderNumber } from '@/lib/orders/order-number';
 
@@ -103,15 +104,14 @@ function formatShippingAddress(order: OrderRow): string {
 
 export async function GET(request: NextRequest) {
 	const supabase = await createClient(request);
-	const {
-		data: { user },
-		error: userError,
-	} = await resolveRequestUser(supabase, request);
+	const auth = await authenticateRequest(request);
 
-	if (userError || !user) {
-		console.error('Orders auth error:', userError);
-		return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: NO_STORE_HEADERS });
+	if (!auth.ok) {
+		console.warn('Orders auth error:', auth.reason);
+		return authFailureResponse(auth.reason, NO_STORE_HEADERS);
 	}
+
+	const userId = auth.claims.sub;
 
 	const { data, error } = await supabase
 		.from('orders')
@@ -140,7 +140,7 @@ export async function GET(request: NextRequest) {
 				line_total
 			)
 		`)
-		.eq('user_id', user.id)
+		.eq('user_id', userId)
 		.order('created_at', { ascending: false });
 
 	if (error) {

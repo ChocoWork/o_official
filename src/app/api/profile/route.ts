@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { createClient, resolveRequestUser } from '@/lib/supabase/server';
+import { createClient } from '@/lib/supabase/server';
+import { authenticateRequest, authFailureResponse } from '@/lib/auth/authenticate';
 import { formatPhoneNumberInput } from '@/features/account/utils/profile-format.util';
 
 const addressSchema = z.object({
@@ -205,15 +206,14 @@ async function clearProfileRow(supabase: Awaited<ReturnType<typeof createClient>
 
 export async function GET(request: NextRequest) {
 	const supabase = await createClient(request);
-	const {
-		data: { user },
-		error: userError,
-	} = await resolveRequestUser(supabase, request);
+	const auth = await authenticateRequest(request);
 
-	if (userError || !user) {
-		console.error('Profile auth error:', userError);
-		return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+	if (!auth.ok) {
+		console.warn('Profile auth error:', auth.reason);
+		return authFailureResponse(auth.reason);
 	}
+
+	const user = { id: auth.claims.sub, email: auth.claims.email ?? null };
 
 	const { data: profile, error } = await fetchProfileRow(supabase, user.id);
 
@@ -233,15 +233,14 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
 	const supabase = await createClient(request);
-	const {
-		data: { user },
-		error: userError,
-	} = await resolveRequestUser(supabase, request);
+	const auth = await authenticateRequest(request);
 
-	if (userError || !user) {
-		console.error('Profile auth error:', userError);
-		return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+	if (!auth.ok) {
+		console.warn('Profile auth error:', auth.reason);
+		return authFailureResponse(auth.reason);
 	}
+
+	const user = { id: auth.claims.sub, email: auth.claims.email ?? null };
 
 	const { requireCsrfOrDeny } = await import('@/lib/csrfMiddleware');
 	const csrfResult = await requireCsrfOrDeny();
@@ -302,15 +301,14 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
 	const supabase = await createClient(request);
-	const {
-		data: { user },
-		error: userError,
-	} = await resolveRequestUser(supabase, request);
+	const auth = await authenticateRequest(request);
 
-	if (userError || !user) {
-		console.error('Profile auth error:', userError);
-		return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+	if (!auth.ok) {
+		console.warn('Profile auth error:', auth.reason);
+		return authFailureResponse(auth.reason);
 	}
+
+	const user = { id: auth.claims.sub, email: auth.claims.email ?? null };
 
 	const { requireCsrfOrDeny } = await import('@/lib/csrfMiddleware');
 	const csrfResult = await requireCsrfOrDeny();

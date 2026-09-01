@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { createClient, resolveRequestUser } from '@/lib/supabase/server';
+import { createClient } from '@/lib/supabase/server';
+import { authenticateRequest, authFailureResponse } from '@/lib/auth/authenticate';
 
 type UserRole = 'admin' | 'supporter' | 'user';
 
@@ -8,14 +9,17 @@ const isUserRole = (role: unknown): role is UserRole => role === 'admin' || role
 export async function GET(request: Request) {
   try {
     const supabase = await createClient(request);
-    const {
-      data: { user },
-      error,
-    } = await resolveRequestUser(supabase, request);
+    const auth = await authenticateRequest(request);
 
-    if (error || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!auth.ok) {
+      return authFailureResponse(auth.reason);
     }
+
+    // role は JWT のクレームから読む。最大 1 時間古くなりうるが、ここでの用途は
+    // 「自分のアカウントに MFA を設定させるか」の判断だけで、管理機能へのアクセスは
+    // admin-rbac が DB の ACL で別途判定する。降格直後の利用者が自分の端末で
+    // MFA を設定できてしまっても権限は増えないため、ACL を引く必要はない。
+    const user = { id: auth.claims.sub, app_metadata: auth.claims.app_metadata };
 
     const role = isUserRole(user.app_metadata?.role) ? user.app_metadata.role : 'user';
     const isPrivileged = role === 'admin' || role === 'supporter';

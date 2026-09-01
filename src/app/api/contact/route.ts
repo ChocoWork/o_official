@@ -3,7 +3,8 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import sendMail from '@/lib/mail';
 import { getRequestOrigin } from '@/lib/redirect';
-import { createClient, createServiceRoleClient, resolveRequestUser } from '@/lib/supabase/server';
+import { createServiceRoleClient } from '@/lib/supabase/server';
+import { authenticateRequest } from '@/lib/auth/authenticate';
 import { logAudit } from '@/lib/audit';
 import { buildReplyAddress } from '@/lib/contact/reply-address';
 import { toOrderNumber } from '@/lib/orders/order-number';
@@ -175,13 +176,11 @@ export async function POST(request: Request) {
     const userAgent = request.headers.get('user-agent');
 
     // ログイン済みなら user_id を記録（ゲストは null）
+    // 認証は任意。未ログインでも問い合わせは受け付けるので、失敗しても続行する。
     let userId: string | null = null;
     try {
-      const authClient = await createClient(request);
-      const {
-        data: { user },
-      } = await resolveRequestUser(authClient, request);
-      userId = user?.id ?? null;
+      const auth = await authenticateRequest(request);
+      userId = auth.ok ? auth.claims.sub : null;
     } catch {
       userId = null;
     }

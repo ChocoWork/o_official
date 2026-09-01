@@ -3,7 +3,16 @@ export {};
 jest.mock('@/lib/supabase/server', () => ({
 	createClient: jest.fn(),
 	createServiceRoleClient: jest.fn(),
-	resolveRequestUser: jest.fn(),
+}));
+// 認証は claims ベースの authenticateRequest に一本化した（旧 resolveRequestUser）。
+jest.mock('@/lib/auth/authenticate', () => ({
+  authenticateRequest: jest.fn(),
+  // 本物と同じく headers を通す。落とすと no-store の検証がすり抜ける。
+  authFailureResponse: (reason: string, headers: Record<string, string> = {}) =>
+    require('next/server').NextResponse.json(
+      { error: reason === 'unavailable' ? 'Service temporarily unavailable' : 'Unauthorized' },
+      { status: reason === 'unavailable' ? 503 : 401, headers },
+    ),
 }));
 
 jest.mock('@/lib/storage/item-images', () => ({
@@ -34,16 +43,14 @@ jest.mock('next/server', () => ({
 	},
 }));
 
-const { createClient, createServiceRoleClient, resolveRequestUser } = require('@/lib/supabase/server');
+const { createClient, createServiceRoleClient } = require('@/lib/supabase/server');
+const { authenticateRequest } = require('@/lib/auth/authenticate');
 const { signItemImageUrl } = require('@/lib/storage/item-images');
 
 describe('GET /api/orders', () => {
 	beforeEach(() => {
 		jest.resetAllMocks();
-		resolveRequestUser.mockResolvedValue({
-			data: { user: { id: 'user-1' } },
-			error: null,
-		});
+		authenticateRequest.mockResolvedValue({ ok: true, claims: { sub: 'user-1', session_id: 'session-1' } });
 		createServiceRoleClient.mockResolvedValue({});
 		signItemImageUrl.mockResolvedValue('https://cdn.example.com/signed-image.jpg');
 	});
@@ -134,10 +141,7 @@ describe('GET /api/orders', () => {
 
 	test('returns no-store on unauthorized responses', async () => {
 		createClient.mockResolvedValue({ from: jest.fn() });
-		resolveRequestUser.mockResolvedValue({
-			data: { user: null },
-			error: { message: 'Unauthorized' },
-		});
+		authenticateRequest.mockResolvedValue({ ok: false, reason: 'missing' });
 
 		const { GET } = require('@/app/api/orders/route');
 		const response: { status: number; headers: Map<string, string> } = await GET(
@@ -152,10 +156,7 @@ describe('GET /api/orders', () => {
 describe('GET /api/orders/[id]', () => {
 	beforeEach(() => {
 		jest.resetAllMocks();
-		resolveRequestUser.mockResolvedValue({
-			data: { user: { id: 'user-1' } },
-			error: null,
-		});
+		authenticateRequest.mockResolvedValue({ ok: true, claims: { sub: 'user-1', session_id: 'session-1' } });
 		createServiceRoleClient.mockResolvedValue({});
 		signItemImageUrl.mockResolvedValue('https://cdn.example.com/signed-image.jpg');
 	});

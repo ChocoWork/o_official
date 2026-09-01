@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { createClient, createServiceRoleClient, resolveRequestUser } from '@/lib/supabase/server';
-import { markPrivilegedMfaVerified } from '@/features/auth/services/mfa-metadata';
+import { cookies } from 'next/headers';
+import { createClient } from '@/lib/supabase/server';
+import { authenticateRequest, authFailureResponse } from '@/lib/auth/authenticate';
+import { findSessionByRefreshHash, persistNewSession } from '@/features/auth/services/session';
+import { refreshCookieName } from '@/lib/cookie';
+import { logAudit } from '@/lib/audit';
 
 type UserRole = 'admin' | 'supporter' | 'user';
 
@@ -33,14 +37,17 @@ export async function POST(request: Request) {
     const { factorId, code } = parsed.data;
 
     const supabase = await createClient(request);
-    const {
-      data: { user },
-      error,
-    } = await resolveRequestUser(supabase, request);
+    const auth = await authenticateRequest(request);
 
-    if (error || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!auth.ok) {
+      return authFailureResponse(auth.reason);
     }
+
+    // role は JWT のクレームから読む。最大 1 時間古くなりうるが、ここでの用途は
+    // 「自分のアカウントに MFA を設定させるか」の判断だけで、管理機能へのアクセスは
+    // admin-rbac が DB の ACL で別途判定する。降格直後の利用者が自分の端末で
+    // MFA を設定できてしまっても権限は増えないため、ACL を引く必要はない。
+    const user = { id: auth.claims.sub, app_metadata: auth.claims.app_metadata };
 
     const role = isUserRole(user.app_metadata?.role) ? user.app_metadata.role : 'user';
     if (role !== 'admin' && role !== 'supporter') {
@@ -68,13 +75,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: '認証コードが正しくありません。' }, { status: 400 });
     }
 
-    const service = await createServiceRoleClient();
-    const markResult = await markPrivilegedMfaVerified(service, user);
-    if (!markResult.ok) {
-      console.error('[auth.mfa.verify] failed to mark privileged MFA verified:', markResult.error);
-      return NextResponse.json({ error: 'MFA状態の更新に失敗しました。' }, { status: 500 });
-    }
-
     const aalResult = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
     if (aalResult.error) {
       console.error('[auth.mfa.verify] failed to read AAL after verification:', aalResult.error);
@@ -94,26 +94,30 @@ export async function POST(request: Request) {
 
     // mfa.verify はセッションを aal2 に昇格した新しいトークン対を返す。
     // これを Cookie に書き戻さないとブラウザは aal1 のままで、認可側の aal2 判定を通れない。
-    const sessionService = await import('@/features/auth/services/session');
-    const { cookies } = await import('next/headers');
-    const { refreshCookieName } = await import('@/lib/cookie');
     const previousRefreshToken = (await cookies()).get(refreshCookieName)?.value ?? null;
     const previousSession = previousRefreshToken
-      ? await sessionService.findSessionByRefreshHash(previousRefreshToken)
+      ? await findSessionByRefreshHash(previousRefreshToken)
       : null;
 
+    // DB 記録に失敗しても、発行済みトークンは必ず配る。aal2 はトークン自体が持っており、
+    // 認可はトークンを見るので sessions 行が無くても正しく動く。逆にここで 500 を返すと、
+    // 既に無効化された旧 refresh token だけがブラウザに残る。
     try {
-      await sessionService.persistNewSession(response, {
+      await persistNewSession(response, {
         accessToken: verifyResult.data.access_token,
         refreshToken: verifyResult.data.refresh_token,
-        expiresIn: verifyResult.data.expires_in,
         userId: user.id,
         previousSessionId: previousSession?.id ?? null,
         previousRefreshToken,
       });
     } catch (persistError) {
       console.error('[auth.mfa.verify] failed to persist elevated session:', persistError);
-      return NextResponse.json({ error: 'MFA状態の更新に失敗しました。' }, { status: 500 });
+      await logAudit({
+        action: 'mfa_verify',
+        actor_id: user.id,
+        outcome: 'error',
+        detail: String(persistError),
+      });
     }
 
     return response;

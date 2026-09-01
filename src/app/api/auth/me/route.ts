@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { authenticateRequest } from '@/lib/supabase/server';
+import { authenticateRequest } from '@/lib/auth/authenticate';
 
 type UserRole = 'admin' | 'supporter' | 'user';
 

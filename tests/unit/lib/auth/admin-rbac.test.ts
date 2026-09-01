@@ -5,12 +5,16 @@ jest.mock('next/server', () => ({
 }));
 
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
-import { checkAuthSessionLiveness, createServiceRoleClient, verifyAccessToken } from '@/lib/supabase/server';
+import { createServiceRoleClient } from '@/lib/supabase/server';
+import { checkAuthSessionLiveness, verifyAccessToken } from '@/lib/auth/authenticate';
 
 jest.mock('@/lib/supabase/server', () => ({
   createServiceRoleClient: jest.fn(),
-  // admin-rbac は失効確認と ACL 照会を並列に投げるため、authenticateRequest ではなく
-  // 内訳の 2 つを直接呼ぶ。ここを戻すと往復が 1 回増える。
+}));
+
+// admin-rbac は失効確認と ACL 照会を並列に投げるため、authenticateRequest ではなく
+// 内訳の 2 つを直接呼ぶ。ここを戻すと往復が 1 回増える。
+jest.mock('@/lib/auth/authenticate', () => ({
   verifyAccessToken: jest.fn(),
   checkAuthSessionLiveness: jest.fn(),
 }));

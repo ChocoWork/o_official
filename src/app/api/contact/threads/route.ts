@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createServiceRoleClient, resolveRequestUser } from '@/lib/supabase/server';
+import { createServiceRoleClient } from '@/lib/supabase/server';
+import { authenticateRequest, authFailureResponse } from '@/lib/auth/authenticate';
 
 const NO_STORE_HEADERS = { 'Cache-Control': 'no-store' };
 
@@ -15,15 +16,13 @@ type ThreadRow = {
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient(request);
-    const {
-      data: { user },
-      error: userError,
-    } = await resolveRequestUser(supabase, request);
+    const auth = await authenticateRequest(request);
 
-    if (userError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: NO_STORE_HEADERS });
+    if (!auth.ok) {
+      return authFailureResponse(auth.reason, NO_STORE_HEADERS);
     }
+
+    const user = { id: auth.claims.sub, email: auth.claims.email ?? null };
 
     const service = await createServiceRoleClient();
     const threads = new Map<string, ThreadRow>();

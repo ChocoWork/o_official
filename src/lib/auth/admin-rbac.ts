@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { checkAuthSessionLiveness, createServiceRoleClient, verifyAccessToken } from '@/lib/supabase/server';
+import { createServiceRoleClient } from '@/lib/supabase/server';
+import { checkAuthSessionLiveness, verifyAccessToken } from '@/lib/auth/authenticate';
 
 export type AppRole = 'admin' | 'supporter' | 'user';
 export type PermissionCode =

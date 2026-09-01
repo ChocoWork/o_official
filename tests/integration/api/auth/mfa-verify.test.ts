@@ -23,11 +23,19 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({
 jest.mock('@/lib/supabase/server', () => ({
   createClient: jest.fn(),
   createServiceRoleClient: jest.fn(),
-  resolveRequestUser: jest.fn(),
+}));
+// 認証は claims ベースの authenticateRequest に一本化した（旧 resolveRequestUser）。
+jest.mock('@/lib/auth/authenticate', () => ({
+  authenticateRequest: jest.fn(),
+  authFailureResponse: (reason: string) =>
+    require('next/server').NextResponse.json(
+      { error: reason === 'unavailable' ? 'Service temporarily unavailable' : 'Unauthorized' },
+      { status: reason === 'unavailable' ? 503 : 401 },
+    ),
 }));
 
-jest.mock('@/features/auth/services/mfa-metadata', () => ({
-  markPrivilegedMfaVerified: jest.fn().mockResolvedValue({ ok: true }),
+jest.mock('@/lib/audit', () => ({
+  logAudit: jest.fn(),
 }));
 
 jest.mock('next/headers', () => ({
@@ -66,11 +74,12 @@ describe('POST /api/auth/mfa/verify', () => {
     cookies.mockReturnValue({ get: jest.fn().mockReturnValue({ value: 'old-refresh' }) });
     sessionService.findSessionByRefreshHash.mockResolvedValue({ id: 'sess-1', user_id: 'user-1' });
 
-    const { createClient, createServiceRoleClient, resolveRequestUser } = require('@/lib/supabase/server');
+    const { createClient, createServiceRoleClient } = require('@/lib/supabase/server');
+const { authenticateRequest } = require('@/lib/auth/authenticate');
 
-    resolveRequestUser.mockResolvedValue({
-      data: { user: { id: 'user-1', email: 'admin@example.com', app_metadata: { role: 'admin' } } },
-      error: null,
+    authenticateRequest.mockResolvedValue({
+      ok: true,
+      claims: { sub: 'user-1', email: 'admin@example.com', session_id: 'session-1', app_metadata: { role: 'admin' } },
     });
 
     createClient.mockResolvedValue({
@@ -115,16 +124,25 @@ describe('POST /api/auth/mfa/verify', () => {
     ]);
   });
 
-  test('セッション永続化に失敗したら 500 を返す', async () => {
+  test('セッション永続化に失敗しても発行済みトークンは配る', async () => {
     const { createServiceRoleClient } = require('@/lib/supabase/server');
     createServiceRoleClient.mockResolvedValue({
-      from: jest.fn(() => {
-        throw new Error('db down');
-      }),
+      from: jest.fn(() => ({
+        insert: jest.fn().mockResolvedValue({ error: { message: 'db down' } }),
+        update: jest.fn(),
+      })),
     });
 
-    const res: any = await verifyHandler(makeRequest());
+    const res = await verifyHandler(makeRequest());
 
-    expect(res.status).toBe(500);
+    // 旧 refresh token は Supabase 側で既に無効化されているので、ここで 500 を返すと
+    // ブラウザには死んだトークンだけが残る。監査に残しつつトークンは配る。
+    expect(res.status).toBe(200);
+    expect(res.cookies.get('sb-access-token').value).toBe('aal2-access');
+    const { logAudit } = require('@/lib/audit');
+    expect(logAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'mfa_verify', outcome: 'error' }),
+    );
   });
+
 });

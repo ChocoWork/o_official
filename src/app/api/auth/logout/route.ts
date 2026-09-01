@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { verifyAccessToken } from '@/lib/auth/authenticate';
+import { logAudit } from '@/lib/audit';
 
 type CsrfDenyResponse = {
   status: number;
@@ -18,6 +21,68 @@ function isCsrfDenyResponse(value: unknown): value is CsrfDenyResponse {
 
 function hasRotatedCsrfToken(value: unknown): value is CsrfRotateResult {
   return typeof value === 'object' && value !== null && 'rotatedCsrfToken' in value;
+}
+
+/**
+ * Supabase 側のセッションを終了させる。
+ *
+ * 公式の auth.admin.signOut は対象ユーザーの**有効な** JWT を要求するため、access token が
+ * 期限切れ・欠落していると呼べない。その状態でも refresh Cookie は生きているので、
+ * 何もしないと auth.sessions の行が残り、流出済みの refresh token がそのまま有効になる。
+ * そこで access token の有効性に依存しない経路を使う:
+ *   1. JWT の session_id クレーム（期限切れでも署名は検証する）→ revoke_auth_session
+ *   2. session_id が取れないときは自前 sessions 行の user_id → revoke_auth_sessions_for_user
+ * 2 は全端末を落とすが、ログアウト要求に対して生きたサーバセッションを残すよりは良い。
+ */
+async function terminateSupabaseSession(
+  service: SupabaseClient,
+  revokedRows: Array<{ user_id: string }> | null,
+): Promise<void> {
+  const verified = await verifyAccessToken(undefined, { allowExpired: true });
+
+  if (verified.ok && verified.claims.session_id) {
+    const { error } = await service.rpc('revoke_auth_session', {
+      p_session_id: verified.claims.session_id,
+    });
+
+    if (!error) {
+      return;
+    }
+
+    console.error('[auth.logout] revoke_auth_session failed:', error);
+  }
+
+  const userId = revokedRows?.[0]?.user_id;
+  if (!userId) {
+    await logAudit({
+      action: 'logout',
+      outcome: 'error',
+      detail: 'auth_session_not_identified',
+    });
+    return;
+  }
+
+  const { error: fallbackError } = await service.rpc('revoke_auth_sessions_for_user', {
+    p_user_id: userId,
+  });
+
+  if (fallbackError) {
+    console.error('[auth.logout] revoke_auth_sessions_for_user failed:', fallbackError);
+    await logAudit({
+      action: 'logout',
+      actor_id: userId,
+      outcome: 'error',
+      detail: 'auth_session_revocation_failed',
+    });
+    return;
+  }
+
+  await logAudit({
+    action: 'logout',
+    actor_id: userId,
+    outcome: 'success',
+    detail: 'revoked_all_sessions_session_id_unavailable',
+  });
 }
 
 export async function POST() {
@@ -46,21 +111,13 @@ export async function POST() {
         // 失効可否に関わらず Cookie は必ずクリアし、ユーザーが確実にログアウトできるようにする
         // （ログアウトは冪等で、CSRF 拒否でも Cookie が残らないようにする）。
         if (!isCsrfDenyResponse(csrfResult)) {
-          await service
+          const { data: revokedRows } = await service
             .from('sessions')
             .update({ revoked_at: new Date().toISOString() })
-            .eq('refresh_token_hash', hash);
+            .eq('refresh_token_hash', hash)
+            .select('user_id');
 
-          // 自前 sessions テーブルを消すだけでは Supabase 側のセッションが生き残り、
-          // 発行済み access token が exp まで有効なままになる。Auth 側も終了させる。
-          const { accessCookieName } = await import('@/lib/cookie');
-          const accessToken = cookieStore.get(accessCookieName)?.value;
-          if (accessToken) {
-            const { error: signOutError } = await service.auth.admin.signOut(accessToken, 'local');
-            if (signOutError) {
-              console.error('Failed to sign out Supabase session:', signOutError);
-            }
-          }
+          await terminateSupabaseSession(service, revokedRows);
         }
       } catch (dbErr) {
         console.error('Failed to mark session revoked:', dbErr);

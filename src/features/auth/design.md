@@ -64,7 +64,15 @@
 
 ### セキュリティ制御
 - `auth:mfa:enroll-totp`, `auth:mfa:verify` にレート制限を適用。
-- API では `resolveRequestUser` でユーザーを確定し、`app_metadata.role` を再評価する。
+- API では `authenticateRequest`（`@/lib/auth/authenticate`）でユーザーを確定する。
+  JWT の署名・exp・iss・aud を JWKS でローカル検証したうえで、`session_id` が
+  `auth.sessions` に生存しているかを RPC で照合する。Supabase 公式が `getClaims` を
+  推奨しているため（getUser は JWT ごとに Auth サーバへ往復する）、旧 `resolveRequestUser`
+  から一本化した。`getClaims` はクレームをデコードするだけで失効を見ないので、
+  失効検知は RPC 側が担う。
+- MFA 系 API の `role` は JWT のクレームから読む。最大 1 時間古くなりうるが、判断の対象は
+  「自分のアカウントに MFA を設定させるか」だけで、管理機能へのアクセスは admin-rbac が
+  DB の ACL で別途判定するため権限は増えない。
 - サービスロール操作はサーバー側のみで実施し、クライアントへ secret key を露出しない。
 
 ### 管理者運用: MFAリセット

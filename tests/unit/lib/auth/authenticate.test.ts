@@ -27,13 +27,13 @@ const requestWith = (headers: Record<string, string>) =>
   new Request('http://localhost/api/admin/anything', { headers });
 
 describe('verifyAccessToken / authenticateRequest', () => {
-  let mod: typeof import('@/lib/supabase/server');
+  let mod: typeof import('@/lib/auth/authenticate');
 
   beforeAll(async () => {
     process.env.NEXT_PUBLIC_SUPABASE_URL = SUPABASE_URL;
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'anon-key';
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-key';
-    mod = await import('@/lib/supabase/server');
+    mod = await import('@/lib/auth/authenticate');
   });
 
   beforeEach(() => {

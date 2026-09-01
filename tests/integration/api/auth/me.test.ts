@@ -1,7 +1,7 @@
 export {};
 
-jest.mock('@/lib/supabase/server', () => ({
-  verifyAccessToken: jest.fn(),
+jest.mock('@/lib/auth/authenticate', () => ({
+  authenticateRequest: jest.fn(),
 }));
 
 jest.mock('next/server', () => ({
@@ -23,8 +23,8 @@ describe('GET /api/auth/me', () => {
   });
 
   test('returns authenticated user payload from HttpOnly cookie based session', async () => {
-    const { verifyAccessToken } = require('@/lib/supabase/server');
-    verifyAccessToken.mockResolvedValue({
+    const { authenticateRequest } = require('@/lib/auth/authenticate');
+    authenticateRequest.mockResolvedValue({
       ok: true,
       claims: {
         sub: 'user-1',
@@ -60,8 +60,8 @@ describe('GET /api/auth/me', () => {
   });
 
   test('reports mfaVerified=false while the session is still aal1', async () => {
-    const { verifyAccessToken } = require('@/lib/supabase/server');
-    verifyAccessToken.mockResolvedValue({
+    const { authenticateRequest } = require('@/lib/auth/authenticate');
+    authenticateRequest.mockResolvedValue({
       ok: true,
       claims: {
         sub: 'user-1',
@@ -79,8 +79,8 @@ describe('GET /api/auth/me', () => {
   });
 
   test('returns authenticated=false when no user is resolved', async () => {
-    const { verifyAccessToken } = require('@/lib/supabase/server');
-    verifyAccessToken.mockResolvedValue({ ok: false, reason: 'missing' });
+    const { authenticateRequest } = require('@/lib/auth/authenticate');
+    authenticateRequest.mockResolvedValue({ ok: false, reason: 'missing' });
 
     const { GET } = await handlerImport();
     const response: { status: number; json: () => Promise<unknown> } = await GET(

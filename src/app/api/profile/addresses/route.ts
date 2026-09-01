@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { createClient, resolveRequestUser } from '@/lib/supabase/server';
+import { createClient } from '@/lib/supabase/server';
+import { authenticateRequest, authFailureResponse } from '@/lib/auth/authenticate';
 
 const addressItemSchema = z.object({
 	id: z.string().trim().max(64).optional(),
@@ -170,17 +171,16 @@ async function fetchProfileAddressesRow(supabase: Awaited<ReturnType<typeof crea
 
 export async function GET(request: NextRequest) {
 	const supabase = await createClient(request);
-	const {
-		data: { user },
-		error: userError,
-	} = await resolveRequestUser(supabase, request);
+	const auth = await authenticateRequest(request);
 
-	if (userError || !user) {
-		console.error('Profile addresses auth error:', userError);
-		return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+	if (!auth.ok) {
+		console.warn('Profile addresses auth error:', auth.reason);
+		return authFailureResponse(auth.reason);
 	}
 
-	const { data: row, error } = await fetchProfileAddressesRow(supabase, user.id);
+	const userId = auth.claims.sub;
+
+	const { data: row, error } = await fetchProfileAddressesRow(supabase, userId);
 
 	if (error) {
 		console.error('Profile addresses fetch error:', error);
@@ -192,15 +192,14 @@ export async function GET(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
 	const supabase = await createClient(request);
-	const {
-		data: { user },
-		error: userError,
-	} = await resolveRequestUser(supabase, request);
+	const auth = await authenticateRequest(request);
 
-	if (userError || !user) {
-		console.error('Profile addresses auth error:', userError);
-		return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+	if (!auth.ok) {
+		console.warn('Profile addresses auth error:', auth.reason);
+		return authFailureResponse(auth.reason);
 	}
+
+	const userId = auth.claims.sub;
 
 	const { requireCsrfOrDeny } = await import('@/lib/csrfMiddleware');
 	const csrfResult = await requireCsrfOrDeny();
@@ -233,7 +232,7 @@ export async function PUT(request: NextRequest) {
 		  }
 		: null;
 
-	const { error } = await upsertProfileAddresses(supabase, user.id, addresses, mirroredAddress);
+	const { error } = await upsertProfileAddresses(supabase, userId, addresses, mirroredAddress);
 
 	if (error) {
 		console.error('Profile addresses update error:', error);
