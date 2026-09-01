@@ -16,9 +16,11 @@ test.describe('FR-CONTACT-011 問い合わせAPIセキュリティ制御', () =>
       },
     });
 
+    // FREQ-327: Origin 検査は proxy に一本化した。ルート固有の実装は削除済みなので、
+    // 本文はルートのものではなく proxy の応答になる。判定条件は 403 であること。
     expect(response.status()).toBe(403);
     const json = await response.json();
-    expect(json).toEqual({ success: false, error: 'Forbidden origin' });
+    expect(json).toEqual({ error: 'Forbidden origin' });
   });
 
   test('honeypot 入力ありの送信を拒否する', async ({ request }) => {

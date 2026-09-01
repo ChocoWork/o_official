@@ -77,14 +77,14 @@ function OAuthCallbackContent() {
     <div className="pb-10 sm:pb-14 px-6 lg:px-12">
       <div className="max-w-xl mx-auto">
         <h1 className="mb-4">{failed ? 'サインインできませんでした' : 'サインインしています…'}</h1>
-        <p className="text-sm text-[#474747] flex items-center gap-2" role="status" aria-live="polite">
+        <p className="lk-text-sm text-[#474747] flex items-center gap-2" role="status" aria-live="polite">
           {!failed ? <Spinner /> : null}
           {message}
         </p>
         {failed ? (
           <Link
             href="/login"
-            className="mt-4 inline-block text-sm underline underline-offset-4 hover:text-[#474747] transition-colors"
+            className="mt-4 inline-block lk-text-sm underline underline-offset-4 hover:text-[#474747] transition-colors"
           >
             ログインに戻る
           </Link>
@@ -101,7 +101,7 @@ export default function OAuthCallbackPage() {
         <div className="pb-10 sm:pb-14 px-6 lg:px-12">
           <div className="max-w-xl mx-auto">
             <h1 className="mb-4">サインインしています…</h1>
-            <p className="text-sm text-[#474747] flex items-center gap-2" role="status" aria-live="polite">
+            <p className="lk-text-sm text-[#474747] flex items-center gap-2" role="status" aria-live="polite">
               <Spinner />
               認証処理中…
             </p>

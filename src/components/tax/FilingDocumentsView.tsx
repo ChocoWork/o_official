@@ -123,7 +123,7 @@ export function FilingDocumentsView({
 
   return (
     <div className="space-y-4">
-      <h3 className="font-acumin text-base font-medium tracking-widest text-black">
+      <h3 className="font-acumin lk-text-lg font-medium tracking-widest text-black">
         申告資料
       </h3>
 
@@ -210,7 +210,7 @@ export function FilingDocumentsView({
           title={<span className={panelTitleClassName}>申告資料一覧</span>}
         >
           {grouped.length === 0 ? (
-            <p className="font-acumin text-xs text-[#707070]">
+            <p className="font-acumin lk-text-3xs text-[#707070]">
               条件に一致する資料がありません。
             </p>
           ) : (
@@ -258,7 +258,7 @@ export function FilingDocumentsView({
                             onClick={() => setSelectedKey(document.key)}
                             className={`cursor-pointer border-b border-[#ededed] transition-colors hover:bg-[#faf7f2] ${active ? "bg-[#f2f8f4]" : ""}`}
                           >
-                            <td className="px-2 py-2.5 font-acumin text-xs text-black">
+                            <td className="px-2 py-2.5 font-acumin lk-text-3xs text-black">
                               <i
                                 className="ri-file-text-line mr-1.5 text-[#707070]"
                                 aria-hidden="true"
@@ -341,14 +341,14 @@ export function FilingDocumentsView({
                   <i
                     className={
                       selected.fileKind === "pdf"
-                        ? "ri-file-pdf-2-line text-xl text-[#b91c1c]"
-                        : "ri-file-excel-2-line text-xl text-[#16844b]"
+                        ? "ri-file-pdf-2-line lk-text-4xl text-[#b91c1c]"
+                        : "ri-file-excel-2-line lk-text-4xl text-[#16844b]"
                     }
                   />
                 </span>
                 <div className="min-w-0">
                   <p className="flex flex-wrap items-center gap-2">
-                    <span className="font-acumin text-xs font-medium text-black">
+                    <span className="font-acumin lk-text-3xs font-medium text-black">
                       {selected.name}
                     </span>
                     <StateBadge
@@ -434,7 +434,7 @@ export function FilingDocumentsView({
               </div>
             </div>
           ) : (
-            <p className="font-acumin text-xs text-[#707070]">
+            <p className="font-acumin lk-text-3xs text-[#707070]">
               資料を選択すると詳細を表示します。
             </p>
           )}
@@ -454,7 +454,7 @@ export function FilingDocumentsView({
               value={inventory.progress}
               size={72}
               label={
-                <span className="font-acumin text-xs font-medium text-black tabular-nums">
+                <span className="font-acumin lk-text-3xs font-medium text-black tabular-nums">
                   {Math.round(inventory.progress)}%
                 </span>
               }

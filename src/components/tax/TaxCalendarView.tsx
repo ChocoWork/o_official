@@ -342,7 +342,7 @@ export function TaxCalendarView({
           }
         >
           {upcoming.length === 0 ? (
-            <p className="flex items-center gap-1.5 font-acumin text-xs text-[#16844b]">
+            <p className="flex items-center gap-1.5 font-acumin lk-text-3xs text-[#16844b]">
               <i className="ri-checkbox-circle-line" aria-hidden="true" />
               今後{UPCOMING_DAYS}日以内の期限はありません。
             </p>

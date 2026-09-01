@@ -6,8 +6,6 @@ import RegisterModal from "@/components/RegisterModal";
 
 export type AuthTab = "login" | "register";
 
-const mdTextStyle: React.CSSProperties = { fontSize: "var(--lk-size-md)" };
-
 const TABS: Array<{ key: AuthTab; label: string; path: string }> = [
   { key: "login", label: "ログイン", path: "/login" },
   { key: "register", label: "会員登録", path: "/login" },
@@ -46,7 +44,7 @@ const AuthTabs: React.FC<AuthTabsProps> = ({ initialTab, initialEmail }) => {
       <div
         role="tablist"
         aria-label="ログイン / 会員登録"
-        className="grid grid-cols-2 px-6"
+        className="grid min-h-[55px] grid-cols-2 px-6"
       >
         {TABS.map(({ key, label }) => {
           const selected = key === activeTab;
@@ -64,12 +62,11 @@ const AuthTabs: React.FC<AuthTabsProps> = ({ initialTab, initialEmail }) => {
               tabIndex={selected ? 0 : -1}
               onClick={() => switchTab(key)}
               onKeyDown={handleTabKeyDown}
-              className={`min-h-12 px-4 tracking-widest border-b transition-colors duration-200 focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-black ${
+              className={`min-h-[55px] px-[21px] lk-text-lg tracking-widest transition-[color,border-color] duration-200 focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-black ${
                 selected
-                  ? "border-black text-black"
-                  : "border-black/20 text-[#a3a3a3] hover:text-[#595959]"
+                  ? "border-b-2 border-black text-black"
+                  : "border-b border-black/20 text-[#737373] hover:border-black/40 hover:text-[#474747]"
               }`}
-              style={mdTextStyle}
             >
               {label}
             </button>
@@ -80,7 +77,7 @@ const AuthTabs: React.FC<AuthTabsProps> = ({ initialTab, initialEmail }) => {
         role="tabpanel"
         id="auth-panel"
         aria-labelledby={`auth-tab-${activeTab}`}
-        className="pt-6 sm:pt-10 lg:pt-13.75"
+        className="pt-[21px] sm:pt-[34px]"
       >
         {activeTab === "login" ? (
           <>

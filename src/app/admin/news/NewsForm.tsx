@@ -233,7 +233,7 @@ export function NewsForm({
           </div>
 
           <div className="space-y-2">
-            <label className="block text-xs tracking-wider text-[#474747]">画像</label>
+            <label className="block lk-text-3xs tracking-wider text-[#474747]">画像</label>
             <div
               role="button"
               tabIndex={0}
@@ -250,7 +250,7 @@ export function NewsForm({
               }}
               onDragLeave={() => setIsDragging(false)}
               onDrop={handleDrop}
-              className={`w-full border border-black/20 text-sm font-acumin px-4 py-10 text-center cursor-pointer transition-colors ${
+              className={`w-full border border-black/20 lk-text-sm font-acumin px-4 py-10 text-center cursor-pointer transition-colors ${
                 isDragging ? 'border-black bg-black/5' : 'bg-white'
               }`}
             >
@@ -263,7 +263,7 @@ export function NewsForm({
               />
               {displayImageUrl ? (
                 <div className="space-y-4">
-                  <p className="text-sm tracking-widest">
+                  <p className="lk-text-sm tracking-widest">
                     {imageFile ? `${imageFile.name} (新規)` : '現在の画像'}
                   </p>
                   <Image
@@ -274,12 +274,12 @@ export function NewsForm({
                     unoptimized={!!previewUrl}
                     className="mx-auto max-h-56 object-contain"
                   />
-                  <p className="text-xs text-black/70">クリックまたはドラッグ&ドロップで画像を変更</p>
+                  <p className="lk-text-3xs text-black/70">クリックまたはドラッグ&ドロップで画像を変更</p>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <p className="text-sm tracking-widest">画像をドラッグ&ドロップ</p>
-                  <p className="text-xs text-black/70">またはクリックしてファイルを追加（JPEG / PNG / WebP / GIF、5MB以下）</p>
+                  <p className="lk-text-sm tracking-widest">画像をドラッグ&ドロップ</p>
+                  <p className="lk-text-3xs text-black/70">またはクリックしてファイルを追加（JPEG / PNG / WebP / GIF、5MB以下）</p>
                 </div>
               )}
             </div>
@@ -343,12 +343,12 @@ export function NewsForm({
           </div>
 
           {submitError && (
-            <p className="text-sm text-red-600 font-acumin" role="alert">
+            <p className="lk-text-sm text-red-600 font-acumin" role="alert">
               {submitError}
             </p>
           )}
           {submitSuccess && (
-            <p className="text-sm text-black font-acumin" role="status">
+            <p className="lk-text-sm text-black font-acumin" role="status">
               {submitSuccess}
             </p>
           )}

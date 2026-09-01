@@ -1,0 +1,24 @@
+.auth-form-grid {
+  display: grid;
+  gap: 13px;
+}
+
+.auth-support-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%;
+  min-height: 44px;
+}
+
+.auth-support-row > [data-ui-text-field] {
+  width: 100%;
+}
+
+.auth-support-row--link {
+  align-items: flex-start;
+}
+
+.auth-form-grid > .auth-action {
+  margin-top: 8px;
+}

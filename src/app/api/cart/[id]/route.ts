@@ -6,6 +6,9 @@ import {
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
 
+// PUBLIC: ゲストカートを扱うので利用者認証は無い。所有権は httpOnly Cookie の
+// session_id（128bit ランダム）で判定し、レート制限と Origin 検査を前段に置く。
+
 type UpdatedCartRow = {
   id: string;
   item_id: number;

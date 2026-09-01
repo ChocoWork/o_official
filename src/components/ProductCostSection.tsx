@@ -36,7 +36,7 @@ const VIEW_TABS = [
 ];
 const PANEL = "rounded-xl border border-black/10 bg-white p-4 sm:p-5";
 const INPUT =
-  "h-10 w-full rounded-md border border-black/20 bg-white px-3 font-acumin text-sm text-black outline-none focus:border-black";
+  "h-10 w-full rounded-md border border-black/20 bg-white px-3 font-acumin lk-text-sm text-black outline-none focus:border-black";
 
 function currency(value: number): string {
   return new Intl.NumberFormat("ja-JP", {
@@ -87,7 +87,7 @@ function Metric({
         {label}
       </p>
       <p
-        className={`mt-2 font-acumin text-xl font-medium ${warning ? "text-[#a16600]" : positive ? "text-[#16844b]" : "text-black"}`}
+        className={`mt-2 font-acumin lk-text-4xl font-medium ${warning ? "text-[#a16600]" : positive ? "text-[#16844b]" : "text-black"}`}
       >
         {value}
       </p>
@@ -308,7 +308,7 @@ export function ProductCostSection({
   if (isLoading)
     return (
       <div className={PANEL}>
-        <p className="font-acumin text-sm text-[#707070]">
+        <p className="font-acumin lk-text-sm text-[#707070]">
           商品原価を読み込み中...
         </p>
       </div>
@@ -366,7 +366,7 @@ export function ProductCostSection({
       {message ? (
         <div
           role={message.error ? "alert" : "status"}
-          className={`rounded-lg border px-4 py-3 font-acumin text-xs ${message.error ? "border-red-300 text-red-700" : "border-[#16844b]/30 text-[#16844b]"}`}
+          className={`rounded-lg border px-4 py-3 font-acumin lk-text-3xs ${message.error ? "border-red-300 text-red-700" : "border-[#16844b]/30 text-[#16844b]"}`}
         >
           {message.text}
         </div>
@@ -431,7 +431,7 @@ export function ProductCostSection({
           </div>
           <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
             <div className={PANEL}>
-              <h3 className="font-acumin text-sm font-medium tracking-widest">
+              <h3 className="font-acumin lk-text-sm font-medium tracking-widest">
                 シーズン収支
               </h3>
               <div
@@ -453,7 +453,7 @@ export function ProductCostSection({
                   const value = Number(raw);
                   return (
                     <div key={String(label)}>
-                      <div className="flex justify-between font-acumin text-xs">
+                      <div className="flex justify-between font-acumin lk-text-3xs">
                         <span>{label}</span>
                         <span>{currency(value)}</span>
                       </div>
@@ -472,7 +472,7 @@ export function ProductCostSection({
               </div>
             </div>
             <div className={PANEL}>
-              <h3 className="font-acumin text-sm font-medium tracking-widest">
+              <h3 className="font-acumin lk-text-sm font-medium tracking-widest">
                 費用構成
               </h3>
               <div className="mt-5 grid grid-cols-[120px_1fr] items-center gap-5">
@@ -512,7 +512,7 @@ export function ProductCostSection({
                     </div>
                   ))}
                   {summary.directCost + summary.commonCost === 0 ? (
-                    <p className="font-acumin text-xs text-[#707070]">
+                    <p className="font-acumin lk-text-3xs text-[#707070]">
                       配賦確定後に表示されます。
                     </p>
                   ) : null}
@@ -521,13 +521,13 @@ export function ProductCostSection({
             </div>
           </div>
           <div className={PANEL}>
-            <h3 className="font-acumin text-sm font-medium tracking-widest">
+            <h3 className="font-acumin lk-text-sm font-medium tracking-widest">
               アイテム別 売上・原価・利益
             </h3>
             <div className="mt-5 space-y-5">
               {data?.items.map((item) => (
                 <div key={item.id}>
-                  <div className="flex justify-between font-acumin text-xs">
+                  <div className="flex justify-between font-acumin lk-text-3xs">
                     <span>{item.provisionalName}</span>
                     <span>利益 {currency(item.projectedProfit)}</span>
                   </div>
@@ -567,7 +567,7 @@ export function ProductCostSection({
                 </div>
               ))}
               {data?.items.length === 0 ? (
-                <p className="font-acumin text-xs text-[#707070]">
+                <p className="font-acumin lk-text-3xs text-[#707070]">
                   アイテムを登録すると比較できます。
                 </p>
               ) : null}
@@ -628,21 +628,21 @@ export function ProductCostSection({
                           {expense.allocated ? "配賦済み" : "未配賦"}
                         </span>
                       </td>
-                      <td className="px-2 py-3 font-acumin text-xs">
+                      <td className="px-2 py-3 font-acumin lk-text-3xs">
                         {expense.date}
                       </td>
                       <td className="px-2 py-3">
-                        <p className="font-acumin text-xs">
+                        <p className="font-acumin lk-text-3xs">
                           {expense.partner || "取引先なし"}
                         </p>
                         <p className="font-acumin lk-text-6xs text-[#707070]">
                           {expense.item}
                         </p>
                       </td>
-                      <td className="px-2 py-3 font-acumin text-xs">
+                      <td className="px-2 py-3 font-acumin lk-text-3xs">
                         {expense.category}
                       </td>
-                      <td className="px-2 py-3 text-right font-acumin text-xs">
+                      <td className="px-2 py-3 text-right font-acumin lk-text-3xs">
                         {currency(expense.amount)}
                       </td>
                       <td className="px-2 py-3 text-right">
@@ -660,7 +660,7 @@ export function ProductCostSection({
                 </tbody>
               </table>
               {filteredExpenses.length === 0 ? (
-                <p className="py-8 text-center font-acumin text-xs text-[#707070]">
+                <p className="py-8 text-center font-acumin lk-text-3xs text-[#707070]">
                   対象の支出はありません。
                 </p>
               ) : null}
@@ -709,7 +709,7 @@ export function ProductCostSection({
                     <p className="font-acumin lk-text-6xs tracking-widest text-[#707070]">
                       {item.category}
                     </p>
-                    <h3 className="mt-1 font-acumin text-sm font-medium">
+                    <h3 className="mt-1 font-acumin lk-text-sm font-medium">
                       {item.provisionalName}
                     </h3>
                   </div>
@@ -718,7 +718,7 @@ export function ProductCostSection({
                     aria-hidden="true"
                   />
                 </div>
-                <dl className="mt-5 grid grid-cols-2 gap-3 font-acumin text-xs">
+                <dl className="mt-5 grid grid-cols-2 gap-3 font-acumin lk-text-3xs">
                   <div>
                     <dt className="lk-text-6xs text-[#707070]">直接原価</dt>
                     <dd className="mt-1">{currency(item.directCost)}</dd>
@@ -752,7 +752,7 @@ export function ProductCostSection({
               <div
                 className={`${PANEL} md:col-span-2 xl:col-span-3 text-center`}
               >
-                <p className="font-acumin text-xs text-[#707070]">
+                <p className="font-acumin lk-text-3xs text-[#707070]">
                   商品がありません。「商品を追加」から仮商品を登録してください。
                 </p>
               </div>
@@ -775,10 +775,10 @@ export function ProductCostSection({
                 <p className="font-acumin lk-text-6xs tracking-widest text-[#707070]">
                   支出配賦
                 </p>
-                <h2 className="mt-1 font-acumin text-lg font-medium">
+                <h2 className="mt-1 font-acumin lk-text-2xl font-medium">
                   {selectedExpense.item}
                 </h2>
-                <p className="font-acumin text-xs text-[#707070]">
+                <p className="font-acumin lk-text-3xs text-[#707070]">
                   {selectedExpense.date} /{" "}
                   {selectedExpense.partner || "取引先なし"} /{" "}
                   {currency(selectedExpense.amount)}
@@ -789,7 +789,7 @@ export function ProductCostSection({
                 aria-label="配賦画面を閉じる"
                 onClick={() => setSelectedExpense(null)}
               >
-                <i className="ri-close-line text-xl" />
+                <i className="ri-close-line lk-text-4xl" />
               </button>
             </div>
             <div className="space-y-3">
@@ -799,7 +799,7 @@ export function ProductCostSection({
                   className="rounded-xl border border-black/10 p-3"
                 >
                   <div className="mb-3 flex justify-between">
-                    <span className="font-acumin text-xs font-medium">
+                    <span className="font-acumin lk-text-3xs font-medium">
                       配賦 {index + 1}
                     </span>
                     <button
@@ -926,7 +926,7 @@ export function ProductCostSection({
               配賦行を追加
             </Button>
             <div className="sticky bottom-0 rounded-xl border border-black/10 bg-white p-4 shadow-[0_-8px_24px_rgba(0,0,0,0.06)]">
-              <div className="grid grid-cols-3 gap-3 font-acumin text-xs">
+              <div className="grid grid-cols-3 gap-3 font-acumin lk-text-3xs">
                 <div>
                   <span className="lk-text-6xs text-[#707070]">支出金額</span>
                   <p>{currency(selectedExpense.amount)}</p>
@@ -1021,16 +1021,16 @@ export function ProductCostSection({
       >
         <div className="space-y-5">
           <div className="flex justify-between">
-            <h2 className="font-acumin text-lg font-medium">商品を追加</h2>
+            <h2 className="font-acumin lk-text-2xl font-medium">商品を追加</h2>
             <button
               type="button"
               aria-label="商品追加を閉じる"
               onClick={() => setIsAddItemOpen(false)}
             >
-              <i className="ri-close-line text-xl" />
+              <i className="ri-close-line lk-text-4xl" />
             </button>
           </div>
-          <label className="block font-acumin text-xs">
+          <label className="block font-acumin lk-text-3xs">
             カテゴリ
             <select
               className={`${INPUT} mt-1`}
@@ -1047,7 +1047,7 @@ export function ProductCostSection({
               ))}
             </select>
           </label>
-          <label className="block font-acumin text-xs">
+          <label className="block font-acumin lk-text-3xs">
             仮の商品名
             <input
               className={`${INPUT} mt-1`}
@@ -1088,7 +1088,7 @@ export function ProductCostSection({
                 <p className="font-acumin lk-text-6xs tracking-widest text-[#707070]">
                   {selectedItem.category}
                 </p>
-                <h2 className="font-acumin text-lg font-medium">
+                <h2 className="font-acumin lk-text-2xl font-medium">
                   {selectedItem.provisionalName}
                 </h2>
               </div>
@@ -1097,7 +1097,7 @@ export function ProductCostSection({
                 aria-label="商品詳細を閉じる"
                 onClick={() => setSelectedItem(null)}
               >
-                <i className="ri-close-line text-xl" />
+                <i className="ri-close-line lk-text-4xl" />
               </button>
             </div>
             <p className="rounded-lg bg-[#f5f5f5] p-3 font-acumin lk-text-4xs text-[#474747]">
@@ -1138,7 +1138,7 @@ export function ProductCostSection({
               />
             </div>
             <div className={PANEL}>
-              <h3 className="font-acumin text-sm font-medium tracking-widest">
+              <h3 className="font-acumin lk-text-sm font-medium tracking-widest">
                 原価内訳
               </h3>
               <div className="mt-4 space-y-2">
@@ -1147,21 +1147,21 @@ export function ProductCostSection({
                 ).map((type) => (
                   <div
                     key={type}
-                    className="flex justify-between font-acumin text-xs"
+                    className="flex justify-between font-acumin lk-text-3xs"
                   >
                     <span>{PRODUCT_COST_TYPE_LABELS[type]}</span>
                     <span>{currency(selectedItem.costBreakdown[type])}</span>
                   </div>
                 ))}
                 {selectedItem.directCost === 0 ? (
-                  <p className="font-acumin text-xs text-[#707070]">
+                  <p className="font-acumin lk-text-3xs text-[#707070]">
                     支出を配賦すると表示されます。
                   </p>
                 ) : null}
               </div>
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <label className="font-acumin text-xs">
+              <label className="font-acumin lk-text-3xs">
                 カテゴリ
                 <select
                   className={`${INPUT} mt-1`}
@@ -1178,7 +1178,7 @@ export function ProductCostSection({
                   ))}
                 </select>
               </label>
-              <label className="font-acumin text-xs">
+              <label className="font-acumin lk-text-3xs">
                 仮の商品名
                 <input
                   className={`${INPUT} mt-1`}
@@ -1192,7 +1192,7 @@ export function ProductCostSection({
                   }
                 />
               </label>
-              <label className="font-acumin text-xs">
+              <label className="font-acumin lk-text-3xs">
                 製造予定数
                 <input
                   className={`${INPUT} mt-1`}
@@ -1210,7 +1210,7 @@ export function ProductCostSection({
                   }
                 />
               </label>
-              <label className="font-acumin text-xs">
+              <label className="font-acumin lk-text-3xs">
                 1着の販売価格
                 <input
                   className={`${INPUT} mt-1`}
@@ -1228,7 +1228,7 @@ export function ProductCostSection({
                   }
                 />
               </label>
-              <label className="font-acumin text-xs sm:col-span-2">
+              <label className="font-acumin lk-text-3xs sm:col-span-2">
                 1着当たり生地使用量（m）
                 <input
                   className={`${INPUT} mt-1`}
@@ -1252,7 +1252,7 @@ export function ProductCostSection({
               <p className="font-acumin lk-text-6xs text-white/60">
                 予定数量分の必要生地
               </p>
-              <p className="mt-1 font-acumin text-2xl">
+              <p className="mt-1 font-acumin lk-text-7xl">
                 {(
                   itemForm.fabricMetersPerUnit * itemForm.plannedQuantity
                 ).toFixed(3)}{" "}

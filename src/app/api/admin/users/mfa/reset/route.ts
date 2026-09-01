@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { logAudit } from '@/lib/audit';
 import { createServiceRoleClient } from '@/lib/supabase/server';
-import { resetPrivilegedMfaVerification } from '@/features/auth/services/mfa-metadata';
 
 const resetMfaBodySchema = z.object({
   userId: z.string().uuid(),
@@ -186,31 +185,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Failed to delete one or more MFA factors' }, { status: 500 });
     }
 
-    const resetResult = await resetPrivilegedMfaVerification(service, {
-      id: targetUser.id,
-      app_metadata: targetUser.app_metadata,
-    });
-
-    if (!resetResult.ok) {
-      await logAudit({
-        action: 'admin.users.mfa.reset',
-        actor_id: authResult.userId,
-        actor_email: authResult.actorEmail,
-        resource: 'users',
-        resource_id: userId,
-        outcome: 'error',
-        detail: 'Failed to reset MFA verification metadata',
-        ip: clientIp,
-        user_agent: userAgent,
-        metadata: {
-          reason,
-          total_factors: factors.length,
-          metadata_error: resetResult.error,
-        },
-      });
-
-      return NextResponse.json({ error: 'Failed to reset MFA metadata' }, { status: 500 });
-    }
 
     await logAudit({
       action: 'admin.users.mfa.reset',

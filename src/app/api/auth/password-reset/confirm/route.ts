@@ -17,6 +17,9 @@ import {
 } from '@/lib/cookie';
 import { readPasswordResetSessionFromCookieHeader } from '@/features/auth/services/password-reset-session';
 
+// PUBLIC: 再設定フローの終端。認証の代わりに署名済み Cookie と未消費トークン行の
+// 両方を検証する（どちらか一方だけを能力にしない）。
+
 /**
  * パスワード変更後は既存セッションを全て切る。
  * 乗っ取られた利用者がパスワードを変えても、失効させないと攻撃者のセッションが
@@ -68,19 +71,6 @@ export async function POST(request: Request) {
 
     const { new_password } = parsed.data;
 
-    // 漏洩済みパスワードを弾く。トークン照合より前に行い、無駄な DB 往復を避ける。
-    // Supabase の leaked password protection は Pro プラン以上でしか使えないため、
-    // 同等の制御をここに置く（FREQ-323）。
-    const pwned = await checkPwnedPassword(new_password);
-    if (pwned.status === 'pwned') {
-      await logAudit({ action: 'password_reset_confirm', actor_email: session.email, outcome: 'failure', detail: 'pwned_password' });
-      return NextResponse.json({ error: PWNED_PASSWORD_MESSAGE }, { status: 400 });
-    }
-    if (pwned.status === 'unavailable') {
-      // 外部サービスの障害で再設定を止めない。検査が効いていない期間を追えるよう監査に残す。
-      await logAudit({ action: 'password_reset_confirm', actor_email: session.email, outcome: 'error', detail: `pwned_check_unavailable:${pwned.reason}` });
-    }
-
     const supabase = await createServiceRoleClient();
 
     // Cookie は署名されているが、それだけを能力にしない。link で消費された行が
@@ -101,6 +91,21 @@ export async function POST(request: Request) {
     if (!tokenRow) {
       await logAudit({ action: 'password_reset_confirm', actor_email: session.email, outcome: 'failure', detail: 'invalid_or_consumed_token' });
       return NextResponse.json({ error: 'Invalid or expired reset session' }, { status: 400 });
+    }
+
+    // 漏洩済みパスワードを弾く。トークンが有効だと確かめた後に行う。順序が逆だと、
+    // 消費済み・偽造トークンでも HIBP への外部往復が発生し、未認証の相手に
+    // 外部 API を叩かせる導線になる（増幅の踏み台になり、レイテンシも無駄になる）。
+    // Supabase の leaked password protection は Pro プラン以上でしか使えないため、
+    // 同等の制御をここに置く（FREQ-323）。
+    const pwned = await checkPwnedPassword(new_password);
+    if (pwned.status === 'pwned') {
+      await logAudit({ action: 'password_reset_confirm', actor_email: session.email, outcome: 'failure', detail: 'pwned_password' });
+      return NextResponse.json({ error: PWNED_PASSWORD_MESSAGE }, { status: 400 });
+    }
+    if (pwned.status === 'unavailable') {
+      // 外部サービスの障害で再設定を止めない。検査が効いていない期間を追えるよう監査に残す。
+      await logAudit({ action: 'password_reset_confirm', actor_email: session.email, outcome: 'error', detail: `pwned_check_unavailable:${pwned.reason}` });
     }
 
     // updateUserById は AuthError を投げずに { data, error } で返す。

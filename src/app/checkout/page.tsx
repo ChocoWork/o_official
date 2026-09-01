@@ -1479,7 +1479,7 @@ function CheckoutPageContent() {
   if (cartLoading) {
     return (
       <div className="element-width text-center">
-        <div className="text-base tracking-widest" style={mdTextStyle}>
+        <div className="lk-text-lg tracking-widest" style={mdTextStyle}>
           読み込み中...
         </div>
       </div>
@@ -1565,7 +1565,7 @@ function CheckoutPageContent() {
                 style={{ gap: "var(--gap-group)" }}
               >
                 <div className="w-12 h-12 flex items-center justify-center bg-black text-white rounded-full shrink-0">
-                  <i className={`${card.icon} text-xl`}></i>
+                  <i className={`${card.icon} lk-text-4xl`}></i>
                 </div>
                 <div
                   className="checkout-field"
@@ -1590,13 +1590,13 @@ function CheckoutPageContent() {
           >
             <Link
               href="/item"
-              className="px-12 py-4 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap"
+              className="px-12 py-4 bg-black text-white lk-text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap"
             >
               買い物を続ける
             </Link>
             <Link
               href="/account"
-              className="px-12 py-4 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap"
+              className="px-12 py-4 border border-black text-black lk-text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap"
             >
               注文履歴を見る
             </Link>
@@ -1723,7 +1723,7 @@ function CheckoutPageContent() {
                     />
                     {checkoutError && (
                       <div className="mt-4 space-y-3">
-                        <p className="text-sm text-red-600">{checkoutError}</p>
+                        <p className="lk-text-sm text-red-600">{checkoutError}</p>
                         <Button
                           type="button"
                           variant="secondary"
@@ -1857,7 +1857,7 @@ function CheckoutPageContent() {
                     </p>
                     {checkoutError && (
                       <div className="mt-4 space-y-3">
-                        <p className="text-sm text-red-600">{checkoutError}</p>
+                        <p className="lk-text-sm text-red-600">{checkoutError}</p>
                         <Button
                           type="button"
                           variant="secondary"
@@ -2012,7 +2012,7 @@ export default function CheckoutPage() {
       fallback={
         <div className="md:px-10 lg:px-12">
           <div className="max-w-6xl mx-auto">
-            <p className="text-sm text-[#474747]">読み込み中...</p>
+            <p className="lk-text-sm text-[#474747]">読み込み中...</p>
           </div>
         </div>
       }

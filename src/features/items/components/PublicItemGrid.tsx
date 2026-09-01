@@ -1304,7 +1304,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
       return (
         <section id="items" className="w-full pb-14 sm:pb-16 md:pb-20">
           <div className="element-width text-center py-10">
-            <div className="text-xl text-red-500">{error}</div>
+            <div className="lk-text-4xl text-red-500">{error}</div>
           </div>
         </section>
       );

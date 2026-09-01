@@ -17,7 +17,13 @@
     "test:e2e:debug": "playwright test --debug",
     "validate-docs": "node scripts/validate-design-docs.js",
     "check-coverage": "node scripts/generate-coverage-report.js",
-    "cleanup:audit-logs": "node scripts/cleanup-audit-logs.js"
+    "cleanup:audit-logs": "node scripts/cleanup-audit-logs.js",
+    "hooks:install": "node scripts/install-hooks.mjs",
+    "test:related": "jest --findRelatedTests --passWithNoTests",
+    "db:start": "supabase start",
+    "db:stop": "supabase stop",
+    "db:reset": "supabase db reset",
+    "test:all": "npm run lint && npm run typecheck && npm test && npm run test:e2e"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1106.0",
@@ -68,6 +74,7 @@
     "mermaid": "^10.9.5",
     "node-fetch": "^2.7.0",
     "pg": "^8.23.0",
+    "supabase": "^2.116.0",
     "tailwindcss": "^4",
     "ts-jest": "^29",
     "tsx": "^4.23.11",

@@ -159,8 +159,8 @@ export function StockistForm({ submitUrl, submitMethod, initialValues, isLoading
             />
           </div>
 
-          {submitError ? <p className="text-sm text-red-600 font-acumin">{submitError}</p> : null}
-          {submitSuccess ? <p className="text-sm text-green-700 font-acumin">{submitSuccess}</p> : null}
+          {submitError ? <p className="lk-text-sm text-red-600 font-acumin">{submitError}</p> : null}
+          {submitSuccess ? <p className="lk-text-sm text-green-700 font-acumin">{submitSuccess}</p> : null}
 
           <div className="pt-2 flex justify-end">
             <Button type="submit" variant="primary" size="sm" className="font-acumin" disabled={isSubmitting}>

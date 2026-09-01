@@ -1,5 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
-import { mockAdminApis } from './FR-ADMIN-044-ledger-three-views.spec';
+import { mockAdminApis } from './admin-accounting-test-utils';
 
 // FREQ-270: Stripe決済・実額手数料・成功返金・Payout・銀行着金確認を ACCOUNTING に反映する。
 // 財務概要に Stripe決済残高／Stripe入金途上／Payout一覧と銀行着金確認を出し、

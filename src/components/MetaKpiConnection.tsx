@@ -92,7 +92,7 @@ export function MetaKpiConnection({
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
-          <p className="font-acumin text-xs font-medium text-black">
+          <p className="font-acumin lk-text-3xs font-medium text-black">
             Instagram・Meta広告連携
           </p>
           {!data.configured ? (

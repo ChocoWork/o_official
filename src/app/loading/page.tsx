@@ -15,7 +15,7 @@ export default function LoadingPage() {
   if (!isAuthResolved) {
     return (
       <div className="element-width">
-        <p className="text-sm text-[#474747] font-acumin">読み込み中...</p>
+        <p className="lk-text-sm text-[#474747] font-acumin">読み込み中...</p>
       </div>
     );
   }
@@ -24,7 +24,7 @@ export default function LoadingPage() {
     return (
       <div className="element-width">
         <h1 className="mb-4">アクセス権限がありません</h1>
-        <p className="text-sm text-[#474747] font-acumin">
+        <p className="lk-text-sm text-[#474747] font-acumin">
           このページは Admin のみ利用できます。
         </p>
       </div>

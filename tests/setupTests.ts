@@ -39,3 +39,30 @@ if (!(globalThis as any).TextDecoder) {
     writable: true,
   });
 }
+
+// jsdom は IntersectionObserver を実装していない。
+// ScrollReveal など useEffect の中でこの API を使うコンポーネントは、
+// polyfill が無いと render 時に ReferenceError を投げてテストが落ちる。
+// コールバックは発火しない最小のスタブ。交差を再現したいテストが出てきたら、
+// そのテスト側で observe を差し替えること。
+if (!(globalThis as any).IntersectionObserver) {
+  class IntersectionObserverStub implements IntersectionObserver {
+    readonly root: Element | Document | null = null;
+    readonly rootMargin: string = '0px';
+    readonly thresholds: ReadonlyArray<number> = [0];
+
+    // コールバックもオプションも使わないので受け取らない（余分な引数は無視される）。
+
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+    takeRecords(): IntersectionObserverEntry[] {
+      return [];
+    }
+  }
+
+  Object.defineProperty(globalThis, 'IntersectionObserver', {
+    value: IntersectionObserverStub,
+    writable: true,
+  });
+}

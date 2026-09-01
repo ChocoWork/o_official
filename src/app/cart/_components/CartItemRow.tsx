@@ -101,7 +101,7 @@ export function CartItemRow({
               >
                 <div className="w-4 h-4 flex items-center justify-center">
                   <i
-                    className={`text-base ${
+                    className={`lk-text-lg ${
                       isWishlisted ? "ri-bookmark-fill" : "ri-bookmark-line"
                     }`}
                   />
@@ -116,7 +116,7 @@ export function CartItemRow({
                 aria-label="カートから削除"
               >
                 <div className="w-4 h-4 flex items-center justify-center">
-                  <i className="ri-close-line text-base" />
+                  <i className="ri-close-line lk-text-lg" />
                 </div>
               </Button>
             </div>

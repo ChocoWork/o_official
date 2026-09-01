@@ -7,6 +7,9 @@ import { ResetRequestSchema } from '@/features/auth/schemas/password-reset';
 import { formatZodError } from '@/features/auth/schemas/common';
 import { getRequestOrigin } from '@/lib/redirect';
 
+// PUBLIC: パスワードを忘れた利用者の入口なので認証は掛けられない。
+// 濫用対策はレート制限と、登録有無で応答を変えないこと（OWASP Forgot Password CS）。
+
 const TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 export async function POST(request: Request) {

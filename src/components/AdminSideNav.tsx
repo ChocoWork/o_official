@@ -44,7 +44,7 @@ export default function AdminSideNav({
             data-active={isActive ? "true" : undefined}
             onClick={() => onTabChange(tab)}
             className={[
-              "flex shrink-0 items-center gap-3 border-l-0.75 px-3 py-2.5 text-left font-acumin text-xs tracking-widest transition-colors lg:w-full",
+              "flex shrink-0 items-center gap-3 border-l-0.75 px-3 py-2.5 text-left font-acumin lk-text-3xs tracking-widest transition-colors lg:w-full",
               isActive
                 ? "border-black bg-[#e9e9e9] font-medium text-black"
                 : "border-transparent text-[#474747] hover:bg-[#efefef] hover:text-black",

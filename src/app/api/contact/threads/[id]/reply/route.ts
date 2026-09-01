@@ -25,7 +25,23 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return authFailureResponse(auth.reason, NO_STORE_HEADERS);
     }
 
-    const user = { id: auth.claims.sub, email: auth.claims.email ?? null };
+    const userId = auth.claims.sub;
+    const userEmail = auth.claims.email ?? null;
+
+    // 認証済みでも、1 スレッドへ無制限に行を挿入させない（OWASP A04: レート制限の欠如）。
+    // 主体は IP ではなく利用者。共有 IP の巻き添えを避けつつ、乗っ取られた 1 セッションが
+    // contact_messages を膨らませるのを止める。
+    const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
+    const rateLimited = await enforceRateLimit({
+      request,
+      endpoint: 'contact:thread:reply',
+      subject: userId,
+      limit: 30,
+      windowSeconds: 3600,
+    });
+    if (rateLimited) {
+      return rateLimited;
+    }
 
     const parsed = replySchema.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) {
@@ -42,8 +58,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     const ownsThread =
       inquiry &&
-      (inquiry.user_id === user.id ||
-        (user.email ? inquiry.email.trim().toLowerCase() === user.email.trim().toLowerCase() : false));
+      (inquiry.user_id === userId ||
+        (userEmail ? inquiry.email.trim().toLowerCase() === userEmail.trim().toLowerCase() : false));
 
     if (!ownsThread) {
       return NextResponse.json({ error: 'Not found' }, { status: 404, headers: NO_STORE_HEADERS });
@@ -53,7 +69,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       {
         inquiry_id: id,
         sender_role: 'user',
-        author_id: user.id,
+        author_id: userId,
         body: parsed.data.body,
         channel: 'web',
       },
@@ -72,7 +88,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     await logAudit({
       action: 'contact.thread.reply',
-      actor_id: user.id,
+      actor_id: userId,
       resource: 'contact',
       resource_id: id,
       outcome: 'success',

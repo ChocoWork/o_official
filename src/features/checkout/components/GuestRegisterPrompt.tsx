@@ -17,10 +17,10 @@ export function GuestRegisterPrompt({ email }: { email: string }) {
       aria-label="会員登録のご案内"
       className="mt-6 border border-[#d4d4d4] bg-white px-5 py-4"
     >
-      <h3 className="font-acumin text-sm tracking-widest text-black">
+      <h3 className="font-acumin lk-text-sm tracking-widest text-black">
         次回から入力不要になります
       </h3>
-      <p className="mt-2 font-acumin text-xs leading-relaxed text-[#474747]">
+      <p className="mt-2 font-acumin lk-text-3xs leading-relaxed text-[#474747]">
         会員登録すると、このご注文がマイページに表示され、お届け先も引き継がれます。
       </p>
       <Button href={href} variant="primary" size="sm" className="mt-4 font-acumin">

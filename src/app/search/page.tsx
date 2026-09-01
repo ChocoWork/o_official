@@ -19,7 +19,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default function SearchPage() {
   return (
-    <Suspense fallback={<p className="text-sm text-[#474747]">読み込み中...</p>}>
+    <Suspense fallback={<p className="lk-text-sm text-[#474747]">読み込み中...</p>}>
       <SearchPageClient />
     </Suspense>
   );

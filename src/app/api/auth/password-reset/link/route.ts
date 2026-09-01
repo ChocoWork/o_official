@@ -6,6 +6,8 @@ import { createPasswordResetSessionToken, passwordResetSessionMaxAgeSeconds } fr
 import { getRequestOrigin } from '@/lib/redirect';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 
+// PUBLIC: メール内リンクからの到達点。認証の代わりにワンタイムトークンを検証する。
+
 const PASSWORD_RESET_PAGE_PATH = '/auth/password-reset';
 const PASSWORD_RESET_VERIFY_PATH = '/auth/password-reset/verify';
 

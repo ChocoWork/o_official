@@ -84,13 +84,13 @@ const patterns = [
     render: (
       <div className="relative overflow-hidden">
         <span
-          className="text-sm tracking-widest text-black/20"
+          className="lk-text-sm tracking-widest text-black/20"
           style={{ fontFamily: "Didot, serif" }}
         >
           Loading
         </span>
         <span
-          className="absolute inset-0 text-sm tracking-widest text-black animate-[shimmer_2s_linear_infinite]"
+          className="absolute inset-0 lk-text-sm tracking-widest text-black animate-[shimmer_2s_linear_infinite]"
           style={{ fontFamily: "Didot, serif" }}
         >
           Loading
@@ -98,8 +98,8 @@ const patterns = [
       </div>
     ),
     code: `<div className="relative overflow-hidden">
-  <span className="text-sm tracking-widest text-black/20">Loading</span>
-  <span className="absolute inset-0 text-sm tracking-widest text-black animate-[shimmer_2s_linear_infinite]">Loading</span>
+  <span className="lk-text-sm tracking-widest text-black/20">Loading</span>
+  <span className="absolute inset-0 lk-text-sm tracking-widest text-black animate-[shimmer_2s_linear_infinite]">Loading</span>
 </div>
 
 /* globals.css or style tag */

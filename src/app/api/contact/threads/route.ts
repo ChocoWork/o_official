@@ -22,7 +22,8 @@ export async function GET(request: NextRequest) {
       return authFailureResponse(auth.reason, NO_STORE_HEADERS);
     }
 
-    const user = { id: auth.claims.sub, email: auth.claims.email ?? null };
+    const userId = auth.claims.sub;
+    const userEmail = auth.claims.email ?? null;
 
     const service = await createServiceRoleClient();
     const threads = new Map<string, ThreadRow>();
@@ -31,16 +32,16 @@ export async function GET(request: NextRequest) {
     const { data: byUser } = await service
       .from('contact_inquiries')
       .select(columns)
-      .eq('user_id', user.id);
+      .eq('user_id', userId);
     for (const row of (byUser ?? []) as ThreadRow[]) {
       threads.set(row.id, row);
     }
 
-    if (user.email) {
+    if (userEmail) {
       const { data: byEmail } = await service
         .from('contact_inquiries')
         .select(columns)
-        .ilike('email', user.email);
+        .ilike('email', userEmail);
       for (const row of (byEmail ?? []) as ThreadRow[]) {
         threads.set(row.id, row);
       }

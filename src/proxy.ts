@@ -9,11 +9,38 @@ import { hasExplicitOriginConfig, isAllowedOrigin } from '@/lib/redirect';
 
 // SameSite=Lax は多層防御であって設計上の制御ではない（OWASP CSRF Cheat Sheet）ので、
 // 状態を変える API は Origin も見る。検査は POST/PUT/PATCH/DELETE 限定なので
-// OAuth コールバック等の GET には影響しない。Stripe webhook は /api/webhook 配下で対象外
-// （Origin を持たない正当な外部 POST を壊さないため）。
-const STATE_CHANGING_PATH_PREFIXES = ['/api/auth', '/api/admin', '/api/cart', '/api/checkout/create-session', '/api/checkout/complete', '/api/wishlist'] as const;
+// OAuth コールバック等の GET には影響しない。
+//
+// 対象は /api 配下の状態変更リクエスト**すべて**。以前は保護するパスを列挙する
+// 許可リストだったが、それでは新しく作ったルートが黙って無防備になる（実際に
+// /api/contact 配下が漏れ、/api/contact/threads/[id]/reply は Origin 検査も
+// CSRF トークンも無い状態だった）。セキュリティ制御を opt-in で回すと漏れが
+// 検知されないので、既定を「検査する」にして除外だけを明示する。
+//
+// 除外してよいのは「Origin を持たない正当な外部 POST」で、かつ別の手段で
+// 発信元を検証しているものだけ。増やすときはその検証手段をコメントに書くこと。
+const ORIGIN_CHECK_PATH_PREFIX = '/api';
+const ORIGIN_CHECK_EXEMPT_PREFIXES = [
+  '/api/webhook',         // Stripe: 署名検証（constructEvent）
+  '/api/contact/inbound', // Resend: Svix 署名検証
+  '/api/cron',            // スケジューラ: Bearer シークレット
+] as const;
+
+/**
+ * パスの前方一致をセグメント境界で判定する。
+ *
+ * 素の startsWith だと '/api' が '/apidocs' に、'/api/webhook' が
+ * '/api/webhookfoo' に当たる。前者は検査漏れ、後者は除外の誤爆で、
+ * どちらも Origin 検査をすり抜ける経路を作る。
+ */
+function matchesPathSegment(pathname: string, prefix: string): boolean {
+  return pathname === prefix || pathname.startsWith(`${prefix}/`);
+}
 const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
+
+/** 許可オリジン未設定の警告はプロセスにつき 1 回。毎リクエスト出すとログが埋まる。 */
+let unconfiguredOriginWarned = false;
 
 function generateNonce(): string {
   const bytes = new Uint8Array(12);
@@ -118,7 +145,11 @@ function isProtectedStateChangingApiRequest(request: NextRequest): boolean {
   }
 
   const pathname = request.nextUrl.pathname;
-  return STATE_CHANGING_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+  if (!matchesPathSegment(pathname, ORIGIN_CHECK_PATH_PREFIX)) {
+    return false;
+  }
+
+  return !ORIGIN_CHECK_EXEMPT_PREFIXES.some((prefix) => matchesPathSegment(pathname, prefix));
 }
 
 /**
@@ -152,10 +183,14 @@ function isAllowedOriginRequest(request: NextRequest): boolean {
   }
 
   // 許可リストが未設定。ここで全拒否すると設定漏れだけで機能停止するため退避する。
-  console.warn(
-    '[proxy] APP_ALLOWED_ORIGINS 等が未設定のため、Origin 検査をリクエスト由来の値で行っています。' +
-      '本番では許可オリジンを明示してください。',
-  );
+  // 状態変更リクエストのたびに出すとログが埋まるので、プロセスにつき 1 回だけ知らせる。
+  if (!unconfiguredOriginWarned) {
+    unconfiguredOriginWarned = true;
+    console.warn(
+      '[proxy] APP_ALLOWED_ORIGINS 等が未設定のため、Origin 検査をリクエスト由来の値で行っています。' +
+        '本番では許可オリジンを明示してください。',
+    );
+  }
   try {
     return new URL(candidate).origin === fallbackRequestOrigin(request);
   } catch {

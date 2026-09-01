@@ -59,7 +59,7 @@ function ItemActionButtons({
           "SOLD OUT"
         ) : addedToCart ? (
           <div className="flex items-center justify-center gap-2">
-            <i className="ri-check-line text-base" />
+            <i className="ri-check-line lk-text-lg" />
             ADDED
           </div>
         ) : addingToCart ? (
@@ -67,7 +67,7 @@ function ItemActionButtons({
         ) : (
           <div className="flex items-center justify-center gap-2">
             <div className="flex h-4 w-4 items-center justify-center">
-              <i className="ri-shopping-bag-line text-base" />
+              <i className="ri-shopping-bag-line lk-text-lg" />
             </div>
             ADD TO CART
           </div>
@@ -86,7 +86,7 @@ function ItemActionButtons({
           <div className="flex items-center justify-center gap-2">
             <div className="flex h-4 w-4 items-center justify-center">
               <i
-                className={`text-base ${
+                className={`lk-text-lg ${
                   isWishlisted ? "ri-bookmark-fill" : "ri-bookmark-line"
                 }`}
               />
@@ -107,7 +107,7 @@ function StockBadge({ stockStatus }: { stockStatus?: ItemStockStatus }) {
     return (
       <span
         data-testid="stock-status"
-        className="inline-block text-xs tracking-widest text-white bg-black px-2 py-0.5"
+        className="inline-block lk-text-3xs tracking-widest text-white bg-black px-2 py-0.5"
       >
         SOLD OUT
       </span>
@@ -118,7 +118,7 @@ function StockBadge({ stockStatus }: { stockStatus?: ItemStockStatus }) {
     return (
       <span
         data-testid="stock-status"
-        className="inline-block text-xs tracking-widest text-red-600 border border-red-400 px-2 py-0.5"
+        className="inline-block lk-text-3xs tracking-widest text-red-600 border border-red-400 px-2 py-0.5"
       >
         残りわずか
       </span>
@@ -377,7 +377,7 @@ export default function ItemDetailClient({ id }: Props) {
                 router.push("/item");
               }}
               variant="ghost"
-              className="text-sm text-[#474747] hover:text-black transition-colors duration-300 flex items-center gap-2 px-0 py-0"
+              className="lk-text-sm text-[#474747] hover:text-black transition-colors duration-300 flex items-center gap-2 px-0 py-0"
               size="md"
             >
               <i className="ri-arrow-left-line" />
@@ -385,7 +385,7 @@ export default function ItemDetailClient({ id }: Props) {
             </Button>
           </div>
           <div className="text-center">
-            <p className="text-base tracking-widest text-red-500">
+            <p className="lk-text-lg tracking-widest text-red-500">
               {error || "商品が見つかりません"}
             </p>
           </div>
@@ -765,7 +765,7 @@ export default function ItemDetailClient({ id }: Props) {
                     aria-label="Add to wishlist"
                   >
                     <i
-                      className={`text-xl ${
+                      className={`lk-text-4xl ${
                         isWishlisted ? "ri-bookmark-fill" : "ri-bookmark-line"
                       }`}
                     />
@@ -861,7 +861,7 @@ export default function ItemDetailClient({ id }: Props) {
               {validationError && (
                 <p
                   role="alert"
-                  className="mt-[var(--lk-item-detail-select-gap)] text-xs text-red-500"
+                  className="mt-[var(--lk-item-detail-select-gap)] lk-text-3xs text-red-500"
                 >
                   {validationError}
                 </p>

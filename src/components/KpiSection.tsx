@@ -818,7 +818,7 @@ function KpiIcon({
       aria-label={`${card.label}：${card.description}${card.definition ? `（定義: ${card.definition}）` : ""}`}
       className={`group relative flex shrink-0 items-center justify-center rounded-full bg-[#ededed] text-[#474747] ${className ?? "h-8 w-8"}`}
     >
-      <i className={`${card.icon} text-base`} aria-hidden="true" />
+      <i className={`${card.icon} lk-text-lg`} aria-hidden="true" />
       <span className="pointer-events-none absolute bottom-full left-0 z-50 mb-2 hidden w-max max-w-55 rounded-md bg-[#111111] px-2.5 py-1.5 text-left font-acumin lk-text-4xs font-normal leading-snug text-white shadow-md group-hover:block">
         {card.description}
         {card.definition ? (
@@ -861,7 +861,7 @@ function KpiListCard({
     >
       <span className="mb-2 flex items-center gap-2">
         <KpiIcon card={card} />
-        <span className="min-w-0 flex-1 truncate font-acumin text-xs text-black">
+        <span className="min-w-0 flex-1 truncate font-acumin lk-text-3xs text-black">
           {card.label}
         </span>
         {achievementState ? (
@@ -877,7 +877,7 @@ function KpiListCard({
           </span>
         ) : null}
       </span>
-      <span className="block font-acumin text-lg leading-none text-black tabular-nums">
+      <span className="block font-acumin lk-text-2xl leading-none text-black tabular-nums">
         {card.valueText}
       </span>
       <span className="mt-1.5 block font-acumin lk-text-4xs text-[#888888] tabular-nums">
@@ -1843,10 +1843,10 @@ export default function KpiSection({
   const header = (
     <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
       <div className="flex min-w-0 flex-wrap items-baseline gap-3">
-        <h2 className="font-acumin text-xl tracking-widest text-black">
+        <h2 className="font-acumin lk-text-4xl tracking-widest text-black">
           KPIダッシュボード
         </h2>
-        <p className="font-acumin text-xs text-[#888888]">
+        <p className="font-acumin lk-text-3xs text-[#888888]">
           カードを選択して、目標・推移・月次記録を一画面で管理
         </p>
       </div>
@@ -1907,12 +1907,12 @@ export default function KpiSection({
         {header}
         <Panel radius="rounded">
           {isLoading ? (
-            <p className="font-acumin text-sm text-[#474747]">
+            <p className="font-acumin lk-text-sm text-[#474747]">
               KPIを読み込み中...
             </p>
           ) : errorMessage ? (
             <div className="space-y-4">
-              <p className="font-acumin text-sm text-red-700">{errorMessage}</p>
+              <p className="font-acumin lk-text-sm text-red-700">{errorMessage}</p>
               <Button
                 variant="secondary"
                 size="sm"
@@ -1923,7 +1923,7 @@ export default function KpiSection({
               </Button>
             </div>
           ) : (
-            <p className="font-acumin text-sm text-[#474747]">
+            <p className="font-acumin lk-text-sm text-[#474747]">
               KPIデータがありません。
             </p>
           )}
@@ -2030,7 +2030,7 @@ export default function KpiSection({
             </div>
 
             {visibleCards.length === 0 ? (
-              <p className="font-acumin text-xs text-[#888888]">
+              <p className="font-acumin lk-text-3xs text-[#888888]">
                 該当するKPIがありません。
               </p>
             ) : null}
@@ -2048,7 +2048,7 @@ export default function KpiSection({
                 <div className="flex min-w-0 items-center gap-2.5">
                   <KpiIcon card={selectedCard} className="h-10 w-10" />
                   <div className="min-w-0">
-                    <p className="truncate font-acumin text-base tracking-widest text-black">
+                    <p className="truncate font-acumin lk-text-lg tracking-widest text-black">
                       {selectedCard.label}
                     </p>
                     <TagLabel
@@ -2067,7 +2067,7 @@ export default function KpiSection({
                     <p className="font-acumin lk-text-4xs text-[#888888]">
                       現在値
                     </p>
-                    <p className="mt-1 font-acumin text-xl leading-none text-black tabular-nums">
+                    <p className="mt-1 font-acumin lk-text-4xl leading-none text-black tabular-nums">
                       {selectedCard.valueText}
                     </p>
                   </div>
@@ -2110,7 +2110,7 @@ export default function KpiSection({
                         </Button>
                       </div>
                     ) : (
-                      <p className="mt-1 font-acumin text-xl leading-none text-black tabular-nums">
+                      <p className="mt-1 font-acumin lk-text-4xl leading-none text-black tabular-nums">
                         {selectedCard.targetText}
                       </p>
                     )}
@@ -2119,7 +2119,7 @@ export default function KpiSection({
                     <p className="font-acumin lk-text-4xs text-[#888888]">
                       達成率
                     </p>
-                    <p className="mt-1 font-acumin text-xl leading-none text-black tabular-nums">
+                    <p className="mt-1 font-acumin lk-text-4xl leading-none text-black tabular-nums">
                       {selectedCard.percentText}
                     </p>
                     <ProgressBar
@@ -2183,7 +2183,7 @@ export default function KpiSection({
                   legendClassName="font-acumin"
                 />
               ) : (
-                <p className="font-acumin text-xs text-[#474747]">
+                <p className="font-acumin lk-text-3xs text-[#474747]">
                   表示できるデータがありません。
                 </p>
               )}
@@ -2387,14 +2387,14 @@ export default function KpiSection({
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-2.5">
                 <i
-                  className="ri-lightbulb-line text-lg text-[#474747]"
+                  className="ri-lightbulb-line lk-text-2xl text-[#474747]"
                   aria-hidden="true"
                 />
-                <p className="font-acumin text-sm tracking-widest text-black">
+                <p className="font-acumin lk-text-sm tracking-widest text-black">
                   インサイト
                 </p>
               </div>
-              <p className="min-w-0 flex-1 font-acumin text-xs text-[#474747]">
+              <p className="min-w-0 flex-1 font-acumin lk-text-3xs text-[#474747]">
                 {insight?.changeText ? (
                   <>
                     {selectedCard.label}は{insight.comparisonLabel}{" "}
@@ -2438,10 +2438,10 @@ export default function KpiSection({
       >
         <div className="flex items-center justify-between gap-3 border-b border-[#d4d4d4] px-5 py-4">
           <div>
-            <p className="font-acumin text-sm tracking-widest text-black">
+            <p className="font-acumin lk-text-sm tracking-widest text-black">
               月次記録の算出元
             </p>
-            <p className="font-acumin text-xs text-[#474747]">
+            <p className="font-acumin lk-text-3xs text-[#474747]">
               {formatSeasonRangeLabel(selectedSeason)}
             </p>
           </div>
@@ -2490,13 +2490,13 @@ export default function KpiSection({
               <table className="w-full min-w-140 border-collapse">
                 <thead>
                   <tr className="border-b border-[#d4d4d4]">
-                    <th className="sticky left-0 z-20 min-w-42 bg-white py-2 pr-3 text-left font-acumin text-xs text-[#474747]">
+                    <th className="sticky left-0 z-20 min-w-42 bg-white py-2 pr-3 text-left font-acumin lk-text-3xs text-[#474747]">
                       項目
                     </th>
                     {recordMonthKeys.map((monthKey) => (
                       <th
                         key={monthKey}
-                        className="whitespace-nowrap px-1.5 py-2 text-right font-acumin text-xs text-[#474747]"
+                        className="whitespace-nowrap px-1.5 py-2 text-right font-acumin lk-text-3xs text-[#474747]"
                       >
                         {monthColumnLabel(monthKey)}
                       </th>
@@ -2509,7 +2509,7 @@ export default function KpiSection({
                       key={metric.key}
                       className="border-b border-[#ededed] align-top"
                     >
-                      <td className="sticky left-0 z-10 min-w-42 bg-white py-2 pr-3 font-acumin text-xs text-black">
+                      <td className="sticky left-0 z-10 min-w-42 bg-white py-2 pr-3 font-acumin lk-text-3xs text-black">
                         <span className="flex items-center gap-1.5">
                           {metric.label}
                           <span className="rounded-full bg-[#ededed] px-1.5 py-0.5 font-acumin lk-text-6xs tracking-wider text-[#888888]">
@@ -2534,7 +2534,7 @@ export default function KpiSection({
                             <input
                               type="text"
                               inputMode="decimal"
-                              className="w-full min-w-16 rounded-md border border-[#d4d4d4] px-2 py-1 text-right font-acumin text-xs text-black tabular-nums focus:border-black focus:outline-none"
+                              className="w-full min-w-16 rounded-md border border-[#d4d4d4] px-2 py-1 text-right font-acumin lk-text-3xs text-black tabular-nums focus:border-black focus:outline-none"
                               value={getSourceCellValue(monthKey, metric.key)}
                               onChange={(event) =>
                                 handleRecordValueChange(
@@ -2569,13 +2569,13 @@ export default function KpiSection({
               <table className="w-full min-w-140 border-collapse">
                 <thead>
                   <tr className="border-b border-[#d4d4d4]">
-                    <th className="sticky left-0 z-20 min-w-42 bg-white py-2 pr-3 text-left font-acumin text-xs text-[#474747]">
+                    <th className="sticky left-0 z-20 min-w-42 bg-white py-2 pr-3 text-left font-acumin lk-text-3xs text-[#474747]">
                       KPI
                     </th>
                     {recordMonthKeys.map((monthKey) => (
                       <th
                         key={monthKey}
-                        className="whitespace-nowrap px-1.5 py-2 text-right font-acumin text-xs text-[#474747]"
+                        className="whitespace-nowrap px-1.5 py-2 text-right font-acumin lk-text-3xs text-[#474747]"
                       >
                         {monthColumnLabel(monthKey)}
                       </th>
@@ -2589,7 +2589,7 @@ export default function KpiSection({
                       className="border-b border-[#ededed] align-top"
                     >
                       <td
-                        className="sticky left-0 z-10 min-w-42 bg-white py-2 pr-3 font-acumin text-xs text-black"
+                        className="sticky left-0 z-10 min-w-42 bg-white py-2 pr-3 font-acumin lk-text-3xs text-black"
                         title={`算出式: ${formula.formulaText}`}
                       >
                         {formula.label}
@@ -2605,7 +2605,7 @@ export default function KpiSection({
                             <input
                               type="text"
                               inputMode="decimal"
-                              className="w-full min-w-16 rounded-md border border-[#d4d4d4] px-2 py-1 text-right font-acumin text-xs text-black tabular-nums focus:border-black focus:outline-none"
+                              className="w-full min-w-16 rounded-md border border-[#d4d4d4] px-2 py-1 text-right font-acumin lk-text-3xs text-black tabular-nums focus:border-black focus:outline-none"
                               value={getKpiCellValue(monthKey, formula.key)}
                               onChange={(event) =>
                                 handleRecordValueChange(
@@ -2634,11 +2634,11 @@ export default function KpiSection({
             </div>
           </Panel>
 
-          <p className="font-acumin text-xs text-[#888888]">
+          <p className="font-acumin lk-text-3xs text-[#888888]">
             ※ 対象シーズンはヘッダーのシーズン選択（例: 2026 S/S =
             4〜9月）で切り替えます。注文系の元データは各月の注文実績から自動取得し、空欄なら自動値、入力するとその値で上書きします。
           </p>
-          <p className="font-acumin text-xs text-[#888888]">
+          <p className="font-acumin lk-text-3xs text-[#888888]">
             ※
             SNS・広告系の元データ（リーチ数・広告費など）は手入力です。Instagram等のAPI自動取得は今後対応予定です。
           </p>
@@ -2655,10 +2655,10 @@ export default function KpiSection({
       >
         <div className="flex items-center justify-between gap-3 border-b border-[#d4d4d4] px-5 py-4">
           <div>
-            <p className="font-acumin text-sm tracking-widest text-black">
+            <p className="font-acumin lk-text-sm tracking-widest text-black">
               KPI一覧の内訳
             </p>
-            <p className="font-acumin text-xs text-[#474747]">
+            <p className="font-acumin lk-text-3xs text-[#474747]">
               全{trendTableRows.length}指標の期間別推移
             </p>
           </div>
@@ -2678,18 +2678,18 @@ export default function KpiSection({
           <table className="w-full min-w-105 border-collapse">
             <thead>
               <tr className="border-b border-[#d4d4d4]">
-                <th className="sticky left-0 top-0 z-30 bg-white py-2 pr-3 text-left font-acumin text-xs text-[#474747]">
+                <th className="sticky left-0 top-0 z-30 bg-white py-2 pr-3 text-left font-acumin lk-text-3xs text-[#474747]">
                   KPI
                 </th>
                 {trendSeries.map((point) => (
                   <th
                     key={point.label}
-                    className="sticky top-0 z-20 whitespace-nowrap bg-white px-1.5 py-2 text-right font-acumin text-xs text-[#474747]"
+                    className="sticky top-0 z-20 whitespace-nowrap bg-white px-1.5 py-2 text-right font-acumin lk-text-3xs text-[#474747]"
                   >
                     {point.label}
                   </th>
                 ))}
-                <th className="sticky top-0 z-20 whitespace-nowrap bg-white py-2 pl-3 text-right font-acumin text-xs text-[#474747]">
+                <th className="sticky top-0 z-20 whitespace-nowrap bg-white py-2 pl-3 text-right font-acumin lk-text-3xs text-[#474747]">
                   成長率(CAGR)
                 </th>
               </tr>
@@ -2700,7 +2700,7 @@ export default function KpiSection({
                   key={row.key}
                   className="border-b border-[#ededed] align-top"
                 >
-                  <td className="sticky left-0 z-10 whitespace-nowrap bg-white py-2 pr-3 font-acumin text-xs text-black">
+                  <td className="sticky left-0 z-10 whitespace-nowrap bg-white py-2 pr-3 font-acumin lk-text-3xs text-black">
                     <span className="flex items-center gap-1.5">
                       {row.label}
                       {row.isSample ? (
@@ -2713,14 +2713,14 @@ export default function KpiSection({
                   {trendSeries.map((point, index) => (
                     <td
                       key={`${row.key}-${point.label}`}
-                      className="whitespace-nowrap px-1.5 py-2 text-right font-acumin text-xs text-black tabular-nums"
+                      className="whitespace-nowrap px-1.5 py-2 text-right font-acumin lk-text-3xs text-black tabular-nums"
                     >
                       {row.values[index] === null
                         ? "—"
                         : formatKpiValue(row.values[index], row.unit)}
                     </td>
                   ))}
-                  <td className="whitespace-nowrap py-2 pl-3 text-right font-acumin text-xs text-black tabular-nums">
+                  <td className="whitespace-nowrap py-2 pl-3 text-right font-acumin lk-text-3xs text-black tabular-nums">
                     {row.cagr === null
                       ? "—"
                       : `${(row.cagr * 100).toFixed(1)}%`}

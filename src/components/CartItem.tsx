@@ -41,11 +41,11 @@ export const CartItem: React.FC<CartItemProps> = ({
         <div className="flex-1 min-w-0">
           <div className="flex justify-between items-start mb-2">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 truncate">
+              <h3 className="lk-text-2xl font-semibold text-gray-900 truncate">
                 {item.name}
               </h3>
-              <p className="text-sm text-gray-500 mt-1">Color：{item.color}</p>
-              <p className="text-sm text-gray-500 mt-1">Size：{item.size}</p>
+              <p className="lk-text-sm text-gray-500 mt-1">Color：{item.color}</p>
+              <p className="lk-text-sm text-gray-500 mt-1">Size：{item.size}</p>
               {/* 在庫表示・カテゴリ表示は削除済み */}
               <div className="mt-2">
                 <Stepper
@@ -80,7 +80,7 @@ export const CartItem: React.FC<CartItemProps> = ({
           {/* 価格と数量コントロール */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-center space-x-4">
-              <span className="text-2xl font-bold text-gray-900">
+              <span className="lk-text-7xl font-bold text-gray-900">
                 ¥{item.price.toLocaleString()}
               </span>
             </div>
@@ -88,10 +88,10 @@ export const CartItem: React.FC<CartItemProps> = ({
             <div className="flex items-center space-x-3">
               {/* 数量コントロールを削除済み */}
               <div className="text-right">
-                <div className="text-lg font-semibold text-gray-900">
+                <div className="lk-text-2xl font-semibold text-gray-900">
                   ¥{(item.price * item.quantity).toLocaleString()}
                 </div>
-                <div className="text-sm text-gray-500">小計</div>
+                <div className="lk-text-sm text-gray-500">小計</div>
               </div>
             </div>
           </div>

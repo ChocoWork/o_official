@@ -1,9 +1,25 @@
 /*
  * テキストサイズの単一の実装箇所。
  *
- * font-size は必ずこのファイルの .lk-text-* を使う。JSX 側に px も
- * Tailwind の text-* も書かない（Tailwind の font-size スケールは
+ * font-size は .lk-text-* で指定する。新しく書くコードでは Tailwind の
+ * text-xs / text-sm / … を使わない（Tailwind の font-size スケールは
  * --lk-size-* と別系列なので混ぜると 2 系統になる）。
+ *
+ * 移行は完了済み（FREQ-318）。src 配下に Tailwind の名前付き font-size は残っていない。
+ *
+ * 守るべき不変条件は 2 つで、どちらも e2e/FR-UI-004 が機械的に固定している。
+ *   1. 同一要素に .lk-text-* と Tailwind の font-size を併用しない。
+ *      このファイルは @layer の外にあり Tailwind の @layer utilities に
+ *      常に優先するため、併用すると宣言順と無関係に Tailwind 側が
+ *      黙って無視される。
+ *   2. src 配下に Tailwind の名前付き font-size を書かない。
+ *      CSS で @apply を使う箇所は .lk-text-* を適用できないので、
+ *      font-size: var(--lk-size-*) を直接書く。
+ *
+ * 対応は名前どうしではなく実寸の近い段へ取る
+ *（text-xs → lk-text-3xs / text-sm → lk-text-sm / text-base → lk-text-lg /
+ * text-lg → lk-text-2xl / text-xl → lk-text-4xl / text-2xl → lk-text-7xl）。
+ * 名前どおりに text-xs → lk-text-xs とすると約 11% 拡大する。
  *
  * 値は globals.css の --lk-size-*（--lk-size-md を基準に φ^1/8 ≈ 1.062 で
  * 上下に展開する流体スケール）を参照するだけにして、実 px をここ以外に
@@ -14,8 +30,7 @@
  * モバイル（同 14px）では全段が約 6.7% 縮む。
  *
  * ブレークポイントでサイズを変える場合はこのファイルではなく、
- * コンポーネント側の CSS に @media で書く（例: SectionTitle.css）。
- */
+ * コンポーネント側の CSS に @media で書く（例: SectionTitle.css）。 */
 
 .lk-text-8xs {
   font-size: var(--lk-size-8xs); /* ≈ 8.7px */

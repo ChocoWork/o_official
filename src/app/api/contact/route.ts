@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import sendMail from '@/lib/mail';
-import { getRequestOrigin } from '@/lib/redirect';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { authenticateRequest } from '@/lib/auth/authenticate';
 import { logAudit } from '@/lib/audit';
@@ -92,36 +91,12 @@ function getClientIp(request: Request): string | null {
   return null;
 }
 
-function isSameOriginRequest(request: Request): boolean {
-  const expectedOrigin = getRequestOrigin(request);
-  const originHeader = request.headers.get('origin');
-  const refererHeader = request.headers.get('referer');
-
-  if (originHeader) {
-    return originHeader === expectedOrigin;
-  }
-
-  if (refererHeader) {
-    try {
-      return new URL(refererHeader).origin === expectedOrigin;
-    } catch {
-      return false;
-    }
-  }
-
-  return false;
-}
-
 function hashText(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
 export async function POST(request: Request) {
   try {
-    if (!isSameOriginRequest(request)) {
-      return NextResponse.json({ success: false, error: 'Forbidden origin' }, { status: 403 });
-    }
-
     const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
     const ipRateLimit = await enforceRateLimit({
       request,
@@ -175,15 +150,11 @@ export async function POST(request: Request) {
     const clientIp = getClientIp(request);
     const userAgent = request.headers.get('user-agent');
 
-    // ログイン済みなら user_id を記録（ゲストは null）
+    // ログイン済みなら user_id を記録（ゲストは null）。
     // 認証は任意。未ログインでも問い合わせは受け付けるので、失敗しても続行する。
-    let userId: string | null = null;
-    try {
-      const auth = await authenticateRequest(request);
-      userId = auth.ok ? auth.claims.sub : null;
-    } catch {
-      userId = null;
-    }
+    // authenticateRequest は throw せず判別可能な結果を返すので try/catch は要らない。
+    const auth = await authenticateRequest(request);
+    const userId = auth.ok ? auth.claims.sub : null;
 
     const linkedOrderId = await resolveLinkedOrderId(service, orderNumber, email, userId);
 

@@ -635,7 +635,7 @@ function AdminPageContent() {
           <div className="space-y-4">
             <div className="space-y-3 border-b border-black/10 pb-4">
               <div className="flex flex-wrap items-end gap-3">
-                <label className="grid gap-1 text-xs font-acumin">
+                <label className="grid gap-1 lk-text-3xs font-acumin">
                   金額（下限）
                   <input
                     aria-label="金額（下限）"
@@ -650,7 +650,7 @@ function AdminPageContent() {
                     className="h-8 w-32 border border-black/25 px-2"
                   />
                 </label>
-                <label className="grid gap-1 text-xs font-acumin">
+                <label className="grid gap-1 lk-text-3xs font-acumin">
                   金額（上限）
                   <input
                     aria-label="金額（上限）"
@@ -689,7 +689,7 @@ function AdminPageContent() {
                     size="sm"
                     className="w-full"
                   />
-                  <span className="text-sm text-[#474747] font-acumin">~</span>
+                  <span className="lk-text-sm text-[#474747] font-acumin">~</span>
                   <DateTimePicker
                     id="orders-to"
                     label=""
@@ -709,7 +709,7 @@ function AdminPageContent() {
                 <Button variant="secondary" size="sm" className="font-acumin" onClick={handleExportOrdersCsv}>
                   表示中の注文をCSV出力
                 </Button>
-                <div className="flex items-center gap-2 text-xs font-acumin">
+                <div className="flex items-center gap-2 lk-text-3xs font-acumin">
                   <span className="text-[#474747]">{ordersTotalCount}件（表示 {displayedOrders.length}件）</span>
                   <span className="text-[#474747]">{ordersPage} / {ordersTotalPages}ページ</span>
                   <Button
@@ -731,17 +731,17 @@ function AdminPageContent() {
                     次へ
                   </Button>
                 </div>
-                <div className="flex items-center gap-2 text-sm font-acumin ml-2">
+                <div className="flex items-center gap-2 lk-text-sm font-acumin ml-2">
                   <span className="w-3 h-3 bg-red-100 rounded-full" />
                   <span className="text-[#474747]">未決済: {pendingShipmentCount}</span>
                 </div>
-                <div className="flex items-center gap-2 text-sm font-acumin">
+                <div className="flex items-center gap-2 lk-text-sm font-acumin">
                   <span className="w-3 h-3 bg-yellow-100 rounded-full" />
                   <span className="text-[#474747]">決済完了: {preparingShipmentCount}</span>
                 </div>
               </div>
             </div>
-            {periodErrorMessage ? <p className="text-sm text-red-700 font-acumin">{periodErrorMessage}</p> : null}
+            {periodErrorMessage ? <p className="lk-text-sm text-red-700 font-acumin">{periodErrorMessage}</p> : null}
             <OrderSection
               orders={displayedOrders}
               isLoading={isOrdersLoading}
@@ -758,14 +758,14 @@ function AdminPageContent() {
             >
               <div className="space-y-3">
                 <div>
-                  <label htmlFor="ship-carrier" className="block font-acumin text-xs text-[#474747]">
+                  <label htmlFor="ship-carrier" className="block font-acumin lk-text-3xs text-[#474747]">
                     配送業者
                   </label>
                   <select
                     id="ship-carrier"
                     value={shipCarrier}
                     onChange={(event) => setShipCarrier(event.target.value as ShippingCarrierId)}
-                    className="mt-1 h-9 w-full border border-[#d4d4d4] bg-white px-2 font-acumin text-xs text-black"
+                    className="mt-1 h-9 w-full border border-[#d4d4d4] bg-white px-2 font-acumin lk-text-3xs text-black"
                   >
                     {SHIPPING_CARRIER_IDS.map((id) => (
                       <option key={id} value={id}>
@@ -775,7 +775,7 @@ function AdminPageContent() {
                   </select>
                 </div>
                 <div>
-                  <label htmlFor="ship-tracking" className="block font-acumin text-xs text-[#474747]">
+                  <label htmlFor="ship-tracking" className="block font-acumin lk-text-3xs text-[#474747]">
                     追跡番号
                   </label>
                   <input
@@ -786,7 +786,7 @@ function AdminPageContent() {
                     value={shipTrackingNumber}
                     onChange={(event) => setShipTrackingNumber(event.target.value)}
                     placeholder="1234-5678-9012"
-                    className="mt-1 h-9 w-full border border-[#d4d4d4] bg-white px-2 font-acumin text-xs text-black"
+                    className="mt-1 h-9 w-full border border-[#d4d4d4] bg-white px-2 font-acumin lk-text-3xs text-black"
                   />
                 </div>
                 <div className="flex gap-2 pt-1">
@@ -819,7 +819,7 @@ function AdminPageContent() {
   if (!isAuthResolved) {
     return (
       <div className="element-width">
-        <p className="text-sm text-[#474747] font-acumin">読み込み中...</p>
+        <p className="lk-text-sm text-[#474747] font-acumin">読み込み中...</p>
       </div>
     );
   }
@@ -828,7 +828,7 @@ function AdminPageContent() {
     return (
       <div className="element-width">
         <h1 className="mb-4">アクセス権限がありません</h1>
-        <p className="text-sm text-[#474747] font-acumin">このページは Admin または Supporter のみ利用できます。</p>
+        <p className="lk-text-sm text-[#474747] font-acumin">このページは Admin または Supporter のみ利用できます。</p>
       </div>
     );
   }
@@ -837,7 +837,7 @@ function AdminPageContent() {
     return (
       <div className="element-width">
         <h1 className="mb-4">2要素認証が必要です</h1>
-        <p className="text-sm text-[#474747] font-acumin">
+        <p className="lk-text-sm text-[#474747] font-acumin">
           管理画面へのアクセスには 2FA の有効化と認証が必要です。設定済みの場合は再度ログインしてください。
         </p>
       </div>
@@ -875,7 +875,7 @@ export default function AdminPage() {
     <Suspense
       fallback={
         <div className="element-width">
-          <p className="text-sm text-[#474747] font-acumin">読み込み中...</p>
+          <p className="lk-text-sm text-[#474747] font-acumin">読み込み中...</p>
         </div>
       }
     >

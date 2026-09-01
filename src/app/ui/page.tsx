@@ -144,10 +144,10 @@ export default function Page() {
   // helper maps for the drawer demo buttons
   const navItemClassMap: Partial<Record<ComponentSize, string>> = {
     xs: "px-3 py-2 lk-text-4xs",
-    sm: "px-4 py-3 text-xs",
-    md: "px-4 py-4 text-sm",
-    lg: "px-4 py-5 text-base",
-    xl: "px-5 py-6 text-lg",
+    sm: "px-4 py-3 lk-text-3xs",
+    md: "px-4 py-4 lk-text-sm",
+    lg: "px-4 py-5 lk-text-lg",
+    xl: "px-5 py-6 lk-text-2xl",
   };
 
   const avatarSize = demoSize;
@@ -344,7 +344,7 @@ export default function Page() {
           {/* --- Text Field --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Text Field
@@ -367,7 +367,7 @@ export default function Page() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  leadingIcon={<i className="ri-mail-line text-base"></i>}
+                  leadingIcon={<i className="ri-mail-line lk-text-lg"></i>}
                   size={demoSize}
                 />
               </div>
@@ -394,7 +394,7 @@ export default function Page() {
           {/* --- Button --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Button
@@ -416,7 +416,7 @@ export default function Page() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
               <div>
                 <p
-                  className="text-xs tracking-widest mb-4 text-black/80"
+                  className="lk-text-3xs tracking-widest mb-4 text-black/80"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 >
                   PRIMARY
@@ -427,7 +427,7 @@ export default function Page() {
               </div>
               <div>
                 <p
-                  className="text-xs tracking-widest mb-4 text-black/80"
+                  className="lk-text-3xs tracking-widest mb-4 text-black/80"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 >
                   SECONDARY
@@ -442,7 +442,7 @@ export default function Page() {
               </div>
               <div>
                 <p
-                  className="text-xs tracking-widest mb-4 text-black/80"
+                  className="lk-text-3xs tracking-widest mb-4 text-black/80"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 >
                   OUTLINE
@@ -457,7 +457,7 @@ export default function Page() {
               </div>
               <div>
                 <p
-                  className="text-xs tracking-widest mb-4 text-black/80"
+                  className="lk-text-3xs tracking-widest mb-4 text-black/80"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 >
                   SELECTED
@@ -473,7 +473,7 @@ export default function Page() {
               </div>
               <div>
                 <p
-                  className="text-xs tracking-widest mb-4 text-black/80"
+                  className="lk-text-3xs tracking-widest mb-4 text-black/80"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 >
                   TEXT
@@ -484,21 +484,21 @@ export default function Page() {
               </div>
               <div>
                 <p
-                  className="text-xs tracking-widest mb-4 text-black/80"
+                  className="lk-text-3xs tracking-widest mb-4 text-black/80"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 >
                   WITH ICON
                 </p>
                 <Button className="w-full" size={buttonDemoSize}>
                   <div className="w-4 h-4 flex items-center justify-center">
-                    <i className="ri-shopping-bag-line text-base"></i>
+                    <i className="ri-shopping-bag-line lk-text-lg"></i>
                   </div>
                   ADD TO CART
                 </Button>
               </div>
               <div>
                 <p
-                  className="text-xs tracking-widest mb-4 text-black/80"
+                  className="lk-text-3xs tracking-widest mb-4 text-black/80"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 >
                   ICON ONLY
@@ -510,13 +510,13 @@ export default function Page() {
                   aria-label="Add to wishlist"
                 >
                   <div className="w-4 h-4 flex items-center justify-center">
-                    <i className="ri-bookmark-line text-base"></i>
+                    <i className="ri-bookmark-line lk-text-lg"></i>
                   </div>
                 </Button>
               </div>
               <div>
                 <p
-                  className="text-xs tracking-widest mb-4 text-black/80"
+                  className="lk-text-3xs tracking-widest mb-4 text-black/80"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 >
                   DISABLED
@@ -531,7 +531,7 @@ export default function Page() {
           {/* --- Radio Button --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Radio Button
@@ -548,7 +548,7 @@ export default function Page() {
           {/* --- Checkbox --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Checkbox
@@ -595,7 +595,7 @@ export default function Page() {
           {/* --- Single Select --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Single Select
@@ -628,7 +628,7 @@ export default function Page() {
           {/* --- Multi Select --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Multi Select
@@ -688,7 +688,7 @@ export default function Page() {
           {/* --- Switch / Toggle --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Switch / Toggle
@@ -719,7 +719,7 @@ export default function Page() {
           {/* --- Slider --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Slider
@@ -756,7 +756,7 @@ export default function Page() {
           {/* --- Stepper --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Stepper
@@ -776,7 +776,7 @@ export default function Page() {
           {/* --- Rating --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Rating
@@ -803,7 +803,7 @@ export default function Page() {
           {/* --- Color Picker --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Color Picker
@@ -832,7 +832,7 @@ export default function Page() {
           {/* --- Date / Time Picker --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Date / Time Picker
@@ -865,7 +865,7 @@ export default function Page() {
           {/* --- Page Control --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Page Control
@@ -881,7 +881,7 @@ export default function Page() {
           {/* --- Bottom Navigation --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Bottom Navigation
@@ -909,7 +909,7 @@ export default function Page() {
           {/* --- Tab / Segment Control --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Tab / Segment Control
@@ -917,7 +917,7 @@ export default function Page() {
             <div className="space-y-12">
               <div>
                 <label
-                  className="block text-xs tracking-widest mb-4 text-black/80"
+                  className="block lk-text-3xs tracking-widest mb-4 text-black/80"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 >
                   STANDARD TABS
@@ -934,7 +934,7 @@ export default function Page() {
               </div>
               <div>
                 <label
-                  className="block text-xs tracking-widest mb-4 text-black/80"
+                  className="block lk-text-3xs tracking-widest mb-4 text-black/80"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 >
                   SEGMENT CONTROL
@@ -958,7 +958,7 @@ export default function Page() {
           {/* --- Search Field --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Search Field
@@ -986,7 +986,7 @@ export default function Page() {
           {/* --- Dialog --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Dialog
@@ -1005,7 +1005,7 @@ export default function Page() {
           {/* --- Sheet --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Sheet
@@ -1013,7 +1013,7 @@ export default function Page() {
             <div className="flex items-center gap-4">
               <button
                 type="button"
-                className="px-8 py-3 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap"
+                className="px-8 py-3 bg-black text-white lk-text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap"
                 style={{ fontFamily: "acumin-pro, sans-serif" }}
                 onClick={() => setMediumSheetOpen(true)}
               >
@@ -1021,7 +1021,7 @@ export default function Page() {
               </button>
               <button
                 type="button"
-                className="px-8 py-3 border border-black text-black text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap"
+                className="px-8 py-3 border border-black text-black lk-text-sm tracking-widest hover:bg-black hover:text-white transition-all duration-300 cursor-pointer whitespace-nowrap"
                 style={{ fontFamily: "acumin-pro, sans-serif" }}
                 onClick={() => setLargeSheetOpen(true)}
               >
@@ -1033,7 +1033,7 @@ export default function Page() {
           {/* --- Action Sheet --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Action Sheet
@@ -1051,7 +1051,7 @@ export default function Page() {
           {/* --- Dropdown --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Dropdown
@@ -1092,14 +1092,14 @@ export default function Page() {
           {/* --- Drawer --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Drawer
             </h2>
             <button
               type="button"
-              className="px-8 py-3 bg-black text-white text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap"
+              className="px-8 py-3 bg-black text-white lk-text-sm tracking-widest hover:bg-[#474747] transition-all duration-300 cursor-pointer whitespace-nowrap"
               style={{ fontFamily: "acumin-pro, sans-serif" }}
               onClick={() => setDrawerOpen(true)}
             >
@@ -1110,7 +1110,7 @@ export default function Page() {
           {/* --- Toast / Snackbar --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Toast / Snackbar
@@ -1185,7 +1185,7 @@ export default function Page() {
           {/* --- Tooltip --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Tooltip
@@ -1205,7 +1205,7 @@ export default function Page() {
                   size={demoSize}
                 >
                   <div className="w-5 h-5 flex items-center justify-center">
-                    <i className="ri-information-line text-xl"></i>
+                    <i className="ri-information-line lk-text-4xl"></i>
                   </div>
                 </Button>
               </Tooltip>
@@ -1215,14 +1215,14 @@ export default function Page() {
           {/* --- Float Button --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Float Button
             </h2>
             <div className="relative h-64 bg-[#f5f5f5] flex items-center justify-center">
               <p
-                className="text-sm text-black/60"
+                className="lk-text-sm text-black/60"
                 style={{ fontFamily: "acumin-pro, sans-serif" }}
               >
                 右下のフローティングボタンをクリック
@@ -1259,7 +1259,7 @@ export default function Page() {
           {/* --- Table --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Table
@@ -1315,7 +1315,7 @@ export default function Page() {
           {/* --- List --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               List
@@ -1336,7 +1336,7 @@ export default function Page() {
           {/* --- Accordion --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Accordion
@@ -1354,7 +1354,7 @@ export default function Page() {
           {/* --- Card --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Card
@@ -1383,7 +1383,7 @@ export default function Page() {
                       className="flex h-10 w-10 items-center justify-center bg-white/90 transition-colors hover:bg-white"
                     >
                       <div className="flex h-5 w-5 items-center justify-center">
-                        <i className="ri-heart-line text-xl"></i>
+                        <i className="ri-heart-line lk-text-4xl"></i>
                       </div>
                     </button>
                   }
@@ -1396,7 +1396,7 @@ export default function Page() {
           {/* --- Carousel --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Carousel
@@ -1412,7 +1412,7 @@ export default function Page() {
           {/* --- Map --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Map
@@ -1427,7 +1427,7 @@ export default function Page() {
           {/* --- Chart --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Chart
@@ -1435,7 +1435,7 @@ export default function Page() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="border border-black/20 p-6">
                 <h3
-                  className="text-xs tracking-widest text-black/80 mb-6"
+                  className="lk-text-3xs tracking-widest text-black/80 mb-6"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 >
                   SALES TREND
@@ -1444,7 +1444,7 @@ export default function Page() {
               </div>
               <div className="border border-black/20 p-6">
                 <h3
-                  className="text-xs tracking-widest text-black/80 mb-6"
+                  className="lk-text-3xs tracking-widest text-black/80 mb-6"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 >
                   CATEGORY DISTRIBUTION
@@ -1461,7 +1461,7 @@ export default function Page() {
           {/* --- Stats --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Stats
@@ -1479,7 +1479,7 @@ export default function Page() {
           {/* --- SpecList --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               SpecList
@@ -1504,7 +1504,7 @@ export default function Page() {
           {/* --- Banner / Alert --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Banner / Alert
@@ -1513,7 +1513,7 @@ export default function Page() {
               {showInfoBanner && (
                 <BannerAlert
                   variant="info"
-                  icon={<i className="ri-information-line text-xl"></i>}
+                  icon={<i className="ri-information-line lk-text-4xl"></i>}
                   message="春の新作コレクションが入荷しました"
                   dismissible
                   onDismiss={() => setShowInfoBanner(false)}
@@ -1523,7 +1523,7 @@ export default function Page() {
               {showPromoBanner && (
                 <BannerAlert
                   variant="warning"
-                  icon={<i className="ri-gift-line text-xl text-black"></i>}
+                  icon={<i className="ri-gift-line lk-text-4xl text-black"></i>}
                   message="¥10,000以上のご購入で送料無料"
                   dismissible
                   onDismiss={() => setShowPromoBanner(false)}
@@ -1534,7 +1534,7 @@ export default function Page() {
                 <BannerAlert
                   variant="error"
                   icon={
-                    <i className="ri-error-warning-line text-xl text-black"></i>
+                    <i className="ri-error-warning-line lk-text-4xl text-black"></i>
                   }
                   message="重要なお知らせ"
                   description="システムメンテナンスのため、3月20日 2:00-4:00の間、一時的にサービスをご利用いただけません。"
@@ -1547,7 +1547,7 @@ export default function Page() {
                 <BannerAlert
                   variant="success"
                   icon={
-                    <i className="ri-error-warning-line text-xl text-black"></i>
+                    <i className="ri-error-warning-line lk-text-4xl text-black"></i>
                   }
                   message="重要なお知らせ"
                   description="システムメンテナンスのため、3月20日 2:00-4:00の間、一時的にサービスをご利用いただけません。"
@@ -1562,7 +1562,7 @@ export default function Page() {
           {/* --- Avatar --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Avatar
@@ -1571,7 +1571,7 @@ export default function Page() {
               <div className="flex flex-col items-center gap-3">
                 <Avatar alt="A" fallback="A" size={avatarSize} />
                 <p
-                  className="text-xs tracking-wider text-black/60"
+                  className="lk-text-3xs tracking-wider text-black/60"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 >
                   LARGE
@@ -1580,7 +1580,7 @@ export default function Page() {
               <div className="flex flex-col items-center gap-3">
                 <Avatar alt="B" fallback="B" size={avatarSize} />
                 <p
-                  className="text-xs tracking-wider text-black/60"
+                  className="lk-text-3xs tracking-wider text-black/60"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 >
                   MEDIUM
@@ -1589,7 +1589,7 @@ export default function Page() {
               <div className="flex flex-col items-center gap-3">
                 <Avatar alt="C" fallback="C" size={avatarSize} />
                 <p
-                  className="text-xs tracking-wider text-black/60"
+                  className="lk-text-3xs tracking-wider text-black/60"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 >
                   SMALL
@@ -1603,7 +1603,7 @@ export default function Page() {
                   size={avatarSize}
                 />
                 <p
-                  className="text-xs tracking-wider text-black/60"
+                  className="lk-text-3xs tracking-wider text-black/60"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 >
                   WITH IMAGE
@@ -1613,12 +1613,12 @@ export default function Page() {
                 <Avatar
                   alt="User"
                   fallback=""
-                  icon={<i className="ri-user-line text-xl text-white"></i>}
+                  icon={<i className="ri-user-line lk-text-4xl text-white"></i>}
                   size={avatarSize}
                   status="online"
                 />
                 <p
-                  className="text-xs tracking-wider text-black/60"
+                  className="lk-text-3xs tracking-wider text-black/60"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 >
                   WITH STATUS
@@ -1630,7 +1630,7 @@ export default function Page() {
           {/* --- Toolbar --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Toolbar
@@ -1653,7 +1653,7 @@ export default function Page() {
 
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Tag / Label
@@ -1661,7 +1661,7 @@ export default function Page() {
             <div className="space-y-8">
               <div>
                 <p
-                  className="text-xs tracking-widest mb-4 text-black/80"
+                  className="lk-text-3xs tracking-widest mb-4 text-black/80"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 >
                   BASIC TAGS
@@ -1680,7 +1680,7 @@ export default function Page() {
               </div>
               <div>
                 <p
-                  className="text-xs tracking-widest mb-4 text-black/80"
+                  className="lk-text-3xs tracking-widest mb-4 text-black/80"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 >
                   REMOVABLE TAGS
@@ -1705,7 +1705,7 @@ export default function Page() {
               </div>
               <div>
                 <p
-                  className="text-xs tracking-widest mb-4 text-black/80"
+                  className="lk-text-3xs tracking-widest mb-4 text-black/80"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 >
                   ROUNDED TAGS
@@ -1728,7 +1728,7 @@ export default function Page() {
           {/* --- Tag / Label --- */}
           <section>
             <h2
-              className="text-2xl text-black mb-8 tracking-tight"
+              className="lk-text-7xl text-black mb-8 tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Badge
@@ -1740,7 +1740,7 @@ export default function Page() {
                   className="w-12 h-12 flex items-center justify-center border border-black/20 hover:bg-[#f5f5f5] transition-colors cursor-pointer"
                 >
                   <div className="w-6 h-6 flex items-center justify-center">
-                    <i className="ri-notification-line text-2xl"></i>
+                    <i className="ri-notification-line lk-text-7xl"></i>
                   </div>
                 </button>
                 <span className="absolute top-0 right-0 inline-flex translate-x-1/2 -translate-y-1/2">
@@ -1753,7 +1753,7 @@ export default function Page() {
                   className="w-12 h-12 flex items-center justify-center border border-black/20 hover:bg-[#f5f5f5] transition-colors cursor-pointer"
                 >
                   <div className="w-6 h-6 flex items-center justify-center">
-                    <i className="ri-message-line text-2xl"></i>
+                    <i className="ri-message-line lk-text-7xl"></i>
                   </div>
                 </button>
                 <span className="absolute top-0 right-0 inline-flex translate-x-1/2 -translate-y-1/2">
@@ -1766,7 +1766,7 @@ export default function Page() {
                   className="w-12 h-12 flex items-center justify-center border border-black/20 hover:bg-[#f5f5f5] transition-colors cursor-pointer"
                 >
                   <div className="w-6 h-6 flex items-center justify-center">
-                    <i className="ri-shopping-bag-line text-2xl"></i>
+                    <i className="ri-shopping-bag-line lk-text-7xl"></i>
                   </div>
                 </button>
                 <span className="absolute top-0 right-0 inline-flex translate-x-1/2 -translate-y-1/2">
@@ -1779,7 +1779,7 @@ export default function Page() {
                   className="w-12 h-12 flex items-center justify-center border border-black/20 hover:bg-[#f5f5f5] transition-colors cursor-pointer"
                 >
                   <div className="w-6 h-6 flex items-center justify-center">
-                    <i className="ri-shopping-cart-line text-2xl"></i>
+                    <i className="ri-shopping-cart-line lk-text-7xl"></i>
                   </div>
                 </button>
                 <span className="absolute top-0 right-0 inline-flex translate-x-1/2 -translate-y-1/2">
@@ -1788,7 +1788,7 @@ export default function Page() {
               </div>
               <div className="flex items-center gap-2">
                 <span
-                  className="text-sm text-black"
+                  className="lk-text-sm text-black"
                   style={{ fontFamily: "acumin-pro, sans-serif" }}
                 >
                   新着メッセージ
@@ -1814,7 +1814,7 @@ export default function Page() {
         title="Medium Sheet"
       >
         <p
-          className="text-sm text-black/60 leading-relaxed"
+          className="lk-text-sm text-black/60 leading-relaxed"
           style={{ fontFamily: "acumin-pro, sans-serif" }}
         >
           画面の約50%を占めるシートです。フィルター設定やオプション選択などに適しています。
@@ -1826,7 +1826,7 @@ export default function Page() {
         title="Large Sheet"
       >
         <p
-          className="text-sm text-black/60 leading-relaxed mb-6"
+          className="lk-text-sm text-black/60 leading-relaxed mb-6"
           style={{ fontFamily: "acumin-pro, sans-serif" }}
         >
           画面の約90%を占める大きなシートです。詳細情報の表示や複雑なフォームに適しています。
@@ -1835,7 +1835,7 @@ export default function Page() {
           {[1, 2, 3, 4, 5, 6, 7, 8].map((item) => (
             <div key={item} className="p-4 border border-black/10">
               <p
-                className="text-sm text-black"
+                className="lk-text-sm text-black"
                 style={{ fontFamily: "acumin-pro, sans-serif" }}
               >
                 {`コンテンツ項目 ${item}`}
@@ -1877,7 +1877,7 @@ export default function Page() {
         <div className="p-8">
           <div className="flex items-center justify-between mb-8">
             <h3
-              className="text-2xl text-black tracking-tight"
+              className="lk-text-7xl text-black tracking-tight"
               style={{ fontFamily: "Didot, serif" }}
             >
               Drawer Menu
@@ -1890,7 +1890,7 @@ export default function Page() {
               aria-label="Close drawer"
             >
               <div className="w-5 h-5 flex items-center justify-center">
-                <i className="ri-close-line text-xl"></i>
+                <i className="ri-close-line lk-text-4xl"></i>
               </div>
             </Button>
           </div>
@@ -1914,7 +1914,7 @@ export default function Page() {
           </nav>
           <div className="mt-12 pt-8 border-t border-black/10">
             <p
-              className="text-xs tracking-widest text-black/60 mb-4"
+              className="lk-text-3xs tracking-widest text-black/60 mb-4"
               style={{ fontFamily: "acumin-pro, sans-serif" }}
             >
               FOLLOW US
@@ -1928,7 +1928,7 @@ export default function Page() {
                   className="aspect-square px-0"
                 >
                   <div className="w-5 h-5 flex items-center justify-center">
-                    <i className={`ri-${icon}-line text-xl`}></i>
+                    <i className={`ri-${icon}-line lk-text-4xl`}></i>
                   </div>
                 </Button>
               ))}

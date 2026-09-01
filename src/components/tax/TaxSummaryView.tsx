@@ -432,7 +432,7 @@ export function TaxSummaryView({
           }
         >
           {actionItems.length === 0 ? (
-            <p className="flex items-center gap-1.5 font-acumin text-xs text-[#16844b]">
+            <p className="flex items-center gap-1.5 font-acumin lk-text-3xs text-[#16844b]">
               <i className="ri-checkbox-circle-line" aria-hidden="true" />
               要対応の項目はありません。
             </p>
@@ -468,7 +468,7 @@ export function TaxSummaryView({
                           {PRIORITY_LABELS[item.priority]}
                         </span>
                       </td>
-                      <td className="px-2 py-2.5 font-acumin text-xs text-black">
+                      <td className="px-2 py-2.5 font-acumin lk-text-3xs text-black">
                         {item.label}
                       </td>
                       <td className="whitespace-nowrap px-2 py-2.5 font-acumin lk-text-4xs text-[#474747] tabular-nums">
@@ -531,7 +531,7 @@ export function TaxSummaryView({
                   ) : null}
                 </span>
                 <span className="min-w-0">
-                  <span className="block font-acumin text-xs text-black">
+                  <span className="block font-acumin lk-text-3xs text-black">
                     {deadline.label}
                   </span>
                   <span className="mt-0.5 flex items-center gap-1.5">

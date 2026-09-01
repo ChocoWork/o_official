@@ -150,7 +150,7 @@ export default function UserSection() {
   if (isLoading) {
     return (
       <section>
-        <p className="text-sm text-[#474747] font-acumin">
+        <p className="lk-text-sm text-[#474747] font-acumin">
           ユーザー一覧を読み込み中です...
         </p>
       </section>
@@ -160,7 +160,7 @@ export default function UserSection() {
   return (
     <section>
       {errorMessage && (
-        <p className="mb-4 text-sm text-red-700 font-acumin">{errorMessage}</p>
+        <p className="mb-4 lk-text-sm text-red-700 font-acumin">{errorMessage}</p>
       )}
 
       <DataTable

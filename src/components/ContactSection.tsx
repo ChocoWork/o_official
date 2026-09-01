@@ -332,7 +332,7 @@ export default function ContactSection() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,360px)_1fr]">
         {/* 一覧 */}
         <div className="space-y-3">
-          <div className="flex items-center justify-between text-xs font-acumin text-[#474747]">
+          <div className="flex items-center justify-between lk-text-3xs font-acumin text-[#474747]">
             <span>{totalCount}件</span>
             <div className="flex items-center gap-2">
               <span>
@@ -362,15 +362,15 @@ export default function ContactSection() {
           </div>
 
           {errorMessage ? (
-            <p className="text-sm text-red-700 font-acumin">{errorMessage}</p>
+            <p className="lk-text-sm text-red-700 font-acumin">{errorMessage}</p>
           ) : null}
 
           {isLoading ? (
-            <div className="py-8 text-center text-sm text-[#474747] font-acumin">
+            <div className="py-8 text-center lk-text-sm text-[#474747] font-acumin">
               読み込み中...
             </div>
           ) : threads.length === 0 ? (
-            <div className="py-8 text-center text-sm text-[#474747] font-acumin">
+            <div className="py-8 text-center lk-text-sm text-[#474747] font-acumin">
               問い合わせがありません
             </div>
           ) : (
@@ -390,10 +390,10 @@ export default function ContactSection() {
                         {formatDateTime(thread.last_message_at)}
                       </span>
                     </div>
-                    <p className="truncate text-sm text-black font-acumin">
+                    <p className="truncate lk-text-sm text-black font-acumin">
                       {thread.subject}
                     </p>
-                    <p className="truncate text-xs text-[#474747] font-acumin">
+                    <p className="truncate lk-text-3xs text-[#474747] font-acumin">
                       {TYPE_LABELS[thread.inquiry_type]}・{thread.name}（
                       {thread.email}）
                     </p>
@@ -407,25 +407,25 @@ export default function ContactSection() {
         {/* 詳細 + チャット + 返信 */}
         <div>
           {!selectedId ? (
-            <Card size="md" className="text-sm text-[#474747] font-acumin">
+            <Card size="md" className="lk-text-sm text-[#474747] font-acumin">
               左の一覧から問い合わせを選択してください。
             </Card>
           ) : isDetailLoading || !detail ? (
-            <Card size="md" className="text-sm text-[#474747] font-acumin">
+            <Card size="md" className="lk-text-sm text-[#474747] font-acumin">
               読み込み中...
             </Card>
           ) : (
             <div className="space-y-4">
               <Card size="md" className="space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h4 className="text-lg text-black font-acumin">
+                  <h4 className="lk-text-2xl text-black font-acumin">
                     {detail.subject}
                   </h4>
                   <StatusBadge tone={STATUS_TONES[detail.status]} size="md">
                     {STATUS_LABELS[detail.status]}
                   </StatusBadge>
                 </div>
-                <dl className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm text-[#474747] font-acumin sm:grid-cols-2">
+                <dl className="grid grid-cols-1 gap-x-6 gap-y-1 lk-text-sm text-[#474747] font-acumin sm:grid-cols-2">
                   <div>
                     <dt className="inline font-medium">お名前：</dt>
                     <dd className="inline">{detail.name}</dd>
@@ -478,7 +478,7 @@ export default function ContactSection() {
                     className={`flex ${message.sender_role === "admin" ? "justify-end" : "justify-start"}`}
                   >
                     <div
-                      className={`max-w-[80%] whitespace-pre-wrap border p-3 text-sm font-acumin ${message.sender_role === "admin" ? "border-black bg-black/4" : "border-black/10 bg-white"}`}
+                      className={`max-w-[80%] whitespace-pre-wrap border p-3 lk-text-sm font-acumin ${message.sender_role === "admin" ? "border-black bg-black/4" : "border-black/10 bg-white"}`}
                     >
                       <div className="mb-1 flex items-center gap-2 lk-text-4xs text-[#474747]">
                         <span>
@@ -531,7 +531,7 @@ export default function ContactSection() {
                 />
                 {replyNotice ? (
                   <p
-                    className="text-sm text-[#474747] font-acumin"
+                    className="lk-text-sm text-[#474747] font-acumin"
                     role="status"
                   >
                     {replyNotice}
@@ -635,10 +635,10 @@ function TemplateManager({ templates, onChanged }: TemplateManagerProps) {
 
   return (
     <Card size="md" className="space-y-4">
-      <h4 className="text-base text-black font-acumin">返信テンプレート管理</h4>
+      <h4 className="lk-text-lg text-black font-acumin">返信テンプレート管理</h4>
       <div className="space-y-2">
         {templates.length === 0 ? (
-          <p className="text-sm text-[#474747] font-acumin">
+          <p className="lk-text-sm text-[#474747] font-acumin">
             テンプレートがありません。
           </p>
         ) : (
@@ -648,10 +648,10 @@ function TemplateManager({ templates, onChanged }: TemplateManagerProps) {
               className="flex items-center justify-between gap-3 border border-black/10 p-2"
             >
               <div className="min-w-0">
-                <p className="truncate text-sm text-black font-acumin">
+                <p className="truncate lk-text-sm text-black font-acumin">
                   {template.title}
                 </p>
-                <p className="truncate text-xs text-[#474747] font-acumin">
+                <p className="truncate lk-text-3xs text-[#474747] font-acumin">
                   {
                     TEMPLATE_CATEGORY_OPTIONS.find(
                       (option) =>
@@ -684,7 +684,7 @@ function TemplateManager({ templates, onChanged }: TemplateManagerProps) {
       </div>
 
       <div className="space-y-2 border-t border-black/10 pt-3">
-        <p className="text-sm text-black font-acumin">
+        <p className="lk-text-sm text-black font-acumin">
           {editingId ? "テンプレートを編集" : "新規テンプレート"}
         </p>
         <div className="flex flex-wrap items-end gap-2">

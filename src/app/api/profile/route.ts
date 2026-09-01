@@ -213,9 +213,10 @@ export async function GET(request: NextRequest) {
 		return authFailureResponse(auth.reason);
 	}
 
-	const user = { id: auth.claims.sub, email: auth.claims.email ?? null };
+	const userId = auth.claims.sub;
+	const userEmail = auth.claims.email ?? null;
 
-	const { data: profile, error } = await fetchProfileRow(supabase, user.id);
+	const { data: profile, error } = await fetchProfileRow(supabase, userId);
 
 	if (error) {
 		console.error('Profile fetch error:', error);
@@ -223,7 +224,7 @@ export async function GET(request: NextRequest) {
 	}
 
 	return NextResponse.json({
-		email: user.email ?? '',
+		email: userEmail ?? '',
 		fullName: profile?.display_name ?? profile?.optional_name ?? '',
 		kanaName: profile?.kana_name ?? '',
 		phone: formatPhoneNumberInput(profile?.phone ?? profile?.optional_phone ?? ''),
@@ -240,7 +241,8 @@ export async function POST(request: NextRequest) {
 		return authFailureResponse(auth.reason);
 	}
 
-	const user = { id: auth.claims.sub, email: auth.claims.email ?? null };
+	const userId = auth.claims.sub;
+	const userEmail = auth.claims.email ?? null;
 
 	const { requireCsrfOrDeny } = await import('@/lib/csrfMiddleware');
 	const csrfResult = await requireCsrfOrDeny();
@@ -272,7 +274,7 @@ export async function POST(request: NextRequest) {
 	const phone = formatPhoneNumberInput(parsedBody.data.phone.trim());
 	// 住所は /api/profile/addresses が管理。プロフィール保存では更新しない。
 
-	const { error } = await upsertProfileRow(supabase, user.id, fullName, kanaName, phone);
+	const { error } = await upsertProfileRow(supabase, userId, fullName, kanaName, phone);
 
 	if (error) {
 		console.error('Profile upsert error:', error);
@@ -280,11 +282,11 @@ export async function POST(request: NextRequest) {
 	}
 
 	// レスポンスの address は現在の保存値（addresses のデフォルト）を返す
-	const { data: refreshed } = await fetchProfileRow(supabase, user.id);
+	const { data: refreshed } = await fetchProfileRow(supabase, userId);
 
 	const response = NextResponse.json({
 		success: true,
-		email: user.email ?? '',
+		email: userEmail ?? '',
 		fullName,
 		kanaName,
 		phone,
@@ -308,7 +310,7 @@ export async function DELETE(request: NextRequest) {
 		return authFailureResponse(auth.reason);
 	}
 
-	const user = { id: auth.claims.sub, email: auth.claims.email ?? null };
+	const userId = auth.claims.sub;
 
 	const { requireCsrfOrDeny } = await import('@/lib/csrfMiddleware');
 	const csrfResult = await requireCsrfOrDeny();
@@ -322,7 +324,7 @@ export async function DELETE(request: NextRequest) {
 		return denyResponse;
 	}
 
-	const { error } = await clearProfileRow(supabase, user.id);
+	const { error } = await clearProfileRow(supabase, userId);
 
 	if (error) {
 		console.error('Profile delete error:', error);

@@ -94,6 +94,56 @@ describe('proxy の Origin 検査', () => {
 
       expect(res.status).not.toBe(403);
     });
+
+    // FREQ-327: 検査は許可リストではなく除外リストで回す。列挙漏れで新しいルートが
+    // 黙って無防備になるのを防ぐ（/api/contact 配下が実際に漏れていた）。
+    test.each([
+      '/api/contact',
+      '/api/contact/threads/abc/reply',
+      '/api/profile',
+      '/api/checkout/update-shipping',
+      '/api/orders',
+    ])('列挙していない %s も検査対象', async (path) => {
+      const proxy = await loadProxy();
+      const res = proxy(makeRequest(`${ALLOWED}${path}`, { origin: 'https://evil.example' }));
+
+      expect(res.status).toBe(403);
+    });
+
+    // 署名や Bearer で発信元を検証している経路だけが除外。
+    test.each(['/api/webhook/stripe', '/api/contact/inbound', '/api/cron/meta-kpi-sync'])(
+      '%s は除外',
+      async (path) => {
+        const proxy = await loadProxy();
+        const res = proxy(makeRequest(`${ALLOWED}${path}`, {}));
+
+        expect(res.status).not.toBe(403);
+      },
+    );
+
+    // API 以外（ページの Server Action 等）は対象外のまま。
+    test('/api 配下でないパスは検査しない', async () => {
+      const proxy = await loadProxy();
+      const res = proxy(makeRequest(`${ALLOWED}/checkout`, {}));
+
+      expect(res.status).not.toBe(403);
+    });
+
+    // 前方一致はセグメント境界で判定する。素の startsWith だと除外が誤爆して
+    // 検査をすり抜ける経路ができる。
+    test('/api/webhookfoo は除外に当たらず検査される', async () => {
+      const proxy = await loadProxy();
+      const res = proxy(makeRequest(`${ALLOWED}/api/webhookfoo`, { origin: 'https://evil.example' }));
+
+      expect(res.status).toBe(403);
+    });
+
+    test('/apidocs は /api 配下ではないので検査しない', async () => {
+      const proxy = await loadProxy();
+      const res = proxy(makeRequest(`${ALLOWED}/apidocs`, { origin: 'https://evil.example' }));
+
+      expect(res.status).not.toBe(403);
+    });
   });
 
   describe('許可オリジンが未設定のとき', () => {

@@ -59,14 +59,14 @@ export default function OrderSection({
 	if (isLoading) {
 		return (
 			<section>
-				<p className="text-sm text-[#474747] font-acumin">注文一覧を読み込み中です...</p>
+				<p className="lk-text-sm text-[#474747] font-acumin">注文一覧を読み込み中です...</p>
 			</section>
 		);
 	}
 
 	return (
 		<section>
-			{errorMessage && <p className="mb-4 text-sm text-red-700 font-acumin">{errorMessage}</p>}
+			{errorMessage && <p className="mb-4 lk-text-sm text-red-700 font-acumin">{errorMessage}</p>}
 
 			<DataTable
 				rows={orders}
@@ -83,8 +83,8 @@ export default function OrderSection({
 						header: '顧客名',
 						render: (order) => (
 							<div>
-								<p className="text-sm text-black font-acumin">{order.customerName}</p>
-								<p className="text-xs text-[#474747] font-acumin">{order.customerEmail}</p>
+								<p className="lk-text-sm text-black font-acumin">{order.customerName}</p>
+								<p className="lk-text-3xs text-[#474747] font-acumin">{order.customerEmail}</p>
 							</div>
 						),
 					},
@@ -95,7 +95,7 @@ export default function OrderSection({
 						render: (order) => (
 							<div className="space-y-1">
 								{order.items.map((item) => (
-									<p key={`${order.id}-${item.name}`} className="text-sm text-black font-acumin">
+									<p key={`${order.id}-${item.name}`} className="lk-text-sm text-black font-acumin">
 										{item.name} × {item.quantity}
 									</p>
 								))}

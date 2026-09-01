@@ -321,7 +321,7 @@ export default function VerifiedPage() {
     return (
       <div className="space-y-4 text-left">
         <p style={authBodyStyle}>{message}</p>
-        <p className="text-xs text-[#474747]">
+        <p className="lk-text-3xs text-[#474747]">
           ここで入力するのは、Google Authenticator などの認証アプリに表示される 6〜8 桁のワンタイムコードです。
         </p>
         {qrCodeSvg ? (
@@ -335,7 +335,7 @@ export default function VerifiedPage() {
           />
         ) : null}
         {totpSecret || totpUri ? (
-          <details className="text-xs text-[#474747]">
+          <details className="lk-text-3xs text-[#474747]">
             <summary className="cursor-pointer underline underline-offset-4 hover:text-black transition-colors">
               手動で入力する場合はこちら
             </summary>

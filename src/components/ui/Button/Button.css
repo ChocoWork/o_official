@@ -111,6 +111,11 @@
   --button-disabled-border-color: #e8e8e8;
 }
 
+/* 認証画面の主CTAと代替認証は同じprops・同じ40px高で反復する。 */
+[data-ui-button].auth-action {
+  min-height: 40px;
+}
+
 [data-ui-button][data-ui-button-variant="danger"] {
   --button-bg: #2a2a2a;
   --button-color: #ffffff;

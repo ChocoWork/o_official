@@ -1,0 +1,55 @@
+#!/bin/sh
+#
+# push 時の全件ゲート。ここを通れば「壊れていない」と言える状態にする。
+#
+# E2E は既知の失敗（19 件）が片付くまで警告のみ。
+# 片付いたら E2E_BLOCKING を 1 に変えて、失敗で push を止めるようにする。
+#
+set -e
+
+E2E_BLOCKING=0
+
+echo "[pre-push] 全件検証を開始します。E2E まで含めて 10〜12 分程度かかります。"
+
+echo "[pre-push] 1/4 lint"
+npm run --silent lint
+
+echo "[pre-push] 2/4 typecheck"
+npm run --silent typecheck
+
+echo "[pre-push] 3/4 ユニットテスト全件"
+npm test -- --silent
+
+# --- ここから E2E ---
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "[pre-push] docker が見つからないため E2E をスキップします。"
+  echo "[pre-push] ローカル Supabase の導入が済むまでの暫定動作です。"
+  echo "[pre-push] OK（E2E スキップ）"
+  exit 0
+fi
+
+echo "[pre-push] DB をベースライン＋シードから作り直します"
+if ! npx supabase db reset; then
+  echo "[pre-push] db reset に失敗しました。"
+  if [ "$E2E_BLOCKING" = "1" ]; then
+    exit 1
+  fi
+  echo "[pre-push] 警告のみのため push は継続します。"
+  exit 0
+fi
+
+echo "[pre-push] 4/4 E2E 全件"
+# E2E_STRICT=1 で起動済みサーバーの使い回しを禁じ、必ずビルドから起動させる。
+if E2E_STRICT=1 npm run test:e2e; then
+  echo "[pre-push] OK"
+  exit 0
+fi
+
+if [ "$E2E_BLOCKING" = "1" ]; then
+  echo "[pre-push] E2E に失敗があるため push を中断します。"
+  exit 1
+fi
+
+echo "[pre-push] E2E に失敗がありますが、既知の失敗を解消するまでは警告のみとします。"
+echo "[pre-push] OK（E2E は警告）"

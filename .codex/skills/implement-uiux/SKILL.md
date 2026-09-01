@@ -1257,6 +1257,13 @@ Layer 10: ナビゲーション・状態管理
 
 ## 検証チェックリスト
 
+### 文字サイズの実装規約
+
+- 通常の JSX / TSX 要素は `className="lk-text-*"` で文字サイズを指定する。`style={{ fontSize: ... }}`、Tailwind の名前付き・任意値フォントサイズ、JSX内での `var(--lk-size-*)` 直接指定は禁止する。
+- `Button`、`TextField` など `size` propを持つ共通UIコンポーネントは、`lk-text-*`で上書きせず`size` propを使う。`size`から`data-ui-size`、`--ui-font-size`へ接続される既存経路を維持する。
+- `font-size: var(--lk-size-*)` は、クラスを付与できない共通コンポーネント内部CSS、またはCSSの`@apply`内に限って使用する。
+- 実装後は `e2e/FR-UI-004-lk-text-migration.spec.ts` を実行し、`.lk-text-*`と別のフォントサイズ系統が混在していないことを確認する。
+
 ### デザイナー向け
 
 - [ ] 見出し構造・ランドマーク・情報階層を定義した

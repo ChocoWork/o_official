@@ -114,8 +114,8 @@ export default function NewsSection() {
                     {item.category}
                   </TagLabel>
                 </div>
-                <h4 className="text-lg text-black mb-2 font-acumin">{item.title}</h4>
-                <p className="text-sm text-[#474747] font-acumin">{item.published_date}</p>
+                <h4 className="lk-text-2xl text-black mb-2 font-acumin">{item.title}</h4>
+                <p className="lk-text-sm text-[#474747] font-acumin">{item.published_date}</p>
               </div>
             </div>
             <div className="flex items-center space-x-3">

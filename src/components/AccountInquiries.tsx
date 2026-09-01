@@ -194,7 +194,7 @@ export default function AccountInquiries() {
                   className={`flex ${message.sender_role === "user" ? "justify-end" : "justify-start"}`}
                 >
                   <div
-                    className={`max-w-[85%] whitespace-pre-wrap border p-3 text-sm ${message.sender_role === "user" ? "border-black bg-black/4" : "border-black/10 bg-white"}`}
+                    className={`max-w-[85%] whitespace-pre-wrap border p-3 lk-text-sm ${message.sender_role === "user" ? "border-black bg-black/4" : "border-black/10 bg-white"}`}
                   >
                     <div className="mb-1 lk-text-4xs text-[#474747]">
                       {message.sender_role === "user" ? "あなた" : "サポート"}・
@@ -217,7 +217,7 @@ export default function AccountInquiries() {
                 onChange={(event) => setReplyBody(event.target.value)}
               />
               {notice ? (
-                <p className="text-sm text-[#474747]" role="status">
+                <p className="lk-text-sm text-[#474747]" role="status">
                   {notice}
                 </p>
               ) : null}

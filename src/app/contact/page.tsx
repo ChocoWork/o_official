@@ -309,7 +309,7 @@ export default function ContactPage() {
           {errors.inquiryType ? (
             <p
               id="inquiryType-error"
-              className="text-xs text-red-600"
+              className="lk-text-3xs text-red-600"
               role="alert"
             >
               {errors.inquiryType}
@@ -377,7 +377,7 @@ export default function ContactPage() {
               {errors.message ? (
                 <p
                   id="message-error"
-                  className="text-xs text-red-600"
+                  className="lk-text-3xs text-red-600"
                   role="alert"
                   style={helperTextStyle}
                 >
@@ -388,7 +388,7 @@ export default function ContactPage() {
               )}
               <p
                 id="message-counter"
-                className="text-xs text-[#474747]"
+                className="lk-text-3xs text-[#474747]"
                 style={helperTextStyle}
               >
                 {messageCount} / {MAX_MESSAGE_LENGTH}
@@ -398,7 +398,7 @@ export default function ContactPage() {
 
           {submitSuccess ? (
             <p
-              className="text-sm flex items-center gap-2"
+              className="lk-text-sm flex items-center gap-2"
               role="status"
               style={bodyTextStyle}
             >
@@ -408,7 +408,7 @@ export default function ContactPage() {
           ) : null}
           {submitError ? (
             <p
-              className="text-sm text-red-600"
+              className="lk-text-sm text-red-600"
               role="alert"
               style={bodyTextStyle}
             >
@@ -441,7 +441,7 @@ export default function ContactPage() {
             onClick={(event) => event.stopPropagation()}
           >
             <h3 id="thanks-modal-title">お問い合わせありがとうございます</h3>
-            <p className="text-sm text-[#474747]" style={bodyTextStyle}>
+            <p className="lk-text-sm text-[#474747]" style={bodyTextStyle}>
               内容を確認のうえ、担当者よりご連絡いたします。
             </p>
             <Button

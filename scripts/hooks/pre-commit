@@ -1,0 +1,25 @@
+#!/bin/sh
+#
+# コミット時の速いゲート。数秒で終わる範囲だけを見る。
+# 重い検証（ユニット全件・E2E 全件）は pre-push が担当する。
+#
+set -e
+
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR -- '*.ts' '*.tsx' | tr '\n' ' ')
+
+if [ -z "$STAGED" ]; then
+  exit 0
+fi
+
+echo "[pre-commit] lint（ステージ済みファイル）"
+npx eslint $STAGED
+
+# tsconfig は src / e2e / tests をまとめて見るので、型は全体で確認するしかない。
+# 実測 3 秒程度なので毎回走らせて問題ない。
+echo "[pre-commit] typecheck"
+npm run --silent typecheck
+
+echo "[pre-commit] 関連ユニットテスト"
+npx jest --findRelatedTests $STAGED --passWithNoTests --silent
+
+echo "[pre-commit] OK"

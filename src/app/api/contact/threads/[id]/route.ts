@@ -25,7 +25,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       return authFailureResponse(auth.reason, NO_STORE_HEADERS);
     }
 
-    const user = { id: auth.claims.sub, email: auth.claims.email ?? null };
+    const userId = auth.claims.sub;
+    const userEmail = auth.claims.email ?? null;
 
     const service = await createServiceRoleClient();
 
@@ -37,8 +38,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     const ownsThread =
       inquiry &&
-      (inquiry.user_id === user.id ||
-        (user.email ? inquiry.email.trim().toLowerCase() === user.email.trim().toLowerCase() : false));
+      (inquiry.user_id === userId ||
+        (userEmail ? inquiry.email.trim().toLowerCase() === userEmail.trim().toLowerCase() : false));
 
     if (!ownsThread) {
       return NextResponse.json({ error: 'Not found' }, { status: 404, headers: NO_STORE_HEADERS });

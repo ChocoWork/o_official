@@ -17,7 +17,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const pageMainClassName = isHome
     ? "flex-1 flex flex-col"
     : isAuthPage
-      ? "flex items-center justify-center min-h-[calc(100dvh-56px)] mt-14 px-5 py-4"
+      ? "flex min-h-dvh items-center justify-center px-5 py-[calc(var(--site-header-offset)+13px)]"
       : "flex-1 flex flex-col my-13 sm:my-13.5 md:my-14 lg:my-[58px] xl:my-15 py-0 sm:py-1 md:py-2 lg:py-3 px-5";
 
   return (
@@ -25,7 +25,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <LoginProvider>
         <a
           href="#main-content"
-          className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-100 focus:bg-white focus:text-black focus:px-4 focus:py-2 focus:text-sm focus:border focus:border-black"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-100 focus:bg-white focus:text-black focus:px-4 focus:py-2 focus:lk-text-sm focus:border focus:border-black"
         >
           メインコンテンツへスキップ
         </a>

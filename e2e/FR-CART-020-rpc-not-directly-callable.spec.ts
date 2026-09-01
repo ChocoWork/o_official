@@ -50,8 +50,9 @@ for (const viewport of viewports) {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await page.goto('/cart');
 
-    // 空カートでも「カート」の見出しが出ることを確認する。
-    // 数量変更・削除の操作自体は FR-CART-001-008 が担当する。
-    await expect(page.getByRole('heading', { name: /CART|カート/i }).first()).toBeVisible();
+    // 空カートは EmptyPage（見出しではなくラベル）を描く。ページが例外で落ちず、
+    // 継続導線まで出ることを確認する。数量変更・削除の操作自体は FR-CART-001-008 が担当する。
+    await expect(page.getByText('YOUR CART IS EMPTY')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'CONTINUE SHOPPING' })).toBeVisible();
   });
 }

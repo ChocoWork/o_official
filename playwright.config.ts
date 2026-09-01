@@ -7,14 +7,20 @@ const resolvedBaseUrl = 'http://localhost:3000';
  */
 export default defineConfig({
   testDir: './e2e',
-  /* Run tests in files in parallel */
-  fullyParallel: false,
+  /*
+   * ファイル内のテストも並列に流す。16 論理コアあるので逐次実行は待ち時間が無駄になる。
+   * 並列度は PW_WORKERS で調整する（干渉が出たら下げる。retries で誤魔化さない）。
+   */
+  fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
   /* Retry on CI only */
   retries: process.env.CI ? 2 : 0,
-  /* Use a single worker to reduce suite flakiness in this workspace. */
-  workers: 1,
+  /*
+   * 既定は 4。以前は「不安定さを抑えるため」1 に固定していたので、
+   * 上げるときは干渉の実測とセットで行うこと。
+   */
+  workers: Number(process.env.PW_WORKERS ?? 4),
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: 'html',
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
@@ -36,7 +42,12 @@ export default defineConfig({
   webServer: {
     command: 'node scripts/e2e-server.mjs',
     url: resolvedBaseUrl,
-    reuseExistingServer: true,
+    /*
+     * 対話的な実行では起動済みサーバーを使い回して待ち時間を減らす。
+     * ゲート実行（pre-push）では E2E_STRICT=1 を立て、必ず自前でビルドから起動する。
+     * 使い回すと「どのビルドを検証したのか」が曖昧になり、計測が信用できなくなる。
+     */
+    reuseExistingServer: process.env.E2E_STRICT !== '1',
     /* next build を含むので長めに取る。 */
     timeout: 600_000,
     stdout: 'pipe',

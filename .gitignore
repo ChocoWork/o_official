@@ -66,3 +66,6 @@ certificates
 /.codex/hooks.json*
 /.claude/*.graphify-bak
 /.graphify_*
+
+# ローカル検証用の一時ファイル（スキーマ比較など）
+tmp/

@@ -5,6 +5,9 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 import { verifyAccessToken } from '@/lib/auth/authenticate';
 import { logAudit } from '@/lib/audit';
 
+// PUBLIC: 未認証でも 200 を返す。ログアウトが 401 だと「まだ有効なセッション」を漏らすため。
+// 実際の失効は verifyAccessToken(allowExpired) で取れた session_id を使い、CSRF トークンも要求する。
+
 type CsrfDenyResponse = {
   status: number;
   _body: unknown;

@@ -140,7 +140,7 @@ export function TaxAdjustmentView({
 
   return (
     <div className="space-y-4">
-      <h3 className="font-acumin text-base font-medium tracking-widest text-black">
+      <h3 className="font-acumin lk-text-lg font-medium tracking-widest text-black">
         税務調整
       </h3>
 
@@ -184,7 +184,7 @@ export function TaxAdjustmentView({
           }
         >
           {adjustments.rows.length === 0 ? (
-            <p className="font-acumin text-xs text-[#707070]">
+            <p className="font-acumin lk-text-3xs text-[#707070]">
               帳簿から検出された調整項目はありません。
             </p>
           ) : (
@@ -311,16 +311,16 @@ export function TaxAdjustmentView({
                 <span className="min-w-0 font-acumin lk-text-4xs text-[#474747]">
                   {label}
                 </span>
-                <span className="shrink-0 font-acumin text-xs text-black tabular-nums">
+                <span className="shrink-0 font-acumin lk-text-3xs text-black tabular-nums">
                   {currency(value)}
                 </span>
               </li>
             ))}
             <li className="flex items-baseline justify-between gap-2 border-t border-black py-2">
-              <span className="font-acumin text-xs font-medium text-black">
+              <span className="font-acumin lk-text-3xs font-medium text-black">
                 税額合計
               </span>
-              <span className="font-acumin text-sm font-medium text-black tabular-nums">
+              <span className="font-acumin lk-text-sm font-medium text-black tabular-nums">
                 {currency(totals.total)}
               </span>
             </li>
@@ -328,7 +328,7 @@ export function TaxAdjustmentView({
               <span className="font-acumin lk-text-4xs text-[#474747]">
                 実効税率（税額合計 ÷ 課税所得）
               </span>
-              <span className="font-acumin text-xs text-black tabular-nums">
+              <span className="font-acumin lk-text-3xs text-black tabular-nums">
                 {percent(totals.effectiveRate)}
               </span>
             </li>
@@ -355,7 +355,7 @@ export function TaxAdjustmentView({
           }
         >
           {visibleRows.length === 0 ? (
-            <p className="font-acumin text-xs text-[#707070]">
+            <p className="font-acumin lk-text-3xs text-[#707070]">
               該当する調整項目がありません。帳簿に家事按分・寄附金などが計上されると自動で並びます。
             </p>
           ) : (
@@ -388,17 +388,17 @@ export function TaxAdjustmentView({
                         onClick={() => setSelectedKey(row.key)}
                         className={`cursor-pointer transition-colors hover:bg-[#faf7f2] ${tableRowClassName} ${active ? "bg-[#f2f8f4]" : ""}`}
                       >
-                        <td className="px-2 py-2.5 font-acumin text-xs text-black">
+                        <td className="px-2 py-2.5 font-acumin lk-text-3xs text-black">
                           {row.label}
                         </td>
                         <td className="whitespace-nowrap px-2 py-2.5 font-acumin lk-text-4xs text-[#474747]">
                           {row.account}
                         </td>
-                        <td className="px-2 py-2.5 text-right font-acumin text-xs text-black tabular-nums">
+                        <td className="px-2 py-2.5 text-right font-acumin lk-text-3xs text-black tabular-nums">
                           {currency(row.bookAmount)}
                         </td>
                         <td
-                          className="px-2 py-2.5 text-right font-acumin text-xs tabular-nums"
+                          className="px-2 py-2.5 text-right font-acumin lk-text-3xs tabular-nums"
                           style={{
                             color: row.addition > 0 ? TAX_ADD_COLOR : "#707070",
                           }}
@@ -406,7 +406,7 @@ export function TaxAdjustmentView({
                           {currency(row.addition)}
                         </td>
                         <td
-                          className="px-2 py-2.5 text-right font-acumin text-xs tabular-nums"
+                          className="px-2 py-2.5 text-right font-acumin lk-text-3xs tabular-nums"
                           style={{
                             color:
                               row.subtraction > 0
@@ -416,7 +416,7 @@ export function TaxAdjustmentView({
                         >
                           {currency(row.subtraction)}
                         </td>
-                        <td className="px-2 py-2.5 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                        <td className="px-2 py-2.5 text-right font-acumin lk-text-3xs font-medium text-black tabular-nums">
                           {currency(row.taxAmount)}
                         </td>
                         <td className="px-2 py-2.5 text-right font-acumin lk-text-4xs text-[#474747] tabular-nums">
@@ -441,26 +441,26 @@ export function TaxAdjustmentView({
                   <tr className={tableTotalRowClassName}>
                     <td
                       colSpan={2}
-                      className="px-2 py-2 font-acumin text-xs font-medium text-black"
+                      className="px-2 py-2 font-acumin lk-text-3xs font-medium text-black"
                     >
                       合計
                     </td>
-                    <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                    <td className="px-2 py-2 text-right font-acumin lk-text-3xs font-medium text-black tabular-nums">
                       {currency(adjustments.bookProfit)}
                     </td>
                     <td
-                      className="px-2 py-2 text-right font-acumin text-xs font-medium tabular-nums"
+                      className="px-2 py-2 text-right font-acumin lk-text-3xs font-medium tabular-nums"
                       style={{ color: TAX_ADD_COLOR }}
                     >
                       {currency(adjustments.additionTotal)}
                     </td>
                     <td
-                      className="px-2 py-2 text-right font-acumin text-xs font-medium tabular-nums"
+                      className="px-2 py-2 text-right font-acumin lk-text-3xs font-medium tabular-nums"
                       style={{ color: TAX_SUBTRACT_COLOR }}
                     >
                       {currency(adjustments.subtractionTotal)}
                     </td>
-                    <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                    <td className="px-2 py-2 text-right font-acumin lk-text-3xs font-medium text-black tabular-nums">
                       {currency(adjustments.taxableIncome)}
                     </td>
                     <td colSpan={2} />
@@ -485,7 +485,7 @@ export function TaxAdjustmentView({
                 <p className="font-acumin lk-text-6xs text-[#707070]">
                   税務調整項目
                 </p>
-                <p className="font-acumin text-xs font-medium text-black">
+                <p className="font-acumin lk-text-3xs font-medium text-black">
                   {selected.label}
                 </p>
               </div>
@@ -528,7 +528,7 @@ export function TaxAdjustmentView({
               </Button>
             </div>
           ) : (
-            <p className="font-acumin text-xs text-[#707070]">
+            <p className="font-acumin lk-text-3xs text-[#707070]">
               調整項目を選択すると、根拠となる勘定科目と仕訳件数を表示します。
             </p>
           )}
@@ -553,7 +553,7 @@ export function TaxAdjustmentView({
             }
             aria-hidden="true"
           />
-          <span className="min-w-0 font-acumin text-xs text-black">
+          <span className="min-w-0 font-acumin lk-text-3xs text-black">
             {matchesLedger
               ? "税務調整後の課税所得は、帳簿の決算値から算出しています。"
               : "税務調整後の課税所得が決算書の所得金額と一致しません。帳簿を確認してください。"}

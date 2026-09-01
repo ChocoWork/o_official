@@ -168,7 +168,7 @@ export function KpiSalesFunnel({
                   data-funnel-stage-frame
                 >
                   <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                    <span className="font-acumin text-xs font-medium tracking-widest text-black">
+                    <span className="font-acumin lk-text-3xs font-medium tracking-widest text-black">
                       {index + 1}. {stage.label}
                     </span>
                     <span className="font-acumin lk-text-6xs text-[#777777]">

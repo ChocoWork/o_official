@@ -27,8 +27,19 @@ const NETWORK_RETRY_DELAY_MS = 250;
 const REFRESH_RATE_LIMITED_COOLDOWN_MS = 60_000;
 const REFRESH_UNAUTHENTICATED_COOLDOWN_MS = 30_000;
 const REFRESH_ERROR_COOLDOWN_MS = 5_000;
+// Retry-After は外部から来る値。異常に大きな値でセッション更新を無期限に止められないよう上限を置く。
+const REFRESH_COOLDOWN_CAP_MS = 5 * 60_000;
 
 export const SESSION_EXPIRED_EVENT = 'auth:session-expired';
+
+/**
+ * セッション更新の抑制を解除する。ログイン成功時に呼ぶこと。
+ * これが無いと、401 でクールダウンに入った直後に再ログインしても
+ * 最大 30 秒はセッション更新が発行されない。
+ */
+export function resetRefreshCooldown(): void {
+  refreshBlockedUntil = 0;
+}
 
 let refreshSessionPromise: Promise<boolean> | null = null;
 let refreshBlockedUntil = 0;
@@ -44,7 +55,7 @@ function waitBeforeRetry(): Promise<void> {
 }
 
 function blockRefreshFor(durationMs: number): void {
-  refreshBlockedUntil = Date.now() + durationMs;
+  refreshBlockedUntil = Date.now() + Math.min(durationMs, REFRESH_COOLDOWN_CAP_MS);
 }
 
 // RFC 9110 の Retry-After。秒数のみを解釈し、解釈できなければ呼び出し側の既定値に任せる。

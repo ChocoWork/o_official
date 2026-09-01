@@ -7,8 +7,10 @@ const isUserRole = (role: unknown): role is UserRole => {
   return role === 'admin' || role === 'supporter' || role === 'user';
 };
 
-const buildResponse = (body: unknown) => {
-  const response = NextResponse.json(body, { status: 200 });
+// no-store / no-referrer はこの経路の全応答に要る。分岐ごとに書くと、
+// 増えた分岐だけ抜ける（実際に 503 を足したときに重複が生まれた）。
+const buildResponse = (body: unknown, init?: ResponseInit) => {
+  const response = NextResponse.json(body, { status: 200, ...init });
   response.headers.set('Cache-Control', 'no-store');
   response.headers.set('Referrer-Policy', 'no-referrer');
   return response;
@@ -25,13 +27,10 @@ export async function GET(request: Request) {
       // 後者で authenticated:false を返すと、DB の一時障害だけで全利用者の画面が
       // ログアウト状態に落ちる。503 にしてクライアント側に前の状態を維持させる。
       if (verified.reason === 'unavailable') {
-        const response = NextResponse.json(
+        return buildResponse(
           { authenticated: false, reason: 'unavailable' },
           { status: 503, headers: { 'Retry-After': '30' } },
         );
-        response.headers.set('Cache-Control', 'no-store');
-        response.headers.set('Referrer-Policy', 'no-referrer');
-        return response;
       }
 
       return buildResponse({ authenticated: false });

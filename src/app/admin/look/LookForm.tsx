@@ -274,7 +274,7 @@ export function LookForm({
       <div className="max-w-4xl mx-auto px-6 lg:px-12">
         <form className="space-y-8" onSubmit={handleSubmit}>
           <div>
-            <label className="block text-sm tracking-widest mb-2">画像</label>
+            <label className="block lk-text-sm tracking-widest mb-2">画像</label>
             {existingImageUrls.length > 0 && previewUrls.length === 0 && (
               <div className="grid grid-cols-2 gap-4 mb-6">
                 {existingImageUrls.map((url, index) => (
@@ -337,7 +337,7 @@ export function LookForm({
               }}
               onDragLeave={() => setIsDragging(false)}
               onDrop={handleDrop}
-              className={`w-full border border-black/20 text-sm px-4 py-10 text-center cursor-pointer transition-colors ${
+              className={`w-full border border-black/20 lk-text-sm px-4 py-10 text-center cursor-pointer transition-colors ${
                 isDragging ? "border-black bg-black/5" : "bg-white"
               }`}
             >
@@ -349,15 +349,15 @@ export function LookForm({
                 className="hidden"
               />
               <div className="space-y-2">
-                <p className="text-sm tracking-widest">
+                <p className="lk-text-sm tracking-widest">
                   画像をドラッグ&ドロップ
                 </p>
-                <p className="text-xs text-black/70">
+                <p className="lk-text-3xs text-black/70">
                   またはクリックしてファイルを追加（JPEG / PNG / WebP /
                   GIF、5MB以下）
                 </p>
                 {submitMethod === "PUT" && (
-                  <p className="text-xs text-black/70">
+                  <p className="lk-text-3xs text-black/70">
                     新規画像を追加して保存すると、画像は新規選択分に置き換わります
                   </p>
                 )}
@@ -366,7 +366,7 @@ export function LookForm({
           </div>
 
           <label className="block space-y-2">
-            <span className="block text-xs tracking-widest text-black/80">
+            <span className="block lk-text-3xs tracking-widest text-black/80">
               シーズン
             </span>
             <div className="flex flex-wrap gap-3">
@@ -427,13 +427,13 @@ export function LookForm({
           </div>
 
           <div>
-            <label className="block text-sm tracking-widest mb-4">
+            <label className="block lk-text-sm tracking-widest mb-4">
               紐づける商品を選択
             </label>
             {isLoadingItems ? (
-              <p className="text-sm text-black/70">商品を読み込み中です...</p>
+              <p className="lk-text-sm text-black/70">商品を読み込み中です...</p>
             ) : items.length === 0 ? (
-              <p className="text-sm text-black/70">
+              <p className="lk-text-sm text-black/70">
                 登録済み商品がありません。先にITEMを登録してください。
               </p>
             ) : (
@@ -462,8 +462,8 @@ export function LookForm({
                         />
                       </div>
                       <div className="p-3">
-                        <p className="text-xs text-black mb-1">{item.name}</p>
-                        <p className="text-xs text-[#474747]">
+                        <p className="lk-text-3xs text-black mb-1">{item.name}</p>
+                        <p className="lk-text-3xs text-[#474747]">
                           {currencyFormatter.format(item.price)}
                         </p>
                         {item.status === "private" && (
@@ -494,13 +494,13 @@ export function LookForm({
           </div>
 
           {submitSuccess && (
-            <p className="text-sm text-green-700" role="status">
+            <p className="lk-text-sm text-green-700" role="status">
               {submitSuccess}
             </p>
           )}
 
           {submitError && (
-            <p className="text-sm text-red-600" role="alert">
+            <p className="lk-text-sm text-red-600" role="alert">
               {submitError}
             </p>
           )}

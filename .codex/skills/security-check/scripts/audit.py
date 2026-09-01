@@ -124,7 +124,7 @@ def add_regex_findings(path: Path, text: str, root: Path, findings: list[Finding
 def add_context_findings(path: Path, text: str, root: Path, findings: list[Finding]) -> None:
     name = display_path(path, root)
     normalized = name.replace("\\", "/")
-    auth_pattern = r"auth\(\)|getSession|getServerSession|currentUser\(|requireAuth|getUser\(\)|authorize|Authorization|verifyToken"
+    auth_pattern = r"auth\(\)|getSession|getServerSession|currentUser\(|requireAuth|getUser\(\)|authorize|Authorization|verifyToken|authenticateRequest"
     if re.search(r"['\"]use server['\"]", text) and not re.search(auth_pattern, text):
         findings.append(Finding("CRITICAL", "A01-001", "Server Action without authentication", name, detail="No authentication check detected", owasp="A01:2021", asvs="V4.1.1, V4.1.5", cwe="CWE-862", fix="Authenticate at the start of the action"))
     if re.search(r"['\"]use server['\"]", text) and not re.search(r"userId|ownerId|authorId|session\.user\.id|\.id ===|\.userId ===", text):

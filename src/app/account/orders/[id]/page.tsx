@@ -190,7 +190,7 @@ export default function AccountOrderDetailPage() {
             isShippingCarrierId(order.shippingCarrier) ? (
               <section aria-label="配送情報" className="mt-6">
                 <h2 className="mb-2 text-[#474747] tracking-wider">配送情報</h2>
-                <dl className="space-y-1 text-sm">
+                <dl className="space-y-1 lk-text-sm">
                   <div className="flex gap-2">
                     <dt className="text-[#707070]">配送業者</dt>
                     <dd>{SHIPPING_CARRIERS[order.shippingCarrier].label}</dd>
@@ -206,7 +206,7 @@ export default function AccountOrderDetailPage() {
                   )}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-2 inline-block text-sm underline"
+                  className="mt-2 inline-block lk-text-sm underline"
                 >
                   配送状況を確認する
                 </a>

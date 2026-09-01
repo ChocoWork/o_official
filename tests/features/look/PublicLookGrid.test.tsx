@@ -56,7 +56,7 @@ function createLooks(count: number): PublicLook[] {
 describe('PublicLookGrid', () => {
   // FREQ-148: ボタンのラベルは VIEW ALL LOOKS。
   // 出し分けは「描画するか否か」ではなく、ブレークポイントごとの表示クラスで行う
-  // （xl 未満は 6 件表示 / xl は 8 件表示）。
+  // （2xl 未満は 6 件表示 / 2xl は 8 件表示。FREQ-148 から FREQ-277 で変更）。
   const viewAllWrapper = () =>
     screen.getByTestId('home-section-view-all').parentElement;
 
@@ -66,26 +66,26 @@ describe('PublicLookGrid', () => {
     expect(screen.getByLabelText('VIEW ALL LOOKS')).toBeInTheDocument();
   });
 
-  it('総数が7件なら xl 未満でのみ VIEW ALL を出す', () => {
+  it('総数が7件なら 2xl 未満でのみ VIEW ALL を出す', () => {
     render(<PublicLookGrid variant="home" looks={createLooks(7)} totalCount={7} />);
 
-    // 6 件表示の帯域では溢れるので出す。8 件表示の xl では出さない。
-    expect(viewAllWrapper()).toHaveClass('flex', 'xl:hidden');
+    // 6 件表示の帯域では溢れるので出す。8 件表示の 2xl では出さない。
+    expect(viewAllWrapper()).toHaveClass('flex', '2xl:hidden');
   });
 
   it('総数が6件ならどの帯域でも VIEW ALL を出さない', () => {
     render(<PublicLookGrid variant="home" looks={createLooks(6)} totalCount={6} />);
 
-    expect(viewAllWrapper()).toHaveClass('hidden', 'xl:hidden');
+    expect(viewAllWrapper()).toHaveClass('hidden', '2xl:hidden');
   });
 
   it('総数が全帯域を上回れば常に VIEW ALL を出す', () => {
     render(<PublicLookGrid variant="home" looks={createLooks(8)} totalCount={20} />);
 
-    expect(viewAllWrapper()).toHaveClass('flex', 'xl:flex');
+    expect(viewAllWrapper()).toHaveClass('flex', '2xl:flex');
   });
 
-  it('7件目以降は xl 以上でのみ表示する', () => {
+  it('7件目以降は 2xl 以上でのみ表示する', () => {
     const { container } = render(
       <PublicLookGrid variant="home" looks={createLooks(8)} totalCount={20} />,
     );

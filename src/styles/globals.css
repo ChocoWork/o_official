@@ -523,7 +523,11 @@ html[data-header-visible="false"] {
   }
 
   .header-drawer-follow-title {
-    @apply mb-4 text-xs tracking-widest text-black;
+    /* @apply は Tailwind ユーティリティしか受け付けないので、font-size は
+       .lk-text-* ではなく直接 --lk-size-* を参照する
+       （下の .header-drawer-follow-icon と同じ書き方）。 */
+    @apply mb-4 tracking-widest text-black;
+    font-size: var(--lk-size-3xs);
     font-family: "acumin-pro", sans-serif;
   }
 

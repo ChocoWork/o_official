@@ -122,26 +122,26 @@ export default function StockistSection() {
             {/* Detail rows */}
             <div className="flex flex-col gap-1.5 sm:gap-2 xl:gap-2.5">
               <div className="flex items-start gap-2">
-                <i className="ri-map-pin-line text-xs sm:text-sm text-black shrink-0 mt-0.75" />
-                <p className="text-xs sm:text-sm text-[#474747] leading-relaxed">
+                <i className="ri-map-pin-line lk-text-3xs sm:lk-text-sm text-black shrink-0 mt-0.75" />
+                <p className="lk-text-3xs sm:lk-text-sm text-[#474747] leading-relaxed">
                   {stockist.address}
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <i className="ri-phone-line text-xs sm:text-sm text-black shrink-0" />
-                <p className="text-xs sm:text-sm text-[#474747]">
+                <i className="ri-phone-line lk-text-3xs sm:lk-text-sm text-black shrink-0" />
+                <p className="lk-text-3xs sm:lk-text-sm text-[#474747]">
                   {stockist.phone}
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <i className="ri-time-line text-xs sm:text-sm text-black shrink-0" />
-                <p className="text-xs sm:text-sm text-[#474747]">
+                <i className="ri-time-line lk-text-3xs sm:lk-text-sm text-black shrink-0" />
+                <p className="lk-text-3xs sm:lk-text-sm text-[#474747]">
                   {stockist.time}
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <i className="ri-calendar-line text-xs sm:text-sm text-black shrink-0" />
-                <p className="text-xs sm:text-sm text-[#474747]">
+                <i className="ri-calendar-line lk-text-3xs sm:lk-text-sm text-black shrink-0" />
+                <p className="lk-text-3xs sm:lk-text-sm text-[#474747]">
                   {stockist.holiday}
                 </p>
               </div>

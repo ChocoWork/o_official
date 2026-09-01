@@ -20,6 +20,8 @@ import crypto from 'crypto';
 
 const RANGE_API = 'https://api.pwnedpasswords.com/range';
 const TIMEOUT_MS = 3000;
+/** Range 応答のキャッシュ寿命。漏洩リストの更新頻度（日次規模）に合わせる。 */
+const CACHE_TTL_SECONDS = 60 * 60 * 24;
 
 export type PwnedCheckResult =
   | { status: 'pwned'; count: number }
@@ -53,8 +55,10 @@ export async function checkPwnedPassword(password: string): Promise<PwnedCheckRe
         'User-Agent': 'o-official-password-check',
       },
       signal: AbortSignal.timeout(TIMEOUT_MS),
-      // 同じプレフィックスの結果は使い回して良い。
-      cache: 'force-cache',
+      // 同じプレフィックスの結果は使い回して良いが、無期限には持たない。
+      // 漏洩リストは増え続けるため、revalidate を付けないと（既定の force-cache だけだと）
+      // Data Cache に居座り、新しい漏洩が永久に反映されない＝検査が形骸化する。
+      next: { revalidate: CACHE_TTL_SECONDS },
     });
 
     if (!response.ok) {

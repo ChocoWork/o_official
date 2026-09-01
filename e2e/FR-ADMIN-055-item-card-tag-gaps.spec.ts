@@ -1,6 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 
-// FREQ-314: Admin ITEM 一覧カードの近接ラダー。
+// FREQ-317: Admin ITEM 一覧カードの近接ラダー。
 //   画像 ↔ タグ行  = --card-media-gap（font）        …別グループの境界なので最も広い
 //   公開状態 ↔ カテゴリ = --card-gap（font ÷ φ）      …同じ行の別属性なので中段
 // 「タグ同士 < 画像との境界」という大小関係そのものを検証する（px 直値は
@@ -79,7 +79,7 @@ for (const viewport of viewports) {
   test.describe(`${viewport.name}（${viewport.width}px）`, () => {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
-    test('FREQ-314-AC-01: 公開状態タグとカテゴリタグの間に隙間がある', async ({
+    test('FREQ-317-AC-01: 公開状態タグとカテゴリタグの間に隙間がある', async ({
       page,
     }) => {
       const cards = await measureCards(page);
@@ -95,7 +95,7 @@ for (const viewport of viewports) {
       }
     });
 
-    test('FREQ-314-AC-02: 画像とタグ行の間に隙間があり、タグ同士より広い', async ({
+    test('FREQ-317-AC-02: 画像とタグ行の間に隙間があり、タグ同士より広い', async ({
       page,
     }) => {
       const cards = await measureCards(page);

@@ -34,7 +34,7 @@ export default function CodeBlock({ code }: { code: string; label: string }) {
             title="Copy"
           >
             <i
-              className={`${copied ? "ri-check-line" : "ri-file-copy-line"} w-4 h-4 flex items-center justify-center text-black/60 text-xs`}
+              className={`${copied ? "ri-check-line" : "ri-file-copy-line"} w-4 h-4 flex items-center justify-center text-black/60 lk-text-3xs`}
             ></i>
           </button>
           <pre

@@ -25,7 +25,7 @@ import {
 // FREQ-310: 全セクションで同じ見出し処理を繰り返す（反復）。フィールドラベルとの
 // 対比はサイズではなく字間と罫線で作る（FREQ-291 で確立したこのプロジェクトの作法）。
 const SECTION_TITLE_CLASS =
-  "border-b border-black/10 pb-2 text-xs tracking-widest text-black/80 font-acumin";
+  "border-b border-black/10 pb-2 lk-text-3xs tracking-widest text-black/80 font-acumin";
 
 // フォームのシェル。xl 未満は1カラム、xl 以上は左=画像 / 右=入力の2カラム。
 // 4K でも行長が伸びすぎないよう 3xl で頭打ちにする。
@@ -416,7 +416,7 @@ export function ItemForm({
               }}
               onDragLeave={() => setIsDragging(false)}
               onDrop={handleDrop}
-              className={`w-full border border-black/20 text-sm px-4 py-10 text-center cursor-pointer transition-colors ${
+              className={`w-full border border-black/20 lk-text-sm px-4 py-10 text-center cursor-pointer transition-colors ${
                 isDragging ? "border-black bg-black/5" : "bg-white"
               }`}
             >
@@ -428,10 +428,10 @@ export function ItemForm({
                 className="hidden"
               />
               <div className="space-y-2">
-                <p className="text-sm tracking-widest">
+                <p className="lk-text-sm tracking-widest">
                   画像をドラッグ&ドロップ
                 </p>
-                <p className="text-xs text-black/70">
+                <p className="lk-text-3xs text-black/70">
                   またはクリックしてファイルを追加（JPEG / PNG / WebP /
                   GIF、5MB以下）
                 </p>
@@ -501,7 +501,7 @@ export function ItemForm({
 
               <div className="item-form__group">
                 <div className="space-y-2">
-                  <span className="block text-xs tracking-widest text-black/80">
+                  <span className="block lk-text-3xs tracking-widest text-black/80">
                     カラー
                   </span>
                   {colors.map((color) => (
@@ -559,7 +559,7 @@ export function ItemForm({
 
                 {savedColors.length > 0 && (
                   <div>
-                    <p className="text-xs tracking-widest mb-3">
+                    <p className="lk-text-3xs tracking-widest mb-3">
                       保存済みカラー
                     </p>
                     <div className="flex flex-wrap gap-3">
@@ -585,7 +585,7 @@ export function ItemForm({
                             className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 lk-text-6xs"
                             aria-label="保存済みカラーを削除"
                           >
-                            <i className="ri-close-line text-xs" />
+                            <i className="ri-close-line lk-text-3xs" />
                           </Button>
                         </div>
                       ))}
@@ -665,13 +665,13 @@ export function ItemForm({
             {/* 主要 CTA。フォームが縦に長い xl 以上では末尾に貼り付けて常に見えるようにする（対比） */}
             <div className="item-form__fields xl:sticky xl:bottom-0 xl:border-t xl:border-black/10 xl:bg-white xl:py-4">
               {submitSuccess && (
-                <p className="text-sm text-black" role="status">
+                <p className="lk-text-sm text-black" role="status">
                   {submitSuccess}
                 </p>
               )}
 
               {submitError && (
-                <p className="text-sm text-red-600" role="alert">
+                <p className="lk-text-sm text-red-600" role="alert">
                   {submitError}
                 </p>
               )}

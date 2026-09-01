@@ -103,7 +103,7 @@ function PageSidebar({
             value={completion.progress}
             size={92}
             label={
-              <span className="font-acumin text-sm font-medium text-black tabular-nums">
+              <span className="font-acumin lk-text-sm font-medium text-black tabular-nums">
                 {Math.round(completion.progress)}%
               </span>
             }
@@ -150,7 +150,7 @@ function PageSidebar({
       >
         <div className="flex items-start gap-2">
           <i
-            className="ri-database-2-line mt-0.5 shrink-0 text-base text-[#474747]"
+            className="ri-database-2-line mt-0.5 shrink-0 lk-text-lg text-[#474747]"
             aria-hidden="true"
           />
           <p className="font-acumin lk-text-4xs leading-relaxed text-[#707070]">
@@ -236,7 +236,7 @@ function BreakdownTable({
       title={<span className={panelTitleClassName}>{title}</span>}
     >
       {rows.length === 0 ? (
-        <p className="font-acumin text-xs text-[#707070]">
+        <p className="font-acumin lk-text-3xs text-[#707070]">
           該当する取引がありません。
         </p>
       ) : (
@@ -254,10 +254,10 @@ function BreakdownTable({
             <tbody>
               {rows.map((row) => (
                 <tr key={row.partner} className={tableRowClassName}>
-                  <td className="px-2 py-2 font-acumin text-xs text-black">
+                  <td className="px-2 py-2 font-acumin lk-text-3xs text-black">
                     {row.partner}
                   </td>
-                  <td className="px-2 py-2 text-right font-acumin text-xs text-[#474747] tabular-nums">
+                  <td className="px-2 py-2 text-right font-acumin lk-text-3xs text-[#474747] tabular-nums">
                     {row.count}
                   </td>
                   <td className={tableNumberClassName}>
@@ -268,11 +268,11 @@ function BreakdownTable({
               <tr className={tableTotalRowClassName}>
                 <td
                   colSpan={2}
-                  className="px-2 py-2 font-acumin text-xs font-medium text-black"
+                  className="px-2 py-2 font-acumin lk-text-3xs font-medium text-black"
                 >
                   合計
                 </td>
-                <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                <td className="px-2 py-2 text-right font-acumin lk-text-3xs font-medium text-black tabular-nums">
                   {currency(rows.reduce((sum, row) => sum + row.amount, 0))}
                 </td>
               </tr>
@@ -481,7 +481,7 @@ export function BlueReturnView(props: TaxReportProps) {
         <span className="font-acumin lk-text-4xs text-[#474747]">
           青色申告特別控除
         </span>
-        <span className="font-acumin text-xs text-black tabular-nums">
+        <span className="font-acumin lk-text-3xs text-black tabular-nums">
           {currency(deduction.deduction)}
         </span>
       </div>
@@ -558,12 +558,12 @@ export function BlueReturnView(props: TaxReportProps) {
                       }
                     >
                       <td
-                        className={`px-2 py-2 font-acumin text-xs ${row.emphasis ? "font-medium text-black" : "text-[#474747]"} ${row.indent ? "pl-6" : ""}`}
+                        className={`px-2 py-2 font-acumin lk-text-3xs ${row.emphasis ? "font-medium text-black" : "text-[#474747]"} ${row.indent ? "pl-6" : ""}`}
                       >
                         {row.label}
                       </td>
                       <td
-                        className={`px-2 py-2 text-right font-acumin text-xs tabular-nums ${row.emphasis ? "font-medium text-black" : "text-black"} ${row.value !== 0 ? "bg-[#f2f8f4]" : ""}`}
+                        className={`px-2 py-2 text-right font-acumin lk-text-3xs tabular-nums ${row.emphasis ? "font-medium text-black" : "text-black"} ${row.value !== 0 ? "bg-[#f2f8f4]" : ""}`}
                       >
                         {currency(row.value)}
                       </td>
@@ -597,14 +597,14 @@ export function BlueReturnView(props: TaxReportProps) {
                 <tbody>
                   {expenseDetailRows.length === 0 ? (
                     <tr>
-                      <td className="px-2 py-2 font-acumin text-xs text-[#707070]">
+                      <td className="px-2 py-2 font-acumin lk-text-3xs text-[#707070]">
                         経費の登録がありません。
                       </td>
                     </tr>
                   ) : (
                     expenseDetailRows.map((row) => (
                       <tr key={row.account.code} className={tableRowClassName}>
-                        <td className="px-2 py-2 font-acumin text-xs text-[#474747]">
+                        <td className="px-2 py-2 font-acumin lk-text-3xs text-[#474747]">
                           {row.account.name}
                         </td>
                         <td className={tableNumberClassName}>
@@ -736,7 +736,7 @@ export function BlueReturnView(props: TaxReportProps) {
             title: "未入力・要確認",
             body:
               page1Completion.empty === 0 ? (
-                <p className="flex items-center gap-1.5 font-acumin text-xs text-[#16844b]">
+                <p className="flex items-center gap-1.5 font-acumin lk-text-3xs text-[#16844b]">
                   <i className="ri-checkbox-circle-line" aria-hidden="true" />
                   未入力の項目はありません。
                 </p>
@@ -826,7 +826,7 @@ export function BlueReturnView(props: TaxReportProps) {
                   ] as const
                 ).map(([label, values, total]) => (
                   <tr key={label} className={tableRowClassName}>
-                    <td className="whitespace-nowrap px-2 py-2 font-acumin text-xs text-[#474747]">
+                    <td className="whitespace-nowrap px-2 py-2 font-acumin lk-text-3xs text-[#474747]">
                       {label}
                     </td>
                     {values.map((value, index) => (
@@ -843,7 +843,7 @@ export function BlueReturnView(props: TaxReportProps) {
                   </tr>
                 ))}
                 <tr className={tableTotalRowClassName}>
-                  <td className="whitespace-nowrap px-2 py-2 font-acumin text-xs font-medium text-black">
+                  <td className="whitespace-nowrap px-2 py-2 font-acumin lk-text-3xs font-medium text-black">
                     雑収入
                   </td>
                   <td
@@ -907,12 +907,12 @@ export function BlueReturnView(props: TaxReportProps) {
                   rows.length === 0
                     ? [
                         <tr key={label} className={tableRowClassName}>
-                          <td className="px-2 py-2 font-acumin text-xs text-[#474747]">
+                          <td className="px-2 py-2 font-acumin lk-text-3xs text-[#474747]">
                             {label}
                           </td>
                           <td
                             colSpan={3}
-                            className="px-2 py-2 font-acumin text-xs text-[#707070]"
+                            className="px-2 py-2 font-acumin lk-text-3xs text-[#707070]"
                           >
                             該当する取引がありません。
                           </td>
@@ -923,13 +923,13 @@ export function BlueReturnView(props: TaxReportProps) {
                           key={`${label}-${row.partner}`}
                           className={tableRowClassName}
                         >
-                          <td className="whitespace-nowrap px-2 py-2 font-acumin text-xs text-[#474747]">
+                          <td className="whitespace-nowrap px-2 py-2 font-acumin lk-text-3xs text-[#474747]">
                             {label}
                           </td>
-                          <td className="px-2 py-2 font-acumin text-xs text-black">
+                          <td className="px-2 py-2 font-acumin lk-text-3xs text-black">
                             {row.partner}
                           </td>
-                          <td className="px-2 py-2 text-right font-acumin text-xs text-[#474747] tabular-nums">
+                          <td className="px-2 py-2 text-right font-acumin lk-text-3xs text-[#474747] tabular-nums">
                             {row.count}
                           </td>
                           <td className={tableNumberClassName}>
@@ -941,11 +941,11 @@ export function BlueReturnView(props: TaxReportProps) {
                 <tr className={tableTotalRowClassName}>
                   <td
                     colSpan={3}
-                    className="px-2 py-2 font-acumin text-xs font-medium text-black"
+                    className="px-2 py-2 font-acumin lk-text-3xs font-medium text-black"
                   >
                     合計
                   </td>
-                  <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                  <td className="px-2 py-2 text-right font-acumin lk-text-3xs font-medium text-black tabular-nums">
                     {currency(
                       [
                         ...breakdowns.interest,
@@ -1051,7 +1051,7 @@ export function BlueReturnView(props: TaxReportProps) {
           title={<span className={panelTitleClassName}>3ページ 減価償却</span>}
         >
           {depreciation.rows.length === 0 ? (
-            <p className="font-acumin text-xs text-[#707070]">
+            <p className="font-acumin lk-text-3xs text-[#707070]">
               固定資産台帳に資産を登録すると、この欄が自動作成されます。
             </p>
           ) : (
@@ -1087,13 +1087,13 @@ export function BlueReturnView(props: TaxReportProps) {
                         onClick={() => setSelectedAssetId(row.asset.id)}
                         className={`cursor-pointer transition-colors hover:bg-[#faf7f2] ${tableRowClassName} ${active ? "bg-[#f6f6f6]" : ""}`}
                       >
-                        <td className="px-2 py-2.5 font-acumin text-xs text-black">
+                        <td className="px-2 py-2.5 font-acumin lk-text-3xs text-black">
                           {row.asset.name}
                         </td>
-                        <td className="whitespace-nowrap px-2 py-2.5 font-acumin text-xs text-[#474747]">
+                        <td className="whitespace-nowrap px-2 py-2.5 font-acumin lk-text-3xs text-[#474747]">
                           {row.asset.acquiredOn.slice(0, 7).replace("-", "/")}
                         </td>
-                        <td className="bg-[#f2f8f4] px-2 py-2.5 text-right font-acumin text-xs text-black tabular-nums">
+                        <td className="bg-[#f2f8f4] px-2 py-2.5 text-right font-acumin lk-text-3xs text-black tabular-nums">
                           {Math.round(row.asset.acquisitionCost).toLocaleString(
                             "ja-JP",
                           )}
@@ -1101,33 +1101,33 @@ export function BlueReturnView(props: TaxReportProps) {
                         <td className="whitespace-nowrap px-2 py-2.5 font-acumin lk-text-4xs text-[#474747]">
                           {DEPRECIATION_METHOD_LABELS[row.asset.method]}
                         </td>
-                        <td className="px-2 py-2.5 text-right font-acumin text-xs text-[#474747] tabular-nums">
+                        <td className="px-2 py-2.5 text-right font-acumin lk-text-3xs text-[#474747] tabular-nums">
                           {row.asset.method === "straightLine"
                             ? row.asset.usefulLife
                             : "—"}
                         </td>
-                        <td className="px-2 py-2.5 text-right font-acumin text-xs text-[#474747] tabular-nums">
+                        <td className="px-2 py-2.5 text-right font-acumin lk-text-3xs text-[#474747] tabular-nums">
                           {row.asset.method === "straightLine"
                             ? straightLineRate(row.asset.usefulLife).toFixed(3)
                             : "—"}
                         </td>
-                        <td className="px-2 py-2.5 text-right font-acumin text-xs text-[#474747] tabular-nums">
+                        <td className="px-2 py-2.5 text-right font-acumin lk-text-3xs text-[#474747] tabular-nums">
                           {row.months}
                         </td>
-                        <td className="bg-[#f2f8f4] px-2 py-2.5 text-right font-acumin text-xs text-black tabular-nums">
+                        <td className="bg-[#f2f8f4] px-2 py-2.5 text-right font-acumin lk-text-3xs text-black tabular-nums">
                           {Math.round(row.depreciation).toLocaleString("ja-JP")}
                         </td>
-                        <td className="px-2 py-2.5 text-right font-acumin text-xs text-[#474747] tabular-nums">
+                        <td className="px-2 py-2.5 text-right font-acumin lk-text-3xs text-[#474747] tabular-nums">
                           {row.asset.businessUseRatio}%
                         </td>
                         <td
-                          className={`px-2 py-2.5 text-right font-acumin text-xs font-medium text-black tabular-nums ${row.privatePortion > 0 ? "bg-[#fdf6ef]" : "bg-[#f2f8f4]"}`}
+                          className={`px-2 py-2.5 text-right font-acumin lk-text-3xs font-medium text-black tabular-nums ${row.privatePortion > 0 ? "bg-[#fdf6ef]" : "bg-[#f2f8f4]"}`}
                         >
                           {Math.round(row.businessExpense).toLocaleString(
                             "ja-JP",
                           )}
                         </td>
-                        <td className="px-2 py-2.5 text-right font-acumin text-xs text-black tabular-nums">
+                        <td className="px-2 py-2.5 text-right font-acumin lk-text-3xs text-black tabular-nums">
                           {Math.round(row.closingBookValue).toLocaleString(
                             "ja-JP",
                           )}
@@ -1138,22 +1138,22 @@ export function BlueReturnView(props: TaxReportProps) {
                   <tr className={tableTotalRowClassName}>
                     <td
                       colSpan={7}
-                      className="px-2 py-2 font-acumin text-xs font-medium text-black"
+                      className="px-2 py-2 font-acumin lk-text-3xs font-medium text-black"
                     >
                       合計
                     </td>
-                    <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                    <td className="px-2 py-2 text-right font-acumin lk-text-3xs font-medium text-black tabular-nums">
                       {Math.round(
                         depreciation.depreciationTotal,
                       ).toLocaleString("ja-JP")}
                     </td>
                     <td />
-                    <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                    <td className="px-2 py-2 text-right font-acumin lk-text-3xs font-medium text-black tabular-nums">
                       {Math.round(
                         depreciation.businessExpenseTotal,
                       ).toLocaleString("ja-JP")}
                     </td>
-                    <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                    <td className="px-2 py-2 text-right font-acumin lk-text-3xs font-medium text-black tabular-nums">
                       {Math.round(
                         depreciation.closingBookValueTotal,
                       ).toLocaleString("ja-JP")}
@@ -1242,7 +1242,7 @@ export function BlueReturnView(props: TaxReportProps) {
             }
           >
             {assetComposition.length === 0 ? (
-              <p className="font-acumin text-xs text-[#707070]">
+              <p className="font-acumin lk-text-3xs text-[#707070]">
                 当期の償却費がありません。
               </p>
             ) : (
@@ -1383,7 +1383,7 @@ export function BlueReturnView(props: TaxReportProps) {
                 ))}
               </dl>
             ) : (
-              <p className="font-acumin text-xs text-[#707070]">
+              <p className="font-acumin lk-text-3xs text-[#707070]">
                 固定資産が登録されていません。
               </p>
             ),
@@ -1450,7 +1450,7 @@ export function BlueReturnView(props: TaxReportProps) {
                         <tr>
                           <td
                             colSpan={3}
-                            className="px-2 py-3 font-acumin text-xs text-[#707070]"
+                            className="px-2 py-3 font-acumin lk-text-3xs text-[#707070]"
                           >
                             残高がありません。
                           </td>
@@ -1458,10 +1458,10 @@ export function BlueReturnView(props: TaxReportProps) {
                       ) : (
                         rows.map((row) => (
                           <tr key={row.code} className={tableRowClassName}>
-                            <td className="whitespace-nowrap px-2 py-2 font-acumin text-xs text-black">
+                            <td className="whitespace-nowrap px-2 py-2 font-acumin lk-text-3xs text-black">
                               {row.name}
                             </td>
-                            <td className="px-2 py-2 text-right font-acumin text-xs text-[#474747] tabular-nums">
+                            <td className="px-2 py-2 text-right font-acumin lk-text-3xs text-[#474747] tabular-nums">
                               {currency(row.opening)}
                             </td>
                             <td className={tableNumberClassName}>
@@ -1471,17 +1471,17 @@ export function BlueReturnView(props: TaxReportProps) {
                         ))
                       )}
                       <tr className={tableTotalRowClassName}>
-                        <td className="px-2 py-2 font-acumin text-xs font-medium text-black">
+                        <td className="px-2 py-2 font-acumin lk-text-3xs font-medium text-black">
                           {kind === "asset" ? "資産合計" : "負債・資本合計"}
                         </td>
-                        <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                        <td className="px-2 py-2 text-right font-acumin lk-text-3xs font-medium text-black tabular-nums">
                           {currency(
                             kind === "asset"
                               ? balanceSheetComparison.openingAssetTotal
                               : balanceSheetComparison.openingLiabilityEquityTotal,
                           )}
                         </td>
-                        <td className="px-2 py-2 text-right font-acumin text-xs font-medium text-black tabular-nums">
+                        <td className="px-2 py-2 text-right font-acumin lk-text-3xs font-medium text-black tabular-nums">
                           {currency(
                             kind === "asset"
                               ? balanceSheetComparison.closingAssetTotal
@@ -1498,7 +1498,7 @@ export function BlueReturnView(props: TaxReportProps) {
 
           <div className="mt-4 flex justify-center">
             <span
-              className={`inline-flex items-center gap-1.5 border px-4 py-2 font-acumin text-xs ${boxRadiusClassName} ${
+              className={`inline-flex items-center gap-1.5 border px-4 py-2 font-acumin lk-text-3xs ${boxRadiusClassName} ${
                 balanceDifference === 0
                   ? "border-[#bcdcc9] bg-[#eff7f2] text-[#16844b]"
                   : "border-[#e7c0c0] bg-[#fdf1f1] text-[#b91c1c]"
@@ -1537,7 +1537,7 @@ export function BlueReturnView(props: TaxReportProps) {
                 title={<span className={panelTitleClassName}>{title}</span>}
               >
                 {rows.length === 0 ? (
-                  <p className="font-acumin text-xs text-[#707070]">
+                  <p className="font-acumin lk-text-3xs text-[#707070]">
                     残高がありません。
                   </p>
                 ) : (

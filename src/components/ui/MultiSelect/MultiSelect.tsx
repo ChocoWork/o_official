@@ -87,7 +87,7 @@ export function MultiSelect({
         data-ui-size={size}
       >
         {label ? (
-          <span className="block text-xs tracking-widest text-black/80">
+          <span className="block lk-text-3xs tracking-widest text-black/80">
             {label}
           </span>
         ) : null}
@@ -123,7 +123,7 @@ export function MultiSelect({
         data-ui-size={size}
       >
         {label ? (
-          <span className="block text-xs tracking-widest text-black/80">
+          <span className="block lk-text-3xs tracking-widest text-black/80">
             {label}
           </span>
         ) : null}
@@ -144,7 +144,7 @@ export function MultiSelect({
         data-ui-size={size}
       >
         {label ? (
-          <span className="block text-xs tracking-widest text-black/80">
+          <span className="block lk-text-3xs tracking-widest text-black/80">
             {label}
           </span>
         ) : null}

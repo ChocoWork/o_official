@@ -8,14 +8,6 @@ export const ResetRequestSchema = z.object({
 
 export type ResetRequest = z.infer<typeof ResetRequestSchema>;
 
-export const ResetConfirmSchema = z.object({
-  token: z.string().min(1, { message: 'トークンが必要です' }),
-  email: emailSchema,
-  new_password: passwordSchema,
-});
-
-export type ResetConfirm = z.infer<typeof ResetConfirmSchema>;
-
 export const ResetSessionConfirmSchema = z.object({
   new_password: passwordSchema,
 });

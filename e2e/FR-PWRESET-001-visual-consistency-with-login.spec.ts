@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test';
 // FREQ-70 / FREQ-92: パスワード再設定ページの見た目を /login と統一すること
 // （FREQ-92 でログインの下線ミニマルデザインへ刷新：FREQ-70 の角丸カードを置換）
 const viewports = [
+  { name: 'iphone-se', width: 375, height: 667 },
   { name: 'mobile', width: 390, height: 844 },
   { name: 'tablet', width: 768, height: 1024 },
   { name: 'desktop', width: 1280, height: 800 },
@@ -88,5 +89,68 @@ for (const viewport of viewports) {
       await page.locator('#email').fill('test@example.com');
       await expect(submit).toBeEnabled();
     });
+
+    test('does not introduce horizontal overflow', async ({ page }) => {
+      // FREQ-70-AC-08: 狭い画面を含め、共通フォーム幅がviewportを超えない
+      const hasHorizontalOverflow = await page.evaluate(() => {
+        const doc = document.documentElement;
+        return doc.scrollWidth > doc.clientWidth + 1;
+      });
+      expect(hasHorizontalOverflow).toBe(false);
+    });
+
+    test('uses the same field and button sizing contract as login', async ({ page }) => {
+      // FREQ-70-AC-05: 共通UIのsize propsをloginと揃え、直値で上書きしない
+      const resetEmail = page.locator('#email').locator('xpath=..').locator('xpath=..');
+      const resetSubmit = page.getByRole('button', { name: '再設定メールを送信' });
+
+      await expect(resetEmail).toHaveAttribute('data-ui-size', 'sm');
+      await expect(resetSubmit).toHaveAttribute('data-ui-size', 'md');
+
+      const resetMetrics = {
+        field: await page.locator('#email').boundingBox(),
+        button: await resetSubmit.boundingBox(),
+      };
+
+      await page.goto('/login');
+      const loginEmail = page.locator('#email');
+      const loginSubmit = page.getByRole('button', { name: 'ログイン', exact: true });
+      const loginMetrics = {
+        field: await loginEmail.boundingBox(),
+        button: await loginSubmit.boundingBox(),
+      };
+
+      expect(Math.abs(resetMetrics.field!.width - loginMetrics.field!.width)).toBeLessThan(1);
+      expect(Math.abs(resetMetrics.field!.height - loginMetrics.field!.height)).toBeLessThan(1);
+      expect(Math.abs(resetMetrics.button!.width - loginMetrics.button!.width)).toBeLessThan(1);
+      expect(Math.abs(resetMetrics.button!.height - loginMetrics.button!.height)).toBeLessThan(1);
+    });
+
+    test('repeats the login form 13px grid and LiftKit type hierarchy', async ({ page }) => {
+      // FREQ-70-AC-06: 13pxグリッド＋CTA前8px（計21px）の近接階層を反復する
+      const heading = page.getByRole('heading', { level: 1 });
+      const email = page.locator('#email');
+      const submit = page.getByRole('button', { name: '再設定メールを送信' });
+      const emailBox = await email.boundingBox();
+      const submitBox = await submit.boundingBox();
+
+      await expect(heading).toHaveClass(/\blk-text-lg\b/);
+      expect(Math.abs(submitBox!.y - (emailBox!.y + emailBox!.height) - 21)).toBeLessThan(1);
+    });
   });
 }
+
+test('completed reset exposes an xs auxiliary link without changing the form width', async ({ page }) => {
+  // FREQ-70-AC-07: 完了導線はloginの補助リンクと同じ最小階層にする
+  await page.route('**/api/auth/password-reset/session', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ready: true, email: 'test@example.com' }) });
+  });
+  await page.route('**/api/auth/password-reset/confirm', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+  });
+  await page.goto('/auth/password-reset');
+  await page.locator('#newPassword').fill('password123');
+  await page.getByRole('button', { name: 'パスワードを更新' }).click();
+
+  await expect(page.getByRole('link', { name: 'ログインへ' })).toHaveClass(/\blk-text-xs\b/);
+});

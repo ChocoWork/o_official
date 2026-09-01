@@ -119,10 +119,10 @@ export default function LookSection() {
                   {item.status === "published" ? "公開中" : "非公開"}
                 </TagLabel>
               </div>
-              <p className="text-xs text-[#474747] tracking-widest font-acumin">
+              <p className="lk-text-3xs text-[#474747] tracking-widest font-acumin">
                 {item.season_year} {item.season_type}
               </p>
-              <p className="text-sm text-black font-acumin">{item.theme}</p>
+              <p className="lk-text-sm text-black font-acumin">{item.theme}</p>
               <div className="flex space-x-2 pt-2">
                 <Button
                   onClick={() => handleToggleStatus(item.id, item.status)}

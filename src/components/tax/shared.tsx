@@ -20,7 +20,7 @@ export const signedCurrency = (value: number) =>
 export const percent = (value: number) => `${value.toFixed(1)}%`;
 
 export const panelTitleClassName =
-  "font-acumin text-sm font-medium tracking-widest text-black";
+  "font-acumin lk-text-sm font-medium tracking-widest text-black";
 export const boxRadiusClassName = "rounded-sm";
 
 /** 税務レポート共通の色。状態は緑＝完了、橙＝要対応、灰＝未着手。 */
@@ -71,7 +71,7 @@ export function TaxMetricCard({
           aria-hidden="true"
         >
           <i
-            className={`${icon ?? "ri-file-list-3-line"} text-base text-black`}
+            className={`${icon ?? "ri-file-list-3-line"} lk-text-lg text-black`}
           />
         </span>
       )}
@@ -80,7 +80,7 @@ export function TaxMetricCard({
           {label}
         </p>
         {/* 桁の多い金額でも欠けないよう、字幅は詰めて折り返しを許す。 */}
-        <p className="mt-1 font-acumin text-lg font-medium text-black tabular-nums">
+        <p className="mt-1 font-acumin lk-text-2xl font-medium text-black tabular-nums">
           {value}
         </p>
         {note ? (
@@ -148,7 +148,7 @@ export function FlowBlock({
       <p className="font-acumin lk-text-4xs tracking-wider text-[#474747]">
         {label}
       </p>
-      <p className="mt-1 font-acumin text-sm font-medium text-black tabular-nums">
+      <p className="mt-1 font-acumin lk-text-sm font-medium text-black tabular-nums">
         {value}
       </p>
       <div className="mt-1 flex items-center gap-1.5">
@@ -165,7 +165,7 @@ export function FlowBlock({
 export function FlowOperator({ symbol }: { symbol: string }) {
   return (
     <span
-      className="flex shrink-0 items-center justify-center font-acumin text-sm text-[#707070]"
+      className="flex shrink-0 items-center justify-center font-acumin lk-text-sm text-[#707070]"
       aria-hidden="true"
     >
       {symbol}
@@ -234,8 +234,8 @@ export function CountLegend({
 /** 表の共通クラス。決算書系の表はどのページでも同じ罫線・字送りにする。 */
 export const tableHeadClassName =
   "px-2 py-2 text-left font-acumin lk-text-4xs font-normal text-[#474747]";
-export const tableCellClassName = "px-2 py-2 font-acumin text-xs text-black";
+export const tableCellClassName = "px-2 py-2 font-acumin lk-text-3xs text-black";
 export const tableNumberClassName =
-  "px-2 py-2 text-right font-acumin text-xs text-black tabular-nums";
+  "px-2 py-2 text-right font-acumin lk-text-3xs text-black tabular-nums";
 export const tableRowClassName = "border-b border-[#ededed]";
 export const tableTotalRowClassName = "border-t border-black";

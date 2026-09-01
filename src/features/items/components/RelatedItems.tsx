@@ -90,7 +90,7 @@ export function RelatedItems({ currentItemId, category }: Props) {
                   sizes="(max-width: 640px) 50vw, 25vw"
                 />
               ) : (
-                <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs">
+                <div className="w-full h-full flex items-center justify-center text-gray-400 lk-text-3xs">
                   No Image
                 </div>
               )}
