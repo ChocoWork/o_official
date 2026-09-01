@@ -33,8 +33,6 @@ jest.mock('@/lib/supabase/server', () => ({
 jest.mock('@/features/auth/services/session', () => ({
   ...jest.requireActual('@/features/auth/services/session'),
   findSessionByRefreshHash: jest.fn(),
-  isReplay: jest.fn(),
-  revokeAllSessionsForUser: jest.fn(),
 }));
 
 jest.mock('next/headers', () => ({
@@ -63,9 +61,7 @@ describe('Refresh API integration (mocked supabase & headers & fetch)', () => {
     createServiceRoleClient.mockReturnValue({ from: fromMock });
     // by default, no cookie
     cookies.mockReturnValue({ get: jest.fn().mockReturnValue(undefined) });
-    sessionService.findSessionByRefreshHash.mockResolvedValue({ id: 'sess1', user_id: 'u1', current_jti: null, quarantined: false, previous_refresh_token_hash: null });
-    sessionService.isReplay.mockResolvedValue(false);
-    sessionService.revokeAllSessionsForUser.mockResolvedValue(undefined);
+    sessionService.findSessionByRefreshHash.mockResolvedValue({ id: 'sess1', user_id: 'u1', revoked_at: null });
     delete process.env.SUPABASE_URL;
     delete process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -131,6 +127,54 @@ describe('Refresh API integration (mocked supabase & headers & fetch)', () => {
 
     // DB update called
     expect(createServiceRoleClient().from).toHaveBeenCalledWith('sessions');
+
+    (global.fetch as jest.MockedFunction<any>).mockRestore();
+  });
+
+  // jti 照合による自前のリプレイ検出は撤去し、検出そのものは Supabase Auth に任せた。
+  // 残った自前の門番は「revoked_at が立っている行は拒否する」の1点だけなので、
+  // ここが外れると失効が効かなくなる。以下2本でその1点を固定する。
+
+  test('失効済みセッションの refresh token は 401 で拒否し、認証 Cookie を破棄する', async () => {
+    cookies.mockReturnValue({ get: jest.fn().mockReturnValue({ value: 'old-refresh' }) });
+    process.env.SUPABASE_URL = 'https://supabase.example';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'svc_key';
+
+    sessionService.findSessionByRefreshHash.mockResolvedValue({
+      id: 'sess1',
+      user_id: 'u1',
+      revoked_at: new Date().toISOString(),
+    });
+
+    const fetchSpy = jest.spyOn(global, 'fetch');
+
+    const res: any = await refreshHandler();
+
+    expect(res.status).toBe(401);
+    // 失効済みなら Supabase への token 交換まで行かせない
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    for (const name of ['sb-access-token', 'sb-refresh-token', 'sb-csrf-token']) {
+      expect(res.cookies.get(name)?.maxAge).toBe(0);
+    }
+
+    fetchSpy.mockRestore();
+  });
+
+  test('Supabase が token 交換を拒否したら 401 で認証 Cookie を破棄する', async () => {
+    cookies.mockReturnValue({ get: jest.fn().mockReturnValue({ value: 'old-refresh' }) });
+    process.env.SUPABASE_URL = 'https://supabase.example';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'svc_key';
+
+    jest.spyOn(global, 'fetch').mockResolvedValue({ ok: false, status: 400, text: async () => 'bad' } as any);
+
+    const res: any = await refreshHandler();
+
+    expect(res.status).toBe(401);
+    // 死んだ Cookie を残すとクライアントが refresh を叩き続ける
+    for (const name of ['sb-access-token', 'sb-refresh-token', 'sb-csrf-token']) {
+      expect(res.cookies.get(name)?.maxAge).toBe(0);
+    }
 
     (global.fetch as jest.MockedFunction<any>).mockRestore();
   });

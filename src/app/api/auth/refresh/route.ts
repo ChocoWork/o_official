@@ -2,19 +2,6 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { logAudit } from '@/lib/audit';
 
-function parseJwtJti(token: string | null | undefined): string | null {
-  if (!token) return null;
-  const segments = token.split('.');
-  if (segments.length !== 3) return null;
-
-  try {
-    const payload = JSON.parse(Buffer.from(segments[1], 'base64url').toString('utf8')) as { jti?: unknown };
-    return typeof payload.jti === 'string' ? payload.jti : null;
-  } catch {
-    return null;
-  }
-}
-
 async function clearAuthCookies(response: NextResponse) {
   const {
     refreshCookieName,
@@ -47,25 +34,25 @@ export async function POST(request: Request) {
 
     const sessionService = await import('@/features/auth/services/session');
     const session = await sessionService.findSessionByRefreshHash(refreshToken);
+
+    // 自前テーブルは監査用。行が無いことは「失効の証拠が無い」だけなので拒否しない
+    // （取りこぼしで正当なユーザーを締め出さない）。実際の門番は Supabase の token 交換。
     if (!session) {
-      await logAudit({ action: 'refresh', outcome: 'failure', detail: 'session_not_found' });
-      return NextResponse.json({ error: 'Invalid refresh token' }, { status: 401 });
+      console.warn('[auth.refresh] no local session row for the presented refresh token');
     }
 
-    const oldTokenJti = parseJwtJti(refreshToken);
-    const jtiMismatch = Boolean(session.current_jti && oldTokenJti && session.current_jti !== oldTokenJti);
-    const replayDetected = (await sessionService.isReplay(session, refreshToken)) || jtiMismatch;
-
-    if (replayDetected) {
-      await sessionService.revokeAllSessionsForUser(session.user_id);
+    // 明示的な失効記録がある場合だけ拒否する。ログアウトや管理者による強制失効が
+    // Supabase 側へ届かなかったときの最後の砦。推測（jti / 旧ハッシュ照合）は行わない
+    // ため誤検知しない。リプレイ検出そのものは Supabase Auth が担当する。
+    if (session?.revoked_at) {
       await logAudit({
         action: 'refresh',
         actor_id: session.user_id,
         outcome: 'failure',
-        detail: jtiMismatch ? 'refresh_replay_jti_mismatch' : 'refresh_replay_detected',
+        detail: 'session_revoked',
       });
 
-      const denied = NextResponse.json({ error: 'Refresh token replay detected' }, { status: 401 });
+      const denied = NextResponse.json({ error: 'Session revoked' }, { status: 401 });
       await clearAuthCookies(denied);
       return denied;
     }
@@ -96,43 +83,47 @@ export async function POST(request: Request) {
       console.error('Token refresh failed:', failedText);
       await logAudit({
         action: 'refresh',
-        actor_id: session.user_id,
+        actor_id: session?.user_id,
         outcome: 'failure',
         detail: 'supabase_refresh_failed',
         metadata: { status: tokenRes.status },
       });
-      return NextResponse.json({ error: 'Failed to refresh token' }, { status: 401 });
+
+      // Supabase が拒否した＝リプレイ検出・セッション終了・期限切れのいずれか。
+      // 死んだ Cookie を残すとクライアントが再試行を続けるので消す。
+      const denied = NextResponse.json({ error: 'Failed to refresh token' }, { status: 401 });
+      await clearAuthCookies(denied);
+      return denied;
     }
 
     const tokenData = await tokenRes.json();
     const newAccessToken = tokenData.access_token;
     const newRefreshToken = tokenData.refresh_token;
-    const expiresIn = tokenData.expires_in; // seconds
     const user = tokenData.user;
 
-    // Set new refresh cookie
     const res = NextResponse.json({ access_token: newAccessToken, user }, { status: 200 });
 
     // Cookie / CSRF / sessions 行の更新は refresh と MFA 昇格で共通。手順がずれないよう一本化する。
+    // DB 記録に失敗しても、発行済みトークンは必ず配る（旧 refresh token は既に無効化されており、
+    // ここで 500 を返すとユーザーは死んだトークンだけを持って詰む）。失敗は監査に残す。
     try {
       await sessionService.persistNewSession(res, {
         accessToken: newAccessToken,
         refreshToken: newRefreshToken,
-        expiresIn,
-        userId: session.user_id || user?.id,
-        previousSessionId: session.id,
+        userId: session?.user_id || user?.id,
+        previousSessionId: session?.id ?? null,
         previousRefreshToken: refreshToken,
       });
       await logAudit({
         action: 'refresh',
-        actor_id: session.user_id,
+        actor_id: session?.user_id,
         outcome: 'success',
       });
     } catch (dbErr) {
       console.error('Session DB update error during refresh:', dbErr);
       await logAudit({
         action: 'refresh',
-        actor_id: session.user_id,
+        actor_id: session?.user_id,
         outcome: 'error',
         detail: String(dbErr),
       });

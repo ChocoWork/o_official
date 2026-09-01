@@ -1,5 +1,12 @@
 export {};
 
+// 漏洩パスワード検査は外部 API（HaveIBeenPwned）を叩く。テストからネットワークへ出さない。
+// 検査そのものの挙動は tests/unit/lib/pwned-password.test.ts が担当する。
+jest.mock('@/lib/pwned-password', () => ({
+  checkPwnedPassword: async () => ({ status: 'ok' }),
+  PWNED_PASSWORD_MESSAGE: 'このパスワードは過去の情報流出で公開されています。別のパスワードを設定してください。',
+}));
+
 jest.mock('next/server', () => ({
   NextResponse: {
     json: (body: any, init?: any) => {
@@ -35,10 +42,6 @@ jest.mock('@/lib/audit', () => ({
   logAudit: jest.fn(),
 }));
 
-jest.mock('@/features/auth/services/mfa-metadata', () => ({
-  resetPrivilegedMfaVerification: jest.fn().mockResolvedValue({ ok: true }),
-}));
-
 jest.mock('@/features/auth/middleware/rateLimit', () => ({
   enforceRateLimit: jest.fn().mockResolvedValue(undefined),
 }));
@@ -47,8 +50,6 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({
 jest.mock('@/features/auth/services/session', () => ({
   ...jest.requireActual('@/features/auth/services/session'),
   findSessionByRefreshHash: jest.fn(),
-  isReplay: jest.fn(),
-  revokeAllSessionsForUser: jest.fn(),
 }));
 
 const { cookies } = require('next/headers');
@@ -78,9 +79,7 @@ describe('Auth full flow integration (register -> login -> refresh -> logout)', 
     delete process.env.SUPABASE_URL;
     delete process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!(global as any).fetch) (global as any).fetch = jest.fn();
-    sessionService.findSessionByRefreshHash.mockResolvedValue({ id: 'session-1', user_id: 'u-seq' });
-    sessionService.isReplay.mockResolvedValue(false);
-    sessionService.revokeAllSessionsForUser.mockResolvedValue(undefined);
+    sessionService.findSessionByRefreshHash.mockResolvedValue({ id: 'session-1', user_id: 'u-seq', revoked_at: null });
   });
 
   test('register -> login -> refresh -> logout sequence', async () => {
@@ -90,7 +89,7 @@ describe('Auth full flow integration (register -> login -> refresh -> logout)', 
     const { createServiceRoleClient } = require('@/lib/supabase/server');
     createServiceRoleClient.mockReturnValue(fakeServiceAdmin);
 
-    const regReq = new Request('http://localhost/api/auth/register', { method: 'POST', headers: { 'content-type': 'application/json', 'x-admin-token': 'adm' }, body: JSON.stringify({ email: 'seq@example.com', password: 'password123' }) });
+    const regReq = new Request('http://localhost/api/auth/register', { method: 'POST', headers: { 'content-type': 'application/json', 'x-admin-token': 'adm' }, body: JSON.stringify({ email: 'seq@example.com', password: 'password123456789' }) });
     const regRes: any = await registerHandler(regReq);
     const regBody = await regRes.json();
     expect(regRes.status).toBe(201);
@@ -110,7 +109,7 @@ describe('Auth full flow integration (register -> login -> refresh -> logout)', 
     };
     createPublicClient.mockResolvedValue(fakePublicClient);
 
-    const loginReq = new Request('http://localhost/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'seq@example.com', password: 'password123' }) });
+    const loginReq = new Request('http://localhost/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'seq@example.com', password: 'password123456789' }) });
     const loginRes: any = await loginHandler(loginReq);
     const loginBody = await loginRes.json();
     expect(loginRes.status).toBe(200);
