@@ -30,7 +30,7 @@ export const emailSchema = z
 
 export const passwordSchema = z
   .string()
-  .min(8, { message: 'パスワードは8文字以上で入力してください' })
+  .min(16, { message: 'パスワードは16文字以上で入力してください' })
   .max(128, { message: 'パスワードは128文字以内で入力してください' });
 
 export type Email = z.infer<typeof emailSchema>;

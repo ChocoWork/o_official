@@ -4,13 +4,20 @@ export {};
 process.env.ADMIN_API_KEY = process.env.ADMIN_API_KEY || 'test-admin-key';
 
 // Mock rateLimit middleware to avoid DB calls
+// 漏洩パスワード検査は外部 API（HaveIBeenPwned）を叩く。テストからネットワークへ出さない。
+// 検査そのものの挙動は tests/unit/lib/pwned-password.test.ts が担当する。
+jest.mock('@/lib/pwned-password', () => ({
+  checkPwnedPassword: async () => ({ status: 'ok' }),
+  PWNED_PASSWORD_MESSAGE: 'このパスワードは過去の情報流出で公開されています。別のパスワードを設定してください。',
+}));
+
 jest.mock('@/features/auth/middleware/rateLimit', () => ({
   enforceRateLimit: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('@/lib/supabase/server', () => ({
   createClient: () => ({ auth: { signUp: jest.fn().mockResolvedValue({ data: { session: { access_token: 'a', refresh_token: 'r', expires_at: Date.now() + 1000 }, user: { id: 'u1', email: 'test@example.com' } }, error: null }) } }),
-  createServiceRoleClient: () => ({ auth: { admin: { createUser: jest.fn().mockResolvedValue({ data: { user: { id: 'admin-user-1', email: 'test@example.com' } }, error: null }) } }, from: () => ({ insert: jest.fn().mockResolvedValue({ data: [{ id: 's1' }], error: null }) }) }),
+  createServiceRoleClient: () => ({ rpc: jest.fn().mockResolvedValue({ data: null, error: null }), auth: { admin: { createUser: jest.fn().mockResolvedValue({ data: { user: { id: 'admin-user-1', email: 'test@example.com' } }, error: null }) } }, from: () => ({ insert: jest.fn().mockResolvedValue({ data: [{ id: 's1' }], error: null }) }) }),
 }));
 
 // Ensure NextResponse.json is available in test environment
@@ -25,7 +32,7 @@ describe('POST /api/auth/register (public)', () => {
 
     const req = new Request('http://localhost/api/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ email: 'test@example.com', password: 'Passw0rd!', emailRedirectTo: '/auth/verified' }),
+      body: JSON.stringify({ email: 'test@example.com', password: 'Passw0rd!23456789', emailRedirectTo: '/auth/verified' }),
       headers: { 'x-admin-token': process.env.ADMIN_API_KEY ?? '', 'content-type': 'application/json' },
     });
     const resp = await route.POST(req as any);
@@ -39,7 +46,7 @@ describe('POST /api/auth/register (public)', () => {
     const route = await import('@/app/api/auth/register/route');
     const req = new Request('http://localhost/api/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ email: 'test@example.com', password: 'Passw0rd!', emailRedirectTo: '/auth/verified' }),
+      body: JSON.stringify({ email: 'test@example.com', password: 'Passw0rd!23456789', emailRedirectTo: '/auth/verified' }),
       headers: { 'content-type': 'application/json' },
     });
     const resp = await route.POST(req as any);

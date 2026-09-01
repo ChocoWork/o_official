@@ -1,6 +1,14 @@
 export {};
 
+// 漏洩パスワード検査は外部 API（HaveIBeenPwned）を叩く。テストからネットワークへ出さない。
+// 検査そのものの挙動は tests/unit/lib/pwned-password.test.ts が担当する。
+jest.mock('@/lib/pwned-password', () => ({
+  checkPwnedPassword: async () => ({ status: 'ok' }),
+  PWNED_PASSWORD_MESSAGE: 'このパスワードは過去の情報流出で公開されています。別のパスワードを設定してください。',
+}));
+
 jest.mock('next/server', () => ({
+  after: () => {},
   NextResponse: {
     json: (body: any, init?: any) => {
       const res: any = {
@@ -46,7 +54,7 @@ describe('Auth API integration (mocked supabase)', () => {
   beforeEach(() => {
     // default service client to satisfy audit/logging and password reset inserts
     const { createServiceRoleClient, createClient, createPublicClient } = require('@/lib/supabase/server');
-    createServiceRoleClient.mockReturnValue({ from: jest.fn().mockReturnValue({ insert: jest.fn().mockResolvedValue({}) }), auth: { admin: { updateUserById: jest.fn().mockResolvedValue({}) } } });
+    createServiceRoleClient.mockReturnValue({ from: jest.fn().mockReturnValue({ insert: jest.fn().mockResolvedValue({}) }), rpc: jest.fn().mockResolvedValue({ data: null, error: null }), auth: { admin: { updateUserById: jest.fn().mockResolvedValue({ data: { user: { id: "u1" } }, error: null }) } } });
     createClient.mockResolvedValue({ auth: { signInWithPassword: jest.fn().mockResolvedValue({ data: null, error: null }) } });
     createPublicClient.mockResolvedValue({ auth: { signInWithPassword: jest.fn().mockResolvedValue({ data: null, error: null }), signInWithOtp: jest.fn().mockResolvedValue({ error: null }) } });
     process.env.MAIL_FROM_ADDRESS = 'no-reply@example.com';
@@ -69,7 +77,7 @@ describe('Auth API integration (mocked supabase)', () => {
     };
     createPublicClient.mockResolvedValue(fakeClient);
 
-    const req = new Request('http://localhost/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'user@example.com', password: 'password123' }) });
+    const req = new Request('http://localhost/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'user@example.com', password: 'password123456789' }) });
 
     const res: any = await loginHandler(req);
     const body = await res.json();
@@ -90,7 +98,7 @@ describe('Auth API integration (mocked supabase)', () => {
     };
     createPublicClient.mockResolvedValue(fakeClient);
 
-    const req = new Request('http://localhost/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'user@example.com', password: 'wrongpass' }) });
+    const req = new Request('http://localhost/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'user@example.com', password: 'wrongpass12345678' }) });
 
     const res: any = await loginHandler(req);
     expect(res.status).toBe(401);
@@ -104,7 +112,7 @@ describe('Auth API integration (mocked supabase)', () => {
     };
     createServiceRoleClient.mockReturnValue(fakeService);
 
-    const req = new Request('http://localhost/api/auth/register', { method: 'POST', headers: { 'content-type': 'application/json', 'x-admin-token': 'adm' }, body: JSON.stringify({ email: 'new@example.com', password: 'password123' }) });
+    const req = new Request('http://localhost/api/auth/register', { method: 'POST', headers: { 'content-type': 'application/json', 'x-admin-token': 'adm' }, body: JSON.stringify({ email: 'new@example.com', password: 'password123456789' }) });
 
     const res: any = await registerHandler(req);
     const body = await res.json();
@@ -114,7 +122,7 @@ describe('Auth API integration (mocked supabase)', () => {
 
   test('register unauthorized without admin token returns 401', async () => {
     delete process.env.ADMIN_API_KEY;
-    const req = new Request('http://localhost/api/auth/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'new@example.com', password: 'password123' }) });
+    const req = new Request('http://localhost/api/auth/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'new@example.com', password: 'password123456789' }) });
 
     const res: any = await registerHandler(req);
     expect(res.status).toBe(500); // because server misconfiguration when ADMIN_API_KEY not configured
@@ -123,8 +131,10 @@ describe('Auth API integration (mocked supabase)', () => {
   test('password reset request inserts token and returns 200', async () => {
     const { createServiceRoleClient } = require('@/lib/supabase/server');
     const insertMock = jest.fn().mockResolvedValue({});
-    const fromMock = jest.fn(() => ({ insert: insertMock, select: jest.fn().mockReturnThis(), eq: jest.fn().mockReturnThis(), maybeSingle: jest.fn().mockResolvedValue({ data: null }) }));
-    const fakeService = { from: fromMock };
+    const chain: any = { insert: insertMock, select: jest.fn().mockReturnThis(), update: jest.fn().mockReturnThis(), eq: jest.fn().mockReturnThis(), maybeSingle: jest.fn().mockResolvedValue({ data: null }) };
+    chain.then = (res: any, rej: any) => Promise.resolve({ data: null, error: null }).then(res, rej);
+    const fromMock = jest.fn(() => chain);
+    const fakeService = { from: fromMock, rpc: jest.fn().mockResolvedValue({ data: "u1", error: null }) };
     createServiceRoleClient.mockReturnValue(fakeService);
 
     const req = new Request('http://localhost/api/auth/password-reset/request', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'user@example.com' }) });
@@ -136,28 +146,36 @@ describe('Auth API integration (mocked supabase)', () => {
     expect(insertMock).toHaveBeenCalled();
   });
 
-  test('password reset confirm with valid token updates password and returns 200', async () => {
+  test('password reset confirm with reset session updates password and returns 200', async () => {
     const { createServiceRoleClient } = require('@/lib/supabase/server');
-    const chain = {
+    const { createPasswordResetSessionToken } = require('@/features/auth/services/password-reset-session');
+
+    const updateUserById = jest.fn().mockResolvedValue({ data: { user: { id: 'u1' } }, error: null });
+    const chain: any = {
       select: jest.fn().mockReturnThis(),
       eq: jest.fn().mockReturnThis(),
-      gte: jest.fn().mockReturnThis(),
-      maybeSingle: jest.fn().mockResolvedValue({ data: { id: 'tok1', user_id: 'u1', email: 'user@example.com' } }),
       update: jest.fn().mockReturnThis(),
+      delete: jest.fn().mockReturnThis(),
+      maybeSingle: jest.fn().mockResolvedValue({ data: { id: 'tok1' }, error: null }),
     };
-    // make eq and update chainable
-    chain.update.mockReturnValue({ eq: jest.fn().mockResolvedValue({}) });
+    chain.then = (res: any, rej: any) => Promise.resolve({ data: null, error: null }).then(res, rej);
 
-    const fromFn = jest.fn(() => chain);
-    const fakeService = { from: fromFn, auth: { admin: { updateUserById: jest.fn().mockResolvedValue({}) } } };
-    createServiceRoleClient.mockReturnValue(fakeService);
+    const rpc = jest.fn().mockResolvedValue({ data: null, error: null });
+    createServiceRoleClient.mockReturnValue({ from: jest.fn(() => chain), rpc, auth: { admin: { updateUserById } } });
 
-    const req = new Request('http://localhost/api/auth/password-reset/confirm', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: 'tok', email: 'user@example.com', new_password: 'newpassword123' }) });
+    const sessionToken = createPasswordResetSessionToken({ userId: 'u1', email: 'user@example.com', tokenId: 'tok1' });
+    const req = new Request('http://localhost/api/auth/password-reset/confirm', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: `sb-password-reset-session=${encodeURIComponent(sessionToken)}` },
+      body: JSON.stringify({ new_password: 'newpassword1234567' }),
+    });
 
     const res: any = await pwConfirmHandler(req);
     const body = await res.json();
     expect(res.status).toBe(200);
     expect(body.ok).toBe(true);
-    expect(chain.maybeSingle).toHaveBeenCalled();
+    expect(updateUserById).toHaveBeenCalledWith('u1', { password: 'newpassword1234567' });
+    // パスワード変更後は既存セッションを失効させる
+    expect(rpc).toHaveBeenCalledWith('revoke_auth_sessions_for_user', { p_user_id: 'u1' });
   });
 });

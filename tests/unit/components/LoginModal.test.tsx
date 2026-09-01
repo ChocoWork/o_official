@@ -47,10 +47,10 @@ describe('LoginModal', () => {
     render(<LoginModal open={true} onClose={jest.fn()} />);
 
     await user.type(screen.getByLabelText('Email'), 'user@example.com');
-    await user.type(screen.getByLabelText('Password'), 'password123');
+    await user.type(screen.getByLabelText('Password'), 'password123456789');
     await user.click(screen.getByRole('button', { name: 'ログイン' }));
 
-    await waitFor(() => expect(loginMock).toHaveBeenCalledWith('user@example.com', 'password123', undefined));
+    await waitFor(() => expect(loginMock).toHaveBeenCalledWith('user@example.com', 'password123456789', undefined));
     expect(screen.getByLabelText('認証コード 1 桁目')).toBeInTheDocument();
     expect(screen.getByText(/後に再送可能/)).toBeInTheDocument();
   });

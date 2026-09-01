@@ -1,14 +1,40 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
+import sendMail from '@/lib/mail';
+import { checkPwnedPassword, PWNED_PASSWORD_MESSAGE } from '@/lib/pwned-password';
 import { createServiceRoleClient, createClient } from '@/lib/supabase/server';
 import { getRequestOrigin, sanitizeRedirectPath } from '@/lib/redirect';
 import { logAudit } from '@/lib/audit';
 import { RegisterRequestSchema } from '@/features/auth/schemas/register';
 import { formatZodError } from '@/features/auth/schemas/common';
 
-type AdminUserLite = {
-  email?: string | null;
-};
+/**
+ * 登録済みかどうかに関わらず同じ応答を返す（アカウント列挙対策）。
+ *
+ * 409 を返すと、任意のアドレスを投げるだけで会員かどうかを判別できる。
+ * 会員だけを狙った標的型フィッシングや、漏洩した メール:パスワード 組の絞り込みに使われる。
+ * OWASP WSTG-IDNT-04 / ASVS 2.1 と Supabase 既定の挙動に合わせ、登録済みなら
+ * 「既に登録済み」を本人にメールで伝え、HTTP 応答は新規登録時と同一にする。
+ */
+function acceptedResponse() {
+  return NextResponse.json({ message: 'Confirmation email sent' }, { status: 202 });
+}
 
+/** 既に登録済みのアドレスへ、ログイン導線を案内する。パスワードには触れない。 */
+function notifyAlreadyRegistered(email: string, loginUrl: string) {
+  // 応答経路から SMTP の往復を外す。送信の有無で応答時間に差が出ないようにする。
+  after(async () => {
+    try {
+      await sendMail({
+        to: email,
+        subject: 'アカウントはすでに登録されています',
+        html: `<p>このメールアドレスはすでに登録されています。</p><p><a href="${loginUrl}">ログイン</a>してください。パスワードが分からない場合は、ログイン画面から再設定できます。</p><p>心当たりがない場合は、このメールを破棄してください。</p>`,
+        text: `このメールアドレスはすでに登録されています。\nログイン: ${loginUrl}\nパスワードが分からない場合は、ログイン画面から再設定できます。\n心当たりがない場合は、このメールを破棄してください。`,
+      });
+    } catch (mailErr) {
+      console.warn('Failed to send already-registered notice:', mailErr);
+    }
+  });
+}
 
 
 export async function POST(request: Request) {
@@ -75,71 +101,46 @@ export async function POST(request: Request) {
 
     // Public signup flow
     try {
-      // factor pre-check into helper for clarity
-      async function preCheckExistingUser(emailToCheck: string): Promise<{ found: boolean; detail?: string }> {
-        try {
-          const service = await createServiceRoleClient();
-
-          if (service?.auth?.admin?.listUsers) {
-            try {
-              const listed = await service.auth.admin.listUsers({ perPage: 100 });
-              if (listed?.data?.users) {
-                const found = listed.data.users.find((u) => String(u.email).toLowerCase() === String(emailToCheck).toLowerCase());
-                if (found) return { found: true, detail: 'email already exists (pre-check listUsers)' };
-              }
-            } catch (e) {
-              console.warn('listUsers pre-check failed, will try HTTP admin API fallback', e);
-            }
-          }
-
-          // HTTP fallback to admin REST endpoint
-          try {
-            const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-            const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-            if (supabaseUrl && serviceKey) {
-              const url = new URL('/auth/v1/admin/users', supabaseUrl).toString();
-              const q = `${url}?email=${encodeURIComponent(emailToCheck)}`;
-              const r = await fetch(q, {
-                method: 'GET',
-                headers: {
-                  Authorization: `Bearer ${serviceKey}`,
-                  apikey: serviceKey,
-                  Accept: 'application/json',
-                },
-              });
-
-              if (r.ok) {
-                const body: unknown = await r.json();
-                const foundUser = Array.isArray(body)
-                  ? (body as AdminUserLite[]).find((u) => String(u.email).toLowerCase() === String(emailToCheck).toLowerCase())
-                  : (typeof body === 'object' && body !== null && 'email' in body ? body : null);
-                if (foundUser) return { found: true, detail: 'email already exists (admin HTTP pre-check)' };
-              } else if (r.status !== 404) {
-                console.warn('Admin HTTP pre-check returned non-ok status', r.status, await r.text());
-              }
-            }
-          } catch (httpErr) {
-            console.warn('Admin HTTP pre-check failed, continuing to signUp', httpErr);
-          }
-        } catch (e) {
-          console.warn('Service-role existence pre-check failed, continuing to signUp', e);
-        }
-
-        return { found: false };
-      }
-
-      const pre = await preCheckExistingUser(email);
-      if (pre.found) {
-        await logAudit({ action: 'register', actor_email: email, outcome: 'conflict', detail: pre.detail });
-        return NextResponse.json({ error: 'Email already registered' }, { status: 409 });
-      }
-
-      const { verifyTurnstile } = await import('@/lib/turnstile');
-      const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null;
+      // Bot 検証を先に通す。この後ろは重複確認と signUp（＝メール送信）なので、
+      // Turnstile が後ろにあるとボットに無償でメール送信を叩かせることになる。
+      const { verifyTurnstile } = await import("@/lib/turnstile");
+      const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
       const turnstile = await verifyTurnstile(parsed.data.turnstileToken, ip);
       if (!turnstile.ok) {
-        await logAudit({ action: 'register', actor_email: email, outcome: 'failure', detail: turnstile.error || 'turnstile_failed' });
-        return NextResponse.json({ error: 'Bot detection failed' }, { status: 403 });
+        await logAudit({ action: "register", actor_email: email, outcome: "failure", detail: turnstile.error || "turnstile_failed" });
+        return NextResponse.json({ error: "Bot detection failed" }, { status: 403 });
+      }
+
+      // 漏洩済みパスワードを弾く。Supabase の leaked password protection は
+      // Pro プラン以上でしか使えないため、同等の制御をここに置く（FREQ-323）。
+      const pwned = await checkPwnedPassword(password);
+      if (pwned.status === 'pwned') {
+        await logAudit({ action: "register", actor_email: email, outcome: "failure", detail: "pwned_password" });
+        return NextResponse.json({ error: PWNED_PASSWORD_MESSAGE }, { status: 400 });
+      }
+      if (pwned.status === 'unavailable') {
+        // 外部サービスの障害で登録を止めない。検査が効いていない期間を追えるよう監査に残す。
+        await logAudit({ action: "register", actor_email: email, outcome: "error", detail: `pwned_check_unavailable:${pwned.reason}` });
+      }
+
+      // 既存ユーザーの確認。以前は listUsers({ perPage: 100 }) で先頭 100 件だけを
+      // 走査していたため、101 人目以降の重複メールを検出できなかった。
+      const service = await createServiceRoleClient();
+      const { findAuthUserIdByEmail } = await import("@/features/auth/services/auth-admin-user");
+      const lookup = await findAuthUserIdByEmail(service, email);
+
+      // 引けなかったときに signUp へ進むと、重複チェックが無言で消える。
+      // 「重複していない」と断定できないので、ここで止める。
+      if (lookup.status === "error") {
+        await logAudit({ action: "register", actor_email: email, outcome: "error", detail: "user_lookup_failed" });
+        return NextResponse.json({ error: "Service temporarily unavailable" }, { status: 503 });
+      }
+
+      if (lookup.status === "found") {
+        // 応答は新規登録時と同一。存在は本人へのメールだけで伝える。
+        await logAudit({ action: "register", actor_email: email, outcome: "conflict", detail: "already_registered_notified" });
+        notifyAlreadyRegistered(email, new URL('/login', getRequestOrigin(request)).toString());
+        return acceptedResponse();
       }
 
       const client = await createClient();
@@ -160,14 +161,20 @@ export async function POST(request: Request) {
         console.error('Public signUp error:', error);
         const msg = String(error.message || '').toLowerCase();
         if (msg.includes('already') || msg.includes('duplicate')) {
+          // ここに来るのは find_auth_user_id_by_email の除外条件（SSO / banned /
+          // 論理削除）に当たったアドレス。上の found と同じ応答に揃える。
           await logAudit({ action: 'register', actor_email: email, outcome: 'conflict', detail: error.message });
-          return NextResponse.json({ error: 'Email already registered' }, { status: 409 });
+          notifyAlreadyRegistered(email, new URL('/login', getRequestOrigin(request)).toString());
+          return acceptedResponse();
         }
         await logAudit({ action: 'register', actor_email: email, outcome: 'error', detail: error.message });
         return NextResponse.json({ error: 'Failed to create user' }, { status: 500 });
       }
 
       // If signup returned a session (auto signed-in), persist session and set cookies
+      // 注: この 201 分岐は Supabase 側の Confirm email が OFF のときだけ通る。
+      // OFF にすると新規は 201、既存は 202 となり応答で判別できてしまうため、
+      // 列挙対策を保つには Confirm email を ON のまま運用すること。
       if (data.session) {
         if (!data.user) {
           await logAudit({ action: 'register', actor_email: email, outcome: 'error', detail: 'missing_user_after_signup' });
@@ -226,7 +233,7 @@ export async function POST(request: Request) {
 
       // If no session (email confirmation flows), return Accepted
       await logAudit({ action: 'register', actor_email: email, outcome: 'created_needs_confirmation' });
-      return NextResponse.json({ message: 'Confirmation email sent' }, { status: 202 });
+      return acceptedResponse();
     } catch (e) {
       console.error('Public register flow error:', e);
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

@@ -1,94 +1,157 @@
-import { NextResponse } from 'next/server';
-import crypto from 'crypto';
+import { NextResponse, after } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import sendMail from '@/lib/mail';
+import { checkPwnedPassword, PWNED_PASSWORD_MESSAGE } from '@/lib/pwned-password';
 import { logAudit } from '@/lib/audit';
-import { ResetConfirmSchema, ResetSessionConfirmSchema } from '@/features/auth/schemas/password-reset';
+import { ResetSessionConfirmSchema } from '@/features/auth/schemas/password-reset';
 import { formatZodError } from '@/features/auth/schemas/common';
-import { cookieOptionsForPasswordReset, passwordResetSessionCookieName } from '@/lib/cookie';
+import {
+  accessCookieName,
+  cookieOptionsForAccess,
+  cookieOptionsForCsrf,
+  cookieOptionsForPasswordReset,
+  cookieOptionsForRefresh,
+  csrfCookieName,
+  passwordResetSessionCookieName,
+  refreshCookieName,
+} from '@/lib/cookie';
 import { readPasswordResetSessionFromCookieHeader } from '@/features/auth/services/password-reset-session';
+
+/**
+ * パスワード変更後は既存セッションを全て切る。
+ * 乗っ取られた利用者がパスワードを変えても、失効させないと攻撃者のセッションが
+ * access token の exp まで生き残る（OWASP: invalidate the sessions automatically）。
+ * 管理者による強制ログアウトと同じ2段構え。失敗しても本処理は成功のまま
+ * （パスワードは既に変わっているので、ここで 500 を返す方が利用者に不利）。
+ */
+async function revokeAllSessions(
+  service: Awaited<ReturnType<typeof createServiceRoleClient>>,
+  userId: string,
+): Promise<void> {
+  const { error: appSessionError } = await service
+    .from('sessions')
+    .update({ revoked_at: new Date().toISOString() })
+    .eq('user_id', userId);
+
+  if (appSessionError) {
+    console.error('[password-reset.confirm] failed to revoke app sessions:', appSessionError);
+  }
+
+  const { error: authSessionError } = await service.rpc('revoke_auth_sessions_for_user', {
+    p_user_id: userId,
+  });
+
+  if (authSessionError) {
+    console.error('[password-reset.confirm] failed to revoke auth sessions:', authSessionError);
+  }
+}
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    try {
+      const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
+      const rl = await enforceRateLimit({ request, endpoint: 'auth:password_reset_confirm', limit: 10, windowSeconds: 3600 });
+      if (rl) return rl;
+    } catch (e) {
+      console.error('Rate limit middleware error (password-reset-confirm):', e);
+    }
+
     const session = readPasswordResetSessionFromCookieHeader(request.headers.get('cookie'));
-    const parsed = session ? ResetSessionConfirmSchema.safeParse(body) : ResetConfirmSchema.safeParse(body);
+    if (!session) {
+      await logAudit({ action: 'password_reset_confirm', outcome: 'failure', detail: 'missing_reset_session' });
+      return NextResponse.json({ error: 'Invalid or expired reset session' }, { status: 400 });
+    }
+
+    const body = await request.json();
+    const parsed = ResetSessionConfirmSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json(formatZodError(parsed.error), { status: 400 });
 
     const { new_password } = parsed.data;
-    const supabase = await createServiceRoleClient();
 
-    if (session) {
-      try {
-        await supabase.auth.admin.updateUserById(session.userId, { password: new_password });
-      } catch (updErr) {
-        console.error('Failed to update user password:', updErr);
-        await logAudit({ action: 'password_reset_confirm', actor_email: session.email, outcome: 'error', detail: String(updErr) });
-        return NextResponse.json({ error: 'Failed to update password' }, { status: 500 });
-      }
-
-      const response = NextResponse.json({ ok: true }, { status: 200 });
-      response.cookies.set({
-        name: passwordResetSessionCookieName,
-        value: '',
-        ...cookieOptionsForPasswordReset(0),
-      });
-
-      await logAudit({ action: 'password_reset_confirm', actor_email: session.email, outcome: 'success', resource_id: session.userId });
-      return response;
+    // 漏洩済みパスワードを弾く。トークン照合より前に行い、無駄な DB 往復を避ける。
+    // Supabase の leaked password protection は Pro プラン以上でしか使えないため、
+    // 同等の制御をここに置く（FREQ-323）。
+    const pwned = await checkPwnedPassword(new_password);
+    if (pwned.status === 'pwned') {
+      await logAudit({ action: 'password_reset_confirm', actor_email: session.email, outcome: 'failure', detail: 'pwned_password' });
+      return NextResponse.json({ error: PWNED_PASSWORD_MESSAGE }, { status: 400 });
+    }
+    if (pwned.status === 'unavailable') {
+      // 外部サービスの障害で再設定を止めない。検査が効いていない期間を追えるよう監査に残す。
+      await logAudit({ action: 'password_reset_confirm', actor_email: session.email, outcome: 'error', detail: `pwned_check_unavailable:${pwned.reason}` });
     }
 
-    const legacyParsed = parsed.data as { token: string; email: string; new_password: string };
-    const { token, email } = legacyParsed;
+    const supabase = await createServiceRoleClient();
 
-    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-
-    // Find valid token
-    const { data: tokenRow, error: tokenErr } = await supabase
+    // Cookie は署名されているが、それだけを能力にしない。link で消費された行が
+    // まだ残っていることを確認する（再設定完了時に削除するので、使い回しは弾かれる）。
+    const { data: tokenRow, error: tokenError } = await supabase
       .from('password_reset_tokens')
-      .select('*')
-      .eq('token_hash', tokenHash)
-      .eq('email', email)
-      .gte('expires_at', new Date().toISOString())
-      .eq('used', false)
+      .select('id')
+      .eq('id', session.tokenId)
+      .eq('used', true)
       .maybeSingle();
 
-    if (tokenErr) {
-      console.error('Token lookup error:', tokenErr);
-      return NextResponse.json({ error: 'Invalid token' }, { status: 400 });
+    if (tokenError) {
+      console.error('Token lookup error:', tokenError);
+      await logAudit({ action: 'password_reset_confirm', actor_email: session.email, outcome: 'error', detail: 'token_lookup_failed' });
+      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
 
     if (!tokenRow) {
-      await logAudit({ action: 'password_reset_confirm', actor_email: email, outcome: 'failure', detail: 'invalid_or_expired_token' });
-      return NextResponse.json({ error: 'Invalid or expired token' }, { status: 400 });
+      await logAudit({ action: 'password_reset_confirm', actor_email: session.email, outcome: 'failure', detail: 'invalid_or_consumed_token' });
+      return NextResponse.json({ error: 'Invalid or expired reset session' }, { status: 400 });
     }
 
-    // Update user's password — attempt to find user id
-    let userId = tokenRow.user_id;
-    if (!userId) {
-      const { findAuthUserIdByEmail } = await import('@/features/auth/services/auth-admin-user');
-      userId = await findAuthUserIdByEmail(supabase, email);
-    }
+    // updateUserById は AuthError を投げずに { data, error } で返す。
+    // 戻り値を見ないと、パスワードポリシー違反などで失敗しても「更新しました」を返してしまう。
+    const { error: updateError } = await supabase.auth.admin.updateUserById(session.userId, {
+      password: new_password,
+    });
 
-    if (!userId) {
-      await logAudit({ action: 'password_reset_confirm', actor_email: email, outcome: 'error', detail: 'user_not_found' });
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
-
-    // Use Supabase Admin API to update user's password
-    try {
-      await supabase.auth.admin.updateUserById(userId, { password: new_password });
-    } catch (updErr) {
-      console.error('Failed to update user password:', updErr);
-      await logAudit({ action: 'password_reset_confirm', actor_email: email, outcome: 'error', detail: String(updErr) });
+    if (updateError) {
+      console.error('Failed to update user password:', updateError);
+      await logAudit({ action: 'password_reset_confirm', actor_email: session.email, outcome: 'error', detail: updateError.message });
       return NextResponse.json({ error: 'Failed to update password' }, { status: 500 });
     }
 
-    // Mark token used
-    await supabase.from('password_reset_tokens').update({ used: true }).eq('id', tokenRow.id);
+    // 使い終わったトークン行を落とす。再設定 Cookie の使い回しもこれで通らなくなる。
+    const { error: deleteError } = await supabase.from('password_reset_tokens').delete().eq('id', session.tokenId);
+    if (deleteError) {
+      console.error('Failed to delete consumed password reset token:', deleteError);
+    }
 
-    await logAudit({ action: 'password_reset_confirm', actor_email: email, outcome: 'success', resource_id: userId });
+    await revokeAllSessions(supabase, session.userId);
 
-    return NextResponse.json({ ok: true }, { status: 200 });
+    const response = NextResponse.json({ ok: true }, { status: 200 });
+    response.cookies.set({
+      name: passwordResetSessionCookieName,
+      value: '',
+      ...cookieOptionsForPasswordReset(0),
+    });
+    // 全セッションを失効させたので、この端末に残っている認証 Cookie も落とす。
+    // 残すと失効済みのトークンで 401 を繰り返すことになる。
+    response.cookies.set({ name: accessCookieName, value: '', ...cookieOptionsForAccess(0) });
+    response.cookies.set({ name: refreshCookieName, value: '', ...cookieOptionsForRefresh(0) });
+    response.cookies.set({ name: csrfCookieName, value: '', ...cookieOptionsForCsrf(0) });
+
+    // 本人が気づけるように変更を通知する。パスワードそのものは本文に入れない。
+    const notifyEmail = session.email;
+    after(async () => {
+      try {
+        await sendMail({
+          to: notifyEmail,
+          subject: 'パスワードを変更しました',
+          html: '<p>アカウントのパスワードが変更されました。</p><p>心当たりがない場合は、ただちにパスワードを再設定のうえお問い合わせください。</p>',
+          text: 'アカウントのパスワードが変更されました。心当たりがない場合は、ただちにパスワードを再設定のうえお問い合わせください。',
+        });
+      } catch (mailErr) {
+        console.warn('Failed to send password change notification:', mailErr);
+      }
+    });
+
+    await logAudit({ action: 'password_reset_confirm', actor_email: session.email, outcome: 'success', resource_id: session.userId });
+    return response;
   } catch (err) {
     console.error('Password reset confirm error:', err);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

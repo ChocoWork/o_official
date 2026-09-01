@@ -1,40 +1,26 @@
-import { ResetRequestSchema, ResetConfirmSchema, ResetSessionConfirmSchema } from '@/features/auth/schemas/password-reset';
+import { ResetRequestSchema, ResetSessionConfirmSchema } from '@/features/auth/schemas/password-reset';
 
-describe('ResetRequestSchema', () => {
-  test('valid email passes', () => {
-    const parsed = ResetRequestSchema.safeParse({ email: 'user@example.com' });
-    expect(parsed.success).toBe(true);
+describe('password-reset schemas', () => {
+  test('ResetRequestSchema はメール形式を検証する', () => {
+    expect(ResetRequestSchema.safeParse({ email: 'user@example.com' }).success).toBe(true);
+    expect(ResetRequestSchema.safeParse({ email: 'not-an-email' }).success).toBe(false);
   });
 
-  test('invalid email fails with Japanese message', () => {
-    const parsed = ResetRequestSchema.safeParse({ email: 'bad' });
-    expect(parsed.success).toBe(false);
-    if (!parsed.success) {
-      expect(parsed.error.issues[0].message).toMatch(/メールアドレス/);
+  test('ResetRequestSchema はメールを小文字に正規化する', () => {
+    const parsed = ResetRequestSchema.safeParse({ email: 'User@Example.COM' });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.email).toBe('user@example.com');
     }
   });
-});
 
-describe('ResetConfirmSchema', () => {
-  test('valid data passes', () => {
-    const parsed = ResetConfirmSchema.safeParse({ token: 'tok', email: 'user@example.com', new_password: 'password123' });
-    expect(parsed.success).toBe(true);
+  test('ResetSessionConfirmSchema は new_password のみを受ける', () => {
+    expect(ResetSessionConfirmSchema.safeParse({ new_password: 'password123456789' }).success).toBe(true);
   });
 
-  test('missing token fails', () => {
-    const parsed = ResetConfirmSchema.safeParse({ email: 'user@example.com', new_password: 'password123' });
-    expect(parsed.success).toBe(false);
+  test('ResetSessionConfirmSchema は 8 文字未満を拒否する', () => {
+    expect(ResetSessionConfirmSchema.safeParse({ new_password: 'short' }).success).toBe(false);
   });
 });
 
-describe('ResetSessionConfirmSchema', () => {
-  test('valid password passes', () => {
-    const parsed = ResetSessionConfirmSchema.safeParse({ new_password: 'password123' });
-    expect(parsed.success).toBe(true);
-  });
-
-  test('missing password fails', () => {
-    const parsed = ResetSessionConfirmSchema.safeParse({});
-    expect(parsed.success).toBe(false);
-  });
-});
+export {};

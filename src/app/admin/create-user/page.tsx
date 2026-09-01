@@ -18,8 +18,8 @@ export default function AdminCreateUserPage() {
       setMessage('メールとパスワードを入力してください');
       return;
     }
-    if (password.length < 8) {
-      setMessage('パスワードは8文字以上にしてください');
+    if (password.length < 16) {
+      setMessage('パスワードは16文字以上にしてください');
       return;
     }
 
@@ -59,7 +59,7 @@ export default function AdminCreateUserPage() {
         <div>
           <Button type="submit" disabled={loading} size="md">作成</Button>
         </div>
-        {message ? <p className="text-sm mt-2">{message}</p> : null}
+        {message ? <p className="lk-text-sm mt-2">{message}</p> : null}
       </form>
     </div>
   );

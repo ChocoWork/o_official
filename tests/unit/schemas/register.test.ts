@@ -2,7 +2,7 @@ import { RegisterRequestSchema } from '@/features/auth/schemas/register';
 
 describe('RegisterRequestSchema', () => {
   test('valid data passes', () => {
-    const data = { email: 'new@example.com', password: 'securepassword', display_name: '太郎' };
+    const data = { email: 'new@example.com', password: 'securepassword1234', display_name: '太郎' };
     const parsed = RegisterRequestSchema.safeParse(data);
     expect(parsed.success).toBe(true);
   });
@@ -19,7 +19,7 @@ describe('RegisterRequestSchema', () => {
     expect(parsed.success).toBe(false);
     if (!parsed.success) {
       const messages = parsed.error.issues.map((i) => i.message).join(' ');
-      expect(messages).toMatch(/パスワードは8文字以上/);
+      expect(messages).toMatch(/パスワードは16文字以上/);
     }
   });
 });

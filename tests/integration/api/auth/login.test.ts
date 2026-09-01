@@ -155,7 +155,7 @@ describe('POST /api/auth/login - Integration Tests', () => {
       const req = new Request('http://localhost/api/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email: 'test@example.com', password: 'WrongPassword' }),
+        body: JSON.stringify({ email: 'test@example.com', password: 'WrongPassword1234' }),
       });
 
       const res: any = await loginHandler(req);
@@ -196,7 +196,7 @@ describe('POST /api/auth/login - Integration Tests', () => {
       const req = new Request('http://localhost/api/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email: 'invalid-email', password: 'Password123!' }),
+        body: JSON.stringify({ email: 'invalid-email', password: 'Password123456789!' }),
       });
 
       const res: any = await loginHandler(req);
@@ -223,7 +223,7 @@ describe('POST /api/auth/login - Integration Tests', () => {
       const req = new Request('http://localhost/api/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email: 'test@example.com', password: 'Password123!' }),
+        body: JSON.stringify({ email: 'test@example.com', password: 'Password123456789!' }),
       });
 
       const res: any = await loginHandler(req);
@@ -240,7 +240,7 @@ describe('POST /api/auth/login - Integration Tests', () => {
       const req = new Request('http://localhost/api/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email: 'test@example.com', password: 'Password123!' }),
+        body: JSON.stringify({ email: 'test@example.com', password: 'Password123456789!' }),
       });
 
       const res: any = await loginHandler(req);
@@ -261,7 +261,7 @@ describe('POST /api/auth/login - Integration Tests', () => {
       const req = new Request('http://localhost/api/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email: 'test@example.com', password: 'Password123!' }),
+        body: JSON.stringify({ email: 'test@example.com', password: 'Password123456789!' }),
       });
 
       await loginHandler(req);

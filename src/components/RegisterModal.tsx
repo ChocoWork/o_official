@@ -7,9 +7,7 @@ import { useLogin } from "@/contexts/LoginContext";
 import { Button } from "@/components/ui/Button/Button";
 import { TextField } from "@/components/ui/TextField/TextField";
 import { useTurnstileWidget } from "@/hooks/useTurnstileWidget";
-
-const xsTextStyle: React.CSSProperties = { fontSize: "var(--lk-size-xs)" };
-const mdTextStyle: React.CSSProperties = { fontSize: "var(--lk-size-md)" };
+import "@/components/AuthForm.css";
 
 interface RegisterModalProps {
   onSwitchToLogin?: () => void;
@@ -35,8 +33,8 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ onSwitchToLogin, initialE
     e.preventDefault();
     setError(null);
 
-    if (password.length < 8) {
-      setError("パスワードは8文字以上で入力してください");
+    if (password.length < 16) {
+      setError("パスワードは16文字以上で入力してください");
       return;
     }
     if (password !== confirmPassword) {
@@ -72,29 +70,26 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ onSwitchToLogin, initialE
       <div className="w-full max-w-md mx-auto px-6 text-center">
         <p
           role="status"
-          className="mb-6 flex items-center justify-center gap-2"
-          style={mdTextStyle}
+          className="mb-6 flex items-center justify-center gap-2 lk-text-md"
         >
           <span aria-hidden="true">✓</span>
           {sentMessage}
         </p>
-        <p className="mb-8 text-[#474747]" style={xsTextStyle}>
+        <p className="mb-8 lk-text-xs text-[#474747]">
           メールが届かない場合は、迷惑メールフォルダをご確認ください。
         </p>
         {onSwitchToLogin ? (
           <button
             type="button"
             onClick={onSwitchToLogin}
-            className="underline underline-offset-4 hover:text-black transition-colors"
-            style={mdTextStyle}
+            className="lk-text-md underline underline-offset-4 hover:text-black transition-colors"
           >
             ログインページへ
           </button>
         ) : (
           <Link
             href="/login"
-            className="underline underline-offset-4 hover:text-black transition-colors"
-            style={mdTextStyle}
+            className="lk-text-md underline underline-offset-4 hover:text-black transition-colors"
           >
             ログインページへ
           </Link>
@@ -113,101 +108,101 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ onSwitchToLogin, initialE
           onReady={renderTurnstile}
         />
       ) : null}
-      <form
-        className="space-y-4 sm:space-y-6 mb-4 sm:mb-8"
-        onSubmit={handleRegister}
-      >
-        <TextField
-          id="email"
-          aria-label="Email"
-          placeholder="Email"
-          type="email"
-          shape="underline"
-          size="lg"
-          leadingIcon={<i className="ri-mail-line" aria-hidden="true"></i>}
-          required
-          autoComplete="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-        <TextField
-          id="password"
-          aria-label="Password"
-          placeholder="Password"
-          type={showPassword ? "text" : "password"}
-          shape="underline"
-          size="lg"
-          leadingIcon={<i className="ri-lock-line" aria-hidden="true"></i>}
-          trailingIcon={
-            <button
-              type="button"
-              className="text-field__toggle"
-              onClick={() => setShowPassword((prev) => !prev)}
-              aria-label={
-                showPassword ? "パスワードを非表示" : "パスワードを表示"
-              }
-              aria-pressed={showPassword}
-            >
-              <i
-                className={showPassword ? "ri-eye-line" : "ri-eye-off-line"}
-                aria-hidden="true"
-              ></i>
-            </button>
-          }
-          required
-          autoComplete="new-password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-        <TextField
-          id="confirm-password"
-          aria-label="Confirm Password"
-          placeholder="Confirm Password"
-          type={showConfirmPassword ? "text" : "password"}
-          shape="underline"
-          size="lg"
-          leadingIcon={<i className="ri-lock-line" aria-hidden="true"></i>}
-          trailingIcon={
-            <button
-              type="button"
-              className="text-field__toggle"
-              onClick={() => setShowConfirmPassword((prev) => !prev)}
-              aria-label={
-                showConfirmPassword
-                  ? "確認用パスワードを非表示"
-                  : "確認用パスワードを表示"
-              }
-              aria-pressed={showConfirmPassword}
-            >
-              <i
-                className={
-                  showConfirmPassword ? "ri-eye-line" : "ri-eye-off-line"
+      <form className="mb-4 sm:mb-8" onSubmit={handleRegister}>
+        <div className="auth-form-grid">
+          <TextField
+            id="email"
+            aria-label="Email"
+            placeholder="Email"
+            type="email"
+            shape="underline"
+            size="sm"
+            leadingIcon={<i className="ri-mail-line" aria-hidden="true"></i>}
+            required
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <TextField
+            id="password"
+            aria-label="Password"
+            placeholder="Password"
+            type={showPassword ? "text" : "password"}
+            shape="underline"
+            size="sm"
+            leadingIcon={<i className="ri-lock-line" aria-hidden="true"></i>}
+            trailingIcon={
+              <button
+                type="button"
+                className="text-field__toggle"
+                onClick={() => setShowPassword((prev) => !prev)}
+                aria-label={
+                  showPassword ? "パスワードを非表示" : "パスワードを表示"
                 }
-                aria-hidden="true"
-              ></i>
-            </button>
-          }
-          required
-          autoComplete="new-password"
-          value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
-        />
-        {siteKey ? (
-          <div className="pt-2">
-            <div ref={turnstileRef}></div>
+                aria-pressed={showPassword}
+              >
+                <i
+                  className={showPassword ? "ri-eye-line" : "ri-eye-off-line"}
+                  aria-hidden="true"
+                ></i>
+              </button>
+            }
+            required
+            autoComplete="new-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <div data-auth-support-row className="auth-support-row">
+            <TextField
+              id="confirm-password"
+              aria-label="Confirm Password"
+              placeholder="Confirm Password"
+              type={showConfirmPassword ? "text" : "password"}
+              shape="underline"
+              size="sm"
+              leadingIcon={<i className="ri-lock-line" aria-hidden="true"></i>}
+              trailingIcon={
+                <button
+                  type="button"
+                  className="text-field__toggle"
+                  onClick={() => setShowConfirmPassword((prev) => !prev)}
+                  aria-label={
+                    showConfirmPassword
+                      ? "確認用パスワードを非表示"
+                      : "確認用パスワードを表示"
+                  }
+                  aria-pressed={showConfirmPassword}
+                >
+                  <i
+                    className={
+                      showConfirmPassword ? "ri-eye-line" : "ri-eye-off-line"
+                    }
+                    aria-hidden="true"
+                  ></i>
+                </button>
+              }
+              required
+              autoComplete="new-password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+            />
           </div>
-        ) : null}
-        <Button
-          type="submit"
-          size="xl"
-          className="w-full"
-          style={{ minHeight: "3rem" }}
-          disabled={loading || !email || !password || !confirmPassword}
-        >
-          {loading ? "処理中..." : "登録して確認メールを受け取る"}
-        </Button>
+          {siteKey ? (
+            <div className="pt-2">
+              <div ref={turnstileRef}></div>
+            </div>
+          ) : null}
+          <Button
+            type="submit"
+            size="md"
+            className="auth-action w-full"
+            disabled={loading || !email || !password || !confirmPassword}
+          >
+            {loading ? "処理中..." : "登録して確認メールを受け取る"}
+          </Button>
+        </div>
         {error ? (
-          <p role="alert" className="text-red-600 mt-2" style={mdTextStyle}>
+          <p role="alert" className="mt-2 lk-text-md text-red-600">
             {error}
           </p>
         ) : null}
@@ -218,25 +213,26 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ onSwitchToLogin, initialE
         </div>
         <div className="relative flex justify-center">
           <span
-            className="px-4 bg-white text-[#474747] tracking-widest"
-            style={xsTextStyle}
+            className="px-4 bg-white lk-text-xs text-[#474747] tracking-widest"
           >
             OR
           </span>
         </div>
       </div>
-      <Button
-        type="button"
-        onClick={() => {
-          void loginWithGoogle({ next: "/auth/verified" });
-        }}
-        variant="secondary"
-        size="xl"
-        className="w-full flex items-center justify-center gap-3"
-        style={{ minHeight: "3rem" }}
-      >
-        <i className="ri-google-fill text-lg"></i>Googleで登録
-      </Button>
+      <div data-auth-alternate role="group" aria-label="その他の会員登録方法">
+        <Button
+          type="button"
+          onClick={() => {
+            void loginWithGoogle({ next: "/auth/verified" });
+          }}
+          variant="outline"
+          size="md"
+          className="auth-action w-full"
+        >
+          <i className="ri-google-fill lk-text-2xl" aria-hidden="true"></i>
+          Googleで登録
+        </Button>
+      </div>
     </div>
   );
 };

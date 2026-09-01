@@ -80,7 +80,7 @@ describe('Auth cookie flags (integration, mocked)', () => {
     });
 
     // call handler
-    const req: any = { headers: { get: () => null }, json: async () => ({ email: 'u@example.com', password: 'passw0rd' }) };
+    const req: any = { headers: { get: () => null }, json: async () => ({ email: 'u@example.com', password: 'passw0rd12345678' }) };
     const res: any = await loginHandler(req);
 
     const pendingCookie = res.cookies.get('sb-login-2fa-session');

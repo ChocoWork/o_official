@@ -26,7 +26,7 @@ const TestConsumer = () => {
       <div>logged:{isLoggedIn ? 'yes' : 'no'}</div>
       <div>admin:{isAdmin ? 'yes' : 'no'}</div>
       <div>resolved:{isAuthResolved ? 'yes' : 'no'}</div>
-      <button onClick={() => void login('user@example.com', 'password123')}>login</button>
+      <button onClick={() => void login('user@example.com', 'password123456789')}>login</button>
       <button onClick={() => void verifyOtp('user@example.com', '12345678')}>verify-otp</button>
       <button onClick={() => void loginWithGoogle({ next: '/account' })}>google-login</button>
       <button onClick={() => void logout()}>logout</button>
@@ -104,7 +104,7 @@ describe('LoginContext', () => {
         credentials: 'same-origin',
         body: JSON.stringify({
           email: 'user@example.com',
-          password: 'password123',
+          password: 'password123456789',
           turnstileToken: undefined,
         }),
       });

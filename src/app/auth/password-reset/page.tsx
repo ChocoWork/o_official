@@ -10,17 +10,13 @@ import {
 import { z } from "zod";
 import { Button } from "@/components/ui/Button/Button";
 import { TextField } from "@/components/ui/TextField/TextField";
+import "@/components/AuthForm.css";
 
 declare global {
   interface Window {
     onTurnstileReset?: (tokenValue: string) => void;
   }
 }
-
-// 見出しはページの最上位アンカー。対比の原則により最大サイズ（2xl）とする。
-const headingTextStyle: React.CSSProperties = {
-  fontSize: "var(--lk-size-2xl)",
-};
 
 export default function PasswordResetPage() {
   const [email, setEmail] = useState("");
@@ -33,8 +29,24 @@ export default function PasswordResetPage() {
   const [isResolvingSession, setIsResolvingSession] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [resetComplete, setResetComplete] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
 
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "";
+
+  // link ルートは失敗理由を ?error= で返す。以前は無言でこの画面に戻していたため、
+  // 期限切れなのか使用済みなのか分からず、利用者が同じ操作を繰り返すことになっていた。
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const reason = params.get("error");
+    if (!reason) return;
+
+    setLinkError(
+      reason === "link_expired"
+        ? "リンクの有効期限が切れているか、すでに使用されています。お手数ですが、再度メールを送信してください。"
+        : "リンクが正しくありません。お手数ですが、再度メールを送信してください。",
+    );
+    window.history.replaceState(null, "", window.location.pathname);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -95,6 +107,7 @@ export default function PasswordResetPage() {
     e.preventDefault();
     setError(null);
     setMessage(null);
+    setLinkError(null);
 
     try {
       ResetRequestSchema.parse({
@@ -196,14 +209,11 @@ export default function PasswordResetPage() {
         />
       ) : null}
       <div className="px-6 pt-6 sm:pt-10 lg:pt-13.75">
-        <h1
-          className="font-brand text-center tracking-widest mb-8"
-          style={headingTextStyle}
-        >
+        <h1 className="mb-[21px] text-center font-brand lk-text-lg tracking-widest sm:mb-[34px]">
           パスワード再設定
         </h1>
         <form
-          className="space-y-4 sm:space-y-6"
+          className="auth-form-grid"
           onSubmit={isConfirmMode ? handleConfirm : handleRequest}
         >
           <TextField
@@ -217,7 +227,7 @@ export default function PasswordResetPage() {
             autoComplete="email"
             disabled={isConfirmMode || isResolvingSession}
             shape="underline"
-            size="lg"
+            size="sm"
             leadingIcon={<i className="ri-mail-line" aria-hidden="true"></i>}
           />
 
@@ -231,9 +241,9 @@ export default function PasswordResetPage() {
               required
               type={showPassword ? "text" : "password"}
               autoComplete="new-password"
-              helperText="8文字以上128文字以内"
+              helperText="16文字以上128文字以内。パスワードマネージャーの利用をおすすめします"
               shape="underline"
-              size="lg"
+              size="sm"
               leadingIcon={<i className="ri-lock-line" aria-hidden="true"></i>}
               trailingIcon={
                 <button
@@ -264,9 +274,8 @@ export default function PasswordResetPage() {
 
           <Button
             type="submit"
-            className="w-full"
-            size="xl"
-            style={{ minHeight: "3rem" }}
+            className="auth-action w-full"
+            size="md"
             disabled={
               loading ||
               isResolvingSession ||
@@ -280,16 +289,24 @@ export default function PasswordResetPage() {
                 : "再設定メールを送信"}
           </Button>
         </form>
+        {linkError ? (
+          <p
+            role="alert"
+            className="lk-text-sm text-red-600 mt-4 whitespace-pre-line"
+          >
+            {linkError}
+          </p>
+        ) : null}
         {error ? (
           <p
             role="alert"
-            className="text-sm text-red-600 mt-4 whitespace-pre-line"
+            className="lk-text-sm text-red-600 mt-4 whitespace-pre-line"
           >
             {error}
           </p>
         ) : null}
         {message ? (
-          <p role="status" className="text-sm mt-4 flex items-center gap-2">
+          <p role="status" className="lk-text-sm mt-4 flex items-center gap-2">
             <span aria-hidden="true">✓</span>
             {message}
           </p>
@@ -297,7 +314,7 @@ export default function PasswordResetPage() {
         {resetComplete ? (
           <Link
             href="/login"
-            className="mt-4 inline-block text-sm underline underline-offset-4 hover:text-[#474747] transition-colors"
+            className="mt-4 inline-block lk-text-xs underline underline-offset-4 hover:text-[#474747] transition-colors"
           >
             ログインへ
           </Link>
