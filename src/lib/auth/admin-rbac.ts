@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createServiceRoleClient, verifyAccessToken } from '@/lib/supabase/server';
+import { checkAuthSessionLiveness, createServiceRoleClient, verifyAccessToken } from '@/lib/supabase/server';
 
 export type AppRole = 'admin' | 'supporter' | 'user';
 export type PermissionCode =
@@ -88,27 +88,6 @@ function resolveTokenRole(user: { app_metadata?: unknown } | null | undefined): 
   return isAppRole(rawRole) ? rawRole : 'user';
 }
 
-async function isAuthSessionActive(sessionId: string | undefined): Promise<boolean> {
-  if (!sessionId) {
-    return false;
-  }
-
-  try {
-    const service = await createServiceRoleClient();
-    const { data, error } = await service.rpc('is_auth_session_active', { p_session_id: sessionId });
-
-    if (error) {
-      console.error('[RBAC.isAuthSessionActive] RPC error:', error);
-      return false;
-    }
-
-    return data === true;
-  } catch (err) {
-    console.error('[RBAC.isAuthSessionActive] Exception:', err);
-    return false;
-  }
-}
-
 async function resolveAclPermissions(userId: string): Promise<Set<PermissionCode>> {
   try {
     const service = await createServiceRoleClient();
@@ -156,7 +135,6 @@ async function resolveAclPermissions(userId: string): Promise<Set<PermissionCode
       }
     }
 
-    console.log(`[RBAC.resolveAclPermissions] User ${userId} -> permissions: ${Array.from(result).join(', ')}`);
     return result;
   } catch (err) {
     console.error('[RBAC.resolveAclPermissions] Exception:', err);
@@ -166,6 +144,11 @@ async function resolveAclPermissions(userId: string): Promise<Set<PermissionCode
 
 export async function authorizeAdminPermission(requiredPermission: PermissionCode, request?: Request): Promise<AuthzResult> {
   try {
+    // ここだけ authenticateRequest を使わず内訳を展開している。
+    // verifyAccessToken は JWKS によるローカル検証で往復が無いため、claims を得た後の
+    // 「セッション失効の確認」と「ACL の照会」は互いに独立で同時に投げられる。
+    // authenticateRequest 経由だと失効確認を待ってから ACL を引くことになり、
+    // 管理 API 1 リクエストあたり往復が 1 回増える。
     const verified = await verifyAccessToken(request);
 
     if (!verified.ok) {
@@ -181,13 +164,28 @@ export async function authorizeAdminPermission(requiredPermission: PermissionCod
 
     const tokenRole = resolveTokenRole({ app_metadata: claims.app_metadata });
 
-    const [aclPermissions, sessionActive] = await Promise.all([
+    const [liveness, aclPermissions] = await Promise.all([
+      checkAuthSessionLiveness(claims.session_id),
       resolveAclPermissions(userId),
-      isAuthSessionActive(claims.session_id),
     ]);
 
-    if (!sessionActive) {
-      console.warn(`[RBAC] Session revoked for ${userId}: ${claims.session_id}`);
+    if (liveness !== 'active') {
+      console.warn(`[RBAC] Session not active for ${userId}: ${liveness}`);
+
+      // 「失効しているか確認できなかった」を 401 で返すと、クライアントは
+      // 「トークンが古い」と解釈してセッション更新を撃つ。DB 障害の最中に
+      // refresh が殺到して障害を増幅するので、503 として区別する。
+      // アクセスを拒否する点は 401 と変わらないので fail-closed は保たれる。
+      if (liveness === 'unavailable') {
+        return {
+          ok: false,
+          response: NextResponse.json(
+            { error: 'Service temporarily unavailable' },
+            { status: 503, headers: { 'Retry-After': '30' } },
+          ),
+        };
+      }
+
       return {
         ok: false,
         response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }),
@@ -228,10 +226,8 @@ export async function authorizeAdminPermission(requiredPermission: PermissionCod
     console.error('[RBAC] Authorization error:', err);
     return {
       ok: false,
-      response: NextResponse.json(
-        { error: 'Internal server error', details: err instanceof Error ? err.message : String(err) },
-        { status: 500 }
-      ),
+      // 内部エラー文字列は外部に出さない（情報露出）。詳細は上の console.error に残る。
+      response: NextResponse.json({ error: 'Internal server error' }, { status: 500 }),
     };
   }
 }

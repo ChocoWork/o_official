@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { verifyAccessToken } from '@/lib/supabase/server';
+import { authenticateRequest } from '@/lib/supabase/server';
 
 type UserRole = 'admin' | 'supporter' | 'user';
 
@@ -16,9 +16,24 @@ const buildResponse = (body: unknown) => {
 
 export async function GET(request: Request) {
   try {
-    const verified = await verifyAccessToken(request);
+    // 失効済みセッションで authenticated:true を返すと、UI は管理メニューを描くのに
+    // API は 401 を返すという食い違いが起きる。認可側と同じ根拠で答える。
+    const verified = await authenticateRequest(request);
 
     if (!verified.ok) {
+      // 「失効している」と「失効しているか確認できなかった」を分ける。
+      // 後者で authenticated:false を返すと、DB の一時障害だけで全利用者の画面が
+      // ログアウト状態に落ちる。503 にしてクライアント側に前の状態を維持させる。
+      if (verified.reason === 'unavailable') {
+        const response = NextResponse.json(
+          { authenticated: false, reason: 'unavailable' },
+          { status: 503, headers: { 'Retry-After': '30' } },
+        );
+        response.headers.set('Cache-Control', 'no-store');
+        response.headers.set('Referrer-Policy', 'no-referrer');
+        return response;
+      }
+
       return buildResponse({ authenticated: false });
     }
 

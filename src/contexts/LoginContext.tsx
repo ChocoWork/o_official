@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, ReactNode } from "react";
 import { supabase } from '@/lib/supabase/client';
 import { navigateBrowser } from '@/lib/browser-location';
-import { clientFetch, SESSION_EXPIRED_EVENT } from '@/lib/client-fetch';
+import { clientFetch, resetRefreshCooldown, SESSION_EXPIRED_EVENT } from '@/lib/client-fetch';
 
 type UserRole = 'admin' | 'supporter' | 'user';
 
@@ -53,6 +53,12 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
   const [isAuthResolved, setIsAuthResolved] = useState(false);
 
   const applyAuthState = React.useCallback((authenticated: boolean, role?: unknown, mfaVerified?: boolean) => {
+    // セッションが生きていると確認できたら更新の抑制を解く。
+    // 401 でクールダウンに入った直後に再ログインしても待たされる、という状態を避ける。
+    if (authenticated) {
+      resetRefreshCooldown();
+    }
+
     const resolvedRole = authenticated && isUserRole(role) ? role : 'user';
     setIsLoggedIn(authenticated);
     setUserRole(resolvedRole);
@@ -68,6 +74,13 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
         cache: 'no-store',
         credentials: 'same-origin',
       });
+
+      // 503 は「認証状態を判定できなかった」。未認証ではないので、いまの状態を保つ。
+      // ここで false に落とすと、DB の一時障害だけで全利用者が画面上ログアウトする。
+      if (response.status === 503) {
+        console.warn('Auth state temporarily undeterminable; keeping current state');
+        return;
+      }
 
       const body: unknown = await response.json().catch(() => null);
       const authState = typeof body === 'object' && body ? (body as AuthStateResponseBody) : null;
