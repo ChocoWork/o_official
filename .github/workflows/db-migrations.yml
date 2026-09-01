@@ -95,6 +95,9 @@ jobs:
 
       - run: supabase db push
 
+      # 参考情報。ここが落ちても本体の成否を上書きしない（失敗時に
+      # 二重にエラーが出て、本当の原因が読み取りにくくなるため）。
       - name: Show applied migration history
         if: always()
+        continue-on-error: true
         run: supabase migration list
