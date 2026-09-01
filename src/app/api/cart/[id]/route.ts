@@ -3,7 +3,7 @@ import {
   buildInventoryConflictBody,
   updateCartQuantitySchema,
 } from '@/features/cart/services/cart-stock';
-import { createClient } from '@/lib/supabase/server';
+import { createServiceRoleClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
 
 type UpdatedCartRow = {
@@ -112,7 +112,16 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createClient(req);
+    // ゲストのカート操作を anon ロールで実行するのをやめ、service role で呼ぶ。
+    //
+    // *_cart_item_secure は SECURITY DEFINER で、所有権の判定は引数の _session_id と
+    // carts.session_id の一致だけ。anon に EXECUTE を開けていると PostgREST を直接
+    // 叩けてしまい、このルートが持つレート制限・監査ログ・proxy の Origin 検査を
+    // すべて素通りできる（session_id は 128bit ランダムなので推測は非現実的だが、
+    // 強制点がアプリ外にも生まれること自体が問題）。
+    // service role に寄せることでルートが単一の強制点になり、094 で anon /
+    // authenticated から EXECUTE を剥がせる。関数側の一致チェックは多層防御として残す。
+    const supabase = await createServiceRoleClient();
     const { id } = await params;
     const sessionId = req.cookies.get("session_id")?.value;
     const clientIp = getClientIp(req);
@@ -259,7 +268,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createClient(req);
+    // service role で呼ぶ。詳細は PATCH 側のコメントを参照。
+    const supabase = await createServiceRoleClient();
     const { id } = await params;
     const sessionId = req.cookies.get("session_id")?.value;
     const clientIp = getClientIp(req);

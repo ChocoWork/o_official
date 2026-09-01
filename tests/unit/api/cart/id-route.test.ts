@@ -17,8 +17,10 @@ const mockRpc = jest.fn();
 const mockEnforceRateLimit = jest.fn();
 const mockLogAudit = jest.fn();
 
+// カート操作は service role で呼ぶ（094 で anon から EXECUTE を剥がしたため）。
+// createClient を残すと、経路を戻したときにテストが素通りしてしまう。
 jest.mock('@/lib/supabase/server', () => ({
-  createClient: jest.fn().mockResolvedValue({ rpc: mockRpc }),
+  createServiceRoleClient: jest.fn().mockResolvedValue({ rpc: mockRpc }),
 }));
 
 jest.mock('@/features/auth/middleware/rateLimit', () => ({

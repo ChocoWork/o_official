@@ -12,9 +12,9 @@ jest.mock('next/server', () => {
   };
 });
 
-// ルートは @supabase/supabase-js ではなく @/lib/supabase/server 経由でクライアントを作る。
+// ルートは service role クライアントで RPC を呼ぶ（094 で anon から EXECUTE を剥がしたため）。
 jest.mock('@/lib/supabase/server', () => ({
-  createClient: jest.fn(),
+  createServiceRoleClient: jest.fn(),
 }));
 
 jest.mock('@/lib/audit', () => ({
@@ -27,7 +27,7 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({
   enforceRateLimit: jest.fn().mockResolvedValue(undefined),
 }));
 
-const { createClient } = require('@/lib/supabase/server');
+const { createServiceRoleClient } = require('@/lib/supabase/server');
 const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
 
 function makeRequest(json: () => Promise<unknown>, sessionId: string | null = 'sess') {
@@ -44,7 +44,7 @@ describe('cart PATCH route', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     enforceRateLimit.mockResolvedValue(undefined);
-    createClient.mockResolvedValue({ rpc: jest.fn().mockResolvedValue({ data: null, error: null }) });
+    createServiceRoleClient.mockResolvedValue({ rpc: jest.fn().mockResolvedValue({ data: null, error: null }) });
   });
 
   it('セッションが無ければ400を返す', async () => {
