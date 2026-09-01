@@ -1,24 +1,100 @@
-name: Deploy DB Migrations
+name: Deploy DB migrations
+
+# 本番 Supabase へのスキーマ適用。
+#
+# 以前の実装は `for f in migrations/*.sql; do psql -f "$f"; done` で、適用済み台帳が無く
+# 毎回全ファイルを頭から流していた。全 migration が冪等でないと壊れるうえ、
+# psql は文ごとに autocommit するため CREATE FUNCTION と REVOKE の間に
+# PUBLIC EXECUTE の窓ができる。Supabase CLI の db push へ寄せて両方を解消する。
+# 適用済みは supabase_migrations.schema_migrations で判定されるためスキップされる。
 
 on:
   push:
-    branches: [ main ]
+    branches: [master, main]
+    paths:
+      - 'supabase/migrations/**'
+      - 'supabase/config.toml'
+      - '.github/workflows/db-migrations.yml'
+  pull_request:
+    paths:
+      - 'supabase/migrations/**'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+# 同時適用を避ける。キャンセルはしない（適用途中で止めない）。
+concurrency:
+  group: db-migrations
+  cancel-in-progress: false
 
 jobs:
-  migrate:
+  plan:
+    name: Dry run (PR)
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install psql
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
-
-      - name: Run SQL migrations
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      - name: Validate required secrets
+        shell: bash
         run: |
-          set -e
-          for f in migrations/*.sql; do
-            echo "Applying $f"
-            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
+          set -euo pipefail
+          for name in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD SUPABASE_PROJECT_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Required secret $name is not set."
+              exit 1
+            fi
           done
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - run: supabase link --project-ref "$SUPABASE_PROJECT_ID"
+
+      # 適用されるものを一覧するだけ。DB は変更しない。
+      - run: supabase db push --dry-run
+
+  deploy:
+    name: Apply to production
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD SUPABASE_PROJECT_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Required secret $name is not set."
+              exit 1
+            fi
+          done
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - run: supabase link --project-ref "$SUPABASE_PROJECT_ID"
+
+      # 何が当たるかをログに残してから適用する（事故時の追跡用）。
+      - run: supabase db push --dry-run
+
+      - run: supabase db push
+
+      - name: Show applied migration history
+        if: always()
+        run: supabase migration list
