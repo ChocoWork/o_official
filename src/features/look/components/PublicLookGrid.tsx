@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import "./PublicLookGrid.css";
 import ScrollReveal from "@/components/animations/ScrollReveal";
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -203,12 +204,10 @@ function LookCard({ look, className }: LookCardProps) {
             >
               {seasonLabel}
             </p>
-            {/* FREQ-139: 対比 — タイトルは関連アイテム文字（2xs）の φ 倍で
-              階層を明快にする。行間は見出し用の √φ */}
+            {/* モバイルはシーズンタイトルが1行に収まるサイズ。行間は見出し用の √φ */}
             <h3
-              className="font-display uppercase transition-colors hover:text-[#474747]"
+              className="look-card-caption-title font-display uppercase transition-colors hover:text-[#474747]"
               style={{
-                fontSize: "calc(var(--lk-size-2xs) * var(--phi))",
                 lineHeight: "var(--sqrt-phi)",
               }}
             >

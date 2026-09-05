@@ -214,6 +214,17 @@ body.admin-font-active
         var(--lk-look-related-items-leading-compensation)
     )
   );
+  /* FREQ-337: sm 未満は商品名と価格を縦積みするため、同一アイテムの
+     「名前↔価格」と別アイテムへの「価格↔次の名前」の間隔が拮抗し、
+     どこまでが1アイテムか読めない。縦積み時だけアイテム間の見た目 gap を
+     φ 倍（= 文字サイズ 1 つ分）に広げてグループの境界を示す（近接） */
+  --lk-look-related-items-stack-gap-narrow: max(
+    0px,
+    calc(
+      var(--lk-look-related-items-visible-gap) * var(--phi) -
+        var(--lk-look-related-items-leading-compensation)
+    )
+  );
   --lk-stockist-card-edge-gap: calc(var(--lk-size-lg) * var(--lk-eighthstep));
   --lk-stockist-card-padding: calc(var(--lk-stockist-card-edge-gap) - 1px);
   --lk-stockist-title-divider-gap: calc(
@@ -706,7 +717,15 @@ html[data-header-visible="false"] {
 }
 
 .look-related-items {
-  gap: var(--lk-look-related-items-stack-gap);
+  gap: var(--lk-look-related-items-stack-gap-narrow);
+}
+
+/* sm 以上は商品名と価格が横並び1行になり縦積みの拮抗が消えるため、
+   アイテム間 gap は従来どおりの φ 比率（FR-LOOK-ALL-007）に戻す */
+@media (min-width: 640px) {
+  .look-related-items {
+    gap: var(--lk-look-related-items-stack-gap);
+  }
 }
 
 .look-related-item-text {

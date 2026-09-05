@@ -1,0 +1,9 @@
+.look-card-caption-title {
+  font-size: var(--lk-size-sm);
+}
+
+@media (min-width: 640px) {
+  .look-card-caption-title {
+    font-size: var(--lk-size-4xl);
+  }
+}
