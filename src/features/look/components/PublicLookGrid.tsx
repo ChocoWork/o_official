@@ -186,9 +186,13 @@ function LookCard({ look, className }: LookCardProps) {
       {/* FREQ-138: lg 未満のみの情報パネル
           （シーズン / セリフ体タイトル / 罫線 / 関連アイテム+価格）。
           lg 以上は画像上のオーバーレイに表示するため非表示 */}
-      {/* FREQ-142: 枠線との間に水平・下余白（13px / sm 21px）を確保。lg は枠線なしのため 0 */}
-      <div className="reveal-mask px-3.25 pb-3.25 sm:px-5.25 sm:pb-5.25 lg:p-0">
-        <div className="reveal-rise">
+      {/* FREQ-339: 余白はマスクではなく動く側（.reveal-rise）に持たせる。
+          マスク側に padding があるとクリップ範囲（padding box）の内側で退避が
+          止まり、初期位置でも文字の右端がカード内に覗いてしまう */}
+      <div className="reveal-mask">
+        {/* FREQ-142: 枠線との間に水平・下余白（13px / sm 21px）を確保。lg は枠線なしのため 0 */}
+        {/* FREQ-338: 文字は画像と同じ左→右の向きで出す（reveal-rise-x） */}
+        <div className="reveal-rise reveal-rise-x px-3.25 pb-3.25 sm:px-5.25 sm:pb-5.25 lg:p-0">
           <Link
             href={`/look/${look.id}`}
             data-testid="look-card-caption"

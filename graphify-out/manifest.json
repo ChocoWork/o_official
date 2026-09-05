@@ -1734,9 +1734,9 @@
     "semantic_hash": ""
   },
   "src/features/look/components/PublicLookGrid.tsx": {
-    "mtime": 1788577569.748233,
-    "seen": 1788577591.0419593,
-    "ast_hash": "5f754712756788a71a159ab571ba9852",
+    "mtime": 1788591409.5588682,
+    "seen": 1788591607.318055,
+    "ast_hash": "2d9811d88ac6916e1ca2bcba2849f768",
     "semantic_hash": ""
   },
   "src/features/look/services/admin-audit.ts": {
@@ -5604,9 +5604,9 @@
     "semantic_hash": ""
   },
   "docs/2_Specs/spec.md": {
-    "mtime": 1788584522.7003767,
-    "seen": 1788584737.14812,
-    "ast_hash": "52b0a1960532382be46bb61a118652f4",
+    "mtime": 1788591434.2587762,
+    "seen": 1788591607.318554,
+    "ast_hash": "30b4d1859adc12261c10ee875a9d9daf",
     "semantic_hash": ""
   },
   "docs/3_ArchitectureDesign/auth-structure.md": {
@@ -10587,6 +10587,18 @@
     "mtime": 1788584504.618189,
     "seen": 1788584737.147169,
     "ast_hash": "a4cec06f0f429fbaef7428ab19779b66",
+    "semantic_hash": ""
+  },
+  "e2e/FR-LOOK-ALL-039-card-text-reveal-left-to-right.spec.ts": {
+    "mtime": 1788590414.8282485,
+    "seen": 1788590544.4408276,
+    "ast_hash": "7eb478c9c264e61eea5d7c1b2cf4a3d2",
+    "semantic_hash": ""
+  },
+  "e2e/FR-LOOK-ALL-040-reveal-initial-outside-card.spec.ts": {
+    "mtime": 1788591422.982884,
+    "seen": 1788591607.317628,
+    "ast_hash": "d5aa6845e1680b9588a18fbfcc2c0654",
     "semantic_hash": ""
   }
 }

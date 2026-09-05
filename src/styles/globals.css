@@ -929,6 +929,7 @@ html[data-header-visible="false"] {
    その要素自身が画面に入った時点で data-reveal="true" を立てる。
    画像＝白いカバーが右へ退いて左から現れる（参考先は上へ退く縦方向。
    ここだけ横方向に変えている）、文字＝マスクの下から迫り上がる。
+   .reveal-rise-x を併記した要素（LOOK カード）だけは文字も左から滑り込む。
    ディレイは参考先と同値（カバー 0.5s / 文字 1.0s）。
    祖先に data-reveal-group が無い箇所（WISHLIST など）には一切効かない。 */
 @keyframes reveal-cover-act {
@@ -946,6 +947,17 @@ html[data-header-visible="false"] {
   }
   to {
     transform: translateY(0);
+  }
+}
+
+/* FREQ-338: LOOK カードの文字は、画像（左→右に現れるカバー）と向きを揃えて
+   マスクの左外から滑り込ませる。ITEM カードは従来どおり下から迫り上がる。 */
+@keyframes reveal-rise-x-act {
+  from {
+    transform: translateX(-105%);
+  }
+  to {
+    transform: translateX(0);
   }
 }
 
@@ -969,6 +981,10 @@ html[data-header-visible="false"] {
   [data-reveal-group] .reveal-rise {
     transform: translateY(105%);
   }
+
+  [data-reveal-group] .reveal-rise-x {
+    transform: translateX(-105%);
+  }
 }
 
 [data-reveal-group] .reveal-cover[data-reveal="true"]::after {
@@ -981,6 +997,10 @@ html[data-header-visible="false"] {
 
 [data-reveal-group] .reveal-mask[data-reveal="true"] .reveal-rise {
   animation: reveal-rise-act 500ms cubic-bezier(0.08, 0.5, 0, 1) 1000ms forwards;
+}
+
+[data-reveal-group] .reveal-mask[data-reveal="true"] .reveal-rise-x {
+  animation: reveal-rise-x-act 500ms cubic-bezier(0.08, 0.5, 0, 1) 1000ms forwards;
 }
 
 @media (prefers-reduced-motion: reduce) {

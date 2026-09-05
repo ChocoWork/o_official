@@ -1734,9 +1734,9 @@
     "semantic_hash": ""
   },
   "src/features/look/components/PublicLookGrid.tsx": {
-    "mtime": 1788577569.748233,
-    "seen": 1788577591.0419593,
-    "ast_hash": "5f754712756788a71a159ab571ba9852",
+    "mtime": 1788590388.0834079,
+    "seen": 1788590544.4412613,
+    "ast_hash": "14ee6682b617649b849c0f4cdfb4384d",
     "semantic_hash": ""
   },
   "src/features/look/services/admin-audit.ts": {
@@ -5604,9 +5604,9 @@
     "semantic_hash": ""
   },
   "docs/2_Specs/spec.md": {
-    "mtime": 1788571053.0687776,
-    "seen": 1788571091.9713042,
-    "ast_hash": "fd13ff56c8b5df2b8c87610fb0aeca05",
+    "mtime": 1788590430.901787,
+    "seen": 1788590544.441775,
+    "ast_hash": "374958f0897195f60de7a552d9aec80e",
     "semantic_hash": ""
   },
   "docs/3_ArchitectureDesign/auth-structure.md": {
@@ -10581,6 +10581,18 @@
     "mtime": 1788573783.4313972,
     "seen": 1788574232.8354852,
     "ast_hash": "7b58e0cf0ec6484f260ff3ece4db4943",
+    "semantic_hash": ""
+  },
+  "e2e/FR-LOOK-ALL-038-mobile-related-item-group-gap.spec.ts": {
+    "mtime": 1788584504.618189,
+    "seen": 1788584737.147169,
+    "ast_hash": "a4cec06f0f429fbaef7428ab19779b66",
+    "semantic_hash": ""
+  },
+  "e2e/FR-LOOK-ALL-039-card-text-reveal-left-to-right.spec.ts": {
+    "mtime": 1788590414.8282485,
+    "seen": 1788590544.4408276,
+    "ast_hash": "7eb478c9c264e61eea5d7c1b2cf4a3d2",
     "semantic_hash": ""
   }
 }
