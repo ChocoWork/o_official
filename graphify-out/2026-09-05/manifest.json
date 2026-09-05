@@ -426,9 +426,9 @@
     "semantic_hash": "3dbad7533b98d14d22e47c6d6ac7b5bb"
   },
   "src/app/api/auth/confirm/route.ts": {
-    "mtime": 1786406957.147635,
-    "seen": 1788271290.702073,
-    "ast_hash": "8bbeb63e7a4f053c28b955bee0f27338",
+    "mtime": 1788573952.010869,
+    "seen": 1788574232.8351068,
+    "ast_hash": "0ae9bfc4f98377fd19007aade8b8b324",
     "semantic_hash": ""
   },
   "src/app/api/auth/login/route.ts": {
@@ -480,9 +480,9 @@
     "semantic_hash": "047596055f340e7c1ee4dcfdd2677761"
   },
   "src/app/api/auth/otp/verify/route.ts": {
-    "mtime": 1788570241.476432,
-    "seen": 1788570418.1957874,
-    "ast_hash": "75f9de2b40a675cc1b3695760a0e4960",
+    "mtime": 1788573952.0103226,
+    "seen": 1788574232.8351154,
+    "ast_hash": "a6d3f58d0aa974a4952fd561e73467e1",
     "semantic_hash": ""
   },
   "src/app/api/auth/password-reset/confirm/route.ts": {
@@ -1836,10 +1836,10 @@
     "semantic_hash": ""
   },
   "src/lib/audit.ts": {
-    "mtime": 1772023623.6154723,
-    "seen": 1788271290.7022455,
-    "ast_hash": "37a8339ba0f23411471108c94ee6555b",
-    "semantic_hash": "37a8339ba0f23411471108c94ee6555b"
+    "mtime": 1788573686.6415493,
+    "seen": 1788574232.835301,
+    "ast_hash": "1a96687ef8a7015ead4f5a925ef23191",
+    "semantic_hash": ""
   },
   "src/lib/auditCleanup.ts": {
     "mtime": 1773138979.8807652,
@@ -2160,9 +2160,9 @@
     "semantic_hash": "19f0fd4639f9228a43c4e82df7f5b8ac"
   },
   "src/lib/supabase/server.ts": {
-    "mtime": 1788265978.683619,
-    "seen": 1788271290.7023053,
-    "ast_hash": "01ea18dc6250c9b554648cd061d9a0c3",
+    "mtime": 1788573686.6415493,
+    "seen": 1788574232.8353634,
+    "ast_hash": "f919e6e7c71b59b30650132aa8036e54",
     "semantic_hash": ""
   },
   "src/lib/turnstile.ts": {
@@ -2238,9 +2238,9 @@
     "semantic_hash": ""
   },
   "tests/integration/api/auth/confirm.test.ts": {
-    "mtime": 1786407021.3413486,
-    "seen": 1788271290.7023158,
-    "ast_hash": "2a77a53bd20b959552f843ece6437d88",
+    "mtime": 1788573686.6405509,
+    "seen": 1788574232.8353748,
+    "ast_hash": "106e0e758d8f2432bba3d51056eca29a",
     "semantic_hash": ""
   },
   "tests/integration/api/auth/cookieFlags.test.ts": {
@@ -2676,9 +2676,9 @@
     "semantic_hash": ""
   },
   "tests/unit/lib/audit.db.test.ts": {
-    "mtime": 1785101561.6394508,
-    "seen": 1788271290.70238,
-    "ast_hash": "717508abbd7b0eacb47d4e5c0b0e49c4",
+    "mtime": 1788573818.6645818,
+    "seen": 1788574232.835445,
+    "ast_hash": "8618b19efdb9c1eeb7456f810a673f99",
     "semantic_hash": ""
   },
   "tests/unit/lib/audit.masking.test.ts": {
@@ -5604,8 +5604,8 @@
     "semantic_hash": ""
   },
   "docs/2_Specs/spec.md": {
-    "mtime": 1788570095.69982,
-    "seen": 1788570418.196515,
+    "mtime": 1788571053.0687776,
+    "seen": 1788571091.9713042,
     "ast_hash": "fd13ff56c8b5df2b8c87610fb0aeca05",
     "semantic_hash": ""
   },
@@ -10500,9 +10500,9 @@
     "semantic_hash": ""
   },
   "src/app/login/verify/VerifyOtpClient.tsx": {
-    "mtime": 1788570241.477579,
-    "seen": 1788570418.195834,
-    "ast_hash": "c40e4867b2842666af8e04b2eab6877f",
+    "mtime": 1788574000.31545,
+    "seen": 1788574232.8351617,
+    "ast_hash": "ee93a663e540c157f376c1c86b25a80a",
     "semantic_hash": ""
   },
   "src/app/login/verify/page.tsx": {
@@ -10530,9 +10530,9 @@
     "semantic_hash": ""
   },
   "tests/integration/api/auth/otp-verify.test.ts": {
-    "mtime": 1788570221.5439487,
-    "seen": 1788570418.1960993,
-    "ast_hash": "ccdcea239e0877986b902f39cd3406a8",
+    "mtime": 1788573686.6405509,
+    "seen": 1788574232.8353832,
+    "ast_hash": "0170303c04eeaf094a136f19b7b103bf",
     "semantic_hash": ""
   },
   "tests/unit/lib/mask-email.test.ts": {
@@ -10557,6 +10557,30 @@
     "mtime": 1788528734.9762914,
     "seen": 1788567424.0145211,
     "ast_hash": "e08c9115a8b3d9e8fead2e46f8d3dfc5",
+    "semantic_hash": ""
+  },
+  "e2e/login-otp-resend-errors.spec.ts": {
+    "mtime": 1788574205.1896927,
+    "seen": 1788574232.8349552,
+    "ast_hash": "efe28839699c093202b79fe2d6a7be18",
+    "semantic_hash": ""
+  },
+  "tests/integration/api/auth/otp-sdk-flow.test.ts": {
+    "mtime": 1788574091.0360858,
+    "seen": 1788574232.8353822,
+    "ast_hash": "7f6a3788142aa498a9914db86812f2b6",
+    "semantic_hash": ""
+  },
+  "tests/unit/components/VerifyOtpClient.test.tsx": {
+    "mtime": 1788573783.4319136,
+    "seen": 1788574232.8354378,
+    "ast_hash": "e30b14cbd0f72157e5263769cb241b18",
+    "semantic_hash": ""
+  },
+  "tests/unit/lib/supabase-client-isolation.test.ts": {
+    "mtime": 1788573783.4313972,
+    "seen": 1788574232.8354852,
+    "ast_hash": "7b58e0cf0ec6484f260ff3ece4db4943",
     "semantic_hash": ""
   }
 }

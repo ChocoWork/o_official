@@ -188,83 +188,83 @@ function LookCard({ look, className }: LookCardProps) {
       {/* FREQ-142: 枠線との間に水平・下余白（13px / sm 21px）を確保。lg は枠線なしのため 0 */}
       <div className="reveal-mask px-3.25 pb-3.25 sm:px-5.25 sm:pb-5.25 lg:p-0">
         <div className="reveal-rise">
-        <Link
-          href={`/look/${look.id}`}
-          data-testid="look-card-caption"
-          className="inline-block lg:hidden"
-        >
-          {/* 近接: コレクション時期と名前は同一グループとして密に（mb 小）、
+          <Link
+            href={`/look/${look.id}`}
+            data-testid="look-card-caption"
+            className="inline-block lg:hidden"
+          >
+            {/* 近接: コレクション時期と名前は同一グループとして密に（mb 小）、
               別グループの関連アイテムとは罫線で区切る。 */}
-          {/* FREQ-143: mobile/tablet のシーズン表記は、色をより黒く・字を太くして
+            {/* FREQ-143: mobile/tablet のシーズン表記は、色をより黒く・字を太くして
               視認性と存在感を高める。字間は詰め気味に整える（FREQ-145）。 */}
-          <p
-            className="text-black/80 font-medium tracking-[0.04em] mb-0.5"
-            style={{ fontSize: "var(--lk-size-3xs)" }}
-          >
-            {seasonLabel}
-          </p>
-          {/* FREQ-139: 対比 — タイトルは関連アイテム文字（2xs）の φ 倍で
+            <p
+              className="text-black/80 font-medium tracking-[0.04em] mb-0.5"
+              style={{ fontSize: "var(--lk-size-3xs)" }}
+            >
+              {seasonLabel}
+            </p>
+            {/* FREQ-139: 対比 — タイトルは関連アイテム文字（2xs）の φ 倍で
               階層を明快にする。行間は見出し用の √φ */}
-          <h3
-            className="font-display uppercase transition-colors hover:text-[#474747]"
-            style={{
-              fontSize: "calc(var(--lk-size-2xs) * var(--phi))",
-              lineHeight: "var(--sqrt-phi)",
-            }}
-          >
-            {look.theme}
-          </h3>
-        </Link>
-        {/* L-7: 関連商品が無い場合は運用用語を出さず行ごと非表示。
+            <h3
+              className="font-display uppercase transition-colors hover:text-[#474747]"
+              style={{
+                fontSize: "calc(var(--lk-size-2xs) * var(--phi))",
+                lineHeight: "var(--sqrt-phi)",
+              }}
+            >
+              {look.theme}
+            </h3>
+          </Link>
+          {/* L-7: 関連商品が無い場合は運用用語を出さず行ごと非表示。
             PC（lg 以上）はホバーでオーバーレイに関連アイテムを表示するため、
             カード下の罫線とリストは出さない */}
-        {look.linkedItems.length > 0 ? (
-          <>
-            <hr
-              data-testid="look-card-divider"
-              className="mt-2 mb-2 border-t border-black/10 sm:mt-3.25 sm:mb-3.25 lg:hidden"
-            />
-            <div className="look-related-items flex flex-col lg:hidden">
-              {/* FREQ-151: PC オーバーレイ（FREQ-150）と同様に、ホバーで
+          {look.linkedItems.length > 0 ? (
+            <>
+              <hr
+                data-testid="look-card-divider"
+                className="mt-2 mb-2 border-t border-black/10 sm:mt-3.25 sm:mb-3.25 lg:hidden"
+              />
+              <div className="look-related-items flex flex-col lg:hidden">
+                {/* FREQ-151: PC オーバーレイ（FREQ-150）と同様に、ホバーで
                   メニュー共通の左→右下線アニメーション（黒）を表示する */}
-              {look.linkedItems.map((item) => (
-                <Link
-                  key={item.id}
-                  href={`/item/${item.id}`}
-                  className="look-related-item-text group/item relative block text-black"
-                >
-                  {/* モバイルは商品名と価格を縦積み（折り返し回避）。sm 以上は横並びで価格を右端に。 */}
-                  {/* FREQ-144: 商品名・価格は ITEM カード（ItemCardInfo）と同じ見た目に揃える。
+                {look.linkedItems.map((item) => (
+                  <Link
+                    key={item.id}
+                    href={`/item/${item.id}`}
+                    className="look-related-item-text group/item relative block text-black"
+                  >
+                    {/* モバイルは商品名と価格を縦積み（折り返し回避）。sm 以上は横並びで価格を右端に。 */}
+                    {/* FREQ-144: 商品名・価格は ITEM カード（ItemCardInfo）と同じ見た目に揃える。
                       名前=font-brand tracking-tight / weight 400、価格=text-black / weight 400、¥表記。 */}
-                  <div className="flex flex-col gap-0.5 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
+                    <div className="flex flex-col gap-0.5 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
+                      <span
+                        className="font-brand tracking-tight min-w-0"
+                        style={{
+                          fontSize: "var(--lk-size-2xs)",
+                          fontWeight: 400,
+                        }}
+                      >
+                        {item.name}
+                      </span>
+                      <span
+                        className="whitespace-nowrap text-black"
+                        style={{
+                          fontSize: "var(--lk-size-2xs)",
+                          fontWeight: 400,
+                        }}
+                      >
+                        ¥{item.price.toLocaleString("ja-JP")}
+                      </span>
+                    </div>
                     <span
-                      className="font-brand tracking-tight min-w-0"
-                      style={{
-                        fontSize: "var(--lk-size-2xs)",
-                        fontWeight: 400,
-                      }}
-                    >
-                      {item.name}
-                    </span>
-                    <span
-                      className="whitespace-nowrap text-black"
-                      style={{
-                        fontSize: "var(--lk-size-2xs)",
-                        fontWeight: 400,
-                      }}
-                    >
-                      ¥{item.price.toLocaleString("ja-JP")}
-                    </span>
-                  </div>
-                  <span
-                    aria-hidden="true"
-                    className="underline-animation-left2right scale-x-0 group-hover/item:scale-x-100"
-                  />
-                </Link>
-              ))}
-            </div>
-          </>
-        ) : null}
+                      aria-hidden="true"
+                      className="underline-animation-left2right scale-x-0 group-hover/item:scale-x-100"
+                    />
+                  </Link>
+                ))}
+              </div>
+            </>
+          ) : null}
         </div>
       </div>
     </ScrollReveal>
@@ -481,7 +481,7 @@ function PublicLookCatalog({
 
         <div
           data-testid="look-content-column"
-          className="flex-1 min-w-0 w-full max-w-full px-3.25 sm:px-4 md:px-5.25 lg:pl-8.5 lg:pr-4 xl:pl-13.75 xl:pr-5.25 2xl:pl-22.25 2xl:pr-8.5 py-0 xl:pb-8.5"
+          className="flex-1 min-w-0 w-full max-w-full sm:px-4 md:px-5.25 lg:pl-8.5 lg:pr-4 xl:pl-13.75 xl:pr-5.25 2xl:pl-22.25 2xl:pr-8.5 py-0 xl:pb-8.5"
         >
           <div className="sm:-mt-1 md:-mt-2 lg:hidden">
             {renderMobileFilterBar(false)}
