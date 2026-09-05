@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createServiceRoleClient } from '@/lib/supabase/server';
+import { createPublicClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
 import { getRequestOrigin, sanitizeRedirectPath } from '@/lib/redirect';
 import { linkGuestOrdersByEmail } from '@/lib/orders/link-guest-orders';
@@ -23,6 +23,7 @@ function buildRedirectResponse(origin: string, redirectPath: string) {
   return res;
 }
 
+// PUBLIC: メール確認の入口。Supabase が token_hash を検証してからセッションを発行する。
 export async function GET(request: Request) {
   try {
     const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
@@ -53,7 +54,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const supabase = await createServiceRoleClient();
+    const supabase = await createPublicClient();
     const { data, error } = await supabase.auth.verifyOtp({
       token_hash: tokenHash,
       type: otpType,

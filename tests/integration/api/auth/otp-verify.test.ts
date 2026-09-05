@@ -12,7 +12,7 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({
 jest.mock('@/lib/supabase/server', () => {
   const mockVerifyOtp = jest.fn();
   return {
-    createServiceRoleClient: jest.fn(async () => ({
+    createPublicClient: jest.fn(async () => ({
       auth: { verifyOtp: mockVerifyOtp },
     })),
     __mockVerifyOtp: mockVerifyOtp,

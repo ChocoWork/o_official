@@ -29,7 +29,7 @@ jest.mock('@/lib/audit', () => ({
 }));
 
 jest.mock('@/lib/supabase/server', () => ({
-  createServiceRoleClient: jest.fn(),
+  createPublicClient: jest.fn(),
 }));
 
 // Mock rateLimit middleware to avoid DB calls
@@ -64,8 +64,8 @@ describe('GET /api/auth/confirm', () => {
     // どちらも Host ヘッダー注入によるオープンリダイレクト対策。
     env.TRUST_PROXY_HEADERS = 'true';
     env.APP_ALLOWED_ORIGINS = 'http://example.com';
-    const { createServiceRoleClient } = require('@/lib/supabase/server');
-    createServiceRoleClient.mockReturnValue({
+    const { createPublicClient } = require('@/lib/supabase/server');
+    createPublicClient.mockReturnValue({
       auth: {
         verifyOtp: jest.fn().mockResolvedValue({ data: null, error: null }),
       },
@@ -90,8 +90,8 @@ describe('GET /api/auth/confirm', () => {
   });
 
   test('valid token redirects to redirect_to and persists session', async () => {
-    const { createServiceRoleClient } = require('@/lib/supabase/server');
-    createServiceRoleClient.mockReturnValue({
+    const { createPublicClient } = require('@/lib/supabase/server');
+    createPublicClient.mockReturnValue({
       auth: {
         verifyOtp: jest.fn().mockResolvedValue({
           data: {
@@ -127,8 +127,8 @@ describe('GET /api/auth/confirm', () => {
     const { persistSessionAndCookies } = require('@/features/auth/services/register');
     persistSessionAndCookies.mockResolvedValue({ ok: true });
 
-    const { createServiceRoleClient } = require('@/lib/supabase/server');
-    createServiceRoleClient.mockReturnValue({
+    const { createPublicClient } = require('@/lib/supabase/server');
+    createPublicClient.mockReturnValue({
       auth: {
         verifyOtp: jest.fn().mockResolvedValue({
           data: {

@@ -38,19 +38,21 @@ export default function VerifyOtpClient({ email }: { email: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [sentAt, setSentAt] = useState<Date | null>(new Date());
+  const [resendAvailableAt, setResendAvailableAt] = useState(
+    () => Date.now() + RESEND_COOLDOWN_SECONDS * 1000,
+  );
   const [timeRemaining, setTimeRemaining] = useState(RESEND_COOLDOWN_SECONDS);
 
   const otpCode = otpDigits.join("");
   const maskedEmail = maskEmail(email);
 
-  const focusOtpInput = (index: number) => {
+  const focusOtpInput = useCallback((index: number) => {
     const input = otpInputRefs.current[index];
     if (input) {
       input.focus();
       input.select();
     }
-  };
+  }, []);
 
   const handleOtpChange = (index: number, value: string) => {
     const numbersOnly = value.replace(/\D/g, "");
@@ -143,13 +145,10 @@ export default function VerifyOtpClient({ email }: { email: string }) {
   // 残り時間は経過時刻から引き直す。setInterval の呼ばれた回数を数えると、
   // タブが背面に回って間引かれたぶんだけ再送可能になる時刻が後ろへずれる。
   useEffect(() => {
-    if (!sentAt) return;
-
     const interval = setInterval(() => {
-      const elapsed = (Date.now() - sentAt.getTime()) / 1000;
       const remaining = Math.max(
         0,
-        RESEND_COOLDOWN_SECONDS - Math.floor(elapsed),
+        Math.ceil((resendAvailableAt - Date.now()) / 1000),
       );
       setTimeRemaining(remaining);
 
@@ -159,7 +158,7 @@ export default function VerifyOtpClient({ email }: { email: string }) {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [sentAt]);
+  }, [resendAvailableAt]);
 
   const resolvePostLoginPath = useCallback(async (): Promise<string> => {
     try {
@@ -210,7 +209,7 @@ export default function VerifyOtpClient({ email }: { email: string }) {
 
   // 再送にパスワードは要らない。パスワード検証を通ったことは 2FA Cookie が
   // 証明しているので、宛先もリクエスト本文では送らない。
-  const handleResend = async () => {
+  const handleResend = useCallback(async () => {
     setLoading(true);
     setError(null);
     setSuccess(null);
@@ -225,12 +224,27 @@ export default function VerifyOtpClient({ email }: { email: string }) {
           router.replace("/login");
           return;
         }
-        setError("認証コードの送信に失敗しました");
+        if (resp.status === 429) {
+          const retryAfter = resp.headers.get("Retry-After");
+          const seconds = retryAfter && /^\d+$/.test(retryAfter)
+            ? Number(retryAfter)
+            : (Date.parse(retryAfter ?? "") - Date.now()) / 1000;
+          const waitSeconds = Number.isFinite(seconds) && seconds > 0
+            ? Math.ceil(seconds)
+            : RESEND_COOLDOWN_SECONDS;
+          setResendAvailableAt(Date.now() + waitSeconds * 1000);
+          setTimeRemaining(waitSeconds);
+          setError("送信回数の上限に達しました。時間をおいて再度お試しください。");
+        } else if (resp.status === 503) {
+          setError("一時的に認証処理を利用できません。時間をおいて再度お試しください。");
+        } else {
+          setError("認証コードの送信に失敗しました");
+        }
         return;
       }
 
       setOtpDigits([...EMPTY_OTP_DIGITS]);
-      setSentAt(new Date());
+      setResendAvailableAt(Date.now() + RESEND_COOLDOWN_SECONDS * 1000);
       setTimeRemaining(RESEND_COOLDOWN_SECONDS);
       setSuccess("認証コードを再送信しました。");
       setTimeout(() => focusOtpInput(0), 0);
@@ -240,7 +254,7 @@ export default function VerifyOtpClient({ email }: { email: string }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [router, focusOtpInput]);
 
   // クライアント状態を戻すだけでは Cookie が残る。サーバーに捨てさせる。
   const handleUseAnotherAddress = async () => {

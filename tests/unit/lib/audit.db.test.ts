@@ -27,4 +27,18 @@ describe('audit DB integration', () => {
 
     await expect(logAudit({ action: 'x', outcome: 'failure' })).resolves.not.toThrow();
   });
+
+  test.each(['returned', 'thrown'])('audit %s errors do not leak details or reject authentication', async mode => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const failure = { message: 'secret-token-and-personal-data', code: '42501' };
+    const insert = mode === 'returned'
+      ? jest.fn().mockResolvedValue({ error: failure })
+      : jest.fn().mockRejectedValue(failure);
+    createServiceRoleClient.mockReturnValue({ from: () => ({ insert }) });
+    await expect(logAudit({ action: 'auth.otp.verify', outcome: 'success',
+      actor_email: 'private@example.invalid', detail: 'private detail' })).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledWith('Failed to write audit log');
+    expect(JSON.stringify(warn.mock.calls)).not.toMatch(/secret-token|private@example|private detail/);
+    warn.mockRestore();
+  });
 });

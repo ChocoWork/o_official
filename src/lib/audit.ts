@@ -48,7 +48,7 @@ export async function logAudit(event: AuditEvent) {
 
     const masked = maskAuditEvent(event);
 
-    await supabase.from('audit_logs').insert([
+    const { error } = await supabase.from('audit_logs').insert([
       {
         action: masked.action,
         actor_id: masked.actor_id,
@@ -64,6 +64,11 @@ export async function logAudit(event: AuditEvent) {
       },
     ]);
 
+    if (error) {
+      // エラー詳細やイベントには個人情報・トークンが含まれうる。
+      console.warn('Failed to write audit log');
+    }
+
     const alertUrl = process.env.ALERT_AUDIT_URL;
     if (alertUrl) {
       try {
@@ -75,13 +80,13 @@ export async function logAudit(event: AuditEvent) {
           },
           body: JSON.stringify({ record: masked }),
         });
-      } catch (alertErr) {
-        console.warn('Failed to call audit alert webhook:', alertErr);
+      } catch {
+        console.warn('Failed to call audit alert webhook');
       }
     }
-  } catch (err) {
+  } catch {
     // 監査ログは冗長性を持たせるべきだが、まずはサーバログに出力する
-    console.warn('Failed to write audit log:', err, event);
+    console.warn('Failed to write audit log');
   }
 }
 

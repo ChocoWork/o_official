@@ -132,15 +132,9 @@ export async function createPublicClient(): Promise<SupabaseClient> {
 
 // サーバサイドの管理操作（マイグレーションやユーザ管理等）に使うサービスロールキーを用いたクライアント
 // SUPABASE_SERVICE_ROLE_KEY を必ず環境変数で設定して使用してください（Secrets 管理下に置くこと）。
-// リクエスト毎の状態を持たないので tokenVerifierClient と同様に使い回す。
-// 毎回生成すると admin API 1 リクエストあたり ACL 照会と RPC で 2 個作ることになる。
-let serviceRoleClient: SupabaseClient | null = null;
-
+// DB / RPC / admin API 専用。利用者の認証には createPublicClient を使う。
+// persistSession: false でも認証結果はメモリに保持されるため、共有しない。
 export async function createServiceRoleClient(): Promise<SupabaseClient> {
-  if (serviceRoleClient) {
-    return serviceRoleClient;
-  }
-
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -149,12 +143,11 @@ export async function createServiceRoleClient(): Promise<SupabaseClient> {
   }
 
   const { createClient: createSupabaseClient } = await import('@supabase/supabase-js');
-  serviceRoleClient = createSupabaseClient(url, serviceKey, {
+  return createSupabaseClient(url, serviceKey, {
     auth: {
+      autoRefreshToken: false,
       persistSession: false,
       detectSessionInUrl: false,
     },
   });
-
-  return serviceRoleClient;
 }

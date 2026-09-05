@@ -105,6 +105,7 @@ describe('Auth full flow integration (register -> login -> refresh -> logout)', 
       auth: {
         signInWithPassword: jest.fn().mockResolvedValue({ data: { session: sessionFixture, user: userFixture }, error: null }),
         signInWithOtp: jest.fn().mockResolvedValue({ data: {}, error: null }),
+        verifyOtp: jest.fn().mockResolvedValue({ data: { session: sessionFixture, user: userFixture }, error: null }),
       },
     };
     createPublicClient.mockResolvedValue(fakePublicClient);
@@ -123,7 +124,6 @@ describe('Auth full flow integration (register -> login -> refresh -> logout)', 
 
     // LOGIN step 2: verify OTP -> issue session
     const verifyServiceClient = {
-      auth: { verifyOtp: jest.fn().mockResolvedValue({ data: { session: sessionFixture, user: userFixture }, error: null }) },
       from: jest.fn(() => ({ insert: jest.fn().mockResolvedValue({ error: null }) })),
     };
     createServiceRoleClient.mockReturnValue(verifyServiceClient);

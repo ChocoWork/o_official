@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
-import { createServiceRoleClient } from '@/lib/supabase/server';
+import { createPublicClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
 import { OtpVerifyRequestSchema } from '@/features/auth/schemas/otp';
 import { formatZodError } from '@/features/auth/schemas/common';
 import { linkGuestOrdersByEmail } from '@/lib/orders/link-guest-orders';
 
+// PUBLIC: ログイン確定前の入口。署名済みパスワード検証 Cookie と OTP を必須とする。
 export async function POST(request: Request) {
   try {
     try {
@@ -68,7 +69,7 @@ export async function POST(request: Request) {
       console.error('Rate limit middleware error (otp verify account):', e);
     }
 
-    const supabase = await createServiceRoleClient();
+    const supabase = await createPublicClient();
 
     // Supabase の公式サンプル（Passwordless email sign-in）はログイン OTP を
     // type: 'email' で検証する。複数 type を総当たりすると、1 回の入力で
