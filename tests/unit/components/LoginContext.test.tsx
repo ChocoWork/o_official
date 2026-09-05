@@ -27,7 +27,7 @@ const TestConsumer = () => {
       <div>admin:{isAdmin ? 'yes' : 'no'}</div>
       <div>resolved:{isAuthResolved ? 'yes' : 'no'}</div>
       <button onClick={() => void login('user@example.com', 'password123456789')}>login</button>
-      <button onClick={() => void verifyOtp('user@example.com', '12345678')}>verify-otp</button>
+      <button onClick={() => void verifyOtp('12345678')}>verify-otp</button>
       <button onClick={() => void loginWithGoogle({ next: '/account' })}>google-login</button>
       <button onClick={() => void logout()}>logout</button>
     </div>

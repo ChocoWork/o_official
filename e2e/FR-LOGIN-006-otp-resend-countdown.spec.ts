@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test';
+import { injectTurnstileToken } from './turnstile-test-utils';
+import { setLoginTwoFactorCookie } from './auth-2fa-test-utils';
 
 test.describe('FR-LOGIN-006 resend countdown', () => {
   test('shows the resend countdown immediately after OTP send', async ({ page }) => {
@@ -15,16 +17,17 @@ test.describe('FR-LOGIN-006 resend countdown', () => {
 
     await page.goto('/login');
 
-    if (process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY) {
-      await page.evaluate(() => {
-        window.onTurnstileSuccess?.('test-turnstile-token');
-      });
-    }
+    await injectTurnstileToken(page);
+
+    // /api/auth/login はモックなので本物の 2FA Cookie が発行されない。
+    // /login/verify はサーバーで Cookie を検証するため、テスト側で置く。
+    await setLoginTwoFactorCookie(page, 'user@example.com');
 
     await page.getByLabel('EMAIL').fill('user@example.com');
-    await page.getByLabel('PASSWORD').fill('password123');
+    await page.getByLabel('PASSWORD').fill('Password123456789!');
     await page.getByRole('button', { name: 'ログイン' }).click();
 
+    await expect(page).toHaveURL(/\/login\/verify$/);
     await expect(page.getByText(/後に再送可能/)).toBeVisible();
     await expect(page.getByRole('button', { name: '再送信' })).toHaveCount(0);
   });

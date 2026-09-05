@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test';
+import { injectTurnstileToken } from './turnstile-test-utils';
+import { setLoginTwoFactorCookie } from './auth-2fa-test-utils';
 import { mockOtpAuthentication } from './account-test-utils';
 
 test.describe('FR-CHECKOUT-012 account profile defaults', () => {
@@ -49,16 +51,24 @@ test.describe('FR-CHECKOUT-012 account profile defaults', () => {
     });
 
     await page.goto('/login');
+
+    await injectTurnstileToken(page);
+    // /api/auth/login はモックなので本物の 2FA Cookie が発行されない。
+    // /login/verify はサーバーで Cookie を検証するため、テスト側で置く。
+    await setLoginTwoFactorCookie(page, 'user@example.com');
     await page.getByLabel('EMAIL').fill('user@example.com');
-    await page.getByLabel('PASSWORD').fill('password123');
+    await page.getByLabel('PASSWORD').fill('Password123456789!');
     await page.getByRole('button', { name: 'ログイン' }).click();
+
+    // FREQ-334: 認証コードの入力は専用画面
+    await page.waitForURL('**/login/verify');
 
     for (let index = 0; index < 8; index += 1) {
       await page.getByLabel(`認証コード ${index + 1} 桁目`).fill(String((index + 1) % 10));
     }
 
-    await page.locator('form button[type="submit"]').click();
-    await page.waitForURL('**/');
+    await page.getByRole('button', { name: 'サインイン' }).click();
+    await page.waitForURL('**/account');
     await page.goto('/checkout');
 
     await expect(page.locator('input[name="email"]').first()).toHaveValue('user@example.com');

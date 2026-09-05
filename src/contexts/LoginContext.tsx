@@ -20,7 +20,7 @@ interface LoginContextType {
   refreshAuthState: () => Promise<void>;
   login: (email: string, password: string, turnstileToken?: string) => Promise<{ success: boolean; error?: string; message?: string }>;
   register: (email: string, password: string, turnstileToken?: string) => Promise<{ success: boolean; error?: string; message?: string }>;
-  verifyOtp: (email: string, code: string) => Promise<{ success: boolean; error?: string; message?: string }>;
+  verifyOtp: (code: string) => Promise<{ success: boolean; error?: string; message?: string }>;
   loginWithGoogle: (params?: { next?: string }) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<{ success: boolean; error?: string }>;
 }
@@ -163,10 +163,11 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const verifyOtp = async (email: string, code: string) => {
+  const verifyOtp = async (code: string) => {
     try {
+      // 宛先はサーバーが 2FA Cookie から取る。クライアントは code だけを送る。
       const { OtpVerifyRequestSchema } = await import('@/features/auth/schemas/otp');
-      const parsed = OtpVerifyRequestSchema.safeParse({ email, code });
+      const parsed = OtpVerifyRequestSchema.safeParse({ code });
       if (!parsed.success) {
         return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ') };
       }
@@ -175,7 +176,7 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
-        body: JSON.stringify({ email, code }),
+        body: JSON.stringify({ code }),
       });
 
       const body: unknown = await resp.json().catch(() => null);

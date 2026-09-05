@@ -12,7 +12,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const isHome = pathname === "/";
   const isPrivacyPage = pathname === "/privacy";
   const isAuthPage =
-    pathname === "/login" || pathname === "/auth/password-reset";
+    pathname === "/login" ||
+    pathname === "/login/verify" ||
+    pathname === "/auth/password-reset";
 
   const pageMainClassName = isHome
     ? "flex-1 flex flex-col"

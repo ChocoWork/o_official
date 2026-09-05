@@ -3,23 +3,7 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
 import { OtpVerifyRequestSchema } from '@/features/auth/schemas/otp';
 import { formatZodError } from '@/features/auth/schemas/common';
-import type { SupabaseClient } from '@supabase/supabase-js';
 import { linkGuestOrdersByEmail } from '@/lib/orders/link-guest-orders';
-
-async function tryVerifyOtpWithTypes(
-  supabase: SupabaseClient,
-  email: string,
-  code: string
-) {
-  const candidates: Array<'email' | 'magiclink' | 'signup'> = ['email', 'magiclink', 'signup'];
-  for (const type of candidates) {
-    const { data, error } = await supabase.auth.verifyOtp({ email, token: code, type });
-    if (!error && data?.session && data?.user) {
-      return { data, type, error: null };
-    }
-  }
-  return { data: null, type: null, error: new Error('OTP verification failed') };
-}
 
 export async function POST(request: Request) {
   try {
@@ -37,27 +21,73 @@ export async function POST(request: Request) {
       return NextResponse.json(formatZodError(parsed.error), { status: 400 });
     }
 
-    const { email, code } = parsed.data;
+    const { code } = parsed.data;
 
     // 「パスワード検証済み」の署名 Cookie を必須とする（パスワードを迂回した OTP 単独ログインを防ぐ）。
+    // 宛先もここから取る。クライアントから受け取らないので、偽装のしようがない。
     const { readLoginTwoFactorSessionFromCookieHeader } = await import('@/features/auth/services/login-2fa-session');
     const pending = readLoginTwoFactorSessionFromCookieHeader(request.headers.get('cookie'));
-    if (!pending || pending.email !== email) {
-      await logAudit({ action: 'auth.otp.verify', actor_email: email, outcome: 'failure', detail: 'missing_or_invalid_password_session' });
+    if (!pending) {
+      await logAudit({ action: 'auth.otp.verify', outcome: 'failure', detail: 'missing_or_invalid_password_session' });
       return NextResponse.json({ error: 'セッションの有効期限が切れました。もう一度ログインしてください。' }, { status: 401 });
     }
 
-    const supabase = await createServiceRoleClient();
-    const result = await tryVerifyOtpWithTypes(supabase, email, code);
+    // アカウント単位の総当たり対策。subject は必ず Cookie 由来にする。
+    // クライアント入力の email を使うと、Cookie を持たない相手が他人の
+    // アカウントの枠を故意に潰せる（DoS）。Cookie 検証の後に置くのもそのため。
+    try {
+      const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
+      const rlAccount = await enforceRateLimit({
+        request,
+        endpoint: 'auth:otp:verify',
+        limit: 5,
+        windowSeconds: 600,
+        subject: pending.email,
+      });
 
-    if (!result.data?.session || !result.data?.user) {
-      await logAudit({ action: 'auth.otp.verify', actor_email: email, outcome: 'failure', detail: 'invalid_or_expired_otp' });
+      if (rlAccount) {
+        // 上限に達したら試行の窓ごと閉じる。Cookie を残すと、窓が明けてから
+        // 同じログイン試行の続きとして再開できてしまう。
+        // enforceRateLimit はテスト環境で素の Response を返しうるので、
+        // 返り値を書き換えず新しい NextResponse を組み立てる。
+        const { loginTwoFactorSessionCookieName, clearCookieOptions } = await import('@/lib/cookie');
+        const limited = NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+        const retryAfter = rlAccount.headers.get('Retry-After');
+        if (retryAfter) {
+          limited.headers.set('Retry-After', retryAfter);
+        }
+        limited.cookies.set({
+          name: loginTwoFactorSessionCookieName,
+          value: '',
+          ...clearCookieOptions(),
+        });
+        await logAudit({ action: 'auth.otp.verify', actor_email: pending.email, outcome: 'failure', detail: 'account_rate_limited' });
+        return limited;
+      }
+    } catch (e) {
+      console.error('Rate limit middleware error (otp verify account):', e);
+    }
+
+    const supabase = await createServiceRoleClient();
+
+    // Supabase の公式サンプル（Passwordless email sign-in）はログイン OTP を
+    // type: 'email' で検証する。複数 type を総当たりすると、1 回の入力で
+    // Supabase 側の検証を最大 3 回消費し、signup / magiclink など別目的で
+    // 発行されたトークンまで第 2 要素として受理しうる。
+    const { data, error: verifyError } = await supabase.auth.verifyOtp({
+      email: pending.email,
+      token: code,
+      type: 'email',
+    });
+
+    if (verifyError || !data?.session || !data?.user) {
+      await logAudit({ action: 'auth.otp.verify', actor_email: pending.email, outcome: 'failure', detail: 'invalid_or_expired_otp' });
       return NextResponse.json({ error: '認証コードが無効、または期限切れです。' }, { status: 401 });
     }
 
     const res = NextResponse.json(
       {
-        user: result.data.user,
+        user: data.user,
         message: '認証に成功しました。',
       },
       { status: 200 },
@@ -68,32 +98,32 @@ export async function POST(request: Request) {
     res.cookies.set({ name: loginTwoFactorSessionCookieName, value: '', ...clearCookieOptions() });
 
     const { persistSessionAndCookies } = await import('@/features/auth/services/register');
-    const persistResult = await persistSessionAndCookies(res, result.data.session, result.data.user);
+    const persistResult = await persistSessionAndCookies(res, data.session, data.user);
 
     if (!persistResult?.ok) {
       await logAudit({
         action: 'auth.otp.verify',
-        actor_email: result.data.user.email ?? email,
+        actor_email: data.user.email ?? pending.email,
         outcome: 'error',
         detail: `session_persist_failed: ${persistResult?.error || 'unknown'}`,
-        resource_id: result.data.user.id,
+        resource_id: data.user.id,
       });
       return NextResponse.json({ error: 'ログイン処理に失敗しました。' }, { status: 500 });
     }
 
     // ログインのたびに走らせる。登録後に増えたゲスト注文も拾える。
     await linkGuestOrdersByEmail({
-      userId: result.data.user.id,
-      email: result.data.user.email ?? email,
-      emailConfirmedAt: result.data.user.email_confirmed_at ?? null,
+      userId: data.user.id,
+      email: data.user.email ?? pending.email,
+      emailConfirmedAt: data.user.email_confirmed_at ?? null,
     });
 
     await logAudit({
       action: 'auth.otp.verify',
-      actor_email: result.data.user.email ?? email,
+      actor_email: data.user.email ?? pending.email,
       outcome: 'success',
-      detail: `verified_type:${result.type ?? 'unknown'}`,
-      resource_id: result.data.user.id,
+      detail: 'verified_type:email',
+      resource_id: data.user.id,
     });
 
     return res;

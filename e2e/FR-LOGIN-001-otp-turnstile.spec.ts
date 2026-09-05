@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test';
+import { injectTurnstileToken } from './turnstile-test-utils';
+import { setLoginTwoFactorCookie } from './auth-2fa-test-utils';
 
 test.describe('FR-LOGIN-001 password + OTP login', () => {
   test('verifies password then advances to OTP code entry', async ({ page }) => {
@@ -15,16 +17,18 @@ test.describe('FR-LOGIN-001 password + OTP login', () => {
 
     await page.goto('/login');
 
-    if (process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY) {
-      await page.evaluate(() => {
-        window.onTurnstileSuccess?.('test-turnstile-token');
-      });
-    }
+    await injectTurnstileToken(page);
+
+    // /api/auth/login はモックなので本物の 2FA Cookie が発行されない。
+    // /login/verify はサーバーで Cookie を検証するため、テスト側で置く。
+    await setLoginTwoFactorCookie(page, 'user@example.com');
 
     await page.getByLabel('EMAIL').fill('user@example.com');
-    await page.getByLabel('PASSWORD').fill('password123');
+    await page.getByLabel('PASSWORD').fill('Password123456789!');
     await page.getByRole('button', { name: 'ログイン' }).click();
 
+    // FREQ-334: 入力はタブ内ではなく専用画面で行う
+    await expect(page).toHaveURL(/\/login\/verify$/);
     await expect(page.getByLabel('認証コード 1 桁目')).toBeVisible();
     await expect(page.getByText(/後に再送可能/)).toBeVisible();
   });

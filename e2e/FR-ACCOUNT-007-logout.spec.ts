@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test';
+import { injectTurnstileToken } from './turnstile-test-utils';
+import { setLoginTwoFactorCookie } from './auth-2fa-test-utils';
 
 test.describe('FR-ACCOUNT-007 logout from account page', () => {
   test('allows the user to log out from the account page', async ({ page }) => {
@@ -23,12 +25,21 @@ test.describe('FR-ACCOUNT-007 logout from account page', () => {
       });
     });
 
+    // ログアウト要求が通ったら未認証に切り替える。
+    // 固定で authenticated:true を返すと、ログアウト後もクライアントが在ログイン扱いになる。
+    let authenticated = true;
+
+    await page.route('**/api/auth/logout', async (route) => {
+      authenticated = false;
+      await route.continue();
+    });
+
     await page.route('**/api/auth/me', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          authenticated: true,
+          authenticated,
           user: {
             id: 'test-user-id',
             email: 'user@example.com',
@@ -48,16 +59,24 @@ test.describe('FR-ACCOUNT-007 logout from account page', () => {
     });
 
     await page.goto('/login');
+
+    await injectTurnstileToken(page);
+    // /api/auth/login はモックなので本物の 2FA Cookie が発行されない。
+    // /login/verify はサーバーで Cookie を検証するため、テスト側で置く。
+    await setLoginTwoFactorCookie(page, 'user@example.com');
     await page.getByLabel('EMAIL').fill('user@example.com');
-    await page.getByLabel('PASSWORD').fill('password123');
+    await page.getByLabel('PASSWORD').fill('Password123456789!');
     await page.getByRole('button', { name: 'ログイン' }).click();
+
+    // FREQ-334: 認証コードの入力は専用画面
+    await page.waitForURL('**/login/verify');
 
     for (let index = 0; index < 8; index += 1) {
       await page.getByLabel(`認証コード ${index + 1} 桁目`).fill(String((index + 1) % 10));
     }
 
-    await page.locator('form button[type="submit"]').click();
-    await page.waitForURL('**/');
+    await page.getByRole('button', { name: 'サインイン' }).click();
+    await page.waitForURL('**/account');
 
     const origin = new URL(page.url()).origin;
     await page.context().addCookies([
@@ -72,7 +91,9 @@ test.describe('FR-ACCOUNT-007 logout from account page', () => {
     await expect(page.getByRole('button', { name: 'ログアウト' })).toBeVisible();
     await page.getByRole('button', { name: 'ログアウト' }).click();
 
-    await expect(page.getByText('会員情報を確認するにはログインが必要です')).toBeVisible();
+    // 実装はログアウト成功時のみホームへハードナビゲーションする
+    // （src/app/account/page.tsx handleLogout）。到達自体がログアウト成立の証拠。
+    await page.waitForURL('**/');
     await expect(page.getByRole('link', { name: 'ログイン' })).toBeVisible();
   });
 });

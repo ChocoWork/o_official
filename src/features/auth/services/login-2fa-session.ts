@@ -2,12 +2,24 @@ import crypto from 'crypto';
 import { loginTwoFactorSessionCookieName } from '@/lib/cookie';
 
 const LOGIN_2FA_SESSION_PURPOSE = 'login_2fa';
-const LOGIN_2FA_SESSION_MAX_AGE_SECONDS = 10 * 60;
+// Supabase の Email OTP Expiration（現行 300 秒）と一致させる。
+// Cookie だけが長いと、コードが切れているのに入力画面が生きている窓ができ、
+// 利用者からは「入れても無効」にしか見えない。
+const LOGIN_2FA_SESSION_MAX_AGE_SECONDS = 5 * 60;
+
+// 保留中セッションの絶対上限。exp は再送のたびに延びる（スライドする）ので、
+// これが無いと再送を繰り返す限り「パスワード検証済み」状態を無期限に保てる。
+// OWASP ASVS v4.0.3 V3.3.2 が求める絶対タイムアウトを認証前段にも適用する。
+// 30 分は「TTL 5 分 + 再送クールダウン 60 秒」で約 5 回の再送を許す値で、
+// アカウント単位の送信枠（5 回 / 600 秒）と釣り合う。
+const LOGIN_2FA_SESSION_ABSOLUTE_MAX_AGE_SECONDS = 30 * 60;
 
 export type LoginTwoFactorSession = {
   purpose: typeof LOGIN_2FA_SESSION_PURPOSE;
   userId: string;
   email: string;
+  /** 最初にパスワード検証を通った時刻。再発行しても引き継ぐ。 */
+  iat: number;
   exp: number;
 };
 
@@ -37,12 +49,20 @@ export function createLoginTwoFactorSessionToken(input: {
   userId: string;
   email: string;
   expiresInSeconds?: number;
+  /**
+   * 再発行時は元の iat を渡すこと。渡さないと絶対上限の起点がリセットされ、
+   * 再送を繰り返す限り保留状態を延ばせてしまう。
+   */
+  issuedAt?: number;
 }) {
-  const exp = Math.floor(Date.now() / 1000) + (input.expiresInSeconds ?? LOGIN_2FA_SESSION_MAX_AGE_SECONDS);
+  const now = Math.floor(Date.now() / 1000);
+  const iat = input.issuedAt ?? now;
+  const exp = now + (input.expiresInSeconds ?? LOGIN_2FA_SESSION_MAX_AGE_SECONDS);
   const payload = base64UrlEncode(JSON.stringify({
     purpose: LOGIN_2FA_SESSION_PURPOSE,
     userId: input.userId,
     email: input.email,
+    iat,
     exp,
   } satisfies LoginTwoFactorSession));
 
@@ -77,12 +97,23 @@ export function verifyLoginTwoFactorSessionToken(token: string | null | undefine
       parsed.purpose !== LOGIN_2FA_SESSION_PURPOSE ||
       typeof parsed.userId !== 'string' ||
       typeof parsed.email !== 'string' ||
+      typeof parsed.iat !== 'number' ||
       typeof parsed.exp !== 'number'
     ) {
+      // iat を持たない旧形式のトークンもここで落ちる。互換は切る判断。
+      // 影響は「デプロイ時点でパスワード送信済み・OTP 未入力」の人だけで、
+      // TTL 5 分ぶんの窓に限られ、やり直しで完全復帰できる。
       return null;
     }
 
-    if (parsed.exp <= Math.floor(Date.now() / 1000)) {
+    const now = Math.floor(Date.now() / 1000);
+
+    if (parsed.exp <= now) {
+      return null;
+    }
+
+    // 絶対上限。exp は再送で延びるので、これが最終的な打ち切りになる。
+    if (now - parsed.iat > LOGIN_2FA_SESSION_ABSOLUTE_MAX_AGE_SECONDS) {
       return null;
     }
 
@@ -111,3 +142,4 @@ export function readLoginTwoFactorSessionFromCookieHeader(cookieHeader: string |
 }
 
 export const loginTwoFactorSessionMaxAgeSeconds = LOGIN_2FA_SESSION_MAX_AGE_SECONDS;
+export const loginTwoFactorSessionAbsoluteMaxAgeSeconds = LOGIN_2FA_SESSION_ABSOLUTE_MAX_AGE_SECONDS;

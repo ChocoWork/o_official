@@ -39,7 +39,7 @@ jest.mock('@/lib/audit', () => ({
 // Mock the signed pending-2FA token service
 jest.mock('@/features/auth/services/login-2fa-session', () => ({
   createLoginTwoFactorSessionToken: jest.fn(() => 'mock-pending-token'),
-  loginTwoFactorSessionMaxAgeSeconds: 600,
+  loginTwoFactorSessionMaxAgeSeconds: 300,
 }));
 
 // Mock cookie utilities used by the login route
@@ -50,7 +50,7 @@ jest.mock('@/lib/cookie', () => ({
     secure: true,
     sameSite: 'strict' as const,
     path: '/',
-    maxAge: 600,
+    maxAge: 300,
   })),
 }));
 
@@ -95,7 +95,6 @@ describe('POST /api/auth/login - Integration Tests', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    delete process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
     __mockSignInWithOtp.mockResolvedValue({ data: {}, error: null });
   });
 
@@ -280,6 +279,30 @@ describe('POST /api/auth/login - Integration Tests', () => {
         windowSeconds: 600,
         subject: 'test@example.com',
       });
+    });
+
+    // Turnstile が本番で未設定なら、ログインも fail-closed で止まること。
+    // 以前は NEXT_PUBLIC_TURNSTILE_SITE_KEY の有無でこの検証ごと飛ばしていたため、
+    // 設定漏れが「Bot 対策が無言で無効」という検知不能な状態になっていた。
+    test('[SECURITY] 本番で Turnstile 未設定なら 403 で止まり、パスワード検証まで進まない', async () => {
+      const originalNodeEnv = process.env.NODE_ENV;
+      (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+      delete process.env.TURNSTILE_SECRET_KEY;
+
+      try {
+        const req = new Request('http://localhost/api/auth/login', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ email: 'test@example.com', password: 'Password123456789!' }),
+        });
+
+        const res: any = await loginHandler(req);
+
+        expect(res.status).toBe(403);
+        expect(__mockSignInWithPassword).not.toHaveBeenCalled();
+      } finally {
+        (process.env as Record<string, string | undefined>).NODE_ENV = originalNodeEnv;
+      }
     });
   });
 });
