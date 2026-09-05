@@ -1,4 +1,10 @@
 import { defineConfig, devices } from '@playwright/test';
+import { loadEnvConfig } from '@next/env';
+
+// アプリと同じ .env 解決規則（.env.local > .env）でテストプロセスにも環境変数を読み込む。
+// これが無いと spec 側の process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY が undefined になり、
+// Turnstile トークンの注入が丸ごとスキップされて送信がクライアント側で止まる。
+loadEnvConfig(process.cwd());
 
 const resolvedBaseUrl = 'http://localhost:3000';
 

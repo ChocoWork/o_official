@@ -1,0 +1,15 @@
+/* 結果画面の見出し。
+ *
+ * 「再設定メールを送信しました」は 13 文字あり、tracking-widest と合わせると
+ * mobile 幅（内容幅 310px）で lk-text-4xl が 1 行に収まらず、最後の 1 文字だけが
+ * 次の行へ落ちる。狭い画面ではスケールを 1 段下げて 1 行に収める。
+ * サイズはブレークポイントで変えるので .lk-text-* ではなく --lk-size-* を直接参照する。 */
+.auth-result-title {
+  font-size: var(--lk-size-2xl);
+}
+
+@media (min-width: 640px) {
+  .auth-result-title {
+    font-size: var(--lk-size-4xl);
+  }
+}

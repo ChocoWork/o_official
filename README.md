@@ -31,10 +31,9 @@ Supabase クライアントの配置
   - デプロイ前にキーが漏洩していないか確認し、疑いがある場合は即時ローテーションしてデプロイし直すこと。
   - キーのローテーション手順（発見時の対応）を運用ドキュメントに明記すること。
 
-Vercel にデプロイする際の具体的アクション（チェックリスト）
+## Vercel にデプロイする際の具体的アクション（チェックリスト）
 
 1. Vercel ダッシュボードの該当プロジェクト → `Settings` → `Environment Variables` に環境変数を登録:
-
    - `NEXT_PUBLIC_SUPABASE_URL` = `https://<project>.supabase.co`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY` = `<anon key>`
    - `SUPABASE_SERVICE_ROLE_KEY` = `<service role key>`（Value をプロダクションにのみ設定、Preview/Development 環境は別キーまたは未設定にする）
@@ -49,3 +48,10 @@ Vercel にデプロイする際の具体的アクション（チェックリス�
 - 環境変数のローテーション手順と、万が一の漏洩時の対応手順（キー無効化、再発行、デプロイ）はリリース運用フローに含めてください。
 
 参考ドキュメント: <https://supabase.com/docs/guides/auth/> と <https://vercel.com/docs>
+
+## Turnstile の導入 (bot対策)
+
+- [ ] Cloudflare ダッシュボードで Turnstile サイトを登録
+- [ ] Vercel の env に 以下を設定する
+  - [ ] NEXT_PUBLIC_TURNSTILE_SITE_KEY を設定する
+  - [ ] TURNSTILE_SECRET_KEY を設定する

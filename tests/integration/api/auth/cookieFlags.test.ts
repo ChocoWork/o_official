@@ -25,6 +25,10 @@ jest.mock('@/lib/supabase/server', () => ({
   createServiceRoleClient: jest.fn(),
 }));
 
+jest.mock('@/lib/turnstile', () => ({
+  verifyTurnstile: jest.fn().mockResolvedValue({ ok: true }),
+}));
+
 jest.mock('next/headers', () => ({
   cookies: jest.fn(),
   headers: jest.fn(),
@@ -68,7 +72,6 @@ describe('Auth cookie flags (integration, mocked)', () => {
   test('login (step 1) sets pending-2FA cookie HttpOnly=true, SameSite=strict and issues no session cookies', async () => {
     (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
     process.env.JWT_SECRET = 'test-jwt-secret';
-    delete process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
     // 新フロー: パスワード検証 + OTP 送信のみ（セッション Cookie は発行しない）
     const { createPublicClient } = require('@/lib/supabase/server');

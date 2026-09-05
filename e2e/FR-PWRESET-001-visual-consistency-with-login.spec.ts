@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { stubTurnstileScript } from './turnstile-test-utils';
 
 // FREQ-70 / FREQ-92: パスワード再設定ページの見た目を /login と統一すること
 // （FREQ-92 でログインの下線ミニマルデザインへ刷新：FREQ-70 の角丸カードを置換）
@@ -15,6 +16,8 @@ const radiusOf = (locator: import('@playwright/test').Locator) =>
 for (const viewport of viewports) {
   test.describe(`FR-PWRESET-001 visual consistency with login (${viewport.name})`, () => {
     test.beforeEach(async ({ page }) => {
+      // Bot 検証ウィジェットを含む状態で採寸する。実 CDN はスイート並列実行時に 429 を返す。
+      await stubTurnstileScript(page);
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       await page.goto('/auth/password-reset');
     });
@@ -127,21 +130,28 @@ for (const viewport of viewports) {
     });
 
     test('repeats the login form 13px grid and LiftKit type hierarchy', async ({ page }) => {
-      // FREQ-70-AC-06: 13pxグリッド＋CTA前8px（計21px）の近接階層を反復する
+      // FREQ-328-AC-04: 13pxグリッド＋CTA前8px（計21px）の近接階層を反復する。
+      // Bot 検証ウィジェットが CTA の直前に入るため、入力欄からではなく
+      // 「CTA 直前要素の下端 → CTA 上端」で測る。
       const heading = page.getByRole('heading', { level: 1 });
-      const email = page.locator('#email');
-      const submit = page.getByRole('button', { name: '再設定メールを送信' });
-      const emailBox = await email.boundingBox();
-      const submitBox = await submit.boundingBox();
-
       await expect(heading).toHaveClass(/\blk-text-lg\b/);
-      expect(Math.abs(submitBox!.y - (emailBox!.y + emailBox!.height) - 21)).toBeLessThan(1);
+
+      const gap = await page.evaluate(() => {
+        const submit = document.querySelector('.auth-form-grid > button[type="submit"]');
+        const previous = submit?.previousElementSibling ?? null;
+        if (!submit || !previous) return null;
+        const previousRect = previous.getBoundingClientRect();
+        return submit.getBoundingClientRect().y - (previousRect.y + previousRect.height);
+      });
+      expect(gap).not.toBeNull();
+      expect(Math.abs(gap! - 21)).toBeLessThan(1);
     });
   });
 }
 
-test('completed reset exposes an xs auxiliary link without changing the form width', async ({ page }) => {
-  // FREQ-70-AC-07: 完了導線はloginの補助リンクと同じ最小階層にする
+test('completed reset exposes the login route as the primary action', async ({ page }) => {
+  // FREQ-329-AC-05: 完了後にこの画面ですることは1つしかないため、主ボタンで置く。
+  // 補助リンク階層だった FREQ-70-AC-07 を上書きする。
   await page.route('**/api/auth/password-reset/session', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ready: true, email: 'test@example.com' }) });
   });
@@ -149,8 +159,13 @@ test('completed reset exposes an xs auxiliary link without changing the form wid
     await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
   });
   await page.goto('/auth/password-reset');
-  await page.locator('#newPassword').fill('password123');
+  await page.locator('#newPassword').fill('Password123456789!');
+  // FREQ-333: 確認欄が埋まるまで送信ボタンは無効。
+  await page.locator('#confirmNewPassword').fill('Password123456789!');
   await page.getByRole('button', { name: 'パスワードを更新' }).click();
 
-  await expect(page.getByRole('link', { name: 'ログインへ' })).toHaveClass(/\blk-text-xs\b/);
+  await expect(page.getByText('パスワードを更新しました')).toBeVisible();
+  const loginAction = page.getByRole('link', { name: 'ログインへ' });
+  await expect(loginAction).toHaveAttribute('data-ui-button-variant', 'primary');
+  await expect(loginAction).toHaveClass(/\bauth-action\b/);
 });

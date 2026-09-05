@@ -54,7 +54,7 @@ for (const viewport of viewports) {
 
       // FREQ-65-AC-03: EMAIL・PASSWORD 入力で有効
       await page.locator('#email').fill('test@example.com');
-      await page.locator('#password').fill('password123');
+      await page.locator('#password').fill('Password123456789!');
       await expect(loginButton).toBeEnabled();
     });
 
@@ -69,8 +69,8 @@ for (const viewport of viewports) {
       await expect(registerButton).toBeDisabled();
 
       await page.locator('#email').fill('test@example.com');
-      await page.locator('#password').fill('password123');
-      await page.locator('#confirm-password').fill('password123');
+      await page.locator('#password').fill('Password123456789!');
+      await page.locator('#confirm-password').fill('Password123456789!');
       await expect(registerButton).toBeEnabled();
     });
   });

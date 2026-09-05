@@ -26,8 +26,11 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ onSwitchToLogin, initialE
   const [sentMessage, setSentMessage] = useState<string | null>(null);
   const [turnstileToken, setTurnstileToken] = useState<string>("");
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "";
-  const { containerRef: turnstileRef, renderWidget: renderTurnstile } =
-    useTurnstileWidget(siteKey, setTurnstileToken);
+  const {
+    containerRef: turnstileRef,
+    renderWidget: renderTurnstile,
+    resetWidget: resetTurnstile,
+  } = useTurnstileWidget(siteKey, setTurnstileToken);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,6 +65,8 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ onSwitchToLogin, initialE
       setError("登録に失敗しました");
     } finally {
       setLoading(false);
+      // トークンは送信時点で消費済み。引き直さないと登録失敗後の再試行が 403 になる。
+      resetTurnstile();
     }
   };
 

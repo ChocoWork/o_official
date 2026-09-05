@@ -252,6 +252,32 @@ describe('Password Reset API - Integration Tests', () => {
         );
       });
 
+      test('[SECURITY] リンクの有効期限は 10 分で、メール本文にも明記する', async () => {
+        // 消費を confirm へ移したので TTL がそのまま漏洩窓になる。
+        // OWASP ASVS v4.0.3 V2.7.2 の 10 分に合わせる。
+        const chain = makeChain({ data: null, error: null });
+        mockFromImplementation = () => chain;
+        const before = Date.now();
+
+        const req = new Request('http://localhost/api/auth/password-reset/request', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ email: 'test@example.com', turnstileToken: 'valid-token' }),
+        });
+
+        await requestHandler(req);
+
+        const inserted = chain.insert.mock.calls[0][0][0];
+        const ttlMs = new Date(inserted.expires_at).getTime() - before;
+        expect(ttlMs).toBeGreaterThan(9 * 60 * 1000);
+        expect(ttlMs).toBeLessThanOrEqual(10 * 60 * 1000 + 5_000);
+
+        await flushAfter();
+        const mail = sendMail.mock.calls[0][0];
+        expect(mail.text).toContain('10分間有効');
+        expect(mail.html).toContain('10分間有効');
+      });
+
       test('[SECURITY] 新規発行前に同じ宛先の未使用トークンを無効化する', async () => {
         const chain = makeChain({ data: null, error: null });
         mockFromImplementation = () => chain;
@@ -366,7 +392,7 @@ describe('Password Reset API - Integration Tests', () => {
   });
 
   describe('POST /api/auth/password-reset/link', () => {
-    test('[SUCCESS] トークンを1回だけ消費して reset-session cookie を張る', async () => {
+    test('[SUCCESS] トークンを消費せず検証だけ行い reset-session cookie を張る', async () => {
       const chain = makeChain({
         data: { id: 'token-123', user_id: 'user-123', email: 'test@example.com' },
         error: null,
@@ -385,13 +411,19 @@ describe('Password Reset API - Integration Tests', () => {
       expect(res.status).toBe(200);
       expect(body.ok).toBe(true);
 
-      // 照合と消費を1文で行い、used=false を更新条件に含める（同時アクセスで二重発行しない）
-      expect(chain.update).toHaveBeenCalledWith({ used: true });
+      // FREQ-319-REQ-03: リンク到達時に副作用を持たせない。ここで消費すると、
+      // JS を実行して展開するリンクスキャナに踏まれた時点でトークンが潰れる。
+      expect(chain.update).not.toHaveBeenCalled();
+      expect(chain.select).toHaveBeenCalledWith('id, user_id, email');
       expect(chain.eq).toHaveBeenCalledWith('used', false);
       expect(chain.eq).toHaveBeenCalledWith('token_hash', expect.any(String));
 
+      // 再設定 Cookie の寿命はリンクと同じ 10 分。confirm では expires_at を
+      // 再検査しないので、この Max-Age が時間の境界そのものになる。
       expect(res._cookies).toEqual(
-        expect.arrayContaining([expect.objectContaining({ name: 'sb-password-reset-session' })])
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'sb-password-reset-session', maxAge: 600 }),
+        ])
       );
     });
 
@@ -462,6 +494,70 @@ describe('Password Reset API - Integration Tests', () => {
           'sb-refresh-token',
           'sb-csrf-token',
         ])
+      );
+    });
+
+    test('[SECURITY] 消費はここで初めて行う（used=false を条件に確保する）', async () => {
+      const chains: any[] = [];
+      mockFromImplementation = () => {
+        const chain = makeChain({ data: { id: 'token-123' }, error: null });
+        chains.push(chain);
+        return chain;
+      };
+      const sessionToken = await buildSessionCookie();
+
+      const req = new Request('http://localhost/api/auth/password-reset/confirm', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          cookie: `sb-password-reset-session=${encodeURIComponent(sessionToken)}`,
+        },
+        body: JSON.stringify({ new_password: 'NewPassword123456!' }),
+      });
+
+      const res: any = await confirmHandler(req);
+      expect(res.status).toBe(200);
+
+      const claim = chains.find((chain) =>
+        chain.update.mock.calls.some((call: any[]) => call[0]?.used === true)
+      );
+      expect(claim).toBeDefined();
+      expect(claim.eq).toHaveBeenCalledWith('used', false);
+    });
+
+    test('[SECURITY] 確保に負けたら 400 で、パスワードを更新しない', async () => {
+      // 1 回目は事前確認（増幅対策）、2 回目が確保。0 行なら他が先に取っている。
+      let call = 0;
+      mockFromImplementation = () => {
+        call += 1;
+        return makeChain({ data: call === 1 ? { id: 'token-123' } : null, error: null });
+      };
+      const updateCalls: any[] = [];
+      mockUpdateUserByIdImplementation = jest.fn(async (...args: any[]) => {
+        updateCalls.push(args);
+        return { data: {}, error: null };
+      });
+      const sessionToken = await buildSessionCookie();
+
+      const req = new Request('http://localhost/api/auth/password-reset/confirm', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          cookie: `sb-password-reset-session=${encodeURIComponent(sessionToken)}`,
+        },
+        body: JSON.stringify({ new_password: 'NewPassword123456!' }),
+      });
+
+      const res: any = await confirmHandler(req);
+
+      expect(res.status).toBe(400);
+      expect(updateCalls).toHaveLength(0);
+      expect(logAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'password_reset_confirm',
+          outcome: 'failure',
+          detail: 'token_already_consumed',
+        })
       );
     });
 

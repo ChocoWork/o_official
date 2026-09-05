@@ -31,7 +31,6 @@ function buildJsonResponse(body: unknown, status: number) {
  * 企業メールのリンクスキャナは受信時にリンクを GET する。GET で消費する作りだと
  * 利用者が開く前にトークンが潰れ、再送しても新しいリンクがまた同じようにスキャンされるため
  * 永久に再設定できなくなる（Supabase の Production Checklist が明記している事象）。
- * 消費は確認ページのボタンから POST するときだけ行う。
  */
 export async function GET(request: Request) {
   const origin = getRequestOrigin(request);
@@ -49,7 +48,13 @@ export async function GET(request: Request) {
 }
 
 /**
- * 確認ページのボタンから呼ばれる。ここでトークンを1回だけ消費して再設定 Cookie を張る。
+ * 確認ページの到達時に呼ばれる。ここでは検証だけを行い、トークンは消費しない。
+ *
+ * Safe Links のように JS を実行して展開するスキャナはこの POST も踏む。ここで消費すると
+ * 確認ページを挟んでも同じ袋小路に戻るため、消費は confirm（実際にパスワードを変えたとき）
+ * に寄せている。Supabase のトラブルシューティングが挙げる "Delay Token Invalidation"、
+ * および OWASP Forgot Password Cheat Sheet の "Invalidated after they have been used" と同じ考え方。
+ * 副作用が無いので、スキャナが何度踏んでもトークンは利用者のために残る。
  */
 export async function POST(request: Request) {
   try {
@@ -73,21 +78,19 @@ export async function POST(request: Request) {
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
     const supabase = await createServiceRoleClient();
 
-    // 照合と消費を1文で行う。select してから update する形だと、同時に踏まれたとき
-    // 両方が「未使用」を見て両方成功し、再設定 Cookie が二重に発行される。
-    // used=false を更新条件に含めることで、勝つのは片方だけになる。
-    const { data: tokenRow, error: consumeError } = await supabase
+    // 読み取りのみ。同じトークンから複数の再設定 Cookie が出うるが、
+    // パスワードを変えられるのは confirm で used=false を勝ち取った1つだけ。
+    const { data: tokenRow, error: lookupError } = await supabase
       .from('password_reset_tokens')
-      .update({ used: true })
+      .select('id, user_id, email')
       .eq('token_hash', tokenHash)
       .eq('used', false)
       .gte('expires_at', new Date().toISOString())
-      .select('id, user_id, email')
       .maybeSingle();
 
-    if (consumeError) {
-      console.error('Password reset link consume error:', consumeError);
-      await logAudit({ action: 'password_reset_link', outcome: 'error', detail: consumeError.message });
+    if (lookupError) {
+      console.error('Password reset link lookup error:', lookupError);
+      await logAudit({ action: 'password_reset_link', outcome: 'error', detail: lookupError.message });
       return buildJsonResponse({ error: 'link_expired' }, 400);
     }
 
@@ -101,9 +104,8 @@ export async function POST(request: Request) {
       const { findAuthUserIdByEmail } = await import('@/features/auth/services/auth-admin-user');
       const lookup = await findAuthUserIdByEmail(supabase, tokenRow.email);
 
-      // 引けなかっただけなら link_expired を返さない。トークンは既に消費済みなので、
-      // 期限切れと言って再送を促すと、消費済みのリンクを二度と使えないまま
-      // 利用者を袋小路に入れることになる。500 で「もう一度」を促す。
+      // 引けなかっただけなら link_expired を返さない。期限切れと言うと、まだ有効な
+      // リンクを利用者が捨ててしまう。500 で「もう一度」を促す。
       if (lookup.status === 'error') {
         await logAudit({
           action: 'password_reset_link',

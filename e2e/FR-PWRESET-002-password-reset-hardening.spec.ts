@@ -31,14 +31,24 @@ for (const viewport of viewports) {
       await expect(alert).toContainText('有効期限');
     });
 
-    // FREQ-319-AC-03: 確認ページが「押して初めて消費する」ボタンを持つこと
-    test('the verify page asks the user to press a button before consuming the token', async ({ page }) => {
+    // FREQ-332-AC-01: 確認画面を挟まず、到達時に自動で 1 回だけ POST すること
+    // （消費は confirm へ移したので、この POST に副作用は無い）
+    test('the verify page posts once automatically instead of showing a button', async ({ page }) => {
+      let posts = 0;
+      page.on('request', (req) => {
+        if (req.method() === 'POST' && req.url().includes('/api/auth/password-reset/link')) {
+          posts += 1;
+        }
+      });
+
       await page.goto(`/auth/password-reset/verify?token=${PROBE_TOKEN}`);
 
-      await expect(page.getByRole('button', { name: 'パスワードを再設定する' })).toBeVisible();
-      // リロードしても袋小路にならないこと（トークンは URL に残す）
-      await page.reload();
-      await expect(page.getByRole('button', { name: 'パスワードを再設定する' })).toBeVisible();
+      // 無効なトークンなので理由付きで入力フォームへ戻る
+      const alert = page.locator('p[role="alert"]');
+      await expect(alert).toBeVisible();
+      await expect(alert).toContainText('有効期限');
+      await expect(page.getByRole('button', { name: 'パスワードを再設定する' })).toHaveCount(0);
+      expect(posts).toBe(1);
     });
 
     // 入力フォーム自体が従来どおり表示されること（回帰）

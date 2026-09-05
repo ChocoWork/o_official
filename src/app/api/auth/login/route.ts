@@ -33,15 +33,12 @@ export async function POST(request: Request) {
 
     const { email, password, turnstileToken } = parsed.data;
 
-    const siteKeyConfigured = !!process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
-    if (siteKeyConfigured) {
-      const { verifyTurnstile } = await import('@/lib/turnstile');
-      const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null;
-      const turnstile = await verifyTurnstile(turnstileToken, ip);
-      if (!turnstile.ok) {
-        await logAudit({ action: 'login', actor_email: email, outcome: 'failure', detail: turnstile.error || 'turnstile_failed' });
-        return NextResponse.json({ error: 'Bot detection failed' }, { status: 403 });
-      }
+    const { verifyTurnstile } = await import('@/lib/turnstile');
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null;
+    const turnstile = await verifyTurnstile(turnstileToken, ip);
+    if (!turnstile.ok) {
+      await logAudit({ action: 'login', actor_email: email, outcome: 'failure', detail: turnstile.error || 'turnstile_failed' });
+      return NextResponse.json({ error: 'Bot detection failed' }, { status: 403 });
     }
 
     // 匿名クライアントでパスワード検証のみ行う（セッション Cookie の副作用を持たない）。

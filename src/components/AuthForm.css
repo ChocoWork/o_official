@@ -3,6 +3,13 @@
   gap: 13px;
 }
 
+/* グリッド項目の既定 min-width:auto は中身の最小幅をトラックへ伝播させる。
+   Turnstile の iframe は 300px を下回れないため、これを切らないと狭い画面で
+   列が 300px に広がり、送信ボタンだけが Google ボタンより横に張り出す。 */
+.auth-form-grid > * {
+  min-width: 0;
+}
+
 .auth-support-row {
   display: flex;
   align-items: center;
@@ -21,4 +28,16 @@
 
 .auth-form-grid > .auth-action {
   margin-top: 8px;
+}
+
+/* 結果画面の再送ブロック。Bot 検証ウィジェットと再送信ボタンの間を、
+   注意書きパネルと主アクションの間（30px）に揃える。
+   フォーム側の 13px + CTA 前 8px（計 21px, FREQ-328-AC-04）は
+   ログイン・会員登録と共有しているので触らない。 */
+.auth-form-grid--result {
+  gap: 30px;
+}
+
+.auth-form-grid--result > .auth-action {
+  margin-top: 0;
 }

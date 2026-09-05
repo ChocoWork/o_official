@@ -40,7 +40,7 @@ const AuthTabs: React.FC<AuthTabsProps> = ({ initialTab, initialEmail }) => {
   };
 
   return (
-    <div className="w-full max-w-md mx-auto px-4 sm:px-6 pt-2">
+    <div className="w-full max-w-md mx-auto">
       <div
         role="tablist"
         aria-label="ログイン / 会員登録"

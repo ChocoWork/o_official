@@ -10,7 +10,9 @@ import { getRequestOrigin } from '@/lib/redirect';
 // PUBLIC: パスワードを忘れた利用者の入口なので認証は掛けられない。
 // 濫用対策はレート制限と、登録有無で応答を変えないこと（OWASP Forgot Password CS）。
 
-const TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
+// OWASP ASVS v4.0.3 V2.7.2「out of band ... tokens after 10 minutes」に合わせる。
+// 消費は再設定完了時なので、この TTL がそのままリンクの漏洩窓になる。
+const TOKEN_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 export async function POST(request: Request) {
   try {
@@ -102,9 +104,9 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
       }
 
-      // メールのリンク先は副作用のない確認ページ。そこのボタン（POST）で初めて
-      // トークンを消費する。GET で消費すると、企業メールのリンクスキャナが
-      // 先に踏んでトークンを潰してしまい、利用者が再設定できなくなる。
+      // メールのリンク先は副作用のない確認ページ。トークンを焼くのは
+      // パスワードを実際に変えたときだけ（confirm）。リンクを開いた時点で焼くと、
+      // 企業メールのリンクスキャナが先に踏んで潰し、利用者が再設定できなくなる。
       const resetUrl = new URL('/auth/password-reset/verify', getRequestOrigin(request));
       resetUrl.searchParams.set('token', token);
 
@@ -114,8 +116,11 @@ export async function POST(request: Request) {
           await sendMail({
             to: email,
             subject: 'Password reset',
-            html: `<p>Click to reset your password: <a href="${resetUrl.toString()}">Reset password</a></p>`,
-            text: `Reset your password: ${resetUrl.toString()}`,
+            // 有効期限を書かないと、切れていたときに理由が利用者へ伝わらない。
+            html: `<p>Click to reset your password: <a href="${resetUrl.toString()}">Reset password</a></p><p>このリンクは10分間有効です。期限が切れた場合は、再度お手続きください。</p>`,
+            text: `Reset your password: ${resetUrl.toString()}
+
+このリンクは10分間有効です。期限が切れた場合は、再度お手続きください。`,
           });
         } catch (mailErr) {
           console.warn('Failed to send password reset mail:', mailErr);

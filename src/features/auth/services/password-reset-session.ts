@@ -2,7 +2,9 @@ import crypto from 'crypto';
 import { passwordResetSessionCookieName } from '@/lib/cookie';
 
 const PASSWORD_RESET_SESSION_PURPOSE = 'password_reset';
-const PASSWORD_RESET_SESSION_MAX_AGE_SECONDS = 15 * 60;
+// リンクの TTL と同じ 10 分。confirm では expires_at を再検査しないので、
+// この Cookie の寿命が再設定フローの時間の境界そのものになる。
+const PASSWORD_RESET_SESSION_MAX_AGE_SECONDS = 10 * 60;
 
 export type PasswordResetSession = {
   purpose: typeof PASSWORD_RESET_SESSION_PURPOSE;

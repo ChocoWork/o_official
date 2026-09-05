@@ -73,13 +73,15 @@ export async function POST(request: Request) {
 
     const supabase = await createServiceRoleClient();
 
-    // Cookie は署名されているが、それだけを能力にしない。link で消費された行が
-    // まだ残っていることを確認する（再設定完了時に削除するので、使い回しは弾かれる）。
+    // Cookie は署名されているが、それだけを能力にしない。トークン行がまだ未消費で
+    // 残っていることを確認する。期限（expires_at）はここでは見ない。時間の境界は
+    // 10 分の再設定 Cookie が持つ。ここで見ると、フォームを開いて入力している最中に
+    // リンクの 10 分が切れて弾かれる。
     const { data: tokenRow, error: tokenError } = await supabase
       .from('password_reset_tokens')
       .select('id')
       .eq('id', session.tokenId)
-      .eq('used', true)
+      .eq('used', false)
       .maybeSingle();
 
     if (tokenError) {
@@ -108,6 +110,30 @@ export async function POST(request: Request) {
       await logAudit({ action: 'password_reset_confirm', actor_email: session.email, outcome: 'error', detail: `pwned_check_unavailable:${pwned.reason}` });
     }
 
+    // ここで初めてトークンを焼く。リンクを開いた時点ではなくパスワードを変える直前に
+    // 置くことで、JS を実行するリンクスキャナが踏んでもトークンが残る。
+    // used=false を更新条件に含めるので、同じリンクから複数の Cookie が出ていても
+    // 通るのは 1 つだけ（0 行なら競合に負けた側）。
+    // 弱いパスワードで弾かれた利用者のリンクを焼かないよう、漏洩照合より後に置く。
+    const { data: claimedRow, error: claimError } = await supabase
+      .from('password_reset_tokens')
+      .update({ used: true })
+      .eq('id', session.tokenId)
+      .eq('used', false)
+      .select('id')
+      .maybeSingle();
+
+    if (claimError) {
+      console.error('Token claim error:', claimError);
+      await logAudit({ action: 'password_reset_confirm', actor_email: session.email, outcome: 'error', detail: 'token_claim_failed' });
+      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    }
+
+    if (!claimedRow) {
+      await logAudit({ action: 'password_reset_confirm', actor_email: session.email, outcome: 'failure', detail: 'token_already_consumed' });
+      return NextResponse.json({ error: 'Invalid or expired reset session' }, { status: 400 });
+    }
+
     // updateUserById は AuthError を投げずに { data, error } で返す。
     // 戻り値を見ないと、パスワードポリシー違反などで失敗しても「更新しました」を返してしまう。
     const { error: updateError } = await supabase.auth.admin.updateUserById(session.userId, {
@@ -120,7 +146,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Failed to update password' }, { status: 500 });
     }
 
-    // 使い終わったトークン行を落とす。再設定 Cookie の使い回しもこれで通らなくなる。
+    // 使い終わったトークン行を落とす。used=true のまま残しても使い回しは弾かれるが、
+    // 不要な行を溜めない。
     const { error: deleteError } = await supabase.from('password_reset_tokens').delete().eq('id', session.tokenId);
     if (deleteError) {
       console.error('Failed to delete consumed password reset token:', deleteError);
