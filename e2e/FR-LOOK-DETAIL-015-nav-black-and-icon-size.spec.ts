@@ -4,8 +4,9 @@ import { gotoFirstLookDetail } from './look-detail-test-utils';
 // FREQ-183: 3カラムナビの配色を黒（hover で #474747）に、
 // アイコンを 7xl に拡大し、ラベル字間を統一する。
 
+// FREQ-343 でモバイル（md 未満）はインラインナビを出さず固定ボトムナビに置き換えたため、
+// このインラインナビの検証は tablet / desktop のみ（mobile は FR-LOOK-DETAIL-017 が担う）。
 const VIEWPORTS = [
-  { name: 'mobile', width: 390, height: 844 },
   { name: 'tablet', width: 768, height: 1024 },
   { name: 'desktop', width: 1280, height: 800 },
 ] as const;

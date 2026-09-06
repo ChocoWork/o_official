@@ -4,8 +4,9 @@ import { gotoFirstLookDetail } from './look-detail-test-utils';
 // FREQ-181: PREV/NEXT 部分を「PREV LOOK / LOOK LIST / NEXT LOOK」の
 // 3カラムフッターナビ（ラベル上・アイコン下、縦の区切り線）にする。
 
+// FREQ-343 でモバイル（md 未満）はインラインナビを出さず固定ボトムナビに置き換えたため、
+// このインラインナビの検証は tablet / desktop のみ（mobile は FR-LOOK-DETAIL-017 が担う）。
 const VIEWPORTS = [
-  { name: 'mobile', width: 390, height: 844 },
   { name: 'tablet', width: 768, height: 1024 },
   { name: 'desktop', width: 1280, height: 800 },
 ] as const;

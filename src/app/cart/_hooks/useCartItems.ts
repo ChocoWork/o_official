@@ -27,6 +27,9 @@ export function useCartItems() {
   const [togglingWishlist, setTogglingWishlist] = useState<string | null>(null);
   const [resyncing, setResyncing] = useState(false);
   const [syncErrorByItem, setSyncErrorByItem] = useState<Record<string, string>>({});
+  // 削除・ウィッシュリスト操作の失敗。alert() はページを止めるうえ商品詳細と見た目が揃わないので、
+  // 同じ Toast に寄せる。表示はページ側の責務なので、ここは文言を持つだけ。
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const { updateCartCount, wishlistedItems, toggleWishlist } = useCart();
 
@@ -164,13 +167,14 @@ export function useCartItems() {
 
   const handleRemove = async (cartId: string) => {
     setUpdatingId(cartId);
+    setActionError(null);
     try {
       const response = await fetch(`/api/cart/${cartId}`, { method: "DELETE" });
       if (!response.ok) throw new Error("削除に失敗しました");
       setCartItems((prev) => prev.filter((item) => item.id !== cartId));
       await updateCartCount();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "エラーが発生しました");
+      setActionError(err instanceof Error ? err.message : "エラーが発生しました");
     } finally {
       setUpdatingId(null);
     }
@@ -178,14 +182,17 @@ export function useCartItems() {
 
   const handleToggleWishlist = async (itemId: number) => {
     setTogglingWishlist(itemId.toString());
+    setActionError(null);
     try {
       await toggleWishlist(itemId);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "エラーが発生しました");
+      setActionError(err instanceof Error ? err.message : "エラーが発生しました");
     } finally {
       setTogglingWishlist(null);
     }
   };
+
+  const dismissActionError = () => setActionError(null);
 
   const handleResyncFromServer = async () => {
     setResyncing(true);
@@ -207,6 +214,7 @@ export function useCartItems() {
     resyncing,
     syncErrorByItem,
     hasSyncError: Object.keys(syncErrorByItem).length > 0,
+    actionError,
     subtotal,
     wishlistedItems,
     handleQuantityChange,
@@ -214,5 +222,6 @@ export function useCartItems() {
     handleRemove,
     handleToggleWishlist,
     handleResyncFromServer,
+    dismissActionError,
   };
 }

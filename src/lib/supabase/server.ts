@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { cookies, headers } from 'next/headers';
 import { sessionCookieName } from '@/lib/cookie';
-import { extractAuthToken, extractCookieValue, extractSessionIdFromCookie } from '@/lib/auth/request-token';
+import { extractCookieValue, extractForwardableAuthToken, extractSessionIdFromCookie } from '@/lib/auth/request-token';
 
 /**
  * Supabase クライアントの生成だけを持つ層。「何を叩くか」を決める。
@@ -19,7 +19,7 @@ export async function createClient(request?: Request): Promise<SupabaseClient> {
   const { createServerClient } = await import('@supabase/ssr');
   const { createClient: createSupabaseClient } = await import('@supabase/supabase-js');
 
-  const authToken = extractAuthToken(request);
+  const authToken = extractForwardableAuthToken(request);
   const sessionId = request
     ? extractSessionIdFromCookie(request)
     : cookieStore.get(sessionCookieName)?.value ?? extractCookieValue(headersList.get('cookie'), sessionCookieName);

@@ -71,4 +71,49 @@ describe('BottomNavigation component', () => {
     screen.getAllByRole('button')[1].click();
     expect(onChange).toHaveBeenCalledWith('search');
   });
+
+  // FREQ-343: LOOK 詳細のモバイル固定ナビで使うため、遷移が目的の項目は
+  // button ではなくリンクとして描画し、遷移先が無い項目は非活性で置く。
+  test('href を持つ項目はリンクとして描画される', () => {
+    render(
+      <BottomNavigation
+        items={[
+          { key: 'prev', label: 'PREV LOOK', href: '/look/1' },
+          { key: 'list', label: 'LOOK LIST', href: '/look' },
+        ]}
+        activeKey=""
+        fixed={false}
+      />,
+    );
+
+    expect(screen.getByRole('link', { name: 'PREV LOOK' })).toHaveAttribute(
+      'href',
+      '/look/1',
+    );
+    expect(screen.getByRole('link', { name: 'LOOK LIST' })).toHaveAttribute(
+      'href',
+      '/look',
+    );
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
+  });
+
+  test('disabled の項目はリンクにもボタンにもならず非活性属性が立つ', () => {
+    const { container } = render(
+      <BottomNavigation
+        items={[
+          { key: 'prev', label: 'PREV LOOK', disabled: true },
+          { key: 'list', label: 'LOOK LIST', href: '/look' },
+        ]}
+        activeKey=""
+        fixed={false}
+      />,
+    );
+
+    expect(screen.queryByRole('link', { name: 'PREV LOOK' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'PREV LOOK' })).toBeNull();
+    expect(
+      container.querySelector('[data-ui-bottom-nav-disabled="true"]'),
+    ).toHaveTextContent('PREV LOOK');
+  });
+
 });

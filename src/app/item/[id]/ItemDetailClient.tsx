@@ -17,6 +17,7 @@ import {
 } from "@/features/items/components/ItemImageCarousel";
 import { SpecList } from "@/components/ui/SpecList/SpecList";
 import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
+import { ToastSnackbar } from "@/components/ui/ToastSnackbar/ToastSnackbar";
 import { sortSizes } from "@/lib/items/sizes";
 
 type Props = { id: string };
@@ -162,6 +163,9 @@ export default function ItemDetailClient({ id }: Props) {
     useState(true);
   // 未選択バリデーションエラーを alert() の代わりにインライン表示する
   const [validationError, setValidationError] = useState<string | null>(null);
+  // ウィッシュリストの失敗は validationError と分ける。カート用のインライン枠に混ぜると
+  // サイズ・カラー選択のエラーに見えるうえ、固定フッターから押したときは画面外で見えない。
+  const [wishlistError, setWishlistError] = useState<string | null>(null);
   const cartButtonRef = useRef<HTMLDivElement>(null);
   const tabletCarouselRef = useRef<HTMLDivElement>(null);
   const mobileCarouselRef = useRef<HTMLDivElement>(null);
@@ -320,10 +324,14 @@ export default function ItemDetailClient({ id }: Props) {
 
   const handleToggleWishlist = async () => {
     if (!item) return;
+    setWishlistError(null);
     setTogglingWishlist(true);
     try {
       await toggleWishlist(item.id);
     } catch (err) {
+      setWishlistError(
+        err instanceof Error ? err.message : "エラーが発生しました",
+      );
       console.error("Error toggling wishlist:", err);
     } finally {
       setTogglingWishlist(false);
@@ -917,6 +925,26 @@ export default function ItemDetailClient({ id }: Props) {
             togglingWishlist={togglingWishlist}
             onAddToCart={handleAddToCart}
             onToggleWishlist={handleToggleWishlist}
+          />
+        </div>
+      )}
+
+      {/* FREQ-340: ウィッシュリストの失敗は3箇所のどのボタンから押しても見えるよう
+          固定表示にする。成功はアイコンの塗りつぶしで伝わるので出さない。
+          固定フッターが出ている間はその分持ち上げて重ならないようにする。 */}
+      {wishlistError && (
+        <div
+          data-testid="item-wishlist-toast"
+          role="alert"
+          className={`fixed right-4 z-50 max-w-[min(92vw,420px)] ${
+            isMainActionBelowViewport ? "bottom-24 md:bottom-4" : "bottom-4"
+          }`}
+        >
+          <ToastSnackbar
+            message={wishlistError}
+            variant="error"
+            actionLabel="閉じる"
+            onAction={() => setWishlistError(null)}
           />
         </div>
       )}

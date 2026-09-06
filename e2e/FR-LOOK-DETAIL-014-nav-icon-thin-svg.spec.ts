@@ -4,8 +4,9 @@ import { gotoFirstLookDetail } from './look-detail-test-utils';
 // FREQ-182: 3カラムナビのアイコンを、にじむアイコンフォントから
 // 細線ストローク（stroke-width 1）のインライン SVG に置換する。
 
+// FREQ-343 でモバイル（md 未満）はインラインナビを出さず固定ボトムナビに置き換えたため、
+// このインラインナビの検証は tablet / desktop のみ（mobile は FR-LOOK-DETAIL-017 が担う）。
 const VIEWPORTS = [
-  { name: 'mobile', width: 390, height: 844 },
   { name: 'tablet', width: 768, height: 1024 },
   { name: 'desktop', width: 1280, height: 800 },
 ] as const;

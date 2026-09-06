@@ -60,9 +60,12 @@ export function LookImageGallery({ theme, imageUrls }: LookImageGalleryProps) {
 
   return (
     <div>
-      {/* モバイル: 横スクロールカルーセル。main の px-5 を負マージンで相殺して
-          フルブリード化し、前後スライドの端が余白部分に見える（ピーク表示） */}
-      <div className="md:hidden -mx-5">
+      {/* モバイル: 横スクロールカルーセル。main の px-4 を負マージンで相殺して
+          フルブリード化し、前後スライドの端が余白部分に見える（ピーク表示）。
+          FREQ-344: ここを -mx-5（20px）にすると main の px-4（16px）を 4px 超過し、
+          ページ全体が横スクロールしてしまう（横スクロールバーが固定ボトムナビの
+          下部も削る）ので、main のパディングと同じ 4 に揃えること。 */}
+      <div className="md:hidden -mx-4">
         <div
           ref={mobileCarouselRef}
           data-testid="look-detail-carousel"

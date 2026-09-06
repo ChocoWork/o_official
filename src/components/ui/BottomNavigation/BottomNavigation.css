@@ -18,9 +18,6 @@
   /* アイコン径＝font × φ（ラベルより一段大きく対比）*/
   --bottom-nav-icon-size: calc(var(--bottom-nav-font-size) * var(--phi));
 
-  /* ラベル文字＝font / φ（アイコンに対し従属させ階層化）*/
-  --bottom-nav-label-size: calc(var(--bottom-nav-font-size) / var(--phi));
-
   /* 近接：アイコン↔ラベルの縦ギャップ＝gap-icon2text */
   --bottom-nav-item-gap: var(--gap-icon2text);
 
@@ -147,7 +144,15 @@
   color: var(--bottom-nav-fg);
   cursor: pointer;
   font-family: inherit;
+  text-decoration: none;
   transition: background-color 120ms ease, color 120ms ease;
+}
+
+/* 遷移先が無い項目：同じ配置のまま減光し、操作対象から外す */
+.bottom-nav__button[data-ui-bottom-nav-disabled='true'] {
+  opacity: 0.3;
+  cursor: default;
+  pointer-events: none;
 }
 
 /* filled：面で囲うボタン（対比：選択時に黒地白文字で反転）*/
@@ -201,9 +206,14 @@
   color: currentColor;
 }
 
-/* --- ラベル（対比：アイコンに従属する小さめ文字／minimal は字間を開く）--- */
+/* --- ラベル（対比：アイコンに従属する小さめ文字／minimal は字間を開く）---
+   既定は font / φ。List の --list-preview-scale と同様、
+   --bottom-nav-label-size を親から渡すと上書きできる。 */
 .bottom-nav__label {
-  font-size: var(--bottom-nav-label-size);
+  font-size: var(
+    --bottom-nav-label-size,
+    calc(var(--bottom-nav-font-size) / var(--phi))
+  );
   line-height: 1;
   color: currentColor;
   white-space: nowrap;

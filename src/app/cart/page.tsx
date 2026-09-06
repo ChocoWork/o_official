@@ -4,6 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { EmptyPage } from "@/components/ui/EmptyPage/EmptyPage";
 import { Button } from "@/components/ui/Button/Button";
+import { ToastSnackbar } from "@/components/ui/ToastSnackbar/ToastSnackbar";
 import { useCartItems } from "./_hooks/useCartItems";
 import { CartItemRow } from "./_components/CartItemRow";
 import { OrderSummary } from "./_components/OrderSummary";
@@ -18,6 +19,7 @@ export default function CartPage() {
     resyncing,
     syncErrorByItem,
     hasSyncError,
+    actionError,
     subtotal,
     wishlistedItems,
     handleQuantityChange,
@@ -25,6 +27,7 @@ export default function CartPage() {
     handleRemove,
     handleToggleWishlist,
     handleResyncFromServer,
+    dismissActionError,
   } = useCartItems();
 
   if (loading) {
@@ -167,6 +170,22 @@ export default function CartPage() {
           <OrderSummary subtotal={subtotal} />
         </div>
       </div>
+
+      {/* FREQ-342: 操作の失敗は alert() ではなく商品詳細と同じ Toast で伝える */}
+      {actionError && (
+        <div
+          data-testid="cart-action-toast"
+          role="alert"
+          className="fixed bottom-4 right-4 z-50 max-w-[min(92vw,420px)]"
+        >
+          <ToastSnackbar
+            message={actionError}
+            variant="error"
+            actionLabel="閉じる"
+            onAction={dismissActionError}
+          />
+        </div>
+      )}
     </div>
   );
 }

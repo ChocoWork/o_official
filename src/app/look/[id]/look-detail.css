@@ -1,0 +1,9 @@
+/* FREQ-343: LOOK 詳細のモバイルは固定ボトムナビが画面下に居座るため、そのままだと
+   フッター末尾の著作権表示と法務リンク（Privacy / Terms / Legal）が永久に隠れる。
+   固定ナビを出しているページでだけフッターに下余白を足して押し上げる。
+   4.5rem = 固定ナビの高さ（size=md で約 56px）＋余白。 */
+@media (max-width: 767.98px) {
+  body:has([data-testid='look-detail-fixed-nav'] [data-ui-bottom-nav]) footer {
+    padding-bottom: 4.5rem;
+  }
+}

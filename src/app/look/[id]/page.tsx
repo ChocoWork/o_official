@@ -1,9 +1,11 @@
+import "./look-detail.css";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { formatLookSeason } from "@/lib/look/public";
 import { getPublishedLookById, getPublishedLooks } from "@/lib/look/server";
 import { List } from "@/components/ui/List/List";
+import { BottomNavigation } from "@/components/ui/BottomNavigation/BottomNavigation";
 import { LookImageGallery } from "@/features/look/components/LookImageGallery";
 
 type Props = {
@@ -26,9 +28,12 @@ const NAV_ICON_GRID = (
 function NavIcon({
   children,
   className,
+  fontSize = "var(--lk-size-7xl)",
 }: {
   children: ReactNode;
   className?: string;
+  /* 固定ボトムナビ側は BottomNavigation のアイコン径に合わせる（FREQ-343）。 */
+  fontSize?: string;
 }) {
   return (
     <svg
@@ -44,7 +49,7 @@ function NavIcon({
       aria-hidden="true"
       focusable="false"
       className={`block ${className ?? ""}`}
-      style={{ fontSize: "var(--lk-size-7xl)" }}
+      style={{ fontSize }}
     >
       {children}
     </svg>
@@ -181,7 +186,7 @@ export default async function LookDetailPage({ params }: Props) {
             <nav
               data-testid="look-detail-bottom-nav"
               aria-label="Look navigation"
-              className="grid grid-cols-3 divide-x divide-black/10 pt-3.25"
+              className="hidden md:grid md:grid-cols-3 divide-x divide-black/10 pt-3.25"
             >
               {prevLook ? (
                 <Link
@@ -265,6 +270,52 @@ export default async function LookDetailPage({ params }: Props) {
             </nav>
           </div>
         </div>
+      </div>
+
+      {/* FREQ-343: md 未満は同じ3項目を UI の BottomNavigation として画面下に固定する
+          （ITEM 詳細のモバイル固定フッターと同じ体験）。 */}
+      <div data-testid="look-detail-fixed-nav" className="md:hidden">
+        <BottomNavigation
+          className="[--bottom-nav-label-size:var(--lk-size-7xs)]"
+          activeKey=""
+          fixed
+          appearance="filled"
+          size="md"
+          items={[
+            {
+              key: "prev",
+              label: "PREV LOOK",
+              href: prevLook ? `/look/${prevLook.id}` : undefined,
+              disabled: !prevLook,
+              icon: (
+                <NavIcon fontSize="var(--bottom-nav-icon-size)">
+                  {NAV_ICON_ARROW_LEFT}
+                </NavIcon>
+              ),
+            },
+            {
+              key: "list",
+              label: "LOOK LIST",
+              href: "/look",
+              icon: (
+                <NavIcon fontSize="var(--bottom-nav-icon-size)">
+                  {NAV_ICON_GRID}
+                </NavIcon>
+              ),
+            },
+            {
+              key: "next",
+              label: "NEXT LOOK",
+              href: nextLook ? `/look/${nextLook.id}` : undefined,
+              disabled: !nextLook,
+              icon: (
+                <NavIcon fontSize="var(--bottom-nav-icon-size)">
+                  {NAV_ICON_ARROW_RIGHT}
+                </NavIcon>
+              ),
+            },
+          ]}
+        />
       </div>
     </div>
   );
