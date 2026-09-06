@@ -66,6 +66,13 @@ CREATE POLICY "deny direct client access" ON public.item_variants
   AS RESTRICTIVE FOR ALL TO anon, authenticated
   USING (false) WITH CHECK (false);
 
+-- このプロジェクトの Supabase は public スキーマの新規テーブルに anon / authenticated へ
+-- 全権限を自動付与するため、まず剥がしてから必要な権限だけを付け直す。
+-- RESTRICTIVE ポリシーだけに頼ると、将来 PERMISSIVE ポリシーが 1 本足された時点で開いてしまう。
+REVOKE ALL ON public.item_colors   FROM anon, authenticated;
+REVOKE ALL ON public.item_sizes    FROM anon, authenticated;
+REVOKE ALL ON public.item_variants FROM anon, authenticated;
+
 GRANT SELECT ON public.item_colors TO anon, authenticated;
 GRANT SELECT ON public.item_sizes  TO anon, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.item_colors, public.item_sizes, public.item_variants TO service_role;
