@@ -207,4 +207,52 @@ describe('integration: stock_movements', () => {
       client.release();
     }
   });
+
+  test('整合しているときは verify_stock_integrity が何も返さない', async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const variantId = await createVariant(client);
+      await client.query(
+        `INSERT INTO public.stock_movements (variant_id, delta, reason) VALUES ($1, 4, 'restock')`,
+        [variantId],
+      );
+
+      const res = await client.query(
+        `SELECT * FROM public.verify_stock_integrity() WHERE variant_id = $1`,
+        [variantId],
+      );
+      expect(res.rows).toHaveLength(0);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
+
+  test('キャッシュを直接書き換えるとズレとして検出される', async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const variantId = await createVariant(client);
+      await client.query(
+        `INSERT INTO public.stock_movements (variant_id, delta, reason) VALUES ($1, 4, 'restock')`,
+        [variantId],
+      );
+      await client.query(
+        `UPDATE public.item_variants SET stock_quantity = 9 WHERE id = $1`,
+        [variantId],
+      );
+
+      const res = await client.query(
+        `SELECT * FROM public.verify_stock_integrity() WHERE variant_id = $1`,
+        [variantId],
+      );
+      expect(res.rows).toHaveLength(1);
+      expect(res.rows[0].cached).toBe(9);
+      expect(res.rows[0].ledger).toBe(4);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
 });
