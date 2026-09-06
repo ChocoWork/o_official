@@ -165,4 +165,46 @@ describe('integration: stock_movements', () => {
       client.release();
     }
   });
+
+  test('台帳は TRUNCATE でも消せない', async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const variantId = await createVariant(client);
+      await client.query(
+        `INSERT INTO public.stock_movements (variant_id, delta, reason) VALUES ($1, 2, 'restock')`,
+        [variantId],
+      );
+
+      await expect(
+        client.query(`TRUNCATE public.stock_movements`),
+      ).rejects.toThrow(/append-only/i);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
+
+  test('service_role は台帳を更新・削除できない（権限側でも閉じている）', async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const variantId = await createVariant(client);
+      await client.query(
+        `INSERT INTO public.stock_movements (variant_id, delta, reason) VALUES ($1, 1, 'restock')`,
+        [variantId],
+      );
+
+      await client.query(`SET LOCAL ROLE service_role`);
+      await expect(
+        client.query(`DELETE FROM public.stock_movements`),
+      ).rejects.toThrow();
+      await expect(
+        client.query(`UPDATE public.stock_movements SET delta = 5`),
+      ).rejects.toThrow();
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
 });

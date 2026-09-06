@@ -57,6 +57,12 @@ CREATE TRIGGER stock_movements_no_delete
   BEFORE DELETE ON public.stock_movements
   FOR EACH ROW EXECUTE FUNCTION public.reject_stock_movement_mutation();
 
+-- TRUNCATE は RLS も行レベルトリガーも通らないため、文レベルのトリガーで止める。
+-- reject_stock_movement_mutation() は NEW / OLD を参照しないので文トリガーからも使える。
+CREATE TRIGGER stock_movements_no_truncate
+  BEFORE TRUNCATE ON public.stock_movements
+  FOR EACH STATEMENT EXECUTE FUNCTION public.reject_stock_movement_mutation();
+
 ALTER TABLE public.stock_movements ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "deny direct client access" ON public.stock_movements
@@ -68,6 +74,9 @@ CREATE POLICY "deny direct client access" ON public.stock_movements
 -- シーケンスの ACL はテーブルとは別オブジェクトなので個別に指定する。
 REVOKE ALL ON public.stock_movements FROM anon, authenticated;
 REVOKE ALL ON SEQUENCE public.stock_movements_id_seq FROM anon, authenticated;
+
+-- GRANT は自動付与された権限を狭めないので、まず剥がしてから必要な分だけ付け直す。
+REVOKE ALL ON public.stock_movements FROM service_role;
 
 GRANT SELECT, INSERT ON public.stock_movements TO service_role;
 GRANT USAGE, SELECT ON SEQUENCE public.stock_movements_id_seq TO service_role;
