@@ -144,4 +144,75 @@ describe('integration: order_items variant columns', () => {
       client.release();
     }
   });
+
+  test('移行後も不変性トリガーは有効に戻っている', async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const res = await client.query(
+        `SELECT tgenabled FROM pg_trigger
+         WHERE tgrelid = 'public.order_items'::regclass
+           AND tgname = 'protect_legal_order_item_immutable_fields'`,
+      );
+      expect(res.rows).toHaveLength(1);
+      expect(res.rows[0].tgenabled).toBe('O');
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
+
+  test('既存明細の color / size に一致するバリアントが後埋めされる', async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const orderId = await createOrder(client);
+
+      // 色とサイズを持つ商品を作り、backfill でバリアントを生成する
+      const item = await client.query(
+        `INSERT INTO public.items (name, description, price, category, image_url, status, colors, sizes, stock_quantity)
+         VALUES ('backfill link test', 'desc', 1000, 'TOPS', '/images/test.jpg', 'published',
+                 '[{"name":"Black","hex":"#000000"}]'::jsonb, ARRAY['M']::text[], 0)
+         RETURNING id`,
+      );
+      const itemId = item.rows[0].id;
+      await client.query(`SELECT public.backfill_item_variants($1)`, [itemId]);
+
+      await client.query(
+        `INSERT INTO public.order_items
+           (order_id, item_id, item_name, item_price, color, size, quantity, line_total)
+         VALUES ($1, $2, 'backfill link test', 1000, 'Black', 'M', 1, 1000)`,
+        [orderId, itemId],
+      );
+
+      // マイグレーション本体と同じ後埋めを再現する
+      await client.query(
+        `ALTER TABLE public.order_items DISABLE TRIGGER protect_legal_order_item_immutable_fields`,
+      );
+      await client.query(
+        `UPDATE public.order_items oi
+         SET variant_id = v.id
+         FROM public.item_variants v
+         LEFT JOIN public.item_colors c ON c.id = v.color_id
+         LEFT JOIN public.item_sizes  s ON s.id = v.size_id
+         WHERE oi.variant_id IS NULL
+           AND v.item_id = oi.item_id
+           AND coalesce(c.name, '')  = coalesce(oi.color, '')
+           AND coalesce(s.label, '') = coalesce(oi.size, '')`,
+      );
+      await client.query(
+        `ALTER TABLE public.order_items ENABLE TRIGGER protect_legal_order_item_immutable_fields`,
+      );
+
+      const linked = await client.query(
+        `SELECT variant_id FROM public.order_items WHERE item_id = $1`,
+        [itemId],
+      );
+      expect(linked.rows[0].variant_id).not.toBeNull();
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
 });
