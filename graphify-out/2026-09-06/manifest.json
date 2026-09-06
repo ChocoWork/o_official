@@ -804,9 +804,9 @@
     "semantic_hash": ""
   },
   "src/app/look/[id]/page.tsx": {
-    "mtime": 1788654859.2108786,
-    "seen": 1788658445.6411757,
-    "ast_hash": "cd1ba1d410307ea82089008cad9f1635",
+    "mtime": 1788616971.8639257,
+    "seen": 1788617166.8439355,
+    "ast_hash": "0c4c22dae35a362ffe5aab84a1e62317",
     "semantic_hash": ""
   },
   "src/app/look/page.tsx": {
@@ -5604,9 +5604,9 @@
     "semantic_hash": ""
   },
   "docs/2_Specs/spec.md": {
-    "mtime": 1788654859.2231362,
-    "seen": 1788658445.641824,
-    "ast_hash": "97d6d3712790efe8e2b4994adac989f4",
+    "mtime": 1788618471.016001,
+    "seen": 1788618640.7939131,
+    "ast_hash": "585332c1fbd77e66c8448c79247521b4",
     "semantic_hash": ""
   },
   "docs/3_ArchitectureDesign/auth-structure.md": {
@@ -10632,9 +10632,9 @@
     "semantic_hash": ""
   },
   "e2e/FR-LOOK-DETAIL-017-mobile-fixed-bottom-nav.spec.ts": {
-    "mtime": 1788654859.2141247,
-    "seen": 1788658445.6408966,
-    "ast_hash": "89cbae92274b93d9fdb5cbe712643fa1",
+    "mtime": 1788616940.0231657,
+    "seen": 1788617166.8436432,
+    "ast_hash": "4797fbfc9b09adb3e6e2cfc8ab10477f",
     "semantic_hash": ""
   },
   "e2e/FR-LOOK-DETAIL-018-no-horizontal-overflow.spec.ts": {

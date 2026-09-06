@@ -3,7 +3,9 @@ import { mockCartApis, mockItemDetailApis, sampleItemDetail } from './shop-test-
 
 test.describe('FR-ITEM-DETAIL-012/013 related items and alt', () => {
   test('関連商品セクションと詳細 alt テキストを表示する', async ({ page }) => {
-    const item = sampleItemDetail();
+    // FREQ-345: alt にカラー名が入るのは COLOR が選択済みのとき。
+    // 選択肢 1 つなら自動選択されるので、単色の商品で検証する。
+    const item = sampleItemDetail({ colors: [{ hex: '#000000', name: 'Black' }] });
     await mockCartApis(page, []);
     await mockItemDetailApis(page, item, [
       {

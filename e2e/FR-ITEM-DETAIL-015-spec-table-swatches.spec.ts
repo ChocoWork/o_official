@@ -38,7 +38,8 @@ for (const viewport of [
       const count = await swatches.count();
       expect(count).toBeGreaterThan(0);
 
-      // 先頭カラーが初期選択され黒枠（border-black）が付く
+      // FREQ-345: 選択肢が複数ある場合は未選択で始まるので、選んでから黒枠を確認する
+      await swatches.first().click();
       const selected = table.locator('button[aria-pressed="true"][aria-label]');
       await expect(selected.first()).toHaveClass(/border-black/);
 

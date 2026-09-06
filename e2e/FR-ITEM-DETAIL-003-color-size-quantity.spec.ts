@@ -19,7 +19,8 @@ test.describe('FR-ITEM-DETAIL-003 カラー・サイズ・数量選択', () => {
     }
     await expect(colorButtons.first()).toBeVisible();
 
-    // 最初のボタンが初期選択状態
+    // FREQ-345: 選択肢が複数ある場合は未選択で始まるため、クリックして選択状態を確認する
+    await colorButtons.first().click();
     await expect(colorButtons.first()).toHaveAttribute('aria-pressed', 'true');
   });
 

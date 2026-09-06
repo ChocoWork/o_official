@@ -29,14 +29,17 @@ test.describe('FR-ITEM-DETAIL-004 カート追加・ウィッシュリスト', (
     await page.goto(`/item/${item!.id}`);
     await page.waitForLoadState('networkidle');
 
-    // カラー・サイズ未選択でカート追加
-    // アラートまたは role="alert" が出ることを確認
-    page.on('dialog', async (dialog) => {
-      expect(dialog.message()).toContain('選択');
-      await dialog.accept();
-    });
-
-    const cartBtn = page.getByText('ADD TO CART').first();
-    await cartBtn.click();
+    // FREQ-345: 選択肢のある軸が未選択の間は ADD TO CART を押せない
+    const cartBtn = page
+      .getByTestId('item-actions-main')
+      .getByRole('button', { name: /ADD TO CART/ });
+    const unselected = page
+      .getByTestId('item-spec-table')
+      .locator('button[aria-pressed="false"]');
+    if ((await unselected.count()) === 0) {
+      test.skip(true, '選択肢が各1つのため未選択状態にならない');
+      return;
+    }
+    await expect(cartBtn).toBeDisabled();
   });
 });

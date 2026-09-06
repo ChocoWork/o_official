@@ -63,7 +63,9 @@ for (const viewport of [
       expect(second).not.toBeNull();
       expect(second!.x - (first!.x + first!.width)).toBeCloseTo(15, 0);
 
-      // AC-02: 初期選択（先頭）だけ黒枠（色の遷移中を拾わないよう poll する）
+      // AC-02: 選んだ 1 つだけ黒枠（色の遷移中を拾わないよう poll する）
+      // FREQ-345: 選択肢が複数あるので初期状態は未選択
+      await swatches.first().click();
       await expect(swatches.first()).toHaveAttribute('aria-pressed', 'true');
       await expect.poll(() => borderColor(page, 0)).toBe('rgb(0, 0, 0)');
       expect(await borderColor(page, 1)).not.toBe('rgb(0, 0, 0)');

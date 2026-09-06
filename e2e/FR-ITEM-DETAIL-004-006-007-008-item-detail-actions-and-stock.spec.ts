@@ -12,9 +12,10 @@ test.describe('FR-ITEM-DETAIL-004/006/007/008 item detail actions and stock', ()
 
     await expect(page.getByTestId('stock-status')).toHaveText('残りわずか');
 
-    await page.getByRole('button', { name: 'ADD TO CART' }).first().click();
-    await expect(page.getByText('すべてのオプションを選択してください')).toBeVisible();
+    // FREQ-345: COLOR / SIZE がともに複数あるので未選択で始まり、押せない
+    await expect(page.getByRole('button', { name: 'ADD TO CART' }).first()).toBeDisabled();
 
+    await page.getByRole('button', { name: 'Black' }).click();
     await page.getByRole('button', { name: 'M', exact: true }).click();
     await page.getByRole('button', { name: 'ADD TO CART' }).first().click();
 

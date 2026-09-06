@@ -33,6 +33,7 @@ type ItemActionButtonsProps = {
   addedToCart: boolean;
   addingToCart: boolean;
   isSoldOut: boolean;
+  optionsSelected: boolean;
   isWishlisted: boolean;
   togglingWishlist: boolean;
   onAddToCart: () => void;
@@ -43,6 +44,7 @@ function ItemActionButtons({
   addedToCart,
   addingToCart,
   isSoldOut,
+  optionsSelected,
   isWishlisted,
   togglingWishlist,
   onAddToCart,
@@ -52,7 +54,7 @@ function ItemActionButtons({
     <div className="flex w-full gap-3 md:flex-col">
       <Button
         onClick={onAddToCart}
-        disabled={addingToCart || isSoldOut}
+        disabled={addingToCart || isSoldOut || !optionsSelected}
         size="xs"
         className="w-full"
       >
@@ -174,6 +176,13 @@ export default function ItemDetailClient({ id }: Props) {
   const stockStatus = item ? resolveStockStatus(item) : "unknown";
   const isSoldOut = stockStatus === "sold_out";
 
+  // FREQ-345: 選択肢がある軸はすべて選ばれるまで ADD TO CART を押せなくする。
+  const optionsSelected =
+    !!item &&
+    (!(item.colors && Array.isArray(item.colors) && item.colors.length > 0) ||
+      !!color) &&
+    (!(item.sizes && item.sizes.length > 0) || !!size);
+
   useEffect(() => {
     const fetchItem = async () => {
       try {
@@ -187,10 +196,12 @@ export default function ItemDetailClient({ id }: Props) {
         }
         const data: Item = await response.json();
         setItem(data);
+        // FREQ-345: 選択肢が 1 つしかない軸は選ぶ余地がないので自動選択する。
+        // 2 つ以上ある軸は未選択のままにして、明示的に選ばせる。
         if (
           data.colors &&
           Array.isArray(data.colors) &&
-          data.colors.length > 0
+          data.colors.length === 1
         ) {
           const firstColor = data.colors[0];
           if (
@@ -498,9 +509,11 @@ export default function ItemDetailClient({ id }: Props) {
           >
             <div className="md:-ml-5 md:w-full lg:ml-0">
               {/* モバイル: 横スクロールカルーセル (FREQ-162)
-                  main の px-5 を負マージンで相殺してフルブリード化し、
-                  ピーク表示が main の padding でクリップされないようにする (FREQ-159) */}
-              <div className="md:hidden -mx-5">
+                  main の px-4 を負マージンで相殺してフルブリード化し、
+                  ピーク表示が main の padding でクリップされないようにする (FREQ-159)。
+                  負マージンが padding を超えると横スクロールが出て、スクロールバーが
+                  固定フッターの下部を削るため、main と同じ 16px に揃える (FREQ-346) */}
+              <div className="md:hidden -mx-4">
                 {/* ピーク表示: 左右に余白を設け、2枚以上のときは
                     前後スライドの端が余白部分に見える (FREQ-158)。
                     余白は 320px 時の 20px / 280px を保つ画面幅比 6.25% で、
@@ -885,6 +898,7 @@ export default function ItemDetailClient({ id }: Props) {
                   addedToCart={addedToCart}
                   addingToCart={addingToCart}
                   isSoldOut={isSoldOut}
+                  optionsSelected={optionsSelected}
                   isWishlisted={isWishlisted}
                   togglingWishlist={togglingWishlist}
                   onAddToCart={handleAddToCart}
@@ -915,12 +929,13 @@ export default function ItemDetailClient({ id }: Props) {
       {isMainActionBelowViewport && (
         <div
           data-testid="item-actions-fixed"
-          className="fixed bottom-0 left-0 right-0 z-50 flex border-t border-black/10 bg-white px-6 py-3 md:hidden"
+          className="fixed bottom-0 left-0 right-0 z-50 flex border-t border-black/10 bg-white px-4 py-3 md:hidden"
         >
           <ItemActionButtons
             addedToCart={addedToCart}
             addingToCart={addingToCart}
             isSoldOut={isSoldOut}
+            optionsSelected={optionsSelected}
             isWishlisted={isWishlisted}
             togglingWishlist={togglingWishlist}
             onAddToCart={handleAddToCart}
