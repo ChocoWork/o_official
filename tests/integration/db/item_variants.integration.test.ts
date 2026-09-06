@@ -189,4 +189,34 @@ describe('integration: item_variants', () => {
       client.release();
     }
   });
+
+  test('anon はシーケンスを操作できない（採番の破壊を防ぐ）', async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      await client.query(`SET LOCAL ROLE anon`);
+      await expect(
+        client.query(`SELECT setval('public.item_variants_id_seq', 1)`),
+      ).rejects.toThrow(/permission denied/i);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
+
+  test('anon はシーケンスの last_value を読めない', async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      await client.query(`SET LOCAL ROLE anon`);
+      await expect(
+        client.query(`SELECT last_value FROM public.item_variants_id_seq`),
+      ).rejects.toThrow(/permission denied/i);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
 });

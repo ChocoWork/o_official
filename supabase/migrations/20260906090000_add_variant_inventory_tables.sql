@@ -73,6 +73,14 @@ REVOKE ALL ON public.item_colors   FROM anon, authenticated;
 REVOKE ALL ON public.item_sizes    FROM anon, authenticated;
 REVOKE ALL ON public.item_variants FROM anon, authenticated;
 
+-- シーケンスの ACL はテーブルとは別オブジェクトなので個別に剥がす。
+-- UPDATE が残ると anon が setval() で主キーの採番を壊せる。
+REVOKE ALL ON SEQUENCE
+  public.item_colors_id_seq,
+  public.item_sizes_id_seq,
+  public.item_variants_id_seq
+FROM anon, authenticated;
+
 GRANT SELECT ON public.item_colors TO anon, authenticated;
 GRANT SELECT ON public.item_sizes  TO anon, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.item_colors, public.item_sizes, public.item_variants TO service_role;
