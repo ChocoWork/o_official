@@ -41,6 +41,45 @@ CREATE INDEX item_variants_item_id_idx ON public.item_variants (item_id);
 CREATE UNIQUE INDEX item_variants_combo_key
   ON public.item_variants (item_id, coalesce(color_id, 0), coalesce(size_id, 0));
 
+-- 在庫は台帳への追記でしか動かさない。バリアントを初期在庫付きで作れると
+-- その分だけ台帳と食い違うため、INSERT の時点で拒否する。
+CREATE OR REPLACE FUNCTION public.reject_initial_stock_quantity()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.stock_quantity <> 0 THEN
+    RAISE EXCEPTION 'item_variants.stock_quantity must start at 0; move stock through stock_movements'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER item_variants_no_initial_stock
+  BEFORE INSERT ON public.item_variants
+  FOR EACH ROW EXECUTE FUNCTION public.reject_initial_stock_quantity();
+
+REVOKE ALL ON FUNCTION public.reject_initial_stock_quantity() FROM PUBLIC, anon, authenticated;
+
+-- item_variants.updated_at は apply_stock_movement() 経由でしか更新されないため、
+-- is_active / sku などの管理画面での編集でも更新されるよう専用トリガーを持たせる。
+CREATE OR REPLACE FUNCTION public.set_item_variants_updated_at()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_item_variants_updated_at
+  BEFORE UPDATE ON public.item_variants
+  FOR EACH ROW EXECUTE FUNCTION public.set_item_variants_updated_at();
+
+REVOKE ALL ON FUNCTION public.set_item_variants_updated_at() FROM PUBLIC, anon, authenticated;
+
 -- 受注時のお届け目安（商品単位）。在庫切れの組み合わせの表示に使う。
 ALTER TABLE public.items
   ADD COLUMN made_to_order_lead_days integer
@@ -83,7 +122,14 @@ FROM anon, authenticated;
 
 GRANT SELECT ON public.item_colors TO anon, authenticated;
 GRANT SELECT ON public.item_sizes  TO anon, authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.item_colors, public.item_sizes, public.item_variants TO service_role;
+
+-- GRANT は自動付与された権限を狭めないので、item_variants は先に剥がしてから
+-- 列単位の UPDATE だけ付け直す（service_role からでも stock_quantity を直接書けないようにするため）。
+REVOKE ALL ON public.item_variants FROM service_role;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.item_colors, public.item_sizes TO service_role;
+GRANT SELECT, INSERT, DELETE ON public.item_variants TO service_role;
+GRANT UPDATE (item_id, color_id, size_id, sku, is_active, updated_at) ON public.item_variants TO service_role;
 GRANT USAGE, SELECT ON SEQUENCE public.item_colors_id_seq, public.item_sizes_id_seq, public.item_variants_id_seq TO service_role;
 
 COMMIT;

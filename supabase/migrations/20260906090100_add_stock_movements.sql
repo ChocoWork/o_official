@@ -12,7 +12,10 @@ CREATE TABLE public.stock_movements (
   order_id      uuid REFERENCES public.orders(id) ON DELETE SET NULL,
   order_item_id uuid REFERENCES public.order_items(id) ON DELETE SET NULL,
   note          text,
-  created_by    uuid REFERENCES public.profiles(user_id) ON DELETE SET NULL,
+  -- 実行者の id。外部キーにはしない: ON DELETE SET NULL は UPDATE として実装されるため、
+  -- 追記専用トリガーがそれを拒否し、プロフィール（や auth.users）の削除自体が失敗してしまう。
+  -- 監査目的の記録なので、アカウントが消えても id はそのまま台帳に残す。
+  created_by    uuid,
   created_at    timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX stock_movements_variant_id_idx ON public.stock_movements (variant_id);
@@ -62,6 +65,9 @@ CREATE TRIGGER stock_movements_no_delete
 CREATE TRIGGER stock_movements_no_truncate
   BEFORE TRUNCATE ON public.stock_movements
   FOR EACH STATEMENT EXECUTE FUNCTION public.reject_stock_movement_mutation();
+
+REVOKE ALL ON FUNCTION public.apply_stock_movement() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.reject_stock_movement_mutation() FROM PUBLIC, anon, authenticated;
 
 ALTER TABLE public.stock_movements ENABLE ROW LEVEL SECURITY;
 

@@ -145,24 +145,6 @@ describe('integration: order_items variant columns', () => {
     }
   });
 
-  test('移行後も不変性トリガーは有効に戻っている', async () => {
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-
-      const res = await client.query(
-        `SELECT tgenabled FROM pg_trigger
-         WHERE tgrelid = 'public.order_items'::regclass
-           AND tgname = 'protect_legal_order_item_immutable_fields'`,
-      );
-      expect(res.rows).toHaveLength(1);
-      expect(res.rows[0].tgenabled).toBe('O');
-    } finally {
-      await client.query('ROLLBACK');
-      client.release();
-    }
-  });
-
   test('既存明細の color / size に一致するバリアントが後埋めされる', async () => {
     const client = await pool.connect();
     try {

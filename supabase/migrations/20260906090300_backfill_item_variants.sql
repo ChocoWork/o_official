@@ -11,9 +11,74 @@ SECURITY DEFINER
 SET search_path = public, pg_catalog
 AS $$
 DECLARE
-  legacy_stock  integer;
-  head_variant  bigint;
+  legacy_stock    integer;
+  head_variant    bigint;
+  bad_color       jsonb;
+  bad_color_name  text;
+  bad_size_label  text;
 BEGIN
+  -- colors / sizes の形が壊れている商品は、機械的な変換を諦めて止まる。
+  -- ここで黙って捨てる（フィルタや ON CONFLICT DO NOTHING）と、後続で items.colors /
+  -- items.sizes を落とすマイグレーションが来たときに元データが跡形もなく消えるため、
+  -- 人間が直すまでマイグレーション全体を失敗させる。
+
+  IF EXISTS (
+    SELECT 1 FROM public.items
+    WHERE id = target_item_id AND jsonb_typeof(colors) <> 'array'
+  ) THEN
+    RAISE EXCEPTION 'item %: colors is not a jsonb array', target_item_id
+      USING ERRCODE = 'data_exception';
+  END IF;
+
+  SELECT elem INTO bad_color
+  FROM public.items i, LATERAL jsonb_array_elements(i.colors) AS elem
+  WHERE i.id = target_item_id
+    AND (
+      jsonb_typeof(elem) <> 'object'
+      OR elem->>'name' IS NULL
+      OR elem->>'hex' IS NULL
+      OR elem->>'hex' !~ '^#[0-9a-fA-F]{6}$'
+    )
+  LIMIT 1;
+
+  IF bad_color IS NOT NULL THEN
+    RAISE EXCEPTION 'item %: colors has an invalid element %; expected an object like {"name": "...", "hex": "#rrggbb"}',
+      target_item_id, bad_color
+      USING ERRCODE = 'data_exception';
+  END IF;
+
+  SELECT elem->>'name' INTO bad_color_name
+  FROM public.items i, LATERAL jsonb_array_elements(i.colors) AS elem
+  WHERE i.id = target_item_id
+  GROUP BY elem->>'name'
+  HAVING count(*) > 1
+  LIMIT 1;
+
+  IF bad_color_name IS NOT NULL THEN
+    RAISE EXCEPTION 'item %: colors has a duplicate name %', target_item_id, bad_color_name
+      USING ERRCODE = 'data_exception';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.items i, LATERAL unnest(i.sizes) AS label
+    WHERE i.id = target_item_id AND label IS NULL
+  ) THEN
+    RAISE EXCEPTION 'item %: sizes contains a NULL element', target_item_id
+      USING ERRCODE = 'data_exception';
+  END IF;
+
+  SELECT label INTO bad_size_label
+  FROM public.items i, LATERAL unnest(i.sizes) AS label
+  WHERE i.id = target_item_id
+  GROUP BY label
+  HAVING count(*) > 1
+  LIMIT 1;
+
+  IF bad_size_label IS NOT NULL THEN
+    RAISE EXCEPTION 'item %: sizes has a duplicate label %', target_item_id, bad_size_label
+      USING ERRCODE = 'data_exception';
+  END IF;
+
   SELECT stock_quantity INTO legacy_stock FROM public.items WHERE id = target_item_id;
 
   -- 色。jsonb 配列の並び順を position にする。

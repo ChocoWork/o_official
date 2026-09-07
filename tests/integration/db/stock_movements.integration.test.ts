@@ -255,4 +255,22 @@ describe('integration: stock_movements', () => {
       client.release();
     }
   });
+
+  test('created_by に外部キーが無い', async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const res = await client.query(
+        `SELECT count(*)::int AS c FROM pg_constraint
+         WHERE conrelid = 'public.stock_movements'::regclass
+           AND contype = 'f'
+           AND conname LIKE '%created_by%'`,
+      );
+      expect(res.rows[0].c).toBe(0);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
 });

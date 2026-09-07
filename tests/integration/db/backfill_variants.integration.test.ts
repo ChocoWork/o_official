@@ -22,7 +22,7 @@ describe('integration: backfill_item_variants', () => {
   async function createLegacyItem(
     client: any,
     colors: unknown,
-    sizes: string[],
+    sizes: (string | null)[],
     stock: number | null,
   ): Promise<string> {
     const res = await client.query(
@@ -194,6 +194,91 @@ describe('integration: backfill_item_variants', () => {
         [itemId],
       );
       expect(ledger.rows[0].total).toBe(2);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
+
+  test('colors が jsonb 配列でない商品は移行が止まる', async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const itemId = await createLegacyItem(client, { not: 'an array' }, ['M'], 0);
+
+      await expect(
+        client.query(`SELECT public.backfill_item_variants($1)`, [itemId]),
+      ).rejects.toThrow(/colors is not a jsonb array/);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
+
+  test('色要素が bare string の商品は移行が止まる', async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const itemId = await createLegacyItem(client, ['Red'], ['M'], 0);
+
+      await expect(
+        client.query(`SELECT public.backfill_item_variants($1)`, [itemId]),
+      ).rejects.toThrow(/colors has an invalid element/);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
+
+  test('hex が # 無しの商品は移行が止まる', async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const itemId = await createLegacyItem(
+        client,
+        [{ name: 'Red', hex: 'FF0000' }],
+        ['M'],
+        0,
+      );
+
+      await expect(
+        client.query(`SELECT public.backfill_item_variants($1)`, [itemId]),
+      ).rejects.toThrow(/colors has an invalid element/);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
+
+  test('同名の色が重複する商品は移行が止まる', async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const itemId = await createLegacyItem(
+        client,
+        [{ name: 'Red', hex: '#FF0000' }, { name: 'Red', hex: '#00FF00' }],
+        ['M'],
+        0,
+      );
+
+      await expect(
+        client.query(`SELECT public.backfill_item_variants($1)`, [itemId]),
+      ).rejects.toThrow(/colors has a duplicate name/);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
+
+  test('sizes に NULL 要素がある商品は移行が止まる', async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const itemId = await createLegacyItem(client, [], ['S', null, 'M'], 0);
+
+      await expect(
+        client.query(`SELECT public.backfill_item_variants($1)`, [itemId]),
+      ).rejects.toThrow(/sizes contains a NULL element/);
     } finally {
       await client.query('ROLLBACK');
       client.release();

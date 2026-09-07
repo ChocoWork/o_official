@@ -101,7 +101,14 @@ describe('integration: item_variants', () => {
     try {
       await client.query('BEGIN');
       const itemId = await createItem(client);
-      await client.query(`INSERT INTO public.item_variants (item_id, stock_quantity) VALUES ($1, 5)`, [itemId]);
+      const variant = await client.query(
+        `INSERT INTO public.item_variants (item_id) VALUES ($1) RETURNING id`,
+        [itemId],
+      );
+      await client.query(
+        `INSERT INTO public.stock_movements (variant_id, delta, reason) VALUES ($1, 5, 'restock')`,
+        [variant.rows[0].id],
+      );
 
       // anon には SELECT 権限自体を与えていないため、0 行ではなく権限エラーになる
       await client.query(`SET LOCAL ROLE anon`);
@@ -214,6 +221,123 @@ describe('integration: item_variants', () => {
       await expect(
         client.query(`SELECT last_value FROM public.item_variants_id_seq`),
       ).rejects.toThrow(/permission denied/i);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
+
+  test('初期在庫つきでバリアントを作れない', async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const itemId = await createItem(client);
+
+      await expect(
+        client.query(
+          `INSERT INTO public.item_variants (item_id, stock_quantity) VALUES ($1, 5)`,
+          [itemId],
+        ),
+      ).rejects.toThrow(/stock_quantity must start at 0/);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
+
+  test('service_role は stock_quantity を直接更新できないが is_active は更新できる', async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const itemId = await createItem(client);
+      const variant = await client.query(
+        `INSERT INTO public.item_variants (item_id) VALUES ($1) RETURNING id`,
+        [itemId],
+      );
+      const variantId = variant.rows[0].id;
+
+      await client.query(`SET LOCAL ROLE service_role`);
+      // 権限エラーはトランザクションを abort 状態にするため、SAVEPOINT で切り離して
+      // 同じトランザクション内で後続の検証を続けられるようにする。
+      await client.query(`SAVEPOINT before_denied_update`);
+      await expect(
+        client.query(
+          `UPDATE public.item_variants SET stock_quantity = 10 WHERE id = $1`,
+          [variantId],
+        ),
+      ).rejects.toThrow(/permission denied/i);
+      await client.query(`ROLLBACK TO SAVEPOINT before_denied_update`);
+
+      await client.query(
+        `UPDATE public.item_variants SET is_active = false WHERE id = $1`,
+        [variantId],
+      );
+      const res = await client.query(
+        `SELECT is_active FROM public.item_variants WHERE id = $1`,
+        [variantId],
+      );
+      expect(res.rows[0].is_active).toBe(false);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
+
+  test('台帳経由なら service_role でも在庫が動く', async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const itemId = await createItem(client);
+      const variant = await client.query(
+        `INSERT INTO public.item_variants (item_id) VALUES ($1) RETURNING id`,
+        [itemId],
+      );
+      const variantId = variant.rows[0].id;
+
+      await client.query(`SET LOCAL ROLE service_role`);
+      await client.query(
+        `INSERT INTO public.stock_movements (variant_id, delta, reason) VALUES ($1, 6, 'restock')`,
+        [variantId],
+      );
+
+      const res = await client.query(
+        `SELECT stock_quantity FROM public.item_variants WHERE id = $1`,
+        [variantId],
+      );
+      expect(res.rows[0].stock_quantity).toBe(6);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
+
+  test('updated_at が UPDATE で自動更新される', async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const itemId = await createItem(client);
+      const variant = await client.query(
+        `INSERT INTO public.item_variants (item_id) VALUES ($1) RETURNING id, updated_at`,
+        [itemId],
+      );
+      const variantId = variant.rows[0].id;
+      const insertedUpdatedAt = variant.rows[0].updated_at;
+
+      // トランザクション内では now() が固定されるため経過時間では検証できない。
+      // 明示的に過去日時を指定しても、トリガーが now() で上書きすることを確認する。
+      const updated = await client.query(
+        `UPDATE public.item_variants
+         SET is_active = false, updated_at = '2000-01-01T00:00:00Z'
+         WHERE id = $1
+         RETURNING updated_at`,
+        [variantId],
+      );
+      expect(new Date(updated.rows[0].updated_at).getTime()).not.toBe(
+        new Date('2000-01-01T00:00:00Z').getTime(),
+      );
+      expect(new Date(updated.rows[0].updated_at).getTime()).toBe(
+        new Date(insertedUpdatedAt).getTime(),
+      );
     } finally {
       await client.query('ROLLBACK');
       client.release();
