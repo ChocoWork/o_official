@@ -6,7 +6,7 @@ import {
 } from './shop-test-utils';
 
 // FREQ-346: モバイル固定フッターが横スクロールバーに下部を削られないこと、
-// 左右余白がインラインの CTA と揃っていること
+// 左右余白が本文と揃っていること
 
 const item = sampleItemDetail();
 
@@ -52,25 +52,17 @@ test.describe('FR-ITEM-DETAIL-059 固定フッター表示時', () => {
     expect(gap).toBeCloseTo(0, 0);
   });
 
-  test('FREQ-346-AC-03: 固定フッターの左右余白がインライン CTA と一致する', async ({
+  test('FREQ-346-AC-03: 固定フッターの左右余白が本文と一致する', async ({
     page,
   }) => {
     await openItemDetail(page);
     await expect(page.getByTestId('item-actions-fixed')).toBeVisible();
 
-    const inline = await page
-      .getByTestId('item-actions-main')
-      .getByRole('button', { name: /ADD TO CART|SOLD OUT/ })
-      .boundingBox();
-
-    const fixed = await page
-      .getByTestId('item-actions-fixed')
-      .getByRole('button', { name: /ADD TO CART|SOLD OUT/ })
-      .boundingBox();
-
-    expect(inline).not.toBeNull();
-    expect(fixed).not.toBeNull();
-    expect(fixed!.x).toBeCloseTo(inline!.x, 0);
-    expect(fixed!.x + fixed!.width).toBeCloseTo(inline!.x + inline!.width, 0);
+    const padding = await page.evaluate(() => {
+      const main = getComputedStyle(document.querySelector('main')!);
+      const fixed = getComputedStyle(document.querySelector('[data-testid="item-actions-fixed"]')!);
+      return { main: parseFloat(main.paddingLeft), fixed: parseFloat(fixed.paddingLeft) };
+    });
+    expect(padding.fixed).toBeCloseTo(padding.main, 0);
   });
 });

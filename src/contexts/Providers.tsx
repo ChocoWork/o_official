@@ -6,10 +6,12 @@ import { CartProvider } from "@/contexts/CartContext";
 import { LoginProvider } from "@/contexts/LoginContext";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
+import "@/styles/detail-layout.css";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isHome = pathname === "/";
+  const isDetailPage = /^\/(?:item|look)\/[^/]+\/?$/.test(pathname ?? "");
   const isPrivacyPage = pathname === "/privacy";
   const isAuthPage =
     pathname === "/login" ||
@@ -20,7 +22,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     ? "flex-1 flex flex-col"
     : isAuthPage
       ? "flex min-h-dvh items-center justify-center px-5 py-[calc(var(--site-header-offset)+13px)]"
-      : "flex-1 flex flex-col my-13 sm:my-13.5 md:my-14 lg:my-[58px] xl:my-15 py-0 sm:py-1 md:py-2 lg:py-3 px-4";
+      : `flex-1 flex flex-col my-13 sm:my-13.5 md:my-14 lg:my-[58px] xl:my-15 py-0 sm:py-1 md:py-2 lg:py-3 ${isDetailPage ? "detail-page-main" : "px-4"}`;
 
   return (
     <CartProvider enabled={!isPrivacyPage}>

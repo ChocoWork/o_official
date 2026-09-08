@@ -1,0 +1,27 @@
+/* Match the mobile fixed action bar's horizontal and bottom padding. */
+[data-ui-sheet-panel].item-option-sheet-panel {
+  padding-inline: 6.25%;
+  padding-bottom: 0.75rem;
+}
+
+/* The option sheet is dismissed through its backdrop or Escape. */
+.item-option-sheet-panel > [data-ui-sheet-header] {
+  display: none;
+}
+
+@media (forced-colors: none) {
+  .item-size-select [data-ui-button][aria-pressed="false"] {
+    border-color: #f1f0ed;
+  }
+
+  .item-size-select [data-ui-button][aria-pressed="true"] {
+    border-color: #000;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) and (forced-colors: none) {
+  .item-size-select
+    [data-ui-button][aria-pressed="false"]:not(:disabled):hover {
+    border-color: rgba(0, 0, 0, 0.3);
+  }
+}

@@ -18,6 +18,8 @@ import {
 import { SpecList } from "@/components/ui/SpecList/SpecList";
 import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
 import { ToastSnackbar } from "@/components/ui/ToastSnackbar/ToastSnackbar";
+import { Sheet } from "@/components/ui/Sheet/Sheet";
+import "./ItemDetailClient.css";
 import { sortSizes } from "@/lib/items/sizes";
 
 type Props = { id: string };
@@ -29,11 +31,93 @@ type Props = { id: string };
 const CAROUSEL_ARROW_ICON_CLASS =
   "h-[clamp(1rem,4.5cqw,1.625rem)] w-[clamp(1rem,4.5cqw,1.625rem)]";
 
+type ColorOption = { hex: string; name: string };
+
+type OptionSelectorsProps = {
+  item: Item;
+  color: string;
+  size: string | null;
+  onSelectColor: (name: string) => void;
+  onSelectSize: (value: string) => void;
+  "data-testid": string;
+  sizeSelectTestId: string;
+};
+
+/** COLOR / SIZE の選択 UI。商品仕様テーブルとモバイルの選択シートで共有する
+ *  （反復: 同じ操作は同じ見た目・同じ挙動で繰り返す） */
+function OptionSelectors({
+  item,
+  color,
+  size,
+  onSelectColor,
+  onSelectSize,
+  "data-testid": dataTestId,
+  sizeSelectTestId,
+}: OptionSelectorsProps) {
+  return (
+    <div
+      data-testid={dataTestId}
+      className="grid grid-cols-[max-content_1fr] items-center gap-x-8 gap-y-[var(--lk-item-detail-select-gap)]"
+    >
+      {/* カラー選択: 参考サイト（roheframes）の実測に合わせ、外形 23px
+          （1px 枠 + 1px 余白）・塗り 19px・間隔 15px。選択中は黒枠
+          (FREQ-296 / FR-ITEM-DETAIL-008: aria-pressed) */}
+      {item.colors && Array.isArray(item.colors) && item.colors.length > 0 && (
+        <div className="col-span-2 flex gap-[15px] flex-wrap">
+          {(item.colors as unknown as ColorOption[]).map((colorOption) => (
+            <button
+              key={colorOption.name}
+              type="button"
+              onClick={() => onSelectColor(colorOption.name)}
+              aria-label={colorOption.name}
+              aria-pressed={color === colorOption.name}
+              title={colorOption.name}
+              className={`h-[23px] w-[23px] border p-px cursor-pointer transition-colors duration-200 focus-visible:outline-none ${
+                color === colorOption.name
+                  ? "border-black"
+                  : "border-[#f1f0ed] hover:border-black/30"
+              }`}
+            >
+              <span
+                className="block w-full h-full"
+                style={{ backgroundColor: colorOption.hex }}
+              />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* サイズ選択: SingleSelect の inline 変種。左寄せで内容なりの幅、
+          未選択は薄いグレー枠・ホバーで濃いグレー枠・選択中は黒枠で囲む
+          並び順は Admin の選択肢の並び（S → M → L → FREE）に合わせる (FREQ-305)
+          (FR-ITEM-DETAIL-008: aria-pressed) */}
+      {item.sizes && item.sizes.length > 0 && (
+        <SingleSelect
+          data-testid={sizeSelectTestId}
+          className="item-size-select col-span-2"
+          variant="inline"
+          size="3xs"
+          aria-label="SIZE"
+          options={sortSizes(item.sizes).map((sizeOption) => ({
+            value: sizeOption,
+            label: sizeOption,
+          }))}
+          value={size ?? ""}
+          onValueChange={onSelectSize}
+        />
+      )}
+    </div>
+  );
+}
+
 type ItemActionButtonsProps = {
   addedToCart: boolean;
   addingToCart: boolean;
   isSoldOut: boolean;
   optionsSelected: boolean;
+  /** 未選択のとき押せなくするか。選択 UI が同じ視界にある場所（インライン）は true、
+   *  選択 UI が見えない固定 CTA は false にしてシートを開かせる (FREQ-347) */
+  enforceSelection: boolean;
   isWishlisted: boolean;
   togglingWishlist: boolean;
   onAddToCart: () => void;
@@ -45,6 +129,7 @@ function ItemActionButtons({
   addingToCart,
   isSoldOut,
   optionsSelected,
+  enforceSelection,
   isWishlisted,
   togglingWishlist,
   onAddToCart,
@@ -54,7 +139,9 @@ function ItemActionButtons({
     <div className="flex w-full gap-3 md:flex-col">
       <Button
         onClick={onAddToCart}
-        disabled={addingToCart || isSoldOut || !optionsSelected}
+        disabled={
+          addingToCart || isSoldOut || (enforceSelection && !optionsSelected)
+        }
         size="xs"
         className="w-full"
       >
@@ -72,7 +159,11 @@ function ItemActionButtons({
             <div className="flex h-4 w-4 items-center justify-center">
               <i className="ri-shopping-bag-line lk-text-lg" />
             </div>
-            ADD TO CART
+            {/* 固定 CTA だけは未選択のとき「選ぶ」ことを予告する。インラインは
+                選択 UI が同じ視界にあるのでラベルを変えない (FREQ-347) */}
+            {enforceSelection || optionsSelected
+              ? "ADD TO CART"
+              : "SELECT OPTIONS"}
           </div>
         )}
       </Button>
@@ -161,20 +252,21 @@ export default function ItemDetailClient({ id }: Props) {
   const [addingToCart, setAddingToCart] = useState(false);
   const [addedToCart, setAddedToCart] = useState(false);
   const [togglingWishlist, setTogglingWishlist] = useState(false);
-  const [isMainActionBelowViewport, setIsMainActionBelowViewport] =
-    useState(true);
   // 未選択バリデーションエラーを alert() の代わりにインライン表示する
   const [validationError, setValidationError] = useState<string | null>(null);
   // ウィッシュリストの失敗は validationError と分ける。カート用のインライン枠に混ぜると
   // サイズ・カラー選択のエラーに見えるうえ、固定フッターから押したときは画面外で見えない。
   const [wishlistError, setWishlistError] = useState<string | null>(null);
-  const cartButtonRef = useRef<HTMLDivElement>(null);
   const tabletCarouselRef = useRef<HTMLDivElement>(null);
   const mobileCarouselRef = useRef<HTMLDivElement>(null);
 
   const isWishlisted = item ? wishlistedItems.has(item.id) : false;
   const stockStatus = item ? resolveStockStatus(item) : "unknown";
   const isSoldOut = stockStatus === "sold_out";
+
+  // FREQ-347: モバイルの固定 CTA から開く選択シート。選択肢とカート投入ボタンを
+  // 同じ視界にまとめ、選択のためにページを往復させない（近接）。
+  const [optionSheetOpen, setOptionSheetOpen] = useState(false);
 
   // FREQ-345: 選択肢がある軸はすべて選ばれるまで ADD TO CART を押せなくする。
   const optionsSelected =
@@ -236,48 +328,6 @@ export default function ItemDetailClient({ id }: Props) {
     window.scrollTo(0, 0);
   }, [item]);
 
-  useLayoutEffect(() => {
-    if (!item) return;
-    const el = cartButtonRef.current;
-    if (!el) return;
-
-    const updateFixedActionVisibility = () => {
-      const rect = el.getBoundingClientRect();
-      setIsMainActionBelowViewport(rect.top >= window.innerHeight);
-    };
-
-    // Observer の初回通知を待たず、固定CTAを初期表示する。
-    // 本体CTAが画面内または画面より上にある場合は、固定CTAを表示しない。
-    updateFixedActionVisibility();
-
-    let animationFrameId: number | null = null;
-    const requestVisibilityUpdate = () => {
-      if (animationFrameId !== null) return;
-      animationFrameId = window.requestAnimationFrame(() => {
-        animationFrameId = null;
-        updateFixedActionVisibility();
-      });
-    };
-
-    const observer = new IntersectionObserver(requestVisibilityUpdate, {
-      threshold: 0,
-    });
-    observer.observe(el);
-    window.addEventListener("scroll", requestVisibilityUpdate, {
-      passive: true,
-    });
-    window.addEventListener("resize", requestVisibilityUpdate);
-
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("scroll", requestVisibilityUpdate);
-      window.removeEventListener("resize", requestVisibilityUpdate);
-      if (animationFrameId !== null) {
-        window.cancelAnimationFrame(animationFrameId);
-      }
-    };
-  }, [item]);
-
   // タブレットカルーセルの前後送りボタン: 指定インデックスのスライドへスクロールする (FREQ-172)
   const scrollTabletCarouselTo = (index: number) => {
     setSelectedImageIndex(index);
@@ -297,6 +347,29 @@ export default function ItemDetailClient({ id }: Props) {
     if (index !== null) {
       setSelectedImageIndex(index);
     }
+  };
+
+  const handleSelectColor = (name: string) => {
+    setColor(name);
+    setValidationError(null);
+  };
+
+  const handleSelectSize = (next: string) => {
+    setSize(next);
+    setValidationError(null);
+  };
+
+  // モバイルの選択操作はシートに集約し、選択済みでも選び直せるようにする。
+  const handleFixedAction = () => {
+    if (
+      !optionsSelected ||
+      (item?.colors?.length ?? 0) > 1 ||
+      (item?.sizes?.length ?? 0) > 1
+    ) {
+      setOptionSheetOpen(true);
+      return;
+    }
+    void handleAddToCart();
   };
 
   const handleAddToCart = async () => {
@@ -321,6 +394,8 @@ export default function ItemDetailClient({ id }: Props) {
       });
       if (!response.ok) throw new Error("カートへの追加に失敗しました");
       await updateCartCount();
+      // FREQ-347: シートから追加したときは閉じて、追加できたことを本体側で見せる
+      setOptionSheetOpen(false);
       setAddedToCart(true);
       setTimeout(() => setAddedToCart(false), 2000);
     } catch (err) {
@@ -508,12 +583,8 @@ export default function ItemDetailClient({ id }: Props) {
             className="grid grid-cols-1 gap-y-3.5 md:-ml-5 md:grid-cols-[min(32rem,56%,calc((100svh-6rem)*2/3))_minmax(18.125rem,1fr)] md:gap-x-3 md:gap-y-0 md:pr-3 lg:ml-0 lg:pr-0 lg:grid-cols-[auto_minmax(18.125rem,min(32rem,calc((100svh-7rem)*2/3)))] lg:justify-center lg:gap-x-14"
           >
             <div className="md:-ml-5 md:w-full lg:ml-0">
-              {/* モバイル: 横スクロールカルーセル (FREQ-162)
-                  main の px-4 を負マージンで相殺してフルブリード化し、
-                  ピーク表示が main の padding でクリップされないようにする (FREQ-159)。
-                  負マージンが padding を超えると横スクロールが出て、スクロールバーが
-                  固定フッターの下部を削るため、main と同じ 16px に揃える (FREQ-346) */}
-              <div className="md:hidden -mx-4">
+              {/* モバイル: main の6.25%余白を相殺し、画像カルーセルを全幅で表示する。 */}
+              <div className="detail-mobile-gallery md:hidden">
                 {/* ピーク表示: 左右に余白を設け、2枚以上のときは
                     前後スライドの端が余白部分に見える (FREQ-158)。
                     余白は 320px 時の 20px / 280px を保つ画面幅比 6.25% で、
@@ -810,79 +881,23 @@ export default function ItemDetailClient({ id }: Props) {
 
               {/* 商品仕様テーブル: カラー・サイズ選択 (FREQ-153)
                   FREQ-292: COLOR / SIZE のラベルは表示しない（各行は全幅） */}
-              <div
-                data-testid="item-spec-table"
-                className="mt-[var(--lk-item-detail-section-gap)] grid grid-cols-[max-content_1fr] items-center gap-x-8 gap-y-[var(--lk-item-detail-select-gap)]"
-              >
-                {/* カラー選択: 参考サイト（roheframes）の実測に合わせ、外形 23px
-                    （1px 枠 + 1px 余白）・塗り 19px・間隔 15px。選択中は黒枠
-                    (FREQ-296 / FR-ITEM-DETAIL-008: aria-pressed) */}
-                {item.colors &&
-                  Array.isArray(item.colors) &&
-                  item.colors.length > 0 && (
-                    <>
-                      <div className="col-span-2 flex gap-[15px] flex-wrap">
-                        {(
-                          item.colors as unknown as Array<{
-                            hex: string;
-                            name: string;
-                          }>
-                        ).map((colorOption) => (
-                          <button
-                            key={colorOption.name}
-                            type="button"
-                            onClick={() => {
-                              setColor(colorOption.name);
-                              setValidationError(null);
-                            }}
-                            aria-label={colorOption.name}
-                            aria-pressed={color === colorOption.name}
-                            title={colorOption.name}
-                            className={`h-[23px] w-[23px] border p-px cursor-pointer transition-colors duration-200 focus-visible:outline-none ${
-                              color === colorOption.name
-                                ? "border-black"
-                                : "border-[#f1f0ed] hover:border-black/30"
-                            }`}
-                          >
-                            <span
-                              className="block w-full h-full"
-                              style={{ backgroundColor: colorOption.hex }}
-                            />
-                          </button>
-                        ))}
-                      </div>
-                    </>
-                  )}
-
-                {/* サイズ選択: SingleSelect の inline 変種。左寄せで内容なりの幅、
-                    未選択は文字だけ・選択中のみ黒枠で囲む (FREQ-303 / FREQ-304)
-                    並び順は Admin の選択肢の並び（S → M → L → FREE）に合わせる (FREQ-305)
-                    (FR-ITEM-DETAIL-008: aria-pressed) */}
-                {item.sizes && item.sizes.length > 0 && (
-                  <SingleSelect
-                    data-testid="item-size-select"
-                    className="col-span-2"
-                    variant="inline"
-                    size="3xs"
-                    aria-label="SIZE"
-                    options={sortSizes(item.sizes).map((sizeOption) => ({
-                      value: sizeOption,
-                      label: sizeOption,
-                    }))}
-                    value={size ?? ""}
-                    onValueChange={(next) => {
-                      setSize(next);
-                      setValidationError(null);
-                    }}
-                  />
-                )}
+              <div className="hidden md:block mt-[var(--lk-item-detail-section-gap)]">
+                <OptionSelectors
+                  data-testid="item-spec-table"
+                  sizeSelectTestId="item-size-select"
+                  item={item}
+                  color={color}
+                  size={size}
+                  onSelectColor={handleSelectColor}
+                  onSelectSize={handleSelectSize}
+                />
               </div>
 
               {/* バリデーションエラーメッセージ (FR-ITEM-DETAIL-008: role="alert") */}
               {validationError && (
                 <p
                   role="alert"
-                  className="mt-[var(--lk-item-detail-select-gap)] lk-text-3xs text-red-500"
+                  className="hidden md:block mt-[var(--lk-item-detail-select-gap)] lk-text-3xs text-red-500"
                 >
                   {validationError}
                 </p>
@@ -890,15 +905,15 @@ export default function ItemDetailClient({ id }: Props) {
 
               {/* カート追加・ウィッシュリストボタン */}
               <div
-                ref={cartButtonRef}
                 data-testid="item-actions-main"
-                className="mt-[var(--lk-item-detail-action-gap)]"
+                className="hidden md:block mt-[var(--lk-item-detail-action-gap)]"
               >
                 <ItemActionButtons
                   addedToCart={addedToCart}
                   addingToCart={addingToCart}
                   isSoldOut={isSoldOut}
                   optionsSelected={optionsSelected}
+                  enforceSelection
                   isWishlisted={isWishlisted}
                   togglingWishlist={togglingWishlist}
                   onAddToCart={handleAddToCart}
@@ -926,23 +941,68 @@ export default function ItemDetailClient({ id }: Props) {
       </div>
 
       {/* モバイル固定フッター (FR-ITEM-DETAIL-006) */}
-      {isMainActionBelowViewport && (
-        <div
-          data-testid="item-actions-fixed"
-          className="fixed bottom-0 left-0 right-0 z-50 flex border-t border-black/10 bg-white px-4 py-3 md:hidden"
-        >
+
+      <div
+        data-testid="item-actions-fixed"
+        className="fixed bottom-0 left-0 right-0 z-50 flex flex-col gap-2 border-t border-black/10 bg-white px-[6.25%] py-3 md:hidden"
+      >
+        {validationError && !optionSheetOpen && (
+          <p role="alert" className="lk-text-3xs text-red-500">
+            {validationError}
+          </p>
+        )}
+        <ItemActionButtons
+          addedToCart={addedToCart}
+          addingToCart={addingToCart}
+          isSoldOut={isSoldOut}
+          optionsSelected={optionsSelected}
+          enforceSelection={false}
+          isWishlisted={isWishlisted}
+          togglingWishlist={togglingWishlist}
+          onAddToCart={handleFixedAction}
+          onToggleWishlist={handleToggleWishlist}
+        />
+      </div>
+
+      {/* FREQ-347: 固定 CTA から開く選択シート。選択肢と決定ボタンを同じ視界に置き、
+          選択のためにページを往復させない。中身は仕様テーブルと同じ UI を再利用する */}
+      <Sheet
+        open={optionSheetOpen}
+        onClose={() => setOptionSheetOpen(false)}
+        size="md"
+        className="item-option-sheet-panel"
+        aria-label="COLOR / SIZE を選択"
+      >
+        <div data-testid="item-option-sheet" className="flex flex-col gap-4">
+          <OptionSelectors
+            data-testid="item-sheet-options"
+            sizeSelectTestId="item-sheet-size-select"
+            item={item}
+            color={color}
+            size={size}
+            onSelectColor={handleSelectColor}
+            onSelectSize={handleSelectSize}
+          />
+
+          {validationError && (
+            <p role="alert" className="lk-text-3xs text-red-500">
+              {validationError}
+            </p>
+          )}
+
           <ItemActionButtons
             addedToCart={addedToCart}
             addingToCart={addingToCart}
             isSoldOut={isSoldOut}
             optionsSelected={optionsSelected}
+            enforceSelection
             isWishlisted={isWishlisted}
             togglingWishlist={togglingWishlist}
             onAddToCart={handleAddToCart}
             onToggleWishlist={handleToggleWishlist}
           />
         </div>
-      )}
+      </Sheet>
 
       {/* FREQ-340: ウィッシュリストの失敗は3箇所のどのボタンから押しても見えるよう
           固定表示にする。成功はアイコンの塗りつぶしで伝わるので出さない。
@@ -951,9 +1011,7 @@ export default function ItemDetailClient({ id }: Props) {
         <div
           data-testid="item-wishlist-toast"
           role="alert"
-          className={`fixed right-4 z-50 max-w-[min(92vw,420px)] ${
-            isMainActionBelowViewport ? "bottom-24 md:bottom-4" : "bottom-4"
-          }`}
+          className="fixed right-4 z-50 max-w-[min(92vw,420px)] bottom-24 md:bottom-4"
         >
           <ToastSnackbar
             message={wishlistError}

@@ -10,4 +10,6 @@ export interface SheetProps {
   /** md = 50vh（デフォルト）, lg = 90vh */
   size?: SheetSize;
   className?: string;
+  /** title を出さないときのアクセシブル名 */
+  'aria-label'?: string;
 }

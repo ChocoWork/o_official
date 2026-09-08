@@ -726,9 +726,9 @@
     "semantic_hash": ""
   },
   "src/app/item/[id]/ItemDetailClient.tsx": {
-    "mtime": 1788600151.0602512,
-    "seen": 1788600250.647509,
-    "ast_hash": "81a4b7830140d7b33910df5568ece06f",
+    "mtime": 1788679115.1297915,
+    "seen": 1788681950.6237388,
+    "ast_hash": "97cc2f4a78d099b30482c6721a81cf3e",
     "semantic_hash": ""
   },
   "src/app/item/[id]/page.tsx": {
@@ -804,9 +804,9 @@
     "semantic_hash": ""
   },
   "src/app/look/[id]/page.tsx": {
-    "mtime": 1788616971.8639257,
-    "seen": 1788617166.8439355,
-    "ast_hash": "0c4c22dae35a362ffe5aab84a1e62317",
+    "mtime": 1788654859.2108786,
+    "seen": 1788658445.6411757,
+    "ast_hash": "cd1ba1d410307ea82089008cad9f1635",
     "semantic_hash": ""
   },
   "src/app/look/page.tsx": {
@@ -1386,15 +1386,15 @@
     "semantic_hash": ""
   },
   "src/components/ui/Sheet/Sheet.tsx": {
-    "mtime": 1781048593.1751444,
-    "seen": 1788271290.7021928,
-    "ast_hash": "964418d248c46aa61ba4e71b2c0a14b8",
+    "mtime": 1788678711.7526214,
+    "seen": 1788681950.6238272,
+    "ast_hash": "891a034d7cce40cf3d49f5df2022be5c",
     "semantic_hash": ""
   },
   "src/components/ui/Sheet/Sheet_type.ts": {
-    "mtime": 1781048560.4460187,
-    "seen": 1788271290.7021937,
-    "ast_hash": "79a3a05ec8523d3ca0b3d00df81e9c6e",
+    "mtime": 1788678722.0468316,
+    "seen": 1788681950.623828,
+    "ast_hash": "f29b8d1b59daa79a411c7790f12e33e1",
     "semantic_hash": ""
   },
   "src/components/ui/SingleSelect/SingleSelect.tsx": {
@@ -4362,22 +4362,22 @@
     "semantic_hash": "54bee5e2e08bb2f627e590952951ce20"
   },
   "e2e/FR-ITEM-DETAIL-003-color-size-quantity.spec.ts": {
-    "mtime": 1787567334.37049,
-    "seen": 1788271290.7017756,
-    "ast_hash": "dc29c53c4b6b40fe4aaaf6d2a8b4352d",
+    "mtime": 1788659818.848079,
+    "seen": 1788673118.1402738,
+    "ast_hash": "d846e617bf1319781fe4ff5279ca7fa7",
     "semantic_hash": ""
   },
   "e2e/FR-ITEM-DETAIL-004-006-007-008-item-detail-actions-and-stock.spec.ts": {
-    "mtime": 1784413497.4224682,
-    "seen": 1788271290.7017763,
-    "ast_hash": "b82bf5b2898955e7911ee8e4b593572d",
+    "mtime": 1788659818.8490882,
+    "seen": 1788673118.1402752,
+    "ast_hash": "94b5dce01da35b3d140794d06dc07215",
     "semantic_hash": ""
   },
   "e2e/FR-ITEM-DETAIL-004-cart-wishlist.spec.ts": {
-    "mtime": 1776517676.990703,
-    "seen": 1788271290.7017775,
-    "ast_hash": "5bf372a5ef16677215e155185e41b7b2",
-    "semantic_hash": "5bf372a5ef16677215e155185e41b7b2"
+    "mtime": 1788659818.8501356,
+    "seen": 1788673118.1402762,
+    "ast_hash": "2dc629d26c6a2ba4dcb2a7d147a22393",
+    "semantic_hash": ""
   },
   "e2e/FR-ITEM-DETAIL-005-loading-error-states.spec.ts": {
     "mtime": 1777210652.2593238,
@@ -4416,10 +4416,10 @@
     "semantic_hash": "dd651a33882388fd6328f3110c1e8490"
   },
   "e2e/FR-ITEM-DETAIL-012-013-related-items-and-alt.spec.ts": {
-    "mtime": 1777210652.2593238,
-    "seen": 1788271290.7017858,
-    "ast_hash": "67111761e32ef2d3c5a458fa0c942f40",
-    "semantic_hash": "67111761e32ef2d3c5a458fa0c942f40"
+    "mtime": 1788659818.8501356,
+    "seen": 1788673118.1402824,
+    "ast_hash": "e8f614aa029c3c6fe7cfb6d27863b3eb",
+    "semantic_hash": ""
   },
   "e2e/FR-ITEM-DETAIL-012-related-items.spec.ts": {
     "mtime": 1777210652.2593238,
@@ -4440,9 +4440,9 @@
     "semantic_hash": "a1617af1530880db1f78f6b26e2ed61d"
   },
   "e2e/FR-ITEM-DETAIL-015-spec-table-swatches.spec.ts": {
-    "mtime": 1787614843.8097386,
-    "seen": 1788271290.701791,
-    "ast_hash": "1b173ac090285c46b3f5ac1b161cfd3d",
+    "mtime": 1788659818.8490882,
+    "seen": 1788673118.1402862,
+    "ast_hash": "7bd6aa0e9f4bb62d5e1dcecaceb60b0b",
     "semantic_hash": ""
   },
   "e2e/FR-ITEM-DETAIL-016-no-quantity-single-add.spec.ts": {
@@ -5604,9 +5604,9 @@
     "semantic_hash": ""
   },
   "docs/2_Specs/spec.md": {
-    "mtime": 1788618471.016001,
-    "seen": 1788618640.7939131,
-    "ast_hash": "585332c1fbd77e66c8448c79247521b4",
+    "mtime": 1788678905.090616,
+    "seen": 1788681950.6243434,
+    "ast_hash": "e5a96955f93d4c56c16d14ab668a0d78",
     "semantic_hash": ""
   },
   "docs/3_ArchitectureDesign/auth-structure.md": {
@@ -10038,9 +10038,9 @@
     "semantic_hash": ""
   },
   "e2e/FR-ITEM-DETAIL-046-color-swatch-ring.spec.ts": {
-    "mtime": 1787569359.186121,
-    "seen": 1788271290.7018156,
-    "ast_hash": "58718e94426a7bf252c864b93494dcce",
+    "mtime": 1788659818.8490882,
+    "seen": 1788673118.1403136,
+    "ast_hash": "93a4a4210fc9331c5d85695015d68286",
     "semantic_hash": ""
   },
   "migrations/090_add_item_product_note.sql": {
@@ -10632,15 +10632,87 @@
     "semantic_hash": ""
   },
   "e2e/FR-LOOK-DETAIL-017-mobile-fixed-bottom-nav.spec.ts": {
-    "mtime": 1788616940.0231657,
-    "seen": 1788617166.8436432,
-    "ast_hash": "4797fbfc9b09adb3e6e2cfc8ab10477f",
+    "mtime": 1788654859.2141247,
+    "seen": 1788658445.6408966,
+    "ast_hash": "89cbae92274b93d9fdb5cbe712643fa1",
     "semantic_hash": ""
   },
   "e2e/FR-LOOK-DETAIL-018-no-horizontal-overflow.spec.ts": {
     "mtime": 1788618421.9425077,
     "seen": 1788618640.7930043,
     "ast_hash": "dd42ce4e166fb70d181099eb8e774233",
+    "semantic_hash": ""
+  },
+  "e2e/FR-ITEM-DETAIL-058-single-option-auto-select.spec.ts": {
+    "mtime": 1788658927.6733208,
+    "seen": 1788673118.1403255,
+    "ast_hash": "2a839ebaacbaa6b841eb3884eb988c51",
+    "semantic_hash": ""
+  },
+  "e2e/FR-ITEM-DETAIL-059-fixed-footer-no-clip.spec.ts": {
+    "mtime": 1788679267.2663596,
+    "seen": 1788681950.6234033,
+    "ast_hash": "dc5e509bcb239460970ac7563e7f0162",
+    "semantic_hash": ""
+  },
+  "e2e/FR-ITEM-DETAIL-060-mobile-option-sheet.spec.ts": {
+    "mtime": 1788678840.2019744,
+    "seen": 1788681950.623405,
+    "ast_hash": "4dcd2c992fb2b8244074c67c2bc1b0ec",
+    "semantic_hash": ""
+  },
+  "tests/unit/components/Sheet.test.tsx": {
+    "mtime": 1788678875.0198393,
+    "seen": 1788681950.624013,
+    "ast_hash": "a00142b29b704f4f64fc64298fee09be",
+    "semantic_hash": ""
+  },
+  "docs/superpowers/specs/2026-09-06-variant-inventory-and-cart-ownership-design.md": {
+    "mtime": 1788682415.7926946,
+    "seen": 1788682423.365569,
+    "ast_hash": "56fa4fde58ebf448341e19b509c03a71",
+    "semantic_hash": ""
+  },
+  "docs/superpowers/plans/2026-09-06-variant-inventory-foundation.md": {
+    "mtime": 1788682771.23048,
+    "seen": 1788682784.0602896,
+    "ast_hash": "7995b028cd9c64d0c3280230beaa160d",
+    "semantic_hash": ""
+  },
+  "tests/integration/db/item_variants.integration.test.ts": {
+    "mtime": 1788698145.1483138,
+    "seen": 1788698176.6626744,
+    "ast_hash": "5ef49436b7bda56f49cf22ed1a6d6a8f",
+    "semantic_hash": ""
+  },
+  "supabase/migrations/20260906090000_add_variant_inventory_tables.sql": {
+    "mtime": 1788684214.7939763,
+    "seen": 1788698411.5364556,
+    "ast_hash": "d1f17f163f0422eb6574022df38e8723",
+    "semantic_hash": ""
+  },
+  "tests/integration/db/stock_movements.integration.test.ts": {
+    "mtime": 1788699383.5562508,
+    "seen": 1788699462.678061,
+    "ast_hash": "bacdb3c78b772d80d08c8dc171c29d81",
+    "semantic_hash": ""
+  },
+  "supabase/migrations/20260906090100_add_stock_movements.sql": {
+    "mtime": 1788699183.5289755,
+    "seen": 1788699462.6765711,
+    "ast_hash": "15341227425d780d99884c43ed6316d1",
+    "semantic_hash": ""
+  },
+  "supabase/migrations/20260906090200_add_verify_stock_integrity.sql": {
+    "mtime": 1788699396.6165733,
+    "seen": 1788700167.8839376,
+    "ast_hash": "3e92fc1719a99f877daa2e8cad8365b2",
+    "semantic_hash": ""
+  },
+  "tests/integration/db/backfill_variants.integration.test.ts": {
+    "mtime": 1788699965.7025852,
+    "seen": 1788700167.8857195,
+    "ast_hash": "8610a24d21fd9da60ad5fdbdd39263f3",
     "semantic_hash": ""
   }
 }

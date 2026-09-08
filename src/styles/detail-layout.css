@@ -1,0 +1,10 @@
+.detail-page-main {
+  padding-inline: 6.25%;
+}
+
+@media (max-width: 767px) {
+  /* The content is 87.5% of the page: 6.25 / 87.5 = 1 / 14. */
+  .detail-page-main .detail-mobile-gallery {
+    margin-inline: calc(-100% / 14);
+  }
+}

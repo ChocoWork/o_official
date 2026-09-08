@@ -60,16 +60,12 @@ export function LookImageGallery({ theme, imageUrls }: LookImageGalleryProps) {
 
   return (
     <div>
-      {/* モバイル: 横スクロールカルーセル。main の px-4 を負マージンで相殺して
-          フルブリード化し、前後スライドの端が余白部分に見える（ピーク表示）。
-          FREQ-344: ここを -mx-5（20px）にすると main の px-4（16px）を 4px 超過し、
-          ページ全体が横スクロールしてしまう（横スクロールバーが固定ボトムナビの
-          下部も削る）ので、main のパディングと同じ 4 に揃えること。 */}
-      <div className="md:hidden -mx-4">
+      {/* モバイル: main の6.25%余白を相殺し、画像カルーセルを全幅で表示する。 */}
+      <div className="detail-mobile-gallery md:hidden">
         <div
           ref={mobileCarouselRef}
           data-testid="look-detail-carousel"
-          className="flex w-full touch-pan-x snap-x snap-mandatory scroll-px-5 gap-0.5 overflow-x-scroll px-5"
+          className="flex w-full touch-pan-x snap-x snap-mandatory scroll-px-[6.25%] gap-[0.625vw] overflow-x-scroll px-[6.25%]"
           style={hiddenScrollbarStyle}
           onScroll={handleCarouselScroll}
         >
@@ -77,7 +73,7 @@ export function LookImageGallery({ theme, imageUrls }: LookImageGalleryProps) {
             <div
               key={`${theme}:carousel:${index}:${imageUrl}`}
               data-testid="look-detail-carousel-slide"
-              className="relative aspect-2/3 w-[calc(100vw-2.5rem)] shrink-0 snap-start overflow-hidden bg-white"
+              className="relative aspect-2/3 w-full shrink-0 snap-start overflow-hidden bg-white"
             >
               <Image
                 src={imageUrl}
@@ -97,7 +93,7 @@ export function LookImageGallery({ theme, imageUrls }: LookImageGalleryProps) {
           selectedIndex={selectedIndex}
           onSelect={scrollMobileCarouselTo}
           label={`${theme} の画像インジケータ`}
-          className="px-5"
+          className="px-[6.25%]"
         />
       </div>
 

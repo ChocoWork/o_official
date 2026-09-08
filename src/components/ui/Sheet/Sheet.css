@@ -33,7 +33,8 @@
 
   position: fixed;
   inset: 0;
-  z-index: 50;
+  /* モバイルの固定 CTA（z-50）より前面に出す */
+  z-index: 60;
   display: flex;
   align-items: flex-end; /* 整列: シートを画面下端に揃える */
   justify-content: center;

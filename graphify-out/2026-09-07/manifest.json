@@ -726,9 +726,9 @@
     "semantic_hash": ""
   },
   "src/app/item/[id]/ItemDetailClient.tsx": {
-    "mtime": 1788792321.316927,
-    "seen": 1788792358.2863111,
-    "ast_hash": "077d74c9c0e40ee9635b38e51c6d9534",
+    "mtime": 1788791077.2529807,
+    "seen": 1788791180.0964944,
+    "ast_hash": "04abc7216eec858fe38dce8464281d18",
     "semantic_hash": ""
   },
   "src/app/item/[id]/page.tsx": {
@@ -10650,9 +10650,9 @@
     "semantic_hash": ""
   },
   "e2e/FR-ITEM-DETAIL-059-fixed-footer-no-clip.spec.ts": {
-    "mtime": 1788792266.103011,
-    "seen": 1788792358.256109,
-    "ast_hash": "bb4ade3a46f27366ac13e64c27b09285",
+    "mtime": 1788679267.2663596,
+    "seen": 1788681950.6234033,
+    "ast_hash": "dc5e509bcb239460970ac7563e7f0162",
     "semantic_hash": ""
   },
   "e2e/FR-ITEM-DETAIL-060-mobile-option-sheet.spec.ts": {
@@ -10740,15 +10740,9 @@
     "semantic_hash": ""
   },
   "e2e/FR-ITEM-DETAIL-061-option-sheet-layout.spec.ts": {
-    "mtime": 1788792219.590046,
-    "seen": 1788792358.2561913,
-    "ast_hash": "b68f4cbf44f44ae7ad7881a73551906c",
-    "semantic_hash": ""
-  },
-  "e2e/FR-ITEM-DETAIL-062-persistent-mobile-cta.spec.ts": {
-    "mtime": 1788792322.3316698,
-    "seen": 1788792358.2561927,
-    "ast_hash": "667150522fdce689573c7a6332a04173",
+    "mtime": 1788790428.159671,
+    "seen": 1788790467.8182154,
+    "ast_hash": "9d5c8b6a31a760cbf2704fc5bcc9e1cb",
     "semantic_hash": ""
   }
 }
