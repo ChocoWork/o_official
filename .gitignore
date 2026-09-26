@@ -60,7 +60,9 @@ certificates
 /.tmp-history-*
 /.claude/settings.local.json
 
-# Graphify is installed user-wide; keep only generated graph data in this repo.
+# Graphify is installed user-wide. Its output is regenerable local data, so it is not tracked
+# (graph.json alone is about 12 MB and every `graphify update .` rewrites it).
+graphify-out/
 /.agents/skills/graphify/
 /.codex/skills/graphify/
 /.codex/hooks.json*

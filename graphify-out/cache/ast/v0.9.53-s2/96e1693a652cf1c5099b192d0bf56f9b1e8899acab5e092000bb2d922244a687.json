@@ -1,1 +1,0 @@
-{"nodes": [{"id": "$graphify-root$_migrations_013_create_news_images_bucket_sql", "label": "013_create_news_images_bucket.sql", "file_type": "code", "source_file": "migrations/013_create_news_images_bucket.sql", "source_location": null}], "edges": []}
