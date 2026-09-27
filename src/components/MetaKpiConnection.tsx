@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button/Button";
 import { clientFetch } from "@/lib/client-fetch";
+import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 
 type ConnectionData = {
   configured: boolean;
@@ -150,11 +151,10 @@ export function MetaKpiConnection({
           )}
         </div>
       </div>
-      {message ? (
-        <p role="status" className="mt-2 font-acumin lk-text-4xs text-[#474747]">
-          {message}
-        </p>
-      ) : null}
+      {/* 案内の入れ物は常に置き、中身だけを入れ替える（FREQ-377） */}
+      <LiveMessage politeness="status" className="mt-2 font-acumin lk-text-4xs text-[#474747]">
+        {message}
+      </LiveMessage>
     </div>
   );
 }

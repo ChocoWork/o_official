@@ -1,6 +1,8 @@
 // File: src/components/ui/TextField/TextField.tsx
 import "@/components/ui/TextField/TextField.css";
+import { useId } from "react";
 import { clsx } from "clsx";
+import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 import type { TextFieldProps } from "@/components/ui/TextField/TextField_type";
 
 export function TextField({
@@ -16,15 +18,14 @@ export function TextField({
   size = "md",
   ...props
 }: TextFieldProps) {
-  const fieldId = id ?? props.name;
-  const errorId = fieldId ? `${fieldId}-error` : undefined;
-  const helperId = fieldId ? `${fieldId}-helper` : undefined;
+  const generatedId = useId();
+  // 見出しを for で結びつけるので、id も name も無いときは生成した id を使う
+  const fieldId = id ?? props.name ?? generatedId;
+  const errorId = `${fieldId}-error`;
+  const helperId = `${fieldId}-helper`;
 
   const describedBy =
-    [
-      errorText && errorId ? errorId : null,
-      !errorText && helperText && helperId ? helperId : null,
-    ]
+    [errorText ? errorId : null, !errorText && helperText ? helperId : null]
       .filter(Boolean)
       .join(" ") || undefined;
 
@@ -39,9 +40,21 @@ export function TextField({
     "data-ui-size": size,
   } as const;
 
+  // 部品全体を label で包まない（FREQ-375）。包むと案内や右端のボタンの名前まで入力欄の名前に
+  // 混ざり、ボタンも label の中の操作要素になる（MDN: label の中に操作要素を置かない）。
+  // 見出しは for で結びつける。
   return (
-    <label className="text-field" {...rootDataAttrs}>
-      {label ? <span className="text-field__label">{label}</span> : null}
+    <div className="text-field" {...rootDataAttrs}>
+      {label ? (
+        <label className="text-field__label" htmlFor={fieldId}>
+          {label}
+          {props.required ? (
+            <span className="text-field__required" aria-hidden="true">
+              *
+            </span>
+          ) : null}
+        </label>
+      ) : null}
       <span className="text-field__control">
         {leadingIcon ? (
           <span className="text-field__icon" aria-hidden="true">
@@ -49,7 +62,10 @@ export function TextField({
           </span>
         ) : null}
         {leadingText ? (
-          <span className="text-field__leading-text">{leadingText}</span>
+          // 欄の見出しの文言として使われるので、これも入力欄に結びつける（押すと入力欄へ移る）
+          <label className="text-field__leading-text" htmlFor={fieldId}>
+            {leadingText}
+          </label>
         ) : null}
         <input
           id={fieldId}
@@ -62,16 +78,21 @@ export function TextField({
           <span className="text-field__trailing">{trailingIcon}</span>
         ) : null}
       </span>
-      {errorText ? (
-        <span id={errorId} role="alert" className="text-field__error">
-          {errorText}
-        </span>
-      ) : null}
+      {/* 案内の入れ物は常に置き、中身だけを入れ替える（FREQ-375）。欄ごとの誤りは確定時に
+          いくつも同時に出うるので、割り込まずに順番に読む polite にする（FREQ-376） */}
+      <LiveMessage
+        as="span"
+        id={errorId}
+        politeness="polite"
+        className="text-field__error"
+      >
+        {errorText}
+      </LiveMessage>
       {!errorText && helperText ? (
         <span id={helperId} className="text-field__helper">
           {helperText}
         </span>
       ) : null}
-    </label>
+    </div>
   );
 }

@@ -25,5 +25,7 @@ export interface SingleSelectProps
   block?: boolean;
   /** dropdown: 選択値ラベルの改行(\n)を複数行表示する（住所の2行表示など）。既定 false */
   multiline?: boolean;
+  /** dropdown / native: 誤りの案内。説明（aria-describedby）として結び、誤りの状態（aria-invalid）にする */
+  errorText?: string;
   'data-testid'?: string;
 }

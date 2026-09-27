@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 
 export type CounterRow = {
@@ -7,6 +8,12 @@ export type CounterRow = {
   bucket: string; // ISO timestamp representing the bucket
   count: number;
 };
+
+// subject にはメールアドレス・セッション ID（Cookie の値そのもの）・管理者 ID が入る。
+// 回数を数えるのに元の値は要らないので、平文で DB に残さずハッシュ値をキーにする。
+function hashSubject(subject: string): string {
+  return createHash('sha512').update(subject).digest('hex');
+}
 
 function normalizeCounterTarget({
   ip,
@@ -19,7 +26,7 @@ function normalizeCounterTarget({
 }) {
   return {
     effectiveIp: subject ? null : ip ?? null,
-    effectiveEndpoint: subject ? `${endpoint}|acct:${subject}` : endpoint,
+    effectiveEndpoint: subject ? `${endpoint}|acct:${hashSubject(subject)}` : endpoint,
   };
 }
 

@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLogin } from '@/contexts/LoginContext';
 import { Button } from '@/components/ui/Button/Button';
+import { LiveMessage } from '@/components/ui/LiveMessage/LiveMessage';
 import { SingleSelect } from '@/components/ui/SingleSelect/SingleSelect';
 
 function Spinner() {
@@ -278,30 +279,9 @@ export default function VerifiedPage() {
   };
 
   const renderBody = () => {
-    if (mode === 'loading') {
-      return (
-        <p
-          className="flex items-center justify-center gap-2 text-[#474747]"
-          role="status"
-          aria-live="polite"
-          style={authBodyStyle}
-        >
-          <Spinner />
-          {message}
-        </p>
-      );
-    }
-
-    if (mode === 'unauthenticated') {
-      return (
-        <div className="space-y-6">
-          <p className="text-black" style={authBodyStyle}>ログインが必要です。ログイン後に再度お試しください。</p>
-          <a href="/login" className="inline-block underline underline-offset-4 hover:text-[#474747] transition-colors">ログインページへ</a>
-        </div>
-      );
-    }
-
-    if (mode === 'non-privileged') {
+    // 読み込み中から「確認完了。アカウントへ移動します…」へは、同じ status の中身だけを入れ替える（FREQ-377）。
+    // 別々の要素で描くと、案内ごと差し込み直すことになり読み上げられないことがある
+    if (mode === 'loading' || mode === 'non-privileged') {
       return (
         <div className="space-y-6">
           <p
@@ -313,7 +293,18 @@ export default function VerifiedPage() {
             <Spinner />
             {message}
           </p>
-          <a href="/account" className="inline-block underline underline-offset-4 hover:text-[#474747] transition-colors">アカウントへ</a>
+          {mode === 'non-privileged' ? (
+            <a href="/account" className="inline-block underline underline-offset-4 hover:text-[#474747] transition-colors">アカウントへ</a>
+          ) : null}
+        </div>
+      );
+    }
+
+    if (mode === 'unauthenticated') {
+      return (
+        <div className="space-y-6">
+          <p className="text-black" style={authBodyStyle}>ログインが必要です。ログイン後に再度お試しください。</p>
+          <a href="/login" className="inline-block underline underline-offset-4 hover:text-[#474747] transition-colors">ログインページへ</a>
         </div>
       );
     }
@@ -415,11 +406,9 @@ export default function VerifiedPage() {
 
       <div className="w-full max-w-md">{renderBody()}</div>
 
-      {errorMessage ? (
-        <p role="alert" className="mt-6 text-red-600" style={authNoteStyle}>
-          {errorMessage}
-        </p>
-      ) : null}
+      <LiveMessage className="mt-6 text-red-600" style={authNoteStyle}>
+        {errorMessage}
+      </LiveMessage>
     </div>
   );
 }

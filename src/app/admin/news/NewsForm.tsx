@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Button } from '@/components/ui/Button/Button';
+import { LiveMessage } from '@/components/ui/LiveMessage/LiveMessage';
 import { RadioButtonGroup } from '@/components/ui/RadioButtonGroup/RadioButtonGroup';
 import { SingleSelect } from '@/components/ui/SingleSelect/SingleSelect';
 import { TextAreaField } from '@/components/ui/TextAreaField/TextAreaField';
@@ -342,16 +343,12 @@ export function NewsForm({
             </Button>
           </div>
 
-          {submitError && (
-            <p className="lk-text-sm text-red-600 font-acumin" role="alert">
-              {submitError}
-            </p>
-          )}
-          {submitSuccess && (
-            <p className="lk-text-sm text-black font-acumin" role="status">
-              {submitSuccess}
-            </p>
-          )}
+          <LiveMessage className="lk-text-sm text-red-600 font-acumin">
+            {submitError}
+          </LiveMessage>
+          <LiveMessage politeness="status" className="lk-text-sm text-black font-acumin">
+            {submitSuccess}
+          </LiveMessage>
         </form>
       </div>
     </main>

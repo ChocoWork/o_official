@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { clientFetch } from "@/lib/client-fetch";
 import { Button } from "@/components/ui/Button/Button";
 import { TextAreaField } from "@/components/ui/TextAreaField/TextAreaField";
+import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 
 type InquiryStatus = "open" | "pending" | "answered" | "closed";
 type InquiryType = "product" | "order" | "other";
@@ -94,9 +95,10 @@ export default function AccountInquiries() {
     }
   }, []);
 
-  const fetchDetail = useCallback(async (id: string) => {
-    setIsDetailLoading(true);
-    setNotice(null);
+  // 返信の後の取り直し（silent）では「読み込み中...」に切り替えない。切り替えると返信の案内の入れ物ごと
+  // 外れ、案内が読み上げられない。案内はスレッドを切り替えたときに消す（FREQ-377）
+  const fetchDetail = useCallback(async (id: string, { silent = false }: { silent?: boolean } = {}) => {
+    if (!silent) setIsDetailLoading(true);
     try {
       const res = await clientFetch(`/api/contact/threads/${id}`, {
         cache: "no-store",
@@ -117,6 +119,7 @@ export default function AccountInquiries() {
   }, [fetchThreads]);
 
   useEffect(() => {
+    setNotice(null);
     if (selectedId) {
       fetchDetail(selectedId);
     } else {
@@ -140,7 +143,7 @@ export default function AccountInquiries() {
       if (!res.ok) throw new Error(`Failed: ${res.status}`);
       setReplyBody("");
       setNotice("返信を送信しました。");
-      await fetchDetail(selectedId);
+      await fetchDetail(selectedId, { silent: true });
       await fetchThreads();
     } catch (err) {
       console.error("Failed to send reply:", err);
@@ -216,11 +219,10 @@ export default function AccountInquiries() {
                 value={replyBody}
                 onChange={(event) => setReplyBody(event.target.value)}
               />
-              {notice ? (
-                <p className="lk-text-sm text-[#474747]" role="status">
-                  {notice}
-                </p>
-              ) : null}
+              {/* 案内の入れ物は常に置き、中身だけを入れ替える（FREQ-377） */}
+              <LiveMessage politeness="status" className="lk-text-sm text-[#474747]">
+                {notice}
+              </LiveMessage>
               <div className="account-actions">
                 <Button
                   size="sm"

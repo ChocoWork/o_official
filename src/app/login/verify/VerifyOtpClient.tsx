@@ -6,6 +6,7 @@ import { useLogin } from "@/contexts/LoginContext";
 import { Button } from "@/components/ui/Button/Button";
 import { formatResendCountdown } from "@/lib/format-countdown";
 import { maskEmail } from "@/lib/mask-email";
+import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 import "@/components/AuthForm.css";
 
 const OTP_LENGTH = 8;
@@ -333,16 +334,10 @@ export default function VerifyOtpClient({ email }: { email: string }) {
           )}
         </div>
 
-        {error ? (
-          <p role="alert" className="mt-4 lk-text-sm text-red-600">
-            {error}
-          </p>
-        ) : null}
-        {success ? (
-          <p role="status" className="mt-4 lk-text-sm">
-            {success}
-          </p>
-        ) : null}
+        <LiveMessage className="mt-4 lk-text-sm text-red-600">{error}</LiveMessage>
+        <LiveMessage politeness="status" className="mt-4 lk-text-sm">
+          {success}
+        </LiveMessage>
 
         <div className="mt-[30px] flex items-center justify-center gap-6">
           <button

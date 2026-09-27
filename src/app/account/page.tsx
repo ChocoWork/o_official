@@ -6,6 +6,7 @@ import React from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useLogin } from "@/contexts/LoginContext";
 import { Button } from "@/components/ui/Button/Button";
+import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 import { TabSegmentControl } from "@/components/ui/TabSegmentControl/TabSegmentControl";
 import { TextField } from "@/components/ui/TextField/TextField";
 import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
@@ -1235,43 +1236,49 @@ function AccountPageContent() {
       </div>
 
       {/* AC-7: フィードバックを操作地点に近い固定トーストで通知 */}
-      {profileMessage ? (
-        <div
-          role="status"
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-[90vw] bg-black text-white px-5 py-3 shadow-lg flex items-center gap-3"
-          style={accountTextMdStyle}
-        >
-          <span className="flex items-center gap-2">
-            <span aria-hidden="true">✓</span>
-            {profileMessage}
-          </span>
-          <button
-            type="button"
-            onClick={() => setProfileMessage(null)}
-            aria-label="通知を閉じる"
-            className="shrink-0 opacity-70 hover:opacity-100 transition-opacity"
-          >
-            <i className="ri-close-line" aria-hidden="true" />
-          </button>
-        </div>
-      ) : null}
-      {profileError ? (
-        <div
-          role="alert"
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-[90vw] border border-red-300 bg-white text-red-600 px-5 py-3 shadow-lg flex items-center gap-3"
-          style={accountTextMdStyle}
-        >
-          <span>{profileError}</span>
-          <button
-            type="button"
-            onClick={() => setProfileError(null)}
-            aria-label="通知を閉じる"
-            className="shrink-0 opacity-70 hover:opacity-100 transition-opacity"
-          >
-            <i className="ri-close-line" aria-hidden="true" />
-          </button>
-        </div>
-      ) : null}
+      {/* 読み上げの入れ物は常に置き、トーストが出ている間だけ中身を入れる（FREQ-377） */}
+      <LiveMessage
+        as="div"
+        politeness="status"
+        className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-[90vw] bg-black text-white px-5 py-3 shadow-lg flex items-center gap-3"
+        style={accountTextMdStyle}
+      >
+        {profileMessage ? (
+          <>
+            <span className="flex items-center gap-2">
+              <span aria-hidden="true">✓</span>
+              {profileMessage}
+            </span>
+            <button
+              type="button"
+              onClick={() => setProfileMessage(null)}
+              aria-label="通知を閉じる"
+              className="shrink-0 opacity-70 hover:opacity-100 transition-opacity"
+            >
+              <i className="ri-close-line" aria-hidden="true" />
+            </button>
+          </>
+        ) : null}
+      </LiveMessage>
+      <LiveMessage
+        as="div"
+        className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-[90vw] border border-red-300 bg-white text-red-600 px-5 py-3 shadow-lg flex items-center gap-3"
+        style={accountTextMdStyle}
+      >
+        {profileError ? (
+          <>
+            <span>{profileError}</span>
+            <button
+              type="button"
+              onClick={() => setProfileError(null)}
+              aria-label="通知を閉じる"
+              className="shrink-0 opacity-70 hover:opacity-100 transition-opacity"
+            >
+              <i className="ri-close-line" aria-hidden="true" />
+            </button>
+          </>
+        ) : null}
+      </LiveMessage>
 
       <ConfirmDialog
         open={confirmProfileDelete}

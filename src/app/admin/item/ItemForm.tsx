@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 // preview images now handled by Card component
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button/Button";
+import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 import { ColorPicker } from "@/components/ui/ColorPicker/ColorPicker";
 import { RadioButtonGroup } from "@/components/ui/RadioButtonGroup/RadioButtonGroup";
 import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
@@ -664,17 +665,13 @@ export function ItemForm({
 
             {/* 主要 CTA。フォームが縦に長い xl 以上では末尾に貼り付けて常に見えるようにする（対比） */}
             <div className="item-form__fields xl:sticky xl:bottom-0 xl:border-t xl:border-black/10 xl:bg-white xl:py-4">
-              {submitSuccess && (
-                <p className="lk-text-sm text-black" role="status">
-                  {submitSuccess}
-                </p>
-              )}
+              <LiveMessage politeness="status" className="lk-text-sm text-black">
+                {submitSuccess}
+              </LiveMessage>
 
-              {submitError && (
-                <p className="lk-text-sm text-red-600" role="alert">
-                  {submitError}
-                </p>
-              )}
+              <LiveMessage className="lk-text-sm text-red-600">
+                {submitError}
+              </LiveMessage>
 
               <div className="flex gap-4">
                 <Button

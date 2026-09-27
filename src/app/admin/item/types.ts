@@ -39,7 +39,6 @@ export type ItemResponse = {
   product_note?: string | null;
   season?: 'SS' | 'AW' | null;
   status: ItemStatus;
-  stock_quantity?: number | null;
 };
 
 export type SeasonValue = '' | 'SS' | 'AW';

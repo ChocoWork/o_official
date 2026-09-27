@@ -1,6 +1,8 @@
 // File: src/components/ui/TextAreaField/TextAreaField.tsx
 import "@/components/ui/TextAreaField/TextAreaField.css";
+import { useId } from "react";
 import { clsx } from "clsx";
+import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 import type { TextAreaFieldProps } from "@/components/ui/TextAreaField/TextAreaField_type";
 
 export function TextAreaField({
@@ -14,15 +16,14 @@ export function TextAreaField({
   size = "md",
   ...props
 }: TextAreaFieldProps) {
-  const fieldId = id ?? props.name;
-  const errorId = fieldId ? `${fieldId}-error` : undefined;
-  const helperId = fieldId ? `${fieldId}-helper` : undefined;
+  const generatedId = useId();
+  // 見出しを for で結びつけるので、id も name も無いときは生成した id を使う
+  const fieldId = id ?? props.name ?? generatedId;
+  const errorId = `${fieldId}-error`;
+  const helperId = `${fieldId}-helper`;
 
   const describedBy =
-    [
-      errorText && errorId ? errorId : null,
-      !errorText && helperText && helperId ? helperId : null,
-    ]
+    [errorText ? errorId : null, !errorText && helperText ? helperId : null]
       .filter(Boolean)
       .join(" ") || undefined;
 
@@ -34,9 +35,15 @@ export function TextAreaField({
     "data-ui-size": size,
   } as const;
 
+  // TextField と同じく部品全体を label で包まない（FREQ-376）。包むと案内や補足文まで入力欄の名前に
+  // 混ざる。見出しは for で結びつける。
   return (
-    <label className="text-area-field" {...rootDataAttrs}>
-      {label ? <span className="text-area-field__label">{label}</span> : null}
+    <div className="text-area-field" {...rootDataAttrs}>
+      {label ? (
+        <label className="text-area-field__label" htmlFor={fieldId}>
+          {label}
+        </label>
+      ) : null}
       <textarea
         id={fieldId}
         rows={rows}
@@ -45,16 +52,20 @@ export function TextAreaField({
         className={clsx("text-area-field__input", className)}
         {...props}
       />
-      {errorText ? (
-        <span id={errorId} role="alert" className="text-area-field__error">
-          {errorText}
-        </span>
-      ) : null}
+      {/* 案内の入れ物は常に置き、中身だけを入れ替える。欄ごとの誤りは割り込まずに順番に読む */}
+      <LiveMessage
+        as="span"
+        id={errorId}
+        politeness="polite"
+        className="text-area-field__error"
+      >
+        {errorText}
+      </LiveMessage>
       {!errorText && helperText ? (
         <span id={helperId} className="text-area-field__helper">
           {helperText}
         </span>
       ) : null}
-    </label>
+    </div>
   );
 }

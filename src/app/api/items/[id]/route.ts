@@ -1,26 +1,12 @@
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
+import { getItemAvailability } from '@/lib/items/availability';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { signItemImageFields } from '@/lib/storage/item-images';
 
-type StockStatus = 'in_stock' | 'low_stock' | 'sold_out' | 'unknown';
-
 const itemIdSchema = z.coerce.number().int().positive();
 const NO_STORE_HEADERS = { 'Cache-Control': 'no-store' };
-
-function toStockStatus(stockQuantity: number | null): StockStatus {
-  if (stockQuantity === null) {
-    return 'unknown';
-  }
-  if (stockQuantity === 0) {
-    return 'sold_out';
-  }
-  if (stockQuantity <= 4) {
-    return 'low_stock';
-  }
-  return 'in_stock';
-}
 
 // GET: 個別商品取得（公開済みのみ）
 export async function GET(
@@ -55,7 +41,7 @@ export async function GET(
 
     const { data, error } = await supabase
       .from('items')
-      .select('id, name, description, price, category, image_url, image_urls, colors, sizes, product_details, material, origin, care, product_note, stock_quantity')
+      .select('id, name, description, price, category, image_url, image_urls, colors, sizes, product_details, material, origin, care, product_note')
       .eq('id', id)
       .eq('status', 'published')
       .single();
@@ -82,12 +68,15 @@ export async function GET(
     }
 
     const signedData = await signItemImageFields(await createServiceRoleClient(), data);
-    const { stock_quantity, ...publicItem } = signedData;
+    // 在庫の単位は色 × サイズ（FREQ-400 / FREQ-401）。
+    const publicItem = signedData;
+    const availability = await getItemAvailability(id);
 
     return NextResponse.json(
       {
         ...publicItem,
-        stockStatus: toStockStatus(stock_quantity),
+        madeToOrder: availability.madeToOrder,
+        variantAvailability: availability.combinations,
       },
       { headers: NO_STORE_HEADERS }
     );

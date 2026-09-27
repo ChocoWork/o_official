@@ -5,7 +5,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Item, ItemStockStatus } from "@/types/item";
+import { Item } from "@/types/item";
 import { useCart } from "@/contexts/CartContext";
 import { Button } from "@/components/ui/Button/Button";
 import { RelatedItems } from "@/features/items/components/RelatedItems";
@@ -18,6 +18,7 @@ import {
 import { SpecList } from "@/components/ui/SpecList/SpecList";
 import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
 import { ToastSnackbar } from "@/components/ui/ToastSnackbar/ToastSnackbar";
+import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 import { Sheet } from "@/components/ui/Sheet/Sheet";
 import "./ItemDetailClient.css";
 import { sortSizes } from "@/lib/items/sizes";
@@ -113,7 +114,6 @@ function OptionSelectors({
 type ItemActionButtonsProps = {
   addedToCart: boolean;
   addingToCart: boolean;
-  isSoldOut: boolean;
   optionsSelected: boolean;
   /** 未選択のとき押せなくするか。選択 UI が同じ視界にある場所（インライン）は true、
    *  選択 UI が見えない固定 CTA は false にしてシートを開かせる (FREQ-347) */
@@ -127,7 +127,6 @@ type ItemActionButtonsProps = {
 function ItemActionButtons({
   addedToCart,
   addingToCart,
-  isSoldOut,
   optionsSelected,
   enforceSelection,
   isWishlisted,
@@ -140,14 +139,12 @@ function ItemActionButtons({
       <Button
         onClick={onAddToCart}
         disabled={
-          addingToCart || isSoldOut || (enforceSelection && !optionsSelected)
+          addingToCart || (enforceSelection && !optionsSelected)
         }
         size="xs"
         className="w-full"
       >
-        {isSoldOut ? (
-          "SOLD OUT"
-        ) : addedToCart ? (
+        {addedToCart ? (
           <div className="flex items-center justify-center gap-2">
             <i className="ri-check-line lk-text-lg" />
             ADDED
@@ -192,52 +189,38 @@ function ItemActionButtons({
   );
 }
 
-/** 在庫状態ラベル: unknown=情報なし, sold_out=SOLD OUT, low_stock=残りわずか */
-function StockBadge({ stockStatus }: { stockStatus?: ItemStockStatus }) {
-  if (!stockStatus || stockStatus === "unknown" || stockStatus === "in_stock")
-    return null;
+/**
+ * 選んだ色 × サイズの納期（FREQ-400）。
+ *
+ * 在庫の有無は「買えるか」ではなく「納期」を分ける。どちらの場合も買えるので、
+ * ここで注文を止めない。日数の区分は法令ページ（特定商取引法）と同じ。
+ */
+function DeliveryNote({
+  availability,
+  color,
+  size,
+}: {
+  availability?: Item["variantAvailability"];
+  color: string;
+  size: string | null;
+}) {
+  const combination = availability?.find(
+    (entry) =>
+      (entry.colorName ?? "") === (color ?? "") && (entry.sizeLabel ?? "") === (size ?? ""),
+  );
 
-  if (stockStatus === "sold_out") {
-    return (
-      <span
-        data-testid="stock-status"
-        className="inline-block lk-text-3xs tracking-widest text-white bg-black px-2 py-0.5"
-      >
-        SOLD OUT
-      </span>
-    );
-  }
+  // 組み合わせが決まっていない間は出さない（選ぶ前に納期を断定しない）。
+  if (!combination) return null;
 
-  if (stockStatus === "low_stock") {
-    return (
-      <span
-        data-testid="stock-status"
-        className="inline-block lk-text-3xs tracking-widest text-red-600 border border-red-400 px-2 py-0.5"
-      >
-        残りわずか
-      </span>
-    );
-  }
-
-  return null;
-}
-
-function resolveStockStatus(item: Item): ItemStockStatus {
-  if (item.stockStatus) {
-    return item.stockStatus;
-  }
-
-  // Backward compatibility for tests or old fixtures that still send stock_quantity.
-  if (item.stock_quantity === null || item.stock_quantity === undefined) {
-    return "unknown";
-  }
-  if (item.stock_quantity === 0) {
-    return "sold_out";
-  }
-  if (item.stock_quantity <= 4) {
-    return "low_stock";
-  }
-  return "in_stock";
+  return (
+    <span
+      data-testid="delivery-note"
+      data-in-stock={combination.inStock ? "true" : "false"}
+      className="inline-block lk-text-3xs tracking-widest text-black/70 border border-black/20 px-2 py-0.5"
+    >
+      {combination.inStock ? "在庫あり・3〜7営業日で発送" : "受注生産・数週間〜2ヶ月"}
+    </span>
+  );
 }
 
 export default function ItemDetailClient({ id }: Props) {
@@ -261,8 +244,7 @@ export default function ItemDetailClient({ id }: Props) {
   const mobileCarouselRef = useRef<HTMLDivElement>(null);
 
   const isWishlisted = item ? wishlistedItems.has(item.id) : false;
-  const stockStatus = item ? resolveStockStatus(item) : "unknown";
-  const isSoldOut = stockStatus === "sold_out";
+
 
   // FREQ-347: モバイルの固定 CTA から開く選択シート。選択肢とカート投入ボタンを
   // 同じ視界にまとめ、選択のためにページを往復させない（近接）。
@@ -564,7 +546,7 @@ export default function ItemDetailClient({ id }: Props) {
       <div className="element-width 2xl:max-w-360">
         <div
           data-testid="item-detail-first-view"
-          className="min-h-[calc(100svh-4rem)]"
+          className="md:min-h-[calc(100svh-4rem)]"
         >
           {/* md〜lg 未満の画像列は幅基準（w-full + aspect-2/3）なので、上限がないと
               高さが viewport を超えて画像下端が見切れる。lg の
@@ -839,8 +821,12 @@ export default function ItemDetailClient({ id }: Props) {
                     >
                       ¥{item.price.toLocaleString("ja-JP")}
                     </p>
-                    {/* 在庫状態バッジ (FR-ITEM-DETAIL-007) */}
-                    <StockBadge stockStatus={stockStatus} />
+                    {/* 選んだ組み合わせの納期（FREQ-400） */}
+                    <DeliveryNote
+                      availability={item.variantAvailability}
+                      color={color}
+                      size={size}
+                    />
                   </div>
                 </div>
                 {/* FREQ-299: md 以上のウィッシュリストは商品名の右端にハートのみ */}
@@ -868,7 +854,7 @@ export default function ItemDetailClient({ id }: Props) {
               {item.description && (
                 <div
                   data-testid="item-detail-description"
-                  className="mt-[var(--lk-item-detail-section-gap)] border-b border-t border-black/10 py-3 md:py-4"
+                  className={`mt-[var(--lk-item-detail-section-gap)] border-t border-black/10 py-3 md:py-4 ${specRows.length > 0 ? "md:border-b" : "border-b"}`}
                 >
                   <p
                     className="text-[#474747] leading-relaxed"
@@ -893,15 +879,11 @@ export default function ItemDetailClient({ id }: Props) {
                 />
               </div>
 
-              {/* バリデーションエラーメッセージ (FR-ITEM-DETAIL-008: role="alert") */}
-              {validationError && (
-                <p
-                  role="alert"
-                  className="hidden md:block mt-[var(--lk-item-detail-select-gap)] lk-text-3xs text-red-500"
-                >
-                  {validationError}
-                </p>
-              )}
+              {/* バリデーションエラーメッセージ (FR-ITEM-DETAIL-008: role="alert")。
+                  入れ物は常に置き、中身だけを入れ替える（FREQ-376）。画面幅ごとに見える場所は1つだけ */}
+              <LiveMessage className="hidden md:block mt-[var(--lk-item-detail-select-gap)] lk-text-3xs text-red-500">
+                {validationError}
+              </LiveMessage>
 
               {/* カート追加・ウィッシュリストボタン */}
               <div
@@ -911,7 +893,6 @@ export default function ItemDetailClient({ id }: Props) {
                 <ItemActionButtons
                   addedToCart={addedToCart}
                   addingToCart={addingToCart}
-                  isSoldOut={isSoldOut}
                   optionsSelected={optionsSelected}
                   enforceSelection
                   isWishlisted={isWishlisted}
@@ -927,7 +908,11 @@ export default function ItemDetailClient({ id }: Props) {
               {specRows.length > 0 && (
                 <SpecList
                   data-testid="item-spec-list"
-                  className="mt-[var(--lk-item-detail-section-gap)]"
+                  className={
+                    item.description
+                      ? "md:mt-[var(--lk-item-detail-section-gap)]"
+                      : "mt-[var(--lk-item-detail-section-gap)]"
+                  }
                   rows={specRows}
                   size="sm"
                 />
@@ -946,15 +931,12 @@ export default function ItemDetailClient({ id }: Props) {
         data-testid="item-actions-fixed"
         className="fixed bottom-0 left-0 right-0 z-50 flex flex-col gap-2 border-t border-black/10 bg-white px-[6.25%] py-3 md:hidden"
       >
-        {validationError && !optionSheetOpen && (
-          <p role="alert" className="lk-text-3xs text-red-500">
-            {validationError}
-          </p>
-        )}
+        <LiveMessage className="lk-text-3xs text-red-500">
+          {!optionSheetOpen ? validationError : null}
+        </LiveMessage>
         <ItemActionButtons
           addedToCart={addedToCart}
           addingToCart={addingToCart}
-          isSoldOut={isSoldOut}
           optionsSelected={optionsSelected}
           enforceSelection={false}
           isWishlisted={isWishlisted}
@@ -984,16 +966,22 @@ export default function ItemDetailClient({ id }: Props) {
             onSelectSize={handleSelectSize}
           />
 
-          {validationError && (
-            <p role="alert" className="lk-text-3xs text-red-500">
-              {validationError}
-            </p>
-          )}
+          {/* 選んだ組み合わせの納期はシートの中にも出す（FREQ-400）。
+              モバイルは選択がシート内で完結するため、閉じるまで納期が分からないと
+              「選び直す理由」に気づけない */}
+          <DeliveryNote
+            availability={item.variantAvailability}
+            color={color}
+            size={size}
+          />
+
+          <LiveMessage className="lk-text-3xs text-red-500">
+            {validationError}
+          </LiveMessage>
 
           <ItemActionButtons
             addedToCart={addedToCart}
             addingToCart={addingToCart}
-            isSoldOut={isSoldOut}
             optionsSelected={optionsSelected}
             enforceSelection
             isWishlisted={isWishlisted}
@@ -1007,20 +995,21 @@ export default function ItemDetailClient({ id }: Props) {
       {/* FREQ-340: ウィッシュリストの失敗は3箇所のどのボタンから押しても見えるよう
           固定表示にする。成功はアイコンの塗りつぶしで伝わるので出さない。
           固定フッターが出ている間はその分持ち上げて重ならないようにする。 */}
-      {wishlistError && (
-        <div
-          data-testid="item-wishlist-toast"
-          role="alert"
-          className="fixed right-4 z-50 max-w-[min(92vw,420px)] bottom-24 md:bottom-4"
-        >
+      {/* 読み上げの入れ物は常に置き、トーストが出ている間だけ中身と data-testid を持たせる（FREQ-376） */}
+      <LiveMessage
+        as="div"
+        data-testid={wishlistError ? "item-wishlist-toast" : undefined}
+        className="fixed right-4 z-50 max-w-[min(92vw,420px)] bottom-24 md:bottom-4"
+      >
+        {wishlistError ? (
           <ToastSnackbar
             message={wishlistError}
             variant="error"
             actionLabel="閉じる"
             onAction={() => setWishlistError(null)}
           />
-        </div>
-      )}
+        ) : null}
+      </LiveMessage>
     </div>
   );
 }

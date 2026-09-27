@@ -20,7 +20,6 @@ import {
   parseItemCollectionMeta,
 } from "@/lib/items/collection-utils";
 import { extractColorSwatches } from "@/lib/items/colors";
-import { isItemInStock } from "@/lib/items/stock-label";
 import { ItemCardInfo, ItemCardMedia } from "./ItemCard";
 import { cn } from "@/lib/utils";
 
@@ -584,8 +583,8 @@ export function PublicItemGrid(props: PublicItemGridProps) {
         selectedStock.length === 0 ||
         selectedStock.length === 2 ||
         (selectedStock.includes("in")
-          ? isItemInStock(item)
-          : !isItemInStock(item));
+          ? !item.madeToOrder
+          : Boolean(item.madeToOrder));
 
       return (
         categoryOk &&
@@ -846,7 +845,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     <div className={ITEM_GRID_CLASS}>
       {displayItems.map((item, index) => {
         // ホーム / 一覧で共通のカード。カラースウォッチ（色）を表示する。
-        const soldOut = !isItemInStock(item);
+        const madeToOrder = Boolean(item.madeToOrder);
         const swatches = extractColorSwatches(item.colors);
 
         return (
@@ -861,7 +860,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
                 imageUrl={item.image_url}
                 imageUrls={item.image_urls}
                 alt={item.name}
-                soldOut={soldOut}
+                madeToOrder={madeToOrder}
               />
               <ItemCardInfo
                 name={item.name}
@@ -915,7 +914,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     const stockOptions = [
       { value: "ALL", label: "ALL" },
       { value: "in", label: "IN STOCK" },
-      { value: "out", label: "OUT OF STOCK" },
+      { value: "out", label: "MADE TO ORDER" },
     ];
     const sizeOptions = [
       { value: "ALL", label: "ALL" },
@@ -1264,7 +1263,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
   selectedStock.forEach((stock) =>
     appliedChips.push({
       key: `stock-${stock}`,
-      label: stock === "in" ? "在庫あり" : "在庫切れ",
+      label: stock === "in" ? "在庫あり" : "受注生産",
       onRemove: () => removeListValue("stock", stock),
     }),
   );

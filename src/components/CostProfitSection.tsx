@@ -25,6 +25,7 @@ import { TabSegmentControl } from "@/components/ui/TabSegmentControl/TabSegmentC
 import { TextAreaField } from "@/components/ui/TextAreaField/TextAreaField";
 import { TextField } from "@/components/ui/TextField/TextField";
 import { ToastSnackbar } from "@/components/ui/ToastSnackbar/ToastSnackbar";
+import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 import { TaxReportSection } from "@/components/tax/TaxReportSection";
 import type { TaxPage } from "@/components/tax/types";
 import { ProductCostSection } from "@/components/ProductCostSection";
@@ -5441,14 +5442,13 @@ export default function CostProfitSection({
       </div>
 
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4">
-        {receiptMessage ? (
-          <p
-            className={`font-acumin lk-text-3xs ${/失敗|ください/.test(receiptMessage) ? "text-red-700" : "text-[#16844b]"}`}
-            role="status"
-          >
-            {receiptMessage}
-          </p>
-        ) : null}
+        {/* 案内の入れ物は常に置き、中身だけを入れ替える（FREQ-377） */}
+        <LiveMessage
+          politeness="status"
+          className={`font-acumin lk-text-3xs ${/失敗|ください/.test(receiptMessage ?? "") ? "text-red-700" : "text-[#16844b]"}`}
+        >
+          {receiptMessage}
+        </LiveMessage>
         {receiptDrawerEntries.map((entry) => (
           <div
             key={entry.id}
@@ -6224,14 +6224,13 @@ export default function CostProfitSection({
           )}
         </div>
 
-        {formMessage ? (
-          <p
-            className={`font-acumin lk-text-3xs ${/失敗|ください/.test(formMessage) ? "text-red-700" : "text-[#16844b]"}`}
-            role="status"
-          >
-            {formMessage}
-          </p>
-        ) : null}
+        {/* 案内の入れ物は常に置き、中身だけを入れ替える（FREQ-377） */}
+        <LiveMessage
+          politeness="status"
+          className={`font-acumin lk-text-3xs ${/失敗|ください/.test(formMessage ?? "") ? "text-red-700" : "text-[#16844b]"}`}
+        >
+          {formMessage}
+        </LiveMessage>
       </div>
 
       <div className="flex gap-2 border-t border-[#d4d4d4] px-5 py-4">
@@ -6949,11 +6948,9 @@ export default function CostProfitSection({
               <dt className="text-[#707070]">金額</dt>
               <dd className="tabular-nums">{currency(deleteEntry.amount)}</dd>
             </dl>
-            {deleteDialogError ? (
-              <p className="font-acumin lk-text-3xs text-red-700" role="alert">
-                {deleteDialogError}
-              </p>
-            ) : null}
+            <LiveMessage className="font-acumin lk-text-3xs text-red-700">
+              {deleteDialogError}
+            </LiveMessage>
             <div className="flex gap-2 border-t border-[#d4d4d4] pt-4">
               <Button
                 type="button"
@@ -9755,14 +9752,13 @@ export default function CostProfitSection({
                   </div>
                 </section>
 
-                {assetMessage ? (
-                  <p
-                    className={`font-acumin lk-text-3xs ${/失敗|ください/.test(assetMessage) ? "text-red-700" : "text-[#16844b]"}`}
-                    role="status"
-                  >
-                    {assetMessage}
-                  </p>
-                ) : null}
+                {/* 案内の入れ物は常に置き、中身だけを入れ替える（FREQ-377） */}
+                <LiveMessage
+                  politeness="status"
+                  className={`font-acumin lk-text-3xs ${/失敗|ください/.test(assetMessage ?? "") ? "text-red-700" : "text-[#16844b]"}`}
+                >
+                  {assetMessage}
+                </LiveMessage>
 
                 <Button
                   variant="primary"
@@ -10183,14 +10179,13 @@ export default function CostProfitSection({
               </p>
             </div>
 
-            {closingMessage ? (
-              <p
-                className={`font-acumin lk-text-3xs ${/失敗|ください|一致し/.test(closingMessage) ? "text-red-700" : "text-[#16844b]"}`}
-                role="status"
-              >
-                {closingMessage}
-              </p>
-            ) : null}
+            {/* 案内の入れ物は常に置き、中身だけを入れ替える（FREQ-377） */}
+            <LiveMessage
+              politeness="status"
+              className={`font-acumin lk-text-3xs ${/失敗|ください|一致し/.test(closingMessage ?? "") ? "text-red-700" : "text-[#16844b]"}`}
+            >
+              {closingMessage}
+            </LiveMessage>
 
             {closedAt ? (
               <>
@@ -12114,21 +12109,38 @@ export default function CostProfitSection({
       {activeTab === "tax" ? taxView : null}
       {payoutConfirmDialog}
 
-      {/* エラー・完了の詳細は画面右下の Toast に出す。成功は自動で消し、エラーは操作で閉じる。 */}
-      {toast ? (
-        <div
-          className="fixed bottom-4 right-4 z-50 max-w-[min(92vw,420px)]"
-          role={toast.variant === "error" ? "alert" : "status"}
-          data-testid="finance-toast"
-        >
+      {/* エラー・完了の詳細は画面右下の Toast に出す。成功は自動で消し、エラーは操作で閉じる。
+          読み上げの入れ物は常に置き、エラーは割り込み・完了は順番待ちで読む（FREQ-376）。
+          トーストが出ている方だけが中身と data-testid を持つ */}
+      <LiveMessage
+        as="div"
+        data-testid={toast?.variant === "error" ? "finance-toast" : undefined}
+        className="fixed bottom-4 right-4 z-50 max-w-[min(92vw,420px)]"
+      >
+        {toast?.variant === "error" ? (
+          <ToastSnackbar
+            message={toast.message}
+            variant="error"
+            actionLabel="閉じる"
+            onAction={() => setToast(null)}
+          />
+        ) : null}
+      </LiveMessage>
+      <LiveMessage
+        as="div"
+        politeness="polite"
+        data-testid={toast && toast.variant !== "error" ? "finance-toast" : undefined}
+        className="fixed bottom-4 right-4 z-50 max-w-[min(92vw,420px)]"
+      >
+        {toast && toast.variant !== "error" ? (
           <ToastSnackbar
             message={toast.message}
             variant={toast.variant}
             actionLabel="閉じる"
             onAction={() => setToast(null)}
           />
-        </div>
-      ) : null}
+        ) : null}
+      </LiveMessage>
     </div>
   );
 }

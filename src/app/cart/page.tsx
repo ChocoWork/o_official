@@ -5,6 +5,7 @@ import Link from "next/link";
 import { EmptyPage } from "@/components/ui/EmptyPage/EmptyPage";
 import { Button } from "@/components/ui/Button/Button";
 import { ToastSnackbar } from "@/components/ui/ToastSnackbar/ToastSnackbar";
+import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 import { useCartItems } from "./_hooks/useCartItems";
 import { CartItemRow } from "./_components/CartItemRow";
 import { OrderSummary } from "./_components/OrderSummary";
@@ -96,30 +97,41 @@ export default function CartPage() {
     >
       <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-8">
         <div>
-          {error && (
-            <div
-              role="alert"
-              className="text-red-600 border border-black/15 bg-black/2 mb-6"
-              style={{ fontSize: "var(--lk-size-md)", padding: "var(--pad-x)" }}
-            >
-              {error}
-            </div>
-          )}
+          <LiveMessage
+            as="div"
+            className="text-red-600 border border-black/15 bg-black/2 mb-6"
+            style={{ fontSize: "var(--lk-size-md)", padding: "var(--pad-x)" }}
+          >
+            {error}
+          </LiveMessage>
 
-          {hasSyncError && (
-            <div
-              role="status"
-              className="text-[#474747] border border-black/20 bg-black/2 flex items-center justify-between mb-6"
-              style={{
-                fontSize: "var(--lk-size-xs)",
-                padding: "var(--pad-x)",
-                gap: "var(--pad-x)",
-              }}
-            >
-              <span className="flex items-center gap-2">
-                <i className="ri-error-warning-line" aria-hidden="true" />
-                数量の更新に失敗した商品があります。再試行または再同期してください。
-              </span>
+          {/* 外枠と読み上げの入れ物は常に置き、失敗している間だけ枠の見た目と文言を出す（FREQ-377）。
+              ボタンは押すと文言が変わるので、読み上げの入れ物の外に置く（案内が読み直されないように） */}
+          <div
+            className={
+              hasSyncError
+                ? "text-[#474747] border border-black/20 bg-black/2 flex items-center justify-between mb-6"
+                : undefined
+            }
+            style={
+              hasSyncError
+                ? {
+                    fontSize: "var(--lk-size-xs)",
+                    padding: "var(--pad-x)",
+                    gap: "var(--pad-x)",
+                  }
+                : undefined
+            }
+          >
+            <LiveMessage as="span" politeness="status" className="flex items-center gap-2">
+              {hasSyncError ? (
+                <>
+                  <i className="ri-error-warning-line" aria-hidden="true" />
+                  数量の更新に失敗した商品があります。再試行または再同期してください。
+                </>
+              ) : null}
+            </LiveMessage>
+            {hasSyncError ? (
               <Button
                 onClick={handleResyncFromServer}
                 disabled={resyncing}
@@ -128,8 +140,8 @@ export default function CartPage() {
               >
                 {resyncing ? "再同期中..." : "最新状態を再取得"}
               </Button>
-            </div>
-          )}
+            ) : null}
+          </div>
 
           {cartItems.map((item) => (
             <CartItemRow
@@ -171,21 +183,22 @@ export default function CartPage() {
         </div>
       </div>
 
-      {/* FREQ-342: 操作の失敗は alert() ではなく商品詳細と同じ Toast で伝える */}
-      {actionError && (
-        <div
-          data-testid="cart-action-toast"
-          role="alert"
-          className="fixed bottom-4 right-4 z-50 max-w-[min(92vw,420px)]"
-        >
+      {/* FREQ-342: 操作の失敗は alert() ではなく商品詳細と同じ Toast で伝える。
+          読み上げの入れ物は常に置き、トーストが出ている間だけ中身と data-testid を持たせる（FREQ-376） */}
+      <LiveMessage
+        as="div"
+        data-testid={actionError ? "cart-action-toast" : undefined}
+        className="fixed bottom-4 right-4 z-50 max-w-[min(92vw,420px)]"
+      >
+        {actionError ? (
           <ToastSnackbar
             message={actionError}
             variant="error"
             actionLabel="閉じる"
             onAction={dismissActionError}
           />
-        </div>
-      )}
+        ) : null}
+      </LiveMessage>
     </div>
   );
 }

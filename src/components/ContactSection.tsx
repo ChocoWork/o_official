@@ -8,6 +8,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge/StatusBadge";
 import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
 import { TextField } from "@/components/ui/TextField/TextField";
 import { TextAreaField } from "@/components/ui/TextAreaField/TextAreaField";
+import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 
 type InquiryStatus = "open" | "pending" | "answered" | "closed";
 type InquiryType = "product" | "order" | "other";
@@ -159,9 +160,10 @@ export default function ContactSection() {
     }
   }, []);
 
-  const fetchDetail = useCallback(async (id: string) => {
-    setIsDetailLoading(true);
-    setReplyNotice(null);
+  // 返信の後の取り直し（silent）では「読み込み中...」に切り替えない。切り替えると返信の案内の入れ物ごと
+  // 外れ、案内が読み上げられない。案内は問い合わせを切り替えたときに消す（FREQ-377）
+  const fetchDetail = useCallback(async (id: string, { silent = false }: { silent?: boolean } = {}) => {
+    if (!silent) setIsDetailLoading(true);
     try {
       const res = await clientFetch(`/api/admin/contact/${id}`, {
         cache: "no-store",
@@ -186,6 +188,7 @@ export default function ContactSection() {
   }, [fetchTemplates]);
 
   useEffect(() => {
+    setReplyNotice(null);
     if (selectedId) {
       fetchDetail(selectedId);
     } else {
@@ -226,7 +229,7 @@ export default function ContactSection() {
           ? "返信を保存しました（メール送信は失敗しました）。"
           : "返信を送信しました。",
       );
-      await fetchDetail(selectedId);
+      await fetchDetail(selectedId, { silent: true });
       await fetchThreads();
     } catch (error) {
       console.error("Failed to send reply:", error);
@@ -529,14 +532,13 @@ export default function ContactSection() {
                   value={replyBody}
                   onChange={(event) => setReplyBody(event.target.value)}
                 />
-                {replyNotice ? (
-                  <p
-                    className="lk-text-sm text-[#474747] font-acumin"
-                    role="status"
-                  >
-                    {replyNotice}
-                  </p>
-                ) : null}
+                {/* 案内の入れ物は常に置き、中身だけを入れ替える（FREQ-377） */}
+                <LiveMessage
+                  politeness="status"
+                  className="lk-text-sm text-[#474747] font-acumin"
+                >
+                  {replyNotice}
+                </LiveMessage>
                 <div className="flex justify-end">
                   <Button
                     size="md"

@@ -3,6 +3,7 @@ import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { authenticateRequest, authFailureResponse } from '@/lib/auth/authenticate';
 import { signItemImageUrl } from '@/lib/storage/item-images';
 import { toOrderNumber } from '@/lib/orders/order-number';
+import { mapPaymentMethodLabel } from '@/features/checkout/services/payment-method.service';
 
 const NO_STORE_HEADERS = {
 	'Cache-Control': 'no-store',
@@ -70,33 +71,6 @@ function formatOrderDateTime(dateText: string) {
 		minute: '2-digit',
 		timeZone: 'Asia/Tokyo',
 	}).format(date);
-}
-
-type StockStatus = 'in_stock' | 'low_stock' | 'sold_out' | 'unknown';
-
-function toStockStatus(qty: number | null): StockStatus {
-	if (qty === null) return 'unknown';
-	if (qty === 0) return 'sold_out';
-	if (qty <= 4) return 'low_stock';
-	return 'in_stock';
-}
-
-// orders には支払方法が保存されないため、注文確定時に payment_intent_id が
-// 書き戻された checkout_drafts から取得する
-function mapPaymentMethodLabel(paymentMethod: string | null | undefined) {
-	if (paymentMethod === 'stripe_card') {
-		return 'クレジットカード';
-	}
-
-	if (paymentMethod === 'stripe_konbini') {
-		return 'コンビニ払い';
-	}
-
-	if (paymentMethod === 'stripe_paypay') {
-		return 'PayPay';
-	}
-
-	return '-';
 }
 
 function toShippingAddress(order: OrderDetailRow) {
@@ -188,25 +162,6 @@ export async function GET(
 		paymentMethod = draftRow?.payment_method ?? null;
 	}
 
-	// 再購入ボタン表示用の在庫状況（購入履歴一覧 /api/orders と同じ判定）
-	const itemIds = [
-		...new Set(
-			(data.order_items ?? [])
-				.map((item) => item.item_id)
-				.filter((id): id is number => typeof id === 'number'),
-		),
-	];
-	const stockMap = new Map<number, StockStatus>();
-	if (itemIds.length > 0) {
-		const { data: stockRows } = await signSupabase
-			.from('items')
-			.select('id, stock_quantity')
-			.in('id', itemIds);
-		for (const row of stockRows ?? []) {
-			stockMap.set(row.id, toStockStatus(row.stock_quantity));
-		}
-	}
-
 	return NextResponse.json({
 		id: data.id,
 		orderNumber: toOrderNumber(data.id),
@@ -236,8 +191,7 @@ export async function GET(
 			color: item.color,
 			size: item.size,
 			quantity: item.quantity,
-			amount: formatCurrency(item.line_total, data.currency),
-			stockStatus: item.item_id !== null ? (stockMap.get(item.item_id) ?? 'unknown') : 'unknown',
+			amount: formatCurrency(item.line_total, data.currency),
 		}))),
 	}, { headers: NO_STORE_HEADERS });
 }

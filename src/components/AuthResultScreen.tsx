@@ -1,4 +1,6 @@
-import React from "react";
+"use client";
+
+import React, { useEffect, useRef } from "react";
 import "./AuthResultScreen.css";
 
 type AuthResultScreenProps = {
@@ -93,10 +95,18 @@ export function AuthResultScreen({
   action,
   links,
 }: AuthResultScreenProps) {
+  const titleRef = useRef<HTMLHeadingElement>(null);
+
+  // 結果の画面はフォームと入れ替わって出るので、押したボタンが消えてフォーカスが外れる。見出しへ移して
+  // 結果を読ませる（FREQ-377）。中身ごと差し込む role="status" は読み上げられないことがあり、フォーカスと
+  // 重ねると二重に読まれるので使わない
+  useEffect(() => {
+    titleRef.current?.focus();
+  }, []);
+
   return (
     <div className="text-center">
-      {/* カウントダウンは毎秒変わるので status の外に置く。中に入れると読み上げが毎秒走る。 */}
-      <div role="status">
+      <div data-testid="auth-result-body">
         {/* 近接の 4 段階。狭い順に
               (1) タイトル→詳細 5px … 一続きの文
               (2) 図→タイトル 7.5px … 同じまとまりだが種類が違う
@@ -107,7 +117,9 @@ export function AuthResultScreen({
           {icon}
           {/* h1 はグローバル指定で Didot（セリフ）になる。認証画面の見出しは
               ページ見出しと同じサンセリフに戻す。 */}
-          <h1 className="font-brand auth-result-title tracking-widest">{title}</h1>
+          <h1 ref={titleRef} tabIndex={-1} className="font-brand auth-result-title tracking-widest">
+            {title}
+          </h1>
         </div>
         {detail ? (
           <div className="mt-[5px] lk-text-sm leading-relaxed">{detail}</div>

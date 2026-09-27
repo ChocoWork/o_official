@@ -2,634 +2,68 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import Stripe from 'stripe';
 import { getStripeServerClient } from '@/lib/stripe/server';
-import {
-  mapFinalizeOrderRpcError,
-  parseFinalizeOrderRpcResult,
-} from '@/features/cart/services/cart-stock';
-import {
-  getDraftIdFromStripeMetadata,
-  type CheckoutDraftItemsSnapshot,
-} from '@/features/checkout/services/checkout-draft.service';
 import { logAudit } from '@/lib/audit';
 import {
-  beginWebhookEvent,
-  completeWebhookEvent,
-  failWebhookEvent,
+  enqueueWebhookEvent,
+  webhookErrorCategory,
   type WebhookEventStore,
 } from '@/lib/stripe/webhook-events';
-import {
-  syncOrderRefunds,
-  type OrderRefundDatabase,
-  type RefundListClient,
-} from '@/lib/stripe/order-refund-sync';
-import {
-  syncPaymentIntentAccounting,
-  syncPayoutAccounting,
-  syncRefundAccounting,
-} from '@/lib/stripe/accounting-sync';
-import { createStripeAccountingDatabase } from '@/lib/stripe/supabase-accounting-database';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
 
-type CheckoutDraftAuditSnapshot = {
-  subtotalAmount: number | null;
-  shippingAmount: number | null;
-  totalAmount: number | null;
-  currency: string | null;
-  lineItemsCount: number;
-  totalQuantity: number;
-  lineTotalSum: number;
-};
-
-function getClientIp(request: NextRequest): string | null {
-  const forwardedFor = request.headers.get('x-forwarded-for');
-  if (forwardedFor) {
-    return forwardedFor.split(',')[0]?.trim() ?? null;
-  }
-
-  return request.headers.get('x-real-ip');
-}
-
-async function logWebhookAudit(
-  request: NextRequest,
-  action: string,
-  outcome: 'success' | 'failure' | 'error' | 'conflict',
-  detail: string,
-  metadata?: Record<string, unknown>
-) {
-  await logAudit({
-    action,
-    resource: 'stripe_webhook',
-    outcome,
-    detail,
-    ip: getClientIp(request),
-    user_agent: request.headers.get('user-agent'),
-    metadata,
-  });
-}
-
-async function getCheckoutDraftAuditSnapshot(
-  draftId: string
-): Promise<CheckoutDraftAuditSnapshot | null> {
-  const { data: draftData, error: draftError } = await supabase
-    .from('checkout_drafts')
-    .select('subtotal_amount, shipping_amount, total_amount, currency, items_snapshot')
-    .eq('id', draftId)
-    .maybeSingle<{
-      subtotal_amount: number;
-      shipping_amount: number;
-      total_amount: number;
-      currency: string;
-      items_snapshot: CheckoutDraftItemsSnapshot | null;
-    }>();
-
-  if (draftError || !draftData) {
-    return null;
-  }
-
-  const itemsSnapshot = draftData.items_snapshot ?? [];
-  const lineItemsCount = itemsSnapshot.length;
-  const totalQuantity = itemsSnapshot.reduce((sum, item) => sum + (item.quantity ?? 0), 0);
-  const lineTotalSum = itemsSnapshot.reduce((sum, item) => sum + (item.line_total ?? 0), 0);
-
-  return {
-    subtotalAmount: draftData.subtotal_amount,
-    shippingAmount: draftData.shipping_amount,
-    totalAmount: draftData.total_amount,
-    currency: draftData.currency,
-    lineItemsCount,
-    totalQuantity,
-    lineTotalSum,
-  };
-}
-
-async function createOrderFromDraft(
-  request: NextRequest,
-  draftId: string,
-  paymentIntentId: string,
-  expectedTotalAmount: number,
-  currency: string,
-  status: 'paid' | 'pending',
-  checkoutSessionId?: string
-): Promise<void> {
-  const draftSnapshot = await getCheckoutDraftAuditSnapshot(draftId);
-
-  const { data, error } = await supabase.rpc(
-    'finalize_order_from_checkout_draft',
-    {
-      _draft_id: draftId,
-      _payment_intent_id: paymentIntentId,
-      _checkout_session_id: checkoutSessionId ?? null,
-      _order_status: status,
-      _expected_total_amount: expectedTotalAmount,
-      _currency: currency,
-    }
-  );
-
-  if (error) {
-    const mappedError = mapFinalizeOrderRpcError(error.message ?? '');
-    console.error('[webhook] finalize_order_from_checkout_draft failed', error);
-    await logWebhookAudit(
-      request,
-      'checkout.webhook.order_finalize',
-      'error',
-      'Failed to finalize order from checkout draft',
-      {
-        draft_id: draftId,
-        payment_intent_id: paymentIntentId,
-        checkout_session_id: checkoutSessionId ?? null,
-        error_message: error.message ?? null,
-        draft_subtotal_amount: draftSnapshot?.subtotalAmount ?? null,
-        draft_shipping_amount: draftSnapshot?.shippingAmount ?? null,
-        draft_total_amount: draftSnapshot?.totalAmount ?? null,
-        draft_currency: draftSnapshot?.currency ?? null,
-        draft_line_items_count: draftSnapshot?.lineItemsCount ?? 0,
-        draft_total_quantity: draftSnapshot?.totalQuantity ?? 0,
-        draft_line_total_sum: draftSnapshot?.lineTotalSum ?? 0,
-        expected_total_amount: expectedTotalAmount,
-        expected_currency: currency,
-      }
-    );
-    throw new Error(mappedError?.body.message ?? 'Failed to create order');
-  }
-
-  const finalizedOrder = parseFinalizeOrderRpcResult(data);
-  if (!finalizedOrder) {
-    console.error('[webhook] unexpected finalize_order_from_checkout_draft payload', data);
-    await logWebhookAudit(
-      request,
-      'checkout.webhook.order_finalize',
-      'error',
-      'Unexpected finalize_order_from_checkout_draft payload',
-      {
-        draft_id: draftId,
-        payment_intent_id: paymentIntentId,
-        checkout_session_id: checkoutSessionId ?? null,
-        draft_subtotal_amount: draftSnapshot?.subtotalAmount ?? null,
-        draft_shipping_amount: draftSnapshot?.shippingAmount ?? null,
-        draft_total_amount: draftSnapshot?.totalAmount ?? null,
-        draft_currency: draftSnapshot?.currency ?? null,
-        draft_line_items_count: draftSnapshot?.lineItemsCount ?? 0,
-        draft_total_quantity: draftSnapshot?.totalQuantity ?? 0,
-        draft_line_total_sum: draftSnapshot?.lineTotalSum ?? 0,
-        expected_total_amount: expectedTotalAmount,
-        expected_currency: currency,
-      }
-    );
-    throw new Error('Failed to create order');
-  }
-
-  await logWebhookAudit(
-    request,
-    'checkout.webhook.order_finalize',
-    'success',
-    'Order finalized from checkout draft',
-    {
-      draft_id: draftId,
-      payment_intent_id: paymentIntentId,
-      checkout_session_id: checkoutSessionId ?? null,
-      order_status: status,
-      expected_total_amount: expectedTotalAmount,
-      currency,
-      draft_subtotal_amount: draftSnapshot?.subtotalAmount ?? null,
-      draft_shipping_amount: draftSnapshot?.shippingAmount ?? null,
-      draft_total_amount: draftSnapshot?.totalAmount ?? null,
-      draft_currency: draftSnapshot?.currency ?? null,
-      draft_line_items_count: draftSnapshot?.lineItemsCount ?? 0,
-      draft_total_quantity: draftSnapshot?.totalQuantity ?? 0,
-      draft_line_total_sum: draftSnapshot?.lineTotalSum ?? 0,
-      expected_vs_draft_total_delta:
-        draftSnapshot?.totalAmount != null
-          ? expectedTotalAmount - draftSnapshot.totalAmount
-          : null,
-    }
-  );
-}
-
-async function handleCheckoutSessionCompleted(
-  request: NextRequest,
-  session: Stripe.Checkout.Session
-): Promise<void> {
-  const draftId = getDraftIdFromStripeMetadata(session.metadata);
-  if (!draftId) {
-    console.error('[webhook] checkout.session.completed missing draft_id metadata', session.id);
-    await logWebhookAudit(request, 'checkout.webhook.event_invalid', 'failure', 'Missing draft_id metadata', {
-      event_type: 'checkout.session.completed',
-      checkout_session_id: session.id,
-    });
-    return;
-  }
-
-  const paymentIntentId =
-    typeof session.payment_intent === 'string'
-      ? session.payment_intent
-      : session.payment_intent?.id;
-
-  if (!paymentIntentId) {
-    console.error('[webhook] checkout.session.completed missing payment_intent', session.id);
-    await logWebhookAudit(request, 'checkout.webhook.event_invalid', 'failure', 'Missing payment_intent', {
-      event_type: 'checkout.session.completed',
-      checkout_session_id: session.id,
-      draft_id: draftId,
-    });
-    return;
-  }
-
-  const { data: existingOrder } = await supabase
-    .from('orders')
-    .select('id')
-    .eq('payment_intent_id', paymentIntentId)
-    .maybeSingle();
-
-  if (existingOrder) {
-    console.info('[webhook] order already exists for checkout session', session.id, 'skipping');
-    await logWebhookAudit(request, 'checkout.webhook.duplicate_skip', 'conflict', 'Order already exists for checkout session', {
-      event_type: 'checkout.session.completed',
-      checkout_session_id: session.id,
-      draft_id: draftId,
-      payment_intent_id: paymentIntentId,
-      order_id: existingOrder.id,
-    });
-    return;
-  }
-
-  await createOrderFromDraft(
-    request,
-    draftId,
-    paymentIntentId,
-    session.amount_total ?? 0,
-    session.currency ?? 'jpy',
-    session.payment_status === 'paid' ? 'paid' : 'pending',
-    session.id
-  );
-}
-
-async function handleCheckoutSessionAsyncPaymentSucceeded(
-  request: NextRequest,
-  session: Stripe.Checkout.Session
-): Promise<void> {
-  const paymentIntentId =
-    typeof session.payment_intent === 'string'
-      ? session.payment_intent
-      : session.payment_intent?.id;
-  if (!paymentIntentId) {
-    console.error('[webhook] checkout.session.async_payment_succeeded missing payment_intent', session.id);
-    await logWebhookAudit(request, 'checkout.webhook.event_invalid', 'failure', 'Missing payment_intent', {
-      event_type: 'checkout.session.async_payment_succeeded',
-      checkout_session_id: session.id,
-    });
-    return;
-  }
-
-  const { error } = await supabase
-    .from('orders')
-    .update({ status: 'paid' })
-    .eq('payment_intent_id', paymentIntentId)
-    .eq('status', 'pending');
-
-  if (error) {
-    console.error('[webhook] failed to update order status to paid', error);
-    await logWebhookAudit(request, 'checkout.webhook.order_status_update', 'error', 'Failed to mark order as paid', {
-      event_type: 'checkout.session.async_payment_succeeded',
-      checkout_session_id: session.id,
-      payment_intent_id: paymentIntentId,
-      error_message: error.message ?? null,
-    });
-    return;
-  }
-
-  await logWebhookAudit(request, 'checkout.webhook.order_status_update', 'success', 'Marked pending order as paid', {
-    event_type: 'checkout.session.async_payment_succeeded',
-    checkout_session_id: session.id,
-    payment_intent_id: paymentIntentId,
-  });
-}
-
-async function handleCheckoutSessionAsyncPaymentFailed(
-  request: NextRequest,
-  session: Stripe.Checkout.Session
-): Promise<void> {
-  const paymentIntentId =
-    typeof session.payment_intent === 'string'
-      ? session.payment_intent
-      : session.payment_intent?.id;
-  if (!paymentIntentId) {
-    console.error('[webhook] checkout.session.async_payment_failed missing payment_intent', session.id);
-    await logWebhookAudit(request, 'checkout.webhook.event_invalid', 'failure', 'Missing payment_intent', {
-      event_type: 'checkout.session.async_payment_failed',
-      checkout_session_id: session.id,
-    });
-    return;
-  }
-
-  const { error } = await supabase
-    .from('orders')
-    .update({ status: 'failed' })
-    .eq('payment_intent_id', paymentIntentId)
-    .eq('status', 'pending');
-
-  if (error) {
-    console.error('[webhook] failed to update order status to failed', error);
-    await logWebhookAudit(request, 'checkout.webhook.order_status_update', 'error', 'Failed to mark order as failed', {
-      event_type: 'checkout.session.async_payment_failed',
-      checkout_session_id: session.id,
-      payment_intent_id: paymentIntentId,
-      error_message: error.message ?? null,
-    });
-    return;
-  }
-
-  await logWebhookAudit(request, 'checkout.webhook.order_status_update', 'success', 'Marked pending order as failed', {
-    event_type: 'checkout.session.async_payment_failed',
-    checkout_session_id: session.id,
-    payment_intent_id: paymentIntentId,
-  });
-}
-
-async function handleCheckoutSessionExpired(
-  request: NextRequest,
-  session: Stripe.Checkout.Session
-): Promise<void> {
-  const paymentIntentId =
-    typeof session.payment_intent === 'string'
-      ? session.payment_intent
-      : session.payment_intent?.id;
-
-  if (!paymentIntentId) {
-    console.info('[webhook] checkout.session.expired without payment_intent, skipping', session.id);
-    await logWebhookAudit(request, 'checkout.webhook.duplicate_skip', 'conflict', 'checkout.session.expired without payment_intent', {
-      event_type: 'checkout.session.expired',
-      checkout_session_id: session.id,
-    });
-    return;
-  }
-
-  const { error } = await supabase
-    .from('orders')
-    .update({ status: 'failed' })
-    .eq('payment_intent_id', paymentIntentId)
-    .eq('status', 'pending');
-
-  if (error) {
-    console.error('[webhook] failed to mark expired checkout session order as failed', error);
-    await logWebhookAudit(request, 'checkout.webhook.order_status_update', 'error', 'Failed to mark expired checkout as failed', {
-      event_type: 'checkout.session.expired',
-      checkout_session_id: session.id,
-      payment_intent_id: paymentIntentId,
-      error_message: error.message ?? null,
-    });
-    return;
-  }
-
-  await logWebhookAudit(request, 'checkout.webhook.order_status_update', 'success', 'Marked expired checkout as failed', {
-    event_type: 'checkout.session.expired',
-    checkout_session_id: session.id,
-    payment_intent_id: paymentIntentId,
-  });
-}
-
-async function handlePaymentIntentSucceeded(
-  request: NextRequest,
-  paymentIntent: Stripe.PaymentIntent
-): Promise<void> {
-  const draftId = getDraftIdFromStripeMetadata(paymentIntent.metadata);
-  if (!draftId) {
-    console.error('[webhook] payment_intent.succeeded missing draft_id metadata', paymentIntent.id);
-    await logWebhookAudit(request, 'checkout.webhook.event_invalid', 'failure', 'Missing draft_id metadata', {
-      event_type: 'payment_intent.succeeded',
-      payment_intent_id: paymentIntent.id,
-    });
-    return;
-  }
-
-  const { data: existingOrder } = await supabase
-    .from('orders')
-    .select('id')
-    .eq('payment_intent_id', paymentIntent.id)
-    .maybeSingle();
-
-  if (existingOrder) {
-    console.info('[webhook] order already exists for payment_intent', paymentIntent.id, 'skipping');
-    await logWebhookAudit(request, 'checkout.webhook.duplicate_skip', 'conflict', 'Order already exists for payment_intent', {
-      event_type: 'payment_intent.succeeded',
-      payment_intent_id: paymentIntent.id,
-      draft_id: draftId,
-      order_id: existingOrder.id,
-    });
-    return;
-  }
-
-  await createOrderFromDraft(
-    request,
-    draftId,
-    paymentIntent.id,
-    paymentIntent.amount ?? 0,
-    paymentIntent.currency ?? 'jpy',
-    'paid'
-  );
-}
-
-async function handlePaymentIntentFailed(
-  request: NextRequest,
-  paymentIntent: Stripe.PaymentIntent
-): Promise<void> {
-  const { error } = await supabase
-    .from('orders')
-    .update({ status: 'failed' })
-    .eq('payment_intent_id', paymentIntent.id)
-    .eq('status', 'pending');
-
-  if (error) {
-    console.error('[webhook] failed to update order status to failed', error);
-    await logWebhookAudit(request, 'checkout.webhook.order_status_update', 'error', 'Failed to mark order as failed', {
-      event_type: 'payment_intent.payment_failed',
-      payment_intent_id: paymentIntent.id,
-      error_message: error.message ?? null,
-    });
-    return;
-  }
-
-  await logWebhookAudit(request, 'checkout.webhook.order_status_update', 'success', 'Marked order as failed', {
-    event_type: 'payment_intent.payment_failed',
-    payment_intent_id: paymentIntent.id,
-  });
-}
-
-function resolvePaymentIntentId(
-  value: string | Stripe.PaymentIntent | null | undefined,
-): string | null {
-  if (typeof value === 'string') return value;
-  return value?.id ?? null;
-}
-
-async function handleRefundChanged(
-  object: Stripe.Refund | Stripe.Charge,
-  stripe: Stripe,
-): Promise<void> {
-  const paymentIntentId = resolvePaymentIntentId(object.payment_intent);
-  if (!paymentIntentId) {
-    throw new Error('Stripe refund event is missing payment_intent');
-  }
-
-  await syncOrderRefunds({
-    database: supabase as unknown as OrderRefundDatabase,
-    stripe: stripe as unknown as RefundListClient,
-    paymentIntentId,
-  });
-}
-
-type AccountingStripeClient = Parameters<typeof syncPayoutAccounting>[0]['stripe'];
-
-/**
- * 注文更新とは独立に、Stripe原始記録（Balance Transaction / Refund / Payout）を同期する。
- */
-async function syncAccountingForEvent(event: Stripe.Event, stripe: Stripe): Promise<void> {
-  const database = createStripeAccountingDatabase(supabase);
-  const client = stripe as unknown as AccountingStripeClient;
-  const object = event.data.object as { id?: string };
-  if (!object?.id) {
-    return;
-  }
-
-  switch (event.type) {
-    case 'payment_intent.succeeded':
-      await syncPaymentIntentAccounting({ stripe: client, database, paymentIntentId: object.id });
-      break;
-    case 'refund.created':
-    case 'refund.updated':
-      await syncRefundAccounting({ stripe: client, database, refundId: object.id });
-      break;
-    case 'payout.paid':
-    case 'payout.failed':
-    case 'payout.reconciliation_completed':
-      await syncPayoutAccounting({ stripe: client, database, payoutId: object.id });
-      break;
-    default:
-      break;
-  }
-}
-
+// PUBLIC: Stripe の署名を raw body で検証し、DBへの永続化に成功してから応答する。
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!webhookSecret) {
     console.error('[webhook] STRIPE_WEBHOOK_SECRET is not set');
-    await logWebhookAudit(req, 'checkout.webhook.signature_invalid', 'error', 'Webhook secret not configured');
-    return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 
-  const sig = req.headers.get('stripe-signature');
-  if (!sig) {
-    await logWebhookAudit(req, 'checkout.webhook.signature_invalid', 'failure', 'Missing stripe-signature header');
+  const signature = req.headers.get('stripe-signature');
+  if (!signature) {
     return NextResponse.json({ error: 'Missing stripe-signature header' }, { status: 400 });
   }
 
   const rawBody = Buffer.from(await req.arrayBuffer());
-
-  const stripe = getStripeServerClient();
   let event: Stripe.Event;
 
   try {
-    event = stripe.webhooks.constructEvent(rawBody, sig, webhookSecret);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    console.error('[webhook] Signature verification failed:', message);
-    await logWebhookAudit(req, 'checkout.webhook.signature_invalid', 'failure', 'Webhook signature verification failed', {
-      error_message: message,
-    });
-    return NextResponse.json(
-      { error: `Webhook signature verification failed: ${message}` },
-      { status: 400 }
+    event = getStripeServerClient().webhooks.constructEvent(
+      rawBody, signature, webhookSecret
     );
-  }
-
-  const eventStore = supabase as unknown as WebhookEventStore;
-  try {
-    const disposition = await beginWebhookEvent(eventStore, {
-      id: event.id,
-      type: event.type,
-      payload: event as unknown as Record<string, unknown>,
-    });
-    if (disposition === 'duplicate') {
-      await logWebhookAudit(req, 'checkout.webhook.duplicate_skip', 'conflict', 'Completed webhook event skipped', {
-        event_id: event.id,
-        event_type: event.type,
-      });
-      return NextResponse.json({ received: true, duplicate: true });
-    }
   } catch (error) {
-    console.error('[webhook] Failed to begin event processing', event.id, error);
-    await logWebhookAudit(req, 'checkout.webhook.event_persist', 'error', 'Failed to begin webhook event processing', {
-      event_id: event.id,
-      event_type: event.type,
-      error_message: error instanceof Error ? error.message : 'Unknown error',
-    });
-    return NextResponse.json({ error: 'Failed to persist webhook event state' }, { status: 500 });
-  }
-
-  try {
-    switch (event.type) {
-      case 'checkout.session.completed':
-        await handleCheckoutSessionCompleted(req, event.data.object as Stripe.Checkout.Session);
-        break;
-      case 'checkout.session.async_payment_succeeded':
-        await handleCheckoutSessionAsyncPaymentSucceeded(req, event.data.object as Stripe.Checkout.Session);
-        break;
-      case 'checkout.session.async_payment_failed':
-        await handleCheckoutSessionAsyncPaymentFailed(req, event.data.object as Stripe.Checkout.Session);
-        break;
-      case 'checkout.session.expired':
-        await handleCheckoutSessionExpired(req, event.data.object as Stripe.Checkout.Session);
-        break;
-      case 'payment_intent.succeeded':
-        await handlePaymentIntentSucceeded(req, event.data.object as Stripe.PaymentIntent);
-        break;
-      case 'payment_intent.payment_failed':
-        await handlePaymentIntentFailed(req, event.data.object as Stripe.PaymentIntent);
-        break;
-      case 'refund.created':
-      case 'refund.updated':
-        await handleRefundChanged(event.data.object as Stripe.Refund, stripe);
-        break;
-      case 'charge.refunded':
-        await handleRefundChanged(event.data.object as Stripe.Charge, stripe);
-        break;
-      default:
-        break;
-    }
-
-    await syncAccountingForEvent(event, stripe);
-  } catch (err) {
-    console.error('[webhook] Error processing event', event.id, event.type, err);
-    try {
-      await failWebhookEvent(eventStore, event.id, err);
-    } catch (stateError) {
-      console.error('[webhook] Failed to persist event failure state', event.id, stateError);
-    }
-    await logWebhookAudit(req, 'checkout.webhook.event_processing', 'error', 'Webhook event processing failed', {
-      event_id: event.id,
-      event_type: event.type,
-      error_message: err instanceof Error ? err.message : 'Unknown error',
+    console.error('[webhook] Signature verification failed',
+      error instanceof Error ? error.name : 'UnknownError');
+    await logAudit({
+      action: 'checkout.webhook.signature_invalid',
+      resource: 'stripe_webhook',
+      outcome: 'failure',
+      detail: 'Webhook signature verification failed',
     });
     return NextResponse.json(
-      { error: 'Internal server error during event processing' },
-      { status: 500 }
+      { error: 'Webhook signature verification failed' },
+      { status: 400 },
     );
   }
 
   try {
-    await completeWebhookEvent(eventStore, event.id);
+    const inserted = await enqueueWebhookEvent(
+      supabase as unknown as WebhookEventStore,
+      {
+        id: event.id,
+        type: event.type,
+        payload: event as unknown as Record<string, unknown>,
+      },
+    );
+    return NextResponse.json({ received: true, duplicate: !inserted });
   } catch (error) {
-    console.error('[webhook] Failed to complete event state', event.id, error);
-    return NextResponse.json({ error: 'Failed to complete webhook event state' }, { status: 500 });
+    console.error('[webhook] Failed to persist verified event', event.id, webhookErrorCategory(error));
+    return NextResponse.json(
+      { error: 'Failed to persist webhook event' },
+      { status: 500 },
+    );
   }
-
-  await logWebhookAudit(req, 'checkout.webhook.event_processing', 'success', 'Webhook event processed', {
-    event_id: event.id,
-    event_type: event.type,
-  });
-
-  return NextResponse.json({ received: true });
 }

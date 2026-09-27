@@ -12,23 +12,3 @@ export function formatStockLabel(
   }
   return "受注生産";
 }
-
-/**
- * 一覧カードでの SOLD OUT 判定（純粋関数）。
- * - description に "sold out" / "在庫切れ" を含む → 在庫なし
- * - sizes が空配列 → 在庫なし
- * - それ以外 → 在庫あり
- */
-export function isItemInStock(item: {
-  description?: string;
-  sizes?: string[];
-}): boolean {
-  const soldOutText = `${item.description ?? ""}`.toLowerCase();
-  if (soldOutText.includes("sold out") || soldOutText.includes("在庫切れ")) {
-    return false;
-  }
-  if (Array.isArray(item.sizes) && item.sizes.length === 0) {
-    return false;
-  }
-  return true;
-}

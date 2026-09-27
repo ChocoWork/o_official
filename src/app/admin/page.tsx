@@ -38,6 +38,32 @@ type ForbiddenErrorBody = {
   reason?: string;
 };
 
+
+type RefundResponseBody = {
+  refundStatus?: unknown;
+  orderStatus?: unknown;
+};
+
+const REFUND_STATUSES = new Set(['pending', 'requires_action', 'succeeded', 'failed', 'canceled']);
+const REFUND_ORDER_STATUSES = new Set(['paid', 'shipped', 'cancelled']);
+
+async function readSafeOrderActionError(response: Response, fallback: string): Promise<string> {
+  if (response.status !== 400 && response.status !== 409) {
+    return fallback;
+  }
+
+  try {
+    const body = (await response.json()) as { error?: unknown };
+    if (typeof body.error === 'string' && body.error.length > 0 && body.error.length <= 200) {
+      return body.error;
+    }
+  } catch {
+    // Invalid or non-JSON error bodies are intentionally replaced with a generic message.
+  }
+
+  return fallback;
+}
+
 const ORDER_CSV_HEADERS = ['注文ID', '顧客名', '顧客メール', '注文日', '購入商品', '商品数', '合計金額', '決済状況'] as const;
 
 function formatOrderItems(items: OrderItem['items']): string {
@@ -59,6 +85,7 @@ function AdminPageContent() {
   const [orders, setOrders] = useState<OrderItem[]>([]);
   const [isOrdersLoading, setIsOrdersLoading] = useState(false);
   const [ordersErrorMessage, setOrdersErrorMessage] = useState<string | null>(null);
+  const [ordersNoticeMessage, setOrdersNoticeMessage] = useState<string | null>(null);
   const [ordersPage, setOrdersPage] = useState(1);
   const [ordersPageSize] = useState(20);
   const [ordersTotalPages, setOrdersTotalPages] = useState(1);
@@ -237,9 +264,11 @@ function AdminPageContent() {
       setOrdersPage(json.pagination?.page ?? page);
       setOrdersTotalPages(json.pagination?.totalPages ?? 1);
       setOrdersTotalCount(json.pagination?.total ?? 0);
+      return true;
     } catch (error) {
       console.error('Failed to fetch admin orders:', error);
       setOrdersErrorMessage(error instanceof Error ? error.message : '注文一覧の取得に失敗しました。');
+      return false;
     } finally {
       setIsOrdersLoading(false);
     }
@@ -345,6 +374,7 @@ function AdminPageContent() {
 
     try {
       setOrdersErrorMessage(null);
+      setOrdersNoticeMessage(null);
       updateProcessingOrder(id, true);
 
       const response = await clientFetch(`/api/admin/orders/${id}/status`, {
@@ -386,6 +416,7 @@ function AdminPageContent() {
   };
 
   const openShipDialog = (id: string) => {
+    setOrdersNoticeMessage(null);
     setShipCarrier('yamato');
     setShipTrackingNumber('');
     setShipOrderId(id);
@@ -402,6 +433,7 @@ function AdminPageContent() {
 
     try {
       setOrdersErrorMessage(null);
+      setOrdersNoticeMessage(null);
       updateProcessingOrder(id, true);
       setShipOrderId(null);
 
@@ -417,7 +449,7 @@ function AdminPageContent() {
 
       if (!response.ok) {
         if (response.status === 409) {
-          throw new Error('発送できる状態ではありません。一覧を更新して状態を確認してください。');
+          throw new Error('発送できる状態ではありません。一覧を更新し、決済状態と配送先を確認してください。');
         }
         if (response.status === 403) {
           throw new Error('注文ステータス更新の権限がありません。');
@@ -443,6 +475,7 @@ function AdminPageContent() {
 
     try {
       setOrdersErrorMessage(null);
+      setOrdersNoticeMessage(null);
       updateProcessingOrder(id, true);
 
       const response = await clientFetch(`/api/admin/orders/${id}/refund`, {
@@ -462,20 +495,35 @@ function AdminPageContent() {
           throw new Error('返金操作の権限がありません。');
         }
 
-        throw new Error('返金処理に失敗しました。');
+        throw new Error(await readSafeOrderActionError(response, '返金処理に失敗しました。'));
       }
 
-      setOrders((prevOrders) =>
-        prevOrders.map((order) =>
-          order.id === id
-            ? {
-                ...order,
-                status: 'キャンセル',
-                canRefund: false,
-              }
-            : order,
-        ),
-      );
+      const body = (await response.json()) as RefundResponseBody;
+      if (
+        typeof body.refundStatus !== 'string'
+        || !REFUND_STATUSES.has(body.refundStatus)
+        || typeof body.orderStatus !== 'string'
+        || !REFUND_ORDER_STATUSES.has(body.orderStatus)
+      ) {
+        throw new Error('返金状態を確認できませんでした。');
+      }
+
+      const refreshed = await fetchOrders();
+      if (!refreshed) {
+        throw new Error('返金後の注文状態を確認できませんでした。一覧を再読み込みしてください。');
+      }
+
+      if (body.refundStatus === 'failed' || body.refundStatus === 'canceled') {
+        throw new Error('返金が完了しませんでした。注文状態を確認してください。');
+      }
+
+      if (body.refundStatus === 'pending' || body.refundStatus === 'requires_action') {
+        setOrdersNoticeMessage('返金処理を受け付けました。Stripeで完了後に注文状態が更新されます。');
+      } else if (body.orderStatus === 'cancelled') {
+        setOrdersNoticeMessage('全額返金が完了し、注文をキャンセルしました。');
+      } else {
+        setOrdersNoticeMessage('返金が完了しました。再取得した注文状態を表示しています。');
+      }
     } catch (error) {
       console.error('Failed to refund order:', error);
       setOrdersErrorMessage(error instanceof Error ? error.message : '返金処理に失敗しました。');
@@ -746,6 +794,7 @@ function AdminPageContent() {
               orders={displayedOrders}
               isLoading={isOrdersLoading}
               errorMessage={ordersErrorMessage}
+              noticeMessage={ordersNoticeMessage}
               onCancelOrder={handleCancelOrder}
               onRefundOrder={userRole === 'admin' ? handleRefundOrder : undefined}
               onShipOrder={openShipDialog}

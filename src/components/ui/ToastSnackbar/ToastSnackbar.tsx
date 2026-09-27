@@ -40,13 +40,10 @@ export function ToastSnackbar({
     <i className={VARIANT_ICON_CLASS[variant]} aria-hidden="true" />
   );
 
+  // 読み上げは外側の常に置いた入れ物（LiveMessage）が担う。ここでも読み上げ領域にすると入れ子になり、
+  // 表示のたびに差し込まれて読まれないこともある（FREQ-376）
   return (
-    <div
-      className={cn("toast-snackbar", className)}
-      {...rootDataAttrs}
-      role="status"
-      aria-live="polite"
-    >
+    <div className={cn("toast-snackbar", className)} {...rootDataAttrs}>
       <div className="toast-snackbar__body">
         {showIcon ? (
           <span className="toast-snackbar__icon" aria-hidden="true">

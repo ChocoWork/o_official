@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button/Button";
+import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 import "@/components/AuthForm.css";
 
 type Props = {
@@ -68,14 +69,12 @@ export default function VerifyClient({ token }: Props) {
         <h1 className="mb-[21px] font-brand lk-text-lg tracking-widest sm:mb-[34px]">
           パスワード再設定
         </h1>
+        {/* 案内の入れ物は常に置き、中身だけを入れ替える（FREQ-376） */}
+        <LiveMessage className="lk-text-sm text-red-600 whitespace-pre-line">
+          {error}
+        </LiveMessage>
         {error ? (
           <>
-            <p
-              role="alert"
-              className="lk-text-sm text-red-600 whitespace-pre-line"
-            >
-              {error}
-            </p>
             <Button
               type="button"
               className="auth-action w-full mt-6"

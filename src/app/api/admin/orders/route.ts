@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { getStripeServerClient } from '@/lib/stripe/server';
 import { createClient } from '@/lib/supabase/server';
+import { findMissingShippingFields } from '@/features/checkout/services/checkout-draft.service';
 
 type OrderRow = {
   id: string;
@@ -13,6 +14,11 @@ type OrderRow = {
   currency: string;
   shipping_full_name: string | null;
   shipping_email: string | null;
+  shipping_postal_code: string | null;
+  shipping_prefecture: string | null;
+  shipping_city: string | null;
+  shipping_address: string | null;
+  shipping_phone: string | null;
   created_at: string;
   shipped_at: string | null;
   shipping_carrier: string | null;
@@ -216,6 +222,11 @@ export async function GET(request: Request) {
         currency,
         shipping_full_name,
         shipping_email,
+        shipping_postal_code,
+        shipping_prefecture,
+        shipping_city,
+        shipping_address,
+        shipping_phone,
         created_at,
         shipped_at,
         shipping_carrier,
@@ -282,6 +293,17 @@ export async function GET(request: Request) {
 
       const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
       const paymentIntent = paymentIntentMap.get(order.payment_intent_id) ?? null;
+      const missingShippingFields = findMissingShippingFields({
+        email: order.shipping_email,
+        fullName: order.shipping_full_name,
+        kanaName: null,
+        postalCode: order.shipping_postal_code,
+        prefecture: order.shipping_prefecture,
+        city: order.shipping_city,
+        address: order.shipping_address,
+        building: null,
+        phone: order.shipping_phone,
+      });
 
       return {
         id: order.id,
@@ -298,8 +320,10 @@ export async function GET(request: Request) {
         shippedAt: order.shipped_at,
         shippingCarrier: order.shipping_carrier,
         trackingNumber: order.tracking_number,
+        canShip: order.status === 'paid' && missingShippingFields.length === 0,
+        missingShippingFields,
         canRefund:
-          order.status === 'paid' &&
+          (order.status === 'paid' || order.status === 'shipped') &&
           paymentIntent?.status === 'succeeded' &&
           order.payment_intent_id.startsWith('pi_'),
       };

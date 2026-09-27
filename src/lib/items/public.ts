@@ -1,11 +1,26 @@
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { signItemImageFields } from '@/lib/storage/item-images';
 import type { Item } from '@/types/item';
+import { getItemsAvailability } from '@/lib/items/availability';
 
 const ITEM_SELECT_COLUMNS =
-  'id, name, description, price, category, image_url, image_urls, colors, sizes, product_details, material, origin, sewing_region, care, season, stock_quantity';
+  'id, name, description, price, category, image_url, image_urls, colors, sizes, product_details, material, origin, sewing_region, care, season';
 
 export type PublicItemDto = Omit<Item, 'status' | 'created_at' | 'updated_at'>;
+
+/**
+ * すぐ出せる在庫の有無を各商品に付ける（FREQ-400）。
+ *
+ * 在庫の単位は色 × サイズ。商品の在庫数（items.stock_quantity）は見ない。
+ * 引けなかった商品は受注生産として扱う（在庫を理由に注文を止めないため、安全側は受注生産）。
+ */
+async function withAvailability(items: PublicItemDto[]): Promise<PublicItemDto[]> {
+  const availability = await getItemsAvailability(items.map((item) => item.id));
+  return items.map((item) => ({
+    ...item,
+    madeToOrder: availability.get(item.id)?.madeToOrder ?? true,
+  }));
+}
 
 export type ItemSort = 'newest' | 'price_asc' | 'price_desc' | 'popular';
 
@@ -56,7 +71,7 @@ export async function getPublishedItems(limit?: number): Promise<PublicItemDto[]
     (data as PublicItemDto[]).map((item) => signItemImageFields(signSupabase, item)),
   );
 
-  return signedItems;
+  return withAvailability(signedItems);
 }
 
 // FREQ-147: ホームの VIEW ALL 表示判定用に公開 ITEM の総数を返す
@@ -153,7 +168,7 @@ export async function getPublishedItemsPage(queryInput: PublishedItemsQuery = {}
   const total = typeof count === 'number' ? count : items.length;
 
   return {
-    items,
+    items: await withAvailability(items),
     page,
     pageSize,
     total,

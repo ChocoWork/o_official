@@ -31,7 +31,6 @@ export type CartQuantityRow = {
 export type InventoryItem = {
   id: number;
   name: string;
-  stock_quantity: number | null;
   status?: string | null;
 };
 
@@ -57,6 +56,12 @@ export function normalizeCartVariantValue(value: string | null | undefined): str
   return trimmed.length > 0 ? trimmed : null;
 }
 
+/**
+ * 買えない商品（非公開・存在しない）だけを挙げる（FREQ-401）。
+ *
+ * 在庫不足では挙げない。在庫の有無は納期を分けるだけで、足りなければ受注生産として受ける。
+ * 在庫の正は item_variants と在庫台帳で、商品単位の在庫数はもう無い。
+ */
 export function collectInventoryIssues(
   cartRows: CartQuantityRow[],
   inventoryItems: InventoryItem[]
@@ -86,16 +91,6 @@ export function collectInventoryIssues(
         reason: 'unavailable',
       });
       continue;
-    }
-
-    if (item.stock_quantity !== null && requestedQuantity > item.stock_quantity) {
-      issues.push({
-        item_id: itemId,
-        name: item.name,
-        requestedQuantity,
-        availableQuantity: item.stock_quantity,
-        reason: 'insufficient_stock',
-      });
     }
   }
 

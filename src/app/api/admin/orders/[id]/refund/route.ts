@@ -9,7 +9,7 @@ import {
   type OrderRefundDatabase,
   type RefundListClient,
 } from '@/lib/stripe/order-refund-sync';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 
 const orderIdSchema = z.string().uuid();
 const refundRequestSchema = z.object({
@@ -20,7 +20,7 @@ const refundRequestSchema = z.object({
 type OrderLookupRow = {
   id: string;
   payment_intent_id: string;
-  status: 'pending' | 'paid' | 'failed' | 'cancelled';
+  status: 'pending' | 'paid' | 'failed' | 'cancelled' | 'shipped';
   total_amount: number;
 };
 
@@ -142,7 +142,7 @@ export async function POST(
       return NextResponse.json({ error: 'Stripe決済注文のみ返金できます。' }, { status: 400 });
     }
 
-    if (order.status !== 'paid') {
+    if (order.status !== 'paid' && order.status !== 'shipped') {
       await logAudit({
         action: 'admin.orders.refund.create',
         actor_id: actorId,
@@ -154,7 +154,7 @@ export async function POST(
         user_agent: userAgent,
       });
 
-      return NextResponse.json({ error: '決済完了の注文のみ返金できます。' }, { status: 409 });
+      return NextResponse.json({ error: '決済完了または発送済みの注文のみ返金できます。' }, { status: 409 });
     }
 
     const refundAmount = parsedBody.data.amount;
@@ -182,8 +182,10 @@ export async function POST(
 
     // A refund can remain pending (for example, Konbini requires bank details).
     // Derive order state only from refunds Stripe confirms as succeeded.
+    const serviceRoleSupabase = await createServiceRoleClient();
     const refundSync = await syncOrderRefunds({
-      database: supabase as unknown as OrderRefundDatabase,
+      actorId,
+      database: serviceRoleSupabase as unknown as OrderRefundDatabase,
       stripe: stripe as unknown as RefundListClient,
       paymentIntentId: order.payment_intent_id,
     });
@@ -222,11 +224,27 @@ export async function POST(
     );
   } catch (error) {
     if (error instanceof Stripe.errors.StripeError) {
+      console.error('POST /api/admin/orders/:id/refund Stripe error:', {
+        type: error.type,
+        statusCode: error.statusCode,
+        requestId: error.requestId,
+      });
+
+      await logAudit({
+        action: 'admin.orders.refund.create',
+        actor_id: actorId,
+        resource: 'orders',
+        resource_id: orderIdForAudit,
+        outcome: 'error',
+        detail: `Stripe refund error (${error.type}, status ${error.statusCode ?? 'unknown'})`,
+      });
+
+      const responseStatus = error.statusCode === 400 || error.statusCode === 409
+        ? error.statusCode
+        : 502;
       return NextResponse.json(
-        {
-          error: error.message || 'Stripe返金処理に失敗しました。',
-        },
-        { status: error.statusCode ?? 400 },
+        { error: 'Stripe返金処理に失敗しました。' },
+        { status: responseStatus },
       );
     }
 

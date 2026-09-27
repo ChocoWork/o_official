@@ -2,7 +2,6 @@ import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import {
   addCartItemSchema,
-  buildInventoryConflictBody,
   normalizeCartVariantValue,
 } from '@/features/cart/services/cart-stock';
 import { logAudit } from '@/lib/audit';
@@ -41,7 +40,6 @@ type ItemRow = {
   image_url: string;
   category: string;
   status: string;
-  stock_quantity?: number | null;
 };
 
 type ExistingCartRow = {
@@ -201,7 +199,7 @@ export async function POST(req: NextRequest) {
     // Check if item exists
     const { data: itemData, error: itemError } = await publicItemSupabase
       .from("items")
-      .select("id, name, stock_quantity, status")
+      .select("id, name, status")
       .eq("id", item_id)
       .eq("status", "published")
       .single();
@@ -241,42 +239,6 @@ export async function POST(req: NextRequest) {
         normalizeCartVariantValue(cartRow.color) === normalizedColor &&
         normalizeCartVariantValue(cartRow.size) === normalizedSize
     );
-    const totalRequestedQuantity =
-      cartRows.reduce((sum, cartRow) => sum + cartRow.quantity, 0) + quantity;
-
-    if (
-      itemData.stock_quantity !== null &&
-      totalRequestedQuantity > itemData.stock_quantity
-    ) {
-      await logAudit({
-        action: 'cart.add',
-        outcome: 'conflict',
-        detail: 'Insufficient stock',
-        ip: clientIp,
-        user_agent: userAgent,
-        metadata: {
-          session_id: sessionId,
-          item_id,
-          requested_quantity: totalRequestedQuantity,
-          available_quantity: itemData.stock_quantity,
-        },
-      });
-      return NextResponse.json(
-        buildInventoryConflictBody(
-          [
-            {
-              item_id,
-              name: itemData.name,
-              requestedQuantity: totalRequestedQuantity,
-              availableQuantity: itemData.stock_quantity,
-              reason: 'insufficient_stock',
-            },
-          ],
-          'insufficient_stock'
-        ),
-        { status: 409 }
-      );
-    }
 
     let cartItem;
     let error;

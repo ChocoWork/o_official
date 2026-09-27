@@ -18,6 +18,7 @@ import {
 import { useTurnstileWidget } from "@/hooks/useTurnstileWidget";
 import { formatResendCountdown } from "@/lib/format-countdown";
 import "@/components/AuthForm.css";
+import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 
 // 再送の間隔。ログインの OTP 再送と同じ値にして、待ち時間の作法を 1 つに揃える。
 const RESEND_COOLDOWN_SECONDS = 60;
@@ -309,12 +310,9 @@ export default function PasswordResetPage() {
   };
 
   const renderResendAction = () => {
+    // 上限に達したときの案内は、呼び出し側の常に置いた入れ物（LiveMessage）が出す（FREQ-376）
     if (rateLimited) {
-      return (
-        <p role="alert" className="lk-text-xs text-red-600">
-          送信回数の上限に達しました。しばらく時間をおいてからお試しください。
-        </p>
-      );
+      return null;
     }
 
     if (cooldownRemaining > 0) {
@@ -399,15 +397,15 @@ export default function PasswordResetPage() {
             }
             action={
               <>
+                <LiveMessage className="lk-text-xs text-red-600">
+                  {rateLimited
+                    ? "送信回数の上限に達しました。しばらく時間をおいてからお試しください。"
+                    : null}
+                </LiveMessage>
                 {renderResendAction()}
-                {error ? (
-                  <p
-                    role="alert"
-                    className="mt-4 lk-text-xs text-red-600 whitespace-pre-line"
-                  >
-                    {error}
-                  </p>
-                ) : null}
+                <LiveMessage className="mt-4 lk-text-xs text-red-600 whitespace-pre-line">
+                  {error}
+                </LiveMessage>
               </>
             }
             links={
@@ -554,22 +552,12 @@ export default function PasswordResetPage() {
                     : "再設定メールを送信"}
               </Button>
             </form>
-            {linkError ? (
-              <p
-                role="alert"
-                className="lk-text-sm text-red-600 mt-4 whitespace-pre-line"
-              >
-                {linkError}
-              </p>
-            ) : null}
-            {error ? (
-              <p
-                role="alert"
-                className="lk-text-sm text-red-600 mt-4 whitespace-pre-line"
-              >
-                {error}
-              </p>
-            ) : null}
+            <LiveMessage className="lk-text-sm text-red-600 mt-4 whitespace-pre-line">
+              {linkError}
+            </LiveMessage>
+            <LiveMessage className="lk-text-sm text-red-600 mt-4 whitespace-pre-line">
+              {error}
+            </LiveMessage>
           </>
         )}
       </div>

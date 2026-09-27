@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import React from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 import type {
   SearchResult,
   SearchResultsResponse,
@@ -641,11 +642,9 @@ export function SearchPageClient() {
 
       {/* 右カラム: 結果リスト */}
       <div className="min-w-0">
-        {errorMessage ? (
-          <p role="alert" className="mb-6 text-red-600" style={mdTextStyle}>
-            {errorMessage}
-          </p>
-        ) : null}
+        <LiveMessage className="mb-6 text-red-600" style={mdTextStyle}>
+          {errorMessage}
+        </LiveMessage>
 
         {!query ? (
           <section>

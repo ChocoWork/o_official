@@ -9,7 +9,7 @@ import {
   ItemCardMedia,
 } from "@/features/items/components/ItemCard";
 import { extractColorSwatches } from "@/lib/items/colors";
-import { isItemInStock } from "@/lib/items/stock-label";
+import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 
 interface WishlistItem {
   id: string;
@@ -23,6 +23,8 @@ interface WishlistItem {
     category: string;
     colors?: Array<{ hex: string; name: string }> | string[];
     sizes?: string[];
+    /** すぐ出せる在庫が無い（受注生産）。買えない印ではない（FREQ-400） */
+    madeToOrder?: boolean;
   } | null;
 }
 
@@ -78,6 +80,17 @@ function resolveDefaultSize(item: WishlistItem["items"]): string | null {
   }
 
   return item.sizes.length === 1 ? item.sizes[0] : null;
+}
+
+function requiresOptionSelection(item: WishlistItem["items"]): boolean {
+  if (!item) {
+    return false;
+  }
+
+  return (
+    (Array.isArray(item.colors) && item.colors.length > 1) ||
+    (Array.isArray(item.sizes) && item.sizes.length > 1)
+  );
 }
 
 function isWishlistItem(value: unknown): value is WishlistItem {
@@ -143,6 +156,9 @@ const wishlistCardNameStyle: React.CSSProperties = {
 };
 const wishlistCardButtonStyle: React.CSSProperties = {
   fontSize: "var(--lk-size-2xs)",
+};
+const wishlistCardActionStyle: React.CSSProperties = {
+  fontSize: "var(--lk-size-3xs)",
 };
 
 export default function Page() {
@@ -211,13 +227,9 @@ export default function Page() {
 
     const resolvedColor = resolveDefaultColor(wishlistItem.items);
     const resolvedSize = resolveDefaultSize(wishlistItem.items);
-    const requiresSizeSelection =
-      Array.isArray(wishlistItem.items.sizes) &&
-      wishlistItem.items.sizes.length > 1;
-
-    if (requiresSizeSelection) {
+    if (requiresOptionSelection(wishlistItem.items)) {
       setActionMessage(
-        "サイズ選択が必要な商品です。商品詳細ページからカートに追加してください。",
+        "色やサイズの選択が必要な商品です。商品詳細ページからカートに追加してください。",
       );
       return;
     }
@@ -314,23 +326,27 @@ export default function Page() {
         </p>
       </div>
       {/* WL-3: 操作地点（カード）に近い視認性のため、固定トーストで通知 */}
-      {actionMessage ? (
-        <div
-          role="status"
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-[90vw] bg-black text-white px-5 py-3 shadow-lg flex items-center gap-3"
-          style={wishlistTextMdStyle}
-        >
-          <span>{actionMessage}</span>
-          <button
-            type="button"
-            onClick={() => setActionMessage(null)}
-            aria-label="通知を閉じる"
-            className="shrink-0 opacity-70 hover:opacity-100 transition-opacity"
-          >
-            <i className="ri-close-line" aria-hidden="true" />
-          </button>
-        </div>
-      ) : null}
+      {/* 読み上げの入れ物は常に置き、トーストが出ている間だけ中身を入れる（FREQ-377） */}
+      <LiveMessage
+        as="div"
+        politeness="status"
+        className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-[90vw] bg-black text-white px-5 py-3 shadow-lg flex items-center gap-3"
+        style={wishlistTextMdStyle}
+      >
+        {actionMessage ? (
+          <>
+            <span>{actionMessage}</span>
+            <button
+              type="button"
+              onClick={() => setActionMessage(null)}
+              aria-label="通知を閉じる"
+              className="shrink-0 opacity-70 hover:opacity-100 transition-opacity"
+            >
+              <i className="ri-close-line" aria-hidden="true" />
+            </button>
+          </>
+        ) : null}
+      </LiveMessage>
       <div
         className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-0.5 sm:gap-x-0.75 lg:gap-x-1 gap-y-4 sm:gap-y-5 md:gap-y-6 lg:gap-y-7"
         role="list"
@@ -338,19 +354,19 @@ export default function Page() {
       >
         {wishlistItems.map((item) => {
           // カードの見た目は ITEM 一覧（PublicItemGrid）と共通の ItemCard に統一。
-          // 色（カラースウォッチ）と数量（在庫：残り〇点／受注生産）を表示する。
+          // 色（カラースウォッチ）と、すぐ出せる在庫が無い場合の「受注生産」を表示する（FREQ-400）。
           const product = item.items;
           const swatches = product ? extractColorSwatches(product.colors) : [];
-          const soldOut = product ? !isItemInStock(product) : false;
+          const madeToOrder = product?.madeToOrder ?? false;
 
           return (
-            <article key={item.id} className="group relative" role="listitem">
+            <article key={item.id} className="group relative flex h-full flex-col" role="listitem">
               {product ? (
                 <Link className="block" href={`/item/${product.id}`}>
                   <ItemCardMedia
                     imageUrl={product.image_url}
                     alt={product.name}
-                    soldOut={soldOut}
+                    madeToOrder={madeToOrder}
                   />
                 </Link>
               ) : (
@@ -376,29 +392,42 @@ export default function Page() {
                       name={product.name}
                       price={product.price}
                       swatches={swatches}
+                      alignSwatchesTop
                     />
                   </Link>
-                  {/* WL-5: 複数サイズ品はボタン挙動と文言を実態に合わせ、詳細ページへ誘導 */}
-                  <div className="px-2 mt-2">
-                    {product.sizes && product.sizes.length > 1 ? (
+                  {/* 複数の色またはサイズ候補がある商品は詳細ページへ誘導 */}
+                  <div className="mt-auto pt-2">
+                    {requiresOptionSelection(product) ? (
                       <Link
                         href={`/item/${product.id}`}
-                        className="block w-full border border-black text-black text-center py-1.5 hover:bg-black hover:text-white transition-colors"
-                        style={wishlistCardButtonStyle}
+                        className="block w-full border border-black text-black text-center py-1 hover:bg-black hover:text-white transition-colors"
+                        style={wishlistCardActionStyle}
                       >
-                        サイズを選択
+                        <div className="flex items-center justify-center gap-2">
+                          <div className="flex h-4 w-4 items-center justify-center">
+                            <i className="ri-shopping-bag-line lk-text-lg" aria-hidden="true" />
+                          </div>
+                          SELECT OPTION
+                        </div>
                       </Link>
                     ) : (
                       <button
                         type="button"
                         onClick={() => handleAddToCart(item)}
                         disabled={addingToCartId === item.id}
-                        className="w-full border border-black text-black py-1.5 hover:bg-black hover:text-white transition-colors disabled:opacity-40"
-                        style={wishlistCardButtonStyle}
+                        className="w-full border border-black text-black py-1 hover:bg-black hover:text-white transition-colors disabled:opacity-40"
+                        style={wishlistCardActionStyle}
                       >
-                        {addingToCartId === item.id
-                          ? "追加中..."
-                          : "カートに追加"}
+                        {addingToCartId === item.id ? (
+                          "追加中..."
+                        ) : (
+                          <div className="flex items-center justify-center gap-2">
+                            <div className="flex h-4 w-4 items-center justify-center">
+                              <i className="ri-shopping-bag-line lk-text-lg" aria-hidden="true" />
+                            </div>
+                            ADD TO CART
+                          </div>
+                        )}
                       </button>
                     )}
                   </div>

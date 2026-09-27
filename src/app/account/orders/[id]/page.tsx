@@ -15,6 +15,7 @@ import {
   type OrderLineItem,
 } from "@/features/account/components/OrderItemRow";
 import { useReorder } from "@/features/account/hooks/useReorder";
+import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 import {
   SHIPPING_CARRIERS,
   isShippingCarrierId,
@@ -150,11 +151,9 @@ export default function AccountOrderDetailPage() {
           </div>
         </div>
       ) : null}
-      {errorMessage ? (
-        <p role="alert" className="text-red-600" style={bodyStyle}>
-          {errorMessage}
-        </p>
-      ) : null}
+      <LiveMessage className="text-red-600" style={bodyStyle}>
+        {errorMessage}
+      </LiveMessage>
 
       {order ? (
         <div className="space-y-6 lg:grid lg:grid-cols-[61.8fr_38.2fr] lg:items-start lg:gap-8 lg:space-y-0">
@@ -270,16 +269,13 @@ export default function AccountOrderDetailPage() {
 
           <section className="border border-black/10 p-5 sm:p-8 space-y-4">
             <h2 style={acuminFont}>ご注文商品</h2>
-            {reorderMessage ? (
-              <p role="status" className="text-black account-feedback">
-                {reorderMessage}
-              </p>
-            ) : null}
-            {reorderError ? (
-              <p role="alert" className="text-red-600 account-feedback">
-                {reorderError}
-              </p>
-            ) : null}
+            {/* 案内の入れ物は常に置き、中身だけを入れ替える（FREQ-377） */}
+            <LiveMessage politeness="status" className="text-black account-feedback">
+              {reorderMessage}
+            </LiveMessage>
+            <LiveMessage className="text-red-600 account-feedback">
+              {reorderError}
+            </LiveMessage>
             {/* 購入履歴タブと同じ表示（OrderItemRow を共用） */}
             <div className="account-order-items">
               {order.items.map((item) => (

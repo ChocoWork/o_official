@@ -21,17 +21,19 @@ export type OrderItem = {
 	totalAmount: string;
 	status: OrderStatus;
 	canRefund?: boolean;
+	canShip?: boolean;
+	missingShippingFields?: string[];
 };
 
 const actionLabelMap: Partial<Record<OrderStatus, string>> = {
 	未決済: 'キャンセル',
-	決済完了: 'キャンセル',
 };
 
 interface OrderSectionProps {
 	orders: OrderItem[];
 	isLoading?: boolean;
 	errorMessage?: string | null;
+	noticeMessage?: string | null;
 	onCancelOrder?: (id: string) => void;
 	onRefundOrder?: (id: string) => void;
 	onShipOrder?: (id: string) => void;
@@ -42,6 +44,7 @@ export default function OrderSection({
 	orders,
 	isLoading = false,
 	errorMessage = null,
+	noticeMessage = null,
 	onCancelOrder,
 	onRefundOrder,
 	onShipOrder,
@@ -66,7 +69,14 @@ export default function OrderSection({
 
 	return (
 		<section>
-			{errorMessage && <p className="mb-4 lk-text-sm text-red-700 font-acumin">{errorMessage}</p>}
+			{errorMessage ? (
+				<p role="alert" className="mb-4 lk-text-sm text-red-700 font-acumin">{errorMessage}</p>
+			) : null}
+			{noticeMessage ? (
+				<p role="status" aria-live="polite" className="mb-4 lk-text-sm text-[#474747] font-acumin">
+					{noticeMessage}
+				</p>
+			) : null}
 
 			<DataTable
 				rows={orders}
@@ -141,7 +151,10 @@ export default function OrderSection({
 										{isProcessing ? '処理中...' : '返金'}
 									</Button>
 								) : null}
-								{order.status === '決済完了' && onShipOrder ? (
+								{order.status === '決済完了' && order.canShip === false ? (
+									<span className="lk-text-xs text-red-700" role="status">配送先要確認</span>
+								) : null}
+								{order.status === '決済完了' && order.canShip && onShipOrder ? (
 									<Button
 										variant="primary"
 										size="sm"

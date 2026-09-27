@@ -5,9 +5,15 @@ import Link from "next/link";
 import Script from "next/script";
 import { useLogin } from "@/contexts/LoginContext";
 import { Button } from "@/components/ui/Button/Button";
+import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 import { TextField } from "@/components/ui/TextField/TextField";
 import { useTurnstileWidget } from "@/hooks/useTurnstileWidget";
 import "@/components/AuthForm.css";
+
+/** 描かれたときにフォーカスを移す（送信後の完了の文言。FREQ-377） */
+function focusOnMount(element: HTMLElement | null) {
+  element?.focus();
+}
 
 interface RegisterModalProps {
   onSwitchToLogin?: () => void;
@@ -73,8 +79,11 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ onSwitchToLogin, initialE
   if (sentMessage) {
     return (
       <div className="w-full max-w-md mx-auto px-6 text-center">
+        {/* 送信するとフォームごと入れ替わり、押したボタンが消えてフォーカスが外れる。完了の文言へ移して
+            読ませる（FREQ-377）。中身ごと差し込む role="status" は読まれないことがあり、重ねると二重に読まれる */}
         <p
-          role="status"
+          ref={focusOnMount}
+          tabIndex={-1}
           className="mb-6 flex items-center justify-center gap-2 lk-text-md"
         >
           <span aria-hidden="true">✓</span>
@@ -206,11 +215,7 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ onSwitchToLogin, initialE
             {loading ? "処理中..." : "登録して確認メールを受け取る"}
           </Button>
         </div>
-        {error ? (
-          <p role="alert" className="mt-2 lk-text-md text-red-600">
-            {error}
-          </p>
-        ) : null}
+        <LiveMessage className="mt-2 lk-text-md text-red-600">{error}</LiveMessage>
       </form>
       <div className="relative mb-4 sm:mb-8">
         <div className="absolute inset-0 flex items-center">

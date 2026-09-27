@@ -4,14 +4,14 @@ import type { ColorSwatch } from "@/lib/items/colors";
 import { ItemCardImageCarousel } from "./ItemImageCarousel";
 
 // ホーム ITEM セクション / ITEM 一覧 / WISHLIST で共有する商品カードの見た目。
-// media（画像＋SOLD OUT）と info（名称＋カラー／価格＋SEASON＋在庫）に分割し、
+// media（画像＋受注生産の印）と info（名称＋カラー／価格＋SEASON＋在庫）に分割し、
 // 呼び出し側でリンクや操作ボタンを自由に合成できるようにする。
 
 export function ItemCardMedia({
   imageUrl,
   imageUrls,
   alt,
-  soldOut = false,
+  madeToOrder = false,
   priority = false,
   children,
 }: {
@@ -19,18 +19,19 @@ export function ItemCardMedia({
   /** FREQ-271: 2枚以上あるときはカード内をスワイプ / 三角ボタンで切り替える */
   imageUrls?: string[] | null;
   alt: string;
-  soldOut?: boolean;
+  /** すぐ出せる在庫が無い（受注生産）。買えない印ではない（FREQ-400） */
+  madeToOrder?: boolean;
   priority?: boolean;
   children?: ReactNode;
 }) {
   const frameClass =
     "reveal-cover relative aspect-3/4 bg-[#f5f5f5] overflow-hidden";
-  const soldOutBadge = soldOut ? (
+  const madeToOrderBadge = madeToOrder ? (
     <span
       className="absolute top-0 left-0 bg-black text-white px-2 py-0.75 tracking-widest"
       style={{ fontSize: "var(--lk-size-4xs)" }}
     >
-      SOLD OUT
+      受注生産
     </span>
   ) : null;
 
@@ -44,7 +45,7 @@ export function ItemCardMedia({
           frameClassName={frameClass}
           overlay={
             <>
-              {soldOutBadge}
+              {madeToOrderBadge}
               {children}
             </>
           }
@@ -75,7 +76,7 @@ export function ItemCardMedia({
           </span>
         </div>
       )}
-      {soldOutBadge}
+      {madeToOrderBadge}
       {children}
     </div>
   );
@@ -86,18 +87,26 @@ export function ItemCardInfo({
   price,
   swatches = [],
   season = null,
+  alignSwatchesTop = false,
 }: {
   name: string;
   price: number;
   swatches?: ColorSwatch[];
   season?: "SS" | "AW" | null;
+  alignSwatchesTop?: boolean;
 }) {
   return (
-    // YOKE 参考: 商品名とカラースウォッチを同一行に横並び（縦中央そろえ）。
+    // YOKE 参考: 商品名とカラースウォッチを同一行に横並び。縦位置は呼び出し側で指定。
     // 価格・SEASON は下段。左右に同量の余白（px）。
     <div data-testid="item-info" className="reveal-mask px-2">
       <div className="reveal-rise">
-      <div className="flex items-center justify-between gap-2">
+      <div
+        className={
+          alignSwatchesTop
+            ? "flex items-start justify-between gap-2"
+            : "flex items-center justify-between gap-2"
+        }
+      >
         <h3
           className="font-brand tracking-tight min-w-0"
           data-testid="item-name"
@@ -109,7 +118,11 @@ export function ItemCardInfo({
         </h3>
         {swatches.length > 0 ? (
           <div
-            className="flex shrink-0 items-center gap-1"
+            className={
+              alignSwatchesTop
+                ? "mt-1 flex shrink-0 items-center gap-1"
+                : "flex shrink-0 items-center gap-1"
+            }
             aria-label={`カラー ${swatches.length}色`}
           >
             {swatches.slice(0, 4).map((swatch) => (

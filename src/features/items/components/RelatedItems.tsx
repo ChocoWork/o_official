@@ -60,7 +60,7 @@ export function RelatedItems({ currentItemId, category }: Props) {
     <section
       data-testid="related-items"
       aria-labelledby="related-items-heading"
-      className="mt-16 lg:mt-24 border-t border-black/10 pt-10"
+      className="md:mt-16 lg:mt-24 md:border-t border-black/10 pt-10"
     >
       <h2
         id="related-items-heading"

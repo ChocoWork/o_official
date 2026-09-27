@@ -26,8 +26,17 @@ export type Item = {
   season?: 'SS' | 'AW' | null;
   status?: 'private' | 'published';
   stockStatus?: ItemStockStatus;
-  /** NULL = 在庫情報なし, 0 = SOLD OUT, 1-4 = 残りわずか, 5以上 = 在庫あり */
-  stock_quantity?: number | null;
+  /**
+   * すぐ出せる在庫がある組み合わせが1つも無い（FREQ-400）。
+   * 「買えない」ではなく「受注生産になる」。在庫を理由に注文は止めない。
+   */
+  madeToOrder?: boolean;
+  /** 色 × サイズごとの在庫の有無。残数は出さない（FREQ-400） */
+  variantAvailability?: Array<{
+    colorName: string | null;
+    sizeLabel: string | null;
+    inStock: boolean;
+  }>;
   created_at?: string;
   updated_at?: string;
 };

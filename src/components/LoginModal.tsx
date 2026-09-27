@@ -8,6 +8,7 @@ import { z } from "zod";
 import { LoginRequestSchema } from "@/features/auth/schemas/login";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button/Button";
+import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 import { TextField } from "@/components/ui/TextField/TextField";
 import { useTurnstileWidget } from "@/hooks/useTurnstileWidget";
 import "@/components/AuthForm.css";
@@ -160,11 +161,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
             {loading ? "処理中..." : "ログイン"}
           </Button>
         </div>
-        {error ? (
-          <p role="alert" className="mt-2 lk-text-md text-red-600">
-            {error}
-          </p>
-        ) : null}
+        <LiveMessage className="mt-2 lk-text-md text-red-600">{error}</LiveMessage>
       </form>
       <div className="relative mb-4 sm:mb-8">
         <div className="absolute inset-0 flex items-center">

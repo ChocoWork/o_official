@@ -140,7 +140,8 @@ export async function POST(request: Request) {
       endpoint: 'contact:submit',
       limit: 5,
       windowSeconds: 3600,
-      subject: email,
+      // 大文字小文字だけ変えたアドレスも同じ受信箱に届くので、同じ枠で数える。
+      subject: email.toLowerCase(),
     });
     if (emailRateLimit) {
       return emailRateLimit;

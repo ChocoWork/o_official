@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button/Button";
+import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
 import { TextAreaField } from "@/components/ui/TextAreaField/TextAreaField";
 import { TextField } from "@/components/ui/TextField/TextField";
@@ -193,6 +194,14 @@ export default function ContactPage() {
         body: JSON.stringify(formData),
       });
 
+      // 送信回数の上限（429）は本文を見ずに案内する。API の本文は英語で、
+      // 手前の層（WAF など）が返す 429 は JSON ですらないため。
+      if (response.status === 429) {
+        throw new Error(
+          "送信回数が上限に達したため、一時的にお問い合わせを受け付けられません。しばらく時間をおいてから、あらためてお問い合わせください。",
+        );
+      }
+
       const payload = await response.json().catch(() => ({}));
 
       if (!response.ok || !payload.success) {
@@ -256,7 +265,7 @@ export default function ContactPage() {
           <TextField
             id="name"
             required
-            label="NAME / お名前 *"
+            label="NAME / お名前"
             type="text"
             name="name"
             size="sm"
@@ -272,7 +281,7 @@ export default function ContactPage() {
           <TextField
             id="email"
             required
-            label="EMAIL / メールアドレス *"
+            label="EMAIL / メールアドレス"
             type="email"
             name="email"
             size="sm"
@@ -303,23 +312,14 @@ export default function ContactPage() {
             variant="dropdown"
             block
             className="w-full"
-            aria-describedby={fieldDescribedBy("inquiryType")}
-            aria-invalid={Boolean(errors.inquiryType)}
+            // 誤りの案内は部品の入れ物（#inquiryType-error）に出し、説明と誤りの状態で結ぶ（FREQ-379）
+            errorText={errors.inquiryType}
           />
-          {errors.inquiryType ? (
-            <p
-              id="inquiryType-error"
-              className="lk-text-3xs text-red-600"
-              role="alert"
-            >
-              {errors.inquiryType}
-            </p>
-          ) : null}
 
           <TextField
             id="subject"
             required
-            label="SUBJECT / 件名 *"
+            label="SUBJECT / 件名"
             type="text"
             name="subject"
             size="sm"
@@ -366,6 +366,7 @@ export default function ContactPage() {
                 handleFieldChange("message", event.target.value)
               }
               onBlur={(event) => handleFieldBlur("message", event.target.value)}
+              errorText={errors.message}
               aria-describedby={
                 fieldDescribedBy("message")
                   ? `${fieldDescribedBy("message")} message-counter`
@@ -373,19 +374,8 @@ export default function ContactPage() {
               }
               aria-invalid={Boolean(errors.message)}
             />
-            <div className="mt-1.5 flex items-center justify-between">
-              {errors.message ? (
-                <p
-                  id="message-error"
-                  className="lk-text-3xs text-red-600"
-                  role="alert"
-                  style={helperTextStyle}
-                >
-                  {errors.message}
-                </p>
-              ) : (
-                <span />
-              )}
+            {/* 誤りの案内は TextAreaField が持つ入れ物（#message-error）に出す（FREQ-376）。ここは文字数だけ */}
+            <div className="mt-1.5 flex items-center justify-end">
               <p
                 id="message-counter"
                 className="lk-text-3xs text-[#474747]"
@@ -396,25 +386,22 @@ export default function ContactPage() {
             </div>
           </div>
 
-          {submitSuccess ? (
-            <p
-              className="lk-text-sm flex items-center gap-2"
-              role="status"
-              style={bodyTextStyle}
-            >
-              <span aria-hidden="true">✓</span>
-              {submitSuccess}
-            </p>
-          ) : null}
-          {submitError ? (
-            <p
-              className="lk-text-sm text-red-600"
-              role="alert"
-              style={bodyTextStyle}
-            >
-              {submitError}
-            </p>
-          ) : null}
+          {/* 案内の入れ物は常に置き、中身だけを入れ替える（FREQ-377） */}
+          <LiveMessage
+            politeness="status"
+            className="lk-text-sm flex items-center gap-2"
+            style={bodyTextStyle}
+          >
+            {submitSuccess ? (
+              <>
+                <span aria-hidden="true">✓</span>
+                {submitSuccess}
+              </>
+            ) : null}
+          </LiveMessage>
+          <LiveMessage className="lk-text-sm text-red-600" style={bodyTextStyle}>
+            {submitError}
+          </LiveMessage>
 
           <Button
             type="submit"

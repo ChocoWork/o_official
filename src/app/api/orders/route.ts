@@ -36,15 +36,6 @@ type OrderRow = {
 	order_items: OrderItemRow[] | null;
 };
 
-type StockStatus = 'in_stock' | 'low_stock' | 'sold_out' | 'unknown';
-
-function toStockStatus(qty: number | null): StockStatus {
-	if (qty === null) return 'unknown';
-	if (qty === 0) return 'sold_out';
-	if (qty <= 4) return 'low_stock';
-	return 'in_stock';
-}
-
 function formatCurrency(amount: number, currency: string) {
 	try {
 		return new Intl.NumberFormat('ja-JP', {
@@ -148,27 +139,8 @@ export async function GET(request: NextRequest) {
 		return NextResponse.json({ error: 'Failed to fetch orders' }, { status: 500, headers: NO_STORE_HEADERS });
 	}
 
-	// 全注文に含まれるitem_idを収集してまとめて在庫照会
-	const allItemIds = [
-		...new Set(
-			((data ?? []) as OrderRow[])
-				.flatMap((o) => (o.order_items ?? []).map((i) => i.item_id))
-				.filter((id): id is number => id !== null),
-		),
-	];
 
 	const signSupabase = await createServiceRoleClient();
-
-	const stockMap = new Map<number, StockStatus>();
-	if (allItemIds.length > 0) {
-		const { data: stockRows } = await signSupabase
-			.from('items')
-			.select('id, stock_quantity')
-			.in('id', allItemIds);
-		for (const row of stockRows ?? []) {
-			stockMap.set(row.id, toStockStatus(row.stock_quantity));
-		}
-	}
 
 	const response = await Promise.all(((data ?? []) as OrderRow[]).map(async (order) => ({
 		id: order.id,
@@ -190,7 +162,6 @@ export async function GET(request: NextRequest) {
 			size: item.size,
 			quantity: item.quantity,
 			amount: formatCurrency(item.line_total, order.currency),
-			stockStatus: item.item_id !== null ? (stockMap.get(item.item_id) ?? 'unknown') : 'unknown',
 		}))),
 		detailHref: `/account/orders/${order.id}`,
 	})));

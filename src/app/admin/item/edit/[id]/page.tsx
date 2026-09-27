@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { ItemForm } from '../../ItemForm';
+import { ItemStockSection } from '../../ItemStockSection';
 import { ItemResponse, ItemFormValues } from '../../types';
 import { clientFetch } from '@/lib/client-fetch';
 
@@ -91,10 +92,16 @@ export default function AdminItemEditPage() {
   }
 
   return (
-    <ItemForm
-      submitUrl={`/api/admin/items/${itemId}`}
-      submitMethod="PUT"
-      initialValues={initialValues}
-    />
+    <>
+      <ItemForm
+        submitUrl={`/api/admin/items/${itemId}`}
+        submitMethod="PUT"
+        initialValues={initialValues}
+      />
+      {/* 在庫は色 × サイズごと（FREQ-399）。新規作成時は組み合わせがまだ無いので編集画面だけに出す。 */}
+      <div className="mx-auto w-full max-w-4xl xl:max-w-6xl 3xl:max-w-7xl px-6 lg:px-12 pb-20">
+        <ItemStockSection itemId={itemId} />
+      </div>
+    </>
   );
 }

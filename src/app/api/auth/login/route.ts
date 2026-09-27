@@ -22,15 +22,6 @@ export async function POST(request: Request) {
       return NextResponse.json(formatZodError(parsed.error), { status: 400 });
     }
 
-    // Account-based rate limit (by email)
-    try {
-      const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
-      const rlAccount = await enforceRateLimit({ request, endpoint: 'auth:login', limit: 5, windowSeconds: 600, subject: parsed.data.email });
-      if (rlAccount) return rlAccount;
-    } catch (e) {
-      console.error('Rate limit middleware error (login-account):', e);
-    }
-
     const { email, password, turnstileToken } = parsed.data;
 
     const { verifyTurnstile } = await import('@/lib/turnstile');
@@ -39,6 +30,17 @@ export async function POST(request: Request) {
     if (!turnstile.ok) {
       await logAudit({ action: 'login', actor_email: email, outcome: 'failure', detail: turnstile.error || 'turnstile_failed' });
       return NextResponse.json({ error: 'Bot detection failed' }, { status: 403 });
+    }
+
+    // Account-based rate limit (by email)
+    // Turnstile の検証より後に数える。先に数えると、ボット判定を通さずに他人のメールアドレスを
+    // 送るだけでその人の枠を使い切らせ、締め出せてしまう（パスワード再設定と同じ順番）。
+    try {
+      const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
+      const rlAccount = await enforceRateLimit({ request, endpoint: 'auth:login', limit: 5, windowSeconds: 600, subject: email });
+      if (rlAccount) return rlAccount;
+    } catch (e) {
+      console.error('Rate limit middleware error (login-account):', e);
     }
 
     // 匿名クライアントでパスワード検証のみ行う（セッション Cookie の副作用を持たない）。

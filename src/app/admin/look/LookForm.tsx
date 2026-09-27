@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button/Button";
+import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 import { RadioButtonGroup } from "@/components/ui/RadioButtonGroup/RadioButtonGroup";
 import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
 import { TextAreaField } from "@/components/ui/TextAreaField/TextAreaField";
@@ -493,17 +494,11 @@ export function LookForm({
             />
           </div>
 
-          {submitSuccess && (
-            <p className="lk-text-sm text-green-700" role="status">
-              {submitSuccess}
-            </p>
-          )}
+          <LiveMessage politeness="status" className="lk-text-sm text-green-700">
+            {submitSuccess}
+          </LiveMessage>
 
-          {submitError && (
-            <p className="lk-text-sm text-red-600" role="alert">
-              {submitError}
-            </p>
-          )}
+          <LiveMessage className="lk-text-sm text-red-600">{submitError}</LiveMessage>
 
           <div className="flex gap-4">
             <Button
