@@ -153,9 +153,9 @@ describe('integration: order_items variant columns', () => {
 
       // 色とサイズを持つ商品を作り、backfill でバリアントを生成する
       const item = await client.query(
-        `INSERT INTO public.items (name, description, price, category, image_url, status, colors, sizes, stock_quantity)
+        `INSERT INTO public.items (name, description, price, category, image_url, status, colors, sizes)
          VALUES ('backfill link test', 'desc', 1000, 'TOPS', '/images/test.jpg', 'published',
-                 '[{"name":"Black","hex":"#000000"}]'::jsonb, ARRAY['M']::text[], 0)
+                 '[{"name":"Black","hex":"#000000"}]'::jsonb, ARRAY['M']::text[])
          RETURNING id`,
       );
       const itemId = item.rows[0].id;

@@ -130,7 +130,6 @@ describe('GET /api/orders', () => {
 							size: 'M',
 							quantity: 1,
 							amount: expect.stringMatching(/^[¥￥]12,000$/),
-							stockStatus: 'in_stock',
 						},
 					],
 					detailHref: '/account/orders/order-1',
@@ -252,7 +251,6 @@ describe('GET /api/orders/[id]', () => {
 				expect.objectContaining({
 					id: 'line-1',
 					itemId: 10,
-					stockStatus: 'in_stock',
 				}),
 			],
 		});

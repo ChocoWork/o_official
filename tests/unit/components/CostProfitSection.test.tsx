@@ -336,7 +336,7 @@ describe('CostProfitSection', () => {
 		fireEvent.click(await screen.findByRole('tab', { name: '取引管理' }));
 		fireEvent.click(await screen.findByRole('button', { name: '銀行振込売上の証憑' }));
 		fireEvent.click(screen.getByRole('button', { name: '証憑添付不可' }));
-		fireEvent.click(screen.getByRole('button', { name: '添付できない理由' }));
+		fireEvent.click(screen.getByRole('combobox', { name: '添付できない理由' }));
 		fireEvent.click(screen.getByRole('option', { name: '銀行の閲覧期限超過' }));
 		expect(screen.getByRole('button', { name: '理由を保存' })).toBeDisabled();
 
@@ -429,7 +429,7 @@ describe('CostProfitSection', () => {
 		fireEvent.click(await screen.findByRole('tab', { name: '取引管理' }));
 		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
 
-		const summary = screen.getByRole('button', { name: '支出摘要' });
+		const summary = screen.getByRole('combobox', { name: '支出摘要' });
 		fireEvent.click(summary);
 		const options = screen.getAllByRole('option');
 		expect(options[0]).toHaveTextContent('＋ 新しい項目を追加');
@@ -437,7 +437,7 @@ describe('CostProfitSection', () => {
 		fireEvent.change(screen.getByRole('textbox', { name: '新しい支出摘要' }), { target: { value: ' 撮影立会費 ' } });
 		fireEvent.click(screen.getByRole('button', { name: '支出摘要を保存' }));
 
-		expect(await screen.findByRole('button', { name: '支出摘要' })).toHaveTextContent('撮影立会費');
+		expect(await screen.findByRole('combobox', { name: '支出摘要' })).toHaveTextContent('撮影立会費');
 		expect(fetchMock).toHaveBeenCalledWith(
 			'/api/admin/kpi/cost-profit',
 			expect.objectContaining({ body: expect.stringContaining('summaryOption.create') }),
@@ -449,7 +449,7 @@ describe('CostProfitSection', () => {
 		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
 		fireEvent.click(await screen.findByRole('tab', { name: '取引管理' }));
 		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
-		fireEvent.click(screen.getByRole('button', { name: '支出摘要' }));
+		fireEvent.click(screen.getByRole('combobox', { name: '支出摘要' }));
 
 		expect(screen.getByRole('button', { name: '外注検品を削除' })).toBeInTheDocument();
 	});
@@ -582,9 +582,9 @@ describe('CostProfitSection', () => {
 		// FREQ-257 以降、取引の入力欄は「新規取引」Drawer の中にある。
 		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
 		// 支出概要は黄金比UIの SingleSelect（dropdown）。トリガーを開いて選択肢を押す。
-		fireEvent.click(screen.getByRole('button', { name: '支出摘要' }));
+		fireEvent.click(screen.getByRole('combobox', { name: '支出摘要' }));
 		fireEvent.click(screen.getByRole('option', { name: '展示会・イベント' }));
-		fireEvent.click(screen.getByRole('button', { name: '勘定科目' }));
+		fireEvent.click(screen.getByRole('combobox', { name: '勘定科目' }));
 		fireEvent.click(screen.getByRole('option', { name: '経費 / 広告宣伝費' }));
 		fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '45000' } });
 		fireEvent.click(screen.getByRole('button', { name: '保存' }));
@@ -604,14 +604,14 @@ describe('CostProfitSection', () => {
 		// FREQ-257 以降、取引の入力欄は「新規取引」Drawer の中にある。
 		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
 		// 取引先も SingleSelect（dropdown）。開いて「＋新規登録」を選ぶ。
-		fireEvent.click(screen.getByRole('button', { name: '取引先' }));
+		fireEvent.click(screen.getByRole('combobox', { name: '取引先' }));
 		fireEvent.click(screen.getByRole('option', { name: '＋ 新規登録' }));
 		fireEvent.change(screen.getByPlaceholderText('取引先名を入力'), { target: { value: '丸善テキスタイル' } });
 		fireEvent.click(screen.getByRole('button', { name: '登録' }));
 
 		expect(await screen.findByText('取引先を登録しました。')).toBeInTheDocument();
 		// 登録後に取引先ドロップダウンを開き直すと、選択肢に追加されている。
-		fireEvent.click(screen.getByRole('button', { name: '取引先' }));
+		fireEvent.click(screen.getByRole('combobox', { name: '取引先' }));
 		expect(await screen.findByRole('option', { name: '丸善テキスタイル' })).toBeInTheDocument();
 	});
 
@@ -624,11 +624,11 @@ describe('CostProfitSection', () => {
 		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
 
 		// 支出概要と金額を入力してからテンプレート保存。
-		fireEvent.click(screen.getByRole('button', { name: '支出摘要' }));
+		fireEvent.click(screen.getByRole('combobox', { name: '支出摘要' }));
 		fireEvent.click(screen.getByRole('option', { name: '縫製外注' }));
 		fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '50000' } });
 
-		fireEvent.click(screen.getByRole('button', { name: 'テンプレート' }));
+		fireEvent.click(screen.getByRole('combobox', { name: 'テンプレート' }));
 		fireEvent.click(screen.getByRole('option', { name: '＋ 現在の入力を保存' }));
 
 		// 名前の初期値は「支出概要 / 金額」。
@@ -646,13 +646,13 @@ describe('CostProfitSection', () => {
 		expect(await screen.findByText('テンプレートを保存しました。')).toBeInTheDocument();
 
 		// 別の支出概要へ変更してから、テンプレートを選び直すと支出概要・金額が戻る。
-		fireEvent.click(screen.getByRole('button', { name: '支出摘要' }));
+		fireEvent.click(screen.getByRole('combobox', { name: '支出摘要' }));
 		fireEvent.click(screen.getByRole('option', { name: '広告出稿' }));
 
-		fireEvent.click(screen.getByRole('button', { name: 'テンプレート' }));
+		fireEvent.click(screen.getByRole('combobox', { name: 'テンプレート' }));
 		fireEvent.click(await screen.findByRole('option', { name: '縫製外注（定番）' }));
 
-		expect(screen.getByRole('button', { name: '支出摘要' })).toHaveTextContent('縫製外注');
+		expect(screen.getByRole('combobox', { name: '支出摘要' })).toHaveTextContent('縫製外注');
 		expect((screen.getByPlaceholderText('0') as HTMLInputElement).value).toBe('50000');
 	});
 
@@ -664,7 +664,7 @@ describe('CostProfitSection', () => {
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
 		fireEvent.click(screen.getByRole('button', { name: '収入', pressed: false }));
-		fireEvent.click(screen.getByRole('button', { name: 'テンプレート' }));
+		fireEvent.click(screen.getByRole('combobox', { name: 'テンプレート' }));
 		fireEvent.click(screen.getByRole('option', { name: '＋ 現在の入力を保存' }));
 
 		const nameInput = screen.getByPlaceholderText('テンプレート名');
@@ -721,9 +721,9 @@ describe('CostProfitSection', () => {
 		await screen.findByText('同期済み');
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
-		fireEvent.click(screen.getByRole('button', { name: 'テンプレート' }));
+		fireEvent.click(screen.getByRole('combobox', { name: 'テンプレート' }));
 		fireEvent.click(screen.getByRole('option', { name: '毎月の家賃' }));
-		fireEvent.click(screen.getByRole('button', { name: '取引先' }));
+		fireEvent.click(screen.getByRole('combobox', { name: '取引先' }));
 		fireEvent.click(screen.getByRole('option', { name: '新取引先' }));
 		fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '85000' } });
 
@@ -747,7 +747,7 @@ describe('CostProfitSection', () => {
 		await screen.findByText('同期済み');
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
-		fireEvent.click(screen.getByRole('button', { name: 'テンプレート' }));
+		fireEvent.click(screen.getByRole('combobox', { name: 'テンプレート' }));
 		fireEvent.click(screen.getByRole('option', { name: '毎月の家賃' }));
 		fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '85000' } });
 
@@ -766,7 +766,7 @@ describe('CostProfitSection', () => {
 		await screen.findByText('同期済み');
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
-		fireEvent.click(screen.getByRole('button', { name: 'テンプレート' }));
+		fireEvent.click(screen.getByRole('combobox', { name: 'テンプレート' }));
 		fireEvent.click(screen.getByRole('option', { name: '毎月の家賃' }));
 		fireEvent.click(screen.getByRole('button', { name: '別名で保存' }));
 
@@ -792,7 +792,7 @@ describe('CostProfitSection', () => {
 		await screen.findByText('同期済み');
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
-		fireEvent.click(screen.getByRole('button', { name: '取引先' }));
+		fireEvent.click(screen.getByRole('combobox', { name: '取引先' }));
 		fireEvent.click(screen.getByRole('option', { name: '＋ 新規登録' }));
 		fireEvent.change(screen.getByPlaceholderText('取引先名を入力'), { target: { value: '新規取引先' } });
 		fireEvent.click(screen.getByRole('button', { name: '登録' }));
@@ -806,7 +806,7 @@ describe('CostProfitSection', () => {
 
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
-		fireEvent.click(screen.getByRole('button', { name: 'テンプレート' }));
+		fireEvent.click(screen.getByRole('combobox', { name: 'テンプレート' }));
 		fireEvent.click(screen.getByRole('option', { name: '＋ 現在の入力を保存' }));
 		fireEvent.change(screen.getByPlaceholderText('テンプレート名'), {
 			target: { value: '保存しない名前' },
@@ -864,14 +864,14 @@ describe('CostProfitSection', () => {
 		fireEvent.click(screen.getByRole('button', { name: '収入', pressed: false }));
 
 		// 収入時は「収入概要」ラベルになり、収入用の選択肢が選べる。
-		expect(screen.getByRole('button', { name: '収入摘要' })).toBeInTheDocument();
-		fireEvent.click(screen.getByRole('button', { name: '収入摘要' }));
+		expect(screen.getByRole('combobox', { name: '収入摘要' })).toBeInTheDocument();
+		fireEvent.click(screen.getByRole('combobox', { name: '収入摘要' }));
 		fireEvent.click(screen.getByRole('option', { name: 'オンライン販売' }));
-		fireEvent.click(screen.getByRole('button', { name: '勘定科目' }));
+		fireEvent.click(screen.getByRole('combobox', { name: '勘定科目' }));
 		fireEvent.click(screen.getByRole('option', { name: '売上（収入）金額 / 売上高' }));
 		fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '120000' } });
 		fireEvent.click(screen.getByRole('button', { name: '証憑添付不可' }));
-		fireEvent.click(screen.getByRole('button', { name: '添付できない理由' }));
+		fireEvent.click(screen.getByRole('combobox', { name: '添付できない理由' }));
 		fireEvent.click(screen.getByRole('option', { name: '証憑が発行されていない' }));
 		fireEvent.click(screen.getByRole('button', { name: '保存' }));
 
@@ -904,24 +904,24 @@ describe('CostProfitSection', () => {
 		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
 
 		// 支出のテンプレートを1件作る。
-		fireEvent.click(screen.getByRole('button', { name: '支出摘要' }));
+		fireEvent.click(screen.getByRole('combobox', { name: '支出摘要' }));
 		fireEvent.click(screen.getByRole('option', { name: '縫製外注' }));
 		fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '50000' } });
-		fireEvent.click(screen.getByRole('button', { name: 'テンプレート' }));
+		fireEvent.click(screen.getByRole('combobox', { name: 'テンプレート' }));
 		fireEvent.click(screen.getByRole('option', { name: '＋ 現在の入力を保存' }));
 		fireEvent.change(screen.getByPlaceholderText('テンプレート名'), { target: { value: '縫製外注（支出）' } });
 		fireEvent.click(screen.getByRole('button', { name: 'テンプレートを保存' }));
 		expect(await screen.findByText('テンプレートを保存しました。')).toBeInTheDocument();
 
 		// 支出テンプレートは支出のプルダウンに出る。
-		fireEvent.click(screen.getByRole('button', { name: 'テンプレート' }));
+		fireEvent.click(screen.getByRole('combobox', { name: 'テンプレート' }));
 		expect(await screen.findByRole('option', { name: '縫製外注（支出）' })).toBeInTheDocument();
 		// ドロップダウンを閉じる。
 		fireEvent.click(screen.getByRole('option', { name: '（テンプレートを選択）' }));
 
 		// 収入へ切替すると、支出テンプレートは選択肢に出ない。
 		fireEvent.click(screen.getByRole('button', { name: '収入', pressed: false }));
-		fireEvent.click(screen.getByRole('button', { name: 'テンプレート' }));
+		fireEvent.click(screen.getByRole('combobox', { name: 'テンプレート' }));
 		expect(screen.queryByRole('option', { name: '縫製外注（支出）' })).not.toBeInTheDocument();
 	});
 

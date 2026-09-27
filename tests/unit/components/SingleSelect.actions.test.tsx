@@ -18,7 +18,7 @@ describe('SingleSelect option actions', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '支出摘要' }));
+    fireEvent.click(screen.getByRole('combobox', { name: '支出摘要' }));
     fireEvent.click(screen.getByRole('button', { name: '外注検品を削除' }));
 
     expect(onDelete).toHaveBeenCalledTimes(1);

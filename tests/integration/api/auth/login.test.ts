@@ -304,6 +304,32 @@ describe('POST /api/auth/login - Integration Tests', () => {
         (process.env as Record<string, string | undefined>).NODE_ENV = originalNodeEnv;
       }
     });
+
+    // ボット判定を通っていない要求でアカウント単位の枠を消費すると、他人のメールアドレスを
+    // 送るだけでその人を締め出せる（OWASP Authentication Cheat Sheet: ロックアウトの DoS 悪用）。
+    test('[SECURITY] Turnstile に失敗した要求はアカウント単位の回数に数えない', async () => {
+      const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
+      const originalNodeEnv = process.env.NODE_ENV;
+      (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+      delete process.env.TURNSTILE_SECRET_KEY;
+
+      try {
+        const req = new Request('http://localhost/api/auth/login', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ email: 'victim@example.com', password: 'Password123456789!' }),
+        });
+
+        const res: any = await loginHandler(req);
+
+        expect(res.status).toBe(403);
+        expect(enforceRateLimit).not.toHaveBeenCalledWith(
+          expect.objectContaining({ subject: expect.anything() }),
+        );
+      } finally {
+        (process.env as Record<string, string | undefined>).NODE_ENV = originalNodeEnv;
+      }
+    });
   });
 });
 

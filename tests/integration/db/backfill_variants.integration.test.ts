@@ -2,7 +2,7 @@ export {};
 
 const { Pool } = require('pg');
 
-// 既存の items.colors / items.sizes / items.stock_quantity からバリアントを生成する。
+// 既存の items.colors / items.sizes から色・サイズ・バリアントを生成する（在庫は移さない: FREQ-401）。
 describe('integration: backfill_item_variants', () => {
   const DATABASE_URL = process.env.DATABASE_URL;
 
@@ -23,13 +23,12 @@ describe('integration: backfill_item_variants', () => {
     client: any,
     colors: unknown,
     sizes: (string | null)[],
-    stock: number | null,
   ): Promise<string> {
     const res = await client.query(
-      `INSERT INTO public.items (name, description, price, category, image_url, status, colors, sizes, stock_quantity)
-       VALUES ('backfill test', 'desc', 1000, 'TOPS', '/images/test.jpg', 'published', $1::jsonb, $2::text[], $3)
+      `INSERT INTO public.items (name, description, price, category, image_url, status, colors, sizes)
+       VALUES ('backfill test', 'desc', 1000, 'TOPS', '/images/test.jpg', 'published', $1::jsonb, $2::text[])
        RETURNING id`,
-      [JSON.stringify(colors), sizes, stock],
+      [JSON.stringify(colors), sizes],
     );
     return res.rows[0].id;
   }
@@ -42,7 +41,6 @@ describe('integration: backfill_item_variants', () => {
         client,
         [{ name: 'Black', hex: '#000000' }, { name: 'Ivory', hex: '#f5f5f5' }],
         ['S', 'M'],
-        7,
       );
 
       await client.query(`SELECT public.backfill_item_variants($1)`, [itemId]);
@@ -66,7 +64,6 @@ describe('integration: backfill_item_variants', () => {
         client,
         [{ name: 'Black', hex: '#000000' }, { name: 'Ivory', hex: '#f5f5f5' }],
         ['M', 'S'],
-        0,
       );
 
       await client.query(`SELECT public.backfill_item_variants($1)`, [itemId]);
@@ -82,7 +79,8 @@ describe('integration: backfill_item_variants', () => {
     }
   });
 
-  test('在庫は position が最小の組み合わせに全量が寄せられ、台帳にも記録される', async () => {
+  // FREQ-401: 旧 items.stock_quantity からの移し替えは廃止した。在庫は台帳でだけ動かす。
+  test('在庫は移さない。作られたバリアントは在庫 0 で台帳も空', async () => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -90,31 +88,25 @@ describe('integration: backfill_item_variants', () => {
         client,
         [{ name: 'Black', hex: '#000000' }, { name: 'Ivory', hex: '#f5f5f5' }],
         ['S', 'M'],
-        7,
       );
 
       await client.query(`SELECT public.backfill_item_variants($1)`, [itemId]);
 
       const rows = await client.query(
-        `SELECT v.stock_quantity, c.position AS cpos, s.position AS spos
-         FROM public.item_variants v
-         LEFT JOIN public.item_colors c ON c.id = v.color_id
-         LEFT JOIN public.item_sizes  s ON s.id = v.size_id
-         WHERE v.item_id = $1
-         ORDER BY c.position, s.position`,
+        `SELECT v.stock_quantity FROM public.item_variants v WHERE v.item_id = $1`,
         [itemId],
       );
-      expect(rows.rows[0].stock_quantity).toBe(7);
-      expect(rows.rows.slice(1).every((r: any) => r.stock_quantity === 0)).toBe(true);
+      expect(rows.rows).toHaveLength(4);
+      expect(rows.rows.every((r: any) => r.stock_quantity === 0)).toBe(true);
 
       const ledger = await client.query(
-        `SELECT coalesce(sum(m.delta), 0)::int AS total
+        `SELECT count(*)::int AS total
          FROM public.stock_movements m
          JOIN public.item_variants v ON v.id = m.variant_id
          WHERE v.item_id = $1`,
         [itemId],
       );
-      expect(ledger.rows[0].total).toBe(7);
+      expect(ledger.rows[0].total).toBe(0);
     } finally {
       await client.query('ROLLBACK');
       client.release();
@@ -125,7 +117,7 @@ describe('integration: backfill_item_variants', () => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const itemId = await createLegacyItem(client, [], [], 3);
+      const itemId = await createLegacyItem(client, [], []);
 
       await client.query(`SELECT public.backfill_item_variants($1)`, [itemId]);
 
@@ -136,18 +128,18 @@ describe('integration: backfill_item_variants', () => {
       expect(res.rows).toHaveLength(1);
       expect(res.rows[0].color_id).toBeNull();
       expect(res.rows[0].size_id).toBeNull();
-      expect(res.rows[0].stock_quantity).toBe(3);
+      expect(res.rows[0].stock_quantity).toBe(0);
     } finally {
       await client.query('ROLLBACK');
       client.release();
     }
   });
 
-  test('stock_quantity が NULL の商品は在庫 0 で作られ、台帳は空になる', async () => {
+  test('バリアントは在庫 0 で作られ、台帳は空になる', async () => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const itemId = await createLegacyItem(client, [{ name: 'Black', hex: '#000000' }], ['M'], null);
+      const itemId = await createLegacyItem(client, [{ name: 'Black', hex: '#000000' }], ['M']);
 
       await client.query(`SELECT public.backfill_item_variants($1)`, [itemId]);
 
@@ -175,7 +167,7 @@ describe('integration: backfill_item_variants', () => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const itemId = await createLegacyItem(client, [{ name: 'Black', hex: '#000000' }], ['M'], 2);
+      const itemId = await createLegacyItem(client, [{ name: 'Black', hex: '#000000' }], ['M']);
 
       await client.query(`SELECT public.backfill_item_variants($1)`, [itemId]);
       await client.query(`SELECT public.backfill_item_variants($1)`, [itemId]);
@@ -193,7 +185,8 @@ describe('integration: backfill_item_variants', () => {
          WHERE v.item_id = $1`,
         [itemId],
       );
-      expect(ledger.rows[0].total).toBe(2);
+      // 在庫は移さないので、何度実行しても台帳は空のまま（FREQ-401）
+      expect(ledger.rows[0].total).toBe(0);
     } finally {
       await client.query('ROLLBACK');
       client.release();
@@ -204,7 +197,7 @@ describe('integration: backfill_item_variants', () => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const itemId = await createLegacyItem(client, { not: 'an array' }, ['M'], 0);
+      const itemId = await createLegacyItem(client, { not: 'an array' }, ['M']);
 
       await expect(
         client.query(`SELECT public.backfill_item_variants($1)`, [itemId]),
@@ -219,7 +212,7 @@ describe('integration: backfill_item_variants', () => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const itemId = await createLegacyItem(client, ['Red'], ['M'], 0);
+      const itemId = await createLegacyItem(client, ['Red'], ['M']);
 
       await expect(
         client.query(`SELECT public.backfill_item_variants($1)`, [itemId]),
@@ -238,7 +231,6 @@ describe('integration: backfill_item_variants', () => {
         client,
         [{ name: 'Red', hex: 'FF0000' }],
         ['M'],
-        0,
       );
 
       await expect(
@@ -258,7 +250,6 @@ describe('integration: backfill_item_variants', () => {
         client,
         [{ name: 'Red', hex: '#FF0000' }, { name: 'Red', hex: '#00FF00' }],
         ['M'],
-        0,
       );
 
       await expect(
@@ -274,7 +265,7 @@ describe('integration: backfill_item_variants', () => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const itemId = await createLegacyItem(client, [], ['S', null, 'M'], 0);
+      const itemId = await createLegacyItem(client, [], ['S', null, 'M']);
 
       await expect(
         client.query(`SELECT public.backfill_item_variants($1)`, [itemId]),

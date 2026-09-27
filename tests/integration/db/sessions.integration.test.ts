@@ -5,6 +5,14 @@ const { Pool } = require('pg');
 // Integration tests for sessions table. Requires DATABASE_URL (service role / admin) in env.
 // These tests are safe: they run inside a transaction and roll back at the end.
 
+function isLocalDatabase(url: string): boolean {
+  try {
+    return ['localhost', '127.0.0.1', '::1'].includes(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
 describe('integration: sessions table', () => {
   const DATABASE_URL = process.env.DATABASE_URL;
 
@@ -13,7 +21,17 @@ describe('integration: sessions table', () => {
     return;
   }
 
-  // pg は型定義パッケージが無く require が any を返すため、明示的に any を置く。
+  // auth.users を作って消すテストなので、使い捨てのローカル DB でだけ動かす。
+  if (!isLocalDatabase(DATABASE_URL)) {
+    test('使い捨ての DB 以外では実行しない', () => {
+      throw new Error(
+        'auth.users を作成・削除するため、localhost 以外の DATABASE_URL では実行しない',
+      );
+    });
+    return;
+  }
+
+  // pg は型定義パッケージが無く require が any を返すため、明示的に any を置く。
   let pool: any;
   beforeAll(() => {
     pool = new Pool({ connectionString: DATABASE_URL });
@@ -28,10 +46,11 @@ describe('integration: sessions table', () => {
     try {
       await client.query('BEGIN');
 
-      // Create a test auth user (use minimal columns; Supabase's auth.users allows insertion via SQL with service role)
+      // 試験用の auth ユーザーを作る。auth.users.id には既定値が無いので明示的に採番する
+      // （省略すると not-null 制約で落ちる）。
       const createUser = await client.query(
-        `INSERT INTO auth.users (email, raw_user_meta_data, created_at, updated_at)
-         VALUES ($1, '{}'::jsonb, now(), now())
+        `INSERT INTO auth.users (id, email, raw_user_meta_data, created_at, updated_at)
+         VALUES (gen_random_uuid(), $1, '{}'::jsonb, now(), now())
          RETURNING id`,
         [`test+sessions-${Date.now()}@example.com`]
       );

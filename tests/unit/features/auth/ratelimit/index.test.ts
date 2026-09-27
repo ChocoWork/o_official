@@ -2,8 +2,11 @@ jest.mock('@/lib/supabase/server', () => ({
   createServiceRoleClient: jest.fn(),
 }));
 
+import { createHash } from 'node:crypto';
 import { incrementCounter } from '@/features/auth/ratelimit';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+
+const sha512Hex = (value: string) => createHash('sha512').update(value).digest('hex');
 
 describe('incrementCounter', () => {
   const mockRpc = jest.fn();
@@ -31,7 +34,8 @@ describe('incrementCounter', () => {
     });
   });
 
-  test('calls the atomic rate limit RPC function with null ip for subject-based counting', async () => {
+  // subject にはメールアドレスやセッション ID（Cookie の値そのもの）が入る。平文で保存しない。
+  test('calls the atomic rate limit RPC function with null ip and a SHA-512 hashed subject', async () => {
     mockRpc.mockResolvedValue({ data: 2, error: null });
 
     const count = await incrementCounter({
@@ -44,7 +48,7 @@ describe('incrementCounter', () => {
     expect(count).toBe(2);
     expect(mockRpc).toHaveBeenCalledWith('increment_rate_limit_counter', {
       _ip: null,
-      _endpoint: 'auth:identify|acct:user@example.com',
+      _endpoint: `auth:identify|acct:${sha512Hex('user@example.com')}`,
       _bucket: '2026-04-19T00:00:00Z',
     });
   });
@@ -74,7 +78,7 @@ describe('incrementCounter', () => {
     expect(count).toBe(10485760);
     expect(mockRpc).toHaveBeenCalledWith('increment_rate_limit_counter', {
       _ip: null,
-      _endpoint: 'admin:looks:create:upload-bytes|acct:admin-user-id',
+      _endpoint: `admin:looks:create:upload-bytes|acct:${sha512Hex('admin-user-id')}`,
       _bucket: '2026-04-26T12:00:00Z',
       _increment: 5242880,
     });

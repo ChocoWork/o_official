@@ -24,6 +24,12 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({
   enforceRateLimit: jest.fn(),
 }));
 
+// 在庫の単位は色 × サイズ（FREQ-400）。商品単位の在庫数は公開レスポンスに出さない。
+const getItemAvailability = jest.fn();
+jest.mock('@/lib/items/availability', () => ({
+  getItemAvailability: (...args: unknown[]) => getItemAvailability(...args),
+}));
+
 const route = require('@/app/api/items/[id]/route');
 const { createClient } = require('@/lib/supabase/server');
 const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
@@ -32,9 +38,13 @@ describe('GET /api/items/[id]', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     enforceRateLimit.mockResolvedValue(undefined);
+    getItemAvailability.mockResolvedValue({
+      madeToOrder: false,
+      combinations: [{ colorName: 'Black', sizeLabel: 'M', inStock: true }],
+    });
   });
 
-  test('公開レスポンスで stockStatus のみ返し、stock_quantity は返さない', async () => {
+  test('公開レスポンスで色 × サイズの在庫を返し、商品単位の在庫数は返さない', async () => {
     const single = jest.fn().mockResolvedValue({
       data: {
         id: 101,
@@ -47,7 +57,6 @@ describe('GET /api/items/[id]', () => {
         colors: [{ hex: '#000', name: 'Black' }],
         sizes: ['M'],
         product_details: ['Silk 100%'],
-        stock_quantity: 2,
       },
       error: null,
     });
@@ -70,8 +79,12 @@ describe('GET /api/items/[id]', () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body.stockStatus).toBe('low_stock');
     expect(body.stock_quantity).toBeUndefined();
+    expect(body.madeToOrder).toBe(false);
+    expect(body.variantAvailability).toEqual([
+      { colorName: 'Black', sizeLabel: 'M', inStock: true },
+    ]);
+    expect(getItemAvailability).toHaveBeenCalledWith(101);
     expect(query.eq).toHaveBeenNthCalledWith(1, 'id', 101);
     expect(query.eq).toHaveBeenNthCalledWith(2, 'status', 'published');
   });

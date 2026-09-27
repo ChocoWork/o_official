@@ -52,14 +52,15 @@ describe('POST /api/cart', () => {
     mockLogAudit.mockResolvedValue(undefined);
   });
 
-  test('同一商品の合計数量が在庫を超える場合は 409 を返す', async () => {
+  // FREQ-401: 在庫の有無は納期を分けるだけ。足りなくても受注生産として受ける。
+  test('同一商品の合計数量が在庫を超えても受け付ける', async () => {
     mockFrom.mockImplementation((table: string) => {
       if (table === 'items') {
         return {
           select: jest.fn().mockReturnThis(),
           eq: jest.fn().mockReturnThis(),
           single: jest.fn().mockResolvedValue({
-            data: { id: 1, name: 'テスト商品', stock_quantity: 3, status: 'published' },
+            data: { id: 1, name: 'テスト商品', status: 'published' },
             error: null,
           }),
         };
@@ -90,8 +91,7 @@ describe('POST /api/cart', () => {
 
     const res = await POST(makeRequest({ item_id: 1, quantity: 2, color: 'BLACK', size: 'L' }));
 
-    expect((res as { status: number }).status).toBe(409);
-    expect((res as unknown as { body: { error: string } }).body.error).toBe('insufficient_stock');
+    expect((res as { status: number }).status).not.toBe(409);
   });
 
   test('数量上限を超える場合は 400 を返す', async () => {
