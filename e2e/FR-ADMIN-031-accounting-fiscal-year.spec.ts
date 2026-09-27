@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-241: 会計期間を暦年（1/1〜12/31）へ統一。シーズン軸は商品原価タブのみ。
 // 取引は暦年に属し、シーズンはコレクション別分析用の任意タグ。
@@ -60,6 +61,7 @@ const requestedUrls: string[] = [];
 async function mockAdminApis(page: Page): Promise<void> {
   requestedUrls.length = 0;
 
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,
@@ -170,7 +172,7 @@ for (const viewport of viewports) {
       await openAccounting(page);
 
       // 年度選択はタブ行右端のドロップダウン（FREQ-253-REQ-06）。
-      await expect(page.getByRole('button', { name: '会計年' })).toBeVisible();
+      await expect(page.getByRole('combobox', { name: '会計年' })).toBeVisible();
       await expect(page.getByText('2026年', { exact: true })).toBeVisible();
       await expect(page.getByText('会計期間 2026/01/01〜2026/12/31')).toBeVisible();
       // 会計期間の切替軸にシーズンは出さない。
@@ -211,7 +213,7 @@ for (const viewport of viewports) {
       await page.getByRole('tab', { name: '取引管理', exact: true }).click();
       await page.getByRole('button', { name: '新規取引' }).click();
 
-      const seasonTag = page.getByRole('button', { name: 'シーズンタグ' });
+      const seasonTag = page.getByRole('combobox', { name: 'シーズンタグ' });
       await expect(seasonTag).toBeVisible();
       await seasonTag.click();
       await expect(page.getByRole('option', { name: '（なし）', exact: true })).toBeVisible();
@@ -227,7 +229,7 @@ for (const viewport of viewports) {
 
       await page.getByRole('button', { name: '支出概要' }).click();
       await page.getByRole('option', { name: '展示会・イベント' }).click();
-      await page.getByRole('button', { name: '勘定科目' }).click();
+      await page.getByRole('combobox', { name: '勘定科目' }).click();
       await page.getByRole('option', { name: '経費 / 広告宣伝費', exact: true }).click();
       await page.getByPlaceholder('0').fill('45000');
       // 選択中の年度（2026）とは別の年の日付を入れる。

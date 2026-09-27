@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-203: Admin 左側縦ナビを薄いグレーの角丸パネル + アイコン + 選択中タブの濃いグレー塗りに刷新
 const viewports = [
@@ -8,6 +9,7 @@ const viewports = [
 ];
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', async (route) => {
     await route.fulfill({
       status: 200,

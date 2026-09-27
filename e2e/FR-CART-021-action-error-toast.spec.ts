@@ -2,6 +2,7 @@ import { expect, Page, test } from '@playwright/test';
 import { mockCartApis, sampleCartItem } from './shop-test-utils';
 
 // FREQ-342: /cart の操作失敗を alert() ではなく商品詳細と同じ Toast で伝える
+// FREQ-376-AC-03: その Toast の中に読み上げ領域を入れ子にしない
 
 const cartItem = sampleCartItem();
 
@@ -86,6 +87,16 @@ for (const viewport of VIEWPORTS) {
       await expect(toast(page)).toHaveText(/ウィッシュリストに追加できません/);
       await expect(toast(page)).toHaveAttribute('role', 'alert');
       expect(dialogs).toEqual([]);
+    });
+
+    test('FREQ-376-AC-03: Toast の中に読み上げ領域を入れ子にしない', async ({ page }) => {
+      await openCart(page, { wishlistPostStatus: 500 });
+
+      await page.getByRole('button', { name: 'ウィッシュリストに追加' }).click();
+
+      await expect(toast(page)).toHaveAttribute('role', 'alert');
+      // 外側の読み上げ領域の中に、さらに読み上げ領域を置かない（二重に読まれないよう）
+      await expect(toast(page).locator('[role="status"], [role="alert"], [aria-live]')).toHaveCount(0);
     });
 
     test('FREQ-342-AC-02: カート削除の失敗も同じ Toast で出る', async ({ page }) => {

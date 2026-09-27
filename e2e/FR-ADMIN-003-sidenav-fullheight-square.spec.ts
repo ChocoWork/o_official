@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-204: Admin 左側縦ナビを本文と同じ高さ（画面下端）まで伸ばし、角丸を廃して角を四角にする
 const viewports = [
@@ -8,6 +9,7 @@ const viewports = [
 ];
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', async (route) => {
     await route.fulfill({
       status: 200,

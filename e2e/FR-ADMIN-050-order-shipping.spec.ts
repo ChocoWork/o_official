@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-267: 決済完了の注文を、配送業者と追跡番号を添えて発送済みにできる。
 const viewports = [
@@ -17,8 +18,20 @@ const ORDERS = [
     items: [{ name: 'シルクブラウス', quantity: 1 }],
     totalAmount: '¥28,800',
     status: '決済完了',
+    canShip: true,
   },
   {
+    id: 'order-missing-shipping',
+    customerName: '配送先 未登録',
+    customerEmail: 'missing@example.com',
+    orderDate: '2026-08-01',
+    itemCount: '1点',
+    items: [{ name: 'ブラウス', quantity: 1 }],
+    totalAmount: '¥18,000',
+    status: '決済完了',
+    canShip: false,
+    missingShippingFields: ['address'],
+  },  {
     id: 'order-pending',
     customerName: '佐藤 太郎',
     customerEmail: 'taro@example.com',
@@ -41,6 +54,7 @@ const ORDERS = [
 ];
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,
@@ -84,11 +98,12 @@ for (const viewport of viewports) {
       await mockAdminApis(page);
     });
 
-    test('決済完了の注文にだけ発送ボタンが出る', async ({ page }) => {
-      // FREQ-267-AC-01 / AC-02
+    test('配送先が揃った決済完了注文にだけ発送ボタンが出る', async ({ page }) => {
+      // FREQ-267-AC-01 / AC-02, FREQ-365-AC-09
       await openOrders(page);
 
       await expect(page.getByRole('button', { name: '発送済みにする' })).toHaveCount(1);
+      await expect(page.getByText('配送先要確認')).toBeVisible();
     });
 
     test('配送業者と追跡番号を入力して発送できる', async ({ page }) => {
@@ -101,8 +116,8 @@ for (const viewport of viewports) {
       await page.getByLabel('追跡番号').fill('1234-5678-9012');
       await page.getByRole('button', { name: '発送する' }).click();
 
-      // exact を付けないとボタン文言「発送済みにする」も部分一致で拾ってしまう。
-      await expect(page.getByText('発送済み', { exact: true })).toHaveCount(2);
+      await expect(page.getByRole('row', { name: /order-paid/ }).getByText('発送済み', { exact: true })).toBeVisible();
+      await expect(page.getByRole('row', { name: /order-shipped/ }).getByText('発送済み', { exact: true })).toBeVisible();
       await expect(page.getByRole('button', { name: '発送済みにする' })).toHaveCount(0);
     });
 

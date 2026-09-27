@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-254: 財務概要の見た目（角丸・状態色）。
 // 面は Panel（--radius-md 8px）、内側の枠は --radius-sm（6px）、
@@ -45,6 +46,7 @@ const INCOMES = [
 ];
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,
@@ -298,7 +300,7 @@ for (const viewport of viewports) {
       // FREQ-256-AC-01 / AC-02
       await openAccounting(page);
 
-      const year = page.getByRole('button', { name: '会計年' });
+      const year = page.getByRole('combobox', { name: '会計年' });
       const status = page.getByText('同期済み');
       const update = page.getByRole('button', { name: '更新' });
 
@@ -331,7 +333,7 @@ for (const viewport of viewports) {
       // FREQ-256-AC-03 / AC-04
       await openAccounting(page);
 
-      const year = page.getByRole('button', { name: '会計年' });
+      const year = page.getByRole('combobox', { name: '会計年' });
       await expect(page.getByText('2026年', { exact: true })).toBeVisible();
       await expect(page.getByText('2026年度', { exact: true })).toHaveCount(0);
 

@@ -36,6 +36,32 @@ async function mockAccountApis(page: Page, orders: unknown[]): Promise<void> {
     }),
   );
 
+  // アカウント画面はプロフィールと住所帳も読む。実 API に届くと 401 になり、clientFetch が
+  // /api/auth/refresh を呼んで 401 ならログアウト扱いになる（429 なら通る）。回数制限の残り具合で
+  // 結果が入れ替わらないよう、ページが呼ぶ認証付き API と refresh をすべて固定する。
+  await page.route('**/api/auth/refresh', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      headers: { 'set-cookie': 'sb-csrf-token=e2e-csrf-token; Path=/; SameSite=Lax' },
+      body: JSON.stringify({ ok: true }),
+    }),
+  );
+  await page.route('**/api/profile', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ email: 'hanako@example.com' }),
+    }),
+  );
+  await page.route('**/api/profile/addresses', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ addresses: [] }),
+    }),
+  );
+
   // GET /api/orders は { data: OrderSummary[] } を返す(配列を直接包む)。
   await page.route('**/api/orders', (route) =>
     route.fulfill({

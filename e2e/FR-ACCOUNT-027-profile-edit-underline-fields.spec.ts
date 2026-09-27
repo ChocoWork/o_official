@@ -61,11 +61,11 @@ for (const viewport of VIEWPORTS) {
 
       // 表示ビューから編集フォームへ切り替える
       await page.getByRole('button', { name: '編集' }).click();
-      await expect(page.getByRole('button', { name: '変更を保存' })).toBeVisible();
+      await expect(page.getByRole('button', { name: '保存', exact: true })).toBeVisible();
 
       // FREQ-97-AC-01: 編集フォームが underline + leadingText の4行で構成される
       const rows = page.locator(
-        'form.account-profile-view label.text-field[data-ui-text-field-shape="underline"][data-ui-text-field-has-leading-text="true"]',
+        'form.account-profile-view .text-field[data-ui-text-field-shape="underline"][data-ui-text-field-has-leading-text="true"]',
       );
       await expect(rows).toHaveCount(4);
       // 枠付きボックス（account-card）は使わない
@@ -105,13 +105,14 @@ for (const viewport of VIEWPORTS) {
       expect(
         await leadOf('氏名').evaluate((el) => getComputedStyle(el).color),
       ).toBe('rgb(0, 0, 0)');
-      // フォーカスしていない行は下線・見出し文字ともグレーのまま
+      // フォーカスしていない行は下線・見出し文字ともグレーのまま。
+      // 見出し文字のグレーはコントラスト対応（FR-ACCOUNT-029）で #767676 になった
       expect(
         await controlOf('フリガナ').evaluate((el) => getComputedStyle(el).borderBottomColor),
       ).toBe('rgba(0, 0, 0, 0.1)');
       expect(
         await leadOf('フリガナ').evaluate((el) => getComputedStyle(el).color),
-      ).toBe('rgba(0, 0, 0, 0.2)');
+      ).toBe('rgb(118, 118, 118)');
 
       // フォーカスを移すと元の行はグレーへ戻り、移った先が黒になる
       await page.getByLabel('フリガナ').focus();

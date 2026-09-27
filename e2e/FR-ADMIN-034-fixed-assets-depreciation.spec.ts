@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-244: 固定資産台帳と減価償却計算。定額法・一括償却・即時償却・事業按分。
 const viewports = [
@@ -43,6 +44,7 @@ const FIXED_ASSETS = [
 ];
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,

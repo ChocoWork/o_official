@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-260: 固定資産の入力を取引管理と固定資産タブで二重に行わせず、取引を単一の入口として連携させる。
 // 取引管理＝購入日・取引先・支払額・支払方法・証憑（取得仕訳）、
@@ -67,6 +68,7 @@ const FIXED_ASSETS = [
 ];
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,
@@ -175,9 +177,9 @@ async function openEntries(page: Page) {
   await page.getByRole('tab', { name: '取引管理', exact: true }).click();
 }
 
-/** SingleSelect（button + listbox）から値を選ぶ。 */
+/** SingleSelect（combobox + listbox。FREQ-379）から値を選ぶ。 */
 async function chooseOption(page: Page, selectLabel: string, optionText: string | RegExp) {
-  await page.getByRole('button', { name: selectLabel, exact: true }).click();
+  await page.getByRole('combobox', { name: selectLabel, exact: true }).click();
   await page.getByRole('option', { name: optionText }).click();
 }
 

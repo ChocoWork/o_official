@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-259: 税務レポートを「税務サマリー／青色申告決算書／税務調整／税務カレンダー／申告資料」の
 // 5枚に再構成し、従来の 1P〜4P は「青色申告決算書」の中に置く。
@@ -83,6 +84,7 @@ const FIXED_ASSETS = [
 ];
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,

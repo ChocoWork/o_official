@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-261: KPI タブのサブタブを廃止し、1画面で完結する KPI ワークスペースにする
 const viewports = [
@@ -47,6 +48,7 @@ function buildYear(year: number, scale: number) {
 }
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', async (route) => {
     await route.fulfill({
       status: 200,

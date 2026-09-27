@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-227 / FREQ-228: 月次記録タブ = 選択シーズン（6ヶ月）の各KPI算出元データ入力 + KPI自動計算
 const viewports = [
@@ -51,6 +52,7 @@ function seasonMonthKeys(season: string): string[] {
 }
 
 async function mockAdminApis(page: Page, seedValues: Record<string, Record<string, number>> = {}): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,
@@ -217,7 +219,7 @@ for (const viewport of viewports) {
       await openRecordTab(page);
 
       await page.getByRole('button', { name: '算出元データを閉じる' }).click();
-      await page.getByRole('button', { name: '対象シーズン' }).click();
+      await page.getByRole('combobox', { name: '対象シーズン' }).click();
       await page.getByRole('option', { name: '2026 A/W' }).click();
       await page.getByRole('button', { name: '算出元データを確認' }).click();
       await expect(page.getByText('2026年10月〜2027年3月', { exact: true })).toBeVisible();

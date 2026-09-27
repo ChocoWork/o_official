@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-311: ITEM一覧カードの公開状態を BASIC TAGS（角丸なし・2xs）、
 // カテゴリを ROUNDED TAGS（角丸・subtle・2xs）にする。
@@ -27,6 +28,7 @@ function buildItems() {
 }
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,

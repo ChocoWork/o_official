@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-232: 勘定科目・支出概要・金額・支払い方法・メモをテンプレート保存し、選択して経費フォームへ反映
 const viewports = [
@@ -26,6 +27,7 @@ function metric(period: string) {
 }
 
 async function mockAdminApis(page: Page) {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,
@@ -114,7 +116,7 @@ async function openCostInputTab(page: Page) {
   await page.getByRole('tab', { name: '取引管理' }).click();
   // FREQ-257 以降、取引の入力欄は「新規取引」Drawer の中にある。
   await page.getByRole('button', { name: '新規取引' }).click();
-  await page.getByRole('button', { name: 'テンプレート', exact: true }).waitFor();
+  await page.getByRole('combobox', { name: 'テンプレート', exact: true }).waitFor();
 }
 
 for (const viewport of viewports) {
@@ -130,11 +132,11 @@ for (const viewport of viewports) {
       await mockAdminApis(page);
       await openCostInputTab(page);
 
-      await page.getByRole('button', { name: '支出摘要' }).click();
+      await page.getByRole('combobox', { name: '支出摘要' }).click();
       await page.getByRole('option', { name: '縫製外注' }).click();
       await page.getByPlaceholder('0').fill('50000');
 
-      await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
+      await page.getByRole('combobox', { name: 'テンプレート', exact: true }).click();
       await page.getByRole('option', { name: '＋ 現在の入力を保存' }).click();
 
       await expect(page.getByPlaceholder('テンプレート名')).toHaveValue('縫製外注 / ¥50,000');
@@ -142,7 +144,7 @@ for (const viewport of viewports) {
       await page.getByRole('button', { name: 'テンプレートを保存' }).click();
 
       await expect(page.getByText('テンプレートを保存しました。')).toBeVisible({ timeout: 15_000 });
-      await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
+      await page.getByRole('combobox', { name: 'テンプレート', exact: true }).click();
       await expect(page.getByRole('option', { name: '縫製外注（定番）' })).toBeVisible();
     });
 
@@ -152,25 +154,25 @@ for (const viewport of viewports) {
       await openCostInputTab(page);
 
       // 先にテンプレートを1件作る。
-      await page.getByRole('button', { name: '支出摘要' }).click();
+      await page.getByRole('combobox', { name: '支出摘要' }).click();
       await page.getByRole('option', { name: '縫製外注' }).click();
       await page.getByPlaceholder('0').fill('50000');
-      await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
+      await page.getByRole('combobox', { name: 'テンプレート', exact: true }).click();
       await page.getByRole('option', { name: '＋ 現在の入力を保存' }).click();
       await page.getByPlaceholder('テンプレート名').fill('縫製外注（定番）');
       await page.getByRole('button', { name: 'テンプレートを保存' }).click();
       await expect(page.getByText('テンプレートを保存しました。')).toBeVisible({ timeout: 15_000 });
 
       // 別の支出概要・金額へ変更。
-      await page.getByRole('button', { name: '支出摘要' }).click();
+      await page.getByRole('combobox', { name: '支出摘要' }).click();
       await page.getByRole('option', { name: '広告出稿' }).click();
       await page.getByPlaceholder('0').fill('12000');
 
       // テンプレートを選び直すと戻る。
-      await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
+      await page.getByRole('combobox', { name: 'テンプレート', exact: true }).click();
       await page.getByRole('option', { name: '縫製外注（定番）' }).click();
 
-      await expect(page.getByRole('button', { name: '支出摘要' })).toHaveText(/縫製外注/);
+      await expect(page.getByRole('combobox', { name: '支出摘要' })).toHaveText(/縫製外注/);
       await expect(page.getByPlaceholder('0')).toHaveValue('50000');
     });
 
@@ -179,16 +181,16 @@ for (const viewport of viewports) {
       const finance = await mockAdminApis(page);
       await openCostInputTab(page);
 
-      await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
+      await page.getByRole('combobox', { name: 'テンプレート', exact: true }).click();
       await page.getByRole('option', { name: '＋ 現在の入力を保存' }).click();
       await page.getByPlaceholder('テンプレート名').fill('毎月の家賃');
       await page.getByRole('button', { name: 'テンプレートを保存' }).click();
 
       await page.getByLabel('取引日').fill('2026-06-15');
-      await page.getByRole('button', { name: 'シーズンタグ' }).click();
+      await page.getByRole('combobox', { name: 'シーズンタグ' }).click();
       await page.getByRole('option', { name: '2026 S/S' }).click();
       await page.getByPlaceholder('0').fill('85000');
-      await page.getByRole('button', { name: '取引先' }).click();
+      await page.getByRole('combobox', { name: '取引先' }).click();
       await page.getByRole('option', { name: '新取引先' }).click();
       await page.getByRole('button', { name: '変更を上書き' }).click();
       const overwriteDialog = page.getByRole('dialog', { name: 'テンプレートの変更を上書き' });
@@ -200,13 +202,13 @@ for (const viewport of viewports) {
       await expect(page.getByText('テンプレートを上書きしました。')).toBeVisible();
       expect(finance.templates.find((template) => template.name === '毎月の家賃')?.partner).toBe('新取引先');
 
-      await page.getByRole('button', { name: '取引先' }).click();
+      await page.getByRole('combobox', { name: '取引先' }).click();
       await page.getByRole('option', { name: '旧取引先' }).click();
-      await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
+      await page.getByRole('combobox', { name: 'テンプレート', exact: true }).click();
       await page.getByRole('option', { name: '毎月の家賃' }).click();
-      await expect(page.getByRole('button', { name: '取引先' })).toHaveText(/新取引先/);
+      await expect(page.getByRole('combobox', { name: '取引先' })).toHaveText(/新取引先/);
       await expect(page.getByLabel('取引日')).toHaveValue('2026-06-15');
-      await expect(page.getByRole('button', { name: 'シーズンタグ' })).toHaveText(/2026 S\/S/);
+      await expect(page.getByRole('combobox', { name: 'シーズンタグ' })).toHaveText(/2026 S\/S/);
 
       await page.getByRole('button', { name: '別名で保存' }).click();
       const nameInput = page.getByPlaceholder('テンプレート名');
@@ -226,7 +228,7 @@ for (const viewport of viewports) {
       await mockAdminApis(page);
       await openCostInputTab(page);
 
-      await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
+      await page.getByRole('combobox', { name: 'テンプレート', exact: true }).click();
       await page.getByRole('option', { name: '＋ 現在の入力を保存' }).click();
       await page.getByPlaceholder('テンプレート名').fill('使い捨て');
       await page.getByRole('button', { name: 'テンプレートを保存' }).click();
@@ -235,7 +237,7 @@ for (const viewport of viewports) {
       await page.getByRole('button', { name: '選択中のテンプレートを削除' }).click();
       await expect(page.getByText('テンプレートを削除しました。')).toBeVisible();
 
-      await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
+      await page.getByRole('combobox', { name: 'テンプレート', exact: true }).click();
       await expect(page.getByRole('option', { name: '使い捨て' })).toHaveCount(0);
     });
 
@@ -250,7 +252,7 @@ for (const viewport of viewports) {
       });
       await openCostInputTab(page);
 
-      await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
+      await page.getByRole('combobox', { name: 'テンプレート', exact: true }).click();
       await page.getByRole('option', { name: '＋ 現在の入力を保存' }).click();
       const nameInput = page.getByPlaceholder('テンプレート名');
       await nameInput.focus();

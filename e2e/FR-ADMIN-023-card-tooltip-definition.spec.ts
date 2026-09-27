@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-225: 目標＆進捗タブのカードのツールチップに月次目標の「定義」列を併記
 const viewports = [
@@ -34,6 +35,7 @@ function metric(period: string, sales: number, aov: number, cvr: number, orders:
 }
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', async (route) => {
     await route.fulfill({
       status: 200,

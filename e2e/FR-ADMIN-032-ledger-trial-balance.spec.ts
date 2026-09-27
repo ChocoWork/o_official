@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-242: 帳簿タブを法定帳簿の形（仕訳帳・総勘定元帳・合計残高試算表）で表示し、
 // 取引管理の実データだけから導出する。架空仕訳は出さない。
@@ -52,6 +53,7 @@ const INCOMES = [
 ];
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,

@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-233: コスト入力タブを「収支入力」に改称し、支出だけでなく収入も管理（収入は売上高へ反映）
 const viewports = [
@@ -24,6 +25,7 @@ function metric(period: string) {
 }
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,
@@ -140,7 +142,7 @@ for (const viewport of viewports) {
       await expect(page.getByRole('button', { name: '収入概要' })).toBeVisible();
       await page.getByRole('button', { name: '収入概要' }).click();
       await page.getByRole('option', { name: 'オンライン販売' }).click();
-      await page.getByRole('button', { name: '勘定科目' }).click();
+      await page.getByRole('combobox', { name: '勘定科目' }).click();
       await page.getByRole('option', { name: '売上（収入）金額 / 売上高', exact: true }).click();
       await page.getByPlaceholder('0').fill('120000');
       await page.getByRole('button', { name: '保存', exact: true }).click();
@@ -162,20 +164,20 @@ for (const viewport of viewports) {
       await page.getByRole('button', { name: '支出概要' }).click();
       await page.getByRole('option', { name: '縫製外注' }).click();
       await page.getByPlaceholder('0').fill('50000');
-      await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
+      await page.getByRole('combobox', { name: 'テンプレート', exact: true }).click();
       await page.getByRole('option', { name: '＋ 現在の入力を保存' }).click();
       await page.getByPlaceholder('テンプレート名').fill('縫製外注（支出）');
       await page.getByRole('button', { name: 'テンプレートを保存' }).click();
       await expect(page.getByText('テンプレートを保存しました。')).toBeVisible();
 
       // 支出のプルダウンには出る。
-      await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
+      await page.getByRole('combobox', { name: 'テンプレート', exact: true }).click();
       await expect(page.getByRole('option', { name: '縫製外注（支出）' })).toBeVisible();
       await page.getByRole('option', { name: '（テンプレートを選択）' }).click();
 
       // 収入へ切り替えると出ない。
       await page.getByRole('button', { name: '収入', exact: true }).click();
-      await page.getByRole('button', { name: 'テンプレート', exact: true }).click();
+      await page.getByRole('combobox', { name: 'テンプレート', exact: true }).click();
       await expect(page.getByRole('option', { name: '縫製外注（支出）' })).toHaveCount(0);
     });
 

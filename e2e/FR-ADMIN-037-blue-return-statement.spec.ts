@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-247: 税務レポートを青色申告決算書（一般用）1〜4ページの様式に対応させる。
 const viewports = [
@@ -76,6 +77,7 @@ const FIXED_ASSETS = [
 ];
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,

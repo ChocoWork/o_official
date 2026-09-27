@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-257: 取引管理タブのダッシュボード化。
 // 1つの表＋サマリー3枚＋確認キュー、検索と登録は Drawer、証憑はD&D／クリック選択。
@@ -75,6 +76,7 @@ const REVISIONS = [
 ];
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,
@@ -274,13 +276,13 @@ for (const viewport of viewports) {
       await expect(page.getByLabel('取引年月日（終了）')).toBeVisible();
       await expect(page.getByLabel('取引金額（下限）')).toBeVisible();
       await expect(page.getByLabel('取引金額（上限）')).toBeVisible();
-      await expect(page.getByRole('button', { name: '絞り込み：相手先' })).toBeVisible();
-      await expect(page.getByRole('button', { name: '絞り込み：科目' })).toBeVisible();
-      await expect(page.getByRole('button', { name: '絞り込み：収支区分' })).toBeVisible();
+      await expect(page.getByRole('combobox', { name: '絞り込み：相手先' })).toBeVisible();
+      await expect(page.getByRole('combobox', { name: '絞り込み：科目' })).toBeVisible();
+      await expect(page.getByRole('combobox', { name: '絞り込み：収支区分' })).toBeVisible();
       await expect(page.getByLabel('絞り込み：キーワード')).toBeVisible();
 
       // 取引先 A社（id:1 支出・id:6 収入）× 2026-06-01以降 → 収入1件だけ残る
-      await page.getByRole('button', { name: '絞り込み：相手先' }).click();
+      await page.getByRole('combobox', { name: '絞り込み：相手先' }).click();
       await page.getByRole('option', { name: 'A社', exact: true }).click();
       await page.getByLabel('取引年月日（開始）').fill('2026-06-01');
       await page.getByRole('button', { name: '適用して閉じる' }).click();
@@ -296,12 +298,12 @@ for (const viewport of viewports) {
       await openEntries(page);
 
       // 常設フォームは無い
-      await expect(page.getByRole('button', { name: '事業形態' })).toHaveCount(0);
+      await expect(page.getByRole('combobox', { name: '事業形態' })).toHaveCount(0);
 
       await page.getByRole('button', { name: '新規取引' }).click();
       await expect(page.getByRole('heading', { name: '新規支出を登録' })).toBeVisible();
-      await expect(page.getByRole('button', { name: '事業形態' })).toBeVisible();
-      await expect(page.getByRole('button', { name: '勘定科目' })).toBeVisible();
+      await expect(page.getByRole('combobox', { name: '事業形態' })).toBeVisible();
+      await expect(page.getByRole('combobox', { name: '勘定科目' })).toBeVisible();
       await expect(page.getByLabel('取引日')).toBeVisible();
       await page.getByRole('button', { name: '取引の入力を閉じる' }).click();
 
@@ -338,7 +340,7 @@ for (const viewport of viewports) {
       await expect(drawer).toHaveAttribute('data-ui-drawer-shape', 'rounded');
       await expect(
         drawer
-          .getByRole('button', { name: '事業形態' })
+          .getByRole('combobox', { name: '事業形態' })
           .locator('xpath=ancestor::*[@data-ui-single-select][1]'),
       ).toHaveAttribute('data-ui-single-select-shape', 'rounded');
       await expect(drawer.getByLabel('取引日').locator('..').locator('..')).toHaveAttribute(
@@ -374,7 +376,7 @@ for (const viewport of viewports) {
         has: page.getByRole('heading', { name: '新規収入を登録' }),
       });
       await drawer.getByRole('button', { name: '証憑添付不可' }).click();
-      await drawer.getByRole('button', { name: '添付できない理由' }).click();
+      await drawer.getByRole('combobox', { name: '添付できない理由' }).click();
       await page.getByRole('option', { name: '銀行の閲覧期限超過' }).click();
 
       await expect(drawer.getByLabel('補足メモ')).toBeVisible();

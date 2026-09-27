@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-243: 取引管理の検索・絞り込み。電子帳簿保存法の検索機能要件を満たす。
 const viewports = [
@@ -51,6 +52,7 @@ const INCOMES = [
 ];
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,
@@ -162,9 +164,9 @@ for (const viewport of viewports) {
       await expect(page.getByLabel('取引年月日（終了）')).toBeVisible();
       await expect(page.getByLabel('取引金額（下限）')).toBeVisible();
       await expect(page.getByLabel('取引金額（上限）')).toBeVisible();
-      await expect(page.getByRole('button', { name: '絞り込み：相手先' })).toBeVisible();
-      await expect(page.getByRole('button', { name: '絞り込み：科目' })).toBeVisible();
-      await expect(page.getByRole('button', { name: '絞り込み：収支区分' })).toBeVisible();
+      await expect(page.getByRole('combobox', { name: '絞り込み：相手先' })).toBeVisible();
+      await expect(page.getByRole('combobox', { name: '絞り込み：科目' })).toBeVisible();
+      await expect(page.getByRole('combobox', { name: '絞り込み：収支区分' })).toBeVisible();
       await expect(page.getByLabel('絞り込み：キーワード')).toBeVisible();
 
       await expect(page.getByText('条件なし')).toBeVisible();
@@ -200,7 +202,7 @@ for (const viewport of viewports) {
       await openFilterDrawer(page);
 
       // 取引先 A社（支出1件・収入1件）× 2026-06-01以降 → 収入1件だけ残る
-      await page.getByRole('button', { name: '絞り込み：相手先' }).click();
+      await page.getByRole('combobox', { name: '絞り込み：相手先' }).click();
       await page.getByRole('option', { name: 'A社', exact: true }).click();
       await page.getByLabel('取引年月日（開始）').fill('2026-06-01');
 

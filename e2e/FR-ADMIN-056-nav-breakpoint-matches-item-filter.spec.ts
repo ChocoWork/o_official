@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { gotoItemList } from './item-list-test-utils';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-315: Admin のタブが「上部バー ↔ 左サイドナビ」に切り替わる幅を、
 // 公開 ITEM 一覧のフィルターが「上部ボタン ↔ 左サイドバー」に切り替わる幅
@@ -13,6 +14,7 @@ const cases = [
 ];
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,

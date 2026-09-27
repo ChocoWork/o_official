@@ -1,4 +1,5 @@
 import { expect, Page, test } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 const viewports = [
   { name: 'mobile', width: 390, height: 844 },
@@ -19,6 +20,7 @@ function metric(period: string) {
 }
 
 async function mockApis(page: Page) {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ authenticated: true, user: { id: 'admin', email: 'admin@example.com', role: 'admin', mfaVerified: true } }) }));
   await page.route('**/api/admin/kpi', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { targetYear: 2026, monthlyYearOptions: [2026], monthlyKpiByYear: [{ year: 2026, metrics: Array.from({ length: 12 }, (_, index) => metric(`${index + 1}月`)) }], seasonalKpi: [metric('2026SS')] } }) }));
   await page.route('**/api/admin/kpi/targets', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { currentSeason: '2026SS', seasons: ['2026SS'], definitions: [], values: {} } }) }));

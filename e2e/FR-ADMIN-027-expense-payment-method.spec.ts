@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-234: 支出フォームの「支払い方法」→「出金方法」改称 + 出金方法の選択肢16項目
 const viewports = [
@@ -24,6 +25,7 @@ function metric(period: string) {
 }
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,
@@ -105,7 +107,7 @@ for (const viewport of viewports) {
       await mockAdminApis(page);
       await openIncomeExpenseTab(page);
 
-      await expect(page.getByRole('button', { name: '出金方法' })).toBeVisible();
+      await expect(page.getByRole('combobox', { name: '出金方法' })).toBeVisible();
       // FREQ-257 で一覧の列は絞られ、入出金方法は入力 Drawer と CSV に残る。
       await expect(page.getByText('支払い方法', { exact: true })).toHaveCount(0);
     });
@@ -115,7 +117,7 @@ for (const viewport of viewports) {
       await mockAdminApis(page);
       await openIncomeExpenseTab(page);
 
-      await page.getByRole('button', { name: '出金方法' }).click();
+      await page.getByRole('combobox', { name: '出金方法' }).click();
       for (const option of ['現金', 'プライベート', '買掛金', '未払消費税', '仮受消費税']) {
         await expect(page.getByRole('option', { name: option, exact: true })).toBeVisible();
       }
@@ -127,9 +129,9 @@ for (const viewport of viewports) {
       await openIncomeExpenseTab(page);
 
       await page.getByRole('button', { name: '収入', exact: true }).click();
-      await expect(page.getByRole('button', { name: '入金方法' })).toBeVisible();
+      await expect(page.getByRole('combobox', { name: '入金方法' })).toBeVisible();
 
-      await page.getByRole('button', { name: '入金方法' }).click();
+      await page.getByRole('combobox', { name: '入金方法' }).click();
       for (const option of ['現金', 'プライベート', '銀行', '売掛金', '受取手形', '仮払消費税']) {
         await expect(page.getByRole('option', { name: option, exact: true })).toBeVisible();
       }

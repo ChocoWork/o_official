@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-253: ACCOUNTING > 財務概要の情報構造。
 // 上から サブタブ行 → 資金推移 → キャッシュブリッジ → 財務3表 → 利益構造 → 構成比。
@@ -45,6 +46,7 @@ const INCOMES = [
 ];
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,
@@ -230,7 +232,7 @@ for (const viewport of viewports) {
       await openAccounting(page);
 
       const tabBox = await page.getByRole('tab', { name: '財務概要' }).boundingBox();
-      const year = page.getByRole('button', { name: '会計年' });
+      const year = page.getByRole('combobox', { name: '会計年' });
       const update = page.getByRole('button', { name: '更新' });
       await expect(year).toBeVisible();
       await expect(page.getByText('2026年', { exact: true })).toBeVisible();

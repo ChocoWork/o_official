@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-206: Admin KPIビュー既存パーツの暖色グレーを無彩色（白・黒・グレー）に統一
 const viewports = [
@@ -34,6 +35,7 @@ function buildMetric(period: string) {
 }
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', async (route) => {
     await route.fulfill({
       status: 200,

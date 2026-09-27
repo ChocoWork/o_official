@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-250: 財務概要の「開業以来の累計」パネル。
 // 損益は期間の表なので、年度で切ると積み上げが見えない点を補う。
@@ -59,6 +60,7 @@ const FIXED_ASSETS = [
 ];
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,

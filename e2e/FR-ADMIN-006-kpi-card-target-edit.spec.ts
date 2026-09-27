@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-207: KPIカード右上の編集ボタンから現在シーズンの目標値を設定できる
 const viewports = [
@@ -49,6 +50,7 @@ function makeTargetsPayload(values: Record<string, Record<string, string>>) {
 }
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', async (route) => {
     await route.fulfill({
       status: 200,

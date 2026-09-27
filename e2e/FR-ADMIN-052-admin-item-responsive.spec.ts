@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-310: Admin の ITEM タブ / 新規登録 / 編集画面を
 // mobile(390) / tablet(768) / PC(1280) / PC-L(1920) / 4K(3840) の5帯に対応させる。
@@ -36,6 +37,7 @@ function buildItems(count: number) {
 }
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,

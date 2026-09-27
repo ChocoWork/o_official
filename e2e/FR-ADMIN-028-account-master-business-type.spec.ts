@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-237: 勘定科目マスタに基づく選択肢 + 事業形態（個人事業主/法人）による出し分け
 const viewports = [
@@ -24,6 +25,7 @@ function metric(period: string) {
 }
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,
@@ -99,11 +101,11 @@ async function openIncomeExpenseTab(page: Page) {
 }
 
 async function openAccountDropdown(page: Page) {
-  await page.getByRole('button', { name: '勘定科目' }).click();
+  await page.getByRole('combobox', { name: '勘定科目' }).click();
 }
 
 async function selectBusinessType(page: Page, label: string) {
-  await page.getByRole('button', { name: '事業形態' }).click();
+  await page.getByRole('combobox', { name: '事業形態' }).click();
   await page.getByRole('option', { name: label, exact: true }).click();
 }
 
@@ -155,7 +157,7 @@ for (const viewport of viewports) {
       await mockAdminApis(page);
       await openIncomeExpenseTab(page);
 
-      await expect(page.getByRole('button', { name: '勘定科目' })).toContainText('（勘定科目を選択）');
+      await expect(page.getByRole('combobox', { name: '勘定科目' })).toContainText('（勘定科目を選択）');
 
       await page.getByRole('spinbutton').first().fill('12000');
       await page.getByRole('button', { name: '保存', exact: true }).click();

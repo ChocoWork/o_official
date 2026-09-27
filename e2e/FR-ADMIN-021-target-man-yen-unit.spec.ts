@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-223: 目標文字列の「万」「億」を倍率として解釈（「約130万円」→ 1,300,000）
 const viewports = [
@@ -39,6 +40,7 @@ function months(seed: number) {
 
 // sales 目標文字列を差し替えられるモック。
 async function mockAdminApis(page: Page, salesTarget: string): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', async (route) => {
     await route.fulfill({
       status: 200,

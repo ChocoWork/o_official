@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-219: KPI一覧の行をプルダウンと同じ20指標に
 const viewports = [
@@ -67,6 +68,7 @@ async function mockAdminApis(
   page: Page,
   monthlyRecordValues: Record<string, Record<string, number>> = {},
 ): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', async (route) => {
     await route.fulfill({
       status: 200,

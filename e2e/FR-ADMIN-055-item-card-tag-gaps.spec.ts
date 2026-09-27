@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-317: Admin ITEM 一覧カードの近接ラダー。
 //   画像 ↔ タグ行  = --card-media-gap（font）        …別グループの境界なので最も広い
@@ -27,6 +28,7 @@ function buildItems() {
 }
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,

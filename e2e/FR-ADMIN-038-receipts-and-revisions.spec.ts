@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-248 / FREQ-249: 財務3表のCSVエクスポート・C/F検算、
 // 証憑（電子取引データ）の添付と訂正削除履歴。
@@ -68,6 +69,7 @@ const REVISIONS = [
 ];
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,

@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-240: ACCOUNTING タブのサブタブ改称（財務サマリー→財務概要 / 収支入力→取引管理 / 帳簿（仕訳一覧）→帳簿）
 const viewports = [
@@ -27,6 +28,7 @@ function metric(period: string) {
 }
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,
@@ -133,7 +135,7 @@ for (const viewport of viewports) {
 
       await page.getByRole('button', { name: '支出概要' }).click();
       await page.getByRole('option', { name: '展示会・イベント' }).click();
-      await page.getByRole('button', { name: '勘定科目' }).click();
+      await page.getByRole('combobox', { name: '勘定科目' }).click();
       await page.getByRole('option', { name: '経費 / 広告宣伝費', exact: true }).click();
       await page.getByPlaceholder('0').fill('45000');
       await page.getByRole('button', { name: '保存', exact: true }).click();

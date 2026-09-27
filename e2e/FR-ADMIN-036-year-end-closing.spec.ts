@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-246: 決算処理（棚卸・引当金・減価償却・元入金振替・翌年度繰越）。
 const viewports = [
@@ -58,6 +59,7 @@ type ClosingState = {
 };
 
 async function mockAdminApis(page: Page, options: { closed?: boolean } = {}): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,

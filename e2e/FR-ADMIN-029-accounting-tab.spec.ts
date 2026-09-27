@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-238: ACCOUNTING タブを KPI の直下に追加し、コスト & 利益の中身を移設
 const viewports = [
@@ -26,6 +27,7 @@ function metric(period: string) {
 }
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,
@@ -126,7 +128,7 @@ for (const viewport of viewports) {
         await expect(page.getByRole('tab', { name: label })).toBeVisible();
       }
       // 年度選択はタブ行右端のドロップダウン（FREQ-253-REQ-06）。
-      await expect(page.getByRole('button', { name: '会計年' })).toBeVisible();
+      await expect(page.getByRole('combobox', { name: '会計年' })).toBeVisible();
       await expect(page.getByText('2026年', { exact: true })).toBeVisible();
 
       await page.getByRole('tab', { name: '取引管理' }).click();

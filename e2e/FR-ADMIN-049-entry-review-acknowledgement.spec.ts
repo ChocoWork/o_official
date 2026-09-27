@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-263: 要確認の取引を、理由と確認手順を見たうえで確認済み（登録済み）にできる。
 const viewports = [
@@ -50,6 +51,7 @@ const EXPENSES = [
 type Ack = { entryRef: string; reason: string; note: string; reviewedAt: string };
 
 async function mockAdminApis(page: Page, acks: Ack[]): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,

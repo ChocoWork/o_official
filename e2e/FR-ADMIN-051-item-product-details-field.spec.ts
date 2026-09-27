@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-306: Admin の ITEM 登録フォームから PRODUCT DETAILS（素材・洗濯の情報）欄を削除し、
 // 「商品情報」ラベルを PRODUCT DETAILS に変更する。
@@ -9,6 +10,7 @@ const viewports = [
 ];
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,

@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-230: コスト入力タブ = カテゴリ→勘定科目 / 項目→支出概要(固定プルダウン) / 取引先(選択+新規登録)
 const viewports = [
@@ -38,6 +39,7 @@ function metric(period: string) {
 }
 
 async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,
@@ -118,8 +120,8 @@ async function openCostInputTab(page: Page) {
   await page.getByRole('tab', { name: '取引管理' }).click();
   // FREQ-257 以降、取引の入力欄は「新規取引」Drawer の中にある。
   await page.getByRole('button', { name: '新規取引' }).click();
-  // プルダウンは黄金比UIの SingleSelect（dropdown）。トリガーは button。
-  await page.getByRole('button', { name: '勘定科目' }).waitFor();
+  // プルダウンは黄金比UIの SingleSelect（dropdown）。トリガーは combobox（FREQ-379）。
+  await page.getByRole('combobox', { name: '勘定科目' }).waitFor();
 }
 
 for (const viewport of viewports) {
@@ -133,7 +135,7 @@ for (const viewport of viewports) {
       await mockAdminApis(page);
       await openCostInputTab(page);
 
-      await expect(page.getByRole('button', { name: '勘定科目' })).toBeVisible();
+      await expect(page.getByRole('combobox', { name: '勘定科目' })).toBeVisible();
       await expect(page.getByText('カテゴリ', { exact: true })).toHaveCount(0);
     });
 
@@ -145,7 +147,7 @@ for (const viewport of viewports) {
       // SingleSelect（dropdown）: トリガーを開いて選択肢を押す。
       await page.getByRole('button', { name: '支出概要' }).click();
       await page.getByRole('option', { name: '展示会・イベント' }).click();
-      await page.getByRole('button', { name: '勘定科目' }).click();
+      await page.getByRole('combobox', { name: '勘定科目' }).click();
       await page.getByRole('option', { name: '経費 / 広告宣伝費', exact: true }).click();
       await page.getByPlaceholder('0').fill('45000');
       await page.getByRole('button', { name: '保存', exact: true }).click();
@@ -162,7 +164,7 @@ for (const viewport of viewports) {
       await mockAdminApis(page);
       await openCostInputTab(page);
 
-      await page.getByRole('button', { name: '取引先' }).click();
+      await page.getByRole('combobox', { name: '取引先' }).click();
       await expect(page.getByRole('option', { name: '丸善テキスタイル' })).toBeVisible();
       await expect(page.getByRole('option', { name: '＋ 新規登録' })).toBeVisible();
     });
@@ -172,14 +174,14 @@ for (const viewport of viewports) {
       await mockAdminApis(page);
       await openCostInputTab(page);
 
-      await page.getByRole('button', { name: '取引先' }).click();
+      await page.getByRole('combobox', { name: '取引先' }).click();
       await page.getByRole('option', { name: '＋ 新規登録' }).click();
       await page.getByPlaceholder('取引先名を入力').fill('東京副資材');
       await page.getByRole('button', { name: '登録', exact: true }).click();
 
       await expect(page.getByText('取引先を登録しました。')).toBeVisible();
       // 登録後に開き直すと選択肢に追加されている。
-      await page.getByRole('button', { name: '取引先' }).click();
+      await page.getByRole('combobox', { name: '取引先' }).click();
       await expect(page.getByRole('option', { name: '東京副資材' })).toBeVisible();
     });
 

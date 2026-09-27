@@ -60,7 +60,7 @@ for (const viewport of VIEWPORTS) {
 
       // AC-02: 4行すべてが underline + leadingText の下線区切りで構成される
       const rows = page.locator(
-        'label.text-field[data-ui-text-field-shape="underline"][data-ui-text-field-has-leading-text="true"]',
+        '.text-field[data-ui-text-field-shape="underline"][data-ui-text-field-has-leading-text="true"]',
       );
       await expect(rows).toHaveCount(4);
 
@@ -72,7 +72,7 @@ for (const viewport of VIEWPORTS) {
       const editButton = page.getByRole('button', { name: '編集' });
       await expect(editButton).toBeVisible();
       await editButton.click();
-      await expect(page.getByRole('button', { name: '変更を保存' })).toBeVisible();
+      await expect(page.getByRole('button', { name: '保存', exact: true })).toBeVisible();
       await expect(page.getByLabel('氏名')).toBeEditable();
     });
   });
