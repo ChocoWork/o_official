@@ -11,7 +11,7 @@
 | FR-ADMIN-005 | LOOK 管理タブではルック一覧・作成・編集・削除・アイテムタグ付けを提供する | IMPL-ADMIN-005 | `src/components/LookSection.tsx`, `src/app/api/admin/looks/route.ts`, `src/app/api/admin/looks/[id]/route.ts` | 一覧・作成・編集モーダル・削除を実装。`look_items` テーブルでアイテムタグ付け対応 | 済 |
 | FR-ADMIN-006 | STOCKIST 管理タブでは店舗一覧・作成・編集・削除・公開ステータス管理を提供する | IMPL-ADMIN-006 | `src/components/StockistSection.tsx`, `src/app/api/admin/stockists/route.ts`, `src/app/api/admin/stockists/[id]/route.ts` | 一覧・作成・編集モーダル・削除・公開切替を実装 | 済 |
 | FR-ADMIN-007 | USER 管理タブは `admin` ロール専用とし `roles` テーブルの編集・ACL 付与・ユーザー一覧を提供する | IMPL-ADMIN-007 | `src/components/UserSection.tsx`, `src/app/api/admin/users/route.ts`, `src/app/api/admin/users/[id]/role/route.ts` | ユーザー一覧・ロール変更フォームを実装。`admin` ロールのみ表示（`visibleTabs` で制御） | 済 |
-| FR-ADMIN-008 | ORDER 管理タブでは注文一覧・ステータスフィルタ・キーワード検索・ページネーション（20件ずつ）・CSV エクスポートを提供する | IMPL-ADMIN-008 | `src/components/OrderSection.tsx`, `src/app/api/admin/orders/route.ts` | ページネーション（pageSize=20）はサーバ側で実装。キーワード検索・ステータスフィルタはクライアント側フィルタ（現在ページ20件のみ対象）のため全件検索には非対応 | 済 |
+| FR-ADMIN-008 | ORDER 管理タブでは注文一覧・ステータスフィルタ・キーワード検索・ページネーション（20件ずつ）・CSV エクスポートを提供する | IMPL-ADMIN-008 | `src/components/OrderSection.tsx`, `src/app/api/admin/orders/route.ts` | 未決済にキャンセル、決済完了に発送、決済完了・発送済みに返金を表示する。返金後は一覧を再取得し、Stripeの確定状態を表示する | 済 |
 
 ---
 
@@ -110,10 +110,51 @@
 |---|---|---|---|
 | `/api/admin/items/import` | POST | CSV バルクインポート（必須カラム/型チェック/重複 SKU 検出） | `admin` |
 | `/api/admin/orders` | GET | 注文一覧（ページネーション・ステータスフィルタ） | `admin`, `supporter` |
-| `/api/admin/orders/:id/status` | POST | 注文ステータス変更 | `admin`, `supporter` |
-| `/api/admin/orders/:id/refund` | POST | 返金処理（Stripe Refund API） | `admin` |
+| `/api/admin/orders/:id/status` | POST | 未決済・決済失敗のキャンセル、決済完了の発送（用途別RPC） | `admin`, `supporter` |
+| `/api/admin/orders/:id/refund` | POST | 決済完了・発送済み注文の返金とStripe現在値からの状態投影 | `admin` |
+| `/api/admin/items/:id/variants` | GET | 色 × サイズの一覧（在庫数・受注生産の受注数）と台帳の履歴（FREQ-399） | `admin.items.read` |
+| `/api/admin/items/:id/variants` | POST | 在庫台帳への追記（入荷 / 棚卸調整） | `admin.items.manage` |
 
 > CSV インポート時は必須カラムチェック・型チェック・重複 SKU 検出を行い、エラー行は一覧で返す。
+
+## 注文のキャンセル・返金（ADMIN-ORDER / FREQ-404）
+
+注文状態は画面の推測で変更せず、Stripeの成功済み返金とDBの条件付き更新を正本にする。
+
+| 現在状態 | 操作 | 遷移・応答 |
+|---|---|---|
+| `pending` | キャンセル | Checkout Sessionを失効し、`release_stock_for_unpaid_order(..., 'cancelled')`で在庫解放と遷移を原子的に行う |
+| `failed` | キャンセル | `admin_cancel_failed_order`が`failed`を条件に更新する。競合で0件なら409 |
+| `paid` | 発送 | `admin_ship_paid_order`が`paid`かつ未発送・配送先必須項目充足を条件に`shipped`へ更新する。欠落または競合で0件なら409。DBトリガーも直接更新を拒否する |
+| `paid` / `shipped` | 通常キャンセル | 409。返金APIを案内する |
+| `paid` / `shipped` | 部分返金、`pending`、`requires_action` | 状態を維持し、成功済み返金額だけを記録する |
+| `paid` / `shipped` | 成功済み返金累計が注文総額以上 | `apply_order_refund_projection`が`cancelled`へ更新する |
+| 全額返金由来の`cancelled` | `refund.failed`で成功額が総額未満 | `shipped_at`があれば`shipped`、なければ`paid`へ戻す |
+| 未決済由来の`cancelled` | 返金同期 | `cancelled`を維持する |
+
+`syncOrderRefunds`はStripe SDKのAsyncIterableで返金一覧を全ページ取得し、`succeeded`だけを合計する。更新は`status`、`refunded_amount`、`payment_status_updated_at`を比較条件にしたCAS RPCで行う。RPC成功後にもStripe返金一覧を全ページ再取得し、書き込んだ金額と導出状態が現在値に一致する場合だけ完了する。CAS競合または再検証不一致ならStripe取得から最大3回やり直し、収束しなければ例外を返し、workerがイベントをfailedとして永続キューから再試行する。未決済由来の既存`cancelled`は投影対象外のno-opとする。`refund.created`、`refund.updated`、`refund.failed`、`charge.refunded`は同じ再計算経路を通る。
+
+管理画面は返金APIの`refundStatus`と`orderStatus`を検証してから一覧を再取得する。`pending`と`requires_action`は`role="status"`、`aria-live="polite"`で完了待ちを通知し、`failed`と`canceled`はエラーにする。400・409の検証済みメッセージだけを利用者へ表示し、内部障害は汎用文言にする。
+
+DB変更は次の2段階で適用する。第1段階は本番適用済み、第2段階は対応アプリの本番動作確認後に適用する。
+
+1. [20260925000218_add_order_state_transition_rpcs.sql](../../supabase/migrations/20260925000218_add_order_state_transition_rpcs.sql): 3つのservice-role専用RPCと監査主体のGUC連携を追加する。既存権限は維持する。
+2. [harden_order_state_transitions.sql](../../supabase/pending/harden_order_state_transitions.sql): アプリ切替確認後に`anon` / `authenticated`の`orders` UPDATE、広範なUPDATE policyを削除し、不変条件トリガーを追加する。
+
+3つのRPCは`SECURITY DEFINER`、`search_path=''`、完全修飾名を使い、`PUBLIC` / `anon` / `authenticated`から実行権限を剥奪する。人間の操作はサーバーが認証済みセッションから得た利用者IDを渡し、`order_revisions.changed_by`へ記録する。クライアント本文の利用者IDは受け付けない。
+
+## 在庫の入力（ADMIN-STOCK / FREQ-399）
+
+在庫の単位は色 × サイズ（`item_variants`）。商品編集画面の「在庫」欄から入れる。
+
+- **在庫は台帳（`stock_movements`）への追記でしか動かさない。** 画面は数量と理由を送るだけで、`item_variants` は直接書き換えない（DB 側もトリガーで追記以外を拒む）
+- 管理画面から打てる理由は **入荷（`restock`）と棚卸調整（`adjustment`）だけ**。注文の処理が書く `purchase` / `cancel` / `refund` は API が 400 で断る。打てると「注文に紐づかない販売」が台帳に混ざり、受注数と突合の意味が壊れる
+- 読み出しの前に `backfill_item_variants(item_id)` を呼ぶ。商品の色・サイズを足した直後でも入れる先が並ぶ（この関数は冪等）
+- 在庫が 0 を下回る追記は `item_variants.stock_quantity >= 0` の CHECK で弾かれる。API は 409 と「在庫が足りない」旨を返し、画面に出す
+- 他の商品のバリアントに入れられないよう、`variant_id` は `item_id` と合わせて引く（BOLA 対策）
+- 追記は成否どちらも監査ログ（`admin.items.stock.move`）に残し、`created_by` に実行者を入れる
+
+在庫数は「すぐ出せる数」であって「売れる数」ではない。0 でも受注生産として注文は通る（ブランドの前提）。製造の判断に使えるよう、受注生産の受注数（`variant_backorder_summary`）を同じ行に並べる。
 | ADMIN-01-010 | Migration 023: roles/permissions/role_permissions/user_roles + `has_permission()` | IMPL-ADMIN-MIG-023 | `migrations/023_add_acl_rbac_tables_and_policies.sql` | ACL/RBAC テーブル + RLS ポリシー作成済み | 済 |
 | ADMIN-01-011 | CSV インポートジョブ実装 | IMPL-ADMIN-CSV-01 | `src/app/api/admin/import/route.ts` | 未実装 | 未 |
 | ADMIN-01-012 | 監査ログ出力追加（部分未実装） | IMPL-ADMIN-AUDIT-01 | `src/lib/audit.ts` | 一部未実装 | 未 |

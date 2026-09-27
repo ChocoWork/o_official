@@ -52,9 +52,10 @@
 }
 
 [data-ui-slider-label] {
-  font-size: 0.75rem;
-  letter-spacing: 0.1em;
-  color: rgba(0, 0, 0, 0.8);
+  /* 共通ラベルトークン（全 UI コンポーネントで字間・サイズを統一） */
+  font-size: var(--lk-label-size);
+  letter-spacing: var(--lk-label-tracking);
+  color: var(--lk-label-color);
 }
 
 [data-ui-slider-value] {

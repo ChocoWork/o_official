@@ -96,6 +96,73 @@ git commit && git push                 # master への push で CI が db push �
 PR を作ると CI が `supabase db push --dry-run` で「何が当たるか」だけを出す。
 master への push で実際に適用される。
 
+### 本番に当てる前の試行（取り消し前提）
+
+データに依存するマイグレーション（既存行の後埋め、列の型変更、トリガーの一時無効化など）は、
+本番のデータで通るかを先に試す。全体を1つの `DO` ブロックに入れ、各ファイルの SQL を
+`EXECUTE` で流し（トップレベルの `BEGIN;` / `COMMIT;` は外す）、確かめたい値を集めてから
+最後に `RAISE EXCEPTION` で全体を取り消す。例外の文言に結果を載せれば、何も残さずに結果だけを得られる。
+
+```sql
+do $dryrun$
+declare r text;
+begin
+  execute $m0$ /* 1本目の SQL */ $m0$;
+  execute $m1$ /* 2本目の SQL */ $m1$;
+  select format('rows=%s', (select count(*) from public.some_table)) into r;
+  raise exception 'DRYRUN (rolled back): %', r;
+end
+$dryrun$;
+```
+
+実行後に、作られるはずのオブジェクトが無いこと（取り消されたこと）を確かめる。
+2026-09-19 のバリアント在庫6本は、この試行で結果（生成件数・検算0行・既存明細の紐付け）を確かめてから当てた。
+
+#### RLS を変えるときは、立場ごとの件数を前後で比べる
+
+同じ `DO` ブロックの中で「変更前に数える → `EXECUTE` で当てる → 変更後に数える」を行い、件数が一致することを確かめる。
+立場は `SET LOCAL ROLE` と JWT のクレーム、セッション ID で切り替える（`auth.uid()` と `current_app_role()` はクレームから読む）。
+
+```sql
+execute 'set local role authenticated';
+perform set_config('request.jwt.claims',
+  json_build_object('sub', '<user_id>', 'role', 'authenticated',
+                    'app_metadata', json_build_object('role', 'user'))::text, true);
+perform set_config('app.session_id', '<session_id>', true);
+execute 'select count(*) from public.orders' into n;
+execute 'reset role';
+```
+
+- 匿名・一般会員・サポーター・管理者に加え、セッションで見える行（ゲストのカート・注文）も数える。ACL で管理者権限を持つ会員を「一般会員」に使うと、権限の経路しか試せない
+- 書き込みの条件は、行を変えない `UPDATE ... SET col = col` の件数で比べる。トリガーの無い表に限る
+- 流した SQL がファイルと同じであることは、本文の `md5()` をローカルで計算した値と比べて確かめる
+- 索引の使用回数（`pg_stat_user_indexes`）は取り消されない。試行の検索で使われた索引は、advisor の unused_index から外れる
+
+2026-09-19 の FREQ-382（RLS 15本の書き換えと会計3表の分割）は、9つの立場×8表で件数が前後一致することを確かめてから当てた。
+
+### MCP の apply_migration で当てた場合
+
+MCP の `apply_migration` は、**当てた時刻**を version として台帳に書く。ファイル名の番号とは一致しない。
+当てた直後に `list_migrations` で記録された version を確かめ、ファイル名をその version に直す。
+
+```text
+supabase/migrations/<作ったときの番号>_<name>.sql  →  <台帳に記録された version>_<name>.sql
+```
+
+直さないと、次の `db push` が「台帳にある version がローカルに無い」で止まる。
+
+### まだ本番に入れないマイグレーション
+
+`supabase/migrations/` に置いたものは、master への push で本番に流れる。
+公開時まで入れないものは `supabase/pending/` に置く（[supabase/pending/README.md](../../supabase/pending/README.md)）。
+入れるときは新しい version を付けて `supabase/migrations/` へ移す。元の古い日付のまま戻さないこと。
+
+### `--include-all` を使わない
+
+本番の最新より古い日付の未適用ファイルがあると、`db push` は
+`Found local migration files to be inserted before the last migration on remote database.` で止まる。
+`--include-all` はこの確認を外すだけで、適用順が崩れる。止まったら、ファイル名と台帳のずれを直す。
+
 ## 書き方の規約
 
 **オブジェクトの種別で冪等性の扱いを分ける。**
@@ -141,6 +208,30 @@ COMMIT;
 `CREATE FUNCTION` → `REVOKE` の順で書く箇所は、包まないと権限の窓ができる。
 `CREATE INDEX CONCURRENTLY` などトランザクション内で実行できない文だけは
 別ファイルに分け、その旨をコメントに書くこと。
+
+### SECURITY DEFINER 関数は search_path の最後に `pg_temp` を書く
+
+`CREATE OR REPLACE FUNCTION` は関数の設定（`pg_proc.proconfig`）を丸ごと置き換える。
+本番で実測した結果（巻き戻し済み）:
+
+| 書き方 | 適用後の `proconfig` |
+| --- | --- |
+| `SET search_path = public, pg_temp` | `search_path=public, pg_temp` |
+| `SET search_path TO 'public'` | `search_path=public`（`pg_temp` が消える） |
+| `SET` 句なし | `NULL`（設定ごと消える） |
+
+`20260921011535_harden_security_definer_search_path.sql` は `ALTER FUNCTION ... SET` で
+既存 20 本に `pg_temp` を足している。**ALTER は関数定義の中に残らない**ため、それより前の
+マイグレーションを雛形にして貼り直すと、対策が静かに巻き戻る。
+
+- 新しい SECURITY DEFINER 関数は `SET search_path = <スキーマ>, pg_temp` と書く
+- 既存の関数を `CREATE OR REPLACE` で差し替えるときは、雛形にした版が古くても `pg_temp` を足す
+- 雛形にするなら、その関数を最後に定義しているファイルを選ぶ（`ls supabase/migrations | grep <関数名>` で探せない場合は `grep -l`）
+- 適用済みのファイルは書き換えない（台帳と md5 がずれる）。直すときは新しいマイグレーションを足す
+
+`tests/unit/migrations/security-definer-search-path-guard.test.ts` が、上記の ALTER より後の
+ファイルについてこれを機械的に確認する。DB 側の実際の状態は
+`tests/integration/db/security_definer_search_path.integration.test.ts` が見る。
 
 ## 必要な GitHub Secrets
 
@@ -191,6 +282,23 @@ npx supabase db push --dry-run   # 「適用対象なし」になること
 
 適用履歴そのものは `migrations/*.sql` と git のコミット履歴に残るので、
 台帳から落としても追跡性は失われない。
+
+## 付録: 台帳とファイル名のずれを揃えた記録（2026-09-19）
+
+レビュー指摘⑪。FREQ-380。
+
+| ずれ | 原因 | 対処 |
+|---|---|---|
+| 本番は `20260911235714` / `20260913005807` / `20260913005917`、ファイルは `20260912000000` / `20260912010000` / `20260912015000` | MCP の `apply_migration` で当てた後、ファイル名を記録された version に直していなかった。SQL の中身は同一（コメント・`BEGIN`/`COMMIT`・空白を除いて一致） | ファイル名を本番の version に直した。本番は変更していない |
+| バリアント在庫の6本（`20260906090000`〜`090500`）が未適用で、本番の最新より古い日付 | 在庫台帳の方針が決まるまで保留していた | 本番へ適用し（取り消し前提の試行で結果を確かめてから）、ファイル名を記録された version（`20260919065336`〜`20260919065518`）に直した |
+| 掃除ジョブ（`20260912020000`）が未適用で、本番の最新より古い日付 | 呼び先のアプリが本番に無く、Vault の秘密も未登録 | `supabase/pending/` へ移した |
+
+揃えた後の状態: ローカル17本と本番の台帳17件が1対1で一致し、`db push` で流れる未適用ファイルは無い。
+
+この状態で CLI が勧める `migration repair --status reverted` だけを行い `--include-all` で流すと、
+`20260911235714`（保持ジョブ）の SQL が再実行され、2026-09-14 に取り消した pg_cron の自己付与が戻る
+（以後の `create extension pg_cron` が `dependent privileges exist` で失敗する）。台帳を書き換えず、
+ファイル名を台帳に合わせたのはこのため。
 
 ## 権限を狭めるマイグレーションの順序
 

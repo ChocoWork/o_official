@@ -44,14 +44,11 @@
   --cp-ring-width: 1px;
 
   /* ラベル字間（ラベル/カテゴリ系で反復する tracking）*/
-  --cp-tracking: 0.15em;
 
   /* フォント・テキストサイズ */
-  --cp-label-size: calc(var(--cp-font-size) / var(--phi));
   --cp-hex-size: var(--cp-font-size);
 
   /* 色トークン（Avatar / Button / BannerAlert / Card / Carousel と同系統。集約）*/
-  --cp-fg-label: rgba(0, 0, 0, 0.8);
   --cp-border-color: rgba(0, 0, 0, 0.2);
   --cp-border-color-active: #000000;
   --cp-ring-color: #000000;
@@ -74,9 +71,10 @@
 /* --- ラベル（対比：字間を広げ muted で操作部と区別）--- */
 .color-picker__label {
   display: block;
-  font-size: var(--cp-label-size);
-  letter-spacing: var(--cp-tracking);
-  color: var(--cp-fg-label);
+  /* 共通ラベルトークン（全 UI コンポーネントで字間・サイズを統一） */
+  font-size: var(--lk-label-size);
+  letter-spacing: var(--lk-label-tracking);
+  color: var(--lk-label-color);
 }
 
 /* スクリーンリーダー専用ラベル（input variant 用）*/

@@ -22,7 +22,6 @@
 
   /* ラベルと本体の間隔（近接：関連はするが分離） */
   --stepper-label-gap: calc(var(--stepper-font-size) / var(--phi));
-  --stepper-label-size: calc(var(--stepper-font-size) / var(--lk-eighthstep-2));
 
   /* 色トークン（Button と同系統。ハードコードは変数化して一箇所に集約） */
   --stepper-border-color: rgb(0 0 0 / 0.2);
@@ -44,10 +43,11 @@
 
 .stepper__label {
   display: block;
-  font-size: var(--stepper-label-size);
-  letter-spacing: 0.12em;
+  /* 共通ラベルトークン（全 UI コンポーネントで字間・サイズを統一） */
+  font-size: var(--lk-label-size);
+  letter-spacing: var(--lk-label-tracking);
   line-height: var(--sqrt-phi);
-  color: rgb(0 0 0 / 0.8);
+  color: var(--lk-label-color);
 }
 
 /* --- 操作グループ（近接：3要素を1つの操作単位として囲う）--- */

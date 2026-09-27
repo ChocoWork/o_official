@@ -52,7 +52,6 @@
   --ss-radius: 0;
 
   /* ラベル字間（ラベル系で反復する tracking）*/
-  --ss-tracking: 0.15em;
 
   /* テキストサイズ（ラベルは本文より sqrt-φ で半段小さく対比し可読性を確保）*/
   --ss-label-size: calc(var(--ss-font-size) / var(--sqrt-phi));
@@ -60,7 +59,6 @@
 
   /* 色トークン（他コンポーネントと同系統。集約）*/
   --ss-fg: #000000;
-  --ss-fg-label: rgba(0, 0, 0, 0.8);
   --ss-fg-placeholder: rgba(0, 0, 0, 0.4);
   --ss-fg-disabled: rgba(0, 0, 0, 0.4);
   --ss-bg: #ffffff;
@@ -70,6 +68,9 @@
   --ss-border-color: rgba(0, 0, 0, 0.2);
   --ss-border-color-disabled: rgba(0, 0, 0, 0.1);
   --ss-border-color-active: #000000;
+  /* 誤りの状態（TextField と同じ色）*/
+  --ss-error-color: #ef4444;
+  --ss-error-text: #dc2626;
   --ss-menu-shadow: 0 calc(var(--ss-font-size) / var(--phi))
     calc(var(--ss-font-size) * var(--phi)) rgba(0, 0, 0, 0.15);
 
@@ -103,9 +104,10 @@
 .single-select__label {
   display: block;
   margin-bottom: var(--ss-label-gap);
-  font-size: var(--ss-label-size);
-  letter-spacing: var(--ss-tracking);
-  color: var(--ss-fg-label);
+  /* 共通ラベルトークン（全 UI コンポーネントで字間・サイズを統一） */
+  font-size: var(--lk-label-size);
+  letter-spacing: var(--lk-label-tracking);
+  color: var(--lk-label-color);
 }
 
 /* --- inline：選択肢を左寄せで横に並べる ---
@@ -334,6 +336,29 @@
   background: var(--ss-bg-selected);
 }
 
+/* キーボードで指している項目（フォーカスは引き金に残るので、項目側に枠を出す。FREQ-379）*/
+.single-select__option[data-ui-single-select-active="true"] {
+  outline: 2px solid var(--ss-border-color-active);
+  outline-offset: -2px;
+}
+
+/* --- 誤りの状態（TextField と同じく枠をエラー色にし、フォーカス中も保つ。FREQ-379）--- */
+[data-ui-single-select][data-ui-single-select-invalid="true"] .single-select__trigger,
+[data-ui-single-select][data-ui-single-select-invalid="true"] .single-select__native,
+[data-ui-single-select][data-ui-single-select-invalid="true"] .single-select__trigger:focus,
+[data-ui-single-select][data-ui-single-select-invalid="true"] .single-select__native:focus {
+  border-color: var(--ss-error-color);
+}
+
+/* 誤りの案内（TextField の案内と同じ大きさ・色。空のあいだは LiveMessage が画面から外す）*/
+.single-select__error {
+  display: block;
+  margin-top: var(--ss-label-gap);
+  font-size: calc(var(--ss-field-size) / var(--phi));
+  line-height: var(--sqrt-phi, 1.4);
+  color: var(--ss-error-text);
+}
+
 /* --- アクセシビリティ配慮（他コンポーネントと同思想で踏襲）--- */
 @media (forced-colors: active) {
   .single-select__trigger,
@@ -347,6 +372,10 @@
     background: Highlight;
     color: HighlightText;
   }
+
+  .single-select__option[data-ui-single-select-active="true"] {
+    outline-color: Highlight;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -356,4 +385,10 @@
   .single-select__native {
     transition: none;
   }
+}
+
+/* --- 必須マーカー（TextField と同じ記号・同じ間隔で必須を示す）--- */
+.single-select__required {
+  margin-inline-start: calc(var(--ss-label-size) / var(--phi) / var(--phi));
+  color: var(--ss-fg, currentColor);
 }

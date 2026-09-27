@@ -27,7 +27,6 @@
   --card-title-size: var(--card-font-size);
   --card-price-size: var(--card-font-size);
   --card-category-size: calc(var(--card-font-size) / var(--phi));
-  --card-label-size: calc(var(--card-font-size) / var(--phi));
 
   /* 枠線（直値を排し φ³ から導出。最小 1px を保証）*/
   --card-border-width: 1px;
@@ -45,7 +44,6 @@
   --card-bg: #ffffff;
   --card-fg: #000000;
   --card-fg-muted: rgba(0, 0, 0, 0.4);
-  --card-fg-label: rgba(0, 0, 0, 0.8);
   --card-border-color: #d5d0c9;
   --card-border-color-hover: #000000;
   --card-media-bg: #f5f5f5;
@@ -103,9 +101,10 @@
 /* --- ラベル（対比：トラッキングを広げ、muted で本文と区別）--- */
 .card__label {
   margin: 0 0 var(--card-label-gap);
-  font-size: var(--card-label-size);
-  letter-spacing: var(--card-tracking);
-  color: var(--card-fg-label);
+  /* 共通ラベルトークン（全 UI コンポーネントで字間・サイズを統一） */
+  font-size: var(--lk-label-size);
+  letter-spacing: var(--lk-label-tracking);
+  color: var(--lk-label-color);
 }
 
 /* --- メディア（整列：相対基準／対比：背景プレースホルダ）--- */

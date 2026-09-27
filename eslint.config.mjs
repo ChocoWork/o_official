@@ -17,7 +17,8 @@ const eslintConfig = [
     rules: {
       'react-hooks/set-state-in-effect': 'off',
       'react-hooks/immutability': 'off',
-      'react-hooks/static-components': 'off',
+      // react-hooks/static-components は止めない（推奨設定のまま有効）。部品を画面の関数の中で
+      // 定義すると再描画のたびに作り直され、入力やフォーカスが消える（FREQ-372）。
       'no-restricted-imports': [
         'error',
         {

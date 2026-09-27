@@ -47,7 +47,6 @@
   /* 色トークン（BannerAlert と同系統。ハードコードは一箇所に集約）*/
   --field-bg: #ffffff;
   --field-fg: #000000;
-  --field-fg-label: rgba(0, 0, 0, 0.8);
   --field-fg-muted: rgba(0, 0, 0, 0.6);
   --field-fg-helper: #474747;
   --field-border-color: rgba(0, 0, 0, 0.2);
@@ -165,10 +164,10 @@
 /* --- ラベル（対比：入力本文より半段小さく・やや淡く／整列：左そろえ）--- */
 .text-field__label {
   display: block;
-  /* ラベルは font-size から導出。helper/error より一段大きく可読性を確保 */
-  font-size: calc(var(--field-font-size) / var(--sqrt-phi));
-  letter-spacing: var(--field-letter-spacing);
-  color: var(--field-fg-label);
+  /* 共通ラベルトークン（全 UI コンポーネントで字間・サイズを統一） */
+  font-size: var(--lk-label-size);
+  letter-spacing: var(--lk-label-tracking);
+  color: var(--lk-label-color);
   line-height: var(--sqrt-phi, 1.4);
 }
 
@@ -314,4 +313,10 @@
   .text-field__input:focus {
     outline: 1px solid Highlight;
   }
+}
+
+/* --- 必須マーカー（対比：ラベルより濃い本文色で必須を示す。色に依存せず記号で伝える）--- */
+.text-field__required {
+  margin-inline-start: calc(var(--field-font-size) / var(--phi) / var(--phi));
+  color: var(--field-fg, currentColor);
 }

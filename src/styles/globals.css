@@ -765,6 +765,22 @@ html[data-header-visible="false"] {
 }
 
 /*
+ * UI コンポーネント共通のラベル（コントロール上部に置く項目名）。
+ * 反復：どの部品でも字間 0.15em・本文より √φ 分小さいサイズに揃え、
+ * 部品ごとに別式だったタイポグラフィを1か所で決める。
+ * サイズは各部品の --ui-font-size から導出するため、data-ui-size を持つ
+ * 要素の上で再宣言して、その要素の値で置換させる。
+ */
+:root {
+  --lk-label-size: calc(var(--lk-size-md) / var(--sqrt-phi));
+  --lk-label-tracking: 0.15em;
+  --lk-label-color: rgba(0, 0, 0, 0.8);
+}
+[data-ui-size] {
+  --lk-label-size: calc(var(--ui-font-size) / var(--sqrt-phi));
+}
+
+/*
  * ITEM 一覧の FILTER（FREQ-45）。stein（ssstein.com）/ HYKE（hyke.jp）の FILTER を
  * 参考にしたタイポグラフィ・余白を、共有 Accordion / MultiSelect の他用途に影響させず
  * .filter-sections の配下だけに適用する。em は各要素の --ui-font-size に比例する。

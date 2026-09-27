@@ -104,6 +104,10 @@ expect(hasHorizontalOverflow).toBe(false);
 
 - `page.route()` の glob で `?` は**1 文字ワイルドカード**。`**/api/foo?**` はクエリ付き URL にマッチしない。`**/api/foo**` にして、ハンドラ内で `new URL(req.url())` を見て分岐する
 - `getByRole(name)` は**部分一致**。`{ name: '勘定科目' }` は `aria-label="勘定科目で絞り込み"` にもマッチする。衝突するなら `exact: true` か、ラベル自体を重ならない文言にする
+- 実 Stripe の決済フォーム（iframe）は、高さ 2px の時点で `toBeVisible()` を通り、その後も中身の読み込みと Link の保存欄で伸びて、下のボタンが数百 px ずれる。ずれの最中に押すとクリックが iframe に当たり、ボタンは押されない。checkout の「確認へ進む」は `e2e/checkout-test-utils.ts` の `waitForPositionToSettle` で位置が落ち着いてから押す
+- 決済フォーム（別オリジンの iframe）の中の項目は、画面外にあると押す前の安定判定が終わらない（30 秒でタイムアウト）か、押しても選択が変わらない。ページ側で支払方法セクションを画面内にスクロールし、位置が落ち着いてから押す。押した後は `aria-expanded="true"` など選択されたことを確かめる（押したつもりで何も起きていないと、テストが素通りする）
+- 管理画面（/admin）の spec は、各 spec のモックより先に `e2e/admin-test-utils.ts` の `mockAdminBackgroundApis(page)` を呼ぶ。/admin は開くだけで spec が見ていない API（KPI タブの Meta 連携、会計タブの法定保存の状態）を読み、未モックだと 401 → refresh も 401 → ログアウト扱いで「アクセス権限がありません」に落ちる（refresh が 429 のときだけ通るので、回数制限の残り具合で結果が入れ替わる）。refresh の振る舞いそのものを確かめる spec（FR-ADMIN-057）では使わない
+- 選択欄（`SingleSelect` の dropdown）の引き金は `role="combobox"`（FREQ-379）。`getByRole('combobox', { name: '都道府県' })` で探す。`button` では見つからない。選択肢は `getByRole('option')`
 
 ## 参考
 

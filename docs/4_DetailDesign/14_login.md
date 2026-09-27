@@ -90,7 +90,7 @@
 | AUTH-SEC-002 | セキュア Cookie（HttpOnly/Secure/SameSite）（必須） | IMPL-AUTH-COOKIE-01 | `src/lib/cookie.ts` | HttpOnly/Secure/SameSite=Lax 設定済み | 済 |
 | AUTH-SEC-003 | CSRF ダブルサブミット（必須） | IMPL-AUTH-CSRF-01 | `src/lib/csrf.ts`, `src/lib/csrfMiddleware.ts` | ダブルサブミットパターン実装済み | 済 |
 | AUTH-SEC-004 | 入力バリデーション（Zod）（必須） | IMPL-AUTH-VAL-01 | `src/features/auth/schemas/` | Zod スキーマで全入力検証済み | 済 |
-| AUTH-SEC-005 | 連続試行制限（IP/アカウント軸）（必須） | IMPL-AUTH-RATE-01 | `src/features/auth/middleware/rateLimit.ts` | Postgres カウンタベースのレート制限実装済み | 済 |
+| AUTH-SEC-005 | 連続試行制限（IP/アカウント軸）（必須） | IMPL-AUTH-RATE-01 | `src/features/auth/middleware/rateLimit.ts` | Postgres カウンタベースのレート制限実装済み。アカウント軸（メールアドレス単位）のログイン回数は Turnstile 検証後に数える。subject は SHA-512 で保存し、一意制約は NULLS NOT DISTINCT（FREQ-360） | 済 |
 | AUTH-SEC-006 | 監査ログ（認証イベント）（必須） | IMPL-AUTH-AUDIT-01 | `src/lib/audit.ts` | audit_logs テーブルへの記録 + cleanup 実装済み | 済 |
 | AUTH-SEC-007 | シークレット管理/ローテーション手順（必須） | IMPL-AUTH-SEC-007 | `docs/ops/secrets.md` | シークレット手動運用・ローテーション手順をドキュメント化済み | 済 |
 | AUTH-SEC-008 | セッション管理 JTI 再利用検出テスト（必須） | IMPL-AUTH-JTI-01 | `src/features/auth/services/session.ts`, `tests/unit/features/auth/services/session.test.ts` | JTI 再利用検出の単体テストを実装済み | 済 |

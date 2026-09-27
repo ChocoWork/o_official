@@ -144,12 +144,11 @@
   border-top: 1px solid rgb(0 0 0 / 0.1);
 }
 .checkout-total-label {
-  font-size: var(--lk-size-lg);
+  font-size: var(--lk-size-md);
   color: #000;
 }
 .checkout-total {
-  font-family: Didot, serif;
-  font-size: var(--lk-size-3xl);
+  font-size: var(--lk-size-md);
   color: #000;
 }
 
@@ -219,4 +218,16 @@
 }
 .checkout-step-connector[data-active="true"] {
   background: #000;
+}
+
+/* Align with the fields while keeping a full-row touch target.
+ * 近接：個々の欄ではなく配送先ブロック全体に掛かる設定なので、欄どうしの間隔
+ * （--gap-group）に --gap-section を上乗せし、区切り線なしで階層を作る。 */
+.checkout-save-address[data-ui-checkbox] {
+  --checkbox-font-size: var(--lk-size-sm);
+  --checkbox-control-size: var(--lk-size-3xl);
+  --checkbox-padding-inline: 0;
+  --checkbox-gap: calc(var(--lk-size-md) / var(--phi));
+  min-height: 2.75rem;
+  margin-top: var(--gap-section);
 }

@@ -45,9 +45,10 @@
 /* ── グループラベル ── */
 [data-ui-radio-group-label] {
   display: block;
-  font-size: calc(var(--_font-size) / var(--_sqrt-phi));
-  letter-spacing: 0.1em;
-  color: rgba(0, 0, 0, 0.8);
+  /* 共通ラベルトークン（全 UI コンポーネントで字間・サイズを統一） */
+  font-size: var(--lk-label-size);
+  letter-spacing: var(--lk-label-tracking);
+  color: var(--lk-label-color);
 }
 
 /* ── items コンテナ ── */
