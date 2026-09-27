@@ -37,19 +37,8 @@ test.describe('FR-CHECKOUT-007 決済前在庫チェック', () => {
       });
     });
 
+    // 1画面化により、ページ到着時点でセッション生成が走るため押下せずにエラーが出る
     await page.goto('/checkout');
-
-    await page.fill('input[name="email"]', 'test@example.com');
-    await page.fill('input[name="fullName"]', 'テスト太郎');
-    await page.fill('input[name="postalCode"]', '100-0001');
-    await page.fill('input[name="city"]', '千代田区');
-    await page.fill('input[name="address"]', '丸の内1-1-1');
-    await page.fill('input[name="phone"]', '09000000000');
-
-    await page.locator('label:has-text("都道府県") button').click();
-    await page.getByRole('option', { name: '東京都', exact: true }).click();
-
-    await page.getByRole('button', { name: 'お支払いに進む' }).first().click();
     await expect(page.getByText('以下の商品の在庫が不足しています: 在庫テスト商品（要求 2 / 在庫 1）')).toBeVisible();
   });
 });

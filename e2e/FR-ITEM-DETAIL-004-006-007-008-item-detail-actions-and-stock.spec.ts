@@ -31,15 +31,21 @@ test.describe('FR-ITEM-DETAIL-004/006/007/008 item detail actions and stock', ()
     await expect(page.getByRole('button', { name: 'ADD TO CART' }).last()).toBeVisible();
   });
 
-  test('売り切れ商品では SOLD OUT 表示と disabled 状態になる', async ({ page }) => {
-    const soldOutItem = sampleItemDetail({ stockStatus: 'sold_out', stock_quantity: 0, sizes: ['M'] });
+  // FREQ-400: 在庫の有無は「買えるか」ではなく「納期」を分ける。在庫が無くても受注生産として買える。
+  test('すぐ出せる在庫が無い組み合わせでも、受注生産として買える', async ({ page }) => {
+    const madeToOrderItem = sampleItemDetail({
+      sizes: ['M'],
+      madeToOrder: true,
+      variantAvailability: [{ colorName: 'Black', sizeLabel: 'M', inStock: false }],
+    });
     await mockCartApis(page, []);
-    await mockItemDetailApis(page, soldOutItem, []);
+    await mockItemDetailApis(page, madeToOrderItem, []);
 
     await page.goto('/item/101');
 
-    await expect(page.getByTestId('stock-status')).toHaveText('SOLD OUT');
-    await expect(page.getByRole('button', { name: 'SOLD OUT' }).first()).toBeDisabled();
+    await expect(page.getByTestId('delivery-note')).toHaveText('受注生産・数週間〜2ヶ月');
+    await expect(page.getByRole('button', { name: 'SOLD OUT' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'ADD TO CART' }).first()).toBeEnabled();
   });
 
   test('Observerの初回通知を待たず本体CTAが画面外なら固定CTAを表示する', async ({ page }) => {

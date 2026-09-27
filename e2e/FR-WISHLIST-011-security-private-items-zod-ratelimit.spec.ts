@@ -139,34 +139,43 @@ test.describe('FR-WISHLIST-011 Security - Private Items, Zod Validation, Rate Li
     test('POST でセッション単位のレート制限が機能する（30 req/min）', async ({
       request,
     }) => {
-      // 公開商品を複数追加して、レート制限に達することを確認
+      test.setTimeout(90_000);
+
+      // IP 単位の上限（60 回/分）は、並列実行中の他のテストと 127.0.0.1 を共有している。
+      // セッション単位の上限だけを見るため、この試験では文書用 IPv6（2001:db8::/32）を名乗る。
+      // x-forwarded-for をそのまま使うのは Vercel を通らないローカルの E2E サーバーだけ。
+      const forwardedFor = `2001:db8::${Date.now().toString(16).slice(-4)}:${Math.floor(Math.random() * 0xffff).toString(16)}`;
+
+      // 回数は1分ごとの固定枠で数える。35 回を送る途中で枠が切り替わると数え直しになり、
+      // 31 回目以降が 429 にならない。枠の残りが短ければ次の枠の頭まで待つ。
+      const msIntoWindow = Date.now() % 60_000;
+      if (msIntoWindow > 45_000) {
+        await new Promise((resolve) => setTimeout(resolve, 60_000 - msIntoWindow + 200));
+      }
+
+      const validItemIds = [1, 2, 3, 4, 5];
       const responses: APIResponse[] = [];
 
-      // 有効な公開商品 ID のリストを用意（実際には DB から取得するか、fixture を使用）
-      const validItemIds = [1, 2, 3, 4, 5];
-
       for (let i = 0; i < 35; i++) {
-        const itemId = validItemIds[i % validItemIds.length];
         const res = await request.post('/api/wishlist', {
-          data: { item_id: itemId },
-          headers: buildWishlistHeaders(sessionCookie),
+          data: { item_id: validItemIds[i % validItemIds.length] },
+          headers: { ...buildWishlistHeaders(sessionCookie), 'x-forwarded-for': forwardedFor },
         });
         responses.push(res);
-
-        // 初回は 201 or 409 (already in wishlist)、レート制限後は 429
-        if (i < 30) {
-          expect([201, 409, 400, 404]).toContain(res.status());
-        }
       }
 
-      // 最後のいくつかのリクエストが 429 になることを確認
-      const last5 = responses.slice(-5);
-      const has429 = last5.some((r) => r.status() === 429);
-
-      if (has429) {
-        expect(has429).toBe(true);
+      // 30 回目までは上限に掛からない（追加済み・存在しない商品などの応答はあり得る）。
+      for (const res of responses.slice(0, 30)) {
+        expect([201, 409, 400, 404]).toContain(res.status());
       }
-      // NOTE: レート制限の厳密なテストには、より詳細なタイミング制御が必要です
+
+      // 31 回目以降はセッション単位の上限で 429 になり、再試行までの秒数を返す。
+      // 以前はここを「429 があれば 429 であること」としか確かめておらず、上限が一度も
+      // 効いていなかった不具合（FREQ-360）を見逃していた。
+      for (const res of responses.slice(30)) {
+        expect(res.status()).toBe(429);
+        expect(res.headers()['retry-after']).toBeTruthy();
+      }
     });
 
     test('POST で same-origin でない送信は 403 を返す', async ({ request }) => {

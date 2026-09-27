@@ -96,7 +96,7 @@ for (const viewport of viewports) {
           .getBoundingClientRect();
         const title = textRect(document.querySelector('h1')!);
         const detail = textRect(
-          document.querySelector('[role="status"] span.block')!,
+          document.querySelector('[data-testid="auth-result-body"] span.block')!,
         );
         const note = document
           .querySelector('[data-testid="auth-result-note"]')!
@@ -190,7 +190,7 @@ for (const viewport of viewports) {
           .getBoundingClientRect();
         const title = textRect(document.querySelector('h1')!);
         const detail = textRect(
-          document.querySelector('[role="status"] span.block')!,
+          document.querySelector('[data-testid="auth-result-body"] span.block')!,
         );
         const note = document
           .querySelector('[data-testid="auth-result-note"]')!

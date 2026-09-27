@@ -2,10 +2,23 @@ import { test, expect } from '@playwright/test';
 import { injectTurnstileToken } from './turnstile-test-utils';
 import { setLoginTwoFactorCookie } from './auth-2fa-test-utils';
 import { mockOtpAuthentication } from './account-test-utils';
+import { stubCheckoutSessionApis } from './checkout-test-utils';
 
 test.describe('FR-CHECKOUT-012 account profile defaults', () => {
   test('ログイン済みユーザーは account の登録情報が配送情報初期値に入る', async ({ page }) => {
     await mockOtpAuthentication(page);
+    await stubCheckoutSessionApis(page);
+
+    // 保存済み配送先は未モックだと実サーバの 401 を拾う。401 は clientFetch の
+    // セッション更新を誘発し、/api/auth/refresh が 401 を返した実行だけ
+    // ログイン状態が落ちて読み取り表示が消える（並列実行時のフレークの原因）。
+    await page.route('**/api/profile/addresses', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ addresses: [] }),
+      });
+    });
 
     await page.route('**/api/cart', async (route) => {
       await route.fulfill({
@@ -71,12 +84,17 @@ test.describe('FR-CHECKOUT-012 account profile defaults', () => {
     await page.waitForURL('**/account');
     await page.goto('/checkout');
 
-    await expect(page.locator('input[name="email"]').first()).toHaveValue('user@example.com');
-    await expect(page.locator('input[name="fullName"]').first()).toHaveValue('山田 花子');
+    // お客様情報は「ログイン済 + 氏名/メール/電話が揃う」場合に読み取り表示になる。
+    // 値がプロフィールから入っていることをカードの表示で確認する。
+    const customerCard = page.locator('.checkout-card').first();
+    await expect(customerCard).toContainText('山田 花子');
+    await expect(customerCard).toContainText('user@example.com');
+    await expect(customerCard).toContainText('090-1111-2222');
+
+    // 配送先は入力欄のまま（保存済み配送先がないため新規入力フォーム）
     await expect(page.locator('input[name="postalCode"]').first()).toHaveValue('150-0001');
     await expect(page.locator('input[name="city"]').first()).toHaveValue('渋谷区');
     await expect(page.locator('input[name="address"]').first()).toHaveValue('神宮前1-2-3');
     await expect(page.locator('input[name="building"]').first()).toHaveValue('青山ハイツ 101');
-    await expect(page.locator('input[name="phone"]').first()).toHaveValue('090-1111-2222');
   });
 });

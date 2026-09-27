@@ -5,15 +5,14 @@ test.describe('FR-CHECKOUT-002 PCI DSS 準拠（カード情報非保存）', ()
     await page.goto('/checkout');
     await page.waitForLoadState('networkidle').catch(() => undefined);
 
-    // Step through to payment form to see Payment Element
+    // 1画面化により、遷移操作なしで支払方法が描画される
     await page.fill('input[name="email"]', 'test@example.com');
     await page.fill('input[name="fullName"]', 'テスト太郎');
     await page.fill('input[name="postalCode"]', '100-0001');
     await page.fill('input[name="city"]', '千代田区');
     await page.fill('input[name="address"]', '丸の内1-1-1');
     await page.fill('input[name="phone"]', '09000000000');
-    
-    await page.getByRole('button', { name: 'お支払いに進む' }).first().click();
+
     await page.waitForTimeout(1000);
 
     // Stripe iframe が存在することで Payment Element の確認

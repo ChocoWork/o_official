@@ -29,15 +29,15 @@ test.describe('FR-CONTACT-011 注文番号入力と送信完了', () => {
 
     await page.goto('/contact');
 
-    await page.getByLabel('NAME / お名前 *').fill('山田 太郎');
-    await page.getByLabel('EMAIL / メールアドレス *').fill('taro@example.com');
+    await page.getByLabel('NAME / お名前').fill('山田 太郎');
+    await page.getByLabel('EMAIL / メールアドレス').fill('taro@example.com');
 
     // トリガーのアクセシブル名は placeholder ではなくラベル。
-    await page.getByRole('button', { name: 'お問い合わせ内容' }).click();
+    await page.getByRole('combobox', { name: 'お問い合わせ内容' }).click();
     // SingleSelect の選択肢は portal で body に描画され、role="option" を持つ。
     await page.getByRole('option', { name: 'ご注文について', exact: true }).click();
 
-    await page.getByLabel('SUBJECT / 件名 *').fill('配送について');
+    await page.getByLabel('SUBJECT / 件名').fill('配送について');
     await page.getByLabel('ORDER NO. / 注文番号（任意）').fill('ORD-ABCD1234');
     await page.getByLabel('MESSAGE / メッセージ *').fill('注文商品の到着予定を教えてください。');
 

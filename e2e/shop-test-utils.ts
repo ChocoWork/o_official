@@ -48,6 +48,14 @@ export type MockItemDetail = {
   product_note?: string | null;
   stockStatus?: 'in_stock' | 'low_stock' | 'sold_out' | 'unknown';
   stock_quantity?: number | null;
+  /** すぐ出せる在庫がある組み合わせが1つも無い（FREQ-400） */
+  madeToOrder?: boolean;
+  /** 色 × サイズごとの在庫の有無。残数は含めない（FREQ-400） */
+  variantAvailability?: Array<{
+    colorName: string | null;
+    sizeLabel: string | null;
+    inStock: boolean;
+  }>;
 };
 
 export const sampleCartItem = (overrides: Partial<MockCartItem> = {}): MockCartItem => ({

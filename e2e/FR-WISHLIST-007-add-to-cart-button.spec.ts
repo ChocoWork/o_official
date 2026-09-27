@@ -45,13 +45,14 @@ async function findMergeableItem(page: Page): Promise<PublicItemDetail | null> {
 
     const detail = (await detailResponse.json()) as PublicItemDetail;
     const sizes = Array.isArray(detail.sizes) ? detail.sizes : [];
+    const colors = Array.isArray(detail.colors) ? detail.colors : [];
     const stockQuantity = detail.stock_quantity;
 
     if (stockQuantity === 0) {
       continue;
     }
 
-    if (sizes.length <= 1) {
+    if (sizes.length <= 1 && colors.length <= 1) {
       return detail;
     }
   }
@@ -63,7 +64,7 @@ test.describe('FR-WISHLIST-007 カートに追加ボタン', () => {
   test('カードにカート追加ボタンがある', async ({ page }) => {
     await page.goto('/wishlist');
 
-    const addToCartButton = page.getByRole('button', { name: 'カートに追加' }).first();
+    const addToCartButton = page.getByRole('button', { name: 'ADD TO CART', exact: true }).first();
     const visible = await addToCartButton.isVisible().catch(() => false);
     if (!visible) {
       test.skip();
@@ -111,7 +112,7 @@ test.describe('FR-WISHLIST-007 カートに追加ボタン', () => {
     });
 
     await page.goto('/wishlist');
-    await page.getByRole('button', { name: 'カートに追加' }).click();
+    await page.getByRole('button', { name: 'ADD TO CART', exact: true }).click();
 
     await expect.poll(() => cartRequestBody).not.toBeNull();
     expect(cartRequestBody).toMatchObject({
@@ -173,7 +174,7 @@ test.describe('FR-WISHLIST-007 カートに追加ボタン', () => {
 
     await page.goto('/wishlist');
     await page.waitForLoadState('networkidle').catch(() => undefined);
-    await page.getByRole('button', { name: 'カートに追加' }).first().click();
+    await page.getByRole('button', { name: 'ADD TO CART', exact: true }).first().click();
 
     await expect.poll(async () => {
       return page.evaluate(async ({ itemId }) => {

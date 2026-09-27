@@ -24,7 +24,7 @@ test.describe('FR-WISHLIST-003/004/006/007/008/010 wishlist behavior', () => {
     await expect(firstItem.getByRole('link', { name: 'Silk Blouse', exact: true })).toHaveAttribute('href', '/item/101');
     await expect(page.getByRole('button', { name: 'ウィッシュリストから削除' })).toBeVisible();
 
-    await page.getByRole('button', { name: 'カートに追加' }).click();
+    await page.getByRole('button', { name: 'ADD TO CART', exact: true }).click();
     await expect(page.getByRole('status')).toHaveText('カートに追加しました。');
 
     await page.getByRole('button', { name: 'ウィッシュリストから削除' }).click();

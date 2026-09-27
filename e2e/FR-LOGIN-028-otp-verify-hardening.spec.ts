@@ -41,7 +41,8 @@ for (const viewport of viewports) {
     }
     await page.getByRole('button', { name: 'サインイン' }).click();
 
-    await expect(page.locator('p[role="alert"]')).toBeVisible();
+    // 案内の入れ物は常に置かれる（FREQ-376）ので、文言が入ったことまで確かめる
+    await expect(page.locator('p[role="alert"]')).toHaveText(/\S/);
 
     // Cookie が消えているので、開き直しても入力画面には入れない
     await page.goto('/login/verify');

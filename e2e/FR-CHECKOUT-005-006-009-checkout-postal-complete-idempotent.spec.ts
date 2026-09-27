@@ -1,8 +1,10 @@
 import { expect, test } from '@playwright/test';
 import { mockCartApis, sampleCartItem } from './shop-test-utils';
+import { stubCheckoutSessionApis } from './checkout-test-utils';
 
 test.describe('FR-CHECKOUT-005/006/009 checkout postal complete idempotent', () => {
   test('郵便番号から住所を自動補完する', async ({ page }) => {
+    await stubCheckoutSessionApis(page);
     await mockCartApis(page, [sampleCartItem()]);
     await page.route('**/api/profile', async (route) => {
       await route.fulfill({
@@ -28,12 +30,13 @@ test.describe('FR-CHECKOUT-005/006/009 checkout postal complete idempotent', () 
     await page.goto('/checkout');
 
     await page.getByLabel('郵便番号').fill('1500001');
-    await expect(page.getByRole('button', { name: '都道府県' })).toContainText('東京都');
+    await expect(page.getByRole('combobox', { name: '都道府県' })).toContainText('東京都');
     await expect(page.getByLabel('市区町村')).toHaveValue('渋谷区');
     await expect(page.getByLabel('番地')).toHaveValue('神宮前1-2-3');
   });
 
   test('session_id callback を一度だけ確定処理し、完了メッセージを表示する', async ({ page }) => {
+    await stubCheckoutSessionApis(page);
     await mockCartApis(page, [sampleCartItem()]);
     let completeCalls = 0;
 

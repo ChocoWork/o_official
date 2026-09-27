@@ -1,4 +1,5 @@
 import { expect, Page } from '@playwright/test';
+import { mockAdminBackgroundApis } from './admin-test-utils';
 
 /**
  * ACCOUNTING（会計）画面の E2E 用モックとナビゲーション。
@@ -101,6 +102,7 @@ const REVISIONS = [
 ];
 
 export async function mockAdminApis(page: Page): Promise<void> {
+  await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,

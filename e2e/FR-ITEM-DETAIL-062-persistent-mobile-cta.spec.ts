@@ -87,7 +87,8 @@ test("mobile direct-add failures remain visible beside the fixed CTA", async ({
   await page.goto("/item/101");
   const fixed = page.getByTestId("item-actions-fixed");
   await fixed.getByRole("button", { name: "ADD TO CART" }).click();
-  await expect(fixed.getByRole("alert")).toBeVisible();
+  // 案内の入れ物は常に置かれる（FREQ-376）ので、文言が入ったことまで確かめる
+  await expect(fixed.getByRole("alert")).toHaveText(/\S/);
   await expect(
     fixed.getByRole("button", { name: "ADD TO CART" }),
   ).toBeEnabled();

@@ -25,10 +25,10 @@ for (const viewport of viewports) {
     test('an expired link shows a reason instead of silently returning to the form', async ({ page }) => {
       await page.goto('/auth/password-reset?error=link_expired');
 
-      // Next の __next-route-announcer__ も role="alert" を持つので要素で絞る
-      const alert = page.locator('p[role="alert"]');
+      // 案内の入れ物は常に置かれ（FREQ-376）、Next の __next-route-announcer__ も role="alert" を持つので、
+      // 理由の文言が入った案内を指す
+      const alert = page.locator('p[role="alert"]', { hasText: '有効期限' });
       await expect(alert).toBeVisible();
-      await expect(alert).toContainText('有効期限');
     });
 
     // FREQ-332-AC-01: 確認画面を挟まず、到達時に自動で 1 回だけ POST すること
@@ -44,9 +44,8 @@ for (const viewport of viewports) {
       await page.goto(`/auth/password-reset/verify?token=${PROBE_TOKEN}`);
 
       // 無効なトークンなので理由付きで入力フォームへ戻る
-      const alert = page.locator('p[role="alert"]');
+      const alert = page.locator('p[role="alert"]', { hasText: '有効期限' });
       await expect(alert).toBeVisible();
-      await expect(alert).toContainText('有効期限');
       await expect(page.getByRole('button', { name: 'パスワードを再設定する' })).toHaveCount(0);
       expect(posts).toBe(1);
     });

@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { stubCheckoutSessionApis } from './checkout-test-utils';
 
 // FREQ-266: 未ログインの注文完了画面から、メールを引き継いで会員登録へ導く。
 const viewports = [
@@ -22,6 +23,7 @@ async function mockAuth(page: Page, authenticated: boolean): Promise<void> {
 }
 
 async function gotoCompletedCheckout(page: Page): Promise<void> {
+  await stubCheckoutSessionApis(page);
   await page.route('**/api/cart', (route) =>
     route.fulfill({
       status: 200,
@@ -34,6 +36,16 @@ async function gotoCompletedCheckout(page: Page): Promise<void> {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ email: 'hanako@example.com' }),
+    }),
+  );
+  // 保存済み配送先は未モックだと実サーバの 401 を拾う。401 は clientFetch の
+  // セッション更新を誘発し、/api/auth/refresh が 401 を返した実行だけ
+  // ログイン状態が落ちる（並列実行時のフレークの原因）。
+  await page.route('**/api/profile/addresses', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ addresses: [] }),
     }),
   );
   await page.route('**/api/checkout/complete', (route) =>
