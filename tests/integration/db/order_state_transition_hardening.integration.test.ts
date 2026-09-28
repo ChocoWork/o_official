@@ -36,10 +36,6 @@ describe('integration: order state transition hardening', () => {
     client = new Client({ connectionString: DATABASE_URL });
     await client.connect();
     await client.query(fs.readFileSync(
-      path.join(process.cwd(), 'supabase/migrations/20260925000218_add_order_state_transition_rpcs.sql'),
-      'utf8',
-    ));
-    await client.query(fs.readFileSync(
       path.join(process.cwd(), 'supabase/pending/harden_order_state_transitions.sql'),
       'utf8',
     ));
