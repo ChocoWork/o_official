@@ -108,6 +108,11 @@ let mockRetireResult: { data: unknown; error: unknown } = {
   data: true,
   error: null,
 };
+const RESERVED_EXPIRES_AT = 1_790_001_830;
+let mockReserveExpiryResult: { data: unknown; error: { message: string } | null } = {
+  data: RESERVED_EXPIRES_AT,
+  error: null,
+};
 
 jest.mock("@supabase/supabase-js", () => ({
   createClient: jest.fn().mockReturnValue({ from: mockFrom, rpc: mockRpc }),
@@ -210,6 +215,7 @@ describe("POST /api/checkout/create-session", () => {
     mockClaimResult = null;
     mockAttachResult = null;
     mockRetireResult = { data: true, error: null };
+    mockReserveExpiryResult = { data: RESERVED_EXPIRES_AT, error: null };
     mockEnforceRateLimit.mockResolvedValue(undefined);
     mockRequireCsrfOrDeny.mockResolvedValue(undefined);
     mockExpire.mockResolvedValue({ id: "cs_test", status: "expired" });
@@ -238,6 +244,10 @@ describe("POST /api/checkout/create-session", () => {
 
         if (functionName === "retire_expired_checkout_draft") {
           return Promise.resolve(mockRetireResult);
+        }
+
+        if (functionName === "reserve_checkout_session_expiry") {
+          return Promise.resolve(mockReserveExpiryResult);
         }
 
         return Promise.resolve({ data: null, error: null });
@@ -387,8 +397,8 @@ describe("POST /api/checkout/create-session", () => {
       );
       expect(mockDraftInsert).not.toHaveBeenCalled();
       expect(mockCreate).toHaveBeenCalledWith(
-        expect.objectContaining({ client_reference_id: "draft-123" }),
-        { idempotencyKey: "checkout-session:create:v1:draft-123" },
+        expect.objectContaining({ client_reference_id: "draft-123", expires_at: RESERVED_EXPIRES_AT }),
+        { idempotencyKey: "checkout-session:create:v1:draft-123:1790001830" },
       );
       expect(mockRpc).toHaveBeenCalledWith(
         "attach_checkout_session_to_draft",
@@ -415,8 +425,8 @@ describe("POST /api/checkout/create-session", () => {
 
     expect(mockCreate).toHaveBeenCalledTimes(2);
     expect(mockCreate.mock.calls.map((call) => call[1])).toEqual([
-      { idempotencyKey: "checkout-session:create:v1:draft-123" },
-      { idempotencyKey: "checkout-session:create:v1:draft-123" },
+      { idempotencyKey: "checkout-session:create:v1:draft-123:1790001830" },
+      { idempotencyKey: "checkout-session:create:v1:draft-123:1790001830" },
     ]);
   });
 
@@ -1239,6 +1249,17 @@ describe("POST /api/checkout/create-session", () => {
         ([functionName]) => functionName === "claim_checkout_draft",
       ),
     ).toHaveLength(0);
+  });
+
+  it("失効時刻を下書きに決められなければ Session を作らない", async () => {
+    mockReserveExpiryResult = { data: null, error: { message: "CHECKOUT_DRAFT_NOT_RESERVABLE" } };
+
+    const res = (await POST(
+      makeRequest({ uiMode: "custom", paymentMethod: "stripe_card" }),
+    )) as unknown as { status: number };
+
+    expect(res.status).toBe(500);
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 });
 

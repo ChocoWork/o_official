@@ -166,8 +166,24 @@ function buildCheckoutRequestFingerprint(params: {
   return `v${CHECKOUT_REQUEST_VERSION}:${createHash("sha256").update(canonical).digest("hex")}`;
 }
 
-function checkoutSessionIdempotencyKey(draftId: string): string {
-  return `checkout-session:create:v${CHECKOUT_REQUEST_VERSION}:${draftId}`;
+function checkoutSessionIdempotencyKey(draftId: string, expiresAt: number): string {
+  return `checkout-session:create:v${CHECKOUT_REQUEST_VERSION}:${draftId}:${expiresAt}`;
+}
+
+/**
+ * 決済画面の失効時刻を下書きに1回だけ決める（設計書 2-2、R-25）。
+ * 冪等キーに含めるので、同じ要求の再送は同じ Session に収束する。
+ */
+async function reserveCheckoutSessionExpiry(draftId: string): Promise<number> {
+  const { data, error } = await supabase.rpc("reserve_checkout_session_expiry", {
+    _draft_id: draftId,
+  });
+
+  if (error || typeof data !== "number" || !Number.isInteger(data)) {
+    throw new Error("Failed to reserve checkout session expiry");
+  }
+
+  return data;
 }
 
 /**
@@ -983,11 +999,13 @@ export async function POST(req: NextRequest) {
       throw new Error("Claimed checkout draft amount invariant failed");
     }
 
+    const checkoutSessionExpiresAt = await reserveCheckoutSessionExpiry(createdDraft.id);
     const selectedPaymentMethod = createdDraft.payment_method ?? "auto";
     const commonSessionParams = {
       mode: "payment" as const,
       line_items: lineItems,
       client_reference_id: createdDraft.id,
+      expires_at: checkoutSessionExpiresAt,
       allow_promotion_codes: true,
       metadata: {
         draft_id: createdDraft.id,
@@ -1022,7 +1040,7 @@ export async function POST(req: NextRequest) {
           };
 
     const session = await stripe.checkout.sessions.create(sessionParams, {
-      idempotencyKey: checkoutSessionIdempotencyKey(createdDraft.id),
+      idempotencyKey: checkoutSessionIdempotencyKey(createdDraft.id, checkoutSessionExpiresAt),
     });
 
     const stored = await storeCheckoutSessionIdOnDraft({
