@@ -48,20 +48,6 @@ function release(
 }
 
 describeLocalDb('integration: 注文 ID で引いて在庫を戻す', (db) => {
-  // order_revisions.changed_by は auth.users への外部キーなので、架空の uuid ではなく実在の行を使う
-  // （tests/integration/db/order_state_transition_hardening.integration.test.ts と同じやり方）。
-  let ACTOR: string;
-
-  beforeAll(async () => {
-    const user = await db().query(
-      `insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
-       values (gen_random_uuid(), $1, '{}'::jsonb, now(), now())
-       returning id`,
-      [`release-stock-by-order-${uniqueSuffix()}@example.com`],
-    );
-    ACTOR = user.rows[0].id as string;
-  });
-
   test('支払い手続き中を放棄にし、確保した分だけ台帳へ戻して、履歴に理由と起因イベントを残す', async () => {
     const fx = await createCatalogFixture(db(), { stock: 5 });
     const { orderId } = await insertOrderWithStockLine(db(), {
@@ -124,40 +110,67 @@ describeLocalDb('integration: 注文 ID で引いて在庫を戻す', (db) => {
     expect((await orderRow(db(), orderId)).status).toBe('pending');
   });
 
-  test('取消は実行者と理由が要り、理由・メモ・お知らせの有無と実行者が残る', async () => {
-    const fx = await createCatalogFixture(db(), { stock: 2 });
-    const { orderId } = await insertOrderWithStockLine(db(), {
-      status: 'payment_in_progress', itemId: fx.itemId, variantId: fx.variantId, quantity: 1, reserved: true,
+  // 実行者を使う2件だけをネストした describe にまとめる。order_revisions.changed_by は
+  // auth.users への外部キーなので、架空の uuid ではなく実在の行を使う
+  // （tests/integration/db/order_state_transition_hardening.integration.test.ts と同じやり方）。
+  // afterAll は同じ階層内では登録順に実行される（describeLocalDb の afterAll が先に登録済み）ため、
+  // ここに afterAll を置くと describeLocalDb が接続を閉じた後に動いてしまう。
+  // ネストした describe の afterAll は親の afterAll より先に実行される（Jest の入れ子の順序）ので、
+  // ここへ置いて後片付けが接続が閉じる前に必ず終わるようにする。
+  describe('取消（実行者を使う）', () => {
+    let ACTOR: string;
+
+    beforeAll(async () => {
+      const user = await db().query(
+        `insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
+         values (gen_random_uuid(), $1, '{}'::jsonb, now(), now())
+         returning id`,
+        [`release-stock-by-order-${uniqueSuffix()}@example.com`],
+      );
+      ACTOR = user.rows[0].id as string;
     });
 
-    await expect(release(db(), { orderId, expected: 'payment_in_progress', next: 'cancelled' }))
-      .rejects.toMatchObject({ code: '22023', message: expect.stringContaining('CANCEL_REQUIRES_ACTOR_AND_REASON') });
-
-    const res = await release(db(), {
-      orderId, expected: 'payment_in_progress', next: 'cancelled', reason: 'admin_cancel',
-      actor: ACTOR, cancelReason: 'customer_request', note: '電話で依頼', notify: false,
+    afterAll(async () => {
+      // profiles は ON DELETE CASCADE、order_revisions.changed_by は ON DELETE SET NULL なので、
+      // このテストの検証が終わった後にここで削除すれば両方きれいに片付く。
+      await db().query('DELETE FROM auth.users WHERE id = $1', [ACTOR]);
     });
 
-    expect(res.rows[0]).toEqual({ released: true, status: 'cancelled' });
-    expect(await orderRow(db(), orderId)).toMatchObject({
-      status: 'cancelled', cancel_reason: 'customer_request', cancel_note: '電話で依頼', cancel_notify_customer: false,
-    });
-    expect(await revisionsOf(db(), orderId)).toEqual([
-      { reason: 'admin_cancel', sourceEventId: null, changedBy: ACTOR },
-    ]);
-  });
+    test('取消は実行者と理由が要り、理由・メモ・お知らせの有無と実行者が残る', async () => {
+      const fx = await createCatalogFixture(db(), { stock: 2 });
+      const { orderId } = await insertOrderWithStockLine(db(), {
+        status: 'payment_in_progress', itemId: fx.itemId, variantId: fx.variantId, quantity: 1, reserved: true,
+      });
 
-  test('取消の理由が「その他」ならメモが要る', async () => {
-    const fx = await createCatalogFixture(db(), { stock: 1 });
-    const { orderId } = await insertOrderWithStockLine(db(), {
-      status: 'payment_in_progress', itemId: fx.itemId, variantId: fx.variantId, quantity: 1, reserved: true,
+      await expect(release(db(), { orderId, expected: 'payment_in_progress', next: 'cancelled' }))
+        .rejects.toMatchObject({ code: '22023', message: expect.stringContaining('CANCEL_REQUIRES_ACTOR_AND_REASON') });
+
+      const res = await release(db(), {
+        orderId, expected: 'payment_in_progress', next: 'cancelled', reason: 'admin_cancel',
+        actor: ACTOR, cancelReason: 'customer_request', note: '電話で依頼', notify: false,
+      });
+
+      expect(res.rows[0]).toEqual({ released: true, status: 'cancelled' });
+      expect(await orderRow(db(), orderId)).toMatchObject({
+        status: 'cancelled', cancel_reason: 'customer_request', cancel_note: '電話で依頼', cancel_notify_customer: false,
+      });
+      expect(await revisionsOf(db(), orderId)).toEqual([
+        { reason: 'admin_cancel', sourceEventId: null, changedBy: ACTOR },
+      ]);
     });
 
-    await expect(release(db(), {
-      orderId, expected: 'payment_in_progress', next: 'cancelled', reason: 'admin_cancel',
-      actor: ACTOR, cancelReason: 'other', note: '  ', notify: true,
-    })).rejects.toMatchObject({ code: '22023', message: expect.stringContaining('CANCEL_NOTE_REQUIRED') });
-    expect((await orderRow(db(), orderId)).status).toBe('payment_in_progress');
+    test('取消の理由が「その他」ならメモが要る', async () => {
+      const fx = await createCatalogFixture(db(), { stock: 1 });
+      const { orderId } = await insertOrderWithStockLine(db(), {
+        status: 'payment_in_progress', itemId: fx.itemId, variantId: fx.variantId, quantity: 1, reserved: true,
+      });
+
+      await expect(release(db(), {
+        orderId, expected: 'payment_in_progress', next: 'cancelled', reason: 'admin_cancel',
+        actor: ACTOR, cancelReason: 'other', note: '  ', notify: true,
+      })).rejects.toMatchObject({ code: '22023', message: expect.stringContaining('CANCEL_NOTE_REQUIRED') });
+      expect((await orderRow(db(), orderId)).status).toBe('payment_in_progress');
+    });
   });
 
   test('期待する状態と違えば何もしない', async () => {
