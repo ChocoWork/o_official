@@ -17,6 +17,7 @@
 - マイグレーションは `supabase/migrations/<version>_<name>.sql`。version は本計画で固定した `20260927100000` 以降を使い、本番の最新（`20260925000303`）より新しいことを作業前に Supabase MCP の `list_migrations` で確かめる。enum の値の追加は単独のファイルにする（追加した値は同じトランザクションで使えない）。enum の値は後から消せないので名前を変えない
 - マイグレーションは冪等に書く（`IF NOT EXISTS`・`CREATE OR REPLACE`・`DROP ... IF EXISTS`）。`BEGIN;` と `COMMIT;` で囲む
 - 新しく作る・変える関数はすべて `SECURITY DEFINER` + `SET search_path = ''` + 完全修飾名。`PUBLIC`・`anon`・`authenticated` から実行権限を剥がし、`service_role` だけに与える（`private` スキーマの補助関数は `REVOKE ALL ... FROM PUBLIC` だけ）
+- 上の規則の例外: `SECURITY DEFINER` の関数・トリガー・マイグレーションからだけ呼ぶ `private` の補助関数（`private.order_line_reservations`・`private.clear_cart_for_order`・`private.suppress_legacy_unpaid_order_emails`）は `SECURITY INVOKER` のままにし、`PUBLIC` から `EXECUTE` を剥がす（`SET search_path = ''` と完全修飾名は守る）。既存のトリガー関数（`private.protect_legal_order_immutable_fields`・`private.enforce_order_payment_invariants`）を変えるときは、既存の `SECURITY INVOKER` と `search_path`（前者は `'pg_catalog'`）を踏襲する。ほかの規則は変えない
 - 新しい public の表は RLS を有効にし、制限的な拒否ポリシーを置く。このプロジェクトは public の新しい表に `anon`・`authenticated` の全権限を自動で付けるので、`REVOKE ALL ... FROM anon, authenticated, service_role` の後で必要な分だけ `GRANT` する
 - 照合関数は Stripe を読むだけ。Stripe へ書くのは Session の失効（管理画面の取消・見回り・商品の非公開）だけで、照合関数の外で行う。自動返金は本計画に含めない（E）
 - 決済画面の規則: 開いてから30分ちょうどまで有効、30分を超えたら失効。Stripe には作成から30分30秒後の `expires_at` を渡す。見回りは毎時、1回50件・45秒まで
@@ -33,7 +34,7 @@
 本計画のタスクのテストで直接は確かめていないが、使う人が最も踏みやすい入力と状態。各行のテストは括弧内のタスクに足してある。
 
 1. **受付の後に同じ Session でもう一度「注文する」が届く**（二重送信・再読込・並行）: 注文は1件のまま、在庫の確保も1回だけ（Task 4 の「同じ Session で2回呼んでも注文は1件…」と「同じ Session の受付が並行しても…」）
-2. **Webhook と見回りが同じ注文を同時に処理する**: 状態の変化もメールも1回だけ（Task 11 の「Webhook と見回りが同時に照合しても、入金済みにするのは1回、メールは1通」）
+2. **Webhook と見回りが同じ注文を同時に処理する**: 状態の変化もメールも1回だけ（Task 11 の「Webhook と見回りが同時に照合しても、入金済みにするのは1回、メールは1通」と、Task 5 の DB 結合テスト「Webhook と見回りが別の接続から同時に入金済みにしても…」）
 3. **払込票を発行した直後に管理者が取り消そうとする**: 取り消せず、払込期限が表示される（Task 16 の「払込票が有効な入金待ちは取り消さず、409 と払込期限を返す」と Task 20 の E2E「払込票が有効な注文は…払込期限が表示される」）
 4. **移行前から残る未入金の注文（Session ID なし）を見回りが処理する**: PaymentIntent から Session を引いて判定し、お客様にはメールを送らない（Task 6 の「移行前の未入金の注文（Session ID なし）は…送信済みとして登録する」と Task 15 の「…Session ID の無い古い注文は PaymentIntent で照合する」）
 5. **要対応の欄を開いたまま、別の管理者が同じ要対応を解決する**: 後から押した方は 409 になり、二重に取り消さない（Task 6 の「…同じ要対応をもう一度解決すると resolved=false」と Task 17 の「別の管理者が先に解決していたら 409（二重に取り消さない）」）
@@ -106,9 +107,9 @@ Run:
 docker inspect -f '{{.State.Health.Status}}' supabase_db_o_official
 npx supabase start
 npx supabase db reset
-DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npx jest tests/integration/db
+DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npx jest tests/integration/db --runInBand
 ```
-Expected: `healthy`、db reset 成功、既存の DB 結合テストが全件 PASS
+Expected: `healthy`、db reset 成功、既存の DB 結合テストが全件 PASS（ディレクトリ全体は必ず `--runInBand` で1ファイルずつ流す。並列だと同じローカル DB を共有するファイルどうしが干渉して落ちる。既存の不安定さで、実装の不具合ではない）
 
 - [ ] **Step 3: 本番の最新マイグレーションを確かめる**
 
@@ -124,7 +125,7 @@ Supabase MCP の `list_migrations`（project `pjidrgofvaglnuuznnyj`）を読み�
 - Create: `supabase/migrations/20260927100000_add_order_payment_statuses.sql`
 
 **Interfaces:**
-- Produces: `describeLocalDb(name: string, body: (getClient: () => PgClient) => void): void`、`LOCAL_DATABASE_URL: string | undefined`、`type PgClient`（以降の DB 結合テストが使う）。enum `public.order_status` の値 `payment_in_progress`・`abandoned`
+- Produces: `describeLocalDb(name: string, body: (getClient: () => PgClient) => void): void`、`connectLocalDb(): Promise<PgClient>`（2本目の接続。並行のテストが使う）、`LOCAL_DATABASE_URL: string | undefined`、`type PgClient`（以降の DB 結合テストが使う）。enum `public.order_status` の値 `payment_in_progress`・`abandoned`
 
 - [ ] **Step 1: DB 結合テストの共通の入口を作る**
 
@@ -136,7 +137,6 @@ Supabase MCP の `list_migrations`（project `pjidrgofvaglnuuznnyj`）を読み�
  * 試験用の注文は削除禁止トリガーで消せないので、使い捨てのローカル DB でだけ動かす。
  * DATABASE_URL が無ければ skip、localhost 以外なら失敗させる（既存の DB 結合テストと同じ規則）。
  */
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const { Client } = require('pg');
 
 export type PgClient = {
@@ -500,7 +500,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: Task 1・2
 - Produces:
   - SQL `private.order_line_reservations(_order_id uuid) → table(order_item_id uuid, variant_id bigint, quantity integer, reserved integer)`
-  - SQL `public.release_stock_for_unpaid_order(_order_id uuid, _expected_status order_status, _next_status order_status, _change_reason text, _actor_id uuid default null, _source_event_id text default null, _cancel_reason text default null, _cancel_note text default null, _notify_customer boolean default null) → table(released boolean, order_id uuid, status order_status)`（旧定義 `(text, order_status)` は Task 20 まで残す）
+  - SQL `public.release_stock_for_unpaid_order(_order_id uuid, _expected_status order_status, _next_status order_status, _change_reason text, _actor_id uuid default null, _source_event_id text default null, _cancel_reason text default null, _cancel_note text default null, _notify_customer boolean default null) → table(released boolean, order_id uuid, status order_status)`（旧定義 `(text, order_status)` は Task 22 まで残す）
   - TS（テスト用）`createCatalogFixture`・`createDraft`・`insertOrderWithStockLine`・`movementsOf`・`variantStock`・`orderRow`・`revisionsOf`・`uniqueSuffix`
 
 - [ ] **Step 1: 試験データの共通関数を書く**
@@ -509,7 +509,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```ts
 import type { PgClient } from './local-db';
 
-/** DB 結合テストの試験データ。本計画の Task 3〜6・19・20 が使う。 */
+/** DB 結合テストの試験データ。本計画の Task 3〜7・21 が使う。 */
 export const PRICE = 5000;
 
 export function uniqueSuffix(): string {
@@ -560,6 +560,8 @@ type DraftLine = { quantity: number; colorName?: string | null; sizeLabel?: stri
 
 /**
  * Session を付けた下書き（status = created）を作る。明細ごとにカートの行も作り、写しの source_cart_id で結ぶ。
+ * カートは session・商品・色・サイズで一意（idx_carts_unique_per_user_session_item）なので、色・サイズが同じ明細は
+ * カートの行を1つにまとめ（数量は明細の合計）、同じ source_cart_id を持たせる。
  * lines を省くと quantity・colorName・sizeLabel の1明細になる。色・サイズの既定は BLACK・M（createCatalogFixture と同じ）。
  */
 export async function createDraft(
@@ -583,14 +585,24 @@ export async function createDraft(
   const sizeOf = (line: DraftLine) => (line.sizeLabel === undefined ? 'M' : line.sizeLabel);
   const totalAmount = lines.reduce((sum, line) => sum + PRICE * line.quantity, 0);
 
-  const cartIds: string[] = [];
+  // 一意インデックスは空の色・サイズを '' とみなすので、まとめるキーも同じにそろえる
+  const cartKeyOf = (line: DraftLine) => `${colorOf(line) ?? ''}|${sizeOf(line) ?? ''}`;
+  const cartQuantityByKey = new Map<string, number>();
   for (const line of lines) {
+    const key = cartKeyOf(line);
+    cartQuantityByKey.set(key, (cartQuantityByKey.get(key) ?? 0) + line.quantity);
+  }
+  const cartIdByKey = new Map<string, string>();
+  for (const line of lines) {
+    const key = cartKeyOf(line);
+    if (cartIdByKey.has(key)) continue;
     const cart = await db.query(
       `insert into public.carts (session_id, item_id, quantity, color, size) values ($1, $2, $3, $4, $5) returning id`,
-      [cartSessionId, options.itemId, line.quantity, colorOf(line), sizeOf(line)],
+      [cartSessionId, options.itemId, cartQuantityByKey.get(key), colorOf(line), sizeOf(line)],
     );
-    cartIds.push(cart.rows[0].id as string);
+    cartIdByKey.set(key, cart.rows[0].id as string);
   }
+  const cartIds = lines.map((line) => cartIdByKey.get(cartKeyOf(line)) as string);
 
   const draft = await db.query(
     `insert into public.checkout_drafts
@@ -927,8 +939,8 @@ Expected: FAIL（`function public.release_stock_for_unpaid_order(uuid, ...) does
 -- 注文 ID で引いて、確保した分だけ在庫を戻す（グループ A 設計書 4-1・4-5・4-7）。
 --
 -- 支払い手続き中の注文は PaymentIntent を持たないので、注文 ID で引く。
--- 旧定義 release_stock_for_unpaid_order(text, order_status) は、呼び出し元を切り替える
--- Task 12〜15 の後に消す（20260927100800_retire_legacy_order_rpcs.sql）。
+-- 旧定義 release_stock_for_unpaid_order(text, order_status) は、呼び出し元を切り替えた後の
+-- Task 22 で消す（20260927100800_retire_legacy_order_rpcs.sql）。
 
 BEGIN;
 
@@ -1771,7 +1783,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Create: `supabase/migrations/20260927100400_mark_order_payment_rpcs.sql`
 
 **Interfaces:**
-- Consumes: Task 3 の `private.order_line_reservations`、Task 4 の受付 RPC、試験データの関数
+- Consumes: Task 1 の `connectLocalDb`（並行のテストの2本目の接続）、Task 3 の `private.order_line_reservations`、Task 4 の受付 RPC、試験データの関数、既存の `public.claim_order_email(_order_id uuid, _kind text) → boolean`（`20260920064241_add_order_email_claims.sql`）
 - Produces:
   - SQL `public.mark_order_paid(_order_id uuid, _expected_status order_status, _payment_intent_id text, _paid_amount integer, _paid_currency text, _source_event_id text default null) → table(updated boolean, amount_matches boolean, needs_review boolean)`。`_expected_status` は `payment_in_progress`・`pending`・`failed` のどれか
   - SQL `public.mark_order_awaiting_payment(_order_id uuid, _payment_intent_id text, _source_event_id text default null) → table(updated boolean)`
@@ -1783,7 +1795,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 `tests/integration/db/mark_order_payment.integration.test.ts`:
 ```ts
 /** @jest-environment node */
-import { describeLocalDb, type PgClient } from './helpers/local-db';
+import { connectLocalDb, describeLocalDb, type PgClient } from './helpers/local-db';
 import {
   PRICE,
   createCatalogFixture,
@@ -1945,6 +1957,34 @@ describeLocalDb('integration: 入金済み・入金待ちにする', (db) => {
     const res = await markPaid(db(), { orderId, expected: 'pending', paymentIntentId: pi, amount: PRICE });
 
     expect(res.rows[0]).toEqual({ updated: true, amount_matches: true, needs_review: false });
+  });
+
+  test('Webhook と見回りが別の接続から同時に入金済みにしても、状態の変化は1回、入金確認メールの送信権も1回だけ取れる（設計書 6 の並行）', async () => {
+    const { orderId } = await placeFromDraft(db(), { stock: 1, quantity: 1 });
+    const pi = `pi_${uniqueSuffix()}`;
+    const other = await connectLocalDb();
+    try {
+      const [webhook, sweep] = await Promise.all([
+        markPaid(db(), { orderId, expected: 'payment_in_progress', paymentIntentId: pi, amount: PRICE, event: 'evt_concurrent_webhook' }),
+        markPaid(other, { orderId, expected: 'payment_in_progress', paymentIntentId: pi, amount: PRICE, event: 'evt_concurrent_sweep' }),
+      ]);
+
+      // 後の方は行ロックを待ち、先に入金済みになった注文を見て何もしない
+      expect([webhook.rows[0].updated, sweep.rows[0].updated].sort()).toEqual([false, true]);
+      const winnerEvent = webhook.rows[0].updated ? 'evt_concurrent_webhook' : 'evt_concurrent_sweep';
+      expect((await orderRow(db(), orderId)).status).toBe('paid');
+      expect(await revisionsOf(db(), orderId)).toEqual([
+        { reason: 'stripe_payment_paid', sourceEventId: winnerEvent, changedBy: null },
+      ]);
+
+      const claims = await Promise.all([
+        db().query('select public.claim_order_email($1::uuid, $2::text) as claimed', [orderId, 'paid']),
+        other.query('select public.claim_order_email($1::uuid, $2::text) as claimed', [orderId, 'paid']),
+      ]);
+      expect(claims.map((res) => res.rows[0].claimed).sort()).toEqual([false, true]);
+    } finally {
+      await other.end();
+    }
   });
 
   test('anon・authenticated は実行できない', async () => {
@@ -2214,7 +2254,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - SQL `public.claim_payment_exception_notification(_exception_id uuid, _channel text) → boolean`・`public.release_payment_exception_notification(_exception_id uuid, _channel text) → boolean`（`_channel` は `shop`・`customer`）
   - SQL `public.resolve_payment_exception(_exception_id uuid, _actor_id uuid, _note text default null, _cancel_order boolean default false, _cancel_reason text default null, _notify_customer boolean default null) → table(resolved boolean, order_id uuid, cancelled_from order_status)`
   - SQL `public.mark_order_reviewed(_order_id uuid, _actor_id uuid) → boolean`
-  - SQL `public.admin_cancel_failed_order(_order_id uuid, _actor_id uuid, _cancel_reason text, _note text default null) → table(id uuid, status order_status)`（旧 `(uuid, uuid)` は Task 20 で消す）
+  - SQL `public.admin_cancel_failed_order(_order_id uuid, _actor_id uuid, _cancel_reason text, _note text default null) → table(id uuid, status order_status)`（旧 `(uuid, uuid)` は Task 22 で消す）
   - SQL `private.suppress_legacy_unpaid_order_emails() → integer`（移行前の未入金の注文のお客様向けメールを送信済みとして登録。マイグレーションで1回呼ぶ）
   - `private.order_emails.kind` に `payment_expired`・`canceled` を足す。`admin_ship_paid_order` は支払額の違いの要対応が開いている注文を断る
 
@@ -3127,7 +3167,7 @@ BEGIN
     RAISE EXCEPTION 'CHECKOUT_DRAFT_NOT_RESERVABLE' USING ERRCODE = '22023';
   END IF;
 
-  RETURN pg_catalog.extract(epoch FROM reserved)::bigint;
+  RETURN pg_catalog.date_part('epoch', reserved)::bigint;
 END;
 $$;
 
@@ -4836,7 +4876,7 @@ export async function sendShopPaymentAlert(alert: ShopPaymentAlert): Promise<boo
 # 支払いの要対応を知らせる店のアドレス（src/lib/orders/order-lifecycle-emails.ts）
 SHOP_ALERT_EMAIL=
 ```
-`README.md` の `PENDING_ORDER_EXPIRY_DAYS` の行の次に、同じ表へ1行足す（`PENDING_ORDER_EXPIRY_DAYS` の行は Task 14 で消す）:
+`README.md` の `PENDING_ORDER_EXPIRY_DAYS` の行の次に、同じ表へ1行足す（`PENDING_ORDER_EXPIRY_DAYS` の行は Task 15 で消す）:
 ```text
   | `SHOP_ALERT_EMAIL` | 支払いの要対応（注文を作れない支払い・支払額の違いなど）を知らせる店のアドレス。未設定なら送らず、毎時の見回りが送り直す |
 ```
@@ -5927,7 +5967,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: Task 4〜6 の RPC、Task 9 の `readCheckoutPayment`、Task 10 のメール、Task 11 の型
 - Produces:
-  - `createSupabaseReconcilerDatabase(client: SupabaseClient): ReconcilerDatabase`（Supabase のエラーは `ReconcileTransientError('db_unavailable')` にする）
+  - `createSupabaseReconcilerDatabase(client: SupabaseClient): ReconcilerDatabase`（Supabase のエラーは、接続・タイムアウト・デッドロック・直列化の失敗だけ `ReconcileTransientError('db_unavailable')` にし、それ以外は元のエラーのまま投げる）
+  - `isTransientSupabaseError(error: unknown): boolean`（その判定。code が無い・SQLSTATE の 08 系・`40001`・`40P01`・53 系・`57014`・`57P01`〜`57P03`・`PGRST000`〜`PGRST002` だけ true）
   - `createReconcilerMailer(client: SupabaseClient): ReconcilerMailer`
   - `createDefaultReconcilerDeps(): Promise<ReconcilerDeps>`（service role の Supabase と `getStripeServerClient()` をつなぐ）
   - `listUnsentShopAlerts(client: SupabaseClient, limit: number): Promise<UnsentShopAlert[]>`（見回りの送り直し。Task 15 が使う）と `type UnsentShopAlert = { exceptionId: string; alert: ShopPaymentAlert }`
@@ -5943,13 +5984,14 @@ jest.mock('@/lib/audit', () => ({
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   createSupabaseReconcilerDatabase,
+  isTransientSupabaseError,
   listUnsentShopAlerts,
 } from '@/lib/stripe/checkout-payment-reconciler-deps';
 
 /**
  * 照合関数と Supabase をつなぐ部分。RPC の名前と引数、戻り値の読み方、エラーの扱いを確かめる。
  */
-type Result = { data: unknown; error: { message: string } | null };
+type Result = { data: unknown; error: { message: string; code?: string } | null };
 
 function fakeClient(options: {
   rpc?: (fn: string, args: Record<string, unknown>) => Result;
@@ -5997,12 +6039,29 @@ describe('createSupabaseReconcilerDatabase', () => {
     expect(order).toEqual({ id: 'order-1', status: 'pending', paymentIntentId: 'pi_1', checkoutSessionId: null });
   });
 
-  it('Supabase のエラーは一時的な失敗（db_unavailable）にする', async () => {
+  it('code の無い Supabase のエラー（通信の失敗）は一時的な失敗（db_unavailable）にする', async () => {
     const { client } = fakeClient({ select: () => ({ data: null, error: { message: 'timeout' } }) });
 
     await expect(
       createSupabaseReconcilerDatabase(client).findOrder({ checkoutSessionId: 'cs_1', paymentIntentId: null }),
     ).rejects.toMatchObject({ name: 'ReconcileTransientError', code: 'db_unavailable' });
+  });
+
+  it('直列化の失敗（40001）の RPC も一時的な失敗（db_unavailable）にする', async () => {
+    const { client } = fakeClient({ rpc: () => ({ data: null, error: { message: 'could not serialize access', code: '40001' } }) });
+
+    await expect(
+      createSupabaseReconcilerDatabase(client).markOrderAwaitingPayment({ orderId: 'order-1', paymentIntentId: 'pi_1', sourceEventId: null }),
+    ).rejects.toMatchObject({ name: 'ReconcileTransientError', code: 'db_unavailable' });
+  });
+
+  it('恒久的なエラー（関数が無い 42883 など）は一時的な失敗にせず、元のエラーのまま投げる', async () => {
+    const dbError = { message: 'function public.mark_order_awaiting_payment does not exist', code: '42883' };
+    const { client } = fakeClient({ rpc: () => ({ data: null, error: dbError }) });
+
+    await expect(
+      createSupabaseReconcilerDatabase(client).markOrderAwaitingPayment({ orderId: 'order-1', paymentIntentId: 'pi_1', sourceEventId: null }),
+    ).rejects.toBe(dbError);
   });
 
   it('受付 RPC に Stripe の値を渡し、受付と理由コードを読み分ける', async () => {
@@ -6108,6 +6167,19 @@ describe('createSupabaseReconcilerDatabase', () => {
   });
 });
 
+describe('isTransientSupabaseError', () => {
+  it.each([undefined, '', '08006', '40001', '40P01', '53300', '57014', '57P01', '57P03', 'PGRST000', 'PGRST002'])(
+    'code %p は一時的な失敗（再試行する）',
+    (code) => {
+      expect(isTransientSupabaseError({ message: 'error', code })).toBe(true);
+    },
+  );
+
+  it.each(['42883', '22023', '23505', '42501', 'PGRST116', 'PGRST203'])('code %p は恒久的なエラー（再試行しない）', (code) => {
+    expect(isTransientSupabaseError({ message: 'error', code })).toBe(false);
+  });
+});
+
 describe('listUnsentShopAlerts', () => {
   it('未解決で店へ未送信の要対応を、店へのメールの形で返す', async () => {
     const { client } = fakeClient({
@@ -6182,12 +6254,32 @@ import type {
   ReconcilerMailer,
 } from '@/lib/stripe/checkout-payment-reconciler';
 
+// 照合関数の既定の依存（設計書 2-1）。注文・在庫・要対応は service_role 専用の RPC だけで書く。
+// 直接 UPDATE するのは、注文詳細の表示に使う下書きの支払方法（persistDraftPaymentMethod）だけ。
+
 /**
- * 照合関数の既定の依存（設計書 2-1）。DB は service_role 専用の RPC だけで書き、
- * Supabase のエラーは一時的な失敗（db_unavailable）として投げる。呼び出し元がイベントを再試行する。
+ * Supabase のエラーが一時的な失敗か（設計書 5-1）。接続・タイムアウト・デッドロック・直列化の失敗だけを一時的とみなす。
+ * code が無い（空）のは通信の失敗。SQLSTATE の 08 系（接続）・40001（直列化）・40P01（デッドロック）・53 系（資源不足）・
+ * 57014（文の取り消し・タイムアウト）・57P01〜57P03（DB の停止・起動中）と、PostgREST の PGRST000〜PGRST002（DB に接続できない）。
  */
-function transient(error: unknown): never {
-  throw new ReconcileTransientError('db_unavailable', { cause: error });
+export function isTransientSupabaseError(error: unknown): boolean {
+  const code = typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : undefined;
+  if (typeof code !== 'string' || code === '') {
+    return true;
+  }
+  return (
+    code.startsWith('08')
+    || code.startsWith('53')
+    || ['40001', '40P01', '57014', '57P01', '57P02', '57P03', 'PGRST000', 'PGRST001', 'PGRST002'].includes(code)
+  );
+}
+
+/** 一時的な失敗は ReconcileTransientError にして投げ（呼び出し元がイベントを再試行する）、それ以外は元のエラーのまま投げる */
+function throwSupabaseError(error: unknown): never {
+  if (isTransientSupabaseError(error)) {
+    throw new ReconcileTransientError('db_unavailable', { cause: error });
+  }
+  throw error;
 }
 
 function firstRow<T>(data: unknown): T | null {
@@ -6213,7 +6305,7 @@ type OrderLookupRow = {
 export function createSupabaseReconcilerDatabase(client: SupabaseClient): ReconcilerDatabase {
   async function callRpc<T>(fn: string, args: Record<string, unknown>): Promise<T | null> {
     const { data, error } = await client.rpc(fn, args);
-    if (error) transient(error);
+    if (error) throwSupabaseError(error);
     return firstRow<T>(data);
   }
 
@@ -6231,7 +6323,7 @@ export function createSupabaseReconcilerDatabase(client: SupabaseClient): Reconc
           .select('id, status, payment_intent_id, checkout_session_id')
           .eq(column, value)
           .maybeSingle<OrderLookupRow>();
-        if (error) transient(error);
+        if (error) throwSupabaseError(error);
         if (data) {
           return {
             id: data.id,
@@ -6339,7 +6431,7 @@ export function createSupabaseReconcilerDatabase(client: SupabaseClient): Reconc
         _exception_id: exceptionId,
         _channel: channel,
       });
-      if (error) transient(error);
+      if (error) throwSupabaseError(error);
       return data === true;
     },
 
@@ -6359,7 +6451,7 @@ export function createSupabaseReconcilerDatabase(client: SupabaseClient): Reconc
         .select('shipping_snapshot')
         .eq('id', draftId)
         .maybeSingle<{ shipping_snapshot: CheckoutShippingSnapshot | null }>();
-      if (error) transient(error);
+      if (error) throwSupabaseError(error);
       if (!data) return null;
 
       return {
@@ -6432,7 +6524,7 @@ export async function listUnsentShopAlerts(client: SupabaseClient, limit: number
     .is('resolved_at', null)
     .order('first_detected_at', { ascending: true })
     .limit(limit);
-  if (error) transient(error);
+  if (error) throwSupabaseError(error);
 
   return (data ?? []).flatMap((row: {
     id: string;
@@ -6469,7 +6561,8 @@ Expected: PASS
 git add src/lib/stripe/checkout-payment-reconciler-deps.ts tests/unit/lib/stripe/checkout-payment-reconciler-deps.test.ts
 git commit -m "feat(stripe): 照合関数を Supabase の RPC・Stripe・メールへつなぐ
 
-Supabase のエラーは一時的な失敗として投げ、呼び出し元が再試行する。
+接続・タイムアウトなど一時的な Supabase のエラーだけを一時的な失敗として投げ、
+呼び出し元が再試行する。それ以外は元のエラーのまま投げる。
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
@@ -7569,7 +7662,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: Task 11 の `reconcileCheckoutPayment`・`notifyShopOfException`・`ReconcileResult`、Task 12 の `createDefaultReconcilerDeps`・`listUnsentShopAlerts`
-- Produces: `expireOpenCheckoutSession(stripe: Stripe, checkoutSessionId: string): Promise<'expired' | 'not_open' | 'missing'>`（Task 16・20 も使う）。見回りの応答 `{ processed, candidateCount, batchOffset, expiredSessions, actions, needsReview, needsAction, failed, shopAlertsSent, capped, timeBudgetExhausted }`
+- Produces: `expireOpenCheckoutSession(stripe: Stripe, checkoutSessionId: string): Promise<'expired' | 'not_open' | 'missing'>`（Task 16・21 も使う）。見回りの応答 `{ processed, candidateCount, batchOffset, expiredSessions, actions, needsReview, needsAction, failed, shopAlertsSent, capped, timeBudgetExhausted }`
 
 - [ ] **Step 1: 失敗するテストを書く（Session の失効）**
 
@@ -9383,7 +9476,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Failed to fetch order attention' }, { status: 500 });
     }
 
-    const exceptions: AttentionException[] = ((exceptionsResult.data ?? []) as ExceptionRow[]).map((row) => {
+    const exceptions: AttentionException[] = ((exceptionsResult.data ?? []) as unknown as ExceptionRow[]).map((row) => {
       const orderStatus = row.orders?.status ?? null;
       return {
         id: row.id,
@@ -9648,6 +9741,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Create: `tests/unit/api/admin/kpi-hidden-statuses.test.ts`
 - Modify: `src/app/api/orders/route.ts:106-135`・`src/app/api/orders/[id]/route.ts:104-141`
 - Create: `tests/unit/api/orders/orders-hidden-statuses.test.ts`
+- Modify: `tests/integration/api/orders.test.ts`（注文の読み込みのモック3か所に `not` を足す）
 - Modify: `docs/2_Specs/spec.md`（FREQ 行）
 
 **Interfaces:**
@@ -10137,22 +10231,57 @@ import { HIDDEN_ORDER_STATUS_FILTER } from '@/lib/orders/order-payment-types';
 ```
 `src/app/api/orders/[id]/route.ts` の `.eq('user_id', userId)` の次の行に同じ2行を足す。両ファイルの `OrderRow`・`OrderDetailRow` の `status` の型に `'payment_in_progress' | 'abandoned'` は足さない（返さないため）
 
-- [ ] **Step 8: テストを通す**
+- [ ] **Step 8: 既存の注文履歴 API のテストのモックに `not` を足す**
 
-Run: `npx jest tests/unit/api/admin tests/unit/api/orders && npm run typecheck && npx eslint src/app/api/admin/orders/route.ts src/app/api/admin/kpi/route.ts src/app/api/orders`
+Step 7 で両 route の注文の読み込み（`createClient` のクエリ）が `.not(...)` を呼ぶので、既存の `tests/integration/api/orders.test.ts` の3件が `...not is not a function` で落ちる。`createClient` の注文のクエリのモック3か所に `not: jest.fn().mockReturnThis(),` を足す。`createServiceRoleClient` のモック（`checkout_drafts`・`items` を読む）は `.not` を呼ばないので変えない。ファイルの字下げはタブなので、タブのまま足す。
+
+`describe('GET /api/orders')` の `returns authenticated orders with no-store cache headers` の `orderQuery` の先頭を替える:
+```ts
+		const orderQuery = {
+			select: jest.fn().mockReturnThis(),
+			eq: jest.fn().mockReturnThis(),
+			not: jest.fn().mockReturnThis(),
+			order: jest.fn().mockResolvedValue({
+```
+`describe('GET /api/orders/[id]')` の `returns order detail with no-store cache headers` の `createClient.mockResolvedValue(...)` を替える:
+```ts
+		createClient.mockResolvedValue({
+			from: jest.fn().mockReturnValue({
+				select: jest.fn().mockReturnThis(),
+				eq: jest.fn().mockReturnThis(),
+				not: jest.fn().mockReturnThis(),
+				maybeSingle,
+			}),
+		});
+```
+同じ describe の `returns no-store on not found responses` の `createClient.mockResolvedValue(...)` を替える:
+```ts
+		createClient.mockResolvedValue({
+			from: jest.fn().mockReturnValue({
+				select: jest.fn().mockReturnThis(),
+				eq: jest.fn().mockReturnThis(),
+				not: jest.fn().mockReturnThis(),
+				maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
+			}),
+		});
+```
+
+- [ ] **Step 9: テストを通す**
+
+Run: `npx jest tests/unit/api/admin tests/unit/api/orders tests/integration/api/orders.test.ts && npm run typecheck && npx eslint src/app/api/admin/orders/route.ts src/app/api/admin/kpi/route.ts src/app/api/orders`
 Expected: PASS、lint の指摘なし
 
-- [ ] **Step 9: FREQ 行を足す**
+- [ ] **Step 10: FREQ 行を足す**
 
 `docs/2_Specs/spec.md` の表の末尾に足す:
 ```text
 | FREQ-410 | お客様の注文履歴・注文詳細と KPI に、支払い手続き中と放棄の注文を出さないこと | FREQ-410-REQ-01 | 注文履歴と注文詳細の API は、支払い手続き中・放棄の注文を返さないこと（メールで知らせた注文だけを見せる。Shopify も放棄された決済を注文として見せない） | FREQ-410-REQ-02 | KPI（CVR・返品率など）は、支払い手続き中・放棄の注文を数えないこと | FREQ-410-AC-01 | 支払い手続き中・放棄の注文が注文履歴と注文詳細に表示されないこと | FREQ-410-AC-02 | KPI の集計が支払い手続き中・放棄の注文を読まないこと |
 ```
 
-- [ ] **Step 10: コミット**
+- [ ] **Step 11: コミット**
 
 ```bash
-git add src/app/api/admin/orders/route.ts tests/unit/api/admin/orders-search-route.test.ts "src/app/api/admin/orders/[id]/refund/route.ts" src/app/api/admin/kpi/route.ts tests/unit/api/admin/kpi-hidden-statuses.test.ts src/app/api/orders/route.ts "src/app/api/orders/[id]/route.ts" tests/unit/api/orders/orders-hidden-statuses.test.ts docs/2_Specs/spec.md
+git add src/app/api/admin/orders/route.ts tests/unit/api/admin/orders-search-route.test.ts "src/app/api/admin/orders/[id]/refund/route.ts" src/app/api/admin/kpi/route.ts tests/unit/api/admin/kpi-hidden-statuses.test.ts src/app/api/orders/route.ts "src/app/api/orders/[id]/route.ts" tests/unit/api/orders/orders-hidden-statuses.test.ts tests/integration/api/orders.test.ts docs/2_Specs/spec.md
 git commit -m "feat(orders): 注文一覧・KPI・注文履歴を支払い手続き中と放棄に合わせる
 
 管理の一覧は要確認・発送止め・取消の可否を返し、放棄は既定で出さない。
@@ -10571,7 +10700,8 @@ export default function OrderCancelDialog({
         className="space-y-4"
         onSubmit={(event) => {
           event.preventDefault();
-          if (!canSubmit || reason === '') {
+          // canSubmit は理由を選んだことを含むので、この後の reason は CancelReason に絞られる
+          if (!canSubmit) {
             return;
           }
           onSubmit({ reason, note: note.trim(), notifyCustomer: showNotifyOption && notifyCustomer });
@@ -12467,7 +12597,8 @@ import {
 ```
 `GET` の `const signedItems = await Promise.all(...)` の行を次に替える:
 ```ts
-    const items = (data ?? []) as Array<{ id: number | string }>;
+    // signItemImageFields の型の制約は image_url・image_urls だけの弱い型なので、要素の型にも含める（TS2559 を避ける）
+    const items = (data ?? []) as Array<{ id: number | string; image_url?: string | null; image_urls?: string[] | null }>;
 
     // 削除できない商品は、削除ボタンを押した時点で案内する（R-44）。読めなければ判定を付けない（削除時に API が確かめる）
     let blockers: Map<number, ItemDeleteBlockers> | null = null;
@@ -13031,7 +13162,7 @@ export async function expireOpenCheckoutSession(
   }
 }
 ```
-`tests/unit/lib/stripe/checkout-session-expiry.test.ts` から `describe('expireCheckoutSessionForPaymentIntent', ...)` のブロックと、その import（`expireCheckoutSessionForPaymentIntent`・`isPendingCheckoutPaymentIntentStatus`）と、そのブロックでしか使っていない補助関数を消す。`describe('expireOpenCheckoutSession', ...)` は残す。
+`tests/unit/lib/stripe/checkout-session-expiry.test.ts` から `describe('expireCheckoutSessionForPaymentIntent', ...)` のブロックと、その import（`expireCheckoutSessionForPaymentIntent`・`isPendingCheckoutPaymentIntentStatus`）と、そのブロックでしか使っていない補助関数（ファイル先頭の `retrieve`・`list`・`expire`・`stripe`・`session`）を消す。これで使われなくなる `import type Stripe from 'stripe';` も消す（`describe('expireOpenCheckoutSession', ...)` は `Parameters<typeof expireOpenCheckoutSession>[0]` で型を取るので要らない）。`describe('expireOpenCheckoutSession', ...)` は残す。
 
 - [ ] **Step 7: 保留中の第2段階に R-04 の不足分を足す**
 
@@ -13087,7 +13218,7 @@ DROP POLICY IF EXISTS "admin order items manage by permission delete" ON public.
 Run:
 ```bash
 npx supabase db reset
-DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npx jest tests/integration/db
+DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npx jest tests/integration/db --runInBand
 npx jest tests/unit && npm run typecheck && npm run lint
 ```
 Expected: すべて PASS
@@ -13111,12 +13242,16 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Files:**
 - Modify: `docs/2_Specs/spec.md`（置き換えた要件の印）
 - Modify: `docs/code-review/2026-09-25-working-diff-security-review.md`（グループ A の状態）
+- Modify: `docs/4_DetailDesign/13_checkout.md`（掃除ジョブの節を照合の見回りに、新しい決済手段の手順の2・4）
+- Modify: `docs/4_DetailDesign/16_admin.md`（ORDER タブ・ITEM タブ）
+- Modify: `README.md`（Webhook の購読イベント）
 
 - [ ] **Step 1: 置き換えた要件に印を付ける**
 
-`docs/2_Specs/spec.md` の次の2か所の文の末尾に足す（行は消さない）:
+`docs/2_Specs/spec.md` の次の3か所の文の末尾に足す（行は消さない）:
 - `FREQ-388-REQ-01` の要件の文の末尾: `（FREQ-407 で置き換え。見回りはアプリ独自の日数で打ち切らない）`
 - `FREQ-389-REQ-01` の要件の文の末尾: `（FREQ-409 で置き換え。下書きへは割引額だけを受付 RPC の中で書き戻す。R-26）`
+- `FREQ-389-REQ-03` の要件の文の末尾: `（FREQ-409 で置き換え。Webhook・完了 API・見回りは同じ照合関数を通り、注文の作成と割引額の書き戻しは受付 RPC の1つのトランザクションで行う。一時的な失敗は worker がイベントを再試行する）`
 
 - [ ] **Step 2: 全部のテストを流す**
 
@@ -13130,7 +13265,7 @@ npm run lint
 npm run typecheck
 npm test
 npx supabase db reset
-DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npx jest tests/integration/db
+DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npx jest tests/integration/db --runInBand
 npx playwright test e2e/FR-ADMIN-050 e2e/FR-ADMIN-051 e2e/FR-ADMIN-052 e2e/FR-ADMIN-054 e2e/FR-ADMIN-060 e2e/FR-ADMIN-061 e2e/FR-ADMIN-062 e2e/FR-ADMIN-063 e2e/FR-LEGAL-004
 ```
 Expected: すべて PASS。E2E は API をモックした管理画面の spec と、DB に触れない /legal の spec だけを流す（全件は本番 Supabase に書くため、本計画では流さない。R-55）
@@ -13145,11 +13280,137 @@ Expected: すべて PASS。E2E は API をモックした管理画面の spec �
 - 保留中の SQL（見回りの毎時の登録・R-04 の第2段階）は、今までどおり明示の承認を得てから当てる
 - 公開前に照合を1回流し、移行前の未入金2件の結果を確かめる（設計書 7-1）
 
-- [ ] **Step 4: コミット**
+- [ ] **Step 4: 詳細設計と README を実装に合わせる**
+
+ユーザー決定（2026-09-27。詳細設計の 13_checkout.md の掃除ジョブの節と 16_admin.md の ORDER・ITEM タブは Task 23 でまとめて更新する。`.superpowers/sdd/2026-09-27-order-payment-reconciliation/progress.md`）に当たる手順。コードは変えず、3つの文書を最終のコードに合わせる。
+
+書き方の決まり:
+- 下の文に書いた事実（値・関数名・ファイル名・状態・応答）は、書く前に1つずつ最終のコードで確かめる。違えばコードに合わせて書く（計画の文より実装を正とする）
+- documentation-guide スキルの規則に従う。絵文字を使わない。概要セクションがあれば保つ。図を足すなら Mermaid で書く（AA は使わない）。表にできるものは表にする
+- FREQ の番号は、Task 7・10・13・18・20・21 で実際に振った番号に読み替える（本計画の FREQ-407〜414 は目安）
+
+**(a) `docs/4_DetailDesign/13_checkout.md`**
+
+1. 「新しい決済手段をダッシュボードで有効化するときの手順」の2番目の項目の末尾の文「`PENDING_ORDER_EXPIRY_DAYS` は再照合を始める閾値であり、支払期限ではない」を消す（環境変数は Task 15 で廃止した。括弧書きは Task 7 で直してある）
+2. 同じ手順の4番目の項目を次に替える:
+```text
+4. テストモードで「確定 → 支払い手続き中（`payment_in_progress`）の注文と在庫の確保 → 払込票の発行で入金待ち（Stripe の状態は `awaiting_payment`、注文の状態の値は `pending`）→ `async_payment_succeeded` で `paid` と入金確認のメール、または払込期限切れ（`async_payment_failed`）で `failed` と在庫の戻し・お支払い期限切れのお知らせ」を一巡させる。どの経路（Webhook・完了 API・見回り）でも、状態は照合関数が Stripe の現在値で決める
+```
+3. 「掃除ジョブの環境変数」の見出しから「下限を5日にする理由（FREQ-388）」の段落の終わりまで（前置きの文・環境変数の表・「Checkout Session が所有する PaymentIntent は…」の文・Stripe の状態の表・FREQ-388 の段落）を次に替える:
+```markdown
+### 照合の見回りと環境変数（FREQ-407）
+
+`POST /api/cron/expire-pending-orders` は照合の見回り。pg_cron が毎時0分（`0 * * * *`）に呼ぶ。pg_net は POST リクエストのみ発行できるため POST となる。
+
+| 項目 | 内容 |
+| --- | --- |
+| 対象 | 決済画面を開いてから30分を超えた支払い手続き中（`payment_in_progress`）の注文と、入金待ち（`pending`）の注文 |
+| 1回の上限 | 50件・45秒（`MAX_ORDERS_PER_RUN`・`TIME_BUDGET_MS`）。残りは次の回に回す |
+| 決済画面の失効 | 開いてから30分を超えてまだ開いている Checkout Session を失効させる（`expireOpenCheckoutSession`）。Webhook が届かなくても、放棄された決済の在庫は最長90分で戻る |
+| 判定 | 照合関数（`reconcileCheckoutPayment`）が Stripe の Session と PaymentIntent の現在値だけで決める。アプリ独自の日数で入金待ちを打ち切らない |
+| 店への要対応メール | 送れていない分を1回20件まで送り直す（`listUnsentShopAlerts`） |
+
+| 環境変数 | 用途 |
+| --- | --- |
+| `CRON_SECRET` | 見回りの呼び出しの認証に使う `Authorization: Bearer <CRON_SECRET>` の照合値。不一致は 401 |
+
+`PENDING_ORDER_EXPIRY_DAYS` は廃止した。入金待ちは Stripe が払込票の期限切れを確定したときだけ失敗にするので、日数の下限（FREQ-388 の5日）も要らない。FREQ-388 は FREQ-407 で置き換えた。
+
+Checkout Session が所有する PaymentIntent は直接 cancel しない。Stripe の状態ごとの行動は判定表（`src/lib/stripe/checkout-payment-decision.ts`。設計書 3-2）にだけ置き、注文と在庫は照合関数が今の状態を条件にした RPC（`mark_order_paid`・`mark_order_awaiting_payment`・`release_stock_for_unpaid_order`）で変える。
+```
+4. 同じ節の続きで、日次の掃除を前提にした文も最終のコードに合わせる:
+   - 「pg_net の待ち時間を短くすると」の段落の「毎晩失敗している」: 毎回失敗している
+   - 「1回に処理する注文は最大50件とする。」の段落: 候補は開いてから30分を超えた支払い手続き中と入金待ち、範囲の巡回は UTC 日ごとでなく時間ごと（`resolveHourlyBatchOffset`）
+   - 「認証失敗の記録と監視（FREQ-370）」の「実行時刻（04:00 UTC）から6時間以内に見る」: 見たい実行の時刻から6時間以内に見る（毎時0分に実行する）
+   - 「pg_cron 登録」の「掃除ジョブを日次実行するための」: 照合の見回りを毎時実行するための
+   - 「本番デプロイの前提条件（レビュー指摘 I8）」の1: 購読イベントは (c) の README と同じ6つ。「日次の掃除ジョブだけが唯一の在庫復元経路になる」は「毎時の見回りだけが注文と在庫を合わせる経路になる」
+
+**(b) `docs/4_DetailDesign/16_admin.md`**
+
+1. 「API 仕様（ADMIN-API）」の表の `/api/admin/orders` と `/api/admin/orders/:id/status` の行を替える:
+```text
+| `/api/admin/orders` | GET | 注文一覧（ページネーション・ステータスフィルタ。放棄は既定で出さない。`review=only` で要確認だけ）。各行に要確認・発送止めの理由・取消の可否・払込期限を付ける | `admin`, `supporter` |
+| `/api/admin/orders/:id/status` | POST | 支払い手続き中・未決済・決済失敗の取消（理由は必須、メモ・お客様へのお知らせ）、決済完了の発送（用途別RPC）。払込票が有効な間の取消は409と払込期限、Stripe・DBの一時的な失敗は503 | `admin`, `supporter` |
+```
+同じ表の末尾に足す:
+```text
+| `/api/admin/order-attention` | GET | 未処理の要対応・要確認の一覧と件数（お客様の個人情報は返さない） | `admin.orders.read` |
+| `/api/admin/orders/:id/review` | POST | 要確認を確認済みにする | `admin.orders.manage` |
+| `/api/admin/payment-exceptions/:id/resolve` | POST | 要対応を解決済みにする。未入金の注文が付いていれば取り消して解決もできる。先に解決されていれば409 | `admin.orders.manage` |
+| `/api/admin/items/:id` | DELETE | 商品の削除。注文の明細・在庫の記録・決済中のある商品は理由付きの409で断り、非公開を促す | `admin.items.manage` |
+```
+2. 「注文のキャンセル・返金（ADMIN-ORDER / FREQ-404）」の表の `pending`・`failed` のキャンセルの行と `paid` の発送の行を替え、`pending` の行の前に `payment_in_progress` の行、`failed` の行の次に `abandoned` の行を足す:
+```text
+| `payment_in_progress` | キャンセル（理由は必須） | 開いている Checkout Session を失効させてから、照合関数が Stripe の現在値で取り消し、確保した分だけ在庫を戻す（`release_stock_for_unpaid_order`）。先に支払いが完了していれば409 |
+| `pending` | キャンセル（理由は必須） | 払込票が有効な間は取り消さず、409と払込期限（`cancelBlockedUntil`）を返す。期限の後は照合関数が Stripe の現在値で決める |
+| `failed` | キャンセル（理由は必須。お知らせは出さない） | `admin_cancel_failed_order`が`failed`を条件に理由・メモ付きで更新する。競合で0件なら409 |
+| `abandoned` | キャンセル | 409（放棄された注文は取り消さない） |
+| `paid` | 発送 | `admin_ship_paid_order`が`paid`かつ未発送・配送先必須項目充足・支払額の違いの要対応が開いていないことを条件に`shipped`へ更新する。満たさないか競合で0件なら409。DBトリガーも直接更新を拒否する |
+```
+3. 「注文のキャンセル・返金」の節の次（「在庫の入力（ADMIN-STOCK / FREQ-399）」の前）に2つの節を足す:
+```markdown
+## ORDER タブの要対応・要確認と取消の画面（ADMIN-ORDER-ATTENTION / FREQ-411〜413）
+
+| 部品 | 内容 |
+| --- | --- |
+| 要対応・要確認の欄（`src/components/AttentionInbox.tsx`） | 注文一覧の上に件数付きで出す。未処理が0件なら出さない。お客様の氏名・住所・メールは出さない |
+| 件数 | 未処理の件数をサイドナビの ORDER（`src/components/AdminSideNav.tsx` の `badges`）と KPI 画面の上部の1行に出す |
+| 状態の絞り込み | 「支払い手続き中」「放棄」を足す。放棄は既定の一覧に出さず、「放棄」で絞り込めば出る |
+| 要確認の印 | 要確認の注文に「要確認」の印を出し、「要確認のみ」で絞り込める |
+| 発送止め | 支払額の違いの要対応が開いている注文は「発送済みにする」を出さず、理由を出す（`admin_ship_paid_order` も断る） |
+| 取消の画面（`src/components/OrderCancelDialog.tsx`） | Shopify の取消画面に合わせる。項目は下の表 |
+
+- 要対応（`payment_exceptions`）: 注文を作れない支払い・支払額の違い・取り消した注文への入金など。理由の表示名は `PAYMENT_EXCEPTION_REASON_LABELS`（`src/lib/orders/order-payment-types.ts`）。「解決済みにする」（メモは任意）で欄から消す。未入金の注文が付いていれば「注文を取り消して解決」（理由とメモが必須）も選べる。別の管理者が先に解決していたら409で、二重に取り消さない
+- 要確認（`orders.review_reason`）: 在庫を確保できなかった注文（`stock_not_reserved`）。「確認済みにする」で欄から消す
+- どちらも実行者と日時を残す
+
+| 取消の画面の項目 | 内容 |
+| --- | --- |
+| 理由 | 必須。在庫切れ・お客様の依頼・不正の疑い・その他（`CANCEL_REASONS`） |
+| メモ | 店内だけに残る（500文字まで）。「その他」と要対応の解決では必須 |
+| お客様へのお知らせ | 「お客様に取消のお知らせを送る」は既定でオン、外せる。失敗の注文の取消では出さない |
+| 在庫 | 常に戻すので選択肢を置かない |
+| 払込票が有効な入金待ち | 取り消させず、払込期限を表示する（API は409と `cancelBlockedUntil`） |
+
+## ITEM タブの非公開と削除（ADMIN-ITEM-GUARD / FREQ-414）
+
+- 商品一覧の削除ボタンは、削除できない商品にも常に出す（無効化・非表示にしない。R-44）
+- 注文の明細・在庫の記録・決済中のある商品は、押した時点で削除を送らず、理由と非公開への案内を出す（`buildItemDeleteGuidance`。一覧の GET が `canDelete`・`deleteBlockedReasons` を返す）
+- 一覧を読んだ後に削除できなくなった商品は、DELETE API が理由付きの409で断る（外部キーで断られた競合も409）。画面はサーバーの案内を出し、商品は残る
+- 商品を非公開にしたら、その商品を含み受付の済んでいない開いている決済（24時間以内）を Stripe で失効させる。失効に失敗しても商品の変更は止めない（受付 RPC が非公開の商品を断る）。削除できたときも同じく失効させる
+```
+
+**(c) `README.md`**
+
+1. 「4. Stripe の webhook 購読イベントを確認する」の本文（「Stripe ダッシュボード → 開発者」で始まる行から「この掃除ジョブが唯一の在庫復元経路になる。」で終わる行まで）を次に替える。一覧は Task 13 の `processStripeWebhookEvent` が照合関数へ渡す6つと同じにする（字下げの2文字の空白は残す）:
+````markdown
+  Stripe ダッシュボード → 開発者 → Webhook → 本番エンドポイント。照合関数へ渡す次の6つが有効になっていること（`src/lib/stripe/webhook-processor.ts` の `processStripeWebhookEvent`）。
+
+  ```text
+  checkout.session.completed
+  checkout.session.async_payment_succeeded
+  checkout.session.async_payment_failed
+  checkout.session.expired
+  payment_intent.succeeded
+  payment_intent.payment_failed
+  ```
+
+  漏れているとエラーは出ないまま webhook 側の照合が発火せず、毎時の見回りだけが注文と在庫を合わせる経路になる（入金の反映・確認メール・在庫の戻しが次の見回りまで遅れる）。
+````
+2. 「これは何か」の3段落目の「ズレていると毎晩 401 を返すだけのジョブになり」の「毎晩」を「毎時」に替える（見回りは Task 15 で毎時にした）
+
+Run:
+```bash
+grep -n "04:00 UTC\|毎晩\|日次\|UTC 日ごと\|expires_after_days: 3" docs/4_DetailDesign/13_checkout.md
+grep -n "04:00 UTC\|毎晩\|PENDING_ORDER_EXPIRY_DAYS" README.md
+```
+Expected: どちらも何も出ない
+
+- [ ] **Step 5: コミット**
 
 ```bash
-git add docs/2_Specs/spec.md docs/code-review/2026-09-25-working-diff-security-review.md
-git commit -m "docs: グループ A の実装済みの状態と本番へ当てる前の確認を残す
+git add docs/2_Specs/spec.md docs/code-review/2026-09-25-working-diff-security-review.md docs/4_DetailDesign/13_checkout.md docs/4_DetailDesign/16_admin.md README.md
+git commit -m "docs: グループ A の詳細設計と README を実装に合わせ、本番へ当てる前の確認を残す
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
