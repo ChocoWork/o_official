@@ -330,7 +330,7 @@ describe("POST /api/checkout/create-session", () => {
     expect(res.status).toBe(200);
   });
 
-  it("コンビニの支払期限を3日で送る", async () => {
+  it("コンビニの支払期限を7日で送る（FREQ-106・R-57）", async () => {
     mockCreate.mockResolvedValue({ client_secret: "secret", id: "cs_test" });
 
     await POST(makeRequest({ uiMode: "custom" }));
@@ -338,7 +338,7 @@ describe("POST /api/checkout/create-session", () => {
     const params = mockCreate.mock.calls[0][0] as {
       payment_method_options?: { konbini?: { expires_after_days?: number } };
     };
-    expect(params.payment_method_options?.konbini?.expires_after_days).toBe(3);
+    expect(params.payment_method_options?.konbini?.expires_after_days).toBe(7);
   });
 
   it("新規セッションの応答にも配送先の版番号（0）を返す（FREQ-365）", async () => {
@@ -351,7 +351,7 @@ describe("POST /api/checkout/create-session", () => {
     expect(res.body).toMatchObject({ shippingRevision: 0 });
   });
 
-  it("hosted モードでは payment_method_types を送らず、konbini の支払期限を3日で送る", async () => {
+  it("hosted モードでは payment_method_types を送らず、konbini の支払期限を7日で送る（FREQ-106・R-57）", async () => {
     mockCreate.mockResolvedValue({
       id: "cs_test",
       url: "https://checkout.stripe.com/pay/cs_test",
@@ -365,7 +365,7 @@ describe("POST /api/checkout/create-session", () => {
       payment_method_options?: { konbini?: { expires_after_days?: number } };
     };
     expect(params.payment_method_types).toBeUndefined();
-    expect(params.payment_method_options?.konbini?.expires_after_days).toBe(3);
+    expect(params.payment_method_options?.konbini?.expires_after_days).toBe(7);
     expect(res.status).toBe(200);
   });
 

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { CSSProperties, ReactNode } from "react";
 import Link from "next/link";
 import { getSiteUrl } from "@/lib/redirect";
+import { KONBINI_PAYMENT_DAYS } from "@/lib/constants/konbini";
 
 const pageTitleStyle: CSSProperties = { fontSize: "var(--lk-size-5xl)" };
 const labelStyle: CSSProperties = { fontSize: "var(--lk-size-md)" };
@@ -92,7 +93,7 @@ export default function LegalPage() {
           <br />
           PayPay：ご注文時にお支払いが確定します。
           <br />
-          コンビニ決済：ご注文後に発行される払込番号の期限（ご注文から7日以内）までに、選択したコンビニでお支払いください。
+          コンビニ決済：ご注文後に発行される払込番号の期限（ご注文から{KONBINI_PAYMENT_DAYS}日以内）までに、選択したコンビニでお支払いください。
           <span className="mt-1 block text-[#767676]" style={noteStyle}>
             ※
             コンビニ決済をご選択の場合、期限までにお支払いが確認できないときは、ご注文をキャンセルさせていただくことがあります。

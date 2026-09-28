@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import Stripe from "stripe";
 import { getStripeServerClient } from "@/lib/stripe/server";
+import { KONBINI_PAYMENT_DAYS } from "@/lib/constants/konbini";
 import {
   buildInventoryConflictBody,
   collectInventoryIssues,
@@ -1021,7 +1022,7 @@ export async function POST(req: NextRequest) {
       },
       customer_email: createdDraft.shipping_snapshot?.email ?? undefined,
       payment_method_options: {
-        konbini: { expires_after_days: 3 },
+        konbini: { expires_after_days: KONBINI_PAYMENT_DAYS },
       },
     } satisfies Stripe.Checkout.SessionCreateParams;
 

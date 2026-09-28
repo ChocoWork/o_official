@@ -675,7 +675,7 @@ Stripe は「同じイベントを複数回受信する可能性」と「配信�
 決済手段の動的化（FREQ-356）により、決済手段の追加は Stripe ダッシュボードの操作だけで反映される。時間差決済（コンビニ払い・銀行振込など、入金確定が即時でない方式）を有効化する場合は次を確認する。
 
 1. その方式の入金確定が `checkout.session.async_payment_succeeded` で通知されるか（Stripe のドキュメントで「delayed notification」に分類されるか）を確認する
-2. 支払期限を指定できる方式なら `payment_method_options` に設定する（コンビニは `expires_after_days: 3` を設定済み）。指定できない方式は Checkout Session をアプリ側で強制終了できない場合があるため、失効・返金・長期保留の運用を決めてから有効化する。`PENDING_ORDER_EXPIRY_DAYS` は再照合を始める閾値であり、支払期限ではない
+2. 支払期限を指定できる方式なら `payment_method_options` に設定する（コンビニは `expires_after_days` に `KONBINI_PAYMENT_DAYS`（7日。`src/lib/constants/konbini.ts`）を設定済み。/legal の表記も同じ定数を読む。FREQ-106・R-57）。指定できない方式は Checkout Session をアプリ側で強制終了できない場合があるため、失効・返金・長期保留の運用を決めてから有効化する。`PENDING_ORDER_EXPIRY_DAYS` は再照合を始める閾値であり、支払期限ではない
 3. その方式が Customer を要求するか確認する（`customer_creation: if_required` の既定で足りるか）
 4. テストモードで「確定 → `pending` 注文と在庫減 → `async_payment_failed` で在庫復元 → `async_payment_succeeded` で `paid` と確認メール」を一巡させる
 5. 返金の可否と手数料の扱いを確認する（返金非対応の方式がある）
