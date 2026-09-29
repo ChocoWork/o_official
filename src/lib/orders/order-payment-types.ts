@@ -68,3 +68,36 @@ export type PaidEmailVariant = 'order_confirmed' | 'payment_received' | 'payment
 
 /** 管理画面のメモの上限（DB の CHECK と同じ） */
 export const ADMIN_NOTE_MAX_LENGTH = 500;
+
+/** 管理画面の「要対応・要確認」欄の1行（要対応）。お客様の個人情報は入れない */
+export type AttentionException = {
+  id: string;
+  reason: PaymentExceptionReason;
+  reasonLabel: string;
+  detail: string | null;
+  orderId: string | null;
+  orderNumber: string | null;
+  orderStatus: OrderStatus | null;
+  paymentRef: string;
+  firstDetectedAt: string;
+  lastDetectedAt: string;
+  detectionCount: number;
+  /** 未入金の注文が付いていれば「注文を取り消して解決」を選べる */
+  canCancelOrder: boolean;
+};
+
+/** 管理画面の「要対応・要確認」欄の1行(要確認) */
+export type AttentionReview = {
+  orderId: string;
+  orderNumber: string;
+  orderStatus: OrderStatus;
+  reviewReason: string;
+  reviewReasonLabel: string;
+  reviewMarkedAt: string | null;
+};
+
+export type OrderAttention = {
+  exceptions: AttentionException[];
+  reviews: AttentionReview[];
+  counts: { exceptions: number; reviews: number };
+};
