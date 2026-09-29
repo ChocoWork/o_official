@@ -104,7 +104,7 @@ describe('integration: expire-pending-orders の登録', () => {
       "select schedule, active from cron.job where jobname = 'expire-pending-orders'",
     );
     expect(job.rowCount).toBe(1);
-    expect(job.rows[0].schedule).toBe('0 4 * * *');
+    expect(job.rows[0].schedule).toBe('0 * * * *');
     expect(job.rows[0].active).toBe(true);
   }, 60000);
 

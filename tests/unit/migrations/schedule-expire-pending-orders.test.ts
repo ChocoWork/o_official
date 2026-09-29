@@ -39,8 +39,8 @@ describe('未入金注文の掃除ジョブの登録', () => {
     expect(sql).toMatch(/create extension if not exists pg_net/i);
   });
 
-  it('毎日 04:00 に expire-pending-orders を登録する', () => {
-    expect(sql).toMatch(/cron\.schedule\(\s*'expire-pending-orders'\s*,\s*'0 4 \* \* \*'/);
+  it('毎時0分に expire-pending-orders を登録する', () => {
+    expect(sql).toMatch(/cron\.schedule\(\s*'expire-pending-orders'\s*,\s*'0 \* \* \* \*'/);
   });
 
   describe('Vault の秘密が無い環境でも止めない', () => {

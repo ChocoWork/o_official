@@ -1,4 +1,4 @@
--- 未入金注文の掃除ジョブを毎日 04:00 UTC に呼ぶ（FREQ-356 / FREQ-368）
+-- 照合の見回りを毎時0分に呼ぶ（グループ A 設計書 2-2。旧: 未入金注文の掃除を毎日 04:00 UTC。FREQ-356 / FREQ-368）
 --
 -- 【保留中】本番の公開時に入れる。supabase/migrations/ に置くと CI の db push が本番へ流すので、
 -- ここ（supabase/pending/）に置いている。入れる手順は supabase/pending/README.md。
@@ -32,7 +32,7 @@ end $$;
 -- 文言には秘密の名前だけを書き、値は出さない（OWASP ASVS 7.1.1）。
 select cron.schedule(
   'expire-pending-orders',
-  '0 4 * * *',
+  '0 * * * *',
   $$
     do $job$
     declare
