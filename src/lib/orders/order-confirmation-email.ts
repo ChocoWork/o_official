@@ -71,6 +71,14 @@ export function formatCurrency(amount: number, currency: string): string {
   }
 }
 
+export function formatItemLines(items: ConfirmationItem[], currency: string): string[] {
+  return items.map((item) => {
+    const variant = [item.color, item.size].filter(Boolean).join(' / ');
+    const label = variant ? `${item.item_name}（${variant}）` : item.item_name;
+    return `・${label} x${item.quantity}　${formatCurrency(item.line_total, currency)}`;
+  });
+}
+
 /**
  * 注文番号（ORD-xxxx）入りの注文メールを、1注文・1種類につき1通だけ送る。
  *
@@ -120,11 +128,7 @@ export async function sendOrderConfirmationEmail(params: OrderConfirmationParams
         ]
       : ['この度はご注文いただき誠にありがとうございます。', 'ご注文を承りました。'];
 
-  const itemLines = items.map((item) => {
-    const variant = [item.color, item.size].filter(Boolean).join(' / ');
-    const label = variant ? `${item.item_name}（${variant}）` : item.item_name;
-    return `・${label} x${item.quantity}　${formatCurrency(item.line_total, currency)}`;
-  });
+  const itemLines = formatItemLines(items, currency);
 
   // 空の項目で空行が出ないよう、値のある行だけを積む。
   const shippingLines = [

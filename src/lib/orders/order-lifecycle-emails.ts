@@ -5,6 +5,7 @@ import {
   claimOrderEmail,
   fetchOrderEmailSource,
   formatCurrency,
+  formatItemLines,
   releaseOrderEmail,
   type OrderEmailSource,
   type OrderEmailSourceStore,
@@ -35,11 +36,7 @@ function orderSummaryLines({ order, items }: OrderEmailSource): string[] {
     `注文番号: ${toOrderNumber(order.id)}`,
     '',
     'ご注文内容:',
-    ...items.map((item) => {
-      const variant = [item.color, item.size].filter(Boolean).join(' / ');
-      const label = variant ? `${item.item_name}（${variant}）` : item.item_name;
-      return `・${label} x${item.quantity}　${formatCurrency(item.line_total, order.currency)}`;
-    }),
+    ...formatItemLines(items, order.currency),
     '',
     `合計: ${formatCurrency(order.total_amount, order.currency)}`,
   ];
