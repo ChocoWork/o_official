@@ -65,7 +65,7 @@ const TRANSIENT_STRIPE_ERROR_TYPES = new Set(['StripeConnectionError', 'StripeAP
  * （resource_missing 以外）やコード側のバグ（snapshotFromSession/classifyStripePaymentState 由来）は
  * ここに含めない。再試行しても直らない失敗を「一時的」として無限に再試行させないため。
  */
-function isTransientStripeError(error: unknown): boolean {
+export function isTransientStripeError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
   const { type, statusCode } = error as { type?: unknown; statusCode?: unknown };
   if (typeof type === 'string' && TRANSIENT_STRIPE_ERROR_TYPES.has(type)) return true;

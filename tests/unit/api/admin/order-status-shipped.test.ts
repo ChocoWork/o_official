@@ -237,6 +237,32 @@ describe('POST /api/admin/orders/[id]/status - 取消', () => {
     expect(res.body.error).toContain('時間をおいて再試行');
   });
 
+  test('開いている決済の失効が一時的な Stripe の失敗なら 503 を返し、照合は呼ばない', async () => {
+    currentOrder('payment_in_progress', { payment_intent_id: null });
+    mockExpireOpenCheckoutSession.mockRejectedValue({ type: 'StripeConnectionError' });
+
+    const res = await post(CANCEL);
+
+    expect(res.status).toBe(503);
+    expect(res.body.error).toContain('時間をおいて再試行');
+    expect(mockReconcile).not.toHaveBeenCalled();
+  });
+
+  test('照合が Stripe 以外の理由で失敗したら 500 で中立な文言を返し、失敗した段階を監査に残す', async () => {
+    currentOrder('payment_in_progress', { payment_intent_id: null });
+    mockReconcile.mockRejectedValue({ code: '23514', message: 'x' });
+
+    const res = await post(CANCEL);
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe('未入金の注文を取り消せませんでした。');
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'error',
+      detail: 'Failed to cancel unpaid order',
+      metadata: { step: 'reconcile' },
+    }));
+  });
+
   test('失敗の注文は専用 RPC に理由とメモを渡し、お客様には送らない', async () => {
     currentOrder('failed');
     mockRpc.mockResolvedValue({ data: [{ id: ORDER_ID, status: 'cancelled' }], error: null });

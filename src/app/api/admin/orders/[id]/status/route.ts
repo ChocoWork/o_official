@@ -4,7 +4,11 @@ import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { getStripeServerClient } from '@/lib/stripe/server';
 import { expireOpenCheckoutSession } from '@/lib/stripe/checkout-session-expiry';
-import { readCheckoutPayment, type CheckoutPaymentStripeClient } from '@/lib/stripe/checkout-payment-reader';
+import {
+  readCheckoutPayment,
+  isTransientStripeError,
+  type CheckoutPaymentStripeClient,
+} from '@/lib/stripe/checkout-payment-reader';
 import {
   reconcileCheckoutPayment,
   ReconcileTransientError,
@@ -257,13 +261,24 @@ async function cancelUnpaidOrder(
   audit: AuditFn,
 ): Promise<Response> {
   const stripe = getStripeServerClient();
+  let step: 'expire' | 'read' | 'reconcile' = 'expire';
 
   try {
     if (order.status === 'payment_in_progress') {
       if (order.checkout_session_id) {
-        await expireOpenCheckoutSession(stripe, order.checkout_session_id);
+        try {
+          await expireOpenCheckoutSession(stripe, order.checkout_session_id);
+        } catch (error) {
+          // expireOpenCheckoutSession は生の Stripe のエラーをそのまま投げる。一時的な失敗
+          // (通信・5xx・回数制限)だけ ReconcileTransientError にして下の 503 の分岐に合わせる。
+          if (isTransientStripeError(error)) {
+            throw new ReconcileTransientError('stripe_unavailable', { cause: error });
+          }
+          throw error;
+        }
       }
     } else {
+      step = 'read';
       const snapshot = await readCheckoutPayment(stripe as unknown as CheckoutPaymentStripeClient, {
         checkoutSessionId: order.checkout_session_id,
         paymentIntentId: order.payment_intent_id,
@@ -275,6 +290,7 @@ async function cancelUnpaidOrder(
       }
     }
 
+    step = 'reconcile';
     const result = await reconcileCheckoutPayment(await createDefaultReconcilerDeps(), {
       checkoutSessionId: order.checkout_session_id,
       paymentIntentId: order.payment_intent_id,
@@ -290,9 +306,11 @@ async function cancelUnpaidOrder(
       );
     }
 
+    // Stripe 以外(DB など)の失敗もここに来る。原因を Stripe と決めつけない中立な文言にし、
+    // どの段階で失敗したかは監査のメタデータにだけ残す(お客様の支払いに関わる操作のため)。
     console.error('[admin.orders.status] Failed to cancel unpaid order:', error);
-    await audit('error', 'Failed to terminate Stripe Checkout payment');
-    return NextResponse.json({ error: 'Stripe 決済のキャンセルに失敗しました。' }, { status: 500 });
+    await audit('error', 'Failed to cancel unpaid order', { step });
+    return NextResponse.json({ error: '未入金の注文を取り消せませんでした。' }, { status: 500 });
   }
 }
 
