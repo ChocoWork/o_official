@@ -47,6 +47,9 @@ export type ReconcilerOrder = {
   status: OrderStatus;
   paymentIntentId: string | null;
   checkoutSessionId: string | null;
+  /** orders.total_amount / orders.currency。入金済みの導き直しで Stripe の受取額と突き合わせる（fix round 1） */
+  totalAmount: number;
+  currency: string;
 };
 
 export type DraftContact = { email: string | null; fullName: string | null; missingShippingFields: string[] };
@@ -228,6 +231,20 @@ function decide(snapshot: CheckoutPaymentSnapshot, order: ReconcilerOrder | null
     return { type: 'exception', reason: 'state_conflict', detail: 'payment_intent_mismatch' };
   }
 
+  // mark_order_paid が返す金額の不一致は戻り値にしか残らない。直後の recordException が失敗すると、
+  // 次の読み直しは入金済み×入金済みを none と見なして要対応を失う（発送を止める約束が壊れる。fix round 1）。
+  // 読むたびに注文の金額・通貨と Stripe の受取額を突き合わせ、違えば毎回そのまま導き直す（state_conflict とは別で、
+  // 読み直しは待たずに記録する）。
+  if (
+    order &&
+    (order.status === 'paid' || order.status === 'shipped') &&
+    snapshot.state.kind === 'paid' &&
+    (order.totalAmount !== snapshot.state.amountReceived ||
+      order.currency.toLowerCase() !== snapshot.state.currency.toLowerCase())
+  ) {
+    return { type: 'exception', reason: 'paid_amount_mismatch' };
+  }
+
   return decideOrderAction({
     stripe: stripeStateFor(snapshot, order),
     orderStatus: order?.status ?? null,
@@ -331,6 +348,8 @@ async function placeAndMark(
     status: 'payment_in_progress',
     paymentIntentId,
     checkoutSessionId,
+    totalAmount: amountTotal,
+    currency,
   };
   return state === 'paid'
     ? markPaid(deps, input, snapshot, order, 'payment_in_progress', 'order_confirmed')

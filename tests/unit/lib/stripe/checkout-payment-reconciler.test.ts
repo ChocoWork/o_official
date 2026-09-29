@@ -36,7 +36,15 @@ function snapshot(state: StripePaymentState, overrides: Partial<CheckoutPaymentS
 }
 
 function order(status: ReconcilerOrder['status'], overrides: Partial<ReconcilerOrder> = {}): ReconcilerOrder {
-  return { id: 'order-1', status, paymentIntentId: null, checkoutSessionId: 'cs_1', ...overrides };
+  return {
+    id: 'order-1',
+    status,
+    paymentIntentId: null,
+    checkoutSessionId: 'cs_1',
+    totalAmount: 5000,
+    currency: 'jpy',
+    ...overrides,
+  };
 }
 
 function harness(init: {
@@ -62,6 +70,8 @@ function harness(init: {
           status: 'payment_in_progress',
           paymentIntentId: args.paymentIntentId,
           checkoutSessionId: args.checkoutSessionId,
+          totalAmount: args.amountTotal,
+          currency: args.currency,
         };
         return { placed: true, orderId: world.order.id, orderStatus: world.order.status, created: true };
       }
@@ -299,6 +309,69 @@ describe('reconcileCheckoutPayment', () => {
     });
     expect(h.mailer.sendOrderConfirmation).not.toHaveBeenCalled();
     expect(h.mailer.sendUnplacedPaymentNotice).not.toHaveBeenCalled();
+    expect(h.mailer.sendShopAlert).toHaveBeenCalledTimes(1);
+  });
+
+  it('入金済みにした直後の要対応の記録が失敗しても、次の照合で不一致を導き直して知らせる（fix round 1）', async () => {
+    const h = harness({
+      stripe: snapshot(PAID),
+      order: order('payment_in_progress', { totalAmount: 4500 }),
+      amountMatches: false,
+    });
+    jest.spyOn(h.database, 'recordException').mockRejectedValueOnce(new Error('db down'));
+
+    await expect(reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' })).rejects.toThrow('db down');
+    expect(h.world.order?.status).toBe('paid');
+
+    const result = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
+
+    expect(result).toMatchObject({
+      kind: 'needs_action',
+      reason: 'paid_amount_mismatch',
+      orderId: 'order-1',
+      orderStatus: 'paid',
+    });
+    expect(h.database.recordException).toHaveBeenCalledTimes(2);
+    expect(h.mailer.sendShopAlert).toHaveBeenCalledTimes(1);
+    expect(h.mailer.sendOrderConfirmation).not.toHaveBeenCalled();
+  });
+
+  it('入金済み × 入金済みで金額が一致すれば、導き直しても何もしない（fix round 1）', async () => {
+    const h = harness({ stripe: snapshot(PAID), order: order('paid', { paymentIntentId: 'pi_1', totalAmount: 5000 }) });
+
+    const result = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
+
+    expect(result).toEqual({ kind: 'ok', action: { type: 'none' }, orderId: 'order-1', orderStatus: 'paid' });
+    expect(h.database.recordException).not.toHaveBeenCalled();
+    expect(h.mailer.sendShopAlert).not.toHaveBeenCalled();
+  });
+
+  it('金額不一致の要対応が解決済みなら、導き直しても知らせ直さない（fix round 1）', async () => {
+    const h = harness({ stripe: snapshot(PAID), order: order('paid', { paymentIntentId: 'pi_1', totalAmount: 4500 }) });
+    jest.spyOn(h.database, 'recordException').mockResolvedValue({ exceptionId: 'exception-9', isNew: false, isResolved: true });
+
+    const result = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
+
+    expect(result).toMatchObject({ kind: 'needs_action', reason: 'paid_amount_mismatch', orderId: 'order-1' });
+    expect(h.database.claimExceptionNotification).not.toHaveBeenCalled();
+    expect(h.mailer.sendShopAlert).not.toHaveBeenCalled();
+  });
+
+  it('発送済みでも通貨が違えば、金額の不一致として要対応にする（fix round 1）', async () => {
+    const h = harness({
+      stripe: snapshot(PAID),
+      order: order('shipped', { paymentIntentId: 'pi_1', totalAmount: 5000, currency: 'USD' }),
+    });
+
+    const result = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
+
+    expect(result).toMatchObject({
+      kind: 'needs_action',
+      reason: 'paid_amount_mismatch',
+      orderId: 'order-1',
+      orderStatus: 'shipped',
+    });
+    expect(h.database.recordException).toHaveBeenCalledWith(expect.objectContaining({ reason: 'paid_amount_mismatch' }));
     expect(h.mailer.sendShopAlert).toHaveBeenCalledTimes(1);
   });
 
