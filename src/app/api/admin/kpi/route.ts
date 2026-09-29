@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { createClient } from '@/lib/supabase/server';
+import { HIDDEN_ORDER_STATUS_FILTER } from '@/lib/orders/order-payment-types';
 import { toOrderSalesTransaction } from '@/lib/sales/order-sales';
 
 type OrderStatus = 'pending' | 'paid' | 'failed' | 'cancelled';
@@ -305,6 +306,8 @@ export async function GET(request: Request) {
       supabase
         .from('orders')
         .select('id, session_id, user_id, payment_intent_id, status, total_amount, refunded_amount, currency, created_at')
+        // 受付の前の注文（支払い手続き中・放棄）は数えない。CVR と返品率を下げないため
+        .not('status', 'in', HIDDEN_ORDER_STATUS_FILTER)
         .order('created_at', { ascending: false }),
       supabase.from('order_items').select('order_id, item_id, item_name, quantity, line_total, created_at'),
       supabase.from('items').select('id, status'),

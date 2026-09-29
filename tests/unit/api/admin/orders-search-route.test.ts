@@ -4,6 +4,7 @@ const authorizeMock = jest.fn();
 const createClientMock = jest.fn();
 const getStripeMock = jest.fn();
 let queryResult: { data: unknown[]; count: number; error: null } = { data: [], count: 0, error: null };
+let shipBlockedRows: Array<{ order_id: string }> = [];
 
 jest.mock('next/server', () => ({
   NextResponse: {
@@ -18,8 +19,10 @@ jest.mock('@/lib/auth/admin-rbac', () => ({
   authorizeAdminPermission: (...args: unknown[]) => authorizeMock(...args),
 }));
 
+const createServiceRoleClientMock = jest.fn();
 jest.mock('@/lib/supabase/server', () => ({
   createClient: (...args: unknown[]) => createClientMock(...args),
+  createServiceRoleClient: (...args: unknown[]) => createServiceRoleClientMock(...args),
 }));
 
 jest.mock('@/lib/stripe/server', () => ({
@@ -34,18 +37,33 @@ describe('GET /api/admin/orders statutory search', () => {
     gte: jest.fn(),
     lte: jest.fn(),
     eq: jest.fn(),
+    neq: jest.fn(),
+    not: jest.fn(),
+    is: jest.fn(),
     or: jest.fn(),
     then: (resolve: (value: unknown) => void) => resolve(queryResult),
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
-    for (const method of ['select', 'order', 'range', 'gte', 'lte', 'eq', 'or'] as const) {
+    for (const method of ['select', 'order', 'range', 'gte', 'lte', 'eq', 'neq', 'not', 'is', 'or'] as const) {
       query[method].mockReturnValue(query);
     }
     queryResult = { data: [], count: 0, error: null };
     authorizeMock.mockResolvedValue({ ok: true });
     createClientMock.mockResolvedValue({ from: jest.fn().mockReturnValue(query) });
+    shipBlockedRows = [];
+    createServiceRoleClientMock.mockResolvedValue({
+      from: jest.fn().mockReturnValue({
+        select: () => ({
+          in: () => ({
+            eq: () => ({
+              is: async () => ({ data: shipBlockedRows, error: null }),
+            }),
+          }),
+        }),
+      }),
+    });
   });
 
   it.each(['amountMin=-1', 'amountMax=1.5', 'status=unknown'])(
@@ -190,5 +208,112 @@ describe('GET /api/admin/orders statutory search', () => {
     expect(response.status).toBe(200);
     expect(body.data[0].canShip).toBe(false);
     expect(body.data[0].missingShippingFields).toEqual(['address']);
+  });
+
+  it('状態の絞り込みに支払い手続き中と放棄を足し、既定の一覧では放棄を除く', async () => {
+    const { GET } = await import('@/app/api/admin/orders/route');
+
+    expect((await GET(new Request('http://localhost/api/admin/orders?status=payment_in_progress'))).status).toBe(200);
+    expect(query.eq).toHaveBeenCalledWith('status', 'payment_in_progress');
+    expect(query.neq).not.toHaveBeenCalled();
+
+    query.eq.mockClear();
+    await GET(new Request('http://localhost/api/admin/orders'));
+    expect(query.neq).toHaveBeenCalledWith('status', 'abandoned');
+  });
+
+  it('要確認のみの絞り込みは、確認済みでない要確認の注文だけにする', async () => {
+    const { GET } = await import('@/app/api/admin/orders/route');
+
+    await GET(new Request('http://localhost/api/admin/orders?review=only'));
+
+    expect(query.not).toHaveBeenCalledWith('review_reason', 'is', null);
+    expect(query.is).toHaveBeenCalledWith('reviewed_at', null);
+  });
+
+  it('新しい状態の表示名・要確認の印・発送止め・取消の可否を返し、PaymentIntent が空でも落ちない', async () => {
+    const future = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
+    queryResult = {
+      data: [
+        {
+          id: 'order-in-progress',
+          payment_intent_id: null,
+          checkout_session_id: 'cs_1',
+          status: 'payment_in_progress',
+          total_amount: 10_000,
+          currency: 'jpy',
+          review_reason: null,
+          reviewed_at: null,
+          created_at: '2026-09-27T00:00:00.000Z',
+          order_items: [],
+        },
+        {
+          id: 'order-voucher',
+          payment_intent_id: 'pi_voucher',
+          checkout_session_id: 'cs_2',
+          status: 'pending',
+          total_amount: 10_000,
+          currency: 'jpy',
+          review_reason: null,
+          reviewed_at: null,
+          created_at: '2026-09-27T00:00:00.000Z',
+          order_items: [],
+        },
+        {
+          id: 'order-mismatch',
+          payment_intent_id: 'pi_mismatch',
+          checkout_session_id: 'cs_3',
+          status: 'paid',
+          total_amount: 10_000,
+          currency: 'jpy',
+          shipping_email: 'buyer@example.com',
+          shipping_full_name: '山田太郎',
+          shipping_postal_code: '1000001',
+          shipping_prefecture: '東京都',
+          shipping_city: '千代田区',
+          shipping_address: '丸の内1-1-1',
+          shipping_phone: '0312345678',
+          review_reason: 'stock_not_reserved',
+          reviewed_at: null,
+          created_at: '2026-09-27T00:00:00.000Z',
+          order_items: [],
+        },
+      ],
+      count: 3,
+      error: null,
+    };
+    shipBlockedRows = [{ order_id: 'order-mismatch' }];
+    getStripeMock.mockReturnValue({
+      paymentIntents: {
+        retrieve: jest.fn().mockImplementation((id: string) => Promise.resolve(
+          id === 'pi_voucher'
+            ? {
+                id,
+                status: 'requires_action',
+                payment_method_types: ['konbini'],
+                next_action: { konbini_display_details: { expires_at: future } },
+              }
+            : { id, status: 'succeeded', payment_method_types: ['card'] },
+        )),
+      },
+    });
+
+    const { GET } = await import('@/app/api/admin/orders/route');
+    const response = await GET(new Request('http://localhost/api/admin/orders'));
+    const body = await response.json() as { data: Array<Record<string, unknown>> };
+    const byId = Object.fromEntries(body.data.map((row) => [row.id, row]));
+
+    expect(byId['order-in-progress']).toMatchObject({ status: '支払い手続き中', canCancel: true, cancelBlockedUntil: null });
+    expect(byId['order-voucher']).toMatchObject({
+      status: '未決済',
+      canCancel: false,
+      cancelBlockedUntil: new Date(future * 1000).toISOString(),
+    });
+    expect(byId['order-mismatch']).toMatchObject({
+      status: '決済完了',
+      needsReview: true,
+      canShip: false,
+      shipBlockedReason: '支払額の確認が必要です（要対応）',
+    });
   });
 });

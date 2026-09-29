@@ -3,6 +3,7 @@ import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { authenticateRequest, authFailureResponse } from '@/lib/auth/authenticate';
 import { signItemImageUrl } from '@/lib/storage/item-images';
 import { toOrderNumber } from '@/lib/orders/order-number';
+import { HIDDEN_ORDER_STATUS_FILTER } from '@/lib/orders/order-payment-types';
 
 const NO_STORE_HEADERS = {
 	'Cache-Control': 'no-store',
@@ -132,6 +133,8 @@ export async function GET(request: NextRequest) {
 			)
 		`)
 		.eq('user_id', userId)
+		// メールで知らせた注文だけを見せる（支払い手続き中・放棄は出さない。設計書 5-5）
+		.not('status', 'in', HIDDEN_ORDER_STATUS_FILTER)
 		.order('created_at', { ascending: false });
 
 	if (error) {

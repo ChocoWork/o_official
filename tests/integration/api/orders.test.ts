@@ -59,6 +59,7 @@ describe('GET /api/orders', () => {
 		const orderQuery = {
 			select: jest.fn().mockReturnThis(),
 			eq: jest.fn().mockReturnThis(),
+			not: jest.fn().mockReturnThis(),
 			order: jest.fn().mockResolvedValue({
 				data: [
 					{
@@ -200,6 +201,7 @@ describe('GET /api/orders/[id]', () => {
 			from: jest.fn().mockReturnValue({
 				select: jest.fn().mockReturnThis(),
 				eq: jest.fn().mockReturnThis(),
+				not: jest.fn().mockReturnThis(),
 				maybeSingle,
 			}),
 		});
@@ -261,6 +263,7 @@ describe('GET /api/orders/[id]', () => {
 			from: jest.fn().mockReturnValue({
 				select: jest.fn().mockReturnThis(),
 				eq: jest.fn().mockReturnThis(),
+				not: jest.fn().mockReturnThis(),
 				maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
 			}),
 		});

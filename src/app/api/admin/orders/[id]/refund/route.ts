@@ -19,8 +19,8 @@ const refundRequestSchema = z.object({
 
 type OrderLookupRow = {
   id: string;
-  payment_intent_id: string;
-  status: 'pending' | 'paid' | 'failed' | 'cancelled' | 'shipped';
+  payment_intent_id: string | null;
+  status: 'payment_in_progress' | 'pending' | 'paid' | 'failed' | 'abandoned' | 'cancelled' | 'shipped';
   total_amount: number;
 };
 
@@ -127,7 +127,7 @@ export async function POST(
       return NextResponse.json({ error: 'Order not found' }, { status: 404 });
     }
 
-    if (!order.payment_intent_id.startsWith('pi_')) {
+    if (!order.payment_intent_id?.startsWith('pi_')) {
       await logAudit({
         action: 'admin.orders.refund.create',
         actor_id: actorId,

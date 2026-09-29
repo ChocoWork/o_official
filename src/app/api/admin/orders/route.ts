@@ -3,13 +3,17 @@ import Stripe from 'stripe';
 import { z } from 'zod';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { getStripeServerClient } from '@/lib/stripe/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
+import { ORDER_STATUSES, type OrderStatus } from '@/lib/orders/order-payment-types';
 import { findMissingShippingFields } from '@/features/checkout/services/checkout-draft.service';
 
 type OrderRow = {
   id: string;
-  payment_intent_id: string;
-  status: 'pending' | 'paid' | 'failed' | 'cancelled' | 'shipped';
+  payment_intent_id: string | null;
+  checkout_session_id: string | null;
+  status: OrderStatus;
+  review_reason: string | null;
+  reviewed_at: string | null;
   total_amount: number;
   currency: string;
   shipping_full_name: string | null;
@@ -40,7 +44,8 @@ const querySchema = z
     amountMax: z.coerce.number().int().nonnegative().optional(),
     counterparty: searchTextSchema,
     reference: searchTextSchema,
-    status: z.enum(['pending', 'paid', 'failed', 'cancelled', 'shipped']).optional(),
+    status: z.enum(ORDER_STATUSES).optional(),
+    review: z.enum(['only']).optional(),
   })
   .refine((value) => !value.from || !value.to || value.from <= value.to, {
     message: 'from must be before or equal to to',
@@ -90,24 +95,25 @@ function toCurrencyLabel(amount: number, currency: string): string {
   }
 }
 
-function mapOrderStatusToLabel(status: OrderRow['status']): '未決済' | '決済完了' | '決済失敗' | 'キャンセル' | '発送済み' {
-  if (status === 'paid') {
-    return '決済完了';
-  }
+type OrderStatusLabel = '支払い手続き中' | '未決済' | '決済完了' | '決済失敗' | '放棄' | 'キャンセル' | '発送済み';
 
-  if (status === 'failed') {
-    return '決済失敗';
+function mapOrderStatusToLabel(status: OrderStatus): OrderStatusLabel {
+  switch (status) {
+    case 'payment_in_progress':
+      return '支払い手続き中';
+    case 'paid':
+      return '決済完了';
+    case 'failed':
+      return '決済失敗';
+    case 'abandoned':
+      return '放棄';
+    case 'cancelled':
+      return 'キャンセル';
+    case 'shipped':
+      return '発送済み';
+    case 'pending':
+      return '未決済';
   }
-
-  if (status === 'cancelled') {
-    return 'キャンセル';
-  }
-
-  if (status === 'shipped') {
-    return '発送済み';
-  }
-
-  return '未決済';
 }
 
 function mapPaymentMethodLabel(paymentIntent: Stripe.PaymentIntent | null): string {
@@ -175,6 +181,37 @@ async function fetchPaymentIntentMap(paymentIntentIds: string[]): Promise<Map<st
   return map;
 }
 
+const SHIP_BLOCKED_REASON = '支払額の確認が必要です（要対応）';
+
+/** 支払額の違いの要対応が開いている注文（発送の RPC も同じ条件で断る。設計書 4-1） */
+async function fetchShipBlockedOrderIds(orderIds: string[]): Promise<Set<string>> {
+  if (orderIds.length === 0) {
+    return new Set();
+  }
+
+  const serviceRoleSupabase = await createServiceRoleClient();
+  const { data, error } = await serviceRoleSupabase
+    .from('payment_exceptions')
+    .select('order_id')
+    .in('order_id', orderIds)
+    .eq('reason', 'paid_amount_mismatch')
+    .is('resolved_at', null);
+
+  if (error) {
+    throw error;
+  }
+
+  return new Set((data ?? []).map((row: { order_id: string }) => row.order_id));
+}
+
+/** 払込票が有効なら、その期限（ISO）。取消はこの時刻を過ぎるまで押せない（設計書 5-2） */
+function voucherValidUntil(paymentIntent: Stripe.PaymentIntent | null): string | null {
+  const expiresAt = paymentIntent?.status === 'requires_action'
+    ? paymentIntent.next_action?.konbini_display_details?.expires_at ?? null
+    : null;
+  return expiresAt && expiresAt * 1000 > Date.now() ? new Date(expiresAt * 1000).toISOString() : null;
+}
+
 export async function GET(request: Request) {
   try {
     const authz = await authorizeAdminPermission('admin.orders.read', request);
@@ -193,6 +230,7 @@ export async function GET(request: Request) {
       counterparty: requestUrl.searchParams.get('counterparty') ?? undefined,
       reference: requestUrl.searchParams.get('reference') ?? undefined,
       status: requestUrl.searchParams.get('status') ?? undefined,
+      review: requestUrl.searchParams.get('review') ?? undefined,
     });
 
     if (!parsedQuery.success) {
@@ -217,6 +255,9 @@ export async function GET(request: Request) {
       .select(`
         id,
         payment_intent_id,
+        checkout_session_id,
+        review_reason,
+        reviewed_at,
         status,
         total_amount,
         currency,
@@ -257,6 +298,13 @@ export async function GET(request: Request) {
 
     if (parsedQuery.data.status) {
       query = query.eq('status', parsedQuery.data.status);
+    } else {
+      // 放棄（決済画面を開いたまま離れた注文）は既定の一覧に出さない。絞り込みで選べる（設計書 5-2）
+      query = query.neq('status', 'abandoned');
+    }
+
+    if (parsedQuery.data.review === 'only') {
+      query = query.not('review_reason', 'is', null).is('reviewed_at', null);
     }
 
     if (parsedQuery.data.counterparty) {
@@ -281,9 +329,12 @@ export async function GET(request: Request) {
     const orderRows = (data ?? []) as OrderRow[];
     const paymentIntentIds = orderRows
       .map((order) => order.payment_intent_id)
-      .filter((paymentIntentId) => paymentIntentId.startsWith('pi_'));
+      .filter((paymentIntentId): paymentIntentId is string => Boolean(paymentIntentId?.startsWith('pi_')));
 
-    const paymentIntentMap = await fetchPaymentIntentMap(paymentIntentIds);
+    const [paymentIntentMap, shipBlockedOrderIds] = await Promise.all([
+      fetchPaymentIntentMap(paymentIntentIds),
+      fetchShipBlockedOrderIds(orderRows.map((order) => order.id)),
+    ]);
 
     const responseData = orderRows.map((order) => {
       const items = (order.order_items ?? []).map((item) => ({
@@ -292,7 +343,7 @@ export async function GET(request: Request) {
       }));
 
       const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
-      const paymentIntent = paymentIntentMap.get(order.payment_intent_id) ?? null;
+      const paymentIntent = order.payment_intent_id ? paymentIntentMap.get(order.payment_intent_id) ?? null : null;
       const missingShippingFields = findMissingShippingFields({
         email: order.shipping_email,
         fullName: order.shipping_full_name,
@@ -305,6 +356,9 @@ export async function GET(request: Request) {
         phone: order.shipping_phone,
       });
 
+      const shipBlockedReason = shipBlockedOrderIds.has(order.id) ? SHIP_BLOCKED_REASON : null;
+      const cancelBlockedUntil = order.status === 'pending' ? voucherValidUntil(paymentIntent) : null;
+
       return {
         id: order.id,
         customerName: order.shipping_full_name?.trim() || 'ゲスト',
@@ -315,17 +369,24 @@ export async function GET(request: Request) {
         totalAmount: toCurrencyLabel(order.total_amount, order.currency),
         status: mapOrderStatusToLabel(order.status),
         paymentMethod: mapPaymentMethodLabel(paymentIntent),
-        paymentReference: order.payment_intent_id,
+        paymentReference: order.payment_intent_id ?? order.checkout_session_id ?? '-',
         stripePaymentStatus: paymentIntent?.status ?? null,
         shippedAt: order.shipped_at,
         shippingCarrier: order.shipping_carrier,
         trackingNumber: order.tracking_number,
-        canShip: order.status === 'paid' && missingShippingFields.length === 0,
+        canShip: order.status === 'paid' && missingShippingFields.length === 0 && !shipBlockedReason,
         missingShippingFields,
+        shipBlockedReason,
+        needsReview: order.review_reason !== null && order.reviewed_at === null,
+        canCancel:
+          order.status === 'payment_in_progress'
+          || order.status === 'failed'
+          || (order.status === 'pending' && !cancelBlockedUntil),
+        cancelBlockedUntil,
         canRefund:
           (order.status === 'paid' || order.status === 'shipped') &&
           paymentIntent?.status === 'succeeded' &&
-          order.payment_intent_id.startsWith('pi_'),
+          Boolean(order.payment_intent_id?.startsWith('pi_')),
       };
     });
 
