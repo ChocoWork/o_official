@@ -3,32 +3,55 @@ import { z } from 'zod';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { getStripeServerClient } from '@/lib/stripe/server';
+import { expireOpenCheckoutSession } from '@/lib/stripe/checkout-session-expiry';
+import { readCheckoutPayment, type CheckoutPaymentStripeClient } from '@/lib/stripe/checkout-payment-reader';
 import {
-  expireCheckoutSessionForPaymentIntent,
-  isPendingCheckoutPaymentIntentStatus,
-} from '@/lib/stripe/checkout-session-expiry';
+  reconcileCheckoutPayment,
+  ReconcileTransientError,
+  type ReconcileResult,
+} from '@/lib/stripe/checkout-payment-reconciler';
+import { createDefaultReconcilerDeps } from '@/lib/stripe/checkout-payment-reconciler-deps';
 import { logAudit } from '@/lib/audit';
 import { SHIPPING_CARRIER_IDS } from '@/lib/orders/shipping-carriers';
 import { sendOrderShippedEmail } from '@/lib/orders/order-shipped-email';
+import {
+  ADMIN_NOTE_MAX_LENGTH,
+  CANCEL_REASONS,
+  PAYMENT_EXCEPTION_REASON_LABELS,
+  type CancelReason,
+  type OrderStatus,
+} from '@/lib/orders/order-payment-types';
 
 const orderIdSchema = z.string().uuid();
 
-function isResourceMissingError(error: unknown): boolean {
-  return Boolean(
-    error
-      && typeof error === 'object'
-      && (error as { code?: unknown }).code === 'resource_missing',
-  );
-}
-
 const updateStatusSchema = z.discriminatedUnion('status', [
-  z.object({ status: z.literal('cancelled') }),
+  z.object({
+    status: z.literal('cancelled'),
+    reason: z.enum(CANCEL_REASONS),
+    note: z.string().trim().max(ADMIN_NOTE_MAX_LENGTH).optional(),
+    notifyCustomer: z.boolean().default(true),
+  }),
   z.object({
     status: z.literal('shipped'),
     carrier: z.enum(SHIPPING_CARRIER_IDS),
     trackingNumber: z.string().trim().min(1).max(64).regex(/^[0-9A-Za-z-]+$/),
   }),
 ]);
+
+type CancelRequest = { reason: CancelReason; note?: string; notifyCustomer: boolean };
+
+type CurrentOrder = {
+  id: string;
+  status: OrderStatus;
+  payment_intent_id: string | null;
+  checkout_session_id: string | null;
+};
+
+type AuditOutcome = 'success' | 'failure' | 'error' | 'conflict';
+type AuditFn = (outcome: AuditOutcome, detail: string, metadata?: Record<string, unknown>) => Promise<void>;
+
+const VOUCHER_VALID_MESSAGE = '払込票が有効な間は取り消せません。払込期限を過ぎると自動で期限切れになります。';
+const STATE_CHANGED_MESSAGE = '注文の状態が変わったためキャンセルできませんでした。';
 
 export async function GET(
   request: Request,
@@ -45,7 +68,7 @@ export async function GET(
       endpoint: `/api/admin/orders/${id}/status`,
       method: 'POST',
       description: 'Order status update endpoint (cancel or shipped)',
-      requiredBody: { status: 'cancelled' },
+      requiredBody: { status: 'cancelled', reason: CANCEL_REASONS },
     },
     { status: 200 },
   );
@@ -64,38 +87,30 @@ export async function POST(
     const { id } = await params;
     const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
     const userAgent = request.headers.get('user-agent') ?? null;
-    const parsedOrderId = orderIdSchema.safeParse(id);
-    if (!parsedOrderId.success) {
-      await logAudit({
+    const audit: AuditFn = (outcome, detail, metadata) =>
+      logAudit({
         action: 'admin.orders.status.update',
         actor_id: authz.userId,
         resource: 'orders',
         resource_id: id,
-        outcome: 'failure',
-        detail: 'Invalid order id',
+        outcome,
+        detail,
         ip: clientIp,
         user_agent: userAgent,
+        metadata: metadata ?? null,
       });
+
+    const parsedOrderId = orderIdSchema.safeParse(id);
+    if (!parsedOrderId.success) {
+      await audit('failure', 'Invalid order id');
       return NextResponse.json({ error: 'Invalid order id' }, { status: 400 });
     }
 
     const parsedBody = updateStatusSchema.safeParse(await request.json().catch(() => ({})));
     if (!parsedBody.success) {
-      await logAudit({
-        action: 'admin.orders.status.update',
-        actor_id: authz.userId,
-        resource: 'orders',
-        resource_id: parsedOrderId.data,
-        outcome: 'failure',
-        detail: 'Invalid request body',
-        ip: clientIp,
-        user_agent: userAgent,
-      });
+      await audit('failure', 'Invalid request body');
       return NextResponse.json(
-        {
-          error: 'Invalid request body',
-          details: parsedBody.error.flatten(),
-        },
+        { error: 'Invalid request body', details: parsedBody.error.flatten() },
         { status: 400 },
       );
     }
@@ -115,30 +130,18 @@ export async function POST(
       }
 
       const shippedOrder = Array.isArray(data) ? data[0] : data;
-
       if (!shippedOrder) {
-        await logAudit({
-          action: 'admin.orders.status.update',
-          actor_id: authz.userId,
-          outcome: 'failure',
-          resource: 'orders',
-          resource_id: id,
-          detail: 'not_shippable',
-        });
+        await audit('failure', 'not_shippable');
         return NextResponse.json(
-          { error: '発送できる状態ではありません。決済完了・未発送で配送先の必須項目が揃った注文のみ発送できます。' },
+          {
+            error:
+              '発送できる状態ではありません。決済完了・未発送で配送先の必須項目が揃い、支払額の確認（要対応）が済んだ注文のみ発送できます。',
+          },
           { status: 409 },
         );
       }
 
-      await logAudit({
-        action: 'admin.orders.status.update',
-        actor_id: authz.userId,
-        outcome: 'success',
-        resource: 'orders',
-        resource_id: id,
-        metadata: { status: 'shipped', carrier: parsedBody.data.carrier },
-      });
+      await audit('success', 'Status changed to shipped', { status: 'shipped', carrier: parsedBody.data.carrier });
 
       await sendOrderShippedEmail({
         orderId: id,
@@ -151,18 +154,21 @@ export async function POST(
       return NextResponse.json({ success: true, status: 'shipped' }, { status: 200 });
     }
 
-    const supabase = await createClient(request);
+    const cancel: CancelRequest = {
+      reason: parsedBody.data.reason,
+      note: parsedBody.data.note || undefined,
+      notifyCustomer: parsedBody.data.notifyCustomer,
+    };
+    if (cancel.reason === 'other' && !cancel.note) {
+      return NextResponse.json({ error: '「その他」を選んだときはメモを入力してください。' }, { status: 400 });
+    }
 
+    const supabase = await createClient(request);
     const { data: currentOrder, error: currentOrderError } = await supabase
       .from('orders')
       .select('id, status, payment_intent_id, checkout_session_id')
       .eq('id', parsedOrderId.data)
-      .maybeSingle<{
-        id: string;
-        status: 'pending' | 'paid' | 'failed' | 'cancelled' | 'shipped';
-        payment_intent_id: string | null;
-        checkout_session_id: string | null;
-      }>();
+      .maybeSingle<CurrentOrder>();
 
     if (currentOrderError) {
       console.error('[admin.orders.status] Failed to fetch order:', currentOrderError);
@@ -170,383 +176,165 @@ export async function POST(
     }
 
     if (!currentOrder) {
-      await logAudit({
-        action: 'admin.orders.status.update',
-        actor_id: authz.userId,
-        resource: 'orders',
-        resource_id: parsedOrderId.data,
-        outcome: 'failure',
-        detail: 'Order not found',
-        ip: clientIp,
-        user_agent: userAgent,
-      });
+      await audit('failure', 'Order not found');
       return NextResponse.json({ error: 'Order not found' }, { status: 404 });
     }
 
     if (currentOrder.status === 'cancelled') {
-      await logAudit({
-        action: 'admin.orders.status.update',
-        actor_id: authz.userId,
-        resource: 'orders',
-        resource_id: parsedOrderId.data,
-        outcome: 'conflict',
-        detail: 'Order already cancelled',
-        ip: clientIp,
-        user_agent: userAgent,
-      });
+      await audit('conflict', 'Order already cancelled');
       return NextResponse.json({ success: true, status: 'cancelled' }, { status: 200 });
     }
 
     if (currentOrder.status === 'shipped') {
-      await logAudit({
-        action: 'admin.orders.status.update',
-        actor_id: authz.userId,
-        resource: 'orders',
-        resource_id: parsedOrderId.data,
-        outcome: 'conflict',
-        detail: 'Order already shipped',
-        ip: clientIp,
-        user_agent: userAgent,
-      });
-      return NextResponse.json(
-        { error: '発送済みの注文はキャンセルできません。' },
-        { status: 409 },
-      );
-    }
-
-    // pending の注文をキャンセルする場合、在庫は既に引き当て済みで PaymentIntent も
-    // 生きているため、status を直接書き換えるだけでは在庫が永久に戻らず、コンビニ払込票も
-    // 支払い可能なまま残ってしまう（レビュー指摘 C2）。release_stock_for_unpaid_order に
-    // _next_status: 'cancelled' を渡し、在庫復元とステータス遷移を1つのRPCで完結させる。
-    if (currentOrder.status === 'pending') {
-      const paymentIntentId = currentOrder.payment_intent_id;
-
-      if (!paymentIntentId) {
-        console.error('[admin.orders.status] pending order has no payment_intent_id', parsedOrderId.data);
-        await logAudit({
-          action: 'admin.orders.status.update',
-          actor_id: authz.userId,
-          resource: 'orders',
-          resource_id: parsedOrderId.data,
-          outcome: 'error',
-          detail: 'Pending order has no payment_intent_id',
-          ip: clientIp,
-          user_agent: userAgent,
-        });
-        return NextResponse.json({ error: 'Failed to update order status' }, { status: 500 });
-      }
-
-      let stripeTerminalState:
-        | { kind: 'payment_intent_canceled' }
-        | {
-            kind: 'checkout_session_expired';
-            sessionId: string;
-            expiredNow: boolean;
-          };
-
-      try {
-        const stripe = getStripeServerClient();
-        let paymentIntentStatus: string;
-
-        try {
-          const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
-          paymentIntentStatus = paymentIntent.status;
-        } catch (retrieveError) {
-          if (!isResourceMissingError(retrieveError)) {
-            throw retrieveError;
-          }
-
-          // resource_missing は「IDが存在しない、または別種別のID」という取得失敗であり、
-          // 未入金を示す決済状態ではない。状態を検証できない限り、Session の状態だけで
-          // 注文キャンセルや在庫解放へ進めない。
-          await logAudit({
-            action: 'admin.orders.status.update',
-            actor_id: authz.userId,
-            resource: 'orders',
-            resource_id: parsedOrderId.data,
-            outcome: 'conflict',
-            detail: 'Cannot cancel: payment intent could not be verified',
-            ip: clientIp,
-            user_agent: userAgent,
-            metadata: { stripe_error_code: 'resource_missing' },
-          });
-          return NextResponse.json(
-            { error: 'Stripe 上の決済状態を確認できないためキャンセルできません。' },
-            { status: 409 },
-          );
-        }
-
-        if (paymentIntentStatus === 'succeeded') {
-          await logAudit({
-            action: 'admin.orders.status.update',
-            actor_id: authz.userId,
-            resource: 'orders',
-            resource_id: parsedOrderId.data,
-            outcome: 'conflict',
-            detail: 'Cannot cancel: payment intent already succeeded',
-            ip: clientIp,
-            user_agent: userAgent,
-            metadata: { payment_intent_status: paymentIntentStatus },
-          });
-          return NextResponse.json(
-            { error: '支払いが完了しているためキャンセルできません。返金は別の操作で行ってください。' },
-            { status: 409 },
-          );
-        }
-
-        // processing はコンビニ払込・銀行振込では入金済みを意味し得る。
-        // async_payment_succeeded より先に在庫を戻さない。
-        if (paymentIntentStatus === 'processing') {
-          await logAudit({
-            action: 'admin.orders.status.update',
-            actor_id: authz.userId,
-            resource: 'orders',
-            resource_id: parsedOrderId.data,
-            outcome: 'conflict',
-            detail: 'Cannot cancel: payment intent is processing',
-            ip: clientIp,
-            user_agent: userAgent,
-            metadata: { payment_intent_status: paymentIntentStatus },
-          });
-          return NextResponse.json(
-            { error: '支払いが処理中のためキャンセルできません。返金は別の操作で行ってください。' },
-            { status: 409 },
-          );
-        }
-
-        if (paymentIntentStatus === 'canceled') {
-          stripeTerminalState = { kind: 'payment_intent_canceled' };
-        } else {
-          if (!isPendingCheckoutPaymentIntentStatus(paymentIntentStatus)) {
-            await logAudit({
-              action: 'admin.orders.status.update',
-              actor_id: authz.userId,
-              resource: 'orders',
-              resource_id: parsedOrderId.data,
-              outcome: 'conflict',
-              detail: 'Cannot cancel: unsupported payment intent status',
-              ip: clientIp,
-              user_agent: userAgent,
-              metadata: { payment_intent_status: paymentIntentStatus },
-            });
-            return NextResponse.json(
-              { error: 'Stripe 上の決済状態を確認できないためキャンセルできません。' },
-              { status: 409 },
-            );
-          }
-
-          const expiry = await expireCheckoutSessionForPaymentIntent({
-            stripe,
-            paymentIntentId,
-            checkoutSessionId: currentOrder.checkout_session_id,
-          });
-
-          if (expiry.outcome !== 'expired') {
-            await logAudit({
-              action: 'admin.orders.status.update',
-              actor_id: authz.userId,
-              resource: 'orders',
-              resource_id: parsedOrderId.data,
-              outcome: 'conflict',
-              detail: expiry.outcome === 'blocked'
-                ? 'Cannot cancel: checkout session is not expireable'
-                : 'Cannot cancel: checkout session could not be verified',
-              ip: clientIp,
-              user_agent: userAgent,
-              metadata: {
-                payment_intent_status: paymentIntentStatus,
-                checkout_session_id: expiry.sessionId,
-                checkout_session_status:
-                  expiry.outcome === 'blocked' ? expiry.sessionStatus : null,
-                checkout_payment_status:
-                  expiry.outcome === 'blocked' ? expiry.paymentStatus : null,
-                reason: expiry.outcome === 'unavailable' ? expiry.reason : null,
-              },
-            });
-            return NextResponse.json(
-              {
-                error:
-                  '決済が完了または処理中、もしくはStripe上の決済状態を確認できないためキャンセルできません。',
-              },
-              { status: 409 },
-            );
-          }
-
-          stripeTerminalState = {
-            kind: 'checkout_session_expired',
-            sessionId: expiry.sessionId,
-            expiredNow: expiry.expiredNow,
-          };
-        }
-      } catch (stripeError) {
-        console.error('[admin.orders.status] Failed to terminate Checkout payment:', stripeError);
-        await logAudit({
-          action: 'admin.orders.status.update',
-          actor_id: authz.userId,
-          resource: 'orders',
-          resource_id: parsedOrderId.data,
-          outcome: 'error',
-          detail: 'Failed to terminate Stripe Checkout payment',
-          ip: clientIp,
-          user_agent: userAgent,
-        });
-        return NextResponse.json({ error: 'Stripe 決済のキャンセルに失敗しました。' }, { status: 500 });
-      }
-
-      const serviceRoleSupabase = await createServiceRoleClient();
-      const { data: releaseData, error: releaseError } = await serviceRoleSupabase.rpc(
-        'release_stock_for_unpaid_order',
-        { _payment_intent_id: paymentIntentId, _next_status: 'cancelled' },
-      );
-
-      if (releaseError) {
-        console.error('[admin.orders.status] Failed to release stock for cancelled order:', releaseError);
-        await logAudit({
-          action: 'admin.orders.status.update',
-          actor_id: authz.userId,
-          resource: 'orders',
-          resource_id: parsedOrderId.data,
-          outcome: 'error',
-          detail: 'Failed to release stock while cancelling order',
-          ip: clientIp,
-          user_agent: userAgent,
-        });
-        return NextResponse.json({ error: 'Failed to update order status' }, { status: 500 });
-      }
-
-      const releaseRow = Array.isArray(releaseData) ? releaseData[0] : releaseData;
-
-      if (releaseRow?.released !== true) {
-        // 読み取りと RPC の間に注文の状態が変わった（例: 直前に paid になった）。
-        // 在庫もステータスも変更されていないので success を返してはいけない。
-        await logAudit({
-          action: 'admin.orders.status.update',
-          actor_id: authz.userId,
-          resource: 'orders',
-          resource_id: parsedOrderId.data,
-          outcome: 'conflict',
-          detail: 'Order state changed before cancellation could be applied',
-          ip: clientIp,
-          user_agent: userAgent,
-          metadata: {
-            from: currentOrder.status,
-            stripe_terminal_state: stripeTerminalState.kind,
-            checkout_session_id:
-              stripeTerminalState.kind === 'checkout_session_expired'
-                ? stripeTerminalState.sessionId
-                : null,
-            stock_released: false,
-          },
-        });
-        return NextResponse.json(
-          { error: '注文の状態が変わったためキャンセルできませんでした。' },
-          { status: 409 },
-        );
-      }
-
-      await logAudit({
-        action: 'admin.orders.status.update',
-        actor_id: authz.userId,
-        resource: 'orders',
-        resource_id: parsedOrderId.data,
-        outcome: 'success',
-        detail: 'Status changed to cancelled',
-        ip: clientIp,
-        user_agent: userAgent,
-        metadata: {
-          from: currentOrder.status,
-          to: 'cancelled',
-          stripe_terminal_state: stripeTerminalState.kind,
-          checkout_session_id:
-            stripeTerminalState.kind === 'checkout_session_expired'
-              ? stripeTerminalState.sessionId
-              : null,
-          checkout_session_expired_now:
-            stripeTerminalState.kind === 'checkout_session_expired'
-              ? stripeTerminalState.expiredNow
-              : false,
-          stock_released: true,
-        },
-      });
-
-      return NextResponse.json({ success: true, status: 'cancelled' }, { status: 200 });
+      await audit('conflict', 'Order already shipped');
+      return NextResponse.json({ error: '発送済みの注文はキャンセルできません。' }, { status: 409 });
     }
 
     if (currentOrder.status === 'paid') {
-      await logAudit({
-        action: 'admin.orders.status.update',
-        actor_id: authz.userId,
-        resource: 'orders',
-        resource_id: parsedOrderId.data,
-        outcome: 'conflict',
-        detail: 'Cannot cancel: order is already paid',
-        ip: clientIp,
-        user_agent: userAgent,
-      });
+      await audit('conflict', 'Cannot cancel: order is already paid');
       return NextResponse.json(
         { error: '支払い済みの注文は返金処理を伴わずキャンセルできません。' },
         { status: 409 },
       );
     }
 
-    // failed -> cancelled は専用RPC内の条件付きUPDATEで原子的に確定する。
-    const serviceRoleSupabase = await createServiceRoleClient();
-    const { data: cancelledData, error: updateError } = await serviceRoleSupabase.rpc(
-      'admin_cancel_failed_order',
-      { _actor_id: authz.userId, _order_id: parsedOrderId.data },
-    );
-
-    if (updateError) {
-      console.error('[admin.orders.status] Failed to update order status:', updateError);
-      await logAudit({
-        action: 'admin.orders.status.update',
-        actor_id: authz.userId,
-        resource: 'orders',
-        resource_id: parsedOrderId.data,
-        outcome: 'error',
-        detail: 'Failed to update order status',
-        ip: clientIp,
-        user_agent: userAgent,
-      });
-      return NextResponse.json({ error: 'Failed to update order status' }, { status: 500 });
+    if (currentOrder.status === 'abandoned') {
+      await audit('conflict', 'Cannot cancel: order is abandoned');
+      return NextResponse.json({ error: '放棄された注文は取り消せません。' }, { status: 409 });
     }
 
-    const updatedOrder = Array.isArray(cancelledData) ? cancelledData[0] : cancelledData;
-    if (!updatedOrder) {
-      await logAudit({
-        action: 'admin.orders.status.update',
-        actor_id: authz.userId,
-        resource: 'orders',
-        resource_id: parsedOrderId.data,
-        outcome: 'conflict',
-        detail: 'Order state changed before failed-order cancellation could be applied',
-        ip: clientIp,
-        user_agent: userAgent,
-      });
-      return NextResponse.json(
-        { error: '注文の状態が変わったためキャンセルできませんでした。' },
-        { status: 409 },
-      );
+    if (currentOrder.status === 'failed') {
+      return cancelFailedOrder(currentOrder, cancel, authz.userId, audit);
     }
 
-    await logAudit({
-      action: 'admin.orders.status.update',
-      actor_id: authz.userId,
-      resource: 'orders',
-      resource_id: updatedOrder.id,
-      outcome: 'success',
-      detail: `Status changed to ${updatedOrder.status}`,
-      ip: clientIp,
-      user_agent: userAgent,
-      metadata: {
-        from: currentOrder.status,
-        to: updatedOrder.status,
-      },
-    });
-
-    return NextResponse.json({ success: true, status: updatedOrder.status }, { status: 200 });
+    return cancelUnpaidOrder(currentOrder, cancel, authz.userId, audit);
   } catch (error) {
     console.error('POST /api/admin/orders/:id/status error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
+}
+
+/** 失敗 → 取消。在庫は戻し済み。お客様には送らない（期限切れで知らせ済み） */
+async function cancelFailedOrder(
+  order: CurrentOrder,
+  cancel: CancelRequest,
+  actorId: string,
+  audit: AuditFn,
+): Promise<Response> {
+  const serviceRoleSupabase = await createServiceRoleClient();
+  const { data, error } = await serviceRoleSupabase.rpc('admin_cancel_failed_order', {
+    _order_id: order.id,
+    _actor_id: actorId,
+    _cancel_reason: cancel.reason,
+    _note: cancel.note ?? null,
+  });
+
+  if (error) {
+    console.error('[admin.orders.status] Failed to cancel failed order:', error);
+    await audit('error', 'Failed to update order status');
+    return NextResponse.json({ error: 'Failed to update order status' }, { status: 500 });
+  }
+
+  const updated = Array.isArray(data) ? data[0] : data;
+  if (!updated) {
+    await audit('conflict', 'Order state changed before failed-order cancellation could be applied');
+    return NextResponse.json({ error: STATE_CHANGED_MESSAGE }, { status: 409 });
+  }
+
+  await audit('success', 'Status changed to cancelled', { from: 'failed', to: 'cancelled', cancel_reason: cancel.reason });
+  return NextResponse.json({ success: true, status: 'cancelled' }, { status: 200 });
+}
+
+/**
+ * 支払い手続き中・入金待ち → 取消（設計書 3-2・5-2、R-18）。
+ * 支払い手続き中は開いている決済を先に失効させる（Checkout の PaymentIntent は直接 cancel できない）。
+ * 入金待ちは払込票が有効な間は取り消さない。どちらも最後は照合関数が Stripe の現在値で決める。
+ */
+async function cancelUnpaidOrder(
+  order: CurrentOrder,
+  cancel: CancelRequest,
+  actorId: string,
+  audit: AuditFn,
+): Promise<Response> {
+  const stripe = getStripeServerClient();
+
+  try {
+    if (order.status === 'payment_in_progress') {
+      if (order.checkout_session_id) {
+        await expireOpenCheckoutSession(stripe, order.checkout_session_id);
+      }
+    } else {
+      const snapshot = await readCheckoutPayment(stripe as unknown as CheckoutPaymentStripeClient, {
+        checkoutSessionId: order.checkout_session_id,
+        paymentIntentId: order.payment_intent_id,
+      });
+      if (snapshot.state.kind === 'awaiting_payment') {
+        const cancelBlockedUntil = snapshot.voucherExpiresAt?.toISOString() ?? null;
+        await audit('conflict', 'Cannot cancel: payment voucher is still valid', { voucher_expires_at: cancelBlockedUntil });
+        return NextResponse.json({ error: VOUCHER_VALID_MESSAGE, cancelBlockedUntil }, { status: 409 });
+      }
+    }
+
+    const result = await reconcileCheckoutPayment(await createDefaultReconcilerDeps(), {
+      checkoutSessionId: order.checkout_session_id,
+      paymentIntentId: order.payment_intent_id,
+      adminCancel: { actorId, reason: cancel.reason, note: cancel.note, notifyCustomer: cancel.notifyCustomer },
+    });
+    return respondToCancelResult(result, order, cancel, audit);
+  } catch (error) {
+    if (error instanceof ReconcileTransientError) {
+      await audit('error', 'Cannot cancel: Stripe or database is temporarily unavailable', { reason: error.code });
+      return NextResponse.json(
+        { error: 'Stripe の状態を確認できませんでした。時間をおいて再試行してください。' },
+        { status: 503 },
+      );
+    }
+
+    console.error('[admin.orders.status] Failed to cancel unpaid order:', error);
+    await audit('error', 'Failed to terminate Stripe Checkout payment');
+    return NextResponse.json({ error: 'Stripe 決済のキャンセルに失敗しました。' }, { status: 500 });
+  }
+}
+
+async function respondToCancelResult(
+  result: ReconcileResult,
+  order: CurrentOrder,
+  cancel: CancelRequest,
+  audit: AuditFn,
+): Promise<Response> {
+  if (result.kind === 'needs_action') {
+    await audit('conflict', 'Cannot cancel: payment needs action', { exception_reason: result.reason });
+    return NextResponse.json(
+      {
+        error: `要対応として記録しました（${PAYMENT_EXCEPTION_REASON_LABELS[result.reason]}）。ORDER タブの要対応から対応してください。`,
+      },
+      { status: 409 },
+    );
+  }
+
+  if (result.orderStatus === 'cancelled') {
+    await audit('success', 'Status changed to cancelled', {
+      from: order.status,
+      to: 'cancelled',
+      cancel_reason: cancel.reason,
+      notify_customer: cancel.notifyCustomer,
+    });
+    return NextResponse.json({ success: true, status: 'cancelled' }, { status: 200 });
+  }
+
+  if (result.orderStatus === 'paid' || result.orderStatus === 'shipped') {
+    await audit('conflict', 'Cannot cancel: payment completed', { order_status: result.orderStatus });
+    return NextResponse.json(
+      { error: '支払いが完了したためキャンセルできません。返金は別の操作で行ってください。' },
+      { status: 409 },
+    );
+  }
+
+  if (result.orderStatus === 'pending') {
+    await audit('conflict', 'Cannot cancel: payment voucher was issued');
+    return NextResponse.json({ error: VOUCHER_VALID_MESSAGE }, { status: 409 });
+  }
+
+  await audit('conflict', 'Order state changed before cancellation could be applied', { order_status: result.orderStatus });
+  return NextResponse.json({ error: STATE_CHANGED_MESSAGE }, { status: 409 });
 }
