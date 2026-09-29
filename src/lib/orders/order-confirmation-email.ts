@@ -2,8 +2,9 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import sendMail from '@/lib/mail';
 import { toOrderNumber } from '@/lib/orders/order-number';
 import { logAudit } from '@/lib/audit';
+import type { PaidEmailVariant } from '@/lib/orders/order-payment-types';
 
-type ConfirmationItem = {
+export type ConfirmationItem = {
   item_name: string;
   color?: string | null;
   size?: string | null;
@@ -32,7 +33,7 @@ export type OrderEmailClaimStore = {
   ): PromiseLike<{ data: unknown; error: { message?: string } | null }>;
 };
 
-export type OrderEmailKind = 'awaiting_payment' | 'paid';
+export type OrderEmailKind = 'awaiting_payment' | 'paid' | 'payment_expired' | 'canceled';
 
 type OrderConfirmationParams = {
   orderId: string;
@@ -54,9 +55,11 @@ type OrderConfirmationParams = {
   currency: string;
   shipping: OrderConfirmationShipping;
   paymentState?: 'paid' | 'awaiting_payment';
+  /** 入金済みの書き分け（設計書 5-4）。送信権はどれも paid */
+  paidVariant?: PaidEmailVariant;
 };
 
-function formatCurrency(amount: number, currency: string): string {
+export function formatCurrency(amount: number, currency: string): string {
   try {
     return new Intl.NumberFormat('ja-JP', {
       style: 'currency',
@@ -110,7 +113,12 @@ export async function sendOrderConfirmationEmail(params: OrderConfirmationParams
         'お支払い手続きの案内は、決済画面および Stripe からのメールをご確認ください。',
         'ご入金の確認後、あらためて確認メールをお送りします。',
       ]
-    : ['この度はご注文いただき誠にありがとうございます。', 'ご注文を承りました。'];
+    : params.paidVariant === 'payment_received_after_expiry'
+      ? [
+          'お支払い期限が過ぎたためご注文の取り消しをご案内しましたが、その後にお支払いを確認しました。',
+          'ご注文は有効です。このまま商品をお届けします。',
+        ]
+      : ['この度はご注文いただき誠にありがとうございます。', 'ご注文を承りました。'];
 
   const itemLines = items.map((item) => {
     const variant = [item.color, item.size].filter(Boolean).join(' / ');
@@ -180,7 +188,7 @@ export async function sendOrderConfirmationEmail(params: OrderConfirmationParams
  * 権利の確認そのものが失敗したときは true を返して送る。届かないより重複するほうがましで、
  * 見逃さないように監査ログに残す。
  */
-async function claimOrderEmail(
+export async function claimOrderEmail(
   store: OrderEmailClaimStore,
   orderId: string,
   kind: OrderEmailKind,
@@ -205,7 +213,7 @@ async function claimOrderEmail(
   }
 }
 
-async function releaseOrderEmail(
+export async function releaseOrderEmail(
   store: OrderEmailClaimStore,
   orderId: string,
   kind: OrderEmailKind,
@@ -235,7 +243,7 @@ export type OrderEmailSourceStore = OrderEmailClaimStore & Pick<SupabaseClient, 
 const ORDER_EMAIL_COLUMNS =
   'id, shipping_email, shipping_full_name, subtotal_amount, shipping_amount, discount_amount, total_amount, currency, shipping_postal_code, shipping_prefecture, shipping_city, shipping_address, shipping_building, shipping_phone';
 
-type OrderEmailRow = {
+export type OrderEmailRow = {
   id: string;
   shipping_email: string | null;
   shipping_full_name: string | null;
@@ -252,25 +260,17 @@ type OrderEmailRow = {
   shipping_phone: string | null;
 };
 
-/**
- * 注文 ID から注文行と明細を引いて、注文メールを送る。
- *
- * webhook（注文作成・async_payment_succeeded）と掃除ジョブ（取りこぼしの救済）が、同じ列の並びと
- * 同じ組み立てを別々に持っていた。片方だけ直すと客に届く内容が経路で食い違うため1か所にまとめる。
- *
- * 明細が引けないときは送らない。空のまま送ると、誤った注文内容を客に見せることになる。
- *
- * @returns 実際に送ったら true
- */
-export async function sendOrderConfirmationEmailForOrderId(params: {
-  store: OrderEmailSourceStore;
-  orderId: string;
-  paymentState: OrderEmailKind;
-  /** ログの頭に付ける呼び出し元の目印（'[webhook]' など） */
-  logLabel: string;
-}): Promise<boolean> {
-  const { store, orderId, paymentState, logLabel } = params;
+export type OrderEmailSource = { order: OrderEmailRow; items: ConfirmationItem[] };
 
+/**
+ * 注文メールの材料（注文行と明細）を引く。明細が引けないときは null（送らない）。
+ * 注文確認・期限切れ・取消のメールで同じ列の並びと同じ規則を使う。
+ */
+export async function fetchOrderEmailSource(
+  store: OrderEmailSourceStore,
+  orderId: string,
+  logLabel: string,
+): Promise<OrderEmailSource | null> {
   const { data: orderRow, error: orderError } = await store
     .from('orders')
     .select(ORDER_EMAIL_COLUMNS)
@@ -278,8 +278,8 @@ export async function sendOrderConfirmationEmailForOrderId(params: {
     .maybeSingle<OrderEmailRow>();
 
   if (orderError || !orderRow) {
-    console.error(`${logLabel} failed to fetch order for confirmation email`, orderId, orderError);
-    return false;
+    console.error(`${logLabel} failed to fetch order for email`, orderId, orderError);
+    return null;
   }
 
   const { data: orderItems, error: orderItemsError } = await store
@@ -288,22 +288,44 @@ export async function sendOrderConfirmationEmailForOrderId(params: {
     .eq('order_id', orderId);
 
   // 取得の失敗と0件はどちらも「注文内容を書けない」。商品の行が無いメールは、客には
-  // 注文が消えたように見える。送らなければ送信権を取らないので、後の経路（webhook の再送・
-  // 掃除ジョブ）が送り直せる。
+  // 注文が消えたように見える。送らなければ送信権を取らないので、後の経路が送り直せる。
   if (orderItemsError || !orderItems || orderItems.length === 0) {
     console.error(
-      `${logLabel} failed to fetch order_items for confirmation email`,
+      `${logLabel} failed to fetch order_items for email`,
       orderId,
       orderItemsError ?? 'no order_items rows',
     );
+    return null;
+  }
+
+  return { order: orderRow, items: orderItems as ConfirmationItem[] };
+}
+
+/**
+ * 注文 ID から注文行と明細を引いて、注文メールを送る。
+ *
+ * @returns 実際に送ったら true
+ */
+export async function sendOrderConfirmationEmailForOrderId(params: {
+  store: OrderEmailSourceStore;
+  orderId: string;
+  paymentState: 'awaiting_payment' | 'paid';
+  /** ログの頭に付ける呼び出し元の目印（'[webhook]' など） */
+  logLabel: string;
+  paidVariant?: PaidEmailVariant;
+}): Promise<boolean> {
+  const { store, orderId, paymentState, logLabel, paidVariant } = params;
+  const source = await fetchOrderEmailSource(store, orderId, logLabel);
+  if (!source) {
     return false;
   }
 
+  const { order: orderRow, items } = source;
   return sendOrderConfirmationEmail({
     orderId: orderRow.id,
     email: orderRow.shipping_email,
     fullName: orderRow.shipping_full_name,
-    items: orderItems as ConfirmationItem[],
+    items,
     subtotalAmount: orderRow.subtotal_amount,
     shippingAmount: orderRow.shipping_amount,
     // 注文確定 RPC 側の COALESCE と同じく、取れないときは 0 として扱う。
@@ -320,6 +342,7 @@ export async function sendOrderConfirmationEmailForOrderId(params: {
       phone: orderRow.shipping_phone,
     },
     paymentState,
+    paidVariant,
     store,
   });
 }

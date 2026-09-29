@@ -126,6 +126,15 @@ describe("sendOrderConfirmationEmail", () => {
     const sent = mockSendMail.mock.calls[0][0] as { subject: string };
     expect(sent.subject).not.toContain('お支払い待ち');
   });
+
+  test('失敗の後の入金（⑤）は、取り消しの案内の後に入金を確認したことを書く', async () => {
+    await sendOrderConfirmationEmail({ ...baseParams(), paidVariant: 'payment_received_after_expiry' });
+
+    const body = mockSendMail.mock.calls[0][0].text as string;
+    expect(body).toContain('その後にお支払いを確認しました');
+    expect(body).toContain('ご注文は有効です');
+    expect(store.calls[0]).toEqual({ fn: 'claim_order_email', args: { _order_id: BASE.orderId, _kind: 'paid' } });
+  });
 });
 
 /**
