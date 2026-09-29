@@ -6165,14 +6165,32 @@ describe('createSupabaseReconcilerDatabase', () => {
     const { client, selects } = fakeClient({
       select: (_table, column) =>
         column === 'payment_intent_id'
-          ? { data: { id: 'order-1', status: 'pending', payment_intent_id: 'pi_1', checkout_session_id: null }, error: null }
+          ? {
+              data: {
+                id: 'order-1',
+                status: 'pending',
+                payment_intent_id: 'pi_1',
+                checkout_session_id: null,
+                total_amount: 5000,
+                currency: 'jpy',
+              },
+              error: null,
+            }
           : { data: null, error: null },
     });
 
     const order = await createSupabaseReconcilerDatabase(client).findOrder({ checkoutSessionId: 'cs_1', paymentIntentId: 'pi_1' });
 
     expect(selects.map((call) => call.column)).toEqual(['checkout_session_id', 'payment_intent_id']);
-    expect(order).toEqual({ id: 'order-1', status: 'pending', paymentIntentId: 'pi_1', checkoutSessionId: null });
+    // 支払額の違いを毎回の照合で導き直すため、注文の額と通貨も読む（Task 11 の修正 5487bec5）
+    expect(order).toEqual({
+      id: 'order-1',
+      status: 'pending',
+      paymentIntentId: 'pi_1',
+      checkoutSessionId: null,
+      totalAmount: 5000,
+      currency: 'jpy',
+    });
   });
 
   it('code の無い Supabase のエラー（通信の失敗）は一時的な失敗（db_unavailable）にする', async () => {
@@ -6436,6 +6454,8 @@ type OrderLookupRow = {
   status: OrderStatus;
   payment_intent_id: string | null;
   checkout_session_id: string | null;
+  total_amount: number;
+  currency: string;
 };
 
 export function createSupabaseReconcilerDatabase(client: SupabaseClient): ReconcilerDatabase {
@@ -6456,7 +6476,7 @@ export function createSupabaseReconcilerDatabase(client: SupabaseClient): Reconc
         if (!value) continue;
         const { data, error } = await client
           .from('orders')
-          .select('id, status, payment_intent_id, checkout_session_id')
+          .select('id, status, payment_intent_id, checkout_session_id, total_amount, currency')
           .eq(column, value)
           .maybeSingle<OrderLookupRow>();
         if (error) throwSupabaseError(error);
@@ -6466,6 +6486,8 @@ export function createSupabaseReconcilerDatabase(client: SupabaseClient): Reconc
             status: data.status,
             paymentIntentId: data.payment_intent_id,
             checkoutSessionId: data.checkout_session_id,
+            totalAmount: data.total_amount,
+            currency: data.currency,
           };
         }
       }
