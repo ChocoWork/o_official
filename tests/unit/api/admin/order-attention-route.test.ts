@@ -18,7 +18,9 @@ const mockRpc = jest.fn();
 const mockSelectColumns: string[] = [];
 let exceptionRows: unknown[] = [];
 let reviewRows: unknown[] = [];
-// 要対応に付いた注文。「注文を取り消して解決」が取り消しの前に読む
+// 要対応 1 件と、それに付いた注文。「注文を取り消して解決」が取り消しの前に読む
+let attachedExists = true;
+let attachedResolvedAt: string | null = null;
 let attachedOrder: Record<string, unknown> | null = null;
 let attachedOrderError: unknown = null;
 
@@ -29,7 +31,7 @@ function listQuery(rows: () => unknown[]) {
   }
   query.limit = async () => ({ data: rows(), count: rows().length, error: null });
   query.maybeSingle = async () => ({
-    data: attachedOrderError ? null : { orders: attachedOrder },
+    data: attachedOrderError || !attachedExists ? null : { resolved_at: attachedResolvedAt, orders: attachedOrder },
     error: attachedOrderError,
   });
   return query;
@@ -113,6 +115,8 @@ beforeEach(() => {
   mockSelectColumns.length = 0;
   exceptionRows = [];
   reviewRows = [];
+  attachedExists = true;
+  attachedResolvedAt = null;
   attachedOrder = null;
   attachedOrderError = null;
   mockAuthorize.mockResolvedValue({ ok: true, userId: 'admin-1', role: 'supporter', actorEmail: null });
@@ -340,6 +344,11 @@ describe('POST /api/admin/payment-exceptions/:id/resolve', () => {
   });
 
   describe('注文を取り消して解決するときの Stripe の確認', () => {
+    // Stripe を引く ID の付き方が違う注文
+    const PI_ONLY_ORDER = { id: ORDER_ID, status: 'payment_in_progress', checkout_session_id: null, payment_intent_id: 'pi_1' };
+    const NO_REF_ORDER = { id: ORDER_ID, status: 'pending', checkout_session_id: null, payment_intent_id: null };
+    const PAID_STATE = { kind: 'paid', amountReceived: 1000, amountRefunded: 0, currency: 'jpy' };
+
     let errorSpy: jest.SpyInstance;
 
     beforeEach(() => {
@@ -350,157 +359,220 @@ describe('POST /api/admin/payment-exceptions/:id/resolve', () => {
       errorSpy.mockRestore();
     });
 
-    describe('支払い手続き中の注文', () => {
-      beforeEach(() => {
-        attachedOrder = IN_PROGRESS_ORDER;
-      });
+    function stripeReads(state: Record<string, unknown>, voucherExpiresAt: Date | null = null) {
+      mockReadCheckoutPayment.mockResolvedValue({ state, voucherExpiresAt });
+    }
 
-      it('開いている決済画面を失効させてから、取り消して解決する', async () => {
-        cancelResolved();
+    it('決済画面を失効させ、Stripe を読み直してから、取り消して解決する', async () => {
+      attachedOrder = IN_PROGRESS_ORDER;
+      stripeReads({ kind: 'checkout_abandoned' });
+      cancelResolved();
 
-        const res = await resolve(CANCEL_BODY);
+      const res = await resolve(CANCEL_BODY);
 
-        expect(res.status).toBe(200);
-        expect(res.body).toEqual({ success: true, orderCancelled: true });
-        expect(mockExpireOpenCheckoutSession).toHaveBeenCalledWith(mockStripe, 'cs_1');
-        expect(mockExpireOpenCheckoutSession.mock.invocationCallOrder[0]).toBeLessThan(mockRpc.mock.invocationCallOrder[0]);
-        expect(mockReadCheckoutPayment).not.toHaveBeenCalled();
-      });
-
-      it('決済画面が開いていなければ（決済が進んだ可能性）409 で、取り消さない', async () => {
-        mockExpireOpenCheckoutSession.mockResolvedValue('not_open');
-
-        const res = await resolve(CANCEL_BODY);
-
-        expect(res.status).toBe(409);
-        expect(res.body.error).toContain('決済が進んだ');
-        expect(mockRpc).not.toHaveBeenCalled();
-        expect(mockSendOrderCanceledEmail).not.toHaveBeenCalled();
-        expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
-          action: 'admin.payment_exceptions.resolve',
-          outcome: 'conflict',
-          resource_id: EXCEPTION_ID,
-        }));
-      });
-
-      it('Stripe に決済画面が無ければ、そのまま取り消して解決する', async () => {
-        mockExpireOpenCheckoutSession.mockResolvedValue('missing');
-        cancelResolved();
-
-        const res = await resolve(CANCEL_BODY);
-
-        expect(res.status).toBe(200);
-        expect(mockRpc).toHaveBeenCalledTimes(1);
-      });
-
-      it('決済画面の ID が無ければ、Stripe には触れずに取り消して解決する', async () => {
-        attachedOrder = { ...IN_PROGRESS_ORDER, checkout_session_id: null };
-        cancelResolved();
-
-        const res = await resolve(CANCEL_BODY);
-
-        expect(res.status).toBe(200);
-        expect(mockExpireOpenCheckoutSession).not.toHaveBeenCalled();
-        expect(mockRpc).toHaveBeenCalledTimes(1);
-      });
-
-      it('失効が一時的な Stripe の失敗なら 503 で「時間をおいて再試行」を返し、取り消さない', async () => {
-        mockExpireOpenCheckoutSession.mockRejectedValue({ type: 'StripeConnectionError' });
-
-        const res = await resolve(CANCEL_BODY);
-
-        expect(res.status).toBe(503);
-        expect(res.body.error).toContain('時間をおいて再試行');
-        expect(mockRpc).not.toHaveBeenCalled();
-      });
-
-      it('失効が一時的でない失敗なら 500 で中立な文言を返し、失敗した段階を監査に残して、取り消さない', async () => {
-        mockExpireOpenCheckoutSession.mockRejectedValue({ type: 'StripeInvalidRequestError', statusCode: 400 });
-
-        const res = await resolve(CANCEL_BODY);
-
-        expect(res.status).toBe(500);
-        expect(res.body.error).toBe('未入金の注文を取り消せませんでした。');
-        expect(mockRpc).not.toHaveBeenCalled();
-        expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
-          outcome: 'error',
-          metadata: { order_id: ORDER_ID, step: 'expire' },
-        }));
-      });
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ success: true, orderCancelled: true });
+      expect(mockExpireOpenCheckoutSession).toHaveBeenCalledWith(mockStripe, 'cs_1');
+      expect(mockReadCheckoutPayment).toHaveBeenCalledWith(mockStripe, { checkoutSessionId: 'cs_1', paymentIntentId: null });
+      const [expireOrder] = mockExpireOpenCheckoutSession.mock.invocationCallOrder;
+      const [readOrder] = mockReadCheckoutPayment.mock.invocationCallOrder;
+      const [rpcOrder] = mockRpc.mock.invocationCallOrder;
+      expect(expireOrder).toBeLessThan(readOrder);
+      expect(readOrder).toBeLessThan(rpcOrder);
     });
 
-    describe('入金待ちの注文', () => {
-      beforeEach(() => {
-        attachedOrder = PENDING_ORDER;
+    it.each<[string, Record<string, unknown>, string, Record<string, unknown>]>([
+      ['支払い手続き中で、決済画面が 0 円で完了していた（失効は何もしない）', IN_PROGRESS_ORDER, 'not_open', { kind: 'zero_amount_complete' }],
+      ['支払い手続き中で、決済画面が放棄になっていた', IN_PROGRESS_ORDER, 'expired', { kind: 'checkout_abandoned' }],
+      ['支払い手続き中で、Stripe に決済画面が無い', IN_PROGRESS_ORDER, 'missing', { kind: 'missing' }],
+      ['入金待ちで、決済画面がまだ開いていた（失効させたので放棄と読める）', PENDING_ORDER, 'expired', { kind: 'checkout_abandoned' }],
+      ['入金待ちで、払込票の期限が切れていた', PENDING_ORDER, 'not_open', { kind: 'voucher_expired' }],
+      ['入金待ちで、Stripe の状態が想定外だった', PENDING_ORDER, 'not_open', { kind: 'not_applicable', reason: 'unexpected' }],
+      ['入金待ちで、Stripe に決済画面が無い', PENDING_ORDER, 'missing', { kind: 'missing' }],
+    ])('%s なら、取り消して解決する', async (_name, order, expireOutcome, state) => {
+      attachedOrder = order;
+      mockExpireOpenCheckoutSession.mockResolvedValue(expireOutcome);
+      stripeReads(state);
+      cancelResolved(order.status as 'payment_in_progress' | 'pending');
+
+      const res = await resolve(CANCEL_BODY);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ success: true, orderCancelled: true });
+      expect(mockExpireOpenCheckoutSession).toHaveBeenCalledWith(mockStripe, order.checkout_session_id);
+      expect(mockRpc).toHaveBeenCalledWith('resolve_payment_exception', expect.objectContaining({ _cancel_order: true }));
+    });
+
+    it.each<[string, Record<string, unknown>]>([
+      ['支払い手続き中', IN_PROGRESS_ORDER],
+      ['入金待ち', PENDING_ORDER],
+    ])('%s の注文でも、Stripe が支払い済みなら 409 で取り消さない', async (_name, order) => {
+      attachedOrder = order;
+      mockExpireOpenCheckoutSession.mockResolvedValue('not_open');
+      stripeReads(PAID_STATE);
+
+      const res = await resolve(CANCEL_BODY);
+
+      expect(res.status).toBe(409);
+      expect(res.body.error).toContain('支払い済み');
+      expect(mockRpc).not.toHaveBeenCalled();
+      expect(mockSendOrderCanceledEmail).not.toHaveBeenCalled();
+      expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+        action: 'admin.payment_exceptions.resolve',
+        outcome: 'conflict',
+        resource_id: EXCEPTION_ID,
+      }));
+    });
+
+    it.each<[string, Record<string, unknown>, Record<string, unknown>, Date | null, string | null]>([
+      ['入金待ちで払込票が有効', PENDING_ORDER, { kind: 'awaiting_payment' }, new Date(FAR_FUTURE), FAR_FUTURE],
+      ['入金待ちで状態を分類できなくても払込期限がまだ先', PENDING_ORDER, { kind: 'not_applicable', reason: 'unexpected' }, new Date(FAR_FUTURE), FAR_FUTURE],
+      ['入金待ちで払込期限が読めなくても Stripe が支払いを待っている', PENDING_ORDER, { kind: 'awaiting_payment' }, null, null],
+      ['支払い手続き中でも払込票が発行されている', IN_PROGRESS_ORDER, { kind: 'awaiting_payment' }, new Date(FAR_FUTURE), FAR_FUTURE],
+    ])('%s なら 409 と払込期限を返し、取り消さない', async (_name, order, state, voucherExpiresAt, cancelBlockedUntil) => {
+      attachedOrder = order;
+      mockExpireOpenCheckoutSession.mockResolvedValue('not_open');
+      stripeReads(state, voucherExpiresAt);
+
+      const res = await resolve(CANCEL_BODY);
+
+      expect(res.status).toBe(409);
+      expect(res.body.cancelBlockedUntil).toBe(cancelBlockedUntil);
+      expect(res.body.error).toContain('払込期限');
+      expect(mockReadCheckoutPayment).toHaveBeenCalledWith(mockStripe, {
+        checkoutSessionId: order.checkout_session_id,
+        paymentIntentId: order.payment_intent_id,
       });
+      expect(mockRpc).not.toHaveBeenCalled();
+      expect(mockSendOrderCanceledEmail).not.toHaveBeenCalled();
+      expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+        outcome: 'conflict',
+        metadata: { order_id: ORDER_ID, voucher_expires_at: cancelBlockedUntil },
+      }));
+    });
 
-      it.each<[string, Record<string, unknown>, Date | null, string | null]>([
-        ['払込票が有効な入金待ち', { kind: 'awaiting_payment' }, new Date(FAR_FUTURE), FAR_FUTURE],
-        ['状態を分類できなくても払込期限がまだ先', { kind: 'not_applicable', reason: 'unexpected' }, new Date(FAR_FUTURE), FAR_FUTURE],
-        ['払込期限が読めなくても Stripe が支払いを待っている', { kind: 'awaiting_payment' }, null, null],
-      ])('%s なら 409 と払込期限を返し、取り消さない', async (_name, state, voucherExpiresAt, cancelBlockedUntil) => {
-        mockReadCheckoutPayment.mockResolvedValue({ state, voucherExpiresAt });
+    it('Session ID が無く PaymentIntent ID だけの注文は、失効を飛ばして PaymentIntent で読み、決済が進行中なら 409 で取り消さない', async () => {
+      attachedOrder = PI_ONLY_ORDER;
+      stripeReads({ kind: 'in_progress' });
 
-        const res = await resolve(CANCEL_BODY);
+      const res = await resolve(CANCEL_BODY);
 
-        expect(res.status).toBe(409);
-        expect(res.body.cancelBlockedUntil).toBe(cancelBlockedUntil);
-        expect(res.body.error).toContain('払込期限');
-        expect(mockReadCheckoutPayment).toHaveBeenCalledWith(mockStripe, { checkoutSessionId: 'cs_2', paymentIntentId: 'pi_2' });
-        expect(mockRpc).not.toHaveBeenCalled();
-        expect(mockSendOrderCanceledEmail).not.toHaveBeenCalled();
-        expect(mockExpireOpenCheckoutSession).not.toHaveBeenCalled();
-        expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
-          outcome: 'conflict',
-          metadata: { order_id: ORDER_ID, voucher_expires_at: cancelBlockedUntil },
-        }));
-      });
+      expect(res.status).toBe(409);
+      expect(res.body.error).toContain('進行中');
+      expect(mockExpireOpenCheckoutSession).not.toHaveBeenCalled();
+      expect(mockReadCheckoutPayment).toHaveBeenCalledWith(mockStripe, { checkoutSessionId: null, paymentIntentId: 'pi_1' });
+      expect(mockRpc).not.toHaveBeenCalled();
+    });
 
-      it('払込票の期限が切れていれば、取り消して解決する', async () => {
-        mockReadCheckoutPayment.mockResolvedValue({ state: { kind: 'voucher_expired' }, voucherExpiresAt: null });
-        cancelResolved('pending');
+    it('Session ID が無く PaymentIntent ID だけの注文で、決済画面が放棄になっていれば、取り消して解決する', async () => {
+      attachedOrder = PI_ONLY_ORDER;
+      stripeReads({ kind: 'checkout_abandoned' });
+      cancelResolved();
 
-        const res = await resolve(CANCEL_BODY);
+      const res = await resolve(CANCEL_BODY);
 
-        expect(res.status).toBe(200);
-        expect(res.body).toEqual({ success: true, orderCancelled: true });
-        expect(mockRpc).toHaveBeenCalledWith('resolve_payment_exception', expect.objectContaining({ _cancel_order: true }));
-      });
+      expect(res.status).toBe(200);
+      expect(mockExpireOpenCheckoutSession).not.toHaveBeenCalled();
+      expect(mockRpc).toHaveBeenCalledTimes(1);
+    });
 
-      it('Stripe に支払いが無ければ、取り消して解決する', async () => {
-        mockReadCheckoutPayment.mockResolvedValue({ state: { kind: 'missing' }, voucherExpiresAt: null });
-        cancelResolved('pending');
+    it('Stripe を引ける ID が無い注文は、Stripe を読まずに取り消して解決する', async () => {
+      attachedOrder = NO_REF_ORDER;
+      cancelResolved('pending');
 
-        const res = await resolve(CANCEL_BODY);
+      const res = await resolve(CANCEL_BODY);
 
-        expect(res.status).toBe(200);
-        expect(mockRpc).toHaveBeenCalledTimes(1);
-        expect(mockExpireOpenCheckoutSession).not.toHaveBeenCalled();
-      });
+      expect(res.status).toBe(200);
+      expect(mockExpireOpenCheckoutSession).not.toHaveBeenCalled();
+      expect(mockReadCheckoutPayment).not.toHaveBeenCalled();
+      expect(mockRpc).toHaveBeenCalledTimes(1);
+    });
 
-      it('確認が一時的な Stripe の失敗なら 503 で「時間をおいて再試行」を返し、取り消さない', async () => {
-        mockReadCheckoutPayment.mockRejectedValue(new ReconcileTransientError('stripe_unavailable'));
+    it('解決済みの要対応は、Stripe には触れず RPC に断らせる（決済画面を失効させない）', async () => {
+      attachedOrder = IN_PROGRESS_ORDER;
+      attachedResolvedAt = '2026-09-27T03:00:00.000Z';
+      mockRpc.mockResolvedValue({ data: [{ resolved: false, order_id: ORDER_ID, cancelled_from: null }], error: null });
 
-        const res = await resolve(CANCEL_BODY);
+      const res = await resolve(CANCEL_BODY);
 
-        expect(res.status).toBe(503);
-        expect(res.body.error).toContain('時間をおいて再試行');
-        expect(mockRpc).not.toHaveBeenCalled();
-      });
+      expect(res.status).toBe(409);
+      expect(mockRpc).toHaveBeenCalledTimes(1);
+      expect(mockExpireOpenCheckoutSession).not.toHaveBeenCalled();
+      expect(mockReadCheckoutPayment).not.toHaveBeenCalled();
+      expect(mockSendOrderCanceledEmail).not.toHaveBeenCalled();
+    });
 
-      it('確認が一時的でない失敗なら 500 で中立な文言を返し、失敗した段階を監査に残して、取り消さない', async () => {
-        mockReadCheckoutPayment.mockRejectedValue(new Error('checkoutSessionId or paymentIntentId is required'));
+    it('存在しない要対応も、Stripe には触れず RPC に断らせる', async () => {
+      attachedExists = false;
+      mockRpc.mockResolvedValue({ data: [{ resolved: false, order_id: null, cancelled_from: null }], error: null });
 
-        const res = await resolve(CANCEL_BODY);
+      const res = await resolve(CANCEL_BODY);
 
-        expect(res.status).toBe(500);
-        expect(res.body.error).toBe('未入金の注文を取り消せませんでした。');
-        expect(mockRpc).not.toHaveBeenCalled();
-        expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
-          outcome: 'error',
-          metadata: { order_id: ORDER_ID, step: 'read' },
-        }));
-      });
+      expect(res.status).toBe(409);
+      expect(mockRpc).toHaveBeenCalledTimes(1);
+      expect(mockExpireOpenCheckoutSession).not.toHaveBeenCalled();
+      expect(mockReadCheckoutPayment).not.toHaveBeenCalled();
+    });
+
+    it('失効が一時的な Stripe の失敗なら 503 で「時間をおいて再試行」を返し、段階を監査に残して、取り消さない', async () => {
+      attachedOrder = IN_PROGRESS_ORDER;
+      mockExpireOpenCheckoutSession.mockRejectedValue({ type: 'StripeConnectionError' });
+
+      const res = await resolve(CANCEL_BODY);
+
+      expect(res.status).toBe(503);
+      expect(res.body.error).toContain('時間をおいて再試行');
+      expect(mockReadCheckoutPayment).not.toHaveBeenCalled();
+      expect(mockRpc).not.toHaveBeenCalled();
+      expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+        outcome: 'error',
+        metadata: { order_id: ORDER_ID, step: 'expire' },
+      }));
+    });
+
+    it('読み直しが一時的な Stripe の失敗なら 503 で「時間をおいて再試行」を返し、段階を監査に残して、取り消さない', async () => {
+      attachedOrder = PENDING_ORDER;
+      mockReadCheckoutPayment.mockRejectedValue(new ReconcileTransientError('stripe_unavailable'));
+
+      const res = await resolve(CANCEL_BODY);
+
+      expect(res.status).toBe(503);
+      expect(res.body.error).toContain('時間をおいて再試行');
+      expect(mockRpc).not.toHaveBeenCalled();
+      expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+        outcome: 'error',
+        metadata: { order_id: ORDER_ID, step: 'read' },
+      }));
+    });
+
+    it('失効が一時的でない失敗なら 500 で中立な文言を返し、段階を監査に残して、取り消さない', async () => {
+      attachedOrder = IN_PROGRESS_ORDER;
+      mockExpireOpenCheckoutSession.mockRejectedValue({ type: 'StripeInvalidRequestError', statusCode: 400 });
+
+      const res = await resolve(CANCEL_BODY);
+
+      expect(res.status).toBe(500);
+      expect(res.body.error).toBe('未入金の注文を取り消せませんでした。');
+      expect(mockRpc).not.toHaveBeenCalled();
+      expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+        outcome: 'error',
+        metadata: { order_id: ORDER_ID, step: 'expire' },
+      }));
+    });
+
+    it('読み直しが一時的でない失敗なら 500 で中立な文言を返し、段階を監査に残して、取り消さない', async () => {
+      attachedOrder = PENDING_ORDER;
+      mockReadCheckoutPayment.mockRejectedValue(new Error('unexpected'));
+
+      const res = await resolve(CANCEL_BODY);
+
+      expect(res.status).toBe(500);
+      expect(res.body.error).toBe('未入金の注文を取り消せませんでした。');
+      expect(mockRpc).not.toHaveBeenCalled();
+      expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+        outcome: 'error',
+        metadata: { order_id: ORDER_ID, step: 'read' },
+      }));
     });
 
     it('付いている注文を読めなければ 500 で、取り消さない', async () => {

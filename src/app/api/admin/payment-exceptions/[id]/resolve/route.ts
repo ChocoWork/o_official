@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import type Stripe from 'stripe';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { createServiceRoleClient } from '@/lib/supabase/server';
@@ -10,6 +9,7 @@ import {
   readCheckoutPayment,
   isTransientStripeError,
   ReconcileTransientError,
+  type CheckoutPaymentSnapshot,
   type CheckoutPaymentStripeClient,
 } from '@/lib/stripe/checkout-payment-reader';
 import { logAudit } from '@/lib/audit';
@@ -38,64 +38,55 @@ type AttachedOrder = {
 
 type AuditFn = (outcome: 'success' | 'conflict' | 'error', detail: string, metadata?: Record<string, unknown>) => Promise<void>;
 
-// 文言は管理画面の取消（orders/[id]/status）と同じ
+// 払込票の文言は管理画面の取消（orders/[id]/status）と同じ
 const VOUCHER_VALID_MESSAGE = '払込票が有効な間は取り消せません。払込期限を過ぎると自動で期限切れになります。';
+const PAID_MESSAGE = '支払い済みのため、注文を取り消せません。';
+const IN_PROGRESS_MESSAGE = '決済が進行中のため、注文を取り消せません。時間をおいて状態を確かめてください。';
 const STRIPE_UNAVAILABLE_MESSAGE = 'Stripe の状態を確認できませんでした。時間をおいて再試行してください。';
 const CANCEL_FAILED_MESSAGE = '未入金の注文を取り消せませんでした。';
-const CHECKOUT_PROGRESSED_MESSAGE =
-  '決済が進んだ可能性があるため、注文を取り消せません。時間をおいて状態を確かめてください。';
 
-/** 支払い手続き中の注文。開いている決済画面を失効させる。開いていなければ（決済が進んだ可能性がある）断る */
-async function refuseIfCheckoutProgressed(
-  stripe: Stripe,
-  order: AttachedOrder,
+/**
+ * Stripe がまだお金を受け取れる（すでに受け取った）状態なら、取り消さない応答を返す。取り消してよければ null。
+ * 払込票が有効な間は、Stripe が期限切れを確定する（払込期限が過ぎる）まで取り消せない（設計書 3-2・5-2）。
+ */
+async function refuseIfStripeMayTakeMoney(
+  snapshot: CheckoutPaymentSnapshot,
+  orderId: string,
   audit: AuditFn,
 ): Promise<Response | null> {
-  if (!order.checkout_session_id) {
-    return null;
+  const { state, voucherExpiresAt } = snapshot;
+
+  if (state.kind === 'paid') {
+    await audit('conflict', 'Cannot cancel: payment is already completed', { order_id: orderId });
+    return NextResponse.json({ error: PAID_MESSAGE }, { status: 409 });
   }
 
-  // 失効させた・Stripe に無い場合は進めてよい
-  const outcome = await expireOpenCheckoutSession(stripe, order.checkout_session_id);
-  if (outcome !== 'not_open') {
-    return null;
+  if (state.kind === 'in_progress') {
+    await audit('conflict', 'Cannot cancel: checkout is still in progress', { order_id: orderId });
+    return NextResponse.json({ error: IN_PROGRESS_MESSAGE }, { status: 409 });
   }
 
-  await audit('conflict', 'Cannot cancel: checkout session is no longer open', { order_id: order.id });
-  return NextResponse.json({ error: CHECKOUT_PROGRESSED_MESSAGE }, { status: 409 });
-}
-
-/** 入金待ちの注文。払込票が有効な間は断る（Stripe が期限切れを確定するまで取り消せない。設計書 5-2） */
-async function refuseIfVoucherValid(
-  stripe: Stripe,
-  order: AttachedOrder,
-  audit: AuditFn,
-): Promise<Response | null> {
-  const snapshot = await readCheckoutPayment(stripe as unknown as CheckoutPaymentStripeClient, {
-    checkoutSessionId: order.checkout_session_id,
-    paymentIntentId: order.payment_intent_id,
-  });
-
-  // 払込期限がまだ先なら、状態を分類できなくても有効とみなす。Stripe に無い場合は進めてよい
-  const expiresAt = snapshot.voucherExpiresAt;
-  const voucherValid =
-    snapshot.state.kind === 'awaiting_payment' || (expiresAt !== null && expiresAt.getTime() > Date.now());
-  if (!voucherValid) {
-    return null;
+  // 払込期限がまだ先なら、状態を分類できなくても有効とみなす
+  if (state.kind === 'awaiting_payment' || (voucherExpiresAt !== null && voucherExpiresAt.getTime() > Date.now())) {
+    const cancelBlockedUntil = voucherExpiresAt?.toISOString() ?? null;
+    await audit('conflict', 'Cannot cancel: payment voucher is still valid', {
+      order_id: orderId,
+      voucher_expires_at: cancelBlockedUntil,
+    });
+    return NextResponse.json({ error: VOUCHER_VALID_MESSAGE, cancelBlockedUntil }, { status: 409 });
   }
 
-  const cancelBlockedUntil = expiresAt?.toISOString() ?? null;
-  await audit('conflict', 'Cannot cancel: payment voucher is still valid', {
-    order_id: order.id,
-    voucher_expires_at: cancelBlockedUntil,
-  });
-  return NextResponse.json({ error: VOUCHER_VALID_MESSAGE, cancelBlockedUntil }, { status: 409 });
+  return null;
 }
 
 /**
- * 「注文を取り消して解決」の前に、Stripe の決済がまだ動くかを確かめる（管理画面の取消と同じ規則。設計書 5-2）。
- * 取り消した注文に、払える決済画面や有効な払込票を残さないため。断る・確かめられないときはその応答を返し、
- * 進めてよければ null を返す。付いている注文が無い、または未入金でなければ何もしない（RPC が断る）。
+ * 「注文を取り消して解決」の前に、Stripe がもうお金を受け取れないことを確かめる（設計書 5-2。取り消した注文に、
+ * 払える決済画面や有効な払込票、入金済みの支払いを残さない）。断る・確かめられないときはその応答を返し、
+ * 進めてよければ null を返す。
+ * 1. 解決済み、注文が付いていない、注文が未入金でない: Stripe には触れない（RPC が断る）。
+ * 2. 決済画面の ID があれば、状態を問わず先に失効を試みる（開いていなければ何もしない）。
+ * 3. Stripe を読み直し、支払い済み・進行中・払込票が有効なら断る。それ以外（0円完了・放棄・期限切れ・
+ *    Stripe に無い・想定外）は取り消してよい。Stripe を引く ID が無い注文は読まずに RPC へ進める。
  */
 async function checkStripeBeforeCancel(
   supabase: SupabaseClient,
@@ -104,9 +95,9 @@ async function checkStripeBeforeCancel(
 ): Promise<Response | null> {
   const { data, error } = await supabase
     .from('payment_exceptions')
-    .select('orders(id, status, checkout_session_id, payment_intent_id)')
+    .select('resolved_at, orders(id, status, checkout_session_id, payment_intent_id)')
     .eq('id', exceptionId)
-    .maybeSingle<{ orders: AttachedOrder | null }>();
+    .maybeSingle<{ resolved_at: string | null; orders: AttachedOrder | null }>();
 
   if (error) {
     console.error('[admin.payment-exceptions.resolve] Failed to read the attached order:', error);
@@ -114,17 +105,31 @@ async function checkStripeBeforeCancel(
     return NextResponse.json({ error: CANCEL_FAILED_MESSAGE }, { status: 500 });
   }
 
-  const order = data?.orders ?? null;
+  // 解決済みなら Stripe には触れない。開いている決済画面を失効させても取り消せず、RPC が「既に解決済み」で断るだけになる
+  const order = data && !data.resolved_at ? data.orders : null;
   if (!order || (order.status !== 'payment_in_progress' && order.status !== 'pending')) {
     return null;
   }
 
-  const step = order.status === 'payment_in_progress' ? 'expire' : 'read';
+  let step: 'expire' | 'read' = 'expire';
   try {
     const stripe = getStripeServerClient();
-    return order.status === 'payment_in_progress'
-      ? await refuseIfCheckoutProgressed(stripe, order, audit)
-      : await refuseIfVoucherValid(stripe, order, audit);
+
+    if (order.checkout_session_id) {
+      // 開いていれば失効させる。開いていない・Stripe に無い場合は何もしないので、結果は問わず読み直しで決める
+      await expireOpenCheckoutSession(stripe, order.checkout_session_id);
+    }
+
+    if (!order.checkout_session_id && !order.payment_intent_id) {
+      return null;
+    }
+
+    step = 'read';
+    const snapshot = await readCheckoutPayment(stripe as unknown as CheckoutPaymentStripeClient, {
+      checkoutSessionId: order.checkout_session_id,
+      paymentIntentId: order.payment_intent_id,
+    });
+    return await refuseIfStripeMayTakeMoney(snapshot, order.id, audit);
   } catch (error) {
     if (error instanceof ReconcileTransientError || isTransientStripeError(error)) {
       await audit('error', 'Cannot cancel: Stripe is temporarily unavailable', { order_id: order.id, step });
@@ -140,7 +145,7 @@ async function checkStripeBeforeCancel(
 
 /**
  * 要対応を解決済みにする(設計書 5-2)。未入金の注文が付いていれば、取り消して解決もできる(メモ必須)。
- * 取り消すときは、先に Stripe の決済を確かめる(checkStripeBeforeCancel)。
+ * 取り消すときは、先に Stripe がもうお金を受け取れないことを確かめる(checkStripeBeforeCancel)。
  * 取り消した場合は確保した分だけ在庫を戻し、注文履歴に実行者と理由を残す(RPC の中)。
  */
 export async function POST(
