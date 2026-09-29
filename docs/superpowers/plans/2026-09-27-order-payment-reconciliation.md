@@ -3782,8 +3782,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Produces:
   - `class ReconcileTransientError extends Error { code: 'stripe_unavailable' | 'db_unavailable' | 'not_converged' }`
   - `type CheckoutPaymentStripeClient`（`checkout.sessions.retrieve/list` と `paymentIntents.retrieve` だけの狭い型）
-  - `type CheckoutPaymentSnapshot = { checkoutSessionId; paymentIntentId; draftId; cartSessionId; sessionCreatedAt: Date | null; amountTotal: number | null; amountDiscount: number; currency: string | null; paymentMethod: string | null; voucherExpiresAt: Date | null; state: StripePaymentState }`
-  - `classifyStripePaymentState(session, paymentIntent): StripePaymentState`
+  - `type CheckoutPaymentSnapshot = { checkoutSessionId; paymentIntentId; draftId: string | null; cartSessionId; sessionCreatedAt: Date | null; amountTotal: number | null; amountDiscount: number; currency: string | null; paymentMethod: string | null; voucherExpiresAt: Date | null; state: StripePaymentState }`（`draftId` は Session の metadata に下書き ID が無ければ null。対象外にするかは Task 11 の照合関数が注文の有無と合わせて決める）
+  - `classifyStripePaymentState(session, paymentIntent): StripePaymentState`（Session と PaymentIntent の状態だけで分ける。下書き ID は見ない）
   - `readCheckoutPayment(stripe, ref: { checkoutSessionId?: string | null; paymentIntentId?: string | null }): Promise<CheckoutPaymentSnapshot>`
 
 - [ ] **Step 1: 失敗するテストを書く**
@@ -3920,7 +3920,11 @@ describe('readCheckoutPayment', () => {
       { payment_status: 'unpaid', payment_intent: paymentIntent({ status: 'requires_confirmation' }) },
       { kind: 'not_applicable', reason: 'unexpected' },
     ],
-    ['下書き ID が無い', { metadata: {} }, { kind: 'not_applicable', reason: 'no_draft' }],
+    [
+      '下書き ID が無くても Session と PaymentIntent の状態で分ける（対象外かは照合関数が注文の有無で決める）',
+      { metadata: {} },
+      { kind: 'paid', amountReceived: 5000, amountRefunded: 0, currency: 'jpy' },
+    ],
   ])('%s', async (_label, overrides, expected) => {
     expect(await stateOf(overrides)).toEqual(expected);
   });
@@ -3962,6 +3966,25 @@ describe('readCheckoutPayment', () => {
       expand: ['data.payment_intent', 'data.payment_intent.payment_method', 'data.payment_intent.latest_charge'],
     });
     expect(snapshot.checkoutSessionId).toBe('cs_1');
+  });
+
+  it('下書き ID の無い Session（移行前の注文）は draftId を null にし、状態で分ける', async () => {
+    const legacy = session({
+      metadata: {},
+      payment_status: 'unpaid',
+      payment_intent: paymentIntent({ status: 'requires_payment_method', amount_received: 0, latest_charge: null }),
+    });
+    const { stripe } = client({ list: jest.fn().mockResolvedValue({ data: [legacy] }) });
+
+    const snapshot = await readCheckoutPayment(stripe, { paymentIntentId: 'pi_1' });
+
+    expect(snapshot).toMatchObject({
+      checkoutSessionId: 'cs_1',
+      paymentIntentId: 'pi_1',
+      draftId: null,
+      cartSessionId: null,
+      state: { kind: 'voucher_expired' },
+    });
   });
 
   it('Checkout を通らない PaymentIntent は対象外（下書きなし）', async () => {
@@ -4103,15 +4126,13 @@ function amountRefundedOf(charge: string | Stripe.Charge | null): number {
 
 /**
  * Session と PaymentIntent の現在値を、判定表の行に分ける（設計書 3-1）。
+ * 下書き ID は見ない。下書き ID の無い支払い（当店の Checkout 以外）を対象外にするかは、照合関数が注文の有無と
+ * 合わせて決める（注文が無いときだけ対象外。移行前の注文は Session に下書き ID が無くても状態に従う。設計書 7-1）。
  */
 export function classifyStripePaymentState(
-  session: Pick<Stripe.Checkout.Session, 'status' | 'payment_status' | 'metadata'>,
+  session: Pick<Stripe.Checkout.Session, 'status' | 'payment_status'>,
   paymentIntent: Pick<Stripe.PaymentIntent, 'status' | 'amount_received' | 'currency' | 'latest_charge'> | null,
 ): StripePaymentState {
-  if (!getDraftIdFromStripeMetadata(session.metadata)) {
-    return { kind: 'not_applicable', reason: 'no_draft' };
-  }
-
   if (session.status === 'open') return { kind: 'in_progress' };
   // expired は一度も完了していない Session だけがなる（complete は終状態）
   if (session.status === 'expired') return { kind: 'checkout_abandoned' };
@@ -4152,6 +4173,7 @@ function snapshotFromSession(session: Stripe.Checkout.Session): CheckoutPaymentS
   return {
     checkoutSessionId: session.id,
     paymentIntentId,
+    // metadata に下書き ID が無ければ null のまま渡す（移行前の注文の Session など）
     draftId: getDraftIdFromStripeMetadata(session.metadata),
     cartSessionId: session.metadata?.session_id ?? null,
     sessionCreatedAt: new Date(session.created * 1000),
@@ -4235,6 +4257,7 @@ git add src/lib/stripe/checkout-payment-reader.ts tests/unit/lib/stripe/checkout
 git commit -m "feat(stripe): Checkout の支払い状態を読んで判定表の行に分ける
 
 Stripe へは書かない。通信の失敗は一時的な失敗として投げる。
+状態は Session と PaymentIntent だけで分け、下書き ID が無ければ null のまま渡す。
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
@@ -4913,9 +4936,9 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Create: `tests/unit/lib/stripe/checkout-payment-reconciler.test.ts`
 
 **Interfaces:**
-- Consumes: Task 8 の `decideOrderAction`・`OrderAction`・型、Task 9 の `CheckoutPaymentSnapshot`・`ReconcileTransientError`、Task 10 の `ShopPaymentAlert`（型だけ）
+- Consumes: Task 8 の `decideOrderAction`・`OrderAction`・`StripePaymentState`・型、Task 9 の `CheckoutPaymentSnapshot`（`draftId` は null もある）・`ReconcileTransientError`、Task 10 の `ShopPaymentAlert`（型だけ）
 - Produces:
-  - `reconcileCheckoutPayment(deps: ReconcilerDeps, input: ReconcileInput): Promise<ReconcileResult>`
+  - `reconcileCheckoutPayment(deps: ReconcilerDeps, input: ReconcileInput): Promise<ReconcileResult>`（起きないマス `state_conflict` はすぐには記録せず、Stripe と注文を読み直して最後の回まで続いたときだけ要対応にする。下書き ID の無い支払いを対象外（記録のみ）にするのは注文が無いときだけで、注文があれば Stripe の状態の行に従う）
   - `notifyShopOfException(deps: Pick<ReconcilerDeps, 'database' | 'mailer'>, exceptionId: string, alert: ShopPaymentAlert): Promise<boolean>`（見回りの送り直しでも使う）
   - `ReconcileTransientError`（Task 9 から再 export）・`MAX_RECONCILE_ATTEMPTS = 3`
   - 型 `ReconcileInput = { checkoutSessionId?; paymentIntentId?; sourceEventId?; adminCancel?: AdminCancelRequest }`、`AdminCancelRequest = { actorId: string; reason: CancelReason; note?: string; notifyCustomer: boolean }`
@@ -5262,6 +5285,35 @@ describe('reconcileCheckoutPayment', () => {
     expect(result).toMatchObject({ kind: 'ok', orderStatus: 'failed' });
   });
 
+  it('下書き ID の無い Session でも注文があれば Stripe の状態に従い、ほかの注文と同じく失敗にする（移行前の注文。設計書 7-1）', async () => {
+    // 見回りが PaymentIntent から引いた移行前の注文の Session。PaymentIntent が requires_payment_method（払込票の期限切れ）
+    const h = harness({
+      stripe: snapshot(
+        { kind: 'voucher_expired' },
+        { checkoutSessionId: 'cs_legacy', paymentIntentId: 'pi_legacy', draftId: null, cartSessionId: null },
+      ),
+      order: order('pending', { id: 'order-legacy', paymentIntentId: 'pi_legacy', checkoutSessionId: null }),
+    });
+
+    const result = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: null, paymentIntentId: 'pi_legacy' });
+
+    expect(h.database.releaseStock).toHaveBeenCalledWith(expect.objectContaining({
+      orderId: 'order-legacy',
+      expectedStatus: 'pending',
+      nextStatus: 'failed',
+      changeReason: 'stripe_voucher_expired',
+    }));
+    // 送るかは送信権が決める（移行前の2件は Task 6 で送信済みとして登録してあるので届かない）
+    expect(h.mailer.sendPaymentExpired).toHaveBeenCalledWith('order-legacy');
+    expect(h.database.recordException).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      kind: 'ok',
+      action: { type: 'release', expectedStatus: 'pending', nextStatus: 'failed' },
+      orderId: 'order-legacy',
+      orderStatus: 'failed',
+    });
+  });
+
   it('決済画面の放棄は在庫を戻して放棄にし、メールは送らない', async () => {
     const h = harness({
       stripe: snapshot({ kind: 'checkout_abandoned' }, { paymentIntentId: null }),
@@ -5334,6 +5386,32 @@ describe('reconcileCheckoutPayment', () => {
     expect(h.audit).toHaveBeenCalledWith(expect.objectContaining({ detail: 'ok:record_only:zero_amount' }));
   });
 
+  it('下書き ID の無い入金済みの支払いで注文も無ければ、何も書かずに監査ログへ残すだけにする（当店の Checkout 以外。設計書 3-2）', async () => {
+    const h = harness({ stripe: snapshot(PAID, { draftId: null, cartSessionId: null }) });
+
+    const result = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
+
+    expect(result).toEqual({ kind: 'ok', action: { type: 'record_only', note: 'not_applicable' }, orderId: null, orderStatus: null });
+    const writes = (Object.keys(h.database) as Array<keyof ReconcilerDatabase>).filter((key) => key !== 'findOrder');
+    for (const key of writes) expect(h.database[key]).not.toHaveBeenCalled();
+    for (const key of Object.keys(h.mailer) as Array<keyof ReconcilerMailer>) expect(h.mailer[key]).not.toHaveBeenCalled();
+    expect(h.audit).toHaveBeenCalledTimes(1);
+    expect(h.audit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'success', detail: 'ok:record_only:not_applicable' }));
+  });
+
+  it('Stripe に無く注文も無ければ、下書き ID を読めなくても「Stripe に無い」の記録のままにする', async () => {
+    const h = harness({ stripe: snapshot({ kind: 'missing' }, { paymentIntentId: null, draftId: null, cartSessionId: null }) });
+
+    const result = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
+
+    expect(result).toEqual({
+      kind: 'ok',
+      action: { type: 'record_only', note: 'stripe_object_missing' },
+      orderId: null,
+      orderStatus: null,
+    });
+  });
+
   it('Stripe を読めなければ何も変えずに一時的な失敗を投げる', async () => {
     const h = harness({ stripe: snapshot(PAID), order: order('payment_in_progress') });
     h.readPayment.mockRejectedValueOnce(new ReconcileTransientError('stripe_unavailable'));
@@ -5356,6 +5434,42 @@ describe('reconcileCheckoutPayment', () => {
 
     expect(result).toEqual({ kind: 'ok', action: { type: 'none' }, orderId: 'order-1', orderStatus: 'paid' });
     expect(h.mailer.sendOrderConfirmation).not.toHaveBeenCalled();
+  });
+
+  it('古い Stripe の状態と新しい注文の起きないマス（手続き中 × 入金済み）は、記録せずに読み直す', async () => {
+    const h = harness({ stripe: snapshot(PAID), order: order('payment_in_progress') });
+    // Stripe を読んだ後、注文を読む前に別の経路が入金済みにする。1回目は古い「手続き中」と新しい「入金済み」の組み合わせになる
+    h.readPayment.mockImplementationOnce(async () => {
+      h.world.order = { ...(h.world.order as ReconcilerOrder), status: 'paid', paymentIntentId: 'pi_1' };
+      return snapshot({ kind: 'in_progress' }, { paymentIntentId: null });
+    });
+
+    const result = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
+
+    expect(result).toEqual({ kind: 'ok', action: { type: 'none' }, orderId: 'order-1', orderStatus: 'paid' });
+    expect(h.readPayment).toHaveBeenCalledTimes(2);
+    expect(h.database.recordException).not.toHaveBeenCalled();
+    expect(h.mailer.sendShopAlert).not.toHaveBeenCalled();
+    expect(h.mailer.sendOrderConfirmation).not.toHaveBeenCalled();
+  });
+
+  it(`起きないマスが${MAX_RECONCILE_ATTEMPTS}回読んでも続くときだけ、要対応（注文と支払いの矛盾）として1回記録して知らせる`, async () => {
+    const h = harness({ stripe: snapshot({ kind: 'awaiting_payment' }), order: order('paid', { paymentIntentId: 'pi_1' }) });
+
+    const result = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
+
+    expect(result).toEqual({
+      kind: 'needs_action',
+      exceptionId: 'exception-1',
+      reason: 'state_conflict',
+      orderId: 'order-1',
+      orderStatus: 'paid',
+    });
+    expect(h.readPayment).toHaveBeenCalledTimes(MAX_RECONCILE_ATTEMPTS);
+    expect(h.database.recordException).toHaveBeenCalledTimes(1);
+    expect(h.database.recordException).toHaveBeenCalledWith(expect.objectContaining({ reason: 'state_conflict', orderId: 'order-1' }));
+    expect(h.mailer.sendShopAlert).toHaveBeenCalledTimes(1);
+    expect(h.audit).toHaveBeenCalledTimes(1);
   });
 
   it(`${MAX_RECONCILE_ATTEMPTS}回で収まらなければ not_converged を投げる`, async () => {
@@ -5406,7 +5520,7 @@ import type {
   PaymentExceptionReason,
   PlaceOrderRejection,
 } from '@/lib/orders/order-payment-types';
-import { decideOrderAction, type OrderAction } from '@/lib/stripe/checkout-payment-decision';
+import { decideOrderAction, type OrderAction, type StripePaymentState } from '@/lib/stripe/checkout-payment-decision';
 import { ReconcileTransientError, type CheckoutPaymentSnapshot } from '@/lib/stripe/checkout-payment-reader';
 
 export { ReconcileTransientError };
@@ -5542,6 +5656,8 @@ const CHANGE_REASONS = {
   cancelled: 'admin_cancel',
 } as const;
 
+const NO_DRAFT: StripePaymentState = { kind: 'not_applicable', reason: 'no_draft' };
+
 type WriteAction = Exclude<OrderAction, { type: 'none' } | { type: 'record_only' } | { type: 'exception' }>;
 
 type Step =
@@ -5558,6 +5674,8 @@ type CustomerNotice = { contact: DraftContact | null; state: 'paid' | 'awaiting_
  * 読む → 判定 → 条件付き更新 → 読み直す を最大3回くり返す。支払い単位のロックは使わない。
  * 書き込みはすべて今の状態を条件にした RPC なので、同じ支払いについて何度・同時に呼ばれても結果は同じ
  * （Stripe の注文処理の手引きが求める性質）。Stripe へは書かない。Session の失効は呼び出し側が先に行う。
+ * 判定表の起きないマス（state_conflict）は、読んでいる間に別の経路が注文を動かしただけのことがあるので、
+ * すぐには記録せずに読み直す。最後の回まで続いたときだけ要対応にする（設計書 2-3）。
  */
 export async function reconcileCheckoutPayment(deps: ReconcilerDeps, input: ReconcileInput): Promise<ReconcileResult> {
   if (!input.checkoutSessionId && !input.paymentIntentId) {
@@ -5589,6 +5707,11 @@ export async function reconcileCheckoutPayment(deps: ReconcilerDeps, input: Reco
             : { kind: 'ok', action: finalAction, orderId: order?.id ?? null, orderStatus: order?.status ?? null },
       };
     } else if (action.type === 'exception') {
+      if (action.reason === 'state_conflict' && attempt < MAX_RECONCILE_ATTEMPTS) {
+        // Stripe を読んでから注文を読むまでに別の経路が注文を動かすと、古い Stripe の状態と新しい注文が
+        // 組み合わさって起きないマスに当たる（例: 手続き中 × 入金済み）。記録も通知もせずに両方を読み直す
+        continue;
+      }
       step = {
         kind: 'done',
         result: await raiseException(deps, input, snapshot, order, action.reason, action.detail ?? null, null),
@@ -5620,10 +5743,22 @@ function decide(snapshot: CheckoutPaymentSnapshot, order: ReconcilerOrder | null
   }
 
   return decideOrderAction({
-    stripe: snapshot.state,
+    stripe: stripeStateFor(snapshot, order),
     orderStatus: order?.status ?? null,
     adminCancel: Boolean(input.adminCancel),
   });
+}
+
+/**
+ * 下書き ID の無い支払い（当店の Checkout 以外）を対象外（記録のみ）にするのは、注文が無いときだけ（設計書 3-1・3-2）。
+ * 注文があれば Stripe の状態の行に従う。移行前の注文は Session に下書き ID が無くても、失敗などに変わる（7-1）。
+ * Stripe に無いときは下書き ID を読めていないだけなので、「Stripe に無い」の行のままにする。
+ */
+function stripeStateFor(snapshot: CheckoutPaymentSnapshot, order: ReconcilerOrder | null): StripePaymentState {
+  if (order === null && snapshot.draftId === null && snapshot.state.kind !== 'missing') {
+    return NO_DRAFT;
+  }
+  return snapshot.state;
 }
 
 function requireOrder(order: ReconcilerOrder | null): ReconcilerOrder {
@@ -5952,6 +6087,7 @@ git add src/lib/stripe/checkout-payment-reconciler.ts tests/unit/lib/stripe/chec
 git commit -m "feat(stripe): 注文を Stripe の現在の支払い状態に合わせる照合関数を足す
 
 読む → 判定 → 条件付き更新 → 読み直し（最大3回）。要対応は1回だけ記録と通知をする。
+起きない組み合わせは読み直してから記録する。下書き ID の無い支払いは、注文が無いときだけ対象外にする。
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
