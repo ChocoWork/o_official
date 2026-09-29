@@ -3,22 +3,17 @@ import { createClient } from '@supabase/supabase-js';
 import { z } from 'zod';
 import { getStripeServerClient } from '@/lib/stripe/server';
 import {
-  mapFinalizeOrderRpcError,
-  parseFinalizeOrderRpcResult,
-} from '@/features/cart/services/cart-stock';
-import {
   checkoutShippingSchema,
-  findMissingShippingFields,
   getDraftIdFromStripeMetadata,
   isZeroAmountCheckoutSession,
   ZERO_AMOUNT_CHECKOUT_AUDIT_DETAIL,
   STRIPE_CHECKOUT_PAYMENT_METHODS,
-  type CheckoutDraftRow,
 } from '@/features/checkout/services/checkout-draft.service';
 import { resolvePaymentMethodFromSession } from '@/features/checkout/services/payment-method.service';
 import { logAudit } from '@/lib/audit';
 import { extractAuthToken } from '@/lib/auth/request-token';
-import { sendOrderConfirmationEmailForOrderId } from '@/lib/orders/order-confirmation-email';
+import { reconcileCheckoutPayment, ReconcileTransientError } from '@/lib/stripe/checkout-payment-reconciler';
+import { createDefaultReconcilerDeps } from '@/lib/stripe/checkout-payment-reconciler-deps';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -32,43 +27,8 @@ const completeCheckoutSchema = z.object({
   shipping: checkoutShippingSchema,
 });
 
-type OrderRow = {
-  id: string;
-  user_id: string | null;
-  status: 'pending' | 'paid' | 'failed' | 'cancelled';
-};
-
-/**
- * 実際に使われた支払方法（および関連カラム）を checkout_drafts へ書き戻す。
- *
- * 書き込みが失敗しても注文自体は成立しているため、リクエストは失敗させない。
- * ただし黙って捨てると `/api/orders/[id]` が誤った支払方法を表示し続ける原因が
- * 追えなくなるので、エラーは console.error と監査ログの両方に残す。
- */
-async function persistCheckoutDraftUpdate(params: {
-  draftId: string;
-  update: Record<string, unknown>;
-  ip: string | null;
-  userAgent: string | null;
-}): Promise<void> {
-  const { draftId, update, ip, userAgent } = params;
-  const { error } = await supabase.from('checkout_drafts').update(update).eq('id', draftId);
-
-  if (error) {
-    console.error('Failed to update checkout draft after order finalization:', draftId, error);
-    await logAudit({
-      action: 'checkout.complete',
-      outcome: 'error',
-      detail: 'Failed to update checkout draft after order finalization',
-      ip,
-      user_agent: userAgent,
-      metadata: {
-        draft_id: draftId,
-        error_message: error.message ?? null,
-      },
-    });
-  }
-}
+/** 注文完了として画面へ返してよい状態。失敗・放棄・取消の注文は完了として返さない */
+const COMPLETED_ORDER_STATUSES = new Set(['paid', 'pending', 'shipped']);
 
 async function resolveAuthenticatedUserId(request: NextRequest): Promise<string | null> {
   const authToken = extractAuthToken(request);
@@ -104,8 +64,6 @@ async function resolveAuthenticatedUserId(request: NextRequest): Promise<string 
  * （ここで失敗を返すと、支払い済みの客に注文失敗を見せることになる）。
  * ただし黙って捨てると「注文履歴に出てこない」形でしか表面化しないので、
  * 失敗も「対象0件」も監査ログに残して後から追えるようにする。
- *
- * @returns 実際に紐付いたら true
  */
 async function linkOrderToUser(params: {
   orderId: string;
@@ -114,7 +72,7 @@ async function linkOrderToUser(params: {
   checkoutSessionId: string;
   ip: string | null;
   userAgent: string | null;
-}): Promise<boolean> {
+}): Promise<void> {
   // 他人の注文を奪わないよう user_id が未設定の行だけを対象にする。
   const { data, error } = await supabase
     .from('orders')
@@ -124,7 +82,7 @@ async function linkOrderToUser(params: {
     .select('id');
 
   if (!error && data && data.length > 0) {
-    return true;
+    return;
   }
 
   console.error(
@@ -147,28 +105,26 @@ async function linkOrderToUser(params: {
       error_message: error?.message ?? null,
     },
   });
-  return false;
 }
 
-/**
- * 確定した注文の確認メールを送る（FREQ-396）。
- *
- * 本文は注文行（orders）から組み立てる共通の入口に任せる。ここで draft のスナップショットから
- * 別に組み立てると、webhook・掃除ジョブが送る内容と項目がずれる。実際、値引額は注文行にしか
- * 無いため、draft から組むと「小計＋送料と合計が合わないメール」になっていた。
- *
- * 送信の失敗は中で監査ログに残る。注文は成立しているのでここでは止めない。
- */
-async function sendConfirmationEmailForOrder(
-	orderId: string,
-	paymentState: 'awaiting_payment' | 'paid',
-): Promise<void> {
-	await sendOrderConfirmationEmailForOrderId({
-		store: supabase,
-		orderId,
-		paymentState,
-		logLabel: '[checkout]',
-	});
+/** 照合の後に毎回呼ぶ。既に本人の注文なら何もしない（設計書 2-2。R-24 の完了 API の分） */
+async function linkOrderToUserIfUnowned(params: Parameters<typeof linkOrderToUser>[0]): Promise<void> {
+  const { data, error } = await supabase
+    .from('orders')
+    .select('user_id')
+    .eq('id', params.orderId)
+    .maybeSingle<{ user_id: string | null }>();
+
+  if (error || !data) {
+    console.error('Failed to read order owner before linking:', params.orderId, error);
+    return;
+  }
+
+  if (data.user_id === params.userId) {
+    return;
+  }
+
+  await linkOrderToUser(params);
 }
 
 function getClientIp(request: NextRequest): string | null {
@@ -248,7 +204,7 @@ export async function POST(req: NextRequest) {
       }
     );
 
-    // 実際に使われた支払方法をサーバ側で1回だけ確定する（クライアント申告は採用しない）。
+    // 実際に使われた支払方法をサーバ側で確定する（クライアント申告は採用しない）。
     const resolvedPaymentMethod = resolvePaymentMethodFromSession(session);
 
     if (session.metadata?.session_id && session.metadata.session_id !== sessionId) {
@@ -296,9 +252,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 合計が 0 の Checkout セッションには PaymentIntent が作られない（判定と文言は
-    // isZeroAmountCheckoutSession の注記を参照）。下の「PaymentIntent が無い」で弾くと
-    // 理由が読めないため、ここで明示して断る（FREQ-389）。
+    // 合計が 0 の Checkout セッションは注文にしない（FREQ-389）。照合関数も記録のみにするが、
+    // ここで理由を明示して断る。
     if (isZeroAmountCheckoutSession(session)) {
       await logAudit({
         action: 'checkout.complete',
@@ -314,28 +269,6 @@ export async function POST(req: NextRequest) {
       });
       return NextResponse.json(
         { error: 'Zero-amount checkout is not supported' },
-        { status: 400 }
-      );
-    }
-
-    const resolvedPaymentIntentId =
-      typeof session.payment_intent === 'string'
-        ? session.payment_intent
-        : session.payment_intent?.id ?? null;
-    if (!resolvedPaymentIntentId) {
-      return NextResponse.json(
-        { error: 'Stripe payment intent is missing' },
-        { status: 400 }
-      );
-    }
-
-    const resolvedCurrency = session.currency?.toLowerCase() ?? null;
-    const resolvedAmount = session.amount_total ?? null;
-    // プロモーションコード適用時の値引額 (税込・割引後が amount_total)
-    const resolvedDiscount = session.total_details?.amount_discount ?? 0;
-    if (!resolvedCurrency || !resolvedAmount) {
-      return NextResponse.json(
-        { error: 'Checkout session amount is missing' },
         { status: 400 }
       );
     }
@@ -364,9 +297,9 @@ export async function POST(req: NextRequest) {
 
     const { data: draftData, error: draftError } = await supabase
       .from('checkout_drafts')
-      .select('id, session_id, checkout_session_id, total_amount, discount_amount, subtotal_amount, shipping_amount, currency, shipping_snapshot, items_snapshot')
+      .select('id, session_id')
       .eq('id', draftId)
-      .maybeSingle<CheckoutDraftRow>();
+      .maybeSingle<{ id: string; session_id: string }>();
 
     if (draftError || !draftData) {
       return NextResponse.json(
@@ -382,227 +315,81 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 割引前どうしで突き合わせる（FREQ-394）。
-    //
-    // この経路は1つの注文につき何度でも走る。webhook が先に注文を作ってからブラウザが戻る場合と、
-    // 注文確定が落ちて客が再試行する場合がある。下の同期は draft の total_amount を割引後へ
-    // 書き換えるので、割引後の合計を「割引前の額」と比べる形にすると2回目から必ず外れ、
-    // 支払い済みの客に理由の読めない 400 を返し続けることになる。
-    // total_amount + discount_amount は同期の前後で変わらないので、これを基準にする。
-    // 取得結果は型注釈を当てているだけで検証はされないため、注文確定 RPC 側の
-    // COALESCE(draft_row.discount_amount, 0) と同じく欠損は 0 として扱う。
-    const draftAmountBeforeDiscount = draftData.total_amount + (draftData.discount_amount ?? 0);
-    if (draftAmountBeforeDiscount !== resolvedAmount + resolvedDiscount) {
-      return NextResponse.json(
-        { error: 'Checkout session amount does not match draft total' },
-        { status: 400 }
-      );
-    }
-
-    if (draftData.currency.toLowerCase() !== resolvedCurrency) {
-      return NextResponse.json(
-        { error: 'Unsupported currency' },
-        { status: 400 }
-      );
-    }
-
-    const { data: existingOrder } = await supabase
-      .from('orders')
-      .select('id, user_id, status')
-      .eq('payment_intent_id', resolvedPaymentIntentId)
-      .maybeSingle<OrderRow>();
-
-    if (existingOrder?.id && activeUserId && existingOrder.user_id !== activeUserId) {
-      // 実際に紐付いたときだけ手元の値を進める（0件更新を成功扱いにしない）。
-      const linked = await linkOrderToUser({
-        orderId: existingOrder.id,
-        userId: activeUserId,
-        sessionId,
-        checkoutSessionId: parsed.data.checkoutSessionId,
-        ip: clientIp,
-        userAgent,
+    // 注文の作成・状態の変更・在庫・メールは照合関数に任せる。Stripe の注文処理の手引きどおり、
+    // Webhook と戻り先のページから同じ関数を呼ぶ（設計書 2-2）。
+    let result;
+    try {
+      result = await reconcileCheckoutPayment(await createDefaultReconcilerDeps(), {
+        checkoutSessionId: session.id,
       });
-      if (linked) {
-        existingOrder.user_id = activeUserId;
-      }
-    }
-
-    if (existingOrder) {
-      // Webhook が先に注文を作った場合、draft の payment_method は初期値のままなので
-      // ここでも本線・フォールバックと同じ値を書き戻す（冪等なので無害）。
-      await persistCheckoutDraftUpdate({
-        draftId,
-        update: { payment_method: resolvedPaymentMethod },
-        ip: clientIp,
-        userAgent,
-      });
-
-      await logAudit({
-        action: 'checkout.complete',
-        outcome: 'conflict',
-        detail: 'Order already finalized',
-        ip: clientIp,
-        user_agent: userAgent,
-        metadata: {
-          session_id: sessionId,
-          checkout_session_id: parsed.data.checkoutSessionId,
-          order_id: existingOrder.id,
-          order_status: existingOrder.status,
-        },
-      });
-      return NextResponse.json({
-        orderId: existingOrder.id,
-        status: existingOrder.status,
-        paymentMethod: resolvedPaymentMethod,
-      });
-    }
-
-    // draft を割引後の実請求額に同期する（RPC / フォールバックの整合用）。
-    // 注文がまだ無いときだけ走らせる。既にある注文はこの下の確定処理を通らないため、
-    // そろえる必要も、余計な書き込みを増やす理由も無い。
-    // 同じ値を書くだけなので、再試行で二度走っても結果は変わらない。
-    if (resolvedDiscount > 0) {
-      const { error: discountSyncError } = await supabase
-        .from('checkout_drafts')
-        .update({ total_amount: resolvedAmount, discount_amount: resolvedDiscount })
-        .eq('id', draftId);
-
-      // そろえられないまま進むと、注文確定は割引前の合計と比べて必ず CHECKOUT_TOTAL_MISMATCH で
-      // 落ちる。失敗を握りつぶすと本番の監査ログにその理由が残らない（FREQ-389）。
-      if (discountSyncError) {
-        console.error('Failed to sync checkout draft discount:', draftId, discountSyncError);
+    } catch (error) {
+      if (error instanceof ReconcileTransientError) {
         await logAudit({
           action: 'checkout.complete',
           outcome: 'error',
-          detail: 'Failed to sync checkout draft discount amount',
+          detail: 'Checkout payment reconciliation is temporarily unavailable',
           ip: clientIp,
           user_agent: userAgent,
           metadata: {
             session_id: sessionId,
-            checkout_session_id: parsed.data.checkoutSessionId,
-            draft_id: draftId,
-            discount_amount: resolvedDiscount,
-            error_message: discountSyncError.message ?? null,
+            checkout_session_id: session.id,
+            reason: error.code,
           },
         });
-        return NextResponse.json({ error: 'Failed to create order' }, { status: 500 });
+        return NextResponse.json({ error: 'Temporarily unavailable' }, { status: 503 });
       }
-
-      draftData.total_amount = resolvedAmount;
+      throw error;
     }
 
-    // 配送先の欠落を注文確定の前に検知する（FREQ-365）。
-    // 支払いは既に成立しているので注文自体は止めない（客に失敗を見せない）。
-    // 黙って作ると「発送先の無い注文」に出荷作業で初めて気づくことになるため、
-    // 欠けた項目を監査ログに残す（OWASP ASVS V11.1.5 / V11.1.7）。
-    const missingShippingFields = findMissingShippingFields(draftData.shipping_snapshot);
-    if (missingShippingFields.length > 0) {
-      console.error('Checkout draft shipping snapshot is incomplete:', draftId, missingShippingFields);
+    if (!result.orderId || !result.orderStatus || !COMPLETED_ORDER_STATUSES.has(result.orderStatus)) {
       await logAudit({
         action: 'checkout.complete',
-        outcome: 'error',
-        detail: 'Checkout draft shipping snapshot is incomplete',
+        outcome: 'failure',
+        detail: 'Order could not be registered',
         ip: clientIp,
         user_agent: userAgent,
         metadata: {
           session_id: sessionId,
-          checkout_session_id: parsed.data.checkoutSessionId,
+          checkout_session_id: session.id,
           draft_id: draftId,
-          payment_intent_id: resolvedPaymentIntentId,
-          missing_shipping_fields: missingShippingFields,
+          result_kind: result.kind,
+          exception_reason: result.kind === 'needs_action' ? result.reason : null,
+          order_status: result.orderStatus,
         },
       });
+      return NextResponse.json({ error: 'Order could not be registered' }, { status: 409 });
     }
 
-    const { data: finalizedOrderData, error: finalizeOrderError } = await supabase.rpc(
-      'finalize_order_from_checkout_draft',
-      {
-        _draft_id: draftId,
-        _payment_intent_id: resolvedPaymentIntentId,
-        _checkout_session_id: parsed.data.checkoutSessionId,
-        _order_status: session.payment_status === 'paid' ? 'paid' : 'pending',
-        _expected_total_amount: resolvedAmount,
-        _currency: resolvedCurrency,
-      }
-    );
-
-    if (finalizeOrderError) {
-      console.error('Failed to finalize order in complete checkout:', finalizeOrderError);
-
-      await logAudit({
-        action: 'checkout.complete',
-        outcome: 'error',
-        detail: 'Failed to finalize order via RPC',
+    if (activeUserId) {
+      await linkOrderToUserIfUnowned({
+        orderId: result.orderId,
+        userId: activeUserId,
+        sessionId,
+        checkoutSessionId: session.id,
         ip: clientIp,
-        user_agent: userAgent,
-        metadata: {
-          session_id: sessionId,
-          checkout_session_id: parsed.data.checkoutSessionId,
-          draft_id: draftId,
-          payment_intent_id: resolvedPaymentIntentId,
-          error_message: finalizeOrderError.message ?? null,
-        },
+        userAgent,
       });
-      const mappedError = mapFinalizeOrderRpcError(finalizeOrderError.message ?? '');
-      if (mappedError) {
-        return NextResponse.json(mappedError.body, { status: mappedError.status });
-      }
-
-      return NextResponse.json({ error: 'Failed to create order' }, { status: 500 });
     }
-
-    const finalizedOrder = parseFinalizeOrderRpcResult(finalizedOrderData);
-    if (!finalizedOrder) {
-      console.error('Unexpected finalize_order_from_checkout_draft payload:', finalizedOrderData);
-      await logAudit({
-        action: 'checkout.complete',
-        outcome: 'error',
-        detail: 'Unexpected finalize_order_from_checkout_draft payload',
-        ip: clientIp,
-        user_agent: userAgent,
-        metadata: {
-          session_id: sessionId,
-          checkout_session_id: parsed.data.checkoutSessionId,
-          draft_id: draftId,
-          payment_intent_id: resolvedPaymentIntentId,
-        },
-      });
-      return NextResponse.json({ error: 'Failed to create order' }, { status: 500 });
-    }
-
-    // RPC は checkout_drafts.status を 'completed' にするが payment_method までは書かないため、
-    // 実際に使われた支払方法をここで書き戻す（注文一覧・注文詳細はこの値を参照する）。
-    await persistCheckoutDraftUpdate({
-      draftId,
-      update: { payment_method: resolvedPaymentMethod },
-      ip: clientIp,
-      userAgent,
-    });
-
-    await sendConfirmationEmailForOrder(
-      finalizedOrder.order_id,
-      session.payment_status === 'paid' ? 'paid' : 'awaiting_payment',
-    );
 
     await logAudit({
       action: 'checkout.complete',
       outcome: 'success',
-      detail: 'Order finalized from checkout session',
+      detail: 'Order reconciled from checkout session',
       ip: clientIp,
       user_agent: userAgent,
       metadata: {
         session_id: sessionId,
-        checkout_session_id: parsed.data.checkoutSessionId,
+        checkout_session_id: session.id,
         draft_id: draftId,
-        payment_intent_id: resolvedPaymentIntentId,
-        order_id: finalizedOrder.order_id,
-        order_status: finalizedOrder.order_status,
+        order_id: result.orderId,
+        order_status: result.orderStatus,
+        result_kind: result.kind,
       },
     });
 
     return NextResponse.json({
-      orderId: finalizedOrder.order_id,
-      status: finalizedOrder.order_status,
+      orderId: result.orderId,
+      status: result.orderStatus,
       paymentMethod: resolvedPaymentMethod,
     });
   } catch (error) {
