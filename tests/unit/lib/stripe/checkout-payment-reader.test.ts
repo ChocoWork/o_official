@@ -40,6 +40,11 @@ function stripeError(code: string) {
   return Object.assign(new Error(code), { type: 'StripeInvalidRequestError', code });
 }
 
+/** `type`/`statusCode` を持つ Stripe SDK のエラーを模す（`stripe.errors.StripeError` の形） */
+function stripeTypedError(props: { type?: string; statusCode?: number }) {
+  return Object.assign(new Error('stripe error'), props);
+}
+
 function client(options: {
   retrieve?: jest.Mock;
   list?: jest.Mock;
@@ -221,14 +226,27 @@ describe('readCheckoutPayment', () => {
     });
   });
 
-  it('通信・5xx・回数制限は一時的な失敗として投げる', async () => {
-    const { stripe } = client({ retrieve: jest.fn().mockRejectedValue(new Error('socket hang up')) });
+  it.each([
+    ['通信エラー', stripeTypedError({ type: 'StripeConnectionError' })],
+    ['回数制限（429）', stripeTypedError({ type: 'StripeRateLimitError', statusCode: 429 })],
+    ['Stripe 側の 5xx', stripeTypedError({ type: 'StripeAPIError', statusCode: 500 })],
+  ])('%s は一時的な失敗として投げる', async (_label, error) => {
+    const { stripe } = client({ retrieve: jest.fn().mockRejectedValue(error) });
 
     await expect(readCheckoutPayment(stripe, { checkoutSessionId: 'cs_1' })).rejects.toMatchObject({
       name: 'ReconcileTransientError',
       code: 'stripe_unavailable',
     });
     await expect(readCheckoutPayment(stripe, { checkoutSessionId: 'cs_1' })).rejects.toBeInstanceOf(ReconcileTransientError);
+  });
+
+  it.each([
+    ['認証エラー（401・鍵の失効/設定ミス）', stripeTypedError({ type: 'StripeAuthenticationError', statusCode: 401 })],
+    ['コード側のバグ等（素の Error）', new Error('boom')],
+  ])('%s は一時的な失敗にせず、そのまま投げる', async (_label, error) => {
+    const { stripe } = client({ retrieve: jest.fn().mockRejectedValue(error) });
+
+    await expect(readCheckoutPayment(stripe, { checkoutSessionId: 'cs_1' })).rejects.toBe(error);
   });
 
   it('ID が無ければ呼び出しの誤りとして投げる（一時的な失敗にしない）', async () => {

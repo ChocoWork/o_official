@@ -58,6 +58,20 @@ function isResourceMissing(error: unknown): boolean {
   return Boolean(error && typeof error === 'object' && (error as { code?: unknown }).code === 'resource_missing');
 }
 
+const TRANSIENT_STRIPE_ERROR_TYPES = new Set(['StripeConnectionError', 'StripeAPIError', 'StripeRateLimitError']);
+
+/**
+ * 一時的な失敗（設計書 5-1）は Stripe の通信・5xx・回数制限だけ。認証・権限・入力不備
+ * （resource_missing 以外）やコード側のバグ（snapshotFromSession/classifyStripePaymentState 由来）は
+ * ここに含めない。再試行しても直らない失敗を「一時的」として無限に再試行させないため。
+ */
+function isTransientStripeError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const { type, statusCode } = error as { type?: unknown; statusCode?: unknown };
+  if (typeof type === 'string' && TRANSIENT_STRIPE_ERROR_TYPES.has(type)) return true;
+  return typeof statusCode === 'number' && (statusCode >= 500 || statusCode === 429);
+}
+
 function emptySnapshot(ref: {
   checkoutSessionId: string | null;
   paymentIntentId: string | null;
@@ -198,6 +212,9 @@ export async function readCheckoutPayment(
       state: { kind: 'not_applicable', reason: 'no_draft' },
     });
   } catch (error) {
-    throw new ReconcileTransientError('stripe_unavailable', { cause: error });
+    if (isTransientStripeError(error)) {
+      throw new ReconcileTransientError('stripe_unavailable', { cause: error });
+    }
+    throw error;
   }
 }
