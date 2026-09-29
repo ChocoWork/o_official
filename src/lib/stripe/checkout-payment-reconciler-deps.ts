@@ -39,7 +39,8 @@ import type {
 /**
  * Supabase のエラーが一時的な失敗か（設計書 5-1）。接続・タイムアウト・デッドロック・直列化の失敗だけを一時的とみなす。
  * code が無い（空）のは通信の失敗。SQLSTATE の 08 系（接続）・40001（直列化）・40P01（デッドロック）・53 系（資源不足）・
- * 57014（文の取り消し・タイムアウト）・57P01〜57P03（DB の停止・起動中）と、PostgREST の PGRST000〜PGRST002（DB に接続できない）。
+ * 57014（文の取り消し・タイムアウト）・57P01〜57P03（DB の停止・起動中）と、PostgREST の PGRST000〜PGRST003
+ * （DB に接続できない・プールの空き接続待ちの時間切れ）。
  */
 export function isTransientSupabaseError(error: unknown): boolean {
   const code = typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : undefined;
@@ -49,7 +50,7 @@ export function isTransientSupabaseError(error: unknown): boolean {
   return (
     code.startsWith('08')
     || code.startsWith('53')
-    || ['40001', '40P01', '57014', '57P01', '57P02', '57P03', 'PGRST000', 'PGRST001', 'PGRST002'].includes(code)
+    || ['40001', '40P01', '57014', '57P01', '57P02', '57P03', 'PGRST000', 'PGRST001', 'PGRST002', 'PGRST003'].includes(code)
   );
 }
 

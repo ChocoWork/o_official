@@ -207,7 +207,7 @@ describe('createSupabaseReconcilerDatabase', () => {
 });
 
 describe('isTransientSupabaseError', () => {
-  it.each([undefined, '', '08006', '40001', '40P01', '53300', '57014', '57P01', '57P03', 'PGRST000', 'PGRST002'])(
+  it.each([undefined, '', '08006', '40001', '40P01', '53300', '57014', '57P01', '57P02', '57P03', 'PGRST000', 'PGRST001', 'PGRST002', 'PGRST003'])(
     'code %p は一時的な失敗（再試行する）',
     (code) => {
       expect(isTransientSupabaseError({ message: 'error', code })).toBe(true);
