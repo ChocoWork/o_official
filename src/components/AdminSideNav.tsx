@@ -4,6 +4,8 @@ interface AdminSideNavProps {
   activeTab: TabType;
   onTabChange: (tab: TabType) => void;
   tabs: TabType[];
+  /** タブごとの未処理の件数（ORDER の要対応・要確認）。0 なら出さない */
+  badges?: Partial<Record<TabType, number>>;
 }
 
 // 各タブのアイコン（remixicon の細線ストローク）。
@@ -27,6 +29,7 @@ export default function AdminSideNav({
   activeTab,
   onTabChange,
   tabs,
+  badges,
 }: AdminSideNavProps) {
   return (
     <nav
@@ -35,6 +38,7 @@ export default function AdminSideNav({
     >
       {tabs.map((tab) => {
         const isActive = tab === activeTab;
+        const count = badges?.[tab] ?? 0;
 
         return (
           <button
@@ -55,6 +59,12 @@ export default function AdminSideNav({
               aria-hidden="true"
             />
             <span>{tab}</span>
+            {count > 0 ? (
+              <span className="ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-black px-1.5 font-acumin lk-text-4xs leading-5 text-white">
+                <span aria-hidden="true">{count}</span>
+                <span className="sr-only">{` 未処理 ${count}件`}</span>
+              </span>
+            ) : null}
           </button>
         );
       })}

@@ -325,7 +325,7 @@ function AdminPageContent() {
     return orders.filter((order) => {
       const matchesStatus = hasAllFilter
         ? true
-        : orderStatusFilters.includes(order.status);
+        : orderStatusFilters.some((filter) => filter === order.status);
       const matchesKeyword =
         normalizedKeyword.length === 0
           ? true
