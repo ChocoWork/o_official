@@ -60,7 +60,8 @@ export default function AdminSideNav({
             />
             <span>{tab}</span>
             {count > 0 ? (
-              <span className="ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-black px-1.5 font-acumin lk-text-4xs leading-5 text-white">
+              // relative: sr-only は絶対配置。基準を件数の丸に置かないと、横に並ぶナビ（lg 未満）の右端に出て、ページの横幅を広げる
+              <span className="relative ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-black px-1.5 font-acumin lk-text-4xs leading-5 text-white">
                 <span aria-hidden="true">{count}</span>
                 <span className="sr-only">{` 未処理 ${count}件`}</span>
               </span>
