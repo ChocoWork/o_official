@@ -69,7 +69,7 @@ export default function OrderSection({
 		未決済: 'bg-red-100 text-red-800',
 		決済完了: 'bg-yellow-100 text-yellow-800',
 		決済失敗: 'bg-orange-100 text-orange-800',
-		放棄: 'bg-gray-100 text-gray-500',
+		放棄: 'bg-gray-100 text-[#474747]',
 		キャンセル: 'bg-gray-100 text-gray-500',
 		発送済み: 'bg-green-100 text-green-800',
 	};

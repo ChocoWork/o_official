@@ -115,6 +115,14 @@ describe('OrderSection order actions', () => {
     expect(screen.queryByText(/払込票の期限切れが確定するまで取り消せません/)).not.toBeInTheDocument();
   });
 
+  it('放棄の印は、灰色の背景に読める文字色（#474747）で出す', () => {
+    render(<OrderSection orders={[{ ...paidOrder, status: '放棄', canRefund: false, canShip: false }]} />);
+
+    const badge = screen.getByText('放棄');
+    expect(badge).toHaveClass('bg-gray-100', 'text-[#474747]');
+    expect(badge).not.toHaveClass('text-gray-500');
+  });
+
   it('支払い手続き中の注文も取り消せる', () => {
     const onCancelOrder = jest.fn();
     render(

@@ -94,6 +94,21 @@ describe('AttentionInbox', () => {
     expect(onResolve).toHaveBeenCalledWith({ exceptionId: 'exception-1', note: 'Stripe で返金済み' });
   });
 
+  it('「解決済みにする」を開くとメモへフォーカスが移り、戻ると押したボタンへ返る', () => {
+    renderInbox();
+    const trigger = screen.getAllByRole('button', { name: '解決済みにする' })[0];
+    trigger.focus();
+
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole('dialog', { name: '解決済みにする' });
+    expect(within(dialog).getByRole('textbox', { name: /メモ/ })).toHaveFocus();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: '戻る' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
   it('未入金の注文が付いた要対応だけ「注文を取り消して解決」を出し、理由とメモを渡す', () => {
     const { onCancelAndResolve } = renderInbox();
 

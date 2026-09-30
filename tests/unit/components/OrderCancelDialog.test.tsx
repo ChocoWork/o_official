@@ -84,4 +84,19 @@ describe('OrderCancelDialog', () => {
 
     expect(screen.getByRole('button', { name: '処理中...' })).toBeDisabled();
   });
+
+  it('開くと取消の理由へフォーカスが移る', () => {
+    renderDialog();
+
+    expect(screen.getByRole('combobox', { name: '取消の理由' })).toHaveFocus();
+  });
+
+  it('Escape で onClose を呼ぶ', () => {
+    const onClose = jest.fn();
+    renderDialog({ onClose });
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });
