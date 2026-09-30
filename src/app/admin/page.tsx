@@ -15,19 +15,25 @@ import LookSection from '@/components/LookSection';
 import StockistSection from '@/components/StockistSection';
 import UserSection from '@/components/UserSection';
 import OrderSection, { type OrderItem } from '@/components/OrderSection';
+import AttentionInbox from '@/components/AttentionInbox';
+import OrderCancelDialog, { type OrderCancelValues } from '@/components/OrderCancelDialog';
+import { BannerAlert } from '@/components/ui/BannerAlert/BannerAlert';
 import { Button } from '@/components/ui/Button/Button';
 import { DateTimePicker } from '@/components/ui/DateTimePicker/DateTimePicker';
 import { SearchField } from '@/components/ui/SearchField/SearchField';
 import { Dialog } from '@/components/ui/Dialog/Dialog';
+import type { OrderAttention } from '@/lib/orders/order-payment-types';
 import { SHIPPING_CARRIERS, SHIPPING_CARRIER_IDS, type ShippingCarrierId } from '@/lib/orders/shipping-carriers';
 
 const allAdminTabs: TabType[] = ['KPI', 'ACCOUNTING', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER'];
 const supporterTabs: TabType[] = ['ORDER'];
 const ORDER_STATUS_FILTERS = [
   { label: 'すべて', value: 'all' },
+  { label: '支払い手続き中', value: '支払い手続き中' },
   { label: '未決済', value: '未決済' },
   { label: '決済完了', value: '決済完了' },
   { label: '決済失敗', value: '決済失敗' },
+  { label: '放棄', value: '放棄' },
   { label: 'キャンセル', value: 'キャンセル' },
   { label: '発送済み', value: '発送済み' },
 ] as const;
@@ -46,6 +52,9 @@ type RefundResponseBody = {
 
 const REFUND_STATUSES = new Set(['pending', 'requires_action', 'succeeded', 'failed', 'canceled']);
 const REFUND_ORDER_STATUSES = new Set(['paid', 'shipped', 'cancelled']);
+
+// 取消・解決で Stripe の状態を確かめられなかった（503）。一覧を更新しても直らないので、再試行を案内する
+const STRIPE_UNAVAILABLE_MESSAGE = 'Stripe の状態を確認できませんでした。時間をおいて再試行してください。';
 
 async function readSafeOrderActionError(response: Response, fallback: string): Promise<string> {
   if (response.status !== 400 && response.status !== 409) {
@@ -104,6 +113,13 @@ function AdminPageContent() {
   const [shipOrderId, setShipOrderId] = useState<string | null>(null);
   const [shipCarrier, setShipCarrier] = useState<ShippingCarrierId>('yamato');
   const [shipTrackingNumber, setShipTrackingNumber] = useState('');
+  const [reviewOnly, setReviewOnly] = useState(false);
+  const [attention, setAttention] = useState<OrderAttention | null>(null);
+  // 読み込みの失敗と、要対応・要確認の操作が断られた理由。欄のすぐ下に出す（OrderSection のエラーは一覧の下で、読み直しで消える）
+  const [attentionErrorMessage, setAttentionErrorMessage] = useState<string | null>(null);
+  const [processingAttentionIds, setProcessingAttentionIds] = useState<string[]>([]);
+  const [cancelTarget, setCancelTarget] = useState<OrderItem | null>(null);
+  const [cancelSubmitting, setCancelSubmitting] = useState(false);
 
   const visibleTabs = useMemo<TabType[]>(() => {
     if (userRole === 'admin') {
@@ -224,14 +240,20 @@ function AdminPageContent() {
 
       const selectedStatus = orderStatusFilters.length === 1 ? orderStatusFilters[0] : 'all';
       const statusMap: Partial<Record<OrderStatusFilterValue, string>> = {
+        '支払い手続き中': 'payment_in_progress',
         '未決済': 'pending',
         '決済完了': 'paid',
         '決済失敗': 'failed',
+        '放棄': 'abandoned',
         'キャンセル': 'cancelled',
       };
       const apiStatus = statusMap[selectedStatus];
       if (apiStatus) {
         query.set('status', apiStatus);
+      }
+
+      if (reviewOnly) {
+        query.set('review', 'only');
       }
 
       const response = await clientFetch(`/api/admin/orders?${query.toString()}`, {
@@ -282,6 +304,7 @@ function AdminPageContent() {
     orderAmountMin,
     orderAmountMax,
     orderStatusFilters,
+    reviewOnly,
   ]);
 
   useEffect(() => {
@@ -295,6 +318,37 @@ function AdminPageContent() {
 
     void fetchOrders();
   }, [activeTab, canAccessAdmin, fetchOrders]);
+
+  // 要対応・要確認（設計書 5-2）。サイドナビと KPI 画面の件数にも使うので、タブを移るたびに読み直す。
+  // 読めなかったときに欄を出さないだけだと「未処理なし」に見え、開いている要対応を見落とすので、その旨を出す
+  const fetchAttention = useCallback(async () => {
+    try {
+      const response = await clientFetch('/api/admin/order-attention', { cache: 'no-store' });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch order attention: ${response.status}`);
+      }
+      const json = (await response.json()) as { data?: Partial<OrderAttention> };
+      const data = json.data;
+      if (!data || !Array.isArray(data.exceptions) || !Array.isArray(data.reviews) || !data.counts) {
+        throw new Error('Unexpected order attention response');
+      }
+      setAttention(data as OrderAttention);
+      setAttentionErrorMessage(null);
+    } catch (error) {
+      console.error('Failed to fetch order attention:', error);
+      setAttentionErrorMessage('要対応・要確認を読み込めませんでした。');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!canAccessAdmin || !isMfaVerified) {
+      return;
+    }
+
+    void fetchAttention();
+  }, [activeTab, canAccessAdmin, isMfaVerified, fetchAttention]);
+
+  const attentionTotal = (attention?.counts.exceptions ?? 0) + (attention?.counts.reviews ?? 0);
 
   useEffect(() => {
     if (!canAccessAdmin || userRole !== 'admin' || !isMfaVerified) {
@@ -367,53 +421,137 @@ function AdminPageContent() {
     });
   };
 
-  const handleCancelOrder = async (id: string) => {
-    if (!window.confirm('この注文をキャンセルしますか？')) {
+  const handleCancelOrder = (id: string) => {
+    const order = orders.find((item) => item.id === id);
+    if (!order) {
+      return;
+    }
+
+    setOrdersNoticeMessage(null);
+    setCancelTarget(order);
+  };
+
+  const submitCancelOrder = async (values: OrderCancelValues) => {
+    const target = cancelTarget;
+    if (!target) {
       return;
     }
 
     try {
       setOrdersErrorMessage(null);
-      setOrdersNoticeMessage(null);
-      updateProcessingOrder(id, true);
+      setCancelSubmitting(true);
+      updateProcessingOrder(target.id, true);
 
-      const response = await clientFetch(`/api/admin/orders/${id}/status`, {
+      const response = await clientFetch(`/api/admin/orders/${target.id}/status`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ status: 'cancelled' }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: 'cancelled',
+          reason: values.reason,
+          ...(values.note ? { note: values.note } : {}),
+          notifyCustomer: values.notifyCustomer,
+        }),
       });
 
       if (!response.ok) {
         if (response.status === 401) {
           throw new Error('認証が必要です。再ログインしてください。');
         }
-
         if (response.status === 403) {
           throw new Error('注文ステータス更新の権限がありません。');
         }
-
-        throw new Error('注文ステータスの更新に失敗しました。');
+        if (response.status === 503) {
+          throw new Error(STRIPE_UNAVAILABLE_MESSAGE);
+        }
+        throw new Error(await readSafeOrderActionError(response, '注文ステータスの更新に失敗しました。'));
       }
 
       setOrders((prevOrders) =>
         prevOrders.map((order) =>
-          order.id === id
-            ? {
-                ...order,
-                status: 'キャンセル',
-              }
+          order.id === target.id
+            ? { ...order, status: 'キャンセル', canCancel: false, cancelBlockedUntil: null }
             : order,
         ),
       );
+      setOrdersNoticeMessage('注文を取り消しました。');
+      void fetchAttention();
     } catch (error) {
       console.error('Failed to cancel order:', error);
       setOrdersErrorMessage(error instanceof Error ? error.message : '注文ステータスの更新に失敗しました。');
     } finally {
-      updateProcessingOrder(id, false);
+      setCancelTarget(null);
+      setCancelSubmitting(false);
+      updateProcessingOrder(target.id, false);
     }
   };
+
+  /**
+   * 要対応・要確認の操作。成功したら欄と一覧を読み直す。断られたら理由を欄のすぐ下に出す（行は残し、押し直せる）。
+   * 送っている間は id を操作中に置き、成功でも失敗でも finally で外す。
+   */
+  const runAttentionAction = async (id: string, request: () => Promise<Response>, successMessage: string) => {
+    try {
+      setOrdersErrorMessage(null);
+      setOrdersNoticeMessage(null);
+      setAttentionErrorMessage(null);
+      setProcessingAttentionIds((prev) => [...prev, id]);
+
+      const response = await request();
+      if (!response.ok) {
+        if (response.status === 403) {
+          throw new Error('この操作の権限がありません。');
+        }
+        if (response.status === 503) {
+          throw new Error(STRIPE_UNAVAILABLE_MESSAGE);
+        }
+        throw new Error(await readSafeOrderActionError(response, '操作に失敗しました。一覧を更新してください。'));
+      }
+
+      setOrdersNoticeMessage(successMessage);
+      await Promise.all([fetchAttention(), fetchOrders()]);
+    } catch (error) {
+      console.error('Failed to update order attention:', error);
+      setAttentionErrorMessage(error instanceof Error ? error.message : '操作に失敗しました。');
+    } finally {
+      setProcessingAttentionIds((prev) => prev.filter((itemId) => itemId !== id));
+    }
+  };
+
+  const handleReviewOrder = (orderId: string) =>
+    void runAttentionAction(
+      orderId,
+      () => clientFetch(`/api/admin/orders/${orderId}/review`, { method: 'POST' }),
+      '確認済みにしました。',
+    );
+
+  const handleResolveException = ({ exceptionId, note }: { exceptionId: string; note: string }) =>
+    void runAttentionAction(
+      exceptionId,
+      () =>
+        clientFetch(`/api/admin/payment-exceptions/${exceptionId}/resolve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(note ? { note } : {}),
+        }),
+      '解決済みにしました。',
+    );
+
+  const handleCancelAndResolve = ({ exceptionId, values }: { exceptionId: string; values: OrderCancelValues }) =>
+    void runAttentionAction(
+      exceptionId,
+      () =>
+        clientFetch(`/api/admin/payment-exceptions/${exceptionId}/resolve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            note: values.note,
+            cancelOrder: true,
+            cancelReason: values.reason,
+            notifyCustomer: values.notifyCustomer,
+          }),
+        }),
+      '注文を取り消して解決しました。',
+    );
 
   const openShipDialog = (id: string) => {
     setOrdersNoticeMessage(null);
@@ -619,7 +757,7 @@ function AdminPageContent() {
         );
       case 'ORDER':
         return (
-          <div className="flex items-center justify-end gap-3 whitespace-nowrap">
+          <div className="flex flex-wrap items-center justify-end gap-3">
             <div className="w-64 shrink-0 xl:w-72">
               <SearchField
                 label="取引先"
@@ -635,7 +773,7 @@ function AdminPageContent() {
                 className="font-acumin"
               />
             </div>
-            <div className="flex shrink-0 gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
               {ORDER_STATUS_FILTERS.map((statusFilter) => (
                 <Button
                   key={statusFilter.value}
@@ -647,6 +785,18 @@ function AdminPageContent() {
                   {statusFilter.label}
                 </Button>
               ))}
+              <Button
+                variant={reviewOnly ? 'primary' : 'secondary'}
+                size="sm"
+                className="font-acumin"
+                aria-pressed={reviewOnly}
+                onClick={() => {
+                  setOrdersPage(1);
+                  setReviewOnly((prev) => !prev);
+                }}
+              >
+                要確認のみ
+              </Button>
             </div>
           </div>
         );
@@ -659,7 +809,18 @@ function AdminPageContent() {
     switch (activeTab) {
       case 'KPI':
         if (userRole !== 'admin') return null;
-        return <KpiSection data={kpiData} isLoading={isKpiLoading} errorMessage={kpiErrorMessage} onRetry={fetchKpi} />;
+        return (
+          <>
+            {attentionTotal > 0 ? (
+              <BannerAlert
+                variant="warning"
+                className="mb-6"
+                message={`要対応${attention?.counts.exceptions ?? 0}件・要確認${attention?.counts.reviews ?? 0}件（ORDER で確認）`}
+              />
+            ) : null}
+            <KpiSection data={kpiData} isLoading={isKpiLoading} errorMessage={kpiErrorMessage} onRetry={fetchKpi} />
+          </>
+        );
       case 'ACCOUNTING':
         if (userRole !== 'admin') return null;
         return <AccountingSection />;
@@ -681,6 +842,16 @@ function AdminPageContent() {
       case 'ORDER':
         return (
           <div className="space-y-4">
+            <AttentionInbox
+              attention={attention}
+              processingIds={processingAttentionIds}
+              onReview={handleReviewOrder}
+              onResolve={handleResolveException}
+              onCancelAndResolve={handleCancelAndResolve}
+            />
+            {attentionErrorMessage ? (
+              <p role="alert" className="lk-text-sm text-red-700 font-acumin">{attentionErrorMessage}</p>
+            ) : null}
             <div className="space-y-3 border-b border-black/10 pb-4">
               <div className="flex flex-wrap items-end gap-3">
                 <label className="grid gap-1 lk-text-3xs font-acumin">
@@ -858,6 +1029,16 @@ function AdminPageContent() {
                 </div>
               </div>
             </Dialog>
+            <OrderCancelDialog
+              open={cancelTarget !== null}
+              title="注文を取り消す"
+              targetLabel={cancelTarget?.id ?? ''}
+              showNotifyOption={cancelTarget?.status !== '決済失敗'}
+              noteRequired={false}
+              submitting={cancelSubmitting}
+              onClose={() => setCancelTarget(null)}
+              onSubmit={(values) => void submitCancelOrder(values)}
+            />
           </div>
         );
       default:
@@ -905,7 +1086,12 @@ function AdminPageContent() {
     <div className="w-full min-w-0 lg:-mx-5">
       <div className="flex min-w-0 flex-col gap-6 lg:flex-row lg:gap-0">
         <aside className="relative z-30 w-full min-w-0 lg:w-56 lg:shrink-0">
-          <AdminSideNav activeTab={activeTab} onTabChange={handleTabChange} tabs={visibleTabs} />
+          <AdminSideNav
+            activeTab={activeTab}
+            onTabChange={handleTabChange}
+            tabs={visibleTabs}
+            badges={{ ORDER: attentionTotal }}
+          />
         </aside>
         <div
           data-testid="admin-content-column"

@@ -19,6 +19,7 @@ const ORDERS = [
     totalAmount: '¥10,000',
     status: '決済完了',
     canRefund: true,
+    canShip: true,
   },
   {
     id: 'order-pending',
@@ -30,6 +31,7 @@ const ORDERS = [
     totalAmount: '¥12,000',
     status: '未決済',
     canRefund: false,
+    canCancel: true,
   },
   {
     id: 'order-shipped',
@@ -115,7 +117,8 @@ for (const viewport of viewports) {
       await page.getByRole('table').getByRole('button', { name: '返金', exact: true }).first().click();
 
       await expect(page.getByRole('status').filter({ hasText: '返金処理を受け付けました' })).toBeVisible();
-      await expect(page.getByText('決済完了', { exact: true })).toHaveCount(1);
+      // 状態の絞り込みボタンにも「決済完了」があるので、一覧の表の中だけを数える
+      await expect(page.getByRole('table').getByText('決済完了', { exact: true })).toHaveCount(1);
       await expect.poll(api.getOrderListRequests).toBe(2);
     });
 

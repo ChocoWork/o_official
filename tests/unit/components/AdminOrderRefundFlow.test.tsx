@@ -15,7 +15,16 @@ jest.mock('@/contexts/LoginContext', () => ({
   }),
 }));
 jest.mock('@/lib/client-fetch', () => ({
-  clientFetch: (...args: unknown[]) => clientFetchMock(...args),
+  // 要対応・要確認はこの test の対象ではないので、未処理なしを返す。
+  // 注文一覧の本文を返すと「読み込めませんでした」の alert が出て、返金のエラーの alert と重なる
+  clientFetch: (...args: unknown[]) =>
+    String(args[0]) === '/api/admin/order-attention'
+      ? Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ data: { exceptions: [], reviews: [], counts: { exceptions: 0, reviews: 0 } } }),
+        })
+      : clientFetchMock(...args),
 }));
 jest.mock('@/components/AdminSideNav', () => () => null);
 jest.mock('@/components/KpiSection', () => () => null);

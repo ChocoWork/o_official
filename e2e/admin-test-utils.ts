@@ -41,4 +41,13 @@ export async function mockAdminBackgroundApis(page: Page): Promise<void> {
       body: JSON.stringify({ data: null }),
     }),
   );
+
+  // ORDER タブと KPI 画面の要対応・要確認（src/components/AttentionInbox.tsx）。未処理なしを返す
+  await page.route('**/api/admin/order-attention', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: { exceptions: [], reviews: [], counts: { exceptions: 0, reviews: 0 } } }),
+    }),
+  );
 }
