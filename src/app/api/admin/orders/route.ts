@@ -204,14 +204,6 @@ async function fetchShipBlockedOrderIds(orderIds: string[]): Promise<Set<string>
   return new Set((data ?? []).map((row: { order_id: string }) => row.order_id));
 }
 
-/** 払込票が有効なら、その期限（ISO）。取消はこの時刻を過ぎるまで押せない（設計書 5-2） */
-function voucherValidUntil(paymentIntent: Stripe.PaymentIntent | null): string | null {
-  const expiresAt = paymentIntent?.status === 'requires_action'
-    ? paymentIntent.next_action?.konbini_display_details?.expires_at ?? null
-    : null;
-  return expiresAt && expiresAt * 1000 > Date.now() ? new Date(expiresAt * 1000).toISOString() : null;
-}
-
 export async function GET(request: Request) {
   try {
     const authz = await authorizeAdminPermission('admin.orders.read', request);
@@ -357,7 +349,16 @@ export async function GET(request: Request) {
       });
 
       const shipBlockedReason = shipBlockedOrderIds.has(order.id) ? SHIP_BLOCKED_REASON : null;
-      const cancelBlockedUntil = order.status === 'pending' ? voucherValidUntil(paymentIntent) : null;
+
+      // 入金待ち（pending）の取消は取消 API（status/route.ts）と同じ判定にする（設計書 4-1）。PaymentIntent が
+      // requires_action か processing の間は、払込票の期限を過ぎても Stripe が期限切れを確定するまで 409 になる。
+      // だからサーバーの時計とは比べない。期限（cancelBlockedUntil）は Stripe が返したときだけ入れる
+      const awaitingPayment = paymentIntent?.status === 'requires_action' || paymentIntent?.status === 'processing';
+      const voucherExpiresAt = paymentIntent?.next_action?.konbini_display_details?.expires_at ?? null;
+      const cancelBlockedUntil =
+        order.status === 'pending' && awaitingPayment && voucherExpiresAt
+          ? new Date(voucherExpiresAt * 1000).toISOString()
+          : null;
 
       return {
         id: order.id,
@@ -381,7 +382,8 @@ export async function GET(request: Request) {
         canCancel:
           order.status === 'payment_in_progress'
           || order.status === 'failed'
-          || (order.status === 'pending' && !cancelBlockedUntil),
+          // Stripe を読めなかった入金待ち（paymentIntent が null）は、取り消せない側に倒す
+          || (order.status === 'pending' && paymentIntent !== null && !awaitingPayment),
         cancelBlockedUntil,
         canRefund:
           (order.status === 'paid' || order.status === 'shipped') &&

@@ -316,4 +316,81 @@ describe('GET /api/admin/orders statutory search', () => {
       shipBlockedReason: '支払額の確認が必要です（要対応）',
     });
   });
+
+  // 取消 API は、PaymentIntent が requires_action か processing の間は 409 にする。払込票の期限を過ぎても、
+  // Stripe が期限切れを確定するまでは変わらない。一覧はサーバーの時計と比べず、同じ判定を返す（設計書 4-1）
+  describe('入金待ち（pending）の取消の可否は取消 API と同じ判定にする', () => {
+    function pendingOrder(paymentIntentId: string) {
+      return {
+        id: `order-${paymentIntentId}`,
+        payment_intent_id: paymentIntentId,
+        checkout_session_id: `cs_${paymentIntentId}`,
+        status: 'pending',
+        total_amount: 10_000,
+        currency: 'jpy',
+        review_reason: null,
+        reviewed_at: null,
+        created_at: '2026-09-27T00:00:00.000Z',
+        order_items: [],
+      };
+    }
+
+    async function listPendingOrder(paymentIntentId: string, retrieve: jest.Mock) {
+      queryResult = { data: [pendingOrder(paymentIntentId)], count: 1, error: null };
+      getStripeMock.mockReturnValue({ paymentIntents: { retrieve } });
+
+      const { GET } = await import('@/app/api/admin/orders/route');
+      const response = await GET(new Request('http://localhost/api/admin/orders'));
+      const body = await response.json() as { data: Array<Record<string, unknown>> };
+      return body.data[0];
+    }
+
+    it('払込票の期限を過ぎていても、Stripe が期限切れを確定する前（requires_action）は取り消せない', async () => {
+      const past = Math.floor(Date.now() / 1000) - 60 * 60;
+
+      const row = await listPendingOrder('pi_voucher_past', jest.fn().mockResolvedValue({
+        id: 'pi_voucher_past',
+        status: 'requires_action',
+        payment_method_types: ['konbini'],
+        next_action: { konbini_display_details: { expires_at: past } },
+      }));
+
+      expect(row).toMatchObject({ canCancel: false, cancelBlockedUntil: new Date(past * 1000).toISOString() });
+    });
+
+    it.each<[string, string, Record<string, unknown>]>([
+      ['processing', 'pi_processing', { status: 'processing', payment_method_types: ['konbini'] }],
+      ['requires_action（コンビニ以外）', 'pi_paypay_action', { status: 'requires_action', payment_method_types: ['paypay'] }],
+    ])('%s の間は取り消せない（Stripe が期限を返さないので cancelBlockedUntil は null）', async (_label, paymentIntentId, paymentIntent) => {
+      const row = await listPendingOrder(
+        paymentIntentId,
+        jest.fn().mockResolvedValue({ id: paymentIntentId, ...paymentIntent }),
+      );
+
+      expect(row).toMatchObject({ canCancel: false, cancelBlockedUntil: null });
+    });
+
+    it('払込票が期限切れの PaymentIntent（requires_payment_method）は取り消せる', async () => {
+      const row = await listPendingOrder('pi_voucher_expired', jest.fn().mockResolvedValue({
+        id: 'pi_voucher_expired',
+        status: 'requires_payment_method',
+        payment_method_types: ['konbini'],
+      }));
+
+      expect(row).toMatchObject({ canCancel: true, cancelBlockedUntil: null });
+    });
+
+    it('PaymentIntent を読めない入金待ちは、取り消せない側に倒す（取消 API が Stripe の現在値で決める）', async () => {
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+      try {
+        const row = await listPendingOrder('pi_unreadable', jest.fn().mockRejectedValue(new Error('stripe unavailable')));
+
+        expect(row).toMatchObject({ canCancel: false, cancelBlockedUntil: null });
+        expect(warn).toHaveBeenCalledWith('[admin.orders] Failed to retrieve payment intent:', expect.any(Error));
+      } finally {
+        warn.mockRestore();
+      }
+    });
+  });
 });
