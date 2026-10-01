@@ -3,6 +3,12 @@ import { z } from 'zod';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { signItemImageFields } from '@/lib/storage/item-images';
+import {
+  describeDeleteBlockers,
+  fetchItemDeleteBlockers,
+  isItemDeletable,
+  type ItemDeleteBlockers,
+} from '@/lib/items/item-checkout-guards';
 
 const itemCategorySchema = z.enum(['TOPS', 'BOTTOMS', 'OUTERWEAR', 'ACCESSORIES']);
 const itemStatusSchema = z.enum(['private', 'published']);
@@ -195,7 +201,29 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Failed to fetch items' }, { status: 500 });
     }
 
-    const signedItems = await Promise.all((data ?? []).map((item) => signItemImageFields(supabase, item)));
+    // signItemImageFields の型の制約は image_url・image_urls だけの弱い型なので、要素の型にも含める（TS2559 を避ける）
+    const items = (data ?? []) as Array<{ id: number | string; image_url?: string | null; image_urls?: string[] | null }>;
+
+    // 削除できない商品は、削除ボタンを押した時点で案内する（R-44）。読めなければ判定を付けない（削除時に API が確かめる）
+    let blockers: Map<number, ItemDeleteBlockers> | null = null;
+    try {
+      blockers = await fetchItemDeleteBlockers(supabase, items.map((item) => Number(item.id)));
+    } catch (blockersError) {
+      console.error('Failed to fetch item delete blockers:', blockersError);
+    }
+
+    const signedItems = await Promise.all(items.map(async (item) => {
+      const signed = await signItemImageFields(supabase, item);
+      if (!blockers) {
+        return signed;
+      }
+      const itemBlockers = blockers.get(Number(item.id));
+      return {
+        ...signed,
+        canDelete: isItemDeletable(itemBlockers),
+        deleteBlockedReasons: itemBlockers ? describeDeleteBlockers(itemBlockers) : [],
+      };
+    }));
 
     return NextResponse.json({ data: signedItems }, { status: 200 });
   } catch (error) {

@@ -3,6 +3,14 @@ import { z } from 'zod';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { signItemImageFields } from '@/lib/storage/item-images';
+import { getStripeServerClient } from '@/lib/stripe/server';
+import {
+  describeDeleteBlockers,
+  expireOpenCheckoutsForItem,
+  fetchItemDeleteBlockers,
+  isItemDeletable,
+} from '@/lib/items/item-checkout-guards';
+import { buildItemDeleteGuidance } from '@/lib/items/item-delete-guidance';
 
 const itemCategorySchema = z.enum(['TOPS', 'BOTTOMS', 'OUTERWEAR', 'ACCESSORIES']);
 const itemStatusSchema = z.enum(['private', 'published']);
@@ -28,6 +36,25 @@ const updateItemSchema = z.object({
 const patchStatusSchema = z.object({
   status: itemStatusSchema,
 });
+
+const itemIdSchema = z.coerce.number().int().positive();
+
+/** ① 非公開にしたら、その商品を含む開いている決済を失効させる。失敗しても商品の変更は止めない */
+async function expireCheckoutsIfUnpublished(
+  supabase: Awaited<ReturnType<typeof createServiceRoleClient>>,
+  id: string,
+  status: 'private' | 'published',
+): Promise<void> {
+  const itemId = itemIdSchema.safeParse(id);
+  if (status !== 'private' || !itemId.success) {
+    return;
+  }
+
+  const result = await expireOpenCheckoutsForItem({ client: supabase, stripe: getStripeServerClient(), itemId: itemId.data });
+  if (result.failed > 0) {
+    console.error('[admin.items] some checkout sessions could not be expired', id, result);
+  }
+}
 
 const allowedImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 const maxImageBytes = 5 * 1024 * 1024;
@@ -190,6 +217,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'Failed to update item' }, { status: 500 });
     }
 
+    await expireCheckoutsIfUnpublished(supabase, id, parsedPayload.data.status);
+
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -240,6 +269,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       return NextResponse.json({ error: 'Failed to update status' }, { status: 500 });
     }
 
+    await expireCheckoutsIfUnpublished(supabase, id, parsed.data.status);
+
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
     console.error('PATCH /api/admin/items/:id error:', error);
@@ -255,17 +286,35 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       return authz.response;
     }
 
+    const itemId = itemIdSchema.safeParse(id);
+    if (!itemId.success) {
+      return NextResponse.json({ error: 'Invalid item id' }, { status: 400 });
+    }
+
     const supabase = await createServiceRoleClient();
+
+    // 注文・在庫の記録・決済中のある商品は消さず、非公開へ誘導する（R-44）
+    const blockers = (await fetchItemDeleteBlockers(supabase, [itemId.data])).get(itemId.data);
+    if (!isItemDeletable(blockers)) {
+      const reasons = blockers ? describeDeleteBlockers(blockers) : [];
+      return NextResponse.json({ error: buildItemDeleteGuidance(reasons), reasons }, { status: 409 });
+    }
 
     const { error } = await supabase
       .from('items')
       .delete()
-      .eq('id', id);
+      .eq('id', itemId.data);
 
     if (error) {
+      // 確かめた後に注文・在庫の記録が増えた（外部キーで断られた）
+      if (error.code === '23503') {
+        return NextResponse.json({ error: buildItemDeleteGuidance([]), reasons: [] }, { status: 409 });
+      }
       console.error('Failed to delete item:', error);
       return NextResponse.json({ error: 'Failed to delete item' }, { status: 500 });
     }
+
+    await expireOpenCheckoutsForItem({ client: supabase, stripe: getStripeServerClient(), itemId: itemId.data });
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {

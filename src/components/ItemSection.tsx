@@ -6,6 +6,7 @@ import { clientFetch } from "@/lib/client-fetch";
 import { Button } from "@/components/ui/Button/Button";
 import { Card } from "@/components/ui/Card/Card";
 import { TagLabel } from "@/components/ui/TagLabel/TagLabel";
+import { buildItemDeleteGuidance } from "@/lib/items/item-delete-guidance";
 
 // FREQ-312: 横に並ぶ枚数を公開 ITEM 一覧と一致させる。列指定は
 // PublicItemGrid の ITEM_GRID_CLASS（FREQ-276）と同じ 2 / md:3 / 2xl:4。
@@ -24,12 +25,15 @@ interface AdminItem {
   price: number;
   image_url: string;
   status: "private" | "published";
+  /** 注文・在庫の記録・決済中のある商品は false（R-44） */
+  canDelete?: boolean;
+  deleteBlockedReasons?: string[];
 }
 
 interface ItemCardProps {
   item: AdminItem;
   onToggleStatus: (id: number, currentStatus: "private" | "published") => void;
-  onDelete: (id: number) => void;
+  onDelete: (item: AdminItem) => void;
 }
 
 function ItemCard({ item, onToggleStatus, onDelete }: ItemCardProps) {
@@ -114,7 +118,7 @@ function ItemCard({ item, onToggleStatus, onDelete }: ItemCardProps) {
             {item.status === "published" ? "非公開" : "公開"}
           </Button>
           <Button
-            onClick={() => onDelete(item.id)}
+            onClick={() => onDelete(item)}
             variant="secondary"
             size="sm"
             className="w-full font-acumin"
@@ -175,15 +179,32 @@ export default function ItemSection() {
     }
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (item: AdminItem) => {
+    // 削除できない商品は、送らずに非公開を促す（R-44）
+    if (item.canDelete === false) {
+      alert(buildItemDeleteGuidance(item.deleteBlockedReasons ?? []));
+      return;
+    }
+
     if (!confirm("この商品を削除してもよろしいですか？")) {
       return;
     }
 
     try {
-      const res = await clientFetch(`/api/admin/items/${id}`, {
+      const res = await clientFetch(`/api/admin/items/${item.id}`, {
         method: "DELETE",
       });
+
+      if (res.status === 409) {
+        const body = (await res.json().catch(() => ({}))) as { error?: unknown };
+        alert(
+          typeof body.error === "string" && body.error.length > 0 && body.error.length <= 200
+            ? body.error
+            : buildItemDeleteGuidance([]),
+        );
+        await fetchItems();
+        return;
+      }
 
       if (!res.ok) {
         throw new Error("Failed to delete item");
