@@ -51,7 +51,7 @@ describe('integration: order state transition hardening', () => {
     shippedAt = null,
     shippingComplete = true,
   }: {
-    status: 'pending' | 'paid' | 'failed' | 'cancelled' | 'shipped';
+    status: 'payment_in_progress' | 'pending' | 'paid' | 'failed' | 'abandoned' | 'cancelled' | 'shipped';
     refundedAmount?: number;
     shippedAt?: string | null;
     shippingComplete?: boolean;
@@ -79,7 +79,7 @@ describe('integration: order state transition hardening', () => {
       `select has_table_privilege('authenticated', 'public.orders', 'UPDATE') as can_update,
               has_function_privilege(
                 'authenticated',
-                'public.admin_cancel_failed_order(uuid,uuid)',
+                'public.admin_cancel_failed_order(uuid,uuid,text,text)',
                 'EXECUTE'
               ) as can_cancel,
               has_function_privilege(
@@ -94,7 +94,7 @@ describe('integration: order state transition hardening', () => {
               ) as can_project_refund,
               has_function_privilege(
                 'service_role',
-                'public.admin_cancel_failed_order(uuid,uuid)',
+                'public.admin_cancel_failed_order(uuid,uuid,text,text)',
                 'EXECUTE'
               ) as service_can_cancel,
               has_function_privilege(
@@ -144,7 +144,7 @@ describe('integration: order state transition hardening', () => {
 
       await client.query('set local role service_role');
       const cancelled = await client.query(
-        'select * from public.admin_cancel_failed_order($1::uuid, $2::uuid)',
+        "select * from public.admin_cancel_failed_order($1::uuid, $2::uuid, 'customer_request', null)",
         [orderId, actorId],
       );
       await client.query('reset role');
@@ -274,6 +274,7 @@ describe('integration: order state transition hardening', () => {
   test('配送先欠落の paid 注文は RPC と直接 UPDATE の両方で出荷できない', async () => {
     await client.query('begin');
     try {
+      await client.query("select set_config('app.order_change_reason', 'integration_test', true)");
       const orderId = await insertOrder({ status: 'paid', shippingComplete: false });
       const actor = await client.query(
         `insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
@@ -318,13 +319,14 @@ describe('integration: order state transition hardening', () => {
 
     try {
       await client.query('begin');
+      await client.query("select set_config('app.order_change_reason', 'integration_test', true)");
       await client.query(
         `update public.orders set status = 'paid'::public.order_status where id = $1`,
         [orderId],
       );
 
       const cancelPromise = racer.query(
-        'select * from public.admin_cancel_failed_order($1::uuid, $2::uuid)',
+        "select * from public.admin_cancel_failed_order($1::uuid, $2::uuid, 'customer_request', null)",
         [orderId, actor.rows[0].id],
       );
       await client.query('commit');
@@ -342,6 +344,7 @@ describe('integration: order state transition hardening', () => {
   test('trigger rejects unpaid cancellation and allows cancellation with a full refund', async () => {
     await client.query('begin');
     try {
+      await client.query("select set_config('app.order_change_reason', 'integration_test', true)");
       const orderId = await insertOrder({ status: 'paid' });
       await client.query('savepoint before_invalid_cancel');
       await expect(
@@ -370,6 +373,7 @@ describe('integration: order state transition hardening', () => {
   test('failed full refund must restore paid or shipped, while unpaid cancellations remain unchanged', async () => {
     await client.query('begin');
     try {
+      await client.query("select set_config('app.order_change_reason', 'integration_test', true)");
       const paidRestoreId = await insertOrder({ status: 'cancelled', refundedAmount: 1000 });
       await client.query('savepoint before_invalid_restore');
       await expect(
@@ -410,6 +414,48 @@ describe('integration: order state transition hardening', () => {
     } finally {
       await client.query('rollback');
     }
+  });
+
+  test('RPC を通らない状態の変更（変更理由なし）は拒否する', async () => {
+    await client.query('begin');
+    try {
+      const orderId = await insertOrder({ status: 'pending' });
+      await expect(
+        client.query(`update public.orders set status = 'failed'::public.order_status where id = $1`, [orderId]),
+      ).rejects.toMatchObject({ code: '23514', message: expect.stringContaining('ORDER_STATUS_CHANGE_REQUIRES_REASON') });
+    } finally {
+      await client.query('rollback');
+    }
+  });
+
+  test('設計書 4-1 の表に無い遷移は拒否する', async () => {
+    await client.query('begin');
+    try {
+      await client.query("select set_config('app.order_change_reason', 'integration_test', true)");
+      const orderId = await insertOrder({ status: 'abandoned' });
+      await expect(
+        client.query(`update public.orders set status = 'paid'::public.order_status where id = $1`, [orderId]),
+      ).rejects.toMatchObject({ code: '23514', message: expect.stringContaining('ORDER_STATUS_TRANSITION_NOT_ALLOWED') });
+    } finally {
+      await client.query('rollback');
+    }
+  });
+
+  test('authenticated は注文と明細を直接作れず、消せない', async () => {
+    const privileges = await client.query(
+      `select has_table_privilege('authenticated', 'public.orders', 'INSERT') as orders_insert,
+              has_table_privilege('authenticated', 'public.orders', 'DELETE') as orders_delete,
+              has_table_privilege('authenticated', 'public.order_items', 'INSERT') as items_insert,
+              has_table_privilege('authenticated', 'public.order_items', 'UPDATE') as items_update,
+              has_table_privilege('authenticated', 'public.order_items', 'DELETE') as items_delete`,
+    );
+    expect(privileges.rows[0]).toEqual({
+      orders_insert: false,
+      orders_delete: false,
+      items_insert: false,
+      items_update: false,
+      items_delete: false,
+    });
   });
 });
 

@@ -48,5 +48,9 @@ describe('order state transition migrations', () => {
     expect(sql).toContain('NEW.refunded_amount < NEW.total_amount');
     expect(sql).toContain("OLD.status = 'cancelled'");
     expect(sql).toContain("NEW.status = 'cancelled'");
+    expect(sql).toMatch(/REVOKE INSERT, DELETE, TRUNCATE ON TABLE public\.orders FROM anon, authenticated/i);
+    expect(sql).toMatch(/REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE public\.order_items FROM anon, authenticated/i);
+    expect(sql).toContain('ORDER_STATUS_CHANGE_REQUIRES_REASON');
+    expect(sql).toContain('ORDER_STATUS_TRANSITION_NOT_ALLOWED');
   });
 });

@@ -6,7 +6,7 @@ const { Client } = require('pg');
 /**
  * 注文にフリガナを残す（FREQ-384、レビュー指摘⑬）。
  *
- * 注文確定（finalize_order_from_checkout_draft）が、配送先の写しの kanaName を
+ * 受付（place_order_from_checkout_draft）が、配送先の写しの kanaName を
  * orders.shipping_kana に書くこと、書いた後は法定の変更禁止トリガーで書き換えられないことを、
  * 実 DB で確かめる。
  *
@@ -67,8 +67,8 @@ describe('integration: 注文のフリガナ', () => {
     const draft = await client.query(
       `insert into public.checkout_drafts
          (session_id, payment_method, subtotal_amount, shipping_amount, total_amount, currency,
-          shipping_snapshot, items_snapshot)
-       values ($1, 'stripe_card', $2, 0, $2, 'jpy', $3::jsonb, $4::jsonb)
+          shipping_snapshot, items_snapshot, checkout_session_id)
+       values ($1, 'stripe_card', $2, 0, $2, 'jpy', $3::jsonb, $4::jsonb, $5)
        returning id`,
       [
         `kana-session-${suffix}`,
@@ -96,16 +96,17 @@ describe('integration: 注文のフリガナ', () => {
             line_total: PRICE,
           },
         ]),
+        `cs_kana_${suffix}`,
       ],
     );
 
-    const finalized = await client.query(
-      `select order_id from public.finalize_order_from_checkout_draft(
-         $1::uuid, $2::text, $3::text, $4::public.order_status, $5::integer, $6::text)`,
-      [draft.rows[0].id, `pi_kana_${suffix}`, `cs_kana_${suffix}`, 'paid', PRICE, 'jpy'],
+    const placed = await client.query(
+      `select order_id from public.place_order_from_checkout_draft(
+         $1::uuid, $2::text, $3::text, $4::integer, 0, 'jpy', now(), null)`,
+      [draft.rows[0].id, `cs_kana_${suffix}`, `kana-session-${suffix}`, PRICE],
     );
 
-    return finalized.rows[0].order_id;
+    return placed.rows[0].order_id;
   }
 
   async function shippingKanaOf(orderId: string): Promise<string | null> {
@@ -113,12 +114,12 @@ describe('integration: 注文のフリガナ', () => {
     return res.rows[0].shipping_kana;
   }
 
-  test('注文確定で配送先の写しのフリガナが注文に入る', async () => {
+  test('受付で配送先の写しのフリガナが注文に入る', async () => {
     const orderId = await finalizeOrder('ヤマダ ハナコ');
     expect(await shippingKanaOf(orderId)).toBe('ヤマダ ハナコ');
   });
 
-  test('フリガナの無い draft でも注文確定は通り、注文のフリガナは空になる', async () => {
+  test('フリガナの無い draft でも受付は通り、注文のフリガナは空になる', async () => {
     const orderId = await finalizeOrder(null);
     expect(await shippingKanaOf(orderId)).toBeNull();
   });

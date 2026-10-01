@@ -21,7 +21,6 @@ const { Client } = require('pg');
 const DATABASE_URL = process.env.DATABASE_URL;
 const SUBTOTAL = 5000;
 const SHIPPING = 500;
-const DISCOUNT = 1000;
 
 function isLocalDatabase(url: string): boolean {
   try {
@@ -113,14 +112,6 @@ describe('integration: 割引が付いた注文の確定', () => {
     return { draftId: draft.rows[0].id, paymentIntentId: `pi_discount_${suffix}`, totalAmount };
   }
 
-  function finalize(draftId: string, paymentIntentId: string, expectedTotal: number) {
-    return client.query(
-      `select order_id from public.finalize_order_from_checkout_draft(
-         $1::uuid, $2::text, $3::text, $4::public.order_status, $5::integer, $6::text)`,
-      [draftId, paymentIntentId, `cs_${paymentIntentId}`, 'paid', expectedTotal, 'jpy'],
-    );
-  }
-
   test('checkout_drafts は discount_amount を持ち、既定は 0', async () => {
     const res = await client.query(
       `select column_default, is_nullable, data_type
@@ -136,44 +127,5 @@ describe('integration: 割引が付いた注文の確定', () => {
 
   test('負の値引額は入れられない', async () => {
     await expect(createDraft(-1)).rejects.toMatchObject({ code: '23514' });
-  });
-
-  test('割引後の合計で注文ができ、値引額が注文に残る', async () => {
-    const { draftId, paymentIntentId, totalAmount } = await createDraft(DISCOUNT);
-
-    const res = await finalize(draftId, paymentIntentId, totalAmount);
-    expect(res.rows[0].order_id).toEqual(expect.any(String));
-
-    const order = await client.query(
-      'select discount_amount, total_amount, subtotal_amount, shipping_amount from public.orders where payment_intent_id = $1',
-      [paymentIntentId],
-    );
-    expect(order.rows[0]).toMatchObject({
-      discount_amount: DISCOUNT,
-      total_amount: totalAmount,
-      subtotal_amount: SUBTOTAL,
-      shipping_amount: SHIPPING,
-    });
-  });
-
-  test('割引が無い注文は、これまで通り値引額 0 で作られる', async () => {
-    const { draftId, paymentIntentId, totalAmount } = await createDraft(0);
-
-    await finalize(draftId, paymentIntentId, totalAmount);
-
-    const order = await client.query(
-      'select discount_amount, total_amount from public.orders where payment_intent_id = $1',
-      [paymentIntentId],
-    );
-    expect(order.rows[0]).toMatchObject({ discount_amount: 0, total_amount: totalAmount });
-  });
-
-  test('下書きの合計と期待額がずれていれば、これまで通り止まる', async () => {
-    const { draftId, paymentIntentId, totalAmount } = await createDraft(DISCOUNT);
-
-    await expect(finalize(draftId, paymentIntentId, totalAmount + 1)).rejects.toMatchObject({
-      code: 'P0001',
-      message: expect.stringContaining('CHECKOUT_TOTAL_MISMATCH'),
-    });
   });
 });

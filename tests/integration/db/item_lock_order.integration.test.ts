@@ -6,7 +6,7 @@ const { Client } = require('pg');
 /**
  * 商品行のロック順（FREQ-364、レビュー指摘⑮）。
  *
- * 注文確定（finalize_order_from_checkout_draft）と在庫復元（release_stock_for_unpaid_order）が
+ * 受付（place_order_from_checkout_draft）と在庫を戻す処理（release_stock_for_unpaid_order）が
  * 同じ商品を別々の順でロックすると、同時に走ったときデッドロックになる。どちらも
  * 商品 id の昇順でロックすることを、実際にロックを取らせて確かめる。
  *
@@ -90,7 +90,7 @@ describe('integration: 商品行のロック順', () => {
     return ids;
   }
 
-  async function createDraft(ids: number[]): Promise<{ draftId: string; paymentIntentId: string }> {
+  async function createDraft(ids: number[]): Promise<{ draftId: string; checkoutSessionId: string; cartSessionId: string }> {
     const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
     // draft の明細は id の降順で並べる（入力順にも依存しないことを見るため）。
     const itemsSnapshot = [...ids].reverse().map((itemId) => ({
@@ -103,22 +103,25 @@ describe('integration: 商品行のロック順', () => {
       quantity: 1,
       line_total: 1000,
     }));
+    const cartSessionId = `lockorder-session-${suffix}`;
+    const checkoutSessionId = `cs_lockorder_${suffix}`;
 
     const draft = await prober.query(
       `insert into public.checkout_drafts
-         (session_id, payment_method, subtotal_amount, shipping_amount, total_amount, currency,
+         (session_id, checkout_session_id, payment_method, subtotal_amount, shipping_amount, total_amount, currency,
           shipping_snapshot, items_snapshot)
-       values ($1, 'stripe_card', $2, 0, $2, 'jpy', $3::jsonb, $4::jsonb)
+       values ($1, $2, 'stripe_card', $3, 0, $3, 'jpy', $4::jsonb, $5::jsonb)
        returning id`,
       [
-        `lockorder-session-${suffix}`,
+        cartSessionId,
+        checkoutSessionId,
         1000 * ids.length,
         JSON.stringify({ email: 'lockorder@example.com', fullName: 'テスト太郎' }),
         JSON.stringify(itemsSnapshot),
       ],
     );
 
-    return { draftId: draft.rows[0].id, paymentIntentId: `pi_lockorder_${suffix}` };
+    return { draftId: draft.rows[0].id, checkoutSessionId, cartSessionId };
   }
 
   async function createPendingOrder(ids: number[]): Promise<string> {
@@ -128,7 +131,7 @@ describe('integration: 商品行のロック順', () => {
       `insert into public.orders
          (session_id, payment_intent_id, status, subtotal_amount, shipping_amount, total_amount, currency)
        values ($1, $2, 'pending', $3, 0, $3, 'jpy')
-       returning id, payment_intent_id`,
+       returning id`,
       [`lockorder-session-${suffix}`, `pi_lockorder_pending_${suffix}`, total],
     );
 
@@ -138,7 +141,7 @@ describe('integration: 商品行のロック順', () => {
       [order.rows[0].id, ids],
     );
 
-    return order.rows[0].payment_intent_id;
+    return order.rows[0].id;
   }
 
   async function waitUntilWaitingForLock(pid: number) {
@@ -202,15 +205,15 @@ describe('integration: 商品行のロック順', () => {
     }
   }
 
-  test('注文確定は商品 id の昇順でロックする', async () => {
+  test('受付は商品 id の昇順でロックする（FOR KEY SHARE でも FOR UPDATE NOWAIT とは衝突する）', async () => {
     const ids = await createItems(ITEM_COUNT);
-    const { draftId, paymentIntentId } = await createDraft(ids);
+    const { draftId, checkoutSessionId, cartSessionId } = await createDraft(ids);
 
     await expectAscendingLockOrder(ids, () =>
       runner.query(
-        `select order_id from public.finalize_order_from_checkout_draft(
-           $1::uuid, $2::text, $3::text, $4::public.order_status, $5::integer, $6::text)`,
-        [draftId, paymentIntentId, 'cs_lockorder', 'paid', 1000 * ids.length, 'jpy'],
+        `select order_id from public.place_order_from_checkout_draft(
+           $1::uuid, $2::text, $3::text, $4::integer, 0, 'jpy', now(), null)`,
+        [draftId, checkoutSessionId, cartSessionId, 1000 * ids.length],
       ),
     );
   }, 120000);
@@ -221,7 +224,7 @@ describe('integration: 商品行のロック順', () => {
    */
   test('在庫復元は商品行をロックしない', async () => {
     const ids = await createItems(ITEM_COUNT);
-    const paymentIntentId = await createPendingOrder(ids);
+    const orderId = await createPendingOrder(ids);
 
     // 別の接続で全商品行を占有したまま在庫復元を呼び、待たずに終わることを確かめる。
     try {
@@ -229,8 +232,9 @@ describe('integration: 商品行のロック順', () => {
       await blocker.query(`select id from public.items where id = any($1::bigint[]) for update`, [ids]);
 
       const released = await runner.query(
-        `select released from public.release_stock_for_unpaid_order($1::text, $2::public.order_status)`,
-        [paymentIntentId, 'failed'],
+        `select released from public.release_stock_for_unpaid_order(
+           $1::uuid, 'pending', 'failed', 'stripe_voucher_expired')`,
+        [orderId],
       );
 
       expect(released.rows[0].released).toBe(true);

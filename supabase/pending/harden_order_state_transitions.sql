@@ -9,6 +9,16 @@ REVOKE UPDATE ON TABLE public.orders FROM anon, authenticated;
 DROP POLICY IF EXISTS "admin orders manage by permission update"
   ON public.orders;
 
+-- 注文と明細は RPC だけで作り・変える（R-04 の不足分。グループ A 設計書 4-7）
+REVOKE INSERT, DELETE, TRUNCATE ON TABLE public.orders FROM anon, authenticated;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE public.order_items FROM anon, authenticated;
+
+DROP POLICY IF EXISTS "admin orders manage by permission insert" ON public.orders;
+DROP POLICY IF EXISTS "admin orders manage by permission delete" ON public.orders;
+DROP POLICY IF EXISTS "admin order items manage by permission insert" ON public.order_items;
+DROP POLICY IF EXISTS "admin order items manage by permission update" ON public.order_items;
+DROP POLICY IF EXISTS "admin order items manage by permission delete" ON public.order_items;
+
 CREATE OR REPLACE FUNCTION private.enforce_order_payment_invariants()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -17,6 +27,26 @@ AS $$
 DECLARE
   required_restored_status public.order_status;
 BEGIN
+  -- 状態の変更は RPC だけが行う。RPC は必ず変更理由を設定する（R-04。設計書 4-7）
+  IF NEW.status IS DISTINCT FROM OLD.status
+     AND NULLIF(pg_catalog.current_setting('app.order_change_reason', true), '') IS NULL THEN
+    RAISE EXCEPTION 'ORDER_STATUS_CHANGE_REQUIRES_REASON'
+      USING ERRCODE = '23514';
+  END IF;
+
+  -- 設計書 4-1 の表に無い遷移は拒否する（取消の注文の復元は、全額返金の失敗で入金済み・発送済みへ戻すため）
+  IF NEW.status IS DISTINCT FROM OLD.status AND NOT (
+       (OLD.status = 'payment_in_progress' AND NEW.status IN ('paid', 'pending', 'failed', 'abandoned', 'cancelled'))
+    OR (OLD.status = 'pending' AND NEW.status IN ('paid', 'failed', 'cancelled'))
+    OR (OLD.status = 'failed' AND NEW.status IN ('paid', 'cancelled'))
+    OR (OLD.status = 'paid' AND NEW.status IN ('shipped', 'cancelled'))
+    OR (OLD.status = 'shipped' AND NEW.status = 'cancelled')
+    OR (OLD.status = 'cancelled' AND NEW.status IN ('paid', 'shipped'))
+  ) THEN
+    RAISE EXCEPTION 'ORDER_STATUS_TRANSITION_NOT_ALLOWED:%->%', OLD.status, NEW.status
+      USING ERRCODE = '23514';
+  END IF;
+
   -- 入金済み・発送済みの注文は、成功済み返金合計が注文総額に達する同一更新でだけ
   -- cancelled へ遷移できる。
   IF OLD.status IN ('paid', 'shipped')

@@ -6,8 +6,8 @@
 
 | ファイル                              | 内容                                                                                                              | 入れる時期                                                                  |
 | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `schedule_expire_pending_orders.sql`  | 未入金注文の掃除ジョブ（毎日 04:00 UTC に `/api/cron/expire-pending-orders` を呼ぶ pg_cron）。FREQ-356 / FREQ-368 | 本番アプリ公開・決済手段の確認後。Vault に `cron_secret` と `app_base_url` を登録してから |
-| `harden_order_state_transitions.sql`  | `orders`のData API直接更新を閉じ、入金・返金の不変条件トリガーを追加する第2段階                                   | 第1段階と対応アプリを本番確認後に昇格・適用する（本依頼で承認済み）             |
+| `schedule_expire_pending_orders.sql`  | 照合の見回り（毎時0分に `/api/cron/expire-pending-orders` を呼ぶ pg_cron）。開いてから30分を超えた決済の失効と、Webhook の取りこぼしの照合。FREQ-356 / FREQ-368 / FREQ-407 | 本番アプリ公開・決済手段の確認後。Vault に `cron_secret` と `app_base_url` を登録してから |
+| `harden_order_state_transitions.sql`  | `orders`・`order_items`のData API直接更新・作成・削除を閉じ、入金・返金の不変条件と、変更理由の無い状態の変更・設計書 4-1 に無い遷移を拒否するトリガーを追加する第2段階（R-04） | 第1段階と対応アプリを本番確認後に、明示の承認を得て昇格・適用する |
 | `harden_checkout_session_claims.sql`  | 既存下書きの要求IDを補完し、`checkout_drafts`への直接INSERTを剥奪する第2段階                                      | 互換段階と対応アプリを本番確認後に昇格・適用する（本依頼で承認済み）        |
 | `schedule_stripe_webhook_worker.sql` | Vaultを使いworkerを10秒間隔で起動するpg_cronジョブ | キューRPC・worker・Vaultの稼働確認後、受信ルート公開前に適用する（条件付き承認済み） |
 
