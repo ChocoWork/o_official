@@ -73,7 +73,7 @@ describe('注文のフリガナを足すマイグレーション', () => {
     expect(readMigration(MIGRATION_SUFFIX).match(/create\s+or\s+replace\s+function/gi)).toHaveLength(2);
   });
 
-  it('全体をトランザクションで包む（規約: docs/ops/db-migrations.md）', () => {
+  it('全体をトランザクションで包む（規約: docs/06_Operations/db-migrations.md）', () => {
     const sql = readMigration(MIGRATION_SUFFIX);
     expect(sql).toMatch(/^BEGIN;$/im);
     expect(sql).toMatch(/^COMMIT;$/im);

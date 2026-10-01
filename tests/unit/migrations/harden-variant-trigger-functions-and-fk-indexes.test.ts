@@ -33,7 +33,7 @@ describe('バリアント在庫の advisor 指摘の修正マイグレーショ�
     );
   });
 
-  it('全体をトランザクションで包む（規約: docs/ops/db-migrations.md）', () => {
+  it('全体をトランザクションで包む（規約: docs/06_Operations/db-migrations.md）', () => {
     const sql = readMigration();
     expect(sql).toMatch(/^BEGIN;$/m);
     expect(sql).toMatch(/^COMMIT;$/m);

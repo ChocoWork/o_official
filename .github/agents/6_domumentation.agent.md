@@ -23,7 +23,7 @@ tools: [execute, read, edit, search, web, github.vscode-pull-request-github/issu
 
 | 対象 | 更新タイミング |
 |---|---|
-| `docs/3_ArchitectureDesign` 配下の 設計書と`docs/4_DetailDesign` 配下の実装計画 | Phase 3 追従 |
+| `docs/03_BasicDesign/architecture` 配下の 設計書と`docs/04_DetailDesign` 配下の実装計画 | Phase 3 追従 |
 | `README.md` | ビルド・セットアップ・概要の変化時 |
 | `docs/architecture.md` / design docs | 新モジュール追加・レイヤー変更時 |
 | `docs/6_Test` 配下のテスト仕様書 | テスト対象・シナリオ変化時 |

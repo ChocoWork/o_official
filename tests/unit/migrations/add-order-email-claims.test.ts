@@ -74,7 +74,7 @@ describe('注文メールの送信権のマイグレーション', () => {
     }
   });
 
-  it('全体をトランザクションで包む（規約: docs/ops/db-migrations.md）', () => {
+  it('全体をトランザクションで包む（規約: docs/06_Operations/db-migrations.md）', () => {
     const sql = readMigration();
     expect(sql).toMatch(/^BEGIN;$/im);
     expect(sql).toMatch(/^COMMIT;$/im);

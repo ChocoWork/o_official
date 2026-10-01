@@ -352,7 +352,7 @@ git commit -m "feat(accounting): distinguish unavailable evidence in tax reports
 
 **Files:**
 
-- Modify: `docs/2_Specs/spec.md`
+- Modify: `docs/02_Requirements/requirements.md`
 - Modify or Create: `e2e/FR-ADMIN-038-receipts-and-revisions.spec.ts`
 - Modify: `docs/superpowers/specs/2026-08-14-income-evidence-unavailable-design.md` only if implementation reveals an approved clarification
 
@@ -422,7 +422,7 @@ Expected: Graphify更新完了、今回の変更だけに空白エラーなし�
 - [ ] **Step 8: 仕様・E2E・最終調整をコミットする**
 
 ```powershell
-git add docs/2_Specs/spec.md e2e/FR-ADMIN-038-receipts-and-revisions.spec.ts src/lib/finance/evidence-status.ts src/app/api/admin/kpi/cost-profit/route.ts src/components/CostProfitSection.tsx src/components/tax
+git add docs/02_Requirements/requirements.md e2e/FR-ADMIN-038-receipts-and-revisions.spec.ts src/lib/finance/evidence-status.ts src/app/api/admin/kpi/cost-profit/route.ts src/components/CostProfitSection.tsx src/components/tax
 git commit -m "test(accounting): verify unavailable income evidence flow"
 ```
 

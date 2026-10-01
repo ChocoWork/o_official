@@ -91,7 +91,7 @@
 
 **Files:**
 
-- Modify: `docs/2_Specs/spec.md`
+- Modify: `docs/02_Requirements/requirements.md`
 - Modify: `e2e/FR-ADMIN-025-expense-templates.spec.ts`
 
 **Interfaces:**

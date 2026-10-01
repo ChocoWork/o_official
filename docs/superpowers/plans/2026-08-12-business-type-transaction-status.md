@@ -104,7 +104,7 @@ Expected: PASS.
 
 - Modify: `src/components/CostProfitSection.tsx`
 - Modify: `tests/unit/components/CostProfitSection.test.tsx`
-- Modify: `docs/2_Specs/spec.md`
+- Modify: `docs/02_Requirements/requirements.md`
 
 **Interfaces:**
 

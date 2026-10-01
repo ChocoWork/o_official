@@ -15,7 +15,7 @@
 - コミットしない。ユーザーの明示指示があるまで `git commit` を実行しない（各タスク末尾は「検証」で終える）。
 - 作業ブランチは `master`。feature ブランチも PR も作らない。
 - E2E は本番ビルド（`npm run build && npm run start`）に対して実行する。dev サーバーが :3000 で動いていると Playwright がそれを再利用するので、実行前に停止する。
-- 要求管理ルール: 機能変更には `docs/2_Specs/spec.md` のトレーサビリティ行と `e2e/FR-{CATEGORY}-{NNN}-{description}.spec.ts` をセットで追加する。E2E は mobile 390 / tablet 768 / desktop 1280 の3ビューポート。
+- 要求管理ルール: 機能変更には `docs/02_Requirements/requirements.md` のトレーサビリティ行と `e2e/FR-{CATEGORY}-{NNN}-{description}.spec.ts` をセットで追加する。E2E は mobile 390 / tablet 768 / desktop 1280 の3ビューポート。
 - ステッパーの2段（`注文を確定する` / `ご注文内容の確認`）と step 2 の確認画面は変更しない。
 - 確定ボタンのラベルは既存の `確認へ進む` のまま。`お支払いに進む` は廃止。
 - `checkout_drafts` の保持ジョブ（pg_cron）はこの計画のスコープ外。
@@ -672,7 +672,7 @@ Expected: PASS。失敗したら CLAUDE.md の切り分け手順（単体再実�
 ### Task 6: 1画面化の要求と新規 E2E を追加する
 
 **Files:**
-- Modify: `docs/2_Specs/spec.md`（末尾に FREQ-354 を追記）
+- Modify: `docs/02_Requirements/requirements.md`（末尾に FREQ-354 を追記）
 - Create: `e2e/FR-CHECKOUT-021-single-step-checkout.spec.ts`
 
 **Interfaces:**
@@ -681,7 +681,7 @@ Expected: PASS。失敗したら CLAUDE.md の切り分け手順（単体再実�
 
 - [ ] **Step 1: spec.md にトレーサビリティ行を追加する**
 
-`docs/2_Specs/spec.md` の末尾に1行追記する:
+`docs/02_Requirements/requirements.md` の末尾に1行追記する:
 
 ```text
 | FREQ-354 | checkout の1段階目を分割せず、お客様情報・配送先・支払方法を1画面で入力できるようにすること（入力と決済の往復をなくす） | FREQ-354-REQ-01 | カート読込完了かつ商品がある時点で決済セッションを1回だけ生成し、配送先が未入力でも支払方法を描画すること。StrictMode の二重実行でも生成は1回に抑えること | FREQ-354-REQ-02 | 「お支払いに進む」ボタンと決済準備の中間画面を廃止し、確定ボタン（確認へ進む）1つにすること。未入力でも押せ、押下時に検証して先頭のエラー欄へフォーカスすること | FREQ-354-REQ-03 | 同一カート内容の 未完了（status='created'）の draft がある場合は Stripe セッションを再利用し、checkout_drafts 行と Stripe セッションを増やさないこと | FREQ-354-AC-01 | mobile（390px）/ tablet（768px）/ desktop（1280px）で、/checkout 到着時に「お客様情報」「配送先」「支払方法の選択」の3見出しが同時に表示されること | FREQ-354-AC-02 | 同3ビューポートで、「お支払いに進む」ボタンが存在しないこと | FREQ-354-AC-03 | 同3ビューポートで、全欄が空のまま確認へ進むを押すと氏名欄にフォーカスが移ること | FREQ-354-AC-04 | 同3ビューポートで、/api/checkout/create-session への POST がページ表示あたり1回だけであること | FREQ-354-AC-05 | 同3ビューポートで、create-session が 429 を返しても入力欄が操作できること |

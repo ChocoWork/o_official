@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- 実装と同時に `docs/2_Specs/spec.md` のトレーサビリティテーブルへ1行追加する（プロジェクトの要求管理ルール）
+- 実装と同時に `docs/02_Requirements/requirements.md` のトレーサビリティテーブルへ1行追加する（プロジェクトの要求管理ルール）
 - E2E は `mobile 390px` / `tablet 768px` / `desktop 1280px` の3ビューポートで書く
 - E2E は本番ビルドに対して実行する。`npx playwright test` が `scripts/e2e-server.mjs` 経由でサーバーを用意する
 - 単体テストは `npx jest <path>` で実行する。テストは `tests/` 配下、`*.test.ts`
@@ -67,7 +67,7 @@
 - Modify: `src/app/api/checkout/complete/route.ts`
 - Test: `tests/unit/lib/orders/order-confirmation-email.test.ts`（新規）
 - Test: `tests/unit/api/checkout/complete-route.test.ts`（既存に追加）
-- Modify: `docs/2_Specs/spec.md`
+- Modify: `docs/02_Requirements/requirements.md`
 
 **Interfaces:**
 
@@ -354,7 +354,7 @@ Expected: PASS（既存テストも含めて全件）
 
 - [ ] **Step 9: spec.md に追記する**
 
-`docs/2_Specs/spec.md` の末尾に1行足す。
+`docs/02_Requirements/requirements.md` の末尾に1行足す。
 
 ```text
 | FREQ-264 | 注文確定時に注文確認メールを送信し、本文にお届け先を含めること | FREQ-264-REQ-01 | 注文が新規に確定した経路で、注文時のメールアドレス宛に件名「【Le Fil des Heures】ご注文ありがとうございます（ORD-XXXXXXXX）」のメールを送信すること | FREQ-264-AC-01 | 注文確定時に sendOrderConfirmationEmail が1回呼ばれること | FREQ-264-REQ-02 | メール本文に氏名・郵便番号・都道府県・市区町村・住所・建物名・電話番号を含めること | FREQ-264-AC-02 | メール本文に「お届け先」「〒150-0001」「東京都渋谷区神宮前1-2-3」「レジデンス101」「090-1234-5678」が含まれること | FREQ-264-REQ-03 | 同じ payment_intent_id で注文完了APIを再度呼んでもメールを再送しないこと | FREQ-264-AC-03 | 既存注文が見つかる経路では sendOrderConfirmationEmail が呼ばれないこと |
@@ -364,7 +364,7 @@ Expected: PASS（既存テストも含めて全件）
 
 ```bash
 npx tsc --noEmit -p tsconfig.json
-git add src/lib/orders/order-confirmation-email.ts src/app/api/checkout/complete/route.ts tests/unit/lib/orders/order-confirmation-email.test.ts tests/unit/api/checkout/complete-route.test.ts docs/2_Specs/spec.md
+git add src/lib/orders/order-confirmation-email.ts src/app/api/checkout/complete/route.ts tests/unit/lib/orders/order-confirmation-email.test.ts tests/unit/api/checkout/complete-route.test.ts docs/02_Requirements/requirements.md
 git commit -m "feat(orders): 注文確認メールを配線しお届け先を追加"
 ```
 
@@ -579,7 +579,7 @@ git commit -m "feat(orders): メール一致でゲスト注文を会員へ紐付
 - Modify: `src/app/api/auth/confirm/route.ts`
 - Modify: `src/app/api/auth/otp/verify/route.ts`
 - Test: `tests/integration/api/auth/confirm.test.ts`（既存に追加）
-- Modify: `docs/2_Specs/spec.md`
+- Modify: `docs/02_Requirements/requirements.md`
 - Test: `e2e/FR-ACCOUNT-030-guest-order-linking.spec.ts`（新規）
 
 **Interfaces:**
@@ -787,7 +787,7 @@ Expected: PASS（9件）
 
 ```bash
 npx tsc --noEmit -p tsconfig.json
-git add src/app/api/auth/confirm/route.ts src/app/api/auth/otp/verify/route.ts tests/integration/api/auth/confirm.test.ts e2e/FR-ACCOUNT-030-guest-order-linking.spec.ts docs/2_Specs/spec.md
+git add src/app/api/auth/confirm/route.ts src/app/api/auth/otp/verify/route.ts tests/integration/api/auth/confirm.test.ts e2e/FR-ACCOUNT-030-guest-order-linking.spec.ts docs/02_Requirements/requirements.md
 git commit -m "feat(auth): メール確認とOTP検証でゲスト注文を会員へ紐付ける"
 ```
 
@@ -1030,7 +1030,7 @@ FREQ-63 で専用の `/register` ルートは廃止され、会員登録は `/lo
 - Modify: `src/app/checkout/page.tsx`
 - Modify: `src/app/login/page.tsx`
 - Test: `e2e/FR-CHECKOUT-015-guest-register-prompt.spec.ts`（新規）
-- Modify: `docs/2_Specs/spec.md`
+- Modify: `docs/02_Requirements/requirements.md`
 
 **Interfaces:**
 
@@ -1217,7 +1217,7 @@ Expected: PASS（12件）
 
 ```bash
 npx tsc --noEmit -p tsconfig.json
-git add src/features/checkout/components/GuestRegisterPrompt.tsx src/app/checkout/page.tsx src/app/login/page.tsx e2e/FR-CHECKOUT-015-guest-register-prompt.spec.ts docs/2_Specs/spec.md
+git add src/features/checkout/components/GuestRegisterPrompt.tsx src/app/checkout/page.tsx src/app/login/page.tsx e2e/FR-CHECKOUT-015-guest-register-prompt.spec.ts docs/02_Requirements/requirements.md
 git commit -m "feat(checkout): 注文完了画面から会員登録へ誘導する"
 ```
 
@@ -1692,7 +1692,7 @@ git commit -m "feat(admin): 注文を発送済みにするAPIを追加"
 
 - Modify: `src/lib/orders/order-shipped-email.ts`（Task 7 の仮実装を置き換える）
 - Test: `tests/unit/lib/orders/order-shipped-email.test.ts`（新規）
-- Modify: `docs/2_Specs/spec.md`
+- Modify: `docs/02_Requirements/requirements.md`
 
 **Interfaces:**
 
@@ -1863,7 +1863,7 @@ Expected: PASS（7件）
 
 ```bash
 npx tsc --noEmit -p tsconfig.json
-git add src/lib/orders/order-shipped-email.ts tests/unit/lib/orders/order-shipped-email.test.ts docs/2_Specs/spec.md
+git add src/lib/orders/order-shipped-email.ts tests/unit/lib/orders/order-shipped-email.test.ts docs/02_Requirements/requirements.md
 git commit -m "feat(orders): 発送通知メールを追加"
 ```
 
@@ -1876,7 +1876,7 @@ git commit -m "feat(orders): 発送通知メールを追加"
 - Modify: `src/components/OrderSection.tsx`
 - Modify: `src/app/admin/page.tsx`
 - Test: `e2e/FR-ADMIN-050-order-shipping.spec.ts`（新規）
-- Modify: `docs/2_Specs/spec.md`
+- Modify: `docs/02_Requirements/requirements.md`
 
 **Interfaces:**
 
@@ -2195,7 +2195,7 @@ Expected: PASS（9件）
 
 ```bash
 npx tsc --noEmit -p tsconfig.json
-git add src/components/OrderSection.tsx src/app/admin/page.tsx e2e/FR-ADMIN-050-order-shipping.spec.ts docs/2_Specs/spec.md
+git add src/components/OrderSection.tsx src/app/admin/page.tsx e2e/FR-ADMIN-050-order-shipping.spec.ts docs/02_Requirements/requirements.md
 git commit -m "feat(admin): 注文を発送済みにする操作を追加"
 ```
 
@@ -2207,7 +2207,7 @@ git commit -m "feat(admin): 注文を発送済みにする操作を追加"
 
 - Modify: `src/app/account/orders/[id]/page.tsx`
 - Test: `e2e/FR-ACCOUNT-031-order-shipping-info.spec.ts`（新規）
-- Modify: `docs/2_Specs/spec.md`
+- Modify: `docs/02_Requirements/requirements.md`
 
 **Interfaces:**
 
@@ -2386,7 +2386,7 @@ Task 9 で追加した FREQ-267 の行の末尾に、追跡表示の REQ と AC 
 npx tsc --noEmit -p tsconfig.json
 npx jest
 npx playwright test e2e/FR-ACCOUNT-030-guest-order-linking.spec.ts e2e/FR-ACCOUNT-031-order-shipping-info.spec.ts e2e/FR-CHECKOUT-015-guest-register-prompt.spec.ts e2e/FR-ADMIN-050-order-shipping.spec.ts --reporter=list
-git add src/app/account/orders/[id]/page.tsx e2e/FR-ACCOUNT-031-order-shipping-info.spec.ts docs/2_Specs/spec.md
+git add src/app/account/orders/[id]/page.tsx e2e/FR-ACCOUNT-031-order-shipping-info.spec.ts docs/02_Requirements/requirements.md
 git commit -m "feat(account): 注文詳細に配送業者と追跡番号を表示する"
 ```
 

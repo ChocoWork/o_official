@@ -54,7 +54,7 @@
 - `src/lib/finance/journal.ts`: 外部で生成した明示仕訳を安全に結合できる補助関数を追加。
 - `src/app/api/admin/kpi/cost-profit/route.ts`: Stripe原始記録・Payout概要を取得してレスポンスへ追加。
 - `src/components/CostProfitSection.tsx`: Stripe残高・返金・Payout・銀行確認UIを追加。
-- `docs/Other/財務.md`: 勘定科目1150とStripe仕訳規則を追記。
+- `docs/04_DetailDesign/shared/finance.md`: 勘定科目1150とStripe仕訳規則を追記。
 - `tests/unit/api/webhook/stripe-route.test.ts`: 会計同期イベント分岐。
 - `tests/unit/api/cron/stripe-reconcile-route.test.ts`: 定期照合の範囲・認証・失敗処理。
 - `tests/unit/api/admin/cost-profit-route.test.ts`: 新APIレスポンスと旧方式フォールバック。
@@ -392,7 +392,7 @@ git -c safe.directory=C:/work/LeFildesHeures commit -m "feat(stripe): reconcile 
 - Modify: `src/lib/finance/accounts.ts`
 - Modify: `src/lib/finance/journal.ts`
 - Modify: `tests/unit/lib/finance/journal.test.ts`
-- Modify: `docs/Other/財務.md`
+- Modify: `docs/04_DetailDesign/shared/finance.md`
 
 **Interfaces:**
 
@@ -487,7 +487,7 @@ Expected: PASS。
 
 - [ ] **Step 6: 勘定科目文書を更新して検証する**
 
-`docs/Other/財務.md`へ`1150 Stripe入金途上 / その他流動資産 / 資産 / 借方`と、1130・1150・1040間の振替規則を追記する。
+`docs/04_DetailDesign/shared/finance.md`へ`1150 Stripe入金途上 / その他流動資産 / 資産 / 借方`と、1130・1150・1040間の振替規則を追記する。
 
 Run:
 
@@ -500,7 +500,7 @@ Expected: PASS。
 - [ ] **Step 7: コミットする**
 
 ```powershell
-git -c safe.directory=C:/work/LeFildesHeures add src/lib/finance/stripe-journal.ts src/lib/finance/accounts.ts src/lib/finance/journal.ts tests/unit/lib/finance/stripe-journal.test.ts tests/unit/lib/finance/journal.test.ts docs/Other/財務.md
+git -c safe.directory=C:/work/LeFildesHeures add src/lib/finance/stripe-journal.ts src/lib/finance/accounts.ts src/lib/finance/journal.ts tests/unit/lib/finance/stripe-journal.test.ts tests/unit/lib/finance/journal.test.ts docs/04_DetailDesign/shared/finance.md
 git -c safe.directory=C:/work/LeFildesHeures commit -m "feat(accounting): project Stripe settlement journal"
 ```
 

@@ -19,7 +19,7 @@ import path from 'node:path';
  *
  * 対象はしきい値（上の ALTER）より後のファイルだけ。それ以前の関数は ALTER 側で直してあり、
  * 定義そのものは古い書き方のまま残っている（適用済みのファイルは書き換えない。
- * docs/ops/db-migrations.md の台帳一致の規約）。
+ * docs/06_Operations/db-migrations.md の台帳一致の規約）。
  *
  * 実際に本番の関数が pg_temp を持っているかは
  * tests/integration/db/security_definer_search_path.integration.test.ts が見る。

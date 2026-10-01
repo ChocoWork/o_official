@@ -372,7 +372,7 @@ git commit -m "feat(finance): show Stripe orders in transaction management"
 - Create: `tests/unit/lib/stripe/reconcile-orders.test.ts`
 - Create: `tests/unit/api/cron/stripe-reconcile-route.test.ts`
 - Modify: `.env.example`
-- Modify: `docs/ops/secrets.md`
+- Modify: `docs/06_Operations/secrets.md`
 
 **Interfaces:**
 
@@ -421,7 +421,7 @@ Expected: PASS for authorization, unmatched filtering, and refund repair.
 - [ ] **Step 7: Commit reconciliation**
 
 ```powershell
-git add src/lib/stripe/reconcile-orders.ts src/app/api/cron/stripe-reconcile/route.ts tests/unit/lib/stripe/reconcile-orders.test.ts tests/unit/api/cron/stripe-reconcile-route.test.ts .env.example docs/ops/secrets.md
+git add src/lib/stripe/reconcile-orders.ts src/app/api/cron/stripe-reconcile/route.ts tests/unit/lib/stripe/reconcile-orders.test.ts tests/unit/api/cron/stripe-reconcile-route.test.ts .env.example docs/06_Operations/secrets.md
 git commit -m "feat(stripe): add order reconciliation job"
 ```
 

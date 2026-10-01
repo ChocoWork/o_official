@@ -14,7 +14,7 @@ tools: [vscode/memory, vscode/runCommand, vscode/askQuestions, vscode/toolSearch
 ## 責務
 
 1. feature ブランチの作成（`feature/<issue番号>-<短い説明>`）
-2. 仕様（`docs/2_Specs/spec.md`）と設計・実装計画（`docs/4_DetailDesign/*md`）に基づくコード実装
+2. 仕様（`docs/02_Requirements/requirements.md`）と設計・実装計画（`docs/04_DetailDesign/*md`）に基づくコード実装
 3. 静的解析（`npm run lint`）
 4. ビルドの成功確認（`npm run build`）
 5. 影響を受けるユニットテスト（`docs/tests/` ）を作成・更新し、ユニットテスト実行（`npm run test`）（`unit-test-jest`, `react-testing-library` スキル参照）

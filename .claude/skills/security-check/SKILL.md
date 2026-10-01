@@ -172,7 +172,7 @@ bash .claude/skills/security-check/scripts/page-audit.sh src/app/contact --name 
 bash .claude/skills/security-check/scripts/page-audit.sh "src/app/item/[id]" --scope-only   # 到達ファイルのみ表示
 ```
 
-- 出力先の慣例: `docs/5_Implement/security_review_<ページ名>.md`
+- 出力先の慣例: `docs/05_Quality/reviews/security_review_<ページ名>.md`
 - 「auth/CSRF なし」検出はゲストセッション設計の公開エンドポイントや `resolveRequestUser` 認証 route で**偽陽性**になり得る。必ず真偽を分類して報告する。
 
 ## 出力フォーマット（監査レポート）

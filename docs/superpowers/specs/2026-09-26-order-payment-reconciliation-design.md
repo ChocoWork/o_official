@@ -2,7 +2,7 @@
 
 > 日付: 2026-09-26（設計の議論と節ごとの承認: 2026-09-25。書いた後の論点1〜8の確認: 2026-09-27。コンビニ払いの期限と削除ボタンの見せ方の決定: 2026-09-27）
 > 分類: architectural（注文の状態・支払いの流れ・DB の RPC が変わるため）
-> 対象の指摘: R-01, R-02, R-04, R-18, R-25（Webhook 側）, R-41, R-42, R-43, R-44, R-57（[レビュー台帳](../../code-review/2026-09-25-working-diff-security-review.md)）
+> 対象の指摘: R-01, R-02, R-04, R-18, R-25（Webhook 側）, R-41, R-42, R-43, R-44, R-57（[レビュー台帳](../../05_Quality/reviews/code/2026-09-25-working-diff-security-review.md)）
 > 関連: [Stripe注文・売上取引の整合性設計](2026-08-09-stripe-order-reconciliation-design.md)、[checkout 1画面化 設計書](2026-09-11-checkout-single-step-design.md)、後続グループ B〜H（台帳の「対処計画」）
 
 ---
@@ -485,7 +485,7 @@ stateDiagram-v2
 
 ### 6-1 要求管理（spec.md と E2E）
 
-画面と機能の変更は、実装と同時に [spec.md](../../2_Specs/spec.md) に FREQ 行を足し、E2E を加える。番号は FREQ-407・FR-ADMIN-060 から。実装時に最新の番号を確かめ直す。
+画面と機能の変更は、実装と同時に [spec.md](../../02_Requirements/requirements.md) に FREQ 行を足し、E2E を加える。番号は FREQ-407・FR-ADMIN-060 から。実装時に最新の番号を確かめ直す。
 
 | 要求 | 受け付け基準の例 | 確かめ方 |
 |---|---|---|

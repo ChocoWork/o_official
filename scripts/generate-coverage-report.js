@@ -2,101 +2,97 @@
 const fs = require('fs');
 const path = require('path');
 
-function readDirMd(dir){
-  if(!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir).filter(f=>f.endsWith('.md')).map(f=>path.join(dir,f));
+const requirementPath = 'docs/02_Requirements/requirements.md';
+const outputPath = 'docs/05_Quality/reports/traceability-report.md';
+const designRoots = ['docs/03_BasicDesign', 'docs/04_DetailDesign'];
+const testRoots = ['e2e', 'tests'];
+const idPattern = /\b(?:FREQ-\d+-AC-\d+|(?:FR|NFR)-[A-Z0-9]+(?:-[A-Z0-9]+)*-\d{3})\b/g;
+
+function filesUnder(directory, extensions) {
+  if (!fs.existsSync(directory)) return [];
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(directory, entry.name);
+    if (entry.isDirectory()) return filesUnder(full, extensions);
+    return entry.isFile() && extensions.some((extension) => full.endsWith(extension)) ? [full] : [];
+  });
 }
 
-function extractReqsFromArch(archFile){
-  const content = fs.readFileSync(archFile,'utf8');
-  const reqs = [];
-  const re = /-\s*(REQ-[A-Z0-9_-]+)\s*—\s*(.+)/g;
-  let m;
-  while((m = re.exec(content)) !== null){
-    reqs.push({id: m[1], desc: m[2].trim()});
-  }
-  // also from table rows
-  const tableRe = /\|\s*(REQ-[A-Z0-9_-]+)\s*\|\s*([^|]+)/g;
-  while((m = tableRe.exec(content)) !== null){
-    const id = m[1]; const desc = m[2].trim();
-    if(!reqs.find(r=>r.id===id)) reqs.push({id, desc});
-  }
-  return reqs;
+function idsIn(content) {
+  return new Set(content.match(idPattern) || []);
 }
 
-function fileContainsKeyword(file, keywords){
-  const content = fs.readFileSync(file,'utf8').toLowerCase();
-  for(const k of keywords){
-    if(content.includes(k.toLowerCase())) return true;
-  }
-  return false;
-}
-
-function keywordsFromDesc(desc){
-  // split japanese/english words, remove short tokens
-  return desc.split(/[\s\/,_\(\)·\-〜:]+/).filter(s=>s.length>2);
-}
-
-(function main(){
-  const archFiles = readDirMd('docs/ArchitectureDesign');
-  // fallback include docs/specs and docs/seq
-  const specs = [...readDirMd('docs/specs'), ...readDirMd('docs/seq')];
-
-  const archReqs = archFiles.flatMap(f=>extractReqsFromArch(f));
-  const report = {covered:[], missing_in_spec:[], missing_in_detailed:[]};
-
-  // Check presence in specs and seq (specs + seq files)
-  for(const r of archReqs){
-    const keywords = keywordsFromDesc(r.desc);
-    let foundInSpec = false;
-    for(const spec of specs){
-      if(fileContainsKeyword(spec, keywords)){
-        foundInSpec = true; break;
-      }
+function references(roots, extensions, requirements) {
+  const found = new Map();
+  for (const file of roots.flatMap((root) => filesUnder(root, extensions))) {
+    const text = fs.readFileSync(file, 'utf8');
+    for (const id of idsIn(text)) {
+      if (!requirements.has(id)) continue;
+      if (!found.has(id)) found.set(id, []);
+      found.get(id).push(file);
     }
-    if(foundInSpec) report.covered.push(r.id);
-    else report.missing_in_spec.push({id:r.id,desc:r.desc});
   }
+  return found;
+}
 
-  // Check presence in detailed design
-  const detailedFiles = readDirMd('docs/DetailDesign');
-  for(const r of archReqs){
-    let foundInDetailed = false;
-    for(const df of detailedFiles){
-      const content = fs.readFileSync(df,'utf8');
-      if(content.includes(r.id) || content.includes(r.desc.split(' ')[0])){
-        foundInDetailed = true; break;
-      }
-    }
-    if(!foundInDetailed) report.missing_in_detailed.push({id:r.id,desc:r.desc});
-  }
+function linkTo(file) {
+  const relative = path.relative(path.dirname(outputPath), file).replaceAll('\\', '/');
+  return `[${path.basename(file)}](${relative})`;
+}
 
-  const out = [];
-  out.push('# Coverage Report');
-  out.push('Generated: ' + new Date().toISOString());
-  out.push('\n## Summary');
-  out.push(`Total requirements discovered in ArchitectureDesign: ${archReqs.length}`);
-  out.push(`Covered in specs/seq: ${report.covered.length}`);
-  out.push(`Missing in specs/seq: ${report.missing_in_spec.length}`);
-  out.push(`Missing in detailed design: ${report.missing_in_detailed.length}`);
-  out.push('\n---\n');
-  if(report.missing_in_spec.length>0){
-    out.push('## Missing in Spec/Seq');
-    for(const m of report.missing_in_spec) out.push(`- ${m.id}: ${m.desc}`);
-  }
-  if(report.missing_in_detailed.length>0){
-    out.push('\n## Missing in Detailed Design');
-    for(const m of report.missing_in_detailed) out.push(`- ${m.id}: ${m.desc}`);
-  }
-  out.push('\n\n## Notes');
-  out.push('If any items are missing, please update the spec/sequence diagrams or the design docs to ensure traceability.');
+function example(files) {
+  if (!files || files.length === 0) return 'なし';
+  return `${files.length}件（${linkTo(files[0])}）`;
+}
 
-  const outPath = 'docs/ArchitectureDesign/coverage-report.md';
-  fs.writeFileSync(outPath, out.join('\n'));
-  console.log('Coverage report written to', outPath);
-  if(report.missing_in_spec.length>0 || report.missing_in_detailed.length>0){
-    console.warn('Coverage gaps detected. Please review', outPath);
-    process.exit(2);
-  }
-  console.log('Coverage OK: All ARCH requirements appear in spec and detailed design.');
-})();
+function main() {
+  if (!fs.existsSync(requirementPath)) throw new Error(`Missing requirement source: ${requirementPath}`);
+  const requirements = idsIn(fs.readFileSync(requirementPath, 'utf8'));
+  if (requirements.size === 0) throw new Error('No requirement IDs were found; refusing an empty report');
+  const design = references(designRoots, ['.md'], requirements);
+  const tests = references(testRoots, ['.spec.ts', '.test.ts', '.test.tsx', '.test.js'], requirements);
+  const sortedIds = [...requirements].sort();
+  const withoutDesign = sortedIds.filter((id) => !design.has(id));
+  const withoutTests = sortedIds.filter((id) => !tests.has(id));
+  const date = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo' }).format(new Date());
+  const lines = [
+    '# 要件IDの参照状況',
+    '',
+    `> 状態: 自動生成 | 生成日: ${date} | 対象: リポジトリ内の文字列参照`,
+    '',
+    '## 概要',
+    '',
+    '要件定義書に現れる受け入れ条件ID（`FREQ-*-AC-*`）と画面・非機能要件ID（`FR-*` / `NFR-*`）が、基本・詳細設計とテストコードに文字列として現れるかを集計する。IDの出現は要件の充足、テストの実行・成功、または本番反映を証明しない。`WONT` や未実装の要件も除外せず、参照のないものを可視化する。',
+    '',
+    '| 指標 | 件数 |',
+    '| --- | ---: |',
+    `| 要件定義書の対象ID | ${sortedIds.length} |`,
+    `| 設計にID参照あり | ${sortedIds.length - withoutDesign.length} |`,
+    `| テストにID参照あり | ${sortedIds.length - withoutTests.length} |`,
+    `| 設計にID参照なし | ${withoutDesign.length} |`,
+    `| テストにID参照なし | ${withoutTests.length} |`,
+    '',
+    '## 参照一覧',
+    '',
+    '| ID | 設計内の参照 | テスト内の参照 |',
+    '| --- | --- | --- |',
+    ...sortedIds.map((id) => `| \`${id}\` | ${example(design.get(id))} | ${example(tests.get(id))} |`),
+    '',
+    '## 読み方と次の確認',
+    '',
+    '- 要件の本文・優先度・受け入れ条件は [要件定義書](../../02_Requirements/requirements.md) を読む。',
+    '- 「参照なし」は自動判定による候補である。別名のテストや別ファイルでの設計を調べてから欠落と判断する。',
+    '- 実際のカバレッジ判定には、テストのアサーション、実行ログ、環境、対象リビジョンを照合する。方法は [テスト仕様](../tests/test-spec.md) を参照する。',
+    '',
+  ];
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  fs.writeFileSync(outputPath, lines.join('\n'), 'utf8');
+  console.log(`Traceability report written: ${outputPath} (${sortedIds.length} IDs; ${withoutDesign.length} without design reference; ${withoutTests.length} without test reference).`);
+  if (process.argv.includes('--strict') && (withoutDesign.length || withoutTests.length)) process.exitCode = 2;
+}
+
+try {
+  main();
+} catch (error) {
+  console.error(error);
+  process.exitCode = 2;
+}

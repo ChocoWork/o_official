@@ -34,7 +34,7 @@
 | `e2e/FR-ADMIN-044-ledger-three-views.spec.ts`             | 3ビューポートで固定グラフと科目別領域の独立性を検証      |
 | `e2e/FR-ADMIN-032-ledger-trial-balance.spec.ts`           | 旧科目別グラフ期待値を元帳・照合契約へ置換               |
 | `e2e/FR-ADMIN-035-statements-from-real-balances.spec.ts`  | 固定資産科目残高の検証先を照合結果へ変更                 |
-| `docs/2_Specs/spec.md`                                    | FREQ-258-REQ/AC-02・03を固定グラフ契約へ同期             |
+| `docs/02_Requirements/requirements.md`                                    | FREQ-258-REQ/AC-02・03を固定グラフ契約へ同期             |
 
 ### Task 1: 月次累積収支の純粋集計
 
@@ -303,7 +303,7 @@ git -c safe.directory=C:/work/LeFildesHeures commit -m "feat(accounting): fix cu
 - Modify: `e2e/FR-ADMIN-044-ledger-three-views.spec.ts:216-238,288-310`
 - Modify: `e2e/FR-ADMIN-032-ledger-trial-balance.spec.ts:166-183`
 - Modify: `e2e/FR-ADMIN-035-statements-from-real-balances.spec.ts:159-176`
-- Modify: `docs/2_Specs/spec.md:1443`
+- Modify: `docs/02_Requirements/requirements.md:1443`
 
 **Interfaces:**
 
@@ -322,7 +322,7 @@ git -c safe.directory=C:/work/LeFildesHeures commit -m "feat(accounting): fix cu
 
 - [ ] **Step 3: FREQ-258を同期する**
 
-`docs/2_Specs/spec.md`のFREQ-258だけを変更する。
+`docs/02_Requirements/requirements.md`のFREQ-258だけを変更する。
 
 - REQ-02: 全収入・全支出と前年末累積収支による1月から12月の固定グラフ。
 - AC-02: region、4サマリー、管理指標注記。
@@ -353,7 +353,7 @@ Expected: 対象全project PASS。失敗時は代表1件をchromium・1 worker�
 
 ```powershell
 git -c safe.directory=C:/work/LeFildesHeures add -- e2e/FR-ADMIN-044-ledger-three-views.spec.ts e2e/FR-ADMIN-032-ledger-trial-balance.spec.ts e2e/FR-ADMIN-035-statements-from-real-balances.spec.ts
-git -c safe.directory=C:/work/LeFildesHeures add -p -- docs/2_Specs/spec.md
+git -c safe.directory=C:/work/LeFildesHeures add -p -- docs/02_Requirements/requirements.md
 git -c safe.directory=C:/work/LeFildesHeures diff --cached --check
 git -c safe.directory=C:/work/LeFildesHeures diff --cached
 git -c safe.directory=C:/work/LeFildesHeures commit -m "test(accounting): align cumulative trend contract"

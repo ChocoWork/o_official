@@ -1,7 +1,7 @@
 # ログインの 2 要素目を専用画面へ分離する設計
 
 > 対象: `/login`（AuthTabs / LoginModal）、`/api/auth/login`、`/api/auth/otp/verify`
-> 関連: [spec.md](../../2_Specs/spec.md) FREQ-334 / FREQ-335
+> 関連: [spec.md](../../02_Requirements/requirements.md) FREQ-334 / FREQ-335
 > 作成日: 2026-09-04
 
 ---

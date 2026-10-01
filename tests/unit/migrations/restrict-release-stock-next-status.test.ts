@@ -69,7 +69,7 @@ describe('在庫復元の遷移先を failed / cancelled に限るマイグレ�
     );
   });
 
-  it('全体をトランザクションで包む（規約: docs/ops/db-migrations.md）', () => {
+  it('全体をトランザクションで包む（規約: docs/06_Operations/db-migrations.md）', () => {
     const sql = readMigration(MIGRATION_SUFFIX);
     expect(sql).toMatch(/^BEGIN;$/im);
     expect(sql).toMatch(/^COMMIT;$/im);

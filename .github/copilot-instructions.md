@@ -14,7 +14,7 @@
 | `create-specification` | AI 向けに最適化された仕様書を GitHub Issue として作成する |
 | `update-specification` | 仕様書 Issue 更新 |
 
-- `docs/1_RequirementsDifinition/` 配下に Excel Excel / PowerPoint 等の設計書があれば `office-document-analyzer` で解析し、要件を把握する
+- `docs/02_Requirements/` 配下に Excel Excel / PowerPoint 等の設計書があれば `office-document-analyzer` で解析し、要件を把握する
 
 ## フェーズ 2: 設計方針・実装計画
 

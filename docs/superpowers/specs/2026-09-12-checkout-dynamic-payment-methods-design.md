@@ -205,7 +205,7 @@ select cron.schedule(
 
 ## 7.5. 新しい決済手段をダッシュボードで有効化するときの手順
 
-動的化により、決済手段の追加は運用操作だけで反映される。時間差決済を有効化する場合は次を確認する。この手順書を `docs/4_DetailDesign/13_checkout.md` に追記する。
+動的化により、決済手段の追加は運用操作だけで反映される。時間差決済を有効化する場合は次を確認する。この手順書を `docs/04_DetailDesign/pages/13_checkout.md` に追記する。
 
 1. その方式の入金確定が `checkout.session.async_payment_succeeded` で通知されるか（Stripe のドキュメントで「delayed notification」に分類されるか）を確認する
 2. 支払期限を指定できる方式なら `payment_method_options` に設定する（A-3）。指定できない方式は B-5 の `PENDING_ORDER_EXPIRY_DAYS` が上限になる
@@ -260,7 +260,7 @@ select cron.schedule(
 
 ## 11. 仕様追記
 
-`docs/2_Specs/spec.md` に2行追加する。
+`docs/02_Requirements/requirements.md` に2行追加する。
 
 - `FREQ-356`: 決済手段をダッシュボード設定に追従させ、時間差決済（コンビニ・銀行振込等）が有効化されても未入金注文で在庫が失われないこと（A + B + C）
 - `FREQ-357`: `create-session` の失敗を種別ごとに区別し、再試行可否と参照IDを画面に出すこと（D）

@@ -1,0 +1,19 @@
+﻿# 1.7 ルック詳細ページ（LOOK DETAIL）詳細設計
+
+> 状態: 既存設計 | 実装状況は項目ごとに要再照合
+
+## 概要
+
+本書は「1.7 ルック詳細ページ（LOOK DETAIL）詳細設計」の既存設計を記録する。要件IDと設計意図を保持しているが、表中の実装状況は現在のコードと一括再照合していない。
+
+## 機能要件対応表
+
+| 要件ID | 要件内容 | 実装ID | 実装対象ファイル | 実装概要 | 実装ステータス |
+|--------|----------|--------|----------------|----------|--------------|
+| FR-LOOK-DETAIL-001 | 公開済みルックの詳細ページを表示しテーマ・シーズンラベル・メインビジュアル・説明文を含める | IMPL-LOOK-DETAIL-001 | `src/app/look/[id]/page.tsx` | RSC でシーズンラベル（`formatLookSeason`）、`h1` にテーマ、メインビジュアル（`imageUrls[0]`）、`themeDescription` を表示 | 済 |
+| FR-LOOK-DETAIL-002 | 紐づけ商品（STYLING ITEMS）を一覧表示し各商品への遷移リンクを提供する | IMPL-LOOK-DETAIL-002 | `src/app/look/[id]/page.tsx`, `src/components/ui/List.tsx` | `List` コンポーネントで商品名・カテゴリ・価格・画像を表示。`/item/${item.id}` へのリンク付き | 済 |
+| FR-LOOK-DETAIL-003 | 前後のルックへのナビゲーションリンクを表示し連続して閲覧できるようにする | IMPL-LOOK-DETAIL-003 | `src/app/look/[id]/page.tsx` | `getPublishedLooks()` で全件取得後にインデックスで前後ルックを特定し PREV/NEXT リンクを表示（全件取得はパフォーマンス改善余地あり） | 済 |
+| FR-LOOK-DETAIL-004 | 存在しないルック ID の場合はエラーメッセージと `/look` への戻るリンクを表示する | IMPL-LOOK-DETAIL-004 | `src/app/look/[id]/page.tsx` | `currentIndex < 0` で "Look not found" を表示し "Back to Lookbook" リンク（`href="/look"`）を提供 | 済 |
+| FR-LOOK-DETAIL-005 | `currentLook.imageUrls` の複数画像をサムネイル付きギャラリーまたはカルーセルで表示する | IMPL-LOOK-DETAIL-005 | `src/app/look/[id]/page.tsx`, `src/features/look/components/LookImageGallery.tsx` | `LookImageGallery` を追加し、メイン画像 + サムネイル選択で画像切替を実装 | 済 |
+| FR-LOOK-DETAIL-006 | `generateMetadata` を実装しページタイトルと description を設定する。また "Back to Lookbook" リンクと適切な `aria-label` を追加する | IMPL-LOOK-DETAIL-006 | `src/app/look/[id]/page.tsx` | `generateMetadata` を実装。通常時にも `Back to Lookbook` リンクを表示し、PREV/NEXT に `aria-label` を付与 | 済 |
+| FR-LOOK-DETAIL-007 | 同シーズンや関連コーディネートの推薦セクションを追加する（WONT） | — | — | 現フェーズ対象外。将来対応。E2E は `test.skip` で管理 | 不要 |

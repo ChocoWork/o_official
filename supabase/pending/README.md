@@ -22,7 +22,7 @@
    ```
 
 2. このフォルダのファイルを消し、表から行を外す。
-3. master へ push する（CI の `db push` が適用する）。MCP の `apply_migration` で当てた場合は、本番の台帳に記録された version にファイル名を合わせる（[docs/ops/db-migrations.md](../../docs/ops/db-migrations.md)）。
+3. master へ push する（CI の `db push` が適用する）。MCP の `apply_migration` で当てた場合は、本番の台帳に記録された version にファイル名を合わせる（[docs/06_Operations/db-migrations.md](../../docs/06_Operations/db-migrations.md)）。
 
 **このフォルダのファイルを、元の日付のまま `supabase/migrations/` に戻さないこと。** 本番の最新より古い日付の未適用ファイルがあると、`db push` は止まる。`--include-all` で押し通すと適用順が崩れる。
 

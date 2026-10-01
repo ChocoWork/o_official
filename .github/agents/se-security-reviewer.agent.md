@@ -140,7 +140,7 @@ for attempt in range(3):
 ## ドキュメント作成
 
 ### 各レビュー後に必ず作成するもの:
-**コードレビュー報告書** - `docs/code-review/[date]-[component]-review.md` に保存
+**コードレビュー報告書** - `docs/05_Quality/reviews/code/[date]-[component]-review.md` に保存
 - 具体的なコード例と修正案を含める
 - 優先度を明記する
 - セキュリティ上の指摘事項を記録する

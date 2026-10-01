@@ -70,7 +70,7 @@ describe('削除済み商品での注文確定を止めるマイグレーショ�
     expect(sql).toMatch(/GRANT EXECUTE ON FUNCTION "public"\."finalize_order_from_checkout_draft"[\s\S]*?TO "postgres", "service_role";/i);
   });
 
-  it('全体をトランザクションで包む（規約: docs/ops/db-migrations.md）', () => {
+  it('全体をトランザクションで包む（規約: docs/06_Operations/db-migrations.md）', () => {
     const sql = readMigration(MIGRATION_SUFFIX);
     expect(sql).toMatch(/^BEGIN;$/im);
     expect(sql).toMatch(/^COMMIT;$/im);

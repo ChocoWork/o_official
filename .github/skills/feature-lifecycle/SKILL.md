@@ -39,7 +39,7 @@ Phase 1 の開始時に、ユーザーのリクエスト形態に応じて 2 つ
 
 | Step | 担当 | 内容 |
 |------|------|------|
-| 1.1 | Product Manager | エントリモードに応じて仕様書 Issue を作成（`new`）または既存 Issue を SPEC 化（`draft`）し、`docs/1_RequirementsDifinition/RequirementsDifinition.md` をもとに、`docs/2_Specs/spec.md` に要件定義を作成または更新する |
+| 1.1 | Product Manager | エントリモードに応じて仕様書 Issue を作成（`new`）または既存 Issue を SPEC 化（`draft`）し、`docs/02_Requirements/stakeholder-requirements.md` をもとに、`docs/02_Requirements/requirements.md` に要件定義を作成または更新する |
 | 1.2 | Reviewer | 仕様書をレビュー → APPROVE / REQUEST CHANGES |
 | 1.3 | Product Manager | REQUEST CHANGES の場合、指摘を反映して 1.2 へ戻る |
 | 1.4 | — | APPROVE の場合、仕様確定 |

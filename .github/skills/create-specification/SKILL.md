@@ -128,7 +128,7 @@ Issue の body は以下のテンプレートに従い、すべてのセクシ�
 
 ## 要求仕様書の更新
 
-- 要求仕様は docs/1_RequirementsDifinition/RequirementsDefinition.md を更新し、作成した仕様書 Issue へのリンクを追加すること。
+- 要求仕様は docs/02_Requirements/RequirementsDefinition.md を更新し、作成した仕様書 Issue へのリンクを追加すること。
 
 ### 要求仕様書ファイル構造
 
@@ -152,7 +152,7 @@ Issue の body は以下のテンプレートに従い、すべてのセクシ�
 
 ## 要件定義書の更新
 
-- 要件定義は docs/2_Specs/spec.md を更新し、作成した仕様書 Issue へのリンクを追加すること。
+- 要件定義は docs/02_Requirements/requirements.md を更新し、作成した仕様書 Issue へのリンクを追加すること。
 
 ### 要件定義書ファイル構造
 

@@ -25,7 +25,7 @@
 - 管理画面の商品一覧の削除ボタンは、削除できない商品にも常に出す。押した時点で理由と非公開への誘導を出し、無効化・非表示にしない（R-44。2026-09-27 決定）
 - お客様へのメールは1件1回（送信権）。件名と本文は固定の文面で組み、外から来た値をヘッダーに入れない
 - E2E は本番ビルドで流す（`npx playwright test <spec>`）。流す前に `Get-NetTCPConnection -LocalPort 3000 -State Listen` で dev サーバーが止まっていることを確かめる。ビューポートは 390・768・1280
-- 画面と機能の変更は、実装と同じタスクで `docs/2_Specs/spec.md` の末尾に FREQ 行を足す。番号は各タスクの最初に `grep -oE "FREQ-[0-9]+" docs/2_Specs/spec.md | sort -t- -k2 -n | tail -1` で最新を確かめ、その次から振る（本計画の番号 FREQ-407〜414 は目安）。E2E の番号も `ls e2e | grep FR-ADMIN- | sort -V | tail -1` で確かめる
+- 画面と機能の変更は、実装と同じタスクで `docs/02_Requirements/requirements.md` の末尾に FREQ 行を足す。番号は各タスクの最初に `grep -oE "FREQ-[0-9]+" docs/02_Requirements/requirements.md | sort -t- -k2 -n | tail -1` で最新を確かめ、その次から振る（本計画の番号 FREQ-407〜414 は目安）。E2E の番号も `ls e2e | grep FR-ADMIN- | sort -V | tail -1` で確かめる
 - 作業は master に直接コミットする。`git add` はタスクで触ったファイルだけを名指しする（作業ツリーには本計画と無関係の変更が残っている）。コミットメッセージは日本語の Conventional Commits、末尾に `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`。push はしない（ユーザーが行う）
 - コミットのたびに graphify の post-commit フックがグラフを作り直すので、手で `graphify update` を流す必要は無い
 
@@ -2988,8 +2988,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: `src/app/api/checkout/create-session/route.ts:169-171`（冪等キー）、`:1003-1026`（Session の作成。`:1006` のコンビニの支払期限を含む）
 - Modify: `tests/unit/api/checkout/create-session-route.test.ts:216-244`（RPC のモック）、`:391`・`:418-419`（冪等キーの期待値）、`:323-332`・`:344-360`（コンビニの支払期限の期待値）
 - Modify: `src/app/legal/page.tsx:1-4`（import）、`:95`（コンビニの支払期限の表記）
-- Modify: `docs/4_DetailDesign/13_checkout.md:678`（コンビニの支払期限）
-- Modify: `docs/2_Specs/spec.md`（末尾に FREQ 行）
+- Modify: `docs/04_DetailDesign/pages/13_checkout.md:678`（コンビニの支払期限）
+- Modify: `docs/02_Requirements/requirements.md`（末尾に FREQ 行）
 
 **Interfaces:**
 - Produces: 列 `checkout_drafts.checkout_session_expires_at timestamptz`。SQL `public.reserve_checkout_session_expiry(_draft_id uuid) → bigint`（Unix 秒。作成から30分30秒後。15秒以内の再送は同じ値）。Stripe の冪等キー `checkout-session:create:v1:<draftId>:<expiresAt>`
@@ -2997,7 +2997,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 - [ ] **Step 1: FREQ の番号を確かめる**
 
-Run: `grep -oE "FREQ-[0-9]+" docs/2_Specs/spec.md | sort -t- -k2 -n | tail -1`
+Run: `grep -oE "FREQ-[0-9]+" docs/02_Requirements/requirements.md | sort -t- -k2 -n | tail -1`
 Expected: `FREQ-406`（違えば、以下の FREQ-407 を次の番号に読み替える。以降のタスクも同じ）
 
 - [ ] **Step 2: 失敗する DB 結合テストを書く**
@@ -3229,7 +3229,7 @@ Expected: すべて PASS
 
 - [ ] **Step 8: FREQ 行を足す**
 
-`docs/2_Specs/spec.md` の表の末尾に足す:
+`docs/02_Requirements/requirements.md` の表の末尾に足す:
 ```text
 | FREQ-407 | 決済画面は開いてから30分ちょうどまで有効とし、30分を超えたら失効させて在庫を戻すこと（R-25） | FREQ-407-REQ-01 | Checkout Session の `expires_at` を作成から30分30秒後にすること。値は下書きに1回だけ決めて保存し、Stripe の冪等キーに含めること | FREQ-407-REQ-02 | 毎時の見回りが、開いてから30分を超えた支払い手続き中の注文の Session がまだ開いていれば失効させ、照合関数で在庫を戻すこと（Webhook が届かなくても最長90分）。アプリ独自の日数で入金待ちを打ち切る処理（FREQ-388 の日数）は置かず、Stripe の現在値だけで判断すること | FREQ-407-AC-01 | Checkout Session が作成から30分30秒後の `expires_at` で作られること | FREQ-407-AC-02 | 同じ要求の15秒以内の再送が同じ冪等キーになること | FREQ-407-AC-03 | 見回りが、開いてから30分を超えてまだ開いている決済を失効させること |
 ```
@@ -3237,7 +3237,7 @@ Expected: すべて PASS
 - [ ] **Step 9: コミット**
 
 ```bash
-git add tests/integration/db/checkout_session_expiry.integration.test.ts supabase/migrations/20260927100600_checkout_session_expiry.sql src/app/api/checkout/create-session/route.ts tests/unit/api/checkout/create-session-route.test.ts docs/2_Specs/spec.md
+git add tests/integration/db/checkout_session_expiry.integration.test.ts supabase/migrations/20260927100600_checkout_session_expiry.sql src/app/api/checkout/create-session/route.ts tests/unit/api/checkout/create-session-route.test.ts docs/02_Requirements/requirements.md
 git commit -m "feat(checkout): 決済画面を作成から30分30秒で失効させる
 
 失効時刻は下書きに1回だけ決めて Stripe の冪等キーに含める（R-25）。
@@ -3301,7 +3301,7 @@ import { KONBINI_PAYMENT_DAYS } from "@/lib/constants/konbini";
           コンビニ決済：ご注文後に発行される払込番号の期限（ご注文から{KONBINI_PAYMENT_DAYS}日以内）までに、選択したコンビニでお支払いください。
 ```
 
-`docs/4_DetailDesign/13_checkout.md` の「新しい決済手段をダッシュボードで有効化するときの手順」の2番目の項目にある括弧書き（「コンビニは」で始まり `expires_after_days: 3` を含むもの）を次に替える:
+`docs/04_DetailDesign/pages/13_checkout.md` の「新しい決済手段をダッシュボードで有効化するときの手順」の2番目の項目にある括弧書き（「コンビニは」で始まり `expires_after_days: 3` を含むもの）を次に替える:
 ```text
 （コンビニは `expires_after_days` に `KONBINI_PAYMENT_DAYS`（7日。`src/lib/constants/konbini.ts`）を設定済み。/legal の表記も同じ定数を読む。FREQ-106・R-57）
 ```
@@ -3323,7 +3323,7 @@ Expected: すべて PASS。FR-LEGAL-004 は /legal の文が「7日以内」の�
 - [ ] **Step 14: コミット**
 
 ```bash
-git add src/lib/constants/konbini.ts src/app/api/checkout/create-session/route.ts src/app/legal/page.tsx tests/unit/api/checkout/create-session-route.test.ts docs/4_DetailDesign/13_checkout.md
+git add src/lib/constants/konbini.ts src/app/api/checkout/create-session/route.ts src/app/legal/page.tsx tests/unit/api/checkout/create-session-route.test.ts docs/04_DetailDesign/pages/13_checkout.md
 git commit -m "feat(checkout): コンビニの支払期限を7日にし、/legal と同じ定数から出す
 
 FREQ-106 のとおり Stripe の expires_after_days と /legal の表記をそろえる（R-57）。
@@ -4272,7 +4272,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Create: `src/lib/orders/order-lifecycle-emails.ts`
 - Create: `tests/unit/lib/orders/order-lifecycle-emails.test.ts`
 - Modify: `.env.example`・`README.md`（`SHOP_ALERT_EMAIL`）
-- Modify: `docs/2_Specs/spec.md`（FREQ 行）
+- Modify: `docs/02_Requirements/requirements.md`（FREQ 行）
 
 **Interfaces:**
 - Consumes: Task 6 の送信権の種類（`payment_expired`・`canceled`）、Task 8 の `PaidEmailVariant`・`PaymentExceptionReason`・`PAYMENT_EXCEPTION_REASON_LABELS`
@@ -4282,7 +4282,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 - [ ] **Step 1: FREQ の番号を確かめる**
 
-Run: `grep -oE "FREQ-[0-9]+" docs/2_Specs/spec.md | sort -t- -k2 -n | tail -1`
+Run: `grep -oE "FREQ-[0-9]+" docs/02_Requirements/requirements.md | sort -t- -k2 -n | tail -1`
 Expected: `FREQ-407`（違えば FREQ-408 を次の番号に読み替える）
 
 - [ ] **Step 2: 失敗するテストを書く（入金確認の書き分け）**
@@ -4911,7 +4911,7 @@ Expected: PASS（既存の注文確認メールのテストも通る）
 
 - [ ] **Step 9: FREQ 行を足す**
 
-`docs/2_Specs/spec.md` の表の末尾に足す:
+`docs/02_Requirements/requirements.md` の表の末尾に足す:
 ```text
 | FREQ-408 | 注文の期限切れ・取消・受付を通らない支払いをお客様にメールで知らせ、要対応を店にメールで知らせること | FREQ-408-REQ-01 | 払込票の期限切れで注文を失敗にしたら「お支払い期限切れのお知らせ」を、管理画面で未入金の注文を取り消し「お客様に取消のお知らせを送る」がオンなら「ご注文取消のお知らせ」を、1注文・1種類につき1通だけ送ること | FREQ-408-REQ-02 | 受付を通らない支払いは、入金済みなら「再度のお支払いは不要」、入金待ちなら「お支払いはお控えください」と案内し、1件1回だけ送ること | FREQ-408-REQ-03 | 要対応は `SHOP_ALERT_EMAIL` へ1件1回送り、お客様の氏名・住所・メールを入れないこと。件名は固定の文面にすること | FREQ-408-AC-01 | 期限切れ・取消・受付を通らない支払いの案内が、それぞれ1回だけ送られること | FREQ-408-AC-02 | 送れなかったら送信権を戻し、後の経路が送り直せること | FREQ-408-AC-03 | 店への要対応メールに理由・注文番号・Stripe の支払い ID・次にやることが書かれ、お客様の個人情報が含まれないこと |
 ```
@@ -4919,7 +4919,7 @@ Expected: PASS（既存の注文確認メールのテストも通る）
 - [ ] **Step 10: コミット**
 
 ```bash
-git add src/lib/orders/order-confirmation-email.ts tests/unit/lib/orders/order-confirmation-email.test.ts src/lib/orders/order-lifecycle-emails.ts tests/unit/lib/orders/order-lifecycle-emails.test.ts .env.example README.md docs/2_Specs/spec.md
+git add src/lib/orders/order-confirmation-email.ts tests/unit/lib/orders/order-confirmation-email.test.ts src/lib/orders/order-lifecycle-emails.ts tests/unit/lib/orders/order-lifecycle-emails.test.ts .env.example README.md docs/02_Requirements/requirements.md
 git commit -m "feat(orders): 期限切れ・取消・受付を通らない支払いのメールと店への要対応メールを足す
 
 お客様へは送信権で1件1回。店へのメールに個人情報を入れない。
@@ -6732,7 +6732,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Files:**
 - Modify: `src/lib/stripe/webhook-processor.ts`（ファイル全体を下の内容に置き換える）
 - Modify: `tests/unit/api/webhook/stripe-route.test.ts`
-- Modify: `docs/2_Specs/spec.md`（FREQ 行）
+- Modify: `docs/02_Requirements/requirements.md`（FREQ 行）
 
 **Interfaces:**
 - Consumes: Task 11 の `reconcileCheckoutPayment`・`ReconcileInput`、Task 12 の `createDefaultReconcilerDeps`
@@ -6740,7 +6740,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 - [ ] **Step 1: FREQ の番号を確かめる**
 
-Run: `grep -oE "FREQ-[0-9]+" docs/2_Specs/spec.md | sort -t- -k2 -n | tail -1`
+Run: `grep -oE "FREQ-[0-9]+" docs/02_Requirements/requirements.md | sort -t- -k2 -n | tail -1`
 Expected: `FREQ-408`（違えば FREQ-409 を次の番号に読み替える）
 
 - [ ] **Step 2: テストを書き換える**
@@ -7029,7 +7029,7 @@ Expected: PASS、lint の指摘なし
 
 - [ ] **Step 6: FREQ 行を足す**
 
-`docs/2_Specs/spec.md` の表の末尾に足す:
+`docs/02_Requirements/requirements.md` の表の末尾に足す:
 ```text
 | FREQ-409 | 注文と在庫を Stripe の現在の支払い状態に合わせる照合を1つにまとめ、Webhook の順番・重複・同時実行で結果が変わらないようにすること（R-01・R-02・R-43） | FREQ-409-REQ-01 | 照合関数は Stripe の Session と PaymentIntent を読み、判定表（設計書 3-2）で行動を1つ決め、今の状態を条件にした RPC で反映し、読み直して収まるまで最大3回くり返すこと。イベントの種類と届いた順番は判定に使わないこと | FREQ-409-REQ-02 | Webhook の決済系6種・完了 API・毎時の見回り・管理画面の取消は、照合関数を呼ぶだけにすること。状態を変える RPC に Stripe のイベント ID を渡して注文履歴に残すこと | FREQ-409-REQ-03 | 仕組みで起きない組み合わせ・注文を作れない支払い・支払額の違いは要対応として記録し（同じ支払い・同じ理由は1行）、店へ1回知らせること。Stripe の通信・DB の失敗・3回で収まらないときは一時的な失敗としてイベントを再試行させること | FREQ-409-AC-01 | 判定表の全マス（Stripe の状態8行 × 注文なしと7状態）が単体テストで確かめられていること | FREQ-409-AC-02 | 同じ支払いを同時に2回照合しても、入金済みにする更新とメールが1回だけであること | FREQ-409-AC-03 | `payment_intent.payment_failed` だけでは在庫を戻さないこと |
 ```
@@ -7037,7 +7037,7 @@ Expected: PASS、lint の指摘なし
 - [ ] **Step 7: コミット**
 
 ```bash
-git add src/lib/stripe/webhook-processor.ts tests/unit/api/webhook/stripe-route.test.ts docs/2_Specs/spec.md
+git add src/lib/stripe/webhook-processor.ts tests/unit/api/webhook/stripe-route.test.ts docs/02_Requirements/requirements.md
 git commit -m "refactor(webhook): 決済系イベントを照合関数に任せる
 
 イベントの中身は ID だけ使い、Stripe の現在値で判定する（R-01・R-02）。
@@ -9900,7 +9900,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: `src/app/api/orders/route.ts:106-135`・`src/app/api/orders/[id]/route.ts:104-141`
 - Create: `tests/unit/api/orders/orders-hidden-statuses.test.ts`
 - Modify: `tests/integration/api/orders.test.ts`（注文の読み込みのモック3か所に `not` を足す）
-- Modify: `docs/2_Specs/spec.md`（FREQ 行）
+- Modify: `docs/02_Requirements/requirements.md`（FREQ 行）
 
 **Interfaces:**
 - Consumes: Task 2 の列、Task 6 の `payment_exceptions`、Task 8 の `ORDER_STATUSES`・`HIDDEN_ORDER_STATUS_FILTER`
@@ -9911,7 +9911,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 - [ ] **Step 1: FREQ の番号を確かめる**
 
-Run: `grep -oE "FREQ-[0-9]+" docs/2_Specs/spec.md | sort -t- -k2 -n | tail -1`
+Run: `grep -oE "FREQ-[0-9]+" docs/02_Requirements/requirements.md | sort -t- -k2 -n | tail -1`
 Expected: `FREQ-409`（違えば FREQ-410 を次の番号に読み替える）
 
 - [ ] **Step 2: 失敗するテストを書く（管理の注文一覧）**
@@ -10431,7 +10431,7 @@ Expected: PASS、lint の指摘なし
 
 - [ ] **Step 10: FREQ 行を足す**
 
-`docs/2_Specs/spec.md` の表の末尾に足す:
+`docs/02_Requirements/requirements.md` の表の末尾に足す:
 ```text
 | FREQ-410 | お客様の注文履歴・注文詳細と KPI に、支払い手続き中と放棄の注文を出さないこと | FREQ-410-REQ-01 | 注文履歴と注文詳細の API は、支払い手続き中・放棄の注文を返さないこと（メールで知らせた注文だけを見せる。Shopify も放棄された決済を注文として見せない） | FREQ-410-REQ-02 | KPI（CVR・返品率など）は、支払い手続き中・放棄の注文を数えないこと | FREQ-410-AC-01 | 支払い手続き中・放棄の注文が注文履歴と注文詳細に表示されないこと | FREQ-410-AC-02 | KPI の集計が支払い手続き中・放棄の注文を読まないこと |
 ```
@@ -10439,7 +10439,7 @@ Expected: PASS、lint の指摘なし
 - [ ] **Step 11: コミット**
 
 ```bash
-git add src/app/api/admin/orders/route.ts tests/unit/api/admin/orders-search-route.test.ts "src/app/api/admin/orders/[id]/refund/route.ts" src/app/api/admin/kpi/route.ts tests/unit/api/admin/kpi-hidden-statuses.test.ts src/app/api/orders/route.ts "src/app/api/orders/[id]/route.ts" tests/unit/api/orders/orders-hidden-statuses.test.ts tests/integration/api/orders.test.ts docs/2_Specs/spec.md
+git add src/app/api/admin/orders/route.ts tests/unit/api/admin/orders-search-route.test.ts "src/app/api/admin/orders/[id]/refund/route.ts" src/app/api/admin/kpi/route.ts tests/unit/api/admin/kpi-hidden-statuses.test.ts src/app/api/orders/route.ts "src/app/api/orders/[id]/route.ts" tests/unit/api/orders/orders-hidden-statuses.test.ts tests/integration/api/orders.test.ts docs/02_Requirements/requirements.md
 git commit -m "feat(orders): 注文一覧・KPI・注文履歴を支払い手続き中と放棄に合わせる
 
 管理の一覧は要確認・発送止め・取消の可否を返し、放棄は既定で出さない。
@@ -11366,7 +11366,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Create: `e2e/FR-ADMIN-060-order-attention-inbox.spec.ts`
 - Create: `e2e/FR-ADMIN-061-order-list-review-states.spec.ts`
 - Create: `e2e/FR-ADMIN-063-order-cancel-dialog.spec.ts`
-- Modify: `docs/2_Specs/spec.md`（FREQ 行3つ）
+- Modify: `docs/02_Requirements/requirements.md`（FREQ 行3つ）
 
 **Interfaces:**
 - Consumes: Task 16〜19 の API と部品
@@ -11375,7 +11375,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 Run:
 ```bash
-grep -oE "FREQ-[0-9]+" docs/2_Specs/spec.md | sort -t- -k2 -n | tail -1
+grep -oE "FREQ-[0-9]+" docs/02_Requirements/requirements.md | sort -t- -k2 -n | tail -1
 ls e2e | grep FR-ADMIN- | sort -V | tail -3
 ```
 Expected: `FREQ-410`、`FR-ADMIN-059-...` が最後（違えば FREQ-411〜413・FR-ADMIN-060〜063 を次の番号に読み替える）
@@ -12174,7 +12174,7 @@ Expected: すべて PASS（390・768・1280 のそれぞれ。横スクロール
 
 - [ ] **Step 8: FREQ 行を足す**
 
-`docs/2_Specs/spec.md` の表の末尾に足す:
+`docs/02_Requirements/requirements.md` の表の末尾に足す:
 ```text
 | FREQ-411 | 管理画面の ORDER タブに要対応・要確認の欄を置き、確認済み・解決済みにできること。未処理の件数をサイドナビと KPI 画面に出すこと | FREQ-411-REQ-01 | 要対応（注文を作れない支払い・支払額の違いなど）と要確認（在庫を確保できなかった注文）を、注文一覧の上に件数付きで出すこと。お客様の個人情報は出さないこと | FREQ-411-REQ-02 | 要確認は「確認済みにする」、要対応は任意のメモ付きの「解決済みにする」で欄から消すこと。未入金の注文が付いた要対応は「注文を取り消して解決」（理由とメモが必須）も選べること。どれも実行者と日時を残すこと | FREQ-411-REQ-03 | 未処理の件数をサイドナビの ORDER と KPI 画面の上部の1行に出すこと | FREQ-411-AC-01 | 未処理の要対応・要確認が ORDER タブの一覧の上に表示されること | FREQ-411-AC-02 | 「確認済みにする」「解決済みにする」を押すと欄から消えること | FREQ-411-AC-03 | 未処理が0件のとき欄が表示されないこと | FREQ-411-AC-04 | サイドナビの ORDER と KPI 画面の上部に未処理の件数が表示されること |
 | FREQ-412 | 注文一覧に支払い手続き中・放棄・要確認の印と発送止めの理由を出し、要確認のみ・状態で絞り込めること | FREQ-412-REQ-01 | 状態の絞り込みに「支払い手続き中」「放棄」を足し、放棄は既定の一覧に出さないこと | FREQ-412-REQ-02 | 要確認の注文に「要確認」の印を出し、「要確認のみ」で絞り込めること | FREQ-412-REQ-03 | 支払額の違いの要対応が開いている注文は「発送済みにする」を出さず、理由を出すこと（発送の RPC も断る） | FREQ-412-AC-01 | 要確認の注文に「要確認」の印が表示されること | FREQ-412-AC-02 | 「要確認のみ」で要確認の注文だけを読み直すこと | FREQ-412-AC-03 | 放棄の注文が既定の一覧に表示されず、「放棄」で絞り込めること | FREQ-412-AC-04 | 支払額の違いの要対応が開いている注文では「発送済みにする」が押せず、理由が表示されること |
@@ -12184,7 +12184,7 @@ Expected: すべて PASS（390・768・1280 のそれぞれ。横スクロール
 - [ ] **Step 9: コミット**
 
 ```bash
-git add src/app/admin/page.tsx e2e/admin-test-utils.ts e2e/FR-ADMIN-051-order-refund-safety.spec.ts e2e/FR-ADMIN-060-order-attention-inbox.spec.ts e2e/FR-ADMIN-061-order-list-review-states.spec.ts e2e/FR-ADMIN-063-order-cancel-dialog.spec.ts docs/2_Specs/spec.md
+git add src/app/admin/page.tsx e2e/admin-test-utils.ts e2e/FR-ADMIN-051-order-refund-safety.spec.ts e2e/FR-ADMIN-060-order-attention-inbox.spec.ts e2e/FR-ADMIN-061-order-list-review-states.spec.ts e2e/FR-ADMIN-063-order-cancel-dialog.spec.ts docs/02_Requirements/requirements.md
 git commit -m "feat(admin): ORDER タブに要対応欄・取消の画面・要確認の絞り込みをつなぐ
 
 サイドナビと KPI 画面に未処理の件数を出す。
@@ -12207,7 +12207,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Create: `tests/unit/api/admin/items-checkout-guards-route.test.ts`
 - Modify: `src/components/ItemSection.tsx`
 - Create: `e2e/FR-ADMIN-062-item-delete-guidance.spec.ts`
-- Modify: `docs/2_Specs/spec.md`（FREQ 行）
+- Modify: `docs/02_Requirements/requirements.md`（FREQ 行）
 
 **Interfaces:**
 - Consumes: Task 15 の `expireOpenCheckoutSession`
@@ -12220,7 +12220,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 - [ ] **Step 1: FREQ の番号を確かめる**
 
-Run: `grep -oE "FREQ-[0-9]+" docs/2_Specs/spec.md | sort -t- -k2 -n | tail -1`
+Run: `grep -oE "FREQ-[0-9]+" docs/02_Requirements/requirements.md | sort -t- -k2 -n | tail -1`
 Expected: `FREQ-413`（違えば FREQ-414 を次の番号に読み替える）
 
 - [ ] **Step 2: 失敗する DB 結合テストを書く**
@@ -12995,7 +12995,7 @@ Expected: すべて PASS（FR-ADMIN-052・054 は商品カードの配置が崩�
 
 - [ ] **Step 11: FREQ 行を足す**
 
-`docs/2_Specs/spec.md` の表の末尾に足す:
+`docs/02_Requirements/requirements.md` の表の末尾に足す:
 ```text
 | FREQ-414 | 商品を非公開・削除にしたら、その商品を含む開いている決済を失効させること。注文や在庫の記録がある商品は削除させず、非公開へ誘導すること（R-44） | FREQ-414-REQ-01 | 商品を非公開にしたら、その商品を含み受付の済んでいない開いている決済（24時間以内）を Stripe で失効させること。失敗しても商品の変更は止めないこと | FREQ-414-REQ-02 | 注文の明細・在庫の記録・決済中のある商品の削除は、汎用の500ではなく理由付きの409で断り、非公開を促すこと。一覧の削除ボタンは削除できない商品にも常に表示し（無効化・非表示にしない）、押した時点で同じ判定の案内を出すこと | FREQ-414-AC-01 | 注文や在庫の記録がある商品を削除しようとすると、非公開を促す案内が表示され、商品が残ること | FREQ-414-AC-02 | 一覧を読んだ後に削除できなくなった商品も、サーバーの案内が表示され、商品が残ること | FREQ-414-AC-03 | 削除できない商品にも削除ボタンが表示され、押せること |
 ```
@@ -13003,7 +13003,7 @@ Expected: すべて PASS（FR-ADMIN-052・054 は商品カードの配置が崩�
 - [ ] **Step 12: コミット**
 
 ```bash
-git add supabase/migrations/20260927100700_item_checkout_guards.sql tests/integration/db/item_checkout_guards.integration.test.ts src/lib/items/item-delete-guidance.ts src/lib/items/item-checkout-guards.ts tests/unit/lib/items/item-checkout-guards.test.ts "src/app/api/admin/items/[id]/route.ts" src/app/api/admin/items/route.ts tests/unit/api/admin/items-checkout-guards-route.test.ts src/components/ItemSection.tsx e2e/FR-ADMIN-062-item-delete-guidance.spec.ts docs/2_Specs/spec.md
+git add supabase/migrations/20260927100700_item_checkout_guards.sql tests/integration/db/item_checkout_guards.integration.test.ts src/lib/items/item-delete-guidance.ts src/lib/items/item-checkout-guards.ts tests/unit/lib/items/item-checkout-guards.test.ts "src/app/api/admin/items/[id]/route.ts" src/app/api/admin/items/route.ts tests/unit/api/admin/items-checkout-guards-route.test.ts src/components/ItemSection.tsx e2e/FR-ADMIN-062-item-delete-guidance.spec.ts docs/02_Requirements/requirements.md
 git commit -m "feat(admin): 商品の非公開で決済を失効させ、削除できない商品は理由を返す
 
 注文・在庫の記録・決済中のある商品は汎用の500ではなく409で非公開へ誘導する（R-44）。
@@ -13398,15 +13398,15 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ## Task 23: 仕上げ（全体の確認と引き継ぎ）
 
 **Files:**
-- Modify: `docs/2_Specs/spec.md`（置き換えた要件の印）
-- Modify: `docs/code-review/2026-09-25-working-diff-security-review.md`（グループ A の状態）
-- Modify: `docs/4_DetailDesign/13_checkout.md`（掃除ジョブの節を照合の見回りに、新しい決済手段の手順の2・4）
-- Modify: `docs/4_DetailDesign/16_admin.md`（ORDER タブ・ITEM タブ）
+- Modify: `docs/02_Requirements/requirements.md`（置き換えた要件の印）
+- Modify: `docs/05_Quality/reviews/code/2026-09-25-working-diff-security-review.md`（グループ A の状態）
+- Modify: `docs/04_DetailDesign/pages/13_checkout.md`（掃除ジョブの節を照合の見回りに、新しい決済手段の手順の2・4）
+- Modify: `docs/04_DetailDesign/pages/16_admin.md`（ORDER タブ・ITEM タブ）
 - Modify: `README.md`（Webhook の購読イベント）
 
 - [ ] **Step 1: 置き換えた要件に印を付ける**
 
-`docs/2_Specs/spec.md` の次の3か所の文の末尾に足す（行は消さない）:
+`docs/02_Requirements/requirements.md` の次の3か所の文の末尾に足す（行は消さない）:
 - `FREQ-388-REQ-01` の要件の文の末尾: `（FREQ-407 で置き換え。見回りはアプリ独自の日数で打ち切らない）`
 - `FREQ-389-REQ-01` の要件の文の末尾: `（FREQ-409 で置き換え。下書きへは割引額だけを受付 RPC の中で書き戻す。R-26）`
 - `FREQ-389-REQ-03` の要件の文の末尾: `（FREQ-409 で置き換え。Webhook・完了 API・見回りは同じ照合関数を通り、注文の作成と割引額の書き戻しは受付 RPC の1つのトランザクションで行う。一時的な失敗は worker がイベントを再試行する）`
@@ -13430,7 +13430,7 @@ Expected: すべて PASS。E2E は API をモックした管理画面の spec �
 
 - [ ] **Step 3: 本番へ当てる前の確認をまとめる**
 
-コードは変えない。次をレビュー台帳のグループ A の行（`docs/code-review/2026-09-25-working-diff-security-review.md`）に「実装済み・push 待ち」として書く:
+コードは変えない。次をレビュー台帳のグループ A の行（`docs/05_Quality/reviews/code/2026-09-25-working-diff-security-review.md`）に「実装済み・push 待ち」として書く:
 - マイグレーション9本（`20260927100000`〜`20260927100800`）。push すると CI が本番へ当てる
 - 当てる直前に、本番の `orders.checkout_session_id` に重複が無いことを Supabase MCP の `execute_sql`（SELECT のみ）で読み直す: `select checkout_session_id, count(*) from public.orders where checkout_session_id is not null group by 1 having count(*) > 1;`
 - 当てた後に MCP で読み戻すもの: enum の7値、`orders_checkout_session_id_key`、新しい関数の権限（`anon`・`authenticated` に EXECUTE が無い）、`payment_exceptions` の RLS、Security Advisor の新しい警告が0件（`get_advisors`）
@@ -13447,7 +13447,7 @@ Expected: すべて PASS。E2E は API をモックした管理画面の spec �
 - documentation-guide スキルの規則に従う。絵文字を使わない。概要セクションがあれば保つ。図を足すなら Mermaid で書く（AA は使わない）。表にできるものは表にする
 - FREQ の番号は、Task 7・10・13・18・20・21 で実際に振った番号に読み替える（本計画の FREQ-407〜414 は目安）
 
-**(a) `docs/4_DetailDesign/13_checkout.md`**
+**(a) `docs/04_DetailDesign/pages/13_checkout.md`**
 
 1. 「新しい決済手段をダッシュボードで有効化するときの手順」の2番目の項目の末尾の文「`PENDING_ORDER_EXPIRY_DAYS` は再照合を始める閾値であり、支払期限ではない」を消す（環境変数は Task 15 で廃止した。括弧書きは Task 7 で直してある）
 2. 同じ手順の4番目の項目を次に替える:
@@ -13483,7 +13483,7 @@ Checkout Session が所有する PaymentIntent は直接 cancel しない。Stri
    - 「pg_cron 登録」の「掃除ジョブを日次実行するための」: 照合の見回りを毎時実行するための
    - 「本番デプロイの前提条件（レビュー指摘 I8）」の1: 購読イベントは (c) の README と同じ6つ。「日次の掃除ジョブだけが唯一の在庫復元経路になる」は「毎時の見回りだけが注文と在庫を合わせる経路になる」
 
-**(b) `docs/4_DetailDesign/16_admin.md`**
+**(b) `docs/04_DetailDesign/pages/16_admin.md`**
 
 1. 「API 仕様（ADMIN-API）」の表の `/api/admin/orders` と `/api/admin/orders/:id/status` の行を替える:
 ```text
@@ -13559,7 +13559,7 @@ Checkout Session が所有する PaymentIntent は直接 cancel しない。Stri
 
 Run:
 ```bash
-grep -n "04:00 UTC\|毎晩\|日次\|UTC 日ごと\|expires_after_days: 3" docs/4_DetailDesign/13_checkout.md
+grep -n "04:00 UTC\|毎晩\|日次\|UTC 日ごと\|expires_after_days: 3" docs/04_DetailDesign/pages/13_checkout.md
 grep -n "04:00 UTC\|毎晩\|PENDING_ORDER_EXPIRY_DAYS" README.md
 ```
 Expected: どちらも何も出ない
@@ -13567,7 +13567,7 @@ Expected: どちらも何も出ない
 - [ ] **Step 5: コミット**
 
 ```bash
-git add docs/2_Specs/spec.md docs/code-review/2026-09-25-working-diff-security-review.md docs/4_DetailDesign/13_checkout.md docs/4_DetailDesign/16_admin.md README.md
+git add docs/02_Requirements/requirements.md docs/05_Quality/reviews/code/2026-09-25-working-diff-security-review.md docs/04_DetailDesign/pages/13_checkout.md docs/04_DetailDesign/pages/16_admin.md README.md
 git commit -m "docs: グループ A の詳細設計と README を実装に合わせ、本番へ当てる前の確認を残す
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"

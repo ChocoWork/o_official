@@ -6,7 +6,7 @@ import path from 'node:path';
  *
  * 客に見える変化は無い段。注文明細に variant_id と引当区分を記録し、在庫で賄える分だけ
  * 台帳（stock_movements）へ追記して引き当てる。在庫が無い組み合わせは受注生産（backorder）
- * として受ける（ブランドの前提。docs/1_RequirementsDifinition/brand.md）。
+ * として受ける（ブランドの前提。docs/01_Planning/brand.md）。
  *
  * ここはファイルの形だけを見る。実際の引き当て・戻しの挙動は
  * tests/integration/db/variant_stock_on_order.integration.test.ts が本物の DB で確かめる。
@@ -28,7 +28,7 @@ function statements(): string {
 }
 
 describe('バリアント在庫の引き当てマイグレーション', () => {
-  it('全体をトランザクションで包む（規約: docs/ops/db-migrations.md）', () => {
+  it('全体をトランザクションで包む（規約: docs/06_Operations/db-migrations.md）', () => {
     const sql = readMigration();
     expect(sql).toMatch(/^BEGIN;$/im);
     expect(sql).toMatch(/^COMMIT;$/im);

@@ -1,7 +1,7 @@
 # バリアント在庫・カート所有権・ウィッシュリスト設計
 
 > 対象システム: Le Fil des Heures 公式オンラインストア
-> 関連ドキュメント: [brand.md](../../1_RequirementsDifinition/brand.md) / [spec.md](../../2_Specs/spec.md)
+> 関連ドキュメント: [brand.md](../../01_Planning/brand.md) / [spec.md](../../02_Requirements/requirements.md)
 > 作成日: 2026-09-06
 
 ---

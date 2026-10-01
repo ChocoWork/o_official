@@ -14,7 +14,7 @@
 
 - E2E は本番ビルドに対して実行する。実行前に `:3000` で dev サーバーが動いていないことを確認する（`Get-NetTCPConnection -LocalPort 3000 -State Listen`）。動いていたら止める。
 - E2E のビューポートは mobile 390px / tablet 768px / desktop 1280px の 3 種を基本とする。
-- UI 変更は `docs/2_Specs/spec.md` のトレーサビリティ行と `e2e/FR-*.spec.ts` をセットで作る。
+- UI 変更は `docs/02_Requirements/requirements.md` のトレーサビリティ行と `e2e/FR-*.spec.ts` をセットで作る。
 - OTP の桁数は 8（`OTP_LENGTH = 8`）。
 - 2FA Cookie 名は `sb-login-2fa-session`、`httpOnly` / `SameSite=Strict`。
 - 2FA Cookie の TTL は 300 秒（5 分）。Supabase の Email OTP Expiration と一致させる。
@@ -45,7 +45,7 @@
 
 **Files:**
 
-- Modify: `docs/2_Specs/spec.md`（末尾に 2 行追加）
+- Modify: `docs/02_Requirements/requirements.md`（末尾に 2 行追加）
 
 **Interfaces:**
 
@@ -54,12 +54,12 @@
 
 - [ ] **Step 1: 現在の最大 FREQ 番号を確認する**
 
-Run: `grep -o "FREQ-[0-9]*" docs/2_Specs/spec.md | sort -t- -k2 -n | tail -1`
+Run: `grep -o "FREQ-[0-9]*" docs/02_Requirements/requirements.md | sort -t- -k2 -n | tail -1`
 Expected: `FREQ-333`
 
 - [ ] **Step 2: FREQ-334 の行を追記する**
 
-`docs/2_Specs/spec.md` の末尾に、以下を 1 行（改行なし）で追加する。
+`docs/02_Requirements/requirements.md` の末尾に、以下を 1 行（改行なし）で追加する。
 
 ```text
 | FREQ-334 | ログインの第 2 要素（メール OTP）の入力を、ログイン / 会員登録タブ内の一状態ではなく専用画面で行うこと | FREQ-334-REQ-01 | メール OTP の入力を専用ルート /login/verify に置き、2FA Cookie（sb-login-2fa-session）が有効なときだけ表示すること。Cookie の不在・改竄・期限切れはすべて同じく /login へリダイレクトし、アカウントの存在を示唆しないこと。判定は Server Component で行い、判定前に入力画面の HTML を送らないこと | FREQ-334-AC-01 | 2FA Cookie を持たない状態で /login/verify を開いたとき /login へ遷移し、認証コード入力欄が一度も表示されないこと（mobile 390px / tablet 768px / desktop 1280px） | FREQ-334-REQ-02 | パスワード検証に成功したら /login/verify へ router.replace で遷移すること。push を使わないこと（戻るボタンで /login に戻れると、生きた 2FA Cookie を持ったまま再ログインでき、2 通目の OTP が飛んでアカウント制限を消費する） | FREQ-334-AC-02 | パスワード検証成功後に /login/verify へ着地し、ブラウザバックで資格情報フォームへ戻らないこと（mobile / tablet / desktop） | FREQ-334-REQ-03 | /login に有効な 2FA Cookie を持って到達した場合は /login/verify へリダイレクトすること | FREQ-334-AC-03 | 有効な 2FA Cookie を持った状態で /login を開いたとき /login/verify へ遷移すること（mobile / tablet / desktop） | FREQ-334-REQ-04 | 検証画面で宛先メールアドレスをマスクして表示すること。ローカル部が 5 文字以上なら先頭 2 文字 + マスク + 末尾 2 文字、4 文字以下なら先頭 1 文字 + マスク。マスク部は常に 3 文字固定とし、ローカル部の長さを漏らさないこと。@ を含まない値は空文字を返し、宛先の行自体を表示しないこと | FREQ-334-AC-04 | 検証画面に生のメールアドレスが表示されず、マスク済みの文字列（例: 14***56@gmail.com）が表示されること（mobile / tablet / desktop） | FREQ-334-REQ-05 | OTP の再送をパスワード不要にすること。再送は 2FA Cookie 由来の宛先へ送る POST /api/auth/login/resend で行い、リクエスト本文に宛先を取らないこと。成功時は 2FA Cookie を再発行して有効期限を延ばすこと | FREQ-334-AC-05 | 検証画面の再送で POST /api/auth/login/resend が呼ばれ、リクエスト本文にメールアドレスとパスワードのいずれも含まれないこと | FREQ-334-REQ-06 | 検証画面から「別のアドレスでやり直す」を選んだとき、POST /api/auth/login/cancel で 2FA Cookie を破棄してから /login へ戻すこと（クライアント状態を戻すだけでは Cookie が残る） | FREQ-334-AC-06 | 「別のアドレスでやり直す」を押したあと /login に戻り、再度 /login/verify を直接開いても入力画面が表示されないこと（mobile / tablet / desktop） |
@@ -75,13 +75,13 @@ Expected: `FREQ-333`
 
 - [ ] **Step 4: 追記できたことを確認する**
 
-Run: `grep -c "FREQ-334\|FREQ-335" docs/2_Specs/spec.md`
+Run: `grep -c "FREQ-334\|FREQ-335" docs/02_Requirements/requirements.md`
 Expected: `2`（1 行に 1 つずつ、計 2 行）
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add docs/2_Specs/spec.md
+git add docs/02_Requirements/requirements.md
 git commit -m "docs(spec): add FREQ-334 / FREQ-335 for the dedicated OTP screen"
 ```
 

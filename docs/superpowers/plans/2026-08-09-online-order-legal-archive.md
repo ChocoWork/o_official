@@ -46,7 +46,7 @@
 | `src/lib/finance/evidence-status.ts`                | 注文売上と手入力取引の証憑状態判定                                   |
 | `src/components/CostProfitSection.tsx`              | 添付不要表示、未添付集計除外、遅延警告                               |
 | `src/app/api/admin/orders/route.ts`                 | 日付・金額・取引先・識別子検索                                       |
-| `docs/ops/legal-archive.md`                         | 保存、再実行、年度確定、復元、外部Storage切替の運用手順              |
+| `docs/06_Operations/legal-archive.md`                         | 保存、再実行、年度確定、復元、外部Storage切替の運用手順              |
 
 ---
 
@@ -801,7 +801,7 @@ git commit -m "feat(finance): show legal archive health"
 
 - Modify: `scripts/legal-archive/run-daily.ts`
 - Modify: `tests/unit/scripts/legal-archive/run-daily.test.ts`
-- Create: `docs/ops/legal-archive.md`
+- Create: `docs/06_Operations/legal-archive.md`
 - Modify: `.env.example`
 
 **Interfaces:**
@@ -853,7 +853,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit finalization and operations**
 
 ```bash
-git add scripts/legal-archive/run-daily.ts tests/unit/scripts/legal-archive/run-daily.test.ts docs/ops/legal-archive.md .env.example
+git add scripts/legal-archive/run-daily.ts tests/unit/scripts/legal-archive/run-daily.test.ts docs/06_Operations/legal-archive.md .env.example
 git commit -m "docs(archive): define retention and recovery operations"
 ```
 

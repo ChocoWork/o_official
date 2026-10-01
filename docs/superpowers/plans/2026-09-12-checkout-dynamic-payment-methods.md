@@ -16,7 +16,7 @@
 - 作業ブランチは `master`。feature ブランチも worktree も PR も作らない。
 - 本番 DB への変更（マイグレーション適用、pg_cron 登録）は**実装者が勝手に流さない**。SQL を用意し、適用はコントローラがユーザーの承認を取ってから行う。
 - E2E は本番ビルドに対して実行する。dev サーバーが :3000 にいると Playwright がそれを再利用するので、実行前に停止する。
-- 要求管理ルール: 機能変更には `docs/2_Specs/spec.md` の行と `e2e/FR-{CATEGORY}-{NNN}-*.spec.ts` をセットで追加する。E2E は mobile 390 / tablet 768 / desktop 1280 の3ビューポート。
+- 要求管理ルール: 機能変更には `docs/02_Requirements/requirements.md` の行と `e2e/FR-{CATEGORY}-{NNN}-*.spec.ts` をセットで追加する。E2E は mobile 390 / tablet 768 / desktop 1280 の3ビューポート。
 - 在庫の減算は `items.stock_quantity` のみ（本番の `finalize_order_from_checkout_draft` がそうなっている）。復元も同じ対象に限定し、**減算と対称**にする。
 - クライアントから送られた決済手段・金額は信用しない。サーバは Stripe と DB の値で判断する。
 - Stripe の生の例外メッセージをクライアントへ返さない。相関IDのみ返し、詳細は `audit_logs` に残す。
@@ -35,8 +35,8 @@
 | `src/app/api/checkout/complete/route.ts`（変更）| 支払方法を PaymentIntent から確定。メールに `paymentState` を渡す |
 | `src/lib/orders/order-confirmation-email.ts`（変更）| `paymentState` による件名・冒頭文の分岐 |
 | `src/app/checkout/page.tsx`（変更）| 確定前の `updateEmail`。エラー表示（文言・参照ID・再試行可否）|
-| `docs/2_Specs/spec.md`（変更）| FREQ-356 / FREQ-357 |
-| `docs/4_DetailDesign/13_checkout.md`（変更）| 新しい決済手段を有効化するときの手順 |
+| `docs/02_Requirements/requirements.md`（変更）| FREQ-356 / FREQ-357 |
+| `docs/04_DetailDesign/pages/13_checkout.md`（変更）| 新しい決済手段を有効化するときの手順 |
 | `e2e/FR-CHECKOUT-022-dynamic-payment-methods.spec.ts`（新規）| 支払方法セクションの描画 |
 | `e2e/FR-CHECKOUT-023-create-session-error-classes.spec.ts`（新規）| エラー種別ごとの表示と再試行可否 |
 
@@ -1363,8 +1363,8 @@ Expected: PASS / エラーなし
 ### Task 8: 仕様・手順書・E2E
 
 **Files:**
-- Modify: `docs/2_Specs/spec.md`（末尾に2行）
-- Modify: `docs/4_DetailDesign/13_checkout.md`（手順を追記）
+- Modify: `docs/02_Requirements/requirements.md`（末尾に2行）
+- Modify: `docs/04_DetailDesign/pages/13_checkout.md`（手順を追記）
 - Create: `e2e/FR-CHECKOUT-022-dynamic-payment-methods.spec.ts`
 - Create: `e2e/FR-CHECKOUT-023-create-session-error-classes.spec.ts`
 
@@ -1381,7 +1381,7 @@ Expected: PASS / エラーなし
 
 - [ ] **Step 2: 手順書を追記する**
 
-`docs/4_DetailDesign/13_checkout.md` の末尾に、設計書 §7.5 の「新しい決済手段をダッシュボードで有効化するときの手順」を転記する。あわせて、Checkout Session の状態遷移、掃除ジョブの環境変数（`CRON_SECRET` / `PENDING_ORDER_EXPIRY_DAYS`）と pg_cron 登録 SQL の所在（`supabase/migrations/20260912020000_schedule_expire_pending_orders.sql`）を記載する。
+`docs/04_DetailDesign/pages/13_checkout.md` の末尾に、設計書 §7.5 の「新しい決済手段をダッシュボードで有効化するときの手順」を転記する。あわせて、Checkout Session の状態遷移、掃除ジョブの環境変数（`CRON_SECRET` / `PENDING_ORDER_EXPIRY_DAYS`）と pg_cron 登録 SQL の所在（`supabase/migrations/20260912020000_schedule_expire_pending_orders.sql`）を記載する。
 
 - [ ] **Step 3: E2E を書く（FR-CHECKOUT-022）**
 
@@ -1508,4 +1508,4 @@ E2E の実行はコントローラが行う（dev サーバー停止とマイグ
 - `npx jest tests/unit/api/checkout tests/unit/api/webhook tests/unit/api/cron tests/unit/features/checkout tests/unit/lib/orders tests/unit/migrations` が PASS
 - `grep -rn "payment_method_types" src/app/api/checkout/create-session/route.ts` が空
 - 適用待ちマイグレーション2本が報告に明記されている
-- `docs/2_Specs/spec.md` に FREQ-356 / FREQ-357、`docs/4_DetailDesign/13_checkout.md` に有効化手順がある
+- `docs/02_Requirements/requirements.md` に FREQ-356 / FREQ-357、`docs/04_DetailDesign/pages/13_checkout.md` に有効化手順がある
