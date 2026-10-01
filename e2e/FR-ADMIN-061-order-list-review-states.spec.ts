@@ -57,6 +57,10 @@ async function openOrders(page: Page) {
   await expect(page.getByRole('row', { name: /order-progress/ })).toBeVisible();
 }
 
+function lastRequestedUrl(urls: string[]): string {
+  return urls[urls.length - 1] ?? '';
+}
+
 for (const viewport of viewports) {
   test.describe(`FR-ADMIN-061 order list review states (${viewport.name})`, () => {
     test.beforeEach(async ({ page }) => {
@@ -93,6 +97,50 @@ for (const viewport of viewports) {
       await page.getByRole('button', { name: '放棄', exact: true }).click();
 
       await expect.poll(() => requestedUrls.some((url) => url.includes('status=abandoned'))).toBe(true);
+    });
+
+    test('「放棄」のあとに別の状態を選ぶと、「放棄」の選択が外れ、その状態で絞り込む', async ({ page }) => {
+      // FREQ-412-AC-05
+      const requestedUrls: string[] = [];
+      await mockAdminApis(page, requestedUrls);
+      await openOrders(page);
+      const abandoned = page.getByRole('button', { name: '放棄', exact: true });
+      const pending = page.getByRole('button', { name: '未決済', exact: true });
+
+      await abandoned.click();
+      await expect(abandoned).toHaveAttribute('aria-pressed', 'true');
+      await expect.poll(() => lastRequestedUrl(requestedUrls)).toContain('status=abandoned');
+
+      await pending.click();
+
+      // 放棄は status を送らないと読めない。他の状態と一緒に選んだままだと status を送れず、放棄の行は出ないのに「放棄」だけ選ばれて見える
+      await expect(abandoned).toHaveAttribute('aria-pressed', 'false');
+      await expect(pending).toHaveAttribute('aria-pressed', 'true');
+      await expect.poll(() => lastRequestedUrl(requestedUrls)).toContain('status=pending');
+    });
+
+    test('「放棄」を選ぶと、選んでいた他の状態が外れる（放棄以外の状態は、これまでどおり重ねて選べる）', async ({ page }) => {
+      // FREQ-412-AC-05
+      const requestedUrls: string[] = [];
+      await mockAdminApis(page, requestedUrls);
+      await openOrders(page);
+      const pending = page.getByRole('button', { name: '未決済', exact: true });
+      const paid = page.getByRole('button', { name: '決済完了', exact: true });
+      const abandoned = page.getByRole('button', { name: '放棄', exact: true });
+
+      await pending.click();
+      await paid.click();
+      // 放棄以外は重ねて選べる（2つ以上なら status は送らず、画面側で絞る）
+      await expect(pending).toHaveAttribute('aria-pressed', 'true');
+      await expect(paid).toHaveAttribute('aria-pressed', 'true');
+      await expect.poll(() => lastRequestedUrl(requestedUrls)).not.toContain('status=');
+
+      await abandoned.click();
+
+      await expect(abandoned).toHaveAttribute('aria-pressed', 'true');
+      await expect(pending).toHaveAttribute('aria-pressed', 'false');
+      await expect(paid).toHaveAttribute('aria-pressed', 'false');
+      await expect.poll(() => lastRequestedUrl(requestedUrls)).toContain('status=abandoned');
     });
 
     test('支払い手続き中の注文が状態名つきで表示される', async ({ page }) => {

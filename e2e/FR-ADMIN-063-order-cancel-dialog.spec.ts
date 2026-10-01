@@ -38,7 +38,8 @@ const ORDERS = [
   { ...BASE, id: 'order-failed', customerName: '失敗 次郎', status: '決済失敗', canCancel: true },
 ];
 
-async function mockAdminApis(page: Page, cancelBodies: unknown[]): Promise<void> {
+/** holdStatusResponse を渡すと、取消 API の応答をそれが解けるまで止める（送っている間の画面を確かめる） */
+async function mockAdminApis(page: Page, cancelBodies: unknown[], holdStatusResponse?: Promise<void>): Promise<void> {
   await mockAdminBackgroundApis(page);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
@@ -57,8 +58,9 @@ async function mockAdminApis(page: Page, cancelBodies: unknown[]): Promise<void>
       body: JSON.stringify({ data: ORDERS, pagination: { page: 1, pageSize: 20, total: ORDERS.length, totalPages: 1 } }),
     }),
   );
-  await page.route('**/api/admin/orders/*/status', (route) => {
+  await page.route('**/api/admin/orders/*/status', async (route) => {
     cancelBodies.push(route.request().postDataJSON());
+    await holdStatusResponse;
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -152,6 +154,40 @@ for (const viewport of viewports) {
       const unknown = page.getByRole('row', { name: /order-unknown/ });
       await expect(unknown.getByRole('button', { name: 'キャンセル' })).toHaveCount(0);
       await expect(unknown.getByText('支払いの状態を確かめられないため、今は取り消せません')).toBeVisible();
+    });
+
+    test('取消の送信中に画面を閉じて別の注文の画面を開いても、先の送信が終わったとき、開いている画面を閉じない', async ({
+      page,
+    }) => {
+      // FREQ-413-AC-07
+      let release!: () => void;
+      const hold = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const cancelBodies: unknown[] = [];
+      await mockAdminApis(page, cancelBodies, hold);
+      await openOrders(page);
+
+      // 1件目を送る（応答は止めておく）
+      await page.getByRole('row', { name: /order-progress/ }).getByRole('button', { name: 'キャンセル' }).click();
+      const dialog = page.getByRole('dialog', { name: '注文を取り消す' });
+      await dialog.getByLabel('取消の理由').selectOption('customer_request');
+      await dialog.getByRole('button', { name: '取り消す' }).click();
+      await expect.poll(() => cancelBodies.length).toBe(1);
+
+      // 送信中に画面を閉じ、別の注文の取消の画面を開く
+      await dialog.getByRole('button', { name: '戻る' }).click();
+      await expect(dialog).toHaveCount(0);
+      await page.getByRole('row', { name: /order-failed/ }).getByRole('button', { name: 'キャンセル' }).click();
+      await expect(dialog.getByText('order-failed')).toBeVisible();
+
+      // 先の送信が終わる
+      release();
+      await expect(page.getByRole('row', { name: /order-progress/ }).getByText('キャンセル', { exact: true })).toBeVisible();
+
+      // 開いている別の注文の画面は、閉じない。送信中のまま固まってもいない（理由を選ぶまで押せないだけ）
+      await expect(dialog.getByText('order-failed')).toBeVisible();
+      await expect(dialog.getByRole('button', { name: '取り消す' })).toBeDisabled();
     });
 
     test('失敗の注文の取消では、お知らせの選択肢を出さない', async ({ page }) => {

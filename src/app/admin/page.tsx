@@ -397,7 +397,13 @@ function AdminPageContent() {
         return ['all'];
       }
 
-      const nextValues = prev.filter((value) => value !== 'all');
+      // 放棄は status を送って初めて読める（既定の一覧は放棄を除き、2つ以上の選択は status を送らない）。
+      // 他の状態と一緒に選ばせない: 選ぶと他の選択が外れ、他の状態を選ぶと放棄が外れる
+      if (nextFilter === '放棄') {
+        return prev.includes('放棄') ? ['all'] : ['放棄'];
+      }
+
+      const nextValues = prev.filter((value) => value !== 'all' && value !== '放棄');
 
       if (nextValues.includes(nextFilter)) {
         const filteredValues = nextValues.filter((value) => value !== nextFilter);
@@ -479,7 +485,8 @@ function AdminPageContent() {
       console.error('Failed to cancel order:', error);
       setOrdersErrorMessage(error instanceof Error ? error.message : '注文ステータスの更新に失敗しました。');
     } finally {
-      setCancelTarget(null);
+      // 閉じるのは、この送信の注文の画面だけ。送信中に画面を閉じて別の注文の画面を開いていたら、その画面は閉じない
+      setCancelTarget((current) => (current?.id === target.id ? null : current));
       setCancelSubmitting(false);
       updateProcessingOrder(target.id, false);
     }
@@ -780,6 +787,7 @@ function AdminPageContent() {
                   variant={orderStatusFilters.includes(statusFilter.value) ? 'primary' : 'secondary'}
                   size="sm"
                   className="font-acumin"
+                  aria-pressed={orderStatusFilters.includes(statusFilter.value)}
                   onClick={() => handleStatusFilterToggle(statusFilter.value)}
                 >
                   {statusFilter.label}
