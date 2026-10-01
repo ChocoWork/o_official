@@ -26,6 +26,11 @@ async function blockers(db: PgClient, itemIds: number[]) {
   }]));
 }
 
+const FUNCTION_SIGNATURES = [
+  'public.find_open_checkout_sessions_for_item(bigint)',
+  'public.item_delete_blockers(bigint[])',
+];
+
 describeLocalDb('integration: 商品の非公開・削除の確かめ', (db) => {
   test('受付の済んでいない開いている決済だけを返す', async () => {
     const fx = await createCatalogFixture(db(), { stock: 0 });
@@ -64,14 +69,18 @@ describeLocalDb('integration: 商品の非公開・削除の確かめ', (db) => 
   });
 
   test('anon・authenticated は実行できない', async () => {
-    for (const signature of [
-      'public.find_open_checkout_sessions_for_item(bigint)',
-      'public.item_delete_blockers(bigint[])',
-    ]) {
+    for (const signature of FUNCTION_SIGNATURES) {
       for (const role of ['anon', 'authenticated']) {
         const res = await db().query('select has_function_privilege($1, $2, $3) as allowed', [role, signature, 'EXECUTE']);
         expect(res.rows[0].allowed).toBe(false);
       }
+    }
+  });
+
+  test('service_role は実行できる（管理 API はこの権限で呼ぶ）', async () => {
+    for (const signature of FUNCTION_SIGNATURES) {
+      const res = await db().query('select has_function_privilege($1, $2, $3) as allowed', ['service_role', signature, 'EXECUTE']);
+      expect(res.rows[0].allowed).toBe(true);
     }
   });
 });

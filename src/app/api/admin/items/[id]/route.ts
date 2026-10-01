@@ -39,7 +39,26 @@ const patchStatusSchema = z.object({
 
 const itemIdSchema = z.coerce.number().int().positive();
 
-/** ① 非公開にしたら、その商品を含む開いている決済を失効させる。失敗しても商品の変更は止めない */
+/**
+ * ① 非公開・削除にした商品を含む、開いている決済を失効させる。
+ * 商品の変更はもう済んでいるので、Stripe のクライアントを得られない・失効に失敗するなど、
+ * 何があっても応答は失敗にしない。失敗はログに残すだけ（受付 RPC が非公開の商品を断る）
+ */
+async function expireCheckoutsSafely(
+  supabase: Awaited<ReturnType<typeof createServiceRoleClient>>,
+  itemId: number,
+): Promise<void> {
+  try {
+    const result = await expireOpenCheckoutsForItem({ client: supabase, stripe: getStripeServerClient(), itemId });
+    if (result.failed > 0) {
+      console.error('[admin.items] some checkout sessions could not be expired', itemId, result);
+    }
+  } catch (error) {
+    console.error('[admin.items] could not expire checkout sessions', itemId, error);
+  }
+}
+
+/** PUT・PATCH: 非公開にしたときだけ、その商品を含む開いている決済を失効させる */
 async function expireCheckoutsIfUnpublished(
   supabase: Awaited<ReturnType<typeof createServiceRoleClient>>,
   id: string,
@@ -50,10 +69,7 @@ async function expireCheckoutsIfUnpublished(
     return;
   }
 
-  const result = await expireOpenCheckoutsForItem({ client: supabase, stripe: getStripeServerClient(), itemId: itemId.data });
-  if (result.failed > 0) {
-    console.error('[admin.items] some checkout sessions could not be expired', id, result);
-  }
+  await expireCheckoutsSafely(supabase, itemId.data);
 }
 
 const allowedImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
@@ -314,7 +330,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       return NextResponse.json({ error: 'Failed to delete item' }, { status: 500 });
     }
 
-    await expireOpenCheckoutsForItem({ client: supabase, stripe: getStripeServerClient(), itemId: itemId.data });
+    await expireCheckoutsSafely(supabase, itemId.data);
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
