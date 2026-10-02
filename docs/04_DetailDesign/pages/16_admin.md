@@ -115,11 +115,15 @@
 | エンドポイント | メソッド | 概要 | ロール要件 |
 |---|---|---|---|
 | `/api/admin/items/import` | POST | CSV バルクインポート（必須カラム/型チェック/重複 SKU 検出） | `admin` |
-| `/api/admin/orders` | GET | 注文一覧（ページネーション・ステータスフィルタ） | `admin`, `supporter` |
-| `/api/admin/orders/:id/status` | POST | 未決済・決済失敗のキャンセル、決済完了の発送（用途別RPC） | `admin`, `supporter` |
+| `/api/admin/orders` | GET | 注文一覧（ページネーション・ステータスフィルタ。放棄は既定で出さない。`review=only` で要確認だけ）。各行に要確認・発送止めの理由・取消の可否・払込期限を付ける | `admin`, `supporter` |
+| `/api/admin/orders/:id/status` | POST | 支払い手続き中・未決済・決済失敗の取消（理由は必須、メモ・お客様へのお知らせ）、決済完了の発送（用途別RPC）。Stripe が払込票の期限切れを確定するまでの取消は409と払込期限、Stripe・DBの一時的な失敗は503 | `admin`, `supporter` |
 | `/api/admin/orders/:id/refund` | POST | 決済完了・発送済み注文の返金とStripe現在値からの状態投影 | `admin` |
 | `/api/admin/items/:id/variants` | GET | 色 × サイズの一覧（在庫数・受注生産の受注数）と台帳の履歴（FREQ-399） | `admin.items.read` |
 | `/api/admin/items/:id/variants` | POST | 在庫台帳への追記（入荷 / 棚卸調整） | `admin.items.manage` |
+| `/api/admin/order-attention` | GET | 未処理の要対応・要確認の一覧と件数（お客様の個人情報は返さない） | `admin.orders.read` |
+| `/api/admin/orders/:id/review` | POST | 要確認を確認済みにする | `admin.orders.manage` |
+| `/api/admin/payment-exceptions/:id/resolve` | POST | 要対応を解決済みにする。未入金の注文が付いていれば取り消して解決もできる。先に解決されていれば409 | `admin.orders.manage` |
+| `/api/admin/items/:id` | DELETE | 商品の削除。注文の明細・在庫の記録・決済中のある商品は理由付きの409で断り、非公開を促す | `admin.items.manage` |
 
 > CSV インポート時は必須カラムチェック・型チェック・重複 SKU 検出を行い、エラー行は一覧で返す。
 
@@ -129,9 +133,11 @@
 
 | 現在状態 | 操作 | 遷移・応答 |
 |---|---|---|
-| `pending` | キャンセル | Checkout Sessionを失効し、`release_stock_for_unpaid_order(..., 'cancelled')`で在庫解放と遷移を原子的に行う |
-| `failed` | キャンセル | `admin_cancel_failed_order`が`failed`を条件に更新する。競合で0件なら409 |
-| `paid` | 発送 | `admin_ship_paid_order`が`paid`かつ未発送・配送先必須項目充足を条件に`shipped`へ更新する。欠落または競合で0件なら409。DBトリガーも直接更新を拒否する |
+| `payment_in_progress` | キャンセル（理由は必須） | 開いている Checkout Session を失効させてから、照合関数が Stripe の現在値で取り消し、確保した分だけ在庫を戻す（`release_stock_for_unpaid_order`）。先に支払いが完了していれば409 |
+| `pending` | キャンセル（理由は必須） | Stripe が払込票の期限切れを確定するまで取り消さず、409と払込期限（`cancelBlockedUntil`）を返す（払込期限を過ぎても、確定するまでは409）。確定の後は照合関数が取り消し、確保した分だけ在庫を戻す（`release_stock_for_unpaid_order`）。Stripe を一時的に読めなければ503 |
+| `failed` | キャンセル（理由は必須。お知らせは出さない） | `admin_cancel_failed_order`が`failed`を条件に理由・メモ付きで更新する。競合で0件なら409 |
+| `abandoned` | キャンセル | 409（放棄された注文は取り消さない） |
+| `paid` | 発送 | `admin_ship_paid_order`が`paid`かつ未発送・配送先必須項目充足・支払額の違いの要対応が開いていないことを条件に`shipped`へ更新する。満たさないか競合で0件なら409。DBトリガーも直接更新を拒否する |
 | `paid` / `shipped` | 通常キャンセル | 409。返金APIを案内する |
 | `paid` / `shipped` | 部分返金、`pending`、`requires_action` | 状態を維持し、成功済み返金額だけを記録する |
 | `paid` / `shipped` | 成功済み返金累計が注文総額以上 | `apply_order_refund_projection`が`cancelled`へ更新する |
@@ -148,6 +154,36 @@ DB変更は次の2段階で適用する。第1段階は本番適用済み、第2
 2. [harden_order_state_transitions.sql](../../../supabase/pending/harden_order_state_transitions.sql): アプリ切替確認後に`anon` / `authenticated`の`orders` UPDATE、広範なUPDATE policyを削除し、不変条件トリガーを追加する。
 
 3つのRPCは`SECURITY DEFINER`、`search_path=''`、完全修飾名を使い、`PUBLIC` / `anon` / `authenticated`から実行権限を剥奪する。人間の操作はサーバーが認証済みセッションから得た利用者IDを渡し、`order_revisions.changed_by`へ記録する。クライアント本文の利用者IDは受け付けない。
+
+## ORDER タブの要対応・要確認と取消の画面（ADMIN-ORDER-ATTENTION / FREQ-411〜413）
+
+| 部品 | 内容 |
+| --- | --- |
+| 要対応・要確認の欄（`src/components/AttentionInbox.tsx`） | 注文一覧の上に件数付きで出す。未処理が0件なら出さない。お客様の氏名・住所・メールは出さない。読み込めなかったときは未処理なしに見せず「要対応・要確認を読み込めませんでした。」を出す。操作が断られたら（払込票が有効・Stripe が一時的に使えないなど）理由を欄のすぐ下に出し、行は残る |
+| 件数 | 未処理の件数をサイドナビの ORDER（`src/components/AdminSideNav.tsx` の `badges`）と KPI 画面の上部の1行に出す |
+| 状態の絞り込み | 「支払い手続き中」「放棄」を足す。放棄は既定の一覧に出さず、「放棄」で絞り込めば出る。「放棄」は他の状態と一緒に選べない（選ぶと他の状態が外れ、他の状態を選ぶと「放棄」が外れる） |
+| 要確認の印 | 要確認の注文に「要確認」の印を出し、「要確認のみ」で絞り込める |
+| 発送止め | 支払額の違いの要対応が開いている注文は「発送済みにする」を出さず、理由を出す（`admin_ship_paid_order` も断る） |
+| 取消の可否 | 取り消せない未決済の注文には「キャンセル」を出さず理由を出す。Stripe が払込票の期限切れを確定するまでは「払込票の期限切れが確定するまで取り消せません（払込期限 …）」、Stripe の状態を確かめられないときは「支払いの状態を確かめられないため、今は取り消せません」（一覧の GET の `canCancel`・`cancelBlockedUntil`。払込票が有効な間は取消 API も409で断る） |
+| 取消の画面（`src/components/OrderCancelDialog.tsx`） | Shopify の取消画面に合わせる。項目は下の表 |
+
+- 要対応（`payment_exceptions`）: 注文を作れない支払い・支払額の違い・取り消した注文への入金など。理由の表示名は `PAYMENT_EXCEPTION_REASON_LABELS`（`src/lib/orders/order-payment-types.ts`）。「解決済みにする」（メモは任意）で欄から消す。未入金の注文が付いていれば「注文を取り消して解決」（理由とメモが必須）も選べる。別の管理者が先に解決していたら409で、二重に取り消さない
+- 要確認（`orders.review_reason`）: 在庫を確保できなかった注文（`stock_not_reserved`）。「確認済みにする」で欄から消す
+- どちらも実行者と日時を残す
+
+| 取消の画面の項目 | 内容 |
+| --- | --- |
+| 理由 | 必須。在庫切れ・お客様の依頼・不正の疑い・その他（`CANCEL_REASONS`） |
+| メモ | 店内だけに残る（500文字まで）。「その他」と要対応の解決では必須 |
+| お客様へのお知らせ | 「お客様に取消のお知らせを送る」は既定でオン、外せる。失敗の注文の取消では出さない |
+| 在庫 | 常に戻すので選択肢を置かない |
+
+## ITEM タブの非公開と削除（ADMIN-ITEM-GUARD / FREQ-414）
+
+- 商品一覧の削除ボタンは、削除できない商品にも常に出す（無効化・非表示にしない。R-44）
+- 注文の明細・在庫の記録・決済中のある商品は、押した時点で削除を送らず、理由と非公開への案内を出す（`buildItemDeleteGuidance`。一覧の GET が `canDelete`・`deleteBlockedReasons` を返す）
+- 一覧を読んだ後に削除できなくなった商品は、DELETE API が理由付きの409で断る（外部キーで断られた競合も409）。画面はサーバーの案内を出し、商品は残る
+- 商品を非公開にしたら、その商品を含み受付の済んでいない開いている決済（24時間以内）を Stripe で失効させる。失効に失敗しても商品の変更は止めない（受付 RPC が非公開の商品を断る）。削除できたときも同じく失効させる
 
 ## 在庫の入力（ADMIN-STOCK / FREQ-399）
 

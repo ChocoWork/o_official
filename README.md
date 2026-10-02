@@ -101,16 +101,18 @@ Supabase クライアントの配置
 
 - [ ] **4. Stripe の webhook 購読イベントを確認する**
 
-  Stripe ダッシュボード → 開発者 → Webhook → 本番エンドポイント。次の4つが有効になっていること。
+  Stripe ダッシュボード → 開発者 → Webhook → 本番エンドポイント。照合関数へ渡す次の6つが有効になっていること（`src/lib/stripe/webhook-processor.ts` の `processStripeWebhookEvent`）。
 
   ```text
-  checkout.session.expired
+  checkout.session.completed
   checkout.session.async_payment_succeeded
   checkout.session.async_payment_failed
+  checkout.session.expired
+  payment_intent.succeeded
   payment_intent.payment_failed
   ```
 
-  漏れているとエラーは出ないまま webhook 側の在庫復元が一切発火せず、この掃除ジョブが唯一の在庫復元経路になる。
+  漏れているとエラーは出ないまま webhook 側の照合が発火せず、毎時の見回りだけが注文と在庫を合わせる経路になる（入金の反映・確認メール・在庫の戻しが次の見回りまで遅れる）。
 
 - [ ] **5. マイグレーションを適用する（アプリのデプロイより先に）**
 
@@ -118,7 +120,7 @@ Supabase クライアントの配置
 
   手順3が済んでいないと、冒頭のガードが例外を投げて適用が中断する。これは意図した動作（合言葉なしでジョブを登録させないための歯止め）なので、エラーが出たら手順3に戻る。
 
-  適用順は常に「マイグレーション → アプリのデプロイ」。逆にすると、`release_stock_for_unpaid_order` が無い状態で webhook が呼ばれて 500 を返す。
+  適用順は常に「マイグレーション → アプリのデプロイ」。逆にすると、照合関数が呼ぶ RPC（`place_order_from_checkout_draft` など）が無い状態で決済系の webhook イベントが届き、worker で失敗して再試行が続く（入金の反映と在庫の戻しが止まる）。
 
 - [ ] **6. 登録を確認する**
 

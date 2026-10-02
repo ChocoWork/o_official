@@ -43,7 +43,7 @@
 | CHECKOUT-01-002 | Payment Element + PaymentIntent 初期化 API                     | IMPL-CHECKOUT-PI-01       | `src/app/api/checkout/route.ts`                                                                                                                                              | PaymentIntent 初期化 API 実装済み                                                                                                                                        | 済             |
 | CHECKOUT-01-003 | `POST /api/checkout/complete`（Stripe Checkout Session のみ）  | IMPL-CHECKOUT-COMPLETE-01 | `src/app/api/checkout/complete/route.ts`                                                                                                                                     | `checkoutSessionId` と `draft_id` を必須化し、公開 complete API では Stripe セッション検証後にのみ注文確定する                                                           | 済             |
 | CHECKOUT-01-004 | Webhook 受信と署名検証                                         | IMPL-CHECKOUT-WEBHOOK-01  | `src/app/api/webhook/stripe/route.ts`                                                                                                                                      | Stripe 署名検証付き Webhook 実装済み                                                                                                                                     | 済             |
-| CHECKOUT-01-005 | 注文確定ロジック（orders/order_items 保存、カートクリア）      | IMPL-CHECKOUT-ORDER-01    | `src/app/api/checkout/create-session/route.ts`, `src/app/api/checkout/complete/route.ts`, `src/app/api/webhook/stripe/route.ts`, `migrations/040_create_checkout_drafts.sql` | create-session 時点で immutable な checkout draft を保存し、complete / webhook は `finalize_order_from_checkout_draft` RPC で draft スナップショットからのみ注文確定する | 済             |
+| CHECKOUT-01-005 | 注文確定ロジック（orders/order_items 保存、カートクリア） | IMPL-CHECKOUT-ORDER-01 | `src/app/api/checkout/create-session/route.ts`, `src/app/api/checkout/complete/route.ts`, `src/lib/stripe/webhook-processor.ts`, `src/lib/stripe/checkout-payment-reconciler.ts`, `supabase/migrations/20260927100300_place_order_from_checkout_draft.sql` | create-session 時点で immutable な checkout draft を保存し、complete / webhook は照合関数（`reconcileCheckoutPayment`）を通る。受付 RPC `place_order_from_checkout_draft` が draft スナップショットからのみ注文を作り、`mark_order_paid`・`mark_order_awaiting_payment` が入金済み・入金待ちにしてカートを空にする | 済 |
 | CHECKOUT-01-006 | 郵便番号住所自動補完（同一オリジン API + `postal_code_cache`） | IMPL-CHECKOUT-POSTAL-01   | `src/app/api/checkout/postal-code/route.ts`                                                                                                                                  | キャッシュ付き郵便番号補完実装済み                                                                                                                                       | 済             |
 | CHECKOUT-01-007 | Payment Element Accordion UI + Appearance API                  | IMPL-CHECKOUT-UI-01       | `src/app/checkout/page.tsx`                                                                                                                                                  | Accordion UI + Appearance API 実装済み                                                                                                                                   | 済             |
 | CHECKOUT-01-008 | Checkout Sessions API（custom UI モード）                      | IMPL-CHECKOUT-SESSION-02  | `src/app/api/checkout/route.ts`                                                                                                                                              | custom UI モード実装済み                                                                                                                                                 | 済             |
@@ -177,40 +177,34 @@ worker（[route.ts](../../../src/app/api/cron/process-stripe-webhooks/route.ts)�
 | 入力が恒久的に使えない | `draft_id`が無い、支払IDが無い | 監査ログに残し、業務上の処理済みとする |
 | 一時的な障害・DBエラー | 注文・返金・会計RPCがerrorを返した | workerが`failed`と次回時刻を保存し、再試行する |
 
-Supabase clientの`{ error }`を見逃すと、入金済み注文を`pending`のまま完了扱いにしてしまう。業務ハンドラはエラーを例外へ変換する。再試行でpaid更新が0件（既にpaid）なら確認メールを重ねて送らない。
-### 同じ支払いの注文確定が並行したとき（FREQ-363）
+Supabase clientの`{ error }`を見逃すと、入金済み注文を`pending`のまま完了扱いにしてしまう。業務ハンドラはエラーを例外へ変換する（照合関数の DB の操作は `src/lib/stripe/checkout-payment-reconciler-deps.ts`。接続・タイムアウトなどは一時的な失敗 `ReconcileTransientError`）。再試行で入金済みにする RPC（`mark_order_paid`）の更新が0件（先に別の経路が入金済みにした）なら、確認メールを重ねて送らずに読み直す。
+### 同じ支払いの受付が並行したとき（FREQ-363）
 
-注文確定 RPC `finalize_order_from_checkout_draft` は次の3経路から呼ばれる。いずれも Checkout Session / PaymentIntent の metadata から同じ `draft_id` を受け取るため、同じ draft 行を奪い合う。
+注文は受付 RPC `place_order_from_checkout_draft` が作る。呼ぶのは照合関数（`reconcileCheckoutPayment`）だけで、注文の無い支払いを Stripe が入金済み・入金待ちと返したとき（受付の予備処理）に呼ぶ。注文の無い支払いを照合関数へ渡す経路は次の2つで、同じ Checkout Session について同時に走りうる。受付の後の入金済み・入金待ちへの更新（`mark_order_paid`・`mark_order_awaiting_payment`）も今の状態を条件にするので、状態の変化とメールは1回だけになる。
 
-| 経路    | 呼び出し元                    |
-| ------- | ----------------------------- |
-| 画面    | `POST /api/checkout/complete` |
-| webhook | `checkout.session.completed`  |
-| webhook | `payment_intent.succeeded`    |
+| 経路 | 呼び出し元 |
+| --- | --- |
+| 画面 | `POST /api/checkout/complete` |
+| webhook | 決済系の6つのイベント（`src/lib/stripe/webhook-processor.ts` の `processStripeWebhookEvent`） |
 
-関数内の冪等性の確認は3段構えにする。
+受付 RPC の冪等性の確認は3段構えにする。
 
-1. draft 行のロック前に、同じ `payment_intent_id` の注文を確認する（再送の大半はここで返るのでロック待ちが起きない）
-2. draft 行を `FOR UPDATE` でロックした直後に、もう一度確認する（先に走っていた確定処理がロック待ちの間にコミットした場合はここで返る）
-3. 注文 INSERT の一意制約違反（`orders_payment_intent_id_key`）で既存注文を返す（最後の防御）
+1. 下書きをロックする前に、同じ `checkout_session_id` の注文を確認する（再送の大半はここで返るのでロック待ちが起きない）
+2. 下書きを `FOR UPDATE` でロックした直後に、もう一度確認する（先に走っていた受付がロック待ちの間にコミットした場合はここで返る）
+3. 注文 INSERT の一意制約違反（`orders_checkout_session_id_key`）で既存の注文を返す（最後の防御）
 
-2 が無いと、後から来た呼び出しはロック解放後の在庫（先発が減らした後）を読み、最後の1点を買う注文で `INSUFFICIENT_STOCK` を返す。Read Committed では SQL 文ごとに最新のコミット済みデータを読み、`FOR UPDATE` は待機後に最新の行を返すため。呼び出し元は画面なら 409 となり、支払い済みの客に「注文確定に失敗しました」と表示することになる。Stripe の注文確定ガイドも、同じ決済に対して確定処理が複数回・同時に呼ばれうることを前提に安全にするよう求めている。
+2 が無いと、後から来た呼び出しはロック解放後の下書き（先発が受付済みにした後）を読み、`draft_not_found` を返す。照合関数はこれを「注文を作れない支払い」の要対応にし、支払い済みの客に誤った案内を送ることになる。Read Committed では SQL 文ごとに最新のコミット済みデータを読み、`FOR UPDATE` は待機後に最新の行を返すため。Stripe の注文確定ガイドも、同じ決済に対して確定処理が複数回・同時に呼ばれうることを前提に安全にするよう求めている。
 
-検証は次の2本で行う。E2E は API をモックするため、この並行性は再現できない。
-
-| テスト                                                                | 実行方法                                                                                                                                                                                                                                                                |
-| --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tests/unit/migrations/finalize-order-idempotency-recheck.test.ts`    | `npm test`。再確認がロックの後・在庫確認の前にあることを SQL で確認する                                                                                                                                                                                                 |
-| `tests/integration/db/finalize_order_concurrency.integration.test.ts` | ローカル Supabase（`npm run db:start`）に対して `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npx jest tests/integration/db/finalize_order_concurrency`。2セッションを実際に競わせる。削除できない試験注文が残るため localhost 以外では動かない |
+検証は `tests/integration/db/place_order_from_checkout_draft.integration.test.ts` の「同じ Session で2回呼んでも注文は1件、在庫の確保も1回（二重送信・再読込）」と「同じ Session の受付が並行しても、後発はロックを待ってから先発の注文を返す」。ローカル Supabase（`npm run db:start`）に対して `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npx jest tests/integration/db/place_order_from_checkout_draft` で、2つの接続を実際に競わせる。削除できない試験注文が残るため localhost 以外では動かない。
 
 ### 商品行のロック順（FREQ-364）
 
-注文確定と在庫復元は同じ商品行を触る。ロックを取る順が食い違うと、同時に走ったときデッドロックになり、Postgres が1秒後（`deadlock_timeout`）に片方を打ち切る。打ち切られたのが画面からの注文確定なら、支払い済みの客に注文失敗が表示される。
+受付・入金済みにする処理・在庫の戻しは同じバリアントを触る。ロックを取る順が食い違うと、同時に走ったときデッドロックになり、Postgres が1秒後（`deadlock_timeout`）に片方を打ち切る。打ち切られた側は一時的な失敗（40P01）になり、完了 API なら 503 を返し、webhook なら worker が再試行する。
 
-| 処理                       | ロックの取り方                                                                                                                                               |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 注文確定（在庫検証ループ） | `order by 1`（item_id の昇順）で1行ずつ `FOR UPDATE`。減算の UPDATE はこの時点で全行ロック済みなので順序を問わない                                           |
-| 在庫復元                   | 在庫を戻す UPDATE の前に、その注文の商品行を `order by i.id ... for update` でまとめてロックする。在庫数が空の商品も含めて、注文確定と同じ集合・同じ順にする |
+| 処理 | ロックの取り方 |
+| --- | --- |
+| 受付（`place_order_from_checkout_draft`） | 商品行を id の昇順で `FOR KEY SHARE`、続けてバリアントを id の昇順で `FOR UPDATE`。`FOR KEY SHARE` はカートの数量変更・商品の非公開とは衝突せず、削除とだけ衝突する（R-42） |
+| 入金済みにする（`mark_order_paid`）・在庫を戻す（`release_stock_for_unpaid_order`） | 商品行はロックしない（FREQ-401）。バリアントを id の昇順で `FOR UPDATE` |
 
 修正前のローカル DB での実測（同じ6商品、id 昇順は 42〜47）。
 
@@ -219,12 +213,11 @@ Supabase clientの`{ error }`を見逃すと、入金済み注文を`pending`の
 | 注文確定の在庫検証ループ | 45, 44, 42, 46, 43, 47（ハッシュ集約の出力順。商品の組み合わせごとに変わる） |
 | 在庫復元の UPDATE        | その時点のテーブルの物理順（行を更新するたびに変わる）                       |
 
-検証は次の2本で行う。
+検証は次の1本で行う。
 
-| テスト                                                     | 実行方法                                                                                                                                                                                         |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `tests/unit/migrations/item-lock-order.test.ts`            | `npm test`。順序の指定が消えていないことを SQL で確認する                                                                                                                                        |
-| `tests/integration/db/item_lock_order.integration.test.ts` | ローカル Supabase に対して `DATABASE_URL=... npx jest tests/integration/db/item_lock_order`。k 番目の商品行を別セッションで塞ぎ、k より小さい行だけがロック済みであることを全 k について確認する |
+| テスト | 実行方法 |
+| --- | --- |
+| `tests/integration/db/item_lock_order.integration.test.ts` | ローカル Supabase に対して `DATABASE_URL=... npx jest tests/integration/db/item_lock_order`。k 番目の商品行を別セッションで塞ぎ、受付が k より小さい行だけをロック済みにしていることを全 k について確かめる（`FOR KEY SHARE` も `FOR UPDATE NOWAIT` とは衝突する）。在庫の戻しは全商品行を塞いでも待たずに終わる |
 
 ### 在庫の単位を色 × サイズにする 第1段（FREQ-398）
 
@@ -267,13 +260,14 @@ items（id 昇順）→ item_variants（id 昇順）。注文確定と在庫戻�
 
 ### 在庫復元の遷移先（FREQ-383）
 
-`release_stock_for_unpaid_order(_payment_intent_id, _next_status default 'failed')` は、pending の注文を `_next_status` へ移してから在庫を戻す。移せる先は `failed` と `cancelled` だけにする。それ以外の値と NULL は、行ロックを取る前に `INVALID_NEXT_STATUS`（SQLSTATE 22023 invalid_parameter_value）で失敗させる。
+在庫を戻す RPC `release_stock_for_unpaid_order` は、注文 ID（`_order_id`）で引いた注文を、今の状態（`_expected_status`。支払い手続き中か入金待ち）を条件に `_next_status` へ移し、確保した分だけ在庫を戻す（R-41）。移せる先は `failed`・`abandoned`（支払い手続き中からだけ）・`cancelled`（実行者と取消の理由が必須）だけにする。行き先は省けない。それ以外の値と NULL は、行ロックを取る前に `INVALID_NEXT_STATUS`（SQLSTATE 22023 invalid_parameter_value）で失敗させる。
 
-| 呼び出し元                                                                                                        | 渡す遷移先       |
-| ----------------------------------------------------------------------------------------------------------------- | ---------------- |
-| webhook（`checkout.session.async_payment_failed` / `checkout.session.expired` / `payment_intent.payment_failed`） | 省略（`failed`） |
-| 掃除ジョブ（`/api/cron/expire-pending-orders`）                                                                   | 省略（`failed`） |
-| 管理画面での pending 注文のキャンセル                                                                             | `cancelled`      |
+| 呼び出し元 | 渡す行き先 |
+| --- | --- |
+| 照合関数（払込票の期限切れ。PaymentIntent が `requires_payment_method`・`canceled`） | `failed` |
+| 照合関数（決済画面の失効。Checkout Session が `expired`） | `abandoned` |
+| 照合関数（管理画面の未入金の注文の取消） | `cancelled` |
+| `resolve_payment_exception`（要対応の「注文を取り消して解決」） | `cancelled` |
 
 以前はどの値でも通った。呼び出し側を誤ると次が起き、どれもエラーにならないので気づけなかった（修正前のローカル DB での実測。在庫 5 の商品を 2 個含む注文）。
 
@@ -284,12 +278,11 @@ items（id 昇順）→ item_variants（id 昇順）。注文確定と在庫戻�
 
 検査には `ASSERT` を使わない。`plpgsql.check_asserts` で無効にでき、PostgreSQL は通常のエラーに `RAISE` を使うよう定めているため。
 
-検証は次の2本で行う。
+検証は次の1本で行う。
 
-| テスト                                                               | 実行方法                                                                                                                                                                                                               |
-| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tests/unit/migrations/restrict-release-stock-next-status.test.ts`   | `npm test`。検査が行ロックより前にあること、検査以外が前回の定義と同じことを SQL で確認する                                                                                                                            |
-| `tests/integration/db/release_stock_next_status.integration.test.ts` | ローカル Supabase に対して `DATABASE_URL=... npx jest tests/integration/db/release_stock_next_status`。許可しない値では注文・在庫・改訂履歴が変わらないこと、failed / cancelled では今まで通り在庫が戻ることを確認する |
+| テスト | 実行方法 |
+| --- | --- |
+| `tests/integration/db/release_stock_by_order.integration.test.ts` | ローカル Supabase に対して `DATABASE_URL=... npx jest tests/integration/db/release_stock_by_order`。許可しない行き先（`pending`・`paid`・`shipped`・`payment_in_progress`・NULL）では注文も在庫も変わらないこと、入金待ちからは放棄にできないこと、取消には実行者と理由が要ること、確保した分だけ戻すことを確かめる |
 
 ### 決済セッション ID の書き戻し（FREQ-397）
 
@@ -346,7 +339,7 @@ sequenceDiagram
 | `expired`                              | 下書きID・セッションID・fingerprint・`created`をすべて照合して退役する。更新0件なら500で停止し、成功時だけ新しい下書きをclaimする |
 | 取得失敗、`resource_missing`、未知状態 | 未入金と推定せず500を返し、新規Sessionを作らない                                              |
 
-Stripe作成には`checkout-session:create:v1:<draft ID>`を冪等キー、下書きIDを`client_reference_id`として渡す。同じキーのパラメータが変わらないよう、明細・metadata・メール・戻り先はすべてclaim済み下書きから組み立てる。Session IDの書き戻しは`attach_checkout_session_to_draft`で行い、未設定または同じIDだけを受け入れる。
+Stripe作成には`checkout-session:create:v1:<draft ID>:<expires_at>`を冪等キー、下書きIDを`client_reference_id`として渡す。`<expires_at>` は決済画面の失効時刻（UNIX 秒。作成から30分30秒後）で、`reserve_checkout_session_expiry` が下書きに保存し、15秒以内の再送には同じ値を返す（それより後は決め直す。FREQ-407）。同じキーのパラメータが変わらないよう、明細・metadata・メール・戻り先・失効時刻はすべてclaim済み下書きから組み立てる。Session IDの書き戻しは`attach_checkout_session_to_draft`で行い、未設定または同じIDだけを受け入れる。
 
 別IDとのCAS競合が確定した場合は、後発Sessionが`open`と確認できたときだけ、Session IDを含む別の冪等キーで失効する。RPC通信エラーは書き込み結果が不明なのでSessionを失効せず、再送で同じStripe冪等キーと下書きを回収する。
 
@@ -386,7 +379,7 @@ draft の配送先（`shipping_snapshot`）を書き換える経路は2つに絞
 | --------------------------------------------------------------------------- | --------------------------------------------------------------- |
 | `tests/unit/api/checkout/update-shipping-route.test.ts`                     | 版の照合、409、不正な版番号の拒否                               |
 | `tests/unit/api/checkout/create-session-route.test.ts`                      | 再利用時に既存の住所を上書きしないこと、空の draft を埋めること |
-| `tests/unit/api/checkout/complete-route.test.ts`                            | 配送先の欠落を監査ログに残しつつ注文は作ること                  |
+| `tests/unit/lib/stripe/checkout-payment-reconciler.test.ts` | 配送先の欠落を監査ログ（`Checkout draft shipping snapshot is incomplete`）に残しつつ注文は作ること。完了 API と webhook はどちらも照合関数の受付の予備処理を通る |
 | `tests/integration/db/checkout_draft_shipping_revision.integration.test.ts` | 実 DB で古い書き込みが弾かれること、同時でも片方だけが勝つこと  |
 | `e2e/FR-CHECKOUT-027-shipping-sync-before-confirm.spec.ts`                  | 確定直前に必ず同期すること、拒否されたら決済へ進まないこと      |
 
@@ -560,23 +553,23 @@ Stripe はイベントの配信順を保証しない。`payment_intent.succeeded
 
 ### 合計が 0 になる割引は受け付けない（FREQ-389）
 
-Stripe 公式（無料の注文）に「無料注文のフルフィルメントを行うには、PaymentIntent イベントではなく、`checkout.session.completed` イベントを処理してください。**支払いのない完了済みの Checkout セッションでは PaymentIntent の関連付けが行われません**」とある。この店の注文の冪等キーは `orders.payment_intent_id` なので、PaymentIntent が無いと注文を一意にできない。
+Stripe 公式（無料の注文）に「無料注文のフルフィルメントを行うには、PaymentIntent イベントではなく、`checkout.session.completed` イベントを処理してください。**支払いのない完了済みの Checkout セッションでは PaymentIntent の関連付けが行われません**」とある。注文の冪等キーはグループ A で `orders.checkout_session_id`（`orders_checkout_session_id_key`）に移し、`orders.payment_intent_id` は空を許すようにしたので、PaymentIntent が無くても注文は一意にできる。それでも合計が 0 の注文は受け付けない（FREQ-389 の方針のまま。設計書 3-2 の判定表の「0円で完了」の行）。
 
-- `amount_total` が 0 のセッションは、注文を作らず 400（`Zero-amount checkout is not supported`）を返し、監査ログに残す
-- webhook も同じ判定・同じ文言で記録する（FREQ-397）。以前は「payment_intent が無い」としか残らず、本番のログで Stripe 側の不具合と区別がつかなかった。判定と文言は `isZeroAmountCheckoutSession` / `ZERO_AMOUNT_CHECKOUT_AUDIT_DETAIL` に1つだけ置く
+- 完了 API は、`amount_total` が 0 のセッションでは照合関数を呼ばずに 400（`Zero-amount checkout is not supported`）を返し、監査ログ（`checkout.complete`）に `Zero-amount checkout session is not supported` と値引額を残す
+- webhook の経路は照合関数を通る。Stripe の状態は `zero_amount_complete`（Session が `complete` かつ `no_payment_required`）で、注文が無ければ記録だけにし、監査ログ（`checkout.payment.reconcile`）に `ok:record_only:zero_amount` を残してイベントを処理済みにする。値引額は記録しない（Stripe の Checkout Session に残る）。文言は完了 API と違うが、「payment_intent が無い」とは区別できる（FREQ-397 の「同じ文言」は FREQ-409 で置き換えた）
 - 「PaymentIntent が無い」で弾くと理由が読めないため、こちらを先に判定する
 - 運用上は、合計が 0 になるクーポン（100%割引・合計以上の割引）を Stripe 側で作らない
-- 支えるなら、注文の冪等キーを `checkout_session_id` へ広げ、`payment_intent_id` を null 可にする改修が要る
+- 受付 RPC（`place_order_from_checkout_draft`）も合計が 0 以下なら `zero_amount` で断る。0円の注文を受け付けるなら、この判定・完了 API の判定・判定表の「0円で完了」の行を変える
 
 ### 商品が引けないときの注文確定（FREQ-387）
 
-管理画面の商品削除は実削除で、カートや checkout draft は止めない（注文済みの商品は注文明細の外部キーが守る）。削除された商品を含む draft で注文確定を呼ぶと、以前は次の順で落ちていた。
+管理画面の商品削除は実削除。注文の明細・在庫の記録・受付の済んでいない開いている決済（24時間以内の下書き）のある商品は、削除させずに理由付きの409を返し、非公開へ促す（FREQ-414。`item_delete_blockers`）。カートとそれより古い下書きは削除を止めないので、削除された商品を含む下書きは残りうる。削除された商品を含む draft で注文確定を呼ぶと、以前は次の順で落ちていた。
 
 1. 商品を1件ずつ `SELECT ... INTO` で引く。行が無いので `item_status` は NULL、`FOUND` は false（PostgreSQL 公式の動作）
 2. `item_status <> 'published'` は NULL との比較で NULL になり、条件が成立せず公開判定を素通りする
 3. 注文明細の INSERT が外部キー違反（23503）で落ちる。支払いは済んでいるので、客には理由の分からない失敗が返る
 
-いまは `IF NOT FOUND OR item_status IS DISTINCT FROM 'published'` で、行が無いときも非公開と同じ `ITEM_NOT_PUBLISHED` で止める。アプリはこのエラーを 409「非公開商品が含まれているため、購入手続きを完了できませんでした。」に変換する。検証は `tests/unit/migrations/reject-missing-item-on-finalize.test.ts` と `tests/integration/db/finalize_missing_item.integration.test.ts`。
+いまは受付 RPC `place_order_from_checkout_draft` が商品を `LEFT JOIN` で引き、行が無い商品も非公開と同じ `item_unavailable` で断る（注文を作らない）。支払いの後なら照合関数が要対応（`order_not_creatable`、詳細 `item_unavailable`）として記録して店へ知らせ、お客様には受付を通らない支払いの案内を1回送る。完了 API は 409 を返す。検証は `tests/integration/db/place_order_from_checkout_draft.integration.test.ts` の「非公開の商品と存在しない商品は item_unavailable」。
 
 ### 注文メールは1注文・1種類につき1通（FREQ-386）
 
@@ -685,9 +678,9 @@ Stripe は「同じイベントを複数回受信する可能性」と「配信�
 決済手段の動的化（FREQ-356）により、決済手段の追加は Stripe ダッシュボードの操作だけで反映される。時間差決済（コンビニ払い・銀行振込など、入金確定が即時でない方式）を有効化する場合は次を確認する。
 
 1. その方式の入金確定が `checkout.session.async_payment_succeeded` で通知されるか（Stripe のドキュメントで「delayed notification」に分類されるか）を確認する
-2. 支払期限を指定できる方式なら `payment_method_options` に設定する（コンビニは `expires_after_days` に `KONBINI_PAYMENT_DAYS`（7日。`src/lib/constants/konbini.ts`）を設定済み。/legal の表記も同じ定数を読む。FREQ-106・R-57）。指定できない方式は Checkout Session をアプリ側で強制終了できない場合があるため、失効・返金・長期保留の運用を決めてから有効化する。`PENDING_ORDER_EXPIRY_DAYS` は再照合を始める閾値であり、支払期限ではない
+2. 支払期限を指定できる方式なら `payment_method_options` に設定する（コンビニは `expires_after_days` に `KONBINI_PAYMENT_DAYS`（7日。`src/lib/constants/konbini.ts`）を設定済み。/legal の表記も同じ定数を読む。FREQ-106・R-57）。指定できない方式は Checkout Session をアプリ側で強制終了できない場合があるため、失効・返金・長期保留の運用を決めてから有効化する。
 3. その方式が Customer を要求するか確認する（`customer_creation: if_required` の既定で足りるか）
-4. テストモードで「確定 → `pending` 注文と在庫減 → `async_payment_failed` で在庫復元 → `async_payment_succeeded` で `paid` と確認メール」を一巡させる
+4. テストモードで「確定 → 支払い手続き中（`payment_in_progress`）の注文と在庫の確保 → 払込票の発行で入金待ち（Stripe の状態は `awaiting_payment`、注文の状態の値は `pending`）→ `async_payment_succeeded` で `paid` と入金確認のメール、または払込期限切れ（`async_payment_failed`）で `failed` と在庫の戻し・お支払い期限切れのお知らせ」を一巡させる。どの経路（Webhook・完了 API・見回り）でも、状態は照合関数が Stripe の現在値で決める
 5. 返金の可否と手数料の扱いを確認する（返金非対応の方式がある）
 6. 確認画面と注文詳細の表示名を確認する。`mapPaymentMethodLabel` に無い方式は Stripe の種別名（例: `alipay`）がそのまま表示されるので、必要なら表示名を追加する（FREQ-371）
 
@@ -695,27 +688,25 @@ Link を独立した支払手段として有効化する、または Express Che
 
 `e2e/FR-CHECKOUT-025-stripe-csp-guard.spec.ts` の PayPay の検証は、PayPay が選ばれたこと（決済フォームの項目の `aria-expanded="true"`）を確かめてから観測する（`e2e/checkout-test-utils.ts` の `selectPaymentMethod`）。以前は画面外の決済フォームを押して選べないまま観測しており、mobile と desktop では PayPay を選ばずに通っていた。
 
-### 掃除ジョブの環境変数
+### 照合の見回りと環境変数（FREQ-407）
 
-既定日数を超えた `pending` 注文を日次で Stripe と再照合する `POST /api/cron/expire-pending-orders` は次の環境変数を使う。pg_net は POST リクエストのみ発行できるため POST となる。
+`POST /api/cron/expire-pending-orders` は照合の見回り。pg_cron が毎時0分（`0 * * * *`）に呼ぶ。pg_net は POST リクエストのみ発行できるため POST となる。
 
-| 環境変数                    | 用途                                                                                                           |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `CRON_SECRET`               | 掃除ジョブ呼び出しの認証に使う `Authorization: Bearer <CRON_SECRET>` の照合値。不一致は 401                    |
-| `PENDING_ORDER_EXPIRY_DAYS` | `pending` 注文を Stripe と再照合し始めるまでの日数（既定 5。5未満を指定しても5に底上げする）。支払期限ではない |
+| 項目 | 内容 |
+| --- | --- |
+| 対象 | 決済画面を開いてから30分を超えた支払い手続き中（`payment_in_progress`）の注文と、入金待ち（`pending`）の注文 |
+| 1回の上限 | 50件・45秒（`MAX_ORDERS_PER_RUN`・`TIME_BUDGET_MS`）。残りは次の回に回す |
+| 決済画面の失効 | 開いてから30分を超えてまだ開いている Checkout Session を失効させる（`expireOpenCheckoutSession`）。Webhook が届かなくても、放棄された決済の在庫は最長90分で戻る |
+| 判定 | 照合関数（`reconcileCheckoutPayment`）が Stripe の Session と PaymentIntent の現在値だけで決める。アプリ独自の日数で入金待ちを打ち切らない |
+| 店への要対応メール | 送れていない分を1回20件まで送り直す（`listUnsentShopAlerts`） |
 
-Checkout Session が所有する PaymentIntent は直接 cancel しない。Stripe の現状態を検証し、次の状態遷移だけを許可する。在庫復元と注文状態の変更は `release_stock_for_unpaid_order` で原子的に行う。
+| 環境変数 | 用途 |
+| --- | --- |
+| `CRON_SECRET` | 見回りの呼び出しの認証に使う `Authorization: Bearer <CRON_SECRET>` の照合値。不一致は 401 |
 
-| Stripe の状態                                                                               | 処理                                                                                                         |
-| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| PaymentIntent `succeeded`                                                                   | 注文を `paid` に救済し、在庫を戻さない                                                                       |
-| PaymentIntent `processing`                                                                  | 注文と在庫を維持し、次回再照合する                                                                           |
-| PaymentIntent `canceled`                                                                    | 未払い終了状態として在庫復元 RPC を呼ぶ                                                                      |
-| Checkout Session `open` かつ `unpaid`                                                       | Session を冪等に expire し、応答または再取得で `expired` かつ `unpaid` を確認した場合だけ在庫復元 RPC を呼ぶ |
-| Checkout Session `expired` かつ `unpaid`                                                    | 在庫復元 RPC を呼ぶ                                                                                          |
-| Checkout Session `complete`、支払い済み、PaymentIntent との関連付け不一致、または再検証不能 | 注文と在庫を維持し、監査ログを失敗として残す                                                                 |
+`PENDING_ORDER_EXPIRY_DAYS` は廃止した。入金待ちは Stripe が払込票の期限切れを確定したときだけ失敗にするので、日数の下限（FREQ-388 の5日）も要らない。FREQ-388 は FREQ-407 で置き換えた。
 
-下限を5日にする理由（FREQ-388）。Stripe は「保留中のコンビニ決済は、指定された日付の深夜直前 (23:59:59) に有効期限が切れます」と定めている。`expires_after_days: 3` で 0:00 に確定した払込票は、約4日（3日23時間59分）支払える。さらに「期限が切れる前に有効な払込取扱票を発行した場合には、`expires_at` の後でもレジで決済を『完了』できます」とあり、期限ちょうどで打ち切ると支払い中の客とぶつかる（Stripe 側でも、支払い中のキャンセル要求は失敗する）。日本時間と UTC の9時間差も踏まえ、1日以上の余裕を取る。
+Checkout Session が所有する PaymentIntent は直接 cancel しない。Stripe の状態ごとの行動は判定表（`src/lib/stripe/checkout-payment-decision.ts`。設計書 3-2）にだけ置き、注文と在庫は照合関数が今の状態を条件にした RPC（`mark_order_paid`・`mark_order_awaiting_payment`・`release_stock_for_unpaid_order`）で変える。
 
 呼ぶ側（pg_net）と呼ばれる側（ルート）の時間の関係も合わせる。
 
@@ -725,9 +716,9 @@ Checkout Session が所有する PaymentIntent は直接 cancel しない。Stri
 | `src/app/api/cron/expire-pending-orders/route.ts`     | `maxDuration = 60`（秒）        | ルートの実行上限                                 |
 | 同上                                                  | `TIME_BUDGET_MS = 45_000`       | ルートが自分で処理を打ち切り、監査ログを残す時刻 |
 
-pg_net の待ち時間を短くすると、ルートがまだ働いている最中に呼ぶ側が諦める。`cron.job_run_details` と `net._http_response` にはタイムアウトだけが残り、運用からは「毎晩失敗している」としか見えない（実際は片付いている）。`timeout_milliseconds` は `maxDuration` 以上にする。この関係は `tests/unit/migrations/schedule-expire-pending-orders.test.ts` が両方のファイルを読んで確かめる。
+pg_net の待ち時間を短くすると、ルートがまだ働いている最中に呼ぶ側が諦める。`cron.job_run_details` と `net._http_response` にはタイムアウトだけが残り、運用からは「毎回失敗している」としか見えない（実際は片付いている）。`timeout_milliseconds` は `maxDuration` 以上にする。この関係は `tests/unit/migrations/schedule-expire-pending-orders.test.ts` が両方のファイルを読んで確かめる。
 
-1回に処理する注文は最大50件とする。`pending` の候補件数から50件単位の範囲を求め、`created_at, id` の安定順序で UTC 日ごとに範囲を巡回する。これにより、長期保留する `complete` / `unpaid` 注文が先頭50件を占めても後続注文を再照合できる。count と一覧取得の間に状態が変わって選択範囲が空になった場合は、その実行だけ先頭範囲へ戻す。監査メタデータに `candidateCount` と `batchOffset` を残す。
+1回に処理する注文は最大50件とする。候補（開いてから30分を超えた支払い手続き中と、入金待ち）の件数から50件単位の範囲を求め、`created_at, id` の安定順序で時間ごとに範囲を巡回する（`resolveHourlyBatchOffset`）。これにより、払込期限まで残る入金待ちの注文が先頭50件を占めても、後続の注文を照合できる。count と一覧取得の間に状態が変わって選択範囲が空になった場合は、その実行だけ先頭範囲へ戻す。監査メタデータに `candidateCount` と `batchOffset` を残す。
 
 ### 認証失敗の記録と監視（FREQ-370）
 
@@ -738,7 +729,7 @@ pg_net の待ち時間を短くすると、ルートがまだ働いている最�
 | Authorization ヘッダが無い・一致しない | 401  | アプリのログだけ（ヘッダの値は出さない）                                |
 | `CRON_SECRET` 未設定（設定ミス）       | 401  | アプリのログと監査ログ。監査ログは IP に依らない共通の枠で10分に1回まで |
 
-「ジョブがそもそも呼ばれていない」「401 で失敗している」は、DB 側の記録で確認する。pg_net の応答は既定で6時間だけ `net._http_response` に残るので、実行時刻（04:00 UTC）から6時間以内に見る。
+「ジョブがそもそも呼ばれていない」「401 で失敗している」は、DB 側の記録で確認する。pg_net の応答は既定で6時間だけ `net._http_response` に残るので、見たい実行の時刻から6時間以内に見る（毎時0分に実行する）。
 
 ```sql
 -- ジョブの実行結果（Vault の秘密が欠けていれば failed と理由が残る。FREQ-368）
@@ -757,13 +748,13 @@ limit 20;
 
 ### pg_cron 登録
 
-掃除ジョブを日次実行するための pg_cron + pg_net 登録 SQL は、本番の公開時まで `supabase/pending/schedule_expire_pending_orders.sql` に保留している（`supabase/migrations/` に置くと CI の `db push` が本番へ流すため。FREQ-380）。入れるときは新しい version で `supabase/migrations/` へ移す（[supabase/pending/README.md](../../../supabase/pending/README.md)）。
+照合の見回りを毎時実行するための pg_cron + pg_net 登録 SQL は、本番の公開時まで `supabase/pending/schedule_expire_pending_orders.sql` に保留している（`supabase/migrations/` に置くと CI の `db push` が本番へ流すため。FREQ-380）。入れるときは新しい version で `supabase/migrations/` へ移す（[supabase/pending/README.md](../../../supabase/pending/README.md)）。
 
 ### 本番デプロイの前提条件（レビュー指摘 I8）
 
 決済手段の動的化と在庫復元の機能を本番へ入れる際は、次の順序で確認・実施する。どれか1つでも欠けると、機能の一部または全部が「エラーは出ないが動いていない」状態になる。
 
-1. **Stripe Webhook エンドポイントの購読イベントを確認する。** `checkout.session.expired` / `checkout.session.async_payment_failed` / `checkout.session.async_payment_succeeded` / `payment_intent.payment_failed` の4つが Stripe ダッシュボードのエンドポイント設定で有効になっていること。これが漏れていると webhook 側の在庫復元・入金確認は一切発火せず、日次の掃除ジョブだけが唯一の在庫復元経路になる（サイレントな機能欠落）。
+1. **Stripe Webhook エンドポイントの購読イベントを確認する。** `checkout.session.completed` / `checkout.session.async_payment_succeeded` / `checkout.session.async_payment_failed` / `checkout.session.expired` / `payment_intent.succeeded` / `payment_intent.payment_failed` の6つが Stripe ダッシュボードのエンドポイント設定で有効になっていること（照合関数へ渡すイベント。`src/lib/stripe/webhook-processor.ts` の `processStripeWebhookEvent`）。これが漏れていると webhook 側の照合は一切発火せず、毎時の見回りだけが注文と在庫を合わせる経路になる（サイレントな機能欠落）。
 2. **`CRON_SECRET` を本番環境変数に設定し、Vault にも登録する。** `supabase/pending/schedule_expire_pending_orders.sql`（pg_cron 登録マイグレーション。公開時に新しい version で適用する）は Vault に秘密が無くても適用できるが、秘密が揃うまでジョブは毎回失敗する（FREQ-368）。失敗は `cron.job_run_details` に status=failed と理由が残り、認証ヘッダの無い要求は送られない。適用後に次を確認する。
 
    ```sql
@@ -773,8 +764,8 @@ limit 20;
    order by start_time desc limit 5;
    ```
 
-3. **バリアント在庫の6本は 2026-09-19 に本番へ適用済み（`20260919065336`〜`20260919065518`。FREQ-380）。** `finalize_order_from_checkout_draft` を再定義せず、`REVOKE` も `item_variants` に閉じているため本機能と衝突しない。ただし `items.stock_quantity`（本機能が使う在庫）と `item_variants.stock_quantity`（バリアント側の在庫台帳）は別々に存在し、互いに整合を取る仕組みはない。アプリをバリアント在庫へ切り替えるときに在庫を入れ直す。`order_items.item_id` は同じ適用で bigint になった（`items.id` と同じ型）。
-4. **マイグレーションをアプリのデプロイより先に適用する。** `release_stock_for_unpaid_order` RPC が存在しない状態でアプリをデプロイすると、webhook の該当ハンドラは例外を投げて 500 を返す（Stripe は再送するため在庫はサイレントには失われないが、再送枠を消費する）。逆に、アプリを先にデプロイしてマイグレーションを後回しにする理由はないため、常に「マイグレーション適用 → アプリデプロイ」の順を守る。
+3. **在庫は色 × サイズ（`item_variants`）と在庫台帳（`stock_movements`）だけで動く。** バリアント在庫の6本（`20260919065336`〜`20260919065518`。FREQ-380）は 2026-09-19 に本番へ適用済み。`items.stock_quantity` は FREQ-401 で廃止し、受付（`place_order_from_checkout_draft`）と在庫の戻し（`release_stock_for_unpaid_order`）は在庫台帳だけを動かす。`order_items.item_id` は同じ適用で bigint になった（`items.id` と同じ型）。
+4. **マイグレーションをアプリのデプロイより先に適用する。** 照合関数が呼ぶ RPC（`place_order_from_checkout_draft`・`mark_order_paid`・`mark_order_awaiting_payment`・`release_stock_for_unpaid_order`・`record_payment_exception` など）が無い状態でアプリをデプロイすると、決済系の webhook イベントはすべて worker で失敗して再試行になり、完了 API と見回りも失敗する。逆にする理由はないため、常に「マイグレーション適用 → アプリデプロイ」の順を守る。
 
 ### 在庫は色 × サイズだけ（FREQ-401）
 

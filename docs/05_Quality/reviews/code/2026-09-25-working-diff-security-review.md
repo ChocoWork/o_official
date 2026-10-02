@@ -434,7 +434,7 @@
 
 | 順 | グループ | 指摘ID | 状態 |
 | --- | --- | --- | --- |
-| 1 | A 支払状態を Stripe の現在値に合わせる | R-01, R-02, R-04, R-18, R-25（Webhook 側）, R-41, R-42, R-43, R-44（①の削除の案内と同じ箇所のため 2026-09-25 に移した）, R-57（create-session の同じ箇所を直すため 2026-09-27 に加えた） | 実装計画のレビュー待ち（[設計書](../../../superpowers/specs/2026-09-26-order-payment-reconciliation-design.md)は 2026-09-27 承認、[実装計画](../../../superpowers/plans/2026-09-27-order-payment-reconciliation.md)） |
+| 1 | A 支払状態を Stripe の現在値に合わせる | R-01, R-02, R-04, R-18, R-25（Webhook 側）, R-41, R-42, R-43, R-44（①の削除の案内と同じ箇所のため 2026-09-25 に移した）, R-57（create-session の同じ箇所を直すため 2026-09-27 に加えた） | 実装済み・push 待ち（[設計書](../../../superpowers/specs/2026-09-26-order-payment-reconciliation-design.md)、[実装計画](../../../superpowers/plans/2026-09-27-order-payment-reconciliation.md)。本番へ当てる前の確認は下の「グループ A を本番へ当てる前の確認」） |
 | 2 | F 支払いを「注文する」で実行する | R-56, X-3, 在庫を注文確定時に確保する要望 | 未着手 |
 | 3 | B キューと worker の運用基盤 | R-07, R-33, R-32, R-05, R-35, R-55, X-4 | 未着手 |
 | 4 | C 注文確定RPC（finalize）の整合 | R-24, R-26（R-42 は同じ箇所を直す A へ移した） | 未着手 |
@@ -466,6 +466,43 @@
 - 実装計画の後の決定（2026-09-27）:
   - コンビニ払いの期限は7日。Stripe・KOMOJU の既定値と ZOZOTOWN・Amazon は3日、BASE は5日、楽天市場は7日。OWASP OAT-021 にも特定商取引法にも日数の基準は無い。受注生産が中心で在庫を押さえる害が小さいため、よく使われる範囲の上限にする（R-57）。
   - 削除できない商品の削除ボタンは常に出し、押した時点で理由と非公開への誘導を出す（無効化・非表示にしない。R-44）。
+
+### グループ A を本番へ当てる前の確認
+
+マイグレーション9本（`20260927100000`〜`20260927100800`）は、master へ push すると CI（`.github/workflows/db-migrations.yml`）が本番へ当てる。本番へは Supabase MCP で読むだけにする（`execute_sql` は SELECT のみ、`get_advisors`）。
+
+| 時点 | 読むもの | 期待 |
+| --- | --- | --- |
+| push の直前 | `select checkout_session_id, count(*) from public.orders where checkout_session_id is not null group by 1 having count(*) > 1;` | 0行（`orders_checkout_session_id_key` を作れる） |
+| push の直前 | `select count(*) from public.orders where status = 'pending' and checkout_session_id is null;` | 2（2026-03-20 の移行前の未入金。2でなければ push せず、件数と作成日時をユーザーに知らせる） |
+| 当てた後（照合・見回りを流す前） | `select count(*) from private.order_emails as e join public.orders as o on o.id = e.order_id where o.status = 'pending' and o.checkout_session_id is null;` | 8（移行前の2件 × お客様向けメール4種。`20260927100500_payment_exceptions.sql` の `private.suppress_legacy_unpaid_order_emails()` が送信済みとして登録する。照合を流すと2件は入金待ちでなくなりうるので、その前に読む） |
+| 当てた後 | `select enumlabel from pg_enum where enumtypid = 'public.order_status'::regtype order by enumsortorder;` | 7行（`payment_in_progress`・`pending`・`paid`・`failed`・`abandoned`・`cancelled`・`shipped`） |
+| 当てた後 | `select conname from pg_constraint where conrelid = 'public.orders'::regclass and conname = 'orders_checkout_session_id_key';` | 1行 |
+| 当てた後 | 下の関数の権限の SELECT | 14行。どれも `anon`・`authenticated` が false、`service_role` が true（古い定義が残っていれば行が増える） |
+| 当てた後 | `select c.relrowsecurity, p.policyname, p.permissive, p.roles from pg_class as c left join pg_policies as p on p.schemaname = 'public' and p.tablename = c.relname where c.oid = 'public.payment_exceptions'::regclass;` | 1行（true・`deny direct client access`・`RESTRICTIVE`・`{anon,authenticated}`） |
+| 当てた後 | `get_advisors`（security） | 新しい警告が0件 |
+
+```sql
+select p.proname,
+       has_function_privilege('anon', p.oid, 'EXECUTE') as anon,
+       has_function_privilege('authenticated', p.oid, 'EXECUTE') as authenticated,
+       has_function_privilege('service_role', p.oid, 'EXECUTE') as service_role
+from pg_proc as p
+join pg_namespace as n on n.oid = p.pronamespace
+where n.nspname = 'public'
+  and p.proname in (
+    'place_order_from_checkout_draft', 'mark_order_paid', 'mark_order_awaiting_payment',
+    'release_stock_for_unpaid_order', 'record_payment_exception', 'claim_payment_exception_notification',
+    'release_payment_exception_notification', 'resolve_payment_exception', 'mark_order_reviewed',
+    'admin_cancel_failed_order', 'admin_ship_paid_order', 'reserve_checkout_session_expiry',
+    'find_open_checkout_sessions_for_item', 'item_delete_blockers'
+  )
+order by p.proname;
+```
+
+- 本番の環境変数に `SHOP_ALERT_EMAIL` を足す（未設定なら店への要対応メールを送らず、毎時の見回りが送り直す）
+- 保留中の SQL（見回りの毎時の登録 `supabase/pending/schedule_expire_pending_orders.sql`・R-04 の第2段階 `supabase/pending/harden_order_state_transitions.sql`）は、今までどおり明示の承認を得てから当てる
+- 公開前に照合を1回流し、移行前の未入金2件の結果を確かめる（設計書 7-1）
 
 ## 追加レビュー（2回目・Claude Code）
 
