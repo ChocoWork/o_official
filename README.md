@@ -57,7 +57,7 @@ Supabase クライアントの配置
 
 コンビニ払い・銀行振込のような時間差決済では、注文が成立してから入金までに数日空く。その間、在庫は確保済みとして引かれている。入金されないまま期限切れになった注文は、誰かが「失敗」にして在庫を戻さないと、売れていない商品の在庫が減ったままになる。
 
-大半は Stripe からの webhook で処理されるが、通知が届かなかった取りこぼしが残る。それを毎時0分に照合し直すのが、このジョブ。決済画面を開いてから30分を超えてまだ開いている決済は、ここで失効させる（在庫は最長90分で戻る）。
+大半は Stripe からの webhook で処理されるが、通知が届かなかった取りこぼしが残る。それを毎時0分に照合し直すのが、このジョブ。支払いの前に注文を作る受付 API（グループ F）が入った後は、決済画面を開いてから30分を超えてまだ開いている決済をここで失効させ、放棄された決済の在庫は Webhook が届かなくても最長90分で戻る。今は注文を支払いの後に作るので、放棄された決済は在庫を押さえない。
 
 ```text
 毎時0分
@@ -146,10 +146,13 @@ select vault.create_secret('http://localhost:3000', 'app_base_url');
 npx supabase migration list --local   # ファイルと DB の適用状況を確認
 ```
 
-DB 結合テスト（`tests/integration/db/*.integration.test.ts`）は `DATABASE_URL` を渡したときだけ動く。試験用の注文や auth ユーザーを作るため、localhost 以外の接続先では動かないようにしてある。
+DB 結合テスト（`tests/integration/db/*.integration.test.ts`）は `DATABASE_URL` を渡したときだけ動く。試験用の注文や auth ユーザーを作るため、localhost 以外の接続先では動かないようにしてある。PostgREST を通すテスト（`reconciler_postgrest`）は、ローカル Supabase の API の URL とサービスロールキー（`LOCAL_SUPABASE_URL`・`LOCAL_SUPABASE_SERVICE_ROLE_KEY`）も渡したときだけ動く。渡さないと、そのテストだけがエラーも出さずにスキップされる。ファイルどうしが同じローカル DB を共有するので、ディレクトリ全体を流すときは `--runInBand` を付ける。
 
 ```bash
-DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npx jest tests/integration/db
+eval "$(npx supabase status -o env | grep -E '^(API_URL|SERVICE_ROLE_KEY)=')"
+DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
+LOCAL_SUPABASE_URL="$API_URL" LOCAL_SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" \
+  npx jest tests/integration/db --runInBand
 ```
 
 ### 適用済みのマイグレーション（本番 DB）

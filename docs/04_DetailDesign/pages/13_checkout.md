@@ -513,23 +513,22 @@ checkout の部品は `CheckoutPageContent` の外（モジュールの最上位
 
 ### 割引が付いた注文の確定（FREQ-389）
 
-チェックアウト画面にプロモーションコードの入力欄があり、Stripe セッションも `allow_promotion_codes: true` で作る（custom / hosted の両方。片方だけ許すと、生成経路によって同じコードが使えたり使えなかったりする。FREQ-397）。割引が付くと Stripe の `amount_total` は割引後、`total_details.amount_discount` が値引額になる。下書き（`checkout_drafts`）は割引前の合計を持っているので、注文確定の前にそろえる。
+チェックアウト画面にプロモーションコードの入力欄があり、Stripe セッションも `allow_promotion_codes: true` で作る（custom / hosted の両方。片方だけ許すと、生成経路によって同じコードが使えたり使えなかったりする。FREQ-397）。割引が付くと Stripe の `amount_total` は割引後、`total_details.amount_discount` が値引額になる。下書き（`checkout_drafts`）の合計は割引前のまま変えない。
 
-| 時点                                        | `checkout_drafts.total_amount` | `discount_amount` |
-| ------------------------------------------- | ------------------------------ | ----------------- |
-| 作成時                                      | 割引前の合計                   | 0                 |
-| 確定の直前（complete / webhook が書き戻す） | 割引後の実請求額               | 値引額            |
-| 注文（`orders`）へ                          | 同じ値を引き写す               | 同じ値を引き写す  |
+| 時点 | `checkout_drafts.total_amount` | `checkout_drafts.discount_amount` | 注文（`orders`）の `total_amount` / `discount_amount` |
+| --- | --- | --- | --- |
+| 作成時 | 割引前の合計 | 0 | 注文なし |
+| 受付 RPC の中（`place_order_from_checkout_draft`。注文の作成と同じトランザクション） | 割引前のまま（書き換えない） | Stripe の値引額を書き戻す | Stripe の割引後の額 / Stripe の値引額 |
 
-そろえないと、注文確定が `_expected_total_amount`（割引後）と下書きの合計（割引前）を比べて `CHECKOUT_TOTAL_MISMATCH` で落ちる。支払い済みの客に 409 が返り、注文は1件も作られない。
+受付 RPC は、下書きの「合計 + 割引額」と Stripe の「割引後の額 + 値引額」を、割引前どうしで比べる。食い違えば `amount_mismatch` で断る。割引後の額は Stripe の値が正で、下書きの合計を割引後に書き換えて合わせることはしない（R-26）。
 
-- 書き戻しは complete と webhook の両方で行う。ブラウザが戻らない経路（コンビニ・銀行振込、webhook 先行のカード）では complete が走らないため
-- 書き戻しに失敗したら、そのまま進めても必ず落ちるので注文確定を呼ばない。complete は 500、webhook のworkerは例外にして永続キューから再試行する。理由は監査ログに残す（握りつぶすと本番で原因が読めない）
-- 注文確定は `COALESCE(draft_row.discount_amount, 0)` を注文へ入れる。以前は 0 を直書きしていたため、注文詳細に値引額が出なかった
+- 金額の書き戻しは、受付 RPC の中の1か所だけで行う。完了 API・webhook・見回りは下書きの金額を書き戻さず、照合関数を呼ぶだけ
+- 注文の作成と値引額の書き戻しは1つのトランザクションなので、片方だけ失敗しない。一時的な失敗（Stripe・DB。`ReconcileTransientError`）では、完了 API は 503 を返して監査ログ（`checkout.complete`）に残し、webhook は worker がイベントを `failed` にして再試行する
+- 受付 RPC は Stripe の値引額を注文の `discount_amount` に、Stripe の割引後の額を `total_amount` に入れる。以前は 0 を直書きしていたため、注文詳細に値引額が出なかった
 
 ### 何度呼ばれてもそろう形にする（FREQ-394）
 
-上の書き戻しは、注文確定の金額検査が見ている値そのもの（`checkout_drafts.total_amount`）を書き換える。検査の基準に割引後の額を使うと、書き戻しが済んだ2回目から必ず外れる。
+受付 RPC の金額検査は、書き換わらない値を基準にする。下書きの合計は割引前のまま変わらず、書き戻すのは割引額だけ（上の FREQ-389）。割引後の合計へ書き換え済みの古い下書きも残りうるので、検査は割引前どうしで比べる。
 
 確定は1つの注文につき何度でも走る。
 
@@ -538,18 +537,19 @@ checkout の部品は `CheckoutPageContent` の外（モジュールの最上位
 | webhook が先に注文を作り、その後ブラウザが戻る | 注文はあるのに complete が 400 を返し、客の画面は失敗表示 |
 | 注文確定が落ちて客が再試行する                 | 何度押しても 400。その注文は二度と確定できない            |
 
-対策は、同期で動かない値を基準にすること。
+対策は、書き換わらない値を基準にすること。
 
-- 比べるのは割引前どうし。`下書きの total_amount + 下書きの discount_amount` と `Stripe の amount_total + total_details.amount_discount`。この和は同期の前後で変わらない
-- 支払いに対応する注文が既にあるときは、書き戻しを行わずその注文を返す。確定処理を通らない以上、そろえる必要も余計な書き込みも無い
-- 金額の食い違いそのものは従来どおり 400 で弾く（不正な減額を通さないための検査であり、緩めていない）
+- 比べるのは割引前どうし。`下書きの total_amount + 下書きの discount_amount` と `Stripe の amount_total + total_details.amount_discount`。今の下書き（割引前の合計と割引額0）も、割引後の合計と割引額の組を持つ古い下書きも、この和は割引前の額になる
+- 照合関数は先に注文を引き、あれば受付 RPC を呼ばずにその注文の状態で決める。受付 RPC も同じ Session の注文があれば、下書きを書き換えずにその注文を返す
+- 金額の食い違いは、受付 RPC が `amount_mismatch` で断り、注文を作らない。照合関数が要対応（`order_not_creatable`、詳細 `amount_mismatch`）として記録して店へ知らせ、完了 API は 409 を返す。不正な減額を通さないための検査であり、緩めていない
 
 #### イベントの順序（FREQ-394）
 
-Stripe はイベントの配信順を保証しない。`payment_intent.succeeded` が `checkout.session.completed` より先に届くと、下書きは割引前のままで注文確定が落ち、500 を返し続ける。`payment_intent.succeeded` のペイロードに値引額は無いため、`checkout.sessions.list({ payment_intent })` でセッションを引いてそろえる。
+Stripe はイベントの配信順を保証しない。照合関数はイベントの種類にも届いた順番にも頼らず、Stripe の現在値だけで決める（R-01・R-02）。`payment_intent.succeeded` のペイロードには値引額が無いので、PaymentIntent の ID しか持たないイベントでは、`checkout.sessions.list({ payment_intent })` で Checkout Session を引き、その割引後の額（`amount_total`）と値引額（`total_details.amount_discount`）で受付 RPC を呼ぶ。
 
-- セッションを引けない場合（Checkout 経由でない PaymentIntent、Stripe 側の一時障害）は割引なしとして進む。金額の根拠を推測で埋めない。合計が食い違えば注文確定が弾き、後から届く `checkout.session.completed` が処理する
-- 書き戻しは両経路で同じ関数を通す。片方だけ直しても、もう片方が同じ落ち方をするため
+- Session を引けない場合（Checkout 経由でない PaymentIntent、Stripe に無いものなど）は、注文が無ければ注文を作らず記録だけにする（監査ログ `checkout.payment.reconcile` に `ok:record_only:not_applicable` または `ok:record_only:stripe_object_missing`）。注文があれば要対応にする。金額の根拠を推測で埋めない
+- Stripe の通信・5xx・回数制限は一時的な失敗として例外にし、webhook なら worker が再試行する
+- 完了 API・webhook・見回りは同じ照合関数を通り、割引額の書き戻しは受付 RPC の1か所にしか無い。片方の経路だけが違う落ち方をすることはない
 
 ### 合計が 0 になる割引は受け付けない（FREQ-389）
 
@@ -573,7 +573,7 @@ Stripe 公式（無料の注文）に「無料注文のフルフィルメント�
 
 ### 注文メールは1注文・1種類につき1通（FREQ-386）
 
-注文確定は「画面からの complete」と「webhook」の2経路から走り、どちらも同じ注文を受け取る（確定の関数は既存の注文をそのまま返すため）。送信済みの記録が無いと、次のことが起きる。
+入金待ち・入金済みのメールは、「画面からの complete」「webhook」「毎時の見回り」の3経路から送りうる。3経路とも同じ照合関数を通り、同じ注文を受け取る。送信済みの記録が無いと、次のことが起きる（下の表は FREQ-386 を直す前の動きで、当時の経路は complete・webhook・掃除ジョブ。掃除ジョブは今の見回りにあたる）。
 
 | 場面                                     | 直す前                                                                                  |
 | ---------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -583,11 +583,11 @@ Stripe 公式（無料の注文）に「無料注文のフルフィルメント�
 
 Stripe は「同じイベントを複数回受信する可能性」と「配信順は保証しない」を明記しているので、受け取り側で重複を排除する。これは OWASP ASVS V11.1.6（TOCTOU・競合）の対象でもある。
 
-- 送る直前に `public.claim_order_email(order_id, kind)` で送信権を取り、取れた経路だけが送る。送信に失敗したら `public.release_order_email` で戻し、あとの経路（webhook の再送・掃除ジョブ）に譲る
-- `kind` は `awaiting_payment` と `paid` の2つ。コンビニは「お支払い待ち」と「入金確認」で2通届くのが正しい
+- 送る直前に `public.claim_order_email(order_id, kind)` で送信権を取り、取れた経路だけが送る。送信に失敗したら `public.release_order_email` で戻し、送信権を取り直せるようにする（今の照合関数は、送れなかったことを見ても送り直さない。確実に届ける仕組みはレビュー台帳のグループ D で扱う）
+- `kind` は `awaiting_payment`・`paid`・`payment_expired`・`canceled` の4つ（`private.order_emails` の CHECK と `OrderEmailKind`）。コンビニは入金待ちの「お支払い待ち」（`awaiting_payment`）と、入金の確認の `paid` で2通届くのが正しい。払込票の期限切れで失敗にしたときは `payment_expired`（「お支払い期限切れのお知らせ」）、管理画面で取り消したときは `canceled`（「ご注文取消のお知らせ」。画面でお知らせを外せば送らない）を、それぞれ1通だけ送る
 - 記録は `private.order_emails`（Data API から触れないスキーマ。Supabase のドキュメントが示す置き方）。関数は SECURITY DEFINER・`search_path = ''` で、実行できるのは service_role だけ
 - 権利の確認そのものが失敗したときは、届かないより重複を選んで送り、監査ログ（`order.confirmation.mail` / `mail_claim_failed`）に残す
-- webhook は入金済みの注文を作ったときも送る。掃除ジョブは paid に更新できた行があるときだけ送り、0件なら `alreadyPaid` として数える
+- 入金待ち・入金済みのメールは、入金済みにする RPC（`mark_order_paid`）か入金待ちにする RPC（`mark_order_awaiting_payment`）が状態を変えたときだけ、照合関数が送る。更新が0件（先に別の経路が動かした）なら、メールは送らずに Stripe と注文を読み直す。支払額が注文と合わないときは入金済みにして要対応にし、注文確認のメールは送らない（店が確かめてから連絡する）
 - 注文 ID から注文行と明細を引いて本文を組み立てる処理は `sendOrderConfirmationEmailForOrderId`（`src/lib/orders/order-confirmation-email.ts`）に1つだけ置く。以前は webhook の2か所と掃除ジョブの計3か所が同じ列の並びと同じ組み立てを別々に持っていて、片方だけ直すと経路によって客に届く内容が食い違う状態だった
 - 明細が引けないとき、および0件のときは送らない（空の注文内容を客に見せない）。送信権を取る前に止めるので、後の経路が送り直せる。呼び出し側は送れなくても注文の成否を変えない
 - 検証は `tests/unit/lib/orders/order-confirmation-email.test.ts`、`tests/integration/db/order_email_claims.integration.test.ts`、各経路の単体テスト
@@ -596,7 +596,7 @@ Stripe は「同じイベントを複数回受信する可能性」と「配信�
 
 確定（complete）だけは下書きのスナップショットから本文を組み立てていた。値引額は注文行（`orders.discount_amount`）にしか無いため、割引が付いた注文のメールは**小計＋送料と合計が合わない**まま届いていた。注文詳細の画面は `-￥1,000` を出しているので、同じ注文について画面とメールで見え方が違っていた。
 
-- 本文の組み立ては `sendOrderConfirmationEmailForOrderId` に一本化する。complete も注文 ID だけを渡す（`logLabel: '[checkout]'`）
+- 本文の組み立ては `sendOrderConfirmationEmailForOrderId` に一本化する。呼ぶのは照合関数のメール送信（`createReconcilerMailer`）だけで、注文 ID だけを渡す（`logLabel: '[reconcile]'`）。完了 API・webhook・見回りは、照合関数を通ってここに届く
 - 値引がある注文では、送料の次に `割引: -￥1,000` を出す。0 のときは行ごと出さない
 - 低レベルの `sendOrderConfirmationEmail` は直接呼ばない。`discountAmount` を必須の引数にしてあるので、新しい呼び出し側が割引を落とすと型で落ちる
 
@@ -696,7 +696,7 @@ Link を独立した支払手段として有効化する、または Express Che
 | --- | --- |
 | 対象 | 決済画面を開いてから30分を超えた支払い手続き中（`payment_in_progress`）の注文と、入金待ち（`pending`）の注文 |
 | 1回の上限 | 50件・45秒（`MAX_ORDERS_PER_RUN`・`TIME_BUDGET_MS`）。残りは次の回に回す |
-| 決済画面の失効 | 開いてから30分を超えてまだ開いている Checkout Session を失効させる（`expireOpenCheckoutSession`）。Webhook が届かなくても、放棄された決済の在庫は最長90分で戻る |
+| 決済画面の失効 | 支払い手続き中の注文のうち、開いてから30分を超えてまだ開いている Checkout Session を失効させる（`expireOpenCheckoutSession`）。支払いの前に注文を作る受付 API（グループ F）が入った後は、Webhook が届かなくても、放棄された決済の在庫は最長90分で戻る。今は注文を支払いの後に作るので、放棄された決済は在庫を押さえない |
 | 判定 | 照合関数（`reconcileCheckoutPayment`）が Stripe の Session と PaymentIntent の現在値だけで決める。アプリ独自の日数で入金待ちを打ち切らない |
 | 店への要対応メール | 送れていない分を1回20件まで送り直す（`listUnsentShopAlerts`） |
 
