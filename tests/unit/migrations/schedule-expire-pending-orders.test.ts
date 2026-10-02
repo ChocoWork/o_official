@@ -10,7 +10,7 @@ import path from 'node:path';
  *
  * 代わりにジョブ本体で秘密を確認する。実測では、秘密が欠けたまま本体を動かすと
  *   - 両方無い: url が null で not-null 違反（送信されない）
- *   - CRON_SECRET だけ無い: Authorization が null のまま送信される（毎晩 401）
+ *   - CRON_SECRET だけ無い: Authorization が null のまま送信される（実行のたびに 401）
  * となるため、送信前に止める。失敗は cron.job_run_details に残るので運用で拾える。
  */
 
@@ -90,7 +90,7 @@ describe('未入金注文の掃除ジョブの登録', () => {
   });
 
   // 呼ぶ側が先に諦めると、ルートは働いているのに cron.job_run_details と net._http_response には
-  // タイムアウトだけが残る。運用は「毎晩失敗している」としか見えず、実際に何件片付いたのか分からない
+  // タイムアウトだけが残る。運用は「毎回失敗している」としか見えず、実際に何件片付いたのか分からない
   // （FREQ-389 と同じ回で直した優先度低の指摘）。
   it('pg_net のタイムアウトは、ルートが自分で打ち切るより後にする', () => {
     expect(jobTimeoutMs).toBeGreaterThan(routeTimeBudgetMs);

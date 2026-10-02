@@ -107,7 +107,9 @@ describeLocalDb('integration: 照合の依存と見回りの候補を実際の P
 
   const apiUrl = LOCAL_API_URL;
   const serviceRoleKey = LOCAL_SERVICE_ROLE_KEY;
-  const savedEnv = { ...process.env };
+  // 見回りのルートが読む環境変数。このテストが書く3つだけを、終わったら元に戻す（process.env 全体は置き換えない）
+  const ENV_KEYS = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'CRON_SECRET'] as const;
+  let savedEnv: Record<string, string | undefined> = {};
   let client: SupabaseClient;
   let database: ReconcilerDatabase;
 
@@ -122,6 +124,7 @@ describeLocalDb('integration: 照合の依存と見回りの候補を実際の P
       auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
     });
     database = createSupabaseReconcilerDatabase(client);
+    savedEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
     // 見回りのルートは createServiceRoleClient で DB を読む（SUPABASE_URL が NEXT_PUBLIC_SUPABASE_URL より優先）
     process.env.SUPABASE_URL = apiUrl;
     process.env.SUPABASE_SERVICE_ROLE_KEY = serviceRoleKey;
@@ -129,7 +132,14 @@ describeLocalDb('integration: 照合の依存と見回りの候補を実際の P
   });
 
   afterAll(() => {
-    process.env = savedEnv;
+    for (const key of ENV_KEYS) {
+      const previous = savedEnv[key];
+      if (previous === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = previous;
+      }
+    }
   });
 
   test('受付 → 入金済み: 受付・入金済みにする RPC の引数名と、注文・下書きの列名が通る', async () => {

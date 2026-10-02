@@ -26,7 +26,7 @@ end $$;
 
 -- ジョブ本体。秘密が欠けたまま送ろうとすると、ローカル DB での実測では次のようになる。
 --   両方無い        : url が null になり not-null 違反。リクエストは積まれない
---   cron_secret のみ無い: Authorization が null のまま積まれ、endpoint は毎晩 401 を返す
+--   cron_secret のみ無い: Authorization が null のまま積まれ、endpoint は実行のたびに 401 を返す
 -- 後者は「動いているように見えて実は何もしていない」状態なので、送信前に止める。
 -- 例外にすると cron.job_run_details に status=failed と理由が残り、運用で拾える。
 -- 文言には秘密の名前だけを書き、値は出さない（OWASP ASVS 7.1.1）。
@@ -60,7 +60,7 @@ select cron.schedule(
         -- 呼ばれる側（src/app/api/cron/expire-pending-orders/route.ts）は
         -- maxDuration=60s、ループの打ち切りは 45s。ここを 30s にすると、ルートが
         -- まだ働いている最中に pg_net が諦め、net._http_response にはタイムアウトだけが
-        -- 残る。運用からは「毎晩失敗している」としか見えず、何件片付いたか分からない。
+        -- 残る。運用からは「毎回失敗している」としか見えず、何件片付いたか分からない。
         -- ルートの実行上限に合わせる（pg_net の既定は 2000ms、上限の定めは無い）。
         timeout_milliseconds := 60000
       );
