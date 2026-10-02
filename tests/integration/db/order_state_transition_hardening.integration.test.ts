@@ -17,6 +17,15 @@ function isLocalDatabase(url: string): boolean {
   }
 }
 
+/**
+ * 保留中の第2段階（supabase/pending/harden_order_state_transitions.sql）の確かめ。
+ *
+ * 注意: beforeAll でこの保留中の SQL をローカル DB に流し、終わっても元へ戻さない。
+ * tests/integration/db 全体を流すとき、このファイルより後に動く同じ実行内のテストは、
+ * orders・order_items への anon・authenticated の作成・更新・削除の剥奪と、トリガーの検査
+ * （変更理由の無い状態の変更・設計書 4-1 の表に無い遷移を拒否する）を受けた DB で動く。
+ * 流し終えたら npx supabase db reset でローカル DB を作り直す。
+ */
 describe('integration: order state transition hardening', () => {
   if (!DATABASE_URL) {
     test.skip('DATABASE_URL 未設定のためスキップ', () => {});
@@ -300,7 +309,7 @@ describe('integration: order state transition hardening', () => {
            where id = $1`,
           [orderId],
         ),
-      ).rejects.toMatchObject({ code: '23514' });
+      ).rejects.toMatchObject({ code: '23514', message: expect.stringContaining('ORDER_SHIPPING_ADDRESS_INCOMPLETE') });
       await client.query('rollback to savepoint before_direct_ship');
     } finally {
       await client.query('rollback');
@@ -352,7 +361,10 @@ describe('integration: order state transition hardening', () => {
           `update public.orders set status = 'cancelled'::public.order_status where id = $1`,
           [orderId],
         ),
-      ).rejects.toMatchObject({ code: '23514' });
+      ).rejects.toMatchObject({
+        code: '23514',
+        message: expect.stringContaining('PAID_ORDER_REQUIRES_FULL_REFUND_BEFORE_CANCELLATION'),
+      });
       await client.query('rollback to savepoint before_invalid_cancel');
 
       const valid = await client.query(

@@ -4,12 +4,13 @@ export {};
 const { Client } = require('pg');
 
 /**
- * 割引が付いた注文の確定（FREQ-389）。
+ * 下書きの値引額の列（FREQ-389）。
  *
  * チェックアウト画面にはプロモーションコードの入力欄があるのに、本番の checkout_drafts には
- * discount_amount 列が無く、割引後の実請求額を書き戻す更新が列ごと弾かれていた。下書きは
- * 割引前の合計のまま残り、注文確定は割引後の期待額と比べて CHECKOUT_TOTAL_MISMATCH で落ちる。
- * 列を足し、注文確定が下書きの値引額を注文へ引き写すことを実 DB で確かめる。
+ * discount_amount 列が無く、割引後の実請求額を書き戻す更新が列ごと弾かれていた。
+ * 列を足したので、列の定義（整数・NOT NULL・既定 0）と、負の値を入れられないことを実 DB で確かめる。
+ * 割引が付いた注文の受付（Stripe の値を注文へ引き写す・割引後の合計へ書き換え済みの古い下書き・
+ * 金額の違い）は place_order_from_checkout_draft.integration.test.ts が確かめる。
  *
  * 実行方法（ローカル Supabase を起動しておく: npm run db:start）:
  *   DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
@@ -30,7 +31,7 @@ function isLocalDatabase(url: string): boolean {
   }
 }
 
-describe('integration: 割引が付いた注文の確定', () => {
+describe('integration: 下書きの値引額の列', () => {
   if (!DATABASE_URL) {
     test.skip('DATABASE_URL 未設定のためスキップ', () => {});
     return;
@@ -56,12 +57,8 @@ describe('integration: 割引が付いた注文の確定', () => {
     if (client) await client.end();
   });
 
-  /** 割引後の合計を持つ draft を作る（アプリが書き戻したあとの状態）。 */
-  async function createDraft(discountAmount: number): Promise<{
-    draftId: string;
-    paymentIntentId: string;
-    totalAmount: number;
-  }> {
+  /** 値引額を指定した draft を作り、その id を返す（値引額の検査を確かめるため）。 */
+  async function createDraft(discountAmount: number): Promise<string> {
     const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
     const item = await client.query(
       `insert into public.items (name, description, price, category, image_url, status)
@@ -109,7 +106,7 @@ describe('integration: 割引が付いた注文の確定', () => {
       ],
     );
 
-    return { draftId: draft.rows[0].id, paymentIntentId: `pi_discount_${suffix}`, totalAmount };
+    return draft.rows[0].id;
   }
 
   test('checkout_drafts は discount_amount を持ち、既定は 0', async () => {

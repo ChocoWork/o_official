@@ -204,7 +204,8 @@ export async function variantStock(db: PgClient, variantId: number): Promise<num
 export async function orderRow(db: PgClient, orderId: string): Promise<Record<string, any>> {
   const res = await db.query(
     `select status::text as status, payment_intent_id, cancel_reason, cancel_note, cancel_notify_customer,
-            review_reason, reviewed_at, reviewed_by, total_amount, discount_amount, checkout_session_created_at
+            review_reason, reviewed_at, reviewed_by, subtotal_amount, shipping_amount, total_amount, discount_amount,
+            checkout_session_created_at
      from public.orders where id = $1`,
     [orderId],
   );

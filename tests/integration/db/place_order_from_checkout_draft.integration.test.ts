@@ -16,6 +16,7 @@ import {
 jest.setTimeout(30000);
 
 const SESSION_CREATED_AT = '2026-09-27T01:00:00.000Z';
+const SHIPPING = 500;
 
 function place(
   db: PgClient,
@@ -59,6 +60,19 @@ async function cartExists(db: PgClient, cartId: string): Promise<boolean> {
   return res.rowCount > 0;
 }
 
+/**
+ * 後発の呼び出しが行ロック待ちに入るまで待つ。固定の待ち時間だと、遅い環境ではロックを待つ前に先発を
+ * コミットしてしまい、ロックを待った後の再確認を通らないまま、先発の注文が見つかって通ってしまう。
+ */
+async function waitUntilWaitingForLock(observer: PgClient, pid: number) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const res = await observer.query('select wait_event_type from pg_stat_activity where pid = $1', [pid]);
+    if (res.rows[0]?.wait_event_type === 'Lock') return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error('後発の呼び出しがロック待ちにならなかった');
+}
+
 describeLocalDb('integration: 受付 RPC', (db) => {
   test('支払い手続き中の注文を作り、在庫を確保し、下書きを受付済みにする。カートは残す', async () => {
     const fx = await createCatalogFixture(db(), { stock: 5 });
@@ -73,7 +87,12 @@ describeLocalDb('integration: 受付 RPC', (db) => {
 
     expect(res.rows[0]).toMatchObject({ order_status: 'payment_in_progress', created: true, rejection: null });
     const order = await orderRow(db(), res.rows[0].order_id);
-    expect(order).toMatchObject({ status: 'payment_in_progress', payment_intent_id: null, total_amount: PRICE * 2 });
+    expect(order).toMatchObject({
+      status: 'payment_in_progress',
+      payment_intent_id: null,
+      total_amount: PRICE * 2,
+      discount_amount: 0,
+    });
     expect(new Date(order.checkout_session_created_at).toISOString()).toBe(SESSION_CREATED_AT);
     expect(await movementsOf(db(), fx.variantId)).toEqual([
       { delta: 5, reason: 'restock' },
@@ -119,30 +138,41 @@ describeLocalDb('integration: 受付 RPC', (db) => {
       amountTotal: draft.totalAmount,
     });
 
-    const lines = await db().query('select fulfillment_type from public.order_items where order_id = $1', [
+    const lines = await db().query('select variant_id, fulfillment_type from public.order_items where order_id = $1', [
       res.rows[0].order_id,
     ]);
-    expect(lines.rows.map((row) => row.fulfillment_type)).toEqual(['backorder']);
+    // 受注生産でも、明細はバリアントに結ばれたまま（variant_id は bigint なので文字列で返る）
+    expect(lines.rows).toEqual([{ variant_id: String(fx.variantId), fulfillment_type: 'backorder' }]);
     expect(await variantStock(db(), fx.variantId)).toBe(1);
   });
 
   test('割引は Stripe の値で注文に入れ、下書きは割引額だけを書き戻す（R-26）', async () => {
     const fx = await createCatalogFixture(db(), { stock: 1 });
     const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 1 });
+    // 送料のある下書きにして、小計と送料が下書きから注文へそのまま入ることも見る（送料 0 では取りこぼしに気づけない）
+    await db().query('update public.checkout_drafts set shipping_amount = $2, total_amount = total_amount + $2 where id = $1', [
+      draft.draftId,
+      SHIPPING,
+    ]);
 
     const res = await place(db(), {
       draftId: draft.draftId,
       checkoutSessionId: draft.checkoutSessionId,
       cartSessionId: draft.cartSessionId,
-      amountTotal: PRICE - 1000,
+      amountTotal: PRICE + SHIPPING - 1000,
       amountDiscount: 1000,
     });
 
     expect(await orderRow(db(), res.rows[0].order_id)).toMatchObject({
-      total_amount: PRICE - 1000,
+      total_amount: PRICE + SHIPPING - 1000,
+      discount_amount: 1000,
+      subtotal_amount: PRICE,
+      shipping_amount: SHIPPING,
+    });
+    expect(await draftRow(db(), draft.draftId)).toMatchObject({
+      total_amount: PRICE + SHIPPING,
       discount_amount: 1000,
     });
-    expect(await draftRow(db(), draft.draftId)).toMatchObject({ total_amount: PRICE, discount_amount: 1000 });
   });
 
   test('割引後の合計へ書き換え済みの古い下書きも受け付ける', async () => {
@@ -260,13 +290,17 @@ describeLocalDb('integration: 受付 RPC', (db) => {
       amountTotal: draft.totalAmount,
     };
     const other = await connectLocalDb();
+    const otherPid = (await other.query('select pg_backend_pid() as pid')).rows[0].pid;
     let committed = false;
     try {
       await db().query('begin');
       const first = await place(db(), args);
-      // 後発は下書きの行ロックで待つ。先発のコミット後に、先発の注文を見つけて返す
+      // 後発は下書きの行ロックで待つ。ロック待ちに入ったことを確かめてから先発をコミットし、
+      // 先発のコミット後に、先発の注文を見つけて返す（ロックを待った後の再確認）を必ず通す
       const second = place(other, args);
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      // 待っている間に失敗して後始末で切断されても、後発のエラーが未処理のまま残らないようにする
+      second.catch(() => undefined);
+      await waitUntilWaitingForLock(db(), otherPid);
       await db().query('commit');
       committed = true;
 
@@ -333,6 +367,33 @@ describeLocalDb('integration: 受付 RPC', (db) => {
       res.rows[0].order_id,
     ]);
     expect(lines.rows).toEqual([{ variant_id: null, fulfillment_type: 'backorder' }]);
+  });
+
+  test('受付で確保した分は、在庫を戻す処理でそのまま台帳へ戻る（確保と戻しの往復）', async () => {
+    const fx = await createCatalogFixture(db(), { stock: 5 });
+    const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 2 });
+    const res = await place(db(), {
+      draftId: draft.draftId,
+      checkoutSessionId: draft.checkoutSessionId,
+      cartSessionId: draft.cartSessionId,
+      amountTotal: draft.totalAmount,
+    });
+    expect(await variantStock(db(), fx.variantId)).toBe(3);
+
+    // 戻す処理は、受付が台帳に書いた purchase を明細で引いて戻す。受付の書き方（order_item_id）が変わると戻らない。
+    const released = await db().query(
+      `select released, status::text as status from public.release_stock_for_unpaid_order(
+         $1::uuid, 'payment_in_progress', 'abandoned', 'stripe_checkout_expired')`,
+      [res.rows[0].order_id],
+    );
+
+    expect(released.rows[0]).toEqual({ released: true, status: 'abandoned' });
+    expect(await movementsOf(db(), fx.variantId)).toEqual([
+      { delta: 5, reason: 'restock' },
+      { delta: -2, reason: 'purchase' },
+      { delta: 2, reason: 'cancel' },
+    ]);
+    expect(await variantStock(db(), fx.variantId)).toBe(5);
   });
 
   test('受注生産の注文を放棄にしても、台帳には何も書かない', async () => {

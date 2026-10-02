@@ -54,8 +54,8 @@ describe('integration: 注文のフリガナ', () => {
     if (client) await client.end();
   });
 
-  /** 商品1点の draft を作り、注文確定まで走らせて注文 id を返す。 */
-  async function finalizeOrder(kanaName: string | null): Promise<string> {
+  /** 商品1点の draft を作り、受付（place_order_from_checkout_draft）まで走らせて注文 id を返す。 */
+  async function placeOrder(kanaName: string | null): Promise<string> {
     const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
     const item = await client.query(
       `insert into public.items (name, description, price, category, image_url, status)
@@ -115,17 +115,17 @@ describe('integration: 注文のフリガナ', () => {
   }
 
   test('受付で配送先の写しのフリガナが注文に入る', async () => {
-    const orderId = await finalizeOrder('ヤマダ ハナコ');
+    const orderId = await placeOrder('ヤマダ ハナコ');
     expect(await shippingKanaOf(orderId)).toBe('ヤマダ ハナコ');
   });
 
   test('フリガナの無い draft でも受付は通り、注文のフリガナは空になる', async () => {
-    const orderId = await finalizeOrder(null);
+    const orderId = await placeOrder(null);
     expect(await shippingKanaOf(orderId)).toBeNull();
   });
 
   test('注文に入ったフリガナは後から書き換えられない', async () => {
-    const orderId = await finalizeOrder('ヤマダ ハナコ');
+    const orderId = await placeOrder('ヤマダ ハナコ');
 
     await expect(
       client.query('update public.orders set shipping_kana = $2 where id = $1', [orderId, 'サトウ タロウ']),
