@@ -305,4 +305,33 @@ describe('syncOrderRefunds', () => {
     expect(error).not.toBeInstanceOf(OrderNotFoundForPaymentIntentError);
     expect((error as Error).message).toBe('Failed to read order refund state: connection lost');
   });
+
+  it('keeps the database error of a failed order read as the cause, so a caller can tell a transient failure', async () => {
+    const dbError = { message: 'connection lost', code: '08006' };
+    const { database, maybeSingle } = createDatabase({ orders: [] });
+    maybeSingle.mockResolvedValue({ data: null, error: dbError });
+
+    const error = await syncOrderRefunds({
+      database,
+      stripe: createStripe([]),
+      paymentIntentId: 'pi_read_failed',
+    }).catch((caught: unknown) => caught);
+
+    expect((error as Error).message).toBe('Failed to read order refund state: connection lost');
+    expect((error as Error).cause).toBe(dbError);
+  });
+
+  it('keeps the database error of a failed projection RPC as the cause', async () => {
+    const dbError = { message: 'could not serialize access', code: '40001' };
+    const { database } = createDatabase({ rpcResults: [{ data: null, error: dbError }] });
+
+    const error = await syncOrderRefunds({
+      database,
+      stripe: createStripe([]),
+      paymentIntentId: 'pi_rpc_failed',
+    }).catch((caught: unknown) => caught);
+
+    expect((error as Error).message).toBe('Failed to update order refund state: could not serialize access');
+    expect((error as Error).cause).toBe(dbError);
+  });
 });

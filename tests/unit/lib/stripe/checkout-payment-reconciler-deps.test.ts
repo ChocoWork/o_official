@@ -4,10 +4,17 @@ jest.mock('@/lib/audit', () => ({
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
+  createReconcilerRefundSync,
   createSupabaseReconcilerDatabase,
   isTransientSupabaseError,
   listUnsentShopAlerts,
 } from '@/lib/stripe/checkout-payment-reconciler-deps';
+import {
+  OrderNotFoundForPaymentIntentError,
+  type OrderRefundDatabase,
+  type RefundListClient,
+  type RefundSnapshot,
+} from '@/lib/stripe/order-refund-sync';
 
 /**
  * 照合関数と Supabase をつなぐ部分。RPC の名前と引数、戻り値の読み方、エラーの扱いを確かめる。
@@ -203,6 +210,131 @@ describe('createSupabaseReconcilerDatabase', () => {
     await expect(
       createSupabaseReconcilerDatabase(client).persistDraftPaymentMethod('draft-1', 'stripe_card'),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('createReconcilerRefundSync', () => {
+  /**
+   * 照合が呼ぶ返金の同期（order-refund-sync.ts の syncOrderRefunds）。同期そのものは order-refund-sync.test.ts が確かめる。
+   * ここでは、一時的な失敗（Stripe の通信・5xx・回数制限、DB の接続・直列化など）を照合の一時的な失敗にして投げ直し
+   * （呼び出し元が再試行する）、恒久的な失敗は元のエラーのまま投げることを確かめる。
+   */
+  type DbResult = { data: unknown; error: { message: string; code?: string } | null };
+
+  const PAID_ORDER = {
+    id: 'order-1',
+    status: 'paid',
+    total_amount: 5000,
+    refunded_amount: 0,
+    payment_status_updated_at: null,
+    shipped_at: null,
+  };
+
+  function refundSyncWorld(options: {
+    order?: DbResult;
+    rpc?: DbResult;
+    refunds?: () => AsyncIterable<RefundSnapshot>;
+  } = {}) {
+    const rpc = jest.fn(async () => options.rpc ?? {
+      data: [{ id: 'order-1', status: 'paid', refunded_amount: 2000 }],
+      error: null,
+    });
+    const database = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({ maybeSingle: async () => options.order ?? { data: PAID_ORDER, error: null } }),
+        }),
+      }),
+      rpc,
+    } as unknown as OrderRefundDatabase;
+    const list = jest.fn(() => options.refunds?.() ?? succeededRefunds(2000));
+    const stripe = { refunds: { list } } as unknown as RefundListClient;
+    return { sync: createReconcilerRefundSync(database, stripe), rpc, list };
+  }
+
+  function succeededRefunds(amount: number): AsyncIterable<RefundSnapshot> {
+    return {
+      async *[Symbol.asyncIterator]() {
+        yield { status: 'succeeded', amount, created: 1_786_000_000 };
+      },
+    };
+  }
+
+  function failingRefunds(error: unknown): () => AsyncIterable<RefundSnapshot> {
+    return () => ({
+      [Symbol.asyncIterator]: () => ({
+        next: async () => {
+          throw error;
+        },
+      }),
+    });
+  }
+
+  it('PaymentIntent の返金を Stripe から読み、返金投影の RPC で注文へ反映する', async () => {
+    const { sync, rpc, list } = refundSyncWorld();
+
+    await expect(sync('pi_1')).resolves.toBeUndefined();
+
+    expect(list).toHaveBeenCalledWith({ payment_intent: 'pi_1', limit: 100 });
+    expect(rpc).toHaveBeenCalledWith('apply_order_refund_projection', expect.objectContaining({
+      _order_id: 'order-1',
+      _expected_status: 'paid',
+      _refunded_amount: 2000,
+    }));
+  });
+
+  it.each([
+    ['通信の失敗', { type: 'StripeConnectionError' }],
+    ['Stripe の障害', { type: 'StripeAPIError', statusCode: 500 }],
+    ['回数制限', { type: 'StripeRateLimitError', statusCode: 429 }],
+  ])('Stripe の一時的な失敗（%s）は、照合の一時的な失敗（stripe_unavailable）にする', async (_name, stripeError) => {
+    const { sync } = refundSyncWorld({ refunds: failingRefunds(stripeError) });
+
+    await expect(sync('pi_1')).rejects.toMatchObject({ name: 'ReconcileTransientError', code: 'stripe_unavailable' });
+  });
+
+  it('Stripe の恒久的なエラー（入力の誤りなど）は、元のエラーのまま投げる', async () => {
+    const stripeError = { type: 'StripeInvalidRequestError', statusCode: 400 };
+    const { sync } = refundSyncWorld({ refunds: failingRefunds(stripeError) });
+
+    await expect(sync('pi_1')).rejects.toBe(stripeError);
+  });
+
+  it.each([
+    ['code の無い（通信の失敗）', { message: 'timeout' }],
+    ['接続の失敗（08006）', { message: 'connection failure', code: '08006' }],
+  ])('注文の読み取りの失敗（%s）は、照合の一時的な失敗（db_unavailable）にする', async (_name, dbError) => {
+    const { sync, rpc } = refundSyncWorld({ order: { data: null, error: dbError } });
+
+    await expect(sync('pi_1')).rejects.toMatchObject({ name: 'ReconcileTransientError', code: 'db_unavailable' });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('返金投影の RPC の直列化の失敗（40001）も、照合の一時的な失敗（db_unavailable）にする', async () => {
+    const { sync } = refundSyncWorld({
+      rpc: { data: null, error: { message: 'could not serialize access', code: '40001' } },
+    });
+
+    await expect(sync('pi_1')).rejects.toMatchObject({ name: 'ReconcileTransientError', code: 'db_unavailable' });
+  });
+
+  it.each([
+    ['注文の読み取り', { order: { data: null, error: { message: 'permission denied', code: '42501' } } }, 'Failed to read order refund state: permission denied'],
+    ['返金投影の RPC', { rpc: { data: null, error: { message: 'check constraint violated', code: '23514' } } }, 'Failed to update order refund state: check constraint violated'],
+  ])('%sの恒久的なエラーは、一時的な失敗にせず、これまでと同じ内容のエラーのまま投げる', async (_name, options, message) => {
+    const { sync } = refundSyncWorld(options);
+
+    const error = await sync('pi_1').catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toMatchObject({ name: 'ReconcileTransientError' });
+    expect((error as Error).message).toBe(message);
+  });
+
+  it('PaymentIntent に注文が無ければ、その型のエラーのまま投げる（一時的な失敗にしない）', async () => {
+    const { sync } = refundSyncWorld({ order: { data: null, error: null } });
+
+    await expect(sync('pi_1')).rejects.toBeInstanceOf(OrderNotFoundForPaymentIntentError);
   });
 });
 

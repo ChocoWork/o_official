@@ -141,8 +141,9 @@ function harness(init: {
 
   const readPayment = jest.fn(async () => world.stripe);
   const audit = jest.fn(async () => undefined);
-  const deps: ReconcilerDeps = { readPayment, database, mailer, audit, now: () => NOW };
-  return { deps, database, mailer, readPayment, audit, world };
+  const syncRefunds = jest.fn<Promise<void>, [string]>(async () => undefined);
+  const deps: ReconcilerDeps = { readPayment, database, mailer, audit, syncRefunds, now: () => NOW };
+  return { deps, database, mailer, readPayment, audit, syncRefunds, world };
 }
 
 describe('reconcileCheckoutPayment', () => {
@@ -483,6 +484,121 @@ describe('reconcileCheckoutPayment', () => {
 
     expect(result).toMatchObject({ kind: 'needs_action', reason: 'cancelled_order_paid', orderId: 'order-1' });
     expect(h.mailer.sendUnplacedPaymentNotice).not.toHaveBeenCalled();
+  });
+
+  describe('Stripe に返金済みの分がある入金済みの支払い（返金が注文より先に起きた場合）', () => {
+    // 注文を作れず要対応になった支払いを店が Stripe で返金したあと、同じ支払いが再び照合される
+    // （完了 API の再呼び出し・Webhook の再試行・見回りの紐付け）。返金済みの分が注文に残らないようにする。
+    const REFUNDED: StripePaymentState = { kind: 'paid', amountReceived: 5000, amountRefunded: 2000, currency: 'jpy' };
+    const FULLY_REFUNDED: StripePaymentState = { kind: 'paid', amountReceived: 5000, amountRefunded: 5000, currency: 'jpy' };
+
+    it.each([
+      ['一部', REFUNDED],
+      ['全額', FULLY_REFUNDED],
+    ])('注文が無ければ、%s返金済みでも注文を作らず記録だけにし、注文確定メールを送らない', async (_name, state) => {
+      const h = harness({ stripe: snapshot(state) });
+
+      const result = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1', sourceEventId: 'evt_late' });
+
+      expect(result).toEqual({
+        kind: 'ok',
+        action: { type: 'record_only', note: 'refunded_before_order' },
+        orderId: null,
+        orderStatus: null,
+      });
+      // 注文を読む以外は何も書かない・送らない。返金の同期も、同期する注文が無いので呼ばない
+      const writes = (Object.keys(h.database) as Array<keyof ReconcilerDatabase>).filter((key) => key !== 'findOrder');
+      for (const key of writes) expect(h.database[key]).not.toHaveBeenCalled();
+      for (const key of Object.keys(h.mailer) as Array<keyof ReconcilerMailer>) expect(h.mailer[key]).not.toHaveBeenCalled();
+      expect(h.syncRefunds).not.toHaveBeenCalled();
+      expect(h.audit).toHaveBeenCalledTimes(1);
+      expect(h.audit).toHaveBeenCalledWith(expect.objectContaining({
+        outcome: 'success',
+        detail: 'ok:record_only:refunded_before_order',
+        metadata: expect.objectContaining({ payment_intent_id: 'pi_1', source_event_id: 'evt_late', stripe_state: 'paid' }),
+      }));
+    });
+
+    it('支払い手続き中の注文を入金済みにした後で、返金済みの分があれば返金の同期を呼ぶ', async () => {
+      const h = harness({ stripe: snapshot(REFUNDED), order: order('payment_in_progress') });
+
+      const result = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1', sourceEventId: 'evt_1' });
+
+      expect(result).toEqual({
+        kind: 'ok',
+        action: { type: 'mark_paid', expectedStatus: 'payment_in_progress', emailVariant: 'order_confirmed' },
+        orderId: 'order-1',
+        orderStatus: 'paid',
+      });
+      expect(h.syncRefunds).toHaveBeenCalledTimes(1);
+      expect(h.syncRefunds).toHaveBeenCalledWith('pi_1');
+      // 注文が入金済みになってから、返金を反映する
+      const markPaidOrder = (h.database.markOrderPaid as jest.Mock).mock.invocationCallOrder[0];
+      expect(markPaidOrder).toBeLessThan(h.syncRefunds.mock.invocationCallOrder[0]);
+    });
+
+    it.each(['paid', 'shipped'] as const)(
+      '%s の注文は、照合が何もしない判定でも、返金済みの分があれば返金の同期を呼ぶ',
+      async (status) => {
+        const h = harness({ stripe: snapshot(REFUNDED), order: order(status, { paymentIntentId: 'pi_1' }) });
+
+        const result = await reconcileCheckoutPayment(h.deps, { paymentIntentId: 'pi_1', sourceEventId: 'evt_late' });
+
+        expect(result).toEqual({ kind: 'ok', action: { type: 'none' }, orderId: 'order-1', orderStatus: status });
+        expect(h.syncRefunds).toHaveBeenCalledTimes(1);
+        expect(h.syncRefunds).toHaveBeenCalledWith('pi_1');
+        expect(h.database.markOrderPaid).not.toHaveBeenCalled();
+        expect(h.mailer.sendOrderConfirmation).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([
+      ['入金済みの注文', order('paid', { paymentIntentId: 'pi_1' })],
+      ['入金済みにする注文', order('payment_in_progress')],
+    ])('返金済みの分が0なら、%sでも返金の同期を呼ばない', async (_name, existing) => {
+      const h = harness({ stripe: snapshot(PAID), order: existing });
+
+      await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
+
+      expect(h.syncRefunds).not.toHaveBeenCalled();
+    });
+
+    it('全額返金で取り消された注文では、返金の同期を呼ばない', async () => {
+      const h = harness({ stripe: snapshot(FULLY_REFUNDED), order: order('cancelled', { paymentIntentId: 'pi_1' }) });
+
+      const result = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
+
+      expect(result).toEqual({ kind: 'ok', action: { type: 'none' }, orderId: 'order-1', orderStatus: 'cancelled' });
+      expect(h.syncRefunds).not.toHaveBeenCalled();
+    });
+
+    it('返金の同期が一時的に失敗したらその失敗を投げ、入金済みにした注文は戻さず、次の照合で返金を反映する', async () => {
+      const h = harness({ stripe: snapshot(REFUNDED), order: order('payment_in_progress') });
+      h.syncRefunds.mockRejectedValueOnce(new ReconcileTransientError('stripe_unavailable'));
+
+      await expect(reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' })).rejects.toMatchObject({
+        name: 'ReconcileTransientError',
+        code: 'stripe_unavailable',
+      });
+      expect(h.world.order?.status).toBe('paid');
+
+      const result = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
+
+      expect(result).toMatchObject({ kind: 'ok', action: { type: 'none' }, orderId: 'order-1', orderStatus: 'paid' });
+      expect(h.syncRefunds).toHaveBeenCalledTimes(2);
+      // 入金済みにするのも注文確定メールも、1回だけ
+      expect(h.database.markOrderPaid).toHaveBeenCalledTimes(1);
+      expect(h.mailer.sendOrderConfirmation).toHaveBeenCalledTimes(1);
+    });
+
+    it('返金の同期の恒久的な失敗は、これまでの失敗と同じく元のエラーのまま投げる', async () => {
+      const h = harness({ stripe: snapshot(REFUNDED), order: order('paid', { paymentIntentId: 'pi_1' }) });
+      const failure = new Error('Failed to update order refund state: permission denied');
+      h.syncRefunds.mockRejectedValue(failure);
+
+      await expect(reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' })).rejects.toBe(failure);
+      expect(h.audit).not.toHaveBeenCalled();
+    });
   });
 
   it('注文の PaymentIntent と Stripe の PaymentIntent が違えば、矛盾として要対応にする', async () => {

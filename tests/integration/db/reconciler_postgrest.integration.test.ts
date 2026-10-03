@@ -38,10 +38,18 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: jes
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { POST } from '@/app/api/cron/expire-pending-orders/route';
+import type {
+  ReconcileInput,
+  ReconcileResult,
+  ReconcilerDeps,
+  ReconcilerMailer,
+} from '@/lib/stripe/checkout-payment-reconciler';
 import {
+  createReconcilerRefundSync,
   createSupabaseReconcilerDatabase,
   listUnsentShopAlerts,
 } from '@/lib/stripe/checkout-payment-reconciler-deps';
+import type { OrderRefundDatabase, RefundListClient } from '@/lib/stripe/order-refund-sync';
 import { describeLocalDb, isLocalDatabase } from './helpers/local-db';
 import {
   PRICE,
@@ -63,6 +71,11 @@ const CHECKOUT_SESSION_VALIDITY_MS = 30 * 60 * 1000;
 type ReconcilerDatabase = ReturnType<typeof createSupabaseReconcilerDatabase>;
 type DraftFixture = Awaited<ReturnType<typeof createDraft>> & { variantId: number };
 type SweepResponse = { status: number; body: { candidateCount: number; failed: number } };
+
+// 上の jest.mock は見回りの候補だけを確かめるために照合関数を偽物にしている。返金の照合は本物の関数で確かめる
+const { reconcileCheckoutPayment: reconcileForReal } = jest.requireActual('@/lib/stripe/checkout-payment-reconciler') as {
+  reconcileCheckoutPayment: (deps: ReconcilerDeps, input: ReconcileInput) => Promise<ReconcileResult>;
+};
 
 function placeArgs(draft: DraftFixture, sessionCreatedAt: Date) {
   return {
@@ -117,6 +130,52 @@ describeLocalDb('integration: 照合の依存と見回りの候補を実際の P
     const fx = await createCatalogFixture(db(), { stock: 2 });
     const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 1 });
     return { ...draft, variantId: fx.variantId };
+  }
+
+  /**
+   * 本物の照合関数の依存。注文・在庫・返金の書き込みは実際の PostgREST（本物の RPC）に通す。
+   * 偽物にするのは、Stripe の現在値（入金済み・返金済みの額）・Stripe の返金一覧・メール・監査ログだけ。
+   */
+  function composedDeps(draft: DraftFixture, paymentIntentId: string, amountRefunded: number): ReconcilerDeps {
+    const mailer: ReconcilerMailer = {
+      sendOrderConfirmation: jest.fn().mockResolvedValue(true),
+      sendPaymentExpired: jest.fn().mockResolvedValue(true),
+      sendOrderCanceled: jest.fn().mockResolvedValue(true),
+      sendUnplacedPaymentNotice: jest.fn().mockResolvedValue(true),
+      sendShopAlert: jest.fn().mockResolvedValue(true),
+    };
+    const stripeRefunds = {
+      refunds: {
+        list: () => ({
+          async *[Symbol.asyncIterator]() {
+            if (amountRefunded > 0) {
+              yield { status: 'succeeded', amount: amountRefunded, created: Math.floor(Date.now() / 1000) };
+            }
+          },
+        }),
+      },
+    } as unknown as RefundListClient;
+
+    return {
+      readPayment: async () => ({
+        checkoutSessionId: draft.checkoutSessionId,
+        paymentIntentId,
+        draftId: draft.draftId,
+        cartSessionId: draft.cartSessionId,
+        sessionCreatedAt: new Date(),
+        amountTotal: draft.totalAmount,
+        amountDiscount: 0,
+        currency: 'jpy',
+        paymentMethod: 'stripe_card',
+        voucherExpiresAt: null,
+        state: { kind: 'paid', amountReceived: draft.totalAmount, amountRefunded, currency: 'jpy' },
+      }),
+      database,
+      mailer,
+      audit: jest.fn().mockResolvedValue(undefined),
+      syncRefunds: createReconcilerRefundSync(client as unknown as OrderRefundDatabase, stripeRefunds),
+      now: () => new Date(),
+    };
   }
 
   beforeAll(() => {
@@ -253,6 +312,48 @@ describeLocalDb('integration: 照合の依存と見回りの候補を実際の P
     await database.releaseExceptionNotification(first.exceptionId, 'shop');
     expect(await unsentIds()).toContain(first.exceptionId);
     expect(await database.claimExceptionNotification(first.exceptionId, 'shop')).toBe(true);
+  });
+
+  test.each([
+    ['一部', 1000, 'paid'],
+    ['全額', PRICE, 'cancelled'],
+  ])('照合: 入金済みにした注文に%s返金済みの分があれば、返金投影の RPC で注文へ反映する（返金額 %i）', async (_name, amountRefunded, expectedStatus) => {
+    const draft = await newDraft();
+    const orderId = await placeOrThrow(database, draft, new Date());
+    const deps = composedDeps(draft, `pi_pgrst_${uniqueSuffix()}`, amountRefunded);
+
+    const result = await reconcileForReal(deps, { checkoutSessionId: draft.checkoutSessionId });
+
+    expect(result).toMatchObject({ kind: 'ok', orderId });
+    const stored = await db().query(
+      'select status::text as status, refunded_amount, refunded_at is not null as has_refunded_at from public.orders where id = $1',
+      [orderId],
+    );
+    expect(stored.rows[0]).toEqual({ status: expectedStatus, refunded_amount: amountRefunded, has_refunded_at: true });
+    expect(deps.mailer.sendOrderConfirmation).toHaveBeenCalledTimes(1);
+
+    // 同じ支払いをもう一度照合しても、同じ状態に収まる（返金の同期は何度呼んでも同じ結果）
+    await reconcileForReal(deps, { checkoutSessionId: draft.checkoutSessionId });
+    const again = await db().query('select status::text as status, refunded_amount from public.orders where id = $1', [orderId]);
+    expect(again.rows[0]).toEqual({ status: expectedStatus, refunded_amount: amountRefunded });
+    expect(deps.mailer.sendOrderConfirmation).toHaveBeenCalledTimes(1);
+  });
+
+  test('照合: 注文が無く返金済みの入金済みの支払いは、注文を作らず記録だけにする（在庫も動かさない）', async () => {
+    const draft = await newDraft();
+    const deps = composedDeps(draft, `pi_pgrst_${uniqueSuffix()}`, 1000);
+
+    const result = await reconcileForReal(deps, { checkoutSessionId: draft.checkoutSessionId });
+
+    expect(result).toEqual({
+      kind: 'ok',
+      action: { type: 'record_only', note: 'refunded_before_order' },
+      orderId: null,
+      orderStatus: null,
+    });
+    expect(await database.findOrder({ checkoutSessionId: draft.checkoutSessionId, paymentIntentId: null })).toBeNull();
+    expect(await movementsOf(db(), draft.variantId)).toEqual([{ delta: 2, reason: 'restock' }]);
+    expect(deps.mailer.sendOrderConfirmation).not.toHaveBeenCalled();
   });
 
   test('見回り: 候補の条件（入れ子の and と ISO の時刻）を PostgREST が受け付け、30分を超えた支払い手続き中と入金待ちだけを数える', async () => {

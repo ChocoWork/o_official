@@ -134,6 +134,11 @@ export type ReconcilerDeps = {
   database: ReconcilerDatabase;
   mailer: ReconcilerMailer;
   audit: ReconcilerAudit;
+  /**
+   * 注文を Stripe の返金済みの分に合わせる（返金の同期。order-refund-sync.ts）。何度呼んでも同じ結果に収まる。
+   * 一時的な失敗は ReconcileTransientError にして投げる（呼び出し元が再試行する）。それ以外はそのまま投げる。
+   */
+  syncRefunds(paymentIntentId: string): Promise<void>;
   now(): Date;
 };
 
@@ -187,6 +192,10 @@ export async function reconcileCheckoutPayment(deps: ReconcilerDeps, input: Reco
 
     let step: Step;
     if (action.type === 'none' || action.type === 'record_only') {
+      if (action.type === 'none') {
+        await syncRefundsOfPaidOrder(deps, snapshot, order);
+      }
+
       const finalAction = applied ?? action;
       step = {
         kind: 'done',
@@ -223,6 +232,29 @@ export async function reconcileCheckoutPayment(deps: ReconcilerDeps, input: Reco
   }
 
   throw new ReconcileTransientError('not_converged');
+}
+
+/**
+ * 入金済み・発送済みの注文に Stripe の返金済みの分があれば、返金の同期を呼んで注文を Stripe に合わせる。
+ * 入金済みにした直後（読み直しで「何もしない」になる）も、すでに入金済みだった注文も、照合のたびにここを通るので、
+ * 注文が無い間に届いて飛ばされた返金の通知や、注文の作成・紐付けより前の返金も、この照合で注文に反映される。
+ * 返金の同期は何度呼んでも同じ結果に収まるので、失敗して再試行されても収束する。
+ * 返金済みの分が無い支払いと、全額返金で取り消された注文（取消。判定は「何もしない」）には呼ばない。
+ */
+async function syncRefundsOfPaidOrder(
+  deps: ReconcilerDeps,
+  snapshot: CheckoutPaymentSnapshot,
+  order: ReconcilerOrder | null,
+): Promise<void> {
+  const { state, paymentIntentId } = snapshot;
+  if (!order || (order.status !== 'paid' && order.status !== 'shipped')) {
+    return;
+  }
+  if (state.kind !== 'paid' || state.amountRefunded <= 0 || !paymentIntentId) {
+    return;
+  }
+
+  await deps.syncRefunds(paymentIntentId);
 }
 
 function decide(snapshot: CheckoutPaymentSnapshot, order: ReconcilerOrder | null, input: ReconcileInput): OrderAction {

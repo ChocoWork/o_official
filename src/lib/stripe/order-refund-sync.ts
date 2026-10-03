@@ -160,7 +160,10 @@ export async function syncOrderRefunds({
       .maybeSingle();
 
     if (orderError) {
-      throw new Error(`Failed to read order refund state: ${orderError.message ?? 'database error'}`);
+      // The database error stays as the cause so a caller can tell a transient failure (connection, serialization).
+      throw new Error(`Failed to read order refund state: ${orderError.message ?? 'database error'}`, {
+        cause: orderError,
+      });
     }
     if (!order) {
       throw new OrderNotFoundForPaymentIntentError();
@@ -201,6 +204,7 @@ export async function syncOrderRefunds({
     if (projectionError) {
       throw new Error(
         `Failed to update order refund state: ${projectionError.message ?? 'database error'}`,
+        { cause: projectionError },
       );
     }
 

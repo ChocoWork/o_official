@@ -134,6 +134,26 @@ describe('decideOrderAction（判定表）', () => {
       .toEqual({ type: 'exception', reason: 'cancelled_order_paid' });
   });
 
+  it.each([
+    ['一部だけ返金済み', 1],
+    ['全額返金済み', 5000],
+  ])('注文が無く、入金済みで返金済みの分もある支払い（%s）は、注文を作らず記録のみにする', (_name, amountRefunded) => {
+    // 注文より先に店が Stripe で返金した支払い。あとから注文にすると、返金が反映されない入金済みの注文が残る
+    const refundedFirst: StripePaymentState = { kind: 'paid', amountReceived: 5000, amountRefunded, currency: 'jpy' };
+
+    expect(decideOrderAction({ stripe: refundedFirst, orderStatus: null, adminCancel: false }))
+      .toEqual({ type: 'record_only', note: 'refunded_before_order' });
+  });
+
+  it('返金済みの分があっても、注文がある入金済みの行は変えない（返金の反映は照合関数が続ける）', () => {
+    const refunded: StripePaymentState = { kind: 'paid', amountReceived: 5000, amountRefunded: 2000, currency: 'jpy' };
+
+    for (const status of ORDER_STATUSES) {
+      expect(decideOrderAction({ stripe: refunded, orderStatus: status, adminCancel: false }))
+        .toEqual(TABLE['入金済み'][status]);
+    }
+  });
+
   it('下書きの無い支払いは detail に no_draft を入れる', () => {
     expect(decideOrderAction({
       stripe: { kind: 'not_applicable', reason: 'no_draft' },

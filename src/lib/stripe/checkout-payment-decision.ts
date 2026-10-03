@@ -16,7 +16,7 @@ export type StripePaymentState =
 
 export type OrderAction =
   | { type: 'none' }
-  | { type: 'record_only'; note: 'zero_amount' | 'stripe_object_missing' | 'not_applicable' }
+  | { type: 'record_only'; note: 'zero_amount' | 'stripe_object_missing' | 'not_applicable' | 'refunded_before_order' }
   | { type: 'place_and_mark_paid' }
   | { type: 'place_and_mark_awaiting' }
   | {
@@ -104,7 +104,11 @@ function decidePaid(
 ): OrderAction {
   switch (orderStatus) {
     case null:
-      return { type: 'place_and_mark_paid' };
+      // 注文より先に返金された支払い（注文を作れず要対応になった支払いを店が Stripe で返金したなど）は、
+      // あとから注文にしない。返金が反映されないまま入金済みの注文が残り、発送できてしまうため（設計書 3-2）
+      return stripe.amountRefunded > 0
+        ? { type: 'record_only', note: 'refunded_before_order' }
+        : { type: 'place_and_mark_paid' };
     case 'payment_in_progress':
       return { type: 'mark_paid', expectedStatus: 'payment_in_progress', emailVariant: 'order_confirmed' };
     case 'pending':

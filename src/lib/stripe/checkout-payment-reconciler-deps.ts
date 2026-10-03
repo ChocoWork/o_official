@@ -23,9 +23,11 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 import { getStripeServerClient } from '@/lib/stripe/server';
 import {
   ReconcileTransientError,
+  isTransientStripeError,
   readCheckoutPayment,
   type CheckoutPaymentStripeClient,
 } from '@/lib/stripe/checkout-payment-reader';
+import { syncOrderRefunds, type OrderRefundDatabase, type RefundListClient } from '@/lib/stripe/order-refund-sync';
 import type {
   ReconcilerAudit,
   ReconcilerDatabase,
@@ -284,15 +286,53 @@ const reconcileAudit: ReconcilerAudit = (event) =>
     metadata: event.metadata,
   });
 
+/** 返金の同期の失敗を、一時的なら ReconcileTransientError に、そうでなければ元のエラーのままにする */
+function toReconcileError(error: unknown): unknown {
+  if (isTransientStripeError(error)) {
+    return new ReconcileTransientError('stripe_unavailable', { cause: error });
+  }
+
+  // syncOrderRefunds は DB の失敗を message だけの Error にして投げ、元のエラー（code 付き）を cause に残す
+  const cause = error instanceof Error ? error.cause : undefined;
+  if (cause !== undefined && isTransientSupabaseError(cause)) {
+    return new ReconcileTransientError('db_unavailable', { cause: error });
+  }
+
+  return error;
+}
+
+/**
+ * 照合が呼ぶ返金の同期（order-refund-sync.ts の syncOrderRefunds）。Stripe は読むだけ。
+ * 一時的な失敗（Stripe の通信・5xx・回数制限、DB の接続・直列化など）は ReconcileTransientError にして投げ
+ * （呼び出し元が再試行する）、それ以外は元のエラーのまま投げる。
+ */
+export function createReconcilerRefundSync(
+  database: OrderRefundDatabase,
+  stripe: RefundListClient,
+): ReconcilerDeps['syncRefunds'] {
+  return async (paymentIntentId) => {
+    try {
+      await syncOrderRefunds({ database, stripe, paymentIntentId });
+    } catch (error) {
+      throw toReconcileError(error);
+    }
+  };
+}
+
 export async function createDefaultReconcilerDeps(): Promise<ReconcilerDeps> {
   const client = await createServiceRoleClient();
-  const stripe = getStripeServerClient() as unknown as CheckoutPaymentStripeClient;
+  const stripeClient = getStripeServerClient();
+  const stripe = stripeClient as unknown as CheckoutPaymentStripeClient;
 
   return {
     readPayment: (ref) => readCheckoutPayment(stripe, ref),
     database: createSupabaseReconcilerDatabase(client),
     mailer: createReconcilerMailer(client),
     audit: reconcileAudit,
+    syncRefunds: createReconcilerRefundSync(
+      client as unknown as OrderRefundDatabase,
+      stripeClient as unknown as RefundListClient,
+    ),
     now: () => new Date(),
   };
 }
