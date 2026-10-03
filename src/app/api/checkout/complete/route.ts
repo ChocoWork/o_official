@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import type Stripe from 'stripe';
 import { z } from 'zod';
 import { getStripeServerClient } from '@/lib/stripe/server';
 import {
@@ -12,6 +13,7 @@ import {
 import { resolvePaymentMethodFromSession } from '@/features/checkout/services/payment-method.service';
 import { logAudit } from '@/lib/audit';
 import { extractAuthToken } from '@/lib/auth/request-token';
+import { isTransientStripeError } from '@/lib/stripe/checkout-payment-reader';
 import { reconcileCheckoutPayment, ReconcileTransientError } from '@/lib/stripe/checkout-payment-reconciler';
 import { createDefaultReconcilerDeps } from '@/lib/stripe/checkout-payment-reconciler-deps';
 
@@ -136,6 +138,21 @@ function getClientIp(request: NextRequest): string | null {
   return request.headers.get('x-real-ip');
 }
 
+/**
+ * 想定外の失敗を監査に残す形にする。Supabase の失敗は Error でない素のオブジェクト
+ * （{ message, code, details, hint }）として投げられることがあるので、Error かどうかを問わず
+ * message と code だけを取り出す。details には行の内容（個人情報）が入りうるので残さない。
+ * code は文字列で付いているときだけ入れる（無ければ従来どおり { error_message } だけ）。
+ */
+function describeUnexpectedError(error: unknown): { error_message: string; error_code?: string } {
+  const fields = typeof error === 'object' && error !== null ? (error as { message?: unknown; code?: unknown }) : {};
+  const errorMessage = typeof fields.message === 'string' ? fields.message : 'Unknown error';
+
+  return typeof fields.code === 'string'
+    ? { error_message: errorMessage, error_code: fields.code }
+    : { error_message: errorMessage };
+}
+
 export async function POST(req: NextRequest) {
   const clientIp = getClientIp(req);
   const userAgent = req.headers.get('user-agent');
@@ -193,16 +210,38 @@ export async function POST(req: NextRequest) {
     }
 
     const stripe = getStripeServerClient();
-    const session = await stripe.checkout.sessions.retrieve(
-      parsed.data.checkoutSessionId,
-      {
-        expand: [
-          'payment_intent',
-          'payment_intent.payment_method',
-          'payment_intent.latest_charge',
-        ],
+    let session: Stripe.Checkout.Session;
+    try {
+      session = await stripe.checkout.sessions.retrieve(
+        parsed.data.checkoutSessionId,
+        {
+          expand: [
+            'payment_intent',
+            'payment_intent.payment_method',
+            'payment_intent.latest_charge',
+          ],
+        }
+      );
+    } catch (error) {
+      // 通信・5xx・回数制限は一時的な失敗。照合の一時的な失敗と同じく 503 にして、時間をおいた再試行へ回す。
+      // 存在しない Session・認証の失敗・コードの不具合は、これまでどおり外側の catch で 500 にする。
+      if (isTransientStripeError(error)) {
+        await logAudit({
+          action: 'checkout.complete',
+          outcome: 'error',
+          detail: 'Stripe checkout session retrieval is temporarily unavailable',
+          ip: clientIp,
+          user_agent: userAgent,
+          metadata: {
+            session_id: sessionId,
+            checkout_session_id: parsed.data.checkoutSessionId,
+            reason: 'stripe_unavailable',
+          },
+        });
+        return NextResponse.json({ error: 'Temporarily unavailable' }, { status: 503 });
       }
-    );
+      throw error;
+    }
 
     // 実際に使われた支払方法をサーバ側で確定する（クライアント申告は採用しない）。
     const resolvedPaymentMethod = resolvePaymentMethodFromSession(session);
@@ -400,9 +439,7 @@ export async function POST(req: NextRequest) {
       detail: 'Complete checkout handler error',
       ip: clientIp,
       user_agent: userAgent,
-      metadata: {
-        error_message: error instanceof Error ? error.message : 'Unknown error',
-      },
+      metadata: describeUnexpectedError(error),
     });
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }

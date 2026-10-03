@@ -303,4 +303,106 @@ describe('POST /api/checkout/complete', () => {
 
     expect(ordersUpdate).not.toHaveBeenCalled();
   });
+
+  describe('Session の取得の失敗と、想定外の失敗の監査', () => {
+    let errorSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+      errorSpy.mockRestore();
+    });
+
+    test.each<[string, unknown]>([
+      ['通信の失敗', { type: 'StripeConnectionError' }],
+      ['Stripe の障害', { type: 'StripeAPIError', statusCode: 500 }],
+      ['回数制限', { type: 'StripeRateLimitError', statusCode: 429 }],
+      ['type の無い 5xx', { statusCode: 503 }],
+    ])('Session の取得が一時的な Stripe の失敗（%s）なら 503 を返し、監査に残して、照合しない', async (_name, stripeError) => {
+      mockRetrieveCheckoutSession.mockRejectedValue(stripeError);
+
+      const res = await post();
+
+      expect(res.status).toBe(503);
+      expect(res.body).toEqual({ error: 'Temporarily unavailable' });
+      expect(mockReconcile).not.toHaveBeenCalled();
+      expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+        action: 'checkout.complete',
+        outcome: 'error',
+        detail: 'Stripe checkout session retrieval is temporarily unavailable',
+        metadata: { session_id: 'sess-abc', checkout_session_id: 'cs_test', reason: 'stripe_unavailable' },
+      }));
+      expect(mockLogAudit).not.toHaveBeenCalledWith(expect.objectContaining({ detail: 'Complete checkout handler error' }));
+    });
+
+    test.each<[string, unknown]>([
+      ['存在しない Session', { type: 'StripeInvalidRequestError', code: 'resource_missing', statusCode: 404 }],
+      ['認証の失敗', { type: 'StripeAuthenticationError', statusCode: 401 }],
+      ['想定外のコードの失敗', new TypeError('unexpected')],
+    ])('Session の取得が一時的でない失敗（%s）は、これまでどおり 500 を返し、一般の失敗として監査に残す', async (_name, stripeError) => {
+      mockRetrieveCheckoutSession.mockRejectedValue(stripeError);
+
+      const res = await post();
+
+      expect(res.status).toBe(500);
+      expect(res.body).toEqual({ error: 'Internal server error' });
+      expect(mockReconcile).not.toHaveBeenCalled();
+      expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+        action: 'checkout.complete',
+        outcome: 'error',
+        detail: 'Complete checkout handler error',
+      }));
+      expect(mockLogAudit).not.toHaveBeenCalledWith(expect.objectContaining({
+        detail: 'Stripe checkout session retrieval is temporarily unavailable',
+      }));
+    });
+
+    test('Error でない DB のエラー（PostgREST の形）で失敗しても、監査に message と code を残して 500 を返す', async () => {
+      mockReconcile.mockRejectedValue({
+        code: '23514',
+        message: 'new row for relation "orders" violates check constraint "orders_total_amount_check"',
+        details: 'Failing row contains (a1b2c3d4, hanako@example.com)',
+        hint: null,
+      });
+
+      const res = await post();
+
+      expect(res.status).toBe(500);
+      expect(res.body).toEqual({ error: 'Internal server error' });
+      // 残すのは message と code だけ。details は行の内容（個人情報）を含みうるので残さない
+      expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+        action: 'checkout.complete',
+        outcome: 'error',
+        detail: 'Complete checkout handler error',
+        metadata: {
+          error_message: 'new row for relation "orders" violates check constraint "orders_total_amount_check"',
+          error_code: '23514',
+        },
+      }));
+    });
+
+    // code は文字列で付いているときだけ残す（無ければ、これまでの { error_message } のまま）
+    test.each<[string, unknown, Record<string, string>]>([
+      ['Error', new Error('unexpected failure'), { error_message: 'unexpected failure' }],
+      [
+        'code の付いた Error',
+        Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }),
+        { error_message: 'socket hang up', error_code: 'ECONNRESET' },
+      ],
+      ['message の無いオブジェクト（code が文字列でない）', { code: 42 }, { error_message: 'Unknown error' }],
+      ['文字列', 'boom', { error_message: 'Unknown error' }],
+    ])('想定外の失敗が %s のときの監査の内容', async (_name, thrown, expectedMetadata) => {
+      mockReconcile.mockRejectedValue(thrown);
+
+      const res = await post();
+
+      expect(res.status).toBe(500);
+      expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+        detail: 'Complete checkout handler error',
+        metadata: expectedMetadata,
+      }));
+    });
+  });
 });
