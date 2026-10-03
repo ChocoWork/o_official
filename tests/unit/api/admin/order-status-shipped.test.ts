@@ -114,6 +114,12 @@ describe('POST /api/admin/orders/[id]/status - CSRF トークン', () => {
     mockRpc.mockResolvedValue({ data: [{ id: ORDER_ID, shipping_email: 'hanako@example.com' }], error: null });
   });
 
+  // clearAllMocks は実装を戻さない。ここで置いた既定の応答を、後ろのテストへ持ち越さない
+  afterEach(() => {
+    mockRpc.mockReset();
+    mockMaybeSingle.mockReset();
+  });
+
   test.each([
     ['取消', 403, CANCEL],
     ['発送', 403, SHIP],
