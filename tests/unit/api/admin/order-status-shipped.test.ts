@@ -48,8 +48,14 @@ jest.mock('@/lib/stripe/checkout-payment-reconciler-deps', () => ({
   createDefaultReconcilerDeps: async () => mockDeps,
 }));
 
+const mockAuthorize = jest.fn();
 jest.mock('@/lib/auth/admin-rbac', () => ({
-  authorizeAdminPermission: jest.fn().mockResolvedValue({ ok: true, userId: 'admin-1' }),
+  authorizeAdminPermission: (...args: unknown[]) => mockAuthorize(...args),
+}));
+
+const mockRequireCsrf = jest.fn();
+jest.mock('@/lib/csrfMiddleware', () => ({
+  requireCsrfOrDeny: (...args: unknown[]) => mockRequireCsrf(...args),
 }));
 
 const mockLogAudit = jest.fn().mockResolvedValue(undefined);
@@ -93,8 +99,59 @@ function reconciled(orderStatus: string) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockAuthorize.mockResolvedValue({ ok: true, userId: 'admin-1' });
+  mockRequireCsrf.mockResolvedValue(undefined);
   mockExpireOpenCheckoutSession.mockResolvedValue('expired');
   reconciled('cancelled');
+});
+
+describe('POST /api/admin/orders/[id]/status - CSRF トークン', () => {
+  const SHIP = { status: 'shipped', carrier: 'yamato', trackingNumber: '1234-5678-9012' };
+
+  // 確認が通れば取消も発送も成功する状態にしておく。拒否されたとき、処理が進んだことが 200 で分かる
+  beforeEach(() => {
+    currentOrder('payment_in_progress', { payment_intent_id: null });
+    mockRpc.mockResolvedValue({ data: [{ id: ORDER_ID, shipping_email: 'hanako@example.com' }], error: null });
+  });
+
+  test.each([
+    ['取消', 403, CANCEL],
+    ['発送', 403, SHIP],
+    ['取消（確認の DB の失敗）', 500, CANCEL],
+    ['発送（確認の DB の失敗）', 500, SHIP],
+  ])('CSRF トークンが合わなければ、%s は何もせず、確認の応答（%i）をそのまま返す', async (_name, status, body) => {
+    mockRequireCsrf.mockResolvedValue(new Response(null, { status }));
+
+    const res = await post(body);
+
+    expect(res.status).toBe(status);
+    expect(mockFrom).not.toHaveBeenCalled();
+    expect(mockRpc).not.toHaveBeenCalled();
+    expect(mockExpireOpenCheckoutSession).not.toHaveBeenCalled();
+    expect(mockReadCheckoutPayment).not.toHaveBeenCalled();
+    expect(mockReconcile).not.toHaveBeenCalled();
+    expect(mockSendOrderShippedEmail).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['取消', CANCEL],
+    ['発送', SHIP],
+  ])('CSRF トークンが合えば、%s は処理を進める', async (_name, body) => {
+    const res = await post(body);
+
+    expect(mockRequireCsrf).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(200);
+  });
+
+  test('権限が無ければ CSRF を確かめず、認可の応答をそのまま返す（権限の確認が先）', async () => {
+    mockAuthorize.mockResolvedValue({ ok: false, response: { status: 403, body: { error: 'Forbidden' } } });
+
+    const res = await post(CANCEL);
+
+    expect(res.status).toBe(403);
+    expect(mockRequireCsrf).not.toHaveBeenCalled();
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
 });
 
 describe('POST /api/admin/orders/[id]/status - 発送', () => {

@@ -88,6 +88,12 @@ export async function POST(
       return authz.response;
     }
 
+    const { requireCsrfOrDeny } = await import('@/lib/csrfMiddleware');
+    const csrfResult = await requireCsrfOrDeny();
+    if (csrfResult instanceof Response) {
+      return csrfResult;
+    }
+
     const { id } = await params;
     const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
     const userAgent = request.headers.get('user-agent') ?? null;

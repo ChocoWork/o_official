@@ -220,6 +220,14 @@ describe('POST /api/admin/orders/:id/review', () => {
     expect(mockRpc).not.toHaveBeenCalled();
   });
 
+  it('権限が無ければ CSRF を確かめず、認可の応答をそのまま返す（権限の確認が先）', async () => {
+    mockAuthorize.mockResolvedValue({ ok: false, response: { status: 403, body: { error: 'Forbidden' } } });
+
+    expect((await review()).status).toBe(403);
+    expect(mockRequireCsrf).not.toHaveBeenCalled();
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
   it('注文 ID の形が違えば 400', async () => {
     expect((await review('not-a-uuid')).status).toBe(400);
   });
@@ -329,6 +337,14 @@ describe('POST /api/admin/payment-exceptions/:id/resolve', () => {
     mockRequireCsrf.mockResolvedValue(new Response(null, { status: 403 }));
 
     expect((await resolve({ note: 'メモ' })).status).toBe(403);
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it('権限が無ければ CSRF を確かめず、認可の応答をそのまま返す（権限の確認が先）', async () => {
+    mockAuthorize.mockResolvedValue({ ok: false, response: { status: 403, body: { error: 'Forbidden' } } });
+
+    expect((await resolve({ note: 'メモ' })).status).toBe(403);
+    expect(mockRequireCsrf).not.toHaveBeenCalled();
     expect(mockRpc).not.toHaveBeenCalled();
   });
 
