@@ -1,5 +1,6 @@
 import {
   calculateSucceededRefundTotal,
+  OrderNotFoundForPaymentIntentError,
   syncOrderRefunds,
   type OrderRefundDatabase,
   type RefundListClient,
@@ -269,5 +270,39 @@ describe('syncOrderRefunds', () => {
     })).rejects.toThrow('permission denied');
 
     expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws a typed error, with the same message as before, when no order has the PaymentIntent', async () => {
+    const { database, maybeSingle, rpc } = createDatabase({ orders: [] });
+    maybeSingle.mockResolvedValue({ data: null, error: null });
+    const stripe = createStripe([{ status: 'succeeded', amount: 1_000, created: 20 }]);
+
+    const error = await syncOrderRefunds({
+      database,
+      stripe,
+      paymentIntentId: 'pi_without_order',
+    }).catch((caught: unknown) => caught);
+
+    // The cron reconcile job and the admin refund route only see an Error with this message, as before.
+    expect(error).toBeInstanceOf(OrderNotFoundForPaymentIntentError);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe('Order not found for Stripe PaymentIntent');
+    expect(stripe.refunds.list).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('does not mistake a failed order read for a missing order', async () => {
+    const { database, maybeSingle } = createDatabase({ orders: [] });
+    maybeSingle.mockResolvedValue({ data: null, error: { message: 'connection lost' } });
+    const stripe = createStripe([]);
+
+    const error = await syncOrderRefunds({
+      database,
+      stripe,
+      paymentIntentId: 'pi_read_failed',
+    }).catch((caught: unknown) => caught);
+
+    expect(error).not.toBeInstanceOf(OrderNotFoundForPaymentIntentError);
+    expect((error as Error).message).toBe('Failed to read order refund state: connection lost');
   });
 });

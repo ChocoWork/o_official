@@ -71,6 +71,17 @@ type StripeRefundProjection = {
 
 const MAX_PROJECTION_ATTEMPTS = 3;
 
+/**
+ * No order carries the PaymentIntent (for example a payment that could not become an order).
+ * It stays an Error with the same message, so callers that only propagate failures behave as before.
+ */
+export class OrderNotFoundForPaymentIntentError extends Error {
+  constructor() {
+    super('Order not found for Stripe PaymentIntent');
+    this.name = 'OrderNotFoundForPaymentIntentError';
+  }
+}
+
 export function calculateSucceededRefundTotal(
   refunds: readonly RefundSnapshot[],
 ): { amount: number; latestSucceededAt: number | null } {
@@ -152,7 +163,7 @@ export async function syncOrderRefunds({
       throw new Error(`Failed to read order refund state: ${orderError.message ?? 'database error'}`);
     }
     if (!order) {
-      throw new Error('Order not found for Stripe PaymentIntent');
+      throw new OrderNotFoundForPaymentIntentError();
     }
 
     // Existing unpaid cancellations predate the refund projection contract.

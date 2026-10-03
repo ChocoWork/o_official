@@ -58,6 +58,25 @@ describe('Stripe accounting synchronization', () => {
     expect(stripe.paymentIntents.retrieve).not.toHaveBeenCalled();
   });
 
+  it('does not save a refund of a Stripe-only payment, and does not throw (the webhook must not retry it forever)', async () => {
+    const db = database();
+    const stripe = {
+      refunds: { retrieve: jest.fn().mockResolvedValue({
+        id: 're_orphan', payment_intent: 'pi_unknown', charge: 'ch_unknown', amount: 2_000,
+        currency: 'jpy', status: 'succeeded', reason: null,
+        balance_transaction: 'txn_refund_orphan', failure_balance_transaction: null,
+        created: 1_755_212_400,
+      }) },
+      balanceTransactions: { retrieve: jest.fn() },
+    };
+
+    await expect(syncRefundAccounting({
+      stripe, database: db, refundId: 're_orphan',
+    })).resolves.toEqual({ disposition: 'unmatched', refund: null });
+    expect(stripe.balanceTransactions.retrieve).not.toHaveBeenCalled();
+    expect(db.rows).toEqual({});
+  });
+
   it('uses the refund balance transaction created time as succeededAt', async () => {
     const db = database();
     const succeededEpoch = Date.parse('2026-08-15T01:00:00.000Z') / 1000;

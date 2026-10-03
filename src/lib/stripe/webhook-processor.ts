@@ -4,6 +4,7 @@ import Stripe from 'stripe';
 import { getStripeServerClient } from '@/lib/stripe/server';
 import { logAudit } from '@/lib/audit';
 import {
+  OrderNotFoundForPaymentIntentError,
   syncOrderRefunds,
   type OrderRefundDatabase,
   type RefundListClient,
@@ -66,20 +67,48 @@ function resolvePaymentIntentId(
   return value?.id ?? null;
 }
 
+/**
+ * 返金の変化を注文へ反映する。注文に結び付いていない支払いの返金（注文を作れず要対応になった支払いを、
+ * 店が Stripe で返金したとき）は、注文が現れないので再試行しても直らない。失敗にして永久に再試行させず、
+ * ID だけを監査に残して完了にする（後段の会計の同期は呼び出し側が続ける）。
+ */
 async function handleRefundChanged(
+  event: Stripe.Event,
   object: Stripe.Refund | Stripe.Charge,
   stripe: Stripe,
+  auditRequest: NextRequest,
 ): Promise<void> {
   const paymentIntentId = resolvePaymentIntentId(object.payment_intent);
   if (!paymentIntentId) {
     throw new Error('Stripe refund event is missing payment_intent');
   }
 
-  await syncOrderRefunds({
-    database: supabase as unknown as OrderRefundDatabase,
-    stripe: stripe as unknown as RefundListClient,
-    paymentIntentId,
-  });
+  try {
+    await syncOrderRefunds({
+      database: supabase as unknown as OrderRefundDatabase,
+      stripe: stripe as unknown as RefundListClient,
+      paymentIntentId,
+    });
+  } catch (error) {
+    if (!(error instanceof OrderNotFoundForPaymentIntentError)) {
+      throw error;
+    }
+
+    const isCharge = event.type === 'charge.refunded';
+    await logWebhookAudit(
+      auditRequest,
+      'checkout.webhook.refund_without_order',
+      'success',
+      'Refund event skipped: no order for the PaymentIntent',
+      {
+        event_id: event.id,
+        event_type: event.type,
+        payment_intent_id: paymentIntentId,
+        refund_id: isCharge ? null : object.id,
+        charge_id: isCharge ? object.id : null,
+      },
+    );
+  }
 }
 
 type AccountingStripeClient = Parameters<typeof syncPayoutAccounting>[0]['stripe'];
@@ -140,10 +169,10 @@ export async function processStripeWebhookEvent(
     case 'refund.created':
     case 'refund.updated':
     case 'refund.failed':
-      await handleRefundChanged(event.data.object as Stripe.Refund, stripe);
+      await handleRefundChanged(event, event.data.object as Stripe.Refund, stripe, auditRequest);
       break;
     case 'charge.refunded':
-      await handleRefundChanged(event.data.object as Stripe.Charge, stripe);
+      await handleRefundChanged(event, event.data.object as Stripe.Charge, stripe, auditRequest);
       break;
     default:
       break;
