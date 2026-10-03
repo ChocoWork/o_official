@@ -17,7 +17,7 @@
 | `POST /api/admin/orders/[id]/status`、取消・出荷 | [status API](../../../src/app/api/admin/orders/%5Bid%5D/status/route.ts) |
 | `POST /api/admin/orders/[id]/refund`、`refunds.create` | [refund API](../../../src/app/api/admin/orders/%5Bid%5D/refund/route.ts) |
 | `POST /api/admin/payment-exceptions/[id]/resolve` | [resolve API](../../../src/app/api/admin/payment-exceptions/%5Bid%5D/resolve/route.ts) |
-| 管理認可 | [admin.orders.manage・セッション・AAL2確認](../../../src/lib/auth/admin-rbac.ts)。refund APIは追加でadminロールに限定。resolve APIは明示的なCSRF検証も行う |
+| 管理認可 | [admin.orders.manage・セッション・AAL2確認](../../../src/lib/auth/admin-rbac.ts)。refund APIは追加でadminロールに限定。status/resolve APIは認可後に明示的なCSRF helperを呼ぶ |
 | `checkout.sessions.retrieve/expire`と失効競合 | [Session失効](../../../src/lib/stripe/checkout-session-expiry.ts) |
 | `checkout.sessions.retrieve/list`、`paymentIntents.retrieve`、照合判定・条件付き更新 | [Stripe読取り](../../../src/lib/stripe/checkout-payment-reader.ts)、[照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)、[判定表](../../../src/lib/stripe/checkout-payment-decision.ts)、[RPC接続](../../../src/lib/stripe/checkout-payment-reconciler-deps.ts) |
 | 在庫解放と取消記録 | [注文IDによる在庫解放RPC](../../../supabase/migrations/20260927100200_release_stock_by_order.sql)、[台帳反映トリガー](../../../supabase/migrations/20260919065355_add_stock_movements.sql) |
@@ -25,9 +25,11 @@
 | `refunds.list`、成功返金集計、CASと再確認 | [返金同期](../../../src/lib/stripe/order-refund-sync.ts)、[返金投影RPC](../../../supabase/migrations/20260925000218_add_order_state_transition_rpcs.sql) |
 | 取消・出荷のメール | [取消メール](../../../src/lib/orders/order-lifecycle-emails.ts)、[送信権](../../../src/lib/orders/order-confirmation-email.ts)、[送信権テーブルとRPC](../../../supabase/migrations/20260920064241_add_order_email_claims.sql)、[出荷メール](../../../src/lib/orders/order-shipped-email.ts)、[メールアダプター](../../../src/lib/mail.ts) |
 
+status/resolve APIは管理認可の後、ID・本文の検証より先に`requireCsrfOrDeny`を呼び、戻り値がResponseならそのまま返して後続へ進まない。helperはrefresh Cookieがなければ検査不要として通し、Cookieがある場合のCSRFヘッダー欠落・hash不一致は403、例外は500。[CSRF helper](../../../src/lib/csrfMiddleware.ts)を参照。これはAPI独自のチェックであり、共通proxyのOrigin検査と別に行われる。
+
 ## SQ-ADMIN-01: 未入金注文の通常取消
 
-目的は、未入金注文をStripeの現在値と突き合わせて取り消すこと。事前条件は管理認可と入力検証を通り、対象がpayment_in_progressまたはpendingであること。終了結果は取消成功の200、取り消せない状態の409、一時的な確認失敗の503等。
+目的は、未入金注文をStripeの現在値と突き合わせて取り消すこと。事前条件は管理認可・CSRF helper・入力検証を通り、対象がpayment_in_progressまたはpendingであること。終了結果は取消成功の200、取り消せない状態の409、一時的な確認失敗の503等。
 
 ```mermaid
 sequenceDiagram
@@ -38,7 +40,7 @@ sequenceDiagram
     participant DB as DB / RPC
     participant Mail as メール送信
     Admin->>API: POST /api/admin/orders/[id]/status (cancelled)
-    API->>API: admin.orders.manage・入力を検証
+    API->>API: admin.orders.manage → CSRF helper → 入力検証
     API->>DB: 対象注文の状態・Stripe参照を取得
     DB-->>API: payment_in_progress または pending
     alt payment_in_progress
@@ -91,7 +93,7 @@ sequenceDiagram
 
 ## SQ-ADMIN-02: 入金済み注文の出荷記録
 
-目的は出荷情報を条件付きで保存し、通知を試みること。事前条件は管理認可、配送業者・追跡番号の入力検証。終了結果はRPCで出荷記録が成立した200、条件不成立の409、RPC失敗の500。
+目的は出荷情報を条件付きで保存し、通知を試みること。事前条件は管理認可・CSRF helper、配送業者・追跡番号の入力検証。終了結果はRPCで出荷記録が成立した200、条件不成立の409、RPC失敗の500。
 
 ```mermaid
 sequenceDiagram
@@ -100,7 +102,7 @@ sequenceDiagram
     participant DB as DB / RPC
     participant Mail as メール送信
     Admin->>API: POST /api/admin/orders/[id]/status (shipped)
-    API->>API: 管理認可・配送業者・追跡番号を検証
+    API->>API: 管理認可 → CSRF helper → 配送業者・追跡番号を検証
     API->>DB: admin_ship_paid_order(order, actor, carrier, tracking)
     alt 条件が成立
         DB-->>API: 出荷更新行と宛先
@@ -288,3 +290,5 @@ APIが外部確認に失敗すればRPCへ進まない。DB側では例外行を
 ## 未確認事項
 
 本番のRPC・トリガー・権限適用、実際の管理者ACL、Stripeの入金・返金結果、外部確認とDB更新の競合、メール到達は未確認。[pendingの状態強制](../../../supabase/pending/harden_order_state_transitions.sql)は実適用を確認せずに有効と断定しない。SQLコメントの計画と現行APIの呼出し経路を区別する。
+
+status APIのCSRF helper追加は、最終照合時のmaster `110420bd`のコードを確認した。取消と出荷の図に同じ前段ガードを反映している。

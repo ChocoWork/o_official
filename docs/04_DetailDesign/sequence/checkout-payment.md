@@ -148,7 +148,11 @@ sequenceDiagram
     UI->>API: POST /api/checkout/complete
     API->>API: Cookie session・利用者・制限・入力確認
     API->>Stripe: Session取得 (PaymentIntent等を展開)
-    Stripe-->>API: 現在値・metadata
+    Stripe-->>API: 現在値・metadata または 取得エラー
+    break 初回Stripe取得に失敗
+        API->>DB: 一時障害分類 または 外側catchでエラーを監査
+        API-->>UI: 一時障害503 / その他500で終了
+    end
     API->>API: metadata所有者 → mode → draft ID → 0円 → Session完了条件
     Note over API,DB: 各ガード不成立なら応答して終了<br/>通過した場合だけdraftを取得
     API->>DB: draft存在・所有session確認
@@ -167,7 +171,7 @@ sequenceDiagram
     end
 ```
 
-complete APIの正常終了はorderIdとpaid/pending/shippedの状態がある200。初回のSession取得を含む照合器外の例外は外側catchの500、照合器の一時エラーは503、注文を登録できない結果は409となる。配送先の入力欄をこのAPIで再保存することはない。
+complete APIの正常終了はorderIdとpaid/pending/shippedの状態がある200。初回のSession取得もisTransientStripeErrorで分類し、一時障害なら503。それ以外の照合器外の例外は外側catchの500、照合器の一時エラーも503、注文を登録できない結果は409となる。配送先の入力欄をこのAPIで再保存することはない。
 
 ## SQ-CHECKOUT-04: 共通照合器の読取り・判定・再確認
 
@@ -266,7 +270,7 @@ sequenceDiagram
 | draftとカート | placeでdraft completed、入金RPCで対象snapshotのsource_cart_idと所有sessionが一致するカート行だけ削除 |
 | paidの異常 | 金額・通貨不一致でもRPCはpaidに更新し、照合器が要対応を記録。再確保できないstock明細はpaid＋要確認。出荷ガードとは別に管理する |
 | 競合・収束 | 更新0件や中間矛盾は読み直し。最大3回で未収束ならReconcileTransientError。completeは一時エラーを503にする |
-| 外部一時障害 | 照合器のStripe読取りでは通信・5xx・429を一時障害に分類し、resource_missingはmissing分類。completeの初回Session取得の例外は照合器外なので外側catchの500。入力・認証の問題を一時障害とみなして繰返さない |
+| 外部一時障害 | StripeConnectionError/StripeAPIError/StripeRateLimitError、または数値statusCodeが500以上/429なら一時障害。照合器の読取りはresource_missingをmissing分類。completeの初回Session取得も同じ一時障害判定で503を返す。初回取得のresource_missing・認証エラー・その他の非一時エラーは外側catchの500。入力・認証の問題を一時障害とみなして繰返さない |
 | 注文メール | 設定・宛先が揃えば種類別claimを行う。RPCがfalseなら送らず、RPC error/例外は監査後に送信を続ける。送信失敗はclaimのreleaseを試みる。入金更新とメール到達・重複排除を同一視しない |
 | 所有者紐付け | ログイン時のみ、user_id未設定条件で紐付け。失敗は成功応答を取り消さない |
 | 画面再試行 | 通常確定・外部復帰とも失敗を表示。completeを自動pollするループは画面にない |
@@ -280,3 +284,5 @@ sequenceDiagram
 ## 未確認事項
 
 本番のmigration適用、実際のStripe Session・PaymentIntent・動的支払方法、外部認証・メール到達、全競合の実行結果は未確認。SQLの「受付API(F)」コメントや廃止されたfinalize/PaymentIntent APIを、現行画面から呼ぶ経路として描かない。
+
+complete APIの初回Stripe取得の503分類と予期しないエラーの監査形式は、`671645aa`のコードを最終照合で確認した。外側500の監査はmessageと文字列codeを記録し、例外オブジェクトのdetails/hintを複写しない。
