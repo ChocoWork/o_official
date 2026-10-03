@@ -469,17 +469,22 @@
 
 ### グループ A を本番へ当てる前の確認
 
-マイグレーション9本（`20260927100000`〜`20260927100800`）は、master へ push すると CI（`.github/workflows/db-migrations.yml`）が本番へ当てる。本番へは Supabase MCP で読むだけにする（`execute_sql` は SELECT のみ、`get_advisors`）。
+マイグレーション10本（`20260927100000`〜`20260927100900`）は、master へ push すると CI（`.github/workflows/db-migrations.yml`）が本番へ当てる。本番へは Supabase MCP で読むだけにする（`list_migrations`、`execute_sql` は SELECT のみ、`get_advisors`）。
 
 | 時点 | 読むもの | 期待 |
 | --- | --- | --- |
+| push の直前 | `list_migrations` | 最新が `20260925000303` のまま（違えば、台帳にあってファイルに無い version で `db push` が止まる。押し通さず、ユーザーに知らせる） |
 | push の直前 | `select checkout_session_id, count(*) from public.orders where checkout_session_id is not null group by 1 having count(*) > 1;` | 0行（`orders_checkout_session_id_key` を作れる） |
+| push の直前 | 下の `public.orders` のトリガーの SELECT | 5行（`protect_legal_order_delete`・`protect_legal_order_immutable_fields`・`record_order_revision`・`reject_shipping_without_address`・`trigger_orders_updated_at`）。`enforce_order_payment_invariants` は無い（保留中の第2段階 `supabase/pending/harden_order_state_transitions.sql` が作る）。`information_schema.triggers` で数えると、`reject_shipping_without_address` が INSERT と UPDATE の2行になるので6行 |
 | push の直前 | `select count(*) from public.orders where status = 'pending' and checkout_session_id is null;` | 2（2026-03-20 の移行前の未入金。2でなければ push せず、件数と作成日時をユーザーに知らせる） |
+| push の直前 | `select count(*), min(created_at), max(created_at) from public.orders where status = 'pending';` | 2件まで（上の移行前の2件だけ。`checkout_session_id` の有無を問わず数える）。E2E が本番に書いた入金待ちの注文が残っていれば、最初の見回りで `payment_expired` のメールや `stripe_object_missing` の要対応になる。2件より多ければ push せず、件数と作成日時をユーザーに知らせる |
 | 当てた後（照合・見回りを流す前） | `select count(*) from private.order_emails as e join public.orders as o on o.id = e.order_id where o.status = 'pending' and o.checkout_session_id is null;` | 8（移行前の2件 × お客様向けメール4種。`20260927100500_payment_exceptions.sql` の `private.suppress_legacy_unpaid_order_emails()` が送信済みとして登録する。照合を流すと2件は入金待ちでなくなりうるので、その前に読む） |
 | 当てた後 | `select enumlabel from pg_enum where enumtypid = 'public.order_status'::regtype order by enumsortorder;` | 7行（`payment_in_progress`・`pending`・`paid`・`failed`・`abandoned`・`cancelled`・`shipped`） |
 | 当てた後 | `select conname from pg_constraint where conrelid = 'public.orders'::regclass and conname = 'orders_checkout_session_id_key';` | 1行 |
 | 当てた後 | 下の関数の権限の SELECT | 14行。どれも `anon`・`authenticated` が false、`service_role` が true（古い定義が残っていれば行が増える） |
 | 当てた後 | `select c.relrowsecurity, p.policyname, p.permissive, p.roles from pg_class as c left join pg_policies as p on p.schemaname = 'public' and p.tablename = c.relname where c.oid = 'public.payment_exceptions'::regclass;` | 1行（true・`deny direct client access`・`RESTRICTIVE`・`{anon,authenticated}`） |
+| 当てた後 | 下の `payment_exceptions` の表の権限の SELECT | 3行。`anon`・`authenticated` は `can_select`・`can_do_more` とも false（何も無い）、`service_role` は `can_select` が true・`can_do_more` が false（SELECT だけ） |
+| 当てた後 | 下の `public.orders` の店内の列の SELECT | 2行（`anon`・`authenticated`）。どちらも `unreadable_columns` が `cancel_note, cancel_notify_customer, cancel_reason, reviewed_by` の4列だけ（ほかの列は読める。`20260927100900_hide_internal_order_columns.sql` が隠す。取消のメモ・理由を、注文の持ち主やゲストに読ませないため） |
 | 当てた後 | `get_advisors`（security） | 新しい警告が0件 |
 
 ```sql
@@ -500,9 +505,48 @@ where n.nspname = 'public'
 order by p.proname;
 ```
 
+上の表の「`public.orders` のトリガーの SELECT」:
+
+```sql
+select t.tgname
+from pg_trigger as t
+where t.tgrelid = 'public.orders'::regclass
+  and not t.tgisinternal
+order by t.tgname;
+```
+
+上の表の「`payment_exceptions` の表の権限の SELECT」:
+
+```sql
+select r.rolname,
+       has_table_privilege(r.rolname, 'public.payment_exceptions', 'SELECT') as can_select,
+       has_table_privilege(r.rolname, 'public.payment_exceptions',
+                           'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER') as can_do_more
+from pg_roles as r
+where r.rolname in ('anon', 'authenticated', 'service_role')
+order by r.rolname;
+```
+
+上の表の「`public.orders` の店内の列の SELECT」（読めない列だけを並べる。店内の4列以外が出たら、新しい列に `GRANT SELECT` を足し忘れている）:
+
+```sql
+select r.rolname,
+       string_agg(a.attname, ', ' order by a.attname collate "C") as unreadable_columns
+from pg_roles as r
+cross join pg_attribute as a
+where r.rolname in ('anon', 'authenticated')
+  and a.attrelid = 'public.orders'::regclass
+  and a.attnum > 0
+  and not a.attisdropped
+  and not has_column_privilege(r.rolname, 'public.orders', a.attnum, 'SELECT')
+group by r.rolname
+order by r.rolname;
+```
+
 - 本番の環境変数に `SHOP_ALERT_EMAIL` を足す（未設定なら店への要対応メールを送らず、毎時の見回りが送り直す）
 - 保留中の SQL（見回りの毎時の登録 `supabase/pending/schedule_expire_pending_orders.sql`・R-04 の第2段階 `supabase/pending/harden_order_state_transitions.sql`）は、今までどおり明示の承認を得てから当てる
 - 公開前に照合を1回流し、移行前の未入金2件の結果を確かめる（設計書 7-1）
+- 公開前の最初の見回りは、移行前の2件を作った Stripe のモード（テストか本番か）のキーで流す（違うと2件とも `stripe_object_missing` になる）
 
 ## 追加レビュー（2回目・Claude Code）
 
