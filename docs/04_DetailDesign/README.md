@@ -1,6 +1,6 @@
 ﻿# 詳細設計の案内
 
-> 状態: 文書索引 | 確認日: 2026-10-01
+> 状態: 文書索引 | 確認日: 2026-10-04
 
 ## 概要
 
@@ -19,9 +19,9 @@
 
 ## 処理と共通設計
 
-- [ログイン・追加認証シーケンス](sequence/auth-login-mfa.md)：現行実装の主要処理。
-- [注文・決済の状態遷移](states/order-payment.md)：注文、決済の確認済み遷移。
-- [認証シーケンス旧版](sequence/01_auth_seq.md)：過去の設計記録。現行フローの正本として扱わない。
+- [シーケンス設計の案内](sequence/README.md)：機能別ファイル・シナリオ別の図。認証、購入、Webhook、注文管理を実装と照合した文書へ案内する。
+- [状態設計の案内](states/README.md)：状態管理対象別の図。注文、購入下書き、Webhookキュー、決済の要対応を分ける。
+- [従来の認証図のパス](sequence/01_auth_seq.md)：現行の認証シナリオへの案内。従来の未検証フローを現行設計として併記しない。
 - [非機能・監視](shared/20_nonfunctional.md)、[デザインシステム](shared/21_design_system.md)、[インフラ・構成](shared/22_infrastructure.md)、[財務ドメイン](shared/finance.md)、[UI部品一覧](shared/component-inventory.md)：既存内容を移した資料。個々の実装状況は対象コードで再確認する。
 
 ## 更新時の形式
