@@ -5,9 +5,11 @@ const eslintConfig = [
   {
     // スキルのサンプルは複数ファイルの断片を1枚に連結したドキュメントで、
     // 単体では成立しないコード。実装ではないので lint 対象から外す。
+    // tmp/ は git 管理外（.gitignore）の作業用スクリプト置き場。リポジトリのコードではないので外す。
     ignores: [
       '.claude/skills/**/examples/**',
       '.github/skills/**/examples/**',
+      'tmp/**',
     ],
   },
   ...nextCoreWebVitals,
