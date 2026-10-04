@@ -315,33 +315,39 @@ describeLocalDb('integration: 照合の依存と見回りの候補を実際の P
   });
 
   test.each([
-    ['一部', 1000, 'paid'],
-    ['全額', PRICE, 'cancelled'],
-  ])('照合: 入金済みにした注文に%s返金済みの分があれば、返金投影の RPC で注文へ反映する（返金額 %i）', async (_name, amountRefunded, expectedStatus) => {
+    ['一部', 1000, 'paid', 1],
+    ['全額', PRICE, 'cancelled', 0],
+  ])('照合: 入金済みにした注文に%s返金済みの分があれば、返金投影の RPC で注文へ反映する（返金額 %i。結果の状態は %s、注文確定メールは %i 通）', async (_name, amountRefunded, expectedStatus, expectedMails) => {
     const draft = await newDraft();
     const orderId = await placeOrThrow(database, draft, new Date());
     const deps = composedDeps(draft, `pi_pgrst_${uniqueSuffix()}`, amountRefunded);
 
     const result = await reconcileForReal(deps, { checkoutSessionId: draft.checkoutSessionId });
 
-    expect(result).toMatchObject({ kind: 'ok', orderId });
+    // 結果の状態は、返金の同期のあとの状態（全額返金なら取消）。完了 API・管理画面の取消が、取り消された注文を入金完了と扱わない
+    expect(result).toMatchObject({ kind: 'ok', orderId, orderStatus: expectedStatus });
     const stored = await db().query(
       'select status::text as status, refunded_amount, refunded_at is not null as has_refunded_at from public.orders where id = $1',
       [orderId],
     );
     expect(stored.rows[0]).toEqual({ status: expectedStatus, refunded_amount: amountRefunded, has_refunded_at: true });
-    expect(deps.mailer.sendOrderConfirmation).toHaveBeenCalledTimes(1);
+    // 全額返金済みの支払いには、注文確定メールを送らない（このあと取消になる）
+    expect(deps.mailer.sendOrderConfirmation).toHaveBeenCalledTimes(expectedMails);
 
     // 同じ支払いをもう一度照合しても、同じ状態に収まる（返金の同期は何度呼んでも同じ結果）
-    await reconcileForReal(deps, { checkoutSessionId: draft.checkoutSessionId });
+    expect(await reconcileForReal(deps, { checkoutSessionId: draft.checkoutSessionId })).toMatchObject({
+      kind: 'ok',
+      orderId,
+      orderStatus: expectedStatus,
+    });
     const again = await db().query('select status::text as status, refunded_amount from public.orders where id = $1', [orderId]);
     expect(again.rows[0]).toEqual({ status: expectedStatus, refunded_amount: amountRefunded });
-    expect(deps.mailer.sendOrderConfirmation).toHaveBeenCalledTimes(1);
+    expect(deps.mailer.sendOrderConfirmation).toHaveBeenCalledTimes(expectedMails);
   });
 
-  test('照合: 注文が無く返金済みの入金済みの支払いは、注文を作らず記録だけにする（在庫も動かさない）', async () => {
+  test('照合: 注文が無く全額返金済みの入金済みの支払いは、注文を作らず記録だけにする（在庫も動かさない）', async () => {
     const draft = await newDraft();
-    const deps = composedDeps(draft, `pi_pgrst_${uniqueSuffix()}`, 1000);
+    const deps = composedDeps(draft, `pi_pgrst_${uniqueSuffix()}`, PRICE);
 
     const result = await reconcileForReal(deps, { checkoutSessionId: draft.checkoutSessionId });
 
@@ -354,6 +360,25 @@ describeLocalDb('integration: 照合の依存と見回りの候補を実際の P
     expect(await database.findOrder({ checkoutSessionId: draft.checkoutSessionId, paymentIntentId: null })).toBeNull();
     expect(await movementsOf(db(), draft.variantId)).toEqual([{ delta: 2, reason: 'restock' }]);
     expect(deps.mailer.sendOrderConfirmation).not.toHaveBeenCalled();
+  });
+
+  test('照合: 注文が無く一部だけ返金済みの入金済みの支払いは、注文を作って入金済みにし、返金済みの分を同じ照合で反映する', async () => {
+    const draft = await newDraft();
+    const deps = composedDeps(draft, `pi_pgrst_${uniqueSuffix()}`, 1000);
+
+    const result = await reconcileForReal(deps, { checkoutSessionId: draft.checkoutSessionId });
+
+    expect(result).toMatchObject({ kind: 'ok', action: { type: 'place_and_mark_paid' }, orderStatus: 'paid' });
+    const stored = await db().query(
+      'select status::text as status, refunded_amount from public.orders where checkout_session_id = $1',
+      [draft.checkoutSessionId],
+    );
+    expect(stored.rows).toEqual([{ status: 'paid', refunded_amount: 1000 }]);
+    expect(await movementsOf(db(), draft.variantId)).toEqual([
+      { delta: 2, reason: 'restock' },
+      { delta: -1, reason: 'purchase' },
+    ]);
+    expect(deps.mailer.sendOrderConfirmation).toHaveBeenCalledTimes(1);
   });
 
   test('見回り: 候補の条件（入れ子の and と ISO の時刻）を PostgREST が受け付け、30分を超えた支払い手続き中と入金待ちだけを数える', async () => {

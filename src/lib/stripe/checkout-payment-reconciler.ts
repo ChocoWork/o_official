@@ -6,7 +6,12 @@ import type {
   PaymentExceptionReason,
   PlaceOrderRejection,
 } from '@/lib/orders/order-payment-types';
-import { decideOrderAction, type OrderAction, type StripePaymentState } from '@/lib/stripe/checkout-payment-decision';
+import {
+  decideOrderAction,
+  isFullyRefunded,
+  type OrderAction,
+  type StripePaymentState,
+} from '@/lib/stripe/checkout-payment-decision';
 import { ReconcileTransientError, type CheckoutPaymentSnapshot } from '@/lib/stripe/checkout-payment-reader';
 
 export { ReconcileTransientError };
@@ -136,9 +141,10 @@ export type ReconcilerDeps = {
   audit: ReconcilerAudit;
   /**
    * 注文を Stripe の返金済みの分に合わせる（返金の同期。order-refund-sync.ts）。何度呼んでも同じ結果に収まる。
+   * 同期したあとの注文の状態を返す（全額返金なら取消）。
    * 一時的な失敗は ReconcileTransientError にして投げる（呼び出し元が再試行する）。それ以外はそのまま投げる。
    */
-  syncRefunds(paymentIntentId: string): Promise<void>;
+  syncRefunds(paymentIntentId: string): Promise<OrderStatus>;
   now(): Date;
 };
 
@@ -192,17 +198,21 @@ export async function reconcileCheckoutPayment(deps: ReconcilerDeps, input: Reco
 
     let step: Step;
     if (action.type === 'none' || action.type === 'record_only') {
-      if (action.type === 'none') {
-        await syncRefundsOfPaidOrder(deps, snapshot, order);
-      }
+      // 返金の同期をしたときは、同期のあとの注文の状態を結果にする（全額返金なら取消。読んだときの状態は古い）
+      const syncedStatus = action.type === 'none' ? await syncRefundsOfPaidOrder(deps, snapshot, order) : null;
 
       const finalAction = applied ?? action;
       step = {
         kind: 'done',
         result:
           reviewOrderId && order && order.id === reviewOrderId
-            ? { kind: 'needs_review', action: finalAction, orderId: order.id, orderStatus: order.status }
-            : { kind: 'ok', action: finalAction, orderId: order?.id ?? null, orderStatus: order?.status ?? null },
+            ? { kind: 'needs_review', action: finalAction, orderId: order.id, orderStatus: syncedStatus ?? order.status }
+            : {
+                kind: 'ok',
+                action: finalAction,
+                orderId: order?.id ?? null,
+                orderStatus: syncedStatus ?? order?.status ?? null,
+              },
       };
     } else if (action.type === 'exception') {
       if (action.reason === 'state_conflict' && attempt < MAX_RECONCILE_ATTEMPTS) {
@@ -240,21 +250,22 @@ export async function reconcileCheckoutPayment(deps: ReconcilerDeps, input: Reco
  * 注文が無い間に届いて飛ばされた返金の通知や、注文の作成・紐付けより前の返金も、この照合で注文に反映される。
  * 返金の同期は何度呼んでも同じ結果に収まるので、失敗して再試行されても収束する。
  * 返金済みの分が無い支払いと、全額返金で取り消された注文（取消。判定は「何もしない」）には呼ばない。
+ * 呼んだときは、同期のあとの注文の状態を返す。呼ばなかったときは null。
  */
 async function syncRefundsOfPaidOrder(
   deps: ReconcilerDeps,
   snapshot: CheckoutPaymentSnapshot,
   order: ReconcilerOrder | null,
-): Promise<void> {
+): Promise<OrderStatus | null> {
   const { state, paymentIntentId } = snapshot;
   if (!order || (order.status !== 'paid' && order.status !== 'shipped')) {
-    return;
+    return null;
   }
   if (state.kind !== 'paid' || state.amountRefunded <= 0 || !paymentIntentId) {
-    return;
+    return null;
   }
 
-  await deps.syncRefunds(paymentIntentId);
+  return deps.syncRefunds(paymentIntentId);
 }
 
 function decide(snapshot: CheckoutPaymentSnapshot, order: ReconcilerOrder | null, input: ReconcileInput): OrderAction {
@@ -422,7 +433,10 @@ async function markPaid(
     };
   }
 
-  await deps.mailer.sendOrderConfirmation(order.id, 'paid', emailVariant);
+  // 全額返金済みの支払いは、このあと返金の同期が注文を取り消す。注文確定・入金確認のメールは送らない
+  if (!isFullyRefunded(state)) {
+    await deps.mailer.sendOrderConfirmation(order.id, 'paid', emailVariant);
+  }
   await persistPaymentMethod(deps, snapshot);
   return { kind: 'applied', orderId: order.id, needsReview: marked.needsReview };
 }

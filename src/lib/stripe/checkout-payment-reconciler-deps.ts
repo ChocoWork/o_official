@@ -27,7 +27,12 @@ import {
   readCheckoutPayment,
   type CheckoutPaymentStripeClient,
 } from '@/lib/stripe/checkout-payment-reader';
-import { syncOrderRefunds, type OrderRefundDatabase, type RefundListClient } from '@/lib/stripe/order-refund-sync';
+import {
+  OrderRefundSyncNotConvergedError,
+  syncOrderRefunds,
+  type OrderRefundDatabase,
+  type RefundListClient,
+} from '@/lib/stripe/order-refund-sync';
 import type {
   ReconcilerAudit,
   ReconcilerDatabase,
@@ -292,6 +297,11 @@ function toReconcileError(error: unknown): unknown {
     return new ReconcileTransientError('stripe_unavailable', { cause: error });
   }
 
+  // 同時の更新や Stripe の返金の変化に負け続けただけで、読み直せば収まる
+  if (error instanceof OrderRefundSyncNotConvergedError) {
+    return new ReconcileTransientError('not_converged', { cause: error });
+  }
+
   // syncOrderRefunds は DB の失敗を message だけの Error にして投げ、元のエラー（code 付き）を cause に残す
   const cause = error instanceof Error ? error.cause : undefined;
   if (cause !== undefined && isTransientSupabaseError(cause)) {
@@ -302,9 +312,9 @@ function toReconcileError(error: unknown): unknown {
 }
 
 /**
- * 照合が呼ぶ返金の同期（order-refund-sync.ts の syncOrderRefunds）。Stripe は読むだけ。
- * 一時的な失敗（Stripe の通信・5xx・回数制限、DB の接続・直列化など）は ReconcileTransientError にして投げ
- * （呼び出し元が再試行する）、それ以外は元のエラーのまま投げる。
+ * 照合が呼ぶ返金の同期（order-refund-sync.ts の syncOrderRefunds）。Stripe は読むだけ。同期したあとの注文の状態を返す。
+ * 一時的な失敗（Stripe の通信・5xx・回数制限、DB の接続・直列化、競合で収まらない）は ReconcileTransientError にして
+ * 投げ（呼び出し元が再試行する）、それ以外は元のエラーのまま投げる。
  */
 export function createReconcilerRefundSync(
   database: OrderRefundDatabase,
@@ -312,7 +322,8 @@ export function createReconcilerRefundSync(
 ): ReconcilerDeps['syncRefunds'] {
   return async (paymentIntentId) => {
     try {
-      await syncOrderRefunds({ database, stripe, paymentIntentId });
+      const synced = await syncOrderRefunds({ database, stripe, paymentIntentId });
+      return synced.orderStatus;
     } catch (error) {
       throw toReconcileError(error);
     }

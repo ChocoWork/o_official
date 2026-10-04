@@ -141,7 +141,8 @@ function harness(init: {
 
   const readPayment = jest.fn(async () => world.stripe);
   const audit = jest.fn(async () => undefined);
-  const syncRefunds = jest.fn<Promise<void>, [string]>(async () => undefined);
+  // 返金の同期は、同期したあとの注文の状態を返す。既定は今の注文の状態のまま（返金で取消になるときだけ、テストが上書きする）
+  const syncRefunds = jest.fn<Promise<ReconcilerOrder['status']>, [string]>(async () => world.order?.status ?? 'paid');
   const deps: ReconcilerDeps = { readPayment, database, mailer, audit, syncRefunds, now: () => NOW };
   return { deps, database, mailer, readPayment, audit, syncRefunds, world };
 }
@@ -492,11 +493,8 @@ describe('reconcileCheckoutPayment', () => {
     const REFUNDED: StripePaymentState = { kind: 'paid', amountReceived: 5000, amountRefunded: 2000, currency: 'jpy' };
     const FULLY_REFUNDED: StripePaymentState = { kind: 'paid', amountReceived: 5000, amountRefunded: 5000, currency: 'jpy' };
 
-    it.each([
-      ['一部', REFUNDED],
-      ['全額', FULLY_REFUNDED],
-    ])('注文が無ければ、%s返金済みでも注文を作らず記録だけにし、注文確定メールを送らない', async (_name, state) => {
-      const h = harness({ stripe: snapshot(state) });
+    it('注文が無く全額返金済みなら、注文を作らず記録だけにし、注文確定メールを送らない', async () => {
+      const h = harness({ stripe: snapshot(FULLY_REFUNDED) });
 
       const result = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1', sourceEventId: 'evt_late' });
 
@@ -519,6 +517,68 @@ describe('reconcileCheckoutPayment', () => {
       }));
     });
 
+    it('注文が無く一部だけ返金済みなら、これまでどおり注文を作って入金済みにし、返金済みの分を同じ照合で反映する', async () => {
+      const h = harness({ stripe: snapshot(REFUNDED) });
+
+      const result = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
+
+      expect(h.database.placeOrder).toHaveBeenCalledTimes(1);
+      expect(h.database.markOrderPaid).toHaveBeenCalledTimes(1);
+      expect(h.mailer.sendOrderConfirmation).toHaveBeenCalledTimes(1);
+      expect(h.mailer.sendOrderConfirmation).toHaveBeenCalledWith('order-new', 'paid', 'order_confirmed');
+      expect(h.syncRefunds).toHaveBeenCalledTimes(1);
+      expect(h.syncRefunds).toHaveBeenCalledWith('pi_1');
+      expect(result).toMatchObject({
+        kind: 'ok',
+        action: { type: 'place_and_mark_paid' },
+        orderId: 'order-new',
+        orderStatus: 'paid',
+      });
+    });
+
+    it.each([
+      ['支払い手続き中', order('payment_in_progress')],
+      ['入金待ち', order('pending', { paymentIntentId: 'pi_1' })],
+      ['失敗', order('failed', { paymentIntentId: 'pi_1' })],
+    ])(
+      '全額返金済みの支払いで%sの注文を入金済みにするときは、注文確定・入金確認のメールを送らず、取り消された状態を結果にする',
+      async (_name, existing) => {
+        const h = harness({ stripe: snapshot(FULLY_REFUNDED), order: existing });
+        h.syncRefunds.mockResolvedValueOnce('cancelled');
+
+        const result = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
+
+        expect(h.database.markOrderPaid).toHaveBeenCalledTimes(1);
+        expect(h.mailer.sendOrderConfirmation).not.toHaveBeenCalled();
+        expect(h.database.persistDraftPaymentMethod).toHaveBeenCalledWith('draft-1', 'stripe_card');
+        expect(h.syncRefunds).toHaveBeenCalledWith('pi_1');
+        // 同期の前の「入金済み」ではなく、同期のあとの「取消」を返す（完了 API・管理画面の取消が、取り消された注文を入金完了と扱わない）
+        expect(result).toMatchObject({ kind: 'ok', orderId: 'order-1', orderStatus: 'cancelled' });
+      },
+    );
+
+    it('入金済みの注文が返金の同期で取り消されたら、「何もしない」判定でも取消を結果にする', async () => {
+      const h = harness({ stripe: snapshot(FULLY_REFUNDED), order: order('paid', { paymentIntentId: 'pi_1' }) });
+      h.syncRefunds.mockResolvedValueOnce('cancelled');
+
+      const result = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
+
+      expect(result).toEqual({ kind: 'ok', action: { type: 'none' }, orderId: 'order-1', orderStatus: 'cancelled' });
+    });
+
+    it('要確認の結果にも、返金の同期のあとの状態を載せる', async () => {
+      const h = harness({
+        stripe: snapshot(FULLY_REFUNDED),
+        order: order('failed', { paymentIntentId: 'pi_1' }),
+        needsReview: true,
+      });
+      h.syncRefunds.mockResolvedValueOnce('cancelled');
+
+      const result = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
+
+      expect(result).toMatchObject({ kind: 'needs_review', orderId: 'order-1', orderStatus: 'cancelled' });
+    });
+
     it('支払い手続き中の注文を入金済みにした後で、返金済みの分があれば返金の同期を呼ぶ', async () => {
       const h = harness({ stripe: snapshot(REFUNDED), order: order('payment_in_progress') });
 
@@ -530,6 +590,8 @@ describe('reconcileCheckoutPayment', () => {
         orderId: 'order-1',
         orderStatus: 'paid',
       });
+      // 一部だけの返金なら、注文確定メールはこれまでどおり1通送る
+      expect(h.mailer.sendOrderConfirmation).toHaveBeenCalledTimes(1);
       expect(h.syncRefunds).toHaveBeenCalledTimes(1);
       expect(h.syncRefunds).toHaveBeenCalledWith('pi_1');
       // 注文が入金済みになってから、返金を反映する

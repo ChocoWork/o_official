@@ -134,15 +134,24 @@ describe('decideOrderAction（判定表）', () => {
       .toEqual({ type: 'exception', reason: 'cancelled_order_paid' });
   });
 
-  it.each([
-    ['一部だけ返金済み', 1],
-    ['全額返金済み', 5000],
-  ])('注文が無く、入金済みで返金済みの分もある支払い（%s）は、注文を作らず記録のみにする', (_name, amountRefunded) => {
-    // 注文より先に店が Stripe で返金した支払い。あとから注文にすると、返金が反映されない入金済みの注文が残る
-    const refundedFirst: StripePaymentState = { kind: 'paid', amountReceived: 5000, amountRefunded, currency: 'jpy' };
+  it('注文が無く、入金済みで全額返金済みの支払いは、注文を作らず記録のみにする', () => {
+    // 注文より先に店が Stripe で全額返金した支払い。あとから注文にすると、返金済みの入金済みの注文が残り、発送できてしまう
+    const refundedFirst: StripePaymentState = { kind: 'paid', amountReceived: 5000, amountRefunded: 5000, currency: 'jpy' };
 
     expect(decideOrderAction({ stripe: refundedFirst, orderStatus: null, adminCancel: false }))
       .toEqual({ type: 'record_only', note: 'refunded_before_order' });
+  });
+
+  it.each([
+    ['1円だけ返金済み', { amountReceived: 5000, amountRefunded: 1 }],
+    ['1円足りない返金済み', { amountReceived: 5000, amountRefunded: 4999 }],
+    ['返金が0（受取額も0）', { amountReceived: 0, amountRefunded: 0 }],
+  ])('注文が無く、入金済みで全額は返金済みでない支払い（%s）は、これまでどおり受付 RPC で作る', (_name, amounts) => {
+    // 一部返金は注文を作って入金済みにし、返金済みの分は照合関数が返金の同期で注文へ反映する
+    const notFullyRefunded: StripePaymentState = { kind: 'paid', currency: 'jpy', ...amounts };
+
+    expect(decideOrderAction({ stripe: notFullyRefunded, orderStatus: null, adminCancel: false }))
+      .toEqual({ type: 'place_and_mark_paid' });
   });
 
   it('返金済みの分があっても、注文がある入金済みの行は変えない（返金の反映は照合関数が続ける）', () => {

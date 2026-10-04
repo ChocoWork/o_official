@@ -1,6 +1,7 @@
 import {
   calculateSucceededRefundTotal,
   OrderNotFoundForPaymentIntentError,
+  OrderRefundSyncNotConvergedError,
   syncOrderRefunds,
   type OrderRefundDatabase,
   type RefundListClient,
@@ -255,6 +256,45 @@ describe('syncOrderRefunds', () => {
 
     expect(stripe.refunds.list).toHaveBeenCalledTimes(3);
     expect(rpc).toHaveBeenCalledTimes(3);
+  });
+
+  it('throws a typed error, with the same message as before, when three attempts all lose the race', async () => {
+    const { database } = createDatabase({
+      orders: [BASE_ORDER, BASE_ORDER, BASE_ORDER],
+      rpcResults: [
+        { data: [], error: null },
+        { data: [], error: null },
+        { data: [], error: null },
+      ],
+    });
+    const stripe = createStripe([{ status: 'succeeded', amount: 10_000, created: 30 }]);
+
+    const error = await syncOrderRefunds({
+      database,
+      stripe,
+      paymentIntentId: 'pi_conflict',
+    }).catch((caught: unknown) => caught);
+
+    // The cron reconcile job and the admin refund route only see an Error with this message, as before.
+    expect(error).toBeInstanceOf(OrderRefundSyncNotConvergedError);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe(
+      'Failed to update order refund state after concurrent updates or changing Stripe refund state',
+    );
+  });
+
+  it('does not report a database error as a lost race', async () => {
+    const { database } = createDatabase({
+      rpcResults: [{ data: null, error: { message: 'permission denied' } }],
+    });
+
+    const error = await syncOrderRefunds({
+      database,
+      stripe: createStripe([]),
+      paymentIntentId: 'pi_error',
+    }).catch((caught: unknown) => caught);
+
+    expect(error).not.toBeInstanceOf(OrderRefundSyncNotConvergedError);
   });
 
   it('surfaces an RPC error without retrying it as a conflict', async () => {

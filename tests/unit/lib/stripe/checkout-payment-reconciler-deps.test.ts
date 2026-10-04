@@ -270,10 +270,10 @@ describe('createReconcilerRefundSync', () => {
     });
   }
 
-  it('PaymentIntent の返金を Stripe から読み、返金投影の RPC で注文へ反映する', async () => {
+  it('PaymentIntent の返金を Stripe から読み、返金投影の RPC で注文へ反映し、反映したあとの注文の状態を返す', async () => {
     const { sync, rpc, list } = refundSyncWorld();
 
-    await expect(sync('pi_1')).resolves.toBeUndefined();
+    await expect(sync('pi_1')).resolves.toBe('paid');
 
     expect(list).toHaveBeenCalledWith({ payment_intent: 'pi_1', limit: 100 });
     expect(rpc).toHaveBeenCalledWith('apply_order_refund_projection', expect.objectContaining({
@@ -281,6 +281,25 @@ describe('createReconcilerRefundSync', () => {
       _expected_status: 'paid',
       _refunded_amount: 2000,
     }));
+  });
+
+  it('全額返金を反映して注文が取消になったら、取消を返す', async () => {
+    const { sync, rpc } = refundSyncWorld({
+      refunds: () => succeededRefunds(5000),
+      rpc: { data: [{ id: 'order-1', status: 'cancelled', refunded_amount: 5000 }], error: null },
+    });
+
+    await expect(sync('pi_1')).resolves.toBe('cancelled');
+
+    expect(rpc).toHaveBeenCalledWith('apply_order_refund_projection', expect.objectContaining({ _refunded_amount: 5000 }));
+  });
+
+  it('競合で収まらず（3回とも更新が0件）に失敗した返金の同期は、照合の一時的な失敗（not_converged）にする', async () => {
+    // 同時の更新や Stripe の返金の変化は、読み直せば収まる。恒久的なエラーとして永久に失敗させない
+    const { sync, rpc } = refundSyncWorld({ rpc: { data: [], error: null } });
+
+    await expect(sync('pi_1')).rejects.toMatchObject({ name: 'ReconcileTransientError', code: 'not_converged' });
+    expect(rpc).toHaveBeenCalledTimes(3);
   });
 
   it.each([

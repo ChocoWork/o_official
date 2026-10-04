@@ -82,6 +82,17 @@ export class OrderNotFoundForPaymentIntentError extends Error {
   }
 }
 
+/**
+ * Every attempt lost the race (a concurrent update, or Stripe's refunds kept changing), so the projection did not settle.
+ * Reading again converges, so callers can treat it as transient. It stays an Error with the same message.
+ */
+export class OrderRefundSyncNotConvergedError extends Error {
+  constructor() {
+    super('Failed to update order refund state after concurrent updates or changing Stripe refund state');
+    this.name = 'OrderRefundSyncNotConvergedError';
+  }
+}
+
 export function calculateSucceededRefundTotal(
   refunds: readonly RefundSnapshot[],
 ): { amount: number; latestSucceededAt: number | null } {
@@ -236,7 +247,5 @@ export async function syncOrderRefunds({
     };
   }
 
-  throw new Error(
-    'Failed to update order refund state after concurrent updates or changing Stripe refund state',
-  );
+  throw new OrderRefundSyncNotConvergedError();
 }

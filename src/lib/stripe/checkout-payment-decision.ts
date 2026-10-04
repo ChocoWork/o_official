@@ -42,6 +42,11 @@ export type DecisionInput = {
 
 const NONE: OrderAction = { type: 'none' };
 
+/** 受取額の全額が返金済みか。返金が0なら（受取額が0でも）全額返金済みとは見なさない */
+export function isFullyRefunded(paid: Pick<Extract<StripePaymentState, { kind: 'paid' }>, 'amountReceived' | 'amountRefunded'>): boolean {
+  return paid.amountRefunded > 0 && paid.amountRefunded >= paid.amountReceived;
+}
+
 /** 判定表の「起きない」マス。仕組みで起きないので、起きたら要対応として警報を出す */
 const STATE_CONFLICT: OrderAction = { type: 'exception', reason: 'state_conflict' };
 
@@ -104,9 +109,10 @@ function decidePaid(
 ): OrderAction {
   switch (orderStatus) {
     case null:
-      // 注文より先に返金された支払い（注文を作れず要対応になった支払いを店が Stripe で返金したなど）は、
-      // あとから注文にしない。返金が反映されないまま入金済みの注文が残り、発送できてしまうため（設計書 3-2）
-      return stripe.amountRefunded > 0
+      // 注文より先に全額返金された支払い（注文を作れず要対応になった支払いを店が Stripe で返金したなど）は、
+      // あとから注文にしない。返金済みの入金済みの注文が残り、発送できてしまうため（設計書 3-2）。
+      // 一部だけの返金は、注文を作って入金済みにし、返金済みの分は照合関数が返金の同期で注文へ反映する
+      return isFullyRefunded(stripe)
         ? { type: 'record_only', note: 'refunded_before_order' }
         : { type: 'place_and_mark_paid' };
     case 'payment_in_progress':
