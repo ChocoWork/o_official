@@ -36,7 +36,7 @@ stateDiagram-v2
 | ID | 契機・ガード | 更新と副作用 | 根拠 |
 | --- | --- | --- | --- |
 | ST-DRAFT-01 | サーバーがカート内容と金額を計算し、下書きを作る | `status=created`、商品・金額・所有sessionのsnapshotを保存 | [create-session](../../../src/app/api/checkout/create-session/route.ts)、[claim RPC](../../../supabase/migrations/20260925000132_add_checkout_session_claim_rpcs.sql) |
-| ST-DRAFT-02 | 照合器がStripeを `paid` または `awaiting_payment` と判定。受付RPCがdraft・金額・通貨・商品を検証し、既存注文の冪等経路でない新規作成に成功 | 注文を `payment_in_progress` で作成、明細と在庫台帳を保存、draftを `completed` に更新。その後の注文 `paid/pending` 更新は別RPC | [受付RPC](../../../supabase/migrations/20260927100300_place_order_from_checkout_draft.sql)、[照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts) |
+| ST-DRAFT-02 | 注文なし・snapshotに下書きIDと注文作成に必要な参照/金額属性ありで、照合器がStripeを `awaiting_payment`、または受取額全額の返金が未成立の `paid` と判定し、注文作成を選ぶ。受付RPCがdraft・所有session・添付Sessionの一致、`created`、正の額、通貨、割引前合計、商品の存在・publishedを検証し、既存注文の冪等経路でない新規作成に成功 | 注文を `payment_in_progress` で作成、明細と賄えるvariantの在庫台帳を保存、draftを `completed` に更新し、割引額とPIを補う。その後の注文 `paid/pending` 更新は別RPC。部分返金済みのpaidは入金更新後の照合で返金投影する | [受付RPC](../../../supabase/migrations/20260927100300_place_order_from_checkout_draft.sql)、[照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)、[全額返金の判定](../../../src/lib/stripe/checkout-payment-decision.ts) |
 | ST-DRAFT-03 | create-sessionが既存Sessionを失効済みと確認。`retire_expired_checkout_draft`がdraft ID・所有session・Session ID・`created`、request version/fingerprintのNULLを含む一致を確認 | `status=failed`。既存のSession IDはNULLにしない。この下書きを作り直して再利用する遷移ではない | [create-session](../../../src/app/api/checkout/create-session/route.ts)、[retire RPC](../../../supabase/migrations/20260925000132_add_checkout_session_claim_rpcs.sql) |
 | ST-DRAFT-04 | `created/failed`、`created_at`が30日より前 | 行をDELETE。`completed`はこの清掃の対象外 | [保持期間job](../../../supabase/migrations/20260911235714_add_checkout_drafts_retention_job.sql) |
 
@@ -45,11 +45,15 @@ stateDiagram-v2
 | 属性・処理 | 現行の条件 |
 | --- | --- |
 | Session作成claim | `(session_id, version, fingerprint)`の部分一意制約で `created` の下書きを取得・作成する。Stripeの冪等キーでSessionを作り、同じdraft・所有session・version・fingerprintでattachする。Webhookキューのようなclaim token・leaseはこのdraft RPCにはない |
+| claimとattachの拒否 | claimは所有session長・正のversionと対応fingerprint・UIモード・origin形式・支払方法・jpy・金額の非負/正の合計・小計＋税＋送料の一致・非空の商品配列を検査する。再取得した行の金額・商品・UIモード・origin不一致も拒否する。attachはcreatedの行をロックし、Session未添付なら設定、同じIDなら既存値、別IDや所有条件不一致なら更新しない |
 | Sessionの期限予約 | `reserve_checkout_session_expiry`は `created` かつSession未添付の場合に期限を予約する。既存期限が `now()+30分15秒` より先なら再利用し、そうでなければ `now()+30分30秒` に更新する。永久固定の期限ではない |
 | 配送先revision | `update-shipping`は所有session・Session ID・期待revision・`status != completed`を条件にCAS更新する。状態遷移ではない |
 | 注文受付の冪等性 | 同じCheckout Sessionの既存注文はそのIDを返す。RPCはdraftロック後にもSessionで再確認する。PI不一致の検出は照合器の別の処理。二重に明細・在庫確保を行う遷移として描かない |
+| 注文なし・全額返金済み | snapshotに下書きIDがあり、Stripeの返金額が正かつ受取額以上なら`record_only:refunded_before_order`。注文受付RPCを呼ばず、draftをcompletedへ変更しない。既存の要対応を自動解決する処理でもない |
+| 状態を変えない書込み | create-sessionの空配送先補完はdraft ID・所有session・期待revisionのCASでsnapshotとrevisionを更新する。update-shippingと異なりstatus条件はない。入金・払込票RPCは添付Sessionでdraftの欠けたPIを補い、照合器は支払方法を保存する。これらはstatusの遷移ではない |
+| Session再取得の結果 | openなら再利用し、completeなら409としてretireしない。expiredを確認したときだけretire後に新しい行をclaimする。Stripe取得失敗・未知状態をexpiredと扱わず、failedへの更新や新規Session作成を進めない |
 
-根拠: [期限予約RPC](../../../supabase/migrations/20260927100600_checkout_session_expiry.sql)、[Session claim RPC](../../../supabase/migrations/20260925000132_add_checkout_session_claim_rpcs.sql)、[配送先revision](../../../supabase/migrations/20260916042338_add_checkout_draft_shipping_revision.sql)、[update-shipping](../../../src/app/api/checkout/update-shipping/route.ts)。
+根拠: [期限予約RPC](../../../supabase/migrations/20260927100600_checkout_session_expiry.sql)、[Session claim RPC](../../../supabase/migrations/20260925000132_add_checkout_session_claim_rpcs.sql)、[配送先revision](../../../supabase/migrations/20260916042338_add_checkout_draft_shipping_revision.sql)、[update-shipping](../../../src/app/api/checkout/update-shipping/route.ts)、[create-sessionの配送先補完](../../../src/app/api/checkout/create-session/route.ts)、[PI補完](../../../supabase/migrations/20260927100400_mark_order_payment_rpcs.sql)、[支払方法保存](../../../src/lib/stripe/checkout-payment-reconciler-deps.ts)。
 
 ## 関連テスト
 

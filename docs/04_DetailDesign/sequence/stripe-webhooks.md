@@ -91,8 +91,16 @@ sequenceDiagram
             alt CheckoutまたはPaymentIntent決済イベント
                 Processor->>Stripe: Session / PaymentIntentの現在値を取得
                 Stripe-->>Processor: 現在の決済情報
-                Processor->>DB: 照合判定に応じた条件付き注文RPC
-                DB-->>Processor: 更新結果 または 要対応記録
+                opt 注文作成・状態更新または要対応記録の判定
+                    Processor->>DB: 照合判定に応じた条件付き注文RPC または 要対応記録
+                    DB-->>Processor: 更新結果 または 要対応記録
+                end
+                opt none判定・paid/shipped注文・Stripe paid・返金額が正・PIあり
+                    Processor->>Stripe: refunds.list / 全ページの成功返金を再取得
+                    Stripe-->>Processor: 最新の成功返金合計
+                    Processor->>DB: apply_order_refund_projection / CASと書込み後の再確認
+                    DB-->>Processor: 同期後の注文状態
+                end
             else Refundまたはcharge.refunded
                 Processor->>DB: PaymentIntentの注文を検索
                 DB-->>Processor: 注文あり / 注文なし / DB error
@@ -106,8 +114,14 @@ sequenceDiagram
                 else cancelledで旧返金額が注文額未満
                     Note over Processor,Stripe: 既存取消を維持し、一覧・投影を省略
                 else 注文なし
-                    Processor->>DB: refund_without_orderを成功監査
-                    Note over Processor,Stripe: 返金一覧・注文投影を省略し後段へ進む
+                    alt failed / canceled の返金、またはrefund.failed
+                        Processor->>DB: Refund IDを参照にunexpected_stateを記録
+                        Processor->>DB: 未解決なら店通知をclaimし送信を試みる
+                        Processor->>DB: refund_without_orderをerror監査
+                    else その他の返金 / charge.refunded
+                        Processor->>DB: refund_without_orderをsuccess監査
+                    end
+                    Note over Processor,Stripe: 返金一覧・注文投影を省略し後段へ進む<br/>記録例外はworkerのfailへ
                 else DB照会エラー
                     Note over Worker,Processor: 例外で中断、workerのfail分岐へ
                 end
@@ -115,10 +129,31 @@ sequenceDiagram
                 Note over Processor: このswitchでは注文・返金を変更しない
             end
             opt 会計対象イベント
-                Processor->>Stripe: PaymentIntent / Refund / Payout等をretrieve
-                Stripe-->>Processor: 会計原始記録
-                Processor->>DB: 会計原始記録を同期
-                DB-->>Processor: 保存結果
+                alt payment_intent.succeeded
+                    Processor->>DB: PIに対応する注文を検索
+                    alt 注文あり
+                        Processor->>Stripe: PaymentIntent / Charge / BalanceTransactionをretrieve
+                        Stripe-->>Processor: 会計原始記録
+                        Processor->>DB: BalanceTransactionを保存
+                    else 注文なし
+                        Note over Processor,DB: unmatchedで正常終了、Stripe会計読取り・保存を省略
+                    end
+                else refund.created / updated / failed
+                    Processor->>Stripe: refunds.retrieve(refundId)
+                    Stripe-->>Processor: Refund現在値
+                    Processor->>DB: RefundのPIに対応する注文を検索
+                    alt 注文あり
+                        Processor->>Stripe: 存在する返金・失敗のBalanceTransactionをretrieve
+                        Stripe-->>Processor: 会計原始記録
+                        Processor->>DB: BalanceTransaction / Refundを保存
+                    else 注文なし
+                        Note over Processor,DB: unmatchedで正常終了、会計DB保存を省略
+                    end
+                else Payout対象イベント
+                    Processor->>Stripe: Payout / BalanceTransactionを取得
+                    Stripe-->>Processor: 会計原始記録
+                    Processor->>DB: 会計原始記録とPayoutを保存
+                end
             end
             Processor->>DB: logAudit(event_processing, success)
             DB-->>Processor: 監査呼出し完了
@@ -140,9 +175,9 @@ sequenceDiagram
 
 | イベント | 注文・返金処理 | 会計処理 |
 | --- | --- | --- |
-| checkout.session.completed / async_payment_succeeded / async_payment_failed / expired | Session IDとevent IDを照合器へ。イベントの中の状態・金額から注文を直接更新しない | この種類による会計同期なし |
-| payment_intent.succeeded / payment_failed | PI IDとevent IDを照合器へ。payment_failedだけで在庫を解放しない | succeededだけPaymentIntent会計同期 |
-| refund.created / updated / failed | PI IDで注文を検索。維持対象のcancelledを除き、注文ありならStripeの全返金を再読取りして投影。注文なしならイベント種別・参照IDを監査して投影を省略 | 注文なしでもRefund会計同期を続ける |
+| checkout.session.completed / async_payment_succeeded / async_payment_failed / expired | Session IDとevent IDを照合器へ。イベントの中の状態・金額から注文を直接更新しない。照合器のnone判定が条件を満たせば返金投影も実行 | この種類による会計同期なし |
+| payment_intent.succeeded / payment_failed | PI IDとevent IDを照合器へ。payment_failedだけで在庫を解放しない。照合器のnone判定が条件を満たせば返金投影も実行 | succeededだけPaymentIntent会計同期。注文なしならunmatchedで保存を省略 |
+| refund.created / updated / failed | PI IDで注文を検索。維持対象のcancelledを除き、注文ありならStripeの全返金を再読取りして投影。注文なしならイベント種別・参照IDを監査して投影を省略 | Refund会計同期の呼出しは続ける。Refundの現在値を取得して注文を再検索し、不在ならunmatchedで会計DB保存を省略 |
 | charge.refunded | PI IDで注文を検索して返金投影（維持対象のcancelledを除く）。注文なしならイベント種別・参照IDを監査して投影を省略 | この種類による会計同期なし |
 | payout.paid / failed / reconciliation_completed | 注文・返金switchでは処理なし | Payout会計同期 |
 | その他 | 注文・返金処理なし | 会計switchの対象でなければ処理なし。監査後にキュー完了 |
@@ -158,12 +193,14 @@ sequenceDiagram
 | PIに対応する注文なし | syncOrderRefundsがOrderNotFoundForPaymentIntentErrorを投げ、返金イベント処理だけがその型を捕捉する。refund_without_orderをイベント種別・参照IDで成功監査し、会計処理・通常監査・completeへ進む。後段が成功すればキューcompletedとなる |
 | 既存取消の維持 | cancelledかつ旧refunded_amountがtotal_amount未満なら既存状態を返し、Stripe返金一覧・投影RPCを呼ばない。Webhookは後段会計・通常監査へ進む |
 | 注文の検索DBエラー | 注文なしとは区別して例外を再throwする。返金一覧・会計同期へ進まずworkerがfailを試みる |
-| needs_action / needs_review | 照合器が記録・通知を済ませて正常に返れば処理成功としcompleted。入金成功の意味ではない |
+| needs_action / needs_review | 照合器が記録と必要な通知の試行を行い正常に返れば処理成功としcompleted。入金成功やメール送信成功の意味ではない |
 | complete/failのtokenが一致しない | RPCはfalse。イベントサービスがclaim喪失の例外を投げる。前workerは新tokenの行を完了・失敗にできない |
 | 再試行 | queued/failedは試行時刻到来、processingは5分lease切れで再claimできる。failの待機はmin(1800,30×attempt_count)秒。回数の固定上限なし |
 | 監査要求 | workerは空ヘッダーのNextRequestを作る。CronのIP・User-AgentをStripe配信元のものとして記録しない |
 
 注文なし返金の捕捉はWebhook processorにある。共通の返金同期関数自身が正常終了へ変える処理ではない。また、成功監査はpayment_exceptionsのresolved_atを更新せず、既存の要対応を自動解決しない。根拠は[handleRefundChanged](../../../src/lib/stripe/webhook-processor.ts)と[返金同期の注文検索](../../../src/lib/stripe/order-refund-sync.ts)。
+
+返金イベントが注文作成より先に届き、注文なしとして完了した場合も、後続の決済照合が部分返金済みの注文を作成・入金済みにした後の読み直しで返金同期を実行する。注文なし・snapshotに下書きIDありでStripeの受取額全額が返金済みなら、`record_only:refunded_before_order`として注文を作らない。既存注文の入金更新で金額・通貨が一致する場合も、全額返金済みなら注文確認メールを抑止し、その後の返金同期で取消へ投影する。根拠は[判定表](../../../src/lib/stripe/checkout-payment-decision.ts)、[照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)、[返金接続と一時エラー分類](../../../src/lib/stripe/checkout-payment-reconciler-deps.ts)。
 
 ## 関連する見回りとschedule
 
@@ -174,6 +211,8 @@ sequenceDiagram
 | workerのschedule案 | pending SQLには10秒ごとのPOST、Vaultのapp_base_url・cron_secret参照を定義。登録・到達性・実起動は未確認 | [worker schedule](../../../supabase/pending/schedule_stripe_webhook_worker.sql) |
 | 見回りのschedule案 | pending SQLには毎時0分のPOSTとVault参照を定義。ソース中の最長90分というコメントは、件数・時間制限下の無条件保証として扱わない | [見回りschedule](../../../supabase/pending/schedule_expire_pending_orders.sql) |
 | `GET /api/cron/stripe-reconcile` | Bearer認証後、succeeded PIを走査し、注文との返金額不一致なら返金同期。会計原始記録とPayoutも同期する。Checkout決済状態を照合する上の見回りとは用途が異なる | [会計・返金照合API](../../../src/app/api/cron/stripe-reconcile/route.ts)、[照合処理](../../../src/lib/stripe/reconcile-orders.ts) |
+
+見回りは個々の注文処理の例外を数えて続行し、部分失敗でも集計を200で返す。会計・返金照合は、注文なしのPIを未対応支払いとして集計する場合があるが、そのPIの会計同期は省略する。返金一覧取得・返金投影の例外は全体の502へ進み、後続PIとPayoutの走査を中断する。個々のPaymentIntent会計同期・Payout同期の例外は`errors`へ収集して続行し、200の集計に含める。先行保存を巻き戻す処理ではない。根拠は上表の各APIと照合処理。
 
 ## 関連テスト
 
@@ -190,4 +229,4 @@ sequenceDiagram
 
 本番のmigration適用、Stripe配信設定・実配信、キューの実データ、Cron登録・Vault値・HTTP到達性、メール到達、競合時の実行結果は未確認。pending SQLの記載を、本番で稼働している証拠として扱わない。
 
-最終照合のコード基準はmasterの`54b280ff`（2026-10-04）。注文なし返金イベントの型限定catchまで静的に確認した。今回、そのコードの実行テストと本番反映は確認していない。
+最終照合のコード基準はmasterの`bbb18761`と、2026-10-04の作業ツリーにある決済・返金ライブラリの未コミット変更。注文なし返金イベントの型限定catch、会計のunmatched分岐、共通照合器による返金同期まで静的に確認した。今回、そのコードの実行テストと本番反映は確認していない。

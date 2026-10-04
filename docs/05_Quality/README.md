@@ -14,3 +14,5 @@
 | `docs/05_Quality/reports/coverage-report-2026-02-01.md` | 2026-02-01 の旧カバレッジ出力 | 履歴。現行の網羅率ではない |
 
 現行のテストコマンドは `package.json`、Jest の対象は `jest.config.cjs`、Playwright の対象とサーバー設定は `playwright.config.ts` を参照する。レビュー文書にある未対応・対応済みの表示は、その記録時点の判断であり、現在のコードまたは実行結果の証明ではない。
+
+[シーケンス・状態設計の実装照合レビュー](reviews/code/2026-10-04-sequence-state-review.md)は、2026-10-04の対象API・状態管理対象から確認した文書の正確性と網羅性の記録である。

@@ -71,13 +71,15 @@ sequenceDiagram
 
 登録UIは成功応答でメール送信案内を表示する。[RegisterModal](../../../src/components/RegisterModal.tsx)は16文字以上と確認password一致を確かめ、[共通Schema](../../../src/features/auth/schemas/common.ts)は16〜128文字を要求する。
 
+公開signUpは[createClient](../../../src/lib/supabase/server.ts)をRequestなしで呼び、SSR clientのCookie adapterはnext/headersのCookie storeへ書く。インストール済み[SSR client](../../../node_modules/@supabase/ssr/dist/module/createServerClient.js)はPKCEとpersistSession=trueを設定し、[signUp](../../../node_modules/@supabase/auth-js/dist/module/GoTrueClient.js)はPKCE code verifierを作り、sessionが返った場合はSIGNED_INを通知する。[SSR storage](../../../node_modules/@supabase/ssr/dist/module/cookies.js)からadapterへ届くSDK Cookie書込みは、上図の独自201レスポンスへのCookie準備と別の経路である。独自保存失敗時に新しい500を返しても、Cookie storeへ行ったSDK Cookie書込みを取消す処理はない。実際のCookie名・分割・ブラウザへの反映は今回runtimeで確認していない。
+
 | 分岐 | 応答・処理 |
 | --- | --- |
 | 入力不正／Turnstile失敗／漏洩password | 400／403／400で止まる |
 | 漏洩照合サービス利用不可 | 監査して登録処理を続ける |
 | signupでalready／duplicate | 既登録通知を予約して202。他のsignupエラーは500 |
 | signupがsessionを返しuserなし | 500 |
-| 初回保存失敗 | 新しい500レスポンスを返す。準備した201を返さない |
+| 初回保存失敗 | 新しい500レスポンスを返す。準備した201を返さない。SSR adapterのCookie store書込みとは別であり、SDK Cookieの取消を保証しない |
 | 外側例外 | JSON解析を含む予期しない例外は500 |
 | afterのメール送信失敗 | ログのみ。返した202は変えない |
 
@@ -148,7 +150,9 @@ sequenceDiagram
 
 typeはsignup／email／magiclink／recoveryを受理し、不明値はsignupにする。戻り先の既定は`/account`、登録フォームは`/auth/verified`を指定する。303はno-store／no-referrerを設定する。保存失敗でも準備済みレスポンスを返すため、Cookie準備が進んだ範囲とDB保存は一致しない場合がある。予期しない例外も同じ戻り先への303で終わる。
 
-ゲスト注文は確認済みemail・user_id NULLの行だけを紐付ける。失敗は認証を止めず、次回OTPログインで再試行される。
+ゲスト注文は確認済みemail・user_id NULLの行だけを紐付ける。紐付いた注文がある場合は、最新注文の配送先・氏名からprofilesの未設定住所・表示名も補完する。既存値は上書きしない。profile保存失敗でも注文の紐付けを戻さず、いずれのhelper失敗も認証を止めない。注文の紐付け失敗は次回OTPログインで再試行される。
+
+登録フォームが指定する`/auth/verified`の到達後は、[追加認証画面の入口と出口](auth-login-mfa.md#追加認証画面の入口と出口)に従い、未認証表示、一般userの/account、特権roleのTOTP／管理画面へ分かれる。
 
 ## 関連テスト
 

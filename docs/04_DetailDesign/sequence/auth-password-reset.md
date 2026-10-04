@@ -60,7 +60,9 @@ sequenceDiagram
   end
 ```
 
-入力Schema不正400、Turnstile失敗403、JSON解析を含む外側例外500。旧tokenの失効更新エラーはログに残して新規発行へ進むため、最新の1本だけが有効という保証はその更新の成功が条件になる。送信先は`/auth/password-reset/verify?token=...`。afterのメール送信失敗は返した200を変えない。UI再送は同じrequest APIを呼び、成功後60秒待機、再送429ではRetry-After（読めなければ3600秒）で待機する。
+入力Schema不正400、Turnstile失敗403、JSON解析を含む外側例外500。旧tokenの失効UPDATEと新tokenのINSERTは別のDB要求であり、同じemailの並列requestを直列化する処理はない。両要求のUPDATEが先に終わってから各INSERTが成功すると、未使用tokenが複数残りうる。旧token失効の戻り値errorもログのみで新規発行へ進むため、更新成功だけから「有効なリンクは最新の1本」と保証しない。confirmのclaim競合防止は同じtokenIdごとで、異なるtokenIdの並列更新をこの処理は排他しない。
+
+送信先は`/auth/password-reset/verify?token=...`。afterのメール送信失敗は返した200を変えない。UI再送は同じrequest APIを呼び、成功後60秒待機、再送429ではRetry-After（読めなければ3600秒）で待機する。初回requestの429はエラー表示のみで、その再送用cooldownは開始しない。
 
 ## SQ-AUTH-RESET-LINK: リンク確認と署名Cookieの発行
 
@@ -189,6 +191,8 @@ sequenceDiagram
 ```
 
 ready=trueはフォームを表示するためのCookie判定であり、confirmが成功する保証ではない。APIはDB照会を行わず、実際の未使用確認はconfirmにある。上図はCookie読取りが結果を返す経路である。署名秘密の未設定やCookie値のdecode例外には、このsession API内のcatchがないため、ready=falseの200へ変換する処理はない。
+
+画面側はsession照会の非2xx・読めないJSONでは初期のrequest modeを保ち、通信例外でもrequest modeにして読込みを終える。confirmの非2xx・通信失敗はconfirmフォーム内のエラーとして表示し、成功時はpassword更新完了と/loginへのボタンを表示する。成功直後にLoginContextを再同期する呼出しはない。
 
 ## 関連テスト
 

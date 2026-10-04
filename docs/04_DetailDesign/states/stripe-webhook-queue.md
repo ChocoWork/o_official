@@ -39,11 +39,13 @@ stateDiagram-v2
 | ST-QUEUE-04 | `processing`かつevent ID・claim tokenが一致 | `completed`。RPCがfalseならイベントサービスはclaim喪失として例外を投げる |
 | ST-QUEUE-05 | `processing`かつevent ID・claim tokenが一致 | `failed`、エラー分類、`next_attempt_at = now()+min(1800, 30*attempt_count)秒`。RPCがfalseならclaim喪失として例外 |
 
-実装に再試行回数の固定上限はない。payloadがない行はclaimしない。`failed`は再試行可能であり、図の終端ではない。キューleaseがDBの排他境界であり、Stripeやメールの外部副作用がすべてDBトランザクションに含まれるとは扱わない。
+実装に再試行回数の固定上限はない。payloadがない行はclaimしない。`failed`は再試行可能であり、図の終端ではない。claim時の行ロックとcomplete/fail時のtoken一致でキュー更新を制御する。lease期限だけではtokenを失わず、再claim前なら期限後も同じtokenでcomplete/failできる。処理中のlease延長や旧workerの停止は実装されていないため、再claim後も旧workerの業務処理が進む場合がある。Stripeやメールの外部副作用を含む処理全体の排他・一括トランザクションではない。
 
 ## 処理結果との対応
 
 workerは保存payloadのID・type・data.objectを検証し、処理関数が正常に戻ればcompleteする。処理例外またはcomplete例外はfailを試みて502を返し、fail記録そのものが失敗しても502を返す。claim対象なしは200 `{processed:0}`。詳細は[シーケンス](../sequence/stripe-webhooks.md)。
+
+payload検査は保存行とのID・type一致、dataがobjectであることと`object`キーの存在を確認する。`data.object`自体の型や各イベントの必須参照IDをすべて事前検証する処理ではなく、後段の業務処理が拒否する場合もある。claim返却値の形式が不正な場合はclaim失敗として502となり、その要求ではfailを呼ばない。DBで既にprocessingとなった行はlease期限後の再claim対象となる。
 
 ## 関連テスト
 

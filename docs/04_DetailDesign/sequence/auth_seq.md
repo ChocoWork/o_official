@@ -14,7 +14,7 @@
 | パスワードとメールOTP、特権TOTP | [ログイン・追加認証](auth-login-mfa.md) |
 | Google OAuth | [OAuth](auth-oauth.md) |
 | パスワード再設定 | [再設定](auth-password-reset.md) |
-| refresh、logout、管理API認可 | [セッション・認可](auth-session.md) |
+| 初期認証状態の照会、refresh、logout、管理API認可 | [セッション・認可](auth-session.md) |
 | 図の分割・フォーマット | [シーケンス設計の方針](README.md) |
 
 ## 同期時に訂正した前提

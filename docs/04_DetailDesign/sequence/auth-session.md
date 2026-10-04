@@ -1,10 +1,10 @@
 # セッション・API認可シーケンス
 
-> 状態: 現行ソース照合済み | 確認日: 2026-10-04 | 対象: refresh、logout、管理API認可
+> 状態: 現行ソース照合済み | 確認日: 2026-10-04 | 対象: 初期認証表示、refresh、logout、管理API認可
 
 ## 概要
 
-refreshはSupabaseのtoken交換後に新Cookieを準備し、新local sessions行を保存して旧行を失効させる。logoutはCookie消去とAuth session失効を試み、通常200を返す。管理API認可はJWT検証後にAuth session生存とDB ACLを並列照会し、生存→ACL→JWT aal2の順に結果を判定する。3つの開始契機を分けて描く。[記載方針](README.md)を参照する。
+初期認証表示はme APIでJWTとAuth session生存を確認する。refreshはSupabaseのtoken交換後に新Cookieを準備し、新local sessions行を保存して旧行を失効させる。logoutはCookie消去とAuth session失効を試み、通常200を返す。管理API認可はJWT検証後にAuth session生存とDB ACLを並列照会し、生存→ACL→JWT aal2の順に結果を判定する。4つの開始契機を分けて描く。[記載方針](README.md)を参照する。
 
 ## 範囲と根拠
 
@@ -18,7 +18,53 @@ refreshはSupabaseのtoken交換後に新Cookieを準備し、新local sessions�
 | DBとCookie | [migration](../../../supabase/migrations/20260901102912_remote_schema.sql) L866–886、L1861–1876、L2105–2137、[Cookie helper](../../../src/lib/cookie.ts) |
 | 呼出元と認証表示 | [clientFetch](../../../src/lib/client-fetch.ts)、[LoginContext](../../../src/contexts/LoginContext.tsx)、[me API](../../../src/app/api/auth/me/route.ts) |
 
-状態変更APIには[proxy](../../../src/proxy.ts)のOrigin／Referer検査が先行する。認証失敗時の標準応答はmissing／invalid／revokedが401、session生存確認不能が503とRetry-After: 30。me APIはmissing等を200 `{authenticated:false}`、確認不能を503で返す。
+状態変更APIには[proxy](../../../src/proxy.ts)のOrigin／Referer検査が先行する。認証失敗時の標準応答はmissing／invalid／revokedが401、session生存確認不能が503とRetry-After: 30。me APIはmissing等を200 `{authenticated:false}`、生存確認helperがunavailableを返した場合を503にする。meの外側catchに到達した予期しない例外は200 `{authenticated:false}`になる。
+
+## SQ-AUTH-SESSION-ME: 初期認証表示の同期
+
+開始契機はLoginProviderの初期表示。事前条件は不要。終了結果はglobalの認証表示が解決済みになる状態、または503により初期の未解決状態を維持する状態である。OTP成功後・MFA成功後の明示的な再同期も同じ同期関数を使う。
+
+```mermaid
+sequenceDiagram
+  participant UI as LoginProvider
+  participant API as me API
+  participant JWT as Supabase getClaims
+  participant DB as Auth session RPC
+  UI->>API: GET /api/auth/me（fetch、no-store）
+  API->>API: Bearer優先、無ければaccess Cookie取得
+  alt tokenなし
+    API-->>UI: 200 authenticated=false
+  else tokenあり
+    API->>JWT: getClaims・issuer / audience照合
+    JWT-->>API: claims / invalid
+    alt token不正
+      API-->>UI: 200 authenticated=false
+    else token検証成功
+      alt JWT session_idなし
+        API-->>UI: 200 authenticated=false
+      else JWT session_idあり
+        API->>DB: is_auth_session_active（JWT session_id）
+        DB-->>API: active / revoked / unavailable
+        alt 生存確認不能
+          API-->>UI: 503 reason=unavailable + Retry-After 30
+        else revoked
+          API-->>UI: 200 authenticated=false
+        else active
+          API-->>UI: 200 authenticated=true + user / role / mfaVerified
+        end
+      end
+    end
+  end
+  alt 503
+    UI->>UI: 前の認証表示とisAuthResolvedを維持
+  else 正常応答・他の非2xx
+    UI->>UI: 応答から認証表示を更新、isAuthResolved=true
+  end
+```
+
+APIの予期しない例外は200の未認証応答。UIの通信例外・JSONを読めない応答も未認証表示を確定する。認証成功のroleはJWTのapp_metadata.roleから読み、不明値はuser、mfaVerifiedはJWT aal=aal2である。global同期はclientFetchを使わず、meは期限切れtokenにも200を返すため、この同期自体からrefreshや401再送は起動しない。初回503ではisAuthResolved=falseのままで、すでに解決した後の503ではその表示を保つ。
+
+`/auth/verified`が独自に行うme照会とrole別の画面出口は[追加認証画面の入口と出口](auth-login-mfa.md#追加認証画面の入口と出口)を参照する。
 
 ## SQ-AUTH-SESSION-REFRESH: token交換
 

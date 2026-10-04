@@ -85,7 +85,7 @@ queryのcode欠落は400、env欠落500、外側例外500。callbackはstateを�
 | 戻り先 | nextの既定は`/auth/verified`。一般userがこの既定先を要求した場合は`/account`、admin／supporterは指定された検証済みパス |
 | 保存順序 | SDK Cookie準備→独自session_id/access/refresh/CSRF Cookie準備→local sessions INSERT |
 | 保存失敗 | DB成功を保証せず、準備済み303とCookieを返す。初回保存のどの段階で失敗したかによりCookie準備の範囲が異なる |
-| ログイン方式 | メールログインの保留Cookie・OTP APIは通らない。特権roleは後続verifiedページでTOTPを扱う |
+| ログイン方式 | メールログインの保留Cookie・OTP APIは通らない。verifiedページに到達した場合のrole／既AAL2／エラー分岐は[追加認証画面の入口と出口](auth-login-mfa.md#追加認証画面の入口と出口)を参照する。特権roleでも指定戻り先が別のパスなら、このcallback自体はverifiedページへ強制しない |
 | アプリ独自連携 | このstart/callbackにoauth_requests／oauth_accountsの照会・作成、link-proposal／link-confirmはない。Supabase側のアカウント連携方針は未確認 |
 | guest注文 | callbackにはconfirm／OTPと同じguest注文引継ぎ呼出しがない |
 

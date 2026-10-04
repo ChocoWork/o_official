@@ -80,7 +80,7 @@ expired分岐の後は、再claimの結果に応じてopen Session回復また�
 | Session作成期限 | DBに期限を予約してStripeへ渡す。既存の期限を再利用する条件は[下書き状態設計](../states/checkout-draft.md)に記載 |
 | Stripe読取り失敗 | expiredとみなしてSessionを追加作成しない。取得の失敗として応答 |
 | attachの競合とDBエラー | 競合は新しいopen Sessionをexpireする補償を試みる。DBエラーではexpireせず500。補償の成功を保証しない |
-| 互換・hosted | v0/未設定draftのcustom再利用経路、hostedのURL応答もAPIにある。現在の購入画面はcustomを送る。旧PaymentIntent APIは410を返す廃止入口 |
+| 互換・hosted | v0/未設定draftのcustom再利用経路、hostedのURL応答もAPIにある。現在の購入画面はcustomを送る。[旧PaymentIntent API](../../../src/app/api/checkout/payment-intent/route.ts)はrate limit通過後に410を返す廃止入口。制限応答429/503が先行し得る |
 
 ## SQ-CHECKOUT-02: 配送先保存と決済確定
 
@@ -192,9 +192,16 @@ sequenceDiagram
         DB-->>C: 注文の現在状態
         C->>C: 現在値から行動判定
         alt 変更不要・記録のみ
+            opt none、paid/shipped注文、paid snapshot、返金額あり、PIあり
+                C->>Stripe: syncRefunds / 全ページの成功返金を読取り
+                C->>DB: apply_order_refund_projection (CAS)
+                DB-->>C: 返金投影後の注文状態
+                C->>Stripe: 返金再読取りで投影確認 (最大3回)
+                Note over C,DB: 失敗は例外で終了 / 古い注文状態で成功を返さない
+            end
             C->>C: ok または 前回更新で要確認ならneeds_review
             C->>DB: 結果を監査
-            C-->>Caller: 結果を返して終了
+            C-->>Caller: 返金同期時は同期後statusで結果を返して終了
         else state_conflictで最終回前
             Note over C: 記録・通知をせず次の読取りへ
         else その他の例外・最終回のstate_conflict
@@ -249,10 +256,12 @@ sequenceDiagram
         C->>DB: paid_amount_mismatchを記録・通知を試みる
         Note over C,Mail: 注文確定メールを抑止、needs_actionのdoneを返す
     else paidの金額一致 または awaitingの更新成功
-        C->>Mail: 種類別の送信helperを呼ぶ (claim失敗時も送信を続行)
-        Mail-->>C: 送信結果
+        opt awaiting または paidで全額返金ではない
+            C->>Mail: 種類別の送信helperを呼ぶ (claim例外時も送信を続行)
+            Mail-->>C: 送信結果
+        end
         C->>DB: 実際の支払方法を保存
-        Note over C: appliedとpaidのneedsReviewを返す
+        Note over C: appliedとpaidのneedsReviewを返す<br/>次の読取りのnone分岐で必要な返金を同期
     end
 ```
 
@@ -264,16 +273,20 @@ sequenceDiagram
 | --- | --- |
 | completeの外部・所有者ガード | Session metadataにsession_idがありCookieと違えば403。modeがpayment以外、draft IDなし、0円、未完了条件は400。draftの所有session違いも403 |
 | 完了判定 | `payment_status=paid OR status=complete`のSessionを受け、照合結果にorderIdとpaid/pending/shippedの状態があれば200。`needs_action/needs_review`という結果名だけで常にエラーにする実装ではない |
+| 返金が注文より先 | `paid`で`amountRefunded > 0 && amountRefunded >= amountReceived`なら注文なしでは`record_only(refunded_before_order)`。注文・在庫確保・注文メールを作らず、completeはorderIdなしの409。一部返金だけなら注文を作り、後続の照合で返金を同期する |
+| 既存注文の返金 | 判定がnone、注文paid/shipped、snapshot paid、返金額>0、PIありの場合だけsyncRefundsを呼ぶ。入金更新直後の読み直しも対象。同期後statusを返し、全額返金によるcancelledならcompleteは409。record_only・返金0・cancelledには呼ばない。事前のPI/金額不一致は要対応分岐を優先する |
+| 返金同期の失敗 | Stripe一時障害はstripe_unavailable、DB errorのcauseが一時障害ならdb_unavailable、最大3回の返金投影が未収束ならnot_convergedのReconcileTransientErrorへ変換。completeは503、workerはfail/retry。その他は元の例外を返す。成立済み注文RPCは巻き戻さない |
 | 配送先 | completeのshippingは形式検証のみ。注文作成時はロックしたdraft.shipping_snapshotから写す。必須配送snapshot欠落は監査して注文作成を続ける |
 | 新規受付 | Sessionで既存注文を確認、draftロック後にも確認。商品はID昇順でKEY SHARE、variantはID昇順でUPDATEロック。商品・金額等の拒否時はorder_not_creatableを記録し、自動返金はしない |
 | 在庫 | 同variant数量を合算し、activeかつ足りるvariantだけstock、残りはbackorder。stock明細をpurchase台帳で確保。決済前のcreate-sessionでは予約しない |
 | draftとカート | placeでdraft completed、入金RPCで対象snapshotのsource_cart_idと所有sessionが一致するカート行だけ削除 |
 | paidの異常 | 金額・通貨不一致でもRPCはpaidに更新し、照合器が要対応を記録。再確保できないstock明細はpaid＋要確認。出荷ガードとは別に管理する |
-| 競合・収束 | 更新0件や中間矛盾は読み直し。最大3回で未収束ならReconcileTransientError。completeは一時エラーを503にする |
+| 競合・収束 | 更新0件や中間矛盾は読み直し。state_conflictが最終回まで続けば要対応を記録してneeds_actionを返す。最大3回の試行内でdoneに達せず、最終回がapplied/lost_raceで追加読取りを要する場合はReconcileTransientError(not_converged)。completeは一時エラーを503にする |
 | 外部一時障害 | StripeConnectionError/StripeAPIError/StripeRateLimitError、または数値statusCodeが500以上/429なら一時障害。照合器の読取りはresource_missingをmissing分類。completeの初回Session取得も同じ一時障害判定で503を返す。初回取得のresource_missing・認証エラー・その他の非一時エラーは外側catchの500。入力・認証の問題を一時障害とみなして繰返さない |
 | 注文メール | 設定・宛先が揃えば種類別claimを行う。RPCがfalseなら送らず、RPC error/例外は監査後に送信を続ける。送信失敗はclaimのreleaseを試みる。入金更新とメール到達・重複排除を同一視しない |
 | 所有者紐付け | ログイン時のみ、user_id未設定条件で紐付け。失敗は成功応答を取り消さない |
 | 画面再試行 | 通常確定・外部復帰とも失敗を表示。completeを自動pollするループは画面にない |
+| 郵便番号の補助照会 | 7桁入力で[postal-code API](../../../src/app/api/checkout/postal-code/route.ts)をGET。IP60回/600秒、入力不正400、制限429/503、200(address/null)、上流例外502。[住所サービス](../../../src/features/checkout/services/postal-code.service.ts)はメモリ/DB cache、同一照会の共有、cache miss時のZipCloud照会を行う。UIは古い入力への応答を破棄し、補完できない場合も手入力を続けられる。draft保存や注文状態は変更しない。配送保存はSQ-CHECKOUT-02へ分ける |
 
 金額・Session・PI照合の全判定は[状態図の判定表](../states/order-payment.md#stripe現在値の分類)へ集約する。
 
@@ -285,4 +298,4 @@ sequenceDiagram
 
 本番のmigration適用、実際のStripe Session・PaymentIntent・動的支払方法、外部認証・メール到達、全競合の実行結果は未確認。SQLの「受付API(F)」コメントや廃止されたfinalize/PaymentIntent APIを、現行画面から呼ぶ経路として描かない。
 
-complete APIの初回Stripe取得の503分類と予期しないエラーの監査形式は、`671645aa`のコードを最終照合で確認した。外側500の監査はmessageと文字列codeを記録し、例外オブジェクトのdetails/hintを複写しない。
+照合基準は2026-10-04の作業ツリーで、`bbb18761`後の返金補正を含む。対象と検証結果は[レビュー記録](../../05_Quality/reviews/code/2026-10-04-sequence-state-review.md)を参照する。completeの外側500の監査はmessageと文字列codeを記録し、例外オブジェクトのdetails/hintを複写しない。

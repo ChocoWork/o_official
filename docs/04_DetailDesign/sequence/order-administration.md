@@ -27,6 +27,17 @@
 
 status/resolve APIは管理認可の後、ID・本文の検証より先に`requireCsrfOrDeny`を呼び、戻り値がResponseならそのまま返して後続へ進まない。helperはrefresh Cookieがなければ検査不要として通し、Cookieがある場合のCSRFヘッダー欠落・hash不一致は403、例外は500。[CSRF helper](../../../src/lib/csrfMiddleware.ts)を参照。これはAPI独自のチェックであり、共通proxyのOrigin検査と別に行われる。
 
+review APIも同じCSRF helperを呼ぶ。refund APIには明示的なCSRF helper呼出しがなく、共通[proxy](../../../src/proxy.ts)の状態変更APIに対するOrigin/Referer検査を通る。管理認可は検証済みJWT、セッションの有効性、DB ACLの対象権限、JWTの`aal2`を確認する。トークン不正・セッション失効は401、権限またはAAL2不足は403、セッション有効性を確認できない場合は503。refundの追加admin判定は検証済みJWTの`app_metadata.role`を使う。ACLのadmin権限だけでこの追加判定を代替する処理ではない。
+
+### 関連する照会入口
+
+| 入口 | 図・操作との対応と結果 | 根拠 |
+| --- | --- | --- |
+| `GET /api/admin/orders` | `admin.orders.read`とAAL2で注文一覧を読む。StripeのPIと未解決の金額不一致も参照し、canShip/canCancel/canRefund等の表示用属性を返す。状態変更はしない。操作時は各POSTが再検証する | [注文一覧](../../../src/app/api/admin/orders/route.ts) |
+| `GET /api/admin/order-attention` | 同じread認可で未解決例外・未確認注文を各最大100件返し、件数も返す。canCancelOrderは注文状態に基づく表示用属性で、Stripeの取消ガード成功を示さない | [要対応・要確認一覧](../../../src/app/api/admin/order-attention/route.ts) |
+| `GET /api/admin/orders/[id]/status` | 同じread認可でPOSTの説明とrequiredBodyを返す。対象注文の現在状態を取得・変更するAPIではない | [status API](../../../src/app/api/admin/orders/%5Bid%5D/status/route.ts) |
+| `GET /api/cron/stripe-reconcile` | Cron Bearer認証でPI・返金・会計・Payoutを照合する。管理認可とは別の入口で、返金不一致時には下記の共通投影も実行する | [照合API](../../../src/app/api/cron/stripe-reconcile/route.ts)、[Webhook関連見回り](stripe-webhooks.md#関連する見回りとschedule) |
+
 ## SQ-ADMIN-01: 未入金注文の通常取消
 
 目的は、未入金注文をStripeの現在値と突き合わせて取り消すこと。事前条件は管理認可・CSRF helper・入力検証を通り、対象がpayment_in_progressまたはpendingであること。終了結果は取消成功の200、取り消せない状態の409、一時的な確認失敗の503等。
@@ -163,6 +174,7 @@ sequenceDiagram
 | 条件 | 結果・保存内容 |
 | --- | --- |
 | 返金要求の冪等性 | APIは`admin-refund:注文ID:指定額またはfull`をキーにする。別の同額返金要求を識別する永続IDはこのAPIで作っていない |
+| 返金要求の本文と金額 | amountは任意の正の整数で、指定時は注文総額以下を検査する。既返金額を引いた残額の事前検査は行わない。amount省略時はStripeへ未指定で渡す。JSON解析失敗は空objectとして扱い、既定reasonとamount未指定で進む。reasonは冪等キーに含まれない |
 | pending / requires_action / failedのRefund | 成功返金合計へ加えない。新しいRefund作成と注文cancelledを同義にしない |
 | 部分成功返金 / 全額成功返金 | 部分ならpaid/shipped維持。成功合計は注文額で上限化し、全額ならcancelledへ投影 |
 | 返金再投影 | 全額返金由来cancelledで成功合計が減った場合、shipped_atありならshipped、なしならpaidへ戻す。旧返金額が全額未満の未入金由来cancelledは同期を行わず維持 |
@@ -170,7 +182,9 @@ sequenceDiagram
 | 保存範囲 | ordersの返金額・返金日時・支払状態更新時刻・statusと履歴。返金投影RPCはstock_movementsを変更せず、全額取消後も在庫を解放しない |
 | Stripe作成後のDB同期失敗 | 既に作られたRefundをAPIが削除・巻き戻す処理はない。例外応答と外部返金結果を別に確認する必要がある |
 
-同じ返金同期は[Webhook処理](stripe-webhooks.md)と[会計・返金照合](../../../src/app/api/cron/stripe-reconcile/route.ts)からも呼ばれる。イベント内の額を加算する処理ではない。根拠はrefund API、返金同期、返金投影RPC。
+同じ返金同期は[Webhookの返金イベント処理](stripe-webhooks.md)、[会計・返金照合](../../../src/app/api/cron/stripe-reconcile/route.ts)、[共通決済照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)からも呼ばれる。共通照合器ではnone判定、paid/shipped注文、Stripe paid、正の返金額、PIありの場合に同期し、返すorderStatusも同期後の値にする。注文作成・入金更新後の読み直しでもこの経路を通るため、先着して注文なしで省略された返金イベントの反映も補う。返金イベント内の額を加算する処理ではない。
+
+注文なし・snapshotに下書きIDありで受取額全額が返金済みのpaidなら、判定表は`record_only:refunded_before_order`を選び注文を作らない。既存注文の入金更新で金額・通貨が一致する場合も、全額返金済みなら注文確認メールを送らず、後続の返金同期で取消へ投影する。共通照合器の返金接続はStripe・DBの一時エラーと返金投影の未収束を`ReconcileTransientError`へ分類する。管理取消経路では503、workerではfailと502、見回りでは個別失敗として扱う。根拠は[判定表](../../../src/lib/stripe/checkout-payment-decision.ts)、[返金接続](../../../src/lib/stripe/checkout-payment-reconciler-deps.ts)と各呼出し元。
 
 共通同期でPIに対応する注文がなければOrderNotFoundForPaymentIntentErrorとなり、返金一覧と投影RPCへ進まない。Webhook processorはこの型だけを捕捉して監査後に後段処理へ進む。管理返金API・会計照合の呼出し元に同じ捕捉はない。差分の確認範囲は[Webhookの未確認事項](stripe-webhooks.md#未確認事項)を参照する。
 
@@ -291,4 +305,4 @@ APIが外部確認に失敗すればRPCへ進まない。DB側では例外行を
 
 本番のRPC・トリガー・権限適用、実際の管理者ACL、Stripeの入金・返金結果、外部確認とDB更新の競合、メール到達は未確認。[pendingの状態強制](../../../supabase/pending/harden_order_state_transitions.sql)は実適用を確認せずに有効と断定しない。SQLコメントの計画と現行APIの呼出し経路を区別する。
 
-status APIのCSRF helper追加は、最終照合時のmaster `110420bd`のコードを確認した。取消と出荷の図に同じ前段ガードを反映している。
+最終照合のコード基準はmasterの`bbb18761`と、2026-10-04の作業ツリーにある決済・返金ライブラリの未コミット変更。取消・出荷のCSRF前段ガードと、返金同期の呼出し元・全額返金の扱いを静的に確認した。今回、コードの実行テストと本番反映は確認していない。

@@ -27,12 +27,14 @@
 | [会員登録・確認](auth-registration.md) | 登録受付、確認メール、token_hashの検証 |
 | [Google OAuth](auth-oauth.md) | OAuth開始、callback、セッション作成、戻り先 |
 | [パスワード再設定](auth-password-reset.md) | 再設定メール、リンク確認、パスワード更新 |
-| [セッション・API認可](auth-session.md) | refresh、logout、管理APIでの認証・ACL・AAL2確認 |
+| [セッション・API認可](auth-session.md) | 初期認証状態の照会、refresh、logout、管理APIでの認証・ACL・AAL2確認 |
 | [購入・決済照合](checkout-payment.md) | 下書きとCheckout Session、画面内決済、completeと照合 |
 | [Stripe Webhook](stripe-webhooks.md) | 署名検証とenqueue、claimと処理・完了・再試行 |
 | [注文管理](order-administration.md) | 未入金取消、出荷、返金、要対応の解決 |
 
-[従来の認証図のパス](01_auth_seq.md)は現在の認証文書への案内として残す。状態の許される変化は[状態設計](../states/README.md)を参照する。
+[認証設計の案内](auth_seq.md)から現在の認証文書へ進める。状態の許される変化は[状態設計](../states/README.md)を参照する。
+
+入口と状態管理対象から確認した[実装照合レビュー](../../05_Quality/reviews/code/2026-10-04-sequence-state-review.md)に、対象API、補助処理の対応、修正事項と検証結果を記録する。
 
 ## 共通フォーマットと根拠の扱い
 

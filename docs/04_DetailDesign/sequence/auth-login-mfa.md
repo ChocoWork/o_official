@@ -110,7 +110,9 @@ IP枠のカウンタDB障害はhelperの503をそのまま返す。account枠は
 
 OTP成功後のme照会は2回ある。LoginContextのglobal同期は503で前の表示を維持し、通信例外なら未認証表示にする。その後のOTP画面の戻り先判定は非2xx/未認証で/login、認証済み特権roleで/auth/verified、それ以外と通信例外で/accountとなる。
 
-保留Cookie不在・改竄・期限切れは401。code Schemaはtrim後8文字で、UIは数字8桁を入力させる。保存に失敗すると、準備済みCookie付き200レスポンスを返さず、新しい500レスポンスを返す。ゲスト注文紐付けは失敗しても認証を止めない。[初回保存](../../../src/features/auth/services/register.ts)の順序は`session_id`→access→refresh→CSRFのCookie準備→hash計算→DB INSERTである。
+保留Cookie読取りがnullを返す不在・署名不一致・期限切れは401。CookieのURL decodeや署名秘密取得がthrowした場合は外側catchの500である。code Schemaはtrim後8文字で、UIは数字8桁を入力させる。保存に失敗すると、準備済みCookie付き200レスポンスを返さず、新しい500レスポンスを返す。OTPの非2xx・通信失敗は画面内エラーになり、検証操作では自動的に/loginへ戻らない。account上限でCookieが消えた後の再読込みは、サーバー側のverifyページguardが/loginへ送る。[初回保存](../../../src/features/auth/services/register.ts)の順序は`session_id`→access→refresh→CSRFのCookie準備→hash計算→DB INSERTである。
+
+ゲスト注文紐付けは失敗しても認証を止めない。紐付いた注文がある場合は、最新注文の配送先・氏名からprofilesの未設定住所・表示名も補完する。既存値は上書きせず、profileの照会・保存失敗も認証成功と注文の紐付けを戻さない。
 
 ## SQ-AUTH-LOGIN-RESEND: OTP再送
 
@@ -143,7 +145,7 @@ sequenceDiagram
   end
 ```
 
-再送もloginと同じカウンタ枠を消費する。UIは429でRetry-Afterに合わせ待機、503で一時障害表示、その他で送信失敗表示となる。UIの60秒待機はAPIの5回／600秒制限とは別である。
+再送もloginと同じカウンタ枠を消費する。UIは429でRetry-Afterに合わせ待機、503で一時障害表示、その他で送信失敗表示となる。UIの60秒待機はAPIの5回／600秒制限とは別である。保留Cookieのdecode・署名秘密取得、Auth呼出し、再発行にthrowが起きた場合、このrouteには外側catchがなく、上図の401／500 JSONへ変換する処理はない。メール送信受付後の再発行例外では、送信済みでも保留Cookie更新まで到達しない場合がある。
 
 ## SQ-AUTH-LOGIN-CANCEL: OTP待ちの取消
 
@@ -165,7 +167,23 @@ sequenceDiagram
   UI->>UI: /loginへreplace
 ```
 
-API固有のレート制限はない。UIはfetchの通信例外を吸収して`/login`へ移動するため、通信失敗時のサーバーCookie消去までは保証されない。[loginページ](../../../src/app/login/page.tsx)は有効保留Cookieがあれば再び`/login/verify`へ送る。
+API固有のレート制限はない。上図はCookie読取りが結果を返す経路である。Cookieのdecode・署名秘密取得例外にはroute内のcatchがなく、消去準備へ進まない。UIはHTTP非2xxも検査せず、fetchの通信例外を吸収して`/login`へ移動するため、移動だけからサーバーCookie消去の成功を判断しない。[loginページ](../../../src/app/login/page.tsx)は有効保留Cookieがあれば再び`/login/verify`へ送る。
+
+### 追加認証画面の入口と出口
+
+`/auth/verified`はOTP成功・登録確認・OAuth後の到達や直接表示で起動し、最初に独自のGET /api/auth/meを行う。[global認証表示の初期同期](auth-session.md#sq-auth-session-me-初期認証表示の同期)とは別の照会で、clientFetchによるrefreshは使わない。
+
+| 判定・操作 | UIの処理・出口 |
+| --- | --- |
+| me非2xx（503を含む）・authenticated=false・読めないJSON | unauthenticated modeを表示し、/loginへのリンクを出す。自動redirectはしない |
+| 認証済み一般user | 完了案内を表示し、800ms後に/accountへreplace |
+| 認証済みadmin／supporter、meのmfaVerified=true | status／enroll／verifyを呼ばず/adminへreplace |
+| 認証済みadmin／supporter、mfaVerified=false | statusを照会し、verified factorがあればコード入力、無ければ登録案内にする。UIはstatusのneedsChallengeを分岐条件に使わない |
+| 初期meの通信例外・statusの非2xx／解析例外／通信例外 | mfa-challenge modeと確認失敗メッセージ。factor一覧等が空なら次の自動enroll条件も満たす |
+| 自動enroll | mfa-challenge modeで未試行・非処理中・QR／登録factorIdなし・verifiedFactors空のとき一度実行。未登録が確認できた場合だけには限定されない |
+| enroll非2xx・data欠落・通信例外 | 画面内エラー。409は既登録の案内、その他は登録失敗の案内。自動試行後も条件を満たせば手動登録ボタンを表示する |
+| verify非2xx・verified≠true・通信例外 | 画面内エラーを表示し、遷移しない |
+| verify成功 | global状態を再同期した後/adminへreplaceする。再同期が503で前の表示を維持した場合や通信例外で未認証表示になった場合もreplaceへ進む |
 
 ## SQ-AUTH-MFA-STATUS: 追加認証状態の取得
 
