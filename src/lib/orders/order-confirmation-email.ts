@@ -86,12 +86,11 @@ export function formatItemLines(items: ConfirmationItem[], currency: string): st
  * 呼び出し側が金額や明細を手で組み立てると、経路ごとに客へ届く内容がずれる。実際、値引額は
  * 注文行にしか無いため、下書きから組んでいた経路だけ割引の行が落ちていた（FREQ-396）。
  *
- * 注文確定は画面からの complete と Stripe webhook の2経路から走り、どちらも同じ注文を受け取る
- * （Stripe は同じイベントの再送と順序の入れ替わりを前提にするよう求めている）。送る前に DB で
- * 送信権を取り、取れた経路だけが送る（OWASP ASVS V11.1.6 の競合対策）。
+ * complete API・Stripe webhook・毎時の見回りは、すべて照合関数を通じて注文確認メールを送る。
+ * 状態を更新できた呼び出しだけ送信を試み、送る前に DB で送信権を取る（OWASP ASVS V11.1.6 の競合対策）。
  *
- * 送信の失敗は監査ログに残すだけで、注文確定は止めない（ほかと同じ扱い）。失敗したときは
- * 送信権を戻し、あとの経路（webhook の再送・掃除ジョブ）が送れるようにする。
+ * 送信の失敗は監査ログに残すが、注文確定は止めない。現在の照合関数は失敗した確認メールを自動再送しない
+ * （R-34、グループ D）。
  *
  * @returns 実際に送ったら true
  */
@@ -291,8 +290,7 @@ export async function fetchOrderEmailSource(
     .select('item_name, color, size, quantity, line_total')
     .eq('order_id', orderId);
 
-  // 取得の失敗と0件はどちらも「注文内容を書けない」。商品の行が無いメールは、客には
-  // 注文が消えたように見える。送らなければ送信権を取らないので、後の経路が送り直せる。
+  // 取得失敗と0件では送らない。注文処理は続けるが、後の照合経路による自動再送はない（R-34、グループ D）。
   if (orderItemsError || !orderItems || orderItems.length === 0) {
     console.error(
       `${logLabel} failed to fetch order_items for email`,

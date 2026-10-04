@@ -8,8 +8,9 @@ import path from 'node:path';
  * 台帳（stock_movements）へ追記して引き当てる。在庫が無い組み合わせは受注生産（backorder）
  * として受ける（ブランドの前提。docs/01_Planning/brand.md）。
  *
- * ここはファイルの形だけを見る。実際の引き当て・戻しの挙動は
- * tests/integration/db/variant_stock_on_order.integration.test.ts が本物の DB で確かめる。
+ * ここは旧マイグレーションの形だけを見る。旧 finalize RPC は
+ * 20260927100800_retire_legacy_order_rpcs.sql で削除した。現行のバリアント明細と在庫確保は
+ * tests/integration/db/place_order_from_checkout_draft.integration.test.ts が実 DB で確かめる。
  */
 
 const MIGRATIONS_DIR = path.join(process.cwd(), 'supabase/migrations');

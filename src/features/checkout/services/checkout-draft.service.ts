@@ -148,13 +148,11 @@ export type CheckoutShippingSnapshot = {
 /**
  * 合計が 0 の Checkout セッションは注文にできない（FREQ-389）。
  *
- * Stripe 公式（無料の注文）に「支払いのない完了済みの Checkout セッションでは PaymentIntent の
- * 関連付けが行われません」とある。この店の注文の冪等キーは `orders.payment_intent_id` なので、
- * PaymentIntent が無ければ注文を一意にできない。
+ * 注文の重複判定は `orders.checkout_session_id` を使うため、PaymentIntent が無くても同じ Session から
+ * 注文を特定できる。
  *
- * 判定と記録の文言をここに1つだけ置く。確定（complete）は 400 を返し、webhook は処理を飛ばすと
- * 扱いは違うが、断る理由は同じ。片方が「payment_intent が無い」としか記録していないと、
- * 本番のログで Stripe 側の不具合と区別がつかない（FREQ-397）。
+ * 0円 Checkout は complete API が `ZERO_AMOUNT_CHECKOUT_AUDIT_DETAIL` で監査して拒否する。Webhook は
+ * 照合関数を通り、注文なしを `ok:record_only:zero_amount` として記録する（FREQ-397）。
  */
 export const ZERO_AMOUNT_CHECKOUT_AUDIT_DETAIL = 'Zero-amount checkout session is not supported';
 
@@ -235,7 +233,7 @@ export type CheckoutDraftRow = {
   payment_intent_id: string | null;
   payment_method: string;
   total_amount: number;
-  /** Stripe のプロモーションコードで引かれた額。total_amount は同期後に割引後の実請求額になる。 */
+  /** Stripe のプロモーションコードで引かれた額。total_amount は割引前のまま残り、受付 RPC が discount_amount だけを書き戻す。 */
   discount_amount: number;
   currency: string;
   shipping_snapshot: CheckoutShippingSnapshot | null;

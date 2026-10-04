@@ -257,7 +257,10 @@ type StoreCheckoutSessionResult = "stored" | "conflict" | "error";
  * Stripe Session ID を、claimしたdraftへCASで確定する。
  *
  * 同じIDの再送は成功として扱い、異なるIDが既に確定していれば上書きしない。
- * RPCエラーは結果不明なので、後続が同じStripe冪等キーで回収できるようSessionを失効しない。
+ * RPCエラーは結果不明なので、Sessionは失効しない。冪等キーに含む失効時刻は
+ * reserve_checkout_session_expiry が15秒だけ使い回すので、15秒以内の再送は同じキーで
+ * 同じSessionを回収する。それより後の再送は別のキーで新しいSessionを作る。
+ * 結び付けられなかったSessionは利用者のどこにも渡らず、自身の失効時刻で失効する。
  */
 async function storeCheckoutSessionIdOnDraft(params: {
   draftId: string;

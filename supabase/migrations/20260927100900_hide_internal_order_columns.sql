@@ -10,13 +10,17 @@
 --      ローカルに無く本番にだけある列も取りこぼさない。
 --
 -- INSERT・UPDATE・DELETE など、ほかの権限と service_role は変えない。管理画面の一覧が管理者の JWT で読む
--- review_reason・reviewed_at は、読めるままにする。店内の4列を読めるのは service_role（サーバー処理）だけ。
+-- review_reason・reviewed_at は、読めるままにする。この制限は public.orders の4列に適用する。
+-- private.record_order_revision() は to_jsonb(OLD/NEW) を order_revisions.before_data/after_data に保存するため、
+-- そのコピーには店内の4列も含まれる。order_revisions は admin.finance.read を持つ管理者の JWT が RLS 経由で読める。
+-- 将来 order_revisions を顧客向けに公開するときは、これらのコピーも公開しないこと。
 --
 -- これからの変更で守ること: 列単位の権限は、後から足した列に及ばない。つまり orders に足した列は、何もしなければ
 -- anon・authenticated から読めない（隠れる側に倒れる）。足すときは同じ変更で、次のどちらかを決める。
 --   (a) お客様に見せる列: その移行で GRANT SELECT (列) ON TABLE public.orders TO anon, authenticated を足す。
 --   (b) 店内だけの列: 移行では何もしない。tests/integration/db/order_internal_columns.integration.test.ts の
 --       INTERNAL_COLUMNS へ足して、意図して隠していることを残す。
+-- public.orders に列を足したら、公開は列単位で GRANT SELECT、非公開は INTERNAL_COLUMNS へ登録し、tests/integration/db/order_internal_columns.integration.test.ts を実行する（CI では自動実行しない）。
 -- 決めないと、そのテストの「ほかの列はすべて読める」が落ちる。決めないまま出すと、その列を利用者の JWT で読む処理が
 -- 42501 で落ちる。適用済みのこの移行は書き換えない。
 -- 利用者の JWT で orders を select('*') や列なしの select() で読まないこと。店内の列を含むので 42501 になる。

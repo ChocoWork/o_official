@@ -13,7 +13,7 @@ import path from 'node:path';
  * 注文側の discount_amount も 0 を直書きしていたため、直しても注文に割引額が残らない。
  * 列の追加と、注文への引き写しをこのマイグレーションでまとめて入れる。
  *
- * 実際の通り方は tests/integration/db/checkout_draft_discount.integration.test.ts が実 DB で確かめる。
+ * 現行の割引書き戻しは tests/integration/db/place_order_from_checkout_draft.integration.test.ts が実 DB で確かめる。
  */
 
 const MIGRATIONS_DIR = path.join(process.cwd(), 'supabase/migrations');

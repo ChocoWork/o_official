@@ -5,7 +5,7 @@ import path from 'node:path';
  * 在庫復元の遷移先を failed / cancelled に限るマイグレーション（FREQ-383、レビュー指摘⑫）。
  *
  * 許可しない値でエラーになり、注文・在庫・改訂履歴が変わらないことは
- * tests/integration/db/release_stock_next_status.integration.test.ts が実 DB で確かめる。
+ * tests/integration/db/release_stock_by_order.integration.test.ts が実 DB で確かめる。
  * このテストは、検査が行ロックより前にあることと、検査以外の定義を変えていないことを守る。
  */
 

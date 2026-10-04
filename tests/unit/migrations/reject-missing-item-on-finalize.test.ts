@@ -9,7 +9,7 @@ import path from 'node:path';
  * `item_status <> 'published'` は NULL との比較で NULL になり、条件が成立せず素通りしていた。
  * そのまま進むと注文明細の外部キー違反で落ち、支払い済みの客に 500 を返すことになる。
  *
- * 実際の止まり方は tests/integration/db/finalize_missing_item.integration.test.ts が実 DB で確かめる。
+ * 現行の受付 RPC での拒否は tests/integration/db/place_order_from_checkout_draft.integration.test.ts が実 DB で確かめる。
  */
 
 const MIGRATIONS_DIR = path.join(process.cwd(), 'supabase/migrations');
