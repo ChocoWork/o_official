@@ -52,15 +52,25 @@ title: シークレット管理方針
 ## Stripe注文同期
 
 Stripe Webhookは `${APP_BASE_URL}/api/webhook/stripe` に設定し、署名シークレットを
-`STRIPE_WEBHOOK_SECRET` としてサーバー環境だけに保存します。次のイベントを購読します。
+`STRIPE_WEBHOOK_SECRET` としてサーバー環境だけに保存します。`src/lib/stripe/webhook-processor.ts` が処理する次の全イベントを購読します。
 
-- `checkout.session.completed`
-- `checkout.session.expired`
-- `payment_intent.succeeded`
-- `payment_intent.payment_failed`
-- `refund.created`
-- `refund.updated`
-- `charge.refunded`
+| イベント | 用途 |
+| --- | --- |
+| `checkout.session.completed` | Checkout Session の現在値を照合し、注文・決済状態へ反映する |
+| `checkout.session.async_payment_succeeded` | 時間差決済の現在値を照合し、注文・決済状態へ反映する |
+| `checkout.session.async_payment_failed` | 時間差決済の現在値を照合し、注文・在庫へ反映する |
+| `checkout.session.expired` | 期限切れ Session を照合し、注文・在庫へ反映する |
+| `payment_intent.succeeded` | PaymentIntent を照合し、注文・決済状態と会計記録へ反映する |
+| `payment_intent.payment_failed` | PaymentIntent の現在値を照合し、注文・在庫へ反映する |
+| `refund.created` | 返金を注文へ反映し、返金の会計記録を同期する。注文が無い場合は監査に残し、失敗・取消なら要対応にして店へ知らせる |
+| `refund.updated` | 返金状態を注文へ反映し、返金の会計記録を同期する。注文が無い失敗・取消は要対応にして店へ知らせる |
+| `refund.failed` | 失敗返金を注文へ反映し、返金の会計記録を同期する。注文が無ければ要対応にして店へ知らせる |
+| `charge.refunded` | Charge の返金を注文へ反映する。注文が無い場合は監査に残して処理を続ける |
+| `payout.paid` | Stripe の Payout を会計記録へ同期する |
+| `payout.failed` | Payout の失敗を会計記録へ同期する |
+| `payout.reconciliation_completed` | Payout の照合結果を会計記録へ同期する |
+
+返金の `refund.*` 購読が無いと、注文の無い失敗・取消返金が要対応として記録されず、店への通知も行われません。
 
 定期照合は `GET /api/cron/stripe-reconcile` を呼び出し、`Authorization: Bearer
 ${CRON_SECRET}` を付与します。Stripeだけに存在する未返金の成功決済は報告対象になり、

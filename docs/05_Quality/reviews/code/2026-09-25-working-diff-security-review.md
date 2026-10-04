@@ -29,9 +29,9 @@
 | R-21 | P3 | 未修正 | 重複した色・サイズ名を保存でき、その商品の在庫欄が500になる |
 | R-22 | P2・既存 | 未修正 | CSRFトークン検査の拒否応答を見落とし、検査が効いていない |
 | R-23 | P2 | 未修正 | Stripeの500系応答が同じ冪等キーで再生され、そのカートで決済を始められない |
-| R-24 | P2・既存 | 未修正 | ログイン客の注文が user_id に紐付かず注文履歴に出ない |
+| R-24 | P2・既存 | 一部修正（complete API は照合後に未所有注文を紐付ける。Webhook 単独経路は未対応） | ログイン客の注文が user_id に紐付かず注文履歴に出ない |
 | R-25 | P2 | 未修正 | Checkout Sessionの有効期限が既定24時間のまま、支払後に注文確定を断る経路がある |
-| R-26 | P3 | 未修正 | 値引き額の書き戻しでdraftの照合が外れ、再表示が500になる |
+| R-26 | P3 | グループ A で修正（受付 RPC が同一トランザクションで discount_amount だけを書き戻す） | 値引き額の書き戻しでdraftの照合が外れ、再表示が500になる |
 | R-27 | P2 | 未修正 | customer_email付きで作ったSessionでは updateEmail が例外になり支払えない |
 | R-28 | P3 | 未修正 | 100%割引で0円Sessionを完了させた後に注文確定を断る |
 | R-29 | P3 | 未修正 | 画面の再試行ボタンとエラー消去の不整合 |
@@ -214,10 +214,10 @@
 
 ### R-24 ログイン客の注文が user_id に紐付かず注文履歴に出ない
 
-- **箇所**: [complete route](../../../../src/app/api/checkout/complete/route.ts) 409〜428行・517〜589行、[finalize_order_from_checkout_draft](../../../../supabase/migrations/20260921121038_retire_item_stock_quantity.sql) 430〜470行、[orders API](../../../../src/app/api/orders/route.ts) 134行。
-- **再現経路**: ログイン状態で購入すると注文は RPC で作られるが、INSERT に user_id がなく、通常経路では `linkOrderToUser` を呼ばない（呼ぶのは注文が既にある分岐だけ）。Webhook経路も同じ。購入履歴は `eq('user_id', userId)` なので、次回ログイン時の `linkGuestOrdersByEmail` まで表示されない。
-- **補足**: 通常経路はHEADから同じ。HEADにあった user_id 付きの直接INSERTフォールバックを今回削除したため、紐付く経路がなくなった。ログイン状態のテストがない。
-- **修正方針**: 注文確定の成功後に activeUserId があれば `linkOrderToUser` を呼ぶ。draft に user_id を持たせて RPC で書く方がWebhook経路も含めて確実。
+- **箇所**: [complete route](../../../../src/app/api/checkout/complete/route.ts) の `linkOrderToUserIfUnowned`、[webhook-processor](../../../../src/lib/stripe/webhook-processor.ts)、[place_order_from_checkout_draft](../../../../supabase/migrations/20260927100300_place_order_from_checkout_draft.sql)、[orders API](../../../../src/app/api/orders/route.ts)。
+- **修正前の再現経路**: ログイン状態で購入すると注文は RPC で作られるが、INSERT に user_id がなく、通常経路でも `linkOrderToUser` が呼ばれなかった。購入履歴は `eq('user_id', userId)` なので、次回ログイン時の `linkGuestOrdersByEmail` まで表示されなかった。
+- **現在の状態**: complete API は照合後、ログイン中なら未所有注文を `user_id` に紐付ける（[complete route](../../../../src/app/api/checkout/complete/route.ts)）。Webhook 単独経路はユーザー情報を持たず、ここを通らないため未対応。
+- **残作業**: Webhook が注文を作る場合にも所有者を保存する方法は未実装。グループ C に残る範囲。
 
 ### R-25 Checkout Sessionの有効期限が既定24時間のまま、支払後に注文確定を断る経路がある
 
@@ -227,9 +227,9 @@
 
 ### R-26 値引き額の書き戻しでdraftの照合が外れ、再表示が500になる
 
-- **箇所**: [complete route](../../../../src/app/api/checkout/complete/route.ts) 464〜492行、[claim_checkout_draft](../../../../supabase/migrations/20260925000132_add_checkout_session_claim_rpcs.sql) 191〜201行。
-- **再現経路**: 値引きありの支払い後、complete は draft の total_amount を値引き後の額へ書き換える。注文確定が失敗して draft が created のまま残ると、同じカートの create-session は既存 draft を取り、total の不一致で `CHECKOUT_FINGERPRINT_MISMATCH` になる。この例外はアプリ側で分類されず、再試行可能な500として返る。本来の「既に確定処理へ進んでいます」にならない。
-- **修正方針**: total_amount は書き換えず discount_amount だけ持ち、finalize は `total - discount` で照合する。
+- **箇所**: [place_order_from_checkout_draft](../../../../supabase/migrations/20260927100300_place_order_from_checkout_draft.sql) と [complete route](../../../../src/app/api/checkout/complete/route.ts)。
+- **修正前の再現経路**: 値引きありの支払い後、complete が draft の `total_amount` を値引き後の額へ書き換えると、同じカートの `create-session` が既存 draft と照合できず `CHECKOUT_FINGERPRINT_MISMATCH` になった。
+- **修正内容（グループ A）**: `place_order_from_checkout_draft` は注文作成と同じトランザクションで、`discount_amount` だけを Stripe の値へ更新し、`total_amount` は割引前の額のまま残す。照合は `total_amount + discount_amount` と Stripe の割引前合計を比べる。現行の確認は [place_order_from_checkout_draft.integration.test.ts](../../../../tests/integration/db/place_order_from_checkout_draft.integration.test.ts)。
 
 ### R-27 customer_email付きで作ったSessionでは updateEmail が例外になり支払えない
 
@@ -437,7 +437,7 @@
 | 1 | A 支払状態を Stripe の現在値に合わせる | R-01, R-02, R-04, R-18, R-25（Webhook 側）, R-41, R-42, R-43, R-44（①の削除の案内と同じ箇所のため 2026-09-25 に移した）, R-57（create-session の同じ箇所を直すため 2026-09-27 に加えた） | 実装済み・push 待ち（[設計書](../../../superpowers/specs/2026-09-26-order-payment-reconciliation-design.md)、[実装計画](../../../superpowers/plans/2026-09-27-order-payment-reconciliation.md)。本番へ当てる前の確認は下の「グループ A を本番へ当てる前の確認」） |
 | 2 | F 支払いを「注文する」で実行する | R-56, X-3, 在庫を注文確定時に確保する要望 | 未着手 |
 | 3 | B キューと worker の運用基盤 | R-07, R-33, R-32, R-05, R-35, R-55, X-4 | 未着手 |
-| 4 | C 注文確定RPC（finalize）の整合 | R-24, R-26（R-42 は同じ箇所を直す A へ移した） | 未着手 |
+| 4 | C 注文確定RPC（finalize）の整合 | R-24, R-26（R-42 は同じ箇所を直す A へ移した） | 一部対応：R-26 はグループ A で修正。R-24 は complete API 経路で修正したが、Webhook 単独経路の所有者保存は未着手 |
 | 5 | D 注文メールを確実に送る | R-34, R-14 | 未着手 |
 | 6 | E 返金イベントの反映 | R-06, R-16（業務判断が要る）, R-03 は任意 | 未着手 |
 | 未定 | H プロモーションコードの管理（ユーザー要望。2026-09-27） | 管理画面でコードを作成・停止する。期限・全体の回数上限・最低購入額は Stripe の制限で効く。初回限定は、Customer を作らない今の決済では Stripe が誰でも初回とみなすため効かない。1人あたりの回数上限は Stripe に無い。この2つは自前で確かめる。0円になるコード（100%割引、割引額以下の最低購入額）は作らせない | 順番は未定 |
@@ -475,6 +475,7 @@
 | --- | --- | --- |
 | push の直前 | `list_migrations` | 最新が `20260925000303` のまま（違えば、台帳にあってファイルに無い version で `db push` が止まる。押し通さず、ユーザーに知らせる） |
 | push の直前 | `select checkout_session_id, count(*) from public.orders where checkout_session_id is not null group by 1 having count(*) > 1;` | 0行（`orders_checkout_session_id_key` を作れる） |
+| push の直前 | `select relacl from pg_class where oid = 'public.orders'::regclass;` と `select attname, attacl from pg_attribute where attrelid = 'public.orders'::regclass and attnum > 0 and not attisdropped and attacl is not null;` | `20260901102912_remote_schema.sql` の事前 GRANT からの期待値は、relacl が postgres grantor による postgres・anon・authenticated・service_role の付与だけ（PUBLIC なし）、列 ACL は0行。適用前のローカル値は現時点で確認できない。PUBLIC または別の grantor による付与は、この移行の REVOKE 後も残る |
 | push の直前 | 下の `public.orders` のトリガーの SELECT | 5行（`protect_legal_order_delete`・`protect_legal_order_immutable_fields`・`record_order_revision`・`reject_shipping_without_address`・`trigger_orders_updated_at`）。`enforce_order_payment_invariants` は無い（保留中の第2段階 `supabase/pending/harden_order_state_transitions.sql` が作る）。`information_schema.triggers` で数えると、`reject_shipping_without_address` が INSERT と UPDATE の2行になるので6行 |
 | push の直前 | `select count(*) from public.orders where status = 'pending' and checkout_session_id is null;` | 2（2026-03-20 の移行前の未入金。2でなければ push せず、件数と作成日時をユーザーに知らせる） |
 | push の直前 | `select count(*), min(created_at), max(created_at) from public.orders where status = 'pending';` | 2件まで（上の移行前の2件だけ。`checkout_session_id` の有無を問わず数える）。E2E が本番に書いた入金待ちの注文が残っていれば、最初の見回りで `payment_expired` のメールや `stripe_object_missing` の要対応になる。2件より多ければ push せず、件数と作成日時をユーザーに知らせる |

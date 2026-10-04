@@ -528,7 +528,7 @@ checkout の部品は `CheckoutPageContent` の外（モジュールの最上位
 
 ### 何度呼ばれてもそろう形にする（FREQ-394）
 
-受付 RPC の金額検査は、書き換わらない値を基準にする。下書きの合計は割引前のまま変わらず、書き戻すのは割引額だけ（上の FREQ-389）。割引後の合計へ書き換え済みの古い下書きも残りうるので、検査は割引前どうしで比べる。
+受付 RPC の金額検査は、下書きの `total_amount + discount_amount` と Stripe の `amount_total + amount_discount` を比べる。`total_amount` は割引前のままにし、受付 RPC が Stripe の値で `discount_amount` だけを書き戻す（上の FREQ-389）。割引後の合計へ書き換え済みの古い下書きも、この和で割引前の額にそろう。
 
 確定は1つの注文につき何度でも走る。
 
@@ -537,7 +537,7 @@ checkout の部品は `CheckoutPageContent` の外（モジュールの最上位
 | webhook が先に注文を作り、その後ブラウザが戻る | 注文はあるのに complete が 400 を返し、客の画面は失敗表示 |
 | 注文確定が落ちて客が再試行する                 | 何度押しても 400。その注文は二度と確定できない            |
 
-対策は、書き換わらない値を基準にすること。
+同じ Session で受付 RPC を再度呼んだ場合、金額検査より先に既存注文を返すため、書き戻し後も同じ注文に収束する。
 
 - 比べるのは割引前どうし。`下書きの total_amount + 下書きの discount_amount` と `Stripe の amount_total + total_details.amount_discount`。今の下書き（割引前の合計と割引額0）も、割引後の合計と割引額の組を持つ古い下書きも、この和は割引前の額になる
 - 照合関数は先に注文を引き、あれば受付 RPC を呼ばずにその注文の状態で決める。受付 RPC も同じ Session の注文があれば、下書きを書き換えずにその注文を返す
@@ -589,7 +589,7 @@ Stripe は「同じイベントを複数回受信する可能性」と「配信�
 - 権利の確認そのものが失敗したときは、届かないより重複を選んで送り、監査ログ（`order.confirmation.mail` / `mail_claim_failed`）に残す
 - 入金待ち・入金済みのメールは、入金済みにする RPC（`mark_order_paid`）か入金待ちにする RPC（`mark_order_awaiting_payment`）が状態を変えたときだけ、照合関数が送る。更新が0件（先に別の経路が動かした）なら、メールは送らずに Stripe と注文を読み直す。支払額が注文と合わないときは入金済みにして要対応にし、注文確認のメールは送らない（店が確かめてから連絡する）
 - 注文 ID から注文行と明細を引いて本文を組み立てる処理は `sendOrderConfirmationEmailForOrderId`（`src/lib/orders/order-confirmation-email.ts`）に1つだけ置く。以前は webhook の2か所と掃除ジョブの計3か所が同じ列の並びと同じ組み立てを別々に持っていて、片方だけ直すと経路によって客に届く内容が食い違う状態だった
-- 明細が引けないとき、および0件のときは送らない（空の注文内容を客に見せない）。送信権を取る前に止めるので、後の経路が送り直せる。呼び出し側は送れなくても注文の成否を変えない
+- 明細が引けないとき、および0件のときは送らない（空の注文内容を客に見せない）。呼び出し側は送れなくても注文の成否を変えず、現在の照合関数は後の経路で自動再送しない（R-34、グループ D）
 - 検証は `tests/unit/lib/orders/order-confirmation-email.test.ts`、`tests/integration/db/order_email_claims.integration.test.ts`、各経路の単体テスト
 
 #### 本文は注文行だけから作る（FREQ-396）
@@ -680,7 +680,7 @@ Stripe は「同じイベントを複数回受信する可能性」と「配信�
 1. その方式の入金確定が `checkout.session.async_payment_succeeded` で通知されるか（Stripe のドキュメントで「delayed notification」に分類されるか）を確認する
 2. 支払期限を指定できる方式なら `payment_method_options` に設定する（コンビニは `expires_after_days` に `KONBINI_PAYMENT_DAYS`（7日。`src/lib/constants/konbini.ts`）を設定済み。/legal の表記も同じ定数を読む。FREQ-106・R-57）。指定できない方式は Checkout Session をアプリ側で強制終了できない場合があるため、失効・返金・長期保留の運用を決めてから有効化する。
 3. その方式が Customer を要求するか確認する（`customer_creation: if_required` の既定で足りるか）
-4. テストモードで「確定 → 支払い手続き中（`payment_in_progress`）の注文と在庫の確保 → 払込票の発行で入金待ち（Stripe の状態は `awaiting_payment`、注文の状態の値は `pending`）→ `async_payment_succeeded` で `paid` と入金確認のメール、または払込期限切れ（`async_payment_failed`）で `failed` と在庫の戻し・お支払い期限切れのお知らせ」を一巡させる。どの経路（Webhook・完了 API・見回り）でも、状態は照合関数が Stripe の現在値で決める
+4. テストモードで「確定 → 支払い手続き中（`payment_in_progress`）の注文と在庫の確保 → 払込票の発行で入金待ち（Stripe の状態は `awaiting_payment`、注文の状態の値は `pending`）→ `async_payment_succeeded` で `paid` と入金確認のメール、または払込期限切れ（`async_payment_failed`）で `failed` と在庫の戻し・お支払い期限切れのお知らせ」を一巡させる。現状は Stripe の入金済み・入金待ちを照合した同じ呼び出し内で注文を作り状態を進める（グループ F の受付 API 適用後は支払い前に注文を受け付ける）。どの経路（Webhook・完了 API・見回り）でも、状態は照合関数が Stripe の現在値で決める
 5. 返金の可否と手数料の扱いを確認する（返金非対応の方式がある）
 6. 確認画面と注文詳細の表示名を確認する。`mapPaymentMethodLabel` に無い方式は Stripe の種別名（例: `alipay`）がそのまま表示されるので、必要なら表示名を追加する（FREQ-371）
 

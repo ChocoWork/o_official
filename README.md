@@ -101,18 +101,25 @@ Supabase クライアントの配置
 
 - [ ] **4. Stripe の webhook 購読イベントを確認する**
 
-  Stripe ダッシュボード → 開発者 → Webhook → 本番エンドポイント。照合関数へ渡す次の6つが有効になっていること（`src/lib/stripe/webhook-processor.ts` の `processStripeWebhookEvent`）。
+  Stripe ダッシュボード → 開発者 → Webhook → 本番エンドポイント。`src/lib/stripe/webhook-processor.ts` が処理する次の全イベントを購読する。
 
-  ```text
-  checkout.session.completed
-  checkout.session.async_payment_succeeded
-  checkout.session.async_payment_failed
-  checkout.session.expired
-  payment_intent.succeeded
-  payment_intent.payment_failed
-  ```
+  | イベント | 用途 |
+  | --- | --- |
+  | `checkout.session.completed` | Checkout Session の現在値を照合し、注文・決済状態へ反映する |
+  | `checkout.session.async_payment_succeeded` | 時間差決済の現在値を照合し、注文・決済状態へ反映する |
+  | `checkout.session.async_payment_failed` | 時間差決済の現在値を照合し、注文・在庫へ反映する |
+  | `checkout.session.expired` | 期限切れ Session を照合し、注文・在庫へ反映する |
+  | `payment_intent.succeeded` | PaymentIntent を照合し、注文・決済状態と会計記録へ反映する |
+  | `payment_intent.payment_failed` | PaymentIntent の現在値を照合し、注文・在庫へ反映する |
+  | `refund.created` | 返金を注文へ反映し、返金の会計記録を同期する。注文が無い場合は監査に残し、失敗・取消なら要対応にして店へ知らせる |
+  | `refund.updated` | 返金状態を注文へ反映し、返金の会計記録を同期する。注文が無い失敗・取消は要対応にして店へ知らせる |
+  | `refund.failed` | 失敗返金を注文へ反映し、返金の会計記録を同期する。注文が無ければ要対応にして店へ知らせる |
+  | `charge.refunded` | Charge の返金を注文へ反映する。注文が無い場合は監査に残して処理を続ける |
+  | `payout.paid` | Stripe の Payout を会計記録へ同期する |
+  | `payout.failed` | Payout の失敗を会計記録へ同期する |
+  | `payout.reconciliation_completed` | Payout の照合結果を会計記録へ同期する |
 
-  漏れているとエラーは出ないまま webhook 側の照合が発火せず、毎時の見回りだけが注文と在庫を合わせる経路になる（入金の反映・確認メール・在庫の戻しが次の見回りまで遅れる）。
+  決済系6イベントが漏れると照合と注文・在庫の更新が遅れる。返金系が漏れると注文の返金状態・会計記録が更新されず、注文の無い失敗・取消返金も店へ通知されない。payout系が漏れると会計記録が更新されない。
 
 - [ ] **5. マイグレーションを適用する（アプリのデプロイより先に）**
 
@@ -146,7 +153,9 @@ select vault.create_secret('http://localhost:3000', 'app_base_url');
 npx supabase migration list --local   # ファイルと DB の適用状況を確認
 ```
 
-DB 結合テスト（`tests/integration/db/*.integration.test.ts`）は `DATABASE_URL` を渡したときだけ動く。試験用の注文や auth ユーザーを作るため、localhost 以外の接続先では動かないようにしてある。PostgREST を通すテスト（`reconciler_postgrest`）は、ローカル Supabase の API の URL とサービスロールキー（`LOCAL_SUPABASE_URL`・`LOCAL_SUPABASE_SERVICE_ROLE_KEY`）も渡したときだけ動く。渡さないと、そのテストだけがエラーも出さずにスキップされる。ファイルどうしが同じローカル DB を共有するので、ディレクトリ全体を流すときは `--runInBand` を付ける。
+DB 結合テスト（`tests/integration/db/*.integration.test.ts`）は `DATABASE_URL` を渡したときだけ動く。試験用の注文や auth ユーザーを作るため、localhost 以外の接続先では動かないようにしてある。PostgREST を通す `reconciler_postgrest.integration.test.ts`・`refund_failure_exception_postgrest.integration.test.ts`・`reconciler_composed.integration.test.ts` は、ローカル Supabase の API URL とサービスロールキー（`LOCAL_SUPABASE_URL`・`LOCAL_SUPABASE_SERVICE_ROLE_KEY`）も必要とする。渡さない場合は、この3ファイルがエラーを出さずにスキップされる。ファイルどうしが同じローカル DB を共有するので、ディレクトリ全体を流すときは `--runInBand` を付ける。
+
+`public.orders` に列を追加したら、同じ変更で公開列には `GRANT SELECT`、店内列は非公開の登録を行い、`tests/integration/db/order_internal_columns.integration.test.ts` を実行する。この DB 結合テストは CI で自動実行しないため、列の判断を実装へ反映するまで失敗する。
 
 ```bash
 eval "$(npx supabase status -o env | grep -E '^(API_URL|SERVICE_ROLE_KEY)=')"
@@ -200,4 +209,4 @@ LOCAL_SUPABASE_URL="$API_URL" LOCAL_SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY
 - [ ] Vercel の env に 以下を設定する
   - [ ] NEXT_PUBLIC_TURNSTILE_SITE_KEY を設定する
   - [ ] TURNSTILE_SECRET_KEY を設定する
-
+
