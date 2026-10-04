@@ -17,6 +17,7 @@ import {
 import { createStripeAccountingDatabase } from '@/lib/stripe/supabase-accounting-database';
 import { reconcileCheckoutPayment, type ReconcileInput } from '@/lib/stripe/checkout-payment-reconciler';
 import { createDefaultReconcilerDeps } from '@/lib/stripe/checkout-payment-reconciler-deps';
+import { raiseRefundFailureWithoutOrder, type FailedRefundStatus } from '@/lib/stripe/refund-failure-exception';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -68,9 +69,30 @@ function resolvePaymentIntentId(
 }
 
 /**
+ * 返金が失敗・取消で終わったか。refund.failed は失敗そのものの通知。refund.created・refund.updated は、
+ * 返金の状態が failed・canceled のときだけ（保留・成功・要操作は、まだ終わっていないか、うまくいっている）。
+ * Charge（charge.refunded）には返金の状態が無い。
+ */
+function failedRefundStatusOf(event: Stripe.Event, object: Stripe.Refund | Stripe.Charge): FailedRefundStatus | null {
+  if (event.type === 'charge.refunded') {
+    return null;
+  }
+
+  const status = (object as Stripe.Refund).status;
+  if (status === 'canceled') {
+    return 'canceled';
+  }
+  return status === 'failed' || event.type === 'refund.failed' ? 'failed' : null;
+}
+
+/**
  * 返金の変化を注文へ反映する。注文に結び付いていない支払いの返金（注文を作れず要対応になった支払いを、
  * 店が Stripe で返金したとき）は、注文が現れないので再試行しても直らない。失敗にして永久に再試行させず、
  * ID だけを監査に残して完了にする（後段の会計の同期は呼び出し側が続ける）。
+ *
+ * ただし、その返金が失敗・取消で終わったときは、支払いだけが残り、照合も二度とこの支払いを見ないので、
+ * 飛ばさずに要対応として記録し、店へ知らせる（既存の要対応の仕組み。同じ返金のイベントが何度届いても1件・1通）。
+ * 記録できなかったときは握りつぶさず投げる（worker がイベントを失敗にして再試行する）。
  */
 async function handleRefundChanged(
   event: Stripe.Event,
@@ -95,18 +117,37 @@ async function handleRefundChanged(
     }
 
     const isCharge = event.type === 'charge.refunded';
+    const identifiers = {
+      event_id: event.id,
+      event_type: event.type,
+      payment_intent_id: paymentIntentId,
+      refund_id: isCharge ? null : object.id,
+      charge_id: isCharge ? object.id : null,
+    };
+
+    const failedStatus = failedRefundStatusOf(event, object);
+    if (!failedStatus) {
+      await logWebhookAudit(
+        auditRequest,
+        'checkout.webhook.refund_without_order',
+        'success',
+        'Refund event skipped: no order for the PaymentIntent',
+        identifiers,
+      );
+      return;
+    }
+
+    const exception = await raiseRefundFailureWithoutOrder(await createDefaultReconcilerDeps(), {
+      paymentIntentId,
+      refundId: object.id,
+      refundStatus: failedStatus,
+    });
     await logWebhookAudit(
       auditRequest,
       'checkout.webhook.refund_without_order',
-      'success',
-      'Refund event skipped: no order for the PaymentIntent',
-      {
-        event_id: event.id,
-        event_type: event.type,
-        payment_intent_id: paymentIntentId,
-        refund_id: isCharge ? null : object.id,
-        charge_id: isCharge ? object.id : null,
-      },
+      'error',
+      'Refund failed or canceled without an order: payment exception recorded',
+      { ...identifiers, refund_status: failedStatus, exception_id: exception.exceptionId },
     );
   }
 }
