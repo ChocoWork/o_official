@@ -1,4 +1,5 @@
 /** @jest-environment node */
+import { spawn, type ChildProcess } from 'node:child_process';
 import {
   E2E_FIXED_ENV,
   buildE2EOverrides,
@@ -8,6 +9,7 @@ import {
   isLocalUrl,
   parseSupabaseStatus,
   prepareE2EEnvironment,
+  probeServer,
   readLocalSupabaseStatus,
   type LocalSupabaseStatus,
   type ServerProbe,
@@ -29,6 +31,7 @@ const dotEnvLocal = {
   SUPABASE_SERVICE_ROLE_KEY: 'prod-service',
   MAIL_PROVIDER: 'resend',
   RESEND_API_KEY: 're_prod_key',
+  RESEND_WEBHOOK_SECRET: 'whsec_prod_secret',
   STRIPE_SECRET_KEY: 'sk_test_abc',
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: 'pk_test_abc',
 };
@@ -95,6 +98,7 @@ describe('buildE2EOverrides', () => {
       MAIL_LOCAL_URL: status.mailpitUrl,
       MAIL_PROVIDER: 'local',
       RESEND_API_KEY: '',
+      RESEND_WEBHOOK_SECRET: 'whsec_ZTJlLWxvY2FsLXJlc2VuZC13ZWJob29rLW9ubHk=',
     });
     expect(overrides).toMatchObject(E2E_FIXED_ENV);
   });
@@ -166,6 +170,97 @@ describe('decideServerReuse', () => {
   });
 });
 
+describe('probeServer', () => {
+  jest.setTimeout(20_000);
+
+  const children: ChildProcess[] = [];
+
+  const startServer = async (handler: string): Promise<{ baseUrl: string; child: ChildProcess }> => {
+    const script = [
+      "const http = require('node:http');",
+      `const server = http.createServer(${handler});`,
+      "server.listen(0, '127.0.0.1', () => {",
+      "  process.stdout.write(String(server.address().port) + '\\n');",
+      '});',
+    ].join('\n');
+    const child = spawn(process.execPath, ['-e', script], { stdio: ['ignore', 'pipe', 'ignore'] });
+    children.push(child);
+
+    return new Promise((resolve, reject) => {
+      let output = '';
+      let settled = false;
+      child.stdout?.setEncoding('utf8');
+      child.stdout?.on('data', (chunk: string | Buffer) => {
+        output += chunk;
+        const port = Number(output.split(/\r?\n/, 1)[0]);
+        if (!settled && Number.isInteger(port) && port > 0) {
+          settled = true;
+          resolve({ baseUrl: `http://127.0.0.1:${port}`, child });
+        }
+      });
+      child.once('error', (error) => {
+        if (!settled) {
+          settled = true;
+          reject(error);
+        }
+      });
+      child.once('exit', (code, signal) => {
+        if (!settled) {
+          settled = true;
+          reject(new Error(`Test HTTP server exited before listening: code=${code}, signal=${signal}`));
+        }
+      });
+    });
+  };
+
+  const stopServer = (child: ChildProcess): Promise<void> => {
+    if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => resolve(), 1_000);
+      timeout.unref();
+      child.once('close', () => {
+        clearTimeout(timeout);
+        resolve();
+      });
+      child.kill();
+    });
+  };
+
+  afterEach(async () => {
+    await Promise.all(children.splice(0).map(stopServer));
+  });
+
+  it('returns the fingerprint from a successful response', async () => {
+    const { baseUrl } = await startServer(
+      "(request, response) => { response.setHeader('content-type', 'application/json'); response.end(JSON.stringify({ fingerprint: 'abc' })); }",
+    );
+    expect(probeServer(baseUrl, 300)).toEqual({ kind: 'up', fingerprint: 'abc' });
+  });
+
+  it('treats a non-OK response as an up server without a fingerprint', async () => {
+    const { baseUrl } = await startServer("(request, response) => { response.statusCode = 404; response.end('not found'); }");
+    expect(probeServer(baseUrl, 300)).toEqual({ kind: 'up', fingerprint: null });
+  });
+
+  it('treats a JSON null response as an up server without a fingerprint', async () => {
+    const { baseUrl } = await startServer("(request, response) => { response.setHeader('content-type', 'application/json'); response.end('null'); }");
+    expect(probeServer(baseUrl, 300)).toEqual({ kind: 'up', fingerprint: null });
+  });
+
+  it('treats a response slower than the probe timeout as an up server without a fingerprint', async () => {
+    const { baseUrl } = await startServer(
+      "(request, response) => { setTimeout(() => response.end(JSON.stringify({ fingerprint: 'late' })), 2000); }",
+    );
+    expect(probeServer(baseUrl, 300)).toEqual({ kind: 'up', fingerprint: null });
+  });
+
+  it('treats a refused connection as a down server', async () => {
+    const { baseUrl, child } = await startServer('(request, response) => response.end()');
+    await stopServer(child);
+    expect(probeServer(baseUrl, 300)).toEqual({ kind: 'down' });
+  });
+});
+
 describe('prepareE2EEnvironment', () => {
   const baseUrl = 'http://localhost:3000';
 
@@ -181,6 +276,7 @@ describe('prepareE2EEnvironment', () => {
     expect(result.env.NEXT_PUBLIC_SUPABASE_URL).toBe(status.apiUrl);
     expect(result.env.SUPABASE_SERVICE_ROLE_KEY).toBe(status.serviceRoleKey);
     expect(result.env.RESEND_API_KEY).toBe('');
+    expect(result.env.RESEND_WEBHOOK_SECRET).toBe('whsec_ZTJlLWxvY2FsLXJlc2VuZC13ZWJob29rLW9ubHk=');
     expect(result.env.E2E_SERVER_FINGERPRINT).toBe(computeServerFingerprint(safeEnv, 'start'));
     expect(readStatus).toHaveBeenCalledTimes(1);
     expect(probe).toHaveBeenCalledWith(baseUrl);

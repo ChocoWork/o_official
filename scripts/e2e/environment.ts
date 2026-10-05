@@ -34,6 +34,7 @@ export const E2E_FIXED_ENV: Readonly<Record<string, string>> = {
   CONTACT_INBOUND_DOMAIN: 'inbound.e2e.test',
   CONTACT_REPLY_SECRET: 'e2e-local-contact-reply-secret-0123456789',
   RESEND_API_KEY: '',
+  RESEND_WEBHOOK_SECRET: 'whsec_ZTJlLWxvY2FsLXJlc2VuZC13ZWJob29rLW9ubHk=',
   STRIPE_WEBHOOK_SECRET: 'whsec_e2e_local_only',
   CRON_SECRET: 'e2e-local-cron-secret-0123456789abcdef',
 };
@@ -159,20 +160,30 @@ export function readLocalSupabaseStatus(run: () => string = runSupabaseStatus): 
 
 // 設定の読み込みは同期なので、別の node で3000番の印を読む。
 const PROBE_SCRIPT = [
-  'fetch(process.argv[1], { signal: AbortSignal.timeout(3000) })',
+  'const isConnectionRefused = (error) => {',
+  "  const cause = error && typeof error === 'object' ? error.cause : null;",
+  "  if (!cause || typeof cause !== 'object') return false;",
+  "  if (cause.code === 'ECONNREFUSED') return true;",
+  '  return cause instanceof AggregateError && cause.errors.length > 0 &&',
+  "    cause.errors.every((item) => item && typeof item === 'object' && item.code === 'ECONNREFUSED');",
+  '};',
+  'fetch(process.argv[1], { signal: AbortSignal.timeout(Number(process.argv[2])) })',
   '  .then(async (res) => {',
-  '    const body = res.ok ? await res.json().catch(() => ({})) : {};',
-  "    const fingerprint = typeof body.fingerprint === 'string' ? body.fingerprint : null;",
+  '    const body = res.ok ? await res.json().catch(() => null) : null;',
+  "    const fingerprint = body !== null && typeof body === 'object' && typeof body.fingerprint === 'string' ? body.fingerprint : null;",
   "    process.stdout.write(JSON.stringify({ kind: 'up', fingerprint }));",
   '  })',
-  "  .catch(() => process.stdout.write(JSON.stringify({ kind: 'down' })));",
+  '  .catch((error) => {',
+  "    const result = isConnectionRefused(error) ? { kind: 'down' } : { kind: 'up', fingerprint: null };",
+  '    process.stdout.write(JSON.stringify(result));',
+  '  });',
 ].join('\n');
 
-export function probeServer(baseUrl: string): ServerProbe {
+export function probeServer(baseUrl: string, timeoutMs = 3000): ServerProbe {
   const target = new URL('/api/e2e/server-info', baseUrl).toString();
-  const output = execFileSync(process.execPath, ['-e', PROBE_SCRIPT, target], {
+  const output = execFileSync(process.execPath, ['-e', PROBE_SCRIPT, target, String(timeoutMs)], {
     encoding: 'utf8',
-    timeout: 10_000,
+    timeout: timeoutMs + 7000,
   });
   return JSON.parse(output) as ServerProbe;
 }
