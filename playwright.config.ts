@@ -61,14 +61,16 @@ export default defineConfig({
   /*
    * E2E は本番ビルドに対して実行する。scripts/e2e-server.mjs が build して起動し、
    * 起動したサーバーはテスト終了後も動いたまま残る。
-   * 3000番で動いているアプリは、見張りが「この設定で起動した E2E 用のもの」と確かめたときだけ使い回す。
+   * 3000番で動いているアプリを使い回すかどうかと、起動の完了は、scripts/e2e-server.mjs が印で確かめる。
+   * 確かめ終わると「[e2e-server] ready」を出すので、Playwright はその1行を待つ。
+   * url は渡さない。渡すと Playwright は 3000番の応答だけで先へ進み、ビルドの間に 3000番を取った
+   * ほかのアプリに対してテストを流してしまう（url の確かめと stdout の待ちを競わせるため）。
    * ゲート実行（pre-push）では E2E_STRICT=1 を立て、使い回さずに必ずビルドから起動する。
    * dev サーバーで動かすデバッグ用途のみ E2E_DEV_SERVER=1 を付ける。
    */
   webServer: {
     command: 'node scripts/e2e-server.mjs',
-    url: resolvedBaseUrl,
-    reuseExistingServer: e2e.reuseExistingServer,
+    wait: { stdout: /\[e2e-server\] ready/ },
     env: e2e.env,
     /* next build を含むので長めに取る。 */
     timeout: 600_000,

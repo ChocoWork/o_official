@@ -12,6 +12,9 @@
  * 3000番で動いているアプリを使い回すのは、/api/e2e/server-info が返す印が
  * playwright.config.ts の作った印（E2E_SERVER_FINGERPRINT）と同じときだけ。
  * 印を返さないアプリ（普段の開発サーバーなど）や違う印のアプリなら、止めて理由を出す。
+ * 起動を待つときも、応答ではなく印の一致で「起動した」と判断する。確かめ終わったら
+ * 「[e2e-server] ready」を出し、playwright.config.ts の webServer.wait がそれを待つ。
+ * E2E_STRICT=1 のときは、印が合っても起動済みのアプリを使い回さない。
  */
 import { spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -109,6 +112,12 @@ function startDetached(script) {
 }
 
 if (await isUp()) {
+  if (process.env.E2E_STRICT === "1") {
+    console.error(
+      `[e2e-server] 見張り: E2E_STRICT=1 では起動済みのアプリを使い回さない。${BASE_URL} のアプリを止めてから流して。`,
+    );
+    process.exit(1);
+  }
   if ((await runningFingerprint()) !== process.env.E2E_SERVER_FINGERPRINT) {
     console.error(
       `[e2e-server] 見張り: ${BASE_URL} で、この E2E が手元の設定で起動したものではないアプリが動いている。止めてから流して。`,
@@ -120,22 +129,34 @@ if (await isUp()) {
   if (!useDevServer) await run("build");
   startDetached(useDevServer ? "dev" : "start");
 
+  // 応答があるだけでは「起動した」と見なさない。ビルドの間にほかのアプリが 3000番を取ると、
+  // 自分のサーバーはポートの使用中で起動できず、ほかのアプリが応答する。印が合うまで待つ。
+  const deadline = Date.now() + READY_TIMEOUT_SECONDS * 1000;
   let ready = false;
-  for (let i = 0; i < READY_TIMEOUT_SECONDS; i += 1) {
-    if (await isUp()) {
+  while (Date.now() < deadline) {
+    if ((await runningFingerprint()) === process.env.E2E_SERVER_FINGERPRINT) {
       ready = true;
       break;
     }
     await sleep(1000);
   }
   if (!ready) {
-    console.error(
-      `サーバーが ${READY_TIMEOUT_SECONDS} 秒以内に ${BASE_URL} で応答しませんでした。`,
-    );
+    if (await isUp()) {
+      console.error(
+        `[e2e-server] 見張り: ${BASE_URL} で、この E2E が起動したものではないアプリが応答している（自分のサーバーはポートの使用中で起動できなかったおそれがある）。止めてから流して。`,
+      );
+    } else {
+      console.error(
+        `サーバーが ${READY_TIMEOUT_SECONDS} 秒以内に ${BASE_URL} で応答しませんでした。`,
+      );
+    }
     process.exit(1);
   }
   console.log(`${BASE_URL} を起動した。テスト後も起動したまま残る。`);
 }
+
+// playwright.config.ts の webServer.wait がこの1行を待つ。印を確かめ終わってから出すこと。
+console.log("[e2e-server] ready");
 
 // Playwright はこのプロセスの終了を「サーバーが落ちた」と見なすので、
 // テストが終わって kill されるまで生かしておく。
