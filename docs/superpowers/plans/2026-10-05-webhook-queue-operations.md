@@ -582,7 +582,7 @@ DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
   npx jest tests/integration/db/stripe_webhook_queue.integration.test.ts --runInBand
 ```
 
-Expected: PASS（13件。最後の「Vaultを参照する10秒間隔のworkerジョブ」は Task 13 で毎分に変える）
+Expected: PASS（13件。最後の「Vaultを参照する10秒間隔のworkerジョブ」は Task 14 で毎分に変える）
 
 フォルダ全体も流す（ほかの結合テストがキューの古い形に頼っていないことを確かめる）:
 
