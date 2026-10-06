@@ -4,8 +4,11 @@ import {
   completeWebhookEvent,
   failWebhookEvent,
   webhookErrorCategory,
+  webhookFailureCause,
+  InvalidWebhookPayloadError,
   type WebhookEventStore,
 } from '@/lib/stripe/webhook-events';
+import { ReconcileTransientError } from '@/lib/stripe/checkout-payment-reader';
 
 const rpc = jest.fn();
 const store = { rpc } as unknown as WebhookEventStore;
@@ -80,9 +83,32 @@ describe('Stripe webhook durable queue calls', () => {
     expect(rpc).toHaveBeenCalledWith('fail_stripe_webhook_event', {
       _event_id: 'evt_2',
       _claim_token: 'claim-2',
-      _error: 'Error',
+      _error: 'unexpected_error',
     });
     await expect(completeWebhookEvent(store, 'evt_3', 'lost'))
       .rejects.toThrow('claim was lost');
+  });
+
+  describe('webhookFailureCause（失敗に残す原因の記号）', () => {
+    it.each(['stripe_unavailable', 'db_unavailable', 'not_converged'] as const)('照合の一時的な失敗 %s はその記号', (code) => {
+      expect(webhookFailureCause(new ReconcileTransientError(code))).toBe(code);
+    });
+
+    it('保存した中身が壊れていれば invalid_payload', () => {
+      expect(webhookFailureCause(new InvalidWebhookPayloadError())).toBe('invalid_payload');
+    });
+
+    it('Stripe の通信・5xx・回数制限は stripe_unavailable', () => {
+      expect(webhookFailureCause({ type: 'StripeConnectionError' })).toBe('stripe_unavailable');
+      expect(webhookFailureCause({ statusCode: 503 })).toBe('stripe_unavailable');
+      expect(webhookFailureCause({ statusCode: 429 })).toBe('stripe_unavailable');
+    });
+
+    it('それ以外は unexpected_error。例外の文や DB のコードは残さない', () => {
+      expect(webhookFailureCause(new Error('buyer@example.com'))).toBe('unexpected_error');
+      expect(webhookFailureCause(Object.assign(new Error('x'), { code: '23505' }))).toBe('unexpected_error');
+      expect(webhookFailureCause('string error')).toBe('unexpected_error');
+      expect(webhookFailureCause(null)).toBe('unexpected_error');
+    });
   });
 });

@@ -1,3 +1,5 @@
+import { isTransientStripeError } from '@/lib/stripe/checkout-payment-reader';
+
 type QueryError = { message?: string } | null;
 
 export type WebhookEventStore = {
@@ -110,18 +112,46 @@ export function webhookErrorCategory(error: unknown): string {
     : null;
   return code ? `${name}:${code}` : name;
 }
+
+/** 失敗に残す原因の記号（設計書 2026-10-05 グループ B の 3-3）。例外の文・スタック・個人情報は残さない。 */
+export type WebhookFailureCause =
+  | 'stripe_unavailable'
+  | 'db_unavailable'
+  | 'not_converged'
+  | 'lease_expired'
+  | 'invalid_payload'
+  | 'unexpected_error';
+
+/** 保存した知らせの中身が壊れている（worker が投げる。やり直しても直らない）。 */
+export class InvalidWebhookPayloadError extends Error {
+  constructor() {
+    super('Persisted Stripe event is invalid');
+    this.name = 'InvalidWebhookPayloadError';
+  }
+}
+
+const RECONCILE_TRANSIENT_CAUSES: ReadonlySet<string> = new Set(['stripe_unavailable', 'db_unavailable', 'not_converged']);
+
+export function webhookFailureCause(error: unknown): WebhookFailureCause {
+  if (error instanceof InvalidWebhookPayloadError) return 'invalid_payload';
+  const code = error && typeof error === 'object' && 'code' in error ? (error as { code?: unknown }).code : null;
+  if (typeof code === 'string' && RECONCILE_TRANSIENT_CAUSES.has(code)) return code as WebhookFailureCause;
+  if (isTransientStripeError(error)) return 'stripe_unavailable';
+  return 'unexpected_error';
+}
+
 export async function failWebhookEvent(
   store: WebhookEventStore,
   eventId: string,
   claimToken: string,
   error: unknown,
 ): Promise<void> {
-  const message = webhookErrorCategory(error);
+  const cause = webhookFailureCause(error);
   const data = unwrapRpc(
     await store.rpc('fail_stripe_webhook_event', {
       _event_id: eventId,
       _claim_token: claimToken,
-      _error: message,
+      _error: cause,
     }),
     'Failed to persist webhook event failure',
   );
