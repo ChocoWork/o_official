@@ -31,7 +31,8 @@ function unwrapRpc(
   context: string,
 ): unknown {
   if (result.error) {
-    throw new Error(context);
+    // DB の関数の失敗は db_unavailable として扱う（設計書 3-3）。DB の文は残さない
+    throw Object.assign(new Error(context), { code: 'db_unavailable' });
   }
   return result.data;
 }

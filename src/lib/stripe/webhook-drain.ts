@@ -59,7 +59,12 @@ export async function drainWebhookQueue(deps: DrainDeps): Promise<DrainResult> {
       result.processed += 1;
     } catch (error) {
       result.failed += 1;
-      console.error('[stripe-webhook-worker] Event processing failed', claim.eventId, webhookFailureCause(error));
+      console.error(
+        '[stripe-webhook-worker] Event processing failed',
+        claim.eventId,
+        webhookFailureCause(error),
+        webhookErrorCategory(error),
+      );
       try {
         await failWebhookEvent(deps.store, claim.eventId, claim.claimToken, error);
       } catch (stateError) {

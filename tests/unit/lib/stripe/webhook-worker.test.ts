@@ -24,6 +24,7 @@ jest.mock('@/lib/ops/ops-alert-mail', () => ({
 }));
 
 import { runWebhookWorker, WORKER_TIME_BUDGET_MS } from '@/lib/stripe/webhook-worker';
+import type { OpsAlertMail } from '@/lib/ops/ops-alert-mail';
 
 const CHECKS = { backlogAlerted: false, deadNotified: 0, staleAlerted: [], failedChecks: [] };
 
@@ -44,6 +45,26 @@ describe('runWebhookWorker', () => {
     expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockStore, 'webhook_worker', true, null);
     expect(mockRunOpsChecks).toHaveBeenCalledWith(expect.objectContaining({ store: mockStore }));
     expect(result).toEqual({ processed: 2, failed: 0, stoppedBy: 'empty', checks: CHECKS });
+  });
+
+  it('点検に渡した send は sendOpsAlertMail でメールを送る', async () => {
+    mockDrain.mockResolvedValue({ processed: 0, failed: 0, stoppedBy: 'empty' });
+    mockSendOpsAlertMail.mockResolvedValueOnce(true);
+    await runWebhookWorker({ requestUrl: 'http://localhost/x' });
+    const { send } = mockRunOpsChecks.mock.calls[0][0] as { send: (mail: OpsAlertMail) => Promise<boolean> };
+    const mail: OpsAlertMail = { kind: 'webhook_backlog', subject: 'キューの滞留', lines: ['queued: 1'] };
+
+    await send(mail);
+
+    expect(mockSendOpsAlertMail).toHaveBeenCalledWith(mail);
+  });
+
+  it('指定した時間の予算を drain へ渡す', async () => {
+    mockDrain.mockResolvedValue({ processed: 0, failed: 0, stoppedBy: 'empty' });
+
+    await runWebhookWorker({ requestUrl: 'http://localhost/x', budgetMs: 1_000 });
+
+    expect(mockDrain).toHaveBeenCalledWith(expect.objectContaining({ budgetMs: 1_000 }));
   });
 
   it('知らせの処理は、受け取り口の住所の空の要求で監査する', async () => {

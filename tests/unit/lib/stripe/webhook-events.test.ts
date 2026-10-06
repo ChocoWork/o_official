@@ -72,6 +72,15 @@ describe('Stripe webhook durable queue calls', () => {
     });
   });
 
+  it('完了の RPC の失敗は文を保ち、db_unavailable として扱う', async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: 'db down' } });
+
+    const completion = completeWebhookEvent(store, 'evt_1', 'claim-1');
+    await expect(completion).rejects.toThrow('Failed to complete webhook event');
+    const error = await completion.catch((cause: unknown) => cause);
+    expect(webhookFailureCause(error)).toBe('db_unavailable');
+  });
+
   it('完了と失敗をclaim tokenで条件付き更新し、claim喪失を検知する', async () => {
     rpc.mockResolvedValueOnce({ data: true, error: null })
       .mockResolvedValueOnce({ data: true, error: null })

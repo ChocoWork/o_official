@@ -60,5 +60,6 @@ describe('POST /api/cron/process-stripe-webhooks', () => {
     mockRunWebhookWorker.mockResolvedValue({ processed: 0, failed: 0, stoppedBy: 'claim_error', checks: CHECKS });
     const response = await POST(request());
     expect(response.status).toBe(502);
+    expect(response.body).toEqual({ processed: 0, failed: 0, stoppedBy: 'claim_error' });
   });
 });
