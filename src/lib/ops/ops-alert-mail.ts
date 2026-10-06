@@ -1,0 +1,167 @@
+import { sendMail } from '@/lib/mail';
+import { logAudit } from '@/lib/audit';
+import { toOrderNumber } from '@/lib/orders/order-number';
+import type { BacklogRow, DeadEvent, RecoveredReviewReason } from '@/lib/ops/ops-store';
+
+/**
+ * 店への知らせのメール（設計書 2026-10-05 グループ B の第6章）。
+ * 宛先は SHOP_ALERT_EMAIL（今の要対応のメールと同じ）。お客様の名前・住所・メールアドレスは入れない。
+ */
+export type OpsAlertKind =
+  | 'webhook_backlog'
+  | 'webhook_dead'
+  | 'job_stale'
+  | 'webhook_signature_invalid'
+  | 'webhook_mode_mismatch'
+  | 'orders_recovered_from_payment';
+
+export type OpsAlertMail = { kind: OpsAlertKind; subject: string; lines: string[] };
+
+export type RecoveredOrderSummary = {
+  orderId: string;
+  reviewReason: RecoveredReviewReason;
+  totalAmount: number | null;
+  currency: string | null;
+};
+
+const RUNBOOK = '手順書（docs/06_Operations/webhook-queue-operations.md）';
+
+const STATUS_LABELS: Record<BacklogRow['status'], string> = {
+  queued: '処理待ち',
+  processing: '処理中',
+  failed: 'やり直し待ち',
+};
+
+const STALE_JOBS = {
+  order_sweep: { label: '毎時の見回り', hours: 2 },
+  stripe_reconcile: { label: '毎晩の照合', hours: 25 },
+} as const;
+
+function formatJst(date: Date): string {
+  return new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo',
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date);
+}
+
+function formatAmount(amount: number | null, currency: string | null): string {
+  if (amount === null || !currency) return '金額不明';
+  return new Intl.NumberFormat('ja-JP', { style: 'currency', currency: currency.toUpperCase() }).format(amount);
+}
+
+export function backlogAlertMail(rows: BacklogRow[]): OpsAlertMail {
+  return {
+    kind: 'webhook_backlog',
+    subject: '【要確認】Stripe の知らせの処理が遅れています',
+    lines: [
+      '受け取ってから15分以上たっても、処理が終わっていない Stripe の知らせがあります。',
+      '',
+      ...rows.map((row) => {
+        const causes = row.lastErrors.length > 0 ? ` 原因: ${row.lastErrors.join('、')}` : '';
+        return `${STATUS_LABELS[row.status]}: ${row.count}件（いちばん古い受け取り: ${formatJst(row.oldestReceivedAt)}）${causes}`;
+      }),
+      '',
+      `次にやること: ${RUNBOOK}の「知らせが溜まったとき」に沿って、定期処理（worker）が動いているかを確かめてください。`,
+    ],
+  };
+}
+
+export function deadDigestMail(events: DeadEvent[], total: number): OpsAlertMail {
+  const rest = total - events.length;
+  return {
+    kind: 'webhook_dead',
+    subject: `【要対応】処理を止めた Stripe の知らせ（${total}件）`,
+    lines: [
+      '8回やり直しても処理できなかった Stripe の知らせを退避しました（これ以上やり直しません）。',
+      '',
+      ...events.map((event) =>
+        `- ${event.eventId}（${event.eventType}） 原因: ${event.cause ?? 'unexpected_error'} `
+        + `受け取り: ${formatJst(event.receivedAt)} 試行: ${event.attemptCount}回`),
+      ...(rest > 0 ? [`（ほかに ${rest} 件。次の知らせで送ります）`] : []),
+      '',
+      '注文の状態は毎時の見回りが、返金と会計は毎晩の照合が Stripe に合わせます。',
+      `同じ原因が続くときは、${RUNBOOK}の「退避の知らせが来たとき」に沿って開発者に連絡してください。`,
+    ],
+  };
+}
+
+export function staleJobMail(job: keyof typeof STALE_JOBS, lastSucceededAt: Date): OpsAlertMail {
+  const { label, hours } = STALE_JOBS[job];
+  return {
+    kind: 'job_stale',
+    subject: `【要確認】定期処理が止まっています（${label}）`,
+    lines: [
+      `${label}が、${hours}時間以上成功していません。`,
+      `最後の成功: ${formatJst(lastSucceededAt)}`,
+      '',
+      `次にやること: ${RUNBOOK}の「定期処理が止まったとき」に沿って、定期処理の実行の記録を確かめてください。`,
+    ],
+  };
+}
+
+export function signatureAlertMail(count: number): OpsAlertMail {
+  return {
+    kind: 'webhook_signature_invalid',
+    subject: '【要確認】署名の合わない Stripe の知らせが届いています',
+    lines: [
+      `10分の間に、署名の合わない知らせが${count}件届きました（すべて断っています）。`,
+      '',
+      'Stripe の署名の合言葉（STRIPE_WEBHOOK_SECRET）の設定を確かめてください。設定が正しければ、外からの偽の知らせを断っているだけです。',
+      `${RUNBOOK}の「署名不正の知らせが来たとき」も確かめてください。`,
+    ],
+  };
+}
+
+export function modeMismatchMail(eventLivemode: boolean, keyLivemode: boolean | null): OpsAlertMail {
+  const keyLabel = keyLivemode === null ? '不明' : keyLivemode ? '本番' : 'テスト';
+  return {
+    kind: 'webhook_mode_mismatch',
+    subject: '【要対応】Stripe の本番とテストの知らせが混ざっています',
+    lines: [
+      `届いた知らせ: ${eventLivemode ? '本番' : 'テスト'}、このアプリの鍵: ${keyLabel}`,
+      '',
+      'この知らせは処理していません。',
+      `Stripe の知らせの宛先と、STRIPE_SECRET_KEY・STRIPE_WEBHOOK_SECRET の組み合わせを確かめてください（${RUNBOOK}の「モード違いの知らせが来たとき」）。`,
+    ],
+  };
+}
+
+export function recoveredOrdersMail(orders: RecoveredOrderSummary[]): OpsAlertMail {
+  return {
+    kind: 'orders_recovered_from_payment',
+    subject: `【要確認】支払いから作った注文（${orders.length}件）`,
+    lines: [
+      'Stripe に支払いがあったのに注文が無かったため、毎時の見回りが注文を作りました。',
+      'お客様は注文の完了を見ていない可能性があります。注文の内容をお客様へ確認してください。',
+      '',
+      ...orders.map((order) =>
+        `- 注文番号 ${toOrderNumber(order.orderId)} ${formatAmount(order.totalAmount, order.currency)}`
+        + (order.reviewReason === 'stock_not_reserved' ? '（在庫も確保できていません）' : '')),
+      '',
+      '管理画面の ORDER タブの「要対応・要確認」で、確認したら確認済みにしてください。',
+    ],
+  };
+}
+
+export async function sendOpsAlertMail(mail: OpsAlertMail): Promise<boolean> {
+  const to = process.env.SHOP_ALERT_EMAIL;
+  if (!to || !process.env.MAIL_FROM_ADDRESS) {
+    console.warn('[ops-alert] SHOP_ALERT_EMAIL or MAIL_FROM_ADDRESS is not configured');
+    return false;
+  }
+  try {
+    await sendMail({ to, subject: mail.subject, text: mail.lines.join('\n') });
+    return true;
+  } catch (error) {
+    console.warn('[ops-alert] send failed', error instanceof Error ? error.name : 'UnknownError');
+    await logAudit({
+      action: 'ops.alert_mail',
+      outcome: 'error',
+      resource: 'ops_alert',
+      detail: 'mail_send_failed',
+      metadata: { kind: mail.kind },
+    });
+    return false;
+  }
+}
