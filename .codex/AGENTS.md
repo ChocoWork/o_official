@@ -137,7 +137,9 @@ npx playwright test e2e/FR-ADMIN-031  # 部分実行（本番ビルド）
 
 **理由:** dev サーバーはリクエストのたびにオンデマンドコンパイルするため、件数が増えると `page.goto` が 30 秒返らない・要素が描画されない、という**実装とは無関係な失敗**を出す。実測で 288 件 22 分の直列実行で 9 件失敗し、同じテストを単体実行すると 111/111 パスした。この偽の失敗を実装のバグと誤診すると、直す必要のないコードを触ることになる。
 
-**注意（必読）:** `reuseExistingServer: true` のため、**`npm run dev` が :3000 で動いたままだと Playwright はそれを再利用し、黙って dev サーバーに対してテストしてしまう**。E2E を回す前に dev サーバーを止めること。
+**手元の Supabase で流す（必読）:** E2E は手元の Supabase（`npm run db:start`・`npm run db:reset`）に対して流す。`playwright.config.ts` の見張り（`scripts/e2e/environment.ts`）が、本番の Supabase の住所・本番の Stripe の鍵・外へのメールを拒み、3000番で E2E 用でないアプリ（`npm run dev` など）が動いていれば止まる。止まったら、3000番のアプリを止めてから流すこと。
+
+**残っている E2E 用のアプリ:** E2E が起動したアプリはテスト後も3000番に残り、次の実行では印が合えばビルドし直さずにそのまま使う。コードを変えた後と push の前は、3000番のアプリを止めてから流すこと（pre-push は `E2E_STRICT=1` なので、残っているアプリがあると E2E を流さずに止まり、警告だけで push が続く）。
 
 ```powershell
 Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue
