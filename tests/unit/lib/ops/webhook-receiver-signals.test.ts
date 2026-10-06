@@ -47,16 +47,47 @@ describe('受け取り口の署名不正とモード違い', () => {
   });
 
   it('1時間以内に送っていれば送らない', async () => {
-    const { store: s } = store({ bump: 9, claimed: false });
+    const { store: s, rpc } = store({ bump: 9, claimed: false });
     const send = jest.fn();
     await recordSignatureFailure({ store: s, send });
     expect(send).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalledWith('release_ops_alert', expect.anything());
   });
 
-  it('送れなければ権利を返す', async () => {
+  it('送れなくても権利を返さず、続く署名不正では送り直さない', async () => {
+    let lastSentAt: string | null = null;
+    const rpc = jest.fn(async (name: string) => {
+      if (name === 'bump_ops_signal') return { data: 5, error: null };
+      if (name === 'claim_ops_alert') {
+        if (lastSentAt !== null) {
+          return { data: [{ claimed: false, claimed_at: null, previous_sent_at: lastSentAt }], error: null };
+        }
+        lastSentAt = '2026-10-05T00:00:00Z';
+        return { data: [{ claimed: true, claimed_at: lastSentAt, previous_sent_at: null }], error: null };
+      }
+      if (name === 'release_ops_alert') lastSentAt = null;
+      return { data: true, error: null };
+    });
+    const s: OpsStore = { rpc };
+    const send = jest.fn<Promise<boolean>, [OpsAlertMail]>().mockResolvedValue(false);
+
+    for (let i = 0; i < 5; i++) await recordSignatureFailure({ store: s, send });
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(rpc).not.toHaveBeenCalledWith('release_ops_alert', expect.anything());
+  });
+
+  it('送信が例外になっても権利を返さず、エラーの種類だけを記録する', async () => {
     const { store: s, rpc } = store({ bump: 5, claimed: true });
-    await recordSignatureFailure({ store: s, send: jest.fn().mockResolvedValue(false) });
-    expect(rpc).toHaveBeenCalledWith('release_ops_alert', expect.objectContaining({ _alert_key: 'webhook_signature_invalid' }));
+    const send = jest.fn<Promise<boolean>, [OpsAlertMail]>().mockRejectedValue(new Error('boom'));
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await expect(recordSignatureFailure({ store: s, send })).resolves.toBeUndefined();
+      expect(rpc).not.toHaveBeenCalledWith('release_ops_alert', expect.anything());
+      expect(errorSpy).toHaveBeenCalledWith('[webhook] Failed to record signature failure', 'Error');
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it('モード違いは1件目で送り、届いたモードと鍵のモードを書く', async () => {

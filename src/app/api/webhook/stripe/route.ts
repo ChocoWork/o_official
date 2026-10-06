@@ -26,6 +26,7 @@ const signalDeps: SignalDeps = {
   send: sendOpsAlertMail,
 };
 
+// PUBLIC: Stripe からの知らせの受け取り口。ログインの代わりに Stripe の署名で確かめる。
 /**
  * PUBLIC: Stripe の知らせの受け取り口（設計書 2026-10-05 グループ B の 5-1）。
  * 1 署名（時刻の差は5分まで）→ 2 13種か → 3 モードが鍵と合うか → 4 保存（同じ番号は1回だけ）→ 5 200 を返し、after() で worker。
@@ -33,8 +34,8 @@ const signalDeps: SignalDeps = {
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!webhookSecret) {
-    console.error('[webhook] STRIPE_WEBHOOK_SECRET is not set');
+  if (!webhookSecret || !process.env.STRIPE_SECRET_KEY) {
+    console.error('[webhook] STRIPE_WEBHOOK_SECRET or STRIPE_SECRET_KEY is not set');
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 
@@ -50,8 +51,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   try {
     event = getStripeServerClient().webhooks.constructEvent(rawBody, signature, webhookSecret);
-  } catch {
-    console.warn('[webhook] Signature verification failed');
+  } catch (error) {
+    console.warn('[webhook] Signature verification failed', error instanceof Error ? error.name : 'UnknownError');
     after(() => recordSignatureFailure(signalDeps));
     return NextResponse.json(
       { error: 'Webhook signature verification failed' },

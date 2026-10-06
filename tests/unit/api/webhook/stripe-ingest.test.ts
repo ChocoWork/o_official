@@ -164,8 +164,26 @@ describe('Stripe webhook durable ingress', () => {
       expect(response.status).toBe(500);
       expect(response.body).toEqual({ error: 'Internal server error' });
       expect(mockEnqueueRpc).not.toHaveBeenCalled();
+      expect(mockAfterCallbacks).toHaveLength(0);
     } finally {
       process.env.STRIPE_WEBHOOK_SECRET = savedSecret;
+    }
+  });
+
+  it('STRIPE_SECRET_KEY未設定なら署名不正と数えず500にする', async () => {
+    const savedKey = process.env.STRIPE_SECRET_KEY;
+    delete process.env.STRIPE_SECRET_KEY;
+    try {
+      const event = { id: 'evt_missing_key', type: 'checkout.session.completed', livemode: false, data: { object: {} } };
+      mockConstructEvent.mockReturnValue(event);
+      const response = await POST(request(event));
+      expect(response.status).toBe(500);
+      expect(response.body).toEqual({ error: 'Internal server error' });
+      expect(mockAfterCallbacks).toHaveLength(0);
+      expect(mockConstructEvent).not.toHaveBeenCalled();
+      expect(mockRecordSignatureFailure).not.toHaveBeenCalled();
+    } finally {
+      process.env.STRIPE_SECRET_KEY = savedKey;
     }
   });
 
@@ -176,6 +194,11 @@ describe('Stripe webhook durable ingress', () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ received: true, ignored: true });
     expect(mockEnqueueRpc).not.toHaveBeenCalled();
+    expect(mockAfterCallbacks).toHaveLength(0);
+    await runAfterCallbacks();
+    expect(mockRunWebhookWorker).not.toHaveBeenCalled();
+    expect(mockRecordSignatureFailure).not.toHaveBeenCalled();
+    expect(mockRecordModeMismatch).not.toHaveBeenCalled();
   });
 
   it('モードの違う知らせは保存せず、200を返して数える', async () => {
@@ -187,6 +210,24 @@ describe('Stripe webhook durable ingress', () => {
     expect(mockEnqueueRpc).not.toHaveBeenCalled();
     await runAfterCallbacks();
     expect(mockRecordModeMismatch).toHaveBeenCalledWith(expect.anything(), true, false);
+    expect(mockRunWebhookWorker).not.toHaveBeenCalled();
+  });
+
+  it('鍵の頭が不明なら保存せず、鍵のモードをnullとして数える', async () => {
+    const savedKey = process.env.STRIPE_SECRET_KEY;
+    process.env.STRIPE_SECRET_KEY = 'pk_test_unknown';
+    try {
+      const event = { id: 'evt_unknown_key', type: 'checkout.session.completed', livemode: false, data: { object: {} } };
+      mockConstructEvent.mockReturnValue(event);
+      const response = await POST(request(event));
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ received: true, ignored: true });
+      expect(mockEnqueueRpc).not.toHaveBeenCalled();
+      await runAfterCallbacks();
+      expect(mockRecordModeMismatch).toHaveBeenCalledWith(expect.anything(), false, null);
+    } finally {
+      process.env.STRIPE_SECRET_KEY = savedKey;
+    }
   });
 
   it('保存したら、返事の後にその場で worker を1回動かす', async () => {
@@ -197,5 +238,20 @@ describe('Stripe webhook durable ingress', () => {
     expect(mockRunWebhookWorker).not.toHaveBeenCalled();
     await runAfterCallbacks();
     expect(mockRunWebhookWorker).toHaveBeenCalledWith({ requestUrl: 'http://localhost/api/webhook/stripe' });
+  });
+
+  it('その場のworkerが例外になっても吸収し、エラーの種類だけを記録する', async () => {
+    const event = { id: 'evt_worker_failed', type: 'checkout.session.completed', livemode: false, data: { object: {} } };
+    mockConstructEvent.mockReturnValue(event);
+    mockRunWebhookWorker.mockRejectedValueOnce(new Error('boom'));
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const response = await POST(request(event));
+      expect(response.status).toBe(200);
+      await expect(runAfterCallbacks()).resolves.toBeUndefined();
+      expect(errorSpy).toHaveBeenCalledWith('[webhook] Inline worker run failed', 'Error');
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });
