@@ -24,7 +24,7 @@ npm test -- --silent
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "[pre-push] docker が見つからないため E2E をスキップします。"
-  echo "[pre-push] ローカル Supabase の導入が済むまでの暫定動作です。"
+  echo "[pre-push] E2E は手元の Supabase（Docker）に対して流すため、Docker が要ります。"
   echo "[pre-push] OK（E2E スキップ）"
   exit 0
 fi

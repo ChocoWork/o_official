@@ -164,6 +164,10 @@ LOCAL_SUPABASE_URL="$API_URL" LOCAL_SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY
   npx jest tests/integration/db --runInBand
 ```
 
+E2E（`npm run test:e2e`）も手元の Supabase につなぐ。`playwright.config.ts` が起動のたびに `npx supabase status` から住所と鍵を読み、`.env.local` の本番の値を上書きする。見本データは `supabase/seed.sql`（架空の値）で、`npm run db:reset` のたびに入る。
+
+普段の開発（`npm run dev`）のメールは、設定にかかわらず手元のメール受け（Mailpit、http://127.0.0.1:54324）に届く。手元の Supabase が止まっているとメールの送信は失敗する（外へは出ない）。
+
 ### 適用済みのマイグレーション（本番 DB）
 
 `supabase/migrations/` のファイルと本番の台帳（`supabase_migrations.schema_migrations`）は、2026-09-21 時点で28本すべて version まで一致している（FREQ-380）。ベースライン以降の本は次のとおり。

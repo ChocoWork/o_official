@@ -30,7 +30,7 @@ npx playwright test --reporter=line               # 全件実行時はこちら�
 
 ### 事前確認（必須）
 
-`reuseExistingServer: true` のため、**`npm run dev` が :3000 で動いたままだと Playwright はそれを再利用し、黙って dev サーバーに対してテストしてしまう**。実行前に必ず止める。
+E2E は手元の Supabase（`npm run db:start`・`npm run db:reset`）に対して流す。`playwright.config.ts` の見張り（`scripts/e2e/environment.ts`）が、本番の Supabase の住所・本番の Stripe の鍵・外へのメールを拒み、3000番で E2E 用でないアプリ（`npm run dev` など）が動いていれば止まる。止まったら、3000番のアプリを止めてから流す。
 
 ```powershell
 Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue

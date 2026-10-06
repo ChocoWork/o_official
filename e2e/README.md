@@ -18,13 +18,17 @@ npx playwright install
 
 ### 前提条件
 
-開発サーバーが起動している必要があります：
+E2E は本番ビルド（`next build` と `next start`）を手元の Supabase につないで流す。`playwright.config.ts` がアプリを起動するので、開発サーバーは要らない（3000番で動いていると、見張りが止める）。
 
-```bash
-npm run dev
-```
+1. Docker Desktop を起動し、手元の Supabase を起動する（`npm run db:start`）
+2. 見本データを入れ直す（`npm run db:reset`。`supabase/seed.sql` が入る）。DB 結合テストを流した後は必ず入れ直す（結合テストが作った公開中の商品が残ると、検索などのテストが実装と関係なく落ちる）
+3. テストを流す（下のコマンド）
 
-別のターミナルでテストを実行：
+見張り（`scripts/e2e/environment.ts`）は、次のときに理由を出して止まる。
+
+- Supabase の住所が手元（localhost）ではない、Stripe の鍵がテスト用ではない、メールの送り先が手元ではない
+- 3000番で、E2E が手元の設定で起動したものではないアプリ（開発サーバーなど）が動いている
+- 手元の Supabase の状態を読めない
 
 ```bash
 # 全E2Eテストを実行
@@ -126,7 +130,7 @@ jobs:
 
 ### ポート衝突
 
-開発サーバーが既に起動している場合、`playwright.config.ts` の `reuseExistingServer` を `true` に設定してください。
+3000番でほかのアプリ（開発サーバーなど）が動いていると、見張りが理由を出して止まる。そのアプリを止めてから流す（`Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue` で確かめる）。E2E が手元の設定で起動したアプリが残っていれば、印で確かめてそのまま使う（`E2E_STRICT=1` のときは使い回さないので、止めてから流す）。
 
 ### タイムアウトエラー
 
@@ -151,6 +155,9 @@ npm run test:e2e:ui
 
 ## 注意事項
 
-- E2Eテストは統合環境でのみ実行されます（開発サーバーが必要）
-- テストデータは各テストで自動生成され、クリーンアップされます
-- 本番環境ではE2Eテストを実行しないでください
+- E2E は手元の Supabase だけを使う。本番の Supabase の鍵と Resend の鍵は、アプリにもテストにも渡さない
+- 見本データは `supabase/seed.sql` の架空の値。お客様・管理者のアカウントや注文は入っていない（ログインは偽の応答で行う）
+- アプリのメールは手元のメール受け（Mailpit、http://127.0.0.1:54324）に届き、外へは出ない
+- Stripe はテストモード。E2E は Stripe の知らせ（Webhook）を手元へつながない
+- テストが作ったカートやお問い合わせは手元の DB に残る。`npm run db:reset` で消える
+- 切り替えの前後を比べるときは `npm run e2e:compare`（最後の実行の `test-results/e2e-results.json` を読む）
