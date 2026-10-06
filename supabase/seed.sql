@@ -103,6 +103,8 @@ INSERT INTO public.item_variants (id, item_id, color_id, size_id, sku, stock_qua
   (21, 10, 13, NULL, 'E2E-ITEM-10-BLACK-NOSIZE', 0, true);
 
 -- ルック: 7件（すべて公開）と、商品とのつながり9件。ルック1に「Aoi」を入れる（検索のテスト）。
+-- 画像は本番（ルックごとに1枚）と違い、わざと2枚にする。ギャラリーの複数枚の動き（FREQ-179、
+-- FR-LOOK-DETAIL-011 のタブレット・パソコンの確かめ）は2枚以上でしか動かないため。本番に合わせて減らさないこと。
 INSERT INTO public.looks (
   id, season_year, season_type, theme, theme_description, image_urls, status, created_at, updated_at
 ) VALUES

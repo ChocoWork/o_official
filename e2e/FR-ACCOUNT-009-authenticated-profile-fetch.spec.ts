@@ -5,6 +5,15 @@ test.describe('FR-ACCOUNT-009 authenticated profile fetch', () => {
 	test('認証付きでプロフィールを取得し、ログイン中メールアドレスを表示する', async ({ page }) => {
 		await mockOtpAuthentication(page);
 
+		// ACCOUNT は配送先も取得する。実 API の 401 → refresh で認証モックが失効しないよう固定する。
+		await page.route('**/api/profile/addresses', async (route) => {
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({ addresses: [] }),
+			});
+		});
+
 		let profileCookieHeader: string | null = null;
 
 		await page.route('**/api/profile', async (route) => {
