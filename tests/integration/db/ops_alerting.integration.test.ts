@@ -1,6 +1,6 @@
 /** @jest-environment node */
 import { describeLocalDb } from './helpers/local-db';
-import { createCatalogFixture, insertOrderWithStockLine } from './helpers/order-fixtures';
+import { createCatalogFixture, insertOrderWithStockLine, revisionsOf } from './helpers/order-fixtures';
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -42,6 +42,7 @@ describeLocalDb('integration: 知らせと定期処理の記録', (db) => {
   });
 
   test('bump は窓の中なら数を足し、窓が過ぎたら1から数え直す。行は1つだけ', async () => {
+    await db().query("delete from public.ops_alert_state where alert_key = 'webhook_signature_invalid'");
     const counts: number[] = [];
     for (let i = 0; i < 3; i += 1) {
       const res = await db().query("select public.bump_ops_signal('webhook_signature_invalid', 600) as n");
@@ -63,6 +64,7 @@ describeLocalDb('integration: 知らせと定期処理の記録', (db) => {
   });
 
   test('claim は1時間に1回だけ取れる。release は自分の取った分だけ元に戻す', async () => {
+    await db().query("delete from public.ops_alert_state where alert_key = 'webhook_backlog'");
     const first = await db().query(
       `select claimed, claimed_at::text as claimed_at, previous_sent_at::text as previous_sent_at
        from public.claim_ops_alert('webhook_backlog', 3600)`,
@@ -92,6 +94,28 @@ describeLocalDb('integration: 知らせと定期処理の記録', (db) => {
     expect(afterCooldown.rows[0].claimed).toBe(true);
   });
 
+  test('bump の窓と claim の送信間隔は0秒を22023で断る', async () => {
+    const errors: unknown[] = [];
+    for (const sql of [
+      "select public.bump_ops_signal('webhook_signature_invalid', 0)",
+      "select * from public.claim_ops_alert('webhook_backlog', 0)",
+    ]) {
+      await db().query('savepoint invalid_seconds');
+      try {
+        await db().query(sql);
+        errors.push(null);
+      } catch (error) {
+        errors.push(error);
+      } finally {
+        await db().query('rollback to savepoint invalid_seconds');
+      }
+    }
+    expect(errors).toEqual([
+      expect.objectContaining({ code: '22023' }),
+      expect.objectContaining({ code: '22023' }),
+    ]);
+  });
+
   test('支払いから作った注文の印は、理由の無い注文にだけ付き、在庫の理由は残す', async () => {
     const catalog = await createCatalogFixture(db(), { stock: 1 });
     const plain = await insertOrderWithStockLine(db(), {
@@ -101,6 +125,9 @@ describeLocalDb('integration: 知らせと定期処理の記録', (db) => {
       plain.orderId,
     ]);
     expect(marked.rows[0].reason).toBe('recovered_from_payment');
+    expect(await revisionsOf(db(), plain.orderId)).toEqual([
+      { reason: 'order_sweep_recovered_from_payment', sourceEventId: null, changedBy: null },
+    ]);
     const plainRow = await db().query(
       'select review_reason, review_marked_at is not null as marked_at from public.orders where id = $1',
       [plain.orderId],
@@ -114,10 +141,12 @@ describeLocalDb('integration: 知らせと定期処理の記録', (db) => {
       "update public.orders set review_reason = 'stock_not_reserved', review_marked_at = now() where id = $1",
       [stock.orderId],
     );
+    const stockRevisionsBefore = await revisionsOf(db(), stock.orderId);
     const kept = await db().query('select public.mark_order_recovered_from_payment($1::uuid) as reason', [
       stock.orderId,
     ]);
     expect(kept.rows[0].reason).toBe('stock_not_reserved');
+    expect(await revisionsOf(db(), stock.orderId)).toEqual(stockRevisionsBefore);
   });
 
   test('無い注文には印を付けず、P0002 で断る', async () => {
@@ -134,6 +163,16 @@ describeLocalDb('integration: 知らせと定期処理の記録', (db) => {
     );
     expect(constraint.rows[0].def).toContain('stock_not_reserved');
     expect(constraint.rows[0].def).toContain('recovered_from_payment');
+
+    const catalog = await createCatalogFixture(db(), { stock: 0 });
+    const order = await insertOrderWithStockLine(db(), {
+      status: 'paid', itemId: catalog.itemId, variantId: catalog.variantId, quantity: 1, reserved: false,
+    });
+    await db().query('savepoint invalid_review_reason');
+    await expect(db().query("update public.orders set review_reason = 'other' where id = $1", [
+      order.orderId,
+    ])).rejects.toMatchObject({ code: '23514' });
+    await db().query('rollback to savepoint invalid_review_reason');
   });
 
   test('anon・authenticated は表も関数も使えない。service_role も表は触れず、関数だけを使える', async () => {

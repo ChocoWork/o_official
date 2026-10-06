@@ -85,6 +85,10 @@ AS $$
 DECLARE
   v_count integer;
 BEGIN
+  IF _window_seconds IS NULL OR _window_seconds <= 0 THEN
+    RAISE EXCEPTION 'INVALID_WINDOW_SECONDS' USING ERRCODE = '22023';
+  END IF;
+
   INSERT INTO public.ops_alert_state AS s (alert_key, window_started_at, window_count, updated_at)
   VALUES (_alert_key, pg_catalog.now(), 1, pg_catalog.now())
   ON CONFLICT (alert_key) DO UPDATE SET
@@ -116,6 +120,10 @@ AS $$
 DECLARE
   v_previous timestamptz;
 BEGIN
+  IF _cooldown_seconds IS NULL OR _cooldown_seconds <= 0 THEN
+    RAISE EXCEPTION 'INVALID_COOLDOWN_SECONDS' USING ERRCODE = '22023';
+  END IF;
+
   INSERT INTO public.ops_alert_state (alert_key) VALUES (_alert_key)
   ON CONFLICT (alert_key) DO NOTHING;
 
@@ -174,6 +182,10 @@ AS $$
 DECLARE
   v_reason text;
 BEGIN
+  PERFORM pg_catalog.set_config('app.order_actor_id', '', true);
+  PERFORM pg_catalog.set_config('app.order_change_reason', 'order_sweep_recovered_from_payment', true);
+  PERFORM pg_catalog.set_config('app.order_source_event_id', '', true);
+
   UPDATE public.orders AS o
   SET review_reason = 'recovered_from_payment',
       review_marked_at = pg_catalog.now()
