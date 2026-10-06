@@ -1,16 +1,2 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
-
-function digest(value: string): Buffer {
-  return createHash('sha256').update(value, 'utf8').digest();
-}
-
-export function authorizeCronBearer(
-  authorization: string | null,
-  configuredSecret: string | undefined,
-): boolean {
-  if (!configuredSecret) return false;
-
-  const expected = digest(`Bearer ${configuredSecret}`);
-  const supplied = digest(authorization ?? '');
-  return timingSafeEqual(expected, supplied);
-}
+// 定期処理の合言葉の比べ方は src/lib/cron/auth.ts に置き直した（設計書 2026-10-05 グループ B の 4-3）
+export { authorizeCronBearer } from '@/lib/cron/auth';

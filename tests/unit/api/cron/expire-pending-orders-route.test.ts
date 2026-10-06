@@ -47,6 +47,9 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({
 
 import { POST } from '@/app/api/cron/expire-pending-orders/route';
 
+// 定期処理の合言葉は32文字以上（設計書 2026-10-05 グループ B の 4-3）
+const CRON_SECRET = 'cron-secret-for-unit-tests-0123456789';
+
 type SweepRow = {
   id: string;
   status: 'payment_in_progress' | 'pending';
@@ -65,7 +68,7 @@ function request(authorization?: string): Request {
   });
 }
 
-async function sweep(authorization = 'Bearer cron-secret'): Promise<SweepResponse> {
+async function sweep(authorization = `Bearer ${CRON_SECRET}`): Promise<SweepResponse> {
   return (await POST(request(authorization))) as unknown as SweepResponse;
 }
 
@@ -90,7 +93,7 @@ describe('POST /api/cron/expire-pending-orders（照合の見回り）', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    process.env.CRON_SECRET = 'cron-secret';
+    process.env.CRON_SECRET = CRON_SECRET;
     dateSpy = jest.spyOn(Date, 'now').mockReturnValue(NOW);
     mockEnforceRateLimit.mockResolvedValue(undefined);
     mockExpireOpenCheckoutSession.mockResolvedValue('not_open');
@@ -110,7 +113,7 @@ describe('POST /api/cron/expire-pending-orders（照合の見回り）', () => {
   });
 
   it('長さが同じでも値が違う secret は 401（timingSafeEqual の分岐を通す）', async () => {
-    expect((await sweep('Bearer cron-secreX')).status).toBe(401);
+    expect((await sweep(`Bearer ${CRON_SECRET.slice(0, -1)}X`)).status).toBe(401);
     expect(mockReconcile).not.toHaveBeenCalled();
   });
 
@@ -125,6 +128,20 @@ describe('POST /api/cron/expire-pending-orders（照合の見回り）', () => {
       action: 'checkout.pending_orders.expire',
       outcome: 'failure',
       detail: expect.stringContaining('CRON_SECRET'),
+    }));
+  });
+
+  it('CRON_SECRET が32文字未満なら、設定の誤りとして 401 にし、理由付きの監査ログを残す', async () => {
+    process.env.CRON_SECRET = 'short-secret';
+
+    const response = await sweep('Bearer short-secret');
+
+    expect(response.status).toBe(401);
+    expect(mockReconcile).not.toHaveBeenCalled();
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'checkout.pending_orders.expire',
+      outcome: 'failure',
+      detail: 'Unauthorized: CRON_SECRET is shorter than 32 characters',
     }));
   });
 

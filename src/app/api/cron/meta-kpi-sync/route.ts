@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server';
+import { authorizeCronRequest } from '@/lib/cron/auth';
 import { currentSeasonKey } from '@/lib/kpi/monthly-metrics';
 import { syncMetaKpis, type MetaConnection } from '@/lib/meta/sync-kpi';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 
 export async function POST(request: Request) {
-	const expected = process.env.CRON_SECRET;
-	const authorization = request.headers.get('authorization');
-	if (!expected || authorization !== `Bearer ${expected}`) {
+	if (!authorizeCronRequest(request, 'meta-kpi-sync').ok) {
 		return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 	}
 	const supabase = await createServiceRoleClient();

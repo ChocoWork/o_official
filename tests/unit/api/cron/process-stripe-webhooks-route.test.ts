@@ -43,6 +43,12 @@ describe('POST /api/cron/process-stripe-webhooks', () => {
     expect(mockRunWebhookWorker).not.toHaveBeenCalled();
   });
 
+  it('CRON_SECRET が32文字未満なら、ヘッダーが一致していても断る', async () => {
+    process.env.CRON_SECRET = 'short-secret';
+    expect((await POST(request('Bearer short-secret'))).status).toBe(401);
+    expect(mockRunWebhookWorker).not.toHaveBeenCalled();
+  });
+
   it('worker を1回動かし、件数と止まった理由を返す', async () => {
     const response = await POST(request());
     expect(response.status).toBe(200);

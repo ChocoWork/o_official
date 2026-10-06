@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { timingSafeEqual } from 'node:crypto';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { getStripeServerClient } from '@/lib/stripe/server';
 import { expireOpenCheckoutSession } from '@/lib/stripe/checkout-session-expiry';
 import { logAudit } from '@/lib/audit';
+import { authorizeCronRequest } from '@/lib/cron/auth';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import {
   notifyShopOfException,
@@ -42,34 +42,6 @@ type SweepOrderRow = {
   checkout_session_id: string | null;
 };
 
-type AuthorizationResult =
-  | { ok: true }
-  | { ok: false; reason: string; misconfigured: boolean };
-
-function checkAuthorization(request: Request): AuthorizationResult {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) {
-    return { ok: false, reason: 'CRON_SECRET is not configured', misconfigured: true };
-  }
-
-  const header = request.headers.get('authorization');
-  if (!header) {
-    return { ok: false, reason: 'Missing Authorization header', misconfigured: false };
-  }
-
-  const expected = Buffer.from(`Bearer ${secret}`);
-  const actual = Buffer.from(header);
-  if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
-    return {
-      ok: false,
-      reason: 'Authorization header does not match CRON_SECRET',
-      misconfigured: false,
-    };
-  }
-
-  return { ok: true };
-}
-
 // 設定ミス（CRON_SECRET 未設定）の監査ログは、全体で10分に1回までにする（FREQ-370）。
 // subject を付けると IP を使わない共通のカウンタになるので、攻撃元を散らしても増えない。
 const MISCONFIGURED_AUDIT_THROTTLE = {
@@ -81,15 +53,13 @@ const MISCONFIGURED_AUDIT_THROTTLE = {
 
 /**
  * 認証に失敗した要求を記録する（FREQ-370）。
- * ヘッダの欠落・不一致はアプリのログにだけ残す（ヘッダの値は出さない）。
- * CRON_SECRET 未設定（運用側の設定ミス）は監査ログにも残す。ただし全体で10分に1回まで。
+ * ヘッダの欠落・不一致はアプリのログにだけ残す（authorizeCronRequest が1行出す。ヘッダの値は出さない）。
+ * CRON_SECRET の未設定・32文字未満（運用側の設定ミス）は監査ログにも残す。ただし全体で10分に1回まで。
  */
 async function recordUnauthorized(
   request: Request,
   auth: { reason: string; misconfigured: boolean },
 ): Promise<void> {
-  console.warn('[cron] expire-pending-orders unauthorized', auth.reason);
-
   if (!auth.misconfigured) return;
 
   const throttled = await enforceRateLimit({ request, ...MISCONFIGURED_AUDIT_THROTTLE });
@@ -111,7 +81,7 @@ function resolveHourlyBatchOffset(totalOrders: number, nowMs: number): number {
 }
 
 export async function POST(request: Request) {
-  const auth = checkAuthorization(request);
+  const auth = authorizeCronRequest(request, 'expire-pending-orders');
   if (!auth.ok) {
     await recordUnauthorized(request, auth);
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

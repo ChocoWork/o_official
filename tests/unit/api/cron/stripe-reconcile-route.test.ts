@@ -11,29 +11,47 @@ jest.mock('@/lib/stripe/supabase-accounting-database', () => ({
   createStripeAccountingDatabase: jest.fn().mockReturnValue({}),
 }));
 
-import { GET } from '@/app/api/cron/stripe-reconcile/route';
+import * as reconcileRoute from '@/app/api/cron/stripe-reconcile/route';
 import { reconcileStripeOrders, reconcileStripePayouts } from '@/lib/stripe/reconcile-orders';
 
 const mockReconcileOrders = reconcileStripeOrders as jest.Mock;
 const mockReconcilePayouts = reconcileStripePayouts as jest.Mock;
+const { POST } = reconcileRoute;
+// 定期処理の合言葉は32文字以上（設計書 2026-10-05 グループ B の 4-3）
+const CRON_SECRET = 'cron-secret-for-unit-tests-0123456789';
 
 function authorizedRequest(): Request {
   return new Request('http://localhost/api/cron/stripe-reconcile', {
-    headers: { authorization: 'Bearer cron-secret' },
+    method: 'POST',
+    headers: { authorization: `Bearer ${CRON_SECRET}` },
   });
 }
 
-describe('GET /api/cron/stripe-reconcile', () => {
+describe('POST /api/cron/stripe-reconcile', () => {
   beforeEach(() => {
-    process.env.CRON_SECRET = 'cron-secret';
+    process.env.CRON_SECRET = CRON_SECRET;
     jest.clearAllMocks();
   });
   afterEach(() => { delete process.env.CRON_SECRET; });
 
   it('rejects requests without the cron bearer token', async () => {
-    const response = await GET(new Request('http://localhost/api/cron/stripe-reconcile'));
+    const response = await POST(new Request('http://localhost/api/cron/stripe-reconcile', { method: 'POST' }));
     expect(response.status).toBe(401);
     expect(reconcileStripeOrders).not.toHaveBeenCalled();
+  });
+
+  it('rejects a CRON_SECRET shorter than 32 characters even when the header matches', async () => {
+    process.env.CRON_SECRET = 'short-secret';
+    const response = await POST(new Request('http://localhost/api/cron/stripe-reconcile', {
+      method: 'POST',
+      headers: { authorization: 'Bearer short-secret' },
+    }));
+    expect(response.status).toBe(401);
+    expect(reconcileStripeOrders).not.toHaveBeenCalled();
+  });
+
+  it('is called with POST only (pg_net sends POST)', () => {
+    expect('GET' in reconcileRoute).toBe(false);
   });
 
   it('does not create orders for unmatched Stripe payments', async () => {
@@ -47,7 +65,7 @@ describe('GET /api/cron/stripe-reconcile', () => {
     });
     mockReconcilePayouts.mockResolvedValue({ syncedPayouts: 0, payoutMismatches: 0, errors: [] });
 
-    const response = await GET(authorizedRequest());
+    const response = await POST(authorizedRequest());
     const body = await response.json();
 
     expect(response.status).toBe(200);
@@ -77,7 +95,7 @@ describe('GET /api/cron/stripe-reconcile', () => {
       errors: [{ sourceId: 'po_1', reason: 'payout sync failed' }],
     });
 
-    const body = await (await GET(authorizedRequest())).json();
+    const body = await (await POST(authorizedRequest())).json();
 
     expect(body.data.errors).toEqual([
       { sourceId: 'pi_1', reason: 'stripe unavailable' },
@@ -90,7 +108,7 @@ describe('GET /api/cron/stripe-reconcile', () => {
     mockReconcileOrders.mockRejectedValue(new Error('database down'));
     mockReconcilePayouts.mockResolvedValue({ syncedPayouts: 0, payoutMismatches: 0, errors: [] });
 
-    const response = await GET(authorizedRequest());
+    const response = await POST(authorizedRequest());
 
     expect(response.status).toBe(502);
   });

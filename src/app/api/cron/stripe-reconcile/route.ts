@@ -1,4 +1,6 @@
+// 毎日 18:00 UTC（日本時間 3:00）に pg_cron＋pg_net から POST で呼ばれる（設計書 2026-10-05 グループ B の 4-1）
 import { NextResponse } from 'next/server';
+import { authorizeCronRequest } from '@/lib/cron/auth';
 import {
   reconcileStripeOrders,
   reconcileStripePayouts,
@@ -25,9 +27,8 @@ export type StripeReconcileResponse = {
   errors: StripeReconciliationError[];
 };
 
-export async function GET(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret || request.headers.get('authorization') !== `Bearer ${secret}`) {
+export async function POST(request: Request) {
+  if (!authorizeCronRequest(request, 'stripe-reconcile').ok) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   try {
