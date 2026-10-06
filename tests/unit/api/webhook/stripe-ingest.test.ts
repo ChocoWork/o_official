@@ -1,11 +1,16 @@
 import { NextRequest } from 'next/server';
 
 process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+process.env.STRIPE_SECRET_KEY = 'sk_test_ingest';
 
+const mockAfterCallbacks: Array<() => unknown> = [];
 jest.mock('next/server', () => {
   const original = jest.requireActual('next/server');
   return {
     ...original,
+    after: (callback: () => unknown) => {
+      mockAfterCallbacks.push(callback);
+    },
     NextResponse: {
       json: jest.fn((body: unknown, init?: { status?: number }) => ({
         body,
@@ -46,9 +51,26 @@ jest.mock('@/lib/stripe/order-refund-sync', () => ({
   syncOrderRefunds: (...args: unknown[]) => mockSyncOrderRefunds(...args),
 }));
 
+const mockLogAudit = jest.fn().mockResolvedValue(undefined);
 jest.mock('@/lib/audit', () => ({
-  logAudit: jest.fn().mockResolvedValue(undefined),
+  logAudit: (...args: unknown[]) => mockLogAudit(...args),
 }));
+
+const mockRunWebhookWorker = jest.fn().mockResolvedValue(undefined);
+jest.mock('@/lib/stripe/webhook-worker', () => ({
+  runWebhookWorker: (...args: unknown[]) => mockRunWebhookWorker(...args),
+}));
+
+const mockRecordSignatureFailure = jest.fn().mockResolvedValue(undefined);
+const mockRecordModeMismatch = jest.fn().mockResolvedValue(undefined);
+jest.mock('@/lib/ops/webhook-receiver-signals', () => ({
+  recordSignatureFailure: (...args: unknown[]) => mockRecordSignatureFailure(...args),
+  recordModeMismatch: (...args: unknown[]) => mockRecordModeMismatch(...args),
+}));
+
+async function runAfterCallbacks(): Promise<void> {
+  for (const callback of mockAfterCallbacks.splice(0)) await callback();
+}
 
 import { POST } from '@/app/api/webhook/stripe/route';
 
@@ -62,6 +84,7 @@ function request(event: unknown): NextRequest {
 
 describe('Stripe webhook durable ingress', () => {
   beforeEach(() => {
+    mockAfterCallbacks.length = 0;
     jest.clearAllMocks();
     mockEnqueueRpc.mockResolvedValue({ data: true, error: null });
   });
@@ -70,6 +93,7 @@ describe('Stripe webhook durable ingress', () => {
     const event = {
       id: 'evt_fast_ack',
       type: 'refund.failed',
+      livemode: false,
       data: { object: { id: 're_1', payment_intent: 'pi_1' } },
     };
     mockConstructEvent.mockReturnValue(event);
@@ -89,7 +113,7 @@ describe('Stripe webhook durable ingress', () => {
   });
 
   it('永続化できなければ2xxを返さない', async () => {
-    const event = { id: 'evt_store_failed', type: 'payment_intent.succeeded', data: { object: {} } };
+    const event = { id: 'evt_store_failed', type: 'payment_intent.succeeded', livemode: false, data: { object: {} } };
     mockConstructEvent.mockReturnValue(event);
     mockEnqueueRpc.mockResolvedValue({ data: null, error: { message: 'database unavailable' } });
 
@@ -105,9 +129,12 @@ describe('Stripe webhook durable ingress', () => {
 
     expect(response.status).toBe(400);
     expect(mockEnqueueRpc).not.toHaveBeenCalled();
+    expect(mockLogAudit).not.toHaveBeenCalled();
+    await runAfterCallbacks();
+    expect(mockRecordSignatureFailure).toHaveBeenCalledTimes(1);
   });
   it('一致する重複イベントは再処理せずduplicateを返す', async () => {
-    const event = { id: 'evt_duplicate', type: 'refund.updated', data: { object: { id: 're_2' } } };
+    const event = { id: 'evt_duplicate', type: 'refund.updated', livemode: false, data: { object: { id: 're_2' } } };
     mockConstructEvent.mockReturnValue(event);
     mockEnqueueRpc.mockResolvedValue({ data: false, error: null });
 
@@ -125,6 +152,8 @@ describe('Stripe webhook durable ingress', () => {
     expect(response.status).toBe(400);
     expect(mockConstructEvent).not.toHaveBeenCalled();
     expect(mockEnqueueRpc).not.toHaveBeenCalled();
+    await runAfterCallbacks();
+    expect(mockRecordSignatureFailure).toHaveBeenCalledTimes(1);
   });
 
   it('Webhook secret未設定なら内部設定を公開せず500にする', async () => {
@@ -138,4 +167,35 @@ describe('Stripe webhook durable ingress', () => {
     } finally {
       process.env.STRIPE_WEBHOOK_SECRET = savedSecret;
     }
-  });});
+  });
+
+  it('13種以外の知らせは保存せずに200を返す', async () => {
+    const event = { id: 'evt_other', type: 'customer.created', livemode: false, data: { object: { id: 'cus_1' } } };
+    mockConstructEvent.mockReturnValue(event);
+    const response = await POST(request(event));
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ received: true, ignored: true });
+    expect(mockEnqueueRpc).not.toHaveBeenCalled();
+  });
+
+  it('モードの違う知らせは保存せず、200を返して数える', async () => {
+    const event = { id: 'evt_live', type: 'checkout.session.completed', livemode: true, data: { object: { id: 'cs_1' } } };
+    mockConstructEvent.mockReturnValue(event);
+    const response = await POST(request(event));
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ received: true, ignored: true });
+    expect(mockEnqueueRpc).not.toHaveBeenCalled();
+    await runAfterCallbacks();
+    expect(mockRecordModeMismatch).toHaveBeenCalledWith(expect.anything(), true, false);
+  });
+
+  it('保存したら、返事の後にその場で worker を1回動かす', async () => {
+    const event = { id: 'evt_after', type: 'checkout.session.completed', livemode: false, data: { object: { id: 'cs_2' } } };
+    mockConstructEvent.mockReturnValue(event);
+    const response = await POST(request(event));
+    expect(response.status).toBe(200);
+    expect(mockRunWebhookWorker).not.toHaveBeenCalled();
+    await runAfterCallbacks();
+    expect(mockRunWebhookWorker).toHaveBeenCalledWith({ requestUrl: 'http://localhost/api/webhook/stripe' });
+  });
+});

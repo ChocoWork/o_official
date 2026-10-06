@@ -1,20 +1,36 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import Stripe from 'stripe';
 import { getStripeServerClient } from '@/lib/stripe/server';
-import { logAudit } from '@/lib/audit';
 import {
   enqueueWebhookEvent,
   webhookErrorCategory,
   type WebhookEventStore,
 } from '@/lib/stripe/webhook-events';
+import { isHandledStripeEventType, stripeKeyLivemode } from '@/lib/stripe/handled-webhook-events';
+import { recordModeMismatch, recordSignatureFailure, type SignalDeps } from '@/lib/ops/webhook-receiver-signals';
+import { sendOpsAlertMail } from '@/lib/ops/ops-alert-mail';
+import type { OpsStore } from '@/lib/ops/ops-store';
+import { runWebhookWorker } from '@/lib/stripe/webhook-worker';
+
+// 返事の後に after() で worker を約45秒まで動かすため
+export const maxDuration = 60;
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
 
-// PUBLIC: Stripe の署名を raw body で検証し、DBへの永続化に成功してから応答する。
+const signalDeps: SignalDeps = {
+  store: supabase as unknown as OpsStore,
+  send: sendOpsAlertMail,
+};
+
+/**
+ * PUBLIC: Stripe の知らせの受け取り口（設計書 2026-10-05 グループ B の 5-1）。
+ * 1 署名（時刻の差は5分まで）→ 2 13種か → 3 モードが鍵と合うか → 4 保存（同じ番号は1回だけ）→ 5 200 を返し、after() で worker。
+ * 署名の欠落・不一致は400。監査ログに1件ずつ書かず、件数だけ数える（R-05）。
+ */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!webhookSecret) {
@@ -24,6 +40,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const signature = req.headers.get('stripe-signature');
   if (!signature) {
+    console.warn('[webhook] Missing stripe-signature header');
+    after(() => recordSignatureFailure(signalDeps));
     return NextResponse.json({ error: 'Missing stripe-signature header' }, { status: 400 });
   }
 
@@ -31,26 +49,31 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   let event: Stripe.Event;
 
   try {
-    event = getStripeServerClient().webhooks.constructEvent(
-      rawBody, signature, webhookSecret
-    );
-  } catch (error) {
-    console.error('[webhook] Signature verification failed',
-      error instanceof Error ? error.name : 'UnknownError');
-    await logAudit({
-      action: 'checkout.webhook.signature_invalid',
-      resource: 'stripe_webhook',
-      outcome: 'failure',
-      detail: 'Webhook signature verification failed',
-    });
+    event = getStripeServerClient().webhooks.constructEvent(rawBody, signature, webhookSecret);
+  } catch {
+    console.warn('[webhook] Signature verification failed');
+    after(() => recordSignatureFailure(signalDeps));
     return NextResponse.json(
       { error: 'Webhook signature verification failed' },
       { status: 400 },
     );
   }
 
+  if (!isHandledStripeEventType(event.type)) {
+    console.info('[webhook] Ignored event type', event.type);
+    return NextResponse.json({ received: true, ignored: true });
+  }
+
+  const keyLivemode = stripeKeyLivemode(process.env.STRIPE_SECRET_KEY);
+  if (keyLivemode === null || event.livemode !== keyLivemode) {
+    console.warn('[webhook] Event mode does not match the secret key', event.id);
+    after(() => recordModeMismatch(signalDeps, event.livemode, keyLivemode));
+    return NextResponse.json({ received: true, ignored: true });
+  }
+
+  let inserted: boolean;
   try {
-    const inserted = await enqueueWebhookEvent(
+    inserted = await enqueueWebhookEvent(
       supabase as unknown as WebhookEventStore,
       {
         id: event.id,
@@ -58,7 +81,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         payload: event as unknown as Record<string, unknown>,
       },
     );
-    return NextResponse.json({ received: true, duplicate: !inserted });
   } catch (error) {
     console.error('[webhook] Failed to persist verified event', event.id, webhookErrorCategory(error));
     return NextResponse.json(
@@ -66,4 +88,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       { status: 500 },
     );
   }
+
+  // 返事の後に続けて処理する。失敗しても、毎分の定期処理が拾う
+  after(() => runWebhookWorker({ requestUrl: req.url }).catch((error: unknown) => {
+    console.error('[webhook] Inline worker run failed', webhookErrorCategory(error));
+  }));
+  return NextResponse.json({ received: true, duplicate: !inserted });
 }
