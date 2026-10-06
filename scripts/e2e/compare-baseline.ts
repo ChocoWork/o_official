@@ -3,7 +3,7 @@
  *
  * 使い方: npm run e2e:compare -- [前の一覧] [後の Playwright JSON]
  * 既定の「前」: 2026-10-05 0:42 開始の全件（本番の DB）。既定の「後」: 最後の実行の test-results/e2e-results.json。
- * 前に通っていて後で通らないテストが1件でもあれば、終了コード1で終わる。
+ * 前に通っていて後で通らないテストや新しい失敗が1件でもあれば、終了コード1で終わる。
  */
 import { readFileSync } from 'node:fs';
 
@@ -15,11 +15,13 @@ type JsonTest = { projectName: string; status: Outcome };
 type JsonSpec = { id: string; title: string; file: string; tests: JsonTest[] };
 type JsonSuite = { title: string; file?: string; specs?: JsonSpec[]; suites?: JsonSuite[] };
 
-export type PlaywrightJsonReport = { suites: JsonSuite[] };
+export type PlaywrightJsonReport = { suites: JsonSuite[]; errors?: unknown[] };
 
 export type Comparison = {
   /** 前は通過、後は失敗・飛ばし */
   regressions: TestOutcome[];
+  /** 前は飛ばし・前に無くて、後は失敗 */
+  newFailures: TestOutcome[];
   /** 前は失敗、後は通過 */
   fixed: TestOutcome[];
   /** 前にあり、後に無い */
@@ -33,6 +35,7 @@ const DEFAULT_CURRENT = 'test-results/e2e-results.json';
 const PASSED: ReadonlySet<Outcome> = new Set<Outcome>(['expected', 'flaky']);
 
 const nameKey = (test: TestOutcome) => `${test.project}|${test.file}|${test.title}`;
+const idKey = (test: TestOutcome) => `${test.testId}|${test.project}`;
 
 export function flattenPlaywrightJson(report: PlaywrightJsonReport): TestOutcome[] {
   const rows: TestOutcome[] = [];
@@ -56,42 +59,52 @@ export function flattenPlaywrightJson(report: PlaywrightJsonReport): TestOutcome
 }
 
 export function compareRuns(baseline: TestOutcome[], current: TestOutcome[]): Comparison {
-  const byId = new Map(current.map((test) => [test.testId, test]));
+  const byId = new Map(current.map((test) => [idKey(test), test]));
   const byName = new Map(current.map((test) => [nameKey(test), test]));
   const matched = new Set<TestOutcome>();
-  const result: Comparison = { regressions: [], fixed: [], missing: [], added: [] };
+  const result: Comparison = { regressions: [], newFailures: [], fixed: [], missing: [], added: [] };
 
   for (const before of baseline) {
-    const after = byId.get(before.testId) ?? byName.get(nameKey(before));
+    const after = byId.get(idKey(before)) ?? byName.get(nameKey(before));
     if (!after) {
       result.missing.push(before);
       continue;
     }
     matched.add(after);
     if (PASSED.has(before.outcome) && !PASSED.has(after.outcome)) result.regressions.push(after);
+    if (before.outcome === 'skipped' && after.outcome === 'unexpected') result.newFailures.push(after);
     if (before.outcome === 'unexpected' && PASSED.has(after.outcome)) result.fixed.push(after);
   }
   result.added = current.filter((test) => !matched.has(test));
+  result.newFailures.push(...result.added.filter((test) => test.outcome === 'unexpected'));
   return result;
 }
 
-function main(argv: string[]): number {
+export function main(argv: string[]): number {
   const baselinePath = argv[0] ?? DEFAULT_BASELINE;
   const currentPath = argv[1] ?? DEFAULT_CURRENT;
   const baseline = (JSON.parse(readFileSync(baselinePath, 'utf8')) as { tests: TestOutcome[] }).tests;
   const currentReport = JSON.parse(readFileSync(currentPath, 'utf8')) as PlaywrightJsonReport & { stats?: { startTime?: string } };
   const current = flattenPlaywrightJson(currentReport);
   console.log(`後の実行の開始: ${currentReport.stats?.startTime ?? '不明'}（${currentPath}）`);
+  const errorCount = currentReport.errors?.length ?? 0;
+  if (errorCount > 0 || current.length === 0) {
+    console.log(`注意: 後の実行でテストが1件も流れていないか、起動に失敗しています（errors: ${errorCount}件）。`);
+  }
   const result = compareRuns(baseline, current);
 
   console.log(`前: ${baseline.length}件 / 後: ${current.length}件`);
   console.log(`前に通っていて後で通らない: ${result.regressions.length}件`);
   for (const test of result.regressions) console.log(`  - [${test.outcome}] ${test.file} :: ${test.title}`);
+  console.log(`前は飛ばし・前に無くて、後で失敗: ${result.newFailures.length}件`);
+  for (const test of result.newFailures) console.log(`  - [${test.outcome}] ${test.file} :: ${test.title}`);
   console.log(`前は失敗で後は通過: ${result.fixed.length}件`);
   console.log(`前にあり後に無い: ${result.missing.length}件`);
-  for (const test of result.missing) console.log(`  - ${test.file} :: ${test.title}`);
+  const missingByFile = new Map<string, number>();
+  for (const test of result.missing) missingByFile.set(test.file, (missingByFile.get(test.file) ?? 0) + 1);
+  for (const file of [...missingByFile.keys()].sort()) console.log(`  - ${file}: ${missingByFile.get(file)}件`);
   console.log(`後にだけある: ${result.added.length}件`);
-  return result.regressions.length > 0 ? 1 : 0;
+  return result.regressions.length + result.newFailures.length > 0 ? 1 : 0;
 }
 
 if (require.main === module) {

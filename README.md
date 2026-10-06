@@ -166,7 +166,7 @@ LOCAL_SUPABASE_URL="$API_URL" LOCAL_SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY
 
 E2E（`npm run test:e2e`）も手元の Supabase につなぐ。`playwright.config.ts` が起動のたびに `npx supabase status` から住所と鍵を読み、`.env.local` の本番の値を上書きする。見本データは `supabase/seed.sql`（架空の値）で、`npm run db:reset` のたびに入る。
 
-普段の開発（`npm run dev`）のメールは、設定にかかわらず手元のメール受け（Mailpit、http://127.0.0.1:54324）に届く。手元の Supabase が止まっているとメールの送信は失敗する（外へは出ない）。
+普段の開発（`npm run dev`）でアプリが送るメール（`sendMail`）は、設定にかかわらず手元のメール受け（Mailpit、http://127.0.0.1:54324）に届く。手元の Supabase が止まっているとメールの送信は失敗する（外へは出ない）。ただし、ログインの認証コードと会員登録の確認のメールは Supabase Auth が送るので、本番の DB につないでいる普段の開発では本物のメールが出る。
 
 ### 適用済みのマイグレーション（本番 DB）
 

@@ -34,6 +34,7 @@ export const E2E_FIXED_ENV: Readonly<Record<string, string>> = {
   CONTACT_INBOUND_DOMAIN: 'inbound.e2e.test',
   CONTACT_REPLY_SECRET: 'e2e-local-contact-reply-secret-0123456789',
   RESEND_API_KEY: '',
+  ALERT_AUDIT_URL: '',
   RESEND_WEBHOOK_SECRET: 'whsec_ZTJlLWxvY2FsLXJlc2VuZC13ZWJob29rLW9ubHk=',
   STRIPE_WEBHOOK_SECRET: 'whsec_e2e_local_only',
   CRON_SECRET: 'e2e-local-cron-secret-0123456789abcdef',
@@ -110,12 +111,13 @@ export function assertSafeE2EEnv(env: EnvRecord): void {
 /** 3000番のアプリが「この設定で起動した E2E 用のもの」かを見分ける印。秘密は含めない。 */
 export function computeServerFingerprint(env: EnvRecord, mode: E2EServerMode): string {
   const material = JSON.stringify({
-    v: 1,
+    v: 2,
     mode,
     supabaseUrl: env.NEXT_PUBLIC_SUPABASE_URL ?? '',
     mailProvider: env.MAIL_PROVIDER ?? '',
     mailUrl: env.MAIL_LOCAL_URL ?? '',
     stripeKeyPrefix: (env.STRIPE_SECRET_KEY ?? '').slice(0, 8),
+    fixed: Object.fromEntries(Object.keys(E2E_FIXED_ENV).sort().map((key) => [key, env[key] ?? null])),
   });
   return createHash('sha256').update(material).digest('hex').slice(0, 32);
 }
@@ -163,9 +165,11 @@ const PROBE_SCRIPT = [
   'const isConnectionRefused = (error) => {',
   "  const cause = error && typeof error === 'object' ? error.cause : null;",
   "  if (!cause || typeof cause !== 'object') return false;",
-  "  if (cause.code === 'ECONNREFUSED') return true;",
-  '  return cause instanceof AggregateError && cause.errors.length > 0 &&',
-  "    cause.errors.every((item) => item && typeof item === 'object' && item.code === 'ECONNREFUSED');",
+  '  if (cause instanceof AggregateError) {',
+  '    return cause.errors.length > 0 &&',
+  "      cause.errors.every((item) => item && typeof item === 'object' && item.code === 'ECONNREFUSED');",
+  '  }',
+  "  return cause.code === 'ECONNREFUSED';",
   '};',
   'fetch(process.argv[1], { signal: AbortSignal.timeout(Number(process.argv[2])) })',
   '  .then(async (res) => {',
@@ -196,11 +200,11 @@ export function prepareE2EEnvironment(options: {
   baseUrl: string;
   readStatus?: () => LocalSupabaseStatus;
   probe?: (baseUrl: string) => ServerProbe;
-}): { env: Record<string, string>; reuseExistingServer: boolean } {
+}): { env: Record<string, string> } {
   if (options.isWorker) {
     // Playwright の worker は設定を読み直す。本体のプロセスが上書きした値を受け継いでいるので、確かめるだけにする。
     assertSafeE2EEnv(options.baseEnv);
-    return { env: {}, reuseExistingServer: false };
+    return { env: {} };
   }
 
   const overrides = buildE2EOverrides((options.readStatus ?? readLocalSupabaseStatus)());
@@ -209,8 +213,9 @@ export function prepareE2EEnvironment(options: {
 
   const fingerprint = computeServerFingerprint(merged, options.mode);
   const probe = (options.probe ?? probeServer)(options.baseUrl);
+  // ここでは安全でない使い回しを止めるだけで、scripts/e2e-server.mjs が印で使い回しを決める。
+  decideServerReuse(probe, fingerprint, options.strict);
   return {
     env: { ...overrides, E2E_SERVER_FINGERPRINT: fingerprint },
-    reuseExistingServer: decideServerReuse(probe, fingerprint, options.strict),
   };
 }

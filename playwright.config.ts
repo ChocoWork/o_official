@@ -73,7 +73,6 @@ export default defineConfig({
   webServer: {
     command: 'node scripts/e2e-server.mjs',
     wait: { stdout: /\[e2e-server\] ready/ },
-    env: e2e.env,
     /* next build を含むので長めに取る。 */
     timeout: 600_000,
     stdout: 'pipe',

@@ -78,8 +78,16 @@ async function isUp() {
   try {
     await fetch(BASE_URL, { signal: AbortSignal.timeout(2000) });
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    // scripts/e2e/environment.ts の probeServer と同じく、接続拒否だけを「空き」とする。
+    const cause = error && typeof error === "object" ? error.cause : null;
+    if (!cause || typeof cause !== "object") return true;
+    if (cause instanceof AggregateError) {
+      return !(cause.errors.length > 0 && cause.errors.every(
+        (item) => item && typeof item === "object" && item.code === "ECONNREFUSED",
+      ));
+    }
+    return cause.code !== "ECONNREFUSED";
   }
 }
 

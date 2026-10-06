@@ -132,6 +132,8 @@ jobs:
 
 3000番でほかのアプリ（開発サーバーなど）が動いていると、見張りが理由を出して止まる。そのアプリを止めてから流す（`Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue` で確かめる）。E2E が手元の設定で起動したアプリが残っていれば、印で確かめてビルドし直さずにそのまま使う。コードを変えた後と push の前は、止めてから流す（`E2E_STRICT=1` のときは使い回さず、残っていれば止まる）。
 
+残っている E2E 用のアプリを止めるときは、3000番で待ち受けているプロセスを止める（PowerShell: `Get-NetTCPConnection -LocalPort 3000 -State Listen | ForEach-Object { Stop-Process -Id $_.OwningProcess }`）。`.env.local` を変えた後も、残っているアプリは前の設定のままなので止めてから流す。
+
 ### タイムアウトエラー
 
 テストがタイムアウトする場合、`playwright.config.ts` の `timeout` 値を増やすか、ヘルパー関数の `waitForTimeout` 値を調整してください。
