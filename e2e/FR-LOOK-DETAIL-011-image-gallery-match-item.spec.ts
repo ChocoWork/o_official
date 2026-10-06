@@ -18,8 +18,10 @@ test.describe('FR-LOOK-DETAIL-011 画像ギャラリーを ITEM 詳細と同一�
       page.locator('[data-testid="look-detail-carousel-slide"]').first(),
     ).toBeVisible();
     await expect(
-      page.locator('[data-testid="look-thumb-button"]'),
+      // 複数画像では desktop 用サムネイルが DOM に残る。mobile での非表示を検証する。
+      page.locator('[data-testid="look-thumb-button"]').filter({ visible: true }),
     ).toHaveCount(0);
+    await expect(page.getByTestId('look-detail-thumbnail-list')).toBeHidden();
     await expect(
       page.locator('[data-testid="look-detail-main-image-frame"]'),
     ).toBeHidden();

@@ -46,7 +46,9 @@ test.describe("FR-HOME-016 ITEMカードのスクロールバー非表示", () =
 
     const cards = page
       .locator('#items [data-testid="item-card"]')
-      .filter({ has: page.getByTestId("item-card-carousel") });
+      // 1280px では7枚目以降が CSS で非表示。非表示カードの画像枚数に依存しない。
+      .filter({ has: page.getByTestId("item-card-carousel"), visible: true });
+    await expect(cards.first()).toBeVisible();
 
     let checked = 0;
     for (let i = 0; i < (await cards.count()); i += 1) {
@@ -64,8 +66,6 @@ test.describe("FR-HOME-016 ITEMカードのスクロールバー非表示", () =
       checked += 1;
     }
 
-    if (checked === 0) {
-      test.skip();
-    }
+    expect(checked).toBeGreaterThan(0);
   });
 });

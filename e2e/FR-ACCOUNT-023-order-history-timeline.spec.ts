@@ -66,6 +66,14 @@ const orders = {
 
 async function openOrdersTab(page: Page) {
 	await mockOtpAuthentication(page);
+	// ACCOUNT は配送先も取得する。実 API の 401 → refresh で認証モックが失効しないよう固定する。
+	await page.route('**/api/profile/addresses', async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ addresses: [] }),
+		});
+	});
 	await page.route('**/api/profile', async (route) => {
 		await route.fulfill({
 			status: 200,

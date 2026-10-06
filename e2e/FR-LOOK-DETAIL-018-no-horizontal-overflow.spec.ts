@@ -33,7 +33,33 @@ test.describe('FR-LOOK-DETAIL-018 横スクロールを発生させない', () =
           .filter((el) => {
             const r = el.getBoundingClientRect();
             if (r.width === 0 && r.height === 0) return false;
-            return r.right > limit + 0.5;
+            // 次のスライドはカルーセルの内側で切り取られる。画像1枚という本番データの
+            // 偶然に依存せず、祖先の overflow による切り取り後の表示領域を調べる。
+            let left = r.left;
+            let right = r.right;
+            let top = r.top;
+            let bottom = r.bottom;
+            for (
+              let parent = el.parentElement;
+              parent && parent !== document.body && parent !== document.documentElement;
+              parent = parent.parentElement
+            ) {
+              const style = getComputedStyle(parent);
+              const clips = (overflow: string) => ['hidden', 'clip', 'scroll', 'auto'].includes(overflow);
+              const bounds = parent.getBoundingClientRect();
+              if (clips(style.overflowX)) {
+                const clipLeft = bounds.left + parent.clientLeft;
+                left = Math.max(left, clipLeft);
+                right = Math.min(right, clipLeft + parent.clientWidth);
+              }
+              if (clips(style.overflowY)) {
+                const clipTop = bounds.top + parent.clientTop;
+                top = Math.max(top, clipTop);
+                bottom = Math.min(bottom, clipTop + parent.clientHeight);
+              }
+            }
+            // 切り取る親自体も列挙対象なので、カルーセル枠がはみ出せば失敗する。
+            return right > left && bottom > top && right > limit + 0.5;
           })
           .map((el) => {
             const r = el.getBoundingClientRect();

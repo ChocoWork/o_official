@@ -171,3 +171,9 @@ SELECT setval(pg_get_serial_sequence('public.item_variants', 'id'), (SELECT max(
 SELECT setval(pg_get_serial_sequence('public.looks', 'id'), (SELECT max(id) FROM public.looks), true);
 SELECT setval(pg_get_serial_sequence('public.news_articles', 'id'), (SELECT max(id) FROM public.news_articles), true);
 SELECT setval(pg_get_serial_sequence('public.stockists', 'id'), (SELECT max(id) FROM public.stockists), true);
+
+-- 本番の PostgREST は、要求ごとに private.set_request_context() を動かし、ゲストのセッションの番号を
+-- app.session_id に入れる（お気に入り・カート・注文のゲスト向けの RLS が読む）。本番ではロールの設定で
+-- 入っているが移行には無いので、手元でも同じにする（2026-10-06 に本番の設定を読んで確認）。
+ALTER ROLE authenticator SET pgrst.db_pre_request TO 'private.set_request_context';
+NOTIFY pgrst, 'reload config';
