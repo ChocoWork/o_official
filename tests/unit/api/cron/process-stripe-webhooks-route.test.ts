@@ -11,41 +11,18 @@ jest.mock('next/server', () => {
   };
 });
 
-const mockStore = { rpc: jest.fn() };
-jest.mock('@/lib/supabase/server', () => ({
-  createServiceRoleClient: jest.fn().mockResolvedValue(mockStore),
-}));
-
-const mockClaim = jest.fn();
-const mockComplete = jest.fn();
-const mockFail = jest.fn();
-jest.mock('@/lib/stripe/webhook-events', () => ({
-  claimWebhookEvent: (...args: unknown[]) => mockClaim(...args),
-  completeWebhookEvent: (...args: unknown[]) => mockComplete(...args),
-  failWebhookEvent: (...args: unknown[]) => mockFail(...args),
-  webhookErrorCategory: (error: unknown) => error instanceof Error ? error.name : 'UnknownError',
-}));
-
-const mockProcess = jest.fn();
-jest.mock('@/lib/stripe/webhook-processor', () => ({
-  processStripeWebhookEvent: (...args: unknown[]) => mockProcess(...args),
+const mockRunWebhookWorker = jest.fn();
+jest.mock('@/lib/stripe/webhook-worker', () => ({
+  runWebhookWorker: (...args: unknown[]) => mockRunWebhookWorker(...args),
 }));
 
 import { POST } from '@/app/api/cron/process-stripe-webhooks/route';
 
-const event = {
-  id: 'evt_worker_1',
-  type: 'checkout.session.expired',
-  data: { object: { id: 'cs_worker_1' } },
-};
-const claim = {
-  eventId: event.id,
-  eventType: event.type,
-  rawPayload: event,
-  claimToken: 'a31ef5a3-2987-4b66-a44f-af52a3a58943',
-};
+const CHECKS = { backlogAlerted: false, deadNotified: 0, staleAlerted: [], failedChecks: [] };
+// Task 8 で32文字以上を求めるので、はじめから32文字以上にしておく
+const CRON_SECRET = 'cron-secret-for-unit-tests-0123456789';
 
-function request(authorization = 'Bearer cron-secret'): Request {
+function request(authorization = `Bearer ${CRON_SECRET}`): Request {
   return new Request('http://localhost/api/cron/process-stripe-webhooks', {
     method: 'POST',
     headers: { authorization },
@@ -55,62 +32,27 @@ function request(authorization = 'Bearer cron-secret'): Request {
 describe('POST /api/cron/process-stripe-webhooks', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    process.env.CRON_SECRET = 'cron-secret';
-    mockClaim.mockResolvedValue(claim);
-    mockProcess.mockResolvedValue(undefined);
-    mockComplete.mockResolvedValue(undefined);
-    mockFail.mockResolvedValue(undefined);
+    process.env.CRON_SECRET = CRON_SECRET;
+    mockRunWebhookWorker.mockResolvedValue({ processed: 2, failed: 1, stoppedBy: 'empty', checks: CHECKS });
   });
 
-  it('認証されない呼出しと未設定secretを拒否し、DBを触らない', async () => {
-    expect((await POST(request('Bearer cron-secreX'))).status).toBe(401);
+  it('認証されない呼出しと未設定secretを拒否し、worker を動かさない', async () => {
+    expect((await POST(request(`Bearer ${CRON_SECRET.slice(0, -1)}X`))).status).toBe(401);
     delete process.env.CRON_SECRET;
     expect((await POST(request())).status).toBe(401);
-    expect(mockClaim).not.toHaveBeenCalled();
+    expect(mockRunWebhookWorker).not.toHaveBeenCalled();
   });
 
-  it('キューが空なら何も処理しない', async () => {
-    mockClaim.mockResolvedValue(null);
+  it('worker を1回動かし、件数と止まった理由を返す', async () => {
     const response = await POST(request());
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ processed: 0 });
-    expect(mockProcess).not.toHaveBeenCalled();
+    expect(response.body).toEqual({ processed: 2, failed: 1, stoppedBy: 'empty' });
+    expect(mockRunWebhookWorker).toHaveBeenCalledWith({ requestUrl: 'http://localhost/api/cron/process-stripe-webhooks' });
   });
 
-  it('claimしたイベントの業務処理後に同じtokenで完了させる', async () => {
-    const response = await POST(request());
-    expect(response.status).toBe(200);
-    expect(response.body).toEqual({ processed: 1 });
-    expect(mockProcess).toHaveBeenCalledWith(event, expect.anything());
-    expect(mockComplete).toHaveBeenCalledWith(mockStore, event.id, claim.claimToken);
-    expect(mockComplete.mock.invocationCallOrder[0]).toBeGreaterThan(
-      mockProcess.mock.invocationCallOrder[0],
-    );
-    expect(mockFail).not.toHaveBeenCalled();
-  });
-
-  it('業務処理失敗を永続化して次回再試行させる', async () => {
-    mockProcess.mockRejectedValue(new Error('transient database failure'));
+  it('取り出しの DB 障害は成功扱いにしない（502）', async () => {
+    mockRunWebhookWorker.mockResolvedValue({ processed: 0, failed: 0, stoppedBy: 'claim_error', checks: CHECKS });
     const response = await POST(request());
     expect(response.status).toBe(502);
-    expect(mockComplete).not.toHaveBeenCalled();
-    expect(mockFail).toHaveBeenCalledWith(
-      mockStore, event.id, claim.claimToken, expect.any(Error),
-    );
-  });
-
-  it('壊れた保存payloadを業務処理へ渡さず失敗として記録する', async () => {
-    mockClaim.mockResolvedValue({ ...claim, rawPayload: { ...event, id: 'evt_mismatch' } });
-    const response = await POST(request());
-    expect(response.status).toBe(502);
-    expect(mockProcess).not.toHaveBeenCalled();
-    expect(mockFail).toHaveBeenCalled();
-  });
-
-  it('claimのDB障害は成功扱いにしない', async () => {
-    mockClaim.mockRejectedValue(new Error('database unavailable'));
-    const response = await POST(request());
-    expect(response.status).toBe(502);
-    expect(mockProcess).not.toHaveBeenCalled();
   });
 });
