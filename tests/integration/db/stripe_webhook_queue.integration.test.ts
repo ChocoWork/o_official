@@ -39,7 +39,7 @@ describe('integration: durable Stripe webhook queue', () => {
     client = new Client({ connectionString: DATABASE_URL });
     await client.connect();
     await client.query(fs.readFileSync(
-      path.join(process.cwd(), 'supabase/migrations/20260925000303_add_stripe_webhook_queue.sql'),
+      path.join(process.cwd(), 'supabase/migrations/20261005100000_webhook_queue_dead_letter.sql'),
       'utf8',
     ));
   });
@@ -189,7 +189,7 @@ describe('integration: durable Stripe webhook queue', () => {
       await secondWorker.end();
     }
   });
-  test('期限切れleaseを再claimし、旧workerの完了を拒否する', async () => {
+  test('期限切れleaseは1回の失敗（lease_expired）として数え、次の取り出しで旧workerの完了を拒否する', async () => {
     await enqueue();
     const first = await claim();
     await client.query(
@@ -198,12 +198,188 @@ describe('integration: durable Stripe webhook queue', () => {
        where id=$1`,
       [eventId],
     );
-    const second = await client.query('select * from public.claim_stripe_webhook_event()');
-    expect(second.rows[0].claim_token).not.toBe(first.claim_token);
+    // 取り出しの最初に、期限の切れた試行を失敗にする。やり直しは1分後なので、この呼び出しでは取り出さない
+    const reaped = await client.query('select * from public.claim_stripe_webhook_event()');
+    expect(reaped.rows.find((row: { event_id: string }) => row.event_id === eventId)).toBeUndefined();
+    const afterReap = await client.query(
+      `select processing_status, last_error, claim_token,
+              extract(epoch from (next_attempt_at - now()))::int as delay_seconds
+       from public.stripe_webhook_events where id=$1`,
+      [eventId],
+    );
+    expect(afterReap.rows[0]).toEqual({
+      processing_status: 'failed',
+      last_error: 'lease_expired',
+      claim_token: null,
+      delay_seconds: 60,
+    });
+
+    const second = await claim();
+    expect(second.claim_token).not.toBe(first.claim_token);
     expect((await client.query(
       'select public.complete_stripe_webhook_event($1,$2::uuid) as completed',
       [eventId, first.claim_token],
     )).rows[0].completed).toBe(false);
+  });
+
+  test('やり直しの間隔は1・2・4…128分で、9回目の失敗で dead になり、もう取り出さない', async () => {
+    await enqueue();
+    for (let attempt = 1; attempt <= 8; attempt += 1) {
+      const claimed = await claim();
+      expect(claimed.event_id).toBe(eventId);
+      await client.query('select public.fail_stripe_webhook_event($1,$2::uuid,$3)', [
+        eventId, claimed.claim_token, 'stripe_unavailable',
+      ]);
+      const row = await client.query(
+        `select processing_status, attempt_count, last_error, dead_at,
+                extract(epoch from (next_attempt_at - now()))::int as delay_seconds
+         from public.stripe_webhook_events where id=$1`,
+        [eventId],
+      );
+      expect(row.rows[0]).toEqual({
+        processing_status: 'failed',
+        attempt_count: attempt,
+        last_error: 'stripe_unavailable',
+        dead_at: null,
+        delay_seconds: 60 * 2 ** (attempt - 1),
+      });
+    }
+
+    const ninth = await claim();
+    expect(ninth.event_id).toBe(eventId);
+    await client.query('select public.fail_stripe_webhook_event($1,$2::uuid,$3)', [
+      eventId, ninth.claim_token, 'db_unavailable',
+    ]);
+    const dead = await client.query(
+      `select processing_status, attempt_count, last_error, dead_at is not null as has_dead_at, claim_token
+       from public.stripe_webhook_events where id=$1`,
+      [eventId],
+    );
+    expect(dead.rows[0]).toEqual({
+      processing_status: 'dead',
+      attempt_count: 9,
+      last_error: 'db_unavailable',
+      has_dead_at: true,
+      claim_token: null,
+    });
+
+    const again = await claim();
+    expect(again).toBeUndefined();
+  });
+
+  test('9回目の試行の期限が切れたら、lease_expired で dead にする', async () => {
+    await enqueue();
+    await client.query(
+      `update public.stripe_webhook_events
+       set processing_status = 'processing', attempt_count = 9,
+           claim_token = gen_random_uuid(), lease_expires_at = now() - interval '1 second'
+       where id=$1`,
+      [eventId],
+    );
+    await client.query('select * from public.claim_stripe_webhook_event()');
+    const row = await client.query(
+      'select processing_status, last_error, dead_at is not null as has_dead_at from public.stripe_webhook_events where id=$1',
+      [eventId],
+    );
+    expect(row.rows[0]).toEqual({ processing_status: 'dead', last_error: 'lease_expired', has_dead_at: true });
+  });
+
+  test('受け取った時刻は、取り出しても変わらない', async () => {
+    await enqueue();
+    await client.query(
+      `update public.stripe_webhook_events set received_at = '2026-01-01T00:00:00Z' where id=$1`,
+      [eventId],
+    );
+    await claim();
+    const row = await client.query(
+      `select received_at = '2026-01-01T00:00:00Z'::timestamptz as kept, processed_at = now() as claimed_now
+       from public.stripe_webhook_events where id=$1`,
+      [eventId],
+    );
+    expect(row.rows[0]).toEqual({ kept: true, claimed_now: true });
+  });
+
+  test('退避を知らせた印は、dead でまだ知らせていない行にだけ付く', async () => {
+    await enqueue();
+    secondaryId = `${eventId}_second`;
+    await client.query(
+      'select public.enqueue_stripe_webhook_event($1,$2,$3::jsonb)',
+      [secondaryId, payload.type, JSON.stringify({ ...payload, id: secondaryId })],
+    );
+    await client.query(
+      `update public.stripe_webhook_events set processing_status = 'dead', dead_at = now() where id=$1`,
+      [eventId],
+    );
+    const first = await client.query(
+      'select public.mark_stripe_webhook_dead_notified($1::text[]) as marked',
+      [[eventId, secondaryId]],
+    );
+    expect(first.rows[0].marked).toBe(1);
+    const second = await client.query(
+      'select public.mark_stripe_webhook_dead_notified($1::text[]) as marked',
+      [[eventId, secondaryId]],
+    );
+    expect(second.rows[0].marked).toBe(0);
+    const rows = await client.query(
+      'select id, dead_notified_at is not null as notified from public.stripe_webhook_events where id = any($1::text[]) order by id',
+      [[eventId, secondaryId]],
+    );
+    expect(rows.rows).toEqual([
+      { id: eventId, notified: true },
+      { id: secondaryId, notified: false },
+    ]);
+  });
+
+  test('溜まりは、受け取ってから指定の秒数以上たって完了していない知らせを状態ごとに数え、中身は返さない', async () => {
+    await enqueue();
+    secondaryId = `${eventId}_second`;
+    await client.query(
+      'select public.enqueue_stripe_webhook_event($1,$2,$3::jsonb)',
+      [secondaryId, payload.type, JSON.stringify({ ...payload, id: secondaryId })],
+    );
+    await client.query(
+      `update public.stripe_webhook_events
+       set received_at = now() - interval '20 minutes',
+           processing_status = case when id = $1 then 'failed' else 'queued' end,
+           last_error = case when id = $1 then 'stripe_unavailable' else null end
+       where id in ($1, $2)`,
+      [eventId, secondaryId],
+    );
+    const backlog = await client.query('select * from public.get_stripe_webhook_backlog(900)');
+    const mine = backlog.rows.filter((row: { processing_status: string }) =>
+      ['failed', 'queued'].includes(row.processing_status));
+    expect(mine).toEqual([
+      expect.objectContaining({ processing_status: 'failed', event_count: expect.any(Number), last_errors: expect.arrayContaining(['stripe_unavailable']) }),
+      expect.objectContaining({ processing_status: 'queued', event_count: expect.any(Number) }),
+    ]);
+    expect(Object.keys(backlog.rows[0]).sort()).toEqual(['event_count', 'last_errors', 'oldest_received_at', 'processing_status']);
+
+    const young = await client.query('select * from public.get_stripe_webhook_backlog(1800)');
+    expect(young.rows.some((row: { oldest_received_at: Date }) =>
+      row.oldest_received_at.getTime() >= Date.now() - 21 * 60 * 1000)).toBe(false);
+  });
+
+  test('まだ知らせていない退避を古い順に上限まで返し、全件の数も返す', async () => {
+    await enqueue();
+    secondaryId = `${eventId}_second`;
+    await client.query(
+      'select public.enqueue_stripe_webhook_event($1,$2,$3::jsonb)',
+      [secondaryId, payload.type, JSON.stringify({ ...payload, id: secondaryId })],
+    );
+    await client.query(
+      `update public.stripe_webhook_events
+       set processing_status = 'dead', attempt_count = 9, last_error = 'unexpected_error',
+           dead_at = case when id = $1 then now() - interval '2 hours' else now() - interval '1 hour' end
+       where id in ($1, $2)`,
+      [eventId, secondaryId],
+    );
+    const listed = await client.query('select * from public.list_unnotified_dead_stripe_webhook_events(1)');
+    const total = listed.rows[0].total_count;
+    expect(total).toBeGreaterThanOrEqual(2);
+    expect(listed.rows).toHaveLength(1);
+    const all = await client.query('select event_id from public.list_unnotified_dead_stripe_webhook_events(1000)');
+    const order = all.rows.map((row: { event_id: string }) => row.event_id).filter((id: string) => [eventId, secondaryId].includes(id));
+    expect(order).toEqual([eventId, secondaryId]);
   });
 
   test('authenticatedはキューの直接更新とservice-role RPCを実行できない', async () => {
@@ -212,7 +388,13 @@ describe('integration: durable Stripe webhook queue', () => {
               has_table_privilege('authenticated','public.stripe_webhook_events','SELECT') as can_select,
               has_function_privilege('authenticated','public.enqueue_stripe_webhook_event(text,text,jsonb)','EXECUTE') as can_enqueue,
               has_function_privilege('authenticated','public.claim_stripe_webhook_event()','EXECUTE') as can_claim,
-              has_function_privilege('service_role','public.enqueue_stripe_webhook_event(text,text,jsonb)','EXECUTE') as service_can_enqueue`,
+              has_function_privilege('service_role','public.enqueue_stripe_webhook_event(text,text,jsonb)','EXECUTE') as service_can_enqueue,
+              has_function_privilege('authenticated','public.mark_stripe_webhook_dead_notified(text[])','EXECUTE') as can_mark_dead,
+              has_function_privilege('service_role','public.mark_stripe_webhook_dead_notified(text[])','EXECUTE') as service_can_mark_dead,
+              has_function_privilege('anon','public.get_stripe_webhook_backlog(integer)','EXECUTE') as anon_can_read_backlog,
+              has_function_privilege('service_role','public.get_stripe_webhook_backlog(integer)','EXECUTE') as service_can_read_backlog,
+              has_function_privilege('authenticated','public.list_unnotified_dead_stripe_webhook_events(integer)','EXECUTE') as can_list_dead,
+              has_function_privilege('service_role','public.list_unnotified_dead_stripe_webhook_events(integer)','EXECUTE') as service_can_list_dead`,
     );
     expect(grants.rows[0]).toEqual({
       can_update: false,
@@ -220,6 +402,12 @@ describe('integration: durable Stripe webhook queue', () => {
       can_enqueue: false,
       can_claim: false,
       service_can_enqueue: true,
+      can_mark_dead: false,
+      service_can_mark_dead: true,
+      anon_can_read_backlog: false,
+      service_can_read_backlog: true,
+      can_list_dead: false,
+      service_can_list_dead: true,
     });
 
     await client.query('set local role authenticated');
