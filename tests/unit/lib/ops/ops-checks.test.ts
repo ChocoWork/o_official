@@ -10,6 +10,7 @@ type FakeState = {
   heartbeats: unknown[];
   sentAt: Record<string, string | null>;
   failOn?: string;
+  failClaimKey?: string;
 };
 
 /** DB の関数を、送る権利の時刻まで含めてまねる */
@@ -17,7 +18,9 @@ function fakeStore(state: FakeState) {
   const calls: Array<{ name: string; params?: Record<string, unknown> }> = [];
   const rpc = jest.fn(async (name: string, params?: Record<string, unknown>) => {
     calls.push({ name, params });
-    if (state.failOn === name) return { data: null, error: { message: 'db down' } };
+    if (state.failOn === name || (name === 'claim_ops_alert' && state.failClaimKey === params?._alert_key)) {
+      return { data: null, error: { message: 'db down' } };
+    }
     switch (name) {
       case 'get_stripe_webhook_backlog':
         return { data: state.backlog, error: null };
@@ -65,6 +68,10 @@ function heartbeat(job: string, lastSucceededAt: string | null) {
 }
 
 describe('runOpsChecks', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('何も無ければ知らせない', async () => {
     const send = jest.fn();
     const { store } = fakeStore(emptyState());
@@ -84,6 +91,9 @@ describe('runOpsChecks', () => {
     expect(first.backlogAlerted).toBe(true);
     expect(send.mock.calls[0][0].kind).toBe('webhook_backlog');
     expect(calls.find((call) => call.name === 'get_stripe_webhook_backlog')?.params).toEqual({ _older_than_seconds: 900 });
+    expect(calls.find((call) => call.name === 'claim_ops_alert')?.params).toEqual({
+      _alert_key: 'webhook_backlog', _cooldown_seconds: 3600,
+    });
 
     const second = await runOpsChecks({ store, send, now: () => NOW });
     expect(second.backlogAlerted).toBe(false);
@@ -99,6 +109,31 @@ describe('runOpsChecks', () => {
     expect((await runOpsChecks({ store, send, now: () => NOW })).backlogAlerted).toBe(false);
     expect(calls.some((call) => call.name === 'release_ops_alert')).toBe(true);
     expect((await runOpsChecks({ store, send, now: () => NOW })).backlogAlerted).toBe(true);
+  });
+
+  it('溜まりの送信が例外を投げても権利を返し、1時間以内の次の点検で送れる', async () => {
+    const state = emptyState();
+    state.backlog = [{ processing_status: 'queued', event_count: 1, oldest_received_at: '2026-10-05T11:00:00Z', last_errors: [] }];
+    const { store, calls } = fakeStore(state);
+    const send = jest.fn<Promise<boolean>, [OpsAlertMail]>()
+      .mockRejectedValueOnce(new TypeError('mail provider details'))
+      .mockResolvedValueOnce(true);
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const first = await runOpsChecks({ store, send, now: () => NOW });
+    expect(first.backlogAlerted).toBe(false);
+    expect(first.failedChecks).toEqual(['backlog']);
+    expect(state.sentAt.webhook_backlog).toBeNull();
+    expect(calls.find((call) => call.name === 'release_ops_alert')?.params).toEqual({
+      _alert_key: 'webhook_backlog', _claimed_at: NOW.toISOString(), _previous_sent_at: null,
+    });
+    expect(log).toHaveBeenCalledWith('[ops-checks] backlog check failed', 'TypeError');
+
+    const second = await runOpsChecks({ store, send, now: () => NOW });
+    expect(second.backlogAlerted).toBe(true);
+    expect(second.failedChecks).toEqual([]);
+    expect(state.sentAt.webhook_backlog).toBe(NOW.toISOString());
+    expect(send).toHaveBeenCalledTimes(2);
   });
 
   it('退避が60件でも1通、載せるのは50件まで。送れた50件に印を付ける', async () => {
@@ -130,6 +165,52 @@ describe('runOpsChecks', () => {
     expect(calls.some((call) => call.name === 'release_ops_alert')).toBe(true);
   });
 
+  it('退避の送信が例外を投げたら前の送信時刻に戻し、次の点検で送って印を付ける', async () => {
+    const state = emptyState();
+    state.dead = [deadRow(1, 1)];
+    state.sentAt.webhook_dead = '2026-10-05T10:00:00Z';
+    const { store, calls } = fakeStore(state);
+    const send = jest.fn<Promise<boolean>, [OpsAlertMail]>()
+      .mockRejectedValueOnce(new Error('mail provider details'))
+      .mockResolvedValueOnce(true);
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const first = await runOpsChecks({ store, send, now: () => NOW });
+    expect(first.deadNotified).toBe(0);
+    expect(first.failedChecks).toEqual(['dead']);
+    expect(state.sentAt.webhook_dead).toBe('2026-10-05T10:00:00Z');
+    expect(calls.some((call) => call.name === 'mark_stripe_webhook_dead_notified')).toBe(false);
+    expect(calls.find((call) => call.name === 'release_ops_alert')?.params).toEqual({
+      _alert_key: 'webhook_dead', _claimed_at: NOW.toISOString(), _previous_sent_at: '2026-10-05T10:00:00Z',
+    });
+
+    const second = await runOpsChecks({ store, send, now: () => NOW });
+    expect(second.deadNotified).toBe(1);
+    expect(second.failedChecks).toEqual([]);
+    expect(state.sentAt.webhook_dead).toBe(NOW.toISOString());
+    expect(calls.find((call) => call.name === 'mark_stripe_webhook_dead_notified')?.params).toEqual({ _event_ids: ['evt_1'] });
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['list_unnotified_dead_stripe_webhook_events', 0],
+    ['mark_stripe_webhook_dead_notified', 1],
+  ])('退避の %s が失敗したログは固定のRPC名を含み、DBの中身を含まない', async (operation, sentCount) => {
+    const state = emptyState();
+    state.dead = [deadRow(1, 1)];
+    state.failOn = operation;
+    const { store, calls } = fakeStore(state);
+    const send = jest.fn<Promise<boolean>, [OpsAlertMail]>().mockResolvedValue(true);
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const result = await runOpsChecks({ store, send, now: () => NOW });
+    expect(result.failedChecks).toEqual(['dead']);
+    expect(result.deadNotified).toBe(0);
+    expect(send).toHaveBeenCalledTimes(sentCount);
+    expect(log).toHaveBeenCalledWith('[ops-checks] dead check failed', `ops store failed: ${operation}`);
+    expect(calls.some((call) => call.name === 'release_ops_alert')).toBe(false);
+  });
+
   it.each([
     ['order_sweep', '2026-10-05T10:00:00Z', true],
     ['order_sweep', '2026-10-05T10:00:01Z', false],
@@ -143,6 +224,57 @@ describe('runOpsChecks', () => {
 
     const result = await runOpsChecks({ store, send, now: () => NOW });
     expect(result.staleAlerted.includes(job as 'order_sweep' | 'stripe_reconcile')).toBe(expected);
+  });
+
+  it('見回りの権利取得が失敗しても、同じ点検で照合の遅れを知らせる', async () => {
+    const state = emptyState();
+    state.heartbeats = [heartbeat('order_sweep', '2026-10-05T09:00:00Z'), heartbeat('stripe_reconcile', '2026-10-04T10:00:00Z')];
+    state.failClaimKey = 'job_stale_order_sweep';
+    const { store, calls } = fakeStore(state);
+    const send = jest.fn<Promise<boolean>, [OpsAlertMail]>().mockResolvedValue(true);
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const result = await runOpsChecks({ store, send, now: () => NOW });
+    expect(result.failedChecks).toEqual(['stale']);
+    expect(result.staleAlerted).toEqual(['stripe_reconcile']);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0].subject).toContain('毎晩の照合');
+    expect(calls.filter((call) => call.name === 'claim_ops_alert').map((call) => call.params?._alert_key)).toEqual([
+      'job_stale_order_sweep', 'job_stale_stripe_reconcile',
+    ]);
+  });
+
+  it('両方の定期処理が遅れたら、それぞれのキーと1時間の制限で知らせる', async () => {
+    const state = emptyState();
+    state.heartbeats = [heartbeat('order_sweep', '2026-10-05T09:00:00Z'), heartbeat('stripe_reconcile', '2026-10-04T10:00:00Z')];
+    const { store, calls } = fakeStore(state);
+    const send = jest.fn<Promise<boolean>, [OpsAlertMail]>().mockResolvedValue(true);
+
+    const result = await runOpsChecks({ store, send, now: () => NOW });
+    expect(result.staleAlerted).toEqual(['order_sweep', 'stripe_reconcile']);
+    expect(result.failedChecks).toEqual([]);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(calls.filter((call) => call.name === 'claim_ops_alert').map((call) => call.params)).toEqual([
+      { _alert_key: 'job_stale_order_sweep', _cooldown_seconds: 3600 },
+      { _alert_key: 'job_stale_stripe_reconcile', _cooldown_seconds: 3600 },
+    ]);
+  });
+
+  it('両方の遅れの点検が失敗しても、失敗一覧のstaleは1つだけにする', async () => {
+    const state = emptyState();
+    state.heartbeats = [heartbeat('order_sweep', '2026-10-05T09:00:00Z'), heartbeat('stripe_reconcile', '2026-10-04T10:00:00Z')];
+    state.failOn = 'claim_ops_alert';
+    const { store, calls } = fakeStore(state);
+    const send = jest.fn<Promise<boolean>, [OpsAlertMail]>().mockResolvedValue(true);
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const result = await runOpsChecks({ store, send, now: () => NOW });
+    expect(result.failedChecks).toEqual(['stale']);
+    expect(result.staleAlerted).toEqual([]);
+    expect(send).not.toHaveBeenCalled();
+    expect(calls.filter((call) => call.name === 'claim_ops_alert').map((call) => call.params?._alert_key)).toEqual([
+      'job_stale_order_sweep', 'job_stale_stripe_reconcile',
+    ]);
   });
 
   it('一度も成功していない定期処理は、遅れの対象にしない（開店前）', async () => {

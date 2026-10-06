@@ -2,6 +2,7 @@ import {
   claimAlert,
   listUnnotifiedDeadEvents,
   markDeadEventsNotified,
+  OpsStoreError,
   readHeartbeats,
   readWebhookBacklog,
   releaseAlert,
@@ -45,16 +46,23 @@ export type OpsCheckResult = {
 
 const STALE_JOBS = ['order_sweep', 'stripe_reconcile'] as const;
 
-async function sendOnce(deps: OpsCheckDeps, key: OpsAlertKey, mail: () => OpsAlertMail): Promise<boolean> {
+async function sendOnce(deps: OpsCheckDeps, key: OpsAlertKey, mail: OpsAlertMail): Promise<boolean> {
   const claim = await claimAlert(deps.store, key, OPS_CHECK_LIMITS.alertCooldownSeconds);
   if (!claim) return false;
-  if (await deps.send(mail())) return true;
-  await releaseAlert(deps.store, claim);
-  return false;
+  let sent = false;
+  try {
+    sent = await deps.send(mail);
+  } finally {
+    if (!sent) await releaseAlert(deps.store, claim);
+  }
+  return sent;
 }
 
 function logFailure(check: string, error: unknown): void {
-  console.error(`[ops-checks] ${check} check failed`, error instanceof Error ? error.name : 'UnknownError');
+  console.error(
+    `[ops-checks] ${check} check failed`,
+    error instanceof OpsStoreError ? error.message : error instanceof Error ? error.name : 'UnknownError',
+  );
 }
 
 export async function runOpsChecks(deps: OpsCheckDeps): Promise<OpsCheckResult> {
@@ -63,7 +71,8 @@ export async function runOpsChecks(deps: OpsCheckDeps): Promise<OpsCheckResult> 
   try {
     const backlog = await readWebhookBacklog(deps.store, OPS_CHECK_LIMITS.backlogAgeSeconds);
     if (backlog.length > 0) {
-      result.backlogAlerted = await sendOnce(deps, 'webhook_backlog', () => backlogAlertMail(backlog));
+      const mail = backlogAlertMail(backlog);
+      result.backlogAlerted = await sendOnce(deps, 'webhook_backlog', mail);
     }
   } catch (error) {
     result.failedChecks.push('backlog');
@@ -73,13 +82,11 @@ export async function runOpsChecks(deps: OpsCheckDeps): Promise<OpsCheckResult> 
   try {
     const { events, total } = await listUnnotifiedDeadEvents(deps.store, OPS_CHECK_LIMITS.deadDigestLimit);
     if (events.length > 0) {
-      const claim = await claimAlert(deps.store, 'webhook_dead', OPS_CHECK_LIMITS.alertCooldownSeconds);
-      if (claim) {
-        if (await deps.send(deadDigestMail(events, total))) {
-          result.deadNotified = await markDeadEventsNotified(deps.store, events.map((event) => event.eventId));
-        } else {
-          await releaseAlert(deps.store, claim);
-        }
+      const mail = deadDigestMail(events, total);
+      if (await sendOnce(deps, 'webhook_dead', mail)) {
+        // 送信後の印付けに失敗したら、1時間後の点検で同じ退避を再送する（at-least-once）。
+        // 知らせを失うより再送を選ぶ（1時間に1回まで）。
+        result.deadNotified = await markDeadEventsNotified(deps.store, events.map((event) => event.eventId));
       }
     }
   } catch (error) {
@@ -90,12 +97,18 @@ export async function runOpsChecks(deps: OpsCheckDeps): Promise<OpsCheckResult> 
   try {
     const heartbeats = await readHeartbeats(deps.store);
     for (const job of STALE_JOBS) {
-      const lastSucceededAt = heartbeats[job]?.lastSucceededAt;
-      if (!lastSucceededAt) continue;
-      const elapsedMs = deps.now().getTime() - lastSucceededAt.getTime();
-      if (elapsedMs < OPS_CHECK_LIMITS.staleAfterSeconds[job] * 1000) continue;
-      if (await sendOnce(deps, `job_stale_${job}`, () => staleJobMail(job, lastSucceededAt))) {
-        result.staleAlerted.push(job);
+      try {
+        const lastSucceededAt = heartbeats[job]?.lastSucceededAt;
+        if (!lastSucceededAt) continue;
+        const elapsedMs = deps.now().getTime() - lastSucceededAt.getTime();
+        if (elapsedMs < OPS_CHECK_LIMITS.staleAfterSeconds[job] * 1000) continue;
+        const mail = staleJobMail(job, lastSucceededAt);
+        if (await sendOnce(deps, `job_stale_${job}`, mail)) {
+          result.staleAlerted.push(job);
+        }
+      } catch (error) {
+        if (!result.failedChecks.includes('stale')) result.failedChecks.push('stale');
+        logFailure('stale', error);
       }
     }
   } catch (error) {
