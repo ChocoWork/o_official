@@ -43,7 +43,7 @@ describe('店への知らせのメールの文面', () => {
     expect(body).toContain('2026/10/05 9:00');
   });
 
-  it('退避: 50件まで並べ、残りの件数と、見回りと照合が合わせることを書く', () => {
+  it('退避: 渡された知らせを並べ、残りの件数と、見回りと照合が合わせることを書く', () => {
     const events = Array.from({ length: 50 }, (_, i) => deadEvent(i + 1));
     const mail = deadDigestMail(events, 60);
     expect(mail.kind).toBe('webhook_dead');
@@ -55,14 +55,50 @@ describe('店への知らせのメールの文面', () => {
     expect(body).toContain('注文の状態は毎時の見回りが、返金と会計は毎晩の照合が Stripe に合わせます。');
   });
 
+  it.each([
+    'stripe_unavailable',
+    'db_unavailable',
+    'not_converged',
+    'lease_expired',
+    'invalid_payload',
+    'unexpected_error',
+  ])('溜まりと退避: 原因の記号 %s をそのまま書く', (cause) => {
+    const backlog = backlogAlertMail([
+      { status: 'failed', count: 1, oldestReceivedAt: new Date('2026-10-05T00:00:00Z'), lastErrors: [cause] },
+    ]);
+    const dead = deadDigestMail([{ ...deadEvent(1), cause }], 1);
+    expect(backlog.lines.join('\n')).toContain(`原因: ${cause}`);
+    expect(dead.lines.join('\n')).toContain(`原因: ${cause}`);
+  });
+
+  it('溜まり: 原因の自由文は unexpected_error にしてメールアドレスを載せない', () => {
+    const mail = backlogAlertMail([
+      { status: 'failed', count: 2, oldestReceivedAt: new Date('2026-10-05T00:00:00Z'), lastErrors: ['stripe_unavailable', 'Error: buyer@example.com'] },
+    ]);
+    const body = `${mail.subject}\n${mail.lines.join('\n')}`;
+    expect(body).toContain('原因: stripe_unavailable、unexpected_error');
+    expect(body).not.toContain('Error: buyer@example.com');
+    expect(body).not.toContain('buyer@example.com');
+  });
+
+  it.each(['Error: buyer@example.com', null])('退避: 原因 %s は unexpected_error にしてメールアドレスを載せない', (cause) => {
+    const mail = deadDigestMail([{ ...deadEvent(1), cause }], 1);
+    const body = `${mail.subject}\n${mail.lines.join('\n')}`;
+    expect(body).toContain('原因: unexpected_error');
+    expect(body).not.toContain('Error: buyer@example.com');
+    expect(body).not.toContain('buyer@example.com');
+  });
+
   it('遅れ: 定期処理の名前と、最後の成功の時刻を書く', () => {
     const sweep = staleJobMail('order_sweep', new Date('2026-10-05T01:00:00Z'));
     expect(sweep.kind).toBe('job_stale');
     expect(sweep.subject).toBe('【要確認】定期処理が止まっています（毎時の見回り）');
     expect(sweep.lines.join('\n')).toContain('2時間以上');
+    expect(sweep.lines.join('\n')).toContain('最後の成功: 2026/10/05 10:00');
     const reconcile = staleJobMail('stripe_reconcile', new Date('2026-10-05T01:00:00Z'));
     expect(reconcile.subject).toBe('【要確認】定期処理が止まっています（毎晩の照合）');
     expect(reconcile.lines.join('\n')).toContain('25時間以上');
+    expect(reconcile.lines.join('\n')).toContain('最後の成功: 2026/10/05 10:00');
   });
 
   it('署名不正: 10分の件数と、合言葉を確かめる案内を書く', () => {
@@ -79,20 +115,60 @@ describe('店への知らせのメールの文面', () => {
     expect(mail.kind).toBe('webhook_mode_mismatch');
     expect(mail.subject).toBe('【要対応】Stripe の本番とテストの知らせが混ざっています');
     expect(mail.lines.join('\n')).toContain('届いた知らせ: テスト、このアプリの鍵: 本番');
+    expect(mail.lines).toContain('モードの違う知らせは処理していません（この知らせは1時間に1回までなので、続けて届いた分は書いていません）。');
     expect(modeMismatchMail(true, null).lines.join('\n')).toContain('このアプリの鍵: 不明');
   });
 
   it('支払いから作った注文: 注文番号と金額、在庫の理由が重なったことを書く', () => {
     const mail = recoveredOrdersMail([
       { orderId: '11111111-2222-3333-4444-555555555555', reviewReason: 'recovered_from_payment', totalAmount: 89000, currency: 'jpy' },
-      { orderId: '66666666-7777-8888-9999-000000000000', reviewReason: 'stock_not_reserved', totalAmount: null, currency: null },
+      { orderId: '66666666-7777-8888-9999-000000000000', reviewReason: 'stock_not_reserved', totalAmount: null, currency: 'jpy' },
+      { orderId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', reviewReason: 'recovered_from_payment', totalAmount: 1200, currency: null },
     ]);
     expect(mail.kind).toBe('orders_recovered_from_payment');
-    expect(mail.subject).toBe('【要確認】支払いから作った注文（2件）');
+    expect(mail.subject).toBe('【要確認】支払いから作った注文（3件）');
     const body = mail.lines.join('\n');
     expect(body).toContain('89,000');
     expect(body).toContain('（在庫も確保できていません）');
     expect(body).toContain('お客様へ確認してください');
+    const orderLines = mail.lines.filter((line) => line.startsWith('- 注文番号 '));
+    expect(orderLines).toHaveLength(3);
+    expect(orderLines[0]).toContain('注文番号 ORD-11111111');
+    expect(orderLines[0]).toContain('89,000');
+    expect(orderLines[0]).not.toContain('（在庫も確保できていません）');
+    expect(orderLines[1]).toBe('- 注文番号 ORD-66666666 金額不明（在庫も確保できていません）');
+    expect(orderLines[2]).toBe('- 注文番号 ORD-AAAAAAAA 金額不明');
+    expect(orderLines[2]).not.toContain('（在庫も確保できていません）');
+    const stockGuidance = '在庫を確保できていない注文は、先に在庫の手当てをしてください。';
+    expect(mail.lines).toContain(stockGuidance);
+    expect(mail.lines.indexOf(stockGuidance)).toBeGreaterThan(mail.lines.indexOf(orderLines[2]));
+    expect(mail.lines.indexOf(stockGuidance)).toBeLessThan(mail.lines.indexOf('管理画面の ORDER タブの「要対応・要確認」で、確認したら確認済みにしてください。'));
+  });
+
+  it('支払いから作った注文: 自動メールの送信と決済画面で完了を見ていない可能性を案内する', () => {
+    const mail = recoveredOrdersMail([
+      { orderId: '11111111-2222-3333-4444-555555555555', reviewReason: 'recovered_from_payment', totalAmount: 89000, currency: 'jpy' },
+    ]);
+    expect(mail.lines).toContain('お客様には注文確定（またはお支払い待ち）のメールが自動で届いていますが、決済の画面で注文の完了を見ていない可能性があります。注文の内容をお客様へ確認してください。');
+  });
+
+  it('支払いから作った注文: 在庫未確保の注文が無ければ在庫の案内を書かない', () => {
+    const mail = recoveredOrdersMail([
+      { orderId: '11111111-2222-3333-4444-555555555555', reviewReason: 'recovered_from_payment', totalAmount: 89000, currency: 'jpy' },
+    ]);
+    expect(mail.lines.join('\n')).not.toContain('（在庫も確保できていません）');
+    expect(mail.lines).not.toContain('在庫を確保できていない注文は、先に在庫の手当てをしてください。');
+  });
+
+  it('支払いから作った注文: 通貨が2文字でも例外を出さず金額を書く', () => {
+    const orders = [{
+      orderId: '11111111-2222-3333-4444-555555555555',
+      reviewReason: 'recovered_from_payment' as const,
+      totalAmount: 89000,
+      currency: 'jp',
+    }];
+    expect(() => recoveredOrdersMail(orders)).not.toThrow();
+    expect(recoveredOrdersMail(orders).lines).toContain('- 注文番号 ORD-11111111 ¥89,000');
   });
 
   it('どの文面にもメールアドレスを入れない', () => {
@@ -133,9 +209,23 @@ describe('sendOpsAlertMail', () => {
   });
 
   it('宛先か差出人が無ければ送らずに false', async () => {
-    delete process.env.SHOP_ALERT_EMAIL;
-    await expect(sendOpsAlertMail(signatureAlertMail(5))).resolves.toBe(false);
-    expect(mockSendMail).not.toHaveBeenCalled();
+    const to = process.env.SHOP_ALERT_EMAIL;
+    const from = process.env.MAIL_FROM_ADDRESS;
+    try {
+      delete process.env.SHOP_ALERT_EMAIL;
+      await expect(sendOpsAlertMail(signatureAlertMail(5))).resolves.toBe(false);
+      expect(mockSendMail).not.toHaveBeenCalled();
+
+      process.env.SHOP_ALERT_EMAIL = to;
+      delete process.env.MAIL_FROM_ADDRESS;
+      await expect(sendOpsAlertMail(signatureAlertMail(5))).resolves.toBe(false);
+      expect(mockSendMail).not.toHaveBeenCalled();
+    } finally {
+      if (to === undefined) delete process.env.SHOP_ALERT_EMAIL;
+      else process.env.SHOP_ALERT_EMAIL = to;
+      if (from === undefined) delete process.env.MAIL_FROM_ADDRESS;
+      else process.env.MAIL_FROM_ADDRESS = from;
+    }
   });
 
   it('送れなければ false を返し、種類だけを監査に残す', async () => {

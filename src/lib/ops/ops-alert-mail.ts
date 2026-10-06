@@ -1,7 +1,9 @@
 import { sendMail } from '@/lib/mail';
 import { logAudit } from '@/lib/audit';
 import { toOrderNumber } from '@/lib/orders/order-number';
+import { formatCurrency } from '@/lib/orders/order-confirmation-email';
 import type { BacklogRow, DeadEvent, RecoveredReviewReason } from '@/lib/ops/ops-store';
+import type { WebhookFailureCause } from '@/lib/stripe/webhook-events';
 
 /**
  * 店への知らせのメール（設計書 2026-10-05 グループ B の第6章）。
@@ -32,6 +34,15 @@ const STATUS_LABELS: Record<BacklogRow['status'], string> = {
   failed: 'やり直し待ち',
 };
 
+const FAILURE_CAUSES: readonly WebhookFailureCause[] = [
+  'stripe_unavailable',
+  'db_unavailable',
+  'not_converged',
+  'lease_expired',
+  'invalid_payload',
+  'unexpected_error',
+];
+
 const STALE_JOBS = {
   order_sweep: { label: '毎時の見回り', hours: 2 },
   stripe_reconcile: { label: '毎晩の照合', hours: 25 },
@@ -47,7 +58,12 @@ function formatJst(date: Date): string {
 
 function formatAmount(amount: number | null, currency: string | null): string {
   if (amount === null || !currency) return '金額不明';
-  return new Intl.NumberFormat('ja-JP', { style: 'currency', currency: currency.toUpperCase() }).format(amount);
+  return formatCurrency(amount, currency);
+}
+
+function formatCause(cause: string | null): WebhookFailureCause {
+  const code = cause ?? 'unexpected_error';
+  return FAILURE_CAUSES.find((allowedCause) => allowedCause === code) ?? 'unexpected_error';
 }
 
 export function backlogAlertMail(rows: BacklogRow[]): OpsAlertMail {
@@ -58,7 +74,7 @@ export function backlogAlertMail(rows: BacklogRow[]): OpsAlertMail {
       '受け取ってから15分以上たっても、処理が終わっていない Stripe の知らせがあります。',
       '',
       ...rows.map((row) => {
-        const causes = row.lastErrors.length > 0 ? ` 原因: ${row.lastErrors.join('、')}` : '';
+        const causes = row.lastErrors.length > 0 ? ` 原因: ${row.lastErrors.map(formatCause).join('、')}` : '';
         return `${STATUS_LABELS[row.status]}: ${row.count}件（いちばん古い受け取り: ${formatJst(row.oldestReceivedAt)}）${causes}`;
       }),
       '',
@@ -76,7 +92,7 @@ export function deadDigestMail(events: DeadEvent[], total: number): OpsAlertMail
       '8回やり直しても処理できなかった Stripe の知らせを退避しました（これ以上やり直しません）。',
       '',
       ...events.map((event) =>
-        `- ${event.eventId}（${event.eventType}） 原因: ${event.cause ?? 'unexpected_error'} `
+        `- ${event.eventId}（${event.eventType}） 原因: ${formatCause(event.cause)} `
         + `受け取り: ${formatJst(event.receivedAt)} 試行: ${event.attemptCount}回`),
       ...(rest > 0 ? [`（ほかに ${rest} 件。次の知らせで送ります）`] : []),
       '',
@@ -121,7 +137,7 @@ export function modeMismatchMail(eventLivemode: boolean, keyLivemode: boolean | 
     lines: [
       `届いた知らせ: ${eventLivemode ? '本番' : 'テスト'}、このアプリの鍵: ${keyLabel}`,
       '',
-      'この知らせは処理していません。',
+      'モードの違う知らせは処理していません（この知らせは1時間に1回までなので、続けて届いた分は書いていません）。',
       `Stripe の知らせの宛先と、STRIPE_SECRET_KEY・STRIPE_WEBHOOK_SECRET の組み合わせを確かめてください（${RUNBOOK}の「モード違いの知らせが来たとき」）。`,
     ],
   };
@@ -133,11 +149,13 @@ export function recoveredOrdersMail(orders: RecoveredOrderSummary[]): OpsAlertMa
     subject: `【要確認】支払いから作った注文（${orders.length}件）`,
     lines: [
       'Stripe に支払いがあったのに注文が無かったため、毎時の見回りが注文を作りました。',
-      'お客様は注文の完了を見ていない可能性があります。注文の内容をお客様へ確認してください。',
+      'お客様には注文確定（またはお支払い待ち）のメールが自動で届いていますが、決済の画面で注文の完了を見ていない可能性があります。注文の内容をお客様へ確認してください。',
       '',
       ...orders.map((order) =>
         `- 注文番号 ${toOrderNumber(order.orderId)} ${formatAmount(order.totalAmount, order.currency)}`
         + (order.reviewReason === 'stock_not_reserved' ? '（在庫も確保できていません）' : '')),
+      ...(orders.some((order) => order.reviewReason === 'stock_not_reserved')
+        ? ['在庫を確保できていない注文は、先に在庫の手当てをしてください。'] : []),
       '',
       '管理画面の ORDER タブの「要対応・要確認」で、確認したら確認済みにしてください。',
     ],
