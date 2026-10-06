@@ -2859,13 +2859,13 @@ process.env.STRIPE_SECRET_KEY = 'sk_test_ingest';
 同じファイルの `jest.mock('next/server', …)` の塊を次に置き換える（`after` を記録する）:
 
 ```ts
-const afterCallbacks: Array<() => unknown> = [];
+const mockAfterCallbacks: Array<() => unknown> = [];
 jest.mock('next/server', () => {
   const original = jest.requireActual('next/server');
   return {
     ...original,
     after: (callback: () => unknown) => {
-      afterCallbacks.push(callback);
+      mockAfterCallbacks.push(callback);
     },
     NextResponse: {
       json: jest.fn((body: unknown, init?: { status?: number }) => ({
@@ -2898,11 +2898,11 @@ jest.mock('@/lib/ops/webhook-receiver-signals', () => ({
 }));
 
 async function runAfterCallbacks(): Promise<void> {
-  for (const callback of afterCallbacks.splice(0)) await callback();
+  for (const callback of mockAfterCallbacks.splice(0)) await callback();
 }
 ```
 
-同じファイルの `beforeEach` の本体の最初に `afterCallbacks.length = 0;` を足す。
+同じファイルの `beforeEach` の本体の最初に `mockAfterCallbacks.length = 0;` を足す。
 
 同じファイルで `mockConstructEvent.mockReturnValue(event)` に渡している知らせの3か所（`evt_fast_ack`・`evt_store_failed`・`evt_duplicate`）すべてに `livemode: false` を足す（例: `const event = { id: 'evt_fast_ack', type: 'refund.failed', livemode: false, data: { … } };`）。`evt_store_failed` の `type: 'payment_intent.succeeded'` は13種に入っているのでそのままにする。
 
