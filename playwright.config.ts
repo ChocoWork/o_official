@@ -29,6 +29,8 @@ Object.assign(process.env, e2e.env);
  */
 export default defineConfig({
   testDir: './e2e',
+  /* 手元の Storage に見本の画像を置く（npx supabase db reset で消えるので毎回置き直す）。 */
+  globalSetup: './scripts/e2e/global-setup.ts',
   /*
    * ファイル内のテストも並列に流す。16 論理コアあるので逐次実行は待ち時間が無駄になる。
    * 並列度は PW_WORKERS で調整する（干渉が出たら下げる。retries で誤魔化さない）。
