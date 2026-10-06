@@ -91,7 +91,74 @@ describe('reconcileStripeOrders', () => {
     });
 
     expect(report.syncedBalanceTransactions).toBe(1);
-    expect(report.errors).toEqual([{ sourceId: 'pi_a', reason: 'stripe unavailable' }]);
+    expect(report.errors).toEqual([{ sourceId: 'pi_a', reason: 'unexpected_error' }]);
+  });
+  it('records a refund sync failure without aborting the remaining payments（設計書 4-5）', async () => {
+    const orders = [
+      { payment_intent_id: 'pi_a', refunded_amount: 0 },
+      { payment_intent_id: 'pi_b', refunded_amount: 0 },
+    ];
+    const database = { from: () => ({ select: async () => ({ data: orders, error: null }) }) };
+    const stripe = {
+      paymentIntents: {
+        list: () => [
+          { id: 'pi_a', status: 'succeeded', amount: 1000 },
+          { id: 'pi_b', status: 'succeeded', amount: 1000 },
+        ],
+      },
+      refunds: { list: () => [{ status: 'succeeded', amount: 500, created: 1 }] },
+    };
+    const syncRefunds = jest
+      .fn()
+      .mockRejectedValueOnce(Object.assign(new Error('Stripe is down for buyer@example.com'), { statusCode: 503 }))
+      .mockResolvedValueOnce(undefined);
+    const syncAccounting = jest.fn().mockResolvedValue({ disposition: 'inserted' });
+
+    const report = await reconcileStripeOrders({ database, stripe, syncRefunds, syncAccounting });
+
+    expect(syncRefunds).toHaveBeenCalledTimes(2);
+    expect(report.syncedRefunds).toBe(1);
+    expect(report.errors).toEqual([{ sourceId: 'pi_a', reason: 'stripe_unavailable' }]);
+    expect(JSON.stringify(report)).not.toContain('buyer@example.com');
+    expect(syncAccounting).toHaveBeenCalledWith('pi_a');
+    expect(syncAccounting).toHaveBeenCalledWith('pi_b');
+  });
+
+  it('records a refund listing failure and continues with the next payment', async () => {
+    const orders = [{ payment_intent_id: 'pi_b', refunded_amount: 0 }];
+    const database = { from: () => ({ select: async () => ({ data: orders, error: null }) }) };
+    const stripe = {
+      paymentIntents: {
+        list: () => [
+          { id: 'pi_a', status: 'succeeded', amount: 1000 },
+          { id: 'pi_b', status: 'succeeded', amount: 1000 },
+        ],
+      },
+      refunds: {
+        list: ({ payment_intent }: { payment_intent: string }) => {
+          if (payment_intent === 'pi_a') {
+            throw Object.assign(new Error('connection reset'), { type: 'StripeConnectionError' });
+          }
+          return [];
+        },
+      },
+    };
+
+    const report = await reconcileStripeOrders({ database, stripe, syncRefunds: jest.fn() });
+
+    expect(report.checkedPayments).toBe(2);
+    expect(report.errors).toEqual([{ sourceId: 'pi_a', reason: 'stripe_unavailable' }]);
+    expect(report.unmatchedActivePayments).toEqual([]);
+  });
+
+  it('reports a database failure while loading orders as db_unavailable', async () => {
+    const database = {
+      from: () => ({ select: async () => ({ data: null, error: { message: 'connection refused' } }) }),
+    };
+    const stripe = { paymentIntents: { list: () => [] }, refunds: { list: () => [] } };
+
+    await expect(reconcileStripeOrders({ database, stripe, syncRefunds: jest.fn() }))
+      .rejects.toMatchObject({ code: 'db_unavailable' });
   });
 });
 
@@ -127,6 +194,6 @@ describe('reconcileStripePayouts', () => {
     const report = await reconcileStripePayouts({ stripe, syncPayout });
 
     expect(report.syncedPayouts).toBe(1);
-    expect(report.errors).toEqual([{ sourceId: 'po_1', reason: 'payout sync failed' }]);
+    expect(report.errors).toEqual([{ sourceId: 'po_1', reason: 'unexpected_error' }]);
   });
 });

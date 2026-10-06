@@ -2,6 +2,12 @@ jest.mock('next/server', () => ({
   NextResponse: { json: (body: unknown, init?: { status?: number }) => ({ status: init?.status ?? 200, json: async () => body }) },
 }));
 jest.mock('@/lib/supabase/server', () => ({ createServiceRoleClient: jest.fn() }));
+const mockLogAudit = jest.fn().mockResolvedValue(undefined);
+jest.mock('@/lib/audit', () => ({ logAudit: (...args: unknown[]) => mockLogAudit(...args) }));
+const mockRecordHeartbeat = jest.fn();
+jest.mock('@/lib/ops/ops-store', () => ({
+  recordHeartbeat: (...args: unknown[]) => mockRecordHeartbeat(...args),
+}));
 jest.mock('@/lib/stripe/server', () => ({ getStripeServerClient: jest.fn() }));
 jest.mock('@/lib/stripe/reconcile-orders', () => ({
   reconcileStripeOrders: jest.fn(),
@@ -13,6 +19,9 @@ jest.mock('@/lib/stripe/supabase-accounting-database', () => ({
 
 import * as reconcileRoute from '@/app/api/cron/stripe-reconcile/route';
 import { reconcileStripeOrders, reconcileStripePayouts } from '@/lib/stripe/reconcile-orders';
+import { createServiceRoleClient } from '@/lib/supabase/server';
+
+const mockDatabase = { name: 'service-role-client' };
 
 const mockReconcileOrders = reconcileStripeOrders as jest.Mock;
 const mockReconcilePayouts = reconcileStripePayouts as jest.Mock;
@@ -28,16 +37,25 @@ function authorizedRequest(): Request {
 }
 
 describe('POST /api/cron/stripe-reconcile', () => {
+  let warn: jest.SpyInstance;
+
   beforeEach(() => {
     process.env.CRON_SECRET = CRON_SECRET;
     jest.clearAllMocks();
+    warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    (createServiceRoleClient as jest.Mock).mockResolvedValue(mockDatabase);
+    mockRecordHeartbeat.mockResolvedValue(undefined);
   });
-  afterEach(() => { delete process.env.CRON_SECRET; });
+  afterEach(() => {
+    warn.mockRestore();
+    delete process.env.CRON_SECRET;
+  });
 
   it('rejects requests without the cron bearer token', async () => {
     const response = await POST(new Request('http://localhost/api/cron/stripe-reconcile', { method: 'POST' }));
     expect(response.status).toBe(401);
     expect(reconcileStripeOrders).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a CRON_SECRET shorter than 32 characters even when the header matches', async () => {
@@ -48,6 +66,7 @@ describe('POST /api/cron/stripe-reconcile', () => {
     }));
     expect(response.status).toBe(401);
     expect(reconcileStripeOrders).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 
   it('is called with POST only (pg_net sends POST)', () => {
@@ -105,11 +124,71 @@ describe('POST /api/cron/stripe-reconcile', () => {
   });
 
   it('returns 502 when reconciliation itself throws', async () => {
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
     mockReconcileOrders.mockRejectedValue(new Error('database down'));
     mockReconcilePayouts.mockResolvedValue({ syncedPayouts: 0, payoutMismatches: 0, errors: [] });
 
     const response = await POST(authorizedRequest());
 
     expect(response.status).toBe(502);
+    error.mockRestore();
+  });
+
+  it('records the run as succeeded and audits the counts with failure causes only', async () => {
+    mockReconcileOrders.mockResolvedValue({
+      checkedPayments: 2,
+      unmatchedActivePayments: [],
+      refundMismatches: [],
+      syncedBalanceTransactions: 1,
+      syncedRefunds: 0,
+      errors: [{ sourceId: 'pi_1', reason: 'stripe_unavailable' }],
+    });
+    mockReconcilePayouts.mockResolvedValue({ syncedPayouts: 1, payoutMismatches: 0, errors: [] });
+
+    const response = await POST(authorizedRequest());
+
+    expect(response.status).toBe(200);
+    expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockDatabase, 'stripe_reconcile', true, null);
+    expect(mockLogAudit).toHaveBeenCalledTimes(1);
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'stripe.reconcile',
+      resource: 'stripe',
+      outcome: 'error',
+      metadata: expect.objectContaining({
+        failed: 1,
+        errors: [{ sourceId: 'pi_1', reason: 'stripe_unavailable' }],
+      }),
+    }));
+  });
+
+  it('records the run as failed with a cause code when reconciliation throws', async () => {
+    mockReconcileOrders.mockRejectedValue(Object.assign(new Error('x'), { code: 'db_unavailable' }));
+    mockReconcilePayouts.mockResolvedValue({ syncedPayouts: 0, payoutMismatches: 0, errors: [] });
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await POST(authorizedRequest());
+
+    expect(response.status).toBe(502);
+    expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockDatabase, 'stripe_reconcile', false, 'db_unavailable');
+    // ログには原因の記号だけを出す（例外そのものを渡さない）
+    expect(error).toHaveBeenCalledWith('[stripe-reconcile] Reconciliation failed', 'db_unavailable');
+    error.mockRestore();
+  });
+
+  it('still answers 200 when the heartbeat cannot be recorded', async () => {
+    mockReconcileOrders.mockResolvedValue({
+      checkedPayments: 0,
+      unmatchedActivePayments: [],
+      refundMismatches: [],
+      syncedBalanceTransactions: 0,
+      syncedRefunds: 0,
+      errors: [],
+    });
+    mockReconcilePayouts.mockResolvedValue({ syncedPayouts: 0, payoutMismatches: 0, errors: [] });
+    mockRecordHeartbeat.mockRejectedValue(new Error('db down'));
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect((await POST(authorizedRequest())).status).toBe(200);
+    error.mockRestore();
   });
 });

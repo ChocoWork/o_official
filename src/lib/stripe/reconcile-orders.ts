@@ -1,4 +1,6 @@
 import { calculateSucceededRefundTotal, type RefundSnapshot } from './order-refund-sync';
+import { ReconcileTransientError } from './checkout-payment-reader';
+import { webhookFailureCause, type WebhookFailureCause } from './webhook-events';
 
 type OrderState = { payment_intent_id: string; refunded_amount: number | null };
 type ReconcileDatabase = {
@@ -12,7 +14,8 @@ type ReconcileStripe = {
   refunds: { list(params: { payment_intent: string; limit: number }): AsyncIterable<RefundSnapshot> | Iterable<RefundSnapshot> };
 };
 
-export type StripeReconciliationError = { sourceId: string; reason: string };
+/** 照合の1件ずつの失敗。原因の記号だけを残す（設計書 2026-10-05 グループ B の 3-3・4-5） */
+export type StripeReconciliationError = { sourceId: string; reason: WebhookFailureCause };
 
 export type StripeOrderReconciliationReport = {
   checkedPayments: number;
@@ -23,8 +26,8 @@ export type StripeOrderReconciliationReport = {
   errors: StripeReconciliationError[];
 };
 
-function reasonOf(error: unknown): string {
-  return error instanceof Error ? error.message : 'unknown error';
+function failureOf(sourceId: string, error: unknown): StripeReconciliationError {
+  return { sourceId, reason: webhookFailureCause(error) };
 }
 
 export async function reconcileStripeOrders({
@@ -39,7 +42,7 @@ export async function reconcileStripeOrders({
   syncAccounting?: (paymentIntentId: string) => Promise<unknown>;
 }): Promise<StripeOrderReconciliationReport> {
   const { data: orders, error } = await database.from('orders').select('payment_intent_id, refunded_amount');
-  if (error) throw new Error(`Failed to load orders: ${error.message ?? 'database error'}`);
+  if (error) throw new ReconcileTransientError('db_unavailable');
   const ordersByPayment = new Map((orders ?? []).map((order) => [order.payment_intent_id, order]));
   const report: StripeOrderReconciliationReport = {
     checkedPayments: 0,
@@ -53,28 +56,33 @@ export async function reconcileStripeOrders({
   for await (const payment of stripe.paymentIntents.list({ limit: 100 })) {
     if (payment.status !== 'succeeded') continue;
     report.checkedPayments += 1;
-    const refunds: RefundSnapshot[] = [];
-    for await (const refund of stripe.refunds.list({ payment_intent: payment.id, limit: 100 })) refunds.push(refund);
-    const stripeRefunded = calculateSucceededRefundTotal(refunds).amount;
     const order = ordersByPayment.get(payment.id);
-    if (!order) {
-      if (stripeRefunded < payment.amount) report.unmatchedActivePayments.push(payment.id);
-      continue;
-    }
-    const databaseRefunded = order.refunded_amount ?? 0;
-    if (stripeRefunded !== databaseRefunded) {
-      report.refundMismatches.push({ paymentIntentId: payment.id, stripe: stripeRefunded, database: databaseRefunded });
-      await syncRefunds(payment.id);
-      report.syncedRefunds += 1;
+
+    // 支払いごとに失敗を受け止め、その回の残りを止めない（設計書 4-5）
+    try {
+      const refunds: RefundSnapshot[] = [];
+      for await (const refund of stripe.refunds.list({ payment_intent: payment.id, limit: 100 })) refunds.push(refund);
+      const stripeRefunded = calculateSucceededRefundTotal(refunds).amount;
+      if (!order) {
+        if (stripeRefunded < payment.amount) report.unmatchedActivePayments.push(payment.id);
+      } else {
+        const databaseRefunded = order.refunded_amount ?? 0;
+        if (stripeRefunded !== databaseRefunded) {
+          report.refundMismatches.push({ paymentIntentId: payment.id, stripe: stripeRefunded, database: databaseRefunded });
+          await syncRefunds(payment.id);
+          report.syncedRefunds += 1;
+        }
+      }
+    } catch (refundError) {
+      report.errors.push(failureOf(payment.id, refundError));
     }
 
-    if (syncAccounting) {
-      try {
-        await syncAccounting(payment.id);
-        report.syncedBalanceTransactions += 1;
-      } catch (error) {
-        report.errors.push({ sourceId: payment.id, reason: reasonOf(error) });
-      }
+    if (!order || !syncAccounting) continue;
+    try {
+      await syncAccounting(payment.id);
+      report.syncedBalanceTransactions += 1;
+    } catch (accountingError) {
+      report.errors.push(failureOf(payment.id, accountingError));
     }
   }
   return report;
@@ -110,7 +118,7 @@ export async function reconcileStripePayouts({
       report.syncedPayouts += 1;
       if (result.reconciliationStatus === 'mismatch') report.payoutMismatches += 1;
     } catch (error) {
-      report.errors.push({ sourceId: payout.id, reason: reasonOf(error) });
+      report.errors.push(failureOf(payout.id, error));
     }
   }
   return report;
