@@ -24,7 +24,7 @@
 | Playwright E2E | `playwright.config.ts` の `e2e/`、Chromium。画面・API を通る利用者の流れを確認 | `npm run test:e2e -- e2e/FR-ABOUT-001-brand-philosophy-section.spec.ts` |
 | 運用確認 | DB 適用、外部 Webhook、アーカイブ復元等の実環境での結果を確認 | 対象の運用手順と実行記録を参照 |
 
-Playwright は `http://localhost:3000` を使用する。設定上は既存サーバーを再利用でき、`E2E_STRICT=1` では自前のビルドから起動する。CI では再試行が設定されている。ファイル発見や `--list` は実行結果に含めない。
+Playwright は `http://localhost:3000` を使い、手元の Supabase に対して流す。3000番のアプリは、E2E が手元の設定で起動したもの（印が一致するもの）だけをビルドし直さずに使い回し、それ以外は止まる。`E2E_STRICT=1` では使い回さず、3000番が空いていなければ止まる。CI では再試行が設定されている。ファイル発見や `--list` は実行結果に含めない。
 
 ## リスクに応じた優先順位
 

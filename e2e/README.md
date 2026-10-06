@@ -130,7 +130,7 @@ jobs:
 
 ### ポート衝突
 
-3000番でほかのアプリ（開発サーバーなど）が動いていると、見張りが理由を出して止まる。そのアプリを止めてから流す（`Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue` で確かめる）。E2E が手元の設定で起動したアプリが残っていれば、印で確かめてそのまま使う（`E2E_STRICT=1` のときは使い回さないので、止めてから流す）。
+3000番でほかのアプリ（開発サーバーなど）が動いていると、見張りが理由を出して止まる。そのアプリを止めてから流す（`Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue` で確かめる）。E2E が手元の設定で起動したアプリが残っていれば、印で確かめてビルドし直さずにそのまま使う。コードを変えた後と push の前は、止めてから流す（`E2E_STRICT=1` のときは使い回さず、残っていれば止まる）。
 
 ### タイムアウトエラー
 

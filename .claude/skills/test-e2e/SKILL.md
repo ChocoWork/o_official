@@ -32,6 +32,8 @@ npx playwright test --reporter=line               # 全件実行時はこちら�
 
 E2E は手元の Supabase（`npm run db:start`・`npm run db:reset`）に対して流す。`playwright.config.ts` の見張り（`scripts/e2e/environment.ts`）が、本番の Supabase の住所・本番の Stripe の鍵・外へのメールを拒み、3000番で E2E 用でないアプリ（`npm run dev` など）が動いていれば止まる。止まったら、3000番のアプリを止めてから流す。
 
+E2E が起動したアプリはテスト後も3000番に残り、次の実行では印が合えばビルドし直さずにそのまま使う。コードを変えた後と push の前は、3000番のアプリを止めてから流すこと（pre-push は `E2E_STRICT=1` なので、残っているアプリがあると E2E を流さずに止まり、警告だけで push が続く）。
+
 ```powershell
 Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue
 ```
