@@ -5620,7 +5620,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 # Stripe の知らせのキューと定期処理の手順書
 
 > 対象: Stripe の知らせ（Webhook）の受け取り口・キュー・worker、毎時の見回り、毎晩の照合、店への知らせ
-> 設計: [グループ B 設計書](../superpowers/specs/2026-10-05-webhook-queue-operations-design.md)、保留中の SQL: [supabase/pending/README.md](../../supabase/pending/README.md)
+> 設計: グループ B 設計書（`docs/superpowers/specs/2026-10-05-webhook-queue-operations-design.md`）、保留中の SQL: `supabase/pending/README.md`
 
 ---
 
@@ -5662,7 +5662,7 @@ flowchart TD
 |---|---|---|---|
 | 1 | Vercel に公開し、環境変数を入れる。`CRON_SECRET` は32文字以上のランダムな値（例: `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`）。`SHOP_ALERT_EMAIL`・`MAIL_FROM_ADDRESS`・`STRIPE_SECRET_KEY`（本番の鍵）も入れる | ユーザー | 公開した URL で画面が開く |
 | 2 | 本番 DB で `create extension if not exists pg_net with schema extensions;` を流し、Vault に `cron_secret`（Vercel の `CRON_SECRET` と同じ値）と `app_base_url`（公開した URL）を入れる | 合言葉はユーザー、それ以外は Claude（許可を得て） | `select name from vault.decrypted_secrets where name in ('cron_secret', 'app_base_url');` が2行 |
-| 3 | `supabase/pending/` の `schedule_stripe_webhook_worker.sql`・`schedule_expire_pending_orders.sql`・`schedule_stripe_reconcile.sql` を、新しい version の移行にして当てる（[README](../../supabase/pending/README.md)） | Claude（許可を得て） | `select jobname, schedule, active from cron.job order by jobname;` に4つ（掃除を含む）が `active` |
+| 3 | `supabase/pending/` の `schedule_stripe_webhook_worker.sql`・`schedule_expire_pending_orders.sql`・`schedule_stripe_reconcile.sql` を、新しい version の移行にして当てる（`supabase/pending/README.md` の手順） | Claude（許可を得て） | `select jobname, schedule, active from cron.job order by jobname;` に4つ（掃除を含む）が `active` |
 | 4 | 定期処理が成功しているのを確かめる | Claude | 6 の SQL。worker は数分後、見回りは次の毎時0分の後、照合は次の 18:00 UTC の後、掃除は次の 19:00 UTC の後。`ops_job_heartbeats` に成功の時刻が入る |
 | 5 | Stripe の管理画面で知らせの宛先（`<公開した URL>/api/webhook/stripe`）を作り、4 の13種を購読し、署名の合言葉を Vercel の `STRIPE_WEBHOOK_SECRET` に入れて出し直す | ユーザー | Stripe の管理画面で宛先が有効 |
 | 6 | 最初の知らせ（テストの決済など）が処理されたのを確かめる | Claude | `stripe_webhook_events` の新しい行が `completed` |
