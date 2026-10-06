@@ -15,6 +15,7 @@
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:debug": "playwright test --debug",
+    "e2e:compare": "tsx scripts/e2e/compare-baseline.ts",
     "validate-docs": "node scripts/validate-design-docs.js",
     "report:traceability": "node scripts/generate-coverage-report.js",
     "check-coverage": "node scripts/generate-coverage-report.js --strict",
