@@ -235,6 +235,14 @@ describe('店への知らせのメールの文面', () => {
       expect(body).toContain('支払いや入金を Stripe と合わせられませんでした');
     });
 
+    it('注文の無い支払いがあれば、まず ORDER タブで注文ができていないか確かめるよう書く（見回りが同じ頃に作ることがある）', () => {
+      const withUnmatched = reconcileFindingsMail({ unmatched: [payment(1)], errors: [] }).lines.join('\n');
+      expect(withUnmatched).toContain('まず管理画面の ORDER タブで注文ができていないか確かめてください');
+      expect(withUnmatched).toContain('それでも注文が無ければ、お客様に連絡して、注文を作るか返金してください。');
+      const errorsOnly = reconcileFindingsMail({ unmatched: [], errors: [failure(1)] }).lines.join('\n');
+      expect(errorsOnly).not.toContain('ORDER タブ');
+    });
+
     it('支払いも失敗も20行まで書き、残りは「（ほかに N 件）」にまとめる。件名の件数は全件', () => {
       const mail = reconcileFindingsMail({
         unmatched: Array.from({ length: 25 }, (_, i) => payment(i + 1)),
