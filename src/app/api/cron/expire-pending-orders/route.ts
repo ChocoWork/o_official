@@ -95,14 +95,24 @@ function resolveHourlyBatchOffset(totalOrders: number, nowMs: number): number {
   return (hour % batchCount) * MAX_ORDERS_PER_RUN;
 }
 
-/** 最後の成功・失敗を記録し、点検する（設計書 2026-10-05 グループ B の 4-6）。どちらの失敗も応答を変えない。 */
-async function finishSweep(store: OpsStore, succeeded: boolean, errorCode: string | null): Promise<void> {
+/** 最後の成功・失敗を記録する（設計書 2026-10-05 グループ B の 4-6）。記録の失敗で応答を変えない。 */
+async function recordSweepRun(store: OpsStore, succeeded: boolean, errorCode: string | null): Promise<void> {
   try {
     await recordHeartbeat(store, 'order_sweep', succeeded, errorCode);
   } catch (error) {
     console.error('[cron] failed to record the sweep heartbeat', error instanceof Error ? error.name : 'UnknownError');
   }
-  await runOpsChecks({ store, send: sendOpsAlertMail, now: () => new Date() });
+}
+
+/** 溜まり・退避・遅れを点検する。点検の失敗は runOpsChecks が受け止め、応答を変えない。 */
+function runChecks(store: OpsStore) {
+  return runOpsChecks({ store, send: sendOpsAlertMail, now: () => new Date() });
+}
+
+/** 失敗の経路: 失敗を記録してから点検する。成功の経路は、記録を拾い上げの直後に、点検を最後に行う。 */
+async function finishSweep(store: OpsStore, succeeded: boolean, errorCode: string | null): Promise<void> {
+  await recordSweepRun(store, succeeded, errorCode);
+  await runChecks(store);
 }
 
 export async function POST(request: Request) {
@@ -240,6 +250,10 @@ export async function POST(request: Request) {
     }
   }
 
+  // 最後の成功は、遅くなりうる後続（要約の読み込み・メール・監査の行）の前に記録する。
+  // 後続で実行の上限（60秒）に届いても、見回りが動いたことは残り、遅れの知らせが誤って出ない。
+  await recordSweepRun(opsStore, true, null);
+
   // 拾って作った注文は、その回の1通にまとめて店へ知らせる（見回り1回につき1通。設計書 6）
   let recoveredOrdersNotified = false;
   if (recovery && recovery.recovered.length > 0) {
@@ -281,6 +295,6 @@ export async function POST(request: Request) {
     metadata: { ...summary, failed_order_ids: failedOrderIds.slice(0, 20) },
   });
 
-  await finishSweep(opsStore, true, null);
+  await runChecks(opsStore);
   return NextResponse.json(summary);
 }

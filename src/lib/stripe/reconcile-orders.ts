@@ -8,7 +8,7 @@ type ReconcileDatabase = {
     select(columns: string): Promise<{ data: OrderState[] | null; error: { message?: string } | null }>;
   };
 };
-type PaymentIntentSnapshot = { id: string; status: string; amount: number };
+type PaymentIntentSnapshot = { id: string; status: string; amount: number; currency: string; created: number };
 type ReconcileStripe = {
   paymentIntents: { list(params: { limit: number }): AsyncIterable<PaymentIntentSnapshot> | Iterable<PaymentIntentSnapshot> };
   refunds: { list(params: { payment_intent: string; limit: number }): AsyncIterable<RefundSnapshot> | Iterable<RefundSnapshot> };
@@ -17,9 +17,16 @@ type ReconcileStripe = {
 /** 照合の1件ずつの失敗。原因の記号だけを残す（設計書 2026-10-05 グループ B の 3-3・4-5） */
 export type StripeReconciliationError = { sourceId: string; reason: WebhookFailureCause };
 
+/** 注文の無い成功の支払いのうち、直近7日に作られたもの。毎晩の店への知らせに載せる（設計書 2026-10-05 グループ B の 6） */
+export type UnmatchedRecentPayment = { id: string; amount: number; currency: string; created: number };
+
+/** 注文の無い支払いを「直近」と数える期間 */
+const RECENT_PAYMENT_SECONDS = 7 * 24 * 60 * 60;
+
 export type StripeOrderReconciliationReport = {
   checkedPayments: number;
   unmatchedActivePayments: string[];
+  unmatchedRecentPayments: UnmatchedRecentPayment[];
   refundMismatches: Array<{ paymentIntentId: string; stripe: number; database: number }>;
   syncedBalanceTransactions: number;
   syncedRefunds: number;
@@ -35,18 +42,22 @@ export async function reconcileStripeOrders({
   stripe,
   syncRefunds,
   syncAccounting,
+  now = () => new Date(),
 }: {
   database: ReconcileDatabase;
   stripe: ReconcileStripe;
   syncRefunds: (paymentIntentId: string) => Promise<unknown>;
   syncAccounting?: (paymentIntentId: string) => Promise<unknown>;
+  now?: () => Date;
 }): Promise<StripeOrderReconciliationReport> {
   const { data: orders, error } = await database.from('orders').select('payment_intent_id, refunded_amount');
   if (error) throw new ReconcileTransientError('db_unavailable');
   const ordersByPayment = new Map((orders ?? []).map((order) => [order.payment_intent_id, order]));
+  const recentSince = Math.floor(now().getTime() / 1000) - RECENT_PAYMENT_SECONDS;
   const report: StripeOrderReconciliationReport = {
     checkedPayments: 0,
     unmatchedActivePayments: [],
+    unmatchedRecentPayments: [],
     refundMismatches: [],
     syncedBalanceTransactions: 0,
     syncedRefunds: 0,
@@ -64,7 +75,17 @@ export async function reconcileStripeOrders({
       for await (const refund of stripe.refunds.list({ payment_intent: payment.id, limit: 100 })) refunds.push(refund);
       const stripeRefunded = calculateSucceededRefundTotal(refunds).amount;
       if (!order) {
-        if (stripeRefunded < payment.amount) report.unmatchedActivePayments.push(payment.id);
+        if (stripeRefunded < payment.amount) {
+          report.unmatchedActivePayments.push(payment.id);
+          if (payment.created >= recentSince) {
+            report.unmatchedRecentPayments.push({
+              id: payment.id,
+              amount: payment.amount,
+              currency: payment.currency,
+              created: payment.created,
+            });
+          }
+        }
       } else {
         const databaseRefunded = order.refunded_amount ?? 0;
         if (stripeRefunded !== databaseRefunded) {

@@ -7,12 +7,14 @@ import {
   backlogAlertMail,
   deadDigestMail,
   modeMismatchMail,
+  reconcileFindingsMail,
   recoveredOrdersMail,
   sendOpsAlertMail,
   signatureAlertMail,
   staleJobMail,
 } from '@/lib/ops/ops-alert-mail';
 import type { DeadEvent } from '@/lib/ops/ops-store';
+import type { StripeReconciliationError, UnmatchedRecentPayment } from '@/lib/stripe/reconcile-orders';
 
 const mockSendMail = sendMail as jest.Mock;
 const mockLogAudit = logAudit as jest.Mock;
@@ -43,7 +45,7 @@ describe('店への知らせのメールの文面', () => {
     expect(body).toContain('2026/10/05 9:00');
   });
 
-  it('退避: 渡された知らせを並べ、残りの件数と、見回りと照合が合わせることを書く', () => {
+  it('退避: 渡された知らせを並べ、残りの件数と、見回りと照合が合わせること（注文を作るのは直近24時間まで）を書く', () => {
     const events = Array.from({ length: 50 }, (_, i) => deadEvent(i + 1));
     const mail = deadDigestMail(events, 60);
     expect(mail.kind).toBe('webhook_dead');
@@ -52,7 +54,8 @@ describe('店への知らせのメールの文面', () => {
     expect(mail.lines.filter((line) => line.startsWith('- evt_'))).toHaveLength(50);
     expect(body).toContain('- evt_1（refund.updated） 原因: unexpected_error');
     expect(body).toContain('（ほかに 10 件。次の知らせで送ります）');
-    expect(body).toContain('注文の状態は毎時の見回りが、返金と会計は毎晩の照合が Stripe に合わせます。');
+    expect(mail.lines).toContain('注文の状態は毎時の見回りが、返金と会計は毎晩の照合が Stripe に合わせます。ただし、見回りが注文を作るのは、直近24時間の Checkout Session の支払いだけです。');
+    expect(mail.lines).toContain('それより古い、注文の無い支払いは、直近7日の分を毎晩の照合のメールでお知らせします。');
   });
 
   it.each([
@@ -190,6 +193,109 @@ describe('店への知らせのメールの文面', () => {
     expect(recoveredOrdersMail(orders).lines).toContain('- 注文番号 ORD-11111111 ¥89,000');
   });
 
+  describe('照合で見つかったこと', () => {
+    const created = Date.parse('2026-10-05T00:00:00Z') / 1000;
+    const payment = (n: number): UnmatchedRecentPayment => ({ id: `pi_${n}`, amount: 1000 + n, currency: 'jpy', created });
+    const failure = (n: number): StripeReconciliationError => ({ sourceId: `po_${n}`, reason: 'stripe_unavailable' });
+
+    it('件名に注文なしと失敗の件数を書き、支払いと失敗を1行ずつ並べる', () => {
+      const mail = reconcileFindingsMail({
+        unmatched: [
+          { id: 'pi_1', amount: 89000, currency: 'jpy', created },
+          { id: 'pi_2', amount: 1200, currency: 'jpy', created: Date.parse('2026-10-05T01:30:00Z') / 1000 },
+        ],
+        errors: [
+          { sourceId: 'pi_9', reason: 'stripe_unavailable' },
+          { sourceId: 'po_1', reason: 'db_unavailable' },
+          { sourceId: 'po_2', reason: 'not_converged' },
+        ],
+      });
+
+      expect(mail.kind).toBe('reconcile_findings');
+      expect(mail.subject).toBe('【要確認】毎晩の照合で注文の無い支払い・失敗が見つかりました（注文なし 2件・失敗 3件）');
+      const items = mail.lines.filter((line) => line.startsWith('- '));
+      expect(items).toHaveLength(5);
+      expect(items[0]).toContain('pi_1');
+      expect(items[0]).toContain('89,000');
+      expect(items[0]).toContain('2026/10/05 9:00');
+      expect(items[1]).toContain('pi_2');
+      expect(items[1]).toContain('1,200');
+      expect(items[1]).toContain('2026/10/05 10:30');
+      expect(items.slice(2)).toEqual([
+        '- pi_9 原因: stripe_unavailable',
+        '- po_1 原因: db_unavailable',
+        '- po_2 原因: not_converged',
+      ]);
+    });
+
+    it('何が起きたかを書く（支払い済みで注文が無いこと、支払いや入金を合わせられなかったこと）', () => {
+      const body = reconcileFindingsMail({ unmatched: [payment(1)], errors: [failure(1)] }).lines.join('\n');
+      expect(body).toContain('Stripe には成功した支払いがあるのに、注文がありません');
+      expect(body).toContain('お客様は支払い済みで、注文が無い状態です');
+      expect(body).toContain('支払いや入金を Stripe と合わせられませんでした');
+    });
+
+    it('支払いも失敗も20行まで書き、残りは「（ほかに N 件）」にまとめる。件名の件数は全件', () => {
+      const mail = reconcileFindingsMail({
+        unmatched: Array.from({ length: 25 }, (_, i) => payment(i + 1)),
+        errors: Array.from({ length: 23 }, (_, i) => failure(i + 1)),
+      });
+
+      expect(mail.subject).toContain('（注文なし 25件・失敗 23件）');
+      expect(mail.lines.filter((line) => line.startsWith('- pi_'))).toHaveLength(20);
+      expect(mail.lines.filter((line) => line.startsWith('- po_'))).toHaveLength(20);
+      expect(mail.lines).toContain('（ほかに 5 件）');
+      expect(mail.lines).toContain('（ほかに 3 件）');
+      const body = mail.lines.join('\n');
+      expect(body).not.toContain('pi_21');
+      expect(body).not.toContain('po_21');
+    });
+
+    it('20件ちょうどはそのまま書き、21件目から「（ほかに 1 件）」にする', () => {
+      const exact = reconcileFindingsMail({ unmatched: Array.from({ length: 20 }, (_, i) => payment(i + 1)), errors: [] });
+      expect(exact.lines.filter((line) => line.startsWith('- pi_'))).toHaveLength(20);
+      expect(exact.lines.join('\n')).not.toContain('ほかに');
+
+      const over = reconcileFindingsMail({ unmatched: Array.from({ length: 21 }, (_, i) => payment(i + 1)), errors: [] });
+      expect(over.lines.filter((line) => line.startsWith('- pi_'))).toHaveLength(20);
+      expect(over.lines).toContain('（ほかに 1 件）');
+    });
+
+    it('支払いだけのときは失敗の見出しを書かず、失敗だけのときは支払いの見出しを書かない', () => {
+      const onlyPayments = reconcileFindingsMail({ unmatched: [payment(1)], errors: [] });
+      expect(onlyPayments.subject).toContain('（注文なし 1件・失敗 0件）');
+      expect(onlyPayments.lines.join('\n')).not.toContain('合わせられなかった');
+
+      const onlyErrors = reconcileFindingsMail({ unmatched: [], errors: [failure(1)] });
+      expect(onlyErrors.subject).toContain('（注文なし 0件・失敗 1件）');
+      expect(onlyErrors.lines.join('\n')).not.toContain('注文がありません');
+      expect(onlyErrors.lines.filter((line) => line.startsWith('- '))).toEqual(['- po_1 原因: stripe_unavailable']);
+    });
+
+    it('次にやること: Stripe のダッシュボードで確かめ、注文が無ければお客様へ連絡して注文を作るか返金し、手順書の見出しを指す', () => {
+      const body = reconcileFindingsMail({ unmatched: [payment(1)], errors: [] }).lines.join('\n');
+      expect(body).toContain('Stripe のダッシュボードで');
+      expect(body).toContain('お客様に連絡して、注文を作るか返金してください');
+      expect(body).toContain('手順書（docs/06_Operations/webhook-queue-operations.md）の「照合で見つかったことの知らせが来たとき」');
+    });
+
+    it('お客様の名前・住所・メールアドレスは、渡されても書かない。原因の自由文は unexpected_error にする', () => {
+      const payments = [{
+        ...payment(1),
+        receipt_email: 'buyer@example.com',
+        shipping: { name: '山田 太郎', address: { line1: '渋谷区1-2-3' } },
+        billing_details: { name: '山田 花子', email: 'buyer@example.com' },
+      }];
+      const errors = [{ sourceId: 'pi_9', reason: 'Error: buyer@example.com' }] as unknown as StripeReconciliationError[];
+
+      const mail = reconcileFindingsMail({ unmatched: payments, errors });
+
+      const body = `${mail.subject}\n${mail.lines.join('\n')}`;
+      expect(body).not.toMatch(/@|buyer|山田|渋谷/);
+      expect(body).toContain('- pi_9 原因: unexpected_error');
+    });
+  });
+
   it('どの文面にもメールアドレスを入れない', () => {
     const mails = [
       backlogAlertMail([{ status: 'queued', count: 1, oldestReceivedAt: new Date(), lastErrors: [] }]),
@@ -198,6 +304,10 @@ describe('店への知らせのメールの文面', () => {
       signatureAlertMail(5),
       modeMismatchMail(true, false),
       recoveredOrdersMail([{ orderId: '11111111-2222-3333-4444-555555555555', reviewReason: 'recovered_from_payment', totalAmount: 100, currency: 'jpy' }]),
+      reconcileFindingsMail({
+        unmatched: [{ id: 'pi_1', amount: 100, currency: 'jpy', created: Date.parse('2026-10-05T00:00:00Z') / 1000 }],
+        errors: [{ sourceId: 'po_1', reason: 'stripe_unavailable' }],
+      }),
     ];
     for (const mail of mails) {
       expect(`${mail.subject}\n${mail.lines.join('\n')}`).not.toMatch(/@/);

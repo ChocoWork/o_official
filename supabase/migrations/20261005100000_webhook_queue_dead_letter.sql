@@ -48,7 +48,7 @@ LANGUAGE sql
 IMMUTABLE
 SET search_path = ''
 AS $$
-  SELECT pg_catalog.make_interval(mins => (2 ^ GREATEST(_failed_attempts - 1, 0))::integer)
+  SELECT pg_catalog.make_interval(mins => (2 ^ LEAST(GREATEST(_failed_attempts - 1, 0), 7))::integer)
 $$;
 
 CREATE OR REPLACE FUNCTION public.claim_stripe_webhook_event()

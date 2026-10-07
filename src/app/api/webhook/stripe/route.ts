@@ -66,7 +66,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const keyLivemode = stripeKeyLivemode(process.env.STRIPE_SECRET_KEY);
-  if (keyLivemode === null || event.livemode !== keyLivemode) {
+  if (keyLivemode === null) {
+    // 鍵は設定されているが、本番でもテストでもない（引用符つきで貼った・pk_ の鍵など）。200 を返すと知らせが失われるので、
+    // 500 を返して Stripe に最大3日送り直させる。モード違いの知らせは、数えて店へ知らせる
+    console.error('[webhook] STRIPE_SECRET_KEY has an unknown prefix');
+    after(() => recordModeMismatch(signalDeps, event.livemode, null));
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+  if (event.livemode !== keyLivemode) {
     console.warn('[webhook] Event mode does not match the secret key', event.id);
     after(() => recordModeMismatch(signalDeps, event.livemode, keyLivemode));
     return NextResponse.json({ received: true, ignored: true });

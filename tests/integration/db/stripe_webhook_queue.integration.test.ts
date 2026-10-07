@@ -267,6 +267,19 @@ describe('integration: durable Stripe webhook queue', () => {
     expect(again).toBeUndefined();
   });
 
+  test('やり直しの間隔は128分で頭打ちになり、試行回数が大きくてもあふれない', async () => {
+    const delays = await client.query(
+      `select private.stripe_webhook_retry_delay(1) = interval '1 minute' as one_attempt,
+              private.stripe_webhook_retry_delay(8) = interval '128 minutes' as eight_attempts,
+              private.stripe_webhook_retry_delay(40) = interval '128 minutes' as forty_attempts`,
+    );
+    expect(delays.rows[0]).toEqual({
+      one_attempt: true,
+      eight_attempts: true,
+      forty_attempts: true,
+    });
+  });
+
   test('9回目の試行の期限が切れたら、lease_expired で dead にする', async () => {
     await enqueue();
     await client.query(

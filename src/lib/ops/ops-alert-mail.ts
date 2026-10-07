@@ -4,6 +4,7 @@ import { toOrderNumber } from '@/lib/orders/order-number';
 import { formatCurrency } from '@/lib/orders/order-confirmation-email';
 import type { BacklogRow, DeadEvent, RecoveredReviewReason } from '@/lib/ops/ops-store';
 import type { WebhookFailureCause } from '@/lib/stripe/webhook-events';
+import type { StripeReconciliationError, UnmatchedRecentPayment } from '@/lib/stripe/reconcile-orders';
 
 /**
  * 店への知らせのメール（設計書 2026-10-05 グループ B の第6章）。
@@ -15,7 +16,8 @@ export type OpsAlertKind =
   | 'job_stale'
   | 'webhook_signature_invalid'
   | 'webhook_mode_mismatch'
-  | 'orders_recovered_from_payment';
+  | 'orders_recovered_from_payment'
+  | 'reconcile_findings';
 
 export type OpsAlertMail = { kind: OpsAlertKind; subject: string; lines: string[] };
 
@@ -97,7 +99,8 @@ export function deadDigestMail(events: DeadEvent[], total: number): OpsAlertMail
         + `受け取り: ${formatJst(event.receivedAt)} 試行: ${event.attemptCount}回`),
       ...(rest > 0 ? [`（ほかに ${rest} 件。次の知らせで送ります）`] : []),
       '',
-      '注文の状態は毎時の見回りが、返金と会計は毎晩の照合が Stripe に合わせます。',
+      '注文の状態は毎時の見回りが、返金と会計は毎晩の照合が Stripe に合わせます。ただし、見回りが注文を作るのは、直近24時間の Checkout Session の支払いだけです。',
+      'それより古い、注文の無い支払いは、直近7日の分を毎晩の照合のメールでお知らせします。',
       `同じ原因が続くときは、${RUNBOOK}の「退避の知らせが来たとき」に沿って開発者に連絡してください。`,
     ],
   };
@@ -160,6 +163,53 @@ export function recoveredOrdersMail(orders: RecoveredOrderSummary[]): OpsAlertMa
         ? ['在庫を確保できていない注文は、先に在庫の手当てをしてください。'] : []),
       '',
       '管理画面の ORDER タブの「要対応・要確認」で、確認したら確認済みにしてください。',
+    ],
+  };
+}
+
+/** 1つの種類につき何行まで書くか。超えた分は「（ほかに N 件）」にまとめる */
+const MAX_FINDING_LINES = 20;
+
+function cappedLines(lines: string[]): string[] {
+  const rest = lines.length - MAX_FINDING_LINES;
+  return rest > 0 ? [...lines.slice(0, MAX_FINDING_LINES), `（ほかに ${rest} 件）`] : lines;
+}
+
+/**
+ * 毎晩の照合で見つかった、直近7日の注文の無い支払いと、支払い・入金ごとの失敗（設計書 2026-10-05 グループ B の 6）。
+ * 書くのは PaymentIntent・入金の ID、金額、支払いの時刻、原因の記号だけ。お客様の名前・住所・メールアドレスは渡されても読まない。
+ */
+export function reconcileFindingsMail({
+  unmatched,
+  errors,
+}: {
+  unmatched: UnmatchedRecentPayment[];
+  errors: StripeReconciliationError[];
+}): OpsAlertMail {
+  return {
+    kind: 'reconcile_findings',
+    subject: `【要確認】毎晩の照合で注文の無い支払い・失敗が見つかりました（注文なし ${unmatched.length}件・失敗 ${errors.length}件）`,
+    lines: [
+      '毎晩の照合で、確かめが必要なことが見つかりました。',
+      ...(unmatched.length > 0
+        ? [
+          '',
+          '注文の無い支払い（直近7日）: Stripe には成功した支払いがあるのに、注文がありません。お客様は支払い済みで、注文が無い状態です。',
+          ...cappedLines(unmatched.map((payment) =>
+            `- ${payment.id} ${formatAmount(payment.amount, payment.currency)} 支払い: ${formatJst(new Date(payment.created * 1000))}`)),
+        ]
+        : []),
+      ...(errors.length > 0
+        ? [
+          '',
+          '合わせられなかった支払い・入金: 支払いや入金を Stripe と合わせられませんでした。',
+          ...cappedLines(errors.map((error) => `- ${error.sourceId} 原因: ${formatCause(error.reason)}`)),
+        ]
+        : []),
+      '',
+      '次にやること: Stripe のダッシュボードで、上の支払い・入金を確かめてください。',
+      ...(unmatched.length > 0 ? ['支払い済みで注文が無いときは、お客様に連絡して、注文を作るか返金してください。'] : []),
+      `${RUNBOOK}の「照合で見つかったことの知らせが来たとき」に沿って進めてください。`,
     ],
   };
 }

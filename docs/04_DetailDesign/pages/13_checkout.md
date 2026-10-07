@@ -158,6 +158,7 @@ flowchart TD
   T -- 13種以外 --> T1["200: 保存しない"]
   T -- 13種 --> M{"鍵のモードと一致するか"}
   M -- 食い違う --> M1["200: 保存せず、<br/>モード違いを店へ知らせる"]
+  M -- 鍵の頭が分からない --> M2["500: Stripe再送（最大3日）。<br/>保存せず、モード違いとして<br/>数えて店へ知らせる"]
   M -- 一致 --> D["原子的enqueue: stripe_webhook_events"]
   D -- DB障害 --> E["500: Stripe再送"]
   D -- 保存または一致する重複 --> F["200: 受信完了"]
@@ -178,11 +179,12 @@ flowchart TD
 | `STRIPE_WEBHOOK_SECRET`か`STRIPE_SECRET_KEY`が未設定 | 500（Stripeが再送する） | しない |
 | 署名ヘッダーが無い・署名が合わない | 400。監査ログには1件ずつ書かず、件数だけを数え、10分に5件で店へ知らせる | しない |
 | 13種（[一覧](../../../src/lib/stripe/handled-webhook-events.ts)）以外 | 200（`ignored`） | しない |
-| 鍵のモードと食い違う（`sk_live_`・`rk_live_`は本番、`sk_test_`・`rk_test_`はテスト。どちらでもない鍵も食い違い扱い） | 200（`ignored`）。モード違いを店へ知らせる（1時間に1回まで） | しない |
+| 鍵のモードと食い違う（`sk_live_`・`rk_live_`は本番、`sk_test_`・`rk_test_`はテスト） | 200（`ignored`）。モード違いを店へ知らせる（1時間に1回まで） | しない |
+| 鍵は設定されているが、頭が上の4つのどれでもない（引用符つきで貼った・`pk_`の鍵など） | 500（Stripeが最大3日再送する。200だと知らせが失われる）。ログに`[webhook] STRIPE_SECRET_KEY has an unknown prefix`を1行出し、モード違い（鍵のモードは不明）として数えて店へ知らせる（1時間に1回まで） | しない |
 | 13種で、モードが合う | 200。応答の後に`after()`でworkerを1回動かす | する（同じIDの再送は1回だけ） |
 | 保存の失敗 | 500（Stripeが再送する） | しない |
 
-StripeのイベントIDを主キーに、署名検証済みのpayloadをservice-role専用RPCで永続化してから2xxを返す。同じIDの再送では種別・不変の`data`・`account`・`livemode`を照合して重複扱いにする。`pending_webhooks`など配信状況メタデータの差は許容し、不変部分の差は衝突として拒否する。保存が失敗したとき（と設定が欠けているとき）だけ5xxにしてStripe再送を受ける。
+StripeのイベントIDを主キーに、署名検証済みのpayloadをservice-role専用RPCで永続化してから2xxを返す。同じIDの再送では種別・不変の`data`・`account`・`livemode`を照合して重複扱いにする。`pending_webhooks`など配信状況メタデータの差は許容し、不変部分の差は衝突として拒否する。保存が失敗したとき、設定が欠けているとき、鍵の頭が分からないときだけ5xxにしてStripe再送を受ける。
 
 worker（[route.ts](../../../src/app/api/cron/process-stripe-webhooks/route.ts)）は`CRON_SECRET`で認証し、取り出せる知らせが無くなるか約45秒たつまで1件ずつ処理する（受け取り口も保存の後に`after()`で1回動かす）。DBのclaimは`FOR UPDATE SKIP LOCKED`、5分lease、claim tokenを使う。処理に失敗したイベントは原因の記号（`stripe_unavailable`など6つ）を残し、失敗した試行の回数をnとして2^(n-1)分後に再試行する。9回目の試行も失敗したら`dead`（退避）にして店へまとめて知らせる。leaseの切れた試行も1回の失敗として数える（`lease_expired`）。古いworkerは完了を確定できない。注文確定とメール送信は既存の冪等処理を維持する（グループ B 設計書 3-1〜3-4）。
 

@@ -47,11 +47,29 @@ describe('受け取り口の署名不正とモード違い', () => {
   });
 
   it('1時間以内に送っていれば送らない', async () => {
-    const { store: s, rpc } = store({ bump: 9, claimed: false });
+    const { store: s, rpc } = store({ bump: 5, claimed: false });
     const send = jest.fn();
     await recordSignatureFailure({ store: s, send });
+    expect(rpc).toHaveBeenCalledWith('claim_ops_alert', { _alert_key: 'webhook_signature_invalid', _cooldown_seconds: 3600 });
     expect(send).not.toHaveBeenCalled();
     expect(rpc).not.toHaveBeenCalledWith('release_ops_alert', expect.anything());
+  });
+
+  it('しきい値を超えた6件目からは、送る権利を取りにいかない（窓ごとに1回だけ取りにいく）', async () => {
+    const { store: s, rpc } = store({ bump: 6, claimed: true });
+    const send = jest.fn();
+    await recordSignatureFailure({ store: s, send });
+    expect(rpc).toHaveBeenCalledWith('bump_ops_signal', { _alert_key: 'webhook_signature_invalid', _window_seconds: 600 });
+    expect(rpc).not.toHaveBeenCalledWith('claim_ops_alert', expect.anything());
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('しきい値ちょうどの5件目では、送る権利を1回だけ取りにいく', async () => {
+    const { store: s, rpc } = store({ bump: 5, claimed: true });
+    const send = jest.fn<Promise<boolean>, [OpsAlertMail]>().mockResolvedValue(true);
+    await recordSignatureFailure({ store: s, send });
+    expect(rpc.mock.calls.filter(([name]) => name === 'claim_ops_alert')).toHaveLength(1);
+    expect(send).toHaveBeenCalledTimes(1);
   });
 
   it('送れなくても権利を返さず、続く署名不正では送り直さない', async () => {
@@ -96,6 +114,18 @@ describe('受け取り口の署名不正とモード違い', () => {
     await recordModeMismatch({ store: s, send }, false, true);
     expect(send.mock.calls[0][0].kind).toBe('webhook_mode_mismatch');
     expect(send.mock.calls[0][0].lines.join('\n')).toContain('届いた知らせ: テスト、このアプリの鍵: 本番');
+  });
+
+  it('モード違いも、1件目だけ送る権利を取りにいき、2件目以降は取りにいかない', async () => {
+    const first = store({ bump: 1, claimed: true });
+    await recordModeMismatch({ store: first.store, send: jest.fn().mockResolvedValue(true) }, false, true);
+    expect(first.rpc.mock.calls.filter(([name]) => name === 'claim_ops_alert')).toHaveLength(1);
+
+    const second = store({ bump: 2, claimed: true });
+    const send = jest.fn();
+    await recordModeMismatch({ store: second.store, send }, false, true);
+    expect(second.rpc).not.toHaveBeenCalledWith('claim_ops_alert', expect.anything());
+    expect(send).not.toHaveBeenCalled();
   });
 
   it('DB の失敗は外へ出さない（受け取り口の返事を壊さない）', async () => {

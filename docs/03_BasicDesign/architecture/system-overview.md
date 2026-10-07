@@ -2,7 +2,7 @@
 
 ## 概要
 
-確認日: 2026-10-03（「Stripe 非同期処理」「HTTP ジョブ登録」の行と「Stripe Webhook の処理」の図は、2026-10-07 に確認し直した）。対象ソース: `697836a1eb2b62e1a3257ce079ecf8f536e1cb06`（確認し直した行と図は `b54976d2`）。
+確認日: 2026-10-03（「Stripe 非同期処理」の行と「Stripe Webhook の処理」の図は、2026-10-07 に確認し直した。「HTTP ジョブ登録」の行は、照合の登録が抜けていたので足し、同じ日に確認し直した）。対象ソース: `697836a1eb2b62e1a3257ce079ecf8f536e1cb06`（確認し直した行と図は `b54976d2`。「HTTP ジョブ登録」の行は、保留中の SQL 3本を `0781d3ff` で読んで確かめた）。
 
 本書はリポジトリ内で確認した実装と呼び出し経路を示す。ブラウザ、Next.js サーバー、外部サービス、別プロセスの運用スクリプトを区別する。本番配置先、環境変数の値、外部サービスの有効化、適用済み migration、ジョブの稼働は未確認である。
 
@@ -112,7 +112,7 @@ flowchart TB
 | 対象 | リポジトリの定義 | 未確認事項 |
 |---|---|---|
 | HTTP Cron | `CRON_SECRET`: [worker](../../../src/app/api/cron/process-stripe-webhooks/route.ts)、[注文見回り](../../../src/app/api/cron/expire-pending-orders/route.ts)、[Stripe照合](../../../src/app/api/cron/stripe-reconcile/route.ts)、[Meta同期](../../../src/app/api/cron/meta-kpi-sync/route.ts)。保存 export / status は `LEGAL_ARCHIVE_CRON_SECRET` | 呼び出し基盤・設定値・実行結果 |
-| HTTP ジョブ登録 | [worker pending SQL](../../../supabase/pending/schedule_stripe_webhook_worker.sql): 毎分（`* * * * *`）。受け取り口も保存の後に worker を1回動かすので、毎分の起動は取りこぼしを拾う役目。[注文見回り pending SQL](../../../supabase/pending/schedule_expire_pending_orders.sql): 毎時。pg_cron / pg_net / Vault を使用。pending SQL は開店のときに `supabase/pending/` から当てる（[手順書](../../06_Operations/webhook-queue-operations.md)の1） | pending SQL の適用・登録。ファイルの存在は適用済みの証明ではない |
+| HTTP ジョブ登録 | [worker pending SQL](../../../supabase/pending/schedule_stripe_webhook_worker.sql): 毎分（`* * * * *`）。受け取り口も保存の後に worker を1回動かすので、毎分の起動は取りこぼしを拾う役目。[注文見回り pending SQL](../../../supabase/pending/schedule_expire_pending_orders.sql): 毎時。[Stripe 照合 pending SQL](../../../supabase/pending/schedule_stripe_reconcile.sql): 毎日 18:00 UTC（`0 18 * * *`）、POST。いずれも pg_cron / pg_net / Vault を使用。pending SQL は開店のときに `supabase/pending/` から当てる（[手順書](../../06_Operations/webhook-queue-operations.md)の1） | pending SQL の適用・登録。ファイルの存在は適用済みの証明ではない |
 | DB 内ジョブ | migration の [未完了 draft 保持期限処理](../../../supabase/migrations/20260911235714_add_checkout_drafts_retention_job.sql)、[rate limit 保持期限処理](../../../supabase/migrations/20260913132437_add_rate_limit_counters_retention_job.sql) | migration の適用・ジョブ稼働 |
 | 保存・復元確認 | [package.json](../../../package.json) の保存 / 復元確認コマンド。[verify-restore](../../../scripts/legal-archive/verify-restore.ts) は提供済みファイルと復元先 Postgres を照合 | 実行基盤・dump 作成元・復元の実施 |
 | ビルド・配置 | 開発 / ビルド / 起動コマンド、[READMEのVercel手順](../../../README.md)、[layoutのnext/font/google](../../../src/app/layout.tsx) | 現在の配置先・ドメイン・リージョン・ビルド時の外部取得結果 |

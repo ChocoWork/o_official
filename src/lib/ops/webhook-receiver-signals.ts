@@ -26,7 +26,8 @@ type Signal = typeof SIGNATURE_ALERT | typeof MODE_MISMATCH_ALERT;
 
 async function countAndAlert(deps: SignalDeps, signal: Signal, mail: (count: number) => OpsAlertMail): Promise<void> {
   const count = await bumpSignal(deps.store, signal.key, signal.windowSeconds);
-  if (count < signal.threshold) return;
+  // 数がしきい値ちょうどのときだけ権利を取りにいく。窓ごとに1回で、しきい値を超えた後の要求ごとには取りにいかない
+  if (count !== signal.threshold) return;
   const alertMail = mail(count);
   if (!(await claimAlert(deps.store, signal.key, signal.cooldownSeconds))) return;
   // 送れなくても権利は返さない。返すと、次に届いた不正な呼び出しのたびに送り直し、

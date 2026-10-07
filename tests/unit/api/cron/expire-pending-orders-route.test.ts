@@ -419,12 +419,34 @@ describe('POST /api/cron/expire-pending-orders（照合の見回り）', () => {
     error.mockRestore();
   });
 
-  it('見回りの最後に最後の成功を記録し、点検する（設計書 4-6）', async () => {
+  it('最後の成功は、拾い上げの後・遅い後続（監査の行）の前に記録し、点検は最後にする（設計書 4-6）', async () => {
     await sweep();
 
     expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockServiceClient, 'order_sweep', true, null);
     expect(mockRunOpsChecks).toHaveBeenCalledWith(expect.objectContaining({ store: mockServiceClient }));
-    expect(mockRunOpsChecks.mock.invocationCallOrder[0]).toBeGreaterThan(mockRecordHeartbeat.mock.invocationCallOrder[0]);
+    const recovery = mockRecoverOrphanPayments.mock.invocationCallOrder[0];
+    const heartbeat = mockRecordHeartbeat.mock.invocationCallOrder[0];
+    const audit = mockLogAudit.mock.invocationCallOrder[0];
+    const checks = mockRunOpsChecks.mock.invocationCallOrder[0];
+    expect(recovery).toBeLessThan(heartbeat);
+    expect(heartbeat).toBeLessThan(audit);
+    expect(audit).toBeLessThan(checks);
+  });
+
+  it('拾って作った注文の要約の読み込みとメールより前に、最後の成功を記録する', async () => {
+    const recovered = [{ orderId: 'order-r1', reviewReason: 'recovered_from_payment' }];
+    mockRecoverOrphanPayments.mockResolvedValue({ checkedSessions: 1, recovered, failed: 0, timeBudgetExhausted: false });
+    mockLoadRecoveredOrderSummaries.mockResolvedValue(
+      recovered.map((order) => ({ ...order, totalAmount: 12000, currency: 'jpy' })),
+    );
+
+    await sweep();
+
+    expect(mockSendOpsAlertMail).toHaveBeenCalledTimes(1);
+    const heartbeat = mockRecordHeartbeat.mock.invocationCallOrder[0];
+    expect(heartbeat).toBeLessThan(mockLoadRecoveredOrderSummaries.mock.invocationCallOrder[0]);
+    expect(heartbeat).toBeLessThan(mockSendOpsAlertMail.mock.invocationCallOrder[0]);
+    expect(mockSendOpsAlertMail.mock.invocationCallOrder[0]).toBeLessThan(mockRunOpsChecks.mock.invocationCallOrder[0]);
   });
 
   it('候補を数えられなければ、失敗（db_unavailable）を記録して 500', async () => {

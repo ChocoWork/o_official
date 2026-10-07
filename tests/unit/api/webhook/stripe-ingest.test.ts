@@ -213,22 +213,30 @@ describe('Stripe webhook durable ingress', () => {
     expect(mockRunWebhookWorker).not.toHaveBeenCalled();
   });
 
-  it('鍵の頭が不明なら保存せず、鍵のモードをnullとして数える', async () => {
-    const savedKey = process.env.STRIPE_SECRET_KEY;
-    process.env.STRIPE_SECRET_KEY = 'pk_test_unknown';
-    try {
-      const event = { id: 'evt_unknown_key', type: 'checkout.session.completed', livemode: false, data: { object: {} } };
-      mockConstructEvent.mockReturnValue(event);
-      const response = await POST(request(event));
-      expect(response.status).toBe(200);
-      expect(response.body).toEqual({ received: true, ignored: true });
-      expect(mockEnqueueRpc).not.toHaveBeenCalled();
-      await runAfterCallbacks();
-      expect(mockRecordModeMismatch).toHaveBeenCalledWith(expect.anything(), false, null);
-    } finally {
-      process.env.STRIPE_SECRET_KEY = savedKey;
-    }
-  });
+  it.each(['pk_test_unknown', '"sk_test_quoted"'])(
+    '鍵の頭が不明（%s）なら保存せず、500を返して Stripe に送り直させ、鍵のモードをnullとして数える',
+    async (unknownKey) => {
+      const savedKey = process.env.STRIPE_SECRET_KEY;
+      process.env.STRIPE_SECRET_KEY = unknownKey;
+      const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const event = { id: 'evt_unknown_key', type: 'checkout.session.completed', livemode: false, data: { object: {} } };
+        mockConstructEvent.mockReturnValue(event);
+        const response = await POST(request(event));
+        expect(response.status).toBe(500);
+        expect(response.body).toEqual({ error: 'Internal server error' });
+        expect(mockEnqueueRpc).not.toHaveBeenCalled();
+        expect(errorSpy).toHaveBeenCalledTimes(1);
+        expect(errorSpy).toHaveBeenCalledWith('[webhook] STRIPE_SECRET_KEY has an unknown prefix');
+        await runAfterCallbacks();
+        expect(mockRecordModeMismatch).toHaveBeenCalledWith(expect.anything(), false, null);
+        expect(mockRunWebhookWorker).not.toHaveBeenCalled();
+      } finally {
+        process.env.STRIPE_SECRET_KEY = savedKey;
+        errorSpy.mockRestore();
+      }
+    },
+  );
 
   it('保存したら、返事の後にその場で worker を1回動かす', async () => {
     const event = { id: 'evt_after', type: 'checkout.session.completed', livemode: false, data: { object: { id: 'cs_2' } } };

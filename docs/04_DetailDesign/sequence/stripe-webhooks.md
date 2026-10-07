@@ -24,7 +24,7 @@ Stripe Webhookの受付は、署名を検証した13種のイベントのうち�
 
 ## SQ-WEBHOOK-01: 署名検証済みイベントの受付
 
-目的は、Stripeから受け取ったイベントを処理前に永続化すること。事前条件はWebhook secretとStripe秘密鍵が設定され、`stripe-signature`ヘッダーがあること。終了結果は保存または一致する重複の確認後の200、保存しない200（13種以外・モード違い）、または400・500であり、注文処理の完了ではない。
+目的は、Stripeから受け取ったイベントを処理前に永続化すること。事前条件はWebhook secretとStripe秘密鍵が設定され、`stripe-signature`ヘッダーがあること。終了結果は保存または一致する重複の確認後の200、保存しない200（13種以外・鍵と食い違うモード）、または400・500（鍵の頭が分からないときの、保存しない500を含む）であり、注文処理の完了ではない。
 
 ```mermaid
 sequenceDiagram
@@ -39,7 +39,10 @@ sequenceDiagram
         SDK-->>API: 検証済みEvent
         alt 13種以外
             API-->>Stripe: 200 received=true, ignored=true（保存しない）
-        else 鍵のモードと食い違う（鍵の頭が判定できない場合を含む）
+        else 鍵の頭が分からない（sk_live_・rk_live_・sk_test_・rk_test_のどれでもない）
+            API-->>Stripe: 500 Internal server error（保存しない。Stripeが最大3日送り直す）
+            Note over API,DB: ログに1行。応答の後にafter()で件数を数え（鍵のモードは不明）、店へメール（1時間に1回まで）
+        else 鍵のモードと食い違う
             API-->>Stripe: 200 received=true, ignored=true（保存しない）
             Note over API,DB: 応答の後にafter()で件数を数え、店へメール（1時間に1回まで）
         else 13種でモードが合う
@@ -70,7 +73,8 @@ sequenceDiagram
 | Webhook secretまたはStripe秘密鍵が未設定 | 500。enqueueへ進まない（Stripeが後で送り直す） |
 | signature欠落 / 署名不一致 | 400。enqueueへ進まない。監査ログに1件ずつ書かず、`ops_alert_state`の件数だけを進める（10分に5件で店へメール。1時間に1回まで） |
 | 13種以外 | 200 `ignored=true`。保存しない（ログに1行） |
-| 鍵のモードと食い違う、または鍵の頭が`sk_live_`・`rk_live_`・`sk_test_`・`rk_test_`のどれでもない | 200 `ignored=true`。保存しない。件数を進めて店へメール（1時間に1回まで）。メールを送れなかったときも、次の要求では送り直さない |
+| 鍵のモードと食い違う（`sk_live_`・`rk_live_`は本番、`sk_test_`・`rk_test_`はテスト） | 200 `ignored=true`。保存しない。件数を進めて店へメール（1時間に1回まで）。メールを送れなかったときも、次の要求では送り直さない |
+| 鍵は設定されているが、頭が`sk_live_`・`rk_live_`・`sk_test_`・`rk_test_`のどれでもない（引用符つきで貼った・`pk_`の鍵など） | 500 `Internal server error`。保存しない（Stripeが最大3日送り直す。200だと知らせが失われる）。ログに`[webhook] STRIPE_SECRET_KEY has an unknown prefix`を1行出し、件数を進めて店へメール（鍵のモードは「不明」。1時間に1回まで。送れなかったときも、次の要求では送り直さない） |
 | 初回enqueue | event ID・type・payload、`queued`、attempt_count=0、次の試行時刻を保存 |
 | 同じevent IDの再送 | event type、data、account、livemodeを照合する。一致すれば既存キュー状態を変更せずfalse。配信メタデータ全体の完全一致は要求しない |
 | 同じIDで内容が矛盾 | RPCがID衝突を拒否し、受付APIは500。既存行を上書きしない |
@@ -230,11 +234,11 @@ sequenceDiagram
 | `POST /api/cron/expire-pending-orders` | Bearer認証後、checkout_session_created_atが30分超前のpayment_in_progressとpending全件を候補に取得。1回最大50件、各注文の開始前に45秒の時間予算を確認する（実行時間の厳密な上限ではない）。時間ごとに取得offsetを巡回。payment_in_progressでSession IDがある場合だけopen Sessionの失効を先に試み、各候補で同じ照合器を呼ぶ。1件失敗でも他を続行 | [見回りAPI](../../../src/app/api/cron/expire-pending-orders/route.ts)、[Session失効](../../../src/lib/stripe/checkout-session-expiry.ts) |
 | 店向け要対応メールの再送 | 注文処理の中断フラグtimeBudgetExhaustedがfalseなら、未解決・未通知を最大20件取得し、送信権をclaimして再送を試みる。最後の注文処理後に経過時間を再検査する条件ではない | [見回りAPI](../../../src/app/api/cron/expire-pending-orders/route.ts)、[未送信取得](../../../src/lib/stripe/checkout-payment-reconciler-deps.ts) |
 | 注文の無い支払いの拾い上げ | 上の注文処理と店向け再送の後、`timeBudgetExhausted`がfalseのときだけ、同じ45秒の予算の残りで動く（新しい照合の開始前に締切を確認する）。直近24時間に作られた完了済みCheckout Sessionのうち注文の無いもの（50件ずつ注文の有無を確かめる）を照合器へ渡し、照合器がその呼出しで注文を作ったときだけ、要確認「支払いから作った注文」（`recovered_from_payment`。在庫の要確認が先に付いていればそれを残す）を付ける。印は3回まで試し、付けられない注文は印なしのまま店向けメールに載せる。拾った注文は、その回の1通にまとめて店へ知らせる。読む範囲が毎回24時間で重なるので、予算切れや注文を作る前の失敗は次の回で拾い直す。注文の行を作った後の失敗は、その Session に注文があるので次の回は拾い直さない。1件失敗でも他を続行し、`failed`に数える | [見回りAPI](../../../src/app/api/cron/expire-pending-orders/route.ts)、[拾い上げ](../../../src/lib/stripe/orphan-payment-recovery.ts)、[店向けメール](../../../src/lib/ops/ops-alert-mail.ts) |
-| 最後の成功の記録と点検 | 見回りの最後に`order_sweep`の最後の成功を`ops_job_heartbeats`へ記録し（注文候補を読めず500を返すときは、失敗と原因の記号`db_unavailable`を記録）、workerと同じ点検（溜まり・退避・遅れを店へ）を行う。記録や点検の失敗は応答を変えない。応答には`checkedSessions`・`recoveredOrders`・`recoveredOrdersNotified`を含める | [見回りAPI](../../../src/app/api/cron/expire-pending-orders/route.ts)、[点検](../../../src/lib/ops/ops-checks.ts)、[記録](../../../src/lib/ops/ops-store.ts) |
+| 最後の成功の記録と点検 | 注文の無い支払いの拾い上げの直後（拾った注文の要約の読み込み・店へのメール・監査の行より前）に`order_sweep`の最後の成功を`ops_job_heartbeats`へ記録し、最後（応答の直前）にworkerと同じ点検（溜まり・退避・遅れを店へ）を行う。後続が遅くなって実行の上限（60秒）に届いても、成功の記録は残る。注文候補を読めず500を返すときは、失敗と原因の記号`db_unavailable`を記録してから点検して返す。記録や点検の失敗は応答を変えない。応答には`checkedSessions`・`recoveredOrders`・`recoveredOrdersNotified`を含める | [見回りAPI](../../../src/app/api/cron/expire-pending-orders/route.ts)、[点検](../../../src/lib/ops/ops-checks.ts)、[記録](../../../src/lib/ops/ops-store.ts) |
 | workerのschedule案 | pending SQLには毎分のPOST（受付APIもその場で1回動かすので、毎分の起動は取りこぼしを拾う役目）、Vaultのapp_base_url・cron_secret参照を定義。登録・到達性・実起動は未確認 | [worker schedule](../../../supabase/pending/schedule_stripe_webhook_worker.sql) |
 | 見回りのschedule案 | pending SQLには毎時0分のPOSTとVault参照を定義。ソース中の最長90分というコメントは、件数・時間制限下の無条件保証として扱わない | [見回りschedule](../../../supabase/pending/schedule_expire_pending_orders.sql) |
 | 照合のschedule案 | pending SQL（`supabase/pending/schedule_stripe_reconcile.sql`）には毎日18:00 UTC（日本時間3:00）のPOSTとVault参照を定義。登録・到達性・実起動は未確認 | [保留中のSQL](../../../supabase/pending/README.md) |
-| `POST /api/cron/stripe-reconcile` | Bearer認証（`CRON_SECRET`・32文字以上）後、succeeded PIを走査し、注文との返金額不一致なら返金同期。会計原始記録とPayoutも同期する。支払いごと・Payoutごとの失敗は原因の記号で受け止めて続行し、監査`stripe.reconcile`と最後の成功を記録する。Checkout決済状態を照合する上の見回りとは用途が異なる | [会計・返金照合API](../../../src/app/api/cron/stripe-reconcile/route.ts)、[照合処理](../../../src/lib/stripe/reconcile-orders.ts) |
+| `POST /api/cron/stripe-reconcile` | Bearer認証（`CRON_SECRET`・32文字以上）後、succeeded PIを走査し、注文との返金額不一致なら返金同期。会計原始記録とPayoutも同期する。支払いごと・Payoutごとの失敗は原因の記号で受け止めて続行し、監査`stripe.reconcile`（注文の無い直近7日の支払いのIDを20件まで含む）と最後の成功を記録する。そのあと、直近7日の注文の無い成功の支払い（全額返金済みを除く）か支払い・Payoutごとの失敗があれば、1回の実行につき1通のメールで店へ知らせる（時間ごとの権利は取らない。送れなくても応答と記録は変えない）。実行の上限は300秒で、pg_netは60秒で待つのをやめる。Checkout決済状態を照合する上の見回りとは用途が異なる | [会計・返金照合API](../../../src/app/api/cron/stripe-reconcile/route.ts)、[照合処理](../../../src/lib/stripe/reconcile-orders.ts) |
 
 見回りは個々の注文処理の例外を数えて続行し、部分失敗でも集計を200で返す。会計・返金照合は、注文なしのPIを未対応支払いとして集計する場合があるが、そのPIの会計同期は省略する。返金一覧取得・返金投影・PaymentIntent会計同期・Payout同期の例外は、支払いごと・Payoutごとに原因の記号つきで`errors`へ収集して続行し、200の集計に含める。注文をDBから読めないとき、またはStripeの一覧そのものを読めないときは全体の502になり、その回の残りを中断する（最後の失敗を記録する）。先行保存を巻き戻す処理ではない。根拠は上表の各APIと照合処理。
 
@@ -255,4 +259,4 @@ sequenceDiagram
 
 最終照合のコード基準はmasterの`bbb18761`と、2026-10-04の作業ツリーにある決済・返金ライブラリの未コミット変更。注文なし返金イベントの型限定catch、会計のunmatched分岐、共通照合器による返金同期まで静的に確認した。今回、そのコードの実行テストと本番反映は確認していない。
 
-2026-10-07 に、Webhook受付・worker・見回り・照合の記述（グループ B で変えた部分）を、masterの`b54976d2`のソースで確認し直した。processorの振り分けと会計同期の記述は、上の基準のまま。
+2026-10-07 に、Webhook受付・worker・見回り・照合の記述（グループ B で変えた部分）を、masterの`b54976d2`のソースで確認し直した。processorの振り分けと会計同期の記述は、上の基準のまま。そのあと、最終のレビューの直し（鍵の頭が分からないときの500、見回りの成功の記録の位置、照合の実行の上限300秒と見つかったことのメール）を、同じ日の作業ツリーのソースで確認して反映した。

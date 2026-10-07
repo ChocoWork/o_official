@@ -1,5 +1,12 @@
 import { reconcileStripeOrders, reconcileStripePayouts } from '@/lib/stripe/reconcile-orders';
 
+// 直近7日の境目を決まった値で確かめるため、時計を渡す
+const NOW = new Date('2026-10-07T00:00:00Z');
+const NOW_SECONDS = NOW.getTime() / 1000;
+const DAY_SECONDS = 24 * 60 * 60;
+// 支払いの通貨と作られた時刻（Stripe の PaymentIntent には必ずある）
+const PAYMENT = { currency: 'jpy', created: NOW_SECONDS - 60 };
+
 describe('reconcileStripeOrders', () => {
   it('reports active Stripe-only payments and repairs refund mismatches', async () => {
     const orders = [
@@ -9,9 +16,9 @@ describe('reconcileStripeOrders', () => {
       from: () => ({ select: async () => ({ data: orders, error: null }) }),
     };
     const paymentIntents = [
-      { id: 'pi_unmatched', status: 'succeeded', amount: 1000 },
-      { id: 'pi_fully_refunded', status: 'succeeded', amount: 2000 },
-      { id: 'pi_partial', status: 'succeeded', amount: 5000 },
+      { id: 'pi_unmatched', status: 'succeeded', amount: 1000, ...PAYMENT },
+      { id: 'pi_fully_refunded', status: 'succeeded', amount: 2000, ...PAYMENT },
+      { id: 'pi_partial', status: 'succeeded', amount: 5000, ...PAYMENT },
     ];
     const refundsByIntent: Record<string, Array<{ status: string; amount: number; created: number }>> = {
       pi_unmatched: [],
@@ -41,8 +48,8 @@ describe('reconcileStripeOrders', () => {
     const stripe = {
       paymentIntents: {
         list: () => [
-          { id: 'pi_known', status: 'succeeded', amount: 1000 },
-          { id: 'pi_stripe_only', status: 'succeeded', amount: 2000 },
+          { id: 'pi_known', status: 'succeeded', amount: 1000, ...PAYMENT },
+          { id: 'pi_stripe_only', status: 'succeeded', amount: 2000, ...PAYMENT },
         ],
       },
       refunds: { list: () => [] },
@@ -72,8 +79,8 @@ describe('reconcileStripeOrders', () => {
     const stripe = {
       paymentIntents: {
         list: () => [
-          { id: 'pi_a', status: 'succeeded', amount: 1000 },
-          { id: 'pi_b', status: 'succeeded', amount: 1000 },
+          { id: 'pi_a', status: 'succeeded', amount: 1000, ...PAYMENT },
+          { id: 'pi_b', status: 'succeeded', amount: 1000, ...PAYMENT },
         ],
       },
       refunds: { list: () => [] },
@@ -102,8 +109,8 @@ describe('reconcileStripeOrders', () => {
     const stripe = {
       paymentIntents: {
         list: () => [
-          { id: 'pi_a', status: 'succeeded', amount: 1000 },
-          { id: 'pi_b', status: 'succeeded', amount: 1000 },
+          { id: 'pi_a', status: 'succeeded', amount: 1000, ...PAYMENT },
+          { id: 'pi_b', status: 'succeeded', amount: 1000, ...PAYMENT },
         ],
       },
       refunds: { list: () => [{ status: 'succeeded', amount: 500, created: 1 }] },
@@ -130,8 +137,8 @@ describe('reconcileStripeOrders', () => {
     const stripe = {
       paymentIntents: {
         list: () => [
-          { id: 'pi_a', status: 'succeeded', amount: 1000 },
-          { id: 'pi_b', status: 'succeeded', amount: 1000 },
+          { id: 'pi_a', status: 'succeeded', amount: 1000, ...PAYMENT },
+          { id: 'pi_b', status: 'succeeded', amount: 1000, ...PAYMENT },
         ],
       },
       refunds: {
@@ -149,6 +156,7 @@ describe('reconcileStripeOrders', () => {
     expect(report.checkedPayments).toBe(2);
     expect(report.errors).toEqual([{ sourceId: 'pi_a', reason: 'stripe_unavailable' }]);
     expect(report.unmatchedActivePayments).toEqual([]);
+    expect(report.unmatchedRecentPayments).toEqual([]);
   });
 
   it('reports a database failure while loading orders as db_unavailable', async () => {
@@ -159,6 +167,71 @@ describe('reconcileStripeOrders', () => {
 
     await expect(reconcileStripeOrders({ database, stripe, syncRefunds: jest.fn() }))
       .rejects.toMatchObject({ code: 'db_unavailable' });
+  });
+});
+
+describe('reconcileStripeOrders: unmatchedRecentPayments（直近7日の、注文の無い成功の支払い）', () => {
+  type Payment = { id: string; status: string; amount: number; currency: string; created: number };
+  const noOrders = { from: () => ({ select: async () => ({ data: [], error: null }) }) };
+
+  /** refunded: PaymentIntent の ID → 成功した返金の合計 */
+  function stripeWith(payments: Payment[], refunded: Record<string, number> = {}) {
+    return {
+      paymentIntents: { list: () => payments },
+      refunds: {
+        list: ({ payment_intent }: { payment_intent: string }) => (
+          refunded[payment_intent] ? [{ status: 'succeeded', amount: refunded[payment_intent], created: 1 }] : []
+        ),
+      },
+    };
+  }
+
+  it('ちょうど7日前の支払いは載せ、それより1秒古い支払いは載せない（注文の無い支払い全体の数は変えない）', async () => {
+    const stripe = stripeWith([
+      { id: 'pi_new', status: 'succeeded', amount: 8900, currency: 'jpy', created: NOW_SECONDS - 3600 },
+      { id: 'pi_edge', status: 'succeeded', amount: 1200, currency: 'jpy', created: NOW_SECONDS - 7 * DAY_SECONDS },
+      { id: 'pi_old', status: 'succeeded', amount: 3000, currency: 'jpy', created: NOW_SECONDS - 7 * DAY_SECONDS - 1 },
+    ]);
+
+    const report = await reconcileStripeOrders({ database: noOrders, stripe, syncRefunds: jest.fn(), now: () => NOW });
+
+    expect(report.unmatchedActivePayments).toEqual(['pi_new', 'pi_edge', 'pi_old']);
+    expect(report.unmatchedRecentPayments).toEqual([
+      { id: 'pi_new', amount: 8900, currency: 'jpy', created: NOW_SECONDS - 3600 },
+      { id: 'pi_edge', amount: 1200, currency: 'jpy', created: NOW_SECONDS - 7 * DAY_SECONDS },
+    ]);
+  });
+
+  it('全額返金済み・注文のある支払い・成功していない支払いは載せない。一部だけ返金した支払いは載せる', async () => {
+    const database = {
+      from: () => ({ select: async () => ({ data: [{ payment_intent_id: 'pi_with_order', refunded_amount: 0 }], error: null }) }),
+    };
+    const stripe = stripeWith(
+      [
+        { id: 'pi_fully_refunded', status: 'succeeded', amount: 2000, ...PAYMENT },
+        { id: 'pi_partly_refunded', status: 'succeeded', amount: 5000, ...PAYMENT },
+        { id: 'pi_with_order', status: 'succeeded', amount: 1000, ...PAYMENT },
+        { id: 'pi_not_paid', status: 'requires_payment_method', amount: 1000, ...PAYMENT },
+      ],
+      { pi_fully_refunded: 2000, pi_partly_refunded: 2000 },
+    );
+
+    const report = await reconcileStripeOrders({ database, stripe, syncRefunds: jest.fn(), now: () => NOW });
+
+    expect(report.unmatchedActivePayments).toEqual(['pi_partly_refunded']);
+    expect(report.unmatchedRecentPayments.map((payment) => payment.id)).toEqual(['pi_partly_refunded']);
+  });
+
+  it('時計を渡さないときは、今の時刻から7日を数える', async () => {
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const stripe = stripeWith([
+      { id: 'pi_recent', status: 'succeeded', amount: 1000, currency: 'jpy', created: nowSeconds - 60 },
+      { id: 'pi_eight_days', status: 'succeeded', amount: 1000, currency: 'jpy', created: nowSeconds - 8 * DAY_SECONDS },
+    ]);
+
+    const report = await reconcileStripeOrders({ database: noOrders, stripe, syncRefunds: jest.fn() });
+
+    expect(report.unmatchedRecentPayments.map((payment) => payment.id)).toEqual(['pi_recent']);
   });
 });
 
