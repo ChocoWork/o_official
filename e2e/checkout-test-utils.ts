@@ -85,8 +85,15 @@ export async function selectPaymentMethod(page: Page, frame: Frame, name: string
     .evaluate((element) => element.scrollIntoView({ block: 'end' }));
   const option = frame.getByRole('button', { name, exact: true });
   await waitForPositionToSettle(option);
-  await option.click();
-  await expect(option).toHaveAttribute('aria-expanded', 'true');
+  // 決済の部品は Link の照会などで描き直しが続くことがあり、負荷の高いとき（E2E をまとめて流したとき）は
+  // 押しても開かないことがある。開いたことを確かめるまで押し直す（開けないままなら時間切れで落ちる）。
+  // 開いた後に押すと閉じる作りかもしれないので、開いていないときだけ押す
+  await expect(async () => {
+    if ((await option.getAttribute('aria-expanded')) !== 'true') {
+      await option.click();
+    }
+    await expect(option).toHaveAttribute('aria-expanded', 'true', { timeout: 3_000 });
+  }).toPass({ timeout: 30_000 });
 }
 
 /**
