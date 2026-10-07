@@ -1,6 +1,6 @@
 # API仕様（現行実装）
 
-> 確認日: 2026-10-03 | ソース基準: `697836a1eb2b62e1a3257ce079ecf8f536e1cb06` の作業ツリー | 対象: `src/app/api/**/route.ts`
+> 確認日: 2026-10-03（Checkout・カートの行はグループ F の変更を 2026-10-07 に反映） | ソース基準: `697836a1eb2b62e1a3257ce079ecf8f536e1cb06` の作業ツリー | 対象: `src/app/api/**/route.ts`
 
 ## 概要
 
@@ -39,7 +39,7 @@ Cookie名/属性は[cookie.ts](../../../src/lib/cookie.ts)、セッション発�
 [requireCsrfOrDeny](../../../src/lib/csrfMiddleware.ts)は`sb-refresh-token` Cookieがなければ検査を省略する。Cookieがあれば`x-csrf-token`が必要。headerはdecodeURIComponentを試み、refresh tokenとheader tokenをSHA-256にしてsessions.refresh_token_hash / csrf_token_hashと照合する。欠落/不一致は403 `{error:"Forbidden",reason:"CSRF validation failed"}`、DB処理の例外は500。通常mutationではCSRFをrotateしない。
 
 - **C**: finance、review、payment exception resolveは戻り値の`Response`を返す。Stockistは[admin-security.ts](../../../src/features/stockist/services/admin-security.ts)経由で`Response`も返す。
-- **C***: Checkout create-session/update-shipping、profile POST/DELETE、addresses PUTはhelperを呼ぶが、ローカル`isCsrfDenyResponse`は`status`と`_body`両方を要求する。helperの実戻り値`NextResponse`には`_body`がなく、このguardは実際の拒否Responseを拾わない。これらのHandlerがhelperの403/500を必ず伝播すると記載しない。ProxyのOrigin検査は別途適用される。
+- **C***: Checkout create-session、profile POST/DELETE、addresses PUTはhelperを呼ぶが、ローカル`isCsrfDenyResponse`は`status`と`_body`両方を要求する。helperの実戻り値`NextResponse`には`_body`がなく、このguardは実際の拒否Responseを拾わない。これらのHandlerがhelperの403/500を必ず伝播すると記載しない。ProxyのOrigin検査は別途適用される。グループ F で足したCheckoutの入口（promotion-code・place-order・resume）は、共通の守り（[checkout-route-guard.ts](../../../src/features/checkout/services/checkout-route-guard.ts)）が実際の拒否Responseも返すので、C*ではない。
 - logoutは拒否を返す用途ではなく、CSRF成功時だけサーバー失効を試行し、Cookie削除/200を返すためにhelperを使う。
 
 ### レート制限・エラー形式
@@ -92,9 +92,9 @@ Stripe Webhookはraw bytesとstripe-signatureを`constructEvent`で検証する�
 
 | メソッド・パス | 認証・認可 | 入力 | 応答 | 主な失敗（HTTP） | 副作用・補足 / 根拠 |
 | --- | --- | --- | --- | --- | --- |
-| `GET /api/cart` | Cookie `session_id`（会員認証不要） | 本文なし | 200 `{id,item_id,quantity,color,size,added_at,items}[]`（空は[]） | 400 session欠落; 500 cart/item取得/例外 | Cookieに属するcart、欠落商品は配列から除く、商品画像署名 [実装](../../../src/app/api/cart/route.ts) |
+| `GET /api/cart` | Cookie `session_id`（会員認証不要） | 本文なし | 200 `{id,item_id,quantity,color,size,added_at,items,fulfillment}[]`（空は[]） | 400 session欠落; 500 cart/item取得/例外 | Cookieに属するcart、欠落商品は配列から除く、商品画像署名。`fulfillment`は明細ごとのお届けの目安（`'stock'`＝在庫あり、`'backorder'`＝受注生産、`null`＝読めないとき）。在庫の数は返さず、読めなくてもカートは返す [実装](../../../src/app/api/cart/route.ts) |
 | `POST /api/cart` | Cookie `session_id`（会員認証不要） | JSON: `item_id` 正整数、`quantity?` 1〜20既定1、`color?,size?`（addCartItemSchema） | 201 保存したcart行object | 400 session/body; 404 非公開/欠落商品; 429; 500 cart照会/保存/例外 | 同一session/item/color/sizeの既存行は数量を更新、新規はinsert [実装](../../../src/app/api/cart/route.ts) |
-| `PATCH /api/cart/[id]` | Cookie `session_id`（会員認証不要） | Path: cart UUID（RPC側判定）。JSON: `{quantity:1〜20整数}` | 200 更新cart行 | 400 session/id/body; 403 RPC権限; 404 cart/item; 409 RPC在庫競合; 429; 500 RPC/例外 | update_cart_item_quantity RPC。RPCエラーをmapCartMutationErrorで変換 [実装](../../../src/app/api/cart/%5Bid%5D/route.ts) |
+| `PATCH /api/cart/[id]` | Cookie `session_id`（会員認証不要） | Path: cart UUID（RPC側判定）。JSON: `{quantity:1〜20整数}` | 200 更新cart行 + `fulfillment`（その明細のお届けの目安。値はGETと同じ） | 400 session/id/body; 403 RPC権限; 404 cart/item; 409 RPC在庫競合; 429; 500 RPC/例外 | update_cart_item_quantity RPC。RPCエラーをmapCartMutationErrorで変換。数量で在庫あり・受注生産が変わるので、その明細の目安を返す [実装](../../../src/app/api/cart/%5Bid%5D/route.ts) |
 | `DELETE /api/cart/[id]` | Cookie `session_id`（会員認証不要） | Path: cart UUID（RPC側判定）、本文なし | 200 `{success:true}` | 400 session/id; 403 RPC権限; 404 cart; 429; 500 RPC/例外 | delete_cart_item RPC（sessionによる所有確認） [実装](../../../src/app/api/cart/%5Bid%5D/route.ts) |
 | `GET /api/wishlist` | Cookie `session_id`（会員認証不要） | 本文なし | 200 `{id,item_id,added_at,items}[]`（空は[]） | 400 session; 429; 500 wishlist/item取得/例外 | 非公開/欠落商品を除く、画像署名 [実装](../../../src/app/api/wishlist/route.ts) |
 | `POST /api/wishlist` | Cookie `session_id`（会員認証不要） | JSON: `{item_id:正整数}` | 201 保存したwishlist行object | 400 session/body; 404 非公開/欠落商品; 409 重複; 429; 500 保存/例外 | Cookieのsessionへ追加 [実装](../../../src/app/api/wishlist/route.ts) |
@@ -117,10 +117,12 @@ Stripe Webhookはraw bytesとstripe-signatureを`constructEvent`で検証する�
 | メソッド・パス | 認証・認可 | 入力 | 応答 | 主な失敗（HTTP） | 副作用・補足 / 根拠 |
 | --- | --- | --- | --- | --- | --- |
 | `POST /api/checkout/complete` | Cookie `session_id`（会員認証不要）（JWTは任意、ユーザー紐付けに使用） | JSON: `{checkoutSessionId,shipping?,paymentMethod?}`（completeCheckoutSchema） | 200 `{orderId,status,paymentMethod}` | 400 session/body/mode/draft/ゼロ額/未決済; 403 Stripe session/draftの所有不一致; 409 注文登録不可; 429; 503 照合一時失敗; 500 例外 | Stripe側payment methodを採用。注文/在庫/決済照合、必要な通知/例外記録をreconciler経由で実行 [実装](../../../src/app/api/checkout/complete/route.ts) |
-| `POST /api/checkout/create-session` | Cookie `session_id`（会員認証不要） + CSRF呼出 C* | JSON: createSessionSchema（下記） | 200 hosted `{url}` / custom `{clientSecret,checkoutSessionId,shippingRevision}` | 400 session/body/空cart/総額; 409 購入不可商品/表示金額不一致/確定済session; 422 Stripe金額制約; 429; 503 Stripe一時障害; 500 DB/設定等。C*参照 | cartからサーバー金額を算出、draft作成/再利用、Stripe Session作成/回復。エラー分類はcheckout-error.service [実装](../../../src/app/api/checkout/create-session/route.ts) |
+| `POST /api/checkout/create-session` | Cookie `session_id`（会員認証不要） + CSRF呼出 C* | JSON: createSessionSchema（下記）。`promotionCode?`（英数字とハイフン、64文字まで）を含む | 200 hosted `{url}` / custom `{confirmation}`、409 `order_already_placed`・`promotion_code_invalid` | 400 session/body/空cart/総額; 409 購入不可商品/表示金額不一致; 422 Stripe金額制約; 429; 503 Stripe一時障害; 500 DB/設定等。C*参照 | 「確認へ進む」の入口。cartからサーバー金額を算出、draft作成/再利用（版2。指紋に配送先と割引コード）、Stripe Session作成/回復（割引はサーバーが`discounts`で付ける。30分で失効）、同じCookieのほかの決済の画面を閉じ、最終確認画面の内容を返す。`confirmation`は`{checkoutSessionId,clientSecret,shipping,lines,promotionCode}`。エラー分類はcheckout-error.service [実装](../../../src/app/api/checkout/create-session/route.ts) |
 | `POST /api/checkout/payment-intent` | 会員認証不要 | 本文は使用しない | 通常応答410 `{error,documentation:"/api/checkout/create-session"}` | 429。成功2xx分岐なし | 廃止済みの入口 [実装](../../../src/app/api/checkout/payment-intent/route.ts) |
 | `GET /api/checkout/postal-code` | 会員認証不要 | Query: `postalCode` 1〜16文字 | 200 `{address:{prefecture,city,address}&#124;null}` | 400 query; 429; 502 lookup失敗 | 郵便番号サービスで住所検索 [実装](../../../src/app/api/checkout/postal-code/route.ts) |
-| `POST /api/checkout/update-shipping` | Cookie `session_id`（会員認証不要） + CSRF呼出 C* | JSON: `{checkoutSessionId,shipping?,expectedRevision?}`（下記） | 200 `{ok:true,revision}` | 400 session/body; 404 draft; 409 `{error:"stale_shipping_revision",revision}`; 428 shipping_revision_required; 429; 500 DB/例外。C*参照 | session所有draftのshippingをrevision一致時だけ更新 [実装](../../../src/app/api/checkout/update-shipping/route.ts) |
+| `POST /api/checkout/promotion-code` | Cookie `session_id`（会員認証不要） + CSRF（ログイン客） | JSON: `{code}`（strict。trim後、英数字とハイフンの64文字まで） | 200 `{code,subtotalAmount,shippingAmount,discountAmount,totalAmount}` | 400 session/body/空cart; 409 買えない商品; 422 `{error:"promotion_code_invalid",reason,message}`; 429; 500 | サーバーがStripeに問い合わせ、今のカートで使えるかを確かめて割引後の金額の目安を返す（有効・期限・回数・最低購入額・合計が0円にならないこと。reasonはnot_found/not_applicable/expired/redemption_limit/minimum_amount/zero_total）。決済の画面には付けない（付けるのはcreate-session）。IP 10秒10回・10分60回、セッション10回/分 [実装](../../../src/app/api/checkout/promotion-code/route.ts) |
+| `POST /api/checkout/place-order` | Cookie `session_id`（会員認証不要） + CSRF（ログイン客） | JSON: `{checkoutSessionId,inStockVariantIds}`（strict。バリアントは100件まで） | 200 `{orderId,orderStatus}` | 400 session/body; 403 他人の決済の画面; 409 `{error:"stock_changed",message,changedLines}`・`{error:"item_unavailable"&#124;"price_changed"&#124;"zero_amount"&#124;"session_expired"&#124;"superseded",message}`・`{error:"payment_done",checkoutSessionId}`; 429; 500 | 「注文する」の受け付け。Stripeから決済の画面を読み直し（持ち主・モード・開いている・未払い・残り10分以上・新しい下書きが無い）、受付RPCを最終確認画面で在庫ありと見せたバリアントつきで呼ぶ。断ったときは注文も在庫の確保も作らない。同じ決済の画面なら同じ注文を返す。IP 10秒10回・10分60回、セッション10回/分 [実装](../../../src/app/api/checkout/place-order/route.ts) |
+| `POST /api/checkout/resume` | Cookie `session_id`（会員認証不要） + CSRF（ログイン客） | JSON: `{checkoutSessionId?}`（strict。無いときはキーごと省く） | 200 `{state:"none"}`・`{state:"payment_done",checkoutSessionId}`・`{state:"resume",confirmation}` | 400 session/body; 403 他人の決済の画面; 429; 500 | 決済の画面を開き直したときの入口。IDが無ければ受け付け済みで支払いの済んだ画面を探すだけ。IDがあれば、支払い済みは`payment_done`、開いていて下書きと結び付いていれば`resume`（最終確認画面の内容）、ほかは`none`。IP 10秒20回・10分120回、セッション20回/分 [実装](../../../src/app/api/checkout/resume/route.ts) |
 
 ## 問い合わせ
 
@@ -275,9 +277,8 @@ Stripe Webhookはraw bytesとstripe-signatureを`constructEvent`で検証する�
 | --- | --- | --- |
 | checkoutShippingSchema | shipping自体が任意。email/fullName/kanaName/postalCode/prefecture/city/address/building/phoneも任意。NFKC/trim等の正規化後、email max254、氏名max100、postalCode 7桁、prefecture max50、city max100、address/building max150、phone `+?`と10〜15桁数字。文字種制限はschemaを参照 | [checkout-draft.service.ts](../../../src/features/checkout/services/checkout-draft.service.ts) |
 | paymentMethod | stripe_card / stripe_paypay / stripe_konbini。create-sessionでは任意。completeに残るクライアント指定は採用せずStripe Sessionから解決 | [draft service](../../../src/features/checkout/services/checkout-draft.service.ts)、[payment-method.service.ts](../../../src/features/checkout/services/payment-method.service.ts) |
-| createSessionSchema | uiModeはhosted/custom、既定hosted。displayedAmountsは必須strict object `{subtotalAmount,taxAmount,shippingAmount,totalAmount}`（各非負整数number）。サーバーcart価格と4項目すべてを照合 | [create-session](../../../src/app/api/checkout/create-session/route.ts)、[checkout-pricing.service.ts](../../../src/features/checkout/services/checkout-pricing.service.ts) |
-| updateShippingSchema | checkoutSessionIdはtrim後空でないstring、shippingは上記、expectedRevisionは任意の非負整数number。schema上任意でも処理では未指定428。ownerはsession_id、更新はrevision一致条件 | [update-shipping](../../../src/app/api/checkout/update-shipping/route.ts) |
-| Checkout conflict | 購入不可商品の409は `{error:"out_of_stock",message,items:[{item_id,name,requestedQuantity,availableQuantity,reason}]}`。collectInventoryIssuesは非公開/欠落商品のunavailableを検出し、在庫不足だけでは拒否しない。金額不一致はcheckout_amount_mismatch、確定済みはcheckout_session_complete | [cart-stock.ts](../../../src/features/cart/services/cart-stock.ts)、[create-session](../../../src/app/api/checkout/create-session/route.ts) |
+| createSessionSchema | uiModeはhosted/custom、既定hosted。displayedAmountsは必須strict object `{subtotalAmount,taxAmount,shippingAmount,totalAmount}`（各非負整数number）。サーバーcart価格と4項目すべてを照合。promotionCode?は英数字とハイフンの64文字まで（trim後）。使えないコードは409 `promotion_code_invalid`（reason・message付き） | [create-session](../../../src/app/api/checkout/create-session/route.ts)、[checkout-pricing.service.ts](../../../src/features/checkout/services/checkout-pricing.service.ts) |
+| Checkout conflict | 購入不可商品の409は `{error:"out_of_stock",message,items:[{item_id,name,requestedQuantity,availableQuantity,reason}]}`。collectInventoryIssuesは非公開/欠落商品のunavailableを検出し、在庫不足だけでは拒否しない。金額不一致はcheckout_amount_mismatch。支払いの済んだ決済の画面があれば `{error:"order_already_placed",checkoutSessionId,message,retryable:false}`、使えない割引コードは `{error:"promotion_code_invalid",reason,message,retryable:false}` | [cart-stock.ts](../../../src/features/cart/services/cart-stock.ts)、[create-session](../../../src/app/api/checkout/create-session/route.ts) |
 | Stripe例外 | create-session catchは `{error:"checkout_session_failed",message,correlationId,retryable}`。amount_too_small/largeは422/retryable:false、rate limitは429/true、connection/API errorは503/true、authentication/permissionやパラメータ不備は500（retryableは分類による） | [checkout-error.service.ts](../../../src/features/checkout/services/checkout-error.service.ts) |
 | 郵便番号 | 郵便番号文字列を正規化し、cache/DB/ZipCloudから `{prefecture,city,address}` 又はnullを返す | [postal-code.service.ts](../../../src/features/checkout/services/postal-code.service.ts)、[postal-code.util.ts](../../../src/features/checkout/utils/postal-code.util.ts) |
 
@@ -374,6 +375,8 @@ costTypeはmaterial/sewing/pattern/planning/accessories/processing/inspection_fi
 ## 更新・検証範囲
 
 2026-10-03のソースをTypeScript ASTで調べた89 Route Handler / 125明示HTTP exportと、上記API表の125メソッド・パスの集合を照合した。入力schema、認証helper、返却分岐とローカルhelperを確認した。APIを追加/削除/変更した場合は表・型定義・[ルート所在表](route-inventory.md)を更新する。
+
+2026-10-07にグループ F の入口の変更を表へ反映した（`update-shipping`の行を消し、`promotion-code`・`place-order`・`resume`の3行を足し、`create-session`とカートの行を直した）。実装を読んで書いたもので、上の件数（89・125）は2026-10-03時点のままであり、再集計していない。
 
 この確認は静的な契約照合であり、実行時のDB適用状況、外部provider設定、デプロイ状態、全APIの疎通を検証したという意味ではない。
 

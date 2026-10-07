@@ -61,7 +61,7 @@
 | R-53 | P3・運用 | 未修正 | Footer のレイアウト変更に要求と E2E がない |
 | R-54 | P3・テスト | 未修正 | 固定CTAの案内のE2Eが「見えている」ことを確かめなくなった |
 | R-55 | P3・条件付き | 一部対応（E2E を手元の Supabase に切り替え。受け取り口のモードの確かめは計画2） | E2E が実際に決済を確定し、テストWebhookを登録すると本番DBに注文を作る |
-| R-56 | P1 | 未修正 | 「確認へ進む」で支払いが確定し、戻る・再読込の後は決済フォームが出ず先へ進めない（ユーザー報告） |
+| R-56 | P1 | 修正済み（グループ F） | 「確認へ進む」で支払いが確定し、戻る・再読込の後は決済フォームが出ず先へ進めない（ユーザー報告） |
 | R-57 | P2・法令表示 | 未修正 | コンビニの支払期限が /legal（7日以内）と Stripe の設定（3日）で食い違う |
 
 ## 指摘
@@ -200,7 +200,7 @@
 
 ### R-22 CSRFトークン検査の拒否応答を見落とし、検査が効いていない
 
-- **箇所**: [create-session](../../../../src/app/api/checkout/create-session/route.ts) 40〜48行・500〜519行、[update-shipping](../../../../src/app/api/checkout/update-shipping/route.ts) 21〜23行、同形の判定が profile・profile/addresses・auth/logout にもある。正しい判定は [admin-security.ts](../../../../src/features/stockist/services/admin-security.ts) の `value instanceof Response`。
+- **箇所**: [create-session](../../../../src/app/api/checkout/create-session/route.ts) 40〜48行・500〜519行、`src/app/api/checkout/update-shipping/route.ts`（グループ F で削除済み）21〜23行、同形の判定が profile・profile/addresses・auth/logout にもある。正しい判定は [admin-security.ts](../../../../src/features/stockist/services/admin-security.ts) の `value instanceof Response`。
 - **再現経路**: ログイン客（`sb-refresh-token` あり）が X-CSRF-Token なし・不正値でPOSTすると、[requireCsrfOrDeny](../../../../src/lib/csrfMiddleware.ts) は403の NextResponse を返す。呼び出し側は `'status' in value && '_body' in value` で拒否を判定するが、`'_body' in NextResponse.json({}, {status: 403})` は false（node で実測）。拒否が無視され処理が続く。DB障害時の500応答も同様に無視される。
 - **影響**: proxy の Origin 検査と SameSite=Lax があるため直接の悪用は難しいが、設計が前提とする多層防御の1層が欠けている（OWASP CSRF Prevention Cheat Sheet）。単体テストはモックが `_body` 付きの素のオブジェクトを返すため検出できない。HEADから存在し、今回の差分は update-shipping を含む同じ経路を変更している。
 - **修正方針**: `if (csrfResult instanceof Response) return csrfResult;` に統一し、実際の NextResponse を返すモックで拒否ケースを試験する。画面は clientFetch が X-CSRF-Token を付けるので、修正で正規の利用は壊れない。
@@ -259,7 +259,7 @@
 
 ### R-31 支払後・注文確定前のdraftの配送先を別タブから上書きできる
 
-- **箇所**: [update-shipping](../../../../src/app/api/checkout/update-shipping/route.ts) 150〜161行。
+- **箇所**: `src/app/api/checkout/update-shipping/route.ts`（グループ F で削除済み）150〜161行。
 - **事実**: 条件は版番号と `status <> 'completed'` だけ。同じCookieの別タブは同じ draft とSessionを使うので、タブAで支払った後、注文確定までの間にタブBの入力で配送先を上書きできる。確定前の書き込みを必須にした FREQ-365 の意図（使う直前の値で確定する）を支払後の区間で崩す。failed の draft も更新できる。
 - **修正方針**: 更新を `status = 'created'` かつ Stripe Session が open の場合に限る。支払済みなら409で再読み込みを案内する。
 
@@ -420,6 +420,7 @@
 - **再現経路**: 「確認へ進む」でカードは引き落とされ、コンビニは払込票が出る。確認画面でブラウザの戻る・再読込・カートからの入り直しをすると、段階は step 1 に戻る。カートは注文確定まで消えないので同じ下書きを取り、Stripe 上は完了済みの Session を掴んで409になる。再試行ボタンも出ず、決済フォームは描画されない。
 - **影響**: 支払った客が注文を確定できない。画面からは注文が作られず、Webhook の稼働後は Webhook が注文とメールを作るので、客の認識（戻った＝注文していない）と食い違う。カートを変えると新しい Session で再び支払える（二重払い）。X-3（特定商取引法12条の6の最終確認画面）と同じ根本原因で、最終確認の前に支払いが確定している。
 - **修正方針**: 支払いの実行を「注文する」へ移す。確認画面は決済フォーム（Payment Element）をマウントしたまま確認内容を示し、「注文する」で `confirm()` → 注文作成 → 在庫確保 → メール送信を一度に行う（[Stripe.js confirm](https://docs.stripe.com/js/custom_checkout/confirm) は既定でマウント中の Payment Element から支払い方法を読む）。入り直しで完了済みの Session を見つけたときは、409 で止めずに注文の状態を示す画面へ案内する。在庫を「注文の確定時（メール送信と同時）」に確保するというユーザー要望は、この変更で成り立つ。
+- **対応（グループ F）**: 支払いを最終確認画面の「注文する」に移した。「確認へ進む」では決済の画面を作るだけで、お金は動かない。支払いの後に入り直すと、入り直しの入口が注文の確定を仕上げて「ご注文は確定しています」を出す（[設計書](../../../superpowers/specs/2026-10-07-checkout-place-order-payment-design.md)、[実装計画](../../../superpowers/plans/2026-10-07-checkout-place-order-payment.md)）。
 
 ### R-57 コンビニの支払期限が /legal と Stripe の設定で食い違う
 
@@ -436,7 +437,7 @@
 | 順 | グループ | 指摘ID | 状態 |
 | --- | --- | --- | --- |
 | 1 | A 支払状態を Stripe の現在値に合わせる | R-01, R-02, R-04, R-18, R-25（Webhook 側）, R-41, R-42, R-43, R-44（①の削除の案内と同じ箇所のため 2026-09-25 に移した）, R-57（create-session の同じ箇所を直すため 2026-09-27 に加えた） | 実装済み・push 待ち（[設計書](../../../superpowers/specs/2026-09-26-order-payment-reconciliation-design.md)、[実装計画](../../../superpowers/plans/2026-09-27-order-payment-reconciliation.md)。本番へ当てる前の確認は下の「グループ A を本番へ当てる前の確認」） |
-| 2 | F 支払いを「注文する」で実行する | R-56, X-3, 在庫を注文確定時に確保する要望 | 設計済み・実装前（[設計書](../../../superpowers/specs/2026-10-07-checkout-place-order-payment-design.md)、[実装計画](../../../superpowers/plans/2026-10-07-checkout-place-order-payment.md)） |
+| 2 | F 支払いを「注文する」で実行する | R-56, X-3, 在庫を注文確定時に確保する要望 | 実装済み（[設計書](../../../superpowers/specs/2026-10-07-checkout-place-order-payment-design.md)、[実装計画](../../../superpowers/plans/2026-10-07-checkout-place-order-payment.md)）。DB の移行は push の後に本番へ |
 | 3 | B キューと worker の運用基盤 | R-07, R-33, R-32, R-05, R-35, R-55, X-4 | 実装済み・push 済み（[設計書](../../../superpowers/specs/2026-10-05-webhook-queue-operations-design.md)、[実装計画1（E2E）](../../../superpowers/plans/2026-10-05-e2e-local-supabase.md)、[実装計画2](../../../superpowers/plans/2026-10-05-webhook-queue-operations.md)。DB の変更は 2026-10-07 に本番へ適用済み（20261007030242・20261007030336）。定期処理の登録は開店のとき（[手順書](../../../06_Operations/webhook-queue-operations.md)）） |
 | 4 | C 注文確定RPC（finalize）の整合 | R-24, R-26（R-42 は同じ箇所を直す A へ移した） | 一部対応：R-26 はグループ A で修正。R-24 は complete API 経路で修正したが、Webhook 単独経路の所有者保存は未着手 |
 | 5 | D 注文メールを確実に送る | R-34, R-14 | 未着手 |
@@ -607,8 +608,8 @@ R-01〜R-14 記録後にコード変更なし（src/supabase/tests/e2e/scripts �
 | U-11 | UI | FR-CHECKOUT-029 が confirm まで実行し、webhook 登録時に本番へ注文を作る | 妥当（条件付き） → R-55（webhook-processor に livemode の照合なし） |
 | X-1 | UI（差分外） | UserSection の権限ドロップダウンは onChange を渡すが、dropdown は onValueChange しか呼ばず権限を変更できない | 妥当・差分外（HEADの SingleSelect も同じ。別タスクへ） |
 | X-2 | UI（差分外） | /auth/verified の認証要素選択は native の SingleSelect に onValueChange を渡すが、native 分岐は呼ばず既定の要素から切り替えられない | 妥当・差分外（HEADから同じ。複数要素の管理者が別要素で検証できない。別タスクへ） |
-| X-3 | Checkout（差分外） | 「確認へ進む」で課金が確定し「注文する」は後に来るため、特定商取引法12条の6の最終確認画面の要件を満たすか | 要確認（法務判断。HEADと同じ2段構成。表示項目の確認は未実施） |
-| Y-1 | ユーザー報告 | 「確認へ進む」の後に確定せず戻ると「決済フォームを準備しています...」「この決済セッションは既に確定処理へ進んでいます。」で先へ進めない | 妥当 → R-56（再現経路をコードで確認。X-3 と同じ根本原因） |
+| X-3 | Checkout（差分外） | 「確認へ進む」で課金が確定し「注文する」は後に来るため、特定商取引法12条の6の最終確認画面の要件を満たすか | 要確認（法務判断。HEADと同じ2段構成。表示項目の確認は未実施）。画面は対応（最終確認画面「注文内容の最終確認」に第12条の6 の項目を出し、申し込みと同時に支払う。グループ F）。要件を満たすかの最終判断は開店の前に専門家へ |
+| Y-1 | ユーザー報告 | 「確認へ進む」の後に確定せず戻ると「決済フォームを準備しています...」「この決済セッションは既に確定処理へ進んでいます。」で先へ進めない | 妥当 → R-56（再現経路をコードで確認。X-3 と同じ根本原因）。グループ F で解消（確認へ進むでは支払わず、支払いの後の入り直しは注文の状態を出す） |
 | X-4 | Cron（差分外） | stripe-reconcile の CRON_SECRET 照合が `!==` で定数時間比較でない（他の Cron は timingSafeEqual） | 妥当・差分外（[stripe-reconcile/route.ts](../../../../src/app/api/cron/stripe-reconcile/route.ts) 30行。グループA設計中に発見。グループBで Cron 認証をそろえる） |
 | 追加証拠 | Webhook・注文 | R-01: worker が最大約6本並行し SKIP LOCKED で同じ PaymentIntent のイベントも並行処理される。R-06: 注文が pending/failed でも返金反映は0行で永久再試行。R-13: 再購入（useReorder）も過去の色・サイズをそのまま送る | 妥当 → 各指摘に追記 |
 

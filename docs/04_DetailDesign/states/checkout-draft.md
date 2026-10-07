@@ -1,16 +1,16 @@
 # 購入下書きの状態
 
-> 状態: 現行ソース確認 | 確認日: 2026-10-04 | 対象: `checkout_drafts.status`
+> 状態: 現行ソース確認 | 確認日: 2026-10-07 | 対象: `checkout_drafts.status`
 
 ## 概要
 
-購入下書きの状態値は `created`・`completed`・`failed`。`completed`は下書きから注文を作成した結果であり、Stripeの入金完了やブラウザの完了表示を意味しない。Checkout Sessionの作成claim、配送先の版番号、Sessionの期限は状態値とは別の属性である。
+購入下書きの状態値は `created`・`completed`・`failed`。`completed`は下書きから注文を作成した結果であり、Stripeの入金完了やブラウザの完了表示を意味しない。グループ F から、注文は最終確認画面の「注文する」の受け付けで支払いの前に作る（支払いの後に注文が無いときだけ、照合器が同じ受付RPCを呼ぶ）。Checkout Sessionの作成claim、Sessionの期限は状態値とは別の属性である。配送先は下書きを作る（claimする）ときに保存するだけで、後から更新する経路は無い。
 
 ## 範囲と根拠
 
 - 対応領域: [CHECKOUT詳細設計](../pages/13_checkout.md)、[購入シーケンス](../sequence/checkout-payment.md)。
 - 状態制約: [remote schema](../../../supabase/migrations/20260901102912_remote_schema.sql)。
-- 更新: [create-session](../../../src/app/api/checkout/create-session/route.ts)、[Session claim・下書き失効RPC](../../../supabase/migrations/20260925000132_add_checkout_session_claim_rpcs.sql)、[注文受付RPC](../../../supabase/migrations/20260927100300_place_order_from_checkout_draft.sql)。snapshotの型・入力正規化は[draftサービス](../../../src/features/checkout/services/checkout-draft.service.ts)。
+- 更新: [create-session](../../../src/app/api/checkout/create-session/route.ts)、[place-order](../../../src/app/api/checkout/place-order/route.ts)、[決済の画面の後始末](../../../src/features/checkout/services/checkout-session-lifecycle.service.ts)、[Session claim・下書き失効RPC](../../../supabase/migrations/20260925000132_add_checkout_session_claim_rpcs.sql)、[注文受付RPC](../../../supabase/migrations/20260927100300_place_order_from_checkout_draft.sql)、[最終確認画面の受け付け（引数を足した注文受付RPC）](../../../supabase/migrations/20261008000000_checkout_final_screen_place_order.sql)。snapshotの型・入力正規化は[draftサービス](../../../src/features/checkout/services/checkout-draft.service.ts)。
 
 ## 状態定義と図
 
@@ -25,8 +25,9 @@
 stateDiagram-v2
     state "削除済み（行なし）" as Deleted
     [*] --> created: ST-DRAFT-01 / 下書きINSERT
-    created --> completed: ST-DRAFT-02 / 注文作成
-    created --> failed: ST-DRAFT-03 / Session失効後のretire
+    created --> completed: ST-DRAFT-02 / 注文作成（「注文する」の受け付け）
+    created --> failed: ST-DRAFT-03 / Session失効後のretire（新しい「確認へ進む」で閉じた場合を含む）
+    created --> created: ST-DRAFT-05 / 受け付けの断り（注文を作らない）
     created --> Deleted: ST-DRAFT-04 / 保持期間の清掃
     failed --> Deleted: ST-DRAFT-04 / 保持期間の清掃
 ```
@@ -36,29 +37,30 @@ stateDiagram-v2
 | ID | 契機・ガード | 更新と副作用 | 根拠 |
 | --- | --- | --- | --- |
 | ST-DRAFT-01 | サーバーがカート内容と金額を計算し、下書きを作る | `status=created`、商品・金額・所有sessionのsnapshotを保存 | [create-session](../../../src/app/api/checkout/create-session/route.ts)、[claim RPC](../../../supabase/migrations/20260925000132_add_checkout_session_claim_rpcs.sql) |
-| ST-DRAFT-02 | 注文なし・snapshotに下書きIDと注文作成に必要な参照/金額属性ありで、照合器がStripeを `awaiting_payment`、または受取額全額の返金が未成立の `paid` と判定し、注文作成を選ぶ。受付RPCがdraft・所有session・添付Sessionの一致、`created`、正の額、通貨、割引前合計、商品の存在・publishedを検証し、既存注文の冪等経路でない新規作成に成功 | 注文を `payment_in_progress` で作成、明細と賄えるvariantの在庫台帳を保存、draftを `completed` に更新し、割引額とPIを補う。その後の注文 `paid/pending` 更新は別RPC。部分返金済みのpaidは入金更新後の照合で返金投影する | [受付RPC](../../../supabase/migrations/20260927100300_place_order_from_checkout_draft.sql)、[照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)、[全額返金の判定](../../../src/lib/stripe/checkout-payment-decision.ts) |
-| ST-DRAFT-03 | create-sessionが既存Sessionを失効済みと確認。`retire_expired_checkout_draft`がdraft ID・所有session・Session ID・`created`、request version/fingerprintのNULLを含む一致を確認 | `status=failed`。既存のSession IDはNULLにしない。この下書きを作り直して再利用する遷移ではない | [create-session](../../../src/app/api/checkout/create-session/route.ts)、[retire RPC](../../../supabase/migrations/20260925000132_add_checkout_session_claim_rpcs.sql) |
+| ST-DRAFT-02 | 次のどちらか。(a) 最終確認画面の「注文する」: place-orderが決済の画面（開いている・未払い・残り10分以上・この下書きと結び付き・新しい下書きが無い）をStripeから読み直し、受付RPCを最終確認画面で在庫ありと見せたバリアントつきで呼ぶ（支払いの前。お金は動いていない）。(b) 支払いの後に注文が無い: 注文なし・snapshotに下書きIDと注文作成に必要な参照/金額属性ありで、照合器がStripeを `awaiting_payment`、または受取額全額の返金が未成立の `paid` と判定し、注文作成を選び、受付RPCを引数なしで呼ぶ。いずれも受付RPCがdraft・所有session・添付Sessionの一致、`created`、正の額、通貨、割引前合計、商品の存在・publishedを検証し、既存注文の冪等経路でない新規作成に成功 | 注文を `payment_in_progress` で作成、明細と賄えるvariantの在庫台帳を保存、draftを `completed` に更新し、割引額とPIを補う。その後の注文 `paid/pending` 更新は別RPC。部分返金済みのpaidは入金更新後の照合で返金投影する | [受付RPC](../../../supabase/migrations/20260927100300_place_order_from_checkout_draft.sql)、[受付RPC（引数追加）](../../../supabase/migrations/20261008000000_checkout_final_screen_place_order.sql)、[place-order](../../../src/app/api/checkout/place-order/route.ts)、[照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)、[全額返金の判定](../../../src/lib/stripe/checkout-payment-decision.ts) |
+| ST-DRAFT-03 | 次のどちらか。(a) create-sessionが、claimした下書きの既存Sessionを失効済みと確認、または開いていても残り15分未満で閉じた。(b) 新しい「確認へ進む」が、同じCookieのほかの下書き（24時間以内）の開いているSessionを閉じた。`created` の下書きなら、`retire_expired_checkout_draft`がdraft ID・所有session・Session ID・`created`、request version/fingerprintのNULLを含む一致を確認 | `status=failed`。既存のSession IDはNULLにしない。この下書きを作り直して再利用する遷移ではない。(b)で受け付け済みの下書き（`completed`）のSessionを閉じたときは、下書きを変えず、照合器が注文を放棄の扱いにして在庫を戻す | [create-session](../../../src/app/api/checkout/create-session/route.ts)、[決済の画面の後始末](../../../src/features/checkout/services/checkout-session-lifecycle.service.ts)、[retire RPC](../../../supabase/migrations/20260925000132_add_checkout_session_claim_rpcs.sql) |
 | ST-DRAFT-04 | `created/failed`、`created_at`が30日より前 | 行をDELETE。`completed`はこの清掃の対象外 | [保持期間job](../../../supabase/migrations/20260911235714_add_checkout_drafts_retention_job.sql) |
+| ST-DRAFT-05 | 「注文する」の受け付け（place-order）で、受付RPCが `zero_amount`・`currency_mismatch`・`amount_mismatch`・`item_unavailable`・`price_changed`・`stock_changed` のどれかを返す。`price_changed`・`stock_changed` は、最終確認画面で在庫ありと見せたバリアントを渡したときだけ返る | `status=created` のまま。注文も在庫の確保も作らず、下書きも書き換えない。画面はカート・入力画面・決済の画面の作り直しへ移す。`draft_not_found`（下書きが `created` でない・結び付きが違う）も状態を変えない | [place-order](../../../src/app/api/checkout/place-order/route.ts)、[受付RPC（引数追加）](../../../supabase/migrations/20261008000000_checkout_final_screen_place_order.sql) |
 
 ## 独立属性と競合
 
 | 属性・処理 | 現行の条件 |
 | --- | --- |
-| Session作成claim | `(session_id, version, fingerprint)`の部分一意制約で `created` の下書きを取得・作成する。Stripeの冪等キーでSessionを作り、同じdraft・所有session・version・fingerprintでattachする。Webhookキューのようなclaim token・leaseはこのdraft RPCにはない |
+| Session作成claim | `(session_id, version, fingerprint)`の部分一意制約で `created` の下書きを取得・作成する。版2（グループ F）は指紋に配送先と割引コードを含むので、入力が変われば別の下書きになる。Stripeの冪等キーでSessionを作り、同じdraft・所有session・version・fingerprintでattachする。Webhookキューのようなclaim token・leaseはこのdraft RPCにはない |
 | claimとattachの拒否 | claimは所有session長・正のversionと対応fingerprint・UIモード・origin形式・支払方法・jpy・金額の非負/正の合計・小計＋税＋送料の一致・非空の商品配列を検査する。再取得した行の金額・商品・UIモード・origin不一致も拒否する。attachはcreatedの行をロックし、Session未添付なら設定、同じIDなら既存値、別IDや所有条件不一致なら更新しない |
 | Sessionの期限予約 | `reserve_checkout_session_expiry`は `created` かつSession未添付の場合に期限を予約する。既存期限が `now()+30分15秒` より先なら再利用し、そうでなければ `now()+30分30秒` に更新する。永久固定の期限ではない |
-| 配送先revision | `update-shipping`は所有session・Session ID・期待revision・`status != completed`を条件にCAS更新する。状態遷移ではない |
+| 配送先 | 下書きを作る（claimする）ときに写しを保存するだけで、後から更新する経路は無い（`update-shipping`はグループ F で廃止）。指紋に含めるので、入力が変われば別の下書きになり、古い下書きの配送先は変わらない。`shipping_revision`の列は残るが、アプリは書かない。状態遷移ではない |
 | 注文受付の冪等性 | 同じCheckout Sessionの既存注文はそのIDを返す。RPCはdraftロック後にもSessionで再確認する。PI不一致の検出は照合器の別の処理。二重に明細・在庫確保を行う遷移として描かない |
 | 注文なし・全額返金済み | snapshotに下書きIDがあり、Stripeの返金額が正かつ受取額以上なら`record_only:refunded_before_order`。注文受付RPCを呼ばず、draftをcompletedへ変更しない。既存の要対応を自動解決する処理でもない |
-| 状態を変えない書込み | create-sessionの空配送先補完はdraft ID・所有session・期待revisionのCASでsnapshotとrevisionを更新する。update-shippingと異なりstatus条件はない。入金・払込票RPCは添付Sessionでdraftの欠けたPIを補い、照合器は支払方法を保存する。これらはstatusの遷移ではない |
-| Session再取得の結果 | openなら再利用し、completeなら409としてretireしない。expiredを確認したときだけretire後に新しい行をclaimする。Stripe取得失敗・未知状態をexpiredと扱わず、failedへの更新や新規Session作成を進めない |
+| 状態を変えない書込み | 入金・払込票RPCは添付Sessionでdraftの欠けたPIを補い、照合器は支払方法を保存する。これらはstatusの遷移ではない。create-sessionの空配送先補完は、グループ F で消した |
+| Session再取得の結果 | openで残り15分以上なら再利用する。completeなら409 `order_already_placed` としてretireしない。失効を確認したとき（残り15分未満で閉じて失効させた場合を含む）だけretire後に新しい行をclaimする。Stripe取得失敗・未知状態をexpiredと扱わず、failedへの更新や新規Session作成を進めない |
 
-根拠: [期限予約RPC](../../../supabase/migrations/20260927100600_checkout_session_expiry.sql)、[Session claim RPC](../../../supabase/migrations/20260925000132_add_checkout_session_claim_rpcs.sql)、[配送先revision](../../../supabase/migrations/20260916042338_add_checkout_draft_shipping_revision.sql)、[update-shipping](../../../src/app/api/checkout/update-shipping/route.ts)、[create-sessionの配送先補完](../../../src/app/api/checkout/create-session/route.ts)、[PI補完](../../../supabase/migrations/20260927100400_mark_order_payment_rpcs.sql)、[支払方法保存](../../../src/lib/stripe/checkout-payment-reconciler-deps.ts)。
+根拠: [期限予約RPC](../../../supabase/migrations/20260927100600_checkout_session_expiry.sql)、[Session claim RPC](../../../supabase/migrations/20260925000132_add_checkout_session_claim_rpcs.sql)、[配送先revisionの列](../../../supabase/migrations/20260916042338_add_checkout_draft_shipping_revision.sql)、[決済の画面の後始末](../../../src/features/checkout/services/checkout-session-lifecycle.service.ts)、[PI補完](../../../supabase/migrations/20260927100400_mark_order_payment_rpcs.sql)、[支払方法保存](../../../src/lib/stripe/checkout-payment-reconciler-deps.ts)。
 
 ## 関連テスト
 
-[Session claim](../../../tests/integration/db/checkout_session_claim.integration.test.ts)、[期限予約](../../../tests/integration/db/checkout_session_expiry.integration.test.ts)、[配送先revision](../../../tests/integration/db/checkout_draft_shipping_revision.integration.test.ts)、[注文受付](../../../tests/integration/db/place_order_from_checkout_draft.integration.test.ts)。参照したテストの今回のDB実行結果ではない。
+[Session claim](../../../tests/integration/db/checkout_session_claim.integration.test.ts)、[期限予約](../../../tests/integration/db/checkout_session_expiry.integration.test.ts)、[配送先revision](../../../tests/integration/db/checkout_draft_shipping_revision.integration.test.ts)（列の条件付き更新の確認。アプリは今は使わない）、[注文受付](../../../tests/integration/db/place_order_from_checkout_draft.integration.test.ts)、[在庫ありと見せた明細の受け付け](../../../tests/integration/db/place_order_shown_stock.integration.test.ts)、[受け付けの窓口](../../../tests/unit/api/checkout/place-order-route.test.ts)。参照したテストの今回のDB実行結果ではない。
 
 ## 未確認事項
 
-本番の状態制約・保持jobの適用と実行、実データの保持期間は未確認。SQLコメントにある決済前の受付APIは現行 `src` の呼び出し元として確認できず、現行の注文作成は照合器からの呼び出しを根拠とした。
+本番の状態制約・保持jobの適用と実行、実データの保持期間は未確認。グループ F の移行（`20261008000000`）はまだ本番へ当てていない。SQLコメントにある決済前の受付APIは、グループ F の `place-order`（最終確認画面の「注文する」）として実装済み。支払いの後に注文が無いときの作成は、引き続き照合器からの呼び出しを根拠とした。

@@ -6,10 +6,48 @@
 
 本書は「1.13 チェックアウトページ（CHECKOUT）詳細設計」の既存設計を記録する。要件IDと設計意図を保持しているが、表中の実装状況は現在のコードと一括再照合していない。
 
+2026-10（グループ F）から、支払いは最終確認画面の「注文する」で行う。入力画面に Stripe の部品を置かず、「確認へ進む」でサーバーが決済の画面を作る。詳しくは「最終確認画面と「注文する」（FREQ-417〜421）」の節。
+
 ## 現行実装の確認事項（2026-10-02）
 
-- 現行の画面は [`src/app/checkout/page.tsx`](../../../src/app/checkout/page.tsx) の `CheckoutProvider` と `PaymentElement` を使い、[`create-session`](../../../src/app/api/checkout/create-session/route.ts) を呼ぶ。決済後の注文照合は [注文・決済状態図](../states/order-payment.md) と [システム構成](../../03_BasicDesign/architecture/system-overview.md) を参照する。
+- 現行の画面は [`src/app/checkout/page.tsx`](../../../src/app/checkout/page.tsx) の `CheckoutProvider` と `PaymentElement` を使い、[`create-session`](../../../src/app/api/checkout/create-session/route.ts) を呼ぶ。決済後の注文照合は [注文・決済状態図](../states/order-payment.md) と [システム構成](../../03_BasicDesign/architecture/system-overview.md) を参照する。グループ F（2026-10-07）で、`CheckoutProvider` と `PaymentElement` は[最終確認画面](../../../src/app/checkout/_components/FinalConfirmationStep.tsx)へ移り、`create-session` は「確認へ進む」で呼ぶ形になった（下の「最終確認画面と「注文する」（FREQ-417〜421）」の節）。
 - この文書の表と後続説明には、固定の決済手段、旧在庫列、過去の画面遷移について作成時点の記述が残る。下の「済」は現在の実装状況を保証しない。該当要件を変更するときはコードとテストに照らして個別に改訂する。
+
+## 最終確認画面と「注文する」（FREQ-417〜421）
+
+[グループ F 設計書](../../superpowers/specs/2026-10-07-checkout-place-order-payment-design.md)と[実装計画](../../superpowers/plans/2026-10-07-checkout-place-order-payment.md)の決め事を、実装の形でまとめる。
+
+```mermaid
+flowchart TD
+    Cart["カート<br/>明細ごとのお届けの目安"] --> Input["入力画面<br/>お客様情報・配送先・割引コード"]
+    Input -->|確認へ進む| Create["create-session<br/>下書き・決済の画面（30分）・割引<br/>ほかの決済の画面を閉じる"]
+    Create --> Final["最終確認画面「注文内容の最終確認」<br/>特定商取引法の項目・お支払い方法"]
+    Final -->|変更| Input
+    Final -->|注文する| Accept["place-order<br/>受け付け（注文・在庫の確保）"]
+    Accept -->|在庫・価格の変化、買えない商品| Cart
+    Accept -->|0円| Input
+    Accept -->|時間切れ| Create
+    Accept --> Pay["Stripe の confirm"] --> Done["complete<br/>入金済み・入金待ち・メール"]
+```
+
+| 項目 | 決まり |
+|---|---|
+| 決済の画面を作る時点 | 「確認へ進む」。ページを開いた時には作らない。要求の版は 2、指紋に配送先と割引コードを含める。同じ入力なら残り15分以上の決済の画面を使い回す |
+| 前の決済の画面 | 同じ Cookie の、24時間以内の作成中・受け付け済みの下書きの画面を閉じる。受け付け済みなら照合関数で放棄の扱いにして在庫を戻す。作成中の下書きは退役させる |
+| 割引コード | 「適用」で `/api/checkout/promotion-code` が確かめる。決済の画面には「確認へ進む」でサーバーが `discounts` で付ける。`allow_promotion_codes` は使わない。最終確認画面では変えられない |
+| お届けの目安 | `preview_checkout_fulfillment`（受付 RPC と同じ規則。同じバリアントは数量を合わせて比べる）。カート・最終確認画面に出す。在庫の数は出さない |
+| 受け付け | `/api/checkout/place-order`。持ち主・モード・新しい下書きの有無・残り10分以上を確かめ、受付 RPC に「在庫ありと見せたバリアント」を渡す。価格の変化は `price_changed`、在庫ありから受注生産への変化は `stock_changed` で、どちらも注文も在庫の確保も作らない |
+| 入り直し | `/api/checkout/resume`。最終確認画面と完了画面の URL は `/checkout?session_id=…`。支払い済みなら完了の処理、開いていれば最終確認画面、ほかは入力画面 |
+| 支払いの試みの記録 | `sessionStorage` の `checkout:payment-attempt`。戻ったときに「支払った直後」と「後からの入り直し」を分け、未払いなら支払いが完了しなかった案内を出す |
+| カートへの案内 | `sessionStorage` の `checkout:cart-notice`。カート画面が1回だけ読んで消す |
+| 入力画面の保存（FREQ-366） | 住所の入力フォームを出していて「この配送先を保存する」が ON のときは、「確認へ進む」の最初（決済の画面を作る前）にプロフィール・住所帳へ保存する。失敗したときは進まず、入力画面に案内を出す。お金は動かない |
+| 最終確認画面の案内 | PayPay の取りやめ・決済の画面の作り直し・別の画面で進んでいる・完了の処理の失敗の案内は、2列の外の一番上（全幅。`data-testid="checkout-final-notice"`）に出す。画面が狭いと ORDER SUMMARY が先に並ぶので、列の中に置くと上へ動かしても見えない |
+| 決済の画面の作り直し | 受け付けが `session_expired`（時間切れ・残り10分未満）で断られたら、「確認へ進む」と同じ処理で作り直し、案内「時間がたったため、お支払い情報をもう一度入力してください」を出す。応答を待つ間は、最終確認画面の「変更」「戻る」「注文する」を押せない |
+| 完了画面（入り直し） | 見出し「ご注文は確定しています」に、注文番号とご注文の状態だけを出す（注文日は出さない。後日に開くことがあり、今日の日付がずれる）。ログイン客には注文の詳細への案内を付ける。支払いの試みの記録がある通常の完了画面は、見出し「Thank you for your order」と注文日を出す |
+| カート画面（FREQ-417） | 明細ごとに「在庫あり・3〜7営業日で発送」か「受注生産・数週間〜2か月以上」を出す（`GET /api/cart` の `fulfillment`）。「注文する」が `stock_changed` で断られた後は、画面の上に案内と変わった商品の名前・色・サイズを並べ、その行に「在庫あり → 受注生産」の印を付ける（数量を減らして在庫に収まった行の印は外す） |
+
+検証は[購入・決済照合シーケンス](../sequence/checkout-payment.md)の「関連テスト」に挙げたテストと、`e2e/FR-CART-022-delivery-estimate-and-stock-notice.spec.ts`（カートの目安と案内）。
+
 ## 機能要件対応表
 
 | 要件ID          | 要件内容                                                                                                                     | 実装ID            | 実装対象ファイル                                                                           | 実装概要                                                                                                                | 実装ステータス |
@@ -313,8 +351,8 @@ Stripe セッションを作ったら、その ID を下書き（`checkout_draft
 
 | 影響                                     | 理由                                                                             |
 | ---------------------------------------- | -------------------------------------------------------------------------------- |
-| 配送先を1文字も保存できない              | `update-shipping` は `checkout_session_id` で下書きを引くため、0件で 404         |
-| 画面を開くたび Stripe セッションが増える | 再利用の判定が「`checkout_session_id` が入った下書き」を探すため、対象から外れる |
+| 「注文する」も入り直しもできない（グループ F から） | `place-order` と `resume` は `checkout_session_id` で下書きと決済の画面の結び付きを確かめるため、書けていないと受け付けは `superseded`、入り直しは入力画面になる |
+| 「確認へ進む」を押すたび Stripe セッションが増える | 再利用の判定が「`checkout_session_id` が入った下書き」を探すため、対象から外れる |
 
 - まだ支払いは発生していないので、500 を返して作り直させる（`Failed to prepare checkout`）
 - 理由は監査ログに残す（`Failed to store checkout session id on draft`）
@@ -322,18 +360,19 @@ Stripe セッションを作ったら、その ID を下書き（`checkout_draft
 
 ### Checkout Session 作成の原子性と冪等性（FREQ-405）
 
-`POST /api/checkout/create-session`は、Stripeを呼ぶ前に`claim_checkout_draft`で要求を1つの下書きへ収束させる。画面から来た値をそのまま冪等キーの意味にせず、次のサーバー算出値を固定順序でJSON化し、`v1:<sha256>`のfingerprintを作る。
+`POST /api/checkout/create-session`は、Stripeを呼ぶ前に`claim_checkout_draft`で要求を1つの下書きへ収束させる。画面から来た値をそのまま冪等キーの意味にせず、次のサーバー算出値を固定順序でJSON化し、`v2:<sha256>`（グループ F 前は`v1:`）のfingerprintを作る。
 
 | fingerprintに含める値                          | 理由                                                  |
 | ---------------------------------------------- | ----------------------------------------------------- |
 | カート明細、サーバー算出の小計・税・送料・合計 | 同じ請求内容だけを再利用する                          |
 | custom / hosted                                | Stripeの必須パラメータが異なる                        |
 | 許可リストで検証したorigin                     | hostedの戻り先を同じ値に固定する                      |
+| 配送先・割引コード（版2から）                  | 決済の画面を「確認へ進む」の時点の入力の写しにする。入力が変われば別の下書き・別の決済の画面にする |
 | 要求版                                         | Stripeの固定オプションを変えたときに旧Sessionと分ける |
 
-配送先と申告支払方法はfingerprintに含めない。同じカートで入力中に値が変わってもSessionを増やさず、最初にclaimした下書きの値をStripe作成パラメータの正本にする。配送先は`shipping_revision`付きの別同期で更新する。
+申告支払方法はfingerprintに含めない。配送先と割引コードは版2（グループ F）から含める。決済の画面は「確認へ進む」の時点の入力の写しで、入力が変われば別の下書き・別の決済の画面になる。claimした下書きの値をStripe作成パラメータの正本にし、配送先を後から書き換える経路は無い（下の「配送先の書き込み順（FREQ-365）」）。
 
-旧互換の再利用検索は`checkout_request_version`が未設定または`v0`の下書きだけを対象にし、旧Session作成時に固定された支払方法と、商品名・単価を含むStripe関連内容が完全一致する場合だけ再利用する。`v1`以降は動的支払方法を前提に、必ずfingerprint付きのclaim経路を使う。
+旧互換の再利用検索（`checkout_request_version`が未設定または`v0`の下書きの使い回し）は、グループ F で消した。旧版の決済の画面はブラウザから割引コードを付けられるので使い回さない。`v1`以降は動的支払方法を前提に、必ずfingerprint付きのclaim経路を使う。
 
 ```mermaid
 sequenceDiagram
@@ -355,12 +394,12 @@ sequenceDiagram
 
 | Stripeの確認結果                       | 処理                                                                                          |
 | -------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `open`                                 | customは`client_secret`、hostedは`url`を同じ下書きから返す                                    |
-| `complete`                             | 決済処理中を含むため409を返し、新規Sessionを作らない                                          |
+| `open`                                 | 残り15分以上なら、customは最終確認画面の内容（`confirmation`。`client_secret`を含む）、hostedは`url`を同じ下書きから返す。残り15分未満なら閉じて退役させ、作り直す |
+| `complete`                             | 決済処理中を含む支払いの済んだ決済の画面なので409 `order_already_placed` を返し、新規Sessionを作らない（画面は注文の確定を仕上げる） |
 | `expired`                              | 下書きID・セッションID・fingerprint・`created`をすべて照合して退役する。更新0件なら500で停止し、成功時だけ新しい下書きをclaimする |
 | 取得失敗、`resource_missing`、未知状態 | 未入金と推定せず500を返し、新規Sessionを作らない                                              |
 
-Stripe作成には`checkout-session:create:v1:<draft ID>:<expires_at>`を冪等キー、下書きIDを`client_reference_id`として渡す。`<expires_at>` は決済画面の失効時刻（UNIX 秒。作成から30分30秒後）で、`reserve_checkout_session_expiry` が下書きに保存し、15秒以内の再送には同じ値を返す（それより後は決め直す。FREQ-407）。同じキーのパラメータが変わらないよう、明細・metadata・メール・戻り先・失効時刻はすべてclaim済み下書きから組み立てる。Session IDの書き戻しは`attach_checkout_session_to_draft`で行い、未設定または同じIDだけを受け入れる。
+Stripe作成には`checkout-session:create:v2:<draft ID>:<expires_at>`（版2。グループ F 前は`v1`）を冪等キー、下書きIDを`client_reference_id`として渡す。`<expires_at>` は決済画面の失効時刻（UNIX 秒。作成から30分30秒後）で、`reserve_checkout_session_expiry` が下書きに保存し、15秒以内の再送には同じ値を返す（それより後は決め直す。FREQ-407）。同じキーのパラメータが変わらないよう、明細・metadata・メール・戻り先・失効時刻はすべてclaim済み下書きから組み立てる。Session IDの書き戻しは`attach_checkout_session_to_draft`で行い、未設定または同じIDだけを受け入れる。
 
 別IDとのCAS競合が確定した場合は、後発Sessionが`open`と確認できたときだけ、Session IDを含む別の冪等キーで失効する。RPC通信エラーは書き込み結果が不明なのでSessionを失効せず、再送で同じStripe冪等キーと下書きを回収する。
 
@@ -373,38 +412,25 @@ DB変更は2段階で適用する。
 
 ### 配送先の書き込み順（FREQ-365）
 
-draft の配送先（`shipping_snapshot`）を書き換える経路は2つに絞る。
+> グループ F で update-shipping を廃止した。配送先は「確認へ進む」で決済の画面と一緒に下書きへ書く（要求の指紋に含める）。
 
-| 経路                                              | 役割                                                                                   |
-| ------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `POST /api/checkout/update-shipping`              | 画面からの同期。入力が止まって0.5秒後（デバウンス）と、「確認へ進む」押下時に必ず呼ぶ  |
-| `POST /api/checkout/create-session`（再利用経路） | draft にまだ住所が無いときだけ、今回の配送先で埋める。既に入っている住所は上書きしない |
+draft の配送先（`shipping_snapshot`）を書く経路は、`POST /api/checkout/create-session`（「確認へ進む」）の1つだけ。下書きを作る（`claim_checkout_draft`）ときに、入力された配送先を写して保存し、その後は書き換えない。配送先は要求の指紋に含めるので、入力が変われば別の下書き・別の決済の画面になる。古い下書きの配送先は変わらない。
 
-書き込みは版番号（`checkout_drafts.shipping_revision`）の照合つきで行う。
+以前は、画面からの同期（update-shipping。入力が止まって0.5秒後のデバウンスと、「確認へ進む」押下時）と create-session の再利用経路の2つから書き換わった。そのため、版番号（`checkout_drafts.shipping_revision`）の照合つきの条件付き更新（版が違えば 409、版番号が無ければ 428）で、遅れて届いた古い内容が新しい内容を消すこと（lost update）と、支払いの後に別タブから上書きされること（R-31）を防いでいた。書き換える経路が無くなったので、どちらも起きない。`shipping_revision` の列と条件付き更新の SQL の形は DB に残るが、サーバーと画面は使わない。
 
-1. create-session の応答に現在の版番号が入る。画面はそれを保持する。
-2. update-shipping は `expectedRevision` を受け取り、`shipping_revision` が一致する行だけを1文の条件付き更新で書き換え、版番号を1つ進めて返す。
-3. 一致しなければ 409 と現在の版番号を返す。画面は版番号を取り込み直し、次の同期で書き直す。
-
-これで、遅れて届いた古い内容が新しい内容を消すこと（lost update）を防ぐ。「読んでから書く」の2段構えにはしない。RFC 9110 の条件付きリクエスト（If-Match）と同じ考え方で、Read Committed の Postgres は競合した更新の条件を評価し直すため、同時に走っても勝つのは片方だけになる。
-
-同じタブからの書き込みは直列化する。デバウンスの同期が飛んでいる最中に「確認へ進む」を押すと、同じ版番号で2つ投げることになり、後から届いた確定直前の同期が 409 で弾かれて決済に進めなくなる。前の同期の完了を待ってから、更新された版番号で書き込む。これで 409 は本来の意味（別タブ・別端末が書き換えた）だけになる。
-
-版番号を伴わない更新要求は 428（RFC 6585 Precondition Required）で拒否し、「再読み込みしてからやり直す」案内を返す。この仕組みが入る前に開いたまま放置されたタブから届くケースがこれにあたる。入力そのものの不備（負の値・整数でない値）は 400 で区別する。428 は監査ログにも残すので、古い版のまま使われているタブがあることを運用側から検知できる。
-
-確定直前は、画面の「同期済み」の記憶にかかわらず必ず書き込む。記憶だけで省略すると、確認（check）と決済（use）の間にサーバ側が変わっていても気づけない（OWASP ASVS V11.1.6 の TOCTOU）。
+最終確認画面に出した配送先と、注文に写す配送先は、どちらも同じ下書きの写しなので、確認の後に変わることは無い（OWASP ASVS V11.1.6 の TOCTOU）。
 
 注文確定の前には配送先の必須項目（メールアドレス・氏名・郵便番号・都道府県・市区町村・番地・電話番号）を検証する。欠けていても支払いは成立しているので注文は作り、欠けた項目を監査ログにエラーとして残す。注文一覧は`配送先要確認`を表示して発送操作を隠し、`admin_ship_paid_order`とDBトリガーも`shipped`への遷移を拒否する（ASVS V11.1.5 / V11.1.7）。
 
 | テスト                                                                      | 内容                                                            |
 | --------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| `tests/unit/api/checkout/update-shipping-route.test.ts`                     | 版の照合、409、不正な版番号の拒否                               |
-| `tests/unit/api/checkout/create-session-route.test.ts`                      | 再利用時に既存の住所を上書きしないこと、空の draft を埋めること |
+| `tests/unit/api/checkout/create-session-route.test.ts`                      | 配送先が違えば別の指紋（別の下書き）になること                  |
 | `tests/unit/lib/stripe/checkout-payment-reconciler.test.ts` | 配送先の欠落を監査ログ（`Checkout draft shipping snapshot is incomplete`）に残しつつ注文は作ること。完了 API と webhook はどちらも照合関数の受付の予備処理を通る |
-| `tests/integration/db/checkout_draft_shipping_revision.integration.test.ts` | 実 DB で古い書き込みが弾かれること、同時でも片方だけが勝つこと  |
-| `e2e/FR-CHECKOUT-027-shipping-sync-before-confirm.spec.ts`                  | 確定直前に必ず同期すること、拒否されたら決済へ進まないこと      |
+| `tests/integration/db/checkout_draft_shipping_revision.integration.test.ts` | 実 DB で古い書き込みが弾かれること、同時でも片方だけが勝つこと（今は書く経路が無い。列の条件付き更新の形の確認として残る） |
 
 ### 確定ボタンの有効・無効（FREQ-367）
+
+> FREQ-418 により廃止。最終確認画面の「注文する」に同じ決まり（決済フォームの準備ができるまで押せない）を置いた。
 
 | 状態                                                     | 確定ボタン                                                    | 表示                    |
 | -------------------------------------------------------- | ------------------------------------------------------------- | ----------------------- |
@@ -428,9 +454,11 @@ draft の配送先（`shipping_snapshot`）を書き換える経路は2つに絞
 
 表示と保存を別々の条件で書くと、保存済み住所が0件のときだけ「フォームは出るのに保存されない」ようにずれる。判定は `isEnteringNewAddress` の1か所にまとめる。
 
-チェックが OFF のときは何も保存しない（OWASP ASVS 8.3.3 の opt-in 同意）。保存は決済確定の直前に走るので、保存に失敗したときは決済へ進まずエラーを出す（支払い前に止まるため、二重課金にはならない）。検証は `e2e/FR-CHECKOUT-017-save-address-control.spec.ts` の「保存済み住所が0件でも配送先を保存する」。
+チェックが OFF のときは何も保存しない（OWASP ASVS 8.3.3 の opt-in 同意）。保存は「確認へ進む」の最初（決済の画面を作る前）に走るので、保存に失敗したときは最終確認画面へ進まずエラーを出す（お金が動く前に止まるため、二重課金にはならない）。検証は `e2e/FR-CHECKOUT-017-save-address-control.spec.ts` の「保存済み住所が0件でも配送先を保存する」。
 
 ### 確認画面の支払方法（FREQ-371）
+
+> FREQ-418 により廃止。支払いの後の確認画面は無くなった。
 
 確認画面は、決済フォーム（PaymentElement）の change イベントの `value.type` を丸めずに持ち、サーバが注文に記録するのと同じ変換を経て、注文詳細（`/api/orders/[id]`）と共通の `mapPaymentMethodLabel` で表示する。変換は `src/features/checkout/services/payment-method.service.ts` にまとめる。
 
@@ -458,6 +486,8 @@ draft の配送先（`shipping_snapshot`）を書き換える経路は2つに絞
 テストモードでは Link（登録済みの Link アカウントが要る）と銀行振込（ダッシュボードで無効）の確認画面まで E2E で進めないため、これらは単体テストで確かめる。
 
 ### 画面の部品の定義場所（FREQ-372）
+
+> AC-03・04 は FREQ-418 により廃止（入力画面に決済フォームと配送先の同期が無い）。
 
 checkout の部品は `CheckoutPageContent` の外（モジュールの最上位）で定義し、必要な値は props で渡す。画面の関数の中で定義すると、再描画のたびに別の部品として作り直され（React は部品の関数が変わると、その下の state と DOM を捨てて作り直す）、次のことが起きていた。
 
@@ -639,6 +669,8 @@ Stripe は「同じイベントを複数回受信する可能性」と「配信�
 
 ### 決済から戻ったときの確定は1回だけ（FREQ-378）
 
+> グループ F から、戻りは入り直しの入口が支払い済みを返したときに確定を送る。完了の後も URL に決済の画面の ID を残す。
+
 `/checkout?session_id=…` で開くと、effect が `/api/checkout/complete` を送る。送ったことを state（`processedCallback`）で覚えていたが、state は次の描画まで反映されない。カートの再描画で依存の `updateCartCount`（メモ化されていない）が先に変わった描画で effect が走り直し、3ms 差で2回送ることがあった（15回中4回。変更前のコードでも同じ率で再現）。
 
 - 送った決済セッションを ref（`finalizedSessionIdRef`）で覚える。ref は即座に変わるので、走り直しても同じ決済セッションでは送らない
@@ -652,8 +684,11 @@ Stripe は「同じイベントを複数回受信する可能性」と「配信�
 
 | エンドポイント                 | メソッド | 概要                                    | 認証                | 主なレスポンス                |
 | ------------------------------ | -------- | --------------------------------------- | ------------------- | ----------------------------- |
-| `/api/checkout/create-session` | POST     | カート内容から Stripe セッションを作成  | 任意（ゲスト/会員） | `{ sessionId, clientSecret }` |
+| `/api/checkout/create-session` | POST     | 「確認へ進む」で下書きと Stripe セッション（30分で失効）を作り、最終確認画面の内容を返す | 任意（ゲスト/会員） | `{ confirmation }` |
 | `/api/checkout/complete`       | POST     | Webhook/サーバ確認後に注文を確定        | 任意                | `{ orderId, status }`         |
+| `/api/checkout/promotion-code` | POST     | 割引コードの「適用」。サーバーが使えるかを確かめ、割引後の金額を返す | 任意（ゲスト/会員） | `{ code, subtotalAmount, shippingAmount, discountAmount, totalAmount }` |
+| `/api/checkout/place-order`    | POST     | 「注文する」の受け付け。注文を作り在庫を確保する | 任意（ゲスト/会員） | `{ orderId, orderStatus }` |
+| `/api/checkout/resume`         | POST     | 決済の画面を開き直したときに、どこから続けるかを返す | 任意（ゲスト/会員） | `{ state: "none" }` ／ `{ state: "payment_done", checkoutSessionId }` ／ `{ state: "resume", confirmation }` |
 | `/api/webhook/stripe`          | POST     | Stripe Webhook 受信・署名検証・冪等処理 | Stripe 署名         | `200` or `400`                |
 
 > **決済成功率目標**: 99% 以上。支払失敗時は注文を `failed` ステータスに更新し、ユーザへ再試行導線を提示すること。

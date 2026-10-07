@@ -1,177 +1,154 @@
 # 購入・決済照合シーケンス
 
-> 状態: 現行ソース確認 | 確認日: 2026-10-04 | 対象: `/checkout`、Checkout Session、注文・在庫の照合
+> 状態: 現行ソース確認 | 確認日: 2026-10-07 | 対象: `/checkout`、Checkout Session、注文・在庫の照合
 
 ## 概要
 
-現在の購入画面は、下書きとStripe Checkout Sessionを準備し、配送先を保存してからStripe決済を確定する。外部遷移が不要なら、その後に注文確認画面へ進み、注文確定操作でcomplete APIを呼ぶ。注文・在庫の作成はcomplete/Webhookが呼ぶ共通照合器が行う。表示の確認手順と、外部サービスで支払いが確定する順序を区別する。
+購入画面は、入力画面（お客様情報・配送先・割引コード）と最終確認画面に分かれる。「確認へ進む」でサーバーが下書きと Stripe Checkout Session（30分で失効。割引はサーバーが付ける）を作り、同じ Cookie のほかの決済の画面を閉じ、最終確認画面の内容を返す。最終確認画面の「注文する」で、受け付け（注文と在庫の確保）→ 支払い → 完了の処理を一度に行う。注文・在庫の状態の変更は complete/Webhook が呼ぶ共通照合器が行う。開き直したときは入り直しの入口が、どこから続けるかを返す。
 
 ## 範囲と根拠
 
-対応: [CHECKOUT詳細設計](../pages/13_checkout.md)の購入・冪等性・配送revision・完了処理。粒度は[共通方針](README.md)、状態は[注文](../states/order-payment.md)と[下書き](../states/checkout-draft.md)。
+対応: [CHECKOUT詳細設計](../pages/13_checkout.md)の購入・冪等性・最終確認画面と受け付け・入り直し・完了処理。粒度は[共通方針](README.md)、状態は[注文](../states/order-payment.md)と[下書き](../states/checkout-draft.md)。
 
 | 略号 | 確認元 |
 | --- | --- |
-| UI | [checkout/page.tsx](../../../src/app/checkout/page.tsx) |
-| Create | [create-session](../../../src/app/api/checkout/create-session/route.ts)、[draftサービス](../../../src/features/checkout/services/checkout-draft.service.ts) |
-| Shipping | [update-shipping](../../../src/app/api/checkout/update-shipping/route.ts) |
+| UI | [checkout/page.tsx](../../../src/app/checkout/page.tsx)、[最終確認画面](../../../src/app/checkout/_components/FinalConfirmationStep.tsx) |
+| Create | [create-session](../../../src/app/api/checkout/create-session/route.ts)、[draftサービス](../../../src/features/checkout/services/checkout-draft.service.ts)、[最終確認画面の内容](../../../src/features/checkout/services/checkout-confirmation.service.ts)、[お届けの目安](../../../src/features/checkout/services/checkout-fulfillment.service.ts) |
+| PlaceOrder | [place-order](../../../src/app/api/checkout/place-order/route.ts) |
+| Resume | [resume](../../../src/app/api/checkout/resume/route.ts)、[決済の画面の後始末](../../../src/features/checkout/services/checkout-session-lifecycle.service.ts) |
+| Promotion | [promotion-code](../../../src/app/api/checkout/promotion-code/route.ts)、[割引コードの確かめ](../../../src/features/checkout/services/promotion-code.service.ts) |
 | Complete | [complete](../../../src/app/api/checkout/complete/route.ts) |
 | Reconcile | [照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)、[読取り](../../../src/lib/stripe/checkout-payment-reader.ts)、[判定](../../../src/lib/stripe/checkout-payment-decision.ts)、[DBアダプター](../../../src/lib/stripe/checkout-payment-reconciler-deps.ts) |
-| RPC | [draft claim・attach・retire](../../../supabase/migrations/20260925000132_add_checkout_session_claim_rpcs.sql)、[期限予約](../../../supabase/migrations/20260927100600_checkout_session_expiry.sql)、[注文受付](../../../supabase/migrations/20260927100300_place_order_from_checkout_draft.sql)、[入金更新](../../../supabase/migrations/20260927100400_mark_order_payment_rpcs.sql) |
+| RPC | [draft claim・attach・retire](../../../supabase/migrations/20260925000132_add_checkout_session_claim_rpcs.sql)、[期限予約](../../../supabase/migrations/20260927100600_checkout_session_expiry.sql)、[注文受付](../../../supabase/migrations/20260927100300_place_order_from_checkout_draft.sql)、[入金更新](../../../supabase/migrations/20260927100400_mark_order_payment_rpcs.sql)、[最終確認画面の受け付け](../../../supabase/migrations/20261008000000_checkout_final_screen_place_order.sql) |
 
-## SQ-CHECKOUT-01: 下書きとSessionの準備
+## SQ-CHECKOUT-01: 「確認へ進む」で決済の画面を作る
 
-開始は、カートの取得完了後、step=1、非空、clientSecret未取得の購入画面。事前条件はCookie `session_id`。正常終了ではcustom UI用のclientSecret・Session ID・shippingRevisionを受け取る。この段階で注文も在庫予約も作成しない。
+開始は入力画面の「確認へ進む」。事前条件は Cookie `session_id` と、入力の検証が通ったこと。正常終了では最終確認画面の内容（`confirmation`）を受け取る。この段階で注文も在庫の確保も作らない。
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant UI as 購入画面
+    participant UI as 入力画面
     participant API as create-session
     participant DB as DB / draft RPC
     participant Stripe as Stripe
-    UI->>API: POST /api/checkout/create-session (uiMode=custom)
+    UI->>API: POST /api/checkout/create-session（配送先・表示額・割引コード）
     API->>API: session・制限・CSRF・入力確認
-    API->>DB: 所有sessionのカート・公開商品を取得
-    DB-->>API: 明細・価格・購入可否
-    API->>API: 金額再計算・表示額照合・fingerprint
-    API->>DB: claim_checkout_draft
-    DB-->>API: created下書きと既存Session ID
-    alt 添付済みSessionがある
-        API->>Stripe: checkout.sessions.retrieve
-        Stripe-->>API: Session現在値
-        alt open・要求と整合
-            API->>DB: 空の配送先だけ補完 (revision付き)
-            API-->>UI: 200 同じclientSecret/Session ID
-        else complete
-            API-->>UI: 409 再作成不可
-        else expired
-            API->>DB: retire_expired_checkout_draft
-            API->>DB: 新しいcreated下書きを再claim
-            Note over API,DB: 回復回数を制限して新規準備へ
-        end
-    else Session未添付の下書き
-        API->>DB: reserve_checkout_session_expiry
-        DB-->>API: 予約したexpires_at
-        API->>Stripe: checkout.sessions.create (冪等キー付き)
-        Stripe-->>API: Session ID・clientSecret
-        API->>DB: attach_checkout_session_to_draft
-        DB-->>API: 同じ要求への添付結果
-        alt 添付成功・同一Session再添付
-            API->>DB: 空の配送先だけ補完 (必要時)
-            API-->>UI: 200 clientSecret/Session ID/revision
-        else 競合・DBエラー
-            opt 競合で新Sessionがopen
-                API->>Stripe: expireを試みる
-            end
-            API-->>UI: 500 準備失敗
+    API->>DB: カート・公開商品を取得し、金額を計算し直す
+    API->>DB: 受け付け済みで支払いの済んだ決済の画面を探す
+    alt 支払いの済んだ決済の画面がある
+        API-->>UI: 409 order_already_placed（画面は完了の処理へ）
+    end
+    opt 割引コードがある
+        API->>Stripe: promotionCodes.list（有効・期限・回数・最低購入額）
+        alt 使えない
+            API-->>UI: 409 promotion_code_invalid（欄に理由）
         end
     end
+    API->>DB: claim_checkout_draft（版 2。指紋に配送先と割引コード）
+    alt 結び付いた決済の画面が開いていて残り15分以上
+        API->>API: その決済の画面を使い回す
+    else 残り15分未満・失効・まだ無い
+        API->>Stripe: 開いていれば失効させる
+        API->>DB: retire_expired_checkout_draft の後に claim し直す
+        API->>Stripe: checkout.sessions.create（discounts、30分で失効）
+        API->>DB: attach_checkout_session_to_draft
+    end
+    API->>DB: 同じ Cookie のほかの下書き（24時間以内）を探す
+    API->>Stripe: 開いている決済の画面を失効させる
+    API->>API: 受け付け済みなら照合関数で放棄の扱い（在庫を戻す）
+    API->>DB: preview_checkout_fulfillment（明細ごとの在庫あり・受注生産）
+    API-->>UI: 200 { confirmation }
+    UI->>UI: 最終確認画面（URL を ?session_id=… に置き換える）
 ```
 
-expired分岐の後は、再claimの結果に応じてopen Session回復または新規準備を行う。図は初回と回復の要点を示し、回復の呼び出しを無限ループとして扱わない。
-
-| 条件・例外 | 現行結果 |
+| 条件・例外 | 結果 |
 | --- | --- |
-| 商品欠落・購入不可 | prepareを拒否。数量不足だけでは拒否せず、注文受付時にstock/backorderを決める |
-| 表示額とサーバー額の違い | 409 `checkout_amount_mismatch`。正の整数でない合計は400 |
-| fingerprint | version、UI mode、origin、JPY、サーバー算出金額、canonical明細。配送先・支払方法を含まない |
-| Session冪等キー | `checkout-session:create:v1:<draftId>:<expiresAt>`。draft claimは部分一意制約であり、Webhookのclaim token/leaseとは別 |
+| 前処理（FREQ-366） | 住所の入力フォームを出していて「この配送先を保存する」が ON のときは、この呼び出しの前にプロフィール・住所帳へ保存する。失敗したときは呼ばず、入力画面に案内を出す |
+| 商品欠落・購入不可 | 409 `out_of_stock` で拒否する。数量不足だけでは拒否せず、在庫あり・受注生産は「注文する」の受け付けで決める。表示額とサーバー額の違いは409 `checkout_amount_mismatch`、正の整数でない合計は400 |
+| 要求の指紋 | 版2。UI mode、origin、JPY、サーバー算出金額、canonical明細、配送先、割引コードの識別子を含み、申告の支払方法は含まない。冪等キーは `checkout-session:create:v2:<draftId>:<expiresAt>`。draft claimは部分一意制約であり、Webhookのclaim token/leaseとは別 |
 | Session作成期限 | DBに期限を予約してStripeへ渡す。既存の期限を再利用する条件は[下書き状態設計](../states/checkout-draft.md)に記載 |
 | Stripe読取り失敗 | expiredとみなしてSessionを追加作成しない。取得の失敗として応答 |
 | attachの競合とDBエラー | 競合は新しいopen Sessionをexpireする補償を試みる。DBエラーではexpireせず500。補償の成功を保証しない |
-| 互換・hosted | v0/未設定draftのcustom再利用経路、hostedのURL応答もAPIにある。現在の購入画面はcustomを送る。[旧PaymentIntent API](../../../src/app/api/checkout/payment-intent/route.ts)はrate limit通過後に410を返す廃止入口。制限応答429/503が先行し得る |
+| hosted・旧API | hostedのURL応答もAPIにある。現在の購入画面はcustomを送る。[旧PaymentIntent API](../../../src/app/api/checkout/payment-intent/route.ts)はrate limit通過後に410を返す廃止入口。制限応答429/503が先行し得る |
 
-## SQ-CHECKOUT-02: 配送先保存と決済確定
+## SQ-CHECKOUT-02: 「注文する」で受け付けて支払う
 
-事前条件はSessionが準備済み、配送情報と支払情報が入力済み。step1の配送同期は同一タブで直列化し、入力が完全で変更ありなら500msのdebounceで送る。以下は利用者が「確認へ進む」を押したシナリオ。
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User as 購入者
-    participant UI as 購入画面
-    participant API as update-shipping
-    participant DB as checkout_drafts
-    participant Stripe as Stripe SDK
-    User->>UI: 確認へ進む
-    UI->>UI: 配送入力を検証
-    UI->>API: POST update-shipping (Session ID・expectedRevision)
-    API->>API: CSRF・制限・入力確認
-    API->>DB: 所有session・revision・未completedでCAS
-    alt 更新成功
-        DB-->>API: revisionを加算して返す
-        API-->>UI: 同期結果
-        UI->>UI: 最新の配送同期keyと一致を確認
-        opt ログイン済み・新規住所入力・保存を選択
-            UI->>UI: プロフィール・住所保存APIを呼ぶ
-        end
-        UI->>Stripe: updateEmail
-        Note over UI,Stripe: key不一致・任意保存失敗・email更新失敗はstep1で終了<br/>成功時だけconfirmへ進む
-        UI->>Stripe: checkout.confirm (redirect=if_required)
-        alt 外部遷移不要・confirm成功
-            Stripe-->>UI: 成功
-            UI->>UI: 金額snapshot保存、step2注文確認
-        else 外部認証が必要
-            Note over UI,Stripe: /checkout?session_id=...へ復帰後 SQ-CHECKOUT-03
-        else confirm失敗
-            Stripe-->>UI: エラー
-            UI->>UI: step1のままエラー表示
-        end
-    else 更新0件・入力エラー
-        API-->>UI: 428 / 404 / 409等
-        UI->>UI: 同期失敗を表示しconfirmへ進まない
-    end
-```
-
-| 条件 | 現行結果 |
-| --- | --- |
-| expectedRevisionなし | 428 `shipping_revision_required` |
-| 更新0件 | 所有draftなしは404、draftありは409と現revision。completedのdraftもこの409経路 |
-| 同一タブ・複数タブ | タブ内はPromise queueで同期を直列化。タブ間はDB revisionのCASで競合。409のrevisionを取り込み当該同期を失敗扱いとする |
-| 古い入力への応答 | UIは古い要求の成功を最新の同期keyとして採用しない |
-| 配送・メール・任意住所保存の失敗 | 決済confirm前の失敗は次の処理へ進まない。Sessionを作り直す動作ではない |
-| 決済後の確認表示 | step2へ進む前にconfirmを呼ぶ。step2の「注文確定」で初めて決済を開始する図にはしない |
-
-## SQ-CHECKOUT-03: complete APIと画面の完了
-
-開始はstep2の注文確定、またはStripeからの `session_id` 付き復帰。復帰POSTはSession IDだけを送れる。completeは保存済み配送snapshotを使い、配送先の更新・revision確認をこのAPI内では行わない。
+開始は最終確認画面の「注文する」。お客様から送るのは決済の画面の ID と、最終確認画面で「在庫あり」と見せた明細のバリアントだけ。金額はサーバーが Stripe から読み直す。
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant UI as 購入画面
-    participant API as complete API
+    participant UI as 最終確認画面
+    participant PO as place-order
+    participant DB as DB / 受付 RPC
     participant Stripe as Stripe
-    participant C as 共通照合器
-    participant DB as DB / 注文RPC
-    UI->>API: POST /api/checkout/complete
-    API->>API: Cookie session・利用者・制限・入力確認
-    API->>Stripe: Session取得 (PaymentIntent等を展開)
-    Stripe-->>API: 現在値・metadata または 取得エラー
-    break 初回Stripe取得に失敗
-        API->>DB: 一時障害分類 または 外側catchでエラーを監査
-        API-->>UI: 一時障害503 / その他500で終了
-    end
-    API->>API: metadata所有者 → mode → draft ID → 0円 → Session完了条件
-    Note over API,DB: 各ガード不成立なら応答して終了<br/>通過した場合だけdraftを取得
-    API->>DB: draft存在・所有session確認
-    DB-->>API: draftのID・session_id
-    API->>C: reconcileCheckoutPayment (Session ID) / SQ-CHECKOUT-04
-    C-->>API: orderId・orderStatus・処理結果
-    alt paid/pending/shippedの注文あり
-        opt ログイン利用者・所有者未設定
-            API->>DB: user_id IS NULLで注文を紐付け
+    participant C as complete
+    UI->>PO: POST /api/checkout/place-order
+    PO->>Stripe: checkout.sessions.retrieve
+    PO->>PO: 持ち主・モード・新しい下書きの有無・開いている・残り10分以上
+    PO->>DB: place_order_from_checkout_draft（Stripe の金額、見せた在庫）
+    alt 断る（価格・在庫の変化、買えない商品、0円、別の画面）
+        PO-->>UI: 409（理由と案内。在庫の変化は変わった明細を添える）
+        UI->>UI: カート画面・入力画面・決済の画面の作り直しへ
+    else 受け付けた（同じ決済の画面なら同じ注文）
+        PO-->>UI: 200 { orderId }
+        UI->>Stripe: checkout.confirm（redirect: if_required）
+        alt カードが断られた
+            Stripe-->>UI: error（受け付け済みの注文はそのまま。もう一度押せる）
+        else 支払えた（PayPay は Stripe の画面を経て ?session_id=… に戻る）
+            UI->>C: POST /api/checkout/complete
+            C->>DB: 照合関数（入金済み・入金待ち、メール、カートを空にする）
+            C-->>UI: { orderId, status }
         end
-        API-->>UI: 200 orderId/status/paymentMethod
-        UI->>UI: カート件数更新、完了表示、復帰query除去
-    else 登録できない・一時障害
-        API-->>UI: 409 / 503等
-        UI->>UI: 失敗表示
     end
 ```
 
-complete APIの正常終了はorderIdとpaid/pending/shippedの状態がある200。初回のSession取得もisTransientStripeErrorで分類し、一時障害なら503。それ以外の照合器外の例外は外側catchの500、照合器の一時エラーも503、注文を登録できない結果は409となる。配送先の入力欄をこのAPIで再保存することはない。
+| 断りの理由 | 画面の動き |
+| --- | --- |
+| `stock_changed`・`item_unavailable`・`price_changed` | カート画面へ移し、案内を1回だけ出す（`sessionStorage` の `checkout:cart-notice`）。在庫の変化は、変わった明細の名前・色・サイズと「在庫あり → 受注生産」の印を添える |
+| `zero_amount` | 入力画面へ戻し、案内を出す |
+| `session_expired` | 「確認へ進む」と同じ処理で決済の画面を作り直し、最終確認画面の一番上に案内を出す。作り直しの応答を待つ間は、「変更」「戻る」「注文する」を押せない |
+| `superseded` | その画面のまま、一番上に案内を出す（別のタブで後から「確認へ進む」が押された） |
+| `payment_done` | 支払いが済んでいる。完了の処理へ進む |
+
+受け付け・支払い・完了の処理の間は、「注文する」を押せない。完了の処理の中の照合は SQ-CHECKOUT-04・05。complete API は metadata の持ち主・mode・draft ID・0円・完了条件の順に確かめる（下の「照合・例外・永続化の条件」）。
+
+## SQ-CHECKOUT-03: 開き直したとき（入り直し）
+
+開始は /checkout を開いたとき（Stripe の画面からの戻り・読み込み直しを含む）。1回の読み込みで1回だけ問い合わせる（FREQ-378）。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant UI as 決済の画面
+    participant R as resume
+    participant Stripe as Stripe
+    participant C as complete
+    UI->>R: POST /api/checkout/resume（URL の session_id があれば添える）
+    alt ID なし
+        R->>R: 受け付け済みで支払いの済んだ決済の画面を探す
+        R-->>UI: payment_done か none
+    else ID あり
+        R->>Stripe: checkout.sessions.retrieve（持ち主を確かめる）
+        R-->>UI: 支払い済みは payment_done、開いていれば resume、ほかは none
+    end
+    alt payment_done
+        UI->>C: POST /api/checkout/complete
+        UI->>UI: 支払いの試みの記録あり＝完了画面、なし＝「ご注文は確定しています」
+    else resume
+        UI->>UI: 最終確認画面（記録ありで未払いなら支払いが完了しなかった案内）
+    else none
+        UI->>UI: 入力画面
+    end
+```
+
+| 条件 | 結果 |
+| --- | --- |
+| resume の失敗 | 通信の失敗と200以外の応答は `none` として扱い、入力画面から始める |
+| 完了画面 | 支払いの試みの記録（`sessionStorage` の `checkout:payment-attempt`）があれば通常の完了画面（見出し「Thank you for your order」・注文日つき）。無ければ入り直しの完了画面 |
+| 入り直しの完了画面 | 見出し「ご注文は確定しています」に、注文番号とご注文の状態だけを出す。注文日は出さない（後日に開くことがあり、今日の日付がずれる）。ログイン客には注文の詳細への案内を付ける。完了の後も URL は `?session_id=…` のまま残し、読み込み直しても注文の状態を出す |
+| 最終確認画面（resume） | 記録ありで未払いなら、支払いが完了しなかった案内（PayPay は「PayPay でのお支払いが完了しませんでした」）を一番上に出す。受け付け済みの注文があれば、お届けの目安は確保した結果（注文の明細）から出す |
 
 ## SQ-CHECKOUT-04: 共通照合器の読取り・判定・再確認
 
@@ -277,8 +254,8 @@ sequenceDiagram
 | 既存注文の返金 | 判定がnone、注文paid/shipped、snapshot paid、返金額>0、PIありの場合だけsyncRefundsを呼ぶ。入金更新直後の読み直しも対象。同期後statusを返し、全額返金によるcancelledならcompleteは409。record_only・返金0・cancelledには呼ばない。事前のPI/金額不一致は要対応分岐を優先する |
 | 返金同期の失敗 | Stripe一時障害はstripe_unavailable、DB errorのcauseが一時障害ならdb_unavailable、最大3回の返金投影が未収束ならnot_convergedのReconcileTransientErrorへ変換。completeは503、workerはfail/retry。その他は元の例外を返す。成立済み注文RPCは巻き戻さない |
 | 配送先 | completeのshippingは形式検証のみ。注文作成時はロックしたdraft.shipping_snapshotから写す。必須配送snapshot欠落は監査して注文作成を続ける |
-| 新規受付 | Sessionで既存注文を確認、draftロック後にも確認。商品はID昇順でKEY SHARE、variantはID昇順でUPDATEロック。商品・金額等の拒否時はorder_not_creatableを記録し、自動返金はしない |
-| 在庫 | 同variant数量を合算し、activeかつ足りるvariantだけstock、残りはbackorder。stock明細をpurchase台帳で確保。決済前のcreate-sessionでは予約しない |
+| 新規受付 | Sessionで既存注文を確認、draftロック後にも確認。商品はID昇順でKEY SHARE、variantはID昇順でUPDATEロック。商品・金額等の拒否時はorder_not_creatableを記録し、自動返金はしない。「注文する」の受け付け（place-order）は、最終確認画面で在庫ありと見せたバリアントを渡して呼び、見せた後の価格の変化は`price_changed`、在庫ありから受注生産への変化は`stock_changed`で断る（注文も在庫の確保も作らず、下書きは`created`のまま）。この引数が無い呼び出し（照合器の予備処理）は、足りない明細を受注生産として受ける |
+| 在庫 | 同variant数量を合算し、activeかつ足りるvariantだけstock、残りはbackorder。stock明細をpurchase台帳で確保。確保は注文を作る受付RPCの中で行い、通常は「注文する」の受け付け（支払いの前）。create-session（確認へ進む）では予約しない |
 | draftとカート | placeでdraft completed、入金RPCで対象snapshotのsource_cart_idと所有sessionが一致するカート行だけ削除 |
 | paidの異常 | 金額・通貨不一致でもRPCはpaidに更新し、照合器が要対応を記録。再確保できないstock明細はpaid＋要確認。出荷ガードとは別に管理する |
 | 競合・収束 | 更新0件や中間矛盾は読み直し。state_conflictが最終回まで続けば要対応を記録してneeds_actionを返す。最大3回の試行内でdoneに達せず、最終回がapplied/lost_raceで追加読取りを要する場合はReconcileTransientError(not_converged)。completeは一時エラーを503にする |
@@ -286,16 +263,16 @@ sequenceDiagram
 | 注文メール | 設定・宛先が揃えば種類別claimを行う。RPCがfalseなら送らず、RPC error/例外は監査後に送信を続ける。送信失敗はclaimのreleaseを試みる。入金更新とメール到達・重複排除を同一視しない |
 | 所有者紐付け | ログイン時のみ、user_id未設定条件で紐付け。失敗は成功応答を取り消さない |
 | 画面再試行 | 通常確定・外部復帰とも失敗を表示。completeを自動pollするループは画面にない |
-| 郵便番号の補助照会 | 7桁入力で[postal-code API](../../../src/app/api/checkout/postal-code/route.ts)をGET。IP60回/600秒、入力不正400、制限429/503、200(address/null)、上流例外502。[住所サービス](../../../src/features/checkout/services/postal-code.service.ts)はメモリ/DB cache、同一照会の共有、cache miss時のZipCloud照会を行う。UIは古い入力への応答を破棄し、補完できない場合も手入力を続けられる。draft保存や注文状態は変更しない。配送保存はSQ-CHECKOUT-02へ分ける |
+| 郵便番号の補助照会 | 7桁入力で[postal-code API](../../../src/app/api/checkout/postal-code/route.ts)をGET。IP60回/600秒、入力不正400、制限429/503、200(address/null)、上流例外502。[住所サービス](../../../src/features/checkout/services/postal-code.service.ts)はメモリ/DB cache、同一照会の共有、cache miss時のZipCloud照会を行う。UIは古い入力への応答を破棄し、補完できない場合も手入力を続けられる。draft保存や注文状態は変更しない。配送先の保存はSQ-CHECKOUT-01へ分ける |
 
 金額・Session・PI照合の全判定は[状態図の判定表](../states/order-payment.md#stripe現在値の分類)へ集約する。
 
 ## 関連テスト
 
-[Session claim](../../../tests/integration/db/checkout_session_claim.integration.test.ts)、[配送revision](../../../tests/integration/db/checkout_draft_shipping_revision.integration.test.ts)、[注文受付](../../../tests/integration/db/place_order_from_checkout_draft.integration.test.ts)、[読取り](../../../tests/unit/lib/stripe/checkout-payment-reader.test.ts)、[照合器](../../../tests/unit/lib/stripe/checkout-payment-reconciler.test.ts)、[入金更新](../../../tests/integration/db/mark_order_payment.integration.test.ts)、[完了と配送先E2E](../../../e2e/FR-CHECKOUT-005-006-009-checkout-postal-complete-idempotent.spec.ts)。関連する検証観点の参照であり、今回の実行成功証跡ではない。
+[Session claim](../../../tests/integration/db/checkout_session_claim.integration.test.ts)、[注文受付](../../../tests/integration/db/place_order_from_checkout_draft.integration.test.ts)、[在庫ありと見せた明細の受け付け](../../../tests/integration/db/place_order_shown_stock.integration.test.ts)、[受け付けの窓口](../../../tests/unit/api/checkout/place-order-route.test.ts)、[入り直しの入口](../../../tests/unit/api/checkout/resume-route.test.ts)、[割引コードの入口](../../../tests/unit/api/checkout/promotion-code-route.test.ts)、[読取り](../../../tests/unit/lib/stripe/checkout-payment-reader.test.ts)、[照合器](../../../tests/unit/lib/stripe/checkout-payment-reconciler.test.ts)、[入金更新](../../../tests/integration/db/mark_order_payment.integration.test.ts)、[完了と配送先E2E](../../../e2e/FR-CHECKOUT-005-006-009-checkout-postal-complete-idempotent.spec.ts)、[注文するで支払う E2E](../../../e2e/FR-CHECKOUT-036-place-order-payment.spec.ts)、[最終確認画面 E2E](../../../e2e/FR-CHECKOUT-037-final-confirmation-screen.spec.ts)、[在庫の変化とカート E2E](../../../e2e/FR-CHECKOUT-038-stock-change-to-cart.spec.ts)、[割引コード E2E](../../../e2e/FR-CHECKOUT-039-promotion-code-server.spec.ts)、[支払い後の入り直し E2E](../../../e2e/FR-CHECKOUT-040-reentry-after-payment.spec.ts)。関連する検証観点の参照であり、今回の実行成功証跡ではない。
 
 ## 未確認事項
 
-本番のmigration適用、実際のStripe Session・PaymentIntent・動的支払方法、外部認証・メール到達、全競合の実行結果は未確認。SQLの「受付API(F)」コメントや廃止されたfinalize/PaymentIntent APIを、現行画面から呼ぶ経路として描かない。
+本番のmigration適用（グループ F の `20261008000000` を含む。まだ本番へ当てていない）、実際のStripe Session・PaymentIntent・動的支払方法、外部認証・メール到達、全競合の実行結果は未確認。SQLの「受付API(F)」コメントは、グループ F の `place-order`（SQ-CHECKOUT-02）として実装済み。廃止されたfinalize/PaymentIntent APIを、現行画面から呼ぶ経路として描かない。
 
-照合基準は2026-10-04の作業ツリーで、`bbb18761`後の返金補正を含む。対象と検証結果は[レビュー記録](../../05_Quality/reviews/code/2026-10-04-sequence-state-review.md)を参照する。completeの外側500の監査はmessageと文字列codeを記録し、例外オブジェクトのdetails/hintを複写しない。
+照合基準は2026-10-04の作業ツリーで、`bbb18761`後の返金補正を含む。SQ-CHECKOUT-01〜03は2026-10-07の作業ツリー（グループ F）から書いた。照合器・complete API・読取り・判定のファイルは、2026-10-04の確認の後に変わっていない。対象と検証結果は[レビュー記録](../../05_Quality/reviews/code/2026-10-04-sequence-state-review.md)を参照する。completeの外側500の監査はmessageと文字列codeを記録し、例外オブジェクトのdetails/hintを複写しない。

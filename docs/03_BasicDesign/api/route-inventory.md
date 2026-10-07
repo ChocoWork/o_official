@@ -1,6 +1,6 @@
 # APIルート一覧
 
-> 状態: ソースから作成した入口一覧 | 確認日: 2026-10-02 | 対象: `src/app/api/**/route.ts`
+> 状態: ソースから作成した入口一覧 | 確認日: 2026-10-02（checkout の入口の変更は 2026-10-07 に反映） | 対象: `src/app/api/**/route.ts`
 
 ## 概要
 
@@ -72,8 +72,10 @@
 | `/api/checkout/complete` | `POST` | [route.ts](../../../src/app/api/checkout/complete/route.ts) |
 | `/api/checkout/create-session` | `POST` | [route.ts](../../../src/app/api/checkout/create-session/route.ts) |
 | `/api/checkout/payment-intent` | `POST` | [route.ts](../../../src/app/api/checkout/payment-intent/route.ts) |
+| `/api/checkout/place-order` | `POST` | [route.ts](../../../src/app/api/checkout/place-order/route.ts) |
 | `/api/checkout/postal-code` | `GET` | [route.ts](../../../src/app/api/checkout/postal-code/route.ts) |
-| `/api/checkout/update-shipping` | `POST` | [route.ts](../../../src/app/api/checkout/update-shipping/route.ts) |
+| `/api/checkout/promotion-code` | `POST` | [route.ts](../../../src/app/api/checkout/promotion-code/route.ts) |
+| `/api/checkout/resume` | `POST` | [route.ts](../../../src/app/api/checkout/resume/route.ts) |
 | `/api/contact/inbound` | `POST` | [route.ts](../../../src/app/api/contact/inbound/route.ts) |
 | `/api/contact` | `POST` | [route.ts](../../../src/app/api/contact/route.ts) |
 | `/api/contact/threads/[id]/reply` | `POST` | [route.ts](../../../src/app/api/contact/threads/%5Bid%5D/reply/route.ts) |
