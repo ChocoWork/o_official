@@ -1,5 +1,7 @@
--- 署名検証済みイベントをDBへ保存した後に処理するworkerを10秒ごとに起動する。
--- 本番適用は add_stripe_webhook_queue.sql とアプリの両方が用意されてから、明示承認後。
+-- 署名検証済みイベントをDBへ保存した後に処理するworkerを毎分起動する（設計書 2026-10-05 グループ B の 4-1。R-32）。
+-- 受け取り口は保存の後にその場で1回 worker を動かす（after()）ので、毎分の起動は取りこぼしを拾う役目。
+-- 10秒ごとだと実行の記録（cron.job_run_details）が1日8,640行溜まるので、毎分（1,440行）にした。
+-- 本番適用は開店のとき、手順書（docs/06_Operations/webhook-queue-operations.md）の順番どおり、明示承認後。
 -- app_base_url と cron_secret は既存のVault secretを再利用し、値をジョブに埋め込まない。
 CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA extensions;
 
@@ -13,7 +15,7 @@ END $$;
 
 SELECT cron.schedule(
   'process-stripe-webhooks',
-  '10 seconds',
+  '* * * * *',
   $$
     DO $job$
     DECLARE

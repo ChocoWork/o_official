@@ -52,7 +52,7 @@ select cron.schedule(
       end if;
 
       perform net.http_post(
-        url := v_base_url || '/api/cron/expire-pending-orders',
+        url := pg_catalog.rtrim(v_base_url, '/') || '/api/cron/expire-pending-orders',
         headers := jsonb_build_object(
           'Content-Type', 'application/json',
           'Authorization', 'Bearer ' || v_cron_secret

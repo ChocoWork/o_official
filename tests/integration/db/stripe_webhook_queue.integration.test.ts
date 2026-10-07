@@ -418,7 +418,7 @@ describe('integration: durable Stripe webhook queue', () => {
       client.query('update public.stripe_webhook_events set last_error=null where false'),
     ).rejects.toMatchObject({ code: '42501' });
   });
-  test('Vaultを参照する10秒間隔のworkerジョブを登録できる', async () => {
+  test('Vaultを参照する毎分のworkerジョブを登録できる', async () => {
     await client.query(fs.readFileSync(
       path.join(process.cwd(), 'supabase/pending/schedule_stripe_webhook_worker.sql'),
       'utf8',
@@ -427,7 +427,7 @@ describe('integration: durable Stripe webhook queue', () => {
       "select schedule, command from cron.job where jobname = 'process-stripe-webhooks'",
     );
     expect(result.rows).toHaveLength(1);
-    expect(result.rows[0].schedule).toBe('10 seconds');
+    expect(result.rows[0].schedule).toBe('* * * * *');
     expect(result.rows[0].command).toContain('/api/cron/process-stripe-webhooks');
     expect(result.rows[0].command).toContain('vault.decrypted_secrets');
     expect(result.rows[0].command).not.toContain('cron-secret');

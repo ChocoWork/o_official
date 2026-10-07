@@ -87,6 +87,12 @@ describe('未入金注文の掃除ジョブの登録', () => {
       expect(jobBody).toMatch(/'Authorization',\s*'Bearer '/);
       expect(jobBody).toMatch(/timeout_milliseconds/);
     });
+
+    it('住所の最後の「/」を落として呼ぶ（Vault の値に「/」が付いていても「//api/…」にしない）', () => {
+      expect(jobBody).toMatch(
+        /pg_catalog\.rtrim\(v_base_url,\s*'\/'\)\s*\|\|\s*'\/api\/cron\/expire-pending-orders'/,
+      );
+    });
   });
 
   // 呼ぶ側が先に諦めると、ルートは働いているのに cron.job_run_details と net._http_response には
