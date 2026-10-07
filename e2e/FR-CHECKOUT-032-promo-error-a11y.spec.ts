@@ -9,7 +9,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
  * role="alert" の要素を案内ごと後から差し込むと読み上げられないことがある（MDN）ので、
  * 案内の入れ物は最初から置き、中身だけを入れ替える。
  *
- * プロモーションコード欄は決済セッションの準備ができてから出るので、実 Stripe のセッションが要る。
+ * プロモーションコード欄は入力画面に常にある。「適用」はサーバーが Stripe に問い合わせて確かめる（グループ F）。
  * カートは FR-CHECKOUT-022 と同じく実 API で用意し、用意できない環境ではスキップする。
  */
 
@@ -19,7 +19,7 @@ const VIEWPORTS = [
   { name: "desktop", width: 1280 },
 ] as const;
 
-/** Stripe に存在しないコード。適用すると「このプロモーションコードは無効です。」などが返る。 */
+/** Stripe に存在しないコード。適用すると、サーバーの文言（このコードは使えません）が返る。 */
 const UNKNOWN_CODE = "E2E-PROMO-UNKNOWN";
 
 async function seedCart(page: Page): Promise<{ ok: boolean; reason: string }> {
@@ -62,7 +62,7 @@ function promoAlert(page: Page): Locator {
   return promoSection(page).locator(':scope > [role="alert"]');
 }
 
-/** checkout を開き、プロモーションコード欄が出る（決済セッションの準備ができる）まで待つ。 */
+/** checkout を開き、プロモーションコード欄が出るまで待つ。 */
 async function openCheckout(page: Page): Promise<void> {
   await page.goto("/checkout");
   await expect(promoInput(page)).toBeVisible({ timeout: 30000 });

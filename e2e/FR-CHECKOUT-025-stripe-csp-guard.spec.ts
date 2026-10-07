@@ -1,5 +1,6 @@
 import { expect, test, type Frame, type Page } from '@playwright/test';
 import { selectPaymentMethod } from './checkout-test-utils';
+import { fillShippingForm, fillTestCard, proceedToFinal, seedCart, stubPostalCode } from './checkout-flow-helpers';
 
 const VIEWPORTS = [
   { name: 'mobile', width: 390 },
@@ -12,11 +13,11 @@ type CspViolation = { directive: string; blocked: string; source: string };
 /** CSP ブロックは操作の後から非同期に起きる。待つべき完了条件が無いので、一定時間だけ観測する。 */
 const OBSERVE_MS = 3_000;
 
-/** 支払方法セクションに描画される Stripe の iframe（FR-CHECKOUT-022 と同じ拾い方）。 */
+/** 最終確認画面のお支払い方法の欄に描画される Stripe の iframe（FR-CHECKOUT-022 と同じ拾い方）。 */
 function paymentIframe(page: Page) {
   return page
     .locator('section.checkout-section')
-    .filter({ hasText: '支払方法の選択' })
+    .filter({ hasText: 'お支払い方法' })
     .locator('iframe')
     .first();
 }
@@ -54,6 +55,8 @@ async function blockedExternalResources(page: Page): Promise<CspViolation[]> {
 
 async function openCheckoutAndWaitForPaymentForm(page: Page): Promise<void> {
   await page.goto('/checkout');
+  await fillShippingForm(page, 'csp-guard@example.com');
+  await proceedToFinal(page);
   // CSP で Stripe の読み込みが止められると決済フォームは出ないので、
   // 「決済フォームが表示された」か「外部リソースのブロックが起きた」のどちらかまで待つ。
   await expect
@@ -81,33 +84,11 @@ test.describe('FR-CHECKOUT-025 checkout の CSP が Stripe の決済フォーム
   // FR-CHECKOUT-022 と同じく実カートを作り、Stripe テストモードのセッションを使う。
   test.beforeEach(async ({ page }) => {
     await recordCspViolations(page);
-    await page.goto('/');
-    const seeded = await page.evaluate(async () => {
-      const itemsResponse = await fetch('/api/items?pageSize=20&sort=newest');
-      if (!itemsResponse.ok) {
-        return { ok: false, reason: `/api/items returned ${itemsResponse.status}` };
-      }
-      const body = (await itemsResponse.json()) as {
-        items?: { id?: number; price?: number }[];
-      };
-      const item = (body.items ?? []).find(
-        (candidate) => typeof candidate?.id === 'number' && (candidate?.price ?? 0) >= 50,
-      );
-      if (!item?.id) {
-        return { ok: false, reason: 'No published item priced at 50 JPY or above' };
-      }
-      const cartResponse = await fetch('/api/cart', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ item_id: item.id, quantity: 1 }),
-      });
-      return cartResponse.ok
-        ? { ok: true, reason: '' }
-        : { ok: false, reason: `cart seeding failed ${cartResponse.status}` };
-    });
+    const seeded = await seedCart(page);
     if (!seeded.ok) {
       test.skip(true, seeded.reason);
     }
+    await stubPostalCode(page);
   });
 
   for (const viewport of VIEWPORTS) {
@@ -139,8 +120,12 @@ test.describe('FR-CHECKOUT-025 checkout の CSP が Stripe の決済フォーム
       await openCheckoutAndWaitForPaymentForm(page);
       expect(await blockedExternalResources(page)).toEqual([]);
 
+      // 最終確認画面ではメールアドレスを先に決済の画面へ渡しているので、Link の保存欄は
+      // カードを入れた後に「情報を保存」として出る（入力画面にあった頃の「Link で安全かつ…」は出ない）。
+      // 保存欄を開いてメールアドレスを入れるだけで、「注文する」は押さない（Link のアカウントは作らない）
       const frame = await paymentElementFrame(page);
-      await frame.getByText('Link で安全かつスピーディーに決済').first().click();
+      await fillTestCard(frame);
+      await frame.getByText('次回以降のチェックアウトを迅速にするために情報を保存').first().click();
       await frame.getByLabel('メールアドレス').first().fill('csp-guard@example.com');
       await page.waitForTimeout(OBSERVE_MS);
 

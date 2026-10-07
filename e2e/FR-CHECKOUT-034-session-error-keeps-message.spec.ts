@@ -1,13 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
 import { mockCartApis, sampleCartItem } from './shop-test-utils';
+import { fillShippingForm, stubPostalCode } from './checkout-flow-helpers';
 
 /**
  * FR-CHECKOUT-034 再試行できない失敗のあとは「確認へ進む」を押せない
  * 対応 FREQ: FREQ-385（AC-01 / AC-02 / AC-03）
  *
- * 在庫切れなど、待っても直らない理由で決済セッションの作成が失敗したあと、代替の
- * 「確認へ進む」を押すと、原因の案内が「決済フォームを準備しています…」に置き換わっていた。
- * 再試行ボタンも出ないため、直らないものを待たせることになる。
+ * 在庫切れなど、待っても直らない理由で決済セッションの作成が失敗したとき、
+ * 再試行できない失敗のあとに「確認へ進む」を押せると、同じ失敗をくり返す。
  */
 
 const VIEWPORTS = [
@@ -17,7 +17,6 @@ const VIEWPORTS = [
 ] as const;
 
 const OUT_OF_STOCK_MESSAGE = '「シルクブラウス」は在庫が不足しています。';
-const PREPARING_MESSAGE = '決済フォームを準備しています。少し待ってから再度お試しください。';
 const ERROR_MESSAGE_ID = 'checkout-session-error-message';
 
 async function openCheckoutWithOutOfStock(page: Page): Promise<void> {
@@ -33,8 +32,11 @@ async function openCheckoutWithOutOfStock(page: Page): Promise<void> {
       json: { error: 'out_of_stock', message: OUT_OF_STOCK_MESSAGE },
     }),
   );
+  await stubPostalCode(page);
   await page.goto('/checkout');
   await expect(page.locator('input[name="fullName"]')).toBeVisible();
+  await fillShippingForm(page, 'e2e-out-of-stock@example.com');
+  await page.getByRole('button', { name: '確認へ進む' }).click();
 }
 
 for (const viewport of VIEWPORTS) {
@@ -45,12 +47,10 @@ for (const viewport of VIEWPORTS) {
     // FREQ-385-AC-01: 原因の案内がそのまま残る
     const errorMessage = page.getByTestId('checkout-session-error');
     await expect(errorMessage).toHaveText(OUT_OF_STOCK_MESSAGE);
-    await expect(page.getByText(PREPARING_MESSAGE)).toHaveCount(0);
 
-    // FREQ-385-AC-02: 押しても進めないので、ボタンを止める。再試行ボタンも出ない
+    // FREQ-385-AC-02: 押しても進めないので、ボタンを止める
     const confirmButton = page.getByRole('button', { name: '確認へ進む' });
     await expect(confirmButton).toBeDisabled();
-    await expect(page.getByRole('button', { name: '再試行する' })).toHaveCount(0);
 
     // FREQ-385-AC-03: 押せない理由として、原因の案内を指す
     await expect(confirmButton).toHaveAttribute('aria-describedby', ERROR_MESSAGE_ID);

@@ -1,27 +1,16 @@
 import { expect, type Frame, type Locator, type Page } from '@playwright/test';
 
 /**
- * 決済セッション生成と認証更新への「実サーバ呼び出し」を止める。
+ * 決済の画面の作成と入り直し、認証の更新への「実サーバ呼び出し」を止める。
  *
- * 1画面化により /checkout はカートに商品があると読み込み時点で
- * create-session を打つ。Stripe を本当に叩く必要があるのは
- * FR-CHECKOUT-022 だけで、それ以外の checkout 系テストが実エンドポイントを
- * 叩くと次の2つの並列実行フレークを生む。
+ * グループ F から、決済の画面（create-session）は「確認へ進む」で作り、/checkout を開くたびに入り直しの
+ * 入口（resume）を呼ぶ。決済フォーム自体を検証しないテストからは、次の2つを避けるために固定値で塞ぐ。
  *
- * 1. レート上限の食い潰し。create-session の IP 上限は本番で 10秒10回・10分60回
- *    （E2E サーバーでは scripts/e2e-server.mjs の倍率で引き上げる。FREQ-362）。
- *    checkout 系を通すだけで 1 分あたり十数回呼ばれ、スイートを連続実行すると
- *    上限に達し、実際に Stripe を見に行く FR-CHECKOUT-022 が 429 で落ちる。
- *
- * 2. モックしたログイン状態の破壊。create-session は clientFetch 経由の POST で、
- *    CSRF Cookie が無いと送信前に /api/auth/refresh を呼ぶ。実サーバは
- *    本物のセッションが無いので 401 を返し、clientFetch は「セッション切れ」を
- *    通知する。LoginContext はこれを受けて isLoggedIn を false に落とすため、
- *    /api/auth/me をモックしていてもログイン限定の UI が消える。
- *    refresh 側が 429（レート制限）を返した実行では通知が出ないので、
- *    「同じテストが実行ごとに通ったり落ちたりする」形で現れる。
- *
- * 決済フォーム自体を検証しないテストからは、この2つを固定値で塞ぐ。
+ * 1. 回数の制限の食い潰し。E2E はすべて 127.0.0.1 から来るので、実際の入口を叩き続けると上限に達し、
+ *    実際に Stripe を見に行くテストが 429 で落ちる。
+ * 2. モックしたログイン状態の破壊。POST は clientFetch 経由で、CSRF Cookie が無いと送信前に
+ *    /api/auth/refresh を呼ぶ。実サーバは本物のセッションが無いので 401 を返し、LoginContext は
+ *    isLoggedIn を false に落とす。
  */
 export async function stubCheckoutSessionApis(page: Page): Promise<void> {
   await page.route('**/api/auth/refresh', (route) =>
@@ -43,6 +32,15 @@ export async function stubCheckoutSessionApis(page: Page): Promise<void> {
         correlationId: 'e2e-stubbed-correlation-id',
         retryable: true,
       }),
+    }),
+  );
+
+  // 入り直しを見ないテストでは「入力画面から」に固定する（決め事 D9）
+  await page.route('**/api/checkout/resume', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ state: 'none' }),
     }),
   );
 }
@@ -77,16 +75,52 @@ export async function waitForPositionToSettle(locator: Locator): Promise<void> {
  *
  * 画面外にある決済フォームの項目は、押す前の安定判定が終わらないか、押しても選択が
  * 変わらないことがある（FR-CHECKOUT-025 の PayPay の検証は、mobile と desktop で PayPay を
- * 選べないまま通っていた）。支払方法セクションを画面内に入れ、位置が落ち着いてから押し、
+ * 選べないまま通っていた）。最終確認画面のお支払い方法の欄を画面内に入れ、位置が落ち着いてから押し、
  * 項目が開いた（aria-expanded="true"）ことを確かめる。
  */
 export async function selectPaymentMethod(page: Page, frame: Frame, name: string): Promise<void> {
   await page
     .locator('section.checkout-section')
-    .filter({ hasText: '支払方法の選択' })
+    .filter({ hasText: 'お支払い方法' })
     .evaluate((element) => element.scrollIntoView({ block: 'end' }));
   const option = frame.getByRole('button', { name, exact: true });
   await waitForPositionToSettle(option);
   await option.click();
   await expect(option).toHaveAttribute('aria-expanded', 'true');
+}
+
+/**
+ * 入り直しの入口を「支払いが済んでいる」にする。stubCheckoutSessionApis より後に登録するので、こちらが優先される。
+ * /checkout?session_id=… を開いたときに、画面が完了の処理（/api/checkout/complete）へ進む。
+ */
+export async function stubResumePaymentDone(page: Page): Promise<void> {
+  await page.route('**/api/checkout/resume', async (route) => {
+    const body = route.request().postDataJSON() as { checkoutSessionId?: string } | null;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(
+        body?.checkoutSessionId
+          ? { state: 'payment_done', checkoutSessionId: body.checkoutSessionId }
+          : { state: 'none' },
+      ),
+    });
+  });
+}
+
+/**
+ * Stripe の画面（PayPay など）で支払った直後に戻った状態を作る（決め事 D10）。
+ * ページの読み込み前に、支払いの試みの記録を sessionStorage に置く。
+ */
+export async function rememberPaymentAttemptBeforeLoad(
+  page: Page,
+  checkoutSessionId: string,
+  paymentType = 'paypay',
+): Promise<void> {
+  await page.addInitScript(
+    ([id, type]) => {
+      window.sessionStorage.setItem('checkout:payment-attempt', JSON.stringify({ checkoutSessionId: id, paymentType: type }));
+    },
+    [checkoutSessionId, paymentType] as const,
+  );
 }

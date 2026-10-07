@@ -1,7 +1,8 @@
 import { expect, test } from '@playwright/test';
+import { fillShippingForm, stubPostalCode } from './checkout-flow-helpers';
 
 test.describe('FR-CHECKOUT-007 決済前在庫チェック', () => {
-  test('チェックアウトページで create-session の 409 を在庫切れメッセージとして表示する', async ({ page }) => {
+  test('確認へ進むで create-session の 409 を買えない商品の案内として表示する', async ({ page }) => {
     await page.route('**/api/cart', async (route) => {
       await route.fulfill({
         status: 200,
@@ -37,8 +38,10 @@ test.describe('FR-CHECKOUT-007 決済前在庫チェック', () => {
       });
     });
 
-    // 1画面化により、ページ到着時点でセッション生成が走るため押下せずにエラーが出る
+    await stubPostalCode(page);
     await page.goto('/checkout');
+    await fillShippingForm(page, 'e2e-checkout-error@example.com');
+    await page.getByRole('button', { name: '確認へ進む' }).click();
     await expect(page.getByText('以下の商品の在庫が不足しています: 在庫テスト商品（要求 2 / 在庫 1）')).toBeVisible();
   });
 });

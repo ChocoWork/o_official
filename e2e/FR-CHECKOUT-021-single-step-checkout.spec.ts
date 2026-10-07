@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mockCartApis, sampleCartItem } from "./shop-test-utils";
+import { fillShippingForm, stubPostalCode } from "./checkout-flow-helpers";
 
 const VIEWPORTS = [
   { name: "mobile", width: 390 },
@@ -7,14 +8,7 @@ const VIEWPORTS = [
   { name: "desktop", width: 1280 },
 ];
 
-// CONTROLLER RULING: create-session を偽の clientSecret（例: "cs_test_secret"）で
-// 成功応答させない。Stripe の CheckoutProvider は不正な clientSecret では
-// 初期化に失敗し、画面全体を壊しうるため。
-// また実エンドポイントに応答させる代替も、create-session はブラウザ向けにモックした
-// /api/cart ではなく session_id クッキーに紐づく実際の carts テーブルを見るため、
-// このテストの空カートでは常に「Cart is empty」(400) で失敗し、結局 clientSecret は
-// 得られない（=確定ボタンは無効化されたまま）。したがってこのファイルでは
-// create-session を失敗応答（429）に固定し、「決済フォーム未準備」の状態だけを検証する。
+// create-session は失敗応答（429）に固定する。入力画面の形と、未入力・失敗のときの動きだけを見る
 async function mockCheckoutApis(page: Page, createSessionStatus = 429): Promise<void> {
   await mockCartApis(page, [sampleCartItem()]);
   await page.route("**/api/auth/me", (route) =>
@@ -30,7 +24,7 @@ async function mockCheckoutApis(page: Page, createSessionStatus = 429): Promise<
 }
 
 for (const viewport of VIEWPORTS) {
-  test(`${viewport.name}（${viewport.width}px）3セクションが1画面に並ぶ`, async ({
+  test(`${viewport.name}（${viewport.width}px）入力画面はお客様情報と配送先で、支払方法の選択は無い`, async ({
     page,
   }) => {
     await page.setViewportSize({ width: viewport.width, height: 900 });
@@ -41,7 +35,7 @@ for (const viewport of VIEWPORTS) {
     await expect(page.getByRole("heading", { name: "配送先" })).toBeVisible();
     await expect(
       page.getByRole("heading", { name: "支払方法の選択" }),
-    ).toBeVisible();
+    ).toHaveCount(0);
     // 中間の遷移ボタンは廃止され、確定ボタンは「確認へ進む」1つだけになる
     await expect(
       page.getByRole("button", { name: "確認へ進む" }),
@@ -72,7 +66,11 @@ for (const viewport of VIEWPORTS) {
   }) => {
     await page.setViewportSize({ width: viewport.width, height: 900 });
     await mockCheckoutApis(page, 429);
+    await stubPostalCode(page);
     await page.goto("/checkout");
+    await fillShippingForm(page, "e2e-single-step@example.com");
+    await page.getByRole("button", { name: "確認へ進む" }).click();
+    await expect(page.getByTestId("checkout-session-error")).not.toHaveText("");
 
     const fullName = page.locator('input[name="fullName"]');
     await fullName.fill("山田太郎");

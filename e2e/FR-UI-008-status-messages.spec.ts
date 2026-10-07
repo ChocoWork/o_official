@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { mockCartApis, sampleCartItem } from './shop-test-utils';
-import { stubCheckoutSessionApis } from './checkout-test-utils';
+import { stubCheckoutSessionApis, stubResumePaymentDone } from './checkout-test-utils';
+import { fillShippingForm, stubPostalCode } from './checkout-flow-helpers';
 import { injectTurnstileToken, stubTurnstileScript } from './turnstile-test-utils';
 
 /**
@@ -49,7 +50,7 @@ for (const viewport of VIEWPORTS) {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
     // FREQ-377-AC-01
-    test('決済の準備に失敗した案内は、最初からある role=alert の入れ物に入り、再試行のボタンは入れ物の外にある', async ({
+    test('決済の準備に失敗した案内は、最初からある role=alert の入れ物に入り、確認へ進むは入れ物の外にある', async ({
       page,
     }) => {
       await mockGuestCheckout(page);
@@ -66,17 +67,21 @@ for (const viewport of VIEWPORTS) {
           },
         });
       });
+      await stubPostalCode(page);
       await page.goto('/checkout');
 
       const region = page.getByTestId('checkout-session-error');
       await expect(region).toHaveAttribute('role', 'alert');
       await expect(region).toHaveText('');
 
+      await fillShippingForm(page, 'e2e-status@example.com');
+      await page.getByRole('button', { name: '確認へ進む' }).click();
+
       createSession.release();
 
       await expect(region).toHaveText(/決済サービスが一時的に利用できません/);
       await expect(region).toBeVisible();
-      await expect(page.getByRole('button', { name: '再試行する' })).toBeVisible();
+      await expect(page.getByRole('button', { name: '確認へ進む' })).toBeVisible();
       await expect(region.getByRole('button')).toHaveCount(0);
       await expectNoHorizontalOverflow(page);
     });
@@ -84,6 +89,7 @@ for (const viewport of VIEWPORTS) {
     // FREQ-377-AC-02
     test('決済から戻って注文の確定に失敗したら、入力画面の先頭の入れ物に案内が入る', async ({ page }) => {
       await mockGuestCheckout(page);
+      await stubResumePaymentDone(page);
       const complete = gate();
       await page.route('**/api/checkout/complete', async (route) => {
         await complete.wait;

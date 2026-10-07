@@ -1,5 +1,9 @@
 import { test, expect, Page } from '@playwright/test';
-import { stubCheckoutSessionApis } from './checkout-test-utils';
+import {
+  rememberPaymentAttemptBeforeLoad,
+  stubCheckoutSessionApis,
+  stubResumePaymentDone,
+} from './checkout-test-utils';
 
 // FREQ-266: 未ログインの注文完了画面から、メールを引き継いで会員登録へ導く。
 const viewports = [
@@ -24,6 +28,8 @@ async function mockAuth(page: Page, authenticated: boolean): Promise<void> {
 
 async function gotoCompletedCheckout(page: Page): Promise<void> {
   await stubCheckoutSessionApis(page);
+  await stubResumePaymentDone(page);
+  await rememberPaymentAttemptBeforeLoad(page, 'cs_test_guest_register_prompt');
   await page.route('**/api/cart', (route) =>
     route.fulfill({
       status: 200,
@@ -52,7 +58,7 @@ async function gotoCompletedCheckout(page: Page): Promise<void> {
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ orderId: 'ORDER-TEST-015' }),
+      body: JSON.stringify({ orderId: 'a1b2c3d4-0015-4000-8000-000000000000' }),
     }),
   );
 

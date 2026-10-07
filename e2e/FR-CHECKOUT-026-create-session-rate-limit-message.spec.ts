@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { stubCheckoutSessionApis } from './checkout-test-utils';
 import { mockCartApis, sampleCartItem } from './shop-test-utils';
+import { fillShippingForm, stubPostalCode } from './checkout-flow-helpers';
 
 /**
  * FR-CHECKOUT-026 決済開始 API の上限到達時の案内
@@ -20,7 +21,7 @@ const VIEWPORTS = [
 const RATE_LIMITED_BODY = {
   error: 'rate_limited',
   message:
-    'アクセスが集中しているため、決済の準備を一時的に止めています。少し時間をおいてから「再試行する」を押してください。',
+    'アクセスが集中しているため、決済の準備を一時的に止めています。少し時間をおいてから、もう一度「確認へ進む」を押してください。',
   retryable: true,
 };
 
@@ -53,23 +54,24 @@ test.describe('FR-CHECKOUT-026 決済開始 API の上限到達時の案内', ()
       // stubCheckoutSessionApis の 503 より後に登録するので、こちらが優先される。
       const release = await holdCreateSessionThenRateLimit(page);
 
+      await stubPostalCode(page);
       await page.goto('/checkout');
 
       const fullName = page.locator('input[name="fullName"]');
       const email = page.locator('input[name="email"]');
-      await fullName.fill('山田太郎');
-      await email.fill('buyer@example.com');
+      await fillShippingForm(page, 'buyer@example.com');
 
       const rateLimited = page.waitForResponse(
         (response) =>
           response.url().includes('/api/checkout/create-session') && response.status() === 429,
       );
+      await page.getByRole('button', { name: '確認へ進む' }).click();
       release();
       await rateLimited;
 
-      await expect(page.getByText(/少し時間をおいてから「再試行する」を押してください/)).toBeVisible();
-      await expect(page.getByRole('button', { name: '再試行する' })).toBeVisible();
-      await expect(fullName).toHaveValue('山田太郎');
+      await expect(page.getByText(/少し時間をおいてから、もう一度「確認へ進む」を押してください/)).toBeVisible();
+      await expect(page.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
+      await expect(fullName).toHaveValue('山田花子');
       await expect(email).toHaveValue('buyer@example.com');
 
       const hasHorizontalOverflow = await page.evaluate(() => {

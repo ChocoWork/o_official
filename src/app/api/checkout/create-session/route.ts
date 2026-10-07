@@ -241,9 +241,9 @@ const CREATE_SESSION_IP_LIMITS = [
   { endpoint: "checkout:create-session:ip-10s", limit: 10, windowSeconds: 10 },
   { endpoint: "checkout:create-session:ip-10m", limit: 60, windowSeconds: 600 },
 ] as const;
-// 画面（checkout/page.tsx）は message をそのまま表示し、retryable なら「再試行する」を出す。
+// 画面（checkout/page.tsx）は message をそのまま表示する。再試行は「確認へ進む」をもう一度押すこと。
 const RATE_LIMITED_MESSAGE =
-  "アクセスが集中しているため、決済の準備を一時的に止めています。少し時間をおいてから「再試行する」を押してください。";
+  "アクセスが集中しているため、決済の準備を一時的に止めています。少し時間をおいてから、もう一度「確認へ進む」を押してください。";
 
 type StoreCheckoutSessionResult = "stored" | "conflict" | "error";
 

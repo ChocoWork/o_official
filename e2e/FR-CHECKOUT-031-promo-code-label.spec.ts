@@ -8,7 +8,7 @@ import { expect, test, type Page } from "@playwright/test";
  * 見出しが読まれず、見出しを押しても入力欄にカーソルが移らない（WCAG 1.3.1 / 4.1.2、W3C H44）。
  * プレースホルダ「コードを入力」は入力を始めると消えるので、見出しの代わりにならない。
  *
- * プロモーションコード欄は決済セッションの準備ができてから出るので、実 Stripe のセッションが要る。
+ * プロモーションコード欄は入力画面に常にある。「適用」はサーバーが Stripe に問い合わせて確かめる（グループ F）。
  * カートは FR-CHECKOUT-022 と同じく実 API で用意し、用意できない環境ではスキップする。
  */
 
@@ -41,7 +41,7 @@ async function seedCart(page: Page): Promise<{ ok: boolean; reason: string }> {
   });
 }
 
-/** checkout を開き、プロモーションコード欄が出る（決済セッションの準備ができる）まで待つ。 */
+/** checkout を開き、プロモーションコード欄が出るまで待つ。 */
 async function openCheckout(page: Page): Promise<void> {
   await page.goto("/checkout");
   await expect(page.getByPlaceholder("コードを入力")).toBeVisible({ timeout: 30000 });

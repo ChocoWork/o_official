@@ -114,8 +114,8 @@ for (const width of [320, 375, 768, 1280]) {
 /**
  * FREQ-366 保存済み住所が0件のログインユーザーでも配送先を保存する
  *
- * 保存は「確認へ進む」の中（決済確定の直前）で走るため、実 Stripe のセッションが要る。
- * カートは FR-CHECKOUT-022 と同じく実 API で用意し、用意できない環境ではスキップする。
+ * 保存は「確認へ進む」の中（決済の画面を作る前）で走る。カートは実 API で用意する（create-session が実際のカートを読むため）。
+ * 用意できない環境では、FR-CHECKOUT-022 と同じくスキップする。
  * 保存先の API（プロフィール・住所帳）は横取りして、呼ばれたことと中身だけを見る。
  */
 const SAVE_BEHAVIOR_VIEWPORTS = [
@@ -199,8 +199,7 @@ async function interceptProfileSaves(page: Page): Promise<ProfileSaveCalls> {
 }
 
 /**
- * 「確認へ進む」を押す。決済フォームの準備中は表示が「決済フォームを準備中...」に変わり、
- * ボタン自体が押せないので（FREQ-367）、押せるようになるまで待ってから押す。
+ * 「確認へ進む」を押す。処理中は押せないので、押せるようになるまで待ってから押す。
  * 決済フォームが伸びてボタンがずれている最中は、クリックが外れるので押さない。
  */
 async function clickConfirm(page: Page): Promise<void> {
@@ -223,13 +222,6 @@ test.describe("FR-CHECKOUT-017 保存済み住所が0件でも配送先を保存
       const calls = await interceptProfileSaves(page);
 
       await page.goto("/checkout");
-      await expect(
-        page
-          .locator("section.checkout-section")
-          .filter({ hasText: "支払方法の選択" })
-          .locator("iframe")
-          .first(),
-      ).toBeVisible({ timeout: 30000 });
 
       await page.getByLabel("氏名").fill("山田花子");
       await page.getByLabel("フリガナ").fill("ヤマダハナコ");
