@@ -5,6 +5,7 @@ import {
 } from '@/features/cart/services/cart-stock';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
+import { previewFulfillment } from '@/features/checkout/services/checkout-fulfillment.service';
 
 // PUBLIC: ゲストカートを扱うので利用者認証は無い。所有権は httpOnly Cookie の
 // session_id（128bit ランダム）で判定し、レート制限と Origin 検査を前段に置く。
@@ -252,7 +253,18 @@ export async function PATCH(
       },
     });
 
-    return NextResponse.json(cartItem);
+    // 数量で在庫あり・受注生産が変わるので、その明細の目安を返す（グループ F 設計書 5-2）
+    let fulfillment: 'stock' | 'backorder' | null = null;
+    try {
+      const [line] = await previewFulfillment(supabase, [
+        { item_id: cartItem.item_id, color: cartItem.color, size: cartItem.size, quantity: cartItem.quantity },
+      ]);
+      fulfillment = line?.fulfillment ?? null;
+    } catch (previewError) {
+      console.error('Failed to preview cart line fulfillment:', previewError);
+    }
+
+    return NextResponse.json({ ...cartItem, fulfillment });
   } catch (error) {
     console.error("Cart PATCH error:", error);
     return NextResponse.json(

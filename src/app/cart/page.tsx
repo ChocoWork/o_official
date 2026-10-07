@@ -9,6 +9,7 @@ import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 import { useCartItems } from "./_hooks/useCartItems";
 import { CartItemRow } from "./_components/CartItemRow";
 import { OrderSummary } from "./_components/OrderSummary";
+import { isSameCartLine, takeCartNotice, type CartNotice } from "@/features/checkout/utils/cart-notice";
 
 export default function CartPage() {
   const {
@@ -30,6 +31,44 @@ export default function CartPage() {
     handleResyncFromServer,
     dismissActionError,
   } = useCartItems();
+
+  // 決済の画面の受け付けで断られた理由（決め事 D11）。読んだら消えるので、開発時の二重実行で空を上書きしない
+  const [notice, setNotice] = React.useState<CartNotice | null>(null);
+  React.useEffect(() => {
+    const taken = takeCartNotice();
+    if (taken) {
+      setNotice(taken);
+    }
+  }, []);
+
+  const noticeBlock = (
+    <LiveMessage
+      as="div"
+      politeness="status"
+      data-testid="cart-notice"
+      className={notice ? "border border-black/20 bg-black/2 mb-6" : undefined}
+      style={notice ? { fontSize: "var(--lk-size-xs)", padding: "var(--pad-x)" } : undefined}
+    >
+      {notice ? (
+        <>
+          <p>{notice.message}</p>
+          {notice.kind === "stock_changed" && notice.lines.length > 0 ? (
+            <ul className="mt-2 list-disc pl-5">
+              {notice.lines.map((line) => {
+                const variant = [line.color, line.size].filter(Boolean).join(" / ");
+                return (
+                  <li key={`${line.itemId}|${line.color ?? ""}|${line.size ?? ""}`}>
+                    {line.name}
+                    {variant ? `（${variant}）` : ""}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
+        </>
+      ) : null}
+    </LiveMessage>
+  );
 
   if (loading) {
     // CT-1: 黒バー明滅 + デバッグ文言を廃し、カートレイアウトの控えめなスケルトンに
@@ -72,13 +111,16 @@ export default function CartPage() {
 
   if (cartItems.length === 0) {
     return (
-      <EmptyPage
-        iconClassName="ri-shopping-bag-line"
-        label="YOUR CART IS EMPTY"
-        size="xs"
-        buttonLabel="CONTINUE SHOPPING"
-        href="/item"
-      />
+      <>
+        {notice ? <div className="max-w-5xl mx-auto w-full">{noticeBlock}</div> : null}
+        <EmptyPage
+          iconClassName="ri-shopping-bag-line"
+          label="YOUR CART IS EMPTY"
+          size="xs"
+          buttonLabel="CONTINUE SHOPPING"
+          href="/item"
+        />
+      </>
     );
   }
 
@@ -97,6 +139,7 @@ export default function CartPage() {
     >
       <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-8">
         <div>
+          {noticeBlock}
           <LiveMessage
             as="div"
             className="text-red-600 border border-black/15 bg-black/2 mb-6"
@@ -151,6 +194,10 @@ export default function CartPage() {
               isTogglingWishlist={togglingWishlist === item.item_id.toString()}
               isWishlisted={wishlistedItems.has(item.item_id)}
               syncError={syncErrorByItem[item.id]}
+              stockChanged={
+                notice?.kind === "stock_changed" &&
+                notice.lines.some((line) => isSameCartLine(line, item))
+              }
               resyncing={resyncing}
               onQuantityChange={handleQuantityChange}
               onRemove={handleRemove}

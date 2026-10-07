@@ -9,6 +9,8 @@ export interface CartEntry {
   color: string | null;
   size: string | null;
   added_at: string;
+  // 明細ごとのお届けの目安（グループ F 設計書 5-2）。サーバーが読めなかったときは null
+  fulfillment?: "stock" | "backorder" | null;
   // null when the product has been removed from inventory
   items: {
     id: number;
@@ -112,11 +114,15 @@ export function useCartItems() {
       const updated = await response.json().catch(() => null);
       const confirmedQty =
         typeof updated?.quantity === "number" ? updated.quantity : quantity;
+      const fulfillment =
+        updated?.fulfillment === "stock" || updated?.fulfillment === "backorder"
+          ? updated.fulfillment
+          : null;
       confirmedQuantities.current[cartId] = confirmedQty;
       delete failedDesired.current[cartId];
       setCartItems((prev) =>
         prev.map((item) =>
-          item.id === cartId ? { ...item, quantity: confirmedQty } : item
+          item.id === cartId ? { ...item, quantity: confirmedQty, fulfillment } : item
         )
       );
       setSyncErrorByItem((prev) => {

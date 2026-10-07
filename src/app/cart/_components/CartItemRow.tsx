@@ -4,6 +4,7 @@ import Image from "next/image";
 import { Button } from "@/components/ui/Button/Button";
 import { Stepper } from "@/components/ui/Stepper/Stepper";
 import { MAX_CART_ITEM_QUANTITY } from "@/features/cart/services/cart-stock";
+import { CART_FULFILLMENT_LABELS } from "@/features/checkout/utils/fulfillment-labels";
 import type { CartEntry } from "../_hooks/useCartItems";
 
 interface CartItemRowProps {
@@ -12,6 +13,7 @@ interface CartItemRowProps {
   isTogglingWishlist: boolean;
   isWishlisted: boolean;
   syncError?: string;
+  stockChanged?: boolean;
   resyncing: boolean;
   onQuantityChange: (cartId: string, qty: number) => void;
   onRemove: (cartId: string) => void;
@@ -26,6 +28,7 @@ export function CartItemRow({
   isTogglingWishlist,
   isWishlisted,
   syncError,
+  stockChanged = false,
   resyncing,
   onQuantityChange,
   onRemove,
@@ -175,6 +178,26 @@ export function CartItemRow({
               )}
             </div>
           )}
+          {/* お届けの目安（グループ F 設計書 5-2）。在庫の数は出さない */}
+          {item.fulfillment ? (
+            <p
+              data-testid="cart-fulfillment"
+              className="text-[#474747]"
+              style={{ fontSize: "var(--lk-size-3xs)" }}
+            >
+              {CART_FULFILLMENT_LABELS[item.fulfillment]}
+            </p>
+          ) : null}
+          {/* 最終確認画面で在庫ありと見せた後に受注生産に変わった明細（設計書 5-3） */}
+          {stockChanged ? (
+            <p
+              data-testid="cart-stock-changed"
+              className="text-red-600"
+              style={{ fontSize: "var(--lk-size-3xs)" }}
+            >
+              在庫あり → 受注生産
+            </p>
+          ) : null}
         </div>
 
         {/* 下段: 単価と数量。画像下端に揃える */}

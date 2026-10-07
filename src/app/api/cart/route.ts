@@ -6,6 +6,7 @@ import {
 } from '@/features/cart/services/cart-stock';
 import { logAudit } from '@/lib/audit';
 import { signItemImageUrl } from '@/lib/storage/item-images';
+import { previewFulfillment } from '@/features/checkout/services/checkout-fulfillment.service';
 
 const cartSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -127,7 +128,19 @@ export async function GET(req: NextRequest) {
       // If an item no longer exists in the items table, drop it from the response
       .filter((ci) => ci.items !== null);
 
-    return NextResponse.json(result);
+    // 明細ごとのお届けの目安（グループ F 設計書 5-2）。在庫の数は返さない。読めなくてもカートは出す
+    let fulfillments: Array<'stock' | 'backorder' | null> = result.map(() => null);
+    try {
+      const preview = await previewFulfillment(
+        cartSupabase,
+        result.map((row) => ({ item_id: row.item_id, color: row.color, size: row.size, quantity: row.quantity })),
+      );
+      fulfillments = result.map((_, index) => preview.find((line) => line.lineNo === index + 1)?.fulfillment ?? null);
+    } catch (previewError) {
+      console.error('Failed to preview cart fulfillment:', previewError);
+    }
+
+    return NextResponse.json(result.map((row, index) => ({ ...row, fulfillment: fulfillments[index] })));
   } catch (error) {
     console.error("Cart GET error:", error);
     return NextResponse.json(

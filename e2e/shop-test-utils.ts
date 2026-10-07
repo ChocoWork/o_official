@@ -7,6 +7,7 @@ export type MockCartItem = {
   color: string | null;
   size: string | null;
   added_at: string;
+  fulfillment?: 'stock' | 'backorder' | null;
   items: {
     id: number;
     name: string;

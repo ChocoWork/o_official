@@ -100,6 +100,27 @@ describe('PATCH /api/cart/[id]', () => {
     expect((res as { status: number }).status).toBe(403);
     expect((res as unknown as { body: { error: string } }).body.error).toBe('Forbidden');
   });
+  test('数量を変えたら、その明細のお届けの目安を返す（設計書 5-2）', async () => {
+    mockRpc.mockImplementation(async (fn: string) => {
+      if (fn === 'update_cart_item_quantity_secure') {
+        return {
+          data: [{ id: 'cart-1', item_id: 1, quantity: 3, color: 'BLACK', size: 'M', session_id: 'sess-abc', user_id: null, added_at: 'x', updated_at: 'y' }],
+          error: null,
+        };
+      }
+      return {
+        data: [{ line_no: 1, item_id: 1, color: 'BLACK', size: 'M', quantity: 3, variant_id: 11, fulfillment: 'backorder' }],
+        error: null,
+      };
+    });
+
+    const res = await PATCH(makeRequest({ quantity: 3 }), { params: Promise.resolve({ id: 'cart-1' }) });
+
+    expect(mockRpc).toHaveBeenCalledWith('preview_checkout_fulfillment', {
+      _items_snapshot: [{ item_id: 1, color: 'BLACK', size: 'M', quantity: 3 }],
+    });
+    expect((res as unknown as { body: Record<string, unknown> }).body).toMatchObject({ id: 'cart-1', quantity: 3, fulfillment: 'backorder' });
+  });
 });
 
 describe('DELETE /api/cart/[id]', () => {

@@ -166,4 +166,60 @@ describe('CartPage', () => {
       expect(screen.getAllByRole('button', { name: '最新状態を再取得' }).length).toBeGreaterThan(0);
     });
   });
+  it('明細ごとにお届けの目安を出す（設計書 5-2）', async () => {
+    (global as any).fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => [
+        {
+          id: '1', item_id: 1, quantity: 1, color: 'BLACK', size: 'M', added_at: '2026-10-08T00:00:00Z', fulfillment: 'stock',
+          items: { id: 1, name: 'シャツ', price: 5000, image_url: '/x.png', category: 'TOPS' },
+        },
+        {
+          id: '2', item_id: 2, quantity: 2, color: 'NAVY', size: 'L', added_at: '2026-10-08T00:00:00Z', fulfillment: 'backorder',
+          items: { id: 2, name: 'パンツ', price: 8000, image_url: '/y.png', category: 'BOTTOMS' },
+        },
+      ],
+    });
+
+    render(<CartPage />);
+
+    const labels = await screen.findAllByTestId('cart-fulfillment');
+    expect(labels.map((label) => label.textContent)).toEqual(['在庫あり・3〜7営業日で発送', '受注生産・数週間〜2か月以上']);
+  });
+
+  it('受け付けで在庫の変化を断られた後は、案内と変わった商品を出し、その行に印を付ける（設計書 5-3）', async () => {
+    window.sessionStorage.setItem(
+      'checkout:cart-notice',
+      JSON.stringify({
+        kind: 'stock_changed',
+        message: '在庫の状況が変わりました。次の商品は受注生産になります（発送まで数週間〜2か月以上）',
+        lines: [{ itemId: 2, name: 'パンツ', color: 'NAVY', size: 'L' }],
+      }),
+    );
+    (global as any).fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => [
+        {
+          id: '1', item_id: 1, quantity: 1, color: 'BLACK', size: 'M', added_at: '2026-10-08T00:00:00Z', fulfillment: 'stock',
+          items: { id: 1, name: 'シャツ', price: 5000, image_url: '/x.png', category: 'TOPS' },
+        },
+        {
+          id: '2', item_id: 2, quantity: 2, color: 'NAVY', size: 'L', added_at: '2026-10-08T00:00:00Z', fulfillment: 'backorder',
+          items: { id: 2, name: 'パンツ', price: 8000, image_url: '/y.png', category: 'BOTTOMS' },
+        },
+      ],
+    });
+
+    render(<CartPage />);
+
+    const notice = await screen.findByTestId('cart-notice');
+    await waitFor(() =>
+      expect(notice).toHaveTextContent('在庫の状況が変わりました。次の商品は受注生産になります（発送まで数週間〜2か月以上）'),
+    );
+    expect(notice).toHaveTextContent('パンツ（NAVY / L）');
+    const marks = await screen.findAllByTestId('cart-stock-changed');
+    expect(marks).toHaveLength(1);
+    expect(marks[0]).toHaveTextContent('在庫あり → 受注生産');
+    expect(window.sessionStorage.getItem('checkout:cart-notice')).toBeNull();
+  });
 });
