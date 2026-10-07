@@ -6,6 +6,20 @@
 
 本書は「1.12 カートページ（CART）詳細設計」の既存設計を記録する。要件IDと設計意図を保持しているが、表中の実装状況は現在のコードと一括再照合していない。
 
+## お届けの目安と受付拒否後の案内（FREQ-417）
+
+> FREQ-417 により明細ごとのお届けの目安と、在庫の変化で受付を断られた後の案内・行の印を追加した。下の既存要件表の在庫表示・チェックの記述は作成時点のもの。
+
+| 項目 | 現行の扱い | 根拠 |
+| --- | --- | --- |
+| お届けの目安 | APIの`fulfillment`が`stock`なら「在庫あり・3〜7営業日で発送」、`backorder`なら「受注生産・数週間〜2か月以上」を明細ごとに出す。在庫数は出さず、値が無いときは目安も出さない | [CartItemRow](../../../src/app/cart/_components/CartItemRow.tsx)、[表示文言](../../../src/features/checkout/utils/fulfillment-labels.ts) |
+| 在庫の変化での受付拒否 | 最終確認画面の「注文する」で、在庫ありと見せた明細が受注生産へ変わると、place-orderは409 `stock_changed`を返す。この拒否では注文も在庫の確保も作らず、カートへ戻す | [place-order](../../../src/app/api/checkout/place-order/route.ts)、[購入画面](../../../src/app/checkout/page.tsx)、[CHECKOUT詳細設計](13_checkout.md) |
+| カートの案内 | カートの上に「在庫の状況が変わりました。次の商品は受注生産になります（発送まで数週間〜2か月以上）」と、変わった商品名・色・サイズを出す。`checkout:cart-notice`をsessionStorageから1回だけ読み、読んだら消す。空カートでも案内の入れ物を置く | [cart/page.tsx](../../../src/app/cart/page.tsx)、[案内の受け渡し](../../../src/features/checkout/utils/cart-notice.ts) |
+| 変わった行の印 | 商品・色・サイズが案内の明細と一致し、現在の`fulfillment`が`stock`でない行に「在庫あり → 受注生産」を出す。数量を減らし在庫ありに戻った行の印は消す。目安が読めない（`null`）行は印を残す | [cart/page.tsx](../../../src/app/cart/page.tsx)、[CartItemRow](../../../src/app/cart/_components/CartItemRow.tsx) |
+| ほかの受付拒否 | `price_changed`・`item_unavailable`も、カートの上に案内を1回だけ出す。在庫の変化の行の印は付けない | [購入画面](../../../src/app/checkout/page.tsx)、[案内の受け渡し](../../../src/features/checkout/utils/cart-notice.ts) |
+
+表示の目印は`data-testid="cart-fulfillment"`、`cart-notice`、`cart-stock-changed`。関連テストは[お届けの目安と在庫変化の案内](../../../e2e/FR-CART-022-delivery-estimate-and-stock-notice.spec.ts)。
+
 ## 機能要件対応表
 
 | 要件ID | 要件内容 | 実装ID | 実装対象ファイル | 実装概要 | 実装ステータス |

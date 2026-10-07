@@ -1,6 +1,6 @@
 # シーケンス設計の案内と記載方針
 
-> 状態: 現行ソースとの同期方針 | 確認日: 2026-10-04 | 対象: 認証・購入・注文管理の実行時相互作用
+> 状態: 現行ソースとの同期方針 | 確認日: 2026-10-04（購入の行は2026-10-07に再確認） | 対象: 認証・購入・注文管理の実行時相互作用
 
 ## 概要
 
@@ -28,7 +28,7 @@
 | [Google OAuth](auth-oauth.md) | OAuth開始、callback、セッション作成、戻り先 |
 | [パスワード再設定](auth-password-reset.md) | 再設定メール、リンク確認、パスワード更新 |
 | [セッション・API認可](auth-session.md) | 初期認証状態の照会、refresh、logout、管理APIでの認証・ACL・AAL2確認 |
-| [購入・決済照合](checkout-payment.md) | 下書きとCheckout Session、画面内決済、completeと照合 |
+| [購入・決済照合](checkout-payment.md) | 「確認へ進む」で下書き・Checkout Sessionを作成し、最終確認画面の「注文する」で受付・在庫確保・支払い・completeを実行。resumeで入り直し、失効時も共通照合器で注文・在庫を合わせる |
 | [Stripe Webhook](stripe-webhooks.md) | 署名検証とenqueue、claimと処理・完了・再試行 |
 | [注文管理](order-administration.md) | 未入金取消、出荷、返金、要対応の解決 |
 

@@ -33,10 +33,10 @@
 | R-25 | P2 | 未修正 | Checkout Sessionの有効期限が既定24時間のまま、支払後に注文確定を断る経路がある |
 | R-26 | P3 | グループ A で修正（受付 RPC が同一トランザクションで discount_amount だけを書き戻す） | 値引き額の書き戻しでdraftの照合が外れ、再表示が500になる |
 | R-27 | P2 | 未修正 | customer_email付きで作ったSessionでは updateEmail が例外になり支払えない |
-| R-28 | P3 | 未修正 | 100%割引で0円Sessionを完了させた後に注文確定を断る |
+| R-28 | P3 | 一部修正（FREQ-420でサーバーが割引コードを検証し、0円になるコードを拒否。既存の0円Sessionの完了後拒否は残る） | 100%割引で0円Sessionを完了させた後に注文確定を断る |
 | R-29 | P3 | 未修正 | 画面の再試行ボタンとエラー消去の不整合 |
 | R-30 | P3 | 未修正 | resource_missing でそのカートの決済開始が恒久的に500になる |
-| R-31 | P3 | 未修正 | 支払後・注文確定前のdraftの配送先を別タブから上書きできる |
+| R-31 | P3 | 解消（グループ F で配送先の後からの同期の入口を廃止） | 支払後・注文確定前のdraftの配送先を別タブから上書きできる |
 | R-32 | P2・適用前に必須 | 未適用 | 10秒間隔のworker Cronで実行履歴が肥大し、Freeプランの容量上限に達する |
 | R-33 | P2 | 未修正 | Webhookの恒久失敗が上限・退避・通知なしで永久に再試行される |
 | R-34 | P2 | 未修正 | 注文確認メールの送信失敗後に再送する経路がない |
@@ -241,9 +241,12 @@
 
 ### R-28 100%割引で0円Sessionを完了させた後に注文確定を断る
 
+> FREQ-420 により一部修正。以下は変更前の指摘であり、現在の画面では「適用」と「確認へ進む」でサーバーがコードを検証し、合計0円になる割引を拒否する。
+
 - **箇所**: [page.tsx](../../../../src/app/checkout/page.tsx) 1442〜1446行、[complete route](../../../../src/app/api/checkout/complete/route.ts) 299〜319行。
 - **事実**: 0円のSessionは注文にしない方針（FREQ-389）だが、画面は確定前に合計0円を止めない。Session は Stripe 上で完了し、プロモーションコードの利用回数も消費されたうえで、客には「注文確定に失敗」と出る。
 - **修正方針**: 確定前に `total.minorUnitsAmount === 0` を止めて案内する。プロモーションコード側に最低金額を設定する運用も併記する。
+- **対応（グループ F）**: [割引コードの検証](../../../../src/features/checkout/services/promotion-code.service.ts)が`zero_total`を拒否し、[promotion-code](../../../../src/app/api/checkout/promotion-code/route.ts)・[create-session](../../../../src/app/api/checkout/create-session/route.ts)がこの検証を呼ぶ。custom / hosted とも検証済みコードだけを`discounts`で付け、最終確認画面からはコードを変更できない。[place-order](../../../../src/app/api/checkout/place-order/route.ts)も支払い前に受付RPCの`zero_amount`を拒否する。既存の0円Sessionに対する[complete](../../../../src/app/api/checkout/complete/route.ts)の完了後拒否は残るため、台帳は一部修正とする。
 
 ### R-29 画面の再試行ボタンとエラー消去の不整合
 
@@ -259,9 +262,12 @@
 
 ### R-31 支払後・注文確定前のdraftの配送先を別タブから上書きできる
 
+> グループ F により解消。配送先の後からの同期の入口を廃止したため、以下の変更前の経路は現在は存在しない。
+
 - **箇所**: `src/app/api/checkout/update-shipping/route.ts`（グループ F で削除済み）150〜161行。
 - **事実**: 条件は版番号と `status <> 'completed'` だけ。同じCookieの別タブは同じ draft とSessionを使うので、タブAで支払った後、注文確定までの間にタブBの入力で配送先を上書きできる。確定前の書き込みを必須にした FREQ-365 の意図（使う直前の値で確定する）を支払後の区間で崩す。failed の draft も更新できる。
 - **修正方針**: 更新を `status = 'created'` かつ Stripe Session が open の場合に限る。支払済みなら409で再読み込みを案内する。
+- **対応（グループ F）**: 配送先は[create-session](../../../../src/app/api/checkout/create-session/route.ts)の下書き作成時に保存し、要求の指紋に含める。別タブで配送先を変えると別の下書きになり、古い下書きの配送先は書き換えない。[CHECKOUT詳細設計のFREQ-365](../../../04_DetailDesign/pages/13_checkout.md#配送先の書き込み順freq-365)と同じ扱い。
 
 ### R-32 10秒間隔のworker Cronで実行履歴が肥大し、Freeプランの容量上限に達する
 

@@ -10,7 +10,7 @@
 
 ## 現行実装の確認事項（2026-10-02）
 
-- 現行の画面は [`src/app/checkout/page.tsx`](../../../src/app/checkout/page.tsx) の `CheckoutProvider` と `PaymentElement` を使い、[`create-session`](../../../src/app/api/checkout/create-session/route.ts) を呼ぶ。決済後の注文照合は [注文・決済状態図](../states/order-payment.md) と [システム構成](../../03_BasicDesign/architecture/system-overview.md) を参照する。グループ F（2026-10-07）で、`CheckoutProvider` と `PaymentElement` は[最終確認画面](../../../src/app/checkout/_components/FinalConfirmationStep.tsx)へ移り、`create-session` は「確認へ進む」で呼ぶ形になった（下の「最終確認画面と「注文する」（FREQ-417〜421）」の節）。
+- 現行の [`src/app/checkout/page.tsx`](../../../src/app/checkout/page.tsx) は、Stripe の部品を置かない入力画面から「確認へ進む」で [`create-session`](../../../src/app/api/checkout/create-session/route.ts) を呼び、[最終確認画面（FinalConfirmationStep）](../../../src/app/checkout/_components/FinalConfirmationStep.tsx)へ進む。`CheckoutProvider` と `PaymentElement` は、この最終確認画面に置く（グループ F、2026-10-07）。決済後の注文照合は [注文・決済状態図](../states/order-payment.md) と [システム構成](../../03_BasicDesign/architecture/system-overview.md) を参照する。詳しくは下の「最終確認画面と「注文する」（FREQ-417〜421）」の節。
 - この文書の表と後続説明には、固定の決済手段、旧在庫列、過去の画面遷移について作成時点の記述が残る。下の「済」は現在の実装状況を保証しない。該当要件を変更するときはコードとテストに照らして個別に改訂する。
 
 ## 最終確認画面と「注文する」（FREQ-417〜421）
@@ -416,16 +416,16 @@ DB変更は2段階で適用する。
 
 draft の配送先（`shipping_snapshot`）を書く経路は、`POST /api/checkout/create-session`（「確認へ進む」）の1つだけ。下書きを作る（`claim_checkout_draft`）ときに、入力された配送先を写して保存し、その後は書き換えない。配送先は要求の指紋に含めるので、入力が変われば別の下書き・別の決済の画面になる。古い下書きの配送先は変わらない。
 
-以前は、画面からの同期（update-shipping。入力が止まって0.5秒後のデバウンスと、「確認へ進む」押下時）と create-session の再利用経路の2つから書き換わった。そのため、版番号（`checkout_drafts.shipping_revision`）の照合つきの条件付き更新（版が違えば 409、版番号が無ければ 428）で、遅れて届いた古い内容が新しい内容を消すこと（lost update）と、支払いの後に別タブから上書きされること（R-31）を防いでいた。書き換える経路が無くなったので、どちらも起きない。`shipping_revision` の列と条件付き更新の SQL の形は DB に残るが、サーバーと画面は使わない。
+以前は、画面からの同期（update-shipping。グループ F で廃止。入力が止まって0.5秒後のデバウンスと、「確認へ進む」押下時）と create-session の再利用経路の2つから書き換わった。そのため、版番号（`checkout_drafts.shipping_revision`）の照合つきの条件付き更新（版が違えば 409、版番号が無ければ 428）で、遅れて届いた古い内容が新しい内容を消すこと（lost update）と、支払いの後に別タブから上書きされること（R-31）を防いでいた。書き換える経路が無くなったので、どちらも起きない。`shipping_revision` の列と条件付き更新の SQL の形は DB に残るが、サーバーと画面は使わない。
 
 最終確認画面に出した配送先と、注文に写す配送先は、どちらも同じ下書きの写しなので、確認の後に変わることは無い（OWASP ASVS V11.1.6 の TOCTOU）。
 
-注文確定の前には配送先の必須項目（メールアドレス・氏名・郵便番号・都道府県・市区町村・番地・電話番号）を検証する。欠けていても支払いは成立しているので注文は作り、欠けた項目を監査ログにエラーとして残す。注文一覧は`配送先要確認`を表示して発送操作を隠し、`admin_ship_paid_order`とDBトリガーも`shipped`への遷移を拒否する（ASVS V11.1.5 / V11.1.7）。
+通常の流れは、入力画面の「確認へ進む」で配送先を検証・保存し、最終確認画面の「注文する」で place-order が支払いの前に注文を作る。以下の欠落監査は、受付を通らないまま支払いが済んだ決済の画面を、共通照合器の `placeAndMark` が後から注文にする予備処理に限る。この予備処理では、注文を作る前に配送先の必須項目（メールアドレス・氏名・郵便番号・都道府県・市区町村・番地・電話番号）の欠落を確認する。欠けていても支払いは成立しているので注文は作り、欠けた項目を監査ログにエラーとして残す。注文一覧は`配送先要確認`を表示して発送操作を隠し、`admin_ship_paid_order`とDBトリガーも`shipped`への遷移を拒否する（ASVS V11.1.5 / V11.1.7）。根拠は[place-order](../../../src/app/api/checkout/place-order/route.ts)と[共通照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)。
 
 | テスト                                                                      | 内容                                                            |
 | --------------------------------------------------------------------------- | --------------------------------------------------------------- |
 | `tests/unit/api/checkout/create-session-route.test.ts`                      | 配送先が違えば別の指紋（別の下書き）になること                  |
-| `tests/unit/lib/stripe/checkout-payment-reconciler.test.ts` | 配送先の欠落を監査ログ（`Checkout draft shipping snapshot is incomplete`）に残しつつ注文は作ること。完了 API と webhook はどちらも照合関数の受付の予備処理を通る |
+| `tests/unit/lib/stripe/checkout-payment-reconciler.test.ts` | 受付を通らず支払い済みで注文が無い場合の予備処理で、配送先の欠落を監査ログ（`Checkout draft shipping snapshot is incomplete`）に残しつつ注文を作ること。通常の place-order で受付済みなら、完了 API・Webhook の照合はこの予備処理を通らない |
 | `tests/integration/db/checkout_draft_shipping_revision.integration.test.ts` | 実 DB で古い書き込みが弾かれること、同時でも片方だけが勝つこと（今は書く経路が無い。列の条件付き更新の形の確認として残る） |
 
 ### 確定ボタンの有効・無効（FREQ-367）
@@ -552,11 +552,14 @@ checkout の部品は `CheckoutPageContent` の外（モジュールの最上位
 
 ### 決済まわりの失敗の案内（FREQ-377）
 
+> FREQ-418 により入力画面の決済フォームと「再試行する」は廃止した。入力画面では「確認へ進む」の上、最終確認画面では案内の種類に応じた位置に出す。
+
 | 案内                               | 置き場所                                                                     | 目印                                   |
 | ---------------------------------- | ---------------------------------------------------------------------------- | -------------------------------------- |
-| 決済の準備（create-session）の失敗 | 決済フォームの下。エラー ID と「再試行する」は案内の後ろに、入れ物の外で出す | `data-testid="checkout-session-error"` |
-| 決済から戻って注文の確定に失敗     | 入力画面（step 1）の先頭。確定は入力画面のまま走るため                       | `data-testid="checkout-return-error"`  |
-| 確認画面の「注文する」の失敗       | 確認画面の操作ボタンの上                                                     | —                                      |
+| 決済の準備（create-session）の失敗 | 入力画面の「確認へ進む」の上。エラー ID は案内の後ろに、入れ物の外で出す。再試行可能なら「確認へ進む」をもう一度押す | `data-testid="checkout-session-error"` |
+| 支払い後の完了処理の失敗（入力画面で処理した場合） | 入力画面（step 1）の先頭 | `data-testid="checkout-return-error"` |
+| 最終確認画面の「注文する」の受付・支払いの失敗 | 最終確認画面の決済フォームの下、操作ボタンの上 | `data-testid="checkout-place-order-error"` |
+| 最終確認画面の時間切れ・別タブの案内、完了処理の失敗 | 最終確認画面の先頭（2列の外） | `data-testid="checkout-final-notice"` |
 
 - 以前は決済から戻って確定に失敗しても、案内が確認画面（step 2）の中にしか無く、画面にも出ていなかった
 - 確認画面から「戻る」で入力画面に戻るときは、確認画面の案内を消す（入力画面の先頭に持ち越さない）
@@ -564,7 +567,9 @@ checkout の部品は `CheckoutPageContent` の外（モジュールの最上位
 
 ### 割引が付いた注文の確定（FREQ-389）
 
-チェックアウト画面にプロモーションコードの入力欄があり、Stripe セッションも `allow_promotion_codes: true` で作る（custom / hosted の両方。片方だけ許すと、生成経路によって同じコードが使えたり使えなかったりする。FREQ-397）。割引が付くと Stripe の `amount_total` は割引後、`total_details.amount_discount` が値引額になる。下書き（`checkout_drafts`）の合計は割引前のまま変えない。
+> FREQ-420 により `allow_promotion_codes` は使わない。割引はサーバーが確かめたコードだけを、「確認へ進む」で `discounts` として付ける（「最終確認画面と「注文する」」の節）。下の金額の扱いは変わらない。
+
+入力画面にはプロモーションコードの入力欄がある。以前の Stripe セッションは `allow_promotion_codes: true` で作っていた（custom / hosted の両方。FREQ-397）が、グループ F で廃止した。現在は両方ともサーバーが検証したコードだけを `discounts` で付ける。割引が付くと Stripe の `amount_total` は割引後、`total_details.amount_discount` が値引額になる。下書き（`checkout_drafts`）の合計は割引前のまま変えない。
 
 | 時点 | `checkout_drafts.total_amount` | `checkout_drafts.discount_amount` | 注文（`orders`）の `total_amount` / `discount_amount` |
 | --- | --- | --- | --- |
@@ -660,7 +665,9 @@ Stripe は「同じイベントを複数回受信する可能性」と「配信�
 
 ### 直らない失敗のあとの「確認へ進む」（FREQ-385）
 
-決済の準備が、待っても直らない理由（在庫切れ、`retryable: false` の 422 など）で失敗したとき、決済フォームはまだ無いので代替の「確認へ進む」が出る。以前はこれを押すと、原因の案内が「決済フォームを準備しています。少し待ってから再度お試しください。」に置き換わっていた。再試行ボタンも出ない状態なので、直らないものを待たせることになる。
+> FREQ-418 により「確認へ進む」は入力画面の通常の操作になった。入力画面に決済フォームや別の再試行ボタンは置かない。下のエラー保持と押せない理由の案内は引き続き適用する。
+
+以前は、決済の準備が待っても直らない理由（在庫切れ、`retryable: false` の 422 など）で失敗したとき、決済フォームの代わりに「確認へ進む」を出していた。これを押すと、原因の案内が「決済フォームを準備しています。少し待ってから再度お試しください。」に置き換わる問題があった。現在も再試行できない失敗では、原因の案内を保ち、入力画面の「確認へ進む」を押せなくする。
 
 - 再試行できない失敗のあいだ（`checkoutError` があり `sessionErrorRetryable` が false）は、「確認へ進む」を押せなくする
 - 押せない理由が分かるよう、ボタンの `aria-describedby` で案内の要素（`id="checkout-session-error-message"`）を指す

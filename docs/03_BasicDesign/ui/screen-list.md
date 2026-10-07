@@ -1,6 +1,6 @@
 # 画面一覧
 
-> 状態: 全画面ルートと導線・表示条件をレビュー | 確認日: 2026-10-03 | 根拠: `src/app/**/page.tsx` 37件
+> 状態: 全画面ルートと導線・表示条件をレビュー | 確認日: 2026-10-03（購入の行は2026-10-07に再確認） | 根拠: `src/app/**/page.tsx` 37件
 
 ## 概要
 
@@ -23,7 +23,7 @@
 | `/search` | サイト内検索 | `q`・`tab` を更新し同じルートで検索。結果から商品・LOOK・NEWS詳細へ移動。LOAD MOREは同画面の追加表示 | [page.tsx](../../../src/app/search/page.tsx) |
 | `/wishlist` | ウィッシュリスト | 商品詳細へ移動。保存解除・カート追加は同画面。空状態から商品一覧へ移動 | [page.tsx](../../../src/app/wishlist/page.tsx) |
 | `/cart` | カート | 数量変更・削除は同画面。商品詳細、商品一覧、購入手続きへ移動。空状態からも商品一覧へ移動 | [page.tsx](../../../src/app/cart/page.tsx) |
-| `/checkout` | 注文・決済 | ゲスト購入、埋め込み決済、注文確認・確定・完了、外部認証からの復帰を同ルートで扱う。完了から商品一覧・アカウント・ゲスト登録へ移動。空カートは同画面に案内 | [page.tsx](../../../src/app/checkout/page.tsx) |
+| `/checkout` | 注文・決済 | ゲスト購入。入力画面の「確認へ進む」でSessionを作り、Stripeの部品を置く最終確認画面へ進む。「注文する」で受付・支払い・完了を行い、外部認証からの復帰も同ルートで扱う。最終確認・完了後もURLに`session_id`を残す（D9）。完了から商品一覧・アカウント・ゲスト登録へ移動。空カートは同画面に案内 | [page.tsx](../../../src/app/checkout/page.tsx)、[FinalConfirmationStep](../../../src/app/checkout/_components/FinalConfirmationStep.tsx) |
 | `/privacy` | プライバシーポリシー | お問い合わせへのリンク | [page.tsx](../../../src/app/privacy/page.tsx) |
 | `/terms` | 利用規約 | 規約本文を表示。ページ固有のルートリンクなし | [page.tsx](../../../src/app/terms/page.tsx) |
 | `/legal` | 法定表記 | お問い合わせへのリンク | [page.tsx](../../../src/app/legal/page.tsx) |
@@ -77,6 +77,8 @@
 
 ## 同じルート内の状態とクエリ
 
+> FREQ-418・421 により、購入の入力画面と最終確認画面を分け、完了後も `session_id` を URL に残す形へ変更した。
+
 | ルート | クエリ・状態 | URL・画面数への扱い |
 | --- | --- | --- |
 | `/news`・NEWS詳細 | `category`：カンマ区切りの複数カテゴリ。未指定はALL | 一覧の絞り込みは同じルート。選択を詳細・一覧へ戻るリンク・前後の記事へ引き継ぐ |
@@ -89,7 +91,7 @@
 | `/auth/password-reset` | `error=link_invalid/link_expired` | 案内を表示後にクエリを除去。メール入力・新パスワード入力・送信／更新完了も同じルート |
 | `/auth/password-reset/verify` | `token` | 自動確認の入力。確認結果に応じて再設定画面へ移動 |
 | `/account` | `tab=profile/shipping/orders/inquiries` | 無指定・未知値はprofile。`address` はshippingへ正規化。タブ切替でreplaceし、他のクエリを保持 |
-| `/checkout` | `session_id`、入力・注文確認・完了・エラー | 外部認証からの復帰を処理し、成功時にクエリを除去。埋め込み決済、画面内完了、エラー境界も同じルート |
+| `/checkout` | `session_id`、入力・最終確認・完了・エラー | 開き直し・外部認証からの復帰はresumeを照会。支払い済みならcomplete、開いていれば最終確認、ほかは入力へ進む。最終確認・完了後も`session_id`をURLに残す（FREQ-421・D9）。最終確認画面の埋め込み決済、完了表示、エラー境界も同じルート |
 | `/admin` | `tab`、`meta`、`meta_reason`、各タブの一覧・編集・確認状態 | tabは許可された初期タブを選ぶ。サイドナビ操作はURLを書き換えない。Meta callbackは結果をクエリに付与して同じadminルートへ戻す |
 
 上表は画面のURLと状態の対応を示す。クエリがあることだけで、その絞り込みをサーバー・クライアントのどちらが処理するかや、全データに適用されることを保証しない。該当ページと描画コンポーネントを根拠とする。

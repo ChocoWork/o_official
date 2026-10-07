@@ -1,6 +1,6 @@
 # 画面遷移図
 
-> 状態: 全画面ルートと現行ソースの導線をレビュー | 確認日: 2026-10-03 | 対象: 37画面ルート
+> 状態: 全画面ルートと現行ソースの導線をレビュー | 確認日: 2026-10-03（購入の導線は2026-10-07に再確認） | 対象: 37画面ルート
 
 ## 概要
 
@@ -15,6 +15,8 @@
 - 図内の区分は所在を探すための `subgraph` であり、全体で1つの遷移図である。37ルートと条件付き導線を含むため、詳細は拡大表示と下の補足表で確認する。
 
 ## 全画面遷移図
+
+> FREQ-418・421 により、購入は入力 → 最終確認 → 受付・支払い → 完了へ変更した。完了後も `session_id` を URL に残す。
 
 ```mermaid
 %%{init: {"flowchart": {"nodeSpacing": 25, "rankSpacing": 35}}}%%
@@ -154,10 +156,12 @@ flowchart LR
     Cart -->|買い物を続ける| ItemList
     Cart --> Checkout
     Cart -. 数量変更 / 削除 .-> Cart
-    Checkout -->|決済処理| Stripe
-    Stripe -. 画面内の注文確認 .-> Checkout
-    Stripe -->|必要時の復帰| Checkout
-    Checkout -. 注文確認・確定・完了 .-> Checkout
+    Checkout -. 確認へ進む: Session作成・最終確認 .-> Checkout
+    Checkout -->|注文する: 受付・在庫確保の後に支払い| Stripe
+    Stripe -. 外部認証不要: complete・完了表示 .-> Checkout
+    Stripe -->|外部認証から復帰: resume・complete| Checkout
+    Checkout -. 最終確認・完了はsession_idをURLに残す .-> Checkout
+    Checkout -->|受付拒否: 在庫・価格の変化や購入不可| Cart
     Checkout -. エラー発生時 .-> CheckoutError
     CheckoutError -. 再表示 .-> Checkout
     CheckoutError -->|カートに戻る| Cart
@@ -238,7 +242,7 @@ flowchart LR
 | Google OAuth | 通常の `next=/auth/verified` の場合、一般利用者だけ `/account` へ戻す。別の戻り先が指定された場合は API の検証済み指定先を使う。API が JSON エラーを返す分岐をログイン画面への自動遷移として描かない |
 | `/auth/callback` | src 内の通常の入口参照は未確認。ページ自体には `code` ありの API 転送、認証済みの `next` への遷移、失敗時のログインリンクがある。図の認証済み出口は `next` 既定値を示す |
 | パスワード再設定 | 現行メールは直接 `/auth/password-reset/verify?token=...` を指定する。確認画面が `POST /api/auth/password-reset/link` を呼び、成功・期限切れ・token不在に応じて再設定画面へ戻る。別入口の同APIのGETも確認画面へ中継する |
-| 決済 | Payment Element は `/checkout` に埋め込む。外部認証が不要なら同画面で注文確認へ進み、注文確定後に完了表示する。外部認証からの復帰は `?session_id=...` を照合して完了表示し、クエリを除去する。空カートでは同画面に案内を表示する |
+| 決済 | `/checkout` の入力画面にStripeの部品を置かず、「確認へ進む」でSessionを作り、最終確認画面の `FinalConfirmationStep` に `CheckoutProvider` / `PaymentElement` を置く。「注文する」で受付・在庫確保の後に支払い、completeで完了表示する。外部認証からの復帰は `?session_id=...` をresumeで照会し、支払い済みならcomplete、開いていれば最終確認画面、ほかは入力画面へ進む。最終確認・完了の後もURLに`session_id`を残す（D9）。空カートでは同画面に案内を表示する |
 | 購入完了・注文詳細 | 完了表示の注文履歴リンクは `/account`。注文詳細の戻るリンクは `/account?tab=orders`。ゲスト登録カードは `/login?tab=register&email=...` でメール初期値を渡す。再度購入はカート追加後も注文詳細に留まる |
 | 注文商品の予約注文分岐 | [OrderItemRow](../../../src/features/account/components/OrderItemRow.tsx)には `itemId` があり `stockStatus=sold_out` の場合に `/contact?subject=予約注文：{商品名}` へ進む分岐がある。現行の注文詳細APIは `stockStatus` を返さないため、注文詳細での通常導線としては確認できない。contactはこのクエリから件名を初期入力しない |
 | 管理タブ・フォーム | admin は8タブ、supporter は ORDER のみ。`/admin?tab=...` は初期タブを指定するが、サイドナビ操作は表示状態だけを変更する。ITEM・LOOK・NEWS は保存成功・キャンセルで戻り、STOCKIST は保存成功時に戻る |
@@ -263,7 +267,7 @@ flowchart LR
 | 全37ルート・共通ナビゲーション | `src/app/**/page.tsx`、[Providers](../../../src/contexts/Providers.tsx)、[Header](../../../src/components/Header.tsx)、[Footer](../../../src/components/Footer.tsx) |
 | ホーム・一覧・検索 | [ホーム](../../../src/app/page.tsx)、[公開商品一覧](../../../src/features/items/components/PublicItemGrid.tsx)、[公開LOOK一覧](../../../src/features/look/components/PublicLookGrid.tsx)、[公開NEWS一覧](../../../src/features/news/components/PublicNewsGrid.tsx)、[ホーム検索](../../../src/features/search/components/SearchHomePreview.tsx)、[検索画面](../../../src/features/search/components/SearchPageClient.tsx) |
 | 詳細・保存・取扱店 | [商品詳細](../../../src/app/item/%5Bid%5D/ItemDetailClient.tsx)、[関連商品](../../../src/features/items/components/RelatedItems.tsx)、[LOOK詳細](../../../src/app/look/%5Bid%5D/page.tsx)、[NEWS詳細](../../../src/app/news/%5Bid%5D/page.tsx)、[保存一覧](../../../src/app/wishlist/page.tsx)、[取扱店](../../../src/features/stockist/components/PublicStockistGrid.tsx) |
-| 購入 | [カート](../../../src/app/cart/page.tsx)、[注文概要](../../../src/app/cart/_components/OrderSummary.tsx)、[チェックアウト](../../../src/app/checkout/page.tsx)、[ゲスト登録案内](../../../src/features/checkout/components/GuestRegisterPrompt.tsx)、[エラー境界](../../../src/app/checkout/error.tsx) |
+| 購入 | [カート](../../../src/app/cart/page.tsx)、[注文概要](../../../src/app/cart/_components/OrderSummary.tsx)、[チェックアウト](../../../src/app/checkout/page.tsx)、[最終確認画面](../../../src/app/checkout/_components/FinalConfirmationStep.tsx)、[place-order](../../../src/app/api/checkout/place-order/route.ts)、[resume](../../../src/app/api/checkout/resume/route.ts)、[ゲスト登録案内](../../../src/features/checkout/components/GuestRegisterPrompt.tsx)、[エラー境界](../../../src/app/checkout/error.tsx) |
 | 認証・再設定 | [LoginContext](../../../src/contexts/LoginContext.tsx)、[ログイン](../../../src/app/login/page.tsx)、[OTP確認](../../../src/app/login/verify/VerifyOtpClient.tsx)、[callback画面](../../../src/app/auth/callback/page.tsx)、[OAuth callback API](../../../src/app/api/auth/oauth/callback/route.ts)、[認証確認](../../../src/app/auth/verified/page.tsx)、[登録メール確認API](../../../src/app/api/auth/confirm/route.ts)、[再設定メールAPI](../../../src/app/api/auth/password-reset/request/route.ts)、[再設定リンク確認](../../../src/app/auth/password-reset/verify/VerifyClient.tsx) |
 | アカウント | [アカウント](../../../src/app/account/page.tsx)、[注文詳細](../../../src/app/account/orders/%5Bid%5D/page.tsx)、[再度購入](../../../src/features/account/hooks/useReorder.ts) |
 | 管理・開発補助 | [管理ページ](../../../src/app/admin/page.tsx)、[ITEMフォーム](../../../src/app/admin/item/ItemForm.tsx)、[LOOKフォーム](../../../src/app/admin/look/LookForm.tsx)、[NEWSフォーム](../../../src/app/admin/news/NewsForm.tsx)、[STOCKISTフォーム](../../../src/app/admin/stockist/StockistForm.tsx)、[ユーザー作成](../../../src/app/admin/create-user/page.tsx)、[UI](../../../src/app/ui/page.tsx)、[LOADING](../../../src/app/loading/page.tsx) |

@@ -4,7 +4,7 @@
 
 ## 概要
 
-購入画面は、入力画面（お客様情報・配送先・割引コード）と最終確認画面に分かれる。「確認へ進む」でサーバーが下書きと Stripe Checkout Session（30分で失効。割引はサーバーが付ける）を作り、同じ Cookie のほかの決済の画面を閉じ、最終確認画面の内容を返す。最終確認画面の「注文する」で、受け付け（注文と在庫の確保）→ 支払い → 完了の処理を一度に行う。注文・在庫の状態の変更は complete/Webhook が呼ぶ共通照合器が行う。開き直したときは入り直しの入口が、どこから続けるかを返す。
+購入画面は、入力画面（お客様情報・配送先・割引コード）と最終確認画面に分かれる。「確認へ進む」でサーバーが下書きと Stripe Checkout Session（30分で失効。割引はサーバーが付ける）を作る。custom の場合は同じ Cookie のほかの決済の画面を閉じ、最終確認画面の内容を返す。hosted の場合は URL を返し、ほかの決済の画面を閉じない。最終確認画面の「注文する」で、受け付け（注文と在庫の確保）→ 支払い → 完了の処理を一度に行う。注文・在庫の状態の変更は complete、Webhook worker、見回り、管理取消が呼ぶ共通照合器が行う。create-session がほかの受付済みの決済の画面を失効させたときと、place-order が残り10分未満の画面を失効させたときも、照合器を呼んで注文を放棄扱いにし、在庫を戻す。開き直したときは入り直しの入口が、どこから続けるかを返す。
 
 ## 範囲と根拠
 
@@ -22,6 +22,8 @@
 | RPC | [draft claim・attach・retire](../../../supabase/migrations/20260925000132_add_checkout_session_claim_rpcs.sql)、[期限予約](../../../supabase/migrations/20260927100600_checkout_session_expiry.sql)、[注文受付](../../../supabase/migrations/20260927100300_place_order_from_checkout_draft.sql)、[入金更新](../../../supabase/migrations/20260927100400_mark_order_payment_rpcs.sql)、[最終確認画面の受け付け](../../../supabase/migrations/20261008000000_checkout_final_screen_place_order.sql) |
 
 ## SQ-CHECKOUT-01: 「確認へ進む」で決済の画面を作る
+
+> FREQ-418 によりページを開いた時の作成を廃止した。下の図は現在の購入画面が使う custom の経路であり、hosted は URL を返す。
 
 開始は入力画面の「確認へ進む」。事前条件は Cookie `session_id` と、入力の検証が通ったこと。正常終了では最終確認画面の内容（`confirmation`）を受け取る。この段階で注文も在庫の確保も作らない。
 
@@ -70,7 +72,7 @@ sequenceDiagram
 | Session作成期限 | DBに期限を予約してStripeへ渡す。既存の期限を再利用する条件は[下書き状態設計](../states/checkout-draft.md)に記載 |
 | Stripe読取り失敗 | expiredとみなしてSessionを追加作成しない。取得の失敗として応答 |
 | attachの競合とDBエラー | 競合は新しいopen Sessionをexpireする補償を試みる。DBエラーではexpireせず500。補償の成功を保証しない |
-| hosted・旧API | hostedのURL応答もAPIにある。現在の購入画面はcustomを送る。[旧PaymentIntent API](../../../src/app/api/checkout/payment-intent/route.ts)はrate limit通過後に410を返す廃止入口。制限応答429/503が先行し得る |
+| hosted・旧API | hostedは`{url}`を返し、同じCookieのほかの決済の画面を閉じる処理と最終確認画面の内容を返す処理を通らない。現在の購入画面はcustomを送る。[旧PaymentIntent API](../../../src/app/api/checkout/payment-intent/route.ts)はrate limit通過後に410を返す廃止入口。制限応答429/503が先行し得る |
 
 ## SQ-CHECKOUT-02: 「注文する」で受け付けて支払う
 
@@ -87,6 +89,7 @@ sequenceDiagram
     UI->>PO: POST /api/checkout/place-order
     PO->>Stripe: checkout.sessions.retrieve
     PO->>PO: 持ち主・モード・新しい下書きの有無・開いている・残り10分以上
+    Note over PO,DB: 残り10分未満ならSessionを失効させ、失効成功時に照合関数を呼ぶ<br/>受付済みの注文は放棄扱いにして在庫を戻す（照合失敗はWebhook・見回りが仕上げる）<br/>409 session_expiredを返し、画面を作り直す。下の受付RPCへは進まない
     PO->>DB: place_order_from_checkout_draft（Stripe の金額、見せた在庫）
     alt 断る（価格・在庫の変化、買えない商品、0円、別の画面）
         PO-->>UI: 409（理由と案内。在庫の変化は変わった明細を添える）
@@ -96,6 +99,7 @@ sequenceDiagram
         UI->>Stripe: checkout.confirm（redirect: if_required）
         alt カードが断られた
             Stripe-->>UI: error（受け付け済みの注文はそのまま。もう一度押せる）
+            Note over UI,PO: 時間がたって押し直し、残り10分未満なら上の失効・照合・作り直しへ
         else 支払えた（PayPay は Stripe の画面を経て ?session_id=… に戻る）
             UI->>C: POST /api/checkout/complete
             C->>DB: 照合関数（入金済み・入金待ち、メール、カートを空にする）
@@ -152,7 +156,9 @@ sequenceDiagram
 
 ## SQ-CHECKOUT-04: 共通照合器の読取り・判定・再確認
 
-開始はcomplete、Webhook worker、見回り、管理取消からの照合器呼出し。Session IDまたはPI IDが必要。図は読み直しの制御を表し、書込みの順序は次の部分シナリオへ分離する。正常終了はok/needs_review/needs_actionの結果であり、3回で終了条件に達しなければReconcileTransientError。
+> FREQ-418・421 により、create-session と place-order の失効処理も照合器の呼出し元に加わった。
+
+開始はcomplete、Webhook worker、見回り、管理取消、create-session（customでほかの受付済みの決済の画面を閉じ、失効に成功したとき）、place-order（残り10分未満の決済の画面を閉じ、失効に成功したとき）からの照合器呼出し。create-session と place-order は[決済の画面の後始末](../../../src/features/checkout/services/checkout-session-lifecycle.service.ts)の `reconcileCheckoutSession` を経由する。Session IDまたはPI IDが必要。図は読み直しの制御を表し、書込みの順序は次の部分シナリオへ分離する。正常終了はok/needs_review/needs_actionの結果であり、3回で終了条件に達しなければReconcileTransientError。
 
 ```mermaid
 sequenceDiagram
@@ -275,4 +281,4 @@ sequenceDiagram
 
 本番のmigration適用（グループ F の `20261008000000` を含む。まだ本番へ当てていない）、実際のStripe Session・PaymentIntent・動的支払方法、外部認証・メール到達、全競合の実行結果は未確認。SQLの「受付API(F)」コメントは、グループ F の `place-order`（SQ-CHECKOUT-02）として実装済み。廃止されたfinalize/PaymentIntent APIを、現行画面から呼ぶ経路として描かない。
 
-照合基準は2026-10-04の作業ツリーで、`bbb18761`後の返金補正を含む。SQ-CHECKOUT-01〜03は2026-10-07の作業ツリー（グループ F）から書いた。照合器・complete API・読取り・判定のファイルは、2026-10-04の確認の後に変わっていない。対象と検証結果は[レビュー記録](../../05_Quality/reviews/code/2026-10-04-sequence-state-review.md)を参照する。completeの外側500の監査はmessageと文字列codeを記録し、例外オブジェクトのdetails/hintを複写しない。
+照合全体の基準は2026-10-04の作業ツリーで、`bbb18761`後の返金補正を含む。SQ-CHECKOUT-01〜03は2026-10-07の作業ツリー（グループ F）から書いた。今回、SQ-CHECKOUT-01のcustom / hostedの分岐、SQ-CHECKOUT-02の失効処理、SQ-CHECKOUT-04の呼出し元と、照合器の受付の予備処理・放棄時の在庫返却を現行コードで確認し直した。2026-10-04のレビュー対象と検証結果は[レビュー記録](../../05_Quality/reviews/code/2026-10-04-sequence-state-review.md)を参照する。completeの外側500の監査はmessageと文字列codeを記録し、例外オブジェクトのdetails/hintを複写しない。
