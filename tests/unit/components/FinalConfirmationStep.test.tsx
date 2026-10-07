@@ -258,4 +258,14 @@ describe('FinalConfirmationStep（設計書 2-3・第4章）', () => {
     fireEvent.click(screen.getAllByRole('button', { name: '変更' })[0]);
     expect(props.onEdit).toHaveBeenCalled();
   });
+
+  test('案内は ORDER SUMMARY より前に置く（狭い画面では ORDER SUMMARY が先に並ぶため、列の中だと上に出ない）', () => {
+    setReady();
+    renderStep({ notice: 'PayPay でのお支払いが完了しませんでした' });
+
+    const notice = screen.getByTestId('checkout-final-notice');
+    const summaryTitle = screen.getByText('ORDER SUMMARY');
+    expect(notice.compareDocumentPosition(summaryTitle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(notice.closest('.checkout-grid')).toBeNull();
+  });
 });

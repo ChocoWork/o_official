@@ -294,129 +294,133 @@ function FinalConfirmationContent({
   };
 
   return (
-    <div className="checkout-grid grid grid-cols-1 md:grid-cols-1 lg:grid-cols-3">
-      <div className="order-2 lg:order-1 md:col-span-1 lg:col-span-2 checkout-sections">
-        <h2 className="checkout-heading font-brand" style={{ fontSize: "var(--lk-size-xl)" }}>
-          注文内容の最終確認
-        </h2>
-        <LiveMessage data-testid="checkout-final-notice" className="text-red-600" style={{ fontSize: "var(--lk-size-sm)" }}>
-          {shownNotice}
-        </LiveMessage>
+    <>
+      {/* 案内は2列の外の一番上に置く。lg 未満では ORDER SUMMARY が先に並ぶので、列の中に置くと
+          画面の上へ戻しても見えない（入力画面の checkout-return-error と同じ置き方） */}
+      <LiveMessage data-testid="checkout-final-notice" className="mb-4 text-red-600" style={{ fontSize: "var(--lk-size-sm)" }}>
+        {shownNotice}
+      </LiveMessage>
+      <div className="checkout-grid grid grid-cols-1 md:grid-cols-1 lg:grid-cols-3">
+        <div className="order-2 lg:order-1 md:col-span-1 lg:col-span-2 checkout-sections">
+          <h2 className="checkout-heading font-brand" style={{ fontSize: "var(--lk-size-xl)" }}>
+            注文内容の最終確認
+          </h2>
 
-        <section className="checkout-section">
-          <div className="flex items-center justify-between">
-            <h3 className="checkout-heading font-brand">お客様情報</h3>
-            <Button type="button" variant="text" size="xs" onClick={onEdit} disabled={busy}>
-              変更
-            </Button>
-          </div>
-          <div className="checkout-card">
-            {shipping.fullName && <p>{shipping.fullName}</p>}
-            {shipping.kanaName && <p>{shipping.kanaName}</p>}
-            {shipping.email && <p className="break-all">{shipping.email}</p>}
-            {shipping.phone && <p>{shipping.phone}</p>}
-          </div>
-        </section>
-
-        <section className="checkout-section">
-          <div className="flex items-center justify-between">
-            <h3 className="checkout-heading font-brand">配送先</h3>
-            <Button type="button" variant="text" size="xs" onClick={onEdit} disabled={busy}>
-              変更
-            </Button>
-          </div>
-          <div className="checkout-card">
-            {shipping.postalCode && <p>〒{formatPostalCodeInput(shipping.postalCode)}</p>}
-            <p>
-              {shipping.prefecture}
-              {shipping.city}
-              {shipping.address}
-            </p>
-            {shipping.building && <p>{shipping.building}</p>}
-          </div>
-        </section>
-
-        {confirmation.promotionCode ? (
           <section className="checkout-section">
-            <h3 className="checkout-heading font-brand">プロモーションコード</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="checkout-heading font-brand">お客様情報</h3>
+              <Button type="button" variant="text" size="xs" onClick={onEdit} disabled={busy}>
+                変更
+              </Button>
+            </div>
             <div className="checkout-card">
-              <p>{confirmation.promotionCode}</p>
+              {shipping.fullName && <p>{shipping.fullName}</p>}
+              {shipping.kanaName && <p>{shipping.kanaName}</p>}
+              {shipping.email && <p className="break-all">{shipping.email}</p>}
+              {shipping.phone && <p>{shipping.phone}</p>}
             </div>
           </section>
-        ) : null}
 
-        {/* 特定商取引法 12条の6 の最終確認画面の項目（設計書第4章）。申込みの期間は定めが無いので出さない */}
-        <section className="checkout-section" aria-labelledby={termsHeadingId}>
-          <h3 id={termsHeadingId} className="checkout-heading font-brand">
-            お支払い・お届け・返品について
-          </h3>
-          <div className="checkout-card" data-testid="checkout-terms" style={{ gap: "var(--gap-group)" }}>
-            <div className="checkout-field">
-              <p className="checkout-label">お支払いの時期・方法</p>
-              <ul>
-                {PAYMENT_TIMING.map((timing) => (
-                  <li key={timing.method}>
-                    {mapPaymentMethodLabel(timing.method)}：{timing.text}
-                  </li>
-                ))}
-              </ul>
+          <section className="checkout-section">
+            <div className="flex items-center justify-between">
+              <h3 className="checkout-heading font-brand">配送先</h3>
+              <Button type="button" variant="text" size="xs" onClick={onEdit} disabled={busy}>
+                変更
+              </Button>
             </div>
-            <div className="checkout-field">
-              <p className="checkout-label">お届けの時期</p>
-              <ul>
-                {lines.map((line) => (
-                  <li key={`${line.itemId}|${line.color ?? ""}|${line.size ?? ""}`}>
-                    {lineLabel(line)}：{FULFILLMENT_HEADINGS[line.fulfillment]}・{FINAL_FULFILLMENT_LABELS[line.fulfillment]}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="checkout-field">
-              <p className="checkout-label">返品・キャンセル</p>
+            <div className="checkout-card">
+              {shipping.postalCode && <p>〒{formatPostalCodeInput(shipping.postalCode)}</p>}
               <p>
-                ご注文後のお客様都合による返品・交換・キャンセルはお受けできません。初期不良・誤送は、商品到着後7日以内にご連絡ください。詳しくは
-                <Link href="/legal" className="underline">
-                  特定商取引法の表記
-                </Link>
-                をご覧ください
+                {shipping.prefecture}
+                {shipping.city}
+                {shipping.address}
               </p>
+              {shipping.building && <p>{shipping.building}</p>}
             </div>
+          </section>
+
+          {confirmation.promotionCode ? (
+            <section className="checkout-section">
+              <h3 className="checkout-heading font-brand">プロモーションコード</h3>
+              <div className="checkout-card">
+                <p>{confirmation.promotionCode}</p>
+              </div>
+            </section>
+          ) : null}
+
+          {/* 特定商取引法 12条の6 の最終確認画面の項目（設計書第4章）。申込みの期間は定めが無いので出さない */}
+          <section className="checkout-section" aria-labelledby={termsHeadingId}>
+            <h3 id={termsHeadingId} className="checkout-heading font-brand">
+              お支払い・お届け・返品について
+            </h3>
+            <div className="checkout-card" data-testid="checkout-terms" style={{ gap: "var(--gap-group)" }}>
+              <div className="checkout-field">
+                <p className="checkout-label">お支払いの時期・方法</p>
+                <ul>
+                  {PAYMENT_TIMING.map((timing) => (
+                    <li key={timing.method}>
+                      {mapPaymentMethodLabel(timing.method)}：{timing.text}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="checkout-field">
+                <p className="checkout-label">お届けの時期</p>
+                <ul>
+                  {lines.map((line) => (
+                    <li key={`${line.itemId}|${line.color ?? ""}|${line.size ?? ""}`}>
+                      {lineLabel(line)}：{FULFILLMENT_HEADINGS[line.fulfillment]}・{FINAL_FULFILLMENT_LABELS[line.fulfillment]}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="checkout-field">
+                <p className="checkout-label">返品・キャンセル</p>
+                <p>
+                  ご注文後のお客様都合による返品・交換・キャンセルはお受けできません。初期不良・誤送は、商品到着後7日以内にご連絡ください。詳しくは
+                  <Link href="/legal" className="underline">
+                    特定商取引法の表記
+                  </Link>
+                  をご覧ください
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section className="checkout-section">
+            <h3 className="checkout-heading font-brand">お支払い方法</h3>
+            <div className="checkout-box">
+              <PaymentElement
+                options={{
+                  layout: { type: "accordion", defaultCollapsed: false, radios: "always", spacedAccordionItems: false },
+                }}
+                onChange={(event) => setSelectedPaymentType(event.value?.type ?? null)}
+              />
+            </div>
+          </section>
+
+          <LiveMessage data-testid="checkout-place-order-error" className="text-red-600" style={{ fontSize: "var(--lk-size-sm)" }}>
+            {error}
+          </LiveMessage>
+
+          <div className="checkout-actions">
+            <Button type="button" variant="secondary" size="lg" onClick={onEdit} disabled={busy}>
+              戻る
+            </Button>
+            <Button type="button" size="lg" className="flex-1" onClick={handlePlaceOrder} disabled={!isReady || busy}>
+              {busy ? "注文を確定しています..." : isReady ? "注文する" : "決済フォームを準備中..."}
+            </Button>
           </div>
-        </section>
+        </div>
 
-        <section className="checkout-section">
-          <h3 className="checkout-heading font-brand">お支払い方法</h3>
-          <div className="checkout-box">
-            <PaymentElement
-              options={{
-                layout: { type: "accordion", defaultCollapsed: false, radios: "always", spacedAccordionItems: false },
-              }}
-              onChange={(event) => setSelectedPaymentType(event.value?.type ?? null)}
-            />
+        <div className="order-1 lg:order-2 md:col-span-1 lg:col-span-1">
+          <div className="checkout-summary md:sticky md:top-32">
+            <h2 className="checkout-summary-title">ORDER SUMMARY</h2>
+            <FinalOrderItems lines={lines} />
+            <FinalOrderTotals />
           </div>
-        </section>
-
-        <LiveMessage data-testid="checkout-place-order-error" className="text-red-600" style={{ fontSize: "var(--lk-size-sm)" }}>
-          {error}
-        </LiveMessage>
-
-        <div className="checkout-actions">
-          <Button type="button" variant="secondary" size="lg" onClick={onEdit} disabled={busy}>
-            戻る
-          </Button>
-          <Button type="button" size="lg" className="flex-1" onClick={handlePlaceOrder} disabled={!isReady || busy}>
-            {busy ? "注文を確定しています..." : isReady ? "注文する" : "決済フォームを準備中..."}
-          </Button>
         </div>
       </div>
-
-      <div className="order-1 lg:order-2 md:col-span-1 lg:col-span-1">
-        <div className="checkout-summary md:sticky md:top-32">
-          <h2 className="checkout-summary-title">ORDER SUMMARY</h2>
-          <FinalOrderItems lines={lines} />
-          <FinalOrderTotals />
-        </div>
-      </div>
-    </div>
+    </>
   );
 }

@@ -97,6 +97,31 @@ type ShippingFormFields = {
   phone: string;
 };
 
+// 住所の5項目（入力欄・下書き・住所帳に共通）
+type AddressFields = Pick<
+  ShippingFormFields,
+  "postalCode" | "prefecture" | "city" | "address" | "building"
+>;
+
+// 下書きの住所と住所帳の住所が同じか。郵便番号は数字だけ、ほかは前後の空白を除いて比べ、
+// null は空欄と同じとみなす。サーバーは下書きの文字を NFKC にそろえる（住所帳は前後の空白を
+// 除くだけ）ので、全角の数字を使った住所でも同じと分かるよう、こちらも NFKC にそろえて比べる
+function isSameAddress(saved: SavedAddress, draft: AddressFields): boolean {
+  const text = (value: string | null | undefined) => (value ?? "").normalize("NFKC").trim();
+  return (
+    normalizePostalCode(saved.postalCode ?? "") === normalizePostalCode(draft.postalCode) &&
+    text(saved.prefecture) === text(draft.prefecture) &&
+    text(saved.city) === text(draft.city) &&
+    text(saved.address) === text(draft.address) &&
+    text(saved.building) === text(draft.building)
+  );
+}
+
+// 住所の選択欄が指す値。下書きと同じ保存済み住所、同じものが無ければ「新規」
+function savedAddressIdFor(list: SavedAddress[], draft: AddressFields): string {
+  return list.find((item) => isSameAddress(item, draft))?.id ?? NEW_ADDRESS_VALUE;
+}
+
 // カート空表示（ORDER SUMMARY の2分岐で共通利用）
 function EmptyCartMessage() {
   return (
@@ -122,6 +147,10 @@ interface CartItem {
     category: string;
   } | null;
 }
+
+// ここから CheckoutPageContent までの部品は、画面の関数の外（モジュールの最上位）に置く。
+// 画面の関数の中で定義すると、再描画のたびに別の部品として作り直され、表示中の案内・
+// フォーカスが消える（FREQ-372。React 公式: 部品の定義は入れ子にしない）。
 
 // 注文明細 (カート商品リスト)。フックなしの共有表示。
 function OrderItems({ cartItems }: { cartItems: CartItem[] }) {
@@ -333,6 +362,13 @@ function CheckoutPageContent() {
   // 保存済み配送先（複数住所から選択）
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<string>("");
+  // 住所帳の読み込みが終わっていれば、その中身。下書きを戻す側が選択欄を合わせるのに使う
+  const savedAddressesRef = useRef<SavedAddress[] | null>(null);
+  // 下書きの配送先を入力欄へ戻した印（中身は戻した住所）。入り直しでは、読み込みがどちらの順で
+  // 終わっても、戻した配送先をプロフィールの初期値で崩さず、住所帳の選択欄をこの住所に合わせる。
+  // 崩れると、お客様が入れていない建物名が時間切れの作り直しでサーバーへ届き、選択欄が実際に
+  // 送る配送先（入力欄の値）と食い違う
+  const adoptedAddressRef = useRef<AddressFields | null>(null);
 
   // フィールドごとのバリデーションエラー (FR-CHECKOUT-004)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -348,6 +384,11 @@ function CheckoutPageContent() {
         }
 
         const data = (await response.json()) as CheckoutProfileResponse;
+
+        // 入り直しで下書きの配送先が先に入っているときは、プロフィールの初期値で崩さない
+        if (adoptedAddressRef.current) {
+          return;
+        }
 
         setShippingForm((prev) => ({
           ...prev,
@@ -410,7 +451,14 @@ function CheckoutPageContent() {
 
         const data = (await response.json()) as { addresses?: SavedAddress[] };
         const list = Array.isArray(data.addresses) ? data.addresses : [];
+        savedAddressesRef.current = list;
         setSavedAddresses(list);
+
+        // 入り直しで下書きの住所が先に入っているときは、既定の住所ではなく下書きと同じ住所を選ぶ
+        if (adoptedAddressRef.current) {
+          setSelectedAddressId(savedAddressIdFor(list, adoptedAddressRef.current));
+          return;
+        }
 
         const initial = list.find((item) => item.isDefault) ?? list[0];
         if (initial) {
@@ -567,6 +615,8 @@ function CheckoutPageContent() {
         const result = await completeCheckout(checkoutSessionId);
         if (result.kind === "error") {
           setConfirmError(result.message);
+          // 案内は画面の一番上に出る。画面が動かないと、押した位置から見えず何も起きないように見える
+          window.scrollTo({ top: 0 });
           return;
         }
         setCompletedOrder({ orderId: result.orderId, orderStatus: result.orderStatus, reentered: options.reentered });
@@ -583,19 +633,30 @@ function CheckoutPageContent() {
   // 最終確認画面へ進む。入り直しでは入力画面の値が空のことがあるので、下書きの値で埋める（「変更」で使う）
   const adoptConfirmation = React.useCallback(
     (next: CheckoutConfirmation) => {
+      // 住所は下書きのとおりに戻し、null は空欄にする。前の値を残すと、お客様が入れていない
+      // 建物名などが残り、時間切れの作り直しでサーバーへ届く
+      const draftAddress: AddressFields = {
+        postalCode: next.shipping.postalCode ? formatPostalCodeInput(next.shipping.postalCode) : "",
+        prefecture: next.shipping.prefecture ?? "",
+        city: next.shipping.city ?? "",
+        address: next.shipping.address ?? "",
+        building: next.shipping.building ?? "",
+      };
+      adoptedAddressRef.current = draftAddress;
       setConfirmation(next);
       setShippingForm((prev) => ({
         ...prev,
         email: next.shipping.email ?? prev.email,
         fullName: next.shipping.fullName ?? prev.fullName,
         kanaName: next.shipping.kanaName ?? prev.kanaName,
-        postalCode: next.shipping.postalCode ? formatPostalCodeInput(next.shipping.postalCode) : prev.postalCode,
-        prefecture: next.shipping.prefecture ?? prev.prefecture,
-        city: next.shipping.city ?? prev.city,
-        address: next.shipping.address ?? prev.address,
-        building: next.shipping.building ?? prev.building,
+        ...draftAddress,
         phone: next.shipping.phone ? formatPhoneNumberInput(next.shipping.phone) : prev.phone,
       }));
+      // 住所帳の選択欄を、実際に送る配送先（入力欄の値）に合わせる。住所帳がまだ読み込み中なら、
+      // 読み込みが終わったときに合わせる。普段の「確認へ進む」は送った値が下書きなので、選んでいた住所のまま
+      if (savedAddressesRef.current) {
+        setSelectedAddressId(savedAddressIdFor(savedAddressesRef.current, draftAddress));
+      }
       setStep(2);
       // 読み込み直し・戻るの操作で同じ最終確認画面に戻れるようにする（決め事 D9）
       router.replace(`/checkout?session_id=${encodeURIComponent(next.checkoutSessionId)}`);
@@ -733,17 +794,24 @@ function CheckoutPageContent() {
       return;
     }
     if (rejection.code === "session_expired") {
-      // 決済の画面を作り直す。お支払い情報はもう一度入れてもらう
+      // 決済の画面を作り直す。お支払い情報はもう一度入れてもらう。
+      // 応答を待つ間は失効した最終確認画面を押せなくする（押すと作り直しが重なる。「変更」の後に
+      // 作り直しが返ると、最終確認画面へ引き戻される）
+      setProceeding(true);
       try {
         await proceedToConfirmation(rejection.message);
       } catch {
         backToInput();
         setCheckoutError("決済の準備に失敗しました。少し時間をおいてから、もう一度お試しください。");
+      } finally {
+        setProceeding(false);
       }
       return;
     }
     // 別のタブで後から「確認へ進む」が押された。この画面では進めない
     setFinalNotice(rejection.message);
+    // 案内は画面の一番上に出る。画面が動かないと、押した位置から見えず何も起きないように見える
+    window.scrollTo({ top: 0 });
   };
 
   const handleApplyPromotion = async (code: string): Promise<boolean> => {
@@ -1243,16 +1311,19 @@ function CheckoutPageContent() {
                 <p className="checkout-label">注文番号</p>
                 <p className="checkout-value">{toOrderNumber(completedOrder.orderId)}</p>
               </div>
-              <div className="checkout-field">
-                <p className="checkout-label">注文日</p>
-                <p className="checkout-value">
-                  {new Date().toLocaleDateString("ja-JP", {
-                    year: "numeric",
-                    month: "long",
-                    day: "numeric",
-                  })}
-                </p>
-              </div>
+              {/* 入り直しは後日に開くことがあり、今日の日付を出すとずれる。出すのは注文番号と状態だけ（設計書 2-5） */}
+              {!completedOrder.reentered && (
+                <div className="checkout-field">
+                  <p className="checkout-label">注文日</p>
+                  <p className="checkout-value">
+                    {new Date().toLocaleDateString("ja-JP", {
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
+                    })}
+                  </p>
+                </div>
+              )}
               <div className="checkout-field">
                 <p className="checkout-label">ご注文の状態</p>
                 <p className="checkout-value">{orderStatusLabel(completedOrder.orderStatus)}</p>
@@ -1384,7 +1455,7 @@ function CheckoutPageContent() {
           <FinalConfirmationStep
             confirmation={confirmation}
             notice={confirmError ?? finalNotice}
-            completing={confirmingOrder}
+            completing={confirmingOrder || proceeding}
             onEdit={backToInput}
             onPaid={(checkoutSessionId) => void finishOrder(checkoutSessionId, { reentered: false })}
             onRejected={(rejection) => void handleRejected(rejection)}
