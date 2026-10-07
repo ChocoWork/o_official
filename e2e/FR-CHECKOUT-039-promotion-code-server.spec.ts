@@ -109,7 +109,13 @@ test.describe('FR-CHECKOUT-039 割引コード', () => {
       // 欄の下に理由が出て、欄が誤りの状態になる（表示は FREQ-420-AC-02 と同じ）
       const input = page.getByLabel('プロモーションコード');
       await input.fill('NO-SUCH-CODE-REAL-E2E');
+      const promotionResponse = page.waitForResponse((response) =>
+        new URL(response.url()).pathname === '/api/checkout/promotion-code' && response.request().method() === 'POST',
+      );
       await page.getByRole('button', { name: '適用' }).click();
+      const rejected = await promotionResponse;
+      expect(rejected.status()).toBe(422);
+      expect(await rejected.json()).toMatchObject({ reason: 'not_found' });
       await expect(page.getByText('このコードは使えません')).toBeVisible({ timeout: 30_000 });
       await expect(input).toHaveAttribute('aria-invalid', 'true');
 

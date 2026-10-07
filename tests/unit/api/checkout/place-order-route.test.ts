@@ -27,7 +27,9 @@ jest.mock('@/lib/stripe/checkout-session-expiry', () => ({
 }));
 
 const mockReconcileCheckoutSession = jest.fn();
+const mockFindPaidCheckoutSession = jest.fn();
 jest.mock('@/features/checkout/services/checkout-session-lifecycle.service', () => ({
+  findPaidCheckoutSession: (...args: unknown[]) => mockFindPaidCheckoutSession(...args),
   reconcileCheckoutSession: (...args: unknown[]) => mockReconcileCheckoutSession(...args),
 }));
 
@@ -143,6 +145,7 @@ describe('POST /api/checkout/place-order', () => {
       finish: (response: NextResponse) => response,
     });
     mockRetrieve.mockResolvedValue(openSession());
+    mockFindPaidCheckoutSession.mockResolvedValue(null);
     mockDraftResult = { data: DRAFT, error: null };
     mockNewerDraftResult = { data: [], error: null };
     mockRpc.mockResolvedValue({
@@ -211,6 +214,24 @@ describe('POST /api/checkout/place-order', () => {
     expect(res.status).toBe(409);
     await expect(res.json()).resolves.toEqual({ error: 'payment_done', checkoutSessionId: 'cs_test_abc' });
     expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  test('別の支払い済みの画面があれば、受付 RPC を呼ばずにその ID を返す', async () => {
+    mockFindPaidCheckoutSession.mockResolvedValue('cs_test_paid');
+    const res = await POST(makeRequest(VALID_BODY));
+    expect(res.status).toBe(409);
+    await expect(res.json()).resolves.toEqual({ error: 'payment_done', checkoutSessionId: 'cs_test_paid' });
+    expect(mockFindPaidCheckoutSession).toHaveBeenCalledWith(
+      expect.objectContaining({ supabase: expect.anything(), stripe: expect.anything() }), 'sess-abc',
+    );
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  test('見つかった支払い済みの画面が同じ ID なら、今までどおり受け付ける', async () => {
+    mockFindPaidCheckoutSession.mockResolvedValue('cs_test_abc');
+    const res = await POST(makeRequest(VALID_BODY));
+    expect(res.status).toBe(200);
+    expect(mockRpc).toHaveBeenCalled();
   });
 
   test('後から別のタブで「確認へ進む」を押していれば、別の画面で進んでいると断る', async () => {
@@ -342,6 +363,7 @@ describe('POST /api/checkout/place-order', () => {
   test.each([
     ['item_unavailable', 'item_unavailable', 'ご注文いただけない商品が含まれています'],
     ['price_changed', 'price_changed', '商品の価格が変わりました。内容をご確認ください'],
+    ['cart_changed', 'cart_changed', 'カートの内容が変わりました。カートをご確認のうえ、もう一度お手続きください。'],
     ['amount_mismatch', 'price_changed', '商品の価格が変わりました。内容をご確認ください'],
     ['currency_mismatch', 'price_changed', '商品の価格が変わりました。内容をご確認ください'],
     ['zero_amount', 'zero_amount', 'このご注文は合計が0円になるため、お受けできません'],

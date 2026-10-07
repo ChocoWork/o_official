@@ -118,6 +118,18 @@ jest.mock("@/lib/audit", () => ({
 }));
 
 import { POST } from "@/app/api/checkout/create-session/route";
+import { calculateCheckoutAmountsFromSubtotal } from "@/features/checkout/services/checkout-pricing.service";
+
+test("最終確認画面の配送料の表示が前提とする配送料0を保つ", () => {
+  if (calculateCheckoutAmountsFromSubtotal(5000).shippingAmount !== 0) {
+    throw new Error("最終確認画面の配送料の表示（FinalConfirmationStep の金額の欄）を直してから変える");
+  }
+});
+
+const SHIPPING = {
+  email: "a@example.com", fullName: "山田 花子", kanaName: "ヤマダ ハナコ",
+  postalCode: "1500001", prefecture: "東京都", city: "渋谷区", address: "神宮前1-1-1", phone: "0311112222",
+};
 
 function makeRequest(
   body: Record<string, unknown>,
@@ -132,6 +144,7 @@ function makeRequest(
       shippingAmount: 0,
       totalAmount: 5000,
     },
+    shipping: SHIPPING,
     ...body,
   };
 
@@ -306,25 +319,38 @@ describe("POST /api/checkout/create-session", () => {
     expect(params.payment_method_options?.konbini?.expires_after_days).toBe(7);
   });
 
-  it("hosted モードでは payment_method_types を送らず、konbini の支払期限を7日で送る（FREQ-106・R-57）", async () => {
-    mockCreate.mockResolvedValue({
-      id: "cs_test",
-      url: "https://checkout.stripe.com/pay/cs_test",
-    });
-
-    const req = makeRequest({ uiMode: "hosted" });
-    const res = (await POST(req)) as unknown as { status: number };
-
-    const params = mockCreate.mock.calls[0][0] as {
-      payment_method_types?: unknown;
-      payment_method_options?: { konbini?: { expires_after_days?: number } };
-    };
-    expect(params.payment_method_types).toBeUndefined();
-    expect(params.payment_method_options?.konbini?.expires_after_days).toBe(7);
-    expect(res.status).toBe(200);
+  it("hosted を送ると 400。決済の画面を作らない", async () => {
+    const res = (await POST(makeRequest({ uiMode: "hosted" }))) as unknown as { status: number };
+    expect(res.status).toBe(400);
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockRpc).not.toHaveBeenCalled();
   });
 
-  it.each([["custom"], ["hosted"]] as const)(
+  it.each(["email", "fullName", "postalCode", "prefecture", "city", "address", "phone"] as const)(
+    "配送先の %s が欠けていれば shipping_incomplete で断る", async (field) => {
+      for (const missing of [undefined, "", "　 "]) {
+        const res = (await POST(makeRequest({ shipping: { ...SHIPPING, [field]: missing } }))) as unknown as {
+          status: number; body: unknown;
+        };
+        expect(res.status).toBe(400);
+        expect(res.body).toEqual({ error: "shipping_incomplete" });
+      }
+      expect(mockCreate).not.toHaveBeenCalled();
+      expect(mockRpc).not.toHaveBeenCalled();
+    },
+  );
+
+  it("配送先自体が無ければ shipping_incomplete。7項目がそろっていれば既定の custom で受け付ける", async () => {
+    const missing = (await POST(makeRequest({ shipping: undefined }))) as unknown as { status: number; body: unknown };
+    expect(missing.status).toBe(400);
+    expect(missing.body).toEqual({ error: "shipping_incomplete" });
+    mockCreate.mockResolvedValue({ id: "cs_test", client_secret: "cs_secret" });
+    const res = (await POST(makeRequest({}))) as unknown as { status: number };
+    expect(res.status).toBe(200);
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ ui_mode: "custom" }), expect.anything());
+  });
+
+  it.each([["custom"]] as const)(
     "%s は原子的に draft を claim し、draft 固有の Stripe 冪等キーを送る",
     async (uiMode) => {
       mockCreate.mockResolvedValue({
@@ -385,7 +411,7 @@ describe("POST /api/checkout/create-session", () => {
     ]);
   });
 
-  it.each([["custom"], ["hosted"]] as const)(
+  it.each([["custom"]] as const)(
     "claim済みのopen %s Sessionは、残り15分以上ならStripe作成を再実行せず回収する",
     async (uiMode) => {
       mockClaimResult = {
@@ -416,19 +442,15 @@ describe("POST /api/checkout/create-session", () => {
       expect(res.status).toBe(200);
       expect(mockCreate).not.toHaveBeenCalled();
       expect(mockExpireOpenCheckoutSession).not.toHaveBeenCalled();
-      expect(res.body).toEqual(
-        uiMode === "custom"
-          ? {
-              confirmation: {
-                checkoutSessionId: "cs_existing_claim",
-                clientSecret: "secret_existing_claim",
-                shipping: null,
-                lines: [],
-                promotionCode: null,
-              },
-            }
-          : { url: "https://checkout.stripe.com/pay/cs_existing_claim" },
-      );
+      expect(res.body).toEqual({
+        confirmation: {
+          checkoutSessionId: "cs_existing_claim",
+          clientSecret: "secret_existing_claim",
+          shipping: null,
+          lines: [],
+          promotionCode: null,
+        },
+      });
     },
   );
 
@@ -484,7 +506,7 @@ describe("POST /api/checkout/create-session", () => {
    * - 再利用の判定から外れ、画面を開くたびに Stripe セッションが増える
    * まだ支払いは発生していないので、500 を返して作り直させるのが安全側。
    */
-  it.each([["custom"], ["hosted"]] as const)(
+  it.each([["custom"]] as const)(
     "%s で決済セッション ID の書き戻しに失敗したら 500 を返す",
     async (uiMode) => {
       mockCreate.mockResolvedValue({
@@ -627,7 +649,7 @@ describe("POST /api/checkout/create-session", () => {
     expect(fingerprints[2]).not.toBe(fingerprints[0]);
   });
 
-  it.each([["custom"], ["hosted"]] as const)(
+  it.each([["custom"]] as const)(
     "%s でも allow_promotion_codes を送らない（割引はサーバーが付ける）",
     async (uiMode) => {
       mockCreate.mockResolvedValue({
@@ -977,7 +999,7 @@ describe("POST /api/checkout/create-session - 回数制限", () => {
       expect(res.body).toEqual({
         error: "rate_limited",
         message: expect.stringContaining(
-          "もう一度「確認へ進む」を押してください",
+          "少し時間をおいてから、もう一度「確認へ進む」を押してください",
         ),
         retryable: true,
       });

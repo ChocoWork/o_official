@@ -190,6 +190,22 @@ BEGIN
   -- お金はまだ動いていないので、変わっていれば注文を作らずに画面で知らせる（設計書 5-3・6-3）。
   -- 引数が無いとき（照合の見回りの予備処理）はお金が動いた後なので、今までどおり注文を作る。
   IF _shown_in_stock_variant_ids IS NOT NULL THEN
+    -- 別の注文がカートを空にした後の下書きでは、同じ商品への二重の申し込みを受け付けない。
+    IF EXISTS (
+      SELECT 1
+      FROM pg_catalog.jsonb_array_elements(draft_row.items_snapshot) AS e(value)
+      WHERE e.value->>'source_cart_id' IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1
+          FROM public.carts AS c
+          WHERE c.id = (e.value->>'source_cart_id')::uuid
+            AND c.session_id = draft_row.session_id
+        )
+    ) THEN
+      RETURN QUERY SELECT NULL::uuid, NULL::public.order_status, false, 'cart_changed'::text;
+      RETURN;
+    END IF;
+
     IF EXISTS (
       SELECT 1
       FROM pg_catalog.jsonb_array_elements(draft_row.items_snapshot) AS e(value)

@@ -76,7 +76,7 @@ export function hasPaymentElement(page: Page): boolean {
   return page.frames().some(isPaymentElementFrame);
 }
 
-/** 最終確認画面の Stripe の決済の入力欄（FR-CHECKOUT-025 と同じ拾い方） */
+/** 最終確認画面の Stripe の決済の入力欄 */
 export async function paymentElementFrame(page: Page): Promise<Frame> {
   await expect.poll(() => hasPaymentElement(page), { timeout: 30_000 }).toBe(true);
   return page.frames().find(isPaymentElementFrame)!;

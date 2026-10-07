@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { seedCart } from "./checkout-flow-helpers";
 
 /**
  * FR-CHECKOUT-032 プロモーションコードを適用できなかった案内を読み上げ、入力欄に結びつける
@@ -10,7 +11,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
  * 案内の入れ物は最初から置き、中身だけを入れ替える。
  *
  * プロモーションコード欄は入力画面に常にある。「適用」はサーバーが Stripe に問い合わせて確かめる（グループ F）。
- * カートは FR-CHECKOUT-022 と同じく実 API で用意し、用意できない環境ではスキップする。
+ * カートは共通の seedCart で実 API を使って用意する。商品が無い環境だけスキップし、HTTP の失敗はテストを失敗にする。
  */
 
 const VIEWPORTS = [
@@ -22,28 +23,6 @@ const VIEWPORTS = [
 /** Stripe に存在しないコード。適用すると、サーバーの文言（このコードは使えません）が返る。 */
 const UNKNOWN_CODE = "E2E-PROMO-UNKNOWN";
 
-async function seedCart(page: Page): Promise<{ ok: boolean; reason: string }> {
-  await page.goto("/");
-  return page.evaluate(async () => {
-    const itemsResponse = await fetch("/api/items?pageSize=20&sort=newest");
-    if (!itemsResponse.ok) {
-      return { ok: false, reason: `/api/items returned ${itemsResponse.status}` };
-    }
-    const body = (await itemsResponse.json()) as { items?: { id?: number; price?: number }[] };
-    const item = (body.items ?? []).find((i) => typeof i?.id === "number" && (i?.price ?? 0) >= 50);
-    if (!item?.id) {
-      return { ok: false, reason: "No published item priced at 50 JPY or above" };
-    }
-    const cartResponse = await fetch("/api/cart", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ item_id: item.id, quantity: 1 }),
-    });
-    return cartResponse.ok
-      ? { ok: true, reason: "" }
-      : { ok: false, reason: `cart seeding failed ${cartResponse.status}` };
-  });
-}
 
 function promoInput(page: Page): Locator {
   return page.getByRole("textbox", { name: "プロモーションコード", exact: true });
@@ -79,7 +58,7 @@ test.describe("FR-CHECKOUT-032 プロモーションコードを適用できな�
 
   test.beforeEach(async ({ page }) => {
     const seeded = await seedCart(page);
-    test.skip(!seeded.ok, seeded.reason);
+    test.skip(!seeded.ok, seeded.ok ? "" : seeded.reason);
   });
 
   for (const viewport of VIEWPORTS) {

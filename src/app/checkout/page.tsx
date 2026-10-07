@@ -293,6 +293,14 @@ function CheckoutPageContent() {
 
   // 1: 入力画面、2: 最終確認画面（グループ F 設計書 第2章）
   const [step, setStep] = useState<number>(1);
+  const previousStepRef = useRef(step);
+  const inputHeadingRef = useRef<HTMLHeadingElement>(null);
+  React.useEffect(() => {
+    if (previousStepRef.current === 2 && step === 1) {
+      inputHeadingRef.current?.focus({ preventScroll: true });
+    }
+    previousStepRef.current = step;
+  }, [step]);
   // 最終確認画面の内容（決済の画面の中身。決め事 D8）
   const [confirmation, setConfirmation] = useState<CheckoutConfirmation | null>(null);
   // 最終確認画面の上に出す案内（PayPay の取りやめ・決済の画面の作り直し・別の画面で進んでいる）
@@ -304,6 +312,8 @@ function CheckoutPageContent() {
   const [proceeding, setProceeding] = useState(false);
   // 開き直したときの状態をサーバーに聞いている間（決め事 D9）
   const [resuming, setResuming] = useState(true);
+  const [resumeUnavailable, setResumeUnavailable] = useState(false);
+  const [resumeNotice, setResumeNotice] = useState<string | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [sessionErrorRetryable, setSessionErrorRetryable] = useState(true);
   const [sessionErrorCorrelationId, setSessionErrorCorrelationId] = useState<string | null>(null);
@@ -369,6 +379,13 @@ function CheckoutPageContent() {
   // 崩れると、お客様が入れていない建物名が時間切れの作り直しでサーバーへ届き、選択欄が実際に
   // 送る配送先（入力欄の値）と食い違う
   const adoptedAddressRef = useRef<AddressFields | null>(null);
+
+  // 入力画面の読み上げ領域が置かれてから文言を入れ、別のブラウザでは注文の状態を推測させない。
+  React.useEffect(() => {
+    if (resumeUnavailable && !cartLoading && !resuming) {
+      setResumeNotice("このブラウザではご注文の状態を表示できません。お支払いがお済みの場合は、ご注文確認のメールをお送りしています。");
+    }
+  }, [resumeUnavailable, cartLoading, resuming]);
 
   // フィールドごとのバリデーションエラー (FR-CHECKOUT-004)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -699,6 +716,9 @@ function CheckoutPageContent() {
       if (checkoutSessionId) {
         router.replace("/checkout");
       }
+      if (result.state === "unavailable") {
+        setResumeUnavailable(true);
+      }
     })();
   }, [searchParams, router, finishOrder, adoptConfirmation]);
 
@@ -783,7 +803,7 @@ function CheckoutPageContent() {
       router.push("/cart");
       return;
     }
-    if (rejection.code === "item_unavailable" || rejection.code === "price_changed") {
+    if (rejection.code === "item_unavailable" || rejection.code === "price_changed" || rejection.code === "cart_changed") {
       saveCartNotice({ kind: "message", message: rejection.message });
       router.push("/cart");
       return;
@@ -1205,7 +1225,7 @@ function CheckoutPageContent() {
   const renderCheckoutSections = () => (
     <div className="order-2 lg:order-1 md:col-span-1 lg:col-span-2 checkout-sections">
       <section className="checkout-section">
-        <h3 className="checkout-heading font-brand">お客様情報</h3>
+        <h3 ref={inputHeadingRef} tabIndex={-1} className="checkout-heading font-brand">お客様情報</h3>
         {renderCustomerInfoSection()}
       </section>
 
@@ -1457,7 +1477,7 @@ function CheckoutPageContent() {
             notice={confirmError ?? finalNotice}
             completing={confirmingOrder || proceeding}
             onEdit={backToInput}
-            onPaid={(checkoutSessionId) => void finishOrder(checkoutSessionId, { reentered: false })}
+            onPaid={(checkoutSessionId) => void finishOrder(checkoutSessionId, { reentered: checkoutSessionId !== confirmation.checkoutSessionId })}
             onRejected={(rejection) => void handleRejected(rejection)}
           />
         ) : (
@@ -1469,6 +1489,14 @@ function CheckoutPageContent() {
               style={{ fontSize: "var(--lk-size-sm)" }}
             >
               {confirmError}
+            </LiveMessage>
+            <LiveMessage
+              politeness="status"
+              data-testid="checkout-resume-notice"
+              className="mb-4"
+              style={{ fontSize: "var(--lk-size-sm)" }}
+            >
+              {resumeNotice}
             </LiveMessage>
             <div className="checkout-grid grid grid-cols-1 md:grid-cols-1 lg:grid-cols-3">
               {renderCheckoutSections()}

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useId, useMemo, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { loadStripe, type Appearance } from "@stripe/stripe-js";
@@ -219,6 +219,10 @@ function FinalConfirmationContent({
 }: FinalConfirmationStepProps) {
   const checkout = useCheckout();
   const termsHeadingId = useId();
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    headingRef.current?.focus({ preventScroll: true });
+  }, []);
   const [selectedPaymentType, setSelectedPaymentType] = useState<string | null>(null);
   const [placing, setPlacing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -259,7 +263,7 @@ function FinalConfirmationContent({
     try {
       const outcome = await placeOrder({ checkoutSessionId: confirmation.checkoutSessionId, inStockVariantIds });
       if (outcome.kind === "payment_done") {
-        onPaid(confirmation.checkoutSessionId);
+        onPaid(outcome.checkoutSessionId ?? confirmation.checkoutSessionId);
         return;
       }
       if (outcome.kind === "rejected") {
@@ -302,14 +306,14 @@ function FinalConfirmationContent({
       </LiveMessage>
       <div className="checkout-grid grid grid-cols-1 md:grid-cols-1 lg:grid-cols-3">
         <div className="order-2 lg:order-1 md:col-span-1 lg:col-span-2 checkout-sections">
-          <h2 className="checkout-heading font-brand" style={{ fontSize: "var(--lk-size-xl)" }}>
+          <h2 ref={headingRef} tabIndex={-1} className="checkout-heading font-brand" style={{ fontSize: "var(--lk-size-xl)" }}>
             注文内容の最終確認
           </h2>
 
           <section className="checkout-section">
             <div className="flex items-center justify-between">
               <h3 className="checkout-heading font-brand">お客様情報</h3>
-              <Button type="button" variant="text" size="xs" onClick={onEdit} disabled={busy}>
+              <Button type="button" aria-label="お客様情報を変更" variant="text" size="xs" onClick={onEdit} disabled={busy}>
                 変更
               </Button>
             </div>
@@ -324,7 +328,7 @@ function FinalConfirmationContent({
           <section className="checkout-section">
             <div className="flex items-center justify-between">
               <h3 className="checkout-heading font-brand">配送先</h3>
-              <Button type="button" variant="text" size="xs" onClick={onEdit} disabled={busy}>
+              <Button type="button" aria-label="配送先を変更" variant="text" size="xs" onClick={onEdit} disabled={busy}>
                 変更
               </Button>
             </div>

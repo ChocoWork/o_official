@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { seedCart } from "./checkout-flow-helpers";
 import { mockCartApis, sampleCartItem } from "./shop-test-utils";
 import { stubCheckoutSessionApis, waitForPositionToSettle } from "./checkout-test-utils";
 
@@ -126,30 +127,6 @@ const SAVE_BEHAVIOR_VIEWPORTS = [
 
 type ProfileSaveCalls = { profile: number; addresses: number; addressesBody: unknown };
 
-async function seedCartForCheckout(
-  page: Page,
-): Promise<{ ok: boolean; reason: string }> {
-  await page.goto("/");
-  return page.evaluate(async () => {
-    const itemsResponse = await fetch("/api/items?pageSize=20&sort=newest");
-    if (!itemsResponse.ok) {
-      return { ok: false, reason: `/api/items returned ${itemsResponse.status}` };
-    }
-    const body = (await itemsResponse.json()) as { items?: { id?: number; price?: number }[] };
-    const item = (body.items ?? []).find((i) => typeof i?.id === "number" && (i?.price ?? 0) >= 50);
-    if (!item?.id) {
-      return { ok: false, reason: "No published item priced at 50 JPY or above" };
-    }
-    const cartResponse = await fetch("/api/cart", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ item_id: item.id, quantity: 1 }),
-    });
-    return cartResponse.ok
-      ? { ok: true, reason: "" }
-      : { ok: false, reason: `cart seeding failed ${cartResponse.status}` };
-  });
-}
 
 /** ログイン状態にして、プロフィールと住所帳（0件）への保存を横取りする。 */
 async function interceptProfileSaves(page: Page): Promise<ProfileSaveCalls> {
@@ -218,8 +195,8 @@ test.describe("FR-CHECKOUT-017 保存済み住所が0件でも配送先を保存
       page,
     }) => {
       await page.setViewportSize({ width: viewport.width, height: 900 });
-      const seeded = await seedCartForCheckout(page);
-      test.skip(!seeded.ok, seeded.reason);
+      const seeded = await seedCart(page);
+      test.skip(!seeded.ok, seeded.ok ? "" : seeded.reason);
 
       const calls = await interceptProfileSaves(page);
 

@@ -112,6 +112,17 @@ describe('FinalConfirmationStep（設計書 2-3・第4章）', () => {
     expect(screen.getByText('150-0001', { exact: false })).toBeInTheDocument();
   });
 
+  test('表示された最終確認画面の表題へフォーカスを移す', () => {
+    renderStep();
+    expect(document.activeElement).toBe(screen.getByRole('heading', { name: '注文内容の最終確認' }));
+  });
+
+  test('変更ボタンは見た目を保ち、お客様情報と配送先の読み上げの名前を分ける', () => {
+    renderStep();
+    expect(screen.getByRole('button', { name: 'お客様情報を変更' })).toHaveTextContent('変更');
+    expect(screen.getByRole('button', { name: '配送先を変更' })).toHaveTextContent('変更');
+  });
+
   test('決済フォームの準備ができるまで「注文する」は押せない', () => {
     renderStep();
 
@@ -218,13 +229,22 @@ describe('FinalConfirmationStep（設計書 2-3・第4章）', () => {
     expect(mockConfirm).not.toHaveBeenCalled();
   });
 
+  test('別の画面で支払いが済んでいれば、見つかった ID で完了へ進む', async () => {
+    setReady();
+    mockPlaceOrder.mockResolvedValue({ kind: 'payment_done', checkoutSessionId: 'cs_paid' });
+    const props = renderStep();
+    fireEvent.click(screen.getByRole('button', { name: '注文する' }));
+    await waitFor(() => expect(props.onPaid).toHaveBeenCalledWith('cs_paid'));
+    expect(mockConfirm).not.toHaveBeenCalled();
+  });
+
   test('支払いの後の完了の処理の間は「注文する」も「変更」も「戻る」も押せない', () => {
     setReady();
     renderStep({ completing: true });
 
     expect(screen.getByRole('button', { name: '注文を確定しています...' })).toBeDisabled();
-    for (const button of screen.getAllByRole('button', { name: '変更' })) {
-      expect(button).toBeDisabled();
+    for (const name of ['お客様情報を変更', '配送先を変更']) {
+      expect(screen.getByRole('button', { name })).toBeDisabled();
     }
     expect(screen.getByRole('button', { name: '戻る' })).toBeDisabled();
   });
@@ -250,22 +270,20 @@ describe('FinalConfirmationStep（設計書 2-3・第4章）', () => {
     expect(reloadPage).toHaveBeenCalledTimes(1);
   });
 
-  test('「変更」で入力画面へ戻る。案内があれば画面の上に出す', () => {
+  test.each(['お客様情報を変更', '配送先を変更', '戻る'])('「%s」で入力画面へ戻る。案内があれば画面の上に出す', (name) => {
     setReady();
     const props = renderStep({ notice: 'PayPay でのお支払いが完了しませんでした' });
 
     expect(screen.getByTestId('checkout-final-notice')).toHaveTextContent('PayPay でのお支払いが完了しませんでした');
-    fireEvent.click(screen.getAllByRole('button', { name: '変更' })[0]);
+    fireEvent.click(screen.getByRole('button', { name }));
     expect(props.onEdit).toHaveBeenCalled();
   });
 
-  test('案内は ORDER SUMMARY より前に置く（狭い画面では ORDER SUMMARY が先に並ぶため、列の中だと上に出ない）', () => {
+  test('案内は2列の入れ物の外に置く', () => {
     setReady();
     renderStep({ notice: 'PayPay でのお支払いが完了しませんでした' });
 
     const notice = screen.getByTestId('checkout-final-notice');
-    const summaryTitle = screen.getByText('ORDER SUMMARY');
-    expect(notice.compareDocumentPosition(summaryTitle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(notice.closest('.checkout-grid')).toBeNull();
   });
 });

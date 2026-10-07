@@ -257,6 +257,25 @@ describe('決済の画面（グループ F）', () => {
     expect(screen.getByLabelText('プロモーションコード')).toBeInTheDocument();
   });
 
+  test('別のブラウザでは状態を出さず、入力画面の上で確認メールを案内し URL を戻す', async () => {
+    mockSearch = 'session_id=cs_other';
+    mockApi.resumeCheckout.mockResolvedValue({ state: 'unavailable' });
+    render(<CheckoutPage />);
+    const notice = await screen.findByTestId('checkout-resume-notice');
+    await waitFor(() => expect(notice).toHaveTextContent('このブラウザではご注文の状態を表示できません。お支払いがお済みの場合は、ご注文確認のメールをお送りしています。'));
+    expect(notice).toHaveAttribute('role', 'status');
+    expect(notice.closest('.checkout-grid')).toBeNull();
+    expect(mockRouter.replace).toHaveBeenCalledWith('/checkout');
+    expect(screen.queryByTestId('final-step')).toBeNull();
+    expect(screen.queryByText(/^ORD-/)).toBeNull();
+    expect(mockApi.completeCheckout).not.toHaveBeenCalled();
+  });
+
+  test('入り直しの案内の入れ物は、案内が無い入力画面にも置く', async () => {
+    render(<CheckoutPage />);
+    expect(await screen.findByTestId('checkout-resume-notice')).toBeEmptyDOMElement();
+  });
+
   test('PayPay から取りやめて戻ると、最終確認画面に案内が出る', async () => {
     mockSearch = 'session_id=cs_test_1';
     window.sessionStorage.setItem(
@@ -348,6 +367,12 @@ describe('決済の画面（グループ F）', () => {
     expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(2);
   });
 
+  test('最初の入力画面では見出しへフォーカスを移さない', async () => {
+    render(<CheckoutPage />);
+    const heading = await screen.findByRole('heading', { name: 'お客様情報' });
+    expect(document.activeElement).not.toBe(heading);
+  });
+
   test('「変更」で入力画面に戻り、URL から決済の画面の ID を外す', async () => {
     mockApi.requestCheckoutConfirmation.mockResolvedValue({ kind: 'confirmation', confirmation: CONFIRMATION });
     render(<CheckoutPage />);
@@ -360,11 +385,13 @@ describe('決済の画面（グループ F）', () => {
 
     expect(await screen.findByRole('button', { name: '確認へ進む' })).toBeInTheDocument();
     expect(mockRouter.replace).toHaveBeenLastCalledWith('/checkout');
+    expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'お客様情報' }));
   });
 
   test.each([
     ['item_unavailable', 'ご注文いただけない商品が含まれています'],
     ['price_changed', '商品の価格が変わりました。内容をご確認ください'],
+    ['cart_changed', 'カートの内容が変わりました。カートをご確認のうえ、もう一度お手続きください。'],
   ])('受け付けで %s を断られたら、カート画面へ案内の文言を渡して移る', async (code, message) => {
     mockApi.requestCheckoutConfirmation.mockResolvedValue({ kind: 'confirmation', confirmation: CONFIRMATION });
     await openFinalStep();
@@ -392,6 +419,7 @@ describe('決済の画面（グループ F）', () => {
     expect(screen.queryByTestId('final-step')).toBeNull();
     expect(screen.getByRole('button', { name: '確認へ進む' })).toBeInTheDocument();
     expect(screen.getByTestId('checkout-session-error')).toHaveTextContent('このご注文は合計が0円になるため、お受けできません');
+    expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'お客様情報' }));
     expect(mockRouter.replace).toHaveBeenLastCalledWith('/checkout');
   });
 
@@ -433,6 +461,15 @@ describe('決済の画面（グループ F）', () => {
     expect(mockApi.completeCheckout).toHaveBeenCalledWith('cs_test_1');
     expect(window.scrollTo).toHaveBeenCalledTimes(1);
     expect(window.scrollTo).toHaveBeenCalledWith({ top: 0 });
+  });
+
+  test('最終確認で別の画面の支払い済み ID を受け取ると、その注文を仕上げて確定済みと案内する', async () => {
+    mockApi.requestCheckoutConfirmation.mockResolvedValue({ kind: 'confirmation', confirmation: CONFIRMATION });
+    mockApi.completeCheckout.mockResolvedValue({ kind: 'completed', orderId: 'order-1', orderStatus: 'paid' });
+    await openFinalStep();
+    await act(async () => { mockFinalProps.onPaid('cs_paid'); });
+    expect(mockApi.completeCheckout).toHaveBeenCalledWith('cs_paid');
+    expect(await screen.findByRole('heading', { name: 'ご注文は確定しています' })).toBeInTheDocument();
   });
 
   test('「確認へ進む」で注文済みと分かったら、その決済の画面の ID で完了の処理をして「ご注文は確定しています」を出す', async () => {

@@ -133,6 +133,44 @@ describeLocalDb('integration: お届けの目安の関数', (db) => {
 });
 
 describeLocalDb('integration: 受付 RPC の在庫と価格の確かめ', (db) => {
+  test('カートの行が消えていれば配列ありの受付は cart_changed。注文も在庫の確保も作らない', async () => {
+    const fx = await createCatalogFixture(db(), { stock: 2 });
+    const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 1 });
+    await db().query('delete from public.carts where id = $1', [draft.cartId]);
+
+    for (const shown of [[], [fx.variantId]]) {
+      const res = await placeWithShown(db(), draft, shown);
+      expect(res.rows[0]).toEqual({ order_id: null, order_status: null, created: false, rejection: 'cart_changed' });
+    }
+    expect(await orderCount(db(), draft.checkoutSessionId)).toBe(0);
+    expect(await variantStock(db(), fx.variantId)).toBe(2);
+    expect(await movementsOf(db(), fx.variantId)).toEqual([{ delta: 2, reason: 'restock' }]);
+    expect(await draftStatus(db(), draft.draftId)).toBe('created');
+  });
+
+  test('カートの行が消えていても NULL の呼び出し（照合器）は今までどおり注文を作る', async () => {
+    const fx = await createCatalogFixture(db(), { stock: 2 });
+    const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 1 });
+    await db().query('delete from public.carts where id = $1', [draft.cartId]);
+
+    const res = await placeWithoutShown(db(), draft);
+
+    expect(res.rows[0]).toMatchObject({ order_status: 'payment_in_progress', created: true, rejection: null });
+    expect(await orderCount(db(), draft.checkoutSessionId)).toBe(1);
+  });
+
+  test('本人のカート行が残っていれば配列ありの受付は今までどおり注文を作る', async () => {
+    const fx = await createCatalogFixture(db(), { stock: 2 });
+    const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 1 });
+    const cart = await db().query('select id from public.carts where id = $1 and session_id = $2', [draft.cartId, draft.cartSessionId]);
+    expect(cart.rowCount).toBe(1);
+
+    const res = await placeWithShown(db(), draft, [fx.variantId]);
+
+    expect(res.rows[0]).toMatchObject({ order_status: 'payment_in_progress', created: true, rejection: null });
+    expect(await variantStock(db(), fx.variantId)).toBe(1);
+  });
+
   test('在庫ありと見せたバリアントの在庫が足りなければ stock_changed。注文も在庫の確保も作らず、下書きは作成中のまま', async () => {
     const fx = await createCatalogFixture(db(), { stock: 1 });
     const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 2 });

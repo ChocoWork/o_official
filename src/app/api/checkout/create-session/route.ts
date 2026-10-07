@@ -88,7 +88,7 @@ const supabase = createClient(
 
 const createSessionSchema = z.object({
   paymentMethod: z.enum(STRIPE_CHECKOUT_PAYMENT_METHODS).optional(),
-  uiMode: z.enum(["hosted", "custom"]).default("hosted"),
+  uiMode: z.enum(["custom"]).default("custom"),
   shipping: checkoutShippingSchema,
   displayedAmounts: checkoutDisplayedAmountsSchema,
   // 入力画面で「適用」したコード。ここでもう一度確かめてから決済の画面に付ける（設計書第3章）
@@ -124,7 +124,7 @@ type ClaimedCheckoutDraftRow = ReusableCheckoutDraftRow & {
   tax_amount: number;
   checkout_request_version: number;
   checkout_request_fingerprint: string;
-  checkout_ui_mode: "custom" | "hosted";
+  checkout_ui_mode: "custom";
   checkout_origin: string;
   claim_created: boolean;
 };
@@ -184,7 +184,7 @@ function canonicalizeItemsSnapshot(
 }
 
 function buildCheckoutRequestFingerprint(params: {
-  uiMode: "custom" | "hosted";
+  uiMode: "custom";
   origin: string;
   subtotalAmount: number;
   taxAmount: number;
@@ -262,7 +262,7 @@ async function storeCheckoutSessionIdOnDraft(params: {
   sessionId: string;
   requestVersion: number;
   requestFingerprint: string;
-  uiMode: "custom" | "hosted";
+  uiMode: "custom";
   ip: string | null;
   userAgent: string | null;
 }): Promise<StoreCheckoutSessionResult> {
@@ -352,7 +352,7 @@ async function expireConflictingOpenSession(
 async function claimCheckoutDraft(params: {
   sessionId: string;
   requestFingerprint: string;
-  uiMode: "custom" | "hosted";
+  uiMode: "custom";
   checkoutOrigin: string;
   paymentMethod: string;
   subtotalAmount: number;
@@ -496,6 +496,12 @@ export async function POST(req: NextRequest) {
     }
 
     const { paymentMethod, shipping, uiMode, displayedAmounts, promotionCode } = parsed.data;
+    // 完了の照合と共有する任意項目のスキーマは保ち、支払いの準備では配送先の欠落を先に断る。
+    const requiredShippingFields = ["email", "fullName", "postalCode", "prefecture", "city", "address", "phone"] as const;
+    if (requiredShippingFields.some((field) => !shipping?.[field]?.trim())) {
+      return NextResponse.json({ error: "shipping_incomplete" }, { status: 400 });
+    }
+
 
     const { data: cartData, error: cartError } = await supabase
       .from("carts")
@@ -801,13 +807,6 @@ export async function POST(req: NextRequest) {
           );
         }
 
-        if (createdDraft.checkout_ui_mode === "hosted" && existingSession.url) {
-          return applyRotatedCsrfCookie(
-            NextResponse.json({ url: existingSession.url }),
-            csrfResult,
-          );
-        }
-
         throw new Error(
           "Claimed Checkout Session is open without its required response field",
         );
@@ -924,19 +923,10 @@ export async function POST(req: NextRequest) {
       },
     } satisfies Stripe.Checkout.SessionCreateParams;
 
-    const sessionParams: Stripe.Checkout.SessionCreateParams =
-      createdDraft.checkout_ui_mode === "custom"
-        ? {
-            ...commonSessionParams,
-            ui_mode: "custom",
-          }
-        : {
-            ...commonSessionParams,
-            success_url:
-              createdDraft.checkout_origin +
-              "/checkout?session_id={CHECKOUT_SESSION_ID}",
-            cancel_url: createdDraft.checkout_origin + "/checkout?cancelled=1",
-          };
+    const sessionParams: Stripe.Checkout.SessionCreateParams = {
+      ...commonSessionParams,
+      ui_mode: "custom",
+    };
 
     const session = await stripe.checkout.sessions.create(sessionParams, {
       idempotencyKey: checkoutSessionIdempotencyKey(createdDraft.id, checkoutSessionExpiresAt),
@@ -978,10 +968,7 @@ export async function POST(req: NextRequest) {
       await logAudit({
         action: "checkout.session.create",
         outcome: "success",
-        detail:
-          createdDraft.checkout_ui_mode === "custom"
-            ? "Created Stripe checkout session (custom UI)"
-            : "Created Stripe checkout session (hosted)",
+        detail: "Created Stripe checkout session (custom UI)",
         ip: clientIp,
         user_agent: userAgent,
         metadata: {
@@ -998,28 +985,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (createdDraft.checkout_ui_mode === "custom") {
-      if (!session.client_secret) {
-        return NextResponse.json(
-          { error: "Failed to create checkout client secret" },
-          { status: 500 },
-        );
-      }
-
-      return await respondWithConfirmation(createdDraft, session.id, session.client_secret);
-    }
-
-    if (!session.url) {
+    if (!session.client_secret) {
       return NextResponse.json(
-        { error: "Failed to create checkout session" },
+        { error: "Failed to create checkout client secret" },
         { status: 500 },
       );
     }
 
-    return applyRotatedCsrfCookie(
-      NextResponse.json({ url: session.url }),
-      csrfResult,
-    );
+    return await respondWithConfirmation(createdDraft, session.id, session.client_secret);
+
   } catch (error) {
     const classified = classifyCheckoutSessionError(error);
     const correlationId = randomUUID();

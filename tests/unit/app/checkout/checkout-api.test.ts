@@ -87,6 +87,25 @@ describe('requestCheckoutConfirmation', () => {
 describe('resumeCheckout', () => {
   beforeEach(() => mockClientFetch.mockReset());
 
+  test.each([[400, 'session_not_found'], [403, 'forbidden']])('ID を送った %s %s は unavailable', async (status, error) => {
+    mockClientFetch.mockResolvedValue(jsonResponse(status as number, { error }));
+    await expect(resumeCheckout('cs_other')).resolves.toEqual({ state: 'unavailable' });
+  });
+
+  test.each([
+    [null, 400, 'session_not_found'], [null, 403, 'forbidden'],
+    ['cs_other', 400, 'invalid_request'], ['cs_other', 403, 'other'],
+    ['cs_other', 500, 'session_not_found'], ['cs_other', 429, 'forbidden'],
+  ])('ID が無いか別の失敗なら none（%s %s %s）', async (id, status, error) => {
+    mockClientFetch.mockResolvedValue(jsonResponse(status as number, { error }));
+    await expect(resumeCheckout(id as string | null)).resolves.toEqual({ state: 'none' });
+  });
+
+  test('通信の失敗も none', async () => {
+    mockClientFetch.mockRejectedValue(new TypeError('Failed to fetch'));
+    await expect(resumeCheckout('cs_other')).resolves.toEqual({ state: 'none' });
+  });
+
   test('決済の画面の ID は有るときだけ送り、応答を状態に分ける。失敗は入力画面から（none）', async () => {
     mockClientFetch
       .mockResolvedValueOnce(jsonResponse(200, { state: 'none' }))
@@ -97,7 +116,7 @@ describe('resumeCheckout', () => {
     await expect(resumeCheckout(null)).resolves.toEqual({ state: 'none' });
     await expect(resumeCheckout('cs_paid')).resolves.toEqual({ state: 'payment_done', checkoutSessionId: 'cs_paid' });
     await expect(resumeCheckout('cs_test_1')).resolves.toEqual({ state: 'resume', confirmation: CONFIRMATION });
-    await expect(resumeCheckout('cs_other')).resolves.toEqual({ state: 'none' });
+    await expect(resumeCheckout('cs_other')).resolves.toEqual({ state: 'unavailable' });
     expect(JSON.parse(mockClientFetch.mock.calls[0][1].body)).toEqual({});
     expect(JSON.parse(mockClientFetch.mock.calls[1][1].body)).toEqual({ checkoutSessionId: 'cs_paid' });
   });
@@ -105,6 +124,19 @@ describe('resumeCheckout', () => {
 
 describe('placeOrder', () => {
   beforeEach(() => mockClientFetch.mockReset());
+
+  test('支払い済みの別の画面の ID を返す。ID が無い古い応答も読める', async () => {
+    mockClientFetch
+      .mockResolvedValueOnce(jsonResponse(409, { error: 'payment_done', checkoutSessionId: 'cs_paid' }))
+      .mockResolvedValueOnce(jsonResponse(409, { error: 'payment_done' }))
+      .mockResolvedValueOnce(jsonResponse(409, { error: 'cart_changed', message: 'カートが変わりました' }));
+    const call = () => placeOrder({ checkoutSessionId: 'cs_test_1', inStockVariantIds: [] });
+    await expect(call()).resolves.toEqual({ kind: 'payment_done', checkoutSessionId: 'cs_paid' });
+    await expect(call()).resolves.toEqual({ kind: 'payment_done' });
+    await expect(call()).resolves.toEqual({
+      kind: 'rejected', rejection: { code: 'cart_changed', message: 'カートが変わりました', changedLines: [] },
+    });
+  });
 
   test('受け付け・支払い済み・断り・失敗に分ける', async () => {
     mockClientFetch
@@ -122,7 +154,7 @@ describe('placeOrder', () => {
     const call = () => placeOrder({ checkoutSessionId: 'cs_test_1', inStockVariantIds: [11] });
 
     await expect(call()).resolves.toEqual({ kind: 'accepted', orderId: 'order-1' });
-    await expect(call()).resolves.toEqual({ kind: 'payment_done' });
+    await expect(call()).resolves.toEqual({ kind: 'payment_done', checkoutSessionId: 'cs_test_1' });
     await expect(call()).resolves.toEqual({
       kind: 'rejected',
       rejection: {

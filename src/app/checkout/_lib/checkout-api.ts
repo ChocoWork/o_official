@@ -24,6 +24,7 @@ export type ProceedResult =
 
 export type ResumeResult =
   | { state: "none" }
+  | { state: "unavailable" }
   | { state: "payment_done"; checkoutSessionId: string }
   | { state: "resume"; confirmation: CheckoutConfirmation };
 
@@ -31,6 +32,7 @@ export type CheckoutRejectionCode =
   | "stock_changed"
   | "item_unavailable"
   | "price_changed"
+  | "cart_changed"
   | "zero_amount"
   | "session_expired"
   | "superseded";
@@ -39,7 +41,7 @@ export type CheckoutRejection = { code: CheckoutRejectionCode; message: string; 
 
 export type PlaceOrderOutcome =
   | { kind: "accepted"; orderId: string }
-  | { kind: "payment_done" }
+  | { kind: "payment_done"; checkoutSessionId?: string }
   | { kind: "rejected"; rejection: CheckoutRejection }
   | { kind: "error"; message: string };
 
@@ -59,6 +61,7 @@ const REJECTION_CODES: readonly CheckoutRejectionCode[] = [
   "stock_changed",
   "item_unavailable",
   "price_changed",
+  "cart_changed",
   "zero_amount",
   "session_expired",
   "superseded",
@@ -128,6 +131,12 @@ export async function resumeCheckout(checkoutSessionId: string | null): Promise<
     const response = await postJson("/api/checkout/resume", checkoutSessionId ? { checkoutSessionId } : {});
     const data = await readJson(response);
     if (!response.ok) {
+      if (checkoutSessionId && (
+        (response.status === 400 && data?.error === "session_not_found") ||
+        (response.status === 403 && data?.error === "forbidden")
+      )) {
+        return { state: "unavailable" };
+      }
       return { state: "none" };
     }
     if (data?.state === "payment_done" && typeof data.checkoutSessionId === "string") {
@@ -156,7 +165,7 @@ export async function placeOrder(params: { checkoutSessionId: string; inStockVar
     return { kind: "accepted", orderId: data.orderId };
   }
   if (response.status === 409 && data?.error === "payment_done") {
-    return { kind: "payment_done" };
+    return { kind: "payment_done", ...(typeof data.checkoutSessionId === "string" ? { checkoutSessionId: data.checkoutSessionId } : {}) };
   }
   if (
     response.status === 409 &&

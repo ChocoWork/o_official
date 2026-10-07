@@ -16,7 +16,7 @@ import {
   PLACE_ORDER_GUARD,
   guardCheckoutPost,
 } from '@/features/checkout/services/checkout-route-guard';
-import { reconcileCheckoutSession } from '@/features/checkout/services/checkout-session-lifecycle.service';
+import { findPaidCheckoutSession, reconcileCheckoutSession } from '@/features/checkout/services/checkout-session-lifecycle.service';
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
@@ -31,13 +31,14 @@ const requestSchema = z
   })
   .strict();
 
-type RejectionCode = 'stock_changed' | 'item_unavailable' | 'price_changed' | 'zero_amount' | 'session_expired' | 'superseded';
+type RejectionCode = 'stock_changed' | 'item_unavailable' | 'price_changed' | 'cart_changed' | 'zero_amount' | 'session_expired' | 'superseded';
 
 /** 断ったときの案内（設計書 5-3・6-3）。どれもお金は動いていない */
 const REJECTION_MESSAGES: Record<RejectionCode, string> = {
   stock_changed: '在庫の状況が変わりました。次の商品は受注生産になります（発送まで数週間〜2か月以上）',
   item_unavailable: 'ご注文いただけない商品が含まれています',
   price_changed: '商品の価格が変わりました。内容をご確認ください',
+  cart_changed: 'カートの内容が変わりました。カートをご確認のうえ、もう一度お手続きください。',
   zero_amount: 'このご注文は合計が0円になるため、お受けできません',
   session_expired: '時間がたったため、お支払い情報をもう一度入力してください',
   superseded: '別の画面で手続きが進んでいます。画面を読み込み直してください',
@@ -52,6 +53,7 @@ const REJECTION_BY_RPC: Record<PlaceOrderRejection, RejectionCode> = {
   zero_amount: 'zero_amount',
   price_changed: 'price_changed',
   stock_changed: 'stock_changed',
+  cart_changed: 'cart_changed',
 };
 
 const FAILED_MESSAGE = 'ご注文を受け付けられませんでした。少し時間をおいてから、もう一度お試しください。';
@@ -200,6 +202,12 @@ export async function POST(req: NextRequest) {
         }
       }
       return reject('session_expired', { ...ref, draft_id: draft.id, remaining_seconds: remainingSeconds });
+    }
+
+    // 別のタブの支払いが先に済んでいれば、同じカートでもう一度課金せず、その注文を仕上げる。
+    const paidCheckoutSessionId = await findPaidCheckoutSession({ supabase, stripe }, guard.sessionId);
+    if (paidCheckoutSessionId && paidCheckoutSessionId !== checkoutSessionId) {
+      return guard.finish(NextResponse.json({ error: 'payment_done', checkoutSessionId: paidCheckoutSessionId }, { status: 409 }));
     }
 
     const { data, error } = await supabase.rpc('place_order_from_checkout_draft', {

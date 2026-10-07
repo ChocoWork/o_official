@@ -14,7 +14,7 @@ import {
 
 /**
  * FR-CHECKOUT-040 決済の画面への入り直し
- * 対応 FREQ: FREQ-421（AC-01〜AC-04）
+ * 対応 FREQ: FREQ-421（AC-01〜AC-05）
  *
  * AC-01・02 は Stripe のテスト用カードで実際に支払う。AC-03 は PayPay の画面から未払いで戻った状態を、
  * 受け付け済みにした実際の開いている決済の画面（本物の受け付けの入口を1回呼ぶ。Stripe の支払いの命令は送らない）と、
@@ -25,6 +25,36 @@ test.describe('FR-CHECKOUT-040 決済の画面への入り直し', () => {
   test.use({ locale: 'ja-JP' });
 
   for (const viewport of CHECKOUT_VIEWPORTS) {
+    test(`${viewport.name}（${viewport.width}px）別のブラウザに戻ると状態を出さず確認メールを案内する`, async ({ page, browser }) => {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      const seeded = await seedCart(page);
+      test.skip(!seeded.ok, seeded.ok ? '' : seeded.reason);
+      await stubPostalCode(page);
+      await page.goto('/checkout');
+      await fillShippingForm(page, `e2e-other-browser-${viewport.name}@example.com`);
+      await proceedToFinal(page);
+      await expect(page).toHaveURL(/\/checkout\?session_id=cs_test_/);
+      const finalUrl = new URL(page.url());
+      const checkoutSessionId = finalUrl.searchParams.get('session_id');
+      expect(checkoutSessionId).toBeTruthy();
+
+      const otherContext = await browser.newContext({
+        locale: 'ja-JP', viewport: { width: viewport.width, height: viewport.height },
+      });
+      try {
+        const otherPage = await otherContext.newPage();
+        await otherPage.goto(`${finalUrl.origin}/checkout?session_id=${encodeURIComponent(checkoutSessionId!)}`);
+        await expect(otherPage.getByTestId('checkout-resume-notice')).toHaveText(
+          'このブラウザではご注文の状態を表示できません。お支払いがお済みの場合は、ご注文確認のメールをお送りしています。',
+        );
+        await expect(otherPage).toHaveURL(`${finalUrl.origin}/checkout`);
+        await expect(otherPage.getByRole('button', { name: '注文する' })).toHaveCount(0);
+        await expect(otherPage.getByText(/^ORD-[0-9A-F]{8}$/)).toHaveCount(0);
+      } finally {
+        await otherContext.close();
+      }
+    });
+
     test(`${viewport.name}（${viewport.width}px）支払いの後に最終確認画面の URL を開くと、払わせずに注文の状態を出す`, async ({
       page,
     }) => {
@@ -48,10 +78,8 @@ test.describe('FR-CHECKOUT-040 決済の画面への入り直し', () => {
       await expect(page.getByText('入金済み')).toBeVisible();
       expect(hasPaymentElement(page)).toBe(false);
       // Stripe の埋め込み枠は後から付くので、見出しが出た直後に枠を見るだけでは、崩れても通りうる。
-      // 「注文する」のボタンは決済の部品と同じ描画で決まるので、出ていないことも見る
-      await expect(page.getByRole('button', { name: '注文する' })).toHaveCount(0);
-      // ボタンは決済フォームの準備が済むまで「決済フォームを準備中...」と出るので、その間も見落とさないようにする
-      await expect(page.getByRole('button', { name: '決済フォームを準備中...' })).toHaveCount(0);
+      // 最終確認の表題は準備中・処理中にも残るので、支払いの部品を出さないことを名前によらず確かめる
+      await expect(page.getByRole('heading', { name: '注文内容の最終確認' })).toHaveCount(0);
     });
 
     test(`${viewport.name}（${viewport.width}px）注文の確定の通信が切れても、読み込み直すと注文の状態を出す`, async ({ page }) => {
@@ -173,7 +201,7 @@ test.describe('FR-CHECKOUT-040 決済の画面への入り直し', () => {
       // この E2E では同じ決済の画面が返る。新しい画面への作り直しは create-session の単体テストで確かめる
       // （作ったばかりの決済の画面は残りが約30分あり、15分以上なら使い回すため。決め事 D4）
       await expect(page.getByRole('heading', { name: '注文内容の最終確認' })).toBeVisible();
-      // 作り直しの間は最終確認画面のボタンを押せず、終わったら押せる
+      // 作り直しが終わった後は最終確認画面のボタンを押せる
       await expect(page.getByRole('button', { name: '注文する' })).toBeEnabled({ timeout: 30_000 });
     });
   }

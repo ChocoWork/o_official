@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { seedCart } from "./checkout-flow-helpers";
 
 /**
  * FR-CHECKOUT-031 プロモーションコードの見出しを入力欄に結びつける
@@ -9,7 +10,7 @@ import { expect, test, type Page } from "@playwright/test";
  * プレースホルダ「コードを入力」は入力を始めると消えるので、見出しの代わりにならない。
  *
  * プロモーションコード欄は入力画面に常にある。「適用」はサーバーが Stripe に問い合わせて確かめる（グループ F）。
- * カートは FR-CHECKOUT-022 と同じく実 API で用意し、用意できない環境ではスキップする。
+ * カートは共通の seedCart で実 API を使って用意する。商品が無い環境だけスキップし、HTTP の失敗はテストを失敗にする。
  */
 
 const VIEWPORTS = [
@@ -18,28 +19,6 @@ const VIEWPORTS = [
   { name: "desktop", width: 1280 },
 ] as const;
 
-async function seedCart(page: Page): Promise<{ ok: boolean; reason: string }> {
-  await page.goto("/");
-  return page.evaluate(async () => {
-    const itemsResponse = await fetch("/api/items?pageSize=20&sort=newest");
-    if (!itemsResponse.ok) {
-      return { ok: false, reason: `/api/items returned ${itemsResponse.status}` };
-    }
-    const body = (await itemsResponse.json()) as { items?: { id?: number; price?: number }[] };
-    const item = (body.items ?? []).find((i) => typeof i?.id === "number" && (i?.price ?? 0) >= 50);
-    if (!item?.id) {
-      return { ok: false, reason: "No published item priced at 50 JPY or above" };
-    }
-    const cartResponse = await fetch("/api/cart", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ item_id: item.id, quantity: 1 }),
-    });
-    return cartResponse.ok
-      ? { ok: true, reason: "" }
-      : { ok: false, reason: `cart seeding failed ${cartResponse.status}` };
-  });
-}
 
 /** checkout を開き、プロモーションコード欄が出るまで待つ。 */
 async function openCheckout(page: Page): Promise<void> {
@@ -53,7 +32,7 @@ test.describe("FR-CHECKOUT-031 プロモーションコードの見出しと入�
 
   test.beforeEach(async ({ page }) => {
     const seeded = await seedCart(page);
-    test.skip(!seeded.ok, seeded.reason);
+    test.skip(!seeded.ok, seeded.ok ? "" : seeded.reason);
   });
 
   for (const viewport of VIEWPORTS) {

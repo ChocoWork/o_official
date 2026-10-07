@@ -2,11 +2,13 @@
  * FR-CHECKOUT-041 確定メールに明細ごとのお届けの目安を添える
  * 対応 FREQ: FREQ-422（AC-01）
  *
- * 手元の種データではバリアントがすべて在庫0なので、注文の明細は受注生産になる前提。
+ * seedCart は色・サイズの無い行をカートに入れ、手元の種データのバリアントはどれも色・サイズを持つので、
+ * どのバリアントにも当たらず受注生産になる。
  * Mailpit は手元にしかないメール受信箱で、本番のメールには触れない。
  * API の形は Mailpit の公式仕様に合わせる: https://mailpit.axllent.org/docs/api-v1/
  */
 import { expect, test } from '@playwright/test';
+import { isLocalUrl } from '../scripts/e2e/environment';
 import {
   CHECKOUT_VIEWPORTS,
   fillShippingForm,
@@ -16,7 +18,6 @@ import {
   stubPostalCode,
 } from './checkout-flow-helpers';
 
-const MAILPIT_URL = 'http://127.0.0.1:54324';
 const FULFILLMENT_TEXT = '受注生産・発送まで数週間〜2か月以上（目安）';
 
 type MailpitSearchResponse = {
@@ -34,6 +35,8 @@ test.describe('FR-CHECKOUT-041 確定メールに明細ごとのお届けの目�
       page,
       request,
     }) => {
+      const mailUrl = process.env.MAIL_LOCAL_URL;
+      if (!mailUrl || !isLocalUrl(mailUrl)) throw new Error('手元のメール受け（MAIL_LOCAL_URL）が無い');
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       const seeded = await seedCart(page);
       test.skip(!seeded.ok, seeded.ok ? '' : seeded.reason);
@@ -48,21 +51,21 @@ test.describe('FR-CHECKOUT-041 確定メールに明細ごとのお届けの目�
 
       // FREQ-422-AC-01。非同期のメールが届かない場合も、目安が無い場合も時間切れで落とす。
       await expect.poll(async () => {
-        const searchResponse = await request.get(`${MAILPIT_URL}/api/v1/search`, {
+        const searchResponse = await request.get(new URL('/api/v1/search', mailUrl).toString(), {
           params: { query: `to:${email}` },
           timeout: 5_000,
         });
-        expect(searchResponse).toBeOK();
+        await expect(searchResponse).toBeOK();
         const search = (await searchResponse.json()) as MailpitSearchResponse;
         const confirmation = search.messages.find((message) => message.Subject.includes('ご注文ありがとうございます'));
         if (!confirmation) {
           return '';
         }
 
-        const messageResponse = await request.get(`${MAILPIT_URL}/api/v1/message/${encodeURIComponent(confirmation.ID)}`, {
+        const messageResponse = await request.get(new URL(`/api/v1/message/${encodeURIComponent(confirmation.ID)}`, mailUrl).toString(), {
           timeout: 5_000,
         });
-        expect(messageResponse).toBeOK();
+        await expect(messageResponse).toBeOK();
         const message = (await messageResponse.json()) as MailpitMessage;
         return message.Text;
       }, {
