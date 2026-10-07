@@ -84,7 +84,7 @@
 | `/api/cron/legal-archive/status` | `POST` | [route.ts](../../../src/app/api/cron/legal-archive/status/route.ts) |
 | `/api/cron/meta-kpi-sync` | `POST` | [route.ts](../../../src/app/api/cron/meta-kpi-sync/route.ts) |
 | `/api/cron/process-stripe-webhooks` | `POST` | [route.ts](../../../src/app/api/cron/process-stripe-webhooks/route.ts) |
-| `/api/cron/stripe-reconcile` | `GET` | [route.ts](../../../src/app/api/cron/stripe-reconcile/route.ts) |
+| `/api/cron/stripe-reconcile` | `POST` | [route.ts](../../../src/app/api/cron/stripe-reconcile/route.ts) |
 | `/api/items/[id]` | `GET` | [route.ts](../../../src/app/api/items/%5Bid%5D/route.ts) |
 | `/api/items` | `GET` | [route.ts](../../../src/app/api/items/route.ts) |
 | `/api/news` | `GET` | [route.ts](../../../src/app/api/news/route.ts) |

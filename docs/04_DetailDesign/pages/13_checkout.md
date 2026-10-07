@@ -155,7 +155,7 @@ flowchart TD
   B -- 成功 --> D[原子的enqueue: stripe_webhook_events]
   D -- DB障害 --> E[500: Stripe再送]
   D -- 保存または一致する重複 --> F[200: 受信完了]
-  F --> G[pg_cron: 10秒ごとにworker起動]
+  F --> G[pg_cron: 毎分worker起動・受け取り口もその場で1回]
   G --> H[claim: SKIP LOCKEDと5分lease]
   H --> I[注文・会計・メール処理]
   I -- 成功 --> J[claim token一致ならcompleted]
@@ -165,9 +165,9 @@ flowchart TD
 
 受信ルートは業務処理を待たない。StripeのイベントIDを主キーに、署名検証済みのpayloadをservice-role専用RPCで永続化してから2xxを返す。同じIDの再送では種別・不変の`data`・`account`・`livemode`を照合して重複扱いにする。`pending_webhooks`など配信状況メタデータの差は許容し、不変部分の差は衝突として拒否する。保存が失敗したときだけ5xxにしてStripe再送を受ける。
 
-worker（[route.ts](../../../src/app/api/cron/process-stripe-webhooks/route.ts)）は`CRON_SECRET`で認証し、1回に1件を処理する。DBのclaimは`FOR UPDATE SKIP LOCKED`、5分lease、claim tokenを使う。処理に失敗したイベントは30秒×試行回数（上限30分）後に再試行する。workerが停止した場合もlease期限後に再claimでき、古いworkerは完了を確定できない。注文確定とメール送信は既存の冪等処理を維持する。
+worker（[route.ts](../../../src/app/api/cron/process-stripe-webhooks/route.ts)）は`CRON_SECRET`で認証し、取り出せる知らせが無くなるか約45秒たつまで1件ずつ処理する（受け取り口も保存の後に`after()`で1回動かす）。DBのclaimは`FOR UPDATE SKIP LOCKED`、5分lease、claim tokenを使う。処理に失敗したイベントは原因の記号（`stripe_unavailable`など6つ）を残し、失敗した試行の回数をnとして2^(n-1)分後に再試行する。9回目の試行も失敗したら`dead`（退避）にして店へまとめて知らせる。leaseの切れた試行も1回の失敗として数える（`lease_expired`）。古いworkerは完了を確定できない。注文確定とメール送信は既存の冪等処理を維持する（グループ B 設計書 3-1〜3-4）。
 
-`stripe_webhook_events`には`queued / processing / completed / failed`、`attempt_count`、`next_attempt_at`、`claim_token`、`lease_expires_at`を保持する。既存表への列追加と権限制限は[キューmigration](../../../supabase/migrations/20260925000303_add_stripe_webhook_queue.sql)として本番適用済み。Vaultを参照する起動ジョブは[スケジュールmigration](../../../supabase/pending/schedule_stripe_webhook_worker.sql)に保留する。本番ではworkerとCronの稼働を確認してから新しい受信ルートを公開する。
+`stripe_webhook_events`には`queued / processing / completed / failed / dead`、`attempt_count`、`next_attempt_at`、`claim_token`、`lease_expires_at`、`received_at`（受け取った時刻）、`dead_at`、`dead_notified_at`を保持する。既存表への列追加と権限制限は[キューmigration](../../../supabase/migrations/20260925000303_add_stripe_webhook_queue.sql)として本番適用済み。Vaultを参照する起動ジョブは[スケジュールmigration](../../../supabase/pending/schedule_stripe_webhook_worker.sql)に保留する。本番ではworkerとCronの稼働を確認してから新しい受信ルートを公開する。
 
 ### ハンドラが失敗したときの扱い（FREQ-369）
 
@@ -754,8 +754,8 @@ limit 20;
 
 決済手段の動的化と在庫復元の機能を本番へ入れる際は、次の順序で確認・実施する。どれか1つでも欠けると、機能の一部または全部が「エラーは出ないが動いていない」状態になる。
 
-1. **Stripe Webhook エンドポイントの購読イベントを確認する。** `checkout.session.completed` / `checkout.session.async_payment_succeeded` / `checkout.session.async_payment_failed` / `checkout.session.expired` / `payment_intent.succeeded` / `payment_intent.payment_failed` の6つが Stripe ダッシュボードのエンドポイント設定で有効になっていること（照合関数へ渡すイベント。`src/lib/stripe/webhook-processor.ts` の `processStripeWebhookEvent`）。これが漏れていると webhook 側の照合は一切発火せず、毎時の見回りだけが注文と在庫を合わせる経路になる（サイレントな機能欠落）。
-2. **`CRON_SECRET` を本番環境変数に設定し、Vault にも登録する。** `supabase/pending/schedule_expire_pending_orders.sql`（pg_cron 登録マイグレーション。公開時に新しい version で適用する）は Vault に秘密が無くても適用できるが、秘密が揃うまでジョブは毎回失敗する（FREQ-368）。失敗は `cron.job_run_details` に status=failed と理由が残り、認証ヘッダの無い要求は送られない。適用後に次を確認する。
+1. **Stripe Webhook エンドポイントの購読イベントを確認する。** 受け取り口が保存する13種（一覧は[手順書](../../06_Operations/webhook-queue-operations.md)の4）が Stripe ダッシュボードのエンドポイント設定で有効になっていること。そのうち `checkout.session.completed` / `checkout.session.async_payment_succeeded` / `checkout.session.async_payment_failed` / `checkout.session.expired` / `payment_intent.succeeded` / `payment_intent.payment_failed` の6つは照合関数へ渡すイベント（`src/lib/stripe/webhook-processor.ts` の `processStripeWebhookEvent`）で、これが漏れていると webhook 側の照合は一切発火せず、毎時の見回りだけが注文と在庫を合わせる経路になる（サイレントな機能欠落）。
+2. **`CRON_SECRET` を本番環境変数に設定し、Vault にも登録する。** 値は32文字以上のランダムな値にする（短いと全部の定期処理の入口が設定の誤りとして401で断る）。`supabase/pending/schedule_expire_pending_orders.sql`（pg_cron 登録マイグレーション。公開時に新しい version で適用する）は Vault に秘密が無くても適用できるが、秘密が揃うまでジョブは毎回失敗する（FREQ-368）。失敗は `cron.job_run_details` に status=failed と理由が残り、認証ヘッダの無い要求は送られない。適用後に次を確認する。
 
    ```sql
    select status, return_message, start_time

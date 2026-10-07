@@ -52,7 +52,7 @@ title: シークレット管理方針
 ## Stripe注文同期
 
 Stripe Webhookは `${APP_BASE_URL}/api/webhook/stripe` に設定し、署名シークレットを
-`STRIPE_WEBHOOK_SECRET` としてサーバー環境だけに保存します。`src/lib/stripe/webhook-processor.ts` が処理する次の全イベントを購読します。
+`STRIPE_WEBHOOK_SECRET` としてサーバー環境だけに保存します。受け取り口が保存する次の13種（`src/lib/stripe/handled-webhook-events.ts`）を購読します。ほかの種類は保存しません。本番の鍵のアプリには本番の宛先、テストの鍵のアプリにはテストの宛先をつなぎます（食い違うと処理せず、店へ知らせます）。
 
 | イベント | 用途 |
 | --- | --- |
@@ -72,9 +72,13 @@ Stripe Webhookは `${APP_BASE_URL}/api/webhook/stripe` に設定し、署名シ�
 
 返金の `refund.*` 購読が無いと、注文の無い失敗・取消返金が要対応として記録されず、店への通知も行われません。
 
-定期照合は `GET /api/cron/stripe-reconcile` を呼び出し、`Authorization: Bearer
-${CRON_SECRET}` を付与します。Stripeだけに存在する未返金の成功決済は報告対象になり、
-注文は自動作成しません。既存注文との返金額差分だけをStripeの成功済み返金から修復します。
+定期照合は毎日 18:00 UTC（日本時間 3:00）に pg_cron＋pg_net が `POST /api/cron/stripe-reconcile` を呼び出し、`Authorization: Bearer
+${CRON_SECRET}` を付与します。Stripeだけに存在する未返金の成功決済は報告対象になり、照合では注文を作りません
+（注文の無い支払いは毎時の見回りが拾います）。既存注文との返金額差分だけをStripeの成功済み返金から修復します。
+
+## CRON_SECRET
+
+定期処理の入口（worker・見回り・照合・Meta の同期）の合言葉です。32文字以上のランダムな値にします。短いと全部の入口が設定の誤りとして断ります。Vercel の環境変数と、本番 DB の Vault（`cron_secret`）にだけ置きます。入れ替えは[手順書](webhook-queue-operations.md)の2に従います。
 
 ## APP_ALLOWED_ORIGINS
 

@@ -36,7 +36,7 @@ review APIも同じCSRF helperを呼ぶ。refund APIには明示的なCSRF helpe
 | `GET /api/admin/orders` | `admin.orders.read`とAAL2で注文一覧を読む。StripeのPIと未解決の金額不一致も参照し、canShip/canCancel/canRefund等の表示用属性を返す。状態変更はしない。操作時は各POSTが再検証する | [注文一覧](../../../src/app/api/admin/orders/route.ts) |
 | `GET /api/admin/order-attention` | 同じread認可で未解決例外・未確認注文を各最大100件返し、件数も返す。canCancelOrderは注文状態に基づく表示用属性で、Stripeの取消ガード成功を示さない | [要対応・要確認一覧](../../../src/app/api/admin/order-attention/route.ts) |
 | `GET /api/admin/orders/[id]/status` | 同じread認可でPOSTの説明とrequiredBodyを返す。対象注文の現在状態を取得・変更するAPIではない | [status API](../../../src/app/api/admin/orders/%5Bid%5D/status/route.ts) |
-| `GET /api/cron/stripe-reconcile` | Cron Bearer認証でPI・返金・会計・Payoutを照合する。管理認可とは別の入口で、返金不一致時には下記の共通投影も実行する | [照合API](../../../src/app/api/cron/stripe-reconcile/route.ts)、[Webhook関連見回り](stripe-webhooks.md#関連する見回りとschedule) |
+| `POST /api/cron/stripe-reconcile` | `CRON_SECRET`のBearer認証でPI・返金・会計・Payoutを照合する。管理認可とは別の入口で、返金不一致時には下記の共通投影も実行する | [照合API](../../../src/app/api/cron/stripe-reconcile/route.ts)、[Cron認証](../../../src/lib/cron/auth.ts)、[Webhook関連見回り](stripe-webhooks.md#関連する見回りとschedule) |
 
 ## SQ-ADMIN-01: 未入金注文の通常取消
 

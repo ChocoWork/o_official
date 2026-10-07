@@ -63,12 +63,13 @@ flowchart TB
   Receiver -->|enqueue RPC: 永続化後に応答| Queue["Supabase Postgres<br/>stripe_webhook_events"]
   Caller["Cron 呼び出し元<br/>pending SQL / 稼働未確認"] -.->|Bearer POST| WorkerProxy["Proxy"]
   WorkerProxy --> Worker["/api/cron/process-stripe-webhooks"]
-  Worker -->|claim RPC: 1件・lease| Queue
+  Worker -->|claim RPC: 1件ずつ繰り返す・lease| Queue
   Worker --> Processor["processStripeWebhookEvent<br/>注文照合・返金同期・会計原始記録同期"]
   Processor -->|現在値を取得| Stripe
   Processor -->|RPC・同期記録| DB["Supabase Postgres / RPC"]
   Processor -.->|注文・店舗通知 / 監査通知| Notify["メール provider / 監査通知 URL"]
   Worker -->|complete / fail RPC| Queue
+  Receiver -->|"応答の後に after() で同じ worker 処理を1回"| Worker
 ```
 
 ### 法定保存の実行境界
@@ -90,7 +91,7 @@ flowchart TB
 | Supabase クライアント | サーバーの匿名・利用者 JWT・service role と、ブラウザの公開キー用クライアント。ブラウザ SDK の確認済み呼び出しはログアウト | [server.ts](../../../src/lib/supabase/server.ts)、[client.ts](../../../src/lib/supabase/client.ts)、[LoginContext](../../../src/contexts/LoginContext.tsx) |
 | Auth / Google OAuth | パスワード、メール OTP、TOTP、Google OAuth 開始・コード交換。Auth の OTP 配送設定はアプリのメール送信 provider から判断できない | [login](../../../src/app/api/auth/login/route.ts)、[OTP](../../../src/app/api/auth/otp/verify/route.ts)、[MFA](../../../src/app/api/auth/mfa/verify/route.ts)、[OAuth開始](../../../src/app/api/auth/oauth/start/route.ts)、[callback](../../../src/app/api/auth/oauth/callback/route.ts) |
 | Stripe の決済・照合 | ブラウザの CheckoutProvider / PaymentElement、サーバーの Session 作成、Stripe 現在値による注文照合 | [checkout UI](../../../src/app/checkout/page.tsx)、[create-session](../../../src/app/api/checkout/create-session/route.ts)、[照合](../../../src/lib/stripe/checkout-payment-reconciler.ts)、[現在値取得](../../../src/lib/stripe/checkout-payment-reader.ts) |
-| Stripe 非同期処理 | 署名検証後に DB 永続化。worker が1件を claim して注文・返金・会計を同期し完了 / 失敗を記録。DB RPC が重複排除・lease・再試行を管理 | [入口](../../../src/app/api/webhook/stripe/route.ts)、[worker](../../../src/app/api/cron/process-stripe-webhooks/route.ts)、[processor](../../../src/lib/stripe/webhook-processor.ts)、[キュー migration](../../../supabase/migrations/20260925000303_add_stripe_webhook_queue.sql) |
+| Stripe 非同期処理 | 署名検証後、13種のイベントだけを DB 永続化する（鍵と違うモードの知らせは保存しない）。応答の後に `after()` で worker を1回動かし、毎分の Cron 呼び出しも同じ worker を起動する。worker は、取り出せる知らせが無くなるか約45秒たつまで、1件ずつ claim して注文・返金・会計を同期し、完了 / 失敗を記録する。DB RPC が重複排除・lease・再試行（9回目の失敗で退避）を管理 | [入口](../../../src/app/api/webhook/stripe/route.ts)、[worker](../../../src/app/api/cron/process-stripe-webhooks/route.ts)、[繰り返し](../../../src/lib/stripe/webhook-drain.ts)、[processor](../../../src/lib/stripe/webhook-processor.ts)、[キュー migration](../../../supabase/migrations/20260925000303_add_stripe_webhook_queue.sql)、[退避 migration](../../../supabase/migrations/20261005100000_webhook_queue_dead_letter.sql) |
 | メール | `MAIL_PROVIDER` による SES / Resend 選択（未指定時のコード上の既定は SES）。問い合わせの Resend / Svix 受信経路は別 | [送信選択](../../../src/lib/mail.ts)、[SES](../../../src/lib/mail/adapters/ses.ts)、[Resend](../../../src/lib/mail/adapters/resend.ts)、[受信](../../../src/app/api/contact/inbound/route.ts) |
 | Meta KPI | OAuth 接続、手動 / Cron の Graph API 同期。アプリ設定・暗号化鍵・保存済み接続が必要。使用する KPI / Meta テーブルの DDL は旧 `migrations/` にあり、現行 `supabase/migrations/` での定義は確認できない（実 DB の有無は未確認） | [config](../../../src/lib/meta/config.ts)、[接続](../../../src/app/api/admin/kpi/meta/connect/route.ts)、[callback](../../../src/app/api/admin/kpi/meta/callback/route.ts)、[手動同期](../../../src/app/api/admin/kpi/meta/sync/route.ts)、[同期](../../../src/lib/meta/sync-kpi.ts)、[Graph client](../../../src/lib/meta/graph-client.ts)、[旧 KPI DDL](../../../migrations/063_create_admin_kpi_monthly_records.sql)、[旧 Meta DDL](../../../migrations/079_create_meta_kpi_integration.sql) |
 | Bot・漏洩・住所検査 | Turnstile widget と siteverify（production で secret 未設定なら拒否）。HIBP へ SHA-1 の先頭5文字を送信。ZipCloud は郵便番号の DB / プロセス内キャッシュにない場合に照会 | [LoginModal](../../../src/components/LoginModal.tsx)、[Turnstile](../../../src/lib/turnstile.ts)、[登録 API](../../../src/app/api/auth/register/route.ts)、[HIBP](../../../src/lib/pwned-password.ts)、[郵便番号 API](../../../src/app/api/checkout/postal-code/route.ts)、[住所検索](../../../src/features/checkout/services/postal-code.service.ts) |
@@ -110,7 +111,7 @@ flowchart TB
 | 対象 | リポジトリの定義 | 未確認事項 |
 |---|---|---|
 | HTTP Cron | `CRON_SECRET`: [worker](../../../src/app/api/cron/process-stripe-webhooks/route.ts)、[注文見回り](../../../src/app/api/cron/expire-pending-orders/route.ts)、[Stripe照合](../../../src/app/api/cron/stripe-reconcile/route.ts)、[Meta同期](../../../src/app/api/cron/meta-kpi-sync/route.ts)。保存 export / status は `LEGAL_ARCHIVE_CRON_SECRET` | 呼び出し基盤・設定値・実行結果 |
-| HTTP ジョブ登録 | [worker pending SQL](../../../supabase/pending/schedule_stripe_webhook_worker.sql): 10秒間隔。[注文見回り pending SQL](../../../supabase/pending/schedule_expire_pending_orders.sql): 毎時。pg_cron / pg_net / Vault を使用 | pending SQL の適用・登録。ファイルの存在は適用済みの証明ではない |
+| HTTP ジョブ登録 | [worker pending SQL](../../../supabase/pending/schedule_stripe_webhook_worker.sql): 毎分（`* * * * *`）。受け取り口も保存の後に worker を1回動かすので、毎分の起動は取りこぼしを拾う役目。[注文見回り pending SQL](../../../supabase/pending/schedule_expire_pending_orders.sql): 毎時。pg_cron / pg_net / Vault を使用。pending SQL は開店のときに `supabase/pending/` から当てる（[手順書](../../06_Operations/webhook-queue-operations.md)の1） | pending SQL の適用・登録。ファイルの存在は適用済みの証明ではない |
 | DB 内ジョブ | migration の [未完了 draft 保持期限処理](../../../supabase/migrations/20260911235714_add_checkout_drafts_retention_job.sql)、[rate limit 保持期限処理](../../../supabase/migrations/20260913132437_add_rate_limit_counters_retention_job.sql) | migration の適用・ジョブ稼働 |
 | 保存・復元確認 | [package.json](../../../package.json) の保存 / 復元確認コマンド。[verify-restore](../../../scripts/legal-archive/verify-restore.ts) は提供済みファイルと復元先 Postgres を照合 | 実行基盤・dump 作成元・復元の実施 |
 | ビルド・配置 | 開発 / ビルド / 起動コマンド、[READMEのVercel手順](../../../README.md)、[layoutのnext/font/google](../../../src/app/layout.tsx) | 現在の配置先・ドメイン・リージョン・ビルド時の外部取得結果 |

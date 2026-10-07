@@ -50,7 +50,7 @@ Cookie名/属性は[cookie.ts](../../../src/lib/cookie.ts)、セッション発�
 
 ### J・W（外部呼出）
 
-Cronは表で指定したsecretに対する`Authorization: Bearer <secret>`を要求し、欠落・不一致・secret未設定はいずれも401。法定保存2ルートは**LEGAL_ARCHIVE_CRON_SECRET**、他Cronは**CRON_SECRET**。[authorizeCronBearer](../../../src/lib/legal-archive/cron-auth.ts)を使う3ルートはhashを定時間比較、expire-pending-ordersは長さ確認と直接定時間比較、meta-kpi-sync/stripe-reconcileは文字列一致。
+Cronは表で指定したsecretに対する`Authorization: Bearer <secret>`を要求し、欠落・不一致・secret未設定はいずれも401。法定保存2ルートは**LEGAL_ARCHIVE_CRON_SECRET**、他Cronは**CRON_SECRET**。どのルートも合言葉をSHA-256にしてから定時間比較する（[auth.ts](../../../src/lib/cron/auth.ts)）。CRON_SECRETのルートは、32文字未満の設定を設定ミスとして401にする。
 
 Stripe Webhookはraw bytesとstripe-signatureを`constructEvent`で検証する。Resend inboundはraw text、svix-id/svix-timestamp/svix-signature、RESEND_WEBHOOK_SECRETでHMAC-SHA256を検証し、timestampの現在との差は5分以内を要求する。署名確認の後にJSONをparseする。会員JWT・管理RBAC・CSRFでこれらの署名を代替しない。
 
@@ -236,13 +236,13 @@ Stripe Webhookはraw bytesとstripe-signatureを`constructEvent`で検証する�
 
 | メソッド・パス | 認証・認可 | 入力 | 応答 | 主な失敗（HTTP） | 副作用・補足 / 根拠 |
 | --- | --- | --- | --- | --- | --- |
-| `POST /api/cron/expire-pending-orders` | CRON_SECRET Bearer J（直接定時間比較） | 本文なし | 200 `{processed,candidateCount,batchOffset,expiredSessions,actions,needsReview,needsAction,failed,shopAlertsSent,capped,timeBudgetExhausted}` | 401 認証/設定欠落; 500 注文候補取得 | 期限切れsession処理、Stripe照合、注文遷移/要確認/要対応記録、未送信店舗alert再送。個別失敗はsummaryへ [実装](../../../src/app/api/cron/expire-pending-orders/route.ts) |
+| `POST /api/cron/expire-pending-orders` | CRON_SECRET Bearer J（hash定時間比較・32文字以上） | 本文なし | 200 `{processed,candidateCount,batchOffset,expiredSessions,actions,needsReview,needsAction,failed,shopAlertsSent,capped,timeBudgetExhausted,checkedSessions,recoveredOrders,recoveredOrdersNotified}` | 401 認証/設定欠落; 500 注文候補取得 | 期限切れsession処理、Stripe照合、注文遷移/要確認/要対応記録、未送信店舗alert再送、直近24時間の注文の無い支払いの拾い上げ（要確認`recovered_from_payment`・店へ1通）、最後の成功の記録と点検。個別失敗はsummaryへ [実装](../../../src/app/api/cron/expire-pending-orders/route.ts) |
 | `GET /api/cron/legal-archive/export` | LEGAL_ARCHIVE_CRON_SECRET Bearer J（hash定時間比較） | Query: `year` 2000〜9999、`cursor?` 1〜1000文字、`pageSize?` 1〜500既定500 | 200 LegalArchivePage `{orders,orderItems,revisions,nextCursor,totals}` | 401; 400 query; 502 DB/カーソルdecode失敗 | JST年度で順次export、no-store [実装](../../../src/app/api/cron/legal-archive/export/route.ts) |
 | `POST /api/cron/legal-archive/status` | LEGAL_ARCHIVE_CRON_SECRET Bearer J（hash定時間比較） | JSON: bodySchema（下記） | 200 `{ok:true}` | 401; 400 body; 409 state遷移; 502 DB | legal_archive_runsをinsert/update。completedから非completedへの遷移は409 [実装](../../../src/app/api/cron/legal-archive/status/route.ts) |
-| `POST /api/cron/meta-kpi-sync` | CRON_SECRET Bearer J（文字列一致） | 本文なし（現在seasonを使用） | 200 `{data:{skipped:true}}` 又は `{data:{status,metricsWritten,message}}` | 401 認証/設定欠落; 502 sync失敗 | active Meta接続があればKPI monthly recordsをupsert [実装](../../../src/app/api/cron/meta-kpi-sync/route.ts) |
-| `POST /api/cron/process-stripe-webhooks` | CRON_SECRET Bearer J（hash定時間比較） | 本文なし | 200 `{processed:0&#124;1}` | 401 認証/設定欠落; 502 claim/処理失敗 | queueから1件claim、Webhook processor実行、成功/失敗状態を保存 [実装](../../../src/app/api/cron/process-stripe-webhooks/route.ts) |
-| `GET /api/cron/stripe-reconcile` | CRON_SECRET Bearer J（文字列一致） | 本文なし | 200 `{data:{matchedOrders,unmatchedPayments,syncedBalanceTransactions,syncedRefunds,syncedPayouts,payoutMismatches,errors}}` | 401 認証/設定欠落; 502 Reconciliation failed | Stripe注文/返金/Payout照合と会計同期 [実装](../../../src/app/api/cron/stripe-reconcile/route.ts) |
-| `POST /api/webhook/stripe` | Stripe署名 W | raw body bytes + `stripe-signature` | 200 `{received:true,duplicate:boolean}` | 400 header/署名; 500 設定/queue保存 | Stripe eventを永続queueへenqueue。ここでは業務処理を実行しない [実装](../../../src/app/api/webhook/stripe/route.ts) |
+| `POST /api/cron/meta-kpi-sync` | CRON_SECRET Bearer J（hash定時間比較・32文字以上） | 本文なし（現在seasonを使用） | 200 `{data:{skipped:true}}` 又は `{data:{status,metricsWritten,message}}` | 401 認証/設定欠落; 502 sync失敗 | active Meta接続があればKPI monthly recordsをupsert [実装](../../../src/app/api/cron/meta-kpi-sync/route.ts) |
+| `POST /api/cron/process-stripe-webhooks` | CRON_SECRET Bearer J（hash定時間比較・32文字以上） | 本文なし | 200 `{processed,failed,stoppedBy}` | 401 認証/設定欠落; 502 claimのDB障害 | queueから取り出せる知らせが無くなるか約45秒たつまで処理。失敗は原因の記号で記録し、2^(n-1)分後に再試行、9回目の失敗で退避（`dead`）。最後の成功の記録と点検（溜まり・退避・遅れを店へ） [実装](../../../src/app/api/cron/process-stripe-webhooks/route.ts) |
+| `POST /api/cron/stripe-reconcile` | CRON_SECRET Bearer J（hash定時間比較・32文字以上） | 本文なし | 200 `{data:{matchedOrders,unmatchedPayments,syncedBalanceTransactions,syncedRefunds,syncedPayouts,payoutMismatches,errors}}`（`errors[].reason` は原因の記号） | 401 認証/設定欠落; 502 Reconciliation failed | Stripe注文/返金/Payout照合と会計同期。支払いごとに失敗を受け止め、監査`stripe.reconcile`と最後の成功を記録 [実装](../../../src/app/api/cron/stripe-reconcile/route.ts) |
+| `POST /api/webhook/stripe` | Stripe署名 W | raw body bytes + `stripe-signature` | 200 `{received:true,duplicate:boolean}`、13種以外とモード違いは200 `{received:true,ignored:true}` | 400 header/署名（監査には書かず件数だけ数え、10分に5件で店へ）; 500 設定/queue保存 | 13種だけを永続queueへenqueueし、応答の後に`after()`でworkerを1回動かす。鍵と違うモードの知らせは保存せず店へ知らせる [実装](../../../src/app/api/webhook/stripe/route.ts) |
 
 ## 入出力定義と処理上の条件
 
