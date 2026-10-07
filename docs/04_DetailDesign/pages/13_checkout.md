@@ -150,24 +150,43 @@ order_items (
 
 ```mermaid
 flowchart TD
-  A[POST /api/webhook/stripe] --> B{raw bodyの署名検証}
-  B -- 失敗 --> C[400]
-  B -- 成功 --> D[原子的enqueue: stripe_webhook_events]
-  D -- DB障害 --> E[500: Stripe再送]
-  D -- 保存または一致する重複 --> F[200: 受信完了]
-  F --> G[pg_cron: 毎分worker起動・受け取り口もその場で1回]
-  G --> H[claim: SKIP LOCKEDと5分lease]
-  H --> I[注文・会計・メール処理]
-  I -- 成功 --> J[claim token一致ならcompleted]
-  I -- 失敗 --> K[failedと次回時刻を保存]
-  K --> G
+  A["POST /api/webhook/stripe"] --> S{"STRIPE_WEBHOOK_SECRETと<br/>STRIPE_SECRET_KEYがある"}
+  S -- どちらか無い --> S1["500: Stripe再送"]
+  S -- 両方ある --> B{"署名ヘッダーがあり、<br/>raw bodyの署名が正しい"}
+  B -- 無い・不一致 --> C["400: 件数だけ数え、<br/>10分に5件で店へ知らせる"]
+  B -- 正しい --> T{"13種のイベントか"}
+  T -- 13種以外 --> T1["200: 保存しない"]
+  T -- 13種 --> M{"鍵のモードと一致するか"}
+  M -- 食い違う --> M1["200: 保存せず、<br/>モード違いを店へ知らせる"]
+  M -- 一致 --> D["原子的enqueue: stripe_webhook_events"]
+  D -- DB障害 --> E["500: Stripe再送"]
+  D -- 保存または一致する重複 --> F["200: 受信完了"]
+  F --> F1["応答の後にafter()で<br/>workerを1回動かす"]
+  F1 --> H["claim: SKIP LOCKEDと5分lease"]
+  G["pg_cron: 毎分worker起動"] --> H
+  H --> I["注文・会計・メール処理"]
+  I -- 成功 --> J["claim token一致ならcompleted"]
+  I -- 失敗・9回未満 --> K["failedと次回時刻（2^(n-1)分後）を保存"]
+  K --> H
+  I -- 9回目も失敗 --> L["dead: 取り出さず、店へまとめて知らせる"]
 ```
 
-受信ルートは業務処理を待たない。StripeのイベントIDを主キーに、署名検証済みのpayloadをservice-role専用RPCで永続化してから2xxを返す。同じIDの再送では種別・不変の`data`・`account`・`livemode`を照合して重複扱いにする。`pending_webhooks`など配信状況メタデータの差は許容し、不変部分の差は衝突として拒否する。保存が失敗したときだけ5xxにしてStripe再送を受ける。
+受信ルート（[route.ts](../../../src/app/api/webhook/stripe/route.ts)）は業務処理を待たない。応答は次のとおり。
+
+| 条件 | 応答 | 保存 |
+| --- | --- | --- |
+| `STRIPE_WEBHOOK_SECRET`か`STRIPE_SECRET_KEY`が未設定 | 500（Stripeが再送する） | しない |
+| 署名ヘッダーが無い・署名が合わない | 400。監査ログには1件ずつ書かず、件数だけを数え、10分に5件で店へ知らせる | しない |
+| 13種（[一覧](../../../src/lib/stripe/handled-webhook-events.ts)）以外 | 200（`ignored`） | しない |
+| 鍵のモードと食い違う（`sk_live_`・`rk_live_`は本番、`sk_test_`・`rk_test_`はテスト。どちらでもない鍵も食い違い扱い） | 200（`ignored`）。モード違いを店へ知らせる（1時間に1回まで） | しない |
+| 13種で、モードが合う | 200。応答の後に`after()`でworkerを1回動かす | する（同じIDの再送は1回だけ） |
+| 保存の失敗 | 500（Stripeが再送する） | しない |
+
+StripeのイベントIDを主キーに、署名検証済みのpayloadをservice-role専用RPCで永続化してから2xxを返す。同じIDの再送では種別・不変の`data`・`account`・`livemode`を照合して重複扱いにする。`pending_webhooks`など配信状況メタデータの差は許容し、不変部分の差は衝突として拒否する。保存が失敗したとき（と設定が欠けているとき）だけ5xxにしてStripe再送を受ける。
 
 worker（[route.ts](../../../src/app/api/cron/process-stripe-webhooks/route.ts)）は`CRON_SECRET`で認証し、取り出せる知らせが無くなるか約45秒たつまで1件ずつ処理する（受け取り口も保存の後に`after()`で1回動かす）。DBのclaimは`FOR UPDATE SKIP LOCKED`、5分lease、claim tokenを使う。処理に失敗したイベントは原因の記号（`stripe_unavailable`など6つ）を残し、失敗した試行の回数をnとして2^(n-1)分後に再試行する。9回目の試行も失敗したら`dead`（退避）にして店へまとめて知らせる。leaseの切れた試行も1回の失敗として数える（`lease_expired`）。古いworkerは完了を確定できない。注文確定とメール送信は既存の冪等処理を維持する（グループ B 設計書 3-1〜3-4）。
 
-`stripe_webhook_events`には`queued / processing / completed / failed / dead`、`attempt_count`、`next_attempt_at`、`claim_token`、`lease_expires_at`、`received_at`（受け取った時刻）、`dead_at`、`dead_notified_at`を保持する。既存表への列追加と権限制限は[キューmigration](../../../supabase/migrations/20260925000303_add_stripe_webhook_queue.sql)として本番適用済み。Vaultを参照する起動ジョブは[スケジュールmigration](../../../supabase/pending/schedule_stripe_webhook_worker.sql)に保留する。本番ではworkerとCronの稼働を確認してから新しい受信ルートを公開する。
+`stripe_webhook_events`には`queued / processing / completed / failed / dead`、`attempt_count`、`next_attempt_at`、`claim_token`、`lease_expires_at`、`received_at`（受け取った時刻）、`dead_at`、`dead_notified_at`を保持する。このうち、`queued / processing / completed / failed`の状態と`next_attempt_at`・`claim_token`・`lease_expires_at`の列追加、権限制限は、[キューmigration](../../../supabase/migrations/20260925000303_add_stripe_webhook_queue.sql)として本番適用済み。`dead`の状態と`received_at`・`dead_at`・`dead_notified_at`の列は、[退避のmigration](../../../supabase/migrations/20261005100000_webhook_queue_dead_letter.sql)で足すもので、本番には2026-10-07時点でまだ無い（グループ B の実装を push した後に本番へ当てる）。Vaultを参照する起動ジョブは[スケジュールmigration](../../../supabase/pending/schedule_stripe_webhook_worker.sql)に保留する。本番ではworkerとCronの稼働を確認してから新しい受信ルートを公開する。
 
 ### ハンドラが失敗したときの扱い（FREQ-369）
 

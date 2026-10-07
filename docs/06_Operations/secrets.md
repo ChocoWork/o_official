@@ -74,7 +74,7 @@ Stripe Webhookは `${APP_BASE_URL}/api/webhook/stripe` に設定し、署名シ�
 
 定期照合は毎日 18:00 UTC（日本時間 3:00）に pg_cron＋pg_net が `POST /api/cron/stripe-reconcile` を呼び出し、`Authorization: Bearer
 ${CRON_SECRET}` を付与します。Stripeだけに存在する未返金の成功決済は報告対象になり、照合では注文を作りません
-（注文の無い支払いは毎時の見回りが拾います）。既存注文との返金額差分だけをStripeの成功済み返金から修復します。
+（注文の無い支払いのうち、直近24時間に作られた Checkout Session のものだけを、毎時の見回りが拾います。それより古いものは見回りでは拾わず、照合の報告に出るだけです）。既存注文との返金額差分だけをStripeの成功済み返金から修復します。
 
 ## CRON_SECRET
 

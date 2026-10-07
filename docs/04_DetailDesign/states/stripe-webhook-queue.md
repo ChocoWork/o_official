@@ -1,6 +1,6 @@
 # Stripe Webhookキューの状態
 
-> 状態: 現行ソース確認 | 確認日: 2026-10-04 | 対象: `stripe_webhook_events.processing_status`
+> 状態: 現行ソース確認 | 確認日: 2026-10-07 | 対象: `stripe_webhook_events.processing_status`
 
 ## 概要
 

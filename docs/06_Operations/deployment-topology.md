@@ -27,14 +27,14 @@ flowchart LR
 | メール | `src/lib/mail/adapters/resend.ts`、`src/lib/mail/adapters/ses.ts` | どちらのアダプターが本番で選ばれるか未確認 |
 | 外部アーカイブ | `src/lib/legal-archive/s3-storage.ts` | 必要な環境設定と保存実績は未確認 |
 | DB 変更 | `.github/workflows/db-migrations.yml` は PR で dry run、push/workflow_dispatch で `supabase db push` を構成 | 実際の実行・適用履歴は未確認 |
-| 定期処理 | `src/app/api/cron/`、README の pg_cron 設定手順 | 登録・実行・成功は未確認 |
+| 定期処理 | `src/app/api/cron/`、`supabase/pending/`の登録 SQL、`docs/06_Operations/webhook-queue-operations.md`（開店のときの順番と確かめ方） | 登録・実行・成功は未確認 |
 
 ## 運用上の参照先
 
 | 目的 | 文書・設定 |
 | --- | --- |
 | DB マイグレーションと台帳 | `docs/06_Operations/db-migrations.md`、`.github/workflows/db-migrations.yml` |
-| シークレットと Stripe 同期 | `docs/06_Operations/secrets.md`、`README.md` |
+| シークレットと Stripe 同期 | `docs/06_Operations/secrets.md`、`docs/06_Operations/webhook-queue-operations.md`、`README.md` |
 | 注文証憑の保存・復元確認 | `docs/06_Operations/legal-archive.md` |
 | KPI 旧セットアップ手順 | `docs/06_Operations/kpi-migration-setup.md`。対象環境と現行 DB 手順との整合を確認してから使用する |
 

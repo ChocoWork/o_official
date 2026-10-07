@@ -49,11 +49,19 @@ Supabase クライアントの配置
 
 参考ドキュメント: <https://supabase.com/docs/guides/auth/> と <https://vercel.com/docs>
 
-## 未入金注文の掃除ジョブ（pg_cron）のセットアップ
+## 定期処理（pg_cron）と Stripe の宛先のセットアップ
 
 **ローカル開発では不要。Vercel に本番デプロイするときに一度だけ行う。**
 
-### これは何か
+開店のときに登録する定期処理は3つある。順番と確かめ方の全体は[手順書](docs/06_Operations/webhook-queue-operations.md)の1にあり、この節はその要約と、見回りの背景を書く。
+
+| 定期処理 | ジョブ名 | 時刻 | 保留中の SQL |
+|---|---|---|---|
+| worker | `process-stripe-webhooks` | 毎分 | `supabase/pending/schedule_stripe_webhook_worker.sql` |
+| 見回り | `expire-pending-orders` | 毎時0分 | `supabase/pending/schedule_expire_pending_orders.sql` |
+| 照合 | `stripe-reconcile` | 毎日 18:00 UTC（日本時間 3:00） | `supabase/pending/schedule_stripe_reconcile.sql` |
+
+### 見回りは何か
 
 コンビニ払い・銀行振込のような時間差決済では、注文が成立してから入金までに数日空く。その間、在庫は確保済みとして引かれている。入金されないまま期限切れになった注文は、誰かが「失敗」にして在庫を戻さないと、売れていない商品の在庫が減ったままになる。
 
@@ -67,7 +75,7 @@ Supabase クライアントの配置
       → 開いてから30分を超えた支払い手続き中の注文と入金待ちの注文を Stripe の現在値と照合し、注文と在庫を合わせる
 ```
 
-この URL は誰でも叩けてしまうため、合言葉（`CRON_SECRET`）で認証する。cron 側は Supabase Vault に置いた値を送り、アプリ側は環境変数の値と照合する。**両方に同じ値を入れる必要がある**。ズレていると毎回 401 を返すだけのジョブになり、しかも 401 は監査ログを書く前に返るので、失敗に気づけない。
+この URL は誰でも叩けてしまうため、合言葉（`CRON_SECRET`）で認証する。cron 側は Supabase Vault に置いた値を送り、アプリ側は環境変数の値と照合する。**両方に同じ値を入れる必要がある**。ズレていると毎回 401 を返すだけのジョブになり、しかも 401 は監査ログを書く前に返る。一度成功したジョブなら、止まったときに遅れの知らせのメールが届くが、一度も成功していないジョブは対象外なので、手順5で必ず成功を確かめる。
 
 ### 手順
 
@@ -90,7 +98,7 @@ Supabase クライアントの配置
 
 - [ ] **3. Supabase Vault に同じ値を登録する**
 
-  Supabase ダッシュボード → SQL Editor で実行する。`<>` を置き換えること。
+  Supabase ダッシュボード → SQL Editor で実行する。`<>` を置き換えること。SQL Editor は流した問い合わせの文を保存するので、合言葉を含む文は、流した直後に保存された問い合わせから削除する（ダッシュボードの Vault の画面から入れてもよい）。
 
   ```sql
   select vault.create_secret('<手順1の文字列>', 'cron_secret');
@@ -99,9 +107,27 @@ Supabase クライアントの配置
 
   `app_base_url` の**末尾にスラッシュを付けない**（マイグレーション側が `/api/cron/expire-pending-orders` を連結する）。
 
-- [ ] **4. Stripe の webhook 購読イベントを確認する**
+- [ ] **4. 保留中の定期処理の登録を、3本ともすべて適用する（Stripe の宛先を登録する前に）**
 
-  Stripe ダッシュボード → 開発者 → Webhook → 本番エンドポイント。`src/lib/stripe/webhook-processor.ts` が処理する次の全イベントを購読する。
+  上の表の3本を、新しい version で `supabase/migrations/` へ移して適用する（手順は [supabase/pending/README.md](supabase/pending/README.md)）。`pg_net` 拡張の作成と cron ジョブの登録を行う。アプリを Vercel に公開し、手順3を済ませた後に行う。
+
+  登録の SQL は、Vault に秘密が無くても通る。冒頭のガードは警告を出すだけで、例外にはしない（ローカル・CI・プレビューの DB を作り直せなくならないようにするため。FREQ-368）。秘密が無いまま動かすと、ジョブが実行のたびに例外で止まり、`cron.job_run_details` に `failed` と理由が残る。手順3が済んでいなければ、先に済ませる。
+
+  通常のマイグレーションの適用順は、これまでどおり「マイグレーション → アプリのデプロイ」。逆にすると、照合関数が呼ぶ RPC（`place_order_from_checkout_draft` など）が無い状態で決済系の webhook イベントが届き、worker で失敗して再試行が続く（入金の反映と在庫の戻しが止まる）。保留中の定期処理の登録だけは、呼び先のアプリが公開された後に適用する。
+
+- [ ] **5. 定期処理が成功しているのを確かめる（Stripe の宛先を登録する前に）**
+
+  ```sql
+  select jobname, schedule, active from cron.job
+  where jobname in ('process-stripe-webhooks', 'expire-pending-orders', 'stripe-reconcile')
+  order by jobname;
+  ```
+
+  3つとも `active` で並ぶ。worker は数分後、見回りは次の毎時0分の後、照合は次の 18:00 UTC の後に、各ジョブの実行の記録とアプリの応答（200）を確かめる。確かめ方は[手順書](docs/06_Operations/webhook-queue-operations.md)の1（手順4）と6にある。worker が動いているのを確かめる前に、次へ進まない。
+
+- [ ] **6. Stripe の宛先を登録し、購読イベントを確認する（定期処理の成功を確かめた後）**
+
+  Stripe ダッシュボード → 開発者 → Webhook → 本番エンドポイント。宛先（`https://<本番ドメイン>/api/webhook/stripe`）の作り方と、署名の合言葉（`STRIPE_WEBHOOK_SECRET`）の入れ方は、[手順書](docs/06_Operations/webhook-queue-operations.md)の1の手順5・6に従う。worker が動いていないうちに宛先を登録すると、受け取り口が開いているのに、知らせを処理する仕組みが動いていない状態になる（R-07）ので、この節の手順5（定期処理の成功の確認）の後に行う。受け取り口が保存する次の13種（`src/lib/stripe/handled-webhook-events.ts`）を購読する。
 
   | イベント | 用途 |
   | --- | --- |
@@ -120,20 +146,6 @@ Supabase クライアントの配置
   | `payout.reconciliation_completed` | Payout の照合結果を会計記録へ同期する |
 
   決済系6イベントが漏れると照合と注文・在庫の更新が遅れる。返金系が漏れると注文の返金状態・会計記録が更新されず、注文の無い失敗・取消返金も店へ通知されない。payout系が漏れると会計記録が更新されない。
-
-- [ ] **5. マイグレーションを適用する（アプリのデプロイより先に）**
-
-  保留中の `supabase/pending/schedule_expire_pending_orders.sql` を、新しい version で `supabase/migrations/` へ移して適用する（手順は [supabase/pending/README.md](supabase/pending/README.md)）。`pg_net` 拡張の作成と cron ジョブの登録を行う。
-
-  手順3が済んでいないと、冒頭のガードが例外を投げて適用が中断する。これは意図した動作（合言葉なしでジョブを登録させないための歯止め）なので、エラーが出たら手順3に戻る。
-
-  適用順は常に「マイグレーション → アプリのデプロイ」。逆にすると、照合関数が呼ぶ RPC（`place_order_from_checkout_draft` など）が無い状態で決済系の webhook イベントが届き、worker で失敗して再試行が続く（入金の反映と在庫の戻しが止まる）。
-
-- [ ] **6. 登録を確認する**
-
-  ```sql
-  select jobname, schedule, active from cron.job where jobname = 'expire-pending-orders';
-  ```
 
 ### ローカル DB（Supabase CLI）
 

@@ -2,7 +2,7 @@
 
 ## 概要
 
-確認日: 2026-10-03。対象ソース: `697836a1eb2b62e1a3257ce079ecf8f536e1cb06`。
+確認日: 2026-10-03（「Stripe 非同期処理」「HTTP ジョブ登録」の行と「Stripe Webhook の処理」の図は、2026-10-07 に確認し直した）。対象ソース: `697836a1eb2b62e1a3257ce079ecf8f536e1cb06`（確認し直した行と図は `b54976d2`）。
 
 本書はリポジトリ内で確認した実装と呼び出し経路を示す。ブラウザ、Next.js サーバー、外部サービス、別プロセスの運用スクリプトを区別する。本番配置先、環境変数の値、外部サービスの有効化、適用済み migration、ジョブの稼働は未確認である。
 
@@ -63,13 +63,14 @@ flowchart TB
   Receiver -->|enqueue RPC: 永続化後に応答| Queue["Supabase Postgres<br/>stripe_webhook_events"]
   Caller["Cron 呼び出し元<br/>pending SQL / 稼働未確認"] -.->|Bearer POST| WorkerProxy["Proxy"]
   WorkerProxy --> Worker["/api/cron/process-stripe-webhooks"]
-  Worker -->|claim RPC: 1件ずつ繰り返す・lease| Queue
-  Worker --> Processor["processStripeWebhookEvent<br/>注文照合・返金同期・会計原始記録同期"]
+  Worker --> Run["runWebhookWorker<br/>取り出せる間、1件ずつ繰り返す（約45秒まで）"]
+  Receiver -->|"応答の後に after() で1回（Cron の入口は介さない）"| Run
+  Run -->|claim RPC: 1件ずつ繰り返す・lease| Queue
+  Run --> Processor["processStripeWebhookEvent<br/>注文照合・返金同期・会計原始記録同期"]
   Processor -->|現在値を取得| Stripe
   Processor -->|RPC・同期記録| DB["Supabase Postgres / RPC"]
   Processor -.->|注文・店舗通知 / 監査通知| Notify["メール provider / 監査通知 URL"]
-  Worker -->|complete / fail RPC| Queue
-  Receiver -->|"応答の後に after() で同じ worker 処理を1回"| Worker
+  Run -->|complete / fail RPC| Queue
 ```
 
 ### 法定保存の実行境界

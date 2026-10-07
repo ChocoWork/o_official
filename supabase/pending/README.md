@@ -29,6 +29,6 @@
 
 ## ローカルで試すとき
 
-`npx supabase db reset` ではこのフォルダは流れない。Webhookのローカル動作確認ではキューmigrationを先に適用し、DBから到達できるアプリURLと`cron_secret`をVaultに用意してからworkerジョブを登録する。ジョブを登録しない場合、受信したイベントは`queued`のまま残る。結合テスト`tests/integration/db/stripe_webhook_queue.integration.test.ts`はキューmigrationをローカルDBに適用し、ジョブ登録だけはトランザクションをロールバックして検証する。未入金注文の掃除ジョブは`tests/integration/db/expire_pending_orders_job.integration.test.ts`で検証する。
+`npx supabase db reset` ではこのフォルダは流れない。Webhookのローカル動作確認ではキューmigrationを先に適用し、DBから到達できるアプリURLと`cron_secret`をVaultに用意してからworkerジョブを登録する。ジョブを登録しなくても、受信ルートは保存の後に`after()`でworkerを1回動かす（`src/app/api/webhook/stripe/route.ts`）ので、受信したイベントは通常その場で処理される。その場の実行が失敗したイベントだけが`queued`・`failed`・`processing`のまま残り、再試行は、別のイベントを受信してその場の実行が走るか、ジョブが登録されるまで起きない。結合テスト`tests/integration/db/stripe_webhook_queue.integration.test.ts`はキューmigrationをローカルDBに適用し、ジョブ登録だけはトランザクションをロールバックして検証する。未入金注文の掃除ジョブは`tests/integration/db/expire_pending_orders_job.integration.test.ts`で、照合の登録は`tests/integration/db/stripe_reconcile_job.integration.test.ts`で検証する。
 
 Webhook受信ルートは`enqueue_stripe_webhook_event`が無ければ5xxになる。キューRPC、worker、Cronジョブを先に準備・確認してから受信ルートを公開する。失敗・滞留は`stripe_webhook_events`の`processing_status`（`dead`は9回目の試行も失敗して退避したもの）、`attempt_count`、`next_attempt_at`、`received_at`、`last_error`（原因の記号）と、`ops_job_heartbeats`（定期処理ごとの最後の成功）、`cron.job_run_details`、`net._http_response`を確認する。調べ方は[手順書](../../docs/06_Operations/webhook-queue-operations.md)。
