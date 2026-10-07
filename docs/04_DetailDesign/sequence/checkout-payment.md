@@ -4,7 +4,7 @@
 
 ## 概要
 
-購入画面は、入力画面（お客様情報・配送先・割引コード）と最終確認画面に分かれる。「確認へ進む」でサーバーが下書きと Stripe Checkout Session（30分で失効。割引はサーバーが付ける）を作る。uiMode は custom のみ（既定 custom）、hosted は廃止し400。同じ Cookie のほかの決済の画面を閉じ、最終確認画面の内容を返す。配送先7項目が欠けていれば400 shipping_incompleteで断る。最終確認画面の「注文する」で、受け付け（注文と在庫の確保）→ 支払い → 完了の処理を一度に行う。受け付け時の注文作成・在庫の確保は place-order が受付 RPC で直接行う。その後の注文・在庫の状態の変更は complete、Webhook worker、見回り、管理取消が呼ぶ共通照合器が行う。create-session がほかの受付済みの決済の画面を失効させたときと、place-order が残り10分未満の画面を失効させたときも、照合器を呼び、受け付け済みなら注文を放棄扱いにし、在庫を戻す。開き直したときは入り直しの入口が、どこから続けるかを返す。
+購入画面は、入力画面（お客様情報・配送先・割引コード）と最終確認画面に分かれる。「確認へ進む」でサーバーが下書きと Stripe Checkout Session（30分で失効。割引はサーバーが付ける）を作る。uiMode は custom のみ（既定 custom）、hosted は廃止し400。同じ Cookie のほかの決済の画面を閉じ、最終確認画面の内容を返す。配送先7項目が欠けていれば400 shipping_incompleteで断る。最終確認画面の「注文する」で、受け付け（注文と在庫の確保）→ 支払い → 完了の処理を一度に行う。受け付け時の注文作成・在庫の確保は place-order が受付 RPC で直接行う。その後の注文・在庫の状態の変更は complete、Webhook worker、見回り、管理取消が呼ぶ共通照合器が行う。create-session がほかの受付済みの決済の画面を失効させたときと、place-order が別の画面の payment_done・cart_changed（受付済みの押し直しを含む）・superseded で断った画面を失効させたときも、照合器を呼び、受け付け済みなら注文を放棄扱いにし、在庫を戻す。残り10分未満は閉じずに409 session_expiredを返して記録し、前の画面は作り直しのD5か30分の時間切れで閉じ、通知・見回りが在庫を戻す。開き直したときは入り直しの入口が、どこから続けるかを返す。
 
 ## 範囲と根拠
 
@@ -90,16 +90,21 @@ sequenceDiagram
     UI->>PO: POST /api/checkout/place-order
     PO->>Stripe: checkout.sessions.retrieve
     PO->>PO: 持ち主・モード・新しい下書きの有無・開いている・残り10分以上
-    Note over PO,DB: 残り10分未満ならSessionを失効させ、失効成功時に照合関数を呼ぶ<br/>受付済みの注文は放棄扱いにして在庫を戻す（照合失敗はWebhook・見回りが仕上げる）<br/>409 session_expiredを返し、画面を作り直す。下の受付RPCへは進まない
+    Note over PO,DB: 残り10分未満は失効・照合を呼ばず、記録して409 session_expired<br/>前の画面は作り直しのcloseOtherCheckoutSessions（D5）か30分の時間切れで閉じる<br/>通知・見回りが在庫を戻す。下の受付RPCへは進まない
+    Note over PO,Stripe: supersededで断る場合は、この画面を閉じ、失効成功時に照合<br/>受付済みなら放棄・在庫返却。理由記号とIDを記録する（失敗はログに残し409を維持）
     PO->>PO: findPaidCheckoutSession（本人の別の完了済み画面を検索）
     alt 別の完了済み画面が見つかった
+        PO->>Stripe: この画面を閉じる
+        PO->>DB: 失効成功時に照合（受付済みなら放棄・在庫返却）
+        PO->>PO: 理由payment_doneと対象IDを監査ログへ
         PO-->>UI: 409 payment_done（見つかったcheckoutSessionId）
         UI->>C: そのIDで注文の確定を仕上げる
         UI->>UI: ご注文は確定しています（もう一度払わせない）
     else 別の完了済み画面なし（同じIDなら従来どおり）
     PO->>DB: place_order_from_checkout_draft（Stripe の金額、見せた在庫）
-    Note over PO,DB: 配列ありの受付はsource_cart_idがNULLでない明細の本人のカート行を検証<br/>消失ならcart_changed（注文・在庫確保を作らない）<br/>NULL引数の照合器の予備処理では検証しない
+    Note over PO,DB: 配列ありの受付はsource_cart_idがNULLでない明細の本人のカート行を検証<br/>消失ならcart_changed（受付済みの押し直しはpayment_in_progressだけ）<br/>paid・pendingの既存注文はカート消失でも返す。NULL引数の照合器では検証しない
     alt 断る（カート・価格・在庫の変化、買えない商品、0円、別の画面）
+        Note over PO,Stripe: cart_changed・supersededではこの画面を閉じ、失効成功時に照合<br/>受付済みなら放棄・在庫返却。理由記号とIDを記録する（失敗はログに残し409を維持）
         PO-->>UI: 409（理由と案内。在庫の変化は変わった明細を添える）
         UI->>UI: カート画面・入力画面・決済の画面の作り直しへ
     else 受け付けた（同じ決済の画面なら同じ注文）
@@ -107,7 +112,7 @@ sequenceDiagram
         UI->>Stripe: checkout.confirm（redirect: if_required）
         alt カードが断られた
             Stripe-->>UI: error（受け付け済みの注文はそのまま。もう一度押せる）
-            Note over UI,PO: 時間がたって押し直し、残り10分未満なら上の失効・照合・作り直しへ
+            Note over UI,PO: 時間がたって押し直し、残り10分未満なら閉じずに409 session_expiredで作り直しへ
         else 支払えた（PayPay は Stripe の画面を経て ?session_id=… に戻る）
             UI->>C: POST /api/checkout/complete
             C->>DB: 照合関数（入金済み・入金待ち、メール、カートを空にする）
@@ -121,7 +126,7 @@ sequenceDiagram
 | --- | --- |
 | `stock_changed`・`item_unavailable`・`price_changed`・`cart_changed` | カート画面へ移し、案内を1回だけ出す（`sessionStorage` の `checkout:cart-notice`）。在庫の変化は、変わった明細の名前・色・サイズと「在庫あり → 受注生産」の印を添える |
 | `zero_amount` | 入力画面へ戻し、案内を出す |
-| `session_expired` | 「確認へ進む」と同じ処理で決済の画面を作り直し、最終確認画面の一番上に案内を出す。作り直しの応答を待つ間は、「変更」「戻る」「注文する」を押せない |
+| `session_expired` | 「確認へ進む」と同じ処理で決済の画面を作り直し、最終確認画面の一番上に案内を出す。作り直しの応答を待つ間は、「変更」「戻る」「注文する」を押せない。作り直しが `out_of_stock` で断られたら、商品名入りのサーバー文を渡してカートへ移る（FREQ-424） |
 | `superseded` | その画面のまま、一番上に案内を出す（別のタブで後から「確認へ進む」が押された） |
 | `payment_done` | 完了済み。同じCookieの別の画面が見つかった場合は応答のcheckoutSessionIdで完了の処理へ進み、「ご注文は確定しています」を出す |
 

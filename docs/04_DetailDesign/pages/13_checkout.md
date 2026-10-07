@@ -36,7 +36,7 @@ flowchart TD
 | 前の決済の画面 | 同じ Cookie の、24時間以内の作成中・受け付け済みの下書きの画面を閉じる。受け付け済みなら照合関数で放棄の扱いにして在庫を戻す。作成中の下書きは退役させる |
 | 割引コード | 「適用」で `/api/checkout/promotion-code` が確かめる。決済の画面には「確認へ進む」でサーバーが `discounts` で付ける。`allow_promotion_codes` は使わない。最終確認画面では変えられない |
 | お届けの目安 | `preview_checkout_fulfillment`（受付 RPC と同じ規則。同じバリアントは数量を合わせて比べる）。カート・最終確認画面に出す。在庫の数は出さない |
-| 受け付け | `/api/checkout/place-order`。持ち主・モード・新しい下書きの有無・残り10分以上を確かめ、受付 RPC に「在庫ありと見せたバリアント」を渡す。受付RPCの前に本人の別の完了済み決済の画面を探し、別IDなら409 payment_doneとそのIDで完了へ進んで「ご注文は確定しています」を出す（同じIDなら従来どおり）。配列ありの受付RPCは下書きのsource_cart_idがNULLでなければ本人のカート行の残存を求め、無ければcart_changed（NULL引数の照合器は検証しない）。価格の変化は `price_changed`、在庫ありから受注生産への変化は `stock_changed` で、拒否時は注文も在庫の確保も作らない。残り10分未満ならSessionを失効させ、失効成功時に照合する。受け付け済みなら注文を放棄扱いにして在庫を戻す（照合失敗はWebhook・見回りが仕上げる） |
+| 受け付け | `/api/checkout/place-order`。持ち主・モード・新しい下書きの有無・残り10分以上を確かめ、受付 RPC に「在庫ありと見せたバリアント」を渡す。受付RPCの前に本人の別の完了済み決済の画面を探し、別IDなら409 payment_doneとそのIDで完了へ進んで「ご注文は確定しています」を出す（同じIDなら従来どおり）。配列ありの受付RPCは下書きのsource_cart_idがNULLでなければ本人のカート行の残存を求め、無ければcart_changed（NULL引数の照合器は検証しない）。価格の変化は `price_changed`、在庫ありから受注生産への変化は `stock_changed` で、拒否時は注文も在庫の確保も作らない。残り10分未満は失効・照合を呼ばず、監査ログを残して409 `session_expired`。前の画面は作り直しの `closeOtherCheckoutSessions`（D5）か30分の時間切れで閉じ、通知・見回りで在庫を戻す。別の画面の `payment_done`・`cart_changed`（受付済み画面の押し直しを含む）・`superseded` はこの画面を閉じ、失効成功時に照合して、受付済みなら放棄・在庫返却を行い、理由記号とIDを監査ログに残す。後始末の失敗はログに残し409を変えない |
 | 入り直し | `/api/checkout/resume`。最終確認画面と完了画面の URL は `/checkout?session_id=…`。支払い済みなら完了の処理、開いていれば最終確認画面、ほかは入力画面。IDを送った400 session_not_found / 403 forbiddenは画面がunavailableとして扱い、URLを/checkoutに戻す。常設のLiveMessage（politeness=status、checkout-resume-notice）を2列の外に置き、「このブラウザではご注文の状態を表示できません。お支払いがお済みの場合は、ご注文確認のメールをお送りしています。」と案内する。注文番号・支払い成否は出さない |
 | 支払いの試みの記録 | `sessionStorage` の `checkout:payment-attempt`。戻ったときに「支払った直後」と「後からの入り直し」を分け、未払いなら支払いが完了しなかった案内を出す |
 | カートへの案内 | `sessionStorage` の `checkout:cart-notice`。カート画面が1回だけ読んで消す。cart_changedもmessageとして保存し、「カートの内容が変わりました。カートをご確認のうえ、もう一度お手続きください。」を出す |
@@ -45,6 +45,9 @@ flowchart TD
 | 決済の画面の作り直し | 受け付けが `session_expired`（時間切れ・残り10分未満）で断られたら、「確認へ進む」と同じ処理で作り直し、案内「時間がたったため、お支払い情報をもう一度入力してください」を出す。応答を待つ間は、最終確認画面の「変更」「戻る」「注文する」を押せない |
 | 完了画面（入り直し） | 見出し「ご注文は確定しています」に、注文番号とご注文の状態だけを出す（注文日は出さない。後日に開くことがあり、今日の日付がずれる）。ログイン客には注文の詳細への案内を付ける。支払いの試みの記録がある通常の完了画面は、見出し「Thank you for your order」と注文日を出す |
 | カート画面（FREQ-417） | 明細ごとに「在庫あり・3〜7営業日で発送」か「受注生産・数週間〜2か月以上」を出す（`GET /api/cart` の `fulfillment`）。「注文する」が `stock_changed` で断られた後は、画面の上に案内と変わった商品の名前・色・サイズを並べ、その行に「在庫あり → 受注生産」の印を付ける（数量を減らして在庫に収まった行の印は外す） |
+| 割引コードの記憶（FREQ-423） | 適用成功・最終確認内容の取り込みで、このタブの `sessionStorage` の `checkout:promotion-code` に `{ code }` を覚える。入力画面を開き直した入口が `none`・`unavailable` ならサーバーで確かめ直し、使えれば割引を表示し、使えなければ欄にコードを入れて理由を出す。削除・注文完了処理成功・再確認の拒否で記録を消す |
+| 作り直しの購入不可（FREQ-424） | create-session は非公開の商品も名前で「以下の商品は現在購入できません: …」と409 `out_of_stock` を返す（行がない商品は `商品 {id}`）。時間切れの作り直し中なら入力画面へ戻さず、サーバーの文をカートの案内に保存してカートへ移る。通常の確認は入力画面に文を出してボタンを無効にする |
+| 価格変更と解決まで残す案内（FREQ-425） | 「確認へ進む」の409 `checkout_amount_mismatch` ではカートと金額を読み直し、「価格が変わりました。金額をご確認のうえ、もう一度「確認へ進む」を押してください。」とボタンの上に出し、更新済み金額で押し直せる。やり直せない案内と無効状態は配送先の「新規」・保存済みの選択や入力の変更で消さない |
 
 検証は[購入・決済照合シーケンス](../sequence/checkout-payment.md)の「関連テスト」に挙げたテストと、`e2e/FR-CART-022-delivery-estimate-and-stock-notice.spec.ts`（カートの目安と案内）。
 
@@ -251,6 +254,8 @@ Supabase clientの`{ error }`を見逃すと、入金済み注文を`pending`の
 1. 下書きをロックする前に、同じ `checkout_session_id` の注文を確認する（再送の大半はここで返るのでロック待ちが起きない）
 2. 下書きを `FOR UPDATE` でロックした直後に、もう一度確認する（先に走っていた受付がロック待ちの間にコミットした場合はここで返る）
 3. 注文 INSERT の一意制約違反（`orders_checkout_session_id_key`）で既存の注文を返す（最後の防御）
+
+> 注（2026-10-08）: ロック前に既存の注文を返すのは、`_shown_in_stock_variant_ids` が NULL の照合器だけ。画面からの押し直し（配列あり）は下書きをロックしてから判断し、既存の注文が `payment_in_progress` で本人のカート行が消えていれば `cart_changed` で断る。既存の注文が入金済み（`paid`）・入金待ち（`pending`）なら、カート行がなくてもその注文を返す。
 
 2 が無いと、後から来た呼び出しはロック解放後の下書き（先発が受付済みにした後）を読み、`draft_not_found` を返す。照合関数はこれを「注文を作れない支払い」の要対応にし、支払い済みの客に誤った案内を送ることになる。Read Committed では SQL 文ごとに最新のコミット済みデータを読み、`FOR UPDATE` は待機後に最新の行を返すため。Stripe の注文確定ガイドも、同じ決済に対して確定処理が複数回・同時に呼ばれうることを前提に安全にするよう求めている。
 
@@ -694,7 +699,7 @@ Stripe は「同じイベントを複数回受信する可能性」と「配信�
 | `/api/checkout/create-session` | POST     | 「確認へ進む」で配送先7項目を求め（欠落は400 shipping_incomplete）、customのみの下書きと Stripe セッション（30分で失効）を作り、最終確認画面の内容を返す（hostedは400） | 任意（ゲスト/会員） | `{ confirmation }` |
 | `/api/checkout/complete`       | POST     | Webhook/サーバ確認後に注文を確定        | 任意                | `{ orderId, status }`         |
 | `/api/checkout/promotion-code` | POST     | 割引コードの「適用」。サーバーが使えるかを確かめ、割引後の金額を返す | 任意（ゲスト/会員） | `{ code, subtotalAmount, shippingAmount, discountAmount, totalAmount }` |
-| `/api/checkout/place-order`    | POST     | 「注文する」の受け付け。別の完了済み画面ならpayment_doneでその注文へ進み、本人のカート行が消えていればcart_changedで断る。注文を作り在庫を確保する。残り10分未満ならSessionを失効させて照合し、受け付け済みなら放棄・在庫返却を行う（失敗はWebhook・見回りが仕上げる） | 任意（ゲスト/会員） | `{ orderId, orderStatus }` |
+| `/api/checkout/place-order`    | POST     | 「注文する」の受け付け。別の完了済み画面ならpayment_doneでその注文へ進み、本人のカート行が消えていればcart_changedで断る（押し直しではpayment_in_progressの注文だけ）。注文を作り在庫を確保する。残り10分未満は閉じず409 session_expiredと記録。前の画面は作り直しのD5か30分の時間切れで閉じる。別の画面のpayment_done・cart_changed（受付済みの押し直しを含む）・supersededではこの画面を閉じ、失効成功時に照合して、受付済みなら放棄・在庫返却し、理由とIDを記録する。後始末の失敗はログに残し応答を変えない | 任意（ゲスト/会員） | `{ orderId, orderStatus }` |
 | `/api/checkout/resume`         | POST     | 決済の画面を開き直したときに、どこから続けるかを返す | 任意（ゲスト/会員） | `{ state: "none" }` ／ `{ state: "payment_done", checkoutSessionId }` ／ `{ state: "resume", confirmation }` |
 | `/api/webhook/stripe`          | POST     | Stripe Webhook 受信・署名検証・冪等処理 | Stripe 署名         | `200` or `400`                |
 
