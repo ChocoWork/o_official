@@ -178,6 +178,49 @@ describe('closeOtherCheckoutSessions', () => {
     expect(d.reconcile).toHaveBeenCalledWith('cs_ok');
   });
 
+  test('退役の RPC が error を返したら下書きと決済の画面の ID をログに残し、次の下書きも失効・退役させる。投げない', async () => {
+    const { client, rpc } = supabaseWith({
+      data: [
+        { id: 'd1', status: 'created', checkout_session_id: 'cs_fail', checkout_request_version: 2, checkout_request_fingerprint: 'v2:a' },
+        { id: 'd2', status: 'created', checkout_session_id: 'cs_ok', checkout_request_version: 2, checkout_request_fingerprint: 'v2:b' },
+      ],
+      error: null,
+    });
+    rpc
+      .mockResolvedValueOnce({ data: null, error: { code: '57014', message: 'boom' } })
+      .mockResolvedValueOnce({ data: true, error: null });
+    mockExpireOpenCheckoutSession.mockResolvedValueOnce('expired').mockResolvedValueOnce('expired');
+    const d = deps(client);
+
+    await expect(
+      closeOtherCheckoutSessions(d, { cartSessionId: 'sess-abc', keepCheckoutSessionId: 'cs_keep' }, NOW),
+    ).resolves.toBeUndefined();
+
+    expect(d.logFailure).toHaveBeenCalledTimes(1);
+    expect(d.logFailure).toHaveBeenCalledWith('Failed to close other checkout session', {
+      draft_id: 'd1',
+      checkout_session_id: 'cs_fail',
+    });
+    expect(mockExpireOpenCheckoutSession).toHaveBeenCalledTimes(2);
+    expect(mockExpireOpenCheckoutSession).toHaveBeenNthCalledWith(1, stripe, 'cs_fail');
+    expect(mockExpireOpenCheckoutSession).toHaveBeenNthCalledWith(2, stripe, 'cs_ok');
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(rpc).toHaveBeenNthCalledWith(1, 'retire_expired_checkout_draft', {
+      _draft_id: 'd1',
+      _session_id: 'sess-abc',
+      _checkout_session_id: 'cs_fail',
+      _request_version: 2,
+      _request_fingerprint: 'v2:a',
+    });
+    expect(rpc).toHaveBeenNthCalledWith(2, 'retire_expired_checkout_draft', {
+      _draft_id: 'd2',
+      _session_id: 'sess-abc',
+      _checkout_session_id: 'cs_ok',
+      _request_version: 2,
+      _request_fingerprint: 'v2:b',
+    });
+  });
+
   test('一覧を読めなければ残して終わる。投げない', async () => {
     const { client } = supabaseWith({ data: null, error: { message: 'boom', code: '57014' } });
     const d = deps(client);

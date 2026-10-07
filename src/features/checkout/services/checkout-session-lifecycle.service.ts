@@ -109,13 +109,16 @@ export async function closeOtherCheckoutSessions(
         await deps.reconcile(draft.checkout_session_id);
         continue;
       }
-      await deps.supabase.rpc('retire_expired_checkout_draft', {
+      const { error: retireError } = await deps.supabase.rpc('retire_expired_checkout_draft', {
         _draft_id: draft.id,
         _session_id: params.cartSessionId,
         _checkout_session_id: draft.checkout_session_id,
         _request_version: draft.checkout_request_version,
         _request_fingerprint: draft.checkout_request_fingerprint,
       });
+      if (retireError) {
+        throw retireError;
+      }
     } catch {
       await deps.logFailure('Failed to close other checkout session', {
         draft_id: draft.id,
