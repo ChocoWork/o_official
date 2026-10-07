@@ -17,7 +17,7 @@
 | R-09 | P2 | 未修正 | 管理画面の受注生産数に発送済み・取消済み注文が残る |
 | R-10 | P2 | 未修正 | バリアント管理APIが集計・履歴の取得失敗を空データとして返す |
 | R-11 | P3（2回目で P1 から訂正） | 未修正 | Custom CheckoutのSession作成時にreturn_urlがない（現状はconfirmのreturnUrlで動作） |
-| R-12 | P2 | 未修正 | プロモーションコード削除のStripeエラーを画面が見落とす |
+| R-12 | P2 | 解消（グループ F） | プロモーションコード削除のStripeエラーを画面が見落とす |
 | R-13 | P1 | 未修正 | 任意の色・サイズをカートへ入れて支払済み注文にできる |
 | R-14 | P2 | 未修正 | メール送信権のDB取得失敗時に重複送信を許す |
 | R-15 | P2 | 未修正 | 色・サイズとバリアントの同期が管理画面の在庫欄を開いたときだけ走る |
@@ -30,11 +30,11 @@
 | R-22 | P2・既存 | 未修正 | CSRFトークン検査の拒否応答を見落とし、検査が効いていない |
 | R-23 | P2 | 未修正 | Stripeの500系応答が同じ冪等キーで再生され、そのカートで決済を始められない |
 | R-24 | P2・既存 | 一部修正（complete API は照合後に未所有注文を紐付ける。Webhook 単独経路は未対応） | ログイン客の注文が user_id に紐付かず注文履歴に出ない |
-| R-25 | P2 | 未修正 | Checkout Sessionの有効期限が既定24時間のまま、支払後に注文確定を断る経路がある |
+| R-25 | P2 | 解消（グループ F） | Checkout Sessionの有効期限が既定24時間のまま、支払後に注文確定を断る経路がある |
 | R-26 | P3 | グループ A で修正（受付 RPC が同一トランザクションで discount_amount だけを書き戻す） | 値引き額の書き戻しでdraftの照合が外れ、再表示が500になる |
-| R-27 | P2 | 未修正 | customer_email付きで作ったSessionでは updateEmail が例外になり支払えない |
+| R-27 | P2 | 解消（グループ F） | customer_email付きで作ったSessionでは updateEmail が例外になり支払えない |
 | R-28 | P3 | 一部修正（FREQ-420でサーバーが割引コードを検証し、0円になるコードを拒否。既存の0円Sessionの完了後拒否は残る） | 100%割引で0円Sessionを完了させた後に注文確定を断る |
-| R-29 | P3 | 未修正 | 画面の再試行ボタンとエラー消去の不整合 |
+| R-29 | P3 | 一部修正（グループ F。金額不一致のretryable:falseと「新規」選択で再試行不可の案内が消える点は残る） | 画面の再試行ボタンとエラー消去の不整合 |
 | R-30 | P3 | 未修正 | resource_missing でそのカートの決済開始が恒久的に500になる |
 | R-31 | P3 | 解消（グループ F で配送先の後からの同期の入口を廃止） | 支払後・注文確定前のdraftの配送先を別タブから上書きできる |
 | R-32 | P2・適用前に必須 | 未適用 | 10秒間隔のworker Cronで実行履歴が肥大し、Freeプランの容量上限に達する |
@@ -140,6 +140,8 @@
 - **2回目の訂正（P1→P3）**: 「決済開始自体が失敗する」は成り立たない。[動的決済手段の設計書](../../../superpowers/specs/2026-09-12-checkout-dynamic-payment-methods-design.md) 21行目で、return_url なし・PayPay有効の状態でSession作成が成功した実測がある。画面は [page.tsx](../../../../src/app/checkout/page.tsx) 1443〜1446行で `confirm({ returnUrl })` を渡しており、[Stripe.js confirm](https://docs.stripe.com/js/custom_checkout/confirm) は returnUrl を「Session作成時に return_url を指定しなかった場合のみ必須」とする。APIリファレンス上は条件付き必須なので、堅牢化としてサーバー側設定は残す。ただし [Basil の変更](https://docs.stripe.com/checkout/custom-checkout/changelog) により、Sessionに return_url がある状態で confirm に returnUrl を渡すとエラーになる。サーバー側に移すときは画面側の returnUrl を同時に外し、R-23 のとおり冪等キーの版も上げる。
 ### R-12 プロモーションコード削除の失敗を案内しない
 
+> 解消（グループ F）。[入力画面](../../../../src/app/checkout/page.tsx)の割引削除はローカルの適用済み値だけを消し、removePromotionCodeを呼ばない。[create-session](../../../../src/app/api/checkout/create-session/route.ts)が確認時にサーバー検証済みコードだけをdiscountsで付け、配送先・コードを指紋へ含めて新しい決済の画面を作る。旧再現経路は無い。以下は変更前の指摘。
+
 - **箇所**: [Checkout画面](../../../../src/app/checkout/page.tsx) 307〜315行、[Stripe.jsの戻り値型](../../../../node_modules/@stripe/stripe-js/dist/stripe-js/checkout.d.ts) 552〜554行。
 - **再現経路**: removePromotionCode() は例外だけでなく type='error' の結果を返すが、削除処理は結果を確認せず入力待ち状態に戻る。通信障害やStripe側の拒否で割引が残っても、客には理由が示されず、そのまま購入を進め得る。applyPromotionCode側は同じ型の error を表示している。
 - **修正方針**: 削除結果の type を判定し、error.message を promoError に表示する。成功時だけ削除済みとして扱い、失敗結果を返すテストを追加する。
@@ -221,6 +223,8 @@
 
 ### R-25 Checkout Sessionの有効期限が既定24時間のまま、支払後に注文確定を断る経路がある
 
+> 解消（グループ F）。Sessionはページを開いた時でなく「確認へ進む」で作る。[期限予約RPC](../../../../supabase/migrations/20260927100600_checkout_session_expiry.sql)が30分の期限（Stripeの下限を割らないため30秒の余裕）を決め、[create-session](../../../../src/app/api/checkout/create-session/route.ts)がexpires_atに渡す。[後始末](../../../../src/features/checkout/services/checkout-session-lifecycle.service.ts)は同じCookieの別のopen Sessionを閉じ、受付済みなら照合して在庫を戻す。[place-order](../../../../src/app/api/checkout/place-order/route.ts)が商品・カート・価格・在庫を受付RPCで支払い前に検証するため、旧来の24時間放置・古い画面から支払い後に初めて商品を拒否する再現経路は無い。別の完了済み画面はpayment_doneでその注文の確定へ進める。閉鎖失敗は監査し、Stripe・DBの実環境検証は別途必要。以下は変更前の指摘。
+
 - **箇所**: [create-session](../../../../src/app/api/checkout/create-session/route.ts) 987〜1022行（expires_at なし）、finalize の `ITEM_NOT_PUBLISHED`（[retire_item_stock_quantity](../../../../supabase/migrations/20260921121038_retire_item_stock_quantity.sql) 414行）、[webhook-processor](../../../../src/lib/stripe/webhook-processor.ts) 167〜191行。
 - **再現経路**: 1画面化でSessionはページを開いた時点で作られ、既定で24時間有効。その間に商品を非公開にすると、開いたままのタブで支払いは完了するが、注文確定は ITEM_NOT_PUBLISHED で失敗する。画面は409、Webhookは例外で永久再試行（R-33）となり、入金済み・注文なしが残る。カート変更で新しい draft を作っても古いSessionは失効させていない。
 - **修正方針**: expires_at を短く（30〜60分）設定し、新しい draft を作るとき同じ session_id の古い open Session を失効させる。支払後に確定できない場合の補償（自動返金、または要確認フラグ付きの注文作成）を決める。
@@ -232,6 +236,8 @@
 - **修正内容（グループ A）**: `place_order_from_checkout_draft` は注文作成と同じトランザクションで、`discount_amount` だけを Stripe の値へ更新し、`total_amount` は割引前の額のまま残す。照合は `total_amount + discount_amount` と Stripe の割引前合計を比べる。現行の確認は [place_order_from_checkout_draft.integration.test.ts](../../../../tests/integration/db/place_order_from_checkout_draft.integration.test.ts)。
 
 ### R-27 customer_email付きで作ったSessionでは updateEmail が例外になり支払えない
+
+> 解消（グループ F）。[入力画面](../../../../src/app/checkout/page.tsx)と[最終確認部品](../../../../src/app/checkout/_components/FinalConfirmationStep.tsx)はupdateEmailを呼ばない。メールは「確認へ進む」で下書きと指紋に固定し、create-sessionがcustomer_emailとして渡す。入力を変えれば別の決済の画面になり、confirm前のupdateEmail例外の経路は無い。以下は変更前の指摘。
 
 - **箇所**: [create-session](../../../../src/app/api/checkout/create-session/route.ts) 1004行、[page.tsx](../../../../src/app/checkout/page.tsx) 1133〜1143行（カート読込後にSession作成）・1433〜1440行（確定直前の updateEmail）・1818行（再試行）。
 - **再現経路**: Session作成時の shipping.email が空でないと `customer_email` を送る。ログイン客のプロフィール取得がカート取得より先に終わった場合、「再試行する」を押した場合、失効した draft を作り直した場合に起こる。このSessionで確定すると `updateEmail` が例外になり「メールアドレスの反映に失敗しました」等で支払えない。shipping は fingerprint に含まれないため、同じカートでは同じSessionが再利用され続ける。
@@ -249,6 +255,8 @@
 - **対応（グループ F）**: [割引コードの検証](../../../../src/features/checkout/services/promotion-code.service.ts)が`zero_total`を拒否し、[promotion-code](../../../../src/app/api/checkout/promotion-code/route.ts)・[create-session](../../../../src/app/api/checkout/create-session/route.ts)がこの検証を呼ぶ。custom / hosted とも検証済みコードだけを`discounts`で付け、最終確認画面からはコードを変更できない。[place-order](../../../../src/app/api/checkout/place-order/route.ts)も支払い前に受付RPCの`zero_amount`を拒否する。既存の0円Sessionに対する[complete](../../../../src/app/api/checkout/complete/route.ts)の完了後拒否は残るため、台帳は一部修正とする。
 
 ### R-29 画面の再試行ボタンとエラー消去の不整合
+
+> 一部修正（グループ F）。決済の準備は「確認へ進む」に統合し、[checkout-api](../../../../src/app/checkout/_lib/checkout-api.ts)が通信の失敗を再試行可能として返し、[入力画面](../../../../src/app/checkout/page.tsx)はretryable:falseのエラー時に「確認へ進む」を無効にする。残りは2点: [create-session](../../../../src/app/api/checkout/create-session/route.ts)のcheckout_amount_mismatchにretryable:falseが無いため、古い表示額で繰り返せること。handleSelectSavedAddressで「新規」を選ぶとsetCheckoutError(null)が在庫切れ等の再試行不可の案内まで消すこと。この波では台帳に残し、修正はしない。
 
 - **箇所**: [create-session](../../../../src/app/api/checkout/create-session/route.ts) 643〜650行、[page.tsx](../../../../src/app/checkout/page.tsx) 945行・793行。
 - **事実**: 409 `checkout_amount_mismatch` は retryable を返さず、画面は `retryable ?? true` で「再試行する」を出す。再試行は古い表示金額を送るので同じ409が続く（文言は「再読み込み」を案内）。また保存済み住所で「新規」を選ぶと `setCheckoutError(null)` で在庫切れ等の再試行不可エラーまで消える。

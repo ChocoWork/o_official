@@ -32,14 +32,14 @@ flowchart TD
 
 | 項目 | 決まり |
 |---|---|
-| 決済の画面を作る時点 | 「確認へ進む」。ページを開いた時には作らない。要求の版は 2、指紋に配送先と割引コードを含める。同じ入力なら残り15分以上の決済の画面を使い回す |
+| 決済の画面を作る時点 | 「確認へ進む」。uiModeはcustomのみ（既定custom）、hostedは廃止して400。配送先7項目（メールアドレス・氏名・郵便番号・都道府県・市区町村・番地・電話番号）が正規化後に空なら400 shipping_incompleteで断る。ページを開いた時には作らない。要求の版は 2、指紋に配送先と割引コードを含める。同じ入力なら残り15分以上の決済の画面を使い回す |
 | 前の決済の画面 | 同じ Cookie の、24時間以内の作成中・受け付け済みの下書きの画面を閉じる。受け付け済みなら照合関数で放棄の扱いにして在庫を戻す。作成中の下書きは退役させる |
 | 割引コード | 「適用」で `/api/checkout/promotion-code` が確かめる。決済の画面には「確認へ進む」でサーバーが `discounts` で付ける。`allow_promotion_codes` は使わない。最終確認画面では変えられない |
 | お届けの目安 | `preview_checkout_fulfillment`（受付 RPC と同じ規則。同じバリアントは数量を合わせて比べる）。カート・最終確認画面に出す。在庫の数は出さない |
-| 受け付け | `/api/checkout/place-order`。持ち主・モード・新しい下書きの有無・残り10分以上を確かめ、受付 RPC に「在庫ありと見せたバリアント」を渡す。価格の変化は `price_changed`、在庫ありから受注生産への変化は `stock_changed` で、どちらも注文も在庫の確保も作らない |
-| 入り直し | `/api/checkout/resume`。最終確認画面と完了画面の URL は `/checkout?session_id=…`。支払い済みなら完了の処理、開いていれば最終確認画面、ほかは入力画面 |
+| 受け付け | `/api/checkout/place-order`。持ち主・モード・新しい下書きの有無・残り10分以上を確かめ、受付 RPC に「在庫ありと見せたバリアント」を渡す。受付RPCの前に本人の別の完了済み決済の画面を探し、別IDなら409 payment_doneとそのIDで完了へ進んで「ご注文は確定しています」を出す（同じIDなら従来どおり）。配列ありの受付RPCは下書きのsource_cart_idがNULLでなければ本人のカート行の残存を求め、無ければcart_changed（NULL引数の照合器は検証しない）。価格の変化は `price_changed`、在庫ありから受注生産への変化は `stock_changed` で、拒否時は注文も在庫の確保も作らない。残り10分未満ならSessionを失効させ、失効成功時に照合する。受け付け済みなら注文を放棄扱いにして在庫を戻す（照合失敗はWebhook・見回りが仕上げる） |
+| 入り直し | `/api/checkout/resume`。最終確認画面と完了画面の URL は `/checkout?session_id=…`。支払い済みなら完了の処理、開いていれば最終確認画面、ほかは入力画面。IDを送った400 session_not_found / 403 forbiddenは画面がunavailableとして扱い、URLを/checkoutに戻す。常設のLiveMessage（politeness=status、checkout-resume-notice）を2列の外に置き、「このブラウザではご注文の状態を表示できません。お支払いがお済みの場合は、ご注文確認のメールをお送りしています。」と案内する。注文番号・支払い成否は出さない |
 | 支払いの試みの記録 | `sessionStorage` の `checkout:payment-attempt`。戻ったときに「支払った直後」と「後からの入り直し」を分け、未払いなら支払いが完了しなかった案内を出す |
-| カートへの案内 | `sessionStorage` の `checkout:cart-notice`。カート画面が1回だけ読んで消す |
+| カートへの案内 | `sessionStorage` の `checkout:cart-notice`。カート画面が1回だけ読んで消す。cart_changedもmessageとして保存し、「カートの内容が変わりました。カートをご確認のうえ、もう一度お手続きください。」を出す |
 | 入力画面の保存（FREQ-366） | 住所の入力フォームを出していて「この配送先を保存する」が ON のときは、「確認へ進む」の最初（決済の画面を作る前）にプロフィール・住所帳へ保存する。失敗したときは進まず、入力画面に案内を出す。お金は動かない |
 | 最終確認画面の案内 | PayPay の取りやめ・決済の画面の作り直し・別の画面で進んでいる・完了の処理の失敗の案内は、2列の外の一番上（全幅。`data-testid="checkout-final-notice"`）に出す。画面が狭いと ORDER SUMMARY が先に並ぶので、列の中に置くと上へ動かしても見えない |
 | 決済の画面の作り直し | 受け付けが `session_expired`（時間切れ・残り10分未満）で断られたら、「確認へ進む」と同じ処理で作り直し、案内「時間がたったため、お支払い情報をもう一度入力してください」を出す。応答を待つ間は、最終確認画面の「変更」「戻る」「注文する」を押せない |
@@ -356,7 +356,7 @@ Stripe セッションを作ったら、その ID を下書き（`checkout_draft
 
 - まだ支払いは発生していないので、500 を返して作り直させる（`Failed to prepare checkout`）
 - 理由は監査ログに残す（`Failed to store checkout session id on draft`）
-- custom と hosted が同じ書き込みをするため、`storeCheckoutSessionIdOnDraft` に1つだけ置く
+- custom の書き込みを `storeCheckoutSessionIdOnDraft` に置く。hosted は廃止し、uiMode に hosted を送ると400で断る
 
 ### Checkout Session 作成の原子性と冪等性（FREQ-405）
 
@@ -365,8 +365,8 @@ Stripe セッションを作ったら、その ID を下書き（`checkout_draft
 | fingerprintに含める値                          | 理由                                                  |
 | ---------------------------------------------- | ----------------------------------------------------- |
 | カート明細、サーバー算出の小計・税・送料・合計 | 同じ請求内容だけを再利用する                          |
-| custom / hosted                                | Stripeの必須パラメータが異なる                        |
-| 許可リストで検証したorigin                     | hostedの戻り先を同じ値に固定する                      |
+| custom（既定。hostedは廃止し400）              | 決済画面の方式を要求の指紋に固定する                  |
+| 許可リストで検証したorigin                     | claim引数と要求の指紋に含める既存の契約を保つ          |
 | 配送先・割引コード（版2から）                  | 決済の画面を「確認へ進む」の時点の入力の写しにする。入力が変われば別の下書き・別の決済の画面にする |
 | 要求版                                         | Stripeの固定オプションを変えたときに旧Sessionと分ける |
 
@@ -394,7 +394,7 @@ sequenceDiagram
 
 | Stripeの確認結果                       | 処理                                                                                          |
 | -------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `open`                                 | 残り15分以上なら、customは最終確認画面の内容（`confirmation`。`client_secret`を含む）、hostedは`url`を同じ下書きから返す。残り15分未満なら閉じて退役させ、作り直す |
+| `open`                                 | 残り15分以上なら、customの最終確認画面の内容（`confirmation`。`client_secret`を含む）を同じ下書きから返す。hostedは廃止し、要求は400で断る。残り15分未満なら閉じて退役させ、作り直す |
 | `complete`                             | 決済処理中を含む支払いの済んだ決済の画面なので409 `order_already_placed` を返し、新規Sessionを作らない（画面は注文の確定を仕上げる） |
 | `expired`                              | 下書きID・セッションID・fingerprint・`created`をすべて照合して退役する。更新0件なら500で停止し、成功時だけ新しい下書きをclaimする |
 | 取得失敗、`resource_missing`、未知状態 | 未入金と推定せず500を返し、新規Sessionを作らない                                              |
@@ -420,12 +420,12 @@ draft の配送先（`shipping_snapshot`）を書く経路は、`POST /api/check
 
 最終確認画面に出した配送先と、注文に写す配送先は、どちらも同じ下書きの写しなので、確認の後に変わることは無い（OWASP ASVS V11.1.6 の TOCTOU）。
 
-通常の流れは、入力画面の「確認へ進む」で配送先を検証・保存し、最終確認画面の「注文する」で place-order が支払いの前に注文を作る。以下の欠落監査は、受付を通らないまま支払いが済んだ決済の画面を、共通照合器の `placeAndMark` が後から注文にする予備処理に限る。この予備処理では、注文を作る前に配送先の必須項目（メールアドレス・氏名・郵便番号・都道府県・市区町村・番地・電話番号）の欠落を確認する。欠けていても支払いは成立しているので注文は作り、欠けた項目を監査ログにエラーとして残す。注文一覧は`配送先要確認`を表示して発送操作を隠し、`admin_ship_paid_order`とDBトリガーも`shipped`への遷移を拒否する（ASVS V11.1.5 / V11.1.7）。根拠は[place-order](../../../src/app/api/checkout/place-order/route.ts)と[共通照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)。
+通常の流れは、入力画面の「確認へ進む」で配送先を検証・保存し、最終確認画面の「注文する」で place-order が支払いの前に注文を作る。以下の欠落監査は、受付を通らないまま完了した（入金済み・入金待ち）決済の画面を、共通照合器の `placeAndMark` が後から注文にする予備処理に限る。この予備処理では、注文を作る前に配送先の必須項目（メールアドレス・氏名・郵便番号・都道府県・市区町村・番地・電話番号）の欠落を確認する。欠けていても決済の画面は完了しており、入金済み・入金待ちの状態を照合する必要があるので注文は作り、欠けた項目を監査ログにエラーとして残す。注文一覧は`配送先要確認`を表示して発送操作を隠し、`admin_ship_paid_order`とDBトリガーも`shipped`への遷移を拒否する（ASVS V11.1.5 / V11.1.7）。根拠は[place-order](../../../src/app/api/checkout/place-order/route.ts)と[共通照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)。
 
 | テスト                                                                      | 内容                                                            |
 | --------------------------------------------------------------------------- | --------------------------------------------------------------- |
 | `tests/unit/api/checkout/create-session-route.test.ts`                      | 配送先が違えば別の指紋（別の下書き）になること                  |
-| `tests/unit/lib/stripe/checkout-payment-reconciler.test.ts` | 受付を通らず支払い済みで注文が無い場合の予備処理で、配送先の欠落を監査ログ（`Checkout draft shipping snapshot is incomplete`）に残しつつ注文を作ること。通常の place-order で受付済みなら、完了 API・Webhook の照合はこの予備処理を通らない |
+| `tests/unit/lib/stripe/checkout-payment-reconciler.test.ts` | 受付を通らないまま完了した（入金済み・入金待ち）決済の画面で注文が無い場合の予備処理で、配送先の欠落を監査ログ（`Checkout draft shipping snapshot is incomplete`）に残しつつ注文を作ること。通常の place-order で受付済みなら、完了 API・Webhook の照合はこの予備処理を通らない |
 | `tests/integration/db/checkout_draft_shipping_revision.integration.test.ts` | 実 DB で古い書き込みが弾かれること、同時でも片方だけが勝つこと（今は書く経路が無い。列の条件付き更新の形の確認として残る） |
 
 ### 確定ボタンの有効・無効（FREQ-367）
@@ -569,7 +569,7 @@ checkout の部品は `CheckoutPageContent` の外（モジュールの最上位
 
 > FREQ-420 により `allow_promotion_codes` は使わない。割引はサーバーが確かめたコードだけを、「確認へ進む」で `discounts` として付ける（「最終確認画面と「注文する」」の節）。下の金額の扱いは変わらない。
 
-入力画面にはプロモーションコードの入力欄がある。以前の Stripe セッションは `allow_promotion_codes: true` で作っていた（custom / hosted の両方。FREQ-397）が、グループ F で廃止した。現在は両方ともサーバーが検証したコードだけを `discounts` で付ける。割引が付くと Stripe の `amount_total` は割引後、`total_details.amount_discount` が値引額になる。下書き（`checkout_drafts`）の合計は割引前のまま変えない。
+入力画面にはプロモーションコードの入力欄がある。以前の Stripe セッションは `allow_promotion_codes: true` で作っていた（custom / hosted の両方。FREQ-397）が、グループ F で廃止した。現在はcustomだけを受け付け（hostedは400）、サーバーが検証したコードだけを `discounts` で付ける。割引が付くと Stripe の `amount_total` は割引後、`total_details.amount_discount` が値引額になる。下書き（`checkout_drafts`）の合計は割引前のまま変えない。
 
 | 時点 | `checkout_drafts.total_amount` | `checkout_drafts.discount_amount` | 注文（`orders`）の `total_amount` / `discount_amount` |
 | --- | --- | --- | --- |
@@ -691,10 +691,10 @@ Stripe は「同じイベントを複数回受信する可能性」と「配信�
 
 | エンドポイント                 | メソッド | 概要                                    | 認証                | 主なレスポンス                |
 | ------------------------------ | -------- | --------------------------------------- | ------------------- | ----------------------------- |
-| `/api/checkout/create-session` | POST     | 「確認へ進む」で下書きと Stripe セッション（30分で失効）を作り、最終確認画面の内容を返す | 任意（ゲスト/会員） | `{ confirmation }` |
+| `/api/checkout/create-session` | POST     | 「確認へ進む」で配送先7項目を求め（欠落は400 shipping_incomplete）、customのみの下書きと Stripe セッション（30分で失効）を作り、最終確認画面の内容を返す（hostedは400） | 任意（ゲスト/会員） | `{ confirmation }` |
 | `/api/checkout/complete`       | POST     | Webhook/サーバ確認後に注文を確定        | 任意                | `{ orderId, status }`         |
 | `/api/checkout/promotion-code` | POST     | 割引コードの「適用」。サーバーが使えるかを確かめ、割引後の金額を返す | 任意（ゲスト/会員） | `{ code, subtotalAmount, shippingAmount, discountAmount, totalAmount }` |
-| `/api/checkout/place-order`    | POST     | 「注文する」の受け付け。注文を作り在庫を確保する | 任意（ゲスト/会員） | `{ orderId, orderStatus }` |
+| `/api/checkout/place-order`    | POST     | 「注文する」の受け付け。別の完了済み画面ならpayment_doneでその注文へ進み、本人のカート行が消えていればcart_changedで断る。注文を作り在庫を確保する。残り10分未満ならSessionを失効させて照合し、受け付け済みなら放棄・在庫返却を行う（失敗はWebhook・見回りが仕上げる） | 任意（ゲスト/会員） | `{ orderId, orderStatus }` |
 | `/api/checkout/resume`         | POST     | 決済の画面を開き直したときに、どこから続けるかを返す | 任意（ゲスト/会員） | `{ state: "none" }` ／ `{ state: "payment_done", checkoutSessionId }` ／ `{ state: "resume", confirmation }` |
 | `/api/webhook/stripe`          | POST     | Stripe Webhook 受信・署名検証・冪等処理 | Stripe 署名         | `200` or `400`                |
 

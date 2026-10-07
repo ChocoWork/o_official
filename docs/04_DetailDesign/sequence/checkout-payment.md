@@ -4,7 +4,7 @@
 
 ## 概要
 
-購入画面は、入力画面（お客様情報・配送先・割引コード）と最終確認画面に分かれる。「確認へ進む」でサーバーが下書きと Stripe Checkout Session（30分で失効。割引はサーバーが付ける）を作る。custom の場合は同じ Cookie のほかの決済の画面を閉じ、最終確認画面の内容を返す。hosted の場合は URL を返し、ほかの決済の画面を閉じない。最終確認画面の「注文する」で、受け付け（注文と在庫の確保）→ 支払い → 完了の処理を一度に行う。注文・在庫の状態の変更は complete、Webhook worker、見回り、管理取消が呼ぶ共通照合器が行う。create-session がほかの受付済みの決済の画面を失効させたときと、place-order が残り10分未満の画面を失効させたときも、照合器を呼んで注文を放棄扱いにし、在庫を戻す。開き直したときは入り直しの入口が、どこから続けるかを返す。
+購入画面は、入力画面（お客様情報・配送先・割引コード）と最終確認画面に分かれる。「確認へ進む」でサーバーが下書きと Stripe Checkout Session（30分で失効。割引はサーバーが付ける）を作る。uiMode は custom のみ（既定 custom）、hosted は廃止し400。同じ Cookie のほかの決済の画面を閉じ、最終確認画面の内容を返す。配送先7項目が欠けていれば400 shipping_incompleteで断る。最終確認画面の「注文する」で、受け付け（注文と在庫の確保）→ 支払い → 完了の処理を一度に行う。受け付け時の注文作成・在庫の確保は place-order が受付 RPC で直接行う。その後の注文・在庫の状態の変更は complete、Webhook worker、見回り、管理取消が呼ぶ共通照合器が行う。create-session がほかの受付済みの決済の画面を失効させたときと、place-order が残り10分未満の画面を失効させたときも、照合器を呼び、受け付け済みなら注文を放棄扱いにし、在庫を戻す。開き直したときは入り直しの入口が、どこから続けるかを返す。
 
 ## 範囲と根拠
 
@@ -23,7 +23,7 @@
 
 ## SQ-CHECKOUT-01: 「確認へ進む」で決済の画面を作る
 
-> FREQ-418 によりページを開いた時の作成を廃止した。下の図は現在の購入画面が使う custom の経路であり、hosted は URL を返す。
+> FREQ-418 によりページを開いた時の作成を廃止した。下の図は現在の購入画面が使う custom の経路。uiMode は custom のみ、hosted は廃止して400。
 
 開始は入力画面の「確認へ進む」。事前条件は Cookie `session_id` と、入力の検証が通ったこと。正常終了では最終確認画面の内容（`confirmation`）を受け取る。この段階で注文も在庫の確保も作らない。
 
@@ -37,6 +37,7 @@ sequenceDiagram
     UI->>API: POST /api/checkout/create-session（配送先・表示額・割引コード）
     API->>API: session・制限・CSRF・入力確認
     API->>DB: カート・公開商品を取得し、金額を計算し直す
+    API->>API: 配送先7項目が欠けていれば400 shipping_incomplete（下書き・Sessionを作らない）
     API->>DB: 受け付け済みで支払いの済んだ決済の画面を探す
     alt 支払いの済んだ決済の画面がある
         API-->>UI: 409 order_already_placed（画面は完了の処理へ）
@@ -72,11 +73,11 @@ sequenceDiagram
 | Session作成期限 | DBに期限を予約してStripeへ渡す。既存の期限を再利用する条件は[下書き状態設計](../states/checkout-draft.md)に記載 |
 | Stripe読取り失敗 | expiredとみなしてSessionを追加作成しない。取得の失敗として応答 |
 | attachの競合とDBエラー | 競合は新しいopen Sessionをexpireする補償を試みる。DBエラーではexpireせず500。補償の成功を保証しない |
-| hosted・旧API | hostedは`{url}`を返し、同じCookieのほかの決済の画面を閉じる処理と最終確認画面の内容を返す処理を通らない。現在の購入画面はcustomを送る。[旧PaymentIntent API](../../../src/app/api/checkout/payment-intent/route.ts)はrate limit通過後に410を返す廃止入口。制限応答429/503が先行し得る |
+| hosted・旧API | uiModeはcustomのみ（既定custom）。hostedは廃止して400。[旧PaymentIntent API](../../../src/app/api/checkout/payment-intent/route.ts)はrate limit通過後に410を返す廃止入口。制限応答429/503が先行し得る |
 
 ## SQ-CHECKOUT-02: 「注文する」で受け付けて支払う
 
-開始は最終確認画面の「注文する」。お客様から送るのは決済の画面の ID と、最終確認画面で「在庫あり」と見せた明細のバリアントだけ。金額はサーバーが Stripe から読み直す。
+開始は最終確認画面の「注文する」。お客様から送るのは決済の画面の ID と、最終確認画面で「在庫あり」と見せた明細のバリアントだけ。金額はサーバーが Stripe から読み直す。前段の「確認へ進む」は custom のみで、配送先7項目を求め、欠落を400 shipping_incompleteで断る。別のブラウザでURLに戻った場合は SQ-CHECKOUT-03 の unavailable の案内へ進み、この受付へ進まない。
 
 ```mermaid
 sequenceDiagram
@@ -90,8 +91,15 @@ sequenceDiagram
     PO->>Stripe: checkout.sessions.retrieve
     PO->>PO: 持ち主・モード・新しい下書きの有無・開いている・残り10分以上
     Note over PO,DB: 残り10分未満ならSessionを失効させ、失効成功時に照合関数を呼ぶ<br/>受付済みの注文は放棄扱いにして在庫を戻す（照合失敗はWebhook・見回りが仕上げる）<br/>409 session_expiredを返し、画面を作り直す。下の受付RPCへは進まない
+    PO->>PO: findPaidCheckoutSession（本人の別の完了済み画面を検索）
+    alt 別の完了済み画面が見つかった
+        PO-->>UI: 409 payment_done（見つかったcheckoutSessionId）
+        UI->>C: そのIDで注文の確定を仕上げる
+        UI->>UI: ご注文は確定しています（もう一度払わせない）
+    else 別の完了済み画面なし（同じIDなら従来どおり）
     PO->>DB: place_order_from_checkout_draft（Stripe の金額、見せた在庫）
-    alt 断る（価格・在庫の変化、買えない商品、0円、別の画面）
+    Note over PO,DB: 配列ありの受付はsource_cart_idがNULLでない明細の本人のカート行を検証<br/>消失ならcart_changed（注文・在庫確保を作らない）<br/>NULL引数の照合器の予備処理では検証しない
+    alt 断る（カート・価格・在庫の変化、買えない商品、0円、別の画面）
         PO-->>UI: 409（理由と案内。在庫の変化は変わった明細を添える）
         UI->>UI: カート画面・入力画面・決済の画面の作り直しへ
     else 受け付けた（同じ決済の画面なら同じ注文）
@@ -106,15 +114,16 @@ sequenceDiagram
             C-->>UI: { orderId, status }
         end
     end
+    end
 ```
 
 | 断りの理由 | 画面の動き |
 | --- | --- |
-| `stock_changed`・`item_unavailable`・`price_changed` | カート画面へ移し、案内を1回だけ出す（`sessionStorage` の `checkout:cart-notice`）。在庫の変化は、変わった明細の名前・色・サイズと「在庫あり → 受注生産」の印を添える |
+| `stock_changed`・`item_unavailable`・`price_changed`・`cart_changed` | カート画面へ移し、案内を1回だけ出す（`sessionStorage` の `checkout:cart-notice`）。在庫の変化は、変わった明細の名前・色・サイズと「在庫あり → 受注生産」の印を添える |
 | `zero_amount` | 入力画面へ戻し、案内を出す |
 | `session_expired` | 「確認へ進む」と同じ処理で決済の画面を作り直し、最終確認画面の一番上に案内を出す。作り直しの応答を待つ間は、「変更」「戻る」「注文する」を押せない |
 | `superseded` | その画面のまま、一番上に案内を出す（別のタブで後から「確認へ進む」が押された） |
-| `payment_done` | 支払いが済んでいる。完了の処理へ進む |
+| `payment_done` | 完了済み。同じCookieの別の画面が見つかった場合は応答のcheckoutSessionIdで完了の処理へ進み、「ご注文は確定しています」を出す |
 
 受け付け・支払い・完了の処理の間は、「注文する」を押せない。完了の処理の中の照合は SQ-CHECKOUT-04・05。complete API は metadata の持ち主・mode・draft ID・0円・完了条件の順に確かめる（下の「照合・例外・永続化の条件」）。
 
@@ -142,6 +151,8 @@ sequenceDiagram
         UI->>UI: 支払いの試みの記録あり＝完了画面、なし＝「ご注文は確定しています」
     else resume
         UI->>UI: 最終確認画面（記録ありで未払いなら支払いが完了しなかった案内）
+    else unavailable（IDを送った400 session_not_found / 403 forbidden）
+        UI->>UI: URLを/checkoutへ。入力画面の上で確認メールを案内（注文番号・支払い成否は出さない）
     else none
         UI->>UI: 入力画面
     end
@@ -149,7 +160,7 @@ sequenceDiagram
 
 | 条件 | 結果 |
 | --- | --- |
-| resume の失敗 | 通信の失敗と200以外の応答は `none` として扱い、入力画面から始める |
+| resume の失敗 | IDを送った400 session_not_found / 403 forbiddenだけは画面が`unavailable`として扱い、URLを`/checkout`に戻す。2列の外の常設LiveMessage（status、checkout-resume-notice）に「このブラウザではご注文の状態を表示できません。お支払いがお済みの場合は、ご注文確認のメールをお送りしています。」と出し、注文番号・支払い成否は出さない。通信の失敗・その他の失敗・ID無しは`none`として入力画面から始める |
 | 完了画面 | 支払いの試みの記録（`sessionStorage` の `checkout:payment-attempt`）があれば通常の完了画面（見出し「Thank you for your order」・注文日つき）。無ければ入り直しの完了画面 |
 | 入り直しの完了画面 | 見出し「ご注文は確定しています」に、注文番号とご注文の状態だけを出す。注文日は出さない（後日に開くことがあり、今日の日付がずれる）。ログイン客には注文の詳細への案内を付ける。完了の後も URL は `?session_id=…` のまま残し、読み込み直しても注文の状態を出す |
 | 最終確認画面（resume） | 記録ありで未払いなら、支払いが完了しなかった案内（PayPay は「PayPay でのお支払いが完了しませんでした」）を一番上に出す。受け付け済みの注文があれば、お届けの目安は確保した結果（注文の明細）から出す |
@@ -260,7 +271,7 @@ sequenceDiagram
 | 既存注文の返金 | 判定がnone、注文paid/shipped、snapshot paid、返金額>0、PIありの場合だけsyncRefundsを呼ぶ。入金更新直後の読み直しも対象。同期後statusを返し、全額返金によるcancelledならcompleteは409。record_only・返金0・cancelledには呼ばない。事前のPI/金額不一致は要対応分岐を優先する |
 | 返金同期の失敗 | Stripe一時障害はstripe_unavailable、DB errorのcauseが一時障害ならdb_unavailable、最大3回の返金投影が未収束ならnot_convergedのReconcileTransientErrorへ変換。completeは503、workerはfail/retry。その他は元の例外を返す。成立済み注文RPCは巻き戻さない |
 | 配送先 | completeのshippingは形式検証のみ。注文作成時はロックしたdraft.shipping_snapshotから写す。必須配送snapshot欠落は監査して注文作成を続ける |
-| 新規受付 | Sessionで既存注文を確認、draftロック後にも確認。商品はID昇順でKEY SHARE、variantはID昇順でUPDATEロック。商品・金額等の拒否時はorder_not_creatableを記録し、自動返金はしない。「注文する」の受け付け（place-order）は、最終確認画面で在庫ありと見せたバリアントを渡して呼び、見せた後の価格の変化は`price_changed`、在庫ありから受注生産への変化は`stock_changed`で断る（注文も在庫の確保も作らず、下書きは`created`のまま）。この引数が無い呼び出し（照合器の予備処理）は、足りない明細を受注生産として受ける |
+| 新規受付 | Sessionで既存注文を確認、draftロック後にも確認。商品はID昇順でKEY SHARE、variantはID昇順でUPDATEロック。商品・金額等の拒否時はorder_not_creatableを記録し、自動返金はしない。「注文する」の受け付け（place-order）は、最終確認画面で在庫ありと見せたバリアントを渡して呼び、source_cart_idがNULLでない明細の本人のカート行が消えていれば`cart_changed`、見せた後の価格の変化は`price_changed`、在庫ありから受注生産への変化は`stock_changed`で断る（注文も在庫の確保も作らず、下書きは`created`のまま）。この引数が無い呼び出し（照合器の予備処理）はカート行を検証せず、足りない明細を受注生産として受ける |
 | 在庫 | 同variant数量を合算し、activeかつ足りるvariantだけstock、残りはbackorder。stock明細をpurchase台帳で確保。確保は注文を作る受付RPCの中で行い、通常は「注文する」の受け付け（支払いの前）。create-session（確認へ進む）では予約しない |
 | draftとカート | placeでdraft completed、入金RPCで対象snapshotのsource_cart_idと所有sessionが一致するカート行だけ削除 |
 | paidの異常 | 金額・通貨不一致でもRPCはpaidに更新し、照合器が要対応を記録。再確保できないstock明細はpaid＋要確認。出荷ガードとは別に管理する |
@@ -281,4 +292,4 @@ sequenceDiagram
 
 本番のmigration適用（グループ F の `20261008000000` を含む。まだ本番へ当てていない）、実際のStripe Session・PaymentIntent・動的支払方法、外部認証・メール到達、全競合の実行結果は未確認。SQLの「受付API(F)」コメントは、グループ F の `place-order`（SQ-CHECKOUT-02）として実装済み。廃止されたfinalize/PaymentIntent APIを、現行画面から呼ぶ経路として描かない。
 
-照合全体の基準は2026-10-04の作業ツリーで、`bbb18761`後の返金補正を含む。SQ-CHECKOUT-01〜03は2026-10-07の作業ツリー（グループ F）から書いた。今回、SQ-CHECKOUT-01のcustom / hostedの分岐、SQ-CHECKOUT-02の失効処理、SQ-CHECKOUT-04の呼出し元と、照合器の受付の予備処理・放棄時の在庫返却を現行コードで確認し直した。2026-10-04のレビュー対象と検証結果は[レビュー記録](../../05_Quality/reviews/code/2026-10-04-sequence-state-review.md)を参照する。completeの外側500の監査はmessageと文字列codeを記録し、例外オブジェクトのdetails/hintを複写しない。
+照合全体の基準は2026-10-04の作業ツリーで、`bbb18761`後の返金補正を含む。SQ-CHECKOUT-01〜03は2026-10-07の作業ツリー（グループ F）から書いた。今回、SQ-CHECKOUT-01のcustom限定・配送先必須の検証、SQ-CHECKOUT-02の失効処理、SQ-CHECKOUT-04の呼出し元と、照合器の受付の予備処理・放棄時の在庫返却を現行コードで確認し直した。2026-10-04のレビュー対象と検証結果は[レビュー記録](../../05_Quality/reviews/code/2026-10-04-sequence-state-review.md)を参照する。completeの外側500の監査はmessageと文字列codeを記録し、例外オブジェクトのdetails/hintを複写しない。
