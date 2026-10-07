@@ -554,8 +554,7 @@ export async function POST(req: NextRequest) {
     const { data: itemsData, error: itemsError } = await supabase
       .from("items")
       .select("id, name, price, image_url, status")
-      .in("id", itemIds)
-      .eq("status", "published");
+      .in("id", itemIds);
 
     if (itemsError) {
       console.error("Failed to fetch items for checkout session:", itemsError);
@@ -577,6 +576,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // 非公開の商品も名前で案内するために読む。ここまで通った明細はすべて公開中なので、金額・写しを作れる。
     const itemMap = new Map<number, CheckoutItemSnapshotRow>(
       ((itemsData ?? []) as CheckoutItemSnapshotRow[]).map((item) => [
         item.id,

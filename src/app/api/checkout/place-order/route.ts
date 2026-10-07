@@ -197,9 +197,12 @@ export async function POST(req: NextRequest) {
     const draftId = getDraftIdFromStripeMetadata(session.metadata);
     const draft = draftId ? await loadDraft(draftId) : null;
     if (!draft || draft.session_id !== guard.sessionId || draft.checkout_session_id !== checkoutSessionId) {
+      await expireRejectedCheckoutSession(stripe, checkoutSessionId);
       return reject('superseded', { ...ref, draft_id: draftId });
     }
     if (await hasNewerDraft(guard.sessionId, draft, checkoutSessionId)) {
+      // 新しい画面の作成時に閉じ損ねていても、古い画面の在庫確保を残さない。
+      await expireRejectedCheckoutSession(stripe, checkoutSessionId);
       return reject('superseded', { ...ref, draft_id: draft.id, superseded_by: 'newer_draft' });
     }
 
@@ -209,15 +212,9 @@ export async function POST(req: NextRequest) {
 
     const remainingSeconds = (session.expires_at ?? 0) - Math.floor(Date.now() / 1000);
     if (remainingSeconds < ACCEPT_MIN_REMAINING_SECONDS) {
-      // 閉じた画面に受け付け済みの注文があれば、照合関数が放棄の扱いにして在庫を戻す。
-      // 失敗しても Stripe の知らせと見回りが仕上げるので、案内は止めない。
-      if ((await expireOpenCheckoutSession(stripe, checkoutSessionId)) === 'expired') {
-        try {
-          await reconcileCheckoutSession(checkoutSessionId);
-        } catch (reconcileError) {
-          console.error('Failed to reconcile the expiring checkout session:', reconcileError);
-        }
-      }
+      // 前の画面は、作り直しの「確認へ進む」で closeOtherCheckoutSessions が閉じる（決め事 D5）。
+      // お客様が去っても30分の時間切れと Stripe の知らせ・見回りで閉じ、在庫が戻る。
+      // ここでは失効・照合を呼ばず、Stripe の一時的な失敗で 500 になるのを避ける。
       return reject('session_expired', { ...ref, draft_id: draft.id, remaining_seconds: remainingSeconds });
     }
 
@@ -225,6 +222,9 @@ export async function POST(req: NextRequest) {
     const paidCheckoutSessionId = await findPaidCheckoutSession({ supabase, stripe }, guard.sessionId);
     if (paidCheckoutSessionId && paidCheckoutSessionId !== checkoutSessionId) {
       await expireRejectedCheckoutSession(stripe, checkoutSessionId);
+      await audit('failure', 'Place order rejected', {
+        ...ref, draft_id: draft.id, reason: 'payment_done', paid_checkout_session_id: paidCheckoutSessionId,
+      });
       return guard.finish(NextResponse.json({ error: 'payment_done', checkoutSessionId: paidCheckoutSessionId }, { status: 409 }));
     }
 
@@ -254,7 +254,7 @@ export async function POST(req: NextRequest) {
       if (code === 'stock_changed') {
         return reject(code, metadata, { changedLines: await changedLinesOf(draft, inStockVariantIds) });
       }
-      if (code === 'cart_changed') {
+      if (code === 'cart_changed' || code === 'superseded') {
         await expireRejectedCheckoutSession(stripe, checkoutSessionId);
       }
       return reject(code, metadata);

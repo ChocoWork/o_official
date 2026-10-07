@@ -36,6 +36,7 @@ import {
   type PromotionPreview,
 } from "@/app/checkout/_lib/checkout-api";
 import { paymentIncompleteMessage, takePaymentAttempt } from "@/app/checkout/_lib/payment-attempt";
+import { clearPromotionCode, readPromotionCode, rememberPromotionCode } from "@/app/checkout/_lib/promotion-memory";
 import "./checkout.css";
 
 const CHECKOUT_STEPS = [
@@ -274,22 +275,22 @@ function CheckoutPageContent() {
   const tax = checkoutAmounts.taxAmount;
   const total = checkoutAmounts.totalAmount;
 
-  React.useEffect(() => {
-    const fetchCart = async () => {
-      try {
-        const res = await fetch("/api/cart");
-        if (res.ok) {
-          const data: CartItem[] = await res.json();
-          setCartItems(data.filter((ci) => ci.items !== null));
-        }
-      } catch (err) {
-        console.error("カート取得エラー", err);
-      } finally {
-        setCartLoading(false);
+  const fetchCart = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/cart");
+      if (res.ok) {
+        const data: CartItem[] = await res.json();
+        setCartItems(data.filter((ci) => ci.items !== null));
       }
-    };
-    fetchCart();
+    } catch (err) {
+      console.error("カート取得エラー", err);
+    } finally {
+      setCartLoading(false);
+    }
   }, []);
+  React.useEffect(() => {
+    void fetchCart();
+  }, [fetchCart]);
 
   // 1: 入力画面、2: 最終確認画面（グループ F 設計書 第2章）
   const [step, setStep] = useState<number>(1);
@@ -308,6 +309,7 @@ function CheckoutPageContent() {
   // 入力画面で適用した割引コード（サーバーが確かめた金額の目安つき。設計書第3章）
   const [promotion, setPromotion] = useState<PromotionPreview | null>(null);
   const [promotionError, setPromotionError] = useState<string | null>(null);
+  const [promotionDefaultCode, setPromotionDefaultCode] = useState("");
   // 「確認へ進む」の処理中
   const [proceeding, setProceeding] = useState(false);
   // 開き直したときの状態をサーバーに聞いている間（決め事 D9）
@@ -509,7 +511,8 @@ function CheckoutPageContent() {
         city: "",
         address: "",
       }));
-      setCheckoutError(null);
+      // 買えない商品などの断りは、配送先を変えても解決しないので案内と無効状態を残す。
+      if (sessionErrorRetryable) setCheckoutError(null);
       return;
     }
 
@@ -636,6 +639,7 @@ function CheckoutPageContent() {
           window.scrollTo({ top: 0 });
           return;
         }
+        clearPromotionCode();
         setCompletedOrder({ orderId: result.orderId, orderStatus: result.orderStatus, reentered: options.reentered });
         await updateCartCount();
         // 完了画面を読み込み直しても、注文の状態を出せるようにする（決め事 D9。確定の処理は何度呼んでも同じ結果）
@@ -664,6 +668,7 @@ function CheckoutPageContent() {
       setResumeUnavailable(false);
       setResumeNotice(null);
       setConfirmation(next);
+      if (next.promotionCode) rememberPromotionCode({ code: next.promotionCode });
       setShippingForm((prev) => ({
         ...prev,
         email: next.shipping.email ?? prev.email,
@@ -694,16 +699,16 @@ function CheckoutPageContent() {
     void (async () => {
       // 読めなければ none（入力画面から）。失敗を投げないので、待ちの表示は必ず外れる
       const result = await resumeCheckout(checkoutSessionId);
-      // 完了の処理の間も入力画面を出しておく。失敗の案内の入れ物を先に置くため（FREQ-377）
-      setResuming(false);
-
       if (result.state === "payment_done") {
+        // 完了の失敗の案内を出す入れ物を先に置く（FREQ-377）。記録のコードの再適用はしない。
+        setResuming(false);
         // 画面の中で支払いを始めた記録があれば「支払った直後」、無ければ後からの入り直し
         const attempt = takePaymentAttempt(result.checkoutSessionId);
         await finishOrder(result.checkoutSessionId, { reentered: attempt === null });
         return;
       }
       if (result.state === "resume") {
+        setResuming(false);
         const attempt = takePaymentAttempt(result.confirmation.checkoutSessionId);
         adoptConfirmation(result.confirmation);
         setFinalNotice(attempt ? paymentIncompleteMessage(attempt.paymentType) : null);
@@ -712,6 +717,11 @@ function CheckoutPageContent() {
           const restored = await checkPromotionCodeRequest(result.confirmation.promotionCode);
           if (restored.kind === "applied") {
             setPromotion(restored.preview);
+            rememberPromotionCode({ code: restored.preview.code });
+          } else {
+            clearPromotionCode();
+            setPromotionDefaultCode(result.confirmation.promotionCode);
+            setPromotionError(restored.message);
           }
         }
         return;
@@ -722,8 +732,22 @@ function CheckoutPageContent() {
       if (result.state === "unavailable") {
         setResumeUnavailable(true);
       }
+      const remembered = readPromotionCode();
+      if (remembered && !promotion) {
+        // 入力画面を出す前に確かめ直す。復元待ちの間にお客様が別のコードを適用するのを避ける。
+        const restored = await checkPromotionCodeRequest(remembered.code);
+        if (restored.kind === "applied") {
+          setPromotion(restored.preview);
+          rememberPromotionCode({ code: restored.preview.code });
+        } else {
+          clearPromotionCode();
+          setPromotionDefaultCode(remembered.code);
+          setPromotionError(restored.message);
+        }
+      }
+      setResuming(false);
     })();
-  }, [searchParams, router, finishOrder, adoptConfirmation]);
+  }, [searchParams, router, finishOrder, adoptConfirmation, promotion]);
 
   const backToInput = () => {
     setStep(1);
@@ -734,7 +758,7 @@ function CheckoutPageContent() {
   };
 
   // 「確認へ進む」の本体。入力を送って決済の画面を作り、最終確認画面へ進む（設計書 2-2）
-  const proceedToConfirmation = async (notice: string | null) => {
+  const proceedToConfirmation = async (notice: string | null, recreating = false) => {
     const result = await requestCheckoutConfirmation({
       shipping: { email, fullName, kanaName, postalCode, prefecture, city, address, building, phone },
       displayedAmounts: {
@@ -757,11 +781,25 @@ function CheckoutPageContent() {
       return;
     }
 
+    if (recreating && result.kind === "error" && result.code === "out_of_stock") {
+      saveCartNotice({ kind: "message", message: result.message });
+      router.push("/cart");
+      return;
+    }
     backToInput();
     if (result.kind === "promotion_code_invalid") {
       // 適用の後にカートが変わるなどで使えなくなった。欄に理由を出す（Review Focus 4）
+      clearPromotionCode();
+      setPromotionDefaultCode(promotion?.code ?? "");
       setPromotion(null);
       setPromotionError(result.message);
+      return;
+    }
+    if (result.code === "checkout_amount_mismatch") {
+      await fetchCart();
+      setSessionErrorRetryable(true);
+      setSessionErrorCorrelationId(null);
+      setCheckoutError("価格が変わりました。金額をご確認のうえ、もう一度「確認へ進む」を押してください。");
       return;
     }
     setSessionErrorRetryable(result.retryable);
@@ -822,7 +860,7 @@ function CheckoutPageContent() {
       // 作り直しが返ると、最終確認画面へ引き戻される）
       setProceeding(true);
       try {
-        await proceedToConfirmation(rejection.message);
+        await proceedToConfirmation(rejection.message, true);
       } catch {
         backToInput();
         setCheckoutError("決済の準備に失敗しました。少し時間をおいてから、もう一度お試しください。");
@@ -842,6 +880,7 @@ function CheckoutPageContent() {
     const result = await checkPromotionCodeRequest(code);
     if (result.kind === "applied") {
       setPromotion(result.preview);
+      rememberPromotionCode({ code: result.preview.code });
       return true;
     }
     setPromotionError(result.message);
@@ -1512,11 +1551,15 @@ function CheckoutPageContent() {
                     <>
                       <OrderItems cartItems={cartItems} />
                       <PromoCodeField
+                        key={promotionDefaultCode}
+                        defaultCode={promotionDefaultCode}
                         applied={promotion}
                         error={promotionError}
                         disabled={proceeding}
                         onApply={handleApplyPromotion}
                         onRemove={() => {
+                          clearPromotionCode();
+                          setPromotionDefaultCode("");
                           setPromotion(null);
                           setPromotionError(null);
                         }}

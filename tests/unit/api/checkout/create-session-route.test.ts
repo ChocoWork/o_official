@@ -16,7 +16,11 @@ jest.mock("next/server", () => {
 
 const mockEq = jest.fn();
 const mockIn = jest.fn();
-const mockItemsStatusEq = jest.fn();
+const mockItemsResult = jest.fn();
+const mockItemsStatusEq = jest.fn(async () => {
+  const result = await mockItemsResult();
+  return { ...result, data: result.data?.filter((item: { status: string }) => item.status === 'published') };
+});
 const mockSelect = jest.fn().mockReturnThis();
 const mockDraftDeleteEq = jest
   .fn()
@@ -281,8 +285,12 @@ describe("POST /api/checkout/create-session", () => {
       ],
       error: null,
     });
-    mockIn.mockReturnValue({ eq: mockItemsStatusEq });
-    mockItemsStatusEq.mockResolvedValue({
+    mockIn.mockImplementation(() => ({
+      eq: mockItemsStatusEq,
+      then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) =>
+        mockItemsResult().then(resolve, reject),
+    }));
+    mockItemsResult.mockResolvedValue({
       data: [
         {
           id: 1,
@@ -569,7 +577,7 @@ describe("POST /api/checkout/create-session", () => {
       data: [{ item_id: 1, quantity: 2, color: "BLACK", size: "M" }],
       error: null,
     });
-    mockItemsStatusEq.mockResolvedValue({
+    mockItemsResult.mockResolvedValue({
       data: [
         {
           id: 1,
@@ -598,12 +606,12 @@ describe("POST /api/checkout/create-session", () => {
     expect((res as { status: number }).status).toBe(200);
   });
 
-  it("非公開・存在しない商品は 409 で断る", async () => {
+  it("存在しない商品は番号で示して 409 で断る", async () => {
     mockEq.mockResolvedValue({
       data: [{ item_id: 1, quantity: 1, color: "BLACK", size: "M" }],
       error: null,
     });
-    mockItemsStatusEq.mockResolvedValue({ data: [], error: null });
+    mockItemsResult.mockResolvedValue({ data: [], error: null });
 
     const req = makeRequest({ paymentMethod: "stripe_card", uiMode: "custom" });
     const res = await POST(req);
@@ -612,16 +620,33 @@ describe("POST /api/checkout/create-session", () => {
     expect((res as unknown as { body: { error: string } }).body.error).toBe(
       "out_of_stock",
     );
+    expect((res as unknown as { body: { message: string } }).body.message).toBe("以下の商品は現在購入できません: 商品 1");
   });
 
-  it("items 取得時に status=published を必須化する", async () => {
+  it("非公開の商品は商品名で示して 409 out_of_stock を返す", async () => {
+    mockEq.mockResolvedValue({ data: [{ item_id: 123, quantity: 1, color: "BLACK", size: "M" }], error: null });
+    mockItemsResult.mockResolvedValue({
+      data: [{ id: 123, name: "非公開のシャツ", price: 5000, image_url: null, status: "private" }], error: null,
+    });
+
+    const res = await POST(makeRequest({ uiMode: "custom" })) as unknown as { status: number; body: { error: string; message: string } };
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("out_of_stock");
+    expect(res.body.message).toBe("以下の商品は現在購入できません: 非公開のシャツ");
+    expect(res.body.message).not.toContain("商品 123");
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it("商品の状態で絞らずに取得する", async () => {
     mockCreate.mockResolvedValue({ client_secret: "secret", id: "cs_test" });
 
     const req = makeRequest({ uiMode: "custom" });
     const res = await POST(req);
 
     expect(mockIn).toHaveBeenCalledWith("id", [1]);
-    expect(mockItemsStatusEq).toHaveBeenCalledWith("status", "published");
+    expect(mockItemsStatusEq).not.toHaveBeenCalled();
     expect((res as { status: number }).status).toBe(200);
   });
 

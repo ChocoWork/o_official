@@ -23,6 +23,15 @@ describe('PromoCodeField（入力画面の割引コード）', () => {
     expect(input).toHaveAccessibleDescription('このコードは使えません');
   });
 
+  test('復元したコードを初めの入力値にして、使えない理由を欄の下へ出す', () => {
+    render(<PromoCodeField applied={null} error="このコードは使えません" defaultCode="OLD10" onApply={jest.fn()} onRemove={jest.fn()} />);
+    const input = screen.getByLabelText('プロモーションコード');
+    expect(input).toHaveValue('OLD10');
+    expect(input).toHaveAccessibleDescription('このコードは使えません');
+    fireEvent.change(input, { target: { value: 'NEW10' } });
+    expect(input).toHaveValue('NEW10');
+  });
+
   test('適用済みならコードと「削除」を出す', () => {
     const onRemove = jest.fn();
     render(

@@ -58,13 +58,15 @@ describe('requestCheckoutConfirmation', () => {
     await expect(call()).resolves.toEqual({
       kind: 'error',
       message: '以下の商品は現在購入できません: A',
+      code: 'out_of_stock',
       retryable: false,
       correlationId: null,
     });
-    await expect(call()).resolves.toEqual({ kind: 'error', message: '一時的に…', retryable: true, correlationId: 'c-1' });
+    await expect(call()).resolves.toEqual({ kind: 'error', code: 'checkout_session_failed', message: '一時的に…', retryable: true, correlationId: 'c-1' });
     await expect(call()).resolves.toEqual({
       kind: 'error',
       message: '決済の準備に失敗しました。少し時間をおいてから、もう一度お試しください。',
+      code: 'Cart is empty',
       retryable: true,
       correlationId: null,
     });
@@ -78,10 +80,17 @@ describe('requestCheckoutConfirmation', () => {
     ).resolves.toEqual({
       kind: 'error',
       message: '決済の準備に失敗しました。少し時間をおいてから、もう一度お試しください。',
+      code: null,
       retryable: true,
       correlationId: null,
     });
   });
+});
+
+test('金額不一致のエラー記号を画面へ渡す', async () => {
+  mockClientFetch.mockResolvedValue(jsonResponse(409, { error: 'checkout_amount_mismatch' }));
+  await expect(requestCheckoutConfirmation({ shipping: SHIPPING, displayedAmounts: AMOUNTS, promotionCode: null }))
+    .resolves.toMatchObject({ kind: 'error', code: 'checkout_amount_mismatch', retryable: true });
 });
 
 describe('resumeCheckout', () => {

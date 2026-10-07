@@ -20,7 +20,7 @@ export type ProceedResult =
   | { kind: "confirmation"; confirmation: CheckoutConfirmation }
   | { kind: "order_already_placed"; checkoutSessionId: string }
   | { kind: "promotion_code_invalid"; message: string }
-  | { kind: "error"; message: string; retryable: boolean; correlationId: string | null };
+  | { kind: "error"; code: string | null; message: string; retryable: boolean; correlationId: string | null };
 
 export type ResumeResult =
   | { state: "none" }
@@ -103,7 +103,7 @@ export async function requestCheckoutConfirmation(body: {
     });
   } catch {
     // clientFetch は POST の通信の失敗を投げ直す。画面が値で扱えるよう、「確認へ進む」をやり直せるエラーにして返す
-    return { kind: "error", message: PROCEED_FAILED_MESSAGE, retryable: true, correlationId: null };
+    return { kind: "error", code: null, message: PROCEED_FAILED_MESSAGE, retryable: true, correlationId: null };
   }
   const data = await readJson(response);
 
@@ -118,6 +118,7 @@ export async function requestCheckoutConfirmation(body: {
   }
   return {
     kind: "error",
+    code: typeof data?.error === "string" ? data.error : null,
     message: typeof data?.message === "string" ? data.message : PROCEED_FAILED_MESSAGE,
     // 買えない商品（FR-CHECKOUT-007）は待っても直らない
     retryable: data?.error === "out_of_stock" ? false : typeof data?.retryable === "boolean" ? data.retryable : true,

@@ -254,7 +254,84 @@ describe('決済の画面（グループ F）', () => {
     expect(await screen.findByText('このコードは ¥10,000 以上のご注文で使えます')).toBeInTheDocument();
     expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledWith(expect.objectContaining({ promotionCode: 'MIN10000' }));
     expect(screen.queryByTestId('final-step')).toBeNull();
-    expect(screen.getByLabelText('プロモーションコード')).toBeInTheDocument();
+    expect(screen.getByLabelText('プロモーションコード')).toHaveValue('MIN10000');
+    expect(window.sessionStorage.getItem('checkout:promotion-code')).toBeNull();
+  });
+
+  test('適用成功でコードを覚え、削除で記録を消す', async () => {
+    mockApi.checkPromotionCodeRequest.mockResolvedValue({ kind: 'applied', preview: { code: 'WELCOME10', subtotalAmount: 5000, shippingAmount: 0, discountAmount: 500, totalAmount: 4500 } });
+    render(<CheckoutPage />);
+    fireEvent.change(await screen.findByLabelText('プロモーションコード'), { target: { value: 'welcome10' } });
+    fireEvent.click(screen.getByRole('button', { name: '適用' }));
+    await screen.findByText('WELCOME10');
+    expect(JSON.parse(window.sessionStorage.getItem('checkout:promotion-code') ?? 'null')).toEqual({ code: 'WELCOME10' });
+    fireEvent.click(screen.getByRole('button', { name: '削除' }));
+    expect(window.sessionStorage.getItem('checkout:promotion-code')).toBeNull();
+    expect(screen.getByLabelText('プロモーションコード')).toHaveValue('');
+  });
+
+  test.each(['none', 'unavailable'])('入力画面を開き直す（%s）と記録したコードを確かめ直して割引を表示する', async (state) => {
+    window.sessionStorage.setItem('checkout:promotion-code', JSON.stringify({ code: 'WELCOME10' }));
+    mockApi.resumeCheckout.mockResolvedValue({ state });
+    mockApi.checkPromotionCodeRequest.mockResolvedValue({ kind: 'applied', preview: { code: 'WELCOME10', subtotalAmount: 5000, shippingAmount: 0, discountAmount: 500, totalAmount: 4500 } });
+    render(<CheckoutPage />);
+    expect(await screen.findByText('WELCOME10')).toBeInTheDocument();
+    expect(screen.getByText('¥4,500')).toBeInTheDocument();
+    expect(mockApi.checkPromotionCodeRequest).toHaveBeenCalledTimes(1);
+    expect(mockApi.checkPromotionCodeRequest).toHaveBeenCalledWith('WELCOME10');
+  });
+
+  test.each(['none', 'unavailable'])('開き直した記録のコードが使えない（%s）ときは欄と理由を残し、記録を消す', async (state) => {
+    window.sessionStorage.setItem('checkout:promotion-code', JSON.stringify({ code: 'OLD10' }));
+    mockApi.resumeCheckout.mockResolvedValue({ state });
+    mockApi.checkPromotionCodeRequest.mockResolvedValue({ kind: 'rejected', message: 'このコードは期限が切れています' });
+    render(<CheckoutPage />);
+    const input = await screen.findByLabelText('プロモーションコード');
+    expect(input).toHaveValue('OLD10');
+    expect(input).toHaveAccessibleDescription('このコードは期限が切れています');
+    expect(window.sessionStorage.getItem('checkout:promotion-code')).toBeNull();
+    expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
+  });
+
+  test.each(['resume', 'proceed'])('最終確認の内容にあるコードを覚える（%s）', async (source) => {
+    const confirmation = { ...CONFIRMATION, promotionCode: 'WELCOME10' };
+    mockApi.checkPromotionCodeRequest.mockResolvedValue({ kind: 'applied', preview: { code: 'WELCOME10', subtotalAmount: 5000, shippingAmount: 0, discountAmount: 500, totalAmount: 4500 } });
+    if (source === 'resume') {
+      mockApi.resumeCheckout.mockResolvedValue({ state: 'resume', confirmation });
+      render(<CheckoutPage />);
+      await screen.findByTestId('final-step');
+    } else {
+      mockApi.requestCheckoutConfirmation.mockResolvedValue({ kind: 'confirmation', confirmation });
+      await openFinalStep();
+    }
+    await waitFor(() => expect(JSON.parse(window.sessionStorage.getItem('checkout:promotion-code') ?? 'null')).toEqual({ code: 'WELCOME10' }));
+  });
+
+  test('最終確認のコードの確かめ直しで使えないときは記録を消し、変更した入力画面にコードと理由を残す', async () => {
+    window.sessionStorage.setItem('checkout:promotion-code', JSON.stringify({ code: 'OLD10' }));
+    mockApi.resumeCheckout.mockResolvedValue({ state: 'resume', confirmation: { ...CONFIRMATION, promotionCode: 'OLD10' } });
+    mockApi.checkPromotionCodeRequest.mockResolvedValue({ kind: 'rejected', message: 'このコードは使えません' });
+    render(<CheckoutPage />);
+    await screen.findByTestId('final-step');
+    act(() => mockFinalProps.onEdit());
+    expect(await screen.findByLabelText('プロモーションコード')).toHaveValue('OLD10');
+    expect(screen.getByLabelText('プロモーションコード')).toHaveAccessibleDescription('このコードは使えません');
+    expect(window.sessionStorage.getItem('checkout:promotion-code')).toBeNull();
+  });
+
+  test.each(['completed', 'error'])('注文の完了処理が %s のとき、成功の場合だけコードの記録を消す', async (kind) => {
+    window.sessionStorage.setItem('checkout:promotion-code', JSON.stringify({ code: 'WELCOME10' }));
+    mockApi.resumeCheckout.mockResolvedValue({ state: 'payment_done', checkoutSessionId: 'cs_test_1' });
+    mockApi.completeCheckout.mockResolvedValue(kind === 'completed' ? { kind, orderId: 'a1b2c3d4-0000', orderStatus: 'paid' } : { kind, message: '注文確定に失敗しました' });
+    render(<CheckoutPage />);
+    if (kind === 'completed') {
+      await screen.findByRole('heading', { name: 'ご注文は確定しています' });
+      expect(window.sessionStorage.getItem('checkout:promotion-code')).toBeNull();
+    } else {
+      await screen.findByText('注文確定に失敗しました');
+      expect(JSON.parse(window.sessionStorage.getItem('checkout:promotion-code') ?? 'null')).toEqual({ code: 'WELCOME10' });
+      expect(mockApi.checkPromotionCodeRequest).not.toHaveBeenCalled();
+    }
   });
 
   test('別のブラウザでは状態を出さず、入力画面の上で確認メールを案内し URL を戻す', async () => {
@@ -386,6 +463,84 @@ describe('決済の画面（グループ F）', () => {
     await waitFor(() => expect(screen.getByTestId('final-session')).toHaveTextContent('cs_test_2'));
     expect(screen.getByTestId('final-notice')).toHaveTextContent('時間がたったため、お支払い情報をもう一度入力してください');
     expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(2);
+  });
+
+  test('時間切れの作り直しで買えない商品が見つかったら、商品名の案内を渡してカートへ移る', async () => {
+    const message = '以下の商品は現在購入できません: 非公開のシャツ';
+    mockApi.requestCheckoutConfirmation
+      .mockResolvedValueOnce({ kind: 'confirmation', confirmation: CONFIRMATION })
+      .mockResolvedValueOnce({ kind: 'error', code: 'out_of_stock', message, retryable: false, correlationId: null });
+    await openFinalStep();
+
+    await act(async () => { mockFinalProps.onRejected({ code: 'session_expired', message: '時間がたったため、お支払い情報をもう一度入力してください', changedLines: [] }); });
+
+    await waitFor(() => expect(mockRouter.push).toHaveBeenCalledWith('/cart'));
+    expect(JSON.parse(window.sessionStorage.getItem('checkout:cart-notice') ?? 'null')).toEqual({ kind: 'message', message });
+    expect(screen.queryByRole('button', { name: '確認へ進む' })).toBeNull();
+  });
+
+  test('ふつうの確認で買えない商品が見つかったら、入力画面で商品名を案内してボタンを無効にする', async () => {
+    const message = '以下の商品は現在購入できません: 非公開のシャツ';
+    mockApi.requestCheckoutConfirmation.mockResolvedValue({ kind: 'error', code: 'out_of_stock', message, retryable: false, correlationId: null });
+    render(<CheckoutPage />);
+    fireEvent.click(await screen.findByRole('button', { name: '確認へ進む' }));
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '確認へ進む' })).toBeDisabled();
+    expect(mockRouter.push).not.toHaveBeenCalled();
+  });
+
+  test('金額が食い違ったらカートを読み直して案内し、新しい金額で押し直せる', async () => {
+    const message = '価格が変わりました。金額をご確認のうえ、もう一度「確認へ進む」を押してください。';
+    jest.mocked(fetch)
+      .mockResolvedValueOnce({ ok: true, json: async () => CART } as Response)
+      .mockResolvedValueOnce({ ok: true, json: async () => [{ ...CART[0], items: { ...CART[0].items, price: 7000 } }] } as Response);
+    mockApi.requestCheckoutConfirmation
+      .mockResolvedValueOnce({ kind: 'error', code: 'checkout_amount_mismatch', message: '金額の食い違い', retryable: false, correlationId: null })
+      .mockResolvedValueOnce({ kind: 'confirmation', confirmation: CONFIRMATION });
+    render(<CheckoutPage />);
+    fireEvent.click(await screen.findByRole('button', { name: '確認へ進む' }));
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.getAllByText('¥7,000').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+    await screen.findByTestId('final-step');
+    expect(mockApi.requestCheckoutConfirmation.mock.calls[1][0].displayedAmounts).toEqual({ subtotalAmount: 7000, taxAmount: 0, shippingAmount: 0, totalAmount: 7000 });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  test('やり直せない断りは配送先の新規・保存済み選択や入力変更でも消えない', async () => {
+    mockSavedAddresses = [SAVED_TOKYO, SAVED_OSAKA];
+    const message = '以下の商品は現在購入できません: シャツ';
+    mockApi.requestCheckoutConfirmation.mockResolvedValue({ kind: 'error', code: 'out_of_stock', message, retryable: false, correlationId: null });
+    render(<CheckoutPage />);
+    fireEvent.click(await screen.findByRole('button', { name: '確認へ進む' }));
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '確認へ進む' })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('combobox', { name: '保存済みの配送先' }));
+    fireEvent.click(await screen.findByRole('option', { name: '新規' }));
+    fireEvent.change(await screen.findByLabelText(/郵便番号/), { target: { value: '6008001' } });
+    expect(screen.getByText(message)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '確認へ進む' })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('combobox', { name: '保存済みの配送先' }));
+    fireEvent.click(await screen.findByRole('option', { name: /大阪府/ }));
+    expect(screen.getByText(message)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '確認へ進む' })).toBeDisabled();
+    expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(1);
+  });
+
+  test('やり直せる断りは配送先で新規を選ぶと消せる', async () => {
+    mockSavedAddresses = [SAVED_TOKYO];
+    mockApi.requestCheckoutConfirmation.mockResolvedValue({ kind: 'error', code: 'checkout_session_failed', message: '一時的な失敗', retryable: true, correlationId: null });
+    render(<CheckoutPage />);
+    fireEvent.click(await screen.findByRole('button', { name: '確認へ進む' }));
+    await screen.findByText('一時的な失敗');
+    fireEvent.click(screen.getByRole('combobox', { name: '保存済みの配送先' }));
+    fireEvent.click(await screen.findByRole('option', { name: '新規' }));
+    expect(screen.queryByText('一時的な失敗')).toBeNull();
+    expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
   });
 
   test('最初の入力画面では見出しへフォーカスを移さない', async () => {

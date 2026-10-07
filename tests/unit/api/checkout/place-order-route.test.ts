@@ -229,6 +229,18 @@ describe('POST /api/checkout/place-order', () => {
     expect(mockRpc).not.toHaveBeenCalled();
     expect(mockExpireOpenCheckoutSession).toHaveBeenCalledWith(expect.anything(), 'cs_test_abc');
     expect(mockReconcileCheckoutSession).toHaveBeenCalledWith('cs_test_abc');
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'checkout.place_order',
+      outcome: 'failure',
+      detail: 'Place order rejected',
+      metadata: {
+        session_id: 'sess-abc',
+        reason: 'payment_done',
+        checkout_session_id: 'cs_test_abc',
+        draft_id: 'draft-1',
+        paid_checkout_session_id: 'cs_test_paid',
+      },
+    }));
   });
 
   test('見つかった支払い済みの画面が同じ ID なら、今までどおり受け付ける', async () => {
@@ -262,9 +274,13 @@ describe('POST /api/checkout/place-order', () => {
     ['payment_done', 'reconcile'],
     ['cart_changed', 'expire'],
     ['cart_changed', 'reconcile'],
+    ['superseded', 'expire'],
+    ['superseded', 'reconcile'],
   ])('%s で断るときに %s が失敗しても、ログに残して同じ 409 を返す', async (code, failureAt) => {
     if (code === 'payment_done') {
       mockFindPaidCheckoutSession.mockResolvedValue('cs_test_paid');
+    } else if (code === 'superseded') {
+      mockNewerDraftResult = { data: [{ id: 'draft-2' }], error: null };
     } else {
       mockRpc.mockResolvedValue({
         data: [{ order_id: null, order_status: null, created: false, rejection: 'cart_changed' }],
@@ -284,7 +300,9 @@ describe('POST /api/checkout/place-order', () => {
       expect(res.status).toBe(409);
       await expect(res.json()).resolves.toEqual(code === 'payment_done'
         ? { error: 'payment_done', checkoutSessionId: 'cs_test_paid' }
-        : { error: 'cart_changed', message: 'カートの内容が変わりました。カートをご確認のうえ、もう一度お手続きください。' });
+        : code === 'superseded'
+          ? { error: 'superseded', message: '別の画面で手続きが進んでいます。画面を読み込み直してください' }
+          : { error: 'cart_changed', message: 'カートの内容が変わりました。カートをご確認のうえ、もう一度お手続きください。' });
       expect(mockExpireOpenCheckoutSession).toHaveBeenCalledWith(expect.anything(), 'cs_test_abc');
       if (failureAt === 'expire') {
         expect(mockReconcileCheckoutSession).not.toHaveBeenCalled();
@@ -297,9 +315,11 @@ describe('POST /api/checkout/place-order', () => {
     }
   });
 
-  test.each(['payment_done', 'cart_changed'])('失効しなかったときは照合せず、409 %s を返す', async (code) => {
+  test.each(['payment_done', 'cart_changed', 'superseded'])('失効しなかったときは照合せず、409 %s を返す', async (code) => {
     if (code === 'payment_done') {
       mockFindPaidCheckoutSession.mockResolvedValue('cs_test_paid');
+    } else if (code === 'superseded') {
+      mockNewerDraftResult = { data: [{ id: 'draft-2' }], error: null };
     } else {
       mockRpc.mockResolvedValue({
         data: [{ order_id: null, order_status: null, created: false, rejection: 'cart_changed' }],
@@ -337,6 +357,23 @@ describe('POST /api/checkout/place-order', () => {
     expect(mockRpc).not.toHaveBeenCalled();
   });
 
+  test.each(['missing', 'different_session', 'newer', 'rpc'])('superseded（%s）で断るときは失効してから照合する', async (source) => {
+    if (source === 'missing') mockDraftResult = { data: null, error: null };
+    if (source === 'different_session') mockDraftResult = { data: { ...DRAFT, checkout_session_id: 'cs_test_other' }, error: null };
+    if (source === 'newer') mockNewerDraftResult = { data: [{ id: 'draft-2' }], error: null };
+    if (source === 'rpc') mockRpc.mockResolvedValue({
+      data: [{ order_id: null, order_status: null, created: false, rejection: 'draft_not_found' }], error: null,
+    });
+
+    const res = await POST(makeRequest(VALID_BODY));
+
+    expect(res.status).toBe(409);
+    await expect(res.json()).resolves.toMatchObject({ error: 'superseded' });
+    expect(mockExpireOpenCheckoutSession).toHaveBeenCalledWith(expect.anything(), 'cs_test_abc');
+    expect(mockReconcileCheckoutSession).toHaveBeenCalledWith('cs_test_abc');
+    expect(mockExpireOpenCheckoutSession.mock.invocationCallOrder[0]).toBeLessThan(mockReconcileCheckoutSession.mock.invocationCallOrder[0]);
+  });
+
   test('下書きが見つからない・結び付きが違えば、別の画面で進んでいると断る', async () => {
     mockDraftResult = { data: { ...DRAFT, checkout_session_id: 'cs_test_other' }, error: null };
 
@@ -359,16 +396,25 @@ describe('POST /api/checkout/place-order', () => {
     expect(mockExpireOpenCheckoutSession).not.toHaveBeenCalled();
   });
 
-  test('残り10分未満なら決済の画面を閉じて照合し（受け付け済みなら放棄）、時間切れとして断る', async () => {
-    mockRetrieve.mockResolvedValue(openSession({ expires_at: Math.floor(Date.now() / 1000) + 9 * 60 }));
+  test('残り10分未満なら失効も照合も呼ばず、時間切れとして断って監査ログを残す', async () => {
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(1791417600000);
+    try {
+      mockRetrieve.mockResolvedValue(openSession({ expires_at: Math.floor(Date.now() / 1000) + 9 * 60 }));
 
-    const res = await POST(makeRequest(VALID_BODY));
+      const res = await POST(makeRequest(VALID_BODY));
 
-    expect(mockExpireOpenCheckoutSession).toHaveBeenCalledWith(expect.anything(), 'cs_test_abc');
-    expect(mockReconcileCheckoutSession).toHaveBeenCalledWith('cs_test_abc');
-    expect(res.status).toBe(409);
-    await expect(res.json()).resolves.toMatchObject({ error: 'session_expired' });
-    expect(mockRpc).not.toHaveBeenCalled();
+      expect(mockExpireOpenCheckoutSession).not.toHaveBeenCalled();
+      expect(mockReconcileCheckoutSession).not.toHaveBeenCalled();
+      expect(res.status).toBe(409);
+      await expect(res.json()).resolves.toMatchObject({ error: 'session_expired' });
+      expect(mockRpc).not.toHaveBeenCalled();
+      expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+        outcome: 'failure',
+        metadata: expect.objectContaining({ reason: 'session_expired', draft_id: 'draft-1', remaining_seconds: 540 }),
+      }));
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   test('受け付けたら、Stripe の金額と最終確認画面で在庫ありと見せたバリアントで受付 RPC を呼び、注文を返す', async () => {

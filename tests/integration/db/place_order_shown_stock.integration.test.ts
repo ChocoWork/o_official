@@ -6,6 +6,7 @@ import {
   createDraft,
   movementsOf,
   variantStock,
+  uniqueSuffix,
 } from './helpers/order-fixtures';
 
 /**
@@ -172,6 +173,39 @@ describeLocalDb('integration: 受付 RPC の在庫と価格の確かめ', (db) =
     expect(await fulfillmentTypes(db(), first.rows[0].order_id)).toEqual(['stock']);
     expect(await variantStock(db(), fx.variantId)).toBe(1);
     expect(await movementsOf(db(), fx.variantId)).toEqual([{ delta: 2, reason: 'restock' }, { delta: -1, reason: 'purchase' }]);
+  });
+
+  test.each(['paid', 'pending'])('既存の注文が %s なら、カート行が消えても配列ありの押し直しは既存の注文を返す', async (status) => {
+    const fx = await createCatalogFixture(db(), { stock: 2 });
+    const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 1 });
+    const first = await placeWithShown(db(), draft, [fx.variantId]);
+    expect(first.rows[0]).toMatchObject({ order_status: 'payment_in_progress', created: true, rejection: null });
+    const orderId = first.rows[0].order_id;
+    const paymentIntentId = `pi_${uniqueSuffix()}`;
+    const marked = status === 'paid'
+      ? await db().query(
+        `select updated from public.mark_order_paid($1::uuid, 'payment_in_progress', $2::text, $3::integer, 'jpy', null)`,
+        [orderId, paymentIntentId, draft.totalAmount],
+      )
+      : await db().query(
+        'select updated from public.mark_order_awaiting_payment($1::uuid, $2::text, null)', [orderId, paymentIntentId],
+      );
+    expect(marked.rows[0].updated).toBe(true);
+    await db().query('delete from public.carts where id = $1', [draft.cartId]);
+    expect((await db().query('select id from public.carts where id = $1', [draft.cartId])).rowCount).toBe(0);
+    const itemsBefore = await db().query('select * from public.order_items where order_id = $1 order by id', [orderId]);
+    const movementsBefore = await movementsOf(db(), fx.variantId);
+    const stockBefore = await variantStock(db(), fx.variantId);
+
+    for (const shown of [[], [fx.variantId]]) {
+      const res = await placeWithShown(db(), draft, shown);
+      expect(res.rows[0]).toEqual({ order_id: orderId, order_status: status, created: false, rejection: null });
+    }
+
+    expect(await orderCount(db(), draft.checkoutSessionId)).toBe(1);
+    expect((await db().query('select * from public.order_items where order_id = $1 order by id', [orderId])).rows).toEqual(itemsBefore.rows);
+    expect(await movementsOf(db(), fx.variantId)).toEqual(movementsBefore);
+    expect(await variantStock(db(), fx.variantId)).toBe(stockBefore);
   });
 
   test('source_cart_id が NULL の明細だけなら、カート行が無くても配列ありで受け付け・押し直しを断らない', async () => {

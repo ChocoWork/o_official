@@ -15,18 +15,20 @@ export function PromoCodeField({
   applied,
   error,
   disabled = false,
+  defaultCode = "",
   onApply,
   onRemove,
 }: {
   applied: PromotionPreview | null;
   error: string | null;
   disabled?: boolean;
+  defaultCode?: string;
   onApply(code: string): Promise<boolean>;
   onRemove(): void;
 }) {
   const inputId = useId();
   const errorId = useId();
-  const [code, setCode] = useState("");
+  const [code, setCode] = useState(defaultCode);
   const [applying, setApplying] = useState(false);
 
   const handleApply = async () => {
