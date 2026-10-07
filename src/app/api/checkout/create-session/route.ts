@@ -12,6 +12,7 @@ import {
 import {
   buildShippingSnapshot,
   checkoutShippingSchema,
+  findMissingShippingFields,
   STRIPE_CHECKOUT_PAYMENT_METHODS,
   type CheckoutDraftItemSnapshot,
   type CheckoutCartSnapshotRow,
@@ -497,8 +498,16 @@ export async function POST(req: NextRequest) {
 
     const { paymentMethod, shipping, uiMode, displayedAmounts, promotionCode } = parsed.data;
     // 完了の照合と共有する任意項目のスキーマは保ち、支払いの準備では配送先の欠落を先に断る。
-    const requiredShippingFields = ["email", "fullName", "postalCode", "prefecture", "city", "address", "phone"] as const;
-    if (requiredShippingFields.some((field) => !shipping?.[field]?.trim())) {
+    const missingShippingFields = findMissingShippingFields(buildShippingSnapshot(shipping));
+    if (missingShippingFields.length > 0) {
+      await logAudit({
+        action: "checkout.session.create",
+        outcome: "failure",
+        detail: "Shipping fields are incomplete",
+        ip: clientIp,
+        user_agent: userAgent,
+        metadata: { session_id: sessionId, reason: "shipping_incomplete", missing_fields: missingShippingFields },
+      });
       return NextResponse.json({ error: "shipping_incomplete" }, { status: 400 });
     }
 

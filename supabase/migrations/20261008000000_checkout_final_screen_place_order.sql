@@ -98,13 +98,13 @@ BEGIN
     RAISE EXCEPTION 'PLACE_ORDER_ARGUMENT_REQUIRED' USING ERRCODE = '22023';
   END IF;
 
-  -- 同じ Session の注文が既にあれば、それを返す。在庫を二重に確保しない。
+  -- 照合器は同じ Session の既存注文をそのまま返す。画面からの押し直しは下書きをロックしてカートも確かめる。
   SELECT o.id, o.status
   INTO existing_id, existing_status
   FROM public.orders AS o
   WHERE o.checkout_session_id = _checkout_session_id;
 
-  IF existing_id IS NOT NULL THEN
+  IF existing_id IS NOT NULL AND _shown_in_stock_variant_ids IS NULL THEN
     RETURN QUERY SELECT existing_id, existing_status, false, NULL::text;
     RETURN;
   END IF;
@@ -122,6 +122,23 @@ BEGIN
   WHERE o.checkout_session_id = _checkout_session_id;
 
   IF existing_id IS NOT NULL THEN
+    -- 別の画面の支払いでカートが空になった後、先に受け付けた画面で押し直して二重に払わせない。
+    IF _shown_in_stock_variant_ids IS NOT NULL
+       AND existing_status = 'payment_in_progress'::public.order_status
+       AND EXISTS (
+         SELECT 1
+         FROM pg_catalog.jsonb_array_elements(draft_row.items_snapshot) AS e(value)
+         WHERE e.value->>'source_cart_id' IS NOT NULL
+           AND NOT EXISTS (
+             SELECT 1
+             FROM public.carts AS c
+             WHERE c.id = (e.value->>'source_cart_id')::uuid
+               AND c.session_id = draft_row.session_id
+           )
+       ) THEN
+      RETURN QUERY SELECT NULL::uuid, NULL::public.order_status, false, 'cart_changed'::text;
+      RETURN;
+    END IF;
     RETURN QUERY SELECT existing_id, existing_status, false, NULL::text;
     RETURN;
   END IF;

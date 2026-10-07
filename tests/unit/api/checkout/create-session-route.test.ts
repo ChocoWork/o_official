@@ -120,8 +120,8 @@ jest.mock("@/lib/audit", () => ({
 import { POST } from "@/app/api/checkout/create-session/route";
 import { calculateCheckoutAmountsFromSubtotal } from "@/features/checkout/services/checkout-pricing.service";
 
-test("最終確認画面の配送料の表示が前提とする配送料0を保つ", () => {
-  if (calculateCheckoutAmountsFromSubtotal(5000).shippingAmount !== 0) {
+test.each([100, 50000])("最終確認画面の配送料の表示が前提とする配送料0を保つ（小計 %i 円）", (subtotal) => {
+  if (calculateCheckoutAmountsFromSubtotal(subtotal).shippingAmount !== 0) {
     throw new Error("最終確認画面の配送料の表示（FinalConfirmationStep の金額の欄）を直してから変える");
   }
 });
@@ -334,6 +334,14 @@ describe("POST /api/checkout/create-session", () => {
         };
         expect(res.status).toBe(400);
         expect(res.body).toEqual({ error: "shipping_incomplete" });
+        expect(mockLogAudit).toHaveBeenLastCalledWith({
+          action: "checkout.session.create",
+          outcome: "failure",
+          detail: "Shipping fields are incomplete",
+          ip: null,
+          user_agent: null,
+          metadata: { session_id: "sess-abc", reason: "shipping_incomplete", missing_fields: [field] },
+        });
       }
       expect(mockCreate).not.toHaveBeenCalled();
       expect(mockRpc).not.toHaveBeenCalled();
@@ -344,10 +352,32 @@ describe("POST /api/checkout/create-session", () => {
     const missing = (await POST(makeRequest({ shipping: undefined }))) as unknown as { status: number; body: unknown };
     expect(missing.status).toBe(400);
     expect(missing.body).toEqual({ error: "shipping_incomplete" });
+    expect(mockLogAudit).toHaveBeenLastCalledWith(expect.objectContaining({
+      outcome: "failure",
+      metadata: {
+        session_id: "sess-abc",
+        reason: "shipping_incomplete",
+        missing_fields: ["email", "fullName", "postalCode", "prefecture", "city", "address", "phone"],
+      },
+    }));
     mockCreate.mockResolvedValue({ id: "cs_test", client_secret: "cs_secret" });
     const res = (await POST(makeRequest({}))) as unknown as { status: number };
     expect(res.status).toBe(200);
     expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ ui_mode: "custom" }), expect.anything());
+  });
+
+  it("複数の必須項目が欠けたときは、値を含めず項目名だけを監査ログに残す", async () => {
+    const res = (await POST(makeRequest({ shipping: { ...SHIPPING, fullName: "", city: "" } }))) as unknown as {
+      status: number; body: unknown;
+    };
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: "shipping_incomplete" });
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: { session_id: "sess-abc", reason: "shipping_incomplete", missing_fields: ["fullName", "city"] },
+    }));
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockRpc).not.toHaveBeenCalled();
   });
 
   it.each([["custom"]] as const)(

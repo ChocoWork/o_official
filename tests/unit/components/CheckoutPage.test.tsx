@@ -260,6 +260,10 @@ describe('決済の画面（グループ F）', () => {
   test('別のブラウザでは状態を出さず、入力画面の上で確認メールを案内し URL を戻す', async () => {
     mockSearch = 'session_id=cs_other';
     mockApi.resumeCheckout.mockResolvedValue({ state: 'unavailable' });
+    // 誤って完了の処理へ進めば注文番号を出せる応答にして、非表示の検証を空振りさせない。
+    mockApi.completeCheckout.mockResolvedValue({
+      kind: 'completed', orderId: 'a1b2c3d4-0000-0000-0000-000000000000', orderStatus: 'paid',
+    });
     render(<CheckoutPage />);
     const notice = await screen.findByTestId('checkout-resume-notice');
     await waitFor(() => expect(notice).toHaveTextContent('このブラウザではご注文の状態を表示できません。お支払いがお済みの場合は、ご注文確認のメールをお送りしています。'));
@@ -269,6 +273,23 @@ describe('決済の画面（グループ F）', () => {
     expect(screen.queryByTestId('final-step')).toBeNull();
     expect(screen.queryByText(/^ORD-/)).toBeNull();
     expect(mockApi.completeCheckout).not.toHaveBeenCalled();
+  });
+
+  test('入り直しが unavailable でも、最終確認へ進んだ後は「変更」で戻っても別のブラウザの案内を残さない', async () => {
+    mockSearch = 'session_id=cs_other';
+    mockApi.resumeCheckout.mockResolvedValue({ state: 'unavailable' });
+    mockApi.requestCheckoutConfirmation.mockResolvedValue({ kind: 'confirmation', confirmation: CONFIRMATION });
+    render(<CheckoutPage />);
+    await waitFor(() => expect(screen.getByTestId('checkout-resume-notice')).toHaveTextContent(
+      'このブラウザではご注文の状態を表示できません。お支払いがお済みの場合は、ご注文確認のメールをお送りしています。',
+    ));
+
+    fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+    await screen.findByTestId('final-step');
+    act(() => { mockFinalProps.onEdit(); });
+
+    expect(await screen.findByRole('button', { name: '確認へ進む' })).toBeInTheDocument();
+    expect(screen.getByTestId('checkout-resume-notice')).toBeEmptyDOMElement();
   });
 
   test('入り直しの案内の入れ物は、案内が無い入力画面にも置く', async () => {

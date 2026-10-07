@@ -49,7 +49,6 @@ test.describe('FR-CHECKOUT-040 決済の画面への入り直し', () => {
         );
         await expect(otherPage).toHaveURL(`${finalUrl.origin}/checkout`);
         await expect(otherPage.getByRole('button', { name: '注文する' })).toHaveCount(0);
-        await expect(otherPage.getByText(/^ORD-[0-9A-F]{8}$/)).toHaveCount(0);
       } finally {
         await otherContext.close();
       }

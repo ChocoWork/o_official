@@ -133,6 +133,68 @@ describeLocalDb('integration: お届けの目安の関数', (db) => {
 });
 
 describeLocalDb('integration: 受付 RPC の在庫と価格の確かめ', (db) => {
+  test('配列ありで受け付け済みの画面も、カート行を消した後の押し直しは cart_changed。注文・明細・在庫の動きを増やさない', async () => {
+    const fx = await createCatalogFixture(db(), { stock: 2 });
+    const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 1 });
+    const first = await placeWithShown(db(), draft, [fx.variantId]);
+    expect(first.rows[0]).toMatchObject({ order_status: 'payment_in_progress', created: true, rejection: null });
+    const itemsBefore = await db().query('select * from public.order_items where order_id = $1 order by id', [first.rows[0].order_id]);
+    const movementsBefore = await movementsOf(db(), fx.variantId);
+    const stockBefore = await variantStock(db(), fx.variantId);
+    await db().query('delete from public.carts where id = $1', [draft.cartId]);
+
+    for (const shown of [[], [fx.variantId]]) {
+      const res = await placeWithShown(db(), draft, shown);
+      expect(res.rows[0]).toEqual({ order_id: null, order_status: null, created: false, rejection: 'cart_changed' });
+    }
+
+    expect(await orderCount(db(), draft.checkoutSessionId)).toBe(1);
+    const itemsAfter = await db().query('select * from public.order_items where order_id = $1 order by id', [first.rows[0].order_id]);
+    expect(itemsAfter.rows).toEqual(itemsBefore.rows);
+    expect(await movementsOf(db(), fx.variantId)).toEqual(movementsBefore);
+    expect(await variantStock(db(), fx.variantId)).toBe(stockBefore);
+    expect(await draftStatus(db(), draft.draftId)).toBe('completed');
+  });
+
+  test('配列ありで受け付け済みなら、カート行を消した後も NULL の呼び出し（照合器）は既存の注文を返す', async () => {
+    const fx = await createCatalogFixture(db(), { stock: 2 });
+    const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 1 });
+    const first = await placeWithShown(db(), draft, [fx.variantId]);
+    expect(first.rows[0]).toMatchObject({ order_status: 'payment_in_progress', created: true, rejection: null });
+    await db().query('delete from public.carts where id = $1', [draft.cartId]);
+
+    const res = await placeWithoutShown(db(), draft);
+
+    expect(res.rows[0]).toEqual({
+      order_id: first.rows[0].order_id, order_status: 'payment_in_progress', created: false, rejection: null,
+    });
+    expect(await orderCount(db(), draft.checkoutSessionId)).toBe(1);
+    expect(await fulfillmentTypes(db(), first.rows[0].order_id)).toEqual(['stock']);
+    expect(await variantStock(db(), fx.variantId)).toBe(1);
+    expect(await movementsOf(db(), fx.variantId)).toEqual([{ delta: 2, reason: 'restock' }, { delta: -1, reason: 'purchase' }]);
+  });
+
+  test('source_cart_id が NULL の明細だけなら、カート行が無くても配列ありで受け付け・押し直しを断らない', async () => {
+    const fx = await createCatalogFixture(db(), { stock: 2 });
+    const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 1 });
+    await db().query(
+      `update public.checkout_drafts set items_snapshot = jsonb_set(items_snapshot, '{0,source_cart_id}', 'null'::jsonb) where id = $1`,
+      [draft.draftId],
+    );
+    await db().query('delete from public.carts where id = $1', [draft.cartId]);
+
+    const first = await placeWithShown(db(), draft, [fx.variantId]);
+    const second = await placeWithShown(db(), draft, [fx.variantId]);
+
+    expect(first.rows[0]).toMatchObject({ order_status: 'payment_in_progress', created: true, rejection: null });
+    expect(second.rows[0]).toEqual({
+      order_id: first.rows[0].order_id, order_status: 'payment_in_progress', created: false, rejection: null,
+    });
+    expect(await orderCount(db(), draft.checkoutSessionId)).toBe(1);
+    expect(await fulfillmentTypes(db(), first.rows[0].order_id)).toEqual(['stock']);
+    expect(await variantStock(db(), fx.variantId)).toBe(1);
+  });
+
   test('カートの行が消えていれば配列ありの受付は cart_changed。注文も在庫の確保も作らない', async () => {
     const fx = await createCatalogFixture(db(), { stock: 2 });
     const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 1 });
@@ -256,6 +318,8 @@ describeLocalDb('integration: 受付 RPC の在庫と価格の確かめ', (db) =
     const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 2 });
 
     const first = await placeWithShown(db(), draft, [fx.variantId]);
+    const cart = await db().query('select id from public.carts where id = $1 and session_id = $2', [draft.cartId, draft.cartSessionId]);
+    expect(cart.rowCount).toBe(1);
     const second = await placeWithShown(db(), draft, [fx.variantId]);
 
     expect(second.rows[0]).toEqual({
@@ -265,6 +329,9 @@ describeLocalDb('integration: 受付 RPC の在庫と価格の確かめ', (db) =
       rejection: null,
     });
     expect(await orderCount(db(), draft.checkoutSessionId)).toBe(1);
+    expect(await fulfillmentTypes(db(), first.rows[0].order_id)).toEqual(['stock']);
+    expect(await variantStock(db(), fx.variantId)).toBe(0);
+    expect(await movementsOf(db(), fx.variantId)).toEqual([{ delta: 2, reason: 'restock' }, { delta: -2, reason: 'purchase' }]);
   });
 
   test('新しい形だけが残り、anon と authenticated は実行できない', async () => {

@@ -135,6 +135,8 @@ describe('POST /api/checkout/place-order', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockExpireOpenCheckoutSession.mockReset();
+    mockReconcileCheckoutSession.mockReset();
     mockDraftQueries.length = 0;
     process.env.STRIPE_SECRET_KEY = 'sk_test_dummy';
     mockGuard.mockResolvedValue({
@@ -225,6 +227,8 @@ describe('POST /api/checkout/place-order', () => {
       expect.objectContaining({ supabase: expect.anything(), stripe: expect.anything() }), 'sess-abc',
     );
     expect(mockRpc).not.toHaveBeenCalled();
+    expect(mockExpireOpenCheckoutSession).toHaveBeenCalledWith(expect.anything(), 'cs_test_abc');
+    expect(mockReconcileCheckoutSession).toHaveBeenCalledWith('cs_test_abc');
   });
 
   test('見つかった支払い済みの画面が同じ ID なら、今までどおり受け付ける', async () => {
@@ -232,6 +236,84 @@ describe('POST /api/checkout/place-order', () => {
     const res = await POST(makeRequest(VALID_BODY));
     expect(res.status).toBe(200);
     expect(mockRpc).toHaveBeenCalled();
+    expect(mockExpireOpenCheckoutSession).not.toHaveBeenCalled();
+    expect(mockReconcileCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  test('cart_changed で断るときは、この画面を失効させて照合する', async () => {
+    mockRpc.mockResolvedValue({
+      data: [{ order_id: null, order_status: null, created: false, rejection: 'cart_changed' }],
+      error: null,
+    });
+
+    const res = await POST(makeRequest(VALID_BODY));
+
+    expect(res.status).toBe(409);
+    await expect(res.json()).resolves.toEqual({
+      error: 'cart_changed',
+      message: 'カートの内容が変わりました。カートをご確認のうえ、もう一度お手続きください。',
+    });
+    expect(mockExpireOpenCheckoutSession).toHaveBeenCalledWith(expect.anything(), 'cs_test_abc');
+    expect(mockReconcileCheckoutSession).toHaveBeenCalledWith('cs_test_abc');
+  });
+
+  test.each([
+    ['payment_done', 'expire'],
+    ['payment_done', 'reconcile'],
+    ['cart_changed', 'expire'],
+    ['cart_changed', 'reconcile'],
+  ])('%s で断るときに %s が失敗しても、ログに残して同じ 409 を返す', async (code, failureAt) => {
+    if (code === 'payment_done') {
+      mockFindPaidCheckoutSession.mockResolvedValue('cs_test_paid');
+    } else {
+      mockRpc.mockResolvedValue({
+        data: [{ order_id: null, order_status: null, created: false, rejection: 'cart_changed' }],
+        error: null,
+      });
+    }
+    const failure = new Error(`${failureAt} failed`);
+    if (failureAt === 'expire') {
+      mockExpireOpenCheckoutSession.mockRejectedValueOnce(failure);
+    } else {
+      mockReconcileCheckoutSession.mockRejectedValueOnce(failure);
+    }
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const res = await POST(makeRequest(VALID_BODY));
+
+      expect(res.status).toBe(409);
+      await expect(res.json()).resolves.toEqual(code === 'payment_done'
+        ? { error: 'payment_done', checkoutSessionId: 'cs_test_paid' }
+        : { error: 'cart_changed', message: 'カートの内容が変わりました。カートをご確認のうえ、もう一度お手続きください。' });
+      expect(mockExpireOpenCheckoutSession).toHaveBeenCalledWith(expect.anything(), 'cs_test_abc');
+      if (failureAt === 'expire') {
+        expect(mockReconcileCheckoutSession).not.toHaveBeenCalled();
+      } else {
+        expect(mockReconcileCheckoutSession).toHaveBeenCalledWith('cs_test_abc');
+      }
+      expect(consoleError).toHaveBeenCalledWith(expect.any(String), failure);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  test.each(['payment_done', 'cart_changed'])('失効しなかったときは照合せず、409 %s を返す', async (code) => {
+    if (code === 'payment_done') {
+      mockFindPaidCheckoutSession.mockResolvedValue('cs_test_paid');
+    } else {
+      mockRpc.mockResolvedValue({
+        data: [{ order_id: null, order_status: null, created: false, rejection: 'cart_changed' }],
+        error: null,
+      });
+    }
+    mockExpireOpenCheckoutSession.mockResolvedValueOnce('not_open');
+
+    const res = await POST(makeRequest(VALID_BODY));
+
+    expect(res.status).toBe(409);
+    await expect(res.json()).resolves.toMatchObject({ error: code });
+    expect(mockExpireOpenCheckoutSession).toHaveBeenCalledWith(expect.anything(), 'cs_test_abc');
+    expect(mockReconcileCheckoutSession).not.toHaveBeenCalled();
   });
 
   test('後から別のタブで「確認へ進む」を押していれば、別の画面で進んでいると断る', async () => {

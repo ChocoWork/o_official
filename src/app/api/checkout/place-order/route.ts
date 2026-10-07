@@ -119,6 +119,23 @@ async function changedLinesOf(draft: DraftRow, inStockVariantIds: number[]) {
     }));
 }
 
+/** 断った画面の確保をすぐ戻す。失敗しても Stripe の知らせと見回りが仕上げるので、拒否の応答は変えない。 */
+async function expireRejectedCheckoutSession(stripe: ReturnType<typeof getStripeServerClient>, checkoutSessionId: string) {
+  try {
+    if ((await expireOpenCheckoutSession(stripe, checkoutSessionId)) !== 'expired') {
+      return;
+    }
+  } catch (expireError) {
+    console.error('Failed to expire the rejected checkout session:', expireError);
+    return;
+  }
+  try {
+    await reconcileCheckoutSession(checkoutSessionId);
+  } catch (reconcileError) {
+    console.error('Failed to reconcile the rejected checkout session:', reconcileError);
+  }
+}
+
 // PUBLIC: ゲスト購入を許可する公開 Route。守りは guardCheckoutPost（Cookie・回数の制限・CSRF）。
 // 「注文する」の受け付け（グループ F 設計書第6章）。決済の画面を Stripe から読み直し、その金額と下書きで
 // 受付 RPC を呼ぶ。お客様から受け取るのは決済の画面の ID と「在庫あり」と見せた明細だけ。
@@ -207,6 +224,7 @@ export async function POST(req: NextRequest) {
     // 別のタブの支払いが先に済んでいれば、同じカートでもう一度課金せず、その注文を仕上げる。
     const paidCheckoutSessionId = await findPaidCheckoutSession({ supabase, stripe }, guard.sessionId);
     if (paidCheckoutSessionId && paidCheckoutSessionId !== checkoutSessionId) {
+      await expireRejectedCheckoutSession(stripe, checkoutSessionId);
       return guard.finish(NextResponse.json({ error: 'payment_done', checkoutSessionId: paidCheckoutSessionId }, { status: 409 }));
     }
 
@@ -235,6 +253,9 @@ export async function POST(req: NextRequest) {
       const metadata = { ...ref, draft_id: draft.id, rpc_rejection: row.rejection };
       if (code === 'stock_changed') {
         return reject(code, metadata, { changedLines: await changedLinesOf(draft, inStockVariantIds) });
+      }
+      if (code === 'cart_changed') {
+        await expireRejectedCheckoutSession(stripe, checkoutSessionId);
       }
       return reject(code, metadata);
     }

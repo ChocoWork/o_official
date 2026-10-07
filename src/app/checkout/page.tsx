@@ -660,6 +660,9 @@ function CheckoutPageContent() {
         building: next.shipping.building ?? "",
       };
       adoptedAddressRef.current = draftAddress;
+      // このブラウザで新しい確認画面へ進めた後は、以前の入り直しの案内を戻る操作でも出さない。
+      setResumeUnavailable(false);
+      setResumeNotice(null);
       setConfirmation(next);
       setShippingForm((prev) => ({
         ...prev,
