@@ -155,7 +155,7 @@ DB変更は次の2段階で適用する。第1段階は本番適用済み、第2
 
 3つのRPCは`SECURITY DEFINER`、`search_path=''`、完全修飾名を使い、`PUBLIC` / `anon` / `authenticated`から実行権限を剥奪する。人間の操作はサーバーが認証済みセッションから得た利用者IDを渡し、`order_revisions.changed_by`へ記録する。クライアント本文の利用者IDは受け付けない。
 
-## ORDER タブの要対応・要確認と取消の画面（ADMIN-ORDER-ATTENTION / FREQ-411〜413）
+## ORDER タブの要対応・要確認と取消の画面（ADMIN-ORDER-ATTENTION / FREQ-411〜413・415）
 
 | 部品 | 内容 |
 | --- | --- |
@@ -168,7 +168,7 @@ DB変更は次の2段階で適用する。第1段階は本番適用済み、第2
 | 取消の画面（`src/components/OrderCancelDialog.tsx`） | Shopify の取消画面に合わせる。項目は下の表 |
 
 - 要対応（`payment_exceptions`）: 注文を作れない支払い・支払額の違い・取り消した注文への入金など。理由の表示名は `PAYMENT_EXCEPTION_REASON_LABELS`（`src/lib/orders/order-payment-types.ts`）。「解決済みにする」（メモは任意）で欄から消す。未入金の注文が付いていれば「注文を取り消して解決」（理由とメモが必須）も選べる。別の管理者が先に解決していたら409で、二重に取り消さない
-- 要確認（`orders.review_reason`）: 在庫を確保できなかった注文（`stock_not_reserved`）。「確認済みにする」で欄から消す
+- 要確認（`orders.review_reason`）: 在庫を確保できなかった注文（`stock_not_reserved`）と、毎時の見回りが注文の無い支払いから作った注文（`recovered_from_payment`。表示は「支払いから作った注文：お客様へ確認してください」。FREQ-415）。両方に当たる注文は在庫の理由を残す。「確認済みにする」で欄から消す
 - どちらも実行者と日時を残す
 
 | 取消の画面の項目 | 内容 |

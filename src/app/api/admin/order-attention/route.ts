@@ -19,6 +19,8 @@ const MAX_ITEMS = 100;
 
 const REVIEW_REASON_LABELS: Record<string, string> = {
   stock_not_reserved: '在庫を確保できなかった注文',
+  // 毎時の見回りが、注文の無い支払いから作った注文（設計書 2026-10-05 グループ B の 3-6。FREQ-415）
+  recovered_from_payment: '支払いから作った注文：お客様へ確認してください',
 };
 
 type ExceptionRow = {

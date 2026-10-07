@@ -180,6 +180,27 @@ describe('GET /api/admin/order-attention', () => {
     expect(mockAuthorize).toHaveBeenCalledWith('admin.orders.read', expect.any(Request));
   });
 
+  it('支払いから作った注文の要確認を、お客様へ確認する文言で返す（FREQ-415）', async () => {
+    reviewRows = [{
+      id: ORDER_ID,
+      status: 'paid',
+      review_reason: 'recovered_from_payment',
+      review_marked_at: '2026-10-05T01:00:00.000Z',
+    }];
+
+    const res = (await getAttention(new Request('http://localhost/api/admin/order-attention'))) as unknown as RouteResponse;
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.reviews[0]).toEqual({
+      orderId: ORDER_ID,
+      orderNumber: 'ORD-A1B2C3D4',
+      orderStatus: 'paid',
+      reviewReason: 'recovered_from_payment',
+      reviewReasonLabel: '支払いから作った注文：お客様へ確認してください',
+      reviewMarkedAt: '2026-10-05T01:00:00.000Z',
+    });
+  });
+
   it('お客様の個人情報の列を読まない', async () => {
     await getAttention(new Request('http://localhost/api/admin/order-attention'));
 
