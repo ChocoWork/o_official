@@ -21,6 +21,7 @@ jest.mock('@/lib/csrfMiddleware', () => ({
 }));
 
 import {
+  CHECKOUT_SESSION_ID_PATTERN,
   guardCheckoutPost,
   resolveCheckoutIpLimitMultiplier,
   type CheckoutGuardConfig,
@@ -181,4 +182,13 @@ describe('guardCheckoutPost', () => {
     await expect(result.response.json()).resolves.toEqual({ error: 'Internal server error' });
   });
 
+});
+
+describe('CHECKOUT_SESSION_ID_PATTERN', () => {
+  test('Stripe の Checkout Session の ID だけを通す', () => {
+    expect(CHECKOUT_SESSION_ID_PATTERN.test('cs_test_a1B2c3')).toBe(true);
+    expect(CHECKOUT_SESSION_ID_PATTERN.test('cs_live_a1B2c3')).toBe(true);
+    expect(CHECKOUT_SESSION_ID_PATTERN.test('pi_test_a1B2c3')).toBe(false);
+    expect(CHECKOUT_SESSION_ID_PATTERN.test('cs_test_a1/../b')).toBe(false);
+  });
 });

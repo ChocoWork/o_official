@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookieOptionsForCsrf, csrfCookieName } from '@/lib/cookie';
 
+/** Stripe の Checkout Session の ID（受け付け・入り直しの要求で受け取る） */
+export const CHECKOUT_SESSION_ID_PATTERN = /^cs_(test|live)_[A-Za-z0-9]+$/;
+
 export type CheckoutRateLimit = { endpoint: string; limit: number; windowSeconds: number };
 
 export type CheckoutGuardConfig = {
