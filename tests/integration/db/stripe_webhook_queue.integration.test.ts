@@ -39,7 +39,7 @@ describe('integration: durable Stripe webhook queue', () => {
     client = new Client({ connectionString: DATABASE_URL });
     await client.connect();
     await client.query(fs.readFileSync(
-      path.join(process.cwd(), 'supabase/migrations/20261005100000_webhook_queue_dead_letter.sql'),
+      path.join(process.cwd(), 'supabase/migrations/20261007030242_webhook_queue_dead_letter.sql'),
       'utf8',
     ));
   });

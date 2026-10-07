@@ -8,7 +8,7 @@
 
 ## 範囲と根拠
 
-対応: [Webhookシーケンス](../sequence/stripe-webhooks.md)、[CHECKOUTのFR-CHECKOUT-009](../pages/13_checkout.md)。定義と遷移は[キューmigration](../../../supabase/migrations/20260925000303_add_stripe_webhook_queue.sql)と、再試行・待機・退避を定める[退避のmigration](../../../supabase/migrations/20261005100000_webhook_queue_dead_letter.sql)、呼び出し元は[イベントサービス](../../../src/lib/stripe/webhook-events.ts)、[Webhook受付](../../../src/app/api/webhook/stripe/route.ts)、[worker](../../../src/app/api/cron/process-stripe-webhooks/route.ts)、[workerの繰り返し](../../../src/lib/stripe/webhook-drain.ts)。
+対応: [Webhookシーケンス](../sequence/stripe-webhooks.md)、[CHECKOUTのFR-CHECKOUT-009](../pages/13_checkout.md)。定義と遷移は[キューmigration](../../../supabase/migrations/20260925000303_add_stripe_webhook_queue.sql)と、再試行・待機・退避を定める[退避のmigration](../../../supabase/migrations/20261007030242_webhook_queue_dead_letter.sql)、呼び出し元は[イベントサービス](../../../src/lib/stripe/webhook-events.ts)、[Webhook受付](../../../src/app/api/webhook/stripe/route.ts)、[worker](../../../src/app/api/cron/process-stripe-webhooks/route.ts)、[workerの繰り返し](../../../src/lib/stripe/webhook-drain.ts)。
 
 ## 状態定義と図
 

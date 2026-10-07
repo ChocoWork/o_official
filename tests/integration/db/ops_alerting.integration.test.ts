@@ -10,7 +10,7 @@ jest.setTimeout(30000);
 describeLocalDb('integration: 知らせと定期処理の記録', (db) => {
   beforeAll(async () => {
     await db().query(fs.readFileSync(
-      path.join(process.cwd(), 'supabase/migrations/20261005100100_ops_alerting.sql'),
+      path.join(process.cwd(), 'supabase/migrations/20261007030336_ops_alerting.sql'),
       'utf8',
     ));
   });
