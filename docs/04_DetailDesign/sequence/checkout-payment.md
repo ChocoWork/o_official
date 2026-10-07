@@ -4,7 +4,7 @@
 
 ## 概要
 
-購入画面は、入力画面（お客様情報・配送先・割引コード）と最終確認画面に分かれる。「確認へ進む」でサーバーが下書きと Stripe Checkout Session（30分で失効。割引はサーバーが付ける）を作る。uiMode は custom のみ（既定 custom）、hosted は廃止し400。同じ Cookie のほかの決済の画面を閉じ、最終確認画面の内容を返す。配送先7項目が欠けていれば400 shipping_incompleteで断る。最終確認画面の「注文する」で、受け付け（注文と在庫の確保）→ 支払い → 完了の処理を一度に行う。受け付け時の注文作成・在庫の確保は place-order が受付 RPC で直接行う。その後の注文・在庫の状態の変更は complete、Webhook worker、見回り、管理取消が呼ぶ共通照合器が行う。create-session がほかの受付済みの決済の画面を失効させたときと、place-order が別の画面の payment_done・cart_changed（受付済みの押し直しを含む）・superseded で断った画面を失効させたときも、照合器を呼び、受け付け済みなら注文を放棄扱いにし、在庫を戻す。残り10分未満は閉じずに409 session_expiredを返して記録し、前の画面は作り直しのD5か30分の時間切れで閉じ、通知・見回りが在庫を戻す。開き直したときは入り直しの入口が、どこから続けるかを返す。
+購入画面は、入力画面（お客様情報・配送先・割引コード）と最終確認画面に分かれる。「確認へ進む」でサーバーが下書きと Stripe Checkout Session（30分で失効。割引はサーバーが付ける）を作る。uiMode は custom のみ（既定 custom）、hosted は廃止し400。同じ Cookie のほかの決済の画面を閉じ、最終確認画面の内容を返す。配送先7項目が欠けていれば400 shipping_incompleteで断る。最終確認画面の「注文する」で、受け付け（注文と在庫の確保）→ 支払い → 完了の処理を一度に行う。受け付け時の注文作成・在庫の確保は place-order が受付 RPC で直接行う。その後の注文・在庫の状態の変更は complete、Webhook worker、見回り、管理取消が呼ぶ共通照合器が行う。create-session がほかの受付済みの決済の画面を失効させたときと、place-order が別の画面の payment_done・cart_changed（受付済みの押し直しを含む）・superseded で断った画面を失効させたときも、照合器を呼び、受け付け済みなら注文を放棄扱いにし、在庫を戻す。残り10分未満は閉じずに409 session_expiredを返して記録し、前の画面は作り直しのD5か30分の時間切れで閉じ、通知・見回りが在庫を戻す。作り直しの「確認へ進む」自体が買えない商品・金額の食い違いなどで断られたときは閉じる処理まで進まないため、30分の時間切れと Stripe の知らせ・見回りで閉じる。開き直したときは入り直しの入口が、どこから続けるかを返す。
 
 ## 範囲と根拠
 
@@ -90,7 +90,7 @@ sequenceDiagram
     UI->>PO: POST /api/checkout/place-order
     PO->>Stripe: checkout.sessions.retrieve
     PO->>PO: 持ち主・モード・新しい下書きの有無・開いている・残り10分以上
-    Note over PO,DB: 残り10分未満は失効・照合を呼ばず、記録して409 session_expired<br/>前の画面は作り直しのcloseOtherCheckoutSessions（D5）か30分の時間切れで閉じる<br/>通知・見回りが在庫を戻す。下の受付RPCへは進まない
+    Note over PO,DB: 残り10分未満は失効・照合を呼ばず、記録して409 session_expired<br/>前の画面は作り直しのcloseOtherCheckoutSessions（D5）か30分の時間切れで閉じる<br/>通知・見回りが在庫を戻す。<br/>作り直しの「確認へ進む」自体が買えない商品・金額の食い違いなどで断られたときは閉じる処理まで進まないため、30分の時間切れと Stripe の知らせ・見回りで閉じる。下の受付RPCへは進まない
     Note over PO,Stripe: supersededで断る場合は、この画面を閉じ、失効成功時に照合<br/>受付済みなら放棄・在庫返却。理由記号とIDを記録する（失敗はログに残し409を維持）
     PO->>PO: findPaidCheckoutSession（本人の別の完了済み画面を検索）
     alt 別の完了済み画面が見つかった
@@ -174,7 +174,7 @@ sequenceDiagram
 
 > FREQ-418・421 により、create-session と place-order の失効処理も照合器の呼出し元に加わった。
 
-開始はcomplete、Webhook worker、見回り、管理取消、create-session（customでほかの受付済みの決済の画面を閉じ、失効に成功したとき）、place-order（残り10分未満の決済の画面を閉じ、失効に成功したとき）からの照合器呼出し。create-session と place-order は[決済の画面の後始末](../../../src/features/checkout/services/checkout-session-lifecycle.service.ts)の `reconcileCheckoutSession` を経由する。Session IDまたはPI IDが必要。図は読み直しの制御を表し、書込みの順序は次の部分シナリオへ分離する。正常終了はok/needs_review/needs_actionの結果であり、3回で終了条件に達しなければReconcileTransientError。
+開始はcomplete、Webhook worker、見回り、管理取消、create-session（customでほかの受付済みの決済の画面を閉じ、失効に成功したとき）、place-order（別の画面のpayment_done・cart_changed・supersededで断った決済の画面を閉じ、失効に成功したとき）からの照合器呼出し。create-session と place-order は[決済の画面の後始末](../../../src/features/checkout/services/checkout-session-lifecycle.service.ts)の `reconcileCheckoutSession` を経由する。Session IDまたはPI IDが必要。図は読み直しの制御を表し、書込みの順序は次の部分シナリオへ分離する。正常終了はok/needs_review/needs_actionの結果であり、3回で終了条件に達しなければReconcileTransientError。
 
 ```mermaid
 sequenceDiagram
