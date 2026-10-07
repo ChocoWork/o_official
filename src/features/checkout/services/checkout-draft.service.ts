@@ -163,8 +163,7 @@ export function isZeroAmountCheckoutSession(session: { amount_total?: number | n
 /**
  * 受け取った配送先を、draft に残す形に揃える。
  *
- * create-session と update-shipping の両方が同じ写しを書くため、ここに1つだけ置く
- * （別々に持つと、項目を足したときに片方だけ古いままになる）。
+ * 下書きに配送先の写しを書くのは「確認へ進む」（create-session）だけ。写しの形をここに1つだけ置く。
  */
 export function buildShippingSnapshot(
   shipping: NonNullable<z.infer<typeof checkoutShippingSchema>> | undefined

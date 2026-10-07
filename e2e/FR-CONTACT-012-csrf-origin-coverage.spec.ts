@@ -16,7 +16,7 @@ test.describe('FR-CONTACT-012 状態変更APIのOrigin検査カバレッジ', ()
     '/api/contact',
     '/api/contact/threads/00000000-0000-0000-0000-000000000000/reply',
     '/api/profile',
-    '/api/checkout/update-shipping',
+    '/api/checkout/place-order',
   ];
 
   for (const path of previouslyUnprotected) {

@@ -33,10 +33,6 @@ export type SessionForPaymentMethodResolution = {
 /** `resolvePaymentMethodFromPaymentIntent` が実際に読む部分だけを表す構造的な型。 */
 export type PaymentIntentForPaymentMethodResolution = PaymentIntentForResolution;
 
-// Apple Pay / Google Pay はカードで決済され、PaymentMethod の type は card になる
-// （ウォレットの種別は card.wallet に入る）。注文にもカードとして記録される。
-const CARD_WALLET_TYPES = ['apple_pay', 'google_pay'];
-
 /**
  * 注文に記録された支払方法を表示名にする。
  * 注文詳細（/api/orders/[id]）と checkout の確認画面で共用し、同じ支払いを同じ名前で出す。
@@ -65,32 +61,6 @@ export function mapPaymentMethodLabel(paymentMethod: string | null | undefined) 
   // 上記以外の値（新しく有効化された Stripe の決済手段等）は丸めず、
   // 記録されている値をそのまま表示する（レビュー指摘 C1）。
   return paymentMethod && paymentMethod.length > 0 ? paymentMethod : '-';
-}
-
-/**
- * 決済フォーム（PaymentElement）の change イベントの `value.type` を、
- * サーバが注文に記録する値（`resolvePaymentMethodFromSession` と同じ変換）にそろえる。
- * change イベントの前（未選択）は、サーバの既定値と同じ stripe_card になる。
- */
-export function toRecordedPaymentMethod(
-  selectedType: string | null | undefined
-): StripeCheckoutPaymentMethod | string {
-  if (selectedType && CARD_WALLET_TYPES.includes(selectedType)) {
-    return 'stripe_card';
-  }
-
-  return mapStripePaymentMethodType(selectedType ?? undefined);
-}
-
-/**
- * create-session / complete に送る支払方法。API は3手段しか受け付けない（それ以外は 400）ので、
- * Link・銀行振込などは送らない。サーバは申告を採用せず Stripe から決めるため、送らなくても困らない。
- */
-export function toCheckoutRequestPaymentMethod(
-  selectedType: string | null | undefined
-): StripeCheckoutPaymentMethod | undefined {
-  const recorded = toRecordedPaymentMethod(selectedType);
-  return isStripeCheckoutPaymentMethod(recorded) ? recorded : undefined;
 }
 
 /**

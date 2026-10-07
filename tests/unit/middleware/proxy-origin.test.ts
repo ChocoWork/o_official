@@ -101,7 +101,7 @@ describe('proxy の Origin 検査', () => {
       '/api/contact',
       '/api/contact/threads/abc/reply',
       '/api/profile',
-      '/api/checkout/update-shipping',
+      '/api/checkout/place-order',
       '/api/orders',
     ])('列挙していない %s も検査対象', async (path) => {
       const proxy = await loadProxy();
