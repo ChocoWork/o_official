@@ -16,14 +16,15 @@ export type SeedResult = { ok: true; itemId: number; price: number } | { ok: fal
 
 /**
  * 公開中で50円以上の商品を1つ、色・サイズなしの行としてカートに入れる（Stripe の最低額は50円）。
- * 入れられない環境ではスキップの理由を返す。
+ * スキップの理由を返すのは、その商品が無い環境のときだけ。入口の崩れや回数の制限（429）などの通信の失敗は
+ * 投げて、テストを失敗にする（スキップにすると赤にならず、push の前の E2E でも回帰に気づけない）。
  */
 export async function seedCart(page: Page): Promise<SeedResult> {
   await page.goto('/');
   return page.evaluate(async (): Promise<SeedResult> => {
     const itemsResponse = await fetch('/api/items?pageSize=20&sort=newest');
     if (!itemsResponse.ok) {
-      return { ok: false, reason: `/api/items returned ${itemsResponse.status}` };
+      throw new Error(`/api/items returned ${itemsResponse.status}`);
     }
     const body = (await itemsResponse.json()) as { items?: { id?: number; price?: number }[] };
     const item = (body.items ?? []).find((i) => typeof i?.id === 'number' && (i?.price ?? 0) >= 50);
@@ -35,9 +36,10 @@ export async function seedCart(page: Page): Promise<SeedResult> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ item_id: item.id, quantity: 1 }),
     });
-    return cartResponse.ok
-      ? { ok: true, itemId: item.id, price: item.price }
-      : { ok: false, reason: `cart seeding failed ${cartResponse.status}` };
+    if (!cartResponse.ok) {
+      throw new Error(`/api/cart returned ${cartResponse.status}`);
+    }
+    return { ok: true, itemId: item.id, price: item.price };
   });
 }
 

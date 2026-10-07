@@ -12,6 +12,8 @@ import {
  * 対応 FREQ: FREQ-420（AC-01 / AC-02 / AC-03）
  *
  * 「適用」の応答は差し替える（Stripe のテストのアカウントにコードを作らないため。確かめの規則は単体テスト）。
+ * ただし2本目で、Stripe に無いコードの「適用」を一度だけ本物の入口へ流す（Cookie・回数の制限・Stripe への
+ * 問い合わせを通る。Stripe には何も作らず、一覧を読むだけ）。
  * AC-03 は「確認へ進む」の実際の入口が Stripe に問い合わせて、無いコードを断ることを見る。
  */
 const ZERO_TOTAL_MESSAGE = 'このコードでは合計が0円になるため使えません';
@@ -75,8 +77,14 @@ test.describe('FR-CHECKOUT-039 割引コード', () => {
       test.skip(!seeded.ok, seeded.ok ? '' : seeded.reason);
       if (!seeded.ok) return;
       await stubPostalCode(page);
-      await page.route('**/api/checkout/promotion-code', (route) =>
-        route.fulfill({
+      // 差し替えるのは、この確かめで決めたコード（NO-SUCH-CODE-E2E）の要求だけ。ほかのコードは本物の入口へ流す
+      await page.route('**/api/checkout/promotion-code', async (route) => {
+        const { code } = route.request().postDataJSON() as { code: string };
+        if (code !== 'NO-SUCH-CODE-E2E') {
+          await route.continue();
+          return;
+        }
+        await route.fulfill({
           status: 200,
           json: {
             code: 'NO-SUCH-CODE-E2E',
@@ -85,8 +93,8 @@ test.describe('FR-CHECKOUT-039 割引コード', () => {
             discountAmount: 1,
             totalAmount: seeded.price - 1,
           },
-        }),
-      );
+        });
+      });
       const createSessionBodies: unknown[] = [];
       page.on('request', (request) => {
         if (request.method() === 'POST' && request.url().includes('/api/checkout/create-session')) {
@@ -96,9 +104,20 @@ test.describe('FR-CHECKOUT-039 割引コード', () => {
 
       await page.goto('/checkout');
       await fillShippingForm(page, `e2e-promotion-${viewport.name}@example.com`);
+
+      // 本物の「適用」を一度は通す。Stripe に無いコードは、実際の入口が Stripe に問い合わせて断り、
+      // 欄の下に理由が出て、欄が誤りの状態になる（表示は FREQ-420-AC-02 と同じ）
+      const input = page.getByLabel('プロモーションコード');
+      await input.fill('NO-SUCH-CODE-REAL-E2E');
+      await page.getByRole('button', { name: '適用' }).click();
+      await expect(page.getByText('このコードは使えません')).toBeVisible({ timeout: 30_000 });
+      await expect(input).toHaveAttribute('aria-invalid', 'true');
+
       await page.getByLabel('プロモーションコード').fill('NO-SUCH-CODE-E2E');
       await page.getByRole('button', { name: '適用' }).click();
       await expect(page.locator('.checkout-summary')).toContainText('NO-SUCH-CODE-E2E');
+      // 上の本物の断りの案内が消えていること。残っていると、下の AC-03 の確かめが前の案内で通ってしまう
+      await expect(page.getByText('このコードは使えません')).toHaveCount(0);
       await page.getByRole('button', { name: '確認へ進む' }).click();
 
       // FREQ-420-AC-03（実際の入口が Stripe に問い合わせて断る）

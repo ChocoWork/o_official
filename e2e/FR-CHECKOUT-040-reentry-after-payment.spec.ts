@@ -17,7 +17,8 @@ import {
  * 対応 FREQ: FREQ-421（AC-01〜AC-04）
  *
  * AC-01・02 は Stripe のテスト用カードで実際に支払う。AC-03 は PayPay の画面から未払いで戻った状態を、
- * 支払いの試みの記録（決め事 D10）と実際の開いている決済の画面で作る。AC-04 は受け付けの入口の応答を差し替える。
+ * 受け付け済みにした実際の開いている決済の画面（本物の受け付けの入口を1回呼ぶ。Stripe の支払いの命令は送らない）と、
+ * 支払いの試みの記録（決め事 D10）で作る。AC-04 は受け付けの入口の応答を差し替える。
  */
 test.describe('FR-CHECKOUT-040 決済の画面への入り直し', () => {
   test.describe.configure({ timeout: 180_000 });
@@ -46,6 +47,11 @@ test.describe('FR-CHECKOUT-040 決済の画面への入り直し', () => {
       await expect(page.getByText(orderNumber)).toBeVisible();
       await expect(page.getByText('入金済み')).toBeVisible();
       expect(hasPaymentElement(page)).toBe(false);
+      // Stripe の埋め込み枠は後から付くので、見出しが出た直後に枠を見るだけでは、崩れても通りうる。
+      // 「注文する」のボタンは決済の部品と同じ描画で決まるので、出ていないことも見る
+      await expect(page.getByRole('button', { name: '注文する' })).toHaveCount(0);
+      // ボタンは決済フォームの準備が済むまで「決済フォームを準備中...」と出るので、その間も見落とさないようにする
+      await expect(page.getByRole('button', { name: '決済フォームを準備中...' })).toHaveCount(0);
     });
 
     test(`${viewport.name}（${viewport.width}px）注文の確定の通信が切れても、読み込み直すと注文の状態を出す`, async ({ page }) => {
@@ -87,7 +93,37 @@ test.describe('FR-CHECKOUT-040 決済の画面への入り直し', () => {
       await page.goto('/checkout');
       await fillShippingForm(page, `e2e-paypay-return-${viewport.name}@example.com`);
       await proceedToFinal(page);
+      // 決済の画面の ID を URL（router.replace で付く）から読むので、付くのを待つ
+      await expect(page).toHaveURL(/\/checkout\?session_id=cs_test_/);
       const checkoutSessionId = new URL(page.url()).searchParams.get('session_id') ?? '';
+
+      // 本物の PayPay の戻りは「受け付け済み（注文がある）・未払い」。本物の受け付けの入口を1回呼んで、その状態にする。
+      // Stripe の支払いの命令は送らない。送り方は画面（checkout-api.ts の placeOrder → client-fetch.ts の clientFetch）と同じ:
+      // JSON を POST し、Cookie を付け、CSRF の合言葉の Cookie があれば x-csrf-token に付ける（ゲストには無く、サーバーも要らない）。
+      // 送信元（Origin）はブラウザが付ける。手元の種データの明細は受注生産なので、「在庫あり」と見せた明細は無い（空の配列）
+      const placed = await page.evaluate(async (id) => {
+        const headers = new Headers({ 'Content-Type': 'application/json' });
+        const csrfToken = document.cookie
+          .split('; ')
+          .find((cookie) => cookie.startsWith('sb-csrf-token='))
+          ?.split('=')
+          .slice(1)
+          .join('=');
+        if (csrfToken) {
+          headers.set('x-csrf-token', csrfToken);
+        }
+        const response = await fetch('/api/checkout/place-order', {
+          method: 'POST',
+          headers,
+          credentials: 'same-origin',
+          body: JSON.stringify({ checkoutSessionId: id, inStockVariantIds: [] }),
+        });
+        const body: unknown = await response.json().catch(() => null);
+        return { status: response.status, body };
+      }, checkoutSessionId);
+      expect(placed.status, `place-order の応答: ${JSON.stringify(placed.body)}`).toBe(200);
+      expect(placed.body).toMatchObject({ orderId: expect.any(String) });
+
       await page.evaluate((id) => {
         window.sessionStorage.setItem('checkout:payment-attempt', JSON.stringify({ checkoutSessionId: id, paymentType: 'paypay' }));
       }, checkoutSessionId);
@@ -134,7 +170,11 @@ test.describe('FR-CHECKOUT-040 決済の画面への入り直し', () => {
         { timeout: 60_000 },
       );
       expect(createSessionCalls).toBe(2);
+      // この E2E では同じ決済の画面が返る。新しい画面への作り直しは create-session の単体テストで確かめる
+      // （作ったばかりの決済の画面は残りが約30分あり、15分以上なら使い回すため。決め事 D4）
       await expect(page.getByRole('heading', { name: '注文内容の最終確認' })).toBeVisible();
+      // 作り直しの間は最終確認画面のボタンを押せず、終わったら押せる
+      await expect(page.getByRole('button', { name: '注文する' })).toBeEnabled({ timeout: 30_000 });
     });
   }
 });

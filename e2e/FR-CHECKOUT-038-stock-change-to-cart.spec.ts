@@ -15,7 +15,8 @@ import {
  * 対応 FREQ: FREQ-417（AC-02 を「注文する」から通しで）
  *
  * 受け付けの時点で在庫が変わった状態は、受け付けの入口の応答で作る（在庫の判定は DB の結合テスト、
- * 入口の組み立ては単体テストで確かめる）。Stripe の支払いの命令は送られない。
+ * 入口の組み立ては単体テストで確かめる）。Stripe の支払いの命令は送られない（api.stripe.com への
+ * /confirm の要求を数え、カート画面へ移った後に0であることで確かめる）。
  *
  * 前提: 行の印（cart-stock-changed）は、カートの取得（GET /api/cart）の fulfillment が 'stock' でない行にだけ出る
  * （断られた後に数量を減らして在庫に収まった行には出さない）。手元の種データ（supabase/seed.sql）では、
@@ -39,6 +40,13 @@ test.describe('FR-CHECKOUT-038 在庫の変化でカートへ戻る', () => {
       if (!seeded.ok) return;
       await stubPostalCode(page);
 
+      let stripeConfirmCalls = 0;
+      page.on('request', (request) => {
+        const url = request.url();
+        if (url.includes('api.stripe.com') && url.includes('/confirm')) {
+          stripeConfirmCalls += 1;
+        }
+      });
       let placeOrderCalls = 0;
       await page.route('**/api/checkout/place-order', async (route) => {
         placeOrderCalls += 1;
@@ -67,6 +75,8 @@ test.describe('FR-CHECKOUT-038 在庫の変化でカートへ戻る', () => {
       await expect(notice).toContainText('E2E の商品');
       await expect(page.getByTestId('cart-stock-changed')).toHaveText('在庫あり → 受注生産');
       expect(placeOrderCalls).toBe(1);
+      // お金が動く前に断った（受け付けで断られたので、Stripe の支払いの命令を出していない）
+      expect(stripeConfirmCalls).toBe(0);
     });
   }
 });

@@ -29,9 +29,15 @@ test.describe('FR-CHECKOUT-036 支払いを「注文する」で行う', () => {
       test.skip(!seeded.ok, seeded.ok ? '' : seeded.reason);
       await stubPostalCode(page);
       let createSessionCalls = 0;
+      // FR-CHECKOUT-038 の「支払いの命令が0件」と同じ数え方。実際に支払うここで1件以上になることで、数え方が空振りでないと分かる
+      let stripeConfirmCalls = 0;
       page.on('request', (request) => {
         if (request.method() === 'POST' && request.url().includes('/api/checkout/create-session')) {
           createSessionCalls += 1;
+        }
+        const url = request.url();
+        if (url.includes('api.stripe.com') && url.includes('/confirm')) {
+          stripeConfirmCalls += 1;
         }
       });
 
@@ -52,6 +58,9 @@ test.describe('FR-CHECKOUT-036 支払いを「注文する」で行う', () => {
       await expect(page.getByRole('heading', { name: 'Thank you for your order' })).toBeVisible({ timeout: 90_000 });
       await expect(page.getByText(/^ORD-[0-9A-F]{8}$/)).toBeVisible();
       await expect(page.getByText('入金済み')).toBeVisible();
+      // 「1回だけ」は支払いの後にも守られている（支払いの間に決済の画面を作り直していない）
+      expect(createSessionCalls).toBe(1);
+      expect(stripeConfirmCalls).toBeGreaterThanOrEqual(1);
       await expectNoHorizontalOverflow(page);
     });
   }
