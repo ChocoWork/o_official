@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 jest.mock('next/link', () => {
   return ({ href, children, ...props }: any) => (
@@ -17,7 +17,10 @@ const mockConfirm = jest.fn();
 let mockCheckoutState: any = { type: 'loading' };
 jest.mock('@stripe/react-stripe-js/checkout', () => ({
   CheckoutProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  PaymentElement: () => <div data-testid="payment-element" />,
+  // 押すと支払い方法を PayPay に選んだことにする（onChange の形は Stripe の PaymentElement と同じ）
+  PaymentElement: ({ onChange }: any) => (
+    <button type="button" data-testid="payment-element" onClick={() => onChange?.({ value: { type: 'paypay' } })} />
+  ),
   useCheckout: () => mockCheckoutState,
 }));
 
@@ -25,8 +28,10 @@ const mockPlaceOrder = jest.fn();
 jest.mock('@/app/checkout/_lib/checkout-api', () => ({
   placeOrder: (...args: unknown[]) => mockPlaceOrder(...args),
 }));
+jest.mock('@/app/checkout/_lib/page-reload', () => ({ reloadPage: jest.fn() }));
 
 import { FinalConfirmationStep } from '@/app/checkout/_components/FinalConfirmationStep';
+import { reloadPage } from '@/app/checkout/_lib/page-reload';
 
 const CONFIRMATION = {
   checkoutSessionId: 'cs_test_1',
@@ -169,6 +174,37 @@ describe('FinalConfirmationStep（設計書 2-3・第4章）', () => {
     expect(await screen.findByText('カードが拒否されました。')).toBeInTheDocument();
     expect(props.onPaid).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: '注文する' })).toBeEnabled();
+    expect(window.sessionStorage.getItem('checkout:payment-attempt')).toBeNull();
+  });
+
+  test('受け付けの後に支払いの処理が例外で止まったら、受け付けられなかったとは言わず、支払いの案内を出す', async () => {
+    setReady();
+    mockPlaceOrder.mockResolvedValue({ kind: 'accepted', orderId: 'order-1' });
+    mockConfirm.mockRejectedValueOnce(new Error('network'));
+    const props = renderStep();
+
+    fireEvent.click(screen.getByRole('button', { name: '注文する' }));
+
+    expect(await screen.findByText('お支払いを完了できませんでした。もう一度お試しください。')).toBeInTheDocument();
+    expect(props.onPaid).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: '注文する' })).toBeEnabled();
+    expect(window.sessionStorage.getItem('checkout:payment-attempt')).toBeNull();
+  });
+
+  test('支払い方法で PayPay を選んで「注文する」を押すと、Stripe の画面へ移る前に支払いの試みを残す（決め事 D10）', async () => {
+    setReady();
+    mockPlaceOrder.mockResolvedValue({ kind: 'accepted', orderId: 'order-1' });
+    mockConfirm.mockReturnValueOnce(new Promise(() => {}));
+    renderStep();
+
+    fireEvent.click(screen.getByTestId('payment-element'));
+    fireEvent.click(screen.getByRole('button', { name: '注文する' }));
+
+    await waitFor(() => expect(mockConfirm).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(window.sessionStorage.getItem('checkout:payment-attempt') ?? 'null')).toEqual({
+      checkoutSessionId: 'cs_test_1',
+      paymentType: 'paypay',
+    });
   });
 
   test('もう支払いが済んでいれば、支払わずに完了へ進む', async () => {
@@ -182,7 +218,7 @@ describe('FinalConfirmationStep（設計書 2-3・第4章）', () => {
     expect(mockConfirm).not.toHaveBeenCalled();
   });
 
-  test('支払いの後の完了の処理の間は「注文する」も「変更」も押せない', () => {
+  test('支払いの後の完了の処理の間は「注文する」も「変更」も「戻る」も押せない', () => {
     setReady();
     renderStep({ completing: true });
 
@@ -190,6 +226,28 @@ describe('FinalConfirmationStep（設計書 2-3・第4章）', () => {
     for (const button of screen.getAllByRole('button', { name: '変更' })) {
       expect(button).toBeDisabled();
     }
+    expect(screen.getByRole('button', { name: '戻る' })).toBeDisabled();
+  });
+
+  test('ブラウザの「戻る」でページが保存から復元されたときだけ読み込み直す（Stripe の画面から戻って「処理中」のまま残さない）', () => {
+    setReady();
+    renderStep();
+    const dispatchPageShow = (persisted: boolean) => {
+      const event = new Event('pageshow');
+      Object.defineProperty(event, 'persisted', { value: persisted });
+      window.dispatchEvent(event);
+    };
+
+    dispatchPageShow(false);
+    expect(reloadPage).not.toHaveBeenCalled();
+
+    dispatchPageShow(true);
+    expect(reloadPage).toHaveBeenCalledTimes(1);
+
+    // 画面を離れた後は、この部品の読み込み直しが残らない
+    cleanup();
+    dispatchPageShow(true);
+    expect(reloadPage).toHaveBeenCalledTimes(1);
   });
 
   test('「変更」で入力画面へ戻る。案内があれば画面の上に出す', () => {

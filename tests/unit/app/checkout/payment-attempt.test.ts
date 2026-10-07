@@ -23,6 +23,18 @@ describe('支払いの試みの記録（決め事 D10）', () => {
     expect(takePaymentAttempt('cs_test_1')).toBeNull();
   });
 
+  test.each(['not json', 'null', '[]'])('sessionStorage の値が壊れている（%s）ときは、記録なしとして null', (broken) => {
+    window.sessionStorage.setItem('checkout:payment-attempt', broken);
+
+    expect(takePaymentAttempt('cs_1')).toBeNull();
+  });
+
+  test('sessionStorage の支払い方法が文字列でなければ、支払い方法なしとして読む', () => {
+    window.sessionStorage.setItem('checkout:payment-attempt', JSON.stringify({ checkoutSessionId: 'cs_1', paymentType: 123 }));
+
+    expect(takePaymentAttempt('cs_1')).toEqual({ checkoutSessionId: 'cs_1', paymentType: null });
+  });
+
   test('戻ってきて未払いなら、PayPay は PayPay の案内、ほかは一般の案内', () => {
     expect(paymentIncompleteMessage('paypay')).toBe('PayPay でのお支払いが完了しませんでした');
     expect(paymentIncompleteMessage('card')).toBe('お支払いが完了しませんでした。もう一度お試しください');

@@ -69,6 +69,19 @@ describe('requestCheckoutConfirmation', () => {
       correlationId: null,
     });
   });
+
+  test('通信が失敗しても reject せず、やり直せるエラーの値で返す', async () => {
+    mockClientFetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+    await expect(
+      requestCheckoutConfirmation({ shipping: SHIPPING, displayedAmounts: AMOUNTS, promotionCode: null }),
+    ).resolves.toEqual({
+      kind: 'error',
+      message: '決済の準備に失敗しました。少し時間をおいてから、もう一度お試しください。',
+      retryable: true,
+      correlationId: null,
+    });
+  });
 });
 
 describe('resumeCheckout', () => {
@@ -150,6 +163,16 @@ describe('completeCheckout', () => {
     });
     expect(fetchMock).toHaveBeenCalledWith('/api/checkout/complete', expect.objectContaining({ method: 'POST' }));
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ checkoutSessionId: 'cs_test_1' });
+  });
+
+  test('完了の応答に状態が無いときは、入金済みにせず unknown を返す', async () => {
+    global.fetch = jest.fn().mockResolvedValueOnce(jsonResponse(200, { orderId: 'order-1' })) as unknown as typeof fetch;
+
+    await expect(completeCheckout('cs_test_1')).resolves.toEqual({
+      kind: 'completed',
+      orderId: 'order-1',
+      orderStatus: 'unknown',
+    });
   });
 });
 

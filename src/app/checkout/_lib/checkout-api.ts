@@ -90,12 +90,18 @@ export async function requestCheckoutConfirmation(body: {
   displayedAmounts: CheckoutDisplayedAmounts;
   promotionCode: string | null;
 }): Promise<ProceedResult> {
-  const response = await postJson("/api/checkout/create-session", {
-    uiMode: "custom",
-    shipping: body.shipping,
-    displayedAmounts: body.displayedAmounts,
-    ...(body.promotionCode ? { promotionCode: body.promotionCode } : {}),
-  });
+  let response: Response;
+  try {
+    response = await postJson("/api/checkout/create-session", {
+      uiMode: "custom",
+      shipping: body.shipping,
+      displayedAmounts: body.displayedAmounts,
+      ...(body.promotionCode ? { promotionCode: body.promotionCode } : {}),
+    });
+  } catch {
+    // clientFetch は POST の通信の失敗を投げ直す。画面が値で扱えるよう、「確認へ進む」をやり直せるエラーにして返す
+    return { kind: "error", message: PROCEED_FAILED_MESSAGE, retryable: true, correlationId: null };
+  }
   const data = await readJson(response);
 
   if (response.ok && data?.confirmation) {
@@ -179,7 +185,8 @@ export async function completeCheckout(checkoutSessionId: string): Promise<Compl
     });
     const data = await readJson(response);
     if (response.ok && typeof data?.orderId === "string") {
-      return { kind: "completed", orderId: data.orderId, orderStatus: typeof data.status === "string" ? data.status : "paid" };
+      // 状態が読めないときに「入金済み」と出すと、コンビニの入金待ちを入金済みと知らせてしまう。知らない状態は画面が「手続き中」と出す
+      return { kind: "completed", orderId: data.orderId, orderStatus: typeof data.status === "string" ? data.status : "unknown" };
     }
   } catch {
     // 下の案内を返す。注文の確定は Stripe の知らせと見回りが仕上げる

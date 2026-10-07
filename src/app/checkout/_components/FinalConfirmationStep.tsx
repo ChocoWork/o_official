@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useId, useMemo, useState } from "react";
+import React, { useEffect, useId, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { loadStripe, type Appearance } from "@stripe/stripe-js";
@@ -16,6 +16,7 @@ import type {
 } from "@/features/checkout/services/checkout-confirmation.service";
 import { placeOrder, type CheckoutRejection } from "@/app/checkout/_lib/checkout-api";
 import { clearPaymentAttempt, rememberPaymentAttempt } from "@/app/checkout/_lib/payment-attempt";
+import { reloadPage } from "@/app/checkout/_lib/page-reload";
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "");
 
@@ -221,6 +222,24 @@ function FinalConfirmationContent({
   const [selectedPaymentType, setSelectedPaymentType] = useState<string | null>(null);
   const [placing, setPlacing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 案内は入れ物を置いた後に入れる。入れ物と文言を同時に差し込むと読み上げられないことがある（LiveMessage の注記）
+  const [shownNotice, setShownNotice] = useState<string | null>(null);
+  useEffect(() => {
+    setShownNotice(notice);
+  }, [notice]);
+
+  // Stripe の画面（PayPay など）からブラウザの「戻る」で戻り、ページが保存から復元されると、
+  // 支払いの Promise が終わらず「処理中」のまま残る。読み込み直して、入り直しの入口に続きを聞く（決め事 D9・D10）
+  useEffect(() => {
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        reloadPage();
+      }
+    };
+    window.addEventListener("pageshow", handlePageShow);
+    return () => window.removeEventListener("pageshow", handlePageShow);
+  }, []);
+
   const isReady = checkout.type === "success";
   // 受け付け・支払いの最中と、支払いの後の完了の処理の間は、どのボタンも押させない
   const busy = placing || completing;
@@ -235,6 +254,8 @@ function FinalConfirmationContent({
     if (checkout.type !== "success" || busy) return;
     setPlacing(true);
     setError(null);
+    // 受け付けが通った後の失敗は、受け付けられなかったとは案内しない（受け付け済みの注文と確保した在庫は残っている）
+    let accepted = false;
     try {
       const outcome = await placeOrder({ checkoutSessionId: confirmation.checkoutSessionId, inStockVariantIds });
       if (outcome.kind === "payment_done") {
@@ -249,6 +270,7 @@ function FinalConfirmationContent({
         setError(outcome.message);
         return;
       }
+      accepted = true;
 
       // PayPay などは Stripe の画面へ移る。戻ったときに「支払った直後」と分かるよう残す（決め事 D10）
       rememberPaymentAttempt({ checkoutSessionId: confirmation.checkoutSessionId, paymentType: selectedPaymentType });
@@ -265,7 +287,7 @@ function FinalConfirmationContent({
       onPaid(confirmation.checkoutSessionId);
     } catch {
       clearPaymentAttempt();
-      setError(PLACE_ORDER_FAILED_MESSAGE);
+      setError(accepted ? PAYMENT_FAILED_MESSAGE : PLACE_ORDER_FAILED_MESSAGE);
     } finally {
       setPlacing(false);
     }
@@ -278,7 +300,7 @@ function FinalConfirmationContent({
           注文内容の最終確認
         </h2>
         <LiveMessage data-testid="checkout-final-notice" className="text-red-600" style={{ fontSize: "var(--lk-size-sm)" }}>
-          {notice}
+          {shownNotice}
         </LiveMessage>
 
         <section className="checkout-section">
