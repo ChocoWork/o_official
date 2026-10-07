@@ -35,6 +35,24 @@ jest.mock('@/lib/stripe/checkout-payment-reconciler', () => ({
 }));
 jest.mock('@/lib/audit', () => ({ logAudit: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: jest.fn() }));
+// 見回りの拾い上げ・最後の成功の記録・点検（設計書 2026-10-05 グループ B の 3-5・4-6）は、単体テストと ops の DB 結合テストで
+// 確かめる。ここでは候補の条件だけを見るので偽物にし、Stripe を呼ばず、ほかの DB 結合テストが読む ops の行も書かない
+jest.mock('@/lib/stripe/orphan-payment-recovery', () => ({
+  recoverOrphanPayments: jest
+    .fn()
+    .mockResolvedValue({ checkedSessions: 0, recovered: [], failed: 0, timeBudgetExhausted: false }),
+  createOrphanRecoveryDeps: jest.fn().mockReturnValue({}),
+  loadRecoveredOrderSummaries: jest.fn().mockResolvedValue([]),
+}));
+jest.mock('@/lib/ops/ops-store', () => ({
+  ...jest.requireActual('@/lib/ops/ops-store'),
+  recordHeartbeat: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock('@/lib/ops/ops-checks', () => ({
+  runOpsChecks: jest
+    .fn()
+    .mockResolvedValue({ backlogAlerted: false, deadNotified: 0, staleAlerted: [], failedChecks: [] }),
+}));
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { POST } from '@/app/api/cron/expire-pending-orders/route';

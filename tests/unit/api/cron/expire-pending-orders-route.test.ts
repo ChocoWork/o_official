@@ -39,10 +39,39 @@ jest.mock('@/lib/stripe/checkout-payment-reconciler-deps', () => ({
 const mockLogAudit = jest.fn().mockResolvedValue(undefined);
 jest.mock('@/lib/audit', () => ({ logAudit: (...args: unknown[]) => mockLogAudit(...args) }));
 
-// 設定ミス（CRON_SECRET 未設定）の監査ログを間引くための回数制限。既定は「まだ上限に達していない」。
+// 設定ミス（CRON_SECRET 未設定、または32文字未満）の監査ログを間引くための回数制限。既定は「まだ上限に達していない」。
 const mockEnforceRateLimit = jest.fn();
 jest.mock('@/features/auth/middleware/rateLimit', () => ({
   enforceRateLimit: (...args: unknown[]) => mockEnforceRateLimit(...args),
+}));
+
+const mockRecoverOrphanPayments = jest.fn();
+const mockCreateOrphanRecoveryDeps = jest.fn((options: unknown) => ({ options }));
+const mockLoadRecoveredOrderSummaries = jest.fn();
+jest.mock('@/lib/stripe/orphan-payment-recovery', () => ({
+  recoverOrphanPayments: (...args: unknown[]) => mockRecoverOrphanPayments(...args),
+  createOrphanRecoveryDeps: (options: unknown) => mockCreateOrphanRecoveryDeps(options),
+  loadRecoveredOrderSummaries: (...args: unknown[]) => mockLoadRecoveredOrderSummaries(...args),
+}));
+
+const mockRecordHeartbeat = jest.fn();
+jest.mock('@/lib/ops/ops-store', () => ({
+  recordHeartbeat: (...args: unknown[]) => mockRecordHeartbeat(...args),
+}));
+
+const mockRunOpsChecks = jest.fn();
+jest.mock('@/lib/ops/ops-checks', () => ({
+  runOpsChecks: (...args: unknown[]) => mockRunOpsChecks(...args),
+}));
+
+const mockSendOpsAlertMail = jest.fn();
+jest.mock('@/lib/ops/ops-alert-mail', () => ({
+  sendOpsAlertMail: (...args: unknown[]) => mockSendOpsAlertMail(...args),
+  recoveredOrdersMail: (orders: unknown[]) => ({
+    kind: 'orders_recovered_from_payment',
+    subject: 'recovered',
+    lines: [String(orders.length)],
+  }),
 }));
 
 import { POST } from '@/app/api/cron/expire-pending-orders/route';
@@ -101,6 +130,11 @@ describe('POST /api/cron/expire-pending-orders（照合の見回り）', () => {
     mockListUnsentShopAlerts.mockResolvedValue([]);
     mockNotifyShop.mockResolvedValue(true);
     candidates([]);
+    mockRecoverOrphanPayments.mockResolvedValue({ checkedSessions: 0, recovered: [], failed: 0, timeBudgetExhausted: false });
+    mockLoadRecoveredOrderSummaries.mockResolvedValue([]);
+    mockRecordHeartbeat.mockResolvedValue(undefined);
+    mockRunOpsChecks.mockResolvedValue({ backlogAlerted: false, deadNotified: 0, staleAlerted: [], failedChecks: [] });
+    mockSendOpsAlertMail.mockResolvedValue(true);
   });
 
   afterEach(() => {
@@ -133,16 +167,20 @@ describe('POST /api/cron/expire-pending-orders（照合の見回り）', () => {
 
   it('CRON_SECRET が32文字未満なら、設定の誤りとして 401 にし、理由付きの監査ログを残す', async () => {
     process.env.CRON_SECRET = 'short-secret';
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
     const response = await sweep('Bearer short-secret');
 
     expect(response.status).toBe(401);
     expect(mockReconcile).not.toHaveBeenCalled();
+    expect(mockEnforceRateLimit).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledTimes(1);
     expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
       action: 'checkout.pending_orders.expire',
       outcome: 'failure',
       detail: 'Unauthorized: CRON_SECRET is shorter than 32 characters',
     }));
+    warn.mockRestore();
   });
 
   it('CRON_SECRET 未設定の監査ログは、IP に依らない共通の枠で10分に1回までに絞る（FREQ-370）', async () => {
@@ -322,7 +360,95 @@ describe('POST /api/cron/expire-pending-orders（照合の見回り）', () => {
 
     expect(mockReconcile).toHaveBeenCalledTimes(1);
     expect(mockListUnsentShopAlerts).not.toHaveBeenCalled();
+    expect(mockRecoverOrphanPayments).not.toHaveBeenCalled();
     expect(response.body).toMatchObject({ processed: 1, timeBudgetExhausted: true });
     expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'failure' }));
+  });
+
+  it('注文の無い支払いの拾い上げを、見回りの45秒の残りで行う（設計書 3-5）', async () => {
+    await sweep();
+
+    expect(mockCreateOrphanRecoveryDeps).toHaveBeenCalledWith(expect.objectContaining({
+      db: mockServiceClient,
+      opsStore: mockServiceClient,
+      stripe: mockStripe,
+      reconcilerDeps: mockDeps,
+      deadline: NOW + 45_000,
+    }));
+    expect(mockRecoverOrphanPayments).toHaveBeenCalledTimes(1);
+  });
+
+  it('拾って作った注文を、その回の1通にまとめて店へ知らせる', async () => {
+    const recovered = [
+      { orderId: 'order-r1', reviewReason: 'recovered_from_payment' },
+      { orderId: 'order-r2', reviewReason: 'stock_not_reserved' },
+    ];
+    mockRecoverOrphanPayments.mockResolvedValue({ checkedSessions: 5, recovered, failed: 0, timeBudgetExhausted: false });
+    mockLoadRecoveredOrderSummaries.mockResolvedValue(
+      recovered.map((order) => ({ ...order, totalAmount: 12000, currency: 'jpy' })),
+    );
+
+    const response = await sweep();
+
+    expect(mockLoadRecoveredOrderSummaries).toHaveBeenCalledWith(mockServiceClient, recovered);
+    expect(mockSendOpsAlertMail).toHaveBeenCalledTimes(1);
+    expect(mockSendOpsAlertMail).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'orders_recovered_from_payment',
+      lines: ['2'],
+    }));
+    expect(response.body).toMatchObject({ checkedSessions: 5, recoveredOrders: 2, recoveredOrdersNotified: true });
+  });
+
+  it('拾って作った注文が無ければ、そのメールを送らない', async () => {
+    const response = await sweep();
+
+    expect(mockSendOpsAlertMail).not.toHaveBeenCalled();
+    expect(response.body).toMatchObject({ recoveredOrders: 0, recoveredOrdersNotified: false });
+  });
+
+  it('拾い上げが失敗しても見回りは最後まで進み、失敗の数に入れる', async () => {
+    mockRecoverOrphanPayments.mockRejectedValue(Object.assign(new Error('x'), { type: 'StripeConnectionError' }));
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await sweep();
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ failed: 1, recoveredOrders: 0 });
+    expect(error).toHaveBeenCalledWith('[cron] failed to recover orphan payments', 'stripe_unavailable');
+    expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockServiceClient, 'order_sweep', true, null);
+    error.mockRestore();
+  });
+
+  it('見回りの最後に最後の成功を記録し、点検する（設計書 4-6）', async () => {
+    await sweep();
+
+    expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockServiceClient, 'order_sweep', true, null);
+    expect(mockRunOpsChecks).toHaveBeenCalledWith(expect.objectContaining({ store: mockServiceClient }));
+    expect(mockRunOpsChecks.mock.invocationCallOrder[0]).toBeGreaterThan(mockRecordHeartbeat.mock.invocationCallOrder[0]);
+  });
+
+  it('候補を数えられなければ、失敗（db_unavailable）を記録して 500', async () => {
+    mockSelect.mockImplementation(() => ({
+      or: () => Promise.resolve({ count: null, error: { message: 'down' } }),
+    }));
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await sweep();
+
+    expect(response.status).toBe(500);
+    expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockServiceClient, 'order_sweep', false, 'db_unavailable');
+    expect(mockRunOpsChecks).toHaveBeenCalled();
+    error.mockRestore();
+  });
+
+  it('最後の成功を記録できなくても、点検と応答は変わらない', async () => {
+    mockRecordHeartbeat.mockRejectedValue(new Error('db down'));
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await sweep();
+
+    expect(response.status).toBe(200);
+    expect(mockRunOpsChecks).toHaveBeenCalled();
+    error.mockRestore();
   });
 });

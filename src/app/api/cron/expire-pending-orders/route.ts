@@ -4,6 +4,18 @@ import { getStripeServerClient } from '@/lib/stripe/server';
 import { expireOpenCheckoutSession } from '@/lib/stripe/checkout-session-expiry';
 import { logAudit } from '@/lib/audit';
 import { authorizeCronRequest } from '@/lib/cron/auth';
+import { recordHeartbeat, type OpsStore } from '@/lib/ops/ops-store';
+import { runOpsChecks } from '@/lib/ops/ops-checks';
+import { recoveredOrdersMail, sendOpsAlertMail } from '@/lib/ops/ops-alert-mail';
+import {
+  createOrphanRecoveryDeps,
+  loadRecoveredOrderSummaries,
+  recoverOrphanPayments,
+  type CheckoutSessionLister,
+  type OrdersQueryClient,
+  type OrphanRecoveryResult,
+} from '@/lib/stripe/orphan-payment-recovery';
+import { webhookFailureCause } from '@/lib/stripe/webhook-events';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import {
   notifyShopOfException,
@@ -18,6 +30,9 @@ import { createDefaultReconcilerDeps, listUnsentShopAlerts } from '@/lib/stripe/
 // 現在は Stripe が入金済みまたは入金待ちを報告してから注文を作るため、放棄した checkout では在庫を確保しない。
 // 入金待ちはアプリ独自の日数で打ち切らず、
 // Stripe が期限切れを確定したときだけ失敗にする（FREQ-388 の日数の底上げは不要になった）。
+// 最後に、直近24時間の完了済みの決済のうち注文の無いものを拾って注文にし、要確認「支払いから作った注文」を付ける。
+// 拾った注文はその回の1通にまとめて店へ知らせる。最後の成功を記録し、溜まり・退避・遅れを点検する
+// （設計書 2026-10-05 グループ B の 3-5・4-6）。
 // pg_cron + pg_net から呼ばれる。net.http_post は POST しか送れないため POST。
 
 export const maxDuration = 60;
@@ -42,7 +57,7 @@ type SweepOrderRow = {
   checkout_session_id: string | null;
 };
 
-// 設定ミス（CRON_SECRET 未設定）の監査ログは、全体で10分に1回までにする（FREQ-370）。
+// 設定ミス（CRON_SECRET 未設定、または32文字未満）の監査ログは、全体で10分に1回までにする（FREQ-370）。
 // subject を付けると IP を使わない共通のカウンタになるので、攻撃元を散らしても増えない。
 const MISCONFIGURED_AUDIT_THROTTLE = {
   endpoint: 'cron:expire-pending-orders:misconfigured',
@@ -80,6 +95,16 @@ function resolveHourlyBatchOffset(totalOrders: number, nowMs: number): number {
   return (hour % batchCount) * MAX_ORDERS_PER_RUN;
 }
 
+/** 最後の成功・失敗を記録し、点検する（設計書 2026-10-05 グループ B の 4-6）。どちらの失敗も応答を変えない。 */
+async function finishSweep(store: OpsStore, succeeded: boolean, errorCode: string | null): Promise<void> {
+  try {
+    await recordHeartbeat(store, 'order_sweep', succeeded, errorCode);
+  } catch (error) {
+    console.error('[cron] failed to record the sweep heartbeat', error instanceof Error ? error.name : 'UnknownError');
+  }
+  await runOpsChecks({ store, send: sendOpsAlertMail, now: () => new Date() });
+}
+
 export async function POST(request: Request) {
   const auth = authorizeCronRequest(request, 'expire-pending-orders');
   if (!auth.ok) {
@@ -88,6 +113,7 @@ export async function POST(request: Request) {
   }
 
   const supabase = await createServiceRoleClient();
+  const opsStore = supabase as unknown as OpsStore;
   const stripe = getStripeServerClient();
   const deps = await createDefaultReconcilerDeps();
 
@@ -103,6 +129,7 @@ export async function POST(request: Request) {
 
   if (countError) {
     console.error('[cron] failed to count sweep candidates', countError);
+    await finishSweep(opsStore, false, 'db_unavailable');
     return NextResponse.json({ error: 'Failed to list orders' }, { status: 500 });
   }
 
@@ -127,6 +154,7 @@ export async function POST(request: Request) {
 
   if (error) {
     console.error('[cron] failed to list sweep candidates', error);
+    await finishSweep(opsStore, false, 'db_unavailable');
     return NextResponse.json({ error: 'Failed to list orders' }, { status: 500 });
   }
 
@@ -193,6 +221,36 @@ export async function POST(request: Request) {
     }
   }
 
+  // 注文の無い支払いの拾い上げ（設計書 3-5）。今の45秒の予算の残りで行い、読み切れない分は次の回に回す
+  let recovery: OrphanRecoveryResult | null = null;
+  if (!timeBudgetExhausted) {
+    try {
+      recovery = await recoverOrphanPayments(createOrphanRecoveryDeps({
+        db: supabase as unknown as OrdersQueryClient,
+        opsStore,
+        stripe: stripe as unknown as CheckoutSessionLister,
+        reconcilerDeps: deps,
+        deadline: startedAt + TIME_BUDGET_MS,
+      }));
+      failed += recovery.failed;
+      timeBudgetExhausted = recovery.timeBudgetExhausted;
+    } catch (recoveryError) {
+      console.error('[cron] failed to recover orphan payments', webhookFailureCause(recoveryError));
+      failed += 1;
+    }
+  }
+
+  // 拾って作った注文は、その回の1通にまとめて店へ知らせる（見回り1回につき1通。設計書 6）
+  let recoveredOrdersNotified = false;
+  if (recovery && recovery.recovered.length > 0) {
+    try {
+      const summaries = await loadRecoveredOrderSummaries(supabase as unknown as OrdersQueryClient, recovery.recovered);
+      recoveredOrdersNotified = await sendOpsAlertMail(recoveredOrdersMail(summaries));
+    } catch (mailError) {
+      console.error('[cron] failed to notify recovered orders', webhookFailureCause(mailError));
+    }
+  }
+
   const summary = {
     processed,
     candidateCount,
@@ -203,6 +261,9 @@ export async function POST(request: Request) {
     needsAction,
     failed,
     shopAlertsSent,
+    checkedSessions: recovery?.checkedSessions ?? 0,
+    recoveredOrders: recovery?.recovered.length ?? 0,
+    recoveredOrdersNotified,
     capped: candidateCount > MAX_ORDERS_PER_RUN,
     timeBudgetExhausted,
   };
@@ -220,5 +281,6 @@ export async function POST(request: Request) {
     metadata: { ...summary, failed_order_ids: failedOrderIds.slice(0, 20) },
   });
 
+  await finishSweep(opsStore, true, null);
   return NextResponse.json(summary);
 }
