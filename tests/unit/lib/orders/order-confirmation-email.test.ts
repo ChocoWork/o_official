@@ -9,6 +9,7 @@ jest.mock('@/lib/audit', () => ({
 }));
 
 import {
+  formatItemLines,
   sendOrderConfirmationEmail,
   sendOrderConfirmationEmailForOrderId,
 } from '@/lib/orders/order-confirmation-email';
@@ -361,5 +362,111 @@ describe('sendOrderConfirmationEmailForOrderId', () => {
     const body = mockSendMail.mock.calls[0][0].text as string;
     expect(body).toContain('割引: -￥3,000');
     expect(body).toContain('合計: ￥25,800');
+  });
+});
+
+describe('明細ごとのお届けの目安（グループ F 設計書 5-3）', () => {
+  const env = process.env as Record<string, string | undefined>;
+  const ORIGINAL_FROM = env.MAIL_FROM_ADDRESS;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    store = makeStore();
+    env.MAIL_FROM_ADDRESS = 'noreply@example.com';
+  });
+
+  afterAll(() => {
+    env.MAIL_FROM_ADDRESS = ORIGINAL_FROM;
+  });
+
+  test('目安を出す指定のときだけ、明細の次の行に在庫あり・受注生産の目安を添える', () => {
+    const items = [
+      { item_name: 'シルクブラウス', color: 'WHITE', size: 'M', quantity: 1, line_total: 28000, fulfillment_type: 'stock' },
+      { item_name: 'ウールパンツ', color: null, size: 'L', quantity: 2, line_total: 36000, fulfillment_type: 'backorder' },
+      { item_name: '古い注文の明細', quantity: 1, line_total: 1000, fulfillment_type: null },
+    ];
+
+    expect(formatItemLines(items, 'jpy', { withFulfillment: true })).toEqual([
+      '・シルクブラウス（WHITE / M） x1　￥28,000\n　在庫あり・ご注文（コンビニはご入金）の確認後、3〜7営業日で発送',
+      '・ウールパンツ（L） x2　￥36,000\n　受注生産・発送まで数週間〜2か月以上（目安）',
+      '・古い注文の明細 x1　￥1,000',
+    ]);
+    expect(formatItemLines(items, 'jpy')).toEqual([
+      '・シルクブラウス（WHITE / M） x1　￥28,000',
+      '・ウールパンツ（L） x2　￥36,000',
+      '・古い注文の明細 x1　￥1,000',
+    ]);
+  });
+
+  test('確定メールの本文に、明細ごとの目安が出る', async () => {
+    await sendOrderConfirmationEmail({
+      ...baseParams(),
+      items: [
+        { item_name: 'シルクブラウス', color: 'WHITE', size: 'M', quantity: 1, line_total: 28000, fulfillment_type: 'stock' },
+      ],
+    });
+
+    const body = mockSendMail.mock.calls[0][0].text as string;
+    expect(body).toContain('在庫あり・ご注文（コンビニはご入金）の確認後、3〜7営業日で発送');
+  });
+
+  test('注文 ID から送るときは、明細の目安も読む', async () => {
+    const selects: string[] = [];
+    const queryStore = {
+      ...makeStore(),
+      from(table: string) {
+        if (table === 'orders') {
+          return {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({
+                  data: {
+                    id: BASE.orderId,
+                    shipping_email: 'hanako@example.com',
+                    shipping_full_name: '山田 花子',
+                    subtotal_amount: 28000,
+                    shipping_amount: 800,
+                    discount_amount: 0,
+                    total_amount: 28800,
+                    currency: 'jpy',
+                    shipping_postal_code: '150-0001',
+                    shipping_prefecture: '東京都',
+                    shipping_city: '渋谷区',
+                    shipping_address: '神宮前1-2-3',
+                    shipping_building: null,
+                    shipping_phone: '090-1234-5678',
+                  },
+                  error: null,
+                }),
+              }),
+            }),
+          };
+        }
+        return {
+          select: (columns: string) => {
+            selects.push(columns);
+            return {
+              eq: async () => ({
+                data: [
+                  { item_name: 'ウールパンツ', color: null, size: 'L', quantity: 1, line_total: 18000, fulfillment_type: 'backorder' },
+                ],
+                error: null,
+              }),
+            };
+          },
+        };
+      },
+    };
+
+    await sendOrderConfirmationEmailForOrderId({
+      store: queryStore as never,
+      orderId: BASE.orderId,
+      paymentState: 'paid',
+      logLabel: '[test]',
+    });
+
+    expect(selects).toEqual(['item_name, color, size, quantity, line_total, fulfillment_type']);
+    const body = mockSendMail.mock.calls[0][0].text as string;
+    expect(body).toContain('受注生産・発送まで数週間〜2か月以上（目安）');
   });
 });

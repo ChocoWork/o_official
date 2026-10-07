@@ -3,6 +3,7 @@ import sendMail from '@/lib/mail';
 import { toOrderNumber } from '@/lib/orders/order-number';
 import { logAudit } from '@/lib/audit';
 import type { PaidEmailVariant } from '@/lib/orders/order-payment-types';
+import { FINAL_FULFILLMENT_LABELS, FULFILLMENT_HEADINGS } from '@/features/checkout/utils/fulfillment-labels';
 
 export type ConfirmationItem = {
   item_name: string;
@@ -10,6 +11,8 @@ export type ConfirmationItem = {
   size?: string | null;
   quantity: number;
   line_total: number;
+  /** 受け付けで在庫を確保した明細は stock、受注生産は backorder（グループ F 設計書 5-3）。目安を出さないメールの呼び出し側は渡さない */
+  fulfillment_type?: string | null;
 };
 
 export type OrderConfirmationShipping = {
@@ -71,11 +74,22 @@ export function formatCurrency(amount: number, currency: string): string {
   }
 }
 
-export function formatItemLines(items: ConfirmationItem[], currency: string): string[] {
+/** 明細の行。確定メールでは、受け付けで決まったお届けの目安を次の行に添える（グループ F 設計書 5-3） */
+export function formatItemLines(
+  items: ConfirmationItem[],
+  currency: string,
+  options: { withFulfillment?: boolean } = {},
+): string[] {
   return items.map((item) => {
     const variant = [item.color, item.size].filter(Boolean).join(' / ');
     const label = variant ? `${item.item_name}（${variant}）` : item.item_name;
-    return `・${label} x${item.quantity}　${formatCurrency(item.line_total, currency)}`;
+    const line = `・${label} x${item.quantity}　${formatCurrency(item.line_total, currency)}`;
+    const fulfillment =
+      item.fulfillment_type === 'stock' || item.fulfillment_type === 'backorder' ? item.fulfillment_type : null;
+    if (!options.withFulfillment || !fulfillment) {
+      return line;
+    }
+    return `${line}\n　${FULFILLMENT_HEADINGS[fulfillment]}・${FINAL_FULFILLMENT_LABELS[fulfillment]}`;
   });
 }
 
@@ -127,7 +141,7 @@ export async function sendOrderConfirmationEmail(params: OrderConfirmationParams
         ]
       : ['この度はご注文いただき誠にありがとうございます。', 'ご注文を承りました。'];
 
-  const itemLines = formatItemLines(items, currency);
+  const itemLines = formatItemLines(items, currency, { withFulfillment: true });
 
   // 空の項目で空行が出ないよう、値のある行だけを積む。
   const shippingLines = [
@@ -287,7 +301,7 @@ export async function fetchOrderEmailSource(
 
   const { data: orderItems, error: orderItemsError } = await store
     .from('order_items')
-    .select('item_name, color, size, quantity, line_total')
+    .select('item_name, color, size, quantity, line_total, fulfillment_type')
     .eq('order_id', orderId);
 
   // 取得失敗と0件では送らない。注文処理は続けるが、後の照合経路による自動再送はない（R-34、グループ D）。
