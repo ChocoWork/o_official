@@ -52,13 +52,18 @@ export const PAYMENT_EXCEPTION_REASON_LABELS: Record<PaymentExceptionReason, str
   stripe_object_missing: 'Stripe に支払いが無い',
 };
 
-/** 受付 RPC が返す理由コード（設計書 4-3） */
+/**
+ * 受付 RPC が返す理由コード（グループ A 設計書 4-3）。
+ * price_changed・stock_changed は受け付けの窓口から呼んだときだけ返る（グループ F 設計書 6-2）。
+ */
 export const PLACE_ORDER_REJECTIONS = [
   'draft_not_found',
   'item_unavailable',
   'amount_mismatch',
   'currency_mismatch',
   'zero_amount',
+  'price_changed',
+  'stock_changed',
 ] as const;
 
 export type PlaceOrderRejection = (typeof PLACE_ORDER_REJECTIONS)[number];
