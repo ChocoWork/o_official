@@ -160,6 +160,25 @@ describe('店への知らせのメールの文面', () => {
     expect(mail.lines).not.toContain('在庫を確保できていない注文は、先に在庫の手当てをしてください。');
   });
 
+  it('支払いから作った注文: 要確認の印を付けられなかった注文（reviewReason が null）の行にだけ、その旨と管理画面に出ないことを書く', () => {
+    const note = '（要確認の印を付けられませんでした。管理画面の「要対応・要確認」には出ません）';
+    const mail = recoveredOrdersMail([
+      { orderId: '11111111-2222-3333-4444-555555555555', reviewReason: null, totalAmount: 89000, currency: 'jpy' },
+      { orderId: '66666666-7777-8888-9999-000000000000', reviewReason: 'recovered_from_payment', totalAmount: 1200, currency: 'jpy' },
+    ]);
+    const orderLines = mail.lines.filter((line) => line.startsWith('- 注文番号 '));
+    expect(orderLines).toHaveLength(2);
+    expect(orderLines[0]).toContain('注文番号 ORD-11111111');
+    expect(orderLines[0]).toContain('89,000');
+    expect(orderLines[0].endsWith(note)).toBe(true);
+    expect(orderLines[1]).toContain('注文番号 ORD-66666666');
+    expect(orderLines[1]).not.toContain('印を付けられませんでした');
+    expect(mail.lines.filter((line) => line.includes(note))).toHaveLength(1);
+    // 印を付けられなかった注文の在庫の状態は分からないので、在庫については何も言わない
+    expect(mail.lines.join('\n')).not.toContain('（在庫も確保できていません）');
+    expect(mail.lines).not.toContain('在庫を確保できていない注文は、先に在庫の手当てをしてください。');
+  });
+
   it('支払いから作った注文: 通貨が2文字でも例外を出さず金額を書く', () => {
     const orders = [{
       orderId: '11111111-2222-3333-4444-555555555555',

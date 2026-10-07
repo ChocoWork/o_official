@@ -4,6 +4,7 @@ jest.mock('@/lib/stripe/checkout-payment-reconciler', () => ({
 }));
 
 import {
+  MARK_RECOVERED_ATTEMPTS,
   ORDER_LOOKUP_BATCH_SIZE,
   ORPHAN_LOOKBACK_SECONDS,
   createOrphanRecoveryDeps,
@@ -120,6 +121,75 @@ describe('recoverOrphanPayments（注文の無い支払いの拾い上げ）', (
     expect(result.recovered).toEqual([{ orderId: 'order-cs_2', reviewReason: 'recovered_from_payment' }]);
   });
 
+  it('照合が失敗した Session には印を付けず、失敗に数えて、次の Session の処理は続ける', async () => {
+    const deps = recoveryDeps({
+      listCompletedSessionIds: jest.fn(() => sessions(['cs_1', 'cs_2'])),
+      reconcile: jest.fn()
+        .mockRejectedValueOnce(Object.assign(new Error('x'), { code: 'stripe_unavailable' }))
+        .mockResolvedValueOnce(placed('order-cs_2')),
+    });
+
+    const result = await recoverOrphanPayments(deps);
+
+    expect(deps.markRecovered.mock.calls.map(([orderId]) => orderId)).toEqual(['order-cs_2']);
+    expect(result.failed).toBe(1);
+    expect(result.recovered).toEqual([{ orderId: 'order-cs_2', reviewReason: 'recovered_from_payment' }]);
+    expect(console.error).toHaveBeenCalledWith('[orphan-recovery] Failed to recover a payment', 'cs_1', 'stripe_unavailable');
+  });
+
+  it('印を付ける処理が2回失敗しても3回目で付けられれば、印を付けた注文として返し、失敗に数えない', async () => {
+    const down = () => Object.assign(new Error('down'), { code: 'db_unavailable' });
+    const deps = recoveryDeps({
+      listCompletedSessionIds: jest.fn(() => sessions(['cs_1'])),
+      markRecovered: jest.fn()
+        .mockRejectedValueOnce(down())
+        .mockRejectedValueOnce(down())
+        .mockResolvedValueOnce('recovered_from_payment'),
+    });
+
+    const result = await recoverOrphanPayments(deps);
+
+    expect(MARK_RECOVERED_ATTEMPTS).toBe(3);
+    expect(deps.markRecovered).toHaveBeenCalledTimes(3);
+    expect(result.recovered).toEqual([{ orderId: 'order-cs_1', reviewReason: 'recovered_from_payment' }]);
+    expect(result.failed).toBe(0);
+  });
+
+  it('印を付ける処理が3回とも失敗したら、印なし（null）の注文として結果に載せ、失敗に数えて、注文の ID と原因を記録する', async () => {
+    const deps = recoveryDeps({
+      listCompletedSessionIds: jest.fn(() => sessions(['cs_1'])),
+      markRecovered: jest.fn(async () => {
+        throw Object.assign(new Error('down'), { code: 'db_unavailable' });
+      }),
+    });
+
+    const result = await recoverOrphanPayments(deps);
+
+    expect(deps.markRecovered).toHaveBeenCalledTimes(3);
+    expect(result.recovered).toEqual([{ orderId: 'order-cs_1', reviewReason: null }]);
+    expect(result.failed).toBe(1);
+    expect(console.error).toHaveBeenCalledTimes(1);
+    expect(console.error).toHaveBeenCalledWith('[orphan-recovery] Failed to mark a recovered order', 'order-cs_1', 'db_unavailable');
+  });
+
+  it('印を付けられなかった注文があっても、次の Session の処理は続ける', async () => {
+    const deps = recoveryDeps({
+      listCompletedSessionIds: jest.fn(() => sessions(['cs_1', 'cs_2'])),
+      markRecovered: jest.fn(async (orderId: string) => {
+        if (orderId === 'order-cs_1') throw new Error('down');
+        return 'recovered_from_payment' as const;
+      }),
+    });
+
+    const result = await recoverOrphanPayments(deps);
+
+    expect(result.recovered).toEqual([
+      { orderId: 'order-cs_1', reviewReason: null },
+      { orderId: 'order-cs_2', reviewReason: 'recovered_from_payment' },
+    ]);
+    expect(result.failed).toBe(1);
+  });
+
   it('時間の予算を過ぎたら新しく照合せず、残りは次の回に回す', async () => {
     let clock = NOW;
     const deps = recoveryDeps({
@@ -137,8 +207,9 @@ describe('recoverOrphanPayments（注文の無い支払いの拾い上げ）', (
     expect(result.recovered).toHaveLength(2);
   });
 
-  it('注文の有無は100件ごとにまとめて確かめる', async () => {
-    const ids = Array.from({ length: 150 }, (_, index) => `cs_${index}`);
+  it('注文の有無は、URL の長さのため、ORDER_LOOKUP_BATCH_SIZE 件ごとにまとめて確かめる', async () => {
+    const total = ORDER_LOOKUP_BATCH_SIZE * 2 + 25;
+    const ids = Array.from({ length: total }, (_, index) => `cs_${index}`);
     const deps = recoveryDeps({
       listCompletedSessionIds: jest.fn(() => sessions(ids)),
       findSessionIdsWithOrders: jest.fn(async (batch: string[]) => new Set(batch)),
@@ -146,10 +217,15 @@ describe('recoverOrphanPayments（注文の無い支払いの拾い上げ）', (
 
     const result = await recoverOrphanPayments(deps);
 
-    expect(ORDER_LOOKUP_BATCH_SIZE).toBe(100);
-    expect(deps.findSessionIdsWithOrders.mock.calls.map(([batch]) => batch.length)).toEqual([100, 50]);
+    // ID は URL に載る。本番の ID（66文字）なら50件で約3.5KB、100件だと約7KB で 8KB の上限に近い
+    expect(ORDER_LOOKUP_BATCH_SIZE).toBe(50);
+    expect(deps.findSessionIdsWithOrders.mock.calls.map(([batch]) => batch.length)).toEqual([
+      ORDER_LOOKUP_BATCH_SIZE,
+      ORDER_LOOKUP_BATCH_SIZE,
+      25,
+    ]);
     expect(deps.reconcile).not.toHaveBeenCalled();
-    expect(result.checkedSessions).toBe(150);
+    expect(result.checkedSessions).toBe(total);
   });
 
   it('注文の有無を確かめられなければ、その回の拾い上げをやめる（呼び出し側で失敗として数える）', async () => {
@@ -240,7 +316,15 @@ describe('createOrphanRecoveryDeps', () => {
 });
 
 describe('loadRecoveredOrderSummaries', () => {
-  it('拾った注文の金額を読む。読めなければ金額不明（null）のまま返す', async () => {
+  beforeEach(() => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('拾った注文の金額を読む。読めなければ金額不明（null）のまま返し、読めなかったことを1行だけ記録する', async () => {
     const inFn = jest.fn()
       .mockResolvedValueOnce({ data: [{ id: 'order-1', total_amount: 12000, currency: 'jpy' }], error: null })
       .mockResolvedValueOnce({ data: null, error: { message: 'down' } });
@@ -255,8 +339,22 @@ describe('loadRecoveredOrderSummaries', () => {
       { orderId: 'order-2', reviewReason: 'stock_not_reserved', totalAmount: null, currency: null },
     ]);
     expect(inFn).toHaveBeenCalledWith('id', ['order-1', 'order-2']);
+    expect(console.error).not.toHaveBeenCalled();
     await expect(loadRecoveredOrderSummaries(db, recovered.slice(0, 1))).resolves.toEqual([
       { orderId: 'order-1', reviewReason: 'recovered_from_payment', totalAmount: null, currency: null },
+    ]);
+    expect(console.error).toHaveBeenCalledTimes(1);
+    expect(console.error).toHaveBeenCalledWith('[orphan-recovery] Failed to read recovered order amounts', 'db_unavailable');
+    expect(JSON.stringify((console.error as jest.Mock).mock.calls)).not.toContain('down');
+  });
+
+  it('印を付けられなかった注文（reviewReason が null）も、そのまま返す', async () => {
+    const inFn = jest.fn()
+      .mockResolvedValueOnce({ data: [{ id: 'order-1', total_amount: 5000, currency: 'jpy' }], error: null });
+    const db = { from: () => ({ select: () => ({ in: inFn }) }) } as unknown as OrdersQueryClient;
+
+    await expect(loadRecoveredOrderSummaries(db, [{ orderId: 'order-1', reviewReason: null }])).resolves.toEqual([
+      { orderId: 'order-1', reviewReason: null, totalAmount: 5000, currency: 'jpy' },
     ]);
   });
 

@@ -12,15 +12,22 @@ import type { RecoveredOrderSummary } from '@/lib/ops/ops-alert-mail';
  * 注文の無い支払いの拾い上げ（設計書 2026-10-05 グループ B の 3-5・3-6）。毎時の見回りの最後に動く。
  * 直近24時間に作られた完了済みの Checkout Session のうち、注文の無いものを照合関数に渡す。
  * 照合関数がその呼び出しで注文を作ったときだけ、要確認「支払いから作った注文」を付ける
- * （同じ頃に Webhook が作った注文には付けない）。読む範囲は毎回24時間で重なるので、
- * 1回失敗しても次の回で拾える。同じ Session を何度渡しても、照合関数は同じ結果に収まる（グループ A）。
+ * （同じ頃に Webhook が作った注文には付けない）。同じ Session を何度渡しても、照合関数は同じ結果に収まる（グループ A）。
+ * 読む範囲は毎回24時間で重なるので、注文を作る前の失敗は次の回で拾い直せる。
+ * 注文の行を作った後の失敗は拾い直せない（その Session には注文が在るので、次の回は飛ばす）。
+ * 印を付ける処理は3回まで試し、それでも付けられない注文は、印なし（reviewReason が null）のまま結果に載せて、その回のメールに書く。
+ * 照合関数が注文を作った後に投げた場合の残りは、最終レビューで扱う。
  */
 export const ORPHAN_LOOKBACK_SECONDS = 24 * 60 * 60;
 
-/** 注文の有無を1回の問い合わせで確かめる Session の数 */
-export const ORDER_LOOKUP_BATCH_SIZE = 100;
+/** 注文の有無を1回の問い合わせで確かめる Session の数。ID は URL に載るので、長さのため50件ずつにする（本番の ID 66文字×100件は約7KB で、8KB の上限に近い） */
+export const ORDER_LOOKUP_BATCH_SIZE = 50;
 
-export type RecoveredOrder = { orderId: string; reviewReason: RecoveredReviewReason };
+/** 要確認の印を付ける処理を試す回数。印を付ける DB の関数は、印がまだ無いときだけ付けるので、何度呼んでもよい */
+export const MARK_RECOVERED_ATTEMPTS = 3;
+
+/** reviewReason が null は、注文は作ったが要確認の印を付けられなかったこと（店へのメールには載せる） */
+export type RecoveredOrder = { orderId: string; reviewReason: RecoveredReviewReason | null };
 
 export type OrphanRecoveryDeps = {
   listCompletedSessionIds(createdGteSeconds: number): AsyncIterable<string>;
@@ -51,20 +58,39 @@ export async function recoverOrphanPayments(deps: OrphanRecoveryDeps): Promise<O
   const result: OrphanRecoveryResult = { checkedSessions: 0, recovered: [], failed: 0, timeBudgetExhausted: false };
   const createdGte = Math.floor(deps.now() / 1000) - ORPHAN_LOOKBACK_SECONDS;
 
+  /** 要確認の印を付ける。MARK_RECOVERED_ATTEMPTS 回とも失敗しても注文は作ってあるので、印なし（null）で返す */
+  const markWithRetries = async (orderId: string): Promise<RecoveredReviewReason | null> => {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= MARK_RECOVERED_ATTEMPTS; attempt += 1) {
+      try {
+        return await deps.markRecovered(orderId);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    result.failed += 1;
+    console.error('[orphan-recovery] Failed to mark a recovered order', orderId, webhookFailureCause(lastError));
+    return null;
+  };
+
   /** 時間切れなら false */
   const recoverBatch = async (sessionIds: string[]): Promise<boolean> => {
     const withOrders = await deps.findSessionIdsWithOrders(sessionIds);
     for (const sessionId of sessionIds) {
       if (withOrders.has(sessionId)) continue;
       if (deps.now() >= deps.deadline) return false;
+
+      let orderId: string | null;
       try {
-        const orderId = placedOrderId(await deps.reconcile(sessionId));
-        if (orderId) result.recovered.push({ orderId, reviewReason: await deps.markRecovered(orderId) });
+        orderId = placedOrderId(await deps.reconcile(sessionId));
       } catch (error) {
-        // 1件の失敗で残りを止めない。次の回も同じ Session を読むので、そこで拾い直す
+        // 1件の失敗で残りを止めない。注文を作る前の失敗は、次の回も同じ Session を読む（24時間で重なる）ので拾い直せる。
+        // 注文の行を作った後の失敗は、その Session に注文が在るので次の回は飛ばす（拾い直せない）。この残りは最終レビューで扱う
         result.failed += 1;
         console.error('[orphan-recovery] Failed to recover a payment', sessionId, webhookFailureCause(error));
+        continue;
       }
+      if (orderId) result.recovered.push({ orderId, reviewReason: await markWithRetries(orderId) });
     }
     return true;
   };
@@ -138,7 +164,7 @@ export function createOrphanRecoveryDeps(options: {
   };
 }
 
-/** 店へのメールに載せる金額を読む。読めなくてもメールは送る（金額は「金額不明」になる）。 */
+/** 店へのメールに載せる金額を読む。読めなくてもメールは送る（金額は「金額不明」になる。読めなかったことは1行だけ記録する）。 */
 export async function loadRecoveredOrderSummaries(
   db: OrdersQueryClient,
   recovered: RecoveredOrder[],
@@ -148,6 +174,7 @@ export async function loadRecoveredOrderSummaries(
     .from('orders')
     .select('id, total_amount, currency')
     .in('id', recovered.map((order) => order.orderId));
+  if (error) console.error('[orphan-recovery] Failed to read recovered order amounts', 'db_unavailable');
   const rows = new Map((error ? [] : data ?? []).map((row) => [String(row.id), row]));
   return recovered.map(({ orderId, reviewReason }) => {
     const row = rows.get(orderId);

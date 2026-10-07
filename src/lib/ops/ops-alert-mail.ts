@@ -21,7 +21,8 @@ export type OpsAlertMail = { kind: OpsAlertKind; subject: string; lines: string[
 
 export type RecoveredOrderSummary = {
   orderId: string;
-  reviewReason: RecoveredReviewReason;
+  /** null は、注文は作ったが要確認の印を付けられなかったこと */
+  reviewReason: RecoveredReviewReason | null;
   totalAmount: number | null;
   currency: string | null;
 };
@@ -153,7 +154,8 @@ export function recoveredOrdersMail(orders: RecoveredOrderSummary[]): OpsAlertMa
       '',
       ...orders.map((order) =>
         `- 注文番号 ${toOrderNumber(order.orderId)} ${formatAmount(order.totalAmount, order.currency)}`
-        + (order.reviewReason === 'stock_not_reserved' ? '（在庫も確保できていません）' : '')),
+        + (order.reviewReason === 'stock_not_reserved' ? '（在庫も確保できていません）' : '')
+        + (order.reviewReason === null ? '（要確認の印を付けられませんでした。管理画面の「要対応・要確認」には出ません）' : '')),
       ...(orders.some((order) => order.reviewReason === 'stock_not_reserved')
         ? ['在庫を確保できていない注文は、先に在庫の手当てをしてください。'] : []),
       '',
