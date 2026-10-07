@@ -21,38 +21,6 @@ const mockSelect = jest.fn().mockReturnThis();
 const mockDraftDeleteEq = jest
   .fn()
   .mockResolvedValue({ data: null, error: null });
-// checkout_drafts.update(...) のチェーン。通常経路（checkout_session_id の書き込み）は .eq() 1 回、
-// 再利用経路（住所が空の draft を埋める）は id / session_id / 版番号の 3 回チェーンされる。
-// 呼び出し引数をテストで検証できるよう、update と .eq() の引数をすべて記録する。
-const mockDraftUpdate = jest.fn();
-let draftUpdateEqCalls: unknown[][] = [];
-// 更新結果。既定は成功（更新後の版番号を返す）。失敗パスのテストのために書き換え可能にしている。
-let mockShippingUpdateResult: { data: unknown; error: unknown } = {
-  data: { shipping_revision: 1 },
-  error: null,
-};
-type DraftUpdateChain = {
-  eq: (...args: unknown[]) => DraftUpdateChain;
-  select: (...args: unknown[]) => DraftUpdateChain;
-  maybeSingle: () => Promise<{ data: unknown; error: unknown }>;
-  then: (onFulfilled?: unknown, onRejected?: unknown) => Promise<unknown>;
-};
-function makeDraftUpdateChain(): DraftUpdateChain {
-  const chain: DraftUpdateChain = {
-    eq: (...args: unknown[]) => {
-      draftUpdateEqCalls.push(args);
-      return chain;
-    },
-    select: () => chain,
-    maybeSingle: () => Promise.resolve(mockShippingUpdateResult),
-    then: (onFulfilled?: unknown, onRejected?: unknown) =>
-      Promise.resolve(mockShippingUpdateResult).then(
-        onFulfilled as never,
-        onRejected as never,
-      ),
-  };
-  return chain;
-}
 const mockDraftInsertSingle = jest.fn().mockResolvedValue({
   data: {
     id: "draft-123",
@@ -67,40 +35,41 @@ const mockDraftInsert = jest.fn().mockReturnValue({
     single: mockDraftInsertSingle,
   }),
 });
-const mockReusableDraft = jest
-  .fn()
-  .mockResolvedValue({ data: null, error: null });
-// checkout_drafts の旧draft再利用検索チェーン: select().eq(session_id).eq(status).or(identity).not(...).order().limit().maybeSingle()
-// BOLA 対策（session_id 絞り込み）とステータス値（'created'）をテストで検証できるよう引数を記録する。
-const mockReusableDraftEq1 = jest.fn();
-const mockReusableDraftEq2 = jest.fn();
-const mockReusableDraftNot = jest.fn();
-const mockReusableDraftOr = jest.fn();
 const mockFrom = jest.fn();
 const mockRpc = jest.fn();
+const mockFindPaidCheckoutSession = jest.fn();
+const mockCloseOtherCheckoutSessions = jest.fn();
+jest.mock("@/features/checkout/services/checkout-session-lifecycle.service", () => ({
+  findPaidCheckoutSession: (...args: unknown[]) => mockFindPaidCheckoutSession(...args),
+  closeOtherCheckoutSessions: (...args: unknown[]) => mockCloseOtherCheckoutSessions(...args),
+  reconcileCheckoutSession: jest.fn(),
+}));
 
-function makeReusableDraftQueryTail() {
-  const tail = {
-    not: jest.fn((...args: unknown[]) => {
-      mockReusableDraftNot(...args);
-      return {
-        order: jest.fn().mockReturnValue({
-          limit: jest.fn().mockReturnValue({
-            maybeSingle: mockReusableDraft,
-          }),
-        }),
-      };
-    }),
-  };
+const mockBuildCheckoutConfirmation = jest.fn();
+jest.mock("@/features/checkout/services/checkout-confirmation.service", () => ({
+  buildCheckoutConfirmation: (...args: unknown[]) => mockBuildCheckoutConfirmation(...args),
+}));
 
-  return {
-    ...tail,
-    or: jest.fn((...args: unknown[]) => {
-      mockReusableDraftOr(...args);
-      return tail;
-    }),
-  };
+const mockCheckPromotionCode = jest.fn();
+jest.mock("@/features/checkout/services/promotion-code.service", () => ({
+  ...jest.requireActual("@/features/checkout/services/promotion-code.service"),
+  checkPromotionCode: (...args: unknown[]) => mockCheckPromotionCode(...args),
+}));
+
+const mockExpireOpenCheckoutSession = jest.fn();
+jest.mock("@/lib/stripe/checkout-session-expiry", () => ({
+  expireOpenCheckoutSession: (...args: unknown[]) => mockExpireOpenCheckoutSession(...args),
+}));
+
+jest.mock("@/lib/storage/item-images", () => ({
+  signItemImageUrl: async (_client: unknown, raw: string | null) => raw,
+}));
+
+/** 開いている決済の画面の失効時刻（使い回せる残り時間がある） */
+function openSessionExpiresAt(remainingSeconds = 1800): number {
+  return Math.floor(Date.now() / 1000) + remainingSeconds;
 }
+
 
 let mockClaimResult: { data: unknown; error: unknown } | null = null;
 let mockAttachResult: { data: unknown; error: unknown } | null = null;
@@ -197,9 +166,9 @@ function makeClaimedDraft(
     shipping_snapshot: params._shipping_snapshot ?? null,
     items_snapshot: params._items_snapshot ?? [],
     shipping_revision: 0,
-    checkout_request_version: params._request_version ?? 1,
+    checkout_request_version: params._request_version ?? 2,
     checkout_request_fingerprint:
-      params._request_fingerprint ?? "v1:" + "a".repeat(64),
+      params._request_fingerprint ?? "v2:" + "a".repeat(64),
     checkout_ui_mode: params._checkout_ui_mode ?? "custom",
     checkout_origin: params._checkout_origin ?? "http://localhost:3000",
     claim_created: true,
@@ -210,8 +179,6 @@ function makeClaimedDraft(
 describe("POST /api/checkout/create-session", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    draftUpdateEqCalls = [];
-    mockShippingUpdateResult = { data: { shipping_revision: 1 }, error: null };
     mockClaimResult = null;
     mockAttachResult = null;
     mockRetireResult = { data: true, error: null };
@@ -219,6 +186,19 @@ describe("POST /api/checkout/create-session", () => {
     mockEnforceRateLimit.mockResolvedValue(undefined);
     mockRequireCsrfOrDeny.mockResolvedValue(undefined);
     mockExpire.mockResolvedValue({ id: "cs_test", status: "expired" });
+    mockFindPaidCheckoutSession.mockResolvedValue(null);
+    mockCloseOtherCheckoutSessions.mockResolvedValue(undefined);
+    mockExpireOpenCheckoutSession.mockResolvedValue("expired");
+    mockCheckPromotionCode.mockReset();
+    mockBuildCheckoutConfirmation.mockImplementation(
+      async (_deps: unknown, params: Record<string, unknown>) => ({
+        checkoutSessionId: params.checkoutSessionId,
+        clientSecret: params.clientSecret,
+        shipping: params.shippingSnapshot,
+        lines: [],
+        promotionCode: params.promotionCode,
+      }),
+    );
     mockRpc.mockImplementation(
       (functionName: string, params: Record<string, unknown>) => {
         if (functionName === "claim_checkout_draft") {
@@ -273,21 +253,6 @@ describe("POST /api/checkout/create-session", () => {
       if (table === "checkout_drafts") {
         return {
           insert: mockDraftInsert,
-          select: jest.fn().mockReturnValue({
-            eq: jest.fn((...args1: unknown[]) => {
-              mockReusableDraftEq1(...args1);
-              return {
-                eq: jest.fn((...args2: unknown[]) => {
-                  mockReusableDraftEq2(...args2);
-                  return makeReusableDraftQueryTail();
-                }),
-              };
-            }),
-          }),
-          update: jest.fn((payload: unknown) => {
-            mockDraftUpdate(payload);
-            return makeDraftUpdateChain();
-          }),
           delete: jest.fn().mockReturnValue({
             eq: mockDraftDeleteEq,
           }),
@@ -341,16 +306,6 @@ describe("POST /api/checkout/create-session", () => {
     expect(params.payment_method_options?.konbini?.expires_after_days).toBe(7);
   });
 
-  it("新規セッションの応答にも配送先の版番号（0）を返す（FREQ-365）", async () => {
-    mockCreate.mockResolvedValue({ client_secret: "secret", id: "cs_test" });
-
-    const res = (await POST(makeRequest({ uiMode: "custom" }))) as unknown as {
-      body: Record<string, unknown>;
-    };
-
-    expect(res.body).toMatchObject({ shippingRevision: 0 });
-  });
-
   it("hosted モードでは payment_method_types を送らず、konbini の支払期限を7日で送る（FREQ-106・R-57）", async () => {
     mockCreate.mockResolvedValue({
       id: "cs_test",
@@ -385,8 +340,8 @@ describe("POST /api/checkout/create-session", () => {
         "claim_checkout_draft",
         expect.objectContaining({
           _session_id: "sess-abc",
-          _request_version: 1,
-          _request_fingerprint: expect.stringMatching(/^v1:[0-9a-f]{64}$/),
+          _request_version: 2,
+          _request_fingerprint: expect.stringMatching(/^v2:[0-9a-f]{64}$/),
           _checkout_ui_mode: uiMode,
           _checkout_origin: "http://localhost:3000",
           _subtotal_amount: 5000,
@@ -398,7 +353,7 @@ describe("POST /api/checkout/create-session", () => {
       expect(mockDraftInsert).not.toHaveBeenCalled();
       expect(mockCreate).toHaveBeenCalledWith(
         expect.objectContaining({ client_reference_id: "draft-123", expires_at: RESERVED_EXPIRES_AT }),
-        { idempotencyKey: "checkout-session:create:v1:draft-123:1790001830" },
+        { idempotencyKey: "checkout-session:create:v2:draft-123:1790001830" },
       );
       expect(mockRpc).toHaveBeenCalledWith(
         "attach_checkout_session_to_draft",
@@ -425,93 +380,13 @@ describe("POST /api/checkout/create-session", () => {
 
     expect(mockCreate).toHaveBeenCalledTimes(2);
     expect(mockCreate.mock.calls.map((call) => call[1])).toEqual([
-      { idempotencyKey: "checkout-session:create:v1:draft-123:1790001830" },
-      { idempotencyKey: "checkout-session:create:v1:draft-123:1790001830" },
+      { idempotencyKey: "checkout-session:create:v2:draft-123:1790001830" },
+      { idempotencyKey: "checkout-session:create:v2:draft-123:1790001830" },
     ]);
-  });
-
-  it("配送先と申告支払方法が競合しても同じfingerprintとStripeパラメータを使う", async () => {
-    const canonicalShipping = {
-      email: "winner@example.com",
-      fullName: "先行 太郎",
-      kanaName: "センコウ タロウ",
-      postalCode: "1000001",
-      prefecture: "東京都",
-      city: "千代田区",
-      address: "丸の内1-1-1",
-      building: null,
-      phone: "09000000000",
-    };
-    const canonicalItems = [
-      {
-        source_cart_id: "cart-1",
-        item_id: 1,
-        item_name: "テスト商品",
-        item_price: 5000,
-        item_image_url: null,
-        color: "BLACK",
-        size: "M",
-        quantity: 1,
-        line_total: 5000,
-      },
-    ];
-    mockClaimResult = {
-      data: [
-        makeClaimedDraft(
-          {},
-          {
-            payment_method: "stripe_card",
-            shipping_snapshot: canonicalShipping,
-            items_snapshot: canonicalItems,
-          },
-        ),
-      ],
-      error: null,
-    };
-    mockCreate.mockResolvedValue({
-      id: "cs_test",
-      status: "open",
-      client_secret: "cs_secret",
-    });
-
-    await Promise.all([
-      POST(
-        makeRequest({
-          uiMode: "custom",
-          paymentMethod: "stripe_paypay",
-          shipping: { ...canonicalShipping, email: "later-a@example.com" },
-        }),
-      ),
-      POST(
-        makeRequest({
-          uiMode: "custom",
-          paymentMethod: "stripe_konbini",
-          shipping: { ...canonicalShipping, email: "later-b@example.com" },
-        }),
-      ),
-    ]);
-
-    const claimCalls = mockRpc.mock.calls.filter(
-      ([functionName]) => functionName === "claim_checkout_draft",
-    );
-    const fingerprints = claimCalls.map(
-      ([, params]) => (params as Record<string, unknown>)._request_fingerprint,
-    );
-    expect(new Set(fingerprints).size).toBe(1);
-    expect(mockCreate).toHaveBeenCalledTimes(2);
-    expect(mockCreate.mock.calls[0]).toEqual(mockCreate.mock.calls[1]);
-    expect(mockCreate.mock.calls[0][0]).toEqual(
-      expect.objectContaining({
-        customer_email: "winner@example.com",
-        metadata: expect.objectContaining({
-          selected_payment_method: "stripe_card",
-        }),
-      }),
-    );
   });
 
   it.each([["custom"], ["hosted"]] as const)(
-    "claim済みのopen %s SessionはStripe作成を再実行せず回収する",
+    "claim済みのopen %s Sessionは、残り15分以上ならStripe作成を再実行せず回収する",
     async (uiMode) => {
       mockClaimResult = {
         data: [
@@ -528,6 +403,7 @@ describe("POST /api/checkout/create-session", () => {
       mockRetrieve.mockResolvedValue({
         id: "cs_existing_claim",
         status: "open",
+        expires_at: openSessionExpiresAt(),
         client_secret: "secret_existing_claim",
         url: "https://checkout.stripe.com/pay/cs_existing_claim",
       });
@@ -539,12 +415,17 @@ describe("POST /api/checkout/create-session", () => {
 
       expect(res.status).toBe(200);
       expect(mockCreate).not.toHaveBeenCalled();
+      expect(mockExpireOpenCheckoutSession).not.toHaveBeenCalled();
       expect(res.body).toEqual(
         uiMode === "custom"
           ? {
-              clientSecret: "secret_existing_claim",
-              checkoutSessionId: "cs_existing_claim",
-              shippingRevision: 0,
+              confirmation: {
+                checkoutSessionId: "cs_existing_claim",
+                clientSecret: "secret_existing_claim",
+                shipping: null,
+                lines: [],
+                promotionCode: null,
+              },
             }
           : { url: "https://checkout.stripe.com/pay/cs_existing_claim" },
       );
@@ -589,30 +470,9 @@ describe("POST /api/checkout/create-session", () => {
       "cs_orphan",
       {},
       {
-        idempotencyKey: "checkout-session:expire-orphan:v1:draft-123:cs_orphan",
+        idempotencyKey: "checkout-session:expire-orphan:v2:draft-123:cs_orphan",
       },
     );
-  });
-
-  /**
-   * 生成経路で挙動を分けない（FREQ-397）。
-   *
-   * プロモーションコードの受け付けが custom 側にしか無いと、hosted（uiMode の既定値）で
-   * 作られたセッションだけコードを使えない。割引の扱い自体は確定・webhook が経路を問わず
-   * 同じように処理する。
-   */
-  it("hosted でもプロモーションコードを受け付ける", async () => {
-    mockCreate.mockResolvedValue({
-      id: "cs_test",
-      url: "https://checkout.stripe.com/pay/cs_test",
-    });
-
-    await POST(makeRequest({ uiMode: "hosted" }));
-
-    const params = mockCreate.mock.calls[0][0] as {
-      allow_promotion_codes?: unknown;
-    };
-    expect(params.allow_promotion_codes).toBe(true);
   });
 
   /**
@@ -730,27 +590,215 @@ describe("POST /api/checkout/create-session", () => {
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
-  // 既に配送先が入っている draft（別タブで住所を入力済みの状態）。
-  const reusableDraftRow = {
-    id: "draft-existing",
-    checkout_session_id: "cs_existing",
-    payment_method: "stripe_card",
-    subtotal_amount: 5000,
-    shipping_amount: 0,
-    total_amount: 5000,
-    currency: "jpy",
-    shipping_revision: 2,
-    shipping_snapshot: {
-      email: "saved@example.com",
-      fullName: "保存済み太郎",
+  it("失効時刻を下書きに決められなければ Session を作らない", async () => {
+    mockReserveExpiryResult = { data: null, error: { message: "CHECKOUT_DRAFT_NOT_RESERVABLE" } };
+
+    const res = (await POST(
+      makeRequest({ uiMode: "custom", paymentMethod: "stripe_card" }),
+    )) as unknown as { status: number };
+
+    expect(res.status).toBe(500);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+  // 決め事 D4: 決済の画面は「確認へ進む」の時点の入力の写し。申告の支払方法は指紋に入れない
+  it("申告の支払方法が違っても同じ指紋、配送先が違えば別の指紋になる", async () => {
+    mockCreate.mockResolvedValue({ id: "cs_test", status: "open", client_secret: "cs_secret" });
+    const shipping = {
+      email: "a@example.com",
+      fullName: "山田 花子",
+      kanaName: "ヤマダ ハナコ",
       postalCode: "1500001",
       prefecture: "東京都",
       city: "渋谷区",
       address: "神宮前1-1-1",
-      building: null,
       phone: "0311112222",
+    };
+
+    await POST(makeRequest({ uiMode: "custom", paymentMethod: "stripe_card", shipping }));
+    await POST(makeRequest({ uiMode: "custom", paymentMethod: "stripe_paypay", shipping }));
+    await POST(
+      makeRequest({ uiMode: "custom", paymentMethod: "stripe_card", shipping: { ...shipping, address: "神宮前2-2-2" } }),
+    );
+
+    const fingerprints = mockRpc.mock.calls
+      .filter(([functionName]) => functionName === "claim_checkout_draft")
+      .map(([, params]) => (params as Record<string, unknown>)._request_fingerprint);
+    expect(fingerprints[0]).toBe(fingerprints[1]);
+    expect(fingerprints[2]).not.toBe(fingerprints[0]);
+  });
+
+  it.each([["custom"], ["hosted"]] as const)(
+    "%s でも allow_promotion_codes を送らない（割引はサーバーが付ける）",
+    async (uiMode) => {
+      mockCreate.mockResolvedValue({
+        id: "cs_test",
+        url: "https://checkout.stripe.com/pay/cs_test",
+        client_secret: "cs_secret",
+      });
+
+      await POST(makeRequest({ uiMode }));
+
+      const params = mockCreate.mock.calls[0][0] as Record<string, unknown>;
+      expect(params.allow_promotion_codes).toBeUndefined();
+      expect(params.discounts).toBeUndefined();
     },
-    items_snapshot: [
+  );
+
+  it("割引コードはサーバーの割引前の合計で確かめ、discounts で付け、metadata にコードを残す", async () => {
+    mockCheckPromotionCode.mockResolvedValue({
+      ok: true,
+      promotionCodeId: "promo_1",
+      code: "WELCOME10",
+      discountAmount: 500,
+      totalAfterDiscount: 4500,
+    });
+    mockCreate.mockResolvedValue({ id: "cs_new", status: "open", client_secret: "secret_new" });
+
+    const res = (await POST(makeRequest({ uiMode: "custom", promotionCode: "welcome10" }))) as unknown as {
+      status: number;
+      body: { confirmation: Record<string, unknown> };
+    };
+
+    expect(mockCheckPromotionCode).toHaveBeenCalledWith(expect.anything(), {
+      code: "welcome10",
+      preDiscountTotal: 5000,
+      now: expect.any(Date),
+    });
+    const params = mockCreate.mock.calls[0][0] as Record<string, unknown>;
+    expect(params.discounts).toEqual([{ promotion_code: "promo_1" }]);
+    expect(params.metadata).toEqual(expect.objectContaining({ promotion_code: "WELCOME10" }));
+    expect(res.status).toBe(200);
+    expect(res.body.confirmation.promotionCode).toBe("WELCOME10");
+  });
+
+  it("割引コードが違えば別の指紋になる（同じ下書き・同じ決済の画面を使い回さない）", async () => {
+    mockCheckPromotionCode.mockResolvedValue({
+      ok: true,
+      promotionCodeId: "promo_1",
+      code: "WELCOME10",
+      discountAmount: 500,
+      totalAfterDiscount: 4500,
+    });
+    mockCreate.mockResolvedValue({ id: "cs_new", status: "open", client_secret: "secret_new" });
+
+    await POST(makeRequest({ uiMode: "custom" }));
+    await POST(makeRequest({ uiMode: "custom", promotionCode: "WELCOME10" }));
+
+    const fingerprints = mockRpc.mock.calls
+      .filter(([functionName]) => functionName === "claim_checkout_draft")
+      .map(([, params]) => (params as Record<string, unknown>)._request_fingerprint);
+    expect(fingerprints[0]).not.toBe(fingerprints[1]);
+  });
+
+  it("割引コードが使えなくなっていれば 409 で理由を返し、下書きも決済の画面も作らない", async () => {
+    mockCheckPromotionCode.mockResolvedValue({
+      ok: false,
+      reason: "minimum_amount",
+      message: "このコードは ¥10,000 以上のご注文で使えます",
+    });
+
+    const res = (await POST(makeRequest({ uiMode: "custom", promotionCode: "MIN10000" }))) as unknown as {
+      status: number;
+      body: Record<string, unknown>;
+    };
+
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({
+      error: "promotion_code_invalid",
+      reason: "minimum_amount",
+      message: "このコードは ¥10,000 以上のご注文で使えます",
+      retryable: false,
+    });
+    expect(mockRpc).not.toHaveBeenCalledWith("claim_checkout_draft", expect.anything());
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("受け付け済みで支払いの済んだ決済の画面があれば、作らずに 409 order_already_placed", async () => {
+    mockFindPaidCheckoutSession.mockResolvedValue("cs_paid");
+
+    const res = (await POST(makeRequest({ uiMode: "custom" }))) as unknown as {
+      status: number;
+      body: Record<string, unknown>;
+    };
+
+    expect(mockFindPaidCheckoutSession).toHaveBeenCalledWith(expect.anything(), "sess-abc");
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({
+      error: "order_already_placed",
+      checkoutSessionId: "cs_paid",
+      message: "ご注文は確定しています。",
+      retryable: false,
+    });
+    expect(mockRpc).not.toHaveBeenCalledWith("claim_checkout_draft", expect.anything());
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("claim した下書きの決済の画面が complete なら 409 order_already_placed（やり直せない 409 は返さない）", async () => {
+    mockRpc.mockImplementationOnce(async () => ({
+      data: [makeClaimedDraft({}, { checkout_session_id: "cs_done" })],
+      error: null,
+    }));
+    mockRetrieve.mockResolvedValue({ id: "cs_done", status: "complete" });
+
+    const res = (await POST(makeRequest({ uiMode: "custom" }))) as unknown as {
+      status: number;
+      body: Record<string, unknown>;
+    };
+
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ error: "order_already_placed", checkoutSessionId: "cs_done" });
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("claim した下書きの決済の画面が残り15分未満なら、閉じて退役させ、新しい決済の画面を作る", async () => {
+    mockRpc.mockImplementationOnce(async () => ({
+      data: [makeClaimedDraft({}, { checkout_session_id: "cs_old" })],
+      error: null,
+    }));
+    mockRetrieve.mockResolvedValue({
+      id: "cs_old",
+      status: "open",
+      expires_at: openSessionExpiresAt(14 * 60),
+      client_secret: "secret_old",
+    });
+    mockCreate.mockResolvedValue({ id: "cs_new", status: "open", client_secret: "secret_new" });
+
+    const res = (await POST(makeRequest({ uiMode: "custom" }))) as unknown as {
+      status: number;
+      body: { confirmation: Record<string, unknown> };
+    };
+
+    expect(mockExpireOpenCheckoutSession).toHaveBeenCalledWith(expect.anything(), "cs_old");
+    expect(mockRpc).toHaveBeenCalledWith(
+      "retire_expired_checkout_draft",
+      expect.objectContaining({ _checkout_session_id: "cs_old" }),
+    );
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(200);
+    expect(res.body.confirmation).toMatchObject({ checkoutSessionId: "cs_new", clientSecret: "secret_new" });
+  });
+
+  it("claim した下書きの決済の画面が expired なら、閉じずに退役させて作り直す", async () => {
+    mockRpc.mockImplementationOnce(async () => ({
+      data: [makeClaimedDraft({}, { checkout_session_id: "cs_expired" })],
+      error: null,
+    }));
+    mockRetrieve.mockResolvedValue({ id: "cs_expired", status: "expired" });
+    mockCreate.mockResolvedValue({ id: "cs_new", status: "open", client_secret: "secret_new" });
+
+    const res = (await POST(makeRequest({ uiMode: "custom" }))) as unknown as { status: number };
+
+    expect(mockExpireOpenCheckoutSession).not.toHaveBeenCalled();
+    expect(mockRpc).toHaveBeenCalledWith(
+      "retire_expired_checkout_draft",
+      expect.objectContaining({ _checkout_session_id: "cs_expired" }),
+    );
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(200);
+  });
+
+  it("決済の画面を作ったら、同じセッションのほかの決済の画面を閉じ、下書きから最終確認画面の内容を作って返す", async () => {
+    const items = [
       {
         source_cart_id: "cart-1",
         item_id: 1,
@@ -762,504 +810,34 @@ describe("POST /api/checkout/create-session", () => {
         quantity: 1,
         line_total: 5000,
       },
-    ],
-  };
-
-  // 住所がまだ入っていない draft（フォーム未入力のまま開いた直後の状態）。
-  const emptyShippingDraftRow = {
-    ...reusableDraftRow,
-    shipping_revision: 0,
-    shipping_snapshot: null,
-  };
-
-  it("同一カートの created draft があれば Stripe セッションを再利用する", async () => {
-    mockReusableDraft.mockResolvedValueOnce({
-      data: reusableDraftRow,
+    ];
+    mockRpc.mockImplementationOnce(async (_name: string, params: Record<string, unknown>) => ({
+      data: [makeClaimedDraft(params, { items_snapshot: items })],
       error: null,
-    });
-    mockRetrieve.mockResolvedValue({
-      id: "cs_existing",
-      status: "open",
-      client_secret: "secret_existing",
-    });
-
-    const req = makeRequest({
-      uiMode: "custom",
-      paymentMethod: "stripe_card",
-      shipping: {
-        email: "test@example.com",
-        fullName: "テスト太郎",
-        postalCode: "1000001",
-        prefecture: "東京都",
-        city: "千代田区",
-        address: "丸の内1-1-1",
-        phone: "09000000000",
-      },
-    });
-    const res = (await POST(req)) as unknown as {
-      status: number;
-      body: Record<string, unknown>;
-    };
-
-    // 再利用検索が cookie の session_id と status='created' で絞り込まれていること
-    // （BOLA 対策のセッション境界と、実在しない 'pending' を検索していないことの両方を確認する）。
-    expect(mockReusableDraftEq1).toHaveBeenCalledWith("session_id", "sess-abc");
-    expect(mockReusableDraftEq2).toHaveBeenCalledWith("status", "created");
-
-    expect(mockRetrieve).toHaveBeenCalledWith("cs_existing");
-    expect(mockCreate).not.toHaveBeenCalled();
-    expect(mockDraftInsert).not.toHaveBeenCalled();
-    expect(res.status).toBe(200);
-    // 画面が条件付き更新に使う版番号を返すこと（FREQ-365）。
-    expect(res.body).toEqual({
-      clientSecret: "secret_existing",
-      checkoutSessionId: "cs_existing",
-      shippingRevision: 2,
-    });
-    expect(mockReusableDraftOr).toHaveBeenCalledWith(
-      "checkout_request_version.is.null,checkout_request_version.eq.0",
-    );
-
-    // 既に配送先が入っている draft は上書きしない。別タブが入力済みの住所を潰さないため。
-    // 今回の入力は、画面が版番号つきで update-shipping を呼んで反映する。
-    expect(mockDraftUpdate).not.toHaveBeenCalled();
-
-    // 再利用成功も他の成功系と同様に監査ログへ記録されること。
-    expect(mockLogAudit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: "checkout.session.create",
-        outcome: "success",
-        metadata: expect.objectContaining({
-          session_id: "sess-abc",
-          draft_id: "draft-existing",
-          checkout_session_id: "cs_existing",
-          ui_mode: "custom",
-        }),
-      }),
-    );
-  });
-
-  it("旧支払方法が異なるSessionは再利用せずv1 claimへ進む", async () => {
-    mockReusableDraft.mockResolvedValueOnce({
-      data: { ...reusableDraftRow, payment_method: "stripe_konbini" },
-      error: null,
-    });
-    mockCreate.mockResolvedValue({
-      id: "cs_new_card",
-      status: "open",
-      client_secret: "secret_new_card",
-    });
-
-    const res = (await POST(
-      makeRequest({ uiMode: "custom", paymentMethod: "stripe_card" }),
-    )) as unknown as {
-      status: number;
-    };
-
-    expect(res.status).toBe(200);
-    expect(mockRetrieve).not.toHaveBeenCalled();
-    expect(mockCreate).toHaveBeenCalledTimes(1);
-    expect(mockRpc).toHaveBeenCalledWith(
-      "claim_checkout_draft",
-      expect.objectContaining({ _payment_method: "stripe_card" }),
-    );
-    expect(mockReusableDraftOr).toHaveBeenCalledWith(
-      "checkout_request_version.is.null,checkout_request_version.eq.0",
-    );
-  });
-
-  it("旧hosted Sessionはcustom要求として誤再利用せず、別のrequest identityへ進む", async () => {
-    mockReusableDraft.mockResolvedValueOnce({
-      data: reusableDraftRow,
-      error: null,
-    });
-    mockRetrieve.mockResolvedValue({
-      id: "cs_legacy_hosted",
-      status: "open",
-      ui_mode: "hosted",
-      url: "https://checkout.stripe.com/pay/cs_legacy_hosted",
-      client_secret: null,
-    });
-    mockCreate.mockResolvedValue({
-      id: "cs_new_custom",
-      status: "open",
-      ui_mode: "custom",
-      client_secret: "secret_new_custom",
-    });
+    }));
+    mockCreate.mockResolvedValue({ id: "cs_new", status: "open", client_secret: "secret_new" });
 
     const res = (await POST(makeRequest({ uiMode: "custom" }))) as unknown as {
       status: number;
       body: Record<string, unknown>;
     };
 
-    expect(res.status).toBe(200);
-    expect(mockCreate).toHaveBeenCalledTimes(1);
-    expect(mockRpc).not.toHaveBeenCalledWith(
-      "retire_expired_checkout_draft",
-      expect.anything(),
+    expect(mockCloseOtherCheckoutSessions).toHaveBeenCalledWith(
+      expect.objectContaining({ reconcile: expect.any(Function), logFailure: expect.any(Function) }),
+      { cartSessionId: "sess-abc", keepCheckoutSessionId: "cs_new" },
     );
-  });
-
-  it("カート内容が変わっている created draft は再利用しない", async () => {
-    mockReusableDraft.mockResolvedValueOnce({
-      data: { ...reusableDraftRow, total_amount: 9999 },
-      error: null,
-    });
-    mockCreate.mockResolvedValue({ client_secret: "secret_new", id: "cs_new" });
-
-    const req = makeRequest({ uiMode: "custom", paymentMethod: "stripe_card" });
-    const res = (await POST(req)) as { status: number };
-
-    expect(mockRetrieve).not.toHaveBeenCalled();
-    expect(mockCreate).toHaveBeenCalledTimes(1);
-    expect(res.status).toBe(200);
-  });
-
-  it("金額は一致していても明細（サイズ）が異なる場合は再利用しない", async () => {
-    // 合計金額は draft と同じ（5000）だが、カートの size が draft のスナップショットと異なる。
-    // 金額だけの比較では検知できない差分であることを確認する。
-    mockReusableDraft.mockResolvedValueOnce({
-      data: reusableDraftRow,
-      error: null,
-    });
-    mockEq.mockResolvedValue({
-      data: [
-        { id: "cart-1", item_id: 1, quantity: 1, color: "BLACK", size: "L" },
-      ],
-      error: null,
-    });
-    mockCreate.mockResolvedValue({ client_secret: "secret_new", id: "cs_new" });
-
-    const req = makeRequest({ uiMode: "custom", paymentMethod: "stripe_card" });
-    const res = (await POST(req)) as { status: number };
-
-    expect(mockRetrieve).not.toHaveBeenCalled();
-    expect(mockCreate).toHaveBeenCalledTimes(1);
-    expect(res.status).toBe(200);
-  });
-
-  it("旧draftの商品名が現在値と異なる場合は古いSessionを再利用しない", async () => {
-    mockReusableDraft.mockResolvedValueOnce({
-      data: {
-        ...reusableDraftRow,
-        items_snapshot: [
-          { ...reusableDraftRow.items_snapshot[0], item_name: "旧商品名" },
-        ],
-      },
-      error: null,
-    });
-    mockCreate.mockResolvedValue({ client_secret: "secret_new", id: "cs_new" });
-
-    const res = (await POST(
-      makeRequest({ uiMode: "custom", paymentMethod: "stripe_card" }),
-    )) as unknown as { status: number };
-
-    expect(res.status).toBe(200);
-    expect(mockRetrieve).not.toHaveBeenCalled();
-    expect(mockCreate).toHaveBeenCalledTimes(1);
-  });
-
-  it("shipping_snapshot の更新が失敗したら 500 を返し、Stripe セッションを新規作成しない", async () => {
-    // 住所がまだ空の draft（＝今回の配送先で埋める経路）で、書き込みが失敗した場合。
-    mockReusableDraft.mockResolvedValueOnce({
-      data: emptyShippingDraftRow,
-      error: null,
-    });
-    mockRetrieve.mockResolvedValue({
-      id: "cs_existing",
-      status: "open",
-      client_secret: "secret_existing",
-    });
-    mockShippingUpdateResult = {
-      data: null,
-      error: { message: "update failed" },
-    };
-
-    const req = makeRequest({
-      uiMode: "custom",
-      paymentMethod: "stripe_card",
-      shipping: {
-        email: "test@example.com",
-        fullName: "テスト太郎",
-        postalCode: "1000001",
-        prefecture: "東京都",
-        city: "千代田区",
-        address: "丸の内1-1-1",
-        phone: "09000000000",
-      },
-    });
-    const res = (await POST(req)) as unknown as {
-      status: number;
-      body: Record<string, unknown>;
-    };
-
-    expect(mockCreate).not.toHaveBeenCalled();
-    expect(res.status).toBe(500);
-    expect(res.body).toEqual({ error: "Failed to prepare checkout" });
-    // 監査ログも記録されず、既存セッションはそのまま open で残る（新規 draft も作られない）。
-    expect(mockLogAudit).not.toHaveBeenCalled();
-    expect(mockDraftInsert).not.toHaveBeenCalled();
-  });
-
-  it("再利用経路で配送先が全項目空の場合、shipping_snapshot は上書きせず reused の clientSecret を返す（C1）", async () => {
-    mockReusableDraft.mockResolvedValueOnce({
-      data: emptyShippingDraftRow,
-      error: null,
-    });
-    mockRetrieve.mockResolvedValue({
-      id: "cs_existing",
-      status: "open",
-      client_secret: "secret_existing",
-    });
-
-    // shipping を渡さない = buildShippingSnapshot はすべて null（別タブがフォーム未入力のまま
-    // create-session を叩いたケースを再現）。
-    const req = makeRequest({ uiMode: "custom", paymentMethod: "stripe_card" });
-    const res = (await POST(req)) as unknown as {
-      status: number;
-      body: Record<string, unknown>;
-    };
-
-    expect(mockDraftUpdate).not.toHaveBeenCalled();
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({
-      clientSecret: "secret_existing",
-      checkoutSessionId: "cs_existing",
-      shippingRevision: 0,
-    });
-  });
-
-  it("再利用時、draft に住所がまだ無ければ今回の配送先で埋め、版番号を1つ進める（FREQ-365）", async () => {
-    mockReusableDraft.mockResolvedValueOnce({
-      data: emptyShippingDraftRow,
-      error: null,
-    });
-    mockRetrieve.mockResolvedValue({
-      id: "cs_existing",
-      status: "open",
-      client_secret: "secret_existing",
-    });
-
-    const req = makeRequest({
-      uiMode: "custom",
-      paymentMethod: "stripe_card",
-      shipping: {
-        email: "test@example.com",
-        fullName: "テスト太郎",
-        postalCode: "1000001",
-        prefecture: "東京都",
-        city: "千代田区",
-        address: "丸の内1-1-1",
-        phone: "09000000000",
-      },
-    });
-    const res = (await POST(req)) as unknown as {
-      status: number;
-      body: Record<string, unknown>;
-    };
-
-    expect(mockDraftUpdate).toHaveBeenCalledWith(
+    expect(mockBuildCheckoutConfirmation).toHaveBeenCalledWith(
+      expect.objectContaining({ signImageUrl: expect.any(Function) }),
       expect.objectContaining({
-        shipping_snapshot: expect.objectContaining({ address: "丸の内1-1-1" }),
-        shipping_revision: 1,
+        checkoutSessionId: "cs_new",
+        clientSecret: "secret_new",
+        itemsSnapshot: items,
+        promotionCode: null,
+        acceptedOrderId: null,
       }),
     );
-    // 他セッションの draft を書き換えないための絞り込みと、版番号の照合。
-    expect(draftUpdateEqCalls).toEqual(
-      expect.arrayContaining([
-        ["id", "draft-existing"],
-        ["session_id", "sess-abc"],
-        ["shipping_revision", 0],
-      ]),
-    );
-    expect(res.body).toEqual({
-      clientSecret: "secret_existing",
-      checkoutSessionId: "cs_existing",
-      shippingRevision: 1,
-    });
-  });
-
-  it("再利用時、draft に住所が入っていれば別の住所が送られても上書きしない（FREQ-365）", async () => {
-    mockReusableDraft.mockResolvedValueOnce({
-      data: reusableDraftRow,
-      error: null,
-    });
-    mockRetrieve.mockResolvedValue({
-      id: "cs_existing",
-      status: "open",
-      client_secret: "secret_existing",
-    });
-
-    const req = makeRequest({
-      uiMode: "custom",
-      paymentMethod: "stripe_card",
-      shipping: {
-        email: "other@example.com",
-        fullName: "別タブ太郎",
-        postalCode: "0600001",
-        prefecture: "北海道",
-        city: "札幌市",
-        address: "北1条西1-1",
-        phone: "0111112222",
-      },
-    });
-    const res = (await POST(req)) as unknown as {
-      body: Record<string, unknown>;
-    };
-
-    expect(mockDraftUpdate).not.toHaveBeenCalled();
-    expect(res.body).toEqual({
-      clientSecret: "secret_existing",
-      checkoutSessionId: "cs_existing",
-      shippingRevision: 2,
-    });
-    expect(mockReusableDraftOr).toHaveBeenCalledWith(
-      "checkout_request_version.is.null,checkout_request_version.eq.0",
-    );
-  });
-
-  it("logAudit が throw しても再利用レスポンス（clientSecret / checkoutSessionId）が返る", async () => {
-    mockReusableDraft.mockResolvedValueOnce({
-      data: reusableDraftRow,
-      error: null,
-    });
-    mockRetrieve.mockResolvedValue({
-      id: "cs_existing",
-      status: "open",
-      client_secret: "secret_existing",
-    });
-    mockLogAudit.mockRejectedValueOnce(new Error("audit down"));
-
-    const req = makeRequest({ uiMode: "custom", paymentMethod: "stripe_card" });
-    const res = (await POST(req)) as unknown as {
-      status: number;
-      body: Record<string, unknown>;
-    };
-
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({
-      clientSecret: "secret_existing",
-      checkoutSessionId: "cs_existing",
-      shippingRevision: 2,
-    });
-    expect(mockReusableDraftOr).toHaveBeenCalledWith(
-      "checkout_request_version.is.null,checkout_request_version.eq.0",
-    );
-    expect(mockCreate).not.toHaveBeenCalled();
-  });
-
-  it("既存 Stripe セッションの取得結果が不明なら新規セッションを作らない", async () => {
-    mockReusableDraft.mockResolvedValueOnce({
-      data: reusableDraftRow,
-      error: null,
-    });
-    mockRetrieve.mockRejectedValueOnce(new Error("resource_missing"));
-
-    const res = (await POST(makeRequest({ uiMode: "custom" }))) as unknown as {
-      status: number;
-    };
-
-    expect(res.status).toBe(500);
-    expect(mockCreate).not.toHaveBeenCalled();
-    expect(mockRpc).not.toHaveBeenCalledWith(
-      "retire_expired_checkout_draft",
-      expect.anything(),
-    );
-  });
-
-  it("既存 Stripe セッションが complete なら新規セッションを作らない", async () => {
-    mockReusableDraft.mockResolvedValueOnce({
-      data: reusableDraftRow,
-      error: null,
-    });
-    mockRetrieve.mockResolvedValue({
-      id: "cs_existing",
-      status: "complete",
-      payment_status: "unpaid",
-      client_secret: "secret_existing",
-    });
-
-    const res = (await POST(makeRequest({ uiMode: "custom" }))) as unknown as {
-      status: number;
-      body: Record<string, unknown>;
-    };
-
-    expect(res.status).toBe(409);
-    expect(res.body).toMatchObject({
-      error: "checkout_session_complete",
-      retryable: false,
-    });
-    expect(mockCreate).not.toHaveBeenCalled();
-  });
-
-  it("既存 Stripe セッションが expired のときだけdraftをCASで退役させて作り直す", async () => {
-    mockReusableDraft.mockResolvedValueOnce({
-      data: reusableDraftRow,
-      error: null,
-    });
-    mockRetrieve.mockResolvedValue({
-      id: "cs_existing",
-      status: "expired",
-      client_secret: "secret_existing",
-    });
-    mockCreate.mockResolvedValue({ client_secret: "secret_new", id: "cs_new" });
-
-    const req = makeRequest({ uiMode: "custom", paymentMethod: "stripe_card" });
-    const res = (await POST(req)) as unknown as {
-      status: number;
-      body: Record<string, unknown>;
-    };
-
-    expect(mockRpc).toHaveBeenCalledWith(
-      "retire_expired_checkout_draft",
-      expect.objectContaining({
-        _draft_id: "draft-existing",
-        _session_id: "sess-abc",
-        _checkout_session_id: "cs_existing",
-      }),
-    );
-    expect(mockCreate).toHaveBeenCalledTimes(1);
-    expect(res.body).toEqual({
-      clientSecret: "secret_new",
-      checkoutSessionId: "cs_new",
-      shippingRevision: 0,
-    });
-  });
-
-  it("expiredでも下書き退役CASが競合したら新規Sessionを作らない", async () => {
-    mockReusableDraft.mockResolvedValueOnce({
-      data: reusableDraftRow,
-      error: null,
-    });
-    mockRetrieve.mockResolvedValue({
-      id: "cs_existing",
-      status: "expired",
-      client_secret: "secret_existing",
-    });
-    mockRetireResult = { data: false, error: null };
-
-    const res = (await POST(
-      makeRequest({ uiMode: "custom", paymentMethod: "stripe_card" }),
-    )) as unknown as { status: number };
-
-    expect(res.status).toBe(500);
-    expect(mockCreate).not.toHaveBeenCalled();
-    expect(
-      mockRpc.mock.calls.filter(
-        ([functionName]) => functionName === "claim_checkout_draft",
-      ),
-    ).toHaveLength(0);
-  });
-
-  it("失効時刻を下書きに決められなければ Session を作らない", async () => {
-    mockReserveExpiryResult = { data: null, error: { message: "CHECKOUT_DRAFT_NOT_RESERVABLE" } };
-
-    const res = (await POST(
-      makeRequest({ uiMode: "custom", paymentMethod: "stripe_card" }),
-    )) as unknown as { status: number };
-
-    expect(res.status).toBe(500);
-    expect(mockCreate).not.toHaveBeenCalled();
+    expect(Object.keys(res.body)).toEqual(["confirmation"]);
   });
 });
 

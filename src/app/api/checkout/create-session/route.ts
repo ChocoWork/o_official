@@ -12,7 +12,6 @@ import {
 import {
   buildShippingSnapshot,
   checkoutShippingSchema,
-  hasShippingAddress,
   STRIPE_CHECKOUT_PAYMENT_METHODS,
   type CheckoutDraftItemSnapshot,
   type CheckoutCartSnapshotRow,
@@ -28,6 +27,20 @@ import { classifyCheckoutSessionError } from "@/features/checkout/services/check
 import { logAudit } from "@/lib/audit";
 import { cookieOptionsForCsrf, csrfCookieName } from "@/lib/cookie";
 import { getRequestOrigin } from "@/lib/redirect";
+import { expireOpenCheckoutSession } from "@/lib/stripe/checkout-session-expiry";
+import { signItemImageUrl } from "@/lib/storage/item-images";
+import {
+  PROMOTION_CODE_PATTERN,
+  checkPromotionCode,
+  type PromotionCodeCheck,
+} from "@/features/checkout/services/promotion-code.service";
+import { buildCheckoutConfirmation } from "@/features/checkout/services/checkout-confirmation.service";
+import {
+  closeOtherCheckoutSessions,
+  findPaidCheckoutSession,
+  reconcileCheckoutSession,
+} from "@/features/checkout/services/checkout-session-lifecycle.service";
+import { resolveCheckoutIpLimitMultiplier } from "@/features/checkout/services/checkout-route-guard";
 
 type CsrfDenyResponse = {
   status: number;
@@ -78,6 +91,8 @@ const createSessionSchema = z.object({
   uiMode: z.enum(["hosted", "custom"]).default("hosted"),
   shipping: checkoutShippingSchema,
   displayedAmounts: checkoutDisplayedAmountsSchema,
+  // 入力画面で「適用」したコード。ここでもう一度確かめてから決済の画面に付ける（設計書第3章）
+  promotionCode: z.string().trim().regex(PROMOTION_CODE_PATTERN).optional(),
 });
 
 function getClientIp(request: NextRequest): string | null {
@@ -119,7 +134,32 @@ type CheckoutDraftAttachmentResult = {
   attached: boolean;
 };
 
-const CHECKOUT_REQUEST_VERSION = 1;
+// 版 2（グループ F）: 決済の画面を「確認へ進む」で作り、割引はサーバーが付ける。
+// 割引コードと配送先を指紋に含め、入力が同じときだけ同じ下書き・決済の画面にする（計画の決め事 D4）。
+const CHECKOUT_REQUEST_VERSION = 2;
+
+/** 開いている決済の画面を使い回すのに要る残り時間（受け付けの10分＋最終確認画面での5分。決め事 D4） */
+const REUSE_MIN_REMAINING_SECONDS = 15 * 60;
+
+function hasReusableTimeLeft(session: Stripe.Checkout.Session): boolean {
+  return (
+    typeof session.expires_at === "number" &&
+    session.expires_at - Math.floor(Date.now() / 1000) >= REUSE_MIN_REMAINING_SECONDS
+  );
+}
+
+/** 支払いの済んだ決済の画面がある（設計書 2-5）。画面は注文の確定を仕上げて状態を見せる */
+function orderAlreadyPlacedResponse(checkoutSessionId: string): NextResponse {
+  return NextResponse.json(
+    {
+      error: "order_already_placed",
+      checkoutSessionId,
+      message: "ご注文は確定しています。",
+      retryable: false,
+    },
+    { status: 409 },
+  );
+}
 
 function canonicalizeItemsSnapshot(
   itemsSnapshot: CheckoutDraftItemSnapshot[],
@@ -151,6 +191,8 @@ function buildCheckoutRequestFingerprint(params: {
   shippingAmount: number;
   totalAmount: number;
   itemsSnapshot: CheckoutDraftItemSnapshot[];
+  shippingSnapshot: CheckoutShippingSnapshot;
+  promotionCodeId: string | null;
 }): string {
   const canonical = JSON.stringify({
     version: CHECKOUT_REQUEST_VERSION,
@@ -162,6 +204,8 @@ function buildCheckoutRequestFingerprint(params: {
     shippingAmount: params.shippingAmount,
     totalAmount: params.totalAmount,
     itemsSnapshot: params.itemsSnapshot,
+    shippingSnapshot: params.shippingSnapshot,
+    promotionCodeId: params.promotionCodeId,
   });
 
   return `v${CHECKOUT_REQUEST_VERSION}:${createHash("sha256").update(canonical).digest("hex")}`;
@@ -187,51 +231,6 @@ async function reserveCheckoutSessionExpiry(draftId: string): Promise<number> {
   return data;
 }
 
-/**
- * 旧互換（request version未設定/v0）Sessionの再利用可否を判定する。
- * 旧Sessionは生成時に支払方法を固定していたため、支払方法・金額・通貨・明細が完全一致する場合だけ再利用する。
- * v1以降はこの関数を通らず、動的支払方法を前提にfingerprint付きclaimへ収束させる。
- */
-function isSameCheckoutContent(
-  draft: ReusableCheckoutDraftRow,
-  current: {
-    paymentMethod: string;
-    subtotalAmount: number;
-    shippingAmount: number;
-    totalAmount: number;
-    itemsSnapshot: CheckoutDraftItemSnapshot[];
-  },
-): boolean {
-  if (!draft.checkout_session_id) return false;
-  if (draft.payment_method !== current.paymentMethod) return false;
-  if (draft.subtotal_amount !== current.subtotalAmount) return false;
-  if (draft.shipping_amount !== current.shippingAmount) return false;
-  if (draft.total_amount !== current.totalAmount) return false;
-  if (draft.currency.toLowerCase() !== "jpy") return false;
-
-  const draftItems = draft.items_snapshot ?? [];
-  if (draftItems.length !== current.itemsSnapshot.length) return false;
-
-  const signature = (rows: CheckoutDraftItemSnapshot[]) =>
-    rows
-      .map((row) =>
-        [
-          row.source_cart_id,
-          row.item_id,
-          row.item_name,
-          row.item_price,
-          row.color ?? "",
-          row.size ?? "",
-          row.quantity,
-          row.line_total,
-        ].join(":"),
-      )
-      .sort()
-      .join("|");
-
-  return signature(draftItems) === signature(current.itemsSnapshot);
-}
-
 // IP 単位の上限は二段で数える（FREQ-362）。
 // - 10秒10回: 一瞬の集中を抑える。時間枠の境目をまたいでも約2秒で20回（毎秒10回）までで、
 //   Stripe の上限（エンドポイントごとに毎秒25回）を1つの IP で超えない。
@@ -242,11 +241,6 @@ const CREATE_SESSION_IP_LIMITS = [
   { endpoint: "checkout:create-session:ip-10s", limit: 10, windowSeconds: 10 },
   { endpoint: "checkout:create-session:ip-10m", limit: 60, windowSeconds: 600 },
 ] as const;
-// E2E はすべてのリクエストが 127.0.0.1 から来るので、本番の上限では足りない。
-// scripts/e2e-server.mjs が起動するサーバーだけ、この倍率で IP 単位の上限を引き上げる。
-const CREATE_SESSION_IP_LIMIT_MULTIPLIER_ENV =
-  "E2E_CREATE_SESSION_IP_LIMIT_MULTIPLIER";
-const CREATE_SESSION_IP_LIMIT_MULTIPLIER_MAX = 30;
 // 画面（checkout/page.tsx）は message をそのまま表示し、retryable なら「再試行する」を出す。
 const RATE_LIMITED_MESSAGE =
   "アクセスが集中しているため、決済の準備を一時的に止めています。少し時間をおいてから「再試行する」を押してください。";
@@ -392,61 +386,6 @@ async function claimCheckoutDraft(params: {
   return draft;
 }
 
-async function fillShippingSnapshotIfEmpty(params: {
-  draft: Pick<
-    ReusableCheckoutDraftRow,
-    "id" | "shipping_snapshot" | "shipping_revision"
-  >;
-  sessionId: string;
-  shippingSnapshot: CheckoutShippingSnapshot;
-}): Promise<number> {
-  const storedRevision = Number(params.draft.shipping_revision ?? 0);
-
-  if (
-    hasShippingAddress(params.draft.shipping_snapshot) ||
-    !hasShippingAddress(params.shippingSnapshot)
-  ) {
-    return storedRevision;
-  }
-
-  const { data, error } = await supabase
-    .from("checkout_drafts")
-    .update({
-      shipping_snapshot: params.shippingSnapshot,
-      shipping_revision: storedRevision + 1,
-    })
-    .eq("id", params.draft.id)
-    .eq("session_id", params.sessionId)
-    .eq("shipping_revision", storedRevision)
-    .select("shipping_revision")
-    .maybeSingle<{ shipping_revision: number }>();
-
-  if (error) {
-    throw error;
-  }
-
-  return data ? Number(data.shipping_revision) : storedRevision;
-}
-
-/**
- * E2E 用の倍率を決める（FREQ-362）。
- *
- * 引き上げは Vercel 以外（手元の E2E サーバー）でだけ効かせる。E2E は next start で動くので
- * NODE_ENV では区別できない。Vercel に誤って環境変数を設定しても本番の上限は緩めず、
- * 倍率にも上限を設ける。
- */
-function resolveCreateSessionIpLimitMultiplier(): number {
-  const raw = process.env[CREATE_SESSION_IP_LIMIT_MULTIPLIER_ENV];
-  if (process.env.VERCEL === "1" || !raw || !/^[0-9]+$/.test(raw)) {
-    return 1;
-  }
-
-  return Math.min(
-    Math.max(Number(raw), 1),
-    CREATE_SESSION_IP_LIMIT_MULTIPLIER_MAX,
-  );
-}
-
 /**
  * 上限到達（429）を、時間をおいて再試行するよう案内する応答に置き換える。
  * 回数制限を判定できなかった応答（503）は上限到達ではないので、そのまま返す。
@@ -491,7 +430,7 @@ export async function POST(req: NextRequest) {
     // 少数の IP からの濫用を止めるのは IP 単位の上限（CREATE_SESSION_IP_LIMITS）。
     // 下のセッション単位の上限は、Cookie を捨てれば回避できるので、1つのブラウザでの
     // 誤操作の連打を止めるためのもの。IP 単位の上限を緩める根拠にはしない。
-    const ipLimitMultiplier = resolveCreateSessionIpLimitMultiplier();
+    const ipLimitMultiplier = resolveCheckoutIpLimitMultiplier();
     for (const { endpoint, limit, windowSeconds } of CREATE_SESSION_IP_LIMITS) {
       const rateLimitByIp = await enforceRateLimit({
         request: req,
@@ -556,7 +495,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { paymentMethod, shipping, uiMode, displayedAmounts } = parsed.data;
+    const { paymentMethod, shipping, uiMode, displayedAmounts, promotionCode } = parsed.data;
 
     const { data: cartData, error: cartError } = await supabase
       .from("carts")
@@ -677,6 +616,93 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const stripe = getStripeServerClient();
+
+    // 受け付け済みで支払いの済んだ決済の画面があれば、新しい決済の画面を作らない（設計書 2-5、R-56）。
+    // 二重に払わせないため。画面は注文の確定を仕上げて「ご注文は確定しています」を出す。
+    const paidCheckoutSessionId = await findPaidCheckoutSession({ supabase, stripe }, sessionId);
+    if (paidCheckoutSessionId) {
+      return applyRotatedCsrfCookie(orderAlreadyPlacedResponse(paidCheckoutSessionId), csrfResult);
+    }
+
+    let promotion: Extract<PromotionCodeCheck, { ok: true }> | null = null;
+    if (promotionCode) {
+      const checked = await checkPromotionCode(stripe, {
+        code: promotionCode,
+        preDiscountTotal: totalAmount,
+        now: new Date(),
+      });
+      if (!checked.ok) {
+        try {
+          await logAudit({
+            action: "checkout.session.create",
+            outcome: "failure",
+            detail: "Promotion code rejected",
+            ip: clientIp,
+            user_agent: userAgent,
+            metadata: { session_id: sessionId, reason: checked.reason },
+          });
+        } catch (logAuditError) {
+          console.error("Failed to log promotion code rejection:", logAuditError);
+        }
+        return applyRotatedCsrfCookie(
+          NextResponse.json(
+            {
+              error: "promotion_code_invalid",
+              reason: checked.reason,
+              message: checked.message,
+              retryable: false,
+            },
+            { status: 409 },
+          ),
+          csrfResult,
+        );
+      }
+      promotion = checked;
+    }
+
+    // 最終確認画面の内容を返す前に、同じセッションのほかの決済の画面を閉じる（設計書 2-2・8、決め事 D5）。
+    const respondWithConfirmation = async (
+      draft: ClaimedCheckoutDraftRow,
+      checkoutSessionId: string,
+      clientSecret: string,
+    ): Promise<NextResponse> => {
+      await closeOtherCheckoutSessions(
+        {
+          supabase,
+          stripe,
+          reconcile: reconcileCheckoutSession,
+          logFailure: async (detail, metadata) => {
+            try {
+              await logAudit({
+                action: "checkout.session.create",
+                outcome: "error",
+                detail,
+                ip: clientIp,
+                user_agent: userAgent,
+                metadata: { session_id: sessionId, ...metadata },
+              });
+            } catch (logAuditError) {
+              console.error("Failed to log closing other checkout sessions:", logAuditError);
+            }
+          },
+        },
+        { cartSessionId: sessionId, keepCheckoutSessionId: checkoutSessionId },
+      );
+      const confirmation = await buildCheckoutConfirmation(
+        { supabase, signImageUrl: (raw) => signItemImageUrl(supabase, raw) },
+        {
+          checkoutSessionId,
+          clientSecret,
+          itemsSnapshot: draft.items_snapshot ?? [],
+          shippingSnapshot: draft.shipping_snapshot,
+          promotionCode: promotion?.code ?? null,
+          acceptedOrderId: null,
+        },
+      );
+      return applyRotatedCsrfCookie(NextResponse.json({ confirmation }), csrfResult);
+    };
+
     const shippingSnapshot = buildShippingSnapshot(shipping);
     const itemsSnapshot = canonicalizeItemsSnapshot(
       (cartData as CheckoutCartSnapshotRow[]).map((cartItem) => {
@@ -704,133 +730,9 @@ export async function POST(req: NextRequest) {
       shippingAmount,
       totalAmount,
       itemsSnapshot,
+      shippingSnapshot,
+      promotionCodeId: promotion?.promotionCodeId ?? null,
     });
-
-    const stripe = getStripeServerClient();
-
-    // 互換期間中の旧draftを先に回収する。Stripe取得に失敗した状態は
-    // expired（未入金）とは断定せず、新規Sessionを作らない。
-    if (uiMode === "custom") {
-      const { data: reusableDraft, error: reusableDraftError } = await supabase
-        .from("checkout_drafts")
-        .select(
-          "id, checkout_session_id, payment_method, subtotal_amount, shipping_amount, total_amount, currency, items_snapshot, shipping_snapshot, shipping_revision, checkout_request_version, checkout_request_fingerprint",
-        )
-        .eq("session_id", sessionId)
-        .eq("status", "created")
-        .or("checkout_request_version.is.null,checkout_request_version.eq.0")
-        .not("checkout_session_id", "is", null)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle<ReusableCheckoutDraftRow>();
-
-      if (reusableDraftError) {
-        throw reusableDraftError;
-      }
-
-      if (
-        reusableDraft &&
-        isSameCheckoutContent(reusableDraft, {
-          paymentMethod: paymentMethod ?? "stripe_card",
-          subtotalAmount,
-          shippingAmount,
-          totalAmount,
-          itemsSnapshot,
-        })
-      ) {
-        const existingSession = await stripe.checkout.sessions.retrieve(
-          reusableDraft.checkout_session_id as string,
-        );
-
-        if (existingSession.ui_mode && existingSession.ui_mode !== "custom") {
-          // ui_modeを記録していない旧draftでも、Stripeがhostedと返したSessionは
-          // custom要求の再利用対象ではない。別の要求IDとして新規claimへ進む。
-        } else if (
-          existingSession.status === "open" &&
-          existingSession.client_secret
-        ) {
-          let shippingRevision: number;
-          try {
-            shippingRevision = await fillShippingSnapshotIfEmpty({
-              draft: reusableDraft,
-              sessionId,
-              shippingSnapshot,
-            });
-          } catch (updateShippingError) {
-            console.error(
-              "Failed to update shipping snapshot on reuse:",
-              updateShippingError,
-            );
-            return applyRotatedCsrfCookie(
-              NextResponse.json(
-                { error: "Failed to prepare checkout" },
-                { status: 500 },
-              ),
-              csrfResult,
-            );
-          }
-
-          try {
-            await logAudit({
-              action: "checkout.session.create",
-              outcome: "success",
-              detail: "Reused Stripe checkout session (custom UI)",
-              ip: clientIp,
-              user_agent: userAgent,
-              metadata: {
-                session_id: sessionId,
-                draft_id: reusableDraft.id,
-                checkout_session_id: existingSession.id,
-                ui_mode: "custom",
-                reused: true,
-              },
-            });
-          } catch (logAuditError) {
-            console.error(
-              "Failed to log audit for reused checkout session:",
-              logAuditError,
-            );
-          }
-
-          return applyRotatedCsrfCookie(
-            NextResponse.json({
-              clientSecret: existingSession.client_secret,
-              checkoutSessionId: existingSession.id,
-              shippingRevision,
-            }),
-            csrfResult,
-          );
-        } else if (existingSession.status === "complete") {
-          return applyRotatedCsrfCookie(
-            NextResponse.json(
-              {
-                error: "checkout_session_complete",
-                message: "この決済セッションは既に確定処理へ進んでいます。",
-                retryable: false,
-              },
-              { status: 409 },
-            ),
-            csrfResult,
-          );
-        } else if (existingSession.status === "expired") {
-          const retired = await retireExpiredDraft({
-            draftId: reusableDraft.id,
-            sessionId,
-            checkoutSessionId: existingSession.id,
-            requestVersion: reusableDraft.checkout_request_version ?? null,
-            requestFingerprint:
-              reusableDraft.checkout_request_fingerprint ?? null,
-          });
-          if (!retired) {
-            throw new Error("Expired checkout draft retirement conflicted");
-          }
-        } else {
-          throw new Error(
-            "Reusable Checkout Session is open without a client secret",
-          );
-        }
-      }
-    }
 
     const claimParams = {
       sessionId,
@@ -865,17 +767,11 @@ export async function POST(req: NextRequest) {
         throw new Error("Claimed Checkout Session UI mode does not match");
       }
 
-      if (existingSession.status === "open") {
+      if (existingSession.status === "open" && hasReusableTimeLeft(existingSession)) {
         if (
           createdDraft.checkout_ui_mode === "custom" &&
           existingSession.client_secret
         ) {
-          const shippingRevision = await fillShippingSnapshotIfEmpty({
-            draft: createdDraft,
-            sessionId,
-            shippingSnapshot,
-          });
-
           try {
             await logAudit({
               action: "checkout.session.create",
@@ -898,13 +794,10 @@ export async function POST(req: NextRequest) {
             );
           }
 
-          return applyRotatedCsrfCookie(
-            NextResponse.json({
-              clientSecret: existingSession.client_secret,
-              checkoutSessionId: existingSession.id,
-              shippingRevision,
-            }),
-            csrfResult,
+          return await respondWithConfirmation(
+            createdDraft,
+            existingSession.id,
+            existingSession.client_secret,
           );
         }
 
@@ -922,19 +815,18 @@ export async function POST(req: NextRequest) {
 
       if (existingSession.status === "complete") {
         return applyRotatedCsrfCookie(
-          NextResponse.json(
-            {
-              error: "checkout_session_complete",
-              message: "この決済セッションは既に確定処理へ進んでいます。",
-              retryable: false,
-            },
-            { status: 409 },
-          ),
+          orderAlreadyPlacedResponse(existingSession.id),
           csrfResult,
         );
       }
 
-      if (existingSession.status !== "expired") {
+      if (existingSession.status === "open") {
+        // 受け付けに要る時間が残らない画面は閉じ、退役させて作り直す（決め事 D4）。
+        // 閉じる間に支払いが済むなど状態が変われば、次の回で読み直す。
+        if ((await expireOpenCheckoutSession(stripe, existingSession.id)) !== "expired") {
+          continue;
+        }
+      } else if (existingSession.status !== "expired") {
         throw new Error("Claimed Checkout Session has an unknown status");
       }
 
@@ -1010,11 +902,14 @@ export async function POST(req: NextRequest) {
       line_items: lineItems,
       client_reference_id: createdDraft.id,
       expires_at: checkoutSessionExpiresAt,
-      allow_promotion_codes: true,
+      // 割引はサーバーが確かめたコードだけを付ける。お客様のブラウザからは付けさせない（設計書第3章）
+      ...(promotion ? { discounts: [{ promotion_code: promotion.promotionCodeId }] } : {}),
       metadata: {
         draft_id: createdDraft.id,
         session_id: createdDraft.session_id,
         selected_payment_method: selectedPaymentMethod,
+        // 最終確認画面と入り直しで、付けたコードを見せる（決め事 D8）
+        ...(promotion ? { promotion_code: promotion.code } : {}),
       },
       payment_intent_data: {
         metadata: {
@@ -1079,15 +974,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    let shippingRevision = Number(createdDraft.shipping_revision ?? 0);
-    if (createdDraft.checkout_ui_mode === "custom") {
-      shippingRevision = await fillShippingSnapshotIfEmpty({
-        draft: createdDraft,
-        sessionId,
-        shippingSnapshot,
-      });
-    }
-
     try {
       await logAudit({
         action: "checkout.session.create",
@@ -1120,14 +1006,7 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      return applyRotatedCsrfCookie(
-        NextResponse.json({
-          clientSecret: session.client_secret,
-          checkoutSessionId: session.id,
-          shippingRevision,
-        }),
-        csrfResult,
-      );
+      return await respondWithConfirmation(createdDraft, session.id, session.client_secret);
     }
 
     if (!session.url) {
