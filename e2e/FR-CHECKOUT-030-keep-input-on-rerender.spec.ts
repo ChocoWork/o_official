@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 /**
- * FR-CHECKOUT-030 ほかの操作で、入力中のプロモーションコード・案内・フォーカスが消えない
+ * FR-CHECKOUT-030 ほかの操作で、入力中のプロモーションコード・案内が消えない
  * 対応 FREQ: FREQ-372（AC-01・AC-02）
  *
  * 画面の関数の中で部品を定義すると、画面が再描画されるたびに別の部品として作り直され、

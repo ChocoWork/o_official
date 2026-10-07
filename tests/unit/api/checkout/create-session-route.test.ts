@@ -976,7 +976,9 @@ describe("POST /api/checkout/create-session - 回数制限", () => {
       expect(res.status).toBe(429);
       expect(res.body).toEqual({
         error: "rate_limited",
-        message: expect.stringContaining("少し時間をおいてから"),
+        message: expect.stringContaining(
+          "もう一度「確認へ進む」を押してください",
+        ),
         retryable: true,
       });
     },

@@ -1,6 +1,6 @@
-import { expect, test, type Frame, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { selectPaymentMethod } from './checkout-test-utils';
-import { fillShippingForm, fillTestCard, proceedToFinal, seedCart, stubPostalCode } from './checkout-flow-helpers';
+import { fillShippingForm, fillTestCard, paymentElementFrame, proceedToFinal, seedCart, stubPostalCode } from './checkout-flow-helpers';
 
 const VIEWPORTS = [
   { name: 'mobile', width: 390 },
@@ -69,12 +69,6 @@ async function openCheckoutAndWaitForPaymentForm(page: Page): Promise<void> {
     .toBe(true);
 }
 
-async function paymentElementFrame(page: Page): Promise<Frame> {
-  const isPaymentElement = (frame: Frame) => /elements-inner-payment/.test(frame.url());
-  await expect.poll(() => page.frames().some(isPaymentElement)).toBe(true);
-  return page.frames().find(isPaymentElement)!;
-}
-
 test.describe('FR-CHECKOUT-025 checkout の CSP が Stripe の決済フォームを妨げない', () => {
   test.describe.configure({ timeout: 90_000 });
   test.use({ locale: 'ja-JP' });
@@ -126,6 +120,9 @@ test.describe('FR-CHECKOUT-025 checkout の CSP が Stripe の決済フォーム
       const frame = await paymentElementFrame(page);
       await fillTestCard(frame);
       await frame.getByText('次回以降のチェックアウトを迅速にするために情報を保存').first().click();
+      // 保存欄が開いた（携帯電話番号の欄が出た）ことを確かめてから進む。Stripe が最初からチェック済みにする
+      // 作りに変わると、押した結果は閉じるので、確かめないと閉じたまま別の欄を埋めて通ってしまう
+      await expect(frame.getByRole('textbox', { name: '携帯電話番号' })).toBeVisible({ timeout: 10_000 });
       await frame.getByLabel('メールアドレス').first().fill('csp-guard@example.com');
       await page.waitForTimeout(OBSERVE_MS);
 

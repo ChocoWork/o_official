@@ -118,6 +118,10 @@ export async function stubResumePaymentDone(page: Page): Promise<void> {
 /**
  * Stripe の画面（PayPay など）で支払った直後に戻った状態を作る（決め事 D10）。
  * ページの読み込み前に、支払いの試みの記録を sessionStorage に置く。
+ *
+ * 同じ page で何度も呼ぶと初期化スクリプトが積み重なる。複数の初期化スクリプトの実行順は
+ * Playwright の文書で定義されていないので、実行順（後に足したものが勝つ）に頼らない。
+ * 開く URL の session_id が checkoutSessionId と同じときだけ書き、ほかの回のスクリプトは何もしない。
  */
 export async function rememberPaymentAttemptBeforeLoad(
   page: Page,
@@ -126,6 +130,9 @@ export async function rememberPaymentAttemptBeforeLoad(
 ): Promise<void> {
   await page.addInitScript(
     ([id, type]) => {
+      if (new URLSearchParams(location.search).get('session_id') !== id) {
+        return;
+      }
       window.sessionStorage.setItem('checkout:payment-attempt', JSON.stringify({ checkoutSessionId: id, paymentType: type }));
     },
     [checkoutSessionId, paymentType] as const,

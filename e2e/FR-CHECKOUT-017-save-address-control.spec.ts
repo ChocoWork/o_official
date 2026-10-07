@@ -200,7 +200,9 @@ async function interceptProfileSaves(page: Page): Promise<ProfileSaveCalls> {
 
 /**
  * 「確認へ進む」を押す。処理中は押せないので、押せるようになるまで待ってから押す。
- * 決済フォームが伸びてボタンがずれている最中は、クリックが外れるので押さない。
+ * 入力画面に決済フォームは無いので、決済フォームが伸びてボタンがずれることは無い。ただ、プロフィール・
+ * 住所帳の読み込みや郵便番号からの住所の補完で画面が描き直されている最中に押すと、クリックが外れうる
+ * ので、念のため位置が落ち着いてから押す。
  */
 async function clickConfirm(page: Page): Promise<void> {
   const confirmButton = page.getByRole("button", { name: "確認へ進む" });

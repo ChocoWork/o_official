@@ -39,7 +39,10 @@ async function mockReturnApis(page: Page, completeCalls: Map<string, number>): P
     completeCalls.set(sessionId, (completeCalls.get(sessionId) ?? 0) + 1);
     // 注文番号は ID の先頭8文字（ORD-XXXXXXXX）。戻りごとに違う番号にする
     const attempt = Number(sessionId.split('_').pop() ?? '0');
-    await route.fulfill({ status: 200, json: { orderId: `0000000${attempt}-0000-4000-8000-000000000000`, status: 'paid' } });
+    await route.fulfill({
+      status: 200,
+      json: { orderId: `${String(attempt).padStart(8, '0')}-0000-4000-8000-000000000000`, status: 'paid' },
+    });
   });
 }
 
@@ -60,7 +63,7 @@ for (const viewport of VIEWPORTS) {
         await expect(
           page.getByText('ご注文を承りました。確認メールをお送りしましたのでご確認ください。'),
         ).toBeVisible();
-        await expect(page.getByText(`ORD-0000000${attempt}`)).toBeVisible();
+        await expect(page.getByText(`ORD-${String(attempt).padStart(8, '0')}`)).toBeVisible();
         // 完了の後も URL に決済の画面の ID を残す（決め事 D9）。開くたびに確定の送信は1回だけ
         await expect(page).toHaveURL(new RegExp(`/checkout\\?session_id=${sessionId}$`));
 

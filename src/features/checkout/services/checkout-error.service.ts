@@ -25,7 +25,7 @@ const CUSTOMER_FIXABLE_INVALID_REQUEST_CODES = new Set(['amount_too_small', 'amo
  * Stripe の例外を、クライアントへ返してよい形に分類する。
  *
  * - 生のメッセージは返さない（内部情報の露出を避ける）。日本語の定型文に写す
- * - 永続的な失敗（金額下限など）は 422 とし、再試行ボタンを出させない
+ * - 永続的な失敗（金額下限など）は 422 とし、画面の「確認へ進む」を押せなくする
  * - 一時的な失敗（レート制限・接続）は 429 / 503 とし、再試行させる
  */
 export function classifyCheckoutSessionError(error: unknown): CheckoutSessionErrorClassification {

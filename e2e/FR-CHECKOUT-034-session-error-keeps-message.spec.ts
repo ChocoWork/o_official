@@ -7,7 +7,7 @@ import { fillShippingForm, stubPostalCode } from './checkout-flow-helpers';
  * 対応 FREQ: FREQ-385（AC-01 / AC-02 / AC-03）
  *
  * 在庫切れなど、待っても直らない理由で決済セッションの作成が失敗したとき、
- * 再試行できない失敗のあとに「確認へ進む」を押せると、同じ失敗をくり返す。
+ * 「確認へ進む」を押せるままだと、押すたびに同じ理由で止まる。
  */
 
 const VIEWPORTS = [
