@@ -421,7 +421,7 @@
 
 ### R-55 E2E が実際に決済を確定し、テストWebhookを登録すると本番DBに注文を作る
 
-- **箇所**: [FR-CHECKOUT-029](../../../../e2e/FR-CHECKOUT-029-payment-method-label.spec.ts) 10〜11行・73〜114行、[webhook-processor](../../../../src/lib/stripe/webhook-processor.ts)（livemode の照合なし）。
+- **箇所**: FR-CHECKOUT-029（グループ F で削除。当時の 10〜11行・73〜114行）、[webhook-processor](../../../../src/lib/stripe/webhook-processor.ts)（livemode の照合なし）。
 - **事実**: テストカードで `checkout.confirm()` まで実行し、Stripe のテスト決済を完了させる。スペックは「注文する」を押さないので注文と在庫は変えないとするが、それは Stripe テストモードの Webhook が0件（2026-09-17 時点）だから成り立つだけ。テスト用 Webhook を登録するか `stripe listen` を動かすと、E2E が本番 Supabase を使う現状では、実行のたびに本番DBへ注文・在庫の出庫・example.com 宛のメールが作られる。
 - **修正方針**: Webhook 処理で `event.livemode` と実行環境を照合する。E2E の前提（テスト用 Webhook を登録しない）をスペックと README に明記し、長期的には E2E 用のDBを分ける。
 - **2026-09-27 追記（pre-push の E2E）**: [scripts/hooks/pre-push](../../../../scripts/hooks/pre-push) は `npx supabase db reset` でローカル DB を作り直してから E2E 全件を流すが、アプリは `.env.local` の本番 Supabase（pjidrgofvaglnuuznnyj）を使う。ローカル Supabase が動いていると db reset が成功し、push のたびに E2E が本番へ書き込む。ローカルが止まっていれば db reset が失敗し、警告だけで E2E を飛ばす（2026-09-27 時点はこちら）。E2E 用の接続先をローカルに切り替えるまで、フックの E2E は本番に向かう前提で扱う（B で直す）。

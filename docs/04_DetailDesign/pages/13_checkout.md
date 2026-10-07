@@ -481,7 +481,7 @@ draft の配送先（`shipping_snapshot`）を書く経路は、`POST /api/check
 | テスト                                                      | 確認すること                                                               |
 | ----------------------------------------------------------- | -------------------------------------------------------------------------- |
 | `tests/unit/features/checkout/payment-method-label.test.ts` | 各 `value.type` の表示名と、API に送る値が入力検証を通ること               |
-| `e2e/FR-CHECKOUT-029-payment-method-label.spec.ts`          | テスト用カードで決済を確定すると、確認画面に「クレジットカード」と出ること |
+| `e2e/FR-CHECKOUT-029-payment-method-label.spec.ts`（グループ F で削除） | 支払いの後の確認画面が無くなったため削除した（FREQ-371 は FREQ-418 により廃止） |
 
 テストモードでは Link（登録済みの Link アカウントが要る）と銀行振込（ダッシュボードで無効）の確認画面まで E2E で進めないため、これらは単体テストで確かめる。
 

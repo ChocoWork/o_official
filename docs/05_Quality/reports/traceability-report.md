@@ -1,6 +1,6 @@
 # 要件IDの参照状況
 
-> 状態: 自動生成 | 生成日: 2026-10-02 | 対象: リポジトリ内の文字列参照
+> 状態: 自動生成 | 生成日: 2026-10-07 | 対象: リポジトリ内の文字列参照
 
 ## 概要
 
@@ -8,11 +8,11 @@
 
 | 指標 | 件数 |
 | --- | ---: |
-| 要件定義書の対象ID | 1516 |
+| 要件定義書の対象ID | 1536 |
 | 設計にID参照あり | 161 |
-| テストにID参照あり | 741 |
-| 設計にID参照なし | 1355 |
-| テストにID参照なし | 775 |
+| テストにID参照あり | 747 |
+| 設計にID参照なし | 1375 |
+| テストにID参照なし | 789 |
 
 ## 参照一覧
 
@@ -59,7 +59,7 @@
 | `FR-CART-012` | 1件（[12_cart.md](../../04_DetailDesign/pages/12_cart.md)） | 1件（[FR-CART-012-013-summary-align-continue-shopping.spec.ts](../../../e2e/FR-CART-012-013-summary-align-continue-shopping.spec.ts)） |
 | `FR-CART-013` | 1件（[12_cart.md](../../04_DetailDesign/pages/12_cart.md)） | 1件（[FR-CART-012-013-summary-align-continue-shopping.spec.ts](../../../e2e/FR-CART-012-013-summary-align-continue-shopping.spec.ts)） |
 | `FR-CART-014` | 1件（[12_cart.md](../../04_DetailDesign/pages/12_cart.md)） | 1件（[FR-CART-014-unit-price-display.spec.ts](../../../e2e/FR-CART-014-unit-price-display.spec.ts)） |
-| `FR-CHECKOUT-001` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 1件（[FR-CHECKOUT-001-payment-element.spec.ts](../../../e2e/FR-CHECKOUT-001-payment-element.spec.ts)） |
+| `FR-CHECKOUT-001` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | なし |
 | `FR-CHECKOUT-002` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 1件（[FR-CHECKOUT-002-pci-compliance.spec.ts](../../../e2e/FR-CHECKOUT-002-pci-compliance.spec.ts)） |
 | `FR-CHECKOUT-003` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 1件（[FR-CHECKOUT-003-tax-display.spec.ts](../../../e2e/FR-CHECKOUT-003-tax-display.spec.ts)） |
 | `FR-CHECKOUT-004` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 1件（[FR-CHECKOUT-004-field-validation.spec.ts](../../../e2e/FR-CHECKOUT-004-field-validation.spec.ts)） |
@@ -67,7 +67,7 @@
 | `FR-CHECKOUT-006` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 3件（[FR-CHECKOUT-006-confirmation-email.spec.ts](../../../e2e/FR-CHECKOUT-006-confirmation-email.spec.ts)） |
 | `FR-CHECKOUT-007` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 1件（[FR-CHECKOUT-007-inventory-check.spec.ts](../../../e2e/FR-CHECKOUT-007-inventory-check.spec.ts)） |
 | `FR-CHECKOUT-008` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 1件（[FR-CHECKOUT-008-error-retry.spec.ts](../../../e2e/FR-CHECKOUT-008-error-retry.spec.ts)） |
-| `FR-CHECKOUT-009` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 1件（[FR-CHECKOUT-009-webhook-idempotency.spec.ts](../../../e2e/FR-CHECKOUT-009-webhook-idempotency.spec.ts)） |
+| `FR-CHECKOUT-009` | 2件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 2件（[FR-CHECKOUT-009-webhook-idempotency.spec.ts](../../../e2e/FR-CHECKOUT-009-webhook-idempotency.spec.ts)） |
 | `FR-CHECKOUT-010` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 1件（[FR-CHECKOUT-010-postal-code-cache.spec.ts](../../../e2e/FR-CHECKOUT-010-postal-code-cache.spec.ts)） |
 | `FR-CHECKOUT-011` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 1件（[FR-CHECKOUT-011-tax-calculation-wont.spec.ts](../../../e2e/FR-CHECKOUT-011-tax-calculation-wont.spec.ts)） |
 | `FR-CHECKOUT-012` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 1件（[FR-CHECKOUT-012-account-profile-defaults.spec.ts](../../../e2e/FR-CHECKOUT-012-account-profile-defaults.spec.ts)） |
@@ -115,8 +115,8 @@
 | `FR-ITEM-DETAIL-012` | 1件（[05_item_detail.md](../../04_DetailDesign/pages/05_item_detail.md)） | 2件（[FR-ITEM-DETAIL-012-013-related-items-and-alt.spec.ts](../../../e2e/FR-ITEM-DETAIL-012-013-related-items-and-alt.spec.ts)） |
 | `FR-ITEM-DETAIL-013` | 1件（[05_item_detail.md](../../04_DetailDesign/pages/05_item_detail.md)） | 1件（[FR-ITEM-DETAIL-013-image-alt-text.spec.ts](../../../e2e/FR-ITEM-DETAIL-013-image-alt-text.spec.ts)） |
 | `FR-LOGIN-001` | 1件（[14_login.md](../../04_DetailDesign/pages/14_login.md)） | 1件（[FR-LOGIN-001-otp-turnstile.spec.ts](../../../e2e/FR-LOGIN-001-otp-turnstile.spec.ts)） |
-| `FR-LOGIN-002` | 1件（[14_login.md](../../04_DetailDesign/pages/14_login.md)） | 1件（[FR-LOGIN-002-google-oauth.spec.ts](../../../e2e/FR-LOGIN-002-google-oauth.spec.ts)） |
-| `FR-LOGIN-003` | 1件（[14_login.md](../../04_DetailDesign/pages/14_login.md)） | 1件（[FR-LOGIN-003-password-reset-link.spec.ts](../../../e2e/FR-LOGIN-003-password-reset-link.spec.ts)） |
+| `FR-LOGIN-002` | 2件（[14_login.md](../../04_DetailDesign/pages/14_login.md)） | 1件（[FR-LOGIN-002-google-oauth.spec.ts](../../../e2e/FR-LOGIN-002-google-oauth.spec.ts)） |
+| `FR-LOGIN-003` | 2件（[14_login.md](../../04_DetailDesign/pages/14_login.md)） | 1件（[FR-LOGIN-003-password-reset-link.spec.ts](../../../e2e/FR-LOGIN-003-password-reset-link.spec.ts)） |
 | `FR-LOGIN-004` | 1件（[14_login.md](../../04_DetailDesign/pages/14_login.md)） | なし |
 | `FR-LOGIN-005` | 1件（[14_login.md](../../04_DetailDesign/pages/14_login.md)） | 1件（[FR-LOGIN-005-metadata.spec.ts](../../../e2e/FR-LOGIN-005-metadata.spec.ts)） |
 | `FR-LOGIN-006` | 1件（[14_login.md](../../04_DetailDesign/pages/14_login.md)） | 1件（[FR-LOGIN-006-otp-resend-countdown.spec.ts](../../../e2e/FR-LOGIN-006-otp-resend-countdown.spec.ts)） |
@@ -1079,7 +1079,7 @@
 | `FREQ-354-AC-01` | なし | なし |
 | `FREQ-354-AC-02` | なし | なし |
 | `FREQ-354-AC-03` | なし | 2件（[FR-CHECKOUT-021-single-step-checkout.spec.ts](../../../e2e/FR-CHECKOUT-021-single-step-checkout.spec.ts)） |
-| `FREQ-354-AC-04` | なし | 1件（[FR-CHECKOUT-001-payment-element.spec.ts](../../../e2e/FR-CHECKOUT-001-payment-element.spec.ts)） |
+| `FREQ-354-AC-04` | なし | なし |
 | `FREQ-354-AC-05` | なし | なし |
 | `FREQ-355-AC-01` | なし | なし |
 | `FREQ-355-AC-02` | なし | なし |
@@ -1092,10 +1092,10 @@
 | `FREQ-357-AC-01` | なし | なし |
 | `FREQ-357-AC-02` | なし | なし |
 | `FREQ-357-AC-03` | なし | なし |
-| `FREQ-358-AC-01` | なし | 1件（[FR-CHECKOUT-024-session-ready-while-typing.spec.ts](../../../e2e/FR-CHECKOUT-024-session-ready-while-typing.spec.ts)） |
-| `FREQ-358-AC-02` | なし | 1件（[FR-CHECKOUT-024-session-ready-while-typing.spec.ts](../../../e2e/FR-CHECKOUT-024-session-ready-while-typing.spec.ts)） |
-| `FREQ-358-AC-03` | なし | 1件（[FR-CHECKOUT-024-session-ready-while-typing.spec.ts](../../../e2e/FR-CHECKOUT-024-session-ready-while-typing.spec.ts)） |
-| `FREQ-358-AC-04` | なし | 1件（[FR-CHECKOUT-024-session-ready-while-typing.spec.ts](../../../e2e/FR-CHECKOUT-024-session-ready-while-typing.spec.ts)） |
+| `FREQ-358-AC-01` | なし | なし |
+| `FREQ-358-AC-02` | なし | なし |
+| `FREQ-358-AC-03` | なし | なし |
+| `FREQ-358-AC-04` | なし | なし |
 | `FREQ-358-AC-05` | なし | 1件（[FR-CHECKOUT-024-session-ready-while-typing.spec.ts](../../../e2e/FR-CHECKOUT-024-session-ready-while-typing.spec.ts)） |
 | `FREQ-359-AC-01` | なし | 1件（[FR-CHECKOUT-025-stripe-csp-guard.spec.ts](../../../e2e/FR-CHECKOUT-025-stripe-csp-guard.spec.ts)） |
 | `FREQ-359-AC-02` | なし | 1件（[FR-CHECKOUT-025-stripe-csp-guard.spec.ts](../../../e2e/FR-CHECKOUT-025-stripe-csp-guard.spec.ts)） |
@@ -1128,14 +1128,14 @@
 | `FREQ-365-AC-02` | なし | なし |
 | `FREQ-365-AC-03` | なし | なし |
 | `FREQ-365-AC-04` | なし | なし |
-| `FREQ-365-AC-05` | なし | 1件（[FR-CHECKOUT-027-shipping-sync-before-confirm.spec.ts](../../../e2e/FR-CHECKOUT-027-shipping-sync-before-confirm.spec.ts)） |
-| `FREQ-365-AC-06` | なし | 1件（[FR-CHECKOUT-027-shipping-sync-before-confirm.spec.ts](../../../e2e/FR-CHECKOUT-027-shipping-sync-before-confirm.spec.ts)） |
+| `FREQ-365-AC-05` | なし | なし |
+| `FREQ-365-AC-06` | なし | なし |
 | `FREQ-365-AC-07` | なし | なし |
 | `FREQ-365-AC-08` | なし | なし |
 | `FREQ-365-AC-09` | なし | 1件（[FR-ADMIN-050-order-shipping.spec.ts](../../../e2e/FR-ADMIN-050-order-shipping.spec.ts)） |
 | `FREQ-366-AC-01` | なし | 1件（[FR-CHECKOUT-017-save-address-control.spec.ts](../../../e2e/FR-CHECKOUT-017-save-address-control.spec.ts)） |
 | `FREQ-366-AC-02` | なし | なし |
-| `FREQ-367-AC-01` | なし | 1件（[FR-CHECKOUT-028-confirm-disabled-until-ready.spec.ts](../../../e2e/FR-CHECKOUT-028-confirm-disabled-until-ready.spec.ts)） |
+| `FREQ-367-AC-01` | なし | なし |
 | `FREQ-367-AC-02` | なし | なし |
 | `FREQ-368-AC-01` | なし | なし |
 | `FREQ-368-AC-02` | なし | なし |
@@ -1147,13 +1147,13 @@
 | `FREQ-370-AC-02` | なし | なし |
 | `FREQ-370-AC-03` | なし | なし |
 | `FREQ-370-AC-04` | なし | なし |
-| `FREQ-371-AC-01` | なし | 1件（[FR-CHECKOUT-029-payment-method-label.spec.ts](../../../e2e/FR-CHECKOUT-029-payment-method-label.spec.ts)） |
+| `FREQ-371-AC-01` | なし | なし |
 | `FREQ-371-AC-02` | なし | なし |
 | `FREQ-371-AC-03` | なし | なし |
 | `FREQ-372-AC-01` | なし | 1件（[FR-CHECKOUT-030-keep-input-on-rerender.spec.ts](../../../e2e/FR-CHECKOUT-030-keep-input-on-rerender.spec.ts)） |
 | `FREQ-372-AC-02` | なし | 1件（[FR-CHECKOUT-030-keep-input-on-rerender.spec.ts](../../../e2e/FR-CHECKOUT-030-keep-input-on-rerender.spec.ts)） |
-| `FREQ-372-AC-03` | なし | 1件（[FR-CHECKOUT-030-keep-input-on-rerender.spec.ts](../../../e2e/FR-CHECKOUT-030-keep-input-on-rerender.spec.ts)） |
-| `FREQ-372-AC-04` | なし | 1件（[FR-CHECKOUT-030-keep-input-on-rerender.spec.ts](../../../e2e/FR-CHECKOUT-030-keep-input-on-rerender.spec.ts)） |
+| `FREQ-372-AC-03` | なし | なし |
+| `FREQ-372-AC-04` | なし | なし |
 | `FREQ-372-AC-05` | なし | なし |
 | `FREQ-373-AC-01` | なし | 1件（[FR-CHECKOUT-031-promo-code-label.spec.ts](../../../e2e/FR-CHECKOUT-031-promo-code-label.spec.ts)） |
 | `FREQ-373-AC-02` | なし | 1件（[FR-CHECKOUT-031-promo-code-label.spec.ts](../../../e2e/FR-CHECKOUT-031-promo-code-label.spec.ts)） |
@@ -1309,7 +1309,27 @@
 | `FREQ-414-AC-01` | なし | 1件（[FR-ADMIN-062-item-delete-guidance.spec.ts](../../../e2e/FR-ADMIN-062-item-delete-guidance.spec.ts)） |
 | `FREQ-414-AC-02` | なし | 1件（[FR-ADMIN-062-item-delete-guidance.spec.ts](../../../e2e/FR-ADMIN-062-item-delete-guidance.spec.ts)） |
 | `FREQ-414-AC-03` | なし | なし |
+| `FREQ-415-AC-01` | なし | 1件（[FR-ADMIN-064-recovered-order-review.spec.ts](../../../e2e/FR-ADMIN-064-recovered-order-review.spec.ts)） |
+| `FREQ-415-AC-02` | なし | 1件（[FR-ADMIN-064-recovered-order-review.spec.ts](../../../e2e/FR-ADMIN-064-recovered-order-review.spec.ts)） |
+| `FREQ-416-AC-01` | なし | 1件（[FR-CHECKOUT-035-webhook-signature-alert.spec.ts](../../../e2e/FR-CHECKOUT-035-webhook-signature-alert.spec.ts)） |
+| `FREQ-416-AC-02` | なし | 1件（[FR-CHECKOUT-035-webhook-signature-alert.spec.ts](../../../e2e/FR-CHECKOUT-035-webhook-signature-alert.spec.ts)） |
+| `FREQ-417-AC-01` | なし | 1件（[FR-CART-022-delivery-estimate-and-stock-notice.spec.ts](../../../e2e/FR-CART-022-delivery-estimate-and-stock-notice.spec.ts)） |
+| `FREQ-417-AC-02` | なし | 2件（[FR-CART-022-delivery-estimate-and-stock-notice.spec.ts](../../../e2e/FR-CART-022-delivery-estimate-and-stock-notice.spec.ts)） |
+| `FREQ-418-AC-01` | なし | 1件（[FR-CHECKOUT-036-place-order-payment.spec.ts](../../../e2e/FR-CHECKOUT-036-place-order-payment.spec.ts)） |
+| `FREQ-418-AC-02` | なし | 1件（[FR-CHECKOUT-036-place-order-payment.spec.ts](../../../e2e/FR-CHECKOUT-036-place-order-payment.spec.ts)） |
+| `FREQ-419-AC-01` | なし | 1件（[FR-CHECKOUT-037-final-confirmation-screen.spec.ts](../../../e2e/FR-CHECKOUT-037-final-confirmation-screen.spec.ts)） |
+| `FREQ-419-AC-02` | なし | 1件（[FR-CHECKOUT-037-final-confirmation-screen.spec.ts](../../../e2e/FR-CHECKOUT-037-final-confirmation-screen.spec.ts)） |
 | `FREQ-42-AC-01` | なし | 1件（[FR-ITEM-ALL-019-category-or-search.spec.ts](../../../e2e/FR-ITEM-ALL-019-category-or-search.spec.ts)） |
+| `FREQ-420-AC-01` | なし | 1件（[FR-CHECKOUT-039-promotion-code-server.spec.ts](../../../e2e/FR-CHECKOUT-039-promotion-code-server.spec.ts)） |
+| `FREQ-420-AC-02` | なし | 1件（[FR-CHECKOUT-039-promotion-code-server.spec.ts](../../../e2e/FR-CHECKOUT-039-promotion-code-server.spec.ts)） |
+| `FREQ-420-AC-03` | なし | 1件（[FR-CHECKOUT-039-promotion-code-server.spec.ts](../../../e2e/FR-CHECKOUT-039-promotion-code-server.spec.ts)） |
+| `FREQ-421-AC-01` | なし | 1件（[FR-CHECKOUT-040-reentry-after-payment.spec.ts](../../../e2e/FR-CHECKOUT-040-reentry-after-payment.spec.ts)） |
+| `FREQ-421-AC-02` | なし | 1件（[FR-CHECKOUT-040-reentry-after-payment.spec.ts](../../../e2e/FR-CHECKOUT-040-reentry-after-payment.spec.ts)） |
+| `FREQ-421-AC-03` | なし | 1件（[FR-CHECKOUT-040-reentry-after-payment.spec.ts](../../../e2e/FR-CHECKOUT-040-reentry-after-payment.spec.ts)） |
+| `FREQ-421-AC-04` | なし | 1件（[FR-CHECKOUT-040-reentry-after-payment.spec.ts](../../../e2e/FR-CHECKOUT-040-reentry-after-payment.spec.ts)） |
+| `FREQ-421-AC-05` | なし | なし |
+| `FREQ-422-AC-01` | なし | 1件（[FR-CHECKOUT-041-confirmation-email-fulfillment.spec.ts](../../../e2e/FR-CHECKOUT-041-confirmation-email-fulfillment.spec.ts)） |
+| `FREQ-422-AC-02` | なし | なし |
 | `FREQ-43-AC-01` | なし | 1件（[FR-ITEM-ALL-020-column-width-stable.spec.ts](../../../e2e/FR-ITEM-ALL-020-column-width-stable.spec.ts)） |
 | `FREQ-44-AC-01` | なし | 1件（[FR-ITEM-ALL-021-stock-season-multiselect.spec.ts](../../../e2e/FR-ITEM-ALL-021-stock-season-multiselect.spec.ts)） |
 | `FREQ-44-AC-02` | なし | 1件（[FR-ITEM-ALL-021-stock-season-multiselect.spec.ts](../../../e2e/FR-ITEM-ALL-021-stock-season-multiselect.spec.ts)） |
