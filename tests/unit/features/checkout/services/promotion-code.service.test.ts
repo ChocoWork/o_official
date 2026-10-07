@@ -6,6 +6,12 @@ import {
 
 const NOW = new Date('2026-10-08T00:00:00.000Z');
 const NOW_SECONDS = Math.floor(NOW.getTime() / 1000);
+const EXPECTED_EXPAND = [
+  'data.promotion.coupon',
+  'data.promotion.coupon.applies_to',
+  'data.promotion.coupon.currency_options',
+  'data.restrictions.currency_options',
+];
 
 function coupon(overrides: Partial<Stripe.Coupon> = {}): Stripe.Coupon {
   return {
@@ -62,7 +68,7 @@ describe('checkPromotionCode', () => {
       code: 'welcome10',
       active: true,
       limit: 1,
-      expand: ['data.promotion.coupon'],
+      expand: EXPECTED_EXPAND,
     });
     expect(result).toEqual({
       ok: true,
@@ -71,6 +77,16 @@ describe('checkPromotionCode', () => {
       discountAmount: 1235,
       totalAfterDiscount: 11110,
     });
+  });
+
+  test('1回目で見つかったときは2回目を呼ばない', async () => {
+    const { client, list } = stripeReturning([promotionCode()]);
+
+    await expect(
+      checkPromotionCode(client, { code: 'WELCOME10', preDiscountTotal: 5000, now: NOW }),
+    ).resolves.toMatchObject({ ok: true });
+
+    expect(list).toHaveBeenCalledTimes(1);
   });
 
   test('定額のコードは合計を超えて引かない', async () => {
@@ -98,16 +114,23 @@ describe('checkPromotionCode', () => {
   });
 
   test('見つからないコードは断る', async () => {
-    const { client } = stripeReturning([]);
+    const { client, list } = stripeReturning([]);
 
     const result = await checkPromotionCode(client, { code: 'NOPE', preDiscountTotal: 5000, now: NOW });
 
     expect(result).toEqual({ ok: false, reason: 'not_found', message: 'このコードは使えません' });
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(list).toHaveBeenNthCalledWith(1, { code: 'NOPE', active: true, limit: 1, expand: EXPECTED_EXPAND });
+    expect(list).toHaveBeenNthCalledWith(2, { code: 'NOPE', limit: 1, expand: EXPECTED_EXPAND });
+    expect(list.mock.calls[1][0]).not.toHaveProperty('active');
   });
 
   test('期限の切れたコード（コード・クーポンのどちらでも）は断る', async () => {
     const byCode = stripeReturning([promotionCode({ expires_at: NOW_SECONDS - 1 })]);
-    const byCoupon = stripeReturning([promotionCode({}, { redeem_by: NOW_SECONDS - 1 })]);
+    const byCoupon = stripeReturning([]);
+    byCoupon.list.mockResolvedValueOnce({ data: [] }).mockResolvedValueOnce({
+      data: [promotionCode({ active: false }, { valid: false, redeem_by: NOW_SECONDS - 1 })],
+    });
 
     await expect(checkPromotionCode(byCode.client, { code: 'OLD', preDiscountTotal: 5000, now: NOW })).resolves.toEqual({
       ok: false,
@@ -116,12 +139,16 @@ describe('checkPromotionCode', () => {
     });
     await expect(
       checkPromotionCode(byCoupon.client, { code: 'OLD', preDiscountTotal: 5000, now: NOW }),
-    ).resolves.toMatchObject({ ok: false, reason: 'expired' });
+    ).resolves.toEqual({ ok: false, reason: 'expired', message: 'このコードは有効期限が切れています' });
+    expect(byCoupon.list).toHaveBeenCalledTimes(2);
   });
 
   test('使える回数を使い切ったコード（コード・クーポンのどちらでも）は断る', async () => {
     const byCode = stripeReturning([promotionCode({ max_redemptions: 3, times_redeemed: 3 })]);
-    const byCoupon = stripeReturning([promotionCode({}, { max_redemptions: 1, times_redeemed: 1 })]);
+    const byCoupon = stripeReturning([]);
+    byCoupon.list.mockResolvedValueOnce({ data: [] }).mockResolvedValueOnce({
+      data: [promotionCode({ active: false }, { valid: false, max_redemptions: 1, times_redeemed: 1 })],
+    });
 
     await expect(checkPromotionCode(byCode.client, { code: 'MAX', preDiscountTotal: 5000, now: NOW })).resolves.toEqual({
       ok: false,
@@ -130,7 +157,51 @@ describe('checkPromotionCode', () => {
     });
     await expect(
       checkPromotionCode(byCoupon.client, { code: 'MAX', preDiscountTotal: 5000, now: NOW }),
-    ).resolves.toMatchObject({ ok: false, reason: 'redemption_limit' });
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'redemption_limit',
+      message: 'このコードは利用回数の上限に達しています',
+    });
+    expect(byCoupon.list).toHaveBeenCalledTimes(2);
+  });
+
+  test('引き直したコード側の期限・回数も確かめる', async () => {
+    const cases = [
+      {
+        promotion: promotionCode({ active: false, expires_at: NOW_SECONDS }),
+        reason: 'expired',
+        message: 'このコードは有効期限が切れています',
+      },
+      {
+        promotion: promotionCode({ active: false, max_redemptions: 3, times_redeemed: 3 }),
+        reason: 'redemption_limit',
+        message: 'このコードは利用回数の上限に達しています',
+      },
+    ];
+
+    for (const { promotion, reason, message } of cases) {
+      const { client, list } = stripeReturning([]);
+      list.mockResolvedValueOnce({ data: [] }).mockResolvedValueOnce({ data: [promotion] });
+
+      await expect(
+        checkPromotionCode(client, { code: 'OLD', preDiscountTotal: 5000, now: NOW }),
+      ).resolves.toEqual({ ok: false, reason, message });
+      expect(list).toHaveBeenCalledTimes(2);
+    }
+  });
+
+  test('引き直したコードに期限切れ・回数上限の理由が無ければ断る', async () => {
+    for (const valid of [true, false]) {
+      const { client, list } = stripeReturning([]);
+      list.mockResolvedValueOnce({ data: [] }).mockResolvedValueOnce({
+        data: [promotionCode({ active: false }, { valid })],
+      });
+
+      await expect(
+        checkPromotionCode(client, { code: 'STOPPED', preDiscountTotal: 5000, now: NOW }),
+      ).resolves.toEqual({ ok: false, reason: 'not_found', message: 'このコードは使えません' });
+      expect(list).toHaveBeenCalledTimes(2);
+    }
   });
 
   test('最低購入額に届かなければ、その額を添えて断る', async () => {

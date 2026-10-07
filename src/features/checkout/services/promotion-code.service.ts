@@ -42,6 +42,28 @@ function reject(reason: Exclude<PromotionCodeRejection, 'minimum_amount'>): Prom
   return { ok: false, reason, message: MESSAGES[reason] };
 }
 
+function expirationOrRedemptionLimit(
+  promotion: Stripe.PromotionCode,
+  coupon: Stripe.Coupon,
+  nowSeconds: number,
+): 'expired' | 'redemption_limit' | null {
+  if (
+    (promotion.expires_at !== null && promotion.expires_at <= nowSeconds) ||
+    (coupon.redeem_by !== null && coupon.redeem_by <= nowSeconds)
+  ) {
+    return 'expired';
+  }
+
+  if (
+    (promotion.max_redemptions !== null && promotion.times_redeemed >= promotion.max_redemptions) ||
+    (coupon.max_redemptions !== null && coupon.times_redeemed >= coupon.max_redemptions)
+  ) {
+    return 'redemption_limit';
+  }
+
+  return null;
+}
+
 function minimumAmountOf(code: Stripe.PromotionCode): number | null {
   const byCurrency = code.restrictions.currency_options?.[CURRENCY]?.minimum_amount;
   if (typeof byCurrency === 'number') {
@@ -75,31 +97,37 @@ export async function checkPromotionCode(
   stripe: PromotionCodeClient,
   params: { code: string; preDiscountTotal: number; now: Date },
 ): Promise<PromotionCodeCheck> {
-  const list = await stripe.promotionCodes.list({
+  const listParams: Stripe.PromotionCodeListParams = {
     code: params.code,
-    active: true,
     limit: 1,
-    expand: ['data.promotion.coupon'],
-  });
-  const promotion = list.data[0];
+    expand: [
+      'data.promotion.coupon',
+      'data.promotion.coupon.applies_to',
+      'data.promotion.coupon.currency_options',
+      'data.restrictions.currency_options',
+    ],
+  };
+  const list = await stripe.promotionCodes.list({ ...listParams, active: true });
+  let promotion = list.data[0];
+  const foundActive = Boolean(promotion);
+  if (!promotion) {
+    // クーポンが使えなくなるとコードも非 active になるため、期限・回数の理由を確かめ直す。
+    const unfilteredList = await stripe.promotionCodes.list(listParams);
+    promotion = unfilteredList.data[0];
+  }
   const coupon = promotion && typeof promotion.promotion?.coupon === 'object' ? promotion.promotion.coupon : null;
   if (!promotion || !coupon) {
     return reject('not_found');
   }
 
   const nowSeconds = Math.floor(params.now.getTime() / 1000);
-  if (
-    (promotion.expires_at !== null && promotion.expires_at <= nowSeconds) ||
-    (coupon.redeem_by !== null && coupon.redeem_by <= nowSeconds)
-  ) {
-    return reject('expired');
+  const usageRejection = expirationOrRedemptionLimit(promotion, coupon, nowSeconds);
+  if (usageRejection) {
+    return reject(usageRejection);
   }
 
-  if (
-    (promotion.max_redemptions !== null && promotion.times_redeemed >= promotion.max_redemptions) ||
-    (coupon.max_redemptions !== null && coupon.times_redeemed >= coupon.max_redemptions)
-  ) {
-    return reject('redemption_limit');
+  if (!foundActive) {
+    return reject('not_found');
   }
 
   if (
