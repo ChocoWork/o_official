@@ -8831,7 +8831,7 @@ git commit -m "test(e2e): 古い流れの決済の E2E を、注文するで支�
 購入画面は、入力画面（お客様情報・配送先・割引コード）と最終確認画面に分かれる。「確認へ進む」でサーバーが下書きと Stripe Checkout Session（30分で失効。割引はサーバーが付ける）を作り、同じ Cookie のほかの決済の画面を閉じ、最終確認画面の内容を返す。最終確認画面の「注文する」で、受け付け（注文と在庫の確保）→ 支払い → 完了の処理を一度に行う。注文・在庫の状態の変更は complete/Webhook が呼ぶ共通照合器が行う。開き直したときは入り直しの入口が、どこから続けるかを返す。
 ```
 
-- 範囲と根拠の表の `Shipping` の行を消し、次の3行を足す。`RPC` の行の最後に `、[最終確認画面の受け付け](../../../supabase/migrations/20261008000000_checkout_final_screen_place_order.sql)` を足す（本番に当てて名前を変えたら、その名前にする）:
+- 範囲と根拠の表の `Shipping` の行を消し、次の3行を足す。`RPC` の行の最後に `、[最終確認画面の受け付け](../../../supabase/migrations/20261007133711_checkout_final_screen_place_order.sql)` を足す（本番に当てて名前を変えたら、その名前にする）:
 
 ```markdown
 | PlaceOrder | [place-order](../../../src/app/api/checkout/place-order/route.ts) |

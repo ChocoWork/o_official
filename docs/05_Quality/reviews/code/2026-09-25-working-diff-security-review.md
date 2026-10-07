@@ -451,7 +451,7 @@
 | 順 | グループ | 指摘ID | 状態 |
 | --- | --- | --- | --- |
 | 1 | A 支払状態を Stripe の現在値に合わせる | R-01, R-02, R-04, R-18, R-25（Webhook 側）, R-41, R-42, R-43, R-44（①の削除の案内と同じ箇所のため 2026-09-25 に移した）, R-57（create-session の同じ箇所を直すため 2026-09-27 に加えた） | 実装済み・push 待ち（[設計書](../../../superpowers/specs/2026-09-26-order-payment-reconciliation-design.md)、[実装計画](../../../superpowers/plans/2026-09-27-order-payment-reconciliation.md)。本番へ当てる前の確認は下の「グループ A を本番へ当てる前の確認」） |
-| 2 | F 支払いを「注文する」で実行する | R-56, X-3, 在庫を注文確定時に確保する要望 | 実装済み（[設計書](../../../superpowers/specs/2026-10-07-checkout-place-order-payment-design.md)、[実装計画](../../../superpowers/plans/2026-10-07-checkout-place-order-payment.md)）。DB の移行は push の後に本番へ |
+| 2 | F 支払いを「注文する」で実行する | R-56, X-3, 在庫を注文確定時に確保する要望 | 実装済み・push 済み（[設計書](../../../superpowers/specs/2026-10-07-checkout-place-order-payment-design.md)、[実装計画](../../../superpowers/plans/2026-10-07-checkout-place-order-payment.md)）。DB の変更は 2026-10-07 に本番へ適用済み（20261007133711）。開店の前に、特定商取引法の表示を専門家に確かめてもらう（X-3） |
 | 3 | B キューと worker の運用基盤 | R-07, R-33, R-32, R-05, R-35, R-55, X-4 | 実装済み・push 済み（[設計書](../../../superpowers/specs/2026-10-05-webhook-queue-operations-design.md)、[実装計画1（E2E）](../../../superpowers/plans/2026-10-05-e2e-local-supabase.md)、[実装計画2](../../../superpowers/plans/2026-10-05-webhook-queue-operations.md)。DB の変更は 2026-10-07 に本番へ適用済み（20261007030242・20261007030336）。定期処理の登録は開店のとき（[手順書](../../../06_Operations/webhook-queue-operations.md)）） |
 | 4 | C 注文確定RPC（finalize）の整合 | R-24, R-26（R-42 は同じ箇所を直す A へ移した） | 一部対応：R-26 はグループ A で修正。R-24 は complete API 経路で修正したが、Webhook 単独経路の所有者保存は未着手 |
 | 5 | D 注文メールを確実に送る | R-34, R-14 | 未着手 |
