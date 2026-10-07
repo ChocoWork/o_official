@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import CartPage from '@/app/cart/page';
 
@@ -221,5 +221,84 @@ describe('CartPage', () => {
     expect(marks).toHaveLength(1);
     expect(marks[0]).toHaveTextContent('在庫あり → 受注生産');
     expect(window.sessionStorage.getItem('checkout:cart-notice')).toBeNull();
+  });
+
+  it('カートが空でも、保存された案内があれば出す（設計書 5-3）', async () => {
+    window.sessionStorage.setItem(
+      'checkout:cart-notice',
+      JSON.stringify({ kind: 'message', message: '商品の価格が変わりました。内容をご確認ください' }),
+    );
+    (global as any).fetch.mockResolvedValueOnce({ ok: true, json: async () => [] });
+
+    render(<CartPage />);
+
+    await waitFor(() => expect(screen.getByText(/YOUR CART IS EMPTY/i)).toBeInTheDocument());
+    const notice = await screen.findByTestId('cart-notice');
+    await waitFor(() => expect(notice).toHaveTextContent('商品の価格が変わりました。内容をご確認ください'));
+    // --pad-x は商品ありの外枠でしか定義されない。空のカートでも余白が 0 にならないよう既定値を持つ
+    expect(notice.style.padding).toMatch(/^var\(--pad-x, .+\)$/);
+  });
+
+  it('在庫の変化の案内があっても、今のお届けの目安が在庫ありの行には印を付けない（設計書 5-3）', async () => {
+    // 断られた後に数量を減らして在庫に収まった行は、目安が在庫ありに変わっている。古い印を残さない
+    window.sessionStorage.setItem(
+      'checkout:cart-notice',
+      JSON.stringify({
+        kind: 'stock_changed',
+        message: '在庫の状況が変わりました。次の商品は受注生産になります（発送まで数週間〜2か月以上）',
+        lines: [
+          { itemId: 1, name: 'シャツ', color: 'BLACK', size: 'M' },
+          { itemId: 2, name: 'パンツ', color: 'NAVY', size: 'L' },
+        ],
+      }),
+    );
+    (global as any).fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => [
+        {
+          id: '1', item_id: 1, quantity: 1, color: 'BLACK', size: 'M', added_at: '2026-10-08T00:00:00Z', fulfillment: 'stock',
+          items: { id: 1, name: 'シャツ', price: 5000, image_url: '/x.png', category: 'TOPS' },
+        },
+        {
+          id: '2', item_id: 2, quantity: 2, color: 'NAVY', size: 'L', added_at: '2026-10-08T00:00:00Z', fulfillment: 'backorder',
+          items: { id: 2, name: 'パンツ', price: 8000, image_url: '/y.png', category: 'BOTTOMS' },
+        },
+      ],
+    });
+
+    render(<CartPage />);
+
+    // お届けの目安と印は、同じ行の上段に並ぶ
+    const [stockRow, backorderRow] = (await screen.findAllByTestId('cart-fulfillment')).map(
+      (label) => label.parentElement as HTMLElement,
+    );
+    expect(await within(backorderRow).findByTestId('cart-stock-changed')).toHaveTextContent('在庫あり → 受注生産');
+    expect(within(stockRow).queryByTestId('cart-stock-changed')).toBeNull();
+    expect(screen.getAllByTestId('cart-stock-changed')).toHaveLength(1);
+  });
+
+  it('案内の入れ物は空のまま先に置かれ、文言はあとから同じ入れ物に入る（読み上げの入れ物）', async () => {
+    const message = '商品の価格が変わりました。内容をご確認ください';
+    window.sessionStorage.setItem('checkout:cart-notice', JSON.stringify({ kind: 'message', message }));
+    (global as any).fetch.mockResolvedValueOnce({ ok: true, json: async () => [] });
+
+    // 文言ごと入れ物を差し込むと、スクリーンリーダーが読まないことがある。DOM が変わった順で確かめる
+    const records: MutationRecord[] = [];
+    const observer = new MutationObserver((list) => records.push(...list));
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    render(<CartPage />);
+
+    const notice = await screen.findByTestId('cart-notice');
+    await waitFor(() => expect(notice).toHaveTextContent(message));
+    records.push(...observer.takeRecords());
+    observer.disconnect();
+
+    expect(
+      records.some(
+        (record) =>
+          record.target === notice && Array.from(record.addedNodes).some((node) => node.textContent === message),
+      ),
+    ).toBe(true);
   });
 });

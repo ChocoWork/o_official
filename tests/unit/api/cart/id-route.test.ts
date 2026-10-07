@@ -121,6 +121,27 @@ describe('PATCH /api/cart/[id]', () => {
     });
     expect((res as unknown as { body: Record<string, unknown> }).body).toMatchObject({ id: 'cart-1', quantity: 3, fulfillment: 'backorder' });
   });
+
+  test('目安を読めなくても、数量の更新は成功として返す（目安は null）', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockRpc.mockImplementation(async (fn: string) => {
+      if (fn === 'update_cart_item_quantity_secure') {
+        return {
+          data: [{ id: 'cart-1', item_id: 1, quantity: 3, color: 'BLACK', size: 'M', session_id: 'sess-abc', user_id: null, added_at: 'x', updated_at: 'y' }],
+          error: null,
+        };
+      }
+      return { data: null, error: { message: 'boom' } };
+    });
+
+    const res = await PATCH(makeRequest({ quantity: 3 }), { params: Promise.resolve({ id: 'cart-1' }) });
+
+    expect((res as { status: number }).status).toBe(200);
+    expect((res as unknown as { body: Record<string, unknown> }).body).toMatchObject({ id: 'cart-1', quantity: 3, fulfillment: null });
+    // 目安を捨てるだけで、失敗そのものは握りつぶさず記録している
+    expect(errorSpy).toHaveBeenCalledWith('Failed to preview cart line fulfillment:', expect.anything());
+    errorSpy.mockRestore();
+  });
 });
 
 describe('DELETE /api/cart/[id]', () => {

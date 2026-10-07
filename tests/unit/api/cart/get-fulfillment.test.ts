@@ -72,11 +72,15 @@ describe('GET /api/cart のお届けの目安（設計書 5-2）', () => {
   });
 
   test('目安を読めなくてもカートは返す（目安は null）', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     mockRpc.mockResolvedValue({ data: null, error: { message: 'boom' } });
 
     const res = (await GET(makeRequest())) as unknown as { status: number; body: Array<Record<string, unknown>> };
 
     expect(res.status).toBe(200);
     expect(res.body.map((row) => row.fulfillment)).toEqual([null, null]);
+    // 目安を捨てるだけで、失敗そのものは握りつぶさず記録している
+    expect(errorSpy).toHaveBeenCalledWith('Failed to preview cart fulfillment:', expect.anything());
+    errorSpy.mockRestore();
   });
 });

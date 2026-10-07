@@ -32,14 +32,24 @@ export default function CartPage() {
     dismissActionError,
   } = useCartItems();
 
-  // 決済の画面の受け付けで断られた理由（決め事 D11）。読んだら消えるので、開発時の二重実行で空を上書きしない
+  // 決済の画面の受け付けで断られた理由（決め事 D11）。読んだら消えるので、開発時の二重実行で空を上書きしない。
+  // 読み込み中は読み上げの入れ物が DOM に無い。そのまま notice に入れると、商品が届いた後に文言ごと
+  // 入れ物が差し込まれ、スクリーンリーダーが読まないことがある。いったん表示待ちに置き、
+  // 読み込みが終わって入れ物が空のまま描かれた後で notice に移す
+  const [pendingNotice, setPendingNotice] = React.useState<CartNotice | null>(null);
   const [notice, setNotice] = React.useState<CartNotice | null>(null);
   React.useEffect(() => {
     const taken = takeCartNotice();
     if (taken) {
-      setNotice(taken);
+      setPendingNotice(taken);
     }
   }, []);
+  React.useEffect(() => {
+    if (!loading && pendingNotice) {
+      setNotice(pendingNotice);
+      setPendingNotice(null);
+    }
+  }, [loading, pendingNotice]);
 
   const noticeBlock = (
     <LiveMessage
@@ -47,7 +57,15 @@ export default function CartPage() {
       politeness="status"
       data-testid="cart-notice"
       className={notice ? "border border-black/20 bg-black/2 mb-6" : undefined}
-      style={notice ? { fontSize: "var(--lk-size-xs)", padding: "var(--pad-x)" } : undefined}
+      // --pad-x は商品ありの外枠でしか定義されない。空のカートでも余白が 0 にならないよう同じ式を既定値にする
+      style={
+        notice
+          ? {
+              fontSize: "var(--lk-size-xs)",
+              padding: "var(--pad-x, calc(var(--lk-size-md) / var(--sqrt-phi)))",
+            }
+          : undefined
+      }
     >
       {notice ? (
         <>
@@ -112,7 +130,8 @@ export default function CartPage() {
   if (cartItems.length === 0) {
     return (
       <>
-        {notice ? <div className="max-w-5xl mx-auto w-full">{noticeBlock}</div> : null}
+        {/* 空のカートでも読み上げの入れ物は常に置く。空の間は見えず場所も取らない */}
+        <div className="max-w-5xl mx-auto w-full">{noticeBlock}</div>
         <EmptyPage
           iconClassName="ri-shopping-bag-line"
           label="YOUR CART IS EMPTY"
@@ -194,8 +213,10 @@ export default function CartPage() {
               isTogglingWishlist={togglingWishlist === item.item_id.toString()}
               isWishlisted={wishlistedItems.has(item.item_id)}
               syncError={syncErrorByItem[item.id]}
+              // 断られた後に数量を減らして在庫に収まった行は、目安が在庫ありに変わっている。目安が読めない（null）ときは印を残す
               stockChanged={
                 notice?.kind === "stock_changed" &&
+                item.fulfillment !== "stock" &&
                 notice.lines.some((line) => isSameCartLine(line, item))
               }
               resyncing={resyncing}
