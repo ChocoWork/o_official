@@ -11,7 +11,7 @@ export type ConfirmationItem = {
   size?: string | null;
   quantity: number;
   line_total: number;
-  /** 受け付けで在庫を確保した明細は stock、受注生産は backorder（グループ F 設計書 5-3）。目安を出さないメールの呼び出し側は渡さない */
+  /** 受け付けで在庫を確保した明細は stock、受注生産は backorder（グループ F 設計書 5-3）。DB の列は NOT NULL。目安を出すかは formatItemLines の withFulfillment で決める */
   fulfillment_type?: string | null;
 };
 
@@ -60,6 +60,7 @@ type OrderConfirmationParams = {
   paymentState?: 'paid' | 'awaiting_payment';
   /** 入金済みの書き分け（設計書 5-4）。送信権はどれも paid */
   paidVariant?: PaidEmailVariant;
+  reviewReason?: string | null;
 };
 
 export function formatCurrency(amount: number, currency: string): string {
@@ -141,7 +142,8 @@ export async function sendOrderConfirmationEmail(params: OrderConfirmationParams
         ]
       : ['この度はご注文いただき誠にありがとうございます。', 'ご注文を承りました。'];
 
-  const itemLines = formatItemLines(items, currency, { withFulfillment: true });
+  // 入金時に在庫を確保し直せなかった注文は、fulfillment_type が stock のままでも引渡しの時期を約束できない。
+  const itemLines = formatItemLines(items, currency, { withFulfillment: params.reviewReason !== 'stock_not_reserved' });
 
   // 空の項目で空行が出ないよう、値のある行だけを積む。
   const shippingLines = [
@@ -258,7 +260,7 @@ export type OrderEmailSourceStore = OrderEmailClaimStore & Pick<SupabaseClient, 
 
 /** 注文メールに必要な orders の列。経路ごとに並びがずれないよう、ここ1か所で持つ。 */
 const ORDER_EMAIL_COLUMNS =
-  'id, shipping_email, shipping_full_name, subtotal_amount, shipping_amount, discount_amount, total_amount, currency, shipping_postal_code, shipping_prefecture, shipping_city, shipping_address, shipping_building, shipping_phone';
+  'id, shipping_email, shipping_full_name, subtotal_amount, shipping_amount, discount_amount, total_amount, currency, shipping_postal_code, shipping_prefecture, shipping_city, shipping_address, shipping_building, shipping_phone, review_reason';
 
 export type OrderEmailRow = {
   id: string;
@@ -275,6 +277,7 @@ export type OrderEmailRow = {
   shipping_address: string | null;
   shipping_building: string | null;
   shipping_phone: string | null;
+  review_reason: string | null;
 };
 
 export type OrderEmailSource = { order: OrderEmailRow; items: ConfirmationItem[] };
@@ -359,6 +362,7 @@ export async function sendOrderConfirmationEmailForOrderId(params: {
     },
     paymentState,
     paidVariant,
+    reviewReason: orderRow.review_reason,
     store,
   });
 }

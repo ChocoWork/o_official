@@ -39,7 +39,7 @@ const ORDER_ROW = {
   shipping_phone: '090-1234-5678',
 };
 
-const ITEMS = [{ item_name: 'シルクブラウス', color: 'WHITE', size: 'M', quantity: 1, line_total: 28000 }];
+const ITEMS = [{ item_name: 'シルクブラウス', color: 'WHITE', size: 'M', quantity: 1, line_total: 28000, fulfillment_type: 'stock' }];
 
 function makeStore(options: { claim?: boolean } = {}) {
   const calls: Array<{ fn: string; args: Record<string, unknown> }> = [];
@@ -85,6 +85,7 @@ describe('期限切れのお知らせ', () => {
     expect(mail.subject).toBe('【Le Fil des Heures】お支払い期限切れのお知らせ（ORD-A1B2C3D4）');
     expect(mail.text).toContain('お支払い期限が過ぎたため、ご注文を取り消しました。');
     expect(mail.text).toContain('・シルクブラウス（WHITE / M） x1');
+    expect(mail.text).not.toContain('在庫あり');
   });
 
   it('送信権を取れなければ送らない（二重送信しない）', async () => {
@@ -127,6 +128,7 @@ describe('取消のお知らせ', () => {
     expect(mail.subject).toBe('【Le Fil des Heures】ご注文取消のお知らせ（ORD-A1B2C3D4）');
     expect(mail.text).toContain(lead);
     expect(mail.text).toContain('お支払いは発生していません。');
+    expect(mail.text).not.toContain('在庫あり');
   });
 });
 

@@ -383,18 +383,18 @@ describe('明細ごとのお届けの目安（グループ F 設計書 5-3）', 
     const items = [
       { item_name: 'シルクブラウス', color: 'WHITE', size: 'M', quantity: 1, line_total: 28000, fulfillment_type: 'stock' },
       { item_name: 'ウールパンツ', color: null, size: 'L', quantity: 2, line_total: 36000, fulfillment_type: 'backorder' },
-      { item_name: '古い注文の明細', quantity: 1, line_total: 1000, fulfillment_type: null },
+      { item_name: '目安の無い明細', quantity: 1, line_total: 1000, fulfillment_type: null },
     ];
 
     expect(formatItemLines(items, 'jpy', { withFulfillment: true })).toEqual([
       '・シルクブラウス（WHITE / M） x1　￥28,000\n　在庫あり・ご注文（コンビニはご入金）の確認後、3〜7営業日で発送',
       '・ウールパンツ（L） x2　￥36,000\n　受注生産・発送まで数週間〜2か月以上（目安）',
-      '・古い注文の明細 x1　￥1,000',
+      '・目安の無い明細 x1　￥1,000',
     ]);
     expect(formatItemLines(items, 'jpy')).toEqual([
       '・シルクブラウス（WHITE / M） x1　￥28,000',
       '・ウールパンツ（L） x2　￥36,000',
-      '・古い注文の明細 x1　￥1,000',
+      '・目安の無い明細 x1　￥1,000',
     ]);
   });
 
@@ -468,5 +468,105 @@ describe('明細ごとのお届けの目安（グループ F 設計書 5-3）', 
     expect(selects).toEqual(['item_name, color, size, quantity, line_total, fulfillment_type']);
     const body = mockSendMail.mock.calls[0][0].text as string;
     expect(body).toContain('受注生産・発送まで数週間〜2か月以上（目安）');
+  });
+
+  test('期限切れの後の入金で在庫を確保し直せなかった注文には、どの明細にも目安を出さない', async () => {
+    const params = {
+      ...baseParams(),
+      paidVariant: 'payment_received_after_expiry' as const,
+      reviewReason: 'stock_not_reserved',
+      items: [
+        { item_name: 'シルクブラウス', quantity: 1, line_total: 28000, fulfillment_type: 'stock' },
+        { item_name: 'ウールパンツ', quantity: 1, line_total: 18000, fulfillment_type: 'backorder' },
+      ],
+    };
+
+    await sendOrderConfirmationEmail(params);
+
+    const body = mockSendMail.mock.calls[0][0].text as string;
+    expect(body).toContain('その後にお支払いを確認しました。');
+    expect(body).toContain('・シルクブラウス x1');
+    expect(body).toContain('・ウールパンツ x1');
+    expect(body).not.toContain('在庫あり・');
+    expect(body).not.toContain('受注生産・');
+  });
+
+  test('コンビニのお支払い待ちの確定メールにも、明細ごとの目安が出る', async () => {
+    await sendOrderConfirmationEmail({
+      ...baseParams(),
+      paymentState: 'awaiting_payment',
+      items: [
+        { item_name: 'シルクブラウス', quantity: 1, line_total: 28000, fulfillment_type: 'stock' },
+        { item_name: 'ウールパンツ', quantity: 1, line_total: 18000, fulfillment_type: 'backorder' },
+      ],
+    });
+
+    const body = mockSendMail.mock.calls[0][0].text as string;
+    expect(body).toContain('まだお支払いは完了していません。');
+    expect(body).toContain('在庫あり・ご注文（コンビニはご入金）の確認後、3〜7営業日で発送');
+    expect(body).toContain('受注生産・発送まで数週間〜2か月以上（目安）');
+  });
+
+  test('注文 ID から送るときは review_reason を読み、在庫を確保し直せなかった注文の目安を出さない', async () => {
+    const selects: Record<string, string> = {};
+    const queryStore = {
+      ...makeStore(),
+      from(table: string) {
+        return {
+          select: (columns: string) => {
+            selects[table] = columns;
+            return {
+              eq: () => table === 'orders'
+                ? {
+                    maybeSingle: async () => ({
+                      data: {
+                        id: BASE.orderId,
+                        shipping_email: BASE.email,
+                        shipping_full_name: BASE.fullName,
+                        subtotal_amount: BASE.subtotalAmount,
+                        shipping_amount: BASE.shippingAmount,
+                        discount_amount: BASE.discountAmount,
+                        total_amount: BASE.totalAmount,
+                        currency: BASE.currency,
+                        shipping_postal_code: BASE.shipping.postalCode,
+                        shipping_prefecture: BASE.shipping.prefecture,
+                        shipping_city: BASE.shipping.city,
+                        shipping_address: BASE.shipping.address,
+                        shipping_building: BASE.shipping.building,
+                        shipping_phone: BASE.shipping.phone,
+                        review_reason: 'stock_not_reserved',
+                      },
+                      error: null,
+                    }),
+                  }
+                : Promise.resolve({
+                    data: [
+                      { item_name: 'シルクブラウス', quantity: 1, line_total: 28000, fulfillment_type: 'stock' },
+                      { item_name: 'ウールパンツ', quantity: 1, line_total: 18000, fulfillment_type: 'backorder' },
+                    ],
+                    error: null,
+                  }),
+            };
+          },
+        };
+      },
+    };
+
+    const sent = await sendOrderConfirmationEmailForOrderId({
+      store: queryStore as never,
+      orderId: BASE.orderId,
+      paymentState: 'paid',
+      paidVariant: 'payment_received_after_expiry',
+      logLabel: '[test]',
+    });
+
+    expect(sent).toBe(true);
+    expect(selects.orders.split(', ')).toContain('review_reason');
+    expect(selects.order_items).toBe('item_name, color, size, quantity, line_total, fulfillment_type');
+    const body = mockSendMail.mock.calls[0][0].text as string;
+    expect(body).toContain('・シルクブラウス x1');
+    expect(body).toContain('・ウールパンツ x1');
+    expect(body).not.toContain('在庫あり・');
+    expect(body).not.toContain('受注生産・');
   });
 });
