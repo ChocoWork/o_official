@@ -55,7 +55,7 @@ export type PromotionPreview = {
   totalAmount: number;
 };
 
-export type PromotionCheckResult = { kind: "applied"; preview: PromotionPreview } | { kind: "rejected"; message: string };
+export type PromotionCheckResult = { kind: "applied"; preview: PromotionPreview } | { kind: "rejected"; message: string; transient: boolean };
 
 const REJECTION_CODES: readonly CheckoutRejectionCode[] = [
   "stock_changed",
@@ -212,8 +212,13 @@ export async function checkPromotionCodeRequest(code: string): Promise<Promotion
     if (response.ok && typeof data?.code === "string" && typeof data.totalAmount === "number") {
       return { kind: "applied", preview: data as unknown as PromotionPreview };
     }
-    return { kind: "rejected", message: typeof data?.message === "string" ? data.message : PROMOTION_FAILED_MESSAGE };
+    return {
+      kind: "rejected",
+      message: typeof data?.message === "string" ? data.message : PROMOTION_FAILED_MESSAGE,
+      // 理由つきの422だけがコードを使えないと確定する。通信・回数制限・サーバーの失敗では記録を残す。
+      transient: response.status !== 422 || typeof data?.message !== "string",
+    };
   } catch {
-    return { kind: "rejected", message: PROMOTION_FAILED_MESSAGE };
+    return { kind: "rejected", message: PROMOTION_FAILED_MESSAGE, transient: true };
   }
 }

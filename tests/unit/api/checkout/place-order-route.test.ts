@@ -357,9 +357,10 @@ describe('POST /api/checkout/place-order', () => {
     expect(mockRpc).not.toHaveBeenCalled();
   });
 
-  test.each(['missing', 'different_session', 'newer', 'rpc'])('superseded（%s）で断るときは失効してから照合する', async (source) => {
+  test.each(['missing', 'different_checkout_session', 'different_cookie_session', 'newer', 'rpc'])('superseded（%s）で断るときは失効してから照合する', async (source) => {
     if (source === 'missing') mockDraftResult = { data: null, error: null };
-    if (source === 'different_session') mockDraftResult = { data: { ...DRAFT, checkout_session_id: 'cs_test_other' }, error: null };
+    if (source === 'different_checkout_session') mockDraftResult = { data: { ...DRAFT, checkout_session_id: 'cs_test_other' }, error: null };
+    if (source === 'different_cookie_session') mockDraftResult = { data: { ...DRAFT, session_id: 'sess-other' }, error: null };
     if (source === 'newer') mockNewerDraftResult = { data: [{ id: 'draft-2' }], error: null };
     if (source === 'rpc') mockRpc.mockResolvedValue({
       data: [{ order_id: null, order_status: null, created: false, rejection: 'draft_not_found' }], error: null,
@@ -372,6 +373,11 @@ describe('POST /api/checkout/place-order', () => {
     expect(mockExpireOpenCheckoutSession).toHaveBeenCalledWith(expect.anything(), 'cs_test_abc');
     expect(mockReconcileCheckoutSession).toHaveBeenCalledWith('cs_test_abc');
     expect(mockExpireOpenCheckoutSession.mock.invocationCallOrder[0]).toBeLessThan(mockReconcileCheckoutSession.mock.invocationCallOrder[0]);
+    if (source !== 'rpc') expect(mockRpc).not.toHaveBeenCalled();
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'checkout.place_order', outcome: 'failure',
+      metadata: expect.objectContaining({ reason: 'superseded', checkout_session_id: 'cs_test_abc', draft_id: 'draft-1' }),
+    }));
   });
 
   test('下書きが見つからない・結び付きが違えば、別の画面で進んでいると断る', async () => {

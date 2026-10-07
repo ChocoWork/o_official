@@ -228,11 +228,30 @@ describe('checkPromotionCodeRequest', () => {
       .mockRejectedValueOnce(new TypeError('Failed to fetch'));
 
     await expect(checkPromotionCodeRequest('welcome10')).resolves.toEqual({ kind: 'applied', preview });
-    await expect(checkPromotionCodeRequest('nope')).resolves.toEqual({ kind: 'rejected', message: 'このコードは使えません' });
+    await expect(checkPromotionCodeRequest('nope')).resolves.toEqual({ kind: 'rejected', message: 'このコードは使えません', transient: false });
     await expect(checkPromotionCodeRequest('x')).resolves.toEqual({
       kind: 'rejected',
       message: '割引コードを確かめられませんでした。少し時間をおいてから、もう一度お試しください。',
+      transient: true,
     });
     expect(JSON.parse(mockClientFetch.mock.calls[0][1].body)).toEqual({ code: 'welcome10' });
+  });
+
+  test.each([400, 403, 429, 500, 503, 200, 422])('理由つき422以外の失敗（HTTP %s）は一時的な失敗を返す', async (status) => {
+    mockClientFetch.mockResolvedValueOnce(jsonResponse(status, { error: 'failed' }));
+
+    await expect(checkPromotionCodeRequest('WELCOME10')).resolves.toEqual({
+      kind: 'rejected',
+      message: '割引コードを確かめられませんでした。少し時間をおいてから、もう一度お試しください。',
+      transient: true,
+    });
+  });
+
+  test.each([429, 500, 503])('HTTP %sは文があっても一時的な失敗を返す', async (status) => {
+    mockClientFetch.mockResolvedValueOnce(jsonResponse(status, { message: 'しばらくしてからお試しください' }));
+
+    await expect(checkPromotionCodeRequest('WELCOME10')).resolves.toEqual({
+      kind: 'rejected', message: 'しばらくしてからお試しください', transient: true,
+    });
   });
 });

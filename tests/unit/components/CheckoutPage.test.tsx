@@ -284,11 +284,11 @@ describe('決済の画面（グループ F）', () => {
   test.each(['none', 'unavailable'])('開き直した記録のコードが使えない（%s）ときは欄と理由を残し、記録を消す', async (state) => {
     window.sessionStorage.setItem('checkout:promotion-code', JSON.stringify({ code: 'OLD10' }));
     mockApi.resumeCheckout.mockResolvedValue({ state });
-    mockApi.checkPromotionCodeRequest.mockResolvedValue({ kind: 'rejected', message: 'このコードは期限が切れています' });
+    mockApi.checkPromotionCodeRequest.mockResolvedValue({ kind: 'rejected', message: 'このコードは有効期限が切れています', transient: false });
     render(<CheckoutPage />);
     const input = await screen.findByLabelText('プロモーションコード');
     expect(input).toHaveValue('OLD10');
-    expect(input).toHaveAccessibleDescription('このコードは期限が切れています');
+    expect(input).toHaveAccessibleDescription('このコードは有効期限が切れています');
     expect(window.sessionStorage.getItem('checkout:promotion-code')).toBeNull();
     expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
   });
@@ -310,13 +310,67 @@ describe('決済の画面（グループ F）', () => {
   test('最終確認のコードの確かめ直しで使えないときは記録を消し、変更した入力画面にコードと理由を残す', async () => {
     window.sessionStorage.setItem('checkout:promotion-code', JSON.stringify({ code: 'OLD10' }));
     mockApi.resumeCheckout.mockResolvedValue({ state: 'resume', confirmation: { ...CONFIRMATION, promotionCode: 'OLD10' } });
-    mockApi.checkPromotionCodeRequest.mockResolvedValue({ kind: 'rejected', message: 'このコードは使えません' });
+    mockApi.checkPromotionCodeRequest.mockResolvedValue({ kind: 'rejected', message: 'このコードは使えません', transient: false });
     render(<CheckoutPage />);
     await screen.findByTestId('final-step');
     act(() => mockFinalProps.onEdit());
     expect(await screen.findByLabelText('プロモーションコード')).toHaveValue('OLD10');
     expect(screen.getByLabelText('プロモーションコード')).toHaveAccessibleDescription('このコードは使えません');
     expect(window.sessionStorage.getItem('checkout:promotion-code')).toBeNull();
+  });
+
+  test.each(['none', 'unavailable', 'resume'])('確かめ直しが一時的に失敗（%s）したら記録を残し、欄にコードと失敗の文を出す', async (state) => {
+    const message = '割引コードを確かめられませんでした。少し時間をおいてから、もう一度お試しください。';
+    window.sessionStorage.setItem('checkout:promotion-code', JSON.stringify({ code: 'WELCOME10' }));
+    mockApi.resumeCheckout.mockResolvedValue(state === 'resume'
+      ? { state, confirmation: { ...CONFIRMATION, promotionCode: 'WELCOME10' } }
+      : { state });
+    mockApi.checkPromotionCodeRequest.mockResolvedValue({ kind: 'rejected', message, transient: true });
+    render(<CheckoutPage />);
+    if (state === 'resume') {
+      await screen.findByTestId('final-step');
+      act(() => mockFinalProps.onEdit());
+    }
+
+    expect(await screen.findByLabelText('プロモーションコード')).toHaveValue('WELCOME10');
+    expect(screen.getByLabelText('プロモーションコード')).toHaveAccessibleDescription(message);
+    expect(JSON.parse(window.sessionStorage.getItem('checkout:promotion-code') ?? 'null')).toEqual({ code: 'WELCOME10' });
+    expect(mockApi.checkPromotionCodeRequest).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: '削除' })).toBeNull();
+  });
+
+  test('記録したコードの確かめ直しが終わるまで、読み込み表示で入力操作を待たせる', async () => {
+    window.sessionStorage.setItem('checkout:promotion-code', JSON.stringify({ code: 'WELCOME10' }));
+    const gate = createDeferred<any>();
+    mockApi.checkPromotionCodeRequest.mockReturnValue(gate.promise);
+    render(<CheckoutPage />);
+    await waitFor(() => expect(mockApi.checkPromotionCodeRequest).toHaveBeenCalledWith('WELCOME10'));
+    expect(screen.queryByLabelText('プロモーションコード')).toBeNull();
+    expect(screen.queryByRole('button', { name: '確認へ進む' })).toBeNull();
+
+    await act(async () => gate.resolve({ kind: 'applied', preview: { code: 'WELCOME10', subtotalAmount: 5000, shippingAmount: 0, discountAmount: 500, totalAmount: 4500 } }));
+
+    expect(await screen.findByText('WELCOME10')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
+    expect(mockApi.resumeCheckout).toHaveBeenCalledTimes(1);
+    expect(mockApi.checkPromotionCodeRequest).toHaveBeenCalledTimes(1);
+  });
+
+  test('同じ適用済みコードを2回断られても、毎回そのコードを欄に戻す', async () => {
+    mockApi.checkPromotionCodeRequest.mockResolvedValue({ kind: 'applied', preview: { code: 'WELCOME10', subtotalAmount: 5000, shippingAmount: 0, discountAmount: 500, totalAmount: 4500 } });
+    mockApi.requestCheckoutConfirmation.mockResolvedValue({ kind: 'promotion_code_invalid', message: 'このコードは使えません' });
+    render(<CheckoutPage />);
+    await screen.findByLabelText('プロモーションコード');
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      fireEvent.change(screen.getByLabelText('プロモーションコード'), { target: { value: 'WELCOME10' } });
+      fireEvent.click(screen.getByRole('button', { name: '適用' }));
+      await screen.findByText('WELCOME10');
+      fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+      await screen.findByText('このコードは使えません');
+      expect(screen.getByLabelText('プロモーションコード')).toHaveValue('WELCOME10');
+      expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
+    }
+    expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(2);
   });
 
   test.each(['completed', 'error'])('注文の完了処理が %s のとき、成功の場合だけコードの記録を消す', async (kind) => {
@@ -507,6 +561,69 @@ describe('決済の画面（グループ F）', () => {
     await screen.findByTestId('final-step');
     expect(mockApi.requestCheckoutConfirmation.mock.calls[1][0].displayedAmounts).toEqual({ subtotalAmount: 7000, taxAmount: 0, shippingAmount: 0, totalAmount: 7000 });
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  test('割引適用中に金額が食い違ったら、カートを読んだ後にコードを1回確かめ直し、要約を新しくする', async () => {
+    const refreshed = { code: 'WELCOME10', subtotalAmount: 7000, shippingAmount: 600, discountAmount: 700, totalAmount: 6900 };
+    jest.mocked(fetch)
+      .mockResolvedValueOnce({ ok: true, json: async () => CART } as Response)
+      .mockResolvedValueOnce({ ok: true, json: async () => [{ ...CART[0], items: { ...CART[0].items, price: 7000 } }] } as Response);
+    mockApi.checkPromotionCodeRequest
+      .mockResolvedValueOnce({ kind: 'applied', preview: { code: 'WELCOME10', subtotalAmount: 5000, shippingAmount: 0, discountAmount: 500, totalAmount: 4500 } })
+      .mockImplementationOnce(async () => {
+        expect(fetch).toHaveBeenCalledTimes(2);
+        return { kind: 'applied', preview: refreshed };
+      });
+    mockApi.requestCheckoutConfirmation
+      .mockResolvedValueOnce({ kind: 'error', code: 'checkout_amount_mismatch', message: '金額の食い違い', retryable: false, correlationId: null })
+      .mockResolvedValueOnce({ kind: 'confirmation', confirmation: CONFIRMATION });
+    render(<CheckoutPage />);
+    fireEvent.change(await screen.findByLabelText('プロモーションコード'), { target: { value: 'WELCOME10' } });
+    fireEvent.click(screen.getByRole('button', { name: '適用' }));
+    await screen.findByText('WELCOME10');
+    fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+
+    await screen.findByText('価格が変わりました。金額をご確認のうえ、もう一度「確認へ進む」を押してください。');
+    expect(mockApi.checkPromotionCodeRequest).toHaveBeenCalledTimes(2);
+    expect(mockApi.checkPromotionCodeRequest).toHaveBeenLastCalledWith('WELCOME10');
+    expect(screen.getByText('小計').parentElement).toHaveTextContent('¥7,000');
+    expect(screen.getByText('配送料').parentElement).toHaveTextContent('¥600');
+    expect(screen.getByText('割引').parentElement).toHaveTextContent('-¥700');
+    expect(screen.getByText('合計').parentElement).toHaveTextContent('¥6,900');
+    expect(screen.queryByText('¥4,500')).toBeNull();
+    expect(JSON.parse(window.sessionStorage.getItem('checkout:promotion-code') ?? 'null')).toEqual({ code: 'WELCOME10' });
+    fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+    await screen.findByTestId('final-step');
+    expect(mockApi.requestCheckoutConfirmation.mock.calls[1][0]).toMatchObject({
+      promotionCode: 'WELCOME10', displayedAmounts: { subtotalAmount: 7000, taxAmount: 0, shippingAmount: 0, totalAmount: 7000 },
+    });
+  });
+
+  test.each([false, true])('価格変更後のコードの確かめ直しで断られたら、欄と理由を戻し目安を外す（一時的: %s）', async (transient) => {
+    const message = transient
+      ? '割引コードを確かめられませんでした。少し時間をおいてから、もう一度お試しください。'
+      : 'このコードは有効期限が切れています';
+    jest.mocked(fetch)
+      .mockResolvedValueOnce({ ok: true, json: async () => CART } as Response)
+      .mockResolvedValueOnce({ ok: true, json: async () => [{ ...CART[0], items: { ...CART[0].items, price: 7000 } }] } as Response);
+    mockApi.checkPromotionCodeRequest
+      .mockResolvedValueOnce({ kind: 'applied', preview: { code: 'WELCOME10', subtotalAmount: 5000, shippingAmount: 0, discountAmount: 500, totalAmount: 4500 } })
+      .mockResolvedValueOnce({ kind: 'rejected', message, transient });
+    mockApi.requestCheckoutConfirmation.mockResolvedValue({ kind: 'error', code: 'checkout_amount_mismatch', message: '金額の食い違い', retryable: false, correlationId: null });
+    render(<CheckoutPage />);
+    fireEvent.change(await screen.findByLabelText('プロモーションコード'), { target: { value: 'WELCOME10' } });
+    fireEvent.click(screen.getByRole('button', { name: '適用' }));
+    await screen.findByText('WELCOME10');
+    fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+
+    const input = await screen.findByLabelText('プロモーションコード');
+    expect(input).toHaveValue('WELCOME10');
+    expect(input).toHaveAccessibleDescription(message);
+    expect(screen.queryByText('割引')).toBeNull();
+    expect(screen.getByText('合計').parentElement).toHaveTextContent('¥7,000');
+    expect(mockApi.checkPromotionCodeRequest).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(window.sessionStorage.getItem('checkout:promotion-code') ?? 'null')).toEqual(transient ? { code: 'WELCOME10' } : null);
+    expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
   });
 
   test('やり直せない断りは配送先の新規・保存済み選択や入力変更でも消えない', async () => {

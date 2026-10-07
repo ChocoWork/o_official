@@ -77,7 +77,7 @@ export function collectInventoryIssues(
   for (const [itemId, requestedQuantity] of requestedQuantities.entries()) {
     const item = inventoryItemMap.get(itemId);
 
-    if (!item || item.status === 'private') {
+    if (!item || item.status !== 'published') {
       issues.push({
         item_id: itemId,
         name: item?.name ?? `商品 ${itemId}`,

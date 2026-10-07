@@ -7,7 +7,7 @@ import { expect, test } from '@playwright/test';
 import { CHECKOUT_VIEWPORTS, seedCart } from './checkout-flow-helpers';
 
 const CODE = 'WELCOME10';
-const INVALID_MESSAGE = 'このコードは期限が切れています';
+const INVALID_MESSAGE = 'このコードは有効期限が切れています';
 
 test.describe('FR-CHECKOUT-042 割引コードの復元', () => {
   test.describe.configure({ timeout: 120_000 });

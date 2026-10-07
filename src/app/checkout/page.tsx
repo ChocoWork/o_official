@@ -310,6 +310,12 @@ function CheckoutPageContent() {
   const [promotion, setPromotion] = useState<PromotionPreview | null>(null);
   const [promotionError, setPromotionError] = useState<string | null>(null);
   const [promotionDefaultCode, setPromotionDefaultCode] = useState("");
+  const [promotionFieldRevision, setPromotionFieldRevision] = useState(0);
+  const restorePromotionInput = React.useCallback((code: string) => {
+    setPromotionDefaultCode(code);
+    // 適用成功で欄が空になるため、同じコードを戻すときも欄を作り直す。
+    setPromotionFieldRevision((revision) => revision + 1);
+  }, []);
   // 「確認へ進む」の処理中
   const [proceeding, setProceeding] = useState(false);
   // 開き直したときの状態をサーバーに聞いている間（決め事 D9）
@@ -690,6 +696,20 @@ function CheckoutPageContent() {
     [router],
   );
 
+  const recheckPromotion = React.useCallback(async (code: string) => {
+    const result = await checkPromotionCodeRequest(code);
+    if (result.kind === "applied") {
+      setPromotion(result.preview);
+      setPromotionError(null);
+      rememberPromotionCode({ code: result.preview.code });
+    } else {
+      if (!result.transient) clearPromotionCode();
+      restorePromotionInput(code);
+      setPromotion(null);
+      setPromotionError(result.message);
+    }
+  }, [restorePromotionInput]);
+
   // 開き直したとき・Stripe の画面から戻ったときに、どこから続けるかをサーバーに聞く（決め事 D9・D10）
   React.useEffect(() => {
     if (resumeStartedRef.current) return;
@@ -714,15 +734,7 @@ function CheckoutPageContent() {
         setFinalNotice(attempt ? paymentIncompleteMessage(attempt.paymentType) : null);
         if (result.confirmation.promotionCode) {
           // 「変更」で入力画面へ戻ったときに、適用済みのコードと金額の目安を出す
-          const restored = await checkPromotionCodeRequest(result.confirmation.promotionCode);
-          if (restored.kind === "applied") {
-            setPromotion(restored.preview);
-            rememberPromotionCode({ code: restored.preview.code });
-          } else {
-            clearPromotionCode();
-            setPromotionDefaultCode(result.confirmation.promotionCode);
-            setPromotionError(restored.message);
-          }
+          await recheckPromotion(result.confirmation.promotionCode);
         }
         return;
       }
@@ -733,21 +745,13 @@ function CheckoutPageContent() {
         setResumeUnavailable(true);
       }
       const remembered = readPromotionCode();
-      if (remembered && !promotion) {
-        // 入力画面を出す前に確かめ直す。復元待ちの間にお客様が別のコードを適用するのを避ける。
-        const restored = await checkPromotionCodeRequest(remembered.code);
-        if (restored.kind === "applied") {
-          setPromotion(restored.preview);
-          rememberPromotionCode({ code: restored.preview.code });
-        } else {
-          clearPromotionCode();
-          setPromotionDefaultCode(remembered.code);
-          setPromotionError(restored.message);
-        }
+      if (remembered) {
+        // 確かめ直しが終わるまで resuming の読み込み表示を保ち、お客様の入力・適用と重なるのを避ける。
+        await recheckPromotion(remembered.code);
       }
       setResuming(false);
     })();
-  }, [searchParams, router, finishOrder, adoptConfirmation, promotion]);
+  }, [searchParams, router, finishOrder, adoptConfirmation, recheckPromotion]);
 
   const backToInput = () => {
     setStep(1);
@@ -790,13 +794,15 @@ function CheckoutPageContent() {
     if (result.kind === "promotion_code_invalid") {
       // 適用の後にカートが変わるなどで使えなくなった。欄に理由を出す（Review Focus 4）
       clearPromotionCode();
-      setPromotionDefaultCode(promotion?.code ?? "");
+      restorePromotionInput(promotion?.code ?? "");
       setPromotion(null);
       setPromotionError(result.message);
       return;
     }
     if (result.code === "checkout_amount_mismatch") {
       await fetchCart();
+      // 要約は適用時の目安を優先するため、価格変更後はコードも確かめ直して目安を更新する。
+      if (promotion) await recheckPromotion(promotion.code);
       setSessionErrorRetryable(true);
       setSessionErrorCorrelationId(null);
       setCheckoutError("価格が変わりました。金額をご確認のうえ、もう一度「確認へ進む」を押してください。");
@@ -1551,7 +1557,7 @@ function CheckoutPageContent() {
                     <>
                       <OrderItems cartItems={cartItems} />
                       <PromoCodeField
-                        key={promotionDefaultCode}
+                        key={promotionFieldRevision}
                         defaultCode={promotionDefaultCode}
                         applied={promotion}
                         error={promotionError}
@@ -1559,7 +1565,7 @@ function CheckoutPageContent() {
                         onApply={handleApplyPromotion}
                         onRemove={() => {
                           clearPromotionCode();
-                          setPromotionDefaultCode("");
+                          restorePromotionInput("");
                           setPromotion(null);
                           setPromotionError(null);
                         }}

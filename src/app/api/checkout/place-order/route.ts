@@ -213,6 +213,7 @@ export async function POST(req: NextRequest) {
     const remainingSeconds = (session.expires_at ?? 0) - Math.floor(Date.now() / 1000);
     if (remainingSeconds < ACCEPT_MIN_REMAINING_SECONDS) {
       // 前の画面は、作り直しの「確認へ進む」で closeOtherCheckoutSessions が閉じる（決め事 D5）。
+      // 作り直し自体が買えない商品・金額の食い違いなどで断られたら閉じる処理まで進まず、30分の時間切れと Stripe の知らせ・見回りで閉じる。
       // お客様が去っても30分の時間切れと Stripe の知らせ・見回りで閉じ、在庫が戻る。
       // ここでは失効・照合を呼ばず、Stripe の一時的な失敗で 500 になるのを避ける。
       return reject('session_expired', { ...ref, draft_id: draft.id, remaining_seconds: remainingSeconds });

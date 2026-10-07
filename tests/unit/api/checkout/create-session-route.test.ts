@@ -623,10 +623,10 @@ describe("POST /api/checkout/create-session", () => {
     expect((res as unknown as { body: { message: string } }).body.message).toBe("以下の商品は現在購入できません: 商品 1");
   });
 
-  it("非公開の商品は商品名で示して 409 out_of_stock を返す", async () => {
+  it.each(["private", "archived", null, undefined])("公開中でない商品（%s）は商品名で示して 409 out_of_stock を返す", async (status) => {
     mockEq.mockResolvedValue({ data: [{ item_id: 123, quantity: 1, color: "BLACK", size: "M" }], error: null });
     mockItemsResult.mockResolvedValue({
-      data: [{ id: 123, name: "非公開のシャツ", price: 5000, image_url: null, status: "private" }], error: null,
+      data: [{ id: 123, name: "非公開のシャツ", price: 5000, image_url: null, status }], error: null,
     });
 
     const res = await POST(makeRequest({ uiMode: "custom" })) as unknown as { status: number; body: { error: string; message: string } };
