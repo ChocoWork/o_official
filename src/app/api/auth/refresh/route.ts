@@ -64,18 +64,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 });
     }
 
-    // Exchange refresh token for new session
-    const params = new URLSearchParams();
-    params.set('grant_type', 'refresh_token');
-    params.set('refresh_token', refreshToken);
-
-    const tokenRes = await fetch(`${SUPABASE_URL}/auth/v1/token`, {
+    // 更新の印を JSON 本文で送り、更新方法は URL で指定する。
+    const tokenRes = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${SERVICE_KEY}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
+        apikey: SERVICE_KEY,
+        'Content-Type': 'application/json',
       },
-      body: params.toString(),
+      body: JSON.stringify({ refresh_token: refreshToken }),
     });
 
     if (!tokenRes.ok) {

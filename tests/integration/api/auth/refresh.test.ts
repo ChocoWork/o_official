@@ -92,7 +92,7 @@ describe('Refresh API integration (mocked supabase & headers & fetch)', () => {
     (global.fetch as jest.MockedFunction<any>).mockRestore();
   });
 
-  test('successful refresh exchanges token, sets cookie and updates sessions table', async () => {
+  test('更新の印を URL の grant_type と JSON 本文・apikey で交換し、Cookie と sessions を更新する', async () => {
     // Arrange
     cookies.mockReturnValue({ get: jest.fn().mockReturnValue({ value: 'old-refresh' }) });
     process.env.SUPABASE_URL = 'https://supabase.example';
@@ -102,7 +102,7 @@ describe('Refresh API integration (mocked supabase & headers & fetch)', () => {
       ok: true,
       json: async () => ({ access_token: 'new-a', refresh_token: 'new-r', expires_in: 3600, user: { id: 'u1', email: 'user@example.com' } }),
     } as any;
-    jest.spyOn(global, 'fetch').mockResolvedValue(fakeTokenResponse);
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(fakeTokenResponse);
 
     const { createServiceRoleClient } = require('@/lib/supabase/server');
     const fromMock = jest.fn(() => ({
@@ -116,6 +116,24 @@ describe('Refresh API integration (mocked supabase & headers & fetch)', () => {
     const body = await res.json();
 
     // Assert
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [tokenUrl, tokenRequest] = fetchSpy.mock.calls[0];
+    const requestUrl = new URL(String(tokenUrl));
+    expect(`${requestUrl.origin}${requestUrl.pathname}`).toBe(`${process.env.SUPABASE_URL}/auth/v1/token`);
+    expect(requestUrl.searchParams.get('grant_type')).toBe('refresh_token');
+    expect(Array.from(requestUrl.searchParams.keys())).toEqual(['grant_type']);
+    expect(tokenRequest?.method).toBe('POST');
+
+    const tokenHeaders = new Headers(tokenRequest?.headers);
+    expect(tokenHeaders.get('Content-Type')).toBe('application/json');
+    // 失敗時の表示にも印やキーの値を出さず、一致だけを検証する。
+    expect(tokenHeaders.get('apikey') === process.env.SUPABASE_SERVICE_ROLE_KEY).toBe(true);
+    expect(tokenHeaders.get('Authorization') === `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`).toBe(true);
+
+    expect(tokenRequest?.body === JSON.stringify({
+      refresh_token: cookies().get('sb-refresh-token').value,
+    })).toBe(true);
+
     expect(res.status).toBe(200);
     expect(body.access_token).toBeDefined();
     expect(body.user.email).toBe('user@example.com');
