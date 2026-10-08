@@ -1,6 +1,6 @@
 # API仕様（現行実装）
 
-> 確認日: 2026-10-03（Checkout・カートの行はグループ F の変更を 2026-10-07 に反映） | ソース基準: `697836a1eb2b62e1a3257ce079ecf8f536e1cb06` の作業ツリー | 対象: `src/app/api/**/route.ts`
+> 確認日: 2026-10-03（Checkout・カートの行はグループ F の変更を 2026-10-07、グループ C の変更を 2026-10-08 に反映） | ソース基準: `697836a1eb2b62e1a3257ce079ecf8f536e1cb06` の作業ツリー | 対象: `src/app/api/**/route.ts`
 
 ## 概要
 
@@ -116,19 +116,53 @@ Stripe Webhookはraw bytesとstripe-signatureを`constructEvent`で検証する�
 
 | メソッド・パス | 認証・認可 | 入力 | 応答 | 主な失敗（HTTP） | 副作用・補足 / 根拠 |
 | --- | --- | --- | --- | --- | --- |
-| `POST /api/checkout/complete` | Cookie `session_id`（会員認証不要）（JWTは任意、ユーザー紐付けに使用） | JSON: `{checkoutSessionId,shipping?,paymentMethod?}`（completeCheckoutSchema） | 200 `{orderId,status,paymentMethod}` | 400 session/body/mode/draft/ゼロ額/未決済; 403 Stripe session/draftの所有不一致; 409 注文登録不可; 429; 503 照合一時失敗; 500 例外 | Stripe側payment methodを採用。注文/在庫/決済照合、必要な通知/例外記録をreconciler経由で実行 [実装](../../../src/app/api/checkout/complete/route.ts) |
-| `POST /api/checkout/create-session` | Cookie `session_id`（会員認証不要） + CSRF呼出 C* | JSON: createSessionSchema（下記）。`promotionCode?`（英数字とハイフン、64文字まで）を含む | 200 custom `{confirmation}`（hosted は廃止、400）、409 `order_already_placed`・`promotion_code_invalid` | 400 session/body/空cart/総額/`shipping_incomplete`; 409 購入不可商品/表示金額不一致; 422 Stripe金額制約; 429; 503 Stripe一時障害; 500 DB/設定等。C*参照 | 「確認へ進む」の入口。cartからサーバー金額を算出、draft作成/再利用（版2。指紋に配送先と割引コード）、Stripe Session作成/回復（割引はサーバーが`discounts`で付ける。30分で失効）。uiModeはcustomのみ（既定custom）。配送先7項目（メールアドレス・氏名・郵便番号・都道府県・市区町村・番地・電話番号）は正規化後に必須で、欠落は400 `{error:"shipping_incomplete"}`。同じCookieのほかの決済の画面を閉じ、受け付け済みなら照合関数で注文を放棄扱いにして在庫を戻し、最終確認画面の内容を返す。hostedは受け付けない（400）。`confirmation`は`{checkoutSessionId,clientSecret,shipping,lines,promotionCode}`。エラー分類はcheckout-error.service [実装](../../../src/app/api/checkout/create-session/route.ts) |
+| `POST /api/checkout/complete` | Cookie `session_id`（会員認証不要。ログインは確かめず、注文の持ち主にも触れない） | JSON: `{checkoutSessionId,shipping?,paymentMethod?}`（completeCheckoutSchema） | 200 `{orderId,status,paymentMethod}` | 400 session/body/mode/draft/ゼロ額/未決済; 403 Stripe session/draftの所有不一致; 409 注文登録不可; 429; 503 照合一時失敗; 500 例外 | Stripe側payment methodを採用。注文/在庫/決済照合、必要な通知/例外記録をreconciler経由で実行。ログイン中の会員を持ち主にする処理はグループ C で廃止した（持ち主は「注文する」の受け付けだけが書く。[グループ C の扱い](#グループ-c-の扱いfreq-426427)） [実装](../../../src/app/api/checkout/complete/route.ts) |
+| `POST /api/checkout/create-session` | Cookie `session_id`（会員認証不要。ログインは買い手として確かめる） + CSRF呼出 C* | JSON: createSessionSchema（下記）。`promotionCode?`（英数字とハイフン、64文字まで）を含む | 200 custom `{confirmation}`（hosted は廃止、400）、409 `order_already_placed`・`promotion_code_invalid` | 400 session/body/空cart/総額/`shipping_incomplete`; 401 `{error:"auth_expired"}`; 409 購入不可商品/表示金額不一致/`{error:"login_changed",message}`; 422 Stripe金額制約; 429; 503 Stripe一時障害、またはログインを確かめられない（Retry-After:30）; 500 DB/設定等。C*参照 | 「確認へ進む」の入口。cartからサーバー金額を算出、draft作成/再利用（版3。指紋に配送先・割引コード・買い手。買い手は下書きの`buyer_user_id`に記録し、後から変えられない）、Stripe Session作成/回復（割引はサーバーが`discounts`で付ける。30分で失効）。uiModeはcustomのみ（既定custom）。配送先7項目（メールアドレス・氏名・郵便番号・都道府県・市区町村・番地・電話番号）は正規化後に必須で、欠落は400 `{error:"shipping_incomplete"}`。同じCookieのほかの決済の画面を閉じ、受け付け済みなら照合関数で注文を放棄扱いにして在庫を戻し、最終確認画面の内容を返す。ログインはCSRFの後、本文を読む前に確かめ（401・503はここで返す）、支払い済みの画面の下書きの買い手が違う時は409 `login_changed`で断る（[グループ C の扱い](#グループ-c-の扱いfreq-426427)）。hostedは受け付けない（400）。`confirmation`は`{checkoutSessionId,clientSecret,shipping,lines,promotionCode}`。エラー分類はcheckout-error.service [実装](../../../src/app/api/checkout/create-session/route.ts) |
 | `POST /api/checkout/payment-intent` | 会員認証不要 | 本文は使用しない | 通常応答410 `{error,documentation:"/api/checkout/create-session"}` | 429。成功2xx分岐なし | 廃止済みの入口 [実装](../../../src/app/api/checkout/payment-intent/route.ts) |
 | `GET /api/checkout/postal-code` | 会員認証不要 | Query: `postalCode` 1〜16文字 | 200 `{address:{prefecture,city,address}&#124;null}` | 400 query; 429; 502 lookup失敗 | 郵便番号サービスで住所検索 [実装](../../../src/app/api/checkout/postal-code/route.ts) |
 | `POST /api/checkout/promotion-code` | Cookie `session_id`（会員認証不要） + CSRF（ログイン客） | JSON: `{code}`（strict。trim後、英数字とハイフンの64文字まで） | 200 `{code,subtotalAmount,shippingAmount,discountAmount,totalAmount}` | 400 session/body/空cart; 409 買えない商品; 422 `{error:"promotion_code_invalid",reason,message}`; 429; 503 回数制限の判定不能; 500 | サーバーがStripeに問い合わせ、今のカートで使えるかを確かめて割引後の金額の目安を返す（有効・期限・回数・最低購入額・合計が0円にならないこと。reasonはnot_found/not_applicable/expired/redemption_limit/minimum_amount/zero_total）。決済の画面には付けない（付けるのはcreate-session）。IP 10秒10回・10分60回、セッション10回/分 [実装](../../../src/app/api/checkout/promotion-code/route.ts) |
-| `POST /api/checkout/place-order` | Cookie `session_id`（会員認証不要） + CSRF（ログイン客） | JSON: `{checkoutSessionId,inStockVariantIds}`（strict。バリアントは100件まで） | 200 `{orderId,orderStatus}` | 400 session/body; 403 他人の決済の画面; 409 `{error:"stock_changed",message,changedLines}`・`{error:"item_unavailable"&#124;"price_changed"&#124;"cart_changed"&#124;"zero_amount"&#124;"session_expired"&#124;"superseded",message}`・`{error:"payment_done",checkoutSessionId}`; 429; 503 回数制限の判定不能; 500 | 「注文する」の受け付け。Stripeから決済の画面を読み直し（持ち主・モード・開いている・未払い・残り10分以上・新しい下書きが無い）、受付RPCの前に`findPaidCheckoutSession`で同じCookieの別の完了済み決済の画面を探す。別IDなら409 `{error:"payment_done",checkoutSessionId:見つかったID}`でその注文の確定へ進み、同じIDなら従来の受付を続ける。受付RPCを最終確認画面で在庫ありと見せたバリアントつきで呼び、下書きのsource_cart_idがNULLでない明細は本人のカート行が残っていることを確かめる。消失なら409 `{error:"cart_changed",message:"カートの内容が変わりました。カートをご確認のうえ、もう一度お手続きください。"}`。NULL引数の照合器の予備処理はカート行を検証しない。受付を断ったときは新しい注文も在庫の確保も作らない。残り10分未満は失効・照合を呼ばず、監査ログを残して409 `session_expired`。前の画面は作り直しの `closeOtherCheckoutSessions`（D5）か30分の時間切れで閉じ、通知・見回りで在庫を戻す。作り直しの「確認へ進む」自体が買えない商品・金額の食い違いなどで断られたときは閉じる処理まで進まないため、30分の時間切れと Stripe の知らせ・見回りで閉じる。別の画面の `payment_done`・`cart_changed`（受付済みの押し直しを含む）・`superseded` はこの画面を閉じ、失効成功時に照合して、受付済みなら放棄・在庫返却を行い、理由とIDを監査ログに残す（後始末の失敗はログに残し409を変えない）。カード拒否後に時間がたって押し直した場合もこの経路を通り、409 `session_expired`で画面を作り直す。同じ決済の画面なら下書きロック後に同じ注文を返すが、payment_in_progressの押し直しはカート消失をcart_changedで断る。paid・pendingの既存注文はカート消失でも返す。IP 10秒10回・10分60回、セッション10回/分 [実装](../../../src/app/api/checkout/place-order/route.ts) |
-| `POST /api/checkout/resume` | Cookie `session_id`（会員認証不要） + CSRF（ログイン客） | JSON: `{checkoutSessionId?}`（strict。無いときはキーごと省く） | 200 `{state:"none"}`・`{state:"payment_done",checkoutSessionId}`・`{state:"resume",confirmation}` | 400 session/body（Cookie無しはsession_not_found）; 403 他人の決済の画面（forbidden）; 429; 503 回数制限の判定不能; 500 | 決済の画面を開き直したときの入口。IDが無ければ受け付け済みで支払いの済んだ画面を探すだけ。IDがあれば、支払い済みは`payment_done`、開いていて下書きと結び付いていれば`resume`（最終確認画面の内容）、ほかは`none`。IDを送った400 session_not_found / 403 forbiddenは画面が`unavailable`へ読み替え、URLを`/checkout`に戻し、入力画面の上の常設LiveMessage（status）で「このブラウザではご注文の状態を表示できません。お支払いがお済みの場合は、ご注文確認のメールをお送りしています。」と案内する。注文番号・支払い成否は出さない。他の失敗とID無しは`none`。IP 10秒20回・10分120回、セッション20回/分 [実装](../../../src/app/api/checkout/resume/route.ts) |
+| `POST /api/checkout/place-order` | Cookie `session_id`（会員認証不要。ログインは買い手として確かめる） + CSRF（ログイン客） | JSON: `{checkoutSessionId,inStockVariantIds}`（strict。バリアントは100件まで） | 200 `{orderId,orderStatus}` | 400 session/body; 401 `{error:"auth_expired"}`; 403 他人の決済の画面; 409 `{error:"stock_changed",message,changedLines}`・`{error:"item_unavailable"&#124;"price_changed"&#124;"cart_changed"&#124;"zero_amount"&#124;"session_expired"&#124;"superseded"&#124;"login_changed",message}`・`{error:"payment_done",checkoutSessionId}`; 429; 503 回数制限の判定不能、またはログインを確かめられない（Retry-After:30）; 500 | 「注文する」の受け付け。守りの直後、何かを変える前にログインを確かめる（401・503はここで返す）。Stripeから決済の画面を読み直し（持ち主・モード・開いている・未払い・残り10分以上・新しい下書きが無い）、持ち主とモードを確かめた直後に下書きの`buyer_user_id`と今の買い手を比べ（支払い済み・時間切れ・別のタブの支払いの判断より前。違えば決済の画面を閉じて409 `login_changed`。[グループ C の扱い](#グループ-c-の扱いfreq-426427)）、受付RPCの前に`findPaidCheckoutSession`で同じCookieの別の完了済み決済の画面を探す。別IDなら409 `{error:"payment_done",checkoutSessionId:見つかったID}`でその注文の確定へ進み、同じIDなら従来の受付を続ける。受付RPCを最終確認画面で在庫ありと見せたバリアントと買い手（`_buyer_user_id`。ゲストは空）つきで呼び、下書きのsource_cart_idがNULLでない明細は本人のカート行が残っていることを確かめる。消失なら409 `{error:"cart_changed",message:"カートの内容が変わりました。カートをご確認のうえ、もう一度お手続きください。"}`。NULL引数の照合器の予備処理はカート行を検証しない。受付を断ったときは新しい注文も在庫の確保も作らない。残り10分未満は失効・照合を呼ばず、監査ログを残して409 `session_expired`。前の画面は作り直しの `closeOtherCheckoutSessions`（D5）か30分の時間切れで閉じ、通知・見回りで在庫を戻す。作り直しの「確認へ進む」自体が買えない商品・金額の食い違いなどで断られたときは閉じる処理まで進まないため、30分の時間切れと Stripe の知らせ・見回りで閉じる。別の画面の `payment_done`・`cart_changed`（受付済みの押し直しを含む）・`superseded` はこの画面を閉じ、失効成功時に照合して、受付済みなら放棄・在庫返却を行い、理由とIDを監査ログに残す（後始末の失敗はログに残し409を変えない）。カード拒否後に時間がたって押し直した場合もこの経路を通り、409 `session_expired`で画面を作り直す。同じ決済の画面なら下書きロック後に同じ注文を返すが、payment_in_progressの押し直しはカート消失をcart_changedで断る。paid・pendingの既存注文はカート消失でも返す。IP 10秒10回・10分60回、セッション10回/分 [実装](../../../src/app/api/checkout/place-order/route.ts) |
+| `POST /api/checkout/resume` | Cookie `session_id`（会員認証不要。ログインは買い手として確かめる） + CSRF（ログイン客） | JSON: `{checkoutSessionId?}`（strict。無いときはキーごと省く） | 200 `{state:"none"}`・`{state:"payment_done",checkoutSessionId}`・`{state:"resume",confirmation}` | 400 session/body（Cookie無しはsession_not_found）; 401 `{error:"auth_expired"}`; 403 他人の決済の画面（forbidden）; 429; 503 回数制限の判定不能、またはログインを確かめられない（Retry-After:30）; 500 | 決済の画面を開き直したときの入口。守りの直後にログインを確かめ（401・503はここで返す）、決済の画面の下書きの買い手が今の買い手と違えば、開いている画面でも支払い済みでも`none`を返す（前の確認画面も支払い済みの知らせも返さない。[グループ C の扱い](#グループ-c-の扱いfreq-426427)）。IDが無ければ受け付け済みで支払いの済んだ画面を探すだけ。IDがあれば、支払い済みは`payment_done`、開いていて下書きと結び付いていれば`resume`（最終確認画面の内容）、ほかは`none`。IDを送った400 session_not_found / 403 forbiddenは画面が`unavailable`へ読み替え、URLを`/checkout`に戻し、入力画面の上の常設LiveMessage（status）で「このブラウザではご注文の状態を表示できません。お支払いがお済みの場合は、ご注文確認のメールをお送りしています。」と案内する。注文番号・支払い成否は出さない。他の失敗とID無しは`none`。IP 10秒20回・10分120回、セッション20回/分 [実装](../../../src/app/api/checkout/resume/route.ts) |
 
 ### グループ F の画面側の扱い（FREQ-423〜425）
 
 - FREQ-423: [入力画面](../../../src/app/checkout/page.tsx)は適用したコードだけを[このタブに記録](../../../src/app/checkout/_lib/promotion-memory.ts)し、入り直しの入口が `none`・`unavailable` なら promotion-code で確かめ直す。使えなければ欄にコードとサーバーの理由を残す。削除・注文完了処理成功・再確認の拒否（422 の理由つきの断り）で記録を消す。一時的な失敗（通信の失敗・429・5xx など）では記録を残す。
 - FREQ-424: create-session の409 `out_of_stock` は非公開商品も名前で案内する（行がない商品は `商品 {id}`）。時間切れの作り直し中なら、その文をカートの案内へ渡してカートへ移す。通常の確認では入力画面で案内し、ボタンを無効にする。
 - FREQ-425: create-session の409 `checkout_amount_mismatch` ではカートと金額を読み直し、「価格が変わりました。金額をご確認のうえ、もう一度「確認へ進む」を押してください。」をボタンの上に出し、更新済み金額で押し直せる。割引コードを適用中なら promotion-code で確かめ直して目安の金額を新しくし、断られたら割引を外して理由を出す。やり直せない案内と無効状態は、配送先の選択・入力変更でも消さない。
+
+### グループ C の扱い（FREQ-426・427）
+
+注文の持ち主（`orders.user_id`）を、サーバーが「確認へ進む」と「注文する」で確かめた会員だけにする。設計は[グループ C 設計書](../../superpowers/specs/2026-10-08-order-owner-binding-design.md)。
+
+#### 買い手の確かめ
+
+[resolveCheckoutBuyer](../../../src/features/checkout/services/checkout-buyer.ts)が、create-session・place-order・resume の守り（Cookie・回数・CSRF）の直後、DB と Stripe に触れる前に、`authenticateRequest`の結果から買い手を決める。会員の ID は検証済みの`claims.sub`だけを使い、画面から送られた値は使わない。
+
+| `authenticateRequest` の結果 | 買い手 | 入口の応答 |
+| --- | --- | --- |
+| 検証済み（`sub`あり） | 会員 | 続ける |
+| 印が無い | ゲスト | 続ける |
+| 印が古い・失効で、更新の印（`sb-refresh-token` Cookie）がある。または検証済みだが`sub`が無い | 確かめ直しが要る | 401 `{error:"auth_expired"}`。何も変えずに返す。画面は印を新しくして1回だけ送り直す |
+| 印が古い・失効で、更新の印が無い | ゲスト（残った古い印は使わない） | 続ける |
+| 生存確認ができない（DB の不調） | 確かめられない | 503 `{error:"Service temporarily unavailable"}` + Retry-After:30（ゲスト扱いにしない） |
+
+#### 入口ごとの扱い
+
+| 入口 | 買い手の使い方 |
+| --- | --- |
+| create-session | 指紋（版3）に含め、`claim_checkout_draft`の`_buyer_user_id`に渡して下書きの`buyer_user_id`に記録する。支払い済みの決済の画面が見つかった時は、その下書きの買い手が今の買い手と同じ時だけ`order_already_placed`を返す。違う・下書きが無い時は、その画面を照合して仕上げ（持ち主は付けない）、監査ログ（`checkout.session.create`、`reason:"login_changed"`）を残して409 `login_changed`で断る（決済の画面の ID は返さない） |
+| place-order | 下書きの買い手と今の買い手を、持ち主・モードの確かめの直後に比べる。違えば、決済の画面が開いていれば閉じ（失効成功時に照合）、監査ログ（`checkout.place_order`、`reason:"login_changed"`）を残して409 `login_changed`で断る。下書きが無い時は比べず、従来の流れ（`payment_done`・`superseded`）に任せる。別のタブの`payment_done`も、その下書きの買い手が同じ時だけ返す（違う・下書きが無い時は、その画面を照合して仕上げ、今の画面を閉じて`login_changed`で断る）。同じなら受付RPCに`_buyer_user_id`（ゲストは空）を渡す。RPCが返す`login_changed`（同時の操作で起きうる）も同じ409にする |
+| resume | 決済の画面の下書きの買い手が今の買い手と違えば、開いている画面でも支払い済みでも`{state:"none"}`を返す。IDが無い時も、支払い済みの画面の下書きの買い手が違う・下書きが無い時は`none`。監査ログは残さず、回数の制限で守る |
+| complete | ログインを確かめず、持ち主にも触れない。ログイン中の会員を持ち主にする処理と、その監査ログ`checkout.link_order_to_user`は廃止した |
+
+409 `login_changed`の`message`は「ログインの状態が変わりました。もう一度「確認へ進む」を押してください。」。401・503は何も変える前に返し、監査ログには残さない（503 はサーバーのログに出す）。
+
+#### DB の決まり
+
+- 下書きの`buyer_user_id`は後から変えられない（`CHECKOUT_DRAFT_BUYER_IMMUTABLE`）。外部キーは付けない（会員を消した後は、誰とも一致せず「注文する」が断られる側に倒すため）。
+- 受付 RPC `place_order_from_checkout_draft`は引数に`_buyer_user_id`を持つ（10個）。「注文する」の経路では、下書きをロックした直後に下書きの買い手と比べ、違えば`login_changed`を返して何も変えない。下書きが無い時や、下書きの Session・カートの印が要求と違う時は、既にある注文の持ち主と比べる。同じなら、注文を作るのと同じ処理の中で`user_id`を書く（ゲストは空）。
+- 照合の経路（買い手を渡さない）で作る注文の`user_id`は空。この経路に買い手だけを渡す呼び間違いは`PLACE_ORDER_ARGUMENT_REQUIRED`（22023）で断る。その注文は、メール確認済みのログインの時に`linkGuestOrdersByEmail`が同じメールでまとめる。
+- 注文の持ち主は空から値へだけ書ける。別の会員への付け替えは`ORDER_OWNER_IMMUTABLE`で断る。空に戻るのは会員を消した時だけ。
 
 ## 問い合わせ
 

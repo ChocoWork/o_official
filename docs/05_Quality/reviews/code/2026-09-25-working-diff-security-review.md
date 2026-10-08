@@ -29,7 +29,7 @@
 | R-21 | P3 | 未修正 | 重複した色・サイズ名を保存でき、その商品の在庫欄が500になる |
 | R-22 | P2・既存 | 未修正 | CSRFトークン検査の拒否応答を見落とし、検査が効いていない |
 | R-23 | P2 | 未修正 | Stripeの500系応答が同じ冪等キーで再生され、そのカートで決済を始められない |
-| R-24 | P2・既存 | 一部修正（complete API は照合後に未所有注文を紐付ける。Webhook 単独経路は未対応） | ログイン客の注文が user_id に紐付かず注文履歴に出ない |
+| R-24 | P2・既存 | 解消（グループ C。「注文する」で確かめた会員を、注文を作る処理の中で持ち主として書く） | ログイン客の注文が user_id に紐付かず注文履歴に出ない |
 | R-25 | P2 | 解消（グループ F） | Checkout Sessionの有効期限が既定24時間のまま、支払後に注文確定を断る経路がある |
 | R-26 | P3 | グループ A で修正（受付 RPC が同一トランザクションで discount_amount だけを書き戻す） | 値引き額の書き戻しでdraftの照合が外れ、再表示が500になる |
 | R-27 | P2 | 解消（グループ F） | customer_email付きで作ったSessionでは updateEmail が例外になり支払えない |
@@ -216,10 +216,18 @@
 
 ### R-24 ログイン客の注文が user_id に紐付かず注文履歴に出ない
 
-- **箇所**: [complete route](../../../../src/app/api/checkout/complete/route.ts) の `linkOrderToUserIfUnowned`、[webhook-processor](../../../../src/lib/stripe/webhook-processor.ts)、[place_order_from_checkout_draft](../../../../supabase/migrations/20260927100300_place_order_from_checkout_draft.sql)、[orders API](../../../../src/app/api/orders/route.ts)。
+> 解消（グループ C）。「確認へ進む」と「注文する」の両方でサーバーがログインを確かめ、同じ会員の時だけ、注文を作るのと同じ処理の中で持ち主（`orders.user_id`）を書く。完了（complete）での紐付けはやめた。[設計書](../../../superpowers/specs/2026-10-08-order-owner-binding-design.md)、[実装計画](../../../superpowers/plans/2026-10-08-order-owner-binding.md)。「箇所」から「グループ C の前の状態」までは変更前の指摘。
+
+- **箇所**: [complete route](../../../../src/app/api/checkout/complete/route.ts) の `linkOrderToUserIfUnowned`（グループ C で削除）、[webhook-processor](../../../../src/lib/stripe/webhook-processor.ts)、[place_order_from_checkout_draft](../../../../supabase/migrations/20260927100300_place_order_from_checkout_draft.sql)、[orders API](../../../../src/app/api/orders/route.ts)。
 - **修正前の再現経路**: ログイン状態で購入すると注文は RPC で作られるが、INSERT に user_id がなく、通常経路でも `linkOrderToUser` が呼ばれなかった。購入履歴は `eq('user_id', userId)` なので、次回ログイン時の `linkGuestOrdersByEmail` まで表示されなかった。
-- **現在の状態**: complete API は照合後、ログイン中なら未所有注文を `user_id` に紐付ける（[complete route](../../../../src/app/api/checkout/complete/route.ts)）。Webhook 単独経路はユーザー情報を持たず、ここを通らないため未対応。
-- **残作業**: Webhook が注文を作る場合にも所有者を保存する方法は未実装。グループ C に残る範囲。
+- **グループ C の前の状態**: complete API は照合後、ログイン中なら未所有注文を `user_id` に紐付けた。完了の処理がログインなしで行われる場合（ブラウザを閉じた・通信が切れた・PayPay から別のブラウザに戻った）と、ユーザー情報を持たない Webhook 単独経路では、持ち主が空のまま残った。また、注文した人と、完了の時にログインしている人が同じかは確かめていなかった。
+- **修正内容（グループ C）**:
+  - 買い手の確かめ: create-session・place-order・resume の3つの入口が、各入口の守りの直後、DB と Stripe に触れる前に `resolveCheckoutBuyer` を呼ぶ。会員の ID は検証済みの `claims.sub` だけから取り、画面から送られた値は使わない。印が古い時は 401 `auth_expired`（画面が印を新しくして1回だけ送り直す）、確かめられない時は 503（ゲスト扱いにしない）。
+  - 「確認へ進む」で、下書きの `buyer_user_id` に買い手（会員の ID、ゲストは空）を記録する。後から変えられない（`CHECKOUT_DRAFT_BUYER_IMMUTABLE`）。
+  - 「注文する」でもう一度確かめ、下書きの買い手と違えば 409 `login_changed` で断る（決済の画面を閉じる。お金は動かない）。同じなら、受付 RPC `place_order_from_checkout_draft` に買い手を渡す。RPC は下書きをロックして買い手を比べ直し、注文を作るのと同じ処理の中で `user_id` を書く。
+  - 「注文する」を通らない支払い（Stripe の知らせ・見回り・完了の照合）は持ち主を付けない。その注文は、メール確認済みのログインの時に `linkGuestOrdersByEmail` が同じメールの注文としてまとめる（今までの仕組み）。
+  - 注文の持ち主は DB が守る。空から値へだけ書け、別の会員への付け替えは `ORDER_OWNER_IMMUTABLE` で断る。空に戻るのは会員を消した時だけ。
+- **確認**: DB 結合 [checkout_order_owner_binding](../../../../tests/integration/db/checkout_order_owner_binding.integration.test.ts)、E2E [FR-CHECKOUT-046](../../../../e2e/FR-CHECKOUT-046-order-owner-binding.spec.ts)（FREQ-426・427）。移行 `20261008120000_checkout_order_owner_binding.sql` は本番へ未適用で、push の後にユーザーの許可を得て当てる。
 
 ### R-25 Checkout Sessionの有効期限が既定24時間のまま、支払後に注文確定を断る経路がある
 
@@ -453,7 +461,7 @@
 | 1 | A 支払状態を Stripe の現在値に合わせる | R-01, R-02, R-04, R-18, R-25（Webhook 側）, R-41, R-42, R-43, R-44（①の削除の案内と同じ箇所のため 2026-09-25 に移した）, R-57（create-session の同じ箇所を直すため 2026-09-27 に加えた） | 実装済み・push 待ち（[設計書](../../../superpowers/specs/2026-09-26-order-payment-reconciliation-design.md)、[実装計画](../../../superpowers/plans/2026-09-27-order-payment-reconciliation.md)。本番へ当てる前の確認は下の「グループ A を本番へ当てる前の確認」） |
 | 2 | F 支払いを「注文する」で実行する | R-56, X-3, 在庫を注文確定時に確保する要望 | 実装済み・push 済み（[設計書](../../../superpowers/specs/2026-10-07-checkout-place-order-payment-design.md)、[実装計画](../../../superpowers/plans/2026-10-07-checkout-place-order-payment.md)）。DB の変更は 2026-10-07 に本番へ適用済み（20261007133711）。開店の前に、特定商取引法の表示を専門家に確かめてもらう（X-3） |
 | 3 | B キューと worker の運用基盤 | R-07, R-33, R-32, R-05, R-35, R-55, X-4 | 実装済み・push 済み（[設計書](../../../superpowers/specs/2026-10-05-webhook-queue-operations-design.md)、[実装計画1（E2E）](../../../superpowers/plans/2026-10-05-e2e-local-supabase.md)、[実装計画2](../../../superpowers/plans/2026-10-05-webhook-queue-operations.md)。DB の変更は 2026-10-07 に本番へ適用済み（20261007030242・20261007030336）。定期処理の登録は開店のとき（[手順書](../../../06_Operations/webhook-queue-operations.md)）） |
-| 4 | C 注文確定RPC（finalize）の整合 | R-24, R-26（R-42 は同じ箇所を直す A へ移した） | 一部対応：R-26 はグループ A で修正。R-24 は complete API 経路で修正したが、Webhook 単独経路の所有者保存は未着手 |
+| 4 | C 注文確定RPC（finalize）の整合 | R-24, R-26（R-42 は同じ箇所を直す A へ移した） | 実装済み（[設計書](../../../superpowers/specs/2026-10-08-order-owner-binding-design.md)、[実装計画](../../../superpowers/plans/2026-10-08-order-owner-binding.md)）：R-26 はグループ A で修正。R-24 は「注文する」で確かめた会員を持ち主として書く形で解消（完了での紐付けは廃止）。DB の変更（20261008120000）は本番へ未適用で、push の後にユーザーの許可を得て当てる |
 | 5 | D 注文メールを確実に送る | R-34, R-14 | 未着手 |
 | 6 | E 返金イベントの反映 | R-06, R-16（業務判断が要る）, R-03 は任意 | 未着手 |
 | 未定 | H プロモーションコードの管理（ユーザー要望。2026-09-27） | 管理画面でコードを作成・停止する。期限・全体の回数上限・最低購入額は Stripe の制限で効く。初回限定は、Customer を作らない今の決済では Stripe が誰でも初回とみなすため効かない。1人あたりの回数上限は Stripe に無い。この2つは自前で確かめる。0円になるコード（100%割引、割引額以下の最低購入額）は作らせない | 順番は未定 |

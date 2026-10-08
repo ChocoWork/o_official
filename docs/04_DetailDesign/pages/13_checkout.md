@@ -8,6 +8,8 @@
 
 2026-10（グループ F）から、支払いは最終確認画面の「注文する」で行う。入力画面に Stripe の部品を置かず、「確認へ進む」でサーバーが決済の画面を作る。詳しくは「最終確認画面と「注文する」（FREQ-417〜421）」の節。
 
+2026-10-08（グループ C）から、ログイン客の注文の持ち主は、「確認へ進む」と「注文する」でサーバーが確かめた会員だけにする。ログインの状態が変わった時は、「注文する」を断って入力画面に戻し、案内を出す。詳しくは「ログインの状態の確かめと注文の持ち主（FREQ-426・427）」の節。
+
 ## 現行実装の確認事項（2026-10-02）
 
 - 現行の [`src/app/checkout/page.tsx`](../../../src/app/checkout/page.tsx) は、Stripe の部品を置かない入力画面から「確認へ進む」で [`create-session`](../../../src/app/api/checkout/create-session/route.ts) を呼び、[最終確認画面（FinalConfirmationStep）](../../../src/app/checkout/_components/FinalConfirmationStep.tsx)へ進む。`CheckoutProvider` と `PaymentElement` は、この最終確認画面に置く（グループ F、2026-10-07）。決済後の注文照合は [注文・決済状態図](../states/order-payment.md) と [システム構成](../../03_BasicDesign/architecture/system-overview.md) を参照する。詳しくは下の「最終確認画面と「注文する」（FREQ-417〜421）」の節。
@@ -32,7 +34,7 @@ flowchart TD
 
 | 項目 | 決まり |
 |---|---|
-| 決済の画面を作る時点 | 「確認へ進む」。uiModeはcustomのみ（既定custom）、hostedは廃止して400。配送先7項目（メールアドレス・氏名・郵便番号・都道府県・市区町村・番地・電話番号）が正規化後に空なら400 shipping_incompleteで断る。ページを開いた時には作らない。要求の版は 2、指紋に配送先と割引コードを含める。同じ入力なら残り15分以上の決済の画面を使い回す |
+| 決済の画面を作る時点 | 「確認へ進む」。uiModeはcustomのみ（既定custom）、hostedは廃止して400。配送先7項目（メールアドレス・氏名・郵便番号・都道府県・市区町村・番地・電話番号）が正規化後に空なら400 shipping_incompleteで断る。ページを開いた時には作らない。要求の版は 3（グループ C。版2はグループ F）、指紋に配送先・割引コード・買い手を含める。同じ入力と同じ買い手なら残り15分以上の決済の画面を使い回す |
 | 前の決済の画面 | 同じ Cookie の、24時間以内の作成中・受け付け済みの下書きの画面を閉じる。受け付け済みなら照合関数で放棄の扱いにして在庫を戻す。作成中の下書きは退役させる |
 | 割引コード | 「適用」で `/api/checkout/promotion-code` が確かめる。決済の画面には「確認へ進む」でサーバーが `discounts` で付ける。`allow_promotion_codes` は使わない。最終確認画面では変えられない |
 | お届けの目安 | `preview_checkout_fulfillment`（受付 RPC と同じ規則。同じバリアントは数量を合わせて比べる）。カート・最終確認画面に出す。在庫の数は出さない |
@@ -50,6 +52,31 @@ flowchart TD
 | 価格変更と解決まで残す案内（FREQ-425） | 「確認へ進む」の409 `checkout_amount_mismatch` ではカートと金額を読み直し、「価格が変わりました。金額をご確認のうえ、もう一度「確認へ進む」を押してください。」とボタンの上に出し、更新済み金額で押し直せる。割引コードを適用中なら確かめ直して目安の金額を新しくし、断られたら割引を外して欄にコードと理由を出す。やり直せない案内と無効状態は配送先の「新規」・保存済みの選択や入力の変更で消さない |
 
 検証は[購入・決済照合シーケンス](../sequence/checkout-payment.md)の「関連テスト」に挙げたテストと、`e2e/FR-CART-022-delivery-estimate-and-stock-notice.spec.ts`（カートの目安と案内）。
+
+## ログインの状態の確かめと注文の持ち主（FREQ-426・427）
+
+[グループ C 設計書](../../superpowers/specs/2026-10-08-order-owner-binding-design.md)と[実装計画](../../superpowers/plans/2026-10-08-order-owner-binding.md)の決め事を、画面の側からまとめる。サーバーは「確認へ進む」と「注文する」でログインを確かめ、下書きに記録した買い手と同じ時だけ、注文の持ち主を書く（[購入・決済照合シーケンス](../sequence/checkout-payment.md)）。画面は、ログインの状態が変わったことを案内し、お客様にやり直してもらう。
+
+```mermaid
+flowchart TD
+    Final["最終確認画面"] -->|注文する| Place["place-order<br/>ログインを確かめ、下書きの買い手と比べる"]
+    Place -->|同じ| Pay["支払いへ<br/>持ち主は受け付けで書かれる"]
+    Place -->|違う login_changed| Input["入力画面に戻し、案内を出す<br/>ログインの状態を読み直す"]
+    Place -->|401 auth_expired| Refresh["印を新しくして1回だけ送り直す"]
+    Refresh -->|新しくできた| Place
+    Refresh -->|新しくできない| Input
+    Input -->|確認へ進むを押し直す| Create["create-session<br/>今のログインで下書きを取り直す"]
+```
+
+| 場面 | 画面の動き |
+|---|---|
+| 「注文する」が `login_changed` で断られた（「確認へ進む」の時とログインの状態が違う） | 入力画面に戻し（URL は `/checkout`）、ボタンの上に「ログインの状態が変わりました。もう一度「確認へ進む」を押してください。」を出す（`data-testid="checkout-session-error"`。押し直せる）。ログインの状態を読み直し（`refreshAuthState`）、入力欄の扱いを今のログインに合わせる（会員はメールを読み取り専用、ゲストは入力できる）。入力した値は書き換えない。お金は動いていない |
+| 「確認へ進む」が 409 `login_changed`（支払い済みの決済の画面の買い手が今の買い手と違う） | 入力画面のまま、サーバーの同じ文を出す。ログインの状態を読み直す。押し直せる |
+| 401 `auth_expired`（create-session・place-order・resume） | `refreshSessionOnce`（[client-fetch.ts](../../../src/lib/client-fetch.ts)）でログインの印を新しくして、同じ要求を1回だけ送り直す（[checkout-api.ts](../../../src/app/checkout/_lib/checkout-api.ts)）。入口は何かを変える前に確かめるので、送り直しても二重にならない |
+| 印を新しくできなかった（ログアウト済み・更新の印が無効） | 「確認へ進む」: 「ログインの有効期限が切れました。ログインし直すか、そのままもう一度「確認へ進む」を押してください。」を出す（自動でゲストとして進めない。押し直せる）。「注文する」: `login_changed` と同じ扱い。入り直し: 入力画面（`none`）。更新の入口がログインの Cookie を消すので、次に押し直すとゲストとして進む。更新が一時的に失敗した時（429・5xx・通信の失敗）は Cookie が残り、数秒〜1分は同じ案内が続くことがある |
+| 503（ログインを確かめられない） | 今の失敗の案内を出す。「確認へ進む」は「決済の準備に失敗しました。少し時間をおいてから、もう一度お試しください。」、「注文する」は「ご注文を受け付けられませんでした。少し時間をおいてから、もう一度お試しください。」。押し直せる。ゲスト扱いにしない |
+
+注文履歴（`GET /api/orders`）は `user_id` で引くので、「注文する」の受け付けで持ち主が書かれた注文は、完了画面に戻らなくても本人の履歴に出る（FREQ-426）。ゲストと、「注文する」を通らない支払いの注文は持ち主が空で、メール確認済みのログインの時に同じメールの注文としてまとめる。「確認へ進む」の後にログインの状態が変わった時は、「注文する」が断られて注文は作られない（FREQ-427）。検証は `e2e/FR-CHECKOUT-046-order-owner-binding.spec.ts`（3つの画面幅）。
 
 ## 機能要件対応表
 
@@ -178,6 +205,8 @@ order_items (
 ```
 
 注文と明細には、法定保存のためのトリガーが付いている。削除は拒否され、金額・配送先・作成日時などは更新できない。状態などの更新は `order_revisions` に前後の内容が残る。
+
+注文の持ち主（`user_id`）は、「注文する」の受け付けが、買い手を確かめた上で注文を作る処理の中で書く（グループ C）。ゲストの注文と、「注文する」を通らない支払いの注文は空で、メール確認済みのログインの時に同じメールの注文としてまとめる。一度付いた持ち主は別の会員へ付け替えられない（`ORDER_OWNER_IMMUTABLE`）。下書き（`checkout_drafts`）は、「確認へ進む」の時の買い手を `buyer_user_id`（uuid、空はゲスト、外部キーなし）に持ち、後から変えられない。
 
 フリガナ（`shipping_kana`）は、checkout の入力を配送先の写し（`checkout_drafts.shipping_snapshot.kanaName`）に保存し、注文確定のときに注文へ写す（FREQ-384）。配送伝票の記入と、返品などのあとのやり取りに使う。送り状の必須項目ではない（ヤマトの B2クラウドが外部データに求める項目にフリガナは無い）ので、注文確定の必須検証（`findMissingShippingFields`）には入れない。フリガナの無い古い draft からでも注文は作れる。
 
@@ -365,7 +394,7 @@ Stripe セッションを作ったら、その ID を下書き（`checkout_draft
 
 ### Checkout Session 作成の原子性と冪等性（FREQ-405）
 
-`POST /api/checkout/create-session`は、Stripeを呼ぶ前に`claim_checkout_draft`で要求を1つの下書きへ収束させる。画面から来た値をそのまま冪等キーの意味にせず、次のサーバー算出値を固定順序でJSON化し、`v2:<sha256>`（グループ F 前は`v1:`）のfingerprintを作る。
+`POST /api/checkout/create-session`は、Stripeを呼ぶ前に`claim_checkout_draft`で要求を1つの下書きへ収束させる。画面から来た値をそのまま冪等キーの意味にせず、次のサーバー算出値を固定順序でJSON化し、`v3:<sha256>`（グループ C 前は`v2:`、グループ F 前は`v1:`）のfingerprintを作る。
 
 | fingerprintに含める値                          | 理由                                                  |
 | ---------------------------------------------- | ----------------------------------------------------- |
@@ -373,9 +402,10 @@ Stripe セッションを作ったら、その ID を下書き（`checkout_draft
 | custom（既定。hostedは廃止し400）              | 決済画面の方式を要求の指紋に固定する                  |
 | 許可リストで検証したorigin                     | claim引数と要求の指紋に含める既存の契約を保つ          |
 | 配送先・割引コード（版2から）                  | 決済の画面を「確認へ進む」の時点の入力の写しにする。入力が変われば別の下書き・別の決済の画面にする |
+| 買い手（版3から）                              | 「確認へ進む」の時にサーバーが確かめた会員の ID（ゲストは空）。買い手が違えば別の下書き・別の決済の画面にする（グループ C）。下書きの`buyer_user_id`にも記録する |
 | 要求版                                         | Stripeの固定オプションを変えたときに旧Sessionと分ける |
 
-申告支払方法はfingerprintに含めない。配送先と割引コードは版2（グループ F）から含める。決済の画面は「確認へ進む」の時点の入力の写しで、入力が変われば別の下書き・別の決済の画面になる。claimした下書きの値をStripe作成パラメータの正本にし、配送先を後から書き換える経路は無い（下の「配送先の書き込み順（FREQ-365）」）。
+申告支払方法はfingerprintに含めない。配送先と割引コードは版2（グループ F）から、買い手は版3（グループ C）から含める。決済の画面は「確認へ進む」の時点の入力の写しで、入力が変われば別の下書き・別の決済の画面になる。claimした下書きの値をStripe作成パラメータの正本にし、配送先を後から書き換える経路は無い（下の「配送先の書き込み順（FREQ-365）」）。
 
 旧互換の再利用検索（`checkout_request_version`が未設定または`v0`の下書きの使い回し）は、グループ F で消した。旧版の決済の画面はブラウザから割引コードを付けられるので使い回さない。`v1`以降は動的支払方法を前提に、必ずfingerprint付きのclaim経路を使う。
 
@@ -404,7 +434,7 @@ sequenceDiagram
 | `expired`                              | 下書きID・セッションID・fingerprint・`created`をすべて照合して退役する。更新0件なら500で停止し、成功時だけ新しい下書きをclaimする |
 | 取得失敗、`resource_missing`、未知状態 | 未入金と推定せず500を返し、新規Sessionを作らない                                              |
 
-Stripe作成には`checkout-session:create:v2:<draft ID>:<expires_at>`（版2。グループ F 前は`v1`）を冪等キー、下書きIDを`client_reference_id`として渡す。`<expires_at>` は決済画面の失効時刻（UNIX 秒。作成から30分30秒後）で、`reserve_checkout_session_expiry` が下書きに保存し、15秒以内の再送には同じ値を返す（それより後は決め直す。FREQ-407）。同じキーのパラメータが変わらないよう、明細・metadata・メール・戻り先・失効時刻はすべてclaim済み下書きから組み立てる。Session IDの書き戻しは`attach_checkout_session_to_draft`で行い、未設定または同じIDだけを受け入れる。
+Stripe作成には`checkout-session:create:v3:<draft ID>:<expires_at>`（版3。グループ C 前は`v2`、グループ F 前は`v1`）を冪等キー、下書きIDを`client_reference_id`として渡す。`<expires_at>` は決済画面の失効時刻（UNIX 秒。作成から30分30秒後）で、`reserve_checkout_session_expiry` が下書きに保存し、15秒以内の再送には同じ値を返す（それより後は決め直す。FREQ-407）。同じキーのパラメータが変わらないよう、明細・metadata・メール・戻り先・失効時刻はすべてclaim済み下書きから組み立てる。Session IDの書き戻しは`attach_checkout_session_to_draft`で行い、未設定または同じIDだけを受け入れる。
 
 別IDとのCAS競合が確定した場合は、後発Sessionが`open`と確認できたときだけ、Session IDを含む別の冪等キーで失効する。RPC通信エラーは書き込み結果が不明なのでSessionを失効せず、再送で同じStripe冪等キーと下書きを回収する。
 
@@ -696,11 +726,11 @@ Stripe は「同じイベントを複数回受信する可能性」と「配信�
 
 | エンドポイント                 | メソッド | 概要                                    | 認証                | 主なレスポンス                |
 | ------------------------------ | -------- | --------------------------------------- | ------------------- | ----------------------------- |
-| `/api/checkout/create-session` | POST     | 「確認へ進む」で配送先7項目を求め（欠落は400 shipping_incomplete）、customのみの下書きと Stripe セッション（30分で失効）を作り、最終確認画面の内容を返す（hostedは400） | 任意（ゲスト/会員） | `{ confirmation }` |
-| `/api/checkout/complete`       | POST     | Webhook/サーバ確認後に注文を確定        | 任意                | `{ orderId, status }`         |
+| `/api/checkout/create-session` | POST     | 「確認へ進む」で配送先7項目を求め（欠落は400 shipping_incomplete）、customのみの下書きと Stripe セッション（30分で失効）を作り、最終確認画面の内容を返す（hostedは400）。ログインを買い手として確かめて下書きに記録する（印が古ければ401 auth_expired、確かめられなければ503。支払い済みの画面の買い手が違えば409 login_changed） | 任意（ゲスト/会員） | `{ confirmation }` |
+| `/api/checkout/complete`       | POST     | Webhook/サーバ確認後に注文を確定。ログインは確かめず、注文の持ち主には触れない（グループ C） | 任意                | `{ orderId, status }`         |
 | `/api/checkout/promotion-code` | POST     | 割引コードの「適用」。サーバーが使えるかを確かめ、割引後の金額を返す | 任意（ゲスト/会員） | `{ code, subtotalAmount, shippingAmount, discountAmount, totalAmount }` |
-| `/api/checkout/place-order`    | POST     | 「注文する」の受け付け。別の完了済み画面ならpayment_doneでその注文へ進み、本人のカート行が消えていればcart_changedで断る（押し直しではpayment_in_progressの注文だけ）。注文を作り在庫を確保する。残り10分未満は閉じず409 session_expiredと記録。前の画面は作り直しのD5か30分の時間切れで閉じる。作り直しの「確認へ進む」自体が買えない商品・金額の食い違いなどで断られたときは閉じる処理まで進まないため、30分の時間切れと Stripe の知らせ・見回りで閉じる。別の画面のpayment_done・cart_changed（受付済みの押し直しを含む）・supersededではこの画面を閉じ、失効成功時に照合して、受付済みなら放棄・在庫返却し、理由とIDを記録する。後始末の失敗はログに残し応答を変えない | 任意（ゲスト/会員） | `{ orderId, orderStatus }` |
-| `/api/checkout/resume`         | POST     | 決済の画面を開き直したときに、どこから続けるかを返す | 任意（ゲスト/会員） | `{ state: "none" }` ／ `{ state: "payment_done", checkoutSessionId }` ／ `{ state: "resume", confirmation }` |
+| `/api/checkout/place-order`    | POST     | 「注文する」の受け付け。ログインを確かめ、下書きの買い手と違えば決済の画面を閉じて409 login_changedで断る（401 auth_expired・503は何も変えず返す）。同じなら、注文を作る処理の中で持ち主を書く。別の完了済み画面ならpayment_doneでその注文へ進み（買い手が違う画面は返さない）、本人のカート行が消えていればcart_changedで断る（押し直しではpayment_in_progressの注文だけ）。注文を作り在庫を確保する。残り10分未満は閉じず409 session_expiredと記録。前の画面は作り直しのD5か30分の時間切れで閉じる。作り直しの「確認へ進む」自体が買えない商品・金額の食い違いなどで断られたときは閉じる処理まで進まないため、30分の時間切れと Stripe の知らせ・見回りで閉じる。別の画面のpayment_done・cart_changed（受付済みの押し直しを含む）・supersededではこの画面を閉じ、失効成功時に照合して、受付済みなら放棄・在庫返却し、理由とIDを記録する。後始末の失敗はログに残し応答を変えない | 任意（ゲスト/会員） | `{ orderId, orderStatus }` |
+| `/api/checkout/resume`         | POST     | 決済の画面を開き直したときに、どこから続けるかを返す。ログインを確かめ、下書きの買い手が違えば none を返す（401 auth_expired・503は何も変えず返す） | 任意（ゲスト/会員） | `{ state: "none" }` ／ `{ state: "payment_done", checkoutSessionId }` ／ `{ state: "resume", confirmation }` |
 | `/api/webhook/stripe`          | POST     | Stripe Webhook 受信・署名検証・冪等処理 | Stripe 署名         | `200` or `400`                |
 
 > **決済成功率目標**: 99% 以上。支払失敗時は注文を `failed` ステータスに更新し、ユーザへ再試行導線を提示すること。
