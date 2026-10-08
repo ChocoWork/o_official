@@ -529,9 +529,20 @@ export async function POST(req: NextRequest) {
     // 同じブラウザで前の人が入れたメールが、別の会員の注文に混ざらないようにする。
     // ログインのメールは、ゲストが入力したメールと同じ整え（NFKC・前後の空白・小文字、形の確かめ）を通してから使う。
     // 通さないと、注文のメールの形がゲストと食い違い、同じメールが大文字小文字・全角の違いで別の見分けの値（別の下書き）になる。
-    // ログインのメールが無い会員・形として使えない会員とゲストは、画面のメールのまま扱う。
+    // ログインのメールが無い会員とゲストは、画面のメールのまま扱う。値があっても使えない会員は断る。
     const memberEmail =
       buyerResolution.kind === "member" ? normalizeCheckoutEmail(buyerResolution.email) : undefined;
+    if (buyerResolution.kind === "member" && buyerResolution.email !== null && !memberEmail) {
+      await logAudit({
+        action: "checkout.session.create",
+        outcome: "failure",
+        detail: "ログインのメールアドレスの形式が不正",
+        ip: clientIp,
+        user_agent: userAgent,
+        metadata: { session_id: sessionId, reason: "invalid_member_email" },
+      });
+      return NextResponse.json({ error: "invalid_member_email" }, { status: 400 });
+    }
     const shipping = memberEmail ? { ...requestedShipping, email: memberEmail } : requestedShipping;
     // 完了の照合と共有する任意項目のスキーマは保ち、支払いの準備では配送先の欠落を先に断る。
     const missingShippingFields = findMissingShippingFields(buildShippingSnapshot(shipping));

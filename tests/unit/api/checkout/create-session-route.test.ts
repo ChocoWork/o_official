@@ -445,14 +445,50 @@ describe("POST /api/checkout/create-session", () => {
       expect(new Set(fingerprints).size).toBe(1);
     });
 
-    it("ログインのメールがメールアドレスの形として使えない会員は、ログインのメールが無い会員と同じに、画面のメールで受け付ける", async () => {
+    it.each([
+      ["メールの形でない", "not-an-email"],
+      ["空白だけ", "　 \t"],
+      ["長さの上限を超える", "a".repeat(243) + "@example.com"],
+    ])("ログインのメールが使えない会員（%s）は、画面のメールに落とさず400で断り、メールの値を監査ログに残さない", async (_label, claimsEmail) => {
       mockCreate.mockResolvedValue({ client_secret: "secret", id: "cs_test" });
+      mockResolveCheckoutBuyer.mockResolvedValue({ kind: "member", userId: "user-1", email: claimsEmail });
+
+      const res = (await POST(makeRequest({ shipping: { ...SHIPPING, email: "Other@Example.com" } }))) as unknown as {
+        status: number; body: unknown;
+      };
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ error: "invalid_member_email" });
+      expect(mockLogAudit).toHaveBeenCalledTimes(1);
+      expect(mockLogAudit).toHaveBeenCalledWith({
+        action: "checkout.session.create",
+        outcome: "failure",
+        detail: "ログインのメールアドレスの形式が不正",
+        ip: null,
+        user_agent: null,
+        metadata: { session_id: "sess-abc", reason: "invalid_member_email" },
+      });
+      expect(mockFrom).not.toHaveBeenCalled();
+      expect(mockRpc).not.toHaveBeenCalled();
+      expect(getStripeServerClient).not.toHaveBeenCalled();
+      expect(mockCreate).not.toHaveBeenCalled();
+      expect(mockRetrieve).not.toHaveBeenCalled();
+      expect(mockExpireOpenCheckoutSession).not.toHaveBeenCalled();
+      expect(mockCloseOtherCheckoutSessions).not.toHaveBeenCalled();
+    });
+
+    it("ログインのメールが使えない会員は、画面のメールも無くてもshipping_incompleteではなくinvalid_member_emailで断る", async () => {
       mockResolveCheckoutBuyer.mockResolvedValue({ kind: "member", userId: "user-1", email: "not-an-email" });
 
-      const res = await POST(makeRequest({ shipping: { ...SHIPPING, email: "Other@Example.com" } }));
+      const res = (await POST(makeRequest({ shipping: { ...SHIPPING, email: undefined } }))) as unknown as {
+        status: number; body: unknown;
+      };
 
-      expect(res.status).toBe(200);
-      expect(claimParams()[0]._shipping_snapshot.email).toBe("other@example.com");
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ error: "invalid_member_email" });
+      expect(mockFrom).not.toHaveBeenCalled();
+      expect(mockRpc).not.toHaveBeenCalled();
+      expect(mockCreate).not.toHaveBeenCalled();
     });
 
     it("ゲストは画面のメールで受け付け、画面のメールが違えば別の見分けの値になる", async () => {
