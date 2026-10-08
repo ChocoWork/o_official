@@ -1151,7 +1151,8 @@ function localDb() {
 
 test.describe('FR-CHECKOUT-046 ログイン客の注文の持ち主', () => {
   test.describe.configure({ timeout: 180_000 });
-  test.use({ locale: 'ja-JP' });
+  // 会員のログインは確認コードとログインの Cookie をブラウザの通信に載せるので、通信記録（trace）を残さない
+  test.use({ locale: 'ja-JP', trace: 'off' });
 
   for (const viewport of CHECKOUT_VIEWPORTS) {
     test(`${viewport.name}（${viewport.width}px）会員の注文は、完了の処理がログインなしでも注文履歴に出る`, async ({ page }) => {
