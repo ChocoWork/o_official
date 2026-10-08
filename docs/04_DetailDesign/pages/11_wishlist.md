@@ -46,7 +46,7 @@
 
 2026-10-08（FREQ-429・431・432）: `wishlist` Cookie は HttpOnly・SameSite=Lax・Path=/・2週間（書き換えで延長）。最後に使ってから30日を過ぎたゲストの分を毎日削除し、会員の分は残す。ログインで合わせるのに失敗してもログインは止めず、Cookieを残して次の読み出しで再試行する。ログアウトは `cart`・`wishlist` Cookieを消し、会員のデータは保持する。
 
-根拠: [持ち主と明細の移行](../../../supabase/migrations/20261008130000_cart_wishlist_ownership.sql)、[合わせ込み](../../../src/features/cart/services/guest-shopping-merge.ts)、[設計](../../superpowers/specs/2026-10-08-cart-wishlist-carryover-design.md)。
+根拠: [持ち主と明細の移行](../../../supabase/migrations/20261008220825_cart_wishlist_ownership.sql)、[合わせ込み](../../../src/features/cart/services/guest-shopping-merge.ts)、[設計](../../superpowers/specs/2026-10-08-cart-wishlist-carryover-design.md)。
 
 ---
 

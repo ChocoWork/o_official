@@ -18,7 +18,7 @@
 - カートの追加の監査は `lines`（`[{variant_id,quantity}]`）。本文の `variant_ids`・`quantities` は古い。
 - お気に入りの 409 の本文は `'Item already in wishlist'`。
 - 決め事 P14 と Review Focus 5 は、「確認へ進む」で購入不可の明細を外して 409 `cart_updated`（`retryable: true`）で案内する形に変えた。
-- [移行 C（バリアントのトリガー）](../../../supabase/migrations/20261008130200_item_variant_sync.sql) を足した。商品の作成と色・サイズの変更で組み合わせを作る。
+- [移行 C（バリアントのトリガー）](../../../supabase/migrations/20261008220958_item_variant_sync.sql) を足した。商品の作成と色・サイズの変更で組み合わせを作る。
 
 ## Global Constraints
 
@@ -35,7 +35,7 @@
 - 合わせる規則: 会員に分が無ければゲストの持ち主を付け替える。両方あれば、違うバリアントは入れた順（`added_at`、同じなら `id`）に50種類まで移し、同じバリアントは大きい方の数量。お気に入りは同じ商品を1つにする。お知らせは出さない
 - DB の名前と形（設計書第3章・第6章）: 表 `public.carts`・`public.cart_lines`・`public.wishlists`・`public.wishlist_lines`、`checkout_drafts.cart_id`。関数 `public.cart_add_lines(_cart_id uuid, _lines jsonb)`、`public.cart_change_line(_cart_id uuid, _line_id uuid, _quantity integer)`、`public.merge_guest_into_member(_user_id uuid, _cart_token_hash text, _wishlist_token_hash text)`、`public.claim_checkout_draft(..., _buyer_user_id uuid, _cart_id uuid)`（15引数、既定値なし）、`public.place_order_from_checkout_draft`（10引数のまま）、`private.clear_cart_for_order(uuid)`、`private.checkout_cart_lines_gone(uuid, jsonb)`。毎日の処理 `guest-shopping-retention`
 - 下書きの明細の参照のキーは `source_cart_line_id`（`cart_lines.id`）。`source_cart_id` は使わない
-- 移行は2本（本計画の決め事 P1）: `supabase/migrations/20261008130000_cart_wishlist_ownership.sql`（1回だけ当てる）と `supabase/migrations/20261008130100_cart_checkout_rpcs.sql`（何度当てても同じ結果）。どちらも `BEGIN;`〜`COMMIT;`。関数は `SECURITY DEFINER`＋`SET search_path = ''`＋完全修飾名。`PUBLIC`・`anon`・`authenticated` から EXECUTE を外し、`service_role` だけに与える（`private` の関数は `PUBLIC` から外す）。最後に `NOTIFY pgrst, 'reload schema';`
+- 移行は2本（本計画の決め事 P1）: `supabase/migrations/20261008220825_cart_wishlist_ownership.sql`（1回だけ当てる）と `supabase/migrations/20261008220944_cart_checkout_rpcs.sql`（何度当てても同じ結果）。どちらも `BEGIN;`〜`COMMIT;`。関数は `SECURITY DEFINER`＋`SET search_path = ''`＋完全修飾名。`PUBLIC`・`anon`・`authenticated` から EXECUTE を外し、`service_role` だけに与える（`private` の関数は `PUBLIC` から外す）。最後に `NOTIFY pgrst, 'reload schema';`
 - `supabase/pending/` は触らない。本番 DB へは、全タスクの後、ユーザーの push の後で許可を得て Supabase MCP の `apply_migration` で2本を順に当て、当てた版にファイル名と文書の版を直す
 - 画面と機能の変更は `docs/02_Requirements/requirements.md` に FREQ-428〜432 の行を足す（Task 10。番号は `grep -oE "FREQ-[0-9]+" docs/02_Requirements/requirements.md | sort -t- -k2 -n | tail -1` が FREQ-427 であることを確かめる）。新しい E2E は `e2e/FR-CART-023-…`・`e2e/FR-CART-024-…`・`e2e/FR-CHECKOUT-047-…`・`e2e/FR-WISHLIST-016-…`（`ls e2e | grep FR-CART- | sort -V | tail -1` などで次の番号であることを確かめる）
 - E2E は本番ビルド（`next build && next start`）・手元の Supabase（`npx supabase db reset` の直後）で、mobile（390px）・tablet（768px）・desktop（1280px）の3つの画面幅で流す。流す前に3000番に何も無いことを `Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue` で確かめる。DB 結合テストの直後に E2E を流さない
@@ -83,8 +83,8 @@
 
 | ファイル | 責務 |
 |---|---|
-| `supabase/migrations/20261008130000_cart_wishlist_ownership.sql`（新規） | 古い表と関数の片付け、新しい4つの表・決まり・トリガー・拒否、`checkout_drafts.cart_id`、カートの関数3本、期限の処理（Task 1） |
-| `supabase/migrations/20261008130100_cart_checkout_rpcs.sql`（新規） | 下書きを取る関数（15引数）・受付の関数・支払い後の関数の作り直し（Task 2） |
+| `supabase/migrations/20261008220825_cart_wishlist_ownership.sql`（新規） | 古い表と関数の片付け、新しい4つの表・決まり・トリガー・拒否、`checkout_drafts.cart_id`、カートの関数3本、期限の処理（Task 1） |
+| `supabase/migrations/20261008220944_cart_checkout_rpcs.sql`（新規） | 下書きを取る関数（15引数）・受付の関数・支払い後の関数の作り直し（Task 2） |
 | `tests/integration/db/cart_wishlist_ownership.integration.test.ts`（新規） | 表・関数・合わせる処理・期限の結合テスト（Task 1） |
 | `tests/integration/db/cart_checkout_rpcs.integration.test.ts`（新規） | 下書き・受付・支払い後の結合テスト（Task 2） |
 | `tests/integration/db/helpers/order-fixtures.ts` ほか DB 結合の5本 | 新しいカートで試験データを作る（Task 2） |
@@ -110,7 +110,7 @@
 ### Task 1: 新しい4つの表と DB の関数（移行 A）
 
 **Files:**
-- Create: `supabase/migrations/20261008130000_cart_wishlist_ownership.sql`
+- Create: `supabase/migrations/20261008220825_cart_wishlist_ownership.sql`
 - Create: `tests/integration/db/cart_wishlist_ownership.integration.test.ts`
 - Delete: `tests/integration/db/guest_rpc_item_id_type.integration.test.ts`（消す古い関数5本を試している）
 
@@ -533,7 +533,7 @@ Expected: FAIL（`relation "public.cart_lines" does not exist` など）
 
 - [ ] **Step 3: 移行 A を書く**
 
-`supabase/migrations/20261008130000_cart_wishlist_ownership.sql`:
+`supabase/migrations/20261008220825_cart_wishlist_ownership.sql`:
 
 ```sql
 -- カートとお気に入りの持ち主と明細（docs/superpowers/specs/2026-10-08-cart-wishlist-carryover-design.md 第3章・第5章・第6章）
@@ -952,7 +952,7 @@ Expected: PASS（全部）。このタスクの時点では、決済の結合テ
 
 ```bash
 git rm tests/integration/db/guest_rpc_item_id_type.integration.test.ts
-git add supabase/migrations/20261008130000_cart_wishlist_ownership.sql tests/integration/db/cart_wishlist_ownership.integration.test.ts
+git add supabase/migrations/20261008220825_cart_wishlist_ownership.sql tests/integration/db/cart_wishlist_ownership.integration.test.ts
 git commit -m "feat(db): カートとお気に入りを持ち主の表と明細の表に作り直し、ログインで合わせる関数を足す"
 ```
 
@@ -961,7 +961,7 @@ git commit -m "feat(db): カートとお気に入りを持ち主の表と明細�
 ### Task 2: 決済の関数の作り直し（移行 B）と DB 結合テストの試験データ
 
 **Files:**
-- Create: `supabase/migrations/20261008130100_cart_checkout_rpcs.sql`
+- Create: `supabase/migrations/20261008220944_cart_checkout_rpcs.sql`
 - Create: `tests/integration/db/cart_checkout_rpcs.integration.test.ts`
 - Modify: `tests/integration/db/helpers/order-fixtures.ts:50-136`（`createDraft`）
 - Modify: `tests/integration/db/checkout_session_claim.integration.test.ts:34-42,103-114`（後片付けで移行 B を当て直す）
@@ -1246,7 +1246,7 @@ Expected: FAIL（`claim_checkout_draft` に `_cart_id` が無い、`cart_changed
 
 - [ ] **Step 5: 移行 B を書く**
 
-`supabase/migrations/20261008130100_cart_checkout_rpcs.sql`。`claim_checkout_draft` と `place_order_from_checkout_draft` の本文は、`supabase/migrations/20261008055720_checkout_order_owner_binding.sql` の定義（:62-237 と :250-579）を写し、次の差分だけを入れる。
+`supabase/migrations/20261008220944_cart_checkout_rpcs.sql`。`claim_checkout_draft` と `place_order_from_checkout_draft` の本文は、`supabase/migrations/20261008055720_checkout_order_owner_binding.sql` の定義（:62-237 と :250-579）を写し、次の差分だけを入れる。
 
 ```sql
 -- 「確認へ進む」「注文する」「支払いの後」の関数を新しいカート（carts・cart_lines）に合わせる
@@ -1320,7 +1320,7 @@ NOTIFY pgrst, 'reload schema';
 COMMIT;
 ```
 
-写した後のファイルに `public.carts AS c` と `session_id = draft_row.session_id`（カートの確かめ）が残っていないことを `grep -n "public.carts" supabase/migrations/20261008130100_cart_checkout_rpcs.sql` で確かめる（残ってよいのは無し）。
+写した後のファイルに `public.carts AS c` と `session_id = draft_row.session_id`（カートの確かめ）が残っていないことを `grep -n "public.carts" supabase/migrations/20261008220944_cart_checkout_rpcs.sql` で確かめる（残ってよいのは無し）。
 
 - [ ] **Step 6: 通ることを確かめる**
 
@@ -1330,7 +1330,7 @@ Expected: PASS（全部。`checkout_session_claim` の後に流れる試験も�
 - [ ] **Step 7: コミットする**
 
 ```bash
-git add supabase/migrations/20261008130100_cart_checkout_rpcs.sql tests/integration/db/cart_checkout_rpcs.integration.test.ts tests/integration/db/helpers/order-fixtures.ts tests/integration/db/checkout_session_claim.integration.test.ts tests/integration/db/checkout_order_owner_binding.integration.test.ts tests/integration/db/place_order_from_checkout_draft.integration.test.ts tests/integration/db/mark_order_payment.integration.test.ts tests/integration/db/place_order_shown_stock.integration.test.ts
+git add supabase/migrations/20261008220944_cart_checkout_rpcs.sql tests/integration/db/cart_checkout_rpcs.integration.test.ts tests/integration/db/helpers/order-fixtures.ts tests/integration/db/checkout_session_claim.integration.test.ts tests/integration/db/checkout_order_owner_binding.integration.test.ts tests/integration/db/place_order_from_checkout_draft.integration.test.ts tests/integration/db/mark_order_payment.integration.test.ts tests/integration/db/place_order_shown_stock.integration.test.ts
 git commit -m "feat(db): 下書き・受付・支払い後の関数を新しいカートの明細で確かめる形に作り直す"
 ```
 
@@ -3885,4 +3885,4 @@ Expected: 成功
 
 - [ ] **Step 5: ユーザーに報告して止まる**
 
-報告すること: 全部の確かめの結果（件数）、新しく落ちた試験と切り分け、push の許可の依頼、push の後に本番の DB へ移行2本（`20261008130000_cart_wishlist_ownership.sql` → `20261008130100_cart_checkout_rpcs.sql`）を当てる許可の依頼。当てた後は、2本のファイル名を本番の台帳の版に直し、同じコミットで文書（er.md・checkout-draft.md・checkout-payment.md のリンク、計画と設計書の版の記載）を直して `npm run -s validate-docs` を流す。`checkout_session_claim` の結合テストは移行 B をファイル名の終わり（`_cart_checkout_rpcs.sql`）で探すので、改名に耐えることを確かめる
+報告すること: 全部の確かめの結果（件数）、新しく落ちた試験と切り分け、push の許可の依頼、push の後に本番の DB へ移行2本（`20261008220825_cart_wishlist_ownership.sql` → `20261008220944_cart_checkout_rpcs.sql`）を当てる許可の依頼。当てた後は、2本のファイル名を本番の台帳の版に直し、同じコミットで文書（er.md・checkout-draft.md・checkout-payment.md のリンク、計画と設計書の版の記載）を直して `npm run -s validate-docs` を流す。`checkout_session_claim` の結合テストは移行 B をファイル名の終わり（`_cart_checkout_rpcs.sql`）で探すので、改名に耐えることを確かめる

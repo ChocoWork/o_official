@@ -70,7 +70,7 @@
 
 > 元ファイル: `docs/02_Requirements/03_cart.md`
 
-カートは持ち主（carts）と明細（cart_lines）に分ける。定義と索引・FKは [ER図](../../03_BasicDesign/data/er.md) と [移行 A](../../../supabase/migrations/20261008130000_cart_wishlist_ownership.sql) を参照する。
+カートは持ち主（carts）と明細（cart_lines）に分ける。定義と索引・FKは [ER図](../../03_BasicDesign/data/er.md) と [移行 A](../../../supabase/migrations/20261008220825_cart_wishlist_ownership.sql) を参照する。
 
 | 表 | 主な列・決まり |
 | --- | --- |

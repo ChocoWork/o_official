@@ -208,7 +208,7 @@ select cron.schedule(
 | 表 `public.carts`（1行＝1商品・`session_id` 付き）と `public.wishlist`、その許可（RLS）・索引 | 新しい表に置き換える。今の行は捨てる（本番は未公開。2026-09-06 設計書 5 章と同じ） |
 | 関数 `add_guest_cart_item`・`update_guest_cart_item_quantity`・`delete_guest_cart_item`・`list_guest_cart`・`add_guest_wishlist_item`・`delete_guest_wishlist_item`・`list_guest_wishlist`・`update_cart_item_quantity_secure`・`delete_cart_item_secure` | 古い表を使う。アプリから呼んでいるのは最後の2本だけで、窓口の作り直しで要らなくなる |
 
-2026-10-08 追記（全体レビュー）: 商品の作成と色・サイズの変更でバリアントをトリガーで作る（[移行 C](../../../supabase/migrations/20261008130200_item_variant_sync.sql)）。理由は、カートの明細がバリアントを要るので、在庫欄を開かずに公開した商品が買えなくなるため。
+2026-10-08 追記（全体レビュー）: 商品の作成と色・サイズの変更でバリアントをトリガーで作る（[移行 C](../../../supabase/migrations/20261008220958_item_variant_sync.sql)）。理由は、カートの明細がバリアントを要るので、在庫欄を開かずに公開した商品が買えなくなるため。
 
 ---
 

@@ -11,7 +11,7 @@ INSERT INTO storage.buckets (id, name, public) VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- 商品の色・サイズ・バリアントは、下で番号と SKU を決めて入れる（E2E が SKU で選ぶため）。
--- 商品を入れた時に組み合わせを自動で作るトリガー（移行 20261008130200_item_variant_sync.sql）が先に別の番号で
+-- 商品を入れた時に組み合わせを自動で作るトリガー（移行 20261008220958_item_variant_sync.sql）が先に別の番号で
 -- 作ると番号がぶつかるので、見本の商品とバリアントを入れる間だけ止め、入れ終わったら戻す。
 ALTER TABLE public.items DISABLE TRIGGER items_sync_variants;
 
