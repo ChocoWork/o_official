@@ -1260,4 +1260,4 @@ git commit -m "test(e2e): FR-CHECKOUT-046 と FREQ-426・427、グループ C �
 1. 単体全件・型・lint・`validate-docs`
 2. `npx supabase db reset` → DB 結合を全件（`--runInBand`）→ もう一度 `npx supabase db reset` → 決済まわりとアカウントの E2E
 3. 全体のレビュー（Opus）。指摘の直しは1回、範囲の再レビューは1回
-4. ユーザーに push の許可をもらう。push の後、本番 DB への移行の適用の許可をもらい、Supabase MCP の `apply_migration` で当てる。当てた版にファイル名を直し、`checkout_session_claim` のテストが探すファイル名の終わり（`_checkout_order_owner_binding.sql`）が変わらないことを確かめる
+4. ユーザーに push の許可をもらう。push の後、本番 DB への移行の適用の許可をもらい、Supabase MCP の `apply_migration` で当てる。当てた版にファイル名を直し、`checkout_session_claim` のテストが探すファイル名の終わり（`_checkout_order_owner_binding.sql`）が変わらないことを確かめる。同じコミットで、文書（`docs/03_BasicDesign/data/er.md`・`docs/04_DetailDesign/states/checkout-draft.md`・`docs/04_DetailDesign/sequence/checkout-payment.md` のリンク、レビュー台帳と本計画の版の記載）の `20261008120000` を新しい版に置き換え、`npm run -s validate-docs` で確かめる（全体レビュー M7）
