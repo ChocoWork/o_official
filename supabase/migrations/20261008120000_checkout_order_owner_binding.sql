@@ -303,34 +303,34 @@ BEGIN
 
   -- 「注文する」の経路では、「確認へ進む」の時の買い手と今の買い手が同じ時だけ進む（グループ C 設計書 5-3）。
   -- 既にある注文を返すより前に比べ、違う人に注文の ID を返さない。
-  IF _shown_in_stock_variant_ids IS NOT NULL THEN
-    -- 下書きが無い時や Session・カートが合わない時は、既存注文の持ち主を基準にする。
-    IF draft_row.id IS NULL
-       OR draft_row.checkout_session_id IS DISTINCT FROM _checkout_session_id
-       OR draft_row.session_id IS DISTINCT FROM _cart_session_id THEN
-      SELECT o.user_id
-      INTO existing_owner
-      FROM public.orders AS o
-      WHERE o.checkout_session_id = _checkout_session_id;
-      IF FOUND AND existing_owner IS DISTINCT FROM _buyer_user_id THEN
-        RETURN QUERY SELECT NULL::uuid, NULL::public.order_status, false, 'login_changed'::text;
-        RETURN;
-      END IF;
-    ELSE
-      IF draft_row.buyer_user_id IS DISTINCT FROM _buyer_user_id THEN
-        RETURN QUERY SELECT NULL::uuid, NULL::public.order_status, false, 'login_changed'::text;
-        RETURN;
-      END IF;
-    END IF;
+  -- 下書きが無い時や Session・カートが合わない時は、下の読み直しで既存注文の持ち主と比べる。
+  IF _shown_in_stock_variant_ids IS NOT NULL
+     AND draft_row.id IS NOT NULL
+     AND draft_row.checkout_session_id IS NOT DISTINCT FROM _checkout_session_id
+     AND draft_row.session_id IS NOT DISTINCT FROM _cart_session_id
+     AND draft_row.buyer_user_id IS DISTINCT FROM _buyer_user_id THEN
+    RETURN QUERY SELECT NULL::uuid, NULL::public.order_status, false, 'login_changed'::text;
+    RETURN;
   END IF;
 
   -- ロックを待つ間に、並行した受付が同じ Session の注文を作っていれば、それを返す。
-  SELECT o.id, o.status
-  INTO existing_id, existing_status
+  -- 持ち主も同じ文で読み、比べた持ち主と返す注文 ID がずれないようにする。
+  SELECT o.id, o.status, o.user_id
+  INTO existing_id, existing_status, existing_owner
   FROM public.orders AS o
   WHERE o.checkout_session_id = _checkout_session_id;
 
   IF existing_id IS NOT NULL THEN
+    -- 下書きが無い時や Session・カートが合わない時は、ロックした下書きではこの Session の受付と順番がそろわないので、
+    -- 既存注文の持ち主を基準にする（グループ C 設計書 5-3）。
+    IF _shown_in_stock_variant_ids IS NOT NULL
+       AND (draft_row.id IS NULL
+            OR draft_row.checkout_session_id IS DISTINCT FROM _checkout_session_id
+            OR draft_row.session_id IS DISTINCT FROM _cart_session_id)
+       AND existing_owner IS DISTINCT FROM _buyer_user_id THEN
+      RETURN QUERY SELECT NULL::uuid, NULL::public.order_status, false, 'login_changed'::text;
+      RETURN;
+    END IF;
     -- 別の画面の支払いでカートが空になった後、先に受け付けた画面で押し直して二重に払わせない。
     IF _shown_in_stock_variant_ids IS NOT NULL
        AND existing_status = 'payment_in_progress'::public.order_status
