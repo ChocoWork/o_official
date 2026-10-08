@@ -24,6 +24,14 @@ function getClientIp(request: NextRequest): string | null {
 }
 
 /**
+ * GET の成功の応答。中身が持ち主ごとで、持ち主を決めた後は Set-Cookie（合わせ込みで印を消す）も
+ * 載るため、キャッシュに残さない（カートの GET と同じ）
+ */
+function noStoreJson(body: unknown): NextResponse {
+  return NextResponse.json(body, { headers: { "Cache-Control": "no-store" } });
+}
+
+/**
  * GET /api/wishlist
  * Fetch wishlist items for the owner (published items only)
  * カートに入れる操作ができるよう、各行に販売中のバリアントを添える
@@ -32,6 +40,29 @@ export async function GET(req: NextRequest) {
   try {
     const clientIp = getClientIp(req);
     const userAgent = req.headers.get("user-agent");
+
+    // レート制限: まず IP 単位（列挙攻撃抑止）。持ち主を決める処理（ログインの確かめと、
+    // 会員に残った印の合わせ込み＝DB への書き込み）を、制限を超えた要求に走らせない（カートの窓口と同じ順）
+    const { enforceRateLimit } = await import(
+      "@/features/auth/middleware/rateLimit"
+    );
+    const rateLimitByIp = await enforceRateLimit({
+      request: req,
+      endpoint: "wishlist:get",
+      limit: 120,
+      windowSeconds: 60,
+    });
+    if (rateLimitByIp) {
+      // IP で数えていて、持ち主はまだ決めていないので、監査に持ち主の情報は入れない
+      await logAudit({
+        action: "wishlist.get",
+        outcome: "rate_limited",
+        detail: "Rate limit exceeded for wishlist GET endpoint",
+        ip: clientIp,
+        user_agent: userAgent,
+      });
+      return rateLimitByIp;
+    }
 
     // お気に入りの表はブラウザから読めないため service role で読む。
     // RLS に頼らず、持ち主の行（wishlist_id）で必ず絞る。
@@ -42,10 +73,7 @@ export async function GET(req: NextRequest) {
     }
     const { context } = opened;
 
-    // レート制限: 持ち主単位と IP 単位（列挙攻撃抑止）。印の無いゲストは IP 単位だけで数える
-    const { enforceRateLimit } = await import(
-      "@/features/auth/middleware/rateLimit"
-    );
+    // 持ち主ごとの制限。印の無いゲストはまだ持ち主が無いので、IP 単位だけで数える
     if (context.rateLimitSubject) {
       const rateLimitByOwner = await enforceRateLimit({
         request: req,
@@ -67,28 +95,10 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const rateLimitByIp = await enforceRateLimit({
-      request: req,
-      endpoint: "wishlist:get",
-      limit: 120,
-      windowSeconds: 60,
-    });
-    if (rateLimitByIp) {
-      await logAudit({
-        action: "wishlist.get",
-        outcome: "rate_limited",
-        detail: "Rate limit exceeded for wishlist GET endpoint",
-        ip: clientIp,
-        user_agent: userAgent,
-        metadata: { ...context.auditOwner },
-      });
-      return rateLimitByIp;
-    }
-
     // 持ち主の行がまだ無ければ、お気に入りは空
     const wishlistId = await context.findOwnerId();
     if (!wishlistId) {
-      return context.finish(NextResponse.json([]));
+      return context.finish(noStoreJson([]));
     }
 
     // Get wishlist items
@@ -106,7 +116,7 @@ export async function GET(req: NextRequest) {
     }
 
     if (!wishlistData || wishlistData.length === 0) {
-      return context.finish(NextResponse.json([]));
+      return context.finish(noStoreJson([]));
     }
 
     // Get items data (published only, using public client)
@@ -134,15 +144,18 @@ export async function GET(req: NextRequest) {
 
     // 公開中の商品が 1 つも残らなければ、バリアントを読むまでもなく空
     if (signedItemsData.length === 0) {
-      return context.finish(NextResponse.json([]));
+      return context.finish(noStoreJson([]));
     }
 
-    // 公開中の商品の販売中のバリアントを読み、商品ごとにまとめる（カートに入れるバリアントを選ぶため）
+    // 公開中の商品の販売中のバリアントを読み、商品ごとにまとめる（カートに入れるバリアントを選ぶため）。
+    // 商品ごとのバリアントの並びが読み込みのたびに変わらないよう、商品の番号・バリアントの番号の昇順で読む
     const { data: variantRows, error: variantError } = await supabase
       .from("item_variants")
       .select("id, item_id, is_active, item_colors(name), item_sizes(label)")
       .in("item_id", signedItemsData.map((item) => item.id))
-      .eq("is_active", true);
+      .eq("is_active", true)
+      .order("item_id", { ascending: true })
+      .order("id", { ascending: true });
     if (variantError) {
       throw variantError;
     }
@@ -166,7 +179,7 @@ export async function GET(req: NextRequest) {
       // Drop items that are no longer published or deleted
       .filter((wi) => wi.items !== null);
 
-    return context.finish(NextResponse.json(result));
+    return context.finish(noStoreJson(result));
   } catch (error) {
     console.error("Wishlist GET error:", error);
     return NextResponse.json(
@@ -186,14 +199,8 @@ export async function POST(req: NextRequest) {
     const clientIp = getClientIp(req);
     const userAgent = req.headers.get("user-agent");
 
-    const supabase = await createServiceRoleClient();
-    const opened = await openShoppingContext(req, "wishlist", supabase, { write: true });
-    if (!opened.ok) {
-      return opened.response;
-    }
-    const { context } = opened;
-
-    // Apply rate limiting (IP-based and owner-based)
+    // Apply rate limiting: まず IP 単位。CSRF の確かめと持ち主を決める処理（ログインの確かめと、
+    // 会員に残った印の合わせ込み＝DB への書き込み）を、制限を超えた要求に走らせない（カートの窓口と同じ順）
     const { enforceRateLimit } = await import(
       "@/features/auth/middleware/rateLimit"
     );
@@ -207,7 +214,21 @@ export async function POST(req: NextRequest) {
       return rateLimitByIp;
     }
 
-    // 印の無いゲストはまだ持ち主が無いので、IP 単位だけで数える
+    // 会員の書き換えには CSRF の合言葉が要る（ゲストは素通りで、Origin の確かめと SameSite で止める）。
+    // 持ち主を決める処理は DB に書き込むことがあるので、その前に確かめる
+    const csrfDenied = await denyIfCsrfInvalid();
+    if (csrfDenied) {
+      return csrfDenied;
+    }
+
+    const supabase = await createServiceRoleClient();
+    const opened = await openShoppingContext(req, "wishlist", supabase, { write: true });
+    if (!opened.ok) {
+      return opened.response;
+    }
+    const { context } = opened;
+
+    // 持ち主ごとの制限。印の無いゲストはまだ持ち主が無いので、IP 単位だけで数える
     if (context.rateLimitSubject) {
       const rateLimitByOwner = await enforceRateLimit({
         request: req,
@@ -219,12 +240,6 @@ export async function POST(req: NextRequest) {
       if (rateLimitByOwner) {
         return rateLimitByOwner;
       }
-    }
-
-    // 会員の書き換えには CSRF の合言葉が要る（ゲストは素通りで、Origin の確かめと SameSite で止める）
-    const csrfDenied = await denyIfCsrfInvalid();
-    if (csrfDenied) {
-      return csrfDenied;
     }
 
     const publicItemSupabase = await createPublicClient();

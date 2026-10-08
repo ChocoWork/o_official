@@ -85,7 +85,7 @@ describe('DELETE /api/wishlist/[id]', () => {
 
   afterEach(() => jest.restoreAllMocks());
 
-  test('持ち主の確認が 401 ならその応答をそのまま返し、何も消さない', async () => {
+  test('持ち主の確認が 401 ならその応答をそのまま返し、持ち主ごとの制限も削除もしない', async () => {
     const denied = NextResponse.json({ error: 'session_expired' }, { status: 401 });
     (openShoppingContext as jest.Mock).mockResolvedValueOnce({ ok: false, response: denied });
     const { supabase } = useDb();
@@ -93,8 +93,10 @@ describe('DELETE /api/wishlist/[id]', () => {
 
     expect(await call(req)).toBe(denied);
     expect(openShoppingContext).toHaveBeenCalledWith(req, 'wishlist', supabase, { write: true });
-    expect(enforceRateLimit).not.toHaveBeenCalled();
-    expect(denyIfCsrfInvalid).not.toHaveBeenCalled();
+    // IP の制限と CSRF の確認は持ち主を決める前に済んでいる。持ち主が決まっていないので、持ち主ごとの制限は呼ばない
+    expect(enforceRateLimit).toHaveBeenCalledTimes(1);
+    expect(enforceRateLimit).toHaveBeenCalledWith({ request: req, endpoint: 'wishlist:delete', limit: 60, windowSeconds: 60 });
+    expect(denyIfCsrfInvalid).toHaveBeenCalledTimes(1);
     expect(supabase.from).not.toHaveBeenCalled();
   });
 
@@ -108,20 +110,22 @@ describe('DELETE /api/wishlist/[id]', () => {
     expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({
       action: 'wishlist.delete', outcome: 'failure', detail: 'Invalid wishlist id', metadata: { ...context.auditOwner },
     }));
+    // 番号の確かめは、IP と持ち主ごとの 2 つの回数の制限の後
+    expect(enforceRateLimit).toHaveBeenCalledTimes(2);
     expect(context.findOwnerId).not.toHaveBeenCalled();
     expect(supabase.from).not.toHaveBeenCalled();
     expect(context.finish).toHaveBeenCalledWith(res);
   });
 
-  test('回数の制限は IP ごとに 60 回・60 秒、持ち主ごとに 30 回・60 秒', async () => {
+  test('回数の制限は IP ごとに 60 回・60 秒（持ち主を決める前）、持ち主ごとに 30 回・60 秒（決めた後）', async () => {
     const req = del();
 
     const res = await call(req);
 
     expect(res.status).toBe(200);
     expect(enforceRateLimit).toHaveBeenCalledTimes(2);
-    expect(enforceRateLimit).toHaveBeenCalledWith({ request: req, endpoint: 'wishlist:delete', limit: 60, windowSeconds: 60 });
-    expect(enforceRateLimit).toHaveBeenCalledWith({
+    expect(enforceRateLimit).toHaveBeenNthCalledWith(1, { request: req, endpoint: 'wishlist:delete', limit: 60, windowSeconds: 60 });
+    expect(enforceRateLimit).toHaveBeenNthCalledWith(2, {
       request: req, endpoint: 'wishlist:delete', limit: 30, windowSeconds: 60, subject: context.rateLimitSubject,
     });
   });
@@ -137,44 +141,52 @@ describe('DELETE /api/wishlist/[id]', () => {
     expect(enforceRateLimit).toHaveBeenCalledWith({ request: req, endpoint: 'wishlist:delete', limit: 60, windowSeconds: 60 });
   });
 
-  test('IP ごとの制限が 429 ならその応答を返し、CSRF の確認も削除もしない', async () => {
+  test('IP ごとの制限が 429 ならその応答を返し、CSRF の確認も持ち主を決めることも削除もしない', async () => {
     const denied = NextResponse.json({ error: 'Too many requests' }, { status: 429 });
     (enforceRateLimit as jest.Mock).mockImplementation(async (options: { subject?: string }) => (options.subject ? undefined : denied));
     const { supabase } = useDb();
 
     expect(await call(del())).toBe(denied);
     expect(denyIfCsrfInvalid).not.toHaveBeenCalled();
+    expect(createServiceRoleClient).not.toHaveBeenCalled();
+    expect(openShoppingContext).not.toHaveBeenCalled();
     expect(context.findOwnerId).not.toHaveBeenCalled();
     expect(supabase.from).not.toHaveBeenCalled();
   });
 
-  test('持ち主ごとの制限が 429 ならその応答を返し、CSRF の確認も削除もしない', async () => {
+  test('持ち主ごとの制限が 429 ならその応答を返し、削除しない', async () => {
     const denied = NextResponse.json({ error: 'Too many requests' }, { status: 429 });
     (enforceRateLimit as jest.Mock).mockImplementation(async (options: { subject?: string }) => (options.subject ? denied : undefined));
     const { supabase } = useDb();
 
     expect(await call(del())).toBe(denied);
-    expect(denyIfCsrfInvalid).not.toHaveBeenCalled();
     expect(context.findOwnerId).not.toHaveBeenCalled();
     expect(supabase.from).not.toHaveBeenCalled();
   });
 
-  test('CSRF の確認が 403 ならその応答を返し、削除しない', async () => {
+  test('CSRF の確認が 403 ならその応答を返し、持ち主を決めることも削除もしない', async () => {
     const denied = NextResponse.json({ error: 'Forbidden', reason: 'CSRF validation failed' }, { status: 403 });
     (denyIfCsrfInvalid as jest.Mock).mockResolvedValueOnce(denied);
     const { supabase } = useDb();
 
     expect(await call(del())).toBe(denied);
+    // IP の制限は CSRF より前に数えるが、持ち主ごとの制限は持ち主を決めた後なので呼ばない
+    expect(enforceRateLimit).toHaveBeenCalledTimes(1);
+    expect(createServiceRoleClient).not.toHaveBeenCalled();
+    expect(openShoppingContext).not.toHaveBeenCalled();
     expect(context.findOwnerId).not.toHaveBeenCalled();
     expect(supabase.from).not.toHaveBeenCalled();
   });
 
-  test('CSRF の確認は回数の制限の後に行う', async () => {
+  test('CSRF の確認は IP ごとの制限の後、持ち主を決める前に行う', async () => {
     await call(del());
 
-    const rateLimitCalls = (enforceRateLimit as jest.Mock).mock.invocationCallOrder;
-    const csrfCall = (denyIfCsrfInvalid as jest.Mock).mock.invocationCallOrder[0];
-    expect(csrfCall).toBeGreaterThan(rateLimitCalls[rateLimitCalls.length - 1]);
+    const [ipLimit, ownerLimit] = (enforceRateLimit as jest.Mock).mock.invocationCallOrder;
+    const csrf = (denyIfCsrfInvalid as jest.Mock).mock.invocationCallOrder[0];
+    const open = (openShoppingContext as jest.Mock).mock.invocationCallOrder[0];
+    expect(ipLimit).toBeLessThan(csrf);
+    expect(csrf).toBeLessThan(open);
+    expect(open).toBeLessThan(ownerLimit);
   });
 
   test('持ち主の行が無ければ 404 にして、削除の問い合わせを出さず finish を通す', async () => {

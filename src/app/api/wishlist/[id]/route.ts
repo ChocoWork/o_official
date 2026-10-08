@@ -31,6 +31,28 @@ export async function DELETE(
     const clientIp = getClientIp(req);
     const userAgent = req.headers.get("user-agent");
 
+    // レート制限: まず IP 単位。CSRF の確かめと持ち主を決める処理（ログインの確かめと、
+    // 会員に残った印の合わせ込み＝DB への書き込み）を、制限を超えた要求に走らせない（カートの窓口と同じ順）
+    const { enforceRateLimit } = await import(
+      "@/features/auth/middleware/rateLimit"
+    );
+    const rateLimitByIp = await enforceRateLimit({
+      request: req,
+      endpoint: "wishlist:delete",
+      limit: 60,
+      windowSeconds: 60,
+    });
+    if (rateLimitByIp) {
+      return rateLimitByIp;
+    }
+
+    // 会員の書き換えには CSRF の合言葉が要る（ゲストは素通りで、Origin の確かめと SameSite で止める）。
+    // 持ち主を決める処理は DB に書き込むことがあるので、その前に確かめる
+    const csrfDenied = await denyIfCsrfInvalid();
+    if (csrfDenied) {
+      return csrfDenied;
+    }
+
     // お気に入りの表はブラウザから読み書きできないため service role で操作する。
     // service role は RLS を通らないので、持ち主の確かめは下の wishlist_id の条件だけが頼り。
     const supabase = await createServiceRoleClient();
@@ -39,6 +61,20 @@ export async function DELETE(
       return opened.response;
     }
     const { context } = opened;
+
+    // 持ち主ごとの制限。印の無いゲストはまだ持ち主が無いので、IP 単位だけで数える
+    if (context.rateLimitSubject) {
+      const rateLimitByOwner = await enforceRateLimit({
+        request: req,
+        endpoint: "wishlist:delete",
+        limit: 30,
+        windowSeconds: 60,
+        subject: context.rateLimitSubject,
+      });
+      if (rateLimitByOwner) {
+        return rateLimitByOwner;
+      }
+    }
 
     const parsedId = wishlistIdSchema.safeParse(id);
     if (!parsedId.success) {
@@ -53,39 +89,6 @@ export async function DELETE(
       return context.finish(
         NextResponse.json({ error: "Invalid wishlist id" }, { status: 400 })
       );
-    }
-
-    const { enforceRateLimit } = await import(
-      "@/features/auth/middleware/rateLimit"
-    );
-    const rateLimitByIp = await enforceRateLimit({
-      request: req,
-      endpoint: "wishlist:delete",
-      limit: 60,
-      windowSeconds: 60,
-    });
-    if (rateLimitByIp) {
-      return rateLimitByIp;
-    }
-
-    // 印の無いゲストはまだ持ち主が無いので、IP 単位だけで数える
-    if (context.rateLimitSubject) {
-      const rateLimitByOwner = await enforceRateLimit({
-        request: req,
-        endpoint: "wishlist:delete",
-        limit: 30,
-        windowSeconds: 60,
-        subject: context.rateLimitSubject,
-      });
-      if (rateLimitByOwner) {
-        return rateLimitByOwner;
-      }
-    }
-
-    // 会員の書き換えには CSRF の合言葉が要る（ゲストは素通りで、Origin の確かめと SameSite で止める）
-    const csrfDenied = await denyIfCsrfInvalid();
-    if (csrfDenied) {
-      return csrfDenied;
     }
 
     // 持ち主の行が無ければ、消せる明細も無い

@@ -118,7 +118,7 @@ function get() {
 }
 
 describe('GET /api/wishlist', () => {
-  test('持ち主の確認が 401 ならその応答をそのまま返し、何も読まない', async () => {
+  test('持ち主の確認が 401 ならその応答をそのまま返し、持ち主ごとの制限も読み込みもしない', async () => {
     const denied = NextResponse.json({ error: 'session_expired' }, { status: 401 });
     (openShoppingContext as jest.Mock).mockResolvedValueOnce({ ok: false, response: denied });
     const { supabase, publicSupabase } = useDb();
@@ -126,7 +126,9 @@ describe('GET /api/wishlist', () => {
 
     expect(await GET(req)).toBe(denied);
     expect(openShoppingContext).toHaveBeenCalledWith(req, 'wishlist', supabase, { write: false });
-    expect(enforceRateLimit).not.toHaveBeenCalled();
+    // IP の制限は持ち主を決める前に済んでいる。持ち主が決まっていないので、持ち主ごとの制限は呼ばない
+    expect(enforceRateLimit).toHaveBeenCalledTimes(1);
+    expect(enforceRateLimit).toHaveBeenCalledWith({ request: req, endpoint: 'wishlist:get', limit: 120, windowSeconds: 60 });
     expect(supabase.from).not.toHaveBeenCalled();
     expect(publicSupabase.from).not.toHaveBeenCalled();
   });
@@ -138,6 +140,7 @@ describe('GET /api/wishlist', () => {
     const res = await GET(get());
 
     expect(res.status).toBe(200);
+    expect(res.headers.get('Cache-Control')).toBe('no-store');
     expect(await res.json()).toEqual([]);
     expect(supabase.from).not.toHaveBeenCalled();
     expect(publicSupabase.from).not.toHaveBeenCalled();
@@ -151,6 +154,7 @@ describe('GET /api/wishlist', () => {
     const res = await GET(get());
 
     expect(res.status).toBe(200);
+    expect(res.headers.get('Cache-Control')).toBe('no-store');
     expect(await res.json()).toEqual([]);
     expect(supabase.from).toHaveBeenCalledTimes(1);
     expect(publicSupabase.from).not.toHaveBeenCalled();
@@ -181,11 +185,17 @@ describe('GET /api/wishlist', () => {
     expect(variants.select).toHaveBeenCalledWith('id, item_id, is_active, item_colors(name), item_sizes(label)');
     expect(variants.in).toHaveBeenCalledWith('item_id', [45, 46]);
     expect(variants.eq).toHaveBeenCalledWith('is_active', true);
+    // 商品ごとのバリアントの並びが読み込みのたびに変わらないよう、商品の番号・バリアントの番号の昇順で読む
+    expect(variants.order).toHaveBeenCalledTimes(2);
+    expect(variants.order).toHaveBeenNthCalledWith(1, 'item_id', { ascending: true });
+    expect(variants.order).toHaveBeenNthCalledWith(2, 'id', { ascending: true });
 
     // 画像の署名は service role のクライアントで行う
     expect(signItemImageUrl).toHaveBeenCalledWith(supabase, 'items/45.png');
 
     expect(res.status).toBe(200);
+    // 中身が持ち主ごとで、持ち主を決めた後は Set-Cookie も載るため、キャッシュに残さない
+    expect(res.headers.get('Cache-Control')).toBe('no-store');
     expect(await res.json()).toEqual([
       {
         id: 'line-3',
@@ -231,21 +241,27 @@ describe('GET /api/wishlist', () => {
     const res = await GET(get());
 
     expect(res.status).toBe(200);
+    expect(res.headers.get('Cache-Control')).toBe('no-store');
     expect(await res.json()).toEqual([]);
     expect(supabase.from).not.toHaveBeenCalledWith('item_variants');
     expect(context.finish).toHaveBeenCalledWith(res);
   });
 
-  test('回数の制限は IP ごとに 120 回・60 秒、持ち主ごとに 60 回・60 秒', async () => {
+  test('回数の制限は IP ごとに 120 回・60 秒（持ち主を決める前）、持ち主ごとに 60 回・60 秒（決めた後）', async () => {
     const req = get();
 
     await GET(req);
 
     expect(enforceRateLimit).toHaveBeenCalledTimes(2);
-    expect(enforceRateLimit).toHaveBeenCalledWith({ request: req, endpoint: 'wishlist:get', limit: 120, windowSeconds: 60 });
-    expect(enforceRateLimit).toHaveBeenCalledWith({
+    expect(enforceRateLimit).toHaveBeenNthCalledWith(1, { request: req, endpoint: 'wishlist:get', limit: 120, windowSeconds: 60 });
+    expect(enforceRateLimit).toHaveBeenNthCalledWith(2, {
       request: req, endpoint: 'wishlist:get', limit: 60, windowSeconds: 60, subject: context.rateLimitSubject,
     });
+    // ログインの確かめと合わせ込み（DB への書き込み）は、IP の制限を通った要求にだけ走らせる
+    const [ipLimit, ownerLimit] = (enforceRateLimit as jest.Mock).mock.invocationCallOrder;
+    const open = (openShoppingContext as jest.Mock).mock.invocationCallOrder[0];
+    expect(ipLimit).toBeLessThan(open);
+    expect(open).toBeLessThan(ownerLimit);
   });
 
   test('印の無いゲストには持ち主ごとの制限を呼ばず、IP ごとの制限だけで数える', async () => {
@@ -259,18 +275,23 @@ describe('GET /api/wishlist', () => {
     expect(enforceRateLimit).toHaveBeenCalledWith({ request: req, endpoint: 'wishlist:get', limit: 120, windowSeconds: 60 });
   });
 
-  test('IP ごとの制限が 429 ならその応答を返し、持ち主の情報つきで監査して何も読まない', async () => {
+  test('IP ごとの制限が 429 ならその応答を返し、持ち主を決めず、持ち主の情報を入れずに監査する', async () => {
     const denied = NextResponse.json({ error: 'Too many requests' }, { status: 429 });
     (enforceRateLimit as jest.Mock).mockImplementation(async (options: { subject?: string }) => (options.subject ? undefined : denied));
     const { supabase } = useDb();
 
     expect(await GET(get())).toBe(denied);
-    expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({
+    expect(logAudit).toHaveBeenCalledTimes(1);
+    const audit = (logAudit as jest.Mock).mock.calls[0][0];
+    expect(audit).toMatchObject({
       action: 'wishlist.get',
       outcome: 'rate_limited',
       detail: 'Rate limit exceeded for wishlist GET endpoint',
-      metadata: { ...context.auditOwner },
-    }));
+    });
+    // IP で数えているので、持ち主の情報は入れない（持ち主はまだ決めていない）
+    expect(audit).not.toHaveProperty('metadata');
+    expect(createServiceRoleClient).not.toHaveBeenCalled();
+    expect(openShoppingContext).not.toHaveBeenCalled();
     expect(supabase.from).not.toHaveBeenCalled();
   });
 
@@ -280,6 +301,8 @@ describe('GET /api/wishlist', () => {
     const { supabase } = useDb();
 
     expect(await GET(get())).toBe(denied);
+    // 持ち主ごとの制限は持ち主を決めた後に数える
+    expect(openShoppingContext).toHaveBeenCalledTimes(1);
     expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({
       action: 'wishlist.get',
       outcome: 'rate_limited',
@@ -341,7 +364,10 @@ describe('GET /api/wishlist', () => {
   test('応答と監査に Cookie の印も完全なハッシュも入れない', async () => {
     const req = get();
     req.headers.set('cookie', `wishlist=${COOKIE_TOKEN}`);
-    (enforceRateLimit as jest.Mock).mockResolvedValueOnce(NextResponse.json({ error: 'Too many requests' }, { status: 429 }));
+    // 1回目は IP の制限を通し、持ち主ごとの制限で止めて、持ち主の情報つきの監査を残させる
+    (enforceRateLimit as jest.Mock)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(NextResponse.json({ error: 'Too many requests' }, { status: 429 }));
 
     await GET(req);
     useDb({
@@ -353,6 +379,7 @@ describe('GET /api/wishlist', () => {
 
     const audit = JSON.stringify((logAudit as jest.Mock).mock.calls);
     expect(audit).toContain('rate_limited');
+    expect(audit).toContain('guest_hash_prefix');
     expect(audit).not.toContain(COOKIE_TOKEN);
     expect(audit).not.toContain(TOKEN_HASH);
     expect(audit).not.toContain('guest_token_hash');
@@ -387,7 +414,7 @@ describe('POST /api/wishlist', () => {
     useAddDb();
   });
 
-  test('持ち主の確認が 401 ならその応答をそのまま返し、何も確かめず書かない', async () => {
+  test('持ち主の確認が 401 ならその応答をそのまま返し、持ち主ごとの制限も書き込みもしない', async () => {
     const denied = NextResponse.json({ error: 'session_expired' }, { status: 401 });
     (openShoppingContext as jest.Mock).mockResolvedValueOnce({ ok: false, response: denied });
     const { supabase, publicSupabase } = useAddDb();
@@ -395,21 +422,23 @@ describe('POST /api/wishlist', () => {
 
     expect(await POST(req)).toBe(denied);
     expect(openShoppingContext).toHaveBeenCalledWith(req, 'wishlist', supabase, { write: true });
-    expect(enforceRateLimit).not.toHaveBeenCalled();
-    expect(denyIfCsrfInvalid).not.toHaveBeenCalled();
+    // IP の制限と CSRF の確認は持ち主を決める前に済んでいる。持ち主が決まっていないので、持ち主ごとの制限は呼ばない
+    expect(enforceRateLimit).toHaveBeenCalledTimes(1);
+    expect(enforceRateLimit).toHaveBeenCalledWith({ request: req, endpoint: 'wishlist:add', limit: 60, windowSeconds: 60 });
+    expect(denyIfCsrfInvalid).toHaveBeenCalledTimes(1);
     expect(supabase.from).not.toHaveBeenCalled();
     expect(publicSupabase.from).not.toHaveBeenCalled();
   });
 
-  test('回数の制限は IP ごとに 60 回・60 秒、持ち主ごとに 30 回・60 秒', async () => {
+  test('回数の制限は IP ごとに 60 回・60 秒（持ち主を決める前）、持ち主ごとに 30 回・60 秒（決めた後）', async () => {
     const req = post({ item_id: 45 });
 
     const res = await POST(req);
 
     expect(res.status).toBe(201);
     expect(enforceRateLimit).toHaveBeenCalledTimes(2);
-    expect(enforceRateLimit).toHaveBeenCalledWith({ request: req, endpoint: 'wishlist:add', limit: 60, windowSeconds: 60 });
-    expect(enforceRateLimit).toHaveBeenCalledWith({
+    expect(enforceRateLimit).toHaveBeenNthCalledWith(1, { request: req, endpoint: 'wishlist:add', limit: 60, windowSeconds: 60 });
+    expect(enforceRateLimit).toHaveBeenNthCalledWith(2, {
       request: req, endpoint: 'wishlist:add', limit: 30, windowSeconds: 60, subject: context.rateLimitSubject,
     });
   });
@@ -423,47 +452,55 @@ describe('POST /api/wishlist', () => {
     expect(enforceRateLimit).toHaveBeenCalledTimes(1);
   });
 
-  test('IP ごとの制限が 429 ならその応答を返し、CSRF の確認も書き込みもしない', async () => {
+  test('IP ごとの制限が 429 ならその応答を返し、CSRF の確認も持ち主を決めることも書き込みもしない', async () => {
     const denied = NextResponse.json({ error: 'Too many requests' }, { status: 429 });
     (enforceRateLimit as jest.Mock).mockImplementation(async (options: { subject?: string }) => (options.subject ? undefined : denied));
     const { supabase, publicSupabase } = useAddDb();
 
     expect(await POST(post({ item_id: 45 }))).toBe(denied);
     expect(denyIfCsrfInvalid).not.toHaveBeenCalled();
+    expect(createServiceRoleClient).not.toHaveBeenCalled();
+    expect(openShoppingContext).not.toHaveBeenCalled();
     expect(context.ensureOwnerId).not.toHaveBeenCalled();
     expect(supabase.from).not.toHaveBeenCalled();
     expect(publicSupabase.from).not.toHaveBeenCalled();
   });
 
-  test('持ち主ごとの制限が 429 ならその応答を返し、CSRF の確認も書き込みもしない', async () => {
+  test('持ち主ごとの制限が 429 ならその応答を返し、書き込みもしない', async () => {
     const denied = NextResponse.json({ error: 'Too many requests' }, { status: 429 });
     (enforceRateLimit as jest.Mock).mockImplementation(async (options: { subject?: string }) => (options.subject ? denied : undefined));
     const { supabase, publicSupabase } = useAddDb();
 
     expect(await POST(post({ item_id: 45 }))).toBe(denied);
-    expect(denyIfCsrfInvalid).not.toHaveBeenCalled();
     expect(context.ensureOwnerId).not.toHaveBeenCalled();
     expect(supabase.from).not.toHaveBeenCalled();
     expect(publicSupabase.from).not.toHaveBeenCalled();
   });
 
-  test('CSRF の確認が 403 ならその応答を返し、書き込まない', async () => {
+  test('CSRF の確認が 403 ならその応答を返し、持ち主を決めることも書き込みもしない', async () => {
     const denied = NextResponse.json({ error: 'Forbidden', reason: 'CSRF validation failed' }, { status: 403 });
     (denyIfCsrfInvalid as jest.Mock).mockResolvedValueOnce(denied);
     const { supabase, publicSupabase } = useAddDb();
 
     expect(await POST(post({ item_id: 45 }))).toBe(denied);
+    // IP の制限は CSRF より前に数えるが、持ち主ごとの制限は持ち主を決めた後なので呼ばない
+    expect(enforceRateLimit).toHaveBeenCalledTimes(1);
+    expect(createServiceRoleClient).not.toHaveBeenCalled();
+    expect(openShoppingContext).not.toHaveBeenCalled();
     expect(context.ensureOwnerId).not.toHaveBeenCalled();
     expect(supabase.from).not.toHaveBeenCalled();
     expect(publicSupabase.from).not.toHaveBeenCalled();
   });
 
-  test('CSRF の確認は回数の制限の後に行う', async () => {
+  test('CSRF の確認は IP ごとの制限の後、持ち主を決める前に行う', async () => {
     await POST(post({ item_id: 45 }));
 
-    const rateLimitCalls = (enforceRateLimit as jest.Mock).mock.invocationCallOrder;
-    const csrfCall = (denyIfCsrfInvalid as jest.Mock).mock.invocationCallOrder[0];
-    expect(csrfCall).toBeGreaterThan(rateLimitCalls[rateLimitCalls.length - 1]);
+    const [ipLimit, ownerLimit] = (enforceRateLimit as jest.Mock).mock.invocationCallOrder;
+    const csrf = (denyIfCsrfInvalid as jest.Mock).mock.invocationCallOrder[0];
+    const open = (openShoppingContext as jest.Mock).mock.invocationCallOrder[0];
+    expect(ipLimit).toBeLessThan(csrf);
+    expect(csrf).toBeLessThan(open);
+    expect(open).toBeLessThan(ownerLimit);
   });
 
   test.each([
