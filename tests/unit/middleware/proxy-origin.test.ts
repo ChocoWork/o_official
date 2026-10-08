@@ -46,7 +46,7 @@ describe('proxy の Origin 検査', () => {
 
     test('許可オリジンからの POST は通す', async () => {
       const proxy = await loadProxy();
-      const res = proxy(makeRequest(`${ALLOWED}/api/cart/1`, { origin: ALLOWED }));
+      const res = proxy(makeRequest(`${ALLOWED}/api/cart/change`, { origin: ALLOWED }));
 
       expect(res.status).not.toBe(403);
     });
@@ -55,7 +55,7 @@ describe('proxy の Origin 検査', () => {
     test('X-Forwarded-Host を細工しても、許可リストに無いオリジンは 403', async () => {
       const proxy = await loadProxy();
       const res = proxy(
-        makeRequest(`${ALLOWED}/api/cart/1`, {
+        makeRequest(`${ALLOWED}/api/cart/change`, {
           origin: 'https://evil.example',
           'x-forwarded-host': 'evil.example',
           'x-forwarded-proto': 'https',
@@ -67,14 +67,14 @@ describe('proxy の Origin 検査', () => {
 
     test('Origin が無い場合は Referer を見る', async () => {
       const proxy = await loadProxy();
-      const res = proxy(makeRequest(`${ALLOWED}/api/cart/1`, { referer: `${ALLOWED}/cart` }));
+      const res = proxy(makeRequest(`${ALLOWED}/api/cart/change`, { referer: `${ALLOWED}/cart` }));
 
       expect(res.status).not.toBe(403);
     });
 
     test('Origin も Referer も無い状態変更リクエストは 403', async () => {
       const proxy = await loadProxy();
-      const res = proxy(makeRequest(`${ALLOWED}/api/cart/1`, {}));
+      const res = proxy(makeRequest(`${ALLOWED}/api/cart/change`, {}));
 
       expect(res.status).toBe(403);
     });
@@ -82,7 +82,7 @@ describe('proxy の Origin 検査', () => {
     // 検査対象は POST/PUT/PATCH/DELETE のみ。OAuth コールバック等の GET を壊さない。
     test('GET は検査しない', async () => {
       const proxy = await loadProxy();
-      const res = proxy(makeRequest(`${ALLOWED}/api/cart/1`, {}, 'GET'));
+      const res = proxy(makeRequest(`${ALLOWED}/api/cart/change`, {}, 'GET'));
 
       expect(res.status).not.toBe(403);
     });
@@ -162,7 +162,7 @@ describe('proxy の Origin 検査', () => {
       const proxy = await loadProxy();
 
       const res = proxy(
-        makeRequest('http://localhost:3000/api/cart/1', {
+        makeRequest('http://localhost:3000/api/cart/change', {
           origin: 'http://localhost:3000',
           host: 'localhost:3000',
         }),
@@ -178,7 +178,7 @@ describe('proxy の Origin 検査', () => {
       const proxy = await loadProxy();
 
       const res = proxy(
-        makeRequest('http://localhost:3000/api/cart/1', {
+        makeRequest('http://localhost:3000/api/cart/change', {
           origin: 'https://evil.example',
           host: 'localhost:3000',
         }),

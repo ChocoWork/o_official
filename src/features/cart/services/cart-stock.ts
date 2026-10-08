@@ -1,27 +1,32 @@
 import { z } from 'zod';
 
 export const MAX_CART_ITEM_QUANTITY = 20;
-const CART_VARIANT_PATTERN = /^[\p{L}\p{N}\s\-_/().]+$/u;
+export const MAX_CART_LINES = 50;
 
-const cartVariantSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(50)
-  .regex(CART_VARIANT_PATTERN)
-  .optional()
-  .nullable();
+/** Shopify と同じくバリアントの番号と数量で足すため、色・サイズの文字列は受け取らない。 */
+export const addCartLinesSchema = z
+  .object({
+    items: z
+      .array(
+        z
+          .object({
+            id: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+            quantity: z.number().int().min(1).max(MAX_CART_ITEM_QUANTITY),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(10),
+  })
+  .strict();
 
-export const addCartItemSchema = z.object({
-  item_id: z.coerce.number().int().positive(),
-  quantity: z.coerce.number().int().positive().max(MAX_CART_ITEM_QUANTITY).default(1),
-  color: cartVariantSchema,
-  size: cartVariantSchema,
-});
-
-export const updateCartQuantitySchema = z.object({
-  quantity: z.coerce.number().int().positive().max(MAX_CART_ITEM_QUANTITY),
-});
+/** 明細の key で変更し、数量0も削除として受け付けるため、追加とは検証を分ける。 */
+export const changeCartLineSchema = z
+  .object({
+    id: z.string().uuid(),
+    quantity: z.number().int().min(0).max(MAX_CART_ITEM_QUANTITY),
+  })
+  .strict();
 
 export type CartQuantityRow = {
   item_id: number;
