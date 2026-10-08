@@ -133,11 +133,14 @@ export const checkoutShippingSchema = z
   .optional();
 
 export type CheckoutCartSnapshotRow = {
+  /** cart_lines.id */
   id: string;
   item_id: number;
   quantity: number;
   color: string | null;
   size: string | null;
+  variant_id: number;
+  variant_active: boolean;
 };
 
 export type CheckoutItemSnapshotRow = {
@@ -149,7 +152,8 @@ export type CheckoutItemSnapshotRow = {
 };
 
 export type CheckoutDraftItemSnapshot = {
-  source_cart_id: string;
+  /** 下書きを作った時のカートの明細（cart_lines.id）。「注文する」の「カートが変わった」と支払い後の削除に使う */
+  source_cart_line_id: string;
   item_id: number;
   item_name: string;
   item_price: number;

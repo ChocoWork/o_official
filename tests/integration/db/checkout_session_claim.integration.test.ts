@@ -133,7 +133,7 @@ describe("integration: Checkout Session draft claim", () => {
       fingerprint: `v1:${"a".repeat(64)}`,
       items: [
         {
-          source_cart_id: `cart-${suffix}`,
+          source_cart_line_id: `cart-${suffix}`,
           item_id: 1,
           item_name: "競合テスト商品",
           item_price: 1000,

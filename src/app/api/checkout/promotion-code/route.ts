@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js';
 import { z } from 'zod';
 import { getStripeServerClient } from '@/lib/stripe/server';
 import { logAudit } from '@/lib/audit';
+import { findCartIdForBuyer } from '@/features/cart/services/shopping-context';
+import { checkoutBuyerFailureResponse, resolveCheckoutBuyer } from '@/features/checkout/services/checkout-buyer';
 import { loadCheckoutCart } from '@/features/checkout/services/checkout-cart.service';
 import { PROMOTION_CODE_GUARD, guardCheckoutPost } from '@/features/checkout/services/checkout-route-guard';
 import { PROMOTION_CODE_PATTERN, checkPromotionCode } from '@/features/checkout/services/promotion-code.service';
@@ -49,7 +51,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const cart = await loadCheckoutCart(supabase, guard.sessionId);
+    // カートは session_id ではなく持ち主（確かめた買い手）で引く。create-session と同じ規則（カートの引き継ぎ設計書 第7章）
+    const buyer = await resolveCheckoutBuyer(req);
+    if (buyer.kind === 'expired' || buyer.kind === 'unavailable') {
+      return guard.finish(checkoutBuyerFailureResponse(buyer.kind));
+    }
+    const cart = await loadCheckoutCart(supabase, await findCartIdForBuyer(supabase, req, buyer));
     if (cart.kind === 'empty') {
       return guard.finish(
         NextResponse.json({ error: 'cart_empty', message: 'ご購入いただける商品がありません。' }, { status: 400 }),

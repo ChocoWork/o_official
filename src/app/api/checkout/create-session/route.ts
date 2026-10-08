@@ -184,7 +184,7 @@ function canonicalizeItemsSnapshot(
 ): CheckoutDraftItemSnapshot[] {
   return [...itemsSnapshot].sort((left, right) =>
     [
-      left.source_cart_id,
+      left.source_cart_line_id,
       String(left.item_id),
       left.color ?? "",
       left.size ?? "",
@@ -192,7 +192,7 @@ function canonicalizeItemsSnapshot(
       .join(":")
       .localeCompare(
         [
-          right.source_cart_id,
+          right.source_cart_line_id,
           String(right.item_id),
           right.color ?? "",
           right.size ?? "",
@@ -372,6 +372,8 @@ async function expireConflictingOpenSession(
 async function claimCheckoutDraft(params: {
   sessionId: string;
   buyerUserId: string | null;
+  /** 下書きを作ったカート（carts.id）。「注文する」の「カートが変わった」の確かめは、このカートの明細で行う */
+  cartId: string;
   requestFingerprint: string;
   uiMode: "custom";
   checkoutOrigin: string;
@@ -398,6 +400,7 @@ async function claimCheckoutDraft(params: {
     _shipping_snapshot: params.shippingSnapshot,
     _items_snapshot: params.itemsSnapshot,
     _buyer_user_id: params.buyerUserId,
+    _cart_id: params.cartId,
   });
 
   const draft = (data as ClaimedCheckoutDraftRow[] | null)?.[0];
@@ -563,12 +566,16 @@ export async function POST(req: NextRequest) {
     }
 
 
-    const { data: cartData, error: cartError } = await supabase
-      .from("carts")
-      .select("id, item_id, quantity, color, size")
-      .eq("session_id", sessionId);
-
-    if (cartError) {
+    // カートは session_id ではなく持ち主（確かめた買い手）で読む。会員に残ったゲストの印があれば、ここで先に合わせる。
+    // session_id は決済の流れ（下書き・注文・入り直し・回数の制限）の印として、この先もそのまま使う。
+    const { findCartIdForBuyer } = await import("@/features/cart/services/shopping-context");
+    const { readCheckoutCartRows } = await import("@/features/checkout/services/checkout-cart.service");
+    let cartId: string | null;
+    let cartData: CheckoutCartSnapshotRow[];
+    try {
+      cartId = await findCartIdForBuyer(supabase, req, buyerResolution);
+      cartData = cartId ? await readCheckoutCartRows(supabase, cartId) : [];
+    } catch (cartError) {
       console.error("Failed to fetch cart for checkout session:", cartError);
       await logAudit({
         action: "checkout.session.create",
@@ -576,10 +583,8 @@ export async function POST(req: NextRequest) {
         detail: "Failed to fetch cart",
         ip: clientIp,
         user_agent: userAgent,
-        metadata: {
-          session_id: sessionId,
-          error_message: cartError.message ?? null,
-        },
+        // PostgREST の失敗は Error ではない素のオブジェクトで投げられるので、message・code だけ取り出す（details・hint は残さない）
+        metadata: { session_id: sessionId, ...describeUnexpectedError(cartError) },
       });
       return NextResponse.json(
         { error: "Failed to fetch cart" },
@@ -587,7 +592,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!cartData || cartData.length === 0) {
+    if (!cartId || cartData.length === 0) {
       await logAudit({
         action: "checkout.session.create",
         outcome: "failure",
@@ -806,7 +811,7 @@ export async function POST(req: NextRequest) {
         const item = itemMap.get(cartItem.item_id);
 
         return {
-          source_cart_id: cartItem.id,
+          source_cart_line_id: cartItem.id,
           item_id: cartItem.item_id,
           item_name: item?.name ?? "商品",
           item_price: item?.price ?? 0,
@@ -835,6 +840,7 @@ export async function POST(req: NextRequest) {
     const claimParams = {
       sessionId,
       buyerUserId,
+      cartId,
       requestFingerprint,
       uiMode,
       checkoutOrigin,

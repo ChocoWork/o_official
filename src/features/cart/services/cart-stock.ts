@@ -31,6 +31,8 @@ export const changeCartLineSchema = z
 export type CartQuantityRow = {
   item_id: number;
   quantity: number;
+  /** 取り扱いを終えたバリアントの行は false。商品が公開中でも買えない（本計画の決め事 P14） */
+  variant_active?: boolean;
 };
 
 export type InventoryItem = {
@@ -48,7 +50,7 @@ export type InventoryIssue = {
 };
 
 /**
- * 買えない商品（非公開・存在しない）だけを挙げる（FREQ-401）。
+ * 買えない商品（非公開・存在しない・取り扱いを終えた色・サイズ）だけを挙げる（FREQ-401）。
  *
  * 在庫不足では挙げない。在庫の有無は納期を分けるだけで、足りなければ受注生産として受ける。
  * 在庫の正は item_variants と在庫台帳で、商品単位の在庫数はもう無い。
@@ -58,11 +60,15 @@ export function collectInventoryIssues(
   inventoryItems: InventoryItem[]
 ): InventoryIssue[] {
   const requestedQuantities = new Map<number, number>();
+  const inactiveItemIds = new Set<number>();
   for (const cartRow of cartRows) {
     requestedQuantities.set(
       cartRow.item_id,
       (requestedQuantities.get(cartRow.item_id) ?? 0) + cartRow.quantity
     );
+    if (cartRow.variant_active === false) {
+      inactiveItemIds.add(cartRow.item_id);
+    }
   }
 
   const inventoryItemMap = new Map<number, InventoryItem>(
@@ -73,7 +79,7 @@ export function collectInventoryIssues(
   for (const [itemId, requestedQuantity] of requestedQuantities.entries()) {
     const item = inventoryItemMap.get(itemId);
 
-    if (!item || item.status !== 'published') {
+    if (!item || item.status !== 'published' || inactiveItemIds.has(itemId)) {
       issues.push({
         item_id: itemId,
         name: item?.name ?? `商品 ${itemId}`,

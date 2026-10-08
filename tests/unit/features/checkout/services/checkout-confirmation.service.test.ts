@@ -10,7 +10,7 @@ import type { CheckoutDraftItemSnapshot } from '@/features/checkout/services/che
 
 const ITEMS: CheckoutDraftItemSnapshot[] = [
   {
-    source_cart_id: 'cart-1',
+    source_cart_line_id: 'cart-1',
     item_id: 1,
     item_name: 'シャツ',
     item_price: 12000,
@@ -21,7 +21,7 @@ const ITEMS: CheckoutDraftItemSnapshot[] = [
     line_total: 24000,
   },
   {
-    source_cart_id: 'cart-2',
+    source_cart_line_id: 'cart-2',
     item_id: 2,
     item_name: 'パンツ',
     item_price: 18000,

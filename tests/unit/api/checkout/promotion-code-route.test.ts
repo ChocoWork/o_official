@@ -21,6 +21,18 @@ jest.mock('@/features/checkout/services/checkout-cart.service', () => ({
   loadCheckoutCart: (...args: unknown[]) => mockLoadCheckoutCart(...args),
 }));
 
+// カートは session_id ではなく、確かめた買い手（持ち主）から引く（カートの引き継ぎ設計書 第7章）
+const mockResolveCheckoutBuyer = jest.fn();
+jest.mock('@/features/checkout/services/checkout-buyer', () => ({
+  ...jest.requireActual('@/features/checkout/services/checkout-buyer'),
+  resolveCheckoutBuyer: (...args: unknown[]) => mockResolveCheckoutBuyer(...args),
+}));
+
+const mockFindCartIdForBuyer = jest.fn();
+jest.mock('@/features/cart/services/shopping-context', () => ({
+  findCartIdForBuyer: (...args: unknown[]) => mockFindCartIdForBuyer(...args),
+}));
+
 const mockCheckPromotionCode = jest.fn();
 jest.mock('@/features/checkout/services/promotion-code.service', () => ({
   ...jest.requireActual('@/features/checkout/services/promotion-code.service'),
@@ -47,7 +59,7 @@ function makeRequest(body: unknown): NextRequest {
 
 const OK_CART = {
   kind: 'ok',
-  cartRows: [{ id: 'cart-1', item_id: 1, quantity: 1, color: 'BLACK', size: 'M' }],
+  cartRows: [{ id: 'line-1', item_id: 1, quantity: 1, color: 'BLACK', size: 'M', variant_id: 101, variant_active: true }],
   itemMap: new Map(),
   amounts: { subtotalAmount: 5000, taxAmount: 0, shippingAmount: 0, totalAmount: 5000 },
 };
@@ -63,6 +75,8 @@ describe('POST /api/checkout/promotion-code', () => {
       finish: (response: NextResponse) => response,
     });
     mockLoadCheckoutCart.mockResolvedValue(OK_CART);
+    mockResolveCheckoutBuyer.mockReset().mockResolvedValue({ kind: 'guest' });
+    mockFindCartIdForBuyer.mockReset().mockResolvedValue('cart-1');
   });
 
   test('守りで断られたら、その応答を返す', async () => {
@@ -92,6 +106,59 @@ describe('POST /api/checkout/promotion-code', () => {
     await expect(res.json()).resolves.toMatchObject({ error: 'cart_empty' });
   });
 
+  test('持ち主のカートが無ければ（印の無いゲストなど）、カートの ID を null で渡して 400', async () => {
+    mockFindCartIdForBuyer.mockResolvedValue(null);
+    mockLoadCheckoutCart.mockResolvedValue({ kind: 'empty' });
+
+    const res = await POST(makeRequest({ code: 'WELCOME10' }));
+
+    expect(mockLoadCheckoutCart).toHaveBeenCalledWith(expect.anything(), null);
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ error: 'cart_empty' });
+    expect(mockCheckPromotionCode).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    { kind: 'expired', status: 401, body: { error: 'auth_expired' } },
+    { kind: 'unavailable', status: 503, body: { error: 'Service temporarily unavailable' } },
+  ])('買い手が $kind なら $status を返し、カートも割引コードの確かめにも進まない', async ({ kind, status, body }) => {
+    mockResolveCheckoutBuyer.mockResolvedValue({ kind });
+    const finish = jest.fn((response: NextResponse) => response);
+    mockGuard.mockResolvedValue({ ok: true, sessionId: 'sess-abc', clientIp: '203.0.113.5', userAgent: 'jest', finish });
+
+    const res = await POST(makeRequest({ code: 'WELCOME10' }));
+
+    expect(res.status).toBe(status);
+    await expect(res.json()).resolves.toEqual(body);
+    if (kind === 'unavailable') expect(res.headers.get('Retry-After')).toBe('30');
+    expect(finish).toHaveBeenCalledTimes(1);
+    expect(mockFindCartIdForBuyer).not.toHaveBeenCalled();
+    expect(mockLoadCheckoutCart).not.toHaveBeenCalled();
+    expect(mockCheckPromotionCode).not.toHaveBeenCalled();
+  });
+
+  test('持ち主のカートを引けなければ 500 で、時間をおいて試すよう案内する', async () => {
+    mockFindCartIdForBuyer.mockRejectedValue(new Error('db down'));
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const res = await POST(makeRequest({ code: 'WELCOME10' }));
+
+      expect(res.status).toBe(500);
+      await expect(res.json()).resolves.toMatchObject({ error: 'promotion_code_failed' });
+      expect(mockLoadCheckoutCart).not.toHaveBeenCalled();
+      expect(mockLogAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'checkout.promotion_code.check',
+          outcome: 'error',
+          metadata: { session_id: 'sess-abc', error_message: 'db down' },
+        }),
+      );
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   test('買えない商品があれば 409 で、その案内を返す', async () => {
     mockLoadCheckoutCart.mockResolvedValue({
       kind: 'unavailable',
@@ -113,9 +180,13 @@ describe('POST /api/checkout/promotion-code', () => {
       totalAfterDiscount: 4500,
     });
 
-    const res = await POST(makeRequest({ code: ' welcome10 ' }));
+    const req = makeRequest({ code: ' welcome10 ' });
+    const res = await POST(req);
 
-    expect(mockLoadCheckoutCart).toHaveBeenCalledWith(expect.anything(), 'sess-abc');
+    // カートは session_id ではなく、確かめた買い手のカートで読む
+    expect(mockResolveCheckoutBuyer).toHaveBeenCalledWith(req);
+    expect(mockFindCartIdForBuyer).toHaveBeenCalledWith(expect.anything(), req, { kind: 'guest' });
+    expect(mockLoadCheckoutCart).toHaveBeenCalledWith(expect.anything(), 'cart-1');
     expect(mockCheckPromotionCode).toHaveBeenCalledWith(mockStripe, {
       code: 'welcome10',
       preDiscountTotal: 5000,

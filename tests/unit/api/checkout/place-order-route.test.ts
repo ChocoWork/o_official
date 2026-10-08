@@ -84,7 +84,7 @@ import { POST } from '@/app/api/checkout/place-order/route';
 
 const ITEMS = [
   {
-    source_cart_id: 'cart-1',
+    source_cart_line_id: 'cart-1',
     item_id: 1,
     item_name: 'シャツ',
     item_price: 5000,
@@ -95,7 +95,7 @@ const ITEMS = [
     line_total: 5000,
   },
   {
-    source_cart_id: 'cart-2',
+    source_cart_line_id: 'cart-2',
     item_id: 2,
     item_name: 'パンツ',
     item_price: 8000,

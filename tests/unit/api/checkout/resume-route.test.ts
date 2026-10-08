@@ -73,7 +73,7 @@ import { POST } from '@/app/api/checkout/resume/route';
 
 const ITEMS = [
   {
-    source_cart_id: 'cart-1',
+    source_cart_line_id: 'cart-1',
     item_id: 1,
     item_name: 'シャツ',
     item_price: 5000,
