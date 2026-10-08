@@ -458,7 +458,11 @@ describe("POST /api/checkout/create-session", () => {
       };
 
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({ error: "invalid_member_email" });
+      expect(res.body).toEqual({
+        error: "invalid_member_email",
+        message: "ログイン中のメールアドレスを確かめられませんでした。ログインし直してから、もう一度お試しください。",
+        retryable: false,
+      });
       expect(mockLogAudit).toHaveBeenCalledTimes(1);
       expect(mockLogAudit).toHaveBeenCalledWith({
         action: "checkout.session.create",
@@ -485,7 +489,11 @@ describe("POST /api/checkout/create-session", () => {
       };
 
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({ error: "invalid_member_email" });
+      expect(res.body).toEqual({
+        error: "invalid_member_email",
+        message: "ログイン中のメールアドレスを確かめられませんでした。ログインし直してから、もう一度お試しください。",
+        retryable: false,
+      });
       expect(mockFrom).not.toHaveBeenCalled();
       expect(mockRpc).not.toHaveBeenCalled();
       expect(mockCreate).not.toHaveBeenCalled();
@@ -1123,6 +1131,34 @@ describe("POST /api/checkout/create-session", () => {
     }
   });
 
+  it('想定外の Error のスタックはサーバーのログだけに残す', async () => {
+    const failure = new Error('想定外の受付の失敗');
+    failure.stack = 'Error: 想定外の受付の失敗\n    at claimCheckoutDraft (checkout.ts:1:1)';
+    mockClaimResult = { data: null, error: failure };
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const res = await POST(makeRequest({ uiMode: 'custom' })) as unknown as {
+        status: number; body: Record<string, unknown>;
+      };
+
+      expect(res.status).toBe(500);
+      expect(consoleError).toHaveBeenCalledWith(
+        'Checkout session creation error:', expect.any(String),
+        { error_message: failure.message, stack: failure.stack },
+      );
+      expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+        outcome: 'error', detail: 'Checkout session creation error',
+        metadata: {
+          correlation_id: expect.any(String), error_message: failure.message,
+          stripe_type: null, stripe_code: null, stripe_status: null, stripe_request_id: null,
+        },
+      }));
+      expect(res.body).not.toHaveProperty('stack');
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it('claim の素の PostgREST エラーも監査に code と message だけを残す', async () => {
     mockClaimResult = { data: null, error: {
       code: '23514', message: 'CHECKOUT_DRAFT_BUYER_MISMATCH', details: '監査に残さない詳細', hint: '監査に残さないヒント',
@@ -1134,6 +1170,10 @@ describe("POST /api/checkout/create-session", () => {
       };
 
       expect(res.status).toBe(500);
+      expect(consoleError).toHaveBeenCalledWith(
+        'Checkout session creation error:', expect.any(String),
+        { error_code: '23514', error_message: 'CHECKOUT_DRAFT_BUYER_MISMATCH' },
+      );
       expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
         outcome: 'error', detail: 'Checkout session creation error',
         metadata: {

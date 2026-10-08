@@ -463,16 +463,22 @@ function CheckoutPageContent() {
   // 古い読み込みが後から終わって新しい内容を上書きしたり、読み込みの間に最終確認画面へ進んだ後やゲストと分かった後で、
   // 入力欄を書き換えたりしないため
   const memberFormGenerationRef = useRef(0);
+  // プロフィールからメールを入力した会員の控え。ゲストが同じメールを打っただけでは、同じ会員と見なさない。
+  const memberProfileEmailRef = useRef<string | null>(null);
   // 読み込みが終わった時の「今の入力欄のメール」。読み込みの関数は依存を持たないので、最新の値を控えから読む
   const currentEmailRef = useRef(email);
   React.useEffect(() => {
     currentEmailRef.current = email;
+    if (memberProfileEmailRef.current !== null && !isSameMemberEmail(email, memberProfileEmailRef.current)) {
+      memberProfileEmailRef.current = null;
+    }
   }, [email]);
 
   // 前の会員のものを外す: 保存済みの配送先の一覧と選択、「この配送先を保存する」のチェック、お客様情報の保存の失敗の文。
   // 入力欄の内容には触れない。別の会員（ゲスト）の画面に前の会員の住所帳が混ざったり、ゲストの「確認へ進む」が
   // 前の会員のチェックのままプロフィールの保存を試みて失敗したりしないようにする
   const dropPreviousMemberState = React.useCallback(() => {
+    memberProfileEmailRef.current = null;
     savedAddressesRef.current = [];
     setSavedAddresses([]);
     setSelectedAddressId("");
@@ -496,8 +502,8 @@ function CheckoutPageContent() {
       if (generation !== memberFormGenerationRef.current) {
         return;
       }
-      // 読み直したのが今の入力欄と同じ会員（メールが整えた上で同じ）のまま。その会員が直した入力と読み込み済みの配送先を消さない
-      if (profile && isSameMemberEmail(profile.email, currentEmailRef.current)) {
+      // プロフィールから入力した会員の控えと同じ時だけ、その会員が直した入力と読み込み済みの配送先を残す。
+      if (profile && memberProfileEmailRef.current !== null && isSameMemberEmail(profile.email, memberProfileEmailRef.current)) {
         return;
       }
 
@@ -515,7 +521,9 @@ function CheckoutPageContent() {
       customerSnapshotRef.current = null;
       setEditingCustomer(false);
       setFieldErrors({});
-      setShippingForm({ ...shippingFieldsFromProfile(profile), saveProfile: false });
+      const fields = shippingFieldsFromProfile(profile);
+      memberProfileEmailRef.current = normalizeEmailForCompare(fields.email) || null;
+      setShippingForm({ ...fields, saveProfile: false });
       // 住所帳が取れなかった時は空にする。前の人の保存済みの配送先を、この会員の選択肢に残さない
       const list = addresses ?? [];
       savedAddressesRef.current = list;
@@ -532,6 +540,10 @@ function CheckoutPageContent() {
         }
 
         const fields = shippingFieldsFromProfile(profile);
+        // 初期値でプロフィールのメールを入れる時だけ控える。既にゲストが入力したメールは控えにしない。
+        if (!currentEmailRef.current) {
+          memberProfileEmailRef.current = normalizeEmailForCompare(fields.email) || null;
+        }
         setShippingForm((prev) => ({
           ...prev,
           email: prev.email || fields.email,
@@ -580,6 +592,7 @@ function CheckoutPageContent() {
     previousLoginRef.current = { isLoggedIn, isAuthResolved, loginSyncCount };
     const resynced = loginSyncCount !== previous.loginSyncCount;
     if (!isLoggedIn) {
+      memberProfileEmailRef.current = null;
       // 読み直した結果がゲスト（会員からゲストに変わった）。入力は残し、前の会員の保存済みの配送先の一覧と選択などは外す
       // （ゲストに前の会員の住所帳を選ばせない）。進行中の会員の置き換えがあっても、後から当てない
       if (resynced) {
@@ -1023,6 +1036,9 @@ function CheckoutPageContent() {
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
   ) => {
     const { name, value, type } = e.target;
+    if (name === "email") {
+      memberProfileEmailRef.current = null;
+    }
     // Keep incomplete customer profiles editable until an explicit save/cancel.
     if (
       isLoggedIn &&

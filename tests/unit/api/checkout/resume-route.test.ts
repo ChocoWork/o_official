@@ -161,6 +161,19 @@ describe('POST /api/checkout/resume', () => {
     expect(mockLogAudit).not.toHaveBeenCalled();
   });
 
+  test('画面の ID が無く、支払い済みの下書きがゲストで今は会員なら、画面の ID を返さず none', async () => {
+    mockResolveCheckoutBuyer.mockResolvedValue({ kind: 'member', userId: 'member-a', email: 'member-a@example.com' });
+    mockFindPaidCheckoutSession.mockResolvedValue('cs_test_paid');
+    mockPaidDraftResult = { data: { buyer_user_id: null }, error: null };
+
+    const res = await POST(makeRequest({}));
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ state: 'none' });
+    expect(mockBuildCheckoutConfirmation).not.toHaveBeenCalled();
+    expect(mockRetrieve).not.toHaveBeenCalled();
+  });
+
   test.each(['member-a', undefined])('画面の指定が無く支払い済みの下書きの買い手が違う・無い（%s）なら none', async (paidBuyer) => {
     mockFindPaidCheckoutSession.mockResolvedValue('cs_test_paid');
     mockPaidDraftResult = { data: paidBuyer === undefined ? null : { buyer_user_id: paidBuyer }, error: null };

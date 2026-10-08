@@ -541,7 +541,11 @@ export async function POST(req: NextRequest) {
         user_agent: userAgent,
         metadata: { session_id: sessionId, reason: "invalid_member_email" },
       });
-      return NextResponse.json({ error: "invalid_member_email" }, { status: 400 });
+      return NextResponse.json({
+        error: "invalid_member_email",
+        message: "ログイン中のメールアドレスを確かめられませんでした。ログインし直してから、もう一度お試しください。",
+        retryable: false,
+      }, { status: 400 });
     }
     const shipping = memberEmail ? { ...requestedShipping, email: memberEmail } : requestedShipping;
     // 完了の照合と共有する任意項目のスキーマは保ち、支払いの準備では配送先の欠落を先に断る。
@@ -1088,7 +1092,10 @@ export async function POST(req: NextRequest) {
     const correlationId = randomUUID();
 
     const errorDescription = describeUnexpectedError(error);
-    console.error("Checkout session creation error:", correlationId, errorDescription);
+    console.error("Checkout session creation error:", correlationId, {
+      ...errorDescription,
+      ...(error instanceof Error ? { stack: error.stack } : {}),
+    });
     try {
       await logAudit({
         action: classified.auditAction,

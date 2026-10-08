@@ -227,6 +227,22 @@ describe('POST /api/checkout/place-order', () => {
     expect(mockFindPaidCheckoutSession).not.toHaveBeenCalled();
   });
 
+  test('別タブの支払い済みの下書きがゲストで今は会員なら、payment_done や画面の ID を返さず login_changed', async () => {
+    mockResolveCheckoutBuyer.mockResolvedValue({ kind: 'member', userId: 'member-a', email: 'member-a@example.com' });
+    mockDraftResult = { data: { ...DRAFT, buyer_user_id: 'member-a' }, error: null };
+    mockFindPaidCheckoutSession.mockResolvedValue('cs_test_paid');
+    mockPaidDraftResult = { data: { buyer_user_id: null }, error: null };
+
+    const res = await POST(makeRequest(VALID_BODY));
+
+    expect(res.status).toBe(409);
+    await expect(res.json()).resolves.toEqual({
+      error: 'login_changed', message: 'ログインの状態が変わりました。もう一度「確認へ進む」を押してください。',
+    });
+    expect(mockRpc).not.toHaveBeenCalled();
+    expect(mockReconcileCheckoutSession).toHaveBeenCalledWith('cs_test_paid');
+  });
+
   test.each(['member-a', undefined])('別タブの支払い済みの下書きの買い手が違う・無い（%s）なら login_changed', async (paidBuyer) => {
     mockFindPaidCheckoutSession.mockResolvedValue('cs_test_paid');
     mockPaidDraftResult = { data: paidBuyer === undefined ? null : { buyer_user_id: paidBuyer }, error: null };

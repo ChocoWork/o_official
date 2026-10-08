@@ -89,6 +89,19 @@ describe('requestCheckoutConfirmation', () => {
       correlationId: null,
     });
   });
+
+  test('使えないログインのメールは、サーバーの案内と押し直せない結果を画面へ渡す', async () => {
+    const message = 'ログイン中のメールアドレスを確かめられませんでした。ログインし直してから、もう一度お試しください。';
+    mockClientFetch.mockResolvedValueOnce(jsonResponse(400, {
+      error: 'invalid_member_email', message, retryable: false,
+    }));
+
+    await expect(requestCheckoutConfirmation({
+      shipping: SHIPPING, displayedAmounts: AMOUNTS, promotionCode: null,
+    })).resolves.toEqual({
+      kind: 'error', code: 'invalid_member_email', message, retryable: false, correlationId: null,
+    });
+  });
 });
 
 test('金額不一致のエラー記号を画面へ渡す', async () => {

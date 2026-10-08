@@ -1,6 +1,6 @@
 /**
  * FR-CHECKOUT-046 ログイン客の注文の持ち主（グループ C）
- * 対応 FREQ: FREQ-426（AC-01）・FREQ-427（AC-01・AC-02）。FREQ-426-AC-02 は DB 結合テスト（checkout_order_owner_binding）で確かめる。
+ * 対応 FREQ: FREQ-426（AC-01・AC-03）・FREQ-427（AC-01・AC-02）。FREQ-426-AC-02 は DB 結合テスト（checkout_order_owner_binding）で確かめる。
  * FREQ-427 の2つは、サーバーが断る経路が違う。AC-01 はログインでカートの印が新しくなるので 403（決済の画面がこのカートのものでない）、
  * AC-02 はカートの印が残ったままログインの Cookie だけが無くなるので、買い手を比べて 409 login_changed（設計書 4-3）。
  * 会員は手元の Supabase に試験ごとに作る（e2e/member-session-helpers.ts）。手元以外では動かない。
@@ -145,6 +145,78 @@ test.describe('FR-CHECKOUT-046 ログイン客の注文の持ち主', () => {
       expect((body.data ?? []).map((order) => order.orderNumber)).toContain(orderNumber);
       const owned = await orderIdsOwnedBy(member.userId);
       expect(owned.map((id) => toOrderNumber(id))).toEqual([orderNumber]);
+    });
+
+    // FREQ-426-AC-03
+    test(`${viewport.name}（${viewport.width}px）会員のログインの印が期限切れでも、新しくして1回だけ送り直し、その会員の注文を受け付ける`, async ({ page, context }) => {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      const member = await createTestMember(`refresh-owner-${viewport.name}`);
+      await loginAsMember(page, member);
+      const seeded = await seedCart(page);
+      test.skip(!seeded.ok, seeded.ok ? '' : seeded.reason);
+      if (!seeded.ok) return;
+      await stubPostalCode(page);
+      await page.goto('/checkout');
+      await fillMemberShippingForm(page, member);
+      await proceedToFinal(page);
+
+      // アクセスの印だけを同じ属性で置き換える。更新・CSRF・カートの印は残し、期限切れからの更新を通す。
+      // Cookie の値は、比較が失敗しても差分に出さない。
+      const cookiesBefore = await context.cookies();
+      const accessCookie = cookiesBefore.find((cookie) => cookie.name === 'sb-access-token');
+      if (!accessCookie) throw new Error('ログインのアクセスの印がブラウザに無い');
+      const preservedNames = ['sb-refresh-token', 'sb-csrf-token', CART_COOKIE_NAME];
+      for (const name of preservedNames) {
+        expect(cookiesBefore.some((cookie) => cookie.name === name)).toBe(true);
+      }
+      await context.addCookies([{ ...accessCookie, value: 'invalid-access-token' }]);
+      const cookiesAfter = await context.cookies();
+      const replaced = cookiesAfter.find((cookie) => cookie.name === accessCookie.name
+        && cookie.domain === accessCookie.domain && cookie.path === accessCookie.path);
+      expect(replaced?.value === 'invalid-access-token').toBe(true);
+      expect(replaced?.expires === accessCookie.expires
+        && replaced?.httpOnly === accessCookie.httpOnly
+        && replaced?.secure === accessCookie.secure
+        && replaced?.sameSite === accessCookie.sameSite).toBe(true);
+      for (const name of preservedNames) {
+        const before = cookiesBefore.find((cookie) => cookie.name === name)!;
+        const after = cookiesAfter.find((cookie) => cookie.name === name
+          && cookie.domain === before.domain && cookie.path === before.path);
+        expect(after?.value === before.value).toBe(true);
+      }
+
+      const statuses: number[] = [];
+      const recordPlaceOrder = (response: import('@playwright/test').Response) => {
+        if (response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/checkout/place-order') {
+          statuses.push(response.status());
+        }
+      };
+      page.on('response', recordPlaceOrder);
+      try {
+        // 2回とも、カード入力と「注文する」の前に待ち受ける。2回目は印の更新後の送り直し。
+        const firstPlaceOrder = waitForPlaceOrderResponse(page);
+        const secondPlaceOrder = page.waitForResponse(
+          (response) => response.request().method() === 'POST'
+            && new URL(response.url()).pathname === '/api/checkout/place-order' && response.status() === 200,
+          { timeout: 120_000 },
+        );
+        await placeOrderWithTestCard(page);
+        const first = await firstPlaceOrder;
+        expect(first.status()).toBe(401);
+        expect(await first.json()).toEqual({ error: 'auth_expired' });
+        const second = await secondPlaceOrder;
+        expect(second.status()).toBe(200);
+        const accepted = (await second.json()) as { orderId: string };
+        expect(accepted.orderId).toEqual(expect.any(String));
+
+        await expect(page.getByRole('heading', { name: 'Thank you for your order' })).toBeVisible({ timeout: 90_000 });
+        expect(statuses).toEqual([401, 200]);
+        const owned = await orderIdsOwnedBy(member.userId);
+        expect(owned).toEqual([accepted.orderId]);
+        await expect(page.getByText(toOrderNumber(accepted.orderId), { exact: true })).toBeVisible();
+      } finally {
+        page.off('response', recordPlaceOrder);
+      }
     });
 
     // FREQ-427-AC-01

@@ -636,6 +636,25 @@ describe('決済の画面（グループ F）', () => {
     expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(2);
   });
 
+  test('使えないログインのメールの案内を表示し、「確認へ進む」を押し直せない形にする', async () => {
+    const message = 'ログイン中のメールアドレスを確かめられませんでした。ログインし直してから、もう一度お試しください。';
+    mockApi.requestCheckoutConfirmation.mockResolvedValue({
+      kind: 'error', code: 'invalid_member_email', message, retryable: false, correlationId: null,
+    });
+    render(<CheckoutPage />);
+    fireEvent.click(await screen.findByRole('button', { name: '確認へ進む' }));
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.getByTestId('checkout-session-error')).toHaveTextContent(message);
+    const proceed = screen.getByRole('button', { name: '確認へ進む' });
+    expect(proceed).toBeDisabled();
+    fireEvent.change(screen.getByLabelText(/建物名/), { target: { value: '入力を直した建物' } });
+    expect(proceed).toBeDisabled();
+    fireEvent.click(proceed);
+    expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(1);
+    expect(mockRefreshAuthState).not.toHaveBeenCalled();
+  });
+
   test('時間切れの作り直しで買えない商品が見つかったら、商品名の案内を渡してカートへ移る', async () => {
     const message = '以下の商品は現在購入できません: 非公開のシャツ';
     mockApi.requestCheckoutConfirmation
@@ -1117,6 +1136,71 @@ describe('決済の画面（グループ F）', () => {
       expect(cartFetchCount()).toBe(1);
     });
 
+    test.each([
+      ['同じメール', 'b@example.com'],
+      ['整えると同じメール', ' Ｂ@Example.COM '],
+    ])('ゲストが会員と%sを入力してからログインしても、名前・住所を会員の内容へ置き換える', async (_label, guestEmail) => {
+      mockIsLoggedIn = false;
+      mockProfileStatus = 401;
+      echoDraft();
+      const { rerender } = render(<CheckoutPage />);
+      await typeGuestShipping();
+      fireEvent.change(screen.getByLabelText(/メールアドレス/), { target: { value: guestEmail } });
+      mockProfileStatus = 200;
+      mockProfileBody = MEMBER_B;
+      mockSavedAddresses = [MEMBER_B_ADDRESS];
+      mockIsLoggedIn = true;
+
+      rerender(<CheckoutPage />);
+
+      expect(await screen.findByText(MEMBER_B.fullName)).toBeInTheDocument();
+      expect(screen.getByRole('combobox', { name: '保存済みの配送先' })).toHaveTextContent('〒530-0001');
+      fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+      await waitFor(() => expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(1));
+      expect(lastShippingSent()).toEqual(MEMBER_B_SHIPPING);
+    });
+
+    test('会員からゲストを経て同じ会員に戻っても、ゲストの入力を会員の内容へ置き換える', async () => {
+      echoDraft();
+      const { rerender } = render(<CheckoutPage />);
+      expect(await screen.findByText(PROFILE.fullName)).toBeInTheDocument();
+      mockIsLoggedIn = false;
+      rerender(<CheckoutPage />);
+      fireEvent.change(screen.getByLabelText(/氏名/), { target: { value: GUEST_INPUT.fullName } });
+      mockIsLoggedIn = true;
+
+      rerender(<CheckoutPage />);
+
+      expect(await screen.findByText(PROFILE.fullName)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+      await waitFor(() => expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(1));
+      expect(lastShippingSent().fullName).toBe(PROFILE.fullName);
+    });
+
+    test('置き換えで会員の内容を入れた後も、同じ会員の読み直しでは直した入力を消さない', async () => {
+      mockIsLoggedIn = false;
+      mockProfileStatus = 401;
+      const { rerender } = render(<CheckoutPage />);
+      await typeGuestShipping();
+      mockProfileStatus = 200;
+      mockProfileBody = MEMBER_B;
+      mockSavedAddresses = [MEMBER_B_ADDRESS];
+      mockIsLoggedIn = true;
+      rerender(<CheckoutPage />);
+      fireEvent.click(await screen.findByRole('button', { name: '変更する' }));
+      fireEvent.change(screen.getByLabelText(/電話番号/), { target: { value: '09099998888' } });
+      mockApi.requestCheckoutConfirmation.mockResolvedValueOnce({
+        kind: 'error', code: 'login_changed', message: LOGIN_CHANGED_MESSAGE, retryable: true, correlationId: null,
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+
+      expect(await screen.findByText(LOGIN_CHANGED_MESSAGE)).toBeInTheDocument();
+      await settle();
+      expect(screen.getByLabelText(/電話番号/)).toHaveValue('090-9999-8888');
+      expect(screen.getByRole('combobox', { name: '保存済みの配送先' })).toHaveTextContent('〒530-0001');
+    });
+
     test('開いた時のログインの確認（まだ確かめていない状態から会員）では、開いた時の読み込みだけで置き換えず、お客様の入力を消さない', async () => {
       mockIsLoggedIn = false;
       mockIsAuthResolved = false;
@@ -1368,7 +1452,7 @@ describe('決済の画面（グループ F）', () => {
       expect(screen.queryByText('佐藤 次郎')).toBeNull();
     });
 
-    // 同じ会員のまま（読み直したプロフィールのメールが、今の入力欄のメールと整えた上で同じ）なら置き換えない。
+    // プロフィールから入力した同じ会員のままなら置き換えない（ゲストの入力と区別する）。
     // その会員が直した入力と、読み込み済みの保存済みの配送先を消さない
     test.each([
       ['同じメール', 'a@example.com'],
