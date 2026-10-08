@@ -29,7 +29,7 @@ const context = {
   kind: 'cart',
   owner: { kind: 'guest', tokenHash: 'f'.repeat(64) },
   rateLimitSubject: `guest:${'f'.repeat(64)}` as string | null,
-  auditOwner: { owner: 'guest', guest_token_hash_prefix: 'ffffffffffff' },
+  auditOwner: { owner: 'guest', guest_hash_prefix: 'ffffffffffff' },
   findOwnerId: jest.fn(),
   ensureOwnerId: jest.fn(),
   finish: jest.fn((res: NextResponse) => res),
@@ -111,6 +111,7 @@ describe('POST /api/cart/change', () => {
   test.each([
     ['CART_LINE_NOT_FOUND', 404, 'カートの商品が見つかりません。ページを読み込み直してください。'],
     ['CART_LINE_QUANTITY_LIMIT', 422, '1つの商品は20個までです。'],
+    ['unknown failure', 500, 'カートを更新できませんでした。時間をおいてもう一度お試しください。'],
   ])('RPC の %s は Shopify の形の %i を返す', async (message, status, description) => {
     supabase.rpc.mockResolvedValueOnce({ data: null, error: { message } });
 
@@ -159,5 +160,43 @@ describe('POST /api/cart/change', () => {
 
     expect(res.status).toBe(200);
     expect(enforceRateLimit).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([0, 3])('数量%iへの変更の成功時に明細と持ち主と数量を監査へ残す', async (quantity) => {
+    const req = post('/api/cart/change', { id: lineId, quantity });
+    const token = 'private-guest-cookie-value';
+    req.headers.set('cookie', `cart=${token}`);
+
+    const res = await POST(req);
+
+    expect(res.status).toBe(200);
+    expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'cart.change', outcome: 'success', resource: 'cart_lines', resource_id: lineId,
+      metadata: { owner: 'guest', guest_hash_prefix: 'ffffffffffff', quantity },
+    }));
+    const audit = JSON.stringify((logAudit as jest.Mock).mock.calls);
+    expect(audit).not.toContain(token);
+    expect(audit).not.toContain(context.owner.tokenHash);
+    expect(audit).not.toContain('guest_token_hash');
+    const response = await res.text();
+    expect(response).not.toContain(token);
+    expect(response).not.toContain(context.owner.tokenHash);
+    expect(response).not.toContain('guest_token_hash');
+  });
+
+  test('途中でカートの組み立てが投げたら Global Constraints の文言で 500 を返す', async () => {
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    (buildCartJson as jest.Mock).mockRejectedValueOnce(new Error('DB unavailable'));
+
+    const res = await POST(post('/api/cart/change', { id: lineId, quantity: 1 }));
+
+    expect(buildCartJson).toHaveBeenCalledWith(supabase, 'cart-1');
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({
+      status: 500, message: 'Cart Error',
+      description: 'カートを更新できませんでした。時間をおいてもう一度お試しください。',
+    });
+    expect(spy).toHaveBeenCalledWith('Cart change error:', expect.any(Error));
+    spy.mockRestore();
   });
 });

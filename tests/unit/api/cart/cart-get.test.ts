@@ -26,7 +26,7 @@ const context = {
   kind: 'cart',
   owner: { kind: 'guest', tokenHash: 'f'.repeat(64) },
   rateLimitSubject: `guest:${'f'.repeat(64)}`,
-  auditOwner: { owner: 'guest', guest_token_hash_prefix: 'ffffffffffff' },
+  auditOwner: { owner: 'guest', guest_hash_prefix: 'ffffffffffff' },
   findOwnerId: jest.fn(),
   ensureOwnerId: jest.fn(),
   finish: jest.fn((res: NextResponse) => res),
@@ -83,5 +83,26 @@ describe('GET /api/cart', () => {
       message: 'Cart Error',
       description: 'カートを更新できませんでした。時間をおいてもう一度お試しください。',
     });
+  });
+
+  test('持ち主の行があれば組み立てたカートを 200 で返す', async () => {
+    const cart = {
+      item_count: 1, currency: 'JPY', items_subtotal_price: 12000, total_price: 12000,
+      items: [{
+        key: 'line-1', id: 1201, variant_id: 1201, product_id: 45, quantity: 1,
+        title: 'リネンシャツ', product_title: 'リネンシャツ', variant_title: null, options_with_values: [],
+        price: 12000, line_price: 12000, image: null, url: '/item/45', fulfillment: 'stock',
+      }],
+    };
+    (buildCartJson as jest.Mock).mockResolvedValueOnce(cart);
+
+    const res = await GET(new NextRequest('http://localhost:3000/api/cart'));
+
+    expect(buildCartJson).toHaveBeenCalledWith(supabase, 'cart-1');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(cart);
+    expect(res.headers.get('Cache-Control')).toBe('no-store');
+    expect(context.finish).toHaveBeenCalledWith(res);
+    expect(context.ensureOwnerId).not.toHaveBeenCalled();
   });
 });

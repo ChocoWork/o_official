@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) {
       return context.finish(cartErrorResponse(400, CART_ERROR_DESCRIPTIONS.invalidRequest));
     }
+    // バリアントと数量の組を追跡できるよう、監査でも送信順と重複を保つ。
     const lines = parsed.data.items.map((line) => ({ variant_id: line.id, quantity: line.quantity }));
 
     const cartId = await context.ensureOwnerId();
@@ -51,7 +52,7 @@ export async function POST(req: NextRequest) {
         detail: error.message ?? 'cart_add_lines failed',
         ip: clientIp,
         user_agent: userAgent,
-        metadata: { ...context.auditOwner, variant_ids: lines.map((line) => line.variant_id) },
+        metadata: { ...context.auditOwner, lines },
       });
       return context.finish(mapped ?? cartErrorResponse(500, CART_ERROR_DESCRIPTIONS.failed));
     }
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
       resource: 'cart_lines',
       ip: clientIp,
       user_agent: userAgent,
-      metadata: { ...context.auditOwner, variant_ids: [...added], quantities: lines.map((line) => line.quantity) },
+      metadata: { ...context.auditOwner, lines },
     });
     return context.finish(NextResponse.json({ items: cart.items.filter((line) => added.has(line.variant_id)) }));
   } catch (error) {

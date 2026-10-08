@@ -25,13 +25,19 @@ function supabaseWith(rows: unknown[]) {
   const query = {
     select: jest.fn().mockReturnThis(),
     eq: jest.fn().mockReturnThis(),
-    order: jest.fn().mockResolvedValue({ data: rows, error: null }),
+    order: jest.fn().mockReturnThis(),
+    then: (resolve: (result: { data: unknown[]; error: null }) => unknown) => resolve({ data: rows, error: null }),
   };
   return { from: jest.fn().mockReturnValue(query), rpc: jest.fn() } as never;
 }
 
 describe('buildCartJson', () => {
-  beforeEach(() => (previewFulfillment as jest.Mock).mockResolvedValue([{ lineNo: 1, fulfillment: 'stock' }]));
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (previewFulfillment as jest.Mock).mockResolvedValue([{ lineNo: 1, fulfillment: 'stock' }]);
+  });
+
+  afterEach(() => jest.restoreAllMocks());
 
   test('持ち主が無ければ空のカート', async () => {
     const supabase = supabaseWith([]);
@@ -80,8 +86,51 @@ describe('buildCartJson', () => {
   });
 
   test('お届けの目安が読めなくてもカートは返す', async () => {
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
     (previewFulfillment as jest.Mock).mockRejectedValueOnce(new Error('rpc down'));
     const cart = await buildCartJson(supabaseWith([line()]), 'cart-1');
     expect(cart.items[0].fulfillment).toBeNull();
+    expect(spy).toHaveBeenCalledWith('Failed to preview cart fulfillment:', expect.any(Error));
+    spy.mockRestore();
+  });
+
+  test('同じ日時の明細の並びを決めるため、日時の降順の次に id の昇順を指定する', async () => {
+    const supabase = supabaseWith([line(), line({ id: 'line-2', item_variants: { ...line().item_variants, id: 1300 } })]);
+
+    const cart = await buildCartJson(supabase, 'cart-1');
+
+    const query = (supabase as { from: jest.Mock }).from.mock.results[0].value;
+    expect(query.order).toHaveBeenCalledTimes(2);
+    expect(query.order).toHaveBeenNthCalledWith(1, 'added_at', { ascending: false });
+    expect(query.order).toHaveBeenNthCalledWith(2, 'id', { ascending: true });
+    expect(cart.items.map((item) => item.key)).toEqual(['line-1', 'line-2']);
+  });
+
+  test('隠す明細を間に挟んでも lineNo を見える明細の順に対応させる', async () => {
+    const hidden = line({ id: 'hidden', item_variants: { ...line().item_variants, items: { ...line().item_variants.items, status: 'private' } } });
+    const inactive = line({ id: 'inactive', item_variants: { ...line().item_variants, is_active: false } });
+    const second = line({ id: 'line-2', quantity: 3, item_variants: { ...line().item_variants, id: 1300, item_id: 46, item_colors: { name: 'ホワイト' }, items: { ...line().item_variants.items, id: 46 } } });
+    const third = line({ id: 'line-3', quantity: 1, item_variants: { ...line().item_variants, id: 1400, item_id: 47, item_sizes: { label: 'L' }, items: { ...line().item_variants.items, id: 47 } } });
+    const supabase = supabaseWith([line(), hidden, second, inactive, third]);
+    (previewFulfillment as jest.Mock).mockResolvedValueOnce([
+      { lineNo: 3, fulfillment: 'stock' },
+      { lineNo: 1, fulfillment: 'stock' },
+      { lineNo: 2, fulfillment: 'backorder' },
+    ]);
+
+    const cart = await buildCartJson(supabase, 'cart-1');
+
+    expect(previewFulfillment).toHaveBeenCalledWith(supabase, [
+      { item_id: 45, color: 'ブラック', size: 'M', quantity: 2 },
+      { item_id: 46, color: 'ホワイト', size: 'M', quantity: 3 },
+      { item_id: 47, color: 'ブラック', size: 'L', quantity: 1 },
+    ]);
+    expect(cart.items.map((item) => ({ key: item.key, fulfillment: item.fulfillment }))).toEqual([
+      { key: 'line-1', fulfillment: 'stock' },
+      { key: 'line-2', fulfillment: 'backorder' },
+      { key: 'line-3', fulfillment: 'stock' },
+    ]);
+    expect(cart.item_count).toBe(6);
+    expect(cart.total_price).toBe(72000);
   });
 });

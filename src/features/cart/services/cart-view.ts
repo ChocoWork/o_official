@@ -20,6 +20,7 @@ type CartLineRow = {
 /**
  * カート全体を Shopify の /cart.js と同じ形で組み立てる（設計書 6-1）。印 token は返さない。
  * 非公開の商品と取り扱い終了のバリアントの明細は出さない（本計画の決め事 P14）。並びは入れた日時の新しい順。
+ * 同じ日時でも並びが変わらないよう、次に明細の id の昇順で並べる。
  */
 export async function buildCartJson(supabase: SupabaseClient, cartId: string | null): Promise<CartJson> {
   if (!cartId) {
@@ -30,7 +31,8 @@ export async function buildCartJson(supabase: SupabaseClient, cartId: string | n
     .from('cart_lines')
     .select('id, quantity, added_at, item_variants(id, item_id, is_active, item_colors(name), item_sizes(label), items(id, name, price, image_url, status))')
     .eq('cart_id', cartId)
-    .order('added_at', { ascending: false });
+    .order('added_at', { ascending: false })
+    .order('id', { ascending: true });
   if (error) {
     throw error;
   }

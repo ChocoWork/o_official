@@ -28,7 +28,7 @@ const context = {
   kind: 'cart',
   owner: { kind: 'guest', tokenHash: 'f'.repeat(64) },
   rateLimitSubject: `guest:${'f'.repeat(64)}` as string | null,
-  auditOwner: { owner: 'guest', guest_token_hash_prefix: 'ffffffffffff' },
+  auditOwner: { owner: 'guest', guest_hash_prefix: 'ffffffffffff' },
   findOwnerId: jest.fn(),
   ensureOwnerId: jest.fn(),
   finish: jest.fn((res: NextResponse) => res),
@@ -166,11 +166,11 @@ describe('POST /api/cart/add', () => {
     expect(context.finish).toHaveBeenCalledWith(res);
     expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({
       action: 'cart.add', outcome: status === 500 ? 'error' : 'failure',
-      metadata: { ...context.auditOwner, variant_ids: [1201] },
+      metadata: { ...context.auditOwner, lines: [{ variant_id: 1201, quantity: 1 }] },
     }));
   });
 
-  test('監査に持ち主の情報と variant_ids を入れ、Cookie の印と完全なハッシュは入れない', async () => {
+  test('監査に持ち主の情報と lines を入れ、Cookie の印と完全なハッシュは入れない', async () => {
     const req = post('/api/cart/add', { items: [{ id: 1201, quantity: 1 }] });
     const token = 'private-guest-cookie-value';
     req.headers.set('cookie', `cart=${token}`);
@@ -178,7 +178,7 @@ describe('POST /api/cart/add', () => {
 
     expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({
       action: 'cart.add', outcome: 'success', resource: 'cart_lines',
-      metadata: { ...context.auditOwner, variant_ids: [1201], quantities: [1] },
+      metadata: { ...context.auditOwner, lines: [{ variant_id: 1201, quantity: 1 }] },
     }));
     const audit = JSON.stringify((logAudit as jest.Mock).mock.calls);
     expect(audit).not.toContain(token);
@@ -186,6 +186,52 @@ describe('POST /api/cart/add', () => {
     expect(audit).not.toContain('"guest_token_hash"');
     const response = await res.text();
     expect(response).not.toContain(token);
+    expect(response).not.toContain(context.owner.tokenHash);
     expect(response).not.toContain('guest_token_hash');
+  });
+
+  test.each([
+    ['success', null, 200],
+    ['failure', { message: 'CART_LINE_QUANTITY_LIMIT' }, 422],
+    ['error', { message: 'unknown failure' }, 500],
+  ])('同じバリアントを2回含む送信でも、%s の監査の lines は送った組のまま残る', async (outcome, error, status) => {
+    supabase.rpc.mockResolvedValueOnce({ data: null, error });
+    const mergedLine = { ...addedLine, quantity: 3, line_price: 36000 };
+    (buildCartJson as jest.Mock).mockResolvedValueOnce({
+      item_count: 4, currency: 'JPY', items_subtotal_price: 48000, total_price: 48000,
+      items: [otherLine, mergedLine],
+    });
+
+    const res = await POST(post('/api/cart/add', { items: [{ id: 1201, quantity: 1 }, { id: 1201, quantity: 2 }] }));
+
+    expect(res.status).toBe(status);
+    expect(supabase.rpc).toHaveBeenCalledWith('cart_add_lines', {
+      _cart_id: 'cart-1', _lines: [{ variant_id: 1201, quantity: 1 }, { variant_id: 1201, quantity: 2 }],
+    });
+    expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'cart.add', outcome,
+      metadata: { ...context.auditOwner, lines: [{ variant_id: 1201, quantity: 1 }, { variant_id: 1201, quantity: 2 }] },
+    }));
+    if (status === 200) {
+      expect(await res.json()).toEqual({ items: [mergedLine] });
+    } else {
+      expect(buildCartJson).not.toHaveBeenCalled();
+    }
+  });
+
+  test('途中でカートの組み立てが投げたら Global Constraints の文言で 500 を返す', async () => {
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    (buildCartJson as jest.Mock).mockRejectedValueOnce(new Error('DB unavailable'));
+
+    const res = await POST(post('/api/cart/add', { items: [{ id: 1201, quantity: 1 }] }));
+
+    expect(buildCartJson).toHaveBeenCalledWith(supabase, 'cart-1');
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({
+      status: 500, message: 'Cart Error',
+      description: 'カートを更新できませんでした。時間をおいてもう一度お試しください。',
+    });
+    expect(spy).toHaveBeenCalledWith('Cart add error:', expect.any(Error));
+    spy.mockRestore();
   });
 });

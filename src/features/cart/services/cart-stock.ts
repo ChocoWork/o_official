@@ -47,15 +47,6 @@ export type InventoryIssue = {
   reason: 'insufficient_stock' | 'unavailable';
 };
 
-export function normalizeCartVariantValue(value: string | null | undefined): string | null {
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
 /**
  * 買えない商品（非公開・存在しない）だけを挙げる（FREQ-401）。
  *
