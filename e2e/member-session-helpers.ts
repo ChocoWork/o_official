@@ -1,8 +1,9 @@
 /**
  * FR-CHECKOUT-046 ではアプリが発行するログイン・CSRF の Cookie が必要になる。
  * Turnstile を伴うパスワード検証の前段だけを既存の助けで作り、確認コードの検証は実際のルートを通す。
- * この助けを呼ぶ spec は `test.use({ trace: 'off' })` が必須。
+ * この助けを呼ぶ spec は、ファイルの最上位（test.describe の外）に `test.use({ trace: 'off' })` が必須。
  * 確認コード・ログインの Cookie・2FA の Cookie がブラウザの文脈の通信に載り、通信記録に残るため。
+ * trace は worker 単位の設定なので、test.describe の中に書くと読み込みで落ちる。
  */
 import { randomBytes } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
