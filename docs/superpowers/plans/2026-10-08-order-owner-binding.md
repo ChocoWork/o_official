@@ -20,7 +20,7 @@
 - 会員の ID は `authenticateRequest` の検証済みの `claims.sub` からだけ取る。画面から送られた値は使わない
 - 買い手の確かめは、各入口の守り（Cookie・回数の制限・CSRF）の直後、DB への書き込みと Stripe の呼び出しより前に行う。401・503 は何も変える前に返す
 - `CHECKOUT_REQUEST_VERSION` を 2 から 3 に上げ、下書きの見分けの値（fingerprint）に買い手（`buyerUserId`。ゲストは `null`）を含める
-- 移行は1本（`supabase/migrations/20261008120000_checkout_order_owner_binding.sql`。本番に当てた後に版へ直す）。`BEGIN;`〜`COMMIT;` で囲み、何度当てても同じ結果になるように書く（`IF NOT EXISTS`・`DROP ... IF EXISTS`・`CREATE OR REPLACE`）。関数は `SECURITY DEFINER`＋`SET search_path = ''`＋完全修飾名。作り直す関数は `PUBLIC`・`anon`・`authenticated` から EXECUTE を外し、`service_role` だけに与える。最後に `NOTIFY pgrst, 'reload schema';`
+- 移行は1本（`supabase/migrations/20261008055720_checkout_order_owner_binding.sql`。本番に当てた後に版へ直す）。`BEGIN;`〜`COMMIT;` で囲み、何度当てても同じ結果になるように書く（`IF NOT EXISTS`・`DROP ... IF EXISTS`・`CREATE OR REPLACE`）。関数は `SECURITY DEFINER`＋`SET search_path = ''`＋完全修飾名。作り直す関数は `PUBLIC`・`anon`・`authenticated` から EXECUTE を外し、`service_role` だけに与える。最後に `NOTIFY pgrst, 'reload schema';`
 - `supabase/pending/` は触らない。本番 DB へは、全タスクの後、ユーザーの push の後で許可を得て Supabase MCP の `apply_migration` で当てる。当てた後、ファイル名を本番の台帳の version に直す（`docs/06_Operations/db-migrations.md`）
 - 画面と機能の変更は、実装と同じタスクで `docs/02_Requirements/requirements.md` に FREQ 行を足す（FREQ-426・FREQ-427。番号は `grep -oE "FREQ-[0-9]+" docs/02_Requirements/requirements.md | sort -t- -k2 -n | tail -1` の次であることを確かめる）。E2E は `e2e/FR-CHECKOUT-046-order-owner-binding.spec.ts`（`ls e2e | grep FR-CHECKOUT- | sort -V | tail -1` の次であることを確かめる）
 - E2E は本番ビルド（`next build && next start`）・手元の Supabase（`npx supabase db reset` の直後）で、mobile（390px）・tablet（768px）・desktop（1280px）の3つの画面幅で流す。流す前に3000番に何も無いことを `Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue` で確かめる。DB 結合テストの直後に E2E を流さない（`checkout_session_claim` のテストが関数を消すため。Task 2 で後片付けを直すまで）
@@ -60,7 +60,7 @@
 
 | ファイル | 責務 |
 |---|---|
-| `supabase/migrations/20261008120000_checkout_order_owner_binding.sql`（新規） | 下書きの買い手の列とトリガー、注文の持ち主のトリガー、2つの関数の作り直し（Task 2） |
+| `supabase/migrations/20261008055720_checkout_order_owner_binding.sql`（新規） | 下書きの買い手の列とトリガー、注文の持ち主のトリガー、2つの関数の作り直し（Task 2） |
 | `tests/integration/db/checkout_order_owner_binding.integration.test.ts`（新規） | 上の DB の決まりの結合テスト（Task 2） |
 | `tests/integration/db/helpers/order-fixtures.ts` | `createDraft` に `buyerUserId` を足す（Task 2） |
 | `tests/integration/db/checkout_session_claim.integration.test.ts` | 後片付けで DB を移行の後に戻す（Task 2） |
@@ -228,7 +228,7 @@ git commit -m "test(e2e): 手元の会員としてログインする助けを足
 ### Task 2: DB の決まり（移行と結合テスト）
 
 **Files:**
-- Create: `supabase/migrations/20261008120000_checkout_order_owner_binding.sql`
+- Create: `supabase/migrations/20261008055720_checkout_order_owner_binding.sql`
 - Create: `tests/integration/db/checkout_order_owner_binding.integration.test.ts`
 - Modify: `tests/integration/db/helpers/order-fixtures.ts`（`createDraft` に `buyerUserId`）
 - Modify: `tests/integration/db/checkout_session_claim.integration.test.ts`（afterAll）
@@ -437,7 +437,7 @@ Expected: FAIL（`buyer_user_id` の列が無い・関数の引数が合わな�
 
 - [ ] **Step 4: 移行を書く**
 
-`supabase/migrations/20261008120000_checkout_order_owner_binding.sql`。冒頭の注記と、次の4つの部分を書く。
+`supabase/migrations/20261008055720_checkout_order_owner_binding.sql`。冒頭の注記と、次の4つの部分を書く。
 
 (a) 下書きの買い手の列とトリガー:
 
@@ -609,7 +609,7 @@ Expected: 新しいテストを含めて全件 PASS（`security_definer_search_p
 - [ ] **Step 7: コミット**
 
 ```bash
-git add supabase/migrations/20261008120000_checkout_order_owner_binding.sql tests/integration/db/checkout_order_owner_binding.integration.test.ts tests/integration/db/helpers/order-fixtures.ts tests/integration/db/checkout_session_claim.integration.test.ts
+git add supabase/migrations/20261008055720_checkout_order_owner_binding.sql tests/integration/db/checkout_order_owner_binding.integration.test.ts tests/integration/db/helpers/order-fixtures.ts tests/integration/db/checkout_session_claim.integration.test.ts
 git commit -m "feat(db): 下書きの買い手と注文の持ち主の決まりを足し、受付で買い手を比べる"
 ```
 
@@ -1260,4 +1260,4 @@ git commit -m "test(e2e): FR-CHECKOUT-046 と FREQ-426・427、グループ C �
 1. 単体全件・型・lint・`validate-docs`
 2. `npx supabase db reset` → DB 結合を全件（`--runInBand`）→ もう一度 `npx supabase db reset` → 決済まわりとアカウントの E2E
 3. 全体のレビュー（Opus）。指摘の直しは1回、範囲の再レビューは1回
-4. ユーザーに push の許可をもらう。push の後、本番 DB への移行の適用の許可をもらい、Supabase MCP の `apply_migration` で当てる。当てた版にファイル名を直し、`checkout_session_claim` のテストが探すファイル名の終わり（`_checkout_order_owner_binding.sql`）が変わらないことを確かめる。同じコミットで、文書（`docs/03_BasicDesign/data/er.md`・`docs/04_DetailDesign/states/checkout-draft.md`・`docs/04_DetailDesign/sequence/checkout-payment.md` のリンク、レビュー台帳と本計画の版の記載）の `20261008120000` を新しい版に置き換え、`npm run -s validate-docs` で確かめる（全体レビュー M7）
+4. ユーザーに push の許可をもらう。push の後、本番 DB への移行の適用の許可をもらい、Supabase MCP の `apply_migration` で当てる。当てた版にファイル名を直し、`checkout_session_claim` のテストが探すファイル名の終わり（`_checkout_order_owner_binding.sql`）が変わらないことを確かめる。同じコミットで、文書（`docs/03_BasicDesign/data/er.md`・`docs/04_DetailDesign/states/checkout-draft.md`・`docs/04_DetailDesign/sequence/checkout-payment.md` のリンク、レビュー台帳と本計画の版の記載）の `20261008120000` を新しい版（2026-10-08 に当てた `20261008055720`）に置き換え、`npm run -s validate-docs` で確かめる（全体レビュー M7）
