@@ -15,9 +15,10 @@ export const CHECKOUT_VIEWPORTS = [
 export type SeedResult = { ok: true; itemId: number; price: number } | { ok: false; reason: string };
 
 /**
- * 公開中で50円以上の商品を1つ、色・サイズなしの行としてカートに入れる（Stripe の最低額は50円）。
- * スキップの理由を返すのは、その商品が無い環境のときだけ。入口の崩れや回数の制限（429）などの通信の失敗は
- * 投げて、テストを失敗にする（スキップにすると赤にならず、push の前の E2E でも回帰に気づけない）。
+ * 公開中で50円以上の商品を1つ、その商品詳細の最初のバリアントでカートに入れる（Stripe の最低額は50円）。
+ * カートの窓口は色・サイズではなくバリアントの番号で受けるので、番号は商品詳細の窓口（variantAvailability）から引く。
+ * スキップの理由を返すのは、その商品（またはそのバリアント）が無い環境のときだけ。入口の崩れや回数の制限（429）などの
+ * 通信の失敗は投げて、テストを失敗にする（スキップにすると赤にならず、push の前の E2E でも回帰に気づけない）。
  */
 export async function seedCart(page: Page): Promise<SeedResult> {
   await page.goto('/');
@@ -31,13 +32,30 @@ export async function seedCart(page: Page): Promise<SeedResult> {
     if (!item?.id || typeof item.price !== 'number') {
       return { ok: false, reason: 'No published item priced at 50 JPY or above' };
     }
-    const cartResponse = await fetch('/api/cart', {
+    const detailResponse = await fetch(`/api/items/${item.id}`);
+    if (!detailResponse.ok) {
+      throw new Error(`/api/items/${item.id} returned ${detailResponse.status}`);
+    }
+    const detail = (await detailResponse.json()) as { variantAvailability?: Array<{ variantId: number }> };
+    const variantId = detail.variantAvailability?.[0]?.variantId;
+    if (!variantId) {
+      return { ok: false, reason: 'No variant for the published item' };
+    }
+    // 会員のカートの書き換えは CSRF の合言葉を求める（ゲストには Cookie が無いので付かない）。値は外へ出さない
+    const csrfToken = document.cookie
+      .split('; ')
+      .find((part) => part.startsWith('sb-csrf-token='))
+      ?.slice('sb-csrf-token='.length);
+    const cartResponse = await fetch('/api/cart/add', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ item_id: item.id, quantity: 1 }),
+      headers: {
+        'Content-Type': 'application/json',
+        ...(csrfToken ? { 'x-csrf-token': decodeURIComponent(csrfToken) } : {}),
+      },
+      body: JSON.stringify({ items: [{ id: variantId, quantity: 1 }] }),
     });
     if (!cartResponse.ok) {
-      throw new Error(`/api/cart returned ${cartResponse.status}`);
+      throw new Error(`/api/cart/add returned ${cartResponse.status}`);
     }
     return { ok: true, itemId: item.id, price: item.price };
   });

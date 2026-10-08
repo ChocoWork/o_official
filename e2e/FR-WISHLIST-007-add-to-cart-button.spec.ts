@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { CART_OPTION_NAMES } from '../src/features/cart/types/cart-json';
 
 type PublicItemDetail = {
   id: number;
@@ -13,8 +14,29 @@ async function clearSessionCollections(page: Page) {
   await page.waitForLoadState('networkidle').catch(() => undefined);
 
   await page.evaluate(async () => {
-    const clearCollection = async (basePath: string) => {
-      const response = await fetch(basePath);
+    // カートの窓口に削除は無い。カート全体（CartJson）の明細を、key を指して数量0に変えて消す（POST /api/cart/change）
+    const clearCart = async () => {
+      const response = await fetch('/api/cart');
+      if (!response.ok) {
+        return;
+      }
+
+      const cart = (await response.json()) as { items?: Array<{ key?: unknown }> };
+      await Promise.all(
+        (cart.items ?? [])
+          .filter((line) => typeof line.key === 'string')
+          .map((line) =>
+            fetch('/api/cart/change', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: line.key, quantity: 0 }),
+            })
+          )
+      );
+    };
+
+    const clearWishlist = async () => {
+      const response = await fetch('/api/wishlist');
       if (!response.ok) {
         return;
       }
@@ -27,12 +49,12 @@ async function clearSessionCollections(page: Page) {
       await Promise.all(
         items
           .filter((item) => item && typeof item.id === 'string')
-          .map((item) => fetch(`${basePath}/${item.id}`, { method: 'DELETE' }))
+          .map((item) => fetch(`/api/wishlist/${item.id}`, { method: 'DELETE' }))
       );
     };
 
-    await clearCollection('/api/cart');
-    await clearCollection('/api/wishlist');
+    await clearCart();
+    await clearWishlist();
   });
 }
 
@@ -75,6 +97,9 @@ test.describe('FR-WISHLIST-007 カートに追加ボタン', () => {
   });
 
   test('wishlist からのカート追加は商品詳細と同じ color と size を送る', async ({ page }) => {
+    // お気に入りの窓口は、各行に販売中のバリアント（番号・色・サイズ）を添える。
+    // カードのカートに入れるボタンは、色・サイズが決まった商品の、その組み合わせのバリアントの番号を送る
+    const blackFreeVariantId = 7101;
     await page.route('**/api/wishlist', async (route) => {
       await route.fulfill({
         status: 200,
@@ -93,21 +118,20 @@ test.describe('FR-WISHLIST-007 カートに追加ボタン', () => {
               colors: [{ name: 'BLACK', hex: '#000000' }],
               sizes: ['FREE'],
             },
+            variants: [{ id: blackFreeVariantId, color: 'BLACK', size: 'FREE' }],
           },
         ]),
       });
     });
 
     let cartRequestBody: Record<string, unknown> | null = null;
-    await page.route('**/api/cart', async (route) => {
-      if (route.request().method() === 'POST') {
-        cartRequestBody = route.request().postDataJSON() as Record<string, unknown>;
-      }
+    await page.route('**/api/cart/add', async (route) => {
+      cartRequestBody = route.request().postDataJSON() as Record<string, unknown>;
 
       await route.fulfill({
-        status: 201,
+        status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ id: 'cart-1', item_id: 101, quantity: 1, color: 'BLACK', size: 'FREE' }),
+        body: JSON.stringify({ items: [] }),
       });
     });
 
@@ -115,12 +139,7 @@ test.describe('FR-WISHLIST-007 カートに追加ボタン', () => {
     await page.getByRole('button', { name: 'ADD TO CART', exact: true }).click();
 
     await expect.poll(() => cartRequestBody).not.toBeNull();
-    expect(cartRequestBody).toMatchObject({
-      item_id: 101,
-      quantity: 1,
-      color: 'BLACK',
-      size: 'FREE',
-    });
+    expect(cartRequestBody).toEqual({ items: [{ id: blackFreeVariantId, quantity: 1 }] });
   });
 
   test('実データで商品詳細追加後に wishlist から追加しても cart は1行に統合される', async ({ page }) => {
@@ -154,6 +173,7 @@ test.describe('FR-WISHLIST-007 カートに追加ボタン', () => {
 
     await page.getByText('ADD TO CART').first().click();
 
+    // 実のカートの窓口（GET /api/cart）はカート全体（CartJson）を返す。この商品の明細は items の product_id で絞る
     await expect.poll(async () => {
       return page.evaluate(async (itemId) => {
         const response = await fetch('/api/cart');
@@ -161,14 +181,10 @@ test.describe('FR-WISHLIST-007 カートに追加ボタン', () => {
           return 0;
         }
 
-        const cartItems = await response.json();
-        if (!Array.isArray(cartItems)) {
-          return 0;
-        }
-
-        return cartItems
-          .filter((entry) => entry.item_id === itemId)
-          .reduce((sum, entry) => sum + Number(entry.quantity ?? 0), 0);
+        const cart = (await response.json()) as { items?: Array<{ product_id: number; quantity: number }> };
+        return (cart.items ?? [])
+          .filter((line) => line.product_id === itemId)
+          .reduce((sum, line) => sum + Number(line.quantity ?? 0), 0);
       }, item!.id);
     }).toBe(1);
 
@@ -177,25 +193,30 @@ test.describe('FR-WISHLIST-007 カートに追加ボタン', () => {
     await page.getByRole('button', { name: 'ADD TO CART', exact: true }).first().click();
 
     await expect.poll(async () => {
-      return page.evaluate(async ({ itemId }) => {
+      return page.evaluate(async ({ itemId, optionNames }) => {
         const response = await fetch('/api/cart');
         if (!response.ok) {
           return { rowCount: 0, quantity: 0, color: null, size: null };
         }
 
-        const cartItems = await response.json();
-        if (!Array.isArray(cartItems)) {
-          return { rowCount: 0, quantity: 0, color: null, size: null };
-        }
-
-        const matchingRows = cartItems.filter((entry) => entry.item_id === itemId);
+        const cart = (await response.json()) as {
+          items?: Array<{
+            product_id: number;
+            quantity: number;
+            options_with_values: Array<{ name: string; value: string }>;
+          }>;
+        };
+        const matchingRows = (cart.items ?? []).filter((line) => line.product_id === itemId);
+        // 色・サイズは明細の options_with_values に、オプション名（カラー・サイズ）と値の組で入っている
+        const optionOf = (name: string) =>
+          matchingRows[0]?.options_with_values.find((option) => option.name === name)?.value ?? null;
         return {
           rowCount: matchingRows.length,
-          quantity: matchingRows.reduce((sum, entry) => sum + Number(entry.quantity ?? 0), 0),
-          color: matchingRows[0]?.color ?? null,
-          size: matchingRows[0]?.size ?? null,
+          quantity: matchingRows.reduce((sum, line) => sum + Number(line.quantity ?? 0), 0),
+          color: optionOf(optionNames.color),
+          size: optionOf(optionNames.size),
         };
-      }, { itemId: item!.id });
+      }, { itemId: item!.id, optionNames: CART_OPTION_NAMES });
     }).toEqual({
       rowCount: 1,
       quantity: 2,

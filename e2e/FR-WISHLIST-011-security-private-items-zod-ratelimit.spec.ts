@@ -3,7 +3,11 @@
  * - private 商品の wishlist 追加拒否
  * - Zod バリデーション（item_id の型チェック）
  * - レート制限（POST での連続リクエスト制限）
- * 
+ *
+ * お気に入りの持ち主は wishlist の Cookie の印で決まる（初めて入れた時に応答の Set-Cookie で付く）。
+ * session_id は決済の流れの印で、お気に入りの持ち主でも回数の数えの単位でもない。
+ * 印の無い要求は IP だけで数え、持ち主ごとの数えは印を付けた要求から始まる。
+ *
  * 対応仕様: docs/5.Implement/security_review_item_id.md
  */
 
@@ -12,12 +16,41 @@ import type { APIResponse } from '@playwright/test';
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
-function buildWishlistHeaders(sessionCookie?: string) {
+/** Cookie の見出しの値。wishlist はお気に入りの持ち主の印、session_id は決済の流れの印 */
+function buildCookieHeader(sessionCookie?: string, wishlistCookie?: string): string | undefined {
+  const cookies = [
+    ...(sessionCookie ? [`session_id=${sessionCookie}`] : []),
+    ...(wishlistCookie ? [`wishlist=${wishlistCookie}`] : []),
+  ];
+  return cookies.length > 0 ? cookies.join('; ') : undefined;
+}
+
+function buildWishlistHeaders(sessionCookie?: string, wishlistCookie?: string) {
+  const cookie = buildCookieHeader(sessionCookie, wishlistCookie);
   return {
     origin: BASE_URL,
     referer: `${BASE_URL}/wishlist`,
-    ...(sessionCookie ? { Cookie: `session_id=${sessionCookie}` } : {}),
+    ...(cookie ? { Cookie: cookie } : {}),
   };
+}
+
+/**
+ * 初めてお気に入りに入れた応答が付ける、持ち主の印（wishlist の Cookie）の値。
+ * 印を付けて送らない要求は、毎回新しい持ち主になり、一覧は空・回数は IP だけで数えられる
+ */
+function readWishlistCookie(response: APIResponse): string | undefined {
+  for (const header of response.headersArray()) {
+    if (header.name.toLowerCase() !== 'set-cookie') {
+      continue;
+    }
+
+    const value = /^wishlist=([^;]+)/.exec(header.value)?.[1];
+    if (value) {
+      return value;
+    }
+  }
+
+  return undefined;
 }
 
 test.describe('FR-WISHLIST-011 Security - Private Items, Zod Validation, Rate Limiting', () => {
@@ -67,9 +100,14 @@ test.describe('FR-WISHLIST-011 Security - Private Items, Zod Validation, Rate Li
 
       expect([201, 409]).toContain(addRes.status()); // 201 or 409 (already in wishlist)
 
+      // 追加で付いた持ち主の印を付けて取得する（印が無いと持ち主の無い空の一覧が返り、下の確かめが空振りになる）
+      const wishlistCookie = readWishlistCookie(addRes);
+      expect(wishlistCookie).toBeTruthy();
+
       // GET で取得
+      const cookie = buildCookieHeader(sessionCookie, wishlistCookie);
       const getRes = await request.get('/api/wishlist', {
-        headers: sessionCookie ? { Cookie: `session_id=${sessionCookie}` } : {},
+        headers: cookie ? { Cookie: cookie } : {},
       });
 
       expect(getRes.status()).toBe(200);
@@ -77,6 +115,7 @@ test.describe('FR-WISHLIST-011 Security - Private Items, Zod Validation, Rate Li
 
       // 取得したアイテムがすべて items !== null であること（deleted items は除外）
       if (Array.isArray(data)) {
+        expect(data.length).toBeGreaterThan(0);
         for (const item of data) {
           expect(item.items).not.toBeNull();
         }
@@ -142,16 +181,26 @@ test.describe('FR-WISHLIST-011 Security - Private Items, Zod Validation, Rate Li
       test.setTimeout(90_000);
 
       // IP 単位の上限（60 回/分）は、並列実行中の他のテストと 127.0.0.1 を共有している。
-      // セッション単位の上限だけを見るため、この試験では文書用 IPv6（2001:db8::/32）を名乗る。
+      // 持ち主単位の上限だけを見るため、この試験では文書用 IPv6（2001:db8::/32）を名乗る。
       // x-forwarded-for をそのまま使うのは Vercel を通らないローカルの E2E サーバーだけ。
       const forwardedFor = `2001:db8::${Date.now().toString(16).slice(-4)}:${Math.floor(Math.random() * 0xffff).toString(16)}`;
 
-      // 回数は1分ごとの固定枠で数える。35 回を送る途中で枠が切り替わると数え直しになり、
+      // 回数は1分ごとの固定枠で数える。36 回を送る途中で枠が切り替わると数え直しになり、
       // 31 回目以降が 429 にならない。枠の残りが短ければ次の枠の頭まで待つ。
       const msIntoWindow = Date.now() % 60_000;
       if (msIntoWindow > 45_000) {
         await new Promise((resolve) => setTimeout(resolve, 60_000 - msIntoWindow + 200));
       }
+
+      // 持ち主ごとの上限（30 回/分）は、wishlist の印を付けた要求から数える。印の無い要求は持ち主が
+      // まだ無く、IP だけで数えられるので、先に1回入れて印を受け取る（この1回は持ち主の回数に入らない）。
+      const first = await request.post('/api/wishlist', {
+        data: { item_id: 1 },
+        headers: { ...buildWishlistHeaders(sessionCookie), 'x-forwarded-for': forwardedFor },
+      });
+      expect([201, 409]).toContain(first.status());
+      const wishlistCookie = readWishlistCookie(first);
+      expect(wishlistCookie).toBeTruthy();
 
       const validItemIds = [1, 2, 3, 4, 5];
       const responses: APIResponse[] = [];
@@ -159,17 +208,17 @@ test.describe('FR-WISHLIST-011 Security - Private Items, Zod Validation, Rate Li
       for (let i = 0; i < 35; i++) {
         const res = await request.post('/api/wishlist', {
           data: { item_id: validItemIds[i % validItemIds.length] },
-          headers: { ...buildWishlistHeaders(sessionCookie), 'x-forwarded-for': forwardedFor },
+          headers: { ...buildWishlistHeaders(sessionCookie, wishlistCookie), 'x-forwarded-for': forwardedFor },
         });
         responses.push(res);
       }
 
-      // 30 回目までは上限に掛からない（追加済み・存在しない商品などの応答はあり得る）。
+      // 印を付けた30 回目までは上限に掛からない（追加済み・存在しない商品などの応答はあり得る）。
       for (const res of responses.slice(0, 30)) {
         expect([201, 409, 400, 404]).toContain(res.status());
       }
 
-      // 31 回目以降はセッション単位の上限で 429 になり、再試行までの秒数を返す。
+      // 印を付けた31 回目以降は持ち主単位の上限で 429 になり、再試行までの秒数を返す。
       // 以前はここを「429 があれば 429 であること」としか確かめておらず、上限が一度も
       // 効いていなかった不具合（FREQ-360）を見逃していた。
       for (const res of responses.slice(30)) {
@@ -204,16 +253,20 @@ test.describe('FR-WISHLIST-011 Security - Private Items, Zod Validation, Rate Li
 
       expect([201, 409]).toContain(addRes.status());
 
-      // 2. GET で取得
+      // 2. GET で取得（追加で付いた持ち主の印を付ける。印が無いと持ち主の無い空の一覧が返り、3. が空振りになる）
+      const wishlistCookie = readWishlistCookie(addRes);
+      expect(wishlistCookie).toBeTruthy();
+      const cookie = buildCookieHeader(sessionCookie, wishlistCookie);
       const getRes = await request.get('/api/wishlist', {
-        headers: sessionCookie ? { Cookie: `session_id=${sessionCookie}` } : {},
+        headers: cookie ? { Cookie: cookie } : {},
       });
 
       expect(getRes.status()).toBe(200);
       const data = await getRes.json();
 
       // 3. 取得したアイテムにはすべて items が存在する（published 確認済み）
-      if (Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data)) {
+        expect(data.length).toBeGreaterThan(0);
         for (const item of data) {
           expect(item.items).not.toBeNull();
           expect(item.items.status).toBe('published');
@@ -240,9 +293,10 @@ test.describe('FR-WISHLIST-011 Security - Private Items, Zod Validation, Rate Li
 
       expect([201, 409]).toContain(goodRes.status());
 
-      // 3. GET で正常に取得
+      // 3. GET で正常に取得（正常な POST で付いた持ち主の印を付ける）
+      const cookie = buildCookieHeader(sessionCookie, readWishlistCookie(goodRes));
       const getRes = await request.get('/api/wishlist', {
-        headers: sessionCookie ? { Cookie: `session_id=${sessionCookie}` } : {},
+        headers: cookie ? { Cookie: cookie } : {},
       });
 
       expect(getRes.status()).toBe(200);

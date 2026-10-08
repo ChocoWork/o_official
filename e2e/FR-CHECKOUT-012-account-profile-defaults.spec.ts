@@ -3,6 +3,7 @@ import { injectTurnstileToken } from './turnstile-test-utils';
 import { setLoginTwoFactorCookie } from './auth-2fa-test-utils';
 import { mockOtpAuthentication } from './account-test-utils';
 import { stubCheckoutSessionApis } from './checkout-test-utils';
+import { sampleCartItem, toCartJson } from './shop-test-utils';
 
 test.describe('FR-CHECKOUT-012 account profile defaults', () => {
   test('ログイン済みユーザーは account の登録情報が配送情報初期値に入る', async ({ page }) => {
@@ -20,27 +21,29 @@ test.describe('FR-CHECKOUT-012 account profile defaults', () => {
       });
     });
 
+    // カートの窓口の応答（CartJson）
     await page.route('**/api/cart', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([
-          {
-            id: 'cart-1',
-            item_id: 1,
-            quantity: 1,
-            color: 'Black',
-            size: 'M',
-            added_at: '2026-04-18T00:00:00.000Z',
-            items: {
-              id: 1,
-              name: 'Silk Blouse',
-              price: 12000,
-              image_url: '/images/test-item.jpg',
-              category: 'tops',
-            },
-          },
-        ]),
+        body: JSON.stringify(
+          toCartJson([
+            sampleCartItem({
+              id: 'cart-1',
+              item_id: 1,
+              quantity: 1,
+              color: 'Black',
+              size: 'M',
+              items: {
+                id: 1,
+                name: 'Silk Blouse',
+                price: 12000,
+                image_url: '/images/test-item.jpg',
+                category: 'tops',
+              },
+            }),
+          ]),
+        ),
       });
     });
 

@@ -20,12 +20,8 @@ test.describe('FR-ITEM-DETAIL-004/006/007/008 item detail actions and stock', ()
     await page.getByRole('button', { name: 'ADD TO CART' }).first().click();
 
     await expect.poll(() => cartMocks.postBodies.length).toBe(1);
-    expect(cartMocks.postBodies[0]).toMatchObject({
-      item_id: 101,
-      quantity: 1,
-      color: 'Black',
-      size: 'M',
-    });
+    // カートの窓口へはバリアントの番号を送る。Black / M の番号は sampleItemDetail の variantAvailability の 1012
+    expect(cartMocks.postBodies[0]).toEqual({ items: [{ id: 1012, quantity: 1 }] });
 
     await expect(page.getByRole('button', { name: 'Add to wishlist' }).first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'ADD TO CART' }).last()).toBeVisible();
@@ -36,7 +32,7 @@ test.describe('FR-ITEM-DETAIL-004/006/007/008 item detail actions and stock', ()
     const madeToOrderItem = sampleItemDetail({
       sizes: ['M'],
       madeToOrder: true,
-      variantAvailability: [{ colorName: 'Black', sizeLabel: 'M', inStock: false }],
+      variantAvailability: [{ colorName: 'Black', sizeLabel: 'M', inStock: false, variantId: 1012 }],
     });
     await mockCartApis(page, []);
     await mockItemDetailApis(page, madeToOrderItem, []);

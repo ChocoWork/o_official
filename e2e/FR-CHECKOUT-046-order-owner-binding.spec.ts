@@ -1,8 +1,9 @@
 /**
  * FR-CHECKOUT-046 ログイン客の注文の持ち主（グループ C）
  * 対応 FREQ: FREQ-426（AC-01・AC-03）・FREQ-427（AC-01・AC-02）。FREQ-426-AC-02 は DB 結合テスト（checkout_order_owner_binding）で確かめる。
- * FREQ-427 の2つは、サーバーが断る経路が違う。AC-01 はログインでカートの印が新しくなるので 403（決済の画面がこのカートのものでない）、
- * AC-02 はカートの印が残ったままログインの Cookie だけが無くなるので、買い手を比べて 409 login_changed（設計書 4-3）。
+ * FREQ-427 の2つは、サーバーが断る経路が違う。AC-01 はログインで決済の流れの印（session_id の Cookie）が新しくなるので 403（決済の画面がこの決済の流れのものでない）、
+ * AC-02 は決済の流れの印が残ったままログインの Cookie だけが無くなるので、買い手を比べて 409 login_changed（設計書 4-3）。
+ * カートの印は cart の Cookie で、session_id とは別物（この試験が使う session_id は決済の流れの印）。
  * 会員は手元の Supabase に試験ごとに作る（e2e/member-session-helpers.ts）。手元以外では動かない。
  */
 import { createClient } from '@supabase/supabase-js';
@@ -14,7 +15,7 @@ import { createTestMember, loginAsMember, type TestMember } from './member-sessi
 
 const LOGIN_CHANGED = 'ログインの状態が変わりました。もう一度「確認へ進む」を押してください。';
 const LOGIN_COOKIE_NAMES = ['sb-access-token', 'sb-refresh-token', 'sb-csrf-token'];
-const CART_COOKIE_NAME = 'session_id';
+const CHECKOUT_SESSION_COOKIE_NAME = 'session_id';
 
 /** 会員の入力画面。メールアドレスはアカウントのもので読み取り専用なので、ほかの欄だけを埋める */
 async function fillMemberShippingForm(page: Page, member: TestMember): Promise<void> {
@@ -47,9 +48,9 @@ async function orderIdsShippedTo(email: string): Promise<string[]> {
   return (data ?? []).map((order: { id: string }) => order.id);
 }
 
-/** このカート（session_id の Cookie の値）の注文。注文はカートの印を持つので、持ち主やメールが違っても拾える */
-async function orderIdsOfCart(cartSessionId: string): Promise<string[]> {
-  const { data, error } = await localDb().from('orders').select('id').eq('session_id', cartSessionId);
+/** この決済の流れ（session_id の Cookie の値）の注文。注文は決済の流れの印を持つので、持ち主やメールが違っても拾える */
+async function orderIdsOfCheckoutSession(checkoutSessionCookie: string): Promise<string[]> {
+  const { data, error } = await localDb().from('orders').select('id').eq('session_id', checkoutSessionCookie);
   if (error) throw new Error('手元の注文を読めない');
   return (data ?? []).map((order: { id: string }) => order.id);
 }
@@ -84,7 +85,7 @@ test.describe('FR-CHECKOUT-046 ログイン客の注文の持ち主', () => {
       if (!seeded.ok) return;
       await stubPostalCode(page);
 
-      // 別のブラウザに戻った形にするため、完了の要求だけ、ログインの Cookie を外して送る（カートの Cookie は残す）。
+      // 別のブラウザに戻った形にするため、完了の要求だけ、ログインの Cookie を外して送る（決済の流れの印などの Cookie は残す）。
       // route.continue の headers では Cookie を書き換えられない（Playwright は Cookie などの見出しの上書きを捨てる）。
       // そこで route.fetch に Cookie の見出しを自分で組んで渡す（見出しがあれば、Playwright は Cookie の保管庫を引かない）。
       const completeCalls: Array<{
@@ -125,13 +126,13 @@ test.describe('FR-CHECKOUT-046 ログイン客の注文の持ち主', () => {
       const orderNumber = (await page.getByText(/^ORD-[0-9A-F]{8}$/).textContent()) ?? '';
       expect(orderNumber).toMatch(/^ORD-[0-9A-F]{8}$/);
 
-      // 完了の要求は、ログインの Cookie が無く、カートの Cookie だけで通った（外した Cookie は、実際にブラウザにあったもの）。
+      // 完了の要求は、ログインの Cookie が無く、決済の流れの印（session_id の Cookie）だけで通った（外した Cookie は、実際にブラウザにあったもの）。
       // その時点で持ち主は書かれていた（注文を作った「注文する」の受け付けが書いた）
       expect(completeCalls.length).toBeGreaterThanOrEqual(1);
       for (const call of completeCalls) {
         expect(call.status).toBe(200);
         expect(call.ownedOrderCountBefore).toBe(1);
-        expect(call.sentCookieNames).toContain(CART_COOKIE_NAME);
+        expect(call.sentCookieNames).toContain(CHECKOUT_SESSION_COOKIE_NAME);
         for (const name of LOGIN_COOKIE_NAMES) {
           expect(call.sentCookieNames).not.toContain(name);
           expect(call.strippedCookieNames).toContain(name);
@@ -160,12 +161,12 @@ test.describe('FR-CHECKOUT-046 ログイン客の注文の持ち主', () => {
       await fillMemberShippingForm(page, member);
       await proceedToFinal(page);
 
-      // アクセスの印だけを同じ属性で置き換える。更新・CSRF・カートの印は残し、期限切れからの更新を通す。
+      // アクセスの印だけを同じ属性で置き換える。更新・CSRF・決済の流れの印は残し、期限切れからの更新を通す。
       // Cookie の値は、比較が失敗しても差分に出さない。
       const cookiesBefore = await context.cookies();
       const accessCookie = cookiesBefore.find((cookie) => cookie.name === 'sb-access-token');
       if (!accessCookie) throw new Error('ログインのアクセスの印がブラウザに無い');
-      const preservedNames = ['sb-refresh-token', 'sb-csrf-token', CART_COOKIE_NAME];
+      const preservedNames = ['sb-refresh-token', 'sb-csrf-token', CHECKOUT_SESSION_COOKIE_NAME];
       for (const name of preservedNames) {
         expect(cookiesBefore.some((cookie) => cookie.name === name)).toBe(true);
       }
@@ -241,8 +242,8 @@ test.describe('FR-CHECKOUT-046 ログイン客の注文の持ち主', () => {
       await loginAsMember(other, member);
       await other.close();
 
-      // ログインはカートの印（session_id の Cookie）を新しい値に替える（セッション固定への守り）。
-      // だから、このタブの決済の画面は今のカートのものでなくなり、サーバーは買い手を比べる前に 403 forbidden で断る（設計書 4-3）。
+      // ログインは決済の流れの印（session_id の Cookie）を新しい値に替える（セッション固定への守り）。
+      // だから、このタブの決済の画面は今の決済の流れのものでなくなり、サーバーは買い手を比べる前に 403 forbidden で断る（設計書 4-3）。
       // 画面はこの 403 を、買い手の比べで断られた時（FREQ-427-AC-02 の 409 login_changed）と同じ案内・入力画面への戻しにする
       const placeOrderResponse = waitForPlaceOrderResponse(page);
       await placeOrderWithTestCard(page);
@@ -272,11 +273,11 @@ test.describe('FR-CHECKOUT-046 ログイン客の注文の持ち主', () => {
       await fillMemberShippingForm(page, member);
       await proceedToFinal(page);
 
-      // ログインの失効・別の端末からのログアウトの形にする。ログインの Cookie だけを外し、カートの印（session_id）は残す。
-      // 印が残るので、サーバーは決済の画面がこのカートのものと認め、買い手を比べて（会員だった下書きに、今はゲスト）断る
+      // ログインの失効・別の端末からのログアウトの形にする。ログインの Cookie だけを外し、決済の流れの印（session_id）は残す。
+      // 印が残るので、サーバーは決済の画面がこの決済の流れのものと認め、買い手を比べて（会員だった下書きに、今はゲスト）断る
       const cookiesBefore = await context.cookies();
-      const cartSessionId = cookiesBefore.find((cookie) => cookie.name === CART_COOKIE_NAME)?.value;
-      if (!cartSessionId) throw new Error('カートの印（session_id）がブラウザに無い');
+      const checkoutSessionCookie = cookiesBefore.find((cookie) => cookie.name === CHECKOUT_SESSION_COOKIE_NAME)?.value;
+      if (!checkoutSessionCookie) throw new Error('決済の流れの印（session_id）がブラウザに無い');
       for (const name of LOGIN_COOKIE_NAMES) {
         // 外す対象が最初から無い、という空振りを防ぐ
         expect(cookiesBefore.map((cookie) => cookie.name)).toContain(name);
@@ -286,7 +287,7 @@ test.describe('FR-CHECKOUT-046 ログイン客の注文の持ち主', () => {
       for (const name of LOGIN_COOKIE_NAMES) {
         expect(cookiesAfter).not.toContain(name);
       }
-      expect(cookiesAfter).toContain(CART_COOKIE_NAME);
+      expect(cookiesAfter).toContain(CHECKOUT_SESSION_COOKIE_NAME);
 
       const placeOrderResponse = waitForPlaceOrderResponse(page);
       await placeOrderWithTestCard(page);
@@ -298,9 +299,9 @@ test.describe('FR-CHECKOUT-046 ログイン客の注文の持ち主', () => {
       await expect(page.getByRole('heading', { name: '注文内容の最終確認' })).toBeHidden();
       await expect(page.getByRole('button', { name: '確認へ進む' })).toBeVisible();
 
-      // 注文は作られていない（その会員の注文も、このカートの注文も無い）
+      // 注文は作られていない（その会員の注文も、この決済の流れの注文も無い）
       expect(await orderIdsOwnedBy(member.userId)).toHaveLength(0);
-      expect(await orderIdsOfCart(cartSessionId)).toHaveLength(0);
+      expect(await orderIdsOfCheckoutSession(checkoutSessionCookie)).toHaveLength(0);
     });
   }
 });

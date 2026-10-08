@@ -1,6 +1,7 @@
 import { expect, Page } from '@playwright/test';
 import { injectTurnstileToken } from './turnstile-test-utils';
 import { setLoginTwoFactorCookie } from './auth-2fa-test-utils';
+import { toCartJson } from './shop-test-utils';
 
 export async function mockOtpAuthentication(page: Page, email = 'user@example.com') {
   await page.route('**/api/auth/login', async (route) => {
@@ -38,6 +39,19 @@ export async function mockOtpAuthentication(page: Page, email = 'user@example.co
         },
       }),
     });
+  });
+
+  // カートとお気に入りの読み込みは会員の印を確かめる。偽の印のままだと実 API が 401 を返し、画面が印の更新を
+  // 呼んで（失敗して）ログインの Cookie を消すため、後の認証モックが効かなくなる。読み込みは空で固定する
+  await page.route('**/api/cart', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(toCartJson([])) });
+  });
+  await page.route('**/api/wishlist', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
 }
 

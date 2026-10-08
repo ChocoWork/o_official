@@ -74,7 +74,7 @@ test.describe('FR-CHECKOUT-025 checkout の CSP が Stripe の決済フォーム
   test.use({ locale: 'ja-JP' });
 
   // CSP の実際の効き目は本物の Stripe.js と決済フォームでしか確かめられない。
-  // create-session は session_id クッキーに紐づく carts テーブルを直接読むので、
+  // create-session は cart クッキー（会員は会員の ID）で決まる持ち主のカートを直接読むので、
   // FR-CHECKOUT-022 と同じく実カートを作り、Stripe テストモードのセッションを使う。
   test.beforeEach(async ({ page }) => {
     await recordCspViolations(page);

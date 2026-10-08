@@ -30,11 +30,12 @@ async function gotoCompletedCheckout(page: Page): Promise<void> {
   await stubCheckoutSessionApis(page);
   await stubResumePaymentDone(page);
   await rememberPaymentAttemptBeforeLoad(page, 'cs_test_guest_register_prompt');
+  // 空のカートの窓口の応答（CartJson）
   await page.route('**/api/cart', (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify([]),
+      body: JSON.stringify({ item_count: 0, currency: 'JPY', items_subtotal_price: 0, total_price: 0, items: [] }),
     }),
   );
   await page.route('**/api/profile', (route) =>

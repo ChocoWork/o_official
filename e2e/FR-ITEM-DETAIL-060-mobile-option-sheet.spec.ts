@@ -73,12 +73,8 @@ test.describe('FR-ITEM-DETAIL-060 モバイル選択シート', () => {
     await sheetCta.click();
 
     await expect.poll(() => cartMocks.postBodies.length).toBe(1);
-    expect(cartMocks.postBodies[0]).toMatchObject({
-      item_id: 101,
-      quantity: 1,
-      color: 'Ivory',
-      size: 'M',
-    });
+    // カートの窓口へは選んだ色・サイズのバリアントの番号を送る。Ivory / M の番号は sampleItemDetail の 1022
+    expect(cartMocks.postBodies[0]).toEqual({ items: [{ id: 1022, quantity: 1 }] });
     await expect(sheet(page)).toBeHidden();
   });
 
@@ -95,7 +91,8 @@ test.describe('FR-ITEM-DETAIL-060 モバイル選択シート', () => {
     await cta.click();
 
     await expect.poll(() => cartMocks.postBodies.length).toBe(1);
-    expect(cartMocks.postBodies[0]).toMatchObject({ color: 'Black', size: 'M' });
+    // 各1つの選択肢は自動で選ばれる。Black / M の番号は sampleItemDetail の 1012
+    expect(cartMocks.postBodies[0]).toEqual({ items: [{ id: 1012, quantity: 1 }] });
     await expect(sheet(page)).toBeHidden();
   });
 

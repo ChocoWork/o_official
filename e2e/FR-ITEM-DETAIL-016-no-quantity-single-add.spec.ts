@@ -32,16 +32,17 @@ for (const viewport of [
       const ok = await gotoFirstItemDetail(page);
       test.skip(!ok, '公開商品データがないためスキップ');
 
-      // カート API をモックして送信ペイロードを検証する
+      // カートの追加の窓口（POST /api/cart/add）をモックして送信ペイロードを検証する。
+      // 本文は { items: [{ id: バリアントの番号, quantity }] } で、数量は items の先頭の明細にある
       let sentQuantity: number | null = null;
-      await page.route('**/api/cart', async (route) => {
+      await page.route('**/api/cart/add', async (route) => {
         if (route.request().method() === 'POST') {
-          const body = route.request().postDataJSON() as { quantity?: number };
-          sentQuantity = body?.quantity ?? null;
+          const body = route.request().postDataJSON() as { items?: Array<{ quantity?: number }> };
+          sentQuantity = body?.items?.[0]?.quantity ?? null;
           await route.fulfill({
             status: 200,
             contentType: 'application/json',
-            body: JSON.stringify({ success: true }),
+            body: JSON.stringify({ items: [] }),
           });
           return;
         }

@@ -50,17 +50,20 @@ async function openCart(
     });
   });
 
-  // mockCartApis のあとに登録して DELETE だけ上書きする
-  await page.route('**/api/cart/*', async (route) => {
-    if (route.request().method() !== 'DELETE') {
+  // mockCartApis のあとに登録して、削除（数量0の変更）だけ上書きする。
+  // 削除は POST /api/cart/change の数量0なので、数量1以上の変更と、成功させる時は mockCartApis に任せる
+  await page.route('**/api/cart/change', async (route) => {
+    const body = route.request().postDataJSON() as { quantity?: number } | null;
+    if (cartDeleteStatus === 200 || body?.quantity !== 0) {
       await route.fallback();
       return;
     }
 
+    // 窓口の断りの形（Shopify の Ajax Cart API と同じ）。画面は description をそのまま通知に出す
     await route.fulfill({
       status: cartDeleteStatus,
       contentType: 'application/json',
-      body: JSON.stringify(cartDeleteStatus === 200 ? { success: true } : { error: 'failed' }),
+      body: JSON.stringify({ status: cartDeleteStatus, message: 'Cart Error', description: '削除に失敗しました' }),
     });
   });
 

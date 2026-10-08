@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { sampleCartItem, toCartJson } from './shop-test-utils';
 
 /**
  * FREQ-309 ヘッダーのカート点数バッジ。
@@ -21,11 +22,12 @@ test.describe('FR-HEADER-008 header cart count badge', () => {
       page,
     }) => {
       let quantity = 3;
+      // バッジの点数は窓口の item_count（CartJson）を読む。quantity 点の明細1行か、空のカートを返す
       await page.route('**/api/cart', (route) =>
         route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify(quantity > 0 ? [{ quantity }] : []),
+          body: JSON.stringify(toCartJson(quantity > 0 ? [sampleCartItem({ quantity })] : [])),
         }),
       );
 

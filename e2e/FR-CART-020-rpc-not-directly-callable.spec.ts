@@ -1,17 +1,19 @@
 import { expect, test } from '@playwright/test';
 
-// FREQ-322: ゲストカートの SECURITY DEFINER 関数を PostgREST の RPC 面から外す
+// FREQ-322: カート・お気に入りの SECURITY DEFINER 関数を PostgREST の RPC 面から外す
 //
-// 所有権の判定は「引数 _session_id と carts.session_id の一致」だけなので、
-// anon に EXECUTE が開いているとアプリのレート制限・監査ログ・Origin 検査を
-// 素通りして直接叩けてしまう。ここでは「anon から呼べないこと」を見る。
+// 持ち主の判定（cart・wishlist の Cookie の印の照合、会員の確かめ）はアプリの窓口が行い、
+// DB の関数は渡されたカートの番号・会員の ID をそのまま信じる。anon に EXECUTE が開いていると、
+// アプリのレート制限・監査ログ・Origin 検査を素通りして、他人のカートの変更や
+// ゲストの分の会員への合わせ込みを直接叩けてしまう。ここでは「anon から呼べないこと」を見る。
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
 const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
 const RPCS = [
-  { name: 'delete_cart_item_secure', body: { _cart_id: '00000000-0000-0000-0000-000000000000', _session_id: 'probe' } },
-  { name: 'update_cart_item_quantity_secure', body: { _cart_id: '00000000-0000-0000-0000-000000000000', _session_id: 'probe', _quantity: 1 } },
+  { name: 'cart_add_lines', body: { _cart_id: '00000000-0000-0000-0000-000000000000', _lines: [{ variant_id: 1, quantity: 1 }] } },
+  { name: 'cart_change_line', body: { _cart_id: '00000000-0000-0000-0000-000000000000', _line_id: '00000000-0000-0000-0000-000000000000', _quantity: 1 } },
+  { name: 'merge_guest_into_member', body: { _user_id: '00000000-0000-0000-0000-000000000000', _cart_token_hash: null, _wishlist_token_hash: null } },
 ];
 
 test.describe('FR-CART-020 guest cart RPC is not reachable from the browser role', () => {

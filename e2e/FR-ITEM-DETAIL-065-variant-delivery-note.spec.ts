@@ -16,8 +16,8 @@ function itemWithMixedStock() {
     sizes: ['M', 'L'],
     madeToOrder: false,
     variantAvailability: [
-      { colorName: 'Black', sizeLabel: 'M', inStock: true },
-      { colorName: 'Black', sizeLabel: 'L', inStock: false },
+      { colorName: 'Black', sizeLabel: 'M', inStock: true, variantId: 1012 },
+      { colorName: 'Black', sizeLabel: 'L', inStock: false, variantId: 1013 },
     ],
   });
 }
@@ -73,7 +73,7 @@ for (const viewport of viewports) {
         colors: [{ hex: '#000000', name: 'Black' }],
         sizes: ['M'],
         madeToOrder: true,
-        variantAvailability: [{ colorName: 'Black', sizeLabel: 'M', inStock: false }],
+        variantAvailability: [{ colorName: 'Black', sizeLabel: 'M', inStock: false, variantId: 1012 }],
       });
       await mockCartApis(page, []);
       await mockItemDetailApis(page, item, []);

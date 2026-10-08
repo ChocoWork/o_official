@@ -77,10 +77,15 @@ test.describe('FR-CHECKOUT-045 在庫ありの注文と確定メール', () => {
       if (!mailUrl || !isLocalUrl(mailUrl)) throw new Error('手元のメール受け（MAIL_LOCAL_URL）が無い');
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       await page.goto('/');
-      await page.evaluate(async (line) => {
-        const response = await fetch('/api/cart', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(line) });
-        if (!response.ok) throw new Error(`/api/cart returned ${response.status}`);
-      }, { item_id: variant.item_id, color: variant.color.name, size: variant.size.label, quantity: 1 });
+      // カートの窓口はバリアントの番号で受ける。DB から選んだこのバリアントの番号（variant.id）をそのまま送る
+      await page.evaluate(async (variantId) => {
+        const response = await fetch('/api/cart/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: [{ id: variantId, quantity: 1 }] }),
+        });
+        if (!response.ok) throw new Error(`/api/cart/add returned ${response.status}`);
+      }, variant.id);
       await stubPostalCode(page);
       const email = `e2e-in-stock-${viewport.name}-${Date.now()}@example.com`;
       await page.goto('/checkout');
