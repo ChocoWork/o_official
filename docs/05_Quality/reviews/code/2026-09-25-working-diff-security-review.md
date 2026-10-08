@@ -20,7 +20,7 @@
 | R-12 | P2 | 解消（グループ F） | プロモーションコード削除のStripeエラーを画面が見落とす |
 | R-13 | P1 | 未修正 | 任意の色・サイズをカートへ入れて支払済み注文にできる |
 | R-14 | P2 | 未修正 | メール送信権のDB取得失敗時に重複送信を許す |
-| R-15 | P2 | 未修正 | 色・サイズとバリアントの同期が管理画面の在庫欄を開いたときだけ走る |
+| R-15 | P2 | 修正済み（2026-10-09） | 色・サイズとバリアントの同期が管理画面の在庫欄を開いたときだけ走る |
 | R-16 | P3 | 要方針決定 | 未発送の全額返金で取消になっても引当在庫を台帳へ戻さない |
 | R-17 | P3 | 未修正 | ウィッシュリストのカードに「受注生産」が出ない |
 | R-18 | P3 | 未修正 | 管理者の未入金注文キャンセルで注文履歴に実行者が残らない |
@@ -163,6 +163,7 @@
 - **箇所**: [variants route](../../../../src/app/api/admin/items/[id]/variants/route.ts) 56〜64行（`backfill_item_variants` の唯一の呼び出し元）、[resolve_checkout_item_variants](../../../../supabase/migrations/20260921035818_wire_variant_stock_on_order.sql) 36〜74行、[variant_backorder_summary](../../../../supabase/migrations/20260919065518_add_variant_backorder_summary.sql) 10〜11行、[ItemForm](../../../../src/app/admin/item/ItemForm.tsx) 364行。
 - **再現経路**: 商品を新規作成すると一覧（`/admin?tab=ITEM`）へ戻り、編集画面の在庫欄は開かれない。本番の items のトリガーは `trg_items_updated_at` だけ（MCPで確認）なので item_variants は作られない。この間に購入されると variant_id=NULL・backorder の明細になり、集計ビューは `variant_id IS NOT NULL` だけを数えるため受注生産数から永続的に漏れる。商品詳細も組合せが空なので納期表示が出ない（FREQ-400-REQ-02）。
 - **修正方針**: 商品の作成・更新と同じトランザクションでバリアントを同期する（RPC化、または colors/sizes 変更のトリガー）。R-08 と同じ根本原因なので1か所で直す。バリアント生成時に NULL の明細を再照合するかも決める。GET に書き込みの副作用がある点もここで解消する。
+- **修正（2026-10-09）**: カートとお気に入りの引き継ぎ（[設計書](../../../superpowers/specs/2026-10-08-cart-wishlist-carryover-design.md)）の全体レビューで同じ問題が見つかり、[移行 20261008220958_item_variant_sync.sql](../../../../supabase/migrations/20261008220958_item_variant_sync.sql) で `items` に `AFTER INSERT OR UPDATE OF colors, sizes` のトリガーを足し、商品の作成・色やサイズの変更と同じ取引で `backfill_item_variants` を呼ぶ形にした（本番に適用済み。適用時に全商品を一度そろえ、組み合わせの欠けた公開中の商品が0件なことを確かめた）。管理画面の保存は色の名前・サイズの重なりを 400 で断る。外した色・サイズのバリアントを止める R-08 は未修正のまま。
 
 ### R-16 未発送の全額返金で取消になっても引当在庫を台帳へ戻さない
 
