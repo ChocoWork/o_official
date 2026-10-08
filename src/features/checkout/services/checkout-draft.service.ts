@@ -50,6 +50,18 @@ const normalizedEmailSchema = z.preprocess(
   z.string().email().max(254).optional()
 );
 
+/**
+ * メールアドレスを、ゲストが入力した配送先のメールと同じ整え（NFKC・前後の空白・小文字、形の確かめ）にする。
+ * 使えない値（空・メールの形でない・長すぎる・文字列でない）は undefined。
+ *
+ * 会員のログインのメール（検証済みの claims.email）を注文のメールに使う時に通す。ゲストの入力と整えが
+ * 食い違うと、同じメールが大文字小文字・全角の違いで別の見分けの値（別の下書き）になる。
+ */
+export function normalizeCheckoutEmail(value: unknown): string | undefined {
+  const parsed = normalizedEmailSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
+
 const normalizedFullNameSchema = z.preprocess(
   normalizeOptionalText,
   z

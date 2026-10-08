@@ -40,18 +40,38 @@ const PROFILE = {
 // プロフィールと住所帳の応答。既定は今までどおり（プロフィールだけが返り、住所帳は失敗する）。
 // 入り直しのテストが、中身と返るタイミング（門が開くまで待つ）を差し替える
 let mockProfileBody: unknown = PROFILE;
-// 200 以外ならプロフィールの入口は失敗を返す。ゲストは 401（保存済みの配送先も同じく失敗にするので mockSavedAddresses を null にする）
+// 200 以外ならプロフィールの入口は失敗を返す。ゲストは 401（保存済みの配送先も同じく失敗にするので mockSavedAddresses を null にする）。
+// 0 は通信の失敗（投げる）
 let mockProfileStatus = 200;
 let mockSavedAddresses: unknown[] | null = null;
 let mockProfileGate: Promise<void> | null = null;
 let mockAddressesGate: Promise<void> | null = null;
+// プロフィールを読む通信が呼ばれた順に使う応答。空なら上の既定を使う。読み直しが重なる試験で、呼び出しごとに中身と終わる時を決める
+const mockProfileQueue: Array<{ body: unknown; gate?: Promise<void> }> = [];
+// 保存の通信（GET 以外）の結果。200 以外なら失敗を返す
+let mockWriteStatus = 200;
 // 画面がプロフィール・保存済みの配送先を読んだ回数を数える（読み直しの有無を確かめる）
 const mockClientFetchUrls: string[] = [];
+// 保存の通信（"POST /api/profile" の形）。ゲストに前の会員の保存を試みさせていないことを確かめる
+const mockClientFetchWrites: string[] = [];
 jest.mock('@/lib/client-fetch', () => ({
-  clientFetch: async (url: string) => {
+  clientFetch: async (url: string, init?: { method?: string }) => {
     mockClientFetchUrls.push(url);
+    const method = init?.method ?? 'GET';
+    if (method !== 'GET') {
+      mockClientFetchWrites.push(`${method} ${url}`);
+      return { ok: mockWriteStatus === 200, status: mockWriteStatus, json: async () => ({}) };
+    }
     if (url === '/api/profile') {
+      const queued = mockProfileQueue.shift();
+      if (queued) {
+        await queued.gate;
+        return { ok: true, json: async () => queued.body };
+      }
       await mockProfileGate;
+      if (mockProfileStatus === 0) {
+        throw new TypeError('Failed to fetch');
+      }
       if (mockProfileStatus !== 200) {
         return { ok: false, status: mockProfileStatus, json: async () => ({ error: 'Unauthorized' }) };
       }
@@ -129,6 +149,14 @@ const MEMBER_B_SHIPPING = {
   address: '梅田2-2-2',
   building: '',
   phone: '06-6111-2222',
+};
+// 読み直しが重なる試験で使う、3人目の会員 C（B とも重ならない）
+const MEMBER_C = {
+  email: 'c@example.com',
+  fullName: '鈴木 三郎',
+  kanaName: 'スズキ サブロウ',
+  phone: '0521112222',
+  address: { postalCode: '4600001', prefecture: '愛知県', city: '名古屋市中区', address: '栄3-3-3', building: '' },
 };
 const GUEST_INPUT = {
   email: 'guest@example.com',
@@ -277,11 +305,14 @@ describe('決済の画面（グループ F）', () => {
     mockSavedAddresses = null;
     mockProfileGate = null;
     mockAddressesGate = null;
+    mockProfileQueue.length = 0;
+    mockWriteStatus = 200;
     mockIsLoggedIn = true;
     mockIsAuthResolved = true;
     // clearAllMocks は実装を消さない。ログインの状態を書き換える実装を、次のテストに持ち越さない
     mockRefreshAuthState.mockReset();
     mockClientFetchUrls.length = 0;
+    mockClientFetchWrites.length = 0;
     window.scrollTo = jest.fn() as unknown as typeof window.scrollTo;
     (global as any).fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => CART });
     mockApi.resumeCheckout.mockResolvedValue({ state: 'none' });
@@ -1128,6 +1159,298 @@ describe('決済の画面（グループ F）', () => {
       fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
       await screen.findByTestId('final-step');
       expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(3);
+    });
+
+    // ログインはカートの印（session_id）を新しくするので、ゲストで「確認へ進む」の後にログインして「注文する」を押すと、
+    // サーバーは 403 で断る（設計書 4-3）。checkout-api がこれを login_changed の断りに読み替えるので、画面は同じ扱いになる。
+    // 読み直すカートは新しい印のカートで、ゲストのカートは引き継がれていない（今の仕組み）
+    test('ログインでカートの印が新しくなって断られた（403 を読み替えた login_changed）時も、入力画面に戻して案内を出し、新しい空のカートと会員の内容を読み直す', async () => {
+      await openFinalStepAsGuest();
+      loginAsMemberBElsewhere();
+      (global.fetch as jest.Mock).mockResolvedValue({ ok: true, json: async () => [] });
+
+      await act(async () => {
+        mockFinalProps.onRejected({ code: 'login_changed', message: LOGIN_CHANGED_MESSAGE, changedLines: [] });
+      });
+
+      expect(screen.queryByTestId('final-step')).toBeNull();
+      expect(screen.getByTestId('checkout-session-error')).toHaveTextContent(LOGIN_CHANGED_MESSAGE);
+      expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
+      expect(mockRefreshAuthState).toHaveBeenCalledTimes(1);
+      expect(cartFetchCount()).toBe(2);
+      expect(await screen.findByText('カートに商品がありません')).toBeInTheDocument();
+      expect(await screen.findByText('b@example.com')).toBeInTheDocument();
+      expect(screen.queryByDisplayValue(GUEST_INPUT.email)).toBeNull();
+      expect(mockRouter.replace).toHaveBeenLastCalledWith('/checkout');
+      expect(mockRouter.push).not.toHaveBeenCalled();
+      // 自動で送り直さない
+      expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(1);
+    });
+
+    // 置き換え（"replace"）で、会員のプロフィールが 401 以外（500・503・通信の失敗）で取れなかった時。
+    // 入力欄は残すが、前の会員の住所帳・選択・保存のチェック・保存の失敗の文は、別の会員の画面に混ぜない
+    describe('置き換えでプロフィールが取れなかった時（401 以外）', () => {
+      const loginChangedError = {
+        kind: 'error', code: 'login_changed', message: LOGIN_CHANGED_MESSAGE, retryable: true, correlationId: null,
+      };
+      // 通信の失敗は、画面が console.error に残す。この中の試験では出力を抑える
+      let consoleError: jest.SpyInstance;
+      beforeEach(() => {
+        consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      });
+      afterEach(() => {
+        consoleError.mockRestore();
+      });
+
+      test.each([
+        ['500', 500],
+        ['503', 503],
+        ['通信の失敗', 0],
+      ])('プロフィールが %s で取れなくても、前の会員の保存済みの配送先の一覧と選択を外し、入力欄は残す', async (_label, status) => {
+        mockSavedAddresses = [SAVED_TOKYO, SAVED_OSAKA];
+        mockApi.requestCheckoutConfirmation.mockResolvedValueOnce(loginChangedError);
+        render(<CheckoutPage />);
+        expect(await screen.findByRole('combobox', { name: '保存済みの配送先' })).toHaveTextContent('〒150-0001');
+        // 別の会員に変わった。プロフィールも住所帳も取れない
+        mockProfileStatus = status;
+        mockSavedAddresses = null;
+
+        fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+
+        expect(await screen.findByText(LOGIN_CHANGED_MESSAGE)).toBeInTheDocument();
+        await settle();
+        expect(screen.queryByRole('combobox', { name: '保存済みの配送先' })).toBeNull();
+        // 入力欄は前の内容のまま（保存済みの配送先を選んでいた形ではなく、入力欄として出る）
+        expect(screen.getByLabelText(/郵便番号/)).toHaveValue('150-0001');
+        expect(screen.getByLabelText(/番地/)).toHaveValue('神宮前1-1-1');
+        expect(screen.getByText('山田 花子')).toBeInTheDocument();
+      });
+
+      test('「この配送先を保存する」のチェックを外す（前の会員が付けた保存を、別の会員に引き継がない）', async () => {
+        mockApi.requestCheckoutConfirmation.mockResolvedValueOnce(loginChangedError);
+        render(<CheckoutPage />);
+        fireEvent.click(await screen.findByRole('checkbox', { name: 'この配送先を保存する' }));
+        expect(screen.getByRole('checkbox', { name: 'この配送先を保存する' })).toBeChecked();
+        mockProfileStatus = 500;
+
+        fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+
+        expect(await screen.findByText(LOGIN_CHANGED_MESSAGE)).toBeInTheDocument();
+        await settle();
+        expect(screen.getByRole('checkbox', { name: 'この配送先を保存する' })).not.toBeChecked();
+      });
+
+      test('お客様情報の保存の失敗の文を消す', async () => {
+        const saveFailed = 'お客様情報の保存に失敗しました。再度お試しください。';
+        mockApi.requestCheckoutConfirmation.mockResolvedValueOnce(loginChangedError);
+        render(<CheckoutPage />);
+        fireEvent.click(await screen.findByRole('button', { name: '変更する' }));
+        mockWriteStatus = 500;
+        fireEvent.click(screen.getByRole('button', { name: '変更を保存' }));
+        expect(await screen.findByText(saveFailed)).toBeInTheDocument();
+        mockWriteStatus = 200;
+        mockProfileStatus = 503;
+
+        fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+
+        expect(await screen.findByText(LOGIN_CHANGED_MESSAGE)).toBeInTheDocument();
+        await settle();
+        expect(screen.queryByText(saveFailed)).toBeNull();
+      });
+    });
+
+    // 置き換えは、最後に始めた読み込みだけを当てる。古い読み込みが遅れて届いても、新しい内容を上書きしない
+    test('読み直しが重なったら、新しく始めた読み込みだけを当てる（遅れて届いた古い読み込みで上書きしない）', async () => {
+      mockIsLoggedIn = false;
+      mockProfileStatus = 401;
+      mockApi.requestCheckoutConfirmation.mockResolvedValue({
+        kind: 'error', code: 'login_changed', message: LOGIN_CHANGED_MESSAGE, retryable: true, correlationId: null,
+      });
+      render(<CheckoutPage />);
+      await typeGuestShipping();
+      // 会員に変わった。1回目の読み直し（B）は遅れて届き、2回目（C）は先に届く
+      const slowB = createDeferred();
+      mockProfileStatus = 200;
+      mockSavedAddresses = [MEMBER_B_ADDRESS];
+      mockProfileQueue.push({ body: MEMBER_B, gate: slowB.promise }, { body: MEMBER_C });
+      mockRefreshAuthState.mockImplementation(async () => {
+        mockIsLoggedIn = true;
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+      await screen.findByText(LOGIN_CHANGED_MESSAGE);
+      await waitFor(() => expect(mockProfileQueue).toHaveLength(1));
+      fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+
+      expect(await screen.findByText('c@example.com')).toBeInTheDocument();
+      await act(async () => {
+        slowB.resolve();
+      });
+      await settle();
+      expect(screen.getByText('c@example.com')).toBeInTheDocument();
+      expect(screen.getByText('鈴木 三郎')).toBeInTheDocument();
+      expect(screen.queryByText('b@example.com')).toBeNull();
+      expect(screen.queryByText('佐藤 次郎')).toBeNull();
+    });
+
+    test('会員の内容を読み込んでいる間に、読み直した結果がゲストと分かったら、遅れて届いた会員の内容で入力欄を置き換えない', async () => {
+      mockIsLoggedIn = false;
+      mockProfileStatus = 401;
+      mockApi.requestCheckoutConfirmation.mockResolvedValue({
+        kind: 'error', code: 'login_changed', message: LOGIN_CHANGED_MESSAGE, retryable: true, correlationId: null,
+      });
+      render(<CheckoutPage />);
+      await typeGuestShipping();
+      // 1回目の読み直しでは会員 B と分かり、プロフィールの読み込みが遅れる
+      const slowB = createDeferred();
+      mockProfileStatus = 200;
+      mockSavedAddresses = [MEMBER_B_ADDRESS];
+      mockProfileQueue.push({ body: MEMBER_B, gate: slowB.promise });
+      mockRefreshAuthState.mockImplementation(async () => {
+        mockIsLoggedIn = true;
+      });
+      fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+      await screen.findByText(LOGIN_CHANGED_MESSAGE);
+      await waitFor(() => expect(mockProfileQueue).toHaveLength(0));
+
+      // B はログアウトした。2回目の読み直しの結果はゲスト
+      mockRefreshAuthState.mockImplementation(async () => {
+        mockIsLoggedIn = false;
+      });
+      fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+      await waitFor(() => expect(mockRefreshAuthState).toHaveBeenCalledTimes(2));
+      await settle();
+      await act(async () => {
+        slowB.resolve();
+      });
+      await settle();
+
+      expect(screen.queryByText('b@example.com')).toBeNull();
+      expect(screen.queryByText('佐藤 次郎')).toBeNull();
+      expect(shippingInputs()).toMatchObject({ email: GUEST_INPUT.email, fullName: GUEST_INPUT.fullName });
+      expect(screen.getByLabelText(/メールアドレス/)).not.toHaveAttribute('readonly');
+    });
+
+    test('読み込みの間に最終確認画面へ進んだら（確認の内容を取り込んだら）、遅れて届いた読み込みで入力欄を置き換えない', async () => {
+      mockIsLoggedIn = false;
+      mockProfileStatus = 401;
+      render(<CheckoutPage />);
+      await typeGuestShipping();
+      // 会員 B に変わった。読み直しは遅れて届く
+      const slowB = createDeferred();
+      mockProfileStatus = 200;
+      mockSavedAddresses = [MEMBER_B_ADDRESS];
+      mockProfileQueue.push({ body: MEMBER_B, gate: slowB.promise });
+      mockRefreshAuthState.mockImplementation(async () => {
+        mockIsLoggedIn = true;
+      });
+      echoDraft();
+      mockApi.requestCheckoutConfirmation.mockResolvedValueOnce({
+        kind: 'error', code: 'login_changed', message: LOGIN_CHANGED_MESSAGE, retryable: true, correlationId: null,
+      });
+      fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+      await screen.findByText(LOGIN_CHANGED_MESSAGE);
+      await waitFor(() => expect(mockProfileQueue).toHaveLength(0));
+
+      // 読み直しが届く前に、もう一度「確認へ進む」を押して最終確認画面へ進んだ（下書きの内容を取り込んだ）
+      fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+      await screen.findByTestId('final-step');
+      await act(async () => {
+        slowB.resolve();
+      });
+      await settle();
+
+      // 「変更」で入力画面へ戻ると、取り込んだ下書きの内容のまま。遅れて届いた B の内容で置き換わっていない
+      await act(async () => {
+        mockFinalProps.onEdit();
+      });
+      expect(screen.getByText(GUEST_INPUT.fullName)).toBeInTheDocument();
+      expect(screen.queryByText('佐藤 次郎')).toBeNull();
+    });
+
+    // 同じ会員のまま（読み直したプロフィールのメールが、今の入力欄のメールと整えた上で同じ）なら置き換えない。
+    // その会員が直した入力と、読み込み済みの保存済みの配送先を消さない
+    test.each([
+      ['同じメール', 'a@example.com'],
+      ['大文字・前後の空白だけが違うメール', ' A@Example.COM '],
+    ])('読み直したプロフィールが今の入力欄と同じ会員（%s）なら、置き換えず、その会員が直した入力を消さない', async (_label, reloadedEmail) => {
+      mockSavedAddresses = [SAVED_TOKYO];
+      mockApi.requestCheckoutConfirmation.mockResolvedValueOnce({
+        kind: 'error', code: 'login_changed', message: LOGIN_CHANGED_MESSAGE, retryable: true, correlationId: null,
+      });
+      render(<CheckoutPage />);
+      fireEvent.click(await screen.findByRole('button', { name: '変更する' }));
+      fireEvent.change(screen.getByLabelText(/電話番号/), { target: { value: '09099998888' } });
+      // 読み直したプロフィールの電話番号は元のまま。置き換われば、直した電話番号が消える
+      mockProfileBody = { ...PROFILE, email: reloadedEmail };
+      const profileReads = mockClientFetchUrls.filter((url) => url === '/api/profile').length;
+
+      fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+
+      expect(await screen.findByText(LOGIN_CHANGED_MESSAGE)).toBeInTheDocument();
+      await waitFor(() => expect(mockClientFetchUrls.filter((url) => url === '/api/profile')).toHaveLength(profileReads + 1));
+      await settle();
+      expect(screen.getByLabelText(/電話番号/)).toHaveValue('090-9999-8888');
+      expect(screen.getByRole('combobox', { name: '保存済みの配送先' })).toHaveTextContent('〒150-0001');
+    });
+
+    // 会員からゲストに変わった（読み直した結果がゲスト）。入力は残し、前の会員の住所帳は外す
+    describe('会員からゲストに変わった時', () => {
+      const authExpiredError = {
+        kind: 'error', code: 'auth_expired', message: LOGIN_EXPIRED_MESSAGE, retryable: true, correlationId: null,
+      };
+
+      function becomeGuestElsewhere() {
+        mockProfileStatus = 401;
+        mockSavedAddresses = null;
+        mockRefreshAuthState.mockImplementation(async () => {
+          mockIsLoggedIn = false;
+        });
+      }
+
+      test('前の会員の保存済みの配送先の一覧と選択を外し、入力は残す', async () => {
+        mockSavedAddresses = [SAVED_TOKYO, SAVED_OSAKA];
+        mockApi.requestCheckoutConfirmation.mockResolvedValueOnce(authExpiredError);
+        render(<CheckoutPage />);
+        expect(await screen.findByRole('combobox', { name: '保存済みの配送先' })).toHaveTextContent('〒150-0001');
+        becomeGuestElsewhere();
+
+        fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+
+        expect(await screen.findByText(LOGIN_EXPIRED_MESSAGE)).toBeInTheDocument();
+        await waitFor(() => expect(screen.queryByRole('combobox', { name: '保存済みの配送先' })).toBeNull());
+        // 入力は残り、ゲストとして直せる形で出る
+        expect(shippingInputs()).toEqual({
+          email: 'a@example.com',
+          fullName: '山田 花子',
+          kanaName: 'ヤマダ ハナコ',
+          phone: '03-1111-2222',
+          postalCode: '150-0001',
+          city: '渋谷区',
+          address: '神宮前1-1-1',
+          building: '',
+        });
+        expect(screen.getByLabelText(/メールアドレス/)).not.toHaveAttribute('readonly');
+      });
+
+      test('「この配送先を保存する」のチェックも外し、押し直してもゲストにプロフィールの保存を試みさせない', async () => {
+        mockApi.requestCheckoutConfirmation
+          .mockResolvedValueOnce(authExpiredError)
+          .mockResolvedValueOnce({ kind: 'confirmation', confirmation: CONFIRMATION });
+        render(<CheckoutPage />);
+        fireEvent.click(await screen.findByRole('checkbox', { name: 'この配送先を保存する' }));
+        becomeGuestElsewhere();
+
+        fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+
+        expect(await screen.findByText(LOGIN_EXPIRED_MESSAGE)).toBeInTheDocument();
+        await settle();
+        // 会員の間に押した時の保存の通信は済んでいる。ここから先の通信だけを見る
+        mockClientFetchWrites.length = 0;
+        fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+        await screen.findByTestId('final-step');
+        expect(mockClientFetchWrites).toEqual([]);
+      });
     });
   });
 

@@ -233,6 +233,12 @@ export async function placeOrder(params: { checkoutSessionId: string; inStockVar
   if (response.status === 409 && data?.error === "payment_done") {
     return { kind: "payment_done", ...(typeof data.checkoutSessionId === "string" ? { checkoutSessionId: data.checkoutSessionId } : {}) };
   }
+  if (response.status === 403 && data?.error === "forbidden") {
+    // ログインはカートの印（session_id）を新しくするので、「確認へ進む」の後にログインすると、決済の画面は今のカートのものでなくなり、
+    // サーバーは買い手を比べる前にこの 403 で断る（設計書 4-3）。お客様には、買い手の比べで断られた時と同じ案内を出して入力画面へ戻す。
+    // サーバーはこの 403 で決済の画面を閉じない（印の合わない要求で他人の決済の画面を閉じさせないため）。画面からも閉じない
+    return { kind: "rejected", rejection: { code: "login_changed", message: LOGIN_CHANGED_MESSAGE, changedLines: [] } };
+  }
   if (response.status === 409 && REJECTION_CODES.includes(data?.error as CheckoutRejectionCode)) {
     const code = data?.error as CheckoutRejectionCode;
     // 画面に出す文はサーバーが付ける。ログインの状態が変わった断りは、文が無くても入力画面へ戻して案内できるよう既定の文を持つ

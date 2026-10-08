@@ -414,6 +414,47 @@ describe("POST /api/checkout/create-session", () => {
       expect(claimParams()[0]._shipping_snapshot.email).toBe("other@example.com");
     });
 
+    // ログインのメールも、ゲストが入力したメールと同じ整え（NFKC・前後の空白・小文字）を通してから使う。
+    // 通さないと、注文のメールの形がゲストと食い違い、同じメールが大文字小文字・全角の違いで別の見分けの値（別の下書き）になる
+    it.each([
+      ["大文字", "Member@Example.COM"],
+      ["前後の空白", "  member@example.com\t"],
+      ["全角", "ｍｅｍｂｅｒ＠ｅｘａｍｐｌｅ．ｃｏｍ"],
+    ])("会員のログインのメールが%sを含んでも、ゲストのメールと同じ整えをして、写しと Stripe の請求先に使う", async (_label, claimsEmail) => {
+      mockCreate.mockResolvedValue({ client_secret: "secret", id: "cs_test" });
+      mockResolveCheckoutBuyer.mockResolvedValue({ kind: "member", userId: "user-1", email: claimsEmail });
+
+      const res = await POST(makeRequest({ shipping: { ...SHIPPING, email: "other@example.com" } }));
+
+      expect(res.status).toBe(200);
+      expect(claimParams()[0]._shipping_snapshot.email).toBe("member@example.com");
+      const stripeParams = mockCreate.mock.calls[0][0] as { customer_email?: string };
+      expect(stripeParams.customer_email).toBe("member@example.com");
+    });
+
+    it("整えると同じになるログインのメールは、見分けの値も同じ（大文字小文字・全角の違いで別の下書きにならない）", async () => {
+      mockCreate.mockResolvedValue({ client_secret: "secret", id: "cs_test" });
+
+      for (const claimsEmail of ["member@example.com", "Member@Example.COM", "ｍｅｍｂｅｒ＠ｅｘａｍｐｌｅ．ｃｏｍ"]) {
+        mockResolveCheckoutBuyer.mockResolvedValue({ kind: "member", userId: "user-1", email: claimsEmail });
+        await POST(makeRequest({}));
+      }
+
+      const fingerprints = claimParams().map((params) => params._request_fingerprint);
+      expect(fingerprints).toHaveLength(3);
+      expect(new Set(fingerprints).size).toBe(1);
+    });
+
+    it("ログインのメールがメールアドレスの形として使えない会員は、ログインのメールが無い会員と同じに、画面のメールで受け付ける", async () => {
+      mockCreate.mockResolvedValue({ client_secret: "secret", id: "cs_test" });
+      mockResolveCheckoutBuyer.mockResolvedValue({ kind: "member", userId: "user-1", email: "not-an-email" });
+
+      const res = await POST(makeRequest({ shipping: { ...SHIPPING, email: "Other@Example.com" } }));
+
+      expect(res.status).toBe(200);
+      expect(claimParams()[0]._shipping_snapshot.email).toBe("other@example.com");
+    });
+
     it("ゲストは画面のメールで受け付け、画面のメールが違えば別の見分けの値になる", async () => {
       mockCreate.mockResolvedValue({ client_secret: "secret", id: "cs_test" });
 

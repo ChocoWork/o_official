@@ -448,3 +448,51 @@ describe('ログインの状態が変わったと断られた時（409 login_cha
     expect(mockClientFetch).toHaveBeenCalledTimes(1);
   });
 });
+
+// ログインはカートの印（session_id の Cookie）を新しい値に替える（セッション固定への守り）。そのため「確認へ進む」の後に
+// ログインして「注文する」を押すと、サーバーは買い手を比べる前に「決済の画面がこのカートのものでない」と 403 forbidden で断る
+// （設計書 4-3）。お客様には、買い手の比べで断られた時（409 login_changed）と同じ案内を出して入力画面へ戻す
+describe('「注文する」が決済の画面はこのカートのものでないと断られた時（403 forbidden）', () => {
+  beforeEach(() => {
+    mockClientFetch.mockReset();
+    mockRefreshSessionOnce.mockReset();
+  });
+
+  test('403 forbidden は、ログインの状態が変わった時の文を持つ断り（login_changed）として返す。送り直さない', async () => {
+    mockClientFetch.mockResolvedValueOnce(jsonResponse(403, { error: 'forbidden' }));
+
+    await expect(placeOrder({ checkoutSessionId: 'cs_test_1', inStockVariantIds: [11] })).resolves.toEqual({
+      kind: 'rejected',
+      rejection: { code: 'login_changed', message: LOGIN_CHANGED_MESSAGE, changedLines: [] },
+    });
+
+    expect(mockRefreshSessionOnce).not.toHaveBeenCalled();
+    expect(mockClientFetch).toHaveBeenCalledTimes(1);
+    expect(mockClientFetch.mock.calls[0][0]).toBe('/api/checkout/place-order');
+  });
+
+  test('403 forbidden の本文に文があっても、案内はログインの状態が変わった時の文に決まっている', async () => {
+    mockClientFetch.mockResolvedValueOnce(jsonResponse(403, { error: 'forbidden', message: '別の文' }));
+
+    await expect(placeOrder({ checkoutSessionId: 'cs_test_1', inStockVariantIds: [11] })).resolves.toEqual({
+      kind: 'rejected',
+      rejection: { code: 'login_changed', message: LOGIN_CHANGED_MESSAGE, changedLines: [] },
+    });
+  });
+
+  // CSRF の守りの 403（error は大文字始まりの Forbidden）など、ほかの 403 と、403 以外の forbidden は読み替えない
+  test.each([
+    ['CSRF の守りの 403', 403, { error: 'Forbidden', reason: 'CSRF validation failed' }],
+    ['error が別の 403', 403, { error: 'other' }],
+    ['本文が読めない 403', 403, null],
+    ['409 の forbidden', 409, { error: 'forbidden' }],
+    ['500 の forbidden', 500, { error: 'forbidden' }],
+  ])('%s は読み替えず、受け付けられなかった時の失敗にする', async (_label, status, body) => {
+    mockClientFetch.mockResolvedValueOnce(jsonResponse(status, body));
+
+    await expect(placeOrder({ checkoutSessionId: 'cs_test_1', inStockVariantIds: [11] })).resolves.toEqual({
+      kind: 'error',
+      message: PLACE_ORDER_FAILED_MESSAGE,
+    });
+  });
+});

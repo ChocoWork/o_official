@@ -139,6 +139,17 @@ function shippingFieldsFromProfile(data: CheckoutProfileResponse): ShippingFormF
   };
 }
 
+// メールアドレスを比べる時の整え。サーバーが注文のメールに使う整えと同じ（NFKC・前後の空白・小文字）。
+// 空は「分からない」なので、空どうしを同じ会員とは見なさない
+function normalizeEmailForCompare(value: unknown): string {
+  return typeof value === "string" ? value.normalize("NFKC").trim().toLowerCase() : "";
+}
+
+function isSameMemberEmail(reloadedEmail: unknown, formEmail: string): boolean {
+  const reloaded = normalizeEmailForCompare(reloadedEmail);
+  return reloaded !== "" && reloaded === normalizeEmailForCompare(formEmail);
+}
+
 // ログイン中の会員のプロフィール。ゲスト（401）や取得の失敗は null
 async function fetchCheckoutProfile(): Promise<CheckoutProfileResponse | null> {
   try {
@@ -447,16 +458,51 @@ function CheckoutPageContent() {
   // フィールドごとのバリデーションエラー (FR-CHECKOUT-004)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
+  // 入力欄の置き換え（loadMemberForm("replace")）の世代。置き換えの読み込みを始めるたび、ゲストと分かったとき、
+  // 確認の内容を入力欄へ取り込んだとき（adoptConfirmation）に1つ進める。置き換えは、読み込みを始めた時の世代のままの時だけ当てる。
+  // 古い読み込みが後から終わって新しい内容を上書きしたり、読み込みの間に最終確認画面へ進んだ後やゲストと分かった後で、
+  // 入力欄を書き換えたりしないため
+  const memberFormGenerationRef = useRef(0);
+  // 読み込みが終わった時の「今の入力欄のメール」。読み込みの関数は依存を持たないので、最新の値を控えから読む
+  const currentEmailRef = useRef(email);
+  React.useEffect(() => {
+    currentEmailRef.current = email;
+  }, [email]);
+
+  // 前の会員のものを外す: 保存済みの配送先の一覧と選択、「この配送先を保存する」のチェック、お客様情報の保存の失敗の文。
+  // 入力欄の内容には触れない。別の会員（ゲスト）の画面に前の会員の住所帳が混ざったり、ゲストの「確認へ進む」が
+  // 前の会員のチェックのままプロフィールの保存を試みて失敗したりしないようにする
+  const dropPreviousMemberState = React.useCallback(() => {
+    savedAddressesRef.current = [];
+    setSavedAddresses([]);
+    setSelectedAddressId("");
+    setShippingForm((prev) => (prev.saveProfile ? { ...prev, saveProfile: false } : prev));
+    setCustomerError(null);
+  }, []);
+
   // 会員のプロフィールと保存済みの配送先を読んで、入力欄へ入れる。
   // - "fill": 画面を開いた時の初期値。入力済みの欄は残す。ゲストは 401 なので何も入らない
   // - "replace": ログインが変わった時（設計書第6章・C7）。前の人の入力を残さず、その会員の内容で入力欄を置き換える。
-  //   プロフィールが取れなかった時（ゲストは 401）は何も変えず、今の入力を残す
+  //   読み直したのが今の入力欄と同じ会員なら何もしない（その会員が直した入力を消さない）。
+  //   プロフィールが取れなかった時（ゲストは 401、ほかは 500・503・通信の失敗）は、入力欄は今のまま残し、前の会員の住所帳などだけ外す
   const loadMemberForm = React.useCallback(async (mode: "fill" | "replace") => {
     const profileRequest = fetchCheckoutProfile();
     const addressesRequest = fetchSavedAddressList();
 
     if (mode === "replace") {
+      const generation = ++memberFormGenerationRef.current;
       const [profile, addresses] = await Promise.all([profileRequest, addressesRequest]);
+      // 待っている間に、新しい置き換えが始まった・確認の内容が取り込まれた・ゲストと分かった。古い読み込みは当てない
+      if (generation !== memberFormGenerationRef.current) {
+        return;
+      }
+      // 読み直したのが今の入力欄と同じ会員（メールが整えた上で同じ）のまま。その会員が直した入力と読み込み済みの配送先を消さない
+      if (profile && isSameMemberEmail(profile.email, currentEmailRef.current)) {
+        return;
+      }
+
+      // 前の会員のものは、プロフィールが取れたかによらず外す
+      dropPreviousMemberState();
       if (!profile) {
         return;
       }
@@ -519,7 +565,7 @@ function CheckoutPageContent() {
         }
       }),
     ]);
-  }, []);
+  }, [dropPreviousMemberState]);
 
   React.useEffect(() => {
     void loadMemberForm("fill");
@@ -532,19 +578,24 @@ function CheckoutPageContent() {
   React.useEffect(() => {
     const previous = previousLoginRef.current;
     previousLoginRef.current = { isLoggedIn, isAuthResolved, loginSyncCount };
-    // ゲストは今の入力を残す
+    const resynced = loginSyncCount !== previous.loginSyncCount;
     if (!isLoggedIn) {
+      // 読み直した結果がゲスト（会員からゲストに変わった）。入力は残し、前の会員の保存済みの配送先の一覧と選択などは外す
+      // （ゲストに前の会員の住所帳を選ばせない）。進行中の会員の置き換えがあっても、後から当てない
+      if (resynced) {
+        memberFormGenerationRef.current += 1;
+        dropPreviousMemberState();
+      }
       return;
     }
 
     // 画面を開いたまま、ゲストから会員に変わった（ヘッダーのログインなど）。
     // 開いた時のログインの確認（isAuthResolved が false から true）は、開いた時の読み込みが受け持つので、ここでは置き換えない
     const becameMember = previous.isAuthResolved && !previous.isLoggedIn;
-    const resynced = loginSyncCount !== previous.loginSyncCount;
     if (becameMember || resynced) {
       void loadMemberForm("replace");
     }
-  }, [isLoggedIn, isAuthResolved, loginSyncCount, loadMemberForm]);
+  }, [isLoggedIn, isAuthResolved, loginSyncCount, loadMemberForm, dropPreviousMemberState]);
 
   // 「確認へ進む」の時とログインが違うと分かった後に、画面を今のログインに合わせる（設計書第6章）。
   // ログインの状態を読み直し、会員なら入力欄を置き換え（上の effect）、ログインでカートも変わりうるので読み直す
@@ -728,6 +779,8 @@ function CheckoutPageContent() {
         building: next.shipping.building ?? "",
       };
       adoptedAddressRef.current = draftAddress;
+      // 入力欄の置き換えを読み込み中なら、後から当てない（下書きの内容を、遅れて届いたプロフィールで上書きしない）
+      memberFormGenerationRef.current += 1;
       // このブラウザで新しい確認画面へ進めた後は、以前の入り直しの案内を戻る操作でも出さない。
       setResumeUnavailable(false);
       setResumeNotice(null);
