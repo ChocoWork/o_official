@@ -11,17 +11,24 @@ LANGUAGE sql
 STABLE
 SET search_path = ''
 AS $$
-  SELECT EXISTS (
-    SELECT 1
-    FROM pg_catalog.jsonb_array_elements(_items_snapshot) AS e(value)
-    WHERE e.value->>'source_cart_line_id' IS NOT NULL
-      AND NOT EXISTS (
-        SELECT 1
-        FROM public.cart_lines AS l
-        WHERE l.id = (e.value->>'source_cart_line_id')::uuid
-          AND l.cart_id = _cart_id
-      )
-  );
+  SELECT CASE
+    -- 下書きの行が無い経路では写しも無いので、既存注文を返せるよう消失と判定しない（グループ C までと同じ動き）。
+    WHEN _items_snapshot IS NULL THEN false
+    -- 移行の前に作った下書きの写しは古いキー source_cart_id だけを持ち、カートを確かめられないため、
+    -- cart_id が無ければ「カートが変わった」として断る（設計書第7章）。
+    WHEN _cart_id IS NULL THEN true
+    ELSE EXISTS (
+      SELECT 1
+      FROM pg_catalog.jsonb_array_elements(_items_snapshot) AS e(value)
+      WHERE e.value->>'source_cart_line_id' IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1
+          FROM public.cart_lines AS l
+          WHERE l.id = (e.value->>'source_cart_line_id')::uuid
+            AND l.cart_id = _cart_id
+        )
+    )
+  END;
 $$;
 REVOKE ALL ON FUNCTION private.checkout_cart_lines_gone(uuid, jsonb) FROM PUBLIC;
 

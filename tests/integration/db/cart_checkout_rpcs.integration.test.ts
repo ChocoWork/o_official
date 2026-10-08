@@ -30,6 +30,17 @@ function placeFromFinalScreen(db: PgClient, draft: { draftId: string; cartSessio
 }
 
 describeLocalDb('integration: 新しいカートと決済の関数', (db) => {
+  test('下書きの行が無ければ（写しが NULL なら）private.checkout_cart_lines_gone(NULL, NULL) は false、写しがあって cart_id が NULL なら true', async () => {
+    const noDraft = await db().query('select private.checkout_cart_lines_gone($1, $2::jsonb) as gone', [null, null]);
+    expect(noDraft.rows[0].gone).toBe(false);
+
+    const legacyDraft = await db().query(
+      'select private.checkout_cart_lines_gone($1, $2::jsonb) as gone',
+      [null, JSON.stringify([{ source_cart_id: '00000000-0000-4000-8000-000000000001' }])],
+    );
+    expect(legacyDraft.rows[0].gone).toBe(true);
+  });
+
   test('下書きを取る関数は cart_id を記録し、同じ下書きを違うカートで取ると断る', async () => {
     const fx = await createCatalogFixture(db(), { stock: 0 });
     const first = await db().query("insert into public.carts (guest_token_hash) values (encode(sha256(convert_to($1, 'UTF8')), 'hex')) returning id", [`a-${uniqueSuffix()}`]);
@@ -81,6 +92,32 @@ describeLocalDb('integration: 新しいカートと決済の関数', (db) => {
     expect(result.rows[0]).toMatchObject({ created: false, rejection: 'cart_changed' });
   });
 
+  test('移行前の下書き（写しは古いキー source_cart_id だけ・cart_id が NULL）は、注文するで cart_changed', async () => {
+    const fx = await createCatalogFixture(db(), { stock: 2 });
+    const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 1 });
+    await db().query(
+      `update public.checkout_drafts
+       set items_snapshot = (
+         select jsonb_agg((e.value - 'source_cart_line_id') || jsonb_build_object('source_cart_id', $2::text))
+         from jsonb_array_elements(items_snapshot) as e(value)
+       ), cart_id = null
+       where id = $1`,
+      [draft.draftId, '00000000-0000-4000-8000-000000000001'],
+    );
+    const result = await placeFromFinalScreen(db(), draft);
+    expect(result.rows[0]).toMatchObject({ order_id: null, created: false, rejection: 'cart_changed' });
+  });
+
+  test('写しの明細が別のカートにあれば cart_changed', async () => {
+    const fx = await createCatalogFixture(db(), { stock: 2 });
+    const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 1 });
+    const other = await db().query("insert into public.carts (guest_token_hash) values (encode(sha256(convert_to($1, 'UTF8')), 'hex')) returning id", [`other-${uniqueSuffix()}`]);
+    const moved = await db().query('update public.cart_lines set cart_id = $1 where id = $2', [other.rows[0].id, draft.cartLineId]);
+    expect(moved.rowCount).toBe(1);
+    const result = await placeFromFinalScreen(db(), draft);
+    expect(result.rows[0]).toMatchObject({ order_id: null, created: false, rejection: 'cart_changed' });
+  });
+
   test('支払いの後は、下書きのカートから写しの明細だけを消し、後から足した明細は残す', async () => {
     const fx = await createCatalogFixture(db(), { stock: 2 });
     const later = await createCatalogFixture(db(), { stock: 0 });
@@ -93,5 +130,22 @@ describeLocalDb('integration: 新しいカートと決済の関数', (db) => {
     );
     const lines = await db().query('select id from public.cart_lines where cart_id = $1', [draft.cartId]);
     expect(lines.rows.map((row) => row.id)).toEqual([extra.rows[0].id]);
+  });
+
+  test('支払いの後、別のカートにある同じ番号の明細は消さない', async () => {
+    const fx = await createCatalogFixture(db(), { stock: 2 });
+    const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 1 });
+    const placed = await placeFromFinalScreen(db(), draft);
+    expect(placed.rows[0]).toMatchObject({ created: true, rejection: null });
+    const other = await db().query("insert into public.carts (guest_token_hash) values (encode(sha256(convert_to($1, 'UTF8')), 'hex')) returning id", [`other-${uniqueSuffix()}`]);
+    const moved = await db().query('update public.cart_lines set cart_id = $1 where id = $2', [other.rows[0].id, draft.cartLineId]);
+    expect(moved.rowCount).toBe(1);
+    const payment = await db().query(
+      "select updated from public.mark_order_awaiting_payment($1::uuid, $2::text, $3::text)",
+      [placed.rows[0].order_id, `pi_${uniqueSuffix()}`, null],
+    );
+    expect(payment.rows[0].updated).toBe(true);
+    const lines = await db().query('select id, cart_id from public.cart_lines where id = $1', [draft.cartLineId]);
+    expect(lines.rows).toEqual([{ id: draft.cartLineId, cart_id: other.rows[0].id }]);
   });
 });
