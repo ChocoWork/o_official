@@ -6,9 +6,10 @@ jest.mock("next/server", () => {
   return {
     ...original,
     NextResponse: {
-      json: jest.fn((body: unknown, init?: { status?: number }) => ({
+      json: jest.fn((body: unknown, init?: { status?: number; headers?: HeadersInit }) => ({
         body,
         status: init?.status ?? 200,
+        headers: new Headers(init?.headers),
       })),
     },
   };
@@ -52,6 +53,12 @@ jest.mock("@/features/checkout/services/checkout-session-lifecycle.service", () 
 const mockBuildCheckoutConfirmation = jest.fn();
 jest.mock("@/features/checkout/services/checkout-confirmation.service", () => ({
   buildCheckoutConfirmation: (...args: unknown[]) => mockBuildCheckoutConfirmation(...args),
+}));
+
+const mockResolveCheckoutBuyer = jest.fn();
+jest.mock("@/features/checkout/services/checkout-buyer", () => ({
+  ...jest.requireActual("@/features/checkout/services/checkout-buyer"),
+  resolveCheckoutBuyer: (...args: unknown[]) => mockResolveCheckoutBuyer(...args),
 }));
 
 const mockCheckPromotionCode = jest.fn();
@@ -123,6 +130,7 @@ jest.mock("@/lib/audit", () => ({
 
 import { POST } from "@/app/api/checkout/create-session/route";
 import { calculateCheckoutAmountsFromSubtotal } from "@/features/checkout/services/checkout-pricing.service";
+import { getStripeServerClient } from "@/lib/stripe/server";
 
 test.each([100, 50000])("最終確認画面の配送料の表示が前提とする配送料0を保つ（小計 %i 円）", (subtotal) => {
   if (calculateCheckoutAmountsFromSubtotal(subtotal).shippingAmount !== 0) {
@@ -183,9 +191,9 @@ function makeClaimedDraft(
     shipping_snapshot: params._shipping_snapshot ?? null,
     items_snapshot: params._items_snapshot ?? [],
     shipping_revision: 0,
-    checkout_request_version: params._request_version ?? 2,
+    checkout_request_version: params._request_version ?? 3,
     checkout_request_fingerprint:
-      params._request_fingerprint ?? "v2:" + "a".repeat(64),
+      params._request_fingerprint ?? "v3:" + "a".repeat(64),
     checkout_ui_mode: params._checkout_ui_mode ?? "custom",
     checkout_origin: params._checkout_origin ?? "http://localhost:3000",
     claim_created: true,
@@ -196,6 +204,8 @@ function makeClaimedDraft(
 describe("POST /api/checkout/create-session", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockResolveCheckoutBuyer.mockReset();
+    mockResolveCheckoutBuyer.mockResolvedValue({ kind: "guest" });
     mockClaimResult = null;
     mockAttachResult = null;
     mockRetireResult = { data: true, error: null };
@@ -305,6 +315,88 @@ describe("POST /api/checkout/create-session", () => {
     });
   });
 
+  it.each([
+    { label: "会員", buyer: { kind: "member", userId: "user-1" }, expectedUserId: "user-1" },
+    { label: "ゲスト", buyer: { kind: "guest" }, expectedUserId: null },
+  ])("$label の買い手を claim_checkout_draft に渡す（画面の ID は使わない）", async ({ buyer, expectedUserId }) => {
+    mockResolveCheckoutBuyer.mockResolvedValue(buyer);
+    mockCreate.mockResolvedValue({ client_secret: "secret", id: "cs_test" });
+    const req = makeRequest({ buyerUserId: "client-user" });
+
+    const res = await POST(req);
+
+    expect(res.status).toBe(200);
+    expect(mockResolveCheckoutBuyer).toHaveBeenCalledWith(req);
+    expect(mockRpc).toHaveBeenCalledWith("claim_checkout_draft", expect.objectContaining({
+      _buyer_user_id: expectedUserId,
+      _request_version: 3,
+    }));
+  });
+
+  it("同じ入力でも会員とゲストは別の v3 指紋で下書きを取る", async () => {
+    mockCreate.mockResolvedValue({ client_secret: "secret", id: "cs_test" });
+    mockResolveCheckoutBuyer
+      .mockResolvedValueOnce({ kind: "member", userId: "user-1" })
+      .mockResolvedValueOnce({ kind: "guest" });
+
+    const memberResponse = await POST(makeRequest({}));
+    const guestResponse = await POST(makeRequest({}));
+
+    expect(memberResponse.status).toBe(200);
+    expect(guestResponse.status).toBe(200);
+    const fingerprints = mockRpc.mock.calls
+      .filter(([functionName]) => functionName === "claim_checkout_draft")
+      .map(([, params]) => (params as Record<string, unknown>)._request_fingerprint);
+    expect(fingerprints).toHaveLength(2);
+    expect(fingerprints[0]).toMatch(/^v3:[0-9a-f]{64}$/);
+    expect(fingerprints[1]).toMatch(/^v3:[0-9a-f]{64}$/);
+    expect(fingerprints[0]).not.toBe(fingerprints[1]);
+  });
+
+  it.each([
+    { kind: "expired", status: 401, body: { error: "auth_expired" } },
+    { kind: "unavailable", status: 503, body: { error: "Service temporarily unavailable" } },
+  ])("買い手が $kind なら $status を返し、本文・カート・DB・Stripe に進まない", async ({ kind, status, body }) => {
+    mockResolveCheckoutBuyer.mockResolvedValue({ kind });
+    const req = makeRequest({ shipping: undefined });
+    const readBody = jest.spyOn(req, "json");
+
+    const res = (await POST(req)) as unknown as { status: number; body: unknown; headers: Headers };
+
+    expect(res.status).toBe(status);
+    expect(res.body).toEqual(body);
+    if (kind === "unavailable") expect(res.headers.get("Retry-After")).toBe("30");
+    expect(mockRequireCsrfOrDeny).toHaveBeenCalledTimes(1);
+    expect(mockResolveCheckoutBuyer).toHaveBeenCalledWith(req);
+    expect(readBody).not.toHaveBeenCalled();
+    expect(mockFrom).not.toHaveBeenCalled();
+    expect(mockRpc).not.toHaveBeenCalled();
+    expect(getStripeServerClient).not.toHaveBeenCalled();
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockRetrieve).not.toHaveBeenCalled();
+    expect(mockExpire).not.toHaveBeenCalled();
+    expect(mockFindPaidCheckoutSession).not.toHaveBeenCalled();
+    expect(mockCloseOtherCheckoutSessions).not.toHaveBeenCalled();
+    expect(mockCheckPromotionCode).not.toHaveBeenCalled();
+    expect(mockLogAudit).not.toHaveBeenCalled();
+  });
+
+  it("CSRF で断られたら買い手を確かめず、本文・カート・DB・Stripe に進まない", async () => {
+    mockRequireCsrfOrDeny.mockResolvedValue({ status: 403, _body: { error: "csrf_failed" } });
+    const req = makeRequest({});
+    const readBody = jest.spyOn(req, "json");
+
+    const res = (await POST(req)) as unknown as { status: number; body: unknown };
+
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ error: "csrf_failed" });
+    expect(mockResolveCheckoutBuyer).not.toHaveBeenCalled();
+    expect(readBody).not.toHaveBeenCalled();
+    expect(mockFrom).not.toHaveBeenCalled();
+    expect(mockRpc).not.toHaveBeenCalled();
+    expect(getStripeServerClient).not.toHaveBeenCalled();
+  });
+
   it("payment_method_types を送らない（ダッシュボード設定に従う）", async () => {
     mockCreate.mockResolvedValue({ client_secret: "secret", id: "cs_test" });
 
@@ -404,8 +496,8 @@ describe("POST /api/checkout/create-session", () => {
         "claim_checkout_draft",
         expect.objectContaining({
           _session_id: "sess-abc",
-          _request_version: 2,
-          _request_fingerprint: expect.stringMatching(/^v2:[0-9a-f]{64}$/),
+          _request_version: 3,
+          _request_fingerprint: expect.stringMatching(/^v3:[0-9a-f]{64}$/),
           _checkout_ui_mode: uiMode,
           _checkout_origin: "http://localhost:3000",
           _subtotal_amount: 5000,
@@ -417,7 +509,7 @@ describe("POST /api/checkout/create-session", () => {
       expect(mockDraftInsert).not.toHaveBeenCalled();
       expect(mockCreate).toHaveBeenCalledWith(
         expect.objectContaining({ client_reference_id: "draft-123", expires_at: RESERVED_EXPIRES_AT }),
-        { idempotencyKey: "checkout-session:create:v2:draft-123:1790001830" },
+        { idempotencyKey: "checkout-session:create:v3:draft-123:1790001830" },
       );
       expect(mockRpc).toHaveBeenCalledWith(
         "attach_checkout_session_to_draft",
@@ -444,8 +536,8 @@ describe("POST /api/checkout/create-session", () => {
 
     expect(mockCreate).toHaveBeenCalledTimes(2);
     expect(mockCreate.mock.calls.map((call) => call[1])).toEqual([
-      { idempotencyKey: "checkout-session:create:v2:draft-123:1790001830" },
-      { idempotencyKey: "checkout-session:create:v2:draft-123:1790001830" },
+      { idempotencyKey: "checkout-session:create:v3:draft-123:1790001830" },
+      { idempotencyKey: "checkout-session:create:v3:draft-123:1790001830" },
     ]);
   });
 
@@ -530,7 +622,7 @@ describe("POST /api/checkout/create-session", () => {
       "cs_orphan",
       {},
       {
-        idempotencyKey: "checkout-session:expire-orphan:v2:draft-123:cs_orphan",
+        idempotencyKey: "checkout-session:expire-orphan:v3:draft-123:cs_orphan",
       },
     );
   });

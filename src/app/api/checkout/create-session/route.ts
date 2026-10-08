@@ -42,6 +42,11 @@ import {
   reconcileCheckoutSession,
 } from "@/features/checkout/services/checkout-session-lifecycle.service";
 import { resolveCheckoutIpLimitMultiplier } from "@/features/checkout/services/checkout-route-guard";
+import {
+  buyerUserIdOf,
+  checkoutBuyerFailureResponse,
+  resolveCheckoutBuyer,
+} from "@/features/checkout/services/checkout-buyer";
 
 type CsrfDenyResponse = {
   status: number;
@@ -135,9 +140,9 @@ type CheckoutDraftAttachmentResult = {
   attached: boolean;
 };
 
-// 版 2（グループ F）: 決済の画面を「確認へ進む」で作り、割引はサーバーが付ける。
-// 割引コードと配送先を指紋に含め、入力が同じときだけ同じ下書き・決済の画面にする（計画の決め事 D4）。
-const CHECKOUT_REQUEST_VERSION = 2;
+// 版 3（グループ C）: 買い手も指紋に含め、入力と買い手が同じときだけ下書き・決済の画面を使い回す（設計書 4-2）。
+// 版を上げることで、買い手を記録していない古い下書きが使い回されるのを防ぐ。
+const CHECKOUT_REQUEST_VERSION = 3;
 
 /** 開いている決済の画面を使い回すのに要る残り時間（受け付けの10分＋最終確認画面での5分。決め事 D4） */
 const REUSE_MIN_REMAINING_SECONDS = 15 * 60;
@@ -194,6 +199,7 @@ function buildCheckoutRequestFingerprint(params: {
   itemsSnapshot: CheckoutDraftItemSnapshot[];
   shippingSnapshot: CheckoutShippingSnapshot;
   promotionCodeId: string | null;
+  buyerUserId: string | null;
 }): string {
   const canonical = JSON.stringify({
     version: CHECKOUT_REQUEST_VERSION,
@@ -207,6 +213,7 @@ function buildCheckoutRequestFingerprint(params: {
     itemsSnapshot: params.itemsSnapshot,
     shippingSnapshot: params.shippingSnapshot,
     promotionCodeId: params.promotionCodeId,
+    buyerUserId: params.buyerUserId,
   });
 
   return `v${CHECKOUT_REQUEST_VERSION}:${createHash("sha256").update(canonical).digest("hex")}`;
@@ -352,6 +359,7 @@ async function expireConflictingOpenSession(
 }
 async function claimCheckoutDraft(params: {
   sessionId: string;
+  buyerUserId: string | null;
   requestFingerprint: string;
   uiMode: "custom";
   checkoutOrigin: string;
@@ -377,6 +385,7 @@ async function claimCheckoutDraft(params: {
     _total_amount: params.totalAmount,
     _shipping_snapshot: params.shippingSnapshot,
     _items_snapshot: params.itemsSnapshot,
+    _buyer_user_id: params.buyerUserId,
   });
 
   const draft = (data as ClaimedCheckoutDraftRow[] | null)?.[0];
@@ -477,6 +486,13 @@ export async function POST(req: NextRequest) {
 
       return denyResponse;
     }
+
+    // 買い手（会員かゲスト）は検証済みのログインからだけ決め、下書きに記録する（グループ C 設計書 4-2）
+    const buyerResolution = await resolveCheckoutBuyer(req);
+    if (buyerResolution.kind === "expired" || buyerResolution.kind === "unavailable") {
+      return checkoutBuyerFailureResponse(buyerResolution.kind);
+    }
+    const buyerUserId = buyerUserIdOf(buyerResolution);
 
     const parsed = createSessionSchema.safeParse(
       await req.json().catch(() => ({})),
@@ -747,10 +763,12 @@ export async function POST(req: NextRequest) {
       itemsSnapshot,
       shippingSnapshot,
       promotionCodeId: promotion?.promotionCodeId ?? null,
+      buyerUserId,
     });
 
     const claimParams = {
       sessionId,
+      buyerUserId,
       requestFingerprint,
       uiMode,
       checkoutOrigin,
