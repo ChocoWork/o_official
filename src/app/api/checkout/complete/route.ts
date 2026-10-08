@@ -55,6 +55,8 @@ function describeUnexpectedError(error: unknown): { error_message: string; error
     : { error_message: errorMessage };
 }
 
+// PUBLIC: ゲスト購入を許可する公開 Route。守りはカートの Cookie・回数の制限・決済の画面とカートの一致・下書きとカートの一致。
+// ログインは確かめない。持ち主は「注文する」の受け付けで書き、完了は照合だけを行う（グループ C 設計書 4-5）。
 export async function POST(req: NextRequest) {
   const clientIp = getClientIp(req);
   const userAgent = req.headers.get('user-agent');

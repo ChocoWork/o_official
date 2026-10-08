@@ -6,6 +6,7 @@ import { getStripeServerClient } from '@/lib/stripe/server';
 import { signItemImageUrl } from '@/lib/storage/item-images';
 import { logAudit } from '@/lib/audit';
 import {
+  buyerOfCheckoutSession,
   getDraftIdFromStripeMetadata,
   type CheckoutDraftItemSnapshot,
   type CheckoutShippingSnapshot,
@@ -35,19 +36,6 @@ type DraftRow = {
 
 function isResourceMissing(error: unknown): boolean {
   return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'resource_missing';
-}
-
-/** 下書きが無ければ買い手を比べられないので、支払い済みの画面を返さない側に倒す */
-async function buyerOfCheckoutSession(checkoutSessionId: string): Promise<string | null | undefined> {
-  const { data, error } = await supabase
-    .from('checkout_drafts')
-    .select('buyer_user_id')
-    .eq('checkout_session_id', checkoutSessionId)
-    .maybeSingle<{ buyer_user_id: string | null }>();
-  if (error) {
-    throw error;
-  }
-  return data ? data.buyer_user_id : undefined;
 }
 
 // PUBLIC: ゲスト購入を許可する公開 Route。守りは guardCheckoutPost（Cookie・回数の制限・CSRF）。
@@ -85,7 +73,7 @@ export async function POST(req: NextRequest) {
       if (!paid) {
         return none();
       }
-      const paidBuyer = await buyerOfCheckoutSession(paid);
+      const paidBuyer = await buyerOfCheckoutSession(supabase, paid);
       return paidBuyer !== undefined && paidBuyer === buyerUserId ? paymentDone(paid) : none();
     }
 

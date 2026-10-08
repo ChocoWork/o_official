@@ -7,6 +7,7 @@ import { expireOpenCheckoutSession } from '@/lib/stripe/checkout-session-expiry'
 import { logAudit } from '@/lib/audit';
 import type { OrderStatus, PlaceOrderRejection } from '@/lib/orders/order-payment-types';
 import {
+  buyerOfCheckoutSession,
   getDraftIdFromStripeMetadata,
   type CheckoutDraftItemSnapshot,
 } from '@/features/checkout/services/checkout-draft.service';
@@ -87,19 +88,6 @@ async function loadDraft(draftId: string): Promise<DraftRow | null> {
     throw error;
   }
   return data;
-}
-
-/** 下書きが無ければ買い手を比べられないので、支払い済みの画面を返さない側に倒す */
-async function buyerOfCheckoutSession(checkoutSessionId: string): Promise<string | null | undefined> {
-  const { data, error } = await supabase
-    .from('checkout_drafts')
-    .select('buyer_user_id')
-    .eq('checkout_session_id', checkoutSessionId)
-    .maybeSingle<{ buyer_user_id: string | null }>();
-  if (error) {
-    throw error;
-  }
-  return data ? data.buyer_user_id : undefined;
 }
 
 /** 後から別のタブで「確認へ進む」を押していれば、そちらを優先する（設計書 8） */
@@ -255,9 +243,19 @@ export async function POST(req: NextRequest) {
     // 別のタブの支払いが先に済んでいれば、同じカートでもう一度課金せず、その注文を仕上げる。
     const paidCheckoutSessionId = await findPaidCheckoutSession({ supabase, stripe }, guard.sessionId);
     if (paidCheckoutSessionId && paidCheckoutSessionId !== checkoutSessionId) {
-      const paidBuyer = await buyerOfCheckoutSession(paidCheckoutSessionId);
+      const paidBuyer = await buyerOfCheckoutSession(supabase, paidCheckoutSessionId);
       if (paidBuyer === undefined || paidBuyer !== buyerUserId) {
-        return loginChanged({ ...ref, draft_id: draft.id, paid_checkout_session_id: paidCheckoutSessionId, draft_buyer_user_id: paidBuyer ?? null });
+        // 支払い済みの注文を仕上げ、次の「確認へ進む」で同じ断りを繰り返さないようにする。持ち主は付けない。
+        try {
+          await reconcileCheckoutSession(paidCheckoutSessionId);
+        } catch (reconcileError) {
+          console.error('支払い済みの決済の画面を照合できませんでした:', reconcileError);
+        }
+        return loginChanged({
+          ...ref, draft_id: draft.id, draft_buyer_user_id: draft.buyer_user_id ?? null,
+          paid_checkout_session_id: paidCheckoutSessionId, paid_draft_found: paidBuyer !== undefined,
+          ...(paidBuyer !== undefined ? { paid_draft_buyer_user_id: paidBuyer } : {}),
+        });
       }
       await expireRejectedCheckoutSession(stripe, checkoutSessionId);
       await audit('failure', 'Place order rejected', {

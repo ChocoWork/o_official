@@ -1,4 +1,21 @@
 import { z } from 'zod';
+import type { SupabaseClient } from '@supabase/supabase-js';
+
+/** 決済の画面の下書きの買い手。ゲストは null、下書きが無い時は undefined（買い手を比べられない）。 */
+export async function buyerOfCheckoutSession(
+  supabase: SupabaseClient,
+  checkoutSessionId: string,
+): Promise<string | null | undefined> {
+  const { data, error } = await supabase
+    .from('checkout_drafts')
+    .select('buyer_user_id')
+    .eq('checkout_session_id', checkoutSessionId)
+    .maybeSingle<{ buyer_user_id: string | null }>();
+  if (error) {
+    throw error;
+  }
+  return data ? data.buyer_user_id : undefined;
+}
 
 function normalizeNfkcText(value: string): string {
   return value.normalize('NFKC').trim();

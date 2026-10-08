@@ -95,18 +95,7 @@ function stripeSession(overrides: Record<string, unknown> = {}) {
   };
 }
 
-let orderOwner: { user_id: string | null } | null = null;
-let ordersUpdate: jest.Mock;
-
 function setupSupabase(draft: { id: string; session_id: string } | null = { id: 'draft-123', session_id: 'sess-abc' }) {
-  ordersUpdate = jest.fn().mockReturnValue({
-    eq: jest.fn().mockReturnValue({
-      is: jest.fn().mockReturnValue({
-        select: jest.fn().mockResolvedValue({ data: [{ id: 'order-1' }], error: null }),
-      }),
-    }),
-  });
-
   mockFrom.mockImplementation((table: string) => {
     if (table === 'checkout_drafts') {
       return {
@@ -118,17 +107,6 @@ function setupSupabase(draft: { id: string; session_id: string } | null = { id: 
       };
     }
 
-    if (table === 'orders') {
-      return {
-        select: jest.fn().mockReturnValue({
-          eq: jest.fn().mockReturnValue({
-            maybeSingle: jest.fn().mockImplementation(async () => ({ data: orderOwner, error: null })),
-          }),
-        }),
-        update: ordersUpdate,
-      };
-    }
-
     return {};
   });
 }
@@ -136,9 +114,7 @@ function setupSupabase(draft: { id: string; session_id: string } | null = { id: 
 describe('POST /api/checkout/complete', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    orderOwner = { user_id: null };
     mockEnforceRateLimit.mockResolvedValue(undefined);
-    mockExtractAuthToken.mockReturnValue(null);
     mockRetrieveCheckoutSession.mockResolvedValue(stripeSession());
     mockReconcile.mockResolvedValue({
       kind: 'ok',
@@ -285,8 +261,6 @@ describe('POST /api/checkout/complete', () => {
   });
 
   test('ログインしていても注文の持ち主を書かず、ログインの確かめを呼ばない', async () => {
-    mockExtractAuthToken.mockReturnValue('token-1');
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
     const request = makeRequest({ checkoutSessionId: 'cs_test' });
     request.headers.set('Authorization', 'Bearer token-1');
 
@@ -295,7 +269,6 @@ describe('POST /api/checkout/complete', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ orderId: 'order-1', status: 'paid', paymentMethod: 'stripe_card' });
     expect(mockReconcile).toHaveBeenCalledWith(mockReconcilerDeps, { checkoutSessionId: 'cs_test' });
-    expect(ordersUpdate).not.toHaveBeenCalled();
     expect(mockFrom).not.toHaveBeenCalledWith('orders');
     expect(mockExtractAuthToken).not.toHaveBeenCalled();
     expect(mockGetUser).not.toHaveBeenCalled();

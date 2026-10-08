@@ -1,4 +1,36 @@
-import { mapStripePaymentMethodType } from '@/features/checkout/services/checkout-draft.service';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { buyerOfCheckoutSession, mapStripePaymentMethodType } from '@/features/checkout/services/checkout-draft.service';
+
+describe('buyerOfCheckoutSession', () => {
+  function clientWithResult(result: { data: unknown; error: unknown }) {
+    const maybeSingle = jest.fn().mockResolvedValue(result);
+    const eq = jest.fn().mockReturnValue({ maybeSingle });
+    const select = jest.fn().mockReturnValue({ eq });
+    const from = jest.fn().mockReturnValue({ select });
+    return { client: { from } as unknown as SupabaseClient, from, select, eq };
+  }
+
+  test.each([
+    ['会員の下書き', { buyer_user_id: 'member-a' }, 'member-a'],
+    ['ゲストの下書き', { buyer_user_id: null }, null],
+    ['下書きなし', null, undefined],
+  ])('%s の買い手を返し、ゲストと下書きなしを区別する', async (_label, data, expected) => {
+    const { client, from, select, eq } = clientWithResult({ data, error: null });
+
+    await expect(buyerOfCheckoutSession(client, 'cs_test_paid')).resolves.toBe(expected);
+
+    expect(from).toHaveBeenCalledWith('checkout_drafts');
+    expect(select).toHaveBeenCalledWith('buyer_user_id');
+    expect(eq).toHaveBeenCalledWith('checkout_session_id', 'cs_test_paid');
+  });
+
+  test('下書きの読み出しが失敗したら、買い手なしとして扱わず例外を返す', async () => {
+    const error = { code: '08006', message: '読み出し失敗' };
+    const { client } = clientWithResult({ data: null, error });
+
+    await expect(buyerOfCheckoutSession(client, 'cs_test_paid')).rejects.toBe(error);
+  });
+});
 
 describe('mapStripePaymentMethodType（レビュー指摘 C1）', () => {
   it('card は stripe_card に正規化する', () => {

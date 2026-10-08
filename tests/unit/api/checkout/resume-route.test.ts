@@ -173,6 +173,31 @@ describe('POST /api/checkout/resume', () => {
     expect(mockLogAudit).not.toHaveBeenCalled();
   });
 
+  test.each(['open', 'complete'])('画面の ID があり、%s の下書きと今の会員が同じなら続けられる', async (status) => {
+    mockResolveCheckoutBuyer.mockResolvedValue({ kind: 'member', userId: 'member-a' });
+    mockDraftResult = { data: { ...DRAFT, buyer_user_id: 'member-a' }, error: null };
+    mockRetrieve.mockResolvedValue({
+      id: 'cs_test_abc', status, client_secret: 'cs_test_abc_secret',
+      metadata: { draft_id: 'draft-1', session_id: 'sess-abc' },
+    });
+
+    const res = await POST(makeRequest({ checkoutSessionId: 'cs_test_abc' }));
+
+    expect(res.status).toBe(200);
+    if (status === 'complete') {
+      await expect(res.json()).resolves.toEqual({ state: 'payment_done', checkoutSessionId: 'cs_test_abc' });
+      expect(mockBuildCheckoutConfirmation).not.toHaveBeenCalled();
+    } else {
+      await expect(res.json()).resolves.toEqual({
+        state: 'resume',
+        confirmation: { checkoutSessionId: 'cs_test_abc', clientSecret: 'x', shipping: SHIPPING, lines: [], promotionCode: 'WELCOME10' },
+      });
+      expect(mockBuildCheckoutConfirmation).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+        checkoutSessionId: 'cs_test_abc', clientSecret: 'cs_test_abc_secret', itemsSnapshot: ITEMS, shippingSnapshot: SHIPPING,
+      }));
+    }
+  });
+
   test.each([null, 'member-a'])('画面の指定が無く支払い済みの買い手が同じ（%s）なら payment_done', async (buyerUserId) => {
     mockResolveCheckoutBuyer.mockResolvedValue(buyerUserId ? { kind: 'member', userId: buyerUserId } : { kind: 'guest' });
     mockFindPaidCheckoutSession.mockResolvedValue('cs_test_paid');

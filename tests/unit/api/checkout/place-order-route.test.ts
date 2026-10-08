@@ -234,8 +234,11 @@ describe('POST /api/checkout/place-order', () => {
     const res = await POST(makeRequest(VALID_BODY));
 
     expect(res.status).toBe(409);
-    await expect(res.json()).resolves.toMatchObject({ error: 'login_changed' });
+    await expect(res.json()).resolves.toEqual({
+      error: 'login_changed', message: 'ログインの状態が変わりました。もう一度「確認へ進む」を押してください。',
+    });
     expect(mockRpc).not.toHaveBeenCalled();
+    expect(mockReconcileCheckoutSession).toHaveBeenCalledWith('cs_test_paid');
     expect(mockExpireOpenCheckoutSession).toHaveBeenCalledWith(expect.anything(), 'cs_test_abc');
     expect(mockDraftQueries).toContainEqual([
       ['select', ['buyer_user_id']], ['eq', ['checkout_session_id', 'cs_test_paid']],
@@ -243,9 +246,66 @@ describe('POST /api/checkout/place-order', () => {
     expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
       metadata: {
         session_id: 'sess-abc', reason: 'login_changed', checkout_session_id: 'cs_test_abc',
-        draft_id: 'draft-1', paid_checkout_session_id: 'cs_test_paid', draft_buyer_user_id: paidBuyer ?? null, buyer_user_id: null,
+        draft_id: 'draft-1', draft_buyer_user_id: null, buyer_user_id: null,
+        paid_checkout_session_id: 'cs_test_paid', paid_draft_found: paidBuyer !== undefined,
+        ...(paidBuyer !== undefined ? { paid_draft_buyer_user_id: paidBuyer } : {}),
       },
     }));
+  });
+
+  test.each(['member-a', undefined])('別タブの支払い済みの照合が失敗しても、買い手が違う・無い（%s）なら 409 login_changed のまま', async (paidBuyer) => {
+    mockFindPaidCheckoutSession.mockResolvedValue('cs_test_paid');
+    mockPaidDraftResult = { data: paidBuyer === undefined ? null : { buyer_user_id: paidBuyer }, error: null };
+    const failure = new Error('照合失敗');
+    mockReconcileCheckoutSession.mockImplementation(async (id: string) => {
+      if (id === 'cs_test_paid') throw failure;
+    });
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const res = await POST(makeRequest(VALID_BODY));
+
+      expect(res.status).toBe(409);
+      await expect(res.json()).resolves.toEqual({
+        error: 'login_changed', message: 'ログインの状態が変わりました。もう一度「確認へ進む」を押してください。',
+      });
+      expect(mockReconcileCheckoutSession).toHaveBeenCalledWith('cs_test_paid');
+      expect(consoleError).toHaveBeenCalledWith(expect.any(String), failure);
+      expect(mockRpc).not.toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  test('別タブの監査では、今の下書き A と支払い済みの下書き B の買い手を分けて残す', async () => {
+    mockResolveCheckoutBuyer.mockResolvedValue({ kind: 'member', userId: 'member-a' });
+    mockDraftResult = { data: { ...DRAFT, buyer_user_id: 'member-a' }, error: null };
+    mockPaidDraftResult = { data: { buyer_user_id: 'member-b' }, error: null };
+    mockFindPaidCheckoutSession.mockResolvedValue('cs_test_paid');
+
+    const res = await POST(makeRequest(VALID_BODY));
+
+    expect(res.status).toBe(409);
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'checkout.place_order', outcome: 'failure',
+      metadata: {
+        session_id: 'sess-abc', reason: 'login_changed', checkout_session_id: 'cs_test_abc',
+        draft_id: 'draft-1', draft_buyer_user_id: 'member-a', buyer_user_id: 'member-a',
+        paid_checkout_session_id: 'cs_test_paid', paid_draft_found: true, paid_draft_buyer_user_id: 'member-b',
+      },
+    }));
+  });
+
+  test('別タブの支払い済みの画面も会員 A の下書きなら、会員 A に payment_done を返す', async () => {
+    mockResolveCheckoutBuyer.mockResolvedValue({ kind: 'member', userId: 'member-a' });
+    mockDraftResult = { data: { ...DRAFT, buyer_user_id: 'member-a' }, error: null };
+    mockPaidDraftResult = { data: { buyer_user_id: 'member-a' }, error: null };
+    mockFindPaidCheckoutSession.mockResolvedValue('cs_test_paid');
+
+    const res = await POST(makeRequest(VALID_BODY));
+
+    expect(res.status).toBe(409);
+    await expect(res.json()).resolves.toEqual({ error: 'payment_done', checkoutSessionId: 'cs_test_paid' });
+    expect(mockRpc).not.toHaveBeenCalled();
   });
 
   test.each([null, 'member-a'])('同じ買い手（%s）なら受付 RPC に _buyer_user_id を渡す', async (buyerUserId) => {
@@ -259,6 +319,8 @@ describe('POST /api/checkout/place-order', () => {
   });
 
   test('受付 RPC の login_changed は 409 として返し、決済の画面を閉じる', async () => {
+    mockResolveCheckoutBuyer.mockResolvedValue({ kind: 'member', userId: 'member-a' });
+    mockDraftResult = { data: { ...DRAFT, buyer_user_id: 'member-a' }, error: null };
     mockRpc.mockResolvedValue({ data: [{ order_id: null, order_status: null, created: false, rejection: 'login_changed' }], error: null });
 
     const res = await POST(makeRequest(VALID_BODY));
@@ -266,6 +328,13 @@ describe('POST /api/checkout/place-order', () => {
     expect(res.status).toBe(409);
     await expect(res.json()).resolves.toEqual({ error: 'login_changed', message: 'ログインの状態が変わりました。もう一度「確認へ進む」を押してください。' });
     expect(mockExpireOpenCheckoutSession).toHaveBeenCalledWith(expect.anything(), 'cs_test_abc');
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'checkout.place_order', outcome: 'failure',
+      metadata: {
+        session_id: 'sess-abc', checkout_session_id: 'cs_test_abc', draft_id: 'draft-1',
+        reason: 'login_changed', rpc_rejection: 'login_changed', draft_buyer_user_id: 'member-a', buyer_user_id: 'member-a',
+      },
+    }));
   });
 
   test.each([['expired', 401, 'auth_expired'], ['unavailable', 503, 'Service temporarily unavailable']])('認証が %s なら %s、本文・Stripe・DB に触れる前に守り付きで返す', async (kind, status, error) => {

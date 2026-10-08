@@ -10,6 +10,7 @@ import {
   collectInventoryIssues,
 } from "@/features/cart/services/cart-stock";
 import {
+  buyerOfCheckoutSession,
   buildShippingSnapshot,
   checkoutShippingSchema,
   findMissingShippingFields,
@@ -140,12 +141,22 @@ type CheckoutDraftAttachmentResult = {
   attached: boolean;
 };
 
-// 版 3（グループ C）: 買い手も指紋に含め、入力と買い手が同じときだけ下書き・決済の画面を使い回す（設計書 4-2）。
+// 版 2（決め事 D4）: 割引コードと配送先を見分けの値に含め、入力が同じときだけ下書き・決済の画面を使い回す。
+// 版 3（グループ C）: 買い手も見分けの値に含め、入力と買い手が同じときだけ使い回す（設計書 4-2）。
 // 版を上げることで、買い手を記録していない古い下書きが使い回されるのを防ぐ。
 const CHECKOUT_REQUEST_VERSION = 3;
 
 /** 開いている決済の画面を使い回すのに要る残り時間（受け付けの10分＋最終確認画面での5分。決め事 D4） */
 const REUSE_MIN_REMAINING_SECONDS = 15 * 60;
+
+/** PostgREST の素のエラーも、code・message だけ監査に残す。details・hint や本文は含めない。 */
+function describeUnexpectedError(error: unknown): { error_message: string; error_code?: string } {
+  const fields = typeof error === "object" && error !== null ? (error as { message?: unknown; code?: unknown }) : {};
+  const errorMessage = typeof fields.message === "string" ? fields.message : "Unknown error";
+  return typeof fields.code === "string"
+    ? { error_message: errorMessage, error_code: fields.code }
+    : { error_message: errorMessage };
+}
 
 function hasReusableTimeLeft(session: Stripe.Checkout.Session): boolean {
   return (
@@ -653,6 +664,37 @@ export async function POST(req: NextRequest) {
     // 二重に払わせないため。画面は注文の確定を仕上げて「ご注文は確定しています」を出す。
     const paidCheckoutSessionId = await findPaidCheckoutSession({ supabase, stripe }, sessionId);
     if (paidCheckoutSessionId) {
+      const paidBuyer = await buyerOfCheckoutSession(supabase, paidCheckoutSessionId);
+      if (paidBuyer === undefined || paidBuyer !== buyerUserId) {
+        // 支払いの仕上げが済めば、次の「確認へ進む」でこの画面を拾わなくなる。照合で持ち主は付けない。
+        try {
+          await reconcileCheckoutSession(paidCheckoutSessionId);
+        } catch (reconcileError) {
+          console.error("支払い済みの決済の画面を照合できませんでした:", reconcileError);
+        }
+        try {
+          await logAudit({
+            action: "checkout.session.create",
+            outcome: "failure",
+            detail: "支払い済みの決済の画面の買い手が一致しません",
+            ip: clientIp,
+            user_agent: userAgent,
+            metadata: {
+              session_id: sessionId, reason: "login_changed",
+              // この経路は下書きを取る前なので、今の下書きはまだ無い。
+              draft_id: null, buyer_user_id: buyerUserId,
+              paid_checkout_session_id: paidCheckoutSessionId, paid_draft_found: paidBuyer !== undefined,
+              ...(paidBuyer !== undefined ? { paid_draft_buyer_user_id: paidBuyer } : {}),
+            },
+          });
+        } catch (logAuditError) {
+          console.error("買い手が一致しない決済の画面の監査ログを残せませんでした:", logAuditError);
+        }
+        return applyRotatedCsrfCookie(NextResponse.json({
+          error: "login_changed",
+          message: "ログインの状態が変わりました。もう一度「確認へ進む」を押してください。",
+        }, { status: 409 }), csrfResult);
+      }
       return applyRotatedCsrfCookie(orderAlreadyPlacedResponse(paidCheckoutSessionId), csrfResult);
     }
 
@@ -1025,7 +1067,8 @@ export async function POST(req: NextRequest) {
     const classified = classifyCheckoutSessionError(error);
     const correlationId = randomUUID();
 
-    console.error("Checkout session creation error:", correlationId, error);
+    const errorDescription = describeUnexpectedError(error);
+    console.error("Checkout session creation error:", correlationId, errorDescription);
     try {
       await logAudit({
         action: classified.auditAction,
@@ -1035,8 +1078,7 @@ export async function POST(req: NextRequest) {
         user_agent: userAgent,
         metadata: {
           correlation_id: correlationId,
-          error_message:
-            error instanceof Error ? error.message : "Unknown error",
+          ...errorDescription,
           stripe_type: classified.stripe.type ?? null,
           stripe_code: classified.stripe.code ?? null,
           stripe_status: classified.stripe.statusCode ?? null,

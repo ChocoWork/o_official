@@ -44,10 +44,11 @@ const mockFrom = jest.fn();
 const mockRpc = jest.fn();
 const mockFindPaidCheckoutSession = jest.fn();
 const mockCloseOtherCheckoutSessions = jest.fn();
+const mockReconcileCheckoutSession = jest.fn();
 jest.mock("@/features/checkout/services/checkout-session-lifecycle.service", () => ({
   findPaidCheckoutSession: (...args: unknown[]) => mockFindPaidCheckoutSession(...args),
   closeOtherCheckoutSessions: (...args: unknown[]) => mockCloseOtherCheckoutSessions(...args),
-  reconcileCheckoutSession: jest.fn(),
+  reconcileCheckoutSession: (...args: unknown[]) => mockReconcileCheckoutSession(...args),
 }));
 
 const mockBuildCheckoutConfirmation = jest.fn();
@@ -83,6 +84,9 @@ function openSessionExpiresAt(remainingSeconds = 1800): number {
 
 
 let mockClaimResult: { data: unknown; error: unknown } | null = null;
+let mockPaidDraftResult: { data: unknown; error: unknown } = { data: null, error: null };
+const mockPaidDraftEq = jest.fn();
+const mockPaidDraftSelect = jest.fn();
 let mockAttachResult: { data: unknown; error: unknown } | null = null;
 let mockRetireResult: { data: unknown; error: unknown } = {
   data: true,
@@ -207,6 +211,10 @@ describe("POST /api/checkout/create-session", () => {
     mockResolveCheckoutBuyer.mockReset();
     mockResolveCheckoutBuyer.mockResolvedValue({ kind: "guest" });
     mockClaimResult = null;
+    mockPaidDraftResult = { data: { buyer_user_id: null }, error: null };
+    mockPaidDraftSelect.mockReturnValue({ eq: mockPaidDraftEq });
+    mockPaidDraftEq.mockReturnValue({ maybeSingle: () => Promise.resolve(mockPaidDraftResult) });
+    mockReconcileCheckoutSession.mockReset().mockResolvedValue(undefined);
     mockAttachResult = null;
     mockRetireResult = { data: true, error: null };
     mockReserveExpiryResult = { data: RESERVED_EXPIRES_AT, error: null };
@@ -279,6 +287,7 @@ describe("POST /api/checkout/create-session", () => {
 
       if (table === "checkout_drafts") {
         return {
+          select: mockPaidDraftSelect,
           insert: mockDraftInsert,
           delete: jest.fn().mockReturnValue({
             eq: mockDraftDeleteEq,
@@ -900,6 +909,103 @@ describe("POST /api/checkout/create-session", () => {
     });
     expect(mockRpc).not.toHaveBeenCalledWith("claim_checkout_draft", expect.anything());
     expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockReconcileCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it('支払い済みの下書きと今の会員が同じなら 409 order_already_placed を返す', async () => {
+    mockResolveCheckoutBuyer.mockResolvedValue({ kind: 'member', userId: 'member-a' });
+    mockFindPaidCheckoutSession.mockResolvedValue('cs_paid');
+    mockPaidDraftResult = { data: { buyer_user_id: 'member-a' }, error: null };
+
+    const res = await POST(makeRequest({ uiMode: 'custom' })) as unknown as {
+      status: number; body: Record<string, unknown>;
+    };
+
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ error: 'order_already_placed', checkoutSessionId: 'cs_paid', message: 'ご注文は確定しています。', retryable: false });
+    expect(mockPaidDraftSelect).toHaveBeenCalledWith('buyer_user_id');
+    expect(mockPaidDraftEq).toHaveBeenCalledWith('checkout_session_id', 'cs_paid');
+    expect(mockReconcileCheckoutSession).not.toHaveBeenCalled();
+    expect(mockRpc).not.toHaveBeenCalled();
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['会員 A から会員 B', 'member-a', { kind: 'member', userId: 'member-b' }, 'member-b'],
+    ['会員 A からゲスト', 'member-a', { kind: 'guest' }, null],
+    ['ゲストから会員 A', null, { kind: 'member', userId: 'member-a' }, 'member-a'],
+    ['下書きなしのゲスト', undefined, { kind: 'guest' }, null],
+    ['下書きなしの会員', undefined, { kind: 'member', userId: 'member-a' }, 'member-a'],
+  ])('支払い済みの買い手が違う・下書きが無い（%s）なら照合して 409 login_changed、ID を返さない', async (_label, paidBuyer, buyer, buyerUserId) => {
+    mockResolveCheckoutBuyer.mockResolvedValue(buyer);
+    mockFindPaidCheckoutSession.mockResolvedValue('cs_paid');
+    mockPaidDraftResult = { data: paidBuyer === undefined ? null : { buyer_user_id: paidBuyer }, error: null };
+
+    const res = await POST(makeRequest({ uiMode: 'custom' })) as unknown as {
+      status: number; body: Record<string, unknown>;
+    };
+
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ error: 'login_changed', message: 'ログインの状態が変わりました。もう一度「確認へ進む」を押してください。' });
+    expect(mockReconcileCheckoutSession).toHaveBeenCalledWith('cs_paid');
+    expect(mockRpc).not.toHaveBeenCalled();
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'checkout.session.create', outcome: 'failure',
+      metadata: {
+        session_id: 'sess-abc', reason: 'login_changed', draft_id: null, buyer_user_id: buyerUserId,
+        paid_checkout_session_id: 'cs_paid', paid_draft_found: paidBuyer !== undefined,
+        ...(paidBuyer !== undefined ? { paid_draft_buyer_user_id: paidBuyer } : {}),
+      },
+    }));
+  });
+
+  it.each(['member-a', undefined])('支払い済みの買い手が違う・無い（%s）時、照合が失敗しても 409 login_changed のまま', async (paidBuyer) => {
+    mockFindPaidCheckoutSession.mockResolvedValue('cs_paid');
+    mockPaidDraftResult = { data: paidBuyer === undefined ? null : { buyer_user_id: paidBuyer }, error: null };
+    const failure = new Error('照合失敗');
+    mockReconcileCheckoutSession.mockRejectedValueOnce(failure);
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const res = await POST(makeRequest({ uiMode: 'custom' })) as unknown as {
+        status: number; body: Record<string, unknown>;
+      };
+
+      expect(res.status).toBe(409);
+      expect(res.body).toEqual({ error: 'login_changed', message: 'ログインの状態が変わりました。もう一度「確認へ進む」を押してください。' });
+      expect(mockReconcileCheckoutSession).toHaveBeenCalledWith('cs_paid');
+      expect(consoleError).toHaveBeenCalledWith(expect.any(String), failure);
+      expect(mockRpc).not.toHaveBeenCalled();
+      expect(mockCreate).not.toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('claim の素の PostgREST エラーも監査に code と message だけを残す', async () => {
+    mockClaimResult = { data: null, error: {
+      code: '23514', message: 'CHECKOUT_DRAFT_BUYER_MISMATCH', details: '監査に残さない詳細', hint: '監査に残さないヒント',
+    } };
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const res = await POST(makeRequest({ uiMode: 'custom' })) as unknown as {
+        status: number; body: Record<string, unknown>;
+      };
+
+      expect(res.status).toBe(500);
+      expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+        outcome: 'error', detail: 'Checkout session creation error',
+        metadata: {
+          correlation_id: expect.any(String), error_code: '23514', error_message: 'CHECKOUT_DRAFT_BUYER_MISMATCH',
+          stripe_type: null, stripe_code: null, stripe_status: null, stripe_request_id: null,
+        },
+      }));
+      expect(res.body).not.toHaveProperty('error_code');
+      expect(res.body).not.toHaveProperty('error_message');
+      expect(mockCreate).not.toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it("claim した下書きの決済の画面が complete なら 409 order_already_placed（やり直せない 409 は返さない）", async () => {
