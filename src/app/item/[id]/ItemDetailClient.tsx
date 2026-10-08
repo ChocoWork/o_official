@@ -193,8 +193,9 @@ function ItemActionButtons({
 /**
  * 選んだ色 × サイズの納期（FREQ-400）。
  *
- * 在庫の有無は「買えるか」ではなく「納期」を分ける。どちらの場合も買えるので、
- * ここで注文を止めない。日数の区分は法令ページ（特定商取引法）と同じ。
+ * 販売中の組み合わせだけを対象に、在庫の有無で納期を分ける。
+ * 取り扱い終了や在庫を読めない組み合わせは納期を断定しないため表示しない。
+ * 日数の区分は法令ページ（特定商取引法）と同じ。
  */
 function DeliveryNote({
   availability,
@@ -368,8 +369,12 @@ export default function ItemDetailClient({ id }: Props) {
     }
     setValidationError(null);
 
-    // 選んだ色・サイズのバリアントの番号を送る。合うバリアントが無い（未登録・在庫の取得に失敗した）時は入れられない。
-    // 取り扱いを終えたバリアントは番号があるので、窓口が 404 の description で断る
+    // 在庫を読めない時と取り扱い終了を区別し、再試行で回復できる場合はその旨を案内する。
+    if (!item.variantAvailability?.length) {
+      setValidationError("在庫を確かめられませんでした。少し時間をおいてから、もう一度お試しください。");
+      return;
+    }
+    // 販売中の組み合わせだけから番号を探し、取り扱い終了の組み合わせを送らない。
     const variantId = findVariantId(item.variantAvailability, hasColors ? color : null, hasSizes ? size : null);
     if (variantId === null) {
       setValidationError("選んだ色・サイズは現在お求めいただけません。");

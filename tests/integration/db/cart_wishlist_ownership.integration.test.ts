@@ -1,7 +1,7 @@
 /** @jest-environment node */
 import { createHash } from 'crypto';
 import { connectLocalDb, describeLocalDb, type PgClient } from './helpers/local-db';
-import { createCatalogFixture, uniqueSuffix } from './helpers/order-fixtures';
+import { createCatalogFixture, createDraft, uniqueSuffix } from './helpers/order-fixtures';
 
 const hashOf = (label: string) => createHash('sha256').update(label).digest('hex');
 
@@ -221,6 +221,7 @@ describeLocalDb('integration: カートとお気に入りの持ち主と明細',
         [{ variant_id: fx.variantId }],
         [7],
         { variant_id: fx.variantId, quantity: 1 },
+        7,
       ];
       for (const lines of invalid) {
         await expect(addLines(db(), cartId, lines)).rejects.toMatchObject({ message: 'CART_INVALID_INPUT' });
@@ -260,6 +261,25 @@ describeLocalDb('integration: カートとお気に入りの持ち主と明細',
   });
 
   describe('merge_guest_into_member', () => {
+    test('会員にもカートがあれば、ゲストの下書きの cart_id を会員のカートへ引き継ぐ', async () => {
+      await db().query('begin');
+      try {
+        const fx = await createCatalogFixture(db(), { stock: 0 });
+        const member = await createMember(db(), 'draft-carryover');
+        const memberCartId = await createMemberCart(db(), member);
+        const draft = await createDraft(db(), { itemId: fx.itemId });
+        const guest = await db().query('select guest_token_hash from public.carts where id = $1', [draft.cartId]);
+        await merge(db(), member, guest.rows[0].guest_token_hash, null);
+        const updated = await db().query('select cart_id from public.checkout_drafts where id = $1', [draft.draftId]);
+        expect(updated.rows[0].cart_id).toBe(memberCartId);
+        expect(await quantityOf(db(), memberCartId, fx.variantId)).toBe(1);
+        expect((await db().query('select id from public.carts where id = $1', [draft.cartId])).rows).toEqual([]);
+      } finally {
+        // 後続の試験に下書きや会員を残さないため、試験の書き込みをまとめて戻す。
+        await db().query('rollback');
+      }
+    });
+
     test('ゲストの分が無ければ何もしない', async () => {
       const member = await createMember(db(), 'none');
       const result = await merge(db(), member, hashOf(`missing-${uniqueSuffix()}`), null);

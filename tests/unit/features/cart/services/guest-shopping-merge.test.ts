@@ -44,6 +44,13 @@ describe('ログインで合わせる', () => {
     expect(JSON.stringify(audit)).not.toContain(WISHLIST);
   });
 
+  test('PostgREST の code が空文字なら、監査の detail は message だけになる', async () => {
+    const supabase = supabaseReturning({ data: null, error: { code: '', message: 'connection closed' } });
+    await expect(mergeGuestShoppingIntoMember(supabase, { userId: 'u1', cartToken: CART, wishlistToken: null })).resolves.toEqual({ ok: false });
+    expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ detail: 'connection closed' }));
+    expect(console.error).toHaveBeenCalled();
+  });
+
   test('DB の失敗は投げずに ok: false を返し、監査に残す', async () => {
     const supabase = supabaseReturning({ data: null, error: { code: 'P0001', message: 'boom', details: null, hint: null } });
     await expect(mergeGuestShoppingIntoMember(supabase, { userId: 'u1', cartToken: CART, wishlistToken: null })).resolves.toEqual({ ok: false });

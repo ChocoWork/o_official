@@ -208,6 +208,8 @@ select cron.schedule(
 | 表 `public.carts`（1行＝1商品・`session_id` 付き）と `public.wishlist`、その許可（RLS）・索引 | 新しい表に置き換える。今の行は捨てる（本番は未公開。2026-09-06 設計書 5 章と同じ） |
 | 関数 `add_guest_cart_item`・`update_guest_cart_item_quantity`・`delete_guest_cart_item`・`list_guest_cart`・`add_guest_wishlist_item`・`delete_guest_wishlist_item`・`list_guest_wishlist`・`update_cart_item_quantity_secure`・`delete_cart_item_secure` | 古い表を使う。アプリから呼んでいるのは最後の2本だけで、窓口の作り直しで要らなくなる |
 
+2026-10-08 追記（全体レビュー）: 商品の作成と色・サイズの変更でバリアントをトリガーで作る（[移行 C](../../../supabase/migrations/20261008130200_item_variant_sync.sql)）。理由は、カートの明細がバリアントを要るので、在庫欄を開かずに公開した商品が買えなくなるため。
+
 ---
 
 ## 4. 印と持ち主の決め方
@@ -426,7 +428,7 @@ Shopify に無いので、窓口の形は今のまま（一覧・追加・削除
 
 ## 7. 決済とのつなぎ
 
-2026-10-08追記（FREQ-430-REQ-05・AC-08、Task 7レビュー）: Shopify の決済が購入不可の商品を外して案内する動きに合わせる。画面に出ない明細を消せず「確認へ進む」が断られ続ける行き止まりを無くすため、`splitPurchasableCartRows` で明細ごとに取り扱い終了・非公開・欠落商品を判定し、`removeCartLines` が持ち主の `cart_id` と明細IDで外す。409 `{error:"cart_updated",retryable:true,message}` と「次の商品はお求めいただけなくなったため、カートから外しました: <名前（色 / サイズ）>。内容をご確認のうえ、もう一度「確認へ進む」を押してください。」を返し、その要求では下書き・Stripe Sessionを作らない。画面はカートと割引の目安を読み直して案内を出し、「確認へ進む」を押せるままにする。押し直すと残りの商品で最終確認へ進む。割引コードの確かめは買える明細だけで計算し、カートを変えない。サーバーは `out_of_stock` を返さず、画面の旧分岐と既存の模擬 E2E は残す。
+2026-10-08追記（FREQ-430-REQ-05・AC-08、Task 7レビュー）: Shopify の決済が購入不可の商品を外して案内する動きに合わせる。画面に出ない明細を消せず「確認へ進む」が断られ続ける行き止まりを無くすため、`splitPurchasableCartRows` で明細ごとに取り扱い終了・非公開・欠落商品を判定し、`removeCartLines` が持ち主の `cart_id` と明細IDで外す。409 `{error:"cart_updated",retryable:true,message}` と「次の商品はお求めいただけなくなったため、カートから外しました: <名前（色 / サイズ）>。内容をご確認のうえ、もう一度「確認へ進む」を押してください。」を返し、その要求では下書き・Stripe Sessionを作らない。画面はカートと割引の目安を読み直して案内を出し、「確認へ進む」を押せるままにする。押し直すと残りの商品で最終確認へ進む。割引コードの確かめは買える明細だけで計算し、カートを変えない。サーバーは `out_of_stock` を返さず、画面の `out_of_stock` の枝と、それを真似る E2E は `cart_updated` の形に直した（全体レビュー）。
 
 根拠: [購入可否判定と削除](../../../src/features/checkout/services/checkout-cart.service.ts)、[create-session](../../../src/app/api/checkout/create-session/route.ts)、[画面の読み直し](../../../src/app/checkout/page.tsx)。
 

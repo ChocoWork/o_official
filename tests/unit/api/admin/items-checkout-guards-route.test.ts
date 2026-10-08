@@ -40,7 +40,7 @@ jest.mock('@/lib/storage/item-images', () => ({
   signItemImageFields: jest.fn(async (_client: unknown, item: unknown) => item),
 }));
 
-import { GET as listItems } from '@/app/api/admin/items/route';
+import { GET as listItems, POST } from '@/app/api/admin/items/route';
 import { DELETE, PATCH, PUT } from '@/app/api/admin/items/[id]/route';
 
 type RouteResponse = { status: number; body: Record<string, unknown> };
@@ -101,6 +101,25 @@ describe('管理画面の商品 API（①・R-44）', () => {
 
   afterEach(() => {
     consoleError.mockRestore();
+  });
+
+  describe.each(['POST', 'PUT'])('%s の組み合わせの入力検証', (method) => {
+    test.each(['colors', 'sizes'])('%s の名前の重なりは 400 で断り、保存しない', async (field) => {
+      const formData = new FormData();
+      for (const [key, value] of Object.entries({ name: 'シャツ', description: '説明', price: '5000', category: 'TOPS', status: 'published' })) {
+        formData.set(key, value);
+      }
+      formData.set('colors', JSON.stringify(field === 'colors'
+        ? [{ name: ' BLACK ', hex: '#000000' }, { name: 'BLACK', hex: '#111111' }]
+        : [{ name: 'BLACK', hex: '#000000' }]));
+      formData.set('sizes', JSON.stringify(field === 'sizes' ? ['M', ' M '] : ['M']));
+      const request = { formData: async () => formData } as unknown as Request;
+      const response = (await (method === 'POST' ? POST(request) : PUT(request, CONTEXT))) as unknown as RouteResponse;
+      expect(response.status).toBe(400);
+      expect(response.body).toMatchObject({ error: 'Invalid request', details: { fieldErrors: { [field]: expect.any(Array) } } });
+      expect(mockUpdateEq).not.toHaveBeenCalled();
+      expect(consoleError).not.toHaveBeenCalled();
+    });
   });
 
   it('非公開にしたら、その商品を含む開いている決済を失効させる', async () => {

@@ -140,7 +140,12 @@ BEGIN
   IF _cart_id IS NULL
      OR _lines IS NULL
      OR pg_catalog.jsonb_typeof(_lines) IS DISTINCT FROM 'array'
-     OR pg_catalog.jsonb_array_length(_lines) NOT BETWEEN 1 AND 10
+  THEN
+    RAISE EXCEPTION 'CART_INVALID_INPUT' USING ERRCODE = '22023';
+  END IF;
+
+  -- OR の評価順に頼らず、配列だと確かめた後で長さと各要素を調べる。
+  IF pg_catalog.jsonb_array_length(_lines) NOT BETWEEN 1 AND 10
      OR EXISTS (
        SELECT 1
        FROM pg_catalog.jsonb_array_elements(_lines) AS e(value)
@@ -339,6 +344,9 @@ BEGIN
         END LOOP;
 
         -- 移さなかった明細（同じバリアント・上限を超えた分）はゲストのカートと一緒に消える
+        -- ゲストで注文まで進んだ後に Webhook・見回りが仕上げても、clear_cart_for_order が
+        -- 下書きの cart_id で会員へ移した購入済み明細を消せるようにする（二重購入を防ぐため）。
+        UPDATE public.checkout_drafts SET cart_id = member_cart_id WHERE cart_id = guest_cart_id;
         DELETE FROM public.carts AS c WHERE c.id = guest_cart_id;
       END IF;
     END IF;
@@ -387,6 +395,7 @@ GRANT EXECUTE ON FUNCTION public.merge_guest_into_member(uuid, text, text) TO se
 
 -- ゲストの分は最後に使ってから30日で消す（設計書 3-3。Shopify も使われないカートを30日で消す）。会員の分は退会まで残す
 -- 同名ジョブは置き換えられる（cron.schedule はジョブ名で上書きする）
+-- 実行時刻は UTC（日本時間 12:45）。
 SELECT cron.schedule(
   'guest-shopping-retention',
   '45 3 * * *',

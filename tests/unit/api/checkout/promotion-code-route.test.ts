@@ -299,6 +299,7 @@ describe('POST /api/checkout/promotion-code', () => {
   });
 
   test('Stripe に問い合わせられなければ 500 で、時間をおいて試すよう案内する', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
     mockCheckPromotionCode.mockRejectedValue(new Error('stripe down'));
 
     const res = await POST(makeRequest({ code: 'WELCOME10' }));
@@ -308,5 +309,7 @@ describe('POST /api/checkout/promotion-code', () => {
       error: 'promotion_code_failed',
       message: '割引コードを確かめられませんでした。少し時間をおいてから、もう一度お試しください。',
     });
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 });

@@ -131,11 +131,16 @@ export async function persistSessionAndCookies(
       // 全部保存した後に呼ぶ。失敗してもログインは止めず、Cookie を残して次の要求で合わせ直す。
       // user.id は型の上で省略可のため確かめる（セッションの保存が済んだこの時点では必ずある）。
       if (guestShopping && user.id && (guestShopping.cartToken || guestShopping.wishlistToken)) {
-        const { mergeGuestShoppingIntoMember } = await import('@/features/cart/services/guest-shopping-merge');
-        const merged = await mergeGuestShoppingIntoMember(service, { userId: user.id, ...guestShopping });
-        if (merged.ok) {
-          const { clearGuestShoppingCookies } = await import('@/features/cart/services/guest-shopping-token');
-          clearGuestShoppingCookies(res);
+        try {
+          const { mergeGuestShoppingIntoMember } = await import('@/features/cart/services/guest-shopping-merge');
+          const merged = await mergeGuestShoppingIntoMember(service, { userId: user.id, ...guestShopping });
+          if (merged.ok) {
+            const { clearGuestShoppingCookies } = await import('@/features/cart/services/guest-shopping-token');
+            clearGuestShoppingCookies(res);
+          }
+        } catch {
+          // ログインは保存済みなので後処理の例外で失敗に戻さず、印や個人情報を出さずに記録する。
+          console.error('persistSessionAndCookies: guest shopping merge failed');
         }
       }
 

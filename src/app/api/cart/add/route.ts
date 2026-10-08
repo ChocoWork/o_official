@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
 import { addCartLinesSchema } from '@/features/cart/services/cart-stock';
-import { denyIfCsrfInvalid, openShoppingContext } from '@/features/cart/services/shopping-context';
+import { denyIfCsrfInvalid, openShoppingContext, type ShoppingContext } from '@/features/cart/services/shopping-context';
 import { buildCartJson } from '@/features/cart/services/cart-view';
 import { CART_ERROR_DESCRIPTIONS, cartErrorResponse, cartRpcErrorResponse } from '@/features/cart/services/cart-errors';
 
@@ -17,6 +17,7 @@ function clientIpOf(req: NextRequest): string | null {
 export async function POST(req: NextRequest) {
   const clientIp = clientIpOf(req);
   const userAgent = req.headers.get('user-agent');
+  let context: ShoppingContext | undefined;
   try {
     const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
     const byIp = await enforceRateLimit({ request: req, endpoint: 'cart:add', limit: 60, windowSeconds: 60 });
@@ -28,7 +29,7 @@ export async function POST(req: NextRequest) {
     const supabase = await createServiceRoleClient();
     const opened = await openShoppingContext(req, 'cart', supabase, { write: true });
     if (!opened.ok) return opened.response;
-    const { context } = opened;
+    context = opened.context;
 
     if (context.rateLimitSubject) {
       const byOwner = await enforceRateLimit({ request: req, endpoint: 'cart:add', limit: 30, windowSeconds: 60, subject: context.rateLimitSubject });
@@ -57,8 +58,7 @@ export async function POST(req: NextRequest) {
       return context.finish(mapped ?? cartErrorResponse(500, CART_ERROR_DESCRIPTIONS.failed));
     }
 
-    const cart = await buildCartJson(supabase, cartId);
-    const added = new Set(lines.map((line) => line.variant_id));
+    // DB の追加は済んでいるため、応答の組み立てが失敗しても成功の監査を失わないよう先に記録する。
     await logAudit({
       action: 'cart.add',
       outcome: 'success',
@@ -67,9 +67,13 @@ export async function POST(req: NextRequest) {
       user_agent: userAgent,
       metadata: { ...context.auditOwner, lines },
     });
+    const cart = await buildCartJson(supabase, cartId);
+    const added = new Set(lines.map((line) => line.variant_id));
     return context.finish(NextResponse.json({ items: cart.items.filter((line) => added.has(line.variant_id)) }));
   } catch (error) {
     console.error('Cart add error:', error);
-    return cartErrorResponse(500, CART_ERROR_DESCRIPTIONS.failed);
+    const response = cartErrorResponse(500, CART_ERROR_DESCRIPTIONS.failed);
+    // 初回ゲストでも作ったカートの印を渡し、応答の失敗で持ち主の行を宙に浮かせない。
+    return context ? context.finish(response) : response;
   }
 }

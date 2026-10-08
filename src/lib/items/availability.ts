@@ -39,7 +39,7 @@ type VariantRow = {
   item_sizes: { label: string } | null;
 };
 
-/** 組み合わせが分からないときの既定。受注生産として扱い、注文は止めない。 */
+/** 組み合わせが分からないときの既定。商品詳細では納期を出さず、再試行を案内する。 */
 const UNKNOWN_AVAILABILITY: ItemAvailability = { madeToOrder: true, combinations: [] };
 
 export async function getItemsAvailability(
@@ -76,10 +76,10 @@ export async function getItemsAvailability(
 
     for (const row of (data ?? []) as unknown as VariantRow[]) {
       const entry = result.get(row.item_id);
-      if (!entry) continue;
+      if (!entry || !row.is_active) continue;
 
-      // 止めている組み合わせは在庫があっても出さない（受注生産として扱う）。
-      const inStock = row.is_active && row.stock_quantity > 0;
+      // 販売中の組み合わせだけに納期を付け、取り扱い終了を受注生産と誤表示しない。
+      const inStock = row.stock_quantity > 0;
       entry.combinations.push({
         colorName: row.item_colors?.name ?? null,
         sizeLabel: row.item_sizes?.label ?? null,

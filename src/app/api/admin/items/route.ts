@@ -29,6 +29,14 @@ const createItemSchema = z.object({
   status: itemStatusSchema,
   sizes: z.array(z.string().trim().min(1).max(20)).min(1),
   colors: z.array(colorSchema).min(1),
+}).superRefine((item, ctx) => {
+  // DB のトリガーが重複を例外にする前に、入力の問題として 400 で返すため確かめる。
+  if (new Set(item.colors.map((color) => color.name)).size !== item.colors.length) {
+    ctx.addIssue({ code: 'custom', path: ['colors'], message: 'Color names must be unique' });
+  }
+  if (new Set(item.sizes).size !== item.sizes.length) {
+    ctx.addIssue({ code: 'custom', path: ['sizes'], message: 'Sizes must be unique' });
+  }
 });
 
 const allowedImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);

@@ -754,6 +754,7 @@ describe("POST /api/checkout/create-session", () => {
   );
 
   it("claim済みSessionの取得結果が不明なら新規Sessionを作らず退役もしない", async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
     mockClaimResult = {
       data: [
         makeClaimedDraft({}, { checkout_session_id: "cs_existing_claim" }),
@@ -772,9 +773,12 @@ describe("POST /api/checkout/create-session", () => {
       "retire_expired_checkout_draft",
       expect.anything(),
     );
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 
   it("異なるStripe Session IDとのCAS競合では後発のopen Sessionを失効する", async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
     mockCreate.mockResolvedValue({
       id: "cs_orphan",
       status: "open",
@@ -794,6 +798,8 @@ describe("POST /api/checkout/create-session", () => {
         idempotencyKey: "checkout-session:expire-orphan:v3:draft-123:cs_orphan",
       },
     );
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 
   /**
@@ -808,6 +814,7 @@ describe("POST /api/checkout/create-session", () => {
   it.each([["custom"]] as const)(
     "%s で決済セッション ID の書き戻しに失敗したら 500 を返す",
     async (uiMode) => {
+      const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
       mockCreate.mockResolvedValue({
         id: "cs_test",
         url: "https://checkout.stripe.com/pay/cs_test",
@@ -828,6 +835,8 @@ describe("POST /api/checkout/create-session", () => {
         }),
       );
       expect(mockExpire).not.toHaveBeenCalled();
+      expect(consoleError).toHaveBeenCalled();
+      consoleError.mockRestore();
     },
   );
 
@@ -1128,7 +1137,13 @@ describe("POST /api/checkout/create-session", () => {
         detail: "Unavailable cart lines removed",
         ip: null,
         user_agent: null,
-        metadata: { session_id: "sess-abc", removed_line_count: 2 },
+        metadata: {
+          session_id: "sess-abc", removed_line_count: 2,
+          removed_lines: [
+            { line_id: CART_ROW.id, variant_id: CART_ROW.variant_id, item_id: CART_ROW.item_id },
+            { line_id: "line-2", variant_id: 102, item_id: CART_ROW.item_id },
+          ],
+        },
       });
       expect(mockRpc).not.toHaveBeenCalled();
       expect(mockCreate).not.toHaveBeenCalled();
@@ -1181,6 +1196,7 @@ describe("POST /api/checkout/create-session", () => {
   });
 
   it("失効時刻を下書きに決められなければ Session を作らない", async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
     mockReserveExpiryResult = { data: null, error: { message: "CHECKOUT_DRAFT_NOT_RESERVABLE" } };
 
     const res = (await POST(
@@ -1189,6 +1205,8 @@ describe("POST /api/checkout/create-session", () => {
 
     expect(res.status).toBe(500);
     expect(mockCreate).not.toHaveBeenCalled();
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
   });
   // 決め事 D4: 決済の画面は「確認へ進む」の時点の入力の写し。申告の支払方法は指紋に入れない
   it("申告の支払方法が違っても同じ指紋、配送先が違えば別の指紋になる", async () => {

@@ -219,8 +219,13 @@ describe('POST /api/cart/add', () => {
     }
   });
 
-  test('途中でカートの組み立てが投げたら Global Constraints の文言で 500 を返す', async () => {
+  test('RPC 成功後の組み立てが投げても成功の監査を残し、初回ゲストの Cookie 付きで 500 を返す', async () => {
     const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    context.rateLimitSubject = null;
+    context.finish.mockImplementation((response: NextResponse) => {
+      response.cookies.set('cart', 'synthetic-guest-token', { httpOnly: true });
+      return response;
+    });
     (buildCartJson as jest.Mock).mockRejectedValueOnce(new Error('DB unavailable'));
 
     const res = await POST(post('/api/cart/add', { items: [{ id: 1201, quantity: 1 }] }));
@@ -232,6 +237,12 @@ describe('POST /api/cart/add', () => {
       description: 'カートを更新できませんでした。時間をおいてもう一度お試しください。',
     });
     expect(spy).toHaveBeenCalledWith('Cart add error:', expect.any(Error));
+    expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'cart.add', outcome: 'success', metadata: { ...context.auditOwner, lines: [{ variant_id: 1201, quantity: 1 }] },
+    }));
+    expect((logAudit as jest.Mock).mock.invocationCallOrder[0]).toBeLessThan((buildCartJson as jest.Mock).mock.invocationCallOrder[0]);
+    expect(context.finish).toHaveBeenCalledWith(res);
+    expect((res as NextResponse).cookies.has('cart')).toBe(true);
     spy.mockRestore();
   });
 });

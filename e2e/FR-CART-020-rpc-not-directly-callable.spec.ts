@@ -32,10 +32,9 @@ test.describe('FR-CART-020 guest cart RPC is not reachable from the browser role
         failOnStatusCode: false,
       });
 
-      // 権限が剥がれていれば PostgREST は 404（関数が見えない）か 403 を返す。
-      // 200 が返るなら anon から実行できてしまっている。
-      expect(response.status()).toBeGreaterThanOrEqual(400);
-      expect(response.status()).toBeLessThan(500);
+      // 入力不正の 400 を権限拒否と誤認しないため、権限不足・関数非公開の code か状態に絞る。
+      const body = await response.json().catch(() => null) as { code?: string } | null;
+      expect(['42501', 'PGRST202'].includes(body?.code ?? '') || [401, 403, 404].includes(response.status())).toBe(true);
     });
   }
 });

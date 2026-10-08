@@ -1,4 +1,5 @@
 import { expect, Page } from '@playwright/test';
+import { CART_OPTION_NAMES, type CartJson } from '../src/features/cart/types/cart-json';
 
 export type MockCartItem = {
   id: string;
@@ -150,8 +151,8 @@ function toCartJsonLine(item: MockCartItem) {
     product_title: name,
     variant_title: variantTitle,
     options_with_values: [
-      ...(item.color ? [{ name: 'カラー', value: item.color }] : []),
-      ...(item.size ? [{ name: 'サイズ', value: item.size }] : []),
+      ...(item.color ? [{ name: CART_OPTION_NAMES.color, value: item.color }] : []),
+      ...(item.size ? [{ name: CART_OPTION_NAMES.size, value: item.size }] : []),
     ],
     price,
     line_price: price * item.quantity,
@@ -162,7 +163,7 @@ function toCartJsonLine(item: MockCartItem) {
 }
 
 /** GET /api/cart の応答（カート全体）。カートを直接真似る spec も、同じ形をここから作る */
-export function toCartJson(items: MockCartItem[]) {
+export function toCartJson(items: MockCartItem[]): CartJson {
   // 非公開・削除の商品（items: null）は新しい窓口が返さないので、真似る時も出さない
   const lines = items.filter((item) => item.items !== null).map(toCartJsonLine);
   const subtotal = lines.reduce((sum, line) => sum + line.line_price, 0);
@@ -195,6 +196,7 @@ export async function mockCartApis(
   const postBodies: Array<Record<string, unknown>> = [];
 
   await page.route('**/api/cart', async (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(toCartJson(cartItems)) });
   });
 
@@ -204,8 +206,10 @@ export async function mockCartApis(
     const added = (body.items ?? []).map(({ id, quantity }) => {
       const existing = cartItems.find((item) => (item.variant_id ?? item.item_id) === id);
       if (existing) {
-        existing.quantity += quantity;
-        return existing;
+        const updated = { ...existing, quantity: existing.quantity + quantity };
+        // 呼び出し元の試験データを変えないため、共有された明細は新しい物で置き換える。
+        cartItems = cartItems.map((item) => item === existing ? updated : item);
+        return updated;
       }
       const created = sampleCartItem({ id: `cart-added-${cartItems.length + 1}`, variant_id: id, quantity });
       cartItems = [...cartItems, created];

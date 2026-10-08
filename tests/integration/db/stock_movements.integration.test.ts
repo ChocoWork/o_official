@@ -25,8 +25,9 @@ describe('integration: stock_movements', () => {
        VALUES ('movement test', 'desc', 1000, 'TOPS', '/images/test.jpg', 'published')
        RETURNING id`,
     );
+    // 色・サイズの無い商品には、items のトリガー（移行 C）が色・サイズ無しのバリアントを1つ作る。それを使う
     const variant = await client.query(
-      `INSERT INTO public.item_variants (item_id) VALUES ($1) RETURNING id`,
+      `SELECT id FROM public.item_variants WHERE item_id = $1 AND color_id IS NULL AND size_id IS NULL`,
       [item.rows[0].id],
     );
     return variant.rows[0].id;

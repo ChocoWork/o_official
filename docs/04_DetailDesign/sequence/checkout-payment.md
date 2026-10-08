@@ -171,7 +171,7 @@ sequenceDiagram
 | --- | --- |
 | `stock_changed`・`item_unavailable`・`price_changed`・`cart_changed` | カート画面へ移し、案内を1回だけ出す（`sessionStorage` の `checkout:cart-notice`）。在庫の変化は、変わった明細の名前・色・サイズと「在庫あり → 受注生産」の印を添える |
 | `zero_amount` | 入力画面へ戻し、案内を出す |
-| `session_expired` | 「確認へ進む」と同じ処理で決済の画面を作り直し、最終確認画面の一番上に案内を出す。作り直しの応答を待つ間は、「変更」「戻る」「注文する」を押せない。購入不可明細があればcreate-sessionが持ち主のカートから外して409 `cart_updated`（`retryable: true`）を返す。入力画面へ戻してカートと割引の目安を読み直し、外した商品名・色・サイズ入りの案内を出し、「確認へ進む」を押せるままにする（FREQ-424・FREQ-430-AC-08）。旧 `out_of_stock` の分岐は画面と模擬 E2E に残るが、実際のサーバーは返さない |
+| `session_expired` | 「確認へ進む」と同じ処理で決済の画面を作り直し、最終確認画面の一番上に案内を出す。作り直しの応答を待つ間は、「変更」「戻る」「注文する」を押せない。購入不可明細があればcreate-sessionが持ち主のカートから外して409 `cart_updated`（`retryable: true`）を返す。入力画面へ戻してカートと割引の目安を読み直し、外した商品名・色・サイズ入りの案内を出し、「確認へ進む」を押せるままにする（FREQ-424・FREQ-430-AC-08）。画面の `out_of_stock` の枝と、それを真似る E2E は `cart_updated` の形に直した（2026-10-08 全体レビュー） |
 | `superseded` | その画面のまま、一番上に案内を出す（別のタブで後から「確認へ進む」が押された） |
 | `login_changed` | 入力画面へ戻し、ボタンの上に「ログインの状態が変わりました。もう一度「確認へ進む」を押してください。」を出す（押し直せる）。ログインの状態とカートを読み直し、入力欄の扱いを今のログインに合わせる（会員なら入力欄をその会員の内容で置き換える（C7）。ゲストなら今の入力を残す）。印を新しくできなかった401（`auth_expired`）と、決済の画面がこの `session_id` の印のものでないという403（`forbidden`）も、同じ扱いにする |
 | 403 `forbidden`（決済の画面がこの決済の流れの印のものでない） | 「確認へ進む」の後にログインして `session_id` の印が新しくなった時など。`login_changed` と同じ扱い（同じ案内・入力画面へ戻す・読み直し）。サーバーは印の合わない要求で他人の決済の画面を閉じさせないため、この403では決済の画面を閉じない（30分の時間切れで閉じる）。画面からも閉じない。読み直すカートは、ログインの処理の中でゲストのカートを合わせた会員のカート（FREQ-428） |
@@ -352,4 +352,4 @@ sequenceDiagram
 
 照合全体の基準は2026-10-04の作業ツリーで、`bbb18761`後の返金補正を含む。SQ-CHECKOUT-01〜03は2026-10-07の作業ツリー（グループ F）から書いた。今回、SQ-CHECKOUT-01のcustom限定・配送先必須の検証、SQ-CHECKOUT-02の失効処理、SQ-CHECKOUT-04の呼出し元と、照合器の受付の予備処理・放棄時の在庫返却を現行コードで確認し直した。2026-10-04のレビュー対象と検証結果は[レビュー記録](../../05_Quality/reviews/code/2026-10-04-sequence-state-review.md)を参照する。completeの外側500の監査はmessageと文字列codeを記録し、例外オブジェクトのdetails/hintを複写しない。
 
-2026-10-08（FREQ-428〜432）: 決済の流れは `session_id`、カートの所有権は `cart` Cookie または会員の ID で分ける。下書きの `cart_id` と `source_cart_line_id` による注文受付・削除の根拠は [移行 B](../../../supabase/migrations/20261008130100_cart_checkout_rpcs.sql)。create-session の購入不可明細の処理は [checkout-cart.service.ts](../../../src/features/checkout/services/checkout-cart.service.ts)。旧 `out_of_stock` は画面の互換分岐と既存の模擬 E2E の説明であり、サーバーは返さない。
+2026-10-08（FREQ-428〜432）: 決済の流れは `session_id`、カートの所有権は `cart` Cookie または会員の ID で分ける。下書きの `cart_id` と `source_cart_line_id` による注文受付・削除の根拠は [移行 B](../../../supabase/migrations/20261008130100_cart_checkout_rpcs.sql)。create-session の購入不可明細の処理は [checkout-cart.service.ts](../../../src/features/checkout/services/checkout-cart.service.ts)。画面の `out_of_stock` の枝と、それを真似る E2E は `cart_updated` の形に直した（全体レビュー）。通常の確認・作り直しとも入力画面で案内し、押し直せるままにする。

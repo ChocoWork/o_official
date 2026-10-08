@@ -10,6 +10,11 @@ INSERT INTO storage.buckets (id, name, public) VALUES
   ('news-images', 'news-images', false)
 ON CONFLICT (id) DO NOTHING;
 
+-- 商品の色・サイズ・バリアントは、下で番号と SKU を決めて入れる（E2E が SKU で選ぶため）。
+-- 商品を入れた時に組み合わせを自動で作るトリガー（移行 20261008130200_item_variant_sync.sql）が先に別の番号で
+-- 作ると番号がぶつかるので、見本の商品とバリアントを入れる間だけ止め、入れ終わったら戻す。
+ALTER TABLE public.items DISABLE TRIGGER items_sync_variants;
+
 -- 商品: 9件（公開7・非公開2）。番号と価格と分類は本番の形に合わせる。
 -- 検索のテストは一覧の先頭（いちばん新しい商品）の名前の最初の語で検索するので、商品1の名前を「Aoi」で始める。
 INSERT INTO public.items (
@@ -101,6 +106,9 @@ INSERT INTO public.item_variants (id, item_id, color_id, size_id, sku, stock_qua
   (19, 9, 12, 10, 'E2E-ITEM-9-CLOUD-M', 0, true),
   (20, 9, 12, 11, 'E2E-ITEM-9-CLOUD-L', 0, true),
   (21, 10, 13, NULL, 'E2E-ITEM-10-BLACK-NOSIZE', 0, true);
+
+-- 見本の商品とバリアントを入れ終えたので、組み合わせを自動で作るトリガーを戻す（以後に作る商品は自動でそろう）。
+ALTER TABLE public.items ENABLE TRIGGER items_sync_variants;
 
 -- ルック: 7件（すべて公開）と、商品とのつながり9件。ルック1に「Aoi」を入れる（検索のテスト）。
 -- 画像は本番（ルックごとに1枚）と違い、わざと2枚にする。ギャラリーの複数枚の動き（FREQ-179、

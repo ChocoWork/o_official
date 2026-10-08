@@ -29,6 +29,8 @@ jest.mock('@/features/auth/services/login-2fa-session', () => ({
 
 jest.mock('@/lib/cookie', () => ({
   loginTwoFactorSessionCookieName: 'sb-login-2fa-session',
+  cartCookieName: 'cart',
+  wishlistCookieName: 'wishlist',
   clearCookieOptions: jest.fn(() => ({ path: '/', maxAge: 0 })),
 }));
 
@@ -127,6 +129,18 @@ describe('POST /api/auth/otp/verify - Integration Tests', () => {
       token: VALID_CODE,
       type: 'email',
     });
+  });
+
+  test('cart の Cookie の印をセッション保存へ渡し、ログイン後の引き継ぎに使う', async () => {
+    const cartToken = 'c'.repeat(43);
+    const request = buildOtpRequest();
+    request.headers.set('cookie', `sb-login-2fa-session=synthetic; cart=${cartToken}`);
+    const res = await otpVerifyHandler(request);
+    const { persistSessionAndCookies } = require('@/features/auth/services/register');
+    expect(res.status).toBe(200);
+    expect(persistSessionAndCookies).toHaveBeenCalledWith(
+      res, fakeSession, fakeUser, { cartToken, wishlistToken: null },
+    );
   });
 
   test('[SECURITY] 本文に email を混ぜても宛先の判定に影響しない', async () => {

@@ -79,14 +79,17 @@ describe('getItemsAvailability', () => {
     expect(result.get(7)?.madeToOrder).toBe(true);
   });
 
-  test('止めている組み合わせは在庫があっても在庫なし扱いにする', async () => {
-    setupVariants([variantRow({ stock_quantity: 5, is_active: false })]);
+  test('取り扱い終了のバリアントは組み合わせに入らない', async () => {
+    setupVariants([
+      variantRow({ stock_quantity: 5, is_active: false }),
+      variantRow({ id: 102, stock_quantity: 0, item_sizes: { label: 'L' } }),
+    ]);
 
     const result = await getItemsAvailability([7]);
 
     expect(result.get(7)).toEqual({
       madeToOrder: true,
-      combinations: [{ colorName: 'BLACK', sizeLabel: 'M', inStock: false, variantId: 101 }],
+      combinations: [{ colorName: 'BLACK', sizeLabel: 'L', inStock: false, variantId: 102 }],
     });
   });
 
@@ -99,8 +102,8 @@ describe('getItemsAvailability', () => {
   });
 
   /**
-   * バリアントがまだ無い商品は「組み合わせが分からない」。
-   * 受注生産として扱い、注文は止めない（在庫が理由で買えなくしない）。
+   * 組み合わせが分からないときは受注生産の既定値と空の組み合わせを返す。
+   * 商品詳細が在庫を読めない旨を案内するため、架空のバリアントを補わない。
    */
   test('バリアントが1つも無い商品は受注生産として返す', async () => {
     setupVariants([]);
@@ -111,12 +114,15 @@ describe('getItemsAvailability', () => {
   });
 
   test('取得に失敗しても落とさず、受注生産として返す', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
     setupVariants(null as unknown as unknown[], { message: 'boom' });
 
     const result = await getItemsAvailability([7, 8]);
 
     expect(result.get(7)).toEqual({ madeToOrder: true, combinations: [] });
     expect(result.get(8)).toEqual({ madeToOrder: true, combinations: [] });
+    expect(consoleError).toHaveBeenCalledWith('Failed to fetch item variant availability:', { message: 'boom' });
+    consoleError.mockRestore();
   });
 
   test('公開中の商品だけを対象にする', async () => {

@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { seedCart } from './checkout-flow-helpers';
 import { createTestMember, loginAsMember } from './member-session-helpers';
+import { expectCartBadge } from './shop-test-utils';
 
 // 確認コードとログインの Cookie を通信記録に残さないため、ファイルの先頭で無効にする。
 test.use({ trace: 'off' });
@@ -39,6 +40,10 @@ for (const viewport of viewports) {
       expect(itemName.length).toBeGreaterThan(0);
       // 画像のリンクも同じ名前を持つため、文字を持つ商品名のリンクに絞る。
       const itemNameLink = page.getByRole('link', { name: itemName, exact: true }).filter({ hasText: itemName });
+      const cartRow = page.locator('div.border-b').filter({ has: itemNameLink });
+      const variant = cartRow.getByTestId('cart-variant');
+      const guestVariant = await variant.count() ? await variant.innerText() : null;
+      const guestQuantity = await cartRow.getByRole('spinbutton').inputValue();
 
       const member = await createTestMember(`cart-carry-${viewport.name}`);
       await loginAsMember(page, member);
@@ -47,6 +52,13 @@ for (const viewport of viewports) {
       await page.goto('/cart');
       await expect(page.getByRole('button', { name: 'カートから削除', exact: true })).toHaveCount(1);
       await expect(itemNameLink).toBeVisible();
+      if (guestVariant === null) {
+        await expect(variant).toHaveCount(0);
+      } else {
+        await expect(variant).toHaveText(guestVariant);
+      }
+      await expect(cartRow.getByRole('spinbutton')).toHaveValue(guestQuantity);
+      await expectCartBadge(page, 1);
 
       const csrf = (await context.cookies()).find((cookie) => cookie.name === 'sb-csrf-token')?.value;
       if (!csrf) throw new Error('ログアウトに必要な CSRF の合言葉が無い');
@@ -70,6 +82,7 @@ for (const viewport of viewports) {
       }
       await page.goto('/cart');
       await expect(page.getByText('YOUR CART IS EMPTY', { exact: true })).toBeVisible();
+      await expect(page.locator('a[href="/cart"] span.absolute')).toHaveCount(0);
 
       // 同じ会員への確認コードは、手元の Supabase の max_frequency（supabase/config.toml の [auth.email]、1秒）より
       // 短い間隔では送れない（"For security purposes, you can only request this after 0 seconds." で 500）。

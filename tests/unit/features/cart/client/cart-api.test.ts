@@ -144,4 +144,8 @@ describe('cart-api', () => {
     expect(findVariantId(availability, 'Ivory', 'M')).toBeNull();
     expect(findVariantId(undefined, 'Black', 'M')).toBeNull();
   });
+
+  test('組み合わせに番号が欠けていても null を返す', () => {
+    expect(findVariantId([{ colorName: 'Black', sizeLabel: 'M', inStock: true } as never], 'Black', 'M')).toBeNull();
+  });
 });

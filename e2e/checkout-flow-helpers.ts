@@ -50,7 +50,7 @@ export async function seedCart(page: Page): Promise<SeedResult> {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(csrfToken ? { 'x-csrf-token': decodeURIComponent(csrfToken) } : {}),
+        ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
       },
       body: JSON.stringify({ items: [{ id: variantId, quantity: 1 }] }),
     });

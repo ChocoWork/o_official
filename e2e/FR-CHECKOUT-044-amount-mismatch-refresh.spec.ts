@@ -1,12 +1,12 @@
 /**
- * FR-CHECKOUT-044 価格変更で読み直し、やり直せない断りを配送先の変更でも残す
+ * FR-CHECKOUT-044 価格変更で読み直し、明細を外した案内後も確認へ進める
  * 対応 FREQ: FREQ-425（AC-01 / AC-02）。金額を更新して送ること自体は page の単体テストでも確かめる。
  */
 import { expect, test } from '@playwright/test';
 import { CHECKOUT_VIEWPORTS, fillShippingForm, proceedToFinal, seedCart, stubPostalCode } from './checkout-flow-helpers';
 
 const PRICE_MESSAGE = '価格が変わりました。金額をご確認のうえ、もう一度「確認へ進む」を押してください。';
-const UNAVAILABLE_MESSAGE = '以下の商品は現在購入できません: E2E のシャツ';
+const UNAVAILABLE_MESSAGE = '次の商品はお求めいただけなくなったため、カートから外しました: E2E のシャツ。内容をご確認のうえ、もう一度「確認へ進む」を押してください。';
 
 test.describe('FR-CHECKOUT-044 価格変更と配送先の選択', () => {
   test.describe.configure({ timeout: 120_000 });
@@ -42,7 +42,7 @@ test.describe('FR-CHECKOUT-044 価格変更と配送先の選択', () => {
       expect(creations).toBe(2);
     });
 
-    test(`${viewport.name}（${viewport.width}px）購入不可の案内と無効なボタンは新規を選んでも残る`, async ({ page }) => {
+    test(`${viewport.name}（${viewport.width}px）明細を外した案内後も確認へ進め、新規を選ぶと案内を消せる`, async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       const seeded = await seedCart(page);
       test.skip(!seeded.ok, seeded.ok ? '' : seeded.reason);
@@ -62,7 +62,7 @@ test.describe('FR-CHECKOUT-044 価格変更と配送先の選択', () => {
       await page.route('**/api/profile/addresses', (route) => route.fulfill({ json: { addresses: [
         { id: 'e2e-address', postalCode: '1500001', prefecture: '東京都', city: '渋谷区', address: '神宮前1-2-3', building: '', isDefault: true },
       ] } }));
-      await page.route('**/api/checkout/create-session', (route) => route.fulfill({ status: 409, json: { error: 'out_of_stock', message: UNAVAILABLE_MESSAGE } }));
+      await page.route('**/api/checkout/create-session', (route) => route.fulfill({ status: 409, json: { error: 'cart_updated', retryable: true, message: UNAVAILABLE_MESSAGE } }));
       await page.goto('/checkout');
       const select = page.getByRole('combobox', { name: '保存済みの配送先' });
       await expect(select).toContainText('150-0001');
@@ -70,13 +70,14 @@ test.describe('FR-CHECKOUT-044 価格変更と配送先の選択', () => {
       await expect(proceed).toBeEnabled();
       await proceed.click();
       await expect(page.getByTestId('checkout-session-error')).toHaveText(UNAVAILABLE_MESSAGE);
-      await expect(proceed).toBeDisabled();
+      await expect(proceed).toBeEnabled();
+      await expect(page).toHaveURL(/\/checkout$/);
 
       await select.click();
       await page.getByRole('option', { name: '新規', exact: true }).click();
       await expect(select).toContainText('新規');
-      await expect(page.getByTestId('checkout-session-error')).toHaveText(UNAVAILABLE_MESSAGE);
-      await expect(proceed).toBeDisabled();
+      await expect(page.getByTestId('checkout-session-error')).toHaveCount(0);
+      await expect(proceed).toBeEnabled();
     });
   }
 });

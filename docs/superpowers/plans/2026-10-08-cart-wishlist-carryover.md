@@ -12,6 +12,14 @@
 
 **Spec:** [docs/superpowers/specs/2026-10-08-cart-wishlist-carryover-design.md](../specs/2026-10-08-cart-wishlist-carryover-design.md)（ユーザー承認 2026-10-08）
 
+## 実装との差分（2026-10-08）
+
+- 監査のゲストのキーは `guest_hash_prefix`。本文の `guest_token_hash_prefix` は古い。
+- カートの追加の監査は `lines`（`[{variant_id,quantity}]`）。本文の `variant_ids`・`quantities` は古い。
+- お気に入りの 409 の本文は `'Item already in wishlist'`。
+- 決め事 P14 と Review Focus 5 は、「確認へ進む」で購入不可の明細を外して 409 `cart_updated`（`retryable: true`）で案内する形に変えた。
+- [移行 C（バリアントのトリガー）](../../../supabase/migrations/20261008130200_item_variant_sync.sql) を足した。商品の作成と色・サイズの変更で組み合わせを作る。
+
 ## Global Constraints
 
 - ユーザーの方針: Shopify と同じ構造に近づける。Shopify に無い部分は世界の業界標準に従う。計画に無い判断が要る時もこの順で決める

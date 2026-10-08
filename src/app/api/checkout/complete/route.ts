@@ -15,6 +15,7 @@ import { logAudit } from '@/lib/audit';
 import { isTransientStripeError } from '@/lib/stripe/checkout-payment-reader';
 import { reconcileCheckoutPayment, ReconcileTransientError } from '@/lib/stripe/checkout-payment-reconciler';
 import { createDefaultReconcilerDeps } from '@/lib/stripe/checkout-payment-reconciler-deps';
+import { describeUnexpectedError } from '@/features/checkout/services/checkout-error.service';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -38,21 +39,6 @@ function getClientIp(request: NextRequest): string | null {
   }
 
   return request.headers.get('x-real-ip');
-}
-
-/**
- * 想定外の失敗を監査に残す形にする。Supabase の失敗は Error でない素のオブジェクト
- * （{ message, code, details, hint }）として投げられることがあるので、Error かどうかを問わず
- * message と code だけを取り出す。details には行の内容（個人情報）が入りうるので残さない。
- * code は文字列で付いているときだけ入れる（無ければ従来どおり { error_message } だけ）。
- */
-function describeUnexpectedError(error: unknown): { error_message: string; error_code?: string } {
-  const fields = typeof error === 'object' && error !== null ? (error as { message?: unknown; code?: unknown }) : {};
-  const errorMessage = typeof fields.message === 'string' ? fields.message : 'Unknown error';
-
-  return typeof fields.code === 'string'
-    ? { error_message: errorMessage, error_code: fields.code }
-    : { error_message: errorMessage };
 }
 
 // PUBLIC: ゲスト購入を許可する公開 Route。守りはカートの Cookie・回数の制限・決済の画面とカートの一致・下書きとカートの一致。

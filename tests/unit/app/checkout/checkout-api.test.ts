@@ -51,7 +51,7 @@ describe('requestCheckoutConfirmation', () => {
       .mockResolvedValueOnce(jsonResponse(200, { confirmation: CONFIRMATION }))
       .mockResolvedValueOnce(jsonResponse(409, { error: 'order_already_placed', checkoutSessionId: 'cs_paid' }))
       .mockResolvedValueOnce(jsonResponse(409, { error: 'promotion_code_invalid', message: 'このコードは使えません' }))
-      .mockResolvedValueOnce(jsonResponse(409, { error: 'out_of_stock', message: '以下の商品は現在購入できません: A' }))
+      .mockResolvedValueOnce(jsonResponse(409, { error: 'cart_updated', retryable: true, message: '次の商品はお求めいただけなくなったため、カートから外しました: A。内容をご確認のうえ、もう一度「確認へ進む」を押してください。' }))
       .mockResolvedValueOnce(jsonResponse(503, { error: 'checkout_session_failed', message: '一時的に…', correlationId: 'c-1', retryable: true }))
       .mockResolvedValueOnce(jsonResponse(400, { error: 'Cart is empty' }));
     const call = () => requestCheckoutConfirmation({ shipping: SHIPPING, displayedAmounts: AMOUNTS, promotionCode: null });
@@ -61,9 +61,9 @@ describe('requestCheckoutConfirmation', () => {
     await expect(call()).resolves.toEqual({ kind: 'promotion_code_invalid', message: 'このコードは使えません' });
     await expect(call()).resolves.toEqual({
       kind: 'error',
-      message: '以下の商品は現在購入できません: A',
-      code: 'out_of_stock',
-      retryable: false,
+      message: '次の商品はお求めいただけなくなったため、カートから外しました: A。内容をご確認のうえ、もう一度「確認へ進む」を押してください。',
+      code: 'cart_updated',
+      retryable: true,
       correlationId: null,
     });
     await expect(call()).resolves.toEqual({ kind: 'error', code: 'checkout_session_failed', message: '一時的に…', retryable: true, correlationId: 'c-1' });

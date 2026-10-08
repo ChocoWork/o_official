@@ -867,7 +867,7 @@ function CheckoutPageContent() {
   };
 
   // 「確認へ進む」の本体。入力を送って決済の画面を作り、最終確認画面へ進む（設計書 2-2）
-  const proceedToConfirmation = async (notice: string | null, recreating = false) => {
+  const proceedToConfirmation = async (notice: string | null) => {
     const result = await requestCheckoutConfirmation({
       shipping: { email, fullName, kanaName, postalCode, prefecture, city, address, building, phone },
       displayedAmounts: {
@@ -890,11 +890,6 @@ function CheckoutPageContent() {
       return;
     }
 
-    if (recreating && result.kind === "error" && result.code === "out_of_stock") {
-      saveCartNotice({ kind: "message", message: result.message });
-      router.push("/cart");
-      return;
-    }
     backToInput();
     if (result.kind === "promotion_code_invalid") {
       // 適用の後にカートが変わるなどで使えなくなった。欄に理由を出す（Review Focus 4）
@@ -996,7 +991,7 @@ function CheckoutPageContent() {
       // 作り直しが返ると、最終確認画面へ引き戻される）
       setProceeding(true);
       try {
-        await proceedToConfirmation(rejection.message, true);
+        await proceedToConfirmation(rejection.message);
       } catch {
         backToInput();
         setCheckoutError("決済の準備に失敗しました。少し時間をおいてから、もう一度お試しください。");

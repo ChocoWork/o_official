@@ -19,6 +19,7 @@ jest.mock('@/lib/cookie', () => ({
 }));
 
 jest.mock('@/features/cart/services/guest-shopping-merge', () => ({ mergeGuestShoppingIntoMember: jest.fn() }));
+jest.mock('@/lib/audit', () => ({ logAudit: jest.fn().mockResolvedValue(undefined) }));
 
 // 既存の Jest の Response は json() を持たないため、実際の NextResponse を使えるよう補う。
 if (typeof Response.json !== 'function') {
@@ -65,6 +66,7 @@ describe('persistSessionAndCookies', () => {
   });
 
   it('returns error when DB insert fails', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
     const res: any = { cookies: { set: jest.fn() } };
 
     mockInsert.mockResolvedValue({ data: null, error: { message: 'dup' } });
@@ -77,12 +79,17 @@ describe('persistSessionAndCookies', () => {
     expect(result.ok).toBe(false);
     expect(res.cookies.set).toHaveBeenCalled();
     expect(mockInsert).toHaveBeenCalled();
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 
   it('returns error when session or user missing', async () => {
+    const consoleWarn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const res: any = { cookies: { set: jest.fn() } };
     const result = await persistSessionAndCookies(res as NextResponse, null, null);
     expect(result.ok).toBe(false);
+    expect(consoleWarn).toHaveBeenCalled();
+    consoleWarn.mockRestore();
   });
 });
 
@@ -154,13 +161,38 @@ describe('persistSessionAndCookies: ゲストのカートとお気に入りの�
     expect(res.cookies.get('refresh')?.value).toBe('r1');
   });
 
+  test.each(['merge', 'clearCookies'])('合わせる後処理（%s）が例外を投げてもログイン成功を保ち、ログを残す', async (failure) => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const res = NextResponse.json({});
+    let response: NextResponse = res;
+    if (failure === 'merge') {
+      (mergeGuestShoppingIntoMember as jest.Mock).mockRejectedValue(new Error('merge failed'));
+    } else {
+      (mergeGuestShoppingIntoMember as jest.Mock).mockResolvedValue({ ok: true });
+      const cookies = res.cookies;
+      response = { cookies: { set: jest.fn((cookie: { name: string; value: string }) => {
+        if (cookie.name === 'cart') throw new Error('cookie cleanup failed');
+        return cookies.set(cookie);
+      }) } } as unknown as NextResponse;
+    }
+    const result = await persistSessionAndCookies(response, session, user, { cartToken: 'c'.repeat(43), wishlistToken: null });
+    expect(result).toEqual({ ok: true });
+    expect(mergeGuestShoppingIntoMember).toHaveBeenCalledTimes(1);
+    expect(res.cookies.has('refresh')).toBe(true);
+    expect(consoleError).toHaveBeenCalledWith('persistSessionAndCookies: guest shopping merge failed');
+    jest.restoreAllMocks();
+  });
+
   test('セッションの保存に失敗した時は合わせず、ゲストの Cookie も残す', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
     mockInsert.mockResolvedValue({ data: null, error: { message: 'dup' } });
     const res = NextResponse.json({});
     const result = await persistSessionAndCookies(res, session, user, { cartToken: 'c'.repeat(43), wishlistToken: null });
     expect(result.ok).toBe(false);
     expect(mergeGuestShoppingIntoMember).not.toHaveBeenCalled();
     expect(res.cookies.get('cart')).toBeUndefined();
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 
   test('印が無ければ合わせない', async () => {

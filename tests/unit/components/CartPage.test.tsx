@@ -162,6 +162,21 @@ describe('CartPage', () => {
     resolveSecond(okJson(cartJson({ ...TEST_ITEM, quantity: 4 })));
   });
 
+  it.each([null, {}, 'unreadable'])('数量変更が 200 でも本文を読めない時（%s）は、望んだ数量を成功として残す', async (body) => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(okJson(cartJson(TEST_ITEM)))
+      .mockResolvedValueOnce({ ok: true, json: async () => {
+        if (body === 'unreadable') throw new SyntaxError('invalid JSON');
+        return body;
+      } });
+    render(<CartPage />);
+    await screen.findByText('Test item');
+    await userEvent.click(screen.getByLabelText('increase'));
+    await waitFor(() => expect(mockUpdateCartCount).toHaveBeenCalled());
+    expect(screen.getByDisplayValue('2')).toBeInTheDocument();
+    expect(screen.queryByText(/再試行/)).toBeNull();
+  });
+
   it('数量の変更が断られたら、確定値へロールバックして窓口の description と再試行UIを表示する', async () => {
     (global as any).fetch
       .mockResolvedValueOnce(okJson(cartJson(TEST_ITEM)))

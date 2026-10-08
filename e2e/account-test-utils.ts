@@ -3,6 +3,10 @@ import { injectTurnstileToken } from './turnstile-test-utils';
 import { setLoginTwoFactorCookie } from './auth-2fa-test-utils';
 import { toCartJson } from './shop-test-utils';
 
+/**
+ * カートとお気に入りの読み込みを空で固定する。
+ * 中身の要る spec は、呼んだ後に自分の route を登録する（後に登録した方が勝つ）。
+ */
 export async function mockOtpAuthentication(page: Page, email = 'user@example.com') {
   await page.route('**/api/auth/login', async (route) => {
     await route.fulfill({

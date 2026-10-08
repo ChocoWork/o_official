@@ -1,19 +1,19 @@
 /**
- * FR-CHECKOUT-043 作り直し中に買えない商品が見つかったらカートへ案内する
- * 対応 FREQ: FREQ-424（AC-02）。AC-01 の非公開商品名の案内は create-session-route の単体テストで確かめる。
+ * FR-CHECKOUT-043 作り直し中に明細を外したら入力画面で案内する
+ * 対応 FREQ: FREQ-430-REQ-05・AC-08。外した商品名の案内は create-session-route の単体テストでも確かめる。
  */
 import { expect, test } from '@playwright/test';
 import { CHECKOUT_VIEWPORTS, fillShippingForm, placeOrderWithTestCard, proceedToFinal, seedCart, stubPostalCode } from './checkout-flow-helpers';
 
 const ITEM_NAME = 'E2E の非公開シャツ';
-const MESSAGE = `以下の商品は現在購入できません: ${ITEM_NAME}`;
+const MESSAGE = `次の商品はお求めいただけなくなったため、カートから外しました: ${ITEM_NAME}。内容をご確認のうえ、もう一度「確認へ進む」を押してください。`;
 
-test.describe('FR-CHECKOUT-043 作り直しでカートへ戻る', () => {
+test.describe('FR-CHECKOUT-043 作り直しで入力画面へ戻る', () => {
   test.describe.configure({ timeout: 120_000 });
   test.use({ locale: 'ja-JP' });
 
   for (const viewport of CHECKOUT_VIEWPORTS) {
-    test(`${viewport.name}（${viewport.width}px）作り直しの購入不可はカートに商品名で出る`, async ({ page }) => {
+    test(`${viewport.name}（${viewport.width}px）作り直しで明細を外した案内は入力画面に出て確認へ進める`, async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       const seeded = await seedCart(page);
       test.skip(!seeded.ok, seeded.ok ? '' : seeded.reason);
@@ -32,7 +32,7 @@ test.describe('FR-CHECKOUT-043 作り直しでカートへ戻る', () => {
       await page.route('**/api/checkout/create-session', async (route) => {
         creations += 1;
         if (creations === 2) {
-          await route.fulfill({ status: 409, json: { error: 'out_of_stock', message: MESSAGE } });
+          await route.fulfill({ status: 409, json: { error: 'cart_updated', retryable: true, message: MESSAGE } });
         } else {
           await route.continue();
         }
@@ -42,9 +42,10 @@ test.describe('FR-CHECKOUT-043 作り直しでカートへ戻る', () => {
       await proceedToFinal(page);
       await placeOrderWithTestCard(page);
 
-      await expect(page).toHaveURL(/\/cart$/, { timeout: 30_000 });
-      await expect(page.getByTestId('cart-notice')).toContainText(MESSAGE);
-      await expect(page.getByTestId('cart-notice')).toContainText(ITEM_NAME);
+      await expect(page).toHaveURL(/\/checkout$/, { timeout: 30_000 });
+      await expect(page.getByTestId('checkout-session-error')).toHaveText(MESSAGE);
+      await expect(page.getByTestId('checkout-session-error')).toContainText(ITEM_NAME);
+      await expect(page.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
       expect(placements).toBe(1);
       expect(creations).toBe(2);
     });

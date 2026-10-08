@@ -158,6 +158,7 @@ describe('toggleWishlist', () => {
   });
 
   test('解除に失敗したら表示を元に戻して例外を投げる', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
     await renderLoaded();
     wishlistDelete = { status: 500, body: { error: 'boom' } };
 
@@ -167,6 +168,8 @@ describe('toggleWishlist', () => {
       expect(screen.getByTestId('error')).toHaveTextContent('ウィッシュリストから削除できません'),
     );
     expect(screen.getByTestId('wishlisted')).toHaveTextContent('yes');
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 
   test('DELETE が 404 なら既に解除済みとして扱う', async () => {
@@ -237,6 +240,7 @@ describe('toggleWishlist', () => {
   });
 
   test('追加に失敗したら表示を元に戻して例外を投げる', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
     await renderLoaded();
     wishlistPost = { status: 500, body: { error: 'boom' } };
 
@@ -246,9 +250,11 @@ describe('toggleWishlist', () => {
       expect(screen.getByTestId('error')).toHaveTextContent('ウィッシュリストに追加できません'),
     );
     expect(screen.getByTestId('new-wishlisted')).toHaveTextContent('no');
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 
-  test('会員（読める CSRF の Cookie がある）は、追加と解除に合言葉を付け、読み取りには付けない', async () => {
+  test('会員（読める CSRF の Cookie がある）は、お気に入りの追加と解除に合言葉を付ける', async () => {
     document.cookie = 'sb-csrf-token=member-token';
     await renderLoaded();
 

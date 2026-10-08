@@ -99,5 +99,5 @@ export function findVariantId(
   const match = availability?.find(
     (entry) => (entry.colorName ?? '') === (color ?? '') && (entry.sizeLabel ?? '') === (size ?? ''),
   );
-  return match ? match.variantId : null;
+  return match?.variantId ?? null;
 }

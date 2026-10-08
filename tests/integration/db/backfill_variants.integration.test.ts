@@ -23,13 +23,22 @@ describe('integration: backfill_item_variants', () => {
     client: any,
     colors: unknown,
     sizes: (string | null)[],
+    options: { bypassVariantTrigger?: boolean } = {},
   ): Promise<string> {
+    // 形の壊れた古い商品は、今は items のトリガー（移行 C）が INSERT の時点で断る。
+    // トリガーより前に入った古い行を再現するため、この取引の間だけトリガーを止めて入れる（試験の DB の postgres でだけ使える）
+    if (options.bypassVariantTrigger) {
+      await client.query(`SET LOCAL session_replication_role = replica`);
+    }
     const res = await client.query(
       `INSERT INTO public.items (name, description, price, category, image_url, status, colors, sizes)
        VALUES ('backfill test', 'desc', 1000, 'TOPS', '/images/test.jpg', 'published', $1::jsonb, $2::text[])
        RETURNING id`,
       [JSON.stringify(colors), sizes],
     );
+    if (options.bypassVariantTrigger) {
+      await client.query(`SET LOCAL session_replication_role = origin`);
+    }
     return res.rows[0].id;
   }
 
@@ -197,7 +206,7 @@ describe('integration: backfill_item_variants', () => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const itemId = await createLegacyItem(client, { not: 'an array' }, ['M']);
+      const itemId = await createLegacyItem(client, { not: 'an array' }, ['M'], { bypassVariantTrigger: true });
 
       await expect(
         client.query(`SELECT public.backfill_item_variants($1)`, [itemId]),
@@ -212,7 +221,7 @@ describe('integration: backfill_item_variants', () => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const itemId = await createLegacyItem(client, ['Red'], ['M']);
+      const itemId = await createLegacyItem(client, ['Red'], ['M'], { bypassVariantTrigger: true });
 
       await expect(
         client.query(`SELECT public.backfill_item_variants($1)`, [itemId]),
@@ -231,6 +240,7 @@ describe('integration: backfill_item_variants', () => {
         client,
         [{ name: 'Red', hex: 'FF0000' }],
         ['M'],
+        { bypassVariantTrigger: true },
       );
 
       await expect(
@@ -250,6 +260,7 @@ describe('integration: backfill_item_variants', () => {
         client,
         [{ name: 'Red', hex: '#FF0000' }, { name: 'Red', hex: '#00FF00' }],
         ['M'],
+        { bypassVariantTrigger: true },
       );
 
       await expect(
@@ -265,11 +276,24 @@ describe('integration: backfill_item_variants', () => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const itemId = await createLegacyItem(client, [], ['S', null, 'M']);
+      const itemId = await createLegacyItem(client, [], ['S', null, 'M'], { bypassVariantTrigger: true });
 
       await expect(
         client.query(`SELECT public.backfill_item_variants($1)`, [itemId]),
       ).rejects.toThrow(/sizes contains a NULL element/);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
+
+  test('形の壊れた色・サイズは、商品を入れる時点で items のトリガーが断る（移行 C）', async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await expect(
+        createLegacyItem(client, [{ name: 'Red', hex: '#FF0000' }, { name: 'Red', hex: '#00FF00' }], ['M']),
+      ).rejects.toThrow(/colors has a duplicate name/);
     } finally {
       await client.query('ROLLBACK');
       client.release();

@@ -174,8 +174,7 @@ export async function requestCheckoutConfirmation(body: {
     kind: "error",
     code: typeof data?.error === "string" ? data.error : null,
     message: typeof data?.message === "string" ? data.message : PROCEED_FAILED_MESSAGE,
-    // 買えない商品（FR-CHECKOUT-007）は待っても直らない
-    retryable: data?.error === "out_of_stock" ? false : typeof data?.retryable === "boolean" ? data.retryable : true,
+    retryable: typeof data?.retryable === "boolean" ? data.retryable : true,
     correlationId: typeof data?.correlationId === "string" ? data.correlationId : null,
   };
 }

@@ -74,6 +74,9 @@ export function splitPurchasableCartRows(
  * cart_id の条件を必ず付け、他人のカートの明細を消さない（service role は RLS を通らない）。DB の失敗は投げる。
  */
 export async function removeCartLines(supabase: SupabaseClient, cartId: string, lineIds: string[]): Promise<void> {
+  // 明細を先にロックし AFTER トリガーが持ち主を更新するため、持ち主を先にロックする
+  // cart_change_line・merge_guest_into_member と同時に走ると、まれにデッドロック（40P01）になる。
+  // 片方の要求は 500 になるがトランザクションが戻るのでデータは壊れず、送り直せば通る。
   const { error } = await supabase.from('cart_lines').delete().eq('cart_id', cartId).in('id', lineIds);
   if (error) {
     throw error;

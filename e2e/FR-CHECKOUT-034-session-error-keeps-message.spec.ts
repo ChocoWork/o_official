@@ -3,11 +3,10 @@ import { mockCartApis, sampleCartItem } from './shop-test-utils';
 import { fillShippingForm, stubPostalCode } from './checkout-flow-helpers';
 
 /**
- * FR-CHECKOUT-034 再試行できない失敗のあとは「確認へ進む」を押せない
- * 対応 FREQ: FREQ-385（AC-01 / AC-02 / AC-03）
+ * FR-CHECKOUT-034 明細を外した案内後も「確認へ進む」を押せる
+ * 対応 FREQ: FREQ-430-REQ-05・AC-08
  *
- * 在庫切れなど、待っても直らない理由で決済セッションの作成が失敗したとき、
- * 「確認へ進む」を押せるままだと、押すたびに同じ理由で止まる。
+ * 購入不可の明細はサーバーが外すため、残りの明細で押し直せるままにする。
  */
 
 const VIEWPORTS = [
@@ -16,10 +15,9 @@ const VIEWPORTS = [
   { name: 'desktop', width: 1280 },
 ] as const;
 
-const OUT_OF_STOCK_MESSAGE = '「シルクブラウス」は在庫が不足しています。';
-const ERROR_MESSAGE_ID = 'checkout-session-error-message';
+const CART_UPDATED_MESSAGE = '次の商品はお求めいただけなくなったため、カートから外しました: シルクブラウス（Black / M）。内容をご確認のうえ、もう一度「確認へ進む」を押してください。';
 
-async function openCheckoutWithOutOfStock(page: Page): Promise<void> {
+async function openCheckoutWithCartUpdated(page: Page): Promise<void> {
   await mockCartApis(page, [sampleCartItem()]);
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({ json: { authenticated: false, user: null } }),
@@ -29,32 +27,29 @@ async function openCheckoutWithOutOfStock(page: Page): Promise<void> {
   await page.route('**/api/checkout/create-session', (route) =>
     route.fulfill({
       status: 409,
-      json: { error: 'out_of_stock', message: OUT_OF_STOCK_MESSAGE },
+      json: { error: 'cart_updated', retryable: true, message: CART_UPDATED_MESSAGE },
     }),
   );
   await stubPostalCode(page);
   await page.goto('/checkout');
   await expect(page.locator('input[name="fullName"]')).toBeVisible();
-  await fillShippingForm(page, 'e2e-out-of-stock@example.com');
+  await fillShippingForm(page, 'e2e-cart-updated@example.com');
   await page.getByRole('button', { name: '確認へ進む' }).click();
 }
 
 for (const viewport of VIEWPORTS) {
-  test(`${viewport.name}（${viewport.width}px）原因の案内が残り、確認へ進むは押せない`, async ({ page }) => {
+  test(`${viewport.name}（${viewport.width}px）入力画面に外した明細の案内が出て、確認へ進める`, async ({ page }) => {
     await page.setViewportSize({ width: viewport.width, height: 900 });
-    await openCheckoutWithOutOfStock(page);
+    await openCheckoutWithCartUpdated(page);
 
-    // FREQ-385-AC-01: 原因の案内がそのまま残る
+    // 外した内容を確かめてから押し直せるよう、入力画面で商品名・色・サイズを案内する。
     const errorMessage = page.getByTestId('checkout-session-error');
-    await expect(errorMessage).toHaveText(OUT_OF_STOCK_MESSAGE);
+    await expect(errorMessage).toHaveText(CART_UPDATED_MESSAGE);
 
-    // FREQ-385-AC-02: 押しても進めないので、ボタンを止める
+    // 外した後のカートで続けられるため、ボタンは押せるままにする。
     const confirmButton = page.getByRole('button', { name: '確認へ進む' });
-    await expect(confirmButton).toBeDisabled();
-
-    // FREQ-385-AC-03: 押せない理由として、原因の案内を指す
-    await expect(confirmButton).toHaveAttribute('aria-describedby', ERROR_MESSAGE_ID);
-    await expect(page.locator(`#${ERROR_MESSAGE_ID}`)).toHaveText(OUT_OF_STOCK_MESSAGE);
+    await expect(confirmButton).toBeEnabled();
+    await expect(page).toHaveURL(/\/checkout$/);
 
     const hasHorizontalOverflow = await page.evaluate(() => {
       const doc = document.documentElement;

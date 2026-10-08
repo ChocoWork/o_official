@@ -25,6 +25,9 @@ describe('integration: item_variants', () => {
        VALUES ('variant test', 'desc', 1000, 'TOPS', '/images/test.jpg', 'published')
        RETURNING id`,
     );
+    // このファイルの試験はバリアントの行を手で入れて制約を確かめる。items のトリガー（移行 C）が作った行を先に消し、
+    // バリアントの無い商品から始める
+    await client.query(`DELETE FROM public.item_variants WHERE item_id = $1`, [res.rows[0].id]);
     return res.rows[0].id;
   }
 

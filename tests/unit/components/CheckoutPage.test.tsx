@@ -699,27 +699,28 @@ describe('決済の画面（グループ F）', () => {
     expect(mockRefreshAuthState).not.toHaveBeenCalled();
   });
 
-  test('時間切れの作り直しで買えない商品が見つかったら、商品名の案内を渡してカートへ移る', async () => {
-    const message = '以下の商品は現在購入できません: 非公開のシャツ';
+  test('時間切れの作り直しで明細を外したら、入力画面に案内し確認へ進めるままにする', async () => {
+    const message = '次の商品はお求めいただけなくなったため、カートから外しました: 非公開のシャツ。内容をご確認のうえ、もう一度「確認へ進む」を押してください。';
     mockApi.requestCheckoutConfirmation
       .mockResolvedValueOnce({ kind: 'confirmation', confirmation: CONFIRMATION })
-      .mockResolvedValueOnce({ kind: 'error', code: 'out_of_stock', message, retryable: false, correlationId: null });
+      .mockResolvedValueOnce({ kind: 'error', code: 'cart_updated', message, retryable: true, correlationId: null });
     await openFinalStep();
 
     await act(async () => { mockFinalProps.onRejected({ code: 'session_expired', message: '時間がたったため、お支払い情報をもう一度入力してください', changedLines: [] }); });
 
-    await waitFor(() => expect(mockRouter.push).toHaveBeenCalledWith('/cart'));
-    expect(JSON.parse(window.sessionStorage.getItem('checkout:cart-notice') ?? 'null')).toEqual({ kind: 'message', message });
-    expect(screen.queryByRole('button', { name: '確認へ進む' })).toBeNull();
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(mockRouter.push).not.toHaveBeenCalled();
+    expect(window.sessionStorage.getItem('checkout:cart-notice')).toBeNull();
+    expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
   });
 
-  test('ふつうの確認で買えない商品が見つかったら、入力画面で商品名を案内してボタンを無効にする', async () => {
-    const message = '以下の商品は現在購入できません: 非公開のシャツ';
-    mockApi.requestCheckoutConfirmation.mockResolvedValue({ kind: 'error', code: 'out_of_stock', message, retryable: false, correlationId: null });
+  test('ふつうの確認で明細を外したら、入力画面で商品名を案内して確認へ進めるままにする', async () => {
+    const message = '次の商品はお求めいただけなくなったため、カートから外しました: 非公開のシャツ。内容をご確認のうえ、もう一度「確認へ進む」を押してください。';
+    mockApi.requestCheckoutConfirmation.mockResolvedValue({ kind: 'error', code: 'cart_updated', message, retryable: true, correlationId: null });
     render(<CheckoutPage />);
     fireEvent.click(await screen.findByRole('button', { name: '確認へ進む' }));
     expect(await screen.findByText(message)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '確認へ進む' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
     expect(mockRouter.push).not.toHaveBeenCalled();
   });
 
@@ -879,25 +880,25 @@ describe('決済の画面（グループ F）', () => {
     });
   });
 
-  test('やり直せない断りは配送先の新規・保存済み選択や入力変更でも消えない', async () => {
+  test('cart_updated の案内後も確認へ進め、配送先を変えると案内を消せる', async () => {
     mockSavedAddresses = [SAVED_TOKYO, SAVED_OSAKA];
-    const message = '以下の商品は現在購入できません: シャツ';
-    mockApi.requestCheckoutConfirmation.mockResolvedValue({ kind: 'error', code: 'out_of_stock', message, retryable: false, correlationId: null });
+    const message = '次の商品はお求めいただけなくなったため、カートから外しました: シャツ。内容をご確認のうえ、もう一度「確認へ進む」を押してください。';
+    mockApi.requestCheckoutConfirmation.mockResolvedValue({ kind: 'error', code: 'cart_updated', message, retryable: true, correlationId: null });
     render(<CheckoutPage />);
     fireEvent.click(await screen.findByRole('button', { name: '確認へ進む' }));
     expect(await screen.findByText(message)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '確認へ進む' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
 
     fireEvent.click(screen.getByRole('combobox', { name: '保存済みの配送先' }));
     fireEvent.click(await screen.findByRole('option', { name: '新規' }));
     fireEvent.change(await screen.findByLabelText(/郵便番号/), { target: { value: '6008001' } });
-    expect(screen.getByText(message)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '確認へ進む' })).toBeDisabled();
+    expect(screen.queryByText(message)).toBeNull();
+    expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
 
     fireEvent.click(screen.getByRole('combobox', { name: '保存済みの配送先' }));
     fireEvent.click(await screen.findByRole('option', { name: /大阪府/ }));
-    expect(screen.getByText(message)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '確認へ進む' })).toBeDisabled();
+    expect(screen.queryByText(message)).toBeNull();
+    expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
     expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(1);
   });
 

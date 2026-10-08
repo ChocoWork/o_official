@@ -82,7 +82,11 @@ export function useCartItems() {
         throw new Error(result.description);
       }
       // 応答はカート全体。この明細の数量とお届けの目安を確定値として採る
-      const updatedLine = toCartEntries(result.body as CartJson).find((item) => item.id === cartId);
+      // DB の変更は成功しているため、本文が読めない時も望んだ数量を採って不要な送り直しを避ける。
+      const body = result.body as CartJson | null;
+      const updatedLine = Array.isArray(body?.items)
+        ? toCartEntries(body as CartJson).find((item) => item.id === cartId)
+        : undefined;
       const confirmedQty = updatedLine?.quantity ?? quantity;
       const fulfillment = updatedLine?.fulfillment ?? null;
       confirmedQuantities.current[cartId] = confirmedQty;

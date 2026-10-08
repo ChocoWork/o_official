@@ -664,7 +664,11 @@ export async function POST(req: NextRequest) {
         detail: "Unavailable cart lines removed",
         ip: clientIp,
         user_agent: userAgent,
-        metadata: { session_id: sessionId, removed_line_count: unavailable.length },
+        metadata: {
+          session_id: sessionId,
+          removed_line_count: unavailable.length,
+          removed_lines: unavailable.map((line) => ({ line_id: line.id, variant_id: line.variant_id, item_id: line.item_id })),
+        },
       });
       const labels = unavailable
         .map((cartRow) => describeRemovedCartLine(cartRow, itemMap))

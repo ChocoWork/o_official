@@ -67,12 +67,24 @@ test('選んだ色・サイズのバリアントの番号を /api/cart/add に�
   expect(JSON.parse(call[1].body)).toEqual({ items: [{ id: 11, quantity: 1 }] });
 });
 
-test('合うバリアントが無ければ送らずに案内を出す', async () => {
+test('在庫を読み込めずバリアントが空なら、送らずに時間をおいた再試行を案内する', async () => {
   itemBody = { ...ITEM, variantAvailability: [] };
   render(<ItemDetailClient id="101" />);
   await clickAdd();
 
+  expect((await screen.findAllByText('在庫を確かめられませんでした。少し時間をおいてから、もう一度お試しください。')).length).toBeGreaterThan(0);
+  expect(screen.queryByTestId('delivery-note')).toBeNull();
+  expect((global.fetch as jest.Mock).mock.calls.some(([url]) => url === '/api/cart/add')).toBe(false);
+  expect(mockUpdateCartCount).not.toHaveBeenCalled();
+});
+
+test('組み合わせはあるが選んだバリアントが無ければ、送らずに取り扱い終了を案内し納期を出さない', async () => {
+  itemBody = { ...ITEM, variantAvailability: [{ colorName: 'Ivory', sizeLabel: 'M', inStock: false, variantId: 12 }] };
+  render(<ItemDetailClient id="101" />);
+  await clickAdd();
+
   expect((await screen.findAllByText('選んだ色・サイズは現在お求めいただけません。')).length).toBeGreaterThan(0);
+  expect(screen.queryByTestId('delivery-note')).toBeNull();
   expect((global.fetch as jest.Mock).mock.calls.some(([url]) => url === '/api/cart/add')).toBe(false);
   expect(mockUpdateCartCount).not.toHaveBeenCalled();
 });

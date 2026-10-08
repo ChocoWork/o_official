@@ -52,7 +52,7 @@ export async function mergeGuestShoppingIntoMember(
         action: 'cart.merge',
         outcome: 'error',
         actor_id: params.userId,
-        detail: code === undefined ? message : `${code}: ${message}`,
+        detail: code ? `${code}: ${message}` : message,
       });
     } catch {
       console.error('Failed to log cart merge audit');
