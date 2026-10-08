@@ -283,13 +283,14 @@ describe('clientFetch', () => {
     expect(refreshCalls).toHaveLength(1);
   });
 
-  // 決済の画面の通信が、ログインの印が古いと断られた時に自分で送り直すための入口（グループ C 設計書第6章）
+  // 決済の画面の通信が、ログインの印が古いと断られた時に自分で送り直すための入口（グループ C 設計書第6章）。
+  // 結果は3つに分ける: 新しくできた（refreshed）・失効（expired。更新の入口が 401）・一時的にできない（unavailable）
   describe('refreshSessionOnce', () => {
-    test('/api/auth/refresh を1回呼び、200 なら true を返す', async () => {
+    test('/api/auth/refresh を1回呼び、200 なら refreshed を返す', async () => {
       const { refreshSessionOnce } = loadFreshClientFetch();
       (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, status: 200 });
 
-      await expect(refreshSessionOnce()).resolves.toBe(true);
+      await expect(refreshSessionOnce()).resolves.toBe('refreshed');
 
       expect(global.fetch).toHaveBeenCalledTimes(1);
       expect(global.fetch).toHaveBeenCalledWith('/api/auth/refresh', {
@@ -299,16 +300,46 @@ describe('clientFetch', () => {
       });
     });
 
-    test('/api/auth/refresh が401なら false を返す', async () => {
-      const { refreshSessionOnce } = loadFreshClientFetch();
+    test('/api/auth/refresh が401なら expired を返し、セッション失効を1回通知する', async () => {
+      const { refreshSessionOnce, SESSION_EXPIRED_EVENT } = loadFreshClientFetch();
+      const listener = jest.fn();
+      window.addEventListener(SESSION_EXPIRED_EVENT, listener);
       (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: false, status: 401, headers: { get: () => null } });
 
-      await expect(refreshSessionOnce()).resolves.toBe(false);
+      await expect(refreshSessionOnce()).resolves.toBe('expired');
+
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(listener).toHaveBeenCalledTimes(1);
+      window.removeEventListener(SESSION_EXPIRED_EVENT, listener);
+    });
+
+    test.each([
+      ['429（回数の制限）', { ok: false, status: 429, headers: { get: () => '30' } }],
+      ['500', { ok: false, status: 500, headers: { get: () => null } }],
+      ['503', { ok: false, status: 503, headers: { get: () => null } }],
+    ])('/api/auth/refresh が%sなら unavailable を返し、失効は通知しない', async (_label, response) => {
+      const { refreshSessionOnce, SESSION_EXPIRED_EVENT } = loadFreshClientFetch();
+      const listener = jest.fn();
+      window.addEventListener(SESSION_EXPIRED_EVENT, listener);
+      (global.fetch as jest.Mock).mockResolvedValueOnce(response);
+
+      await expect(refreshSessionOnce()).resolves.toBe('unavailable');
+
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(listener).not.toHaveBeenCalled();
+      window.removeEventListener(SESSION_EXPIRED_EVENT, listener);
+    });
+
+    test('/api/auth/refresh の通信が失敗したら unavailable を返す', async () => {
+      const { refreshSessionOnce } = loadFreshClientFetch();
+      (global.fetch as jest.Mock).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+      await expect(refreshSessionOnce()).resolves.toBe('unavailable');
 
       expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
-    test('同時の2回の呼び出しは1回の更新にまとまる', async () => {
+    test('同時の2回の呼び出しは1回の更新にまとまり、同じ結果を返す', async () => {
       const { refreshSessionOnce } = loadFreshClientFetch();
       let completeRefresh: (() => void) | undefined;
       const refreshResponse = new Promise<{ ok: boolean; status: number }>((resolve) => {
@@ -319,16 +350,26 @@ describe('clientFetch', () => {
       const results = Promise.all([refreshSessionOnce(), refreshSessionOnce()]);
       completeRefresh?.();
 
-      await expect(results).resolves.toEqual([true, true]);
+      await expect(results).resolves.toEqual(['refreshed', 'refreshed']);
       expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
-    test('更新に失敗した直後はクールダウン中なので、続けて呼んでも更新を発行せず false を返す', async () => {
+    test('更新に失敗した直後はクールダウン中なので、続けて呼んでも更新を発行せず unavailable を返す', async () => {
+      const { refreshSessionOnce } = loadFreshClientFetch();
+      (global.fetch as jest.Mock).mockResolvedValue({ ok: false, status: 429, headers: { get: () => '30' } });
+
+      await expect(refreshSessionOnce()).resolves.toBe('unavailable');
+      await expect(refreshSessionOnce()).resolves.toBe('unavailable');
+
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    test('401 で失効した直後のクールダウン中も、更新を発行せず unavailable を返す（通信しなかった）', async () => {
       const { refreshSessionOnce } = loadFreshClientFetch();
       (global.fetch as jest.Mock).mockResolvedValue({ ok: false, status: 401, headers: { get: () => null } });
 
-      await expect(refreshSessionOnce()).resolves.toBe(false);
-      await expect(refreshSessionOnce()).resolves.toBe(false);
+      await expect(refreshSessionOnce()).resolves.toBe('expired');
+      await expect(refreshSessionOnce()).resolves.toBe('unavailable');
 
       expect(global.fetch).toHaveBeenCalledTimes(1);
     });

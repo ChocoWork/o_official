@@ -41,7 +41,15 @@ export function resetRefreshCooldown(): void {
   refreshBlockedUntil = 0;
 }
 
-let refreshSessionPromise: Promise<boolean> | null = null;
+/**
+ * 印の更新の結果。
+ * - refreshed: 更新の入口が成功した
+ * - expired: 更新の入口が 401（refresh token が無効。再ログイン以外に回復手段がない）
+ * - unavailable: 回数の制限・5xx・通信の失敗、または待ち時間中で通信しなかった（時間をおけば直りうる）
+ */
+export type SessionRefreshOutcome = 'refreshed' | 'expired' | 'unavailable';
+
+let refreshSessionPromise: Promise<SessionRefreshOutcome> | null = null;
 let refreshBlockedUntil = 0;
 
 function isRetryableRequest(method: string): boolean {
@@ -79,7 +87,7 @@ function notifySessionExpired(): void {
   window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
 }
 
-async function performRefresh(): Promise<boolean> {
+async function performRefresh(): Promise<SessionRefreshOutcome> {
   let response: Response;
 
   try {
@@ -90,33 +98,33 @@ async function performRefresh(): Promise<boolean> {
     });
   } catch {
     blockRefreshFor(REFRESH_ERROR_COOLDOWN_MS);
-    return false;
+    return 'unavailable';
   }
 
   if (response.ok) {
     refreshBlockedUntil = 0;
-    return true;
+    return 'refreshed';
   }
 
   if (response.status === 429) {
     blockRefreshFor(parseRetryAfterMs(response) ?? REFRESH_RATE_LIMITED_COOLDOWN_MS);
-    return false;
+    return 'unavailable';
   }
 
   if (response.status === 401) {
     // refresh token が無効。再認証以外に回復手段がないので叩き続けない。
     blockRefreshFor(REFRESH_UNAUTHENTICATED_COOLDOWN_MS);
     notifySessionExpired();
-    return false;
+    return 'expired';
   }
 
   blockRefreshFor(REFRESH_ERROR_COOLDOWN_MS);
-  return false;
+  return 'unavailable';
 }
 
-function refreshSession(): Promise<boolean> {
+function refreshSessionOutcome(): Promise<SessionRefreshOutcome> {
   if (Date.now() < refreshBlockedUntil) {
-    return Promise.resolve(false);
+    return Promise.resolve('unavailable');
   }
 
   if (!refreshSessionPromise) {
@@ -128,13 +136,19 @@ function refreshSession(): Promise<boolean> {
   return refreshSessionPromise;
 }
 
+// clientFetch は、更新できたかどうかだけを見る
+function refreshSession(): Promise<boolean> {
+  return refreshSessionOutcome().then((outcome) => outcome === 'refreshed');
+}
+
 /**
  * ログインの印を1回だけ新しくする（同時に走る更新は1つにまとめる）。
  * clientFetch は書き込み（POST）を自動で送り直さない。送り直しても二重にならない入口
  * （ログインの確かめを何かを変える前に行う決済の入口）だけが、これを呼んで自分で送り直す。
+ * 呼び出し側は、失効（expired）と一時的にできない（unavailable）を分けて扱う。待ち時間中は通信せず unavailable を返す。
  */
-export function refreshSessionOnce(): Promise<boolean> {
-  return refreshSession();
+export function refreshSessionOnce(): Promise<SessionRefreshOutcome> {
+  return refreshSessionOutcome();
 }
 
 async function fetchWithNetworkRetry(

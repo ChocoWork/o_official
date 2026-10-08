@@ -325,7 +325,7 @@ describe("POST /api/checkout/create-session", () => {
   });
 
   it.each([
-    { label: "会員", buyer: { kind: "member", userId: "user-1" }, expectedUserId: "user-1" },
+    { label: "会員", buyer: { kind: "member", userId: "user-1", email: "user-1@example.com" }, expectedUserId: "user-1" },
     { label: "ゲスト", buyer: { kind: "guest" }, expectedUserId: null },
   ])("$label の買い手を claim_checkout_draft に渡す（画面の ID は使わない）", async ({ buyer, expectedUserId }) => {
     mockResolveCheckoutBuyer.mockResolvedValue(buyer);
@@ -345,7 +345,7 @@ describe("POST /api/checkout/create-session", () => {
   it("同じ入力でも会員とゲストは別の v3 指紋で下書きを取る", async () => {
     mockCreate.mockResolvedValue({ client_secret: "secret", id: "cs_test" });
     mockResolveCheckoutBuyer
-      .mockResolvedValueOnce({ kind: "member", userId: "user-1" })
+      .mockResolvedValueOnce({ kind: "member", userId: "user-1", email: "user-1@example.com" })
       .mockResolvedValueOnce({ kind: "guest" });
 
     const memberResponse = await POST(makeRequest({}));
@@ -360,6 +360,70 @@ describe("POST /api/checkout/create-session", () => {
     expect(fingerprints[0]).toMatch(/^v3:[0-9a-f]{64}$/);
     expect(fingerprints[1]).toMatch(/^v3:[0-9a-f]{64}$/);
     expect(fingerprints[0]).not.toBe(fingerprints[1]);
+  });
+
+  // C7: 会員の注文のメールは、画面から送られた値ではなく検証済みのログインのメールにする（設計書 4-2）
+  describe("注文のメールアドレス（C7）", () => {
+    const claimParams = () =>
+      mockRpc.mock.calls
+        .filter(([functionName]) => functionName === "claim_checkout_draft")
+        .map(([, params]) => params as { _shipping_snapshot: { email: string | null }; _request_fingerprint: string });
+
+    it("会員でログインのメールがあれば、画面のメールが別の値でも、下書きの配送先の写しと Stripe の請求先にはログインのメールを使う", async () => {
+      mockCreate.mockResolvedValue({ client_secret: "secret", id: "cs_test" });
+      mockResolveCheckoutBuyer.mockResolvedValue({ kind: "member", userId: "user-1", email: "member@example.com" });
+
+      const res = await POST(makeRequest({ shipping: { ...SHIPPING, email: "other@example.com" } }));
+
+      expect(res.status).toBe(200);
+      expect(claimParams()[0]._shipping_snapshot.email).toBe("member@example.com");
+      const stripeParams = mockCreate.mock.calls[0][0] as { customer_email?: string };
+      expect(stripeParams.customer_email).toBe("member@example.com");
+    });
+
+    it("会員でログインのメールがあれば、画面のメールが無くても配送先がそろい、ログインのメールで受け付ける", async () => {
+      mockCreate.mockResolvedValue({ client_secret: "secret", id: "cs_test" });
+      mockResolveCheckoutBuyer.mockResolvedValue({ kind: "member", userId: "user-1", email: "member@example.com" });
+
+      const res = await POST(makeRequest({ shipping: { ...SHIPPING, email: undefined } }));
+
+      expect(res.status).toBe(200);
+      expect(claimParams()[0]._shipping_snapshot.email).toBe("member@example.com");
+    });
+
+    it("会員の見分けの値は、画面のメールが何でも同じ（ログインのメールが入る）", async () => {
+      mockCreate.mockResolvedValue({ client_secret: "secret", id: "cs_test" });
+      mockResolveCheckoutBuyer.mockResolvedValue({ kind: "member", userId: "user-1", email: "member@example.com" });
+
+      await POST(makeRequest({ shipping: { ...SHIPPING, email: "x@example.com" } }));
+      await POST(makeRequest({ shipping: { ...SHIPPING, email: "y@example.com" } }));
+      await POST(makeRequest({ shipping: { ...SHIPPING, email: "member@example.com" } }));
+
+      const fingerprints = claimParams().map((params) => params._request_fingerprint);
+      expect(fingerprints).toHaveLength(3);
+      expect(new Set(fingerprints).size).toBe(1);
+    });
+
+    it("ログインのメールが無い会員（email が null）は、今までどおり画面のメールで受け付ける", async () => {
+      mockCreate.mockResolvedValue({ client_secret: "secret", id: "cs_test" });
+      mockResolveCheckoutBuyer.mockResolvedValue({ kind: "member", userId: "user-1", email: null });
+
+      const res = await POST(makeRequest({ shipping: { ...SHIPPING, email: "Other@Example.com" } }));
+
+      expect(res.status).toBe(200);
+      expect(claimParams()[0]._shipping_snapshot.email).toBe("other@example.com");
+    });
+
+    it("ゲストは画面のメールで受け付け、画面のメールが違えば別の見分けの値になる", async () => {
+      mockCreate.mockResolvedValue({ client_secret: "secret", id: "cs_test" });
+
+      await POST(makeRequest({ shipping: { ...SHIPPING, email: "x@example.com" } }));
+      await POST(makeRequest({ shipping: { ...SHIPPING, email: "y@example.com" } }));
+
+      const calls = claimParams();
+      expect(calls.map((params) => params._shipping_snapshot.email)).toEqual(["x@example.com", "y@example.com"]);
+      expect(calls[0]._request_fingerprint).not.toBe(calls[1]._request_fingerprint);
+    });
   });
 
   it.each([
@@ -913,7 +977,7 @@ describe("POST /api/checkout/create-session", () => {
   });
 
   it('支払い済みの下書きと今の会員が同じなら 409 order_already_placed を返す', async () => {
-    mockResolveCheckoutBuyer.mockResolvedValue({ kind: 'member', userId: 'member-a' });
+    mockResolveCheckoutBuyer.mockResolvedValue({ kind: 'member', userId: 'member-a', email: 'member-a@example.com' });
     mockFindPaidCheckoutSession.mockResolvedValue('cs_paid');
     mockPaidDraftResult = { data: { buyer_user_id: 'member-a' }, error: null };
 
@@ -931,11 +995,11 @@ describe("POST /api/checkout/create-session", () => {
   });
 
   it.each([
-    ['会員 A から会員 B', 'member-a', { kind: 'member', userId: 'member-b' }, 'member-b'],
+    ['会員 A から会員 B', 'member-a', { kind: 'member', userId: 'member-b', email: 'member-b@example.com' }, 'member-b'],
     ['会員 A からゲスト', 'member-a', { kind: 'guest' }, null],
-    ['ゲストから会員 A', null, { kind: 'member', userId: 'member-a' }, 'member-a'],
+    ['ゲストから会員 A', null, { kind: 'member', userId: 'member-a', email: 'member-a@example.com' }, 'member-a'],
     ['下書きなしのゲスト', undefined, { kind: 'guest' }, null],
-    ['下書きなしの会員', undefined, { kind: 'member', userId: 'member-a' }, 'member-a'],
+    ['下書きなしの会員', undefined, { kind: 'member', userId: 'member-a', email: 'member-a@example.com' }, 'member-a'],
   ])('支払い済みの買い手が違う・下書きが無い（%s）なら照合して 409 login_changed、ID を返さない', async (_label, paidBuyer, buyer, buyerUserId) => {
     mockResolveCheckoutBuyer.mockResolvedValue(buyer);
     mockFindPaidCheckoutSession.mockResolvedValue('cs_paid');

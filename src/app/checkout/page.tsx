@@ -123,6 +123,55 @@ function savedAddressIdFor(list: SavedAddress[], draft: AddressFields): string {
   return list.find((item) => isSameAddress(item, draft))?.id ?? NEW_ADDRESS_VALUE;
 }
 
+// プロフィールの応答を入力欄の形（9項目）にする。欠けた項目は空文字
+function shippingFieldsFromProfile(data: CheckoutProfileResponse): ShippingFormFields {
+  const text = (value: unknown) => (typeof value === "string" ? value : "");
+  return {
+    email: text(data.email),
+    fullName: text(data.fullName),
+    kanaName: text(data.kanaName),
+    postalCode: formatPostalCodeInput(text(data.address?.postalCode)),
+    prefecture: text(data.address?.prefecture),
+    city: text(data.address?.city),
+    address: text(data.address?.address),
+    building: text(data.address?.building),
+    phone: formatPhoneNumberInput(text(data.phone)),
+  };
+}
+
+// ログイン中の会員のプロフィール。ゲスト（401）や取得の失敗は null
+async function fetchCheckoutProfile(): Promise<CheckoutProfileResponse | null> {
+  try {
+    const response = await clientFetch("/api/profile", {
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      return null;
+    }
+    return (await response.json()) as CheckoutProfileResponse;
+  } catch (error) {
+    console.error("プロフィール初期値の取得に失敗しました", error);
+    return null;
+  }
+}
+
+// ログイン中の会員の保存済み配送先。ゲスト（401）や取得の失敗は null
+async function fetchSavedAddressList(): Promise<SavedAddress[] | null> {
+  try {
+    const response = await clientFetch("/api/profile/addresses", {
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const data = (await response.json()) as { addresses?: SavedAddress[] };
+    return Array.isArray(data.addresses) ? data.addresses : [];
+  } catch (error) {
+    console.error("保存済み配送先の取得に失敗しました", error);
+    return null;
+  }
+}
+
 // カート空表示（ORDER SUMMARY の2分岐で共通利用）
 function EmptyCartMessage() {
   return (
@@ -342,7 +391,7 @@ function CheckoutPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { updateCartCount } = useCart();
-  const { isLoggedIn, refreshAuthState } = useLogin();
+  const { isLoggedIn, isAuthResolved, refreshAuthState } = useLogin();
   const [shippingForm, setShippingForm] = useState({
     email: "",
     fullName: "",
@@ -398,84 +447,63 @@ function CheckoutPageContent() {
   // フィールドごとのバリデーションエラー (FR-CHECKOUT-004)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  React.useEffect(() => {
-    const fetchProfileDefaults = async () => {
-      try {
-        const response = await clientFetch("/api/profile", {
-          cache: "no-store",
-        });
-        if (!response.ok) {
-          return;
-        }
+  // 会員のプロフィールと保存済みの配送先を読んで、入力欄へ入れる。
+  // - "fill": 画面を開いた時の初期値。入力済みの欄は残す。ゲストは 401 なので何も入らない
+  // - "replace": ログインが変わった時（設計書第6章・C7）。前の人の入力を残さず、その会員の内容で入力欄を置き換える。
+  //   プロフィールが取れなかった時（ゲストは 401）は何も変えず、今の入力を残す
+  const loadMemberForm = React.useCallback(async (mode: "fill" | "replace") => {
+    const profileRequest = fetchCheckoutProfile();
+    const addressesRequest = fetchSavedAddressList();
 
-        const data = (await response.json()) as CheckoutProfileResponse;
+    if (mode === "replace") {
+      const [profile, addresses] = await Promise.all([profileRequest, addressesRequest]);
+      if (!profile) {
+        return;
+      }
 
+      // 入力欄はもう前の人の下書きの配送先ではない。下書きを戻した印を外す
+      adoptedAddressRef.current = null;
+      // 前の人の郵便番号の補完が後から届いても、置き換えた住所を崩さない
+      latestPostalLookupRef.current = "";
+      // 「キャンセル」で前の人の氏名・電話番号を戻さない
+      customerSnapshotRef.current = null;
+      setEditingCustomer(false);
+      setFieldErrors({});
+      setShippingForm({ ...shippingFieldsFromProfile(profile), saveProfile: false });
+      // 住所帳が取れなかった時は空にする。前の人の保存済みの配送先を、この会員の選択肢に残さない
+      const list = addresses ?? [];
+      savedAddressesRef.current = list;
+      setSavedAddresses(list);
+      setSelectedAddressId((list.find((item) => item.isDefault) ?? list[0])?.id ?? "");
+      return;
+    }
+
+    await Promise.all([
+      profileRequest.then((profile) => {
         // 入り直しで下書きの配送先が先に入っているときは、プロフィールの初期値で崩さない
-        if (adoptedAddressRef.current) {
+        if (!profile || adoptedAddressRef.current) {
           return;
         }
 
+        const fields = shippingFieldsFromProfile(profile);
         setShippingForm((prev) => ({
           ...prev,
-          email:
-            prev.email || (typeof data.email === "string" ? data.email : ""),
-          fullName:
-            prev.fullName ||
-            (typeof data.fullName === "string" ? data.fullName : ""),
-          kanaName:
-            prev.kanaName ||
-            (typeof data.kanaName === "string" ? data.kanaName : ""),
-          postalCode:
-            prev.postalCode ||
-            formatPostalCodeInput(
-              typeof data.address?.postalCode === "string"
-                ? data.address.postalCode
-                : "",
-            ),
-          prefecture:
-            prev.prefecture ||
-            (typeof data.address?.prefecture === "string"
-              ? data.address.prefecture
-              : ""),
-          city:
-            prev.city ||
-            (typeof data.address?.city === "string" ? data.address.city : ""),
-          address:
-            prev.address ||
-            (typeof data.address?.address === "string"
-              ? data.address.address
-              : ""),
-          building:
-            prev.building ||
-            (typeof data.address?.building === "string"
-              ? data.address.building
-              : ""),
-          phone:
-            prev.phone ||
-            formatPhoneNumberInput(
-              typeof data.phone === "string" ? data.phone : "",
-            ),
+          email: prev.email || fields.email,
+          fullName: prev.fullName || fields.fullName,
+          kanaName: prev.kanaName || fields.kanaName,
+          postalCode: prev.postalCode || fields.postalCode,
+          prefecture: prev.prefecture || fields.prefecture,
+          city: prev.city || fields.city,
+          address: prev.address || fields.address,
+          building: prev.building || fields.building,
+          phone: prev.phone || fields.phone,
         }));
-      } catch (error) {
-        console.error("プロフィール初期値の取得に失敗しました", error);
-      }
-    };
-
-    void fetchProfileDefaults();
-  }, []);
-
-  React.useEffect(() => {
-    const fetchSavedAddresses = async () => {
-      try {
-        const response = await clientFetch("/api/profile/addresses", {
-          cache: "no-store",
-        });
-        if (!response.ok) {
+      }),
+      addressesRequest.then((list) => {
+        if (!list) {
           return;
         }
 
-        const data = (await response.json()) as { addresses?: SavedAddress[] };
-        const list = Array.isArray(data.addresses) ? data.addresses : [];
         savedAddressesRef.current = list;
         setSavedAddresses(list);
 
@@ -489,13 +517,43 @@ function CheckoutPageContent() {
         if (initial) {
           setSelectedAddressId(initial.id);
         }
-      } catch (error) {
-        console.error("保存済み配送先の取得に失敗しました", error);
-      }
-    };
-
-    void fetchSavedAddresses();
+      }),
+    ]);
   }, []);
+
+  React.useEffect(() => {
+    void loadMemberForm("fill");
+  }, [loadMemberForm]);
+
+  // ログインが変わったかもしれない合図。サーバーに断られてログインの状態を読み直した後に増やす。
+  // 会員か（置き換えるか）は、読み直した後に描画されたログインの状態（isLoggedIn）で決める
+  const [loginSyncCount, setLoginSyncCount] = useState(0);
+  const previousLoginRef = useRef({ isLoggedIn, isAuthResolved, loginSyncCount });
+  React.useEffect(() => {
+    const previous = previousLoginRef.current;
+    previousLoginRef.current = { isLoggedIn, isAuthResolved, loginSyncCount };
+    // ゲストは今の入力を残す
+    if (!isLoggedIn) {
+      return;
+    }
+
+    // 画面を開いたまま、ゲストから会員に変わった（ヘッダーのログインなど）。
+    // 開いた時のログインの確認（isAuthResolved が false から true）は、開いた時の読み込みが受け持つので、ここでは置き換えない
+    const becameMember = previous.isAuthResolved && !previous.isLoggedIn;
+    const resynced = loginSyncCount !== previous.loginSyncCount;
+    if (becameMember || resynced) {
+      void loadMemberForm("replace");
+    }
+  }, [isLoggedIn, isAuthResolved, loginSyncCount, loadMemberForm]);
+
+  // 「確認へ進む」の時とログインが違うと分かった後に、画面を今のログインに合わせる（設計書第6章）。
+  // ログインの状態を読み直し、会員なら入力欄を置き換え（上の effect）、ログインでカートも変わりうるので読み直す
+  const resyncAfterLoginChange = async () => {
+    await refreshAuthState();
+    // ログインの状態の更新と同じ描画にまとまるよう、カートを待たずに合図を出す（置き換えが1回で済む）
+    setLoginSyncCount((count) => count + 1);
+    await fetchCart();
+  };
 
   const handleSelectSavedAddress = (id: string) => {
     setSelectedAddressId(id);
@@ -810,8 +868,9 @@ function CheckoutPageContent() {
     }
     if (result.code === "auth_expired" || result.code === "login_changed") {
       // ログインの印を新しくできなかった、または支払い済みの画面が別の買い手のものだった。入力画面を今のログインに
-      // 合わせ、お客様に押し直してもらう（自動でゲストとして進めない。設計書 C2）
-      void refreshAuthState();
+      // 合わせ、お客様に押し直してもらう（自動でゲストとして進めない。設計書 C2）。
+      // 一時的な失敗（auth_unavailable）はログインが変わったわけではないので、読み直さない
+      void resyncAfterLoginChange();
     }
     setSessionErrorRetryable(result.retryable);
     setSessionErrorCorrelationId(result.correlationId);
@@ -856,7 +915,7 @@ function CheckoutPageContent() {
       setSessionErrorRetryable(true);
       setSessionErrorCorrelationId(null);
       setCheckoutError(rejection.message);
-      void refreshAuthState();
+      void resyncAfterLoginChange();
       return;
     }
     if (rejection.code === "stock_changed") {

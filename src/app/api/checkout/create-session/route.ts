@@ -523,7 +523,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { paymentMethod, shipping, uiMode, displayedAmounts, promotionCode } = parsed.data;
+    const { paymentMethod, shipping: requestedShipping, uiMode, displayedAmounts, promotionCode } = parsed.data;
+    // 会員の注文のメールは、画面から送られた値ではなく検証済みのログインのメールにする（設計書 4-2・C7）。
+    // 同じブラウザで前の人が入れたメールが、別の会員の注文に混ざらないようにする。
+    // ログインのメールが無い会員とゲストは、画面のメールのまま扱う。
+    const shipping =
+      buyerResolution.kind === "member" && buyerResolution.email
+        ? { ...requestedShipping, email: buyerResolution.email }
+        : requestedShipping;
     // 完了の照合と共有する任意項目のスキーマは保ち、支払いの準備では配送先の欠落を先に断る。
     const missingShippingFields = findMissingShippingFields(buildShippingSnapshot(shipping));
     if (missingShippingFields.length > 0) {

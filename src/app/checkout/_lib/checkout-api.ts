@@ -91,7 +91,16 @@ function postJson(url: string, body: unknown): Promise<Response> {
   });
 }
 
-type CheckoutPostResult = { response: Response; data: JsonBody; loginExpired: boolean };
+/**
+ * 決済の入口の通信の結果。
+ * - response: ふつうの応答（本文つき）
+ * - login_expired: 印を新しくできない（更新の入口が 401）、または送り直してもまた断られた。結果は呼び出し側が入口ごとに決める
+ * - auth_unavailable: 印の更新が一時的にできない（回数の制限・通信の失敗・待ち時間中）。ゲストの形に落とさず、一時的な失敗として扱う
+ */
+type CheckoutPostResult =
+  | { kind: "response"; response: Response; data: JsonBody }
+  | { kind: "login_expired" }
+  | { kind: "auth_unavailable" };
 
 function isAuthExpired(response: Response, data: JsonBody): boolean {
   return response.status === 401 && data?.error === "auth_expired";
@@ -100,20 +109,27 @@ function isAuthExpired(response: Response, data: JsonBody): boolean {
 /**
  * ログインの印が古いと断られたら、印を新しくして1回だけ送り直す（グループ C 設計書第6章）。
  * 入口はログインの確かめを何かを変える前に行うので、送り直しても二重にならない。
- * 印を新しくできない、または送り直してもまた断られた時は loginExpired を立てて返し、結果は呼び出し側が入口ごとに決める。
+ * 送り直すのは印を新しくできた時だけ。失効や一時的な失敗の時に送り直しても、同じ断りになるだけで通信が増える。
  */
 async function postCheckoutJson(url: string, body: unknown): Promise<CheckoutPostResult> {
   const first = await postJson(url, body);
   const firstData = await readJson(first);
   if (!isAuthExpired(first, firstData)) {
-    return { response: first, data: firstData, loginExpired: false };
+    return { kind: "response", response: first, data: firstData };
   }
-  if (!(await refreshSessionOnce())) {
-    return { response: first, data: firstData, loginExpired: true };
+  const refreshed = await refreshSessionOnce();
+  if (refreshed === "expired") {
+    return { kind: "login_expired" };
+  }
+  if (refreshed === "unavailable") {
+    return { kind: "auth_unavailable" };
   }
   const second = await postJson(url, body);
   const secondData = await readJson(second);
-  return { response: second, data: secondData, loginExpired: isAuthExpired(second, secondData) };
+  if (isAuthExpired(second, secondData)) {
+    return { kind: "login_expired" };
+  }
+  return { kind: "response", response: second, data: secondData };
 }
 
 /** 「確認へ進む」。サーバーが下書きと決済の画面を作り、最終確認画面の内容を返す（設計書 2-2） */
@@ -134,9 +150,13 @@ export async function requestCheckoutConfirmation(body: {
     // clientFetch は POST の通信の失敗を投げ直す。画面が値で扱えるよう、「確認へ進む」をやり直せるエラーにして返す
     return { kind: "error", code: null, message: PROCEED_FAILED_MESSAGE, retryable: true, correlationId: null };
   }
-  if (result.loginExpired) {
+  if (result.kind === "login_expired") {
     // 自動でゲストとして進めず、お客様に押し直してもらう（設計書 C2）
     return { kind: "error", code: "auth_expired", message: LOGIN_EXPIRED_MESSAGE, retryable: true, correlationId: null };
+  }
+  if (result.kind === "auth_unavailable") {
+    // ログインの状態は変わっていない。画面はログインの状態を読み直さず、今の「時間をおいて、もう一度」の案内を出す
+    return { kind: "error", code: "auth_unavailable", message: PROCEED_FAILED_MESSAGE, retryable: true, correlationId: null };
   }
   const { response, data } = result;
 
@@ -162,14 +182,12 @@ export async function requestCheckoutConfirmation(body: {
 /** 決済の画面を開き直したときに、どこから続けるか（決め事 D9）。読めなければ入力画面から */
 export async function resumeCheckout(checkoutSessionId: string | null): Promise<ResumeResult> {
   try {
-    const { response, data, loginExpired } = await postCheckoutJson(
-      "/api/checkout/resume",
-      checkoutSessionId ? { checkoutSessionId } : {},
-    );
-    if (loginExpired) {
-      // 印を新しくできなかった。続きの手続きは読めないので、入力画面から始めてもらう
+    const result = await postCheckoutJson("/api/checkout/resume", checkoutSessionId ? { checkoutSessionId } : {});
+    if (result.kind !== "response") {
+      // 印を新しくできなかった（失効、または一時的）。続きの手続きは読めないので、入力画面から始めてもらう
       return { state: "none" };
     }
+    const { response, data } = result;
     if (!response.ok) {
       if (checkoutSessionId && (
         (response.status === 400 && data?.error === "session_not_found") ||
@@ -199,9 +217,13 @@ export async function placeOrder(params: { checkoutSessionId: string; inStockVar
   } catch {
     return { kind: "error", message: PLACE_ORDER_FAILED_MESSAGE };
   }
-  if (result.loginExpired) {
+  if (result.kind === "login_expired") {
     // 「確認へ進む」の時のログインが、今は確かめられない。ログインの状態が変わった時と同じに扱う
     return { kind: "rejected", rejection: { code: "login_changed", message: LOGIN_CHANGED_MESSAGE, changedLines: [] } };
+  }
+  if (result.kind === "auth_unavailable") {
+    // 一時的にログインを確かめられない。最終確認画面に残り、押し直せる
+    return { kind: "error", message: PLACE_ORDER_FAILED_MESSAGE };
   }
   const { response, data } = result;
 
@@ -211,19 +233,20 @@ export async function placeOrder(params: { checkoutSessionId: string; inStockVar
   if (response.status === 409 && data?.error === "payment_done") {
     return { kind: "payment_done", ...(typeof data.checkoutSessionId === "string" ? { checkoutSessionId: data.checkoutSessionId } : {}) };
   }
-  if (
-    response.status === 409 &&
-    REJECTION_CODES.includes(data?.error as CheckoutRejectionCode) &&
-    typeof data?.message === "string"
-  ) {
-    return {
-      kind: "rejected",
-      rejection: {
-        code: data.error as CheckoutRejectionCode,
-        message: data.message,
-        changedLines: Array.isArray(data.changedLines) ? data.changedLines.filter(isCartNoticeLine) : [],
-      },
-    };
+  if (response.status === 409 && REJECTION_CODES.includes(data?.error as CheckoutRejectionCode)) {
+    const code = data?.error as CheckoutRejectionCode;
+    // 画面に出す文はサーバーが付ける。ログインの状態が変わった断りは、文が無くても入力画面へ戻して案内できるよう既定の文を持つ
+    const message = typeof data?.message === "string" ? data.message : code === "login_changed" ? LOGIN_CHANGED_MESSAGE : null;
+    if (message !== null) {
+      return {
+        kind: "rejected",
+        rejection: {
+          code,
+          message,
+          changedLines: Array.isArray(data?.changedLines) ? data.changedLines.filter(isCartNoticeLine) : [],
+        },
+      };
+    }
   }
   return { kind: "error", message: typeof data?.message === "string" ? data.message : PLACE_ORDER_FAILED_MESSAGE };
 }

@@ -188,8 +188,8 @@ describe('POST /api/checkout/place-order', () => {
 
   test.each([
     ['ゲスト', { kind: 'guest' }, null],
-    ['別の会員', { kind: 'member', userId: 'member-b' }, 'member-b'],
-    ['会員', { kind: 'member', userId: 'member-a' }, 'member-a'],
+    ['別の会員', { kind: 'member', userId: 'member-b', email: 'member-b@example.com' }, 'member-b'],
+    ['会員', { kind: 'member', userId: 'member-a', email: 'member-a@example.com' }, 'member-a'],
   ])('下書きの買い手と違う%sなら 409 login_changed、失効して ID だけを監査に残す', async (_label, buyer, buyerUserId) => {
     const draftBuyerUserId = buyerUserId === 'member-a' ? null : 'member-a';
     mockResolveCheckoutBuyer.mockResolvedValue(buyer);
@@ -277,7 +277,7 @@ describe('POST /api/checkout/place-order', () => {
   });
 
   test('別タブの監査では、今の下書き A と支払い済みの下書き B の買い手を分けて残す', async () => {
-    mockResolveCheckoutBuyer.mockResolvedValue({ kind: 'member', userId: 'member-a' });
+    mockResolveCheckoutBuyer.mockResolvedValue({ kind: 'member', userId: 'member-a', email: 'member-a@example.com' });
     mockDraftResult = { data: { ...DRAFT, buyer_user_id: 'member-a' }, error: null };
     mockPaidDraftResult = { data: { buyer_user_id: 'member-b' }, error: null };
     mockFindPaidCheckoutSession.mockResolvedValue('cs_test_paid');
@@ -296,7 +296,7 @@ describe('POST /api/checkout/place-order', () => {
   });
 
   test('別タブの支払い済みの画面も会員 A の下書きなら、会員 A に payment_done を返す', async () => {
-    mockResolveCheckoutBuyer.mockResolvedValue({ kind: 'member', userId: 'member-a' });
+    mockResolveCheckoutBuyer.mockResolvedValue({ kind: 'member', userId: 'member-a', email: 'member-a@example.com' });
     mockDraftResult = { data: { ...DRAFT, buyer_user_id: 'member-a' }, error: null };
     mockPaidDraftResult = { data: { buyer_user_id: 'member-a' }, error: null };
     mockFindPaidCheckoutSession.mockResolvedValue('cs_test_paid');
@@ -309,7 +309,7 @@ describe('POST /api/checkout/place-order', () => {
   });
 
   test.each([null, 'member-a'])('同じ買い手（%s）なら受付 RPC に _buyer_user_id を渡す', async (buyerUserId) => {
-    mockResolveCheckoutBuyer.mockResolvedValue(buyerUserId ? { kind: 'member', userId: buyerUserId } : { kind: 'guest' });
+    mockResolveCheckoutBuyer.mockResolvedValue(buyerUserId ? { kind: 'member', userId: buyerUserId, email: 'member-a@example.com' } : { kind: 'guest' });
     mockDraftResult = { data: { ...DRAFT, buyer_user_id: buyerUserId }, error: null };
 
     const res = await POST(makeRequest(VALID_BODY));
@@ -319,7 +319,7 @@ describe('POST /api/checkout/place-order', () => {
   });
 
   test('受付 RPC の login_changed は 409 として返し、決済の画面を閉じる', async () => {
-    mockResolveCheckoutBuyer.mockResolvedValue({ kind: 'member', userId: 'member-a' });
+    mockResolveCheckoutBuyer.mockResolvedValue({ kind: 'member', userId: 'member-a', email: 'member-a@example.com' });
     mockDraftResult = { data: { ...DRAFT, buyer_user_id: 'member-a' }, error: null };
     mockRpc.mockResolvedValue({ data: [{ order_id: null, order_status: null, created: false, rejection: 'login_changed' }], error: null });
 
@@ -358,7 +358,7 @@ describe('POST /api/checkout/place-order', () => {
   });
 
   test('下書きが無ければ会員でも買い手を比べず superseded を返す', async () => {
-    mockResolveCheckoutBuyer.mockResolvedValue({ kind: 'member', userId: 'member-a' });
+    mockResolveCheckoutBuyer.mockResolvedValue({ kind: 'member', userId: 'member-a', email: 'member-a@example.com' });
     mockDraftResult = { data: null, error: null };
 
     const res = await POST(makeRequest(VALID_BODY));

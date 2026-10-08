@@ -141,9 +141,9 @@ describe('POST /api/checkout/resume', () => {
   test.each([
     ['open', 'member-a', { kind: 'guest' }],
     ['complete', 'member-a', { kind: 'guest' }],
-    ['open', 'member-a', { kind: 'member', userId: 'member-b' }],
-    ['complete', 'member-a', { kind: 'member', userId: 'member-b' }],
-    ['open', null, { kind: 'member', userId: 'member-a' }],
+    ['open', 'member-a', { kind: 'member', userId: 'member-b', email: 'member-b@example.com' }],
+    ['complete', 'member-a', { kind: 'member', userId: 'member-b', email: 'member-b@example.com' }],
+    ['open', null, { kind: 'member', userId: 'member-a', email: 'member-a@example.com' }],
   ])('%s の下書きの買い手（%s）と今の買い手が違えば none を返す', async (status, draftBuyerUserId, buyer) => {
     mockResolveCheckoutBuyer.mockResolvedValue(buyer);
     mockDraftResult = { data: { ...DRAFT, buyer_user_id: draftBuyerUserId }, error: null };
@@ -174,7 +174,7 @@ describe('POST /api/checkout/resume', () => {
   });
 
   test.each(['open', 'complete'])('画面の ID があり、%s の下書きと今の会員が同じなら続けられる', async (status) => {
-    mockResolveCheckoutBuyer.mockResolvedValue({ kind: 'member', userId: 'member-a' });
+    mockResolveCheckoutBuyer.mockResolvedValue({ kind: 'member', userId: 'member-a', email: 'member-a@example.com' });
     mockDraftResult = { data: { ...DRAFT, buyer_user_id: 'member-a' }, error: null };
     mockRetrieve.mockResolvedValue({
       id: 'cs_test_abc', status, client_secret: 'cs_test_abc_secret',
@@ -199,7 +199,7 @@ describe('POST /api/checkout/resume', () => {
   });
 
   test.each([null, 'member-a'])('画面の指定が無く支払い済みの買い手が同じ（%s）なら payment_done', async (buyerUserId) => {
-    mockResolveCheckoutBuyer.mockResolvedValue(buyerUserId ? { kind: 'member', userId: buyerUserId } : { kind: 'guest' });
+    mockResolveCheckoutBuyer.mockResolvedValue(buyerUserId ? { kind: 'member', userId: buyerUserId, email: 'member-a@example.com' } : { kind: 'guest' });
     mockFindPaidCheckoutSession.mockResolvedValue('cs_test_paid');
     mockPaidDraftResult = { data: { buyer_user_id: buyerUserId }, error: null };
 

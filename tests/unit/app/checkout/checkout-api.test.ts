@@ -274,9 +274,12 @@ describe('checkPromotionCodeRequest', () => {
 
 const LOGIN_EXPIRED_MESSAGE = 'ログインの有効期限が切れました。ログインし直すか、そのままもう一度「確認へ進む」を押してください。';
 const LOGIN_CHANGED_MESSAGE = 'ログインの状態が変わりました。もう一度「確認へ進む」を押してください。';
+const PROCEED_FAILED_MESSAGE = '決済の準備に失敗しました。少し時間をおいてから、もう一度お試しください。';
+const PLACE_ORDER_FAILED_MESSAGE = 'ご注文を受け付けられませんでした。少し時間をおいてから、もう一度お試しください。';
 
 // ログインの印が古いと断られた時（401 auth_expired）に印を新しくして送り直す3つの入口。
-// 印を新しくできなかった時の結果（expired）と、送り直しの通信が失敗した時の結果（failed）は入口ごとに違う
+// 印の更新の結果は3つ: refreshed は1回だけ送り直す。expired（更新の入口が 401）と unavailable（回数の制限・通信の失敗・待ち時間中）は
+// 送り直さず、入口ごとの結果を返す。送り直しの通信が失敗した時の結果（failed）も入口ごとに違う
 const RESEND_ENTRIES = [
   {
     name: 'requestCheckoutConfirmation（create-session）',
@@ -285,10 +288,11 @@ const RESEND_ENTRIES = [
     success: jsonResponse(200, { confirmation: CONFIRMATION }),
     succeeded: { kind: 'confirmation', confirmation: CONFIRMATION },
     expired: { kind: 'error', code: 'auth_expired', message: LOGIN_EXPIRED_MESSAGE, retryable: true, correlationId: null },
+    unavailable: { kind: 'error', code: 'auth_unavailable', message: PROCEED_FAILED_MESSAGE, retryable: true, correlationId: null },
     failed: {
       kind: 'error',
       code: null,
-      message: '決済の準備に失敗しました。少し時間をおいてから、もう一度お試しください。',
+      message: PROCEED_FAILED_MESSAGE,
       retryable: true,
       correlationId: null,
     },
@@ -300,7 +304,8 @@ const RESEND_ENTRIES = [
     success: jsonResponse(200, { orderId: 'order-1', orderStatus: 'payment_in_progress' }),
     succeeded: { kind: 'accepted', orderId: 'order-1' },
     expired: { kind: 'rejected', rejection: { code: 'login_changed', message: LOGIN_CHANGED_MESSAGE, changedLines: [] } },
-    failed: { kind: 'error', message: 'ご注文を受け付けられませんでした。少し時間をおいてから、もう一度お試しください。' },
+    unavailable: { kind: 'error', message: PLACE_ORDER_FAILED_MESSAGE },
+    failed: { kind: 'error', message: PLACE_ORDER_FAILED_MESSAGE },
   },
   {
     name: 'resumeCheckout（resume）',
@@ -309,21 +314,22 @@ const RESEND_ENTRIES = [
     success: jsonResponse(200, { state: 'resume', confirmation: CONFIRMATION }),
     succeeded: { state: 'resume', confirmation: CONFIRMATION },
     expired: { state: 'none' },
+    unavailable: { state: 'none' },
     failed: { state: 'none' },
   },
 ];
 
-describe.each(RESEND_ENTRIES)('ログインの印が古いと断られた時の送り直し: $name', ({ url, call, success, succeeded, expired, failed }) => {
+describe.each(RESEND_ENTRIES)('ログインの印が古いと断られた時の送り直し: $name', ({ url, call, success, succeeded, expired, unavailable, failed }) => {
   beforeEach(() => {
     mockClientFetch.mockReset();
     mockRefreshSessionOnce.mockReset();
   });
 
-  test('印を新しくして、同じ要求を1回だけ送り直し、2回目の応答で結果を返す', async () => {
+  test('印を新しくして（refreshed）、同じ要求を1回だけ送り直し、2回目の応答で結果を返す', async () => {
     mockClientFetch
       .mockResolvedValueOnce(jsonResponse(401, { error: 'auth_expired' }))
       .mockResolvedValueOnce(success);
-    mockRefreshSessionOnce.mockResolvedValue(true);
+    mockRefreshSessionOnce.mockResolvedValue('refreshed');
 
     await expect(call()).resolves.toEqual(succeeded);
 
@@ -346,9 +352,9 @@ describe.each(RESEND_ENTRIES)('ログインの印が古いと断られた時の�
     expect(mockClientFetch).toHaveBeenCalledTimes(1);
   });
 
-  test('印を新しくできなかったら送り直さず、印が古い時の結果を返す', async () => {
+  test('印が失効していたら（expired）送り直さず、印が古い時の結果を返す', async () => {
     mockClientFetch.mockResolvedValueOnce(jsonResponse(401, { error: 'auth_expired' }));
-    mockRefreshSessionOnce.mockResolvedValue(false);
+    mockRefreshSessionOnce.mockResolvedValue('expired');
 
     await expect(call()).resolves.toEqual(expired);
 
@@ -356,9 +362,19 @@ describe.each(RESEND_ENTRIES)('ログインの印が古いと断られた時の�
     expect(mockClientFetch).toHaveBeenCalledTimes(1);
   });
 
-  test('送り直しでもまた 401 auth_expired なら、もう送り直さず、新しくできなかった時と同じ結果を返す', async () => {
+  test('印の更新が一時的にできなければ（unavailable）送り直さず、一時的な失敗の結果を返す', async () => {
+    mockClientFetch.mockResolvedValueOnce(jsonResponse(401, { error: 'auth_expired' }));
+    mockRefreshSessionOnce.mockResolvedValue('unavailable');
+
+    await expect(call()).resolves.toEqual(unavailable);
+
+    expect(mockRefreshSessionOnce).toHaveBeenCalledTimes(1);
+    expect(mockClientFetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('送り直しでもまた 401 auth_expired なら、もう送り直さず、失効した時と同じ結果を返す', async () => {
     mockClientFetch.mockResolvedValue(jsonResponse(401, { error: 'auth_expired' }));
-    mockRefreshSessionOnce.mockResolvedValue(true);
+    mockRefreshSessionOnce.mockResolvedValue('refreshed');
 
     await expect(call()).resolves.toEqual(expired);
 
@@ -370,7 +386,7 @@ describe.each(RESEND_ENTRIES)('ログインの印が古いと断られた時の�
     mockClientFetch
       .mockResolvedValueOnce(jsonResponse(401, { error: 'auth_expired' }))
       .mockRejectedValueOnce(new TypeError('Failed to fetch'));
-    mockRefreshSessionOnce.mockResolvedValue(true);
+    mockRefreshSessionOnce.mockResolvedValue('refreshed');
 
     await expect(call()).resolves.toEqual(failed);
   });
@@ -392,6 +408,27 @@ describe('ログインの状態が変わったと断られた時（409 login_cha
 
     expect(mockRefreshSessionOnce).not.toHaveBeenCalled();
     expect(mockClientFetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('place-order の 409 login_changed に message が無ければ、ログインの状態が変わった時の文を持つ断りとして返す', async () => {
+    mockClientFetch.mockResolvedValueOnce(jsonResponse(409, { error: 'login_changed' }));
+
+    await expect(placeOrder({ checkoutSessionId: 'cs_test_1', inStockVariantIds: [11] })).resolves.toEqual({
+      kind: 'rejected',
+      rejection: { code: 'login_changed', message: LOGIN_CHANGED_MESSAGE, changedLines: [] },
+    });
+
+    expect(mockRefreshSessionOnce).not.toHaveBeenCalled();
+    expect(mockClientFetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('place-order の login_changed 以外の断りは message が無ければ、これまでどおり受け付けられなかった時の失敗にする', async () => {
+    mockClientFetch.mockResolvedValueOnce(jsonResponse(409, { error: 'stock_changed' }));
+
+    await expect(placeOrder({ checkoutSessionId: 'cs_test_1', inStockVariantIds: [11] })).resolves.toEqual({
+      kind: 'error',
+      message: PLACE_ORDER_FAILED_MESSAGE,
+    });
   });
 
   test('create-session の 409 login_changed は、サーバーの文を持つ一般のエラー（code login_changed・やり直せる）で返す。送り直さない', async () => {

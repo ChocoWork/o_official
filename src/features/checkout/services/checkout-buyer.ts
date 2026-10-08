@@ -2,8 +2,11 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { authenticateRequest, authFailureResponse } from '@/lib/auth/authenticate';
 import { refreshCookieName } from '@/lib/cookie';
 
-/** 決済の入口が扱う買い手（グループ C 設計書 4-1）。会員の ID は検証済みのログインからだけ取る */
-export type CheckoutBuyer = { kind: 'member'; userId: string } | { kind: 'guest' };
+/**
+ * 決済の入口が扱う買い手（グループ C 設計書 4-1）。会員の ID と email は検証済みのログインからだけ取る。
+ * email は注文のメールを画面の値にしないための値（4-2・C7）。claims.email が無い印は null
+ */
+export type CheckoutBuyer = { kind: 'member'; userId: string; email: string | null } | { kind: 'guest' };
 
 export type CheckoutBuyerResolution = CheckoutBuyer | { kind: 'expired' } | { kind: 'unavailable' };
 
@@ -15,7 +18,11 @@ export async function resolveCheckoutBuyer(request: NextRequest): Promise<Checko
   const verified = await authenticateRequest(request);
   if (verified.ok) {
     const userId = verified.claims.sub;
-    return typeof userId === 'string' && userId.length > 0 ? { kind: 'member', userId } : { kind: 'expired' };
+    if (typeof userId !== 'string' || userId.length === 0) {
+      return { kind: 'expired' };
+    }
+    const email = verified.claims.email;
+    return { kind: 'member', userId, email: typeof email === 'string' && email.length > 0 ? email : null };
   }
   if (verified.reason === 'missing') {
     return { kind: 'guest' };

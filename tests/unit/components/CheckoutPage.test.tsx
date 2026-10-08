@@ -22,8 +22,12 @@ jest.mock('next/navigation', () => ({
 const mockUpdateCartCount = jest.fn();
 jest.mock('@/contexts/CartContext', () => ({ useCart: () => ({ updateCartCount: mockUpdateCartCount }) }));
 const mockRefreshAuthState = jest.fn();
+// 画面が読むログインの状態。ゲスト→会員のテストが書き換えて、再描画で画面に見せる。
+// isAuthResolved は最初のログインの確認が済んだか（開いた時の確認と、開いたままの変化を分ける）
+let mockIsLoggedIn = true;
+let mockIsAuthResolved = true;
 jest.mock('@/contexts/LoginContext', () => ({
-  useLogin: () => ({ isLoggedIn: true, refreshAuthState: mockRefreshAuthState }),
+  useLogin: () => ({ isLoggedIn: mockIsLoggedIn, isAuthResolved: mockIsAuthResolved, refreshAuthState: mockRefreshAuthState }),
 }));
 
 const PROFILE = {
@@ -36,13 +40,21 @@ const PROFILE = {
 // プロフィールと住所帳の応答。既定は今までどおり（プロフィールだけが返り、住所帳は失敗する）。
 // 入り直しのテストが、中身と返るタイミング（門が開くまで待つ）を差し替える
 let mockProfileBody: unknown = PROFILE;
+// 200 以外ならプロフィールの入口は失敗を返す。ゲストは 401（保存済みの配送先も同じく失敗にするので mockSavedAddresses を null にする）
+let mockProfileStatus = 200;
 let mockSavedAddresses: unknown[] | null = null;
 let mockProfileGate: Promise<void> | null = null;
 let mockAddressesGate: Promise<void> | null = null;
+// 画面がプロフィール・保存済みの配送先を読んだ回数を数える（読み直しの有無を確かめる）
+const mockClientFetchUrls: string[] = [];
 jest.mock('@/lib/client-fetch', () => ({
   clientFetch: async (url: string) => {
+    mockClientFetchUrls.push(url);
     if (url === '/api/profile') {
       await mockProfileGate;
+      if (mockProfileStatus !== 200) {
+        return { ok: false, status: mockProfileStatus, json: async () => ({ error: 'Unauthorized' }) };
+      }
       return { ok: true, json: async () => mockProfileBody };
     }
     if (url === '/api/profile/addresses' && mockSavedAddresses !== null) {
@@ -96,6 +108,42 @@ const CONFIRMATION = {
   promotionCode: null,
 };
 
+// ログインの変更（グループ C・C7）のテストで使う、もう一人の会員 B と、ゲストが入力した値。
+// どの欄も PROFILE（会員 A）とも互いにも重ならない。B のプロフィールの建物名は空
+const MEMBER_B = {
+  email: 'b@example.com',
+  fullName: '佐藤 次郎',
+  kanaName: 'サトウ ジロウ',
+  phone: '0661112222',
+  address: { postalCode: '5300001', prefecture: '大阪府', city: '大阪市北区', address: '梅田2-2-2', building: '' },
+};
+const MEMBER_B_ADDRESS = { id: 'addr-b', postalCode: '5300001', prefecture: '大阪府', city: '大阪市北区', address: '梅田2-2-2', building: '', isDefault: true };
+// 会員 B の内容で入力欄が置き換わっていれば、「確認へ進む」で送る配送先はこれになる
+const MEMBER_B_SHIPPING = {
+  email: 'b@example.com',
+  fullName: '佐藤 次郎',
+  kanaName: 'サトウ ジロウ',
+  postalCode: '530-0001',
+  prefecture: '大阪府',
+  city: '大阪市北区',
+  address: '梅田2-2-2',
+  building: '',
+  phone: '06-6111-2222',
+};
+const GUEST_INPUT = {
+  email: 'guest@example.com',
+  fullName: '田中 太郎',
+  kanaName: 'タナカ タロウ',
+  phone: '090-1234-5678',
+  postalCode: '600-8001',
+  prefecture: '京都府',
+  city: '京都市下京区',
+  address: '四条通3-3-3',
+  building: 'ゲストビル201',
+};
+const LOGIN_CHANGED_MESSAGE = 'ログインの状態が変わりました。もう一度「確認へ進む」を押してください。';
+const LOGIN_EXPIRED_MESSAGE = 'ログインの有効期限が切れました。ログインし直すか、そのままもう一度「確認へ進む」を押してください。';
+
 // 保存済み住所。郵便番号は住所帳に数字だけで残り、文字は入力のまま（B の番地は全角）残る。
 // 既定は東京（A）、大阪（B）は既定でない
 const SAVED_TOKYO = { id: 'addr-tokyo', postalCode: '1500001', prefecture: '東京都', city: '渋谷区', address: '神宮前1-1-1', building: '', isDefault: true };
@@ -143,6 +191,35 @@ function echoDraft() {
       confirmation: { ...CONFIRMATION, shipping: { ...shipping, postalCode: shipping.postalCode.replace(/\D/g, '') } },
     };
   });
+}
+
+// カート（/api/cart）を読んだ回数。開いた時の1回に加えて、ログインの状態が変わった後の読み直しを数える
+const cartFetchCount = () => jest.mocked(fetch).mock.calls.filter(([url]) => url === '/api/cart').length;
+
+// 会員が入力画面に入れた値（プロフィールの値を含む）を、9項目そろえて読む
+const shippingInputs = () => ({
+  email: (screen.getByLabelText(/メールアドレス/) as HTMLInputElement).value,
+  fullName: (screen.getByLabelText(/氏名/) as HTMLInputElement).value,
+  kanaName: (screen.getByLabelText(/フリガナ/) as HTMLInputElement).value,
+  phone: (screen.getByLabelText(/電話番号/) as HTMLInputElement).value,
+  postalCode: (screen.getByLabelText(/郵便番号/) as HTMLInputElement).value,
+  city: (screen.getByLabelText(/市区町村/) as HTMLInputElement).value,
+  address: (screen.getByLabelText(/番地/) as HTMLInputElement).value,
+  building: (screen.getByLabelText(/建物名/) as HTMLInputElement).value,
+});
+
+// ゲストとして開いた入力画面に、9項目を入れる（入力欄はゲストの時だけ出る）
+async function typeGuestShipping() {
+  fireEvent.change(await screen.findByLabelText(/氏名/), { target: { value: GUEST_INPUT.fullName } });
+  fireEvent.change(screen.getByLabelText(/フリガナ/), { target: { value: GUEST_INPUT.kanaName } });
+  fireEvent.change(screen.getByLabelText(/メールアドレス/), { target: { value: GUEST_INPUT.email } });
+  fireEvent.change(screen.getByLabelText(/電話番号/), { target: { value: GUEST_INPUT.phone } });
+  fireEvent.change(screen.getByLabelText(/郵便番号/), { target: { value: GUEST_INPUT.postalCode } });
+  fireEvent.click(screen.getByRole('combobox', { name: /都道府県/ }));
+  fireEvent.click(await screen.findByRole('option', { name: GUEST_INPUT.prefecture }));
+  fireEvent.change(screen.getByLabelText(/市区町村/), { target: { value: GUEST_INPUT.city } });
+  fireEvent.change(screen.getByLabelText(/番地/), { target: { value: GUEST_INPUT.address } });
+  fireEvent.change(screen.getByLabelText(/建物名/), { target: { value: GUEST_INPUT.building } });
 }
 
 // プロフィール・住所帳の読み込みが、下書きを戻す前に終わる／後に終わる順
@@ -196,9 +273,15 @@ describe('決済の画面（グループ F）', () => {
     mockSearch = '';
     mockFinalProps = null;
     mockProfileBody = PROFILE;
+    mockProfileStatus = 200;
     mockSavedAddresses = null;
     mockProfileGate = null;
     mockAddressesGate = null;
+    mockIsLoggedIn = true;
+    mockIsAuthResolved = true;
+    // clearAllMocks は実装を消さない。ログインの状態を書き換える実装を、次のテストに持ち越さない
+    mockRefreshAuthState.mockReset();
+    mockClientFetchUrls.length = 0;
     window.scrollTo = jest.fn() as unknown as typeof window.scrollTo;
     (global as any).fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => CART });
     mockApi.resumeCheckout.mockResolvedValue({ state: 'none' });
@@ -719,10 +802,11 @@ describe('決済の画面（グループ F）', () => {
     expect(mockRouter.replace).toHaveBeenLastCalledWith('/checkout');
   });
 
-  test('受け付けでログインの状態が変わったと断られたら、入力画面に戻って案内を出し、ログインの状態を読み直して、押し直せる', async () => {
+  test('受け付けでログインの状態が変わったと断られたら、入力画面に戻って案内を出し、ログインの状態とカートを読み直して、押し直せる', async () => {
     const message = 'ログインの状態が変わりました。もう一度「確認へ進む」を押してください。';
     mockApi.requestCheckoutConfirmation.mockResolvedValue({ kind: 'confirmation', confirmation: CONFIRMATION });
     await openFinalStep();
+    expect(cartFetchCount()).toBe(1);
 
     await act(async () => {
       mockFinalProps.onRejected({ code: 'login_changed', message, changedLines: [] });
@@ -732,6 +816,8 @@ describe('決済の画面（グループ F）', () => {
     expect(screen.getByTestId('checkout-session-error')).toHaveTextContent(message);
     expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
     expect(mockRefreshAuthState).toHaveBeenCalledTimes(1);
+    // ログインが変わるとカートも変わりうる。状態を読み直した後に、カートも読み直す
+    expect(cartFetchCount()).toBe(2);
     expect(mockRouter.replace).toHaveBeenLastCalledWith('/checkout');
     expect(mockRouter.push).not.toHaveBeenCalled();
     // 自動で送り直さない。お客様が押し直すと、今のログインで最終確認画面へ進む
@@ -744,7 +830,7 @@ describe('決済の画面（グループ F）', () => {
   test.each([
     ['auth_expired', 'ログインの有効期限が切れました。ログインし直すか、そのままもう一度「確認へ進む」を押してください。'],
     ['login_changed', 'ログインの状態が変わりました。もう一度「確認へ進む」を押してください。'],
-  ])('「確認へ進む」が %s で返ったら、入力画面のまま案内を出し、ログインの状態を読み直して、押し直せる', async (code, message) => {
+  ])('「確認へ進む」が %s で返ったら、入力画面のまま案内を出し、ログインの状態とカートを読み直して、押し直せる', async (code, message) => {
     mockApi.requestCheckoutConfirmation
       .mockResolvedValueOnce({ kind: 'error', code, message, retryable: true, correlationId: null })
       .mockResolvedValueOnce({ kind: 'confirmation', confirmation: CONFIRMATION });
@@ -757,6 +843,7 @@ describe('決済の画面（グループ F）', () => {
     expect(screen.queryByTestId('final-step')).toBeNull();
     expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
     expect(mockRefreshAuthState).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(cartFetchCount()).toBe(2));
     // 自動でゲストとして送り直さない。お客様が押し直したときだけ、もう一度送る
     expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
@@ -774,6 +861,274 @@ describe('決済の画面（グループ F）', () => {
 
     expect(await screen.findByText('一時的な失敗')).toBeInTheDocument();
     expect(mockRefreshAuthState).not.toHaveBeenCalled();
+  });
+
+  test('ログインの印の更新が一時的にできなかった（auth_unavailable）時は、ゲストの形に落とさず、ログインの状態もカートも読み直さずに、押し直せる', async () => {
+    const message = '決済の準備に失敗しました。少し時間をおいてから、もう一度お試しください。';
+    mockApi.requestCheckoutConfirmation
+      .mockResolvedValueOnce({ kind: 'error', code: 'auth_unavailable', message, retryable: true, correlationId: null })
+      .mockResolvedValueOnce({ kind: 'confirmation', confirmation: CONFIRMATION });
+    render(<CheckoutPage />);
+    await screen.findByRole('button', { name: '確認へ進む' });
+    await settle();
+    const profileReads = mockClientFetchUrls.filter((url) => url === '/api/profile').length;
+
+    fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    await settle();
+    expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
+    expect(mockRefreshAuthState).not.toHaveBeenCalled();
+    expect(cartFetchCount()).toBe(1);
+    expect(mockClientFetchUrls.filter((url) => url === '/api/profile')).toHaveLength(profileReads);
+    // 押し直せる（会員の入力もそのまま送られる）
+    fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+    await screen.findByTestId('final-step');
+    expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(2);
+  });
+
+  // 設計書第6章・C7: ログインの状態が変わったら、入力画面をその会員の内容で読み直す（前の人の入力を残さない）
+  describe('ログインの状態が変わった時の入力欄（グループ C・C7）', () => {
+    // ゲストとして開いて9項目を入れ、「確認へ進む」で最終確認画面まで進む。サーバーの答えはまだゲスト（プロフィールは 401）
+    async function openFinalStepAsGuest() {
+      mockIsLoggedIn = false;
+      mockProfileStatus = 401;
+      echoDraft();
+      render(<CheckoutPage />);
+      await typeGuestShipping();
+      fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+      await screen.findByTestId('final-step');
+    }
+
+    // 別のタブで会員 B としてログインした。サーバーは B の内容で答え、画面は状態を読み直した時に会員になる
+    function loginAsMemberBElsewhere() {
+      mockProfileStatus = 200;
+      mockProfileBody = MEMBER_B;
+      mockSavedAddresses = [MEMBER_B_ADDRESS];
+      mockRefreshAuthState.mockImplementation(async () => {
+        mockIsLoggedIn = true;
+      });
+    }
+
+    const lastShippingSent = () => {
+      const calls = mockApi.requestCheckoutConfirmation.mock.calls;
+      return calls[calls.length - 1][0].shipping;
+    };
+
+    test('ゲストの入力の後に会員になり「注文する」が断られたら、入力欄が会員のプロフィールと保存済みの配送先に置き換わる', async () => {
+      await openFinalStepAsGuest();
+      loginAsMemberBElsewhere();
+
+      await act(async () => {
+        mockFinalProps.onRejected({ code: 'login_changed', message: LOGIN_CHANGED_MESSAGE, changedLines: [] });
+      });
+
+      // ゲストの入力は残らず、会員のメールが読み取りで出る。案内も残る
+      expect(await screen.findByText('b@example.com')).toBeInTheDocument();
+      expect(screen.queryByDisplayValue(GUEST_INPUT.email)).toBeNull();
+      expect(screen.queryByDisplayValue(GUEST_INPUT.fullName)).toBeNull();
+      expect(screen.getByTestId('checkout-session-error')).toHaveTextContent(LOGIN_CHANGED_MESSAGE);
+      expect(mockRefreshAuthState).toHaveBeenCalledTimes(1);
+      // プロフィールを読むのは、開いた時の1回と置き換えの1回だけ（ログインの状態の更新と読み直しの合図は同じ描画にまとまり、二重に読まない）
+      expect(mockClientFetchUrls.filter((url) => url === '/api/profile')).toHaveLength(2);
+      // 押し直すと、会員の内容（9項目）で送られる。ゲストの建物名も残らない
+      fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+      await waitFor(() => expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(2));
+      expect(lastShippingSent()).toEqual(MEMBER_B_SHIPPING);
+    });
+
+    test('会員 A から会員 B に変わって断られたら、A の入力を残さず B の内容に置き換わる。B のプロフィールが空の欄は空になる', async () => {
+      // A の建物名は下書きに入り、入力欄に残る。B のプロフィールの建物名は空
+      mockProfileBody = { ...PROFILE, address: { ...PROFILE.address, building: '101号室' } };
+      mockSavedAddresses = [SAVED_TOKYO];
+      echoDraft();
+      await openFinalStep();
+      mockProfileBody = MEMBER_B;
+      mockSavedAddresses = [MEMBER_B_ADDRESS];
+
+      await act(async () => {
+        mockFinalProps.onRejected({ code: 'login_changed', message: LOGIN_CHANGED_MESSAGE, changedLines: [] });
+      });
+
+      expect(await screen.findByText('b@example.com')).toBeInTheDocument();
+      expect(screen.queryByText('a@example.com')).toBeNull();
+      expect(screen.getByRole('combobox', { name: '保存済みの配送先' })).toHaveTextContent('〒530-0001');
+      fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+      await waitFor(() => expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(2));
+      expect(lastShippingSent()).toEqual(MEMBER_B_SHIPPING);
+    });
+
+    test('会員 B の保存済みの配送先が取れなかった時は、会員 A の保存済みの配送先を選択肢に残さない', async () => {
+      mockSavedAddresses = [SAVED_TOKYO];
+      mockApi.requestCheckoutConfirmation.mockResolvedValueOnce({
+        kind: 'error', code: 'login_changed', message: LOGIN_CHANGED_MESSAGE, retryable: true, correlationId: null,
+      });
+      render(<CheckoutPage />);
+      expect(await screen.findByRole('combobox', { name: '保存済みの配送先' })).toHaveTextContent('〒150-0001');
+      // B のプロフィールは取れるが、住所帳は取れない
+      mockProfileBody = MEMBER_B;
+      mockSavedAddresses = null;
+
+      fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+
+      expect(await screen.findByText('b@example.com')).toBeInTheDocument();
+      expect(screen.queryByRole('combobox', { name: '保存済みの配送先' })).toBeNull();
+      expect(screen.queryByText(/150-0001/)).toBeNull();
+      // 保存済みの配送先が無いので、B のプロフィールの住所が入力欄に出る
+      expect(screen.getByLabelText(/郵便番号/)).toHaveValue('530-0001');
+    });
+
+    test('お客様情報を編集している途中でログインが変わったら、編集を閉じて新しい会員の内容を出す（「キャンセル」で前の人の氏名に戻らない）', async () => {
+      mockApi.requestCheckoutConfirmation.mockResolvedValueOnce({
+        kind: 'error', code: 'login_changed', message: LOGIN_CHANGED_MESSAGE, retryable: true, correlationId: null,
+      });
+      render(<CheckoutPage />);
+      fireEvent.click(await screen.findByRole('button', { name: '変更する' }));
+      expect(screen.getByRole('button', { name: 'キャンセル' })).toBeInTheDocument();
+      mockProfileBody = MEMBER_B;
+      mockSavedAddresses = [MEMBER_B_ADDRESS];
+
+      fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+
+      expect(await screen.findByText('b@example.com')).toBeInTheDocument();
+      expect(screen.getByText('佐藤 次郎')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'キャンセル' })).toBeNull();
+    });
+
+    test('ログインの状態を読み直してもゲストのままなら、今の入力を残し、メールは入力できる形にする', async () => {
+      await openFinalStepAsGuest();
+
+      await act(async () => {
+        mockFinalProps.onRejected({ code: 'login_changed', message: LOGIN_CHANGED_MESSAGE, changedLines: [] });
+      });
+      await settle();
+
+      expect(shippingInputs()).toEqual({
+        email: GUEST_INPUT.email,
+        fullName: GUEST_INPUT.fullName,
+        kanaName: GUEST_INPUT.kanaName,
+        phone: GUEST_INPUT.phone,
+        postalCode: GUEST_INPUT.postalCode,
+        city: GUEST_INPUT.city,
+        address: GUEST_INPUT.address,
+        building: GUEST_INPUT.building,
+      });
+      expect(screen.getByRole('combobox', { name: /都道府県/ })).toHaveTextContent(GUEST_INPUT.prefecture);
+      expect(screen.getByLabelText(/メールアドレス/)).not.toHaveAttribute('readonly');
+      expect(screen.getByTestId('checkout-session-error')).toHaveTextContent(LOGIN_CHANGED_MESSAGE);
+      expect(mockRefreshAuthState).toHaveBeenCalledTimes(1);
+      expect(cartFetchCount()).toBe(2);
+    });
+
+    test('「確認へ進む」が login_changed で返り、会員になっていたら、カートを読み直して入力欄を会員の内容に置き換える', async () => {
+      mockIsLoggedIn = false;
+      mockProfileStatus = 401;
+      mockApi.requestCheckoutConfirmation
+        .mockResolvedValueOnce({ kind: 'error', code: 'login_changed', message: LOGIN_CHANGED_MESSAGE, retryable: true, correlationId: null })
+        .mockResolvedValueOnce({ kind: 'confirmation', confirmation: CONFIRMATION });
+      render(<CheckoutPage />);
+      await typeGuestShipping();
+      loginAsMemberBElsewhere();
+
+      fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+
+      expect(await screen.findByText('b@example.com')).toBeInTheDocument();
+      expect(screen.queryByDisplayValue(GUEST_INPUT.email)).toBeNull();
+      expect(screen.getByTestId('checkout-session-error')).toHaveTextContent(LOGIN_CHANGED_MESSAGE);
+      expect(cartFetchCount()).toBe(2);
+      fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+      await screen.findByTestId('final-step');
+      expect(lastShippingSent()).toEqual(MEMBER_B_SHIPPING);
+    });
+
+    test('「確認へ進む」が auth_expired で返り、ゲストになっていたら、カートを読み直し、今の入力を残してメールを入力できる形にする', async () => {
+      mockApi.requestCheckoutConfirmation
+        .mockResolvedValueOnce({ kind: 'error', code: 'auth_expired', message: LOGIN_EXPIRED_MESSAGE, retryable: true, correlationId: null })
+        .mockResolvedValueOnce({ kind: 'confirmation', confirmation: CONFIRMATION });
+      render(<CheckoutPage />);
+      // 会員 A として入力が済んだ状態。印が失効してゲストになる
+      expect(await screen.findByText('a@example.com')).toBeInTheDocument();
+      mockProfileStatus = 401;
+      mockRefreshAuthState.mockImplementation(async () => {
+        mockIsLoggedIn = false;
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+
+      expect(await screen.findByText(LOGIN_EXPIRED_MESSAGE)).toBeInTheDocument();
+      await waitFor(() => expect(cartFetchCount()).toBe(2));
+      await waitFor(() => expect(screen.getByLabelText(/メールアドレス/)).toHaveValue('a@example.com'));
+      expect(screen.getByLabelText(/メールアドレス/)).not.toHaveAttribute('readonly');
+      expect(screen.getByLabelText(/氏名/)).toHaveValue('山田 花子');
+    });
+
+    test('画面を開いたまま、ゲストから会員に変わったら（ヘッダーのログインなど）、入力欄を会員の内容に置き換える', async () => {
+      mockIsLoggedIn = false;
+      mockProfileStatus = 401;
+      echoDraft();
+      const { rerender } = render(<CheckoutPage />);
+      await typeGuestShipping();
+      // ログインした（サーバーは B として答え、ログインの状態が false から true に変わる）
+      mockProfileStatus = 200;
+      mockProfileBody = MEMBER_B;
+      mockSavedAddresses = [MEMBER_B_ADDRESS];
+      mockIsLoggedIn = true;
+
+      rerender(<CheckoutPage />);
+
+      expect(await screen.findByText('b@example.com')).toBeInTheDocument();
+      expect(screen.queryByDisplayValue(GUEST_INPUT.email)).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+      await waitFor(() => expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(1));
+      expect(lastShippingSent()).toEqual(MEMBER_B_SHIPPING);
+      // 画面のログインの変化を拾っただけで、サーバーに断られたわけではない。状態の読み直しもカートの読み直しもしない
+      expect(mockRefreshAuthState).not.toHaveBeenCalled();
+      expect(cartFetchCount()).toBe(1);
+    });
+
+    test('開いた時のログインの確認（まだ確かめていない状態から会員）では、開いた時の読み込みだけで置き換えず、お客様の入力を消さない', async () => {
+      mockIsLoggedIn = false;
+      mockIsAuthResolved = false;
+      const { rerender } = render(<CheckoutPage />);
+      // 開いた時の読み込みで会員 A の内容が入り、お客様が電話番号を直す
+      await waitFor(() => expect(screen.getByLabelText(/氏名/)).toHaveValue('山田 花子'));
+      fireEvent.change(screen.getByLabelText(/電話番号/), { target: { value: '09099998888' } });
+      mockIsLoggedIn = true;
+      mockIsAuthResolved = true;
+
+      rerender(<CheckoutPage />);
+      await settle();
+
+      expect(screen.getByText('090-9999-8888')).toBeInTheDocument();
+      expect(mockClientFetchUrls.filter((url) => url === '/api/profile')).toHaveLength(1);
+      expect(mockClientFetchUrls.filter((url) => url === '/api/profile/addresses')).toHaveLength(1);
+    });
+
+    test.each([
+      ['auth_expired', LOGIN_EXPIRED_MESSAGE],
+      ['login_changed', LOGIN_CHANGED_MESSAGE],
+    ])('時間切れの作り直しが %s で返ったら、入力画面に戻って案内を出し、自動で送り直さず、押し直せる', async (code, message) => {
+      mockApi.requestCheckoutConfirmation
+        .mockResolvedValueOnce({ kind: 'confirmation', confirmation: CONFIRMATION })
+        .mockResolvedValueOnce({ kind: 'error', code, message, retryable: true, correlationId: null })
+        .mockResolvedValueOnce({ kind: 'confirmation', confirmation: { ...CONFIRMATION, checkoutSessionId: 'cs_test_2' } });
+      await openFinalStep();
+
+      await act(async () => {
+        mockFinalProps.onRejected({ code: 'session_expired', message: '時間がたったため、お支払い情報をもう一度入力してください', changedLines: [] });
+      });
+
+      expect(screen.queryByTestId('final-step')).toBeNull();
+      expect(screen.getByTestId('checkout-session-error')).toHaveTextContent(message);
+      expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
+      expect(mockRefreshAuthState).toHaveBeenCalledTimes(1);
+      expect(cartFetchCount()).toBe(2);
+      // 自動で送り直さない（作り直しの1回だけ）。お客様が押し直したときだけ、もう一度送る
+      expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(2);
+      fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+      await screen.findByTestId('final-step');
+      expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(3);
+    });
   });
 
   test('受け付けで別の画面の手続きを断られたら、最終確認画面の案内に出し、画面の上へ戻す', async () => {

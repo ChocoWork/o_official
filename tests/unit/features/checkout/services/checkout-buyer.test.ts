@@ -32,9 +32,21 @@ function request(cookie = ''): NextRequest {
 describe('resolveCheckoutBuyer', () => {
   beforeEach(() => mockAuthenticate.mockReset());
 
-  test('検証済みの印なら会員（ID は claims.sub）', async () => {
-    mockAuthenticate.mockResolvedValue({ ok: true, claims: { sub: 'user-1' } });
-    await expect(resolveCheckoutBuyer(request())).resolves.toEqual({ kind: 'member', userId: 'user-1' });
+  test('検証済みの印なら会員（ID は claims.sub、メールは claims.email）', async () => {
+    mockAuthenticate.mockResolvedValue({ ok: true, claims: { sub: 'user-1', email: 'member@example.com' } });
+    await expect(resolveCheckoutBuyer(request())).resolves.toEqual({
+      kind: 'member', userId: 'user-1', email: 'member@example.com',
+    });
+  });
+
+  // 注文のメールを画面から送られた値にしないための値。空・文字列でない claims.email は「無い」として扱い、画面のメールに任せる
+  test.each([
+    ['claims.email が無い', {}],
+    ['claims.email が空文字', { email: '' }],
+    ['claims.email が文字列でない', { email: 123 }],
+  ])('%s会員は email を null にする', async (_label, extraClaims) => {
+    mockAuthenticate.mockResolvedValue({ ok: true, claims: { sub: 'user-1', ...extraClaims } });
+    await expect(resolveCheckoutBuyer(request())).resolves.toEqual({ kind: 'member', userId: 'user-1', email: null });
   });
 
   test('印が無ければゲスト', async () => {
@@ -78,6 +90,7 @@ describe('checkoutBuyerFailureResponse', () => {
 });
 
 test('buyerUserIdOf はゲストを null にする', () => {
-  expect(buyerUserIdOf({ kind: 'member', userId: 'u' })).toBe('u');
+  expect(buyerUserIdOf({ kind: 'member', userId: 'u', email: 'u@example.com' })).toBe('u');
+  expect(buyerUserIdOf({ kind: 'member', userId: 'u', email: null })).toBe('u');
   expect(buyerUserIdOf({ kind: 'guest' })).toBeNull();
 });
