@@ -227,7 +227,7 @@
   - 「注文する」でもう一度確かめ、下書きの買い手と違えば 409 `login_changed` で断る（決済の画面を閉じる。お金は動かない）。同じなら、受付 RPC `place_order_from_checkout_draft` に買い手を渡す。RPC は下書きをロックして買い手を比べ直し、注文を作るのと同じ処理の中で `user_id` を書く。
   - 「注文する」を通らない支払い（Stripe の知らせ・見回り・完了の照合）は持ち主を付けない。その注文は、メール確認済みのログインの時に `linkGuestOrdersByEmail` が同じメールの注文としてまとめる（今までの仕組み）。
   - 注文の持ち主は DB が守る。空から値へだけ書け、別の会員への付け替えは `ORDER_OWNER_IMMUTABLE` で断る。空に戻るのは会員を消した時だけ。
-- **確認**: DB 結合 [checkout_order_owner_binding](../../../../tests/integration/db/checkout_order_owner_binding.integration.test.ts)、E2E [FR-CHECKOUT-046](../../../../e2e/FR-CHECKOUT-046-order-owner-binding.spec.ts)（FREQ-426・427）。移行 `20261008120000_checkout_order_owner_binding.sql` は本番へ未適用で、push の後にユーザーの許可を得て当てる。
+- **確認**: DB 結合 [checkout_order_owner_binding](../../../../tests/integration/db/checkout_order_owner_binding.integration.test.ts)、E2E [FR-CHECKOUT-046](../../../../e2e/FR-CHECKOUT-046-order-owner-binding.spec.ts)（FREQ-426・427）。FREQ-427 の2つは断られる経路が違い、別々に確かめる: AC-01 はログインでカートの印が新しくなり、買い手の比べより前に 403 `forbidden` で断られる経路（画面は `login_changed` と同じ扱い）、AC-02 はカートの印が残ったままログインの Cookie が無くなり、買い手の比べで 409 `login_changed` で断られる経路。移行 `20261008120000_checkout_order_owner_binding.sql` は本番へ未適用で、push の後にユーザーの許可を得て当てる。
 
 ### R-25 Checkout Sessionの有効期限が既定24時間のまま、支払後に注文確定を断る経路がある
 
