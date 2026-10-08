@@ -8,6 +8,10 @@ export const passwordResetSessionCookieName = 'sb-password-reset-session';
 export const loginTwoFactorSessionCookieName = 'sb-login-2fa-session';
 export const sessionCookieName = 'session_id';
 export const csrfCookieMaxAgeSeconds = 7 * 24 * 60 * 60;
+export const cartCookieName = 'cart';
+export const wishlistCookieName = 'wishlist';
+/** ゲストのカート・お気に入りの印の寿命。Shopify の cart Cookie と同じ2週間（設計書 4-1） */
+export const guestShoppingCookieMaxAgeSeconds = 14 * 24 * 60 * 60;
 
 const SESSION_ID_BYTES = 16;
 
@@ -81,6 +85,13 @@ export function cookieOptionsForLoginTwoFactor(maxAgeSeconds: number) {
     maxAge: maxAgeSeconds,
     httpOnly: true,
     sameSite: 'strict' as const,
+  };
+}
+
+export function cookieOptionsForGuestShopping(maxAgeSeconds: number = guestShoppingCookieMaxAgeSeconds) {
+  return {
+    ...getBaseCookieOptions(),
+    maxAge: maxAgeSeconds,
   };
 }
 
