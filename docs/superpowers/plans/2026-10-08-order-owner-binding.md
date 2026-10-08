@@ -1149,10 +1149,13 @@ function localDb() {
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
 }
 
+// 会員のログインは確認コードとログインの Cookie をブラウザの通信に載せるので、通信記録（trace）を残さない。
+// trace は worker 単位の設定なので、test.describe の中ではなくファイルの最上位に置く（中に置くと読み込みで落ちる）。
+test.use({ trace: 'off' });
+
 test.describe('FR-CHECKOUT-046 ログイン客の注文の持ち主', () => {
   test.describe.configure({ timeout: 180_000 });
-  // 会員のログインは確認コードとログインの Cookie をブラウザの通信に載せるので、通信記録（trace）を残さない
-  test.use({ locale: 'ja-JP', trace: 'off' });
+  test.use({ locale: 'ja-JP' });
 
   for (const viewport of CHECKOUT_VIEWPORTS) {
     test(`${viewport.name}（${viewport.width}px）会員の注文は、完了の処理がログインなしでも注文履歴に出る`, async ({ page }) => {
