@@ -369,7 +369,10 @@ export default function ItemDetailClient({ id }: Props) {
     }
     setValidationError(null);
 
-    // 在庫を読めない時と取り扱い終了を区別し、再試行で回復できる場合はその旨を案内する。
+    // 組み合わせが1つも無いのは、ほとんどが在庫を読めなかった時（UNKNOWN_AVAILABILITY。商品にはトリガーで
+    // 組み合わせが必ずできる）なので、再試行を案内する。ただし空の配列では「読めない」と「全部が取り扱い終了」を
+    // 区別できず、全部を取り扱い終了にした商品もこの案内になる（今は SQL でしか止められない。管理画面で止められる
+    // ようにする時に、窓口で両者を区別する）。
     if (!item.variantAvailability?.length) {
       setValidationError("在庫を確かめられませんでした。少し時間をおいてから、もう一度お試しください。");
       return;

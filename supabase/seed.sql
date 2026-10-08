@@ -68,7 +68,7 @@ INSERT INTO public.items (
    'Synthetic private product details.', 'private',
    '2026-05-28T12:00:00Z', '2026-05-28T12:00:00Z', NULL);
 
--- 色13・サイズ11・バリアント21（商品1は2、商品9は4色×3サイズの12、ほかは1）。在庫は本番の形どおりすべて0
+-- 色13・サイズ11・バリアント22（商品1・6は2、商品9は4色×3サイズの12、ほかは1）。在庫は本番の形どおりすべて0
 -- （バリアントは在庫0でしか作れない。在庫は台帳でしか動かさない）。
 INSERT INTO public.item_colors (id, item_id, name, hex, position) VALUES
   (1, 1, 'Natural', '#d8d0c5', 0), (2, 3, 'Navy', '#34465e', 0),
@@ -105,7 +105,8 @@ INSERT INTO public.item_variants (id, item_id, color_id, size_id, sku, stock_qua
   (18, 9, 12, 9, 'E2E-ITEM-9-CLOUD-S', 0, true),
   (19, 9, 12, 10, 'E2E-ITEM-9-CLOUD-M', 0, true),
   (20, 9, 12, 11, 'E2E-ITEM-9-CLOUD-L', 0, true),
-  (21, 10, 13, NULL, 'E2E-ITEM-10-BLACK-NOSIZE', 0, true);
+  (21, 10, 13, NULL, 'E2E-ITEM-10-BLACK-NOSIZE', 0, true),
+  (22, 6, 6, 6, 'E2E-ITEM-6-STONE-1', 0, true);
 
 -- 見本の商品とバリアントを入れ終えたので、組み合わせを自動で作るトリガーを戻す（以後に作る商品は自動でそろう）。
 ALTER TABLE public.items ENABLE TRIGGER items_sync_variants;

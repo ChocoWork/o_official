@@ -1,12 +1,15 @@
 /**
- * FR-CHECKOUT-044 価格変更で読み直し、明細を外した案内後も確認へ進める
- * 対応 FREQ: FREQ-425（AC-01 / AC-02）。金額を更新して送ること自体は page の単体テストでも確かめる。
+ * FR-CHECKOUT-044 価格変更の読み直しと、再試行できる断り・できない断りでの配送先の選択
+ * 対応 FREQ: FREQ-425-AC-01（金額の読み直し）、FREQ-430-AC-08（明細を外した後の再試行）、
+ * FREQ-377（案内の入れ物を保つ）、FREQ-425-AC-02・FREQ-385-AC-02（再試行不可の案内と無効状態を保つ）。
+ * 金額を更新して送ること自体は page の単体テストでも確かめる。
  */
 import { expect, test } from '@playwright/test';
 import { CHECKOUT_VIEWPORTS, fillShippingForm, proceedToFinal, seedCart, stubPostalCode } from './checkout-flow-helpers';
 
 const PRICE_MESSAGE = '価格が変わりました。金額をご確認のうえ、もう一度「確認へ進む」を押してください。';
 const UNAVAILABLE_MESSAGE = '次の商品はお求めいただけなくなったため、カートから外しました: E2E のシャツ。内容をご確認のうえ、もう一度「確認へ進む」を押してください。';
+const INVALID_MEMBER_EMAIL_MESSAGE = 'ログイン中のメールアドレスを確かめられませんでした。ログインし直してから、もう一度お試しください。';
 
 test.describe('FR-CHECKOUT-044 価格変更と配送先の選択', () => {
   test.describe.configure({ timeout: 120_000 });
@@ -76,8 +79,47 @@ test.describe('FR-CHECKOUT-044 価格変更と配送先の選択', () => {
       await select.click();
       await page.getByRole('option', { name: '新規', exact: true }).click();
       await expect(select).toContainText('新規');
-      await expect(page.getByTestId('checkout-session-error')).toHaveCount(0);
+      // LiveMessage は案内を読み上げる入れ物を保つため、消えるのは中身だけ（FREQ-377）。
+      await expect(page.getByTestId('checkout-session-error')).toHaveText('');
       await expect(proceed).toBeEnabled();
+    });
+
+    test(`${viewport.name}（${viewport.width}px）やり直せない断りの案内と無効な確認ボタンは新規を選んでも残る`, async ({ page }) => {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      const seeded = await seedCart(page);
+      test.skip(!seeded.ok, seeded.ok ? '' : seeded.reason);
+      if (!seeded.ok) return;
+      await stubPostalCode(page);
+      // 保存済みの住所とお客様情報で入力を満たし、配送先の変更後も断りが残ることを確かめる。
+      await page.route('**/api/auth/me', (route) => route.fulfill({ json: { authenticated: true, user: { id: 'test-user-id', role: 'user', mfaVerified: false } } }));
+      await page.route('**/api/profile', (route) => route.fulfill({ json: {
+        email: `e2e-blocked-new-address-${viewport.name}@example.com`,
+        fullName: '山田 花子',
+        kanaName: 'ヤマダ ハナコ',
+        phone: '0312345678',
+        address: { postalCode: '1500001', prefecture: '東京都', city: '渋谷区', address: '神宮前1-2-3', building: '' },
+      } }));
+      await page.route('**/api/profile/addresses', (route) => route.fulfill({ json: { addresses: [
+        { id: 'e2e-address', postalCode: '1500001', prefecture: '東京都', city: '渋谷区', address: '神宮前1-2-3', building: '', isDefault: true },
+      ] } }));
+      // create-session が実際に 400・retryable: false で返し、checkout-api がそのまま写す断りを使う。
+      // ログイン中のメールの問題は配送先を新規にしても解決しないため、案内と無効状態を保つ例にする。
+      await page.route('**/api/checkout/create-session', (route) => route.fulfill({ status: 400, json: { error: 'invalid_member_email', retryable: false, message: INVALID_MEMBER_EMAIL_MESSAGE } }));
+      await page.goto('/checkout');
+      const select = page.getByRole('combobox', { name: '保存済みの配送先' });
+      await expect(select).toContainText('150-0001');
+      const proceed = page.getByRole('button', { name: '確認へ進む' });
+      await expect(proceed).toBeEnabled();
+      await proceed.click();
+      await expect(page.getByTestId('checkout-session-error')).toHaveText(INVALID_MEMBER_EMAIL_MESSAGE);
+      await expect(proceed).toBeDisabled();
+
+      await select.click();
+      await page.getByRole('option', { name: '新規', exact: true }).click();
+      await expect(select).toContainText('新規');
+      await expect(page.getByTestId('checkout-session-error')).toHaveText(INVALID_MEMBER_EMAIL_MESSAGE);
+      await expect(proceed).toBeDisabled();
+      await expect(page).toHaveURL(/\/checkout$/);
     });
   }
 });

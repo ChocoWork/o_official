@@ -902,6 +902,25 @@ describe('決済の画面（グループ F）', () => {
     expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(1);
   });
 
+  test('やり直せない断りの案内と押せない確認ボタンは、配送先で新規を選んでも残る', async () => {
+    mockSavedAddresses = [SAVED_TOKYO];
+    const message = 'ログイン中のメールアドレスを確かめられませんでした。ログインし直してから、もう一度お試しください。';
+    // サーバーが 400 で返す invalid_member_email は、配送先を変えても解決しないため再試行不可の例にする。
+    mockApi.requestCheckoutConfirmation.mockResolvedValue({ kind: 'error', code: 'invalid_member_email', message, retryable: false, correlationId: null });
+    render(<CheckoutPage />);
+    const proceed = await screen.findByRole('button', { name: '確認へ進む' });
+    fireEvent.click(proceed);
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(proceed).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('combobox', { name: '保存済みの配送先' }));
+    fireEvent.click(await screen.findByRole('option', { name: '新規' }));
+    expect(screen.getByRole('combobox', { name: '保存済みの配送先' })).toHaveTextContent('新規');
+    expect(screen.getByTestId('checkout-session-error')).toHaveTextContent(message);
+    expect(proceed).toBeDisabled();
+    expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(1);
+  });
+
   test('やり直せる断りは配送先で新規を選ぶと消せる', async () => {
     mockSavedAddresses = [SAVED_TOKYO];
     mockApi.requestCheckoutConfirmation.mockResolvedValue({ kind: 'error', code: 'checkout_session_failed', message: '一時的な失敗', retryable: true, correlationId: null });

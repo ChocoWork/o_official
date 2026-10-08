@@ -42,7 +42,8 @@ for (const viewport of viewports) {
       const itemNameLink = page.getByRole('link', { name: itemName, exact: true }).filter({ hasText: itemName });
       const cartRow = page.locator('div.border-b').filter({ has: itemNameLink });
       const variant = cartRow.getByTestId('cart-variant');
-      const guestVariant = await variant.count() ? await variant.innerText() : null;
+      // toHaveText は textContent を空白を詰めて比べるので、innerText（改行が入る）ではなく textContent で控える
+      const guestVariant = await variant.count() ? ((await variant.textContent()) ?? '').trim() : null;
       const guestQuantity = await cartRow.getByRole('spinbutton').inputValue();
 
       const member = await createTestMember(`cart-carry-${viewport.name}`);

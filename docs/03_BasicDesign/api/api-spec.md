@@ -128,7 +128,7 @@ Stripe Webhookはraw bytesとstripe-signatureを`constructEvent`で検証する�
 ### グループ F の画面側の扱い（FREQ-423〜425）
 
 - FREQ-423: [入力画面](../../../src/app/checkout/page.tsx)は適用したコードだけを[このタブに記録](../../../src/app/checkout/_lib/promotion-memory.ts)し、入り直しの入口が `none`・`unavailable` なら promotion-code で確かめ直す。使えなければ欄にコードとサーバーの理由を残す。削除・注文完了処理成功・再確認の拒否（422 の理由つきの断り）で記録を消す。一時的な失敗（通信の失敗・429・5xx など）では記録を残す。
-- FREQ-424 の旧 `out_of_stock` 分岐は画面と既存の模擬 E2E に残る。2026-10-08（FREQ-430-REQ-05・AC-08）以降、create-session は購入不可明細を持ち主のカートから外し、409 `cart_updated`（retryable: true）と「次の商品はお求めいただけなくなったため、カートから外しました: <名前（色 / サイズ）>。内容をご確認のうえ、もう一度「確認へ進む」を押してください。」を返す。サーバーは `out_of_stock` を返さない。
+- FREQ-424: 画面の `out_of_stock` の枝とそれを真似る E2E は `cart_updated` の形に直した（2026-10-08 の全体レビュー）。2026-10-08（FREQ-430-REQ-05・AC-08）以降、create-session は購入不可明細を持ち主のカートから外し、409 `cart_updated`（retryable: true）と「次の商品はお求めいただけなくなったため、カートから外しました: <名前（色 / サイズ）>。内容をご確認のうえ、もう一度「確認へ進む」を押してください。」を返す。サーバーは `out_of_stock` を返さない。
 - FREQ-425: create-session の409 `checkout_amount_mismatch` ではカートと金額を読み直し、「価格が変わりました。金額をご確認のうえ、もう一度「確認へ進む」を押してください。」をボタンの上に出し、更新済み金額で押し直せる。割引コードを適用中なら promotion-code で確かめ直して目安の金額を新しくし、断られたら割引を外して理由を出す。やり直せない案内と無効状態は、配送先の選択・入力変更でも消さない。
 
 ### グループ C の扱い（FREQ-426・427）

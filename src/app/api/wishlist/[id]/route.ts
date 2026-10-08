@@ -101,7 +101,7 @@ export async function DELETE(
 
     // 他人の明細を消せないよう、必ず持ち主の wishlist_id でも絞る
     // 明細を先にロックし AFTER トリガーが持ち主を更新するため、持ち主を先にロックする
-    // cart_change_line・merge_guest_into_member と同時に走ると、まれにデッドロック（40P01）になる。
+    // merge_guest_into_member と同時に走ると、まれにデッドロック（40P01）になる。
     // 片方の要求は 500 になるがトランザクションが戻るのでデータは壊れず、送り直せば通る。
     const { data: deleted, error: deleteError } = await supabase
       .from("wishlist_lines")
