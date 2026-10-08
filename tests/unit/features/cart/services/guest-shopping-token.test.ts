@@ -52,7 +52,7 @@ describe('ゲストの印', () => {
     const cookie = res.cookies.get('cart');
     expect(cookie).toMatchObject({ value: 'c'.repeat(43), httpOnly: true, sameSite: 'lax', path: '/', maxAge: 1209600 });
     clearGuestShoppingCookies(res);
-    expect(res.cookies.get('cart')?.value).toBe('');
-    expect(res.cookies.get('wishlist')?.value).toBe('');
+    expect(res.cookies.get('cart')).toMatchObject({ value: '', maxAge: 0, path: '/' });
+    expect(res.cookies.get('wishlist')).toMatchObject({ value: '', maxAge: 0, path: '/' });
   });
 });

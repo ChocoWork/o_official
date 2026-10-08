@@ -39,7 +39,8 @@ const tableOf = (kind: GuestShoppingKind): ShoppingOwnerTable => (kind === 'cart
 
 function auditOwnerOf(owner: ShoppingOwnerRef | null): Record<string, string> {
   if (owner?.kind === 'member') return { owner: 'member', user_id: owner.userId };
-  if (owner?.kind === 'guest') return { owner: 'guest', guest_token_hash_prefix: owner.tokenHash.slice(0, 12) };
+  // キーに token があると maskAuditEvent が値を伏せてゲストの記録をつなげられないため、含めない。
+  if (owner?.kind === 'guest') return { owner: 'guest', guest_hash_prefix: owner.tokenHash.slice(0, 12) };
   return { owner: 'guest' };
 }
 

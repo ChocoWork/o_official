@@ -19,6 +19,7 @@ export async function mergeGuestShoppingIntoMember(
   if (!params.cartToken && !params.wishlistToken) {
     return { ok: true, cartLinesMoved: 0, cartLinesDropped: 0, wishlistLinesMoved: 0 };
   }
+  let result: Extract<GuestMergeResult, { ok: true }>;
   try {
     const { data, error } = await supabase.rpc('merge_guest_into_member', {
       _user_id: params.userId,
@@ -29,12 +30,42 @@ export async function mergeGuestShoppingIntoMember(
       throw error;
     }
     const row = ((data ?? []) as MergeRow[])[0] ?? { cart_lines_moved: 0, cart_lines_dropped: 0, wishlist_lines_moved: 0 };
-    const result = {
+    result = {
       ok: true as const,
       cartLinesMoved: Number(row.cart_lines_moved),
       cartLinesDropped: Number(row.cart_lines_dropped),
       wishlistLinesMoved: Number(row.wishlist_lines_moved),
     };
+  } catch (error) {
+    // DB の関数にはハッシュしか渡らずエラーの文に印は入らないため、原因の code と message を記録する。
+    const code = error !== null && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
+      ? error.code
+      : undefined;
+    const message = error instanceof Error
+      ? error.message
+      : error !== null && typeof error === 'object' && 'message' in error && typeof error.message === 'string'
+        ? error.message
+        : 'merge failed';
+    console.error('Failed to merge guest shopping into member:', { ...(code === undefined ? {} : { code }), message });
+    try {
+      await logAudit({
+        action: 'cart.merge',
+        outcome: 'error',
+        actor_id: params.userId,
+        detail: code === undefined ? message : `${code}: ${message}`,
+      });
+    } catch {
+      console.error('Failed to log cart merge audit');
+    }
+    return { ok: false };
+  }
+
+  // 偽の Cookie で監査を水増しさせないため、移した・移さなかった件数がすべて0なら記録しない。
+  if (result.cartLinesMoved === 0 && result.cartLinesDropped === 0 && result.wishlistLinesMoved === 0) {
+    return result;
+  }
+  // DB の処理は済んでいるため、監査の失敗で合わせる処理を失敗扱いにしない。
+  try {
     await logAudit({
       action: 'cart.merge',
       outcome: 'success',
@@ -45,20 +76,8 @@ export async function mergeGuestShoppingIntoMember(
         wishlist_lines_moved: result.wishlistLinesMoved,
       },
     });
-    return result;
   } catch {
-    // 依存先の例外には印が含まれ得るため、ログと監査には固定文言だけを残す。
-    console.error('Failed to merge guest shopping into member');
-    try {
-      await logAudit({
-        action: 'cart.merge',
-        outcome: 'error',
-        actor_id: params.userId,
-        detail: 'merge failed',
-      });
-    } catch {
-      console.error('Failed to log cart merge audit');
-    }
-    return { ok: false };
+    console.error('Failed to log cart merge audit');
   }
+  return result;
 }
