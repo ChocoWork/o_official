@@ -312,7 +312,7 @@
 
 ### R-36 FREQ-401のカート単体テストが500応答でも成功する
 
-- **箇所**: [cart route test](../../../../tests/unit/api/cart/route.test.ts) 55〜95行。
+- **箇所**: 当時の `tests/unit/api/cart/route.test.ts` 55〜95行。2026-10-08追記（FREQ-430）: このファイルはカート API の移行で削除済み。以下は移行前の試験についてのレビュー記録として残す。
 - **事実**: モックに `insert` がなく、実行ログに `TypeError: cartSupabase.from(...).insert is not a function` が出たうえで3件成功する（2026-09-25 実行）。アサーションが `not.toBe(409)` だけなので500でも通る。
 - **修正方針**: insert をモックし、201と投入内容（色・サイズ・数量）を検証する。
 

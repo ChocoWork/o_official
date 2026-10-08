@@ -1,6 +1,6 @@
 # APIルート一覧
 
-> 状態: ソースから作成した入口一覧 | 確認日: 2026-10-02（checkout の入口の変更は 2026-10-07 に反映） | 対象: `src/app/api/**/route.ts`
+> 状態: ソースから作成した入口一覧 | 確認日: 2026-10-02（checkout の入口の変更は 2026-10-07、カートの入口の変更は 2026-10-08 に反映） | 対象: `src/app/api/**/route.ts`
 
 ## 概要
 
@@ -67,8 +67,9 @@
 | `/api/auth/password-reset/session` | `GET` | [route.ts](../../../src/app/api/auth/password-reset/session/route.ts) |
 | `/api/auth/refresh` | `POST` | [route.ts](../../../src/app/api/auth/refresh/route.ts) |
 | `/api/auth/register` | `POST` | [route.ts](../../../src/app/api/auth/register/route.ts) |
-| `/api/cart/[id]` | `DELETE`, `PATCH` | [route.ts](../../../src/app/api/cart/%5Bid%5D/route.ts) |
-| `/api/cart` | `GET`, `POST` | [route.ts](../../../src/app/api/cart/route.ts) |
+| `/api/cart/add` | `POST` | [route.ts](../../../src/app/api/cart/add/route.ts) |
+| `/api/cart/change` | `POST` | [route.ts](../../../src/app/api/cart/change/route.ts) |
+| `/api/cart` | `GET` | [route.ts](../../../src/app/api/cart/route.ts) |
 | `/api/checkout/complete` | `POST` | [route.ts](../../../src/app/api/checkout/complete/route.ts) |
 | `/api/checkout/create-session` | `POST` | [route.ts](../../../src/app/api/checkout/create-session/route.ts) |
 | `/api/checkout/payment-intent` | `POST` | [route.ts](../../../src/app/api/checkout/payment-intent/route.ts) |

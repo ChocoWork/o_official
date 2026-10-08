@@ -6,6 +6,18 @@
 
 本書は「1.5 商品詳細ページ（ITEM DETAIL）詳細設計」の既存設計を記録する。要件IDと設計意図を保持しているが、表中の実装状況は現在のコードと一括再照合していない。
 
+## カート・お気に入りの引き継ぎ（2026-10-08 / FREQ-428〜432）
+
+| 操作 | 現行の窓口・扱い |
+| --- | --- |
+| カートに追加 | `variantAvailability` から選んだ色・サイズの `variantId` を引き、`POST /api/cart/add` に `{items:[{id:variantId,quantity:1}]}` を送る。同じバリアントは数量を足す。在庫0は受注生産として買える |
+| 追加の断り | 422「1つの商品は20個までです。」「カートに入れられるのは50種類までです。」、404「選んだ色・サイズは現在お求めいただけません。」。`{status,message:"Cart Error",description}` の description をそのまま画面へ出す |
+| お気に入り | `POST /api/wishlist` に `{item_id}`、削除は `DELETE /api/wishlist/[id]`。重複は409 `{error:"Item already in wishlist"}` |
+| ゲストの印 | `cart`・`wishlist` は別の256ビット乱数の Cookie（HttpOnly・SameSite=Lax・Path=/・2週間）。商品一覧そのものは Cookie に置かずサーバーに置き、DBは印のSHA-256だけを保存する |
+| 会員 | 会員の ID で読み、書き換えは CSRF が必須。ログインでゲストの分を合わせ、成功した専用 Cookie を消す。失敗してもログインは続け、次の読み出しで再試行する |
+
+根拠: [商品詳細](../../../src/app/item/[id]/ItemDetailClient.tsx)、[カート追加](../../../src/app/api/cart/add/route.ts)、[お気に入り](../../../src/app/api/wishlist/route.ts)、[持ち主](../../../src/features/cart/services/shopping-context.ts)、[引き継ぎ設計](../../superpowers/specs/2026-10-08-cart-wishlist-carryover-design.md)。
+
 ## 機能要件対応表
 
 | 要件ID | 要件内容 | 実装ID | 実装対象ファイル | 実装概要 | 実装ステータス |
@@ -13,7 +25,7 @@
 | FR-ITEM-DETAIL-001 | クライアントサイドで `/api/items/[id]` から商品データを読み込みページを構成する | IMPL-ITEM-DETAIL-001 | `src/app/item/[id]/page.tsx`, `src/app/api/items/` | `"use client"` コンポーネントで `useEffect` から `fetch('/api/items/${id}')` を実行 | 済 |
 | FR-ITEM-DETAIL-002 | 画像カルーセルを表示しモバイルでは横スクロール・デスクトップではサムネイル選択 UI を提供する | IMPL-ITEM-DETAIL-002 | `src/app/item/[id]/page.tsx` | `carouselRef` で横スクロールを実装し `handleCarouselScroll` でインデックスを追従。サムネイルクリックで画像切替 | 済 |
 | FR-ITEM-DETAIL-003 | カラー・サイズ・数量をユーザーが選択でき選択状態を明確に表示する | IMPL-ITEM-DETAIL-003 | `src/app/item/[id]/page.tsx`, `src/components/ui/Stepper.tsx` | カラー・サイズのボタン選択 + `Stepper` コンポーネントで数量指定 | 済 |
-| FR-ITEM-DETAIL-004 | カート追加ボタンとウィッシュリスト切替ボタンを提供し状態変更時に適切なフィードバックを返す | IMPL-ITEM-DETAIL-004 | `src/app/item/[id]/page.tsx`, `src/app/api/cart/route.ts`, `src/app/api/wishlist/route.ts` | カート追加・ウィッシュリスト切替ともに実装済み。フィードバックは `alert()` を使用（Toast 等への改善推奨） | 済 |
+| FR-ITEM-DETAIL-004 | カート追加ボタンとウィッシュリスト切替ボタンを提供し状態変更時に適切なフィードバックを返す | IMPL-ITEM-DETAIL-004 | `src/app/item/[id]/ItemDetailClient.tsx`, `src/app/api/cart/add/route.ts`, `src/app/api/wishlist/route.ts` | 選んだバリアントを `POST /api/cart/add` に `{items:[{id,quantity:1}]}` で送る。成功は ADDED、失敗は description を読み上げの案内へ出す。お気に入りは POST / DELETE、失敗はトースト | 済 |
 | FR-ITEM-DETAIL-005 | 読み込み中はローディング表示・404 時にはエラーメッセージと戻るボタンを表示する | IMPL-ITEM-DETAIL-005 | `src/app/item/[id]/page.tsx` | ローディング中は「読み込み中...」テキスト表示。エラー時は "BACK TO ITEMS" ボタンを表示 | 済 |
 | FR-ITEM-DETAIL-006 | レスポンシブレイアウトを採用しモバイルでは固定フッターボタンを含む操作領域を維持する | IMPL-ITEM-DETAIL-006 | `src/app/item/[id]/page.tsx` | デスクトップは `md:sticky` で粘着配置。モバイルは `fixed bottom-0` の固定フッターボタンを `IntersectionObserver` で制御 | 済 |
 | FR-ITEM-DETAIL-007 | 在庫状態を表示しサイズ・カラー選択時に「残りわずか」「売り切れ」情報を明示する。選択不可バリエーションは無効化する | IMPL-ITEM-DETAIL-007 | `src/app/item/[id]/ItemDetailClient.tsx`, `src/app/item/[id]/page.tsx` | `StockBadge` コンポーネントで在庫表示。`isSoldOut` で UI 無効化。`stock_quantity` カラムを DB に追加 | 済 |
@@ -74,7 +86,8 @@
 | 選んだ色 × サイズ | 表示 |
 |---|---|
 | すぐ出せる在庫がある | 在庫あり・3〜7営業日で発送 |
-| 在庫が無い / 停止中 / バリアント未登録 | 受注生産・数週間〜2ヶ月 |
+| 在庫が無い販売中のバリアント | 受注生産・数週間〜2ヶ月 |
+| 取り扱い終了 / バリアント未登録 | カートへの追加を断る（FREQ-430）。納期の表示だけで購入可能とは判断しない |
 
 日数の区分は法令ページ（特定商取引法）と同じ。両者がずれると表示と規約が食い違う。
 

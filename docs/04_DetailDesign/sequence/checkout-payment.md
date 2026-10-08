@@ -44,7 +44,6 @@ sequenceDiagram
         API-->>UI: 401 auth_expired か 503（何も変えない。401は画面が印を新しくして1回だけ送り直す）
     end
     API->>API: 入力確認
-    API->>DB: カート・公開商品を取得し、金額を計算し直す
     API->>API: 配送先7項目が欠けていれば400 shipping_incomplete（下書き・Sessionを作らない）
     API->>DB: 受け付け済みで支払いの済んだ決済の画面を探す
     alt 支払いの済んだ決済の画面があり、その下書きの買い手が今の買い手と同じ
@@ -53,13 +52,22 @@ sequenceDiagram
         API->>DB: その画面を照合して仕上げる（持ち主は付けない）
         API-->>UI: 409 login_changed（決済の画面の ID は返さない）
     end
+    API->>DB: 持ち主のcartを取得（残ったゲストの印は先に会員へ合わせる）
+    API->>DB: cart_linesと商品を取得（source_cart_line_idはcart_lines.id）
+    API->>API: splitPurchasableCartRowsで明細ごとに判定
+    break 取り扱い終了・非公開・欠落商品の明細がある
+        API->>DB: cart_idと明細IDで購入不可の明細だけ削除
+        API-->>UI: 409 cart_updated（retryable true、外した商品名・色・サイズ）
+        UI->>UI: カートと割引の目安を読み直し、案内を出す（確認へ進むは押せる）
+    end
+    API->>API: 買える明細から金額を計算し直す
     opt 割引コードがある
         API->>Stripe: promotionCodes.list（有効・期限・回数・最低購入額）
         alt 使えない
             API-->>UI: 409 promotion_code_invalid（欄に理由）
         end
     end
-    API->>DB: claim_checkout_draft（版 3。指紋に配送先・割引コード・買い手。買い手を下書きに記録）
+    API->>DB: claim_checkout_draft（版 3。指紋に配送先・割引コード・買い手。buyer_user_idとcart_idを記録）
     alt 結び付いた決済の画面が開いていて残り15分以上
         API->>API: その決済の画面を使い回す
     else 残り15分未満・失効・まだ無い
@@ -79,7 +87,7 @@ sequenceDiagram
 | 条件・例外 | 結果 |
 | --- | --- |
 | 前処理（FREQ-366） | 住所の入力フォームを出していて「この配送先を保存する」が ON のときは、この呼び出しの前にプロフィール・住所帳へ保存する。失敗したときは呼ばず、入力画面に案内を出す |
-| 商品欠落・購入不可 | 409 `out_of_stock` で拒否する。数量不足だけでは拒否せず、在庫あり・受注生産は「注文する」の受け付けで決める。表示額とサーバー額の違いは409 `checkout_amount_mismatch`、正の整数でない合計は400 |
+| 商品欠落・購入不可（FREQ-430-REQ-05・AC-08） | splitPurchasableCartRowsで明細ごとに分け、持ち主のcart_idと明細IDで購入不可明細を外す。409 `{error:"cart_updated",retryable:true,message}`（外した商品名・色・サイズ入り）を返す。画面はカートと割引の目安を読み直し、案内を出して押し直せるままにする。割引コードの確かめは買える明細だけで計算し、カートを変えない。在庫不足だけでは拒否しない。表示額不一致は409 checkout_amount_mismatch、正の整数でない合計は400 |
 | 要求の指紋 | 版3（グループ C）。UI mode、origin、JPY、サーバー算出金額、canonical明細、配送先、割引コードの識別子、買い手（会員の ID、ゲストは空）を含み、申告の支払方法は含まない。買い手が違えば別の下書きになり、買い手を記録していない古い版の下書きは使い回さない。冪等キーは `checkout-session:create:v3:<draftId>:<expiresAt>`。draft claimは部分一意制約であり、Webhookのclaim token/leaseとは別 |
 | ログインの確かめ（グループ C） | CSRFの後、本文を読む前に[買い手の確かめ](../../../src/features/checkout/services/checkout-buyer.ts)を行う。印が古い・失効で更新の印（`sb-refresh-token` Cookie）がある時は401 `auth_expired`、DBの不調で生存確認ができない時は503。どちらも下書き・Stripeに触れる前に返すので、画面が送り直しても二重にならない。更新の印が無い古い印はゲストとして進む。会員の IDは検証済みの`claims.sub`だけを使う |
 | 支払い済みの画面の買い手（グループ C） | 見つかった支払い済みの画面の下書きの買い手が今の買い手と違う・下書きが無い時は、その画面を照合して仕上げ（持ち主は付けない）、監査ログ（`reason:login_changed`）を残して409 `login_changed`で断る。別の買い手に決済の画面の ID を渡さない |
@@ -135,7 +143,7 @@ sequenceDiagram
         UI->>UI: ご注文は確定しています（もう一度払わせない）
     else 別の完了済み画面なし（同じIDなら従来どおり）
     PO->>DB: place_order_from_checkout_draft（Stripe の金額、見せた在庫、買い手）
-    Note over PO,DB: 配列ありの受付はsource_cart_idがNULLでない明細の本人のカート行を検証<br/>消失ならcart_changed（受付済みの押し直しはpayment_in_progressだけ）<br/>paid・pendingの既存注文はカート消失でも返す。NULL引数の照合器では検証しない
+    Note over PO,DB: 配列ありの受付はsource_cart_line_idが指すcart_linesを下書きのcart_idで検証（cart_idなしの旧下書きもcart_changed）<br/>消失ならcart_changed（受付済みの押し直しはpayment_in_progressだけ）<br/>paid・pendingの既存注文はカート消失でも返す。NULL引数の照合器では検証しない
     Note over PO,DB: 下書きをロックした直後に買い手をもう一度比べ、違えばlogin_changedで何も変えない<br/>同じ時だけ、注文を作る処理の中でuser_idを書く（ゲストは空）
     alt 断る（カート・価格・在庫の変化、買えない商品、0円、別の画面、買い手の食い違い）
         Note over PO,Stripe: cart_changed・superseded・login_changedではこの画面を閉じ、失効成功時に照合<br/>受付済みなら放棄・在庫返却。理由記号とIDを記録する（失敗はログに残し409を維持）
@@ -318,9 +326,9 @@ sequenceDiagram
 | 既存注文の返金 | 判定がnone、注文paid/shipped、snapshot paid、返金額>0、PIありの場合だけsyncRefundsを呼ぶ。入金更新直後の読み直しも対象。同期後statusを返し、全額返金によるcancelledならcompleteは409。record_only・返金0・cancelledには呼ばない。事前のPI/金額不一致は要対応分岐を優先する |
 | 返金同期の失敗 | Stripe一時障害はstripe_unavailable、DB errorのcauseが一時障害ならdb_unavailable、最大3回の返金投影が未収束ならnot_convergedのReconcileTransientErrorへ変換。completeは503、workerはfail/retry。その他は元の例外を返す。成立済み注文RPCは巻き戻さない |
 | 配送先 | completeのshippingは形式検証のみ。注文作成時はロックしたdraft.shipping_snapshotから写す。必須配送snapshot欠落は監査して注文作成を続ける |
-| 新規受付 | Sessionで既存注文を確認、draftロック後にも確認。商品はID昇順でKEY SHARE、variantはID昇順でUPDATEロック。商品・金額等の拒否時はorder_not_creatableを記録し、自動返金はしない。「注文する」の受け付け（place-order）は、最終確認画面で在庫ありと見せたバリアントを渡して呼び、source_cart_idがNULLでない明細の本人のカート行が消えていれば`cart_changed`、見せた後の価格の変化は`price_changed`、在庫ありから受注生産への変化は`stock_changed`で断る（注文も在庫の確保も作らず、下書きは`created`のまま）。この引数が無い呼び出し（照合器の予備処理）はカート行を検証せず、足りない明細を受注生産として受ける。「注文する」の受け付けは、下書きをロックした直後（既にある注文を返すより前）に下書きの買い手と引数の買い手を比べ、違えば`login_changed`で断る（何も変えない）。下書きが無い時や、下書きの Session・カートの印が要求と違う時は、既にある注文の持ち主と比べる。買い手だけを渡して配列を渡さない呼び間違いは`PLACE_ORDER_ARGUMENT_REQUIRED`（22023）で断る |
+| 新規受付 | Sessionで既存注文を確認、draftロック後にも確認。商品はID昇順でKEY SHARE、variantはID昇順でUPDATEロック。商品・金額等の拒否時はorder_not_creatableを記録し、自動返金はしない。「注文する」の受け付け（place-order）は、最終確認画面で在庫ありと見せたバリアントを渡して呼び、source_cart_line_idのcart_linesが下書きのcart_idに属さない・消えている、またはcart_idが無い移行前の下書きなら`cart_changed`、見せた後の価格の変化は`price_changed`、在庫ありから受注生産への変化は`stock_changed`で断る（注文も在庫の確保も作らず、下書きは`created`のまま）。この引数が無い呼び出し（照合器の予備処理）はカート行を検証せず、足りない明細を受注生産として受ける。「注文する」の受け付けは、下書きをロックした直後（既にある注文を返すより前）に下書きの買い手と引数の買い手を比べ、違えば`login_changed`で断る（何も変えない）。下書きが無い時や、下書きの Session・カートの印が要求と違う時は、既にある注文の持ち主と比べる。買い手だけを渡して配列を渡さない呼び間違いは`PLACE_ORDER_ARGUMENT_REQUIRED`（22023）で断る |
 | 在庫 | 同variant数量を合算し、activeかつ足りるvariantだけstock、残りはbackorder。stock明細をpurchase台帳で確保。確保は注文を作る受付RPCの中で行い、通常は「注文する」の受け付け（支払いの前）。create-session（確認へ進む）では予約しない |
-| draftとカート | placeでdraft completed、入金RPCで対象snapshotのsource_cart_idと所有sessionが一致するカート行だけ削除 |
+| draftとカート | placeでdraft completed。支払い後のprivate.clear_cart_for_orderは、下書きのcart_idに属し、snapshotのsource_cart_line_idが指すcart_linesだけを削除する。「確認へ進む」の後に別タブで足した未購入の明細は残す |
 | paidの異常 | 金額・通貨不一致でもRPCはpaidに更新し、照合器が要対応を記録。再確保できないstock明細はpaid＋要確認。出荷ガードとは別に管理する |
 | 競合・収束 | 更新0件や中間矛盾は読み直し。state_conflictが最終回まで続けば要対応を記録してneeds_actionを返す。最大3回の試行内でdoneに達せず、最終回がapplied/lost_raceで追加読取りを要する場合はReconcileTransientError(not_converged)。completeは一時エラーを503にする |
 | 外部一時障害 | StripeConnectionError/StripeAPIError/StripeRateLimitError、または数値statusCodeが500以上/429なら一時障害。照合器の読取りはresource_missingをmissing分類。completeの初回Session取得も同じ一時障害判定で503を返す。初回取得のresource_missing・認証エラー・その他の非一時エラーは外側catchの500。入力・認証の問題を一時障害とみなして繰返さない |
@@ -340,3 +348,6 @@ sequenceDiagram
 本番のmigration適用（グループ F の `20261007133711` は 2026-10-07 に本番へ当て、関数の形と実行権を確かめた。グループ C の `20261008055720` は 2026-10-08 に本番へ当て、関数の形・実行権・トリガーを確かめた）、実際のStripe Session・PaymentIntent・動的支払方法、外部認証・メール到達、全競合の実行結果は未確認。SQLの「受付API(F)」コメントは、グループ F の `place-order`（SQ-CHECKOUT-02）として実装済み。廃止されたfinalize/PaymentIntent APIを、現行画面から呼ぶ経路として描かない。
 
 照合全体の基準は2026-10-04の作業ツリーで、`bbb18761`後の返金補正を含む。SQ-CHECKOUT-01〜03は2026-10-07の作業ツリー（グループ F）から書いた。今回、SQ-CHECKOUT-01のcustom限定・配送先必須の検証、SQ-CHECKOUT-02の失効処理、SQ-CHECKOUT-04の呼出し元と、照合器の受付の予備処理・放棄時の在庫返却を現行コードで確認し直した。2026-10-04のレビュー対象と検証結果は[レビュー記録](../../05_Quality/reviews/code/2026-10-04-sequence-state-review.md)を参照する。completeの外側500の監査はmessageと文字列codeを記録し、例外オブジェクトのdetails/hintを複写しない。
+
+
+2026-10-08（FREQ-428〜432）: 決済の流れは `session_id`、カートの所有権は `cart` Cookie または会員の ID で分ける。下書きの `cart_id` と `source_cart_line_id` による注文受付・削除の根拠は [移行 B](../../../supabase/migrations/20261008130100_cart_checkout_rpcs.sql)。create-session の購入不可明細の処理は [checkout-cart.service.ts](../../../src/features/checkout/services/checkout-cart.service.ts)。旧 `out_of_stock` は画面の互換分岐と既存の模擬 E2E の説明であり、サーバーは返さない。

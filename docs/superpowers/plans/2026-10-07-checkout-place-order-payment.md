@@ -1,5 +1,7 @@
 # 支払いを「注文する」で行う（グループ F）実装計画
 
+> 2026-10-08追記（FREQ-428〜432）: 本計画の `source_cart_id` は、移行前の下書きの写し・旧コード、またはその置き換え対象を説明するために残す過去の記録。現行の下書きの明細参照は `source_cart_line_id`（`cart_lines.id`）、所有カートは `checkout_drafts.cart_id`。実装時の契約は [カートとお気に入りの引き継ぎ設計](../specs/2026-10-08-cart-wishlist-carryover-design.md)を参照する。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 支払いを最終確認画面の「注文する」に移す。「確認へ進む」でサーバーが下書きから決済の画面（Stripe の Checkout Session）を作り、「注文する」でサーバーが注文を受け付けて在庫を確保し、その場で支払う。確認画面での戻る・読み込み直し・入り直しで二重に払えないようにし、在庫の変化はお金が動く前に示す。

@@ -351,7 +351,7 @@ sequenceDiagram
 | `title`・`variant_title`・`options_with_values` | `title` は「商品名 - 色 / サイズ」。色・サイズが無いバリアントは `title` が商品名だけ、`variant_title` が `null`、`options_with_values` が空の配列 |
 | `items_subtotal_price`・`total_price` | 出す明細の `line_price` の合計。カートでは割引を扱わないので同じ値 |
 | `fulfillment` | この店の追加の項目。在庫あり `stock`・受注生産 `backorder`・読めない時 `null`（グループ F 設計書 5-2 と同じ） |
-| 出さない明細 | 非公開の商品の明細と、取り扱い終了（`is_active = false`）のバリアントの明細（今の非公開の商品の扱いをバリアントにも広げる）。`item_count` にも数えない |
+| 出さない明細 | 非公開の商品の明細と、取り扱い終了（`is_active = false`）のバリアントの明細。item_countにも数えない。2026-10-08追記: 「確認へ進む」で持ち主のカートから外して商品名・色・サイズを案内し、押し直せるままにする。Shopify の決済の動きに合わせ、画面に出ない明細を消せず進めない行き止まりを無くすため |
 | 並び | 入れた日時の新しい順（今と同じ） |
 | 持ち主なし | `{"item_count": 0, "items": [], …}` |
 
@@ -404,7 +404,7 @@ Shopify に無いので、窓口の形は今のまま（一覧・追加・削除
 | CSRF | 書き換え（カートの追加・変更、お気に入りの追加・削除）に合言葉が必須（決済の窓口と同じ） | 合言葉は無い。他のサイトからの送信は送信元（Origin）の確かめ（`src/proxy.ts`、POST・PUT・PATCH・DELETE）と SameSite=Lax で止める（今と同じ） |
 | 回数の制限 | IP ごと＋会員ごと | IP ごと＋印ごと（印がまだ無い時は IP ごとだけ） |
 | 回数 | 今の値を使う（`cart:add` は IP 60回・持ち主 30回／分など）。`cart:change` は今の `cart:update` の値 | 同じ |
-| 監査の記録 | 会員の ID | 「ゲスト」と印のハッシュの先頭12桁。印そのものは残さない |
+| 監査の記録 | `user_id`（会員の ID） | `{owner:"guest",guest_hash_prefix:SHA-256の先頭12文字}`。印そのものは残さない。カート追加の明細は `lines:[{variant_id,quantity}]`（組・送信順・重複を保つ） |
 | 明細の照合 | DB の関数の中で、明細のカートが今の持ち主のカートかを確かめる | 同じ |
 
 ### 6-4 窓口が使う DB の関数
@@ -421,6 +421,10 @@ Shopify に無いので、窓口の形は今のまま（一覧・追加・削除
 ---
 
 ## 7. 決済とのつなぎ
+
+2026-10-08追記（FREQ-430-REQ-05・AC-08、Task 7レビュー）: Shopify の決済が購入不可の商品を外して案内する動きに合わせる。画面に出ない明細を消せず「確認へ進む」が断られ続ける行き止まりを無くすため、`splitPurchasableCartRows` で明細ごとに取り扱い終了・非公開・欠落商品を判定し、`removeCartLines` が持ち主の `cart_id` と明細IDで外す。409 `{error:"cart_updated",retryable:true,message}` と「次の商品はお求めいただけなくなったため、カートから外しました: <名前（色 / サイズ）>。内容をご確認のうえ、もう一度「確認へ進む」を押してください。」を返し、その要求では下書き・Stripe Sessionを作らない。画面はカートと割引の目安を読み直して案内を出し、「確認へ進む」を押せるままにする。押し直すと残りの商品で最終確認へ進む。割引コードの確かめは買える明細だけで計算し、カートを変えない。サーバーは `out_of_stock` を返さず、画面の旧分岐と既存の模擬 E2E は残す。
+
+根拠: [購入可否判定と削除](../../../src/features/checkout/services/checkout-cart.service.ts)、[create-session](../../../src/app/api/checkout/create-session/route.ts)、[画面の読み直し](../../../src/app/checkout/page.tsx)。
 
 | 場面 | 直した後 |
 |---|---|

@@ -8,6 +8,8 @@
 
 グループ C（2026-10-08）の [20261008055720_checkout_order_owner_binding.sql](../../../supabase/migrations/20261008055720_checkout_order_owner_binding.sql) は、`checkout_drafts` に列 `buyer_user_id` を 1 つ足し、トリガーを 2 つ足す（下書きの買い手の変更禁止、注文の持ち主の付け替え禁止）。テーブルと FK の数は変わらない。この移行は本番へ未適用で、上の件数の集計には含めない。内容は 2.4・5.1・5.2 に書く。
 
+2026-10-08 追記（FREQ-428〜432）: [移行 A: 持ち主と明細](../../../supabase/migrations/20261008130000_cart_wishlist_ownership.sql) は旧 `carts`・`wishlist` を削除し、`carts`・`cart_lines`・`wishlists`・`wishlist_lines` を作り、`checkout_drafts.cart_id` を足す。[移行 B: 決済 RPC](../../../supabase/migrations/20261008130100_cart_checkout_rpcs.sql) は明細の写しを `source_cart_line_id`（`cart_lines.id`）で扱う。本書のカート・お気に入り・下書き部分はこの2本に合わせた。上の基準集計との差分はテーブル +2、物理 FK +5（計61テーブル・68 FK）。他領域の後続変更を一括再集計した数や、本番の適用確認ではない。
+
 図は領域別に分割する。PK・FK と関係を読むための列だけを載せ、全列、CHECK、RLS、トリガー、RPC、Storage オブジェクトの一覧は SQL に委ねる。旧 `migrations/` と `supabase/pending/` は主な集計の基準に含めず、現行コードが依存する旧定義だけを補足する。
 
 | 領域 | 内容 |
@@ -64,23 +66,45 @@ erDiagram
   }
   CARTS {
     uuid id PK "NOT_NULL"
-    uuid user_id FK "NULL"
-    bigint item_id "NOT_NULL"
-    text session_id "NULL"
-    text color "NULL"
-    text size "NULL"
+    uuid user_id FK,UK "NULL"
+    text guest_token_hash UK "NULL; SHA-256"
+    timestamptz created_at "NOT_NULL"
+    timestamptz updated_at "NOT_NULL"
   }
-  WISHLIST {
+  CART_LINES {
     uuid id PK "NOT_NULL"
-    uuid user_id FK "NULL"
-    bigint item_id "NOT_NULL"
-    text session_id "NULL"
+    uuid cart_id FK "NOT_NULL"
+    bigint variant_id FK "NOT_NULL"
+    integer quantity "NOT_NULL; 1..20"
+    timestamptz added_at "NOT_NULL"
+    timestamptz updated_at "NOT_NULL"
+  }
+  WISHLISTS {
+    uuid id PK "NOT_NULL"
+    uuid user_id FK,UK "NULL"
+    text guest_token_hash UK "NULL; SHA-256"
+    timestamptz created_at "NOT_NULL"
+    timestamptz updated_at "NOT_NULL"
+  }
+  WISHLIST_LINES {
+    uuid id PK "NOT_NULL"
+    uuid wishlist_id FK "NOT_NULL"
+    bigint item_id FK "NOT_NULL"
+    timestamptz added_at "NOT_NULL"
+  }
+  ITEM_VARIANTS {
+    bigint id PK "NOT_NULL"
+  }
+  ITEMS {
+    bigint id PK "NOT_NULL"
   }
   AUTH_USERS {
     uuid id PK "external: auth.users"
   }
   AUTH_USERS |o..o{ PASSWORD_RESET_TOKENS : "user_id"
-  PROFILES |o..o{ CARTS : "user_id"
+  PROFILES |o..o| CARTS : "user_id"
+  CARTS ||..o{ CART_LINES : "cart_id"
+  ITEM_VARIANTS ||..o{ CART_LINES : "variant_id"
   AUTH_USERS ||--o| PROFILES : "user_id"
   AUTH_USERS ||..o{ REFRESH_TOKEN_HISTORY : "user_id"
   PERMISSIONS ||--o{ ROLE_PERMISSIONS : "permission_id"
@@ -90,7 +114,9 @@ erDiagram
   AUTH_USERS |o..o{ USER_ROLES : "assigned_by"
   ROLES ||--o{ USER_ROLES : "role_id"
   AUTH_USERS ||--o{ USER_ROLES : "user_id"
-  PROFILES |o..o{ WISHLIST : "user_id"
+  PROFILES |o..o| WISHLISTS : "user_id"
+  WISHLISTS ||..o{ WISHLIST_LINES : "wishlist_id"
+  ITEMS ||..o{ WISHLIST_LINES : "item_id"
 ```
 
 ### 2.2 商品・バリアント・LOOK
@@ -243,8 +269,12 @@ erDiagram
     text payment_intent_id UK "NULL"
     text session_id "NOT_NULL"
     uuid buyer_user_id "NULL"
+    uuid cart_id FK "NULL"
     jsonb items_snapshot "NOT_NULL"
     jsonb shipping_snapshot "NULL"
+  }
+  CARTS {
+    uuid id PK "NOT_NULL"
   }
   ORDERS {
     uuid id PK "NOT_NULL"
@@ -255,6 +285,7 @@ erDiagram
   AUTH_USERS {
     uuid id PK "external: auth.users"
   }
+  CARTS |o..o{ CHECKOUT_DRAFTS : "cart_id"
   ORDERS |o..o{ STRIPE_BALANCE_TRANSACTIONS : "order_id"
   AUTH_USERS |o..o{ STRIPE_PAYOUTS : "bank_confirmed_by"
   STRIPE_BALANCE_TRANSACTIONS |o..o{ STRIPE_REFUNDS : "balance_transaction_id"
@@ -524,17 +555,38 @@ erDiagram
 | `public.permissions` | `(id)` | `(code)` | 参照元 1 / 参照先 0 | [20260901102912:773](../../../supabase/migrations/20260901102912_remote_schema.sql#L773) |
 | `public.user_roles` | `(user_id, role_id)` | なし | 参照元 0 / 参照先 3 | [20260901102912:1005](../../../supabase/migrations/20260901102912_remote_schema.sql#L1005) |
 | `public.role_permissions` | `(role_id, permission_id)` | なし | 参照元 0 / 参照先 2 | [20260901102912:844](../../../supabase/migrations/20260901102912_remote_schema.sql#L844) |
-| `public.carts` | `(id)` | `(COALESCE(user_id, UUIDゼロ), COALESCE(session_id, 空文字), item_id, COALESCE(color, 空文字), COALESCE(size, 空文字))` 式 UNIQUE | 参照元 0 / 参照先 1 | [20260901102912:444](../../../supabase/migrations/20260901102912_remote_schema.sql#L444) |
-| `public.wishlist` | `(id)` | `(COALESCE(user_id, UUIDゼロ), COALESCE(session_id, 空文字), item_id)` 式 UNIQUE | 参照元 0 / 参照先 1 | [20260901102912:1018](../../../supabase/migrations/20260901102912_remote_schema.sql#L1018) |
+| `public.carts` | `(id)` | `(user_id)`; `(guest_token_hash)` UNIQUE、持ち主はどちらか1つ | 参照元 2 / 参照先 1 | [移行 A](../../../supabase/migrations/20261008130000_cart_wishlist_ownership.sql) |
+| `public.cart_lines` | `(id)` | `(cart_id, variant_id)` UNIQUE | 参照元 0 / 参照先 2 | [移行 A](../../../supabase/migrations/20261008130000_cart_wishlist_ownership.sql) |
+| `public.wishlists` | `(id)` | `(user_id)`; `(guest_token_hash)` UNIQUE、持ち主はどちらか1つ | 参照元 1 / 参照先 1 | [移行 A](../../../supabase/migrations/20261008130000_cart_wishlist_ownership.sql) |
+| `public.wishlist_lines` | `(id)` | `(wishlist_id, item_id)` UNIQUE | 参照元 0 / 参照先 2 | [移行 A](../../../supabase/migrations/20261008130000_cart_wishlist_ownership.sql) |
+
+#### カートとお気に入りの列・索引（2026-10-08）
+
+| 表 | 列と制約 |
+| --- | --- |
+| `carts`・`wishlists` | `id uuid` PK（gen_random_uuid）、`user_id uuid` nullable UNIQUE、`guest_token_hash text` nullable UNIQUE（64桁の小文字16進 SHA-256）、`created_at`・`updated_at timestamptz` NOT NULL（now）。`num_nonnulls(user_id,guest_token_hash)=1` |
+| `cart_lines` | `id uuid` PK（gen_random_uuid）、`cart_id uuid`・`variant_id bigint`・`quantity integer`・`added_at`・`updated_at timestamptz` は NOT NULL。日時はnow、数量1〜20、`(cart_id,variant_id)` UNIQUE |
+| `wishlist_lines` | `id uuid` PK（gen_random_uuid）、`wishlist_id uuid`・`item_id bigint`・`added_at timestamptz` は NOT NULL。日時はnow、`(wishlist_id,item_id)` UNIQUE |
+| `checkout_drafts` | `cart_id uuid` nullable（カートを削除したら SET NULL）。`items_snapshot` の `source_cart_line_id` は `cart_lines.id` の写しで、JSON の値なので物理 FK ではない |
+
+| 索引 | 対象・用途 |
+| --- | --- |
+| 持ち主の UNIQUE 索引 | `carts`・`wishlists` の `user_id` と `guest_token_hash` をそれぞれ一意にする |
+| 明細の UNIQUE 索引 | `cart_lines(cart_id,variant_id)`、`wishlist_lines(wishlist_id,item_id)` |
+| `cart_lines_variant_id_idx` | `cart_lines(variant_id)` |
+| `wishlist_lines_item_id_idx` | `wishlist_lines(item_id)` |
+| `checkout_drafts_cart_id_idx` | `checkout_drafts(cart_id)` |
+
+4表は RLS と権限の取り消しで anon・authenticated からの直接読み書きを拒否し、service_role の API だけが読み書きする。明細変更のトリガーが持ち主の updated_at を進め、ゲストは最後に使ってから30日を過ぎると毎日削除される。定義は [移行 A](../../../supabase/migrations/20261008130000_cart_wishlist_ownership.sql)、決済の下書きとの照合は [移行 B](../../../supabase/migrations/20261008130100_cart_checkout_rpcs.sql) に従う。
 
 ### 3.2 商品・LOOK
 
 | テーブル | PK | PK 以外の一意性 | 物理 FK 接続 | 定義元 |
 | --- | --- | --- | --- | --- |
-| `public.items` | `(id)` | なし | 参照元 6 / 参照先 0 | [20260901102912:572](../../../supabase/migrations/20260901102912_remote_schema.sql#L572) |
+| `public.items` | `(id)` | なし | 参照元 7 / 参照先 0 | [20260901102912:572](../../../supabase/migrations/20260901102912_remote_schema.sql#L572) |
 | `public.item_colors` | `(id)` | `(item_id, name)` | 参照元 1 / 参照先 1 | [20260919065336:7](../../../supabase/migrations/20260919065336_add_variant_inventory_tables.sql#L7) |
 | `public.item_sizes` | `(id)` | `(item_id, label)` | 参照元 1 / 参照先 1 | [20260919065336:18](../../../supabase/migrations/20260919065336_add_variant_inventory_tables.sql#L18) |
-| `public.item_variants` | `(id)` | `(sku)`; `(item_id, COALESCE(color_id, 0), COALESCE(size_id, 0))` 式 UNIQUE | 参照元 2 / 参照先 3 | [20260919065336:27](../../../supabase/migrations/20260919065336_add_variant_inventory_tables.sql#L27) |
+| `public.item_variants` | `(id)` | `(sku)`; `(item_id, COALESCE(color_id, 0), COALESCE(size_id, 0))` 式 UNIQUE | 参照元 3 / 参照先 3 | [20260919065336:27](../../../supabase/migrations/20260919065336_add_variant_inventory_tables.sql#L27) |
 | `public.item_cost_history` | `(id)` | なし | 参照元 0 / 参照先 1 | [20260901102912:557](../../../supabase/migrations/20260901102912_remote_schema.sql#L557) |
 | `public.looks` | `(id)` | なし | 参照元 1 / 参照先 0 | [20260901102912:639](../../../supabase/migrations/20260901102912_remote_schema.sql#L639) |
 | `public.look_items` | `(look_id, item_id)` | なし | 参照元 0 / 参照先 2 | [20260901102912:629](../../../supabase/migrations/20260901102912_remote_schema.sql#L629) |
@@ -559,7 +611,7 @@ erDiagram
 | `public.stripe_payouts` | `(id)` | なし | 参照元 0 / 参照先 1 | [20260901102912:934](../../../supabase/migrations/20260901102912_remote_schema.sql#L934) |
 | `public.payment_exceptions` | `(id)` | `(payment_ref, reason)` | 参照元 0 / 参照先 1 | [20260927100500:6](../../../supabase/migrations/20260927100500_payment_exceptions.sql#L6) |
 | `public.stripe_webhook_events` | `(id)` | なし | なし（独立） | [20260901102912:988](../../../supabase/migrations/20260901102912_remote_schema.sql#L988) |
-| `public.checkout_drafts` | `(id)` | `(checkout_session_id)`; `(payment_intent_id)`; `(session_id, checkout_request_version, checkout_request_fingerprint)` 部分 UNIQUE（`status = created` かつ fingerprint 非 NULL） | なし（独立） | [20260901102912:461](../../../supabase/migrations/20260901102912_remote_schema.sql#L461)。列 `buyer_user_id` の追加: [20261008055720](../../../supabase/migrations/20261008055720_checkout_order_owner_binding.sql) |
+| `public.checkout_drafts` | `(id)` | `(checkout_session_id)`; `(payment_intent_id)`; `(session_id, checkout_request_version, checkout_request_fingerprint)` 部分 UNIQUE（`status = created` かつ fingerprint 非 NULL） | 参照元 0 / 参照先 1 | [20260901102912:461](../../../supabase/migrations/20260901102912_remote_schema.sql#L461)。列 `buyer_user_id` の追加: [20261008055720](../../../supabase/migrations/20261008055720_checkout_order_owner_binding.sql)。列 `cart_id` の追加: [移行 A](../../../supabase/migrations/20261008130000_cart_wishlist_ownership.sql) |
 
 ### 3.5 会計
 
@@ -617,7 +669,9 @@ erDiagram
 | 子テーブル.FK 列 | 参照先 | 型 / NULL可 | 親あたりの子 | ON DELETE | 定義元 |
 | --- | --- | --- | --- | --- | --- |
 | `public.password_reset_tokens.user_id` | `auth.users(id)` | `uuid` / 可 | 0..N | `CASCADE` | [20260901102912:2707](../../../supabase/migrations/20260901102912_remote_schema.sql#L2707) |
-| `public.carts.user_id` | `public.profiles(user_id)` | `uuid` / 可 | 0..N | `CASCADE` | [20260901102912:2710](../../../supabase/migrations/20260901102912_remote_schema.sql#L2710) |
+| `public.carts.user_id` | `public.profiles(user_id)` | `uuid` / 可 | 0..1 | `CASCADE` | [移行 A](../../../supabase/migrations/20261008130000_cart_wishlist_ownership.sql) |
+| `public.cart_lines.cart_id` | `public.carts(id)` | `uuid` / 不可 | 0..N | `CASCADE` | [移行 A](../../../supabase/migrations/20261008130000_cart_wishlist_ownership.sql) |
+| `public.cart_lines.variant_id` | `public.item_variants(id)` | `bigint` / 不可 | 0..N | `CASCADE` | [移行 A](../../../supabase/migrations/20261008130000_cart_wishlist_ownership.sql) |
 | `public.profiles.user_id` | `auth.users(id)` | `uuid` / 不可 | 0..1 | `CASCADE` | [20260901102912:2716](../../../supabase/migrations/20260901102912_remote_schema.sql#L2716) |
 | `public.refresh_token_history.user_id` | `auth.users(id)` | `uuid` / 不可 | 0..N | `CASCADE` | [20260901102912:2719](../../../supabase/migrations/20260901102912_remote_schema.sql#L2719) |
 | `public.role_permissions.permission_id` | `public.permissions(id)` | `bigint` / 不可 | 0..N | `CASCADE` | [20260901102912:2722](../../../supabase/migrations/20260901102912_remote_schema.sql#L2722) |
@@ -627,7 +681,9 @@ erDiagram
 | `public.user_roles.assigned_by` | `auth.users(id)` | `uuid` / 可 | 0..N | `SET NULL` | [20260901102912:2750](../../../supabase/migrations/20260901102912_remote_schema.sql#L2750) |
 | `public.user_roles.role_id` | `public.roles(id)` | `bigint` / 不可 | 0..N | `RESTRICT` | [20260901102912:2753](../../../supabase/migrations/20260901102912_remote_schema.sql#L2753) |
 | `public.user_roles.user_id` | `auth.users(id)` | `uuid` / 不可 | 0..N | `CASCADE` | [20260901102912:2756](../../../supabase/migrations/20260901102912_remote_schema.sql#L2756) |
-| `public.wishlist.user_id` | `public.profiles(user_id)` | `uuid` / 可 | 0..N | `CASCADE` | [20260901102912:2759](../../../supabase/migrations/20260901102912_remote_schema.sql#L2759) |
+| `public.wishlists.user_id` | `public.profiles(user_id)` | `uuid` / 可 | 0..1 | `CASCADE` | [移行 A](../../../supabase/migrations/20261008130000_cart_wishlist_ownership.sql) |
+| `public.wishlist_lines.wishlist_id` | `public.wishlists(id)` | `uuid` / 不可 | 0..N | `CASCADE` | [移行 A](../../../supabase/migrations/20261008130000_cart_wishlist_ownership.sql) |
+| `public.wishlist_lines.item_id` | `public.items(id)` | `bigint` / 不可 | 0..N | `CASCADE` | [移行 A](../../../supabase/migrations/20261008130000_cart_wishlist_ownership.sql) |
 
 ### 4.2 商品・バリアント・LOOK
 
@@ -667,6 +723,7 @@ erDiagram
 | `public.stripe_refunds.failure_balance_transaction_id` | `public.stripe_balance_transactions(id)` | `text` / 可 | 0..N | `RESTRICT` | [20260901102912:2743](../../../supabase/migrations/20260901102912_remote_schema.sql#L2743) |
 | `public.stripe_refunds.order_id` | `public.orders(id)` | `uuid` / 不可 | 0..N | `RESTRICT` | [20260901102912:2747](../../../supabase/migrations/20260901102912_remote_schema.sql#L2747) |
 | `public.payment_exceptions.order_id` | `public.orders(id)` | `uuid` / 可 | 0..N | `NO ACTION` | [20260927100500:12](../../../supabase/migrations/20260927100500_payment_exceptions.sql#L12) |
+| `public.checkout_drafts.cart_id` | `public.carts(id)` | `uuid` / 可 | 0..N | `SET NULL` | [移行 A](../../../supabase/migrations/20261008130000_cart_wishlist_ownership.sql) |
 
 ### 4.5 会計の業務関係
 
@@ -718,7 +775,7 @@ erDiagram
 
 | 列・記録 | SQL 上の構造 | 根拠 |
 | --- | --- | --- |
-| `carts.item_id`、`wishlist.item_id` | bigint の通常列。`items` への FK はない | [基準 SQL](../../../supabase/migrations/20260901102912_remote_schema.sql#L444) / [wishlist](../../../supabase/migrations/20260901102912_remote_schema.sql#L1018) |
+| `checkout_drafts.items_snapshot[].source_cart_line_id` | `cart_lines.id` の写し。JSON の参照に物理 FK はなく、注文受付で下書きの cart_id に属するかを確かめる | [移行 B](../../../supabase/migrations/20261008130100_cart_checkout_rpcs.sql) |
 | `carts`、`wishlist`、`orders`、`checkout_drafts` の `session_id` | text のアプリケーション用セッション識別子。`public.sessions.id` への FK はない | [カート](../../../supabase/migrations/20260901102912_remote_schema.sql#L444) / [下書き](../../../supabase/migrations/20260901102912_remote_schema.sql#L461) / [注文](../../../supabase/migrations/20260901102912_remote_schema.sql#L718) |
 | `checkout_drafts.items_snapshot`、`shipping_snapshot` | JSONB。商品・利用者・注文への FK はない。下書き表に `order_id`、`user_id` 列はない（買い手は次の行の `buyer_user_id`） | [下書き定義](../../../supabase/migrations/20260901102912_remote_schema.sql#L461) |
 | `checkout_drafts.buyer_user_id` | 「確認へ進む」でサーバーが確かめた会員の ID を持つ uuid の通常列。空はゲスト。`auth.users`・`profiles` への FK は付けない。会員を消した後も ID が残り、その会員として誰もログインできないので、「注文する」は必ず断られる側に倒れる。FK で空にすると、消した会員の下書きがゲストの下書きに変わり、ゲストとして注文できてしまう。下書きは 30 日で消えるので、残った ID は溜まらない | [グループ C の移行](../../../supabase/migrations/20261008055720_checkout_order_owner_binding.sql) |
@@ -739,7 +796,7 @@ erDiagram
 - [orders.payment_intent_id は nullable 化](../../../supabase/migrations/20260927100100_order_payment_columns.sql#L6)され、`checkout_session_id` の UNIQUE が追加されている。どちらの Stripe ID も SQL FK ではない。
 - [Checkout 要求識別子のマイグレーション](../../../supabase/migrations/20260925000132_add_checkout_session_claim_rpcs.sql#L3)には「保留中・互換段階」のコメントが残るが、現行 [create-session Route Handler](../../../src/app/api/checkout/create-session/route.ts#L368) は `claim_checkout_draft` を使用し、[識別子の列を取得](../../../src/app/api/checkout/create-session/route.ts#L714)する。本書はそのソース上の定義を記録し、デプロイ済みとの判定は行わない。
 - [グループ C の移行](../../../supabase/migrations/20261008055720_checkout_order_owner_binding.sql)は、2 つのトリガーで持ち主の決まりを DB に置く。`checkout_drafts.buyer_user_id` は作った後に変えられない（`checkout_drafts_buyer_immutable`、例外 `CHECKOUT_DRAFT_BUYER_IMMUTABLE`）。`orders.user_id` は空から会員へだけ書け、会員から別の会員への付け替えは `ORDER_OWNER_IMMUTABLE` で断る（`orders_owner_immutable`。`SECURITY DEFINER` で `profiles` を見る）。会員から空への更新は、その会員の `profiles` の行が無い時、つまり会員を消して FK の `ON DELETE SET NULL` が空にする時だけ通る。
-- 対象のマイグレーション列にはテーブルの DROP や FK の DROP / 差し替えはない。一方、CHECK、通常列、UNIQUE、RPC の変更はあるため、基準 SQL だけでは最終構造を表せない。
+- 2026-10-03 の基準範囲にはテーブルの DROP や FK の DROP / 差し替えはない。2026-10-08 の移行 A は旧カート・お気に入りの表を作り直す。一方、CHECK、通常列、UNIQUE、RPC の変更はあるため、基準 SQL だけでは最終構造を表せない。
 
 ## 6. 現行コードの追加依存とビュー
 

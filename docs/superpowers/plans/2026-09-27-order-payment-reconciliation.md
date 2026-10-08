@@ -1,5 +1,7 @@
 # 支払い状態の照合と注文の先受付（グループ A）実装計画
 
+> 2026-10-08追記（FREQ-428〜432）: 本計画の `source_cart_id` は、移行前の下書きの写し・旧コード、またはその置き換え対象を説明するために残す過去の記録。現行の下書きの明細参照は `source_cart_line_id`（`cart_lines.id`）、所有カートは `checkout_drafts.cart_id`。実装時の契約は [カートとお気に入りの引き継ぎ設計](../specs/2026-10-08-cart-wishlist-carryover-design.md)を参照する。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 注文と在庫を Stripe の現在の支払い状態に合わせる照合関数を1つ作り、Webhook・見回り・完了 API・管理画面の取消から呼ぶ。支払いの前に注文を受け付ける RPC を用意し、要対応・要確認を管理画面で扱えるようにする。

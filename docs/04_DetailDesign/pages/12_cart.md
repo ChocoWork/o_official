@@ -27,9 +27,9 @@
 | 要件ID | 要件内容 | 実装ID | 実装対象ファイル | 実装概要 | 実装ステータス |
 |--------|----------|--------|----------------|----------|--------------|
 | FR-CART-001 | `/cart` ページは `GET /api/cart` からカートアイテムを取得し商品画像・商品名・価格・カラー・サイズ・数量変更 UI を表示する | IMPL-CART-001 | `src/app/cart/page.tsx`, `src/app/api/cart/route.ts` | `useEffect` で `fetch('/api/cart')` 実行、画像/名前/価格/カラー/サイズ/`Stepper` を表示。※ 画像の `<Link href>` がカート UUID を参照するバグが存在（正しくは `item.items.id`） | 済 |
-| FR-CART-002 | カートは `proxy.ts` で生成される `session_id` クッキーに基づき30日間保持されログイン不要の永続カートを実現する | IMPL-CART-002 | `src/proxy.ts`, `src/app/api/cart/route.ts` | `session_id` クッキーベースで proxy が管理 | 済 |
-| FR-CART-003 | 数量変更は `Stepper` で可能とし 500ms のデバウンスで `PATCH /api/cart/[id]` を呼び出す | IMPL-CART-003 | `src/app/cart/page.tsx`, `src/app/api/cart/[id]/route.ts` | `scheduleUpdate` で 500ms デバウンス、`inFlight` で二重送信防止、楽観的 UI 更新を実装 | 済 |
-| FR-CART-004 | アイテム削除は `DELETE /api/cart/[id]` で実行し削除後にカート件数と画面を更新する | IMPL-CART-004 | `src/app/cart/page.tsx`, `src/app/api/cart/[id]/route.ts` | `DELETE /api/cart/${cartId}` + `setCartItems(filter)` で即時反映 + `updateCartCount()` でバッジ更新。エラー時は `alert()` のみ | 済 |
+| FR-CART-002 | ゲストは cart Cookie で2週間保持し、会員は会員の ID で持つ | IMPL-CART-002 | `src/features/cart/services/shopping-context.ts`, `src/app/api/cart/route.ts` | session_idとは別の印。ログインで会員のカートへ合わせる（FREQ-428・432） | 済 |
+| FR-CART-003 | 数量変更は Stepper で可能とし500msのデバウンスで POST /api/cart/changeを呼ぶ | IMPL-CART-003 | `src/app/cart/_hooks/useCartItems.ts`, `src/app/api/cart/change/route.ts` | 明細keyと数量を送信、楽観的更新・二重送信防止 | 済 |
+| FR-CART-004 | POST /api/cart/changeに明細keyと数量0を送り、削除後に件数と画面を更新する | IMPL-CART-004 | `src/app/cart/_hooks/useCartItems.ts`, `src/app/api/cart/change/route.ts` | 即時反映とバッジ更新。失敗はトースト（FREQ-377） | 済 |
 | FR-CART-005 | 注文サマリーは小計・配送料（無料表示）・合計を表示し `/checkout` への遷移ボタンを設置する | IMPL-CART-005 | `src/app/cart/page.tsx` | 小計・配送料「無料」・合計・`Button href="/checkout"` を実装。`total = subtotal`（送料0円） | 済 |
 | FR-CART-006 | プロモーションコード入力欄と適用ボタンを UI に含む | IMPL-CART-006 | `src/app/cart/page.tsx` | `TextField` + `Button「適用」` の UI を設置。コード検証・割引計算ロジックは未実装（プレースホルダー表示のみ） | 済 |
 | FR-CART-007 | カートが空の場合は `EmptyCart` コンポーネントを表示し `/item` への「買い物を続ける」リンクを設ける | IMPL-CART-007 | `src/app/cart/page.tsx`, `src/components/EmptyCart.tsx` | `cartItems.length === 0` 時に `<EmptyCart />` をレンダリング。`/item` リンクあり | 済 |
@@ -53,11 +53,11 @@
 
 | 要件ID | 要件内容 | 実装ID | 実装対象ファイル | 実装概要 | 実装ステータス |
 |--------|----------|--------|----------------|----------|--------------|
-| CART-01-001 | Cart API 実装（GET/POST/PATCH/DELETE） | IMPL-CART-API-01 | `src/app/api/cart/route.ts`, `src/app/api/cart/[id]/route.ts` | 全メソッド実装済み | 済 |
-| CART-01-002 | Cookie 永続化（`session_id` ベース、30日TTL） | IMPL-CART-SESSION-01 | `src/proxy.ts` | session_id Cookie で永続カート実装済み | 済 |
+| CART-01-001 | Cart API（GET /api/cart・POST /api/cart/add・POST /api/cart/change） | IMPL-CART-API-01 | `src/app/api/cart/route.ts`, `src/app/api/cart/add/route.ts`, `src/app/api/cart/change/route.ts` | 持ち主とバリアントで読み書きする | 済 |
+| CART-01-002 | Cookie 永続化（cart、2週間）と会員の ID による保持 | IMPL-CART-SESSION-01 | `src/features/cart/services/shopping-context.ts` | ログインで会員へ合わせ、ログアウトで端末のCookieを消す | 済 |
 | CART-01-003 | `inFlight.current` ref スナップショットパターンで ESLint 警告解消 | IMPL-CART-ESLINT-01 | `src/app/cart/page.tsx` | ref スナップショットパターン適用済み | 済 |
 | CART-01-004 | クーポン検証ロジック（サーバ側） | IMPL-CART-COUPON-01 | `src/app/api/cart/coupon/route.ts` | 未実装 | 未 |
-| CART-01-005 | 在庫チェック（数量超過でエラー） | IMPL-CART-STOCK-01 | `src/app/api/cart/route.ts`, `src/app/api/cart/[id]/route.ts`, `src/features/cart/services/cart-stock.ts` | 同一 `item_id` の合算数量で `quantity <= stock_quantity` を検証し、非公開商品と在庫不足を 409 で返却 | 済 |
+| CART-01-005 | 明細の数量・種類の上限と購入可否 | IMPL-CART-STOCK-01 | `src/app/api/cart/add/route.ts`, `src/app/api/cart/change/route.ts`, `src/features/cart/services/cart-stock.ts` | 1明細20個・50種類は422、非公開・取り扱い終了・無いバリアントは404。在庫0は受注生産で追加できる | 済 |
 
 ### 依存関係
 
@@ -70,21 +70,19 @@
 
 > 元ファイル: `docs/02_Requirements/03_cart.md`
 
-```sql
-carts (
-  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  session_id text NOT NULL,
-  items      jsonb NOT NULL DEFAULT '[]',
-  updated_at timestamptz DEFAULT now()
-);
+カートは持ち主（carts）と明細（cart_lines）に分ける。定義と索引・FKは [ER図](../../03_BasicDesign/data/er.md) と [移行 A](../../../supabase/migrations/20261008130000_cart_wishlist_ownership.sql) を参照する。
 
-CREATE INDEX idx_carts_session_id ON carts(session_id);
-```
+| 表 | 主な列・決まり |
+| --- | --- |
+| carts | id UUID、user_idまたはguest_token_hash（SHA-256）のどちらか1つ、created_at・updated_at。会員1人・印1つにつき1行 |
+| cart_lines | id UUID（APIのkey）、cart_id、variant_id、quantity（1〜20）、added_at・updated_at。同じcart_id・variant_idは1行 |
 
-### カート TTL
+### カート TTL と引き継ぎ（FREQ-428・431・432）
 
-- 30 日間保持。`updated_at` ベースで期限切れ判定。
-- クリーンアップジョブで定期削除。
+- ゲストの `cart` Cookie は256ビット乱数、HttpOnly・SameSite=Lax・Path=/・2週間。書き換えのたびに延長する。session_idは決済の流れだけに使う。
+- ゲストのサーバーの分は、最後に使ってから30日を過ぎると毎日の処理で削除する。会員の分は対象外。
+- ログインで会員にカートが無ければ付け替え、両方あれば違うバリアントは残し、同じバリアントは大きい方の数量。会員の明細を先に、ゲストの追加順に50種類まで残す。
+- 合わせるのに失敗してもログインは止めず、印を残し、次のカート・お気に入り・決済の読み出しで再試行する。ログアウトは端末のcart・wishlist Cookieを消す。会員の分は次のログインで戻る。
 
 ---
 
@@ -92,11 +90,16 @@ CREATE INDEX idx_carts_session_id ON carts(session_id);
 
 | メソッド | パス | 概要 | NFR |
 |---------|------|------|-----|
-| GET | `/api/cart` | カートアイテム一覧取得 | P95 < 150ms |
-| POST | `/api/cart/add` | 商品をカートに追加 | P95 < 150ms |
-| PATCH | `/api/cart/[id]` | 数量更新（500ms デバウンス） | P95 < 150ms |
-| DELETE | `/api/cart/[id]` | アイテム削除 | — |
+| GET | `/api/cart` | カート全体（item_count・items・円の合計、tokenなし） | P95 < 150ms |
+| POST | `/api/cart/add` | `{items:[{id:variantId,quantity}]}`、同じバリアントは加算、追加後の明細を返す | P95 < 150ms |
+| POST | `/api/cart/change` | `{id:明細key,quantity}`（0で削除）、カート全体を返す | P95 < 150ms |
 | POST | `/api/cart/coupon` | クーポンコード適用 | — |
+
+カート3窓口の認可は cart Cookie または会員（会員の書き換えにはCSRFが必須）。`/api/cart/coupon` の行は旧構想で、現行の割引コードは決済画面の `/api/checkout/promotion-code` で扱う。
+
+追加・変更の断りは `{status,message:"Cart Error",description}`。422「1つの商品は20個までです。」「カートに入れられるのは50種類までです。」、404「選んだ色・サイズは現在お求めいただけません。」「カートの商品が見つかりません。ページを読み込み直してください。」、400「送った内容を確認できませんでした。」を画面へ出す。根拠: [エラー定義](../../../src/features/cart/services/cart-errors.ts)、[クライアント](../../../src/features/cart/client/cart-api.ts)。
+
+2026-10-08追記（FREQ-430-REQ-05・AC-08）: GETは非公開商品と取り扱い終了バリアントの明細を表示・件数から除く。「確認へ進む」はそれらを持ち主のカートから外し、409 cart_updatedで外した商品を案内する。画面はカートと割引の目安を読み直して押し直せるままにし、残りの商品で最終確認へ進める。根拠: [create-session](../../../src/app/api/checkout/create-session/route.ts)、[購入画面](../../../src/app/checkout/page.tsx)。
 
 ---
 
