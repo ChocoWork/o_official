@@ -184,7 +184,9 @@ export async function POST(request: Request) {
         const res = NextResponse.json({ access_token: data.session.access_token, user: data.user }, { status: 201 });
         try {
           const { persistSessionAndCookies } = await import('@/features/auth/services/register');
-          const result = await persistSessionAndCookies(res, data.session, data.user);
+          // ゲストのカートとお気に入りの印を、ログインの保存の後で会員の分へ合わせるために渡す。
+          const { readGuestShoppingTokens } = await import('@/features/cart/services/guest-shopping-token');
+          const result = await persistSessionAndCookies(res, data.session, data.user, readGuestShoppingTokens(request.headers.get('cookie')));
           if (!result?.ok) {
             console.error('persistSessionAndCookies failed:', result.error);
             // Clear cookies to avoid inconsistent client state

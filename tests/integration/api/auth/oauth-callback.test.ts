@@ -163,7 +163,9 @@ describe('GET /api/auth/oauth/callback - Error Cases', () => {
       expect.objectContaining({
         id: 'user-123',
         email: 'test@example.com',
-      })
+      }),
+      // この要求にはゲストのカート・お気に入りの Cookie が無いので、印は2つとも空
+      { cartToken: null, wishlistToken: null }
     );
 
     const { logAudit } = require('@/lib/audit');

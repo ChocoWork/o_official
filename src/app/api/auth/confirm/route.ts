@@ -76,7 +76,9 @@ export async function GET(request: Request) {
     const res = buildRedirectResponse(origin, redirectPath);
 
     const { persistSessionAndCookies } = await import('@/features/auth/services/register');
-    const persistResult = await persistSessionAndCookies(res, data.session, data.user);
+    // ゲストのカートとお気に入りの印を、ログインの保存の後で会員の分へ合わせるために渡す。
+    const { readGuestShoppingTokens } = await import('@/features/cart/services/guest-shopping-token');
+    const persistResult = await persistSessionAndCookies(res, data.session, data.user, readGuestShoppingTokens(request.headers.get('cookie')));
 
     if (!persistResult?.ok) {
       await logAudit({

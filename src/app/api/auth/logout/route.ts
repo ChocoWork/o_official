@@ -138,6 +138,8 @@ export async function POST() {
       sessionCookieName,
       loginTwoFactorSessionCookieName,
       passwordResetSessionCookieName,
+      cartCookieName,
+      wishlistCookieName,
       clearCookieOptions,
       cookieOptionsForCsrf,
     } = await import('@/lib/cookie');
@@ -145,7 +147,8 @@ export async function POST() {
       res.cookies.set({ name: csrfCookieName, value: csrfResult.rotatedCsrfToken, ...cookieOptionsForCsrf(0) });
     }
 
-    // アプリ独自の認証 Cookie をクリア
+    // アプリ独自の認証 Cookie をクリア。
+    // この端末のゲストのカート・お気に入りの印も消す。会員の分はサーバーに残り、次のログインで戻る（設計書 4-3）
     for (const name of [
       sessionCookieName,
       refreshCookieName,
@@ -153,6 +156,8 @@ export async function POST() {
       csrfCookieName,
       loginTwoFactorSessionCookieName,
       passwordResetSessionCookieName,
+      cartCookieName,
+      wishlistCookieName,
     ]) {
       res.cookies.set({ name, value: '', ...clearCookieOptions() });
     }

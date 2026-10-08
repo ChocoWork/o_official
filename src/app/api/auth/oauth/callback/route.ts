@@ -157,7 +157,9 @@ export async function GET(request: Request) {
 
     try {
       const { persistSessionAndCookies } = await import('@/features/auth/services/register');
-      const persisted = await persistSessionAndCookies(res, sessionLike, user);
+      // ゲストのカートとお気に入りの印を、ログインの保存の後で会員の分へ合わせるために渡す。
+      const { readGuestShoppingTokens } = await import('@/features/cart/services/guest-shopping-token');
+      const persisted = await persistSessionAndCookies(res, sessionLike, user, readGuestShoppingTokens(request.headers.get('cookie')));
       if (!persisted?.ok) {
         await logAudit({ action: 'auth.oauth.callback', outcome: 'error', detail: `session_persist_failed: ${persisted?.error || 'unknown'}`, resource_id: user.id });
         return res;

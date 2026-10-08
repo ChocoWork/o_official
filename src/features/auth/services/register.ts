@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { logAudit } from '@/lib/audit';
+import type { GuestShoppingTokens } from '@/features/cart/services/guest-shopping-token';
 
 type PersistSession = {
   access_token: string;
@@ -14,7 +15,12 @@ type PersistUser = {
   app_metadata?: unknown;
 };
 
-export async function persistSessionAndCookies(res: NextResponse, session: PersistSession, user: PersistUser) {
+export async function persistSessionAndCookies(
+  res: NextResponse,
+  session: PersistSession,
+  user: PersistUser,
+  guestShopping?: GuestShoppingTokens,
+) {
   const context = { actor_id: user?.id ?? null, actor_email: user?.email ?? null };
 
   try {
@@ -120,6 +126,19 @@ export async function persistSessionAndCookies(res: NextResponse, session: Persi
         actor_email: context.actor_email,
         metadata: { inserted_count: 1, expires_at: expiresAt },
       });
+
+      // ゲストのカートとお気に入りを会員の分へ合わせる（設計書第5章）。ログインの Cookie とセッションを
+      // 全部保存した後に呼ぶ。失敗してもログインは止めず、Cookie を残して次の要求で合わせ直す。
+      // user.id は型の上で省略可のため確かめる（セッションの保存が済んだこの時点では必ずある）。
+      if (guestShopping && user.id && (guestShopping.cartToken || guestShopping.wishlistToken)) {
+        const { mergeGuestShoppingIntoMember } = await import('@/features/cart/services/guest-shopping-merge');
+        const merged = await mergeGuestShoppingIntoMember(service, { userId: user.id, ...guestShopping });
+        if (merged.ok) {
+          const { clearGuestShoppingCookies } = await import('@/features/cart/services/guest-shopping-token');
+          clearGuestShoppingCookies(res);
+        }
+      }
+
       return { ok: true };
     } catch (dbErr) {
       console.error('persistSessionAndCookies: unexpected DB error', dbErr, context);
