@@ -46,8 +46,9 @@ function markAwaiting(db: PgClient, args: { orderId: string; paymentIntentId: st
   );
 }
 
-async function cartExists(db: PgClient, cartId: string): Promise<boolean> {
-  const res = await db.query('select 1 from public.carts where id = $1', [cartId]);
+async function cartLineExists(db: PgClient, cartLineId: string | null): Promise<boolean> {
+  if (cartLineId === null) return false;
+  const res = await db.query('select 1 from public.cart_lines where id = $1', [cartLineId]);
   return res.rowCount > 0;
 }
 
@@ -60,7 +61,7 @@ describeLocalDb('integration: 入金済み・入金待ちにする', (db) => {
 
     expect(res.rows[0]).toEqual({ updated: true, amount_matches: true, needs_review: false });
     expect(await orderRow(db(), orderId)).toMatchObject({ status: 'paid', payment_intent_id: pi, review_reason: null });
-    expect(await cartExists(db(), draft.cartId)).toBe(false);
+    expect(await cartLineExists(db(), draft.cartLineId)).toBe(false);
     const draftPi = await db().query('select payment_intent_id from public.checkout_drafts where id = $1', [draft.draftId]);
     expect(draftPi.rows[0].payment_intent_id).toBe(pi);
     expect(await revisionsOf(db(), orderId)).toEqual([
@@ -147,7 +148,7 @@ describeLocalDb('integration: 入金済み・入金待ちにする', (db) => {
     expect(first.rows[0].updated).toBe(true);
     expect(second.rows[0].updated).toBe(false);
     expect(await orderRow(db(), orderId)).toMatchObject({ status: 'pending', payment_intent_id: pi });
-    expect(await cartExists(db(), draft.cartId)).toBe(false);
+    expect(await cartLineExists(db(), draft.cartLineId)).toBe(false);
     expect(await revisionsOf(db(), orderId)).toEqual([
       { reason: 'stripe_payment_awaiting', sourceEventId: 'evt_awaiting_1', changedBy: null },
     ]);

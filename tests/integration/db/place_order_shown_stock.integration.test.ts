@@ -142,7 +142,7 @@ describeLocalDb('integration: 受付 RPC の在庫と価格の確かめ', (db) =
     const itemsBefore = await db().query('select * from public.order_items where order_id = $1 order by id', [first.rows[0].order_id]);
     const movementsBefore = await movementsOf(db(), fx.variantId);
     const stockBefore = await variantStock(db(), fx.variantId);
-    await db().query('delete from public.carts where id = $1', [draft.cartId]);
+    await db().query('delete from public.cart_lines where id = $1', [draft.cartLineId]);
 
     for (const shown of [[], [fx.variantId]]) {
       const res = await placeWithShown(db(), draft, shown);
@@ -162,7 +162,7 @@ describeLocalDb('integration: 受付 RPC の在庫と価格の確かめ', (db) =
     const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 1 });
     const first = await placeWithShown(db(), draft, [fx.variantId]);
     expect(first.rows[0]).toMatchObject({ order_status: 'payment_in_progress', created: true, rejection: null });
-    await db().query('delete from public.carts where id = $1', [draft.cartId]);
+    await db().query('delete from public.cart_lines where id = $1', [draft.cartLineId]);
 
     const res = await placeWithoutShown(db(), draft);
 
@@ -191,8 +191,8 @@ describeLocalDb('integration: 受付 RPC の在庫と価格の確かめ', (db) =
         'select updated from public.mark_order_awaiting_payment($1::uuid, $2::text, null)', [orderId, paymentIntentId],
       );
     expect(marked.rows[0].updated).toBe(true);
-    await db().query('delete from public.carts where id = $1', [draft.cartId]);
-    expect((await db().query('select id from public.carts where id = $1', [draft.cartId])).rowCount).toBe(0);
+    await db().query('delete from public.cart_lines where id = $1', [draft.cartLineId]);
+    expect((await db().query('select id from public.cart_lines where id = $1 and cart_id = $2', [draft.cartLineId, draft.cartId])).rowCount).toBe(0);
     const itemsBefore = await db().query('select * from public.order_items where order_id = $1 order by id', [orderId]);
     const movementsBefore = await movementsOf(db(), fx.variantId);
     const stockBefore = await variantStock(db(), fx.variantId);
@@ -208,14 +208,14 @@ describeLocalDb('integration: 受付 RPC の在庫と価格の確かめ', (db) =
     expect(await variantStock(db(), fx.variantId)).toBe(stockBefore);
   });
 
-  test('source_cart_id が NULL の明細だけなら、カート行が無くても配列ありで受け付け・押し直しを断らない', async () => {
+  test('source_cart_line_id が NULL の明細だけなら、カート行が無くても配列ありで受け付け・押し直しを断らない', async () => {
     const fx = await createCatalogFixture(db(), { stock: 2 });
     const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 1 });
     await db().query(
-      `update public.checkout_drafts set items_snapshot = jsonb_set(items_snapshot, '{0,source_cart_id}', 'null'::jsonb) where id = $1`,
+      `update public.checkout_drafts set items_snapshot = jsonb_set(items_snapshot, '{0,source_cart_line_id}', 'null'::jsonb) where id = $1`,
       [draft.draftId],
     );
-    await db().query('delete from public.carts where id = $1', [draft.cartId]);
+    await db().query('delete from public.cart_lines where id = $1', [draft.cartLineId]);
 
     const first = await placeWithShown(db(), draft, [fx.variantId]);
     const second = await placeWithShown(db(), draft, [fx.variantId]);
@@ -232,7 +232,7 @@ describeLocalDb('integration: 受付 RPC の在庫と価格の確かめ', (db) =
   test('カートの行が消えていれば配列ありの受付は cart_changed。注文も在庫の確保も作らない', async () => {
     const fx = await createCatalogFixture(db(), { stock: 2 });
     const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 1 });
-    await db().query('delete from public.carts where id = $1', [draft.cartId]);
+    await db().query('delete from public.cart_lines where id = $1', [draft.cartLineId]);
 
     for (const shown of [[], [fx.variantId]]) {
       const res = await placeWithShown(db(), draft, shown);
@@ -247,7 +247,7 @@ describeLocalDb('integration: 受付 RPC の在庫と価格の確かめ', (db) =
   test('カートの行が消えていても NULL の呼び出し（照合器）は今までどおり注文を作る', async () => {
     const fx = await createCatalogFixture(db(), { stock: 2 });
     const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 1 });
-    await db().query('delete from public.carts where id = $1', [draft.cartId]);
+    await db().query('delete from public.cart_lines where id = $1', [draft.cartLineId]);
 
     const res = await placeWithoutShown(db(), draft);
 
@@ -258,7 +258,7 @@ describeLocalDb('integration: 受付 RPC の在庫と価格の確かめ', (db) =
   test('本人のカート行が残っていれば配列ありの受付は今までどおり注文を作る', async () => {
     const fx = await createCatalogFixture(db(), { stock: 2 });
     const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 1 });
-    const cart = await db().query('select id from public.carts where id = $1 and session_id = $2', [draft.cartId, draft.cartSessionId]);
+    const cart = await db().query('select id from public.cart_lines where id = $1 and cart_id = $2', [draft.cartLineId, draft.cartId]);
     expect(cart.rowCount).toBe(1);
 
     const res = await placeWithShown(db(), draft, [fx.variantId]);
@@ -352,7 +352,7 @@ describeLocalDb('integration: 受付 RPC の在庫と価格の確かめ', (db) =
     const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 2 });
 
     const first = await placeWithShown(db(), draft, [fx.variantId]);
-    const cart = await db().query('select id from public.carts where id = $1 and session_id = $2', [draft.cartId, draft.cartSessionId]);
+    const cart = await db().query('select id from public.cart_lines where id = $1 and cart_id = $2', [draft.cartLineId, draft.cartId]);
     expect(cart.rowCount).toBe(1);
     const second = await placeWithShown(db(), draft, [fx.variantId]);
 

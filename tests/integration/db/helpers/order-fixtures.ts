@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import type { PgClient } from './local-db';
 
 /** DB 結合テストの試験データ。本計画の Task 3〜7・21 が使う。 */
@@ -50,9 +51,9 @@ export async function createCatalogFixture(
 type DraftLine = { quantity: number; colorName?: string | null; sizeLabel?: string | null };
 
 /**
- * Session を付けた下書き（status = created）を作る。明細ごとにカートの行も作り、写しの source_cart_id で結ぶ。
- * カートは session・商品・色・サイズで一意（idx_carts_unique_per_user_session_item）なので、色・サイズが同じ明細は
- * カートの行を1つにまとめ（数量は明細の合計）、同じ source_cart_id を持たせる。
+ * Session を付けた下書き（status = created）を作る。ゲストのカートと明細も作り、下書きの cart_id と
+ * 写しの source_cart_line_id で結ぶ。カートは同じバリアントを1行にまとめる（数量は明細の合計）ので、
+ * 色・サイズが同じ明細は同じ明細の参照を持つ。色・サイズがバリアントに当たらない明細は参照を空にする。
  * lines を省くと quantity・colorName・sizeLabel の1明細になる。色・サイズの既定は BLACK・M（createCatalogFixture と同じ）。
  */
 export async function createDraft(
@@ -66,7 +67,14 @@ export async function createDraft(
     kanaName?: string | null;
     buyerUserId?: string | null;
   },
-): Promise<{ draftId: string; cartSessionId: string; checkoutSessionId: string; cartId: string; totalAmount: number }> {
+): Promise<{
+  draftId: string;
+  cartSessionId: string;
+  checkoutSessionId: string;
+  cartId: string;
+  cartLineId: string | null;
+  totalAmount: number;
+}> {
   const suffix = uniqueSuffix();
   const cartSessionId = `fx-session-${suffix}`;
   const checkoutSessionId = `cs_fx_${suffix}`;
@@ -77,30 +85,48 @@ export async function createDraft(
   const sizeOf = (line: DraftLine) => (line.sizeLabel === undefined ? 'M' : line.sizeLabel);
   const totalAmount = lines.reduce((sum, line) => sum + PRICE * line.quantity, 0);
 
-  // 一意インデックスは空の色・サイズを '' とみなすので、まとめるキーも同じにそろえる
-  const cartKeyOf = (line: DraftLine) => `${colorOf(line) ?? ''}|${sizeOf(line) ?? ''}`;
-  const cartQuantityByKey = new Map<string, number>();
+  const cart = await db.query('insert into public.carts (guest_token_hash) values ($1) returning id', [
+    createHash('sha256').update(`fx-cart-${suffix}`).digest('hex'),
+  ]);
+  const cartId = cart.rows[0].id as string;
+
+  const variantIds: Array<number | null> = [];
   for (const line of lines) {
-    const key = cartKeyOf(line);
-    cartQuantityByKey.set(key, (cartQuantityByKey.get(key) ?? 0) + line.quantity);
-  }
-  const cartIdByKey = new Map<string, string>();
-  for (const line of lines) {
-    const key = cartKeyOf(line);
-    if (cartIdByKey.has(key)) continue;
-    const cart = await db.query(
-      `insert into public.carts (session_id, item_id, quantity, color, size) values ($1, $2, $3, $4, $5) returning id`,
-      [cartSessionId, options.itemId, cartQuantityByKey.get(key), colorOf(line), sizeOf(line)],
+    const variant = await db.query(
+      `select v.id from public.item_variants as v
+       left join public.item_colors as c on c.id = v.color_id
+       left join public.item_sizes as z on z.id = v.size_id
+       where v.item_id = $1
+         and coalesce(c.name, '') = coalesce($2, '')
+         and coalesce(z.label, '') = coalesce($3, '')
+       limit 1`,
+      [options.itemId, colorOf(line), sizeOf(line)],
     );
-    cartIdByKey.set(key, cart.rows[0].id as string);
+    variantIds.push(variant.rows[0] ? Number(variant.rows[0].id) : null);
   }
-  const cartIds = lines.map((line) => cartIdByKey.get(cartKeyOf(line)) as string);
+
+  const quantityByVariant = new Map<number, number>();
+  lines.forEach((line, index) => {
+    const variantId = variantIds[index];
+    if (variantId !== null) {
+      quantityByVariant.set(variantId, (quantityByVariant.get(variantId) ?? 0) + line.quantity);
+    }
+  });
+  const lineIdByVariant = new Map<number, string>();
+  for (const [variantId, quantity] of quantityByVariant) {
+    const saved = await db.query(
+      'insert into public.cart_lines (cart_id, variant_id, quantity) values ($1, $2, $3) returning id',
+      [cartId, variantId, quantity],
+    );
+    lineIdByVariant.set(variantId, saved.rows[0].id as string);
+  }
+  const lineIds = variantIds.map((variantId) => (variantId === null ? null : lineIdByVariant.get(variantId) ?? null));
 
   const draft = await db.query(
     `insert into public.checkout_drafts
        (session_id, checkout_session_id, payment_method, subtotal_amount, shipping_amount, discount_amount,
-        total_amount, currency, shipping_snapshot, items_snapshot, buyer_user_id)
-     values ($1, $2, 'stripe_card', $3, 0, 0, $3, 'jpy', $4::jsonb, $5::jsonb, $6)
+        total_amount, currency, shipping_snapshot, items_snapshot, buyer_user_id, cart_id)
+     values ($1, $2, 'stripe_card', $3, 0, 0, $3, 'jpy', $4::jsonb, $5::jsonb, $6, $7)
      returning id`,
     [
       cartSessionId,
@@ -127,13 +153,21 @@ export async function createDraft(
           size: sizeOf(line),
           quantity: line.quantity,
           line_total: PRICE * line.quantity,
-          source_cart_id: cartIds[index],
+          source_cart_line_id: lineIds[index],
         })),
       ),
       options.buyerUserId ?? null,
+      cartId,
     ],
   );
-  return { draftId: draft.rows[0].id as string, cartSessionId, checkoutSessionId, cartId: cartIds[0], totalAmount };
+  return {
+    draftId: draft.rows[0].id as string,
+    cartSessionId,
+    checkoutSessionId,
+    cartId,
+    cartLineId: lineIds.find((id): id is string => id !== null) ?? null,
+    totalAmount,
+  };
 }
 
 /**

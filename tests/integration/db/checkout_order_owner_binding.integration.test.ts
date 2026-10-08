@@ -194,9 +194,9 @@ describeLocalDb('integration: 注文の持ち主の確かめ（グループ C）
       )).rejects.toMatchObject({ message: 'PLACE_ORDER_ARGUMENT_REQUIRED', code: '22023' });
     });
 
-    test('14引数の claim と10引数の受付は anon・authenticated が実行できず service_role だけ実行できる', async () => {
+    test('15引数の claim と10引数の受付は anon・authenticated が実行できず service_role だけ実行できる', async () => {
       const signatures = [
-        'public.claim_checkout_draft(text,smallint,text,text,text,text,text,integer,integer,integer,integer,jsonb,jsonb,uuid)',
+        'public.claim_checkout_draft(text,smallint,text,text,text,text,text,integer,integer,integer,integer,jsonb,jsonb,uuid,uuid)',
         'public.place_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamptz,text,bigint[],uuid)',
       ];
       for (const signature of signatures) {
@@ -280,7 +280,7 @@ describeLocalDb('integration: 注文の持ち主の確かめ（グループ C）
         `select * from public.claim_checkout_draft(
            $1, 3::smallint, $2, 'custom', 'http://localhost:3000', 'stripe_card', 'jpy',
            5000, 0, 0, 5000, '{}'::jsonb,
-           '[{"item_id":1,"item_name":"x","item_price":5000,"quantity":1,"line_total":5000}]'::jsonb, $3)`,
+           '[{"item_id":1,"item_name":"x","item_price":5000,"quantity":1,"line_total":5000}]'::jsonb, $3, _cart_id => null)`,
         [sessionId, fingerprint, buyerUserId],
       );
       const created = await claim(buyer);

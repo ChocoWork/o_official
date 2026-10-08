@@ -55,8 +55,9 @@ async function draftRow(db: PgClient, draftId: string) {
   return res.rows[0];
 }
 
-async function cartExists(db: PgClient, cartId: string): Promise<boolean> {
-  const res = await db.query('select 1 from public.carts where id = $1', [cartId]);
+async function cartLineExists(db: PgClient, cartLineId: string | null): Promise<boolean> {
+  if (cartLineId === null) return false;
+  const res = await db.query('select 1 from public.cart_lines where id = $1', [cartLineId]);
   return res.rowCount > 0;
 }
 
@@ -100,7 +101,7 @@ describeLocalDb('integration: 受付 RPC', (db) => {
     ]);
     expect(await variantStock(db(), fx.variantId)).toBe(3);
     expect((await draftRow(db(), draft.draftId)).status).toBe('completed');
-    expect(await cartExists(db(), draft.cartId)).toBe(true);
+    expect(await cartLineExists(db(), draft.cartLineId)).toBe(true);
   });
 
   test('同じ Session で2回呼んでも注文は1件、在庫の確保も1回（二重送信・再読込）', async () => {
