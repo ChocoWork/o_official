@@ -64,7 +64,7 @@
 | `tests/integration/db/checkout_order_owner_binding.integration.test.ts`（新規） | 上の DB の決まりの結合テスト（Task 2） |
 | `tests/integration/db/helpers/order-fixtures.ts` | `createDraft` に `buyerUserId` を足す（Task 2） |
 | `tests/integration/db/checkout_session_claim.integration.test.ts` | 後片付けで DB を移行の後に戻す（Task 2） |
-| `src/lib/orders/order-payment-types.ts` | 受付の関数の断りに `login_changed` を足す（Task 2） |
+| `src/lib/orders/order-payment-types.ts` | 受付の関数の断りに `login_changed` を足す（Task 4。place-order の `REJECTION_BY_RPC` と同じコミットにしないと型の確かめが落ちる） |
 | `src/features/checkout/services/checkout-buyer.ts`（新規） | 買い手の確かめと失敗の応答（Task 3） |
 | `tests/unit/features/checkout/services/checkout-buyer.test.ts`（新規） | 上の単体テスト（Task 3） |
 | `src/app/api/checkout/create-session/route.ts` | 買い手の確かめ、見分けの値と下書きを取る関数への買い手（Task 3） |
@@ -232,10 +232,9 @@ git commit -m "test(e2e): 手元の会員としてログインする助けを足
 - Create: `tests/integration/db/checkout_order_owner_binding.integration.test.ts`
 - Modify: `tests/integration/db/helpers/order-fixtures.ts`（`createDraft` に `buyerUserId`）
 - Modify: `tests/integration/db/checkout_session_claim.integration.test.ts`（afterAll）
-- Modify: `src/lib/orders/order-payment-types.ts`（`PLACE_ORDER_REJECTIONS` に `'login_changed'`）
 
 **Interfaces:**
-- Produces: 列 `checkout_drafts.buyer_user_id uuid`、関数 `claim_checkout_draft(text, smallint, text, text, text, text, text, integer, integer, integer, integer, jsonb, jsonb, uuid)`、`place_order_from_checkout_draft(uuid, text, text, integer, integer, text, timestamptz, text, bigint[], uuid)`、受付の関数の断り `'login_changed'`、型 `PlaceOrderRejection` に `'login_changed'`
+- Produces: 列 `checkout_drafts.buyer_user_id uuid`、関数 `claim_checkout_draft(text, smallint, text, text, text, text, text, integer, integer, integer, integer, jsonb, jsonb, uuid)`、`place_order_from_checkout_draft(uuid, text, text, integer, integer, text, timestamptz, text, bigint[], uuid)`、受付の関数の断り `'login_changed'`（TS の型 `PlaceOrderRejection` に足すのは Task 4）
 
 - [ ] **Step 1: 試験データに買い手を足す**
 
@@ -568,11 +567,7 @@ NOTIFY pgrst, 'reload schema';
 COMMIT;
 ```
 
-- [ ] **Step 5: 型に断りを足す**
-
-`src/lib/orders/order-payment-types.ts` の `PLACE_ORDER_REJECTIONS` の最後に `'login_changed',` を足し、注記に「login_changed は受け付けの窓口から呼んだときだけ返る（グループ C 設計書 5-3）」を足す。
-
-- [ ] **Step 6: claim のテストの後片付けを直す**
+- [ ] **Step 5: claim のテストの後片付けを直す**
 
 `tests/integration/db/checkout_session_claim.integration.test.ts`:
 
@@ -604,17 +599,17 @@ const OWNER_BINDING_SQL = fs.readFileSync(
   });
 ```
 
-- [ ] **Step 7: 通ることを確かめる**
+- [ ] **Step 6: 通ることを確かめる**
 
 Run（controller）: `npx supabase db reset` の後、`DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npx jest tests/integration/db --runInBand`
 Expected: 新しいテストを含めて全件 PASS（`security_definer_search_path`・`checkout_session_claim`・`place_order_*` も）
 
 続けて（controller）: DB 結合の直後に `npx supabase status` が healthy のまま、`select count(*) from pg_proc where proname = 'claim_checkout_draft'` が 1 であること（後片付けで移行の後に戻っている）
 
-- [ ] **Step 8: コミット**
+- [ ] **Step 7: コミット**
 
 ```bash
-git add supabase/migrations/20261008120000_checkout_order_owner_binding.sql tests/integration/db/checkout_order_owner_binding.integration.test.ts tests/integration/db/helpers/order-fixtures.ts tests/integration/db/checkout_session_claim.integration.test.ts src/lib/orders/order-payment-types.ts
+git add supabase/migrations/20261008120000_checkout_order_owner_binding.sql tests/integration/db/checkout_order_owner_binding.integration.test.ts tests/integration/db/helpers/order-fixtures.ts tests/integration/db/checkout_session_claim.integration.test.ts
 git commit -m "feat(db): 下書きの買い手と注文の持ち主の決まりを足し、受付で買い手を比べる"
 ```
 
@@ -817,6 +812,7 @@ git commit -m "feat(checkout): 確認へ進むでログインを確かめ、下�
 ### Task 4: 「注文する」・入り直し・完了
 
 **Files:**
+- Modify: `src/lib/orders/order-payment-types.ts`（`PLACE_ORDER_REJECTIONS` に `'login_changed'`）
 - Modify: `src/app/api/checkout/place-order/route.ts`
 - Modify: `src/app/api/checkout/resume/route.ts`
 - Modify: `src/app/api/checkout/complete/route.ts`
@@ -845,6 +841,8 @@ Run: `npx jest tests/unit/api/checkout/place-order-route.test.ts`
 Expected: FAIL（新しいケース）
 
 - [ ] **Step 2: place-order を直す**
+
+`src/lib/orders/order-payment-types.ts` の `PLACE_ORDER_REJECTIONS` の最後に `'login_changed',` を足し、注記に「login_changed は受け付けの窓口から呼んだときだけ返る（グループ C 設計書 5-3）」を足す。下の 1 と同じコミットにする（`REJECTION_BY_RPC` は `Record<PlaceOrderRejection, ...>` なので、片方だけだと型の確かめが落ちる）。
 
 `src/app/api/checkout/place-order/route.ts`:
 
@@ -956,7 +954,7 @@ Expected: PASS・エラーなし
 - [ ] **Step 7: コミット**
 
 ```bash
-git add src/app/api/checkout/place-order/route.ts src/app/api/checkout/resume/route.ts src/app/api/checkout/complete/route.ts tests/unit/api/checkout/place-order-route.test.ts tests/unit/api/checkout/resume-route.test.ts tests/unit/api/checkout/complete-route.test.ts
+git add src/lib/orders/order-payment-types.ts src/app/api/checkout/place-order/route.ts src/app/api/checkout/resume/route.ts src/app/api/checkout/complete/route.ts tests/unit/api/checkout/place-order-route.test.ts tests/unit/api/checkout/resume-route.test.ts tests/unit/api/checkout/complete-route.test.ts
 git commit -m "feat(checkout): 注文すると入り直しで買い手を比べ、完了での紐付けをやめる"
 ```
 
