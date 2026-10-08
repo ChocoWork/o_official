@@ -28,7 +28,7 @@ CREATE TRIGGER checkout_drafts_buyer_immutable
 
 -- 注文の持ち主は空から値へだけ書ける。別の会員への付け替えは断る。
 -- 空へ戻すのは、会員を消して外部キー（ON DELETE SET NULL）が空にする時だけ通す（設計書 5-5）。
--- RLS に左右されずに auth.users を見るため SECURITY DEFINER にする。
+-- 呼んだ役割に auth.users を読む権限が無くても確かめられるよう、関数の持ち主の権限で動く SECURITY DEFINER にする。
 CREATE OR REPLACE FUNCTION public.guard_order_owner()
 RETURNS trigger
 LANGUAGE plpgsql

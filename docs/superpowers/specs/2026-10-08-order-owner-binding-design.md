@@ -245,7 +245,7 @@ flowchart TD
 | 会員A | 会員B | 断る（`ORDER_OWNER_IMMUTABLE`） |
 | 会員A | 空 | その会員のアカウント（`auth.users` の行）が無い時（会員を消して、外部キーが空にする時）だけ通す。それ以外は断る |
 
-- トリガーの関数は、RLS に左右されずに `auth.users` を見るため、SECURITY DEFINER にし、search_path を空にする。
+- トリガーの関数は、`auth.users` を読む権限を持つ関数の持ち主の権限で動くよう、SECURITY DEFINER にし、search_path を空にする（呼んだ役割に `auth.users` を読む権限が無くても確かめられる）。
 - `orders.user_id` は `profiles(user_id)` への外部キー（ON DELETE SET NULL）で、`profiles` は `auth.users` を消すと一緒に消える。会員を消した時の空への更新は、`auth.users` の行が先に消えているのでこの決まりで通る。DB 結合テストで確かめる。
 - 会員が自分の `profiles` の行だけを消しても（`auth.users` は残る）、注文の持ち主は空にならず、消す操作ごと断られる（全体レビューで見つかった抜けを 2026-10-08 に足した。前は `profiles` の行の有無で決めていて、会員が自分の注文の持ち主を空にできた）。
 
@@ -295,7 +295,7 @@ action の名前は今の入口の名前に合わせた（create-session は `ch
 - 受付の関数: 既に注文がある時も、買い手が違えば `login_changed` を返し、注文の ID を返さない。下書きの行が無い時や、下書きの Session・カートの印が要求と違う時は、既にある注文の持ち主と比べる。
 - 受付の関数（照合の経路）: 下書きに買い手があっても、注文の `user_id` は空。買い手だけを渡す呼び間違いは 22023 で断られる。
 - 下書きを取る関数（14個の引数）と受付の関数（10個の引数）は、anon・authenticated が実行できず、service_role だけが実行できる。
-- 注文の持ち主: 空→会員は通る。会員A→会員B は断る。会員→空は、`profiles` がある間は断る。会員を消すと空になる（外部キーの ON DELETE SET NULL が通る）。
+- 注文の持ち主: 空→会員は通る。会員A→会員B は断る。会員→空は、その会員のアカウント（`auth.users`）がある間は断る（会員が自分の `profiles` の行だけを消しても断られる）。会員を消すと空になる（外部キーの ON DELETE SET NULL が通る）。
 - `linkGuestOrdersByEmail` の更新（空→会員）が通る。
 
 ### 8-2 単体

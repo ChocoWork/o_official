@@ -194,10 +194,13 @@ test.describe('FR-CHECKOUT-046 ログイン客の注文の持ち主', () => {
       page.on('response', recordPlaceOrder);
       try {
         // 2回とも、カード入力と「注文する」の前に待ち受ける。2回目は印の更新後の送り直し。
+        // 2回目は状態を問わずに待つ（送り直しが 200 以外で返った時に、時間切れではなくその状態で落とすため）。
+        let placeOrderResponses = 0;
         const firstPlaceOrder = waitForPlaceOrderResponse(page);
         const secondPlaceOrder = page.waitForResponse(
           (response) => response.request().method() === 'POST'
-            && new URL(response.url()).pathname === '/api/checkout/place-order' && response.status() === 200,
+            && new URL(response.url()).pathname === '/api/checkout/place-order'
+            && ++placeOrderResponses === 2,
           { timeout: 120_000 },
         );
         await placeOrderWithTestCard(page);
