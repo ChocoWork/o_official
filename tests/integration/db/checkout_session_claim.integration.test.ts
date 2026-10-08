@@ -31,6 +31,15 @@ const HARDENING_SQL = fs.readFileSync(
   ),
   "utf8",
 );
+const OWNER_BINDING_SQL = fs.readFileSync(
+  path.join(
+    process.cwd(),
+    "supabase/migrations",
+    fs.readdirSync(path.join(process.cwd(), "supabase/migrations"))
+      .find((name: string) => name.endsWith("_checkout_order_owner_binding.sql")),
+  ),
+  "utf8",
+);
 const CLEANUP_SQL = `
 BEGIN;
 DROP FUNCTION IF EXISTS public.claim_checkout_draft(
@@ -92,8 +101,14 @@ describe("integration: Checkout Session draft claim", () => {
   });
 
   afterAll(async () => {
-    if (clientA) await clientA.query(CLEANUP_SQL);
-    if (clientA) await clientA.end();
+    if (clientA) {
+      // 試験用に消した列と関数を、移行の後の状態（元の移行＋グループ C の移行）に戻す。
+      // 戻さないと、後に走る DB 結合テストと E2E の「確認へ進む」が関数の無い DB に当たる。
+      await clientA.query(CLEANUP_SQL);
+      await clientA.query(COMPAT_SQL);
+      await clientA.query(OWNER_BINDING_SQL);
+      await clientA.end();
+    }
     if (clientB) await clientB.end();
   });
 

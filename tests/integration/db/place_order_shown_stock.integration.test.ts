@@ -381,7 +381,7 @@ describeLocalDb('integration: 受付 RPC の在庫と価格の確かめ', (db) =
     expect(res.rows).toEqual([
       {
         signature:
-          'place_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamp with time zone,text,bigint[])',
+          'place_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamp with time zone,text,bigint[],uuid)',
         anon: false,
         authed: false,
         service: true,

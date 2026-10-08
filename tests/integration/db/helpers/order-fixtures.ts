@@ -64,6 +64,7 @@ export async function createDraft(
     sizeLabel?: string | null;
     lines?: DraftLine[];
     kanaName?: string | null;
+    buyerUserId?: string | null;
   },
 ): Promise<{ draftId: string; cartSessionId: string; checkoutSessionId: string; cartId: string; totalAmount: number }> {
   const suffix = uniqueSuffix();
@@ -98,8 +99,8 @@ export async function createDraft(
   const draft = await db.query(
     `insert into public.checkout_drafts
        (session_id, checkout_session_id, payment_method, subtotal_amount, shipping_amount, discount_amount,
-        total_amount, currency, shipping_snapshot, items_snapshot)
-     values ($1, $2, 'stripe_card', $3, 0, 0, $3, 'jpy', $4::jsonb, $5::jsonb)
+        total_amount, currency, shipping_snapshot, items_snapshot, buyer_user_id)
+     values ($1, $2, 'stripe_card', $3, 0, 0, $3, 'jpy', $4::jsonb, $5::jsonb, $6)
      returning id`,
     [
       cartSessionId,
@@ -129,6 +130,7 @@ export async function createDraft(
           source_cart_id: cartIds[index],
         })),
       ),
+      options.buyerUserId ?? null,
     ],
   );
   return { draftId: draft.rows[0].id as string, cartSessionId, checkoutSessionId, cartId: cartIds[0], totalAmount };

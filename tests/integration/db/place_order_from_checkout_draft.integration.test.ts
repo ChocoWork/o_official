@@ -423,7 +423,7 @@ describeLocalDb('integration: 受付 RPC', (db) => {
 
   test('anon・authenticated は実行できない', async () => {
     const signature =
-      'public.place_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamptz,text,bigint[])';
+      'public.place_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamptz,text,bigint[],uuid)';
     for (const role of ['anon', 'authenticated']) {
       const res = await db().query('select has_function_privilege($1, $2, $3) as allowed', [role, signature, 'EXECUTE']);
       expect(res.rows[0].allowed).toBe(false);
