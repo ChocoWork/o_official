@@ -228,9 +228,15 @@ secure_password_change = false
 # Controls the minimum amount of time that must pass before sending another signup confirmation or password reset email.
 max_frequency = "1s"
 # Number of characters used in the email OTP.
-otp_length = 6
+# アプリの入力（src/features/auth/schemas/otp.ts）が8桁を求め、本番も8桁で送るため。
+otp_length = 8
 # Number of seconds before the email OTP expires (defaults to 1 hour).
 otp_expiry = 3600
+
+# ログインの確認コード（signInWithOtp）のメール。アプリは本文のコードを入力させるので、本番と同じくコードを入れる（手元の E2E が読む）
+[auth.email.template.magic_link]
+subject = "ログインの確認コード"
+content_path = "./supabase/templates/magic_link.html"
 
 # Use a production-ready SMTP server
 # [auth.email.smtp]
