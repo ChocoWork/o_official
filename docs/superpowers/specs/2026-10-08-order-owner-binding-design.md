@@ -259,9 +259,13 @@ flowchart TD
 
 | 場面 | action | outcome | metadata |
 |---|---|---|---|
-| 「注文する」の `login_changed` | `checkout.place_order` | failure | `reason: 'login_changed'`、`checkout_session_id`、`draft_id`、`draft_buyer_user_id`、`buyer_user_id`（ゲストは空） |
-| 下書きを取る関数の買い手の食い違い（5-2 の例外） | `checkout.create_session` | error | `draft_id`、例外の文 |
+| 「注文する」の `login_changed`（下書きの買い手が違う・受付の関数が断った） | `checkout.place_order` | failure | `reason: 'login_changed'`、`checkout_session_id`、`draft_id`、`draft_buyer_user_id`、`buyer_user_id`（ゲストは空） |
+| 「注文する」で、別のタブの支払い済みの画面の買い手が違う・下書きが無い | `checkout.place_order` | failure | 上の項目（`draft_id`・`draft_buyer_user_id` は今の下書きの値）に加えて、`paid_checkout_session_id`、`paid_draft_found`、`paid_draft_buyer_user_id`（下書きがある時だけ） |
+| 「確認へ進む」で、支払い済みの画面の買い手が違う・下書きが無い（4-2） | `checkout.session.create` | failure | `reason: 'login_changed'`、`draft_id: null`（下書きを取る前）、`buyer_user_id`、`paid_checkout_session_id`、`paid_draft_found`、`paid_draft_buyer_user_id`（下書きがある時だけ） |
+| 下書きを取る関数の失敗（5-2 の買い手の食い違いを含む） | `checkout.session.create` | error | `error_code`・`error_message`（PostgREST の code と message。本文や details は残さない） |
 | 入り直しの買い手の食い違い | 残さない（`none` を返すだけ。回数の制限で守る） | - | - |
+
+action の名前は今の入口の名前に合わせた（create-session は `checkout.session.create`。計画の決め事 P3）。どの行も、名前・住所・メールアドレス・カードの情報は残さない。
 
 401・503 は、今の入口と同じく監査ログに残さない（503 はサーバーのログに出す）。
 
