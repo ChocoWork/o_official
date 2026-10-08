@@ -237,6 +237,25 @@ describeLocalDb('integration: 注文の持ち主の確かめ（グループ C）
       await expect(db().query('update public.orders set user_id = null where id = $1', [orderId])).rejects.toThrow('ORDER_OWNER_IMMUTABLE');
     });
 
+    test('profiles の行だけを消そうとしても auth.users が残る間は断り、注文の持ち主を保つ', async () => {
+      const buyer = await member('profile-only');
+      const { itemId } = await createCatalogFixture(db(), { stock: 0 });
+      const ordered = await placeFromFinalScreen(db(), await createDraft(db(), { itemId, buyerUserId: buyer }), buyer);
+      expect(ordered).toMatchObject({ created: true, rejection: null });
+      expect(ordered.order_id).not.toBeNull();
+
+      await expect(db().query('delete from public.profiles where user_id = $1', [buyer]))
+        .rejects.toMatchObject({ message: 'ORDER_OWNER_IMMUTABLE', code: '23514' });
+
+      expect(await ownerOf(db(), ordered.order_id as string)).toBe(buyer);
+      const remaining = await db().query(
+        `select exists(select 1 from auth.users where id = $1) as account_exists,
+                exists(select 1 from public.profiles where user_id = $1) as profile_exists`,
+        [buyer],
+      );
+      expect(remaining.rows[0]).toEqual({ account_exists: true, profile_exists: true });
+    });
+
     test('会員を消すと注文の持ち主は空になり、その会員の下書きでは誰も注文できない', async () => {
       const leaving = await createMember(db(), 'leaving');
       const { itemId } = await createCatalogFixture(db(), { stock: 0 });

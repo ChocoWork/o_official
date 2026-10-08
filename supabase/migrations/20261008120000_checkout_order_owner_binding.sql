@@ -28,7 +28,7 @@ CREATE TRIGGER checkout_drafts_buyer_immutable
 
 -- 注文の持ち主は空から値へだけ書ける。別の会員への付け替えは断る。
 -- 空へ戻すのは、会員を消して外部キー（ON DELETE SET NULL）が空にする時だけ通す（設計書 5-5）。
--- RLS に左右されずに profiles を見るため SECURITY DEFINER にする。
+-- RLS に左右されずに auth.users を見るため SECURITY DEFINER にする。
 CREATE OR REPLACE FUNCTION public.guard_order_owner()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -40,7 +40,7 @@ BEGIN
     RETURN NEW;
   END IF;
   IF NEW.user_id IS NULL AND NOT EXISTS (
-    SELECT 1 FROM public.profiles AS p WHERE p.user_id = OLD.user_id
+    SELECT 1 FROM auth.users AS u WHERE u.id = OLD.user_id
   ) THEN
     RETURN NEW;
   END IF;
@@ -501,11 +501,16 @@ BEGIN
     RETURNING id INTO inserted_id;
   EXCEPTION
     WHEN unique_violation THEN
-      SELECT o.id, o.status
-      INTO existing_id, existing_status
+      SELECT o.id, o.status, o.user_id
+      INTO existing_id, existing_status, existing_owner
       FROM public.orders AS o
       WHERE o.checkout_session_id = _checkout_session_id;
       IF existing_id IS NOT NULL THEN
+        IF _shown_in_stock_variant_ids IS NOT NULL
+           AND existing_owner IS DISTINCT FROM _buyer_user_id THEN
+          RETURN QUERY SELECT NULL::uuid, NULL::public.order_status, false, 'login_changed'::text;
+          RETURN;
+        END IF;
         RETURN QUERY SELECT existing_id, existing_status, false, NULL::text;
         RETURN;
       END IF;
