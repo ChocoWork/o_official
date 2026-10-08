@@ -126,9 +126,9 @@ Stripe Webhookはraw bytesとstripe-signatureを`constructEvent`で検証する�
 
 ### グループ F の画面側の扱い（FREQ-423〜425）
 
-- FREQ-423: [入力画面](../../../src/app/checkout/page.tsx)は適用したコードだけを[このタブに記録](../../../src/app/checkout/_lib/promotion-memory.ts)し、入り直しの入口が `none`・`unavailable` なら promotion-code で確かめ直す。使えなければ欄にコードとサーバーの理由を残す。削除・注文完了処理成功・再確認の拒否で記録を消す。
+- FREQ-423: [入力画面](../../../src/app/checkout/page.tsx)は適用したコードだけを[このタブに記録](../../../src/app/checkout/_lib/promotion-memory.ts)し、入り直しの入口が `none`・`unavailable` なら promotion-code で確かめ直す。使えなければ欄にコードとサーバーの理由を残す。削除・注文完了処理成功・再確認の拒否（422 の理由つきの断り）で記録を消す。一時的な失敗（通信の失敗・429・5xx など）では記録を残す。
 - FREQ-424: create-session の409 `out_of_stock` は非公開商品も名前で案内する（行がない商品は `商品 {id}`）。時間切れの作り直し中なら、その文をカートの案内へ渡してカートへ移す。通常の確認では入力画面で案内し、ボタンを無効にする。
-- FREQ-425: create-session の409 `checkout_amount_mismatch` ではカートと金額を読み直し、「価格が変わりました。金額をご確認のうえ、もう一度「確認へ進む」を押してください。」をボタンの上に出し、更新済み金額で押し直せる。やり直せない案内と無効状態は、配送先の選択・入力変更でも消さない。
+- FREQ-425: create-session の409 `checkout_amount_mismatch` ではカートと金額を読み直し、「価格が変わりました。金額をご確認のうえ、もう一度「確認へ進む」を押してください。」をボタンの上に出し、更新済み金額で押し直せる。割引コードを適用中なら promotion-code で確かめ直して目安の金額を新しくし、断られたら割引を外して理由を出す。やり直せない案内と無効状態は、配送先の選択・入力変更でも消さない。
 
 ## 問い合わせ
 
