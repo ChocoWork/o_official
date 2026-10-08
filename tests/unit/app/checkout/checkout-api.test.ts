@@ -76,6 +76,15 @@ describe('requestCheckoutConfirmation', () => {
     });
   });
 
+  test('買えなくなった明細をサーバーが外した断り（409 cart_updated）は、サーバーの文のまま、やり直せるエラーで渡す', async () => {
+    const message = '次の商品はお求めいただけなくなったため、カートから外しました: シャツ（BLACK / M）。内容をご確認のうえ、もう一度「確認へ進む」を押してください。';
+    mockClientFetch.mockResolvedValueOnce(jsonResponse(409, { error: 'cart_updated', retryable: true, message }));
+
+    await expect(
+      requestCheckoutConfirmation({ shipping: SHIPPING, displayedAmounts: AMOUNTS, promotionCode: null }),
+    ).resolves.toEqual({ kind: 'error', code: 'cart_updated', message, retryable: true, correlationId: null });
+  });
+
   test('通信が失敗しても reject せず、やり直せるエラーの値で返す', async () => {
     mockClientFetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
 
@@ -274,23 +283,17 @@ describe('checkPromotionCodeRequest', () => {
       kind: 'rejected', message: 'しばらくしてからお試しください', transient: true,
     });
   });
-
-  test('401 auth_expired でも送り直さない（送り直すのは決済の3つの入口だけ）', async () => {
-    mockClientFetch.mockResolvedValue(jsonResponse(401, { error: 'auth_expired' }));
-
-    await expect(checkPromotionCodeRequest('WELCOME10')).resolves.toMatchObject({ kind: 'rejected', transient: true });
-
-    expect(mockRefreshSessionOnce).not.toHaveBeenCalled();
-    expect(mockClientFetch).toHaveBeenCalledTimes(1);
-  });
 });
 
 const LOGIN_EXPIRED_MESSAGE = 'ログインの有効期限が切れました。ログインし直すか、そのままもう一度「確認へ進む」を押してください。';
 const LOGIN_CHANGED_MESSAGE = 'ログインの状態が変わりました。もう一度「確認へ進む」を押してください。';
 const PROCEED_FAILED_MESSAGE = '決済の準備に失敗しました。少し時間をおいてから、もう一度お試しください。';
 const PLACE_ORDER_FAILED_MESSAGE = 'ご注文を受け付けられませんでした。少し時間をおいてから、もう一度お試しください。';
+const PROMOTION_LOGIN_EXPIRED_MESSAGE = 'ログインの有効期限が切れました。ログインし直してから、もう一度「適用」を押してください。';
+const PROMOTION_FAILED_MESSAGE = '割引コードを確かめられませんでした。少し時間をおいてから、もう一度お試しください。';
+const PROMOTION_PREVIEW = { code: 'WELCOME10', subtotalAmount: 5000, shippingAmount: 0, discountAmount: 500, totalAmount: 4500 };
 
-// ログインの印が古いと断られた時（401 auth_expired）に印を新しくして送り直す3つの入口。
+// ログインの印が古いと断られた時（401 auth_expired）に印を新しくして送り直す4つの入口（割引コードの「適用」を含む）。
 // 印の更新の結果は3つ: refreshed は1回だけ送り直す。expired（更新の入口が 401）と unavailable（回数の制限・通信の失敗・待ち時間中）は
 // 送り直さず、入口ごとの結果を返す。送り直しの通信が失敗した時の結果（failed）も入口ごとに違う
 const RESEND_ENTRIES = [
@@ -329,6 +332,17 @@ const RESEND_ENTRIES = [
     expired: { state: 'none' },
     unavailable: { state: 'none' },
     failed: { state: 'none' },
+  },
+  {
+    name: 'checkPromotionCodeRequest（promotion-code）',
+    url: '/api/checkout/promotion-code',
+    call: () => checkPromotionCodeRequest('WELCOME10'),
+    success: jsonResponse(200, PROMOTION_PREVIEW),
+    succeeded: { kind: 'applied', preview: PROMOTION_PREVIEW },
+    // 「適用」は押し直せる。コードが使えないと確定したわけではないので、どちらも一時的な失敗（transient）にして、記憶しているコードを消さない
+    expired: { kind: 'rejected', message: PROMOTION_LOGIN_EXPIRED_MESSAGE, transient: true },
+    unavailable: { kind: 'rejected', message: PROMOTION_FAILED_MESSAGE, transient: true },
+    failed: { kind: 'rejected', message: PROMOTION_FAILED_MESSAGE, transient: true },
   },
 ];
 

@@ -6,6 +6,7 @@ import { logAudit } from '@/lib/audit';
 import { findCartIdForBuyer } from '@/features/cart/services/shopping-context';
 import { checkoutBuyerFailureResponse, resolveCheckoutBuyer } from '@/features/checkout/services/checkout-buyer';
 import { loadCheckoutCart } from '@/features/checkout/services/checkout-cart.service';
+import { describeUnexpectedError } from '@/features/checkout/services/checkout-error.service';
 import { PROMOTION_CODE_GUARD, guardCheckoutPost } from '@/features/checkout/services/checkout-route-guard';
 import { PROMOTION_CODE_PATTERN, checkPromotionCode } from '@/features/checkout/services/promotion-code.service';
 
@@ -56,14 +57,12 @@ export async function POST(req: NextRequest) {
     if (buyer.kind === 'expired' || buyer.kind === 'unavailable') {
       return guard.finish(checkoutBuyerFailureResponse(buyer.kind));
     }
+    // 買えない明細（取り扱い終了・非公開）は金額に入れず、断りもしない。カートの画面に出ている明細だけで確かめる
     const cart = await loadCheckoutCart(supabase, await findCartIdForBuyer(supabase, req, buyer));
     if (cart.kind === 'empty') {
       return guard.finish(
         NextResponse.json({ error: 'cart_empty', message: 'ご購入いただける商品がありません。' }, { status: 400 }),
       );
-    }
-    if (cart.kind === 'unavailable') {
-      return guard.finish(NextResponse.json(cart.body, { status: 409 }));
     }
 
     const result = await checkPromotionCode(getStripeServerClient(), {
@@ -93,9 +92,8 @@ export async function POST(req: NextRequest) {
     );
   } catch (error) {
     console.error('Promotion code check error:', error);
-    await audit('error', 'Promotion code check failed', {
-      error_message: error instanceof Error ? error.message : 'Unknown error',
-    });
+    // PostgREST の失敗は Error ではない素のオブジェクトで投げられるので、message・code だけ取り出す（details・hint は残さない）
+    await audit('error', 'Promotion code check failed', describeUnexpectedError(error));
     return guard.finish(NextResponse.json({ error: 'promotion_code_failed', message: FAILED_MESSAGE }, { status: 500 }));
   }
 }

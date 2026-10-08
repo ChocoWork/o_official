@@ -1,5 +1,4 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { buildInventoryConflictBody, collectInventoryIssues } from '@/features/cart/services/cart-stock';
 import type {
   CheckoutCartSnapshotRow,
   CheckoutItemSnapshotRow,
@@ -11,7 +10,6 @@ import {
 
 export type CheckoutCartLoad =
   | { kind: 'empty' }
-  | { kind: 'unavailable'; body: ReturnType<typeof buildInventoryConflictBody> }
   | {
       kind: 'ok';
       cartRows: CheckoutCartSnapshotRow[];
@@ -54,8 +52,38 @@ export async function readCheckoutCartRows(supabase: SupabaseClient, cartId: str
 }
 
 /**
- * カートと、サーバーが計算した割引前の金額を読む（create-session と同じ読み方・同じ規則）。
- * 非公開・削除された商品、取り扱いを終えた色・サイズがあれば買えない（FREQ-401）。DB の失敗は投げる。
+ * 明細を、買えるものと買えないもの（取り扱いを終えたバリアント、非公開・無い商品）に分ける。
+ * 明細ごとに見る（同じ商品でも販売中の色・サイズの明細は買える）。GET /api/cart が出さない明細と同じ規則（設計書 6-1）
+ */
+export function splitPurchasableCartRows(
+  cartRows: CheckoutCartSnapshotRow[],
+  items: CheckoutItemSnapshotRow[],
+): { purchasable: CheckoutCartSnapshotRow[]; unavailable: CheckoutCartSnapshotRow[] } {
+  const itemMap = new Map<number, CheckoutItemSnapshotRow>(items.map((item) => [item.id, item]));
+  const purchasable: CheckoutCartSnapshotRow[] = [];
+  const unavailable: CheckoutCartSnapshotRow[] = [];
+  for (const row of cartRows) {
+    const isPurchasable = row.variant_active !== false && itemMap.get(row.item_id)?.status === 'published';
+    (isPurchasable ? purchasable : unavailable).push(row);
+  }
+  return { purchasable, unavailable };
+}
+
+/**
+ * 買えない明細を、持ち主のカートから消す。
+ * cart_id の条件を必ず付け、他人のカートの明細を消さない（service role は RLS を通らない）。DB の失敗は投げる。
+ */
+export async function removeCartLines(supabase: SupabaseClient, cartId: string, lineIds: string[]): Promise<void> {
+  const { error } = await supabase.from('cart_lines').delete().eq('cart_id', cartId).in('id', lineIds);
+  if (error) {
+    throw error;
+  }
+}
+
+/**
+ * カートと、サーバーが計算した割引前の金額を読む（create-session と同じ読み方）。
+ * 買える明細だけで金額を出す。画面（GET /api/cart）に出ている明細と同じなので、割引の目安が画面の小計とずれない（FREQ-401）。
+ * 買えない明細があっても、ここでは断らず、消さない（割引コードの確かめは確かめだけで、カートを変えない）。DB の失敗は投げる。
  */
 export async function loadCheckoutCart(supabase: SupabaseClient, cartId: string | null): Promise<CheckoutCartLoad> {
   if (!cartId) {
@@ -66,7 +94,7 @@ export async function loadCheckoutCart(supabase: SupabaseClient, cartId: string 
     return { kind: 'empty' };
   }
 
-  // 非公開の商品も名前で案内するため、create-session と同じく状態で絞らずに読む
+  // 商品は create-session と同じく状態で絞らずに読み、買えるかどうかは splitPurchasableCartRows で分ける
   const { data: itemsData, error: itemsError } = await supabase
     .from('items')
     .select('id, name, price, image_url, status')
@@ -79,11 +107,11 @@ export async function loadCheckoutCart(supabase: SupabaseClient, cartId: string 
   }
 
   const items = (itemsData ?? []) as CheckoutItemSnapshotRow[];
-  const issues = collectInventoryIssues(cartRows, items);
-  if (issues.length > 0) {
-    return { kind: 'unavailable', body: buildInventoryConflictBody(issues, 'out_of_stock') };
+  const { purchasable } = splitPurchasableCartRows(cartRows, items);
+  if (purchasable.length === 0) {
+    return { kind: 'empty' };
   }
 
   const itemMap = new Map<number, CheckoutItemSnapshotRow>(items.map((item) => [item.id, item]));
-  return { kind: 'ok', cartRows, itemMap, amounts: calculateCheckoutAmountsFromCartRows(cartRows, itemMap) };
+  return { kind: 'ok', cartRows: purchasable, itemMap, amounts: calculateCheckoutAmountsFromCartRows(purchasable, itemMap) };
 }

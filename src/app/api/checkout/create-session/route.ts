@@ -6,10 +6,6 @@ import Stripe from "stripe";
 import { getStripeServerClient } from "@/lib/stripe/server";
 import { KONBINI_PAYMENT_DAYS } from "@/lib/constants/konbini";
 import {
-  buildInventoryConflictBody,
-  collectInventoryIssues,
-} from "@/features/cart/services/cart-stock";
-import {
   buyerOfCheckoutSession,
   buildShippingSnapshot,
   checkoutShippingSchema,
@@ -26,7 +22,10 @@ import {
   checkoutDisplayedAmountsSchema,
   isCheckoutDisplayedAmountsMatched,
 } from "@/features/checkout/services/checkout-pricing.service";
-import { classifyCheckoutSessionError } from "@/features/checkout/services/checkout-error.service";
+import {
+  classifyCheckoutSessionError,
+  describeUnexpectedError,
+} from "@/features/checkout/services/checkout-error.service";
 import { logAudit } from "@/lib/audit";
 import { cookieOptionsForCsrf, csrfCookieName } from "@/lib/cookie";
 import { getRequestOrigin } from "@/lib/redirect";
@@ -150,13 +149,17 @@ const CHECKOUT_REQUEST_VERSION = 3;
 /** 開いている決済の画面を使い回すのに要る残り時間（受け付けの10分＋最終確認画面での5分。決め事 D4） */
 const REUSE_MIN_REMAINING_SECONDS = 15 * 60;
 
-/** PostgREST の素のエラーも、code・message だけ監査に残す。details・hint や本文は含めない。 */
-function describeUnexpectedError(error: unknown): { error_message: string; error_code?: string } {
-  const fields = typeof error === "object" && error !== null ? (error as { message?: unknown; code?: unknown }) : {};
-  const errorMessage = typeof fields.message === "string" ? fields.message : "Unknown error";
-  return typeof fields.code === "string"
-    ? { error_message: errorMessage, error_code: fields.code }
-    : { error_message: errorMessage };
+/**
+ * カートから外した明細の案内に出す名前。商品名に、色・サイズがあれば（色 / サイズ）を付ける（片方だけならその片方）。
+ * 商品が無ければ番号で示す。
+ */
+function describeRemovedCartLine(
+  cartRow: CheckoutCartSnapshotRow,
+  itemMap: Map<number, CheckoutItemSnapshotRow>,
+): string {
+  const name = itemMap.get(cartRow.item_id)?.name ?? `商品 ${cartRow.item_id}`;
+  const options = [cartRow.color, cartRow.size].filter(Boolean).join(" / ");
+  return options ? `${name}（${options}）` : name;
 }
 
 function hasReusableTimeLeft(session: Stripe.Checkout.Session): boolean {
@@ -569,7 +572,9 @@ export async function POST(req: NextRequest) {
     // カートは session_id ではなく持ち主（確かめた買い手）で読む。会員に残ったゲストの印があれば、ここで先に合わせる。
     // session_id は決済の流れ（下書き・注文・入り直し・回数の制限）の印として、この先もそのまま使う。
     const { findCartIdForBuyer } = await import("@/features/cart/services/shopping-context");
-    const { readCheckoutCartRows } = await import("@/features/checkout/services/checkout-cart.service");
+    const { readCheckoutCartRows, removeCartLines, splitPurchasableCartRows } = await import(
+      "@/features/checkout/services/checkout-cart.service"
+    );
     let cartId: string | null;
     let cartData: CheckoutCartSnapshotRow[];
     try {
@@ -604,9 +609,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Cart is empty" }, { status: 400 });
     }
 
-    const itemIds = (cartData as CheckoutCartSnapshotRow[]).map(
-      (item) => item.item_id,
-    );
+    const itemIds = cartData.map((item) => item.item_id);
     const { data: itemsData, error: itemsError } = await supabase
       .from("items")
       .select("id, name, price, image_url, status")
@@ -620,31 +623,65 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const inventoryIssues = collectInventoryIssues(
-      cartData as CheckoutCartSnapshotRow[],
-      (itemsData ?? []) as CheckoutItemSnapshotRow[],
+    // 非公開の商品も名前で案内するために、状態で絞らずに読む。
+    const items = (itemsData ?? []) as CheckoutItemSnapshotRow[];
+    const itemMap = new Map<number, CheckoutItemSnapshotRow>(
+      items.map((item) => [item.id, item]),
     );
 
-    if (inventoryIssues.length > 0) {
+    // 取り扱いを終えた色・サイズ、非公開・無い商品の明細は、カートの画面（GET /api/cart）に出ないので、会員は自分では消せない。
+    // 残すと「確認へ進む」が断られ続けて決済できなくなるため、持ち主のカートから外して知らせ、残りの明細で押し直してもらう
+    // （設計書 6-1。Shopify の決済が "Your cart has been updated" と出して続けられるのと同じ）。
+    // 外すのは、この買い手のカートの、買えないと判定した明細だけ。
+    const { unavailable } = splitPurchasableCartRows(cartData, items);
+    if (unavailable.length > 0) {
+      try {
+        await removeCartLines(
+          supabase,
+          cartId,
+          unavailable.map((cartRow) => cartRow.id),
+        );
+      } catch (removeError) {
+        console.error("Failed to remove unavailable cart lines for checkout session:", removeError);
+        await logAudit({
+          action: "checkout.session.create",
+          outcome: "error",
+          detail: "Failed to remove unavailable cart lines",
+          ip: clientIp,
+          user_agent: userAgent,
+          // PostgREST の失敗は Error ではない素のオブジェクトで投げられるので、message・code だけ取り出す
+          metadata: { session_id: sessionId, ...describeUnexpectedError(removeError) },
+        });
+        return NextResponse.json(
+          { error: "Failed to update cart" },
+          { status: 500 },
+        );
+      }
+
+      await logAudit({
+        action: "checkout.session.create",
+        outcome: "failure",
+        detail: "Unavailable cart lines removed",
+        ip: clientIp,
+        user_agent: userAgent,
+        metadata: { session_id: sessionId, removed_line_count: unavailable.length },
+      });
+      const labels = unavailable
+        .map((cartRow) => describeRemovedCartLine(cartRow, itemMap))
+        .join("、");
       return NextResponse.json(
-        buildInventoryConflictBody(inventoryIssues, "out_of_stock"),
+        {
+          error: "cart_updated",
+          retryable: true,
+          message: `次の商品はお求めいただけなくなったため、カートから外しました: ${labels}。内容をご確認のうえ、もう一度「確認へ進む」を押してください。`,
+        },
         { status: 409 },
       );
     }
 
-    // 非公開の商品も名前で案内するために読む。ここまで通った明細はすべて公開中なので、金額・写しを作れる。
-    const itemMap = new Map<number, CheckoutItemSnapshotRow>(
-      ((itemsData ?? []) as CheckoutItemSnapshotRow[]).map((item) => [
-        item.id,
-        item,
-      ]),
-    );
-
+    // ここまで来た明細はすべて買えるので、金額・写しを作れる。
     const { subtotalAmount, taxAmount, shippingAmount, totalAmount } =
-      calculateCheckoutAmountsFromCartRows(
-        cartData as CheckoutCartSnapshotRow[],
-        itemMap,
-      );
+      calculateCheckoutAmountsFromCartRows(cartData, itemMap);
 
     if (
       !isCheckoutDisplayedAmountsMatched(
@@ -807,7 +844,7 @@ export async function POST(req: NextRequest) {
 
     const shippingSnapshot = buildShippingSnapshot(shipping);
     const itemsSnapshot = canonicalizeItemsSnapshot(
-      (cartData as CheckoutCartSnapshotRow[]).map((cartItem) => {
+      cartData.map((cartItem) => {
         const item = itemMap.get(cartItem.item_id);
 
         return {

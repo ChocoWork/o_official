@@ -68,8 +68,12 @@ jest.mock("@/features/cart/services/shopping-context", () => ({
 }));
 
 const mockReadCheckoutCartRows = jest.fn();
+const mockRemoveCartLines = jest.fn();
 jest.mock("@/features/checkout/services/checkout-cart.service", () => ({
+  // 買える明細と買えない明細を分ける関数は DB に触れない純粋な関数なので本物を使い、DB に触れる関数だけ差し替える
+  ...jest.requireActual("@/features/checkout/services/checkout-cart.service"),
   readCheckoutCartRows: (...args: unknown[]) => mockReadCheckoutCartRows(...args),
+  removeCartLines: (...args: unknown[]) => mockRemoveCartLines(...args),
 }));
 
 const mockCheckPromotionCode = jest.fn();
@@ -285,6 +289,7 @@ describe("POST /api/checkout/create-session", () => {
     );
     mockFindCartIdForBuyer.mockReset().mockResolvedValue("cart-1");
     mockReadCheckoutCartRows.mockReset().mockResolvedValue([CART_ROW]);
+    mockRemoveCartLines.mockReset().mockResolvedValue(undefined);
     mockFrom.mockImplementation((table: string) => {
       if (table === "items") {
         return {
@@ -530,6 +535,7 @@ describe("POST /api/checkout/create-session", () => {
     expect(mockRequireCsrfOrDeny).toHaveBeenCalledTimes(1);
     expect(mockResolveCheckoutBuyer).toHaveBeenCalledWith(req);
     expect(readBody).not.toHaveBeenCalled();
+    expect(mockFindCartIdForBuyer).not.toHaveBeenCalled();
     expect(mockFrom).not.toHaveBeenCalled();
     expect(mockRpc).not.toHaveBeenCalled();
     expect(getStripeServerClient).not.toHaveBeenCalled();
@@ -553,6 +559,7 @@ describe("POST /api/checkout/create-session", () => {
     expect(res.body).toEqual({ error: "csrf_failed" });
     expect(mockResolveCheckoutBuyer).not.toHaveBeenCalled();
     expect(readBody).not.toHaveBeenCalled();
+    expect(mockFindCartIdForBuyer).not.toHaveBeenCalled();
     expect(mockFrom).not.toHaveBeenCalled();
     expect(mockRpc).not.toHaveBeenCalled();
     expect(getStripeServerClient).not.toHaveBeenCalled();
@@ -857,20 +864,21 @@ describe("POST /api/checkout/create-session", () => {
     expect((res as { status: number }).status).toBe(200);
   });
 
-  it("存在しない商品は番号で示して 409 で断る", async () => {
+  it("存在しない商品の明細はカートから外し、商品の番号で示して 409 cart_updated を返す", async () => {
     mockItemsResult.mockResolvedValue({ data: [], error: null });
 
     const req = makeRequest({ paymentMethod: "stripe_card", uiMode: "custom" });
     const res = await POST(req);
 
     expect((res as { status: number }).status).toBe(409);
-    expect((res as unknown as { body: { error: string } }).body.error).toBe(
-      "out_of_stock",
+    expect((res as unknown as { body: { error: string } }).body.error).toBe("cart_updated");
+    expect((res as unknown as { body: { message: string } }).body.message).toBe(
+      "次の商品はお求めいただけなくなったため、カートから外しました: 商品 1（BLACK / M）。内容をご確認のうえ、もう一度「確認へ進む」を押してください。",
     );
-    expect((res as unknown as { body: { message: string } }).body.message).toBe("以下の商品は現在購入できません: 商品 1");
+    expect(mockRemoveCartLines).toHaveBeenCalledWith(expect.anything(), "cart-1", ["line-1"]);
   });
 
-  it.each(["private", "archived", null, undefined])("公開中でない商品（%s）は商品名で示して 409 out_of_stock を返す", async (status) => {
+  it.each(["private", "archived", null, undefined])("公開中でない商品（%s）の明細はカートから外し、商品名で示して 409 cart_updated を返す", async (status) => {
     mockReadCheckoutCartRows.mockResolvedValue([{ ...CART_ROW, item_id: 123 }]);
     mockItemsResult.mockResolvedValue({
       data: [{ id: 123, name: "非公開のシャツ", price: 5000, image_url: null, status }], error: null,
@@ -879,9 +887,10 @@ describe("POST /api/checkout/create-session", () => {
     const res = await POST(makeRequest({ uiMode: "custom" })) as unknown as { status: number; body: { error: string; message: string } };
 
     expect(res.status).toBe(409);
-    expect(res.body.error).toBe("out_of_stock");
-    expect(res.body.message).toBe("以下の商品は現在購入できません: 非公開のシャツ");
+    expect(res.body.error).toBe("cart_updated");
+    expect(res.body.message).toContain("非公開のシャツ（BLACK / M）");
     expect(res.body.message).not.toContain("商品 123");
+    expect(mockRemoveCartLines).toHaveBeenCalledWith(expect.anything(), "cart-1", ["line-1"]);
     expect(mockCreate).not.toHaveBeenCalled();
     expect(mockRpc).not.toHaveBeenCalled();
   });
@@ -942,18 +951,13 @@ describe("POST /api/checkout/create-session", () => {
       expect(mockCreate).not.toHaveBeenCalled();
     });
 
-    it("取り扱いを終えたバリアントの行があれば、商品が公開中でも 409 out_of_stock で断る", async () => {
-      mockReadCheckoutCartRows.mockResolvedValue([{ ...CART_ROW, variant_active: false }]);
+    it("買えない明細が無ければ、カートから何も外さない", async () => {
+      mockCreate.mockResolvedValue({ client_secret: "secret", id: "cs_test" });
 
-      const res = (await POST(makeRequest({}))) as unknown as {
-        status: number; body: { error: string; message: string };
-      };
+      const res = await POST(makeRequest({}));
 
-      expect(res.status).toBe(409);
-      expect(res.body.error).toBe("out_of_stock");
-      expect(res.body.message).toBe("以下の商品は現在購入できません: テスト商品");
-      expect(mockRpc).not.toHaveBeenCalled();
-      expect(mockCreate).not.toHaveBeenCalled();
+      expect(res.status).toBe(200);
+      expect(mockRemoveCartLines).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -1048,6 +1052,114 @@ describe("POST /api/checkout/create-session", () => {
       expect(claims[0]._items_snapshot.map((line) => line.source_cart_line_id)).toEqual(["line-a", "line-b"]);
       expect(claims[1]._items_snapshot).toEqual(claims[0]._items_snapshot);
       expect(claims[1]._request_fingerprint).toBe(claims[0]._request_fingerprint);
+    });
+  });
+
+  // 取り扱いを終えた色・サイズ、非公開・無い商品の明細は、カートの画面（GET /api/cart）に出ないので、会員は自分では消せない。
+  // 残すと「確認へ進む」が断られ続けるため、サーバーがカートから外して知らせ、残りで押し直してもらう
+  // （設計書 6-1。Shopify の決済で "Your cart has been updated" と出して続けられるのと同じ）
+  describe("買えなくなった明細の取り除き", () => {
+    type CartUpdatedResponse = { status: number; body: { error: string; retryable: boolean; message: string } };
+    const UPDATED_MESSAGE = (labels: string) =>
+      `次の商品はお求めいただけなくなったため、カートから外しました: ${labels}。内容をご確認のうえ、もう一度「確認へ進む」を押してください。`;
+
+    it("取り扱いを終えたバリアントの明細だけを持ち主のカートから外し、同じ商品の販売中の明細は外さない", async () => {
+      mockReadCheckoutCartRows.mockResolvedValue([
+        CART_ROW,
+        { ...CART_ROW, id: "line-2", variant_id: 102, color: "WHITE", size: "S", variant_active: false },
+      ]);
+
+      const res = (await POST(makeRequest({}))) as unknown as CartUpdatedResponse;
+
+      expect(res.status).toBe(409);
+      expect(res.body).toEqual({ error: "cart_updated", retryable: true, message: UPDATED_MESSAGE("テスト商品（WHITE / S）") });
+      expect(mockRemoveCartLines).toHaveBeenCalledTimes(1);
+      expect(mockRemoveCartLines).toHaveBeenCalledWith(expect.objectContaining({ from: mockFrom, rpc: mockRpc }), "cart-1", ["line-2"]);
+    });
+
+    it("案内の商品名は、色・サイズがあれば（色 / サイズ）を付け、片方だけならその片方を付け、「、」でつなぐ。商品が無ければ番号で示す", async () => {
+      mockReadCheckoutCartRows.mockResolvedValue([
+        { ...CART_ROW, id: "line-a", variant_active: false },
+        { ...CART_ROW, id: "line-b", item_id: 2, color: "NAVY", size: null, variant_active: false },
+        { ...CART_ROW, id: "line-c", item_id: 3, color: null, size: "L", variant_active: false },
+        { ...CART_ROW, id: "line-d", item_id: 4, color: null, size: null, variant_active: false },
+        { ...CART_ROW, id: "line-e", item_id: 99 },
+      ]);
+      mockItemsResult.mockResolvedValue({
+        data: [
+          { id: 1, name: "シャツ", price: 5000, image_url: null, status: "published" },
+          { id: 2, name: "パンツ", price: 5000, image_url: null, status: "published" },
+          { id: 3, name: "コート", price: 5000, image_url: null, status: "private" },
+          { id: 4, name: "帽子", price: 5000, image_url: null, status: "published" },
+        ],
+        error: null,
+      });
+
+      const res = (await POST(makeRequest({}))) as unknown as CartUpdatedResponse;
+
+      expect(res.status).toBe(409);
+      expect(res.body.message).toBe(
+        UPDATED_MESSAGE("シャツ（BLACK / M）、パンツ（NAVY）、コート（L）、帽子、商品 99（BLACK / M）"),
+      );
+      expect(mockRemoveCartLines).toHaveBeenCalledWith(expect.anything(), "cart-1", ["line-a", "line-b", "line-c", "line-d", "line-e"]);
+    });
+
+    it("外したあとは決済の画面も下書きも作らず、外した件数を監査に残す", async () => {
+      mockReadCheckoutCartRows.mockResolvedValue([
+        { ...CART_ROW, variant_active: false },
+        { ...CART_ROW, id: "line-2", variant_id: 102, variant_active: false },
+        { ...CART_ROW, id: "line-3", item_id: 2, variant_id: 201 },
+      ]);
+      mockItemsResult.mockResolvedValue({
+        data: [
+          { id: 1, name: "テスト商品", price: 5000, image_url: null, status: "published" },
+          { id: 2, name: "もう一つの商品", price: 5000, image_url: null, status: "published" },
+        ],
+        error: null,
+      });
+
+      const res = (await POST(makeRequest({}))) as unknown as CartUpdatedResponse;
+
+      expect(res.status).toBe(409);
+      expect(mockLogAudit).toHaveBeenCalledTimes(1);
+      expect(mockLogAudit).toHaveBeenCalledWith({
+        action: "checkout.session.create",
+        outcome: "failure",
+        detail: "Unavailable cart lines removed",
+        ip: null,
+        user_agent: null,
+        metadata: { session_id: "sess-abc", removed_line_count: 2 },
+      });
+      expect(mockRpc).not.toHaveBeenCalled();
+      expect(mockCreate).not.toHaveBeenCalled();
+      expect(getStripeServerClient).not.toHaveBeenCalled();
+    });
+
+    it("外せなかったら 500 Failed to update cart で断り、監査には message と code だけを error で残す", async () => {
+      mockReadCheckoutCartRows.mockResolvedValue([{ ...CART_ROW, variant_active: false }]);
+      // PostgREST の失敗は Error ではない素のオブジェクトで投げられる
+      mockRemoveCartLines.mockRejectedValue({ code: "57P01", message: "db down", details: "監査に残さない詳細", hint: "監査に残さないヒント" });
+      const consoleError = jest.spyOn(console, "error").mockImplementation(() => undefined);
+      try {
+        const res = (await POST(makeRequest({}))) as unknown as { status: number; body: unknown };
+
+        expect(res.status).toBe(500);
+        expect(res.body).toEqual({ error: "Failed to update cart" });
+        expect(consoleError).toHaveBeenCalled();
+        expect(mockLogAudit).toHaveBeenCalledTimes(1);
+        expect(mockLogAudit).toHaveBeenCalledWith({
+          action: "checkout.session.create",
+          outcome: "error",
+          detail: "Failed to remove unavailable cart lines",
+          ip: null,
+          user_agent: null,
+          metadata: { session_id: "sess-abc", error_message: "db down", error_code: "57P01" },
+        });
+        expect(mockRpc).not.toHaveBeenCalled();
+        expect(mockCreate).not.toHaveBeenCalled();
+      } finally {
+        consoleError.mockRestore();
+      }
     });
   });
 

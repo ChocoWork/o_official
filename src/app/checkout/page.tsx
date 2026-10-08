@@ -913,6 +913,16 @@ function CheckoutPageContent() {
       setCheckoutError("価格が変わりました。金額をご確認のうえ、もう一度「確認へ進む」を押してください。");
       return;
     }
+    if (result.code === "cart_updated") {
+      // 買えなくなった明細をサーバーがカートから外した（Shopify の "Your cart has been updated" と同じ）。
+      // 画面のカートと割引の目安を読み直し、押し直せるままにする
+      await fetchCart();
+      if (promotion) await recheckPromotion(promotion.code);
+      setSessionErrorRetryable(true);
+      setSessionErrorCorrelationId(null);
+      setCheckoutError(result.message);
+      return;
+    }
     if (result.code === "auth_expired" || result.code === "login_changed") {
       // ログインの印を新しくできなかった、または支払い済みの画面が別の買い手のものだった。入力画面を今のログインに
       // 合わせ、お客様に押し直してもらう（自動でゲストとして進めない。設計書 C2）。

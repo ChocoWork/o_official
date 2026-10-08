@@ -17,8 +17,11 @@ jest.mock('@/features/checkout/services/checkout-route-guard', () => ({
 }));
 
 const mockLoadCheckoutCart = jest.fn();
+const mockRemoveCartLines = jest.fn();
 jest.mock('@/features/checkout/services/checkout-cart.service', () => ({
   loadCheckoutCart: (...args: unknown[]) => mockLoadCheckoutCart(...args),
+  // 割引コードの確かめはカートを変えない。呼ばれていないことを確かめるために差し替えておく
+  removeCartLines: (...args: unknown[]) => mockRemoveCartLines(...args),
 }));
 
 // カートは session_id ではなく、確かめた買い手（持ち主）から引く（カートの引き継ぎ設計書 第7章）
@@ -45,7 +48,11 @@ jest.mock('@/lib/stripe/server', () => ({ getStripeServerClient: () => mockStrip
 const mockLogAudit = jest.fn().mockResolvedValue(undefined);
 jest.mock('@/lib/audit', () => ({ logAudit: (...args: unknown[]) => mockLogAudit(...args) }));
 
-jest.mock('@supabase/supabase-js', () => ({ createClient: jest.fn().mockReturnValue({}) }));
+// route が作る Supabase のクライアント。本物の loadCheckoutCart を通す試験だけが、読み込みの結果を差し替える
+const mockSupabaseFrom = jest.fn();
+jest.mock('@supabase/supabase-js', () => ({
+  createClient: jest.fn().mockReturnValue({ from: (...args: unknown[]) => mockSupabaseFrom(...args) }),
+}));
 
 import { POST } from '@/app/api/checkout/promotion-code/route';
 
@@ -77,6 +84,7 @@ describe('POST /api/checkout/promotion-code', () => {
     mockLoadCheckoutCart.mockResolvedValue(OK_CART);
     mockResolveCheckoutBuyer.mockReset().mockResolvedValue({ kind: 'guest' });
     mockFindCartIdForBuyer.mockReset().mockResolvedValue('cart-1');
+    mockSupabaseFrom.mockReset();
   });
 
   test('守りで断られたら、その応答を返す', async () => {
@@ -159,16 +167,55 @@ describe('POST /api/checkout/promotion-code', () => {
     }
   });
 
-  test('買えない商品があれば 409 で、その案内を返す', async () => {
-    mockLoadCheckoutCart.mockResolvedValue({
-      kind: 'unavailable',
-      body: { error: 'out_of_stock', message: '以下の商品は現在購入できません: A', items: [] },
+  // 取り扱いを終えた色・サイズ、非公開・無い商品の明細は、カートの画面（GET /api/cart）に出ない。
+  // 割引コードの確かめはそれで断らず、画面に出ている明細だけの金額で確かめ、カートは変えない（設計書 6-1）。本物の loadCheckoutCart を通す
+  test('買えない明細があっても 409 にせず、買える明細だけの金額で確かめる。カートは変えない', async () => {
+    const lineOf = (id: string, itemId: number, variantId: number, quantity: number, isActive: boolean) => ({
+      id,
+      quantity,
+      item_variants: { id: variantId, item_id: itemId, is_active: isActive, item_colors: null, item_sizes: null },
+    });
+    const cartLines = [
+      lineOf('line-1', 1, 101, 1, true),
+      lineOf('line-2', 2, 201, 3, false),
+      lineOf('line-3', 3, 301, 1, true),
+      lineOf('line-4', 4, 401, 1, true),
+    ];
+    const items = [
+      { id: 1, name: 'シャツ', price: 5000, image_url: null, status: 'published' },
+      { id: 2, name: '終了したパンツ', price: 8000, image_url: null, status: 'published' },
+      { id: 3, name: '非公開のコート', price: 30000, image_url: null, status: 'private' },
+    ];
+    const deleteLines = jest.fn();
+    const linesQuery = {
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockResolvedValue({ data: cartLines, error: null }),
+      delete: deleteLines,
+    };
+    const itemsQuery = { select: jest.fn().mockReturnThis(), in: jest.fn().mockResolvedValue({ data: items, error: null }) };
+    mockSupabaseFrom.mockImplementation((table: string) => (table === 'cart_lines' ? linesQuery : itemsQuery));
+    mockLoadCheckoutCart.mockImplementationOnce(
+      jest.requireActual('@/features/checkout/services/checkout-cart.service').loadCheckoutCart,
+    );
+    mockCheckPromotionCode.mockResolvedValue({
+      ok: true,
+      promotionCodeId: 'promo_1',
+      code: 'WELCOME10',
+      discountAmount: 500,
+      totalAfterDiscount: 4500,
     });
 
     const res = await POST(makeRequest({ code: 'WELCOME10' }));
 
-    expect(res.status).toBe(409);
-    await expect(res.json()).resolves.toMatchObject({ error: 'out_of_stock' });
+    expect(res.status).toBe(200);
+    expect(mockCheckPromotionCode).toHaveBeenCalledWith(mockStripe, {
+      code: 'WELCOME10',
+      preDiscountTotal: 5000,
+      now: expect.any(Date),
+    });
+    await expect(res.json()).resolves.toMatchObject({ subtotalAmount: 5000, totalAmount: 4500 });
+    expect(mockRemoveCartLines).not.toHaveBeenCalled();
+    expect(deleteLines).not.toHaveBeenCalled();
   });
 
   test('サーバーの割引前の合計で確かめ、使えれば割引後の金額を返す', async () => {
@@ -224,6 +271,31 @@ describe('POST /api/checkout/promotion-code', () => {
         metadata: { session_id: 'sess-abc', reason: 'zero_total' },
       }),
     );
+  });
+
+  // PostgREST の失敗は Error ではない素のオブジェクトで投げられる。メッセージを取りこぼさず、details・hint は残さない
+  test('カートの読み込みの素の PostgREST エラーも、監査には code と message だけを残す', async () => {
+    mockLoadCheckoutCart.mockRejectedValue({
+      code: '42P01', message: 'relation does not exist', details: '監査に残さない詳細', hint: '監査に残さないヒント',
+    });
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const res = await POST(makeRequest({ code: 'WELCOME10' }));
+
+      expect(res.status).toBe(500);
+      await expect(res.json()).resolves.toMatchObject({ error: 'promotion_code_failed' });
+      expect(consoleError).toHaveBeenCalled();
+      expect(mockLogAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'checkout.promotion_code.check',
+          outcome: 'error',
+          metadata: { session_id: 'sess-abc', error_message: 'relation does not exist', error_code: '42P01' },
+        }),
+      );
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   test('Stripe に問い合わせられなければ 500 で、時間をおいて試すよう案内する', async () => {

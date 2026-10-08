@@ -73,6 +73,7 @@ const PROCEED_FAILED_MESSAGE = "決済の準備に失敗しました。少し時
 const PLACE_ORDER_FAILED_MESSAGE = "ご注文を受け付けられませんでした。少し時間をおいてから、もう一度お試しください。";
 const COMPLETE_FAILED_MESSAGE = "注文確定に失敗しました。時間をおいて再度お試しください。";
 const PROMOTION_FAILED_MESSAGE = "割引コードを確かめられませんでした。少し時間をおいてから、もう一度お試しください。";
+const PROMOTION_LOGIN_EXPIRED_MESSAGE = "ログインの有効期限が切れました。ログインし直してから、もう一度「適用」を押してください。";
 const LOGIN_CHANGED_MESSAGE = "ログインの状態が変わりました。もう一度「確認へ進む」を押してください。";
 const LOGIN_EXPIRED_MESSAGE = "ログインの有効期限が切れました。ログインし直すか、そのままもう一度「確認へ進む」を押してください。";
 
@@ -279,8 +280,16 @@ export async function completeCheckout(checkoutSessionId: string): Promise<Compl
 /** 割引コードの「適用」（設計書第3章） */
 export async function checkPromotionCodeRequest(code: string): Promise<PromotionCheckResult> {
   try {
-    const response = await postJson("/api/checkout/promotion-code", { code });
-    const data = await readJson(response);
+    const result = await postCheckoutJson("/api/checkout/promotion-code", { code });
+    if (result.kind === "login_expired") {
+      // ゲストの形に落とさず、ログインし直して押し直してもらう。コードが使えないと確定したわけではないので、一時的な失敗にする
+      return { kind: "rejected", message: PROMOTION_LOGIN_EXPIRED_MESSAGE, transient: true };
+    }
+    if (result.kind === "auth_unavailable") {
+      // ログインの状態は変わっていない。通信・回数制限の失敗と同じく、時間をおいて押し直してもらう
+      return { kind: "rejected", message: PROMOTION_FAILED_MESSAGE, transient: true };
+    }
+    const { response, data } = result;
     if (response.ok && typeof data?.code === "string" && typeof data.totalAmount === "number") {
       return { kind: "applied", preview: data as unknown as PromotionPreview };
     }

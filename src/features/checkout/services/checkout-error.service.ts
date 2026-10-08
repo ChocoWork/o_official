@@ -16,6 +16,21 @@ export type CheckoutSessionErrorClassification = {
 const DEFAULT_AUDIT_ACTION = 'checkout.session.create';
 
 /**
+ * 想定外の失敗を監査に残す形にする。Supabase の失敗は Error でない素のオブジェクト
+ * （{ message, code, details, hint }）として投げられることがあるので、Error かどうかを問わず
+ * message と code だけを取り出す。details には行の内容（個人情報）が入りうるので残さない。
+ * code は文字列で付いているときだけ入れる（無ければ { error_message } だけ）。
+ */
+export function describeUnexpectedError(error: unknown): { error_message: string; error_code?: string } {
+  const fields = typeof error === 'object' && error !== null ? (error as { message?: unknown; code?: unknown }) : {};
+  const errorMessage = typeof fields.message === 'string' ? fields.message : 'Unknown error';
+
+  return typeof fields.code === 'string'
+    ? { error_message: errorMessage, error_code: fields.code }
+    : { error_message: errorMessage };
+}
+
+/**
  * StripeInvalidRequestError のうち、顧客がカート内容を直せば解消しうる code。
  * ここに載っていない code（未指定含む）は当方のパラメータ不備とみなす。
  */

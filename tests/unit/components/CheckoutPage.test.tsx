@@ -806,6 +806,79 @@ describe('決済の画面（グループ F）', () => {
     expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
   });
 
+  // 買えなくなった明細（取り扱い終了・非公開）は、カートの画面に出ないので会員は消せない。サーバーが外して知らせる（409 cart_updated）。
+  // Shopify の決済の "Your cart has been updated" と同じく、押せなくせず、外れた後のカートで続けられるようにする
+  describe('買えなくなった明細をサーバーがカートから外した（cart_updated）', () => {
+    const PANTS_LINE: CartLineSpec = { key: 'cart-2', productId: 2, name: 'ズボン', price: 8000, color: 'NAVY', size: 'L' };
+    const CART_WITH_PANTS = cartJsonOf(SHIRT_LINE, PANTS_LINE);
+    const message = '次の商品はお求めいただけなくなったため、カートから外しました: ズボン（NAVY / L）。内容をご確認のうえ、もう一度「確認へ進む」を押してください。';
+    const cartUpdated = { kind: 'error', code: 'cart_updated', message, retryable: true, correlationId: null };
+
+    test('カートを読み直して案内し、外れた後の金額で「確認へ進む」を押し直せる', async () => {
+      jest.mocked(fetch)
+        .mockResolvedValueOnce({ ok: true, json: async () => CART_WITH_PANTS } as Response)
+        .mockResolvedValueOnce({ ok: true, json: async () => CART } as Response);
+      mockApi.requestCheckoutConfirmation
+        .mockResolvedValueOnce(cartUpdated)
+        .mockResolvedValueOnce({ kind: 'confirmation', confirmation: CONFIRMATION });
+      render(<CheckoutPage />);
+      expect(await screen.findByText('ズボン')).toBeInTheDocument();
+      expect(screen.getByText('合計').parentElement).toHaveTextContent('¥13,000');
+      fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+
+      expect(await screen.findByText(message)).toBeInTheDocument();
+      await waitFor(() => expect(screen.queryByText('ズボン')).toBeNull());
+      expect(screen.getByText('合計').parentElement).toHaveTextContent('¥5,000');
+      expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(mockRouter.push).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+      await screen.findByTestId('final-step');
+      expect(mockApi.requestCheckoutConfirmation.mock.calls[1][0].displayedAmounts).toEqual({ subtotalAmount: 5000, taxAmount: 0, shippingAmount: 0, totalAmount: 5000 });
+    });
+
+    test('割引適用中なら、カートを読んだ後にコードも確かめ直し、要約の目安を新しくする', async () => {
+      jest.mocked(fetch)
+        .mockResolvedValueOnce({ ok: true, json: async () => CART_WITH_PANTS } as Response)
+        .mockResolvedValueOnce({ ok: true, json: async () => CART } as Response);
+      mockApi.checkPromotionCodeRequest
+        .mockResolvedValueOnce({ kind: 'applied', preview: { code: 'WELCOME10', subtotalAmount: 13000, shippingAmount: 0, discountAmount: 1300, totalAmount: 11700 } })
+        .mockImplementationOnce(async () => {
+          expect(fetch).toHaveBeenCalledTimes(2);
+          return { kind: 'applied', preview: { code: 'WELCOME10', subtotalAmount: 5000, shippingAmount: 0, discountAmount: 500, totalAmount: 4500 } };
+        });
+      mockApi.requestCheckoutConfirmation.mockResolvedValueOnce(cartUpdated);
+      render(<CheckoutPage />);
+      fireEvent.change(await screen.findByLabelText('プロモーションコード'), { target: { value: 'WELCOME10' } });
+      fireEvent.click(screen.getByRole('button', { name: '適用' }));
+      await screen.findByText('WELCOME10');
+      fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+
+      await screen.findByText(message);
+      expect(mockApi.checkPromotionCodeRequest).toHaveBeenCalledTimes(2);
+      expect(mockApi.checkPromotionCodeRequest).toHaveBeenLastCalledWith('WELCOME10');
+      expect(screen.getByText('小計').parentElement).toHaveTextContent('¥5,000');
+      expect(screen.getByText('割引').parentElement).toHaveTextContent('-¥500');
+      expect(screen.getByText('合計').parentElement).toHaveTextContent('¥4,500');
+      expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
+    });
+
+    test('時間切れの作り直しで起きても、カートへは移らず、入力画面でカートを読み直して案内する', async () => {
+      mockApi.requestCheckoutConfirmation
+        .mockResolvedValueOnce({ kind: 'confirmation', confirmation: CONFIRMATION })
+        .mockResolvedValueOnce(cartUpdated);
+      await openFinalStep();
+
+      await act(async () => { mockFinalProps.onRejected({ code: 'session_expired', message: '時間がたったため、お支払い情報をもう一度入力してください', changedLines: [] }); });
+
+      expect(await screen.findByText(message)).toBeInTheDocument();
+      expect(screen.queryByTestId('final-step')).toBeNull();
+      expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
+      expect(mockRouter.push).not.toHaveBeenCalled();
+      expect(fetch).toHaveBeenCalledTimes(2);
+    });
+  });
+
   test('やり直せない断りは配送先の新規・保存済み選択や入力変更でも消えない', async () => {
     mockSavedAddresses = [SAVED_TOKYO, SAVED_OSAKA];
     const message = '以下の商品は現在購入できません: シャツ';
