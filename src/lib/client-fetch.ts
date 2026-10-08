@@ -2,7 +2,7 @@
  * Browser-side fetch wrapper that relies on cookie-based authentication.
  * API routes should use same-site cookies instead of client-stored tokens.
  */
-function getCsrfTokenFromCookie(): string | undefined {
+export function getCsrfTokenFromCookie(): string | undefined {
   if (typeof document === 'undefined') {
     return undefined;
   }

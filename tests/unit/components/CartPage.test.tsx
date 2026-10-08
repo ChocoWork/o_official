@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import CartPage from '@/app/cart/page';
+import { CART_OPTION_NAMES, type CartJson, type CartJsonLine } from '@/features/cart/types/cart-json';
 
 // mock next/link and next/image to simplify tests
 jest.mock('next/link', () => {
@@ -16,15 +17,76 @@ jest.mock('next/image', () => {
 });
 
 // stub useCart hook so the component renders without context issues
+const mockUpdateCartCount = jest.fn();
 jest.mock('@/contexts/CartContext', () => {
   return {
     useCart: () => ({
-      updateCartCount: jest.fn(),
+      updateCartCount: mockUpdateCartCount,
       wishlistedItems: new Set<number>(),
       toggleWishlist: jest.fn(),
     }),
   };
 });
+
+type LineSpec = {
+  key: string;
+  productId: number;
+  name: string;
+  price: number;
+  quantity?: number;
+  color?: string;
+  size?: string;
+  fulfillment?: CartJsonLine['fulfillment'];
+};
+
+// カートの窓口（GET /api/cart・POST /api/cart/change）の応答の作り方。
+// 明細は Shopify の形で、色・サイズは options_with_values に入る（画面が toCartEntries で今の形に直す）
+function cartJson(...specs: LineSpec[]): CartJson {
+  const items = specs.map((spec): CartJsonLine => {
+    const quantity = spec.quantity ?? 1;
+    const variantTitle = [spec.color, spec.size].filter(Boolean).join(' / ') || null;
+    return {
+      key: spec.key,
+      id: spec.productId * 100,
+      variant_id: spec.productId * 100,
+      product_id: spec.productId,
+      quantity,
+      title: variantTitle ? `${spec.name} - ${variantTitle}` : spec.name,
+      product_title: spec.name,
+      variant_title: variantTitle,
+      options_with_values: [
+        ...(spec.color ? [{ name: CART_OPTION_NAMES.color, value: spec.color }] : []),
+        ...(spec.size ? [{ name: CART_OPTION_NAMES.size, value: spec.size }] : []),
+      ],
+      price: spec.price,
+      line_price: spec.price * quantity,
+      image: '/x.png',
+      url: `/item/${spec.productId}`,
+      fulfillment: spec.fulfillment ?? null,
+    };
+  });
+  const subtotal = items.reduce((sum, line) => sum + line.line_price, 0);
+  return {
+    item_count: items.reduce((sum, line) => sum + line.quantity, 0),
+    currency: 'JPY',
+    items_subtotal_price: subtotal,
+    total_price: subtotal,
+    items,
+  };
+}
+
+// 画面が読む応答（ok と json だけ持つ最小の Response）
+const okJson = (body: unknown) => ({ ok: true, json: async () => body });
+// 窓口の断り（Shopify の Ajax Cart API と同じ形）
+const cartError = (status: number, description: string) => ({
+  ok: false,
+  status,
+  json: async () => ({ status, message: 'Cart Error', description }),
+});
+
+const TEST_ITEM: LineSpec = { key: '1', productId: 1, name: 'Test item', price: 100 };
+const SHIRT: LineSpec = { key: '1', productId: 1, name: 'シャツ', price: 5000, color: 'BLACK', size: 'M', fulfillment: 'stock' };
+const PANTS: LineSpec = { key: '2', productId: 2, name: 'パンツ', price: 8000, quantity: 2, color: 'NAVY', size: 'L', fulfillment: 'backorder' };
 
 describe('CartPage', () => {
   beforeEach(() => {
@@ -36,23 +98,8 @@ describe('CartPage', () => {
     jest.resetAllMocks();
   });
 
-  it('does not crash when an item returned from API lacks product details', async () => {
-    const badCart = [
-      {
-        id: 'abc',
-        item_id: 123,
-        quantity: 1,
-        color: null,
-        size: null,
-        added_at: '2025-01-01T00:00:00Z',
-        items: null,
-      },
-    ];
-
-    (global as any).fetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => badCart,
-    });
+  it('明細が1つも無いカート（取り扱いが終わった商品の明細はサーバーが返さない）は、空のカートを表示する', async () => {
+    (global as any).fetch.mockResolvedValueOnce(okJson(cartJson()));
 
     render(<CartPage />);
 
@@ -64,24 +111,6 @@ describe('CartPage', () => {
 
   it('optimistically updates quantity and debounces server call', async () => {
     // use real timers to avoid complexity with jest fake timers and waitFor
-    const initialCart = [
-      {
-        id: '1',
-        item_id: 1,
-        quantity: 1,
-        color: null,
-        size: null,
-        added_at: '2025-01-01T00:00:00Z',
-        items: {
-          id: 1,
-          name: 'Test item',
-          price: 100,
-          image_url: '/x.png',
-          category: 'TEST',
-        },
-      },
-    ];
-
     let resolveFirst: (value?: any) => void = () => {};
     const firstPromise = new Promise((res) => {
       resolveFirst = res;
@@ -91,9 +120,9 @@ describe('CartPage', () => {
       resolveSecond = res;
     });
 
-    // initial GET followed by two PATCHs with manual control
+    // initial GET followed by two POSTs (/api/cart/change) with manual control
     (global as any).fetch
-      .mockResolvedValueOnce({ ok: true, json: async () => initialCart })
+      .mockResolvedValueOnce(okJson(cartJson(TEST_ITEM)))
       .mockImplementationOnce(() => firstPromise)
       .mockImplementationOnce(() => secondPromise);
 
@@ -105,7 +134,7 @@ describe('CartPage', () => {
     await userEvent.click(inc);
     await new Promise((r) => setTimeout(r, 500));
 
-    // at this point first PATCH should be pending
+    // at this point first POST should be pending
     expect(fetch).toHaveBeenCalledTimes(2);
 
     // click again while first request is still in flight
@@ -116,40 +145,27 @@ describe('CartPage', () => {
     expect(screen.getByDisplayValue('4')).toBeInTheDocument();
 
     // now resolve first request
-    resolveFirst({ ok: true, json: async () => ({ quantity: 2 }) });
+    resolveFirst(okJson(cartJson({ ...TEST_ITEM, quantity: 2 })));
     // allow microtasks to run and scheduling logic to execute
     await Promise.resolve();
 
-    // wait for second PATCH to be issued (may happen after debounce)
+    // wait for second POST to be issued (may happen after debounce)
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
-    expect((fetch as unknown as jest.Mock).mock.calls[2][1]).toMatchObject({ method: 'PATCH' });
+    const calls = (fetch as unknown as jest.Mock).mock.calls;
+    expect(calls[1][0]).toBe('/api/cart/change');
+    expect(JSON.parse(calls[1][1].body)).toEqual({ id: '1', quantity: 2 });
+    expect(calls[2][0]).toBe('/api/cart/change');
+    expect(calls[2][1]).toMatchObject({ method: 'POST' });
+    expect(JSON.parse(calls[2][1].body)).toEqual({ id: '1', quantity: 4 });
 
     // clean up second promise resolution
-    resolveSecond({ ok: true, json: async () => ({ quantity: 4 }) });
+    resolveSecond(okJson(cartJson({ ...TEST_ITEM, quantity: 4 })));
   });
 
-  it('PATCH失敗時に確定値へロールバックし再試行UIを表示する', async () => {
-    const initialCart = [
-      {
-        id: '1',
-        item_id: 1,
-        quantity: 1,
-        color: null,
-        size: null,
-        added_at: '2025-01-01T00:00:00Z',
-        items: {
-          id: 1,
-          name: 'Test item',
-          price: 100,
-          image_url: '/x.png',
-          category: 'TEST',
-        },
-      },
-    ];
-
+  it('数量の変更が断られたら、確定値へロールバックして窓口の description と再試行UIを表示する', async () => {
     (global as any).fetch
-      .mockResolvedValueOnce({ ok: true, json: async () => initialCart })
-      .mockResolvedValueOnce({ ok: false, json: async () => ({ message: '在庫不足' }) });
+      .mockResolvedValueOnce(okJson(cartJson(TEST_ITEM)))
+      .mockResolvedValueOnce(cartError(422, '1つの商品は20個までです。'));
 
     render(<CartPage />);
     await waitFor(() => screen.getByText('Test item'));
@@ -161,25 +177,72 @@ describe('CartPage', () => {
 
     await waitFor(() => {
       expect(screen.getByDisplayValue('1')).toBeInTheDocument();
-      expect(screen.getByText('在庫不足')).toBeInTheDocument();
+      expect(screen.getByText('1つの商品は20個までです。')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: '再試行' })).toBeInTheDocument();
       expect(screen.getAllByRole('button', { name: '最新状態を再取得' }).length).toBeGreaterThan(0);
     });
   });
-  it('明細ごとにお届けの目安を出す（設計書 5-2）', async () => {
-    (global as any).fetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => [
-        {
-          id: '1', item_id: 1, quantity: 1, color: 'BLACK', size: 'M', added_at: '2026-10-08T00:00:00Z', fulfillment: 'stock',
-          items: { id: 1, name: 'シャツ', price: 5000, image_url: '/x.png', category: 'TOPS' },
-        },
-        {
-          id: '2', item_id: 2, quantity: 2, color: 'NAVY', size: 'L', added_at: '2026-10-08T00:00:00Z', fulfillment: 'backorder',
-          items: { id: 2, name: 'パンツ', price: 8000, image_url: '/y.png', category: 'BOTTOMS' },
-        },
-      ],
+
+  it('数量の変更の応答（CartJson）の数量とお届けの目安が、その明細に出る', async () => {
+    (global as any).fetch
+      .mockResolvedValueOnce(okJson(cartJson(SHIRT)))
+      // 画面は 2 にするが、画面が確定値として採るのは応答の明細の数量とお届けの目安
+      .mockResolvedValueOnce(okJson(cartJson({ ...SHIRT, quantity: 3, fulfillment: 'backorder' })));
+
+    render(<CartPage />);
+    expect(await screen.findByTestId('cart-fulfillment')).toHaveTextContent('在庫あり・3〜7営業日で発送');
+
+    await userEvent.click(screen.getByLabelText('increase'));
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('3')).toBeInTheDocument();
+      expect(screen.getByTestId('cart-fulfillment')).toHaveTextContent('受注生産・数週間〜2か月以上');
     });
+    const [endpoint, init] = (fetch as unknown as jest.Mock).mock.calls[1];
+    expect(endpoint).toBe('/api/cart/change');
+    expect(init).toMatchObject({ method: 'POST' });
+    expect(JSON.parse(init.body)).toEqual({ id: '1', quantity: 2 });
+    expect(mockUpdateCartCount).toHaveBeenCalled();
+  });
+
+  it('削除は同じ窓口に数量0を送り、その明細を画面から外してヘッダーの数を読み直す', async () => {
+    (global as any).fetch
+      .mockResolvedValueOnce(okJson(cartJson(SHIRT, PANTS)))
+      .mockResolvedValueOnce(okJson(cartJson(PANTS)));
+
+    render(<CartPage />);
+    await screen.findByText('シャツ');
+
+    await userEvent.click(screen.getAllByRole('button', { name: 'カートから削除' })[0]);
+
+    await waitFor(() => expect(screen.queryByText('シャツ')).toBeNull());
+    expect(screen.getByText('パンツ')).toBeInTheDocument();
+    const [endpoint, init] = (fetch as unknown as jest.Mock).mock.calls[1];
+    expect(endpoint).toBe('/api/cart/change');
+    expect(init).toMatchObject({ method: 'POST' });
+    expect(JSON.parse(init.body)).toEqual({ id: '1', quantity: 0 });
+    expect(mockUpdateCartCount).toHaveBeenCalled();
+  });
+
+  it('削除が断られたら、窓口の description をトーストで出して、明細は残す', async () => {
+    (global as any).fetch
+      .mockResolvedValueOnce(okJson(cartJson(SHIRT)))
+      .mockResolvedValueOnce(cartError(404, 'カートの商品が見つかりません。ページを読み込み直してください。'));
+
+    render(<CartPage />);
+    await screen.findByText('シャツ');
+
+    await userEvent.click(screen.getByRole('button', { name: 'カートから削除' }));
+
+    expect(await screen.findByTestId('cart-action-toast')).toHaveTextContent(
+      'カートの商品が見つかりません。ページを読み込み直してください。',
+    );
+    expect(screen.getByText('シャツ')).toBeInTheDocument();
+    expect(mockUpdateCartCount).not.toHaveBeenCalled();
+  });
+
+  it('明細ごとにお届けの目安を出す（設計書 5-2）', async () => {
+    (global as any).fetch.mockResolvedValueOnce(okJson(cartJson(SHIRT, PANTS)));
 
     render(<CartPage />);
 
@@ -196,19 +259,7 @@ describe('CartPage', () => {
         lines: [{ itemId: 2, name: 'パンツ', color: 'NAVY', size: 'L' }],
       }),
     );
-    (global as any).fetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => [
-        {
-          id: '1', item_id: 1, quantity: 1, color: 'BLACK', size: 'M', added_at: '2026-10-08T00:00:00Z', fulfillment: 'stock',
-          items: { id: 1, name: 'シャツ', price: 5000, image_url: '/x.png', category: 'TOPS' },
-        },
-        {
-          id: '2', item_id: 2, quantity: 2, color: 'NAVY', size: 'L', added_at: '2026-10-08T00:00:00Z', fulfillment: 'backorder',
-          items: { id: 2, name: 'パンツ', price: 8000, image_url: '/y.png', category: 'BOTTOMS' },
-        },
-      ],
-    });
+    (global as any).fetch.mockResolvedValueOnce(okJson(cartJson(SHIRT, PANTS)));
 
     render(<CartPage />);
 
@@ -228,7 +279,7 @@ describe('CartPage', () => {
       'checkout:cart-notice',
       JSON.stringify({ kind: 'message', message: '商品の価格が変わりました。内容をご確認ください' }),
     );
-    (global as any).fetch.mockResolvedValueOnce({ ok: true, json: async () => [] });
+    (global as any).fetch.mockResolvedValueOnce(okJson(cartJson()));
 
     render(<CartPage />);
 
@@ -252,19 +303,7 @@ describe('CartPage', () => {
         ],
       }),
     );
-    (global as any).fetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => [
-        {
-          id: '1', item_id: 1, quantity: 1, color: 'BLACK', size: 'M', added_at: '2026-10-08T00:00:00Z', fulfillment: 'stock',
-          items: { id: 1, name: 'シャツ', price: 5000, image_url: '/x.png', category: 'TOPS' },
-        },
-        {
-          id: '2', item_id: 2, quantity: 2, color: 'NAVY', size: 'L', added_at: '2026-10-08T00:00:00Z', fulfillment: 'backorder',
-          items: { id: 2, name: 'パンツ', price: 8000, image_url: '/y.png', category: 'BOTTOMS' },
-        },
-      ],
-    });
+    (global as any).fetch.mockResolvedValueOnce(okJson(cartJson(SHIRT, PANTS)));
 
     render(<CartPage />);
 
@@ -280,7 +319,7 @@ describe('CartPage', () => {
   it('案内の入れ物は空のまま先に置かれ、文言はあとから同じ入れ物に入る（読み上げの入れ物）', async () => {
     const message = '商品の価格が変わりました。内容をご確認ください';
     window.sessionStorage.setItem('checkout:cart-notice', JSON.stringify({ kind: 'message', message }));
-    (global as any).fetch.mockResolvedValueOnce({ ok: true, json: async () => [] });
+    (global as any).fetch.mockResolvedValueOnce(okJson(cartJson()));
 
     // 文言ごと入れ物を差し込むと、スクリーンリーダーが読まないことがある。DOM が変わった順で確かめる
     const records: MutationRecord[] = [];

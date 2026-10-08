@@ -3,6 +3,7 @@
 import React from "react";
 import { usePathname } from "next/navigation";
 import { CartProvider } from "@/contexts/CartContext";
+import { CartLoginSync } from "@/contexts/CartLoginSync";
 import { LoginProvider } from "@/contexts/LoginContext";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
@@ -27,6 +28,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <CartProvider enabled={!isPrivacyPage}>
       <LoginProvider>
+        <CartLoginSync />
         <a
           href="#main-content"
           className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-100 focus:bg-white focus:text-black focus:px-4 focus:py-2 focus:lk-text-sm focus:border focus:border-black"

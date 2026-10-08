@@ -36,6 +36,8 @@ export type Item = {
     colorName: string | null;
     sizeLabel: string | null;
     inStock: boolean;
+    /** バリアントの番号。カートに入れる窓口（/api/cart/add）へ送る */
+    variantId: number;
   }>;
   created_at?: string;
   updated_at?: string;

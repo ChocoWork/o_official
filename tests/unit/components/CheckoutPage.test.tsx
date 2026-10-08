@@ -1,5 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { CART_OPTION_NAMES, type CartJson } from '@/features/cart/types/cart-json';
 
 jest.mock('next/link', () => {
   return ({ href, children, ...props }: any) => (
@@ -114,12 +115,35 @@ jest.mock('@/app/checkout/_components/FinalConfirmationStep', () => ({
 
 import CheckoutPage from '@/app/checkout/page';
 
-const CART = [
-  {
-    id: 'cart-1', item_id: 1, quantity: 1, color: 'BLACK', size: 'M', added_at: '2026-10-08T00:00:00Z',
-    items: { id: 1, name: 'シャツ', price: 5000, image_url: '/x.png', category: 'TOPS' },
-  },
-];
+// カートの窓口（GET /api/cart）の応答の作り方。明細は Shopify の形で、画面が toCartEntries で今の形に直す
+type CartLineSpec = { key: string; productId: number; name: string; price: number; color: string; size: string };
+const cartJsonOf = (...specs: CartLineSpec[]): CartJson => {
+  const items = specs.map((spec) => ({
+    key: spec.key,
+    id: spec.productId * 100,
+    variant_id: spec.productId * 100,
+    product_id: spec.productId,
+    quantity: 1,
+    title: `${spec.name} - ${spec.color} / ${spec.size}`,
+    product_title: spec.name,
+    variant_title: `${spec.color} / ${spec.size}`,
+    options_with_values: [
+      { name: CART_OPTION_NAMES.color, value: spec.color },
+      { name: CART_OPTION_NAMES.size, value: spec.size },
+    ],
+    price: spec.price,
+    line_price: spec.price,
+    image: '/x.png',
+    url: `/item/${spec.productId}`,
+    fulfillment: null,
+  }));
+  const subtotal = items.reduce((sum, line) => sum + line.line_price, 0);
+  return { item_count: items.length, currency: 'JPY', items_subtotal_price: subtotal, total_price: subtotal, items };
+};
+const SHIRT_LINE: CartLineSpec = { key: 'cart-1', productId: 1, name: 'シャツ', price: 5000, color: 'BLACK', size: 'M' };
+const CART = cartJsonOf(SHIRT_LINE);
+// 価格が変わった後に読み直すカート
+const CART_REPRICED = cartJsonOf({ ...SHIRT_LINE, price: 7000 });
 const CONFIRMATION = {
   checkoutSessionId: 'cs_test_1',
   clientSecret: 's',
@@ -325,6 +349,26 @@ describe('決済の画面（グループ F）', () => {
     expect(mockApi.resumeCheckout).toHaveBeenCalledTimes(1);
     expect(mockApi.resumeCheckout).toHaveBeenCalledWith(null);
     expect(screen.queryByTestId('final-step')).toBeNull();
+  });
+
+  test('注文の要約に、カートの窓口の明細（商品名・色 / サイズ・数量・価格）を出す', async () => {
+    render(<CheckoutPage />);
+
+    expect(await screen.findByText('シャツ')).toBeInTheDocument();
+    expect(screen.getByText('BLACK / M')).toBeInTheDocument();
+    expect(screen.getByText('数量: 1')).toBeInTheDocument();
+    expect(screen.getByText('小計').parentElement).toHaveTextContent('¥5,000');
+    expect(screen.queryByText('カートに商品がありません')).toBeNull();
+  });
+
+  test('カートの窓口が空のカートを返したら、商品が無い案内を出し、「確認へ進む」は送らない', async () => {
+    (global as any).fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => cartJsonOf() });
+    render(<CheckoutPage />);
+
+    expect(await screen.findByText('カートに商品がありません')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+    expect(await screen.findByText('ご購入いただける商品がありません。商品を追加してから決済に進んでください。')).toBeInTheDocument();
+    expect(mockApi.requestCheckoutConfirmation).not.toHaveBeenCalled();
   });
 
   test('「確認へ進む」で最終確認画面へ進み、URL を決済の画面の ID にする', async () => {
@@ -683,7 +727,7 @@ describe('決済の画面（グループ F）', () => {
     const message = '価格が変わりました。金額をご確認のうえ、もう一度「確認へ進む」を押してください。';
     jest.mocked(fetch)
       .mockResolvedValueOnce({ ok: true, json: async () => CART } as Response)
-      .mockResolvedValueOnce({ ok: true, json: async () => [{ ...CART[0], items: { ...CART[0].items, price: 7000 } }] } as Response);
+      .mockResolvedValueOnce({ ok: true, json: async () => CART_REPRICED } as Response);
     mockApi.requestCheckoutConfirmation
       .mockResolvedValueOnce({ kind: 'error', code: 'checkout_amount_mismatch', message: '金額の食い違い', retryable: false, correlationId: null })
       .mockResolvedValueOnce({ kind: 'confirmation', confirmation: CONFIRMATION });
@@ -703,7 +747,7 @@ describe('決済の画面（グループ F）', () => {
     const refreshed = { code: 'WELCOME10', subtotalAmount: 7000, shippingAmount: 600, discountAmount: 700, totalAmount: 6900 };
     jest.mocked(fetch)
       .mockResolvedValueOnce({ ok: true, json: async () => CART } as Response)
-      .mockResolvedValueOnce({ ok: true, json: async () => [{ ...CART[0], items: { ...CART[0].items, price: 7000 } }] } as Response);
+      .mockResolvedValueOnce({ ok: true, json: async () => CART_REPRICED } as Response);
     mockApi.checkPromotionCodeRequest
       .mockResolvedValueOnce({ kind: 'applied', preview: { code: 'WELCOME10', subtotalAmount: 5000, shippingAmount: 0, discountAmount: 500, totalAmount: 4500 } })
       .mockImplementationOnce(async () => {
@@ -741,7 +785,7 @@ describe('決済の画面（グループ F）', () => {
       : 'このコードは有効期限が切れています';
     jest.mocked(fetch)
       .mockResolvedValueOnce({ ok: true, json: async () => CART } as Response)
-      .mockResolvedValueOnce({ ok: true, json: async () => [{ ...CART[0], items: { ...CART[0].items, price: 7000 } }] } as Response);
+      .mockResolvedValueOnce({ ok: true, json: async () => CART_REPRICED } as Response);
     mockApi.checkPromotionCodeRequest
       .mockResolvedValueOnce({ kind: 'applied', preview: { code: 'WELCOME10', subtotalAmount: 5000, shippingAmount: 0, discountAmount: 500, totalAmount: 4500 } })
       .mockResolvedValueOnce({ kind: 'rejected', message, transient });
@@ -1245,13 +1289,15 @@ describe('決済の画面（グループ F）', () => {
       expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(3);
     });
 
-    // ログインはカートの印（session_id）を新しくするので、ゲストで「確認へ進む」の後にログインして「注文する」を押すと、
+    // ログインは決済の流れの印（session_id）を新しくするので、ゲストで「確認へ進む」の後にログインして「注文する」を押すと、
     // サーバーは 403 で断る（設計書 4-3）。checkout-api がこれを login_changed の断りに読み替えるので、画面は同じ扱いになる。
-    // 読み直すカートは新しい印のカートで、ゲストのカートは引き継がれていない（今の仕組み）
-    test('ログインでカートの印が新しくなって断られた（403 を読み替えた login_changed）時も、入力画面に戻して案内を出し、新しい空のカートと会員の内容を読み直す', async () => {
+    // ログインでゲストのカートは会員のカートへ合わさる（設計書第5章）ので、読み直すカートにはゲストで入れた商品がある
+    test('ログインでカートの印が新しくなって断られた（403 を読み替えた login_changed）時も、入力画面に戻して案内を出し、合わせた後のカートと会員の内容を読み直す', async () => {
       await openFinalStepAsGuest();
       loginAsMemberBElsewhere();
-      (global.fetch as jest.Mock).mockResolvedValue({ ok: true, json: async () => [] });
+      // ゲストで入れた商品（パンツ）が、会員のカートに合わさって入っている
+      const mergedCart = cartJsonOf(SHIRT_LINE, { key: 'cart-2', productId: 2, name: 'ゲストで入れたパンツ', price: 8000, color: 'NAVY', size: 'L' });
+      (global.fetch as jest.Mock).mockResolvedValue({ ok: true, json: async () => mergedCart });
 
       await act(async () => {
         mockFinalProps.onRejected({ code: 'login_changed', message: LOGIN_CHANGED_MESSAGE, changedLines: [] });
@@ -1262,7 +1308,8 @@ describe('決済の画面（グループ F）', () => {
       expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
       expect(mockRefreshAuthState).toHaveBeenCalledTimes(1);
       expect(cartFetchCount()).toBe(2);
-      expect(await screen.findByText('カートに商品がありません')).toBeInTheDocument();
+      expect(await screen.findByText('ゲストで入れたパンツ')).toBeInTheDocument();
+      expect(screen.queryByText('カートに商品がありません')).toBeNull();
       expect(await screen.findByText('b@example.com')).toBeInTheDocument();
       expect(screen.queryByDisplayValue(GUEST_INPUT.email)).toBeNull();
       expect(mockRouter.replace).toHaveBeenLastCalledWith('/checkout');

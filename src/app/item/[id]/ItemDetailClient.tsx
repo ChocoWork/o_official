@@ -7,6 +7,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Item } from "@/types/item";
 import { useCart } from "@/contexts/CartContext";
+import { findVariantId, postCart } from "@/features/cart/client/cart-api";
 import { Button } from "@/components/ui/Button/Button";
 import { RelatedItems } from "@/features/items/components/RelatedItems";
 import {
@@ -367,14 +368,18 @@ export default function ItemDetailClient({ id }: Props) {
     }
     setValidationError(null);
 
+    // 選んだ色・サイズのバリアントの番号を送る。合うバリアントが無い（未登録・在庫の取得に失敗した）時は入れられない。
+    // 取り扱いを終えたバリアントは番号があるので、窓口が 404 の description で断る
+    const variantId = findVariantId(item.variantAvailability, hasColors ? color : null, hasSizes ? size : null);
+    if (variantId === null) {
+      setValidationError("選んだ色・サイズは現在お求めいただけません。");
+      return;
+    }
+
     setAddingToCart(true);
     try {
-      const response = await fetch("/api/cart", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ item_id: item.id, quantity: 1, color, size }),
-      });
-      if (!response.ok) throw new Error("カートへの追加に失敗しました");
+      const result = await postCart("/api/cart/add", { items: [{ id: variantId, quantity: 1 }] }, "カートへの追加に失敗しました");
+      if (!result.ok) throw new Error(result.description);
       await updateCartCount();
       // FREQ-347: シートから追加したときは閉じて、追加できたことを本体側で見せる
       setOptionSheetOpen(false);

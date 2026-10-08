@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/Button/Button";
 export type OrderLineItem = {
   id: string;
   itemId: number | null;
+  /** 再注文でカートに入れるバリアントの番号。番号の無い古い明細は null */
+  variantId: number | null;
   name: string;
   imageUrl?: string | null;
   color?: string | null;

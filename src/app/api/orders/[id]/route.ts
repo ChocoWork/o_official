@@ -13,6 +13,8 @@ const NO_STORE_HEADERS = {
 type OrderItemRow = {
 	id: string;
 	item_id: number | null;
+	// 再注文でカートに入れるバリアント。バリアントの番号を持たない古い明細は null
+	variant_id: number | null;
 	item_name: string;
 	item_image_url: string | null;
 	color: string | null;
@@ -128,6 +130,7 @@ export async function GET(
 			order_items (
 				id,
 				item_id,
+				variant_id,
 				item_name,
 				item_image_url,
 				color,
@@ -189,6 +192,7 @@ export async function GET(
 		items: await Promise.all((data.order_items ?? []).map(async (item) => ({
 			id: item.id,
 			itemId: item.item_id,
+			variantId: item.variant_id ?? null,
 			name: item.item_name,
 			imageUrl: await signItemImageUrl(signSupabase, item.item_image_url),
 			color: item.color,

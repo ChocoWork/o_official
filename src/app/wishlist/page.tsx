@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useCart } from "@/contexts/CartContext";
+import { postCart, sendShoppingRequest } from "@/features/cart/client/cart-api";
 import { EmptyPage } from "@/components/ui/EmptyPage/EmptyPage";
 import {
   ItemCardInfo,
@@ -10,6 +11,13 @@ import {
 } from "@/features/items/components/ItemCard";
 import { extractColorSwatches } from "@/lib/items/colors";
 import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
+
+/** カートに入れられる（販売中の）バリアント。番号を /api/cart/add へ送る */
+interface WishlistVariant {
+  id: number;
+  color: string | null;
+  size: string | null;
+}
 
 interface WishlistItem {
   id: string;
@@ -26,6 +34,23 @@ interface WishlistItem {
     /** すぐ出せる在庫が無い（受注生産）。買えない印ではない（FREQ-400） */
     madeToOrder?: boolean;
   } | null;
+  variants: WishlistVariant[];
+}
+
+/** 窓口が返した行。variants は無い・壊れている場合があるので、画面で使う前に空の配列へ整える */
+type WishlistItemPayload = Omit<WishlistItem, "variants"> & { variants?: unknown };
+
+function isWishlistVariant(value: unknown): value is WishlistVariant {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.id === "number" &&
+    (candidate.color === null || typeof candidate.color === "string") &&
+    (candidate.size === null || typeof candidate.size === "string")
+  );
 }
 
 function isColorOption(value: unknown): value is { hex: string; name: string } {
@@ -93,7 +118,7 @@ function requiresOptionSelection(item: WishlistItem["items"]): boolean {
   );
 }
 
-function isWishlistItem(value: unknown): value is WishlistItem {
+function isWishlistItem(value: unknown): value is WishlistItemPayload {
   if (!value || typeof value !== "object") {
     return false;
   }
@@ -138,7 +163,10 @@ function parseWishlistResponse(payload: unknown): WishlistItem[] {
     console.warn("Invalid wishlist entries were filtered out", payload);
   }
 
-  return parsed;
+  return parsed.map((entry) => ({
+    ...entry,
+    variants: Array.isArray(entry.variants) ? entry.variants.filter(isWishlistVariant) : [],
+  }));
 }
 
 const wishlistTextMdStyle: React.CSSProperties = {
@@ -176,7 +204,7 @@ export default function Page() {
 
   const fetchWishlist = async () => {
     try {
-      const response = await fetch("/api/wishlist");
+      const response = await sendShoppingRequest("/api/wishlist");
       if (!response.ok) {
         throw new Error("ウィッシュリストの取得に失敗しました");
       }
@@ -195,7 +223,7 @@ export default function Page() {
     setActionMessage(null);
     setRemovingId(wishlistId);
     try {
-      const response = await fetch(`/api/wishlist/${wishlistId}`, {
+      const response = await sendShoppingRequest(`/api/wishlist/${wishlistId}`, {
         method: "DELETE",
       });
 
@@ -234,25 +262,26 @@ export default function Page() {
       return;
     }
 
+    // 窓口が返した販売中のバリアントから、選んだ色・サイズの番号を探す（商品詳細の findVariantId と同じ比べ方）
+    const variant = wishlistItem.variants.find(
+      (entry) => (entry.color ?? "") === (resolvedColor ?? "") && (entry.size ?? "") === (resolvedSize ?? ""),
+    );
+    if (!variant) {
+      setActionMessage("選んだ色・サイズは現在お求めいただけません。");
+      return;
+    }
+
     setActionMessage(null);
     setAddingToCartId(wishlistItem.id);
 
     try {
-      const response = await fetch("/api/cart", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          item_id: wishlistItem.items.id,
-          quantity: 1,
-          color: resolvedColor,
-          size: resolvedSize,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("カートへの追加に失敗しました");
+      const result = await postCart(
+        "/api/cart/add",
+        { items: [{ id: variant.id, quantity: 1 }] },
+        "カートへの追加に失敗しました",
+      );
+      if (!result.ok) {
+        throw new Error(result.description);
       }
 
       await updateCartCount();

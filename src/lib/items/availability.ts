@@ -20,6 +20,8 @@ export type VariantAvailability = {
   sizeLabel: string | null;
   /** すぐ出せるか。false は「買えない」ではなく「受注生産になる」 */
   inStock: boolean;
+  /** バリアントの番号。カートに入れる窓口（/api/cart/add）へ送る（Shopify も公開している番号） */
+  variantId: number;
 };
 
 export type ItemAvailability = {
@@ -29,6 +31,7 @@ export type ItemAvailability = {
 };
 
 type VariantRow = {
+  id: number;
   item_id: number;
   stock_quantity: number;
   is_active: boolean;
@@ -58,7 +61,7 @@ export async function getItemsAvailability(
     const supabase = await createServiceRoleClient();
     const { data, error } = await supabase
       .from('item_variants')
-      .select('item_id, stock_quantity, is_active, item_colors(name), item_sizes(label), items!inner(status)')
+      .select('id, item_id, stock_quantity, is_active, item_colors(name), item_sizes(label), items!inner(status)')
       .in('item_id', itemIds)
       .eq('items.status', 'published');
 
@@ -81,6 +84,7 @@ export async function getItemsAvailability(
         colorName: row.item_colors?.name ?? null,
         sizeLabel: row.item_sizes?.label ?? null,
         inStock,
+        variantId: Number(row.id),
       });
       if (inStock) {
         entry.madeToOrder = false;

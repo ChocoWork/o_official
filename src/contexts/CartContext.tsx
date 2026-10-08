@@ -1,10 +1,7 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-
-type CartItemResponse = {
-  quantity: number;
-};
+import React, { createContext, useCallback, useContext, useState, useEffect, useRef } from 'react';
+import { fetchCartJson, sendShoppingRequest } from '@/features/cart/client/cart-api';
 
 type WishlistItemResponse = {
   id: string;
@@ -16,6 +13,8 @@ interface CartContextType {
   wishlistedItems: Set<number>;
   updateCartCount: () => Promise<void>;
   updateWishlist: () => Promise<void>;
+  /** カートの数とお気に入りを読み直す。ログイン・ログアウトの後に呼ぶ（CartLoginSync） */
+  refreshShopping: () => Promise<void>;
   toggleWishlist: (itemId: number) => Promise<boolean>;
 }
 
@@ -31,22 +30,18 @@ export function CartProvider({ children, enabled = true }: { children: React.Rea
   // 同じ商品の操作が重なるとロールバックが後勝ちして表示が壊れる。
   const pendingItems = useRef<Set<number>>(new Set());
 
-  const updateCartCount = async () => {
+  const updateCartCount = useCallback(async () => {
     try {
-      const response = await fetch('/api/cart');
-      if (response.ok) {
-        const cartItems: CartItemResponse[] = await response.json();
-        const totalCount = cartItems.reduce((sum: number, item) => sum + item.quantity, 0);
-        setCartCount(totalCount);
-      }
+      const cart = await fetchCartJson();
+      setCartCount(cart.item_count);
     } catch (error) {
       console.error('Failed to fetch cart count:', error);
     }
-  };
+  }, []);
 
-  const updateWishlist = async () => {
+  const updateWishlist = useCallback(async () => {
     try {
-      const response = await fetch('/api/wishlist');
+      const response = await sendShoppingRequest('/api/wishlist');
       if (response.ok) {
         const wishlistItems: WishlistItemResponse[] = await response.json();
         wishlistRowIds.current = new Map(wishlistItems.map((item) => [item.item_id, item.id]));
@@ -55,7 +50,11 @@ export function CartProvider({ children, enabled = true }: { children: React.Rea
     } catch (error) {
       console.error('Failed to fetch wishlist:', error);
     }
-  };
+  }, []);
+
+  const refreshShopping = useCallback(async () => {
+    await Promise.all([updateCartCount(), updateWishlist()]);
+  }, [updateCartCount, updateWishlist]);
 
   const markWishlisted = (itemId: number, wishlisted: boolean) => {
     setWishlistedItems(prev => {
@@ -71,7 +70,7 @@ export function CartProvider({ children, enabled = true }: { children: React.Rea
 
   /** 行 ID が手元に無いときだけ一覧を引き直す。409 で登録済みと分かった場合など。 */
   const lookupWishlistRowId = async (itemId: number): Promise<string | undefined> => {
-    const response = await fetch('/api/wishlist');
+    const response = await sendShoppingRequest('/api/wishlist');
     if (!response.ok) {
       throw new Error('ウィッシュリストから削除できません');
     }
@@ -86,7 +85,7 @@ export function CartProvider({ children, enabled = true }: { children: React.Rea
 
     // サーバー側に行が無い＝解除済み。目的は達成されているので成功として扱う。
     if (rowId) {
-      const response = await fetch(`/api/wishlist/${rowId}`, { method: 'DELETE' });
+      const response = await sendShoppingRequest(`/api/wishlist/${rowId}`, { method: 'DELETE' });
 
       // 404 も「既に無い」なので同じ。冪等にしておかないと、行 ID が古いだけで失敗になる。
       if (!response.ok && response.status !== 404) {
@@ -98,7 +97,7 @@ export function CartProvider({ children, enabled = true }: { children: React.Rea
   };
 
   const addToWishlist = async (itemId: number) => {
-    const response = await fetch('/api/wishlist', {
+    const response = await sendShoppingRequest('/api/wishlist', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -162,10 +161,10 @@ export function CartProvider({ children, enabled = true }: { children: React.Rea
 
     updateCartCount();
     updateWishlist();
-  }, [enabled]);
+  }, [enabled, updateCartCount, updateWishlist]);
 
   return (
-    <CartContext.Provider value={{ cartCount, wishlistedItems, updateCartCount, updateWishlist, toggleWishlist }}>
+    <CartContext.Provider value={{ cartCount, wishlistedItems, updateCartCount, updateWishlist, refreshShopping, toggleWishlist }}>
       {children}
     </CartContext.Provider>
   );

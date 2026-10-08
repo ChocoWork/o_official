@@ -1,5 +1,5 @@
 import React from "react";
-import { clientFetch } from "@/lib/client-fetch";
+import { postCart } from "@/features/cart/client/cart-api";
 
 // 再購入（注文商品をカートに追加）の共通ロジック。
 // 購入履歴タブ・注文詳細ページで同一挙動を共有する。
@@ -8,9 +8,8 @@ import { clientFetch } from "@/lib/client-fetch";
 type ReorderableItem = {
   id: string;
   itemId: number | null;
+  variantId: number | null;
   quantity: number;
-  color?: string | null;
-  size?: string | null;
 };
 
 export function useReorder(callbacks: {
@@ -23,20 +22,23 @@ export function useReorder(callbacks: {
 
   const reorder = async (item: ReorderableItem) => {
     if (!item.itemId) return;
+    // 注文の明細のバリアントで入れる。番号の無い古い明細・取り扱いを終えた色やサイズは入れられない（設計書 8 章）
+    if (item.variantId === null) {
+      callbacks.onError("この商品は現在お求めいただけません。");
+      return;
+    }
     setReorderingItemId(item.id);
     try {
-      const response = await clientFetch("/api/cart", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          item_id: item.itemId,
-          quantity: item.quantity,
-          color: item.color ?? "",
-          size: item.size ?? "",
-        }),
-      });
-      if (!response.ok) throw new Error("カートへの追加に失敗しました");
-      callbacks.onSuccess("カートに追加しました");
+      const result = await postCart(
+        "/api/cart/add",
+        { items: [{ id: item.variantId, quantity: item.quantity }] },
+        "カートへの追加に失敗しました",
+      );
+      if (result.ok) {
+        callbacks.onSuccess("カートに追加しました");
+      } else {
+        callbacks.onError(result.status === 404 ? "この商品は現在お求めいただけません。" : result.description);
+      }
     } catch {
       callbacks.onError("カートへの追加に失敗しました");
     } finally {

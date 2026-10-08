@@ -1,25 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useCart } from "@/contexts/CartContext";
+import { fetchCartJson, postCart, toCartEntries, type CartEntry } from "@/features/cart/client/cart-api";
+import type { CartJson } from "@/features/cart/types/cart-json";
 
-// Shape of a cart entry as returned by /api/cart
-export interface CartEntry {
-  id: string;
-  item_id: number;
-  quantity: number;
-  color: string | null;
-  size: string | null;
-  added_at: string;
-  // 明細ごとのお届けの目安（グループ F 設計書 5-2）。サーバーが読めなかったときは null
-  fulfillment?: "stock" | "backorder" | null;
-  // null when the product has been removed from inventory
-  items: {
-    id: number;
-    name: string;
-    price: number;
-    image_url: string;
-    category: string;
-  } | null;
-}
+export type { CartEntry };
 
 export function useCartItems() {
   const [cartItems, setCartItems] = useState<CartEntry[]>([]);
@@ -45,10 +29,7 @@ export function useCartItems() {
   const fetchCart = useCallback(async ({ showLoading = false } = {}) => {
     if (showLoading) setLoading(true);
     try {
-      const response = await fetch("/api/cart");
-      if (!response.ok) throw new Error("カートの取得に失敗しました");
-      const data: CartEntry[] = await response.json();
-      const items = data.filter((ci) => ci.items !== null);
+      const items = toCartEntries(await fetchCartJson());
       setCartItems(items);
       confirmedQuantities.current = Object.fromEntries(
         items.map((i) => [i.id, i.quantity])
@@ -96,28 +77,14 @@ export function useCartItems() {
     inFlight.current.add(cartId);
     setUpdatingId(cartId);
     try {
-      const response = await fetch(`/api/cart/${cartId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ quantity }),
-      });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null);
-        const message =
-          typeof payload?.message === "string"
-            ? payload.message
-            : typeof payload?.error === "string"
-              ? payload.error
-              : "数量更新に失敗しました";
-        throw new Error(message);
+      const result = await postCart("/api/cart/change", { id: cartId, quantity }, "数量更新に失敗しました");
+      if (!result.ok) {
+        throw new Error(result.description);
       }
-      const updated = await response.json().catch(() => null);
-      const confirmedQty =
-        typeof updated?.quantity === "number" ? updated.quantity : quantity;
-      const fulfillment =
-        updated?.fulfillment === "stock" || updated?.fulfillment === "backorder"
-          ? updated.fulfillment
-          : null;
+      // 応答はカート全体。この明細の数量とお届けの目安を確定値として採る
+      const updatedLine = toCartEntries(result.body as CartJson).find((item) => item.id === cartId);
+      const confirmedQty = updatedLine?.quantity ?? quantity;
+      const fulfillment = updatedLine?.fulfillment ?? null;
       confirmedQuantities.current[cartId] = confirmedQty;
       delete failedDesired.current[cartId];
       setCartItems((prev) =>
@@ -175,8 +142,9 @@ export function useCartItems() {
     setUpdatingId(cartId);
     setActionError(null);
     try {
-      const response = await fetch(`/api/cart/${cartId}`, { method: "DELETE" });
-      if (!response.ok) throw new Error("削除に失敗しました");
+      // 削除は数量0の変更（Shopify の /cart/change.js と同じ）
+      const result = await postCart("/api/cart/change", { id: cartId, quantity: 0 }, "削除に失敗しました");
+      if (!result.ok) throw new Error(result.description);
       setCartItems((prev) => prev.filter((item) => item.id !== cartId));
       await updateCartCount();
     } catch (err) {

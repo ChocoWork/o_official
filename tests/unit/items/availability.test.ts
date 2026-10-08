@@ -31,6 +31,7 @@ function setupVariants(rows: unknown[], error: { message: string } | null = null
 
 function variantRow(overrides: Record<string, unknown> = {}) {
   return {
+    id: 101,
     item_id: 7,
     stock_quantity: 0,
     is_active: true,
@@ -54,17 +55,18 @@ describe('getItemsAvailability', () => {
 
   test('在庫のある組み合わせがあれば、その商品は受注生産ではない', async () => {
     setupVariants([
-      variantRow({ stock_quantity: 3 }),
-      variantRow({ stock_quantity: 0, item_sizes: { label: 'L' } }),
+      variantRow({ id: 101, stock_quantity: 3 }),
+      variantRow({ id: 102, stock_quantity: 0, item_sizes: { label: 'L' } }),
     ]);
 
     const result = await getItemsAvailability([7]);
 
+    // variantId は、カートに入れる窓口（/api/cart/add）へ送るバリアントの番号
     expect(result.get(7)).toEqual({
       madeToOrder: false,
       combinations: [
-        { colorName: 'BLACK', sizeLabel: 'M', inStock: true },
-        { colorName: 'BLACK', sizeLabel: 'L', inStock: false },
+        { colorName: 'BLACK', sizeLabel: 'M', inStock: true, variantId: 101 },
+        { colorName: 'BLACK', sizeLabel: 'L', inStock: false, variantId: 102 },
       ],
     });
   });
@@ -84,7 +86,7 @@ describe('getItemsAvailability', () => {
 
     expect(result.get(7)).toEqual({
       madeToOrder: true,
-      combinations: [{ colorName: 'BLACK', sizeLabel: 'M', inStock: false }],
+      combinations: [{ colorName: 'BLACK', sizeLabel: 'M', inStock: false, variantId: 101 }],
     });
   });
 

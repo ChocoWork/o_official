@@ -10,6 +10,7 @@ import { Checkbox } from "@/components/ui/Checkbox/Checkbox";
 import { useCart } from "@/contexts/CartContext";
 import { useLogin } from "@/contexts/LoginContext";
 import { clientFetch } from "@/lib/client-fetch";
+import { fetchCartJson, toCartEntries, type CartEntry } from "@/features/cart/client/cart-api";
 import { toOrderNumber } from "@/lib/orders/order-number";
 import { formatPhoneNumberInput } from "@/features/account/utils/profile-format.util";
 import {
@@ -192,29 +193,12 @@ function EmptyCartMessage() {
   );
 }
 
-// cart data for order summary (mirrors cart/page.tsx)
-interface CartItem {
-  id: string;
-  item_id: number;
-  quantity: number;
-  color: string | null;
-  size: string | null;
-  added_at: string;
-  items: {
-    id: number;
-    name: string;
-    price: number;
-    image_url: string;
-    category: string;
-  } | null;
-}
-
 // ここから CheckoutPageContent までの部品は、画面の関数の外（モジュールの最上位）に置く。
 // 画面の関数の中で定義すると、再描画のたびに別の部品として作り直され、表示中の案内・
 // フォーカスが消える（FREQ-372。React 公式: 部品の定義は入れ子にしない）。
 
 // 注文明細 (カート商品リスト)。フックなしの共有表示。
-function OrderItems({ cartItems }: { cartItems: CartItem[] }) {
+function OrderItems({ cartItems }: { cartItems: CartEntry[] }) {
   return (
     <div className="checkout-items">
       {cartItems.map((item) => {
@@ -322,7 +306,7 @@ function orderStatusLabel(status: string): string {
 function CheckoutPageContent() {
   const mdTextStyle: React.CSSProperties = { fontSize: "var(--lk-size-md)" };
 
-  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [cartItems, setCartItems] = useState<CartEntry[]>([]);
   const [cartLoading, setCartLoading] = useState(true);
 
   // Server and UI must share the same pricing policy to avoid checkout amount mismatch.
@@ -337,11 +321,7 @@ function CheckoutPageContent() {
 
   const fetchCart = React.useCallback(async () => {
     try {
-      const res = await fetch("/api/cart");
-      if (res.ok) {
-        const data: CartItem[] = await res.json();
-        setCartItems(data.filter((ci) => ci.items !== null));
-      }
+      setCartItems(toCartEntries(await fetchCartJson()));
     } catch (err) {
       console.error("カート取得エラー", err);
     } finally {
