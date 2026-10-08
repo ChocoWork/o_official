@@ -342,7 +342,7 @@ function CheckoutPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { updateCartCount } = useCart();
-  const { isLoggedIn } = useLogin();
+  const { isLoggedIn, refreshAuthState } = useLogin();
   const [shippingForm, setShippingForm] = useState({
     email: "",
     fullName: "",
@@ -808,6 +808,11 @@ function CheckoutPageContent() {
       setCheckoutError("価格が変わりました。金額をご確認のうえ、もう一度「確認へ進む」を押してください。");
       return;
     }
+    if (result.code === "auth_expired" || result.code === "login_changed") {
+      // ログインの印を新しくできなかった、または支払い済みの画面が別の買い手のものだった。入力画面を今のログインに
+      // 合わせ、お客様に押し直してもらう（自動でゲストとして進めない。設計書 C2）
+      void refreshAuthState();
+    }
     setSessionErrorRetryable(result.retryable);
     setSessionErrorCorrelationId(result.correlationId);
     setCheckoutError(result.message);
@@ -845,6 +850,15 @@ function CheckoutPageContent() {
 
   // 受け付けで断られた（お金は動いていない）。理由ごとに移る先を決める（設計書 6-3）
   const handleRejected = async (rejection: CheckoutRejection) => {
+    if (rejection.code === "login_changed") {
+      // 「確認へ進む」の時とログインの状態が違う。入力画面を今のログインに合わせ、やり直してもらう（設計書第6章）
+      backToInput();
+      setSessionErrorRetryable(true);
+      setSessionErrorCorrelationId(null);
+      setCheckoutError(rejection.message);
+      void refreshAuthState();
+      return;
+    }
     if (rejection.code === "stock_changed") {
       saveCartNotice({ kind: "stock_changed", message: rejection.message, lines: rejection.changedLines });
       router.push("/cart");

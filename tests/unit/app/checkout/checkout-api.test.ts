@@ -1,5 +1,9 @@
 const mockClientFetch = jest.fn();
-jest.mock('@/lib/client-fetch', () => ({ clientFetch: (...args: unknown[]) => mockClientFetch(...args) }));
+const mockRefreshSessionOnce = jest.fn();
+jest.mock('@/lib/client-fetch', () => ({
+  clientFetch: (...args: unknown[]) => mockClientFetch(...args),
+  refreshSessionOnce: (...args: unknown[]) => mockRefreshSessionOnce(...args),
+}));
 
 import {
   checkPromotionCodeRequest,
@@ -218,7 +222,10 @@ describe('completeCheckout', () => {
 });
 
 describe('checkPromotionCodeRequest', () => {
-  beforeEach(() => mockClientFetch.mockReset());
+  beforeEach(() => {
+    mockClientFetch.mockReset();
+    mockRefreshSessionOnce.mockReset();
+  });
 
   test('適用できれば金額の目安を、できなければ理由を返す', async () => {
     const preview = { code: 'WELCOME10', subtotalAmount: 5000, shippingAmount: 0, discountAmount: 500, totalAmount: 4500 };
@@ -253,5 +260,154 @@ describe('checkPromotionCodeRequest', () => {
     await expect(checkPromotionCodeRequest('WELCOME10')).resolves.toEqual({
       kind: 'rejected', message: 'しばらくしてからお試しください', transient: true,
     });
+  });
+
+  test('401 auth_expired でも送り直さない（送り直すのは決済の3つの入口だけ）', async () => {
+    mockClientFetch.mockResolvedValue(jsonResponse(401, { error: 'auth_expired' }));
+
+    await expect(checkPromotionCodeRequest('WELCOME10')).resolves.toMatchObject({ kind: 'rejected', transient: true });
+
+    expect(mockRefreshSessionOnce).not.toHaveBeenCalled();
+    expect(mockClientFetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+const LOGIN_EXPIRED_MESSAGE = 'ログインの有効期限が切れました。ログインし直すか、そのままもう一度「確認へ進む」を押してください。';
+const LOGIN_CHANGED_MESSAGE = 'ログインの状態が変わりました。もう一度「確認へ進む」を押してください。';
+
+// ログインの印が古いと断られた時（401 auth_expired）に印を新しくして送り直す3つの入口。
+// 印を新しくできなかった時の結果（expired）と、送り直しの通信が失敗した時の結果（failed）は入口ごとに違う
+const RESEND_ENTRIES = [
+  {
+    name: 'requestCheckoutConfirmation（create-session）',
+    url: '/api/checkout/create-session',
+    call: () => requestCheckoutConfirmation({ shipping: SHIPPING, displayedAmounts: AMOUNTS, promotionCode: null }),
+    success: jsonResponse(200, { confirmation: CONFIRMATION }),
+    succeeded: { kind: 'confirmation', confirmation: CONFIRMATION },
+    expired: { kind: 'error', code: 'auth_expired', message: LOGIN_EXPIRED_MESSAGE, retryable: true, correlationId: null },
+    failed: {
+      kind: 'error',
+      code: null,
+      message: '決済の準備に失敗しました。少し時間をおいてから、もう一度お試しください。',
+      retryable: true,
+      correlationId: null,
+    },
+  },
+  {
+    name: 'placeOrder（place-order）',
+    url: '/api/checkout/place-order',
+    call: () => placeOrder({ checkoutSessionId: 'cs_test_1', inStockVariantIds: [11] }),
+    success: jsonResponse(200, { orderId: 'order-1', orderStatus: 'payment_in_progress' }),
+    succeeded: { kind: 'accepted', orderId: 'order-1' },
+    expired: { kind: 'rejected', rejection: { code: 'login_changed', message: LOGIN_CHANGED_MESSAGE, changedLines: [] } },
+    failed: { kind: 'error', message: 'ご注文を受け付けられませんでした。少し時間をおいてから、もう一度お試しください。' },
+  },
+  {
+    name: 'resumeCheckout（resume）',
+    url: '/api/checkout/resume',
+    call: () => resumeCheckout('cs_test_1'),
+    success: jsonResponse(200, { state: 'resume', confirmation: CONFIRMATION }),
+    succeeded: { state: 'resume', confirmation: CONFIRMATION },
+    expired: { state: 'none' },
+    failed: { state: 'none' },
+  },
+];
+
+describe.each(RESEND_ENTRIES)('ログインの印が古いと断られた時の送り直し: $name', ({ url, call, success, succeeded, expired, failed }) => {
+  beforeEach(() => {
+    mockClientFetch.mockReset();
+    mockRefreshSessionOnce.mockReset();
+  });
+
+  test('印を新しくして、同じ要求を1回だけ送り直し、2回目の応答で結果を返す', async () => {
+    mockClientFetch
+      .mockResolvedValueOnce(jsonResponse(401, { error: 'auth_expired' }))
+      .mockResolvedValueOnce(success);
+    mockRefreshSessionOnce.mockResolvedValue(true);
+
+    await expect(call()).resolves.toEqual(succeeded);
+
+    expect(mockRefreshSessionOnce).toHaveBeenCalledTimes(1);
+    expect(mockClientFetch).toHaveBeenCalledTimes(2);
+    expect(mockClientFetch.mock.calls[0][0]).toBe(url);
+    expect(mockClientFetch.mock.calls[1]).toEqual(mockClientFetch.mock.calls[0]);
+  });
+
+  test.each([
+    ['401 でも error が auth_expired ではない', 401, { error: 'unauthorized' }],
+    ['401 で本文が読めない', 401, null],
+    ['auth_expired でも 401 ではない', 403, { error: 'auth_expired' }],
+  ])('送り直さない（%s）', async (_label, status, body) => {
+    mockClientFetch.mockResolvedValue(jsonResponse(status, body));
+
+    await call();
+
+    expect(mockRefreshSessionOnce).not.toHaveBeenCalled();
+    expect(mockClientFetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('印を新しくできなかったら送り直さず、印が古い時の結果を返す', async () => {
+    mockClientFetch.mockResolvedValueOnce(jsonResponse(401, { error: 'auth_expired' }));
+    mockRefreshSessionOnce.mockResolvedValue(false);
+
+    await expect(call()).resolves.toEqual(expired);
+
+    expect(mockRefreshSessionOnce).toHaveBeenCalledTimes(1);
+    expect(mockClientFetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('送り直しでもまた 401 auth_expired なら、もう送り直さず、新しくできなかった時と同じ結果を返す', async () => {
+    mockClientFetch.mockResolvedValue(jsonResponse(401, { error: 'auth_expired' }));
+    mockRefreshSessionOnce.mockResolvedValue(true);
+
+    await expect(call()).resolves.toEqual(expired);
+
+    expect(mockRefreshSessionOnce).toHaveBeenCalledTimes(1);
+    expect(mockClientFetch).toHaveBeenCalledTimes(2);
+  });
+
+  test('送り直しの通信が失敗したら、今までの通信の失敗と同じ扱いにする', async () => {
+    mockClientFetch
+      .mockResolvedValueOnce(jsonResponse(401, { error: 'auth_expired' }))
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    mockRefreshSessionOnce.mockResolvedValue(true);
+
+    await expect(call()).resolves.toEqual(failed);
+  });
+});
+
+describe('ログインの状態が変わったと断られた時（409 login_changed）', () => {
+  beforeEach(() => {
+    mockClientFetch.mockReset();
+    mockRefreshSessionOnce.mockReset();
+  });
+
+  test('place-order の 409 login_changed は、サーバーの文を持つ断り（login_changed）として返す。送り直さない', async () => {
+    mockClientFetch.mockResolvedValueOnce(jsonResponse(409, { error: 'login_changed', message: LOGIN_CHANGED_MESSAGE }));
+
+    await expect(placeOrder({ checkoutSessionId: 'cs_test_1', inStockVariantIds: [11] })).resolves.toEqual({
+      kind: 'rejected',
+      rejection: { code: 'login_changed', message: LOGIN_CHANGED_MESSAGE, changedLines: [] },
+    });
+
+    expect(mockRefreshSessionOnce).not.toHaveBeenCalled();
+    expect(mockClientFetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('create-session の 409 login_changed は、サーバーの文を持つ一般のエラー（code login_changed・やり直せる）で返す。送り直さない', async () => {
+    mockClientFetch.mockResolvedValueOnce(jsonResponse(409, { error: 'login_changed', message: LOGIN_CHANGED_MESSAGE }));
+
+    await expect(
+      requestCheckoutConfirmation({ shipping: SHIPPING, displayedAmounts: AMOUNTS, promotionCode: null }),
+    ).resolves.toEqual({
+      kind: 'error',
+      code: 'login_changed',
+      message: LOGIN_CHANGED_MESSAGE,
+      retryable: true,
+      correlationId: null,
+    });
+
+    expect(mockRefreshSessionOnce).not.toHaveBeenCalled();
+    expect(mockClientFetch).toHaveBeenCalledTimes(1);
   });
 });

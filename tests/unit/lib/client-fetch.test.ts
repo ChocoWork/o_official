@@ -282,4 +282,55 @@ describe('clientFetch', () => {
     );
     expect(refreshCalls).toHaveLength(1);
   });
+
+  // 決済の画面の通信が、ログインの印が古いと断られた時に自分で送り直すための入口（グループ C 設計書第6章）
+  describe('refreshSessionOnce', () => {
+    test('/api/auth/refresh を1回呼び、200 なら true を返す', async () => {
+      const { refreshSessionOnce } = loadFreshClientFetch();
+      (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, status: 200 });
+
+      await expect(refreshSessionOnce()).resolves.toBe(true);
+
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(global.fetch).toHaveBeenCalledWith('/api/auth/refresh', {
+        method: 'POST',
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
+    });
+
+    test('/api/auth/refresh が401なら false を返す', async () => {
+      const { refreshSessionOnce } = loadFreshClientFetch();
+      (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: false, status: 401, headers: { get: () => null } });
+
+      await expect(refreshSessionOnce()).resolves.toBe(false);
+
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    test('同時の2回の呼び出しは1回の更新にまとまる', async () => {
+      const { refreshSessionOnce } = loadFreshClientFetch();
+      let completeRefresh: (() => void) | undefined;
+      const refreshResponse = new Promise<{ ok: boolean; status: number }>((resolve) => {
+        completeRefresh = () => resolve({ ok: true, status: 200 });
+      });
+      (global.fetch as jest.Mock).mockImplementation(async () => refreshResponse);
+
+      const results = Promise.all([refreshSessionOnce(), refreshSessionOnce()]);
+      completeRefresh?.();
+
+      await expect(results).resolves.toEqual([true, true]);
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    test('更新に失敗した直後はクールダウン中なので、続けて呼んでも更新を発行せず false を返す', async () => {
+      const { refreshSessionOnce } = loadFreshClientFetch();
+      (global.fetch as jest.Mock).mockResolvedValue({ ok: false, status: 401, headers: { get: () => null } });
+
+      await expect(refreshSessionOnce()).resolves.toBe(false);
+      await expect(refreshSessionOnce()).resolves.toBe(false);
+
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+  });
 });

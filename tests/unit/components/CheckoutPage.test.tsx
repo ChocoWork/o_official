@@ -21,7 +21,10 @@ jest.mock('next/navigation', () => ({
 
 const mockUpdateCartCount = jest.fn();
 jest.mock('@/contexts/CartContext', () => ({ useCart: () => ({ updateCartCount: mockUpdateCartCount }) }));
-jest.mock('@/contexts/LoginContext', () => ({ useLogin: () => ({ isLoggedIn: true }) }));
+const mockRefreshAuthState = jest.fn();
+jest.mock('@/contexts/LoginContext', () => ({
+  useLogin: () => ({ isLoggedIn: true, refreshAuthState: mockRefreshAuthState }),
+}));
 
 const PROFILE = {
   email: 'a@example.com',
@@ -714,6 +717,63 @@ describe('決済の画面（グループ F）', () => {
     expect(screen.getByTestId('checkout-session-error')).toHaveTextContent('このご注文は合計が0円になるため、お受けできません');
     expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'お客様情報' }));
     expect(mockRouter.replace).toHaveBeenLastCalledWith('/checkout');
+  });
+
+  test('受け付けでログインの状態が変わったと断られたら、入力画面に戻って案内を出し、ログインの状態を読み直して、押し直せる', async () => {
+    const message = 'ログインの状態が変わりました。もう一度「確認へ進む」を押してください。';
+    mockApi.requestCheckoutConfirmation.mockResolvedValue({ kind: 'confirmation', confirmation: CONFIRMATION });
+    await openFinalStep();
+
+    await act(async () => {
+      mockFinalProps.onRejected({ code: 'login_changed', message, changedLines: [] });
+    });
+
+    expect(screen.queryByTestId('final-step')).toBeNull();
+    expect(screen.getByTestId('checkout-session-error')).toHaveTextContent(message);
+    expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
+    expect(mockRefreshAuthState).toHaveBeenCalledTimes(1);
+    expect(mockRouter.replace).toHaveBeenLastCalledWith('/checkout');
+    expect(mockRouter.push).not.toHaveBeenCalled();
+    // 自動で送り直さない。お客様が押し直すと、今のログインで最終確認画面へ進む
+    expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+    await screen.findByTestId('final-step');
+    expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(2);
+  });
+
+  test.each([
+    ['auth_expired', 'ログインの有効期限が切れました。ログインし直すか、そのままもう一度「確認へ進む」を押してください。'],
+    ['login_changed', 'ログインの状態が変わりました。もう一度「確認へ進む」を押してください。'],
+  ])('「確認へ進む」が %s で返ったら、入力画面のまま案内を出し、ログインの状態を読み直して、押し直せる', async (code, message) => {
+    mockApi.requestCheckoutConfirmation
+      .mockResolvedValueOnce({ kind: 'error', code, message, retryable: true, correlationId: null })
+      .mockResolvedValueOnce({ kind: 'confirmation', confirmation: CONFIRMATION });
+    render(<CheckoutPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '確認へ進む' }));
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.getByTestId('checkout-session-error')).toHaveTextContent(message);
+    expect(screen.queryByTestId('final-step')).toBeNull();
+    expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
+    expect(mockRefreshAuthState).toHaveBeenCalledTimes(1);
+    // 自動でゲストとして送り直さない。お客様が押し直したときだけ、もう一度送る
+    expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+    await screen.findByTestId('final-step');
+    expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(2);
+  });
+
+  test('ログインと関係のない失敗では、ログインの状態を読み直さない', async () => {
+    mockApi.requestCheckoutConfirmation.mockResolvedValue({
+      kind: 'error', code: 'checkout_session_failed', message: '一時的な失敗', retryable: true, correlationId: null,
+    });
+    render(<CheckoutPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '確認へ進む' }));
+
+    expect(await screen.findByText('一時的な失敗')).toBeInTheDocument();
+    expect(mockRefreshAuthState).not.toHaveBeenCalled();
   });
 
   test('受け付けで別の画面の手続きを断られたら、最終確認画面の案内に出し、画面の上へ戻す', async () => {

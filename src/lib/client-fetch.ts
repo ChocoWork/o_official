@@ -128,6 +128,15 @@ function refreshSession(): Promise<boolean> {
   return refreshSessionPromise;
 }
 
+/**
+ * ログインの印を1回だけ新しくする（同時に走る更新は1つにまとめる）。
+ * clientFetch は書き込み（POST）を自動で送り直さない。送り直しても二重にならない入口
+ * （ログインの確かめを何かを変える前に行う決済の入口）だけが、これを呼んで自分で送り直す。
+ */
+export function refreshSessionOnce(): Promise<boolean> {
+  return refreshSession();
+}
+
 async function fetchWithNetworkRetry(
   endpoint: string,
   options: RequestInit,

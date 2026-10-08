@@ -1,4 +1,4 @@
-import { clientFetch } from "@/lib/client-fetch";
+import { clientFetch, refreshSessionOnce } from "@/lib/client-fetch";
 import type { CheckoutConfirmation } from "@/features/checkout/services/checkout-confirmation.service";
 import type { CheckoutDisplayedAmounts } from "@/features/checkout/services/checkout-pricing.service";
 import { isCartNoticeLine, type CartNoticeLine } from "@/features/checkout/utils/cart-notice";
@@ -35,7 +35,8 @@ export type CheckoutRejectionCode =
   | "cart_changed"
   | "zero_amount"
   | "session_expired"
-  | "superseded";
+  | "superseded"
+  | "login_changed";
 
 export type CheckoutRejection = { code: CheckoutRejectionCode; message: string; changedLines: CartNoticeLine[] };
 
@@ -65,12 +66,15 @@ const REJECTION_CODES: readonly CheckoutRejectionCode[] = [
   "zero_amount",
   "session_expired",
   "superseded",
+  "login_changed",
 ];
 
 const PROCEED_FAILED_MESSAGE = "決済の準備に失敗しました。少し時間をおいてから、もう一度お試しください。";
 const PLACE_ORDER_FAILED_MESSAGE = "ご注文を受け付けられませんでした。少し時間をおいてから、もう一度お試しください。";
 const COMPLETE_FAILED_MESSAGE = "注文確定に失敗しました。時間をおいて再度お試しください。";
 const PROMOTION_FAILED_MESSAGE = "割引コードを確かめられませんでした。少し時間をおいてから、もう一度お試しください。";
+const LOGIN_CHANGED_MESSAGE = "ログインの状態が変わりました。もう一度「確認へ進む」を押してください。";
+const LOGIN_EXPIRED_MESSAGE = "ログインの有効期限が切れました。ログインし直すか、そのままもう一度「確認へ進む」を押してください。";
 
 type JsonBody = Record<string, unknown> | null;
 
@@ -87,15 +91,40 @@ function postJson(url: string, body: unknown): Promise<Response> {
   });
 }
 
+type CheckoutPostResult = { response: Response; data: JsonBody; loginExpired: boolean };
+
+function isAuthExpired(response: Response, data: JsonBody): boolean {
+  return response.status === 401 && data?.error === "auth_expired";
+}
+
+/**
+ * ログインの印が古いと断られたら、印を新しくして1回だけ送り直す（グループ C 設計書第6章）。
+ * 入口はログインの確かめを何かを変える前に行うので、送り直しても二重にならない。
+ * 印を新しくできない、または送り直してもまた断られた時は loginExpired を立てて返し、結果は呼び出し側が入口ごとに決める。
+ */
+async function postCheckoutJson(url: string, body: unknown): Promise<CheckoutPostResult> {
+  const first = await postJson(url, body);
+  const firstData = await readJson(first);
+  if (!isAuthExpired(first, firstData)) {
+    return { response: first, data: firstData, loginExpired: false };
+  }
+  if (!(await refreshSessionOnce())) {
+    return { response: first, data: firstData, loginExpired: true };
+  }
+  const second = await postJson(url, body);
+  const secondData = await readJson(second);
+  return { response: second, data: secondData, loginExpired: isAuthExpired(second, secondData) };
+}
+
 /** 「確認へ進む」。サーバーが下書きと決済の画面を作り、最終確認画面の内容を返す（設計書 2-2） */
 export async function requestCheckoutConfirmation(body: {
   shipping: CheckoutShippingInput;
   displayedAmounts: CheckoutDisplayedAmounts;
   promotionCode: string | null;
 }): Promise<ProceedResult> {
-  let response: Response;
+  let result: CheckoutPostResult;
   try {
-    response = await postJson("/api/checkout/create-session", {
+    result = await postCheckoutJson("/api/checkout/create-session", {
       uiMode: "custom",
       shipping: body.shipping,
       displayedAmounts: body.displayedAmounts,
@@ -105,7 +134,11 @@ export async function requestCheckoutConfirmation(body: {
     // clientFetch は POST の通信の失敗を投げ直す。画面が値で扱えるよう、「確認へ進む」をやり直せるエラーにして返す
     return { kind: "error", code: null, message: PROCEED_FAILED_MESSAGE, retryable: true, correlationId: null };
   }
-  const data = await readJson(response);
+  if (result.loginExpired) {
+    // 自動でゲストとして進めず、お客様に押し直してもらう（設計書 C2）
+    return { kind: "error", code: "auth_expired", message: LOGIN_EXPIRED_MESSAGE, retryable: true, correlationId: null };
+  }
+  const { response, data } = result;
 
   if (response.ok && data?.confirmation) {
     return { kind: "confirmation", confirmation: data.confirmation as CheckoutConfirmation };
@@ -129,8 +162,14 @@ export async function requestCheckoutConfirmation(body: {
 /** 決済の画面を開き直したときに、どこから続けるか（決め事 D9）。読めなければ入力画面から */
 export async function resumeCheckout(checkoutSessionId: string | null): Promise<ResumeResult> {
   try {
-    const response = await postJson("/api/checkout/resume", checkoutSessionId ? { checkoutSessionId } : {});
-    const data = await readJson(response);
+    const { response, data, loginExpired } = await postCheckoutJson(
+      "/api/checkout/resume",
+      checkoutSessionId ? { checkoutSessionId } : {},
+    );
+    if (loginExpired) {
+      // 印を新しくできなかった。続きの手続きは読めないので、入力画面から始めてもらう
+      return { state: "none" };
+    }
     if (!response.ok) {
       if (checkoutSessionId && (
         (response.status === 400 && data?.error === "session_not_found") ||
@@ -154,13 +193,17 @@ export async function resumeCheckout(checkoutSessionId: string | null): Promise<
 
 /** 「注文する」の受け付け（設計書 2-4・第6章） */
 export async function placeOrder(params: { checkoutSessionId: string; inStockVariantIds: number[] }): Promise<PlaceOrderOutcome> {
-  let response: Response;
+  let result: CheckoutPostResult;
   try {
-    response = await postJson("/api/checkout/place-order", params);
+    result = await postCheckoutJson("/api/checkout/place-order", params);
   } catch {
     return { kind: "error", message: PLACE_ORDER_FAILED_MESSAGE };
   }
-  const data = await readJson(response);
+  if (result.loginExpired) {
+    // 「確認へ進む」の時のログインが、今は確かめられない。ログインの状態が変わった時と同じに扱う
+    return { kind: "rejected", rejection: { code: "login_changed", message: LOGIN_CHANGED_MESSAGE, changedLines: [] } };
+  }
+  const { response, data } = result;
 
   if (response.ok && typeof data?.orderId === "string") {
     return { kind: "accepted", orderId: data.orderId };
