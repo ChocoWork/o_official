@@ -54,7 +54,18 @@ for (const viewport of viewports) {
         headers: { origin: new URL(page.url()).origin, 'x-csrf-token': csrf },
       }).catch(() => { throw new Error('ログアウトの要求に失敗した'); });
       expect(logout.status()).toBe(200);
-      expect((await context.cookies()).some((cookie) => ['cart', 'wishlist'].includes(cookie.name))).toBe(false);
+      // ログインで既に消えた Cookie の有無ではなく、ログアウト自体の削除指示を確かめる。
+      for (const cookieName of ['cart', 'wishlist']) {
+        const deleted = logout.headersArray().some((header) => {
+          if (header.name.toLowerCase() !== 'set-cookie') return false;
+          const [cookie, ...attributes] = header.value.split(';').map((part) => part.trim());
+          return cookie === `${cookieName}=` && attributes.some((attribute) =>
+            /^max-age=0$/i.test(attribute) ||
+            (/^expires=/i.test(attribute) && Date.parse(attribute.slice('expires='.length)) <= Date.now()));
+        });
+        // 応答の Cookie の値を差分に出さず、名前ごとの削除指示の有無だけを比較する。
+        expect(deleted, `${cookieName} の Cookie を消す指示があること`).toBe(true);
+      }
       await page.goto('/cart');
       await expect(page.getByText('YOUR CART IS EMPTY', { exact: true })).toBeVisible();
 

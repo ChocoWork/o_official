@@ -85,6 +85,6 @@
 
 ### 実装ノート
 
-- ウィッシュリストの現状: `session_id` Cookie ベースで保持。会員ログイン後の DB 同期は未実装
+- ウィッシュリストの現状: ゲストは `wishlist` Cookie、会員は会員の ID でサーバーに保持し、ログインでゲストの分を会員の分へ合わせる。同じ商品は1件にし、ログアウトで端末の Cookie を消す。会員の分は次のログインで戻る（FR-WISHLIST-009・MKT-01-002、FREQ-429・431）
 - メールテンプレート: ブランドガイドラインに準拠した SendGrid Dynamic Templates を使用予定
 - 依存: `docs/tasks/09_integrations_ticket.md` (INTEG-01) の SendGrid 実装予定

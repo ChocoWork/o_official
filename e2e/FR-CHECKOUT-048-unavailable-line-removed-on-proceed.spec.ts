@@ -102,7 +102,8 @@ test.describe('FR-CHECKOUT-048 買えない明細を確認へ進む時に外す'
         await expect(summary.getByText(remainingVariant.item.name, { exact: true })).toBeVisible();
         await expect(summary.getByText(unavailableVariant.item.name, { exact: true })).toHaveCount(0);
       } finally {
-        await restoreVariant();
+        // 元のアサーションの失敗を隠さず、復元の失敗は afterEach の再試行で結果に残す。
+        await restoreVariant().catch(() => undefined);
       }
     });
   }

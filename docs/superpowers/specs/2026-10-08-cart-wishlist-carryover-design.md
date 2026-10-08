@@ -351,9 +351,11 @@ sequenceDiagram
 | `title`・`variant_title`・`options_with_values` | `title` は「商品名 - 色 / サイズ」。色・サイズが無いバリアントは `title` が商品名だけ、`variant_title` が `null`、`options_with_values` が空の配列 |
 | `items_subtotal_price`・`total_price` | 出す明細の `line_price` の合計。カートでは割引を扱わないので同じ値 |
 | `fulfillment` | この店の追加の項目。在庫あり `stock`・受注生産 `backorder`・読めない時 `null`（グループ F 設計書 5-2 と同じ） |
-| 出さない明細 | 非公開の商品の明細と、取り扱い終了（`is_active = false`）のバリアントの明細。item_countにも数えない。2026-10-08追記: 「確認へ進む」で持ち主のカートから外して商品名・色・サイズを案内し、押し直せるままにする。Shopify の決済の動きに合わせ、画面に出ない明細を消せず進めない行き止まりを無くすため |
+| 出さない明細 | 非公開の商品の明細と、取り扱い終了（`is_active = false`）のバリアントの明細（今の非公開の商品の扱いをバリアントにも広げる）。`item_count` にも数えない |
 | 並び | 入れた日時の新しい順（今と同じ） |
 | 持ち主なし | `{"item_count": 0, "items": [], …}` |
+
+2026-10-08 追記（出さない明細、FREQ-430-REQ-05・AC-08）: 「確認へ進む」で持ち主のカートから購入不可の明細を外して商品名・色・サイズを案内し、押し直せるままにする。Shopify の決済の動きに合わせ、画面に出ない明細を消せず進めない行き止まりを無くすため。処理と応答は第7章の追記を参照する。
 
 `POST /api/cart/add` の送る中身と返す中身:
 
@@ -404,8 +406,10 @@ Shopify に無いので、窓口の形は今のまま（一覧・追加・削除
 | CSRF | 書き換え（カートの追加・変更、お気に入りの追加・削除）に合言葉が必須（決済の窓口と同じ） | 合言葉は無い。他のサイトからの送信は送信元（Origin）の確かめ（`src/proxy.ts`、POST・PUT・PATCH・DELETE）と SameSite=Lax で止める（今と同じ） |
 | 回数の制限 | IP ごと＋会員ごと | IP ごと＋印ごと（印がまだ無い時は IP ごとだけ） |
 | 回数 | 今の値を使う（`cart:add` は IP 60回・持ち主 30回／分など）。`cart:change` は今の `cart:update` の値 | 同じ |
-| 監査の記録 | `user_id`（会員の ID） | `{owner:"guest",guest_hash_prefix:SHA-256の先頭12文字}`。印そのものは残さない。カート追加の明細は `lines:[{variant_id,quantity}]`（組・送信順・重複を保つ） |
+| 監査の記録 | `user_id`（会員の ID） | `{owner:"guest",guest_token_hash_prefix:SHA-256の先頭12文字}`。印そのものは残さない |
 | 明細の照合 | DB の関数の中で、明細のカートが今の持ち主のカートかを確かめる | 同じ |
+
+2026-10-08 追記（監査の記録）: 上表の監査の記録は承認時の記述として残す。現行のゲストのキーは `guest_hash_prefix`（印のSHA-256の先頭12文字）に替える。旧 `guest_token_hash_prefix` はキー名に `token` を含み、監査の伏せ字で値が消えるため。印そのものは残さない。カート追加の明細は `lines:[{variant_id,quantity}]` として、番号と数量の組・送信順・重複を保つ。
 
 ### 6-4 窓口が使う DB の関数
 

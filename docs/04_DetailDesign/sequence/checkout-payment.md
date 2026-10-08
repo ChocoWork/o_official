@@ -45,6 +45,18 @@ sequenceDiagram
     end
     API->>API: 入力確認
     API->>API: 配送先7項目が欠けていれば400 shipping_incomplete（下書き・Sessionを作らない）
+    API->>DB: 持ち主のcartを取得（残ったゲストの印は先に会員へ合わせる）
+    API->>DB: cart_linesと商品を取得（source_cart_line_idはcart_lines.id）
+    API->>API: splitPurchasableCartRowsで明細ごとに判定
+    break 取り扱い終了・非公開・欠落商品の明細がある
+        API->>DB: removeCartLines（cart_idと明細IDで購入不可の明細だけ削除）
+        API-->>UI: 409 cart_updated（retryable true、外した商品名・色・サイズ）
+        UI->>UI: カートと割引の目安を読み直し、案内を出す（確認へ進むは押せる）
+    end
+    API->>API: 買える明細から金額を計算し直す
+    break 表示額とサーバーの金額が一致しない
+        API-->>UI: 409 checkout_amount_mismatch
+    end
     API->>DB: 受け付け済みで支払いの済んだ決済の画面を探す
     alt 支払いの済んだ決済の画面があり、その下書きの買い手が今の買い手と同じ
         API-->>UI: 409 order_already_placed（画面は完了の処理へ）
@@ -52,15 +64,6 @@ sequenceDiagram
         API->>DB: その画面を照合して仕上げる（持ち主は付けない）
         API-->>UI: 409 login_changed（決済の画面の ID は返さない）
     end
-    API->>DB: 持ち主のcartを取得（残ったゲストの印は先に会員へ合わせる）
-    API->>DB: cart_linesと商品を取得（source_cart_line_idはcart_lines.id）
-    API->>API: splitPurchasableCartRowsで明細ごとに判定
-    break 取り扱い終了・非公開・欠落商品の明細がある
-        API->>DB: cart_idと明細IDで購入不可の明細だけ削除
-        API-->>UI: 409 cart_updated（retryable true、外した商品名・色・サイズ）
-        UI->>UI: カートと割引の目安を読み直し、案内を出す（確認へ進むは押せる）
-    end
-    API->>API: 買える明細から金額を計算し直す
     opt 割引コードがある
         API->>Stripe: promotionCodes.list（有効・期限・回数・最低購入額）
         alt 使えない
@@ -168,7 +171,7 @@ sequenceDiagram
 | --- | --- |
 | `stock_changed`・`item_unavailable`・`price_changed`・`cart_changed` | カート画面へ移し、案内を1回だけ出す（`sessionStorage` の `checkout:cart-notice`）。在庫の変化は、変わった明細の名前・色・サイズと「在庫あり → 受注生産」の印を添える |
 | `zero_amount` | 入力画面へ戻し、案内を出す |
-| `session_expired` | 「確認へ進む」と同じ処理で決済の画面を作り直し、最終確認画面の一番上に案内を出す。作り直しの応答を待つ間は、「変更」「戻る」「注文する」を押せない。作り直しが `out_of_stock` で断られたら、商品名入りのサーバー文を渡してカートへ移る（FREQ-424） |
+| `session_expired` | 「確認へ進む」と同じ処理で決済の画面を作り直し、最終確認画面の一番上に案内を出す。作り直しの応答を待つ間は、「変更」「戻る」「注文する」を押せない。購入不可明細があればcreate-sessionが持ち主のカートから外して409 `cart_updated`（`retryable: true`）を返す。入力画面へ戻してカートと割引の目安を読み直し、外した商品名・色・サイズ入りの案内を出し、「確認へ進む」を押せるままにする（FREQ-424・FREQ-430-AC-08）。旧 `out_of_stock` の分岐は画面と模擬 E2E に残るが、実際のサーバーは返さない |
 | `superseded` | その画面のまま、一番上に案内を出す（別のタブで後から「確認へ進む」が押された） |
 | `login_changed` | 入力画面へ戻し、ボタンの上に「ログインの状態が変わりました。もう一度「確認へ進む」を押してください。」を出す（押し直せる）。ログインの状態とカートを読み直し、入力欄の扱いを今のログインに合わせる（会員なら入力欄をその会員の内容で置き換える（C7）。ゲストなら今の入力を残す）。印を新しくできなかった401（`auth_expired`）と、決済の画面がこのカートのものでないという403（`forbidden`）も、同じ扱いにする |
 | 403 `forbidden`（決済の画面がこのカートのものでない） | 「確認へ進む」の後にログインしてカートの印が新しくなった時など。`login_changed` と同じ扱い（同じ案内・入力画面へ戻す・読み直し）。サーバーは印の合わない要求で他人の決済の画面を閉じさせないため、この403では決済の画面を閉じない（30分の時間切れで閉じる）。画面からも閉じない。読み直すカートは新しい印のカートで、ゲストのカートは引き継がれていない |
@@ -348,6 +351,5 @@ sequenceDiagram
 本番のmigration適用（グループ F の `20261007133711` は 2026-10-07 に本番へ当て、関数の形と実行権を確かめた。グループ C の `20261008055720` は 2026-10-08 に本番へ当て、関数の形・実行権・トリガーを確かめた）、実際のStripe Session・PaymentIntent・動的支払方法、外部認証・メール到達、全競合の実行結果は未確認。SQLの「受付API(F)」コメントは、グループ F の `place-order`（SQ-CHECKOUT-02）として実装済み。廃止されたfinalize/PaymentIntent APIを、現行画面から呼ぶ経路として描かない。
 
 照合全体の基準は2026-10-04の作業ツリーで、`bbb18761`後の返金補正を含む。SQ-CHECKOUT-01〜03は2026-10-07の作業ツリー（グループ F）から書いた。今回、SQ-CHECKOUT-01のcustom限定・配送先必須の検証、SQ-CHECKOUT-02の失効処理、SQ-CHECKOUT-04の呼出し元と、照合器の受付の予備処理・放棄時の在庫返却を現行コードで確認し直した。2026-10-04のレビュー対象と検証結果は[レビュー記録](../../05_Quality/reviews/code/2026-10-04-sequence-state-review.md)を参照する。completeの外側500の監査はmessageと文字列codeを記録し、例外オブジェクトのdetails/hintを複写しない。
-
 
 2026-10-08（FREQ-428〜432）: 決済の流れは `session_id`、カートの所有権は `cart` Cookie または会員の ID で分ける。下書きの `cart_id` と `source_cart_line_id` による注文受付・削除の根拠は [移行 B](../../../supabase/migrations/20261008130100_cart_checkout_rpcs.sql)。create-session の購入不可明細の処理は [checkout-cart.service.ts](../../../src/features/checkout/services/checkout-cart.service.ts)。旧 `out_of_stock` は画面の互換分岐と既存の模擬 E2E の説明であり、サーバーは返さない。

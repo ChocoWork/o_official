@@ -13,7 +13,7 @@ const viewports = [
 type Variant = { variantId: number; colorName: string | null; sizeLabel: string | null };
 type Cart = { item_count: number; items: Array<{ key: string; id: number; variant_id: number; product_id: number; quantity: number; price: number; line_price: number }> };
 
-/** 画像の署名 URL に含まれる語と、カートの印の漏出を取り違えないよう、JSON のキーだけを調べる。 */
+/** 画像の署名 URL の token と取り違えず、全階層のキー名に含まれる token を調べるため。 */
 function responseKeys(value: unknown): string[] {
   if (Array.isArray(value)) return value.flatMap(responseKeys);
   if (value !== null && typeof value === 'object') {
@@ -59,7 +59,7 @@ async function detailAddButton(page: Page, variant: Variant, mobile: boolean) {
   return page.getByTestId('item-actions-main').getByRole('button', { name: /ADD TO CART/ });
 }
 
-test('FR-CART-024 FREQ-430-AC-01・02・03・05・06・07: カート全体・加算・上限・所有権・CSRF', async ({ page, browser }) => {
+test('FR-CART-024 FREQ-430-AC-01・02・03・05・06・07: カート全体・加算・上限・所有権・CSRF', async ({ page, browser, context }) => {
   const seeded = await seedCart(page);
   test.skip(!seeded.ok, seeded.ok ? '' : seeded.reason);
   if (!seeded.ok) return;
@@ -72,8 +72,13 @@ test('FR-CART-024 FREQ-430-AC-01・02・03・05・06・07: カート全体・加
   expect((await add(1)).status()).toBe(200);
   const response = await page.request.get('/api/cart');
   expect(response.status()).toBe(200);
-  const cart = await response.json() as Cart;
-  expect(responseKeys(cart)).not.toContain('token');
+  const raw = await response.text();
+  const value = (await context.cookies()).find((cookie) => cookie.name === 'cart')?.value ?? '';
+  // 本物の印と本文を比べ、失敗時の差分に秘密の値が出ないよう真偽だけを確認する。
+  expect(Boolean(value)).toBe(true);
+  expect(raw.includes(value)).toBe(false);
+  const cart = JSON.parse(raw) as Cart;
+  expect(responseKeys(cart).filter((key) => /token/i.test(key))).toEqual([]);
   expect(cart.item_count).toBe(2);
   expect(cart.items).toHaveLength(1);
   expect(cart.items[0]).toMatchObject({
@@ -116,7 +121,11 @@ test('FR-CART-024 FREQ-430-AC-01・02・03・05・06・07: カート全体・加
   const member = await createTestMember('cart-api-desktop');
   await loginAsMember(page, member);
   // Origin は付け、CSRF の合言葉だけを省くことで、送信元検証との取り違えを防ぐ。
-  expect((await add(1)).status()).toBe(403);
+  const denied = await add(1);
+  expect(denied.status()).toBe(403);
+  // 同じ403でも別の拒否理由では通さず、CSRF の合言葉が無いことによる拒否まで確認する。
+  const denial = await denied.json() as { reason?: string };
+  expect(denial.reason).toBe('CSRF validation failed');
 });
 
 for (const viewport of viewports) {
