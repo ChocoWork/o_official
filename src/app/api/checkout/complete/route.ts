@@ -12,7 +12,6 @@ import {
 } from '@/features/checkout/services/checkout-draft.service';
 import { resolvePaymentMethodFromSession } from '@/features/checkout/services/payment-method.service';
 import { logAudit } from '@/lib/audit';
-import { extractAuthToken } from '@/lib/auth/request-token';
 import { isTransientStripeError } from '@/lib/stripe/checkout-payment-reader';
 import { reconcileCheckoutPayment, ReconcileTransientError } from '@/lib/stripe/checkout-payment-reconciler';
 import { createDefaultReconcilerDeps } from '@/lib/stripe/checkout-payment-reconciler-deps';
@@ -31,103 +30,6 @@ const completeCheckoutSchema = z.object({
 
 /** 注文完了として画面へ返してよい状態。失敗・放棄・取消の注文は完了として返さない */
 const COMPLETED_ORDER_STATUSES = new Set(['paid', 'pending', 'shipped']);
-
-async function resolveAuthenticatedUserId(request: NextRequest): Promise<string | null> {
-  const authToken = extractAuthToken(request);
-  if (!authToken) {
-    return null;
-  }
-
-  const authClient = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-        detectSessionInUrl: false,
-      },
-      global: {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-      },
-    }
-  );
-
-  const { data } = await authClient.auth.getUser(authToken);
-  return data.user?.id ?? null;
-}
-
-/**
- * ゲストのまま作られた注文を、ログイン中のユーザーへ紐付ける。
- *
- * 決済は既に成立しているので、紐付けに失敗してもチェックアウトは成功として返す
- * （ここで失敗を返すと、支払い済みの客に注文失敗を見せることになる）。
- * ただし黙って捨てると「注文履歴に出てこない」形でしか表面化しないので、
- * 失敗も「対象0件」も監査ログに残して後から追えるようにする。
- */
-async function linkOrderToUser(params: {
-  orderId: string;
-  userId: string;
-  sessionId: string;
-  checkoutSessionId: string;
-  ip: string | null;
-  userAgent: string | null;
-}): Promise<void> {
-  // 他人の注文を奪わないよう user_id が未設定の行だけを対象にする。
-  const { data, error } = await supabase
-    .from('orders')
-    .update({ user_id: params.userId })
-    .eq('id', params.orderId)
-    .is('user_id', null)
-    .select('id');
-
-  if (!error && data && data.length > 0) {
-    return;
-  }
-
-  console.error(
-    'Failed to link guest order to user:',
-    error ?? 'no order row matched (already owned by another user)'
-  );
-  await logAudit({
-    action: 'checkout.link_order_to_user',
-    outcome: 'error',
-    detail: error
-      ? 'Failed to link guest order to user'
-      : 'Guest order was not linked (already owned by another user)',
-    ip: params.ip,
-    user_agent: params.userAgent,
-    metadata: {
-      session_id: params.sessionId,
-      checkout_session_id: params.checkoutSessionId,
-      order_id: params.orderId,
-      linked_user_id: params.userId,
-      error_message: error?.message ?? null,
-    },
-  });
-}
-
-/** 照合の後に毎回呼ぶ。既に本人の注文なら何もしない（設計書 2-2。R-24 の完了 API の分） */
-async function linkOrderToUserIfUnowned(params: Parameters<typeof linkOrderToUser>[0]): Promise<void> {
-  const { data, error } = await supabase
-    .from('orders')
-    .select('user_id')
-    .eq('id', params.orderId)
-    .maybeSingle<{ user_id: string | null }>();
-
-  if (error || !data) {
-    console.error('Failed to read order owner before linking:', params.orderId, error);
-    return;
-  }
-
-  if (data.user_id === params.userId) {
-    return;
-  }
-
-  await linkOrderToUser(params);
-}
 
 function getClientIp(request: NextRequest): string | null {
   const forwardedFor = request.headers.get('x-forwarded-for');
@@ -169,8 +71,6 @@ export async function POST(req: NextRequest) {
       });
       return NextResponse.json({ error: 'Session not found' }, { status: 400 });
     }
-
-    const activeUserId = await resolveAuthenticatedUserId(req);
 
     const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
     const rateLimitByIp = await enforceRateLimit({
@@ -397,17 +297,6 @@ export async function POST(req: NextRequest) {
         },
       });
       return NextResponse.json({ error: 'Order could not be registered' }, { status: 409 });
-    }
-
-    if (activeUserId) {
-      await linkOrderToUserIfUnowned({
-        orderId: result.orderId,
-        userId: activeUserId,
-        sessionId,
-        checkoutSessionId: session.id,
-        ip: clientIp,
-        userAgent,
-      });
     }
 
     await logAudit({

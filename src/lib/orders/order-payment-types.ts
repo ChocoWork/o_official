@@ -55,6 +55,7 @@ export const PAYMENT_EXCEPTION_REASON_LABELS: Record<PaymentExceptionReason, str
 /**
  * 受付 RPC が返す理由コード（グループ A 設計書 4-3）。
  * cart_changed・price_changed・stock_changed は受け付けの窓口から呼んだときだけ返る（グループ F 設計書 6-2）。
+ * login_changed は受け付けの窓口から呼んだときだけ返る（グループ C 設計書 5-3）。
  */
 export const PLACE_ORDER_REJECTIONS = [
   'draft_not_found',
@@ -65,6 +66,7 @@ export const PLACE_ORDER_REJECTIONS = [
   'price_changed',
   'stock_changed',
   'cart_changed',
+  'login_changed',
 ] as const;
 
 export type PlaceOrderRejection = (typeof PLACE_ORDER_REJECTIONS)[number];

@@ -17,6 +17,7 @@ import {
   guardCheckoutPost,
 } from '@/features/checkout/services/checkout-route-guard';
 import { findPaidCheckoutSession, reconcileCheckoutSession } from '@/features/checkout/services/checkout-session-lifecycle.service';
+import { resolveCheckoutBuyer, checkoutBuyerFailureResponse, buyerUserIdOf } from '@/features/checkout/services/checkout-buyer';
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
@@ -31,7 +32,7 @@ const requestSchema = z
   })
   .strict();
 
-type RejectionCode = 'stock_changed' | 'item_unavailable' | 'price_changed' | 'cart_changed' | 'zero_amount' | 'session_expired' | 'superseded';
+type RejectionCode = 'stock_changed' | 'item_unavailable' | 'price_changed' | 'cart_changed' | 'zero_amount' | 'session_expired' | 'superseded' | 'login_changed';
 
 /** 断ったときの案内（設計書 5-3・6-3）。どれもお金は動いていない */
 const REJECTION_MESSAGES: Record<RejectionCode, string> = {
@@ -42,6 +43,7 @@ const REJECTION_MESSAGES: Record<RejectionCode, string> = {
   zero_amount: 'このご注文は合計が0円になるため、お受けできません',
   session_expired: '時間がたったため、お支払い情報をもう一度入力してください',
   superseded: '別の画面で手続きが進んでいます。画面を読み込み直してください',
+  login_changed: 'ログインの状態が変わりました。もう一度「確認へ進む」を押してください。',
 };
 
 /** 受付 RPC の理由コードを、画面の案内の理由に読み替える（決め事 D12） */
@@ -54,6 +56,7 @@ const REJECTION_BY_RPC: Record<PlaceOrderRejection, RejectionCode> = {
   price_changed: 'price_changed',
   stock_changed: 'stock_changed',
   cart_changed: 'cart_changed',
+  login_changed: 'login_changed',
 };
 
 const FAILED_MESSAGE = 'ご注文を受け付けられませんでした。少し時間をおいてから、もう一度お試しください。';
@@ -62,6 +65,7 @@ type DraftRow = {
   id: string;
   session_id: string;
   checkout_session_id: string | null;
+  buyer_user_id: string | null;
   created_at: string;
   items_snapshot: CheckoutDraftItemSnapshot[] | null;
 };
@@ -76,13 +80,26 @@ type PlaceOrderRow = {
 async function loadDraft(draftId: string): Promise<DraftRow | null> {
   const { data, error } = await supabase
     .from('checkout_drafts')
-    .select('id, session_id, checkout_session_id, created_at, items_snapshot')
+    .select('id, session_id, checkout_session_id, buyer_user_id, created_at, items_snapshot')
     .eq('id', draftId)
     .maybeSingle<DraftRow>();
   if (error) {
     throw error;
   }
   return data;
+}
+
+/** 下書きが無ければ買い手を比べられないので、支払い済みの画面を返さない側に倒す */
+async function buyerOfCheckoutSession(checkoutSessionId: string): Promise<string | null | undefined> {
+  const { data, error } = await supabase
+    .from('checkout_drafts')
+    .select('buyer_user_id')
+    .eq('checkout_session_id', checkoutSessionId)
+    .maybeSingle<{ buyer_user_id: string | null }>();
+  if (error) {
+    throw error;
+  }
+  return data ? data.buyer_user_id : undefined;
 }
 
 /** 後から別のタブで「確認へ進む」を押していれば、そちらを優先する（設計書 8） */
@@ -145,6 +162,13 @@ export async function POST(req: NextRequest) {
     return guard.response;
   }
 
+  // 買い手は検証済みのログインからだけ決める。何かを変える前に確かめる（グループ C 設計書 4-3）
+  const buyerResolution = await resolveCheckoutBuyer(req);
+  if (buyerResolution.kind === 'expired' || buyerResolution.kind === 'unavailable') {
+    return guard.finish(checkoutBuyerFailureResponse(buyerResolution.kind));
+  }
+  const buyerUserId = buyerUserIdOf(buyerResolution);
+
   const audit = async (
     outcome: 'success' | 'failure' | 'error',
     detail: string,
@@ -178,6 +202,10 @@ export async function POST(req: NextRequest) {
     const ref = { checkout_session_id: checkoutSessionId };
 
     const stripe = getStripeServerClient();
+    const loginChanged = async (metadata: Record<string, unknown>) => {
+      await expireRejectedCheckoutSession(stripe, checkoutSessionId);
+      return reject('login_changed', { ...metadata, buyer_user_id: buyerUserId });
+    };
     const session = await stripe.checkout.sessions.retrieve(checkoutSessionId);
 
     if (session.metadata?.session_id !== guard.sessionId) {
@@ -190,12 +218,17 @@ export async function POST(req: NextRequest) {
       return guard.finish(NextResponse.json({ error: 'place_order_failed', message: FAILED_MESSAGE }, { status: 500 }));
     }
 
+    const draftId = getDraftIdFromStripeMetadata(session.metadata);
+    const draft = draftId ? await loadDraft(draftId) : null;
+    // 違う買い手に支払い済みの知らせを返さないため、ほかの判断より前に比べる（設計書 4-3、C5）
+    if (draft && (draft.buyer_user_id ?? null) !== buyerUserId) {
+      return loginChanged({ ...ref, draft_id: draft.id, draft_buyer_user_id: draft.buyer_user_id ?? null });
+    }
+
     if (session.status === 'complete') {
       return guard.finish(NextResponse.json({ error: 'payment_done', checkoutSessionId }, { status: 409 }));
     }
 
-    const draftId = getDraftIdFromStripeMetadata(session.metadata);
-    const draft = draftId ? await loadDraft(draftId) : null;
     if (!draft || draft.session_id !== guard.sessionId || draft.checkout_session_id !== checkoutSessionId) {
       await expireRejectedCheckoutSession(stripe, checkoutSessionId);
       return reject('superseded', { ...ref, draft_id: draftId });
@@ -222,6 +255,10 @@ export async function POST(req: NextRequest) {
     // 別のタブの支払いが先に済んでいれば、同じカートでもう一度課金せず、その注文を仕上げる。
     const paidCheckoutSessionId = await findPaidCheckoutSession({ supabase, stripe }, guard.sessionId);
     if (paidCheckoutSessionId && paidCheckoutSessionId !== checkoutSessionId) {
+      const paidBuyer = await buyerOfCheckoutSession(paidCheckoutSessionId);
+      if (paidBuyer === undefined || paidBuyer !== buyerUserId) {
+        return loginChanged({ ...ref, draft_id: draft.id, paid_checkout_session_id: paidCheckoutSessionId, draft_buyer_user_id: paidBuyer ?? null });
+      }
       await expireRejectedCheckoutSession(stripe, checkoutSessionId);
       await audit('failure', 'Place order rejected', {
         ...ref, draft_id: draft.id, reason: 'payment_done', paid_checkout_session_id: paidCheckoutSessionId,
@@ -239,6 +276,7 @@ export async function POST(req: NextRequest) {
       _checkout_session_created_at: new Date(session.created * 1000).toISOString(),
       _payment_intent_id: typeof session.payment_intent === 'string' ? session.payment_intent : null,
       _shown_in_stock_variant_ids: inStockVariantIds,
+      _buyer_user_id: buyerUserId,
     });
     if (error) {
       throw error;
@@ -251,11 +289,14 @@ export async function POST(req: NextRequest) {
 
     if (row.rejection) {
       const code = REJECTION_BY_RPC[row.rejection];
-      const metadata = { ...ref, draft_id: draft.id, rpc_rejection: row.rejection };
+      const metadata = {
+        ...ref, draft_id: draft.id, rpc_rejection: row.rejection,
+        ...(code === 'login_changed' ? { draft_buyer_user_id: draft.buyer_user_id ?? null, buyer_user_id: buyerUserId } : {}),
+      };
       if (code === 'stock_changed') {
         return reject(code, metadata, { changedLines: await changedLinesOf(draft, inStockVariantIds) });
       }
-      if (code === 'cart_changed' || code === 'superseded') {
+      if (code === 'cart_changed' || code === 'superseded' || code === 'login_changed') {
         await expireRejectedCheckoutSession(stripe, checkoutSessionId);
       }
       return reject(code, metadata);

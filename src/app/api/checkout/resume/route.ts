@@ -12,6 +12,7 @@ import {
 } from '@/features/checkout/services/checkout-draft.service';
 import { buildCheckoutConfirmation } from '@/features/checkout/services/checkout-confirmation.service';
 import { findPaidCheckoutSession } from '@/features/checkout/services/checkout-session-lifecycle.service';
+import { resolveCheckoutBuyer, checkoutBuyerFailureResponse, buyerUserIdOf } from '@/features/checkout/services/checkout-buyer';
 import {
   CHECKOUT_SESSION_ID_PATTERN,
   RESUME_GUARD,
@@ -26,6 +27,7 @@ type DraftRow = {
   id: string;
   session_id: string;
   checkout_session_id: string | null;
+  buyer_user_id: string | null;
   status: string;
   items_snapshot: CheckoutDraftItemSnapshot[] | null;
   shipping_snapshot: CheckoutShippingSnapshot | null;
@@ -33,6 +35,19 @@ type DraftRow = {
 
 function isResourceMissing(error: unknown): boolean {
   return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'resource_missing';
+}
+
+/** 下書きが無ければ買い手を比べられないので、支払い済みの画面を返さない側に倒す */
+async function buyerOfCheckoutSession(checkoutSessionId: string): Promise<string | null | undefined> {
+  const { data, error } = await supabase
+    .from('checkout_drafts')
+    .select('buyer_user_id')
+    .eq('checkout_session_id', checkoutSessionId)
+    .maybeSingle<{ buyer_user_id: string | null }>();
+  if (error) {
+    throw error;
+  }
+  return data ? data.buyer_user_id : undefined;
 }
 
 // PUBLIC: ゲスト購入を許可する公開 Route。守りは guardCheckoutPost（Cookie・回数の制限・CSRF）。
@@ -44,6 +59,13 @@ export async function POST(req: NextRequest) {
   if (!guard.ok) {
     return guard.response;
   }
+
+  // 前の確認画面を別の買い手に返さないため、何かに触れる前にログインを確かめる（グループ C 設計書 4-4）
+  const buyerResolution = await resolveCheckoutBuyer(req);
+  if (buyerResolution.kind === 'expired' || buyerResolution.kind === 'unavailable') {
+    return guard.finish(checkoutBuyerFailureResponse(buyerResolution.kind));
+  }
+  const buyerUserId = buyerUserIdOf(buyerResolution);
 
   const none = () => guard.finish(NextResponse.json({ state: 'none' }));
   const paymentDone = (checkoutSessionId: string) =>
@@ -60,7 +82,11 @@ export async function POST(req: NextRequest) {
 
     if (!checkoutSessionId) {
       const paid = await findPaidCheckoutSession({ supabase, stripe }, guard.sessionId);
-      return paid ? paymentDone(paid) : none();
+      if (!paid) {
+        return none();
+      }
+      const paidBuyer = await buyerOfCheckoutSession(paid);
+      return paidBuyer !== undefined && paidBuyer === buyerUserId ? paymentDone(paid) : none();
     }
 
     let session: Stripe.Checkout.Session;
@@ -89,24 +115,24 @@ export async function POST(req: NextRequest) {
       return guard.finish(NextResponse.json({ error: 'forbidden' }, { status: 403 }));
     }
 
+    const draftId = getDraftIdFromStripeMetadata(session.metadata);
+    const { data: draft, error: draftError } = draftId ? await supabase
+      .from('checkout_drafts')
+      .select('id, session_id, checkout_session_id, buyer_user_id, status, items_snapshot, shipping_snapshot')
+      .eq('id', draftId)
+      .maybeSingle<DraftRow>() : { data: null, error: null };
+    if (draftError) {
+      throw draftError;
+    }
+    // 支払い済みの ID も別の買い手には返さないので、complete の判断より前に比べる（設計書 4-4）
+    if (draft && (draft.buyer_user_id ?? null) !== buyerUserId) {
+      return none();
+    }
     if (session.status === 'complete') {
       return paymentDone(session.id);
     }
     if (session.status !== 'open' || !session.client_secret) {
       return none();
-    }
-
-    const draftId = getDraftIdFromStripeMetadata(session.metadata);
-    if (!draftId) {
-      return none();
-    }
-    const { data: draft, error: draftError } = await supabase
-      .from('checkout_drafts')
-      .select('id, session_id, checkout_session_id, status, items_snapshot, shipping_snapshot')
-      .eq('id', draftId)
-      .maybeSingle<DraftRow>();
-    if (draftError) {
-      throw draftError;
     }
     if (
       !draft ||

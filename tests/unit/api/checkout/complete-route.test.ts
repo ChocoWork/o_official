@@ -284,24 +284,22 @@ describe('POST /api/checkout/complete', () => {
     expect(res.body).toEqual({ error: 'Temporarily unavailable' });
   });
 
-  test('ログイン客なら、照合の後に未所有の注文を紐付ける（R-24 の完了 API の分）', async () => {
+  test('ログインしていても注文の持ち主を書かず、ログインの確かめを呼ばない', async () => {
     mockExtractAuthToken.mockReturnValue('token-1');
     mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
+    const request = makeRequest({ checkoutSessionId: 'cs_test' });
+    request.headers.set('Authorization', 'Bearer token-1');
 
-    const res = await post();
+    const res = await POST(request) as unknown as RouteResponse;
 
     expect(res.status).toBe(200);
-    expect(ordersUpdate).toHaveBeenCalledWith({ user_id: 'user-1' });
-  });
-
-  test('既に同じお客様の注文なら紐付け直さない', async () => {
-    mockExtractAuthToken.mockReturnValue('token-1');
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
-    orderOwner = { user_id: 'user-1' };
-
-    await post();
-
+    expect(res.body).toEqual({ orderId: 'order-1', status: 'paid', paymentMethod: 'stripe_card' });
+    expect(mockReconcile).toHaveBeenCalledWith(mockReconcilerDeps, { checkoutSessionId: 'cs_test' });
     expect(ordersUpdate).not.toHaveBeenCalled();
+    expect(mockFrom).not.toHaveBeenCalledWith('orders');
+    expect(mockExtractAuthToken).not.toHaveBeenCalled();
+    expect(mockGetUser).not.toHaveBeenCalled();
+    expect(mockLogAudit).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'checkout.link_order_to_user' }));
   });
 
   describe('Session の取得の失敗と、想定外の失敗の監査', () => {

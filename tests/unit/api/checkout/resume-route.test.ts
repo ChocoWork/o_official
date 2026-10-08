@@ -17,8 +17,15 @@ jest.mock('@/features/checkout/services/checkout-route-guard', () => ({
 }));
 
 const mockRetrieve = jest.fn();
+const mockResolveCheckoutBuyer = jest.fn();
+jest.mock('@/features/checkout/services/checkout-buyer', () => ({
+  ...jest.requireActual('@/features/checkout/services/checkout-buyer'),
+  resolveCheckoutBuyer: (...args: unknown[]) => mockResolveCheckoutBuyer(...args),
+}));
+
+const mockGetStripeServerClient = jest.fn(() => ({ checkout: { sessions: { retrieve: mockRetrieve } } }));
 jest.mock('@/lib/stripe/server', () => ({
-  getStripeServerClient: () => ({ checkout: { sessions: { retrieve: mockRetrieve } } }),
+  getStripeServerClient: () => mockGetStripeServerClient(),
 }));
 
 const mockFindPaidCheckoutSession = jest.fn();
@@ -39,16 +46,26 @@ const mockLogAudit = jest.fn().mockResolvedValue(undefined);
 jest.mock('@/lib/audit', () => ({ logAudit: (...args: unknown[]) => mockLogAudit(...args) }));
 
 let mockDraftResult: { data: unknown; error: unknown } = { data: null, error: null };
+let mockPaidDraftResult: { data: unknown; error: unknown } = { data: null, error: null };
 let mockOrderResult: { data: unknown; error: unknown } = { data: null, error: null };
+const mockDraftQueries: Array<Array<[string, unknown[]]>> = [];
+const mockFrom = jest.fn((table: string) => {
+  const calls: Array<[string, unknown[]]> = [];
+  if (table === 'checkout_drafts') mockDraftQueries.push(calls);
+  const chain: Record<string, unknown> = {};
+  for (const method of ['select', 'eq']) {
+    chain[method] = (...args: unknown[]) => {
+      calls.push([method, args]);
+      return chain;
+    };
+  }
+  chain.maybeSingle = () => Promise.resolve(table === 'orders' ? mockOrderResult
+    : calls.some(([method, args]) => method === 'eq' && args[0] === 'checkout_session_id') ? mockPaidDraftResult : mockDraftResult);
+  return chain;
+});
 jest.mock('@supabase/supabase-js', () => ({
   createClient: () => ({
-    from: (table: string) => {
-      const chain: Record<string, unknown> = {};
-      chain.select = () => chain;
-      chain.eq = () => chain;
-      chain.maybeSingle = () => Promise.resolve(table === 'orders' ? mockOrderResult : mockDraftResult);
-      return chain;
-    },
+    from: (table: string) => mockFrom(table),
   }),
 }));
 
@@ -82,6 +99,7 @@ const DRAFT = {
   id: 'draft-1',
   session_id: 'sess-abc',
   checkout_session_id: 'cs_test_abc',
+  buyer_user_id: null,
   status: 'created',
   items_snapshot: ITEMS,
   shipping_snapshot: SHIPPING,
@@ -98,6 +116,8 @@ function makeRequest(body: unknown): NextRequest {
 describe('POST /api/checkout/resume', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockResolveCheckoutBuyer.mockReset().mockResolvedValue({ kind: 'guest' });
+    mockDraftQueries.length = 0;
     mockGuard.mockResolvedValue({
       ok: true,
       sessionId: 'sess-abc',
@@ -113,8 +133,90 @@ describe('POST /api/checkout/resume', () => {
       metadata: { draft_id: 'draft-1', session_id: 'sess-abc', promotion_code: 'WELCOME10' },
     });
     mockDraftResult = { data: DRAFT, error: null };
+    mockPaidDraftResult = { data: { buyer_user_id: null }, error: null };
     mockOrderResult = { data: null, error: null };
     mockBuildCheckoutConfirmation.mockResolvedValue({ checkoutSessionId: 'cs_test_abc', clientSecret: 'x', shipping: SHIPPING, lines: [], promotionCode: 'WELCOME10' });
+  });
+
+  test.each([
+    ['open', 'member-a', { kind: 'guest' }],
+    ['complete', 'member-a', { kind: 'guest' }],
+    ['open', 'member-a', { kind: 'member', userId: 'member-b' }],
+    ['complete', 'member-a', { kind: 'member', userId: 'member-b' }],
+    ['open', null, { kind: 'member', userId: 'member-a' }],
+  ])('%s の下書きの買い手（%s）と今の買い手が違えば none を返す', async (status, draftBuyerUserId, buyer) => {
+    mockResolveCheckoutBuyer.mockResolvedValue(buyer);
+    mockDraftResult = { data: { ...DRAFT, buyer_user_id: draftBuyerUserId }, error: null };
+    mockRetrieve.mockResolvedValue({
+      id: 'cs_test_abc', status, client_secret: 'cs_test_abc_secret',
+      metadata: { draft_id: 'draft-1', session_id: 'sess-abc' },
+    });
+
+    const res = await POST(makeRequest({ checkoutSessionId: 'cs_test_abc' }));
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ state: 'none' });
+    expect(mockBuildCheckoutConfirmation).not.toHaveBeenCalled();
+    expect(mockFrom).not.toHaveBeenCalledWith('orders');
+    expect(mockLogAudit).not.toHaveBeenCalled();
+  });
+
+  test.each(['member-a', undefined])('画面の指定が無く支払い済みの下書きの買い手が違う・無い（%s）なら none', async (paidBuyer) => {
+    mockFindPaidCheckoutSession.mockResolvedValue('cs_test_paid');
+    mockPaidDraftResult = { data: paidBuyer === undefined ? null : { buyer_user_id: paidBuyer }, error: null };
+
+    const res = await POST(makeRequest({}));
+
+    await expect(res.json()).resolves.toEqual({ state: 'none' });
+    expect(mockBuildCheckoutConfirmation).not.toHaveBeenCalled();
+    expect(mockRetrieve).not.toHaveBeenCalled();
+    expect(mockLogAudit).not.toHaveBeenCalled();
+  });
+
+  test.each([null, 'member-a'])('画面の指定が無く支払い済みの買い手が同じ（%s）なら payment_done', async (buyerUserId) => {
+    mockResolveCheckoutBuyer.mockResolvedValue(buyerUserId ? { kind: 'member', userId: buyerUserId } : { kind: 'guest' });
+    mockFindPaidCheckoutSession.mockResolvedValue('cs_test_paid');
+    mockPaidDraftResult = { data: { buyer_user_id: buyerUserId }, error: null };
+
+    const res = await POST(makeRequest({}));
+
+    await expect(res.json()).resolves.toEqual({ state: 'payment_done', checkoutSessionId: 'cs_test_paid' });
+    expect(mockDraftQueries).toEqual([
+      [['select', ['buyer_user_id']], ['eq', ['checkout_session_id', 'cs_test_paid']]],
+    ]);
+  });
+
+  test.each([['expired', 401, 'auth_expired'], ['unavailable', 503, 'Service temporarily unavailable']])('認証が %s なら %s、本文・Stripe・DB に触れる前に守り付きで返す', async (kind, status, error) => {
+    mockResolveCheckoutBuyer.mockResolvedValue({ kind });
+    const finish = jest.fn((response: NextResponse) => response);
+    mockGuard.mockResolvedValue({ ok: true, sessionId: 'sess-abc', finish });
+    const request = makeRequest({});
+    const readBody = jest.spyOn(request, 'json');
+
+    const res = await POST(request);
+
+    expect(res.status).toBe(status);
+    await expect(res.json()).resolves.toEqual({ error });
+    expect(mockResolveCheckoutBuyer).toHaveBeenCalledWith(request);
+    expect(finish).toHaveBeenCalledWith(res);
+    expect(readBody).not.toHaveBeenCalled();
+    expect(mockGetStripeServerClient).not.toHaveBeenCalled();
+    expect(mockFindPaidCheckoutSession).not.toHaveBeenCalled();
+    expect(mockFrom).not.toHaveBeenCalled();
+    expect(mockLogAudit).not.toHaveBeenCalled();
+  });
+
+  test.each(['open', 'complete'])('下書きが無い %s の画面は今までどおり扱う', async (status) => {
+    mockDraftResult = { data: null, error: null };
+    mockRetrieve.mockResolvedValue({
+      id: 'cs_test_abc', status, client_secret: 'cs_test_abc_secret',
+      metadata: { draft_id: 'draft-1', session_id: 'sess-abc' },
+    });
+
+    const res = await POST(makeRequest({ checkoutSessionId: 'cs_test_abc' }));
+
+    await expect(res.json()).resolves.toEqual(status === 'complete'
+      ? { state: 'payment_done', checkoutSessionId: 'cs_test_abc' } : { state: 'none' });
   });
 
   test('決済の画面の指定が無ければ、支払いの済んだ画面を探す。あれば payment_done、無ければ none', async () => {
