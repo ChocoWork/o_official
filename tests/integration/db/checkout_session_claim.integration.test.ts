@@ -104,6 +104,8 @@ describe("integration: Checkout Session draft claim", () => {
     if (clientA) {
       // 試験用に消した列と関数を、移行の後の状態（元の移行＋グループ C の移行）に戻す。
       // 戻さないと、後に走る DB 結合テストと E2E の「確認へ進む」が関数の無い DB に当たる。
+      // claim・attach・retire の関数と checkout_drafts の列・制約・索引を作り直す移行を後から足したら、
+      // ここで当て直す移行にも足すこと（足さないと、後に流れる試験と E2E が古い定義に当たる）。
       await clientA.query(CLEANUP_SQL);
       await clientA.query(COMPAT_SQL);
       await clientA.query(OWNER_BINDING_SQL);

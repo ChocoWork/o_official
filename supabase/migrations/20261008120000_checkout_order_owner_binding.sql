@@ -279,7 +279,8 @@ BEGIN
      OR _stripe_amount_discount IS NULL
      OR _stripe_amount_discount < 0
      OR NULLIF(pg_catalog.btrim(_stripe_currency), '') IS NULL
-     OR _checkout_session_created_at IS NULL THEN
+     OR _checkout_session_created_at IS NULL
+     OR (_buyer_user_id IS NOT NULL AND _shown_in_stock_variant_ids IS NULL) THEN
     RAISE EXCEPTION 'PLACE_ORDER_ARGUMENT_REQUIRED' USING ERRCODE = '22023';
   END IF;
 
@@ -303,17 +304,20 @@ BEGIN
   -- 「注文する」の経路では、「確認へ進む」の時の買い手と今の買い手が同じ時だけ進む（グループ C 設計書 5-3）。
   -- 既にある注文を返すより前に比べ、違う人に注文の ID を返さない。
   IF _shown_in_stock_variant_ids IS NOT NULL THEN
-    IF draft_row.id IS NOT NULL THEN
-      IF draft_row.buyer_user_id IS DISTINCT FROM _buyer_user_id THEN
-        RETURN QUERY SELECT NULL::uuid, NULL::public.order_status, false, 'login_changed'::text;
-        RETURN;
-      END IF;
-    ELSE
+    -- 下書きが無い時や Session・カートが合わない時は、既存注文の持ち主を基準にする。
+    IF draft_row.id IS NULL
+       OR draft_row.checkout_session_id IS DISTINCT FROM _checkout_session_id
+       OR draft_row.session_id IS DISTINCT FROM _cart_session_id THEN
       SELECT o.user_id
       INTO existing_owner
       FROM public.orders AS o
       WHERE o.checkout_session_id = _checkout_session_id;
       IF FOUND AND existing_owner IS DISTINCT FROM _buyer_user_id THEN
+        RETURN QUERY SELECT NULL::uuid, NULL::public.order_status, false, 'login_changed'::text;
+        RETURN;
+      END IF;
+    ELSE
+      IF draft_row.buyer_user_id IS DISTINCT FROM _buyer_user_id THEN
         RETURN QUERY SELECT NULL::uuid, NULL::public.order_status, false, 'login_changed'::text;
         RETURN;
       END IF;

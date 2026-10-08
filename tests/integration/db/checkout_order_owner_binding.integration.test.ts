@@ -66,6 +66,7 @@ describeLocalDb('integration: 注文の持ち主の確かめ（グループ C）
       const row = await placeFromFinalScreen(db(), draft, buyer);
       expect(row.rejection).toBeNull();
       expect(row.created).toBe(true);
+      expect(row.order_id).not.toBeNull();
       expect(await ownerOf(db(), row.order_id as string)).toBe(buyer);
     });
 
@@ -74,6 +75,7 @@ describeLocalDb('integration: 注文の持ち主の確かめ（グループ C）
       const draft = await createDraft(db(), { itemId });
       const row = await placeFromFinalScreen(db(), draft, null);
       expect(row.rejection).toBeNull();
+      expect(row.order_id).not.toBeNull();
       expect(await ownerOf(db(), row.order_id as string)).toBeNull();
     });
 
@@ -100,8 +102,11 @@ describeLocalDb('integration: 注文の持ち主の確かめ（グループ C）
       const { itemId } = await createCatalogFixture(db(), { stock: 0 });
       const draft = await createDraft(db(), { itemId, buyerUserId: buyer });
       const first = await placeFromFinalScreen(db(), draft, buyer);
+      expect(first).toMatchObject({ created: true, rejection: null });
+      expect(first.order_id).not.toBeNull();
       const second = await placeFromFinalScreen(db(), draft, buyer);
       expect(second).toMatchObject({ order_id: first.order_id, created: false, rejection: null });
+      expect(second.order_id).not.toBeNull();
       expect(await placeFromFinalScreen(db(), draft, other)).toMatchObject({ order_id: null, rejection: 'login_changed' });
     });
 
@@ -111,9 +116,55 @@ describeLocalDb('integration: 注文の持ち主の確かめ（グループ C）
       const { itemId } = await createCatalogFixture(db(), { stock: 0 });
       const draft = await createDraft(db(), { itemId, buyerUserId: buyer });
       const first = await placeFromFinalScreen(db(), draft, buyer);
+      expect(first).toMatchObject({ created: true, rejection: null });
+      expect(first.order_id).not.toBeNull();
       await db().query('delete from public.checkout_drafts where id = $1', [draft.draftId]);
       expect(await placeFromFinalScreen(db(), draft, other)).toMatchObject({ order_id: null, rejection: 'login_changed' });
-      expect((await placeFromFinalScreen(db(), draft, buyer)).order_id).toBe(first.order_id);
+      const retried = await placeFromFinalScreen(db(), draft, buyer);
+      expect(retried).toMatchObject({ order_id: first.order_id, created: false, rejection: null });
+      expect(retried.order_id).not.toBeNull();
+    });
+
+    test('下書きと Session・カートの組み合わせが違う時は、既存注文の持ち主と比べて別の買い手に ID を返さない', async () => {
+      const buyer = await member('mixed-draft');
+      const other = await member('mixed-draft-other');
+      const { itemId } = await createCatalogFixture(db(), { stock: 0 });
+      const firstDraft = await createDraft(db(), { itemId, buyerUserId: buyer });
+      const first = await placeFromFinalScreen(db(), firstDraft, buyer);
+      expect(first).toMatchObject({ created: true, rejection: null });
+      expect(first.order_id).not.toBeNull();
+      expect(await ownerOf(db(), first.order_id as string)).toBe(buyer);
+      const secondDraft = await createDraft(db(), { itemId, buyerUserId: buyer });
+      const otherDraft = await createDraft(db(), { itemId, buyerUserId: other });
+
+      // 同じ買い手の別の下書きと、別の買い手の下書きのどちらでも、Session 1 の注文の持ち主を基準にする。
+      for (const mismatchedDraft of [
+        { ...secondDraft, checkoutSessionId: firstDraft.checkoutSessionId },
+        { ...otherDraft, checkoutSessionId: firstDraft.checkoutSessionId },
+        { ...firstDraft, cartSessionId: secondDraft.cartSessionId },
+      ]) {
+        expect(await placeFromFinalScreen(db(), mismatchedDraft, other)).toMatchObject({
+          order_id: null, order_status: null, created: false, rejection: 'login_changed',
+        });
+        const retried = await placeFromFinalScreen(db(), mismatchedDraft, buyer);
+        expect(retried).toMatchObject({ order_id: first.order_id, created: false, rejection: null });
+        expect(retried.order_id).not.toBeNull();
+      }
+
+      // 照合で作った注文が後から会員に紐付いた場合も、カートが違えば下書きの買い手を使わない。
+      const reconciled = await placeFromReconciler(db(), otherDraft);
+      expect(reconciled.rejection).toBeNull();
+      expect(reconciled.order_id).not.toBeNull();
+      expect(await ownerOf(db(), reconciled.order_id as string)).toBeNull();
+      await db().query('update public.orders set user_id = $1 where id = $2', [buyer, reconciled.order_id]);
+      expect(await ownerOf(db(), reconciled.order_id as string)).toBe(buyer);
+      const mismatchedCart = { ...otherDraft, cartSessionId: secondDraft.cartSessionId };
+      expect(await placeFromFinalScreen(db(), mismatchedCart, other)).toMatchObject({
+        order_id: null, order_status: null, created: false, rejection: 'login_changed',
+      });
+      const retried = await placeFromFinalScreen(db(), mismatchedCart, buyer);
+      expect(retried).toMatchObject({ order_id: reconciled.order_id, created: false, rejection: null });
+      expect(retried.order_id).not.toBeNull();
     });
 
     test('照合の経路（「注文する」を通らない支払い）では、下書きに買い手があっても持ち主を付けない', async () => {
@@ -122,7 +173,41 @@ describeLocalDb('integration: 注文の持ち主の確かめ（グループ C）
       const draft = await createDraft(db(), { itemId, buyerUserId: buyer });
       const row = await placeFromReconciler(db(), draft);
       expect(row.rejection).toBeNull();
+      expect(row.order_id).not.toBeNull();
       expect(await ownerOf(db(), row.order_id as string)).toBeNull();
+    });
+
+    test('照合の経路に買い手を渡すと、既存注文があっても 22023 の例外で断る', async () => {
+      const buyer = await member('reconciler-buyer');
+      const { itemId } = await createCatalogFixture(db(), { stock: 0 });
+      const draft = await createDraft(db(), { itemId, buyerUserId: buyer });
+      const ordered = await placeFromFinalScreen(db(), draft, buyer);
+      expect(ordered).toMatchObject({ created: true, rejection: null });
+      expect(ordered.order_id).not.toBeNull();
+      await expect(db().query(
+        `select * from public.place_order_from_checkout_draft(
+           _draft_id => $1, _checkout_session_id => $2, _cart_session_id => $3,
+           _stripe_amount_total => $4, _stripe_amount_discount => 0, _stripe_currency => 'jpy',
+           _checkout_session_created_at => now(), _payment_intent_id => null,
+           _shown_in_stock_variant_ids => null, _buyer_user_id => $5)`,
+        [draft.draftId, draft.checkoutSessionId, draft.cartSessionId, draft.totalAmount, buyer],
+      )).rejects.toMatchObject({ message: 'PLACE_ORDER_ARGUMENT_REQUIRED', code: '22023' });
+    });
+
+    test('14引数の claim と10引数の受付は anon・authenticated が実行できず service_role だけ実行できる', async () => {
+      const signatures = [
+        'public.claim_checkout_draft(text,smallint,text,text,text,text,text,integer,integer,integer,integer,jsonb,jsonb,uuid)',
+        'public.place_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamptz,text,bigint[],uuid)',
+      ];
+      for (const signature of signatures) {
+        const result = await db().query(
+          `select has_function_privilege('anon', $1::text, 'EXECUTE') as anon,
+                  has_function_privilege('authenticated', $1::text, 'EXECUTE') as authenticated,
+                  has_function_privilege('service_role', $1::text, 'EXECUTE') as service_role`,
+          [signature],
+        );
+        expect(result.rows[0]).toEqual({ anon: false, authenticated: false, service_role: true });
+      }
     });
 
     test('下書きの買い手は後から変えられない（空から会員へも）', async () => {
@@ -143,6 +228,8 @@ describeLocalDb('integration: 注文の持ち主の確かめ（グループ C）
       const other = await member('owner-other');
       const { itemId } = await createCatalogFixture(db(), { stock: 0 });
       const row = await placeFromFinalScreen(db(), await createDraft(db(), { itemId }), null);
+      expect(row).toMatchObject({ created: true, rejection: null });
+      expect(row.order_id).not.toBeNull();
       const orderId = row.order_id as string;
       await db().query('update public.orders set user_id = $1 where id = $2', [owner, orderId]);
       expect(await ownerOf(db(), orderId)).toBe(owner);
@@ -154,8 +241,13 @@ describeLocalDb('integration: 注文の持ち主の確かめ（グループ C）
       const leaving = await createMember(db(), 'leaving');
       const { itemId } = await createCatalogFixture(db(), { stock: 0 });
       const ordered = await placeFromFinalScreen(db(), await createDraft(db(), { itemId, buyerUserId: leaving }), leaving);
+      expect(ordered).toMatchObject({ created: true, rejection: null });
+      expect(ordered.order_id).not.toBeNull();
+      expect(await ownerOf(db(), ordered.order_id as string)).toBe(leaving);
       const pendingDraft = await createDraft(db(), { itemId, buyerUserId: leaving });
       await db().query('delete from auth.users where id = $1', [leaving]);
+      const remaining = await db().query('select count(*)::int as n from public.orders where id = $1', [ordered.order_id]);
+      expect(remaining.rows[0].n).toBe(1);
       expect(await ownerOf(db(), ordered.order_id as string)).toBeNull();
       expect((await placeFromFinalScreen(db(), pendingDraft, null)).rejection).toBe('login_changed');
     });
