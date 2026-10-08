@@ -17,7 +17,7 @@ for (const viewport of viewports) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
     });
 
-    test('FREQ-428-AC-01・FREQ-431-AC-01・FREQ-432-AC-04: ログインで残り、ログアウトで消え、もう一度のログインで戻る', async ({ page, context }) => {
+    test('FREQ-428-AC-01・FREQ-431-AC-01・FREQ-431-AC-02・FREQ-432-AC-04: ログインで残り、ログアウトで消え、もう一度のログインで戻る', async ({ page, context }) => {
       const seeded = await seedCart(page);
       test.skip(!seeded.ok, seeded.ok ? '' : seeded.reason);
       if (!seeded.ok) return;
@@ -59,9 +59,11 @@ for (const viewport of viewports) {
         const deleted = logout.headersArray().some((header) => {
           if (header.name.toLowerCase() !== 'set-cookie') return false;
           const [cookie, ...attributes] = header.value.split(';').map((part) => part.trim());
-          return cookie === `${cookieName}=` && attributes.some((attribute) =>
-            /^max-age=0$/i.test(attribute) ||
-            (/^expires=/i.test(attribute) && Date.parse(attribute.slice('expires='.length)) <= Date.now()));
+          // Path が違う指示ではブラウザの Path=/ の Cookie は消えないので、Path=/ も求める
+          return cookie === `${cookieName}=` && attributes.some((attribute) => /^path=\/$/i.test(attribute)) &&
+            attributes.some((attribute) =>
+              /^max-age=0$/i.test(attribute) ||
+              (/^expires=/i.test(attribute) && Date.parse(attribute.slice('expires='.length)) <= Date.now()));
         });
         // 応答の Cookie の値を差分に出さず、名前ごとの削除指示の有無だけを比較する。
         expect(deleted, `${cookieName} の Cookie を消す指示があること`).toBe(true);
