@@ -7,7 +7,7 @@ import {
   type OrderEmailRow,
 } from '@/lib/orders/order-confirmation-email';
 import type { OrderStatus } from '@/lib/orders/order-payment-types';
-import { SHIPPING_CARRIERS, SHIPPING_CARRIER_IDS, type ShippingCarrierId } from '@/lib/orders/shipping-carriers';
+import { SHIPPING_CARRIERS, isShippingCarrierId } from '@/lib/orders/shipping-carriers';
 import type { OrderEmailKind, OrderEmailVariant } from '@/lib/orders/email/order-email-types';
 
 /**
@@ -204,10 +204,6 @@ function composeCanceled(material: OrderEmailMaterial, previousStatus: 'payment_
       SHOP_NAME,
     ].join('\n'),
   };
-}
-
-function isShippingCarrierId(value: unknown): value is ShippingCarrierId {
-  return typeof value === 'string' && (SHIPPING_CARRIER_IDS as readonly string[]).includes(value);
 }
 
 /** 配送業者か伝票番号が無ければ作らない（送れない材料の不足） */

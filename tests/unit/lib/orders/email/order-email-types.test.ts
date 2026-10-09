@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   describeOrderEmailState,
   isOrderEmailErrorCode,
@@ -5,10 +7,67 @@ import {
   ORDER_EMAIL_ERROR_CODES,
   ORDER_EMAIL_ERROR_LABELS,
   ORDER_EMAIL_KIND_LABELS,
+  ORDER_EMAIL_KINDS,
+  ORDER_EMAIL_STATUSES,
+  ORDER_EMAIL_DELIVERY_STATUSES,
+  DELIVERY_PROBLEM_STATUSES,
   RESENDABLE_ORDER_STATUSES,
+  type OrderEmailVariant,
+  type OrderEmailPauseReason,
+  type OrderEmailSkipReason,
+  type OrderEmailFailureCategory,
 } from '@/lib/orders/email/order-email-types';
 
+/** アプリの値と DB の CHECK・関数の入力制限がずれないことを、移行の本文で確かめる。 */
+const outboxMigration = fs.readFileSync(
+  path.join(process.cwd(), 'supabase/migrations/20261009120000_order_email_outbox.sql'), 'utf8',
+);
+
+function sqlValues(pattern: RegExp, sql = outboxMigration): string[] {
+  const values = sql.match(pattern)?.[1];
+  expect(values).toBeDefined();
+  return [...(values ?? '').matchAll(/'([^']+)'/g)].map((match) => match[1]).sort();
+}
+
 describe('注文のメールの種類と名前', () => {
+  it('メールの種類・状態・配達の状態は DB の CHECK と同じ値', () => {
+    expect([...ORDER_EMAIL_KINDS].sort()).toEqual(sqlValues(/CHECK\s*\(kind IN \(([^)]+)\)/));
+    expect([...ORDER_EMAIL_STATUSES].sort()).toEqual(sqlValues(/CHECK\s*\(status IN \(([^)]+)\)/));
+    expect([...ORDER_EMAIL_DELIVERY_STATUSES].sort()).toEqual(sqlValues(/delivery_status IN \(([^)]+)\)/));
+  });
+
+  it('書き分けと一時停止の理由は DB の CHECK と同じ値', () => {
+    // 型だけの値も Record で全件を並べ、型の増減と DB の増減を両方検知する。
+    const variants: Record<OrderEmailVariant, true> = {
+      order_confirmed: true, payment_received: true, payment_received_after_expiry: true, payment_in_progress: true, pending: true,
+    };
+    const pauseReasons: Record<OrderEmailPauseReason, true> = {
+      config_api_key: true, config_sender_domain: true, config_provider: true, quota_daily: true, quota_monthly: true,
+    };
+    const paidVariants = sqlValues(/kind = 'paid'[\s\S]*?variant IN \(([^)]+)\)/);
+    const canceledVariants = sqlValues(/kind = 'canceled'[\s\S]*?variant IN \(([^)]+)\)/);
+    expect(Object.keys(variants).sort()).toEqual([...paidVariants, ...canceledVariants].sort());
+    expect(Object.keys(pauseReasons).sort()).toEqual(sqlValues(/reason IN \(([^)]+)\)/));
+  });
+
+  it('取りやめの理由・失敗の分類は DB の関数の入力制限と同じ値', () => {
+    const skipReasons: Record<OrderEmailSkipReason, true> = { superseded: true, no_recipient: true };
+    const categories: Record<OrderEmailFailureCategory, true> = { transient: true, config: true, permanent: true };
+    const skipFunction = outboxMigration.split('CREATE OR REPLACE FUNCTION public.skip_order_email')[1]?.split('$$;')[0];
+    const failFunction = outboxMigration.split('CREATE OR REPLACE FUNCTION public.fail_order_email')[1]?.split('$$;')[0];
+    expect(skipFunction).toBeDefined();
+    expect(failFunction).toBeDefined();
+    expect(Object.keys(skipReasons).sort()).toEqual(sqlValues(/_reason NOT IN \(([^)]+)\)/, skipFunction));
+    expect(Object.keys(categories).sort()).toEqual(sqlValues(/_category NOT IN \(([^)]+)\)/, failFunction));
+  });
+
+  it('原因の記号は DB の CHECK の形を満たし、配達の問題の一覧は DB の索引と同じ値', () => {
+    const errorPattern = outboxMigration.match(/last_error_code ~ '([^']+)'/)?.[1];
+    expect(errorPattern).toBeDefined();
+    for (const code of ORDER_EMAIL_ERROR_CODES) expect(code).toMatch(new RegExp(errorPattern as string));
+    expect([...DELIVERY_PROBLEM_STATUSES].sort()).toEqual(sqlValues(/WHERE delivery_status IN \(([^)]+)\)/));
+  });
+
   it('種類の名前は設計書のとおり', () => {
     expect(ORDER_EMAIL_KIND_LABELS).toEqual({
       paid: '注文確認', awaiting_payment: '入金待ち', payment_expired: '支払い期限切れ', canceled: '取消', shipped: '発送',

@@ -1,4 +1,3 @@
-
 import {
   composeOrderEmail,
   loadOrderEmailMaterial,
@@ -141,33 +140,41 @@ describe('composeOrderEmail', () => {
 
 describe('loadOrderEmailMaterial', () => {
   function store(results: { order: unknown; orderError?: unknown; items?: unknown; itemsError?: unknown }) {
+    const orderSelect = jest.fn(() => ({ eq: () => ({ maybeSingle: async () => ({ data: results.order, error: results.orderError ?? null }) }) }));
+    const itemSelect = jest.fn(() => ({ eq: async () => ({ data: results.items ?? null, error: results.itemsError ?? null }) }));
     const from = jest.fn((table: string) => {
       if (table === 'orders') {
-        return {
-          select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: results.order, error: results.orderError ?? null }) }) }),
-        };
+        return { select: orderSelect };
       }
-      return { select: () => ({ eq: async () => ({ data: results.items ?? null, error: results.itemsError ?? null }) }) };
+      return { select: itemSelect };
     });
-    return { from } as never;
+    return { client: { from } as never, orderSelect, itemSelect };
   }
 
   it('注文と明細を読む。注文の状態・配送業者・伝票番号も読む', async () => {
     const order = material().order;
     const items = material().items;
+    const db = store({ order, items });
 
-    await expect(loadOrderEmailMaterial(store({ order, items }), ORDER_ID)).resolves.toEqual({ order, items });
+    await expect(loadOrderEmailMaterial(db.client, ORDER_ID)).resolves.toEqual({ order, items });
+    const columns = (db.orderSelect.mock.calls[0] as unknown as [string])[0].split(',').map((column) => column.trim());
+    expect(columns).toEqual([
+      'id', 'status', 'shipping_email', 'shipping_full_name', 'subtotal_amount', 'shipping_amount', 'discount_amount',
+      'total_amount', 'currency', 'shipping_postal_code', 'shipping_prefecture', 'shipping_city', 'shipping_address',
+      'shipping_building', 'shipping_phone', 'review_reason', 'shipping_carrier', 'tracking_number',
+    ]);
+    expect(db.itemSelect).toHaveBeenCalledWith('item_name, color, size, quantity, line_total, fulfillment_type');
   });
 
   it('注文が無い・明細が0件なら null', async () => {
-    await expect(loadOrderEmailMaterial(store({ order: null }), ORDER_ID)).resolves.toBeNull();
-    await expect(loadOrderEmailMaterial(store({ order: material().order, items: [] }), ORDER_ID)).resolves.toBeNull();
+    await expect(loadOrderEmailMaterial(store({ order: null }).client, ORDER_ID)).resolves.toBeNull();
+    await expect(loadOrderEmailMaterial(store({ order: material().order, items: [] }).client, ORDER_ID)).resolves.toBeNull();
   });
 
   it('読めなければ OrderEmailMaterialError を投げる', async () => {
-    await expect(loadOrderEmailMaterial(store({ order: null, orderError: { message: 'down' } }), ORDER_ID)).rejects.toBeInstanceOf(OrderEmailMaterialError);
+    await expect(loadOrderEmailMaterial(store({ order: null, orderError: { message: 'down' } }).client, ORDER_ID)).rejects.toBeInstanceOf(OrderEmailMaterialError);
     await expect(
-      loadOrderEmailMaterial(store({ order: material().order, itemsError: { message: 'down' } }), ORDER_ID),
+      loadOrderEmailMaterial(store({ order: material().order, itemsError: { message: 'down' } }).client, ORDER_ID),
     ).rejects.toBeInstanceOf(OrderEmailMaterialError);
   });
 });

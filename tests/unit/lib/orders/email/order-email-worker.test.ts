@@ -1,7 +1,14 @@
 jest.mock('@/lib/audit', () => ({ logAudit: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('@/lib/supabase/server', () => ({ createServiceRoleClient: jest.fn() }));
 
-import { processOrderEmails, skipReasonFor, type OrderEmailWorkerDeps } from '@/lib/orders/email/order-email-worker';
+import {
+  orderEmailWorkerDisabledReason,
+  processOrderEmails,
+  runOrderEmailWorker,
+  skipReasonFor,
+  type OrderEmailWorkerDeps,
+} from '@/lib/orders/email/order-email-worker';
+import { createServiceRoleClient } from '@/lib/supabase/server';
 import { OrderEmailMaterialError, type OrderEmailMaterial } from '@/lib/orders/email/order-email-compose';
 import type { OrderEmailStore } from '@/lib/orders/email/order-email-store';
 import type { OrderEmailSendOutcome } from '@/lib/orders/email/order-email-sender';
@@ -36,6 +43,7 @@ function harness(queue: QueueRow[], options: {
   material?: OrderEmailMaterial | null | Error;
   send?: OrderEmailSendOutcome[];
   saveResult?: boolean;
+  completeResult?: boolean;
   failOn?: string;
   config?: OrderEmailWorkerDeps['checkConfig'];
   clock?: number[];
@@ -51,6 +59,7 @@ function harness(queue: QueueRow[], options: {
       case 'save_order_email_content':
         return { data: options.saveResult ?? true, error: null };
       case 'complete_order_email':
+        return { data: options.completeResult ?? true, error: null };
       case 'skip_order_email':
         return { data: true, error: null };
       case 'fail_order_email':
@@ -81,6 +90,48 @@ function harness(queue: QueueRow[], options: {
 }
 
 const names = (calls: Array<{ name: string }>) => calls.map((call) => call.name);
+
+describe('orderEmailWorkerDisabledReason', () => {
+  it.each([
+    ['Vercel preview', { NODE_ENV: 'production', VERCEL_ENV: 'preview' }, 'non_production_deployment'],
+    ['Vercel development', { NODE_ENV: 'development', VERCEL_ENV: 'development', SUPABASE_URL: 'http://127.0.0.1:54321' }, 'non_production_deployment'],
+    ['Vercel production', { NODE_ENV: 'production', VERCEL_ENV: 'production' }, null],
+    ['Vercel でない本番ビルド', { NODE_ENV: 'production' }, null],
+    ['next dev と本番の DB', { NODE_ENV: 'development', SUPABASE_URL: 'https://project.supabase.co' }, 'development_shared_database'],
+    ['next dev と手元の IPv4', { NODE_ENV: 'development', SUPABASE_URL: 'http://127.0.0.1:54321' }, null],
+    ['next dev と localhost', { NODE_ENV: 'development', NEXT_PUBLIC_SUPABASE_URL: 'http://localhost:54321' }, null],
+    ['next dev と手元の IPv6', { NODE_ENV: 'development', SUPABASE_URL: 'http://[::1]:54321' }, null],
+    ['next dev と住所なし', { NODE_ENV: 'development' }, 'development_shared_database'],
+    ['next dev と壊れた住所', { NODE_ENV: 'development', SUPABASE_URL: 'broken-url' }, 'development_shared_database'],
+    ['非公開の住所を優先', { NODE_ENV: 'development', SUPABASE_URL: 'https://project.supabase.co', NEXT_PUBLIC_SUPABASE_URL: 'http://localhost:54321' }, 'development_shared_database'],
+    ['空の非公開の住所は公開の住所へ', { NODE_ENV: 'development', SUPABASE_URL: '', NEXT_PUBLIC_SUPABASE_URL: 'http://localhost:54321' }, null],
+    ['localhost に似た外部の host', { NODE_ENV: 'development', SUPABASE_URL: 'https://localhost.example.com' }, 'development_shared_database'],
+  ] as const)('%s の環境判定', (_name, env, expected) => {
+    expect(orderEmailWorkerDisabledReason(env)).toBe(expected);
+  });
+});
+
+describe('runOrderEmailWorker の環境の守り', () => {
+  beforeEach(() => jest.clearAllMocks());
+  afterEach(() => jest.restoreAllMocks());
+
+  it.each([
+    [{ NODE_ENV: 'production', VERCEL_ENV: 'preview' }, 'non_production_deployment'],
+    [{ NODE_ENV: 'development', VERCEL_ENV: 'development', SUPABASE_URL: 'http://127.0.0.1:54321' }, 'non_production_deployment'],
+    [{ NODE_ENV: 'development', SUPABASE_URL: 'https://project.supabase.co' }, 'development_shared_database'],
+    [{ NODE_ENV: 'development' }, 'development_shared_database'],
+    [{ NODE_ENV: 'development', SUPABASE_URL: 'broken-url' }, 'development_shared_database'],
+  ] as const)('%o では DB に触れず disabled を返す', async (env, reason) => {
+    jest.replaceProperty(process, 'env', env);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await expect(runOrderEmailWorker()).resolves.toEqual({ sent: 0, skipped: 0, failed: 0, stoppedBy: 'disabled' });
+
+    expect(createServiceRoleClient).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith('[order-email-worker] skipped', reason);
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('processOrderEmails', () => {
   afterEach(() => jest.restoreAllMocks());
@@ -164,12 +215,15 @@ describe('processOrderEmails', () => {
 
   it('担当を失っていて控えられなければ、送らず何も書かない', async () => {
     const h = harness([row()], { saveResult: false });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
     const result = await processOrderEmails(h.deps);
 
     expect(h.send).not.toHaveBeenCalled();
     expect(names(h.calls)).not.toContain('fail_order_email');
     expect(result.failed).toBe(1);
+    expect(warn).toHaveBeenCalledWith('[order-email-worker] lease lost', 'email-1');
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 
   it('一時的な失敗は待つ時間の指示を渡してやり直し、次の行へ進む', async () => {
@@ -216,7 +270,7 @@ describe('processOrderEmails', () => {
     const error = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     await expect(processOrderEmails(h.deps)).resolves.toMatchObject({ stoppedBy: 'claim_error' });
-    expect(error).toHaveBeenCalledWith('[order-email-worker] claim failed', 'OrderEmailStoreError');
+    expect(error).toHaveBeenCalledWith('[order-email-worker] claim failed', 'OrderEmailStoreError', '08006');
     expect(error).toHaveBeenCalledTimes(1);
   });
 
@@ -236,7 +290,36 @@ describe('processOrderEmails', () => {
     const error = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     await expect(processOrderEmails(h.deps)).resolves.toMatchObject({ sent: 1, stoppedBy: 'empty' });
-    expect(error).toHaveBeenCalledWith('[order-email-worker] failed to record sent', 'email-1', 'OrderEmailStoreError');
+    expect(error).toHaveBeenCalledWith('[order-email-worker] failed to record sent', 'email-1', 'OrderEmailStoreError', '08006');
+    expect(error).toHaveBeenCalledTimes(1);
+  });
+
+  it('送信済みの記録で担当を失ったときは、行の ID だけを警告する', async () => {
+    const h = harness([row()], { completeResult: false });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await expect(processOrderEmails(h.deps)).resolves.toMatchObject({ sent: 1, stoppedBy: 'empty' });
+
+    expect(warn).toHaveBeenCalledWith('[order-email-worker] lease lost', 'email-1');
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['fail_order_email', { send: [{ ok: false, failure: { category: 'transient', code: 'network_error', retryAfterSeconds: null } }] }, ['email-1', 'network_error']],
+    ['skip_order_email', { material: material({ shipping_email: null }) }, ['email-1', 'no_recipient']],
+    ['pause_order_email_sending', { config: () => 'config_provider' }, ['config_provider']],
+  ] satisfies Array<[string, Parameters<typeof harness>[1], string[]]>)('%s の DB 失敗は原因と SQLSTATE だけを記録する', async (failOn, options, context) => {
+    const h = harness([row()], { ...options, failOn });
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    await processOrderEmails(h.deps);
+
+    const messages: Record<string, string> = {
+      fail_order_email: '[order-email-worker] failed to record failure',
+      skip_order_email: '[order-email-worker] failed to record skip',
+      pause_order_email_sending: '[order-email-worker] failed to pause sending',
+    };
+    expect(error).toHaveBeenCalledWith(messages[failOn], ...context, 'OrderEmailStoreError', '08006');
     expect(error).toHaveBeenCalledTimes(1);
   });
 });

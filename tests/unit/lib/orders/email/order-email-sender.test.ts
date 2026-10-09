@@ -16,21 +16,34 @@ import {
   checkOrderEmailSendConfig,
   classifyResendError,
   parseRetryAfter,
+  ORDER_EMAIL_SEND_TIMEOUT_MS,
   sendOrderEmailMessage,
 } from '@/lib/orders/email/order-email-sender';
 
 const MESSAGE = { to: 'hanako@example.com', subject: '件名', text: '本文', idempotencyKey: 'order-email/email-1' };
 const RESEND_ENV = { NODE_ENV: 'production', MAIL_PROVIDER: 'resend', MAIL_FROM_ADDRESS: 'shop@example.com', RESEND_API_KEY: 're_test_key' };
+const LOCAL_ENV = { NODE_ENV: 'production', MAIL_PROVIDER: 'local', MAIL_FROM_ADDRESS: 'no-reply@e2e.test', SUPABASE_URL: 'http://127.0.0.1:54321' };
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockResendSend.mockReset();
+  mockLocalSend.mockReset();
 });
+
+afterEach(() => jest.useRealTimers());
 
 describe('checkOrderEmailSendConfig', () => {
   it.each([
     [{ ...RESEND_ENV }, null],
-    [{ NODE_ENV: 'production', MAIL_PROVIDER: 'local', MAIL_FROM_ADDRESS: 'shop@example.com' }, null],
-    [{ NODE_ENV: 'development', MAIL_FROM_ADDRESS: 'shop@example.com' }, null],
+    [LOCAL_ENV, null],
+    [{ NODE_ENV: 'development', MAIL_FROM_ADDRESS: 'shop@example.com', SUPABASE_URL: 'http://127.0.0.1:54321' }, null],
+    [{ ...LOCAL_ENV, SUPABASE_URL: 'https://project.supabase.co' }, 'config_provider'],
+    [{ ...LOCAL_ENV, SUPABASE_URL: undefined }, 'config_provider'],
+    [{ ...LOCAL_ENV, SUPABASE_URL: 'broken-url' }, 'config_provider'],
+    [{ ...LOCAL_ENV, SUPABASE_URL: undefined, NEXT_PUBLIC_SUPABASE_URL: 'http://localhost:54321' }, null],
+    [{ ...LOCAL_ENV, SUPABASE_URL: 'http://[::1]:54321' }, null],
+    [{ ...LOCAL_ENV, SUPABASE_URL: 'https://project.supabase.co', NEXT_PUBLIC_SUPABASE_URL: 'http://localhost:54321' }, 'config_provider'],
+    [{ ...LOCAL_ENV, SUPABASE_URL: 'http://localhost:54321', NEXT_PUBLIC_SUPABASE_URL: 'https://project.supabase.co' }, null],
     [{ NODE_ENV: 'production', MAIL_FROM_ADDRESS: 'shop@example.com' }, 'config_provider'],
     [{ NODE_ENV: 'production', MAIL_PROVIDER: 'ses', MAIL_FROM_ADDRESS: 'shop@example.com' }, 'config_provider'],
     [{ NODE_ENV: 'production', MAIL_PROVIDER: 'smtp', MAIL_FROM_ADDRESS: 'shop@example.com' }, 'config_provider'],
@@ -113,9 +126,7 @@ describe('sendOrderEmailMessage', () => {
 
   it('手元のメール受けは Mailpit へ送る（メールの番号は持たない）', async () => {
     mockLocalSend.mockResolvedValue({ ID: 'mailpit-1' });
-    const env = { NODE_ENV: 'production', MAIL_PROVIDER: 'local', MAIL_FROM_ADDRESS: 'no-reply@e2e.test' };
-
-    await expect(sendOrderEmailMessage(MESSAGE, env)).resolves.toEqual({ ok: true, providerMessageId: null });
+    await expect(sendOrderEmailMessage(MESSAGE, LOCAL_ENV)).resolves.toEqual({ ok: true, providerMessageId: null });
     expect(mockLocalSend).toHaveBeenCalledWith({ to: 'hanako@example.com', subject: '件名', text: '本文', from: 'no-reply@e2e.test' });
     expect(mockResendSend).not.toHaveBeenCalled();
   });
@@ -131,5 +142,79 @@ describe('sendOrderEmailMessage', () => {
     });
     expect(mockResendSend).not.toHaveBeenCalled();
     expect(mockLocalSend).not.toHaveBeenCalled();
+  });
+
+  it('local と共有の DB の組み合わせは送信前に設定の問題を返す', async () => {
+    await expect(sendOrderEmailMessage(MESSAGE, { ...LOCAL_ENV, SUPABASE_URL: 'https://project.supabase.co' })).resolves.toEqual({
+      ok: false, failure: { category: 'config', code: 'config_provider', retryAfterSeconds: null },
+    });
+    expect(mockLocalSend).not.toHaveBeenCalled();
+    expect(mockResendSend).not.toHaveBeenCalled();
+  });
+});
+
+describe('sendOrderEmailMessage の時間上限', () => {
+  beforeEach(() => jest.useFakeTimers());
+
+  it.each([
+    ['Resend', RESEND_ENV, mockResendSend],
+    ['手元のメール受け', LOCAL_ENV, mockLocalSend],
+  ] as const)('%s の返事がなければ8秒で通信の一時的な失敗になる', async (_name, env, send) => {
+    send.mockReturnValue(new Promise(() => {}));
+    const result = jest.fn();
+    void sendOrderEmailMessage(MESSAGE, env).then(result);
+
+    await jest.advanceTimersByTimeAsync(7_999);
+    expect(result).not.toHaveBeenCalled();
+    await jest.advanceTimersByTimeAsync(1);
+
+    expect(result).toHaveBeenCalledWith({ ok: false, failure: { category: 'transient', code: 'network_error', retryAfterSeconds: null } });
+    expect(result).toHaveBeenCalledTimes(1);
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('8秒より前に Resend の返事が来れば送信結果を返し、タイマーを止める', async () => {
+    mockResendSend.mockImplementation(() => new Promise((resolve) => {
+      setTimeout(() => resolve({ data: { id: 're_fast' }, error: null, headers: {} }), 7_999);
+    }));
+    const result = sendOrderEmailMessage(MESSAGE, RESEND_ENV);
+
+    await jest.advanceTimersByTimeAsync(7_999);
+
+    await expect(result).resolves.toEqual({ ok: true, providerMessageId: 're_fast' });
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it.each([
+    ['Resend', RESEND_ENV, mockResendSend],
+    ['手元のメール受け', LOCAL_ENV, mockLocalSend],
+  ] as const)('%s が打ち切り後に失敗しても未処理の Promise の失敗にならない', async (_name, env, send) => {
+    let rejectSend!: (reason: Error) => void;
+    send.mockReturnValue(new Promise((_resolve, reject) => { rejectSend = reject; }));
+    const result = jest.fn();
+    void sendOrderEmailMessage(MESSAGE, env).then(result);
+
+    await jest.advanceTimersByTimeAsync(ORDER_EMAIL_SEND_TIMEOUT_MS);
+    expect(result).toHaveBeenCalledWith({ ok: false, failure: { category: 'transient', code: 'network_error', retryAfterSeconds: null } });
+    rejectSend(new Error('late network error'));
+    await jest.advanceTimersByTimeAsync(0);
+
+    expect(result).toHaveBeenCalledTimes(1);
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('打ち切り後に Resend が受け付けても、返した一時的な失敗を変えない', async () => {
+    let resolveSend!: (response: { data: { id: string }; error: null; headers: object }) => void;
+    mockResendSend.mockReturnValue(new Promise((resolve) => { resolveSend = resolve; }));
+    const result = jest.fn();
+    void sendOrderEmailMessage(MESSAGE, RESEND_ENV).then(result);
+
+    await jest.advanceTimersByTimeAsync(ORDER_EMAIL_SEND_TIMEOUT_MS);
+    expect(result).toHaveBeenCalledWith({ ok: false, failure: { category: 'transient', code: 'network_error', retryAfterSeconds: null } });
+    resolveSend({ data: { id: 're_late' }, error: null, headers: {} });
+    await jest.advanceTimersByTimeAsync(0);
+
+    expect(result).toHaveBeenCalledTimes(1);
+    expect(jest.getTimerCount()).toBe(0);
   });
 });

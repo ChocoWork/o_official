@@ -6,6 +6,7 @@ import {
 } from '@/lib/orders/email/order-email-compose';
 import {
   checkOrderEmailSendConfig,
+  isLocalOrderEmailDatabase,
   sendOrderEmailMessage,
   type OrderEmailMessage,
   type OrderEmailSendFailure,
@@ -18,6 +19,7 @@ import {
   pauseOrderEmailSending,
   saveOrderEmailContent,
   skipOrderEmail,
+  OrderEmailStoreError,
   type ClaimedOrderEmail,
   type OrderEmailStore,
 } from '@/lib/orders/email/order-email-store';
@@ -44,13 +46,36 @@ export type OrderEmailWorkerResult = {
   sent: number;
   skipped: number;
   failed: number;
-  stoppedBy: 'empty' | 'budget' | 'paused' | 'claim_error';
+  stoppedBy: 'empty' | 'budget' | 'paused' | 'claim_error' | 'disabled';
 };
+
+export type OrderEmailWorkerEnv = {
+  NODE_ENV?: string;
+  VERCEL_ENV?: string;
+  SUPABASE_URL?: string;
+  NEXT_PUBLIC_SUPABASE_URL?: string;
+};
+
+/**
+ * worker を動かさない環境なら理由を返す。送る予定の表と一時停止は DB 全体で1つなので、
+ * 本番の DB の行をほかの環境が取り出したり、一時停止を書いたりしないようにする。
+ * - Vercel の preview・development の公開（VERCEL_ENV が production でない）
+ * - 普段の開発（next dev）で、DB が手元の Supabase でない時（送り手が必ず手元のメール受けになり、お客様に届かないまま送信済みになる）
+ */
+export function orderEmailWorkerDisabledReason(
+  env: OrderEmailWorkerEnv = process.env,
+): 'non_production_deployment' | 'development_shared_database' | null {
+  if (env.VERCEL_ENV && env.VERCEL_ENV !== 'production') return 'non_production_deployment';
+  if (env.NODE_ENV === 'development' && !isLocalOrderEmailDatabase(env)) return 'development_shared_database';
+  return null;
+}
 
 type DeliverOutcome = 'sent' | 'skipped' | 'failed' | 'paused';
 
-function errorName(error: unknown): string {
-  return error instanceof Error ? error.name : 'UnknownError';
+/** DB の断りは短い記号だけを足す。例外の文や DB の詳しい説明はログに出さない。 */
+function errorDetails(error: unknown): string[] {
+  const name = error instanceof Error ? error.name : 'UnknownError';
+  return error instanceof OrderEmailStoreError && error.code ? [name, error.code] : [name];
 }
 
 /** 送る前に取りやめにする理由（設計書 4-1）。送ってよければ null */
@@ -75,7 +100,7 @@ async function recordFailure(
     await failOrderEmail(deps.store, claim, failure);
   } catch (error) {
     // 記録できなくても、担当の期限が切れた後に1回の失敗として数え直される
-    console.error('[order-email-worker] failed to record failure', claim.id, failure.code, errorName(error));
+    console.error('[order-email-worker] failed to record failure', claim.id, failure.code, ...errorDetails(error));
   }
   return failure.category === 'config' ? 'paused' : 'failed';
 }
@@ -96,7 +121,7 @@ async function deliver(deps: OrderEmailWorkerDeps, claim: ClaimedOrderEmail): Pr
     try {
       await skipOrderEmail(deps.store, claim, skip);
     } catch (error) {
-      console.error('[order-email-worker] failed to record skip', claim.id, skip, errorName(error));
+      console.error('[order-email-worker] failed to record skip', claim.id, skip, ...errorDetails(error));
     }
     return 'skipped';
   }
@@ -120,6 +145,7 @@ async function deliver(deps: OrderEmailWorkerDeps, claim: ClaimedOrderEmail): Pr
     }
     if (!saved) {
       // 担当の期限が切れて、別の worker が取り直した。こちらは送らない
+      console.warn('[order-email-worker] lease lost', claim.id);
       return 'failed';
     }
     content = composed;
@@ -136,10 +162,11 @@ async function deliver(deps: OrderEmailWorkerDeps, claim: ClaimedOrderEmail): Pr
   }
 
   try {
-    await completeOrderEmail(deps.store, claim, outcome.providerMessageId);
+    const completed = await completeOrderEmail(deps.store, claim, outcome.providerMessageId);
+    if (!completed) console.warn('[order-email-worker] lease lost', claim.id);
   } catch (error) {
     // 送れている。担当の期限の後に同じ中身・同じ鍵で送り直し、Resend が2通目を送らずに受け付けを返す
-    console.error('[order-email-worker] failed to record sent', claim.id, errorName(error));
+    console.error('[order-email-worker] failed to record sent', claim.id, ...errorDetails(error));
   }
   return 'sent';
 }
@@ -153,7 +180,7 @@ export async function processOrderEmails(deps: OrderEmailWorkerDeps): Promise<Or
     try {
       await pauseOrderEmailSending(deps.store, configError);
     } catch (error) {
-      console.error('[order-email-worker] failed to pause sending', configError, errorName(error));
+      console.error('[order-email-worker] failed to pause sending', configError, ...errorDetails(error));
     }
     return { ...result, stoppedBy: 'paused' };
   }
@@ -163,7 +190,7 @@ export async function processOrderEmails(deps: OrderEmailWorkerDeps): Promise<Or
     try {
       claim = await claimOrderEmail(deps.store, ORDER_EMAIL_LEASE_SECONDS);
     } catch (error) {
-      console.error('[order-email-worker] claim failed', errorName(error));
+      console.error('[order-email-worker] claim failed', ...errorDetails(error));
       return { ...result, stoppedBy: 'claim_error' };
     }
     if (!claim) return { ...result, stoppedBy: 'empty' };
@@ -180,6 +207,11 @@ export async function processOrderEmails(deps: OrderEmailWorkerDeps): Promise<Or
 
 /** 本物の依存で1回動かす */
 export async function runOrderEmailWorker(options: { budgetMs?: number } = {}): Promise<OrderEmailWorkerResult> {
+  const disabledReason = orderEmailWorkerDisabledReason();
+  if (disabledReason) {
+    console.warn('[order-email-worker] skipped', disabledReason);
+    return { sent: 0, skipped: 0, failed: 0, stoppedBy: 'disabled' };
+  }
   const client = await createServiceRoleClient();
   return processOrderEmails({
     store: client as unknown as OrderEmailStore,
