@@ -44,6 +44,15 @@ type ReviewRow = {
   review_marked_at: string | null;
 };
 
+/**
+ * ログに残すのは、例外の名前と DB の断りの記号（SQLSTATE などの短い記号）だけにする。
+ * 例外の文・details・hint には、行の値（支払い ID など）が混ざりうる。
+ */
+function safeErrorFields(error: unknown): string[] {
+  const code = typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : undefined;
+  return [error instanceof Error ? error.name : 'UnknownError', ...(typeof code === 'string' && code ? [code] : [])];
+}
+
 export async function GET(request: Request) {
   const authz = await authorizeAdminPermission('admin.orders.read', request);
   if (!authz.ok) {
@@ -72,7 +81,7 @@ export async function GET(request: Request) {
     ]);
 
     if (exceptionsResult.error || reviewsResult.error) {
-      console.error('[admin.order-attention] Failed to fetch', exceptionsResult.error ?? reviewsResult.error);
+      console.error('[admin.order-attention] Failed to fetch', ...safeErrorFields(exceptionsResult.error ?? reviewsResult.error));
       return NextResponse.json({ error: 'Failed to fetch order attention' }, { status: 500 });
     }
 
@@ -130,7 +139,7 @@ export async function GET(request: Request) {
     };
     return NextResponse.json({ data });
   } catch (error) {
-    console.error('GET /api/admin/order-attention error:', error);
+    console.error('GET /api/admin/order-attention error:', ...safeErrorFields(error));
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

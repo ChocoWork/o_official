@@ -23,13 +23,15 @@ let attachedExists = true;
 let attachedResolvedAt: string | null = null;
 let attachedOrder: Record<string, unknown> | null = null;
 let attachedOrderError: unknown = null;
+// 一覧の読み込みが DB に断られた時の error。null なら成功
+let listError: unknown = null;
 
 function listQuery(rows: () => unknown[]) {
   const query: Record<string, unknown> = {};
   for (const method of ['is', 'not', 'order', 'eq']) {
     query[method] = () => query;
   }
-  query.limit = async () => ({ data: rows(), count: rows().length, error: null });
+  query.limit = async () => ({ data: rows(), count: rows().length, error: listError });
   query.maybeSingle = async () => ({
     data: attachedOrderError || !attachedExists ? null : { resolved_at: attachedResolvedAt, orders: attachedOrder },
     error: attachedOrderError,
@@ -78,6 +80,7 @@ jest.mock('@/lib/orders/email/order-email-schedule', () => ({
 import { GET as getAttention } from '@/app/api/admin/order-attention/route';
 import { POST as postReview } from '@/app/api/admin/orders/[id]/review/route';
 import { POST as postResolve } from '@/app/api/admin/payment-exceptions/[id]/resolve/route';
+import { createServiceRoleClient } from '@/lib/supabase/server';
 import { ReconcileTransientError } from '@/lib/stripe/checkout-payment-reader';
 import { ORDER_EMAIL_ERROR_LABELS } from '@/lib/orders/email/order-email-types';
 
@@ -121,6 +124,7 @@ beforeEach(() => {
   attachedResolvedAt = null;
   attachedOrder = null;
   attachedOrderError = null;
+  listError = null;
   mockAuthorize.mockResolvedValue({ ok: true, userId: 'admin-1', role: 'supporter', actorEmail: null });
   mockRequireCsrf.mockResolvedValue(undefined);
   mockExpireOpenCheckoutSession.mockResolvedValue('expired');
@@ -158,6 +162,42 @@ describe('GET /api/admin/order-attention', () => {
       expect(warn.mock.calls).toEqual([['[admin.order-attention] Failed to fetch email sending state', 'OrderEmailStoreError', '08006']]);
     } finally {
       warn.mockRestore();
+    }
+  });
+
+  it('一覧を DB に断られたら 500。ログは例外の名前と DB の記号だけで、DB の文・details・hint は出さない', async () => {
+    listError = Object.assign(new Error('canceling statement for cs_1'), {
+      name: 'PostgrestError',
+      code: '57014',
+      details: 'Key (payment_ref)=(cs_1)',
+      hint: 'cs_1 を含むヒント',
+    });
+    const error = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const res = (await getAttention(new Request('http://localhost/api/admin/order-attention'))) as unknown as RouteResponse;
+      expect(res.status).toBe(500);
+      expect(res.body).toEqual({ error: 'Failed to fetch order attention' });
+      expect(error.mock.calls).toEqual([['[admin.order-attention] Failed to fetch', 'PostgrestError', '57014']]);
+      expect(JSON.stringify(error.mock.calls)).not.toContain('cs_1');
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it.each([
+    ['DB の記号がある例外は名前と記号', { code: '08006' }, ['TypeError', '08006']],
+    ['記号の無い例外は名前だけ', {}, ['TypeError']],
+  ])('予期しない例外は 500。ログは例外の名前と DB の記号だけで、例外の文は出さない（%s）', async (_name, extra, fields) => {
+    jest.mocked(createServiceRoleClient).mockRejectedValueOnce(Object.assign(new TypeError('fetch failed for cs_1'), extra));
+    const error = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const res = (await getAttention(new Request('http://localhost/api/admin/order-attention'))) as unknown as RouteResponse;
+      expect(res.status).toBe(500);
+      expect(res.body).toEqual({ error: 'Internal server error' });
+      expect(error.mock.calls).toEqual([['GET /api/admin/order-attention error:', ...fields]]);
+      expect(JSON.stringify(error.mock.calls)).not.toContain('cs_1');
+    } finally {
+      error.mockRestore();
     }
   });
 

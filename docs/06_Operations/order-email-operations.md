@@ -40,9 +40,32 @@ flowchart LR
 
 ## 1. 公開のときにやること
 
-### 1-1 公開前の送信待ちの確かめ
+### 1-1 本番の移行の順番と照合
 
-本番に移行を当てた後、`MAIL_PROVIDER` などの本番の環境変数を入れる前に、本番の `private.order_email_outbox` に溜まった送信待ち・送信中・やり直し待ちの行を確かめる。普段の開発で本番の DB につないだ `next dev` から決済・発送・取消を試すと、状態を変える DB の関数は同じ取引で送る予定の行を書く。開発の worker は環境の門で止まるため、行は残り、公開後の最初の worker が本物の Resend から試しの注文の宛先へ送ってしまう。実在の他人の宛先なら個人情報が届き、架空の宛先なら跳ね返りで送信の評価が下がる。
+移行は戻さない。直す時は前へ進める移行で直す。[移行 A](../../supabase/migrations/20261009120000_order_email_outbox.sql) を当ててから [移行 B](../../supabase/migrations/20261009120100_order_email_enqueue.sql) を当てる。B は古い `private.order_emails` の印を、送らない `legacy_suppressed` の行として移し、古い表を消す。古い表は B の後には無いので、種類ごとの件数は当てる前に控える。実際の順は次のとおり。
+
+1. 当てる前に、入金待ちのまま残る試しの注文を、お客様に知らせない取消として片付けておく。有効な払込票は管理画面が409で断るので、期限切れの確定を待つか開発者に相談し、強制的に状態を書き換えない。
+2. 当てる前に、古い表の種類ごとの件数と合計を控える（下の SQL の前半）。
+3. A、B の順に当てる。
+4. 当てた後に、新しい表の `legacy_suppressed` の行を種類ごとに数え、控えと照合する（下の SQL の後半）。公開前の試しの行を取りやめる 1-2 より前に行う。
+
+照合は、Supabase のダッシュボード（本番のプロジェクト）→ SQL Editor で、次の読むだけの SQL を流す。種類ごとの件数と、合計8行・2注文が同じことを確かめる（8行・2注文は2026-10-09の確認値。違えば適用・公開を止めてユーザーへ知らせる）。
+
+```sql
+-- 当てる前（B の後はこの表は無い）。種類ごとの件数を控える
+select kind, count(*) from private.order_emails group by kind order by kind;
+select count(*) as rows, count(distinct order_id) as orders from private.order_emails;
+
+-- A → B を当てた後。公開前の試しの行を取りやめるより前に照合する
+select kind, count(*) from private.order_email_outbox
+where last_error_code = 'legacy_suppressed' group by kind order by kind;
+select count(*) as rows, count(distinct order_id) as orders from private.order_email_outbox
+where last_error_code = 'legacy_suppressed';
+```
+
+### 1-2 公開前の送信待ちの確かめ
+
+1-1 の移行と照合の後、`MAIL_PROVIDER` などの本番の環境変数を入れる前に、本番の `private.order_email_outbox` に溜まった送信待ち・送信中・やり直し待ちの行を確かめる。普段の開発で本番の DB につないだ `next dev` から決済・発送・取消を試すと、状態を変える DB の関数は同じ取引で送る予定の行を書く。開発の worker は環境の門で止まるため、行は残り、公開後の最初の worker が本物の Resend から試しの注文の宛先へ送ってしまう。実在の他人の宛先なら個人情報が届き、架空の宛先なら跳ね返りで送信の評価が下がる。
 
 次の読むだけの SQL を、Supabase のダッシュボード（本番のプロジェクト）→ SQL Editor で流す。件数と、注文番号・種類・作った時刻だけを見る。宛先・件名・本文は出さない。
 
@@ -78,31 +101,13 @@ where 'ORD-' || upper(left(e.order_id::text, 8)) = a.order_number
 returning 'ORD-' || upper(left(e.order_id::text, 8)) as order_number, e.kind, e.created_at;
 ```
 
-移行を本番に当てた後から公開までは、本番の DB で注文の状態を変える試し（決済・発送・取消）をしない。入金待ちのまま残る試しの注文は、移行を当てる前に、お客様に知らせない取消として片付けておく。有効な払込票は管理画面が409で断るので、期限切れの確定を待つか開発者に相談し、強制的に状態を書き換えない。移行後に初めて残りを見つけた場合も、試しの取消で新しい行を増やさず、公開を止めてユーザーに知らせる。
-
-### 1-2 本番の移行の順番と照合
-
-移行は戻さない。直す時は前へ進める移行で直す。[移行 A](../../supabase/migrations/20261009120000_order_email_outbox.sql) を当ててから [移行 B](../../supabase/migrations/20261009120100_order_email_enqueue.sql) を当てる。B は古い `private.order_emails` の印を、送らない `legacy_suppressed` の行として移し、古い表を消す。
-
-当てる前と後の照合は、Supabase のダッシュボード（本番のプロジェクト）→ SQL Editor で、次の読むだけの SQL を流す。種類ごとの件数と、合計8行・2注文が同じことを確かめる（8行・2注文は2026-10-09の確認値。違えば適用・公開を止めてユーザーへ知らせる）。
-
-```sql
--- 当てる前（B の後はこの表は無い）。種類ごとの件数を控える
-select kind, count(*) from private.order_emails group by kind order by kind;
-select count(*) as rows, count(distinct order_id) as orders from private.order_emails;
-
--- A → B を当てた後。公開前の試しの行を取りやめるより前に照合する
-select kind, count(*) from private.order_email_outbox
-where last_error_code = 'legacy_suppressed' group by kind order by kind;
-select count(*) as rows, count(distinct order_id) as orders from private.order_email_outbox
-where last_error_code = 'legacy_suppressed';
-```
+移行を本番に当てた後から公開までは、本番の DB で注文の状態を変える試し（決済・発送・取消）をしない。移行の後に、入金待ちのまま残る試しの注文を初めて見つけた場合も、試しの取消で新しい行を増やさず、公開を止めてユーザーに知らせる（移行の前の片付けは 1-1）。
 
 ### 1-3 公開の設定
 
 | 順 | やること | 誰が | 確かめ方 |
 |---|---|---|---|
-| 0 | 1-2 の移行の照合と、1-1 の公開前の送信待ちの確かめを済ませる。試しの行の取りやめは明示の承認の後だけ | ユーザーと controller | 移行前後の種類別件数が同じ8行・2注文で、公開前の試しの送信待ちが残っていない |
+| 0 | 1-1 の移行の照合と、1-2 の公開前の送信待ちの確かめを済ませる。試しの行の取りやめは明示の承認の後だけ | ユーザーと Claude | 移行前後の種類別件数が同じ8行・2注文で、公開前の試しの送信待ちが残っていない |
 | 1 | Vercel の環境変数 `MAIL_PROVIDER` を `resend`（小文字）にし、`RESEND_API_KEY`・`MAIL_FROM_ADDRESS`（確かめ済みのドメインのアドレス）・`SHOP_ALERT_EMAIL` を入れる。`RESEND_API_KEY` は Full access にする（送信専用の鍵だと、配達の見回りが「鍵の設定」で止まる。送信と Webhook は動く） | ユーザー | 5 の「送信の一時停止」で `paused` が false |
 | 2 | Resend の管理画面の Webhooks で宛先 `<公開した URL>/api/webhook/resend-delivery` を作り、`email.delivered`・`email.delivery_delayed`・`email.bounced`・`email.complained`・`email.suppressed`・`email.failed` の6つを選ぶ。出た署名の鍵（`whsec_` で始まる）を Vercel の `RESEND_DELIVERY_WEBHOOK_SECRET` に入れて出し直す。お問い合わせの返信の宛先（`/api/contact/inbound`・`RESEND_WEBHOOK_SECRET`）とは別の宛先・別の鍵にする | ユーザー | Resend の管理画面で宛先が有効 |
 | 3 | 2 の通しの確かめ | ユーザー（試しの注文）、Claude（確かめる） | 2 の表 |
@@ -117,11 +122,11 @@ where last_error_code = 'legacy_suppressed';
 
 手元で `next build && next start` を本番の DB に向けない。この門は手元の本番ビルドを止めず、`MAIL_PROVIDER` が無いと既定の SES が選ばれて、本番の DB に `config_provider` の一時停止を書く。`VERCEL_ENV` が実行時に見えないと preview の判定もできないため、公開前に上の順4を確かめる。
 
-## 2. 本番の Resend とつないだ通しの確かめ（お客様がいない公開前の確認）
+## 2. 本番の Resend とつないだ通しの確かめ（公開の後・開店の前（お客様がいない時だけ））
 
-試しの注文の宛先を Resend の試し用の宛先にして、次を確かめる。試しの注文は確かめた後に取り消すか返金する。
+公開の後・開店の前の、お客様がいない時だけ行う。1-3 の順1・2（環境変数と配達の知らせの宛先）を済ませた本番で、試しの注文の宛先を Resend の試し用の宛先にして、次を確かめる。試しの注文は確かめた後に取り消すか返金する。
 
-お客様がいない公開の前だけ、Resend の鍵（`RESEND_API_KEY`）を一時的に誤った値にし、試しの行で送信を試みる。ORDER タブの上に「お客様への注文のメールの送信を止めています」と原因が出ることを確かめる。正しい値に戻して出し直し、送る対象の1件を毎分の worker が試し、15分以内に自動で再開すること、状態を読み直すと帯が消えることを確かめる。worker が動く本番の実行環境で行う（preview・development は環境の門で止まる）。結果を下の欄に残す。開店後のお客様のいる環境では行わない。
+あわせて、Resend の鍵（`RESEND_API_KEY`）を一時的に誤った値にし、試しの行で送信を試みる。ORDER タブの上に「お客様への注文のメールの送信を止めています」と原因が出ることを確かめる。正しい値に戻して出し直し、送る対象の1件を毎分の worker が試し、15分以内に自動で再開すること、状態を読み直すと帯が消えることを確かめる。worker が動く本番の実行環境で行う（preview・development は環境の門で止まる）。結果を下の欄に残す。開店後のお客様のいる環境では行わない。
 
 | 宛先 | 確かめること |
 |---|---|

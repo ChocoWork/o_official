@@ -112,7 +112,8 @@ function OrderHistoryDialogBody({ orderId, onClose }: OrderHistoryDialogBodyProp
   }, [orderId, load]);
 
   // 画面を切り替えると、押したボタンは画面ごと消えて、フォーカスがダイアログの外（body）へ落ちる（設計書 5-5、WCAG 2.4.3）。
-  // 戻る・やめるでは同じ行のボタンへ戻す。ボタンが消えた場合と、それ以外の切り替えはパネルへ移す。
+  // 戻る・やめるでは同じ行のボタンへ戻す。ボタンが消えた場合と、それ以外の切り替えはパネルへ移す
+  // （再送の返事を待つ間の「やめる」も、返事の後の読み直しで行のボタンが消えるので、パネルへ移す）。
   // 最初の画面では動かさない（Dialog が開いた時に決めた場所を奪わない）
   useEffect(() => {
     if (shownView.current === view.name) return;
@@ -128,17 +129,18 @@ function OrderHistoryDialogBody({ orderId, onClose }: OrderHistoryDialogBodyProp
   }, [view.name]);
 
   // 焦点の移動と polite の文の挿入が同じ描画だと読み上げが落ちるため、上の移動の後の描画で文を入れる。
-  // 別の行の確かめへ移っていた場合は、その行の結果と誤解される知らせを出さない。
+  // 別の行の確かめの画面にいる間は、その行の結果と誤解される知らせを出さずに取っておき、その画面を離れた時に出す。
   useEffect(() => {
     if (!pendingNotice) return;
-    if (view.name !== 'confirm' || view.entry.emailId === pendingNotice.emailId) {
-      setNotice(pendingNotice.notice);
-    }
+    if (view.name === 'confirm' && view.entry.emailId !== pendingNotice.emailId) return;
+    setNotice(pendingNotice.notice);
     setPendingNotice(null);
   }, [pendingNotice, view]);
 
   const backToList = (entry: OrderHistoryEmailEntry, action: 'content' | 'resend') => {
-    returnFocus.current = { emailId: entry.emailId, action };
+    // 再送の返事を待つ間は、返事の後の読み直しで行の「お客様へ再送」が消えうる（受け付けた行は再送できなくなる）。
+    // 消えるボタンへ戻すとフォーカスが body へ落ちるので、行は覚えず、上の effect でパネルへ移す
+    returnFocus.current = action === 'resend' && submitting ? null : { emailId: entry.emailId, action };
     setView({ name: 'list' });
   };
 
@@ -190,7 +192,7 @@ function OrderHistoryDialogBody({ orderId, onClose }: OrderHistoryDialogBodyProp
       setPendingNotice({ emailId: entry.emailId, notice: { tone: 'failure', text: RESEND_FAILED_MESSAGE } });
     } finally {
       setSubmitting(false);
-      // 履歴へ戻すのは、この行の確かめの画面にいる時だけ。別の画面は変えず、別の行の確かめでは上の effect が知らせも抑える
+      // 履歴へ戻すのは、この行の確かめの画面にいる時だけ。別の画面は変えず、別の行の確かめでは上の effect が知らせを取っておく
       setView((current) =>
         current.name === 'confirm' && current.entry.emailId === entry.emailId ? { name: 'list' } : current,
       );

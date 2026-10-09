@@ -13,7 +13,8 @@ import { sendOpsAlertMail } from '@/lib/ops/ops-alert-mail';
 import type { OpsStore } from '@/lib/ops/ops-store';
 import { runWebhookWorker } from '@/lib/stripe/webhook-worker';
 
-// 返事の後に after() で worker を約45秒まで動かすため
+// 返事の後に after() で worker を動かすため。時間の配分は Stripe の知らせ35秒＋注文のメール10秒で、
+// その後に店への知らせの点検と1時間ごとの配達の見回りが続く（src/lib/stripe/webhook-worker.ts）
 export const maxDuration = 60;
 
 const supabase = createClient(
