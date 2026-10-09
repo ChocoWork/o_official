@@ -817,22 +817,7 @@ CREATE TABLE IF NOT EXISTS private.order_email_outbox (
   next_attempt_at timestamptz NOT NULL DEFAULT pg_catalog.now(),
   lease_token uuid,
   lease_expires_at timestamptz,
-  last_error_code text CHECK (last_error_code IS NULL OR last_error_code ~ '^[a-z0-9_]{1,64}
-
-- [ ] **Step 4: テストが通ることを確かめる（controller）**
-
-Run: `npx supabase db reset` の後に `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npx jest tests/integration/db/order_email_outbox --runInBand`
-Expected: PASS（全件）。続けて Global Constraints の DB 結合テスト（フォルダ全体）を流し、ほかの試験が落ちないこと（`ops_alerting` の「知らない定期処理の名前は断る」が通ること）を確かめる
-
-- [ ] **Step 5: コミット（controller）**
-
-```bash
-git add supabase/migrations/20261009120000_order_email_outbox.sql tests/integration/db/order_email_outbox.integration.test.ts
-git commit -m "feat(db): 注文のメールの表と送る予定の関数を足す（グループ D 移行 A）"
-```
-
----
-),
+  last_error_code text CHECK (last_error_code IS NULL OR last_error_code ~ '^[a-z0-9_]{1,64}$'),
   subject text CHECK (subject IS NULL OR pg_catalog.char_length(subject) BETWEEN 1 AND 300),
   body_text text CHECK (body_text IS NULL OR pg_catalog.char_length(body_text) BETWEEN 1 AND 20000),
   provider_message_id text
@@ -939,9 +924,9 @@ RETURNS integer
 LANGUAGE sql
 IMMUTABLE
 SET search_path = ''
-AS $
+AS $$
   SELECT 9
-$;
+$$;
 
 -- 失敗した試行が _failed_attempts 回の後に待つ時間（1・2・4…128分）。前後2割の揺らぎを足す
 CREATE OR REPLACE FUNCTION private.order_email_retry_delay(_failed_attempts integer)
@@ -949,32 +934,32 @@ RETURNS interval
 LANGUAGE sql
 VOLATILE
 SET search_path = ''
-AS $
+AS $$
   SELECT pg_catalog.make_interval(
     secs => 60 * (2 ^ LEAST(GREATEST(COALESCE(_failed_attempts, 1) - 1, 0), 7)) * (0.8 + 0.4 * pg_catalog.random())
   )
-$;
+$$;
 
 -- 5. 行を書く（設計書 3-1）。状態を変える関数が同じ取引で呼ぶ。自動の行は1注文1種類1行なので、2回目は何もしない
 CREATE OR REPLACE FUNCTION private.enqueue_order_email(_order_id uuid, _kind text, _variant text DEFAULT NULL)
 RETURNS boolean
 LANGUAGE plpgsql
 SET search_path = ''
-AS $
+AS $$
 BEGIN
   INSERT INTO private.order_email_outbox (order_id, kind, variant, origin)
   VALUES (_order_id, _kind, _variant, 'auto')
   ON CONFLICT (order_id, kind) WHERE origin = 'auto' DO NOTHING;
   RETURN FOUND;
 END;
-$;
+$$;
 
 -- 6. 送信全体を止める（設計書 4-5）。止めた時刻は最初に止めた時のまま、次に1件試す時刻を決め直す
 CREATE OR REPLACE FUNCTION private.set_order_email_pause(_reason text)
 RETURNS boolean
 LANGUAGE plpgsql
 SET search_path = ''
-AS $
+AS $$
 DECLARE
   v_was_paused boolean;
 BEGIN
@@ -1000,18 +985,18 @@ BEGIN
 
   RETURN NOT COALESCE(v_was_paused, false);
 END;
-$;
+$$;
 
 CREATE OR REPLACE FUNCTION public.pause_order_email_sending(_reason text)
 RETURNS boolean
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
-AS $
+AS $$
 BEGIN
   RETURN private.set_order_email_pause(_reason);
 END;
-$;
+$$;
 
 CREATE OR REPLACE FUNCTION public.get_order_email_send_state()
 RETURNS TABLE (paused boolean, reason text, paused_at timestamptz, next_probe_at timestamptz)
@@ -1019,11 +1004,11 @@ LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = ''
-AS $
+AS $$
   SELECT p.paused, p.reason, p.paused_at, p.next_probe_at
   FROM private.order_email_send_pause AS p
   WHERE p.id
-$;
+$$;
 
 -- 7. 送る行を1つ取り出す（設計書 4-1・4-3・4-5）
 --   1) 担当の期限が切れた試行は1回の失敗として数える（9回目なら送れなかった）。控えた中身は残す（同じ鍵で送り直す）
@@ -1045,7 +1030,7 @@ RETURNS TABLE (
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
-AS $
+AS $$
 #variable_conflict use_column
 DECLARE
   v_paused boolean;
@@ -1128,7 +1113,7 @@ BEGIN
          )
   FROM claimed AS c;
 END;
-$;
+$$;
 
 -- 8. 最初に送る前に中身を控える（設計書 4-2）。控えは一度だけ
 CREATE OR REPLACE FUNCTION public.save_order_email_content(
@@ -1141,7 +1126,7 @@ RETURNS boolean
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
-AS $
+AS $$
 BEGIN
   IF _subject IS NULL OR _body_text IS NULL THEN
     RAISE EXCEPTION 'CONTENT_REQUIRED' USING ERRCODE = '22023';
@@ -1156,7 +1141,7 @@ BEGIN
     AND e.subject IS NULL;
   RETURN FOUND;
 END;
-$;
+$$;
 
 -- 9. 送信済みにする。送れたので、止めていた送信を同じ取引で再開する（設計書 4-5。half-open から closed）
 CREATE OR REPLACE FUNCTION public.complete_order_email(
@@ -1168,7 +1153,7 @@ RETURNS boolean
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
-AS $
+AS $$
 BEGIN
   UPDATE private.order_email_outbox AS e
   SET status = 'sent',
@@ -1197,7 +1182,7 @@ BEGIN
 
   RETURN true;
 END;
-$;
+$$;
 
 -- 10. 失敗を記録する（設計書 4-3・4-4）。結果の状態を返し、担当の印が合わなければ NULL
 --   transient: やり直し待ち（9回目の失敗なら送れなかった）。待つ時間の指示が長ければそちら（最大1日）
@@ -1214,29 +1199,14 @@ RETURNS text
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
-AS $
+AS $$
 DECLARE
   v_status text;
 BEGIN
   IF _category IS NULL OR _category NOT IN ('transient', 'permanent', 'config') THEN
     RAISE EXCEPTION 'INVALID_FAILURE_CATEGORY' USING ERRCODE = '22023';
   END IF;
-  IF _error_code IS NULL OR _error_code !~ '^[a-z0-9_]{1,64}
-
-- [ ] **Step 4: テストが通ることを確かめる（controller）**
-
-Run: `npx supabase db reset` の後に `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npx jest tests/integration/db/order_email_outbox --runInBand`
-Expected: PASS（全件）。続けて Global Constraints の DB 結合テスト（フォルダ全体）を流し、ほかの試験が落ちないこと（`ops_alerting` の「知らない定期処理の名前は断る」が通ること）を確かめる
-
-- [ ] **Step 5: コミット（controller）**
-
-```bash
-git add supabase/migrations/20261009120000_order_email_outbox.sql tests/integration/db/order_email_outbox.integration.test.ts
-git commit -m "feat(db): 注文のメールの表と送る予定の関数を足す（グループ D 移行 A）"
-```
-
----
- THEN
+  IF _error_code IS NULL OR _error_code !~ '^[a-z0-9_]{1,64}$' THEN
     RAISE EXCEPTION 'INVALID_ERROR_CODE' USING ERRCODE = '22023';
   END IF;
 
@@ -1294,7 +1264,7 @@ git commit -m "feat(db): 注文のメールの表と送る予定の関数を足�
 
   RETURN v_status;
 END;
-$;
+$$;
 
 -- 11. 取りやめ（設計書 4-1）。理由を残し、控えた本文を消す
 CREATE OR REPLACE FUNCTION public.skip_order_email(_email_id uuid, _lease_token uuid, _reason text)
@@ -1302,7 +1272,7 @@ RETURNS boolean
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
-AS $
+AS $$
 BEGIN
   IF _reason IS NULL OR _reason NOT IN ('superseded', 'no_recipient') THEN
     RAISE EXCEPTION 'INVALID_SKIP_REASON' USING ERRCODE = '22023';
@@ -1322,7 +1292,7 @@ BEGIN
     AND e.lease_token = _lease_token;
   RETURN FOUND;
 END;
-$;
+$$;
 
 -- 12. 管理画面の再送（設計書 5-3）。今の注文の状態で意味のある種類で、送信済みか送れなかった行があるときだけ。
 --     書き分けはその種類の最後の行から写す。同じ種類の手の再送が送信待ちなら断る
@@ -1331,7 +1301,7 @@ RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
-AS $
+AS $$
 DECLARE
   v_status public.order_status;
   v_variant text;
@@ -1381,7 +1351,7 @@ BEGIN
 
   RETURN v_email_id;
 END;
-$;
+$$;
 
 -- 13. 管理画面の履歴（設計書 5-1）。本文は返さない
 CREATE OR REPLACE FUNCTION public.list_order_email_history(_order_id uuid)
@@ -1406,7 +1376,7 @@ LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = ''
-AS $
+AS $$
   SELECT e.id, e.kind, e.variant, e.origin, u.email::text, e.status, e.attempts, e.last_error_code,
          e.delivery_status, e.delivery_event_at, e.created_at, e.sent_at, e.finished_at,
          e.body_text IS NOT NULL, e.body_erased_at IS NOT NULL
@@ -1414,7 +1384,7 @@ AS $
   LEFT JOIN auth.users AS u ON u.id = e.requested_by
   WHERE e.order_id = _order_id
   ORDER BY e.seq DESC
-$;
+$$;
 
 -- 注文の状態の変化（order_revisions から）。前後の値はそのまま返さず、決めた項目だけ取り出す（住所などを出さない）
 CREATE OR REPLACE FUNCTION public.list_order_status_history(_order_id uuid)
@@ -1432,7 +1402,7 @@ LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = ''
-AS $
+AS $$
   SELECT r.changed_at,
          r.before_data ->> 'status',
          r.after_data ->> 'status',
@@ -1446,7 +1416,7 @@ AS $
   WHERE r.order_id = _order_id
     AND r.operation = 'status_update'
   ORDER BY r.changed_at DESC, r.id DESC
-$;
+$$;
 
 -- 14. 送ったメールの中身（設計書 5-2）。送信済みの行だけ
 CREATE OR REPLACE FUNCTION public.get_order_email_content(_order_id uuid, _email_id uuid)
@@ -1455,13 +1425,13 @@ LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = ''
-AS $
+AS $$
   SELECT e.subject, e.body_text, e.sent_at, e.body_erased_at IS NOT NULL
   FROM private.order_email_outbox AS e
   WHERE e.id = _email_id
     AND e.order_id = _order_id
     AND e.status = 'sent'
-$;
+$$;
 
 -- 15. 配達の状態（設計書 6-2〜6-4）。受け口は知らせの番号つき、見回りは番号なしで呼ぶ。
 --     同じ知らせは1回だけ、記録より新しい知らせだけ書き換える。届かなかった知らせは店へ知らせ直す
@@ -1475,7 +1445,7 @@ RETURNS text
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
-AS $
+AS $$
 DECLARE
   v_updated uuid;
 BEGIN
@@ -1514,7 +1484,7 @@ BEGIN
   END IF;
   RETURN 'unknown_email';
 END;
-$;
+$$;
 
 -- 1時間ごとの見回りの対象（設計書 6-4）。送ってから3日以内で、配達の状態が無いか遅れのメール
 CREATE OR REPLACE FUNCTION public.list_order_emails_awaiting_delivery(_limit integer)
@@ -1523,7 +1493,7 @@ LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = ''
-AS $
+AS $$
   SELECT e.id, e.provider_message_id
   FROM private.order_email_outbox AS e
   WHERE e.status = 'sent'
@@ -1532,7 +1502,7 @@ AS $
     AND e.sent_at > pg_catalog.now() - interval '3 days'
   ORDER BY e.sent_at, e.seq
   LIMIT LEAST(GREATEST(COALESCE(_limit, 0), 0), 100)
-$;
+$$;
 
 -- 16. 点検（設計書 4-6・4-8）。中身は返さず、原因の記号だけ返す
 CREATE OR REPLACE FUNCTION public.get_order_email_backlog(_older_than_seconds integer)
@@ -1541,7 +1511,7 @@ LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = ''
-AS $
+AS $$
   SELECT e.status,
          pg_catalog.count(*)::integer,
          pg_catalog.min(e.created_at),
@@ -1551,7 +1521,7 @@ AS $
     AND e.created_at <= pg_catalog.now() - pg_catalog.make_interval(secs => _older_than_seconds)
   GROUP BY e.status
   ORDER BY e.status
-$;
+$$;
 
 CREATE OR REPLACE FUNCTION public.list_unnotified_dead_order_emails(_limit integer)
 RETURNS TABLE (
@@ -1567,7 +1537,7 @@ LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = ''
-AS $
+AS $$
   SELECT e.id, e.order_id, e.kind, e.last_error_code, e.attempts, e.finished_at,
          (pg_catalog.count(*) OVER ())::integer
   FROM private.order_email_outbox AS e
@@ -1575,14 +1545,14 @@ AS $
     AND e.dead_notified_at IS NULL
   ORDER BY e.finished_at, e.seq
   LIMIT _limit
-$;
+$$;
 
 CREATE OR REPLACE FUNCTION public.mark_order_emails_dead_notified(_email_ids uuid[])
 RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
-AS $
+AS $$
 DECLARE
   v_count integer;
 BEGIN
@@ -1594,7 +1564,7 @@ BEGIN
   GET DIAGNOSTICS v_count = ROW_COUNT;
   RETURN v_count;
 END;
-$;
+$$;
 
 CREATE OR REPLACE FUNCTION public.list_unnotified_order_email_delivery_problems(_limit integer)
 RETURNS TABLE (
@@ -1609,7 +1579,7 @@ LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = ''
-AS $
+AS $$
   SELECT e.id, e.order_id, e.kind, e.delivery_status, e.delivery_event_at,
          (pg_catalog.count(*) OVER ())::integer
   FROM private.order_email_outbox AS e
@@ -1617,14 +1587,14 @@ AS $
     AND e.delivery_alert_notified_at IS NULL
   ORDER BY e.delivery_event_at, e.seq
   LIMIT _limit
-$;
+$$;
 
 CREATE OR REPLACE FUNCTION public.mark_order_email_delivery_problems_notified(_email_ids uuid[])
 RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
-AS $
+AS $$
 DECLARE
   v_count integer;
 BEGIN
@@ -1636,7 +1606,7 @@ BEGIN
   GET DIAGNOSTICS v_count = ROW_COUNT;
   RETURN v_count;
 END;
-$;
+$$;
 
 -- 17. 毎日の片付け（設計書 7-5）。送信済みの本文は送ってから45日、取りやめ・送れなかったの本文は残っていれば消す。
 --     Resend の知らせの受付済みの番号は3日
@@ -1644,7 +1614,7 @@ CREATE OR REPLACE FUNCTION private.purge_order_email_data()
 RETURNS void
 LANGUAGE plpgsql
 SET search_path = ''
-AS $
+AS $$
 BEGIN
   UPDATE private.order_email_outbox AS e
   SET subject = NULL,
@@ -1659,7 +1629,7 @@ BEGIN
   DELETE FROM private.resend_webhook_receipts AS r
   WHERE r.received_at < pg_catalog.now() - interval '3 days';
 END;
-$;
+$$;
 
 -- 18. 定期処理の最後の成功に、注文のメールの worker と配達の見回りを足す
 ALTER TABLE public.ops_job_heartbeats
@@ -1717,7 +1687,7 @@ GRANT EXECUTE ON FUNCTION public.mark_order_email_delivery_problems_notified(uui
 SELECT cron.schedule(
   'order-email-retention',
   '40 19 * * *',
-  $ SELECT private.purge_order_email_data() $
+  $$ SELECT private.purge_order_email_data() $$
 );
 
 NOTIFY pgrst, 'reload schema';
