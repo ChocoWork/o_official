@@ -15,6 +15,7 @@ import { logAudit } from '@/lib/audit';
 import { isTransientStripeError } from '@/lib/stripe/checkout-payment-reader';
 import { reconcileCheckoutPayment, ReconcileTransientError } from '@/lib/stripe/checkout-payment-reconciler';
 import { createDefaultReconcilerDeps } from '@/lib/stripe/checkout-payment-reconciler-deps';
+import { scheduleOrderEmailDelivery } from '@/lib/orders/email/order-email-schedule';
 import { describeUnexpectedError } from '@/features/checkout/services/checkout-error.service';
 
 const supabase = createClient(
@@ -267,6 +268,9 @@ export async function POST(req: NextRequest) {
       }
       throw error;
     }
+
+    // 照合が書いた注文のメール（入金済み・入金待ち）を、返事の後に送る（グループ D 設計書 4-7）
+    scheduleOrderEmailDelivery();
 
     if (!result.orderId || !result.orderStatus || !COMPLETED_ORDER_STATUSES.has(result.orderStatus)) {
       await logAudit({

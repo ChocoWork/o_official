@@ -7,6 +7,10 @@ import {
   backlogAlertMail,
   deadDigestMail,
   modeMismatchMail,
+  orderEmailBacklogMail,
+  orderEmailDeadDigestMail,
+  orderEmailDeliveryProblemMail,
+  orderEmailPausedMail,
   reconcileFindingsMail,
   recoveredOrdersMail,
   sendOpsAlertMail,
@@ -301,6 +305,61 @@ describe('店への知らせのメールの文面', () => {
       const body = `${mail.subject}\n${mail.lines.join('\n')}`;
       expect(body).not.toMatch(/@|buyer|山田|渋谷/);
       expect(body).toContain('- pi_9 原因: unexpected_error');
+    });
+  });
+
+  describe('注文のメール（グループ D）', () => {
+    const ORDER_ID = 'a1b2c3d4-1111-2222-8333-444455556666';
+
+    it('一時停止: 原因と、自動で再開することと、手順書の節を書く', () => {
+      const mail = orderEmailPausedMail({
+        reason: 'quota_daily', pausedAt: new Date('2026-10-09T01:00:00Z'), nextProbeAt: new Date('2026-10-10T00:00:00Z'),
+      });
+      expect(mail.kind).toBe('order_email_paused');
+      expect(mail.subject).toBe('【要対応】注文のメールの送信を止めています');
+      expect(mail.lines.join('\n')).toContain('1日の送信の上限');
+      expect(mail.lines.join('\n')).toContain('docs/06_Operations/order-email-operations.md）の「送信の一時停止」');
+    });
+
+    it('溜まり: 状態ごとの件数と原因の名前を書く', () => {
+      const mail = orderEmailBacklogMail([
+        { status: 'retry_wait', count: 2, oldestCreatedAt: new Date('2026-10-09T01:00:00Z'), lastErrors: ['provider_unavailable', 'Error: x@example.com'] },
+      ]);
+      const text = mail.lines.join('\n');
+      expect(mail.subject).toBe('【要確認】注文のメールの送信が遅れています');
+      expect(text).toContain('やり直し待ち: 2件');
+      expect(text).toContain('送信サービスの一時的な失敗、想定外の失敗');
+      expect(text).not.toContain('@example.com');
+      expect(text).toContain('の「溜まり」');
+    });
+
+    it('送れなかった: 注文番号・種類・原因・試行の回数と、管理画面から再送できることを書く', () => {
+      const mail = orderEmailDeadDigestMail([
+        { id: 'email-1', orderId: ORDER_ID, kind: 'paid', lastErrorCode: 'invalid_message', attempts: 1, finishedAt: null },
+      ], 3);
+      const text = mail.lines.join('\n');
+      expect(mail.subject).toBe('【要対応】送れなかった注文のメール（3件）');
+      expect(text).toContain('- ORD-A1B2C3D4（注文確認のメール） 原因: 宛先の形が不正 試行: 1回');
+      expect(text).toContain('（ほかに 2 件。次の知らせで送ります）');
+      expect(text).toContain('「履歴」から「お客様へ再送」');
+      expect(text).toContain('の「送れなかった」');
+    });
+
+    it('届かなかった: 注文番号・種類・配達の状態を書く', () => {
+      const mail = orderEmailDeliveryProblemMail([
+        { id: 'email-2', orderId: ORDER_ID, kind: 'shipped', deliveryStatus: 'bounced', deliveryEventAt: new Date('2026-10-09T01:00:00Z') },
+      ], 1);
+      const text = mail.lines.join('\n');
+      expect(mail.subject).toBe('【要確認】届かなかった注文のメール（1件）');
+      expect(text).toContain('- ORD-A1B2C3D4（発送のメール） 状態: 届かなかった');
+      expect(text).toContain('の「届かなかった」');
+    });
+
+    it('遅れ: 注文のメールの worker は15分と手順書の「worker の停止」を書く。今の2つの文面は変えない', () => {
+      const email = staleJobMail('order_email_worker', new Date('2026-10-09T01:00:00Z'));
+      expect(email.lines[0]).toBe('注文のメールの送信が、15分以上成功していません。');
+      expect(email.lines.join('\n')).toContain('docs/06_Operations/order-email-operations.md）の「worker の停止」');
+      expect(staleJobMail('order_sweep', new Date('2026-10-09T01:00:00Z')).lines[0]).toBe('毎時の見回りが、2時間以上成功していません。');
     });
   });
 

@@ -12,6 +12,7 @@ import {
   type CheckoutPaymentSnapshot,
   type CheckoutPaymentStripeClient,
 } from '@/lib/stripe/checkout-payment-reader';
+import { scheduleOrderEmailDelivery } from '@/lib/orders/email/order-email-schedule';
 import { logAudit } from '@/lib/audit';
 import { ADMIN_NOTE_MAX_LENGTH, CANCEL_REASONS, type OrderStatus } from '@/lib/orders/order-payment-types';
 
@@ -225,6 +226,10 @@ export async function POST(
       );
     }
 
+    if (row.cancelled_from) {
+      // 取消のメールは在庫を戻す関数が同じ取引で行を書いた（知らせる時だけ）。返事の後に送る
+      scheduleOrderEmailDelivery();
+    }
 
     await audit(
       'success',

@@ -69,6 +69,12 @@ jest.mock('@/lib/stripe/checkout-payment-reader', () => ({
   readCheckoutPayment: (...args: unknown[]) => mockReadCheckoutPayment(...args),
 }));
 
+// 取消のメールの行を書いた後に、返事の後の送信を予約する（after() を使うので、試験では差し替える）
+const mockScheduleOrderEmailDelivery = jest.fn();
+jest.mock('@/lib/orders/email/order-email-schedule', () => ({
+  scheduleOrderEmailDelivery: (...args: unknown[]) => mockScheduleOrderEmailDelivery(...args),
+}));
+
 import { GET as getAttention } from '@/app/api/admin/order-attention/route';
 import { POST as postReview } from '@/app/api/admin/orders/[id]/review/route';
 import { POST as postResolve } from '@/app/api/admin/payment-exceptions/[id]/resolve/route';
@@ -274,10 +280,11 @@ describe('POST /api/admin/payment-exceptions/:id/resolve', () => {
       _cancel_reason: null,
       _notify_customer: null,
     });
-    // 取り消さない解決は、注文も Stripe も読まない
+    // 取り消さない解決は、注文も Stripe も読まず、メールの送信も予約しない
     expect(mockSelectColumns).toHaveLength(0);
     expect(mockExpireOpenCheckoutSession).not.toHaveBeenCalled();
     expect(mockReadCheckoutPayment).not.toHaveBeenCalled();
+    expect(mockScheduleOrderEmailDelivery).not.toHaveBeenCalled();
   });
 
   it('別の管理者が先に解決していたら 409(二重に取り消さない)', async () => {
@@ -294,7 +301,7 @@ describe('POST /api/admin/payment-exceptions/:id/resolve', () => {
     expect(mockRpc).not.toHaveBeenCalled();
   });
 
-  it.each([true, false])('注文を取り消して解決し、取消のお知らせは notifyCustomer=%s のときだけ送る', async (notifyCustomer) => {
+  it.each([true, false])('注文を取り消して解決するとき、取消のお知らせを送るか（notifyCustomer=%s）を DB に渡し、メールの送信を1回予約する', async (notifyCustomer) => {
     attachedOrder = IN_PROGRESS_ORDER;
     mockRpc.mockResolvedValue({ data: [{ resolved: true, order_id: ORDER_ID, cancelled_from: 'payment_in_progress' }], error: null });
 
@@ -306,17 +313,17 @@ describe('POST /api/admin/payment-exceptions/:id/resolve', () => {
       _cancel_reason: 'other',
       _notify_customer: notifyCustomer,
     }));
-    expect(mockRpc).toHaveBeenCalledWith('resolve_payment_exception', expect.objectContaining({ _notify_customer: notifyCustomer }));
+    // 取消のメールの行は DB の関数が書く（知らせる時だけ）。知らせるかどうかにかかわらず、窓口は送信を1回予約する
+    expect(mockScheduleOrderEmailDelivery).toHaveBeenCalledTimes(1);
   });
 
-  it('取り消すときに notifyCustomer を送らなければ、既定でお知らせを送る（RPC には true を渡す）', async () => {
+  it('取り消すときに notifyCustomer を送らなければ、取消のお知らせを送る指定（true）を DB に渡す', async () => {
     attachedOrder = IN_PROGRESS_ORDER;
     cancelResolved();
 
     const res = await resolve(CANCEL_BODY);
 
     expect(res.status).toBe(200);
-    expect(mockRpc).toHaveBeenCalledWith('resolve_payment_exception', expect.objectContaining({ _notify_customer: true }));
     expect(mockRpc).toHaveBeenCalledWith('resolve_payment_exception', expect.objectContaining({ _notify_customer: true }));
   });
 

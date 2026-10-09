@@ -1,4 +1,5 @@
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { recordHeartbeat, type OpsStore } from '@/lib/ops/ops-store';
 import {
   composeOrderEmail,
   loadOrderEmailMaterial,
@@ -205,7 +206,11 @@ export async function processOrderEmails(deps: OrderEmailWorkerDeps): Promise<Or
   return result;
 }
 
-/** 本物の依存で1回動かす */
+/**
+ * 本物の依存で1回動かし、最後の成功を記録する（取り出しに失敗したときだけ失敗）。
+ * 止める環境（環境の門）では DB に触れず、最後の成功も書かない。本番の記録を、開発や preview が上書きして、
+ * 止まった worker の知らせを隠さないため。
+ */
 export async function runOrderEmailWorker(options: { budgetMs?: number } = {}): Promise<OrderEmailWorkerResult> {
   const disabledReason = orderEmailWorkerDisabledReason();
   if (disabledReason) {
@@ -213,12 +218,22 @@ export async function runOrderEmailWorker(options: { budgetMs?: number } = {}): 
     return { sent: 0, skipped: 0, failed: 0, stoppedBy: 'disabled' };
   }
   const client = await createServiceRoleClient();
-  return processOrderEmails({
-    store: client as unknown as OrderEmailStore,
+  const store = client as unknown as OrderEmailStore & OpsStore;
+  const result = await processOrderEmails({
+    store,
     loadMaterial: (orderId) => loadOrderEmailMaterial(client, orderId),
     send: (message) => sendOrderEmailMessage(message),
     checkConfig: () => checkOrderEmailSendConfig(),
     now: () => Date.now(),
     budgetMs: options.budgetMs ?? ORDER_EMAIL_WORKER_BUDGET_MS,
   });
+
+  const claimFailed = result.stoppedBy === 'claim_error';
+  try {
+    await recordHeartbeat(store, 'order_email_worker', !claimFailed, claimFailed ? 'db_unavailable' : null);
+  } catch (error) {
+    // 記録できなくても結果は変えない。記録が古くなれば、点検が worker の停止として知らせる
+    console.error('[order-email-worker] failed to record heartbeat', ...errorDetails(error));
+  }
+  return result;
 }

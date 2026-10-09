@@ -1,5 +1,15 @@
 jest.mock('@/lib/audit', () => ({ logAudit: jest.fn().mockResolvedValue(undefined) }));
-jest.mock('@/lib/supabase/server', () => ({ createServiceRoleClient: jest.fn() }));
+const mockRecordHeartbeat = jest.fn();
+jest.mock('@/lib/ops/ops-store', () => ({
+  recordHeartbeat: (...args: unknown[]) => mockRecordHeartbeat(...args),
+}));
+const mockClientRpc = jest.fn();
+const mockClient = { rpc: (...args: unknown[]) => mockClientRpc(...args), from: jest.fn() };
+jest.mock('@/lib/supabase/server', () => ({ createServiceRoleClient: jest.fn(async () => mockClient) }));
+jest.mock('@/lib/orders/email/order-email-sender', () => ({
+  ...jest.requireActual('@/lib/orders/email/order-email-sender'),
+  checkOrderEmailSendConfig: () => null,
+}));
 
 import {
   orderEmailWorkerDisabledReason,
@@ -130,6 +140,51 @@ describe('runOrderEmailWorker の環境の守り', () => {
     expect(createServiceRoleClient).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith('[order-email-worker] skipped', reason);
     expect(warn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('runOrderEmailWorker', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRecordHeartbeat.mockReset().mockResolvedValue(undefined);
+    mockClientRpc.mockReset();
+    // 実際の環境変数（VERCEL_ENV など）に左右されず、環境の門を通る環境で試す
+    jest.replaceProperty(process, 'env', { NODE_ENV: 'test' });
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  it('送るものが無くても、最後の成功を記録する', async () => {
+    mockClientRpc.mockResolvedValue({ data: [], error: null });
+
+    await expect(runOrderEmailWorker()).resolves.toMatchObject({ stoppedBy: 'empty' });
+    expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockClient, 'order_email_worker', true, null);
+  });
+
+  it('取り出しに失敗したら、失敗と原因の記号を記録する', async () => {
+    mockClientRpc.mockResolvedValue({ data: null, error: { message: 'down', code: '08006' } });
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      await expect(runOrderEmailWorker()).resolves.toMatchObject({ stoppedBy: 'claim_error' });
+      expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockClient, 'order_email_worker', false, 'db_unavailable');
+      expect(error).toHaveBeenCalledWith('[order-email-worker] claim failed', 'OrderEmailStoreError', '08006');
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it('止める環境では DB に触れず、最後の成功も記録しない（本番の記録を、開発や preview が上書きしない）', async () => {
+    jest.replaceProperty(process, 'env', { NODE_ENV: 'production', VERCEL_ENV: 'preview' });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      await expect(runOrderEmailWorker()).resolves.toEqual({ sent: 0, skipped: 0, failed: 0, stoppedBy: 'disabled' });
+      expect(createServiceRoleClient).not.toHaveBeenCalled();
+      expect(mockRecordHeartbeat).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledWith('[order-email-worker] skipped', 'non_production_deployment');
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 

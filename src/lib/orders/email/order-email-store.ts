@@ -1,4 +1,5 @@
 import type {
+  OrderEmailDeliveryStatus,
   OrderEmailErrorCode,
   OrderEmailFailureCategory,
   OrderEmailKind,
@@ -22,7 +23,12 @@ export type OrderEmailRpcName =
   | 'fail_order_email'
   | 'skip_order_email'
   | 'pause_order_email_sending'
-  | 'get_order_email_send_state';
+  | 'get_order_email_send_state'
+  | 'get_order_email_backlog'
+  | 'list_unnotified_dead_order_emails'
+  | 'mark_order_emails_dead_notified'
+  | 'list_unnotified_order_email_delivery_problems'
+  | 'mark_order_email_delivery_problems_notified';
 
 export type OrderEmailStore = {
   rpc(name: OrderEmailRpcName, params?: Record<string, unknown>): PromiseLike<{ data: unknown; error: QueryError }>;
@@ -166,4 +172,90 @@ export async function getOrderEmailSendState(store: OrderEmailStore): Promise<Or
     pausedAt: dateOrNull(row?.paused_at),
     nextProbeAt: dateOrNull(row?.next_probe_at),
   };
+}
+
+/** 点検用: 書いてから一定時間たっても送れていない行の状態ごとのまとめ（設計書 4-6・4-8）。中身は含めない */
+export type OrderEmailBacklogRow = {
+  status: 'pending' | 'sending' | 'retry_wait';
+  count: number;
+  oldestCreatedAt: Date;
+  lastErrors: string[];
+};
+
+export type DeadOrderEmail = {
+  id: string;
+  orderId: string;
+  kind: OrderEmailKind;
+  lastErrorCode: string | null;
+  attempts: number;
+  finishedAt: Date | null;
+};
+
+export type DeliveryProblemEmail = {
+  id: string;
+  orderId: string;
+  kind: OrderEmailKind;
+  deliveryStatus: OrderEmailDeliveryStatus;
+  deliveryEventAt: Date | null;
+};
+
+export async function readOrderEmailBacklog(store: OrderEmailStore, olderThanSeconds: number): Promise<OrderEmailBacklogRow[]> {
+  const data = await callOrderEmailRpc(store, 'get_order_email_backlog', { _older_than_seconds: olderThanSeconds });
+  return rowsOf(data).map((row) => ({
+    status: row.status as OrderEmailBacklogRow['status'],
+    count: Number(row.email_count),
+    oldestCreatedAt: new Date(String(row.oldest_created_at)),
+    lastErrors: Array.isArray(row.last_errors)
+      ? (row.last_errors as unknown[]).filter((value): value is string => typeof value === 'string')
+      : [],
+  }));
+}
+
+/** まだ店へ知らせていない「送れなかった」行。total は上限で切る前の件数 */
+export async function listUnnotifiedDeadOrderEmails(
+  store: OrderEmailStore,
+  limit: number,
+): Promise<{ emails: DeadOrderEmail[]; total: number }> {
+  const list = rowsOf(await callOrderEmailRpc(store, 'list_unnotified_dead_order_emails', { _limit: limit }));
+  return {
+    total: list.length > 0 ? Number(list[0].total_count) : 0,
+    emails: list.map((row) => ({
+      id: String(row.email_id),
+      orderId: String(row.order_id),
+      kind: row.kind as OrderEmailKind,
+      lastErrorCode: textOrNull(row.last_error_code),
+      attempts: Number(row.attempts),
+      finishedAt: dateOrNull(row.finished_at),
+    })),
+  };
+}
+
+export async function markDeadOrderEmailsNotified(store: OrderEmailStore, emailIds: string[]): Promise<number> {
+  if (emailIds.length === 0) return 0;
+  const data = await callOrderEmailRpc(store, 'mark_order_emails_dead_notified', { _email_ids: emailIds });
+  return typeof data === 'number' ? data : 0;
+}
+
+/** まだ店へ知らせていない「届かなかった」行。total は上限で切る前の件数 */
+export async function listUnnotifiedDeliveryProblems(
+  store: OrderEmailStore,
+  limit: number,
+): Promise<{ emails: DeliveryProblemEmail[]; total: number }> {
+  const list = rowsOf(await callOrderEmailRpc(store, 'list_unnotified_order_email_delivery_problems', { _limit: limit }));
+  return {
+    total: list.length > 0 ? Number(list[0].total_count) : 0,
+    emails: list.map((row) => ({
+      id: String(row.email_id),
+      orderId: String(row.order_id),
+      kind: row.kind as OrderEmailKind,
+      deliveryStatus: row.delivery_status as OrderEmailDeliveryStatus,
+      deliveryEventAt: dateOrNull(row.delivery_event_at),
+    })),
+  };
+}
+
+export async function markDeliveryProblemsNotified(store: OrderEmailStore, emailIds: string[]): Promise<number> {
+  if (emailIds.length === 0) return 0;
+  const data = await callOrderEmailRpc(store, 'mark_order_email_delivery_problems_notified', { _email_ids: emailIds });
+  return typeof data === 'number' ? data : 0;
 }

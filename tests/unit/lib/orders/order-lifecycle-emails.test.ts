@@ -68,9 +68,12 @@ describe('店への要対応メール', () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     delete env.SHOP_ALERT_EMAIL;
 
-    expect(await sendShopPaymentAlert(ALERT)).toBe(false);
-    expect(mockSendMail).not.toHaveBeenCalled();
-    expect(warn).toHaveBeenCalledWith('[shop-alert] SHOP_ALERT_EMAIL or MAIL_FROM_ADDRESS is not configured');
-    warn.mockRestore();
+    try {
+      expect(await sendShopPaymentAlert(ALERT)).toBe(false);
+      expect(mockSendMail).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledWith('[shop-alert] SHOP_ALERT_EMAIL or MAIL_FROM_ADDRESS is not configured');
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

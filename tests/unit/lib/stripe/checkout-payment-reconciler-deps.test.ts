@@ -221,11 +221,14 @@ describe('createSupabaseReconcilerDatabase', () => {
     const error = jest.spyOn(console, 'error').mockImplementation(() => undefined);
     const { client } = fakeClient({ update: { data: null, error: { message: 'timeout' } } });
 
-    await expect(
-      createSupabaseReconcilerDatabase(client).persistDraftPaymentMethod('draft-1', 'stripe_card'),
-    ).resolves.toBeUndefined();
-    expect(error).toHaveBeenCalledWith('[reconcile] failed to persist payment_method on checkout draft', 'draft-1', { message: 'timeout' });
-    error.mockRestore();
+    try {
+      await expect(
+        createSupabaseReconcilerDatabase(client).persistDraftPaymentMethod('draft-1', 'stripe_card'),
+      ).resolves.toBeUndefined();
+      expect(error).toHaveBeenCalledWith('[reconcile] failed to persist payment_method on checkout draft', 'draft-1', { message: 'timeout' });
+    } finally {
+      error.mockRestore();
+    }
   });
 });
 

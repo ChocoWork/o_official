@@ -53,6 +53,12 @@ jest.mock('@/lib/stripe/checkout-payment-reconciler-deps', () => ({
   createDefaultReconcilerDeps: async () => mockReconcilerDeps,
 }));
 
+// 照合が書いた注文のメールを返事の後に送る予約（after() を使うので、試験では差し替える）
+const mockScheduleOrderEmailDelivery = jest.fn();
+jest.mock('@/lib/orders/email/order-email-schedule', () => ({
+  scheduleOrderEmailDelivery: (...args: unknown[]) => mockScheduleOrderEmailDelivery(...args),
+}));
+
 import { POST } from '@/app/api/checkout/complete/route';
 import { ReconcileTransientError } from '@/lib/stripe/checkout-payment-reader';
 
@@ -146,6 +152,7 @@ describe('POST /api/checkout/complete', () => {
       expand: ['payment_intent', 'payment_intent.payment_method', 'payment_intent.latest_charge'],
     });
     expect(mockEnforceRateLimit).toHaveBeenCalledWith(expect.objectContaining({ endpoint: 'checkout:complete' }));
+    expect(mockScheduleOrderEmailDelivery).toHaveBeenCalledTimes(1);
   });
 
   test('払込票を発行した Session は入金待ちの注文を返す', async () => {
@@ -258,6 +265,7 @@ describe('POST /api/checkout/complete', () => {
 
     expect(res.status).toBe(503);
     expect(res.body).toEqual({ error: 'Temporarily unavailable' });
+    expect(mockScheduleOrderEmailDelivery).not.toHaveBeenCalled();
   });
 
   test('ログインしていても注文の持ち主を書かず、ログインの確かめを呼ばない', async () => {

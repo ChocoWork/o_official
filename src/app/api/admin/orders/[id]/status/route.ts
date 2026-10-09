@@ -15,6 +15,7 @@ import {
   type ReconcileResult,
 } from '@/lib/stripe/checkout-payment-reconciler';
 import { createDefaultReconcilerDeps } from '@/lib/stripe/checkout-payment-reconciler-deps';
+import { scheduleOrderEmailDelivery } from '@/lib/orders/email/order-email-schedule';
 import { logAudit } from '@/lib/audit';
 import { SHIPPING_CARRIER_IDS } from '@/lib/orders/shipping-carriers';
 import {
@@ -154,6 +155,9 @@ export async function POST(
       }
 
       await audit('success', 'Status changed to shipped', { status: 'shipped', carrier: parsedBody.data.carrier, notify_customer: parsedBody.data.notifyCustomer });
+
+      // 発送のメール（知らせる時だけ）の行は DB の関数が同じ取引で書いた。返事の後に送る（グループ D 設計書 4-7）
+      scheduleOrderEmailDelivery();
 
       return NextResponse.json({ success: true, status: 'shipped' }, { status: 200 });
     }
@@ -337,6 +341,8 @@ async function respondToCancelResult(
       cancel_reason: cancel.reason,
       notify_customer: cancel.notifyCustomer,
     });
+    // 取消のメール（知らせる時だけ）の行は在庫を戻す関数が同じ取引で書いた。返事の後に送る
+    scheduleOrderEmailDelivery();
     return NextResponse.json({ success: true, status: 'cancelled' }, { status: 200 });
   }
 

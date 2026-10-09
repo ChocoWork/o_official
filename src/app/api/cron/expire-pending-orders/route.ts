@@ -23,6 +23,9 @@ import {
   type ReconcileResult,
 } from '@/lib/stripe/checkout-payment-reconciler';
 import { createDefaultReconcilerDeps, listUnsentShopAlerts } from '@/lib/stripe/checkout-payment-reconciler-deps';
+import { runOrderEmailOpsChecks } from '@/lib/orders/email/order-email-ops';
+import { scheduleOrderEmailDelivery } from '@/lib/orders/email/order-email-schedule';
+import type { OrderEmailStore } from '@/lib/orders/email/order-email-store';
 
 // 照合の見回り（グループ A 設計書 2-2）。毎時、決済画面を開いてから30分を超えた支払い手続き中の注文と、
 // 入金待ちの全件を Stripe の現在値と照合する。まだ開いている決済はその場で失効させる。
@@ -104,9 +107,18 @@ async function recordSweepRun(store: OpsStore, succeeded: boolean, errorCode: st
   }
 }
 
-/** 溜まり・退避・遅れを点検する。点検の失敗は runOpsChecks が受け止め、応答を変えない。 */
-function runChecks(store: OpsStore) {
-  return runOpsChecks({ store, send: sendOpsAlertMail, now: () => new Date() });
+/**
+ * 溜まり・退避・遅れを点検する。点検の失敗は runOpsChecks が受け止め、応答を変えない。
+ * 続けて注文のメールの点検も行う（グループ D 設計書 4-8。worker の終わりと同じ点検を、見回りの終わりにも行う）。
+ */
+async function runChecks(store: OpsStore) {
+  const result = await runOpsChecks({ store, send: sendOpsAlertMail, now: () => new Date() });
+  await runOrderEmailOpsChecks({
+    store: store as unknown as OpsStore & OrderEmailStore,
+    send: sendOpsAlertMail,
+    now: () => new Date(),
+  });
+  return result;
 }
 
 /** 失敗の経路: 失敗を記録してから点検する。成功の経路は、記録を拾い上げの直後に、点検を最後に行う。 */
@@ -296,5 +308,8 @@ export async function POST(request: Request) {
   });
 
   await runChecks(opsStore);
+
+  // 見回りの照合が書いた注文のメール（期限切れ・入金済み）を、返事の後に送る（グループ D 設計書 4-7）
+  scheduleOrderEmailDelivery();
   return NextResponse.json(summary);
 }

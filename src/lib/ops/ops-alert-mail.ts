@@ -5,6 +5,18 @@ import { formatCurrency } from '@/lib/orders/order-confirmation-email';
 import type { BacklogRow, DeadEvent, RecoveredReviewReason } from '@/lib/ops/ops-store';
 import type { WebhookFailureCause } from '@/lib/stripe/webhook-events';
 import type { StripeReconciliationError, UnmatchedRecentPayment } from '@/lib/stripe/reconcile-orders';
+import {
+  isOrderEmailErrorCode,
+  ORDER_EMAIL_DELIVERY_LABELS,
+  ORDER_EMAIL_ERROR_LABELS,
+  ORDER_EMAIL_KIND_LABELS,
+} from '@/lib/orders/email/order-email-types';
+import type {
+  DeadOrderEmail,
+  DeliveryProblemEmail,
+  OrderEmailBacklogRow,
+  OrderEmailSendState,
+} from '@/lib/orders/email/order-email-store';
 
 /**
  * 店への知らせのメール（設計書 2026-10-05 グループ B の第6章）。
@@ -17,7 +29,11 @@ export type OpsAlertKind =
   | 'webhook_signature_invalid'
   | 'webhook_mode_mismatch'
   | 'orders_recovered_from_payment'
-  | 'reconcile_findings';
+  | 'reconcile_findings'
+  | 'order_email_paused'
+  | 'order_email_backlog'
+  | 'order_email_dead'
+  | 'order_email_delivery_problem';
 
 export type OpsAlertMail = { kind: OpsAlertKind; subject: string; lines: string[] };
 
@@ -30,6 +46,7 @@ export type RecoveredOrderSummary = {
 };
 
 const RUNBOOK = '手順書（docs/06_Operations/webhook-queue-operations.md）';
+export const ORDER_EMAIL_RUNBOOK = '手順書（docs/06_Operations/order-email-operations.md）';
 
 const STATUS_LABELS: Record<BacklogRow['status'], string> = {
   queued: '処理待ち',
@@ -47,8 +64,9 @@ const FAILURE_CAUSES: readonly WebhookFailureCause[] = [
 ];
 
 const STALE_JOBS = {
-  order_sweep: { label: '毎時の見回り', hours: 2 },
-  stripe_reconcile: { label: '毎晩の照合', hours: 25 },
+  order_sweep: { label: '毎時の見回り', threshold: '2時間', runbook: RUNBOOK, section: '定期処理が止まったとき' },
+  stripe_reconcile: { label: '毎晩の照合', threshold: '25時間', runbook: RUNBOOK, section: '定期処理が止まったとき' },
+  order_email_worker: { label: '注文のメールの送信', threshold: '15分', runbook: ORDER_EMAIL_RUNBOOK, section: 'worker の停止' },
 } as const;
 
 function formatJst(date: Date): string {
@@ -107,15 +125,15 @@ export function deadDigestMail(events: DeadEvent[], total: number): OpsAlertMail
 }
 
 export function staleJobMail(job: keyof typeof STALE_JOBS, lastSucceededAt: Date): OpsAlertMail {
-  const { label, hours } = STALE_JOBS[job];
+  const { label, threshold, runbook, section } = STALE_JOBS[job];
   return {
     kind: 'job_stale',
     subject: `【要確認】定期処理が止まっています（${label}）`,
     lines: [
-      `${label}が、${hours}時間以上成功していません。`,
+      `${label}が、${threshold}以上成功していません。`,
       `最後の成功: ${formatJst(lastSucceededAt)}`,
       '',
-      `次にやること: ${RUNBOOK}の「定期処理が止まったとき」に沿って、定期処理の実行の記録を確かめてください。`,
+      `次にやること: ${runbook}の「${section}」に沿って、定期処理の実行の記録を確かめてください。`,
     ],
   };
 }
@@ -215,6 +233,87 @@ export function reconcileFindingsMail({
         ]
         : []),
       `${RUNBOOK}の「照合で見つかったことの知らせが来たとき」に沿って進めてください。`,
+    ],
+  };
+}
+
+const ORDER_EMAIL_BACKLOG_LABELS: Record<OrderEmailBacklogRow['status'], string> = {
+  pending: '送信待ち',
+  sending: '送信中',
+  retry_wait: 'やり直し待ち',
+};
+
+/** 原因の記号の名前。自由文（宛先などを含みうる）は「想定外の失敗」にして載せない */
+function orderEmailErrorLabel(code: string | null): string {
+  return isOrderEmailErrorCode(code) ? ORDER_EMAIL_ERROR_LABELS[code] : ORDER_EMAIL_ERROR_LABELS.unexpected_error;
+}
+
+export function orderEmailPausedMail(state: Pick<OrderEmailSendState, 'reason' | 'pausedAt' | 'nextProbeAt'>): OpsAlertMail {
+  return {
+    kind: 'order_email_paused',
+    subject: '【要対応】注文のメールの送信を止めています',
+    lines: [
+      `送信サービスの設定の問題で、お客様への注文のメールの送信を止めています（${orderEmailErrorLabel(state.reason)}）。`,
+      ...(state.pausedAt ? [`止めた時刻: ${formatJst(state.pausedAt)}`] : []),
+      ...(state.nextProbeAt ? [`次に1件だけ試す時刻: ${formatJst(state.nextProbeAt)}`] : []),
+      '設定が直ると、試した1件が送れた時点で自動で再開します。止めている間のメールは消えずに残ります。',
+      '',
+      `次にやること: ${ORDER_EMAIL_RUNBOOK}の「送信の一時停止」に沿って、設定を確かめてください。`,
+    ],
+  };
+}
+
+export function orderEmailBacklogMail(rows: OrderEmailBacklogRow[]): OpsAlertMail {
+  return {
+    kind: 'order_email_backlog',
+    subject: '【要確認】注文のメールの送信が遅れています',
+    lines: [
+      'お客様への注文のメールのうち、書いてから15分以上たっても送れていないものがあります。',
+      '',
+      ...rows.map((row) => {
+        const causes = row.lastErrors.length > 0 ? ` 原因: ${row.lastErrors.map(orderEmailErrorLabel).join('、')}` : '';
+        return `${ORDER_EMAIL_BACKLOG_LABELS[row.status]}: ${row.count}件（いちばん古いもの: ${formatJst(row.oldestCreatedAt)}）${causes}`;
+      }),
+      '',
+      `次にやること: ${ORDER_EMAIL_RUNBOOK}の「溜まり」に沿って、worker と送信の一時停止を確かめてください。`,
+    ],
+  };
+}
+
+export function orderEmailDeadDigestMail(emails: DeadOrderEmail[], total: number): OpsAlertMail {
+  const rest = total - emails.length;
+  return {
+    kind: 'order_email_dead',
+    subject: `【要対応】送れなかった注文のメール（${total}件）`,
+    lines: [
+      'お客様への注文のメールを送れませんでした（これ以上やり直しません）。',
+      '',
+      ...emails.map((email) =>
+        `- ${toOrderNumber(email.orderId)}（${ORDER_EMAIL_KIND_LABELS[email.kind]}のメール） `
+        + `原因: ${orderEmailErrorLabel(email.lastErrorCode)} 試行: ${email.attempts}回`),
+      ...(rest > 0 ? [`（ほかに ${rest} 件。次の知らせで送ります）`] : []),
+      '',
+      '管理画面の ORDER タブで、その注文の「履歴」から「お客様へ再送」できます。',
+      `原因ごとの対応は、${ORDER_EMAIL_RUNBOOK}の「送れなかった」を確かめてください。`,
+    ],
+  };
+}
+
+export function orderEmailDeliveryProblemMail(emails: DeliveryProblemEmail[], total: number): OpsAlertMail {
+  const rest = total - emails.length;
+  return {
+    kind: 'order_email_delivery_problem',
+    subject: `【要確認】届かなかった注文のメール（${total}件）`,
+    lines: [
+      'お客様への注文のメールが、相手のメールの会社で届かなかった・止められたと知らせがありました。',
+      '',
+      ...emails.map((email) =>
+        `- ${toOrderNumber(email.orderId)}（${ORDER_EMAIL_KIND_LABELS[email.kind]}のメール） `
+        + `状態: ${ORDER_EMAIL_DELIVERY_LABELS[email.deliveryStatus]}`
+        + (email.deliveryEventAt ? ` 時刻: ${formatJst(email.deliveryEventAt)}` : '')),
+      ...(rest > 0 ? [`（ほかに ${rest} 件。次の知らせで送ります）`] : []),
+      '',
+      `宛先の誤りや受け取りの拒否のことがあります。${ORDER_EMAIL_RUNBOOK}の「届かなかった」に沿って、お客様への連絡を考えてください。`,
     ],
   };
 }

@@ -46,7 +46,7 @@ export type OpsCheckResult = {
 
 const STALE_JOBS = ['order_sweep', 'stripe_reconcile'] as const;
 
-async function sendOnce(deps: OpsCheckDeps, key: OpsAlertKey, mail: OpsAlertMail): Promise<boolean> {
+export async function sendOnce(deps: OpsCheckDeps, key: OpsAlertKey, mail: OpsAlertMail): Promise<boolean> {
   const claim = await claimAlert(deps.store, key, OPS_CHECK_LIMITS.alertCooldownSeconds);
   if (!claim) return false;
   let sent = false;

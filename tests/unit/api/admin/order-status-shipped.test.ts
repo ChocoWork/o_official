@@ -48,6 +48,12 @@ jest.mock('@/lib/stripe/checkout-payment-reconciler-deps', () => ({
   createDefaultReconcilerDeps: async () => mockDeps,
 }));
 
+// 行を書いた後に注文のメールを返事の後に送る予約（after() を使うので、試験では差し替える）
+const mockScheduleOrderEmailDelivery = jest.fn();
+jest.mock('@/lib/orders/email/order-email-schedule', () => ({
+  scheduleOrderEmailDelivery: (...args: unknown[]) => mockScheduleOrderEmailDelivery(...args),
+}));
+
 const mockAuthorize = jest.fn();
 jest.mock('@/lib/auth/admin-rbac', () => ({
   authorizeAdminPermission: (...args: unknown[]) => mockAuthorize(...args),
@@ -106,7 +112,7 @@ describe('POST /api/admin/orders/[id]/status - CSRF トークン', () => {
   // 確認が通れば取消も発送も成功する状態にしておく。拒否されたとき、処理が進んだことが 200 で分かる
   beforeEach(() => {
     currentOrder('payment_in_progress', { payment_intent_id: null });
-    mockRpc.mockResolvedValue({ data: [{ id: ORDER_ID, shipping_email: 'hanako@example.com' }], error: null });
+    mockRpc.mockResolvedValue({ data: [{ id: ORDER_ID }], error: null });
   });
 
   // clearAllMocks は実装を戻さない。ここで置いた既定の応答を、後ろのテストへ持ち越さない
@@ -156,7 +162,7 @@ describe('POST /api/admin/orders/[id]/status - CSRF トークン', () => {
 
 describe('POST /api/admin/orders/[id]/status - 発送', () => {
   test('paid の注文を発送済みにできる', async () => {
-    mockRpc.mockResolvedValue({ data: [{ id: ORDER_ID, shipping_email: 'hanako@example.com' }], error: null });
+    mockRpc.mockResolvedValue({ data: [{ id: ORDER_ID }], error: null });
 
     const res = await post({ status: 'shipped', carrier: 'yamato', trackingNumber: '1234-5678-9012' });
 
@@ -168,9 +174,10 @@ describe('POST /api/admin/orders/[id]/status - 発送', () => {
       _tracking_number: '1234-5678-9012',
       _notify_customer: true,
     });
+    expect(mockScheduleOrderEmailDelivery).toHaveBeenCalledTimes(1);
   });
 
-  test('更新対象が無ければ 409 を返し、配送先と支払額の確認を促し、メールを送らない', async () => {
+  test('更新対象が無ければ 409 を返し、配送先と支払額の確認を促し、メールの送信を予約しない', async () => {
     mockRpc.mockResolvedValue({ data: [], error: null });
 
     const res = await post({ status: 'shipped', carrier: 'yamato', trackingNumber: '1234-5678-9012' });
@@ -178,6 +185,7 @@ describe('POST /api/admin/orders/[id]/status - 発送', () => {
     expect(res.status).toBe(409);
     expect(res.body.error).toContain('配送先');
     expect(res.body.error).toContain('支払額');
+    expect(mockScheduleOrderEmailDelivery).not.toHaveBeenCalled();
   });
 
   test('「お客様に発送のメールを送る」を外すと、DB に送らないを渡す', async () => {
@@ -236,6 +244,7 @@ describe('POST /api/admin/orders/[id]/status - 取消', () => {
       adminCancel: { actorId: 'admin-1', reason: 'customer_request', note: '電話で依頼', notifyCustomer: false },
     });
     expect(mockExpireOpenCheckoutSession.mock.invocationCallOrder[0]).toBeLessThan(mockReconcile.mock.invocationCallOrder[0]);
+    expect(mockScheduleOrderEmailDelivery).toHaveBeenCalledTimes(1);
   });
 
   test('お知らせは既定で送る', async () => {
@@ -327,17 +336,20 @@ describe('POST /api/admin/orders/[id]/status - 取消', () => {
     const error = jest.spyOn(console, 'error').mockImplementation(() => undefined);
     mockReconcile.mockRejectedValue({ code: '23514', message: 'x' });
 
-    const res = await post(CANCEL);
+    try {
+      const res = await post(CANCEL);
 
-    expect(res.status).toBe(500);
-    expect(res.body.error).toBe('未入金の注文を取り消せませんでした。');
-    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
-      outcome: 'error',
-      detail: 'Failed to cancel unpaid order',
-      metadata: { step: 'reconcile' },
-    }));
-    expect(error).toHaveBeenCalledWith('[admin.orders.status] Failed to cancel unpaid order:', { code: '23514', message: 'x' });
-    error.mockRestore();
+      expect(res.status).toBe(500);
+      expect(res.body.error).toBe('未入金の注文を取り消せませんでした。');
+      expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+        outcome: 'error',
+        detail: 'Failed to cancel unpaid order',
+        metadata: { step: 'reconcile' },
+      }));
+      expect(error).toHaveBeenCalledWith('[admin.orders.status] Failed to cancel unpaid order:', { code: '23514', message: 'x' });
+    } finally {
+      error.mockRestore();
+    }
   });
 
   test('失敗の注文は専用 RPC に理由とメモを渡し、お客様には送らない', async () => {

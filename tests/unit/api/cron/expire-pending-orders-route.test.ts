@@ -74,6 +74,19 @@ jest.mock('@/lib/ops/ops-alert-mail', () => ({
   }),
 }));
 
+// 見回りの照合が書いた注文のメール（期限切れ・入金済み）を、返事の後に送る予約（after() を使うので、試験では差し替える）
+const mockScheduleOrderEmailDelivery = jest.fn();
+jest.mock('@/lib/orders/email/order-email-schedule', () => ({
+  scheduleOrderEmailDelivery: (...args: unknown[]) => mockScheduleOrderEmailDelivery(...args),
+}));
+
+const mockRunOrderEmailOpsChecks = jest.fn().mockResolvedValue({
+  pausedAlerted: false, backlogAlerted: false, deadNotified: 0, deliveryNotified: 0, staleAlerted: false, failedChecks: [],
+});
+jest.mock('@/lib/orders/email/order-email-ops', () => ({
+  runOrderEmailOpsChecks: (...args: unknown[]) => mockRunOrderEmailOpsChecks(...args),
+}));
+
 import { POST } from '@/app/api/cron/expire-pending-orders/route';
 
 // 定期処理の合言葉は32文字以上（設計書 2026-10-05 グループ B の 4-3）
@@ -285,6 +298,8 @@ describe('POST /api/cron/expire-pending-orders（照合の見回り）', () => {
       outcome: 'error',
       metadata: expect.objectContaining({ failed_order_ids: ['order-4'] }),
     }));
+    expect(mockScheduleOrderEmailDelivery).toHaveBeenCalledTimes(1);
+    expect(mockRunOrderEmailOpsChecks).toHaveBeenCalledWith(expect.objectContaining({ now: expect.any(Function) }));
   });
 
   it('店へ未送信の要対応を送り直す', async () => {

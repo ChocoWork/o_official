@@ -22,29 +22,64 @@ const mockSendOpsAlertMail = jest.fn();
 jest.mock('@/lib/ops/ops-alert-mail', () => ({
   sendOpsAlertMail: (...args: unknown[]) => mockSendOpsAlertMail(...args),
 }));
+const mockRunOrderEmailWorker = jest.fn();
+jest.mock('@/lib/orders/email/order-email-worker', () => ({
+  ORDER_EMAIL_WORKER_BUDGET_MS: 10_000,
+  runOrderEmailWorker: (...args: unknown[]) => mockRunOrderEmailWorker(...args),
+}));
+const mockRunOrderEmailOpsChecks = jest.fn();
+jest.mock('@/lib/orders/email/order-email-ops', () => ({
+  runOrderEmailOpsChecks: (...args: unknown[]) => mockRunOrderEmailOpsChecks(...args),
+}));
 
 import { runWebhookWorker, WORKER_TIME_BUDGET_MS } from '@/lib/stripe/webhook-worker';
 import type { OpsAlertMail } from '@/lib/ops/ops-alert-mail';
 
 const CHECKS = { backlogAlerted: false, deadNotified: 0, staleAlerted: [], failedChecks: [] };
+const EMAILS = { sent: 1, skipped: 0, failed: 0, stoppedBy: 'empty' };
+const EMAIL_CHECKS = { pausedAlerted: false, backlogAlerted: false, deadNotified: 0, deliveryNotified: 0, staleAlerted: false, failedChecks: [] };
 
 describe('runWebhookWorker', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockRunOpsChecks.mockResolvedValue(CHECKS);
     mockRecordHeartbeat.mockResolvedValue(undefined);
+    mockRunOrderEmailWorker.mockResolvedValue(EMAILS);
+    mockRunOrderEmailOpsChecks.mockResolvedValue(EMAIL_CHECKS);
   });
 
-  it('約45秒の予算で処理し、成功を記録して点検する', async () => {
+  it('Stripe の知らせに35秒、注文のメールに10秒を使い、成功を記録して両方を点検する', async () => {
     mockDrain.mockResolvedValue({ processed: 2, failed: 0, stoppedBy: 'empty' });
 
     const result = await runWebhookWorker({ requestUrl: 'http://localhost/api/cron/process-stripe-webhooks' });
 
-    expect(WORKER_TIME_BUDGET_MS).toBe(45_000);
-    expect(mockDrain).toHaveBeenCalledWith(expect.objectContaining({ store: mockStore, budgetMs: 45_000 }));
+    expect(WORKER_TIME_BUDGET_MS).toBe(35_000);
+    expect(mockDrain).toHaveBeenCalledWith(expect.objectContaining({ store: mockStore, budgetMs: 35_000 }));
+    expect(mockRunOrderEmailWorker).toHaveBeenCalledWith({ budgetMs: 10_000 });
+    // Stripe の知らせが書いた注文のメールの行を、同じ起動の中で送るため、Stripe の知らせを先に処理する
+    expect(mockDrain.mock.invocationCallOrder[0]).toBeLessThan(mockRunOrderEmailWorker.mock.invocationCallOrder[0]);
     expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockStore, 'webhook_worker', true, null);
     expect(mockRunOpsChecks).toHaveBeenCalledWith(expect.objectContaining({ store: mockStore }));
-    expect(result).toEqual({ processed: 2, failed: 0, stoppedBy: 'empty', checks: CHECKS });
+    expect(mockRunOrderEmailOpsChecks).toHaveBeenCalledWith(expect.objectContaining({ store: mockStore }));
+    expect(result).toEqual({ processed: 2, failed: 0, stoppedBy: 'empty', checks: CHECKS, emails: EMAILS, emailChecks: EMAIL_CHECKS });
+  });
+
+  it('注文のメールの worker が投げても、点検まで続ける', async () => {
+    mockDrain.mockResolvedValue({ processed: 0, failed: 0, stoppedBy: 'empty' });
+    mockRunOrderEmailWorker.mockRejectedValueOnce(new Error('boom'));
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      const result = await runWebhookWorker({ requestUrl: 'http://localhost/x' });
+
+      expect(result.emails).toBeNull();
+      expect(mockRunOpsChecks).toHaveBeenCalled();
+      expect(mockRunOrderEmailOpsChecks).toHaveBeenCalled();
+      // 例外の文（boom）は出さず、例外の名前だけを残す
+      expect(error).toHaveBeenCalledWith('[stripe-webhook-worker] Order email worker failed', 'Error');
+    } finally {
+      error.mockRestore();
+    }
   });
 
   it('点検に渡した send は sendOpsAlertMail でメールを送る', async () => {
