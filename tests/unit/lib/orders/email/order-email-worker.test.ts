@@ -20,7 +20,7 @@ import {
 } from '@/lib/orders/email/order-email-worker';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { OrderEmailMaterialError, type OrderEmailMaterial } from '@/lib/orders/email/order-email-compose';
-import type { OrderEmailStore } from '@/lib/orders/email/order-email-store';
+import { OrderEmailStoreError, type OrderEmailStore } from '@/lib/orders/email/order-email-store';
 import type { OrderEmailSendOutcome } from '@/lib/orders/email/order-email-sender';
 
 type QueueRow = {
@@ -168,6 +168,22 @@ describe('runOrderEmailWorker', () => {
       await expect(runOrderEmailWorker()).resolves.toMatchObject({ stoppedBy: 'claim_error' });
       expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockClient, 'order_email_worker', false, 'db_unavailable');
       expect(error).toHaveBeenCalledWith('[order-email-worker] claim failed', 'OrderEmailStoreError', '08006');
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it.each([
+    ['通常の例外', new Error('宛先・件名・本文を含む例外'), ['Error']],
+    ['DB の記号付き', new OrderEmailStoreError('claim_order_email', { message: '宛先・件名・本文を含む例外', code: '08006' }), ['OrderEmailStoreError', '08006']],
+  ])('心拍の記録が失敗（%s）しても worker の結果は変わらず、ログは例外名と DB の記号だけ', async (_label, failure, details) => {
+    mockClientRpc.mockResolvedValue({ data: [], error: null });
+    mockRecordHeartbeat.mockRejectedValueOnce(failure);
+    const error = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      await expect(runOrderEmailWorker()).resolves.toEqual({ sent: 0, skipped: 0, failed: 0, stoppedBy: 'empty' });
+      expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockClient, 'order_email_worker', true, null);
+      expect(error.mock.calls).toEqual([['[order-email-worker] failed to record heartbeat', ...details]]);
     } finally {
       error.mockRestore();
     }

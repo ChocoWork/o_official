@@ -65,6 +65,10 @@ function fakeStore(state: State) {
 const ORDER_ID = 'a1b2c3d4-1111-2222-8333-444455556666';
 
 describe('runOrderEmailOpsChecks', () => {
+  beforeEach(() => {
+    // 門以外の試験は、実行元の Vercel 設定や開発環境に左右されず点検を通す
+    jest.replaceProperty(process, 'env', { ...process.env, NODE_ENV: 'test', VERCEL_ENV: undefined });
+  });
   // process.env を差し替えた試験の後に、元へ戻す
   afterEach(() => jest.restoreAllMocks());
 
@@ -156,6 +160,16 @@ describe('runOrderEmailOpsChecks', () => {
     } finally {
       error.mockRestore();
     }
+  });
+
+  it('注文のメールの worker の最後の成功が10分前なら停止を知らせない', async () => {
+    const state = emptyState();
+    state.heartbeats = [{ job: 'order_email_worker', last_succeeded_at: '2026-10-09T11:50:00Z', last_failed_at: null, last_error_code: null }];
+    const { store, calls } = fakeStore(state);
+    const send = jest.fn();
+    expect((await runOrderEmailOpsChecks({ store, send, now: () => NOW })).staleAlerted).toBe(false);
+    expect(send).not.toHaveBeenCalled();
+    expect(calls.map((call) => call.name)).not.toContain('claim_ops_alert');
   });
 
   it('止める環境では、DB を読まず、知らせず、印も付けない（本番の知らせを、開発や preview が知らせ済みにしない）', async () => {

@@ -101,6 +101,20 @@ describe('buildOrderHistory', () => {
     expect(withOpenManual[0]).toMatchObject({ manual: true, requestedByEmail: 'admin@example.com', stateLabel: '送信待ち' });
   });
 
+  it('返金の取り消しでキャンセルから発送済みに戻る時は、配送情報より返金の取り消しを優先する', () => {
+    const history = buildOrderHistory({
+      order: { id: ORDER_ID, status: 'shipped', shippingEmail: null, createdAt: '2026-10-08T23:00:00.000Z' },
+      statusRows: [{
+        changedAt: '2026-10-11T02:00:00.000Z', fromStatus: 'cancelled', toStatus: 'shipped', changeReason: 'stripe_refund_projection',
+        actorEmail: null, shippingCarrier: 'yamato', trackingNumber: '1234-5678', cancelReason: null,
+      }],
+      emailRows: [], sendState: NOT_PAUSED,
+    });
+    expect(history.entries[0]).toEqual({
+      type: 'status', at: '2026-10-11T02:00:00.000Z', fromLabel: 'キャンセル', toLabel: '発送済み', actorEmail: null, detail: '返金の取り消し',
+    });
+  });
+
   it('送信を止めていれば、その原因の名前を返す', () => {
     const history = buildOrderHistory({
       order: { id: ORDER_ID, status: 'paid', shippingEmail: null, createdAt: '2026-10-08T23:00:00.000Z' },

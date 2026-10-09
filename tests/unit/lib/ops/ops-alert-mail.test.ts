@@ -98,14 +98,25 @@ describe('店への知らせのメールの文面', () => {
 
   it('遅れ: 定期処理の名前と、最後の成功の時刻を書く', () => {
     const sweep = staleJobMail('order_sweep', new Date('2026-10-05T01:00:00Z'));
-    expect(sweep.kind).toBe('job_stale');
-    expect(sweep.subject).toBe('【要確認】定期処理が止まっています（毎時の見回り）');
-    expect(sweep.lines.join('\n')).toContain('2時間以上');
-    expect(sweep.lines.join('\n')).toContain('最後の成功: 2026/10/05 10:00');
+    expect(sweep).toEqual({
+      kind: 'job_stale', subject: '【要確認】定期処理が止まっています（毎時の見回り）',
+      lines: [
+        '毎時の見回りが、2時間以上成功していません。',
+        '最後の成功: 2026/10/05 10:00',
+        '',
+        '次にやること: 手順書（docs/06_Operations/webhook-queue-operations.md）の「定期処理が止まったとき」に沿って、定期処理の実行の記録を確かめてください。',
+      ],
+    });
     const reconcile = staleJobMail('stripe_reconcile', new Date('2026-10-05T01:00:00Z'));
-    expect(reconcile.subject).toBe('【要確認】定期処理が止まっています（毎晩の照合）');
-    expect(reconcile.lines.join('\n')).toContain('25時間以上');
-    expect(reconcile.lines.join('\n')).toContain('最後の成功: 2026/10/05 10:00');
+    expect(reconcile).toEqual({
+      kind: 'job_stale', subject: '【要確認】定期処理が止まっています（毎晩の照合）',
+      lines: [
+        '毎晩の照合が、25時間以上成功していません。',
+        '最後の成功: 2026/10/05 10:00',
+        '',
+        '次にやること: 手順書（docs/06_Operations/webhook-queue-operations.md）の「定期処理が止まったとき」に沿って、定期処理の実行の記録を確かめてください。',
+      ],
+    });
   });
 
   it('署名不正: 10分の件数と、合言葉を確かめる案内を書く', () => {

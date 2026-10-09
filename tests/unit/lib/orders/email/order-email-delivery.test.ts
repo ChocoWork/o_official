@@ -76,10 +76,20 @@ type CheckDeps = Parameters<typeof checkOrderEmailDeliveries>[0];
 
 /** 時間と待ちは偽物にして、試験が実際には待たないようにする。変えたい物だけ渡す */
 function checkDeps(store: CheckDeps['store'], readLastEvent: LastEventReader, overrides: Partial<CheckDeps> = {}): CheckDeps {
-  return { store, readLastEvent, now: () => NOW, limit: 50, budgetMs: 8_000, nowMs: () => 0, sleep: async () => undefined, ...overrides };
+  return { store, readLastEvent, now: () => NOW, limit: 50, budgetMs: 8_000, nowMs: () => 0, sleep: async () => undefined, shuffle: (emails) => emails, ...overrides };
 }
 
 describe('checkOrderEmailDeliveries', () => {
+  it('読む前に取得した件を混ぜ、差し替えた順で読む', async () => {
+    const { store } = fakeStore(THREE);
+    const shuffle = jest.fn<ReturnType<NonNullable<CheckDeps['shuffle']>>, Parameters<NonNullable<CheckDeps['shuffle']>>>((emails) => [...emails].reverse());
+    const readLastEvent = jest.fn(async () => ({ ok: true as const, status: null }));
+    await checkOrderEmailDeliveries(checkDeps(store, readLastEvent, { shuffle }));
+    expect(shuffle).toHaveBeenCalledTimes(1);
+    expect(shuffle).toHaveBeenCalledWith(THREE.map((email) => ({ id: email.email_id, providerMessageId: email.provider_message_id })));
+    expect(readLastEvent.mock.calls).toEqual([['re_3'], ['re_2'], ['re_1']]);
+  });
+
   it('状態の決まっていないメールを Resend で読み、分かった状態を今の時刻で記録する', async () => {
     const { store, calls } = fakeStore([
       { email_id: 'email-1', provider_message_id: 're_1' },
@@ -106,7 +116,7 @@ describe('checkOrderEmailDeliveries', () => {
     expect(calls.map((call) => call.name)).not.toContain('record_order_email_delivery');
   });
 
-  it('2件目から読む前に500ミリ秒待つ。1件目の前は待たない（Resend の回数の制限を使い切らない）', async () => {
+  it('2件目から読む前に1秒待つ。1件目の前は待たない（Resend の回数の制限を使い切らない）', async () => {
     const { store } = fakeStore(THREE);
     const order: string[] = [];
     const readLastEvent: LastEventReader = jest.fn(async (id: string) => {
@@ -119,7 +129,7 @@ describe('checkOrderEmailDeliveries', () => {
 
     await checkOrderEmailDeliveries(checkDeps(store, readLastEvent, { sleep }));
 
-    expect(order).toEqual(['read:re_1', 'sleep:500', 'read:re_2', 'sleep:500', 'read:re_3']);
+    expect(order).toEqual(['read:re_1', 'sleep:1000', 'read:re_2', 'sleep:1000', 'read:re_3']);
   });
 
   it('時間の上限（待った時間も数える）に達したら、次を読む前に止まる', async () => {
@@ -133,7 +143,7 @@ describe('checkOrderEmailDeliveries', () => {
       clock += ms;
     });
 
-    // 1件目は 0ms→4000ms。待って 4500ms で2件目を読み 8500ms。3件目の前は待って 9000ms で、上限の 8000ms を過ぎている
+    // 1件目は 0ms→4000ms。待って 5000ms で2件目を読み 9000ms。3件目の前は待って 10000ms で、上限の 8000ms を過ぎている
     await expect(checkOrderEmailDeliveries(checkDeps(store, readLastEvent, { budgetMs: 8_000, nowMs: () => clock, sleep }))).resolves.toEqual({
       checked: 2, updated: 0, failed: 0, configError: false, stoppedEarly: true,
     });
@@ -384,12 +394,34 @@ describe('runOrderEmailDeliveryCheckIfDue', () => {
     const { store, calls } = fakeStore(ONE, [], 'record_ops_heartbeat');
     const readLastEvent = jest.fn();
 
-    await expect(runOrderEmailDeliveryCheckIfDue(store, { env: RESEND, now: () => NOW, readLastEvent })).resolves.toBe('failed');
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      await expect(runOrderEmailDeliveryCheckIfDue(store, { env: RESEND, now: () => NOW, readLastEvent })).resolves.toBe('failed');
+      expect(readLastEvent).not.toHaveBeenCalled();
+      expect(calls.map((call) => call.name)).not.toContain('list_order_emails_awaiting_delivery');
+      // 書けない DB に、失敗の記録を重ねない
+      expect(heartbeatsOf(calls)).toEqual([START]);
+      expect(warn.mock.calls).toEqual([['[order-email-delivery] failed to start', 'OpsStoreError']]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
 
-    expect(readLastEvent).not.toHaveBeenCalled();
-    expect(calls.map((call) => call.name)).not.toContain('list_order_emails_awaiting_delivery');
-    // 書けない DB に、失敗の記録を重ねない
-    expect(heartbeatsOf(calls)).toEqual([START]);
+  it('本番の配線は50件がすぐ読めても8秒で止まり、8件と stopped_early を記録する', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(NOW);
+    const awaiting = Array.from({ length: 50 }, (_, index) => ({ email_id: `email-${index}`, provider_message_id: `re_${index}` }));
+    const { store } = fakeStore(awaiting);
+    const readLastEvent = jest.fn(async () => ({ ok: true as const, status: null }));
+    const run = runOrderEmailDeliveryCheckIfDue(store, { env: RESEND, readLastEvent });
+    await jest.advanceTimersByTimeAsync(7_999);
+    expect(readLastEvent).toHaveBeenCalledTimes(8);
+    expect(info).not.toHaveBeenCalled();
+    await jest.advanceTimersByTimeAsync(1);
+    await expect(run).resolves.toBe('done');
+    expect(Date.now() - NOW.getTime()).toBe(8_000);
+    expect(readLastEvent).toHaveBeenCalledTimes(8);
+    expect(info.mock.calls).toEqual([['[order-email-delivery] checked', 8, 0, 0, 'stopped_early']]);
   });
 
   it('鍵の問題なら、始めの記録の後に、失敗と原因の記号を記録する', async () => {
@@ -420,8 +452,8 @@ describe('runOrderEmailDeliveryCheckIfDue', () => {
       .mockResolvedValueOnce({ ok: false, configError: false, retryable: false });
 
     const run = runOrderEmailDeliveryCheckIfDue(store, { env: RESEND, now: () => NOW, readLastEvent });
-    // 2件目の前の500ミリ秒の待ちを進める
-    await jest.advanceTimersByTimeAsync(500);
+    // 2件目の前の1秒の待ちを進める
+    await jest.advanceTimersByTimeAsync(1_000);
 
     await expect(run).resolves.toBe('done');
     expect(heartbeatsOf(calls)).toEqual([START]);

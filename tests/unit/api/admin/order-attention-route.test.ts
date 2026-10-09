@@ -79,6 +79,7 @@ import { GET as getAttention } from '@/app/api/admin/order-attention/route';
 import { POST as postReview } from '@/app/api/admin/orders/[id]/review/route';
 import { POST as postResolve } from '@/app/api/admin/payment-exceptions/[id]/resolve/route';
 import { ReconcileTransientError } from '@/lib/stripe/checkout-payment-reader';
+import { ORDER_EMAIL_ERROR_LABELS } from '@/lib/orders/email/order-email-types';
 
 type RouteResponse = { status: number; body: Record<string, any> };
 
@@ -124,9 +125,42 @@ beforeEach(() => {
   mockRequireCsrf.mockResolvedValue(undefined);
   mockExpireOpenCheckoutSession.mockResolvedValue('expired');
   mockReadCheckoutPayment.mockResolvedValue({ state: { kind: 'missing' }, voucherExpiresAt: null });
+  mockRpc.mockResolvedValue({ data: [{ paused: false, reason: null }], error: null });
 });
 
 describe('GET /api/admin/order-attention', () => {
+  it.each(['config_api_key', 'config_sender_domain', 'config_provider', 'quota_daily', 'quota_monthly', null] as const)(
+    '送信を止めている時は理由 %s の名前を履歴と同じ表から返す', async (reason) => {
+      mockRpc.mockResolvedValue({ data: [{ paused: true, reason }], error: null });
+      const res = (await getAttention(new Request('http://localhost/api/admin/order-attention'))) as unknown as RouteResponse;
+      expect(res.status).toBe(200);
+      expect(res.body.data.emailSending).toEqual({ paused: true, reasonLabel: ORDER_EMAIL_ERROR_LABELS[reason ?? 'config_provider'] });
+      expect(mockRpc).toHaveBeenCalledWith('get_order_email_send_state', undefined);
+    },
+  );
+
+  it('送信を止めていない時は理由なしで返す', async () => {
+    const res = (await getAttention(new Request('http://localhost/api/admin/order-attention'))) as unknown as RouteResponse;
+    expect(res.status).toBe(200);
+    expect(res.body.data.emailSending).toEqual({ paused: false, reasonLabel: null });
+  });
+
+  it('送信状態が読めなくても要対応は 200 のまま返し、状態は null、ログは例外名と DB の記号だけ', async () => {
+    mockRpc.mockResolvedValue({ data: null, error: { code: '08006', message: '宛先・件名・本文を含む例外' } });
+    reviewRows = [{ id: ORDER_ID, status: 'paid', review_reason: 'stock_not_reserved', review_marked_at: null }];
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const res = (await getAttention(new Request('http://localhost/api/admin/order-attention'))) as unknown as RouteResponse;
+      expect(res.status).toBe(200);
+      expect(res.body.data.emailSending).toBeNull();
+      expect(res.body.data.counts).toEqual({ exceptions: 0, reviews: 1 });
+      expect(res.body.data.reviews).toHaveLength(1);
+      expect(warn.mock.calls).toEqual([['[admin.order-attention] Failed to fetch email sending state', 'OrderEmailStoreError', '08006']]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('未解決の要対応と未確認の要確認を、件数と一緒に返す', async () => {
     exceptionRows = [{
       id: EXCEPTION_ID,

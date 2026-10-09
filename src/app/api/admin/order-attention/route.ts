@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { toOrderNumber } from '@/lib/orders/order-number';
+import { ORDER_EMAIL_ERROR_LABELS } from '@/lib/orders/email/order-email-types';
+import { getOrderEmailSendState, OrderEmailStoreError, type OrderEmailStore } from '@/lib/orders/email/order-email-store';
 import {
   PAYMENT_EXCEPTION_REASON_LABELS,
   type AttentionException,
@@ -101,9 +103,26 @@ export async function GET(request: Request) {
       reviewMarkedAt: row.review_marked_at,
     }));
 
-    const data: OrderAttention = {
+    // 送信元の設定が原因で止まると店への知らせも届かないので、この窓口でも毎回状態を返す。
+    // 状態だけが読めない時も、店が注文に対応できるよう要対応の欄は返す。
+    const emailSending = await getOrderEmailSendState(supabase as unknown as OrderEmailStore)
+      .then((state) => ({
+        paused: state.paused,
+        reasonLabel: state.paused ? ORDER_EMAIL_ERROR_LABELS[state.reason ?? 'config_provider'] : null,
+      }))
+      .catch((error: unknown) => {
+        console.warn(
+          '[admin.order-attention] Failed to fetch email sending state',
+          error instanceof Error ? error.name : 'UnknownError',
+          ...(error instanceof OrderEmailStoreError && error.code ? [error.code] : []),
+        );
+        return null;
+      });
+
+    const data: OrderAttention & { emailSending: { paused: boolean; reasonLabel: string | null } | null } = {
       exceptions,
       reviews,
+      emailSending,
       counts: {
         exceptions: exceptionsResult.count ?? exceptions.length,
         reviews: reviewsResult.count ?? reviews.length,

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { createServiceRoleClient } from '@/lib/supabase/server';
-import { getOrderEmailContent, type OrderEmailStore } from '@/lib/orders/email/order-email-store';
+import { getOrderEmailContent, OrderEmailStoreError, type OrderEmailStore } from '@/lib/orders/email/order-email-store';
 
 const paramsSchema = z.object({ id: z.string().uuid(), emailId: z.string().uuid() });
 
@@ -26,7 +26,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     }
     return NextResponse.json(content, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    console.error('[admin.orders.email.content] Failed to load content', error instanceof Error ? error.name : 'UnknownError');
+    console.error('[admin.orders.email.content] Failed to load content', error instanceof Error ? error.name : 'UnknownError',
+      ...(error instanceof OrderEmailStoreError && error.code ? [error.code] : []));
     return NextResponse.json({ error: 'Failed to load content' }, { status: 500 });
   }
 }

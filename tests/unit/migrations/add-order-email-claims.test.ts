@@ -8,8 +8,7 @@ import path from 'node:path';
  * 送信済みの記録が無いため、コンビニ・銀行振込では同じ案内が2通届き、カードでは webhook が
  * 先着すると1通も届かない。送る前に DB で権利を取り、取れた経路だけが送る。
  *
- * 実際に1回しか取れないことは tests/integration/db/order_email_claims.integration.test.ts が
- * 実 DB で確かめる。このテストは、置き場所と権限が変わらないことを守る。
+ * 旧送信権の実 DB 試験はグループ D の送信予定の表の試験へ移り、このテストは過去の移行の置き場所と権限を守る。
  */
 
 const MIGRATIONS_DIR = path.join(process.cwd(), 'supabase/migrations');

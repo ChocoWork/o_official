@@ -107,9 +107,9 @@ describe('runWebhookWorker', () => {
     }
   });
 
-  it('点検に渡した send は sendOpsAlertMail でメールを送る', async () => {
+  it('グループ B と D の点検に渡した send は sendOpsAlertMail でメールを送る', async () => {
     mockDrain.mockResolvedValue({ processed: 0, failed: 0, stoppedBy: 'empty' });
-    mockSendOpsAlertMail.mockResolvedValueOnce(true);
+    mockSendOpsAlertMail.mockResolvedValue(true);
     await runWebhookWorker({ requestUrl: 'http://localhost/x' });
     const { send } = mockRunOpsChecks.mock.calls[0][0] as { send: (mail: OpsAlertMail) => Promise<boolean> };
     const mail: OpsAlertMail = { kind: 'webhook_backlog', subject: 'キューの滞留', lines: ['queued: 1'] };
@@ -117,6 +117,10 @@ describe('runWebhookWorker', () => {
     await send(mail);
 
     expect(mockSendOpsAlertMail).toHaveBeenCalledWith(mail);
+    const { send: sendOrderEmailAlert } = mockRunOrderEmailOpsChecks.mock.calls[0][0] as { send: (mail: OpsAlertMail) => Promise<boolean> };
+    const orderEmailMail: OpsAlertMail = { kind: 'order_email_paused', subject: '注文のメールの一時停止', lines: ['送信の鍵の設定'] };
+    await expect(sendOrderEmailAlert(orderEmailMail)).resolves.toBe(true);
+    expect(mockSendOpsAlertMail).toHaveBeenNthCalledWith(2, orderEmailMail);
   });
 
   it('指定した時間の予算を drain へ渡す', async () => {
@@ -142,11 +146,19 @@ describe('runWebhookWorker', () => {
     expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockStore, 'webhook_worker', false, 'db_unavailable');
   });
 
-  it('記録に失敗しても点検は行う', async () => {
+  it('心拍の記録に失敗しても worker の結果は変わらず、両方の点検を行い、ログは例外名だけ', async () => {
     mockDrain.mockResolvedValue({ processed: 1, failed: 0, stoppedBy: 'empty' });
-    mockRecordHeartbeat.mockRejectedValue(new Error('db down'));
-    jest.spyOn(console, 'error').mockImplementation(() => {});
-    await expect(runWebhookWorker({ requestUrl: 'http://localhost/x' })).resolves.toMatchObject({ processed: 1 });
-    expect(mockRunOpsChecks).toHaveBeenCalled();
+    mockRecordHeartbeat.mockRejectedValueOnce(new Error('宛先・件名・本文を含む例外'));
+    const error = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      await expect(runWebhookWorker({ requestUrl: 'http://localhost/x' })).resolves.toEqual({
+        processed: 1, failed: 0, stoppedBy: 'empty', checks: CHECKS, emails: EMAILS, emailChecks: EMAIL_CHECKS,
+      });
+      expect(mockRunOpsChecks).toHaveBeenCalled();
+      expect(mockRunOrderEmailOpsChecks).toHaveBeenCalled();
+      expect(error.mock.calls).toEqual([['[stripe-webhook-worker] Failed to record heartbeat', 'Error']]);
+    } finally {
+      error.mockRestore();
+    }
   });
 });

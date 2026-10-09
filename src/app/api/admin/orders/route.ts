@@ -5,6 +5,7 @@ import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { getStripeServerClient } from '@/lib/stripe/server';
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { ORDER_STATUSES, type OrderStatus } from '@/lib/orders/order-payment-types';
+import { ORDER_STATUS_LABELS, type OrderStatusLabel } from '@/lib/orders/email/order-history';
 import { findMissingShippingFields } from '@/features/checkout/services/checkout-draft.service';
 
 type OrderRow = {
@@ -95,25 +96,8 @@ function toCurrencyLabel(amount: number, currency: string): string {
   }
 }
 
-type OrderStatusLabel = '支払い手続き中' | '未決済' | '決済完了' | '決済失敗' | '放棄' | 'キャンセル' | '発送済み';
-
 function mapOrderStatusToLabel(status: OrderStatus): OrderStatusLabel {
-  switch (status) {
-    case 'payment_in_progress':
-      return '支払い手続き中';
-    case 'paid':
-      return '決済完了';
-    case 'failed':
-      return '決済失敗';
-    case 'abandoned':
-      return '放棄';
-    case 'cancelled':
-      return 'キャンセル';
-    case 'shipped':
-      return '発送済み';
-    case 'pending':
-      return '未決済';
-  }
+  return ORDER_STATUS_LABELS[status];
 }
 
 function mapPaymentMethodLabel(paymentIntent: Stripe.PaymentIntent | null): string {

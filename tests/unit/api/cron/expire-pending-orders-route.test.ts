@@ -470,22 +470,47 @@ describe('POST /api/cron/expire-pending-orders（照合の見回り）', () => {
     }));
     const error = jest.spyOn(console, 'error').mockImplementation(() => {});
 
-    const response = await sweep();
+    try {
+      const response = await sweep();
+      expect(response.status).toBe(500);
+      expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockServiceClient, 'order_sweep', false, 'db_unavailable');
+      expect(mockRunOpsChecks).toHaveBeenCalled();
+      expect(mockRunOrderEmailOpsChecks).toHaveBeenCalledWith(expect.objectContaining({ store: mockServiceClient, now: expect.any(Function), send: expect.any(Function) }));
+      expect(mockScheduleOrderEmailDelivery).not.toHaveBeenCalled();
+      expect(mockRecordHeartbeat.mock.invocationCallOrder[0]).toBeLessThan(mockRunOrderEmailOpsChecks.mock.invocationCallOrder[0]);
+    } finally {
+      error.mockRestore();
+    }
+  });
 
-    expect(response.status).toBe(500);
-    expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockServiceClient, 'order_sweep', false, 'db_unavailable');
-    expect(mockRunOpsChecks).toHaveBeenCalled();
-    error.mockRestore();
+  it('候補一覧の取得に失敗しても注文のメールを点検し、送信は予約しない', async () => {
+    mockRange.mockResolvedValue({ data: null, error: { message: 'down' } });
+    const error = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      expect((await sweep()).status).toBe(500);
+      expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockServiceClient, 'order_sweep', false, 'db_unavailable');
+      expect(mockRunOrderEmailOpsChecks).toHaveBeenCalledWith(expect.objectContaining({ store: mockServiceClient, send: expect.any(Function) }));
+      expect(mockScheduleOrderEmailDelivery).not.toHaveBeenCalled();
+      expect(mockReconcile).not.toHaveBeenCalled();
+    } finally {
+      error.mockRestore();
+    }
   });
 
   it('最後の成功を記録できなくても、点検と応答は変わらない', async () => {
-    mockRecordHeartbeat.mockRejectedValue(new Error('db down'));
+    const expected = await sweep();
+    mockRecordHeartbeat.mockRejectedValueOnce(new Error('宛先・件名・本文を含む例外'));
     const error = jest.spyOn(console, 'error').mockImplementation(() => {});
 
-    const response = await sweep();
-
-    expect(response.status).toBe(200);
-    expect(mockRunOpsChecks).toHaveBeenCalled();
-    error.mockRestore();
+    try {
+      const response = await sweep();
+      expect(response).toEqual(expected);
+      expect(response.status).toBe(200);
+      expect(mockRunOpsChecks).toHaveBeenCalledTimes(2);
+      expect(mockRunOrderEmailOpsChecks).toHaveBeenCalledTimes(2);
+      expect(error.mock.calls).toEqual([['[cron] failed to record the sweep heartbeat', 'Error']]);
+    } finally {
+      error.mockRestore();
+    }
   });
 });

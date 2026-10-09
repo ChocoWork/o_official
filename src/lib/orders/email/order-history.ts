@@ -17,7 +17,7 @@ import {
  * 管理画面の「この注文の履歴」（グループ D 設計書 5-1）。窓口と画面の両方が使うので、サーバーだけの物を import しない。
  * 注文の状態の変化とメールを新しい順に並べる。再送できるかは窓口が決めて返す（画面は判断しない）。
  */
-export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
+export const ORDER_STATUS_LABELS = {
   payment_in_progress: '支払い手続き中',
   pending: '未決済',
   paid: '決済完了',
@@ -25,7 +25,9 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   abandoned: '放棄',
   cancelled: 'キャンセル',
   shipped: '発送済み',
-};
+} as const satisfies Record<OrderStatus, string>;
+
+export type OrderStatusLabel = (typeof ORDER_STATUS_LABELS)[OrderStatus];
 
 export type OrderStatusHistoryRow = {
   changedAt: string;

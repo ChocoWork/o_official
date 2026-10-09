@@ -1,6 +1,8 @@
 /** @jest-environment node */
 import { connectLocalDb, describeLocalDb, type PgClient } from './helpers/local-db';
 import { createCatalogFixture, insertOrderWithStockLine, uniqueSuffix } from './helpers/order-fixtures';
+import { ORDER_STATUSES } from '@/lib/orders/order-payment-types';
+import { ORDER_EMAIL_KINDS, RESENDABLE_ORDER_STATUSES } from '@/lib/orders/email/order-email-types';
 
 /**
  * 注文のメールの表と関数（グループ D 設計書 3・4・6・7 章）。
@@ -372,7 +374,7 @@ describeLocalDb('integration: 注文のメールの表と関数', (db) => {
       expect(res.rows[0].utc_second).toBe(0);
     });
 
-    test('止めた時刻は最初のまま。知らない理由は断る', async () => {
+    test('止めた時刻と次に試す時刻は最初のまま。知らない理由は断る', async () => {
       const firstPause = await db().query("select public.pause_order_email_sending('config_provider') as newly");
       await db().query(
         "update private.order_email_send_pause set paused_at = now() - interval '1 hour', next_probe_at = now() - interval '1 minute'",
@@ -383,16 +385,48 @@ describeLocalDb('integration: 注文のメールの表と関数', (db) => {
       expect(secondPause.rows[0].newly).toBe(false);
       const state = await db().query(
         `select paused_at = now() - interval '1 hour' as kept,
-                next_probe_at = now() + interval '15 minutes' as rescheduled
+                next_probe_at = now() - interval '1 minute' as probe_kept
          from public.get_order_email_send_state()`,
       );
       expect(state.rows[0].kept).toBe(true);
-      expect(state.rows[0].rescheduled).toBe(true);
+      expect(state.rows[0].probe_kept).toBe(true);
       await expectRejected(db(), "select public.pause_order_email_sending('network_error')", [], { code: '22023' });
+    });
+
+    test('既に止めていても2回目が1日の上限なら、次に試す時刻を次の UTC 0時に決め直す', async () => {
+      await db().query("select public.pause_order_email_sending('config_provider')");
+      await db().query("update private.order_email_send_pause set paused_at = now() - interval '1 hour', next_probe_at = now() - interval '1 minute'");
+      const paused = await db().query("select public.pause_order_email_sending('quota_daily') as newly");
+      expect(paused.rows[0].newly).toBe(false);
+      const state = await db().query(
+        `select reason, paused_at = now() - interval '1 hour' as kept,
+                next_probe_at = (date_trunc('day', now() at time zone 'UTC') + interval '1 day') at time zone 'UTC' as midnight
+         from public.get_order_email_send_state()`,
+      );
+      expect(state.rows[0]).toEqual({ reason: 'quota_daily', kept: true, midnight: true });
     });
   });
 
   describe('手の再送', () => {
+    test.each(ORDER_EMAIL_KINDS.flatMap((kind) => ORDER_STATUSES.map((status) => [kind, status] as const)))(
+      '送信済みの %s × 注文状態 %s の再送可否は RESENDABLE_ORDER_STATUSES と一致する', async (kind, status) => {
+        const actor = await createActor(db());
+        const orderId = await createOrder(db(), status);
+        const variant = kind === 'paid' ? 'order_confirmed' : kind === 'canceled' ? 'pending' : null;
+        await enqueue(db(), orderId, kind, variant);
+        // 今の注文の状態に関係なく過去に送れた行を用意し、再送の状態表だけを確かめる
+        await db().query("update private.order_email_outbox set status = 'sent', sent_at = now(), finished_at = now() where order_id = $1", [orderId]);
+        const sql = 'select public.request_order_email_resend($1, $2, $3) as email_id';
+        const args = [orderId, kind, actor.id];
+        if (RESENDABLE_ORDER_STATUSES[kind].includes(status)) {
+          const res = await db().query(sql, args);
+          expect(await emailRow(db(), res.rows[0].email_id)).toMatchObject({ order_id: orderId, kind, status: 'pending', origin: 'manual' });
+        } else {
+          await expectRejected(db(), sql, args, { code: '22023', message: expect.stringContaining('RESEND_NOT_ALLOWED') });
+        }
+      },
+    );
+
     async function sentPaidEmail(status = 'paid'): Promise<{ orderId: string; emailId: string }> {
       const orderId = await createOrder(db(), status);
       await enqueue(db(), orderId, 'paid', 'order_confirmed');

@@ -159,7 +159,7 @@ BEGIN
 END;
 $$;
 
--- 6. 送信全体を止める（設計書 4-5）。止めた時刻は最初に止めた時のまま、次に1件試す時刻を決め直す
+-- 6. 送信全体を止める（設計書 4-5）。止めた時刻は最初のまま、次に試す時刻は1日の上限の時だけ決め直す
 CREATE OR REPLACE FUNCTION private.set_order_email_pause(_reason text)
 RETURNS boolean
 LANGUAGE plpgsql
@@ -183,6 +183,8 @@ BEGIN
       next_probe_at = CASE
         WHEN _reason = 'quota_daily'
           THEN (pg_catalog.date_trunc('day', pg_catalog.now() AT TIME ZONE 'UTC') + interval '1 day') AT TIME ZONE 'UTC'
+        -- 毎分の設定点検で、既に決めた試しの時刻を先へ延ばさない（止めている間は表の CHECK で必ず入っている）
+        WHEN p.paused THEN p.next_probe_at
         ELSE pg_catalog.now() + interval '15 minutes'
       END,
       updated_at = pg_catalog.now()

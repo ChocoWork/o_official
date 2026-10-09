@@ -14,16 +14,6 @@ export type ConfirmationItem = {
   fulfillment_type?: string | null;
 };
 
-export type OrderConfirmationShipping = {
-  fullName: string | null;
-  postalCode: string | null;
-  prefecture: string | null;
-  city: string | null;
-  address: string | null;
-  building: string | null;
-  phone: string | null;
-};
-
 export function formatCurrency(amount: number, currency: string): string {
   try {
     return new Intl.NumberFormat('ja-JP', {

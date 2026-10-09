@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto';
 import { Resend } from 'resend';
 import { resolveMailProvider } from '@/lib/mail';
 import { readHeartbeats, recordHeartbeat, type OpsStore } from '@/lib/ops/ops-store';
@@ -19,7 +20,7 @@ export const DELIVERY_CHECK_LIMIT = 50;
 /** 見回り1回に使う時間。毎分の worker の maxDuration（60秒）の中で、点検の後に動くので短くする */
 export const DELIVERY_CHECK_BUDGET_MS = 8_000;
 /** Resend の API の回数の制限（既定で毎秒2回。お客様へのメールの送信と共有）を超えないよう、読む間を空ける */
-export const DELIVERY_CHECK_READ_INTERVAL_MS = 500;
+export const DELIVERY_CHECK_READ_INTERVAL_MS = 1_000;
 /** 1件の読み取りを待つ時間。返事が来なければ、その回の見回りをそこでやめる */
 export const DELIVERY_CHECK_READ_TIMEOUT_MS = 5_000;
 
@@ -122,10 +123,23 @@ export function createResendLastEventReader(apiKey: string): LastEventReader {
 }
 
 /**
+ * 古い順の先頭で状態の決まらないメールが、毎回の時間の上限を占めないようにする。
+ * 守りの点検が Math.random を弱い乱数として止めるので、混ぜるだけでも node:crypto の randomInt を使う
+ */
+function shuffleEmails<T>(emails: T[]): T[] {
+  const shuffled = [...emails];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const other = randomInt(index + 1);
+    [shuffled[index], shuffled[other]] = [shuffled[other], shuffled[index]];
+  }
+  return shuffled;
+}
+
+/**
  * 状態の決まっていないメールの最後の状態を Resend で読み、分かった状態を記録する（設計書 6-4）。
  * 全体の時間（budgetMs）と読む間隔（DELIVERY_CHECK_READ_INTERVAL_MS）に上限を付け、Resend の回数の制限を使い切らない。
  * 少し待てば読める見込みの失敗はその回をやめて次の1時間に回し、そのメールだけの失敗は次へ進む。
- * 対象は古い順なので、同じメールで毎回止まると、後ろのメールが永久に読まれない。
+ * 古い順で取った対象を読む前に混ぜ、先頭の状態が決まらなくても後ろを読む機会を作る。
  * stoppedEarly は、全部を読み終える前にやめたこと（時間切れ・少し待てば読める見込みの失敗・鍵の問題）。
  */
 export async function checkOrderEmailDeliveries(deps: {
@@ -136,10 +150,11 @@ export async function checkOrderEmailDeliveries(deps: {
   budgetMs: number;
   nowMs: () => number;
   sleep: (ms: number) => Promise<void>;
+  shuffle?: (emails: Array<{ id: string; providerMessageId: string }>) => Array<{ id: string; providerMessageId: string }>;
 }): Promise<{ checked: number; updated: number; failed: number; configError: boolean; stoppedEarly: boolean }> {
   const result = { checked: 0, updated: 0, failed: 0, configError: false, stoppedEarly: false };
   const startedAt = deps.nowMs();
-  const emails = await listOrderEmailsAwaitingDelivery(deps.store, deps.limit);
+  const emails = (deps.shuffle ?? shuffleEmails)(await listOrderEmailsAwaitingDelivery(deps.store, deps.limit));
   for (const [index, email] of emails.entries()) {
     // 2件目からは間を空ける。待った時間も予算に入る
     if (index > 0) await deps.sleep(DELIVERY_CHECK_READ_INTERVAL_MS);
@@ -207,7 +222,8 @@ export async function runOrderEmailDeliveryCheckIfDue(
   // この回を始めたことを、読む前に記録する。書けない時は DB が使えないので、読まずにやめる（次の分にやり直す）
   try {
     await recordHeartbeat(store, 'order_email_delivery_check', true, null);
-  } catch {
+  } catch (error) {
+    console.warn('[order-email-delivery] failed to start', error instanceof Error ? error.name : 'UnknownError');
     return 'failed';
   }
 
@@ -227,7 +243,7 @@ export async function runOrderEmailDeliveryCheckIfDue(
       await recordHeartbeat(store, 'order_email_delivery_check', false, 'config_api_key');
       return 'failed';
     }
-    // 1件も読めず、失敗だけだった時は、Resend 側の問題として記録する。一部でも読めていれば、始めの記録のままにする
+    // 読めた件数が0で失敗が1件以上なら、失敗の種類を問わず provider_unavailable を記録する。一部でも読めていれば始めの記録のままにする
     if (result.checked === 0 && result.failed > 0) {
       await recordHeartbeat(store, 'order_email_delivery_check', false, 'provider_unavailable');
       return 'failed';

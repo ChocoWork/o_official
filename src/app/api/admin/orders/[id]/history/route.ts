@@ -8,6 +8,7 @@ import {
   getOrderEmailSendState,
   listOrderEmailHistory,
   listOrderStatusHistory,
+  OrderEmailStoreError,
   type OrderEmailStore,
 } from '@/lib/orders/email/order-email-store';
 
@@ -57,7 +58,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {
-    console.error('[admin.orders.history] Failed to load history', error instanceof Error ? error.name : 'UnknownError');
+    console.error('[admin.orders.history] Failed to load history', error instanceof Error ? error.name : 'UnknownError',
+      ...(error instanceof OrderEmailStoreError && error.code ? [error.code] : []));
     return NextResponse.json({ error: 'Failed to load history' }, { status: 500 });
   }
 }

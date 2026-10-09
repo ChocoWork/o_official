@@ -17,7 +17,9 @@ import type { OrderEmailStore } from '@/lib/orders/email/order-email-store';
 
 /**
  * 1回の起動で Stripe の知らせを続けて処理する時間（設計書 2026-10-05 グループ B の 3-1）。
- * 続けて注文のメールに10秒を使い（グループ D 設計書 4-7）、合わせて入口の maxDuration 60 秒に余裕を持たせる。
+ * 続けて注文のメールに10秒を使い（グループ D 設計書 4-7）、点検と配達の見回り（最大約13秒）が続く。
+ * 入口の maxDuration 60秒を超えて打ち切られても、重複防止キーで二重送信は防ぐ。
+ * 店への知らせの送信中に打ち切られると、送る権利の記録が戻らず、その知らせは最大1時間出ない。
  */
 export const WORKER_TIME_BUDGET_MS = 35_000;
 

@@ -7,6 +7,7 @@ import { logAudit } from '@/lib/audit';
 import { ORDER_EMAIL_KINDS } from '@/lib/orders/email/order-email-types';
 import {
   OrderEmailResendError,
+  OrderEmailStoreError,
   requestOrderEmailResend,
   type OrderEmailStore,
 } from '@/lib/orders/email/order-email-store';
@@ -51,25 +52,31 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   const { id } = await params;
-  const parsedId = z.string().uuid().safeParse(id);
-  const parsedBody = bodySchema.safeParse(await request.json().catch(() => null));
-  if (!parsedId.success || !parsedBody.success) {
-    return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
-  }
-
-  const { kind } = parsedBody.data;
-  const audit = (outcome: AuditOutcome, detail: string, metadata: Record<string, unknown>) =>
+  const audit = (outcome: AuditOutcome, detail: string, metadata: Record<string, unknown> | null = null) =>
     logAudit({
       action: 'admin.orders.email.resend',
       actor_id: authz.userId,
       resource: 'orders',
-      resource_id: parsedId.data,
+      resource_id: id,
       outcome,
       detail,
       ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
       user_agent: request.headers.get('user-agent') ?? null,
       metadata,
     });
+
+  const parsedId = z.string().uuid().safeParse(id);
+  if (!parsedId.success) {
+    await audit('failure', 'Invalid order id');
+    return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+  }
+  const parsedBody = bodySchema.safeParse(await request.json().catch(() => null));
+  if (!parsedBody.success) {
+    // 入力値や検証の詳細は個人情報を含みうるので、固定の文だけを監査に残す
+    await audit('failure', 'Invalid request body');
+    return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+  }
+  const { kind } = parsedBody.data;
 
   try {
     const store = (await createServiceRoleClient()) as unknown as OrderEmailStore;
@@ -86,7 +93,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       await audit('conflict', error.reason === 'already_queued' ? 'Resend already queued' : 'Resend not allowed', { kind });
       return NextResponse.json({ error: MESSAGES[error.reason] }, { status: 409 });
     }
-    console.error('[admin.orders.email.resend] Failed to request resend', error instanceof Error ? error.name : 'UnknownError');
+    console.error('[admin.orders.email.resend] Failed to request resend', error instanceof Error ? error.name : 'UnknownError',
+      ...(error instanceof OrderEmailStoreError && error.code ? [error.code] : []));
     await audit('error', 'Failed to request resend', { kind });
     return NextResponse.json({ error: MESSAGES.failed }, { status: 500 });
   }
