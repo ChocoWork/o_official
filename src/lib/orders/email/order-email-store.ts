@@ -9,6 +9,11 @@ import type {
   OrderEmailVariant,
 } from '@/lib/orders/email/order-email-types';
 import { isOrderEmailErrorCode } from '@/lib/orders/email/order-email-types';
+import type {
+  OrderEmailContentResponse,
+  OrderEmailHistoryRow,
+  OrderStatusHistoryRow,
+} from '@/lib/orders/email/order-history';
 
 /**
  * 注文のメールの表を DB の関数で読み書きする（グループ D 設計書 7-2）。
@@ -30,7 +35,11 @@ export type OrderEmailRpcName =
   | 'list_unnotified_order_email_delivery_problems'
   | 'mark_order_email_delivery_problems_notified'
   | 'record_order_email_delivery'
-  | 'list_order_emails_awaiting_delivery';
+  | 'list_order_emails_awaiting_delivery'
+  | 'request_order_email_resend'
+  | 'list_order_email_history'
+  | 'list_order_status_history'
+  | 'get_order_email_content';
 
 export type OrderEmailStore = {
   rpc(name: OrderEmailRpcName, params?: Record<string, unknown>): PromiseLike<{ data: unknown; error: QueryError }>;
@@ -286,4 +295,86 @@ export async function listOrderEmailsAwaitingDelivery(
   return rowsOf(data).flatMap((row) =>
     typeof row.provider_message_id === 'string' ? [{ id: String(row.email_id), providerMessageId: row.provider_message_id }] : [],
   );
+}
+
+export class OrderEmailResendError extends Error {
+  constructor(readonly reason: 'not_allowed' | 'already_queued' | 'order_not_found') {
+    super(`order email resend refused: ${reason}`);
+    this.name = 'OrderEmailResendError';
+  }
+}
+
+/** 管理画面の再送の行を足し、行の番号を返す（設計書 5-3）。DB の断りは OrderEmailResendError にする */
+export async function requestOrderEmailResend(
+  store: OrderEmailStore,
+  request: { orderId: string; kind: OrderEmailKind; actorId: string },
+): Promise<string> {
+  const { data, error } = await store.rpc('request_order_email_resend', {
+    _order_id: request.orderId,
+    _kind: request.kind,
+    _actor_id: request.actorId,
+  });
+  if (error) {
+    const message = error.message ?? '';
+    if (message.includes('RESEND_ALREADY_QUEUED')) throw new OrderEmailResendError('already_queued');
+    if (message.includes('RESEND_NOT_ALLOWED')) throw new OrderEmailResendError('not_allowed');
+    if (message.includes('ORDER_NOT_FOUND')) throw new OrderEmailResendError('order_not_found');
+    throw new OrderEmailStoreError('request_order_email_resend', error);
+  }
+  if (typeof data !== 'string') throw new OrderEmailStoreError('request_order_email_resend', null);
+  return data;
+}
+
+export async function listOrderEmailHistory(store: OrderEmailStore, orderId: string): Promise<OrderEmailHistoryRow[]> {
+  const data = await callOrderEmailRpc(store, 'list_order_email_history', { _order_id: orderId });
+  return rowsOf(data).map((row) => ({
+    id: String(row.email_id),
+    kind: row.kind as OrderEmailKind,
+    origin: row.origin === 'manual' ? 'manual' : 'auto',
+    requestedByEmail: textOrNull(row.requested_by_email),
+    status: row.status as OrderEmailStatus,
+    attempts: Number(row.attempts),
+    lastErrorCode: textOrNull(row.last_error_code),
+    deliveryStatus: textOrNull(row.delivery_status) as OrderEmailDeliveryStatus | null,
+    deliveryEventAt: textOrNull(row.delivery_event_at),
+    createdAt: String(row.created_at),
+    sentAt: textOrNull(row.sent_at),
+    finishedAt: textOrNull(row.finished_at),
+    hasBody: row.has_body === true,
+    bodyErased: row.body_erased === true,
+  }));
+}
+
+export async function listOrderStatusHistory(store: OrderEmailStore, orderId: string): Promise<OrderStatusHistoryRow[]> {
+  const data = await callOrderEmailRpc(store, 'list_order_status_history', { _order_id: orderId });
+  return rowsOf(data).map((row) => ({
+    changedAt: String(row.changed_at),
+    fromStatus: textOrNull(row.from_status),
+    toStatus: String(row.to_status),
+    changeReason: textOrNull(row.change_reason),
+    actorEmail: textOrNull(row.actor_email),
+    shippingCarrier: textOrNull(row.shipping_carrier),
+    trackingNumber: textOrNull(row.tracking_number),
+    cancelReason: textOrNull(row.cancel_reason),
+  }));
+}
+
+/** 窓口が返す形（画面と共有する OrderEmailContentResponse）と同じ。二重に定義して食い違わないよう別名にする */
+export type OrderEmailContent = OrderEmailContentResponse;
+
+/** 送信済みのメールの中身。無い・送信済みでなければ null */
+export async function getOrderEmailContent(
+  store: OrderEmailStore,
+  orderId: string,
+  emailId: string,
+): Promise<OrderEmailContent | null> {
+  const row = rowsOf(await callOrderEmailRpc(store, 'get_order_email_content', { _order_id: orderId, _email_id: emailId }))[0];
+  if (!row) return null;
+  const sentAt = textOrNull(row.sent_at);
+  const subject = textOrNull(row.subject);
+  const bodyText = textOrNull(row.body_text);
+  if (row.body_erased === true || subject === null || bodyText === null) {
+    return { status: 'erased', sentAt };
+  }
+  return { status: 'available', subject, bodyText, sentAt };
 }
