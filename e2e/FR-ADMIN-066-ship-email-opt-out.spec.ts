@@ -104,17 +104,24 @@ for (const viewport of viewports) {
       test.setTimeout(120_000);
       const silentEmail = uniqueEmail(`ship-silent-${viewport.name}`);
       const notifiedEmail = uniqueEmail(`ship-notified-${viewport.name}`);
-      const { silentOrder } = await withLocalDb(async (db) => {
+      const { silentOrder, notifiedOrder } = await withLocalDb(async (db) => {
         const actor = await createActor(db);
         const silent = await createPaidOrder(db, silentEmail);
         const notified = await createPaidOrder(db, notifiedEmail);
         await db.query("select * from public.admin_ship_paid_order($1::uuid, $2::uuid, 'yamato', 'E2E-SILENT', false)", [silent, actor]);
         await db.query("select * from public.admin_ship_paid_order($1::uuid, $2::uuid, 'yamato', 'E2E-NOTIFIED', true)", [notified, actor]);
-        return { silentOrder: silent };
+        return { silentOrder: silent, notifiedOrder: notified };
       });
 
       await runWorkerOnce(request);
 
+      // worker は時間の予算で止まるため、送る注文の発送の行が自動の1行だけで送信済みになるのを先に待つ。
+      // 送信済みはメールを送った後に書かれるので、この確かめの後にメール受けを数え直せる。
+      await expect.poll(
+        async () => withLocalDb(async (db) =>
+          (await db.query("select origin, status from private.order_email_outbox where order_id = $1 and kind = 'shipped'", [notifiedOrder])).rows),
+        { timeout: 30_000, message: '送る注文の発送の行は、自動の1行だけで送信済みであること' },
+      ).toEqual([{ origin: 'auto', status: 'sent' }]);
       await expect.poll(
         async () => (await mailsTo(request, notifiedEmail)).filter((message) => message.Subject.includes(SHIPPED_SUBJECT)).length,
         { timeout: 30_000 },

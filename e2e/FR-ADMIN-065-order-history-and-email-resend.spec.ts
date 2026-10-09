@@ -7,6 +7,7 @@
  * 履歴のダイアログと送ったメールの中身は、目で見るために3つの画面幅の写しを test-results/group-d/ に残す。
  */
 import { expect, test, type Page } from '@playwright/test';
+import type { OrderEmailContentResponse, OrderHistoryEmailEntry, OrderHistoryResponse } from '@/lib/orders/email/order-history';
 import { mockAdminBackgroundApis } from './admin-test-utils';
 import { createActor, createPaidOrder, mailsTo, runWorkerOnce, uniqueEmail, withLocalDb } from './order-email-test-utils';
 
@@ -36,13 +37,13 @@ const SENT_EMAIL = {
   kindLabel: '注文確認', manual: false, requestedByEmail: null, stateLabel: '配達済み', warning: false, attempts: 1,
   errorLabel: null, sentAt: '2026-10-09T01:00:05.000Z', deliveryEventAt: '2026-10-09T01:01:00.000Z',
   canViewContent: true, bodyErased: false, resendable: true,
-};
+} satisfies OrderHistoryEmailEntry;
 
 function historyBody(resent: boolean) {
   const manual = {
     ...SENT_EMAIL, at: '2026-10-09T02:00:00.000Z', emailId: 'c1b2c3d4-1111-2222-8333-444455556666', manual: true,
     requestedByEmail: 'admin@example.com', stateLabel: '送信待ち', sentAt: null, deliveryEventAt: null, canViewContent: false, resendable: false,
-  };
+  } satisfies OrderHistoryEmailEntry;
   return {
     order: { id: ORDER_ID, orderNumber: 'ORD-A1B2C3D4', statusLabel: '決済完了', recipient: 'hanako@example.com' },
     sendPaused: null,
@@ -52,7 +53,7 @@ function historyBody(resent: boolean) {
       { type: 'status', at: '2026-10-09T01:00:00.000Z', fromLabel: '支払い手続き中', toLabel: '決済完了', actorEmail: null, detail: null },
       { type: 'created', at: '2026-10-09T00:59:00.000Z' },
     ],
-  };
+  } satisfies OrderHistoryResponse;
 }
 
 async function mockAdminApis(page: Page, state: { resent: boolean; resendBodies: unknown[] }): Promise<void> {
@@ -83,7 +84,7 @@ async function mockAdminApis(page: Page, state: { resent: boolean; resendBodies:
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ status: 'available', subject: SUBJECT, bodyText: '山田 花子 様\n\nご注文を承りました。', sentAt: SENT_EMAIL.sentAt }),
+      body: JSON.stringify({ status: 'available', subject: SUBJECT, bodyText: '山田 花子 様\n\nご注文を承りました。', sentAt: SENT_EMAIL.sentAt } satisfies OrderEmailContentResponse),
     }));
   await page.route(`**/api/admin/orders/${ORDER_ID}/emails/resend`, (route) => {
     state.resendBodies.push(route.request().postDataJSON());

@@ -82,11 +82,14 @@ function OrderHistoryDialogBody({ orderId, onClose }: OrderHistoryDialogBodyProp
   const [history, setHistory] = useState<OrderHistoryResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
+  const [pendingNotice, setPendingNotice] = useState<{ emailId: string; notice: Notice } | null>(null);
   const [view, setView] = useState<View>({ name: 'list' });
   const [submitting, setSubmitting] = useState(false);
   // いま出ている画面の入れ物。3つの画面で同じ ref を使い、ダイアログのパネルを探す起点にする
   const viewRef = useRef<HTMLDivElement>(null);
   const shownView = useRef<View['name']>('list');
+  const contentRequest = useRef(0);
+  const returnFocus = useRef<{ emailId: string; action: 'content' | 'resend' } | null>(null);
 
   const load = useCallback(async (id: string) => {
     setLoadError(null);
@@ -109,19 +112,45 @@ function OrderHistoryDialogBody({ orderId, onClose }: OrderHistoryDialogBodyProp
   }, [orderId, load]);
 
   // 画面を切り替えると、押したボタンは画面ごと消えて、フォーカスがダイアログの外（body）へ落ちる（設計書 5-5、WCAG 2.4.3）。
-  // 消えないパネルへ移し、新しい題を読ませる。最初の画面では動かさない（Dialog が開いた時に決めた場所を奪わない）
+  // 戻る・やめるでは同じ行のボタンへ戻す。ボタンが消えた場合と、それ以外の切り替えはパネルへ移す。
+  // 最初の画面では動かさない（Dialog が開いた時に決めた場所を奪わない）
   useEffect(() => {
     if (shownView.current === view.name) return;
     shownView.current = view.name;
-    viewRef.current?.closest<HTMLElement>('[role="dialog"]')?.focus();
+    const panel = viewRef.current?.closest<HTMLElement>('[role="dialog"]');
+    const target = returnFocus.current;
+    const opener = view.name === 'list' && target
+      ? Array.from(panel?.querySelectorAll<HTMLButtonElement>('button[data-history-action]') ?? [])
+          .find((button) => button.dataset.emailId === target.emailId && button.dataset.historyAction === target.action && !button.disabled)
+      : null;
+    returnFocus.current = null;
+    (opener ?? panel)?.focus();
   }, [view.name]);
 
+  // 焦点の移動と polite の文の挿入が同じ描画だと読み上げが落ちるため、上の移動の後の描画で文を入れる。
+  // 別の行の確かめへ移っていた場合は、その行の結果と誤解される知らせを出さない。
+  useEffect(() => {
+    if (!pendingNotice) return;
+    if (view.name !== 'confirm' || view.entry.emailId === pendingNotice.emailId) {
+      setNotice(pendingNotice.notice);
+    }
+    setPendingNotice(null);
+  }, [pendingNotice, view]);
+
+  const backToList = (entry: OrderHistoryEmailEntry, action: 'content' | 'resend') => {
+    returnFocus.current = { emailId: entry.emailId, action };
+    setView({ name: 'list' });
+  };
+
   const openContent = async (entry: OrderHistoryEmailEntry) => {
+    const request = ++contentRequest.current;
     setNotice(null);
     setView({ name: 'content', entry, content: null, error: null });
-    // 返事を待つ間に「戻る」を押したり別のメールを開いたりしていたら、その画面を前の返事で上書きしない
+    // 同じメールを開き直した要求も番号で区別し、戻った後や別のメールを開いた後の画面を前の返事で上書きしない
     const settle = (next: View) =>
-      setView((current) => (current.name === 'content' && current.entry.emailId === entry.emailId ? next : current));
+      setView((current) => (
+        contentRequest.current === request && current.name === 'content' && current.entry.emailId === entry.emailId ? next : current
+      ));
     try {
       const response = await clientFetch(`/api/admin/orders/${orderId}/emails/${entry.emailId}`, { cache: 'no-store' });
       if (!response.ok) {
@@ -151,16 +180,17 @@ function OrderHistoryDialogBody({ orderId, onClose }: OrderHistoryDialogBodyProp
         body: JSON.stringify({ kind: entry.kind }),
       });
       const body: unknown = await response.json().catch(() => null);
-      setNotice(
-        response.ok
+      setPendingNotice({
+        emailId: entry.emailId,
+        notice: response.ok
           ? { tone: 'success', text: RESEND_ACCEPTED_MESSAGE }
           : { tone: 'failure', text: resendRefusalMessage(response.status, body) },
-      );
+      });
     } catch {
-      setNotice({ tone: 'failure', text: RESEND_FAILED_MESSAGE });
+      setPendingNotice({ emailId: entry.emailId, notice: { tone: 'failure', text: RESEND_FAILED_MESSAGE } });
     } finally {
       setSubmitting(false);
-      // 履歴へ戻すのは、この行の確かめの画面にいる時だけ。待つ間に別の画面へ移っていたら、画面は変えずに知らせだけ出す
+      // 履歴へ戻すのは、この行の確かめの画面にいる時だけ。別の画面は変えず、別の行の確かめでは上の effect が知らせも抑える
       setView((current) =>
         current.name === 'confirm' && current.entry.emailId === entry.emailId ? { name: 'list' } : current,
       );
@@ -206,12 +236,12 @@ function OrderHistoryDialogBody({ orderId, onClose }: OrderHistoryDialogBodyProp
         {entry.attempts > 1 ? <p className="text-[#474747]">試した回数: {entry.attempts}回</p> : null}
         <div className="flex flex-wrap gap-2">
           {entry.canViewContent ? (
-            <Button variant="secondary" size="sm" className="font-acumin" onClick={() => void openContent(entry)}>
+            <Button variant="secondary" size="sm" className="font-acumin" data-email-id={entry.emailId} data-history-action="content" onClick={() => void openContent(entry)}>
               中身を見る
             </Button>
           ) : null}
           {entry.resendable ? (
-            <Button variant="secondary" size="sm" className="font-acumin" onClick={() => askResend(entry)}>
+            <Button variant="secondary" size="sm" className="font-acumin" data-email-id={entry.emailId} data-history-action="resend" onClick={() => askResend(entry)}>
               お客様へ再送
             </Button>
           ) : null}
@@ -289,7 +319,7 @@ function OrderHistoryDialogBody({ orderId, onClose }: OrderHistoryDialogBodyProp
               </pre>
             </>
           ) : null}
-          <Button variant="secondary" size="sm" className="w-full font-acumin" onClick={() => setView({ name: 'list' })}>
+          <Button variant="secondary" size="sm" className="w-full font-acumin" onClick={() => backToList(view.entry, 'content')}>
             戻る
           </Button>
         </div>
@@ -304,7 +334,7 @@ function OrderHistoryDialogBody({ orderId, onClose }: OrderHistoryDialogBodyProp
             <p className="font-acumin lk-text-3xs text-[#474747]">宛先: {history.order.recipient}</p>
           ) : null}
           <div className="flex gap-2 pt-1">
-            <Button variant="secondary" size="sm" className="w-full font-acumin" onClick={() => setView({ name: 'list' })}>
+            <Button variant="secondary" size="sm" className="w-full font-acumin" onClick={() => backToList(view.entry, 'resend')}>
               やめる
             </Button>
             <Button

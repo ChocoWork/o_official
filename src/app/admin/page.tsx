@@ -25,6 +25,10 @@ import { DateTimePicker } from '@/components/ui/DateTimePicker/DateTimePicker';
 import { SearchField } from '@/components/ui/SearchField/SearchField';
 import type { OrderAttention } from '@/lib/orders/order-payment-types';
 
+type AdminOrderAttention = OrderAttention & {
+  emailSending?: { paused: boolean; reasonLabel: string | null } | null;
+};
+
 const allAdminTabs: TabType[] = ['KPI', 'ACCOUNTING', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER'];
 const supporterTabs: TabType[] = ['ORDER'];
 const ORDER_STATUS_FILTERS = [
@@ -113,7 +117,7 @@ function AdminPageContent() {
   const [shipOrderId, setShipOrderId] = useState<string | null>(null);
   const [historyOrderId, setHistoryOrderId] = useState<string | null>(null);
   const [reviewOnly, setReviewOnly] = useState(false);
-  const [attention, setAttention] = useState<OrderAttention | null>(null);
+  const [attention, setAttention] = useState<AdminOrderAttention | null>(null);
   // 読み込みの失敗と、要対応・要確認の操作が断られた理由。欄のすぐ下に出す（OrderSection のエラーは一覧の下で、読み直しで消える）
   const [attentionErrorMessage, setAttentionErrorMessage] = useState<string | null>(null);
   const [processingAttentionIds, setProcessingAttentionIds] = useState<string[]>([]);
@@ -326,12 +330,12 @@ function AdminPageContent() {
       if (!response.ok) {
         throw new Error(`Failed to fetch order attention: ${response.status}`);
       }
-      const json = (await response.json()) as { data?: Partial<OrderAttention> };
+      const json = (await response.json()) as { data?: Partial<AdminOrderAttention> };
       const data = json.data;
       if (!data || !Array.isArray(data.exceptions) || !Array.isArray(data.reviews) || !data.counts) {
         throw new Error('Unexpected order attention response');
       }
-      setAttention(data as OrderAttention);
+      setAttention(data as AdminOrderAttention);
       setAttentionErrorMessage(null);
     } catch (error) {
       console.error('Failed to fetch order attention:', error);
@@ -843,6 +847,13 @@ function AdminPageContent() {
       case 'ORDER':
         return (
           <div className="space-y-4">
+            {attention?.emailSending?.paused === true ? (
+              <BannerAlert
+                variant="error"
+                title="お客様への注文のメールの送信を止めています"
+                description={`原因: ${attention.emailSending.reasonLabel ?? '不明'}。原因を直すと、15分ごとに1件ずつ試して自動で再開します（1日の送信の上限の時は日本時間 9時から）。手順は「注文のメールの手順書」の「送信の一時停止」にあります。`}
+              />
+            ) : null}
             <AttentionInbox
               attention={attention}
               processingIds={processingAttentionIds}

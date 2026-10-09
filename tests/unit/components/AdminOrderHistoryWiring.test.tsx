@@ -7,6 +7,7 @@ import AdminPage from '@/app/admin/page';
  * 一覧は本物の OrderSection を使い、窓口（clientFetch）だけを差し替える。
  */
 const clientFetchMock = jest.fn();
+const mockAttention = jest.fn();
 
 jest.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams('tab=ORDER'),
@@ -20,14 +21,9 @@ jest.mock('@/contexts/LoginContext', () => ({
   }),
 }));
 jest.mock('@/lib/client-fetch', () => ({
-  // 要対応・要確認はこの試験の対象ではないので、未処理なしを返す
   clientFetch: (...args: unknown[]) =>
     String(args[0]) === '/api/admin/order-attention'
-      ? Promise.resolve({
-          ok: true,
-          status: 200,
-          json: async () => ({ data: { exceptions: [], reviews: [], counts: { exceptions: 0, reviews: 0 } } }),
-        })
+      ? mockAttention(...args)
       : clientFetchMock(...args),
 }));
 jest.mock('@/components/AdminSideNav', () => () => null);
@@ -77,12 +73,42 @@ function shipBody(): unknown {
 describe('管理画面の注文の履歴と発送のつなぎ込み', () => {
   beforeEach(() => {
     clientFetchMock.mockReset();
+    mockAttention.mockReset();
+    mockAttention.mockImplementation(() => ok({ data: { exceptions: [], reviews: [], counts: { exceptions: 0, reviews: 0 } } }));
     clientFetchMock.mockImplementation((url: string) => {
       if (String(url).startsWith('/api/admin/orders?')) return ok(ordersBody);
       if (String(url).endsWith('/history')) return ok(historyBody);
       if (String(url).endsWith('/status')) return ok({ success: true, status: 'shipped' });
       return ok({});
     });
+  });
+
+  it.each(['送信元のドメインの設定', null])('送信を止めている時は ORDER の帯に原因 %s と再開の案内を出す', async (reasonLabel) => {
+    mockAttention.mockImplementation(() => ok({ data: {
+      exceptions: [], reviews: [], counts: { exceptions: 0, reviews: 0 }, emailSending: { paused: true, reasonLabel },
+    } }));
+    render(<AdminPage />);
+
+    const title = await screen.findByText('お客様への注文のメールの送信を止めています');
+    const banner = title.closest('[role="alert"]');
+    expect(banner).toHaveAttribute('data-ui-banner-alert-variant', 'error');
+    expect(banner).toHaveTextContent(`原因: ${reasonLabel ?? '不明'}。原因を直すと、15分ごとに1件ずつ試して自動で再開します（1日の送信の上限の時は日本時間 9時から）。手順は「注文のメールの手順書」の「送信の一時停止」にあります。`);
+    expect(await screen.findByRole('button', { name: 'ORD-A1B2C3D4 の履歴' })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['止めていない', { emailSending: { paused: false, reasonLabel: null } }],
+    ['値が null', { emailSending: null }],
+    ['項目が無い', {}],
+  ])('送信状態が %s 時は帯を出さず、注文を読み込める', async (_label, sending) => {
+    mockAttention.mockImplementation(() => ok({ data: {
+      exceptions: [], reviews: [], counts: { exceptions: 0, reviews: 0 }, ...sending,
+    } }));
+    render(<AdminPage />);
+    await screen.findByRole('button', { name: 'ORD-A1B2C3D4 の履歴' });
+
+    expect(screen.queryByText('お客様への注文のメールの送信を止めています')).not.toBeInTheDocument();
+    expect(screen.queryByText('要対応・要確認を読み込めませんでした。')).not.toBeInTheDocument();
   });
 
   it('「履歴」を押すと履歴のダイアログが開き、Escape で閉じると、その「履歴」のボタンへフォーカスが戻る', async () => {

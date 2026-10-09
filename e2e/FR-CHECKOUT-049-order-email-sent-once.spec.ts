@@ -82,8 +82,8 @@ test.describe('FR-CHECKOUT-049 注文確認のメールは1通だけ届く', () 
       const rows = await withLocalDb(async (db) =>
         (await db.query("select origin, status from private.order_email_outbox where order_id = $1 and kind = 'paid'", [order.id])).rows);
       expect(rows).toEqual([{ origin: 'auto', status: 'sent' }]);
-      // 2通目が届くとしたら worker が行を送る時。worker の1回は送る行が無くなるまで続き、行は送ってから送信済みになる。
-      // 送信済みの1行だけなので、固定の時間を待たずに数えてよい
+      // worker は10秒の予算で止まり、別の起動が取った行は飛ばすので、1回の終了だけでは送り切った証拠にならない。
+      // 直前の DB の確かめで、自動の行が送信済みの1行だけ（送信後に記録）と分かるので、固定の時間を待たずに数え直せる
       expect(await confirmations()).toBe(1);
     });
   }
