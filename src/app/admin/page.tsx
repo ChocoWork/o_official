@@ -17,13 +17,13 @@ import UserSection from '@/components/UserSection';
 import OrderSection, { type OrderItem } from '@/components/OrderSection';
 import AttentionInbox from '@/components/AttentionInbox';
 import OrderCancelDialog, { type OrderCancelValues } from '@/components/OrderCancelDialog';
+import OrderShipDialog, { type OrderShipValues } from '@/components/OrderShipDialog';
+import OrderHistoryDialog from '@/components/OrderHistoryDialog';
 import { BannerAlert } from '@/components/ui/BannerAlert/BannerAlert';
 import { Button } from '@/components/ui/Button/Button';
 import { DateTimePicker } from '@/components/ui/DateTimePicker/DateTimePicker';
 import { SearchField } from '@/components/ui/SearchField/SearchField';
-import { Dialog } from '@/components/ui/Dialog/Dialog';
 import type { OrderAttention } from '@/lib/orders/order-payment-types';
-import { SHIPPING_CARRIERS, SHIPPING_CARRIER_IDS, type ShippingCarrierId } from '@/lib/orders/shipping-carriers';
 
 const allAdminTabs: TabType[] = ['KPI', 'ACCOUNTING', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER'];
 const supporterTabs: TabType[] = ['ORDER'];
@@ -111,8 +111,7 @@ function AdminPageContent() {
   const [orderAmountMax, setOrderAmountMax] = useState('');
   const [processingOrderIds, setProcessingOrderIds] = useState<string[]>([]);
   const [shipOrderId, setShipOrderId] = useState<string | null>(null);
-  const [shipCarrier, setShipCarrier] = useState<ShippingCarrierId>('yamato');
-  const [shipTrackingNumber, setShipTrackingNumber] = useState('');
+  const [historyOrderId, setHistoryOrderId] = useState<string | null>(null);
   const [reviewOnly, setReviewOnly] = useState(false);
   const [attention, setAttention] = useState<OrderAttention | null>(null);
   // 読み込みの失敗と、要対応・要確認の操作が断られた理由。欄のすぐ下に出す（OrderSection のエラーは一覧の下で、読み直しで消える）
@@ -562,19 +561,12 @@ function AdminPageContent() {
 
   const openShipDialog = (id: string) => {
     setOrdersNoticeMessage(null);
-    setShipCarrier('yamato');
-    setShipTrackingNumber('');
     setShipOrderId(id);
   };
 
-  const handleShipOrder = async () => {
+  const handleShipOrder = async (values: OrderShipValues) => {
     const id = shipOrderId;
     if (!id) return;
-
-    if (!/^[0-9A-Za-z-]{1,64}$/.test(shipTrackingNumber.trim())) {
-      setOrdersErrorMessage('追跡番号は英数字とハイフンで入力してください。');
-      return;
-    }
 
     try {
       setOrdersErrorMessage(null);
@@ -587,8 +579,9 @@ function AdminPageContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           status: 'shipped',
-          carrier: shipCarrier,
-          trackingNumber: shipTrackingNumber.trim(),
+          carrier: values.carrier,
+          trackingNumber: values.trackingNumber,
+          notifyCustomer: values.notifyCustomer,
         }),
       });
 
@@ -977,66 +970,15 @@ function AdminPageContent() {
               onCancelOrder={handleCancelOrder}
               onRefundOrder={userRole === 'admin' ? handleRefundOrder : undefined}
               onShipOrder={openShipDialog}
+              onShowHistory={setHistoryOrderId}
               processingOrderIds={processingOrderIds}
             />
-            <Dialog
+            <OrderShipDialog
               open={shipOrderId !== null}
               onClose={() => setShipOrderId(null)}
-              title="発送済みにする"
-            >
-              <div className="space-y-3">
-                <div>
-                  <label htmlFor="ship-carrier" className="block font-acumin lk-text-3xs text-[#474747]">
-                    配送業者
-                  </label>
-                  <select
-                    id="ship-carrier"
-                    value={shipCarrier}
-                    onChange={(event) => setShipCarrier(event.target.value as ShippingCarrierId)}
-                    className="mt-1 h-9 w-full border border-[#d4d4d4] bg-white px-2 font-acumin lk-text-3xs text-black"
-                  >
-                    {SHIPPING_CARRIER_IDS.map((id) => (
-                      <option key={id} value={id}>
-                        {SHIPPING_CARRIERS[id].label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label htmlFor="ship-tracking" className="block font-acumin lk-text-3xs text-[#474747]">
-                    追跡番号
-                  </label>
-                  <input
-                    id="ship-tracking"
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={64}
-                    value={shipTrackingNumber}
-                    onChange={(event) => setShipTrackingNumber(event.target.value)}
-                    placeholder="1234-5678-9012"
-                    className="mt-1 h-9 w-full border border-[#d4d4d4] bg-white px-2 font-acumin lk-text-3xs text-black"
-                  />
-                </div>
-                <div className="flex gap-2 pt-1">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="w-full font-acumin"
-                    onClick={() => setShipOrderId(null)}
-                  >
-                    キャンセル
-                  </Button>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    className="w-full font-acumin"
-                    onClick={() => void handleShipOrder()}
-                  >
-                    発送する
-                  </Button>
-                </div>
-              </div>
-            </Dialog>
+              onSubmit={(values) => void handleShipOrder(values)}
+            />
+            <OrderHistoryDialog orderId={historyOrderId} onClose={() => setHistoryOrderId(null)} />
             <OrderCancelDialog
               open={cancelTarget !== null}
               title="注文を取り消す"

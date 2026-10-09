@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/Button/Button';
 import { DataTable } from '@/components/ui/DataTable/DataTable';
 import { StatusBadge } from '@/components/ui/StatusBadge/StatusBadge';
 import { TagLabel } from '@/components/ui/TagLabel/TagLabel';
+import { toOrderNumber } from '@/lib/orders/order-number';
 
 export type OrderStatus = '支払い手続き中' | '未決済' | '決済完了' | '決済失敗' | '放棄' | 'キャンセル' | '発送済み';
 
@@ -42,6 +43,8 @@ interface OrderSectionProps {
 	onCancelOrder?: (id: string) => void;
 	onRefundOrder?: (id: string) => void;
 	onShipOrder?: (id: string) => void;
+	/** 注文の履歴（状態の変化とメール）を開く */
+	onShowHistory?: (id: string) => void;
 	processingOrderIds?: string[];
 }
 
@@ -61,6 +64,7 @@ export default function OrderSection({
 	onCancelOrder,
 	onRefundOrder,
 	onShipOrder,
+	onShowHistory,
 	processingOrderIds = [],
 }: OrderSectionProps) {
 
@@ -162,6 +166,17 @@ export default function OrderSection({
 
 							return (
 							<div className="flex flex-wrap items-center gap-2">
+								{onShowHistory ? (
+									<Button
+										variant="secondary"
+										size="sm"
+										className="font-acumin"
+										aria-label={`${toOrderNumber(order.id)} の履歴`}
+										onClick={() => onShowHistory(order.id)}
+									>
+										履歴
+									</Button>
+								) : null}
 								{order.canRefund && onRefundOrder ? (
 									<Button
 										variant="secondary"

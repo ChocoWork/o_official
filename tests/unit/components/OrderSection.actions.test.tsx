@@ -135,4 +135,16 @@ describe('OrderSection order actions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }));
     expect(onCancelOrder).toHaveBeenCalledWith('in-progress');
   });
+
+  it('どの注文にも「履歴」を出し、押すと注文の番号を渡す', () => {
+    const onShowHistory = jest.fn();
+
+    render(<OrderSection orders={[paidOrder, pendingOrder]} onShowHistory={onShowHistory} />);
+
+    const buttons = screen.getAllByRole('button', { name: /の履歴$/ });
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0]).toHaveTextContent('履歴');
+    fireEvent.click(buttons[1]);
+    expect(onShowHistory).toHaveBeenCalledWith('pending-order');
+  });
 });
