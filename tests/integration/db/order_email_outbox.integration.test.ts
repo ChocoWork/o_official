@@ -99,13 +99,28 @@ describeLocalDb('integration: 注文のメールの表と関数', (db) => {
     test('書き分けは種類に合うものだけ。入金済みと取消は書き分けが要る', async () => {
       const orderId = await createOrder(db(), 'paid');
       await expectRejected(db(), 'select private.enqueue_order_email($1, $2, $3)', [orderId, 'paid', null], { code: '23514' });
+      await expectRejected(db(), 'select private.enqueue_order_email($1, $2, $3)', [orderId, 'canceled', null], { code: '23514' });
       await expectRejected(db(), 'select private.enqueue_order_email($1, $2, $3)', [orderId, 'canceled', 'paid'], { code: '23514' });
       await expectRejected(db(), 'select private.enqueue_order_email($1, $2, $3)', [orderId, 'shipped', 'order_confirmed'], { code: '23514' });
       await expectRejected(db(), 'select private.enqueue_order_email($1, $2, $3)', [orderId, 'refund', null], { code: '23514' });
     });
+
+    test('知らないメールの種類は表の種類の CHECK で断る', async () => {
+      const orderId = await createOrder(db(), 'paid');
+
+      await expectRejected(db(), 'select private.enqueue_order_email($1, $2, $3)', [orderId, 'unknown', null], {
+        code: '23514', constraint: 'order_email_outbox_kind_check',
+      });
+    });
   });
 
   describe('取り出し', () => {
+    test.each([null, 29, 901])('担当の秒数 %s は INVALID_LEASE_SECONDS で断る', async (seconds) => {
+      await expectRejected(db(), 'select * from public.claim_order_email($1::integer)', [seconds], {
+        code: '22023', message: 'INVALID_LEASE_SECONDS',
+      });
+    });
+
     test('担当の印を付けて1行取り出し、試した回数を数える', async () => {
       const orderId = await createOrder(db(), 'paid');
       await enqueue(db(), orderId, 'paid', 'order_confirmed');
@@ -190,6 +205,28 @@ describeLocalDb('integration: 注文のメールの表と関数', (db) => {
       expect((await fail(db(), wrong, 'network_error', 'transient')).rows[0].status).toBeNull();
       expect(await emailRow(db(), claimed!.email_id)).toMatchObject({ status: 'sending' });
     });
+
+    test('9回目の担当の期限が切れた行は、次の取り出しで送れなかったにし、控えた本文を消す', async () => {
+      const orderId = await createOrder(db(), 'paid');
+      await enqueue(db(), orderId, 'paid', 'order_confirmed');
+      await db().query('update private.order_email_outbox set attempts = 8 where order_id = $1', [orderId]);
+      const claimed = await claim(db());
+      expect(claimed).toMatchObject({ order_id: orderId, attempts: 9 });
+      await db().query('select public.save_order_email_content($1, $2, $3, $4)', [claimed!.email_id, claimed!.lease_token, '件名', '本文']);
+      await db().query("update private.order_email_outbox set lease_expires_at = now() - interval '1 second' where id = $1", [claimed!.email_id]);
+
+      expect(await claim(db())).toBeNull();
+      expect(await emailRow(db(), claimed!.email_id)).toMatchObject({
+        status: 'dead', attempts: 9, last_error_code: 'lease_expired',
+        subject: null, body_text: null, lease_token: null, lease_expires_at: null,
+      });
+      const erased = await db().query(
+        `select finished_at = now() as finished, body_erased_at = now() as erased
+         from private.order_email_outbox where id = $1`,
+        [claimed!.email_id],
+      );
+      expect(erased.rows[0]).toEqual({ finished: true, erased: true });
+    });
   });
 
   describe('やり直しと送れなかった', () => {
@@ -213,6 +250,15 @@ describeLocalDb('integration: 注文のメールの表と関数', (db) => {
       await fail(db(), claimed!, 'rate_limited', 'transient', 600);
 
       expect(await waitSeconds(db(), claimed!.email_id)).toBeCloseTo(600, 0);
+    });
+
+    test('待つ時間の指示が2日でも、待つ時間は1日で打ち切る', async () => {
+      const orderId = await createOrder(db(), 'paid');
+      await enqueue(db(), orderId, 'paid', 'order_confirmed');
+      const claimed = await claim(db());
+
+      expect((await fail(db(), claimed!, 'rate_limited', 'transient', 172800)).rows[0].status).toBe('retry_wait');
+      expect(await waitSeconds(db(), claimed!.email_id)).toBe(86400);
     });
 
     test('9回目の失敗で送れなかったにし、控えた本文を消す', async () => {
@@ -258,6 +304,26 @@ describeLocalDb('integration: 注文のメールの表と関数', (db) => {
       });
       await expectRejected(db(), 'select public.skip_order_email($1, $2, $3)', [claimed!.email_id, claimed!.lease_token, 'other'], { code: '22023' });
     });
+
+    test('入金済みのメールは superseded で取りやめにできず、no_recipient ならできる', async () => {
+      const orderId = await createOrder(db(), 'paid');
+      await enqueue(db(), orderId, 'paid', 'order_confirmed');
+      const claimed = await claim(db());
+      await db().query('select public.save_order_email_content($1, $2, $3, $4)', [claimed!.email_id, claimed!.lease_token, '件名', '本文']);
+
+      await expectRejected(db(), 'select public.skip_order_email($1, $2, $3)', [claimed!.email_id, claimed!.lease_token, 'superseded'], {
+        code: '22023', message: 'SUPERSEDE_NOT_ALLOWED',
+      });
+      expect(await emailRow(db(), claimed!.email_id)).toMatchObject({
+        status: 'sending', lease_token: claimed!.lease_token, subject: '件名', body_text: '本文', last_error_code: null,
+      });
+
+      const skipped = await db().query('select public.skip_order_email($1, $2, $3) as skipped', [claimed!.email_id, claimed!.lease_token, 'no_recipient']);
+      expect(skipped.rows[0].skipped).toBe(true);
+      expect(await emailRow(db(), claimed!.email_id)).toMatchObject({
+        status: 'skipped', last_error_code: 'no_recipient', subject: null, body_text: null, lease_token: null, lease_expires_at: null,
+      });
+    });
   });
 
   describe('送信の一時停止', () => {
@@ -292,18 +358,36 @@ describeLocalDb('integration: 注文のメールの表と関数', (db) => {
       await db().query("select public.pause_order_email_sending('quota_daily')");
 
       const res = await db().query(
-        `select next_probe_at = ((date_trunc('day', now() at time zone 'UTC') + interval '1 day') at time zone 'UTC') as ok
+        `select next_probe_at > now() as future,
+                next_probe_at <= now() + interval '1 day' as within_day,
+                extract(hour from next_probe_at at time zone 'UTC')::int as utc_hour,
+                extract(minute from next_probe_at at time zone 'UTC')::int as utc_minute,
+                extract(second from next_probe_at at time zone 'UTC')::float8 as utc_second
          from public.get_order_email_send_state()`,
       );
-      expect(res.rows[0].ok).toBe(true);
+      expect(res.rows[0].future).toBe(true);
+      expect(res.rows[0].within_day).toBe(true);
+      expect(res.rows[0].utc_hour).toBe(0);
+      expect(res.rows[0].utc_minute).toBe(0);
+      expect(res.rows[0].utc_second).toBe(0);
     });
 
     test('止めた時刻は最初のまま。知らない理由は断る', async () => {
       const firstPause = await db().query("select public.pause_order_email_sending('config_provider') as newly");
+      await db().query(
+        "update private.order_email_send_pause set paused_at = now() - interval '1 hour', next_probe_at = now() - interval '1 minute'",
+      );
       const secondPause = await db().query("select public.pause_order_email_sending('config_provider') as newly");
 
       expect(firstPause.rows[0].newly).toBe(true);
       expect(secondPause.rows[0].newly).toBe(false);
+      const state = await db().query(
+        `select paused_at = now() - interval '1 hour' as kept,
+                next_probe_at = now() + interval '15 minutes' as rescheduled
+         from public.get_order_email_send_state()`,
+      );
+      expect(state.rows[0].kept).toBe(true);
+      expect(state.rows[0].rescheduled).toBe(true);
       await expectRejected(db(), "select public.pause_order_email_sending('network_error')", [], { code: '22023' });
     });
   });
@@ -316,6 +400,25 @@ describeLocalDb('integration: 注文のメールの表と関数', (db) => {
       await complete(db(), claimed!, `re_${uniqueSuffix()}`);
       return { orderId, emailId: claimed!.email_id };
     }
+
+    test('知らない再送の種類は INVALID_EMAIL_KIND で断る', async () => {
+      const orderId = await createOrder(db(), 'paid');
+      const actor = await createActor(db());
+
+      await expectRejected(db(), 'select public.request_order_email_resend($1, $2, $3)', [orderId, 'unknown', actor.id], {
+        code: '22023', message: 'INVALID_EMAIL_KIND',
+      });
+    });
+
+    test.each(['注文', '種類', '管理者'])('再送の%sが NULL なら RESEND_ARGUMENT_REQUIRED で断る', async (missing) => {
+      const orderId = await createOrder(db(), 'paid');
+      const actor = await createActor(db());
+      const args = [missing === '注文' ? null : orderId, missing === '種類' ? null : 'paid', missing === '管理者' ? null : actor.id];
+
+      await expectRejected(db(), 'select public.request_order_email_resend($1, $2, $3)', args, {
+        code: '22023', message: 'RESEND_ARGUMENT_REQUIRED',
+      });
+    });
 
     test('送信済みのメールを、同じ書き分けの手の行として足し、管理者を記録する', async () => {
       const actor = await createActor(db());
@@ -407,6 +510,41 @@ describeLocalDb('integration: 注文のメールの表と関数', (db) => {
           from_status: 'payment_in_progress', to_status: 'cancelled', change_reason: 'admin_cancel',
           actor_email: actor.email, cancel_reason: 'customer_request', shipping_carrier: null, tracking_number: null,
         }),
+      ]);
+    });
+
+    test('一部の返金は状態の履歴を増やさず、全額の返金による取消は履歴に返す', async () => {
+      const orderId = await createOrder(db(), 'paid');
+      const orderStateSql = `select status::text as status, total_amount, refunded_amount,
+                                   payment_status_updated_at::text as payment_status_updated_at
+                            from public.orders where id = $1`;
+      // 期待する更新時刻は文字列で読み、PostgreSQL の秒未満の精度を保つ。
+      const initial = (await db().query(orderStateSql, [orderId])).rows[0];
+      const partialAmount = Math.floor(Number(initial.total_amount) / 2);
+      expect(partialAmount).toBeGreaterThan(0);
+      expect(partialAmount).toBeLessThan(Number(initial.total_amount));
+      const before = await db().query('select * from public.list_order_status_history($1)', [orderId]);
+      expect(before.rows).toEqual([]);
+
+      const partial = await db().query(
+        `select * from public.apply_order_refund_projection(
+          $1::uuid, $2::public.order_status, $3::integer, $4::timestamptz, $5::integer, now(), now(), null
+        )`,
+        [orderId, initial.status, initial.refunded_amount, initial.payment_status_updated_at, partialAmount],
+      );
+      expect(partial.rows).toEqual([{ id: orderId, status: 'paid', refunded_amount: partialAmount }]);
+      expect((await db().query('select * from public.list_order_status_history($1)', [orderId])).rows).toEqual(before.rows);
+
+      const afterPartial = (await db().query(orderStateSql, [orderId])).rows[0];
+      const full = await db().query(
+        `select * from public.apply_order_refund_projection(
+          $1::uuid, $2::public.order_status, $3::integer, $4::timestamptz, $5::integer, now(), now(), null
+        )`,
+        [orderId, afterPartial.status, afterPartial.refunded_amount, afterPartial.payment_status_updated_at, afterPartial.total_amount],
+      );
+      expect(full.rows).toEqual([{ id: orderId, status: 'cancelled', refunded_amount: Number(afterPartial.total_amount) }]);
+      expect((await db().query('select * from public.list_order_status_history($1)', [orderId])).rows).toEqual([
+        expect.objectContaining({ from_status: 'paid', to_status: 'cancelled', change_reason: 'stripe_refund_projection' }),
       ]);
     });
 
@@ -524,6 +662,26 @@ describeLocalDb('integration: 注文のメールの表と関数', (db) => {
       expect((await db().query('select * from public.list_unnotified_order_email_delivery_problems(50)')).rows).toEqual([]);
     });
 
+    test.each([null, -1])('未通知の一覧の件数が %s でも例外にならず0行を返す', async (limit) => {
+      const deadOrder = await createOrder(db(), 'paid');
+      await enqueue(db(), deadOrder, 'paid', 'order_confirmed');
+      const dead = await claim(db());
+      await fail(db(), dead!, 'invalid_message', 'permanent');
+
+      const deliveryOrder = await createOrder(db(), 'paid');
+      const messageId = `re_${uniqueSuffix()}`;
+      await enqueue(db(), deliveryOrder, 'paid', 'order_confirmed');
+      const sent = await claim(db());
+      await complete(db(), sent!, messageId);
+      await db().query("select public.record_order_email_delivery(null, $1, 'bounced', now())", [messageId]);
+
+      // 対象の行があることを先に確かめ、空の表で偶然通る試験にしない。
+      expect((await db().query('select email_id from public.list_unnotified_dead_order_emails(50)')).rows).toEqual([{ email_id: dead!.email_id }]);
+      expect((await db().query('select email_id from public.list_unnotified_order_email_delivery_problems(50)')).rows).toEqual([{ email_id: sent!.email_id }]);
+      expect((await db().query('select * from public.list_unnotified_dead_order_emails($1::integer)', [limit])).rows).toEqual([]);
+      expect((await db().query('select * from public.list_unnotified_order_email_delivery_problems($1::integer)', [limit])).rows).toEqual([]);
+    });
+
     test('注文のメールの定期処理の名前を記録できる', async () => {
       await db().query("select public.record_ops_heartbeat('order_email_worker', true)");
       await db().query("select public.record_ops_heartbeat('order_email_delivery_check', false, 'config_api_key')");
@@ -533,6 +691,45 @@ describeLocalDb('integration: 注文のメールの表と関数', (db) => {
   });
 
   describe('片付けと守り', () => {
+    test.each([
+      'public.claim_order_email(integer)',
+      'public.save_order_email_content(uuid, uuid, text, text)',
+      'public.complete_order_email(uuid, uuid, text)',
+      'public.fail_order_email(uuid, uuid, text, text, integer)',
+      'public.skip_order_email(uuid, uuid, text)',
+      'public.pause_order_email_sending(text)',
+      'public.get_order_email_send_state()',
+      'public.request_order_email_resend(uuid, text, uuid)',
+      'public.list_order_email_history(uuid)',
+      'public.list_order_status_history(uuid)',
+      'public.get_order_email_content(uuid, uuid)',
+      'public.record_order_email_delivery(text, text, text, timestamptz)',
+      'public.list_order_emails_awaiting_delivery(integer)',
+      'public.get_order_email_backlog(integer)',
+      'public.list_unnotified_dead_order_emails(integer)',
+      'public.mark_order_emails_dead_notified(uuid[])',
+      'public.list_unnotified_order_email_delivery_problems(integer)',
+      'public.mark_order_email_delivery_problems_notified(uuid[])',
+    ])('%s の実行権限は service_role だけにある', async (signature) => {
+      for (const role of ['anon', 'authenticated', 'service_role']) {
+        const privilege = await db().query("select has_function_privilege($1::text, $2::text, 'EXECUTE') as allowed", [role, signature]);
+        expect({ role, allowed: privilege.rows[0].allowed }).toEqual({ role, allowed: role === 'service_role' });
+      }
+    });
+
+    test.each([
+      'private.order_email_max_attempts()',
+      'private.order_email_retry_delay(integer)',
+      'private.enqueue_order_email(uuid, text, text)',
+      'private.set_order_email_pause(text)',
+      'private.purge_order_email_data()',
+    ])('%s の実行権限は anon・authenticated・service_role のどれにも無い', async (signature) => {
+      for (const role of ['anon', 'authenticated', 'service_role']) {
+        const privilege = await db().query("select has_function_privilege($1::text, $2::text, 'EXECUTE') as allowed", [role, signature]);
+        expect({ role, allowed: privilege.rows[0].allowed }).toEqual({ role, allowed: false });
+      }
+    });
+
     test('毎日の片付けは、45日を過ぎた送信済みの本文と3日を過ぎた受付済みの番号を消す', async () => {
       const orderId = await createOrder(db(), 'paid');
       await enqueue(db(), orderId, 'paid', 'order_confirmed');
@@ -632,6 +829,36 @@ describeLocalDb('integration: 注文のメールの同時の取り出し', (db) 
       expect(first).not.toBeNull();
       expect(second).not.toBeNull();
       expect(second!.email_id).not.toBe(first!.email_id);
+    } finally {
+      await db().query('rollback');
+      await other.query('rollback');
+    }
+  });
+
+  test('前の行の取り出しが未確定の間は、別の接続も同じ注文の後の行を取り出さない', async () => {
+    // ほかの未完了の行を先に片付け、同じ注文の確定した2行だけを対象にする。
+    await db().query(
+      `update private.order_email_outbox
+       set status = 'skipped', finished_at = now(), lease_token = null, lease_expires_at = null, last_error_code = 'superseded'
+       where status in ('pending', 'sending', 'retry_wait')`,
+    );
+    await db().query('update private.order_email_send_pause set paused = false, reason = null, paused_at = null, next_probe_at = null');
+    const orderId = await createOrder(db(), 'pending');
+    created.push(orderId);
+    await enqueue(db(), orderId, 'awaiting_payment');
+    await enqueue(db(), orderId, 'paid', 'payment_received');
+
+    await db().query('begin');
+    await other.query('begin');
+    try {
+      const first = await claim(db());
+      expect(first).toMatchObject({ order_id: orderId, kind: 'awaiting_payment' });
+      expect(await claim(other)).toBeNull();
+      const later = await other.query(
+        "select status, attempts from private.order_email_outbox where order_id = $1 and kind = 'paid'",
+        [orderId],
+      );
+      expect(later.rows).toEqual([{ status: 'pending', attempts: 0 }]);
     } finally {
       await db().query('rollback');
       await other.query('rollback');

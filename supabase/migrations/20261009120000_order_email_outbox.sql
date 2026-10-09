@@ -483,6 +483,16 @@ BEGIN
     RAISE EXCEPTION 'INVALID_SKIP_REASON' USING ERRCODE = '22023';
   END IF;
 
+  -- 取りやめ（superseded）は入金待ちと支払い期限切れだけ（設計書 4-1）。入金済み・取消・発送はその時の事実を伝えるので取りやめない
+  IF _reason = 'superseded' AND EXISTS (
+    SELECT 1
+    FROM private.order_email_outbox AS e
+    WHERE e.id = _email_id
+      AND e.kind NOT IN ('awaiting_payment', 'payment_expired')
+  ) THEN
+    RAISE EXCEPTION 'SUPERSEDE_NOT_ALLOWED' USING ERRCODE = '22023';
+  END IF;
+
   UPDATE private.order_email_outbox AS e
   SET status = 'skipped',
       finished_at = pg_catalog.now(),
@@ -592,6 +602,7 @@ AS $$
 $$;
 
 -- 注文の状態の変化（order_revisions から）。前後の値はそのまま返さず、決めた項目だけ取り出す（住所などを出さない）
+-- 返金の同期で状態が変わった行は operation が refund_update になるので、operation ではなく変わった列で見る
 CREATE OR REPLACE FUNCTION public.list_order_status_history(_order_id uuid)
 RETURNS TABLE (
   changed_at timestamptz,
@@ -619,7 +630,7 @@ AS $$
   FROM public.order_revisions AS r
   LEFT JOIN auth.users AS u ON u.id = r.changed_by
   WHERE r.order_id = _order_id
-    AND r.operation = 'status_update'
+    AND 'status' = ANY (r.changed_fields)
   ORDER BY r.changed_at DESC, r.id DESC
 $$;
 
@@ -749,7 +760,7 @@ AS $$
   WHERE e.status = 'dead'
     AND e.dead_notified_at IS NULL
   ORDER BY e.finished_at, e.seq
-  LIMIT _limit
+  LIMIT LEAST(GREATEST(COALESCE(_limit, 0), 0), 100)
 $$;
 
 CREATE OR REPLACE FUNCTION public.mark_order_emails_dead_notified(_email_ids uuid[])
@@ -791,7 +802,7 @@ AS $$
   WHERE e.delivery_status IN ('bounced', 'complained', 'suppressed', 'failed')
     AND e.delivery_alert_notified_at IS NULL
   ORDER BY e.delivery_event_at, e.seq
-  LIMIT _limit
+  LIMIT LEAST(GREATEST(COALESCE(_limit, 0), 0), 100)
 $$;
 
 CREATE OR REPLACE FUNCTION public.mark_order_email_delivery_problems_notified(_email_ids uuid[])
