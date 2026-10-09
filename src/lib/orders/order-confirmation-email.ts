@@ -36,6 +36,7 @@ export function formatCurrency(amount: number, currency: string): string {
   }
 }
 
+/** 明細の行。確定メールでは、受け付けで決まったお届けの目安を次の行に添える（グループ F 設計書 5-3） */
 export function formatItemLines(
   items: ConfirmationItem[],
   currency: string,
