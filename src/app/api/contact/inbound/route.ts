@@ -53,6 +53,7 @@ function stripQuotedHistory(text: string): string {
   return output.join('\n').trim();
 }
 
+// PUBLIC: Resend からのお問い合わせの返信の受け口。ログインの代わりに Svix の署名で確かめる
 export async function POST(request: Request) {
   try {
     const secret = process.env.RESEND_WEBHOOK_SECRET;

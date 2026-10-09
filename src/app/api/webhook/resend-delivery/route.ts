@@ -12,6 +12,7 @@ import { recordOrderEmailDelivery, type OrderEmailStore } from '@/lib/orders/ema
  */
 const MAX_SVIX_ID_LENGTH = 200;
 
+// PUBLIC: Resend からの配達の知らせの受け口。ログインの代わりに Svix の署名で確かめる
 export async function POST(request: Request): Promise<NextResponse> {
   const secret = process.env.RESEND_DELIVERY_WEBHOOK_SECRET;
   if (!secret) {
