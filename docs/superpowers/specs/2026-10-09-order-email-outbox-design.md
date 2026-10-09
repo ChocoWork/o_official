@@ -12,7 +12,7 @@
 
 お客様への注文のメール（注文確認・入金待ち・支払い期限切れ・取消・発送）を、0通にも2通にもならないように送る。
 
-今は、メールを送る前に DB で「送信権」を取り、送れなかったら権利を戻すだけで、誰も送り直さない（R-34）。権利の確認そのものに失敗すると「届かないよりまし」と送ってしまい、同時に動く経路があると2通になる（R-14）。発送のメールは送信権も再送も無い。
+実装前は、メールを送る前に DB で「送信権」を取り、送れなかったら権利を戻すだけで、誰も送り直さない（R-34）。権利の確認そのものに失敗すると「届かないよりまし」と送ってしまい、同時に動く経路があると2通になる（R-14）。発送のメールは送信権も再送も無い。
 
 この設計は、業界の定番の **transactional outbox**（状態の変更と同じ取引で「送る予定」を1行書き、別の処理が送る）に置き換える。送る処理はグループ B の worker と同じ作りにし、管理画面には Shopify と同じ「注文の履歴」と「メールの再送」を付ける。
 
@@ -71,7 +71,7 @@
 
 ---
 
-## 2. 今の状態（2026-10-09）
+## 2. 実装前の状態（2026-10-09）
 
 | メール | きっかけ | 送り方 | 失敗した時 |
 |---|---|---|---|
@@ -158,10 +158,12 @@ sequenceDiagram
 
 - 入金済みのメールの書き分けが `payment_received_after_expiry`（期限切れの案内の後の入金）でも、期限切れのメールを実際には送っていない時（取りやめ・行が無い）は、普通の文面（`payment_received`）で作る。
 
+- `public.skip_order_email` も `superseded` を `awaiting_payment`・`payment_expired` に限る。ほかの種類は SQLSTATE `22023`・`SUPERSEDE_NOT_ALLOWED` で断る。
+
 ### 4-2 中身を作る時
 
 - 最初に送る時、その時点の注文の情報で件名と本文を作り、**送る前に**行に控える。やり直しは控えた中身と同じ重複防止キーで送る（Resend は同じキーで中身が違うと 409 で断る）。送れた後に記録の前に落ちても、やり直しは同じ中身と同じキーになるので、Resend は2通目を送らずに最初の受け付けを返す。
-- 文面は今のメール（`src/lib/orders/order-confirmation-email.ts`・`order-lifecycle-emails.ts`・`order-shipped-email.ts`）と同じにする。件名は固定の文と注文番号だけで組み、氏名や商品名は本文にだけ入れる（メールの見出しへの差し込みを防ぐ。今と同じ）。
+- 文面は実装前の注文確認・入金待ち・期限切れ・取消・発送のメールと同じにし、現在は `src/lib/orders/email/order-email-compose.ts` の `composeOrderEmail` が組み立てる。件名は固定の文と注文番号だけで組み、氏名や商品名は本文にだけ入れる（メールの見出しへの差し込みを防ぐ。今と同じ）。
 - 控えた本文の保存期間は 7-5。
 
 ### 4-3 やり直し
@@ -182,7 +184,7 @@ sequenceDiagram
 - 間隔には前後2割までの揺らぎを足す。
 - 回数の制限（429）やサーバーの一時停止（503）の応答が待つ時間（`Retry-After`）を示したら、決めた間隔と比べて長い方を使う。
 - 担当の期限は5分。期限切れも1回の失敗（`lease_expired`）として数える。
-- やり直しは約4時間で終わるので、Resend の重複防止キーの24時間に収まる。
+- 通常のやり直しは約4時間で、Resend の重複防止キーの有効期間（24時間）に収まる。`Retry-After` は最大1日で、一時停止や長い待機で24時間を越えると、前の試行が届いていた場合に2通目になりうる（[手順書](../../06_Operations/order-email-operations.md)の3）。
 
 ### 4-4 失敗の分け方
 
@@ -194,7 +196,8 @@ sequenceDiagram
 | どれにも当たらない | ― | 一時的と同じくやり直す | `unexpected_error` |
 
 - 失敗には原因の記号だけを残す。例外の文・宛先・本文は残さない（グループ B と同じ）。
-- 本番（`NODE_ENV=production`）で送り手が Resend でない時（設定が無く SES になる時を含む）は、送らずに 4-5 の一時停止（`config_provider`）にする。重複防止キーの無い送り手では送らない（OWASP の Fail Securely）。E2E と開発の手元のメール受け（`local`）は対象外。
+- 送り手が Resend でも手元のメール受け（`local`）でもない時（設定が無く SES になる時を含む）は、送らずに 4-5 の一時停止（`config_provider`）にする。`local` は手元の Supabase とだけ使い、ほかの DB との組み合わせも `checkOrderEmailSendConfig` が `config_provider` で一時停止する。
+- 1回の送信の待機は `ORDER_EMAIL_SEND_TIMEOUT_MS`（8秒）で打ち切り、一時的な失敗（`network_error`）でやり直す。通信自体は中断せず、遅れて返った結果は使わない。やり直しは同じ重複防止キーで送る（24時間の限りは4-3）。
 
 ### 4-5 送信の一時停止（サーキットブレーカー）
 
@@ -211,7 +214,7 @@ sequenceDiagram
 |---|---|---|---|
 | 送れなかった | 退避した（9回失敗・このメールだけの問題） | まとめて1通、1時間に1回 | 点検（4-8） |
 | 届かなかった | 配達の状態が「届かなかった」「迷惑メールにされた」「送信先が止められている」「送信サービスで送れなかった」になった（6-3） | まとめて1通、1時間に1回 | 点検 |
-| 送信の一時停止 | 4-5 で止めた | 1時間に1回 | worker |
+| 送信の一時停止 | 4-5 で止めた | 1時間に1回 | 点検 |
 | 溜まり | 書いてから15分以上送れていないメール（送信待ち・送信中・やり直し待ち）がある | 1時間に1回 | 点検 |
 | worker の停止 | 注文のメールの worker の最後の成功から15分以上 | 1時間に1回 | 点検 |
 
@@ -222,10 +225,12 @@ sequenceDiagram
 - **毎分の定期処理**：今の Webhook の worker の定期処理（`/api/cron/process-stripe-webhooks`、pg_cron＋pg_net）の続きで、注文のメールの表も処理する。新しい定期処理と合言葉は増やさない。1回の起動の時間の中で、Webhook の知らせを先に、メールを後に処理する。
 - **行を書いた直後**：決済の完了（complete）・Webhook の知らせの処理・管理画面の発送・取消・再送・要対応の解決・期限切れの定期処理（`/api/cron/expire-pending-orders`）のあとで、その場（Next.js の `after()`）で1回動かす。ふだんは数秒で届く。
 - 最後に成功した時刻を `ops_job_heartbeats` に記録する（`order_email_worker`）。
+- `orderEmailWorkerDisabledReason` は `VERCEL_ENV` が設定されて production 以外の公開と、手元でない DB につないだ `next dev` を止める。worker・点検・配達の見回りは DB に触れず、心拍も書かない。Resend の受け口にはこの門を置かない。
+- 手元で本番の DB に向けた `next build && next start` はこの門では止まらない。Vercel の `VERCEL_ENV` が実行時に見える設定と、手元の接続先を公開前に確かめる（[手順書](../../06_Operations/order-email-operations.md)の1）。
 
 ### 4-8 点検
 
-worker の終わりに、グループ B の点検（`runOpsChecks`）に次を足す：送れなかった・届かなかったのまとめ・溜まり・worker の停止。
+グループ B の点検（`runOpsChecks`）に続けて `runOrderEmailOpsChecks` を呼び、一時停止・送れなかった・届かなかったのまとめ・溜まり・worker の停止を点検する。毎分の worker と期限切れの見回り（`expire-pending-orders`）の両方から動く。4-7 の環境の門で止まる時は読み書きも店への送信もしない。
 
 ### 4-9 突き合わせ
 
@@ -264,6 +269,7 @@ worker の終わりに、グループ B の点検（`runOpsChecks`）に次を�
 
 - 上に宛先（注文のメールアドレス）を出す。送信を一時停止している時は「メールの送信を一時停止しています（理由）」と出す。
 - 状態の変化の表示は、表に残っている前後の値をそのまま出さず、上の項目だけを決まった文で出す（住所などを余計に出さない）。
+- `public.list_order_status_history` は `'status' = ANY (changed_fields)` で絞り、`apply_order_refund_projection` の `refund_update` による状態変更も含める。`order-history.ts` は返金でキャンセルになった行に「理由: 全額返金」、キャンセルから戻った行に「返金の取り消し」を出す。
 
 ### 5-2 送ったメールの中身
 
@@ -348,7 +354,9 @@ worker の終わりに、グループ B の点検（`runOpsChecks`）に次を�
 - 1時間ごとに、送ってから3日以内で配達の状態がまだ決まっていない（無い・配達の遅れ）メールについて、Resend の API でそのメールの最後の状態を読み、記録を直す（Shopify の Webhook の「取りこぼしを API で読み直す見回り」と同じ考え方。グループ B の Stripe の見回りと同じ形）。
 - 受け口の登録前や、受け口が長く止まった時の取りこぼしを拾う。
 - 1回に読む件数に上限（50件）を付け、Resend の回数の制限を守る。
-- 毎分の定期処理の中で、1時間に1回だけ動かす（前回の時刻を `ops_job_heartbeats` で見る）。
+- 毎分の worker の最後、店への知らせの点検の後に1時間に1回だけ動かす。心拍（`order_email_delivery_check`）を Resend の読み取り前に書き、途中で止まっても次の分には動かさない。4-7 の環境の門で止まる時は DB・Resend に触れず、心拍も書かない。
+- 時間枠は `DELIVERY_CHECK_BUDGET_MS`（8秒）、読む間は `DELIVERY_CHECK_READ_INTERVAL_MS`（500ミリ秒）、1件の待機は `DELIVERY_CHECK_READ_TIMEOUT_MS`（5秒）。回数の制限・通信の不調・時間切れはその回をやめる。8秒は次の読み取りを始める前に確認し、開始済みの読み取りと DB の処理まで含む厳密な実行上限ではない。
+- 読めた0件で失敗がある時は `provider_unavailable`、読み取り権限の無い鍵は `config_api_key` を心拍に残す（店への知らせは無い）。Resend の最後の状態が `opened`・`clicked` なら配達済みとして記録する。
 
 ### 6-5 突き合わせ
 
@@ -376,7 +384,8 @@ worker の終わりに、グループ B の点検（`runOpsChecks`）に次を�
 | `id` | 行の番号（uuid） |
 | `order_id` | 注文（`orders` を消せば一緒に消える） |
 | `kind` | `paid`・`awaiting_payment`・`payment_expired`・`canceled`・`shipped` |
-| `paid_variant` | 入金済みの書き分け（`order_confirmed`・`payment_received`・`payment_received_after_expiry`）。ほかは空 |
+| `seq` | 行を足した順の番号（bigint、一意）。同じ注文の送信と履歴の順番に使う |
+| `variant` | 入金済みの書き分け（`order_confirmed`・`payment_received`・`payment_received_after_expiry`）と取消前の状態（`payment_in_progress`・`pending`）。ほかは空 |
 | `origin` | `auto`（状態の変化）・`manual`（管理画面の再送） |
 | `requested_by` | 手の再送をした管理者（`auth.users`）。自動は空 |
 | `status` | `pending`・`sending`・`retry_wait`・`sent`・`skipped`（取りやめ）・`dead` |
@@ -390,7 +399,7 @@ worker の終わりに、グループ B の点検（`runOpsChecks`）に次を�
 | `created_at`・`sent_at`・`finished_at`・`body_erased_at` | 作った・送った・片付いた・本文を消した時刻 |
 
 - 一意の決まり：自動の行は `(order_id, kind)` で1行（`origin = 'auto'`）。手の行は、`status` が `pending`・`sending`・`retry_wait` の間 `(order_id, kind)` で1行。`provider_message_id` は重複なし。
-- 索引：取り出し用に、`status` が `pending`・`retry_wait`・`sending` の行だけに効く `(next_attempt_at)` の部分インデックス。履歴用に `(order_id, created_at)`。
+- 索引：取り出し用に、`status` が `pending`・`retry_wait`・`sending` の行だけに効く `(next_attempt_at)` の部分インデックス。同じ注文の順番と履歴用に `(order_id, seq)`。
 
 **`private.order_email_send_pause`（送信の一時停止、1行だけ）**
 
@@ -409,23 +418,26 @@ worker の終わりに、グループ B の点検（`runOpsChecks`）に次を�
 
 ### 7-2 関数
 
-行を書く関数 `private.enqueue_order_email(...)` だけは `private` に置き、状態を変える DB の処理の中からだけ呼ぶ（誰にも実行の権限を与えない）。ほかは `public` に置き、実行は `service_role` だけにする。担当の印を受け取る関数は、印と期限が合う時だけ行を変える。
+行を書く関数 `private.enqueue_order_email(...)` は `private` に置き、状態を変える DB の処理の中からだけ呼ぶ（誰にも実行の権限を与えない）。片付けの `private.purge_order_email_data()` と内部の補助関数も `private` に置く。worker・管理画面・受け口の関数は `public` に置き、実行は `service_role` だけにする。担当の印を受け取る関数は、印と期限が合う時だけ行を変える。
 
 | 関数 | 役目 |
 |---|---|
-| `claim_order_emails(_limit, _lease_seconds)` | 一時停止を見て、送る行を担当の印付きで取り出す（`FOR UPDATE SKIP LOCKED`・同じ注文は順番どおり） |
+| `claim_order_email(_lease_seconds)` | 一時停止を見て、送る行を担当の印付きで取り出す（`FOR UPDATE SKIP LOCKED`・同じ注文は順番どおり） |
 | `save_order_email_content(_email_id, _lease_token, _subject, _body_text)` | 最初に送る前に、作った件名と本文を控える（控えが無い時だけ） |
 | `complete_order_email(_email_id, _lease_token, _provider_message_id)` | 送信済みにし、Resend のメールの番号を書く |
 | `fail_order_email(...)` | 失敗の原因と待つ時間を受け、やり直し待ち・退避にする |
 | `skip_order_email(_email_id, _lease_token, _reason)` | 取りやめにする |
-| `pause_order_email_sending(...)`・`resume_order_email_sending()` | 一時停止と再開 |
+| `pause_order_email_sending(_reason)`・`get_order_email_send_state()` | 一時停止と状態の照会。試した1件が `complete_order_email` で送信済みになると再開 |
 | `request_order_email_resend(_order_id, _kind, _actor_id)` | 再送の行を作る（再送できる種類か・手の行が送信待ちでないかを確かめる） |
 | `list_order_email_history(_order_id)` | 管理画面の履歴（本文は返さない） |
-| `get_order_email_content(_email_id)` | 管理画面の中身（送信済みで本文が残っている時だけ） |
-| `record_order_email_delivery(_svix_id, _provider_message_id, _status, _event_at)` | 受け口と見回りから。受け口は受付済みの番号を書き（見回りは番号なしで呼ぶ）、配達の状態を新しい時だけ直す |
+| `list_order_status_history(_order_id)` | 状態の変化の履歴（返金の変化を含む） |
+| `get_order_email_content(_order_id, _email_id)` | 管理画面の中身（送信済みで本文が残っている時だけ） |
+| `record_order_email_delivery(_svix_id, _provider_message_id, _delivery_status, _event_at)` | 受け口と見回りから。受け口は受付済みの番号を書き（見回りは番号なしで呼ぶ）、配達の状態を新しい時だけ直す |
 | `list_order_emails_awaiting_delivery(_limit)` | 見回り用。送ってから3日以内で配達の状態が決まっていないメールの Resend の番号を返す |
-| `purge_order_email_data()` | 毎日の片付け（7-5） |
-| `order_email_ops_snapshot()` | 点検（4-8）用の件数（送れなかった・届かなかったの新しい分・溜まり） |
+| `private.purge_order_email_data()` | 毎日の片付け（7-5）。private のまま pg_cron だけから呼ぶ |
+| `get_order_email_backlog(_older_than_seconds)` | 点検用の溜まり |
+| `list_unnotified_dead_order_emails(_limit)`・`mark_order_emails_dead_notified(_email_ids)` | 送れなかった新しい分の照会と、店へ知らせた印 |
+| `list_unnotified_order_email_delivery_problems(_limit)`・`mark_order_email_delivery_problems_notified(_email_ids)` | 届かなかった新しい分の照会と、店へ知らせた印 |
 
 ### 7-3 状態を変える DB の処理の変更
 
@@ -441,14 +453,14 @@ worker の終わりに、グループ B の点検（`runOpsChecks`）に次を�
 
 ### 7-4 消す物
 
-- 送信権の表 `private.order_emails` と、関数 `claim_order_email`・`release_order_email`。アプリのメールの送り方を全部「表に書く → worker が送る」に替えた後の移行で消す。
-- 本番のアプリは公開前で、今ある注文は試験の物なので、古い送信の記録は新しい表に移さない。
+- 送信権の表 `private.order_emails` と、古い関数 `claim_order_email(_order_id, _kind)`・`release_order_email(_order_id, _kind)`。アプリのメールの送り方を全部「表に書く → worker が送る」に替えた後の移行で消す。新しい `claim_order_email(_lease_seconds)` は残す。
+- 本番の古い送信権は8行で、移行前の未入金の注文2件の「送らない」印だった（2026-10-09 に本番を読んで確かめた）。消すと、この2件に後から期限切れのメールが届きうるので、取りやめ（`legacy_suppressed`）の自動の行として新しい表へ移してから消す（実装計画の決め事 P9）。
 
 ### 7-5 保存期間（毎日の定期処理）
 
 | 物 | 期間 |
 |---|---|
-| 送信済みのメールの本文 | 送ってから45日で消す（種類・時刻・状態は残す） |
+| 送信済みのメールの本文 | 送ってから45日を過ぎた分を毎日の片付けで消す（種類・時刻・状態は残す） |
 | 取りやめ・送れなかったメールの本文 | 片付いた時にすぐ消す |
 | Resend の知らせの受付済みの番号 | 3日で消す（Svix の送り直しは約28時間） |
 | メールの記録そのもの（本文以外） | 注文と同じだけ残す |
@@ -550,3 +562,11 @@ Shopify も「試しの知らせでは本当の流れの確かめにならない
 | 設計書を書く時 | 注文にならなかった支払いの案内を範囲の外と明記する（1-4） | 書く時にコードを読み直して見つけた。注文が無く、店の連絡で補える |
 | 設計書を書く時 | 取りやめの状態の名前を `skipped` にする | 取消のメールの種類 `canceled` と取り違えないため |
 | 設計書を書く時 | 送る前に中身を控える関数を足す（7-2） | 「送れた後に記録の前に落ちた」時に、やり直しを同じ中身にして2通目を防ぐため（設計2・5 の約束を関数にした） |
+| 実装計画を書く時 | 古い送信権の8行を取りやめとして移す（7-4） | 本番を読んで、移行前の未入金の注文2件の「送らない」印だと分かった。グループ A 設計書 7-1 の決め事を守る |
+| 実装の時（2026-10-09） | 返金で状態が変わった行も履歴に含め、全額返金と返金の取り消しを表示する（5-1） | 返金の同期は `refund_update` なので、`status_update` だけでは状態の履歴が欠ける |
+| 実装の時（2026-10-09） | `superseded` の取りやめを DB でも入金待ち・支払い期限切れに限る（4-1） | 注文確認・取消・発送はその時の事実を伝えるため、誤った取りやめを DB で断る |
+| 実装の時（2026-10-09） | 送信・点検・配達の見回りに環境の門を置き、`local` を手元の Supabase に限る（4-4・4-7・4-8・6-4） | 開発や preview が本番の行・一時停止・心拍・知らせ済みの印を書き換えないため。Resend の受け口は署名で守り、門を置かない |
+| 実装の時（2026-10-09） | 1回の送信の待機を8秒で打ち切り、`network_error` で同じキーを使ってやり直す（4-4） | 返事のない送信で worker と後の点検を止めないため |
+| 実装の時（2026-10-09） | 配達の見回りは点検の後に置き、時間枠8秒・読み取り間隔500ミリ秒・1件5秒、心拍を Resend の読み取り前に書く。`opened`・`clicked` も配達済みとする（6-4） | 毎分の起動の時間と Resend の回数の制限を守り、途中で止まっても毎分やり直さず、開封後のメールを読み直し続けないため |
+| 実装の時（2026-10-09） | 店への知らせの点検を毎分の worker と期限切れの見回りの両方から動かす（4-8） | worker が止まった場合も見回りから停止を検出するため |
+| 実装の時（2026-10-09） | 列・関数を現行の名前と引数に揃える（7-1・7-2） | 1行ずつの取得、取消の書き分け、注文とメールの組の照会、個別の点検関数として実装したため |

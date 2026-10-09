@@ -76,6 +76,12 @@ Stripe Webhookは `${APP_BASE_URL}/api/webhook/stripe` に設定し、署名シ�
 ${CRON_SECRET}` を付与します。Stripeだけに存在する未返金の成功決済は報告対象になり、照合では注文を作りません
 （注文の無い支払いのうち、直近24時間に作られた Checkout Session のものだけを、毎時の見回りが拾います。それより古いものは見回りでは拾いません。照合は、直近7日の注文の無い成功の支払い（全額返金済みを除く）と、支払い・入金ごとの失敗を、見つかった夜だけ、1回の実行につき1通のメール（宛先は `SHOP_ALERT_EMAIL`）で店へ知らせます。7日より古い支払いは、照合の結果の `unmatchedPayments` の件数にだけ入ります）。既存注文との返金額差分だけをStripeの成功済み返金から修復します。
 
+## RESEND_DELIVERY_WEBHOOK_SECRET
+
+Resend の配達の状態の知らせ（`POST /api/webhook/resend-delivery`）の Svix 署名の鍵です（`whsec_` で始まる）。お問い合わせの返信の `RESEND_WEBHOOK_SECRET` とは別の宛先・別の鍵にします。Vercel の環境変数にだけ置きます。入れ替えは[注文のメールの手順書](order-email-operations.md)の4に従います。
+
+本番の注文のメールは `MAIL_PROVIDER` で Resend を選んだ時だけ送ります（ほかの送り手では送信を止めます）。`RESEND_API_KEY` は Full access にします（送信専用の鍵だと、1時間ごとの配達の見回りが動きません）。
+
 ## CRON_SECRET
 
 定期処理の入口（worker・見回り・照合・Meta の同期）の合言葉です。32文字以上のランダムな値にします。短いと全部の入口が設定の誤りとして断ります。Vercel の環境変数と、本番 DB の Vault（`cron_secret`）にだけ置きます。入れ替えは[手順書](webhook-queue-operations.md)の2に従います。

@@ -39,6 +39,9 @@
 | `/api/admin/news/[id]` | `DELETE`, `GET`, `PATCH`, `PUT` | [route.ts](../../../src/app/api/admin/news/%5Bid%5D/route.ts) |
 | `/api/admin/news` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/news/route.ts) |
 | `/api/admin/order-attention` | `GET` | [route.ts](../../../src/app/api/admin/order-attention/route.ts) |
+| `/api/admin/orders/[id]/emails/[emailId]` | `GET` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/emails/%5BemailId%5D/route.ts) |
+| `/api/admin/orders/[id]/emails/resend` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/emails/resend/route.ts) |
+| `/api/admin/orders/[id]/history` | `GET` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/history/route.ts) |
 | `/api/admin/orders/[id]/refund` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/refund/route.ts) |
 | `/api/admin/orders/[id]/review` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/review/route.ts) |
 | `/api/admin/orders/[id]/status` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/status/route.ts) |
@@ -97,9 +100,15 @@
 | `/api/profile` | `DELETE`, `GET`, `POST` | [route.ts](../../../src/app/api/profile/route.ts) |
 | `/api/search` | `GET` | [route.ts](../../../src/app/api/search/route.ts) |
 | `/api/suggest` | `GET` | [route.ts](../../../src/app/api/suggest/route.ts) |
+| `/api/webhook/resend-delivery` | `POST` | [route.ts](../../../src/app/api/webhook/resend-delivery/route.ts) |
 | `/api/webhook/stripe` | `POST` | [route.ts](../../../src/app/api/webhook/stripe/route.ts) |
 | `/api/wishlist/[id]` | `DELETE` | [route.ts](../../../src/app/api/wishlist/%5Bid%5D/route.ts) |
 | `/api/wishlist` | `GET`, `POST` | [route.ts](../../../src/app/api/wishlist/route.ts) |
+
+## 注文のメールと発送
+
+履歴・中身は `admin.orders.read`、再送は `admin.orders.manage`・CSRF・送信元と管理者ごと10分に30回。配達の受け口は公開で Svix 署名を確かめる。発送は `POST /api/admin/orders/[id]/status` の本文 `notifyCustomer`（真偽、既定 true）で知らせるかを選ぶ。詳しい入力と応答は [APIの主要契約](api-spec.md)の「管理:注文・要対応」「Webhook・Cron」に記す。
+
 ## 更新と検証
 
 ルートを追加・削除した場合はこの一覧を再生成し、API の主要契約と関連テストを更新する。動的セグメント（`[id]` 等）は Next.js のファイル名のまま表記した。ここに列挙したことは、実行時にその API が成功することを意味しない。

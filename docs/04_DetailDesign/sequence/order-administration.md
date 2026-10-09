@@ -23,7 +23,7 @@
 | 在庫解放と取消記録 | [注文IDによる在庫解放RPC](../../../supabase/migrations/20260927100200_release_stock_by_order.sql)、[台帳反映トリガー](../../../supabase/migrations/20260919065355_add_stock_movements.sql) |
 | 出荷・失敗注文の取消・例外解決 | [最新の管理RPC](../../../supabase/migrations/20260927100500_payment_exceptions.sql)、[必須配送先判定](../../../supabase/migrations/20260925000218_add_order_state_transition_rpcs.sql) |
 | `refunds.list`、成功返金集計、CASと再確認 | [返金同期](../../../src/lib/stripe/order-refund-sync.ts)、[返金投影RPC](../../../supabase/migrations/20260925000218_add_order_state_transition_rpcs.sql) |
-| 取消・出荷のメール | [取消メール](../../../src/lib/orders/order-lifecycle-emails.ts)、[送信権](../../../src/lib/orders/order-confirmation-email.ts)、[送信権テーブルとRPC](../../../supabase/migrations/20260920064241_add_order_email_claims.sql)、[出荷メール](../../../src/lib/orders/order-shipped-email.ts)、[メールアダプター](../../../src/lib/mail.ts) |
+| 取消・出荷のメール | [送る予定の表](../../../supabase/migrations/20261009120000_order_email_outbox.sql)、[状態を変える関数](../../../supabase/migrations/20261009120100_order_email_enqueue.sql)、[worker](../../../src/lib/orders/email/order-email-worker.ts)、[中身](../../../src/lib/orders/email/order-email-compose.ts) |
 
 status/resolve APIは管理認可の後、ID・本文の検証より先に`requireCsrfOrDeny`を呼び、戻り値がResponseならそのまま返して後続へ進まない。helperはrefresh Cookieがなければ検査不要として通し、Cookieがある場合のCSRFヘッダー欠落・hash不一致は403、例外は500。[CSRF helper](../../../src/lib/csrfMiddleware.ts)を参照。これはAPI独自のチェックであり、共通proxyのOrigin検査と別に行われる。
 
@@ -49,7 +49,7 @@ sequenceDiagram
     participant Stripe as Stripe API
     participant Reconcile as 決済照合
     participant DB as DB / RPC
-    participant Mail as メール送信
+    participant Mail as 注文のメールworker
     Admin->>API: POST /api/admin/orders/[id]/status (cancelled)
     API->>API: admin.orders.manage → CSRF helper → 入力検証
     API->>DB: 対象注文の状態・Stripe参照を取得
@@ -69,18 +69,13 @@ sequenceDiagram
         API->>Reconcile: reconcileCheckoutPayment(adminCancel)
         Reconcile->>Stripe: Session / PaymentIntentの現在値を再取得
         Stripe-->>Reconcile: 現在の決済情報
-        Reconcile->>DB: 判定に応じた条件付きRPC
+        Reconcile->>DB: 判定に応じた条件付きRPC（在庫を戻して知らせる時は取消のメールの行を同じ取引で書く）
         DB-->>Reconcile: 更新結果
-        opt cancelledへ更新しnotifyCustomer=true
-            Reconcile->>DB: claim_order_email(canceled)
-            DB-->>Reconcile: true / false / error
-            Reconcile->>Mail: trueまたはclaim失敗なら取消メールを試みる
-            Mail-->>Reconcile: 送信結果
-        end
         Reconcile-->>API: orderStatus / needs_action / needs_review
         alt 注文がcancelled
             API->>DB: 取消成功の監査
             API-->>Admin: 200 success=true
+            API-->>Mail: after() で worker を動かす
         else 入金済み・払込票発行・要対応・状態競合
             API->>DB: 拒否・競合の監査
             API-->>Admin: 409 / 結果別メッセージ
@@ -111,16 +106,17 @@ sequenceDiagram
     participant Admin as 管理者
     participant API as 注文status API
     participant DB as DB / RPC
-    participant Mail as メール送信
+    participant Mail as 注文のメールworker
     Admin->>API: POST /api/admin/orders/[id]/status (shipped)
     API->>API: 管理認可 → CSRF helper → 配送業者・追跡番号を検証
-    API->>DB: admin_ship_paid_order(order, actor, carrier, tracking)
+    API->>DB: admin_ship_paid_order(order, actor, carrier, tracking, notify)
     alt 条件が成立
         DB-->>API: 出荷更新行と宛先
         API->>DB: 出荷成功の監査
-        API->>Mail: sendOrderShippedEmail
-        Mail-->>API: 送信完了 または 送信失敗を記録
+        Note over DB: notify なら発送のメールの行を書く
         API-->>Admin: 200 status=shipped
+        API-->>API: after() で worker を動かす
+        API-->>Mail: 発送のメールを送る（同じ重複防止キーでやり直す）
     else 更新0件
         DB-->>API: 対象行なし
         API->>DB: not_shippableの監査
@@ -131,7 +127,7 @@ sequenceDiagram
     end
 ```
 
-RPCはpaid、shipped_atがNULL、氏名・メール・郵便番号・都道府県・市区町村・住所・電話の非空、未解決paid_amount_mismatchなしを条件にする。出荷日時・carrier・trackingを保存する。review_reasonの未確認自体は拒否条件に含まれない。出荷メールには注文メールのclaim RPCを使わず、自動再送もない。通常の送信失敗は監査し、出荷状態を戻さない。根拠は[管理RPC](../../../supabase/migrations/20260927100500_payment_exceptions.sql)と[出荷メール](../../../src/lib/orders/order-shipped-email.ts)。
+RPCはpaid、shipped_atがNULL、氏名・メール・郵便番号・都道府県・市区町村・住所・電話の非空、未解決paid_amount_mismatchなしを条件にする。出荷日時・carrier・trackingを保存する。review_reasonの未確認自体は拒否条件に含まれない。`notifyCustomer` は真偽・既定 true。知らせる時は同じ取引で発送のメールの行を書き、返事の後に worker が送る。失敗はやり直し、送れなければ店へ知らせる。根拠は[管理RPC](../../../supabase/migrations/20261009120100_order_email_enqueue.sql)と[worker](../../../src/lib/orders/email/order-email-worker.ts)。
 
 ## SQ-ADMIN-03: 管理返金と成功返金の投影
 
@@ -225,7 +221,7 @@ sequenceDiagram
     participant API as 要対応resolve API
     participant Stripe as Stripe API
     participant DB as DB / RPC
-    participant Mail as メール送信
+    participant Mail as 注文のメールworker
     Admin->>API: POST /api/admin/payment-exceptions/[id]/resolve (cancelOrder=true)
     API->>API: 管理認可・CSRF・理由とメモを検証
     API->>DB: 解決状態と関連注文を取得
@@ -246,18 +242,13 @@ sequenceDiagram
     else 外部ガードを通過または参照IDなし
         API->>DB: resolve_payment_exception(cancel_order=true)
         DB->>DB: 例外をロック・未入金注文を確認
-        DB->>DB: release_stock_for_unpaid_order / 期待状態付き取消
+        DB->>DB: release_stock_for_unpaid_order / 期待状態付き取消（知らせる時は取消のメールの行を同じ取引で書く）
         alt 取消更新が成功
             DB->>DB: 予約分のcancel台帳と例外解決を同一処理で保存
             DB-->>API: resolved=true, cancelled_from
-            opt notifyCustomer=true
-                API->>DB: claim_order_email(canceled)
-                DB-->>API: true / false / error
-                API->>Mail: trueまたはclaim失敗なら取消メールを試みる
-                Mail-->>API: 送信結果
-            end
             API->>DB: 取消付き解決の監査
             API-->>Admin: 200 orderCancelled=true
+            API-->>Mail: after() で worker を動かす
         else 既解決・取消競合・取消不可
             DB-->>API: false または ORDER_NOT_CANCELLABLE
             API-->>Admin: 409
@@ -282,13 +273,13 @@ APIが外部確認に失敗すればRPCへ進まない。DB側では例外行を
 
 | 項目 | 現行処理 |
 | --- | --- |
-| 取消メール | `private.order_emails`の注文ID・種類の一意性でclaim。メール設定なし・宛先なし・claim RPCがfalseなら送らない。claim RPCのerror/例外は監査後にtrueとして送信を続けるため、重複を排除できない場合がある。通常の送信失敗は監査してclaimをreleaseしfalse。release失敗も監査し、DB取消を戻さない |
-| 出荷メール | 出荷保存後に送信を試みる。通常の送信失敗は監査し、状態を戻さず、自動再送しない |
+| 取消・発送のメール | 取消・発送のメールは、状態を変える関数が同じ取引で送る予定の行を書き、worker が送る。失敗はやり直し、送れなければ店へ知らせる（FREQ-434・435） |
+| 発送の選択 | `notifyCustomer`（真偽、既定 true）が false なら発送のメールの行を書かない（FREQ-438） |
 | 履歴 | RPCがactor・理由を設定し、order_revisionsに変更前後・変更列等を記録する。返金ではrefund_update、状態変更ではstatus_update等として記録 |
 | 要確認 | [review API](../../../src/app/api/admin/orders/%5Bid%5D/review/route.ts)は管理認可・CSRF後にmark_order_reviewed。review_reasonあり・reviewed_atなしを条件にreviewed_at/byを保存し、reasonを消さない。要対応resolveとは別操作 |
 | API応答と外部副作用 | 先行RPCやStripeの成功後に後続処理が失敗する場合がある。応答コードだけから取消・返金・メールの全結果を判断しない |
 
-根拠: [注文メール](../../../src/lib/orders/order-lifecycle-emails.ts)、[送信権](../../../src/lib/orders/order-confirmation-email.ts)、[出荷メール](../../../src/lib/orders/order-shipped-email.ts)、[履歴トリガー](../../../supabase/migrations/20260925000218_add_order_state_transition_rpcs.sql)、[要確認RPC](../../../supabase/migrations/20260927100500_payment_exceptions.sql)。
+根拠: [worker](../../../src/lib/orders/email/order-email-worker.ts)、[中身](../../../src/lib/orders/email/order-email-compose.ts)、[履歴トリガー](../../../supabase/migrations/20260925000218_add_order_state_transition_rpcs.sql)、[状態の履歴](../../../supabase/migrations/20261009120000_order_email_outbox.sql#L606)、[要確認RPC](../../../supabase/migrations/20260927100500_payment_exceptions.sql)。
 
 ## 関連テスト
 
@@ -297,7 +288,7 @@ APIが外部確認に失敗すればRPCへ進まない。DB側では例外行を
 | 出荷・通常取消・競合 | [status API](../../../tests/unit/api/admin/order-status-shipped.test.ts)、[在庫解放RPC](../../../tests/integration/db/release_stock_by_order.integration.test.ts) |
 | 管理返金・成功返金のみの投影 | [refund API](../../../tests/unit/api/admin/order-refund-route.test.ts)、[返金同期](../../../tests/unit/lib/stripe/order-refund-sync.test.ts) |
 | 解決・取消前のStripe確認・要確認 | [要対応API](../../../tests/unit/api/admin/order-attention-route.test.ts)、[例外RPC](../../../tests/integration/db/payment_exceptions.integration.test.ts) |
-| メール・送信権 | [取消等のメール](../../../tests/unit/lib/orders/order-lifecycle-emails.test.ts)、[出荷メール](../../../tests/unit/lib/orders/order-shipped-email.test.ts)、[送信権RPC](../../../tests/integration/db/order_email_claims.integration.test.ts) |
+| 注文のメール | [中身](../../../tests/unit/lib/orders/email/order-email-compose.test.ts)、[worker](../../../tests/unit/lib/orders/email/order-email-worker.test.ts)、[送る予定の表](../../../tests/integration/db/order_email_outbox.integration.test.ts)、[行を書く関数](../../../tests/integration/db/order_email_enqueue.integration.test.ts) |
 
 関連テストは今回実行していない。DBや外部決済を操作した成功証跡ではない。
 

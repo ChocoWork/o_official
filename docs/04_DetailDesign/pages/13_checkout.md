@@ -674,34 +674,22 @@ Stripe 公式（無料の注文）に「無料注文のフルフィルメント�
 
 いまは受付 RPC `place_order_from_checkout_draft` が商品を `LEFT JOIN` で引き、行が無い商品も非公開と同じ `item_unavailable` で断る（注文を作らない）。支払いの後なら照合関数が要対応（`order_not_creatable`、詳細 `item_unavailable`）として記録して店へ知らせ、お客様には受付を通らない支払いの案内を1回送る。完了 API は 409 を返す。検証は `tests/integration/db/place_order_from_checkout_draft.integration.test.ts` の「非公開の商品と存在しない商品は item_unavailable」。
 
-### 注文メールは1注文・1種類につき1通（FREQ-386）
+### 注文メールは1注文・1種類につき1通（FREQ-386・FREQ-434）
 
-入金待ち・入金済みのメールは、「画面からの complete」「webhook」「毎時の見回り」の3経路から送りうる。3経路とも同じ照合関数を通り、同じ注文を受け取る。送信済みの記録が無いと、次のことが起きる（下の表は FREQ-386 を直す前の動きで、当時の経路は complete・webhook・掃除ジョブ。掃除ジョブは今の見回りにあたる）。
+2026-10-09 から、注文のメールは送る予定の表（transactional outbox）で送る（[グループ D 設計書](../../superpowers/specs/2026-10-09-order-email-outbox-design.md)）。
 
-| 場面                                     | 直す前                                                                                  |
-| ---------------------------------------- | --------------------------------------------------------------------------------------- |
-| カードで webhook が先に注文を作る        | webhook は入金待ちのときしか送らず、complete は既存注文として何も送らずに返す。**0通**  |
-| コンビニ・銀行振込で complete が先に作る | complete が送り、そのあと webhook が同じ入金待ちの注文を受け取ってもう一度送る。**2通** |
-| 掃除ジョブが pending を paid に上げる    | 更新できた行数を見ずに送るため、webhook と重なると**2通**                               |
-
-Stripe は「同じイベントを複数回受信する可能性」と「配信順は保証しない」を明記しているので、受け取り側で重複を排除する。これは OWASP ASVS V11.1.6（TOCTOU・競合）の対象でもある。
-
-- 送る直前に `public.claim_order_email(order_id, kind)` で送信権を取り、取れた経路だけが送る。送信に失敗したら `public.release_order_email` で戻し、送信権を取り直せるようにする（今の照合関数は、送れなかったことを見ても送り直さない。確実に届ける仕組みはレビュー台帳のグループ D で扱う）
-- `kind` は `awaiting_payment`・`paid`・`payment_expired`・`canceled` の4つ（`private.order_emails` の CHECK と `OrderEmailKind`）。コンビニは入金待ちの「お支払い待ち」（`awaiting_payment`）と、入金の確認の `paid` で2通届くのが正しい。払込票の期限切れで失敗にしたときは `payment_expired`（「お支払い期限切れのお知らせ」）、管理画面で取り消したときは `canceled`（「ご注文取消のお知らせ」。画面でお知らせを外せば送らない）を、それぞれ1通だけ送る
-- 記録は `private.order_emails`（Data API から触れないスキーマ。Supabase のドキュメントが示す置き方）。関数は SECURITY DEFINER・`search_path = ''` で、実行できるのは service_role だけ
-- 権利の確認そのものが失敗したときは、届かないより重複を選んで送り、監査ログ（`order.confirmation.mail` / `mail_claim_failed`）に残す
-- 入金待ち・入金済みのメールは、入金済みにする RPC（`mark_order_paid`）か入金待ちにする RPC（`mark_order_awaiting_payment`）が状態を変えたときだけ、照合関数が送る。更新が0件（先に別の経路が動かした）なら、メールは送らずに Stripe と注文を読み直す。支払額が注文と合わないときは入金済みにして要対応にし、注文確認のメールは送らない（店が確かめてから連絡する）
-- 注文 ID から注文行と明細を引いて本文を組み立てる処理は `sendOrderConfirmationEmailForOrderId`（`src/lib/orders/order-confirmation-email.ts`）に1つだけ置く。以前は webhook の2か所と掃除ジョブの計3か所が同じ列の並びと同じ組み立てを別々に持っていて、片方だけ直すと経路によって客に届く内容が食い違う状態だった
-- 明細が引けないとき、および0件のときは送らない（空の注文内容を客に見せない）。呼び出し側は送れなくても注文の成否を変えず、現在の照合関数は後の経路で自動再送しない（R-34、グループ D）
-- 検証は `tests/unit/lib/orders/order-confirmation-email.test.ts`、`tests/integration/db/order_email_claims.integration.test.ts`、各経路の単体テスト
+- 注文の状態を変える DB の関数（入金済み・入金待ち・在庫を戻す・発送）が、同じ取引で `private.order_email_outbox` に1行書く。自動の行は1注文1種類1行なので、画面からの complete・Webhook・毎時の見回りのどれが何回動いても、行は1つ。
+- 決済の完了の窓口は、照合の後に返事を返してから worker を1回動かす（`after()`）。Webhook の知らせは worker が処理した後に続けて送る。どちらも動かなくても、毎分の定期処理が送る。
+- worker は最初に送る前に件名と本文を控え、行の番号から作った重複防止キーで Resend に送る。送れた後に落ちても、やり直しは同じ中身・同じキーで送り、Resend の24時間の有効期間内は2通目にならない。24時間を越える場合は[手順書](../../06_Operations/order-email-operations.md)の3で確かめる。
+- 一時的な失敗は約4時間で9回までやり直す。駄目なら「送れなかった」にして店へ知らせ、管理画面の注文の「履歴」から再送できる。
 
 #### 本文は注文行だけから作る（FREQ-396）
 
 確定（complete）だけは下書きのスナップショットから本文を組み立てていた。値引額は注文行（`orders.discount_amount`）にしか無いため、割引が付いた注文のメールは**小計＋送料と合計が合わない**まま届いていた。注文詳細の画面は `-￥1,000` を出しているので、同じ注文について画面とメールで見え方が違っていた。
 
-- 本文の組み立ては `sendOrderConfirmationEmailForOrderId` に一本化する。呼ぶのは照合関数のメール送信（`createReconcilerMailer`）だけで、注文 ID だけを渡す（`logLabel: '[reconcile]'`）。完了 API・webhook・見回りは、照合関数を通ってここに届く
+- 2026-10-09 から、worker が注文 ID で `loadOrderEmailMaterial` を呼び、`composeOrderEmail` で本文を作る（`src/lib/orders/email/order-email-compose.ts`）。注文行と明細を読む境界は1つにし、完了 API・Webhook・見回りは送る予定の行を書く。
 - 値引がある注文では、送料の次に `割引: -￥1,000` を出す。0 のときは行ごと出さない
-- 低レベルの `sendOrderConfirmationEmail` は直接呼ばない。`discountAmount` を必須の引数にしてあるので、新しい呼び出し側が割引を落とすと型で落ちる
+- 注文のメールは `composeOrderEmail` が `orders.discount_amount` を使って組み立てる。最初の送信前に worker が件名と本文を控え、やり直しでは控えを使う（FREQ-434）。
 
 | 行   | 出典                                               |
 | ---- | -------------------------------------------------- |

@@ -160,8 +160,9 @@ sequenceDiagram
             Note over UI,PO: 時間がたって押し直し、残り10分未満なら閉じずに409 session_expiredで作り直しへ
         else 支払えた（PayPay は Stripe の画面を経て ?session_id=… に戻る）
             UI->>C: POST /api/checkout/complete
-            C->>DB: 照合関数（入金済み・入金待ち、メール、カートを空にする）
+            C->>DB: 照合関数（入金済み・入金待ち、同じ取引でメールの行を書く、カートを空にする）
             C-->>UI: { orderId, status }
+            C-->>C: after() で注文のメールworkerを動かす
         end
     end
     end
@@ -285,7 +286,8 @@ SQ-CHECKOUT-04のapply内でpaidまたはawaitingの更新を選んだ部分シ�
 sequenceDiagram
     participant C as apply / placeAndMark / mark関数
     participant DB as DB / 注文RPC
-    participant Mail as 注文メール
+    participant Caller as complete等の呼び出し元
+    participant Mail as 注文のメールworker
     opt 注文がない
         C->>DB: 配送snapshotの欠落を確認、必要なら監査
         C->>DB: place_order_from_checkout_draft
@@ -299,6 +301,7 @@ sequenceDiagram
         end
     end
     C->>DB: mark_order_paid または mark_order_awaiting_payment
+    Note over DB: 更新成功時に同じ取引で注文のメールの行を書く<br/>paidは金額一致・全額返金でない時だけ
     DB-->>C: updated・paidの場合amountMatches/needsReview
     break updated=false
         Note over C: lost_raceを返す / 金額不一致の記録はしない
@@ -308,12 +311,12 @@ sequenceDiagram
         C->>DB: paid_amount_mismatchを記録・通知を試みる
         Note over C,Mail: 注文確定メールを抑止、needs_actionのdoneを返す
     else paidの金額一致 または awaitingの更新成功
-        opt awaiting または paidで全額返金ではない
-            C->>Mail: 種類別の送信helperを呼ぶ (claim例外時も送信を続行)
-            Mail-->>C: 送信結果
-        end
+        Note over DB: 自動の行は1注文1種類1行
+        Note over Caller,Mail: 照合後、窓口の返事の後のafter()でworkerが送る<br/>WebhookではStripeの処理後のworkerが送り、毎分の定期処理も拾う
         C->>DB: 実際の支払方法を保存
         Note over C: appliedとpaidのneedsReviewを返す<br/>次の読取りのnone分岐で必要な返金を同期
+        C-->>Caller: applied（照合の続きへ）
+        Caller-->>Mail: 照合を終えて返事の後、after() で worker を動かす
     end
 ```
 

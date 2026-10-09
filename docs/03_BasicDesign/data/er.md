@@ -12,18 +12,20 @@
 
 2026-10-08 追記（全体レビュー、FREQ-433）: [移行 C: バリアントの同期](../../../supabase/migrations/20261008220958_item_variant_sync.sql) は `public.items` の `items_sync_variants` トリガーを足す。`AFTER INSERT OR UPDATE OF colors, sizes` で `private.sync_item_variants()` が `public.backfill_item_variants(NEW.id)` を呼び、商品の作成・色やサイズの追加の直後からカートに入れられるようにする。既存商品も一度同期する。テーブル・FK の数は変わらず、本番の適用状況は未確認。
 
+2026-10-09 追記（グループ D、FREQ-434〜438）: [移行 A](../../../supabase/migrations/20261009120000_order_email_outbox.sql) で `private.order_email_outbox`（注文のメール。自動の行は `(order_id, kind)` で1行、手の再送は送信待ちの間1行、`provider_message_id` は重複なし）・`private.order_email_send_pause`（送信の一時停止。1行）・`private.resend_webhook_receipts`（Resend の知らせの受付済みの番号。3日）を足した。[移行 B](../../../supabase/migrations/20261009120100_order_email_enqueue.sql) で `private.order_emails`（古い送信権）を消した（本番の8行を取りやめの行として移す処理を含む）。3つの表は関数だけで読み書きし、RLS を有効にして表の権限を外してある。本番の適用状況は未確認。
+
 図は領域別に分割する。PK・FK と関係を読むための列だけを載せ、全列、CHECK、RLS、トリガー、RPC、Storage オブジェクトの一覧は SQL に委ねる。旧 `migrations/` と `supabase/pending/` は主な集計の基準に含めず、現行コードが依存する旧定義だけを補足する。
 
 | 領域 | 内容 |
 | --- | --- |
 | 認証・権限・利用者データ | セッション、権限中間表、プロフィール、カート、お気に入り |
-| 商品・LOOK・在庫・注文 | 商品バリアント、在庫台帳、注文と改訂、注文メール送信権 |
+| 商品・LOOK・在庫・注文 | 商品バリアント、在庫台帳、注文と改訂、注文のメール（送る予定・送信の一時停止・配達の知らせの受付済み） |
 | 決済・会計・問い合わせ | Stripe 記録、証憑、固定資産、原価配賦、年度締め、問い合わせ |
 | 独立したテーブル | KPI、監査、アーカイブ、コンテンツ、キャッシュ、レート制限 |
 
 ## 1. 凡例と関係の範囲
 
-- エンティティ名は SQL テーブル名の大文字表記。`AUTH_USERS`、`PRIVATE_ORDER_EMAILS`、`SECURITY_*` 以外は `public` スキーマ。
+- エンティティ名は SQL テーブル名の大文字表記。`AUTH_USERS`、`ORDER_EMAIL_OUTBOX`、`ORDER_EMAIL_SEND_PAUSE`、`RESEND_WEBHOOK_RECEIPTS`、`SECURITY_*` 以外は `public` スキーマ。
 - `PK` は主キー、`FK` は SQL の `REFERENCES`、`UK` は列単独の一意性。複合キー・式インデックスは後述の一覧に記載する。`NULL` は nullable、`NOT_NULL` は非 nullable。
 - 親側 `||` は子行から必ず 1 親、`|o` は子行から 0 または 1 親。子側 `o{` は親行から 0 件以上、`o|` は親行から 0 または 1 件。FK は親行に子行の存在を要求しない。
 - 実線は FK 列が子の PK を構成する関係、点線は PK を構成しない関係。**どちらも物理 FK** であり、アプリケーション上の関連を線で推測しない。
@@ -170,7 +172,7 @@ erDiagram
   ITEM_SIZES |o..o{ ITEM_VARIANTS : "size_id"
 ```
 
-### 2.3 注文・改訂・在庫台帳・メール送信権
+### 2.3 注文・改訂・在庫台帳・注文のメール
 
 ```mermaid
 erDiagram
@@ -200,9 +202,32 @@ erDiagram
     uuid order_item_id FK "NULL"
     uuid created_by "NULL"
   }
-  PRIVATE_ORDER_EMAILS {
-    uuid order_id PK,FK "NOT_NULL"
-    text kind PK "NOT_NULL"
+  ORDER_EMAIL_OUTBOX {
+    uuid id PK "NOT_NULL"
+    bigint seq UK "NOT_NULL"
+    uuid order_id FK "NOT_NULL"
+    text kind "NOT_NULL"
+    text variant "NULL"
+    text origin "NOT_NULL"
+    uuid requested_by FK "NULL"
+    text status "NOT_NULL"
+    integer attempts "NOT_NULL"
+    timestamptz next_attempt_at "NOT_NULL"
+    text provider_message_id UK "NULL"
+    text delivery_status "NULL"
+  }
+  ORDER_EMAIL_SEND_PAUSE {
+    boolean id PK "NOT_NULL"
+    boolean paused "NOT_NULL"
+    text reason "NULL"
+    timestamptz next_probe_at "NULL"
+  }
+  RESEND_WEBHOOK_RECEIPTS {
+    text svix_id PK "NOT_NULL"
+    timestamptz received_at "NOT_NULL"
+  }
+  AUTH_USERS {
+    uuid id PK "NOT_NULL"
   }
   ITEMS {
     bigint id PK "NOT_NULL"
@@ -227,7 +252,8 @@ erDiagram
   ORDERS |o..o{ STOCK_MOVEMENTS : "order_id"
   ORDER_ITEMS |o..o{ STOCK_MOVEMENTS : "order_item_id"
   ITEM_VARIANTS |o..o{ ORDER_ITEMS : "variant_id"
-  ORDERS ||--o{ PRIVATE_ORDER_EMAILS : "order_id"
+  ORDERS ||--o{ ORDER_EMAIL_OUTBOX : "メール"
+  AUTH_USERS |o..o{ ORDER_EMAIL_OUTBOX : "requested_by"
 ```
 
 ### 2.4 決済記録・Checkout 下書き
@@ -602,7 +628,9 @@ erDiagram
 | `public.order_items` | `(id)` | なし | 参照元 1 / 参照先 3 | [20260901102912:677](../../../supabase/migrations/20260901102912_remote_schema.sql#L677) |
 | `public.order_revisions` | `(id)` | なし | 参照元 0 / 参照先 2 | [20260901102912:698](../../../supabase/migrations/20260901102912_remote_schema.sql#L698) |
 | `public.stock_movements` | `(id)` | なし | 参照元 0 / 参照先 3 | [20260919065355:6](../../../supabase/migrations/20260919065355_add_stock_movements.sql#L6) |
-| `private.order_emails` | `(order_id, kind)` | なし | 参照元 0 / 参照先 1 | [20260920064241:17](../../../supabase/migrations/20260920064241_add_order_email_claims.sql#L17) |
+| `private.order_email_outbox` | `(id)` | `(seq)`; 自動 `(order_id, kind)`; 手の送信待ち `(order_id, kind)`; `(provider_message_id)` | 参照元 0 / 参照先 2（orders・auth.users） | [移行 A:11](../../../supabase/migrations/20261009120000_order_email_outbox.sql#L11) |
+| `private.order_email_send_pause` | `(id)` | なし（1行） | 参照元 0 / 参照先 0 | [移行 A:91](../../../supabase/migrations/20261009120000_order_email_outbox.sql#L91) |
+| `private.resend_webhook_receipts` | `(svix_id)` | なし | 参照元 0 / 参照先 0 | [移行 A:110](../../../supabase/migrations/20261009120000_order_email_outbox.sql#L110) |
 
 ### 3.4 決済・下書き
 
@@ -700,7 +728,7 @@ erDiagram
 | `public.item_variants.color_id` | `public.item_colors(id)` | `bigint` / 可 | 0..N | `RESTRICT` | [20260919065336:30](../../../supabase/migrations/20260919065336_add_variant_inventory_tables.sql#L30) |
 | `public.item_variants.size_id` | `public.item_sizes(id)` | `bigint` / 可 | 0..N | `RESTRICT` | [20260919065336:31](../../../supabase/migrations/20260919065336_add_variant_inventory_tables.sql#L31) |
 
-### 4.3 注文・改訂・在庫台帳・メール送信権
+### 4.3 注文・改訂・在庫台帳・注文のメール
 
 | 子テーブル.FK 列 | 参照先 | 型 / NULL可 | 親あたりの子 | ON DELETE | 定義元 |
 | --- | --- | --- | --- | --- | --- |
@@ -713,7 +741,8 @@ erDiagram
 | `public.stock_movements.order_id` | `public.orders(id)` | `uuid` / 可 | 0..N | `SET NULL` | [20260919065355:12](../../../supabase/migrations/20260919065355_add_stock_movements.sql#L12) |
 | `public.stock_movements.order_item_id` | `public.order_items(id)` | `uuid` / 可 | 0..N | `SET NULL` | [20260919065355:13](../../../supabase/migrations/20260919065355_add_stock_movements.sql#L13) |
 | `public.order_items.variant_id` | `public.item_variants(id)` | `bigint` / 可 | 0..N | `RESTRICT` | [20260919065442:10](../../../supabase/migrations/20260919065442_add_order_items_variant_columns.sql#L10) |
-| `private.order_emails.order_id` | `public.orders(id)` | `uuid` / 不可 | 0..N | `CASCADE` | [20260920064241:18](../../../supabase/migrations/20260920064241_add_order_email_claims.sql#L18) |
+| `private.order_email_outbox.order_id` | `public.orders(id)` | `uuid` / 不可 | 0..N | `CASCADE` | [移行 A:14](../../../supabase/migrations/20261009120000_order_email_outbox.sql#L14) |
+| `private.order_email_outbox.requested_by` | `auth.users(id)` | `uuid` / 可 | 0..N | `SET NULL` | [移行 A:18](../../../supabase/migrations/20261009120000_order_email_outbox.sql#L18) |
 
 ### 4.4 決済記録・Checkout 下書き
 

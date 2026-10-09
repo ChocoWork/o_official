@@ -78,13 +78,13 @@ sequenceDiagram
 | 初回enqueue | event ID・type・payload、`queued`、attempt_count=0、次の試行時刻を保存 |
 | 同じevent IDの再送 | event type、data、account、livemodeを照合する。一致すれば既存キュー状態を変更せずfalse。配信メタデータ全体の完全一致は要求しない |
 | 同じIDで内容が矛盾 | RPCがID衝突を拒否し、受付APIは500。既存行を上書きしない |
-| 保存または重複確認の200の後 | `after()`で`runWebhookWorker`を1回動かす（約45秒まで。SQ-WEBHOOK-02）。失敗してもログに残すだけで、毎分のCronが拾う |
+| 保存または重複確認の200の後 | `after()`で`runWebhookWorker`を1回動かす（Stripe の知らせに35秒、注文のメールに10秒。合わせて45秒の処理予算、点検と配達の見回りはその後。SQ-WEBHOOK-02）。失敗してもログに残すだけで、毎分のCronが拾う |
 
 根拠は上記のWebhook受付とキューRPC。署名失敗は監査ログに書かず件数だけを数える。処理成功の監査はworker側で行う。
 
 ## SQ-WEBHOOK-02: workerによる処理
 
-目的は、DBに保存されたイベントを順に取得し、対応する業務処理と完了記録を行うこと。開始契機は毎分の`POST /api/cron/process-stripe-webhooks`と、受付APIが保存の後に`after()`で動かす1回で、Cron APIの事前条件は`CRON_SECRET`（32文字以上）と一致するBearer認証。1回の起動は、取り出せるイベントが無くなるか約45秒たつまで続ける。1件の失敗は原因の記号を記録して次へ進む。終了結果は200 `{processed,failed,stoppedBy}`で、502はclaimのDB障害（`stoppedBy=claim_error`）だけである。
+目的は、DBに保存されたイベントを順に取得し、対応する業務処理と完了記録を行うこと。開始契機は毎分の`POST /api/cron/process-stripe-webhooks`と、受付APIが保存の後に`after()`で動かす1回で、Cron APIの事前条件は`CRON_SECRET`（32文字以上）と一致するBearer認証。1回の起動は、取り出せるイベントが無くなるかStripe の知らせの35秒の予算に達するまで続ける。1件の失敗は原因の記号を記録して次へ進む。終了結果は200 `{processed,failed,stoppedBy}`で、502はclaimのDB障害（`stoppedBy=claim_error`）だけである。
 
 ```mermaid
 sequenceDiagram
@@ -95,7 +95,7 @@ sequenceDiagram
     participant Stripe as Stripe API
     Cron->>Worker: POST /api/cron/process-stripe-webhooks
     Worker->>Worker: Bearer認証（CRON_SECRETは32文字以上）
-    loop 取り出せる間（約45秒の予算まで。時間切れはstoppedBy=budget）
+    loop 取り出せる間（Stripe の知らせの35秒の予算まで。時間切れはstoppedBy=budget）
         Worker->>DB: claim_stripe_webhook_event()
         DB-->>Worker: 対象なし / payloadとclaim token / error
         alt claim RPCが失敗
@@ -186,7 +186,11 @@ sequenceDiagram
             end
         end
     end
-    Worker->>DB: record_ops_heartbeat(webhook_worker)と点検（溜まり・退避・遅れを店へ）
+    Worker->>DB: record_ops_heartbeat(webhook_worker)
+    Worker->>Worker: 注文のメールworker（10秒の処理予算）
+    Note over Worker: Stripe の知らせ35秒＋注文のメール10秒＝45秒の処理予算
+    Worker->>DB: 店への知らせの点検（注文のメールの点検も行う）
+    Worker->>Worker: 配達の見回り（1時間に1回、最後。時間枠8秒）
     alt stoppedByがclaim_error
         Worker-->>Cron: 502
     else stoppedByがemptyまたはbudget
@@ -194,7 +198,7 @@ sequenceDiagram
     end
 ```
 
-図の業務処理はイベント種別で選ぶ部分シナリオである。照合器は必要ならメール送信も試みる。個々のRPCと最大3回の読み直しは[注文状態](../states/order-payment.md)と[返金シーケンス](order-administration.md#sq-admin-03-管理返金と成功返金の投影)に記す。workerは、取り出せるイベントが無くなるか約45秒たつまで、同じ要求の中で続けて取得する。1件の失敗は記録して次へ進み、`claim_error`だけが繰り返しを止めて502になる。
+図の業務処理はイベント種別で選ぶ部分シナリオである。照合器が呼ぶ状態変更 RPC は同じ取引で注文のメールの行を書く。Stripe の知らせに35秒、注文のメールに10秒（合わせて45秒の処理予算）を使い、点検の後に配達の見回りを行う。個々のRPCと最大3回の読み直しは[注文状態](../states/order-payment.md)と[返金シーケンス](order-administration.md#sq-admin-03-管理返金と成功返金の投影)に記す。workerは、取り出せるイベントが無くなるかStripe の知らせの35秒の予算に達するまで、同じ要求の中で続けて取得する。1件の失敗は記録して次へ進み、`claim_error`だけが繰り返しを止めて502になる。
 
 ### イベントと実行処理
 
@@ -221,6 +225,7 @@ sequenceDiagram
 | needs_action / needs_review | 照合器が記録と必要な通知の試行を行い正常に返れば処理成功としcompleted。入金成功やメール送信成功の意味ではない |
 | complete/failのtokenが一致しない | RPCはfalse。イベントサービスがclaim喪失の例外を投げる。前workerは新tokenの行を完了・失敗にできない |
 | 再試行 | queued/failedは試行時刻到来でclaimできる。失敗した試行の回数をnとして、待機は2^(n-1)分（1・2・4…128分）。9回目の試行も失敗したら`dead`にして取り出さず、店へまとめて知らせる。processingは5分lease切れになると、次のclaimで1回の失敗（`lease_expired`）として数える |
+| 注文のメール | Stripe の知らせを35秒の予算で処理した後、続けて10秒の予算で注文のメールを送り、注文のメールの点検の後に1時間ごとの配達の状態を見回る（グループ D）。送信・点検・配達の見回りは環境の門に従う |
 | 監査要求 | workerは空ヘッダーのNextRequestを作る。CronのIP・User-AgentをStripe配信元のものとして記録しない |
 
 注文なし返金の捕捉はWebhook processorにある。共通の返金同期関数自身が正常終了へ変える処理ではない。また、成功監査はpayment_exceptionsのresolved_atを更新せず、既存の要対応を自動解決しない。根拠は[handleRefundChanged](../../../src/lib/stripe/webhook-processor.ts)と[返金同期の注文検索](../../../src/lib/stripe/order-refund-sync.ts)。
@@ -234,7 +239,7 @@ sequenceDiagram
 | `POST /api/cron/expire-pending-orders` | Bearer認証後、checkout_session_created_atが30分超前のpayment_in_progressとpending全件を候補に取得。1回最大50件、各注文の開始前に45秒の時間予算を確認する（実行時間の厳密な上限ではない）。時間ごとに取得offsetを巡回。payment_in_progressでSession IDがある場合だけopen Sessionの失効を先に試み、各候補で同じ照合器を呼ぶ。1件失敗でも他を続行 | [見回りAPI](../../../src/app/api/cron/expire-pending-orders/route.ts)、[Session失効](../../../src/lib/stripe/checkout-session-expiry.ts) |
 | 店向け要対応メールの再送 | 注文処理の中断フラグtimeBudgetExhaustedがfalseなら、未解決・未通知を最大20件取得し、送信権をclaimして再送を試みる。最後の注文処理後に経過時間を再検査する条件ではない | [見回りAPI](../../../src/app/api/cron/expire-pending-orders/route.ts)、[未送信取得](../../../src/lib/stripe/checkout-payment-reconciler-deps.ts) |
 | 注文の無い支払いの拾い上げ | 上の注文処理と店向け再送の後、`timeBudgetExhausted`がfalseのときだけ、同じ45秒の予算の残りで動く（新しい照合の開始前に締切を確認する）。直近24時間に作られた完了済みCheckout Sessionのうち注文の無いもの（50件ずつ注文の有無を確かめる）を照合器へ渡し、照合器がその呼出しで注文を作ったときだけ、要確認「支払いから作った注文」（`recovered_from_payment`。在庫の要確認が先に付いていればそれを残す）を付ける。印は3回まで試し、付けられない注文は印なしのまま店向けメールに載せる。拾った注文は、その回の1通にまとめて店へ知らせる。読む範囲が毎回24時間で重なるので、予算切れや注文を作る前の失敗は次の回で拾い直す。注文の行を作った後の失敗は、その Session に注文があるので次の回は拾い直さない。1件失敗でも他を続行し、`failed`に数える | [見回りAPI](../../../src/app/api/cron/expire-pending-orders/route.ts)、[拾い上げ](../../../src/lib/stripe/orphan-payment-recovery.ts)、[店向けメール](../../../src/lib/ops/ops-alert-mail.ts) |
-| 最後の成功の記録と点検 | 注文の無い支払いの拾い上げの直後（拾った注文の要約の読み込み・店へのメール・監査の行より前）に`order_sweep`の最後の成功を`ops_job_heartbeats`へ記録し、最後（応答の直前）にworkerと同じ点検（溜まり・退避・遅れを店へ）を行う。後続が遅くなって実行の上限（60秒）に届いても、成功の記録は残る。注文候補を読めず500を返すときは、失敗と原因の記号`db_unavailable`を記録してから点検して返す。記録や点検の失敗は応答を変えない。応答には`checkedSessions`・`recoveredOrders`・`recoveredOrdersNotified`を含める | [見回りAPI](../../../src/app/api/cron/expire-pending-orders/route.ts)、[点検](../../../src/lib/ops/ops-checks.ts)、[記録](../../../src/lib/ops/ops-store.ts) |
+| 最後の成功の記録と点検 | 注文の無い支払いの拾い上げの直後（拾った注文の要約の読み込み・店へのメール・監査の行より前）に`order_sweep`の最後の成功を`ops_job_heartbeats`へ記録し、最後（応答の直前）にworkerと同じ点検（溜まり・退避・遅れを店へ）と注文のメールの点検（`runOrderEmailOpsChecks`）を行う。後続が遅くなって実行の上限（60秒）に届いても、成功の記録は残る。注文候補を読めず500を返すときは、失敗と原因の記号`db_unavailable`を記録してから点検して返す。記録や点検の失敗は応答を変えない。応答には`checkedSessions`・`recoveredOrders`・`recoveredOrdersNotified`を含める | [見回りAPI](../../../src/app/api/cron/expire-pending-orders/route.ts)、[点検](../../../src/lib/ops/ops-checks.ts)、[記録](../../../src/lib/ops/ops-store.ts) |
 | workerのschedule案 | pending SQLには毎分のPOST（受付APIもその場で1回動かすので、毎分の起動は取りこぼしを拾う役目）、Vaultのapp_base_url・cron_secret参照を定義。登録・到達性・実起動は未確認 | [worker schedule](../../../supabase/pending/schedule_stripe_webhook_worker.sql) |
 | 見回りのschedule案 | pending SQLには毎時0分のPOSTとVault参照を定義。ソース中の最長90分というコメントは、件数・時間制限下の無条件保証として扱わない | [見回りschedule](../../../supabase/pending/schedule_expire_pending_orders.sql) |
 | 照合のschedule案 | pending SQL（`supabase/pending/schedule_stripe_reconcile.sql`）には毎日18:00 UTC（日本時間3:00）のPOSTとVault参照を定義。登録・到達性・実起動は未確認 | [保留中のSQL](../../../supabase/pending/README.md) |

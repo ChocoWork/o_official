@@ -4,7 +4,7 @@
 
 ## 概要
 
-現行Route Handlerの入力、認証・認可、応答、主要な失敗分岐と副作用を記録する。89ファイル、明示exportされた125組のHTTPメソッド・パスを対象とする。実装と実装が呼ぶschema/helperを根拠とし、未実装の契約は追加しない。DB・Stripe・Supabase Auth・メール等の実環境での成功や設定状態を保証する文書ではない。
+現行Route Handlerの入力、認証・認可、応答、主要な失敗分岐と副作用を記録する。97ファイル、明示exportされた131組のHTTPメソッド・パスを対象とする。実装と実装が呼ぶschema/helperを根拠とし、未実装の契約は追加しない。DB・Stripe・Supabase Auth・メール等の実環境での成功や設定状態を保証する文書ではない。
 
 | 読み方 | 内容 |
 | --- | --- |
@@ -13,7 +13,7 @@
 | 入出力定義 | I/N/L/S/T/O/F/Pなどの再利用schema、応答の詳細と根拠へのリンク |
 | 入口の所在 | [APIルート一覧](route-inventory.md)（所在表） |
 
-表中の`?`は任意項目、`|`は選択肢。JSONに単一の共通envelopeはない。`{data:...}`、配列、直接object、`{success:true}`、`{ok:true}`を各実装どおりに区別する。表のエラー欄に加え、その行の共通認証・Origin・CSRFの応答が適用される。Next.jsが自動提供するHEAD/OPTIONSは125組に含めない。
+表中の`?`は任意項目、`|`は選択肢。JSONに単一の共通envelopeはない。`{data:...}`、配列、直接object、`{success:true}`、`{ok:true}`を各実装どおりに区別する。表のエラー欄に加え、その行の共通認証・Origin・CSRFの応答が適用される。Next.jsが自動提供するHEAD/OPTIONSは131組に含めない。
 
 ## 共通境界
 
@@ -245,6 +245,9 @@ Stripe Webhookはraw bytesとstripe-signatureを`constructEvent`で検証する�
 | --- | --- | --- | --- | --- | --- |
 | `GET /api/admin/order-attention` | RBAC `admin.orders.read` | 本文なし | 200 `{data:OrderAttention}`（reviews、exceptions） | 500 DB/例外 | 未確認注文と未解決payment exceptions [実装](../../../src/app/api/admin/order-attention/route.ts) |
 | `GET /api/admin/orders` | RBAC `admin.orders.read` | Query O（querySchema。下記） | 200 `{data:管理注文[],pagination:{page,pageSize,total,totalPages}}` | 400 query; 500 DB/例外 | Stripe状態/返金残額/操作可否/レビュー要否を付加 [実装](../../../src/app/api/admin/orders/route.ts) |
+| `GET /api/admin/orders/[id]/history` | RBAC `admin.orders.read` | Path UUID | 200 `{order:{id,orderNumber,statusLabel,recipient},sendPaused,entries}`。本文は返さない | 400 id; 404 order; 500 DB/例外 | 受付・状態の変化（返金を含む）・メールを新しい順、送信の一時停止、no-store [実装](../../../src/app/api/admin/orders/%5Bid%5D/history/route.ts) |
+| `GET /api/admin/orders/[id]/emails/[emailId]` | RBAC `admin.orders.read` | Path: id/emailIdともUUID | 200 `{status:"available",subject,bodyText,sentAt}` 又は `{status:"erased",sentAt}` | 400 id; 404 対象なし/未送信; 500 DB/例外 | 送信済みだけ。45日を過ぎた本文を毎日の片付けで消した後はerased、no-store [実装](../../../src/app/api/admin/orders/%5Bid%5D/emails/%5BemailId%5D/route.ts) |
+| `POST /api/admin/orders/[id]/emails/resend` | RBAC `admin.orders.manage` + CSRF C、送信元・管理者ごと10分に30回 | Path UUID、JSON `{kind}`（注文のメール5種類） | 200 `{success:true,emailId}` | 400 id/body; 404 order; 409 送信待ちの再送あり/状態不適合/再送元なし; 429 回数; 503 制限DB障害; 500 DB/監査/例外 | 手の再送の行を足し、監査、応答後after()でworker [実装](../../../src/app/api/admin/orders/%5Bid%5D/emails/resend/route.ts) |
 | `POST /api/admin/orders/[id]/refund` | RBAC `admin.orders.manage` + JWT role admin | Path UUID。JSON: `{amount?:正整数,reason?:requested_by_customer&#124;duplicate&#124;fraudulent}`（既定requested_by_customer） | 200 `{success:true,refundId,refundAmount,currency,refundStatus,orderStatus}` | 400 id/body/非Stripe/金額超過; 403 role; 404 order; 409 未完了状態; Stripe例外400/409又は502; 500 DB/例外 | Stripe Refund作成、orders返金同期 [実装](../../../src/app/api/admin/orders/%5Bid%5D/refund/route.ts) |
 | `POST /api/admin/orders/[id]/review` | RBAC `admin.orders.manage` + CSRF C | Path UUID、本文なし | 200 `{success:true}` | 400 id; 409 未確認reasonなし/競合; 500 DB/例外 | reviewed_at/byを更新 [実装](../../../src/app/api/admin/orders/%5Bid%5D/review/route.ts) |
 | `GET /api/admin/orders/[id]/status` | RBAC `admin.orders.read` | Path: id（このGETにはUUID検証なし） | 200 `{endpoint,method:"POST",description,requiredBody:{status:"cancelled",reason:CANCEL_REASONS}}` | RBACの失敗応答のみ | 操作方法を返す。注文状態照会ではない [実装](../../../src/app/api/admin/orders/%5Bid%5D/status/route.ts) |
@@ -289,9 +292,10 @@ Stripe Webhookはraw bytesとstripe-signatureを`constructEvent`で検証する�
 | `GET /api/cron/legal-archive/export` | LEGAL_ARCHIVE_CRON_SECRET Bearer J（hash定時間比較） | Query: `year` 2000〜9999、`cursor?` 1〜1000文字、`pageSize?` 1〜500既定500 | 200 LegalArchivePage `{orders,orderItems,revisions,nextCursor,totals}` | 401; 400 query; 502 DB/カーソルdecode失敗 | JST年度で順次export、no-store [実装](../../../src/app/api/cron/legal-archive/export/route.ts) |
 | `POST /api/cron/legal-archive/status` | LEGAL_ARCHIVE_CRON_SECRET Bearer J（hash定時間比較） | JSON: bodySchema（下記） | 200 `{ok:true}` | 401; 400 body; 409 state遷移; 502 DB | legal_archive_runsをinsert/update。completedから非completedへの遷移は409 [実装](../../../src/app/api/cron/legal-archive/status/route.ts) |
 | `POST /api/cron/meta-kpi-sync` | CRON_SECRET Bearer J（hash定時間比較・32文字以上） | 本文なし（現在seasonを使用） | 200 `{data:{skipped:true}}` 又は `{data:{status,metricsWritten,message}}` | 401 認証/設定欠落; 502 sync失敗 | active Meta接続があればKPI monthly recordsをupsert [実装](../../../src/app/api/cron/meta-kpi-sync/route.ts) |
-| `POST /api/cron/process-stripe-webhooks` | CRON_SECRET Bearer J（hash定時間比較・32文字以上） | 本文なし | 200 `{processed,failed,stoppedBy}` | 401 認証/設定欠落; 502 claimのDB障害 | queueから取り出せる知らせが無くなるか約45秒たつまで処理。失敗は原因の記号で記録し、2^(n-1)分後に再試行、9回目の失敗で退避（`dead`）。最後の成功の記録と点検（溜まり・退避・遅れを店へ） [実装](../../../src/app/api/cron/process-stripe-webhooks/route.ts) |
+| `POST /api/cron/process-stripe-webhooks` | CRON_SECRET Bearer J（hash定時間比較・32文字以上） | 本文なし | 200 `{processed,failed,stoppedBy}` | 401 認証/設定欠落; 502 claimのDB障害 | Stripeの知らせに35秒、注文のメールに10秒（合わせて45秒の処理予算）。queueから取り出せる知らせが無くなるか35秒たつまで処理。失敗は原因の記号で記録し、2^(n-1)分後に再試行、9回目の失敗で退避（`dead`）。最後の成功の記録、店への知らせの点検、その後に配達の見回り（1時間に1回、時間枠8秒） [実装](../../../src/app/api/cron/process-stripe-webhooks/route.ts) |
 | `POST /api/cron/stripe-reconcile` | CRON_SECRET Bearer J（hash定時間比較・32文字以上） | 本文なし | 200 `{data:{matchedOrders,unmatchedPayments,syncedBalanceTransactions,syncedRefunds,syncedPayouts,payoutMismatches,errors}}`（`errors[].reason` は原因の記号） | 401 認証/設定欠落; 502 Reconciliation failed | Stripe注文/返金/Payout照合と会計同期。支払いごとに失敗を受け止め、監査`stripe.reconcile`と最後の成功を記録 [実装](../../../src/app/api/cron/stripe-reconcile/route.ts) |
 | `POST /api/webhook/stripe` | Stripe署名 W | raw body bytes + `stripe-signature` | 200 `{received:true,duplicate:boolean}`、13種以外とモード違いは200 `{received:true,ignored:true}` | 400 header/署名（監査には書かず件数だけ数え、10分に5件で店へ）; 500 設定/queue保存 | 13種だけを永続queueへenqueueし、応答の後に`after()`でworkerを1回動かす。鍵と違うモードの知らせは保存せず店へ知らせる [実装](../../../src/app/api/webhook/stripe/route.ts) |
+| `POST /api/webhook/resend-delivery` | 公開（Svix署名・`RESEND_DELIVERY_WEBHOOK_SECRET`） | raw body、svix-id/timestamp/signature。64KBまで、時刻前後5分、配達の知らせ6種類 | 200 `{received:true}`。対象外は `{received:true,ignored:true}` | 400 header/JSON/入力; 401 署名/時刻; 413 大きさ; 500 DB記録; 503 鍵未設定 | 同じ番号は1回、記録より新しい状態だけ更新。環境の門なし [実装](../../../src/app/api/webhook/resend-delivery/route.ts) |
 
 ## 入出力定義と処理上の条件
 
@@ -347,7 +351,7 @@ Stripe Webhookはraw bytesとstripe-signatureを`constructEvent`で検証する�
 | --- | --- | --- |
 | O: querySchema | page整数>=1既定1、pageSize整数1〜100既定20、from/to? YYYY-MM-DDかつfrom<=to、amountMin/Max? 非負整数かつmin<=max、counterparty/reference? trim/1〜200、status? ORDER_STATUSES、review? only | [orders Handler](../../../src/app/api/admin/orders/route.ts)、[ORDER_STATUSES](../../../src/lib/orders/order-payment-types.ts) |
 | O-status: cancelled | `{status:"cancelled",reason:stock_unavailable&#124;customer_request&#124;suspected_fraud&#124;other,note?:trim/max500,notifyCustomer?:boolean}`。notifyCustomer既定true、otherはnoteが必要。paid/shipped/abandoned、決済処理中/有効な払込票等の条件は409。Stripe一時障害は503 | [status Handler](../../../src/app/api/admin/orders/%5Bid%5D/status/route.ts)、[payment reader](../../../src/lib/stripe/checkout-payment-reader.ts)、[reconciler](../../../src/lib/stripe/checkout-payment-reconciler.ts) |
-| O-status: shipped | `{status:"shipped",carrier:SHIPPING_CARRIER_IDS,trackingNumber:trim/1〜64}`。trackingNumberは英数字/hyphenのみ。paid/未発送/配送必須項目充足/支払額の要対応解決などをRPCで確認 | [status Handler](../../../src/app/api/admin/orders/%5Bid%5D/status/route.ts)、[shipping-carriers](../../../src/lib/orders/shipping-carriers.ts) |
+| O-status: shipped | `{status:"shipped",carrier:SHIPPING_CARRIER_IDS,trackingNumber:trim/1〜64,notifyCustomer?:boolean}`。notifyCustomerは真偽・既定true、falseなら発送のメールの行を書かない。trackingNumberは英数字/hyphenのみ。paid/未発送/配送必須項目充足/支払額の要対応解決などをRPCで確認 | [status Handler](../../../src/app/api/admin/orders/%5Bid%5D/status/route.ts)、[shipping-carriers](../../../src/lib/orders/shipping-carriers.ts) |
 | 管理注文応答 | customerName/Email、orderDate、itemCount/items、通貨整形totalAmount、表示status、paymentMethod/reference、Stripe status、shippedAt/carrier/tracking、canShip/missingShippingFields/shipBlockedReason、needsReview、canCancel/cancelBlockedUntil、canRefund等を返す。詳細な全fieldはresponseData構築を正とする | [orders responseData](../../../src/app/api/admin/orders/route.ts) |
 | 要対応解決 | cancelOrder既定false、note max500、cancelReasonは上記enum、notifyCustomer既定true。cancelOrder=true時にreasonとnoteを要求。Stripeに入金/処理/有効な払込票が残る場合等は拒否、状態競合は409 | [resolve Handler](../../../src/app/api/admin/payment-exceptions/%5Bid%5D/resolve/route.ts) |
 | 返金 | 対象はStripe payment_intent_idを持つpaid/shipped。amount未指定は残額、指定額の注文金額超過は400。Stripe exception status400/409はそのまま、その他は502。返金後の注文状態はsyncOrderRefunds結果 | [refund Handler](../../../src/app/api/admin/orders/%5Bid%5D/refund/route.ts)、[order-refund-sync](../../../src/lib/stripe/order-refund-sync.ts) |
