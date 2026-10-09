@@ -157,7 +157,7 @@
 - **箇所**: [注文確認メール](../../../../src/lib/orders/order-confirmation-email.ts) 177〜205行、[対応テスト](../../../../tests/unit/lib/orders/order-confirmation-email.test.ts) 190行付近。
 - **再現経路**: claim_order_email RPC が失敗すると claimOrderEmail は監査後に true を返す。complete、Webhook、再試行が同じ注文を並行処理し、DBの一時障害で各呼び出しのclaimが失敗すれば、いずれも送信へ進んで同じ確認メールを複数通送る。これは「未達より重複を優先」という意図的な実装だが、FREQ-386の二重送信防止契約はこの障害時には満たさない。
 - **修正方針**: 送信権が不明な状態では無条件送信せず、永続的なoutboxと再試行で到達性と一度だけの送信を両立する。claim失敗・並行complete/Webhookの試験を追加し、障害時のメール運用方針を仕様に明記する。
-- **修正（2026-10-09）**: グループ D（[設計書](../../../superpowers/specs/2026-10-09-order-email-outbox-design.md)・[実装計画](../../../superpowers/plans/2026-10-09-order-email-outbox.md)）で、送信権の仕組みを送る予定の表（transactional outbox）に置き換えた。注文の状態を変える DB の関数が同じ取引で1行書き（自動の行は1注文1種類1行）、worker が行の番号から作った重複防止キーで Resend に送る。一時的な失敗は約4時間で9回までやり直し、設定の問題は送信全体を止め、送れなければ店へ知らせて管理画面から再送できる。移行は `20261009120000_order_email_outbox.sql`・`20261009120100_order_email_enqueue.sql`（本番への適用は push の後）。
+- **修正（2026-10-09）**: グループ D（[設計書](../../../superpowers/specs/2026-10-09-order-email-outbox-design.md)・[実装計画](../../../superpowers/plans/2026-10-09-order-email-outbox.md)）で、送信権の仕組みを送る予定の表（transactional outbox）に置き換えた。注文の状態を変える DB の関数が同じ取引で1行書き（自動の行は1注文1種類1行）、worker が行の番号から作った重複防止キーで Resend に送る。一時的な失敗は約4時間で9回までやり直し、設定の問題は送信全体を止め、送れなければ店へ知らせて管理画面から再送できる。移行は `20261009095633_order_email_outbox.sql`・`20261009095736_order_email_enqueue.sql`（2026-10-09 に push し、本番へ適用済み。当てる前の古い送信権の8行・注文2件が、同じ数の取りやめの行になったことを確かめた）。
 
 ### R-15 色・サイズとバリアントの同期が管理画面の在庫欄を開いたときだけ走る
 
@@ -305,7 +305,7 @@
 - **箇所**: [order-confirmation-email.ts](../../../../src/lib/orders/order-confirmation-email.ts) 155〜174行、[webhook-processor](../../../../src/lib/stripe/webhook-processor.ts) 425〜441行・280〜300行、[complete route](../../../../src/app/api/checkout/complete/route.ts) 430〜457行。
 - **事実**: 送信失敗時は送信権を戻して false を返すが、呼び出し側は戻り値を見ない。以後、Stripeの再送はキューで重複扱い、Webhookと complete は注文が既にあれば早期に戻り、掃除ジョブは pending→paid の昇格時しか送らない。Resend の一時失敗だけで確認メールが0通で確定する。FREQ-386「0通や2通にならない」「あとの経路が送れるようにする」を満たさない。R-14 と逆方向の同じ問題。
 - **修正方針**: R-14 と共通の永続 outbox を作り、workerが送信・再試行する。
-- **修正（2026-10-09）**: グループ D（[設計書](../../../superpowers/specs/2026-10-09-order-email-outbox-design.md)・[実装計画](../../../superpowers/plans/2026-10-09-order-email-outbox.md)）で、送信権の仕組みを送る予定の表（transactional outbox）に置き換えた。注文の状態を変える DB の関数が同じ取引で1行書き（自動の行は1注文1種類1行）、worker が行の番号から作った重複防止キーで Resend に送る。一時的な失敗は約4時間で9回までやり直し、設定の問題は送信全体を止め、送れなければ店へ知らせて管理画面から再送できる。移行は `20261009120000_order_email_outbox.sql`・`20261009120100_order_email_enqueue.sql`（本番への適用は push の後）。
+- **修正（2026-10-09）**: グループ D（[設計書](../../../superpowers/specs/2026-10-09-order-email-outbox-design.md)・[実装計画](../../../superpowers/plans/2026-10-09-order-email-outbox.md)）で、送信権の仕組みを送る予定の表（transactional outbox）に置き換えた。注文の状態を変える DB の関数が同じ取引で1行書き（自動の行は1注文1種類1行）、worker が行の番号から作った重複防止キーで Resend に送る。一時的な失敗は約4時間で9回までやり直し、設定の問題は送信全体を止め、送れなければ店へ知らせて管理画面から再送できる。移行は `20261009095633_order_email_outbox.sql`・`20261009095736_order_email_enqueue.sql`（2026-10-09 に push し、本番へ適用済み。当てる前の古い送信権の8行・注文2件が、同じ数の取りやめの行になったことを確かめた）。
 
 ### R-35 workerが1起動1件しか処理せず、集中時に反映が数十分遅れる
 
@@ -465,7 +465,7 @@
 | 2 | F 支払いを「注文する」で実行する | R-56, X-3, 在庫を注文確定時に確保する要望 | 実装済み・push 済み（[設計書](../../../superpowers/specs/2026-10-07-checkout-place-order-payment-design.md)、[実装計画](../../../superpowers/plans/2026-10-07-checkout-place-order-payment.md)）。DB の変更は 2026-10-07 に本番へ適用済み（20261007133711）。開店の前に、特定商取引法の表示を専門家に確かめてもらう（X-3） |
 | 3 | B キューと worker の運用基盤 | R-07, R-33, R-32, R-05, R-35, R-55, X-4 | 実装済み・push 済み（[設計書](../../../superpowers/specs/2026-10-05-webhook-queue-operations-design.md)、[実装計画1（E2E）](../../../superpowers/plans/2026-10-05-e2e-local-supabase.md)、[実装計画2](../../../superpowers/plans/2026-10-05-webhook-queue-operations.md)。DB の変更は 2026-10-07 に本番へ適用済み（20261007030242・20261007030336）。定期処理の登録は開店のとき（[手順書](../../../06_Operations/webhook-queue-operations.md)）） |
 | 4 | C 注文確定RPC（finalize）の整合 | R-24, R-26（R-42 は同じ箇所を直す A へ移した） | 実装済み（[設計書](../../../superpowers/specs/2026-10-08-order-owner-binding-design.md)、[実装計画](../../../superpowers/plans/2026-10-08-order-owner-binding.md)）：R-26 はグループ A で修正。R-24 は「注文する」で確かめた会員を持ち主として書く形で解消（完了での紐付けは廃止）。DB の変更（20261008055720）は 2026-10-08 に本番へ当てた |
-| 5 | D 注文メールを確実に送る | R-34, R-14 | 実装済み（2026-10-09。push・本番への適用は未） |
+| 5 | D 注文メールを確実に送る | R-34, R-14 | 実装済み・push 済み（[設計書](../../../superpowers/specs/2026-10-09-order-email-outbox-design.md)、[実装計画](../../../superpowers/plans/2026-10-09-order-email-outbox.md)）。DB の変更は 2026-10-09 に本番へ適用済み（20261009095633・20261009095736）。開店の前の残りは[手順書](../../../06_Operations/order-email-operations.md)の 1 |
 | 6 | E 返金イベントの反映 | R-06, R-16（業務判断が要る）, R-03 は任意 | 未着手 |
 | 未定 | H プロモーションコードの管理（ユーザー要望。2026-09-27） | 管理画面でコードを作成・停止する。期限・全体の回数上限・最低購入額は Stripe の制限で効く。初回限定は、Customer を作らない今の決済では Stripe が誰でも初回とみなすため効かない。1人あたりの回数上限は Stripe に無い。この2つは自前で確かめる。0円になるコード（100%割引、割引額以下の最低購入額）は作らせない | 順番は未定 |
 | 未定 | G 在庫・注文・発注の管理画面（ユーザー要望） | 色×サイズごとに「販売できる在庫」「在庫に対しての注文数」「受注生産の注文数」を管理し、発注に使う。関連: R-09, R-10, R-15, R-39 | 順番は未定 |

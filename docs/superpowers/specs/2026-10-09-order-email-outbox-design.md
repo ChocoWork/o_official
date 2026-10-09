@@ -517,7 +517,7 @@ sequenceDiagram
 
 ### 10-1 出し方
 
-1. push の後、移行をユーザーの許可を得て Supabase の接続で当てる（今までどおり）。当てる前に、`private.order_emails` の種類ごとの件数を控える（移行 B が古い表を消すので、当てた後には取れない）。[移行 A](../../../supabase/migrations/20261009120000_order_email_outbox.sql) を当ててから [移行 B](../../../supabase/migrations/20261009120100_order_email_enqueue.sql) を当てる。移行は戻さない。直す時は前へ進める移行で直す。当てた後にファイル名を本番の台帳の版に直す。
+1. push の後、移行をユーザーの許可を得て Supabase の接続で当てる（今までどおり）。当てる前に、`private.order_emails` の種類ごとの件数を控える（移行 B が古い表を消すので、当てた後には取れない）。[移行 A](../../../supabase/migrations/20261009095633_order_email_outbox.sql) を当ててから [移行 B](../../../supabase/migrations/20261009095736_order_email_enqueue.sql) を当てる。移行は戻さない。直す時は前へ進める移行で直す。当てた後にファイル名を本番の台帳の版に直す（2026-10-09 に当てた。版 20261009095633・20261009095736）。
 2. 当てた後に、`private.order_email_outbox` の `last_error_code = 'legacy_suppressed'` の件数を種類ごとに数え、当てる前の控えと照合する。同じ8行・2注文であることを確かめる（2026-10-09の確認値。違えば適用・公開を止めてユーザーへ知らせる）。SQL は [手順書](../../06_Operations/order-email-operations.md)の1-1。
 3. `MAIL_PROVIDER` などの本番の環境変数を入れる前に、本番の送信待ち・送信中・やり直し待ちを、件数と注文番号・種類・作った時刻だけで確かめる。公開前の試しの行はユーザーに見せ、明示の承認の後に `skipped`・`legacy_suppressed` として本文を消す。移行後の本番の DB につないだ開発でも DB の関数は行を書くため、移行後から公開までは決済・発送・取消の試しをしない。入金待ちの試しの注文は移行前にお客様に知らせない取消にする（手順書の1-1）。詳細と SQL は [手順書](../../06_Operations/order-email-operations.md)の1-2。
 4. 本番の公開の時に、環境変数 `RESEND_DELIVERY_WEBHOOK_SECRET` を入れ、Resend の管理画面で受け口（`/api/webhook/resend-delivery`、6種類の知らせ）を登録する。登録までの間は、`RESEND_API_KEY` が Full access の鍵なら1時間ごとの見回りが配達の状態を拾う（送信専用の鍵では読めない）。

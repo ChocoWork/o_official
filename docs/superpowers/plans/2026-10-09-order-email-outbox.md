@@ -30,7 +30,7 @@
   - 種類の名前: `注文確認`・`入金待ち`・`支払い期限切れ`・`取消`・`発送`
 - 権限: 履歴と中身は `admin.orders.read`、再送と発送は `admin.orders.manage`。再送は CSRF・回数の制限（送信元ごとと管理者ごとに10分に30回）・監査（お客様の個人情報は入れない）
 - 配達の知らせの受け口: `POST /api/webhook/resend-delivery`。鍵は `RESEND_DELIVERY_WEBHOOK_SECRET`（お問い合わせの `RESEND_WEBHOOK_SECRET` とは別）。署名は Svix（届いたままの本文・`timingSafeEqual`・時刻の差は5分まで・署名が並んだらどれか1つ）。本文は64KBまで
-- 移行は2本: `supabase/migrations/20261009120000_order_email_outbox.sql`（表と関数）と `supabase/migrations/20261009120100_order_email_enqueue.sql`（状態を変える関数の作り直しと古い送信権の片付け。何度当てても同じ結果）。どちらも `BEGIN;`〜`COMMIT;`。関数は `SECURITY DEFINER`＋`SET search_path = ''`＋完全修飾名。`PUBLIC`・`anon`・`authenticated` から EXECUTE を外し、`service_role` だけに与える（`private` の関数は `PUBLIC` から外すだけ）。最後に `NOTIFY pgrst, 'reload schema';`
+- 移行は2本: `supabase/migrations/20261009095633_order_email_outbox.sql`（表と関数）と `supabase/migrations/20261009095736_order_email_enqueue.sql`（状態を変える関数の作り直しと古い送信権の片付け。何度当てても同じ結果）。どちらも `BEGIN;`〜`COMMIT;`。関数は `SECURITY DEFINER`＋`SET search_path = ''`＋完全修飾名。`PUBLIC`・`anon`・`authenticated` から EXECUTE を外し、`service_role` だけに与える（`private` の関数は `PUBLIC` から外すだけ）。最後に `NOTIFY pgrst, 'reload schema';`
 - `supabase/pending/` は触らない。本番 DB へは、全タスクの後、ユーザーの push の後で許可を得て Supabase MCP の `apply_migration` で2本を順に当て、当てた版にファイル名と文書の版を直す
 - 画面と機能の変更は `docs/02_Requirements/requirements.md` に FREQ-434〜438 の行を足す（Task 9。`grep -oE "FREQ-[0-9]+" docs/02_Requirements/requirements.md | sort -t- -k2 -n | tail -1` が FREQ-433 であることを確かめる）。新しい E2E は `e2e/FR-CHECKOUT-049-order-email-sent-once.spec.ts`・`e2e/FR-ADMIN-065-order-history-and-email-resend.spec.ts`・`e2e/FR-ADMIN-066-ship-email-opt-out.spec.ts`（`ls e2e | grep FR-CHECKOUT- | sort -V | tail -1` が FR-CHECKOUT-048、`ls e2e | grep FR-ADMIN- | sort -V | tail -1` が FR-ADMIN-064 であることを確かめる）
 - E2E は本番ビルド（`next build && next start`）・手元の Supabase（`npx supabase db reset` の直後）で、mobile（390px）・tablet（768px）・desktop（1280px）の3つの画面幅で流す。流す前に3000番に何も無いことを `Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue` で確かめる。DB 結合テストの直後に E2E を流さない（`npx supabase db reset` を挟む）
@@ -83,8 +83,8 @@
 
 | ファイル | 責務 |
 |---|---|
-| `supabase/migrations/20261009120000_order_email_outbox.sql`（新規） | 3つの表・決まり・送る予定の関数・保存期間の定期処理・定期処理の名前（Task 1） |
-| `supabase/migrations/20261009120100_order_email_enqueue.sql`（新規） | 状態を変える関数が行を書く・古い送信権を移して消す（Task 3） |
+| `supabase/migrations/20261009095633_order_email_outbox.sql`（新規） | 3つの表・決まり・送る予定の関数・保存期間の定期処理・定期処理の名前（Task 1） |
+| `supabase/migrations/20261009095736_order_email_enqueue.sql`（新規） | 状態を変える関数が行を書く・古い送信権を移して消す（Task 3） |
 | `tests/integration/db/order_email_outbox.integration.test.ts`（新規） | 表と関数の結合テスト（Task 1） |
 | `tests/integration/db/order_email_enqueue.integration.test.ts`（新規） | 状態を変える関数が書く行の結合テスト（Task 3） |
 | `src/lib/orders/email/order-email-types.ts`（新規） | 種類・状態・原因の記号・名前・再送できる状態（Task 2。画面からも使う） |
@@ -113,7 +113,7 @@
 ### Task 1: 注文のメールの表と関数（移行 A）
 
 **Files:**
-- Create: `supabase/migrations/20261009120000_order_email_outbox.sql`
+- Create: `supabase/migrations/20261009095633_order_email_outbox.sql`
 - Create: `tests/integration/db/order_email_outbox.integration.test.ts`
 
 **Interfaces:**
@@ -790,7 +790,7 @@ Expected: FAIL（`relation "private.order_email_outbox" does not exist` など�
 
 - [ ] **Step 3: 移行 A を書く**
 
-`supabase/migrations/20261009120000_order_email_outbox.sql`:
+`supabase/migrations/20261009095633_order_email_outbox.sql`:
 
 ```sql
 -- 注文のメールを確実に送る（グループ D 設計書 2026-10-09 の 3・4・6・7 章。R-34・R-14）
@@ -1703,7 +1703,7 @@ Expected: PASS（全件）。続けて Global Constraints の DB 結合テスト
 - [ ] **Step 5: コミット（controller）**
 
 ```bash
-git add supabase/migrations/20261009120000_order_email_outbox.sql tests/integration/db/order_email_outbox.integration.test.ts
+git add supabase/migrations/20261009095633_order_email_outbox.sql tests/integration/db/order_email_outbox.integration.test.ts
 git commit -m "feat(db): 注文のメールの表と送る予定の関数を足す（グループ D 移行 A）"
 ```
 
@@ -1801,7 +1801,7 @@ import type { OrderStatus, PaidEmailVariant } from '@/lib/orders/order-payment-t
 
 /**
  * 注文のメールの種類・状態・原因の記号（グループ D 設計書 3・4・5・6 章）。
- * DB の CHECK 制約（移行 20261009120000_order_email_outbox.sql）と同じ値を1か所に置く。画面からも読む。
+ * DB の CHECK 制約（移行 20261009095633_order_email_outbox.sql）と同じ値を1か所に置く。画面からも読む。
  */
 export const ORDER_EMAIL_KINDS = ['paid', 'awaiting_payment', 'payment_expired', 'canceled', 'shipped'] as const;
 export type OrderEmailKind = (typeof ORDER_EMAIL_KINDS)[number];
@@ -3469,7 +3469,7 @@ git commit -m "feat(orders): 注文のメールの中身を作って送る worke
 ### Task 3: 状態を変える関数が行を書き、直接の送信をやめる（移行 B とつなぎ替え）
 
 **Files:**
-- Create: `supabase/migrations/20261009120100_order_email_enqueue.sql`
+- Create: `supabase/migrations/20261009095736_order_email_enqueue.sql`
 - Create: `tests/integration/db/order_email_enqueue.integration.test.ts`
 - Delete: `tests/integration/db/order_email_claims.integration.test.ts`（消す送信権の関数を試している）
 - Modify: `tests/integration/db/mark_order_payment.integration.test.ts`・`place_order_shown_stock.integration.test.ts`・`order_state_transition_hardening.integration.test.ts`・`payment_exceptions.integration.test.ts`・`reconciler_composed.integration.test.ts`・`reconciler_postgrest.integration.test.ts`
@@ -3716,7 +3716,7 @@ Expected: FAIL（`function public.mark_order_paid(uuid, order_status, text, inte
 
 - [ ] **Step 3: 移行 B を書く**
 
-`supabase/migrations/20261009120100_order_email_enqueue.sql`:
+`supabase/migrations/20261009095736_order_email_enqueue.sql`:
 
 ```sql
 -- 注文の状態を変える DB の関数が、同じ取引で「注文のメール」の行を書く（グループ D 設計書 3-1・7-3・7-4）。
@@ -4463,7 +4463,7 @@ Expected: PASS（`order_email_enqueue`・`order_email_outbox`・直した7本を
 - [ ] **Step 11: コミット（controller）**
 
 ```bash
-git add supabase/migrations/20261009120100_order_email_enqueue.sql tests/integration/db/order_email_enqueue.integration.test.ts tests/integration/db/order_email_claims.integration.test.ts tests/integration/db/mark_order_payment.integration.test.ts tests/integration/db/place_order_shown_stock.integration.test.ts tests/integration/db/order_state_transition_hardening.integration.test.ts tests/integration/db/payment_exceptions.integration.test.ts tests/integration/db/reconciler_composed.integration.test.ts tests/integration/db/reconciler_postgrest.integration.test.ts src/lib/stripe/checkout-payment-reconciler.ts src/lib/stripe/checkout-payment-reconciler-deps.ts src/lib/orders/order-confirmation-email.ts src/lib/orders/order-lifecycle-emails.ts src/lib/orders/order-shipped-email.ts "src/app/api/admin/orders/[id]/status/route.ts" "src/app/api/admin/payment-exceptions/[id]/resolve/route.ts" tests/unit/lib/stripe/checkout-payment-reconciler.test.ts tests/unit/lib/stripe/checkout-payment-reconciler-deps.test.ts tests/unit/api/admin/order-status-shipped.test.ts tests/unit/api/admin/order-attention-route.test.ts tests/unit/lib/orders/order-confirmation-email.test.ts tests/unit/lib/orders/order-lifecycle-emails.test.ts tests/unit/lib/orders/order-shipped-email.test.ts
+git add supabase/migrations/20261009095736_order_email_enqueue.sql tests/integration/db/order_email_enqueue.integration.test.ts tests/integration/db/order_email_claims.integration.test.ts tests/integration/db/mark_order_payment.integration.test.ts tests/integration/db/place_order_shown_stock.integration.test.ts tests/integration/db/order_state_transition_hardening.integration.test.ts tests/integration/db/payment_exceptions.integration.test.ts tests/integration/db/reconciler_composed.integration.test.ts tests/integration/db/reconciler_postgrest.integration.test.ts src/lib/stripe/checkout-payment-reconciler.ts src/lib/stripe/checkout-payment-reconciler-deps.ts src/lib/orders/order-confirmation-email.ts src/lib/orders/order-lifecycle-emails.ts src/lib/orders/order-shipped-email.ts "src/app/api/admin/orders/[id]/status/route.ts" "src/app/api/admin/payment-exceptions/[id]/resolve/route.ts" tests/unit/lib/stripe/checkout-payment-reconciler.test.ts tests/unit/lib/stripe/checkout-payment-reconciler-deps.test.ts tests/unit/api/admin/order-status-shipped.test.ts tests/unit/api/admin/order-attention-route.test.ts tests/unit/lib/orders/order-confirmation-email.test.ts tests/unit/lib/orders/order-lifecycle-emails.test.ts tests/unit/lib/orders/order-shipped-email.test.ts
 git commit -m "feat(orders): 状態を変える DB の関数が注文のメールの行を書き、直接の送信をやめる（グループ D 移行 B）"
 ```
 
@@ -8114,7 +8114,7 @@ git commit -m "test(e2e): 注文のメールが1通だけ届くこと・履歴�
 2. `### R-14 …` と `### R-34 …` の節の終わりに、それぞれ次を足す:
 
 ```markdown
-- **修正（2026-10-09）**: グループ D（[設計書](../../../superpowers/specs/2026-10-09-order-email-outbox-design.md)・[実装計画](../../../superpowers/plans/2026-10-09-order-email-outbox.md)）で、送信権の仕組みを送る予定の表（transactional outbox）に置き換えた。注文の状態を変える DB の関数が同じ取引で1行書き（自動の行は1注文1種類1行）、worker が行の番号から作った重複防止キーで Resend に送る。一時的な失敗は約4時間で9回までやり直し、設定の問題は送信全体を止め、送れなければ店へ知らせて管理画面から再送できる。移行は `20261009120000_order_email_outbox.sql`・`20261009120100_order_email_enqueue.sql`（本番への適用は push の後）。
+- **修正（2026-10-09）**: グループ D（[設計書](../../../superpowers/specs/2026-10-09-order-email-outbox-design.md)・[実装計画](../../../superpowers/plans/2026-10-09-order-email-outbox.md)）で、送信権の仕組みを送る予定の表（transactional outbox）に置き換えた。注文の状態を変える DB の関数が同じ取引で1行書き（自動の行は1注文1種類1行）、worker が行の番号から作った重複防止キーで Resend に送る。一時的な失敗は約4時間で9回までやり直し、設定の問題は送信全体を止め、送れなければ店へ知らせて管理画面から再送できる。移行は `20261009095633_order_email_outbox.sql`・`20261009095736_order_email_enqueue.sql`（本番への適用は push の後）。
 ```
 
 3. グループの表の `| 5 | D 注文メールを確実に送る | R-34, R-14 | 未着手 |` を `| 5 | D 注文メールを確実に送る | R-34, R-14 | 実装済み（2026-10-09。push・本番への適用は未） |` にする。
@@ -8126,7 +8126,7 @@ git commit -m "test(e2e): 注文のメールが1通だけ届くこと・履歴�
 1. 頭の追記の並び（`2026-10-08 追記（全体レビュー、FREQ-433）…` の行）の次に足す:
 
 ```markdown
-2026-10-09 追記（グループ D、FREQ-434〜438）: [移行 A](../../../supabase/migrations/20261009120000_order_email_outbox.sql) で `private.order_email_outbox`（注文のメール。自動の行は `(order_id, kind)` で1行、手の再送は送信待ちの間1行、`provider_message_id` は重複なし）・`private.order_email_send_pause`（送信の一時停止。1行）・`private.resend_webhook_receipts`（Resend の知らせの受付済みの番号。3日）を足した。[移行 B](../../../supabase/migrations/20261009120100_order_email_enqueue.sql) で `private.order_emails`（古い送信権）を消した（本番の8行は取りやめの行として移した）。3つの表は関数だけで読み書きし、RLS を有効にして表の権限を外してある。本番の適用状況は未確認。
+2026-10-09 追記（グループ D、FREQ-434〜438）: [移行 A](../../../supabase/migrations/20261009095633_order_email_outbox.sql) で `private.order_email_outbox`（注文のメール。自動の行は `(order_id, kind)` で1行、手の再送は送信待ちの間1行、`provider_message_id` は重複なし）・`private.order_email_send_pause`（送信の一時停止。1行）・`private.resend_webhook_receipts`（Resend の知らせの受付済みの番号。3日）を足した。[移行 B](../../../supabase/migrations/20261009095736_order_email_enqueue.sql) で `private.order_emails`（古い送信権）を消した（本番の8行は取りやめの行として移した）。3つの表は関数だけで読み書きし、RLS を有効にして表の権限を外してある。本番の適用状況は未確認。
 ```
 
 2. 概要の表の「商品・LOOK・在庫・注文」の行の `注文メール送信権` を `注文のメール（送る予定・送信の一時停止・配達の知らせの受付済み）` にする。
@@ -8179,7 +8179,7 @@ git commit -m "test(e2e): 注文のメールが1通だけ届くこと・履歴�
 
 `docs/04_DetailDesign/sequence/order-administration.md`:
 
-1. 根拠の表の「取消・出荷のメール」の行のリンクを4つにする（文字 → `order-administration.md` から見た行き先）: 「送る予定の表」→ `../../../supabase/migrations/20261009120000_order_email_outbox.sql`、「状態を変える関数」→ `../../../supabase/migrations/20261009120100_order_email_enqueue.sql`、「worker」→ `../../../src/lib/orders/email/order-email-worker.ts`、「中身」→ `../../../src/lib/orders/email/order-email-compose.ts`。
+1. 根拠の表の「取消・出荷のメール」の行のリンクを4つにする（文字 → `order-administration.md` から見た行き先）: 「送る予定の表」→ `../../../supabase/migrations/20261009095633_order_email_outbox.sql`、「状態を変える関数」→ `../../../supabase/migrations/20261009095736_order_email_enqueue.sql`、「worker」→ `../../../src/lib/orders/email/order-email-worker.ts`、「中身」→ `../../../src/lib/orders/email/order-email-compose.ts`。
 2. Mermaid の `Reconcile->>DB: claim_order_email(canceled)`（2か所）を消し、在庫を戻す RPC の矢印の説明に「（知らせる時は取消のメールの行を同じ取引で書く）」を足す。
 3. 発送の流れの `API->>DB: admin_ship_paid_order(order, actor, carrier, tracking)` を `API->>DB: admin_ship_paid_order(order, actor, carrier, tracking, notify)` にし、`API->>Mail: sendOrderShippedEmail` の分岐を、`Note over DB: notify なら発送のメールの行を書く` と `API-->>API: after() で worker を動かす` に替える。
 4. 「取消メール」の行（`private.order_emails`の注文ID・種類の一意性でclaim…）を「取消・発送のメールは、状態を変える関数が同じ取引で送る予定の行を書き、worker が送る。失敗はやり直し、送れなければ店へ知らせる（FREQ-434・435）」にする。根拠の行の出荷メール（`order-shipped-email.ts`）へのリンクを消し、文字「worker」・行き先 `../../../src/lib/orders/email/order-email-worker.ts` のリンクに替える。
@@ -8412,4 +8412,4 @@ Expected: 成功
 
 - [ ] **Step 6: ユーザーに報告して止まる**
 
-報告すること: 全部の確かめの結果（件数）、守りの点検の結果、新しく落ちた試験と切り分け、push の許可の依頼（未 push の 7ad71826 も一緒に出る）、push の後に本番の DB へ移行2本（`20261009120000_order_email_outbox.sql` → `20261009120100_order_email_enqueue.sql`）を当てる許可の依頼。当てた後は、2本のファイル名を本番の台帳の版に直し、同じコミットで文書（er.md・レビュー台帳・計画と設計書の版の記載）を直して `npm run -s validate-docs` を流す。当てた後の確かめ（読むだけ）: 3つの表と18の公開の関数があり実行は service_role だけ、`private.order_emails` が無い、取りやめの行が8行（`legacy_suppressed`）、`order-email-retention` の定期処理が1つ、Supabase の advisors に新しい指摘が無い。公開と開店の前の残り（`MAIL_PROVIDER=resend`・配達の知らせの宛先と鍵・通しの確かめ）は開店前の残りの一覧に足す
+報告すること: 全部の確かめの結果（件数）、守りの点検の結果、新しく落ちた試験と切り分け、push の許可の依頼（未 push の 7ad71826 も一緒に出る）、push の後に本番の DB へ移行2本（`20261009095633_order_email_outbox.sql` → `20261009095736_order_email_enqueue.sql`）を当てる許可の依頼。当てた後は、2本のファイル名を本番の台帳の版に直し、同じコミットで文書（er.md・レビュー台帳・計画と設計書の版の記載）を直して `npm run -s validate-docs` を流す。当てた後の確かめ（読むだけ）: 3つの表と18の公開の関数があり実行は service_role だけ、`private.order_emails` が無い、取りやめの行が8行（`legacy_suppressed`）、`order-email-retention` の定期処理が1つ、Supabase の advisors に新しい指摘が無い。公開と開店の前の残り（`MAIL_PROVIDER=resend`・配達の知らせの宛先と鍵・通しの確かめ）は開店前の残りの一覧に足す

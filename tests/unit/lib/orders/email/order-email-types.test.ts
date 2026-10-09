@@ -20,7 +20,7 @@ import {
 
 /** アプリの値と DB の CHECK・関数の入力制限がずれないことを、移行の本文で確かめる。 */
 const outboxMigration = fs.readFileSync(
-  path.join(process.cwd(), 'supabase/migrations/20261009120000_order_email_outbox.sql'), 'utf8',
+  path.join(process.cwd(), 'supabase/migrations/20261009095633_order_email_outbox.sql'), 'utf8',
 );
 
 function sqlValues(pattern: RegExp, sql = outboxMigration): string[] {

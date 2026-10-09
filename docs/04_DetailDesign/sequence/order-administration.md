@@ -21,10 +21,10 @@
 | `checkout.sessions.retrieve/expire`と失効競合 | [Session失効](../../../src/lib/stripe/checkout-session-expiry.ts) |
 | `checkout.sessions.retrieve/list`、`paymentIntents.retrieve`、照合判定・条件付き更新 | [Stripe読取り](../../../src/lib/stripe/checkout-payment-reader.ts)、[照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)、[判定表](../../../src/lib/stripe/checkout-payment-decision.ts)、[RPC接続](../../../src/lib/stripe/checkout-payment-reconciler-deps.ts) |
 | 在庫解放と取消記録 | [注文IDによる在庫解放RPC](../../../supabase/migrations/20260927100200_release_stock_by_order.sql)、[台帳反映トリガー](../../../supabase/migrations/20260919065355_add_stock_movements.sql) |
-| 出荷 | [移行 B の最新の発送RPC](../../../supabase/migrations/20261009120100_order_email_enqueue.sql)、[必須配送先判定](../../../supabase/migrations/20260925000218_add_order_state_transition_rpcs.sql) |
-| 失敗注文の取消・例外解決 | [管理RPC](../../../supabase/migrations/20260927100500_payment_exceptions.sql)。取消メールの行を書く在庫解放関数は [移行 B](../../../supabase/migrations/20261009120100_order_email_enqueue.sql) |
+| 出荷 | [移行 B の最新の発送RPC](../../../supabase/migrations/20261009095736_order_email_enqueue.sql)、[必須配送先判定](../../../supabase/migrations/20260925000218_add_order_state_transition_rpcs.sql) |
+| 失敗注文の取消・例外解決 | [管理RPC](../../../supabase/migrations/20260927100500_payment_exceptions.sql)。取消メールの行を書く在庫解放関数は [移行 B](../../../supabase/migrations/20261009095736_order_email_enqueue.sql) |
 | `refunds.list`、成功返金集計、CASと再確認 | [返金同期](../../../src/lib/stripe/order-refund-sync.ts)、[返金投影RPC](../../../supabase/migrations/20260925000218_add_order_state_transition_rpcs.sql) |
-| 取消・出荷のメール | [送る予定の表](../../../supabase/migrations/20261009120000_order_email_outbox.sql)、[状態を変える関数](../../../supabase/migrations/20261009120100_order_email_enqueue.sql)、[worker](../../../src/lib/orders/email/order-email-worker.ts)、[中身](../../../src/lib/orders/email/order-email-compose.ts) |
+| 取消・出荷のメール | [送る予定の表](../../../supabase/migrations/20261009095633_order_email_outbox.sql)、[状態を変える関数](../../../supabase/migrations/20261009095736_order_email_enqueue.sql)、[worker](../../../src/lib/orders/email/order-email-worker.ts)、[中身](../../../src/lib/orders/email/order-email-compose.ts) |
 
 status/resolve APIは管理認可の後、ID・本文の検証より先に`requireCsrfOrDeny`を呼び、戻り値がResponseならそのまま返して後続へ進まない。helperはrefresh Cookieがなければ検査不要として通し、Cookieがある場合のCSRFヘッダー欠落・hash不一致は403、例外は500。[CSRF helper](../../../src/lib/csrfMiddleware.ts)を参照。これはAPI独自のチェックであり、共通proxyのOrigin検査と別に行われる。
 
@@ -128,7 +128,7 @@ sequenceDiagram
     end
 ```
 
-RPCはpaid、shipped_atがNULL、氏名・メール・郵便番号・都道府県・市区町村・住所・電話の非空、未解決paid_amount_mismatchなしを条件にする。出荷日時・carrier・trackingを保存する。review_reasonの未確認自体は拒否条件に含まれない。`notifyCustomer` は真偽・既定 true。知らせる時は同じ取引で発送のメールの行を書き、返事の後に worker が送る。失敗はやり直し、送れなければ店へ知らせる。根拠は[管理RPC](../../../supabase/migrations/20261009120100_order_email_enqueue.sql)と[worker](../../../src/lib/orders/email/order-email-worker.ts)。
+RPCはpaid、shipped_atがNULL、氏名・メール・郵便番号・都道府県・市区町村・住所・電話の非空、未解決paid_amount_mismatchなしを条件にする。出荷日時・carrier・trackingを保存する。review_reasonの未確認自体は拒否条件に含まれない。`notifyCustomer` は真偽・既定 true。知らせる時は同じ取引で発送のメールの行を書き、返事の後に worker が送る。失敗はやり直し、送れなければ店へ知らせる。根拠は[管理RPC](../../../supabase/migrations/20261009095736_order_email_enqueue.sql)と[worker](../../../src/lib/orders/email/order-email-worker.ts)。
 
 ## SQ-ADMIN-03: 管理返金と成功返金の投影
 
@@ -280,7 +280,7 @@ APIが外部確認に失敗すればRPCへ進まない。DB側では例外行を
 | 要確認 | [review API](../../../src/app/api/admin/orders/%5Bid%5D/review/route.ts)は管理認可・CSRF後にmark_order_reviewed。review_reasonあり・reviewed_atなしを条件にreviewed_at/byを保存し、reasonを消さない。要対応resolveとは別操作 |
 | API応答と外部副作用 | 先行RPCやStripeの成功後に後続処理が失敗する場合がある。応答コードだけから取消・返金・メールの全結果を判断しない |
 
-根拠: [worker](../../../src/lib/orders/email/order-email-worker.ts)、[中身](../../../src/lib/orders/email/order-email-compose.ts)、[履歴トリガー](../../../supabase/migrations/20260925000218_add_order_state_transition_rpcs.sql)、[状態の履歴](../../../supabase/migrations/20261009120000_order_email_outbox.sql#L606)、[要確認RPC](../../../supabase/migrations/20260927100500_payment_exceptions.sql)。
+根拠: [worker](../../../src/lib/orders/email/order-email-worker.ts)、[中身](../../../src/lib/orders/email/order-email-compose.ts)、[履歴トリガー](../../../supabase/migrations/20260925000218_add_order_state_transition_rpcs.sql)、[状態の履歴](../../../supabase/migrations/20261009095633_order_email_outbox.sql#L606)、[要確認RPC](../../../supabase/migrations/20260927100500_payment_exceptions.sql)。
 
 ## 関連テスト
 

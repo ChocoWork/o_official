@@ -42,7 +42,7 @@ flowchart LR
 
 ### 1-1 本番の移行の順番と照合
 
-移行は戻さない。直す時は前へ進める移行で直す。[移行 A](../../supabase/migrations/20261009120000_order_email_outbox.sql) を当ててから [移行 B](../../supabase/migrations/20261009120100_order_email_enqueue.sql) を当てる。B は古い `private.order_emails` の印を、送らない `legacy_suppressed` の行として移し、古い表を消す。古い表は B の後には無いので、種類ごとの件数は当てる前に控える。実際の順は次のとおり。
+移行は戻さない。直す時は前へ進める移行で直す。[移行 A](../../supabase/migrations/20261009095633_order_email_outbox.sql) を当ててから [移行 B](../../supabase/migrations/20261009095736_order_email_enqueue.sql) を当てる。B は古い `private.order_emails` の印を、送らない `legacy_suppressed` の行として移し、古い表を消す。古い表は B の後には無いので、種類ごとの件数は当てる前に控える。実際の順は次のとおり。
 
 1. 当てる前に、入金待ちのまま残る試しの注文を、お客様に知らせない取消として片付けておく。有効な払込票は管理画面が409で断るので、期限切れの確定を待つか開発者に相談し、強制的に状態を書き換えない。
 2. 当てる前に、古い表の種類ごとの件数と合計を控える（下の SQL の前半）。
