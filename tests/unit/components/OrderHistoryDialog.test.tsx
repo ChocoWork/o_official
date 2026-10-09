@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import type { OrderHistoryResponse } from '@/lib/orders/email/order-history';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import type { OrderHistoryEmailEntry, OrderHistoryResponse } from '@/lib/orders/email/order-history';
 
 const mockClientFetch = jest.fn();
 jest.mock('@/lib/client-fetch', () => ({ clientFetch: (...args: unknown[]) => mockClientFetch(...args) }));
@@ -28,6 +28,29 @@ function history(overrides: Partial<OrderHistoryResponse> = {}): OrderHistoryRes
     ],
     ...overrides,
   };
+}
+
+/** 送信済みのメールの行（既定は自動で送った注文確認）。複数の行や手の再送の行を作る試験で使う */
+function sentEmailEntry(overrides: Partial<OrderHistoryEmailEntry> = {}): OrderHistoryEmailEntry {
+  return {
+    type: 'email', at: '2026-10-09T01:00:00.000Z', emailId: 'email-1', kind: 'paid', kindLabel: '注文確認', manual: false,
+    requestedByEmail: null, stateLabel: '送信済み', warning: false, attempts: 1, errorLabel: null,
+    sentAt: '2026-10-09T01:00:05.000Z', deliveryEventAt: null, canViewContent: true, bodyErased: false, resendable: true,
+    ...overrides,
+  };
+}
+
+const SUBJECT = '【Le Fil des Heures】ご注文ありがとうございます';
+
+/** メールの中身の窓口の返事（送信済み・本文あり） */
+function contentBody(overrides: Record<string, unknown> = {}) {
+  return { status: 'available', subject: SUBJECT, bodyText: '山田 花子 様\n\nご注文を承りました。', sentAt: '2026-10-09T01:00:05.000Z', ...overrides };
+}
+
+/** 実際の操作と同じく、押すボタンへ先にフォーカスを移してから押す（押したボタンが消えた時に、フォーカスがどこへ行くかを見るため） */
+function press(button: HTMLElement) {
+  button.focus();
+  fireEvent.click(button);
 }
 
 beforeEach(() => {
@@ -155,7 +178,9 @@ describe('OrderHistoryDialog', () => {
 
     mockClientFetch.mockResolvedValueOnce(json({ error: 'Forbidden' }, 403));
     render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} />);
-    expect(await screen.findByRole('alert')).toHaveTextContent('履歴を見る権限がありません。');
+    // 知らせの入れ物（role="alert"）は最初から置いてあるので、文字が入るのを待つ
+    expect(await screen.findByText('履歴を見る権限がありません。')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('履歴を見る権限がありません。');
   });
 
   it('Escape で閉じる', async () => {
@@ -209,5 +234,304 @@ describe('OrderHistoryDialog', () => {
     expect(screen.getByText('読み込み中です...')).toBeInTheDocument();
     expect(screen.queryByText('宛先: hanako@example.com')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '閉じる' })).toHaveFocus();
+  });
+});
+
+// 設計書 5-5: 開いている間はフォーカスが中に留まる。画面を切り替えると、押したボタンごと画面が消える
+describe('OrderHistoryDialog の画面の切り替えとフォーカス', () => {
+  it('画面を切り替えても、フォーカスはダイアログのパネルに留まる（押したボタンが消えても body へ落ちない）', async () => {
+    mockClientFetch.mockResolvedValueOnce(json(history())).mockResolvedValueOnce(json(contentBody()));
+
+    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} />);
+    press(await screen.findByRole('button', { name: '中身を見る' }));
+    await screen.findByText(SUBJECT);
+    expect(screen.getByRole('dialog', { name: '注文確認のメールの中身' })).toHaveFocus();
+
+    press(screen.getByRole('button', { name: '戻る' }));
+    expect(screen.getByRole('dialog', { name: 'この注文の履歴' })).toHaveFocus();
+
+    press(screen.getByRole('button', { name: 'お客様へ再送' }));
+    expect(screen.getByRole('dialog', { name: 'お客様へ再送' })).toHaveFocus();
+
+    press(screen.getByRole('button', { name: 'やめる' }));
+    expect(screen.getByRole('dialog', { name: 'この注文の履歴' })).toHaveFocus();
+  });
+
+  it('再送が終わって履歴へ戻る時も、フォーカスはダイアログのパネルに留まる', async () => {
+    mockClientFetch
+      .mockResolvedValueOnce(json(history()))
+      .mockResolvedValueOnce(json({ success: true, emailId: 'email-2' }))
+      .mockResolvedValueOnce(json(history()));
+
+    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} />);
+    press(await screen.findByRole('button', { name: 'お客様へ再送' }));
+    press(screen.getByRole('button', { name: '再送する' }));
+    await screen.findByText('再送を受け付けました。少し待つと届きます。');
+
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'この注文の履歴' })).toHaveFocus());
+  });
+
+  it('最初の画面（履歴）では、フォーカスをパネルへ動かさない（Dialog が開いた時に決めた場所のまま）', async () => {
+    mockClientFetch.mockResolvedValueOnce(json(history()));
+
+    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} />);
+    await screen.findByText('宛先: hanako@example.com');
+
+    expect(screen.getByRole('button', { name: '閉じる' })).toHaveFocus();
+  });
+});
+
+// 結果の知らせは、画面の切り替えや履歴の読み直しの条件の外に最初から置いた入れ物の中の文字だけを変える
+// （後から差し込んだ入れ物は読み上げられない環境が多い）。受け付けは status、断り・失敗は alert
+describe('OrderHistoryDialog の再送の結果の知らせ', () => {
+  const REFUSAL = '同じメールの再送がまだ送られていません。少し待ってから履歴を確かめてください。';
+
+  it('入れ物は最初から置いてあり、同じ要素の文字だけが変わる（受け付けは status）', async () => {
+    mockClientFetch
+      .mockResolvedValueOnce(json(history()))
+      .mockResolvedValueOnce(json({ success: true, emailId: 'email-2' }))
+      .mockResolvedValueOnce(json(history()));
+
+    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} />);
+    await screen.findByText('宛先: hanako@example.com');
+    const status = screen.getByRole('status');
+    const alert = screen.getByRole('alert');
+    expect(status).toBeEmptyDOMElement();
+    expect(alert).toBeEmptyDOMElement();
+
+    press(screen.getByRole('button', { name: 'お客様へ再送' }));
+    press(screen.getByRole('button', { name: '再送する' }));
+    await screen.findByText('再送を受け付けました。少し待つと届きます。');
+
+    expect(screen.getByRole('status')).toBe(status);
+    expect(status).toHaveTextContent('再送を受け付けました。少し待つと届きます。');
+    expect(screen.getByRole('alert')).toBe(alert);
+    expect(alert).toBeEmptyDOMElement();
+  });
+
+  it('再送の後に履歴の読み直しが失敗しても、受け付けの知らせは消えない', async () => {
+    mockClientFetch
+      .mockResolvedValueOnce(json(history()))
+      .mockResolvedValueOnce(json({ success: true, emailId: 'email-2' }))
+      .mockResolvedValueOnce(json({ error: 'Failed to load history' }, 500));
+
+    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} />);
+    press(await screen.findByRole('button', { name: 'お客様へ再送' }));
+    press(screen.getByRole('button', { name: '再送する' }));
+
+    expect(await screen.findByText('履歴を読み込めませんでした。')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('履歴を読み込めませんでした。');
+    expect(screen.getByRole('status')).toHaveTextContent('再送を受け付けました。少し待つと届きます。');
+  });
+
+  it('断られたら role="alert" の入れ物に出し、status には出さない', async () => {
+    mockClientFetch
+      .mockResolvedValueOnce(json(history()))
+      .mockResolvedValueOnce(json({ error: REFUSAL }, 409))
+      .mockResolvedValueOnce(json(history()));
+
+    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} />);
+    press(await screen.findByRole('button', { name: 'お客様へ再送' }));
+    press(screen.getByRole('button', { name: '再送する' }));
+
+    expect(await screen.findByText(REFUSAL)).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(REFUSAL);
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
+  });
+
+  it('通信が失敗しても、role="alert" の入れ物に一般の文を出す', async () => {
+    mockClientFetch
+      .mockResolvedValueOnce(json(history()))
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(json(history()));
+
+    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} />);
+    press(await screen.findByRole('button', { name: 'お客様へ再送' }));
+    press(screen.getByRole('button', { name: '再送する' }));
+
+    expect(await screen.findByText('再送を受け付けられませんでした。')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('再送を受け付けられませんでした。');
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
+  });
+
+  it('403 で断られたら、管理画面の隣の操作と同じ「この操作の権限がありません。」を出す（英語は出さない）', async () => {
+    mockClientFetch
+      .mockResolvedValueOnce(json(history()))
+      .mockResolvedValueOnce(json({ error: 'Forbidden', permission: 'admin.orders.manage' }, 403))
+      .mockResolvedValueOnce(json(history()));
+
+    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} />);
+    press(await screen.findByRole('button', { name: 'お客様へ再送' }));
+    press(screen.getByRole('button', { name: '再送する' }));
+
+    expect(await screen.findByText('この操作の権限がありません。')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('この操作の権限がありません。');
+    expect(screen.queryByText('Forbidden')).not.toBeInTheDocument();
+  });
+
+  it('受け付けたら履歴を読み直し（3回目は履歴の窓口）、手で再送した行を出す', async () => {
+    const reloaded = history({
+      entries: [
+        sentEmailEntry({
+          emailId: 'email-2', at: '2026-10-09T02:00:00.000Z', manual: true, requestedByEmail: 'admin@example.com',
+          stateLabel: '送信待ち', sentAt: null, canViewContent: false, resendable: false,
+        }),
+        sentEmailEntry({ resendable: false }),
+      ],
+    });
+    mockClientFetch
+      .mockResolvedValueOnce(json(history()))
+      .mockResolvedValueOnce(json({ success: true, emailId: 'email-2' }))
+      .mockResolvedValueOnce(json(reloaded));
+
+    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} />);
+    press(await screen.findByRole('button', { name: 'お客様へ再送' }));
+    press(screen.getByRole('button', { name: '再送する' }));
+
+    expect(await screen.findByText('手で再送（admin@example.com）')).toBeInTheDocument();
+    expect(mockClientFetch).toHaveBeenCalledTimes(3);
+    expect(mockClientFetch).toHaveBeenNthCalledWith(3, `/api/admin/orders/${ORDER_ID}/history`, { cache: 'no-store' });
+    expect(screen.queryByRole('button', { name: 'お客様へ再送' })).not.toBeInTheDocument();
+  });
+
+  it('前の知らせは、別の画面へ移ると消える（中身の画面に「受け付けました」を残さない）', async () => {
+    mockClientFetch
+      .mockResolvedValueOnce(json(history()))
+      .mockResolvedValueOnce(json({ success: true, emailId: 'email-2' }))
+      .mockResolvedValueOnce(json(history({ entries: [sentEmailEntry({ resendable: false })] })))
+      .mockResolvedValueOnce(json(contentBody()));
+
+    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} />);
+    press(await screen.findByRole('button', { name: 'お客様へ再送' }));
+    press(screen.getByRole('button', { name: '再送する' }));
+    await screen.findByText('再送を受け付けました。少し待つと届きます。');
+    press(await screen.findByRole('button', { name: '中身を見る' }));
+    await screen.findByText(SUBJECT);
+
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
+  });
+});
+
+// 利用者が先へ進んだ後に、遅れて届いた返事で画面を引き戻さない
+describe('OrderHistoryDialog の遅れて届いた返事', () => {
+  const contentUrl = (emailId: string) => `/api/admin/orders/${ORDER_ID}/emails/${emailId}`;
+
+  /** 履歴は二通（email-2 が新しく上、email-1 が下）。中身の返事は試験が返すまで止めておく */
+  function holdContents() {
+    const pending: Record<string, (value: Response) => void> = {};
+    const twoEmails = history({ entries: [sentEmailEntry({ emailId: 'email-2', at: '2026-10-09T02:00:00.000Z' }), sentEmailEntry()] });
+    mockClientFetch.mockImplementation((url: string) => {
+      if (url.endsWith('/history')) return Promise.resolve(json(twoEmails));
+      return new Promise<Response>((resolve) => {
+        pending[url] = resolve;
+      });
+    });
+    return pending;
+  }
+
+  it('中身の返事を待つ間に「戻る」を押したら、返事が届いても履歴の画面のまま', async () => {
+    const pending = holdContents();
+
+    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} />);
+    press((await screen.findAllByRole('button', { name: '中身を見る' }))[0]);
+    press(screen.getByRole('button', { name: '戻る' }));
+
+    await act(async () => {
+      pending[contentUrl('email-2')](json(contentBody({ subject: '二通目の件名' })));
+    });
+
+    expect(screen.getByRole('dialog', { name: 'この注文の履歴' })).toBeInTheDocument();
+    expect(screen.queryByText('二通目の件名')).not.toBeInTheDocument();
+  });
+
+  it('A を開いて戻り、B を開いた後に A の返事が届いても、B の画面（読み込み中）のまま', async () => {
+    const pending = holdContents();
+
+    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} />);
+    press((await screen.findAllByRole('button', { name: '中身を見る' }))[1]);
+    press(screen.getByRole('button', { name: '戻る' }));
+    press(screen.getAllByRole('button', { name: '中身を見る' })[0]);
+    expect(screen.getByText('読み込み中です...')).toBeInTheDocument();
+
+    await act(async () => {
+      pending[contentUrl('email-1')](json(contentBody({ subject: 'A の件名' })));
+    });
+    expect(screen.getByText('読み込み中です...')).toBeInTheDocument();
+    expect(screen.queryByText('A の件名')).not.toBeInTheDocument();
+
+    await act(async () => {
+      pending[contentUrl('email-2')](json(contentBody({ subject: 'B の件名' })));
+    });
+    expect(screen.getByText('B の件名')).toBeInTheDocument();
+    expect(screen.queryByText('A の件名')).not.toBeInTheDocument();
+  });
+
+  it('再送の返事を待つ間に別の画面へ移っていたら、画面は変えずに知らせだけ出す', async () => {
+    let resolvePost: (value: Response) => void = () => {};
+    mockClientFetch.mockImplementation((url: string) => {
+      if (url.endsWith('/history')) return Promise.resolve(json(history()));
+      if (url.endsWith('/emails/resend')) {
+        return new Promise<Response>((resolve) => {
+          resolvePost = resolve;
+        });
+      }
+      // 中身の返事は届かないまま
+      return new Promise<Response>(() => {});
+    });
+
+    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} />);
+    press(await screen.findByRole('button', { name: 'お客様へ再送' }));
+    press(screen.getByRole('button', { name: '再送する' }));
+    // 再送の返事を待つ間に履歴へ戻り、別の画面（中身）を開く
+    press(screen.getByRole('button', { name: 'やめる' }));
+    press(screen.getByRole('button', { name: '中身を見る' }));
+
+    await act(async () => {
+      resolvePost(json({ success: true, emailId: 'email-2' }));
+    });
+
+    expect(screen.getByRole('dialog', { name: '注文確認のメールの中身' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('再送を受け付けました。少し待つと届きます。');
+  });
+});
+
+describe('OrderHistoryDialog の中身の画面', () => {
+  it('送った時刻（日本時間）を出し、手で再送した行には「手で再送」の印も出す', async () => {
+    const entries = [sentEmailEntry({ manual: true, requestedByEmail: 'admin@example.com' })];
+    mockClientFetch.mockResolvedValueOnce(json(history({ entries }))).mockResolvedValueOnce(json(contentBody()));
+
+    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} />);
+    press(await screen.findByRole('button', { name: '中身を見る' }));
+
+    const dialog = await screen.findByRole('dialog', { name: '注文確認のメールの中身' });
+    expect(await within(dialog).findByText('送った時刻: 2026/10/09 10:00')).toBeInTheDocument();
+    expect(within(dialog).getByText('手で再送（admin@example.com）')).toBeInTheDocument();
+  });
+
+  it('自動で送ったメールには「手で再送」の印を出さない。本文を消した後でも送った時刻は出す', async () => {
+    mockClientFetch
+      .mockResolvedValueOnce(json(history({ entries: [sentEmailEntry()] })))
+      .mockResolvedValueOnce(json({ status: 'erased', sentAt: '2026-08-01T05:30:00.000Z' }));
+
+    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} />);
+    press(await screen.findByRole('button', { name: '中身を見る' }));
+
+    const dialog = await screen.findByRole('dialog', { name: '注文確認のメールの中身' });
+    expect(await within(dialog).findByText('送った時刻: 2026/08/01 14:30')).toBeInTheDocument();
+    expect(within(dialog).getByText('本文の保存期間（45日）を過ぎました')).toBeInTheDocument();
+    expect(within(dialog).queryByText(/手で再送/)).not.toBeInTheDocument();
+  });
+
+  it('本文の欄は、キーボードで届いてスクロールできるよう、フォーカスでき、名前が付く', async () => {
+    mockClientFetch.mockResolvedValueOnce(json(history())).mockResolvedValueOnce(json(contentBody()));
+
+    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} />);
+    press(await screen.findByRole('button', { name: '中身を見る' }));
+
+    const body = await screen.findByRole('region', { name: 'メールの本文' });
+    expect(body).toHaveAttribute('tabindex', '0');
+    expect(body).toHaveTextContent('ご注文を承りました。');
+    body.focus();
+    expect(body).toHaveFocus();
   });
 });

@@ -86,7 +86,6 @@ export default function OrderShipDialog({ open, onClose, onSubmit }: OrderShipDi
           <input
             id="ship-tracking"
             type="text"
-            inputMode="numeric"
             maxLength={64}
             value={trackingNumber}
             onChange={(event) => setTrackingNumber(event.target.value)}
