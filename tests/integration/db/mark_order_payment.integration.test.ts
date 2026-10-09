@@ -34,7 +34,7 @@ function markPaid(
 ) {
   return db.query(
     `select updated, amount_matches, needs_review
-     from public.mark_order_paid($1::uuid, $2::public.order_status, $3::text, $4::integer, $5::text, $6::text)`,
+     from public.mark_order_paid($1::uuid, $2::public.order_status, $3::text, $4::integer, $5::text, true, 'order_confirmed', $6::text)`,
     [args.orderId, args.expected, args.paymentIntentId, args.amount, args.currency ?? 'jpy', args.event ?? null],
   );
 }
@@ -164,7 +164,7 @@ describeLocalDb('integration: 入金済み・入金待ちにする', (db) => {
     expect(res.rows[0]).toEqual({ updated: true, amount_matches: true, needs_review: false });
   });
 
-  test('Webhook と見回りが別の接続から同時に入金済みにしても、状態の変化は1回、入金確認メールの送信権も1回だけ取れる(設計書 6 の並行)', async () => {
+  test('Webhook と見回りが別の接続から同時に入金済みにしても、状態の変化は1回、入金確認メールの送る予定も1行だけ書く(設計書 6 の並行)', async () => {
     const { orderId } = await placeFromDraft(db(), { stock: 1, quantity: 1 });
     const pi = `pi_${uniqueSuffix()}`;
     const other = await connectLocalDb();
@@ -182,11 +182,12 @@ describeLocalDb('integration: 入金済み・入金待ちにする', (db) => {
         { reason: 'stripe_payment_paid', sourceEventId: winnerEvent, changedBy: null },
       ]);
 
-      const claims = await Promise.all([
-        db().query('select public.claim_order_email($1::uuid, $2::text) as claimed', [orderId, 'paid']),
-        other.query('select public.claim_order_email($1::uuid, $2::text) as claimed', [orderId, 'paid']),
-      ]);
-      expect(claims.map((res) => res.rows[0].claimed).sort()).toEqual([false, true]);
+      // 状態を変えた側が同じ取引で書いた行だけが残る
+      const emails = await db().query(
+        'select kind, variant, status from private.order_email_outbox where order_id = $1 order by seq',
+        [orderId],
+      );
+      expect(emails.rows).toEqual([{ kind: 'paid', variant: 'order_confirmed', status: 'pending' }]);
     } finally {
       await other.end();
     }
@@ -194,7 +195,7 @@ describeLocalDb('integration: 入金済み・入金待ちにする', (db) => {
 
   test('anon・authenticated は実行できない', async () => {
     for (const signature of [
-      'public.mark_order_paid(uuid,public.order_status,text,integer,text,text)',
+      'public.mark_order_paid(uuid,public.order_status,text,integer,text,boolean,text,text)',
       'public.mark_order_awaiting_payment(uuid,text,text)',
     ]) {
       for (const role of ['anon', 'authenticated']) {

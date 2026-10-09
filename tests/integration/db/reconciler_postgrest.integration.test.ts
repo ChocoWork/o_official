@@ -68,7 +68,7 @@ import {
   listUnsentShopAlerts,
 } from '@/lib/stripe/checkout-payment-reconciler-deps';
 import type { OrderRefundDatabase, RefundListClient } from '@/lib/stripe/order-refund-sync';
-import { describeLocalDb, isLocalDatabase } from './helpers/local-db';
+import { describeLocalDb, isLocalDatabase, type PgClient } from './helpers/local-db';
 import {
   PRICE,
   createCatalogFixture,
@@ -124,6 +124,14 @@ async function sweep(): Promise<SweepResponse> {
   return (await POST(request)) as unknown as SweepResponse;
 }
 
+async function paidEmailCount(db: PgClient, orderId: string): Promise<number> {
+  const res = await db.query(
+    "select count(*)::int as count from private.order_email_outbox where order_id = $1 and kind = 'paid'",
+    [orderId],
+  );
+  return res.rows[0].count as number;
+}
+
 describeLocalDb('integration: 照合の依存と見回りの候補を実際の PostgREST に通す', (db) => {
   if (!LOCAL_API_URL || !LOCAL_SERVICE_ROLE_KEY) {
     test.skip('LOCAL_SUPABASE_URL・LOCAL_SUPABASE_SERVICE_ROLE_KEY 未設定のためスキップ', () => {});
@@ -156,9 +164,6 @@ describeLocalDb('integration: 照合の依存と見回りの候補を実際の P
    */
   function composedDeps(draft: DraftFixture, paymentIntentId: string, amountRefunded: number): ReconcilerDeps {
     const mailer: ReconcilerMailer = {
-      sendOrderConfirmation: jest.fn().mockResolvedValue(true),
-      sendPaymentExpired: jest.fn().mockResolvedValue(true),
-      sendOrderCanceled: jest.fn().mockResolvedValue(true),
       sendUnplacedPaymentNotice: jest.fn().mockResolvedValue(true),
       sendShopAlert: jest.fn().mockResolvedValue(true),
     };
@@ -252,6 +257,8 @@ describeLocalDb('integration: 照合の依存と見回りの候補を実際の P
         paymentIntentId,
         paidAmount: PRICE,
         paidCurrency: 'jpy',
+        notifyCustomer: true,
+        paidEmailVariant: 'order_confirmed',
         sourceEventId: `evt_pgrst_${uniqueSuffix()}`,
       }),
     ).toEqual({ updated: true, amountMatches: true, needsReview: false });
@@ -350,7 +357,7 @@ describeLocalDb('integration: 照合の依存と見回りの候補を実際の P
     );
     expect(stored.rows[0]).toEqual({ status: expectedStatus, refunded_amount: amountRefunded, has_refunded_at: true });
     // 全額返金済みの支払いには、注文確定メールを送らない（このあと取消になる）
-    expect(deps.mailer.sendOrderConfirmation).toHaveBeenCalledTimes(expectedMails);
+    expect(await paidEmailCount(db(), orderId)).toBe(expectedMails);
 
     // 同じ支払いをもう一度照合しても、同じ状態に収まる（返金の同期は何度呼んでも同じ結果）
     expect(await reconcileForReal(deps, { checkoutSessionId: draft.checkoutSessionId })).toMatchObject({
@@ -360,7 +367,7 @@ describeLocalDb('integration: 照合の依存と見回りの候補を実際の P
     });
     const again = await db().query('select status::text as status, refunded_amount from public.orders where id = $1', [orderId]);
     expect(again.rows[0]).toEqual({ status: expectedStatus, refunded_amount: amountRefunded });
-    expect(deps.mailer.sendOrderConfirmation).toHaveBeenCalledTimes(expectedMails);
+    expect(await paidEmailCount(db(), orderId)).toBe(expectedMails);
   });
 
   test('照合: 注文が無く全額返金済みの入金済みの支払いは、注文を作らず記録だけにする（在庫も動かさない）', async () => {
@@ -377,7 +384,6 @@ describeLocalDb('integration: 照合の依存と見回りの候補を実際の P
     });
     expect(await database.findOrder({ checkoutSessionId: draft.checkoutSessionId, paymentIntentId: null })).toBeNull();
     expect(await movementsOf(db(), draft.variantId)).toEqual([{ delta: 2, reason: 'restock' }]);
-    expect(deps.mailer.sendOrderConfirmation).not.toHaveBeenCalled();
   });
 
   test('照合: 注文が無く一部だけ返金済みの入金済みの支払いは、注文を作って入金済みにし、返金済みの分を同じ照合で反映する', async () => {
@@ -396,7 +402,8 @@ describeLocalDb('integration: 照合の依存と見回りの候補を実際の P
       { delta: 2, reason: 'restock' },
       { delta: -1, reason: 'purchase' },
     ]);
-    expect(deps.mailer.sendOrderConfirmation).toHaveBeenCalledTimes(1);
+    const placed = await db().query('select id from public.orders where checkout_session_id = $1', [draft.checkoutSessionId]);
+    expect(await paidEmailCount(db(), placed.rows[0].id as string)).toBe(1);
   });
 
   test('見回り: 候補の条件（入れ子の and と ISO の時刻）を PostgREST が受け付け、30分を超えた支払い手続き中と入金待ちだけを数える', async () => {
@@ -427,6 +434,8 @@ describeLocalDb('integration: 照合の依存と見回りの候補を実際の P
           paymentIntentId: `pi_pgrst_${uniqueSuffix()}`,
           paidAmount: PRICE,
           paidCurrency: 'jpy',
+          notifyCustomer: true,
+          paidEmailVariant: 'order_confirmed',
           sourceEventId: null,
         }),
       ).toMatchObject({ updated: true });

@@ -184,7 +184,7 @@ describeLocalDb('integration: 受付 RPC の在庫と価格の確かめ', (db) =
     const paymentIntentId = `pi_${uniqueSuffix()}`;
     const marked = status === 'paid'
       ? await db().query(
-        `select updated from public.mark_order_paid($1::uuid, 'payment_in_progress', $2::text, $3::integer, 'jpy', null)`,
+        `select updated from public.mark_order_paid($1::uuid, 'payment_in_progress', $2::text, $3::integer, 'jpy', true, 'order_confirmed', null)`,
         [orderId, paymentIntentId, draft.totalAmount],
       )
       : await db().query(

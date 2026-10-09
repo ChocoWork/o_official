@@ -53,11 +53,6 @@ jest.mock('@/lib/supabase/server', () => ({
 const mockLogAudit = jest.fn().mockResolvedValue(undefined);
 jest.mock('@/lib/audit', () => ({ logAudit: (...args: unknown[]) => mockLogAudit(...args) }));
 
-const mockSendOrderCanceledEmail = jest.fn().mockResolvedValue(true);
-jest.mock('@/lib/orders/order-lifecycle-emails', () => ({
-  sendOrderCanceledEmail: (...args: unknown[]) => mockSendOrderCanceledEmail(...args),
-}));
-
 const mockStripe = { name: 'stripe' };
 jest.mock('@/lib/stripe/server', () => ({
   getStripeServerClient: () => mockStripe,
@@ -291,7 +286,6 @@ describe('POST /api/admin/payment-exceptions/:id/resolve', () => {
     const res = await resolve({ note: 'メモ' });
 
     expect(res.status).toBe(409);
-    expect(mockSendOrderCanceledEmail).not.toHaveBeenCalled();
   });
 
   it('「注文を取り消して解決」は理由とメモが要る', async () => {
@@ -312,7 +306,7 @@ describe('POST /api/admin/payment-exceptions/:id/resolve', () => {
       _cancel_reason: 'other',
       _notify_customer: notifyCustomer,
     }));
-    expect(mockSendOrderCanceledEmail).toHaveBeenCalledTimes(notifyCustomer ? 1 : 0);
+    expect(mockRpc).toHaveBeenCalledWith('resolve_payment_exception', expect.objectContaining({ _notify_customer: notifyCustomer }));
   });
 
   it('取り消すときに notifyCustomer を送らなければ、既定でお知らせを送る（RPC には true を渡す）', async () => {
@@ -323,7 +317,7 @@ describe('POST /api/admin/payment-exceptions/:id/resolve', () => {
 
     expect(res.status).toBe(200);
     expect(mockRpc).toHaveBeenCalledWith('resolve_payment_exception', expect.objectContaining({ _notify_customer: true }));
-    expect(mockSendOrderCanceledEmail).toHaveBeenCalledTimes(1);
+    expect(mockRpc).toHaveBeenCalledWith('resolve_payment_exception', expect.objectContaining({ _notify_customer: true }));
   });
 
   it('未入金でない注文は取り消せず 409（Stripe には触れず、RPC が断る）', async () => {
@@ -453,7 +447,6 @@ describe('POST /api/admin/payment-exceptions/:id/resolve', () => {
       expect(res.status).toBe(409);
       expect(res.body.error).toContain('支払い済み');
       expect(mockRpc).not.toHaveBeenCalled();
-      expect(mockSendOrderCanceledEmail).not.toHaveBeenCalled();
       expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
         action: 'admin.payment_exceptions.resolve',
         outcome: 'conflict',
@@ -481,7 +474,6 @@ describe('POST /api/admin/payment-exceptions/:id/resolve', () => {
         paymentIntentId: order.payment_intent_id,
       });
       expect(mockRpc).not.toHaveBeenCalled();
-      expect(mockSendOrderCanceledEmail).not.toHaveBeenCalled();
       expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
         outcome: 'conflict',
         metadata: { order_id: ORDER_ID, voucher_expires_at: cancelBlockedUntil },
@@ -536,7 +528,6 @@ describe('POST /api/admin/payment-exceptions/:id/resolve', () => {
       expect(mockRpc).toHaveBeenCalledTimes(1);
       expect(mockExpireOpenCheckoutSession).not.toHaveBeenCalled();
       expect(mockReadCheckoutPayment).not.toHaveBeenCalled();
-      expect(mockSendOrderCanceledEmail).not.toHaveBeenCalled();
     });
 
     it('存在しない要対応も、Stripe には触れず RPC に断らせる', async () => {

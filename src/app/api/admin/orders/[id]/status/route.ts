@@ -17,7 +17,6 @@ import {
 import { createDefaultReconcilerDeps } from '@/lib/stripe/checkout-payment-reconciler-deps';
 import { logAudit } from '@/lib/audit';
 import { SHIPPING_CARRIER_IDS } from '@/lib/orders/shipping-carriers';
-import { sendOrderShippedEmail } from '@/lib/orders/order-shipped-email';
 import {
   ADMIN_NOTE_MAX_LENGTH,
   CANCEL_REASONS,
@@ -39,6 +38,8 @@ const updateStatusSchema = z.discriminatedUnion('status', [
     status: z.literal('shipped'),
     carrier: z.enum(SHIPPING_CARRIER_IDS),
     trackingNumber: z.string().trim().min(1).max(64).regex(/^[0-9A-Za-z-]+$/),
+    // 発送の画面の「お客様に発送のメールを送る」（既定は送る。Shopify の「発送の詳細を今すぐ送る」）
+    notifyCustomer: z.boolean().default(true),
   }),
 ]);
 
@@ -132,6 +133,7 @@ export async function POST(
         _order_id: parsedOrderId.data,
         _shipping_carrier: parsedBody.data.carrier,
         _tracking_number: parsedBody.data.trackingNumber,
+        _notify_customer: parsedBody.data.notifyCustomer,
       });
 
       if (error) {
@@ -151,15 +153,7 @@ export async function POST(
         );
       }
 
-      await audit('success', 'Status changed to shipped', { status: 'shipped', carrier: parsedBody.data.carrier });
-
-      await sendOrderShippedEmail({
-        orderId: id,
-        email: shippedOrder.shipping_email,
-        fullName: shippedOrder.shipping_full_name,
-        carrier: parsedBody.data.carrier,
-        trackingNumber: parsedBody.data.trackingNumber,
-      });
+      await audit('success', 'Status changed to shipped', { status: 'shipped', carrier: parsedBody.data.carrier, notify_customer: parsedBody.data.notifyCustomer });
 
       return NextResponse.json({ success: true, status: 'shipped' }, { status: 200 });
     }

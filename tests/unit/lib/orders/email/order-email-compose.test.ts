@@ -1,6 +1,3 @@
-// 明細の書き方の部品（order-confirmation-email）が import する監査ログと Supabase を、試験では読み込まない
-jest.mock('@/lib/audit', () => ({ logAudit: jest.fn().mockResolvedValue(undefined) }));
-jest.mock('@/lib/supabase/server', () => ({ createServiceRoleClient: jest.fn() }));
 
 import {
   composeOrderEmail,

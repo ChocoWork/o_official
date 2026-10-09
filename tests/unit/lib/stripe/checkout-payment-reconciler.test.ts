@@ -47,15 +47,20 @@ function order(status: ReconcilerOrder['status'], overrides: Partial<ReconcilerO
   };
 }
 
+type EnqueuedEmail = { orderId: string; kind: 'paid' | 'awaiting_payment' | 'payment_expired' | 'canceled'; variant: string | null };
+
+const emailsOf = (h: { world: { enqueued: EnqueuedEmail[] } }, kind: EnqueuedEmail['kind']) => h.world.enqueued.filter((email) => email.kind === kind);
+
 function harness(init: {
   stripe: CheckoutPaymentSnapshot;
   order?: ReconcilerOrder | null;
   amountMatches?: boolean;
   needsReview?: boolean;
 }) {
-  const world: { stripe: CheckoutPaymentSnapshot; order: ReconcilerOrder | null } = {
+  const world: { stripe: CheckoutPaymentSnapshot; order: ReconcilerOrder | null; enqueued: EnqueuedEmail[] } = {
     stripe: init.stripe,
     order: init.order ?? null,
+    enqueued: [],
   };
   const exceptions = new Map<string, { id: string; resolved: boolean }>();
 
@@ -82,13 +87,19 @@ function harness(init: {
         return { updated: false, amountMatches: false, needsReview: false };
       }
       world.order = { ...world.order, status: 'paid', paymentIntentId: world.order.paymentIntentId ?? args.paymentIntentId };
-      return { updated: true, amountMatches: init.amountMatches ?? true, needsReview: init.needsReview ?? false };
+      const amountMatches = init.amountMatches ?? true;
+      // DB の mark_order_paid と同じく、金額が合い「送る」の時だけ注文確認の行を書く
+      if (amountMatches && args.notifyCustomer) {
+        world.enqueued.push({ orderId: world.order.id, kind: 'paid', variant: args.paidEmailVariant });
+      }
+      return { updated: true, amountMatches, needsReview: init.needsReview ?? false };
     },
     async markOrderAwaitingPayment(args) {
       if (!world.order || world.order.status !== 'payment_in_progress') {
         return { updated: false };
       }
       world.order = { ...world.order, status: 'pending', paymentIntentId: world.order.paymentIntentId ?? args.paymentIntentId };
+      world.enqueued.push({ orderId: world.order.id, kind: 'awaiting_payment', variant: null });
       return { updated: true };
     },
     async releaseStock(args) {
@@ -96,6 +107,11 @@ function harness(init: {
         return { released: false };
       }
       world.order = { ...world.order, status: args.nextStatus };
+      if (args.nextStatus === 'failed') {
+        world.enqueued.push({ orderId: world.order.id, kind: 'payment_expired', variant: null });
+      } else if (args.nextStatus === 'cancelled' && args.notifyCustomer) {
+        world.enqueued.push({ orderId: world.order.id, kind: 'canceled', variant: args.expectedStatus });
+      }
       return { released: true };
     },
     async recordException(args) {
@@ -119,15 +135,6 @@ function harness(init: {
   };
 
   const mailer: ReconcilerMailer = {
-    async sendOrderConfirmation() {
-      return true;
-    },
-    async sendPaymentExpired() {
-      return true;
-    },
-    async sendOrderCanceled() {
-      return true;
-    },
     async sendUnplacedPaymentNotice() {
       return true;
     },
@@ -159,9 +166,11 @@ describe('reconcileCheckoutPayment', () => {
       paymentIntentId: 'pi_1',
       paidAmount: 5000,
       paidCurrency: 'jpy',
+      notifyCustomer: true,
+      paidEmailVariant: 'order_confirmed',
       sourceEventId: 'evt_1',
     });
-    expect(h.mailer.sendOrderConfirmation).toHaveBeenCalledWith('order-1', 'paid', 'order_confirmed');
+    expect(emailsOf(h, 'paid')).toEqual([{ orderId: 'order-1', kind: 'paid', variant: 'order_confirmed' }]);
     expect(h.database.persistDraftPaymentMethod).toHaveBeenCalledWith('draft-1', 'stripe_card');
     expect(result).toEqual({
       kind: 'ok',
@@ -194,7 +203,7 @@ describe('reconcileCheckoutPayment', () => {
       sessionCreatedAt: SESSION_CREATED_AT,
       paymentIntentId: 'pi_1',
     });
-    expect(h.mailer.sendOrderConfirmation).toHaveBeenCalledWith('order-new', 'paid', 'order_confirmed');
+    expect(emailsOf(h, 'paid')).toEqual([{ orderId: 'order-new', kind: 'paid', variant: 'order_confirmed' }]);
     expect(result).toMatchObject({ kind: 'ok', action: { type: 'place_and_mark_paid' }, orderId: 'order-new', orderStatus: 'paid' });
   });
 
@@ -208,7 +217,7 @@ describe('reconcileCheckoutPayment', () => {
       paymentIntentId: 'pi_1',
       sourceEventId: null,
     });
-    expect(h.mailer.sendOrderConfirmation).toHaveBeenCalledWith('order-new', 'awaiting_payment');
+    expect(emailsOf(h, 'awaiting_payment')).toEqual([{ orderId: 'order-new', kind: 'awaiting_payment', variant: null }]);
     expect(result).toMatchObject({ kind: 'ok', orderId: 'order-new', orderStatus: 'pending' });
   });
 
@@ -309,7 +318,7 @@ describe('reconcileCheckoutPayment', () => {
       orderId: 'order-1',
       orderStatus: 'paid',
     });
-    expect(h.mailer.sendOrderConfirmation).not.toHaveBeenCalled();
+    expect([...emailsOf(h, 'paid'), ...emailsOf(h, 'awaiting_payment')]).toEqual([]);
     expect(h.mailer.sendUnplacedPaymentNotice).not.toHaveBeenCalled();
     expect(h.mailer.sendShopAlert).toHaveBeenCalledTimes(1);
   });
@@ -335,7 +344,7 @@ describe('reconcileCheckoutPayment', () => {
     });
     expect(h.database.recordException).toHaveBeenCalledTimes(2);
     expect(h.mailer.sendShopAlert).toHaveBeenCalledTimes(1);
-    expect(h.mailer.sendOrderConfirmation).not.toHaveBeenCalled();
+    expect([...emailsOf(h, 'paid'), ...emailsOf(h, 'awaiting_payment')]).toEqual([]);
   });
 
   it('入金済み × 入金済みで金額が一致すれば、導き直しても何もしない（fix round 1）', async () => {
@@ -382,7 +391,7 @@ describe('reconcileCheckoutPayment', () => {
 
     const result = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
 
-    expect(h.mailer.sendOrderConfirmation).toHaveBeenCalledWith('order-1', 'paid', 'payment_received_after_expiry');
+    expect(emailsOf(h, 'paid')).toEqual([{ orderId: 'order-1', kind: 'paid', variant: 'payment_received_after_expiry' }]);
     expect(result).toMatchObject({ kind: 'needs_review', orderId: 'order-1', orderStatus: 'paid' });
   });
 
@@ -402,7 +411,7 @@ describe('reconcileCheckoutPayment', () => {
       cancelNote: null,
       notifyCustomer: null,
     });
-    expect(h.mailer.sendPaymentExpired).toHaveBeenCalledWith('order-1');
+    expect(emailsOf(h, 'payment_expired')).toEqual([{ orderId: 'order-1', kind: 'payment_expired', variant: null }]);
     expect(result).toMatchObject({ kind: 'ok', orderStatus: 'failed' });
   });
 
@@ -424,8 +433,8 @@ describe('reconcileCheckoutPayment', () => {
       nextStatus: 'failed',
       changeReason: 'stripe_voucher_expired',
     }));
-    // 送るかは送信権が決める（移行前の2件は Task 6 で送信済みとして登録してあるので届かない）
-    expect(h.mailer.sendPaymentExpired).toHaveBeenCalledWith('order-legacy');
+    // 行を書くかは DB が決める（移行前の2件は取りやめの行を移してあるので、自動の行はもう書かれない）
+    expect(emailsOf(h, 'payment_expired')).toEqual([{ orderId: 'order-legacy', kind: 'payment_expired', variant: null }]);
     expect(h.database.recordException).not.toHaveBeenCalled();
     expect(result).toEqual({
       kind: 'ok',
@@ -447,8 +456,8 @@ describe('reconcileCheckoutPayment', () => {
       nextStatus: 'abandoned',
       changeReason: 'stripe_checkout_expired',
     }));
-    expect(h.mailer.sendPaymentExpired).not.toHaveBeenCalled();
-    expect(h.mailer.sendOrderCanceled).not.toHaveBeenCalled();
+    expect(emailsOf(h, 'payment_expired')).toEqual([]);
+    expect(emailsOf(h, 'canceled')).toEqual([]);
     expect(result).toMatchObject({ kind: 'ok', orderStatus: 'abandoned' });
   });
 
@@ -474,7 +483,7 @@ describe('reconcileCheckoutPayment', () => {
       cancelNote: '電話で依頼',
       notifyCustomer,
     });
-    expect(h.mailer.sendOrderCanceled).toHaveBeenCalledTimes(notifyCustomer ? 1 : 0);
+    expect(emailsOf(h, 'canceled')).toEqual(notifyCustomer ? [{ orderId: 'order-1', kind: 'canceled', variant: 'payment_in_progress' }] : []);
     expect(result).toMatchObject({ kind: 'ok', orderStatus: 'cancelled' });
   });
 
@@ -508,6 +517,7 @@ describe('reconcileCheckoutPayment', () => {
       const writes = (Object.keys(h.database) as Array<keyof ReconcilerDatabase>).filter((key) => key !== 'findOrder');
       for (const key of writes) expect(h.database[key]).not.toHaveBeenCalled();
       for (const key of Object.keys(h.mailer) as Array<keyof ReconcilerMailer>) expect(h.mailer[key]).not.toHaveBeenCalled();
+      expect(h.world.enqueued).toEqual([]);
       expect(h.syncRefunds).not.toHaveBeenCalled();
       expect(h.audit).toHaveBeenCalledTimes(1);
       expect(h.audit).toHaveBeenCalledWith(expect.objectContaining({
@@ -524,8 +534,8 @@ describe('reconcileCheckoutPayment', () => {
 
       expect(h.database.placeOrder).toHaveBeenCalledTimes(1);
       expect(h.database.markOrderPaid).toHaveBeenCalledTimes(1);
-      expect(h.mailer.sendOrderConfirmation).toHaveBeenCalledTimes(1);
-      expect(h.mailer.sendOrderConfirmation).toHaveBeenCalledWith('order-new', 'paid', 'order_confirmed');
+      expect(emailsOf(h, 'paid')).toHaveLength(1);
+      expect(emailsOf(h, 'paid')).toEqual([{ orderId: 'order-new', kind: 'paid', variant: 'order_confirmed' }]);
       expect(h.syncRefunds).toHaveBeenCalledTimes(1);
       expect(h.syncRefunds).toHaveBeenCalledWith('pi_1');
       expect(result).toMatchObject({
@@ -549,7 +559,8 @@ describe('reconcileCheckoutPayment', () => {
         const result = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
 
         expect(h.database.markOrderPaid).toHaveBeenCalledTimes(1);
-        expect(h.mailer.sendOrderConfirmation).not.toHaveBeenCalled();
+        expect(h.database.markOrderPaid).toHaveBeenCalledWith(expect.objectContaining({ notifyCustomer: false }));
+        expect([...emailsOf(h, 'paid'), ...emailsOf(h, 'awaiting_payment')]).toEqual([]);
         expect(h.database.persistDraftPaymentMethod).toHaveBeenCalledWith('draft-1', 'stripe_card');
         expect(h.syncRefunds).toHaveBeenCalledWith('pi_1');
         // 同期の前の「入金済み」ではなく、同期のあとの「取消」を返す（完了 API・管理画面の取消が、取り消された注文を入金完了と扱わない）
@@ -591,7 +602,7 @@ describe('reconcileCheckoutPayment', () => {
         orderStatus: 'paid',
       });
       // 一部だけの返金なら、注文確定メールはこれまでどおり1通送る
-      expect(h.mailer.sendOrderConfirmation).toHaveBeenCalledTimes(1);
+      expect(emailsOf(h, 'paid')).toHaveLength(1);
       expect(h.syncRefunds).toHaveBeenCalledTimes(1);
       expect(h.syncRefunds).toHaveBeenCalledWith('pi_1');
       // 注文が入金済みになってから、返金を反映する
@@ -610,7 +621,7 @@ describe('reconcileCheckoutPayment', () => {
         expect(h.syncRefunds).toHaveBeenCalledTimes(1);
         expect(h.syncRefunds).toHaveBeenCalledWith('pi_1');
         expect(h.database.markOrderPaid).not.toHaveBeenCalled();
-        expect(h.mailer.sendOrderConfirmation).not.toHaveBeenCalled();
+        expect([...emailsOf(h, 'paid'), ...emailsOf(h, 'awaiting_payment')]).toEqual([]);
       },
     );
 
@@ -650,7 +661,7 @@ describe('reconcileCheckoutPayment', () => {
       expect(h.syncRefunds).toHaveBeenCalledTimes(2);
       // 入金済みにするのも注文確定メールも、1回だけ
       expect(h.database.markOrderPaid).toHaveBeenCalledTimes(1);
-      expect(h.mailer.sendOrderConfirmation).toHaveBeenCalledTimes(1);
+      expect(emailsOf(h, 'paid')).toHaveLength(1);
     });
 
     it('返金の同期の恒久的な失敗は、これまでの失敗と同じく元のエラーのまま投げる', async () => {
@@ -692,6 +703,7 @@ describe('reconcileCheckoutPayment', () => {
     const writes = (Object.keys(h.database) as Array<keyof ReconcilerDatabase>).filter((key) => key !== 'findOrder');
     for (const key of writes) expect(h.database[key]).not.toHaveBeenCalled();
     for (const key of Object.keys(h.mailer) as Array<keyof ReconcilerMailer>) expect(h.mailer[key]).not.toHaveBeenCalled();
+    expect(h.world.enqueued).toEqual([]);
     expect(h.audit).toHaveBeenCalledTimes(1);
     expect(h.audit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'success', detail: 'ok:record_only:not_applicable' }));
   });
@@ -730,7 +742,7 @@ describe('reconcileCheckoutPayment', () => {
     const result = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
 
     expect(result).toEqual({ kind: 'ok', action: { type: 'none' }, orderId: 'order-1', orderStatus: 'paid' });
-    expect(h.mailer.sendOrderConfirmation).not.toHaveBeenCalled();
+    expect([...emailsOf(h, 'paid'), ...emailsOf(h, 'awaiting_payment')]).toEqual([]);
   });
 
   it('古い Stripe の状態と新しい注文の起きないマス（手続き中 × 入金済み）は、記録せずに読み直す', async () => {
@@ -747,7 +759,7 @@ describe('reconcileCheckoutPayment', () => {
     expect(h.readPayment).toHaveBeenCalledTimes(2);
     expect(h.database.recordException).not.toHaveBeenCalled();
     expect(h.mailer.sendShopAlert).not.toHaveBeenCalled();
-    expect(h.mailer.sendOrderConfirmation).not.toHaveBeenCalled();
+    expect([...emailsOf(h, 'paid'), ...emailsOf(h, 'awaiting_payment')]).toEqual([]);
   });
 
   it(`起きないマスが${MAX_RECONCILE_ATTEMPTS}回読んでも続くときだけ、要対応（注文と支払いの矛盾）として1回記録して知らせる`, async () => {
@@ -788,7 +800,7 @@ describe('reconcileCheckoutPayment', () => {
     ]);
 
     expect(results.map((result) => result.kind)).toEqual(['ok', 'ok']);
-    expect(h.mailer.sendOrderConfirmation).toHaveBeenCalledTimes(1);
+    expect(emailsOf(h, 'paid')).toHaveLength(1);
     expect(h.world.order?.status).toBe('paid');
   });
 

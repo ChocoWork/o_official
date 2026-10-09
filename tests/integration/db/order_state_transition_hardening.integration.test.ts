@@ -93,7 +93,7 @@ describe('integration: order state transition hardening', () => {
               ) as can_cancel,
               has_function_privilege(
                 'authenticated',
-                'public.admin_ship_paid_order(uuid,uuid,text,text)',
+                'public.admin_ship_paid_order(uuid,uuid,text,text,boolean)',
                 'EXECUTE'
               ) as can_ship,
               has_function_privilege(
@@ -108,7 +108,7 @@ describe('integration: order state transition hardening', () => {
               ) as service_can_cancel,
               has_function_privilege(
                 'service_role',
-                'public.admin_ship_paid_order(uuid,uuid,text,text)',
+                'public.admin_ship_paid_order(uuid,uuid,text,text,boolean)',
                 'EXECUTE'
               ) as service_can_ship,
               has_function_privilege(
@@ -197,7 +197,7 @@ describe('integration: order state transition hardening', () => {
       await client.query('set local role service_role');
       const shipped = await client.query(
         `select * from public.admin_ship_paid_order(
-           $1::uuid, $2::uuid, 'yamato'::text, 'TRACK-123'::text
+           $1::uuid, $2::uuid, 'yamato'::text, 'TRACK-123'::text, false
          )`,
         [shippingOrderId, actorId],
       );
@@ -294,7 +294,7 @@ describe('integration: order state transition hardening', () => {
       await client.query('set local role service_role');
       const shipped = await client.query(
         `select * from public.admin_ship_paid_order(
-          $1::uuid, $2::uuid, 'yamato'::text, 'TRACK-123'::text
+          $1::uuid, $2::uuid, 'yamato'::text, 'TRACK-123'::text, false
         )`,
         [orderId, actor.rows[0].id],
       );

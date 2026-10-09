@@ -63,11 +63,6 @@ jest.mock('@/lib/audit', () => ({
   logAudit: (...args: unknown[]) => mockLogAudit(...args),
 }));
 
-const mockSendOrderShippedEmail = jest.fn().mockResolvedValue(undefined);
-jest.mock('@/lib/orders/order-shipped-email', () => ({
-  sendOrderShippedEmail: (...args: unknown[]) => mockSendOrderShippedEmail(...args),
-}));
-
 import { POST } from '@/app/api/admin/orders/[id]/status/route';
 import { ReconcileTransientError } from '@/lib/stripe/checkout-payment-reader';
 
@@ -136,7 +131,6 @@ describe('POST /api/admin/orders/[id]/status - CSRF トークン', () => {
     expect(mockExpireOpenCheckoutSession).not.toHaveBeenCalled();
     expect(mockReadCheckoutPayment).not.toHaveBeenCalled();
     expect(mockReconcile).not.toHaveBeenCalled();
-    expect(mockSendOrderShippedEmail).not.toHaveBeenCalled();
   });
 
   test.each([
@@ -172,8 +166,8 @@ describe('POST /api/admin/orders/[id]/status - 発送', () => {
       _order_id: ORDER_ID,
       _shipping_carrier: 'yamato',
       _tracking_number: '1234-5678-9012',
+      _notify_customer: true,
     });
-    expect(mockSendOrderShippedEmail).toHaveBeenCalledTimes(1);
   });
 
   test('更新対象が無ければ 409 を返し、配送先と支払額の確認を促し、メールを送らない', async () => {
@@ -184,7 +178,24 @@ describe('POST /api/admin/orders/[id]/status - 発送', () => {
     expect(res.status).toBe(409);
     expect(res.body.error).toContain('配送先');
     expect(res.body.error).toContain('支払額');
-    expect(mockSendOrderShippedEmail).not.toHaveBeenCalled();
+  });
+
+  test('「お客様に発送のメールを送る」を外すと、DB に送らないを渡す', async () => {
+    mockRpc.mockResolvedValue({ data: [{ id: ORDER_ID }], error: null });
+
+    const response = await post({ status: 'shipped', carrier: 'yamato', trackingNumber: '1234-5678-9012', notifyCustomer: false });
+
+    expect(response.status).toBe(200);
+    expect(mockRpc).toHaveBeenCalledWith('admin_ship_paid_order', expect.objectContaining({ _notify_customer: false }));
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+      detail: 'Status changed to shipped',
+      metadata: expect.objectContaining({ notify_customer: false }),
+    }));
+  });
+
+  test('「送るか」が真偽でなければ 400', async () => {
+    const response = await post({ status: 'shipped', carrier: 'yamato', trackingNumber: '1234-5678-9012', notifyCustomer: 'no' });
+    expect(response.status).toBe(400);
   });
 
   test('未知の配送業者と記号の混ざった追跡番号は 400 を返す', async () => {
@@ -313,6 +324,7 @@ describe('POST /api/admin/orders/[id]/status - 取消', () => {
 
   test('照合が Stripe 以外の理由で失敗したら 500 で中立な文言を返し、失敗した段階を監査に残す', async () => {
     currentOrder('payment_in_progress', { payment_intent_id: null });
+    const error = jest.spyOn(console, 'error').mockImplementation(() => undefined);
     mockReconcile.mockRejectedValue({ code: '23514', message: 'x' });
 
     const res = await post(CANCEL);
@@ -324,6 +336,8 @@ describe('POST /api/admin/orders/[id]/status - 取消', () => {
       detail: 'Failed to cancel unpaid order',
       metadata: { step: 'reconcile' },
     }));
+    expect(error).toHaveBeenCalledWith('[admin.orders.status] Failed to cancel unpaid order:', { code: '23514', message: 'x' });
+    error.mockRestore();
   });
 
   test('失敗の注文は専用 RPC に理由とメモを渡し、お客様には送らない', async () => {

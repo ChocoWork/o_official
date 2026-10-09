@@ -1,149 +1,18 @@
 import sendMail from '@/lib/mail';
 import { logAudit } from '@/lib/audit';
 import { toOrderNumber } from '@/lib/orders/order-number';
-import {
-  claimOrderEmail,
-  fetchOrderEmailSource,
-  formatCurrency,
-  formatItemLines,
-  releaseOrderEmail,
-  type OrderEmailSource,
-  type OrderEmailSourceStore,
-} from '@/lib/orders/order-confirmation-email';
+import { greeting } from '@/lib/orders/email/order-email-compose';
 import {
   PAYMENT_EXCEPTION_REASON_LABELS,
   type PaymentExceptionReason,
 } from '@/lib/orders/order-payment-types';
 
 /**
- * 注文の状態が変わったときのお客様へのメールと、店への要対応メール（グループ A 設計書 5-3・5-4）。
- *
+ * 注文にならなかった支払いのお客様への案内と、店への要対応メール（グループ A 設計書 5-3・5-4）。
+ * お客様への注文のメール（入金待ち・入金済み・期限切れ・取消・発送）は src/lib/orders/email/ が送る（グループ D）。
  * 件名は固定の文面で組み、外から来た値（氏名・商品名）は本文にだけ入れる（メールヘッダーの注入を防ぐ）。
- * お客様へのメールは送信権（1注文・1種類につき1通）を取ってから送り、送れなければ権利を戻す。
  */
 const SHOP_NAME = 'Le Fil des Heures';
-
-function greeting(fullName: string | null): string {
-  return fullName ? `${fullName} 様` : 'お客様';
-}
-
-function contactLine(orderId: string): string {
-  return `お問い合わせの際は、注文番号（${toOrderNumber(orderId)}）をお問い合わせフォームにご入力ください。`;
-}
-
-function orderSummaryLines({ order, items }: OrderEmailSource): string[] {
-  return [
-    `注文番号: ${toOrderNumber(order.id)}`,
-    '',
-    'ご注文内容:',
-    ...formatItemLines(items, order.currency),
-    '',
-    `合計: ${formatCurrency(order.total_amount, order.currency)}`,
-  ];
-}
-
-async function sendClaimedOrderEmail(params: {
-  store: OrderEmailSourceStore;
-  orderId: string;
-  kind: 'payment_expired' | 'canceled';
-  logLabel: string;
-  compose: (source: OrderEmailSource) => { subject: string; text: string };
-}): Promise<boolean> {
-  const { store, orderId, kind, logLabel, compose } = params;
-  if (!process.env.MAIL_FROM_ADDRESS) {
-    return false;
-  }
-
-  const source = await fetchOrderEmailSource(store, orderId, logLabel);
-  const to = source?.order.shipping_email;
-  if (!source || !to) {
-    return false;
-  }
-
-  if (!(await claimOrderEmail(store, orderId, kind))) {
-    return false;
-  }
-
-  const { subject, text } = compose(source);
-  try {
-    await sendMail({ to, subject, text });
-    return true;
-  } catch (error) {
-    console.warn(`${logLabel} order lifecycle mail send failed`, orderId, kind, error);
-    await logAudit({
-      action: 'order.lifecycle.mail',
-      outcome: 'error',
-      resource: 'order',
-      resource_id: orderId,
-      detail: 'mail_send_failed',
-      metadata: { kind },
-    });
-    await releaseOrderEmail(store, orderId, kind);
-    return false;
-  }
-}
-
-/** 払込票の期限切れで失敗にしたとき。支払い方法を問わない文面にする（銀行振込を足しても同じ仕組みに載る） */
-export function sendPaymentExpiredEmail(params: {
-  store: OrderEmailSourceStore;
-  orderId: string;
-  logLabel: string;
-}): Promise<boolean> {
-  return sendClaimedOrderEmail({
-    ...params,
-    kind: 'payment_expired',
-    compose: (source) => ({
-      subject: `【${SHOP_NAME}】お支払い期限切れのお知らせ（${toOrderNumber(source.order.id)}）`,
-      text: [
-        greeting(source.order.shipping_full_name),
-        '',
-        'お支払い期限が過ぎたため、ご注文を取り消しました。',
-        'お支払いは発生していません。引き続きご購入を希望される場合は、あらためてご注文ください。',
-        '',
-        ...orderSummaryLines(source),
-        '',
-        contactLine(source.order.id),
-        '',
-        SHOP_NAME,
-      ].join('\n'),
-    }),
-  });
-}
-
-/** 管理画面で未入金の注文を取り消したとき。支払い手続き中の注文では、これが最初のメールになる */
-export function sendOrderCanceledEmail(params: {
-  store: OrderEmailSourceStore;
-  orderId: string;
-  previousStatus: 'payment_in_progress' | 'pending';
-  logLabel: string;
-}): Promise<boolean> {
-  const lead =
-    params.previousStatus === 'payment_in_progress'
-      ? 'お手続き中のご注文を取り消しました。'
-      : 'お支払い待ちのご注文を取り消しました。';
-
-  return sendClaimedOrderEmail({
-    store: params.store,
-    orderId: params.orderId,
-    logLabel: params.logLabel,
-    kind: 'canceled',
-    compose: (source) => ({
-      subject: `【${SHOP_NAME}】ご注文取消のお知らせ（${toOrderNumber(source.order.id)}）`,
-      text: [
-        greeting(source.order.shipping_full_name),
-        '',
-        lead,
-        'お支払いは発生していません。',
-        '',
-        ...orderSummaryLines(source),
-        '',
-        contactLine(source.order.id),
-        '',
-        SHOP_NAME,
-      ].join('\n'),
-    }),
-  });
-}
 
 /**
  * 受付を通らない支払いの案内（要対応 order_not_creatable）。注文が無いので注文番号は書かない。

@@ -4,10 +4,7 @@ import {
   findMissingShippingFields,
   type CheckoutShippingSnapshot,
 } from '@/features/checkout/services/checkout-draft.service';
-import { sendOrderConfirmationEmailForOrderId } from '@/lib/orders/order-confirmation-email';
 import {
-  sendOrderCanceledEmail,
-  sendPaymentExpiredEmail,
   sendShopPaymentAlert,
   sendUnplacedPaymentNotice,
   type ShopPaymentAlert,
@@ -164,6 +161,8 @@ export function createSupabaseReconcilerDatabase(client: SupabaseClient): Reconc
           _payment_intent_id: args.paymentIntentId,
           _paid_amount: args.paidAmount,
           _paid_currency: args.paidCurrency,
+          _notify_customer: args.notifyCustomer,
+          _paid_email_variant: args.paidEmailVariant,
           _source_event_id: args.sourceEventId,
         },
       );
@@ -270,13 +269,8 @@ export function createSupabaseReconcilerDatabase(client: SupabaseClient): Reconc
   };
 }
 
-export function createReconcilerMailer(client: SupabaseClient): ReconcilerMailer {
+export function createReconcilerMailer(): ReconcilerMailer {
   return {
-    sendOrderConfirmation: (orderId, paymentState, paidVariant) =>
-      sendOrderConfirmationEmailForOrderId({ store: client, orderId, paymentState, paidVariant, logLabel: '[reconcile]' }),
-    sendPaymentExpired: (orderId) => sendPaymentExpiredEmail({ store: client, orderId, logLabel: '[reconcile]' }),
-    sendOrderCanceled: (orderId, previousStatus) =>
-      sendOrderCanceledEmail({ store: client, orderId, previousStatus, logLabel: '[reconcile]' }),
     sendUnplacedPaymentNotice,
     sendShopAlert: sendShopPaymentAlert,
   };
@@ -338,7 +332,7 @@ export async function createDefaultReconcilerDeps(): Promise<ReconcilerDeps> {
   return {
     readPayment: (ref) => readCheckoutPayment(stripe, ref),
     database: createSupabaseReconcilerDatabase(client),
-    mailer: createReconcilerMailer(client),
+    mailer: createReconcilerMailer(),
     audit: reconcileAudit,
     syncRefunds: createReconcilerRefundSync(
       client as unknown as OrderRefundDatabase,

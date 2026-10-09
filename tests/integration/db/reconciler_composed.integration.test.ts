@@ -5,11 +5,11 @@
  *
  * 単体テストは DB の操作を偽物にする。reconciler_postgrest は DB の操作を単独で呼び、本物の照合関数に通すのは返金の件だけで
  * メールも偽物にしている。入金・払込期限切れ・金額の違い・取消後の入金で、照合関数が判定した行動を本物の RPC・トリガー・
- * メールの送信権が受け取り、注文・在庫・要対応の行がその通りに収まるかは、どちらでも確かめられない。
+ * 注文のメールの送る予定の行が、注文・在庫・要対応の行と一緒にその通りに収まるかは、どちらでも確かめられない。
  *
  * 本物: 照合関数、createSupabaseReconcilerDatabase（supabase-js → PostgREST → RPC・表・トリガー。要対応の記録と
- *       通知の送信権の RPC を含む）、createReconcilerMailer（注文メールの組み立てと claim_order_email の送信権、
- *       期限切れのお知らせ、店への要対応メールの組み立て）。
+ *       通知の送信権の RPC を含む）、createReconcilerMailer（店への要対応メールの組み立て）。お客様への注文のメールは、
+ *       本物の RPC が同じ取引で書く送る予定の行で確かめる。
  * 偽物: Stripe の読み取り（readPayment。段階ごとの現在値を返す。state は本物の classifyStripePaymentState で作る）、
  *       メールの送信（@/lib/mail の sendMail だけ。呼び出しを記録する）、監査ログ（deps.audit と @/lib/audit）、
  *       返金の同期（syncRefunds。この4つの流れに返金は無いので、呼ばれたら失敗させる）。
@@ -24,7 +24,7 @@
  *   LOCAL_SUPABASE_URL="$API_URL" LOCAL_SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" \
  *     npx jest tests/integration/db/reconciler_composed --runInBand
  */
-// 外の世界に出るメールの送信だけを偽物にする。送信権（claim_order_email）と本文の組み立ては本物
+// 外の世界に出るメール（店への要対応メール）の送信だけを偽物にする
 jest.mock('@/lib/mail', () => ({ __esModule: true, default: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('next/headers', () => ({ cookies: jest.fn(), headers: jest.fn() }));
 // 監査ログは偽物にし、ローカル DB の audit_logs へも ALERT_AUDIT_URL へも書かない
@@ -60,8 +60,6 @@ const LOCAL_API_URL = process.env.LOCAL_SUPABASE_URL;
 const LOCAL_SERVICE_ROLE_KEY = process.env.LOCAL_SUPABASE_SERVICE_ROLE_KEY;
 /** 店への要対応メールの宛先。メールは送られない（sendMail が偽物）ので、実在しない宛先でよい */
 const SHOP_ALERT_TO = 'shop-alert@example.com';
-/** createDraft が下書きの配送先に入れるメールアドレス（お客様へのメールの宛先） */
-const CUSTOMER_EMAIL = 'fixture@example.com';
 
 type DraftFixture = Awaited<ReturnType<typeof createDraft>> & { variantId: number };
 
@@ -147,7 +145,7 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
       auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
     });
     database = createSupabaseReconcilerDatabase(client);
-    mailer = createReconcilerMailer(client);
+    mailer = createReconcilerMailer();
     savedEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
     process.env.MAIL_FROM_ADDRESS = 'no-reply@example.com';
     process.env.SHOP_ALERT_EMAIL = SHOP_ALERT_TO;
@@ -192,7 +190,7 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
     return placed.orderId;
   }
 
-  /** 照合関数の依存。Stripe の現在値だけを world.snapshot で差し替える。DB・メールの組み立て・送信権は本物 */
+  /** 照合関数の依存。Stripe の現在値だけを world.snapshot で差し替える。DB と店への要対応メールの組み立ては本物 */
   function fakeStripe(initial: CheckoutPaymentSnapshot) {
     const world = { snapshot: initial };
     const deps: ReconcilerDeps = {
@@ -232,13 +230,16 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
       )
     ).rows;
 
-  /** 取られているお客様向けメールの送信権（種類）。private スキーマなので pg で直接読む */
-  const claimedEmailKinds = async (orderId: string) =>
-    (await db().query('select kind from private.order_emails where order_id = $1 order by kind', [orderId])).rows.map(
-      (row) => row.kind as string,
-    );
+  /** 照合が本物の RPC で書いた、お客様への注文のメールの送る予定。private スキーマなので pg で直接読む */
+  const queuedEmails = async (orderId: string) =>
+    (
+      await db().query(
+        'select kind, variant, status from private.order_email_outbox where order_id = $1 order by seq',
+        [orderId],
+      )
+    ).rows;
 
-  test('カードの入金: 注文が無い支払いを入金済みの注文にして確認メールを1通だけ送り、同じ事実で照合し直しても何も変わらない', async () => {
+  test('カードの入金: 注文が無い支払いを入金済みの注文にして注文確認の送る予定を1行だけ書き、同じ事実で照合し直しても何も変わらない', async () => {
     const draft = await newDraft();
     const paymentIntentId = `pi_composed_${uniqueSuffix()}`;
     const stripe = fakeStripe(snapshotOf(draft, paymentIntentId, stripeState.paid(PRICE)));
@@ -259,16 +260,14 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
     ]);
     expect(await variantStock(db(), draft.variantId)).toBe(1);
     expect(await exceptionsOf(draft)).toEqual([]);
-    // 確認メールの送信権は本物の RPC で1行だけ取られ、送信（偽物）は1回
-    expect(await claimedEmailKinds(orderId)).toEqual(['paid']);
-    expect(sentMails()).toHaveLength(1);
-    expect(sentMails()[0]).toMatchObject({ to: CUSTOMER_EMAIL, subject: expect.stringContaining(toOrderNumber(orderId)) });
-    expect(sentMails()[0].subject).toContain('ご注文ありがとうございます');
+    // 注文確認の送る予定を本物の RPC が1行だけ書く。お客様へのメールは worker が送る
+    expect(await queuedEmails(orderId)).toEqual([{ kind: 'paid', variant: 'order_confirmed', status: 'pending' }]);
+    expect(sentMails()).toHaveLength(0);
 
     const revisionsAfterFirst = await revisionsOf(db(), orderId);
     const second = await reconcile(stripe.deps, draft);
 
-    // 同じ事実からは同じ行動（何もしない）。注文・台帳・変更履歴・送信権・メールのどれも動かない
+    // 同じ事実からは同じ行動（何もしない）。注文・台帳・変更履歴・送る予定・メールのどれも動かない
     expect(second).toEqual({ kind: 'ok', action: { type: 'none' }, orderId, orderStatus: 'paid' });
     expect(await ordersOf(draft)).toEqual(orders);
     expect(await revisionsOf(db(), orderId)).toEqual(revisionsAfterFirst);
@@ -276,11 +275,11 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
       { delta: 2, reason: 'restock' },
       { delta: -1, reason: 'purchase' },
     ]);
-    expect(await claimedEmailKinds(orderId)).toEqual(['paid']);
-    expect(sentMails()).toHaveLength(1);
+    expect(await queuedEmails(orderId)).toEqual([{ kind: 'paid', variant: 'order_confirmed', status: 'pending' }]);
+    expect(sentMails()).toHaveLength(0);
   });
 
-  test('払込期限切れ: 入金待ちの注文（在庫は確保済み）が失敗になって在庫が戻り、期限切れのお知らせを1通だけ送る', async () => {
+  test('払込期限切れ: 入金待ちの注文（在庫は確保済み）が失敗になって在庫が戻り、期限切れの送る予定を1行だけ書く', async () => {
     const draft = await newDraft();
     const paymentIntentId = `pi_composed_${uniqueSuffix()}`;
     const konbini = { paymentMethod: 'stripe_konbini' };
@@ -291,7 +290,7 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
       }),
     );
 
-    // 1. 払込票を発行した。注文を作って入金待ちにし、在庫を確保したまま、お支払い待ちのメールを1通送る
+    // 1. 払込票を発行した。注文を作って入金待ちにし、在庫を確保したまま、お支払い待ちの送る予定を1行書く
     const awaiting = await reconcile(stripe.deps, draft);
 
     expect(awaiting).toMatchObject({ kind: 'ok', action: { type: 'place_and_mark_awaiting' }, orderStatus: 'pending' });
@@ -303,10 +302,8 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
       { delta: -1, reason: 'purchase' },
     ]);
     expect(await variantStock(db(), draft.variantId)).toBe(1);
-    expect(await claimedEmailKinds(orderId)).toEqual(['awaiting_payment']);
-    expect(sentMails()).toHaveLength(1);
-    expect(sentMails()[0]).toMatchObject({ to: CUSTOMER_EMAIL, subject: expect.stringContaining(toOrderNumber(orderId)) });
-    expect(sentMails()[0].subject).toContain('お支払い待ち');
+    expect(await queuedEmails(orderId)).toEqual([{ kind: 'awaiting_payment', variant: null, status: 'pending' }]);
+    expect(sentMails()).toHaveLength(0);
     // 注文詳細に出す支払い方法は、下書きに本物の更新で書かれる
     const draftRow = await db().query('select payment_method from public.checkout_drafts where id = $1', [draft.draftId]);
     expect(draftRow.rows[0].payment_method).toBe('stripe_konbini');
@@ -331,18 +328,16 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
       { delta: 1, reason: 'cancel' },
     ]);
     expect(await variantStock(db(), draft.variantId)).toBe(2);
-    expect(await claimedEmailKinds(orderId)).toEqual(['awaiting_payment', 'payment_expired']);
-    expect(sentMails()).toHaveLength(2);
-    expect(sentMails()[1]).toMatchObject({ to: CUSTOMER_EMAIL, subject: expect.stringContaining(toOrderNumber(orderId)) });
-    expect(sentMails()[1].subject).toContain('お支払い期限切れのお知らせ');
+    expect(await queuedEmails(orderId)).toEqual([{ kind: 'awaiting_payment', variant: null, status: 'pending' }, { kind: 'payment_expired', variant: null, status: 'pending' }]);
+    expect(sentMails()).toHaveLength(0);
 
     // 3. 期限切れのままもう一度照合しても、戻した在庫は動かず、お知らせは増えない
     const again = await reconcile(stripe.deps, draft);
 
     expect(again).toEqual({ kind: 'ok', action: { type: 'none' }, orderId, orderStatus: 'failed' });
     expect(await movementsOf(db(), draft.variantId)).toHaveLength(3);
-    expect(await claimedEmailKinds(orderId)).toEqual(['awaiting_payment', 'payment_expired']);
-    expect(sentMails()).toHaveLength(2);
+    expect(await queuedEmails(orderId)).toEqual([{ kind: 'awaiting_payment', variant: null, status: 'pending' }, { kind: 'payment_expired', variant: null, status: 'pending' }]);
+    expect(sentMails()).toHaveLength(0);
   });
 
   // 実行者を使う2件だけをネストした describe にまとめる。order_revisions.changed_by は auth.users への外部キーなので、
@@ -368,7 +363,7 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
     });
 
     const shipPaidOrder = (orderId: string) =>
-      db().query(`select id from public.admin_ship_paid_order($1::uuid, $2::uuid, 'yamato', '1234-5678')`, [orderId, ACTOR]);
+      db().query(`select id from public.admin_ship_paid_order($1::uuid, $2::uuid, 'yamato', '1234-5678', false)`, [orderId, ACTOR]);
 
     test('金額の違い: 入金済みにして要対応に記録し、お客様への確認メールは出さず、解決するまで発送できない', async () => {
       const draft = await newDraft();
@@ -398,7 +393,7 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
       expect(first).toMatchObject({ exceptionId: exception.id });
       expect(await exceptionsOf(draft)).toHaveLength(1);
       // 注文確定メールは出さない（店が確かめてから連絡する）。出るのは店への要対応メールだけ
-      expect(await claimedEmailKinds(orderId)).toEqual([]);
+      expect(await queuedEmails(orderId)).toEqual([]);
       expect(sentMails()).toHaveLength(1);
       expect(sentMails()[0]).toMatchObject({
         to: SHOP_ALERT_TO,
@@ -482,7 +477,7 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
       expect(await exceptionsOf(draft)).toHaveLength(1);
       expect(first).toMatchObject({ exceptionId: exception.id });
       // お客様へのメールは出ず、店への要対応メールが1通
-      expect(await claimedEmailKinds(orderId)).toEqual([]);
+      expect(await queuedEmails(orderId)).toEqual([]);
       expect(sentMails()).toHaveLength(1);
       expect(sentMails()[0]).toMatchObject({
         to: SHOP_ALERT_TO,

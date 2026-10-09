@@ -41,9 +41,12 @@ async function claim(db: PgClient, id: string, channel: string): Promise<boolean
   return res.rows[0].claimed;
 }
 
-async function claimEmail(db: PgClient, orderId: string, kind: string): Promise<boolean> {
-  const res = await db.query('select public.claim_order_email($1::uuid, $2::text) as claimed', [orderId, kind]);
-  return res.rows[0].claimed;
+async function enqueueEmail(db: PgClient, orderId: string, kind: string, variant: string | null = null): Promise<boolean> {
+  const res = await db.query(
+    'select private.enqueue_order_email($1::uuid, $2::text, $3::text) as inserted',
+    [orderId, kind, variant],
+  );
+  return res.rows[0].inserted;
 }
 
 describeLocalDb('integration: 要対応・要確認', (db) => {
@@ -195,7 +198,7 @@ describeLocalDb('integration: 要対応・要確認', (db) => {
     });
     const { exception_id: id } = await record(db(), { ref: `cs_${uniqueSuffix()}`, reason: 'paid_amount_mismatch', orderId });
     const ship = () => db().query(
-      `select id from public.admin_ship_paid_order($1::uuid, $2::uuid, 'yamato', '1234-5678')`,
+      `select id from public.admin_ship_paid_order($1::uuid, $2::uuid, 'yamato', '1234-5678', false)`,
       [orderId, ACTOR],
     );
 
@@ -228,19 +231,19 @@ describeLocalDb('integration: 要対応・要確認', (db) => {
   });
   });
 
-  test('メールの送信権に期限切れと取消が加わる', async () => {
+  test('送る予定の行に期限切れと取消が入る', async () => {
     const fx = await createCatalogFixture(db(), { stock: 0 });
     const { orderId } = await insertOrderWithStockLine(db(), {
       status: 'failed', itemId: fx.itemId, variantId: fx.variantId, quantity: 1, reserved: false,
       paymentIntentId: `pi_${uniqueSuffix()}`,
     });
 
-    expect(await claimEmail(db(), orderId, 'payment_expired')).toBe(true);
-    expect(await claimEmail(db(), orderId, 'canceled')).toBe(true);
-    await expect(claimEmail(db(), orderId, 'refunded')).rejects.toMatchObject({ code: '23514' });
+    expect(await enqueueEmail(db(), orderId, 'payment_expired')).toBe(true);
+    expect(await enqueueEmail(db(), orderId, 'canceled', 'pending')).toBe(true);
+    await expect(enqueueEmail(db(), orderId, 'refunded')).rejects.toMatchObject({ code: '23514' });
   });
 
-  test('移行前の未入金の注文（Session ID なし）は、お客様向けメールを送信済みとして登録する', async () => {
+  test('移行済みの取りやめの行がある注文では、自動の行をもう書かない', async () => {
     const fx = await createCatalogFixture(db(), { stock: 0 });
     const legacy = await insertOrderWithStockLine(db(), {
       status: 'pending', itemId: fx.itemId, variantId: fx.variantId, quantity: 1, reserved: false,
@@ -251,12 +254,21 @@ describeLocalDb('integration: 要対応・要確認', (db) => {
       paymentIntentId: `pi_${uniqueSuffix()}`,
     });
 
-    await db().query('select private.suppress_legacy_unpaid_order_emails()');
+    // 移行 B が古い送信権から移した後の行を再現し、同じ注文・種類の自動送信を抑える
+    await db().query(
+      `insert into private.order_email_outbox (order_id, kind, variant, origin, status, last_error_code, finished_at)
+       select $1::uuid, k.kind,
+              case k.kind when 'paid' then 'order_confirmed' when 'canceled' then 'pending' end,
+              'auto', 'skipped', 'legacy_suppressed', now()
+       from unnest(array['awaiting_payment', 'paid', 'payment_expired', 'canceled']) as k(kind)`,
+      [legacy.orderId],
+    );
 
     for (const kind of ['awaiting_payment', 'paid', 'payment_expired', 'canceled']) {
-      expect(await claimEmail(db(), legacy.orderId, kind)).toBe(false);
+      const variant = kind === 'paid' ? 'order_confirmed' : kind === 'canceled' ? 'pending' : null;
+      expect(await enqueueEmail(db(), legacy.orderId, kind, variant)).toBe(false);
     }
-    expect(await claimEmail(db(), current.orderId, 'payment_expired')).toBe(true);
+    expect(await enqueueEmail(db(), current.orderId, 'payment_expired')).toBe(true);
   });
 
   test('表は RLS が有効で、anon・authenticated は表も RPC も使えない', async () => {

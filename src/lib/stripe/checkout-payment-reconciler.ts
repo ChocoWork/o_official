@@ -82,6 +82,10 @@ export interface ReconcilerDatabase {
     paymentIntentId: string;
     paidAmount: number;
     paidCurrency: string;
+    /** お客様に注文確認を送るか（全額返金済みの支払いは送らない）。DB が金額の一致と合わせて、行を書くか決める */
+    notifyCustomer: boolean;
+    /** 入金済みの書き分け（グループ A 設計書 5-4） */
+    paidEmailVariant: PaidEmailVariant;
     sourceEventId: string | null;
   }): Promise<{ updated: boolean; amountMatches: boolean; needsReview: boolean }>;
   markOrderAwaitingPayment(args: {
@@ -116,14 +120,8 @@ export interface ReconcilerDatabase {
   persistDraftPaymentMethod(draftId: string, paymentMethod: string): Promise<void>;
 }
 
+/** 照合が送るメール。お客様への注文のメールは、状態を変える DB の関数が同じ取引で行を書き、worker が送る（グループ D） */
 export interface ReconcilerMailer {
-  sendOrderConfirmation(
-    orderId: string,
-    paymentState: 'paid' | 'awaiting_payment',
-    paidVariant?: PaidEmailVariant,
-  ): Promise<boolean>;
-  sendPaymentExpired(orderId: string): Promise<boolean>;
-  sendOrderCanceled(orderId: string, previousStatus: 'payment_in_progress' | 'pending'): Promise<boolean>;
   sendUnplacedPaymentNotice(args: { to: string; fullName: string | null; state: 'paid' | 'awaiting_payment' }): Promise<boolean>;
   sendShopAlert(alert: ShopPaymentAlert): Promise<boolean>;
 }
@@ -412,12 +410,15 @@ async function markPaid(
     throw new Error('mark_paid requires a paid Stripe state with a PaymentIntent');
   }
 
+  // 全額返金済みの支払いは、このあと返金の同期が注文を取り消すので、注文確認の行を書かない（DB は金額の一致も見る）
   const marked = await deps.database.markOrderPaid({
     orderId: order.id,
     expectedStatus,
     paymentIntentId,
     paidAmount: state.amountReceived,
     paidCurrency: state.currency,
+    notifyCustomer: !isFullyRefunded(state),
+    paidEmailVariant: emailVariant,
     sourceEventId: input.sourceEventId ?? null,
   });
   if (!marked.updated) {
@@ -433,10 +434,6 @@ async function markPaid(
     };
   }
 
-  // 全額返金済みの支払いは、このあと返金の同期が注文を取り消す。注文確定・入金確認のメールは送らない
-  if (!isFullyRefunded(state)) {
-    await deps.mailer.sendOrderConfirmation(order.id, 'paid', emailVariant);
-  }
   await persistPaymentMethod(deps, snapshot);
   return { kind: 'applied', orderId: order.id, needsReview: marked.needsReview };
 }
@@ -460,7 +457,6 @@ async function markAwaiting(
     return { kind: 'lost_race' };
   }
 
-  await deps.mailer.sendOrderConfirmation(order.id, 'awaiting_payment');
   await persistPaymentMethod(deps, snapshot);
   return { kind: 'applied', orderId: order.id, needsReview: false };
 }
@@ -492,12 +488,6 @@ async function release(
     return { kind: 'lost_race' };
   }
 
-  if (nextStatus === 'failed') {
-    await deps.mailer.sendPaymentExpired(order.id);
-  }
-  if (cancel?.notifyCustomer) {
-    await deps.mailer.sendOrderCanceled(order.id, expectedStatus);
-  }
   return { kind: 'applied', orderId: order.id, needsReview: false };
 }
 

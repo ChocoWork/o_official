@@ -13,7 +13,6 @@ import {
   type CheckoutPaymentStripeClient,
 } from '@/lib/stripe/checkout-payment-reader';
 import { logAudit } from '@/lib/audit';
-import { sendOrderCanceledEmail } from '@/lib/orders/order-lifecycle-emails';
 import { ADMIN_NOTE_MAX_LENGTH, CANCEL_REASONS, type OrderStatus } from '@/lib/orders/order-payment-types';
 
 const resolveSchema = z.object({
@@ -226,14 +225,6 @@ export async function POST(
       );
     }
 
-    if (row.cancelled_from && row.order_id && notifyCustomer) {
-      await sendOrderCanceledEmail({
-        store: supabase,
-        orderId: row.order_id,
-        previousStatus: row.cancelled_from,
-        logLabel: '[admin]',
-      });
-    }
 
     await audit(
       'success',

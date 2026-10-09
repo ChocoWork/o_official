@@ -162,8 +162,21 @@ describe('createSupabaseReconcilerDatabase', () => {
       paymentIntentId: 'pi_1',
       paidAmount: 5000,
       paidCurrency: 'jpy',
+      notifyCustomer: true,
+      paidEmailVariant: 'payment_received',
       sourceEventId: 'evt_1',
     })).toEqual({ updated: true, amountMatches: false, needsReview: true });
+
+    expect(rpc).toHaveBeenCalledWith('mark_order_paid', {
+      _order_id: 'order-1',
+      _expected_status: 'pending',
+      _payment_intent_id: 'pi_1',
+      _paid_amount: 5000,
+      _paid_currency: 'jpy',
+      _notify_customer: true,
+      _paid_email_variant: 'payment_received',
+      _source_event_id: 'evt_1',
+    });
 
     expect(await database.releaseStock({
       orderId: 'order-1',
@@ -205,11 +218,14 @@ describe('createSupabaseReconcilerDatabase', () => {
   });
 
   it('支払方法を下書きへ書けなくても投げない', async () => {
+    const error = jest.spyOn(console, 'error').mockImplementation(() => undefined);
     const { client } = fakeClient({ update: { data: null, error: { message: 'timeout' } } });
 
     await expect(
       createSupabaseReconcilerDatabase(client).persistDraftPaymentMethod('draft-1', 'stripe_card'),
     ).resolves.toBeUndefined();
+    expect(error).toHaveBeenCalledWith('[reconcile] failed to persist payment_method on checkout draft', 'draft-1', { message: 'timeout' });
+    error.mockRestore();
   });
 });
 
