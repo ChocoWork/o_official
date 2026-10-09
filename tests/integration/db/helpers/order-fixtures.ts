@@ -184,6 +184,8 @@ export async function insertOrderWithStockLine(
     reserved: boolean;
     checkoutSessionId?: string | null;
     paymentIntentId?: string | null;
+    /** 宛先。配送先は後から書き換えられないので、作る時に決める（E2E が使う） */
+    shippingEmail?: string;
   },
 ): Promise<{ orderId: string; orderItemId: string }> {
   const suffix = uniqueSuffix();
@@ -195,7 +197,7 @@ export async function insertOrderWithStockLine(
         shipping_email, shipping_full_name, shipping_postal_code, shipping_prefecture,
         shipping_city, shipping_address, shipping_phone)
      values ($1, $2, $3, $4::public.order_status, $5, 0, $5, 'jpy',
-             'fixture@example.com', '山田 花子', '1500001', '東京都', '渋谷区', '神宮前1-1-1', '0311112222')
+             $6, '山田 花子', '1500001', '東京都', '渋谷区', '神宮前1-1-1', '0311112222')
      returning id`,
     [
       `fx-order-${suffix}`,
@@ -203,6 +205,7 @@ export async function insertOrderWithStockLine(
       options.paymentIntentId ?? null,
       options.status,
       PRICE * options.quantity,
+      options.shippingEmail ?? 'fixture@example.com',
     ],
   );
   const orderId = order.rows[0].id as string;
