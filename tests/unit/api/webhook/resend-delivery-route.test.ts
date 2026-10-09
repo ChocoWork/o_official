@@ -80,6 +80,15 @@ describe('POST /api/webhook/resend-delivery', () => {
     expect((await POST(deliveryRequest(DELIVERED))).status).toBe(200);
   });
 
+  it('古い知らせ（記録より新しい知らせが既にある）も 200 を返す（送り直させない）', async () => {
+    mockRpc.mockResolvedValueOnce({ data: 'stale', error: null });
+
+    const response = await POST(deliveryRequest(DELIVERED));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ received: true });
+  });
+
   it('鍵の作り直しの間に並んだ署名のどれかが合えば通す', async () => {
     const timestamp = String(Math.floor(Date.now() / 1000));
     const old = sign('msg_1', timestamp, DELIVERED, `whsec_${Buffer.from('old').toString('base64')}`);
@@ -107,6 +116,18 @@ describe('POST /api/webhook/resend-delivery', () => {
     expect(mockRpc).not.toHaveBeenCalled();
   });
 
+  it('content-length の見出しが上限を超えていれば、本文を読まずに 413', async () => {
+    const request = deliveryRequest(DELIVERED, { headers: { 'content-length': String(64 * 1024 + 1) } });
+    const readBody = jest.spyOn(request, 'arrayBuffer');
+
+    expect((await POST(request)).status).toBe(413);
+
+    expect(readBody).not.toHaveBeenCalled();
+    expect(request.bodyUsed).toBe(false);
+    expect(mockRpc).not.toHaveBeenCalled();
+    readBody.mockRestore();
+  });
+
   it('受けない種類は記録せずに 200、形の違う本文は 400', async () => {
     const opened = JSON.stringify({ type: 'email.opened', created_at: '2026-10-09T01:00:00Z', data: { email_id: 're_1' } });
     const ignored = await POST(deliveryRequest(opened));
@@ -128,5 +149,20 @@ describe('POST /api/webhook/resend-delivery', () => {
     mockRpc.mockResolvedValueOnce({ data: null, error: { message: 'down', code: '08006' } });
     expect((await POST(deliveryRequest(DELIVERED))).status).toBe(500);
     error.mockRestore();
+  });
+
+  it('DB の失敗で 500 を返す時、ログには例外の名前だけを出し、DB の文は出さない', async () => {
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockRpc.mockResolvedValueOnce({ data: null, error: { message: 'down', code: '08006' } });
+
+    try {
+      expect((await POST(deliveryRequest(DELIVERED))).status).toBe(500);
+
+      expect(error).toHaveBeenCalledTimes(1);
+      expect(error).toHaveBeenCalledWith('[resend-delivery] Failed to record delivery', 'OrderEmailStoreError');
+      expect(JSON.stringify(error.mock.calls)).not.toContain('down');
+    } finally {
+      error.mockRestore();
+    }
   });
 });

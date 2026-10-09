@@ -64,6 +64,9 @@ describe('runWebhookWorker', () => {
     expect(mockRunOrderEmailDeliveryCheckIfDue).toHaveBeenCalledWith(mockStore);
     // Stripe の知らせが書いた注文のメールの行を、同じ起動の中で送るため、Stripe の知らせを先に処理する
     expect(mockDrain.mock.invocationCallOrder[0]).toBeLessThan(mockRunOrderEmailWorker.mock.invocationCallOrder[0]);
+    // 配達の見回りは Resend の返事に左右されて長引きうるので、店への知らせの点検（2つ）より後に動かす
+    expect(mockRunOpsChecks.mock.invocationCallOrder[0]).toBeLessThan(mockRunOrderEmailDeliveryCheckIfDue.mock.invocationCallOrder[0]);
+    expect(mockRunOrderEmailOpsChecks.mock.invocationCallOrder[0]).toBeLessThan(mockRunOrderEmailDeliveryCheckIfDue.mock.invocationCallOrder[0]);
     expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockStore, 'webhook_worker', true, null);
     expect(mockRunOpsChecks).toHaveBeenCalledWith(expect.objectContaining({ store: mockStore }));
     expect(mockRunOrderEmailOpsChecks).toHaveBeenCalledWith(expect.objectContaining({ store: mockStore }));
@@ -88,15 +91,20 @@ describe('runWebhookWorker', () => {
     }
   });
 
-  it('配達の見回りが投げても、点検まで続ける', async () => {
+  it('配達の見回りが投げても、2つの点検の結果を返す', async () => {
     mockDrain.mockResolvedValue({ processed: 0, failed: 0, stoppedBy: 'empty' });
     mockRunOrderEmailDeliveryCheckIfDue.mockRejectedValueOnce(new Error('boom'));
     const error = jest.spyOn(console, 'error').mockImplementation(() => {});
 
-    await runWebhookWorker({ requestUrl: 'http://localhost/x' });
+    try {
+      const result = await runWebhookWorker({ requestUrl: 'http://localhost/x' });
 
-    expect(mockRunOrderEmailOpsChecks).toHaveBeenCalled();
-    error.mockRestore();
+      expect(result).toEqual({ processed: 0, failed: 0, stoppedBy: 'empty', checks: CHECKS, emails: EMAILS, emailChecks: EMAIL_CHECKS });
+      // 例外の文（boom）は出さず、例外の名前だけを残す
+      expect(error).toHaveBeenCalledWith('[stripe-webhook-worker] Delivery check failed', 'Error');
+    } finally {
+      error.mockRestore();
+    }
   });
 
   it('点検に渡した send は sendOpsAlertMail でメールを送る', async () => {
