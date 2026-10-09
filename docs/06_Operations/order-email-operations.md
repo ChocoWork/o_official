@@ -40,14 +40,75 @@ flowchart LR
 
 ## 1. 公開のときにやること
 
+### 1-1 公開前の送信待ちの確かめ
+
+本番に移行を当てた後、`MAIL_PROVIDER` などの本番の環境変数を入れる前に、本番の `private.order_email_outbox` に溜まった送信待ち・送信中・やり直し待ちの行を確かめる。普段の開発で本番の DB につないだ `next dev` から決済・発送・取消を試すと、状態を変える DB の関数は同じ取引で送る予定の行を書く。開発の worker は環境の門で止まるため、行は残り、公開後の最初の worker が本物の Resend から試しの注文の宛先へ送ってしまう。実在の他人の宛先なら個人情報が届き、架空の宛先なら跳ね返りで送信の評価が下がる。
+
+次の読むだけの SQL を、Supabase のダッシュボード（本番のプロジェクト）→ SQL Editor で流す。件数と、注文番号・種類・作った時刻だけを見る。宛先・件名・本文は出さない。
+
+```sql
+-- 送信待ち・送信中・やり直し待ちの件数
+select status, count(*)
+from private.order_email_outbox
+where status in ('pending', 'sending', 'retry_wait')
+group by status order by status;
+
+-- 対象の一覧（注文番号は管理画面と同じ ORD-＋UUID の先頭8文字）
+select 'ORD-' || upper(left(order_id::text, 8)) as order_number, kind, created_at
+from private.order_email_outbox
+where status in ('pending', 'sending', 'retry_wait')
+order by created_at, seq;
+```
+
+公開前の試しの行があれば、上の件数と一覧をユーザーに見せ、取りやめる行について**明示の承認を得てから**、次の書き換えの SQL を同じ SQL Editor で流す。環境変数の設定・公開・worker の起動より先に行う。値の欄は承認された注文番号・種類・作った時刻だけに置き換え、承認されていない行は含めない。`sending` の担当の印と期限も消して表の制約を守り、本文を消す。変更の件数と返る一覧が承認したものと合うこと、上の読むだけの SQL で対象が残っていないことを確かめる。
+
+```sql
+-- 明示の承認を得た後だけ流す。VALUES には承認された行だけを並べる
+with approved(order_number, kind, created_at) as (
+  values ('<承認した注文番号>'::text, '<承認した種類>'::text, '<承認した作成時刻>'::timestamptz)
+)
+update private.order_email_outbox as e
+set status = 'skipped', last_error_code = 'legacy_suppressed',
+    subject = null, body_text = null, body_erased_at = now(), finished_at = now(),
+    lease_token = null, lease_expires_at = null
+from approved as a
+where 'ORD-' || upper(left(e.order_id::text, 8)) = a.order_number
+  and e.kind = a.kind and e.created_at = a.created_at
+  and e.status in ('pending', 'sending', 'retry_wait')
+returning 'ORD-' || upper(left(e.order_id::text, 8)) as order_number, e.kind, e.created_at;
+```
+
+移行を本番に当てた後から公開までは、本番の DB で注文の状態を変える試し（決済・発送・取消）をしない。入金待ちのまま残る試しの注文は、移行を当てる前に、お客様に知らせない取消として片付けておく。有効な払込票は管理画面が409で断るので、期限切れの確定を待つか開発者に相談し、強制的に状態を書き換えない。移行後に初めて残りを見つけた場合も、試しの取消で新しい行を増やさず、公開を止めてユーザーに知らせる。
+
+### 1-2 本番の移行の順番と照合
+
+移行は戻さない。直す時は前へ進める移行で直す。[移行 A](../../supabase/migrations/20261009120000_order_email_outbox.sql) を当ててから [移行 B](../../supabase/migrations/20261009120100_order_email_enqueue.sql) を当てる。B は古い `private.order_emails` の印を、送らない `legacy_suppressed` の行として移し、古い表を消す。
+
+当てる前と後の照合は、Supabase のダッシュボード（本番のプロジェクト）→ SQL Editor で、次の読むだけの SQL を流す。種類ごとの件数と、合計8行・2注文が同じことを確かめる（8行・2注文は2026-10-09の確認値。違えば適用・公開を止めてユーザーへ知らせる）。
+
+```sql
+-- 当てる前（B の後はこの表は無い）。種類ごとの件数を控える
+select kind, count(*) from private.order_emails group by kind order by kind;
+select count(*) as rows, count(distinct order_id) as orders from private.order_emails;
+
+-- A → B を当てた後。公開前の試しの行を取りやめるより前に照合する
+select kind, count(*) from private.order_email_outbox
+where last_error_code = 'legacy_suppressed' group by kind order by kind;
+select count(*) as rows, count(distinct order_id) as orders from private.order_email_outbox
+where last_error_code = 'legacy_suppressed';
+```
+
+### 1-3 公開の設定
+
 | 順 | やること | 誰が | 確かめ方 |
 |---|---|---|---|
-| 1 | Vercel の環境変数 `MAIL_PROVIDER` で Resend を選び、`RESEND_API_KEY`・`MAIL_FROM_ADDRESS`（確かめ済みのドメインのアドレス）・`SHOP_ALERT_EMAIL` を入れる。`RESEND_API_KEY` は Full access にする（送信専用の鍵だと、配達の見回りが「鍵の設定」で止まる。送信と Webhook は動く） | ユーザー | 5 の「送信の一時停止」で `paused` が false |
+| 0 | 1-2 の移行の照合と、1-1 の公開前の送信待ちの確かめを済ませる。試しの行の取りやめは明示の承認の後だけ | ユーザーと controller | 移行前後の種類別件数が同じ8行・2注文で、公開前の試しの送信待ちが残っていない |
+| 1 | Vercel の環境変数 `MAIL_PROVIDER` を `resend`（小文字）にし、`RESEND_API_KEY`・`MAIL_FROM_ADDRESS`（確かめ済みのドメインのアドレス）・`SHOP_ALERT_EMAIL` を入れる。`RESEND_API_KEY` は Full access にする（送信専用の鍵だと、配達の見回りが「鍵の設定」で止まる。送信と Webhook は動く） | ユーザー | 5 の「送信の一時停止」で `paused` が false |
 | 2 | Resend の管理画面の Webhooks で宛先 `<公開した URL>/api/webhook/resend-delivery` を作り、`email.delivered`・`email.delivery_delayed`・`email.bounced`・`email.complained`・`email.suppressed`・`email.failed` の6つを選ぶ。出た署名の鍵（`whsec_` で始まる）を Vercel の `RESEND_DELIVERY_WEBHOOK_SECRET` に入れて出し直す。お問い合わせの返信の宛先（`/api/contact/inbound`・`RESEND_WEBHOOK_SECRET`）とは別の宛先・別の鍵にする | ユーザー | Resend の管理画面で宛先が有効 |
 | 3 | 2 の通しの確かめ | ユーザー（試しの注文）、Claude（確かめる） | 2 の表 |
 | 4 | Vercel の「System Environment Variables を自動で公開」が有効なことを確かめる | ユーザー | `VERCEL_ENV` が実行時に見える。見えないと preview でも環境の門を通って動く |
 
-- 本番の `MAIL_PROVIDER` で Resend を選んでいないと、注文のメールは送らずに送信を止める（重複防止キーの無い送り手で送らないため）。手元のメール受け（`local`）は手元の Supabase とだけ使い、ほかの DB と組み合わせると `config_provider` で一時停止する。
+- 本番の `MAIL_PROVIDER` は `resend`（小文字）を入れる。これは送り手を選ぶ設定の値で、秘密ではない。`resolveMailProvider` は大文字小文字まで完全一致で見るので、`Resend` と入れると送信を止め、店への知らせも届かない。ほかの送り手でも注文のメールは送らずに止める（重複防止キーの無い送り手で送らないため）。手元のメール受け（`local`）は手元の Supabase とだけ使い、ほかの DB と組み合わせると `config_provider` で一時停止する。
 - 宛先を登録するまでの間も、読み取り権限のある鍵なら1時間ごとの見回りが配達の状態を拾う（6）。
 
 ### 環境の門
@@ -56,9 +117,11 @@ flowchart LR
 
 手元で `next build && next start` を本番の DB に向けない。この門は手元の本番ビルドを止めず、`MAIL_PROVIDER` が無いと既定の SES が選ばれて、本番の DB に `config_provider` の一時停止を書く。`VERCEL_ENV` が実行時に見えないと preview の判定もできないため、公開前に上の順4を確かめる。
 
-## 2. 本番の Resend とつないだ通しの確かめ（公開の後・開店の前）
+## 2. 本番の Resend とつないだ通しの確かめ（お客様がいない公開前の確認）
 
 試しの注文の宛先を Resend の試し用の宛先にして、次を確かめる。試しの注文は確かめた後に取り消すか返金する。
+
+お客様がいない公開の前だけ、Resend の鍵（`RESEND_API_KEY`）を一時的に誤った値にし、試しの行で送信を試みる。ORDER タブの上に「お客様への注文のメールの送信を止めています」と原因が出ることを確かめる。正しい値に戻して出し直し、送る対象の1件を毎分の worker が試し、15分以内に自動で再開すること、状態を読み直すと帯が消えることを確かめる。worker が動く本番の実行環境で行う（preview・development は環境の門で止まる）。結果を下の欄に残す。開店後のお客様のいる環境では行わない。
 
 | 宛先 | 確かめること |
 |---|---|
@@ -83,6 +146,8 @@ flowchart LR
 2. 原因が「宛先の形が不正」なら、お客様のメールアドレスの誤りを疑い、ほかの手段（電話など）でお客様に確かめる。
 3. 直せる原因なら、「お客様へ再送」で送り直す。
 
+原因が `idempotency_conflict`（同じ送信の印で中身が違う）なら、[送信の一時停止の節の送信元を変える時の注意](#送信の一時停止)を確かめる。送信元の変更などで、同じキーの前の試行と中身が違うと Resend が409を返し、やり直さず「送れなかった」にする。前の試行が送られていないか Resend の記録を照合し、開発者に連絡する。必要な再送は新しい行・新しいキーになる。
+
 ### 届かなかった
 
 件名「【要確認】届かなかった注文のメール（N件）」。Resend が送った後に、相手のメールの会社で届かなかった・止められた。
@@ -96,20 +161,24 @@ flowchart LR
 
 ### 送信の一時停止
 
+店主が気づく道は、管理画面の ORDER タブの上に出る「お客様への注文のメールの送信を止めています」の帯である。帯は止めている時だけ出て、原因と再開の案内を示す（E2E `FR-ADMIN-067`）。止まった時の店への知らせのメールも、止まった原因と同じ送信の道（同じ鍵・送信元・上限）を通るので届かない。
+
 件名「【要対応】注文のメールの送信を止めています」。鍵・送信元のドメイン・送り手・送信の上限の問題で、送信全体を止めている。メールは消えずに残り、直ると試した1件が送れた時点で自動で再開する（15分ごと。1日の上限は日本時間 9時の後）。
+
+一時停止を書き直しても、`quota_daily` 以外は「次に1件試す時刻」（`next_probe_at`）を延ばさない。`quota_daily` だけは次の UTC 0時（日本時間 9時）に決め直す。
 
 | 原因 | 直し方 |
 |---|---|
 | 送信の鍵の設定 | Vercel の `RESEND_API_KEY` が Resend の有効な鍵か確かめ、入れ直して出し直す |
 | 送信元のドメインの設定 | Resend の管理画面で送信元のドメインの確かめ（DNS）が通っているか、`MAIL_FROM_ADDRESS` がそのドメインか確かめる |
-| 送信サービスの設定 | `MAIL_PROVIDER` で Resend を選び、`MAIL_FROM_ADDRESS` が入っているか確かめる |
+| 送信サービスの設定 | `MAIL_PROVIDER` が `resend`（小文字）か、`MAIL_FROM_ADDRESS` が入っているか確かめる。`resolveMailProvider` は完全一致なので、`Resend` は誤りで全部止まり、店への知らせも届かない |
 | 1日の送信の上限・1か月の送信の上限 | Resend の利用の上限を確かめ、必要なら上のプランにする |
 
-この知らせ自体も同じ送信サービスで送るので、鍵や上限の問題では届かないことがある。管理画面の注文の「履歴」の上の表示と、5 の「送信の一時停止」でも確かめる。
+注文の「履歴」の上の表示と、5 の「送信の一時停止」でも確かめる。
 
 Resend の重複防止キーは24時間だけ効く。一時停止や待つ時間の指示（`Retry-After`、最大1日）で24時間を越えて送り直すと、前の試行が Resend に届いていた場合に2通目になりうる。長い一時停止の後は、管理画面の履歴で送信済みでない行を確かめ、必要に応じて Resend の記録も照合する。
 
-送信待ち・やり直し待ちの行があるうちに送信元（`MAIL_FROM_ADDRESS`）を変えると、前の試行の中身と違うため Resend が409を返し、「送れなかった」（`idempotency_conflict`）になることがある。手で再送すれば新しい行・新しいキーで送れる。送信元を変える前に待ちの行を確かめる。
+送信待ち・やり直し待ちの行があるうちに送信元（`MAIL_FROM_ADDRESS`）を変えると、前の試行の中身と違うため Resend が409を返し、やり直さず「送れなかった」（`idempotency_conflict`）になることがある。前の試行が送られていないか Resend の記録を照合し、開発者に連絡する。必要な手の再送は新しい行・新しいキーになる。送信元を変える前に待ちの行を確かめる。
 
 ### 溜まり
 
@@ -135,11 +204,11 @@ Resend の重複防止キーは24時間だけ効く。一時停止や待つ時�
 | `unexpected_error` | 想定外の失敗 | やり直す |
 | `config_api_key`・`config_sender_domain`・`config_provider`・`quota_daily`・`quota_monthly` | 設定の問題 | 送信全体を止める |
 | `invalid_message` | 宛先の形が不正 | 送れなかった |
-| `idempotency_conflict` | 同じ送信の印で中身が違う | 送れなかった（開発者に連絡） |
+| `idempotency_conflict` | 同じ送信の印で中身が違う | やり直さず送れなかった。前の試行を Resend の記録で照合し、開発者に連絡。必要な手の再送は新しい行・新しいキー（[送れなかった](#送れなかった)） |
 | `source_missing` | 注文の情報が足りない | 送れなかった（開発者に連絡） |
 | `superseded` | 注文の状態が変わったため | 取りやめ |
 | `no_recipient` | 宛先が無い | 取りやめ |
-| `legacy_suppressed` | 移行前の注文のため | 取りやめ（移行で移した印） |
+| `legacy_suppressed` | 移行前の注文のため | 取りやめ（移行で移した印、または明示の承認で取りやめた公開前の試しの行） |
 
 ## 4. 配達の知らせの鍵の入れ替え
 
@@ -148,6 +217,8 @@ Resend の重複防止キーは24時間だけ効く。一時停止や待つ時�
 3. 出し直した後、Resend の管理画面でその宛先の配達の記録が成功（200）になっているのを確かめる。
 
 ## 5. 状態を確かめる（本番は読むだけ）
+
+この節の SQL は、Supabase のダッシュボード（本番のプロジェクト）→ SQL Editor で流す。読むだけの SQL だけを流し、書き込みの文は流さない。アプリのログは、Vercel → このプロジェクトの Logs で見る。
 
 ```sql
 -- 状態ごとの件数
@@ -172,9 +243,11 @@ Resend の読み取りの権限が要る。`RESEND_API_KEY` が送信専用の�
 | 上限 | 決まり |
 |---|---|
 | 1回の時間枠 | 8秒（`DELIVERY_CHECK_BUDGET_MS`） |
-| 読む間 | 500ミリ秒（`DELIVERY_CHECK_READ_INTERVAL_MS`） |
+| 読む間 | 1秒（`DELIVERY_CHECK_READ_INTERVAL_MS`） |
 | 1件の待機 | 5秒（`DELIVERY_CHECK_READ_TIMEOUT_MS`）。通信自体は中断せず、遅れて返った結果は使わない |
 | 読む件数 | 最大50件。送ってから3日以内で状態が無い・配達の遅れのメールだけ |
+
+古い順に取得した対象を、Resend を読む前に混ぜる。先頭の状態が決まらないメールだけが毎回の時間枠を使わず、後ろのメールも読めるようにする。
 
 8秒は次の読み取りを始める前に確認する時間枠で、開始済みの読み取りと DB の処理を含む厳密な実行上限ではない。回数の制限・通信の不調・待機切れはその回をやめ、次の1時間に回す。読めた0件で失敗がある時は `provider_unavailable` を心拍に残す。Resend の最後の状態が `opened`・`clicked` のメールは配達済みとして扱う。
 

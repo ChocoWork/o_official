@@ -24,6 +24,7 @@
 | 見回り | 毎時0分 | POST `/api/cron/expire-pending-orders` |
 | 照合 | 毎日 3:00（18:00 UTC） | POST `/api/cron/stripe-reconcile` |
 | 実行の記録の掃除 | 毎日 4:00（19:00 UTC） | DB の中だけ（7日を残す） |
+| 注文のメールの片付け（`order-email-retention`） | 毎日 4:40（19:40 UTC） | DB の中だけ（本文と受付済みの番号の片付け） |
 
 ---
 
@@ -31,7 +32,8 @@
 
 ```mermaid
 flowchart TD
-    A["1 Vercel に公開し、環境変数を入れる"] --> B["2 本番 DB で pg_net を有効にし、Vault に合言葉と住所を入れる"]
+    P["公開前: 移行の照合と試しの送信待ちを確認<br/>取りやめはユーザーの明示の承認の後"] --> A["1 Vercel に公開し、環境変数を入れる"]
+    A --> B["2 本番 DB で pg_net を有効にし、Vault に合言葉と住所を入れる"]
     B --> C["3 保留中の SQL を当て、定期処理を登録する"]
     C --> D["4 定期処理が成功しているのを確かめる"]
     D --> E["5 Stripe の知らせの宛先を登録する（13種）"]
@@ -41,16 +43,17 @@ flowchart TD
 
 | 順 | やること | 誰が | 確かめ方 |
 |---|---|---|---|
-| 1 | Vercel に公開し、環境変数を入れる。`CRON_SECRET` は32文字以上のランダムな値（例: `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`）。`SHOP_ALERT_EMAIL`・`MAIL_FROM_ADDRESS`・`STRIPE_SECRET_KEY`（本番の鍵）も入れる。知らせのメールを送る設定（`MAIL_PROVIDER` で Resend を選び、`RESEND_API_KEY`。本番の注文のメールは Resend でしか送らない。[注文のメールの手順書](order-email-operations.md)の1）も入れる | ユーザー | 公開した URL で画面が開く。Vercel の環境変数に、`SHOP_ALERT_EMAIL`・`MAIL_FROM_ADDRESS` とメールを送る設定が入っている（無いと、知らせのメールは送られず、アプリのログに警告が出るだけになる） |
+| 0 | 本番の環境変数（`MAIL_PROVIDER` など）を入れる前に、[注文のメールの手順書](order-email-operations.md)の1-2で移行前後を照合し、1-1の読むだけの SQL で送信待ち・送信中・やり直し待ちを確かめる。試しの行の取りやめはユーザーに見せ、明示の承認を得た後だけ | ユーザーと controller | 古い印が種類ごとに同じ8行・2注文で、公開前の試しの送信待ちが残っていない（宛先を出さない） |
+| 1 | Vercel に公開し、環境変数を入れる。`CRON_SECRET` は32文字以上のランダムな値（例: `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`）。`SHOP_ALERT_EMAIL`・`MAIL_FROM_ADDRESS`・`STRIPE_SECRET_KEY`（本番の鍵）も入れる。知らせのメールを送る設定（`MAIL_PROVIDER` は `resend`（小文字）、`RESEND_API_KEY`。本番の注文のメールは Resend でしか送らない。[注文のメールの手順書](order-email-operations.md)の1）も入れる。`resend` は秘密ではない設定値で、`Resend` と入れると完全一致の検証で止まり、店への知らせも届かない | ユーザー | 公開した URL で画面が開く。Vercel の環境変数に、`SHOP_ALERT_EMAIL`・`MAIL_FROM_ADDRESS` とメールを送る設定が入っている（無いと、知らせのメールは送られず、アプリのログに警告が出るだけになる） |
 | 2 | 本番 DB で `create extension if not exists pg_net with schema extensions;` を流し、Vault に `cron_secret`（Vercel の `CRON_SECRET` と同じ値）と `app_base_url`（公開した URL。末尾の `/` は付けずに入れる）を入れる | 合言葉はユーザー（Vault の画面で入れる）、それ以外は Claude（許可を得て） | `select name from vault.decrypted_secrets where name in ('cron_secret', 'app_base_url');` が2行 |
-| 3 | `supabase/pending/` の `schedule_stripe_webhook_worker.sql`・`schedule_expire_pending_orders.sql`・`schedule_stripe_reconcile.sql` を、新しい version の移行にして当てる（`supabase/pending/README.md` の手順） | Claude（許可を得て） | `select jobname, schedule, active from cron.job order by jobname;` に、`cron-job-run-details-retention`（掃除。移行で登録済み）・`expire-pending-orders`・`process-stripe-webhooks`・`stripe-reconcile` の4つが `active` で並ぶ。保持期限の別のジョブ（`checkout-drafts-retention`・`rate-limit-counters-retention`）が並んでいてもよい |
+| 3 | `supabase/pending/` の `schedule_stripe_webhook_worker.sql`・`schedule_expire_pending_orders.sql`・`schedule_stripe_reconcile.sql` を、新しい version の移行にして当てる（`supabase/pending/README.md` の手順） | Claude（許可を得て） | `select jobname, schedule, active from cron.job order by jobname;` に、`cron-job-run-details-retention`（掃除。移行で登録済み）・`expire-pending-orders`・`process-stripe-webhooks`・`stripe-reconcile`・`order-email-retention`（毎日19:40 UTC、本文と受付済みの番号の片付け。グループ D の移行 A で登録）の5つが `active` で並ぶ。保持期限の別のジョブ（`checkout-drafts-retention`・`rate-limit-counters-retention`）が並んでいてもよい |
 | 4 | 定期処理が成功しているのを確かめる | Claude | 6 の「実行の記録と、その直後の応答」の SQL（`jobname` を変えて使う）。worker は数分後に、`process-stripe-webhooks` の `status` が `succeeded`、応答の `status_code` が200。見回りは次の毎時0分の後、照合は次の 18:00 UTC の後に、`expire-pending-orders`・`stripe-reconcile` の実行の記録と応答（応答は実行から6時間以内に見る）、そして `ops_job_heartbeats` の `order_sweep`・`stripe_reconcile` の成功の時刻で確かめる。照合は最大300秒動き、pg_net は60秒で待つのをやめるので、応答が `timed_out` でも、`stripe_reconcile` の成功の時刻が新しければ成功（6 の「応答の見方」）。掃除は次の 19:00 UTC の後に、6 の「定期処理ごとの実行の記録」の SQL（`cron-job-run-details-retention`。URL を呼ばないので応答は無い）で確かめる |
 | 5 | Stripe の管理画面で知らせの宛先（`<公開した URL>/api/webhook/stripe`）を作り、4 の13種を購読し、署名の合言葉を Vercel の `STRIPE_WEBHOOK_SECRET` に入れて出し直す | ユーザー | Stripe の管理画面で宛先が有効 |
 | 5b | Resend の配達の知らせの宛先を登録する（[注文のメールの手順書](order-email-operations.md)の1の順2） | ユーザー | Resend の管理画面で宛先が有効 |
 | 6 | 最初の知らせが処理されたのを確かめる。本番の鍵ではテストカードが使えず、テストモードの知らせは本番の宛先に届かない。少額の本番の決済を1回して、確かめた後に返金する | ユーザー（決済と返金）、Claude（確かめる） | `stripe_webhook_events` の新しい行（決済の知らせ。返金したら返金の知らせも）が `completed` |
 | 7 | 普段の開発を手元の DB に切り替える（設計書 第7章） | Claude とユーザー | `npm run dev` の画面が手元の見本データを出す |
 
-- 3 の前に、本番のキューと記録の表に、開発の実行で入った行が残っていないかを、読むだけの SQL で確かめる（6 の「キューの状態ごとの件数と、いちばん古い受け取り」「定期処理ごとの最後の成功・失敗」「知らせの回数の上限の状態」）。普段の開発（`npm run dev`）は開店のときまで本番の DB につながっているので、テストモードの知らせで完了していない行・退避（`dead`）の行・開発の実行が書いた最後の成功の時刻や知らせの状態が残りうる。残っていると、登録の直後に「処理が遅れています」「止まっています」の知らせが出る。行が見つかったら、消す前にユーザーへ見せる。消すのは別の手順で、ユーザーの明示の承認を得てから、3 の前に行う（承認なしには消さない。消す文は、中身を見たうえでその場で決める）。
+- 3 の前に、本番のキューと記録の表に、開発の実行で入った行が残っていないかを、読むだけの SQL で確かめる（6 の「キューの状態ごとの件数と、いちばん古い受け取り」「定期処理ごとの最後の成功・失敗」「知らせの回数の上限の状態」）。注文のメールの表 `private.order_email_outbox` の送信待ち・送信中・やり直し待ちも対象とし、こちらは環境変数を入れる前の順0で確かめる（[注文のメールの手順書](order-email-operations.md)の1-1。件数・注文番号・種類・作った時刻だけを出し、宛先を出さない）。普段の開発（`npm run dev`）は開店のときまで本番の DB につながっているので、テストモードの知らせで完了していない行・退避（`dead`）の行・開発の実行が書いた最後の成功の時刻や知らせの状態が残りうる。残っていると、登録の直後に「処理が遅れています」「止まっています」の知らせが出る。行が見つかったら、消す前にユーザーへ見せる。消すのは別の手順で、ユーザーの明示の承認を得てから、3 の前に行う（承認なしには消さない。消す文は、中身を見たうえでその場で決める）。注文のメールの試しの行は削除せず、承認後に `skipped`・`legacy_suppressed` として本文を消す。移行後から公開までは本番の DB で決済・発送・取消を試さない。入金待ちの試しの注文は移行前にお客様に知らせない取消にしておく。
 - 3・4 を 5 より先にする。worker が動いているのを確かめてから、受け取り口を開ける（R-07）。
 - `ops_job_heartbeats` の `webhook_worker` は、定期処理だけでなく、受け取り口が保存の後に動かす worker（`after()`）も更新する。定期処理が動いている証拠にならないので、4 の確かめには使わない。
 - 一度も成功していない定期処理は、遅れの知らせの対象にならない。4 の確かめを省かない。
@@ -99,7 +102,7 @@ flowchart TD
 - やること: 定期処理（worker）が動いているかを、次の順に確かめる
 
 1. 6 の「実行の記録と、その直後の応答」の SQL（`jobname` を `process-stripe-webhooks` にする）で、worker の実行の記録と応答を見る。`ops_job_heartbeats` の `webhook_worker` は、定期処理だけでなく、受け取り口が保存の後に動かす worker（`after()`）も更新する。定期処理が動いている証拠にならないので、これで判断しない。
-2. 応答の `status_code` で切り分ける。worker（POST `/api/cron/process-stripe-webhooks`）は1回の呼び出しで、取り出せる知らせが無くなるか約45秒（アプリの実行上限は60秒）たつまで、1件ずつ処理する。失敗した知らせは原因の記号つきで記録して次へ進み、応答は200 `{processed, failed, stoppedBy}` になる。
+2. 応答の `status_code` で切り分ける。worker（POST `/api/cron/process-stripe-webhooks`）は1回の呼び出しで、取り出せる Stripe の知らせが無くなるか35秒たつまで1件ずつ処理し、続いて注文のメールを10秒の予算で送る。その後に店への知らせの点検と配達の見回りが続く（アプリの実行上限は60秒）。失敗した知らせは原因の記号つきで記録して次へ進み、応答は200 `{processed, failed, stoppedBy}` になる。
    - 401: 合言葉が合っていない。2 に従う。アプリのログに `[cron] … unauthorized`（合言葉を断ったときにアプリが出す行）が出ていないのに401なら、アプリではなく、Vercel のデプロイの保護が返している。`app_base_url` が本番のドメインでなく、プレビューやデプロイごとの URL のときに起きる。本番のドメインを入れる
    - 3xx: `app_base_url` が別の URL へ転送されている。転送先の、最終の本番の URL を入れる
    - 502: DB から知らせを取り出せなかった（`stoppedBy` が `claim_error`）。worker が DB からキューを読めないので、Supabase のプロジェクトの状態を確かめる

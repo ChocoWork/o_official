@@ -52,7 +52,7 @@ Cookie名/属性は[cookie.ts](../../../src/lib/cookie.ts)、セッション発�
 
 Cronは表で指定したsecretに対する`Authorization: Bearer <secret>`を要求し、欠落・不一致・secret未設定はいずれも401。法定保存2ルートは**LEGAL_ARCHIVE_CRON_SECRET**、他Cronは**CRON_SECRET**。どのルートも合言葉をSHA-256にしてから定時間比較する（[auth.ts](../../../src/lib/cron/auth.ts)）。CRON_SECRETのルートは、32文字未満の設定を設定ミスとして401にする。
 
-Stripe Webhookはraw bytesとstripe-signatureを`constructEvent`で検証する。Resend inboundはraw text、svix-id/svix-timestamp/svix-signature、RESEND_WEBHOOK_SECRETでHMAC-SHA256を検証し、timestampの現在との差は5分以内を要求する。署名確認の後にJSONをparseする。会員JWT・管理RBAC・CSRFでこれらの署名を代替しない。
+Stripe Webhookはraw bytesとstripe-signatureを`constructEvent`で検証する。Resend はraw text、svix-id/svix-timestamp/svix-signatureをHMAC-SHA256で検証し、timestampの現在との差は5分以内を要求する。鍵はお問い合わせの inbound が `RESEND_WEBHOOK_SECRET`、注文の配達の知らせが `RESEND_DELIVERY_WEBHOOK_SECRET` で、宛先と鍵を分ける。署名確認の後にJSONをparseする。会員JWT・管理RBAC・CSRFでこれらの署名を代替しない。
 
 ## 認証
 
@@ -243,7 +243,7 @@ Stripe Webhookはraw bytesとstripe-signatureを`constructEvent`で検証する�
 
 | メソッド・パス | 認証・認可 | 入力 | 応答 | 主な失敗（HTTP） | 副作用・補足 / 根拠 |
 | --- | --- | --- | --- | --- | --- |
-| `GET /api/admin/order-attention` | RBAC `admin.orders.read` | 本文なし | 200 `{data:OrderAttention}`（reviews、exceptions） | 500 DB/例外 | 未確認注文と未解決payment exceptions [実装](../../../src/app/api/admin/order-attention/route.ts) |
+| `GET /api/admin/order-attention` | RBAC `admin.orders.read` | 本文なし | 200 `{data:{exceptions,reviews,counts,emailSending}}`。`emailSending` は `{paused:boolean,reasonLabel:string\|null}\|null` | 500 DB/例外 | 未確認注文と未解決payment exceptions、送信の一時停止。停止中だけ原因名を返し、停止なしは `reasonLabel:null`。送信状態の取得だけが失敗した時は `emailSending:null` として一覧と200を保つ。ORDER タブの帯に使う [実装](../../../src/app/api/admin/order-attention/route.ts) |
 | `GET /api/admin/orders` | RBAC `admin.orders.read` | Query O（querySchema。下記） | 200 `{data:管理注文[],pagination:{page,pageSize,total,totalPages}}` | 400 query; 500 DB/例外 | Stripe状態/返金残額/操作可否/レビュー要否を付加 [実装](../../../src/app/api/admin/orders/route.ts) |
 | `GET /api/admin/orders/[id]/history` | RBAC `admin.orders.read` | Path UUID | 200 `{order:{id,orderNumber,statusLabel,recipient},sendPaused,entries}`。本文は返さない | 400 id; 404 order; 500 DB/例外 | 受付・状態の変化（返金を含む）・メールを新しい順、送信の一時停止、no-store [実装](../../../src/app/api/admin/orders/%5Bid%5D/history/route.ts) |
 | `GET /api/admin/orders/[id]/emails/[emailId]` | RBAC `admin.orders.read` | Path: id/emailIdともUUID | 200 `{status:"available",subject,bodyText,sentAt}` 又は `{status:"erased",sentAt}` | 400 id; 404 対象なし/未送信; 500 DB/例外 | 送信済みだけ。45日を過ぎた本文を毎日の片付けで消した後はerased、no-store [実装](../../../src/app/api/admin/orders/%5Bid%5D/emails/%5BemailId%5D/route.ts) |
@@ -295,7 +295,7 @@ Stripe Webhookはraw bytesとstripe-signatureを`constructEvent`で検証する�
 | `POST /api/cron/process-stripe-webhooks` | CRON_SECRET Bearer J（hash定時間比較・32文字以上） | 本文なし | 200 `{processed,failed,stoppedBy}` | 401 認証/設定欠落; 502 claimのDB障害 | Stripeの知らせに35秒、注文のメールに10秒（合わせて45秒の処理予算）。queueから取り出せる知らせが無くなるか35秒たつまで処理。失敗は原因の記号で記録し、2^(n-1)分後に再試行、9回目の失敗で退避（`dead`）。最後の成功の記録、店への知らせの点検、その後に配達の見回り（1時間に1回、時間枠8秒） [実装](../../../src/app/api/cron/process-stripe-webhooks/route.ts) |
 | `POST /api/cron/stripe-reconcile` | CRON_SECRET Bearer J（hash定時間比較・32文字以上） | 本文なし | 200 `{data:{matchedOrders,unmatchedPayments,syncedBalanceTransactions,syncedRefunds,syncedPayouts,payoutMismatches,errors}}`（`errors[].reason` は原因の記号） | 401 認証/設定欠落; 502 Reconciliation failed | Stripe注文/返金/Payout照合と会計同期。支払いごとに失敗を受け止め、監査`stripe.reconcile`と最後の成功を記録 [実装](../../../src/app/api/cron/stripe-reconcile/route.ts) |
 | `POST /api/webhook/stripe` | Stripe署名 W | raw body bytes + `stripe-signature` | 200 `{received:true,duplicate:boolean}`、13種以外とモード違いは200 `{received:true,ignored:true}` | 400 header/署名（監査には書かず件数だけ数え、10分に5件で店へ）; 500 設定/queue保存 | 13種だけを永続queueへenqueueし、応答の後に`after()`でworkerを1回動かす。鍵と違うモードの知らせは保存せず店へ知らせる [実装](../../../src/app/api/webhook/stripe/route.ts) |
-| `POST /api/webhook/resend-delivery` | 公開（Svix署名・`RESEND_DELIVERY_WEBHOOK_SECRET`） | raw body、svix-id/timestamp/signature。64KBまで、時刻前後5分、配達の知らせ6種類 | 200 `{received:true}`。対象外は `{received:true,ignored:true}` | 400 header/JSON/入力; 401 署名/時刻; 413 大きさ; 500 DB記録; 503 鍵未設定 | 同じ番号は1回、記録より新しい状態だけ更新。環境の門なし [実装](../../../src/app/api/webhook/resend-delivery/route.ts) |
+| `POST /api/webhook/resend-delivery` | Resend Svix署名 W | raw body、svix-id/timestamp/signature。64KBまで、時刻前後5分、配達の知らせ6種類 | 200 `{received:true}`。対象外は `{received:true,ignored:true}` | 400 header/JSON/入力; 401 署名/時刻; 413 大きさ; 500 DB記録; 503 鍵未設定 | 同じ番号は1回、記録より新しい状態だけ更新。環境の門なし [実装](../../../src/app/api/webhook/resend-delivery/route.ts) |
 
 ## 入出力定義と処理上の条件
 

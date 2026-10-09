@@ -80,7 +80,7 @@ ${CRON_SECRET}` を付与します。Stripeだけに存在する未返金の成�
 
 Resend の配達の状態の知らせ（`POST /api/webhook/resend-delivery`）の Svix 署名の鍵です（`whsec_` で始まる）。お問い合わせの返信の `RESEND_WEBHOOK_SECRET` とは別の宛先・別の鍵にします。Vercel の環境変数にだけ置きます。入れ替えは[注文のメールの手順書](order-email-operations.md)の4に従います。
 
-本番の注文のメールは `MAIL_PROVIDER` で Resend を選んだ時だけ送ります（ほかの送り手では送信を止めます）。`RESEND_API_KEY` は Full access にします（送信専用の鍵だと、1時間ごとの配達の見回りが動きません）。
+本番の注文のメールは `MAIL_PROVIDER` に `resend`（小文字）を入れた時だけ送ります（ほかの送り手では送信を止めます）。`resend` は送り手を選ぶ値で秘密ではありません。`resolveMailProvider` は大文字小文字まで完全一致で見るため、`Resend` と入れると全部止まり、店への知らせも届きません。`RESEND_API_KEY` は Full access にします（送信専用の鍵だと、1時間ごとの配達の見回りが動きません）。
 
 ## CRON_SECRET
 

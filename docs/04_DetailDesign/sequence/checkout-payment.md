@@ -338,7 +338,7 @@ sequenceDiagram
 | paidの異常 | 金額・通貨不一致でもRPCはpaidに更新し、照合器が要対応を記録。再確保できないstock明細はpaid＋要確認。出荷ガードとは別に管理する |
 | 競合・収束 | 更新0件や中間矛盾は読み直し。state_conflictが最終回まで続けば要対応を記録してneeds_actionを返す。最大3回の試行内でdoneに達せず、最終回がapplied/lost_raceで追加読取りを要する場合はReconcileTransientError(not_converged)。completeは一時エラーを503にする |
 | 外部一時障害 | StripeConnectionError/StripeAPIError/StripeRateLimitError、または数値statusCodeが500以上/429なら一時障害。照合器の読取りはresource_missingをmissing分類。completeの初回Session取得も同じ一時障害判定で503を返す。初回取得のresource_missing・認証エラー・その他の非一時エラーは外側catchの500。入力・認証の問題を一時障害とみなして繰返さない |
-| 注文メール | 設定・宛先が揃えば種類別claimを行う。RPCがfalseなら送らず、RPC error/例外は監査後に送信を続ける。送信失敗はclaimのreleaseを試みる。入金更新とメール到達・重複排除を同一視しない |
+| 注文メール | 状態を変える関数が同じ取引で送る予定の行を書き、worker が行の番号から作った重複防止キーで送る。失敗はやり直し、送れなければ店へ知らせる（FREQ-434・435）。入金更新とメール到達を同一視しない |
 | 注文の持ち主（グループ C） | 「注文する」の受け付け（place-order → 受付RPC）だけが、下書きの買い手と今の買い手が同じ時に`user_id`を書く（ゲストは空）。completeと照合器は書かない（完了での紐付けは廃止）。「注文する」を通らない支払い（Stripeの知らせ・見回り・完了の照合）で作る注文は持ち主が空で、メール確認済みのログインの時に`linkGuestOrdersByEmail`が同じメールでまとめる。DBは持ち主の付け替えを断る（空→会員は通る。会員→別の会員は`ORDER_OWNER_IMMUTABLE`。会員→空は会員を消した時だけ） |
 | 画面再試行 | 通常確定・外部復帰とも失敗を表示。completeを自動pollするループは画面にない |
 | 郵便番号の補助照会 | 7桁入力で[postal-code API](../../../src/app/api/checkout/postal-code/route.ts)をGET。IP60回/600秒、入力不正400、制限429/503、200(address/null)、上流例外502。[住所サービス](../../../src/features/checkout/services/postal-code.service.ts)はメモリ/DB cache、同一照会の共有、cache miss時のZipCloud照会を行う。UIは古い入力への応答を破棄し、補完できない場合も手入力を続けられる。draft保存や注文状態は変更しない。配送先の保存はSQ-CHECKOUT-01へ分ける |

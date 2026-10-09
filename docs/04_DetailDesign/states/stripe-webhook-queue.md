@@ -4,7 +4,7 @@
 
 ## 概要
 
-署名検証済みの13種のイベントを永続化して受付応答を返す。workerは毎分のCron起動と、受付APIが保存の後に`after()`で動かす1回のどちらでも、取り出せるイベントが無くなるか約45秒たつまで1件ずつ処理する。9回目の試行も失敗したイベントは`dead`にして取り出さず、店へ知らせる。キューの `completed` はイベントの処理完了であり、注文の入金成功ではない。要対応・要確認を記録して正常に戻った場合もイベント処理は完了する。
+署名検証済みの13種のイベントを永続化して受付応答を返す。workerは毎分のCron起動と、受付APIが保存の後に`after()`で動かす1回のどちらでも、取り出せる Stripe のイベントが無くなるか35秒たつまで1件ずつ処理し、続いて注文のメールを10秒の予算で送る。その後に店への知らせの点検と配達の見回りが続く（入口の実行上限は60秒）。9回目の試行も失敗したイベントは`dead`にして取り出さず、店へ知らせる。キューの `completed` はイベントの処理完了であり、注文の入金成功ではない。要対応・要確認を記録して正常に戻った場合もイベント処理は完了する。
 
 ## 範囲と根拠
 
@@ -46,7 +46,7 @@ stateDiagram-v2
 
 ## 処理結果との対応
 
-workerは保存payloadのID・type・data.objectを検証し、処理関数が正常に戻ればcompleteする。処理例外またはcomplete例外は原因の記号つきでfailを試み、fail記録そのものが失敗してもログに残して次のイベントへ進む。1回の起動は、claim対象が無くなる（`empty`）か約45秒の予算を使い切る（`budget`）まで続き、応答は200 `{processed,failed,stoppedBy}`。claimのDB障害（`claim_error`）だけが502で、そこで繰り返しを止める。詳細は[シーケンス](../sequence/stripe-webhooks.md)。
+workerは保存payloadのID・type・data.objectを検証し、処理関数が正常に戻ればcompleteする。処理例外またはcomplete例外は原因の記号つきでfailを試み、fail記録そのものが失敗してもログに残して次のイベントへ進む。1回の起動は、Stripe のclaim対象が無くなる（`empty`）か35秒の予算を使い切る（`budget`）まで続く。続いて注文のメールを10秒の予算で送り、その後に点検と配達の見回りを行い、応答は200 `{processed,failed,stoppedBy}`。claimのDB障害（`claim_error`）だけが502で、そこで繰り返しを止める。詳細は[シーケンス](../sequence/stripe-webhooks.md)。
 
 payload検査は保存行とのID・type一致、dataがobjectであることと`object`キーの存在を確認する。`data.object`自体の型や各イベントの必須参照IDをすべて事前検証する処理ではなく、後段の業務処理が拒否する場合もある。claim返却値の形式が不正な場合はclaim失敗（`claim_error`）として502となり、その要求ではfailを呼ばない。検査に落ちた保存payloadは`invalid_payload`の失敗として数える。DBで既にprocessingとなった行は、lease期限後の次のclaimで失敗（`lease_expired`）として数えられ、待機の後に再claim対象となる（9回目なら`dead`）。
 

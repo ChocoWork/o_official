@@ -21,7 +21,8 @@
 | `checkout.sessions.retrieve/expire`と失効競合 | [Session失効](../../../src/lib/stripe/checkout-session-expiry.ts) |
 | `checkout.sessions.retrieve/list`、`paymentIntents.retrieve`、照合判定・条件付き更新 | [Stripe読取り](../../../src/lib/stripe/checkout-payment-reader.ts)、[照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)、[判定表](../../../src/lib/stripe/checkout-payment-decision.ts)、[RPC接続](../../../src/lib/stripe/checkout-payment-reconciler-deps.ts) |
 | 在庫解放と取消記録 | [注文IDによる在庫解放RPC](../../../supabase/migrations/20260927100200_release_stock_by_order.sql)、[台帳反映トリガー](../../../supabase/migrations/20260919065355_add_stock_movements.sql) |
-| 出荷・失敗注文の取消・例外解決 | [最新の管理RPC](../../../supabase/migrations/20260927100500_payment_exceptions.sql)、[必須配送先判定](../../../supabase/migrations/20260925000218_add_order_state_transition_rpcs.sql) |
+| 出荷 | [移行 B の最新の発送RPC](../../../supabase/migrations/20261009120100_order_email_enqueue.sql)、[必須配送先判定](../../../supabase/migrations/20260925000218_add_order_state_transition_rpcs.sql) |
+| 失敗注文の取消・例外解決 | [管理RPC](../../../supabase/migrations/20260927100500_payment_exceptions.sql)。取消メールの行を書く在庫解放関数は [移行 B](../../../supabase/migrations/20261009120100_order_email_enqueue.sql) |
 | `refunds.list`、成功返金集計、CASと再確認 | [返金同期](../../../src/lib/stripe/order-refund-sync.ts)、[返金投影RPC](../../../supabase/migrations/20260925000218_add_order_state_transition_rpcs.sql) |
 | 取消・出荷のメール | [送る予定の表](../../../supabase/migrations/20261009120000_order_email_outbox.sql)、[状態を変える関数](../../../supabase/migrations/20261009120100_order_email_enqueue.sql)、[worker](../../../src/lib/orders/email/order-email-worker.ts)、[中身](../../../src/lib/orders/email/order-email-compose.ts) |
 
@@ -111,9 +112,9 @@ sequenceDiagram
     API->>API: 管理認可 → CSRF helper → 配送業者・追跡番号を検証
     API->>DB: admin_ship_paid_order(order, actor, carrier, tracking, notify)
     alt 条件が成立
-        DB-->>API: 出荷更新行と宛先
+        Note over DB: 関数内で出荷を更新し、notify なら同じ取引で発送のメールの行を書く
+        DB-->>API: 更新した注文の id だけ
         API->>DB: 出荷成功の監査
-        Note over DB: notify なら発送のメールの行を書く
         API-->>Admin: 200 status=shipped
         API-->>API: after() で worker を動かす
         API-->>Mail: 発送のメールを送る（同じ重複防止キーでやり直す）
@@ -273,7 +274,7 @@ APIが外部確認に失敗すればRPCへ進まない。DB側では例外行を
 
 | 項目 | 現行処理 |
 | --- | --- |
-| 取消・発送のメール | 取消・発送のメールは、状態を変える関数が同じ取引で送る予定の行を書き、worker が送る。失敗はやり直し、送れなければ店へ知らせる（FREQ-434・435） |
+| 取消・発送のメール | 取消・発送のメールは、状態を変える関数が同じ取引で送る予定の行を書き、worker が行の番号から作った重複防止キーで送る。失敗はやり直し、送れなければ店へ知らせる（FREQ-434・435） |
 | 発送の選択 | `notifyCustomer`（真偽、既定 true）が false なら発送のメールの行を書かない（FREQ-438） |
 | 履歴 | RPCがactor・理由を設定し、order_revisionsに変更前後・変更列等を記録する。返金ではrefund_update、状態変更ではstatus_update等として記録 |
 | 要確認 | [review API](../../../src/app/api/admin/orders/%5Bid%5D/review/route.ts)は管理認可・CSRF後にmark_order_reviewed。review_reasonあり・reviewed_atなしを条件にreviewed_at/byを保存し、reasonを消さない。要対応resolveとは別操作 |

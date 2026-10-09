@@ -2,17 +2,17 @@
 
 ## 概要
 
-`supabase/migrations/` の基準スキーマと後続変更を時系列で確認し、定義された全テーブルと物理 FK を示す。主な対象は **59 テーブル（public 56、private 1、security 2）と 63 FK（public 起点 62、private 起点 1）**。加えて、現行コードが使うもののこの SQL 列に定義がない **3 テーブルと旧 SQL の 2 FK**、現行 SQL にある **1 ビュー** を第 6 節に記録する。`auth.users` は参照先の外部スキーマとして表示し、このテーブル数に含めない。
+`supabase/migrations/` の基準スキーマと後続変更を時系列で確認し、テーブルと物理 FK を示す。基準と本書のカート・お気に入り・グループ D の追記を反映した掲載対象は **63 テーブル（public 58、private 3、security 2）と 69 FK（public 起点 67、private 起点 2）**。加えて、現行コードが使うもののこの SQL 列に定義がない **3 テーブルと旧 SQL の 2 FK**、現行 SQL にある **1 ビュー** を第 6 節に記録する。`auth.users` は参照先の外部スキーマとして表示し、このテーブル数に含めない。他領域の後続変更を一括再集計した数ではない。
 
-確認日: **2026-10-03**。ソース基準コミット: `697836a1eb2b62e1a3257ce079ecf8f536e1cb06`。基準は [20260901102912_remote_schema.sql](../../../supabase/migrations/20260901102912_remote_schema.sql)、最後の対象ファイルは [20260927100800_retire_legacy_order_rpcs.sql](../../../supabase/migrations/20260927100800_retire_legacy_order_rpcs.sql)。対象の 40 SQL ファイルが定義する構造を記録しており、本番 DB の適用状況は確認していない。
+基準の確認日: **2026-10-03**。ソース基準コミット: `697836a1eb2b62e1a3257ce079ecf8f536e1cb06`。基準は [20260901102912_remote_schema.sql](../../../supabase/migrations/20260901102912_remote_schema.sql)、基準集計の最後の対象ファイルは [20260927100800_retire_legacy_order_rpcs.sql](../../../supabase/migrations/20260927100800_retire_legacy_order_rpcs.sql)。対象の 40 SQL ファイルの基準は59テーブル・63 FKで、後続の記載済みの追記を含む一覧は2026-10-09に数え直した。本番 DB の適用状況は確認していない。
 
 グループ C（2026-10-08）の [20261008055720_checkout_order_owner_binding.sql](../../../supabase/migrations/20261008055720_checkout_order_owner_binding.sql) は、`checkout_drafts` に列 `buyer_user_id` を 1 つ足し、トリガーを 2 つ足す（下書きの買い手の変更禁止、注文の持ち主の付け替え禁止）。テーブルと FK の数は変わらない。この移行は 2026-10-08 に本番へ適用済み（上の件数の集計には含めない）。内容は 2.4・5.1・5.2 に書く。
 
-2026-10-08 追記（FREQ-428〜432）: [移行 A: 持ち主と明細](../../../supabase/migrations/20261008220825_cart_wishlist_ownership.sql) は旧 `carts`・`wishlist` を削除し、`carts`・`cart_lines`・`wishlists`・`wishlist_lines` を作り、`checkout_drafts.cart_id` を足す。[移行 B: 決済 RPC](../../../supabase/migrations/20261008220944_cart_checkout_rpcs.sql) は明細の写しを `source_cart_line_id`（`cart_lines.id`）で扱う。本書のカート・お気に入り・下書き部分はこの2本に合わせた。上の基準集計との差分はテーブル +2、物理 FK +5（計61テーブル・68 FK）。他領域の後続変更を一括再集計した数ではない。移行 A・B と [移行 C: バリアントのトリガー](../../../supabase/migrations/20261008220958_item_variant_sync.sql) は 2026-10-09（日本時間）に本番へ適用済み（版 20261008220825・20261008220944・20261008220958。適用後に旧関数9本と旧表が無いこと、4表の RLS、定期の片付け1件、関数の実行が service_role だけなこと、組み合わせの欠けた公開中の商品が0件なことを確かめた）。
+2026-10-08 追記（FREQ-428〜432）: [移行 A: 持ち主と明細](../../../supabase/migrations/20261008220825_cart_wishlist_ownership.sql) は旧 `carts`・`wishlist` を削除し、`carts`・`cart_lines`・`wishlists`・`wishlist_lines` を作り、`checkout_drafts.cart_id` を足す。[移行 B: 決済 RPC](../../../supabase/migrations/20261008220944_cart_checkout_rpcs.sql) は明細の写しを `source_cart_line_id`（`cart_lines.id`）で扱う。本書のカート・お気に入り・下書き部分はこの2本に合わせた。基準集計との差分はテーブル +2、物理 FK +5（この追記の時点で計61テーブル・68 FK）。他領域の後続変更を一括再集計した数ではない。移行 A・B と [移行 C: バリアントのトリガー](../../../supabase/migrations/20261008220958_item_variant_sync.sql) は 2026-10-09（日本時間）に本番へ適用済み（版 20261008220825・20261008220944・20261008220958。適用後に旧関数9本と旧表が無いこと、4表の RLS、定期の片付け1件、関数の実行が service_role だけなこと、組み合わせの欠けた公開中の商品が0件なことを確かめた）。
 
 2026-10-08 追記（全体レビュー、FREQ-433）: [移行 C: バリアントの同期](../../../supabase/migrations/20261008220958_item_variant_sync.sql) は `public.items` の `items_sync_variants` トリガーを足す。`AFTER INSERT OR UPDATE OF colors, sizes` で `private.sync_item_variants()` が `public.backfill_item_variants(NEW.id)` を呼び、商品の作成・色やサイズの追加の直後からカートに入れられるようにする。既存商品も一度同期する。テーブル・FK の数は変わらず、本番の適用状況は未確認。
 
-2026-10-09 追記（グループ D、FREQ-434〜438）: [移行 A](../../../supabase/migrations/20261009120000_order_email_outbox.sql) で `private.order_email_outbox`（注文のメール。自動の行は `(order_id, kind)` で1行、手の再送は送信待ちの間1行、`provider_message_id` は重複なし）・`private.order_email_send_pause`（送信の一時停止。1行）・`private.resend_webhook_receipts`（Resend の知らせの受付済みの番号。3日）を足した。[移行 B](../../../supabase/migrations/20261009120100_order_email_enqueue.sql) で `private.order_emails`（古い送信権）を消した（本番の8行を取りやめの行として移す処理を含む）。3つの表は関数だけで読み書きし、RLS を有効にして表の権限を外してある。本番の適用状況は未確認。
+2026-10-09 追記（グループ D、FREQ-434〜438）: [移行 A](../../../supabase/migrations/20261009120000_order_email_outbox.sql) で `private.order_email_outbox`（注文のメール。自動の行は `(order_id, kind)` で1行、手の再送は送信待ちの間1行、`provider_message_id` は重複なし）・`private.order_email_send_pause`（送信の一時停止。1行）・`private.resend_webhook_receipts`（Resend の知らせの受付済みの番号。3日）を足した。[移行 B](../../../supabase/migrations/20261009120100_order_email_enqueue.sql) で `private.order_emails`（古い送信権）を消した（本番の8行を取りやめの行として移す処理を含む）。差分はテーブル +2（3表追加・1表削除）、物理 FK +1（outbox の `order_id`・`requested_by` の2本追加・旧表の `order_id` の1本削除）で、前の追記の61テーブル・68 FKから **63テーブル・69 FK** になる。3つの表は関数だけで読み書きし、RLS を有効にして表の権限を外してある。本番の適用状況は未確認。
 
 図は領域別に分割する。PK・FK と関係を読むための列だけを載せ、全列、CHECK、RLS、トリガー、RPC、Storage オブジェクトの一覧は SQL に委ねる。旧 `migrations/` と `supabase/pending/` は主な集計の基準に含めず、現行コードが依存する旧定義だけを補足する。
 
@@ -252,7 +252,7 @@ erDiagram
   ORDERS |o..o{ STOCK_MOVEMENTS : "order_id"
   ORDER_ITEMS |o..o{ STOCK_MOVEMENTS : "order_item_id"
   ITEM_VARIANTS |o..o{ ORDER_ITEMS : "variant_id"
-  ORDERS ||--o{ ORDER_EMAIL_OUTBOX : "メール"
+  ORDERS ||..o{ ORDER_EMAIL_OUTBOX : "order_id"
   AUTH_USERS |o..o{ ORDER_EMAIL_OUTBOX : "requested_by"
 ```
 
@@ -569,7 +569,7 @@ erDiagram
 
 ## 3. 全テーブルとキーの一覧
 
-以下は 59 テーブルすべての定義元とキーの一覧。FK の有無は入出両方向で判定する。`audit_logs_backups.id` は主キーではなく nullable の通常列である。
+以下は掲載対象の63テーブル・69 FKの定義元とキーの一覧。FK の有無は入出両方向で判定する。`audit_logs_backups.id` は主キーではなく nullable の通常列である。
 
 ### 3.1 認証・利用者
 
@@ -628,9 +628,9 @@ erDiagram
 | `public.order_items` | `(id)` | なし | 参照元 1 / 参照先 3 | [20260901102912:677](../../../supabase/migrations/20260901102912_remote_schema.sql#L677) |
 | `public.order_revisions` | `(id)` | なし | 参照元 0 / 参照先 2 | [20260901102912:698](../../../supabase/migrations/20260901102912_remote_schema.sql#L698) |
 | `public.stock_movements` | `(id)` | なし | 参照元 0 / 参照先 3 | [20260919065355:6](../../../supabase/migrations/20260919065355_add_stock_movements.sql#L6) |
-| `private.order_email_outbox` | `(id)` | `(seq)`; 自動 `(order_id, kind)`; 手の送信待ち `(order_id, kind)`; `(provider_message_id)` | 参照元 0 / 参照先 2（orders・auth.users） | [移行 A:11](../../../supabase/migrations/20261009120000_order_email_outbox.sql#L11) |
-| `private.order_email_send_pause` | `(id)` | なし（1行） | 参照元 0 / 参照先 0 | [移行 A:91](../../../supabase/migrations/20261009120000_order_email_outbox.sql#L91) |
-| `private.resend_webhook_receipts` | `(svix_id)` | なし | 参照元 0 / 参照先 0 | [移行 A:110](../../../supabase/migrations/20261009120000_order_email_outbox.sql#L110) |
+| `private.order_email_outbox` | `(id)` | `(seq)`; 自動 `(order_id, kind)`; 手の送信待ち `(order_id, kind)`; `(provider_message_id)` | 参照元 0 / 参照先 2（orders・auth.users） | [20261009120000:11](../../../supabase/migrations/20261009120000_order_email_outbox.sql#L11) |
+| `private.order_email_send_pause` | `(id)` | なし（1行） | なし（独立） | [20261009120000:91](../../../supabase/migrations/20261009120000_order_email_outbox.sql#L91) |
+| `private.resend_webhook_receipts` | `(svix_id)` | なし | なし（独立） | [20261009120000:110](../../../supabase/migrations/20261009120000_order_email_outbox.sql#L110) |
 
 ### 3.4 決済・下書き
 
@@ -833,7 +833,7 @@ erDiagram
 
 ### 6.1 現行マイグレーション列にない 3 テーブル
 
-以下の 3 テーブルは現行の `.from()` 呼び出しに存在するが、`supabase/migrations/` の基準 SQL と後続変更には CREATE TABLE がない。定義は旧 `migrations/` に存在するため、**現行コードの依存と旧 SQL の構造**として示す。第 2〜4 節の 59 テーブル・63 FK には加算していない。実 DB に存在するか、旧 SQL のとおりの制約があるかは未確認である。
+以下の 3 テーブルは現行の `.from()` 呼び出しに存在するが、`supabase/migrations/` の基準 SQL と後続変更には CREATE TABLE がない。定義は旧 `migrations/` に存在するため、**現行コードの依存と旧 SQL の構造**として示す。第 2〜4 節の63テーブル・69 FKには加算していない。実 DB に存在するか、旧 SQL のとおりの制約があるかは未確認である。
 
 | 現行コードの参照テーブル | 旧 SQL の PK / UNIQUE | 旧 SQL の FK | 定義元 / 現行の参照元 |
 | --- | --- | --- | --- |
