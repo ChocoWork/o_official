@@ -111,7 +111,7 @@ describe('proxy の Origin 検査', () => {
     });
 
     // 署名や Bearer で発信元を検証している経路だけが除外。
-    test.each(['/api/webhook/stripe', '/api/contact/inbound', '/api/cron/meta-kpi-sync'])(
+    test.each(['/api/webhook/stripe', '/api/webhook/resend-delivery', '/api/contact/inbound', '/api/cron/meta-kpi-sync'])(
       '%s は除外',
       async (path) => {
         const proxy = await loadProxy();

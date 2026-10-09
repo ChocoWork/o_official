@@ -1,47 +1,12 @@
 import { NextResponse } from 'next/server';
-import { createHmac, timingSafeEqual } from 'node:crypto';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
 import { parseReplyAddress } from '@/lib/contact/reply-address';
+import { isSvixTimestampFresh, verifySvixSignature } from '@/lib/webhooks/svix';
 
 // Resend delivers inbound emails via a Svix-signed webhook. We verify the
 // signature manually (no svix dependency) and correlate the reply back to the
 // originating inquiry thread via the reply+{id}.{token}@ address.
-
-const SVIX_TOLERANCE_SECONDS = 5 * 60;
-
-function verifySvixSignature(
-  secret: string,
-  svixId: string,
-  svixTimestamp: string,
-  svixSignatureHeader: string,
-  payload: string
-): boolean {
-  const secretKey = secret.startsWith('whsec_') ? secret.slice('whsec_'.length) : secret;
-  const secretBytes = Buffer.from(secretKey, 'base64');
-  const signedContent = `${svixId}.${svixTimestamp}.${payload}`;
-  const expected = createHmac('sha256', secretBytes).update(signedContent).digest('base64');
-
-  const providedSignatures = svixSignatureHeader
-    .split(' ')
-    .map((part) => part.split(',')[1])
-    .filter((value): value is string => Boolean(value));
-
-  const expectedBuffer = Buffer.from(expected);
-  return providedSignatures.some((signature) => {
-    const provided = Buffer.from(signature);
-    return provided.length === expectedBuffer.length && timingSafeEqual(provided, expectedBuffer);
-  });
-}
-
-function isTimestampFresh(svixTimestamp: string): boolean {
-  const timestamp = Number.parseInt(svixTimestamp, 10);
-  if (!Number.isFinite(timestamp)) {
-    return false;
-  }
-  const nowSeconds = Math.floor(Date.now() / 1000);
-  return Math.abs(nowSeconds - timestamp) <= SVIX_TOLERANCE_SECONDS;
-}
 
 // Collect candidate recipient addresses from the inbound payload shape.
 function collectRecipients(data: Record<string, unknown>): string[] {
@@ -105,7 +70,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing signature headers' }, { status: 400 });
     }
 
-    if (!isTimestampFresh(svixTimestamp) || !verifySvixSignature(secret, svixId, svixTimestamp, svixSignature, rawBody)) {
+    if (!isSvixTimestampFresh(svixTimestamp) || !verifySvixSignature(secret, svixId, svixTimestamp, svixSignature, rawBody)) {
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
     }
 

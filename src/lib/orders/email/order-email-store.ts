@@ -28,7 +28,9 @@ export type OrderEmailRpcName =
   | 'list_unnotified_dead_order_emails'
   | 'mark_order_emails_dead_notified'
   | 'list_unnotified_order_email_delivery_problems'
-  | 'mark_order_email_delivery_problems_notified';
+  | 'mark_order_email_delivery_problems_notified'
+  | 'record_order_email_delivery'
+  | 'list_order_emails_awaiting_delivery';
 
 export type OrderEmailStore = {
   rpc(name: OrderEmailRpcName, params?: Record<string, unknown>): PromiseLike<{ data: unknown; error: QueryError }>;
@@ -258,4 +260,30 @@ export async function markDeliveryProblemsNotified(store: OrderEmailStore, email
   if (emailIds.length === 0) return 0;
   const data = await callOrderEmailRpc(store, 'mark_order_email_delivery_problems_notified', { _email_ids: emailIds });
   return typeof data === 'number' ? data : 0;
+}
+
+export type OrderEmailDeliveryRecordResult = 'updated' | 'stale' | 'duplicate' | 'unknown_email';
+
+export async function recordOrderEmailDelivery(
+  store: OrderEmailStore,
+  event: { svixId: string | null; providerMessageId: string; status: OrderEmailDeliveryStatus; eventAt: Date },
+): Promise<OrderEmailDeliveryRecordResult> {
+  const data = await callOrderEmailRpc(store, 'record_order_email_delivery', {
+    _svix_id: event.svixId,
+    _provider_message_id: event.providerMessageId,
+    _delivery_status: event.status,
+    _event_at: event.eventAt.toISOString(),
+  });
+  if (data === 'updated' || data === 'stale' || data === 'duplicate' || data === 'unknown_email') return data;
+  throw new OrderEmailStoreError('record_order_email_delivery', null);
+}
+
+export async function listOrderEmailsAwaitingDelivery(
+  store: OrderEmailStore,
+  limit: number,
+): Promise<Array<{ id: string; providerMessageId: string }>> {
+  const data = await callOrderEmailRpc(store, 'list_order_emails_awaiting_delivery', { _limit: limit });
+  return rowsOf(data).flatMap((row) =>
+    typeof row.provider_message_id === 'string' ? [{ id: String(row.email_id), providerMessageId: row.provider_message_id }] : [],
+  );
 }

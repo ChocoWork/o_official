@@ -31,6 +31,10 @@ const mockRunOrderEmailOpsChecks = jest.fn();
 jest.mock('@/lib/orders/email/order-email-ops', () => ({
   runOrderEmailOpsChecks: (...args: unknown[]) => mockRunOrderEmailOpsChecks(...args),
 }));
+const mockRunOrderEmailDeliveryCheckIfDue = jest.fn();
+jest.mock('@/lib/orders/email/order-email-delivery', () => ({
+  runOrderEmailDeliveryCheckIfDue: (...args: unknown[]) => mockRunOrderEmailDeliveryCheckIfDue(...args),
+}));
 
 import { runWebhookWorker, WORKER_TIME_BUDGET_MS } from '@/lib/stripe/webhook-worker';
 import type { OpsAlertMail } from '@/lib/ops/ops-alert-mail';
@@ -46,6 +50,7 @@ describe('runWebhookWorker', () => {
     mockRecordHeartbeat.mockResolvedValue(undefined);
     mockRunOrderEmailWorker.mockResolvedValue(EMAILS);
     mockRunOrderEmailOpsChecks.mockResolvedValue(EMAIL_CHECKS);
+    mockRunOrderEmailDeliveryCheckIfDue.mockResolvedValue('not_due');
   });
 
   it('Stripe の知らせに35秒、注文のメールに10秒を使い、成功を記録して両方を点検する', async () => {
@@ -56,6 +61,7 @@ describe('runWebhookWorker', () => {
     expect(WORKER_TIME_BUDGET_MS).toBe(35_000);
     expect(mockDrain).toHaveBeenCalledWith(expect.objectContaining({ store: mockStore, budgetMs: 35_000 }));
     expect(mockRunOrderEmailWorker).toHaveBeenCalledWith({ budgetMs: 10_000 });
+    expect(mockRunOrderEmailDeliveryCheckIfDue).toHaveBeenCalledWith(mockStore);
     // Stripe の知らせが書いた注文のメールの行を、同じ起動の中で送るため、Stripe の知らせを先に処理する
     expect(mockDrain.mock.invocationCallOrder[0]).toBeLessThan(mockRunOrderEmailWorker.mock.invocationCallOrder[0]);
     expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockStore, 'webhook_worker', true, null);
@@ -80,6 +86,17 @@ describe('runWebhookWorker', () => {
     } finally {
       error.mockRestore();
     }
+  });
+
+  it('配達の見回りが投げても、点検まで続ける', async () => {
+    mockDrain.mockResolvedValue({ processed: 0, failed: 0, stoppedBy: 'empty' });
+    mockRunOrderEmailDeliveryCheckIfDue.mockRejectedValueOnce(new Error('boom'));
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    await runWebhookWorker({ requestUrl: 'http://localhost/x' });
+
+    expect(mockRunOrderEmailOpsChecks).toHaveBeenCalled();
+    error.mockRestore();
   });
 
   it('点検に渡した send は sendOpsAlertMail でメールを送る', async () => {

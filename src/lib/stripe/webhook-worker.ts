@@ -11,6 +11,7 @@ import {
   runOrderEmailWorker,
   type OrderEmailWorkerResult,
 } from '@/lib/orders/email/order-email-worker';
+import { runOrderEmailDeliveryCheckIfDue } from '@/lib/orders/email/order-email-delivery';
 import { runOrderEmailOpsChecks, type OrderEmailOpsResult } from '@/lib/orders/email/order-email-ops';
 import type { OrderEmailStore } from '@/lib/orders/email/order-email-store';
 
@@ -56,6 +57,13 @@ export async function runWebhookWorker(options: { requestUrl: string; budgetMs?:
     emails = await runOrderEmailWorker({ budgetMs: ORDER_EMAIL_WORKER_BUDGET_MS });
   } catch (error) {
     console.error('[stripe-webhook-worker] Order email worker failed', error instanceof Error ? error.name : 'UnknownError');
+  }
+
+  // 配達の状態の見回り。1時間に1回だけ動く（前回の時刻は見回りの中で見る）。投げても、点検は続ける
+  try {
+    await runOrderEmailDeliveryCheckIfDue(store);
+  } catch (error) {
+    console.error('[stripe-webhook-worker] Delivery check failed', error instanceof Error ? error.name : 'UnknownError');
   }
 
   const checks = await runOpsChecks({ store, send: sendOpsAlertMail, now: () => new Date() });

@@ -21,7 +21,7 @@ import { hasExplicitOriginConfig, isAllowedOrigin } from '@/lib/redirect';
 // 発信元を検証しているものだけ。増やすときはその検証手段をコメントに書くこと。
 const ORIGIN_CHECK_PATH_PREFIX = '/api';
 const ORIGIN_CHECK_EXEMPT_PREFIXES = [
-  '/api/webhook',         // Stripe: 署名検証（constructEvent）
+  '/api/webhook',         // Stripe（constructEvent）・Resend の配達の知らせ（Svix）: 署名検証
   '/api/contact/inbound', // Resend: Svix 署名検証
   '/api/cron',            // スケジューラ: Bearer シークレット
 ] as const;
