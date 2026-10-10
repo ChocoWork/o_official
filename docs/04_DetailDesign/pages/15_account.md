@@ -14,7 +14,7 @@
 | FR-ACCOUNT-002 | プロフィールタブではメールアドレス（読み取り専用）・氏名・電話番号を表示・編集できる | IMPL-ACCOUNT-002 | `src/app/account/page.tsx`, `src/app/api/profile/route.ts` | `/api/profile` が認証済みユーザーの email / 氏名 / 電話番号を返し、account 画面で read-only メール表示と編集保存を行う | 済 |
 | FR-ACCOUNT-003 | 未ログイン時のアクセスは案内表示またはログイン導線で適切にハンドリングする | IMPL-ACCOUNT-003 | `src/app/account/page.tsx` | `isLoggedIn` が false の場合に案内テキストと `/login` への誘導ボタンを表示する | 済 |
 | FR-ACCOUNT-004 | 配送情報タブでは郵便番号・都道府県・市区町村・番地を入力・保存でき、郵便番号入力時に住所自動補完を行う | IMPL-ACCOUNT-004 | `src/app/account/page.tsx`, `src/app/api/profile/route.ts` | 配送情報タブで住所を保存し、郵便番号補完は `/api/checkout/postal-code` 経由で実行する | 済 |
-| FR-ACCOUNT-005 | 注文履歴タブでは過去の注文を一覧表示し、注文詳細への遷移を提供する | IMPL-ACCOUNT-005 | `src/app/account/page.tsx`, `src/app/api/orders/route.ts`, `src/app/api/orders/[id]/route.ts`, `src/app/account/orders/[id]/page.tsx` | `/api/orders` で本人注文一覧を返し、一覧カードと `/account/orders/[id]` の注文詳細導線を実装する | 済 |
+| FR-ACCOUNT-005 | 注文履歴タブでは過去の注文を一覧表示し、注文詳細への遷移を提供する | IMPL-ACCOUNT-005 | `src/app/account/page.tsx`, `src/app/api/orders/route.ts`, `src/app/api/orders/[id]/route.ts`, `src/app/account/orders/[id]/page.tsx` | `/api/orders` で本人注文一覧を返し、一覧カードと `/account/orders/[id]` の注文詳細導線を実装する。状態の言葉は進み具合の言葉（未決済・受注生産中・発送準備中・配送中。FREQ-441）で、注文詳細は進み具合の段と発送ごとの配送情報を出す（FREQ-444） | 済 |
 | FR-ACCOUNT-006 | 顧客プロフィールの保存項目を拡張し、フリガナ・住所を含めた完全な顧客情報を管理できるようにする | IMPL-ACCOUNT-006 | `src/app/account/page.tsx`, `src/app/api/profile/route.ts` | `profiles.kana_name` / `phone` / `address` を保存対象に含め、プロフィール編集から完全な顧客情報を管理できるようにする | 済 |
 | FR-ACCOUNT-007 | account ページからログアウトできる導線を提供し、ログアウト後は未ログイン状態を明示する | IMPL-ACCOUNT-007 | `src/app/account/page.tsx`, `src/contexts/LoginContext.tsx`, `src/app/api/auth/logout/route.ts` | account サイドバーにログアウトボタンを追加し、`/api/auth/logout` 呼び出し後に未ログイン案内表示へ戻す | 済 |
 | FR-ACCOUNT-008 | メールアドレスをプロフィールカードへ含め、配送先住所 UI を配送情報タブへ分離する | IMPL-ACCOUNT-008 | `src/app/account/page.tsx`, `e2e/FR-ACCOUNT-008-profile-address-integration.spec.ts` | プロフィールカード内に read-only メール表示を含め、住所管理は配送情報タブへ分離する | 済 |
@@ -58,3 +58,26 @@
 - Supabase の profiles 保存は RLS が有効なため、account/profile API は request ごとの Authorization ヘッダを Supabase client に引き渡し、DB query 自体もユーザー文脈で実行する。
 - account の電話番号と郵便番号入力は、表示は自動整形しつつ、ユーザーは数字のみを意識して入力できる状態を維持する。郵便番号の補完 API 呼び出しと保存 payload は正規化済みの数字列を使う。
 - account のプロフィールタブはメールアドレス・氏名・フリガナ・電話番号を扱い、配送情報タブは住所情報のみを扱う。削除操作もタブごとの情報範囲に限定する。
+
+## 注文の言葉・進み具合・発送ごとの配送情報（ACCOUNT-ORDER / FREQ-441・444）
+
+2026-10-10 から、購入履歴と注文詳細の状態は、商品ごとの数から出した進み具合の言葉で見せる（[グループ E-1 設計書](../../superpowers/specs/2026-10-10-partial-fulfillment-design.md) の 4 章・9-3）。DB の状態の値は変えない。
+
+| 画面 | 内容 |
+| --- | --- |
+| 購入履歴の一覧（`GET /api/orders`） | 状態の言葉は「未決済・受注生産中・発送準備中・配送中・配達済み・決済失敗・キャンセル」。「支払い手続き中」「放棄」の注文は今までどおり出さない（FREQ-441） |
+| 進み具合（注文詳細。名前「配送ステータス」の一覧） | 在庫の品だけの注文は「お支払い・発送準備中・配送中・配達済み」の4段、受注生産の品を含む注文は「お支払い・受注生産中・発送準備中・配送中・配達済み」の5段。済み・今の段は黒、これからの段は灰色。キャンセル・決済失敗の注文には出さない。今の段は、注文のいちばん手前の段階で決める（FREQ-444） |
+| 配送情報 | 発送ごとに「配送情報（n回目）」の区切りを出し（n は DB の発送の番号のまま。取り消した発送があると、出す番号は飛ぶ）、発送日・配送業者・追跡番号・追跡のリンク（「配送状況を確認する」）・その発送の商品と数を並べる。取り消した発送と、発送が無い注文には出さない。窓口は注文の行の発送日時・配送業者・伝票番号を返さず、`shipments` に置き換える |
+| まだ送っていない商品 | 「発送準備中の商品」「受注生産中の商品」の見出しの下に並べる（窓口が商品ごとの `readyQuantity`・`inProductionQuantity` を返す） |
+
+注文の窓口（`GET /api/orders/[id]`）は、持ち主を確かめた後に、アプリ（service_role）でその注文の発送と数を読む。新しい発送の表はお客様から直接読めない。
+
+### 受け付け基準と E2E（グループ E-1）
+
+| 受け付け基準 | 確かめること | E2E |
+| --- | --- | --- |
+| FREQ-441-AC-03 | 購入履歴の一覧に進み具合の言葉が出る | [FR-ADMIN-070](../../../e2e/FR-ADMIN-070-order-progress-labels.spec.ts) |
+| FREQ-444-AC-01 | 在庫の品だけは4段、受注生産の品を含むと5段の進み具合 | [FR-ACCOUNT-032](../../../e2e/FR-ACCOUNT-032-order-progress-and-shipments.spec.ts) |
+| FREQ-444-AC-02 | 発送ごとの配送情報（n回目）。発送が無い注文には出ない | FR-ACCOUNT-032、[FR-ACCOUNT-031](../../../e2e/FR-ACCOUNT-031-order-shipping-info.spec.ts) |
+| FREQ-444-AC-03 | 発送準備中の商品・受注生産中の商品の見出し | FR-ACCOUNT-032 |
+| FREQ-444-AC-04 | 取り消した発送は出ず、キャンセルした注文には段を出さない | FR-ACCOUNT-032 |

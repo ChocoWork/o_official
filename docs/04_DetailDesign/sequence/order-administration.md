@@ -1,6 +1,6 @@
 # 注文管理のシーケンス
 
-> 状態: 現行ソース確認 | 確認日: 2026-10-04 | 対象: 未入金取消、出荷、管理返金、要対応の解決
+> 状態: 現行ソース確認（発送の節はグループ E-1 の変更を 2026-10-10 に反映） | 確認日: 2026-10-04 | 対象: 未入金取消、発送（一部の発送・仕上がり・取消を含む）、管理返金、要対応の解決
 
 ## 概要
 
@@ -14,19 +14,21 @@
 
 | 境界・操作 | 実装根拠 |
 | --- | --- |
-| `POST /api/admin/orders/[id]/status`、取消・出荷 | [status API](../../../src/app/api/admin/orders/%5Bid%5D/status/route.ts) |
+| `POST /api/admin/orders/[id]/status`、未入金の取消 | [status API](../../../src/app/api/admin/orders/%5Bid%5D/status/route.ts) |
+| `GET`・`POST /api/admin/orders/[id]/fulfillments`、発送の取消 `…/fulfillments/[fulfillmentId]/cancel` | [発送API](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/route.ts)、[発送の取消API](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/%5BfulfillmentId%5D/cancel/route.ts) |
+| `POST /api/admin/orders/[id]/completions`、仕上がりの取消 `…/completions/[completionId]/cancel` | [仕上がりAPI](../../../src/app/api/admin/orders/%5Bid%5D/completions/route.ts)、[仕上がりの取消API](../../../src/app/api/admin/orders/%5Bid%5D/completions/%5BcompletionId%5D/cancel/route.ts) |
 | `POST /api/admin/orders/[id]/refund`、`refunds.create` | [refund API](../../../src/app/api/admin/orders/%5Bid%5D/refund/route.ts) |
 | `POST /api/admin/payment-exceptions/[id]/resolve` | [resolve API](../../../src/app/api/admin/payment-exceptions/%5Bid%5D/resolve/route.ts) |
 | 管理認可 | [admin.orders.manage・セッション・AAL2確認](../../../src/lib/auth/admin-rbac.ts)。refund APIは追加でadminロールに限定。status/resolve APIは認可後に明示的なCSRF helperを呼ぶ |
 | `checkout.sessions.retrieve/expire`と失効競合 | [Session失効](../../../src/lib/stripe/checkout-session-expiry.ts) |
 | `checkout.sessions.retrieve/list`、`paymentIntents.retrieve`、照合判定・条件付き更新 | [Stripe読取り](../../../src/lib/stripe/checkout-payment-reader.ts)、[照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)、[判定表](../../../src/lib/stripe/checkout-payment-decision.ts)、[RPC接続](../../../src/lib/stripe/checkout-payment-reconciler-deps.ts) |
 | 在庫解放と取消記録 | [注文IDによる在庫解放RPC](../../../supabase/migrations/20260927100200_release_stock_by_order.sql)、[台帳反映トリガー](../../../supabase/migrations/20260919065355_add_stock_movements.sql) |
-| 出荷 | [移行 B の最新の発送RPC](../../../supabase/migrations/20261009095736_order_email_enqueue.sql)、[必須配送先判定](../../../supabase/migrations/20260925000218_add_order_state_transition_rpcs.sql) |
+| 発送・仕上がり | [E-1 移行 A: 商品ごとの数と仕上がりの関数](../../../supabase/migrations/20261010120000_order_fulfillments.sql)、[E-1 移行 B: 発送・発送の取消の関数](../../../supabase/migrations/20261010120100_fulfillment_order_emails.sql)、[必須配送先判定](../../../supabase/migrations/20260925000218_add_order_state_transition_rpcs.sql) |
 | 失敗注文の取消・例外解決 | [管理RPC](../../../supabase/migrations/20260927100500_payment_exceptions.sql)。取消メールの行を書く在庫解放関数は [移行 B](../../../supabase/migrations/20261009095736_order_email_enqueue.sql) |
 | `refunds.list`、成功返金集計、CASと再確認 | [返金同期](../../../src/lib/stripe/order-refund-sync.ts)、[返金投影RPC](../../../supabase/migrations/20260925000218_add_order_state_transition_rpcs.sql) |
-| 取消・出荷のメール | [送る予定の表](../../../supabase/migrations/20261009095633_order_email_outbox.sql)、[状態を変える関数](../../../supabase/migrations/20261009095736_order_email_enqueue.sql)、[worker](../../../src/lib/orders/email/order-email-worker.ts)、[中身](../../../src/lib/orders/email/order-email-compose.ts) |
+| 取消・発送のメール（発送は発送ごとに1通） | [送る予定の表](../../../supabase/migrations/20261009095633_order_email_outbox.sql)、[状態を変える関数](../../../supabase/migrations/20261009095736_order_email_enqueue.sql)、[発送ごとのメールの行](../../../supabase/migrations/20261010120100_fulfillment_order_emails.sql)、[worker](../../../src/lib/orders/email/order-email-worker.ts)、[中身](../../../src/lib/orders/email/order-email-compose.ts) |
 
-status/resolve APIは管理認可の後、ID・本文の検証より先に`requireCsrfOrDeny`を呼び、戻り値がResponseならそのまま返して後続へ進まない。helperはrefresh Cookieがなければ検査不要として通し、Cookieがある場合のCSRFヘッダー欠落・hash不一致は403、例外は500。[CSRF helper](../../../src/lib/csrfMiddleware.ts)を参照。これはAPI独自のチェックであり、共通proxyのOrigin検査と別に行われる。
+status/resolve APIは管理認可の後、ID・本文の検証より先に`requireCsrfOrDeny`を呼び、戻り値がResponseならそのまま返して後続へ進まない。helperはrefresh Cookieがなければ検査不要として通し、Cookieがある場合のCSRFヘッダー欠落・hash不一致は403、例外は500。[CSRF helper](../../../src/lib/csrfMiddleware.ts)を参照。これはAPI独自のチェックであり、共通proxyのOrigin検査と別に行われる。発送・仕上がりのAPI（`fulfillments`・`completions`）は、管理認可（`admin.orders.manage`）→ CSRF helper → 回数の制限（送信元ごと・管理者ごと）→ 注文の番号の検証 → 本文の検証の順で、先に断った段階で後ろへ進まない（[メールの再送API](../../../src/app/api/admin/orders/%5Bid%5D/emails/resend/route.ts)と同じ形）。
 
 review APIも同じCSRF helperを呼ぶ。refund APIには明示的なCSRF helper呼出しがなく、共通[proxy](../../../src/proxy.ts)の状態変更APIに対するOrigin/Referer検査を通る。管理認可は検証済みJWT、セッションの有効性、DB ACLの対象権限、JWTの`aal2`を確認する。トークン不正・セッション失効は401、権限またはAAL2不足は403、セッション有効性を確認できない場合は503。refundの追加admin判定は検証済みJWTの`app_metadata.role`を使う。ACLのadmin権限だけでこの追加判定を代替する処理ではない。
 
@@ -34,9 +36,10 @@ review APIも同じCSRF helperを呼ぶ。refund APIには明示的なCSRF helpe
 
 | 入口 | 図・操作との対応と結果 | 根拠 |
 | --- | --- | --- |
-| `GET /api/admin/orders` | `admin.orders.read`とAAL2で注文一覧を読む。StripeのPIと未解決の金額不一致も参照し、canShip/canCancel/canRefund等の表示用属性を返す。状態変更はしない。操作時は各POSTが再検証する | [注文一覧](../../../src/app/api/admin/orders/route.ts) |
+| `GET /api/admin/orders` | `admin.orders.read`とAAL2で注文一覧を読む。StripeのPIと未解決の金額不一致も参照し、canShip/canRecordCompletion/canCancel/canRefund等の表示用属性と、商品ごとの数から出した注文の言葉（status）・一部発送済みかを返す。状態変更はしない。操作時は各POSTが再検証する | [注文一覧](../../../src/app/api/admin/orders/route.ts) |
 | `GET /api/admin/order-attention` | 同じread認可で未解決例外・未確認注文を各最大100件返し、件数も返す。canCancelOrderは注文状態に基づく表示用属性で、Stripeの取消ガード成功を示さない | [要対応・要確認一覧](../../../src/app/api/admin/order-attention/route.ts) |
 | `GET /api/admin/orders/[id]/status` | 同じread認可でPOSTの説明とrequiredBodyを返す。対象注文の現在状態を取得・変更するAPIではない | [status API](../../../src/app/api/admin/orders/%5Bid%5D/status/route.ts) |
+| `GET /api/admin/orders/[id]/fulfillments` | `admin.orders.manage` で、発送と仕上がりの画面の材料（商品ごとの数・発送の一覧・発送できない理由）を service_role で読む。状態変更はしない。操作時は各POSTが再検証する | [発送API](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/route.ts) |
 | `POST /api/cron/stripe-reconcile` | `CRON_SECRET`のBearer認証でPI・返金・会計・Payoutを照合する。管理認可とは別の入口で、返金不一致時には下記の共通投影も実行する | [照合API](../../../src/app/api/cron/stripe-reconcile/route.ts)、[Cron認証](../../../src/lib/cron/auth.ts)、[Webhook関連見回り](stripe-webhooks.md#関連する見回りとschedule) |
 
 ## SQ-ADMIN-01: 未入金注文の通常取消
@@ -98,37 +101,83 @@ sequenceDiagram
 
 照合器の条件付き更新0件は、Stripe・DBを読み直す契機であり取消成功ではない。最大3回で収束しない場合は一時エラー。根拠はstatus API、照合器、在庫解放RPC。
 
-## SQ-ADMIN-02: 入金済み注文の出荷記録
+## SQ-ADMIN-02: 入金済み注文の出荷記録（仕上がり・発送ごと・取消）
 
-目的は出荷情報を条件付きで保存し、通知を試みること。事前条件は管理認可・CSRF helper、配送業者・追跡番号の入力検証。終了結果はRPCで出荷記録が成立した200、条件不成立の409、RPC失敗の500。
+目的は、入金済みの注文の発送を商品と数ごとに1回ずつ記録し、受注生産の品の仕上がりを記録し、どちらも取り消せるようにすること。事前条件は管理認可（`admin.orders.manage`）・CSRF helper・回数の制限・入力の検証。終了結果は、記録が成立した200、条件不成立の404・409・400、RPC失敗の500。
+
+### 発送を記録する
 
 ```mermaid
 sequenceDiagram
     participant Admin as 管理者
-    participant API as 注文status API
+    participant API as 発送API
     participant DB as DB / RPC
     participant Mail as 注文のメールworker
-    Admin->>API: POST /api/admin/orders/[id]/status (shipped)
-    API->>API: 管理認可 → CSRF helper → 配送業者・追跡番号を検証
-    API->>DB: admin_ship_paid_order(order, actor, carrier, tracking, notify)
-    alt 条件が成立
-        Note over DB: 関数内で出荷を更新し、notify なら同じ取引で発送のメールの行を書く
-        DB-->>API: 更新した注文の id だけ
-        API->>DB: 出荷成功の監査
-        API-->>Admin: 200 status=shipped
-        API-->>API: after() で worker を動かす
-        API-->>Mail: 発送のメールを送る（同じ重複防止キーでやり直す）
-    else 更新0件
-        DB-->>API: 対象行なし
-        API->>DB: not_shippableの監査
-        API-->>Admin: 409
+    Admin->>API: GET /api/admin/orders/[id]/fulfillments
+    API->>DB: 商品ごとの数・発送の一覧・発送できない理由を読む（service_role）
+    DB-->>API: 発送の材料
+    API-->>Admin: 200 発送の材料
+    Admin->>API: POST /api/admin/orders/[id]/fulfillments（requestKey・配送業者・伝票番号・知らせるか・商品と数）
+    API->>API: 管理認可 → CSRF helper → 回数の制限 → 注文の番号 → 中身を検証
+    API->>DB: admin_create_fulfillment(order, actor, requestKey, carrier, tracking, notify, lines)
+    alt 同じ requestKey が記録済みで同じ中身
+        DB-->>API: 前の結果（replayed = true）
+        API-->>Admin: 200（二重に記録しない）
+    else 条件が成立
+        Note over DB: 注文の行を FOR UPDATE。商品ごとに発送準備中の数を確かめて発送を書き、最後の発送なら shipped にし、notify なら発送ごとのメールの行を同じ取引で書く
+        DB-->>API: fulfillment_id・number・completes_order・order_status
+        API->>DB: 発送成功の監査
+        API-->>Admin: 200
+        API-->>Mail: after() で worker を動かす
+    else 決まった言葉の断り
+        DB-->>API: ORDER_NOT_SHIPPABLE・QUANTITY_EXCEEDS_READY など
+        API-->>Admin: 404 / 409 / 400 と画面に出す言葉
     else RPCエラー
         DB-->>API: error
         API-->>Admin: 500
     end
 ```
 
-RPCはpaid、shipped_atがNULL、氏名・メール・郵便番号・都道府県・市区町村・住所・電話の非空、未解決paid_amount_mismatchなしを条件にする。出荷日時・carrier・trackingを保存する。review_reasonの未確認自体は拒否条件に含まれない。`notifyCustomer` は真偽・既定 true。知らせる時は同じ取引で発送のメールの行を書き、返事の後に worker が送る。失敗はやり直し、送れなければ店へ知らせる。根拠は[管理RPC](../../../supabase/migrations/20261009095736_order_email_enqueue.sql)と[worker](../../../src/lib/orders/email/order-email-worker.ts)。
+### 仕上がりと取消
+
+```mermaid
+sequenceDiagram
+    participant Admin as 管理者
+    participant API as 仕上がり・取消API
+    participant DB as DB / RPC
+    Admin->>API: POST /api/admin/orders/[id]/completions
+    API->>DB: admin_record_completion(order, actor, requestKey, lines)
+    Note over DB: 決済完了の注文の受注生産の品だけ。受注生産中の数まで。お客様にメールは送らない
+    DB-->>API: 仕上がりの番号（行ごと）・replayed
+    API-->>Admin: 200
+    Admin->>API: POST /api/admin/orders/[id]/fulfillments/[fulfillmentId]/cancel
+    API->>DB: admin_cancel_fulfillment(order, fulfillment, actor)
+    Note over DB: 取消の時刻と人を書く。shipped なら paid に戻して出荷日時・配送情報を空にする。まだ送っていないその発送のメールの行を取りやめ（fulfillment_cancelled）にする
+    DB-->>API: outcome（cancelled か already_cancelled）・order_status
+    API-->>Admin: 200
+    Admin->>API: POST /api/admin/orders/[id]/completions/[completionId]/cancel
+    API->>DB: admin_cancel_completion(order, completion, actor)
+    alt 取り消しても発送した数以上が残る
+        DB-->>API: outcome（cancelled か already_cancelled）
+        API-->>Admin: 200
+    else 発送した数を下回る
+        DB-->>API: COMPLETION_ALREADY_SHIPPED
+        API-->>Admin: 409
+    end
+```
+
+### 発送の条件と永続化
+
+| 条件 | 結果・保存内容 |
+| --- | --- |
+| 発送できない状態 | 決済完了でない・未発送が無い: `ORDER_NOT_SHIPPABLE`（409）。配送先の必須項目が足りない: `SHIPPING_ADDRESS_INCOMPLETE`（409）。未解決の paid_amount_mismatch: `PAYMENT_REVIEW_REQUIRED`（409）。review_reason の未確認自体は拒否条件に含まれない |
+| 数の超過 | 注文に無い商品・発送準備中の数を超える数: `QUANTITY_EXCEEDS_READY`（409）。受注生産中の品は、仕上がりを記録するまで送れない。関数の確かめに重ねて、`shipped ≤ completed ≤ quantity` を破る書き込みはトリガーが `FULFILLMENT_BOUNDS_VIOLATED`（23514）で止める |
+| 同時の操作 | 注文の行の鍵で1つずつ進む。後の方は前の結果を見て、上の断りになる。2回目の発送は記録されない |
+| 重複防止キー | 同じキーで同じ中身は前の結果（`replayed`）、違う中身は `FULFILLMENT_REQUEST_MISMATCH`（409）。答えが分からない時、画面は同じキーで確かめ直す |
+| 保存 | 発送（番号は注文ごとの最大＋1。取り消した番号は使い回さない）・発送の商品。全部を送った時だけ、注文の shipped・出荷日時・配送業者・追跡番号。注文の改訂の理由は `admin_create_fulfillment`・`admin_cancel_fulfillment` |
+| メール | `notifyCustomer` が真の時だけ、その発送の発送メールの行を同じ取引で書く。返事の後に worker が送る。失敗はやり直し、送れなければ店へ知らせる |
+
+仕上がりの記録は決済完了の注文だけ（`ORDER_NOT_IN_PRODUCTION`）、受注生産の品だけ（`LINE_NOT_IN_PRODUCTION`）、受注生産中の数まで（`QUANTITY_EXCEEDS_IN_PRODUCTION`）。根拠は [移行 A](../../../supabase/migrations/20261010120000_order_fulfillments.sql)、[移行 B](../../../supabase/migrations/20261010120100_fulfillment_order_emails.sql)、[発送API](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/route.ts)、[worker](../../../src/lib/orders/email/order-email-worker.ts)。
 
 ## SQ-ADMIN-03: 管理返金と成功返金の投影
 
@@ -274,9 +323,9 @@ APIが外部確認に失敗すればRPCへ進まない。DB側では例外行を
 
 | 項目 | 現行処理 |
 | --- | --- |
-| 取消・発送のメール | 取消・発送のメールは、状態を変える関数が同じ取引で送る予定の行を書き、worker が行の番号から作った重複防止キーで送る。失敗はやり直し、送れなければ店へ知らせる（FREQ-434・435） |
-| 発送の選択 | `notifyCustomer`（真偽、既定 true）が false なら発送のメールの行を書かない（FREQ-438） |
-| 履歴 | RPCがactor・理由を設定し、order_revisionsに変更前後・変更列等を記録する。返金ではrefund_update、状態変更ではstatus_update等として記録 |
+| 取消・発送のメール | 取消・発送のメールは、状態を変える関数が同じ取引で送る予定の行を書き、worker が行の番号から作った重複防止キーで送る。失敗はやり直し、送れなければ店へ知らせる（FREQ-434・435）。発送のメールは発送ごとに1行で、取り消した発送のまだ送っていない行は取りやめになる（FREQ-442・443） |
+| 発送の選択 | `notifyCustomer`（真偽、既定 true）が false なら、その発送のメールの行を書かない（FREQ-438。グループ E-1 から発送ごとに選ぶ） |
+| 履歴 | RPCがactor・理由を設定し、order_revisionsに変更前後・変更列等を記録する。返金ではrefund_update、状態変更ではstatus_update等として記録。状態が変わらない一部の発送・仕上がりとそれらの取消は、発送の表・仕上がりの表から読んで同じ履歴に並べる（グループ E-1） |
 | 要確認 | [review API](../../../src/app/api/admin/orders/%5Bid%5D/review/route.ts)は管理認可・CSRF後にmark_order_reviewed。review_reasonあり・reviewed_atなしを条件にreviewed_at/byを保存し、reasonを消さない。要対応resolveとは別操作 |
 | API応答と外部副作用 | 先行RPCやStripeの成功後に後続処理が失敗する場合がある。応答コードだけから取消・返金・メールの全結果を判断しない |
 
@@ -286,10 +335,11 @@ APIが外部確認に失敗すればRPCへ進まない。DB側では例外行を
 
 | 観点 | 参照 |
 | --- | --- |
-| 出荷・通常取消・競合 | [status API](../../../tests/unit/api/admin/order-status-shipped.test.ts)、[在庫解放RPC](../../../tests/integration/db/release_stock_by_order.integration.test.ts) |
+| 発送・仕上がり・取消・競合 | [発送・仕上がりのDB](../../../tests/integration/db/order_fulfillments.integration.test.ts)、[発送ごとのメールのDB](../../../tests/integration/db/fulfillment_order_emails.integration.test.ts)、[E2E 部分発送](../../../e2e/FR-ADMIN-068-partial-fulfillment.spec.ts)、[E2E 発送の取消](../../../e2e/FR-ADMIN-072-fulfillment-cancel.spec.ts) |
+| 通常取消・競合 | [在庫解放RPC](../../../tests/integration/db/release_stock_by_order.integration.test.ts) |
 | 管理返金・成功返金のみの投影 | [refund API](../../../tests/unit/api/admin/order-refund-route.test.ts)、[返金同期](../../../tests/unit/lib/stripe/order-refund-sync.test.ts) |
 | 解決・取消前のStripe確認・要確認 | [要対応API](../../../tests/unit/api/admin/order-attention-route.test.ts)、[例外RPC](../../../tests/integration/db/payment_exceptions.integration.test.ts) |
-| 注文のメール | [中身](../../../tests/unit/lib/orders/email/order-email-compose.test.ts)、[worker](../../../tests/unit/lib/orders/email/order-email-worker.test.ts)、[送る予定の表](../../../tests/integration/db/order_email_outbox.integration.test.ts)、[行を書く関数](../../../tests/integration/db/order_email_enqueue.integration.test.ts) |
+| 注文のメール | [中身](../../../tests/unit/lib/orders/email/order-email-compose.test.ts)、[worker](../../../tests/unit/lib/orders/email/order-email-worker.test.ts)、[送る予定の表](../../../tests/integration/db/order_email_outbox.integration.test.ts)、[行を書く関数](../../../tests/integration/db/order_email_enqueue.integration.test.ts)、[発送ごとのメール](../../../e2e/FR-ADMIN-071-fulfillment-shipping-email.spec.ts) |
 
 関連テストは今回実行していない。DBや外部決済を操作した成功証跡ではない。
 
