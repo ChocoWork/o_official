@@ -7,6 +7,7 @@ import { TagLabel } from '@/components/ui/TagLabel/TagLabel';
 import { toOrderNumber } from '@/lib/orders/order-number';
 import type { OrderStatus as DbOrderStatus } from '@/lib/orders/order-payment-types';
 import { PARTIALLY_SHIPPED_LABEL, type OrderProgressKey } from '@/lib/orders/order-progress';
+import { cn } from '@/lib/utils';
 
 export type OrderStatus =
 	| '支払い手続き中'
@@ -203,7 +204,7 @@ export default function OrderSection({
 						render: (order) => (
 							<div className="flex flex-wrap items-center gap-1">
 								{/* 「受注生産中」「発送準備中」などは、狭い画面幅でも途中で折り返さない */}
-								<StatusBadge tone={STATUS_TONES[order.status]} className={`${STATUS_CLASSES[order.status]} whitespace-nowrap`} size="md">
+								<StatusBadge tone={STATUS_TONES[order.status]} className={cn(STATUS_CLASSES[order.status], 'whitespace-nowrap')} size="md">
 									{order.status}
 								</StatusBadge>
 								{order.partiallyShipped ? (
