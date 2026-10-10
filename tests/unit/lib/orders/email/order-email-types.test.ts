@@ -21,7 +21,7 @@ import {
 /**
  * アプリの値と DB の CHECK・関数の入力制限がずれないことを、移行の本文で確かめる。
  * - 表の CHECK・書き分け・失敗の分類: グループ D の移行（20261009095633）
- * - 発送ごとのメールで作り直した関数（取りやめの理由・再送できる状態の表）: グループ E-1 の移行 B（20261010120100）
+ * - 発送ごとのメールで作り直した関数（取りやめの理由・再送できる状態の表）: グループ E-1 の移行 B（20261010122320）
  * 本番へ当てて版を改名したら、ここの名前も直す。
  */
 const outboxMigration = fs.readFileSync(
@@ -29,7 +29,7 @@ const outboxMigration = fs.readFileSync(
 );
 // 行の説明にも関数名や許可の表の例が出るので、説明は外してから読む
 const fulfillmentEmailMigration = fs
-  .readFileSync(path.join(process.cwd(), 'supabase/migrations/20261010120100_fulfillment_order_emails.sql'), 'utf8')
+  .readFileSync(path.join(process.cwd(), 'supabase/migrations/20261010122320_fulfillment_order_emails.sql'), 'utf8')
   .replace(/--.*$/gm, '');
 
 function sqlValues(pattern: RegExp, sql = outboxMigration): string[] {

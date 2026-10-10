@@ -16,8 +16,8 @@
 
 | Task | 作る物 | 主なファイル |
 |---|---|---|
-| 1 | 発送・発送の商品・仕上がりの3つの表と守り、商品ごとの数・仕上がり・読み出し・在庫の DB の関数、前からの発送済みの注文の写し（移行 A） | `supabase/migrations/20261010120000_order_fulfillments.sql` |
-| 2 | 発送する・発送を取り消す DB の関数、発送ごとの発送のメール（注文のメールの表の変更）、前の発送の関数と受注の集計の view の削除（移行 B） | `supabase/migrations/20261010120100_fulfillment_order_emails.sql` |
+| 1 | 発送・発送の商品・仕上がりの3つの表と守り、商品ごとの数・仕上がり・読み出し・在庫の DB の関数、前からの発送済みの注文の写し（移行 A） | `supabase/migrations/20261010120303_order_fulfillments.sql` |
+| 2 | 発送する・発送を取り消す DB の関数、発送ごとの発送のメール（注文のメールの表の変更）、前の発送の関数と受注の集計の view の削除（移行 B） | `supabase/migrations/20261010122320_fulfillment_order_emails.sql` |
 | 3 | 注文の言葉と進み具合の段、発送と仕上がりの TS の部品（型・誤りの言葉・DB の呼び出し・発送の材料） | `src/lib/orders/order-progress.ts`・`src/lib/orders/fulfillment/` |
 | 4 | 発送ごとの発送のメールの本文、取り消した発送のメールの取りやめ、再送の発送の番号、注文の確認の1行 | `src/lib/orders/email/` |
 | 5 | 管理画面の窓口（発送の材料・発送・取消・仕上がり・再送・履歴）。状態の窓口から発送の道を消す | `src/app/api/admin/orders/[id]/` |
@@ -59,7 +59,7 @@
 - 権限: 発送の材料・発送・発送の取消・仕上がり・仕上がりの取消は `admin.orders.manage`。履歴は `admin.orders.read`（今のまま）。書く窓口は CSRF（`requireCsrfOrDeny`）と回数の制限（送信元ごとと管理者ごと）を通す。回数の制限の窓口名と回数: `admin:orders:fulfillment-create`（10分に60回）・`admin:orders:fulfillment-cancel`（10分に30回）・`admin:orders:completion-record`（10分に60回）・`admin:orders:completion-cancel`（10分に30回）
 - 監査（`logAudit`）に伝票番号・宛先・氏名・住所を入れない（`maskAuditEvent` は `number` を含む鍵を伏せるが、そもそも入れない）
 - 新しい3つの表は `public`。RLS を有効にし、`anon`・`authenticated` は RESTRICTIVE の方針で全部拒み、権限も外す。`service_role` は SELECT だけ。書くのは関数だけ。関数は `SECURITY DEFINER`＋`SET search_path = ''`＋完全修飾名。`PUBLIC`・`anon`・`authenticated` から EXECUTE を外し、`service_role` だけに与える（`private` の関数は `PUBLIC` から外すだけ）。最後に `NOTIFY pgrst, 'reload schema';`
-- 移行は2本: A `supabase/migrations/20261010120000_order_fulfillments.sql`、B `supabase/migrations/20261010120100_fulfillment_order_emails.sql`。どちらも `BEGIN;`〜`COMMIT;`。前からのデータの写しは何度当てても同じ結果に書く。本番 DB へは、全タスクの後、ユーザーの push の後で許可を得て Supabase MCP の `apply_migration` で A・B の順に当て、当てた版にファイル名と文書の版を直す
+- 移行は2本: A `supabase/migrations/20261010120303_order_fulfillments.sql`、B `supabase/migrations/20261010122320_fulfillment_order_emails.sql`。どちらも `BEGIN;`〜`COMMIT;`。前からのデータの写しは何度当てても同じ結果に書く。本番 DB へは、全タスクの後、ユーザーの push の後で許可を得て Supabase MCP の `apply_migration` で A・B の順に当て、当てた版にファイル名と文書の版を直す
 - 画面と機能の変更は `docs/02_Requirements/requirements.md` に FREQ-439〜446 の行を足す（Task 11。`grep -oE "FREQ-[0-9]+" docs/02_Requirements/requirements.md | sort -t- -k2 -n | tail -1` が FREQ-438 であることを確かめる）。新しい E2E は `e2e/FR-ADMIN-068`〜`073`・`e2e/FR-ACCOUNT-032`・`e2e/FR-CHECKOUT-050`（`ls e2e | grep -E "^FR-ADMIN-[0-9]" | sort -V | tail -1` が FR-ADMIN-067、FR-ACCOUNT は 031、FR-CHECKOUT は 049 であることを確かめる）
 - E2E は本番ビルド（`next build && next start`）・手元の Supabase（`npx supabase db reset` の直後）で、mobile（390px）・tablet（768px）・desktop（1280px）の3つの画面幅で流す。流す前に3000番に何も無いことを `Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue` で確かめる。DB 結合テストの直後に E2E を流さない（`npx supabase db reset` を挟む）
 - DB 結合テストは `npx supabase db reset` の後に、フォルダ全体を `--runInBand` で流す: `eval "$(npx supabase status -o env | grep -E '^(API_URL|SERVICE_ROLE_KEY)=')"` の後に `LOCAL_SUPABASE_URL="$API_URL" LOCAL_SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npx jest tests/integration/db --runInBand`（値は画面に出さない）
@@ -84,7 +84,7 @@
 
 | ID | 決め事 | 理由 |
 |---|---|---|
-| P1 | 移行は2本。A（`20261010120000_order_fulfillments.sql`）は3つの表・守り・数の関数・仕上がりの関数・読み出しの関数・在庫の関数・前からの写し。B（`20261010120100_fulfillment_order_emails.sql`）は注文のメールの表の変更と、発送の関数（発送のメールを書くので outbox の列が要る）・古い関数と view の削除 | 発送の関数は発送のメールの予定を書くので、outbox に発送の番号の列ができてから作る |
+| P1 | 移行は2本。A（`20261010120303_order_fulfillments.sql`）は3つの表・守り・数の関数・仕上がりの関数・読み出しの関数・在庫の関数・前からの写し。B（`20261010122320_fulfillment_order_emails.sql`）は注文のメールの表の変更と、発送の関数（発送のメールを書くので outbox の列が要る）・古い関数と view の削除 | 発送の関数は発送のメールの予定を書くので、outbox に発送の番号の列ができてから作る |
 | P2 | 一覧の画面のために、注文の番号の配列で数を返す `public.list_order_line_fulfillment(_order_ids uuid[])` を作る（1回に200件まで） | 一覧の1ページ分の注文の数を、1回の呼び出しで読む |
 | P3 | DB の関数は決まった言葉（例 `QUANTITY_EXCEEDS_READY`）で止め、TS は言葉の部分一致で誤りの記号（`FulfillmentErrorCode`）に直す。窓口は `{ error, code }` を返す | グループ D の再送と同じ形。画面は記号ではなく `error` の言葉を出す |
 | P4 | 引き当て済みの数は、`stock_movements(order_item_id)` の前からある索引 `stock_movements_order_item_id_idx`（20260919130048）で商品の行ごとに台帳から数える。新しい索引は足さない（実行で直した） | 同じ列の索引を2つ持たない |
@@ -107,10 +107,10 @@
 
 | ファイル | 責務 | タスク |
 |---|---|---|
-| `supabase/migrations/20261010120000_order_fulfillments.sql`（新規） | 3つの表・守り・数の関数・仕上がりの関数・読み出しの関数・在庫の関数・前からの写し | 1 |
+| `supabase/migrations/20261010120303_order_fulfillments.sql`（新規） | 3つの表・守り・数の関数・仕上がりの関数・読み出しの関数・在庫の関数・前からの写し | 1 |
 | `tests/integration/db/order_fulfillments.integration.test.ts`（新規） | 移行 A の結合テスト | 1 |
 | `tests/integration/db/helpers/order-fixtures.ts` | 在庫の品と受注生産の品を持つ注文を作る道具 `insertOrderWithLines` を足す | 1 |
-| `supabase/migrations/20261010120100_fulfillment_order_emails.sql`（新規） | 注文のメールの表の変更・発送の関数・古い関数と view の削除 | 2 |
+| `supabase/migrations/20261010122320_fulfillment_order_emails.sql`（新規） | 注文のメールの表の変更・発送の関数・古い関数と view の削除 | 2 |
 | `tests/integration/db/fulfillment_order_emails.integration.test.ts`（新規） | 移行 B の結合テスト | 2 |
 | `tests/integration/db/order_email_enqueue.integration.test.ts`・`order_email_outbox.integration.test.ts`・`order_state_transition_hardening.integration.test.ts`・`payment_exceptions.integration.test.ts`・`reconciler_composed.integration.test.ts` | `admin_ship_paid_order` を新しい関数に置き換える・発送のメールの一意の決まりの変更に合わせる | 2 |
 | `supabase/pending/harden_order_state_transitions.sql`、`tests/unit/migrations/order-state-transition-hardening.test.ts` | 状態の移り方の表を直す（P14） | 2 |
@@ -422,7 +422,7 @@ movements: Array<{ id: number; variantId: number; delta: number; reason: string;
 ### Task 1: 発送と仕上がりの記録（移行 A）
 
 **Files:**
-- Create: `supabase/migrations/20261010120000_order_fulfillments.sql`
+- Create: `supabase/migrations/20261010120303_order_fulfillments.sql`
 - Create: `tests/integration/db/order_fulfillments.integration.test.ts`
 - Modify: `tests/integration/db/helpers/order-fixtures.ts`（`insertOrderWithLines` を足す）
 
@@ -1039,7 +1039,7 @@ Expected: FAIL（`relation "public.order_fulfillments" does not exist` など）
 
 - [ ] **Step 4: 移行 A を書く**
 
-`supabase/migrations/20261010120000_order_fulfillments.sql`:
+`supabase/migrations/20261010120303_order_fulfillments.sql`:
 
 ```sql
 -- 部分発送と注文の進み具合（グループ E-1 設計書 3・5・10・11 章）の移行 A
@@ -1799,7 +1799,7 @@ Expected: PASS（全部）。`stock_movements` の索引を足しただけで、
 - [ ] **Step 7: コミット**
 
 ```bash
-git add supabase/migrations/20261010120000_order_fulfillments.sql tests/integration/db/order_fulfillments.integration.test.ts tests/integration/db/helpers/order-fixtures.ts
+git add supabase/migrations/20261010120303_order_fulfillments.sql tests/integration/db/order_fulfillments.integration.test.ts tests/integration/db/helpers/order-fixtures.ts
 git commit -m "$(cat <<'EOF'
 feat(orders): 発送と受注生産の仕上がりの記録の表と関数を足す（グループ E-1 の移行 A）
 
@@ -1816,7 +1816,7 @@ EOF
 ### Task 2: 発送の関数と発送ごとのメール（移行 B）
 
 **Files:**
-- Create: `supabase/migrations/20261010120100_fulfillment_order_emails.sql`
+- Create: `supabase/migrations/20261010122320_fulfillment_order_emails.sql`
 - Create: `tests/integration/db/fulfillment_order_emails.integration.test.ts`
 - Modify: `tests/integration/db/order_fulfillments.integration.test.ts`（Task 1 の試験。前からの写しの試験で、移行 B の CHECK をその取引の中だけ外す）
 - Modify: `tests/integration/db/order_email_enqueue.integration.test.ts`（発送の2つの試験・消した関数の試験・権限の試験）
@@ -2515,7 +2515,7 @@ Expected: FAIL（`function public.admin_create_fulfillment(...) does not exist` 
 
 - [ ] **Step 3: 移行 B を書く**
 
-`supabase/migrations/20261010120100_fulfillment_order_emails.sql`:
+`supabase/migrations/20261010122320_fulfillment_order_emails.sql`:
 
 ```sql
 -- 部分発送と注文の進み具合（グループ E-1 設計書 6・7・8 章）の移行 B
@@ -2523,7 +2523,7 @@ Expected: FAIL（`function public.admin_create_fulfillment(...) does not exist` 
 -- 注文のメールの表（グループ D の outbox）に発送の番号の列を足し、発送のメールを発送ごとに1行にする。
 -- 発送の関数と発送の取消の関数を作り、前の発送の関数（admin_ship_paid_order。発送は注文に1回だけだった）と、
 -- 受注の集計の view（variant_backorder_summary。在庫の画面は移行 A の list_variant_stock_states に替える）を消す。
--- 移行 A（20261010120000_order_fulfillments.sql）の後に当てる。
+-- 移行 A（20261010120303_order_fulfillments.sql）の後に当てる。
 BEGIN;
 
 -- 1. 発送の番号の列（設計書 8-1）。発送の記録は消せない（移行 A の守り）ので、消す時の決まりは RESTRICT
@@ -3213,7 +3213,7 @@ import {
 /**
  * アプリの値と DB の CHECK・関数の入力制限がずれないことを、移行の本文で確かめる。
  * - 表の CHECK・書き分け・失敗の分類: グループ D の移行（20261009095633）
- * - 発送ごとのメールで作り直した関数（取りやめの理由・再送できる状態の表）: グループ E-1 の移行 B（20261010120100）
+ * - 発送ごとのメールで作り直した関数（取りやめの理由・再送できる状態の表）: グループ E-1 の移行 B（20261010122320）
  * 本番へ当てて版を改名したら、ここの名前も直す。
  */
 const outboxMigration = fs.readFileSync(
@@ -3221,7 +3221,7 @@ const outboxMigration = fs.readFileSync(
 );
 // 行の説明にも関数名や許可の表の例が出るので、説明は外してから読む
 const fulfillmentEmailMigration = fs
-  .readFileSync(path.join(process.cwd(), 'supabase/migrations/20261010120100_fulfillment_order_emails.sql'), 'utf8')
+  .readFileSync(path.join(process.cwd(), 'supabase/migrations/20261010122320_fulfillment_order_emails.sql'), 'utf8')
   .replace(/--.*$/gm, '');
 
 function sqlValues(pattern: RegExp, sql = outboxMigration): string[] {
@@ -3350,7 +3350,7 @@ import type { OrderStatus, PaidEmailVariant } from '@/lib/orders/order-payment-t
 /**
  * 注文のメールの種類・状態・原因の記号（グループ D 設計書 3・4・5・6 章）。
  * DB の CHECK 制約（移行 20261009095633_order_email_outbox.sql）と同じ値を1か所に置く。画面からも読む。
- * 取りやめの理由と再送できる状態の表は、発送ごとのメールで作り直した移行 20261010120100_fulfillment_order_emails.sql の関数と同じ。
+ * 取りやめの理由と再送できる状態の表は、発送ごとのメールで作り直した移行 20261010122320_fulfillment_order_emails.sql の関数と同じ。
  */
 ```
 
@@ -3898,7 +3898,7 @@ async function insertFulfillmentRecord(db: PgClient, orderId: string): Promise<s
 ```ts
 const FULFILLMENT_PATH = path.join(
   process.cwd(),
-  'supabase/migrations/20261010120100_fulfillment_order_emails.sql',
+  'supabase/migrations/20261010122320_fulfillment_order_emails.sql',
 );
 ```
 
@@ -3957,7 +3957,7 @@ Expected: 誤り0件。前の発送の関数と view を使う窓口（`src/app/
 - [ ] **Step 15: コミット**
 
 ```bash
-git add supabase/migrations/20261010120100_fulfillment_order_emails.sql tests/integration/db/fulfillment_order_emails.integration.test.ts tests/integration/db/order_fulfillments.integration.test.ts tests/integration/db/order_email_enqueue.integration.test.ts tests/integration/db/order_email_outbox.integration.test.ts tests/integration/db/order_state_transition_hardening.integration.test.ts tests/integration/db/payment_exceptions.integration.test.ts tests/integration/db/reconciler_composed.integration.test.ts tests/integration/db/order_items_variant.integration.test.ts supabase/pending/harden_order_state_transitions.sql tests/unit/migrations/order-state-transition-hardening.test.ts src/lib/orders/email/order-email-types.ts tests/unit/lib/orders/email/order-email-types.test.ts
+git add supabase/migrations/20261010122320_fulfillment_order_emails.sql tests/integration/db/fulfillment_order_emails.integration.test.ts tests/integration/db/order_fulfillments.integration.test.ts tests/integration/db/order_email_enqueue.integration.test.ts tests/integration/db/order_email_outbox.integration.test.ts tests/integration/db/order_state_transition_hardening.integration.test.ts tests/integration/db/payment_exceptions.integration.test.ts tests/integration/db/reconciler_composed.integration.test.ts tests/integration/db/order_items_variant.integration.test.ts supabase/pending/harden_order_state_transitions.sql tests/unit/migrations/order-state-transition-hardening.test.ts src/lib/orders/email/order-email-types.ts tests/unit/lib/orders/email/order-email-types.test.ts
 git commit -m "$(cat <<'EOF'
 feat(orders): 発送を1回ごとの記録にし、発送のメールを発送ごとに送る（グループ E-1 の移行 B）
 
@@ -21606,7 +21606,7 @@ FREQ-267-AC-04（横方向のスクロールが無いこと）は変わらない
 ```text
 片付けの定期処理が1件なこと、関数・表・制約・索引の定義が手元の移行と一致することを確かめた）。
 
-2026-10-10 追記（グループ E-1、FREQ-439〜446）: [移行 A](../../../supabase/migrations/20261010120000_order_fulfillments.sql) で `public.order_fulfillments`（発送。1回の発送が1行。取り消しても行は残し、番号は使い回さない）・`public.order_fulfillment_lines`（発送の商品と数。追記だけ）・`public.order_item_completions`（受注生産の品の仕上がり。商品ごとに1行）を足した。3つの表は RLS を有効にして表の権限を外し、service_role は読むだけ、書くのは SECURITY DEFINER の DB の関数だけにした。[移行 B](../../../supabase/migrations/20261010120100_fulfillment_order_emails.sql) で `private.order_email_outbox` に `fulfillment_id`（発送のメールの行だけが持つ）を足し、ビュー `public.variant_backorder_summary` を消した（受注生産の数は `public.list_variant_stock_states` が返す）。差分はテーブル +3、物理 FK +6（発送と仕上がりの表の5本と outbox の1本。実行した人の列 `created_by`・`cancelled_by` は、取消の列しか変えさせない守りと ON DELETE SET NULL がぶつかるので外部キーにしない）で、前の追記の63テーブル・69 FKから **66テーブル・75 FK** になる。本番の適用状況は未確認（本番へは push の後に当てる）。
+2026-10-10 追記（グループ E-1、FREQ-439〜446）: [移行 A](../../../supabase/migrations/20261010120303_order_fulfillments.sql) で `public.order_fulfillments`（発送。1回の発送が1行。取り消しても行は残し、番号は使い回さない）・`public.order_fulfillment_lines`（発送の商品と数。追記だけ）・`public.order_item_completions`（受注生産の品の仕上がり。商品ごとに1行）を足した。3つの表は RLS を有効にして表の権限を外し、service_role は読むだけ、書くのは SECURITY DEFINER の DB の関数だけにした。[移行 B](../../../supabase/migrations/20261010122320_fulfillment_order_emails.sql) で `private.order_email_outbox` に `fulfillment_id`（発送のメールの行だけが持つ）を足し、ビュー `public.variant_backorder_summary` を消した（受注生産の数は `public.list_variant_stock_states` が返す）。差分はテーブル +3、物理 FK +6（発送と仕上がりの表の5本と outbox の1本。実行した人の列 `created_by`・`cancelled_by` は、取消の列しか変えさせない守りと ON DELETE SET NULL がぶつかるので外部キーにしない）で、前の追記の63テーブル・69 FKから **66テーブル・75 FK** になる。本番の適用状況は未確認（本番へは push の後に当てる）。
 ```
 
 **編集 2-5（領域の表）。** 置き換え前:
@@ -21729,9 +21729,9 @@ FREQ-267-AC-04（横方向のスクロールが無いこと）は変わらない
 
 ```text
 | `public.stock_movements` | `(id)` | なし | 参照元 0 / 参照先 3 | [20260919065355:6](../../../supabase/migrations/20260919065355_add_stock_movements.sql#L6) |
-| `public.order_fulfillments` | `(id)` | `(order_id, number)`; `(request_key)` | 参照元 2 / 参照先 1 | [移行 A](../../../supabase/migrations/20261010120000_order_fulfillments.sql) |
-| `public.order_fulfillment_lines` | `(fulfillment_id, order_item_id)` | なし | 参照元 0 / 参照先 2 | [移行 A](../../../supabase/migrations/20261010120000_order_fulfillments.sql) |
-| `public.order_item_completions` | `(id)` | `(request_key, order_item_id)` | 参照元 0 / 参照先 2 | [移行 A](../../../supabase/migrations/20261010120000_order_fulfillments.sql) |
+| `public.order_fulfillments` | `(id)` | `(order_id, number)`; `(request_key)` | 参照元 2 / 参照先 1 | [移行 A](../../../supabase/migrations/20261010120303_order_fulfillments.sql) |
+| `public.order_fulfillment_lines` | `(fulfillment_id, order_item_id)` | なし | 参照元 0 / 参照先 2 | [移行 A](../../../supabase/migrations/20261010120303_order_fulfillments.sql) |
+| `public.order_item_completions` | `(id)` | `(request_key, order_item_id)` | 参照元 0 / 参照先 2 | [移行 A](../../../supabase/migrations/20261010120303_order_fulfillments.sql) |
 ```
 
 **編集 2-13（注文のメールの表の行）。** 置き換え前:
@@ -21769,7 +21769,7 @@ FREQ-267-AC-04（横方向のスクロールが無いこと）は変わらない
 | `order_fulfillments(order_id, number)` の UNIQUE | その注文の何回目の発送か |
 | `order_fulfillment_lines(order_item_id)` | 商品ごとの発送した数 |
 
-3つの表は RLS を有効にし、anon・authenticated の権限を外し、service_role は SELECT だけを持つ。書くのは `admin_create_fulfillment`・`admin_cancel_fulfillment`・`admin_record_completion`・`admin_cancel_completion`（どれも SECURITY DEFINER）だけ。商品ごとの数は `private.order_line_fulfillment` の1か所で数え、`shipped ≤ completed ≤ quantity` を DB の関数とトリガーで守る。定義は [移行 A](../../../supabase/migrations/20261010120000_order_fulfillments.sql)・[移行 B](../../../supabase/migrations/20261010120100_fulfillment_order_emails.sql) に従う。
+3つの表は RLS を有効にし、anon・authenticated の権限を外し、service_role は SELECT だけを持つ。書くのは `admin_create_fulfillment`・`admin_cancel_fulfillment`・`admin_record_completion`・`admin_cancel_completion`（どれも SECURITY DEFINER）だけ。商品ごとの数は `private.order_line_fulfillment` の1か所で数え、`shipped ≤ completed ≤ quantity` を DB の関数とトリガーで守る。定義は [移行 A](../../../supabase/migrations/20261010120303_order_fulfillments.sql)・[移行 B](../../../supabase/migrations/20261010122320_fulfillment_order_emails.sql) に従う。
 
 ### 3.4 決済・下書き
 ```
@@ -21784,12 +21784,12 @@ FREQ-267-AC-04（横方向のスクロールが無いこと）は変わらない
 
 ```text
 | `private.order_email_outbox.requested_by` | `auth.users(id)` | `uuid` / 可 | 0..N | `SET NULL` | [移行 A:18](../../../supabase/migrations/20261009095633_order_email_outbox.sql#L18) |
-| `public.order_fulfillments.order_id` | `public.orders(id)` | `uuid` / 不可 | 0..N | `RESTRICT` | [E-1 移行 A](../../../supabase/migrations/20261010120000_order_fulfillments.sql) |
-| `public.order_fulfillment_lines.fulfillment_id` | `public.order_fulfillments(id)` | `uuid` / 不可 | 0..N | `RESTRICT` | [E-1 移行 A](../../../supabase/migrations/20261010120000_order_fulfillments.sql) |
-| `public.order_fulfillment_lines.order_item_id` | `public.order_items(id)` | `uuid` / 不可 | 0..N | `RESTRICT` | [E-1 移行 A](../../../supabase/migrations/20261010120000_order_fulfillments.sql) |
-| `public.order_item_completions.order_id` | `public.orders(id)` | `uuid` / 不可 | 0..N | `RESTRICT` | [E-1 移行 A](../../../supabase/migrations/20261010120000_order_fulfillments.sql) |
-| `public.order_item_completions.order_item_id` | `public.order_items(id)` | `uuid` / 不可 | 0..N | `RESTRICT` | [E-1 移行 A](../../../supabase/migrations/20261010120000_order_fulfillments.sql) |
-| `private.order_email_outbox.fulfillment_id` | `public.order_fulfillments(id)` | `uuid` / 可 | 0..N | `RESTRICT` | [E-1 移行 B](../../../supabase/migrations/20261010120100_fulfillment_order_emails.sql) |
+| `public.order_fulfillments.order_id` | `public.orders(id)` | `uuid` / 不可 | 0..N | `RESTRICT` | [E-1 移行 A](../../../supabase/migrations/20261010120303_order_fulfillments.sql) |
+| `public.order_fulfillment_lines.fulfillment_id` | `public.order_fulfillments(id)` | `uuid` / 不可 | 0..N | `RESTRICT` | [E-1 移行 A](../../../supabase/migrations/20261010120303_order_fulfillments.sql) |
+| `public.order_fulfillment_lines.order_item_id` | `public.order_items(id)` | `uuid` / 不可 | 0..N | `RESTRICT` | [E-1 移行 A](../../../supabase/migrations/20261010120303_order_fulfillments.sql) |
+| `public.order_item_completions.order_id` | `public.orders(id)` | `uuid` / 不可 | 0..N | `RESTRICT` | [E-1 移行 A](../../../supabase/migrations/20261010120303_order_fulfillments.sql) |
+| `public.order_item_completions.order_item_id` | `public.order_items(id)` | `uuid` / 不可 | 0..N | `RESTRICT` | [E-1 移行 A](../../../supabase/migrations/20261010120303_order_fulfillments.sql) |
+| `private.order_email_outbox.fulfillment_id` | `public.order_fulfillments(id)` | `uuid` / 可 | 0..N | `RESTRICT` | [E-1 移行 B](../../../supabase/migrations/20261010122320_fulfillment_order_emails.sql) |
 ```
 
 **編集 2-16（5.2 に E-1 の箇条書きを足す）。** 置き換え前:
@@ -21802,7 +21802,7 @@ FREQ-267-AC-04（横方向のスクロールが無いこと）は変わらない
 
 ```text
 会員から空への更新は、その会員の `profiles` の行が無い時、つまり会員を消して FK の `ON DELETE SET NULL` が空にする時だけ通る。
-- [グループ E-1 の移行 A](../../../supabase/migrations/20261010120000_order_fulfillments.sql) は、発送した数・仕上がった数を、変えられない `order_items` ではなく 3 つの新しい表に持つ（商品ごとの数は `private.order_line_fulfillment` の 1 か所で数え、`shipped ≤ completed ≤ quantity` を DB の関数とトリガーで守る）。`orders.shipped_at`・`shipping_carrier`・`tracking_number` は「全部の商品を発送した時」の値として残し、発送の取消で未発送が出たら空に戻す（`shipped_at` で戻し先を決める返金の取り消しの決まりが、そのまま使える）。`private.order_email_outbox.fulfillment_id` は、種類が `shipped` の行だけが持つ（`(kind = 'shipped') = (fulfillment_id IS NOT NULL)` の CHECK）。
+- [グループ E-1 の移行 A](../../../supabase/migrations/20261010120303_order_fulfillments.sql) は、発送した数・仕上がった数を、変えられない `order_items` ではなく 3 つの新しい表に持つ（商品ごとの数は `private.order_line_fulfillment` の 1 か所で数え、`shipped ≤ completed ≤ quantity` を DB の関数とトリガーで守る）。`orders.shipped_at`・`shipping_carrier`・`tracking_number` は「全部の商品を発送した時」の値として残し、発送の取消で未発送が出たら空に戻す（`shipped_at` で戻し先を決める返金の取り消しの決まりが、そのまま使える）。`private.order_email_outbox.fulfillment_id` は、種類が `shipped` の行だけが持つ（`(kind = 'shipped') = (fulfillment_id IS NOT NULL)` の CHECK）。
 ```
 
 **編集 2-17（第 6 節の数）。** 置き換え前:
@@ -21828,7 +21828,7 @@ FREQ-267-AC-04（横方向のスクロールが無いこと）は変わらない
 ```text
 ### 6.2 `public.variant_backorder_summary` ビュー（2026-10-10 に消した）
 
-グループ E-1 の[移行 B](../../../supabase/migrations/20261010120100_fulfillment_order_emails.sql)で消した。受注生産の数は、仕上がっていない数だけを数える `public.list_variant_stock_states` が返す（[在庫の画面](../../04_DetailDesign/pages/16_admin.md)）。以下は消す前の定義の記録。
+グループ E-1 の[移行 B](../../../supabase/migrations/20261010122320_fulfillment_order_emails.sql)で消した。受注生産の数は、仕上がっていない数だけを数える `public.list_variant_stock_states` が返す（[在庫の画面](../../04_DetailDesign/pages/16_admin.md)）。以下は消す前の定義の記録。
 ```
 
 **編集 2-19。** 置き換え前:
@@ -22149,8 +22149,8 @@ canShip/canRecordCompletion/missingShippingFields/shipBlockedReason、status（�
 
 ```text
 | D | [グループ D の移行 B: 入金済み・入金待ち・在庫解放・発送と、同じ取引でのメールの行の作成](../../../supabase/migrations/20261009095736_order_email_enqueue.sql) |
-| FA | [グループ E-1 の移行 A: 発送・仕上がりの記録と商品ごとの数](../../../supabase/migrations/20261010120000_order_fulfillments.sql) |
-| FB | [グループ E-1 の移行 B: 発送・発送の取消と、発送ごとのメールの行](../../../supabase/migrations/20261010120100_fulfillment_order_emails.sql) |
+| FA | [グループ E-1 の移行 A: 発送・仕上がりの記録と商品ごとの数](../../../supabase/migrations/20261010120303_order_fulfillments.sql) |
+| FB | [グループ E-1 の移行 B: 発送・発送の取消と、発送ごとのメールの行](../../../supabase/migrations/20261010122320_fulfillment_order_emails.sql) |
 ```
 
 **編集 3-2（状態の意味。決済完了）。** 置き換え前:
@@ -22323,7 +22323,7 @@ DB の状態の値（上の7つ）は変えない。管理画面とお客様の�
 置き換え後:
 
 ```text
-| 発送・仕上がり | [E-1 移行 A: 商品ごとの数と仕上がりの関数](../../../supabase/migrations/20261010120000_order_fulfillments.sql)、[E-1 移行 B: 発送・発送の取消の関数](../../../supabase/migrations/20261010120100_fulfillment_order_emails.sql)、[必須配送先判定](../../../supabase/migrations/20260925000218_add_order_state_transition_rpcs.sql) |
+| 発送・仕上がり | [E-1 移行 A: 商品ごとの数と仕上がりの関数](../../../supabase/migrations/20261010120303_order_fulfillments.sql)、[E-1 移行 B: 発送・発送の取消の関数](../../../supabase/migrations/20261010122320_fulfillment_order_emails.sql)、[必須配送先判定](../../../supabase/migrations/20260925000218_add_order_state_transition_rpcs.sql) |
 ```
 
 **編集 3-14（根拠の表。取消・発送のメール）。** 置き換え前:
@@ -22335,7 +22335,7 @@ DB の状態の値（上の7つ）は変えない。管理画面とお客様の�
 置き換え後:
 
 ```text
-| 取消・発送のメール（発送は発送ごとに1通） | [送る予定の表](../../../supabase/migrations/20261009095633_order_email_outbox.sql)、[状態を変える関数](../../../supabase/migrations/20261009095736_order_email_enqueue.sql)、[発送ごとのメールの行](../../../supabase/migrations/20261010120100_fulfillment_order_emails.sql)、
+| 取消・発送のメール（発送は発送ごとに1通） | [送る予定の表](../../../supabase/migrations/20261009095633_order_email_outbox.sql)、[状態を変える関数](../../../supabase/migrations/20261009095736_order_email_enqueue.sql)、[発送ごとのメールの行](../../../supabase/migrations/20261010122320_fulfillment_order_emails.sql)、
 ```
 
 **編集 3-15（認可と CSRF の段落）。** 置き換え前:
@@ -22466,7 +22466,7 @@ sequenceDiagram
 | 保存 | 発送（番号は注文ごとの最大＋1。取り消した番号は使い回さない）・発送の商品。全部を送った時だけ、注文の shipped・出荷日時・配送業者・追跡番号。注文の改訂の理由は `admin_create_fulfillment`・`admin_cancel_fulfillment` |
 | メール | `notifyCustomer` が真の時だけ、その発送の発送メールの行を同じ取引で書く。返事の後に worker が送る。失敗はやり直し、送れなければ店へ知らせる |
 
-仕上がりの記録は決済完了の注文だけ（`ORDER_NOT_IN_PRODUCTION`）、受注生産の品だけ（`LINE_NOT_IN_PRODUCTION`）、受注生産中の数まで（`QUANTITY_EXCEEDS_IN_PRODUCTION`）。根拠は [移行 A](../../../supabase/migrations/20261010120000_order_fulfillments.sql)、[移行 B](../../../supabase/migrations/20261010120100_fulfillment_order_emails.sql)、[発送API](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/route.ts)、[worker](../../../src/lib/orders/email/order-email-worker.ts)。
+仕上がりの記録は決済完了の注文だけ（`ORDER_NOT_IN_PRODUCTION`）、受注生産の品だけ（`LINE_NOT_IN_PRODUCTION`）、受注生産中の数まで（`QUANTITY_EXCEEDS_IN_PRODUCTION`）。根拠は [移行 A](../../../supabase/migrations/20261010120303_order_fulfillments.sql)、[移行 B](../../../supabase/migrations/20261010122320_fulfillment_order_emails.sql)、[発送API](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/route.ts)、[worker](../../../src/lib/orders/email/order-email-worker.ts)。
 
 
 ```
@@ -23216,7 +23216,7 @@ where shipped_at is not null and status not in ('shipped', 'cancelled');
 
 3. **当てる**: ユーザーの許可を得てから、Supabase の接続の `apply_migration` で移行 A（`order_fulfillments`）、移行 B（`fulfillment_order_emails`）の順に当てる。1つずつ許可を得る
    - 移行 A と B は続けて当て、その間に開発の画面で操作しない（普段の開発は本番の DB を使うため）
-4. **当てた版に名前を合わせる**: 本番の台帳（`list_migrations`）の版の番号に合わせて、`git mv` で2つのファイルの名前を直し、ファイル名を書いている所（`grep -rn "20261010120000\|20261010120100" docs supabase tests src`。単体テスト `order-email-types.test.ts`・`order-state-transition-hardening.test.ts` が移行 B のパスを読んでいる）を直す。単体テストを流してからコミットする（`chore(db): …`）
+4. **当てた版に名前を合わせる**: 本番の台帳（`list_migrations`）の版の番号に合わせて、`git mv` で2つのファイルの名前を直し、ファイル名を書いている所（`grep -rn "20261010120303\|20261010122320" docs supabase tests src`。単体テスト `order-email-types.test.ts`・`order-state-transition-hardening.test.ts` が移行 B のパスを読んでいる）を直す。単体テストを流してからコミットする（`chore(db): …`）
 5. **当てた後の確かめ**（本番の DB を読むだけ）:
 
 ```sql

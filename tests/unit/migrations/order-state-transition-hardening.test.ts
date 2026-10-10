@@ -11,7 +11,7 @@ const HARDENING_PATH = path.join(
 );
 const FULFILLMENT_PATH = path.join(
   process.cwd(),
-  'supabase/migrations/20261010120100_fulfillment_order_emails.sql',
+  'supabase/migrations/20261010122320_fulfillment_order_emails.sql',
 );
 
 describe('order state transition migrations', () => {

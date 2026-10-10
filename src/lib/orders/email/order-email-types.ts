@@ -3,7 +3,7 @@ import type { OrderStatus, PaidEmailVariant } from '@/lib/orders/order-payment-t
 /**
  * 注文のメールの種類・状態・原因の記号（グループ D 設計書 3・4・5・6 章）。
  * DB の CHECK 制約（移行 20261009095633_order_email_outbox.sql）と同じ値を1か所に置く。画面からも読む。
- * 取りやめの理由と再送できる状態の表は、発送ごとのメールで作り直した移行 20261010120100_fulfillment_order_emails.sql の関数と同じ。
+ * 取りやめの理由と再送できる状態の表は、発送ごとのメールで作り直した移行 20261010122320_fulfillment_order_emails.sql の関数と同じ。
  */
 export const ORDER_EMAIL_KINDS = ['paid', 'awaiting_payment', 'payment_expired', 'canceled', 'shipped'] as const;
 export type OrderEmailKind = (typeof ORDER_EMAIL_KINDS)[number];
