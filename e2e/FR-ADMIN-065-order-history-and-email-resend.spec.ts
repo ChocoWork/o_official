@@ -36,7 +36,7 @@ const SENT_EMAIL = {
   type: 'email', at: '2026-10-09T01:00:00.000Z', emailId: 'b1b2c3d4-1111-2222-8333-444455556666', kind: 'paid',
   kindLabel: '注文確認', manual: false, requestedByEmail: null, stateLabel: '配達済み', warning: false, attempts: 1,
   errorLabel: null, sentAt: '2026-10-09T01:00:05.000Z', deliveryEventAt: '2026-10-09T01:01:00.000Z',
-  canViewContent: true, bodyErased: false, resendable: true,
+  canViewContent: true, bodyErased: false, resendable: true, fulfillmentId: null, fulfillmentNumber: null,
 } satisfies OrderHistoryEmailEntry;
 
 function historyBody(resent: boolean) {

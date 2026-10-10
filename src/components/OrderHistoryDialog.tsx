@@ -223,6 +223,10 @@ function OrderHistoryDialogBody({ orderId, onClose }: OrderHistoryDialogBodyProp
         </li>
       );
     }
+    // 発送・仕上がりとその取消の行は Task 6 で描く。それまではメールの行だけを描く
+    if (entry.type !== 'email') {
+      return null;
+    }
     return (
       <li key={`email-${entry.emailId}`} className="space-y-1 font-acumin lk-text-3xs text-black">
         <div className="flex flex-wrap items-center gap-2">

@@ -13,7 +13,11 @@ import {
 } from '@/lib/orders/email/order-email-store';
 import { scheduleOrderEmailDelivery } from '@/lib/orders/email/order-email-schedule';
 
-const bodySchema = z.object({ kind: z.enum(ORDER_EMAIL_KINDS) });
+// 発送のメールだけが、どの発送のメールかを持つ（DB の表の CHECK `(kind = 'shipped') = (fulfillment_id IS NOT NULL)` と同じ決まり）。
+// null は「持たない」として受ける（画面が、発送の番号の無いメールも同じ形で送れるように）
+const bodySchema = z
+  .object({ kind: z.enum(ORDER_EMAIL_KINDS), fulfillmentId: z.string().uuid().nullish() })
+  .refine((body) => (body.kind === 'shipped') === Boolean(body.fulfillmentId));
 
 const RATE_LIMIT = { endpoint: 'admin:orders:email-resend', limit: 30, windowSeconds: 600 } as const;
 
@@ -27,7 +31,8 @@ const MESSAGES = {
 type AuditOutcome = 'success' | 'failure' | 'conflict' | 'error';
 
 /**
- * お客様へのメールの再送（グループ D 設計書 5-3）。手で足した印の新しい行を作り、今の注文の情報で作り直して送る。
+ * お客様へのメールの再送（グループ D 設計書 5-3、グループ E-1 設計書 8-2）。手で足した印の新しい行を作り、今の注文の情報で作り直して送る。
+ * 発送のメールは発送ごとに別のメールなので、どの発送かも受ける。
  * 権限 → CSRF → 回数の制限（送信元ごとと管理者ごと）の順に確かめる。監査にお客様の個人情報は入れない。
  */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -77,25 +82,28 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
   }
   const { kind } = parsedBody.data;
+  const fulfillmentId = parsedBody.data.fulfillmentId ?? null;
+  // 発送の番号は個人情報ではないので、どの発送のメールかを監査に残す
+  const target = fulfillmentId ? { kind, fulfillment_id: fulfillmentId } : { kind };
 
   try {
     const store = (await createServiceRoleClient()) as unknown as OrderEmailStore;
-    const emailId = await requestOrderEmailResend(store, { orderId: parsedId.data, kind, actorId: authz.userId });
-    await audit('success', 'Order email resend requested', { kind, email_id: emailId });
+    const emailId = await requestOrderEmailResend(store, { orderId: parsedId.data, kind, actorId: authz.userId, fulfillmentId });
+    await audit('success', 'Order email resend requested', { ...target, email_id: emailId });
     scheduleOrderEmailDelivery();
     return NextResponse.json({ success: true, emailId });
   } catch (error) {
     if (error instanceof OrderEmailResendError) {
       if (error.reason === 'order_not_found') {
-        await audit('failure', 'Order not found', { kind });
+        await audit('failure', 'Order not found', target);
         return NextResponse.json({ error: MESSAGES.order_not_found }, { status: 404 });
       }
-      await audit('conflict', error.reason === 'already_queued' ? 'Resend already queued' : 'Resend not allowed', { kind });
+      await audit('conflict', error.reason === 'already_queued' ? 'Resend already queued' : 'Resend not allowed', target);
       return NextResponse.json({ error: MESSAGES[error.reason] }, { status: 409 });
     }
     console.error('[admin.orders.email.resend] Failed to request resend', error instanceof Error ? error.name : 'UnknownError',
       ...(error instanceof OrderEmailStoreError && error.code ? [error.code] : []));
-    await audit('error', 'Failed to request resend', { kind });
+    await audit('error', 'Failed to request resend', target);
     return NextResponse.json({ error: MESSAGES.failed }, { status: 500 });
   }
 }

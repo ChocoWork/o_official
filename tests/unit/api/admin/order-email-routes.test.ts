@@ -27,10 +27,16 @@ jest.mock('@/lib/orders/email/order-email-schedule', () => ({
 }));
 const mockRpc = jest.fn();
 const mockMaybeSingle = jest.fn();
+const mockOrderItems = jest.fn();
 jest.mock('@/lib/supabase/server', () => ({
   createServiceRoleClient: jest.fn(async () => ({
     rpc: (...args: unknown[]) => mockRpc(...args),
-    from: () => ({ select: () => ({ eq: () => ({ maybeSingle: (...args: unknown[]) => mockMaybeSingle(...args) }) }) }),
+    // 注文の行は eq の後ろの maybeSingle で1行、商品の名前は eq の後ろをそのまま待つ
+    from: (table: string) => ({
+      select: () => ({
+        eq: () => (table === 'order_items' ? mockOrderItems() : { maybeSingle: (...args: unknown[]) => mockMaybeSingle(...args) }),
+      }),
+    }),
   })),
 }));
 
@@ -38,8 +44,12 @@ import { GET as getHistory } from '@/app/api/admin/orders/[id]/history/route';
 import { GET as getContent } from '@/app/api/admin/orders/[id]/emails/[emailId]/route';
 import { POST as postResend } from '@/app/api/admin/orders/[id]/emails/resend/route';
 
-const ORDER_ID = 'a1b2c3d4-1111-2222-8333-444455556666';
-const EMAIL_ID = 'b1b2c3d4-1111-2222-8333-444455556666';
+const ORDER_ID = 'a1b2c3d4-1111-4222-8333-444455556666';
+const EMAIL_ID = 'b1b2c3d4-1111-4222-8333-444455556666';
+const FULFILLMENT_ID = 'c1b2c3d4-1111-4222-8333-444455556666';
+const COMPLETION_ID = 'e1b2c3d4-1111-4222-8333-444455556666';
+const ITEM_1 = 'd1b2c3d4-1111-4222-8333-444455556661';
+const ITEM_2 = 'd1b2c3d4-1111-4222-8333-444455556662';
 const DENIED = new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403 });
 
 function rpcReturns(map: Record<string, { data: unknown; error?: unknown }>) {
@@ -48,6 +58,10 @@ function rpcReturns(map: Record<string, { data: unknown; error?: unknown }>) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockRpc.mockReset();
+  mockMaybeSingle.mockReset();
+  mockOrderItems.mockReset();
+  mockOrderItems.mockResolvedValue({ data: [], error: null });
   mockAuthorize.mockResolvedValue({ ok: true, userId: 'admin-1', role: 'admin', actorEmail: 'admin@example.com' });
   mockRequireCsrf.mockResolvedValue(undefined);
   mockEnforceRateLimit.mockResolvedValue(undefined);
@@ -83,10 +97,69 @@ describe('GET /api/admin/orders/[id]/history', () => {
     const body = await response.json();
     expect(body.order).toEqual({ id: ORDER_ID, orderNumber: 'ORD-A1B2C3D4', statusLabel: '決済完了', recipient: 'hanako@example.com' });
     expect(body.entries.map((entry: { type: string }) => entry.type)).toEqual(['email', 'status', 'created']);
-    expect(body.entries[0]).toMatchObject({ emailId: EMAIL_ID, stateLabel: '送信済み', resendable: true });
+    expect(body.entries[0]).toMatchObject({ emailId: EMAIL_ID, stateLabel: '送信済み', resendable: true, fulfillmentId: null, fulfillmentNumber: null });
     expect(mockRpc).toHaveBeenCalledWith('list_order_status_history', { _order_id: ORDER_ID });
     expect(mockRpc).toHaveBeenCalledWith('list_order_email_history', { _order_id: ORDER_ID });
     expect(JSON.stringify(body)).not.toContain('order_confirmed');
+  });
+
+  it('発送・仕上がり・発送ごとのメールも新しい順に返し、商品の名前は「商品名（色 / サイズ）」で出す', async () => {
+    mockMaybeSingle.mockResolvedValue({
+      data: { id: ORDER_ID, status: 'paid', shipping_email: 'hanako@example.com', created_at: '2026-10-08T23:00:00.000Z' },
+      error: null,
+    });
+    mockOrderItems.mockResolvedValue({
+      data: [
+        { id: ITEM_1, item_name: 'シルクブラウス', color: '白', size: 'M' },
+        { id: ITEM_2, item_name: 'リネンパンツ', color: null, size: null },
+      ],
+      error: null,
+    });
+    rpcReturns({
+      list_order_email_history: { data: [{
+        email_id: EMAIL_ID, kind: 'shipped', variant: null, origin: 'auto', requested_by_email: null, status: 'sent', attempts: 1,
+        last_error_code: null, delivery_status: null, delivery_event_at: null, created_at: '2026-10-10T02:00:00+00:00',
+        sent_at: '2026-10-10T02:00:05+00:00', finished_at: '2026-10-10T02:00:05+00:00', has_body: true, body_erased: false,
+        fulfillment_id: FULFILLMENT_ID, fulfillment_number: 1,
+      }] },
+      get_order_email_send_state: { data: [{ paused: false, reason: null, paused_at: null, next_probe_at: null }] },
+      list_order_fulfillments: { data: [{
+        fulfillment_id: FULFILLMENT_ID, number: 1, shipping_carrier: 'yamato', tracking_number: '1234-5678', notify_customer: true,
+        completes_order: false, shipped_at: '2026-10-10T02:00:00+00:00', created_by_email: 'admin@example.com', cancelled_at: null,
+        cancelled_by_email: null, legacy: false, lines: [{ order_item_id: ITEM_1, quantity: 1 }],
+      }] },
+      list_order_completions: { data: [{
+        completion_id: COMPLETION_ID, order_item_id: ITEM_2, quantity: 1, created_at: '2026-10-10T01:00:00+00:00',
+        created_by_email: 'admin@example.com', cancelled_at: null, cancelled_by_email: null, legacy: false,
+      }] },
+      list_order_line_fulfillment: { data: [
+        {
+          order_id: ORDER_ID, order_item_id: ITEM_1, variant_id: 11, fulfillment_type: 'stock', quantity: 2, shipped: 1, completed: 2,
+          in_production: 0, ready_unshipped: 1, unshipped: 1,
+        },
+        {
+          order_id: ORDER_ID, order_item_id: ITEM_2, variant_id: 12, fulfillment_type: 'backorder', quantity: 1, shipped: 0, completed: 1,
+          in_production: 0, ready_unshipped: 1, unshipped: 1,
+        },
+      ] },
+    });
+
+    const response = await getHistory(request(), context);
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.entries.map((entry: { type: string }) => entry.type)).toEqual(['email', 'fulfillment', 'completion', 'created']);
+    expect(body.entries[0]).toMatchObject({
+      kindLabel: '発送（1回目）', fulfillmentId: FULFILLMENT_ID, fulfillmentNumber: 1, resendable: true,
+    });
+    expect(body.entries[1]).toMatchObject({
+      number: 1, carrierLabel: 'ヤマト運輸', trackingNumber: '1234-5678', cancellable: true,
+      items: [{ name: 'シルクブラウス（白 / M）', quantity: 1 }], actorEmail: 'admin@example.com',
+    });
+    expect(body.entries[2]).toMatchObject({ items: [{ name: 'リネンパンツ', quantity: 1 }], cancellable: true });
+    expect(mockRpc).toHaveBeenCalledWith('list_order_fulfillments', { _order_id: ORDER_ID });
+    expect(mockRpc).toHaveBeenCalledWith('list_order_completions', { _order_id: ORDER_ID });
+    expect(mockRpc).toHaveBeenCalledWith('list_order_line_fulfillment', { _order_ids: [ORDER_ID] });
   });
 
   it('権限が無ければ認可の応答、注文番号の形が違えば 400、無ければ 404、DB の失敗は 500', async () => {
@@ -106,6 +179,27 @@ describe('GET /api/admin/orders/[id]/history', () => {
       expect(response.status).toBe(500);
       await expect(response.json()).resolves.toEqual({ error: 'Failed to load history' });
       expect(error.mock.calls).toEqual([['[admin.orders.history] Failed to load history', 'OrderEmailStoreError', '08006']]);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it('発送の一覧・商品の名前の読み込みが失敗しても 500。ログは例外名と DB の記号だけ', async () => {
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      mockMaybeSingle.mockResolvedValue({ data: { id: ORDER_ID, status: 'paid', shipping_email: null, created_at: '2026-10-08T23:00:00Z' }, error: null });
+      rpcReturns({ list_order_fulfillments: { data: null, error: { message: '宛先を含む例外', code: '08006' } } });
+      expect((await getHistory(request(), context)).status).toBe(500);
+
+      rpcReturns({});
+      mockOrderItems.mockResolvedValueOnce({ data: null, error: { message: '宛先を含む例外', code: '42P01' } });
+      const response = await getHistory(request(), context);
+      expect(response.status).toBe(500);
+      await expect(response.json()).resolves.toEqual({ error: 'Failed to load history' });
+      expect(error.mock.calls).toEqual([
+        ['[admin.orders.history] Failed to load history', 'FulfillmentStoreError', '08006'],
+        ['[admin.orders.history] Failed to load history', 'FulfillmentStoreError', '42P01'],
+      ]);
     } finally {
       error.mockRestore();
     }
@@ -189,6 +283,34 @@ describe('POST /api/admin/orders/[id]/emails/resend', () => {
     expect(mockSchedule).toHaveBeenCalledTimes(1);
   });
 
+  it('発送のメールは、どの発送かを付けて再送を頼む。どの発送かも監査に残す', async () => {
+    rpcReturns({ request_order_email_resend: { data: EMAIL_ID } });
+
+    const response = await postResend(request({ kind: 'shipped', fulfillmentId: FULFILLMENT_ID }), context);
+
+    expect(response.status).toBe(200);
+    expect(mockRpc).toHaveBeenCalledWith('request_order_email_resend', {
+      _order_id: ORDER_ID, _kind: 'shipped', _actor_id: 'admin-1', _fulfillment_id: FULFILLMENT_ID,
+    });
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'success', metadata: { kind: 'shipped', fulfillment_id: FULFILLMENT_ID, email_id: EMAIL_ID },
+    }));
+    // 入れた鍵が maskAuditEvent に伏せられることもない
+    const { maskAuditEvent } = jest.requireActual('@/lib/audit');
+    const audited = mockLogAudit.mock.calls[0][0];
+    expect(maskAuditEvent(audited).metadata).toEqual(audited.metadata);
+    expect(mockSchedule).toHaveBeenCalledTimes(1);
+  });
+
+  it('発送のメール以外は、発送の番号が null でも受ける（持たない扱い）', async () => {
+    rpcReturns({ request_order_email_resend: { data: EMAIL_ID } });
+
+    const response = await postResend(request({ kind: 'paid', fulfillmentId: null }), context);
+
+    expect(response.status).toBe(200);
+    expect(mockRpc).toHaveBeenCalledWith('request_order_email_resend', expect.objectContaining({ _kind: 'paid', _fulfillment_id: null }));
+  });
+
   it('権限が無ければ CSRF を確かめず、認可の応答を返す（権限の確認が先）', async () => {
     mockAuthorize.mockResolvedValueOnce({ ok: false, response: DENIED });
 
@@ -215,6 +337,24 @@ describe('POST /api/admin/orders/[id]/emails/resend', () => {
     expect(mockLogAudit).toHaveBeenNthCalledWith(2, expect.objectContaining({ outcome: 'failure', detail: 'Invalid order id', metadata: null }));
   });
 
+  it.each([
+    ['発送のメールに発送の番号が無い', { kind: 'shipped' }],
+    ['発送のメールの発送の番号が null', { kind: 'shipped', fulfillmentId: null }],
+    ['発送のメールの発送の番号が UUID でない', { kind: 'shipped', fulfillmentId: 'x' }],
+    ['発送のメール以外に発送の番号がある', { kind: 'paid', fulfillmentId: FULFILLMENT_ID }],
+  ])('%s なら 400。行を足さず、固定の文だけを監査に残す', async (_name, body) => {
+    const response = await postResend(request(body), context);
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: 'Invalid request' });
+    expect(mockRpc).not.toHaveBeenCalled();
+    expect(mockLogAudit.mock.calls).toEqual([[{
+      action: 'admin.orders.email.resend', actor_id: 'admin-1', resource: 'orders', resource_id: ORDER_ID,
+      outcome: 'failure', detail: 'Invalid request body', ip: '203.0.113.5', user_agent: 'jest', metadata: null,
+    }]]);
+    expect(mockSchedule).not.toHaveBeenCalled();
+  });
+
   it('管理者ごとの回数の制限で 429 なら行・監査・送信予約を作らない', async () => {
     mockEnforceRateLimit.mockResolvedValueOnce(undefined).mockResolvedValueOnce(new Response(null, { status: 429 }));
     const req = request({ kind: 'paid' });
@@ -226,7 +366,7 @@ describe('POST /api/admin/orders/[id]/emails/resend', () => {
     expect(mockSchedule).not.toHaveBeenCalled();
   });
 
-  it.each(['null', '{', JSON.stringify({ kind: '宛先・件名・本文' })])('本文の形が誤り（%s）なら固定文だけで failure の監査を残す', async (body) => {
+  it.each(['null', '{', JSON.stringify({ kind: '宛先・件名・本文' })])('本文の形が誤り（%s）なら固定の文だけで failure の監査を残す', async (body) => {
     const req = new Request(`http://localhost/api/admin/orders/${ORDER_ID}/emails/resend`, {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.5', 'user-agent': 'jest' }, body,
     });
@@ -252,6 +392,18 @@ describe('POST /api/admin/orders/[id]/emails/resend', () => {
     await expect(response.json()).resolves.toEqual({ error });
     expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: status === 404 ? 'failure' : 'conflict', metadata: { kind: 'paid' } }));
     expect(mockSchedule).not.toHaveBeenCalled();
+  });
+
+  it('取り消した発送のメールの再送を DB が断ったら 409。どの発送かを監査に残す', async () => {
+    rpcReturns({ request_order_email_resend: { data: null, error: { message: 'RESEND_NOT_ALLOWED', code: '22023' } } });
+
+    const response = await postResend(request({ kind: 'shipped', fulfillmentId: FULFILLMENT_ID }), context);
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: '今の注文の状態では、このメールは再送できません。' });
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'conflict', metadata: { kind: 'shipped', fulfillment_id: FULFILLMENT_ID },
+    }));
   });
 
   it('思いがけない DB の失敗は 500', async () => {

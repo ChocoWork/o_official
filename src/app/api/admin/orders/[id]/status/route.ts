@@ -17,7 +17,6 @@ import {
 import { createDefaultReconcilerDeps } from '@/lib/stripe/checkout-payment-reconciler-deps';
 import { scheduleOrderEmailDelivery } from '@/lib/orders/email/order-email-schedule';
 import { logAudit } from '@/lib/audit';
-import { SHIPPING_CARRIER_IDS } from '@/lib/orders/shipping-carriers';
 import {
   ADMIN_NOTE_MAX_LENGTH,
   CANCEL_REASONS,
@@ -28,21 +27,13 @@ import {
 
 const orderIdSchema = z.string().uuid();
 
-const updateStatusSchema = z.discriminatedUnion('status', [
-  z.object({
-    status: z.literal('cancelled'),
-    reason: z.enum(CANCEL_REASONS),
-    note: z.string().trim().max(ADMIN_NOTE_MAX_LENGTH).optional(),
-    notifyCustomer: z.boolean().default(true),
-  }),
-  z.object({
-    status: z.literal('shipped'),
-    carrier: z.enum(SHIPPING_CARRIER_IDS),
-    trackingNumber: z.string().trim().min(1).max(64).regex(/^[0-9A-Za-z-]+$/),
-    // 発送の画面の「お客様に発送のメールを送る」（既定は送る。Shopify の「発送の詳細を今すぐ送る」）
-    notifyCustomer: z.boolean().default(true),
-  }),
-]);
+// 発送は /api/admin/orders/[id]/fulfillments に移した（グループ E-1）。この窓口は未入金の注文の取消だけ
+const updateStatusSchema = z.object({
+  status: z.literal('cancelled'),
+  reason: z.enum(CANCEL_REASONS),
+  note: z.string().trim().max(ADMIN_NOTE_MAX_LENGTH).optional(),
+  notifyCustomer: z.boolean().default(true),
+});
 
 type CancelRequest = { reason: CancelReason; note?: string; notifyCustomer: boolean };
 
@@ -73,7 +64,7 @@ export async function GET(
     {
       endpoint: `/api/admin/orders/${id}/status`,
       method: 'POST',
-      description: 'Order status update endpoint (cancel or shipped)',
+      description: 'Order status update endpoint (cancel)',
       requiredBody: { status: 'cancelled', reason: CANCEL_REASONS },
     },
     { status: 200 },
@@ -125,41 +116,6 @@ export async function POST(
         { error: 'Invalid request body', details: parsedBody.error.flatten() },
         { status: 400 },
       );
-    }
-
-    if (parsedBody.data.status === 'shipped') {
-      const serviceRoleSupabase = await createServiceRoleClient();
-      const { data, error } = await serviceRoleSupabase.rpc('admin_ship_paid_order', {
-        _actor_id: authz.userId,
-        _order_id: parsedOrderId.data,
-        _shipping_carrier: parsedBody.data.carrier,
-        _tracking_number: parsedBody.data.trackingNumber,
-        _notify_customer: parsedBody.data.notifyCustomer,
-      });
-
-      if (error) {
-        console.error('[admin.orders.status] Failed to ship order:', error);
-        return NextResponse.json({ error: '発送状態の更新に失敗しました。' }, { status: 500 });
-      }
-
-      const shippedOrder = Array.isArray(data) ? data[0] : data;
-      if (!shippedOrder) {
-        await audit('failure', 'not_shippable');
-        return NextResponse.json(
-          {
-            error:
-              '発送できる状態ではありません。決済完了・未発送で配送先の必須項目が揃い、支払額の確認（要対応）が済んだ注文のみ発送できます。',
-          },
-          { status: 409 },
-        );
-      }
-
-      await audit('success', 'Status changed to shipped', { status: 'shipped', carrier: parsedBody.data.carrier, notify_customer: parsedBody.data.notifyCustomer });
-
-      // 発送のメール（知らせる時だけ）の行は DB の関数が同じ取引で書いた。返事の後に送る（グループ D 設計書 4-7）
-      scheduleOrderEmailDelivery();
-
-      return NextResponse.json({ success: true, status: 'shipped' }, { status: 200 });
     }
 
     const cancel: CancelRequest = {

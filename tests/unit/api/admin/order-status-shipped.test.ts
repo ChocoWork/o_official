@@ -107,12 +107,9 @@ beforeEach(() => {
 });
 
 describe('POST /api/admin/orders/[id]/status - CSRF トークン', () => {
-  const SHIP = { status: 'shipped', carrier: 'yamato', trackingNumber: '1234-5678-9012' };
-
-  // 確認が通れば取消も発送も成功する状態にしておく。拒否されたとき、処理が進んだことが 200 で分かる
+  // 確認が通れば取消が成功する状態にしておく。拒否されたとき、処理が進んだことが 200 で分かる
   beforeEach(() => {
     currentOrder('payment_in_progress', { payment_intent_id: null });
-    mockRpc.mockResolvedValue({ data: [{ id: ORDER_ID }], error: null });
   });
 
   // clearAllMocks は実装を戻さない。ここで置いた既定の応答を、後ろのテストへ持ち越さない
@@ -122,14 +119,12 @@ describe('POST /api/admin/orders/[id]/status - CSRF トークン', () => {
   });
 
   test.each([
-    ['取消', 403, CANCEL],
-    ['発送', 403, SHIP],
-    ['取消（確認の DB の失敗）', 500, CANCEL],
-    ['発送（確認の DB の失敗）', 500, SHIP],
-  ])('CSRF トークンが合わなければ、%s は何もせず、確認の応答（%i）をそのまま返す', async (_name, status, body) => {
+    ['取消', 403],
+    ['取消（確認の DB の失敗）', 500],
+  ])('CSRF トークンが合わなければ、%s は何もせず、確認の応答（%i）をそのまま返す', async (_name, status) => {
     mockRequireCsrf.mockResolvedValue(new Response(null, { status }));
 
-    const res = await post(body);
+    const res = await post(CANCEL);
 
     expect(res.status).toBe(status);
     expect(mockFrom).not.toHaveBeenCalled();
@@ -139,11 +134,8 @@ describe('POST /api/admin/orders/[id]/status - CSRF トークン', () => {
     expect(mockReconcile).not.toHaveBeenCalled();
   });
 
-  test.each([
-    ['取消', CANCEL],
-    ['発送', SHIP],
-  ])('CSRF トークンが合えば、%s は処理を進める', async (_name, body) => {
-    const res = await post(body);
+  test('CSRF トークンが合えば、取消は処理を進める', async () => {
+    const res = await post(CANCEL);
 
     expect(mockRequireCsrf).toHaveBeenCalledTimes(1);
     expect(res.status).toBe(200);
@@ -161,55 +153,21 @@ describe('POST /api/admin/orders/[id]/status - CSRF トークン', () => {
 });
 
 describe('POST /api/admin/orders/[id]/status - 発送', () => {
-  test('paid の注文を発送済みにできる', async () => {
-    mockRpc.mockResolvedValue({ data: [{ id: ORDER_ID }], error: null });
+  // 発送は /api/admin/orders/[id]/fulfillments に移した（グループ E-1）。この窓口は未入金の注文の取消だけ
+  test.each([
+    ['従来の発送の中身', { status: 'shipped', carrier: 'yamato', trackingNumber: '1234-5678-9012' }],
+    ['「送るか」を付けた発送の中身', { status: 'shipped', carrier: 'yamato', trackingNumber: '1234-5678-9012', notifyCustomer: false }],
+    ['中身が足りない発送', { status: 'shipped' }],
+  ])('status: shipped（%s）は 400 を返し、DB を読まず、発送の関数も呼ばない', async (_name, body) => {
+    const res = await post(body);
 
-    const res = await post({ status: 'shipped', carrier: 'yamato', trackingNumber: '1234-5678-9012' });
-
-    expect(res.status).toBe(200);
-    expect(mockRpc).toHaveBeenCalledWith('admin_ship_paid_order', {
-      _actor_id: 'admin-1',
-      _order_id: ORDER_ID,
-      _shipping_carrier: 'yamato',
-      _tracking_number: '1234-5678-9012',
-      _notify_customer: true,
-    });
-    expect(mockScheduleOrderEmailDelivery).toHaveBeenCalledTimes(1);
-  });
-
-  test('更新対象が無ければ 409 を返し、配送先と支払額の確認を促し、メールの送信を予約しない', async () => {
-    mockRpc.mockResolvedValue({ data: [], error: null });
-
-    const res = await post({ status: 'shipped', carrier: 'yamato', trackingNumber: '1234-5678-9012' });
-
-    expect(res.status).toBe(409);
-    expect(res.body.error).toContain('配送先');
-    expect(res.body.error).toContain('支払額');
-    expect(mockScheduleOrderEmailDelivery).not.toHaveBeenCalled();
-  });
-
-  test('「お客様に発送のメールを送る」を外すと、DB に送らないを渡す', async () => {
-    mockRpc.mockResolvedValue({ data: [{ id: ORDER_ID }], error: null });
-
-    const response = await post({ status: 'shipped', carrier: 'yamato', trackingNumber: '1234-5678-9012', notifyCustomer: false });
-
-    expect(response.status).toBe(200);
-    expect(mockRpc).toHaveBeenCalledWith('admin_ship_paid_order', expect.objectContaining({ _notify_customer: false }));
-    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
-      detail: 'Status changed to shipped',
-      metadata: expect.objectContaining({ notify_customer: false }),
-    }));
-  });
-
-  test('「送るか」が真偽でなければ 400', async () => {
-    const response = await post({ status: 'shipped', carrier: 'yamato', trackingNumber: '1234-5678-9012', notifyCustomer: 'no' });
-    expect(response.status).toBe(400);
-  });
-
-  test('未知の配送業者と記号の混ざった追跡番号は 400 を返す', async () => {
-    expect((await post({ status: 'shipped', carrier: 'dhl', trackingNumber: '1234' })).status).toBe(400);
-    expect((await post({ status: 'shipped', carrier: 'yamato', trackingNumber: '12 34/56' })).status).toBe(400);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Invalid request body');
     expect(mockFrom).not.toHaveBeenCalled();
+    expect(mockRpc).not.toHaveBeenCalled();
+    expect(mockRpc).not.toHaveBeenCalledWith('admin_ship_paid_order', expect.anything());
+    expect(mockScheduleOrderEmailDelivery).not.toHaveBeenCalled();
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'failure', detail: 'Invalid request body' }));
   });
 });
 

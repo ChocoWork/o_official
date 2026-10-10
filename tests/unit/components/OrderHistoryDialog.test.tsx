@@ -22,6 +22,7 @@ function history(overrides: Partial<OrderHistoryResponse> = {}): OrderHistoryRes
         type: 'email', at: '2026-10-09T01:00:00.000Z', emailId: 'email-1', kind: 'paid', kindLabel: '注文確認', manual: false,
         requestedByEmail: null, stateLabel: '届かなかった', warning: true, attempts: 1, errorLabel: null,
         sentAt: '2026-10-09T01:00:05.000Z', deliveryEventAt: '2026-10-09T01:01:00.000Z', canViewContent: true, bodyErased: false, resendable: true,
+        fulfillmentId: null, fulfillmentNumber: null,
       },
       { type: 'status', at: '2026-10-09T01:00:00.000Z', fromLabel: '支払い手続き中', toLabel: '決済完了', actorEmail: null, detail: null },
       { type: 'created', at: '2026-10-09T00:59:00.000Z' },
@@ -36,6 +37,7 @@ function sentEmailEntry(overrides: Partial<OrderHistoryEmailEntry> = {}): OrderH
     type: 'email', at: '2026-10-09T01:00:00.000Z', emailId: 'email-1', kind: 'paid', kindLabel: '注文確認', manual: false,
     requestedByEmail: null, stateLabel: '送信済み', warning: false, attempts: 1, errorLabel: null,
     sentAt: '2026-10-09T01:00:05.000Z', deliveryEventAt: null, canViewContent: true, bodyErased: false, resendable: true,
+    fulfillmentId: null, fulfillmentNumber: null,
     ...overrides,
   };
 }
