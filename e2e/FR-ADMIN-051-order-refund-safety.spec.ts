@@ -1,4 +1,5 @@
 import { expect, Page, test } from '@playwright/test';
+import type { OrderItem, OrderLineItem } from '@/components/OrderSection';
 import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-404: 入金済み注文は返金結果を正本として状態を更新する。
@@ -17,7 +18,7 @@ const LINE = {
   shipped: 0,
   inProduction: 0,
   readyUnshipped: 1,
-};
+} satisfies Omit<OrderLineItem, 'name'>;
 
 const ORDERS = [
   {
@@ -62,7 +63,7 @@ const ORDERS = [
     progressKey: 'in_transit',
     canRefund: true,
   },
-];
+] satisfies OrderItem[];
 
 async function mockAdminApis(page: Page) {
   let orderListRequests = 0;
@@ -135,7 +136,7 @@ for (const viewport of viewports) {
       await page.getByRole('table').getByRole('button', { name: '返金', exact: true }).first().click();
 
       await expect(page.getByRole('status').filter({ hasText: '返金処理を受け付けました' })).toBeVisible();
-      // 状態の絞り込みボタンにも「決済完了」があるので、一覧の表の中だけを数える
+      // 返金を受け付けても注文は入金済みのまま（画面の言葉は「発送準備中」のまま）。一覧の表の中の状態の印だけを数える
       await expect(page.getByRole('table').getByText('発送準備中', { exact: true })).toHaveCount(1);
       await expect.poll(api.getOrderListRequests).toBe(2);
     });

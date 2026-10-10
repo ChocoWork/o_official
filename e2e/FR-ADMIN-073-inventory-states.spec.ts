@@ -165,8 +165,10 @@ for (const viewport of viewports) {
         const inProgress = await createOrderWithLines(
           db, email('progress'), [{ name: 'E2E在庫のシャツ', quantity: 1, fulfillmentType: 'stock' }],
           { status: 'payment_in_progress', catalog });
+        // この試験はメールを確かめないので、知らせない発送にする（知らせる発送は、ほかの spec の worker が送るメールの行を残す）
         await createFulfillment(db, paid.orderId, actorId, {
           trackingNumber: 'E2E-STOCK-1',
+          notify: false,
           lines: [{ orderItemId: paid.orderItemIds[0], quantity: 1 }],
         });
 

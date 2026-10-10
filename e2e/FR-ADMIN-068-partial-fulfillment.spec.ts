@@ -309,17 +309,21 @@ for (const viewport of viewports) {
           'LINE_NOT_IN_ORDER',
         );
 
-        // 一部の発送。同じ重複防止キーの送り直しは前の結果（replayed）で、二重に記録しない。中身が違えば断る
+        // 一部の発送。同じ重複防止キーの送り直しは前の結果（replayed）で、二重に記録しない。中身が違えば断る。
+        // この試験はメールを確かめないので、知らせない発送にする（知らせる発送は、ほかの spec の worker が送るメールの行を残す）。
+        // 重複防止キーの中身の比べには「知らせるか」も入るので、送り直しと中身違いの呼び出しも同じ値にそろえる
         const key = randomUUID();
         const first = await createFulfillment(db, order.orderId, actor, {
           requestKey: key,
           trackingNumber: 'E2E-GUARD-1',
+          notify: false,
           lines: [{ orderItemId: blouseId, quantity: 2 }],
         });
         expect(first).toMatchObject({ number: 1, completesOrder: false, orderStatus: 'paid', replayed: false });
         const replay = await createFulfillment(db, order.orderId, actor, {
           requestKey: key,
           trackingNumber: 'E2E-GUARD-1',
+          notify: false,
           lines: [{ orderItemId: blouseId, quantity: 2 }],
         });
         expect(replay).toMatchObject({ fulfillmentId: first.fulfillmentId, number: 1, replayed: true });
@@ -327,6 +331,7 @@ for (const viewport of viewports) {
           createFulfillment(db, order.orderId, actor, {
             requestKey: key,
             trackingNumber: 'E2E-GUARD-1',
+            notify: false,
             lines: [{ orderItemId: blouseId, quantity: 1 }],
           }),
           'FULFILLMENT_REQUEST_MISMATCH',
@@ -339,9 +344,17 @@ for (const viewport of viewports) {
       // ブラウスが残っているので、1つ目の後も注文は決済完了のままで、断りの言葉は数の超過になる
       const race = await Promise.allSettled([
         withLocalDb((db) =>
-          createFulfillment(db, orderId, actorId, { trackingNumber: 'E2E-RACE-A', lines: [{ orderItemId: skirt, quantity: 1 }] })),
+          createFulfillment(db, orderId, actorId, {
+            trackingNumber: 'E2E-RACE-A',
+            notify: false,
+            lines: [{ orderItemId: skirt, quantity: 1 }],
+          })),
         withLocalDb((db) =>
-          createFulfillment(db, orderId, actorId, { trackingNumber: 'E2E-RACE-B', lines: [{ orderItemId: skirt, quantity: 1 }] })),
+          createFulfillment(db, orderId, actorId, {
+            trackingNumber: 'E2E-RACE-B',
+            notify: false,
+            lines: [{ orderItemId: skirt, quantity: 1 }],
+          })),
       ]);
       const rejected = race.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
       expect(race.filter((result) => result.status === 'fulfilled')).toHaveLength(1);

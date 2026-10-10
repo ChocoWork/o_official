@@ -167,6 +167,8 @@ for (const viewport of viewports) {
       // ダイアログは開く時に160ミリ秒で現れる。途中の写りを避けるため、動きを終わらせてから撮る
       await page.screenshot({ path: `test-results/group-e1/order-history-fulfillment-${viewport.width}.png`, animations: 'disabled' });
 
+      // 取消の前は、その発送のメールに「お客様へ再送」が1つある（取消の後に無いことの確かめが、名前の変わりで黙って通らないように）
+      await expect(dialog.getByRole('button', { name: 'お客様へ再送' })).toHaveCount(1);
       const before = listUrls.length;
       await shipment.getByRole('button', { name: 'この発送を取り消す' }).click();
       await expect(page.getByText(CONFIRM)).toBeVisible();
@@ -198,6 +200,9 @@ for (const viewport of viewports) {
       await shipment.getByRole('button', { name: 'この発送を取り消す' }).click();
       await page.getByRole('button', { name: '取り消す', exact: true }).click();
       await expect(page.getByText(REFUSAL)).toBeVisible();
+      // 断られた後も、確かめの画面（文と「やめる」）に留まっていて、取り消されてもいない
+      await expect(page.getByText(CONFIRM)).toBeVisible();
+      await expect(page.getByRole('button', { name: 'やめる', exact: true })).toBeVisible();
       expect(state.posts).toHaveLength(1);
       await expect(page.getByText('発送（1回目）を取り消しました')).toHaveCount(0);
     });
@@ -231,17 +236,29 @@ for (const viewport of viewports) {
           trackingNumber: 'E2E-CANCEL-1',
           lines: [{ orderItemId: shirt, quantity: 2 }],
         });
-        const second = await createFulfillment(db, order.orderId, actorId, {
-          trackingNumber: 'E2E-CANCEL-2',
-          carrier: 'sagawa',
-          lines: [{ orderItemId: coat, quantity: 1 }],
-        });
-        expect(second).toMatchObject({ number: 2, completesOrder: true, orderStatus: 'shipped' });
-        return { actorId, orderId: order.orderId, shirt, coat, first, second };
+        return { actorId, orderId: order.orderId, shirt, coat, first };
       });
 
-      // 全部を送っていた注文の2回目の発送を、メールが送られる前に取り消す
-      const cancelled = await withLocalDb((db) => cancelFulfillment(db, setup.orderId, setup.second.fulfillmentId, setup.actorId));
+      // 全部を送っていた注文の2回目の発送を、メールが送られる前に取り消す。
+      // 発送のメールの行は書いた時から取り出せるので、取消を別の接続でやると、その間にほかの spec の worker が行を取って、
+      // 取りやめにできない（sending・sent になる）ことがある。発送と取消を同じ接続の1つの取引にまとめ、コミットまで行を見せない
+      const { second, cancelled } = await withLocalDb(async (db) => {
+        await db.query('begin');
+        try {
+          const shipment = await createFulfillment(db, setup.orderId, setup.actorId, {
+            trackingNumber: 'E2E-CANCEL-2',
+            carrier: 'sagawa',
+            lines: [{ orderItemId: setup.coat, quantity: 1 }],
+          });
+          const result = await cancelFulfillment(db, setup.orderId, shipment.fulfillmentId, setup.actorId);
+          await db.query('commit');
+          return { second: shipment, cancelled: result };
+        } catch (error) {
+          await db.query('rollback');
+          throw error;
+        }
+      });
+      expect(second).toMatchObject({ number: 2, completesOrder: true, orderStatus: 'shipped' });
       expect(cancelled).toEqual({ outcome: 'cancelled', orderStatus: 'paid' });
       await withLocalDb(async (db) => {
         // 決済完了に戻り、全部を送った時の値は空になる。コートは発送準備中に戻る
@@ -254,13 +271,13 @@ for (const viewport of viewports) {
         expect((await lineCounts(db, setup.orderId))[setup.coat]).toMatchObject({ shipped: 0, readyUnshipped: 1 });
         // まだ送っていないその発送のメールは取りやめ
         const rows = await outboxRows(db, setup.orderId);
-        expect(rows.find((row) => row.fulfillment_id === setup.second.fulfillmentId)).toMatchObject({
+        expect(rows.find((row) => row.fulfillment_id === second.fulfillmentId)).toMatchObject({
           status: 'skipped',
           last_error_code: 'fulfillment_cancelled',
         });
       });
       // 2回目の取消は、何度押しても同じ結果
-      expect(await withLocalDb((db) => cancelFulfillment(db, setup.orderId, setup.second.fulfillmentId, setup.actorId))).toMatchObject({
+      expect(await withLocalDb((db) => cancelFulfillment(db, setup.orderId, second.fulfillmentId, setup.actorId))).toMatchObject({
         outcome: 'already_cancelled',
       });
 
@@ -282,9 +299,10 @@ for (const viewport of viewports) {
         });
         expect((await lineCounts(db, setup.orderId))[setup.shirt]).toMatchObject({ shipped: 0, readyUnshipped: 2 });
 
-        // 取り消した分の番号は使い回さない。コートを送り直すと3回目になる
+        // 取り消した分の番号は使い回さない。コートを送り直すと3回目になる（この発送のメールは確かめないので、知らせない発送にする）
         const reshipped = await createFulfillment(db, setup.orderId, setup.actorId, {
           trackingNumber: 'E2E-CANCEL-3',
+          notify: false,
           lines: [{ orderItemId: setup.coat, quantity: 1 }],
         });
         expect(reshipped).toMatchObject({ number: 3, completesOrder: false });

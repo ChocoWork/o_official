@@ -7,6 +7,7 @@
  * 履歴のダイアログと送ったメールの中身は、目で見るために3つの画面幅の写しを test-results/group-d/ に残す。
  */
 import { expect, test, type Page } from '@playwright/test';
+import type { OrderItem } from '@/components/OrderSection';
 import type { OrderEmailContentResponse, OrderHistoryEmailEntry, OrderHistoryResponse } from '@/lib/orders/email/order-history';
 import { mockAdminBackgroundApis } from './admin-test-utils';
 import { createActor, createPaidOrder, mailsTo, runWorkerOnce, uniqueEmail, withLocalDb } from './order-email-test-utils';
@@ -45,7 +46,7 @@ const ORDER_ROW = {
   progressKey: 'ready',
   partiallyShipped: false,
   canShip: true,
-};
+} satisfies OrderItem;
 
 const SENT_EMAIL = {
   type: 'email', at: '2026-10-09T01:00:00.000Z', emailId: 'b1b2c3d4-1111-2222-8333-444455556666', kind: 'paid',

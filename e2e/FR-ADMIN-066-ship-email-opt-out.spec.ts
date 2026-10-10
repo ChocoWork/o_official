@@ -1,6 +1,6 @@
 /**
  * FR-ADMIN-066 発送の時に、発送のメールを送るかを選べる（最初は送る）
- * 対応 FREQ: FREQ-438（AC-01・AC-02）、FREQ-442（AC-04 は FR-ADMIN-071 が確かめる）
+ * 対応 FREQ: FREQ-438（AC-01・AC-02）、FREQ-442（AC-04 は、この spec の「送らない」の試験と FR-ADMIN-071 の両方が確かめる）
  *
  * 画面は窓口を差し替えて、送る本文に「送るか」が載ることを確かめる。
  * 「外すと届かず、入れると1通届く」は、手元の DB の発送の関数・worker の定期処理の入口・手元のメール受けで確かめる（本計画 P11）。
@@ -17,7 +17,7 @@ import {
   mailsTo,
   orderItemIdsOf,
   outboxRows,
-  runWorkerOnce,
+  runWorkerUntil,
   uniqueEmail,
   withLocalDb,
 } from './order-email-test-utils';
@@ -115,7 +115,7 @@ for (const viewport of viewports) {
     });
 
     test('「送らない」で発送した注文には発送のメールが届かず、「送る」なら1通届く（手元の DB と Mailpit）', async ({ request }) => {
-      // FREQ-438-AC-02
+      // FREQ-438-AC-02, FREQ-442-AC-04
       // worker の入口は Stripe の知らせの処理と注文のメールの送信を続けて動かすので、既定の30秒では足りないことがある
       test.setTimeout(120_000);
       const silentEmail = uniqueEmail(`ship-silent-${viewport.name}`);
@@ -139,14 +139,18 @@ for (const viewport of viewports) {
         return { silentOrder: silent, notifiedOrder: notified, notifiedFulfillmentId: shipment.fulfillmentId };
       });
 
-      await runWorkerOnce(request);
-
-      // worker は時間の予算で止まるため、送る注文の発送の行が、その発送の自動の1行だけで送信済みになるのを先に待つ。
+      // worker は時間の予算で止まり、別の起動が取った行は飛ばすので、1回叩いただけでは送り切った証拠にならない。
+      // 送る注文の発送の行が送信済みになるまで、worker の入口を叩き直す（FR-ADMIN-071・072 と同じ）。
       // 送信済みはメールを送った後に書かれるので、この確かめの後にメール受けを数え直せる。
-      await expect.poll(
-        async () => withLocalDb((db) => outboxRows(db, notifiedOrder)),
-        { timeout: 30_000, message: '送る注文の発送の行は、その発送の自動の1行だけで送信済みであること' },
-      ).toEqual([{ fulfillment_id: notifiedFulfillmentId, origin: 'auto', status: 'sent', last_error_code: null }]);
+      await runWorkerUntil(
+        request,
+        async () => (await withLocalDb((db) => outboxRows(db, notifiedOrder))).some((row) => row.status === 'sent'),
+        '送る注文の発送のメールが送信済みになること',
+      );
+      // 送る注文の発送の行は、その発送の自動の1行だけ
+      expect(await withLocalDb((db) => outboxRows(db, notifiedOrder))).toEqual([
+        { fulfillment_id: notifiedFulfillmentId, origin: 'auto', status: 'sent', last_error_code: null },
+      ]);
       await expect.poll(
         async () => (await mailsTo(request, notifiedEmail)).filter((message) => message.Subject.includes(SHIPPED_SUBJECT)).length,
         { timeout: 30_000 },

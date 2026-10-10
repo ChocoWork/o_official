@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import type { OrderItem } from '@/components/OrderSection';
 import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-412: 注文一覧に支払い手続き中・放棄・要確認の印・発送止めの理由を出し、要確認のみ・状態で絞り込める。
@@ -26,7 +27,7 @@ const BASE = {
     },
   ],
   totalAmount: '¥28,800',
-};
+} satisfies Pick<OrderItem, 'customerEmail' | 'orderDate' | 'itemCount' | 'items' | 'totalAmount'>;
 
 const ORDERS = [
   {
@@ -58,7 +59,7 @@ const ORDERS = [
     canShip: false,
     shipBlockedReason: '支払額の確認が必要です（要対応）',
   },
-];
+] satisfies OrderItem[];
 
 async function mockAdminApis(page: Page, requestedUrls: string[]): Promise<void> {
   await mockAdminBackgroundApis(page);

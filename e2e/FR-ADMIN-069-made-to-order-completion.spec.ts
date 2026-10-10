@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { expect, test, type Page } from '@playwright/test';
 import type { OrderHistoryCompletionCancelEntry, OrderHistoryCompletionEntry, OrderHistoryResponse } from '@/lib/orders/email/order-history';
 import type {
+  CancelCompletionResponse,
   CreateFulfillmentRequest,
   CreateFulfillmentResponse,
   FulfillmentErrorResponse,
@@ -291,7 +292,7 @@ for (const viewport of viewports) {
         }
         cancelled = true;
         state.completed = 0;
-        await fulfillJson(route, { outcome: 'cancelled' });
+        await fulfillJson(route, { outcome: 'cancelled' } satisfies CancelCompletionResponse);
       });
       await openOrderTab(page);
       const row = page.getByRole('row', { name: new RegExp(ORDER_ID) });
@@ -311,8 +312,10 @@ for (const viewport of viewports) {
       await page.getByRole('button', { name: '取り消す', exact: true }).click();
       await expect(page.getByText('もう発送した数があるため、取り消せません。')).toBeVisible();
       expect(cancelPosts).toHaveLength(1);
-      expect(cancelled).toBe(false);
       await page.getByRole('button', { name: 'やめる', exact: true }).click();
+      // 断られた後も、履歴の仕上がりは取り消せる状態のまま（取消の行は増えず、取り消すボタンも残る）
+      await expect(entry.getByRole('button', { name: 'この仕上がりを取り消す' })).toBeVisible();
+      await expect(dialog.getByRole('listitem').filter({ hasText: '仕上がりを取り消しました' })).toHaveCount(0);
 
       // 取り消せる時は、取り消すと履歴に残り、一覧が読み直されて受注生産中に戻る
       refuse = false;
@@ -343,8 +346,10 @@ for (const viewport of viewports) {
           createFulfillment(db, order.orderId, actor, { trackingNumber: 'E2E-MTO-0', lines: [{ orderItemId: coat, quantity: 1 }] }),
           'QUANTITY_EXCEEDS_READY',
         );
+        // この試験はメールを確かめないので、知らせない発送にする（知らせる発送は、ほかの spec の worker が送るメールの行を残す）
         const stockShipment = await createFulfillment(db, order.orderId, actor, {
           trackingNumber: 'E2E-MTO-1',
+          notify: false,
           lines: [{ orderItemId: blouse, quantity: 1 }],
         });
         expect(stockShipment).toMatchObject({ completesOrder: false, orderStatus: 'paid' });
@@ -359,6 +364,7 @@ for (const viewport of viewports) {
         // 記録の後は送れる。送った数を下回る取消は断られ、数は変わらない
         const coatShipment = await createFulfillment(db, order.orderId, actor, {
           trackingNumber: 'E2E-MTO-2',
+          notify: false,
           lines: [{ orderItemId: coat, quantity: 1 }],
         });
         expect(coatShipment).toMatchObject({ number: 2, completesOrder: false });

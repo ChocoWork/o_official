@@ -5,7 +5,7 @@
  * 管理画面の注文の一覧とお客様の購入履歴の一覧に出る言葉を、窓口を差し替えて確かめる。
  * 管理画面の絞り込みは DB の状態で働く（窓口は status=paid・status=shipped、2つ以上選んだ時は画面が orderStatus で絞る）。
  */
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { mockOtpAuthentication } from './account-test-utils';
 import { adminOrder, mockAdminSession, mockOrderList, openOrderTab, orderLine, viewports } from './order-fulfillment-test-utils';
 
@@ -54,6 +54,15 @@ function lastUrl(urls: string[]): string {
 
 function orderRow(page: Page, id: string) {
   return page.getByRole('row', { name: new RegExp(id) });
+}
+
+/** その印の文字が何行に並んでいるか（行ごとの上の位置の種類を数える。狭い画面幅で「発送準備/中」と割れると2になる） */
+async function textLineCount(element: Locator): Promise<number> {
+  return element.evaluate((node) => {
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    return new Set(Array.from(range.getClientRects()).map((rect) => Math.round(rect.top))).size;
+  });
 }
 
 async function openCustomerOrders(page: Page): Promise<void> {
@@ -110,6 +119,10 @@ for (const viewport of viewports) {
       ];
       for (const [id, word] of words) {
         await expect(orderRow(page, id).getByText(word, { exact: true })).toBeVisible();
+      }
+      // 状態の印は1行で出る（狭い画面幅で、5文字の言葉が「発送準備/中」のように途中で割れない。FR-ACCOUNT-019 の「1行で表示」と同じ考え）
+      for (const [id, word] of words) {
+        expect(await textLineCount(orderRow(page, id).getByText(word, { exact: true })), `${id} の「${word}」の印の行数`).toBe(1);
       }
       // 「一部発送済み」の印は、一部だけ送った注文にだけ付く
       await expect(orderRow(page, 'order-partial').getByText('一部発送済み', { exact: true })).toBeVisible();
