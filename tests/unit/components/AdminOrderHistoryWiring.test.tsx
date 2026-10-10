@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import AdminPage from '@/app/admin/page';
 
 /**
@@ -39,6 +39,8 @@ const ORDER_ID = 'a1b2c3d4-1111-2222-8333-444455556666';
 const ITEM_ID = 'b1b2c3d4-1111-2222-8333-444455556666';
 const COAT_ID = 'c1c2c3d4-1111-2222-8333-444455556666';
 const FULFILLMENT_ID = 'f1f1f1f1-1111-2222-8333-444455556666';
+/** 一覧に並ぶ、もう1つの注文 */
+const OTHER_ORDER_ID = 'd1d2d3d4-1111-2222-8333-444455556666';
 
 const BLOUSE = {
   id: ITEM_ID, name: 'シルクブラウス', color: '白', size: 'M', quantity: 1, fulfillmentType: 'stock',
@@ -119,6 +121,51 @@ function postedBody(suffix: string): Record<string, unknown> | undefined {
 let orderRows: unknown[] = [];
 /** 発送・仕上がり・取消の POST への答え（既定は成功） */
 let postAnswer: (url: string) => Promise<unknown> = () => ok({});
+
+/** 返事を止めておく。release(返事) で返す（画面の更新まで待つ） */
+function hold() {
+  let resolve: (answer: unknown) => void = () => undefined;
+  const held = new Promise<unknown>((resolveHeld) => {
+    resolve = resolveHeld;
+  });
+  return {
+    held,
+    release: (answer: unknown) =>
+      act(async () => {
+        resolve(answer);
+        await held;
+      }),
+  };
+}
+
+/** 窓口（url の終わりが suffix）への POST の返事を止めておく。返すときは、戻り値の関数に返事を渡す */
+function holdPost(suffix: string) {
+  const { held, release } = hold();
+  const previous = postAnswer;
+  postAnswer = (url) => (url.endsWith(suffix) ? held : previous(url));
+  return release;
+}
+
+/** 履歴に出す、取り消せる発送の行 */
+const CANCELLABLE_SHIPMENT = {
+  type: 'fulfillment', at: '2026-10-10T02:00:00.000Z', fulfillmentId: FULFILLMENT_ID, number: 1, carrierLabel: 'ヤマト運輸',
+  trackingNumber: '1234-5678', items: [{ name: 'シルクブラウス', quantity: 1 }], actorEmail: 'admin@example.com',
+  notifyCustomer: true, completesOrder: true, cancelled: false, cancellable: true, legacy: false,
+};
+
+/** 窓口の差し替え。一覧は orderRows、POST は postAnswer。発送の材料と履歴の行は引数で決める */
+function serveOrdersApi({ lines = [BLOUSE_LINE], entries = historyBody.entries }: { lines?: unknown[]; entries?: unknown[] } = {}) {
+  clientFetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    const target = String(url);
+    if (init?.method === 'POST') return postAnswer(target);
+    if (target.startsWith('/api/admin/orders?')) {
+      return ok({ data: orderRows, pagination: { page: 1, pageSize: 20, total: orderRows.length, totalPages: 1 } });
+    }
+    if (target.endsWith('/history')) return ok({ ...historyBody, entries });
+    if (target.endsWith('/fulfillments')) return ok(materialsBody(lines));
+    return ok({});
+  });
+}
 
 describe('管理画面の注文の履歴・発送・仕上がりのつなぎ込み', () => {
   beforeEach(() => {
@@ -355,6 +402,146 @@ describe('管理画面の注文の履歴・発送・仕上がりのつなぎ込�
     expect(screen.getByText('シルクブラウス（白 / M）×2（発送済み 2）')).toBeInTheDocument();
     expect(screen.getByText('ウールコート（黒 / L）×1（受注生産中 1）')).toBeInTheDocument();
   });
+
+  it('発送: 注文 A の返事を待つ間に注文 B の画面を開いても、A の返事で B の画面は閉じず、一覧は読み直す', async () => {
+    orderRows = [orderRow(), orderRow({ id: OTHER_ORDER_ID })];
+    const release = holdPost('/fulfillments');
+    render(<AdminPage />);
+    fireEvent.click((await screen.findAllByRole('button', { name: '発送済みにする' }))[0]);
+    const dialogForA = await screen.findByRole('dialog', { name: '発送済みにする' });
+    await within(dialogForA).findByRole('checkbox', { name: 'お客様に発送のメールを送る' });
+    fireEvent.change(within(dialogForA).getByLabelText('追跡番号'), { target: { value: '1234-5678' } });
+    fireEvent.click(within(dialogForA).getByRole('button', { name: '発送する' }));
+    await waitFor(() => expect(clientFetchMock).toHaveBeenCalledWith(
+      `/api/admin/orders/${ORDER_ID}/fulfillments`,
+      expect.objectContaining({ method: 'POST' }),
+    ));
+
+    // 返事を待つ間に、注文 B の発送の画面を開く（A の画面の後ろの行のボタンなので hidden: true で探す）
+    fireEvent.click(screen.getAllByRole('button', { name: '発送済みにする', hidden: true })[1]);
+    await waitFor(() => expect(clientFetchMock).toHaveBeenCalledWith(
+      `/api/admin/orders/${OTHER_ORDER_ID}/fulfillments`,
+      { cache: 'no-store' },
+    ));
+    const dialogForB = await screen.findByRole('dialog', { name: '発送済みにする' });
+    await within(dialogForB).findByRole('checkbox', { name: 'お客様に発送のメールを送る' });
+
+    await release(ok({ fulfillmentId: 'fulfillment-1', number: 1, completesOrder: true, orderStatus: 'shipped', replayed: false }));
+
+    await waitFor(() => expect(listRequests()).toHaveLength(2));
+    expect(screen.getByRole('dialog', { name: '発送済みにする' })).toBeInTheDocument();
+  });
+
+  it('発送: 成功しても、一覧の知らせは出さない（言葉は、読み直した記録から出す）', async () => {
+    postAnswer = () => {
+      orderRows = [orderRow({
+        status: '配送中', orderStatus: 'shipped', progressKey: 'in_transit', canShip: false,
+        items: [{ ...BLOUSE, shipped: 1, readyUnshipped: 0 }],
+      })];
+      return ok({ fulfillmentId: 'fulfillment-1', number: 1, completesOrder: true, orderStatus: 'shipped', replayed: false });
+    };
+    render(<AdminPage />);
+    fireEvent.click(await screen.findByRole('button', { name: '発送済みにする' }));
+    const dialog = await screen.findByRole('dialog', { name: '発送済みにする' });
+    await within(dialog).findByRole('checkbox', { name: 'お客様に発送のメールを送る' });
+    fireEvent.change(within(dialog).getByLabelText('追跡番号'), { target: { value: '1234-5678' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: '発送する' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    // 読み直した一覧が出てから確かめる（読み込み中は、知らせも出ない）
+    expect(await screen.findByText('配送中', { selector: 'span' })).toBeInTheDocument();
+    expect(screen.queryAllByRole('status')).toHaveLength(0);
+  });
+
+  // 発送・仕上がり・履歴の取消・要確認の確認は、窓口の返事を待ってから一覧を読み直す。返事を待つ間に絞り込みが変わっても、
+  // 読み直しは、押した時点の（古い）条件ではなく、今の条件で頼む
+  describe('返事を待つ間に絞り込みを変えても、返事の後の読み直しは今の絞り込みで頼む', () => {
+    /** 絞り込みを「発送待ち」へ変える。窓口へは status=paid で頼むはず（画面の後ろのボタンなので hidden: true で探す） */
+    async function changeFilterToAwaitingShipment() {
+      fireEvent.click(screen.getByRole('button', { name: '発送待ち（受注生産中・発送準備中）', hidden: true }));
+      await waitFor(() => expect(String(listRequests().at(-1)?.[0])).toContain('status=paid'));
+    }
+
+    /** 返事の後に一覧を読み直した（最初の表示・絞り込みの変更に続く3回目）こと。その頼みが、今の絞り込みであること */
+    async function expectReloadedWithCurrentFilter() {
+      await waitFor(() => expect(listRequests()).toHaveLength(3));
+      expect(String(listRequests().at(-1)?.[0])).toContain('status=paid');
+    }
+
+    it('発送', async () => {
+      const release = holdPost('/fulfillments');
+      render(<AdminPage />);
+      fireEvent.click(await screen.findByRole('button', { name: '発送済みにする' }));
+      const dialog = await screen.findByRole('dialog', { name: '発送済みにする' });
+      await within(dialog).findByRole('checkbox', { name: 'お客様に発送のメールを送る' });
+      fireEvent.change(within(dialog).getByLabelText('追跡番号'), { target: { value: '1234-5678' } });
+      fireEvent.click(within(dialog).getByRole('button', { name: '発送する' }));
+      await waitFor(() => expect(postedBody('/fulfillments')).toBeDefined());
+
+      await changeFilterToAwaitingShipment();
+      await release(ok({ fulfillmentId: 'fulfillment-1', number: 1, completesOrder: true, orderStatus: 'shipped', replayed: false }));
+
+      await expectReloadedWithCurrentFilter();
+    });
+
+    it('仕上がりの記録', async () => {
+      orderRows = [orderRow({
+        status: '受注生産中', progressKey: 'in_production', items: [COAT_IN_PRODUCTION], canShip: true, canRecordCompletion: true,
+      })];
+      serveOrdersApi({ lines: [COAT_LINE] });
+      const release = holdPost('/completions');
+      render(<AdminPage />);
+      fireEvent.click(await screen.findByRole('button', { name: '仕上がりを記録する' }));
+      const dialog = await screen.findByRole('dialog', { name: '仕上がりを記録する' });
+      const group = await within(dialog).findByRole('group', { name: 'ウールコート（黒 / L）' });
+      fireEvent.change(within(group).getByLabelText('仕上がった数'), { target: { value: '1' } });
+      fireEvent.click(within(dialog).getByRole('button', { name: '記録する' }));
+      await waitFor(() => expect(postedBody('/completions')).toBeDefined());
+
+      await changeFilterToAwaitingShipment();
+      await release(ok({ completionIds: ['completion-1'], replayed: false }));
+
+      await expectReloadedWithCurrentFilter();
+    });
+
+    it('履歴の発送の取消', async () => {
+      serveOrdersApi({ entries: [CANCELLABLE_SHIPMENT] });
+      const release = holdPost('/cancel');
+      render(<AdminPage />);
+      fireEvent.click(await screen.findByRole('button', { name: 'ORD-A1B2C3D4 の履歴' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'この発送を取り消す' }));
+      fireEvent.click(screen.getByRole('button', { name: '取り消す' }));
+      await waitFor(() => expect(clientFetchMock).toHaveBeenCalledWith(
+        `/api/admin/orders/${ORDER_ID}/fulfillments/${FULFILLMENT_ID}/cancel`,
+        { method: 'POST' },
+      ));
+
+      await changeFilterToAwaitingShipment();
+      await release(ok({ outcome: 'cancelled', orderStatus: 'paid' }));
+
+      await expectReloadedWithCurrentFilter();
+    });
+
+    it('要確認の「確認済みにする」', async () => {
+      mockAttention.mockImplementation(() => ok({ data: {
+        exceptions: [],
+        reviews: [{
+          orderId: ORDER_ID, orderNumber: 'ORD-A1B2C3D4', orderStatus: 'paid', reviewReason: 'stock_not_reserved',
+          reviewReasonLabel: '在庫を確保できませんでした', reviewMarkedAt: null,
+        }],
+        counts: { exceptions: 0, reviews: 1 },
+      } }));
+      const release = holdPost('/review');
+      render(<AdminPage />);
+      fireEvent.click(await screen.findByRole('button', { name: '確認済みにする' }));
+      await waitFor(() => expect(clientFetchMock).toHaveBeenCalledWith(`/api/admin/orders/${ORDER_ID}/review`, { method: 'POST' }));
+
+      await changeFilterToAwaitingShipment();
+      await release(ok({}));
+
+      await expectReloadedWithCurrentFilter();
+    });
+  });
 });
 
 describe('管理画面の絞り込み・件数・CSV', () => {
@@ -437,6 +624,76 @@ describe('管理画面の絞り込み・件数・CSV', () => {
     // 発送準備中も受注生産中も、DB の状態は決済完了（paid）なので、どちらも発送待ちに数える
     expect(screen.getByText('発送待ち: 2')).toBeInTheDocument();
     expect(screen.queryByText(/決済完了:/)).not.toBeInTheDocument();
+  });
+
+  // 絞り込みを続けて変えると、一覧の読みが重なる。使うのは、最後に始めた読みの答えだけ
+  describe('一覧の読みが重なった時', () => {
+    const list = () => ({
+      data: orderRows,
+      pagination: { page: 1, pageSize: 20, total: orderRows.length, totalPages: 1 },
+    });
+    /** 古い条件（放棄）の答え。1件だけ返る */
+    const abandonedAnswer = () => ok({
+      data: [orderRow({ id: 'order-abandoned', status: '放棄', orderStatus: 'abandoned', progressKey: 'abandoned', canShip: false })],
+      pagination: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
+    });
+
+    it('遅れて返った古い条件の答えは、新しい条件の一覧・件数を上書きしない', async () => {
+      const abandoned = hold();
+      clientFetchMock.mockImplementation((url: string) => {
+        if (String(url).includes('status=abandoned')) return abandoned.held;
+        if (String(url).startsWith('/api/admin/orders?')) return ok(list());
+        return ok({});
+      });
+      render(<AdminPage />);
+      await screen.findByText('order-paid');
+
+      // 「放棄」を選ぶ（窓口の返事は遅れる）→ すぐ「すべて」へ戻す（こちらはすぐ返る）
+      fireEvent.click(screen.getByRole('button', { name: '放棄' }));
+      await waitFor(() => expect(String(listRequests().at(-1)?.[0])).toContain('status=abandoned'));
+      fireEvent.click(screen.getByRole('button', { name: 'すべて' }));
+      await waitFor(() => expect(listRequests()).toHaveLength(3));
+      expect(await screen.findByText('order-paid')).toBeInTheDocument();
+
+      // 古い条件（放棄）の答えが、あとから返る
+      await abandoned.release(abandonedAnswer());
+
+      expect(screen.queryByText('order-abandoned')).not.toBeInTheDocument();
+      expect(screen.getByText('order-paid')).toBeInTheDocument();
+      expect(screen.getByText(/3件（表示 3件）/)).toBeInTheDocument();
+    });
+
+    it('古い条件の答えが先に返っても、新しい条件の答えが返るまで、読み込み中の表示を消さない', async () => {
+      const abandoned = hold();
+      const latest = hold();
+      let readsWithoutStatus = 0;
+      clientFetchMock.mockImplementation((url: string) => {
+        if (String(url).includes('status=abandoned')) return abandoned.held;
+        if (String(url).startsWith('/api/admin/orders?')) {
+          // 1回目（最初の表示）はすぐ返し、2回目（「すべて」へ戻した読み）は止めておく
+          readsWithoutStatus += 1;
+          return readsWithoutStatus === 1 ? ok(list()) : latest.held;
+        }
+        return ok({});
+      });
+      render(<AdminPage />);
+      await screen.findByText('order-paid');
+      fireEvent.click(screen.getByRole('button', { name: '放棄' }));
+      await waitFor(() => expect(String(listRequests().at(-1)?.[0])).toContain('status=abandoned'));
+      fireEvent.click(screen.getByRole('button', { name: 'すべて' }));
+      await waitFor(() => expect(listRequests()).toHaveLength(3));
+      expect(screen.getByText('注文一覧を読み込み中です...')).toBeInTheDocument();
+
+      // 古い条件の答えが先に返っても、新しい読みの途中なので読み込み中のまま。古い答えは出さない
+      await abandoned.release(abandonedAnswer());
+      expect(screen.getByText('注文一覧を読み込み中です...')).toBeInTheDocument();
+      expect(screen.queryByText('order-abandoned')).not.toBeInTheDocument();
+
+      // 新しい条件の答えが返ると、一覧が出て、読み込み中の表示が消える
+      await latest.release(ok(list()));
+      expect(await screen.findByText('order-paid')).toBeInTheDocument();
+      expect(screen.queryByText('注文一覧を読み込み中です...')).not.toBeInTheDocument();
+    });
   });
 
   describe('CSV', () => {

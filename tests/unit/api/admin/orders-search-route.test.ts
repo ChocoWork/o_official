@@ -1,9 +1,11 @@
+import { inspect } from 'node:util';
+
 export {};
 
 const authorizeMock = jest.fn();
 const createClientMock = jest.fn();
 const getStripeMock = jest.fn();
-let queryResult: { data: unknown[]; count: number; error: null } = { data: [], count: 0, error: null };
+let queryResult: { data: unknown[]; count: number; error: unknown } = { data: [], count: 0, error: null };
 let shipBlockedRows: Array<{ order_id: string }> = [];
 // public.list_order_line_fulfillment が返す行（service_role の RPC）。支払い済み・発送済みの注文の商品ごとの数
 let lineFulfillmentRows: Array<Record<string, unknown>> = [];
@@ -584,6 +586,50 @@ describe('GET /api/admin/orders statutory search', () => {
         const response = await GET(new Request('http://localhost/api/admin/orders'));
 
         expect(response.status).toBe(500);
+      } finally {
+        consoleError.mockRestore();
+      }
+    });
+
+    // FulfillmentStoreError は cause に DB の生の誤り（details・hint 込み）を持ち、例外ごとログに渡すと Node は [cause] まで出す。
+    // 発送の窓口と同じく、名前と code・operation だけを出す
+    it('数を読めなかった時のログには、例外の名前・code・operation だけを出し、DB の文（message・details・hint）は出さない', async () => {
+      const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      rpcMock.mockResolvedValue({
+        data: null,
+        error: { message: 'SECRET-MESSAGE', details: 'SECRET-DETAILS', hint: 'SECRET-HINT', code: '08006' },
+      });
+      queryResult = { data: [paidOrderRow()], count: 1, error: null };
+
+      try {
+        const { GET } = await import('@/app/api/admin/orders/route');
+        const response = await GET(new Request('http://localhost/api/admin/orders'));
+
+        expect(response.status).toBe(500);
+        expect(consoleError).toHaveBeenCalledWith(
+          'GET /api/admin/orders error:', 'FulfillmentStoreError', '08006', 'list_order_line_fulfillment',
+        );
+        // 渡した引数の中身（例外を渡していれば cause の中まで）に、DB の文の目印が無いこと
+        expect(inspect(consoleError.mock.calls, { depth: null })).not.toContain('SECRET');
+      } finally {
+        consoleError.mockRestore();
+      }
+    });
+
+    it('注文の読みが失敗した時も、ログには例外の名前と code だけを出し、DB の文は出さない', async () => {
+      const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      const databaseError = Object.assign(new Error('SECRET-MESSAGE'), {
+        name: 'PostgrestError', details: 'SECRET-DETAILS', hint: 'SECRET-HINT', code: '42703',
+      });
+      queryResult = { data: [], count: 0, error: databaseError };
+
+      try {
+        const { GET } = await import('@/app/api/admin/orders/route');
+        const response = await GET(new Request('http://localhost/api/admin/orders'));
+
+        expect(response.status).toBe(500);
+        expect(consoleError).toHaveBeenCalledWith('[admin.orders] Failed to fetch orders:', 'PostgrestError', '42703', null);
+        expect(inspect(consoleError.mock.calls, { depth: null })).not.toContain('SECRET');
       } finally {
         consoleError.mockRestore();
       }

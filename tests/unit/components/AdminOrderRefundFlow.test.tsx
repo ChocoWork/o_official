@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import AdminPage from '@/app/admin/page';
 
 const clientFetchMock = jest.fn();
@@ -200,5 +200,45 @@ describe('admin order refund flow', () => {
       expect(orderRequests).toBe(2);
     },
   );
+
+  it('reloads with the filter chosen while the refund was pending, not the one in place when it was requested', async () => {
+    let finishRefund: (response: unknown) => void = () => undefined;
+    const refundResponse = new Promise((resolve) => {
+      finishRefund = resolve;
+    });
+    const orderUrls: string[] = [];
+    clientFetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (String(url).endsWith('/refund') && init?.method === 'POST') {
+        return refundResponse;
+      }
+
+      if (String(url).startsWith('/api/admin/orders?')) {
+        orderUrls.push(String(url));
+      }
+      return Promise.resolve({ ok: true, status: 200, json: async () => orderResponse });
+    });
+
+    render(<AdminPage />);
+    await screen.findByText('発送準備中');
+    fireEvent.click(screen.getByRole('button', { name: '返金' }));
+    await waitFor(() => {
+      expect(clientFetchMock).toHaveBeenCalledWith(expect.stringMatching(/\/refund$/), expect.objectContaining({ method: 'POST' }));
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '発送待ち（受注生産中・発送準備中）' }));
+    await waitFor(() => expect(orderUrls.at(-1)).toContain('status=paid'));
+
+    await act(async () => {
+      finishRefund({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, refundStatus: 'succeeded', orderStatus: 'paid' }),
+      });
+      await refundResponse;
+    });
+
+    await waitFor(() => expect(orderUrls).toHaveLength(3));
+    expect(orderUrls.at(-1)).toContain('status=paid');
+  });
 
 });

@@ -249,7 +249,8 @@ export default function OrderSection({
 								{awaitingShipment && order.shipBlockedReason ? (
 									<span className="lk-text-xs text-red-700" role="status">{order.shipBlockedReason}</span>
 								) : null}
-								{awaitingShipment && order.canShip === false && (!order.shipBlockedReason || hasMissingShipping) ? (
+								{/* canShip が false になる理由は、配送先が足りない・支払額の確かめ・送る品が残っていない、の3つ。配送先が実際に足りない時だけ出す */}
+								{awaitingShipment && hasMissingShipping ? (
 									<span className="lk-text-xs text-red-700" role="status">配送先要確認</span>
 								) : null}
 								{order.canRecordCompletion && onRecordCompletion ? (

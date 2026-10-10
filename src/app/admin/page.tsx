@@ -1,7 +1,7 @@
 // ----------------- 管理ダッシュボード -----------------
 'use client';
 
-import { Suspense, useMemo, useState, useEffect, useCallback } from 'react';
+import { Suspense, useMemo, useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { type TabType } from '@/components/AdminTabs';
 import AdminSideNav from '@/components/AdminSideNav';
@@ -214,7 +214,14 @@ function AdminPageContent() {
     }
   }, [activeTab, visibleTabs, canAccessAdmin]);
 
+  // 一覧を読んだ番号。絞り込みやページを続けて変えると読みが重なるので、使うのは最後に始めた読みの答えだけにする
+  // （遅れて返った古い条件の答えが、新しい条件の一覧を上書きしないため）
+  const ordersRequestSeq = useRef(0);
+
   const fetchOrders = useCallback(async (nextPage?: number) => {
+    const requestId = ++ordersRequestSeq.current;
+    const isLatestRequest = () => requestId === ordersRequestSeq.current;
+
     try {
       setIsOrdersLoading(true);
       setOrdersErrorMessage(null);
@@ -285,17 +292,25 @@ function AdminPageContent() {
         };
       };
 
-      setOrders(json.data ?? []);
-      setOrdersPage(json.pagination?.page ?? page);
-      setOrdersTotalPages(json.pagination?.totalPages ?? 1);
-      setOrdersTotalCount(json.pagination?.total ?? 0);
+      // 後から始めた読みがあれば、この答えは捨てる（一覧・件数・ページ・誤り・読み込み中の表示は、その新しい読みが決める）
+      if (isLatestRequest()) {
+        setOrders(json.data ?? []);
+        setOrdersPage(json.pagination?.page ?? page);
+        setOrdersTotalPages(json.pagination?.totalPages ?? 1);
+        setOrdersTotalCount(json.pagination?.total ?? 0);
+      }
       return true;
     } catch (error) {
       console.error('Failed to fetch admin orders:', error);
-      setOrdersErrorMessage(error instanceof Error ? error.message : '注文一覧の取得に失敗しました。');
+      if (isLatestRequest()) {
+        setOrdersErrorMessage(error instanceof Error ? error.message : '注文一覧の取得に失敗しました。');
+      }
       return false;
     } finally {
-      setIsOrdersLoading(false);
+      // 捨てた読みが読み込み中の表示を消すと、新しい読みの途中なのに古い一覧が見える
+      if (isLatestRequest()) {
+        setIsOrdersLoading(false);
+      }
     }
   }, [
     ordersPage,
@@ -309,6 +324,13 @@ function AdminPageContent() {
     orderStatusFilters,
     reviewOnly,
   ]);
+
+  // 窓口の返事を待つ間に絞り込みやページが変わっても、返事の後の読み直しは今の条件で頼む。
+  // 操作を始めた時点の fetchOrders は古い条件を閉じ込めているので、返事の後は、この ref に置いた最新の関数を呼ぶ
+  const fetchOrdersRef = useRef(fetchOrders);
+  useLayoutEffect(() => {
+    fetchOrdersRef.current = fetchOrders;
+  }, [fetchOrders]);
 
   useEffect(() => {
     if (!canAccessAdmin) {
@@ -519,7 +541,7 @@ function AdminPageContent() {
       }
 
       setOrdersNoticeMessage(successMessage);
-      await Promise.all([fetchAttention(), fetchOrders()]);
+      await Promise.all([fetchAttention(), fetchOrdersRef.current()]);
     } catch (error) {
       console.error('Failed to update order attention:', error);
       setAttentionErrorMessage(error instanceof Error ? error.message : '操作に失敗しました。');
@@ -578,18 +600,18 @@ function AdminPageContent() {
   // 閉じるのは、その操作の注文の画面だけ（返事を待つ間に別の注文の画面を開いていたら、その画面は閉じない）
   const handleShipped = (id: string) => {
     setShipOrderId((current) => (current === id ? null : current));
-    void fetchOrders();
+    void fetchOrdersRef.current();
   };
 
   const handleCompletionRecorded = (id: string) => {
     setCompletionOrderId((current) => (current === id ? null : current));
     setOrdersNoticeMessage(COMPLETION_RECORDED_MESSAGE);
-    void fetchOrders();
+    void fetchOrdersRef.current();
   };
 
   // 履歴の画面で発送か仕上がりを取り消した。履歴の画面は開いたまま、一覧だけ読み直す
   const handleFulfillmentChanged = () => {
-    void fetchOrders();
+    void fetchOrdersRef.current();
   };
 
   const handleRefundOrder = async (id: string) => {
@@ -632,7 +654,7 @@ function AdminPageContent() {
         throw new Error('返金状態を確認できませんでした。');
       }
 
-      const refreshed = await fetchOrders();
+      const refreshed = await fetchOrdersRef.current();
       if (!refreshed) {
         throw new Error('返金後の注文状態を確認できませんでした。一覧を再読み込みしてください。');
       }

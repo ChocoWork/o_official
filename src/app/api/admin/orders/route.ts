@@ -205,6 +205,19 @@ async function fetchLineCounts(orderRows: OrderRow[]): Promise<Map<string, Order
   return listOrderLineFulfillment(await createServiceRoleClient(), orderIds);
 }
 
+/**
+ * ログに出す例外の項目。名前と、あれば code・operation だけにする。
+ * FulfillmentStoreError や Supabase の誤りは cause に DB の生の誤り（details・hint 込み）を持ち、Node は [cause] まで出すので、
+ * 例外そのものはログに渡さない（発送の窓口と同じ決まり）
+ */
+function describeErrorForLog(error: unknown): [name: string, code: unknown, operation: unknown] {
+  const { code = null, operation = null } = (typeof error === 'object' && error !== null ? error : {}) as {
+    code?: unknown;
+    operation?: unknown;
+  };
+  return [error instanceof Error ? error.name : 'UnknownError', code, operation];
+}
+
 export async function GET(request: Request) {
   try {
     const authz = await authorizeAdminPermission('admin.orders.read', request);
@@ -319,7 +332,7 @@ export async function GET(request: Request) {
     const { data, count, error } = await query;
 
     if (error) {
-      console.error('[admin.orders] Failed to fetch orders:', error);
+      console.error('[admin.orders] Failed to fetch orders:', ...describeErrorForLog(error));
       return NextResponse.json({ error: 'Failed to fetch orders' }, { status: 500 });
     }
 
@@ -439,7 +452,7 @@ export async function GET(request: Request) {
       { status: 200 },
     );
   } catch (error) {
-    console.error('GET /api/admin/orders error:', error);
+    console.error('GET /api/admin/orders error:', ...describeErrorForLog(error));
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

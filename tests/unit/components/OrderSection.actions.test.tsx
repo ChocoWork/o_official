@@ -115,6 +115,27 @@ describe('OrderSection order actions', () => {
     expect(screen.queryByText('配送先要確認')).not.toBeInTheDocument();
   });
 
+  it('送る品が残っていない発送待ちの注文（canShip: false）は、配送先がそろっていれば「配送先要確認」を出さない', () => {
+    render(
+      <OrderSection
+        orders={[
+          { ...paidOrder, id: 'nothing-left-a', canShip: false, missingShippingFields: [] },
+          { ...paidOrder, id: 'nothing-left-b', canShip: false },
+          { ...paidOrder, id: 'no-address', canShip: false, missingShippingFields: ['address'] },
+        ]}
+        onShipOrder={jest.fn()}
+      />,
+    );
+
+    // 出るのは、配送先が実際に足りない注文だけ
+    const rows = screen.getAllByRole('row');
+    const rowOf = (id: string) => rows.find((row) => row.textContent?.includes(id)) as HTMLElement;
+    expect(within(rowOf('no-address')).getByText('配送先要確認')).toBeInTheDocument();
+    expect(within(rowOf('nothing-left-a')).queryByText('配送先要確認')).not.toBeInTheDocument();
+    expect(within(rowOf('nothing-left-b')).queryByText('配送先要確認')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '発送済みにする' })).not.toBeInTheDocument();
+  });
+
   it('払込票が有効な注文は、取消の代わりに払込期限を出す', () => {
     render(
       <OrderSection
