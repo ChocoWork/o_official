@@ -113,7 +113,7 @@ Stripe Webhookはraw bytesとstripe-signatureを`constructEvent`で検証する�
 | `POST /api/profile` | 会員認証 U + CSRF呼出 C* | JSON: profilePayloadSchema（下記） | 200 `{success:true,email,fullName,kanaName,phone,address}` | Uの401/503; 400 payload; 500 DB。C*の制限参照 | 氏名/電話をupsert。返すaddressは保存済みdefault address [実装](../../../src/app/api/profile/route.ts) |
 | `DELETE /api/profile` | 会員認証 U + CSRF呼出 C* | 本文なし | 200 `{success:true}` | Uの401/503; 500 DB。C*の制限参照 | プロフィール欄をnullへ更新（認証ユーザーの削除ではない） [実装](../../../src/app/api/profile/route.ts) |
 
-注文の商品の行ごとの数（発送した数・受注生産中の数など。グループ E-1）は、お客様の注文の一覧と詳細、管理画面の注文の一覧と履歴、発送の材料（`GET /api/admin/orders/[id]/fulfillments`）が、同じ読み出し（`listOrderLineFulfillment`）で読む。注文の番号を小文字にそろえて、200件ずつ DB に渡す。1回の答えが 1000 行（PostgREST の上限）に届いた時は、切れている恐れがあるので数えずに止め、窓口は 500 を返す（切れたまま数えると、残りがあるのに「配送中」と出すなど、注文の言葉を誤るため）。お客様の注文の窓口は、この発送と数の読み出しの失敗のログに、名前・code・operation だけを残す（DB の文に宛先などが混ざりうるため）。管理画面の注文の一覧も、失敗のログに名前・code・operation だけを残す。根拠: [読み出し](../../../src/lib/orders/fulfillment/fulfillment-store.ts)。
+注文の商品の行ごとの数（発送した数・受注生産中の数など。グループ E-1）は、お客様の注文の一覧と詳細、管理画面の注文の一覧と履歴、発送の材料（`GET /api/admin/orders/[id]/fulfillments`）が、同じ読み出し（`listOrderLineFulfillment`）で読む。注文の番号を小文字にそろえて、200件ずつ DB に渡す。1回の答えが 1000 行（PostgREST の上限）に届いた時は、切れている恐れがあるので数えずに止め、窓口は 500 を返す（切れたまま数えると、残りがあるのに「配送中」と出すなど、注文の言葉を誤るため）。お客様の注文の窓口は、この発送と数の読み出しの失敗のログに、名前・code・operation だけを残す（DB の文に宛先などが混ざりうるため）。管理画面の注文の一覧も、注文と数の読み出しの失敗のログに名前・code・operation だけを残す。根拠: [読み出し](../../../src/lib/orders/fulfillment/fulfillment-store.ts)。
 
 ## Checkout
 

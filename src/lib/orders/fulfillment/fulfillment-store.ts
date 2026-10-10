@@ -290,7 +290,11 @@ export type OrderFulfillmentHistoryRow = {
   lines: FulfillmentLineQuantity[];
 };
 
-/** 注文の発送の一覧（取り消した分も含む。何回目の新しい順）。操作した人のメールを含むので、管理画面の窓口だけが使う */
+/**
+ * 注文の発送の一覧（取り消した分も含む。何回目の新しい順）。操作した人のメールを含むので、答えをそのまま返さない。
+ * 管理画面の窓口のほか、お客様の窓口（src/app/api/orders/[id]/route.ts）も使う。お客様の答えに管理者のメールが出ないのは、
+ * 呼ぶ側の toShipments が項目を名指しで選ぶから。新しく呼ぶ所も、項目を名指しで選んでから返すこと。
+ */
 export async function listOrderFulfillments(store: FulfillmentStore, orderId: string): Promise<OrderFulfillmentHistoryRow[]> {
   const data = await callRpc(store, 'list_order_fulfillments', { _order_id: orderId });
   return rowsOf(data).map((row) => ({

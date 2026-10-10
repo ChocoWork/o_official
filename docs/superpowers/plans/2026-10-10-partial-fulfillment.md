@@ -23191,7 +23191,7 @@ Expected: 何も出ない（全部のタスクのファイルはコミット済�
 全部の確かめの後、push と本番の DB への適用はユーザーの指示と許可を得てから行う（設計書 16章）。SDD の中では行わない。
 
 1. **push**: ユーザーが push を指示したら、3000番を止めてから `git push`（pre-push の E2E は `E2E_STRICT=1`）。`--no-verify` は使わない
-2. **当てる前の数**（本番の DB を読むだけ。Supabase の接続の `execute_sql`）。どちらも0の見込み。0でなければ、当てる前にユーザーに見せる:
+2. **当てる前の数**（本番の DB を読むだけ。Supabase の接続の `execute_sql`）。どれも0の見込み。0でなければ、当てる前にユーザーに見せて扱いを決める:
 
 ```sql
 select count(*) as shipped_without_tracking
@@ -23202,9 +23202,20 @@ select count(distinct e.order_id) as shipped_email_without_shipment
 from private.order_email_outbox as e
 join public.orders as o on o.id = e.order_id
 where e.kind = 'shipped' and o.shipped_at is null;
+
+-- 前からの写しは shipped_at IS NOT NULL だけで選ぶので、この注文は写されず「発送準備中」と出る
+select count(*) as shipped_without_shipped_at
+from public.orders
+where status = 'shipped' and shipped_at is null;
+
+-- 写されて全部の商品が発送済みになるので「配送中」と出るのに、管理画面の絞り込みでは「発送待ち」に入る
+select count(*) as shipped_at_but_not_shipped
+from public.orders
+where shipped_at is not null and status not in ('shipped', 'cancelled');
 ```
 
 3. **当てる**: ユーザーの許可を得てから、Supabase の接続の `apply_migration` で移行 A（`order_fulfillments`）、移行 B（`fulfillment_order_emails`）の順に当てる。1つずつ許可を得る
+   - 移行 A と B は続けて当て、その間に開発の画面で操作しない（普段の開発は本番の DB を使うため）
 4. **当てた版に名前を合わせる**: 本番の台帳（`list_migrations`）の版の番号に合わせて、`git mv` で2つのファイルの名前を直し、ファイル名を書いている所（`grep -rn "20261010120000\|20261010120100" docs supabase tests src`。単体テスト `order-email-types.test.ts`・`order-state-transition-hardening.test.ts` が移行 B のパスを読んでいる）を直す。単体テストを流してからコミットする（`chore(db): …`）
 5. **当てた後の確かめ**（本番の DB を読むだけ）:
 

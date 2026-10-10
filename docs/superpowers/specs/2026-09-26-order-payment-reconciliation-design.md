@@ -269,7 +269,7 @@ stateDiagram-v2
 | 入金済み → 発送済み、全額返金による取消 | 店の操作・返金 | 今の RPC のまま | — | 返金系は E |
 
 - どの変化も「今の状態が左の値のとき」だけ変える条件付き更新にする。先に動いていれば0件で終わる。
-- 発送の RPC `admin_ship_paid_order` は、支払額の違い（`paid_amount_mismatch`）の要対応が開いている注文を断る。金額の一致を確かめてから発送する（OWASP の決済連携の手引き）。
+- 発送の RPC `admin_ship_paid_order`（2026-10-10 グループ E-1 の移行 B で消した。発送は `admin_create_fulfillment`）は、支払額の違い（`paid_amount_mismatch`）の要対応が開いている注文を断る。金額の一致を確かめてから発送する（OWASP の決済連携の手引き）。
 - 状態を変える RPC は、Stripe のイベント ID（R-43）・実行者（R-18）・変更理由を、今の注文履歴の仕組み（`app.order_source_event_id`・`app.order_actor_id`・`app.order_change_reason`）で残す。注文の作成（INSERT）は履歴の対象外なので、受付 RPC には渡さない。
 - `mark_order_paid` と `mark_order_awaiting_payment` は、`payment_intent_id` が空なら値を入れる（4-2）。
 

@@ -305,7 +305,7 @@ flowchart LR
 | 入力の誤り | 400 | 入力を確かめてください。 |
 | それ以外 | 500 | 仕上がりの記録に失敗しました。 |
 
-- 監査: `admin.orders.completion.record`・`admin.orders.completion.cancel`（結果・商品の行の数・数の合計。お客様の個人情報は入れない）
+- 監査: `admin.orders.completion.record` は結果・商品の行の数・数の合計を残す。`admin.orders.completion.cancel` は `completion_id` と結果（`cancelled`・`already_cancelled`）だけを残す。どちらもお客様の個人情報は入れない
 
 ### 5-3 DB の関数
 
@@ -464,7 +464,7 @@ flowchart LR
 3. 注文が決済完了か発送済みでなければ `FULFILLMENT_CANCEL_NOT_ALLOWED`（E-2・E-3 で、返品や発送後の返金に使われた発送を拒む条件を足す）
 4. 取り消した時刻と人を書く
 5. 注文が発送済みなら、`status = 'paid'` に戻し、`shipped_at`・`shipping_carrier`・`tracking_number` を空にする（注文の改訂の理由は `admin_cancel_fulfillment`）
-6. この発送の、まだ送っていない発送のメール（送る前・やり直し待ち）を「取りやめ」（理由 `fulfillment_cancelled`）にする。送っている途中の行は、worker が中身を作る時に取消を見て取りやめる
+6. この発送の、送る前（`pending`）・やり直し待ち（`retry_wait`）の発送のメールを「取りやめ」（理由 `fulfillment_cancelled`）にする。やり直し待ちの行には、送信の時間切れ（8秒）の時点で Resend がもう受け付けていた物がありうるので、取りやめても届いている恐れがある（`attempts` が1以上の行。運用の手順書 7-1 の SQL で確かめる）。送っている途中（`sending`）の行は、worker が中身を作るための材料を読む前に取消が来れば取りやめ、読んだ後なら送られることがある
 
 ### 7-4 突き合わせ
 
@@ -749,7 +749,7 @@ Le Fil des Heures
 |---|---|---|---|
 | FREQ-439 | 発送準備中の品を先に送れる部分発送 | 発送の画面に商品と発送準備中の数が出る／最初は発送準備中の全部が入る／一部の発送で「一部発送済み」と残りの発送のボタンが出る／全部の発送で配送中（発送済み）になる／発送準備中を超える数は断られる | `e2e/FR-ADMIN-068-partial-fulfillment.spec.ts` |
 | FREQ-440 | 受注生産中と仕上がりの記録 | 受注生産の品を含む注文は入金の後に受注生産中と出る／受注生産中の品は送れない／仕上がりを記録すると発送準備中になる／仕上がりの取消で受注生産中に戻る／送った数を下回る取消は断られる | `e2e/FR-ADMIN-069-made-to-order-completion.spec.ts` |
-| FREQ-441 | 注文の進み具合の言葉 | 管理画面とお客様の一覧に、未決済・受注生産中・発送準備中・配送中と一部発送済みの印が出る／絞り込みが DB の状態で働く | `e2e/FR-ADMIN-070-order-progress-labels.spec.ts` |
+| FREQ-441 | 注文の進み具合の言葉 | 管理画面とお客様の一覧に、未決済・受注生産中・発送準備中・配送中の言葉が出る（お客様の一覧は言葉だけ。「一部発送済み」の印は、管理画面の一覧とお客様の注文の詳しい画面に出る）／絞り込みが DB の状態で働く | `e2e/FR-ADMIN-070-order-progress-labels.spec.ts` |
 | FREQ-442 | 発送ごとの発送のお知らせ | 発送ごとに1通／その発送の商品と数が書いてある／残りの案内がある／知らせない発送には送らない | `e2e/FR-ADMIN-071-fulfillment-shipping-email.spec.ts`（手元の DB と Mailpit） |
 | FREQ-443 | 発送の取消 | 履歴から取り消せる／発送準備中に戻る／発送済みが決済完了に戻る／お客様にメールが行かない | `e2e/FR-ADMIN-072-fulfillment-cancel.spec.ts` |
 | FREQ-444 | お客様の注文の画面の進み具合と発送ごとの配送情報 | 在庫の品だけなら4段、受注生産の品を含むなら5段の進み具合が出る／発送ごとの配送業者・追跡番号・リンク・商品が出る／発送準備中と受注生産中の商品が出る／取り消した発送は出ない | `e2e/FR-ACCOUNT-032-order-progress-and-shipments.spec.ts` |
