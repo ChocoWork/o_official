@@ -400,14 +400,19 @@ describeLocalDb('integration: 発送と仕上がりの記録（移行 A）', (db
       expect(byVariant(states.rows)[madeFx.variantId]).toMatchObject({ backorder: 2 });
     });
 
-    test('受注生産の数は、支払い手続き中・失敗・キャンセル・発送済みの注文を数えない', async () => {
+    test('受注生産の数は、支払い手続き中・失敗・放棄・キャンセル・発送済みの注文を数えない', async () => {
       const madeFx = await createCatalogFixture(db(), { stock: 0 });
-      for (const status of ['payment_in_progress', 'failed', 'cancelled', 'pending', 'paid']) {
+      for (const status of ['payment_in_progress', 'failed', 'abandoned', 'cancelled', 'pending', 'paid']) {
         await insertOrderWithLines(db(), {
           status,
           lines: [{ itemId: madeFx.itemId, variantId: madeFx.variantId, quantity: 1, fulfillmentType: 'backorder' }],
         });
       }
+      await insertOrderWithLines(db(), {
+        status: 'shipped',
+        shipped: { carrier: 'yamato', trackingNumber: 'YM-STATE' },
+        lines: [{ itemId: madeFx.itemId, variantId: madeFx.variantId, quantity: 1, fulfillmentType: 'backorder' }],
+      });
       const res = await db().query('select * from public.list_variant_stock_states($1::bigint[])', [[madeFx.variantId]]);
       expect(res.rows).toEqual([{ variant_id: String(madeFx.variantId), committed: 0, backorder: 2 }]);
     });

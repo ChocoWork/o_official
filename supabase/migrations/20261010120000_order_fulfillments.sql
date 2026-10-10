@@ -576,7 +576,8 @@ AS $$
   ORDER BY c.created_at DESC, c.id
 $$;
 
--- 8. 在庫の数（設計書 10-1）。引き当て済み = 確保して送っていない数、受注生産 = 未入金・入金済みのまだ仕上がっていない数
+-- 8. 在庫の数（設計書 10-1）。引き当て済み = 確保して送っていない数、受注生産 = 未入金・入金済みのまだ仕上がっていない数。
+--    数え方は1か所だけ: 発送と仕上がりは private.order_line_fulfillment、確保中は private.order_line_reservations（設計書 3-3・10-1）
 CREATE OR REPLACE FUNCTION public.list_variant_stock_states(_variant_ids bigint[])
 RETURNS TABLE (variant_id bigint, committed integer, backorder integer)
 LANGUAGE plpgsql
@@ -597,37 +598,22 @@ BEGIN
   WITH wanted AS (
     SELECT DISTINCT w.variant_id FROM pg_catalog.unnest(_variant_ids) AS w(variant_id)
   ),
-  per_item AS (
-    SELECT oi.variant_id,
-           oi.fulfillment_type,
-           oi.quantity,
-           o.status,
-           GREATEST(0, -COALESCE((
-             SELECT pg_catalog.sum(m.delta)
-             FROM public.stock_movements AS m
-             WHERE m.order_item_id = oi.id
-               AND m.reason IN ('purchase', 'cancel')
-           ), 0))::integer AS reserved,
-           COALESCE((
-             SELECT pg_catalog.sum(fl.quantity)
-             FROM public.order_fulfillment_lines AS fl
-             JOIN public.order_fulfillments AS f ON f.id = fl.fulfillment_id
-             WHERE fl.order_item_id = oi.id
-               AND f.cancelled_at IS NULL
-           ), 0)::integer AS shipped,
-           COALESCE((
-             SELECT pg_catalog.sum(c.quantity)
-             FROM public.order_item_completions AS c
-             WHERE c.order_item_id = oi.id
-               AND c.cancelled_at IS NULL
-           ), 0)::integer AS completed
+  orders_with_variants AS (
+    SELECT DISTINCT oi.order_id, o.status
     FROM public.order_items AS oi
     JOIN public.orders AS o ON o.id = oi.order_id
     WHERE oi.variant_id IN (SELECT w.variant_id FROM wanted AS w)
+  ),
+  per_item AS (
+    SELECT l.variant_id, l.fulfillment_type, l.shipped, l.in_production, r.reserved, x.status
+    FROM orders_with_variants AS x
+    CROSS JOIN LATERAL private.order_line_fulfillment(x.order_id) AS l
+    JOIN LATERAL private.order_line_reservations(x.order_id) AS r ON r.order_item_id = l.order_item_id
+    WHERE l.variant_id IN (SELECT w.variant_id FROM wanted AS w)
   )
   SELECT w.variant_id,
          COALESCE(pg_catalog.sum(GREATEST(p.reserved - p.shipped, 0)) FILTER (WHERE p.fulfillment_type = 'stock'), 0)::integer,
-         COALESCE(pg_catalog.sum(GREATEST(p.quantity - p.completed, 0)) FILTER (
+         COALESCE(pg_catalog.sum(p.in_production) FILTER (
            WHERE p.fulfillment_type = 'backorder'
              AND p.status IN ('pending'::public.order_status, 'paid'::public.order_status)
          ), 0)::integer
