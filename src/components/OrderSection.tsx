@@ -202,7 +202,8 @@ export default function OrderSection({
 						header: '決済状況',
 						render: (order) => (
 							<div className="flex flex-wrap items-center gap-1">
-								<StatusBadge tone={STATUS_TONES[order.status]} className={STATUS_CLASSES[order.status]} size="md">
+								{/* 「受注生産中」「発送準備中」などは、狭い画面幅でも途中で折り返さない */}
+								<StatusBadge tone={STATUS_TONES[order.status]} className={`${STATUS_CLASSES[order.status]} whitespace-nowrap`} size="md">
 									{order.status}
 								</StatusBadge>
 								{order.partiallyShipped ? (
