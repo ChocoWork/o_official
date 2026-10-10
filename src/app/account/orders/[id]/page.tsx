@@ -7,19 +7,16 @@ import { Button } from "@/components/ui/Button/Button";
 import { useLogin } from "@/contexts/LoginContext";
 import { clientFetch } from "@/lib/client-fetch";
 import {
-  ORDER_PROGRESS_STEPS,
-  resolveOrderProgressIndex,
-} from "@/lib/orders/order-status";
+  PARTIALLY_SHIPPED_LABEL,
+  type OrderProgressKey,
+  type OrderProgressStep,
+} from "@/lib/orders/order-progress";
 import {
   OrderItemRow,
   type OrderLineItem,
 } from "@/features/account/components/OrderItemRow";
 import { useReorder } from "@/features/account/hooks/useReorder";
 import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
-import {
-  SHIPPING_CARRIERS,
-  isShippingCarrierId,
-} from "@/lib/orders/shipping-carriers";
 import "../../account.css";
 
 // OD-2: Tailwind 既定サイズではなくサイト共通の --lk-size-* トークンを使用
@@ -29,22 +26,77 @@ const lgStyle = { fontSize: "var(--lk-size-lg)" } as const;
 const acuminFont = { fontFamily: "acumin-pro, sans-serif" } as const;
 const acuminLgStyle = { ...lgStyle, ...acuminFont } as const;
 
+type OrderDetailItem = OrderLineItem & {
+  /** 発送した数 */
+  shippedQuantity: number;
+  /** 発送準備中の数（入金後の注文だけ。窓口が数える） */
+  readyQuantity: number;
+  /** 受注生産中の数（入金後の注文だけ。窓口が数える） */
+  inProductionQuantity: number;
+};
+
+type OrderShipment = {
+  id: string;
+  number: number;
+  shippedAt: string;
+  carrier: string | null;
+  carrierLabel: string | null;
+  trackingNumber: string | null;
+  trackingUrl: string | null;
+  items: Array<{
+    orderItemId: string;
+    name: string;
+    color: string | null;
+    size: string | null;
+    quantity: number;
+  }>;
+};
+
 type OrderDetail = {
   id: string;
   orderNumber: string;
   orderDate: string;
   status: string;
+  progress: {
+    key: OrderProgressKey;
+    label: string;
+    partiallyShipped: boolean;
+    steps: OrderProgressStep[] | null;
+  };
   subtotalAmount: string;
   shippingAmount: string;
   discountAmount: string;
   totalAmount: string;
   paymentMethod: string;
   shippingAddress: string;
-  items: OrderLineItem[];
-  shippedAt: string | null;
-  shippingCarrier: string | null;
-  trackingNumber: string | null;
+  items: OrderDetailItem[];
+  shipments: OrderShipment[];
 };
+
+/** 発送日は日本時間の日付で出す（窓口は時刻のまま返す） */
+function formatShippedDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat("ja-JP", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: "Asia/Tokyo",
+  }).format(date);
+}
+
+/** 「名前（色 / サイズ）」の形。色もサイズも無い古い明細は名前だけ */
+function describeItem(
+  name: string,
+  color: string | null | undefined,
+  size: string | null | undefined,
+): string {
+  const variant = [color, size].filter(Boolean).join(" / ");
+  return variant ? `${name}（${variant}）` : name;
+}
 
 export default function AccountOrderDetailPage() {
   const params = useParams<{ id: string }>();
@@ -121,7 +173,10 @@ export default function AccountOrderDetailPage() {
     );
   }
 
-  const progressIndex = order ? resolveOrderProgressIndex(order.status) : -1;
+  // 数は入金後の注文にだけ窓口が返す（未入金・キャンセルの注文の品は 0）
+  const readyItems = order?.items.filter((item) => item.readyQuantity > 0) ?? [];
+  const inProductionItems =
+    order?.items.filter((item) => item.inProductionQuantity > 0) ?? [];
 
   return (
     // lg 以上は横幅を活かして 61.8% : 38.2%（黄金比）の2カラムに分割する
@@ -184,69 +239,138 @@ export default function AccountOrderDetailPage() {
               </div>
             </div>
 
-            {order.shippingCarrier &&
-            order.trackingNumber &&
-            isShippingCarrierId(order.shippingCarrier) ? (
-              <section aria-label="配送情報" className="mt-6">
-                <h2 className="mb-2 text-[#474747] tracking-wider">配送情報</h2>
-                <dl className="space-y-1 lk-text-sm">
-                  <div className="flex gap-2">
-                    <dt className="text-[#707070]">配送業者</dt>
-                    <dd>{SHIPPING_CARRIERS[order.shippingCarrier].label}</dd>
-                  </div>
-                  <div className="flex gap-2">
-                    <dt className="text-[#707070]">追跡番号</dt>
-                    <dd className="tabular-nums">{order.trackingNumber}</dd>
-                  </div>
-                </dl>
-                <a
-                  href={SHIPPING_CARRIERS[order.shippingCarrier].trackingUrl(
-                    order.trackingNumber,
-                  )}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-2 inline-block lk-text-sm underline"
-                >
-                  配送状況を確認する
-                </a>
-              </section>
-            ) : null}
+            {/* 状態の言葉。支払い手続き中・放棄の注文は窓口が返さない（お客様には出さない） */}
+            <div
+              className="flex flex-wrap items-center gap-2"
+              data-testid="order-progress-status"
+            >
+              <span className="account-status">{order.progress.label}</span>
+              {order.progress.partiallyShipped ? (
+                <span className="account-status account-status-sm">
+                  {PARTIALLY_SHIPPED_LABEL}
+                </span>
+              ) : null}
+            </div>
 
-            {/* OD-4: 進捗の視覚化（受注→発送→配達） */}
-            {progressIndex >= 0 ? (
+            {/* OD-4: 進捗の視覚化。段は窓口が記録から決める（在庫の品だけなら4段、受注生産の品を含むなら5段） */}
+            {order.progress.steps ? (
               // sm 未満はラベルを丸数字の下に置いて折返しを防ぐ（結線は丸数字の中心高さに合わせる）
               <ol
                 className="flex items-start sm:items-center gap-1.5 sm:gap-2 pt-2"
                 aria-label="配送ステータス"
               >
-                {ORDER_PROGRESS_STEPS.map((step, index) => {
-                  const done = index <= progressIndex;
+                {order.progress.steps.map((step, index, steps) => {
+                  // 済んだ段と今の段は塗り、結線は済んだ段の後ろだけ塗る
+                  const filled = step.state !== "todo";
                   return (
-                    <React.Fragment key={step}>
-                      <li className="flex flex-col items-center gap-1 sm:flex-row sm:gap-2">
+                    <React.Fragment key={step.key}>
+                      <li
+                        aria-current={step.state === "current" ? "step" : undefined}
+                        className="flex flex-col items-center gap-1 sm:flex-row sm:gap-2"
+                      >
                         <span
                           aria-hidden="true"
-                          className={`flex h-6 w-6 items-center justify-center rounded-full border lk-text-6xs ${done ? "border-black bg-black text-white" : "border-black/25 text-[#999]"}`}
+                          className={`flex h-6 w-6 items-center justify-center rounded-full border lk-text-6xs ${filled ? "border-black bg-black text-white" : "border-black/25 text-[#999]"}`}
                         >
                           {index + 1}
                         </span>
                         <span
-                          className={`whitespace-nowrap ${done ? "text-black" : "text-[#999]"}`}
+                          className={`whitespace-nowrap ${filled ? "text-black" : "text-[#999]"}`}
                           style={labelStyle}
                         >
-                          {step}
+                          {step.label}
                         </span>
                       </li>
-                      {index < ORDER_PROGRESS_STEPS.length - 1 ? (
+                      {index < steps.length - 1 ? (
                         <li
                           aria-hidden="true"
-                          className={`h-px flex-1 mt-3 sm:mt-0 ${index < progressIndex ? "bg-black" : "bg-black/15"}`}
+                          className={`h-px flex-1 mt-3 sm:mt-0 ${step.state === "done" ? "bg-black" : "bg-black/15"}`}
                         />
                       ) : null}
                     </React.Fragment>
                   );
                 })}
               </ol>
+            ) : null}
+
+            {/* 配送情報は発送ごとに出す。取り消した発送は窓口が返さない */}
+            {order.shipments.map((shipment) => (
+              <section
+                key={shipment.id}
+                aria-label={`配送情報（${shipment.number}回目）`}
+                className="mt-6"
+              >
+                <h2 className="mb-2 text-[#474747] tracking-wider">
+                  {`配送情報（${shipment.number}回目）`}
+                </h2>
+                <dl className="space-y-1 lk-text-sm">
+                  <div className="flex gap-2">
+                    <dt className="text-[#707070]">発送日</dt>
+                    <dd className="tabular-nums">
+                      {formatShippedDate(shipment.shippedAt)}
+                    </dd>
+                  </div>
+                  {shipment.carrierLabel ? (
+                    <div className="flex gap-2">
+                      <dt className="text-[#707070]">配送業者</dt>
+                      <dd>{shipment.carrierLabel}</dd>
+                    </div>
+                  ) : null}
+                  {shipment.trackingNumber ? (
+                    <div className="flex gap-2">
+                      <dt className="text-[#707070]">追跡番号</dt>
+                      <dd className="tabular-nums">{shipment.trackingNumber}</dd>
+                    </div>
+                  ) : null}
+                </dl>
+                {shipment.trackingUrl ? (
+                  <a
+                    href={shipment.trackingUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-2 inline-block lk-text-sm underline"
+                  >
+                    配送状況を確認する
+                  </a>
+                ) : null}
+                <ul className="mt-2 space-y-1 lk-text-sm">
+                  {shipment.items.map((line) => (
+                    <li key={line.orderItemId}>
+                      {`${describeItem(line.name, line.color, line.size)} × ${line.quantity}`}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+
+            {readyItems.length > 0 ? (
+              <section aria-label="発送準備中の商品" className="mt-6">
+                <h2 className="mb-2 text-[#474747] tracking-wider">
+                  発送準備中の商品
+                </h2>
+                <ul className="space-y-1 lk-text-sm">
+                  {readyItems.map((item) => (
+                    <li key={item.id}>
+                      {`${describeItem(item.name, item.color, item.size)} × ${item.readyQuantity}`}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+
+            {inProductionItems.length > 0 ? (
+              <section aria-label="受注生産中の商品" className="mt-6">
+                <h2 className="mb-2 text-[#474747] tracking-wider">
+                  受注生産中の商品
+                </h2>
+                <ul className="space-y-1 lk-text-sm">
+                  {inProductionItems.map((item) => (
+                    <li key={item.id}>
+                      {`${describeItem(item.name, item.color, item.size)} × ${item.inProductionQuantity}`}
+                    </li>
+                  ))}
+                </ul>
+              </section>
             ) : null}
           </section>
 

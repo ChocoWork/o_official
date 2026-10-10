@@ -47,6 +47,20 @@ const { createClient, createServiceRoleClient } = require('@/lib/supabase/server
 const { authenticateRequest } = require('@/lib/auth/authenticate');
 const { signItemImageUrl } = require('@/lib/storage/item-images');
 
+// private.order_line_fulfillment の1行（在庫の品1点が仕上がり済みで未発送 = 発送準備中）
+const READY_LINE_ROW = {
+	order_id: 'order-1',
+	order_item_id: 'line-1',
+	variant_id: 5,
+	fulfillment_type: 'stock',
+	quantity: 1,
+	shipped: 0,
+	completed: 1,
+	in_production: 0,
+	ready_unshipped: 1,
+	unshipped: 1,
+};
+
 describe('GET /api/orders', () => {
 	beforeEach(() => {
 		jest.resetAllMocks();
@@ -90,15 +104,8 @@ describe('GET /api/orders', () => {
 			from: jest.fn().mockReturnValue(orderQuery),
 		});
 
-		createServiceRoleClient.mockResolvedValue({
-			from: jest.fn().mockReturnValue({
-				select: jest.fn().mockReturnThis(),
-				in: jest.fn().mockResolvedValue({
-					data: [{ id: 10, stock_quantity: 5 }],
-					error: null,
-				}),
-			}),
-		});
+		const rpc = jest.fn().mockResolvedValue({ data: [READY_LINE_ROW], error: null });
+		createServiceRoleClient.mockResolvedValue({ rpc });
 
 		const { GET } = require('@/app/api/orders/route');
 		const response: { status: number; json: () => Promise<unknown>; headers: Map<string, string> } = await GET(
@@ -114,7 +121,7 @@ describe('GET /api/orders', () => {
 					id: 'order-1',
 					orderNumber: 'ORD-ORDER-1',
 					orderDate: '2026/04/01',
-					status: '決済完了',
+					status: '発送準備中',
 					totalAmount: expect.stringMatching(/^[¥￥]12,000$/),
 					itemCount: 1,
 					shippingFullName: '',
@@ -137,6 +144,7 @@ describe('GET /api/orders', () => {
 				},
 			],
 		});
+		expect(rpc).toHaveBeenCalledWith('list_order_line_fulfillment', { _order_ids: ['order-1'] });
 	});
 
 	test('returns no-store on unauthorized responses', async () => {
@@ -228,6 +236,10 @@ describe('GET /api/orders/[id]', () => {
 					}),
 				};
 			}),
+			rpc: jest.fn().mockImplementation(async (name: string) => ({
+				data: name === 'list_order_line_fulfillment' ? [READY_LINE_ROW] : [],
+				error: null,
+			})),
 		});
 
 		const { GET } = require('@/app/api/orders/[id]/route');
@@ -244,6 +256,18 @@ describe('GET /api/orders/[id]', () => {
 			orderNumber: 'ORD-ORDER-1',
 			orderDate: '2026/04/01 09:00',
 			status: 'paid',
+			progress: {
+				key: 'ready',
+				label: '発送準備中',
+				partiallyShipped: false,
+				steps: [
+					{ key: 'payment', label: 'お支払い', state: 'done' },
+					{ key: 'ready', label: '発送準備中', state: 'current' },
+					{ key: 'in_transit', label: '配送中', state: 'todo' },
+					{ key: 'delivered', label: '配達済み', state: 'todo' },
+				],
+			},
+			shipments: [],
 			subtotalAmount: expect.stringMatching(/^[¥￥]12,000$/),
 			shippingAmount: expect.stringMatching(/^[¥￥]500$/),
 			discountAmount: expect.stringMatching(/^-[¥￥]1,000$/),
@@ -253,9 +277,15 @@ describe('GET /api/orders/[id]', () => {
 				expect.objectContaining({
 					id: 'line-1',
 					itemId: 10,
+					shippedQuantity: 0,
+					readyQuantity: 1,
+					inProductionQuantity: 0,
 				}),
 			],
 		});
+		expect(body).not.toHaveProperty('shippedAt');
+		expect(body).not.toHaveProperty('shippingCarrier');
+		expect(body).not.toHaveProperty('trackingNumber');
 	});
 
 	test('returns no-store on not found responses', async () => {

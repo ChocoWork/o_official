@@ -4,6 +4,8 @@ import { authenticateRequest, authFailureResponse } from '@/lib/auth/authenticat
 import { signItemImageUrl } from '@/lib/storage/item-images';
 import { toOrderNumber } from '@/lib/orders/order-number';
 import { HIDDEN_ORDER_STATUS_FILTER } from '@/lib/orders/order-payment-types';
+import { deriveOrderProgress } from '@/lib/orders/order-progress';
+import { listOrderLineFulfillment, type OrderLineFulfillmentRow } from '@/lib/orders/fulfillment/fulfillment-store';
 
 const NO_STORE_HEADERS = {
 	'Cache-Control': 'no-store',
@@ -60,26 +62,6 @@ function formatOrderDate(dateText: string) {
 		month: '2-digit',
 		day: '2-digit',
 	}).format(date);
-}
-
-function mapStatusLabel(status: OrderRow['status']) {
-	if (status === 'paid') {
-		return '決済完了';
-	}
-
-	if (status === 'failed') {
-		return '決済失敗';
-	}
-
-	if (status === 'cancelled') {
-		return 'キャンセル';
-	}
-
-	if (status === 'shipped') {
-		return '発送済み';
-	}
-
-	return '未決済';
 }
 
 function formatShippingAddress(order: OrderRow): string {
@@ -142,14 +124,29 @@ export async function GET(request: NextRequest) {
 		return NextResponse.json({ error: 'Failed to fetch orders' }, { status: 500, headers: NO_STORE_HEADERS });
 	}
 
+	const orders = (data ?? []) as OrderRow[];
+	const serviceSupabase = await createServiceRoleClient();
 
-	const signSupabase = await createServiceRoleClient();
+	// 一覧の言葉は商品の数から出す。新しい表はお客様から直接読めないので、持ち主の確かめを通った一覧の分を service_role で1回で読む
+	let lineRowsByOrder: Map<string, OrderLineFulfillmentRow[]>;
+	try {
+		lineRowsByOrder = await listOrderLineFulfillment(serviceSupabase, orders.map((order) => order.id));
+	} catch (fulfillmentError) {
+		// DB の文には宛先などが混ざりうるので、エラーの中身は出さず、名前・code・operation だけを残す
+		console.error(
+			'Orders fulfillment fetch error:',
+			fulfillmentError instanceof Error ? fulfillmentError.name : 'UnknownError',
+			(fulfillmentError as { code?: unknown })?.code ?? null,
+			(fulfillmentError as { operation?: unknown })?.operation ?? null,
+		);
+		return NextResponse.json({ error: 'Failed to fetch orders' }, { status: 500, headers: NO_STORE_HEADERS });
+	}
 
-	const response = await Promise.all(((data ?? []) as OrderRow[]).map(async (order) => ({
+	const response = await Promise.all(orders.map(async (order) => ({
 		id: order.id,
 		orderNumber: toOrderNumber(order.id),
 		orderDate: formatOrderDate(order.created_at),
-		status: mapStatusLabel(order.status),
+		status: deriveOrderProgress(order.status, lineRowsByOrder.get(order.id) ?? []).label,
 		totalAmount: formatCurrency(order.total_amount, order.currency),
 		itemCount: (order.order_items ?? []).reduce((sum, item) => sum + item.quantity, 0),
 		shippingFullName: order.shipping_full_name ?? '',
@@ -160,7 +157,7 @@ export async function GET(request: NextRequest) {
 			id: item.id,
 			itemId: item.item_id,
 			name: item.item_name,
-			imageUrl: await signItemImageUrl(signSupabase, item.item_image_url),
+			imageUrl: await signItemImageUrl(serviceSupabase, item.item_image_url),
 			color: item.color,
 			size: item.size,
 			quantity: item.quantity,
