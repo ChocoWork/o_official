@@ -28,6 +28,7 @@ jest.mock('@/lib/audit', () => ({
   logAudit: (...args: unknown[]) => mockLogAudit(...args),
 }));
 
+import { inspect } from 'util';
 import { GET, POST } from '@/app/api/admin/items/[id]/variants/route';
 
 const ITEM_ID = '7';
@@ -56,14 +57,17 @@ function variantRow(id: number, stockQuantity: number) {
   };
 }
 
+/** PostgREST が返す誤りの形。message・details・hint は DB の文を持つ */
+type DbError = { message: string; details?: string; hint?: string; code?: string };
+
 /** item_variants の読み取りと、DB の関数（引き当て・受注生産・在庫の履歴）の答えを組み立てる。 */
 function setupReads(options: {
   variants?: unknown[];
   variantsError?: { message: string } | null;
   states?: unknown[];
-  statesError?: { message: string } | null;
+  statesError?: DbError | null;
   history?: unknown[];
-  historyError?: { message: string } | null;
+  historyError?: DbError | null;
 } = {}) {
   const {
     variants = [variantRow(11, 4)],
@@ -306,6 +310,41 @@ describe('GET /api/admin/items/[id]/variants', () => {
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ error: 'Failed to fetch stock history' });
     consoleError.mockRestore();
+  });
+
+  /**
+   * PostgREST の誤りは message・details・hint に DB の文（引数や行の値）を持つ。
+   * 新しく足した2つの DB の関数の失敗は、ログに名前と code だけを残し、誤りそのものは渡さない。
+   */
+  it.each([
+    ['引き当て済み・受注生産の数', 'Failed to fetch variant stock states:', 'statesError'],
+    ['在庫の履歴', 'Failed to fetch stock history:', 'historyError'],
+  ] as const)('%sが読めない時のログに、DB の誤りの文（message・details・hint）を出さない', async (_name, logLabel, failing) => {
+    const fields = { details: 'DETAILS-MARKER', hint: 'HINT-MARKER', code: '42883' };
+    // PostgREST の誤りの2つの形: 素のオブジェクトと、Error を継いだ PostgrestError（今の supabase-js）
+    const shapes: Array<[dbError: DbError, expectedName: string]> = [
+      [{ message: 'MESSAGE-MARKER', ...fields }, 'UnknownError'],
+      [Object.assign(new Error('MESSAGE-MARKER'), { name: 'PostgrestError', ...fields }), 'PostgrestError'],
+    ];
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      for (const [dbError, expectedName] of shapes) {
+        consoleError.mockClear();
+        setupReads(failing === 'statesError' ? { statesError: dbError } : { historyError: dbError });
+
+        const res = await callGet();
+
+        expect(res.status).toBe(500);
+        expect(consoleError).toHaveBeenCalledWith(logLabel, 7, expectedName, '42883');
+        const logged = inspect(consoleError.mock.calls, { depth: null });
+        for (const marker of ['MESSAGE-MARKER', 'DETAILS-MARKER', 'HINT-MARKER']) {
+          expect(logged).not.toContain(marker);
+        }
+      }
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it('バリアントが引けなければ 500 を返す', async () => {

@@ -61,6 +61,15 @@ type StockHistoryRow = {
 /** 在庫の画面に出す履歴の件数 */
 const STOCK_HISTORY_LIMIT = 50;
 
+/**
+ * ログに出す誤りの項目。名前と、あれば code だけにする（src/app/api/admin/orders/route.ts の describeErrorForLog と同じ考え）。
+ * PostgREST の誤りは message・details・hint に DB の文（引数や行の値）を持つので、誤りそのものはログに渡さない。
+ */
+function describeErrorForLog(error: unknown): [name: string, code: unknown] {
+  const { code = null } = (typeof error === 'object' && error !== null ? error : {}) as { code?: unknown };
+  return [error instanceof Error ? error.name : 'UnknownError', code];
+}
+
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const authz = await authorizeAdminPermission('admin.items.read', request);
@@ -107,7 +116,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       ? await supabase.rpc('list_variant_stock_states', { _variant_ids: variantIds })
       : { data: [], error: null };
     if (stockStatesError) {
-      console.error('Failed to fetch variant stock states:', itemId, stockStatesError);
+      console.error('Failed to fetch variant stock states:', itemId, ...describeErrorForLog(stockStatesError));
       return NextResponse.json({ error: 'Failed to fetch variant stock states' }, { status: 500 });
     }
 
@@ -115,7 +124,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       ? await supabase.rpc('list_item_stock_history', { _item_id: itemId, _limit: STOCK_HISTORY_LIMIT })
       : { data: [], error: null };
     if (historyError) {
-      console.error('Failed to fetch stock history:', itemId, historyError);
+      console.error('Failed to fetch stock history:', itemId, ...describeErrorForLog(historyError));
       return NextResponse.json({ error: 'Failed to fetch stock history' }, { status: 500 });
     }
 

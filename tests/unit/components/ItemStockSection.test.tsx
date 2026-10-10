@@ -1,4 +1,5 @@
 import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { ItemStockSection } from '@/app/admin/item/ItemStockSection';
 import { clientFetch } from '@/lib/client-fetch';
 
@@ -137,5 +138,55 @@ describe('ItemStockSection の4つの数と履歴（グループ E-1）', () => 
 
     expect(screen.getByText('まだ記録がありません。')).toBeInTheDocument();
     expect(screen.queryAllByTestId('stock-movement-row')).toHaveLength(0);
+  });
+});
+
+describe('ItemStockSection の読み込みの失敗（店主は英語が読めない）', () => {
+  const LOAD_ERROR = /^在庫の取得に失敗しました。$/;
+  let consoleError: jest.SpyInstance;
+
+  beforeEach(() => {
+    mockedFetch.mockReset();
+    consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    consoleError.mockRestore();
+  });
+
+  it('窓口が 500 を返したら、窓口の英語の文ではなく日本語の固定の文を出し、履歴の空の案内は出さない', async () => {
+    mockedFetch.mockResolvedValue(json({ error: 'Failed to fetch variant stock states' }, 500));
+    render(<ItemStockSection itemId="7" />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(LOAD_ERROR);
+    expect(screen.queryByText('Failed to fetch variant stock states')).not.toBeInTheDocument();
+    expect(screen.queryByText('まだ記録がありません。')).not.toBeInTheDocument();
+  });
+
+  it('通信が切れた時も、同じ日本語の固定の文を出し、履歴の空の案内は出さない', async () => {
+    mockedFetch.mockRejectedValue(new Error('network down'));
+    render(<ItemStockSection itemId="7" />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(LOAD_ERROR);
+    expect(screen.queryByText('まだ記録がありません。')).not.toBeInTheDocument();
+  });
+
+  it('在庫を記録した直後の読み直しに失敗したら、同じ日本語の固定の文を出す（古い数のまま黙らない）', async () => {
+    mockedFetch.mockResolvedValue(json({ variants: [VARIANT], movements: [PURCHASE, RESTOCK] }));
+    render(<ItemStockSection itemId="7" />);
+    await screen.findByRole('heading', { name: '履歴' });
+    mockedFetch
+      .mockResolvedValueOnce(json({ success: true }, 201))
+      .mockResolvedValueOnce(json({ error: 'Failed to fetch stock history' }, 500));
+
+    await userEvent.type(screen.getByTestId('variant-delta'), '3');
+    await userEvent.click(screen.getByTestId('variant-submit'));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(LOAD_ERROR);
+    expect(screen.queryByText('Failed to fetch stock history')).not.toBeInTheDocument();
+    // 記録の POST のあとに、読み直しの GET が1回
+    expect(mockedFetch).toHaveBeenCalledTimes(3);
+    expect(mockedFetch).toHaveBeenNthCalledWith(2, '/api/admin/items/7/variants', expect.objectContaining({ method: 'POST' }));
+    expect(mockedFetch).toHaveBeenNthCalledWith(3, '/api/admin/items/7/variants');
   });
 });

@@ -62,6 +62,9 @@ const REASON_LABELS: Record<string, string> = {
 const STOCK_TERMS_EXPLANATION =
   "すぐ出せる数は今すぐ売れる数、引き当て済みは注文のために取ってある数、手元の数は棚に実際にある数、受注生産はこれから作る数。";
 
+// 読み込みの失敗は、窓口の英語の文を出さずにこの文にする（店主は英語が読めない）。記録の直後の読み直しの失敗も同じ
+const LOAD_ERROR_MESSAGE = "在庫の取得に失敗しました。";
+
 // 管理画面から打てる理由。注文の処理が書くものは含めない（API 側でも拒否する）。
 const ADMIN_REASONS = [
   { value: "restock", label: "入荷" },
@@ -104,17 +107,17 @@ export function ItemStockSection({ itemId }: { itemId: string }) {
   const load = useCallback(async () => {
     try {
       const response = await clientFetch(`/api/admin/items/${itemId}/variants`);
-      const json = await response.json().catch(() => null);
       if (!response.ok) {
-        setLoadError(json?.error ?? "在庫の取得に失敗しました");
+        setLoadError(LOAD_ERROR_MESSAGE);
         return;
       }
+      const json = await response.json().catch(() => null);
       setLoadError(null);
       setVariants((json?.variants ?? []) as Variant[]);
       setMovements((json?.movements ?? []) as Movement[]);
     } catch (error) {
       console.error("Failed to fetch item variants:", error);
-      setLoadError("在庫の取得に失敗しました");
+      setLoadError(LOAD_ERROR_MESSAGE);
     } finally {
       setIsLoading(false);
     }
@@ -333,7 +336,7 @@ export function ItemStockSection({ itemId }: { itemId: string }) {
       )}
 
       <h3 className="mt-10 lk-text-3xs tracking-widest text-black/60">履歴</h3>
-      {movements.length === 0 ? (
+      {movements.length === 0 && !loadError ? (
         <p className="mt-3 lk-text-2xs text-black/60">まだ記録がありません。</p>
       ) : (
         <ul className="mt-3 flex flex-col gap-2">
