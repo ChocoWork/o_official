@@ -18,4 +18,6 @@ export interface DialogProps {
   shape?: UIDialogShape;
   /** demo size: xs/sm/md/lg/xl */
   size?: ComponentSize;
+  /** 幅が 768px 未満の画面では、画面いっぱいに開く（入力と一覧が長い画面向け） */
+  fullScreenOnMobile?: boolean;
 }

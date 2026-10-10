@@ -80,6 +80,19 @@
 }
 
 
+/* --- 小さい画面（768px 未満）で画面いっぱいに開く（fullScreenOnMobile）---
+   .dialog-panel は @layer の外にあるので、className の Tailwind では上書きできない。ここで持つ */
+@media (max-width: 767.98px) {
+  [data-ui-dialog][data-ui-dialog-fullscreen="mobile"] .dialog-panel {
+    max-width: none;
+    height: 100%;
+    margin-inline: 0;
+    border-radius: 0;
+    box-shadow: none;
+    overflow-y: auto;
+  }
+}
+
 /* --- 背景スクリム（対比：背後を暗転させ panel を前面に浮かせる）--- */
 .dialog-overlay__scrim {
   position: absolute;

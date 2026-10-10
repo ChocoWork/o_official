@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { useState } from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { Dialog } from '@/components/ui/Dialog/Dialog';
@@ -411,5 +413,34 @@ describe('Dialog の背景（スクリム）で閉じる条件', () => {
     fireEvent.click(scrim());
 
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+// 小さい画面で画面いっぱいに開く指定（発送の画面・仕上がりの画面）。見た目は CSS の責務なので、
+// ここでは属性の契約と、CSS が 768px 未満だけに効くことを確かめる。実際の見え方は E2E（390px）が確かめる
+describe('Dialog の fullScreenOnMobile', () => {
+  const dialogOf = (container: HTMLElement) => container.querySelector('[data-ui-dialog]');
+
+  it('付けた時だけ data-ui-dialog-fullscreen="mobile" が付く', () => {
+    const { container, rerender } = render(<Dialog open onClose={() => {}} title="T" />);
+    expect(dialogOf(container)).not.toHaveAttribute('data-ui-dialog-fullscreen');
+
+    rerender(<Dialog open onClose={() => {}} title="T" fullScreenOnMobile />);
+    expect(dialogOf(container)).toHaveAttribute('data-ui-dialog-fullscreen', 'mobile');
+  });
+
+  it('画面いっぱいの CSS は 768px 未満の幅だけに効き、パネルの最大幅・余白・角を外す', () => {
+    // .dialog-panel は @layer の外にある CSS なので、className の Tailwind では上書きできない。Dialog.css が持つ
+    const css = fs.readFileSync(path.join(process.cwd(), 'src/components/ui/Dialog/Dialog.css'), 'utf8').replace(/\r\n/g, '\n');
+    const rule = css.match(
+      /@media \(max-width: 767\.98px\) \{\n\s*\[data-ui-dialog\]\[data-ui-dialog-fullscreen="mobile"\] \.dialog-panel \{([^}]*)\}/,
+    );
+
+    expect(rule).not.toBeNull();
+    const declarations = rule?.[1] ?? '';
+    expect(declarations).toContain('max-width: none;');
+    expect(declarations).toContain('height: 100%;');
+    expect(declarations).toContain('margin-inline: 0;');
+    expect(declarations).toContain('border-radius: 0;');
   });
 });

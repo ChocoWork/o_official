@@ -38,6 +38,7 @@ export function Dialog({
   className,
   shape = "square",
   size = "md",
+  fullScreenOnMobile = false,
 }: DialogProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   // 親は onClose を描画のたびにつくり直す（入力のたびに再描画する）。effect の依存にすると
@@ -120,6 +121,7 @@ export function Dialog({
     "data-ui-dialog-shape": shape,
     "data-ui-dialog-size": size,
     "data-ui-size": size,
+    "data-ui-dialog-fullscreen": fullScreenOnMobile ? "mobile" : undefined,
   } as const;
 
   const isInPanel = (target: EventTarget) =>
