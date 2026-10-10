@@ -83,6 +83,26 @@ describe('integration: order state transition hardening', () => {
     return result.rows[0].id as string;
   }
 
+  /** 発送の関数は商品の行が要るので、注文に在庫の品を1つ足す（色・サイズの無い商品には、トリガーがバリアントを1つ作る） */
+  async function insertOrderItem(orderId: string): Promise<string> {
+    const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    const item = await client.query(
+      `insert into public.items (name, description, price, category, image_url, status)
+       values ($1, 'state transition', 1000, 'TOPS', '/images/test.jpg', 'published')
+       returning id`,
+      [`state-transition-${suffix}`],
+    );
+    const variant = await client.query('select id from public.item_variants where item_id = $1 limit 1', [item.rows[0].id]);
+    const line = await client.query(
+      `insert into public.order_items
+         (order_id, item_id, variant_id, item_name, item_price, quantity, line_total, fulfillment_type)
+       values ($1, $2, $3, 'state transition', 1000, 1, 1000, 'stock')
+       returning id`,
+      [orderId, item.rows[0].id, variant.rows[0].id],
+    );
+    return line.rows[0].id as string;
+  }
+
   test('authenticated cannot update orders or execute transition RPCs', async () => {
     const privileges = await client.query(
       `select has_table_privilege('authenticated', 'public.orders', 'UPDATE') as can_update,
@@ -93,7 +113,7 @@ describe('integration: order state transition hardening', () => {
               ) as can_cancel,
               has_function_privilege(
                 'authenticated',
-                'public.admin_ship_paid_order(uuid,uuid,text,text,boolean)',
+                'public.admin_create_fulfillment(uuid,uuid,uuid,text,text,boolean,jsonb)',
                 'EXECUTE'
               ) as can_ship,
               has_function_privilege(
@@ -108,7 +128,7 @@ describe('integration: order state transition hardening', () => {
               ) as service_can_cancel,
               has_function_privilege(
                 'service_role',
-                'public.admin_ship_paid_order(uuid,uuid,text,text,boolean)',
+                'public.admin_create_fulfillment(uuid,uuid,uuid,text,text,boolean,jsonb)',
                 'EXECUTE'
               ) as service_can_ship,
               has_function_privilege(
@@ -189,6 +209,7 @@ describe('integration: order state transition hardening', () => {
       );
       const actorId = user.rows[0].id as string;
       const shippingOrderId = await insertOrder({ status: 'paid' });
+      const shippingItemId = await insertOrderItem(shippingOrderId);
       const refundOrderId = await insertOrder({ status: 'paid' });
       const legacyCancelledId = await insertOrder({ status: 'cancelled' });
       const firstProjectionAt = '2026-09-22T00:00:00.000Z';
@@ -196,10 +217,10 @@ describe('integration: order state transition hardening', () => {
 
       await client.query('set local role service_role');
       const shipped = await client.query(
-        `select * from public.admin_ship_paid_order(
-           $1::uuid, $2::uuid, 'yamato'::text, 'TRACK-123'::text, false
+        `select * from public.admin_create_fulfillment(
+           $1::uuid, $2::uuid, gen_random_uuid(), 'yamato'::text, 'TRACK-123'::text, false, $3::jsonb
          )`,
-        [shippingOrderId, actorId],
+        [shippingOrderId, actorId, JSON.stringify([{ order_item_id: shippingItemId, quantity: 1 }])],
       );
       const fullyRefunded = await client.query(
         `select * from public.apply_order_refund_projection(
@@ -243,7 +264,7 @@ describe('integration: order state transition hardening', () => {
       await client.query('reset role');
 
       expect(shipped.rows).toEqual([
-        expect.objectContaining({ id: shippingOrderId }),
+        expect.objectContaining({ completes_order: true, order_status: 'shipped', replayed: false }),
       ]);
       expect(fullyRefunded.rows).toEqual([
         { id: refundOrderId, status: 'cancelled', refunded_amount: 1000 },
@@ -285,21 +306,25 @@ describe('integration: order state transition hardening', () => {
     try {
       await client.query("select set_config('app.order_change_reason', 'integration_test', true)");
       const orderId = await insertOrder({ status: 'paid', shippingComplete: false });
+      const orderItemId = await insertOrderItem(orderId);
       const actor = await client.query(
         `insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
          values (gen_random_uuid(), $1, '{}'::jsonb, now(), now()) returning id`,
         [`shipping-hold-${Date.now()}@example.com`],
       );
 
+      // 発送の関数は断る（前の関数は0行を返していた）。断りで取引が止まらないよう、退避点の中で呼ぶ
+      await client.query('savepoint before_rpc_ship');
       await client.query('set local role service_role');
-      const shipped = await client.query(
-        `select * from public.admin_ship_paid_order(
-          $1::uuid, $2::uuid, 'yamato'::text, 'TRACK-123'::text, false
-        )`,
-        [orderId, actor.rows[0].id],
-      );
-      expect(shipped.rows).toEqual([]);
-      await client.query('reset role');
+      await expect(
+        client.query(
+          `select * from public.admin_create_fulfillment(
+            $1::uuid, $2::uuid, gen_random_uuid(), 'yamato'::text, 'TRACK-123'::text, false, $3::jsonb
+          )`,
+          [orderId, actor.rows[0].id, JSON.stringify([{ order_item_id: orderItemId, quantity: 1 }])],
+        ),
+      ).rejects.toMatchObject({ code: '22023', message: 'SHIPPING_ADDRESS_INCOMPLETE' });
+      await client.query('rollback to savepoint before_rpc_ship');
 
       await client.query('savepoint before_direct_ship');
       await expect(
@@ -315,6 +340,55 @@ describe('integration: order state transition hardening', () => {
       await client.query('rollback');
     }
   });
+
+  test('発送の取消だけが、発送済みから決済完了へ戻せる（グループ E-1 設計書 7-3）', async () => {
+    await client.query('begin');
+    try {
+      const actor = await client.query(
+        `insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
+         values (gen_random_uuid(), $1, '{}'::jsonb, now(), now()) returning id`,
+        [`fulfillment-cancel-${Date.now()}@example.com`],
+      );
+      const actorId = actor.rows[0].id as string;
+      const orderId = await insertOrder({ status: 'paid' });
+      const orderItemId = await insertOrderItem(orderId);
+      const lines = JSON.stringify([{ order_item_id: orderItemId, quantity: 1 }]);
+
+      await client.query('set local role service_role');
+      const shipped = await client.query(
+        `select * from public.admin_create_fulfillment($1::uuid, $2::uuid, gen_random_uuid(), 'yamato', 'TRACK-9', false, $3::jsonb)`,
+        [orderId, actorId, lines],
+      );
+      const cancelled = await client.query(
+        'select * from public.admin_cancel_fulfillment($1::uuid, $2::uuid, $3::uuid)',
+        [orderId, shipped.rows[0].fulfillment_id, actorId],
+      );
+      await client.query(
+        `select * from public.admin_create_fulfillment($1::uuid, $2::uuid, gen_random_uuid(), 'yamato', 'TRACK-10', false, $3::jsonb)`,
+        [orderId, actorId, lines],
+      );
+      await client.query('reset role');
+
+      expect(shipped.rows).toEqual([expect.objectContaining({ completes_order: true, order_status: 'shipped' })]);
+      expect(cancelled.rows).toEqual([{ outcome: 'cancelled', order_status: 'paid' }]);
+
+      // ほかの理由で発送済みから決済完了へ戻すことはできない
+      await client.query('savepoint direct_unship');
+      await client.query("select set_config('app.order_change_reason', 'integration_test', true)");
+      await expect(
+        client.query(
+          `update public.orders
+           set status = 'paid'::public.order_status, shipped_at = null, shipping_carrier = null, tracking_number = null
+           where id = $1`,
+          [orderId],
+        ),
+      ).rejects.toMatchObject({ code: '23514', message: expect.stringContaining('ORDER_STATUS_TRANSITION_NOT_ALLOWED') });
+      await client.query('rollback to savepoint direct_unship');
+    } finally {
+      await client.query('rollback');
+    }
+  });
+
   test('failed cancellation loses atomically when payment wins the row race', async () => {
     const actor = await client.query(
       `insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)

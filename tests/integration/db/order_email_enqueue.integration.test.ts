@@ -47,6 +47,29 @@ function markPaid(
   );
 }
 
+/** 発送できる入金済みの注文（在庫の品1つ） */
+async function createShippableOrder(db: PgClient): Promise<{ orderId: string; orderItemId: string }> {
+  const fx = await createCatalogFixture(db, { stock: 1 });
+  return insertOrderWithStockLine(db, {
+    status: 'paid', itemId: fx.itemId, variantId: fx.variantId, quantity: 1, reserved: true,
+  });
+}
+
+/** 全部の商品を1回で送る（グループ E-1 の発送の関数） */
+function shipAll(
+  db: PgClient,
+  order: { orderId: string; orderItemId: string },
+  actor: string,
+  carrier: string,
+  tracking: string,
+  notify: boolean,
+) {
+  return db.query(
+    'select * from public.admin_create_fulfillment($1::uuid, $2::uuid, gen_random_uuid(), $3, $4, $5, $6::jsonb)',
+    [order.orderId, actor, carrier, tracking, notify, JSON.stringify([{ order_item_id: order.orderItemId, quantity: 1 }])],
+  );
+}
+
 describeLocalDb('integration: 状態を変える関数が注文のメールの行を書く', (db) => {
   test('入金済みにすると、注文確認の行を書く。2回目は状態が変わらないので書かない', async () => {
     const orderId = await createOrder(db(), 'payment_in_progress');
@@ -155,30 +178,45 @@ describeLocalDb('integration: 状態を変える関数が注文のメールの�
     expect(await emailsOf(db(), silent)).toEqual([]);
   });
 
-  test('発送は「発送のメールを送る」の時だけ行を書き、履歴に配送業者と伝票番号が出る', async () => {
+  test('発送は「発送のメールを送る」の時だけ、その発送の行を書き、履歴に配送業者と伝票番号が出る', async () => {
     const actor = await createActor(db());
-    const notified = await createOrder(db(), 'paid');
-    const silent = await createOrder(db(), 'paid');
+    const notified = await createShippableOrder(db());
+    const silent = await createShippableOrder(db());
 
-    const shipped = await db().query("select * from public.admin_ship_paid_order($1::uuid, $2::uuid, 'yamato', 'TRK-1', true)", [notified, actor]);
-    await db().query("select * from public.admin_ship_paid_order($1::uuid, $2::uuid, 'sagawa', 'TRK-2', false)", [silent, actor]);
+    const shipped = await shipAll(db(), notified, actor, 'yamato', 'TRK-1', true);
+    await shipAll(db(), silent, actor, 'sagawa', 'TRK-2', false);
 
-    expect(shipped.rows).toEqual([{ id: notified }]);
-    expect(await emailsOf(db(), notified)).toEqual([{ kind: 'shipped', variant: null, origin: 'auto', status: 'pending' }]);
-    expect(await emailsOf(db(), silent)).toEqual([]);
-    const history = await db().query('select to_status, shipping_carrier, tracking_number from public.list_order_status_history($1)', [notified]);
+    expect(shipped.rows).toEqual([expect.objectContaining({ completes_order: true, order_status: 'shipped', replayed: false })]);
+    expect(await emailsOf(db(), notified.orderId)).toEqual([{ kind: 'shipped', variant: null, origin: 'auto', status: 'pending' }]);
+    expect(await emailsOf(db(), silent.orderId)).toEqual([]);
+    const linked = await db().query(
+      "select fulfillment_id from private.order_email_outbox where order_id = $1 and kind = 'shipped'",
+      [notified.orderId],
+    );
+    expect(linked.rows).toEqual([{ fulfillment_id: shipped.rows[0].fulfillment_id }]);
+    const history = await db().query(
+      'select to_status, shipping_carrier, tracking_number from public.list_order_status_history($1)',
+      [notified.orderId],
+    );
     expect(history.rows).toEqual([{ to_status: 'shipped', shipping_carrier: 'yamato', tracking_number: 'TRK-1' }]);
   });
 
   test('発送の関数は「送るか」を省くと断る', async () => {
     const actor = await createActor(db());
-    const orderId = await createOrder(db(), 'paid');
+    const { orderId, orderItemId } = await createShippableOrder(db());
+    const lines = JSON.stringify([{ order_item_id: orderItemId, quantity: 1 }]);
 
     await expect(
-      db().query("select * from public.admin_ship_paid_order($1::uuid, $2::uuid, 'yamato', 'TRK-3', null)", [orderId, actor]),
-    ).rejects.toMatchObject({ code: '22023' });
+      db().query(
+        "select * from public.admin_create_fulfillment($1::uuid, $2::uuid, gen_random_uuid(), 'yamato', 'TRK-3', null, $3::jsonb)",
+        [orderId, actor, lines],
+      ),
+    ).rejects.toMatchObject({ code: '22023', message: 'FULFILLMENT_ARGUMENT_INVALID' });
     await expect(
-      db().query("select * from public.admin_ship_paid_order($1::uuid, $2::uuid, 'yamato', 'TRK-3')", [orderId, actor]),
+      db().query(
+        "select * from public.admin_create_fulfillment($1::uuid, $2::uuid, gen_random_uuid(), 'yamato', 'TRK-3', $3::jsonb)",
+        [orderId, actor, lines],
+      ),
     ).rejects.toMatchObject({ code: '42883' });
   });
 
@@ -189,15 +227,19 @@ describeLocalDb('integration: 状態を変える関数が注文のメールの�
               to_regprocedure('public.release_order_email(uuid,text)') as release,
               to_regprocedure('private.suppress_legacy_unpaid_order_emails()') as suppress,
               to_regprocedure('public.mark_order_paid(uuid,public.order_status,text,integer,text,text)') as old_mark_paid,
-              to_regprocedure('public.admin_ship_paid_order(uuid,uuid,text,text)') as old_ship`,
+              to_regprocedure('public.admin_ship_paid_order(uuid,uuid,text,text)') as old_ship,
+              to_regprocedure('public.admin_ship_paid_order(uuid,uuid,text,text,boolean)') as ship_paid`,
     );
-    expect(res.rows[0]).toEqual({ claims: null, claim: null, release: null, suppress: null, old_mark_paid: null, old_ship: null });
+    expect(res.rows[0]).toEqual({
+      claims: null, claim: null, release: null, suppress: null, old_mark_paid: null, old_ship: null, ship_paid: null,
+    });
   });
 
   test('作り直した関数は anon・authenticated が呼べず、service_role だけが呼べる', async () => {
     const signatures = [
       'public.mark_order_paid(uuid,public.order_status,text,integer,text,boolean,text,text)',
-      'public.admin_ship_paid_order(uuid,uuid,text,text,boolean)',
+      'public.admin_create_fulfillment(uuid,uuid,uuid,text,text,boolean,jsonb)',
+      'public.admin_cancel_fulfillment(uuid,uuid,uuid)',
     ];
     for (const signature of signatures) {
       const res = await db().query(

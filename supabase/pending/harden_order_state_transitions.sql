@@ -34,13 +34,16 @@ BEGIN
       USING ERRCODE = '23514';
   END IF;
 
-  -- 設計書 4-1 の表に無い遷移は拒否する（取消の注文の復元は、全額返金の失敗で入金済み・発送済みへ戻すため）
+  -- 設計書 4-1 の表に無い遷移は拒否する（取消の注文の復元は、全額返金の失敗で入金済み・発送済みへ戻すため。
+  -- 発送済みから入金済みへは、発送の取消で未発送の品が戻った時だけ。グループ E-1 設計書 7-3）
   IF NEW.status IS DISTINCT FROM OLD.status AND NOT (
        (OLD.status = 'payment_in_progress' AND NEW.status IN ('paid', 'pending', 'failed', 'abandoned', 'cancelled'))
     OR (OLD.status = 'pending' AND NEW.status IN ('paid', 'failed', 'cancelled'))
     OR (OLD.status = 'failed' AND NEW.status IN ('paid', 'cancelled'))
     OR (OLD.status = 'paid' AND NEW.status IN ('shipped', 'cancelled'))
     OR (OLD.status = 'shipped' AND NEW.status = 'cancelled')
+    OR (OLD.status = 'shipped' AND NEW.status = 'paid'
+        AND pg_catalog.current_setting('app.order_change_reason', true) = 'admin_cancel_fulfillment')
     OR (OLD.status = 'cancelled' AND NEW.status IN ('paid', 'shipped'))
   ) THEN
     RAISE EXCEPTION 'ORDER_STATUS_TRANSITION_NOT_ALLOWED:%->%', OLD.status, NEW.status

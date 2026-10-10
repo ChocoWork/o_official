@@ -362,8 +362,14 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
       await db().query('DELETE FROM auth.users WHERE id = $1', [ACTOR]);
     });
 
-    const shipPaidOrder = (orderId: string) =>
-      db().query(`select id from public.admin_ship_paid_order($1::uuid, $2::uuid, 'yamato', '1234-5678', false)`, [orderId, ACTOR]);
+    /** 注文の全部の商品を1回で送る（グループ E-1 の発送の関数） */
+    const shipPaidOrder = async (orderId: string) => {
+      const items = await db().query('select id, quantity from public.order_items where order_id = $1 order by id', [orderId]);
+      return db().query(
+        `select * from public.admin_create_fulfillment($1::uuid, $2::uuid, gen_random_uuid(), 'yamato', '1234-5678', false, $3::jsonb)`,
+        [orderId, ACTOR, JSON.stringify(items.rows.map((row) => ({ order_item_id: row.id, quantity: row.quantity })))],
+      );
+    };
 
     test('金額の違い: 入金済みにして要対応に記録し、お客様への確認メールは出さず、解決するまで発送できない', async () => {
       const draft = await newDraft();
@@ -406,7 +412,7 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
         { delta: -1, reason: 'purchase' },
       ]);
       // 要対応が開いている間は発送できない
-      expect((await shipPaidOrder(orderId)).rowCount).toBe(0);
+      await expect(shipPaidOrder(orderId)).rejects.toMatchObject({ code: '22023', message: 'PAYMENT_REVIEW_REQUIRED' });
 
       // 同じ事実で照合し直すと、入金済み × 入金済みでも金額の違いを導き直して同じ要対応に数えるだけ。
       // 店への知らせは増えず、発送は止まったまま
@@ -415,9 +421,9 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
       expect(second).toMatchObject({ kind: 'needs_action', reason: 'paid_amount_mismatch', orderId, exceptionId: exception.id });
       expect(await exceptionsOf(draft)).toEqual([{ ...exception, detection_count: 2 }]);
       expect(sentMails()).toHaveLength(1);
-      expect((await shipPaidOrder(orderId)).rowCount).toBe(0);
+      await expect(shipPaidOrder(orderId)).rejects.toMatchObject({ code: '22023', message: 'PAYMENT_REVIEW_REQUIRED' });
 
-      // 対照: 解決すれば発送できる。さっきの0件は、要対応が開いていたからである（配送先などほかの理由ではない）
+      // 対照: 解決すれば発送できる。さっきの断りは、要対応が開いていたからである（配送先などほかの理由ではない）
       const resolved = await db().query(
         'select resolved from public.resolve_payment_exception($1::uuid, $2::uuid, $3::text)',
         [exception.id, ACTOR, '差額を返金'],

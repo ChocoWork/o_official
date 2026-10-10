@@ -9,6 +9,10 @@ const HARDENING_PATH = path.join(
   process.cwd(),
   'supabase/pending/harden_order_state_transitions.sql',
 );
+const FULFILLMENT_PATH = path.join(
+  process.cwd(),
+  'supabase/migrations/20261010120100_fulfillment_order_emails.sql',
+);
 
 describe('order state transition migrations', () => {
   it('defines narrow service-role-only RPCs with fixed search paths and CAS projection', () => {
@@ -52,5 +56,23 @@ describe('order state transition migrations', () => {
     expect(sql).toMatch(/REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE public\.order_items FROM anon, authenticated/i);
     expect(sql).toContain('ORDER_STATUS_CHANGE_REQUIRES_REASON');
     expect(sql).toContain('ORDER_STATUS_TRANSITION_NOT_ALLOWED');
+    // 発送の取消で未発送の品が戻った注文だけ、発送済みから決済完了へ戻せる（グループ E-1 設計書 7-3・12-3）
+    expect(sql).toContain("(OLD.status = 'shipped' AND NEW.status = 'paid'");
+    expect(sql).toContain("pg_catalog.current_setting('app.order_change_reason', true) = 'admin_cancel_fulfillment'");
+  });
+
+  it('replaces the ship RPC with service-role-only fulfillment RPCs that record the change reason', () => {
+    const sql = fs.readFileSync(FULFILLMENT_PATH, 'utf8');
+
+    for (const name of ['admin_create_fulfillment', 'admin_cancel_fulfillment']) {
+      expect(sql).toMatch(new RegExp(`REVOKE ALL ON FUNCTION public\\.${name}\\([^)]*\\)\\s+FROM PUBLIC, anon, authenticated`, 'i'));
+      expect(sql).toMatch(new RegExp(`GRANT EXECUTE ON FUNCTION public\\.${name}\\([^)]*\\) TO service_role`, 'i'));
+      const body = sql.split(`CREATE OR REPLACE FUNCTION public.${name}(`)[1]?.split('$$;')[0];
+      expect(body).toBeDefined();
+      expect(body).toContain('SECURITY DEFINER');
+      expect(body).toContain("SET search_path = ''");
+      expect(body).toContain(`'app.order_change_reason', '${name}'`);
+    }
+    expect(sql).toContain('DROP FUNCTION IF EXISTS public.admin_ship_paid_order(uuid, uuid, text, text, boolean);');
   });
 });

@@ -472,6 +472,8 @@ describeLocalDb('integration: 発送と仕上がりの記録（移行 A）', (db
           { itemId: madeFx.itemId, variantId: madeFx.variantId, quantity: 1, fulfillmentType: 'backorder' },
         ],
       });
+      // 移行 B の後は、発送のメールの行に発送の番号が要る。移行の前の行を再現するため、この取引の中だけ決まりを外す
+      await db().query('alter table private.order_email_outbox drop constraint order_email_outbox_fulfillment_check');
       await db().query(
         "insert into private.order_email_outbox (order_id, kind, origin, status) values ($1, 'shipped', 'auto', 'sent')",
         [orderId],

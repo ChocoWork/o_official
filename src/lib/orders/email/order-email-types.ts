@@ -3,6 +3,7 @@ import type { OrderStatus, PaidEmailVariant } from '@/lib/orders/order-payment-t
 /**
  * 注文のメールの種類・状態・原因の記号（グループ D 設計書 3・4・5・6 章）。
  * DB の CHECK 制約（移行 20261009095633_order_email_outbox.sql）と同じ値を1か所に置く。画面からも読む。
+ * 取りやめの理由と再送できる状態の表は、発送ごとのメールで作り直した移行 20261010120100_fulfillment_order_emails.sql の関数と同じ。
  */
 export const ORDER_EMAIL_KINDS = ['paid', 'awaiting_payment', 'payment_expired', 'canceled', 'shipped'] as const;
 export type OrderEmailKind = (typeof ORDER_EMAIL_KINDS)[number];
@@ -44,6 +45,7 @@ export const ORDER_EMAIL_ERROR_CODES = [
   'source_missing',
   'superseded',
   'no_recipient',
+  'fulfillment_cancelled',
   'legacy_suppressed',
 ] as const;
 export type OrderEmailErrorCode = (typeof ORDER_EMAIL_ERROR_CODES)[number];
@@ -53,7 +55,7 @@ export type OrderEmailPauseReason = Extract<
   OrderEmailErrorCode,
   'config_api_key' | 'config_sender_domain' | 'config_provider' | 'quota_daily' | 'quota_monthly'
 >;
-export type OrderEmailSkipReason = Extract<OrderEmailErrorCode, 'superseded' | 'no_recipient'>;
+export type OrderEmailSkipReason = Extract<OrderEmailErrorCode, 'superseded' | 'no_recipient' | 'fulfillment_cancelled'>;
 
 export const ORDER_EMAIL_KIND_LABELS: Record<OrderEmailKind, string> = {
   paid: '注文確認',
@@ -81,6 +83,7 @@ export const ORDER_EMAIL_ERROR_LABELS: Record<OrderEmailErrorCode, string> = {
   source_missing: '注文の情報が足りない',
   superseded: '注文の状態が変わったため',
   no_recipient: '宛先が無い',
+  fulfillment_cancelled: '発送の取消',
   legacy_suppressed: '移行前の注文のため',
 };
 
@@ -93,13 +96,17 @@ export const ORDER_EMAIL_DELIVERY_LABELS: Record<OrderEmailDeliveryStatus, strin
   failed: '送信サービスで送れなかった',
 };
 
-/** 再送できる種類と、そのときの注文の状態（設計書 5-3。DB の request_order_email_resend と同じ表） */
+/**
+ * 再送できる種類と、そのときの注文の状態（設計書 5-3。DB の request_order_email_resend と同じ表）。
+ * 発送のメールは、一部だけ送った間の注文（決済完了）でも再送できる（グループ E-1 設計書 8-2）。
+ * その発送が取り消されていないことは、DB の関数と履歴の組み立てが見る。
+ */
 export const RESENDABLE_ORDER_STATUSES: Record<OrderEmailKind, readonly OrderStatus[]> = {
   paid: ['paid', 'shipped'],
   awaiting_payment: ['pending'],
   payment_expired: ['failed'],
   canceled: ['cancelled'],
-  shipped: ['shipped'],
+  shipped: ['paid', 'shipped'],
 };
 
 export function isOrderEmailKind(value: unknown): value is OrderEmailKind {

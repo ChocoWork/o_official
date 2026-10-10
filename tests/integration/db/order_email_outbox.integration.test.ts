@@ -32,9 +32,30 @@ async function createActor(db: PgClient): Promise<{ id: string; email: string }>
   return { id: res.rows[0].id as string, email };
 }
 
-async function enqueue(db: PgClient, orderId: string, kind: string, variant: string | null = null): Promise<boolean> {
-  const res = await db.query('select private.enqueue_order_email($1::uuid, $2::text, $3::text) as inserted', [orderId, kind, variant]);
+async function enqueue(
+  db: PgClient,
+  orderId: string,
+  kind: string,
+  variant: string | null = null,
+  fulfillmentId: string | null = null,
+): Promise<boolean> {
+  const res = await db.query(
+    'select private.enqueue_order_email($1::uuid, $2::text, $3::text, $4::uuid) as inserted',
+    [orderId, kind, variant, fulfillmentId],
+  );
   return res.rows[0].inserted as boolean;
+}
+
+/** 発送のメールは発送の記録が要る（グループ E-1）。再送の状態表だけを確かめる試験では、発送の関数を通さず直接書く */
+async function insertFulfillmentRecord(db: PgClient, orderId: string): Promise<string> {
+  const res = await db.query(
+    `insert into public.order_fulfillments
+       (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order)
+     values ($1, 1, gen_random_uuid(), 'yamato', '1234-5678', true, true)
+     returning id`,
+    [orderId],
+  );
+  return res.rows[0].id as string;
 }
 
 async function claim(db: PgClient): Promise<Row | null> {
@@ -413,14 +434,18 @@ describeLocalDb('integration: 注文のメールの表と関数', (db) => {
         const actor = await createActor(db());
         const orderId = await createOrder(db(), status);
         const variant = kind === 'paid' ? 'order_confirmed' : kind === 'canceled' ? 'pending' : null;
-        await enqueue(db(), orderId, kind, variant);
+        // 発送のメールは発送ごとに送るので、発送の記録を用意して、その発送の行にする（グループ E-1）
+        const fulfillmentId = kind === 'shipped' ? await insertFulfillmentRecord(db(), orderId) : null;
+        await enqueue(db(), orderId, kind, variant, fulfillmentId);
         // 今の注文の状態に関係なく過去に送れた行を用意し、再送の状態表だけを確かめる
         await db().query("update private.order_email_outbox set status = 'sent', sent_at = now(), finished_at = now() where order_id = $1", [orderId]);
-        const sql = 'select public.request_order_email_resend($1, $2, $3) as email_id';
-        const args = [orderId, kind, actor.id];
+        const sql = 'select public.request_order_email_resend($1, $2, $3, $4) as email_id';
+        const args = [orderId, kind, actor.id, fulfillmentId];
         if (RESENDABLE_ORDER_STATUSES[kind].includes(status)) {
           const res = await db().query(sql, args);
-          expect(await emailRow(db(), res.rows[0].email_id)).toMatchObject({ order_id: orderId, kind, status: 'pending', origin: 'manual' });
+          expect(await emailRow(db(), res.rows[0].email_id)).toMatchObject({
+            order_id: orderId, kind, status: 'pending', origin: 'manual', fulfillment_id: fulfillmentId,
+          });
         } else {
           await expectRejected(db(), sql, args, { code: '22023', message: expect.stringContaining('RESEND_NOT_ALLOWED') });
         }
@@ -485,8 +510,9 @@ describeLocalDb('integration: 注文のメールの表と関数', (db) => {
       await expectRejected(db(), 'select public.request_order_email_resend($1, $2, $3)', [orderId, 'awaiting_payment', actor.id], {
         code: '22023', message: expect.stringContaining('RESEND_NOT_ALLOWED'),
       });
+      // 発送のメールは、どの発送かを渡さないと断る（グループ E-1 設計書 8-2）
       await expectRejected(db(), 'select public.request_order_email_resend($1, $2, $3)', [orderId, 'shipped', actor.id], {
-        code: '22023', message: expect.stringContaining('RESEND_NOT_ALLOWED'),
+        code: '22023', message: 'RESEND_FULFILLMENT_REQUIRED',
       });
 
       const pendingOrder = await createOrder(db(), 'pending');
@@ -733,7 +759,7 @@ describeLocalDb('integration: 注文のメールの表と関数', (db) => {
       'public.skip_order_email(uuid, uuid, text)',
       'public.pause_order_email_sending(text)',
       'public.get_order_email_send_state()',
-      'public.request_order_email_resend(uuid, text, uuid)',
+      'public.request_order_email_resend(uuid, text, uuid, uuid)',
       'public.list_order_email_history(uuid)',
       'public.list_order_status_history(uuid)',
       'public.get_order_email_content(uuid, uuid)',
@@ -754,7 +780,7 @@ describeLocalDb('integration: 注文のメールの表と関数', (db) => {
     test.each([
       'private.order_email_max_attempts()',
       'private.order_email_retry_delay(integer)',
-      'private.enqueue_order_email(uuid, text, text)',
+      'private.enqueue_order_email(uuid, text, text, uuid)',
       'private.set_order_email_pause(text)',
       'private.purge_order_email_data()',
     ])('%s の実行権限は anon・authenticated・service_role のどれにも無い', async (signature) => {

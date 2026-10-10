@@ -116,7 +116,7 @@ describe('integration: order_items variant columns', () => {
     }
   });
 
-  test('受注の集計ビューが backorder の数量だけを合計する', async () => {
+  test('受注生産の数は backorder の数量だけを数える（グループ E-1 で view から関数に替えた）', async () => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -135,11 +135,12 @@ describe('integration: order_items variant columns', () => {
         [orderId, itemId, variantId],
       );
 
+      // 注文は既定の状態（未決済）。未決済と決済完了の、まだ仕上がっていない受注生産の数を数える
       const res = await client.query(
-        `SELECT backorder_quantity FROM public.variant_backorder_summary WHERE variant_id = $1`,
-        [variantId],
+        'SELECT backorder FROM public.list_variant_stock_states($1::bigint[])',
+        [[variantId]],
       );
-      expect(res.rows[0].backorder_quantity).toBe(2);
+      expect(res.rows[0].backorder).toBe(2);
     } finally {
       await client.query('ROLLBACK');
       client.release();

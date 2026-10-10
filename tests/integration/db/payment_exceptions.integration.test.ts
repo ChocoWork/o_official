@@ -192,19 +192,19 @@ describeLocalDb('integration: 要対応・要確認', (db) => {
 
   test('支払額の違いの要対応が開いている注文は発送できず、解決すると発送できる', async () => {
     const fx = await createCatalogFixture(db(), { stock: 0 });
-    const { orderId } = await insertOrderWithStockLine(db(), {
+    const { orderId, orderItemId } = await insertOrderWithStockLine(db(), {
       status: 'paid', itemId: fx.itemId, variantId: fx.variantId, quantity: 1, reserved: false,
       paymentIntentId: `pi_${uniqueSuffix()}`,
     });
     const { exception_id: id } = await record(db(), { ref: `cs_${uniqueSuffix()}`, reason: 'paid_amount_mismatch', orderId });
     const ship = () => db().query(
-      `select id from public.admin_ship_paid_order($1::uuid, $2::uuid, 'yamato', '1234-5678', false)`,
-      [orderId, ACTOR],
+      `select * from public.admin_create_fulfillment($1::uuid, $2::uuid, gen_random_uuid(), 'yamato', '1234-5678', false, $3::jsonb)`,
+      [orderId, ACTOR, JSON.stringify([{ order_item_id: orderItemId, quantity: 1 }])],
     );
 
-    expect((await ship()).rowCount).toBe(0);
+    await expect(ship()).rejects.toMatchObject({ code: '22023', message: 'PAYMENT_REVIEW_REQUIRED' });
     await db().query('select resolved from public.resolve_payment_exception($1::uuid, $2::uuid, $3::text)', [id, ACTOR, '差額を返金']);
-    expect((await ship()).rowCount).toBe(1);
+    expect((await ship()).rows).toEqual([expect.objectContaining({ completes_order: true, order_status: 'shipped' })]);
   });
 
   test('失敗の注文の取消は理由とメモを残し、「その他」はメモが要る', async () => {

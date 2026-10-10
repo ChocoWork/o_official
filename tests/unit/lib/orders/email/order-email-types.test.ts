@@ -18,15 +18,32 @@ import {
   type OrderEmailFailureCategory,
 } from '@/lib/orders/email/order-email-types';
 
-/** アプリの値と DB の CHECK・関数の入力制限がずれないことを、移行の本文で確かめる。 */
+/**
+ * アプリの値と DB の CHECK・関数の入力制限がずれないことを、移行の本文で確かめる。
+ * - 表の CHECK・書き分け・失敗の分類: グループ D の移行（20261009095633）
+ * - 発送ごとのメールで作り直した関数（取りやめの理由・再送できる状態の表）: グループ E-1 の移行 B（20261010120100）
+ * 本番へ当てて版を改名したら、ここの名前も直す。
+ */
 const outboxMigration = fs.readFileSync(
   path.join(process.cwd(), 'supabase/migrations/20261009095633_order_email_outbox.sql'), 'utf8',
 );
+// 行の説明にも関数名や許可の表の例が出るので、説明は外してから読む
+const fulfillmentEmailMigration = fs
+  .readFileSync(path.join(process.cwd(), 'supabase/migrations/20261010120100_fulfillment_order_emails.sql'), 'utf8')
+  .replace(/--.*$/gm, '');
 
 function sqlValues(pattern: RegExp, sql = outboxMigration): string[] {
   const values = sql.match(pattern)?.[1];
   expect(values).toBeDefined();
   return [...(values ?? '').matchAll(/'([^']+)'/g)].map((match) => match[1]).sort();
+}
+
+/** 関数の本文。`CREATE [OR REPLACE] FUNCTION <名前>(` の次から、最初の `$$;` まで */
+function functionBody(sql: string, qualifiedName: string): string {
+  const header = new RegExp(`CREATE (?:OR REPLACE )?FUNCTION ${qualifiedName.replace('.', '[.]')} *[(]`);
+  const body = sql.split(header)[1]?.split('$$;')[0];
+  expect(body).toBeDefined();
+  return body as string;
 }
 
 describe('注文のメールの種類と名前', () => {
@@ -51,14 +68,16 @@ describe('注文のメールの種類と名前', () => {
   });
 
   it('取りやめの理由・失敗の分類は DB の関数の入力制限と同じ値', () => {
-    const skipReasons: Record<OrderEmailSkipReason, true> = { superseded: true, no_recipient: true };
+    const skipReasons: Record<OrderEmailSkipReason, true> = { superseded: true, no_recipient: true, fulfillment_cancelled: true };
     const categories: Record<OrderEmailFailureCategory, true> = { transient: true, config: true, permanent: true };
-    const skipFunction = outboxMigration.split('CREATE OR REPLACE FUNCTION public.skip_order_email')[1]?.split('$$;')[0];
-    const failFunction = outboxMigration.split('CREATE OR REPLACE FUNCTION public.fail_order_email')[1]?.split('$$;')[0];
-    expect(skipFunction).toBeDefined();
-    expect(failFunction).toBeDefined();
-    expect(Object.keys(skipReasons).sort()).toEqual(sqlValues(/_reason NOT IN \(([^)]+)\)/, skipFunction));
-    expect(Object.keys(categories).sort()).toEqual(sqlValues(/_category NOT IN \(([^)]+)\)/, failFunction));
+    // 取りやめの理由は、足した理由を含む移行 B の関数から読む。失敗の分類は変わっていないグループ D の移行から読む
+    const sqlSkipReasons = sqlValues(/_reason NOT IN \(([^)]+)\)/, functionBody(fulfillmentEmailMigration, 'public.skip_order_email'));
+    expect(Object.keys(skipReasons).sort()).toEqual(sqlSkipReasons);
+    // 取りやめの理由は、履歴に出す原因の記号でもある。DB が受ける理由は、アプリが名前を持つ記号だけ
+    for (const reason of sqlSkipReasons) expect(isOrderEmailErrorCode(reason)).toBe(true);
+    expect(Object.keys(categories).sort()).toEqual(
+      sqlValues(/_category NOT IN \(([^)]+)\)/, functionBody(outboxMigration, 'public.fail_order_email')),
+    );
   });
 
   it('原因の記号は DB の CHECK の形を満たし、配達の問題の一覧は DB の索引と同じ値', () => {
@@ -74,16 +93,28 @@ describe('注文のメールの種類と名前', () => {
     });
   });
 
-  it('原因の記号にはすべて日本語の名前がある。宛先の形の不正は「宛先の形が不正」', () => {
+  it('原因の記号にはすべて日本語の名前がある。宛先の形の不正は「宛先の形が不正」、発送の取消は「発送の取消」', () => {
     for (const code of ORDER_EMAIL_ERROR_CODES) expect(ORDER_EMAIL_ERROR_LABELS[code]).toEqual(expect.any(String));
     expect(ORDER_EMAIL_ERROR_LABELS.invalid_message).toBe('宛先の形が不正');
     expect(ORDER_EMAIL_ERROR_LABELS.provider_unavailable).toBe('送信サービスの一時的な失敗');
+    expect(ORDER_EMAIL_ERROR_LABELS.fulfillment_cancelled).toBe('発送の取消');
   });
 
-  it('再送できる注文の状態は DB の request_order_email_resend と同じ表', () => {
+  it('再送できる注文の状態は DB の request_order_email_resend と同じ表（発送のメールは、一部だけ送った間の決済完了でも再送できる）', () => {
     expect(RESENDABLE_ORDER_STATUSES).toEqual({
-      paid: ['paid', 'shipped'], awaiting_payment: ['pending'], payment_expired: ['failed'], canceled: ['cancelled'], shipped: ['shipped'],
+      paid: ['paid', 'shipped'], awaiting_payment: ['pending'], payment_expired: ['failed'], canceled: ['cancelled'], shipped: ['paid', 'shipped'],
     });
+
+    // 移行 B の関数の許可の表を読んで突き合わせる。1つの種類は
+    // `(_kind = '種類' AND v_status IN ('状態', ...))` か `(_kind = '種類' AND v_status = '状態')` の形で書いてある
+    const sqlMatrix: Record<string, string[]> = {};
+    for (const match of functionBody(fulfillmentEmailMigration, 'public.request_order_email_resend').matchAll(
+      /\(_kind = '([a-z_]+)' AND v_status (?:IN \(([^)]+)\)|= '([a-z_]+)')\)/g,
+    )) {
+      sqlMatrix[match[1]] = (match[2] ? [...match[2].matchAll(/'([^']+)'/g)].map((value) => value[1]) : [match[3]]).sort();
+    }
+    const appMatrix = Object.fromEntries(ORDER_EMAIL_KINDS.map((kind) => [kind, [...RESENDABLE_ORDER_STATUSES[kind]].sort()]));
+    expect(sqlMatrix).toEqual(appMatrix);
   });
 
   it.each([
