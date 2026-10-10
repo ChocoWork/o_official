@@ -206,9 +206,10 @@ async function fetchLineCounts(orderRows: OrderRow[]): Promise<Map<string, Order
 }
 
 /**
- * ログに出す例外の項目。名前と、あれば code・operation だけにする。
- * FulfillmentStoreError や Supabase の誤りは cause に DB の生の誤り（details・hint 込み）を持ち、Node は [cause] まで出すので、
- * 例外そのものはログに渡さない（発送の窓口と同じ決まり）
+ * ログに出す例外の項目。名前と、あれば code・operation だけにする（発送の窓口と同じ決まり）。
+ * ・Supabase の誤りは、Error ではない素のオブジェクトで、message・details・hint を直下に持つ（だから名前は UnknownError になる）
+ * ・FulfillmentStoreError は、DB の生の誤り（details・hint 込み）を cause に持ち、Node は [cause] まで出す
+ * どちらも、誤りそのものはログに渡さない
  */
 function describeErrorForLog(error: unknown): [name: string, code: unknown, operation: unknown] {
   const { code = null, operation = null } = (typeof error === 'object' && error !== null ? error : {}) as {

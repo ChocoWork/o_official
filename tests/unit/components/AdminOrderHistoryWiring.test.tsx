@@ -117,6 +117,14 @@ function postedBody(suffix: string): Record<string, unknown> | undefined {
   return call ? (JSON.parse((call[1] as RequestInit).body as string) as Record<string, unknown>) : undefined;
 }
 
+/**
+ * 一覧の知らせ（OrderSection の noticeMessage）の要素。「配送先要確認」や発送を止める理由など、ほかの role="status" は含めない。
+ * 知らせが出ている時は要素を返し、無ければ null（出ている時に見つかることは、仕上がりの試験で確かめている）
+ */
+function listNotice(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('p[role="status"][aria-live="polite"]');
+}
+
 /** 一覧が返す行。窓口を呼んだ後に差し替えて、読み直した結果を再現する */
 let orderRows: unknown[] = [];
 /** 発送・仕上がり・取消の POST への答え（既定は成功） */
@@ -432,6 +440,44 @@ describe('管理画面の注文の履歴・発送・仕上がりのつなぎ込�
     expect(screen.getByRole('dialog', { name: '発送済みにする' })).toBeInTheDocument();
   });
 
+  it('仕上がり: 注文 A の返事を待つ間に A の画面を閉じて注文 B の画面を開いても、A の返事で B の画面は閉じず、知らせを出して一覧を読み直す', async () => {
+    const inProduction = {
+      status: '受注生産中', progressKey: 'in_production', items: [COAT_IN_PRODUCTION], canShip: true, canRecordCompletion: true,
+    };
+    orderRows = [orderRow(inProduction), orderRow({ ...inProduction, id: OTHER_ORDER_ID })];
+    serveOrdersApi({ lines: [COAT_LINE] });
+    const release = holdPost('/completions');
+    render(<AdminPage />);
+    fireEvent.click((await screen.findAllByRole('button', { name: '仕上がりを記録する' }))[0]);
+    const dialogForA = await screen.findByRole('dialog', { name: '仕上がりを記録する' });
+    const groupForA = await within(dialogForA).findByRole('group', { name: 'ウールコート（黒 / L）' });
+    fireEvent.change(within(groupForA).getByLabelText('仕上がった数'), { target: { value: '1' } });
+    fireEvent.click(within(dialogForA).getByRole('button', { name: '記録する' }));
+    await waitFor(() => expect(clientFetchMock).toHaveBeenCalledWith(
+      `/api/admin/orders/${ORDER_ID}/completions`,
+      expect.objectContaining({ method: 'POST' }),
+    ));
+
+    // 返事を待つ間に、A の画面を閉じ（「キャンセル」は送信中も押せる）、注文 B の仕上がりの画面を開く
+    fireEvent.click(within(dialogForA).getByRole('button', { name: 'キャンセル' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: '仕上がりを記録する' })[1]);
+    await waitFor(() => expect(clientFetchMock).toHaveBeenCalledWith(
+      `/api/admin/orders/${OTHER_ORDER_ID}/fulfillments`,
+      { cache: 'no-store' },
+    ));
+    const dialogForB = await screen.findByRole('dialog', { name: '仕上がりを記録する' });
+    await within(dialogForB).findByRole('group', { name: 'ウールコート（黒 / L）' });
+
+    await release(ok({ completionIds: ['completion-1'], replayed: false }));
+
+    await waitFor(() => expect(listRequests()).toHaveLength(2));
+    expect(screen.getByRole('dialog', { name: '仕上がりを記録する' })).toBeInTheDocument();
+    expect(await screen.findByText('仕上がりを記録しました。')).toBeInTheDocument();
+    // 一覧の知らせの要素が、この選び方で見つかること（発送の後に知らせが出ない試験の見張りが、空振りしないため）
+    expect(listNotice()).toHaveTextContent('仕上がりを記録しました。');
+  });
+
   it('発送: 成功しても、一覧の知らせは出さない（言葉は、読み直した記録から出す）', async () => {
     postAnswer = () => {
       orderRows = [orderRow({
@@ -448,9 +494,10 @@ describe('管理画面の注文の履歴・発送・仕上がりのつなぎ込�
     fireEvent.click(within(dialog).getByRole('button', { name: '発送する' }));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    // 読み直した一覧が出てから確かめる（読み込み中は、知らせも出ない）
+    // 読み直した一覧が出てから確かめる（読み込み中は、知らせも出ない）。見るのは一覧の知らせの要素だけ
     expect(await screen.findByText('配送中', { selector: 'span' })).toBeInTheDocument();
-    expect(screen.queryAllByRole('status')).toHaveLength(0);
+    expect(listNotice()).not.toBeInTheDocument();
+    expect(screen.queryByText('仕上がりを記録しました。')).not.toBeInTheDocument();
   });
 
   // 発送・仕上がり・履歴の取消・要確認の確認は、窓口の返事を待ってから一覧を読み直す。返事を待つ間に絞り込みが変わっても、

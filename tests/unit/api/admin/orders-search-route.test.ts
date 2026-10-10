@@ -616,11 +616,11 @@ describe('GET /api/admin/orders statutory search', () => {
       }
     });
 
-    it('注文の読みが失敗した時も、ログには例外の名前と code だけを出し、DB の文は出さない', async () => {
+    // supabase-js は throwOnError を使わない時、誤りを Error ではなく素のオブジェクト（message・code・details・hint）で返す。
+    // 通信の失敗も同じ形。Error ではないので、ログの名前は UnknownError になる
+    it('注文の読みが失敗した時も、ログには名前（Error でなければ UnknownError）と code だけを出し、DB の文は出さない', async () => {
       const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
-      const databaseError = Object.assign(new Error('SECRET-MESSAGE'), {
-        name: 'PostgrestError', details: 'SECRET-DETAILS', hint: 'SECRET-HINT', code: '42703',
-      });
+      const databaseError = { message: 'SECRET-MESSAGE', details: 'SECRET-DETAILS', hint: 'SECRET-HINT', code: '42703' };
       queryResult = { data: [], count: 0, error: databaseError };
 
       try {
@@ -628,7 +628,7 @@ describe('GET /api/admin/orders statutory search', () => {
         const response = await GET(new Request('http://localhost/api/admin/orders'));
 
         expect(response.status).toBe(500);
-        expect(consoleError).toHaveBeenCalledWith('[admin.orders] Failed to fetch orders:', 'PostgrestError', '42703', null);
+        expect(consoleError).toHaveBeenCalledWith('[admin.orders] Failed to fetch orders:', 'UnknownError', '42703', null);
         expect(inspect(consoleError.mock.calls, { depth: null })).not.toContain('SECRET');
       } finally {
         consoleError.mockRestore();
