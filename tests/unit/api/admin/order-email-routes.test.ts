@@ -180,7 +180,7 @@ describe('POST /api/admin/orders/[id]/emails/resend', () => {
     expect(mockEnforceRateLimit).toHaveBeenCalledTimes(2);
     expect(mockEnforceRateLimit).toHaveBeenNthCalledWith(1, { request: req, endpoint: 'admin:orders:email-resend', limit: 30, windowSeconds: 600 });
     expect(mockEnforceRateLimit).toHaveBeenNthCalledWith(2, { request: req, endpoint: 'admin:orders:email-resend', limit: 30, windowSeconds: 600, subject: 'admin-1' });
-    expect(mockRpc).toHaveBeenCalledWith('request_order_email_resend', { _order_id: ORDER_ID, _kind: 'paid', _actor_id: 'admin-1' });
+    expect(mockRpc).toHaveBeenCalledWith('request_order_email_resend', { _order_id: ORDER_ID, _kind: 'paid', _actor_id: 'admin-1', _fulfillment_id: null });
     expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
       action: 'admin.orders.email.resend', actor_id: 'admin-1', resource: 'orders', resource_id: ORDER_ID, outcome: 'success',
       metadata: { kind: 'paid', email_id: EMAIL_ID },

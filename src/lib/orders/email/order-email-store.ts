@@ -69,6 +69,8 @@ export type ClaimedOrderEmail = {
   subject: string | null;
   bodyText: string | null;
   paymentExpiredSent: boolean;
+  /** 発送のメールだけ、どの発送のメールかを示す。ほかの種類は null（グループ E-1 設計書 8-1） */
+  fulfillmentId: string | null;
 };
 
 export type OrderEmailLease = Pick<ClaimedOrderEmail, 'id' | 'leaseToken'>;
@@ -103,6 +105,10 @@ export function dateOrNull(value: unknown): Date | null {
   return typeof value === 'string' ? new Date(value) : null;
 }
 
+export function numberOrNull(value: unknown): number | null {
+  return typeof value === 'number' ? value : null;
+}
+
 export async function claimOrderEmail(store: OrderEmailStore, leaseSeconds: number): Promise<ClaimedOrderEmail | null> {
   const row = rowsOf(await callOrderEmailRpc(store, 'claim_order_email', { _lease_seconds: leaseSeconds }))[0];
   if (!row) return null;
@@ -117,6 +123,7 @@ export async function claimOrderEmail(store: OrderEmailStore, leaseSeconds: numb
     subject: textOrNull(row.subject),
     bodyText: textOrNull(row.body_text),
     paymentExpiredSent: row.payment_expired_sent === true,
+    fulfillmentId: textOrNull(row.fulfillment_id),
   };
 }
 
@@ -304,20 +311,27 @@ export class OrderEmailResendError extends Error {
   }
 }
 
-/** 管理画面の再送の行を足し、行の番号を返す（設計書 5-3）。DB の断りは OrderEmailResendError にする */
+/**
+ * 管理画面の再送の行を足し、行の番号を返す（設計書 5-3）。DB の断りは OrderEmailResendError にする。
+ * 発送のメールは、どの発送のメールかを発送の番号で渡す（グループ E-1 設計書 8-2）。ほかの種類は渡さない
+ */
 export async function requestOrderEmailResend(
   store: OrderEmailStore,
-  request: { orderId: string; kind: OrderEmailKind; actorId: string },
+  request: { orderId: string; kind: OrderEmailKind; actorId: string; fulfillmentId?: string | null },
 ): Promise<string> {
   const { data, error } = await store.rpc('request_order_email_resend', {
     _order_id: request.orderId,
     _kind: request.kind,
     _actor_id: request.actorId,
+    _fulfillment_id: request.fulfillmentId ?? null,
   });
   if (error) {
     const message = error.message ?? '';
     if (message.includes('RESEND_ALREADY_QUEUED')) throw new OrderEmailResendError('already_queued');
-    if (message.includes('RESEND_NOT_ALLOWED')) throw new OrderEmailResendError('not_allowed');
+    // 発送の番号の無い発送のメールの再送は、状態が合わない再送と同じ「できない」にする（画面は発送の番号を必ず付ける）
+    if (message.includes('RESEND_NOT_ALLOWED') || message.includes('RESEND_FULFILLMENT_REQUIRED')) {
+      throw new OrderEmailResendError('not_allowed');
+    }
     if (message.includes('ORDER_NOT_FOUND')) throw new OrderEmailResendError('order_not_found');
     throw new OrderEmailStoreError('request_order_email_resend', error);
   }
@@ -342,6 +356,8 @@ export async function listOrderEmailHistory(store: OrderEmailStore, orderId: str
     finishedAt: textOrNull(row.finished_at),
     hasBody: row.has_body === true,
     bodyErased: row.body_erased === true,
+    fulfillmentId: textOrNull(row.fulfillment_id),
+    fulfillmentNumber: numberOrNull(row.fulfillment_number),
   }));
 }
 

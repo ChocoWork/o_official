@@ -19,32 +19,46 @@ import {
   type OrderEmailWorkerDeps,
 } from '@/lib/orders/email/order-email-worker';
 import { createServiceRoleClient } from '@/lib/supabase/server';
-import { OrderEmailMaterialError, type OrderEmailMaterial } from '@/lib/orders/email/order-email-compose';
+import { OrderEmailMaterialError, type OrderEmailFulfillmentMaterial, type OrderEmailMaterial } from '@/lib/orders/email/order-email-compose';
 import { OrderEmailStoreError, type OrderEmailStore } from '@/lib/orders/email/order-email-store';
 import type { OrderEmailSendOutcome } from '@/lib/orders/email/order-email-sender';
 
 type QueueRow = {
   email_id: string; order_id: string; kind: string; variant: string | null; origin: string; attempts: number;
   lease_token: string; subject: string | null; body_text: string | null; payment_expired_sent: boolean;
+  fulfillment_id: string | null;
 };
 
 function row(overrides: Partial<QueueRow> = {}): QueueRow {
   return {
     email_id: 'email-1', order_id: 'order-1', kind: 'paid', variant: 'order_confirmed', origin: 'auto', attempts: 1,
-    lease_token: 'lease-1', subject: null, body_text: null, payment_expired_sent: false, ...overrides,
+    lease_token: 'lease-1', subject: null, body_text: null, payment_expired_sent: false, fulfillment_id: null, ...overrides,
   };
 }
 
-function material(overrides: Partial<OrderEmailMaterial['order']> = {}): OrderEmailMaterial {
+function material(
+  overrides: Partial<OrderEmailMaterial['order']> = {},
+  fulfillment: OrderEmailMaterial['fulfillment'] = null,
+): OrderEmailMaterial {
   return {
     order: {
       id: 'order-1', status: 'paid', shipping_email: 'hanako@example.com', shipping_full_name: '山田 花子',
       subtotal_amount: 5000, shipping_amount: 0, discount_amount: 0, total_amount: 5000, currency: 'jpy',
       shipping_postal_code: '1500001', shipping_prefecture: '東京都', shipping_city: '渋谷区', shipping_address: '神宮前1-1-1',
-      shipping_building: null, shipping_phone: '0311112222', review_reason: null, shipping_carrier: null, tracking_number: null,
+      shipping_building: null, shipping_phone: '0311112222', review_reason: null,
       ...overrides,
     },
     items: [{ item_name: 'コート', color: null, size: null, quantity: 1, line_total: 5000, fulfillment_type: 'stock' }],
+    fulfillment,
+  };
+}
+
+/** 発送のメールの材料。既定は、全部を送った発送（残りの案内なし） */
+function fulfillmentMaterial(overrides: Partial<OrderEmailFulfillmentMaterial> = {}): OrderEmailFulfillmentMaterial {
+  return {
+    number: 1, carrier: 'yamato', trackingNumber: '1234-5678', completesOrder: true, cancelled: false,
+    lines: [{ item_name: 'コート', color: null, size: null, quantity: 1 }],
+    ...overrides,
   };
 }
 
@@ -148,6 +162,7 @@ describe('runOrderEmailWorker', () => {
     jest.clearAllMocks();
     mockRecordHeartbeat.mockReset().mockResolvedValue(undefined);
     mockClientRpc.mockReset();
+    mockClient.from.mockReset();
     // 実際の環境変数（VERCEL_ENV など）に左右されず、環境の門を通る環境で試す
     jest.replaceProperty(process, 'env', { NODE_ENV: 'test' });
   });
@@ -202,6 +217,43 @@ describe('runOrderEmailWorker', () => {
       warn.mockRestore();
     }
   });
+
+  it('発送のメールの行は、行の発送の番号で発送を読む（注文の番号でも絞る）', async () => {
+    type FilterChain = {
+      eq: (column: string, value: unknown) => FilterChain;
+      maybeSingle: () => Promise<{ data: unknown; error: unknown }>;
+    };
+    const filters: Array<[string, unknown]> = [];
+    const fulfillmentQuery: FilterChain = {
+      eq: (column, value) => {
+        filters.push([column, value]);
+        return fulfillmentQuery;
+      },
+      maybeSingle: async () => ({ data: null, error: null }),
+    };
+    mockClient.from.mockImplementation((table: string) => {
+      if (table === 'orders') {
+        return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: material().order, error: null }) }) }) };
+      }
+      if (table === 'order_items') {
+        return { select: () => ({ eq: async () => ({ data: material().items, error: null }) }) };
+      }
+      if (table === 'order_fulfillments') {
+        return { select: () => fulfillmentQuery };
+      }
+      throw new Error(`unexpected table: ${table}`);
+    });
+    const claims = [[row({ kind: 'shipped', variant: null, fulfillment_id: 'fulfillment-1' })], []];
+    mockClientRpc.mockImplementation(async (name: string) => ({
+      data: name === 'claim_order_email' ? (claims.shift() ?? []) : 'dead',
+      error: null,
+    }));
+
+    await expect(runOrderEmailWorker()).resolves.toMatchObject({ failed: 1, stoppedBy: 'empty' });
+
+    expect(filters).toEqual([['id', 'fulfillment-1'], ['order_id', 'order-1']]);
+    expect(mockClientRpc).toHaveBeenCalledWith('fail_order_email', expect.objectContaining({ _error_code: 'source_missing' }));
+  });
 });
 
 describe('processOrderEmails', () => {
@@ -213,6 +265,8 @@ describe('processOrderEmails', () => {
     const result = await processOrderEmails(h.deps);
 
     expect(result).toEqual({ sent: 1, skipped: 0, failed: 0, stoppedBy: 'empty' });
+    // 発送のメールでない行は、発送の番号を渡さずに材料を読む
+    expect(h.loadMaterial).toHaveBeenCalledWith('order-1', null);
     expect(names(h.calls)).toEqual(['claim_order_email', 'save_order_email_content', 'complete_order_email', 'claim_order_email']);
     const saved = h.calls[1].params as { _subject: string; _body_text: string };
     expect(saved._subject).toBe('【Le Fil des Heures】ご注文ありがとうございます（ORD-ORDER-1）');
@@ -254,6 +308,51 @@ describe('processOrderEmails', () => {
     expect(h.send).not.toHaveBeenCalled();
   });
 
+  it('発送のメールは、行の発送の番号で材料を読み、その発送の商品と残りの案内を書いて送る', async () => {
+    const h = harness([row({ kind: 'shipped', variant: null, fulfillment_id: 'fulfillment-2' })], {
+      material: material({ status: 'paid' }, fulfillmentMaterial({ number: 2, completesOrder: false })),
+    });
+
+    const result = await processOrderEmails(h.deps);
+
+    expect(result).toEqual({ sent: 1, skipped: 0, failed: 0, stoppedBy: 'empty' });
+    expect(h.loadMaterial).toHaveBeenCalledWith('order-1', 'fulfillment-2');
+    const saved = h.calls.find((call) => call.name === 'save_order_email_content')?.params as { _subject: string; _body_text: string };
+    expect(saved._subject).toBe('【Le Fil des Heures】商品を発送いたしました（ORD-ORDER-1）');
+    expect(saved._body_text).toContain('・コート x1');
+    expect(saved._body_text).toContain('残りの商品は、準備ができ次第お送りします。');
+    expect(h.send).toHaveBeenCalledWith({
+      to: 'hanako@example.com', subject: saved._subject, text: saved._body_text, idempotencyKey: 'order-email/email-1',
+    });
+  });
+
+  it('発送が取り消されていたら、送らずに取りやめにする（送っている途中だった行は、ここで取消を見る）', async () => {
+    const h = harness([row({ kind: 'shipped', variant: null, fulfillment_id: 'fulfillment-1' })], {
+      material: material({ status: 'paid' }, fulfillmentMaterial({ cancelled: true })),
+    });
+
+    const result = await processOrderEmails(h.deps);
+
+    expect(result).toEqual({ sent: 0, skipped: 1, failed: 0, stoppedBy: 'empty' });
+    expect(h.send).not.toHaveBeenCalled();
+    expect(names(h.calls)).not.toContain('save_order_email_content');
+    expect(h.calls.find((call) => call.name === 'skip_order_email')?.params).toEqual({
+      _email_id: 'email-1', _lease_token: 'lease-1', _reason: 'fulfillment_cancelled',
+    });
+  });
+
+  it('控えた中身がある行（やり直しの行）でも、発送が取り消されていたら送らない', async () => {
+    const h = harness(
+      [row({ kind: 'shipped', variant: null, fulfillment_id: 'fulfillment-1', attempts: 2, subject: '控えた件名', body_text: '控えた本文' })],
+      { material: material({ status: 'paid' }, fulfillmentMaterial({ cancelled: true })) },
+    );
+
+    await processOrderEmails(h.deps);
+
+    expect(h.send).not.toHaveBeenCalled();
+    expect(h.calls.find((call) => call.name === 'skip_order_email')?.params).toMatchObject({ _reason: 'fulfillment_cancelled' });
+  });
+
   it('注文や明細が無い・発送の伝票番号が無いときは、すぐ送れなかったにする', async () => {
     const missing = harness([row()], { material: null });
     await processOrderEmails(missing.deps);
@@ -261,7 +360,9 @@ describe('processOrderEmails', () => {
       _error_code: 'source_missing', _category: 'permanent',
     });
 
-    const shipped = harness([row({ kind: 'shipped', variant: null })], { material: material({ status: 'shipped' }) });
+    const shipped = harness([row({ kind: 'shipped', variant: null, fulfillment_id: 'fulfillment-1' })], {
+      material: material({ status: 'shipped' }, fulfillmentMaterial({ trackingNumber: null })),
+    });
     await processOrderEmails(shipped.deps);
     expect(shipped.calls.find((call) => call.name === 'fail_order_email')?.params).toMatchObject({
       _error_code: 'source_missing', _category: 'permanent',
@@ -411,5 +512,14 @@ describe('skipReasonFor（設計書 4-1）', () => {
     ['shipped', 'shipped', null],
   ])('%s のメールは、注文が %s なら %s', (kind, status, expected) => {
     expect(skipReasonFor(claim(kind), material({ status: status as never }))).toBe(expected);
+  });
+
+  it.each([
+    ['shipped', false, null],
+    ['shipped', true, 'fulfillment_cancelled'],
+    // 発送の取消は発送のメールだけの理由。ほかの種類は、材料に取消済みの発送があっても見ない
+    ['paid', true, null],
+  ])('%s のメールは、発送が取消済み=%s なら %s（グループ E-1 設計書 7-3）', (kind, cancelled, expected) => {
+    expect(skipReasonFor(claim(kind), material({ status: 'paid' }, fulfillmentMaterial({ cancelled })))).toBe(expected);
   });
 });

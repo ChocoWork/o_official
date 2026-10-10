@@ -7,7 +7,7 @@ function email(overrides: Partial<OrderEmailHistoryRow> = {}): OrderEmailHistory
   return {
     id: 'email-1', kind: 'paid', origin: 'auto', requestedByEmail: null, status: 'sent', attempts: 1, lastErrorCode: null,
     deliveryStatus: null, deliveryEventAt: null, createdAt: '2026-10-09T01:00:00.000Z', sentAt: '2026-10-09T01:00:05.000Z',
-    finishedAt: '2026-10-09T01:00:05.000Z', hasBody: true, bodyErased: false, ...overrides,
+    finishedAt: '2026-10-09T01:00:05.000Z', hasBody: true, bodyErased: false, fulfillmentId: null, fulfillmentNumber: null, ...overrides,
   };
 }
 

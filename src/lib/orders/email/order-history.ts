@@ -55,6 +55,9 @@ export type OrderEmailHistoryRow = {
   finishedAt: string | null;
   hasBody: boolean;
   bodyErased: boolean;
+  /** 発送のメールだけ、どの発送のメールか・何回目の発送かを示す。ほかの種類は null（グループ E-1 設計書 8-2） */
+  fulfillmentId: string | null;
+  fulfillmentNumber: number | null;
 };
 
 export type OrderHistoryCreatedEntry = { type: 'created'; at: string };

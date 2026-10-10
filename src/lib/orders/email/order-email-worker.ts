@@ -36,7 +36,8 @@ export const ORDER_EMAIL_LEASE_SECONDS = 300;
 
 export type OrderEmailWorkerDeps = {
   store: OrderEmailStore;
-  loadMaterial: (orderId: string) => Promise<OrderEmailMaterial | null>;
+  /** 発送のメールの行は、行の発送の番号で発送の材料も読む。ほかの種類は null（グループ E-1 設計書 8-1） */
+  loadMaterial: (orderId: string, fulfillmentId: string | null) => Promise<OrderEmailMaterial | null>;
   send: (message: OrderEmailMessage) => Promise<OrderEmailSendOutcome>;
   checkConfig: () => OrderEmailPauseReason | null;
   now: () => number;
@@ -89,6 +90,9 @@ export function skipReasonFor(
   if (claim.kind === 'payment_expired' && (material.order.status === 'paid' || material.order.status === 'shipped')) {
     return 'superseded';
   }
+  // 発送を取り消した後は、その発送のメールを送らない。送る前・やり直し待ちの行は取消の時に DB が取りやめるので、
+  // ここで見るのは、取消の時に送っている途中だった行。控えた中身がある行も送らない（グループ E-1 設計書 7-3）
+  if (claim.kind === 'shipped' && material.fulfillment?.cancelled) return 'fulfillment_cancelled';
   return null;
 }
 
@@ -109,7 +113,7 @@ async function recordFailure(
 async function deliver(deps: OrderEmailWorkerDeps, claim: ClaimedOrderEmail): Promise<DeliverOutcome> {
   let material: OrderEmailMaterial | null;
   try {
-    material = await deps.loadMaterial(claim.orderId);
+    material = await deps.loadMaterial(claim.orderId, claim.fulfillmentId);
   } catch {
     return recordFailure(deps, claim, { category: 'transient', code: 'db_unavailable', retryAfterSeconds: null });
   }
@@ -221,7 +225,7 @@ export async function runOrderEmailWorker(options: { budgetMs?: number } = {}): 
   const store = client as unknown as OrderEmailStore & OpsStore;
   const result = await processOrderEmails({
     store,
-    loadMaterial: (orderId) => loadOrderEmailMaterial(client, orderId),
+    loadMaterial: (orderId, fulfillmentId) => loadOrderEmailMaterial(client, orderId, fulfillmentId),
     send: (message) => sendOrderEmailMessage(message),
     checkConfig: () => checkOrderEmailSendConfig(),
     now: () => Date.now(),
