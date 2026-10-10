@@ -2,15 +2,37 @@
 
 import { Button } from '@/components/ui/Button/Button';
 import { DataTable } from '@/components/ui/DataTable/DataTable';
-import { StatusBadge } from '@/components/ui/StatusBadge/StatusBadge';
+import { StatusBadge, type StatusBadgeTone } from '@/components/ui/StatusBadge/StatusBadge';
 import { TagLabel } from '@/components/ui/TagLabel/TagLabel';
 import { toOrderNumber } from '@/lib/orders/order-number';
+import type { OrderStatus as DbOrderStatus } from '@/lib/orders/order-payment-types';
+import { PARTIALLY_SHIPPED_LABEL, type OrderProgressKey } from '@/lib/orders/order-progress';
 
-export type OrderStatus = '支払い手続き中' | '未決済' | '決済完了' | '決済失敗' | '放棄' | 'キャンセル' | '発送済み';
+export type OrderStatus =
+	| '支払い手続き中'
+	| '未決済'
+	| '受注生産中'
+	| '発送準備中'
+	| '配送中'
+	| '配達済み'
+	| '決済失敗'
+	| '放棄'
+	| 'キャンセル';
 
 export type OrderLineItem = {
+	/** 注文の商品の番号。React の key に使う（同じ商品の色違いが重なるため、名前では区別できない） */
+	id: string;
 	name: string;
+	color: string | null;
+	size: string | null;
 	quantity: number;
+	fulfillmentType: 'stock' | 'backorder';
+	/** 発送した数 */
+	shipped: number;
+	/** 受注生産中の数（まだ仕上がっていない数） */
+	inProduction: number;
+	/** 発送準備中の数（仕上がっていて、まだ送っていない数） */
+	readyUnshipped: number;
 };
 
 export type OrderItem = {
@@ -21,9 +43,17 @@ export type OrderItem = {
 	itemCount: string;
 	items: OrderLineItem[];
 	totalAmount: string;
+	/** 注文の言葉（受注生産中・発送準備中・配送中など）。記録から出した物 */
 	status: OrderStatus;
+	/** DB の注文の状態。件数・絞り込み・CSV の判断はこれを使う（言葉は表示のため） */
+	orderStatus?: DbOrderStatus;
+	progressKey?: OrderProgressKey;
+	/** 発送した数があり、未発送の数も残っている */
+	partiallyShipped?: boolean;
 	canRefund?: boolean;
 	canShip?: boolean;
+	/** 受注生産中の数がある決済完了の注文 */
+	canRecordCompletion?: boolean;
 	missingShippingFields?: string[];
 	/** 在庫を確保できなかった入金済みの注文（要確認）。確認済みにするまで印を出す */
 	needsReview?: boolean;
@@ -43,10 +73,36 @@ interface OrderSectionProps {
 	onCancelOrder?: (id: string) => void;
 	onRefundOrder?: (id: string) => void;
 	onShipOrder?: (id: string) => void;
+	/** 受注生産の品の仕上がりを記録する画面を開く */
+	onRecordCompletion?: (id: string) => void;
 	/** 注文の履歴（状態の変化とメール）を開く */
 	onShowHistory?: (id: string) => void;
 	processingOrderIds?: string[];
 }
+
+const STATUS_TONES: Record<OrderStatus, StatusBadgeTone> = {
+	支払い手続き中: 'warning',
+	未決済: 'warning',
+	受注生産中: 'positive',
+	発送準備中: 'positive',
+	配送中: 'positive',
+	配達済み: 'positive',
+	決済失敗: 'danger',
+	放棄: 'danger',
+	キャンセル: 'danger',
+};
+
+const STATUS_CLASSES: Record<OrderStatus, string> = {
+	支払い手続き中: 'bg-gray-100 text-[#474747]',
+	未決済: 'bg-red-100 text-red-800',
+	受注生産中: 'bg-blue-100 text-blue-800',
+	発送準備中: 'bg-yellow-100 text-yellow-800',
+	配送中: 'bg-green-100 text-green-800',
+	配達済み: 'bg-green-100 text-green-800',
+	決済失敗: 'bg-orange-100 text-orange-800',
+	放棄: 'bg-gray-100 text-[#474747]',
+	キャンセル: 'bg-gray-100 text-gray-500',
+};
 
 function formatDeadline(value: string): string {
 	const date = new Date(value);
@@ -54,6 +110,23 @@ function formatDeadline(value: string): string {
 		return value;
 	}
 	return new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', dateStyle: 'medium', timeStyle: 'short' }).format(date);
+}
+
+/** 「ブラウス（白 / M）×2（受注生産中 1・発送済み 1）」。括弧の中は0でない数だけ */
+function formatOrderLineItem(item: OrderLineItem): string {
+	const variant = [item.color, item.size].filter((part): part is string => Boolean(part)).join(' / ');
+	const counts = [
+		item.inProduction > 0 ? `受注生産中 ${item.inProduction}` : null,
+		item.readyUnshipped > 0 ? `発送準備中 ${item.readyUnshipped}` : null,
+		item.shipped > 0 ? `発送済み ${item.shipped}` : null,
+	].filter((part): part is string => part !== null);
+	const name = variant ? `${item.name}（${variant}）` : item.name;
+	return counts.length > 0 ? `${name}×${item.quantity}（${counts.join('・')}）` : `${name}×${item.quantity}`;
+}
+
+/** 発送待ち（DB の状態が paid）か。受注生産中・発送準備中の言葉がこれにあたる */
+function isAwaitingShipment(order: OrderItem): boolean {
+	return order.orderStatus ? order.orderStatus === 'paid' : order.status === '受注生産中' || order.status === '発送準備中';
 }
 
 export default function OrderSection({
@@ -64,19 +137,10 @@ export default function OrderSection({
 	onCancelOrder,
 	onRefundOrder,
 	onShipOrder,
+	onRecordCompletion,
 	onShowHistory,
 	processingOrderIds = [],
 }: OrderSectionProps) {
-
-	const statusClassMap: Record<OrderStatus, string> = {
-		支払い手続き中: 'bg-gray-100 text-[#474747]',
-		未決済: 'bg-red-100 text-red-800',
-		決済完了: 'bg-yellow-100 text-yellow-800',
-		決済失敗: 'bg-orange-100 text-orange-800',
-		放棄: 'bg-gray-100 text-[#474747]',
-		キャンセル: 'bg-gray-100 text-gray-500',
-		発送済み: 'bg-green-100 text-green-800',
-	};
 
 	if (isLoading) {
 		return (
@@ -124,8 +188,8 @@ export default function OrderSection({
 						render: (order) => (
 							<div className="space-y-1">
 								{order.items.map((item) => (
-									<p key={`${order.id}-${item.name}`} className="lk-text-sm text-black font-acumin">
-										{item.name} × {item.quantity}
+									<p key={item.id} className="lk-text-sm text-black font-acumin">
+										{formatOrderLineItem(item)}
 									</p>
 								))}
 							</div>
@@ -138,19 +202,12 @@ export default function OrderSection({
 						header: '決済状況',
 						render: (order) => (
 							<div className="flex flex-wrap items-center gap-1">
-								<StatusBadge
-									tone={
-										order.status === '決済完了'
-											? 'positive'
-											: order.status === '決済失敗' || order.status === 'キャンセル' || order.status === '放棄'
-												? 'danger'
-												: 'warning'
-									}
-									className={statusClassMap[order.status]}
-									size="md"
-								>
+								<StatusBadge tone={STATUS_TONES[order.status]} className={STATUS_CLASSES[order.status]} size="md">
 									{order.status}
 								</StatusBadge>
+								{order.partiallyShipped ? (
+									<TagLabel variant="outline" size="2xs">{PARTIALLY_SHIPPED_LABEL}</TagLabel>
+								) : null}
 								{order.needsReview ? (
 									<TagLabel variant="outline" size="2xs">要確認</TagLabel>
 								) : null}
@@ -163,6 +220,7 @@ export default function OrderSection({
 						render: (order) => {
 							const isProcessing = processingOrderIds.includes(order.id);
 							const hasMissingShipping = (order.missingShippingFields?.length ?? 0) > 0;
+							const awaitingShipment = isAwaitingShipment(order);
 
 							return (
 							<div className="flex flex-wrap items-center gap-2">
@@ -188,13 +246,24 @@ export default function OrderSection({
 										{isProcessing ? '処理中...' : '返金'}
 									</Button>
 								) : null}
-								{order.status === '決済完了' && order.shipBlockedReason ? (
+								{awaitingShipment && order.shipBlockedReason ? (
 									<span className="lk-text-xs text-red-700" role="status">{order.shipBlockedReason}</span>
 								) : null}
-								{order.status === '決済完了' && order.canShip === false && (!order.shipBlockedReason || hasMissingShipping) ? (
+								{awaitingShipment && order.canShip === false && (!order.shipBlockedReason || hasMissingShipping) ? (
 									<span className="lk-text-xs text-red-700" role="status">配送先要確認</span>
 								) : null}
-								{order.status === '決済完了' && order.canShip && onShipOrder ? (
+								{order.canRecordCompletion && onRecordCompletion ? (
+									<Button
+										variant="secondary"
+										size="sm"
+										className="font-acumin"
+										onClick={() => onRecordCompletion(order.id)}
+										disabled={isProcessing}
+									>
+										{isProcessing ? '処理中...' : '仕上がりを記録する'}
+									</Button>
+								) : null}
+								{order.canShip && onShipOrder ? (
 									<Button
 										variant="primary"
 										size="sm"

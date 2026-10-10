@@ -5,7 +5,8 @@ import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { getStripeServerClient } from '@/lib/stripe/server';
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { ORDER_STATUSES, type OrderStatus } from '@/lib/orders/order-payment-types';
-import { ORDER_STATUS_LABELS, type OrderStatusLabel } from '@/lib/orders/email/order-history';
+import { deriveOrderProgress } from '@/lib/orders/order-progress';
+import { listOrderLineFulfillment, type OrderLineFulfillmentRow } from '@/lib/orders/fulfillment/fulfillment-store';
 import { findMissingShippingFields } from '@/features/checkout/services/checkout-draft.service';
 
 type OrderRow = {
@@ -29,8 +30,12 @@ type OrderRow = {
   shipping_carrier: string | null;
   tracking_number: string | null;
   order_items: Array<{
+    id: string;
     item_name: string;
+    color: string | null;
+    size: string | null;
     quantity: number;
+    fulfillment_type: 'stock' | 'backorder';
   }> | null;
 };
 
@@ -94,10 +99,6 @@ function toCurrencyLabel(amount: number, currency: string): string {
   } catch {
     return `¥${amount.toLocaleString('ja-JP')}`;
   }
-}
-
-function mapOrderStatusToLabel(status: OrderStatus): OrderStatusLabel {
-  return ORDER_STATUS_LABELS[status];
 }
 
 function mapPaymentMethodLabel(paymentIntent: Stripe.PaymentIntent | null): string {
@@ -188,6 +189,22 @@ async function fetchShipBlockedOrderIds(orderIds: string[]): Promise<Set<string>
   return new Set((data ?? []).map((row: { order_id: string }) => row.order_id));
 }
 
+/**
+ * 商品ごとの数（発送した・受注生産中・発送準備中）。支払い済みと発送済みの注文だけ数える。
+ * 未入金などの注文は、まだ作る・送る段階に入っていないので数に意味が無い。
+ * 数は service_role で読む（新しい表は利用者の JWT からは読めない。設計書 3-4）
+ */
+async function fetchLineCounts(orderRows: OrderRow[]): Promise<Map<string, OrderLineFulfillmentRow[]>> {
+  const orderIds = orderRows
+    .filter((order) => order.status === 'paid' || order.status === 'shipped')
+    .map((order) => order.id);
+  if (orderIds.length === 0) {
+    return new Map();
+  }
+
+  return listOrderLineFulfillment(await createServiceRoleClient(), orderIds);
+}
+
 export async function GET(request: Request) {
   try {
     const authz = await authorizeAdminPermission('admin.orders.read', request);
@@ -249,8 +266,12 @@ export async function GET(request: Request) {
         shipping_carrier,
         tracking_number,
         order_items (
+          id,
           item_name,
-          quantity
+          color,
+          size,
+          quantity,
+          fulfillment_type
         )
       `, { count: 'exact' })
       .order('created_at', { ascending: false })
@@ -307,18 +328,34 @@ export async function GET(request: Request) {
       .map((order) => order.payment_intent_id)
       .filter((paymentIntentId): paymentIntentId is string => Boolean(paymentIntentId?.startsWith('pi_')));
 
-    const [paymentIntentMap, shipBlockedOrderIds] = await Promise.all([
+    const [paymentIntentMap, shipBlockedOrderIds, lineCountsByOrder] = await Promise.all([
       fetchPaymentIntentMap(paymentIntentIds),
       fetchShipBlockedOrderIds(orderRows.map((order) => order.id)),
+      fetchLineCounts(orderRows),
     ]);
 
     const responseData = orderRows.map((order) => {
-      const items = (order.order_items ?? []).map((item) => ({
-        name: item.item_name,
-        quantity: item.quantity,
-      }));
+      const lineCounts = lineCountsByOrder.get(order.id) ?? [];
+      const countsByItem = new Map(lineCounts.map((row) => [row.orderItemId, row]));
+      const items = (order.order_items ?? []).map((item) => {
+        const counts = countsByItem.get(item.id);
+        return {
+          id: item.id,
+          name: item.item_name,
+          color: item.color,
+          size: item.size,
+          quantity: item.quantity,
+          fulfillmentType: item.fulfillment_type,
+          shipped: counts?.shipped ?? 0,
+          inProduction: counts?.inProduction ?? 0,
+          readyUnshipped: counts?.readyUnshipped ?? 0,
+        };
+      });
 
       const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
+      const inProductionTotal = items.reduce((sum, item) => sum + item.inProduction, 0);
+      const readyTotal = items.reduce((sum, item) => sum + item.readyUnshipped, 0);
+      const progress = deriveOrderProgress(order.status, lineCounts);
       const paymentIntent = order.payment_intent_id ? paymentIntentMap.get(order.payment_intent_id) ?? null : null;
       const missingShippingFields = findMissingShippingFields({
         email: order.shipping_email,
@@ -352,14 +389,24 @@ export async function GET(request: Request) {
         itemCount: `${totalQuantity}点`,
         items,
         totalAmount: toCurrencyLabel(order.total_amount, order.currency),
-        status: mapOrderStatusToLabel(order.status),
+        // 言葉（status）は表示のため。件数・絞り込み・CSV の判断には DB の状態（orderStatus）を使う
+        status: progress.label,
+        orderStatus: order.status,
+        progressKey: progress.key,
+        partiallyShipped: progress.partiallyShipped,
         paymentMethod: mapPaymentMethodLabel(paymentIntent),
         paymentReference: order.payment_intent_id ?? order.checkout_session_id ?? '-',
         stripePaymentStatus: paymentIntent?.status ?? null,
         shippedAt: order.shipped_at,
         shippingCarrier: order.shipping_carrier,
         trackingNumber: order.tracking_number,
-        canShip: order.status === 'paid' && missingShippingFields.length === 0 && !shipBlockedReason,
+        // 発送準備中か受注生産中の数があれば発送の画面を開ける（受注生産中の品は、画面の中で仕上がりを記録してから送る）
+        canShip:
+          order.status === 'paid'
+          && readyTotal + inProductionTotal > 0
+          && missingShippingFields.length === 0
+          && !shipBlockedReason,
+        canRecordCompletion: order.status === 'paid' && inProductionTotal > 0,
         missingShippingFields,
         shipBlockedReason,
         needsReview: order.review_reason !== null && order.reviewed_at === null,

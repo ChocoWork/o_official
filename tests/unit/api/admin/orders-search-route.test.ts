@@ -5,6 +5,17 @@ const createClientMock = jest.fn();
 const getStripeMock = jest.fn();
 let queryResult: { data: unknown[]; count: number; error: null } = { data: [], count: 0, error: null };
 let shipBlockedRows: Array<{ order_id: string }> = [];
+// public.list_order_line_fulfillment が返す行（service_role の RPC）。支払い済み・発送済みの注文の商品ごとの数
+let lineFulfillmentRows: Array<Record<string, unknown>> = [];
+const rpcMock = jest.fn();
+
+function lineRow(overrides: Record<string, unknown>) {
+  return {
+    order_id: 'order-1', order_item_id: 'item-1', variant_id: 1, fulfillment_type: 'stock', quantity: 1,
+    shipped: 0, completed: 1, in_production: 0, ready_unshipped: 1, unshipped: 1,
+    ...overrides,
+  };
+}
 
 jest.mock('next/server', () => ({
   NextResponse: {
@@ -53,6 +64,9 @@ describe('GET /api/admin/orders statutory search', () => {
     authorizeMock.mockResolvedValue({ ok: true });
     createClientMock.mockResolvedValue({ from: jest.fn().mockReturnValue(query) });
     shipBlockedRows = [];
+    lineFulfillmentRows = [];
+    rpcMock.mockReset();
+    rpcMock.mockImplementation(async () => ({ data: lineFulfillmentRows, error: null }));
     createServiceRoleClientMock.mockResolvedValue({
       from: jest.fn().mockReturnValue({
         select: () => ({
@@ -63,6 +77,7 @@ describe('GET /api/admin/orders statutory search', () => {
           }),
         }),
       }),
+      rpc: (...args: unknown[]) => rpcMock(...args),
     });
   });
 
@@ -276,13 +291,16 @@ describe('GET /api/admin/orders statutory search', () => {
           review_reason: 'stock_not_reserved',
           reviewed_at: null,
           created_at: '2026-09-27T00:00:00.000Z',
-          order_items: [],
+          order_items: [
+            { id: 'item-mismatch', item_name: 'シルクブラウス', color: '白', size: 'M', quantity: 1, fulfillment_type: 'stock' },
+          ],
         },
       ],
       count: 3,
       error: null,
     };
     shipBlockedRows = [{ order_id: 'order-mismatch' }];
+    lineFulfillmentRows = [lineRow({ order_id: 'order-mismatch', order_item_id: 'item-mismatch' })];
     getStripeMock.mockReturnValue({
       paymentIntents: {
         retrieve: jest.fn().mockImplementation((id: string) => Promise.resolve(
@@ -303,14 +321,18 @@ describe('GET /api/admin/orders statutory search', () => {
     const body = await response.json() as { data: Array<Record<string, unknown>> };
     const byId = Object.fromEntries(body.data.map((row) => [row.id, row]));
 
-    expect(byId['order-in-progress']).toMatchObject({ status: '支払い手続き中', canCancel: true, cancelBlockedUntil: null });
+    expect(byId['order-in-progress']).toMatchObject({
+      status: '支払い手続き中', orderStatus: 'payment_in_progress', canCancel: true, cancelBlockedUntil: null,
+    });
     expect(byId['order-voucher']).toMatchObject({
       status: '未決済',
+      orderStatus: 'pending',
       canCancel: false,
       cancelBlockedUntil: new Date(future * 1000).toISOString(),
     });
     expect(byId['order-mismatch']).toMatchObject({
-      status: '決済完了',
+      status: '発送準備中',
+      orderStatus: 'paid',
       needsReview: true,
       canShip: false,
       shipBlockedReason: '支払額の確認が必要です（要対応）',
@@ -391,6 +413,189 @@ describe('GET /api/admin/orders statutory search', () => {
       } finally {
         warn.mockRestore();
       }
+    });
+  });
+
+  // 注文の言葉と発送・仕上がりのボタンは、商品ごとの数（private.order_line_fulfillment を service_role で読んだ物）から出す。
+  // 言葉（status）は表示のため。件数・絞り込み・CSV の判断には DB の状態（orderStatus）を使う（本計画 P9・P10）
+  describe('商品ごとの数・注文の言葉・発送と仕上がりのボタン', () => {
+    function paidOrderRow(overrides: Record<string, unknown> = {}) {
+      return {
+        id: 'order-1',
+        payment_intent_id: null,
+        checkout_session_id: 'cs_1',
+        status: 'paid',
+        total_amount: 30_000,
+        currency: 'jpy',
+        shipping_email: 'buyer@example.com',
+        shipping_full_name: '山田太郎',
+        shipping_postal_code: '1000001',
+        shipping_prefecture: '東京都',
+        shipping_city: '千代田区',
+        shipping_address: '丸の内1-1-1',
+        shipping_phone: '0312345678',
+        review_reason: null,
+        reviewed_at: null,
+        created_at: '2026-10-10T00:00:00.000Z',
+        shipped_at: null,
+        shipping_carrier: null,
+        tracking_number: null,
+        order_items: [
+          { id: 'item-stock', item_name: 'シルクブラウス', color: '白', size: 'M', quantity: 2, fulfillment_type: 'stock' },
+          { id: 'item-coat', item_name: 'ウールコート', color: '黒', size: 'L', quantity: 1, fulfillment_type: 'backorder' },
+        ],
+        ...overrides,
+      };
+    }
+
+    async function listOrders(rows: unknown[], url = 'http://localhost/api/admin/orders') {
+      queryResult = { data: rows, count: rows.length, error: null };
+      const { GET } = await import('@/app/api/admin/orders/route');
+      const response = await GET(new Request(url));
+      const body = await response.json() as { data: Array<Record<string, any>> };
+      return { response, rows: body.data };
+    }
+
+    it('商品の番号・色・サイズ・在庫か受注生産かを、注文の商品と一緒に読む', async () => {
+      await listOrders([]);
+
+      const selected = String(query.select.mock.calls[0][0]);
+      expect(selected).toMatch(/order_items\s*\(\s*id,\s*item_name,\s*color,\s*size,\s*quantity,\s*fulfillment_type\s*\)/);
+      expect(query.select.mock.calls[0][1]).toEqual({ count: 'exact' });
+    });
+
+    it('一部を送って受注生産の品が残る注文は「受注生産中」＋一部発送済みで、発送も仕上がりの記録もできる', async () => {
+      lineFulfillmentRows = [
+        lineRow({ order_id: 'order-1', order_item_id: 'item-stock', quantity: 2, shipped: 1, completed: 2, in_production: 0, ready_unshipped: 1, unshipped: 1 }),
+        lineRow({ order_id: 'order-1', order_item_id: 'item-coat', fulfillment_type: 'backorder', quantity: 1, shipped: 0, completed: 0, in_production: 1, ready_unshipped: 0, unshipped: 1 }),
+      ];
+
+      const { rows } = await listOrders([paidOrderRow()]);
+
+      expect(rpcMock).toHaveBeenCalledTimes(1);
+      expect(rpcMock).toHaveBeenCalledWith('list_order_line_fulfillment', { _order_ids: ['order-1'] });
+      expect(rows[0]).toMatchObject({
+        status: '受注生産中',
+        orderStatus: 'paid',
+        progressKey: 'in_production',
+        partiallyShipped: true,
+        canShip: true,
+        canRecordCompletion: true,
+        itemCount: '3点',
+      });
+      expect(rows[0].items).toEqual([
+        {
+          id: 'item-stock', name: 'シルクブラウス', color: '白', size: 'M', quantity: 2, fulfillmentType: 'stock',
+          shipped: 1, inProduction: 0, readyUnshipped: 1,
+        },
+        {
+          id: 'item-coat', name: 'ウールコート', color: '黒', size: 'L', quantity: 1, fulfillmentType: 'backorder',
+          shipped: 0, inProduction: 1, readyUnshipped: 0,
+        },
+      ]);
+    });
+
+    it('全部の商品が発送準備中なら「発送準備中」で、仕上がりの記録は出さない', async () => {
+      lineFulfillmentRows = [
+        lineRow({ order_id: 'order-1', order_item_id: 'item-stock', quantity: 2, completed: 2, ready_unshipped: 2, unshipped: 2 }),
+        lineRow({ order_id: 'order-1', order_item_id: 'item-coat', fulfillment_type: 'backorder', quantity: 1, completed: 1, ready_unshipped: 1, unshipped: 1 }),
+      ];
+
+      const { rows } = await listOrders([paidOrderRow()]);
+
+      expect(rows[0]).toMatchObject({
+        status: '発送準備中', orderStatus: 'paid', progressKey: 'ready', partiallyShipped: false, canShip: true, canRecordCompletion: false,
+      });
+    });
+
+    it('全部を送った注文は「配送中」（DB の状態は shipped）で、発送も仕上がりの記録もできない', async () => {
+      lineFulfillmentRows = [
+        lineRow({ order_id: 'order-1', order_item_id: 'item-stock', quantity: 2, shipped: 2, completed: 2, ready_unshipped: 0, unshipped: 0 }),
+        lineRow({ order_id: 'order-1', order_item_id: 'item-coat', fulfillment_type: 'backorder', quantity: 1, shipped: 1, completed: 1, ready_unshipped: 0, unshipped: 0 }),
+      ];
+
+      const { rows } = await listOrders([
+        paidOrderRow({ status: 'shipped', shipped_at: '2026-10-10T01:00:00.000Z', shipping_carrier: 'yamato', tracking_number: '1234' }),
+      ]);
+
+      expect(rows[0]).toMatchObject({
+        status: '配送中', orderStatus: 'shipped', progressKey: 'in_transit', partiallyShipped: false, canShip: false, canRecordCompletion: false,
+      });
+    });
+
+    it('数を読むのは支払い済みと発送済みの注文だけ。ほかの注文は数を 0 にして、言葉は状態のまま', async () => {
+      lineFulfillmentRows = [
+        lineRow({ order_id: 'order-paid', order_item_id: 'item-stock', quantity: 2, completed: 2, ready_unshipped: 2, unshipped: 2 }),
+      ];
+
+      const { rows } = await listOrders([
+        paidOrderRow({ id: 'order-pending', status: 'pending' }),
+        paidOrderRow({ id: 'order-failed', status: 'failed' }),
+        paidOrderRow({ id: 'order-cancelled', status: 'cancelled' }),
+        paidOrderRow({ id: 'order-paid', order_items: [{ id: 'item-stock', item_name: 'シルクブラウス', color: '白', size: 'M', quantity: 2, fulfillment_type: 'stock' }] }),
+      ]);
+      const byId = Object.fromEntries(rows.map((row) => [row.id, row]));
+
+      expect(rpcMock).toHaveBeenCalledWith('list_order_line_fulfillment', { _order_ids: ['order-paid'] });
+      expect(byId['order-pending']).toMatchObject({ status: '未決済', orderStatus: 'pending', canShip: false, canRecordCompletion: false, partiallyShipped: false });
+      expect(byId['order-failed']).toMatchObject({ status: '決済失敗', orderStatus: 'failed' });
+      expect(byId['order-cancelled']).toMatchObject({ status: 'キャンセル', orderStatus: 'cancelled' });
+      expect(byId['order-pending'].items.every((item: Record<string, number>) => item.shipped === 0 && item.inProduction === 0 && item.readyUnshipped === 0)).toBe(true);
+      expect(byId['order-paid']).toMatchObject({ status: '発送準備中', canShip: true });
+    });
+
+    it('支払い済み・発送済みの注文が無い一覧は、数を読みに行かない', async () => {
+      const { rows } = await listOrders([paidOrderRow({ status: 'pending' })]);
+
+      expect(rows).toHaveLength(1);
+      expect(rpcMock).not.toHaveBeenCalled();
+    });
+
+    it('支払額の確認が残る注文は発送できないが、受注生産中の数があれば仕上がりは記録できる', async () => {
+      shipBlockedRows = [{ order_id: 'order-1' }];
+      lineFulfillmentRows = [
+        lineRow({ order_id: 'order-1', order_item_id: 'item-coat', fulfillment_type: 'backorder', quantity: 1, completed: 0, in_production: 1, ready_unshipped: 0, unshipped: 1 }),
+      ];
+
+      const { rows } = await listOrders([paidOrderRow()]);
+
+      expect(rows[0]).toMatchObject({
+        canShip: false, shipBlockedReason: '支払額の確認が必要です（要対応）', canRecordCompletion: true,
+      });
+    });
+
+    it('送る品も作る品も残っていない支払い済みの注文には、発送も仕上がりの記録も出さない', async () => {
+      lineFulfillmentRows = [
+        lineRow({ order_id: 'order-1', order_item_id: 'item-stock', quantity: 2, shipped: 2, completed: 2, ready_unshipped: 0, unshipped: 0 }),
+      ];
+
+      const { rows } = await listOrders([paidOrderRow()]);
+
+      expect(rows[0]).toMatchObject({ canShip: false, canRecordCompletion: false });
+    });
+
+    it('数を読めなかった時は 500 にする（数が無いまま発送できる印を出さない）', async () => {
+      const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      rpcMock.mockResolvedValue({ data: null, error: { message: 'down', code: '08006' } });
+      queryResult = { data: [paidOrderRow()], count: 1, error: null };
+
+      try {
+        const { GET } = await import('@/app/api/admin/orders/route');
+        const response = await GET(new Request('http://localhost/api/admin/orders'));
+
+        expect(response.status).toBe(500);
+      } finally {
+        consoleError.mockRestore();
+      }
+    });
+
+    it('状態の絞り込みの値は DB の状態のまま。言葉（発送済み・配送中など）は受け付けない', async () => {
+      const { GET } = await import('@/app/api/admin/orders/route');
+
+      expect((await GET(new Request('http://localhost/api/admin/orders?status=shipped'))).status).toBe(200);
+      expect(query.eq).toHaveBeenCalledWith('status', 'shipped');
+      expect((await GET(new Request(`http://localhost/api/admin/orders?status=${encodeURIComponent('発送済み')}`))).status).toBe(400);
+      expect((await GET(new Request(`http://localhost/api/admin/orders?status=${encodeURIComponent('配送中')}`))).status).toBe(400);
     });
   });
 });

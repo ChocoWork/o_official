@@ -60,7 +60,8 @@ const orderResponse = {
     itemCount: '1点',
     items: [],
     totalAmount: '¥10,000',
-    status: '決済完了',
+    status: '発送準備中',
+    orderStatus: 'paid',
     canRefund: true,
   }],
   pagination: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
@@ -94,12 +95,12 @@ describe('admin order refund flow', () => {
     });
 
     render(<AdminPage />);
-    await screen.findByText('決済完了');
+    await screen.findByText('発送準備中');
 
     fireEvent.click(screen.getByRole('button', { name: '返金' }));
 
     expect(await screen.findByRole('status')).toHaveTextContent('返金処理を受け付けました');
-    expect(screen.getByTestId('order-status')).toHaveTextContent('決済完了');
+    expect(screen.getByTestId('order-status')).toHaveTextContent('発送準備中');
     await waitFor(() => {
       expect(clientFetchMock.mock.calls.filter(([url]) => String(url).startsWith('/api/admin/orders?'))).toHaveLength(2);
     });
@@ -119,7 +120,7 @@ describe('admin order refund flow', () => {
     });
 
     render(<AdminPage />);
-    await screen.findByText('決済完了');
+    await screen.findByText('発送準備中');
     fireEvent.click(screen.getByRole('button', { name: '返金' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('注文の状態が変わったため返金できません。');
@@ -148,7 +149,7 @@ describe('admin order refund flow', () => {
             ...orderResponse,
             data: [{
               ...orderResponse.data[0],
-              status: orderRequests === 1 ? '決済完了' : 'キャンセル',
+              status: orderRequests === 1 ? '発送準備中' : 'キャンセル',
               canRefund: orderRequests === 1,
             }],
           }),
@@ -159,7 +160,7 @@ describe('admin order refund flow', () => {
     });
 
     render(<AdminPage />);
-    await screen.findByText('決済完了');
+    await screen.findByText('発送準備中');
     fireEvent.click(screen.getByRole('button', { name: '返金' }));
 
     expect(await screen.findByRole('status')).toHaveTextContent('全額返金が完了し、注文をキャンセルしました。');
@@ -191,11 +192,11 @@ describe('admin order refund flow', () => {
       });
 
       render(<AdminPage />);
-      await screen.findByText('決済完了');
+      await screen.findByText('発送準備中');
       fireEvent.click(screen.getByRole('button', { name: '返金' }));
 
       expect(await screen.findByRole('alert')).toHaveTextContent('返金が完了しませんでした。');
-      expect(screen.getByTestId('order-status')).toHaveTextContent('決済完了');
+      expect(screen.getByTestId('order-status')).toHaveTextContent('発送準備中');
       expect(orderRequests).toBe(2);
     },
   );

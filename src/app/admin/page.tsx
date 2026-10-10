@@ -17,13 +17,15 @@ import UserSection from '@/components/UserSection';
 import OrderSection, { type OrderItem } from '@/components/OrderSection';
 import AttentionInbox from '@/components/AttentionInbox';
 import OrderCancelDialog, { type OrderCancelValues } from '@/components/OrderCancelDialog';
-import OrderShipDialog, { type OrderShipValues } from '@/components/OrderShipDialog';
+import OrderShipDialog from '@/components/OrderShipDialog';
+import OrderCompletionDialog from '@/components/OrderCompletionDialog';
 import OrderHistoryDialog from '@/components/OrderHistoryDialog';
 import { BannerAlert } from '@/components/ui/BannerAlert/BannerAlert';
 import { Button } from '@/components/ui/Button/Button';
 import { DateTimePicker } from '@/components/ui/DateTimePicker/DateTimePicker';
 import { SearchField } from '@/components/ui/SearchField/SearchField';
-import type { OrderAttention } from '@/lib/orders/order-payment-types';
+import { COMPLETION_RECORDED_MESSAGE } from '@/lib/orders/fulfillment/fulfillment-client';
+import type { OrderAttention, OrderStatus } from '@/lib/orders/order-payment-types';
 
 type AdminOrderAttention = OrderAttention & {
   emailSending?: { paused: boolean; reasonLabel: string | null } | null;
@@ -31,16 +33,17 @@ type AdminOrderAttention = OrderAttention & {
 
 const allAdminTabs: TabType[] = ['KPI', 'ACCOUNTING', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER'];
 const supporterTabs: TabType[] = ['ORDER'];
+// 絞り込みは DB の状態で行う（段階で絞ると、ページを分けて読む作りが崩れる。設計書 4-4）。value は窓口の status にそのまま送る
 const ORDER_STATUS_FILTERS = [
   { label: 'すべて', value: 'all' },
-  { label: '支払い手続き中', value: '支払い手続き中' },
-  { label: '未決済', value: '未決済' },
-  { label: '決済完了', value: '決済完了' },
-  { label: '決済失敗', value: '決済失敗' },
-  { label: '放棄', value: '放棄' },
-  { label: 'キャンセル', value: 'キャンセル' },
-  { label: '発送済み', value: '発送済み' },
-] as const;
+  { label: '支払い手続き中', value: 'payment_in_progress' },
+  { label: '未決済', value: 'pending' },
+  { label: '発送待ち（受注生産中・発送準備中）', value: 'paid' },
+  { label: '発送済み（配送中・配達済み）', value: 'shipped' },
+  { label: '決済失敗', value: 'failed' },
+  { label: '放棄', value: 'abandoned' },
+  { label: 'キャンセル', value: 'cancelled' },
+] as const satisfies ReadonlyArray<{ label: string; value: 'all' | OrderStatus }>;
 
 type OrderStatusFilterValue = (typeof ORDER_STATUS_FILTERS)[number]['value'];
 
@@ -79,8 +82,12 @@ async function readSafeOrderActionError(response: Response, fallback: string): P
 
 const ORDER_CSV_HEADERS = ['注文ID', '顧客名', '顧客メール', '注文日', '購入商品', '商品数', '合計金額', '決済状況'] as const;
 
+// 発送準備中の数だけ書く。もう送った品と、まだ作っている品を詰めないため（設計書 9-1）
 function formatOrderItems(items: OrderItem['items']): string {
-  return items.map((item) => `${item.name} x${item.quantity}`).join(' / ');
+  return items
+    .filter((item) => item.readyUnshipped > 0)
+    .map((item) => `${item.name} x${item.readyUnshipped}`)
+    .join(' / ');
 }
 
 function escapeCsvValue(value: string): string {
@@ -115,6 +122,7 @@ function AdminPageContent() {
   const [orderAmountMax, setOrderAmountMax] = useState('');
   const [processingOrderIds, setProcessingOrderIds] = useState<string[]>([]);
   const [shipOrderId, setShipOrderId] = useState<string | null>(null);
+  const [completionOrderId, setCompletionOrderId] = useState<string | null>(null);
   const [historyOrderId, setHistoryOrderId] = useState<string | null>(null);
   const [reviewOnly, setReviewOnly] = useState(false);
   const [attention, setAttention] = useState<AdminOrderAttention | null>(null);
@@ -241,18 +249,10 @@ function AdminPageContent() {
         query.set('amountMax', orderAmountMax);
       }
 
+      // 2つ以上選んだ時は status を送らず、下の displayedOrders が DB の状態（orderStatus）で絞る
       const selectedStatus = orderStatusFilters.length === 1 ? orderStatusFilters[0] : 'all';
-      const statusMap: Partial<Record<OrderStatusFilterValue, string>> = {
-        '支払い手続き中': 'payment_in_progress',
-        '未決済': 'pending',
-        '決済完了': 'paid',
-        '決済失敗': 'failed',
-        '放棄': 'abandoned',
-        'キャンセル': 'cancelled',
-      };
-      const apiStatus = statusMap[selectedStatus];
-      if (apiStatus) {
-        query.set('status', apiStatus);
+      if (selectedStatus !== 'all') {
+        query.set('status', selectedStatus);
       }
 
       if (reviewOnly) {
@@ -366,12 +366,13 @@ function AdminPageContent() {
   }, [activeTab, canAccessAdmin, fetchKpi, isMfaVerified, userRole]);
 
   const pendingShipmentCount = useMemo(
-    () => orders.filter((order) => order.status === '未決済').length,
+    () => orders.filter((order) => order.orderStatus === 'pending').length,
     [orders],
   );
 
-  const preparingShipmentCount = useMemo(
-    () => orders.filter((order) => order.status === '決済完了').length,
+  // 発送待ち＝DB の状態が決済完了（受注生産中・発送準備中。一部を送った注文も含む）
+  const awaitingShipmentCount = useMemo(
+    () => orders.filter((order) => order.orderStatus === 'paid').length,
     [orders],
   );
 
@@ -382,7 +383,7 @@ function AdminPageContent() {
     return orders.filter((order) => {
       const matchesStatus = hasAllFilter
         ? true
-        : orderStatusFilters.some((filter) => filter === order.status);
+        : orderStatusFilters.some((filter) => filter === order.orderStatus);
       const matchesKeyword =
         normalizedKeyword.length === 0
           ? true
@@ -402,11 +403,11 @@ function AdminPageContent() {
 
       // 放棄は status を送って初めて読める（既定の一覧は放棄を除き、2つ以上の選択は status を送らない）。
       // 他の状態と一緒に選ばせない: 選ぶと他の選択が外れ、他の状態を選ぶと放棄が外れる
-      if (nextFilter === '放棄') {
-        return prev.includes('放棄') ? ['all'] : ['放棄'];
+      if (nextFilter === 'abandoned') {
+        return prev.includes('abandoned') ? ['all'] : ['abandoned'];
       }
 
-      const nextValues = prev.filter((value) => value !== 'all' && value !== '放棄');
+      const nextValues = prev.filter((value) => value !== 'all' && value !== 'abandoned');
 
       if (nextValues.includes(nextFilter)) {
         const filteredValues = nextValues.filter((value) => value !== nextFilter);
@@ -478,7 +479,7 @@ function AdminPageContent() {
       setOrders((prevOrders) =>
         prevOrders.map((order) =>
           order.id === target.id
-            ? { ...order, status: 'キャンセル', canCancel: false, cancelBlockedUntil: null }
+            ? { ...order, status: 'キャンセル', orderStatus: 'cancelled', canCancel: false, cancelBlockedUntil: null }
             : order,
         ),
       );
@@ -568,46 +569,27 @@ function AdminPageContent() {
     setShipOrderId(id);
   };
 
-  const handleShipOrder = async (values: OrderShipValues) => {
-    const id = shipOrderId;
-    if (!id) return;
+  const openCompletionDialog = (id: string) => {
+    setOrdersNoticeMessage(null);
+    setCompletionOrderId(id);
+  };
 
-    try {
-      setOrdersErrorMessage(null);
-      setOrdersNoticeMessage(null);
-      updateProcessingOrder(id, true);
-      setShipOrderId(null);
+  // 発送・仕上がりの画面は自分で窓口を呼ぶ。成功したら、ここで一覧を読み直す（手元で言葉を書き換えない）。
+  // 閉じるのは、その操作の注文の画面だけ（返事を待つ間に別の注文の画面を開いていたら、その画面は閉じない）
+  const handleShipped = (id: string) => {
+    setShipOrderId((current) => (current === id ? null : current));
+    void fetchOrders();
+  };
 
-      const response = await clientFetch(`/api/admin/orders/${id}/status`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          status: 'shipped',
-          carrier: values.carrier,
-          trackingNumber: values.trackingNumber,
-          notifyCustomer: values.notifyCustomer,
-        }),
-      });
+  const handleCompletionRecorded = (id: string) => {
+    setCompletionOrderId((current) => (current === id ? null : current));
+    setOrdersNoticeMessage(COMPLETION_RECORDED_MESSAGE);
+    void fetchOrders();
+  };
 
-      if (!response.ok) {
-        if (response.status === 409) {
-          throw new Error('発送できる状態ではありません。一覧を更新し、決済状態と配送先を確認してください。');
-        }
-        if (response.status === 403) {
-          throw new Error('注文ステータス更新の権限がありません。');
-        }
-        throw new Error('発送状態の更新に失敗しました。');
-      }
-
-      setOrders((prevOrders) =>
-        prevOrders.map((order) => (order.id === id ? { ...order, status: '発送済み' } : order)),
-      );
-    } catch (error) {
-      console.error('Failed to ship order:', error);
-      setOrdersErrorMessage(error instanceof Error ? error.message : '発送状態の更新に失敗しました。');
-    } finally {
-      updateProcessingOrder(id, false);
-    }
+  // 履歴の画面で発送か仕上がりを取り消した。履歴の画面は開いたまま、一覧だけ読み直す
+  const handleFulfillmentChanged = () => {
+    void fetchOrders();
   };
 
   const handleRefundOrder = async (id: string) => {
@@ -696,8 +678,8 @@ function AdminPageContent() {
   };
 
   const handleExportOrdersCsv = () => {
-    // only export orders that are in the “決済完了” status
-    const filtered = displayedOrders.filter((o) => o.status === '決済完了');
+    // 発送待ち（DB の状態が決済完了）の注文だけ書き出す。商品の欄は発送準備中の数（formatOrderItems）
+    const filtered = displayedOrders.filter((o) => o.orderStatus === 'paid');
 
     const csvRows = filtered.map((order) => {
       const row = [
@@ -968,7 +950,7 @@ function AdminPageContent() {
                 </div>
                 <div className="flex items-center gap-2 lk-text-sm font-acumin">
                   <span className="w-3 h-3 bg-yellow-100 rounded-full" />
-                  <span className="text-[#474747]">決済完了: {preparingShipmentCount}</span>
+                  <span className="text-[#474747]">発送待ち: {awaitingShipmentCount}</span>
                 </div>
               </div>
             </div>
@@ -981,15 +963,29 @@ function AdminPageContent() {
               onCancelOrder={handleCancelOrder}
               onRefundOrder={userRole === 'admin' ? handleRefundOrder : undefined}
               onShipOrder={openShipDialog}
+              onRecordCompletion={openCompletionDialog}
               onShowHistory={setHistoryOrderId}
               processingOrderIds={processingOrderIds}
             />
             <OrderShipDialog
-              open={shipOrderId !== null}
+              orderId={shipOrderId}
               onClose={() => setShipOrderId(null)}
-              onSubmit={(values) => void handleShipOrder(values)}
+              onShipped={() => {
+                if (shipOrderId) handleShipped(shipOrderId);
+              }}
             />
-            <OrderHistoryDialog orderId={historyOrderId} onClose={() => setHistoryOrderId(null)} />
+            <OrderCompletionDialog
+              orderId={completionOrderId}
+              onClose={() => setCompletionOrderId(null)}
+              onRecorded={() => {
+                if (completionOrderId) handleCompletionRecorded(completionOrderId);
+              }}
+            />
+            <OrderHistoryDialog
+              orderId={historyOrderId}
+              onClose={() => setHistoryOrderId(null)}
+              onChanged={handleFulfillmentChanged}
+            />
             <OrderCancelDialog
               open={cancelTarget !== null}
               title="注文を取り消す"
