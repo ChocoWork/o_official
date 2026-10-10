@@ -140,6 +140,21 @@ describe('loadFulfillmentMaterials', () => {
     expect(materials?.lines[0]).toMatchObject({ shipped: 2, readyUnshipped: 0, unshipped: 0 });
   });
 
+  it('大文字の番号で開いても、DB が返した注文の番号（小文字）で読み直し、商品が並ぶ', async () => {
+    // 偽物の DB は、実際と同じに、小文字の id の注文と小文字の order_id の数を返す
+    const { client, rpc, tables } = stubClient();
+
+    const materials = await loadFulfillmentMaterials(client, ORDER_ID.toUpperCase());
+
+    expect(materials?.order.id).toBe(ORDER_ID);
+    expect(materials?.lines.map((line) => line.orderItemId)).toEqual([STOCK_ITEM, BACKORDER_ITEM]);
+    expect(materials?.fulfillments).toHaveLength(2);
+    expect(rpc).toHaveBeenCalledWith('list_order_line_fulfillment', { _order_ids: [ORDER_ID] });
+    expect(rpc).toHaveBeenCalledWith('list_order_fulfillments', { _order_id: ORDER_ID });
+    expect(tables.order_items.eq).toHaveBeenCalledWith('order_id', ORDER_ID);
+    expect(tables.payment_exceptions.eq).toHaveBeenCalledWith('order_id', ORDER_ID);
+  });
+
   it('注文が無ければ null。ほかの読み取りはしない', async () => {
     const { client, from, rpc } = stubClient({ order: { data: null, error: null } });
 

@@ -33,8 +33,11 @@ const ORDER_COLUMNS =
 
 /**
  * 発送の画面が開いた時に読む材料（グループ E-1 設計書 6-1・6-2）。service_role の client で読む。
- * 発送できない理由は DB の関数 admin_create_fulfillment が断るのと同じ条件を、画面が先に知らせるために出す
- * （決済完了でない → 配送先が足りない → 支払額の違いの要対応が残っている、の順）。注文が無ければ null。
+ * 発送できない理由 blockedReason は、DB の関数 admin_create_fulfillment が断る理由を画面が先に知らせるために出す
+ * （決済完了でない → 配送先が足りない → 支払額の違いの要対応が残っている、の順）。DB の判定と全く同じではなく、2点が違う。
+ * - 空白だけの欄は、画面の方が厳しく見る（JS の trim は全角空白も除く。DB の btrim は半角空白だけ）
+ * - 未発送の品が無い決済完了の注文は、DB だけが断る（ORDER_NOT_SHIPPABLE）
+ * 注文が無ければ null。
  */
 export async function loadFulfillmentMaterials(client: SupabaseClient, orderId: string): Promise<FulfillmentMaterials | null> {
   const { data: order, error: orderError } = await client
@@ -49,23 +52,24 @@ export async function loadFulfillmentMaterials(client: SupabaseClient, orderId: 
     return null;
   }
 
+  // ここから先は、呼び出し側が渡した文字ではなく、DB が返した番号（小文字）で引く
   const [itemsResult, exceptionsResult, countsByOrder, fulfillmentRows] = await Promise.all([
     // 同じ注文の商品は同じ時刻に登録されるので、id を足して並びを決める
     client
       .from('order_items')
       .select('id, item_name, color, size')
-      .eq('order_id', orderId)
+      .eq('order_id', order.id)
       .order('created_at', { ascending: true })
       .order('id', { ascending: true }),
     // 管理画面の一覧（src/app/api/admin/orders/route.ts）と、発送の DB の関数が断る条件と同じ
     client
       .from('payment_exceptions')
       .select('order_id')
-      .eq('order_id', orderId)
+      .eq('order_id', order.id)
       .eq('reason', 'paid_amount_mismatch')
       .is('resolved_at', null),
-    listOrderLineFulfillment(client, [orderId]),
-    listOrderFulfillments(client, orderId),
+    listOrderLineFulfillment(client, [order.id]),
+    listOrderFulfillments(client, order.id),
   ]);
   if (itemsResult.error) {
     throw new FulfillmentStoreError('load_order_items', itemsResult.error);
@@ -74,7 +78,7 @@ export async function loadFulfillmentMaterials(client: SupabaseClient, orderId: 
     throw new FulfillmentStoreError('load_payment_exceptions', exceptionsResult.error);
   }
 
-  const counts = new Map((countsByOrder.get(orderId) ?? []).map((row) => [row.orderItemId, row] as const));
+  const counts = new Map((countsByOrder.get(order.id) ?? []).map((row) => [row.orderItemId, row] as const));
   const lines = ((itemsResult.data ?? []) as MaterialItemRow[]).flatMap((item): FulfillmentMaterialLine[] => {
     const row = counts.get(item.id);
     if (!row) {

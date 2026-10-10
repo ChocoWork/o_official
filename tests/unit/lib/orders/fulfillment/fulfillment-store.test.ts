@@ -373,6 +373,48 @@ describe('listOrderLineFulfillment', () => {
     expect(result.get(ORDER_ID)).toHaveLength(1);
   });
 
+  it('大文字の番号を渡すと、RPC へは小文字で渡り、DB が小文字で返した行は渡した文字のキーに入る', async () => {
+    const upper = ORDER_ID.toUpperCase();
+    // 実際の DB は uuid をいつも小文字で返す
+    const { store, rpc } = storeWith({ list_order_line_fulfillment: { data: [countRow(ORDER_ID, ITEM_1)] } });
+
+    const result = await listOrderLineFulfillment(store, [upper]);
+
+    expect(rpc).toHaveBeenCalledWith('list_order_line_fulfillment', { _order_ids: [ORDER_ID] });
+    expect([...result.keys()]).toEqual([upper]);
+    expect(result.get(upper)).toEqual([{
+      orderId: ORDER_ID, orderItemId: ITEM_1, variantId: 11, fulfillmentType: 'stock', quantity: 2, shipped: 1, completed: 2,
+      inProduction: 0, readyUnshipped: 1, unshipped: 1,
+    }]);
+  });
+
+  it('同じ番号を大文字と小文字で両方渡すと、RPC へは1つだけ渡り、両方のキーに同じ行が入る', async () => {
+    const upper = ORDER_ID.toUpperCase();
+    const { store, rpc } = storeWith({
+      list_order_line_fulfillment: { data: [countRow(ORDER_ID, ITEM_1), countRow(ORDER_ID, ITEM_2)] },
+    });
+
+    const result = await listOrderLineFulfillment(store, [ORDER_ID, upper]);
+
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith('list_order_line_fulfillment', { _order_ids: [ORDER_ID] });
+    expect([...result.keys()]).toEqual([ORDER_ID, upper]);
+    expect(result.get(ORDER_ID)).toHaveLength(2);
+    expect(result.get(upper)).toEqual(result.get(ORDER_ID));
+  });
+
+  it('200件ずつに分ける数は、小文字にそろえて重複を除いた後の数', async () => {
+    // 先頭の a で、大文字にすると必ず別の文字になる
+    const lower = Array.from({ length: 250 }, (_, index) => `a0000000-0000-4000-8000-${String(index).padStart(12, '0')}`);
+    const { store, rpc } = storeWith({ list_order_line_fulfillment: { data: [] } });
+
+    const result = await listOrderLineFulfillment(store, [...lower, ...lower.map((id) => id.toUpperCase())]);
+
+    expect(rpc.mock.calls.map(([, args]) => (args?._order_ids as string[]).length)).toEqual([200, 50]);
+    expect(rpc.mock.calls[0][1]?._order_ids).toEqual(lower.slice(0, 200));
+    expect(result.size).toBe(500);
+  });
+
   it('200件ずつに分けて呼ぶ（DB の関数は201件以上を断るため）', async () => {
     const ids = Array.from({ length: 450 }, (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`);
     const { store, rpc } = storeWith({ list_order_line_fulfillment: { data: [] } });
@@ -389,5 +431,27 @@ describe('listOrderLineFulfillment', () => {
     const { store } = storeWith({ list_order_line_fulfillment: { error: { message: 'TOO_MANY_ORDERS', code: '22023' } } });
 
     await expect(listOrderLineFulfillment(store, [ORDER_ID])).rejects.toBeInstanceOf(FulfillmentStoreError);
+  });
+
+  describe('PostgREST の max_rows（1000）で答えが切れうる時', () => {
+    const rows = (count: number) =>
+      Array.from({ length: count }, (_, index) => countRow(ORDER_ID, `f1b2c3d4-1111-4222-8333-${String(index).padStart(12, '0')}`));
+
+    it('1回の答えが 1000 行に届いたら、切れている恐れがあるので数えずに FulfillmentStoreError で止める', async () => {
+      const { store } = storeWith({ list_order_line_fulfillment: { data: rows(1000) } });
+
+      const error = await listOrderLineFulfillment(store, [ORDER_ID]).catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(FulfillmentStoreError);
+      expect(error).toMatchObject({ operation: 'list_order_line_fulfillment' });
+    });
+
+    it('999 行なら通る', async () => {
+      const { store } = storeWith({ list_order_line_fulfillment: { data: rows(999) } });
+
+      const result = await listOrderLineFulfillment(store, [ORDER_ID]);
+
+      expect(result.get(ORDER_ID)).toHaveLength(999);
+    });
   });
 });

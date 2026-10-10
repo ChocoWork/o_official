@@ -132,25 +132,35 @@ export type OrderLineFulfillmentRow = {
 // DB の関数 list_order_line_fulfillment が一度に受ける注文の数の上限
 const LINE_FULFILLMENT_CHUNK_SIZE = 200;
 
+// PostgREST が1回の答えで返す行の上限。値は supabase/config.toml の max_rows と本番の既定（どちらも 1000）に合わせる。
+// 上限に届いた答えは切れている恐れがあり、切れたまま数えると注文の言葉を誤る（残りがあるのに「配送中」と出る、など）ので、数えずに止める
+const POSTGREST_MAX_ROWS = 1000;
+
 /**
  * 注文ごとの商品の数（発送した・仕上がった・受注生産中・発送準備中・未発送）。数え方は DB の1か所にあるので、
- * 窓口と画面は必ずこの答えを使う。渡した注文の番号は全部キーに入る（商品の行が無ければ空の配列）。
+ * 窓口と画面は必ずこの答えを使う。渡した注文の番号は全部キーに入る（渡した文字のまま。商品の行が無ければ空の配列）。
  * 空なら DB を呼ばない。DB の関数が受ける上限に合わせて、200件ずつに分けて呼ぶ。
+ * 1回の答えが PostgREST の行の上限に届いたら、切れている恐れがあるので FulfillmentStoreError で止める。
  */
 export async function listOrderLineFulfillment(
   store: FulfillmentStore,
   orderIds: readonly string[],
 ): Promise<Map<string, OrderLineFulfillmentRow[]>> {
-  const ids = [...new Set(orderIds)];
-  const byOrder = new Map<string, OrderLineFulfillmentRow[]>(ids.map((id): [string, OrderLineFulfillmentRow[]] => [id, []]));
+  // DB は uuid を小文字で返す。窓口の uuid 検証は大文字も通すので、小文字にそろえて引かないと行が合わず捨てられる
+  const ids = [...new Set(orderIds.map((id) => id.toLowerCase()))];
+  const rowsById = new Map<string, OrderLineFulfillmentRow[]>(ids.map((id): [string, OrderLineFulfillmentRow[]] => [id, []]));
 
   for (let start = 0; start < ids.length; start += LINE_FULFILLMENT_CHUNK_SIZE) {
     const data = await callRpc(store, 'list_order_line_fulfillment', {
       _order_ids: ids.slice(start, start + LINE_FULFILLMENT_CHUNK_SIZE),
     });
-    for (const row of rowsOf(data)) {
-      const orderId = String(row.order_id);
-      byOrder.get(orderId)?.push({
+    const rows = rowsOf(data);
+    if (rows.length >= POSTGREST_MAX_ROWS) {
+      throw new FulfillmentStoreError('list_order_line_fulfillment');
+    }
+    for (const row of rows) {
+      const orderId = String(row.order_id).toLowerCase();
+      rowsById.get(orderId)?.push({
         orderId,
         orderItemId: String(row.order_item_id),
         variantId: typeof row.variant_id === 'number' ? row.variant_id : null,
@@ -164,7 +174,9 @@ export async function listOrderLineFulfillment(
       });
     }
   }
-  return byOrder;
+  return new Map(
+    [...new Set(orderIds)].map((id): [string, OrderLineFulfillmentRow[]] => [id, rowsById.get(id.toLowerCase()) ?? []]),
+  );
 }
 
 /** 発送を1回記録する。同じ requestKey の送り直しは前の結果を返す（replayed）。断りは FulfillmentOperationError */
