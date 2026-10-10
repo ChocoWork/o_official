@@ -18,16 +18,22 @@ type VariantState = {
   sizeLabel: string;
   stockQuantity: number;
   isActive: boolean;
+  committedQuantity: number;
+  onHandQuantity: number;
   backorderQuantity: number;
 };
 
 type MovementState = {
   id: number;
-  variant_id: number;
+  variantId: number;
   delta: number;
   reason: string;
   note: string | null;
-  created_at: string;
+  createdAt: string;
+  actorEmail: string | null;
+  orderId: string | null;
+  orderNumber: string | null;
+  balanceAfter: number;
 };
 
 async function mockAdminApis(
@@ -78,11 +84,11 @@ async function mockAdminApis(
 
   // サーバ側の状態を画面から動かせるよう、モック内に持つ。
   const variants: VariantState[] = [
-    { id: 11, colorName: 'BLACK', colorHex: '#000000', sizeLabel: 'M', stockQuantity: 4, isActive: true, backorderQuantity: 2 },
-    { id: 12, colorName: 'BLACK', colorHex: '#000000', sizeLabel: 'L', stockQuantity: 0, isActive: true, backorderQuantity: 0 },
+    { id: 11, colorName: 'BLACK', colorHex: '#000000', sizeLabel: 'M', stockQuantity: 4, isActive: true, committedQuantity: 3, onHandQuantity: 7, backorderQuantity: 2 },
+    { id: 12, colorName: 'BLACK', colorHex: '#000000', sizeLabel: 'L', stockQuantity: 0, isActive: true, committedQuantity: 0, onHandQuantity: 0, backorderQuantity: 0 },
   ];
   const movements: MovementState[] = [
-    { id: 5, variant_id: 11, delta: 4, reason: 'restock', note: '初回入荷', created_at: '2026-09-20T01:00:00Z' },
+    { id: 5, variantId: 11, delta: 4, reason: 'restock', note: '初回入荷', createdAt: '2026-09-20T01:00:00Z', actorEmail: 'a@e.com', orderId: null, orderNumber: null, balanceAfter: 4 },
   ];
   let nextMovementId = 6;
 
@@ -101,14 +107,19 @@ async function mockAdminApis(
       const target = variants.find((variant) => variant.id === body.variantId);
       if (target) {
         target.stockQuantity += body.delta;
+        target.onHandQuantity += body.delta;
       }
       movements.unshift({
         id: nextMovementId++,
-        variant_id: body.variantId,
+        variantId: body.variantId,
         delta: body.delta,
         reason: body.reason,
         note: body.note ?? null,
-        created_at: '2026-09-21T02:00:00Z',
+        createdAt: '2026-09-21T02:00:00Z',
+        actorEmail: 'a@e.com',
+        orderId: null,
+        orderNumber: null,
+        balanceAfter: target?.stockQuantity ?? 0,
       });
       await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ success: true }) });
       return;

@@ -44,31 +44,49 @@ function makeRequest(body?: unknown): Request {
   });
 }
 
-/** item_variants / stock_movements / variant_backorder_summary の読み取りを組み立てる。 */
+/** バリアントの行（色・サイズつき）。 */
+function variantRow(id: number, stockQuantity: number) {
+  return {
+    id,
+    stock_quantity: stockQuantity,
+    is_active: true,
+    sku: null,
+    item_colors: { name: 'BLACK', hex: '#000000', position: 0 },
+    item_sizes: { label: id === 11 ? 'M' : 'L', position: id === 11 ? 1 : 2 },
+  };
+}
+
+/** item_variants の読み取りと、DB の関数（引き当て・受注生産・在庫の履歴）の答えを組み立てる。 */
 function setupReads(options: {
   variants?: unknown[];
   variantsError?: { message: string } | null;
-  movements?: unknown[];
-  backorders?: unknown[];
+  states?: unknown[];
+  statesError?: { message: string } | null;
+  history?: unknown[];
+  historyError?: { message: string } | null;
 } = {}) {
   const {
-    variants = [
+    variants = [variantRow(11, 4)],
+    variantsError = null,
+    states = [{ variant_id: 11, committed: 3, backorder: 2 }],
+    statesError = null,
+    history = [
       {
-        id: 11,
-        stock_quantity: 4,
-        is_active: true,
-        sku: null,
-        item_colors: { name: 'BLACK', hex: '#000000', position: 0 },
-        item_sizes: { label: 'M', position: 1 },
+        movement_id: 5,
+        variant_id: 11,
+        delta: 4,
+        reason: 'restock',
+        note: '入荷',
+        created_at: '2026-09-21T00:00:00Z',
+        actor_email: 'admin@example.com',
+        order_id: null,
+        balance_after: 4,
       },
     ],
-    variantsError = null,
-    movements = [
-      { id: 5, variant_id: 11, delta: 4, reason: 'restock', note: '入荷', created_at: '2026-09-21T00:00:00Z' },
-    ],
-    backorders = [{ variant_id: 11, backorder_quantity: 2 }],
+    historyError = null,
   } = options;
 
+  // 台帳や view は直接読まない。item_variants 以外を読もうとすると、from が空の物を返して落ちる
   mockFrom.mockImplementation((table: string) => {
     if (table === 'item_variants') {
       return {
@@ -80,36 +98,34 @@ function setupReads(options: {
       };
     }
 
-    if (table === 'stock_movements') {
-      return {
-        select: jest.fn().mockReturnValue({
-          in: jest.fn().mockReturnValue({
-            order: jest.fn().mockReturnValue({
-              limit: jest.fn().mockResolvedValue({ data: movements, error: null }),
-            }),
-          }),
-        }),
-        insert: jest.fn().mockResolvedValue({ error: null }),
-      };
-    }
-
-    if (table === 'variant_backorder_summary') {
-      return {
-        select: jest.fn().mockReturnValue({
-          in: jest.fn().mockResolvedValue({ data: backorders, error: null }),
-        }),
-      };
-    }
-
     return {};
   });
+
+  mockRpc.mockImplementation(async (name: string) => {
+    if (name === 'list_variant_stock_states') {
+      return { data: statesError ? null : states, error: statesError };
+    }
+    if (name === 'list_item_stock_history') {
+      return { data: historyError ? null : history, error: historyError };
+    }
+    // backfill_item_variants
+    return { data: null, error: null };
+  });
+}
+
+type GetResponse = {
+  status: number;
+  body: { variants: Array<Record<string, unknown>>; movements: Array<Record<string, unknown>> };
+};
+
+async function callGet(): Promise<GetResponse> {
+  return (await GET(makeRequest(), params())) as unknown as GetResponse;
 }
 
 describe('GET /api/admin/items/[id]/variants', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockAuthorize.mockResolvedValue({ ok: true, userId: 'admin-1' });
-    mockRpc.mockResolvedValue({ error: null });
     setupReads();
   });
 
@@ -138,35 +154,158 @@ describe('GET /api/admin/items/[id]/variants', () => {
     expect(mockRpc).toHaveBeenCalledWith('backfill_item_variants', { target_item_id: 7 });
   });
 
-  it('色・サイズ・在庫・受注生産の受注数を返す', async () => {
-    const res = (await GET(makeRequest(), params())) as unknown as {
-      status: number;
-      body: { variants: Array<Record<string, unknown>>; movements: unknown[] };
-    };
+  it('色・サイズと4つの数を返す。手元の数は、すぐ出せる数に引き当て済みを足した数', async () => {
+    const res = await callGet();
 
     expect(res.status).toBe(200);
     expect(res.body.variants).toEqual([
-      expect.objectContaining({
+      {
         id: 11,
         colorName: 'BLACK',
         colorHex: '#000000',
         sizeLabel: 'M',
+        sku: null,
         stockQuantity: 4,
         isActive: true,
+        committedQuantity: 3,
+        onHandQuantity: 7,
         backorderQuantity: 2,
-      }),
+      },
     ]);
-    expect(res.body.movements).toHaveLength(1);
   });
 
-  it('受注生産の受注が無いバリアントは 0 で返す', async () => {
-    setupReads({ backorders: [] });
+  it('バリアントごとに自分の引き当て済み・受注生産を結び付け、番号を全部まとめて DB の関数に渡す', async () => {
+    setupReads({
+      variants: [variantRow(11, 4), variantRow(12, 0)],
+      states: [
+        { variant_id: 12, committed: 1, backorder: 5 },
+        { variant_id: 11, committed: 3, backorder: 2 },
+      ],
+    });
 
-    const res = (await GET(makeRequest(), params())) as unknown as {
-      body: { variants: Array<{ backorderQuantity: number }> };
-    };
+    const res = await callGet();
 
-    expect(res.body.variants[0].backorderQuantity).toBe(0);
+    expect(mockRpc).toHaveBeenCalledWith('list_variant_stock_states', { _variant_ids: [11, 12] });
+    expect(res.body.variants).toEqual([
+      expect.objectContaining({ id: 11, committedQuantity: 3, onHandQuantity: 7, backorderQuantity: 2 }),
+      expect.objectContaining({ id: 12, committedQuantity: 1, onHandQuantity: 1, backorderQuantity: 5 }),
+    ]);
+  });
+
+  it('引き当ても受注生産も無いバリアントは 0 で返し、手元の数はすぐ出せる数と同じ', async () => {
+    setupReads({ states: [] });
+
+    const res = await callGet();
+
+    expect(res.body.variants[0]).toMatchObject({
+      stockQuantity: 4,
+      committedQuantity: 0,
+      onHandQuantity: 4,
+      backorderQuantity: 0,
+    });
+  });
+
+  it('在庫の履歴は DB の関数で、この商品の最新50件を読む', async () => {
+    await callGet();
+
+    expect(mockRpc).toHaveBeenCalledWith('list_item_stock_history', { _item_id: 7, _limit: 50 });
+  });
+
+  it('履歴は誰が・どの注文で・変わった後の数つきで返し、注文は注文番号の形にする', async () => {
+    setupReads({
+      history: [
+        {
+          movement_id: 9,
+          variant_id: 11,
+          delta: -1,
+          reason: 'purchase',
+          note: null,
+          created_at: '2026-09-22T00:00:00Z',
+          actor_email: null,
+          order_id: 'a1b2c3d4-1111-4222-8333-444455556666',
+          balance_after: 3,
+        },
+        {
+          movement_id: 5,
+          variant_id: 11,
+          delta: 4,
+          reason: 'restock',
+          note: '入荷',
+          created_at: '2026-09-21T00:00:00Z',
+          actor_email: 'admin@example.com',
+          order_id: null,
+          balance_after: 4,
+        },
+      ],
+    });
+
+    const res = await callGet();
+
+    expect(res.body.movements).toEqual([
+      {
+        id: 9,
+        variantId: 11,
+        delta: -1,
+        reason: 'purchase',
+        note: null,
+        createdAt: '2026-09-22T00:00:00Z',
+        actorEmail: null,
+        orderId: 'a1b2c3d4-1111-4222-8333-444455556666',
+        orderNumber: 'ORD-A1B2C3D4',
+        balanceAfter: 3,
+      },
+      {
+        id: 5,
+        variantId: 11,
+        delta: 4,
+        reason: 'restock',
+        note: '入荷',
+        createdAt: '2026-09-21T00:00:00Z',
+        actorEmail: 'admin@example.com',
+        orderId: null,
+        orderNumber: null,
+        balanceAfter: 4,
+      },
+    ]);
+  });
+
+  it('バリアントが無い商品は、数も履歴も DB の関数を呼ばずに空で返す', async () => {
+    setupReads({ variants: [] });
+
+    const res = await callGet();
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ variants: [], movements: [] });
+    expect(mockRpc).toHaveBeenCalledTimes(1);
+    expect(mockRpc).toHaveBeenCalledWith('backfill_item_variants', { target_item_id: 7 });
+  });
+
+  it('台帳の表や、前の受注生産の view は直接読まない', async () => {
+    await callGet();
+
+    expect(mockFrom.mock.calls.map(([table]) => table)).toEqual(['item_variants']);
+  });
+
+  it('引き当て済み・受注生産の数が読めなければ 500 を返す（0 に見せない）', async () => {
+    setupReads({ statesError: { message: 'boom' } });
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await callGet();
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Failed to fetch variant stock states' });
+    consoleError.mockRestore();
+  });
+
+  it('在庫の履歴が読めなければ 500 を返す', async () => {
+    setupReads({ historyError: { message: 'boom' } });
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await callGet();
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Failed to fetch stock history' });
+    consoleError.mockRestore();
   });
 
   it('バリアントが引けなければ 500 を返す', async () => {

@@ -12,8 +12,9 @@ import { clientFetch } from "@/lib/client-fetch";
  * item_variants を直接書き換えない。注文の処理が書く理由（purchase / cancel / refund）は
  * ここからは選べない。
  *
- * 在庫が無い組み合わせも受注生産として売れる（ブランドの前提）。在庫数は「すぐ出せる数」で、
- * 0 は「売れない」ではない。受注生産の受注数を並べて置き、製造の判断に使えるようにする。
+ * 在庫が無い組み合わせも受注生産として売れる（ブランドの前提）。すぐ出せる数が 0 でも「売れない」
+ * ではない。すぐ出せる数・引き当て済み・手元の数・受注生産（まだ仕上がっていない数）を並べて置き、
+ * 製造と仕入れの判断に使えるようにする（グループ E-1。数え方は DB の関数が1か所で持つ）。
  */
 
 type Variant = {
@@ -22,18 +23,31 @@ type Variant = {
   colorHex: string | null;
   sizeLabel: string | null;
   sku: string | null;
+  /** すぐ出せる数 */
   stockQuantity: number;
   isActive: boolean;
+  /** 引き当て済み: 注文のために取ってある数 */
+  committedQuantity: number;
+  /** 手元の数: 棚に実際にある数（すぐ出せる数 + 引き当て済み） */
+  onHandQuantity: number;
+  /** 受注生産: これから作る数 */
   backorderQuantity: number;
 };
 
 type Movement = {
   id: number;
-  variant_id: number;
+  variantId: number;
   delta: number;
   reason: string;
   note: string | null;
-  created_at: string;
+  createdAt: string;
+  /** 記録した管理者のメール。注文や取消の処理が自動で書いた行は null */
+  actorEmail: string | null;
+  orderId: string | null;
+  /** 注文番号の形（ORD-XXXXXXXX）。注文に結び付かない行は null */
+  orderNumber: string | null;
+  /** その行で変わった後の、この色・サイズのすぐ出せる数 */
+  balanceAfter: number;
 };
 
 const REASON_LABELS: Record<string, string> = {
@@ -43,6 +57,10 @@ const REASON_LABELS: Record<string, string> = {
   cancel: "取消",
   refund: "返金",
 };
+
+// 4つの数の言葉の説明。画面の上に1回だけ書く（色・サイズごとの行には書かない）
+const STOCK_TERMS_EXPLANATION =
+  "すぐ出せる数は今すぐ売れる数、引き当て済みは注文のために取ってある数、手元の数は棚に実際にある数、受注生産はこれから作る数。";
 
 // 管理画面から打てる理由。注文の処理が書くものは含めない（API 側でも拒否する）。
 const ADMIN_REASONS = [
@@ -171,8 +189,14 @@ export function ItemStockSection({ itemId }: { itemId: string }) {
         在庫
       </h2>
 
-      <p className="mt-3 lk-text-3xs leading-relaxed text-black/60">
-        在庫数は「すぐ出せる数」。0 でも受注生産として注文は受け付ける。
+      <p
+        data-testid="stock-terms-explanation"
+        className="mt-3 lk-text-3xs leading-relaxed text-black/60"
+      >
+        {STOCK_TERMS_EXPLANATION}
+      </p>
+      <p className="mt-1 lk-text-3xs leading-relaxed text-black/60">
+        すぐ出せる数が 0 でも、受注生産として注文は受け付ける。
         数を動かすと理由つきで台帳に残り、あとから取り消せない。
       </p>
 
@@ -227,10 +251,20 @@ export function ItemStockSection({ itemId }: { itemId: string }) {
                   </span>
 
                   <span className="lk-text-2xs text-black">
-                    <span className="text-black/50">在庫 </span>
+                    <span className="text-black/50">すぐ出せる数 </span>
                     <span data-testid="variant-stock" className="font-medium">
                       {variant.stockQuantity}
                     </span>
+                  </span>
+
+                  <span className="lk-text-2xs text-black">
+                    <span className="text-black/50">引き当て済み </span>
+                    <span data-testid="variant-committed">{variant.committedQuantity}</span>
+                  </span>
+
+                  <span className="lk-text-2xs text-black">
+                    <span className="text-black/50">手元の数 </span>
+                    <span data-testid="variant-on-hand">{variant.onHandQuantity}</span>
                   </span>
 
                   <span className="lk-text-2xs text-black">
@@ -303,18 +337,39 @@ export function ItemStockSection({ itemId }: { itemId: string }) {
         <p className="mt-3 lk-text-2xs text-black/60">まだ記録がありません。</p>
       ) : (
         <ul className="mt-3 flex flex-col gap-2">
-          {movements.map((movement) => (
-            <li
-              key={movement.id}
-              data-testid="stock-movement-row"
-              className="flex flex-wrap items-baseline gap-x-4 gap-y-1 border-b border-black/5 pb-2 lk-text-3xs text-black/70"
-            >
-              <span>{formatDateTime(movement.created_at)}</span>
-              <span>{REASON_LABELS[movement.reason] ?? movement.reason}</span>
-              <span className="font-medium text-black">{formatDelta(movement.delta)}</span>
-              {movement.note && <span className="text-black/50">{movement.note}</span>}
-            </li>
-          ))}
+          {movements.map((movement) => {
+            const variant = variants.find((candidate) => candidate.id === movement.variantId);
+
+            return (
+              <li
+                key={movement.id}
+                data-testid="stock-movement-row"
+                className="flex flex-wrap items-baseline gap-x-4 gap-y-1 border-b border-black/5 pb-2 lk-text-3xs text-black/70"
+              >
+                <span data-testid="stock-movement-time">{formatDateTime(movement.createdAt)}</span>
+                {variant && (
+                  <span data-testid="stock-movement-variant">{variantLabel(variant)}</span>
+                )}
+                <span data-testid="stock-movement-reason">
+                  {REASON_LABELS[movement.reason] ?? movement.reason}
+                </span>
+                <span data-testid="stock-movement-delta" className="font-medium text-black">
+                  {formatDelta(movement.delta)}
+                </span>
+                <span data-testid="stock-movement-balance">{`変わった後 ${movement.balanceAfter}`}</span>
+                {/* 記録した人が空の行は、注文や取消の処理が自動で書いたもの */}
+                <span data-testid="stock-movement-actor">{movement.actorEmail ?? "自動"}</span>
+                {movement.orderNumber && (
+                  <span data-testid="stock-movement-order">{movement.orderNumber}</span>
+                )}
+                {movement.note && (
+                  <span data-testid="stock-movement-note" className="text-black/50">
+                    {movement.note}
+                  </span>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>

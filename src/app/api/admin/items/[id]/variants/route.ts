@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { logAudit } from '@/lib/audit';
+import { toOrderNumber } from '@/lib/orders/order-number';
 
 /**
  * 色 × サイズ（バリアント）の在庫を管理画面から扱う（FREQ-399）。
@@ -36,6 +37,29 @@ type VariantRow = {
   item_colors: { name: string; hex: string; position: number } | null;
   item_sizes: { label: string; position: number } | null;
 };
+
+/** public.list_variant_stock_states の1行（引き当て済みと受注生産の数。設計書 10-1） */
+type StockStateRow = {
+  variant_id: number;
+  committed: number;
+  backorder: number;
+};
+
+/** public.list_item_stock_history の1行（設計書 10-2） */
+type StockHistoryRow = {
+  movement_id: number;
+  variant_id: number;
+  delta: number;
+  reason: string;
+  note: string | null;
+  created_at: string;
+  actor_email: string | null;
+  order_id: string | null;
+  balance_after: number;
+};
+
+/** 在庫の画面に出す履歴の件数 */
+const STOCK_HISTORY_LIMIT = 50;
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -77,42 +101,60 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const variantRows = (variants ?? []) as unknown as VariantRow[];
     const variantIds = variantRows.map((row) => row.id);
 
-    const { data: backorders } = variantIds.length
-      ? await supabase
-          .from('variant_backorder_summary')
-          .select('variant_id, backorder_quantity')
-          .in('variant_id', variantIds)
-      : { data: [] as Array<{ variant_id: number; backorder_quantity: number }> };
+    // 引き当て済みと受注生産の数は DB の関数が1か所で数える。台帳や view を画面の側で数え直さない。
+    // 読めなかった時に 0 と見せると製造と仕入れの判断を誤るので、失敗は隠さない
+    const { data: stockStates, error: stockStatesError } = variantIds.length
+      ? await supabase.rpc('list_variant_stock_states', { _variant_ids: variantIds })
+      : { data: [], error: null };
+    if (stockStatesError) {
+      console.error('Failed to fetch variant stock states:', itemId, stockStatesError);
+      return NextResponse.json({ error: 'Failed to fetch variant stock states' }, { status: 500 });
+    }
 
-    const backorderByVariant = new Map(
-      ((backorders ?? []) as Array<{ variant_id: number; backorder_quantity: number }>).map((row) => [
-        row.variant_id,
-        row.backorder_quantity,
-      ]),
+    const { data: history, error: historyError } = variantIds.length
+      ? await supabase.rpc('list_item_stock_history', { _item_id: itemId, _limit: STOCK_HISTORY_LIMIT })
+      : { data: [], error: null };
+    if (historyError) {
+      console.error('Failed to fetch stock history:', itemId, historyError);
+      return NextResponse.json({ error: 'Failed to fetch stock history' }, { status: 500 });
+    }
+
+    const stateByVariant = new Map<number, StockStateRow>(
+      ((stockStates ?? []) as StockStateRow[]).map((row) => [row.variant_id, row]),
     );
-
-    const { data: movements } = variantIds.length
-      ? await supabase
-          .from('stock_movements')
-          .select('id, variant_id, delta, reason, note, created_at')
-          .in('variant_id', variantIds)
-          .order('id', { ascending: false })
-          .limit(50)
-      : { data: [] as unknown[] };
 
     return NextResponse.json(
       {
-        variants: variantRows.map((row) => ({
-          id: row.id,
-          colorName: row.item_colors?.name ?? null,
-          colorHex: row.item_colors?.hex ?? null,
-          sizeLabel: row.item_sizes?.label ?? null,
-          sku: row.sku,
-          stockQuantity: row.stock_quantity,
-          isActive: row.is_active,
-          backorderQuantity: backorderByVariant.get(row.id) ?? 0,
+        variants: variantRows.map((row) => {
+          const state = stateByVariant.get(row.id);
+          const committedQuantity = state?.committed ?? 0;
+
+          return {
+            id: row.id,
+            colorName: row.item_colors?.name ?? null,
+            colorHex: row.item_colors?.hex ?? null,
+            sizeLabel: row.item_sizes?.label ?? null,
+            sku: row.sku,
+            stockQuantity: row.stock_quantity,
+            isActive: row.is_active,
+            committedQuantity,
+            // 手元の数は棚に実際にある数。すぐ出せる数に、注文のために取ってある数を足す（設計書 10-1）
+            onHandQuantity: row.stock_quantity + committedQuantity,
+            backorderQuantity: state?.backorder ?? 0,
+          };
+        }),
+        movements: ((history ?? []) as StockHistoryRow[]).map((row) => ({
+          id: row.movement_id,
+          variantId: row.variant_id,
+          delta: row.delta,
+          reason: row.reason,
+          note: row.note,
+          createdAt: row.created_at,
+          actorEmail: row.actor_email,
+          orderId: row.order_id,
+          orderNumber: row.order_id ? toOrderNumber(row.order_id) : null,
+          balanceAfter: row.balance_after,
         })),
-        movements: movements ?? [],
       },
       { status: 200 },
     );
