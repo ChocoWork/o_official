@@ -87,7 +87,7 @@
 | P1 | 移行は2本。A（`20261010120000_order_fulfillments.sql`）は3つの表・守り・数の関数・仕上がりの関数・読み出しの関数・在庫の関数・前からの写し。B（`20261010120100_fulfillment_order_emails.sql`）は注文のメールの表の変更と、発送の関数（発送のメールを書くので outbox の列が要る）・古い関数と view の削除 | 発送の関数は発送のメールの予定を書くので、outbox に発送の番号の列ができてから作る |
 | P2 | 一覧の画面のために、注文の番号の配列で数を返す `public.list_order_line_fulfillment(_order_ids uuid[])` を作る（1回に200件まで） | 一覧の1ページ分の注文の数を、1回の呼び出しで読む |
 | P3 | DB の関数は決まった言葉（例 `QUANTITY_EXCEEDS_READY`）で止め、TS は言葉の部分一致で誤りの記号（`FulfillmentErrorCode`）に直す。窓口は `{ error, code }` を返す | グループ D の再送と同じ形。画面は記号ではなく `error` の言葉を出す |
-| P4 | `stock_movements(order_item_id)` に索引を足す（移行 A） | 引き当て済みの数を商品の行ごとに台帳から数えるため。今の索引は variant_id と order_id だけ |
+| P4 | 引き当て済みの数は、`stock_movements(order_item_id)` の前からある索引 `stock_movements_order_item_id_idx`（20260919130048）で商品の行ごとに台帳から数える。新しい索引は足さない（実行で直した） | 同じ列の索引を2つ持たない |
 | P5 | 仕上がりの記録は1つの商品の行ごとに1行。1回の操作の行は同じ `request_key` を持つ（`(request_key, order_item_id)` で一意） | 取消を商品ごとにできる。重複防止は操作ごと |
 | P6 | 発送の画面と仕上がりの画面は、`orderId` を受け取って自分で材料を読む部品にする。成功したら親に知らせ、親（管理画面）が一覧を読み直す | 今の発送の画面は配送業者と伝票番号だけを親に返していたが、商品の数は画面の中で決めるため |
 | P7 | 注文の言葉と進み具合の段は `src/lib/orders/order-progress.ts`（画面からも使う。サーバーだけの物を import しない）の1か所で出す。今の `src/lib/orders/order-status.ts` の `ORDER_PROGRESS_STEPS`・`resolveOrderProgressIndex` は使わなくなるので消す（`formatOrderStatus` は残す） | 管理画面・お客様の画面・窓口が同じ言葉を出す |
@@ -433,7 +433,6 @@ movements: Array<{ id: number; variantId: number; delta: number; reason: string;
   - 共通の約束 C-1 の移行 A の関数（`private.order_line_fulfillment`・`public.list_order_line_fulfillment`・`public.admin_record_completion`・`public.admin_cancel_completion`・`public.list_order_fulfillments`・`public.list_order_completions`・`public.list_variant_stock_states`・`public.list_item_stock_history`）
   - `private.parse_fulfillment_lines(_lines jsonb, _error text) RETURNS TABLE (order_item_id uuid, quantity integer)`（`_lines` の形を確かめて行に分ける。形が違えば `_error` の言葉で 22023。Task 2 の発送の関数も使う）
   - `private.backfill_legacy_fulfillments() RETURNS integer`（前からの発送済みの注文に、発送の記録と受注生産の品の仕上がりの記録を作る。作った発送の数を返す。何度呼んでも同じ結果）
-  - 索引 `stock_movements_order_item_idx`
   - 試験の道具 `insertOrderWithLines(db, options)`（Step 1）
 
 - [ ] **Step 1: 試験の道具を足す**
@@ -1100,8 +1099,6 @@ CREATE TABLE IF NOT EXISTS public.order_item_completions (
 CREATE INDEX IF NOT EXISTS order_fulfillment_lines_order_item_idx ON public.order_fulfillment_lines (order_item_id);
 CREATE INDEX IF NOT EXISTS order_item_completions_order_item_idx ON public.order_item_completions (order_item_id);
 CREATE INDEX IF NOT EXISTS order_item_completions_order_idx ON public.order_item_completions (order_id, created_at);
--- 引き当て済みを商品の行ごとに台帳から数える（今の索引は variant_id と order_id だけ）
-CREATE INDEX IF NOT EXISTS stock_movements_order_item_idx ON public.stock_movements (order_item_id);
 
 -- 2. 守り（関数の確かめに重ねる）
 CREATE OR REPLACE FUNCTION private.reject_fulfillment_record_change()
@@ -1412,7 +1409,7 @@ BEGIN
        OR v_existing <> pg_catalog.cardinality(v_ids)
        OR EXISTS (
          SELECT 1
-         FROM pg_catalog.unnest(v_ids, v_quantities) AS r(order_item_id, quantity)
+         FROM ROWS FROM (pg_catalog.unnest(v_ids), pg_catalog.unnest(v_quantities)) AS r(order_item_id, quantity)
          WHERE NOT EXISTS (
            SELECT 1 FROM public.order_item_completions AS c
            WHERE c.request_key = _request_key
@@ -1438,7 +1435,7 @@ BEGIN
 
   IF EXISTS (
     SELECT 1
-    FROM pg_catalog.unnest(v_ids, v_quantities) AS r(order_item_id, quantity)
+    FROM ROWS FROM (pg_catalog.unnest(v_ids), pg_catalog.unnest(v_quantities)) AS r(order_item_id, quantity)
     LEFT JOIN private.order_line_fulfillment(_order_id) AS l ON l.order_item_id = r.order_item_id
     WHERE l.order_item_id IS NULL
        OR l.fulfillment_type <> 'backorder'
@@ -1448,7 +1445,7 @@ BEGIN
 
   IF EXISTS (
     SELECT 1
-    FROM pg_catalog.unnest(v_ids, v_quantities) AS r(order_item_id, quantity)
+    FROM ROWS FROM (pg_catalog.unnest(v_ids), pg_catalog.unnest(v_quantities)) AS r(order_item_id, quantity)
     JOIN private.order_line_fulfillment(_order_id) AS l ON l.order_item_id = r.order_item_id
     WHERE r.quantity > l.in_production
   ) THEN
@@ -1458,7 +1455,7 @@ BEGIN
   RETURN QUERY
   INSERT INTO public.order_item_completions AS c (order_id, order_item_id, quantity, request_key, created_by)
   SELECT _order_id, r.order_item_id, r.quantity, _request_key, _actor_id
-  FROM pg_catalog.unnest(v_ids, v_quantities) AS r(order_item_id, quantity)
+  FROM ROWS FROM (pg_catalog.unnest(v_ids), pg_catalog.unnest(v_quantities)) AS r(order_item_id, quantity)
   RETURNING c.id, c.order_item_id, c.quantity, false;
 END;
 $$;
@@ -2963,7 +2960,7 @@ BEGIN
        ) <> pg_catalog.cardinality(v_ids)
        OR EXISTS (
          SELECT 1
-         FROM pg_catalog.unnest(v_ids, v_quantities) AS r(order_item_id, quantity)
+         FROM ROWS FROM (pg_catalog.unnest(v_ids), pg_catalog.unnest(v_quantities)) AS r(order_item_id, quantity)
          WHERE NOT EXISTS (
            SELECT 1
            FROM public.order_fulfillment_lines AS l
@@ -3019,7 +3016,7 @@ BEGIN
 
   IF EXISTS (
     SELECT 1
-    FROM pg_catalog.unnest(v_ids, v_quantities) AS r(order_item_id, quantity)
+    FROM ROWS FROM (pg_catalog.unnest(v_ids), pg_catalog.unnest(v_quantities)) AS r(order_item_id, quantity)
     JOIN private.order_line_fulfillment(_order_id) AS l ON l.order_item_id = r.order_item_id
     WHERE r.quantity > l.ready_unshipped
   ) THEN
@@ -3052,7 +3049,7 @@ BEGIN
 
   INSERT INTO public.order_fulfillment_lines (fulfillment_id, order_item_id, quantity)
   SELECT v_fulfillment_id, r.order_item_id, r.quantity
-  FROM pg_catalog.unnest(v_ids, v_quantities) AS r(order_item_id, quantity);
+  FROM ROWS FROM (pg_catalog.unnest(v_ids), pg_catalog.unnest(v_quantities)) AS r(order_item_id, quantity);
 
   -- 全部を送った時だけ、注文を発送済みにする（今の発送の列の意味＝全部を送った時の値を守る。
   -- 全額返金の取り消しの戻し先と、配送先を確かめるトリガーがそのまま使える）
@@ -21771,7 +21768,6 @@ FREQ-267-AC-04（横方向のスクロールが無いこと）は変わらない
 | --- | --- |
 | `order_fulfillments(order_id, number)` の UNIQUE | その注文の何回目の発送か |
 | `order_fulfillment_lines(order_item_id)` | 商品ごとの発送した数 |
-| `stock_movements(order_item_id)` | 引き当て済みの数を、商品の行ごとに台帳から数える |
 
 3つの表は RLS を有効にし、anon・authenticated の権限を外し、service_role は SELECT だけを持つ。書くのは `admin_create_fulfillment`・`admin_cancel_fulfillment`・`admin_record_completion`・`admin_cancel_completion`（どれも SECURITY DEFINER）だけ。商品ごとの数は `private.order_line_fulfillment` の1か所で数え、`shipped ≤ completed ≤ quantity` を DB の関数とトリガーで守る。定義は [移行 A](../../../supabase/migrations/20261010120000_order_fulfillments.sql)・[移行 B](../../../supabase/migrations/20261010120100_fulfillment_order_emails.sql) に従う。
 
