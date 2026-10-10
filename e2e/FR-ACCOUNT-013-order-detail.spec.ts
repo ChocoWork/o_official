@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { mockOtpAuthentication } from './account-test-utils';
+import { withReadyProgress } from './order-detail-fixtures';
 
 // FREQ-78: 注文詳細ページ（/account/orders/[id]）の表示項目
 // AC-01: 注文番号・注文日時（時刻含む）が表示されること
@@ -55,7 +56,7 @@ for (const viewport of viewports) {
 				await route.fulfill({
 					status: 200,
 					contentType: 'application/json',
-					body: JSON.stringify(orderDetail),
+					body: JSON.stringify(withReadyProgress(orderDetail)),
 				});
 			});
 
@@ -66,17 +67,18 @@ for (const viewport of viewports) {
 			await expect(page.getByText('注文日時')).toBeVisible();
 			await expect(page.getByText('2026/04/01 09:00')).toBeVisible();
 
-			// AC-02: 配送ステータス（進捗バー・日本語ラベル）
-			await expect(page.getByText('支払い完了')).toBeVisible();
+			// AC-02: 配送ステータス（進捗バー・日本語ラベル）（2026-10-10 FREQ-444 で、段は お支払い・発送準備中・配送中・配達済み）
 			const progress = page.getByRole('list', { name: '配送ステータス' });
 			await expect(progress).toBeVisible();
-			await expect(progress.getByText('受注')).toBeVisible();
-			await expect(progress.getByText('発送')).toBeVisible();
-			await expect(progress.getByText('配達')).toBeVisible();
+			await expect(progress.getByText('お支払い', { exact: true })).toBeVisible();
+			await expect(progress.getByText('発送準備中', { exact: true })).toBeVisible();
+			await expect(progress.getByText('配送中', { exact: true })).toBeVisible();
+			await expect(progress.getByText('配達済み', { exact: true })).toBeVisible();
 
 			// AC-03: 商品（購入履歴タブと同じ表示）
-			await expect(page.getByText('Silk Blouse')).toBeVisible();
-			await expect(page.getByText('Black / M')).toBeVisible();
+			// 2026-10-10 FREQ-444: 発送準備中の商品の欄にも「名前（色 / サイズ） × 数」が出るので、ご注文商品の欄の文字だけに exact で合わせる
+			await expect(page.getByText('Silk Blouse', { exact: true })).toBeVisible();
+			await expect(page.getByText('Black / M', { exact: true })).toBeVisible();
 			await expect(page.getByText('数量: 1')).toBeVisible();
 			await expect(page.getByRole('button', { name: '再度購入' })).toBeVisible();
 

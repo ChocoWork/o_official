@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { loginAndOpenAccount, mockOtpAuthentication } from './account-test-utils';
+import { withReadyProgress } from './order-detail-fixtures';
 
 test.describe('FR-ACCOUNT-005 order history', () => {
   test('過去の注文を一覧表示し、注文詳細へ遷移できる', async ({ page }) => {
@@ -35,7 +36,7 @@ test.describe('FR-ACCOUNT-005 order history', () => {
               id: 'order-1',
               orderNumber: 'ORD-0001',
               orderDate: '2026-04-01',
-              status: '決済完了',
+              status: '発送準備中',
               totalAmount: '¥12,000',
               itemCount: 1,
               items: [
@@ -52,17 +53,19 @@ test.describe('FR-ACCOUNT-005 order history', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({
-          id: 'order-1',
-          orderNumber: 'ORD-0001',
-          orderDate: '2026-04-01',
-          status: '決済完了',
-          totalAmount: '¥12,000',
-          shippingAddress: '東京都渋谷区神宮前1-2-3 青山ハイツ 101',
-          items: [
-            { id: 'line-1', name: 'Silk Blouse', quantity: 1, color: 'Black', size: 'M', amount: '¥12,000' },
-          ],
-        }),
+        body: JSON.stringify(
+          withReadyProgress({
+            id: 'order-1',
+            orderNumber: 'ORD-0001',
+            orderDate: '2026-04-01',
+            status: 'paid',
+            totalAmount: '¥12,000',
+            shippingAddress: '東京都渋谷区神宮前1-2-3 青山ハイツ 101',
+            items: [
+              { id: 'line-1', name: 'Silk Blouse', quantity: 1, color: 'Black', size: 'M', amount: '¥12,000' },
+            ],
+          }),
+        ),
       });
     });
 
@@ -70,7 +73,7 @@ test.describe('FR-ACCOUNT-005 order history', () => {
     await page.getByRole('tab', { name: '購入履歴' }).click();
 
     await expect(page.getByText('ORD-0001')).toBeVisible();
-    await expect(page.getByText('決済完了')).toBeVisible();
+    await expect(page.getByText('発送準備中')).toBeVisible();
     // FREQ-88: 行全体が注文詳細へのリンク
     const orderRow = page.getByRole('link', { name: /ORD-0001/ });
     await expect(orderRow).toHaveAttribute('href', '/account/orders/order-1');

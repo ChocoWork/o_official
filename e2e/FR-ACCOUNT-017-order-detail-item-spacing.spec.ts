@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockOtpAuthentication } from './account-test-utils';
+import { withReadyProgress } from './order-detail-fixtures';
 
 // FREQ-82: 注文詳細「ご注文商品」の窮屈さ解消
 // （FREQ-87 によりモバイルは「商品情報列内・コンテンツ幅」に変更）
@@ -45,7 +46,7 @@ async function openOrderDetail(page: Page) {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
-			body: JSON.stringify(orderDetail),
+			body: JSON.stringify(withReadyProgress(orderDetail)),
 		});
 	});
 	await page.route('**/_next/image**', async (route) => {

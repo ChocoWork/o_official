@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockOtpAuthentication } from './account-test-utils';
+import { withReadyProgress } from './order-detail-fixtures';
 
 // FREQ-84: 配送ステータスバーのモバイル崩れ改善
 // AC-01: 375px / 390px でステップラベルが折り返されず1行で表示されること
@@ -39,7 +40,7 @@ async function openOrderDetail(page: Page) {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
-			body: JSON.stringify(orderDetail),
+			body: JSON.stringify(withReadyProgress(orderDetail)),
 		});
 	});
 	await page.goto('/account/orders/order-1');
@@ -64,7 +65,7 @@ for (const viewport of [
 		test('sm 未満はラベルが丸数字の下に1行で表示され、横スクロールが発生しない', async ({ page }) => {
 			await openOrderDetail(page);
 
-			for (const label of ['支払い完了', '受注', '発送', '配達']) {
+			for (const label of ['お支払い', '発送準備中', '配送中', '配達済み']) {
 				const { circleBox, labelBox } = await stepBoxes(page, label);
 				expect(circleBox).not.toBeNull();
 				expect(labelBox).not.toBeNull();
@@ -93,7 +94,7 @@ for (const viewport of [
 		test('sm 以上はラベルが丸数字の右に同じ行で表示される', async ({ page }) => {
 			await openOrderDetail(page);
 
-			for (const label of ['支払い完了', '受注', '発送', '配達']) {
+			for (const label of ['お支払い', '発送準備中', '配送中', '配達済み']) {
 				const { circleBox, labelBox } = await stepBoxes(page, label);
 				expect(circleBox).not.toBeNull();
 				expect(labelBox).not.toBeNull();

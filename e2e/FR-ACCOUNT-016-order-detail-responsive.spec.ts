@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockOtpAuthentication } from './account-test-utils';
+import { withReadyProgress } from './order-detail-fixtures';
 
 // FREQ-81: 注文詳細ページのレスポンシブ最適化（lg 以上で 61.8% : 38.2% の2カラム）
 // AC-01: desktop でご注文商品と支払金額が横並びであること
@@ -41,7 +42,7 @@ async function openOrderDetail(page: Page) {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
-			body: JSON.stringify(orderDetail),
+			body: JSON.stringify(withReadyProgress(orderDetail)),
 		});
 	});
 	await page.goto('/account/orders/order-1');

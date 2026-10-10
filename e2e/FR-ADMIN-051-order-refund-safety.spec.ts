@@ -8,6 +8,17 @@ const viewports = [
   { name: 'desktop', width: 1280, height: 900 },
 ];
 
+const LINE = {
+  id: 'c1000000-0000-4000-8000-000000000001',
+  color: 'ホワイト',
+  size: 'M',
+  quantity: 1,
+  fulfillmentType: 'stock',
+  shipped: 0,
+  inProduction: 0,
+  readyUnshipped: 1,
+};
+
 const ORDERS = [
   {
     id: 'order-paid',
@@ -15,9 +26,12 @@ const ORDERS = [
     customerEmail: 'paid@example.com',
     orderDate: '2026-09-22',
     itemCount: '1点',
-    items: [{ name: 'ブラウス', quantity: 1 }],
+    items: [{ ...LINE, name: 'ブラウス' }],
     totalAmount: '¥10,000',
-    status: '決済完了',
+    status: '発送準備中',
+    orderStatus: 'paid',
+    progressKey: 'ready',
+    partiallyShipped: false,
     canRefund: true,
     canShip: true,
   },
@@ -27,9 +41,11 @@ const ORDERS = [
     customerEmail: 'pending@example.com',
     orderDate: '2026-09-22',
     itemCount: '1点',
-    items: [{ name: 'スカート', quantity: 1 }],
+    items: [{ ...LINE, name: 'スカート' }],
     totalAmount: '¥12,000',
     status: '未決済',
+    orderStatus: 'pending',
+    progressKey: 'unpaid',
     canRefund: false,
     canCancel: true,
   },
@@ -39,9 +55,11 @@ const ORDERS = [
     customerEmail: 'shipped@example.com',
     orderDate: '2026-09-22',
     itemCount: '1点',
-    items: [{ name: 'コート', quantity: 1 }],
+    items: [{ ...LINE, name: 'コート', shipped: 1, readyUnshipped: 0 }],
     totalAmount: '¥30,000',
-    status: '発送済み',
+    status: '配送中',
+    orderStatus: 'shipped',
+    progressKey: 'in_transit',
     canRefund: true,
   },
 ];
@@ -118,7 +136,7 @@ for (const viewport of viewports) {
 
       await expect(page.getByRole('status').filter({ hasText: '返金処理を受け付けました' })).toBeVisible();
       // 状態の絞り込みボタンにも「決済完了」があるので、一覧の表の中だけを数える
-      await expect(page.getByRole('table').getByText('決済完了', { exact: true })).toHaveCount(1);
+      await expect(page.getByRole('table').getByText('発送準備中', { exact: true })).toHaveCount(1);
       await expect.poll(api.getOrderListRequests).toBe(2);
     });
 

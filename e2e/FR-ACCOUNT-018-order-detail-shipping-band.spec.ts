@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockOtpAuthentication } from './account-test-utils';
+import { withReadyProgress } from './order-detail-fixtures';
 
 // FREQ-83: 配送先情報・支払方法をヘッダー直下の全幅横長バンドへ移動
 // AC-01: 配送先情報と支払方法がご注文商品より上に表示されること
@@ -41,7 +42,7 @@ async function openOrderDetail(page: Page) {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
-			body: JSON.stringify(orderDetail),
+			body: JSON.stringify(withReadyProgress(orderDetail)),
 		});
 	});
 	await page.goto('/account/orders/order-1');

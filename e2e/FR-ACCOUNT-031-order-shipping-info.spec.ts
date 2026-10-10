@@ -1,6 +1,9 @@
 import { test, expect, Page } from '@playwright/test';
+import { STOCK_IN_TRANSIT_PROGRESS, shipmentOf, withReadyProgress } from './order-detail-fixtures';
 
 // FREQ-267: 発送済みの注文詳細に配送業者・追跡番号・追跡リンクを出す。
+// 2026-10-10（FREQ-444）: 配送情報は発送ごとの「配送情報（n回目）」になり、追跡のリンクは窓口が返す（shipments[].trackingUrl）。
+// FREQ-267-AC-05/06 は FREQ-444-AC-02 に引き継いだ（requirements.md の注記）。詳しい確かめは FR-ACCOUNT-032。
 const viewports = [
   { name: 'mobile', width: 390, height: 844 },
   { name: 'tablet', width: 768, height: 1024 },
@@ -9,11 +12,11 @@ const viewports = [
 
 const ORDER_ID = 'a1b2c3d4-1111-2222-3333-444455556666';
 
-const SHIPPED_ORDER = {
+const PAID_ORDER = withReadyProgress({
   id: ORDER_ID,
   orderNumber: 'ORD-A1B2C3D4',
   orderDate: '2026/08/01 09:00',
-  status: 'shipped',
+  status: 'paid',
   subtotalAmount: '¥28,000',
   shippingAmount: '¥800',
   discountAmount: '¥0',
@@ -33,17 +36,14 @@ const SHIPPED_ORDER = {
       stockStatus: 'in_stock',
     },
   ],
-  shippedAt: '2026-08-05T00:00:00.000Z',
-  shippingCarrier: 'yamato',
-  trackingNumber: '1234-5678-9012',
-};
+});
 
-const PAID_ORDER = {
-  ...SHIPPED_ORDER,
-  status: 'paid',
-  shippedAt: null,
-  shippingCarrier: null,
-  trackingNumber: null,
+const SHIPPED_ORDER = {
+  ...PAID_ORDER,
+  status: 'shipped',
+  items: PAID_ORDER.items.map((item) => ({ ...item, shippedQuantity: item.quantity, readyQuantity: 0 })),
+  progress: STOCK_IN_TRANSIT_PROGRESS,
+  shipments: [shipmentOf({ number: 1 })],
 };
 
 async function mockOrderDetail(page: Page, order: unknown): Promise<void> {
@@ -74,11 +74,11 @@ for (const viewport of viewports) {
     });
 
     test('発送済みの注文に配送情報が出る', async ({ page }) => {
-      // FREQ-267-AC-05
+      // FREQ-267-AC-05, FREQ-444-AC-02
       await mockOrderDetail(page, SHIPPED_ORDER);
       await page.goto(`/account/orders/${ORDER_ID}`);
 
-      const section = page.getByRole('region', { name: '配送情報' });
+      const section = page.getByRole('region', { name: '配送情報（1回目）' });
       await expect(section).toBeVisible();
       await expect(section.getByText('ヤマト運輸')).toBeVisible();
       await expect(section.getByText('1234-5678-9012')).toBeVisible();
@@ -89,11 +89,11 @@ for (const viewport of viewports) {
     });
 
     test('未発送の注文には配送情報が出ない', async ({ page }) => {
-      // FREQ-267-AC-06
+      // FREQ-267-AC-06, FREQ-444-AC-02
       await mockOrderDetail(page, PAID_ORDER);
       await page.goto(`/account/orders/${ORDER_ID}`);
 
-      await expect(page.getByRole('region', { name: '配送情報' })).toHaveCount(0);
+      await expect(page.getByRole('region', { name: /配送情報/ })).toHaveCount(0);
     });
 
     test('横方向のページスクロールが発生しない', async ({ page }) => {

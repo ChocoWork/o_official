@@ -13,7 +13,7 @@ const orders = {
 			id: 'order-1',
 			orderNumber: 'LFH-260512-00123',
 			orderDate: '2026/05/12',
-			status: '決済完了',
+			status: '発送準備中',
 			totalAmount: '¥64,900',
 			itemCount: 1,
 			shippingFullName: '山田 花子',
@@ -117,7 +117,7 @@ for (const viewport of [
 			const row = page.getByRole('link', { name: /LFH-260512-00123/ });
 			await expect(row).toBeVisible();
 			await expect(row.getByText('¥64,900')).toBeVisible();
-			await expect(row.getByText('決済完了')).toBeVisible();
+			await expect(row.getByText('発送準備中')).toBeVisible();
 			await expect(row.getByText('2026.05.12')).toBeVisible();
 
 			// AC-03: 行全体が注文詳細へのリンク

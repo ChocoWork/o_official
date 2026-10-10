@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockOtpAuthentication } from './account-test-utils';
+import { withReadyProgress } from './order-detail-fixtures';
 
 // FREQ-85: 「この注文について問い合わせる」ボタンの位置と幅の改善
 // AC-01: ボタンが支払金額セクションの直下に表示されること
@@ -39,7 +40,7 @@ async function openOrderDetail(page: Page) {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
-			body: JSON.stringify(orderDetail),
+			body: JSON.stringify(withReadyProgress(orderDetail)),
 		});
 	});
 	await page.goto('/account/orders/order-1');

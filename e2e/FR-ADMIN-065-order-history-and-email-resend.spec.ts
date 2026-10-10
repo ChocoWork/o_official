@@ -26,9 +26,24 @@ const ORDER_ROW = {
   customerEmail: 'hanako@example.com',
   orderDate: '2026-10-09',
   itemCount: '1点',
-  items: [{ name: 'シルクブラウス', quantity: 1 }],
+  items: [
+    {
+      id: 'c1000000-0000-4000-8000-000000000001',
+      name: 'シルクブラウス',
+      color: 'ホワイト',
+      size: 'M',
+      quantity: 1,
+      fulfillmentType: 'stock',
+      shipped: 0,
+      inProduction: 0,
+      readyUnshipped: 1,
+    },
+  ],
   totalAmount: '¥28,800',
-  status: '決済完了',
+  status: '発送準備中',
+  orderStatus: 'paid',
+  progressKey: 'ready',
+  partiallyShipped: false,
   canShip: true,
 };
 

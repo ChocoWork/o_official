@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { mockOtpAuthentication } from './account-test-utils';
+import { withReadyProgress } from './order-detail-fixtures';
 
 // FREQ-80: 注文詳細ページの進捗バーに「支払い完了」ステップを追加し、
 // ヘッダーの「ステータス」行と「合計（税込・送料込）」行を削除する
@@ -47,14 +48,14 @@ for (const viewport of viewports) {
 	test.describe(`FR-ACCOUNT-015 order detail progress steps (${viewport.name})`, () => {
 		test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
-		test('進捗バーが支払い完了から始まる4ステップになり、ステータス行と合計行が表示されない', async ({ page }) => {
+		test('進捗バーがお支払いから始まる4ステップになり、ステータス行と合計行が表示されない', async ({ page }) => {
 			await mockOtpAuthentication(page);
 
 			await page.route('**/api/orders/order-1', async (route) => {
 				await route.fulfill({
 					status: 200,
 					contentType: 'application/json',
-					body: JSON.stringify(orderDetail),
+					body: JSON.stringify(withReadyProgress(orderDetail)),
 				});
 			});
 
@@ -62,20 +63,20 @@ for (const viewport of viewports) {
 
 			await expect(page.getByText('ORD-0001')).toBeVisible();
 
-			// AC-01: 4ステップ表示・先頭は支払い完了
+			// AC-01: 4ステップ表示・先頭はお支払い（2026-10-10 FREQ-444 で、段の名前を お支払い・発送準備中・配送中・配達済み に置き換え）
 			const progress = page.getByRole('list', { name: '配送ステータス' });
 			await expect(progress).toBeVisible();
-			await expect(progress.getByText('支払い完了')).toBeVisible();
-			await expect(progress.getByText('受注')).toBeVisible();
-			await expect(progress.getByText('発送')).toBeVisible();
-			await expect(progress.getByText('配達')).toBeVisible();
-			await expect(progress.locator('li').first()).toContainText('支払い完了');
+			await expect(progress.getByText('お支払い', { exact: true })).toBeVisible();
+			await expect(progress.getByText('発送準備中', { exact: true })).toBeVisible();
+			await expect(progress.getByText('配送中', { exact: true })).toBeVisible();
+			await expect(progress.getByText('配達済み', { exact: true })).toBeVisible();
+			await expect(progress.locator('li').first()).toContainText('お支払い');
 
-			// AC-02: paid は 支払い完了・受注 が完了表示（text-black）、発送・配達 が未完了表示（text-[#999]）
-			await expect(progress.getByText('支払い完了')).toHaveClass(/text-black/);
-			await expect(progress.getByText('受注')).toHaveClass(/text-black/);
-			await expect(progress.getByText('発送')).toHaveClass(/text-\[#999\]/);
-			await expect(progress.getByText('配達')).toHaveClass(/text-\[#999\]/);
+			// AC-02: 入金済みの在庫の品は お支払い・発送準備中 が済み・今の段（text-black）、配送中・配達済み がこれからの段（text-[#999]）
+			await expect(progress.getByText('お支払い', { exact: true })).toHaveClass(/text-black/);
+			await expect(progress.getByText('発送準備中', { exact: true })).toHaveClass(/text-black/);
+			await expect(progress.getByText('配送中', { exact: true })).toHaveClass(/text-\[#999\]/);
+			await expect(progress.getByText('配達済み', { exact: true })).toHaveClass(/text-\[#999\]/);
 
 			// AC-03: ステータス行なし
 			await expect(page.getByText('ステータス', { exact: true })).toHaveCount(0);

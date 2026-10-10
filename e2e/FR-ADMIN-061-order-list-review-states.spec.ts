@@ -12,18 +12,49 @@ const BASE = {
   customerEmail: 'buyer@example.com',
   orderDate: '2026-09-27',
   itemCount: '1点',
-  items: [{ name: 'シルクブラウス', quantity: 1 }],
+  items: [
+    {
+      id: 'c1000000-0000-4000-8000-000000000001',
+      name: 'シルクブラウス',
+      color: 'ホワイト',
+      size: 'M',
+      quantity: 1,
+      fulfillmentType: 'stock',
+      shipped: 0,
+      inProduction: 0,
+      readyUnshipped: 1,
+    },
+  ],
   totalAmount: '¥28,800',
 };
 
 const ORDERS = [
-  { ...BASE, id: 'order-progress', customerName: '手続き 花子', status: '支払い手続き中', canCancel: true },
-  { ...BASE, id: 'order-review', customerName: '確認 太郎', status: '決済完了', canShip: true, needsReview: true },
+  {
+    ...BASE,
+    id: 'order-progress',
+    customerName: '手続き 花子',
+    status: '支払い手続き中',
+    orderStatus: 'payment_in_progress',
+    progressKey: 'payment_in_progress',
+    canCancel: true,
+  },
+  {
+    ...BASE,
+    id: 'order-review',
+    customerName: '確認 太郎',
+    status: '発送準備中',
+    orderStatus: 'paid',
+    progressKey: 'ready',
+    canShip: true,
+    needsReview: true,
+  },
   {
     ...BASE,
     id: 'order-blocked',
     customerName: '金額 次郎',
-    status: '決済完了',
+    status: '発送準備中',
+    orderStatus: 'paid',
+    progressKey: 'ready',
     canShip: false,
     shipBlockedReason: '支払額の確認が必要です（要対応）',
   },
@@ -125,21 +156,21 @@ for (const viewport of viewports) {
       await mockAdminApis(page, requestedUrls);
       await openOrders(page);
       const pending = page.getByRole('button', { name: '未決済', exact: true });
-      const paid = page.getByRole('button', { name: '決済完了', exact: true });
+      const waiting = page.getByRole('button', { name: '発送待ち（受注生産中・発送準備中）', exact: true });
       const abandoned = page.getByRole('button', { name: '放棄', exact: true });
 
       await pending.click();
-      await paid.click();
+      await waiting.click();
       // 放棄以外は重ねて選べる（2つ以上なら status は送らず、画面側で絞る）
       await expect(pending).toHaveAttribute('aria-pressed', 'true');
-      await expect(paid).toHaveAttribute('aria-pressed', 'true');
+      await expect(waiting).toHaveAttribute('aria-pressed', 'true');
       await expect.poll(() => lastRequestedUrl(requestedUrls)).not.toContain('status=');
 
       await abandoned.click();
 
       await expect(abandoned).toHaveAttribute('aria-pressed', 'true');
       await expect(pending).toHaveAttribute('aria-pressed', 'false');
-      await expect(paid).toHaveAttribute('aria-pressed', 'false');
+      await expect(waiting).toHaveAttribute('aria-pressed', 'false');
       await expect.poll(() => lastRequestedUrl(requestedUrls)).toContain('status=abandoned');
     });
 
