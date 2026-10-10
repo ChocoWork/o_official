@@ -265,3 +265,70 @@ export async function revisionsOf(
     changedBy: row.changed_by,
   }));
 }
+
+export type FixtureLine = {
+  itemId: number;
+  variantId: number;
+  quantity: number;
+  fulfillmentType: 'stock' | 'backorder';
+  /** 在庫の品で、台帳に確保（purchase）を入れるか。既定は入れる */
+  reserved?: boolean;
+};
+
+/**
+ * 在庫の品と受注生産の品を混ぜた注文を直接作る（グループ E-1）。
+ * shipped を渡すと、状態を発送済みにして発送の時刻・配送業者・伝票番号も入れる（移行の前に発送した注文を再現する）。
+ */
+export async function insertOrderWithLines(
+  db: PgClient,
+  options: {
+    status: string;
+    lines: FixtureLine[];
+    shippingEmail?: string;
+    shipped?: { carrier: 'yamato' | 'sagawa' | 'japanpost' | null; trackingNumber: string | null };
+  },
+): Promise<{ orderId: string; orderItemIds: string[] }> {
+  const suffix = uniqueSuffix();
+  const subtotal = options.lines.reduce((sum, line) => sum + PRICE * line.quantity, 0);
+  const order = await db.query(
+    `insert into public.orders
+       (session_id, checkout_session_id, payment_intent_id, status,
+        subtotal_amount, shipping_amount, total_amount, currency,
+        shipping_email, shipping_full_name, shipping_postal_code, shipping_prefecture,
+        shipping_city, shipping_address, shipping_phone, shipped_at, shipping_carrier, tracking_number)
+     values ($1, $2, null, $3::public.order_status, $4, 0, $4, 'jpy',
+             $5, '山田 花子', '1500001', '東京都', '渋谷区', '神宮前1-1-1', '0311112222', $6, $7, $8)
+     returning id`,
+    [
+      `fx-order-${suffix}`,
+      `cs_fx_${suffix}`,
+      options.status,
+      subtotal,
+      options.shippingEmail ?? 'fixture@example.com',
+      options.shipped ? new Date().toISOString() : null,
+      options.shipped?.carrier ?? null,
+      options.shipped?.trackingNumber ?? null,
+    ],
+  );
+  const orderId = order.rows[0].id as string;
+  const orderItemIds: string[] = [];
+  for (const line of options.lines) {
+    const inserted = await db.query(
+      `insert into public.order_items
+         (order_id, item_id, item_name, item_price, color, size, quantity, line_total, variant_id, fulfillment_type)
+       values ($1, $2, '照合テスト', $3, 'BLACK', 'M', $4, $5, $6, $7)
+       returning id`,
+      [orderId, line.itemId, PRICE, line.quantity, PRICE * line.quantity, line.variantId, line.fulfillmentType],
+    );
+    const orderItemId = inserted.rows[0].id as string;
+    orderItemIds.push(orderItemId);
+    if (line.fulfillmentType === 'stock' && (line.reserved ?? true)) {
+      await db.query(
+        `insert into public.stock_movements (variant_id, delta, reason, order_id, order_item_id)
+         values ($1, $2, 'purchase', $3, $4)`,
+        [line.variantId, -line.quantity, orderId, orderItemId],
+      );
+    }
+  }
+  return { orderId, orderItemIds };
+}
